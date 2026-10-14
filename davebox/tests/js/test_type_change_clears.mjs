@@ -132,9 +132,9 @@ step('chain params (synth / fxN) play only on a Schwung track', () => {
     for (const r of [1, 2, 3]) { if (T('4:synth:cutoff', r)) throw new Error('synth kept on ' + routeName[r]); if (T('4:fx2:mix', r)) throw new Error('fx kept on ' + routeName[r]); }
     if (!T('4:synth:cutoff', 0)) throw new Error('synth cleared on Schwung');
 });
-step('chain MIDI FX (midi_fxN) play on Schwung AND MIDI (item 15 = A), not Move or NONE', () => {
-    if (!T('4:midi_fx1:rate', 0) || !T('4:midi_fx1:rate', 2)) throw new Error('midi_fx cleared where it should route');
-    if (T('4:midi_fx1:rate', 1) || T('4:midi_fx1:rate', 3)) throw new Error('midi_fx kept on Move/NONE');
+step('chain MIDI FX (midi_fxN) play on Schwung, Move AND MIDI (the parked slot is borrowed), not NONE', () => {
+    if (!T('4:midi_fx1:rate', 0) || !T('4:midi_fx1:rate', 1) || !T('4:midi_fx1:rate', 2)) throw new Error('midi_fx cleared where it should route');
+    if (T('4:midi_fx1:rate', 3)) throw new Error('midi_fx kept on NONE');
 });
 step('the levels (slot: volume/pan/sends) survive Schwung ↔ Move (both have a strip), not MIDI or NONE', () => {
     for (const k of ['volume', 'pan', 'send_a', 'send_b']) {

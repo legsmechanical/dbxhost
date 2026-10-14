@@ -1124,6 +1124,25 @@ typedef struct {
      * release goes where its start went even if the lane map or the track's
      * type changed in between. */
     uint8_t   audition_lane[128];
+    /* MIDI FX on a Move or MIDI track. Such a track's own chain slot is parked
+     * (its instrument is elsewhere), so the slot's MIDI FX are free to borrow:
+     * with this set, every message the track would send to Move or the USB
+     * port goes to the slot instead (via_slot_divert), the slot's MIDI FX run
+     * on it -- and tick their arps -- exactly as on a Schwung track, and the
+     * chain hands ALL of their output back (chain key `midi_fx_host_route`)
+     * for slot_fx_emit to send where the track's notes go. The chain stays the
+     * only thing driving its plugins. Set by the UI while a MIDI FX is loaded
+     * on such a track (tN_fxslot); saved with the project. */
+    uint8_t   fx_via_slot;
+    /* What the slot's MIDI FX have sounding at the track's destination, per
+     * pitch (counted, like pfx.pitch_refcount), and where that is (one place:
+     * a track's destination is one route and channel), so a panic,
+     * a route change or switching the effect off can close exactly those.
+     * Runtime only. */
+    uint8_t   fx_out_held[128];
+    uint8_t   fx_out_route;   /* ROUTE_MOVE / ROUTE_EXTERNAL of the held notes */
+    uint8_t   fx_out_ch;      /* ...and the channel they sound on */
+    uint8_t   fx_out_flush;   /* set from set_param: close the held notes at the next render */
 } seq8_track_t;
 #define LRS_SET(tr, s)  ((tr)->live_recorded_steps[(s)>>3] |=  (uint8_t)(1u<<((s)&7)))
 #define LRS_TEST(tr, s) ((tr)->live_recorded_steps[(s)>>3] &   (1u<<((s)&7)))
@@ -2025,6 +2044,74 @@ static midi_dest_t midi_dest_resolve(uint8_t route, uint8_t slot, uint8_t midi_t
     return d;
 }
 
+/* MIDI FX on a Move or MIDI track (seq8_track_t.fx_via_slot): a message bound
+ * for Move or the USB port goes to the track's own chain slot instead, to run
+ * through its MIDI FX; the chain hands the result back (slot_fx_emit). Called
+ * by both emitters once the destination and its channel are final. Returns 1
+ * if it took the message. */
+static int via_slot_divert(uint8_t track_idx, const midi_dest_t *dst,
+                           uint8_t status, uint8_t d1, uint8_t d2) {
+    if (!g_inst || !g_host || track_idx >= NUM_TRACKS) return 0;
+    const seq8_track_t *tr = &g_inst->tracks[track_idx];
+    if (!tr->fx_via_slot) return 0;
+    if (dst->route != ROUTE_MOVE && dst->route != ROUTE_EXTERNAL) return 0;
+    if (!g_host->midi_send_internal_slot) return 0;
+    const uint8_t msg[4] = { (uint8_t)(status >> 4), status, d1, d2 };
+    g_host->midi_send_internal_slot((int)tr->pfx.slot, msg, 4);
+    return 1;
+}
+
+/* Send one message to Move or the USB port, as the emitters do. */
+static void route_out(uint8_t route, uint8_t status, uint8_t d1, uint8_t d2) {
+    if (!g_host) return;
+    if (route == ROUTE_MOVE) {
+        if (!g_host->midi_inject_to_move) return;
+        uint8_t pkt[4] = { (uint8_t)(0x20 | (status >> 4)), status, d1, d2 };
+        g_host->midi_inject_to_move(pkt, 4);
+    } else if (route == ROUTE_EXTERNAL) {
+        if (!g_host->midi_send_external) return;
+        const uint8_t pkt[4] = { (uint8_t)(0x20 | ((status >> 4) & 0x0F)), status, d1, d2 };
+        g_host->midi_send_external(pkt, 4);
+    }
+}
+
+/* What the slot's MIDI FX made from a via-slot track's messages, on its way
+ * to where the track's notes go. Audio thread (the host's drain, after this
+ * module's render). Re-addressed here: the slot may have changed the channel,
+ * and a `MIDI to Track N` follower sends on its target's. Note pairs are
+ * counted per pitch, so a chord's overlapping notes and the duplicate offs a
+ * stopping arp sends after a panic cannot unbalance Move's voices. */
+static void slot_fx_emit(seq8_track_t *tr, uint8_t status, uint8_t d1, uint8_t d2) {
+    const uint8_t type = (uint8_t)(status & 0xF0);
+    if (type < 0x80 || type > 0xE0 || d1 > 127) return;
+    if (tr->pad_mode == PAD_MODE_CONDUCT) return;
+    midi_dest_t dst = midi_dest_resolve(tr->pfx.route, tr->pfx.slot, tr->pfx.midi_to);
+    if (!dst.emit || (dst.route != ROUTE_MOVE && dst.route != ROUTE_EXTERNAL)) return;
+    const uint8_t ch = dst.channel != MIDI_DEST_KEEP_CH ? dst.channel : (uint8_t)(tr->channel & 0x0F);
+    status = (uint8_t)(type | ch);
+    if (type == 0x90 && d2 > 0) {
+        if (tr->fx_out_held[d1] == 255) return;
+        if (tr->fx_out_held[d1]++ != 0) return;          /* already sounding */
+        tr->fx_out_route = dst.route;
+        tr->fx_out_ch = ch;
+    } else if (type == 0x80 || type == 0x90) {
+        if (tr->fx_out_held[d1] == 0) return;            /* never sounded, or already closed */
+        if (--tr->fx_out_held[d1] != 0) return;          /* still sounding from another */
+    }
+    route_out(dst.route, status, d1, d2);
+}
+
+/* Close every note the slot's MIDI FX have sounding for this track, where
+ * they sound. Panic, a route change, the effect switched off. */
+static void fx_via_slot_silence(seq8_track_t *tr) {
+    int n;
+    for (n = 0; n < 128; n++) {
+        if (!tr->fx_out_held[n]) continue;
+        tr->fx_out_held[n] = 0;
+        route_out(tr->fx_out_route, (uint8_t)(0x80 | (tr->fx_out_ch & 0x0F)), (uint8_t)n, 0);
+    }
+}
+
 /* Forward decls — arp engine and scale_transpose defined further down. */
 static void arp_add_note     (arp_engine_t *a, uint8_t pitch, uint8_t vel);
 static void arp_remove_note  (arp_engine_t *a, uint8_t pitch);
@@ -2571,6 +2658,7 @@ static void pfx_emit(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
     if (!dst.emit) return;
     if (dst.channel != MIDI_DEST_KEEP_CH)
         status = (uint8_t)((status & 0xF0) | dst.channel);
+    if (via_slot_divert(fx->track_idx, &dst, status, d1, d2)) return;
     if (dst.route == ROUTE_MOVE) {
         if (!g_host->midi_inject_to_move) return;
         uint8_t pkt[4] = { (uint8_t)(0x20 | (status >> 4)), status, d1, d2 };
@@ -2698,6 +2786,9 @@ static void send_panic_ex(seq8_instance_t *inst, int full) {
             pfx_emit(fx, (uint8_t)(0xB0 | ch), 123, 0); /* All Notes Off */
         }
     }
+    /* MIDI FX on Move / MIDI tracks: what the slot's effects have sounding.
+     * By the held list, never a sweep (Move's inject is rate-limited). */
+    for (t = 0; t < NUM_TRACKS; t++) fx_via_slot_silence(&inst->tracks[t]);
     /* ROUTE_MOVE: skip CC 123 sweep. Move's voice allocator corrupts when
      * CC 123 (all-notes-off) is followed by explicit note-offs for pitches
      * already killed by the CC. silence_track_notes_v2 already sent
@@ -5461,7 +5552,22 @@ static void slot_fx_note(seq8_instance_t *inst, int slot, uint8_t status, uint8_
  * on the audio thread after render_block, once per generated message. */
 void move_plugin_slot_midi_v1(void *instance, int slot, const uint8_t *msg, int len) {
     seq8_instance_t *inst = (seq8_instance_t *)instance;
-    if (!inst || !msg || len < 3 || slot < 0 || slot >= SEQ8_CHAIN_SLOTS) return;
+    if (!inst || !msg || len < 2 || slot < 0 || slot >= SEQ8_CHAIN_SLOTS) return;
+    /* A Move or MIDI track borrowing its slot's MIDI FX: the slot's whole
+     * output, to be SENT where the track's notes go -- never recorded here
+     * (it carries the clip's own notes back). */
+    {
+        int t;
+        for (t = 0; t < NUM_TRACKS; t++) {
+            seq8_track_t *tr = &inst->tracks[t];
+            if (tr->fx_via_slot && (int)tr->pfx.slot == slot &&
+                (tr->pfx.route == ROUTE_MOVE || tr->pfx.route == ROUTE_EXTERNAL)) {
+                slot_fx_emit(tr, msg[0], msg[1], len >= 3 ? msg[2] : 0);
+                return;
+            }
+        }
+    }
+    if (len < 3) return;
     slot_fx_note(inst, slot, msg[0], msg[1], msg[2]);
 }
 
@@ -7573,6 +7679,9 @@ static int pfx_get(seq8_track_t *tr, const char *key, char *out, int out_len) {
     /* 0 = plays its own instrument; 1..NUM_TRACKS = plays that track's. */
     if (!strcmp(key, "midi_to"))
         return snprintf(out, out_len, "%d", (int)fx->midi_to);
+    /* 1 = this Move / MIDI track plays through its own slot's MIDI FX. */
+    if (!strcmp(key, "fxslot"))
+        return snprintf(out, out_len, "%d", (int)tr->fx_via_slot);
 
     if (!strcmp(key, "track_looper"))
         return snprintf(out, out_len, "%d", (int)fx->looper_on);

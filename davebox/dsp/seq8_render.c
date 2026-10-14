@@ -259,6 +259,15 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
     /* The slots' transport follows db's own, and the host knows its tempo. */
     slot_tempo_declare(inst);
     slot_clock_edges(inst);
+    {   /* MIDI FX on Move / MIDI tracks: a route change or the effect switched
+         * off (set_param) closes what it had sounding, from here. */
+        int ft;
+        for (ft = 0; ft < NUM_TRACKS; ft++)
+            if (inst->tracks[ft].fx_out_flush) {
+                inst->tracks[ft].fx_out_flush = 0;
+                fx_via_slot_silence(&inst->tracks[ft]);
+            }
+    }
 
     /* Clock OUT transport edges (0xFA/0xFC). Emitted once per block from the
      * audio thread (single producer for the shim ext ring) on the db transport

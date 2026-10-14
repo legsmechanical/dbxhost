@@ -106,12 +106,13 @@ step('setup: routes — 2,3 Schwung · 4 MIDI · 5 NONE · 6 Move · 7 Conduct',
 
 /* ⭑ RULED (Josh, 2026-09-05, after the build-23 pass): from an EDITOR the switch
  * lands on the new track's SOUND MENU on its INSTRUMENT row — every track kind. */
-/* A MIDI track's menu: its destination, a rule, then its own config rows — no
- * chain, no bus, and (since 2026-09-19) no CONFIG door, the rows being inline. */
+/* A MIDI track's menu: its destination, its MIDI FX (since 2026-10-14), a
+ * rule, then its own config rows — no instrument chain, no bus, and (since
+ * 2026-09-19) no CONFIG door, the rows being inline. */
 const isMidiMenu = () => {
     const k = kinds().split(',');
-    return k[0] === 'trackto' && k[1] === 'div' && k.length > 2 &&
-           k.slice(2).every(x => x === 'cfg' || x === 'div');   /* ruled groups, 2026-09-24 */
+    return k[0] === 'trackto' && k[1] === 'block' && k[2] === 'div' && k.length > 3 &&
+           k.slice(3).every(x => x === 'cfg' || x === 'div');   /* ruled groups, 2026-09-24 */
 };
 const onInstrumentRow = () => view() === VIEW_BLOCKS && kinds().split(',')[snd.soundPickStateForTest().row] === 'trackto';
 step('⭑ Schwung → Schwung: the switch from an EDITOR lands on the new track\'s sound menu, INSTRUMENT row', () => {

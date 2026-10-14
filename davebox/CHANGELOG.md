@@ -8,6 +8,12 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Added
+- **MIDI FX on Move tracks and MIDI tracks.** The **MIDI FX** row in the Sound
+  menu is now on Move tracks and MIDI tracks as well as Schwung ones: load an
+  arpeggiator, a chord or any other MIDI effect, and the track's notes go
+  through it on their way to Move's instrument or out of the MIDI port. It
+  stays with the track when you change what it plays. (**Notes to Seq** is
+  still for Schwung tracks only.)
 - **Card Hold.** A new row in the global menu sets how long a knob's page
   stays on screen after you let go of the knob: **Off** (it goes with your
   finger, as before), **0.5 s**, **1 s** or **2 s**. It applies to the bank

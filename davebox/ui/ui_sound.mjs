@@ -57,7 +57,7 @@ import { instrOptions, instrPickerRows, moveInstrOwner, fmtInstr, INSTR_SCHWUNG,
          BANK_MACRO_ALLOW, BANK_SHORT, seqAutoKeyFor, SEQ_AUTO_TARGETS,
          midiTargetIsMidi, midiTargetCC, midiTargetName, midiTargetShort, midiTargetMax, midiTargetDefault, midiTargetTo14, PB_CENTRE,
          PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD, ROUTE_NONE, TRACK_PAD_BASE } from './ui_constants.mjs';
-import { applyTrackConfig, applyBankParam, readBankParams } from './ui_dsp_bridge.mjs';
+import { applyTrackConfig, applyBankParam, readBankParams, syncTrackMidiFx } from './ui_dsp_bridge.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { moduleParallelDefault, setModuleParallelDefault, reconcileParallelSlot } from './ui_parallel.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -941,6 +941,7 @@ const S = {
      * effect landed on track 1's sound page. The door is stated by whoever
      * opens it, never derived. */
     busDoor: null,
+    mfxDoor: null,              /* a Move track's MIDI FX open: the bus to return to (mfxDoorEnter) */
     knobLegRow: 0,
     knobLegIdx: -1,
     knobLegEditing: false,
@@ -1788,6 +1789,7 @@ export function soundRetarget(track, slot) {
  * leaving sound mode and entering a track — so neither direction can inherit it. */
 function clearBusContext() {
     S.bus = null;
+    S.mfxDoor = null;
     S.busIdx = 0;
     S.busLevelEditing = false;
     S.busLevelDirty = false;
@@ -1895,6 +1897,7 @@ export function soundExit() {
 
 /* Which module each block holds — drives the picker and the empty-block flow. */
 function refreshBlockNames() {
+    mfxDoorReturn();
     if (!S.bus) probeCaps();
     buildPickRows();
     /* Names and bypass are read per ROW, so a bus context reads its own four
@@ -2372,7 +2375,28 @@ function onVolumeTurn(delta) {
 
 /* ---- discovery ---- */
 
+/* THE MIDI FX DOOR on a Move track. Its screen is the Move BUS (S.bus, S.slot
+ * 0, keys addressed by bus prefix and loaded by PATH), but its MIDI FX block
+ * belongs to the track's parked CHAIN slot (loaded by id, addressed by slot).
+ * So opening that block steps out of the bus into the slot, exactly as a
+ * Schwung track's MIDI FX is reached, and remembers the bus: the block list
+ * puts it back (mfxDoorReturn, from refreshBlockNames). Any fresh entry into
+ * sound mode drops the door with the rest of the context. */
+function mfxDoorEnter(comp) {
+    if (!comp || !/^midi_fx\d$/.test(comp) || !S.bus || S.bus.kind !== 'move') return;
+    S.mfxDoor = { bus: S.bus };
+    S.bus = null;
+    S.slot = slotIndex(S.track);
+}
+function mfxDoorReturn() {
+    if (!S.mfxDoor || S.view !== VIEW_BLOCKS) return;
+    S.bus = S.mfxDoor.bus;
+    S.slot = 0;
+    S.mfxDoor = null;
+}
+
 function openBlock(comp) {
+    mfxDoorEnter(comp);
     S.comp = comp;
     const bi = BLOCKS.findIndex(b => b.comp === comp);
     if (bi >= 0) S.blockIdx = bi;          /* meaningless on a bus, unused there */
@@ -3020,6 +3044,7 @@ export function soundEnterMove(track) {
     S.track = track;
     S.slot = 0;                 /* move_fx: keys ignore the slot argument */
     S.bus = moveBusFor(track);
+    S.mfxDoor = null;
     S.busIdx = 0;
     S.busLevelEditing = false;
     S.busLevelDirty = false;
@@ -3443,6 +3468,11 @@ function buildPickRows() {
          * parked exactly as its chain is, so the effects and the mixer position
          * below would all be backed by something that cannot be heard. */
         if (!conductorMenu()) {
+        /* MIDI FX on a Move track: the track's own chain slot is parked (its
+         * instrument is Move's), so the slot's MIDI FX block is borrowed — the
+         * engine plays the track through it and sends the result on to Move
+         * (syncTrackMidiFx). The row opens that block through mfxDoorEnter. */
+        if (S.bus.kind === 'move') rows.push({ kind: 'block', comp: 'midi_fx1', label: 'MIDI FX' });
         for (const n of BUS_BLOCKS) {
             rows.push({ kind: 'block', comp: S.bus.prefix + 'fx' + n, label: 'FX ' + n });
         }
@@ -3502,6 +3532,9 @@ function buildPickRows() {
          * screen is its destination plus the CONFIG door, exactly as a Move
          * track's is. configRows itself decides which rows a MIDI track gets. */
         if (GS.trackRoute[S.track] === 2) {
+            /* MIDI FX on a MIDI track — the parked slot's block, borrowed as
+             * on a Move track; the result leaves by the port. */
+            rows.push({ kind: 'block', comp: 'midi_fx1', label: 'MIDI FX' });
             pushConfigRows(rows, S.track);
             S.pickRows = orderTrackMenu(rows); S.pickRow = 0; return;
         }
@@ -5192,9 +5225,9 @@ function commitInstrChoice() {
  * targetCompatible, from the DESTINATION's capability — so the same rule
  * serves macro legs and automation lanes, and every direction of change:
  *   · chain params (synth / fxN)       → Schwung only
- *   · chain MIDI FX params (midi_fxN)  → Schwung, and MIDI (item 15 = A: a
- *                                        MIDI track routes through its parked
- *                                        slot's MIDI FX)
+ *   · chain MIDI FX params (midi_fxN)  → every type but none: a Move or MIDI
+ *                                        track plays through its parked slot's
+ *                                        MIDI FX (syncTrackMidiFx)
  *   · Move bus FX params (move_fx:N:fxM) → Move only
  *   · the levels (slot:/move_fx:N: volume pan send_a send_b) → Schwung and
  *                                        Move (both have a strip)
@@ -5226,7 +5259,7 @@ function compCompatible(comp, key, newRoute) {
     if (comp === 'slot' || /^move_fx:\d+$/.test(comp))
         return LEVEL_KEYS[key] ? (newRoute === 0 || newRoute === 1) : (comp === 'slot' ? newRoute === 0 : newRoute === 1);
     if (/^move_fx:\d+:fx\d+$/.test(comp)) return newRoute === 1;
-    if (/^midi_fx\d+$/.test(comp)) return newRoute === 0 || newRoute === 2;
+    if (/^midi_fx\d+$/.test(comp)) return newRoute !== ROUTE_NONE;   /* a track's MIDI FX play on every route */
     if (comp === 'synth' || /^fx\d+$/.test(comp)) return newRoute === 0;
     return true;
 }
@@ -8016,6 +8049,7 @@ function mlIsFavorite(mod) {
  * where S.comp still names whichever block was last opened — browsing without
  * this would offer modules for the wrong component and load into it. */
 function openBrowse(comp, prompt) {
+    mfxDoorEnter(comp);
     if (comp) {
         S.comp = comp;
         const bi = BLOCKS.findIndex(b => b.comp === comp);
@@ -8444,6 +8478,9 @@ function applyModulePick(mod) {
      * module id. Same key, different currency — loading a bus by id silently
      * does nothing, which is the kind of failure you debug for an hour. */
     engineLoadModule(S.slot, S.comp, S.bus ? (mod.path || '') : mod.id);
+    /* A MIDI FX on a Move or MIDI track works by borrowing the parked slot —
+     * switched on with the effect, off with [ none ]. */
+    if (!S.bus && S.comp === 'midi_fx1' && GS.trackRoute[S.track] !== 0) syncTrackMidiFx(S.track, !!mod.id);
     /* The slot's render-pool pin follows the module that just arrived (a
      * synth pick only; the pin is decided by the instrument). */
     if (!S.bus && S.comp === 'synth') reconcileParallelSlot(S.slot);
@@ -12366,6 +12403,11 @@ const FX_TO_SEQ_KEY = 'midi_fx_to_host';
 const FX_TO_SEQ_LABEL = 'Notes to Seq';
 function fxToSeqOffered() {
     if (S.comp !== 'midi_fx1' || S.slot < 0 || !S.moduleId || soundIsGlobal()) return false;
+    /* Schwung tracks only, for now: on a Move or MIDI track the effect's whole
+     * output already comes back to the engine to be SENT (syncTrackMidiFx),
+     * and recording it as well needs telling what the effect generated from
+     * the clip's own notes it carries back. */
+    if (GS.trackRoute[S.track] !== 0) return false;
     const caps = engineModuleCaps(S.comp, S.moduleId);
     return !!(caps && caps.pre_capable);
 }

@@ -79,20 +79,21 @@ step('CONTROL: a Schwung track\'s menu still has its blocks, levels and doors', 
     if (k[0] !== 'trackto') throw new Error('first row ' + k[0]);
     if (!k.includes('block') || !k.includes('buslevel')) throw new Error('Schwung menu lost rows: ' + k.join(','));
 });
-step('a MIDI-routed track\'s menu is its destination + its own CONFIG rows, nothing else', () => {
+step('a MIDI-routed track\'s menu is its destination, its MIDI FX + its own CONFIG rows, nothing else', () => {
     B.applyInstrChoice(1, C.INSTR_MIDI_CH + 4);
     if (S.trackRoute[1] !== 2) throw new Error('route=' + S.trackRoute[1]);
     S.activeTrack = 1;
     /* Import MIDI left the track menu for K8 of the CLIP / DRUM LANE card (Josh, 2026-09-29), so no door is left here at all. */
     const k = menuFor(1);
     if (k.includes('midiimport')) throw new Error('Import MIDI is back in the menu: ' + k.join(','));
-    /* No chain, no bus — so: the destination, a rule, then the config rows. */
-    if (k[0] !== 'trackto' || k[1] !== 'div') throw new Error('rows: ' + k.join(','));
+    /* No instrument chain, no bus — so: the destination, its MIDI FX (the
+     * parked slot's, borrowed — 2026-10-14), a rule, then the config rows. */
+    if (k[0] !== 'trackto' || k[1] !== 'block' || k[2] !== 'div') throw new Error('rows: ' + k.join(','));
     /* The config rows come in their ruled groups (Josh, 2026-09-24), so rules
      * sit between them. */
-    if (!k.slice(2).every(x => x === 'cfg' || x === 'div')) throw new Error('rows: ' + k.join(','));
+    if (!k.slice(3).every(x => x === 'cfg' || x === 'div')) throw new Error('rows: ' + k.join(','));
     if (k.includes('config')) throw new Error('the CONFIG door came back: ' + k.join(','));
-    if (k.includes('block') || k.includes('buslevel')) throw new Error('rows: ' + k.join(','));
+    if (k.filter(x => x === 'block').length !== 1 || k.includes('buslevel')) throw new Error('rows: ' + k.join(','));
 });
 step('a NONE track stays collapsed to the row that picks an instrument', () => {
     B.applyInstrChoice(2, C.INSTR_NONE);

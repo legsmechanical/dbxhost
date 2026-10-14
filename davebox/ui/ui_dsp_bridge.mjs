@@ -46,7 +46,8 @@ import { Red } from '/data/UserData/schwung/shared/constants.mjs';
 
 import { S } from './ui_state.mjs';
 import { slotIndex, syncLinkAudioRoutingFromRoutes,
-         invalidateLinkAudioRoutingCache, linkAudioRoutingJustEnabled } from './ui_engine.mjs';
+         invalidateLinkAudioRoutingCache, linkAudioRoutingJustEnabled,
+         engineLoadedModule, engineSetChainParam } from './ui_engine.mjs';
 import { clipHasContent, _clipIsEmpty, bankIsDoor } from './ui_pure.mjs';
 import { showActionPopup, showActionPopupFor, writeSidecar, uuidToStatePath, uuidToUiStatePath,
          uuidToNewProjectPath, freshSidecar } from './ui_persistence.mjs';
@@ -1321,6 +1322,32 @@ export function applyInstrChoice(t, v) {
     return true;
 }
 
+/* MIDI FX on a Move or MIDI track. Such a track's own chain slot is parked,
+ * so its MIDI FX block is free to borrow: with an effect loaded there, the
+ * engine sends the track's notes through the slot (tN_fxslot) and the slot
+ * hands the effect's whole output back instead of playing it
+ * (`midi_fx_host_route`), for the engine to send where the track's notes go.
+ * A Schwung track needs neither — its notes already reach the effect, and its
+ * output already plays the slot's instrument.
+ *
+ * Both halves are written together, the slot's FIRST: the other order would
+ * send a note into a slot still playing its effect's output on the parked
+ * instrument. `loaded` overrides the read when the caller has just changed the
+ * module (the chain loads it asynchronously, so a read now is stale).
+ * `defer`: the engine's half goes through the default-param queue (next
+ * tick) — for a caller that has just written another tN_ key in the same
+ * callback, which can coalesce and drop one (the route write must stand
+ * alone; test_instr_pick_sets_route). */
+export function syncTrackMidiFx(t, loaded, defer) {
+    const slot = slotIndex(t);
+    const has = loaded === undefined ? !!engineLoadedModule(slot, 'midi_fx1') : !!loaded;
+    const route = S.trackRoute[t];
+    const on = has && (route === 1 || route === 2) ? 1 : 0;
+    engineSetChainParam(slot, 'midi_fx_host_route', on);
+    if (defer) S.pendingDefaultSetParams.push({ key: 't' + t + '_fxslot', val: String(on) });
+    else host_module_set_param('t' + t + '_fxslot', String(on));
+}
+
 export function applyTrackConfig(t, key, val) {
     let strVal;
     if (key === 'route') strVal = val === ROUTE_NONE ? 'none' : val === 2 ? 'external' : val === 1 ? 'move' : 'schwung';
@@ -1331,6 +1358,9 @@ export function applyTrackConfig(t, key, val) {
     else if (key === 'route') {
         S.trackRoute[t] = val;
         S.instrAbbrevAt = 0;              /* the bank header's [instrument] re-reads */
+        /* The track's MIDI FX follow it across routes: borrowed on Move and
+         * MIDI, the slot's own on Schwung, nothing to do on None. */
+        syncTrackMidiFx(t, undefined, true);
         /* Link Audio rebuild is derived from routing, not a setting — a track
          * routed to Move needs its audio back through that Move bus. */
         syncLinkAudioRoutingFromRoutes(S.trackRoute);

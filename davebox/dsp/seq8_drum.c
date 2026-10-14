@@ -26,6 +26,7 @@ static void drum_pfx_emit(drum_pfx_t *px, uint8_t status, uint8_t d1, uint8_t d2
     if (!dst.emit) return;
     if (dst.channel != MIDI_DEST_KEEP_CH)
         status = (uint8_t)((status & 0xF0) | dst.channel);
+    if (via_slot_divert(px->track_idx, &dst, status, d1, d2)) return;
     if (dst.route == ROUTE_MOVE) {
         if (!g_host->midi_inject_to_move) return;
         uint8_t pkt[4] = { (uint8_t)(0x20 | (status >> 4)), status, d1, d2 };

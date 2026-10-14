@@ -482,6 +482,10 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
     for (t = 0; t < NUM_TRACKS; t++)
         if (inst->tracks[t].pfx.midi_to)
             fprintf(fp, ",\"t%d_mt\":%d", t, (int)inst->tracks[t].pfx.midi_to);
+    /* MIDI FX on a Move / MIDI track (fx_via_slot), sparse: absent = off. */
+    for (t = 0; t < NUM_TRACKS; t++)
+        if (inst->tracks[t].fx_via_slot)
+            fprintf(fp, ",\"t%d_fs\":1", t);
     for (t = 0; t < NUM_TRACKS; t++)
         if (inst->tracks[t].pfx.looper_on != 1)
             fprintf(fp, ",\"t%d_lp\":%d", t, (int)inst->tracks[t].pfx.looper_on);
@@ -1139,6 +1143,10 @@ static void seq8_load_state(seq8_instance_t *inst) {
 
         /* `MIDI to Track N` (0 = own instrument). Absent = 0, which is what
          * every set written before this existed means. */
+        snprintf(key, sizeof(key), "t%d_fs", t);
+        inst->tracks[t].fx_via_slot = json_get_int(buf, key, 0) ? 1 : 0;
+        memset(inst->tracks[t].fx_out_held, 0, sizeof(inst->tracks[t].fx_out_held));
+
         snprintf(key, sizeof(key), "t%d_mt", t);
         {
             uint8_t mt = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, NUM_TRACKS);
