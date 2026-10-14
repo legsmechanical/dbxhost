@@ -1556,6 +1556,20 @@ static int overtake_midi_send_internal_slot(int slot, const uint8_t *msg, int le
     return len;
 }
 
+/* Host extension (move_host_ext_v1_t.midi_send_slot_direct): the slot-addressed
+ * send above, delivered past the slot's MIDI FX (MOVE_MIDI_SOURCE_DIRECT).
+ * Voice messages only: realtime has no MIDI FX to skip and goes the usual way. */
+static int overtake_midi_send_slot_direct(int slot, const uint8_t *msg, int len) {
+    if (!msg || len < 4) return 0;
+    if ((msg[1] & 0xF0) < 0x80 || (msg[1] & 0xF0) == 0xF0) return overtake_midi_send_internal_slot(slot, msg, len);
+    uint8_t cin = (msg[1] >> 4) & 0x0F;
+    uint8_t pkt[4] = { cin, msg[1], msg[2], msg[3] };
+    static int midi_log_count = 0;
+    int log_on = shadow_midi_out_log_enabled();
+    shadow_chain_dispatch_midi_to_slot_direct(slot, pkt, log_on, &midi_log_count);
+    return len;
+}
+
 /* Host extension (move_host_ext_v1_t.set_slot_param): an overtake DSP sets one
  * chain-slot parameter from its own render, in program order with the notes it
  * sends through overtake_midi_send_internal_slot above. That call is
@@ -1607,6 +1621,7 @@ static const move_host_ext_v1_t overtake_host_ext = {
     .size = sizeof(move_host_ext_v1_t),
     .set_slot_param = overtake_set_slot_param,
     .set_tempo = overtake_set_tempo,
+    .midi_send_slot_direct = overtake_midi_send_slot_direct,
 };
 
 /* Slot MIDI (plugin_api_v1.h, MOVE_PLUGIN_SLOT_MIDI_V1_SYMBOL): the overtake

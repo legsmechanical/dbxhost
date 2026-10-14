@@ -121,6 +121,10 @@ void shadow_chain_dispatch_midi_to_slots(const uint8_t *pkt, int log_on, int *mi
  * master-FX fanout (which still runs for an out-of-range slot). */
 void shadow_chain_dispatch_midi_to_slot(int slot, const uint8_t *pkt, int log_on, int *midi_log_count);
 
+/* The same, delivered with MOVE_MIDI_SOURCE_DIRECT: to the slot's instrument
+ * and audio FX, skipping its MIDI FX and its transpose. */
+void shadow_chain_dispatch_midi_to_slot_direct(int slot, const uint8_t *pkt, int log_on, int *midi_log_count);
+
 /* Broadcast a 1-byte system-realtime message (0xF8/0xFA/0xFB/0xFC) to every
  * active chain slot, bypassing per-slot channel remap (which would corrupt the
  * status byte). For internally generated transport clock. */

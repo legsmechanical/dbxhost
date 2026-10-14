@@ -770,6 +770,20 @@ void v2_on_midi(void *instance, const uint8_t *msg, int len, int source) {
         }
     }
 
+    /* DIRECT (move_host_ext_v1_t.midi_send_slot_direct): straight to the
+     * instrument and the audio FX, past the MIDI FX — and past
+     * midi_fx_host_route, which is about what the MIDI FX make. The sender
+     * already ran this slot's MIDI FX on it, or chose not to. */
+    if (source == MOVE_MIDI_SOURCE_DIRECT) {
+        if (len > 3) len = 3;
+        if (inst->synth_plugin_v2 && inst->synth_instance && inst->synth_plugin_v2->on_midi)
+            inst->synth_plugin_v2->on_midi(inst->synth_instance, msg, len, MOVE_MIDI_SOURCE_EXTERNAL);
+        for (int f = 0; f < inst->fx_count; f++)
+            if (inst->fx_on_midi[f] && inst->fx_instances[f])
+                inst->fx_on_midi[f](inst->fx_instances[f], msg, len, MOVE_MIDI_SOURCE_EXTERNAL);
+        return;
+    }
+
     /* Process through MIDI FX modules (if any loaded) */
     uint8_t out_msgs[MIDI_FX_MAX_OUT_MSGS][3];
     int out_lens[MIDI_FX_MAX_OUT_MSGS];

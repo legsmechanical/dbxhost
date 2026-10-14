@@ -55,10 +55,11 @@ static int stub_set_slot_param(int slot, const char *key, const char *value) {
 static float g_ext_tempo = -1.0f;
 static int   g_ext_tempo_calls;
 static void stub_set_tempo(float bpm) { g_ext_tempo = bpm; g_ext_tempo_calls++; }
+static int stub_send_slot_direct(int slot, const uint8_t *m, int n) { push_event(HX_MIDI_DIRECT, m, n, slot); return n; }
 float hx_stub_ext_tempo(void)       { return g_ext_tempo; }
 int   hx_stub_ext_tempo_calls(void) { return g_ext_tempo_calls; }
 const move_host_ext_v1_t *hx_stub_ext(void) {
-    static const move_host_ext_v1_t ext = { sizeof(move_host_ext_v1_t), stub_set_slot_param, stub_set_tempo };
+    static const move_host_ext_v1_t ext = { sizeof(move_host_ext_v1_t), stub_set_slot_param, stub_set_tempo, stub_send_slot_direct };
     return &ext;
 }
 void hx_stub_ext_refuse(int on) { g_ext_refuse = on; }

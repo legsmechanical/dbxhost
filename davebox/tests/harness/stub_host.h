@@ -9,9 +9,11 @@ typedef enum {
     HX_MIDI_INTERNAL = 0,
     HX_MIDI_EXTERNAL = 1,
     HX_MIDI_INJECT   = 2,
-    HX_PARAM_SET     = 3    /* the host extension's set_slot_param — in the
+    HX_PARAM_SET     = 3,   /* the host extension's set_slot_param — in the
                                SAME ordered list as the MIDI, which is the
                                point: order between a value and a note */
+    HX_MIDI_DIRECT   = 4    /* the extension's midi_send_slot_direct: to a slot's
+                               instrument, past its MIDI FX (`slot` set) */
 } hx_midi_kind;
 
 typedef struct {

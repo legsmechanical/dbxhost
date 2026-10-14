@@ -123,6 +123,21 @@ fi
 echo "$s" | grep -A1 'shadow_chain_fx_out_drain(' | grep -q 'overtake_slot_midi_fn && overtake_dsp_gen_inst' \
     || say "the drain does not fall back to discarding when no module takes the notes"
 
+# ---- DIRECT: a slot's instrument, past its MIDI FX (move_host_ext_v1_t.midi_send_slot_direct) ----
+echo "$h" | awk '/typedef struct move_host_ext_v1/,/} move_host_ext_v1_t;/' | grep -q 'int (\*midi_send_slot_direct)(int slot, const uint8_t \*msg, int len);' \
+    || say "move_host_ext_v1_t lacks midi_send_slot_direct"
+echo "$s" | grep -q '\.midi_send_slot_direct = overtake_midi_send_slot_direct,' || say "the shim does not hand out midi_send_slot_direct"
+direct="$(body "$s" 'static int overtake_midi_send_slot_direct(int slot, const uint8_t *msg, int len) {')"
+echo "$direct" | grep -q 'shadow_chain_dispatch_midi_to_slot_direct(slot, pkt' || say "midi_send_slot_direct does not dispatch DIRECT"
+SM="$(code src/host/shadow_midi.c)"
+echo "$SM" | grep -q 'shadow_chain_dispatch_to_one_slot(slot, pkt, pv2, MOVE_MIDI_SOURCE_DIRECT)' || say "the DIRECT dispatch does not deliver with MOVE_MIDI_SOURCE_DIRECT"
+echo "$SM" | grep -q 'if (source == MOVE_MIDI_SOURCE_DIRECT || shadow_chain_apply_transpose(i, msg))' \
+    || say "DIRECT is transposed a second time (the MIDI FX output was made from an already-transposed note)"
+onm2="$(body "$cm" 'void v2_on_midi(void *instance, const uint8_t *msg, int len, int source)')"
+d_at="$(echo "$onm2" | grep -n 'if (source == MOVE_MIDI_SOURCE_DIRECT) {' | head -1 | cut -d: -f1)"
+fx_at="$(echo "$onm2" | grep -n 'v2_process_midi_fx(inst, msg, len' | head -1 | cut -d: -f1)"
+{ [ -n "$d_at" ] && [ -n "$fx_at" ] && [ "$d_at" -lt "$fx_at" ]; } || say "v2_on_midi does not take DIRECT ahead of the MIDI FX"
+
 # ---- the frozen struct, and the header copies ----
 echo "$h" | grep -q '#define MOVE_PLUGIN_SLOT_MIDI_V1_SYMBOL "move_plugin_slot_midi_v1"' || say "$H lacks the slot-MIDI symbol"
 echo "$h" | awk '/typedef struct host_api_v1/,/} host_api_v1_t;/' | grep -Eq 'slot_midi|midi_fx_sink|fx_out' \

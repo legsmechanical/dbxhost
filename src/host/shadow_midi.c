@@ -311,7 +311,7 @@ static int shadow_chain_apply_transpose(int slot, uint8_t *msg)
  * channel remap, transpose, delivery. Channel/skip filtering is the
  * caller's job. Returns 1 if the slot received the message. */
 static int shadow_chain_dispatch_to_one_slot(int i, const uint8_t *pkt,
-                                             const plugin_api_v2_t *pv2)
+                                             const plugin_api_v2_t *pv2, int source)
 {
     /* Lazy activation check — any loaded component (synth, audio FX,
      * or MIDI FX) is enough to activate. MIDI-FX-only slots in Pre
@@ -354,9 +354,11 @@ static int shadow_chain_dispatch_to_one_slot(int i, const uint8_t *pkt,
     /* Send MIDI to this slot */
     if (pv2 && pv2->on_midi) {
         uint8_t msg[3] = { shadow_chain_remap_channel(i, pkt[1]), pkt[2], pkt[3] };
-        if (shadow_chain_apply_transpose(i, msg)) {
-            pv2->on_midi(host_chain_slots[i].instance, msg, 3,
-                         MOVE_MIDI_SOURCE_EXTERNAL);
+        /* DIRECT skips the slot's transpose as it skips the MIDI FX: what
+         * arrives that way is the output of this slot's own MIDI FX, which
+         * were sent the note already transposed. */
+        if (source == MOVE_MIDI_SOURCE_DIRECT || shadow_chain_apply_transpose(i, msg)) {
+            pv2->on_midi(host_chain_slots[i].instance, msg, 3, source);
         }
     }
     return 1;
@@ -434,7 +436,7 @@ void shadow_chain_dispatch_midi_to_slots(const uint8_t *pkt, int log_on, int *mi
         if (host_chain_slots[i].channel != (int)midi_ch && host_chain_slots[i].channel != -1)
             continue;
 
-        dispatched += shadow_chain_dispatch_to_one_slot(i, pkt, pv2);
+        dispatched += shadow_chain_dispatch_to_one_slot(i, pkt, pv2, MOVE_MIDI_SOURCE_EXTERNAL);
     }
 
     shadow_chain_dispatch_fanout(pkt, pv2);
@@ -452,7 +454,21 @@ void shadow_chain_dispatch_midi_to_slot(int slot, const uint8_t *pkt, int log_on
     int dispatched = 0;
 
     if (slot >= 0 && slot < SHADOW_CHAIN_INSTANCES)
-        dispatched = shadow_chain_dispatch_to_one_slot(slot, pkt, pv2);
+        dispatched = shadow_chain_dispatch_to_one_slot(slot, pkt, pv2, MOVE_MIDI_SOURCE_EXTERNAL);
+
+    shadow_chain_dispatch_fanout(pkt, pv2);
+    shadow_chain_dispatch_log(pkt, dispatched, log_on, midi_log_count);
+}
+
+/* The same, delivered with MOVE_MIDI_SOURCE_DIRECT: the slot plays it on its
+ * instrument and audio FX and skips its MIDI FX (and its transpose). */
+void shadow_chain_dispatch_midi_to_slot_direct(int slot, const uint8_t *pkt, int log_on, int *midi_log_count)
+{
+    const plugin_api_v2_t *pv2 = *host_plugin_v2;
+    int dispatched = 0;
+
+    if (slot >= 0 && slot < SHADOW_CHAIN_INSTANCES)
+        dispatched = shadow_chain_dispatch_to_one_slot(slot, pkt, pv2, MOVE_MIDI_SOURCE_DIRECT);
 
     shadow_chain_dispatch_fanout(pkt, pv2);
     shadow_chain_dispatch_log(pkt, dispatched, log_on, midi_log_count);

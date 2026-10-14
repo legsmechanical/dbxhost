@@ -25,6 +25,8 @@
 #define MOVE_MIDI_SOURCE_EXTERNAL 2
 #define MOVE_MIDI_SOURCE_HOST 3  /* Host-generated (clock, etc) */
 #define MOVE_MIDI_SOURCE_FX_BROADCAST 4  /* Broadcast to audio FX only (skip synth) */
+#define MOVE_MIDI_SOURCE_DIRECT 5  /* To the slot's synth and audio FX, SKIPPING its MIDI FX
+                                    * (move_host_ext_v1_t.midi_send_slot_direct) */
 
 /* Clock status identifiers for host_api_v1.get_clock_status() */
 #define MOVE_CLOCK_STATUS_UNAVAILABLE 0  /* Clock output not available/configured */
@@ -217,6 +219,15 @@ typedef struct move_host_ext_v1 {
      * render_block or set_param; it stores one value. The host withdraws it
      * when the module is unloaded. */
     void (*set_tempo)(float bpm);
+
+    /* Send MIDI to chain slot `slot`'s INSTRUMENT, skipping the slot's MIDI
+     * FX — the same message form and channel handling as
+     * midi_send_internal_slot, delivered with MOVE_MIDI_SOURCE_DIRECT. For a
+     * sequencer that runs a slot's MIDI FX on what is PLAYED but not on what
+     * it plays back (the effect's output was already recorded), and for
+     * sending on what the effect handed back (midi_fx_host_route). Audio
+     * thread; returns what midi_send_internal_slot returns. */
+    int (*midi_send_slot_direct)(int slot, const uint8_t *msg, int len);
 } move_host_ext_v1_t;
 
 typedef void (*move_plugin_host_ext_v1_fn)(const move_host_ext_v1_t *ext);

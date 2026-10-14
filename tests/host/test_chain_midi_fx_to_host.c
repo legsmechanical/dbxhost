@@ -220,6 +220,18 @@ int main(void) {
         OK(got_n == 3, "route: with Pre on, the host did not still get the whole output");
         inst->midi_fx_pre_mode = 0;
 
+        /* DIRECT (midi_send_slot_direct): past the MIDI FX to the synth —
+         * one note, not the chord — and past the host route, route on or off. */
+        for (int route = 0; route <= 1; route++) {
+            inst->midi_fx_host_route = route;
+            got_n = 0; synth_heard = 0;
+            v2_on_midi(inst, on, 3, MOVE_MIDI_SOURCE_DIRECT);
+            v2_on_midi(inst, off, 3, MOVE_MIDI_SOURCE_DIRECT);
+            OK(synth_heard == 2, route ? "DIRECT with the route on: the synth did not get exactly the on and the off"
+                                       : "DIRECT: the synth did not get exactly the on and the off (the MIDI FX ran?)");
+            OK(got_n == 0, "DIRECT: something was handed to the host");
+        }
+
         inst->midi_fx_host_route = 0;
         inst->synth_plugin_v2 = NULL; inst->synth_instance = NULL;
     }
