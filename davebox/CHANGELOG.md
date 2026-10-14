@@ -8,15 +8,20 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Added
-- **Narrate a mirror recording.** The web mirror can now put the Move's
-  microphone in the video it records, beside the screen and the device's
-  sound. Switch **Mirror Mic** to On in Project Settings (after Move
-  Settings), then click **Mic** on the mirror page: a level slider and a meter
-  appear, and the next recording carries your voice. The microphone is only
-  recorded, never played back on the page. It can only be switched on from the
-  Move itself, and every launch starts with it Off. With a cable in the line
-  input, that is what is recorded instead. Use headphones while you talk — the
-  microphone hears the speaker.
+- **Narrate a mirror recording.** The web mirror can now record your voice
+  into the video, beside the screen and the device's sound. On the mirror
+  page, open the **Mic** list and pick **This computer's mic**: the first time,
+  the page moves to its secure address (`https://move.local:7701/mirror`) and
+  your browser warns about the certificate — accept it once — then asks to use
+  the microphone. After that the list names every microphone the computer
+  has; pick one, set the level with the slider beside it, and record. The
+  voice is only recorded, never played back on the page.
+- **The Move's own input as the microphone.** The same list has **Device
+  mic**: the Move's built-in microphone, or its line input when a cable is in
+  it. It hears every pad press through the case, so it suits a line input
+  better than narration. It must be switched on from the Move — **Mirror Mic**
+  in Project Settings, after Move Settings — and every launch starts with it
+  Off.
 - **Card Hold.** A new row in the global menu sets how long a knob's page
   stays on screen after you let go of the knob: **Off** (it goes with your
   finger, as before), **0.5 s**, **1 s** or **2 s**. It applies to the bank

@@ -82,7 +82,7 @@
     <option value="device">Device</option>
   </select>
   <button id="mute" type="button" title="Hear the device here. Recordings always include its sound.">Unmute</button>
-  <button id="mic" type="button" title="Put the device's microphone (or its line input) in recordings, for narration. Switch on Mirror Mic in the device's menu first. It is never played here.">Mic</button>
+  <select id="micsrc" title="A microphone for recordings, for narration: this computer's, or the device's own (switch on Mirror Mic in the device's menu first). It is recorded, never played here."></select>
   <span id="micbox"><input id="micgain" type="range" min="0" max="8" step="0.05" value="2" title="Microphone level in the recording"><span id="micmeter" title="Microphone level"><i></i></span></span>
   <button id="png" type="button">Save PNG</button>
   <button id="rec" type="button">Record</button>
@@ -782,6 +782,8 @@ function buildAudio() {
   micGain = actx.createGain(); micGain.gain.value = micLevel();
   micHP.connect(micGain);
   if (recDest) micGain.connect(recDest);
+  micAn = actx.createAnalyser(); micAn.fftSize = 1024;
+  micGain.connect(micAn);              /* the meter: the level as recorded */
   actx.addEventListener('statechange', audioState);
   return true;
 }
@@ -795,6 +797,7 @@ function audioState() {
     flushLater();
     connect();                           /* now ask for `pcm` */
   }
+  sysHook();
   for (const w of audioWaiters.splice(0)) w(true);
 }
 /* Asks the context to run; safe to call from every gesture. Resolves true if
@@ -858,35 +861,124 @@ function pcmEvent(data) {
 }
 
 /* ---------------- microphone ----------------
- * `mic` events are the device's hardware input (its microphone, or the line
- * input when a cable is in it), in the same shape as `pcm`, and only arrive
- * while Mirror Mic is switched on ON THE DEVICE -- this page cannot open it.
- * Which channel the microphone sits on is the codec's business, so the two are
- * averaged into one centred voice. Its own queue, on the same clock as the
- * device's sound; it never moves audioDelay, which times the PICTURE. */
-let micOn = false, micHP = null, micGain = null, micNext = 0, micExpect = -1, micPeak = 0, micAt = 0;
-const micBtn = document.getElementById('mic'), micBox = document.getElementById('micbox');
+ * Narration for a recording, from one of two places, chosen in the list:
+ *
+ * THIS COMPUTER's microphone (any input the browser offers). A browser only
+ * hands a microphone to a SECURE page, and /mirror on http is not one, so the
+ * manager also serves this page over https on SECURE_PORT with a certificate
+ * it made itself; from the http page the choice goes there (the browser warns
+ * once about the certificate). The voice is live while the device's sound and
+ * picture arrive a jitter buffer late, so it is delayed to sit with them.
+ *
+ * THE DEVICE's own (`mic` events: its hardware input, in the same shape as
+ * `pcm`), which only arrive while Mirror Mic is switched on ON THE DEVICE --
+ * this page cannot open it. It hears every pad press through the case; it is
+ * here for a line input. The two channels are averaged into one centred voice.
+ *
+ * Either way it goes to the RECORDING only (buildAudio), and never moves
+ * audioDelay, which times the PICTURE. */
+const SECURE_PORT = 7701;
+const SYS_LAG_S = JITTER_S + 0.04;     /* the jitter buffer, plus the stream's own transit */
+let micSrc = 'off';                    /* 'off' | 'move' | 'sys:<deviceId>' ('sys:' = the default input) */
+let micOn = false;                     /* the device's microphone is wanted on the stream */
+let micHP = null, micGain = null, micAn = null, micNext = 0, micExpect = -1, micAt = 0;
+let sysStream = null, sysNode = null, sysDelay = null, sysDevices = [], sysError = '';
+const micSel = document.getElementById('micsrc'), micBox = document.getElementById('micbox');
 const micSlider = document.getElementById('micgain'), micMeter = document.getElementById('micmeter');
-try { micOn = localStorage.getItem('mirror.mic') === '1'; } catch (_) {}
+const sysCan = !!(window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+try { const m = localStorage.getItem('mirror.micSrc'); if (m === 'move' || (sysCan && m && m.startsWith('sys:'))) micSrc = m; } catch (_) {}
 try { const g = parseFloat(localStorage.getItem('mirror.micGain')); if (g >= 0 && g <= 8) micSlider.value = g; } catch (_) {}
+if (sysCan && location.hash === '#mic') { micSrc = 'sys:'; try { history.replaceState(null, '', location.pathname); } catch (_) {} }
+micOn = micSrc === 'move';
 function micLevel() { return parseFloat(micSlider.value) || 0; }
 function micShow() {
-  const live = micOn && performance.now() - micAt < 1000;
-  micBtn.textContent = !micOn ? 'Mic' : live ? 'Mic: live' : 'Mic: off on device';
-  micBtn.classList.toggle('on', micOn);
-  micBox.classList.toggle('on', micOn);
+  const opts = [['off', 'Mic: off']];
+  if (sysCan) {
+    if (!sysDevices.length) opts.push(['sys:', "This computer's mic"]);
+    for (const d of sysDevices) opts.push(['sys:' + d.deviceId, d.label || 'Microphone']);
+    if (micSrc.startsWith('sys:') && !opts.some(o => o[0] === micSrc)) opts.push([micSrc, "This computer's mic"]);
+  } else opts.push(['secure', "This computer's mic…"]);
+  const moveLive = micOn && performance.now() - micAt < 1000;
+  opts.push(['move', !micOn || moveLive ? 'Device mic' : 'Device mic — off on the device']);
+  const key = JSON.stringify(opts);
+  if (micSel.dataset.key !== key) {    /* rebuilt only on a change: it may be open */
+    micSel.dataset.key = key;
+    micSel.textContent = '';
+    for (const [v, t] of opts) { const o = document.createElement('option'); o.value = v; o.textContent = t; micSel.appendChild(o); }
+  }
+  micSel.value = micSrc;
+  micSel.classList.toggle('on', micSrc !== 'off');
+  micSel.title = sysError || micSel.getAttribute('data-title') || micSel.title;
+  micBox.classList.toggle('on', micSrc !== 'off');
 }
-micBtn.addEventListener('click', () => {
-  micOn = !micOn; micNext = 0; micExpect = -1; micPeak = 0;
-  try { localStorage.setItem('mirror.mic', micOn ? '1' : '0'); } catch (_) {}
+micSel.setAttribute('data-title', micSel.title);
+function micChoose(src) {
+  if (src === 'secure') {              /* a microphone needs the https page */
+    location.href = 'https://' + location.hostname + ':' + SECURE_PORT + '/mirror#mic';
+    return;
+  }
+  micSrc = src; sysError = '';
+  try { localStorage.setItem('mirror.micSrc', micSrc); } catch (_) {}
+  const wasOn = micOn;
+  micOn = micSrc === 'move'; micNext = 0; micExpect = -1;
+  if (micSrc.startsWith('sys:')) sysStart(micSrc.slice(4)); else sysStop();
   micShow();
   ensureAudio();
-  if (audioOn) connect();              /* ask again, with or without `mic` */
-});
+  if (audioOn && wasOn !== micOn) connect();   /* ask again, with or without `mic` */
+}
+micSel.addEventListener('change', () => micChoose(micSel.value));
 micSlider.addEventListener('input', () => {
   if (micGain) micGain.gain.value = micLevel();
   try { localStorage.setItem('mirror.micGain', micSlider.value); } catch (_) {}
 });
+
+/* This computer's microphone. The browser asks the user the first time; only
+ * after that does it name the inputs, so the list is read again then. */
+function sysStop() {
+  if (sysNode) { try { sysNode.disconnect(); } catch (_) {} sysNode = null; }
+  if (sysStream) { for (const t of sysStream.getTracks()) t.stop(); sysStream = null; }
+}
+async function sysStart(id) {
+  sysStop();
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: id ? { deviceId: { exact: id } } : true }); }
+  catch (e) {
+    if (micSrc !== 'sys:' + id) return;          /* the choice moved on while the browser asked */
+    sysError = e && e.name === 'NotAllowedError' ? 'The browser was not allowed to use the microphone.'
+             : e && (e.name === 'NotFoundError' || e.name === 'OverconstrainedError') ? 'That microphone is not connected.'
+             : 'The microphone could not be opened.';
+    micSrc = 'off'; micShow();
+    return;
+  }
+  if (micSrc !== 'sys:' + id) { for (const t of stream.getTracks()) t.stop(); return; }
+  sysStream = stream;
+  sysHook();
+  await sysList();
+  /* the default input now has a name: show the one that is really open */
+  const got = stream.getAudioTracks()[0], gid = got && got.getSettings ? got.getSettings().deviceId : '';
+  if (!id && gid && sysDevices.some(d => d.deviceId === gid)) {
+    micSrc = 'sys:' + gid;
+    try { localStorage.setItem('mirror.micSrc', micSrc); } catch (_) {}
+  }
+  micShow();
+}
+function sysHook() {
+  if (!sysStream || sysNode || !actx || !micGain || actx.state !== 'running') return;
+  sysNode = actx.createMediaStreamSource(sysStream);
+  if (!sysDelay) { sysDelay = actx.createDelay(1); sysDelay.delayTime.value = SYS_LAG_S; sysDelay.connect(micGain); }
+  sysNode.connect(sysDelay);
+}
+async function sysList() {
+  try { sysDevices = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput' && d.deviceId && d.label); }
+  catch (_) { sysDevices = []; }
+  micShow();
+}
+if (sysCan) {
+  try { navigator.mediaDevices.addEventListener('devicechange', sysList); } catch (_) {}
+  sysList();
+  if (micSrc.startsWith('sys:')) sysStart(micSrc.slice(4));
+}
+
 function micEvent(data) {
   if (!micOn || !audioOn || !actx || !micHP) return;
   let p; try { p = JSON.parse(data); } catch (_) { return; }
@@ -903,27 +995,27 @@ function micEvent(data) {
   else if (micNext > now + JITTER_S + 0.3) micNext = now + JITTER_S;
   const buf = actx.createBuffer(1, n, rate);
   const M = buf.getChannelData(0);
-  let peak = 0;
   for (let i = 0, o = 0; i < n; i++, o += 4) {
     let l = raw.charCodeAt(o) | (raw.charCodeAt(o + 1) << 8); if (l & 0x8000) l -= 0x10000;
     let r = raw.charCodeAt(o + 2) | (raw.charCodeAt(o + 3) << 8); if (r & 0x8000) r -= 0x10000;
-    const m = (l + r) / 65536;
-    M[i] = m;
-    if (m > peak) peak = m; else if (-m > peak) peak = -m;
+    M[i] = (l + r) / 65536;
   }
   const src = actx.createBufferSource();
   src.buffer = buf; src.connect(micHP); src.start(micNext);
   micNext += n / rate;
-  micPeak = Math.max(micPeak, peak);
   micAt = performance.now();
 }
 /* The meter shows the level as RECORDED (after the slider); red is clipping. */
+const micScope = new Uint8Array(1024);
+let micPeak = 0;
 function micMeterDraw() {
-  if (!micOn) return;
-  const v = Math.min(1, micPeak * micLevel());
-  micMeter.firstChild.style.width = Math.round(v * 100) + '%';
-  micMeter.classList.toggle('hot', v >= 0.98);
-  micPeak *= 0.9;
+  if (micSrc === 'off' || !micAn) return;
+  micAn.getByteTimeDomainData(micScope);
+  let peak = 0;
+  for (let i = 0; i < micScope.length; i++) { const v = Math.abs(micScope[i] - 128); if (v > peak) peak = v; }
+  micPeak = Math.max(peak / 127, micPeak * 0.9);
+  micMeter.firstChild.style.width = Math.round(Math.min(1, micPeak) * 100) + '%';
+  micMeter.classList.toggle('hot', micPeak >= 0.98);
 }
 setInterval(micShow, 500);
 micShow();

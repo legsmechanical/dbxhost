@@ -43,6 +43,11 @@ done
 if grep -q "addEventListener('mic'" "$PAGE" && grep -q 'micGain.connect(recDest)' "$PAGE"; then echo "ok   the microphone reaches the recording"
 else echo "FAIL the microphone does not reach the recording"; fails=$((fails+1)); fi
 n=$(grep -c 'connect(actx.destination)' "$PAGE")
-if [ "$n" -eq 1 ] && ! grep -E 'mic[A-Za-z]*\.connect\(' "$PAGE" | grep -vqE 'micHP\.connect\(micGain\)|micGain\.connect\(recDest\)|src\.connect\(micHP\)'; then echo "ok   the microphone is never played here"
+ok_edges='micHP\.connect\(micGain\)|micGain\.connect\(recDest\)|micGain\.connect\(micAn\)|src\.connect\(micHP\)|sysDelay\.connect\(micGain\)|sysNode\.connect\(sysDelay\)'
+if [ "$n" -eq 1 ] && ! grep -E '(mic|sys)[A-Za-z]*\.connect\(' "$PAGE" | grep -vqE "$ok_edges"; then echo "ok   the microphone is never played here"
 else echo "FAIL the microphone is routed somewhere other than the recording"; fails=$((fails+1)); fi
+# The computer's microphone exists only on the https page; on http the API is
+# absent, and touching it unguarded would break the whole script.
+if grep -q 'const sysCan = !!(window.isSecureContext && navigator.mediaDevices' "$PAGE"; then echo "ok   the computer's microphone is asked for only in a secure context"
+else echo "FAIL the page reaches for navigator.mediaDevices without checking for a secure context"; fails=$((fails+1)); fi
 [ "$fails" -eq 0 ]
