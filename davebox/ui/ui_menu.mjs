@@ -25,6 +25,7 @@ import { S } from './ui_state.mjs';
 import { keyRootName } from './ui_chord.mjs';
 import { openDaveBox, daveWindowOn, setDaveWindowOn } from './ui_daves.mjs';
 import { bluetoothPresent, bluetoothOn, setBluetoothOn } from './ui_bluetooth.mjs';
+import { cardHoldMs, setCardHoldMs, CARD_HOLD_CHOICES } from './ui_prefs.mjs';
 import { saveState, loadSnapshotManifest, showActionPopup } from './ui_persistence.mjs';
 import { openLoadSnapshot, openProjectPadPicker } from './ui_dialogs.mjs';
 import { forceRedraw } from './ui_leds.mjs';
@@ -228,6 +229,15 @@ function buildGlobalMenuItems() {
             get: function() { return S.beatMarkersEnabled; },
             set: function(v) { S.beatMarkersEnabled = v; forceRedraw(); },
             onLabel: 'On', offLabel: 'Off'
+        }),
+        /* Card Hold (Josh, 2026-10-13): how long a knob's page stays on
+         * screen after the knob is let go. Device-global (ui_prefs), Off by
+         * default. */
+        createEnum('Card Hold', {
+            get: function() { return cardHoldMs(); },
+            set: function(v) { setCardHoldMs(v); forceRedraw(); },
+            options: CARD_HOLD_CHOICES,
+            format: function(v) { return v === 0 ? 'Off' : (v / 1000) + ' s'; }
         }),
         createDivider(),
         createEnum('MIDI In', {

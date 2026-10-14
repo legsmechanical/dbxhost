@@ -75,6 +75,7 @@ import { soundHasPendingAction, soundActive, soundOpen, soundResting, soundEnter
     soundConsumeCoRunRequest, soundShowMenu, soundSetBank, midiVal, midiSendValue, soundShiftHeld } from './ui_sound.mjs';
 import { enterMoveNativeCoRun, moveSettingsTick } from './ui_corun.mjs';
 import { openGlobalMenuAt } from './ui_menu.mjs';
+import { cardHoldExpired } from './ui_prefs.mjs';
 import { heldIndicatorChanged } from './ui_chord.mjs';
 
 const BANK_DISPLAY_MS = 1000;
@@ -463,6 +464,7 @@ export function _tickImpl() {
     checkBackHold();   /* self-managed Back: fire suspend once a held Back crosses the long-press threshold */
     checkShiftStep11Hold(); /* Shift+Step 11: likewise — LIVE ARP's settings */
     checkJogHold();    /* a jog press held over a screen becomes the bank map */
+    if (cardHoldExpired()) forceRedraw();   /* a knob's held page has run out */
     /* Note/Session left a co-run: once the host has handed the screen back,
      * land on Session View, its destination everywhere else. */
     if (S.pendingSessionAfterCoRun && S.moveCoRunTrack < 0 && !S.moveSettingsOpen) {

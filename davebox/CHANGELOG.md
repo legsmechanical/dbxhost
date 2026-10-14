@@ -8,6 +8,11 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Added
+- **Card Hold.** A new row in the global menu sets how long a knob's page
+  stays on screen after you let go of the knob: **Off** (it goes with your
+  finger, as before), **0.5 s**, **1 s** or **2 s**. It applies to the bank
+  page in Track View and the mixer page in Session View, and is remembered
+  across projects.
 - **Groove.** Swing has grown into a groove. In Project Settings, **Groove**
   picks the project's timing feel — Off, Swing 1/16, Swing 1/8, or a groove
   loaded from a file — and **Groove Amt** sets how much of it you hear. A

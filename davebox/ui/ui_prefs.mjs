@@ -3,7 +3,57 @@
  * every change. Each lives in its own small file under dbx-host, beside the
  * Daves switch, so it survives updates and the uninstaller keeps it.
  */
-import { S } from './ui_state.mjs';
+import { S, nowMs } from './ui_state.mjs';
+
+/* Card Hold (Josh, 2026-10-13: "a custom knob overview hold setting that
+ * dictates how long a card remains on screen after a knob touch is released").
+ * Let go of a knob and the page it was showing — the bank's page in Track
+ * View, the mixer page in Session View — stays up this long before the
+ * overview comes back. Off = it goes with the finger, as before. Device-wide;
+ * absent file = Off. */
+export const CARD_HOLD_PATH = '/data/UserData/dbx-host/card-hold.txt';
+export const CARD_HOLD_CHOICES = [0, 500, 1000, 2000];   /* ms */
+
+export function cardHoldMs() {
+    if (S.cardHoldMs === null) {
+        let ms = 0;
+        try {
+            if (host_file_exists(CARD_HOLD_PATH)) ms = parseInt(String(host_read_file(CARD_HOLD_PATH) || '').trim(), 10);
+        } catch (e) { ms = 0; }
+        S.cardHoldMs = CARD_HOLD_CHOICES.includes(ms) ? ms : 0;
+    }
+    return S.cardHoldMs;
+}
+
+export function setCardHoldMs(v) {
+    S.cardHoldMs = CARD_HOLD_CHOICES.includes(v | 0) ? (v | 0) : 0;
+    if (S.cardHoldMs === 0) S.cardHoldUntil = -1;
+    let wrote = false;
+    try { wrote = !!host_write_file(CARD_HOLD_PATH, S.cardHoldMs + '\n'); } catch (e) { wrote = false; }
+    if (!wrote) console.log('[prefs] could not persist Card Hold to ' + CARD_HOLD_PATH);
+}
+
+/* A knob was let go: the page it showed stays until the hold runs out. It
+ * belongs to the place it was armed — the view, the track and the bank — so
+ * moving on never drags a held page along. */
+export function armCardHold() {
+    const ms = cardHoldMs();
+    if (!(ms > 0)) { S.cardHoldUntil = -1; return; }
+    S.cardHoldUntil = nowMs() + ms;
+    S.cardHoldAt = (S.sessionView ? 's' : 't') + ':' + S.activeTrack + ':' + S.activeBank;
+}
+/* Is a held page still to be drawn? A RENDER gate only, like the jog-touch
+ * reveal: nothing that reads input asks it. Shift stands it down. */
+export function cardHoldShows() {
+    return S.cardHoldUntil >= 0 && nowMs() < S.cardHoldUntil && !S.shiftHeld &&
+           S.cardHoldAt === (S.sessionView ? 's' : 't') + ':' + S.activeTrack + ':' + S.activeBank;
+}
+/* Once per tick: true the tick the hold runs out, so the overview is redrawn. */
+export function cardHoldExpired() {
+    if (S.cardHoldUntil < 0 || nowMs() < S.cardHoldUntil) return false;
+    S.cardHoldUntil = -1;
+    return true;
+}
 
 /* Seq Follow (Josh, 2026-09-29): ONE switch for the whole device, toggled by
  * holding Left or Right and pressing Play. On = the step page tracks the

@@ -89,6 +89,7 @@ import { _onCCMsg, syncCoRunShift } from './ui_input_cc.mjs';
 import { soundActive, soundOpen, soundResting, soundExit, soundOnCC, soundOnNote, soundOnMidiRaw,
          installGateMemoInvalidation, soundSeqMirror } from './ui_sound.mjs';
 import { soundModeCovered } from './ui_render.mjs';
+import { armCardHold } from './ui_prefs.mjs';
 import { _tickImpl, applyExtMidiRemap, requestSessionExit } from './ui_tick.mjs';
 
 /*
@@ -1003,6 +1004,7 @@ function _dispatchBelowJogRouter(data, status, d1, d2) {
                     }
                     /* SEQ ARP K5 / TRACK ARP K5 release: refresh pads (vel-slider editor → normal pads). */
                     if ((S.activeBank === 4 && d1 === 4) || (S.activeBank === 5 && d1 === 4)) forceRedraw();
+                    armCardHold();
                     S.knobTouched = -1;
                     S.knobPhysIdx = -1;
                     S.knobLocked[d1] = false;
@@ -1038,6 +1040,7 @@ function _dispatchBelowJogRouter(data, status, d1, d2) {
                     }
                 }
                 if ((S.activeBank === 4 && d1 === 4) || (S.activeBank === 5 && d1 === 4)) forceRedraw();
+                armCardHold();
                 S.knobTouched = -1;
                 S.knobPhysIdx = -1;
                 S.knobLocked[d1] = false;

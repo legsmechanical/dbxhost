@@ -7,7 +7,7 @@
  */
 
 import { S, PERF_FACTORY_PRESETS, stepRevealAvailable, stepHoldEstablished, loopViewActive, knobAltOn } from './ui_state.mjs';
-import { seqFollowOn } from './ui_prefs.mjs';
+import { seqFollowOn, cardHoldShows } from './ui_prefs.mjs';
 import { drawDaveBox, drawBannerDave, BANNER_H, drawDaveLoading } from './ui_daves.mjs';
 import { devSnapOpen, devSnapHints, devSnapTitle } from './ui_devsnap.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
@@ -1507,18 +1507,20 @@ export function sessMixerVisible() {
 /* ⭑ WHAT THE SCREEN SHOWS vs WHAT THE MODE IS. The jog-touch reveal (Josh,
  * 2026-09-30; always on since 2026-10-13, its global switch retired) SHOWS
  * the card while a finger rests on the jog, but it is not bank mode:
- * bankCardVisible()/sessMixerVisible() stay the gates every INPUT reads (the click that latches, the gateway click,
- * sound-mode entry, the mixer's level follow), so a click on a touch-revealed
- * card still latches it, exactly as from the overview. Only the render reads
- * these two. Shift stands the reveal down, as it does the card. */
+ * bankCardVisible()/sessMixerVisible() stay the gates every INPUT reads (the
+ * gateway click, sound-mode entry, the mixer's level follow). Only the render
+ * reads these two. Shift stands the reveal down, as it does the card.
+ * ⭑ CARD HOLD (2026-10-13) is the same kind of thing: the page a knob was
+ * showing stays for a set time after the knob is let go (ui_prefs
+ * cardHoldShows) — drawn, and nothing more. */
 function jogTouchReveals() {
     return !!S.jogTouched && !S.shiftHeld;
 }
 export function bankCardShown() {
-    return bankCardVisible() || (!S.sessionView && jogTouchReveals());
+    return bankCardVisible() || (!S.sessionView && (jogTouchReveals() || cardHoldShows()));
 }
 export function sessMixerShown() {
-    return sessMixerVisible() || (!!S.sessionView && jogTouchReveals());
+    return sessMixerVisible() || (!!S.sessionView && (jogTouchReveals() || cardHoldShows()));
 }
 
 export function bankCardVisible() {
