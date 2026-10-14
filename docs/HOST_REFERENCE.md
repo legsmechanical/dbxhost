@@ -694,6 +694,24 @@ Mirror Display on for the session — this fork's `mirrorOn` wrapper in
   an AudioContext. The Move encodes nothing: the browser's MediaRecorder makes
   the .mp4/.webm. Hook placement is pinned by
   `tests/host/test_audio_live_call_sites.sh`.
+- **The computer's microphone needs https, so the mirror has an https door.** A
+  browser gives a page a microphone only in a secure context, and the manager
+  is plain http. `schwung-manager` therefore also serves `/mirror` and
+  `/stream-auto` — those routes and nothing else — over TLS on
+  `-mirror-tls-port` (7701; 0 = off), with a certificate it makes for itself
+  (`mirror_tls.go`) and keeps in the install dir (`mirror-tls.crt`/`.key`) so
+  the browser's one-time acceptance sticks. Its dates are fixed, not read off
+  the device's clock. It buys the browser's permission, not confidentiality;
+  no HSTS is ever sent (it would be remembered for the whole host, every
+  port). On the http page the Mic list's computer entry navigates to the https
+  one (`SECURE_PORT` in the page, held to the flag default by
+  `mirror_tls_test.go`); there the list names the browser's inputs
+  (`enumerateDevices`, after the first grant). The live voice is delayed by
+  the jitter buffer plus transit (`SYS_LAG_S`) so it sits with the device's
+  sound, and goes through a level and a meter to the RECORDING only, never
+  the speakers. ⚠ The device's own microphone was tried first (a second ring
+  off the hardware input) and removed: it works, and it hears every pad press
+  through the case.
 - **Picture/sound sync is a DELAY, not a timestamp match.** Both arrive on one
   stream; only the sound then waits in a 150 ms jitter buffer, so every visual
   update (screen, LEDs, fingers) is applied as late as the sound that arrived
