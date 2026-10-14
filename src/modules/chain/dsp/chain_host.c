@@ -925,6 +925,7 @@ static void v2_set_param_route(void *instance, const char *key, const char *val)
             inst->loaded_forward_channel = temp_patch->forward_channel;
             inst->midi_fx_pre_mode = temp_patch->midi_fx_pre_mode ? 1 : 0;
             inst->midi_fx_to_host = temp_patch->midi_fx_to_host ? 1 : 0;
+            inst->midi_fx_host_route = temp_patch->midi_fx_host_route ? 1 : 0;
             /* Check for "modified" field to restore dirty state */
             FILE *mf = fopen(val, "r");
             if (mf) {
@@ -1000,10 +1001,11 @@ static void v2_set_param_route(void *instance, const char *key, const char *val)
         inst->dirty = 0;
         malloc_trim(0);
     }
-    else if (strcmp(key, "midi_fx_to_host") == 0) {
+    else if (strcmp(key, "midi_fx_to_host") == 0 || strcmp(key, "midi_fx_host_route") == 0) {
+        int *flag = strcmp(key, "midi_fx_to_host") == 0 ? &inst->midi_fx_to_host : &inst->midi_fx_host_route;
         int on = (val && atoi(val)) ? 1 : 0;
-        if (on != inst->midi_fx_to_host) {
-            inst->midi_fx_to_host = on;
+        if (on != *flag) {
+            *flag = on;
             inst->dirty = 1;
         }
     }
@@ -1591,9 +1593,9 @@ static int v2_get_param_route(void *instance, const char *key, char *buf, int bu
     if (strcmp(key, "midi_fx_pre_mode") == 0) {
         return snprintf(buf, buf_len, "%d", inst->midi_fx_pre_mode ? 1 : 0);
     }
-    if (strcmp(key, "midi_fx_to_host") == 0) {
-        return snprintf(buf, buf_len, "%d", inst->midi_fx_to_host ? 1 : 0);
-    }
+    if (strcmp(key, "midi_fx_to_host") == 0 || strcmp(key, "midi_fx_host_route") == 0)
+        return snprintf(buf, buf_len, "%d", (strcmp(key, "midi_fx_to_host") == 0 ? inst->midi_fx_to_host
+                                                                               : inst->midi_fx_host_route) ? 1 : 0);
     if (strcmp(key, "midi_fx:pre_capable") == 0) {
         /* Hint from the loaded MIDI FX's module.json. Aggregated as OR
          * across slots — in practice only one MIDI FX is loaded per slot. */

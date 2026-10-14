@@ -95,6 +95,12 @@ static int saw(uint8_t status, uint8_t d1) {
     return n;
 }
 
+/* A stand-in synth: counts what reaches it. */
+static int synth_heard;
+static void fake_synth_on_midi(void *instance, const uint8_t *msg, int len, int source) {
+    (void)instance; (void)msg; (void)len; (void)source; synth_heard++;
+}
+
 /* Nothing may be injected into Move by this feature. */
 static int injected;
 static int stub_inject(const uint8_t *msg, int len) { (void)msg; injected++; return len; }
@@ -172,6 +178,52 @@ int main(void) {
     OK(injected == 0, "midi_fx_to_host injected into Move");
     OK(inst->midi_fx_pre_mode == 0, "midi_fx_to_host switched Pre mode on");
 
+    /* ---- midi_fx_host_route: the WHOLE output to the host, none to the synth.
+     *      A host-side sequencer sends a track's notes into a slot whose synth
+     *      is not that track's instrument, only to borrow the slot's MIDI FX. */
+    {
+        static plugin_api_v2_t fake_synth;
+        memset(&fake_synth, 0, sizeof(fake_synth));
+        fake_synth.on_midi = fake_synth_on_midi;
+        inst->synth_plugin_v2 = &fake_synth;
+        inst->synth_instance = (void *)&fake_synth;
+        const uint8_t on[3] = { 0x90, 60, 100 }, off[3] = { 0x80, 60, 0 };
+
+        /* control: route OFF, the synth plays the transform and the host hears none of it */
+        inst->midi_fx_to_host = 0; inst->midi_fx_host_route = 0;
+        got_n = 0; synth_heard = 0;
+        v2_on_midi(inst, on, 3, MOVE_MIDI_SOURCE_INTERNAL);
+        OK(synth_heard == 2 && got_n == 0, "control: with the route off the synth plays the chord and the host hears nothing");
+
+        inst->midi_fx_host_route = 1;
+        got_n = 0; synth_heard = 0;
+        v2_on_midi(inst, on, 3, MOVE_MIDI_SOURCE_INTERNAL);
+        v2_on_midi(inst, off, 3, MOVE_MIDI_SOURCE_INTERNAL);
+        OK(saw(0x90, 60) == 1 && saw(0x90, 64) == 1, "route: the transform of a note sent did not reach the host (root + third)");
+        OK(saw(0x80, 60) == 1 && saw(0x80, 64) == 1, "route: the note-offs did not follow (the track would hang notes)");
+        OK(synth_heard == 0, "route: the slot's own synth played the notes as well");
+
+        got_n = 0; synth_heard = 0;
+        clock_bytes(inst);
+        OK(saw(0x90, 36) == 1 && saw(0x90, 38) == 1 && saw(0x80, 36) == 1, "route: clock-generated notes did not reach the host");
+        OK(got_n == 4, "route: something other than the generated notes crossed (a clock byte?)");
+        OK(synth_heard == 0, "route: the synth played clock-generated notes");
+
+        got_n = 0; synth_heard = 0;
+        OK(v2_tick_midi_fx(inst, 128) == 0, "route: tick reported a delivery to the synth");
+        OK(saw(0x90, 42) == 1 && got_n == 1 && synth_heard == 0, "route: tick output did not go to the host only");
+
+        inst->midi_fx_pre_mode = 1; injected = 0; got_n = 0;
+        v2_on_midi(inst, on, 3, MOVE_MIDI_SOURCE_INTERNAL);
+        v2_tick_midi_fx(inst, 128);
+        OK(injected == 0, "route: Pre mode still injected into Move — the host would play it a second time");
+        OK(got_n == 3, "route: with Pre on, the host did not still get the whole output");
+        inst->midi_fx_pre_mode = 0;
+
+        inst->midi_fx_host_route = 0;
+        inst->synth_plugin_v2 = NULL; inst->synth_instance = NULL;
+    }
+
     /* ---- no sink registered: safe, and silent ---- */
     chain_set_midi_fx_sink(NULL);
     got_n = 0;
@@ -182,8 +234,10 @@ int main(void) {
 
     /* ---- with NO effect loaded the clock byte passes through the transform
      *      as "output": it must not cross ---- */
+    inst->midi_fx_host_route = 1;
     v2_unload_midi_fx_slot(inst, 0);
     OK(inst->midi_fx_to_host == 0, "unloading the effect did not reset midi_fx_to_host");
+    OK(inst->midi_fx_host_route == 0, "unloading the effect did not reset midi_fx_host_route");
     inst->midi_fx_to_host = 1;
     got_n = 0;
     clock_bytes(inst);
@@ -192,6 +246,6 @@ int main(void) {
     v2_unload_all_midi_fx(inst);
     free(inst);
     if (failures) return 1;
-    printf("PASS: midi_fx_to_host hands generated (clock + tick) output to the host, and nothing else\n");
+    printf("PASS: midi_fx_to_host hands generated (clock + tick) output to the host, and nothing else; midi_fx_host_route hands ALL of it, and none to the synth\n");
     return 0;
 }

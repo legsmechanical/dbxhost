@@ -48,13 +48,21 @@ echo "$cm" | grep -q '^void chain_set_midi_fx_sink(chain_midi_fx_sink_fn sink)' 
 echo "$cm" | grep -q 'static.*void chain_set_midi_fx_sink' && say "chain_set_midi_fx_sink is static (the shim resolves it by dlsym)"
 echo "$ci" | grep -q 'void chain_set_midi_fx_sink(chain_midi_fx_sink_fn sink);' || say "no prototype for chain_set_midi_fx_sink in $CI"
 echo "$ci" | grep 'chain_set_midi_fx_sink' | grep -q 'CHAIN_INTERNAL' && say "chain_set_midi_fx_sink is hidden-visibility"
-[ "$(echo "$cm" | grep -c 'midi_fx_to_host_emit(inst, out_msgs\[i\], out_lens\[i\])')" = 2 ] \
-    || say "expected the hand-off at exactly two sites in $CM (tick path + clock path)"
+[ "$(echo "$cm" | grep -c 'midi_fx_to_host_emit(inst, out_msgs\[i\], out_lens\[i\])')" = 3 ] \
+    || say "expected the hand-off at exactly three sites in $CM (tick path + clock path + midi_fx_host_route)"
 tick="$(body "$cm" 'int v2_tick_midi_fx(chain_instance_t *inst, int frames)')"
 echo "$tick" | grep -q 'midi_fx_to_host_emit' || say "v2_tick_midi_fx does not hand tick output to the host"
 onm="$(body "$cm" 'void v2_on_midi(void *instance, const uint8_t *msg, int len, int source)')"
+# Two hand-offs in v2_on_midi: the generated-only one, gated on a CLOCK input,
+# and midi_fx_host_route's, which takes everything and RETURNS before the synth.
 echo "$onm" | grep -B1 'midi_fx_to_host_emit' | grep -q 'chain_fx_input_is_clock(msg, len)' \
     || say "v2_on_midi hands over output that is not gated on a CLOCK input"
+route_blk="$(echo "$onm" | awk '/if \(inst->midi_fx_host_route\) \{/{f=1} f{print} f&&/^    \}/{exit}')"
+echo "$route_blk" | grep -q 'midi_fx_to_host_emit' && echo "$route_blk" | grep -q 'return;' \
+    || say "v2_on_midi's midi_fx_host_route branch does not hand everything over and return before the synth"
+r_at="$(echo "$onm" | grep -n 'if (inst->midi_fx_host_route) {' | head -1 | cut -d: -f1)"
+s_at="$(echo "$onm" | grep -n 'synth_plugin_v2->on_midi(inst->synth_instance, out_msgs' | head -1 | cut -d: -f1)"
+{ [ -n "$r_at" ] && [ -n "$s_at" ] && [ "$r_at" -lt "$s_at" ]; } || say "the midi_fx_host_route branch is not ahead of the send to the synth"
 
 # ---- the key: set, get, parse, both applies, unload reset ----
 echo "$ch" | grep -q 'strcmp(key, "midi_fx_to_host") == 0' || say "$CH does not handle the midi_fx_to_host key"
@@ -64,6 +72,17 @@ echo "$cp" | grep -q 'json_get_int(json, "midi_fx_to_host", &patch->midi_fx_to_h
 echo "$cp" | grep -q 'inst->midi_fx_to_host = inst->patches\[patch_idx\].midi_fx_to_host' || say "the library-patch apply site drops midi_fx_to_host"
 body "$cm" 'void v2_unload_midi_fx_slot(chain_instance_t *inst, int slot)' | grep -q 'inst->midi_fx_to_host = 0' \
     || say "unloading a MIDI FX does not reset midi_fx_to_host"
+
+for k in midi_fx_host_route; do
+  [ "$(echo "$ch" | grep -c "strcmp(key, \"$k\") == 0")" -ge 2 ] || say "$k is not in BOTH set_param and get_param"
+  echo "$ch" | grep -q "inst->$k = temp_patch->$k" || say "the load-from-file apply site drops $k"
+  echo "$cp" | grep -q "json_get_int(json, \"$k\", &patch->$k)" || say "the patch parser does not read $k"
+  echo "$cp" | grep -q "inst->$k = inst->patches\[patch_idx\].$k" || say "the library-patch apply site drops $k"
+  body "$cm" 'void v2_unload_midi_fx_slot(chain_instance_t *inst, int slot)' | grep -q "inst->$k = 0" \
+      || say "unloading a MIDI FX does not reset $k"
+  echo "$j" | grep 'const preKeys' -A2 | grep -q "\"$k\"" || say "the slot saver does not READ $k (preKeys)"
+  echo "$j" | grep -q "patch.$k = " || say "the slot saver does not WRITE $k into the patch"
+done
 
 # ---- the saver ----
 echo "$j" | grep 'const preKeys' -A2 | grep -q '"midi_fx_to_host"' || say "the slot saver does not READ midi_fx_to_host (preKeys)"

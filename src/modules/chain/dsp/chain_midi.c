@@ -247,6 +247,7 @@ void v2_unload_midi_fx_slot(chain_instance_t *inst, int slot) {
     inst->midi_fx_bypassed[slot] = 0;
     /* "Hand this effect's notes to the host" goes with the effect. */
     inst->midi_fx_to_host = 0;
+    inst->midi_fx_host_route = 0;
 
     /* Stale refcount entries from a now-unloaded MIDI FX would orphan future
      * note-ons. Reset with the FX, along with the pad-held tracker — whichever
@@ -356,7 +357,7 @@ void chain_set_midi_fx_sink(chain_midi_fx_sink_fn sink) { g_midi_fx_sink = sink;
  * No allocation, no logging: the tick path calls this from a render lane. */
 static inline void midi_fx_to_host_emit(chain_instance_t *inst, const uint8_t *msg, int len) {
     chain_midi_fx_sink_fn sink = g_midi_fx_sink;
-    if (sink && chain_fx_to_host_should_emit(inst->midi_fx_to_host, msg, len))
+    if (sink && chain_fx_to_host_should_emit(inst->midi_fx_to_host || inst->midi_fx_host_route, msg, len))
         sink((void *)inst, msg, len);
 }
 
@@ -442,8 +443,9 @@ int v2_tick_midi_fx(chain_instance_t *inst, int frames) {
         int count = api->tick(fx_inst, frames, SAMPLE_RATE,
                               out_msgs, out_lens, MIDI_FX_MAX_OUT_MSGS);
 
-        /* Send generated messages to synth */
-        for (int i = 0; i < count; i++) {
+        /* Send generated messages to synth -- unless the whole output is
+         * routed to the host (midi_fx_host_route), which then sends it on. */
+        for (int i = 0; i < count && !inst->midi_fx_host_route; i++) {
             if (inst->synth_plugin_v2 && inst->synth_instance && inst->synth_plugin_v2->on_midi) {
                 inst->synth_plugin_v2->on_midi(inst->synth_instance, out_msgs[i], out_lens[i], 0);
                 /* INSIDE the delivery guard, not outside it on `count` — see
@@ -452,7 +454,8 @@ int v2_tick_midi_fx(chain_instance_t *inst, int frames) {
             }
         }
 
-        /* midi_fx_to_host: tick output is the FX's own — also to the host. */
+        /* midi_fx_to_host: tick output is the FX's own — also to the host.
+         * (midi_fx_host_route: all of it, and only there.) */
         for (int i = 0; i < count; i++) midi_fx_to_host_emit(inst, out_msgs[i], out_lens[i]);
 
         /* Pre mode: also inject into Move's MIDI_IN so Move's native
@@ -460,7 +463,7 @@ int v2_tick_midi_fx(chain_instance_t *inst, int frames) {
          * override the channel byte with the slot's live recv channel —
          * forward_channel is the synth-internal routing hint and must
          * never reach Move. */
-        if (inst->midi_fx_pre_mode && inst->host && inst->host->midi_inject_to_move) {
+        if (inst->midi_fx_pre_mode && !inst->midi_fx_host_route && inst->host && inst->host->midi_inject_to_move) {
             int recv_ch = -2;
             if (inst->host->slot_recv_channel) {
                 recv_ch = inst->host->slot_recv_channel((void *)inst);
@@ -771,6 +774,16 @@ void v2_on_midi(void *instance, const uint8_t *msg, int len, int source) {
     uint8_t out_msgs[MIDI_FX_MAX_OUT_MSGS][3];
     int out_lens[MIDI_FX_MAX_OUT_MSGS];
     int out_count = v2_process_midi_fx(inst, msg, len, out_msgs, out_lens, MIDI_FX_MAX_OUT_MSGS);
+
+    /* midi_fx_host_route: the WHOLE output -- transforms of notes as well as
+     * what a generator made -- goes to the host and nothing to the synth. The
+     * host sent these notes here only to borrow this slot's MIDI FX; the
+     * instrument they are for is not this slot's. Nothing else below applies
+     * (no Pre inject: the host sends the result on itself). */
+    if (inst->midi_fx_host_route) {
+        for (int i = 0; i < out_count; i++) midi_fx_to_host_emit(inst, out_msgs[i], out_lens[i]);
+        return;
+    }
 
     /* Send processed messages to synth */
     for (int i = 0; i < out_count; i++) {

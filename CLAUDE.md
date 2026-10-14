@@ -129,6 +129,8 @@ Keep each isolated in its own commit so it is easy to exclude when cherry-pickin
   `chain_set_midi_fx_sink` (optional export). ⚠ The hand-off is a QUEUE drained after the overtake
   render, never a direct call: tick output is produced on a render-pool lane, and clock output can
   be produced from inside the overtake DSP's own render. `tests/host/test_midi_fx_to_host_wiring.sh`.
+  Its sibling key `midi_fx_host_route` hands over the effect's WHOLE output instead of playing it,
+  so a Move or MIDI track can borrow its parked slot's MIDI FX.
 
 → full history and the silent-misbehaviour warning: [`RATIONALE.md`](RATIONALE.md).
 

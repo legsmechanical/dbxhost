@@ -2198,14 +2198,15 @@ MIDI FX are built identically to other native plugins:
 
 ### Where a MIDI FX's output goes
 
-A MIDI FX's output always goes to its own slot's synth. Two per-slot chain
-parameters send a copy somewhere else as well. They are separate axes and do not
-interact.
+A MIDI FX's output goes to its own slot's synth. Two per-slot chain parameters
+send a copy somewhere else as well; they are separate axes and do not interact. A
+third sends ALL of it elsewhere instead.
 
 | Chain key (bare, per slot) | Values | What it adds |
 |---|---|---|
 | `midi_fx_pre_mode` | `0` Post (default) / `1` Pre | Pre also injects the output into Move's own MIDI input on the slot's receive channel, so Move's native track plays (and can record) it. |
 | `midi_fx_to_host` | `0` off (default) / `1` on | The notes the effect GENERATES are also handed to the host, for a host-side sequencer to record. Nothing is sent to Move. |
+| `midi_fx_host_route` | `0` off (default) / `1` on | **Instead of** the synth: the effect's WHOLE output — the transform of every note the slot is sent as well as what it generates — goes to the host, and nothing reaches this slot's synth or (in Pre mode) Move. For a host-side sequencer whose track plays an instrument that is not this slot's: it sends the track's notes into the slot only to borrow its MIDI FX, and sends the result on itself. |
 
 `midi_fx_to_host` hands over only what the effect produced on its own:
 
@@ -2219,7 +2220,7 @@ handed back what it already holds, on every pass. So a chord effect contributes
 nothing here; a clock-driven generator or an arpeggiator does. Only channel-voice
 messages cross (never realtime).
 
-Both keys are saved with the slot. `midi_fx_to_host` is reset when the MIDI FX is
+All three keys are saved with the slot. `midi_fx_to_host` and `midi_fx_host_route` are reset when the MIDI FX is
 unloaded or swapped (it is a statement about that effect); `midi_fx_pre_mode` is
 not. `midi_fx:pre_capable` reads `1` when the loaded MIDI FX declares
 `capabilities.pre_capable`.

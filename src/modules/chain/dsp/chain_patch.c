@@ -1922,6 +1922,8 @@ int v2_parse_patch_file(chain_instance_t *inst, const char *path, patch_info_t *
     json_get_int(json, "midi_fx_pre_mode", &patch->midi_fx_pre_mode);
     /* ...and midi_fx_to_host (top-level; absence = off). */
     json_get_int(json, "midi_fx_to_host", &patch->midi_fx_to_host);
+    /* ...and midi_fx_host_route (top-level; absence = off). */
+    json_get_int(json, "midi_fx_host_route", &patch->midi_fx_host_route);
 
     /* Parse LFO config: "lfos": { "lfo1": { ... }, "lfo2": ... } */
     const char *lfos_pos = strstr(json, "\"lfos\"");
@@ -2223,6 +2225,7 @@ int v2_load_patch(chain_instance_t *inst, int patch_idx) {
         inst->current_patch = patch_idx;
         inst->midi_fx_pre_mode = inst->patches[patch_idx].midi_fx_pre_mode ? 1 : 0;
         inst->midi_fx_to_host = inst->patches[patch_idx].midi_fx_to_host ? 1 : 0;
+        inst->midi_fx_host_route = inst->patches[patch_idx].midi_fx_host_route ? 1 : 0;
         inst->dirty = 0;
     }
     return rc;

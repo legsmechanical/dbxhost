@@ -367,6 +367,7 @@ typedef struct {
     int forward_channel;   /* PATCH_CHANNEL_UNSET=absent, -2=passthrough, -1=auto, 0-15=channel */
     int midi_fx_pre_mode;  /* 0 = Post (default), 1 = Pre (additive inject to Move MIDI_IN) */
     int midi_fx_to_host;   /* 0 = off (default), 1 = generated MIDI FX output also goes to the host's sink */
+    int midi_fx_host_route; /* 0 = off (default), 1 = ALL MIDI FX output goes to the host's sink, none to the synth */
     lfo_state_t lfos[LFO_COUNT];  /* LFO configuration */
     bus_config_t buses[SLOT_BUSES];
     int main_sends[BUS_MIX_SENDS];
@@ -693,6 +694,18 @@ typedef struct chain_instance {
      * interact. Reset when the MIDI FX is unloaded — it is a statement about
      * that effect. Inert with no sink registered. */
     int midi_fx_to_host;
+
+    /* Route the MIDI FX's ENTIRE output to the host instead of the synth:
+     * 0 = off (default), 1 = every message the FX emits -- the transform of
+     * each note the slot is sent AND what it generates from the clock or its
+     * tick -- goes to the sink (chain_set_midi_fx_sink) and NOTHING reaches
+     * this slot's synth. For a host-side sequencer whose track plays an
+     * instrument that is not this slot's (another device's, an external
+     * port): it sends its notes here only to borrow the slot's MIDI FX, and
+     * takes the result back to send on. Independent of midi_fx_to_host and
+     * midi_fx_pre_mode. Reset when the MIDI FX is unloaded. Inert with no
+     * sink registered. */
+    int midi_fx_host_route;
 
     /* Cached "pre_capable" hint from the loaded MIDI FX module.json.
      * Informs the Shadow UI default on first placement; does not gate the
