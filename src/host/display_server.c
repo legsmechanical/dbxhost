@@ -135,7 +135,6 @@ typedef struct {
     int needs_initial_frame;
     int extras;                    /* /stream-auto?v=2: also surface + e16 as named events */
     int audio;                     /* ...&audio=1: also `pcm` (audio_live_shm.h) */
-    int mic;                       /* ...&mic=1: also `mic`, the hardware input ring */
     long long connected_ms;        /* eviction picks the oldest stream */
     char buf[CLIENT_BUF_SIZE];
     int buf_len;
@@ -418,7 +417,6 @@ static void client_remove(int idx) {
     clients[idx].resync = 0;
     clients[idx].extras = 0;
     clients[idx].audio = 0;
-    clients[idx].mic = 0;
 }
 
 /* Push what is queued. Returns -1 when the client was removed. */
@@ -517,8 +515,6 @@ static void handle_http(int idx) {
         clients[idx].extras = (v2 && eol && v2 < eol) ? 1 : 0;
         const char *au = strstr(clients[idx].buf, "audio=1");
         clients[idx].audio = (clients[idx].extras && au && eol && au < eol) ? 1 : 0;
-        const char *mi = strstr(clients[idx].buf, "mic=1");
-        clients[idx].mic = (clients[idx].extras && mi && eol && mi < eol) ? 1 : 0;
         const char *sse_header =
             "HTTP/1.1 200 OK\r\n"
             "Content-Type: text/event-stream\r\n"
@@ -560,60 +556,6 @@ static void handle_http(int idx) {
     clients[idx].buf_len = 0;
 }
 
-/* Map one of the shim's audio rings read-only, retrying every SHM_RETRY_MS
- * until it exists. */
-static void audio_ring_open(const char *path, const audio_live_shm_t **ptr, long long *last_attempt) {
-    if (*ptr) return;
-    long long now = now_ms();
-    if (now - *last_attempt < SHM_RETRY_MS) return;
-    *last_attempt = now;
-    int fd = open(path, O_RDONLY);
-    if (fd < 0) return;
-    struct stat st;
-    if (fstat(fd, &st) == 0 && st.st_size >= (off_t)sizeof(audio_live_shm_t)) {
-        void *p = mmap(NULL, sizeof(audio_live_shm_t), PROT_READ, MAP_SHARED, fd, 0);
-        if (p != MAP_FAILED) {
-            *ptr = (const audio_live_shm_t *)p;
-            LOG_INFO(DISPLAY_LOG_SOURCE, "opened %s", path);
-        }
-    }
-    close(fd);
-}
-
-/* Everything new in `ring` since *cursor, as one `event: <name>`. `pos` is
- * the frame index of the first sample, so a page can tell a gap (a skipped
- * chunk, a lapped ring) from a continuation. A first read (*cursor == 0)
- * starts `start_back` frames behind the writer. Returns the event's length,
- * 0 for none. */
-static int audio_ring_event(const audio_live_shm_t *ring, uint64_t *cursor, uint64_t start_back,
-                            const char *name, int16_t *pcm, char *b64, char *evt, size_t evt_size) {
-    if (!ring || memcmp(ring->magic, AUDIO_LIVE_MAGIC, 6) != 0 || ring->version != AUDIO_LIVE_VERSION)
-        return 0;
-    int len = 0;
-    uint64_t wp = __atomic_load_n(&ring->write_pos, __ATOMIC_ACQUIRE);
-    if (*cursor == 0 || *cursor > wp || wp - *cursor > AUDIO_LIVE_FRAMES / 2)
-        *cursor = wp > start_back ? wp - start_back : 0;
-    if (wp - *cursor > AUDIO_CHUNK_MAX) *cursor = wp - AUDIO_CHUNK_MAX;
-    if (wp > *cursor) {
-        int n = audio_live_read(ring, *cursor, wp, pcm);
-        /* The copy can be lapped: this process has no priority and the writer
-         * is the SPI callback. Drop what may have been overwritten, so the
-         * page sees a gap in `pos` rather than a corrupt chunk labelled
-         * contiguous. */
-        uint64_t lost = audio_live_lapped(ring, *cursor);
-        if (lost < (uint64_t)n) {
-            int keep = n - (int)lost;
-            (void)base64_encode((const uint8_t *)(pcm + lost * 2), keep * 4, b64);
-            len = snprintf(evt, evt_size,
-                           "event: %s\ndata: {\"pos\":%llu,\"n\":%d,\"rate\":%u,\"d\":\"%s\"}\n\n",
-                           name, (unsigned long long)(*cursor + lost), keep, ring->sample_rate, b64);
-            if (len >= (int)evt_size) len = 0;
-        }
-    }
-    *cursor = wp;
-    return len;
-}
-
 int main(int argc, char *argv[]) {
     int port = DEFAULT_PORT;
     if (argc > 1) port = atoi(argv[1]);
@@ -653,10 +595,6 @@ int main(int argc, char *argv[]) {
     static int16_t audio_pcm[AUDIO_CHUNK_MAX * 2];
     static char audio_b64[AUDIO_CHUNK_MAX * 4 * 4 / 3 + 8];
     static char pcm_evt[AUDIO_CHUNK_MAX * 4 * 4 / 3 + 128];
-    const audio_live_shm_t *mic_ptr = NULL;
-    long long last_mic_shm_attempt = 0;
-    uint64_t mic_cursor = 0;
-    static char mic_evt[AUDIO_CHUNK_MAX * 4 * 4 / 3 + 128];
 
     /* Listen socket */
     int srv = socket(AF_INET, SOCK_STREAM, 0);
@@ -777,9 +715,25 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        /* The mirror's audio rings (audio_live_shm.h), made by the shim. */
-        audio_ring_open(AUDIO_LIVE_SHM_PATH, &audio_ptr, &last_audio_shm_attempt);
-        audio_ring_open(AUDIO_MIC_SHM_PATH, &mic_ptr, &last_mic_shm_attempt);
+        /* The mirror's audio ring (audio_live_shm.h), made by the shim. */
+        if (!audio_ptr) {
+            long long now = now_ms();
+            if (now - last_audio_shm_attempt >= SHM_RETRY_MS) {
+                last_audio_shm_attempt = now;
+                int fd = open(AUDIO_LIVE_SHM_PATH, O_RDONLY);
+                if (fd >= 0) {
+                    struct stat st;
+                    if (fstat(fd, &st) == 0 && st.st_size >= (off_t)sizeof(audio_live_shm_t)) {
+                        void *p = mmap(NULL, sizeof(audio_live_shm_t), PROT_READ, MAP_SHARED, fd, 0);
+                        if (p != MAP_FAILED) {
+                            audio_ptr = (const audio_live_shm_t *)p;
+                            LOG_INFO(DISPLAY_LOG_SOURCE, "opened %s", AUDIO_LIVE_SHM_PATH);
+                        }
+                    }
+                    close(fd);
+                }
+            }
+        }
 
         /* Build fd_sets for select: requests to read, queues to drain */
         fd_set rfds, wfds;
@@ -950,7 +904,7 @@ int main(int argc, char *argv[]) {
 
         /* ---- Events, built once and only if someone will get them ---- */
         int legacy_len = 0, auto_len = 0, e16_len = 0, e16n_len = 0, surf_len = 0, hb_len = 0;
-        int want_legacy = 0, want_auto = 0, want_e16 = 0, want_extras = 0, want_audio = 0, want_mic = 0;
+        int want_legacy = 0, want_auto = 0, want_e16 = 0, want_extras = 0, want_audio = 0;
         for (int i = 0; i < MAX_CLIENTS; i++) {
             if (clients[i].fd < 0) continue;
             if (clients[i].stream_mode == STREAM_MODE_LEGACY) want_legacy = 1;
@@ -958,7 +912,6 @@ int main(int argc, char *argv[]) {
                 want_auto = 1;
                 if (clients[i].extras) want_extras = 1;
                 if (clients[i].audio) want_audio = 1;
-                if (clients[i].mic) want_mic = 1;
             }
             if (clients[i].stream_mode == STREAM_MODE_E16) want_e16 = 1;
         }
@@ -992,16 +945,33 @@ int main(int argc, char *argv[]) {
          * page can tell a gap (a skipped chunk, a lapped ring) from a
          * continuation. With no listener the cursor is dropped, and the next
          * one starts near the writer instead of replaying a stale ring. */
-        int pcm_len = 0, mic_len = 0;
+        int pcm_len = 0;
         if (!want_audio) audio_cursor = 0;
-        else pcm_len = audio_ring_event(audio_ptr, &audio_cursor, AUDIO_START_BACK, "pcm",
-                                        audio_pcm, audio_b64, pcm_evt, sizeof pcm_evt);
-        /* The microphone starts AT the writer, never behind it: its ring keeps
-         * its last third of a second after the device switches it off, and a
-         * page that connects later must not be handed any of that. */
-        if (!want_mic) mic_cursor = 0;
-        else mic_len = audio_ring_event(mic_ptr, &mic_cursor, 0, "mic",
-                                        audio_pcm, audio_b64, mic_evt, sizeof mic_evt);
+        if (want_audio && audio_ptr && memcmp(audio_ptr->magic, AUDIO_LIVE_MAGIC, 6) == 0 &&
+            audio_ptr->version == AUDIO_LIVE_VERSION) {
+            uint64_t wp = __atomic_load_n(&audio_ptr->write_pos, __ATOMIC_ACQUIRE);
+            if (audio_cursor == 0 || audio_cursor > wp || wp - audio_cursor > AUDIO_LIVE_FRAMES / 2)
+                audio_cursor = wp > AUDIO_START_BACK ? wp - AUDIO_START_BACK : 0;
+            if (wp - audio_cursor > AUDIO_CHUNK_MAX) audio_cursor = wp - AUDIO_CHUNK_MAX;
+            if (wp > audio_cursor) {
+                int n = audio_live_read(audio_ptr, audio_cursor, wp, audio_pcm);
+                /* The copy can be lapped: this process has no priority and
+                 * the writer is the SPI callback. Drop what may have been
+                 * overwritten, so the page sees a gap in `pos` rather than a
+                 * corrupt chunk labelled contiguous. */
+                uint64_t lost = audio_live_lapped(audio_ptr, audio_cursor);
+                if (lost < (uint64_t)n) {
+                    int keep = n - (int)lost;
+                    (void)base64_encode((const uint8_t *)(audio_pcm + lost * 2), keep * 4, audio_b64);
+                    pcm_len = snprintf(pcm_evt, sizeof pcm_evt,
+                                       "event: pcm\ndata: {\"pos\":%llu,\"n\":%d,\"rate\":%u,\"d\":\"%s\"}\n\n",
+                                       (unsigned long long)(audio_cursor + lost), keep,
+                                       audio_ptr->sample_rate, audio_b64);
+                    if (pcm_len >= (int)sizeof pcm_evt) pcm_len = 0;
+                }
+                audio_cursor = wp;
+            }
+        }
 
         int hb_due = (now - hb_at >= HEARTBEAT_MS);
         if (hb_due) {
@@ -1039,8 +1009,6 @@ int main(int argc, char *argv[]) {
                     rc = client_send(i, e16n_evt, e16n_len, now);
                 if (rc == 0 && c->audio && pcm_len)
                     rc = client_send(i, pcm_evt, pcm_len, now);
-                if (rc == 0 && c->mic && mic_len)
-                    rc = client_send(i, mic_evt, mic_len, now);
                 break;
             case STREAM_MODE_E16:
                 if ((full || e16_changed) && e16_len) rc = client_send(i, e16_evt, e16_len, now);
@@ -1063,7 +1031,6 @@ int main(int argc, char *argv[]) {
     if (e16_shm_ptr) munmap(e16_shm_ptr, sizeof(e16_mirror_shm_t));
     if (surface_ptr) munmap((void *)surface_ptr, sizeof(surface_live_shm_t));
     if (audio_ptr) munmap((void *)audio_ptr, sizeof(audio_live_shm_t));
-    if (mic_ptr) munmap((void *)mic_ptr, sizeof(audio_live_shm_t));
     if (norns_shm_fd >= 0) close(norns_shm_fd);
     unified_log_shutdown();
     return 0;

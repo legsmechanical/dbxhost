@@ -39,11 +39,11 @@ for api in audioWorklet AudioWorkletNode navigator.clipboard serviceWorker crypt
   else echo "ok   no $api"; fi
 done
 # The microphone is RECORDED, never played: on the page's speakers it is the
-# talker's own voice a moment late, and beside the device it feeds back.
-if grep -q "addEventListener('mic'" "$PAGE" && grep -q 'micGain.connect(recDest)' "$PAGE"; then echo "ok   the microphone reaches the recording"
+# talker's own voice a moment late.
+if grep -q 'sysNode.connect(sysDelay)' "$PAGE" && grep -q 'micGain.connect(recDest)' "$PAGE"; then echo "ok   the microphone reaches the recording"
 else echo "FAIL the microphone does not reach the recording"; fails=$((fails+1)); fi
 n=$(grep -c 'connect(actx.destination)' "$PAGE")
-ok_edges='micHP\.connect\(micGain\)|micGain\.connect\(recDest\)|micGain\.connect\(micAn\)|sysDelay\.connect\(micGain\)|sysNode\.connect\(sysDelay\)'
+ok_edges='micGain\.connect\(recDest\)|micGain\.connect\(micAn\)|sysDelay\.connect\(micGain\)|sysNode\.connect\(sysDelay\)'
 if [ "$n" -eq 1 ] && ! grep -oE '(mic|sys)[A-Za-z]*\.connect\([^)]*\)' "$PAGE" | grep -vqE "^($ok_edges)\$"; then echo "ok   the microphone is never played here"
 else echo "FAIL the microphone is routed somewhere other than the recording"; fails=$((fails+1)); fi
 # The computer's microphone exists only on the https page; on http the API is

@@ -260,13 +260,8 @@ typedef struct shadow_control_t {
      *
      * Kept as a reserved byte so CONTROL_BUFFER_SIZE and the SHM layout are
      * untouched -- the shim creates that SHM and shadow_ui maps it through the
-     * same macro, and shadow_control_size_check below is what proves it.
-     *
-     * The byte is now `mirror_mic`: 1 = the hardware input is streamed to the
-     * web mirror (audio_live_shm.h). Set ONLY from the device (host_mirror_mic),
-     * cleared at every shim start and never persisted -- the manager's pages
-     * take no login, so nothing reachable over the network may set it. */
-    volatile uint8_t mirror_mic;
+     * same macro, and shadow_control_size_check below is what proves it. */
+    volatile uint8_t reserved_was_native_repaint_on_exit;
     volatile uint8_t preview_cmd;          /* 0=none, 1=play (path in file), 2=stop */
     volatile uint8_t pad_block;            /* 1=suppress pad notes (68-99) from reaching Move */
     volatile uint8_t suspend_overtake;  /* 1=suspend (skip exit hook), 0=normal exit */

@@ -64,13 +64,9 @@ int main(void) {
         if (fp) {
             static char src[1 << 20];
             size_t len = fread(src, 1, sizeof src - 1, fp); src[len] = 0; fclose(fp);
-            /* one helper builds the event for BOTH rings (sound, microphone) */
-            const char *rd = strstr(src, "audio_live_read(ring");
-            const char *lp = strstr(src, "audio_live_lapped(ring");
+            const char *rd = strstr(src, "audio_live_read(audio_ptr");
+            const char *lp = strstr(src, "audio_live_lapped(audio_ptr");
             CHECK(rd && lp && lp > rd, "display_server does not lap-check after audio_live_read");
-            CHECK(strstr(src, "audio_live_read(audio_ptr") == NULL && strstr(src, "audio_live_read(mic_ptr") == NULL,
-                  "display_server reads a ring outside the lap-checked helper");
-            CHECK(strcmp(AUDIO_MIC_SHM_NAME, AUDIO_LIVE_SHM_NAME) != 0, "the microphone ring shares the sound ring's name");
         }
     }
 

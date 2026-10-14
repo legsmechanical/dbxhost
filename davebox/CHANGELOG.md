@@ -16,12 +16,6 @@ the section into a versioned heading at release time.
   the microphone. After that the list names every microphone the computer
   has; pick one, set the level with the slider beside it, and record. The
   voice is only recorded, never played back on the page.
-- **The Move's own input as the microphone.** The same list has **Device
-  mic**: the Move's built-in microphone, or its line input when a cable is in
-  it. It hears every pad press through the case, so it suits a line input
-  better than narration. It must be switched on from the Move — **Mirror Mic**
-  in Project Settings, after Move Settings — and every launch starts with it
-  Off.
 - **Card Hold.** A new row in the global menu sets how long a knob's page
   stays on screen after you let go of the knob: **Off** (it goes with your
   finger, as before), **0.5 s**, **1 s** or **2 s**. It applies to the bank
