@@ -40,6 +40,7 @@
 #endif
 
 #include "host/plugin_api_v1.h"
+#include "host/move_info_store.h"
 #include "host/audio_fx_api_v2.h"
 #include "host/shadow_constants.h"
 #include "host/display_pull.h"
@@ -1602,16 +1603,24 @@ static int overtake_set_slot_param(int slot, const char *key, const char *value)
     return 1;
 }
 
-/* schwung_move_info(): what Move's own set says, for native modules — NOT
- * PROVIDED here (upstream #573 fills it from a live model of the set this fork
- * does not carry). Exported anyway, returning 0 = "this Schwung does not
- * provide it": a module's reader (upstream's host/move_info.h) looks this
- * symbol up FIRST and only when it is absent maps the fixed-name
- * /schwung-move-info segment — which on a device that also runs stock Schwung
- * is stock's, abandoned at whatever set it last saw. The signature is the
- * reader's: (move_info_t *out, size_t cap). */
+/* schwung_move_info(): the session's key, scale, tempo and transport, for
+ * native modules (upstream's host/move_info.h reader). Upstream fills it from
+ * a live model of Move's own set, which this fork does not carry; here the
+ * overtake DSP that owns the session publishes it (set_move_info below), and
+ * until one does — or after it is unloaded — the answer is 0, "this Schwung
+ * does not provide it". Always EXPORTED: a reader looks this symbol up FIRST
+ * and only when it is absent maps the fixed-name /schwung-move-info segment,
+ * which on a device that also runs stock Schwung is stock's, abandoned at
+ * whatever set it last saw. Audio-thread safe: a seqlocked copy. */
+static move_info_shm_t g_move_info;
 __attribute__((visibility("default")))
-int schwung_move_info(void *out, size_t cap) { (void)out; (void)cap; return 0; }
+int schwung_move_info(void *out, size_t cap) { return move_info_store_get(&g_move_info, out, cap); }
+
+/* Host extension (move_host_ext_v1_t.set_move_info): the overtake DSP
+ * publishes what schwung_move_info() answers, or withdraws it (NULL). */
+static void overtake_set_move_info(const void *info, size_t size) {
+    move_info_store_put(&g_move_info, (const move_info_t *)info, size);
+}
 
 /* Host extension (move_host_ext_v1_t.set_tempo): an overtake DSP that runs
  * its own clock declares its exact tempo to the transport service. */
@@ -1622,6 +1631,7 @@ static const move_host_ext_v1_t overtake_host_ext = {
     .set_slot_param = overtake_set_slot_param,
     .set_tempo = overtake_set_tempo,
     .midi_send_slot_direct = overtake_midi_send_slot_direct,
+    .set_move_info = overtake_set_move_info,
 };
 
 /* Slot MIDI (plugin_api_v1.h, MOVE_PLUGIN_SLOT_MIDI_V1_SYMBOL): the overtake
@@ -1810,6 +1820,7 @@ static void shadow_overtake_dsp_load(const char *path) {
     /* Unload previous if any */
     if (overtake_dsp_handle) {
         shadow_log("Overtake DSP: unloading previous before loading new");
+        move_info_store_put(&g_move_info, NULL, 0);   /* the next module publishes its own */
         /* Stop new off-RT snapshot reads and drain any in flight before freeing. */
         g_snap_rt_safe = 0;
         int snap_idle = snap_wait_idle();
@@ -1958,8 +1969,9 @@ static void shadow_overtake_dsp_load(const char *path) {
 
 static void shadow_overtake_dsp_unload(void) {
     if (!overtake_dsp_handle) return;
-    /* Its declared tempo goes with it. */
+    /* Its declared tempo goes with it, and what it published for move_info. */
     shadow_transport_declare_bpm(0.0f);
+    move_info_store_put(&g_move_info, NULL, 0);
     /* ...and so does its entry for the slots' generated MIDI FX output: it
      * lives in the instance about to be destroyed. First, before anything is
      * torn down; the drain then discards. */

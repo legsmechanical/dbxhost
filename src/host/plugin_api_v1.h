@@ -228,6 +228,17 @@ typedef struct move_host_ext_v1 {
      * sending on what the effect handed back (midi_fx_host_route). Audio
      * thread; returns what midi_send_internal_slot returns. */
     int (*midi_send_slot_direct)(int slot, const uint8_t *msg, int len);
+
+    /* Publish what the session's key, scale, tempo and transport are, for
+     * every module that reads move_info.h (schwung_move_info()). `info`
+     * points at a move_info_t (move_info.h) and `size` is the caller's
+     * sizeof it; the host copies it, so the caller's struct need not live.
+     * For a module that owns the session (an overtake sequencer) and so is
+     * the truth about these, rather than Move's own set. Call it when a field
+     * changes, not every block; pass NULL to withdraw (readers then get 0,
+     * "not provided"). Audio thread or set_param: a copy under a seqlock, no
+     * syscalls. The host withdraws it when the module is unloaded. */
+    void (*set_move_info)(const void *info, size_t size);
 } move_host_ext_v1_t;
 
 typedef void (*move_plugin_host_ext_v1_fn)(const move_host_ext_v1_t *ext);

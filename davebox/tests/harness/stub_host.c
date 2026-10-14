@@ -58,8 +58,18 @@ static void stub_set_tempo(float bpm) { g_ext_tempo = bpm; g_ext_tempo_calls++; 
 static int stub_send_slot_direct(int slot, const uint8_t *m, int n) { push_event(HX_MIDI_DIRECT, m, n, slot); return n; }
 float hx_stub_ext_tempo(void)       { return g_ext_tempo; }
 int   hx_stub_ext_tempo_calls(void) { return g_ext_tempo_calls; }
+static move_info_t g_ext_mi;
+static int         g_ext_mi_calls, g_ext_mi_live;
+static void stub_set_move_info(const void *info, size_t size) {
+    g_ext_mi_calls++;
+    g_ext_mi_live = info != NULL;
+    memset(&g_ext_mi, 0, sizeof g_ext_mi);
+    if (info) memcpy(&g_ext_mi, info, size < sizeof g_ext_mi ? size : sizeof g_ext_mi);
+}
+const move_info_t *hx_stub_move_info(void) { return g_ext_mi_live ? &g_ext_mi : NULL; }
+int hx_stub_move_info_calls(void)          { return g_ext_mi_calls; }
 const move_host_ext_v1_t *hx_stub_ext(void) {
-    static const move_host_ext_v1_t ext = { sizeof(move_host_ext_v1_t), stub_set_slot_param, stub_set_tempo, stub_send_slot_direct };
+    static const move_host_ext_v1_t ext = { sizeof(move_host_ext_v1_t), stub_set_slot_param, stub_set_tempo, stub_send_slot_direct, stub_set_move_info };
     return &ext;
 }
 void hx_stub_ext_refuse(int on) { g_ext_refuse = on; }

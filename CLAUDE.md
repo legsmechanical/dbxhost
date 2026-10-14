@@ -121,8 +121,10 @@ Keep each isolated in its own commit so it is easy to exclude when cherry-pickin
 - **One fork-only host EXTENSION for module DSPs:** `move_plugin_host_ext_v1` /
   `move_host_ext_v1_t` (`src/host/plugin_api_v1.h`), members `set_slot_param` (an overtake DSP sets a
   chain-slot parameter from its own render), `set_tempo` (an overtake DSP that runs its own clock
-  declares its exact tempo, which `get_bpm()` then answers with) and `midi_send_slot_direct` (MIDI to a
-  slot's instrument past its MIDI FX, `MOVE_MIDI_SOURCE_DIRECT`). Handed over by `dlsym` after
+  declares its exact tempo, which `get_bpm()` then answers with), `midi_send_slot_direct` (MIDI to a
+  slot's instrument past its MIDI FX, `MOVE_MIDI_SOURCE_DIRECT`) and `set_move_info` (the overtake
+  DSP publishes the session's key / scale / tempo / transport, which the shim's
+  `schwung_move_info()` then answers modules with — upstream fills it from Move's own set). Handed over by `dlsym` after
   `create_instance`; `host_api_v1_t` itself stays frozen at upstream's geometry.
 - **One fork-only module EXPORT the host calls, and the chain key behind it:**
   `move_plugin_slot_midi_v1` (`src/host/plugin_api_v1.h`) — a slot whose chain key `midi_fx_to_host`

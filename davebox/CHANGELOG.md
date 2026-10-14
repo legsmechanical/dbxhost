@@ -8,6 +8,9 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Added
+- **Modules follow dAVEBOx's key and scale.** An instrument or MIDI effect
+  that follows "the host's key" (set to Host) now gets dAVEBOx's key, scale
+  and tempo, and follows them as you change them.
 - **MIDI FX on Move tracks and MIDI tracks.** The **MIDI FX** row in the Sound
   menu is now on Move tracks and MIDI tracks as well as Schwung ones: load an
   arpeggiator, a chord or any other MIDI effect, and the track's notes go
