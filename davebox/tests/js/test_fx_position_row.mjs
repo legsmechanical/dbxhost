@@ -1,16 +1,18 @@
-/* tests/js/test_fx_to_seq_row.mjs — NOTES TO SEQ on a MIDI effect's Module page.
+/* tests/js/test_fx_position_row.mjs — a MIDI FX module's Position: Post / Pre.
  *
- * A MIDI effect that generates notes (a drum pattern from the clock, an
- * arpeggio) plays them on its instrument only. Its Module page carries a row,
- * "Notes to Seq", that also sends them to the sequencer, so Record and Capture
- * take them. It is offered only where it means something: a track's MIDI FX
- * block holding a module that declares `capabilities.pre_capable`.
- *
- * Performs the gesture on the real editor: open the track's MIDI FX block,
- * walk to the Module page, click in, land on the row, click. Asserts what is
- * on the page, what is written to the instrument (`midi_fx_to_host`), and
- * that the project is saved. CONTROLS: a MIDI effect that does not declare it,
- * and the track's instrument, get no row.
+ * Josh, 2026-10-14: every MIDI FX MODULE can sit Pre (what you play goes
+ * through it and its output is what is recorded; playback skips it) or Post
+ * (today's). The row replaced "Notes to Seq" on the module's own Module page.
+ * This drives the REAL editor: open the MIDI FX block, walk to the Module
+ * page, click the row, and read what reached the engine and the slot:
+ *   - offered for EVERY MIDI FX module (the host cannot tell a transform from
+ *     a generator), reading Post;
+ *   - a click → Pre: the engine's tN_fxpre, the slot's midi_fx_host_route,
+ *     and a save; a second click → Post;
+ *   - a project still carrying the old "Notes to Seq" key opens as Pre, once,
+ *     and the key is cleared;
+ *   - the row reads a mirror: nothing is read from the device while idle;
+ *   - the instrument's own Module page has no such row.
  */
 
 let failed = 0;
@@ -58,6 +60,9 @@ for (const fn of ['host_ensure_dir', 'host_remove_dir', 'host_system_cmd', 'host
                   'host_ext_midi_remap_clear', 'host_ext_midi_remap_set', 'host_ext_midi_remap_enable'])
     globalThis[fn] = () => (fn.indexOf('get') >= 0 ? '' : 0);
 globalThis.host_read_file = (p) => FILES[p] || '';
+/* the engine's writes, in order (tN_fxpre / tN_fxslot) */
+const dsp = [];
+globalThis.host_module_set_param = (k, v) => { dsp.push([k, String(v)]); };
 globalThis.host_file_exists = (p) => p in FILES;
 
 async function main() {
@@ -119,67 +124,74 @@ function clickRow(label) {
     click(); ticks(3);
 }
 
-step('⭐⭐ a generating MIDI effect: its Module page offers Notes to Seq, reading Off, above Swap Module', () => {
+const fxpreW = () => dsp.filter(([k]) => k === 't' + T + '_fxpre').map(([, v]) => v);
+const routeW = () => sets.filter((x) => x[1] === 'midi_fx_host_route' && x[0] === T).map((x) => x[2]);
+
+step('⭐⭐ a MIDI FX module\'s Module page offers Position, reading Post, above Swap Module', () => {
     openBlock('midi_fx1');
     walkTo('Module');
     const l = labels();
-    assert(l.includes('Notes to Seq'), 'rows: ' + JSON.stringify(l));
-    assert(l.indexOf('Notes to Seq') < l.indexOf('Swap Module'), 'the row sits below the destructive ones: ' + JSON.stringify(l));
-    assert(rowOf('Notes to Seq').value === 'Off', 'reads ' + rowOf('Notes to Seq').value);
-    assert(!snd.soundFxToSeqForTest().on, 'the cached value is on');
+    assert(l.includes('Position'), 'rows: ' + JSON.stringify(l));
+    assert(!l.includes('Notes to Seq'), 'the retired row is back: ' + JSON.stringify(l));
+    assert(l.indexOf('Position') < l.indexOf('Swap Module'), 'the row sits below the destructive ones: ' + JSON.stringify(l));
+    assert(rowOf('Position').value === 'Post', 'reads ' + rowOf('Position').value);
 });
 
-step('⭐⭐ THE GESTURE: click the row — it reads On, the instrument is told, and the project is saved', () => {
-    sets.length = 0; saves = 0;
-    clickRow('Notes to Seq');
+step('⭐⭐ THE GESTURE: click it — Pre: the engine and the slot are told, and it is saved', () => {
+    sets.length = 0; dsp.length = 0; saves = 0;
+    clickRow('Position');
     assert(swallowed === null, 'a handler threw: ' + swallowed);
-    const w = sets.filter((x) => x[1] === 'midi_fx_to_host');
-    assert(w.length === 1 && w[0][0] === T && w[0][2] === '1', 'writes: ' + JSON.stringify(sets));
+    assert(fxpreW().join() === '1', 'engine writes: ' + JSON.stringify(dsp));
+    assert(routeW().join() === '1', 'the slot was not told to hand its output back: ' + JSON.stringify(sets));
+    assert(GS.trackFxPre[T] === 1, 'the mirror did not follow');
     assert(saves >= 1, 'the setting was not saved — it would revert on the next launch');
     assert(snd.soundViewForTest() === VIEW_EDIT && pp().on, 'the click left the editor, view ' + snd.soundViewForTest());
-    assert(rowOf('Notes to Seq') && rowOf('Notes to Seq').value === 'On', 'the row still reads ' + JSON.stringify(rowOf('Notes to Seq')));
+    assert(rowOf('Position') && rowOf('Position').value === 'Pre', 'the row reads ' + JSON.stringify(rowOf('Position')));
 });
 
-step('⭐ a second click turns it off again', () => {
-    sets.length = 0;
+step('⭐ a second click puts it back to Post', () => {
+    sets.length = 0; dsp.length = 0;
     click(); ticks(3);                               /* the cursor is still on the row */
-    const w = sets.filter((x) => x[1] === 'midi_fx_to_host');
-    assert(w.length === 1 && w[0][2] === '0', 'writes: ' + JSON.stringify(sets));
-    assert(rowOf('Notes to Seq').value === 'Off', 'reads ' + rowOf('Notes to Seq').value);
+    assert(fxpreW().join() === '0' && routeW().join() === '0', 'writes: ' + JSON.stringify([dsp, sets]));
+    assert(rowOf('Position').value === 'Post', 'reads ' + rowOf('Position').value);
 });
 
-step('⭐ reopening the effect reads what the instrument holds (one read, at discovery)', () => {
-    ASSIGN.midi_fx_to_host = '1';
-    openBlock('midi_fx1');
-    walkTo('Module');
-    assert(rowOf('Notes to Seq').value === 'On', 'reads ' + rowOf('Notes to Seq').value);
-    /* ...and nothing reads the device while the page is merely redrawn */
-    let reads = 0;
-    const was = globalThis.shadow_get_param;
-    globalThis.shadow_get_param = (slot, key) => { if (key === 'midi_fx_to_host') reads++; return was(slot, key); };
-    try { for (let i = 0; i < 20; i++) { snd.soundRender(); ticks(1); } } finally { globalThis.shadow_get_param = was; }
-    assert(reads === 0, 'the row read the device ' + reads + ' times while idle');
-    ASSIGN.midi_fx_to_host = '0';
-});
-
-step('CONTROL: a MIDI effect that does not declare it gets no row — and the page still works', () => {
+step('⭐ EVERY module gets it — one that declares nothing too', () => {
     ASSIGN['midi_fx1:module'] = 'plainfx';
     openBlock('midi_fx1');
     walkTo('Module');
-    assert(!labels().includes('Notes to Seq'), 'rows: ' + JSON.stringify(labels()));
-    assert(labels().includes('Swap Module'), 'the Module page lost its rows: ' + JSON.stringify(labels()));
-    assert(!snd.soundFxToSeqForTest().offered, 'offered for a module without pre_capable');
+    assert(labels().includes('Position'), 'rows: ' + JSON.stringify(labels()));
+    assert(snd.soundFxPositionForTest().offered, 'not offered');
     ASSIGN['midi_fx1:module'] = 'patgen';
 });
 
-step('CONTROL: the track\'s INSTRUMENT gets no row, whatever its module.json says', () => {
+step('⭐ an OLD project\'s "Notes to Seq" opens as Pre, once, and the old key is cleared', () => {
+    GS.trackFxPre[T] = 0;
+    ASSIGN.midi_fx_to_host = '1';
+    sets.length = 0; dsp.length = 0;
+    openBlock('midi_fx1');
+    walkTo('Module');
+    assert(rowOf('Position').value === 'Pre', 'reads ' + rowOf('Position').value);
+    assert(fxpreW().includes('1') && routeW().includes('1'), 'not migrated: ' + JSON.stringify([dsp, sets]));
+    assert(ASSIGN.midi_fx_to_host === '0', 'the old key was left on (its recorder would run as well)');
+});
+
+step('⭐ the row reads a mirror: nothing is read from the device while the page is redrawn', () => {
+    let reads = 0;
+    const was = globalThis.shadow_get_param;
+    globalThis.shadow_get_param = (slot, key) => { if (/fxpre|midi_fx_to_host|host_route/.test(key)) reads++; return was(slot, key); };
+    try { for (let i = 0; i < 20; i++) { snd.soundRender(); ticks(1); } } finally { globalThis.shadow_get_param = was; }
+    assert(reads === 0, 'the row read the device ' + reads + ' times while idle');
+});
+
+step('CONTROL: the track\'s INSTRUMENT gets no Position row', () => {
     openBlock('synth');
     walkTo('Module');
-    assert(!labels().includes('Notes to Seq'), 'rows: ' + JSON.stringify(labels()));
+    assert(!labels().includes('Position'), 'rows: ' + JSON.stringify(labels()));
 });
 
 if (swallowed !== null) { console.error('FAIL: a handler threw: ' + swallowed); failed = 1; }
-if (failed) { console.log('FAIL: notes to seq row'); process.exit(1); }
-console.log('PASS: Notes to Seq is offered on a generating MIDI effect, flips, writes, saves, and reads back');
+if (failed) { console.log('FAIL: MIDI FX Position row'); process.exit(1); }
+console.log('PASS: every MIDI FX module offers Position; Pre/Post reach the engine and the slot, save, and migrate');
 }
 main().catch((e) => { console.error(e); process.exit(1); });

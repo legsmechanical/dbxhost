@@ -736,9 +736,6 @@ const S = {
     sections: [],
     bankIdx: 0,
     moduleId: '',
-    /* "Notes to Seq" for the MIDI effect on screen (fxToSeqOffered): read once
-     * at discovery, flipped by its row. The instrument holds the truth. */
-    fxToSeq: false,
 
     /* Hosting: a module that DECLARES `capabilities.host_canvas_ui` draws
      * itself through its own bank_editor, and `banks` stays as the fallback.
@@ -7903,8 +7900,8 @@ function runDiscovery() {
      * time you glance at another param) but never a module swap. */
     if (id !== S.moduleId) { wavEditCloseIfOpen(); canvasCloseIfOpen(); wavForgetComponent(S.comp, S.slot); ppWidgetsForget(); }
     S.moduleId = id;
-    /* "Notes to Seq": one read, and only for an effect that offers the row. */
-    S.fxToSeq = fxToSeqOffered() ? (engineGetChainParam(S.slot, FX_TO_SEQ_KEY) === '1') : false;
+    /* A project from before Position: its "Notes to Seq" becomes Pre (one read). */
+    fxPosMigrate();
     if (!id) { S.banks = []; S.banksDeferred = false; S.sections = []; S.dirty = true; return; }
     /* The page grid will draw this module, so the flat banks -- davebox's own
      * editor, its FALLBACK -- are not built now (DR32's 32 pads made
@@ -8485,9 +8482,10 @@ function applyModulePick(mod) {
      * module id. Same key, different currency — loading a bus by id silently
      * does nothing, which is the kind of failure you debug for an hour. */
     engineLoadModule(S.slot, S.comp, S.bus ? (mod.path || '') : mod.id);
-    /* A MIDI FX on a Move or MIDI track works by borrowing the parked slot —
-     * switched on with the effect, off with [ none ]. */
-    if (!S.bus && S.comp === 'midi_fx1' && GS.trackRoute[S.track] !== 0) syncTrackMidiFx(S.track, !!mod.id);
+    /* A MIDI FX on a Move or MIDI track works by borrowing the parked slot,
+     * and a PRE one hands its output back on any track — switched on with the
+     * effect, off with [ none ] (which also puts Position back to Post). */
+    if (!S.bus && S.comp === 'midi_fx1') syncTrackMidiFx(S.track, !!mod.id);
     /* The slot's render-pool pin follows the module that just arrived (a
      * synth pick only; the pin is decided by the instrument). */
     if (!S.bus && S.comp === 'synth') reconcileParallelSlot(S.slot);
@@ -12390,46 +12388,56 @@ export function soundWidgetsForTest() {
 }
 export function soundWidgetsEnableForTest(on) { ppWidgetsEnabled = !!on; }
 
-/* ---- NOTES TO SEQ ---------------------------------------------------------
+/* ---- POSITION: PRE / POST ------------------------------------------------
  *
- * A MIDI effect that GENERATES notes — a drum pattern from the clock, an
- * arpeggio — plays them on its own instrument and nowhere else. With this row
- * on, they also reach the sequencer as if played on the track: Record writes
- * them into the clip, Capture keeps them (the engine's slot_fx_note; the
- * chain key `midi_fx_to_host`). They are never played a second time.
+ * Where a track's MIDI FX MODULE sits (Josh, 2026-10-14; dAVEBOx's own
+ * sequencer effects are not affected):
  *
- * Offered on the effect's own Module page, and only where it means something:
- * a track's MIDI FX block holding a module that declares
- * `capabilities.pre_capable` — the module's own statement that it generates
- * notes. One MIDI effect per instrument here, so one row is the whole setting.
+ *   Post  what you play is recorded as played; the module plays on top of the
+ *         clip and of your playing, on the way to the instrument (default);
+ *   Pre   what you play goes THROUGH the module, and its output is what you
+ *         hear, what Capture keeps and what Record writes; the clip's playback
+ *         skips it (or you would hear a chord of a chord).
  *
- * The instrument stores it (saved with the project, cleared when the effect
- * is swapped or removed). The row shows a cached copy, read once when the
- * editor discovers the module — trailingMenus() runs on every plan and must
- * not read the device. */
-const FX_TO_SEQ_KEY = 'midi_fx_to_host';
-const FX_TO_SEQ_LABEL = 'Notes to Seq';
-function fxToSeqOffered() {
+ * Offered for every module, on every track kind that has an instrument: the
+ * host cannot tell a transform from a generator, so the user chooses. It
+ * replaced "Notes to Seq" (a Pre that only some modules offered); a project
+ * still carrying that key becomes Pre the first time its effect is opened
+ * (discovery, below).
+ *
+ * The ENGINE holds the choice (tN_fxpre, mirrored as GS.trackFxPre); the
+ * slot's `midi_fx_host_route` is derived from it (syncTrackMidiFx). The row
+ * reads the mirror — trailingMenus() runs on every plan and must not read
+ * the device. */
+const FX_POS_LABEL = 'Position';
+const FX_TO_SEQ_KEY = 'midi_fx_to_host';     /* the retired key: migrated, then cleared */
+function fxPosOffered() {
     if (S.comp !== 'midi_fx1' || S.slot < 0 || !S.moduleId || soundIsGlobal()) return false;
-    /* Schwung tracks only, for now: on a Move or MIDI track the effect's whole
-     * output already comes back to the engine to be SENT (syncTrackMidiFx),
-     * and recording it as well needs telling what the effect generated from
-     * the clip's own notes it carries back. */
-    if (GS.trackRoute[S.track] !== 0) return false;
-    const caps = engineModuleCaps(S.comp, S.moduleId);
-    return !!(caps && caps.pre_capable);
+    return GS.trackRoute[S.track] !== ROUTE_NONE;
 }
-function toggleFxToSeq() {
-    if (!fxToSeqOffered()) return;
-    S.fxToSeq = !S.fxToSeq;
-    queueChainWrite(FX_TO_SEQ_KEY, S.fxToSeq ? 1 : 0);
-    /* Saved at once, like a slot setting: a switch that reverted on the next
-     * launch would be worse than none. */
+function toggleFxPosition() {
+    if (!fxPosOffered()) return;
+    const t = S.track;
+    GS.trackFxPre[t] = GS.trackFxPre[t] ? 0 : 1;
+    syncTrackMidiFx(t, true);
+    /* Saved at once, like a slot setting: the slot's route key is in its
+     * patch, and a switch that reverted on the next launch would be worse
+     * than none. The engine's half is saved with the project. */
     S.pendingAction = { t: 'slotsave' };
     if (ppOn) paramPagesRefreshTrailing();
     S.dirty = true;
 }
-export function soundFxToSeqForTest() { return { offered: fxToSeqOffered(), on: S.fxToSeq }; }
+/* A project from before the switch: its effect's "Notes to Seq" was a Pre
+ * that recorded only what the effect generated. It becomes Pre, once. */
+function fxPosMigrate() {
+    if (!fxPosOffered()) return;
+    if (engineGetChainParam(S.slot, FX_TO_SEQ_KEY) !== '1') return;
+    queueChainWrite(FX_TO_SEQ_KEY, 0);
+    GS.trackFxPre[S.track] = 1;
+    syncTrackMidiFx(S.track, true);
+    S.pendingAction = { t: 'slotsave' };
+}
+export function soundFxPositionForTest() { return { offered: fxPosOffered(), pre: !!GS.trackFxPre[S.track] }; }
 
 /* Re-read the user presets and rebuild the trailing pages from them.
  *
@@ -12561,12 +12569,11 @@ function ppIo() {
                      * only a module that splits its voices offers it. */
                     ...(ModBus.modBusDoorState(S.modBus) === 'open'
                         ? [{ label: ModBus.MODBUS_LABEL, action: 'module_buses' }] : []),
-                    /* ⭑ NOTES TO SEQ: the notes this effect GENERATES also go to
-                     * the sequencer — Record writes them into the clip, Capture
-                     * keeps them (fxToSeqOffered). The value is the cached one:
+                    /* ⭑ POSITION: Pre / Post for this MIDI FX module
+                     * (fxPosOffered). The value is the engine's mirror:
                      * nothing is read from the device in here. */
-                    ...(fxToSeqOffered()
-                        ? [{ label: FX_TO_SEQ_LABEL, value: S.fxToSeq ? 'On' : 'Off', action: 'fx_to_seq' }] : []),
+                    ...(fxPosOffered()
+                        ? [{ label: FX_POS_LABEL, value: GS.trackFxPre[S.track] ? 'Pre' : 'Post', action: 'fx_position' }] : []),
                     { label: 'Swap Module', action: 'swap_module' },
                     /* ⭑ REMOVE IS THE `[ none ]` PICK, reached through the same
                      * applyModulePick — not a second way to clear a slot. */
@@ -12642,7 +12649,7 @@ function ppIo() {
              * looking at. */
             else if (action === 'up_save') { overwriteUserPreset(); ppRefreshPresets(); }
             else if (action === 'up_delete') { deleteRecordedPreset(); ppRefreshPresets(); }
-            else if (action === 'fx_to_seq') toggleFxToSeq();
+            else if (action === 'fx_position') toggleFxPosition();
             else if (action === 'remove_module') requestModulePick({ id: '', name: '[ none ]' });
             else if (action === 'up_save_as') startSaveFlow();
             else if (action === 'swap_module') { openBrowse(S.comp); ppErrandView = S.view; }

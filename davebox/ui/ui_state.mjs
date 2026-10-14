@@ -472,6 +472,9 @@ export const S = {
      * the external-MIDI path, which must hand a Move track's keyboard notes to
      * the engine rather than to Move. */
     trackFxSlot: new Array(8).fill(0),
+    /* 1 = the track's MIDI FX module is PRE (the engine's tN_fxpre; the
+     * module page's Position row). */
+    trackFxPre: new Array(8).fill(0),
     moveCoRunTrack: -1,                       /* -1 = off; 0-3 = Move firmware is co-running on this track (dAVEBOx skips OLED; shim filters nav CCs + touch 0-9 from tool, lets them reach Move) */
     /* Move's own Settings menu, opened in co-run from Project Settings'
      * Move Settings... row (ui_corun.mjs enterMoveSettingsCoRun). A different

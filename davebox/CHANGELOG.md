@@ -12,8 +12,14 @@ the section into a versioned heading at release time.
   menu is now on Move tracks and MIDI tracks as well as Schwung ones: load an
   arpeggiator, a chord or any other MIDI effect, and the track's notes go
   through it on their way to Move's instrument or out of the MIDI port. It
-  stays with the track when you change what it plays. (**Notes to Seq** is
-  still for Schwung tracks only.)
+  stays with the track when you change what it plays.
+- **MIDI effects can sit Pre or Post.** A MIDI effect module's Module page has a
+  **Position** row. **Post** is what you had: the effect plays on top of the
+  clip. **Pre** puts it in front of the sequencer: what you play goes through
+  it, and its output is what you hear, record and capture — so a chord effect
+  records chords and an arpeggiator records its arpeggio — and the clip plays
+  back without it. Every MIDI effect offers it, on Schwung, Move and MIDI
+  tracks. It replaces **Notes to Seq**; a project that used it opens at Pre.
 - **Card Hold.** A new row in the global menu sets how long a knob's page
   stays on screen after you let go of the knob: **Off** (it goes with your
   finger, as before), **0.5 s**, **1 s** or **2 s**. It applies to the bank

@@ -206,7 +206,9 @@ step('CONTROL: a Schwung track\'s pick writes neither switch — its effect play
     reset(); enterMenu(0);
     pickArp();
     assert(sets.some((s) => s[1] === 'midi_fx1:module' && s[0] === T), 'rig: nothing loaded on the Schwung track');
-    assert(!order.some((o) => /midi_fx_host_route|_fxslot/.test(o)), 'a Schwung track was switched: ' + JSON.stringify(order));
+    /* (a Post effect: everything it writes is OFF — Pre is the module page's
+     * Position row, test_fx_position_row) */
+    assert(!order.some((o) => /(midi_fx_host_route|_fxslot|_fxpre)=1/.test(o)), 'a Schwung track was switched: ' + JSON.stringify(order));
 });
 
 step('CONTROL: no MIDI FX row with no instrument, or on a Conductor', () => {
