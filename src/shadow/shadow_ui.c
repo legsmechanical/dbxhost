@@ -2600,6 +2600,24 @@ static JSValue js_host_vol_block(JSContext *ctx, JSValueConst this_val,
     return JS_TRUE;
 }
 
+/* host_mirror_mic([enable]) -> bool - the web mirror's microphone. With an
+ * argument, switches the hardware input stream on or off; always returns the
+ * current state. SHM only, never persisted: the shim clears it at every start,
+ * and this binding is the one way to set it -- /mirror takes no login, so the
+ * microphone is opened from the device or not at all. */
+static JSValue js_host_mirror_mic(JSContext *ctx, JSValueConst this_val,
+                                  int argc, JSValueConst *argv) {
+    (void)this_val;
+    if (!shadow_control) return JS_FALSE;
+    if (argc >= 1) {
+        int val = 0;
+        JS_ToInt32(ctx, &val, argv[0]);
+        shadow_control->mirror_mic = val ? 1 : 0;
+        shadow_ui_log_line(val ? "shadow_ui: mirror_mic ON" : "shadow_ui: mirror_mic OFF");
+    }
+    return JS_NewBool(ctx, shadow_control->mirror_mic != 0);
+}
+
 /* host_canvas_input(enable) - canvas overlay active: shim also forwards the
  * master/jog capacitive touch notes (8-9) to the shadow UI while set */
 static JSValue js_host_canvas_input(JSContext *ctx, JSValueConst this_val,
@@ -3204,6 +3222,7 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
     /* Register pad block function */
     JS_SetPropertyStr(ctx, global_obj, "host_pad_block", JS_NewCFunction(ctx, js_host_pad_block, "host_pad_block", 1));
     JS_SetPropertyStr(ctx, global_obj, "host_vol_block", JS_NewCFunction(ctx, js_host_vol_block, "host_vol_block", 1));
+    JS_SetPropertyStr(ctx, global_obj, "host_mirror_mic", JS_NewCFunction(ctx, js_host_mirror_mic, "host_mirror_mic", 1));
 
     /* Build facts a module needs to run on more than one host (param namespaces
      * a typeof probe cannot see, plus which install this is) */

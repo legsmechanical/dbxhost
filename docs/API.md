@@ -291,6 +291,11 @@ host_sampler_resume()         // Resume paused recording
 host_sampler_is_paused()      // -> bool
 host_sampler_get_samples_written() // -> int
 host_pad_block(bool)          // Suppress pad notes (68-99) from reaching Move
+host_mirror_mic([bool])       // [FORK-ONLY] -> bool. The web mirror's microphone: with
+                              // an argument, lets (or stops) the hardware input being
+                              // streamed to /mirror for narration; always returns the
+                              // current state. Session-only: cleared at every start,
+                              // never persisted, and settable from nowhere else.
 host_vol_block(bool)          // [FORK-ONLY] Claim the master volume knob: suppress
                               // CC 79 + its touch note (8) from reaching Move, so a
                               // tool can repurpose the knob without Move also moving

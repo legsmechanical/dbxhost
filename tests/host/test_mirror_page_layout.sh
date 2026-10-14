@@ -38,4 +38,11 @@ for api in audioWorklet AudioWorkletNode navigator.clipboard serviceWorker crypt
   if grep -q "$api" "$PAGE"; then echo "FAIL $PAGE uses $api, which plain http does not have"; fails=$((fails+1));
   else echo "ok   no $api"; fi
 done
+# The microphone is RECORDED, never played: on the page's speakers it is the
+# talker's own voice a moment late, and beside the device it feeds back.
+if grep -q "addEventListener('mic'" "$PAGE" && grep -q 'micGain.connect(recDest)' "$PAGE"; then echo "ok   the microphone reaches the recording"
+else echo "FAIL the microphone does not reach the recording"; fails=$((fails+1)); fi
+n=$(grep -c 'connect(actx.destination)' "$PAGE")
+if [ "$n" -eq 1 ] && ! grep -E 'mic[A-Za-z]*\.connect\(' "$PAGE" | grep -vqE 'micHP\.connect\(micGain\)|micGain\.connect\(recDest\)|src\.connect\(micHP\)'; then echo "ok   the microphone is never played here"
+else echo "FAIL the microphone is routed somewhere other than the recording"; fails=$((fails+1)); fi
 [ "$fails" -eq 0 ]

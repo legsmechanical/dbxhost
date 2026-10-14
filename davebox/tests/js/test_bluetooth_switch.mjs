@@ -67,7 +67,7 @@ step('with the marker the row sits with the device settings, after Move Settings
     S.globalMenuOpen = false; menu.openGlobalMenu();
     const l = labels(); const i = l.indexOf('Bluetooth');
     if (i < 0) throw new Error('no Bluetooth row: ' + l.join(' | '));
-    if (l[i - 1] !== 'Move Settings...' || l[i + 1] !== '---')
+    if (l[i - 1] !== 'Move Settings...' || l[i + 1] !== 'Mirror Mic')
         throw new Error('wrong place: ' + l.slice(i - 2, i + 2).join(' | '));
 });
 

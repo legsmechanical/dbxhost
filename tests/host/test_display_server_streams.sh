@@ -19,6 +19,11 @@
 #   5. SOUND (default queue size): `&audio=1` gets `pcm` chunks whose `pos`
 #      runs on without a gap and whose samples decode to exactly what the
 #      writer put in the ring; a client that did not ask gets none.
+#   6. THE MICROPHONE: `&mic=1` gets `mic` chunks from the SECOND ring, each
+#      stream decoding to its own ring's samples; a client that did not ask,
+#      or an old page, gets none; and what the ring still held from BEFORE
+#      the client connected is never handed out (the device may have switched
+#      the microphone off since).
 #
 # Mutation check, done by hand: making client_flush treat EAGAIN as an error
 # (the old behaviour) fails case 1.
@@ -37,7 +42,7 @@ trap 'kill $(jobs -p) 2>/dev/null || true; rm -rf "$T"' EXIT
 "$CC" -O1 -Isrc -Isrc/host \
     -DSHM_PATH="\"$T/live\"" -DNORNS_SHM_PATH="\"$T/norns\"" \
     -DSURFACE_LIVE_SHM_PATH="\"$T/surface\"" -DE16_MIRROR_SHM_PATH="\"$T/e16\"" \
-    -DAUDIO_LIVE_SHM_PATH="\"$T/audio\"" \
+    -DAUDIO_LIVE_SHM_PATH="\"$T/audio\"" -DAUDIO_MIC_SHM_PATH="\"$T/mic\"" \
     -o "$T/ds_audio" src/host/display_server.c src/host/unified_log.c -lpthread
 
 T="$T" python3 - <<'EOF'
@@ -143,6 +148,23 @@ def audio_writer():
             struct.pack_into("<Q", au, 16, wp)
         time.sleep(0.002)
 threading.Thread(target=audio_writer, daemon=True).start()
+# the microphone ring: 4096 frames of something said EARLIER, and a writer
+# that is not running yet
+mc = mk(T + "/mic", 32 + AF * 4)
+mc[0:8] = b"AUDLV1\0\0"; mc[8:12] = struct.pack("<I", 1); mc[12:16] = struct.pack("<I", 44100)
+MIC_OLD = 4096
+mc[32:32 + MIC_OLD * 4] = struct.pack("<hh", 0x1111, 0x1111) * MIC_OLD
+struct.pack_into("<Q", mc, 16, MIC_OLD)
+def mramp(i): return (i * 13) % 65536 - 32768
+def mic_writer():
+    wp = MIC_OLD; t0 = time.monotonic()
+    while not stop:
+        due = MIC_OLD + int((time.monotonic() - t0) * 44100) // 128 * 128
+        while wp < due:
+            blk = b"".join(struct.pack("<hh", mramp(wp + f), 0) for f in range(128))
+            at = (wp % AF) * 4; mc[32 + at:32 + at + 512] = blk; wp += 128
+            struct.pack_into("<Q", mc, 16, wp)
+        time.sleep(0.002)
 PORT += 1
 srv = subprocess.Popen([T + "/ds_audio", str(PORT)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 for _ in range(50):
@@ -163,6 +185,37 @@ check(len(chunks) > 30 and total > 44100 * 2, f"sound streams: {len(chunks)} chu
 check(gaps == 0, f"pcm chunks run on without a gap ({gaps})")
 check(wrong == 0, f"every sample decodes to what was written ({wrong} wrong)")
 check(b"event: pcm" not in qbuf, "a client that did not ask for sound gets none")
+
+# 6. the microphone
+def chunks_of(buf, name):
+    body = buf.split(b"\r\n\r\n", 1)[1] if b"\r\n\r\n" in buf else buf
+    return [json.loads(e.split(b"data: ", 1)[1]) for e in body.split(b"\n\n")[:-1]
+            if e.startswith(b"event: " + name + b"\n")]
+def score(chunks, fn):
+    gaps = sum(1 for a, b in zip(chunks, chunks[1:]) if b["pos"] != a["pos"] + a["n"])
+    wrong = 0; total = 0
+    for c in chunks:
+        pcm = base64.b64decode(c["d"]); total += c["n"]
+        for f in range(c["n"]):
+            if struct.unpack_from("<h", pcm, f * 4)[0] != fn(c["pos"] + f): wrong += 1
+    return gaps, wrong, total
+m = stream("/stream-auto?v=2&audio=1&mic=1")
+idle, _ = read(m, 1.0)
+check(b"event: pcm" in idle, "the microphone client is being served")
+check(b"event: mic" not in idle, "what the ring held before the client connected is not sent")
+n = stream("/stream-auto?v=2&audio=1"); o = stream("/stream-auto?mic=1")
+threading.Thread(target=mic_writer, daemon=True).start()
+buf, _ = read(m, 3.0); nbuf, _ = read(n, 0.5); obuf, _ = read(o, 0.5); m.close(); n.close(); o.close()
+mic = chunks_of(buf, b"mic"); pcm = chunks_of(buf, b"pcm")
+gaps, wrong, total = score(mic, mramp)
+check(len(mic) > 30 and total > 44100 * 2, f"the microphone streams: {len(mic)} chunks, {total} frames in 3 s")
+check(bool(mic) and mic[0]["pos"] >= MIC_OLD, "it starts at the writer, not behind it")
+check(gaps == 0, f"mic chunks run on without a gap ({gaps})")
+check(wrong == 0, f"every mic sample is the microphone ring's ({wrong} wrong)")
+gaps, wrong, total = score(pcm, ramp)
+check(len(pcm) > 30 and gaps == 0 and wrong == 0, f"beside it, pcm is still the sound ring's ({gaps} gaps, {wrong} wrong)")
+check(b"event: pcm" in nbuf and b"event: mic" not in nbuf, "a client that asked only for sound gets no microphone")
+check(b"event: mic" not in obuf, "an old page cannot ask for it")
 
 stop = True; srv.terminate(); srv.wait()
 sys.exit(1 if fails else 0)

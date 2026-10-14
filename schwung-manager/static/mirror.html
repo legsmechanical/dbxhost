@@ -65,6 +65,13 @@
   body.fs #hero { border: none; max-width: none; width: min(100vw, 200dvh); cursor: zoom-out; }
   /* the view follows the capture choice: what you see is what is saved */
   body.view-screen #device, body.view-device #hero { display: none; }
+  /* the microphone's level and meter exist only while it is switched on here */
+  #micbox { display: none; align-items: center; gap: 6px; }
+  #micbox.on { display: inline-flex; }
+  #micgain { width: 90px; }
+  #micmeter { width: 60px; height: 8px; background: #222; border-radius: 2px; overflow: hidden; }
+  #micmeter i { display: block; height: 100%; width: 0; background: var(--ok); }
+  #micmeter.hot i { background: var(--bad); }
 </style>
 </head><body>
 <div id="bar">
@@ -75,6 +82,8 @@
     <option value="device">Device</option>
   </select>
   <button id="mute" type="button" title="Hear the device here. Recordings always include its sound.">Unmute</button>
+  <button id="mic" type="button" title="Put the device's microphone (or its line input) in recordings, for narration. Switch on Mirror Mic in the device's menu first. It is never played here.">Mic</button>
+  <span id="micbox"><input id="micgain" type="range" min="0" max="8" step="0.05" value="2" title="Microphone level in the recording"><span id="micmeter" title="Microphone level"><i></i></span></span>
   <button id="png" type="button">Save PNG</button>
   <button id="rec" type="button">Record</button>
   <button id="fingerbtn" type="button" title="Show a finger on every control as it is touched, pressed or turned">Fingers</button>
@@ -203,7 +212,7 @@ function connect() {
   inputSeeded = false;
   lastEvent = Date.now();
   connects++;
-  const src = new EventSource('/stream-auto?v=2' + (audioOn ? '&audio=1' : ''));
+  const src = new EventSource('/stream-auto?v=2' + (audioOn ? '&audio=1' + (micOn ? '&mic=1' : '') : ''));
   es = src;
   src.onopen = () => { if (es === src) { alive(); setStatus('live', 'live'); } };
   src.onerror = () => {
@@ -246,6 +255,7 @@ function connect() {
     });
   });
   src.addEventListener('pcm', e => { if (es === src) { alive(); pcmEvent(e.data); } });
+  src.addEventListener('mic', e => { if (es === src) { alive(); micEvent(e.data); } });
   src.addEventListener('e16', e => { if (es === src) { alive(); e16Event(e.data); } });
 }
 
@@ -764,6 +774,14 @@ function buildAudio() {
   listenGain.gain.value = listening ? 1 : 0;
   bus.connect(listenGain).connect(actx.destination);
   if (actx.createMediaStreamDestination) { recDest = actx.createMediaStreamDestination(); bus.connect(recDest); }
+  /* The microphone goes to the RECORDING and nowhere else: played here it
+   * would be the speaker's own voice a moment late, and next to the device it
+   * would feed back. A high-pass takes the worst of the thump a pad press
+   * sends through the case. */
+  micHP = actx.createBiquadFilter(); micHP.type = 'highpass'; micHP.frequency.value = 110;
+  micGain = actx.createGain(); micGain.gain.value = micLevel();
+  micHP.connect(micGain);
+  if (recDest) micGain.connect(recDest);
   actx.addEventListener('statechange', audioState);
   return true;
 }
@@ -838,6 +856,77 @@ function pcmEvent(data) {
   const want = (nextTime - n / rate - now) + (actx.baseLatency || 0) + (actx.outputLatency || 0);
   audioDelay = audioDelay ? audioDelay + (want - audioDelay) * 0.1 : want;
 }
+
+/* ---------------- microphone ----------------
+ * `mic` events are the device's hardware input (its microphone, or the line
+ * input when a cable is in it), in the same shape as `pcm`, and only arrive
+ * while Mirror Mic is switched on ON THE DEVICE -- this page cannot open it.
+ * Which channel the microphone sits on is the codec's business, so the two are
+ * averaged into one centred voice. Its own queue, on the same clock as the
+ * device's sound; it never moves audioDelay, which times the PICTURE. */
+let micOn = false, micHP = null, micGain = null, micNext = 0, micExpect = -1, micPeak = 0, micAt = 0;
+const micBtn = document.getElementById('mic'), micBox = document.getElementById('micbox');
+const micSlider = document.getElementById('micgain'), micMeter = document.getElementById('micmeter');
+try { micOn = localStorage.getItem('mirror.mic') === '1'; } catch (_) {}
+try { const g = parseFloat(localStorage.getItem('mirror.micGain')); if (g >= 0 && g <= 8) micSlider.value = g; } catch (_) {}
+function micLevel() { return parseFloat(micSlider.value) || 0; }
+function micShow() {
+  const live = micOn && performance.now() - micAt < 1000;
+  micBtn.textContent = !micOn ? 'Mic' : live ? 'Mic: live' : 'Mic: off on device';
+  micBtn.classList.toggle('on', micOn);
+  micBox.classList.toggle('on', micOn);
+}
+micBtn.addEventListener('click', () => {
+  micOn = !micOn; micNext = 0; micExpect = -1; micPeak = 0;
+  try { localStorage.setItem('mirror.mic', micOn ? '1' : '0'); } catch (_) {}
+  micShow();
+  ensureAudio();
+  if (audioOn) connect();              /* ask again, with or without `mic` */
+});
+micSlider.addEventListener('input', () => {
+  if (micGain) micGain.gain.value = micLevel();
+  try { localStorage.setItem('mirror.micGain', micSlider.value); } catch (_) {}
+});
+function micEvent(data) {
+  if (!micOn || !audioOn || !actx || !micHP) return;
+  let p; try { p = JSON.parse(data); } catch (_) { return; }
+  const raw = atob(p.d || ''), n = raw.length >> 2;
+  if (!n) return;
+  const rate = p.rate || 44100;
+  const now = actx.currentTime;
+  if (micExpect >= 0 && p.pos !== micExpect) {
+    const gap = p.pos - micExpect;
+    micNext = (gap > 0 && gap < rate / 2) ? micNext + gap / rate : 0;
+  }
+  micExpect = p.pos + n;
+  if (micNext < now + 0.01) micNext = now + JITTER_S;
+  else if (micNext > now + JITTER_S + 0.3) micNext = now + JITTER_S;
+  const buf = actx.createBuffer(1, n, rate);
+  const M = buf.getChannelData(0);
+  let peak = 0;
+  for (let i = 0, o = 0; i < n; i++, o += 4) {
+    let l = raw.charCodeAt(o) | (raw.charCodeAt(o + 1) << 8); if (l & 0x8000) l -= 0x10000;
+    let r = raw.charCodeAt(o + 2) | (raw.charCodeAt(o + 3) << 8); if (r & 0x8000) r -= 0x10000;
+    const m = (l + r) / 65536;
+    M[i] = m;
+    if (m > peak) peak = m; else if (-m > peak) peak = -m;
+  }
+  const src = actx.createBufferSource();
+  src.buffer = buf; src.connect(micHP); src.start(micNext);
+  micNext += n / rate;
+  micPeak = Math.max(micPeak, peak);
+  micAt = performance.now();
+}
+/* The meter shows the level as RECORDED (after the slider); red is clipping. */
+function micMeterDraw() {
+  if (!micOn) return;
+  const v = Math.min(1, micPeak * micLevel());
+  micMeter.firstChild.style.width = Math.round(v * 100) + '%';
+  micMeter.classList.toggle('hot', v >= 0.98);
+  micPeak *= 0.9;
+}
+setInterval(micShow, 500);
+micShow();
 
 /* Visual updates wait out the sound's buffer while sound is on.
  *
@@ -987,6 +1076,7 @@ function tick() {
     dctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     drawDevice(dctx, now);
   }
+  micMeterDraw();
   if (recorder) composite(recKind);
   requestAnimationFrame(tick);
 }

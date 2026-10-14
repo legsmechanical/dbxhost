@@ -694,6 +694,25 @@ Mirror Display on for the session — this fork's `mirrorOn` wrapper in
   an AudioContext. The Move encodes nothing: the browser's MediaRecorder makes
   the .mp4/.webm. Hook placement is pinned by
   `tests/host/test_audio_live_call_sites.sh`.
+- **The microphone is a second ring, opened only from the device.** `audio-mic`
+  is the same ring type carrying the hardware INPUT — the built-in microphone,
+  or the line input when a cable is in it (CC 114) — so a recording can carry
+  narration. The shim pushes it in post-transfer from `hw`, never the shadow
+  (whose copy the resample bridge overwrites with the mix), raw stereo, and
+  only while Mirror Display is on AND `shadow_control->mirror_mic` is set.
+  That byte has one setter, the JS binding `host_mirror_mic([on]) -> bool`,
+  called from a menu row on the device; the shim clears it at every start and
+  it is never persisted. ⚠ This is deliberate: `/mirror` and the manager take
+  no login and opening the page turns Mirror Display on, so without the byte
+  any host on the network could listen to the room. display-server sends the
+  ring as `event: mic` (same shape as `pcm`) to clients that asked with
+  `&mic=1`, starting AT the writer — the ring keeps its last 371 ms after the
+  switch goes off, and a later client is not handed it. The page averages the
+  two channels into one voice, high-passes it at 110 Hz (pad presses thump
+  through the case), applies the level slider and connects it to the
+  RECORDING only — never to the speakers. The microphone hears the device's
+  speaker; narrate on headphones. Pinned by `test_audio_live_call_sites.sh`,
+  `test_display_server_streams.sh` (case 6) and `test_mirror_page_layout.sh`.
 - **Picture/sound sync is a DELAY, not a timestamp match.** Both arrive on one
   stream; only the sound then waits in a 150 ms jitter buffer, so every visual
   update (screen, LEDs, fingers) is applied as late as the sound that arrived

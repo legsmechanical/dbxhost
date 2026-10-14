@@ -157,6 +157,13 @@ static audio_live_shm_t *audio_live_shm = NULL;
 static inline int audio_live_wanted(void) {
     return audio_live_shm && shadow_control && shadow_control->display_mirror;
 }
+/* The hardware input for the mirror (same ring type), written only while the
+ * mirror is on and the session switched its microphone on from the device. */
+static audio_live_shm_t *audio_mic_shm = NULL;
+static inline int audio_mic_wanted(void) {
+    return audio_mic_shm && shadow_control && shadow_control->display_mirror &&
+           shadow_control->mirror_mic;
+}
 static uint8_t shadow_display_mode = 0;
 
 static shadow_ui_state_t *shadow_ui_state = NULL;
@@ -3914,6 +3921,9 @@ static void init_shadow_shm(void)
     audio_live_shm = (audio_live_shm_t *)shadow_shm_map(AUDIO_LIVE_SHM_NAME,
                                                        sizeof(audio_live_shm_t), 1, 1);
     if (audio_live_shm) audio_live_init(audio_live_shm);
+    audio_mic_shm = (audio_live_shm_t *)shadow_shm_map(AUDIO_MIC_SHM_NAME,
+                                                      sizeof(audio_live_shm_t), 1, 1);
+    if (audio_mic_shm) audio_live_init(audio_mic_shm);
 
     /* Create/open control shared memory - DON'T zero it, shadow_poc owns the state */
     shadow_control = (shadow_control_t *)shadow_shm_map(SHM_SHADOW_CONTROL,
@@ -5727,6 +5737,7 @@ static void shim_init_subsystems(void)
     }
     if (shadow_control) {
         shadow_control->display_mirror = display_mirror_enabled ? 1 : 0;
+        shadow_control->mirror_mic = 0;   /* never carried over: the device turns it on */
         shadow_control->skipback_seconds = (uint16_t)skipback_seconds_setting;
         shadow_control->midi_indicator_enabled = midi_indicator_enabled_setting ? 1 : 0;
         shadow_control->speaker_active = 1; /* assume speaker at boot; CC 115 will correct */
@@ -8032,6 +8043,12 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
 
     /* The resample bridge is NOT here any more -- it is the LAST writer of
      * AUDIO_IN, after the slot render below. See the call site. */
+
+    /* The mirror's microphone: this frame's hardware input, read from `hw` --
+     * the shadow's copy is overwritten by the resample bridge. Not tied to
+     * the sampler source. */
+    if (audio_mic_wanted())
+        audio_live_push(audio_mic_shm, (const int16_t *)(hw + AUDIO_IN_OFFSET), FRAMES_PER_BLOCK, 1.0f);
 
     /* Capture audio for sampler post-ioctl (Move Input source only - fresh hardware input) */
     if (sampler_source == SAMPLER_SOURCE_MOVE_INPUT) {

@@ -34,6 +34,17 @@
 #ifndef AUDIO_LIVE_SHM_PATH   /* tests point it at a plain file */
 #define AUDIO_LIVE_SHM_PATH   "/dev/shm" SCHWUNG_SHM_PREFIX "audio-live"
 #endif
+/* A second ring of the SAME type carries the hardware INPUT -- the built-in
+ * microphone, or the line-in jack when a cable is in it -- so a recording made
+ * on /mirror can carry narration (`&mic=1`, `event: mic`). Raw stereo, as it
+ * left the codec; the page decides what to do with the channels. Written only
+ * while the mirror is on AND the session switched the microphone on from the
+ * device itself (shadow_control->mirror_mic): /mirror takes no login, and a
+ * room microphone is not something a page on the network may open. */
+#define AUDIO_MIC_SHM_NAME    SCHWUNG_SHM_PREFIX "audio-mic"
+#ifndef AUDIO_MIC_SHM_PATH    /* tests point it at a plain file */
+#define AUDIO_MIC_SHM_PATH    "/dev/shm" SCHWUNG_SHM_PREFIX "audio-mic"
+#endif
 #define AUDIO_LIVE_MAGIC      "AUDLV1"
 #define AUDIO_LIVE_VERSION    1
 #define AUDIO_LIVE_RATE       44100

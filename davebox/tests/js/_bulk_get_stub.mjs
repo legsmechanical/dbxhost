@@ -20,6 +20,13 @@ globalThis.host_module_get_params = (blob) => enc(dec(blob).map((k) => {
 if (typeof globalThis.host_autosave_hold !== 'function') globalThis.host_autosave_hold = () => {};
 if (typeof globalThis.host_autosave_kick !== 'function') globalThis.host_autosave_kick = () => {};
 
+/* The web mirror's microphone switch: a host byte, Off until a test sets it.
+ * Pinned by test_mirror_mic_switch.mjs. */
+if (typeof globalThis.host_mirror_mic !== 'function') {
+    let on = false;
+    globalThis.host_mirror_mic = (...a) => { if (a.length) on = !!a[0]; return on; };
+}
+
 /* Time in tests is driven by S.tickCount; the clock follows at the old device cadence. */
 import { S as __S } from '../../ui/ui_state.mjs';
 __S.clockFollowTicks = true;

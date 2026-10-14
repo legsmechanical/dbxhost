@@ -338,6 +338,15 @@ function buildGlobalMenuItems() {
             set: function(v) { setBluetoothOn(v); },
             onLabel: 'On', offLabel: 'Off'
         }) : null,
+        /* Mirror Mic: lets the web mirror record the Move's microphone (or its
+         * line input) with the screen, for a narrated video. It can only be
+         * switched on here, on the device, and every launch starts with it
+         * Off — the mirror page is open to the whole network. */
+        createToggle('Mirror Mic', {
+            get: function() { return host_mirror_mic() === true; },
+            set: function(v) { host_mirror_mic(v ? 1 : 0); },
+            onLabel: 'On', offLabel: 'Off'
+        }),
         createDivider(),
         /* The Daves switch (Josh, 2026-09-05): On = a collected Dave scrolls
          * through the session banner while playing; Off = the static wordmark.

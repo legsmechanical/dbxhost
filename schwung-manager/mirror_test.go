@@ -26,7 +26,7 @@ func TestHandleMirrorServesEmbeddedPage(t *testing.T) {
 		t.Errorf("Cache-Control %q, want no-store", cc)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"const SURFACE_VERSION", "/stream-auto?v=2", "</html>"} {
+	for _, want := range []string{"const SURFACE_VERSION", "/stream-auto?v=2", "addEventListener('mic'", "</html>"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page is missing %q", want)
 		}
