@@ -38,7 +38,7 @@ import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
          SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock, faderStep, faderWire,
          PAGE_KNOB, pageFloatStep, pageIntDetents } from './ui_engine.mjs';
 import { scaleNudgeNote, stepEntryVelocity,
-         bankCycleForMode, bankListForMode, bankIsDoor, bankPadMapCellAt, bankPadMapActionAt, bankMapCellForPad, bankMapTrackForCell, SESS_PAD_MAP, bankDisplayName } from './ui_pure.mjs';
+         bankCycleForMode, bankListForMode, bankIsDoor, bankPadMapCellAt, bankPadMapActionAt, bankMapCellForPad, bankMapTrackForStep, SESS_PAD_MAP, bankDisplayName } from './ui_pure.mjs';
 import { saveState, writeSidecar, doClearSession, showActionPopup,
          showActionPopupFor, showActionPopupGauge } from './ui_persistence.mjs';
 import {
@@ -1501,18 +1501,11 @@ export function bankMapEnd() {
  * another under one hold. */
 /* Would a tap on this pad of the map do anything? The same lookups the tap
  * makes, asked first. */
-/* The track a right-grid cell would switch TO on this map, or -1: the track
- * map only, and never the track already active. */
-function bankMapTrackPick(cell) {
-    if (S.bankMapKind === 'session') return -1;
-    const t = bankMapTrackForCell(cell.col, cell.row);
-    return (t >= 0 && t < NUM_TRACKS && t !== S.activeTrack) ? t : -1;
-}
 function bankMapPadActs(note) {
     const cell = bankMapCellForPad(note);
     if (!cell) return false;
-    /* A track pad acts unless it is the track you are on. */
-    if (cell.col > 3) return bankMapTrackPick(cell) >= 0;
+    /* The right 4x4 is dark on every map. */
+    if (cell.col > 3) return false;
     if (S.bankMapKind === 'session') {
         if (cell.col === 0) return SESS_PAD_MAP.mixer.modes[cell.row] !== undefined;
         if (cell.col === 1) return !!SESS_PAD_MAP.fx.buses[cell.row];
@@ -1538,23 +1531,7 @@ export function bankMapPadTap(note) {
     const pickRest = S.sessionView ? !sessMixerVisible() : !bankCardVisible();
     const cell = bankMapCellForPad(note);
     if (!cell) return;
-    /* ⭑ A TRACK PAD (Josh, 2026-10-08): the right grid's top two rows switch
-     * track. Like a bank pad: the map stays and repaints for the new track,
-     * so the bank you wanted there is the next tap. */
-    if (cell.col > 3) {
-        const nt = bankMapTrackPick(cell);
-        if (nt < 0) return;
-        bankMapCancelMenu();
-        selectTrackFromPad(nt);
-        /* The map's OLED does not name the track, so say it: the notice card,
-         * over the map, for a glance (Josh, 2026-10-08: "a very brief
-         * 'Track [n]' pop-up" · "under the track line ... the full name of
-         * the instrument/destination"). */
-        showActionPopupFor(BANK_MAP_TRACK_POPUP_MS, 'TRACK ' + (nt + 1), trackInstrName(nt));
-        invalidateLEDCache();
-        forceRedraw();
-        return;
-    }
+    if (cell.col > 3) return;
     if (S.bankMapKind === 'session') {
         if (cell.col === 0) {
             const mode = SESS_PAD_MAP.mixer.modes[cell.row];
@@ -1590,6 +1567,28 @@ export function bankMapPadTap(note) {
     }
     S.bankPickerSel = bankListFor(t).indexOf(b);
     applyBankPick(rest);
+}
+
+/* ⭑ A TRACK BUTTON (Josh, 2026-10-08, moved to the steps 2026-10-14: "move
+ * the track selectors off of the pads on the right 4x4 and down to step
+ * buttons one through 8. should work the same way with the same leds"): on
+ * the track map, Steps 1-8 switch track. Like a bank pad: the map stays and
+ * repaints for the new track, so the bank you wanted there is the next tap.
+ * Steps 9-16 are dark and do nothing while the map is up. */
+export function bankMapStepTap(note) {
+    S.bankMapSwallow.add(note);
+    const nt = bankMapTrackForStep(note);
+    if (nt < 0 || nt >= NUM_TRACKS || nt === S.activeTrack) return;
+    bankMapLeaveScreen();
+    bankMapCancelMenu();
+    selectTrackFromPad(nt);
+    /* The map's OLED does not name the track, so say it: the notice card,
+     * over the map, for a glance (Josh, 2026-10-08: "a very brief
+     * 'Track [n]' pop-up" · "under the track line ... the full name of
+     * the instrument/destination"). */
+    showActionPopupFor(BANK_MAP_TRACK_POPUP_MS, 'TRACK ' + (nt + 1), trackInstrName(nt));
+    invalidateLEDCache();
+    forceRedraw();
 }
 
 /* ⭑ MENU PADS — CONFIG, AUTOMATION, INST, and Session View's MASTER / SEND A /

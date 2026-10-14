@@ -81,7 +81,7 @@ import { applyTrackConfig,
 import { recordNoteOn, recordNoteOff,
     extHeldNotes, extCountInCapture } from './ui_record.mjs';
 import { _onPadPress, _onPadRelease, _onPadAftertouch, _onStepButtons } from './ui_input_pads.mjs';
-import { applyBankPick, heldStepJog, bankMapArmable, bankMapBegin, bankMapEnd, bankMapPadTap,
+import { applyBankPick, heldStepJog, bankMapArmable, bankMapBegin, bankMapEnd, bankMapPadTap, bankMapStepTap,
          bankMapDeferrable, jogDeferBegin, jogDeferTake,
     bankMapRelease } from './ui_input_cc.mjs';
 import { standDownBankDisplay } from './ui_state.mjs';
@@ -599,14 +599,18 @@ function _onMidiInternalImpl(data) {
          * owner. A jog turn, a knob or a step leave the map up. */
         bankMapEnd();
     }
-    if (d1 >= 68 && d1 <= 99) {
+    /* The step buttons belong to the TRACK map too (Steps 1-8 = the tracks);
+     * Session View's map leaves them to their owner. */
+    const _mapStep = d1 >= 16 && d1 <= 31;
+    if ((d1 >= 68 && d1 <= 99) || _mapStep) {
         const _k = status & 0xF0;
+        const _mapTakes = S.bankMapUp && !(_mapStep && S.bankMapKind === 'session');
         if (_k === 0x80 || (_k === 0x90 && d2 === 0)) {
             if (S.bankMapSwallow.delete(d1)) return;
         } else if (_k === 0xA0) {
-            if (S.bankMapUp || S.bankMapSwallow.has(d1)) return;
+            if (_mapTakes || S.bankMapSwallow.has(d1)) return;
         } else if (_k === 0x90) {
-            if (S.bankMapUp) { bankMapPadTap(d1); return; }
+            if (_mapTakes) { if (_mapStep) bankMapStepTap(d1); else bankMapPadTap(d1); return; }
             /* A fresh press outside a hold supersedes a pending swallow (its
              * release was lost), or that press's own release would be eaten. */
             S.bankMapSwallow.delete(d1);

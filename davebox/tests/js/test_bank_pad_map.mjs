@@ -85,8 +85,8 @@ const frame = () => { fb.fill(0); render.drawUI(); return fb.slice(); };
 const ink = (f, x, y, w, h) => { let n = 0; for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) n += f[j * W + i]; return n; };
 const cellInk = (f, c, r) => { const q = kit.bankMapCellRect(c, r); return ink(f, q.x, q.y, q.w, q.h) / (q.w * q.h); };
 const rightDark = () => { for (let r = 0; r < 4; r++) for (let c = 4; c < 8; c++) if ((led[pad(c, r)] | 0) !== 0) return false; return true; };
-/* The track map lights the right grid's top two rows (the track pads). */
-const lowerRightDark = () => { for (let r = 2; r < 4; r++) for (let c = 4; c < 8; c++) if ((led[pad(c, r)] | 0) !== 0) return false; return true; };
+/* The track map's tracks are on the step buttons now: the whole right grid is dark. */
+const lowerRightDark = rightDark;
 const ccm = await import('../../ui/ui_input_cc.mjs');
 const home = () => { ccm.bankMapEnd(); S.activeBank = 0; S.trackActiveBank[S.activeTrack] = 0; S.bankCardLatched = false;
     S.bankSelectTick = -1; S.pendingSoundEnterTrack = -1; S.trackPadMode[S.activeTrack] = C.PAD_MODE_MELODIC_SCALE ?? 0; };
@@ -580,15 +580,15 @@ step('⭐ the TRACK overview footer: HLD BANKS · TCH EDIT · SHFT TRK, all draw
         assert(kit.MV_FOOTER_CANON.keys.indexOf(k) >= 0, k + ' is not a canon key');
 });
 
-/* ---- THE TRACK PADS (Josh, 2026-10-08) ----------------------------------
- * "let's add pad map track switch shortcuts to the right 4x4 grid ... top row
- * is [tracks] 1-4, next row is 5-8. pads show track colors. current track is
- * blinking track color. others are dim track color". */
-const TRK = (t) => pad(4 + (t % 4), t >> 2);
+/* ---- THE TRACK BUTTONS (Josh, 2026-10-08; moved 2026-10-14) -------------
+ * "move the track selectors off of the pads on the right 4x4 and down to step
+ * buttons one through 8 ... make all tracks show as bright track color with
+ * the active one blinking track color/white". */
+const TRK = (t) => 16 + t;
 const await_eng = await import('../../ui/ui_engine.mjs');
 const paintOn = () => { for (let i = 0; i < 80 && !leds.bankMapTrackBlinkOn(S.clockMs); i++) tick(); ticks(1); };
 
-step('⭐ track pads: the other seven DIM in their own colour, the active one BLINKS bright, the lower rows dark', () => {
+step('⭐ track buttons: Steps 1-8 BRIGHT in their colour, the active one blinks colour/White, Steps 9-16 and the right grid dark', () => {
     home(); S.sessionView = false;
     const at = S.activeTrack;
     press(); holdPast();
@@ -596,22 +596,23 @@ step('⭐ track pads: the other seven DIM in their own colour, the active one BL
     paintOn();
     for (let t = 0; t < 8; t++) {
         if (t === at) continue;
-        assert(led[TRK(t)] === C.TRACK_DIM_COLORS[t], 'track ' + (t + 1) + ' pad is ' + led[TRK(t)] + ', wanted dim ' + C.TRACK_DIM_COLORS[t]);
+        assert(led[TRK(t)] === C.TRACK_COLORS[t], 'Step ' + (t + 1) + ' is ' + led[TRK(t)] + ', wanted ' + C.TRACK_COLORS[t]);
     }
     const seen = new Set();
     for (let i = 0; i < 90; i++) { tick(); seen.add(led[TRK(at)] | 0); }
-    assert(seen.has(C.TRACK_COLORS[at]) && seen.has(0) && seen.size === 2,
-           'the active track pad does not blink bright/off: ' + JSON.stringify([...seen]));
-    assert(lowerRightDark(), 'the lower right rows are lit');
+    assert(seen.has(C.TRACK_COLORS[at]) && seen.has(K.White) && seen.size === 2,
+           'the active track button does not blink colour/White: ' + JSON.stringify([...seen]));
+    for (let i = 8; i < 16; i++) assert((led[16 + i] | 0) === 0, 'Step ' + (i + 1) + ' is lit');
+    assert(rightDark(), 'the right grid is lit');
     release(); ticks(2);
 });
 
-step('⭐⭐ HOLD + a track pad: the track switches, the map STAYS and the next tap is a bank on the NEW track', () => {
+step('⭐⭐ HOLD + a track button: the track switches, the map STAYS and the next tap is a bank on the NEW track', () => {
     ccm.bankMapEnd(); home(); S.sessionView = false;
     const to = S.activeTrack === 5 ? 6 : 5;
     press(); holdPast();
     tap(TRK(to)); ticks(1);
-    assert(S.activeTrack === to, 'the track pad did not switch: active ' + S.activeTrack);
+    assert(S.activeTrack === to, 'the track button did not switch: active ' + S.activeTrack);
     assert(S.bankMapUp, 'the map went away on a track pick');
     /* ...and says which: the notice card, over the map, gone in a moment. */
     assert(JSON.stringify(S.actionPopupLines) === JSON.stringify(['TRACK ' + (to + 1), 'No instrument']) && S.actionPopupCard,
@@ -631,12 +632,12 @@ step('⭐⭐ HOLD + a track pad: the track switches, the map STAYS and the next 
     assert(!S.bankMapUp && S.activeTrack === to, 'after release');
 });
 
-step('the track\'s own pad and the lower right rows do nothing; another track pad switches and says so', () => {
+step('the track\'s own button, Steps 9-16 and the right grid do nothing; another track button switches and says so', () => {
     ccm.bankMapEnd(); home();
     const at = S.activeTrack, to = at === 0 ? 1 : 0;
     press(); ticks(1);
     assert(S.bankMapUp, 'rig: the hold did not show the map');
-    tap(TRK(at)); tap(pad(5, 2)); tap(pad(7, 3)); ticks(1);
+    tap(TRK(at)); tap(24); tap(31); tap(pad(4, 0)); tap(pad(7, 1)); tap(pad(7, 3)); ticks(1);
     assert(S.activeTrack === at && S.bankMapUp, 'a dead pad did something');
     tap(TRK(to)); ticks(1);
     assert(S.activeTrack === to, 'the track pad did not switch: active ' + S.activeTrack);
@@ -683,13 +684,14 @@ step('⚠ RETIRED: Shift + a bottom-row pad no longer switches track — and lig
     midi(0xB0, 49, 0); ticks(2);
 });
 
-step('SESSION map: no track pads — the right grid is dark and dead', () => {
+step('SESSION map: no track buttons — the right grid is dark and dead, steps left to their owner', () => {
     ccm.bankMapEnd(); home(); S.sessionView = true; S.sessKnobMode = 0;
     const at = S.activeTrack;
     press(); holdPast(); ticks(6);
     assert(S.bankMapKind === 'session' && rightDark(), 'session map lit the right grid');
-    tap(TRK(at === 6 ? 5 : 6)); ticks(1);
+    tap(pad(4 + ((at === 6 ? 5 : 6) % 4), (at === 6 ? 5 : 6) >> 2)); ticks(1);
     assert(S.activeTrack === at, 'a session-map pad switched track');
+    assert(!S.bankMapSwallow.has(16 + (at === 6 ? 5 : 6)), 'the session map took a step button');
     holdLong(); release(); ticks(2); S.sessionView = false;
 });
 

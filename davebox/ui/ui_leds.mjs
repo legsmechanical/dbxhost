@@ -9,7 +9,7 @@ import {
 } from './ui_constants.mjs';
 import { trackClipHasContent, updateSceneMapLEDs } from './ui_scene.mjs';
 import { PROJECT_COLORS, projectColorLED } from './ui_dialogs.mjs';
-import { arpVelLevel, drumVelocityToZone, bankPadMapForMode, SESS_PAD_MAP, bankMapPadForCell, bankMapTrackForCell } from './ui_pure.mjs';
+import { arpVelLevel, drumVelocityToZone, bankPadMapForMode, SESS_PAD_MAP, bankMapPadForCell, bankMapTrackForStep } from './ui_pure.mjs';
 import { knobRingColor, knobRingNorm, ringCellsFor, ringNormOfCell } from './ui_knob_leds.mjs';
 import { automationStateFor } from './ui_automation.mjs';
 import { devSnapOpen, devSnapLedFor } from './ui_devsnap.mjs';
@@ -199,6 +199,7 @@ export function autoLanePlayStep(cy) {
 
 export function updateStepLEDs() {
     if (!S.ledInitComplete) return;
+    if (paintBankMapSteps()) return;
     /* ⭐⭐ THE SAVE FLASH OWNS THE ROW OUTRIGHT (Josh, 2026-09-10: "blink works,
      * but it'd be good to do a double blink like mute snapshot does").
      *
@@ -589,16 +590,22 @@ function paintBankMapPads() {
             col[at(ci, r)] = on ? White
                 : own ? trackColor(t) : BANK_MAP_COL_COLORS[ci];
         }));
-        /* The track pads: every track dim in its colour, the one you are on
-         * blinking bright. */
-        const blinkOn = bankMapTrackBlinkOn(S.clockMs);
-        for (let r = 0; r < 2; r++) for (let c = 4; c < 8; c++) {
-            const tt = bankMapTrackForCell(c, r);
-            if (tt < 0 || tt >= NUM_TRACKS) continue;
-            col[at(c, r)] = tt !== t ? trackDimColor(tt) : blinkOn ? trackColor(tt) : LED_OFF;
-        }
     }
     for (let i = 0; i < 32; i++) cachedSetLED(TRACK_PAD_BASE + i, col[i]);
+}
+/* THE BANK MAP's step buttons (track map only): Steps 1-8 are the tracks,
+ * every track bright in its colour, the one you are on blinking its colour /
+ * White (Josh, 2026-10-14); Steps 9-16 dark. True if it painted the row. */
+function paintBankMapSteps() {
+    if (!S.bankMapUp || S.bankMapKind === 'session') return false;
+    const t = S.activeTrack;
+    const blinkOn = bankMapTrackBlinkOn(S.clockMs);
+    for (let i = 0; i < 16; i++) {
+        const tt = bankMapTrackForStep(16 + i);
+        setLED(16 + i, (tt < 0 || tt >= NUM_TRACKS) ? LED_OFF
+            : tt !== t || blinkOn ? trackColor(tt) : White);
+    }
+    return true;
 }
 
 export function updateSessionLEDs() {

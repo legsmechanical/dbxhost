@@ -345,12 +345,12 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   while you hold — and **let go** to play again. Letting go without tapping
   changes nothing. The map is up only while the jog is down; a click leaves
   nothing on screen.
-- **The right-hand pads are the tracks** while the map is up (Track View):
-  the top row is tracks 1–4, the next row 5–8, each in its track colour with
-  the track you are on blinking. **Tap one** to switch track — the screen
-  flashes **TRACK n** and what that track plays. The map stays up, now showing
-  the new track's banks, so the bank you want there is the next tap. The two
-  lower rows are dark and do nothing. Session View's map has no track pads.
+- **Steps 1–8 are the tracks** while the map is up (Track View), each lit in
+  its track colour, with the track you are on blinking between its colour and
+  white. **Press one** to switch track — the screen flashes **TRACK n** and
+  what that track plays. The map stays up, now showing the new track's banks,
+  so the bank you want there is the next tap. Steps 9–16 and the right-hand
+  pads are dark and do nothing. Session View's map leaves the steps alone.
 - **CONFIG**, **AUTOMATION** and **INST** (and Session View's **MASTER**,
   **SEND A** and **SEND B**) open a screen, so they wait: the pad turns white,
   and the screen opens when you let go of the jog. Tap a bank after one and
