@@ -7429,7 +7429,10 @@ static void shim_remap_cable2_channels(uint8_t *shadow) {
         }
 
         /* Normal channel remap: rewrite channel byte in both hw and shadow so
-         * Move firmware and next-frame internal readers see consistent data. */
+         * Move firmware and next-frame internal readers see consistent data.
+         * A HOLD_NOTES entry remaps the same way; its note-ons are kept from
+         * Move afterwards (shim_block_cable2_in_sh_midi). */
+        if ((mapped & 0xF0) == EXT_MIDI_REMAP_HOLD_NOTES) mapped &= 0x0F;
         if (mapped >= 16) continue;  /* guard: treat unknown values as passthrough */
         hw_buf[j + 1] = (status & 0xF0) | (mapped & 0x0F);
         if (sh_buf) sh_buf[j + 1] = (status & 0xF0) | (mapped & 0x0F);
@@ -7848,7 +7851,14 @@ static void shim_block_cable2_in_sh_midi(uint8_t *sh_midi) {
         if ((status & 0xF0) != 0x90) continue;         /* note-on only */
         if (sh_midi[j + 3] == 0) continue;             /* already velocity=0 */
         uint8_t in_ch = status & 0x0F;
-        if (ext_midi_remap_shm->remap[in_ch] != EXT_MIDI_REMAP_BLOCK) continue;
+        if (ext_midi_remap_shm->remap[in_ch] != EXT_MIDI_REMAP_BLOCK) {
+            /* HOLD_NOTES: the channel here is already the REMAPPED one, so
+             * look for an entry that maps onto it with the hold. 16 bytes. */
+            int held = 0;
+            for (int k = 0; k < 16 && !held; k++)
+                held = ext_midi_remap_shm->remap[k] == (uint8_t)(EXT_MIDI_REMAP_HOLD_NOTES | in_ch);
+            if (!held) continue;
+        }
         /* Convert to proper note-off so Move ignores it cleanly */
         sh_midi[j]     = (sh_midi[j] & 0xF0) | 0x08;  /* CIN 8 = note-off */
         sh_midi[j + 1] = 0x80 | in_ch;                 /* note-off status */

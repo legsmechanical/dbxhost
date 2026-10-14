@@ -853,6 +853,12 @@ typedef struct schwung_ext_midi_remap_t {
 
 #define EXT_MIDI_REMAP_PASSTHROUGH 0xFF
 #define EXT_MIDI_REMAP_BLOCK       0xFE  /* block note-ons from Move; shadow_ui still sees original */
+/* 0x80 | out_ch (0x80..0x8F): remap to out_ch like a plain entry, AND keep the
+ * channel's NOTE-ONS from Move -- the tool plays them itself (through effects
+ * of its own) while everything else (CC, pressure, bend) still reaches Move on
+ * out_ch. A tool using it maps every input channel it listens on, out_ch's own
+ * included, since the hold is found from the remapped channel. */
+#define EXT_MIDI_REMAP_HOLD_NOTES  0x80
 #define EXT_MIDI_REMAP_VERSION     1
 
 /*

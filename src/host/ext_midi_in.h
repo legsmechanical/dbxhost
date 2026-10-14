@@ -58,6 +58,13 @@ ext_midi_in_for_move(const uint8_t in[4], const schwung_ext_midi_remap_t *remap,
          * for a blocked hardware channel. */
         return !((status & 0xF0) == 0x90 && in[3] > 0);
     }
+    if ((mapped & 0xF0) == EXT_MIDI_REMAP_HOLD_NOTES) {
+        /* Remapped, and its note-ons are the module's to play: Move gets
+         * everything else on the new channel. */
+        if ((status & 0xF0) == 0x90 && in[3] > 0) return 0;
+        out[1] = (uint8_t)((status & 0xF0) | (mapped & 0x0F));
+        return 1;
+    }
     if (mapped >= 16) return 1;              /* unknown value: passthrough */
     out[1] = (uint8_t)((status & 0xF0) | mapped);
     return 1;
@@ -78,6 +85,7 @@ ext_midi_in_for_module(const uint8_t in[4], const schwung_ext_midi_remap_t *rema
     out[0] = in[0]; out[1] = in[1]; out[2] = in[2]; out[3] = in[3];
     if (!remap || !remap->enabled || thru_active) return;
     uint8_t mapped = remap->remap[in[1] & 0x0F];
+    if ((mapped & 0xF0) == EXT_MIDI_REMAP_HOLD_NOTES) mapped &= 0x0F;   /* remapped as usual */
     if (mapped >= 16) return;                /* passthrough, block, unknown */
     out[1] = (uint8_t)((in[1] & 0xF0) | mapped);
 }

@@ -270,7 +270,12 @@ move_midi_inject_to_move([packet0, status, d1, d2])
 // Rewrites the channel byte of incoming external MIDI before Move's firmware
 // processes it. Solves live-external-MIDI ↔ Move-track routing without the
 // cable-2 echo cascade. See CLAUDE.md "Cable-2 Channel Remap" for behavior.
-host_ext_midi_remap_set(in_ch, out_ch) // 0-15. out_ch >= 16 or < 0 = passthrough
+host_ext_midi_remap_set(in_ch, out_ch) // 0-15. out_ch >= 16 or < 0 = passthrough;
+                                       // 0xFE = block note-ons from Move;
+                                       // 0x80|out (0x80-0x8F) [FORK-ONLY] = remap, but keep the
+                                       // NOTE-ONS from Move (the module plays them itself;
+                                       // CC/pressure/bend still reach Move on `out`). Map out's
+                                       // own channel too: the hold is found after the remap.
 host_ext_midi_remap_clear()            // reset all 16 entries to passthrough
 host_ext_midi_remap_enable(on)         // bool: global enable/disable
 

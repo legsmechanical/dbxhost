@@ -84,6 +84,31 @@ static void test_for_move(void)
     CHECK(ext_midi_in_for_move(on, &remap, 0, out) == 1 && out[1] == 0x92);
 }
 
+/* HOLD_NOTES (0x80 | out): remapped as a plain entry, but the note-ons are the
+ * module's to play — a tool that sends them through effects of its own. */
+static void test_hold_notes(void)
+{
+    schwung_ext_midi_remap_t remap;
+    memset(&remap, 0, sizeof(remap));
+    memset((void *)remap.remap, EXT_MIDI_REMAP_PASSTHROUGH, 16);
+    remap.enabled = 1;
+    remap.remap[2] = EXT_MIDI_REMAP_HOLD_NOTES | 5;
+    uint8_t out[4];
+    uint8_t on[4]  = { 0x29, 0x92, 60, 100 };
+    uint8_t on0[4] = { 0x29, 0x92, 60, 0 };
+    uint8_t off[4] = { 0x28, 0x82, 60, 0 };
+    uint8_t cc[4]  = { 0x2B, 0xB2, 1, 64 };
+    uint8_t pb[4]  = { 0x2E, 0xE2, 0, 64 };
+    CHECK(ext_midi_in_for_move(on, &remap, 0, out) == 0);                       /* Move never sounds it */
+    CHECK(ext_midi_in_for_move(on0, &remap, 0, out) == 1 && out[1] == 0x95);   /* a velocity-0 on is an off */
+    CHECK(ext_midi_in_for_move(off, &remap, 0, out) == 1 && out[1] == 0x85);
+    CHECK(ext_midi_in_for_move(cc, &remap, 0, out) == 1 && out[1] == 0xB5);    /* the rest reaches Move, remapped */
+    CHECK(ext_midi_in_for_move(pb, &remap, 0, out) == 1 && out[1] == 0xE5);
+    ext_midi_in_for_module(on, &remap, 0, out);
+    CHECK(out[1] == 0x95);                                                     /* the module sees it remapped */
+    CHECK(ext_midi_in_for_move(on, &remap, 1, out) == 1 && out[1] == 0x92);    /* MPE thru still wins */
+}
+
 /* The module must see a sidecar event on the channel a hardware one would
  * carry by the time it is published: remapped where the table remaps, the
  * original where it passes through or blocks. */
@@ -143,6 +168,7 @@ int main(void)
 {
     test_valid();
     test_for_move();
+    test_hold_notes();
     test_for_module();
     if (failures) { printf("test_ext_midi_in: %d FAILED\n", failures); return 1; }
     printf("test_ext_midi_in: OK\n");
