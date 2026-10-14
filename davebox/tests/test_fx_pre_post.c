@@ -102,15 +102,17 @@ int main(void) {
         const clip_t *cl = &tr->clips[tr->active_clip];
         hx_set_param(h, "t1_live_notes", "eon 64 100");
         hx_set_param(h, "t1_record_note_on", "64 100");  /* what the JS sends while recording */
-        back(h, T, 0x90, 64, 100);
-        back(h, T, 0x90, 68, 100);
+        /* the effect TRANSPOSES (64 → 65) and adds a third, so a raw 64 in
+         * the clip can only be the played note recorded as well */
+        back(h, T, 0x90, 65, 100);
+        back(h, T, 0x90, 69, 100);
         hx_render(h, 3);
         hx_set_param(h, "t1_live_notes", "eoff 64");
         hx_set_param(h, "t1_record_note_off", "64");
-        back(h, T, 0x80, 64, 0);
-        back(h, T, 0x80, 68, 0);
-        HX_ASSERT(clip_has(cl, 68) == 1, "recording: the effect's third is in the clip");
-        HX_ASSERT(clip_has(cl, 64) == 1, "recording: the root (from the effect) is in the clip ONCE — the played note was not recorded as well");
+        back(h, T, 0x80, 65, 0);
+        back(h, T, 0x80, 69, 0);
+        HX_ASSERT(clip_has(cl, 65) == 1 && clip_has(cl, 69) == 1, "recording: the effect's output is in the clip");
+        HX_ASSERT(clip_has(cl, 64) == 0, "recording: the PLAYED note was recorded as well as the effect's output");
     }
     hx_set_param(h, "t1_recording", "0");
     hx_render(h, 2);
@@ -118,8 +120,8 @@ int main(void) {
     /* ---- 4. PLAYBACK skips the effect: the clip's notes go DIRECT ---- */
     hx_clear_capture(h);
     hx_render(h, 1600);                                 /* a full pass of the clip (16 steps at 120 = 4 s) */
-    HX_ASSERT(seen(HX_MIDI_DIRECT, T, 0x90, 68) >= 1, "playback: the recorded note plays DIRECT");
-    HX_ASSERT(seen(HX_MIDI_INTERNAL, T, 0x90, 68) == 0, "playback: the clip went through the effect again (a chord of a chord)");
+    HX_ASSERT(seen(HX_MIDI_DIRECT, T, 0x90, 69) >= 1, "playback: the recorded note plays DIRECT");
+    HX_ASSERT(seen(HX_MIDI_INTERNAL, T, 0x90, 69) == 0, "playback: the clip went through the effect again (a chord of a chord)");
     hx_set_param(h, "transport", "stop");
     hx_render(h, 2);
 
