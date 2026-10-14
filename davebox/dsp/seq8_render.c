@@ -92,6 +92,21 @@ static inline void clock_send_f8_tick(seq8_instance_t *inst) {
     }
 }
 
+/* PRINT, done: the take is exactly print_end long. It replaces the clip it
+ * was printed from (undoable as one step, like a bake — merge_place's
+ * clip_init also resets the clip's sequencer effects, which the take already
+ * carries), and the transport stops. The UI bypasses the module. */
+static void print_finish(seq8_instance_t *inst) {
+    const int t = inst->print_track, c = inst->print_clip;
+    merge_finalize(inst);
+    inst->merge_end_abs = inst->print_end;
+    ext_transport_stop(inst);
+    if (inst->tracks[t].pad_mode == PAD_MODE_DRUM) undo_begin_drum_clip(inst, t, c);
+    else                                           undo_begin_single(inst, t, c);
+    merge_place(inst, c);
+    inst->print_state = 3;
+}
+
 /* Transport to the instrument slots. The host broadcasts a realtime status
  * sent this way to every slot and counts it as the internal transport, which
  * is where a slot's MIDI FX and synced LFOs read Start, clock and Stop from.
@@ -546,6 +561,12 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
             inst->merge_state     = MERGE_STATE_CAPTURING;
             inst->merge_start_abs = inst->global_tick * TICKS_PER_STEP;
             for (_mt = 0; _mt < NUM_TRACKS; _mt++) inst->merge_pending_count[_mt] = 0;
+            if (inst->print_state == 1) inst->print_state = 2;
+        }
+        /* PRINT: the take ends itself after its laps, to the tick. */
+        if (inst->print_state == 2 && inst->merge_state == MERGE_STATE_CAPTURING) {
+            uint32_t _abs = inst->global_tick * TICKS_PER_STEP + inst->master_tick_in_step;
+            if (_abs >= inst->merge_start_abs + inst->print_end) print_finish(inst);
         }
         if (inst->merge_state == MERGE_STATE_STOPPING && inst->master_tick_in_step == 0
                 && inst->global_tick % 16 == 0) {

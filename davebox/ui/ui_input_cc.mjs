@@ -28,6 +28,7 @@ import {
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool, ROUTE_NONE } from './ui_constants.mjs';
 import { closeChordPopup, chordEditSlot, chordSlotKnob, chordBankKnob, chordSlotReset } from './ui_chord_pads.mjs';
+import { bakeNeedsPrint, printStart, printModalCC } from './ui_print.mjs';
 import { customLayoutOn, customEditTarget, customChordTranspose, customChordOctaveStep } from './ui_custom_chords.mjs';
 import { triggerFire } from './ui_trigger.mjs';
 import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay,
@@ -507,6 +508,14 @@ function _onCC_jog(d1, d2) {
             return;
         }
         if (S.confirmBakeIsMultiLoop) {
+            if (S.confirmBakeSel > 0 && bakeNeedsPrint(S.confirmBakeTrack)) {
+                /* A MIDI FX module in play: bake it by PLAYING the clip (no
+                 * wrap question — the take is what was heard). */
+                printStart(S.confirmBakeTrack, S.confirmBakeClip, [1, 2, 4][S.confirmBakeSel - 1]);
+                S.confirmBake = false;
+                S.screenDirty = true;
+                return;
+            }
             if (S.confirmBakeSel > 0) {
                 /* advance to wrap dialog */
                 S.confirmBakeLoops     = [1, 2, 4][S.confirmBakeSel - 1];
@@ -527,6 +536,15 @@ function _onCC_jog(d1, d2) {
             }
         } else if (S.confirmBakeDrumLoopOpen) {
             /* drum step 2: loop count — 0=CANCEL, 1-3 = 1x/2x/4x → wrap dialog */
+            if (S.confirmBakeDrumLoopSel > 0 && S.confirmBakeDrumMode === 2 &&
+                    bakeNeedsPrint(S.confirmBakeTrack)) {
+                /* the whole drum clip, with a MIDI FX module in play: PRINT */
+                printStart(S.confirmBakeTrack, S.confirmBakeClip, [1, 2, 4][S.confirmBakeDrumLoopSel - 1]);
+                S.confirmBakeDrumLoopOpen = false;
+                S.confirmBake = false;
+                S.screenDirty = true;
+                return;
+            }
             if (S.confirmBakeDrumLoopSel > 0) {
                 S.confirmBakeLoops     = [1, 2, 4][S.confirmBakeDrumLoopSel - 1];
                 S.confirmBakeWrapPhase = true;
@@ -5431,6 +5449,9 @@ export function _onCCMsg(d1, d2) {
      * never arrives; only Shift+Back reaches us — _handleBack handles that too.)
      * Co-run is excluded: Back there is host/peer-owned (deferred to a later
      * pass), so we don't claim it and never run our back-stack over co-run. */
+    /* A PRINT (Bake of a clip with a MIDI FX module in play) holds the
+     * surface while it plays: Back cancels it, the rest is swallowed. */
+    if (printModalCC(d1, d2)) return;
     if (d1 === MoveBack && S.moveCoRunTrack < 0) {
         _handleBack(d2); return;
     }

@@ -20,6 +20,11 @@ the section into a versioned heading at release time.
   records chords and an arpeggiator records its arpeggio — and the clip plays
   back without it. Every MIDI effect offers it, on Schwung, Move and MIDI
   tracks. It replaces **Notes to Seq**; a project that used it opens at Pre.
+- **Bake includes MIDI effects.** Baking a clip whose track has a MIDI effect
+  module in play (Post) now plays the clip and records what you hear — the
+  module included — for the loops you picked, then bypasses the module. Back
+  cancels. Scene bakes and Export to Live still leave the module out, and now
+  say which tracks.
 - **Card Hold.** A new row in the global menu sets how long a knob's page
   stays on screen after you let go of the knob: **Off** (it goes with your
   finger, as before), **0.5 s**, **1 s** or **2 s**. It applies to the bank

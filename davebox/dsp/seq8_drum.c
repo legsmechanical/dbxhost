@@ -128,43 +128,8 @@ static void drum_pfx_send(drum_pfx_t *px, uint8_t status, uint8_t d1, uint8_t d2
             return;
         }
     }
-    /* Live Merge hook (drum-lane pfx): same per-track capture as melodic.
-     * Capture continues during STOPPING — see melodic comment. */
-    if (g_inst && (g_inst->merge_state == MERGE_STATE_CAPTURING ||
-                   g_inst->merge_state == MERGE_STATE_STOPPING)) {
-        uint8_t st  = status & 0xF0;
-        uint8_t tri = px->track_idx;
-        if (tri < NUM_TRACKS && (st == 0x90 || st == 0x80)) {
-            uint32_t abs_now = (uint32_t)g_inst->groove_ahead + g_inst->global_tick * TICKS_PER_STEP
-                               + g_inst->master_tick_in_step;
-            uint32_t rel = abs_now > g_inst->merge_start_abs
-                           ? abs_now - g_inst->merge_start_abs : 0;
-            if (rel >= 256u * g_inst->merge_tps) {
-                merge_finalize(g_inst);
-            } else if (st == 0x90 && d2 > 0) {
-                if (g_inst->merge_pending_count[tri] < 512) {
-                    int _pi = (int)g_inst->merge_pending_count[tri]++;
-                    g_inst->merge_pending[tri][_pi].pitch      = d1;
-                    g_inst->merge_pending[tri][_pi].tick_at_on = rel;
-                    g_inst->merge_pending[tri][_pi].vel        = d2;
-                    g_inst->merge_pending[tri][_pi].gate       = 0;
-                }
-            } else {
-                int _pi;
-                for (_pi = (int)g_inst->merge_pending_count[tri] - 1; _pi >= 0; _pi--) {
-                    if (g_inst->merge_pending[tri][_pi].pitch == d1 &&
-                        g_inst->merge_pending[tri][_pi].gate == 0) {
-                        uint32_t gate = rel > g_inst->merge_pending[tri][_pi].tick_at_on
-                                        ? rel - g_inst->merge_pending[tri][_pi].tick_at_on : 1;
-                        if (gate == 0)     gate = 1;
-                        if (gate > 65535u) gate = 65535u;
-                        g_inst->merge_pending[tri][_pi].gate = (uint16_t)gate;
-                        break;
-                    }
-                }
-            }
-        }
-    }
+    /* Live Merge hook (drum-lane pfx): the same capture as melodic. */
+    merge_capture(px->track_idx, status, d1, d2, 0);
     /* Swing deferral. Mirrors pfx_send: applies in both transport states so
      * Rpt1/Rpt2 swing while stopped; live drum taps bypass via emit_bypass_swing.
      * Events re-entering from the drum drain skip swing — schedule-time swing

@@ -213,13 +213,16 @@ function drawExportDoneDialog() {
      * off-screen strings the 2026-08-15 audit found. */
     const path = S.exportDonePath || '';
     const LIMIT = 124;
+    /* A MIDI FX module the export could not include takes the last line. */
+    const fx = (S.exportMidiFxLeftOut || []).length ? 'No MIDI FX: T' + S.exportMidiFxLeftOut.join(' T') : '';
     let y = 14, lines = 0, i = 0;
-    while (i < path.length && lines < 4) {
+    while (i < path.length && lines < (fx ? 3 : 4)) {
         let n = 1;
         while (i + n < path.length && text_width(path.slice(i, i + n + 1)) <= LIMIT) n++;
         print(2, y, path.slice(i, i + n), 1);   /* the host face: a PATH keeps its case */
         i += n; y += 9; lines++;
     }
+    if (fx) print(2, 41, fx, 1);
     drawOkButton(52);
 }
 

@@ -180,6 +180,66 @@ static int sp_globals_misc(sp_ctx_t *cx) {
         merge_place(inst, my_atoi(val));
         return 1;
     }
+    if (!strcmp(key, "print_arm")) {
+        /* print_arm "T C N": PRINT clip C of track T for N passes (a Bake of a
+         * clip whose track has an active POST MIDI FX module — see
+         * print_track). Transport must be stopped. A solo Live Merge of T —
+         * the same count-in, a clean take from the top — that records the
+         * module's output and ends itself (print_finish). C must be T's
+         * active clip, which the solo merge relaunches. Refused (state stays
+         * 0) for anything else, or a take longer than a merge can hold. */
+        int pt = -1, pc = -1, pn = 1;
+        sscanf(val ? val : "", "%d %d %d", &pt, &pc, &pn);
+        if (inst->playing || inst->merge_state != MERGE_STATE_IDLE || inst->print_state) return 1;
+        if (pt < 0 || pt >= NUM_TRACKS || pc < 0 || pc >= NUM_CLIPS) return 1;
+        seq8_track_t *ptr = &inst->tracks[pt];
+        if ((int)ptr->active_clip != pc) return 1;
+        uint32_t len_ticks;
+        if (ptr->pad_mode == PAD_MODE_DRUM) {
+            drum_clip_t *dc = ptr->drum_clips[pc];
+            if (!dc) return 1;
+            len_ticks = (uint32_t)dc->lanes[0].clip.length * dc->lanes[0].clip.ticks_per_step;
+        } else {
+            len_ticks = (uint32_t)ptr->clips[pc].length * ptr->clips[pc].ticks_per_step;
+        }
+        uint32_t end = len_ticks * (uint32_t)clamp_i(pn, 1, 4);
+        if (end == 0 || end > 256u * TICKS_PER_STEP) return 1;
+        inst->print_track = (uint8_t)pt;
+        inst->print_clip  = (uint8_t)pc;
+        inst->print_end   = end;
+        inst->print_state = 1;
+        {
+            char tv[8];
+            snprintf(tv, sizeof tv, "t%d", pt);
+            sp_ctx_t sub_cx = *cx;
+            sub_cx.key = "merge_arm"; sub_cx.val = tv;
+            sp_globals_misc(&sub_cx);
+        }
+        return 1;
+    }
+    if (!strcmp(key, "print_done")) {
+        /* the UI has taken the finished print (bypassed the module) */
+        if (inst->print_state == 3) inst->print_state = 0;
+        return 1;
+    }
+    if (!strcmp(key, "print_cancel")) {
+        /* Back during a print: the clip is left as it was. */
+        if (!inst->print_state) return 1;
+        inst->print_state = 0;
+        if (inst->playing) ext_transport_stop(inst);
+        {
+            int t;
+            for (t = 0; t < NUM_TRACKS; t++) inst->merge_pending_count[t] = 0;
+            if (inst->count_in_merge) {
+                inst->count_in_ticks = 0;
+                inst->count_in_merge = 0;
+                for (t = 0; t < NUM_TRACKS; t++) inst->tracks[t].will_relaunch = 0;
+            }
+            inst->merge_state      = MERGE_STATE_IDLE;
+            inst->merge_solo_track = 0xFF;
+        }
+        return 1;
+    }
     if (!strcmp(key, "merge_cancel")) {
         /* Discard any captured pending notes without writing to clips. Also
          * abandon a count-in if one is mid-flight (defensive). */

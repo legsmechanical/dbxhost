@@ -1362,6 +1362,16 @@ typedef struct {
     uint8_t  merge_state;
     uint32_t merge_start_abs;    /* abs master tick (global_tick*TPS + master_tick_in_step) */
     uint32_t merge_tps;          /* TPS used for captured timing (TICKS_PER_STEP for all tracks) */
+    /* PRINT (Bake of a clip whose track has an active POST MIDI FX module):
+     * a solo Live Merge of that track that records the module's OUTPUT (the
+     * slot's hand-back, not this engine's own output, which is before the
+     * module), stops itself after print_laps passes of the clip, and writes
+     * the take back over print_clip. print_state: 0 idle, 1 armed (count-in),
+     * 2 printing, 3 done (the UI then bypasses the module). */
+    uint8_t  print_track;        /* meaningful only while print_state != 0 */
+    uint8_t  print_clip;
+    uint8_t  print_state;
+    uint32_t print_end;          /* the take's length, in merge ticks */
     uint8_t  merge_solo_track;   /* 0xFF = capture all 8 tracks (scene mode); else only this
                                   * track's output is captured (Track-View single-clip merge).
                                   * Set on every merge_arm; only read while a merge is active. */
@@ -2166,6 +2176,51 @@ static void clip_build_steps_from_notes(clip_t *cl);
  * to CAPTURED. The actual write to destination clips happens in merge_place
  * once the user picks a scene row via merge_place_row. Safe to call from
  * ARMED, CAPTURING, or STOPPING; no-op when IDLE/CAPTURED. */
+static void merge_finalize(seq8_instance_t *inst);
+/* Live Merge's capture of one message on track `tri` (melodic and drum-lane
+ * output alike). Capture continues during STOPPING (the user tapped stop but
+ * the bar has not landed) so trailing notes in the final page still make it
+ * in. Single-clip merge: only the solo track. A PRINT takes its track's notes
+ * from the MIDI FX module's output (`from_fx`, the slot's hand-back), never
+ * from this engine's own output, which is before the module. */
+static void merge_capture(uint8_t tri, uint8_t status, uint8_t d1, uint8_t d2, int from_fx) {
+    if (!g_inst || (g_inst->merge_state != MERGE_STATE_CAPTURING &&
+                    g_inst->merge_state != MERGE_STATE_STOPPING)) return;
+    uint8_t st = status & 0xF0;
+    if (g_inst->merge_solo_track != 0xFF && tri != g_inst->merge_solo_track) return;
+    if (g_inst->print_state && tri == g_inst->print_track && !from_fx) return;
+    if (tri >= NUM_TRACKS || (st != 0x90 && st != 0x80)) return;
+    /* + groove_ahead: a note played ahead of its tick is captured at the tick
+     * it belongs to, not the one it was fired on */
+    uint32_t abs_now = (uint32_t)g_inst->groove_ahead + g_inst->global_tick * TICKS_PER_STEP
+                       + g_inst->master_tick_in_step;
+    uint32_t rel = abs_now > g_inst->merge_start_abs ? abs_now - g_inst->merge_start_abs : 0;
+    if (rel >= 256u * g_inst->merge_tps) {
+        merge_finalize(g_inst);              /* max length reached */
+    } else if (st == 0x90 && d2 > 0) {
+        if (g_inst->merge_pending_count[tri] < 512) {
+            int _pi = (int)g_inst->merge_pending_count[tri]++;
+            g_inst->merge_pending[tri][_pi].pitch      = d1;
+            g_inst->merge_pending[tri][_pi].tick_at_on = rel;
+            g_inst->merge_pending[tri][_pi].vel        = d2;
+            g_inst->merge_pending[tri][_pi].gate       = 0; /* open */
+        }
+    } else {
+        /* note-off: close the most recent matching open pending entry. */
+        int _pi;
+        for (_pi = (int)g_inst->merge_pending_count[tri] - 1; _pi >= 0; _pi--) {
+            if (g_inst->merge_pending[tri][_pi].pitch == d1 && g_inst->merge_pending[tri][_pi].gate == 0) {
+                uint32_t gate = rel > g_inst->merge_pending[tri][_pi].tick_at_on
+                                ? rel - g_inst->merge_pending[tri][_pi].tick_at_on : 1;
+                if (gate == 0)     gate = 1;
+                if (gate > 65535u) gate = 65535u;
+                g_inst->merge_pending[tri][_pi].gate = (uint16_t)gate;
+                break;
+            }
+        }
+    }
+}
+
 static void merge_finalize(seq8_instance_t *inst) {
     if (!inst || inst->merge_state == MERGE_STATE_IDLE) return;
     if (inst->merge_state == MERGE_STATE_CAPTURED) return;
@@ -2554,49 +2609,7 @@ static void pfx_send(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
      * Capture continues during STOPPING (user has tapped merge_stop but the
      * bar boundary hasn't landed yet) so trailing notes in the final partial
      * page still make it in. */
-    if (g_inst && (g_inst->merge_state == MERGE_STATE_CAPTURING ||
-                   g_inst->merge_state == MERGE_STATE_STOPPING)) {
-        uint8_t st  = status & 0xF0;
-        uint8_t tri = fx->track_idx;
-        /* Single-clip merge (Track View Shift+Rec): only the solo track's
-         * output is captured; other tracks play through untouched. */
-        if (g_inst->merge_solo_track != 0xFF && tri != g_inst->merge_solo_track)
-            st = 0;   /* fails the note filter below — event not captured */
-        if (tri < NUM_TRACKS && (st == 0x90 || st == 0x80)) {
-            /* + groove_ahead: a note played ahead of its tick is captured
-             * at the tick it belongs to, not the one it was fired on */
-            uint32_t abs_now = (uint32_t)g_inst->groove_ahead + g_inst->global_tick * TICKS_PER_STEP
-                               + g_inst->master_tick_in_step;
-            uint32_t rel = abs_now > g_inst->merge_start_abs
-                           ? abs_now - g_inst->merge_start_abs : 0;
-            if (rel >= 256u * g_inst->merge_tps) {
-                /* Max length reached — finalize the whole multi-track capture. */
-                merge_finalize(g_inst);
-            } else if (st == 0x90 && d2 > 0) {
-                if (g_inst->merge_pending_count[tri] < 512) {
-                    int _pi = (int)g_inst->merge_pending_count[tri]++;
-                    g_inst->merge_pending[tri][_pi].pitch      = d1;
-                    g_inst->merge_pending[tri][_pi].tick_at_on = rel;
-                    g_inst->merge_pending[tri][_pi].vel        = d2;
-                    g_inst->merge_pending[tri][_pi].gate       = 0; /* open */
-                }
-            } else {
-                /* note-off: close the most recent matching open pending entry. */
-                int _pi;
-                for (_pi = (int)g_inst->merge_pending_count[tri] - 1; _pi >= 0; _pi--) {
-                    if (g_inst->merge_pending[tri][_pi].pitch == d1 &&
-                        g_inst->merge_pending[tri][_pi].gate == 0) {
-                        uint32_t gate = rel > g_inst->merge_pending[tri][_pi].tick_at_on
-                                        ? rel - g_inst->merge_pending[tri][_pi].tick_at_on : 1;
-                        if (gate == 0)     gate = 1;
-                        if (gate > 65535u) gate = 65535u;
-                        g_inst->merge_pending[tri][_pi].gate = (uint16_t)gate;
-                        break;
-                    }
-                }
-            }
-        }
-    }
+    merge_capture(fx->track_idx, status, d1, d2, 0);
 
     /* Swing deferral: note-on and note-off on even steps are queued and routed
      * directly (bypass_swing) so they don't re-enter pfx_send on fire.
@@ -5649,6 +5662,22 @@ static void pre_handback(seq8_instance_t *inst, seq8_track_t *tr, uint8_t status
 void move_plugin_slot_midi_v1(void *instance, int slot, const uint8_t *msg, int len) {
     seq8_instance_t *inst = (seq8_instance_t *)instance;
     if (!inst || !msg || len < 2 || slot < 0 || slot >= SEQ8_CHAIN_SLOTS) return;
+    /* PRINT: the module's output on the printing track is what the take
+     * records. On a Schwung track (whose effect normally plays its own
+     * instrument) the UI turned the slot's hand-back on for the print, so the
+     * output is sent on to the instrument here, past the effect. */
+    if (inst->print_state && inst->print_track < NUM_TRACKS &&
+            (int)inst->tracks[inst->print_track].pfx.slot == slot) {
+        seq8_track_t *ptr = &inst->tracks[inst->print_track];
+        merge_capture(inst->print_track, msg[0], msg[1], len >= 3 ? msg[2] : 0, 1);
+        if (ptr->pfx.route == ROUTE_SCHWUNG && !ptr->fx_pre) {
+            if (g_ext && g_ext->midi_send_slot_direct) {
+                const uint8_t m4[4] = { (uint8_t)(msg[0] >> 4), msg[0], msg[1], len >= 3 ? msg[2] : 0 };
+                g_ext->midi_send_slot_direct(slot, m4, 4);
+            }
+            return;
+        }
+    }
     /* A PRE effect: its output is what was played (pre_handback). */
     {
         int t;
@@ -8616,6 +8645,9 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                         (inst && inst->ext_transport_running) ? 1 : 0,
                         inst ? (int)inst->ext_tick_pending : 0);
 
+    /* PRINT state, for the UI's progress and its finish (see print_track). */
+    if (!strcmp(key, "print_state"))
+        return snprintf(out, out_len, "%d", (int)inst->print_state);
     if (!strcmp(key, "playing"))
         return snprintf(out, out_len, "%d", inst ? (int)inst->playing : 0);
     if (!strcmp(key, "active_track"))

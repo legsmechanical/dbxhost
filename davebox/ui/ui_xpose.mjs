@@ -8,7 +8,8 @@
 import { NUM_TRACKS, NUM_CLIPS, PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE } from './ui_constants.mjs';
 import { S, conductorTrackIdx } from './ui_state.mjs';
 import { noteUndoUnit } from './ui_editops.mjs';
-import { showActionPopup } from './ui_persistence.mjs';
+import { showActionPopup, showActionPopupFor } from './ui_persistence.mjs';
+import { midiFxLeftOut } from './ui_print.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { forceRedraw } from './ui_leds.mjs';
 
@@ -37,12 +38,16 @@ export function sceneBakeHasConductor(clipIdx) {
  * Conductor (4th token A) and the DSP auto-disables the conductor clip's
  * responder flags for the baked tracks. */
 export function commitSceneBake(clipIdx, loops, wrap, apply) {
+    /* A scene bake is OFFLINE: a track's MIDI FX module is not in it. Say
+     * which (Josh, 2026-10-14: no silent loss); a single clip's Bake prints. */
+    const leftOut = midiFxLeftOut();
     S.pendingDefaultSetParams.push({
         key: 'bake_scene',
         val: clipIdx + ' ' + loops + ' ' + (wrap ? 1 : 0) + ' ' + (apply ? 1 : 0)
     });
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
-    showActionPopup('SCENE', 'BAKED');
+    if (leftOut.length) showActionPopupFor(3500, 'SCENE BAKED', 'MIDI FX not baked:', 'T' + leftOut.join(' T'));
+    else showActionPopup('SCENE', 'BAKED');
     S.pendingSceneBakeResync = 2;
     S.pendingSceneBakeClip   = clipIdx;
     /* DSP cleared the conductor clip's responder flags for the baked tracks.

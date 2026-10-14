@@ -77,6 +77,7 @@ import { enterMoveNativeCoRun, moveSettingsTick } from './ui_corun.mjs';
 import { openGlobalMenuAt } from './ui_menu.mjs';
 import { cardHoldExpired } from './ui_prefs.mjs';
 import { heldIndicatorChanged } from './ui_chord.mjs';
+import { printTick } from './ui_print.mjs';
 
 const BANK_DISPLAY_MS = 1000;
 const KNOB_TURN_HIGHLIGHT_MS = 600;               /* highlight after turn without touch */
@@ -606,6 +607,9 @@ export function _tickImpl() {
      * tick. One set_param per track per tick — survives same-buffer
      * coalescing of multiple pad presses in one audio buffer. */
     _drainLiveNotes();
+
+    /* A PRINT in flight (ui_print): its progress and its finish. */
+    printTick();
 
     /* Reapply cable-2 channel remap if anything affecting it changed. */
     {

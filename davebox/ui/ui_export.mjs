@@ -21,6 +21,7 @@ import { S, conductorTrackIdx } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { slotIndex, DAVEBOX_HOST_DIR, SLOT_LEVEL_MAX, engineGet, engineGetSlotParam } from './ui_engine.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
+import { midiFxLeftOut } from './ui_print.mjs';
 import { NUM_TRACKS, NUM_CLIPS, ACTION_POPUP_MS, PAD_MODE_CONDUCT } from './ui_constants.mjs';
 
 /* Our own module directory — where build.sh/build_sound.sh put pack.py and the
@@ -1005,6 +1006,9 @@ function confirmExportStart() {
 /* Arm the deferred export (drained in tick()). Caller has already resolved
  * S.exportApplyConductor and confirmed transport is stopped. */
 function armExport() {
+    /* Export is OFFLINE: a track's MIDI FX module is not in it (the done
+     * dialog says which). */
+    S.exportMidiFxLeftOut    = midiFxLeftOut();
     S.pendingExport          = true;
     S.confirmExportCondPhase = false;
     S.globalMenuOpen         = false;

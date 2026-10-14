@@ -830,6 +830,7 @@ export const S = {
     exportDoneDialog: false,       /* persistent "Exported to <path>" dialog (OK to dismiss) */
     exportDonePath: '',            /* full device path shown in the export-done dialog */
     exportDoneMissing: 0,          /* count of samples that couldn't be bundled */
+    exportMidiFxLeftOut: [],       /* tracks (1-based) whose MIDI FX module the export left out */
     noteSessionPressedTick: -1,
     sessionOverlayHeld: false,
     overviewCache: null,
