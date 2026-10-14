@@ -180,6 +180,12 @@ step('⭐ Back from the effect lands on the MOVE track\'s menu again, not a chai
     assert(rowAt(BUS_FX1) >= 0 && rowAt('midi_fx1') >= 0, 'not the Move menu: ' + JSON.stringify(snd.soundPickStateForTest().comps));
 });
 
+step('⭐⭐ ...and the MIDI FX row NAMES the loaded effect (it read the bus\'s slot 0 and showed "--")', () => {
+    const st = snd.soundPickStateForTest();
+    const name = st.names[rowAt('midi_fx1')];
+    assert(name === 'arp', 'the row shows ' + JSON.stringify(name) + ', not the effect loaded in the track\'s slot');
+});
+
 step('⭐ [ none ] on a Move track switches both off', () => {
     order.length = 0;
     pickNone();

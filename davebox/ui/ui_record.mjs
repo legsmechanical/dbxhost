@@ -213,7 +213,16 @@ export function registerTapTempo(padNote) {
 export function flushHeldMoveExtNotes() {
     if (extHeldNotes.size === 0) return;
     for (const [pitch, info] of extHeldNotes) {
-        if (S.trackRoute[info.track] !== 1) continue;   /* Move-native voices only */
+        if (S.trackRoute[info.track] !== 1) continue;   /* Move tracks only */
+        if (info.live) {
+            /* Played through the engine (a Move track with MIDI FX): its
+             * physical off will arrive remapped for the NEW track and be
+             * filtered out, so close it in the engine now. */
+            liveSendNote(info.track, 0x80, pitch, 0, false, true);
+            if (info.recording) recordNoteOff(pitch, true);
+            extHeldNotes.delete(pitch);
+            continue;
+        }
         const ch = (S.trackChannel[info.track] - 1) & 0x0F;
         move_midi_inject_to_move([0x28, 0x80 | ch, pitch, 0]);
         /* Close an open recording gate at the cut point (fallback tick --
@@ -229,7 +238,7 @@ export function extNoteOffAll() {
         /* Ext-origin tag for non-Move routes only (mirrors the
          * _onMidiExternalImpl guards): ROUTE_MOVE ext is played natively by
          * Move and must not generate ext live tokens. */
-        liveSendNote(info.track, 0x80, pitch, 0, false, S.trackRoute[info.track] !== 1);
+        liveSendNote(info.track, 0x80, pitch, 0, false, info.live !== undefined ? info.live : S.trackRoute[info.track] !== 1);
         if (info.recording) recordNoteOff(pitch, true);
     }
     extHeldNotes.clear();

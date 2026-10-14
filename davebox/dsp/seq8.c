@@ -8909,7 +8909,7 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
          * RT: stack buffers only, no allocation. */
         if (!strcmp(sub, "digest")) {
             static const char *TRACK_KEYS[] = {
-                "active_clip", "pad_octave", "transpose", "channel", "diq", "midi_to",
+                "active_clip", "pad_octave", "transpose", "channel", "diq", "midi_to", "fxslot",
                 "pad_mode", "route", "track_looper", "groove_ovr", "track_vel_override",
                 "tarp_si", "tarp_sll", "tarp_sv", "drum_r2rt",
                 "delay_clock_fb", "drum_meta",

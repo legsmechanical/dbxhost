@@ -467,6 +467,11 @@ export const S = {
      * plays that track's instead. Mirrors the DSP's tN_midi_to. */
     trackMidiTo: Array.from({ length: NUM_TRACKS }, () => 0),
     trackRoute: new Array(8).fill(0),
+    /* 1 = the track plays through its own slot's MIDI FX (a Move or MIDI
+     * track with an effect loaded; the engine's tN_fxslot). Mirrored here for
+     * the external-MIDI path, which must hand a Move track's keyboard notes to
+     * the engine rather than to Move. */
+    trackFxSlot: new Array(8).fill(0),
     moveCoRunTrack: -1,                       /* -1 = off; 0-3 = Move firmware is co-running on this track (dAVEBOx skips OLED; shim filters nav CCs + touch 0-9 from tool, lets them reach Move) */
     /* Move's own Settings menu, opened in co-run from Project Settings'
      * Move Settings... row (ui_corun.mjs enterMoveSettingsCoRun). A different
@@ -1157,6 +1162,7 @@ export const S = {
     lastRemapRoute: -1,
     lastRemapChannel: -1,
     lastRemapMidiIn: -2,
+    lastRemapFxSlot: -1,
     lastTarpStyle: new Array(8).fill(1),
     padLayoutChromatic: new Array(8).fill(false),
     /* The Piano layout (per track; Josh, 2026-09-26): two piano octaves, the

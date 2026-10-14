@@ -1233,6 +1233,9 @@ function readTrackConfig(t) {
     /* 0 = plays its own instrument; 1..8 = plays that track's (`MIDI to Track N`). */
     const mt = dspGet('t' + t + '_midi_to');
     if (mt !== null && mt !== undefined) S.trackMidiTo[t] = parseInt(mt, 10) | 0;
+    /* Plays through its slot's MIDI FX (a Move / MIDI track). "" = unknown: keep. */
+    const fs = dspGet('t' + t + '_fxslot');
+    if (fs === '0' || fs === '1') S.trackFxSlot[t] = fs === '1' ? 1 : 0;
     /* Bulk read (project load): re-derive after the last track, below. */
     const pm = dspGet('t' + t + '_pad_mode');
     if (pm !== null && pm !== undefined) S.trackPadMode[t] = parseInt(pm, 10) | 0;
@@ -1344,6 +1347,7 @@ export function syncTrackMidiFx(t, loaded, defer) {
     const route = S.trackRoute[t];
     const on = has && (route === 1 || route === 2) ? 1 : 0;
     engineSetChainParam(slot, 'midi_fx_host_route', on);
+    S.trackFxSlot[t] = on;
     if (defer) S.pendingDefaultSetParams.push({ key: 't' + t + '_fxslot', val: String(on) });
     else host_module_set_param('t' + t + '_fxslot', String(on));
 }

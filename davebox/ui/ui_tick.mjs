@@ -220,14 +220,19 @@ export function applyExtMidiRemap() {
         return;
     }
     const outCh = S.trackChannel[t] - 1;  /* 0-indexed */
+    /* A Move track playing through its MIDI FX: the same remap, but its NOTES
+     * are held back from Move (EXT_MIDI_REMAP_HOLD_NOTES) — the engine plays
+     * them through the effect. The hold is found from the REMAPPED channel, so
+     * the track's own channel gets an entry too. */
+    const hold = S.trackFxSlot[t] ? 0x80 : 0;
     host_ext_midi_remap_clear();
     if (S.midiInChannel === 0) {
         for (var _i = 0; _i < 16; _i++) {
-            if (_i !== outCh) host_ext_midi_remap_set(_i, outCh);
+            if (_i !== outCh || hold) host_ext_midi_remap_set(_i, outCh | hold);
         }
     } else {
         const inCh = S.midiInChannel - 1;  /* 0-indexed */
-        if (inCh !== outCh) host_ext_midi_remap_set(inCh, outCh);
+        if (inCh !== outCh || hold) host_ext_midi_remap_set(inCh, outCh | hold);
     }
     host_ext_midi_remap_enable(1);
     S.extMidiRemapActive = true;
@@ -608,8 +613,9 @@ export function _tickImpl() {
         const _rr = S.trackRoute[_rt];
         const _rc = S.trackChannel[_rt];
         const _rm = S.midiInChannel;
+        const _rf = S.trackFxSlot[_rt] | 0;
         if (_rt !== S.lastRemapTrack || _rr !== S.lastRemapRoute ||
-                _rc !== S.lastRemapChannel || _rm !== S.lastRemapMidiIn) {
+                _rc !== S.lastRemapChannel || _rm !== S.lastRemapMidiIn || _rf !== S.lastRemapFxSlot) {
             /* TARP latch is per-track musical intent — preserved across track/
              * route/channel/MIDI-in changes. Only Stop transport and Delete+Play
              * clear it deliberately. */
@@ -620,7 +626,7 @@ export function _tickImpl() {
             flushHeldMoveExtNotes();
             applyExtMidiRemap();
             S.lastRemapTrack = _rt; S.lastRemapRoute = _rr;
-            S.lastRemapChannel = _rc; S.lastRemapMidiIn = _rm;
+            S.lastRemapChannel = _rc; S.lastRemapMidiIn = _rm; S.lastRemapFxSlot = _rf;
         }
     }
 

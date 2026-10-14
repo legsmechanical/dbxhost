@@ -110,7 +110,7 @@ else
 fi
 
 # ---- 2. a write empties it, inside queueWrite's own body -----------------
-qw=$(awk '/^function queueWrite\(key, val, comp\) \{/{f=1} f{print} f && /^\}$/{exit}' "$f")
+qw=$(awk '/^function queueWrite\(key, val, comp, slot\) \{/{f=1} f{print} f && /^\}$/{exit}' "$f")
 if [ -z "$qw" ]; then
   echo "FAIL: queueWrite not found"; fail=1
 elif ! printf '%s\n' "$qw" | grep -Fq "ppCondReadsDrop();"; then

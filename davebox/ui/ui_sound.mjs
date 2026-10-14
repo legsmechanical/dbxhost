@@ -1035,6 +1035,7 @@ export function soundPickStateForTest() {
      * it is this re-read that would resurrect it. */
     return { kinds: S.pickRows.map(r => r.kind), comps: S.pickRows.map(r => r.comp || null),
              labels: S.pickRows.map(r => r.label || null),
+             names: S.pickRows.map(r => r.name || null),
              row: S.pickRow, view: S.view, shift: S.shiftHeld,
              enumPick: S.enumPick ? S.enumPick.label : null };
 }
@@ -1928,8 +1929,8 @@ function refreshBlockNames() {
             continue;
         }
         if (r.kind !== 'block') continue;
-        r.name = moduleIdOf(engineLoadedModule(S.slot, r.comp));
-        r.bypassed = engineGet(S.slot, r.comp, 'bypassed') === '1' ? 1 : 0;
+        r.name = moduleIdOf(engineLoadedModule(rowSlot(r.comp), r.comp));
+        r.bypassed = engineGet(rowSlot(r.comp), r.comp, 'bypassed') === '1' ? 1 : 0;
     }
 }
 
@@ -2382,6 +2383,12 @@ function onVolumeTurn(delta) {
  * Schwung track's MIDI FX is reached, and remembers the bus: the block list
  * puts it back (mfxDoorReturn, from refreshBlockNames). Any fresh entry into
  * sound mode drops the door with the rest of the context. */
+/* The slot a ROW's component lives in: the screen's, except a Move track's
+ * MIDI FX row, whose block is the track's chain slot while the screen is the
+ * bus (slot 0). For the reads and writes made from the block LIST itself. */
+function rowSlot(comp) {
+    return (S.bus && S.bus.kind === 'move' && /^midi_fx\d$/.test(comp || '')) ? slotIndex(S.track) : S.slot;
+}
 function mfxDoorEnter(comp) {
     if (!comp || !/^midi_fx\d$/.test(comp) || !S.bus || S.bus.kind !== 'move') return;
     S.mfxDoor = { bus: S.bus };
@@ -8697,7 +8704,7 @@ function drainAndVerifyWrites() {
  * key per drain instead of one per detent. */
 /* `comp` defaults to the block being edited; the block PICKER passes one
  * explicitly, since there the cursor and S.comp are different things. */
-function queueWrite(key, val, comp) {
+function queueWrite(key, val, comp, slot) {
     /* ⚠ NOT the invalidation that matters — this only QUEUES, so the value has
      * not moved yet and the real drop happens at the write binding when the
      * drain lands it. Kept because the grid's own cache is updated at queue
@@ -8705,10 +8712,11 @@ function queueWrite(key, val, comp) {
      * from a value this call has already superseded on screen. */
     ppCondReadsDrop();
     const c = comp || S.comp;
+    const sl = slot === undefined ? S.slot : slot;
     for (const w of S.pendingWrites) {
-        if (w.key === key && w.comp === c && w.slot === S.slot) { w.val = val; return; }
+        if (w.key === key && w.comp === c && w.slot === sl) { w.val = val; return; }
     }
-    if (comp) { S.pendingWrites.push({ slot: S.slot, comp: c, key, val }); return; }
+    if (comp) { S.pendingWrites.push({ slot: sl, comp: c, key, val }); return; }
     /* The SLOT is captured here, not read at drain time. Sound mode can retarget
      * to another track mid-queue, and a write raised against one slot must never
      * land in the one that replaced it. */
@@ -9907,7 +9915,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
             const r = S.pickRows[S.pickRow];
             if (r && r.kind === 'block' && r.name) {   /* empty = nothing to bypass */
                 r.bypassed = r.bypassed ? 0 : 1;
-                queueWrite('bypassed', String(r.bypassed), r.comp);
+                queueWrite('bypassed', String(r.bypassed), r.comp, rowSlot(r.comp));
                 S.presetMsg = r.bypassed ? 'BYPASSED' : 'ACTIVE';
                 S.dirty = true;
             }

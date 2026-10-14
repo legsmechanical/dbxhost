@@ -1077,7 +1077,9 @@ function _dispatchBelowJogRouter(data, status, d1, d2) {
  * notes back (the engine's on_midi comment records the device diagnosis), so
  * that test could only ever drop a note played in unison with the clip. */
 function extCaptureWanted(t, pitch) {
-    if (S.trackRoute[t] !== 1) return false;
+    /* A Move track playing through its MIDI FX gets the note through the
+     * engine, which captures it itself — like any other route. */
+    if (S.trackRoute[t] !== 1 || S.trackFxSlot[t]) return false;
     if (S.heldStep >= 0 && !S.shiftHeld && !S.sessionView) return false;
     if (S.liveActiveNotes.has(pitch)) return false;
     return !(S.recordArmed && t === S.recordArmedTrack);
@@ -1097,6 +1099,12 @@ function _onMidiExternalImpl(data) {
      * Never inject — injecting causes an echo cascade (Move echoes cable-2 back
      * as cable-2, we re-inject, infinite loop → crash). */
     const routeIsMove = S.trackRoute[t] === 1;
+    /* ...except its NOTES on a Move track playing through its MIDI FX: those
+     * the host holds back from Move (EXT_MIDI_REMAP_HOLD_NOTES, applyExtMidiRemap)
+     * and the engine plays, through the effect, into Move itself. Its CC,
+     * pressure and bend still go to Move natively, as on any Move track — they
+     * are what Move echoes, so they must never be injected. */
+    const nativeMove = routeIsMove && !S.trackFxSlot[t];
 
     /* Channel filter. When the cable-2 remap is active for a ROUTE_MOVE track the
      * shim rewrites the channel byte before we see it — messages arrive on
@@ -1113,7 +1121,7 @@ function _onMidiExternalImpl(data) {
         if (msgType === 0x90 && d2 > 0) {
             const vel = effectiveVelocity(d2);
             S.lastPadVelocity = vel;
-            if (!routeIsMove) liveSendNote(t, 0x90, d1, vel, false, true);
+            if (!nativeMove) liveSendNote(t, 0x90, d1, vel, false, true);
             const isSeqEcho = routeIsMove && S.seqActiveNotes.has(d1);
             /* A Move track sounds the note itself; Capture still takes it. */
             const capOnly = extCaptureWanted(t, d1);
@@ -1137,11 +1145,11 @@ function _onMidiExternalImpl(data) {
                     S.pendingDrumLaneResyncLane  = recLane;
                 }
             }
-            extHeldNotes.set(d1, { track: t, recording: recCap, echo: isSeqEcho, cap: capOnly });
+            extHeldNotes.set(d1, { track: t, recording: recCap, echo: isSeqEcho, cap: capOnly, live: !nativeMove });
         } else if (msgType === 0x80 || (msgType === 0x90 && d2 === 0)) {
             const info = extHeldNotes.get(d1);
             const noteTrack = info ? info.track : t;
-            if (S.trackRoute[noteTrack] !== 1) liveSendNote(noteTrack, 0x80, d1, 0, false, true);
+            if (info ? info.live : !nativeMove) liveSendNote(noteTrack, 0x80, d1, 0, false, true);
             else if (info && info.cap) queueCaptureNote(noteTrack, true, d1, 0);
             if (info && info.recording && S.recordArmed)
                 _drumRecNoteOffs.push({ track: noteTrack, laneNote: d1, ext: true });
@@ -1156,7 +1164,7 @@ function _onMidiExternalImpl(data) {
         const vel = effectiveVelocity(d2);
         S.lastPlayedNote  = d1;
         S.lastPadVelocity = vel;
-        if (!routeIsMove) liveSendNote(t, 0x90, d1, vel, false, true);
+        if (!nativeMove) liveSendNote(t, 0x90, d1, vel, false, true);
         /* ROUTE_MOVE: sequencer inject echoes come back here on cable-2. Skip recording
          * for pitches the sequencer is already S.playing — those are echoes, not keyboard input.
          * Preserve any existing recording-active entry so the keyboard gate isn't overwritten. */
@@ -1172,7 +1180,7 @@ function _onMidiExternalImpl(data) {
         if (recCap) recordNoteOn(d1, vel, t, true);
         const prevInfo = extHeldNotes.get(d1);
         if (!prevInfo || !prevInfo.recording || !isSeqEcho) {
-            extHeldNotes.set(d1, { track: t, recording: recCap, echo: isSeqEcho, cap: capOnly });
+            extHeldNotes.set(d1, { track: t, recording: recCap, echo: isSeqEcho, cap: capOnly, live: !nativeMove });
         }
         if (S.heldStep >= 0 && !S.shiftHeld && !S.sessionView) {
             const ac = effectiveClip(t);
@@ -1199,7 +1207,7 @@ function _onMidiExternalImpl(data) {
     } else if (msgType === 0x80 || (msgType === 0x90 && d2 === 0)) {
         const info = extHeldNotes.get(d1);
         const noteTrack = info ? info.track : t;
-        if (S.trackRoute[noteTrack] !== 1) liveSendNote(noteTrack, 0x80, d1, 0, false, true);
+        if (info ? info.live : !nativeMove) liveSendNote(noteTrack, 0x80, d1, 0, false, true);
         else if (info && info.cap) queueCaptureNote(noteTrack, true, d1, 0);
         if (info && info.recording) recordNoteOff(d1, true);
         extHeldNotes.delete(d1);
