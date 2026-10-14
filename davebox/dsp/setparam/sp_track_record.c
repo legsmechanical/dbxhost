@@ -166,6 +166,7 @@ static int sp_track_record(sp_ctx_t *cx) {
          * single-buffer precision); fallback is current_clip_tick at handler arrival
          * (stock-Schwung path, no slot snapshot). */
         if (!tr->recording) return 1;
+        if (tr->fx_pre) { pre_record_batch(inst, tr, val, 1); return 1; }   /* PRE: the effect's output is recorded */
         clip_t *cl = &tr->clips[tr->active_clip];
 
         uint16_t tps = cl->ticks_per_step;
@@ -346,6 +347,7 @@ static int sp_track_record(sp_ctx_t *cx) {
          * PHASE-1: per-pitch off_tick comes from on_midi_release_tick slot
          * (audio-thread); fallback is current_clip_tick. */
         if (!tr->recording) return 1;
+        if (tr->fx_pre) { pre_record_batch(inst, tr, val, 0); return 1; }
         clip_t *cl = &tr->clips[tr->active_clip];
 
         uint16_t tps = cl->ticks_per_step;

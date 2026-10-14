@@ -1143,6 +1143,17 @@ typedef struct {
     uint8_t   fx_out_route;   /* ROUTE_MOVE / ROUTE_EXTERNAL of the held notes */
     uint8_t   fx_out_ch;      /* ...and the channel they sound on */
     uint8_t   fx_out_flush;   /* set from set_param: close the held notes at the next render */
+    /* The track's MIDI FX module is PRE (tN_fxpre): what is PLAYED goes
+     * through it and its output is what is heard, captured and recorded; what
+     * the clip plays back skips it. Played notes are caught at live_note_on /
+     * live_note_off and sent into the track's own slot (whose
+     * `midi_fx_host_route` the UI turns on with this); the slot hands the
+     * effect's output back to pre_handback, which plays it through
+     * live_note_on as if it had been played, and records it. Every emission
+     * then skips the effect: on a Schwung track it goes to the slot DIRECT
+     * (move_host_ext_v1_t.midi_send_slot_direct), on Move / MIDI straight out.
+     * Saved with the project (t%d_fp). */
+    uint8_t   fx_pre;
 } seq8_track_t;
 #define LRS_SET(tr, s)  ((tr)->live_recorded_steps[(s)>>3] |=  (uint8_t)(1u<<((s)&7)))
 #define LRS_TEST(tr, s) ((tr)->live_recorded_steps[(s)>>3] &   (1u<<((s)&7)))
@@ -1243,6 +1254,7 @@ typedef struct {
     uint32_t global_tick;             /* steps elapsed since transport play; bar boundary = global_tick % 16 == 0 */
     uint32_t arp_master_tick;         /* free-running master tick for SEQ ARP; advances even while stopped, resets on transport play / count-in fire */
     int      emit_bypass_swing;       /* set to 1 around live-tap emissions; pfx_send/drum_pfx_send skip swing when nonzero */
+    int      pre_returning;           /* 1 while pre_handback plays a PRE effect's output: live_note_on/off must not send it back in */
     int      in_queue_drain;          /* set inside pfx_q_fire/drum_pfx_q_fire so re-entered pfx_send/drum_pfx_send skip the swing block (preserving arp/looper/merge hooks but preventing re-queue) */
     uint64_t swing_step_delay_offbeat;/* offbeat-step swing offset in samples; kept current independent of which step we're on so schedule-time swing helper doesn't recompute */
 
@@ -2053,10 +2065,32 @@ static int via_slot_divert(uint8_t track_idx, const midi_dest_t *dst,
                            uint8_t status, uint8_t d1, uint8_t d2) {
     if (!g_inst || !g_host || track_idx >= NUM_TRACKS) return 0;
     const seq8_track_t *tr = &g_inst->tracks[track_idx];
+    const uint8_t msg[4] = { (uint8_t)(status >> 4), status, d1, d2 };
+    /* PRE: the effect already ran on what was played (pre_handback), and the
+     * clip's playback skips it. A Schwung track's own slot is reached past
+     * its MIDI FX; Move / the port are reached as usual. */
+    if (tr->fx_pre) {
+        if (dst->route == ROUTE_SCHWUNG && dst->slot == tr->pfx.slot &&
+                g_ext && g_ext->midi_send_slot_direct) {
+            g_ext->midi_send_slot_direct((int)dst->slot, msg, 4);
+            return 1;
+        }
+        return 0;
+    }
     if (!tr->fx_via_slot) return 0;
     if (dst->route != ROUTE_MOVE && dst->route != ROUTE_EXTERNAL) return 0;
     if (!g_host->midi_send_internal_slot) return 0;
-    const uint8_t msg[4] = { (uint8_t)(status >> 4), status, d1, d2 };
+    g_host->midi_send_internal_slot((int)tr->pfx.slot, msg, 4);
+    return 1;
+}
+
+/* PRE: a played note into the track's own slot, to run through its MIDI FX
+ * (whose output comes back to pre_handback). Returns 1 if it was taken. */
+static int pre_divert(seq8_instance_t *inst, seq8_track_t *tr, uint8_t status, uint8_t d1, uint8_t d2) {
+    if (!tr->fx_pre || inst->pre_returning || !g_host || !g_host->midi_send_internal_slot) return 0;
+    if (tr->pfx.route == ROUTE_NONE || tr->pad_mode == PAD_MODE_CONDUCT) return 0;
+    const uint8_t st = (uint8_t)((status & 0xF0) | (tr->channel & 0x0F));
+    const uint8_t msg[4] = { (uint8_t)(st >> 4), st, d1, d2 };
     g_host->midi_send_internal_slot((int)tr->pfx.slot, msg, 4);
     return 1;
 }
@@ -4336,6 +4370,7 @@ advance_l:
  * bypasses TRACK ARP (→ pfx_note_on directly) for drum tracks or when off. */
 static void live_note_on(seq8_instance_t *inst, seq8_track_t *tr,
                          uint8_t pitch, uint8_t vel) {
+    if (pre_divert(inst, tr, 0x90, pitch, vel)) return;   /* PRE: into the effect first */
     if (tr->pad_mode == PAD_MODE_DRUM) {
         /* Defense-in-depth: the active drum clip can transiently be NULL (the
          * documented window between pad_mode being set and drum_clips being
@@ -4432,6 +4467,7 @@ static void capture_note_only(seq8_instance_t *inst, seq8_track_t *tr,
  * when latch=0 and buffer empties, silences arp output. */
 static void live_note_off(seq8_instance_t *inst, seq8_track_t *tr,
                           uint8_t pitch) {
+    if (pre_divert(inst, tr, 0x80, pitch, 0)) return;     /* PRE: into the effect first */
     /* The arp's notes end where the arp ends them, not on the pad release. */
     if (tr->pad_mode == PAD_MODE_DRUM || !tr->tarp_on)
         capture_push(inst, tr, CAP_EV_NOTE_OFF, pitch, 0);
@@ -4466,6 +4502,33 @@ static void live_note_off(seq8_instance_t *inst, seq8_track_t *tr,
     inst->emit_bypass_swing = 0;
 }
 
+/* PRE: a record_note_on / _off (or the drum pair) batch on a track whose MIDI
+ * FX module is PRE. Nothing of it is recorded — the effect's OUTPUT is, when
+ * it comes back (pre_handback) — but the handler's live monitoring still
+ * happens, and live_note_on / _off send it into the effect. `val` is the
+ * handler's own payload: "[e]p v ..." for an on batch, "[e]p ..." for off. */
+static void pre_record_batch(seq8_instance_t *inst, seq8_track_t *tr, const char *val, int is_on) {
+    const int monitor = !inst->dsp_inbound_enabled &&
+        (tr->pfx.route == ROUTE_MOVE || (tr->tarp_on && tr->pad_mode != PAD_MODE_DRUM));
+    const char *sp = val ? val : "";
+    while (*sp) {
+        while (*sp == ' ') sp++;
+        if (!*sp) break;
+        if (*sp == 'e') sp++;
+        if (*sp < '0' || *sp > '9') break;
+        int pitch = 0, vel = SEQ_VEL;
+        while (*sp >= '0' && *sp <= '9') pitch = pitch * 10 + (*sp++ - '0');
+        if (is_on) {
+            while (*sp == ' ') sp++;
+            if (*sp >= '0' && *sp <= '9') { vel = 0; while (*sp >= '0' && *sp <= '9') vel = vel * 10 + (*sp++ - '0'); }
+        }
+        pitch = clamp_i(pitch, 0, 127);
+        if (!monitor) continue;
+        if (is_on) live_note_on(inst, tr, (uint8_t)pitch, (uint8_t)clamp_i(vel, 1, 127));
+        else       live_note_off(inst, tr, (uint8_t)pitch);
+    }
+}
+
 /* ---- Chord-layout pad voices ------------------------------------------
  * A melodic pad press may start several pitches, and two held pads may share
  * one (a chord slot and the strum row, or two overlapping chords). A pitch
@@ -4490,6 +4553,8 @@ static void pad_pitch_on(seq8_instance_t *inst, seq8_track_t *tr, int t, int pad
                          uint8_t pitch, uint8_t vel) {
     if (pad_pitch_holders(inst, t, pad, pitch) == 0) {
         live_note_on(inst, tr, pitch, vel);
+    } else if (pre_divert(inst, tr, 0x90, pitch, vel)) {
+        /* PRE: the re-strike goes into the effect too */
     } else if (!tr->tarp_on) {
         inst->emit_bypass_swing = 1;
         pfx_note_on(inst, tr, pitch, vel);      /* retrigger-guarded */
@@ -5521,6 +5586,27 @@ static void slot_fx_record_drum_on(seq8_instance_t *inst, seq8_track_t *tr,
     rui_content(inst);
 }
 
+/* Record a note that came out of the track's instrument's MIDI effect, if the
+ * track is recording (or in its count-in's last eighth). Returns 1 if it was
+ * the recorder's to take. */
+static int slot_fx_record(seq8_instance_t *inst, seq8_track_t *tr, int is_on, uint8_t d1, uint8_t d2) {
+    const int tidx = (int)(tr - inst->tracks);
+    const int drum = (tr->pad_mode == PAD_MODE_DRUM);
+    /* The count-in's last eighth, as for every other recorder. */
+    const int preroll = (!tr->recording && inst->count_in_ticks > 0 &&
+                         inst->count_in_ticks <= (int32_t)(PPQN / 2) &&
+                         (int)inst->count_in_track == tidx);
+    if (!tr->recording && !preroll) return 0;
+    if (drum) {
+        if (is_on) slot_fx_record_drum_on(inst, tr, preroll, d1, d2);
+    } else if (is_on) {
+        slot_fx_record_melodic_on(inst, tr, preroll, d1, d2);
+    } else if (tr->recording) {
+        slot_fx_record_melodic_off(tr, d1);
+    }
+    return 1;
+}
+
 static void slot_fx_note(seq8_instance_t *inst, int slot, uint8_t status, uint8_t d1, uint8_t d2) {
     const uint8_t type = (uint8_t)(status & 0xF0);
     const int is_on  = (type == 0x90 && d2 > 0);
@@ -5529,23 +5615,33 @@ static void slot_fx_note(seq8_instance_t *inst, int slot, uint8_t status, uint8_
     seq8_track_t *tr = slot_owner_track(inst, slot);
     if (!tr) return;
     const int tidx = (int)(tr - inst->tracks);
-    const int drum = (tr->pad_mode == PAD_MODE_DRUM);
-    /* The count-in's last eighth, as for every other recorder. */
-    const int preroll = (!tr->recording && inst->count_in_ticks > 0 &&
-                         inst->count_in_ticks <= (int32_t)(PPQN / 2) &&
-                         (int)inst->count_in_track == tidx);
-    if (tr->recording || preroll) {
-        if (drum) {
-            if (is_on) slot_fx_record_drum_on(inst, tr, preroll, d1, d2);
-        } else if (is_on) {
-            slot_fx_record_melodic_on(inst, tr, preroll, d1, d2);
-        } else if (tr->recording) {
-            slot_fx_record_melodic_off(tr, d1);
-        }
-        return;
-    }
+    if (slot_fx_record(inst, tr, is_on, d1, d2)) return;
     if (tidx != (int)inst->active_track) return;
     capture_note_only(inst, tr, is_on, d1, d2);
+}
+
+/* PRE: what the track's effect made from what was PLAYED. It is played as if
+ * it had been played (live_note_on / live_note_off — LIVE ARP, the sequencer's
+ * own effects, Capture, all as for a pad), with pre_returning set so it is not
+ * sent back in, and recorded in place of what was played (record_note_on and
+ * its siblings skip a PRE track). LIVE ARP records its own output, so a track
+ * with it on is not recorded twice. Anything other than a note goes out as
+ * the track's own output. */
+static void pre_handback(seq8_instance_t *inst, seq8_track_t *tr, uint8_t status, uint8_t d1, uint8_t d2) {
+    const uint8_t type = (uint8_t)(status & 0xF0);
+    const int is_on  = (type == 0x90 && d2 > 0);
+    const int is_off = (type == 0x80 || (type == 0x90 && d2 == 0));
+    if (type < 0x80 || type > 0xE0 || d1 > 127) return;
+    if (!is_on && !is_off) {
+        pfx_emit(&tr->pfx, (uint8_t)(type | (tr->channel & 0x0F)), d1, d2);
+        return;
+    }
+    inst->pre_returning = 1;
+    if (is_on) live_note_on(inst, tr, d1, d2);
+    else       live_note_off(inst, tr, d1);
+    inst->pre_returning = 0;
+    if (!tr->tarp_on || tr->pad_mode == PAD_MODE_DRUM) (void)slot_fx_record(inst, tr, is_on, d1, d2);
+    rui_content(inst);
 }
 
 /* The host's entry (plugin_api_v1.h, MOVE_PLUGIN_SLOT_MIDI_V1_SYMBOL): called
@@ -5553,6 +5649,17 @@ static void slot_fx_note(seq8_instance_t *inst, int slot, uint8_t status, uint8_
 void move_plugin_slot_midi_v1(void *instance, int slot, const uint8_t *msg, int len) {
     seq8_instance_t *inst = (seq8_instance_t *)instance;
     if (!inst || !msg || len < 2 || slot < 0 || slot >= SEQ8_CHAIN_SLOTS) return;
+    /* A PRE effect: its output is what was played (pre_handback). */
+    {
+        int t;
+        for (t = 0; t < NUM_TRACKS; t++) {
+            seq8_track_t *tr = &inst->tracks[t];
+            if (tr->fx_pre && (int)tr->pfx.slot == slot && tr->pfx.route != ROUTE_NONE) {
+                pre_handback(inst, tr, msg[0], msg[1], len >= 3 ? msg[2] : 0);
+                return;
+            }
+        }
+    }
     /* A Move or MIDI track borrowing its slot's MIDI FX: the slot's whole
      * output, to be SENT where the track's notes go -- never recorded here
      * (it carries the clip's own notes back). */
@@ -7682,6 +7789,9 @@ static int pfx_get(seq8_track_t *tr, const char *key, char *out, int out_len) {
     /* 1 = this Move / MIDI track plays through its own slot's MIDI FX. */
     if (!strcmp(key, "fxslot"))
         return snprintf(out, out_len, "%d", (int)tr->fx_via_slot);
+    /* 1 = the track's MIDI FX module is PRE (what is played goes through it). */
+    if (!strcmp(key, "fxpre"))
+        return snprintf(out, out_len, "%d", (int)tr->fx_pre);
 
     if (!strcmp(key, "track_looper"))
         return snprintf(out, out_len, "%d", (int)fx->looper_on);
@@ -8909,7 +9019,7 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
          * RT: stack buffers only, no allocation. */
         if (!strcmp(sub, "digest")) {
             static const char *TRACK_KEYS[] = {
-                "active_clip", "pad_octave", "transpose", "channel", "diq", "midi_to", "fxslot",
+                "active_clip", "pad_octave", "transpose", "channel", "diq", "midi_to", "fxslot", "fxpre",
                 "pad_mode", "route", "track_looper", "groove_ovr", "track_vel_override",
                 "tarp_si", "tarp_sll", "tarp_sv", "drum_r2rt",
                 "delay_clock_fb", "drum_meta",

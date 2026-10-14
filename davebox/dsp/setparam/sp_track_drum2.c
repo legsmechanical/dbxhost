@@ -663,6 +663,7 @@ static int sp_track_drum2(sp_ctx_t *cx) {
          * Gate initially GATE_TICKS; updated to actual hold time on
          * drum_record_note_off. */
         if (!tr->recording) return 1;
+        if (tr->fx_pre) { pre_record_batch(inst, tr, val, 1); return 1; }
         {
             int ac = (int)tr->active_clip;
             drum_clip_t *dc = tr->drum_clips[ac];
@@ -830,6 +831,7 @@ static int sp_track_drum2(sp_ctx_t *cx) {
          * drum_record_note_on on the matching lane, computing actual hold
          * duration from elapsed render ticks. */
         if (!tr->recording) return 1;
+        if (tr->fx_pre) { pre_record_batch(inst, tr, val, 0); return 1; }
         {
             int ac2    = (int)tr->active_clip;
             drum_clip_t *dc2 = tr->drum_clips[ac2];

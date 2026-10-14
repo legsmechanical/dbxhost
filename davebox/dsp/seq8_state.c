@@ -486,6 +486,10 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
     for (t = 0; t < NUM_TRACKS; t++)
         if (inst->tracks[t].fx_via_slot)
             fprintf(fp, ",\"t%d_fs\":1", t);
+    /* ...and a PRE MIDI FX module (fx_pre), sparse: absent = Post. */
+    for (t = 0; t < NUM_TRACKS; t++)
+        if (inst->tracks[t].fx_pre)
+            fprintf(fp, ",\"t%d_fp\":1", t);
     for (t = 0; t < NUM_TRACKS; t++)
         if (inst->tracks[t].pfx.looper_on != 1)
             fprintf(fp, ",\"t%d_lp\":%d", t, (int)inst->tracks[t].pfx.looper_on);
@@ -1145,6 +1149,8 @@ static void seq8_load_state(seq8_instance_t *inst) {
          * every set written before this existed means. */
         snprintf(key, sizeof(key), "t%d_fs", t);
         inst->tracks[t].fx_via_slot = json_get_int(buf, key, 0) ? 1 : 0;
+        snprintf(key, sizeof(key), "t%d_fp", t);
+        inst->tracks[t].fx_pre = json_get_int(buf, key, 0) ? 1 : 0;
         memset(inst->tracks[t].fx_out_held, 0, sizeof(inst->tracks[t].fx_out_held));
 
         snprintf(key, sizeof(key), "t%d_mt", t);

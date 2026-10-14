@@ -224,6 +224,20 @@ static int sp_track_config(sp_ctx_t *cx) {
         return 1;
     }
 
+    /* tN_fxpre: 1 = the track's MIDI FX module is PRE (seq8_track_t.fx_pre).
+     * The UI sets it with the slot's `midi_fx_host_route`. A change silences
+     * the track first: a note sounding through one path would be released
+     * through the other. */
+    if (!strcmp(sub, "fxpre")) {
+        uint8_t on = (uint8_t)(my_atoi(val) ? 1 : 0);
+        if (on != tr->fx_pre) {
+            silence_track_from_set_param(inst, tr);
+            tr->fx_pre = on;
+            inst->state_dirty = 1;
+        }
+        return 1;
+    }
+
     /* tN_route: set MIDI routing for this track */
     if (!strcmp(sub, "route")) {
         uint8_t rt;
