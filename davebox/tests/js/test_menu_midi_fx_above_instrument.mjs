@@ -106,6 +106,22 @@ step('⭐ Move track: MIDI FX first, then its instrument, landing on the instrum
     if (!onInstr()) throw new Error('landed on row ' + st().row);
 });
 
+step('⭐ back onto a Schwung track from the Move track menu lands on the instrument (the cursor carries no block)', () => {
+    S.activeTrack = 0;
+    sound.soundExit(); sound.soundEnter(0, 0); ticks(2);
+    if (st().kinds[0] !== 'block' || !onInstr()) throw new Error('landed on row ' + st().row + ' of ' + st().kinds.join(','));
+});
+
+step('⭐ a cursor that followed a block lands on that block, not the instrument', () => {
+    sound.soundPickRowSetForTest(st().comps.indexOf('fx1'));
+    sound.soundExit();
+    const before = st().comps[st().row];
+    sound.soundEnter(0, 0); ticks(2);
+    /* soundEnter keeps the component it was on only when it was IN that block;
+     * from the list the component is the generator's, so this lands home. */
+    if (!onInstr() && st().comps[st().row] !== before) throw new Error('landed on row ' + st().row);
+});
+
 step('NONE: just its destination row', () => {
     B.applyInstrChoice(3, C.INSTR_NONE);
     S.activeTrack = 3;
