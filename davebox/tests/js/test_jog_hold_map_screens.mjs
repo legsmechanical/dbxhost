@@ -264,6 +264,16 @@ step('⭐⭐ over a SCREEN — touch, hold, pick (the pick tears the screen down
     assert(!S.jogTouched, 'the touch is still on record after the finger left');
 });
 
+step('⭐ NO finger on the jog: letting the map go puts no touch on record', () => {
+    ccm.bankMapEnd(); home(); ticks(2);
+    menuMod.openGlobalMenu();
+    touchOn(); touchOff();                        /* touched and let go before the hold */
+    press(); holdMap();
+    tap(DELAY); ticks(1);
+    holdMap(); release(); ticks(2);
+    assert(!S.jogTouched, 'a touch was put on record with no finger on the jog');
+});
+
 step('⭐ a TRACK switch (Step 6) while touching: the card shows on the new track after the click comes up', () => {
     ccm.bankMapEnd(); home(); ticks(2);
     const to = S.activeTrack === 5 ? 6 : 5;
@@ -291,6 +301,7 @@ step('⭐ released WITHOUT a pick over a screen: the screen stays, and no card i
     touchOn(); press(); holdMap();
     holdMap(); release(); ticks(2);
     assert(S.globalMenuOpen, 'the menu went away under a hold that picked nothing');
+    assert(!S.jogTouched, 'a touch was put on record over the menu you are still on');
     touchOff(); ticks(2);
     menuMod.closeGlobalMenu ? menuMod.closeGlobalMenu() : (S.globalMenuOpen = false);
     ticks(2);
