@@ -129,7 +129,7 @@ static void drum_pfx_send(drum_pfx_t *px, uint8_t status, uint8_t d1, uint8_t d2
         }
     }
     /* Live Merge hook (drum-lane pfx): the same capture as melodic. */
-    merge_capture(px->track_idx, status, d1, d2, 0);
+    merge_capture(px->track_idx, status, d1, d2);
     /* Swing deferral. Mirrors pfx_send: applies in both transport states so
      * Rpt1/Rpt2 swing while stopped; live drum taps bypass via emit_bypass_swing.
      * Events re-entering from the drum drain skip swing — schedule-time swing
@@ -271,8 +271,31 @@ static void drum_pfx_sched_delay_offs(drum_pfx_t *px, pfx_active_t *an,
     }
 }
 
+/* POST: a lane's note-off goes to the module, which has its note (0 = now).
+ * Returns 1 if it did. A lane with nothing in the module is one sounding the
+ * module's own output: the caller releases that as usual. */
+static int drum_post_off(seq8_instance_t *inst, seq8_track_t *tr, drum_pfx_t *px, uint64_t gate) {
+    if (!post_takes(inst, tr)) return 0;
+    const int l = (int)(px - tr->drum_lane_pfx);
+    if (l < 0 || l >= DRUM_LANES || !tr->post.lane_pitch[l]) return 0;
+    const uint8_t p = (uint8_t)(tr->post.lane_pitch[l] - 1);
+    tr->post.lane_pitch[l] = 0;
+    post_raw_off(tr, p, gate ? (tr->post.gate[p] ? tr->post.gate[p] : gate) : 0);
+    return 1;
+}
+
 static void drum_pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
                              drum_pfx_t *px, uint8_t pitch, uint8_t vel) {
+    /* POST: the lane's note into the module first; what it makes comes back
+     * to the lane whose note it is (post_handback). */
+    if (post_takes(inst, tr)) {
+        const int l = (int)(px - tr->drum_lane_pfx);
+        if (l >= 0 && l < DRUM_LANES) {
+            post_raw_on(inst, tr, pitch, vel);
+            tr->post.lane_pitch[l] = (uint8_t)(pitch + 1);
+        }
+        return;
+    }
     uint8_t       ch  = tr->channel;
     uint64_t      now = px->sample_counter;
     pfx_active_t *an  = &px->active_note;
@@ -336,6 +359,7 @@ static void drum_pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
 
 static void drum_pfx_note_off(seq8_instance_t *inst, seq8_track_t *tr,
                               drum_pfx_t *px, uint8_t pitch) {
+    if (drum_post_off(inst, tr, px, drum_pfx_gate_smp(inst, px))) return;
     pfx_active_t *an = &px->active_note;
     if (!an->active) return;
     (void)pitch;
@@ -364,6 +388,7 @@ static void drum_pfx_note_off(seq8_instance_t *inst, seq8_track_t *tr,
 /* Immediate note-off — bypasses gate_smp minimum (for live pad releases). */
 static void drum_pfx_note_off_imm(seq8_instance_t *inst, seq8_track_t *tr,
                                    drum_pfx_t *px, uint8_t pitch) {
+    if (drum_post_off(inst, tr, px, 0)) return;
     pfx_active_t *an = &px->active_note;
     if (!an->active) return;
     (void)pitch;

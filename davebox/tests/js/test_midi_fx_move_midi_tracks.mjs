@@ -3,7 +3,8 @@
  *
  * Such a track's own chain slot is parked (its instrument is Move's, or a
  * device on the port), so its MIDI FX block is borrowed: the engine plays the
- * track through the slot (tN_fxslot) and the slot hands the effect's output
+ * track through the slot first (tN_fxpost: the module runs before the track's
+ * own effects, on every kind of track) and the slot hands the effect's output
  * back instead of playing it (chain key `midi_fx_host_route`). What can go
  * wrong is in the UI, so this drives the REAL gesture — the row on the menu,
  * a click, the picker, a pick, Back — and asserts what reached the engine:
@@ -15,7 +16,8 @@
  *   - the slot's switch is written BEFORE the engine's (else a note would
  *     reach a slot still playing its effect on the parked instrument);
  *   - Back lands on the Move bus menu again, not a chain menu;
- *   - [ none ] switches both off; a Schwung track's pick writes neither;
+ *   - [ none ] switches both off; a Schwung track's pick switches both on
+ *     too (its module runs first, then the track's effects, then its synth);
  *   - a route change carries the effect across.
  */
 import './_bulk_get_stub.mjs';
@@ -165,7 +167,7 @@ step('⭐⭐ THE GESTURE on a Move track: click, pick — the effect loads by ID
 
 step('⭐⭐ ...and both halves are switched on, the SLOT\'s first', () => {
     const c = order.indexOf('chain:' + T + ':midi_fx_host_route=1');
-    const d = order.indexOf('dsp:t' + T + '_fxslot=1');
+    const d = order.indexOf('dsp:t' + T + '_fxpost=1');
     assert(c >= 0, 'the slot was not told to hand its output back: ' + JSON.stringify(order));
     assert(d >= 0, 'the engine was not told to play the track through its slot: ' + JSON.stringify(order));
     assert(c < d, 'the engine was switched before the slot: ' + JSON.stringify(order));
@@ -190,7 +192,7 @@ step('⭐ [ none ] on a Move track switches both off', () => {
     order.length = 0;
     pickNone();
     assert(order.indexOf('chain:' + T + ':midi_fx_host_route=0') >= 0, 'the slot was not switched off: ' + JSON.stringify(order));
-    assert(order.indexOf('dsp:t' + T + '_fxslot=0') >= 0, 'the engine was not switched off: ' + JSON.stringify(order));
+    assert(order.indexOf('dsp:t' + T + '_fxpost=0') >= 0, 'the engine was not switched off: ' + JSON.stringify(order));
 });
 
 step('⭐⭐ a MIDI track has the row too, and the same pick switches it on', () => {
@@ -199,16 +201,18 @@ step('⭐⭐ a MIDI track has the row too, and the same pick switches it on', ()
     pickArp();
     const load = sets.find((s) => s[1] === 'midi_fx1:module');
     assert(load && load[0] === T && load[2] === 'arp', 'wrong load on a MIDI track: ' + JSON.stringify(load));
-    assert(dsp['t' + T + '_fxslot'] === '1' && ENG[T + '|midi_fx_host_route'] === '1', 'not switched on: ' + JSON.stringify(order));
+    assert(dsp['t' + T + '_fxpost'] === '1' && ENG[T + '|midi_fx_host_route'] === '1', 'not switched on: ' + JSON.stringify(order));
 });
 
-step('CONTROL: a Schwung track\'s pick writes neither switch — its effect plays its own instrument', () => {
+step('⭐ a Schwung track\'s pick switches it on too, the slot\'s half first — its module runs before the track\'s effects', () => {
     reset(); enterMenu(0);
     pickArp();
     assert(sets.some((s) => s[1] === 'midi_fx1:module' && s[0] === T), 'rig: nothing loaded on the Schwung track');
-    /* (a Post effect: everything it writes is OFF — Pre is the module page's
-     * Position row, test_fx_position_row) */
-    assert(!order.some((o) => /(midi_fx_host_route|_fxslot|_fxpre)=1/.test(o)), 'a Schwung track was switched: ' + JSON.stringify(order));
+    const c = order.indexOf('chain:' + T + ':midi_fx_host_route=1');
+    const d = order.indexOf('dsp:t' + T + '_fxpost=1');
+    assert(c >= 0 && d > c, 'a Schwung track was not switched on, slot first: ' + JSON.stringify(order));
+    /* (Post: Pre is the module page's Position row, test_fx_position_row) */
+    assert(order.indexOf('dsp:t' + T + '_fxpre=0') >= 0, 'Pre was not written off: ' + JSON.stringify(order));
 });
 
 step('CONTROL: no MIDI FX row with no instrument, or on a Conductor', () => {
@@ -222,22 +226,24 @@ step('CONTROL: no MIDI FX row with no instrument, or on a Conductor', () => {
     GS.trackPadMode[T] = 0;
 });
 
-step('⭐ a route change carries the effect: Schwung -> Move switches it on, Move -> Schwung off', () => {
+step('⭐ a route change carries the effect: on at Schwung, on at Move, OFF at None', () => {
     /* The engine's half is DEFERRED to the next tick here: the route write must
      * stand alone in its callback (test_instr_pick_sets_route). */
-    const fxq = () => GS.pendingDefaultSetParams.filter((p) => p.key === 't' + T + '_fxslot').map((p) => p.val);
+    const fxq = () => GS.pendingDefaultSetParams.filter((p) => p.key === 't' + T + '_fxpost').map((p) => p.val);
     reset();
     GS.pendingDefaultSetParams.length = 0;
     ENG[T + '|midi_fx1:module'] = 'arp';
     GS.trackRoute[T] = 0;
     bridge.applyTrackConfig(T, 'route', 1);
     assert(ENG[T + '|midi_fx_host_route'] === '1' && fxq().join() === '1', 'to Move: ' + JSON.stringify([order, fxq()]));
-    assert(!('t' + T + '_fxslot' in dsp), 'the engine switch shared the route write\'s callback');
+    assert(!('t' + T + '_fxpost' in dsp), 'the engine switch shared the route write\'s callback');
     bridge.applyTrackConfig(T, 'route', 0);
-    assert(ENG[T + '|midi_fx_host_route'] === '0' && fxq().join() === '1,0', 'to Schwung: ' + JSON.stringify(fxq()));
+    assert(ENG[T + '|midi_fx_host_route'] === '1' && fxq().join() === '1,1', 'to Schwung: ' + JSON.stringify(fxq()));
+    bridge.applyTrackConfig(T, 'route', 3);      /* ROUTE_NONE */
+    assert(ENG[T + '|midi_fx_host_route'] === '0' && fxq().join() === '1,1,0', 'to None: ' + JSON.stringify(fxq()));
     delete ENG[T + '|midi_fx1:module'];
     bridge.applyTrackConfig(T, 'route', 2);
-    assert(ENG[T + '|midi_fx_host_route'] === '0' && fxq().join() === '1,0,0', 'with NO effect, a MIDI track was switched on');
+    assert(ENG[T + '|midi_fx_host_route'] === '0' && fxq().join() === '1,1,0,0', 'with NO effect, a MIDI track was switched on');
     GS.pendingDefaultSetParams.length = 0;
 });
 

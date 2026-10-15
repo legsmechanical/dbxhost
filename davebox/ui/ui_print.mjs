@@ -16,7 +16,6 @@
 import { S } from './ui_state.mjs';
 import { slotIndex, engineLoadedModule, engineGet, engineSet, engineSetChainParam,
          engineSaveState } from './ui_engine.mjs';
-import { syncTrackMidiFx } from './ui_dsp_bridge.mjs';
 import { showActionPopupFor } from './ui_persistence.mjs';
 import { noteUndoUnit } from './ui_state.mjs';
 import { ROUTE_NONE, PAD_MODE_DRUM } from './ui_constants.mjs';
@@ -52,25 +51,19 @@ export function printStart(t, c, loops) {
         return false;
     }
     const slot = slotIndex(t);
-    /* A Schwung track's effect normally plays its own instrument: for the
-     * print it hands its output to the engine, which records it and sends it
-     * on (a Move / MIDI track's borrowed effect already does). */
-    if (S.trackRoute[t] === 0) engineSetChainParam(slot, 'midi_fx_host_route', 1);
+    /* Nothing to re-route: the module runs first, so the track's own output
+     * -- what the engine records -- already has it in. */
     host_module_set_param('print_arm', t + ' ' + c + ' ' + loops);
     printing = { t, c, loops, slot, polled: 0 };
     showActionPopupFor(60000, 'PRINTING ' + loops + 'x', 'MIDI FX, live', 'Back cancels');
     return true;
 }
 
-/* The slot's hand-back as it was before the print. */
-function restoreRoute(p) { syncTrackMidiFx(p.t); }
-
 export function printCancel() {
     if (!printing) return;
     const p = printing;
     printing = null;
     host_module_set_param('print_cancel', '1');
-    restoreRoute(p);
     showActionPopupFor(1500, 'BAKE CANCELLED');
 }
 
@@ -84,8 +77,7 @@ export function printTick() {
         const p = printing;
         printing = null;
         engineSet(p.slot, 'midi_fx1', 'bypassed', '1');   /* or the clip plays through it twice */
-        restoreRoute(p);
-        host_module_set_param('print_done', '1');
+            host_module_set_param('print_done', '1');
         engineSaveState();
         noteUndoUnit(); S.undoSeqArpSnapshot = null;
         showActionPopupFor(2500, 'BAKED', p.loops + 'x', 'MIDI FX bypassed');
@@ -102,8 +94,7 @@ export function printTick() {
         /* the engine dropped it (refused, or stopped under it) */
         const p = printing;
         printing = null;
-        restoreRoute(p);
-        showActionPopupFor(2000, 'BAKE STOPPED');
+            showActionPopupFor(2000, 'BAKE STOPPED');
     } else if (printing.polled % 50 === 0) {
         showActionPopupFor(60000, 'PRINTING ' + printing.loops + 'x', 'MIDI FX, live', 'Back cancels');
     }

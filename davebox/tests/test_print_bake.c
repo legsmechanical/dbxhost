@@ -3,11 +3,12 @@
  * CAN be baked?").
  *
  * The offline bake cannot run a module, so a print plays the clip for real —
- * a solo Live Merge of the track — and records what the MODULE put out (the
- * slot's hand-back), not this engine's own output (which is before the
- * module). It ends itself after N passes, to the tick, writes the take over
- * the clip, and stops the transport. Here the module is a stand-in: every
- * note the engine sends into slot 1 comes back with a third on top.
+ * a solo Live Merge of the track — and records the track's own output, which
+ * has the module in it: a POST module runs first (tN_fxpost), and what it
+ * hands back plays through the track's effects. It ends itself after N
+ * passes, to the tick, writes the take over the clip, and stops the
+ * transport. Here the module is a stand-in: every note the engine sends into
+ * slot 1 comes back with a third on top.
  *
  *   - refused while playing, or for a clip that is not the track's active one;
  *   - armed → a count-in → printing → done (state 1 → 2 → 3);
@@ -64,6 +65,7 @@ int main(void) {
 
     hx_set_param(h, "t1_route", "schwung");
     HX_ASSERT(tr->pfx.slot == T && tr->pad_mode != PAD_MODE_DRUM, "rig: melodic Schwung track 1, slot 1");
+    hx_set_param(h, "t1_fxpost", "1");                  /* a POST module on its slot */
     inst->active_track = T;
     hx_set_param(h, "t1_launch_clip", "0");
     hx_render(h, 2);

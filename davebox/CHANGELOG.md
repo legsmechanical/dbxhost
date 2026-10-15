@@ -64,6 +64,11 @@ the section into a versioned heading at release time.
   **Grv Velocity** and **Grv Random** can be set per track the same way.
 
 ### Changed
+- **A MIDI effect at Post runs first.** The clip's notes now go into the
+  module, and the track's own clip effects — NOTE FX, Harmonize, MIDI Delay,
+  SEQ ARP — work on what the module plays. A MIDI Delay echoes an
+  arpeggiator's notes; Harmonize stacks on a chord module's chords. On a drum
+  track the module's notes play on the lane whose note they are.
 - **Session map: the FX pads moved one column right**, so they no longer sit
   directly beside the mixer pads.
 - **MIDI FX sits above the instrument** in a track's sound menu, so the rows

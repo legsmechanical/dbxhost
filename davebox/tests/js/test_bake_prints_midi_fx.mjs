@@ -9,7 +9,8 @@ import './_bulk_get_stub.mjs';   /* the bulk read, derived from this test's sing
  * press/release in Track View, jog to a loop count, click.
  *
  *   - Post module in play → print_arm "T C N", not `bake`; no wrap question;
- *   - on a Schwung track the slot is told to hand its output back first;
+ *   - the slot's routing is left alone: the module already runs first, so
+ *     the track's own output -- what the engine records -- has it in;
  *   - the surface is held: Back cancels (print_cancel), other buttons are
  *     swallowed;
  *   - done → the module is bypassed on the track's slot, print_done, BAKED;
@@ -92,10 +93,8 @@ step('⭐⭐ a Post module in play: Bake PRINTS — print_arm, no instant bake, 
     assert(!S.confirmBake && !S.confirmBakeWrapPhase, 'a dialog is still up (the wrap question?)');
 });
 
-step('⭐ on a Schwung track the slot hands its output back first', () => {
-    const i = sets.findIndex((x) => x[1] === T + '|midi_fx_host_route' && x[2] === '1');
-    const j = sets.findIndex((x) => x[1] === 'print_arm');
-    assert(i >= 0 && i < j, 'order: ' + JSON.stringify(sets));
+step('⭐ the print leaves the slot\'s routing alone (the module already runs first)', () => {
+    assert(!sets.some((x) => x[1] === T + '|midi_fx_host_route'), 'the print re-routed the slot: ' + JSON.stringify(sets));
 });
 
 step('⭐ while it plays the surface is held: buttons are swallowed', () => {
@@ -112,18 +111,18 @@ step('⭐⭐ DONE: the module is bypassed on the track\'s slot, the engine told,
     assert(ENG[T + '|midi_fx1:bypassed'] === '1', 'the module was not bypassed — the clip would play through it twice');
     assert(dsp('print_done').length === 1, 'print_done: ' + JSON.stringify(sets));
     assert((S.actionPopupLines || []).join(' ').indexOf('BAKED') >= 0, 'popup: ' + JSON.stringify(S.actionPopupLines));
-    assert(ENG[T + '|midi_fx_host_route'] === '0', 'the slot\'s hand-back was left on after the print');
+    assert(!sets.some((x) => x[1] === T + '|midi_fx_host_route'), 'the finish re-routed the slot: ' + JSON.stringify(sets));
     PRINT_STATE = '0';
 });
 
-step('⭐ Back during a print cancels it, and the slot goes back to how it was', () => {
+step('⭐ Back during a print cancels it, and leaves the module as it was', () => {
     setModule('arp', false);
     bake2x();
     assert(dsp('print_arm').length === 1, 'rig: not printing');
     sets.length = 0;
     cc(HC.MoveBack, 127); cc(HC.MoveBack, 0);
     assert(dsp('print_cancel').length === 1, 'print_cancel: ' + JSON.stringify(sets));
-    assert(ENG[T + '|midi_fx_host_route'] === '0', 'the hand-back was left on');
+    assert(!sets.some((x) => x[1] === T + '|midi_fx_host_route'), 'the cancel re-routed the slot: ' + JSON.stringify(sets));
     ticks(12);
     assert(ENG[T + '|midi_fx1:bypassed'] === '0', 'a cancelled print bypassed the module');
 });

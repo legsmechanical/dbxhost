@@ -1233,12 +1233,13 @@ function readTrackConfig(t) {
     /* 0 = plays its own instrument; 1..8 = plays that track's (`MIDI to Track N`). */
     const mt = dspGet('t' + t + '_midi_to');
     if (mt !== null && mt !== undefined) S.trackMidiTo[t] = parseInt(mt, 10) | 0;
-    /* Plays through its slot's MIDI FX (a Move / MIDI track). "" = unknown: keep. */
-    const fs = dspGet('t' + t + '_fxslot');
-    if (fs === '0' || fs === '1') S.trackFxSlot[t] = fs === '1' ? 1 : 0;
-    /* Its MIDI FX module's Position: 1 = Pre. "" = unknown: keep. */
+    /* Its MIDI FX module: 1 = Post (runs first), and its Position: 1 = Pre.
+     * "" = unknown: keep. Either way the track's notes go through its slot. */
+    const fo = dspGet('t' + t + '_fxpost');
     const fp = dspGet('t' + t + '_fxpre');
     if (fp === '0' || fp === '1') S.trackFxPre[t] = fp === '1' ? 1 : 0;
+    if ((fo === '0' || fo === '1') && (fp === '0' || fp === '1'))
+        S.trackFxSlot[t] = fo === '1' || fp === '1' ? 1 : 0;
     /* Bulk read (project load): re-derive after the last track, below. */
     const pm = dspGet('t' + t + '_pad_mode');
     if (pm !== null && pm !== undefined) S.trackPadMode[t] = parseInt(pm, 10) | 0;
@@ -1328,36 +1329,32 @@ export function applyInstrChoice(t, v) {
     return true;
 }
 
-/* MIDI FX on a Move or MIDI track. Such a track's own chain slot is parked,
- * so its MIDI FX block is free to borrow: with an effect loaded there, the
- * engine sends the track's notes through the slot (tN_fxslot) and the slot
- * hands the effect's whole output back instead of playing it
- * (`midi_fx_host_route`), for the engine to send where the track's notes go.
- * A Schwung track needs neither — its notes already reach the effect, and its
- * output already plays the slot's instrument.
+/* A track's MIDI FX module, on every kind of track. It runs FIRST: what the
+ * track plays goes into its own chain slot (a Move or MIDI track's is parked,
+ * so it is free to borrow), the slot hands the module's whole output back
+ * instead of playing it (`midi_fx_host_route`), and the engine plays that
+ * through the track's own effects to where its notes go -- POST, tN_fxpost.
+ * PRE (S.trackFxPre — the module page's Position row) puts it in front of the
+ * sequencer instead: what is PLAYED goes through it, tN_fxpre.
  *
- * Both halves are written together, the slot's FIRST: the other order would
- * send a note into a slot still playing its effect's output on the parked
- * instrument. `loaded` overrides the read when the caller has just changed the
- * module (the chain loads it asynchronously, so a read now is stale).
- * `defer`: the engine's half goes through the default-param queue (next
- * tick) — for a caller that has just written another tN_ key in the same
- * callback, which can coalesce and drop one (the route write must stand
- * alone; test_instr_pick_sets_route). */
+ * The slot's half is written FIRST: the other order would send a note into a
+ * slot still playing its module's output on its own instrument. `loaded`
+ * overrides the read when the caller has just changed the module (the chain
+ * loads it asynchronously, so a read now is stale). `defer`: the engine's half
+ * goes through the default-param queue (next tick) — for a caller that has
+ * just written another tN_ key in the same callback, which can coalesce and
+ * drop one (the route write must stand alone; test_instr_pick_sets_route). */
 export function syncTrackMidiFx(t, loaded, defer) {
     const slot = slotIndex(t);
     const has = loaded === undefined ? !!engineLoadedModule(slot, 'midi_fx1') : !!loaded;
     const route = S.trackRoute[t];
-    const on = has && (route === 1 || route === 2) ? 1 : 0;
-    /* PRE (S.trackFxPre — the module's Position row): what is played goes
-     * through the effect and comes back to the engine on EVERY track kind, so
-     * the slot hands its output back on a Schwung track too. No module, no Pre:
-     * the next one starts at Post. */
+    /* No module, no Pre: the next one starts at Post. */
     if (!has) S.trackFxPre[t] = 0;
-    const pre = has && route !== ROUTE_NONE && S.trackFxPre[t] ? 1 : 0;
-    engineSetChainParam(slot, 'midi_fx_host_route', on || pre ? 1 : 0);
+    const on = has && route !== ROUTE_NONE ? 1 : 0;
+    const pre = on && S.trackFxPre[t] ? 1 : 0;
+    engineSetChainParam(slot, 'midi_fx_host_route', on);
     S.trackFxSlot[t] = on;
-    const writes = [['t' + t + '_fxslot', String(on)], ['t' + t + '_fxpre', String(pre)]];
+    const writes = [['t' + t + '_fxpost', String(on && !pre ? 1 : 0)], ['t' + t + '_fxpre', String(pre)]];
     for (const [k, v] of writes) {
         if (defer) S.pendingDefaultSetParams.push({ key: k, val: v });
         else host_module_set_param(k, v);

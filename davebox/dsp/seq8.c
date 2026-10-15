@@ -906,6 +906,24 @@ typedef struct {
     drum_pfx_params_t pfx_params;
 } drum_rec_snap_lane_t;
 
+/* A POST track's notes on their way INTO its MIDI FX module (fx_post), per
+ * pitch: when the note-on is due (a swung note is held back as the clip's
+ * own effects would hold it), and when its note-off is (its gate). Kept apart
+ * from the effects' own records (pfx.active_notes), which hold what the
+ * module sends BACK -- a chord module gives the root back on the same pitch.
+ * Serviced once a block (post_raw_service). Runtime only. */
+typedef struct {
+    uint64_t on_time[128];   /* when it entered: its gate counts from here */
+    uint64_t gate[128];      /* a sequenced note's own gate in samples (0 = the track's) */
+    uint64_t on_at[128];     /* 0 = sent; else the parked note-on's time */
+    uint64_t off_at[128];    /* 0 = none; else when its note-off goes in */
+    uint64_t park[128];      /* how long its note-on was held: its note-off waits as long */
+    uint8_t  vel[128];
+    uint8_t  held[128];      /* 1 = sounding in (or bound for) the module */
+    uint8_t  lane_pitch[DRUM_LANES]; /* a drum lane's note in the module, + 1 (0 = none) */
+    uint8_t  pending;        /* some on_at / off_at is set */
+} post_raw_t;
+
 typedef struct {
     uint8_t   channel;              /* MIDI channel 0-3 */
     clip_t    clips[NUM_CLIPS];
@@ -1126,25 +1144,18 @@ typedef struct {
      * release goes where its start went even if the lane map or the track's
      * type changed in between. */
     uint8_t   audition_lane[128];
-    /* MIDI FX on a Move or MIDI track. Such a track's own chain slot is parked
-     * (its instrument is elsewhere), so the slot's MIDI FX are free to borrow:
-     * with this set, every message the track would send to Move or the USB
-     * port goes to the slot instead (via_slot_divert), the slot's MIDI FX run
-     * on it -- and tick their arps -- exactly as on a Schwung track, and the
-     * chain hands ALL of their output back (chain key `midi_fx_host_route`)
-     * for slot_fx_emit to send where the track's notes go. The chain stays the
-     * only thing driving its plugins. Set by the UI while a MIDI FX is loaded
-     * on such a track (tN_fxslot); saved with the project. */
-    uint8_t   fx_via_slot;
-    /* What the slot's MIDI FX have sounding at the track's destination, per
-     * pitch (counted, like pfx.pitch_refcount), and where that is (one place:
-     * a track's destination is one route and channel), so a panic,
-     * a route change or switching the effect off can close exactly those.
-     * Runtime only. */
-    uint8_t   fx_out_held[128];
-    uint8_t   fx_out_route;   /* ROUTE_MOVE / ROUTE_EXTERNAL of the held notes */
-    uint8_t   fx_out_ch;      /* ...and the channel they sound on */
-    uint8_t   fx_out_flush;   /* set from set_param: close the held notes at the next render */
+    /* The track's MIDI FX module is POST (tN_fxpost), on any kind of track:
+     * the module runs FIRST. What the track plays -- the clip, LIVE ARP, note
+     * repeat, the pads -- goes into its own chain slot raw (post_raw_*: the
+     * note's length already decided, its swing already applied), the slot
+     * hands the module's whole output back (chain key `midi_fx_host_route`,
+     * which the UI turns on with this), and post_handback plays that through
+     * the track's own effects (NOTE FX, HARMZ, MIDI delay, SEQ ARP) to where
+     * the track's notes go, past the module (via_slot_divert). A Move or MIDI
+     * track borrows its parked slot this way. Set by the UI while a MIDI FX is
+     * loaded at Post; saved with the project (t%d_fo). */
+    uint8_t   fx_post;
+    post_raw_t post;
     /* The track's MIDI FX module is PRE (tN_fxpre): what is PLAYED goes
      * through it and its output is what is heard, captured and recorded; what
      * the clip plays back skips it. Played notes are caught at live_note_on /
@@ -1257,6 +1268,7 @@ typedef struct {
     uint32_t arp_master_tick;         /* free-running master tick for SEQ ARP; advances even while stopped, resets on transport play / count-in fire */
     int      emit_bypass_swing;       /* set to 1 around live-tap emissions; pfx_send/drum_pfx_send skip swing when nonzero */
     int      pre_returning;           /* 1 while pre_handback plays a PRE effect's output: live_note_on/off must not send it back in */
+    int      post_returning;          /* 1 while post_handback plays a POST module's output: it goes through the track's effects, not back into the module */
     int      in_queue_drain;          /* set inside pfx_q_fire/drum_pfx_q_fire so re-entered pfx_send/drum_pfx_send skip the swing block (preserving arp/looper/merge hooks but preventing re-queue) */
     uint64_t swing_step_delay_offbeat;/* offbeat-step swing offset in samples; kept current independent of which step we're on so schedule-time swing helper doesn't recompute */
 
@@ -2077,32 +2089,24 @@ static midi_dest_t midi_dest_resolve(uint8_t route, uint8_t slot, uint8_t midi_t
     return d;
 }
 
-/* MIDI FX on a Move or MIDI track (seq8_track_t.fx_via_slot): a message bound
- * for Move or the USB port goes to the track's own chain slot instead, to run
- * through its MIDI FX; the chain hands the result back (slot_fx_emit). Called
- * by both emitters once the destination and its channel are final. Returns 1
- * if it took the message. */
+/* The track's MIDI FX module already ran on what it plays -- PRE on what was
+ * played (pre_handback), POST on what the track plays (post_handback) -- so
+ * its effects' output goes on PAST the module: a Schwung track's own slot is
+ * reached direct (to its instrument), Move / the port as usual. Called by both
+ * emitters once the destination and its channel are final. Returns 1 if it
+ * took the message. */
 static int via_slot_divert(uint8_t track_idx, const midi_dest_t *dst,
                            uint8_t status, uint8_t d1, uint8_t d2) {
     if (!g_inst || !g_host || track_idx >= NUM_TRACKS) return 0;
     const seq8_track_t *tr = &g_inst->tracks[track_idx];
-    const uint8_t msg[4] = { (uint8_t)(status >> 4), status, d1, d2 };
-    /* PRE: the effect already ran on what was played (pre_handback), and the
-     * clip's playback skips it. A Schwung track's own slot is reached past
-     * its MIDI FX; Move / the port are reached as usual. */
-    if (tr->fx_pre) {
-        if (dst->route == ROUTE_SCHWUNG && dst->slot == tr->pfx.slot &&
-                g_ext && g_ext->midi_send_slot_direct) {
-            g_ext->midi_send_slot_direct((int)dst->slot, msg, 4);
-            return 1;
-        }
-        return 0;
+    if (!tr->fx_pre && !tr->fx_post) return 0;
+    if (dst->route == ROUTE_SCHWUNG && dst->slot == tr->pfx.slot &&
+            g_ext && g_ext->midi_send_slot_direct) {
+        const uint8_t msg[4] = { (uint8_t)(status >> 4), status, d1, d2 };
+        g_ext->midi_send_slot_direct((int)dst->slot, msg, 4);
+        return 1;
     }
-    if (!tr->fx_via_slot) return 0;
-    if (dst->route != ROUTE_MOVE && dst->route != ROUTE_EXTERNAL) return 0;
-    if (!g_host->midi_send_internal_slot) return 0;
-    g_host->midi_send_internal_slot((int)tr->pfx.slot, msg, 4);
-    return 1;
+    return 0;
 }
 
 /* PRE: a played note into the track's own slot, to run through its MIDI FX
@@ -2116,55 +2120,97 @@ static int pre_divert(seq8_instance_t *inst, seq8_track_t *tr, uint8_t status, u
     return 1;
 }
 
-/* Send one message to Move or the USB port, as the emitters do. */
-static void route_out(uint8_t route, uint8_t status, uint8_t d1, uint8_t d2) {
-    if (!g_host) return;
-    if (route == ROUTE_MOVE) {
-        if (!g_host->midi_inject_to_move) return;
-        uint8_t pkt[4] = { (uint8_t)(0x20 | (status >> 4)), status, d1, d2 };
-        g_host->midi_inject_to_move(pkt, 4);
-    } else if (route == ROUTE_EXTERNAL) {
-        if (!g_host->midi_send_external) return;
-        const uint8_t pkt[4] = { (uint8_t)(0x20 | ((status >> 4) & 0x0F)), status, d1, d2 };
-        g_host->midi_send_external(pkt, 4);
+/* ---- POST: the track's notes into its MIDI FX module (fx_post) ---- */
+
+static uint64_t pfx_gate_smp(seq8_instance_t *inst, seq8_track_t *tr);
+
+/* Does what this track plays go into its module first? Not while the
+ * module's own output is coming back through the track (post_returning). */
+static inline int post_takes(const seq8_instance_t *inst, const seq8_track_t *tr) {
+    return tr->fx_post && !inst->post_returning && tr->pfx.route != ROUTE_NONE
+        && tr->pad_mode != PAD_MODE_CONDUCT;
+}
+
+static void post_raw_send(seq8_track_t *tr, uint8_t type, uint8_t d1, uint8_t d2) {
+    if (!g_host || !g_host->midi_send_internal_slot) return;
+    const uint8_t st = (uint8_t)(type | (tr->channel & 0x0F));
+    const uint8_t msg[4] = { (uint8_t)(st >> 4), st, d1, d2 };
+    g_host->midi_send_internal_slot((int)tr->pfx.slot, msg, 4);
+}
+
+/* A note-on into the module, now or -- swung, or held by a groove -- when the
+ * track's own effects would have sent it. A pitch already in there is closed
+ * first, so the module never holds two of one note. */
+static void post_raw_on(seq8_instance_t *inst, seq8_track_t *tr, uint8_t p, uint8_t vel) {
+    post_raw_t *r = &tr->post;
+    const uint64_t now = tr->pfx.sample_counter;
+    if (p > 127) return;
+    if (r->held[p]) {
+        if (!r->on_at[p]) post_raw_send(tr, 0x80, p, 0);   /* sent: close it; parked: it never went */
+        r->held[p] = 0; r->on_at[p] = 0; r->off_at[p] = 0;
+    }
+    const uint64_t park = (inst->emit_bypass_swing || inst->in_queue_drain)
+                        ? 0 : groove_park_now(inst, (int)tr->pfx.track_idx);
+    r->held[p] = 1; r->on_time[p] = now; r->gate[p] = 0; r->park[p] = park; r->vel[p] = vel;
+    if (park) { r->on_at[p] = now + park; r->pending = 1; }
+    else post_raw_send(tr, 0x90, p, vel);
+}
+
+/* Its note-off: at the end of `gate` (0 = now), waiting as long as its
+ * note-on was held, and never before its note-on. */
+static void post_raw_off(seq8_track_t *tr, uint8_t p, uint64_t gate) {
+    post_raw_t *r = &tr->post;
+    const uint64_t now = tr->pfx.sample_counter;
+    if (p > 127 || !r->held[p]) return;
+    uint64_t at = gate ? r->on_time[p] + gate + r->park[p] : now;
+    if (r->on_at[p] && at < r->on_at[p]) at = r->on_at[p];
+    if (at > now) { r->off_at[p] = at; r->pending = 1; return; }
+    post_raw_send(tr, 0x80, p, 0);
+    r->held[p] = 0; r->off_at[p] = 0;
+}
+
+/* Once a block: send what has come due, note-ons before note-offs. */
+static void post_raw_service(seq8_instance_t *inst) {
+    int t, p;
+    for (t = 0; t < NUM_TRACKS; t++) {
+        seq8_track_t *tr = &inst->tracks[t];
+        post_raw_t *r = &tr->post;
+        if (!r->pending) continue;
+        const uint64_t now = tr->pfx.sample_counter;
+        int left = 0;
+        for (p = 0; p < 128; p++) {
+            if (!r->held[p]) continue;
+            if (r->on_at[p]) {
+                if (r->on_at[p] <= now) { post_raw_send(tr, 0x90, (uint8_t)p, r->vel[p]); r->on_at[p] = 0; }
+                else { left = 1; continue; }
+            }
+            if (r->off_at[p]) {
+                if (r->off_at[p] <= now) { post_raw_send(tr, 0x80, (uint8_t)p, 0); r->held[p] = 0; r->off_at[p] = 0; }
+                else left = 1;
+            }
+        }
+        r->pending = (uint8_t)left;
     }
 }
 
-/* What the slot's MIDI FX made from a via-slot track's messages, on its way
- * to where the track's notes go. Audio thread (the host's drain, after this
- * module's render). Re-addressed here: the slot may have changed the channel,
- * and a `MIDI to Track N` follower sends on its target's. Note pairs are
- * counted per pitch, so a chord's overlapping notes and the duplicate offs a
- * stopping arp sends after a panic cannot unbalance Move's voices. */
-static void slot_fx_emit(seq8_track_t *tr, uint8_t status, uint8_t d1, uint8_t d2) {
-    const uint8_t type = (uint8_t)(status & 0xF0);
-    if (type < 0x80 || type > 0xE0 || d1 > 127) return;
-    if (tr->pad_mode == PAD_MODE_CONDUCT) return;
-    midi_dest_t dst = midi_dest_resolve(tr->pfx.route, tr->pfx.slot, tr->pfx.midi_to);
-    if (!dst.emit || (dst.route != ROUTE_MOVE && dst.route != ROUTE_EXTERNAL)) return;
-    const uint8_t ch = dst.channel != MIDI_DEST_KEEP_CH ? dst.channel : (uint8_t)(tr->channel & 0x0F);
-    status = (uint8_t)(type | ch);
-    if (type == 0x90 && d2 > 0) {
-        if (tr->fx_out_held[d1] == 255) return;
-        if (tr->fx_out_held[d1]++ != 0) return;          /* already sounding */
-        tr->fx_out_route = dst.route;
-        tr->fx_out_ch = ch;
-    } else if (type == 0x80 || type == 0x90) {
-        if (tr->fx_out_held[d1] == 0) return;            /* never sounded, or already closed */
-        if (--tr->fx_out_held[d1] != 0) return;          /* still sounding from another */
+/* Close everything the track has in its module, now (a parked note-on never
+ * goes). Panic, the module switched off or moved, a route change. */
+static void post_raw_release_all(seq8_track_t *tr) {
+    post_raw_t *r = &tr->post;
+    int p;
+    for (p = 0; p < 128; p++) {
+        if (!r->held[p]) continue;
+        if (!r->on_at[p]) post_raw_send(tr, 0x80, (uint8_t)p, 0);
+        r->held[p] = 0; r->on_at[p] = 0; r->off_at[p] = 0;
     }
-    route_out(dst.route, status, d1, d2);
+    memset(r->lane_pitch, 0, sizeof r->lane_pitch);
+    r->pending = 0;
 }
 
-/* Close every note the slot's MIDI FX have sounding for this track, where
- * they sound. Panic, a route change, the effect switched off. */
-static void fx_via_slot_silence(seq8_track_t *tr) {
-    int n;
-    for (n = 0; n < 128; n++) {
-        if (!tr->fx_out_held[n]) continue;
-        tr->fx_out_held[n] = 0;
-        route_out(tr->fx_out_route, (uint8_t)(0x80 | (tr->fx_out_ch & 0x0F)), (uint8_t)n, 0);
-    }
+/* A sequenced note's own gate (Len-aware), for whichever record holds it. */
+static inline void pfx_set_gate_override(seq8_instance_t *inst, seq8_track_t *tr, uint8_t p, uint64_t smp) {
+    if (post_takes(inst, tr)) { if (p < 128 && tr->post.held[p]) tr->post.gate[p] = smp; }
+    else tr->pfx.active_notes[p].gate_override_smp = smp;
 }
 
 /* Forward decls — arp engine and scale_transpose defined further down. */
@@ -2191,15 +2237,13 @@ static void merge_finalize(seq8_instance_t *inst);
 /* Live Merge's capture of one message on track `tri` (melodic and drum-lane
  * output alike). Capture continues during STOPPING (the user tapped stop but
  * the bar has not landed) so trailing notes in the final page still make it
- * in. Single-clip merge: only the solo track. A PRINT takes its track's notes
- * from the MIDI FX module's output (`from_fx`, the slot's hand-back), never
- * from this engine's own output, which is before the module. */
-static void merge_capture(uint8_t tri, uint8_t status, uint8_t d1, uint8_t d2, int from_fx) {
+ * in. Single-clip merge: only the solo track. A PRINT is one of those: its
+ * track's output already has its POST module in it (the module runs first). */
+static void merge_capture(uint8_t tri, uint8_t status, uint8_t d1, uint8_t d2) {
     if (!g_inst || (g_inst->merge_state != MERGE_STATE_CAPTURING &&
                     g_inst->merge_state != MERGE_STATE_STOPPING)) return;
     uint8_t st = status & 0xF0;
     if (g_inst->merge_solo_track != 0xFF && tri != g_inst->merge_solo_track) return;
-    if (g_inst->print_state && tri == g_inst->print_track && !from_fx) return;
     if (tri >= NUM_TRACKS || (st != 0x90 && st != 0x80)) return;
     /* + groove_ahead: a note played ahead of its tick is captured at the tick
      * it belongs to, not the one it was fired on */
@@ -2620,7 +2664,7 @@ static void pfx_send(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
      * Capture continues during STOPPING (user has tapped merge_stop but the
      * bar boundary hasn't landed yet) so trailing notes in the final partial
      * page still make it in. */
-    merge_capture(fx->track_idx, status, d1, d2, 0);
+    merge_capture(fx->track_idx, status, d1, d2);
 
     /* Swing deferral: note-on and note-off on even steps are queued and routed
      * directly (bypass_swing) so they don't re-enter pfx_send on fire.
@@ -2844,9 +2888,9 @@ static void send_panic_ex(seq8_instance_t *inst, int full) {
             pfx_emit(fx, (uint8_t)(0xB0 | ch), 123, 0); /* All Notes Off */
         }
     }
-    /* MIDI FX on Move / MIDI tracks: what the slot's effects have sounding.
-     * By the held list, never a sweep (Move's inject is rate-limited). */
-    for (t = 0; t < NUM_TRACKS; t++) fx_via_slot_silence(&inst->tracks[t]);
+    /* POST modules: everything the tracks have in them. What a module had
+     * sounding is the tracks' own output, released above. */
+    for (t = 0; t < NUM_TRACKS; t++) post_raw_release_all(&inst->tracks[t]);
     /* ROUTE_MOVE: skip CC 123 sweep. Move's voice allocator corrupts when
      * CC 123 (all-notes-off) is followed by explicit note-offs for pitches
      * already killed by the CC. silence_track_notes_v2 already sent
@@ -3536,6 +3580,8 @@ static void pfx_reset(play_fx_t *fx) {
  * and the arp re-emits the picked note via pfx_send with arp_emitting=1. */
 static void pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
                         uint8_t orig_note, uint8_t vel) {
+    /* POST: the module first; what it makes comes back here (post_handback). */
+    if (post_takes(inst, tr)) { post_raw_on(inst, tr, orig_note, vel); return; }
     play_fx_t   *fx  = &tr->pfx;
     uint8_t      ch  = tr->channel;
     uint64_t     now = fx->sample_counter;
@@ -3748,6 +3794,13 @@ static void conductor_apply_now_retrigger(seq8_instance_t *inst) {
  * each emitted note-off via pfx_send, mirroring the note-on flow. */
 static void pfx_note_off(seq8_instance_t *inst, seq8_track_t *tr,
                          uint8_t orig_note) {
+    /* POST: a note the module has gets its off there, at its gate's end. A
+     * pitch it does not have is one of the module's own, coming back. */
+    if (post_takes(inst, tr) && orig_note < 128 && tr->post.held[orig_note]) {
+        post_raw_off(tr, orig_note, tr->post.gate[orig_note] ? tr->post.gate[orig_note]
+                                                             : pfx_gate_smp(inst, tr));
+        return;
+    }
     play_fx_t   *fx  = &tr->pfx;
     pfx_active_t *an = &fx->active_notes[orig_note];
 
@@ -3799,6 +3852,10 @@ static void pfx_note_off(seq8_instance_t *inst, seq8_track_t *tr,
  * should stop the moment the finger lifts regardless of how long gate_time is. */
 static void pfx_note_off_imm(seq8_instance_t *inst, seq8_track_t *tr,
                               uint8_t orig_note) {
+    if (post_takes(inst, tr) && orig_note < 128 && tr->post.held[orig_note]) {
+        post_raw_off(tr, orig_note, 0);
+        return;
+    }
     play_fx_t   *fx  = &tr->pfx;
     pfx_active_t *an = &fx->active_notes[orig_note];
 
@@ -5668,50 +5725,58 @@ static void pre_handback(seq8_instance_t *inst, seq8_track_t *tr, uint8_t status
     rui_content(inst);
 }
 
+/* POST: what the track's module made from what the track played. It goes
+ * through the track's own effects -- NOTE FX, HARMZ, MIDI delay, SEQ ARP --
+ * to where the track's notes go, past the module (via_slot_divert). Not as a
+ * pad (live_note_on): what was played is already recorded and captured, and
+ * LIVE ARP ran before the module. Not swung again: what went in was. Its
+ * note-offs are the module's, so each is a release, not a gate. A drum
+ * track's note plays on the lane whose note it is; one that is no lane's has
+ * nowhere to sound (as a pad, and as a bake). */
+static void post_handback(seq8_instance_t *inst, seq8_track_t *tr, uint8_t status, uint8_t d1, uint8_t d2) {
+    const uint8_t type = (uint8_t)(status & 0xF0);
+    const int is_on  = (type == 0x90 && d2 > 0);
+    const int is_off = (type == 0x80 || (type == 0x90 && d2 == 0));
+    if (type < 0x80 || type > 0xE0 || d1 > 127) return;
+    if (!is_on && !is_off) {
+        pfx_emit(&tr->pfx, (uint8_t)(type | (tr->channel & 0x0F)), d1, d2);
+        return;
+    }
+    const int held_bypass = inst->emit_bypass_swing;
+    inst->post_returning = 1;
+    inst->emit_bypass_swing = 1;
+    if (tr->pad_mode == PAD_MODE_DRUM) {
+        const drum_clip_t *dc = tr->drum_clips[tr->active_clip];
+        int l;
+        for (l = 0; dc && l < DRUM_LANES; l++) {
+            if (dc->lanes[l].midi_note != d1) continue;
+            if (is_on) drum_pfx_note_on(inst, tr, &tr->drum_lane_pfx[l], d1, d2);
+            else       drum_pfx_note_off_imm(inst, tr, &tr->drum_lane_pfx[l], d1);
+            break;
+        }
+    } else if (is_on) {
+        pfx_note_on(inst, tr, d1, d2);
+    } else {
+        pfx_note_off_imm(inst, tr, d1);
+    }
+    inst->emit_bypass_swing = held_bypass;
+    inst->post_returning = 0;
+}
+
 /* The host's entry (plugin_api_v1.h, MOVE_PLUGIN_SLOT_MIDI_V1_SYMBOL): called
  * on the audio thread after render_block, once per generated message. */
 void move_plugin_slot_midi_v1(void *instance, int slot, const uint8_t *msg, int len) {
     seq8_instance_t *inst = (seq8_instance_t *)instance;
     if (!inst || !msg || len < 2 || slot < 0 || slot >= SEQ8_CHAIN_SLOTS) return;
-    /* PRINT: the module's output on the printing track is what the take
-     * records. On a Schwung track (whose effect normally plays its own
-     * instrument) the UI turned the slot's hand-back on for the print, so the
-     * output is sent on to the instrument here, past the effect. */
-    if (inst->print_state && inst->print_track < NUM_TRACKS &&
-            (int)inst->tracks[inst->print_track].pfx.slot == slot) {
-        seq8_track_t *ptr = &inst->tracks[inst->print_track];
-        merge_capture(inst->print_track, msg[0], msg[1], len >= 3 ? msg[2] : 0, 1);
-        if (ptr->pfx.route == ROUTE_SCHWUNG && !ptr->fx_pre) {
-            if (g_ext && g_ext->midi_send_slot_direct) {
-                const uint8_t m4[4] = { (uint8_t)(msg[0] >> 4), msg[0], msg[1], len >= 3 ? msg[2] : 0 };
-                g_ext->midi_send_slot_direct(slot, m4, 4);
-            }
-            return;
-        }
-    }
-    /* A PRE effect: its output is what was played (pre_handback). */
     {
         int t;
         for (t = 0; t < NUM_TRACKS; t++) {
             seq8_track_t *tr = &inst->tracks[t];
-            if (tr->fx_pre && (int)tr->pfx.slot == slot && tr->pfx.route != ROUTE_NONE) {
-                pre_handback(inst, tr, msg[0], msg[1], len >= 3 ? msg[2] : 0);
-                return;
-            }
-        }
-    }
-    /* A Move or MIDI track borrowing its slot's MIDI FX: the slot's whole
-     * output, to be SENT where the track's notes go -- never recorded here
-     * (it carries the clip's own notes back). */
-    {
-        int t;
-        for (t = 0; t < NUM_TRACKS; t++) {
-            seq8_track_t *tr = &inst->tracks[t];
-            if (tr->fx_via_slot && (int)tr->pfx.slot == slot &&
-                (tr->pfx.route == ROUTE_MOVE || tr->pfx.route == ROUTE_EXTERNAL)) {
-                slot_fx_emit(tr, msg[0], msg[1], len >= 3 ? msg[2] : 0);
-                return;
-            }
+            if ((int)tr->pfx.slot != slot || tr->pfx.route == ROUTE_NONE) continue;
+            /* A PRE effect: its output is what was played (pre_handback). */
+            if (tr->fx_pre) { pre_handback(inst, tr, msg[0], msg[1], len >= 3 ? msg[2] : 0); return; }
+            /* A POST module: its output plays through the track's effects. */
+            if (tr->fx_post) { post_handback(inst, tr, msg[0], msg[1], len >= 3 ? msg[2] : 0); return; }
         }
     }
     if (len < 3) return;
@@ -7827,8 +7892,8 @@ static int pfx_get(seq8_track_t *tr, const char *key, char *out, int out_len) {
     if (!strcmp(key, "midi_to"))
         return snprintf(out, out_len, "%d", (int)fx->midi_to);
     /* 1 = this Move / MIDI track plays through its own slot's MIDI FX. */
-    if (!strcmp(key, "fxslot"))
-        return snprintf(out, out_len, "%d", (int)tr->fx_via_slot);
+    if (!strcmp(key, "fxpost"))
+        return snprintf(out, out_len, "%d", (int)tr->fx_post);
     /* 1 = the track's MIDI FX module is PRE (what is played goes through it). */
     if (!strcmp(key, "fxpre"))
         return snprintf(out, out_len, "%d", (int)tr->fx_pre);
@@ -9062,7 +9127,7 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
          * RT: stack buffers only, no allocation. */
         if (!strcmp(sub, "digest")) {
             static const char *TRACK_KEYS[] = {
-                "active_clip", "pad_octave", "transpose", "channel", "diq", "midi_to", "fxslot", "fxpre",
+                "active_clip", "pad_octave", "transpose", "channel", "diq", "midi_to", "fxpost", "fxpre",
                 "pad_mode", "route", "track_looper", "groove_ovr", "track_vel_override",
                 "tarp_si", "tarp_sll", "tarp_sv", "drum_r2rt",
                 "delay_clock_fb", "drum_meta",

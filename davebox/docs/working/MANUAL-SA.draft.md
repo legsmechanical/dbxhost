@@ -1821,12 +1821,17 @@ The last two pages are the same for every module:
   removing asks first if macros or automation would be left behind.
   - On a MIDI effect the page also has **Position** (Post / Pre). See below.
 
-**Position — Pre or Post.** Where a MIDI effect module sits, on any kind of track
-(dAVEBOx's own sequencer effects are not affected):
+**Position — Pre or Post.** Where a MIDI effect module sits, on any kind of track:
 
 - **Post** (the default): what you play is recorded as you played it, and the
   effect plays on top — on the clip and on your playing — on the way to the
-  instrument.
+  instrument. It comes **first**: the clip's notes go into the module, and the
+  track's own clip effects (NOTE FX, Harmonize, MIDI Delay, SEQ ARP) work on
+  what the module plays. So a MIDI Delay echoes an arpeggiator's notes, and
+  Harmonize stacks on a chord module's chords. Note length (Gate, Len) is set
+  before the module. On a drum track each of the module's notes plays on the
+  lane whose note it is, with that lane's effects; a note no lane plays is not
+  heard.
 - **Pre**: what you play goes *through* the effect, and the effect's output is
   what you hear, what **Record** writes into the clip and what **Capture** keeps.
   The clip then plays back *without* the effect, so a chord effect records

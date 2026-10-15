@@ -314,6 +314,8 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
         for (_l = 0; _l < DRUM_LANES; _l++)
             drum_pfx_q_fire(&inst->tracks[t].drum_lane_pfx[_l], inst->tracks[t].drum_lane_pfx[_l].sample_counter);
     }
+    /* POST tracks: the notes due into their modules. */
+    post_raw_service(inst);
 
     /* Clock-follow housekeeping: staleness, MovePlay inject drain, start timeout. */
     seq8_clock_follow_tick(inst, frames);
@@ -325,15 +327,6 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
     slot_tempo_declare(inst);
     move_info_publish(inst);
     slot_clock_edges(inst);
-    {   /* MIDI FX on Move / MIDI tracks: a route change or the effect switched
-         * off (set_param) closes what it had sounding, from here. */
-        int ft;
-        for (ft = 0; ft < NUM_TRACKS; ft++)
-            if (inst->tracks[ft].fx_out_flush) {
-                inst->tracks[ft].fx_out_flush = 0;
-                fx_via_slot_silence(&inst->tracks[ft]);
-            }
-    }
 
     /* Clock OUT transport edges (0xFA/0xFC). Emitted once per block from the
      * audio thread (single producer for the shim ext ring) on the db transport
@@ -751,8 +744,8 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                             drum_pfx_note_on(inst, tr, &tr->drum_lane_pfx[_rp_lane], _rp_pitch, _rp_vel);
                         else {
                             pfx_note_on(inst, tr, _rp_pitch, _rp_vel);
-                            tr->pfx.active_notes[_rp_pitch].gate_override_smp =
-                                pfx_ticks_to_smp(inst, tr, (uint32_t)_rp_gate);
+                            pfx_set_gate_override(inst, tr, _rp_pitch,
+                                pfx_ticks_to_smp(inst, tr, (uint32_t)_rp_gate));
                         }
                         inst->swing_step_delay = _rp_held; inst->park_explicit = _rp_held_x;
                         /* Push to play_pending for the sub-hit's own gate countdown */
@@ -1091,8 +1084,8 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                             tr->note_active = 1;
                         }
                         pfx_note_on(inst, tr, emit_pitch, _gvel);
-                        tr->pfx.active_notes[emit_pitch].gate_override_smp =
-                            pfx_ticks_to_smp(inst, tr, (uint32_t)_sub_gate);
+                        pfx_set_gate_override(inst, tr, emit_pitch,
+                            pfx_ticks_to_smp(inst, tr, (uint32_t)_sub_gate));
                         if (_ratch > 1) {
                             int _k;
                             for (_k = 1; _k < _ratch; _k++) {
