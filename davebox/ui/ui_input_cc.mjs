@@ -1526,7 +1526,7 @@ function bankMapPadActs(note) {
         !!bankMapModuleAt(S.trackRoute[S.activeTrack], S.trackPadMode[S.activeTrack], cell.col, cell.row);
     if (S.bankMapKind === 'session') {
         if (cell.col === 0) return SESS_PAD_MAP.mixer.modes[cell.row] !== undefined;
-        if (cell.col === 1) return !!SESS_PAD_MAP.fx.buses[cell.row];
+        if (cell.col === SESS_PAD_MAP.fx.col) return !!SESS_PAD_MAP.fx.buses[cell.row];
         return false;
     }
     const t = S.activeTrack;
@@ -1565,7 +1565,7 @@ export function bankMapPadTap(note) {
         if (cell.col === 0) {
             const mode = SESS_PAD_MAP.mixer.modes[cell.row];
             if (mode !== undefined) { bankMapCancelMenu(); sessWalkTo(mode, pickRest); }
-        } else if (cell.col === 1) {
+        } else if (cell.col === SESS_PAD_MAP.fx.col) {
             const bus = SESS_PAD_MAP.fx.buses[cell.row];
             if (bus) bankMapMenuTap({ kind: 'bus', bus, col: cell.col, row: cell.row });
         }

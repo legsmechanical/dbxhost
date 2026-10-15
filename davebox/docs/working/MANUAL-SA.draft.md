@@ -438,8 +438,8 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
 map**:
 
 - **Hold the jog**: the **MIXER** column is Volume, Pan, Send A and
-  Send B; beside it, the **FX** column opens the **Master**, **Send A** and
-  **Send B** effects directly, each next to its level. The sends share a color.
+  Send B; one column over (the third), the **FX** column opens the **Master**,
+  **Send A** and **Send B** effects directly, each level with its mixer row. The sends share a color.
   As on a track, a tap on a clicked-open map picks and puts the map away. The
   indicator at the top right names the mixer mode.
 - **Touch a knob** (or the jog) to see the mixer page. On the Send A or Send B

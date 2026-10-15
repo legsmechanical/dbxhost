@@ -1597,11 +1597,9 @@ export function bankMapItems() {
     if (S.bankMapKind === 'session') {
         const m = SESS_PAD_MAP;
         return {
-            cols: [
-                { label: m.mixer.label, cells: m.mixer.modes.map((i) => SESS_KNOB_MODES[i].label) },
-                { label: m.fx.label, cells: m.fx.names.slice() },
-                null, null,
-            ],
+            cols: [0, 1, 2, 3].map((c) =>
+                c === 0 ? { label: m.mixer.label, cells: m.mixer.modes.map((i) => SESS_KNOB_MODES[i].label) }
+                : c === m.fx.col ? { label: m.fx.label, cells: m.fx.names.slice() } : null),
             cur: S.bankMapDeferred ? { c: S.bankMapDeferred.col, r: S.bankMapDeferred.row }
                 : (S.sessKnobMode | 0) < 4 ? { c: 0, r: S.sessKnobMode | 0 } : null,
         };

@@ -181,8 +181,8 @@ step('⭐⭐ the Session map\'s MASTER pad lands IN Master FX (Shift + Note/Sess
     snd.soundExit(); ticks(2);
     S.sessionView = true; ticks(2);
     cc(3, 127);                                         /* jog down: the Session map */
-    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 93, 100]));   /* MASTER: col 1, top row */
-    globalThis.onMidiMessageInternal(new Uint8Array([0x80, 93, 0]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 94, 100]));   /* MASTER: col 2 (the third), top row */
+    globalThis.onMidiMessageInternal(new Uint8Array([0x80, 94, 0]));
     cc(3, 0);                                           /* jog up: it opens */
     ticks(4);
     const bus = snd.soundBusForTest();

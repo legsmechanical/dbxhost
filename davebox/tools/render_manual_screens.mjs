@@ -767,7 +767,7 @@ screen('session-mixer-senda', '3.6 Parameter banks', 'Session mixer — Send A',
     'The Send A page: how much of each track feeds the first send bus.',
     () => { toSession(); toMixer(2); });
 screen('session-bank-map', '14.8 Master FX and the sends', 'The Session map',
-    'In Session View hold the jog: the mixer modes down the left, MASTER, SEND A and SEND B effects beside them — tap one and let go to open it.',
+    'In Session View hold the jog: the mixer modes down the left, MASTER, SEND A and SEND B effects a column over — tap one and let go to open it.',
     () => { toSession(); press(3); ticks(2); if (!S.bankMapUp) throw new Error('holding the jog did not show the Session map'); });
 
 /* 12.3 — mute & solo, seen on the track row */
@@ -1107,7 +1107,7 @@ screen('midi-track-card', '14.1 Opening TRACK CONFIG', 'MIX on a MIDI track',
 /* 14.3 — the global effect buses, from Session View */
 screen('fx-buses', '14.8 Master FX and the sends', 'MASTER FX',
     'The MASTER pad on the Session map: Master FX and its four effect blocks. SEND A and SEND B open the same way.',
-    () => { toSession(); mapTap(PURE.bankMapPadForCell(1, 0)); ticks(6);
+    () => { toSession(); mapTap(PURE.bankMapPadForCell(PURE.SESS_PAD_MAP.fx.col, 0)); ticks(6);
             const b = SND.soundBusForTest();
             if (!b || b.id !== 'master') throw new Error('the MASTER pad did not open Master FX'); });
 

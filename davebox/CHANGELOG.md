@@ -64,6 +64,8 @@ the section into a versioned heading at release time.
   **Grv Velocity** and **Grv Random** can be set per track the same way.
 
 ### Changed
+- **Session map: the FX pads moved one column right**, so they no longer sit
+  directly beside the mixer pads.
 - **MIDI FX sits above the instrument** in a track's sound menu, so the rows
   follow the signal. The menu still opens on the instrument row.
 - **The bank map's track switches moved to Steps 1–8.** While you hold the jog,

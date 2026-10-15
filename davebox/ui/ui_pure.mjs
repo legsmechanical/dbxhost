@@ -250,11 +250,13 @@ export function bankPadMapCellAt(padMode, t, col, row) {
 
 /* Session View's map: the mixer modes down column 0 (SESS_KNOB_MODES indices
  * 0..3), and the effect buses in
- * column 1, each beside its level (Josh: "Send a and b [should be] aligned
+ * column `fx.col`, each level with its mixer row (Josh: "Send a and b [should be] aligned
  * with their counterparts on the mixer row"). Bus ids are FX_BUSES ids. */
 export const SESS_PAD_MAP = {
     mixer: { label: 'MIXER', modes: [0, 1, 2, 3] },
-    fx:    { label: 'FX', buses: ['master', null, 'sendA', 'sendB'],
+    /* In the THIRD column, a column clear of the mixer (Josh, 2026-10-15: "so
+     * the two aren't sitting right next to each other"). */
+    fx:    { label: 'FX', col: 2, buses: ['master', null, 'sendA', 'sendB'],
              names: ['MASTER', null, 'SEND A', 'SEND B'] },
 };
 

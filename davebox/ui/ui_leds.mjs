@@ -579,7 +579,8 @@ function paintBankMapPads() {
     if (S.bankMapKind === 'session') {
         for (let r = 0; r < 4; r++) {
             col[at(0, r)] = !d && r === S.sessKnobMode ? White : SESS_MAP_COLORS[r];
-            if (SESS_PAD_MAP.fx.buses[r]) col[at(1, r)] = d && d.col === 1 && d.row === r ? White : BrightOrange;
+            const fc = SESS_PAD_MAP.fx.col;
+            if (SESS_PAD_MAP.fx.buses[r]) col[at(fc, r)] = d && d.col === fc && d.row === r ? White : BrightOrange;
         }
     } else {
         const t = S.activeTrack;
