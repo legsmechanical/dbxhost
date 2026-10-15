@@ -314,8 +314,10 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
         for (_l = 0; _l < DRUM_LANES; _l++)
             drum_pfx_q_fire(&inst->tracks[t].drum_lane_pfx[_l], inst->tracks[t].drum_lane_pfx[_l].sample_counter);
     }
-    /* POST tracks: the notes due into their modules. */
+    /* POST tracks: the notes due into their modules, and the closes left by
+     * a stop / panic / switch-off / route change. */
     post_raw_service(inst);
+    post_flush_service(inst);
 
     /* Clock-follow housekeeping: staleness, MovePlay inject drain, start timeout. */
     seq8_clock_follow_tick(inst, frames);
@@ -425,6 +427,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                         pfx_note_off_imm(inst, _tr, _tr->tarp.sounding_pitch);
                         _tr->tarp.sounding_active = 0;
                     }
+                    post_raw_rebase(_tr, _tr->pfx.sample_counter);
                     _tr->pfx.sample_counter = 0;
                     /* Prime current_clip_tick to match the direction-aware
                      * current_step set above — so the first post-fire

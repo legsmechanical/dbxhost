@@ -922,6 +922,21 @@ typedef struct {
     uint8_t  held[128];      /* 1 = sounding in (or bound for) the module */
     uint8_t  lane_pitch[DRUM_LANES]; /* a drum lane's note in the module, + 1 (0 = none) */
     uint8_t  pending;        /* some on_at / off_at is set */
+    /* What came BACK: the module's notes, per pitch, the lane each plays on
+     * (+ 1; 0 = none), so its note-off finds the same lane however the map
+     * moved in between. */
+    uint8_t  ret_lane[128];
+    /* What the track's own output has sounding at its destination, counted
+     * at the emitters (pfx_emit, drum_pfx_emit) while the module is in, and
+     * where that is (one place). A stop, a panic, the module switched off or
+     * a route change closes exactly these, there -- the returned notes'
+     * records are wiped by those paths, and nothing else would. */
+    uint8_t  out[128];
+    uint8_t  out_route, out_slot, out_ch;
+    /* ...closed at the next render (a set_param-context send does not release
+     * a Move voice): the pitches, and where they sounded. */
+    uint8_t  flush[128];
+    uint8_t  flush_any, flush_route, flush_slot, flush_ch;
 } post_raw_t;
 
 typedef struct {
@@ -1961,6 +1976,7 @@ static int  clip_insert_note(clip_t *cl, uint32_t tick, uint16_t gate, uint8_t p
 static void clip_migrate_to_notes(clip_t *cl);
 static void clip_build_steps_from_notes(clip_t *cl);
 static void silence_track_notes_v2(seq8_instance_t *inst, seq8_track_t *tr);
+static void post_release_all(seq8_instance_t *inst, seq8_track_t *tr);
 static void clip_pfx_params_init(clip_pfx_params_t *p);
 /* v=34 trig conditions — defined after effective_note_tick */
 static int  step_trig_pass(clip_t *cl, uint16_t sidx, uint32_t cycle, uint32_t *rng);
@@ -2205,6 +2221,101 @@ static void post_raw_release_all(seq8_track_t *tr) {
     }
     memset(r->lane_pitch, 0, sizeof r->lane_pitch);
     r->pending = 0;
+}
+
+/* Count what a POST track's output sounds at its destination (called by the
+ * emitters once the destination and channel are final). */
+static void post_out_count(uint8_t track_idx, const midi_dest_t *dst, uint8_t status, uint8_t d1, uint8_t d2) {
+    if (!g_inst || track_idx >= NUM_TRACKS || d1 > 127) return;
+    seq8_track_t *tr = &g_inst->tracks[track_idx];
+    if (!tr->fx_post) return;
+    post_raw_t *r = &tr->post;
+    const uint8_t type = (uint8_t)(status & 0xF0);
+    if (type == 0x90 && d2 > 0) {
+        if (r->out[d1] < 255) r->out[d1]++;
+        r->out_route = dst->route; r->out_slot = dst->slot; r->out_ch = (uint8_t)(status & 0x0F);
+    } else if ((type == 0x80 || type == 0x90) && r->out[d1]) {
+        r->out[d1]--;
+    }
+}
+
+static void arp_silence(seq8_instance_t *inst, seq8_track_t *tr);
+
+/* Close EVERYTHING a POST track's module path has: what went into the module
+ * (raw offs into the slot, now) and what its output has sounding (closed
+ * where it sounds, at the next render). The returned notes' records, their
+ * queued events and SEQ ARP's hold on them go: the module's own late offs
+ * then find nothing to close. Any thread. */
+static void post_release_all(seq8_instance_t *inst, seq8_track_t *tr) {
+    post_raw_t *r = &tr->post;
+    int p, l;
+    post_raw_release_all(tr);
+    if (!tr->fx_post) return;
+    {   /* SEQ ARP holds the module's notes: let go of them first */
+        const int hr = inst->post_returning;
+        inst->post_returning = 1;
+        arp_silence(inst, tr);
+        inst->post_returning = hr;
+    }
+    for (p = 0; p < 128; p++) {
+        if (!r->out[p]) continue;
+        if (!r->flush_any) { r->flush_route = r->out_route; r->flush_slot = r->out_slot; r->flush_ch = r->out_ch; }
+        r->flush[p] = 1; r->flush_any = 1;
+        r->out[p] = 0;
+        tr->pfx.pitch_refcount[p] = 0;
+    }
+    memset(tr->pfx.active_notes, 0, sizeof(tr->pfx.active_notes));
+    tr->pfx.event_count = 0;
+    for (l = 0; l < DRUM_LANES; l++) {
+        tr->drum_lane_pfx[l].active_note.active = 0;
+        tr->drum_lane_pfx[l].event_count = 0;
+    }
+    memset(r->ret_lane, 0, sizeof r->ret_lane);
+}
+
+/* Once a block: the closes post_release_all left, where the notes sounded. */
+static void post_flush_service(seq8_instance_t *inst) {
+    int t, p;
+    for (t = 0; t < NUM_TRACKS; t++) {
+        post_raw_t *r = &inst->tracks[t].post;
+        if (!r->flush_any) continue;
+        r->flush_any = 0;
+        const uint8_t st = (uint8_t)(0x80 | (r->flush_ch & 0x0F));
+        for (p = 0; p < 128; p++) {
+            if (!r->flush[p]) continue;
+            r->flush[p] = 0;
+            if (r->flush_route == ROUTE_MOVE) {
+                if (g_host && g_host->midi_inject_to_move) {
+                    uint8_t pkt[4] = { (uint8_t)(0x20 | (st >> 4)), st, (uint8_t)p, 0 };
+                    g_host->midi_inject_to_move(pkt, 4);
+                }
+            } else if (r->flush_route == ROUTE_EXTERNAL) {
+                if (g_host && g_host->midi_send_external) {
+                    const uint8_t pkt[4] = { (uint8_t)(0x20 | ((st >> 4) & 0x0F)), st, (uint8_t)p, 0 };
+                    g_host->midi_send_external(pkt, 4);
+                }
+            } else {
+                /* a Schwung slot: past its MIDI FX (it is the one that made them) */
+                const uint8_t msg[4] = { (uint8_t)(st >> 4), st, (uint8_t)p, 0 };
+                if (g_ext && g_ext->midi_send_slot_direct) g_ext->midi_send_slot_direct((int)r->flush_slot, msg, 4);
+                else if (g_host && g_host->midi_send_internal_slot) g_host->midi_send_internal_slot((int)r->flush_slot, msg, 4);
+            }
+        }
+    }
+}
+
+/* The track's sample clock is about to restart from 0 (transport start, the
+ * count-in's end): what is parked for the module keeps its distance. */
+static void post_raw_rebase(seq8_track_t *tr, uint64_t old) {
+    post_raw_t *r = &tr->post;
+    int p;
+    if (!r->pending) return;
+    for (p = 0; p < 128; p++) {
+        if (!r->held[p]) continue;
+        r->on_time[p] = r->on_time[p] > old ? r->on_time[p] - old : 0;
+        if (r->on_at[p])  r->on_at[p]  = r->on_at[p]  > old ? r->on_at[p]  - old : 1;
+        if (r->off_at[p]) r->off_at[p] = r->off_at[p] > old ? r->off_at[p] - old : 1;
+    }
 }
 
 /* A sequenced note's own gate (Len-aware), for whichever record holds it. */
@@ -2760,6 +2871,7 @@ static void pfx_emit(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
     if (!dst.emit) return;
     if (dst.channel != MIDI_DEST_KEEP_CH)
         status = (uint8_t)((status & 0xF0) | dst.channel);
+    post_out_count(fx->track_idx, &dst, status, d1, d2);
     if (via_slot_divert(fx->track_idx, &dst, status, d1, d2)) return;
     if (dst.route == ROUTE_MOVE) {
         if (!g_host->midi_inject_to_move) return;
@@ -2890,7 +3002,7 @@ static void send_panic_ex(seq8_instance_t *inst, int full) {
     }
     /* POST modules: everything the tracks have in them. What a module had
      * sounding is the tracks' own output, released above. */
-    for (t = 0; t < NUM_TRACKS; t++) post_raw_release_all(&inst->tracks[t]);
+    for (t = 0; t < NUM_TRACKS; t++) post_release_all(inst, &inst->tracks[t]);
     /* ROUTE_MOVE: skip CC 123 sweep. Move's voice allocator corrupts when
      * CC 123 (all-notes-off) is followed by explicit note-offs for pitches
      * already killed by the CC. silence_track_notes_v2 already sent
@@ -5747,12 +5859,13 @@ static void post_handback(seq8_instance_t *inst, seq8_track_t *tr, uint8_t statu
     inst->emit_bypass_swing = 1;
     if (tr->pad_mode == PAD_MODE_DRUM) {
         const drum_clip_t *dc = tr->drum_clips[tr->active_clip];
-        int l;
-        for (l = 0; dc && l < DRUM_LANES; l++) {
-            if (dc->lanes[l].midi_note != d1) continue;
-            if (is_on) drum_pfx_note_on(inst, tr, &tr->drum_lane_pfx[l], d1, d2);
-            else       drum_pfx_note_off_imm(inst, tr, &tr->drum_lane_pfx[l], d1);
-            break;
+        int l = -1, i;
+        if (is_off && tr->post.ret_lane[d1]) l = tr->post.ret_lane[d1] - 1;   /* where it went */
+        for (i = 0; l < 0 && dc && i < DRUM_LANES; i++)
+            if (dc->lanes[i].midi_note == d1) l = i;
+        if (l >= 0) {
+            if (is_on) { drum_pfx_note_on(inst, tr, &tr->drum_lane_pfx[l], d1, d2); tr->post.ret_lane[d1] = (uint8_t)(l + 1); }
+            else       { drum_pfx_note_off_imm(inst, tr, &tr->drum_lane_pfx[l], d1); tr->post.ret_lane[d1] = 0; }
         }
     } else if (is_on) {
         pfx_note_on(inst, tr, d1, d2);

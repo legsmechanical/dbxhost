@@ -77,7 +77,7 @@ export function printTick() {
         const p = printing;
         printing = null;
         engineSet(p.slot, 'midi_fx1', 'bypassed', '1');   /* or the clip plays through it twice */
-            host_module_set_param('print_done', '1');
+        host_module_set_param('print_done', '1');
         engineSaveState();
         noteUndoUnit(); S.undoSeqArpSnapshot = null;
         showActionPopupFor(2500, 'BAKED', p.loops + 'x', 'MIDI FX bypassed');
@@ -94,7 +94,7 @@ export function printTick() {
         /* the engine dropped it (refused, or stopped under it) */
         const p = printing;
         printing = null;
-            showActionPopupFor(2000, 'BAKE STOPPED');
+        showActionPopupFor(2000, 'BAKE STOPPED');
     } else if (printing.polled % 50 === 0) {
         showActionPopupFor(60000, 'PRINTING ' + printing.loops + 'x', 'MIDI FX, live', 'Back cancels');
     }

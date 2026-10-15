@@ -8,6 +8,7 @@
  * and wipe active_notes (same pattern as transport stop). */
 static void silence_track_from_set_param(seq8_instance_t *inst, seq8_track_t *tr) {
     play_fx_t *fx = &tr->pfx;
+    post_release_all(inst, tr);          /* a POST module's notes, in it and out of it */
     silence_track_notes_v2(inst, tr);
     /* EFFECTIVE route: a `MIDI to Track N` follower whose target is Move needs
      * the Move workaround too. Its own route reads ROUTE_EXTERNAL, so testing
@@ -314,6 +315,7 @@ static void ext_transport_start(seq8_instance_t *inst) {
         }
         _tr->tick_in_step       = 0;
         _tr->note_active        = 0;
+        post_raw_rebase(_tr, _tr->pfx.sample_counter);
         _tr->pfx.sample_counter = 0;
         if (_tr->drum_clips[_tr->active_clip]) {
             int _dl;
@@ -347,6 +349,7 @@ static void ext_transport_stop(seq8_instance_t *inst) {
     inst->cap_select_active = 0;   /* stopping transport closes the tempo selector */
     for (t = 0; t < NUM_TRACKS; t++) {
         play_fx_t *fx = &inst->tracks[t].pfx;
+        post_release_all(inst, &inst->tracks[t]);   /* see silence_track_from_set_param */
         silence_track_notes_v2(inst, &inst->tracks[t]);
         /* Effective route — see silence_track_from_set_param. */
         if (midi_dest_resolve(fx->route, fx->slot, fx->midi_to).route == ROUTE_MOVE) {

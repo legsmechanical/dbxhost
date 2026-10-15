@@ -111,6 +111,7 @@ static int sp_globals_transport(sp_ctx_t *cx) {
                 }
                 _tr->tick_in_step       = 0;
                 _tr->note_active        = 0;
+                post_raw_rebase(_tr, _tr->pfx.sample_counter);
                 _tr->pfx.sample_counter = 0;
                 /* Re-peg queued ROUTE_MOVE events (note-offs kept above) to
                  * fire immediately: their fire_at was pegged to the counter
@@ -275,6 +276,7 @@ static int sp_globals_transport(sp_ctx_t *cx) {
                 }
                 }
                 tr->note_active        = 0;
+                post_raw_rebase(tr, tr->pfx.sample_counter);
                 tr->pfx.sample_counter = 0;
                 /* Re-peg queued ROUTE_MOVE events to fire immediately —
                  * same stranding hazard as the restart branch above. */

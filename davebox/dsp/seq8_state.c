@@ -1147,11 +1147,12 @@ static void seq8_load_state(seq8_instance_t *inst) {
 
         /* `MIDI to Track N` (0 = own instrument). Absent = 0, which is what
          * every set written before this existed means. */
+        /* What the old project had in its module, and sounding from it. */
+        post_release_all(inst, &inst->tracks[t]);
         snprintf(key, sizeof(key), "t%d_fo", t);
         inst->tracks[t].fx_post = json_get_int(buf, key, 0) ? 1 : 0;
         snprintf(key, sizeof(key), "t%d_fp", t);
         inst->tracks[t].fx_pre = json_get_int(buf, key, 0) ? 1 : 0;
-        memset(&inst->tracks[t].post, 0, sizeof(inst->tracks[t].post));
 
         snprintf(key, sizeof(key), "t%d_mt", t);
         {

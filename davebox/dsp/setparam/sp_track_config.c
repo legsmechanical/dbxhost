@@ -218,7 +218,7 @@ static int sp_track_config(sp_ctx_t *cx) {
     if (!strcmp(sub, "fxpost")) {
         uint8_t on = (uint8_t)(my_atoi(val) ? 1 : 0);
         if (on != tr->fx_post) {
-            post_raw_release_all(tr);
+            post_release_all(inst, tr);
             silence_track_from_set_param(inst, tr);
             tr->fx_post = on;
             inst->state_dirty = 1;
@@ -248,7 +248,7 @@ static int sp_track_config(sp_ctx_t *cx) {
         else if (!strcmp(val, "external")) rt = ROUTE_EXTERNAL;
         else if (!strcmp(val, "none"))    rt = ROUTE_NONE;
         else return 1;
-        if (rt != tr->pfx.route) post_raw_release_all(tr);   /* what its module had, at the old one */
+        if (rt != tr->pfx.route) post_release_all(inst, tr);   /* what its module had, at the old one */
         tr->pfx.route = rt;
         { int _rl; for (_rl = 0; _rl < DRUM_LANES; _rl++) tr->drum_lane_pfx[_rl].route = rt; }
         rui_mark(inst, tidx, tr->active_clip);   /* rui_index route */
