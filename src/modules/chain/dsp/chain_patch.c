@@ -5,6 +5,7 @@
  */
 
 #include "chain_internal.h"
+#include <sys/stat.h>
 
 #include "host/schwung_paths.h"
 /* Fix file ownership after writing as root */
@@ -66,9 +67,34 @@ static int check_filename_exists(const char *dir, const char *base, char *out_pa
 
 /* Compare function for sorting patches alphabetically by name */
 static int compare_patches(const void *a, const void *b) {
-    const patch_info_t *pa = (const patch_info_t *)a;
-    const patch_info_t *pb = (const patch_info_t *)b;
+    const patch_entry_t *pa = (const patch_entry_t *)a;
+    const patch_entry_t *pb = (const patch_entry_t *)b;
     return strcasecmp(pa->name, pb->name);
+}
+
+/* The library dir's mtime in ns (-1 if it cannot be read). A file added,
+ * removed or renamed moves it; that is exactly when the list can change. */
+static long long patches_dir_stamp(const char *dir) {
+    struct stat st;
+    if (stat(dir, &st) != 0) return -1;
+#ifdef __APPLE__
+    return (long long)st.st_mtimespec.tv_sec * 1000000000LL + st.st_mtimespec.tv_nsec;
+#else
+    return (long long)st.st_mtim.tv_sec * 1000000000LL + st.st_mtim.tv_nsec;
+#endif
+}
+
+/* The library as it is on disk NOW: rescans when the dir changed since the
+ * last scan (one stat otherwise). Every index-taking entry calls it first, so
+ * an index the UI computed from its own fresh listing means the same file
+ * here — a patch installed or saved from elsewhere while this instance lived
+ * used to be invisible to it. Returns the count. */
+int v2_patches_fresh(chain_instance_t *inst) {
+    char dir[MAX_PATH_LEN];
+    if (!inst) return 0;
+    snprintf(dir, sizeof(dir), "%s/../../patches", inst->module_dir);
+    if (patches_dir_stamp(dir) != inst->patches_dir_stamp) v2_scan_patches(inst);
+    return inst->patch_count;
 }
 
 /* V2 scan patches - simple version */
@@ -79,6 +105,9 @@ int v2_scan_patches(chain_instance_t *inst) {
     if (!inst) return -1;
 
     snprintf(patches_dir, sizeof(patches_dir), "%s/../../patches", inst->module_dir);
+    /* Stamp BEFORE reading: a file landing mid-scan then reads as a change
+     * at the next call, never as already seen. */
+    inst->patches_dir_stamp = patches_dir_stamp(patches_dir);
     inst->patch_count = 0;
     /* Clear old data to prevent stale/garbage entries */
     memset(inst->patches, 0, sizeof(inst->patches));
@@ -91,7 +120,8 @@ int v2_scan_patches(chain_instance_t *inst) {
     }
 
     struct dirent *entry;
-    while ((entry = readdir(dir)) != NULL && inst->patch_count < MAX_PATCHES) {
+    int dropped = 0;
+    while ((entry = readdir(dir)) != NULL) {
         if (entry->d_name[0] == '.') continue;
 
         size_t len = strlen(entry->d_name);
@@ -100,18 +130,22 @@ int v2_scan_patches(chain_instance_t *inst) {
         char path[MAX_PATH_LEN];
         snprintf(path, sizeof(path), "%s/%s", patches_dir, entry->d_name);
 
-        patch_info_t *patch = &inst->patches[inst->patch_count];
-        if (v2_parse_patch_file(inst, path, patch) == 0) {
-            strncpy(patch->path, path, MAX_PATH_LEN - 1);
-            inst->patch_count++;
-        }
+        if (!inst->patch_scratch || v2_parse_patch_file(inst, path, inst->patch_scratch) != 0) continue;
+        if (inst->patch_count >= MAX_PATCHES) { dropped++; continue; }
+        patch_entry_t *e = &inst->patches[inst->patch_count++];
+        snprintf(e->name, sizeof(e->name), "%s", inst->patch_scratch->name);
+        snprintf(e->path, sizeof(e->path), "%s", path);
     }
 
     closedir(dir);
+    if (dropped) {
+        snprintf(msg, sizeof(msg), "Patch library: %d patch(es) past the %d-patch cap NOT listed", dropped, MAX_PATCHES);
+        v2_chain_log(inst, msg);
+    }
 
     /* Sort patches alphabetically by name */
     if (inst->patch_count > 1) {
-        qsort(inst->patches, inst->patch_count, sizeof(patch_info_t), compare_patches);
+        qsort(inst->patches, inst->patch_count, sizeof inst->patches[0], compare_patches);
     }
 
     return inst->patch_count;
@@ -286,7 +320,7 @@ int v2_save_patch(chain_instance_t *inst, const char *json_data) {
 int v2_update_patch(chain_instance_t *inst, int index, const char *json_data) {
     char msg[256];
 
-    if (index < 0 || index >= inst->patch_count) {
+    if (index < 0 || index >= v2_patches_fresh(inst)) {
         snprintf(msg, sizeof(msg), "[v2] Invalid patch index for update: %d (count=%d)", index, inst->patch_count);
         v2_chain_log(inst, msg);
         return -1;
@@ -315,7 +349,7 @@ int v2_update_patch(chain_instance_t *inst, int index, const char *json_data) {
 int v2_delete_patch(chain_instance_t *inst, int index) {
     char msg[256];
 
-    if (index < 0 || index >= inst->patch_count) {
+    if (index < 0 || index >= v2_patches_fresh(inst)) {
         snprintf(msg, sizeof(msg), "[v2] Invalid patch index for delete: %d (count=%d)", index, inst->patch_count);
         v2_chain_log(inst, msg);
         return -1;
@@ -2216,16 +2250,22 @@ int v2_load_from_patch_info(chain_instance_t *inst, patch_info_t *patch) {
 }
 
 int v2_load_patch(chain_instance_t *inst, int patch_idx) {
-    if (!inst || patch_idx < 0 || patch_idx >= inst->patch_count) {
+    if (!inst || patch_idx < 0 || patch_idx >= v2_patches_fresh(inst) || !inst->patch_scratch) {
         return -1;
     }
+    /* The list holds a name and a path; the patch itself is read now. */
+    patch_info_t *p = inst->patch_scratch;
+    if (v2_parse_patch_file(inst, inst->patches[patch_idx].path, p) != 0) return -1;
+    snprintf(p->path, sizeof(p->path), "%s", inst->patches[patch_idx].path);
 
-    int rc = v2_load_from_patch_info(inst, &inst->patches[patch_idx]);
+    int rc = v2_load_from_patch_info(inst, p);
     if (rc == 0) {
         inst->current_patch = patch_idx;
-        inst->midi_fx_pre_mode = inst->patches[patch_idx].midi_fx_pre_mode ? 1 : 0;
-        inst->midi_fx_to_host = inst->patches[patch_idx].midi_fx_to_host ? 1 : 0;
-        inst->midi_fx_host_route = inst->patches[patch_idx].midi_fx_host_route ? 1 : 0;
+        inst->loaded_receive_channel = p->receive_channel;
+        inst->loaded_forward_channel = p->forward_channel;
+        inst->midi_fx_pre_mode = p->midi_fx_pre_mode ? 1 : 0;
+        inst->midi_fx_to_host = p->midi_fx_to_host ? 1 : 0;
+        inst->midi_fx_host_route = p->midi_fx_host_route ? 1 : 0;
         inst->dirty = 0;
     }
     return rc;

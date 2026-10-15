@@ -885,6 +885,7 @@ static void v2_set_param_route(void *instance, const char *key, const char *val)
             v2_unload_all_audio_fx(inst);
             v2_unload_synth(inst);
             inst->current_patch = -1;
+            inst->loaded_receive_channel = inst->loaded_forward_channel = PATCH_CHANNEL_UNSET;
         } else {
             v2_load_patch(inst, idx);
         }
@@ -1565,28 +1566,18 @@ static int v2_get_param_route(void *instance, const char *key, char *buf, int bu
         return snprintf(buf, buf_len, "%d", inst->dirty);
     }
     if (strcmp(key, "patch_count") == 0) {
-        return snprintf(buf, buf_len, "%d", inst->patch_count);
+        return snprintf(buf, buf_len, "%d", v2_patches_fresh(inst));
     }
     if (strcmp(key, "current_patch") == 0) {
         return snprintf(buf, buf_len, "%d", inst->current_patch);
     }
     if (strcmp(key, "patch:receive_channel") == 0) {
-        int v = PATCH_CHANNEL_UNSET;
-        if (inst->current_patch >= 0 && inst->current_patch < inst->patch_count) {
-            v = inst->patches[inst->current_patch].receive_channel;
-        } else if (inst->loaded_receive_channel != PATCH_CHANNEL_UNSET) {
-            v = inst->loaded_receive_channel;
-        }
+        int v = inst->loaded_receive_channel;   /* a library load sets it too */
         if (v == PATCH_CHANNEL_UNSET) return 0;  /* absent — caller skips */
         return snprintf(buf, buf_len, "%d", v);
     }
     if (strcmp(key, "patch:forward_channel") == 0) {
-        int v = PATCH_CHANNEL_UNSET;
-        if (inst->current_patch >= 0 && inst->current_patch < inst->patch_count) {
-            v = inst->patches[inst->current_patch].forward_channel;
-        } else if (inst->loaded_forward_channel != PATCH_CHANNEL_UNSET) {
-            v = inst->loaded_forward_channel;
-        }
+        int v = inst->loaded_forward_channel;
         if (v == PATCH_CHANNEL_UNSET) return 0;  /* absent — caller skips */
         return snprintf(buf, buf_len, "%d", v);
     }
@@ -1607,14 +1598,14 @@ static int v2_get_param_route(void *instance, const char *key, char *buf, int bu
     }
     if (strncmp(key, "patch_name_", 11) == 0) {
         int idx = atoi(key + 11);
-        if (idx >= 0 && idx < inst->patch_count) {
+        if (idx >= 0 && idx < v2_patches_fresh(inst)) {
             return snprintf(buf, buf_len, "%s", inst->patches[idx].name);
         }
         return -1;
     }
     if (strncmp(key, "patch_path_", 11) == 0) {
         int idx = atoi(key + 11);
-        if (idx >= 0 && idx < inst->patch_count) {
+        if (idx >= 0 && idx < v2_patches_fresh(inst)) {
             return snprintf(buf, buf_len, "%s", inst->patches[idx].path);
         }
         return -1;
