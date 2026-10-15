@@ -21,6 +21,8 @@ int main(void) {
     ROW("MIDI Sync Out. Submenu. 7 of 12");
     ROW("MIDI Sync: Off. Menu item. 1 of 3");
     ROW("A. B. Menu item. 10 of 100");               /* a label with its own ". " */
+    ROW("Back. Back. 1 of 3");                       /* a submenu's first row (Wi-Fi, 2026-10-15) */
+    ROW("CarbonaNotGlue (connected). Submenu. 3 of 10");
     NOTROW("Set 29");
     NOTROW("Set Overview");
     NOTROW("Note Mode");

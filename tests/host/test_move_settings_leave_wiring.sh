@@ -21,6 +21,6 @@ grep -B3 '^ *shadow_dbus_settings_leave_arm();' src/schwung_shim.c | grep -q 'CO
     && fail "the Back arm is gated on the track co-run's Back-top flag (the settings co-run never sets it)"
 grep -q '\.settings_leave_arm = shadow_dbus_settings_leave_arm' src/schwung_shim.c \
     || fail "the shim does not hand shadow_midi the Settings-leave hook"
-awk '/memcpy\(&midi_in\[hw_offset\], pkt, 4\);/,/injected\+\+;/' src/host/shadow_midi.c | grep -q 'pkt\[2\] == 17 && pkt\[3\] > 0' \
+awk '/memcpy\(&midi_in\[hw_offset\], pkt, 4\);/,/injected\+\+;/' src/host/shadow_midi.c | grep -q "(pkt\[1\] & 0xF0) == 0x90 && pkt\[2\] == 17" \
     || fail "an injected Step 2 press does not arm the Settings leave"
 echo "PASS: Move Settings leave inputs are wired (Back to Move, injected Step 2)"

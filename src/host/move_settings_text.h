@@ -14,9 +14,9 @@
  *
  * ⚠ NOT EVERY SETTINGS SCREEN IS A ROW (Josh, 2026-10-15: "trying to enter
  * the wifi menu from move settings co-run in dbxhost kicks me back out"). The
- * Wi-Fi menu's status line and its network list announce as plain text
- * ("Disconnected 99 %" — device log, 2026-10-15), and dropping SETTINGS on
- * those read as "Move left". So a non-row announcement ends SETTINGS only
+ * Wi-Fi menu opens on a row of a third shape, "Back. Back. 1 of 3" (now a row
+ * kind below), and the log also holds a plain "Disconnected 99 %" from inside
+ * it (device, 2026-10-15); dropping SETTINGS on those read as "Move left". So a non-row announcement ends SETTINGS only
  * when something that LEAVES Move's settings went to Move just before it: a
  * Back (at the top level it leaves), or the Shift+Step 2 that toggles the
  * menu closed (move_settings_next_mode).
@@ -42,7 +42,9 @@ static inline int move_settings_text_is_position(const char *s) {
 }
 
 static inline int move_settings_text_is_row(const char *text) {
-    static const char *const kinds[] = { ". Submenu. ", ". Menu item. " };
+    /* ". Back. ": a submenu's own first row, "Back. Back. 1 of 3" (the Wi-Fi
+     * menu, device capture 2026-10-15) — the row that kicked a session out. */
+    static const char *const kinds[] = { ". Submenu. ", ". Menu item. ", ". Back. " };
     if (!text || !text[0]) return 0;
     for (unsigned k = 0; k < sizeof(kinds) / sizeof(kinds[0]); k++) {
         const size_t n = strlen(kinds[k]);
