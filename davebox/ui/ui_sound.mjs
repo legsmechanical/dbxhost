@@ -851,6 +851,7 @@ const S = {
     busLevelDirty: false,       /* changed → save chain state when leaving the bus */
     pickRows: [],               /* picker rows: {kind:'bus'|'block'|'settings'} */
     pickRow: 0,                 /* cursor in the block PICKER (rows, not blocks) */
+    pickLandHome: false,        /* the next buildPickRows lands on the instrument row */
     blockRows: [],              /* block indices this host actually supports */
     /* `Track to` edit state. DEFERRED COMMIT, and not for tidiness: applying a
      * route on every detent would tear down and rebuild Track Control once per
@@ -1259,7 +1260,7 @@ export function soundOpen() { return S.active; }
  *           click is spent and does nothing (2026-10-04) */
 export function soundCardClick() {
     if (S.view === VIEW_PROMPT) { soundMixSendClick(S.touchedIdx); return true; }
-    if (S.view === VIEW_CFGCARD) { S.pickRow = 0; soundShowMenu(); return true; }
+    if (S.view === VIEW_CFGCARD) { S.pickRow = pickHomeRow(S.pickRows); soundShowMenu(); return true; }
     if (S.view === VIEW_MACROS) { soundMacroKnobClick(S.touchedIdx); S.dirty = true; return true; }
     return false;
 }
@@ -1423,6 +1424,10 @@ export function soundEnter(track, slot) {
      * mode no longer takes the bank to open, so a card can only show while the
      * track is on that bank. */
     S.view = soundCardViewFor(GS.activeBank);
+    /* Land on the INSTRUMENT row — unless the cursor follows a block you were
+     * in (buildPickRows keeps that). It sat at row 0 = the instrument until
+     * MIDI FX moved above it (2026-10-15). */
+    S.pickLandHome = !(S.comp && S.comp !== 'synth' && BLOCKS.some((b) => b.comp === S.comp));
     /* ⚠ SYNC to the physical key, do not assume it is up. Clearing this on a
      * retarget made Shift+jog a ONE-SHOT: stepping a track retargets, the
      * retarget forgot Shift was still down, and the next turn was read as an
@@ -1715,7 +1720,7 @@ export function soundRetarget(track, slot) {
          * synth — not on an fx index that meant a bus insert a moment ago. */
         clearBusContext();
         S.view = wasMacros ? VIEW_MACROS : wasPrompt ? VIEW_PROMPT : wasCfg ? VIEW_CFGCARD : VIEW_BLOCKS;
-        S.pickRow = 0;
+        S.pickRow = 0; S.pickLandHome = true;
         S.comp = 'synth';
         S.blockIdx = 1;
     }
@@ -3060,7 +3065,7 @@ export function soundEnterMove(track) {
      * which enters through this same path, looked broken on Move tracks.
      * ⭑ By the track's bank (2026-09-24), as in soundEnter. */
     S.view = soundCardViewFor(GS.activeBank);
-    S.pickRow = 0;
+    S.pickRow = 0; S.pickLandHome = true;   /* the rows are built later: buildPickRows */
     S.comp = '';                /* no chain component is in scope on a Move bus */
     /* Sync, never assume up — see the note in soundEnter. */
     S.shiftHeld = GS.shiftHeld === true;
@@ -3410,7 +3415,10 @@ function conductorMenu() {
  * left the menu — the Mute button owns them. A row this table does not name
  * keeps its place at the end, so a new row can never silently vanish. */
 const TRACK_MENU_GROUPS = [
-    ['Instmt/Dest', 'MIDI FX', 'FX'],
+    /* MIDI FX ABOVE the instrument (Josh, 2026-10-15: "to better represent
+     * signal flow") — notes reach the instrument through it. Landing stays on
+     * the instrument row (pickHomeRow). */
+    ['MIDI FX', 'Instmt/Dest', 'FX'],
     ['Volume', 'Pan', 'Send A', 'Send B', 'Buses'],
     ['Presets'],
     ['LFOs'],
@@ -3429,6 +3437,13 @@ function trackMenuSlot(r) {
     if (r.kind === 'patches') return 'Presets';
     if (r.kind === 'settings') return 'LFOs';
     return r.label;                               /* buslevel / cfg: by name */
+}
+/* Where a fresh landing on the menu rests: the INSTRUMENT row (Josh,
+ * 2026-10-15: "any defaults that apply to landing on instrument should remain
+ * unchanged" — it was row 0 until MIDI FX moved above it), else the top. */
+function pickHomeRow(pr) {
+    const i = (pr || []).findIndex((r) => r.kind === 'trackto');
+    return i >= 0 ? i : 0;
 }
 function orderTrackMenu(rows) {
     const bySlot = new Map(), extra = [];
@@ -3514,7 +3529,7 @@ function buildPickRows() {
          * stranded: both address the parked chain, so a preset that loads
          * effects you cannot see would be worse than not offering it. They come
          * back with the instrument. */
-        if (conductorMenu()) { pushConfigRows(rows, S.track); S.pickRows = orderTrackMenu(rows); S.pickRow = 0; return; }
+        if (conductorMenu()) { pushConfigRows(rows, S.track); S.pickRows = orderTrackMenu(rows); S.pickRow = pickHomeRow(S.pickRows); S.pickLandHome = false; return; }
         /* An EXT-routed track (MIDI out, or playing another track's instrument)
          * has no chain and no bus, so it has no sound to show and no mixer
          * position to set — every other row here would be backed by nothing.
@@ -3526,7 +3541,7 @@ function buildPickRows() {
         /* NONE: even less than EXT — the row that picks one. (Import MIDI
          * left this menu for the CLIP / DRUM LANE card's K8, 2026-09-29.) */
         if (GS.trackRoute[S.track] === ROUTE_NONE) {
-            S.pickRows = orderTrackMenu(rows); S.pickRow = 0; return;
+            S.pickRows = orderTrackMenu(rows); S.pickRow = pickHomeRow(S.pickRows); S.pickLandHome = false; return;
         }   /* NONE: even less than EXT — just the row that picks one */
         /* A MIDI-routed track has no chain and no bus, but it IS a track, and
          * davebox's own per-track settings — mode, layout, transpose, velocity
@@ -3540,7 +3555,7 @@ function buildPickRows() {
              * on a Move track; the result leaves by the port. */
             rows.push({ kind: 'block', comp: 'midi_fx1', label: 'MIDI FX' });
             pushConfigRows(rows, S.track);
-            S.pickRows = orderTrackMenu(rows); S.pickRow = 0; return;
+            S.pickRows = orderTrackMenu(rows); S.pickRow = pickHomeRow(S.pickRows); S.pickLandHome = false; return;
         }
         /* ⭑ No Generator row (Josh, 2026-09-04): the INSTRUMENT row is the
          * generator's door now — click enters it, Shift+click picks another —
@@ -3621,8 +3636,9 @@ function buildPickRows() {
     const at = S.comp === 'synth'
         ? pr.findIndex(r => r.kind === 'trackto')
         : pr.findIndex(r => r.kind === 'block' && r.comp === S.comp);
-    if (at >= 0) S.pickRow = at;
-    if (S.pickRow >= pr.length) S.pickRow = 0;
+    if (S.pickLandHome) { S.pickLandHome = false; S.pickRow = pickHomeRow(pr); }
+    else if (at >= 0) S.pickRow = at;
+    if (S.pickRow >= pr.length) S.pickRow = pickHomeRow(pr);
     /* Never rest on a rule. */
     if (pr[S.pickRow] && pr[S.pickRow].kind === 'div') S.pickRow = pickStep(1);
 }

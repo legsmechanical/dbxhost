@@ -90,10 +90,10 @@ function openBlock(comp) {
     GS.activeTrack = T;
     snd.soundEnter(T, T); ticks(4);
     {
-        /* The instrument is the menu's first row (its door); a block is the
-         * row that names its component. */
+        /* The instrument is its own row (its door); a block is the row that
+         * names its component. */
         const st = snd.soundPickStateForTest();
-        const at = comp === 'synth' ? 0 : st.comps.indexOf(comp);
+        const at = comp === 'synth' ? st.kinds.indexOf('trackto') : st.comps.indexOf(comp);
         if (at < 0) throw new Error('rig: no ' + comp + ' row on the sound menu: ' + JSON.stringify(st));
         snd.soundPickRowSetForTest(at);
     }

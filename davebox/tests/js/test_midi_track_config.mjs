@@ -76,7 +76,8 @@ step('setup', () => {
 step('CONTROL: a Schwung track\'s menu still has its blocks, levels and doors', () => {
     B.applyInstrChoice(0, C.INSTR_SCHWUNG);
     const k = menuFor(0);
-    if (k[0] !== 'trackto') throw new Error('first row ' + k[0]);
+    /* MIDI FX first, then the instrument (signal order, Josh 2026-10-15). */
+    if (k[0] !== 'block' || k[1] !== 'trackto') throw new Error('first rows ' + k.slice(0, 2).join(','));
     if (!k.includes('block') || !k.includes('buslevel')) throw new Error('Schwung menu lost rows: ' + k.join(','));
 });
 step('a MIDI-routed track\'s menu is its destination, its MIDI FX + its own CONFIG rows, nothing else', () => {
@@ -86,9 +87,10 @@ step('a MIDI-routed track\'s menu is its destination, its MIDI FX + its own CONF
     /* Import MIDI left the track menu for K8 of the CLIP / DRUM LANE card (Josh, 2026-09-29), so no door is left here at all. */
     const k = menuFor(1);
     if (k.includes('midiimport')) throw new Error('Import MIDI is back in the menu: ' + k.join(','));
-    /* No instrument chain, no bus — so: the destination, its MIDI FX (the
-     * parked slot's, borrowed — 2026-10-14), a rule, then the config rows. */
-    if (k[0] !== 'trackto' || k[1] !== 'block' || k[2] !== 'div') throw new Error('rows: ' + k.join(','));
+    /* No instrument chain, no bus — so: its MIDI FX (the parked slot's,
+     * borrowed — 2026-10-14) above the destination (signal order,
+     * 2026-10-15), a rule, then the config rows. */
+    if (k[0] !== 'block' || k[1] !== 'trackto' || k[2] !== 'div') throw new Error('rows: ' + k.join(','));
     /* The config rows come in their ruled groups (Josh, 2026-09-24), so rules
      * sit between them. */
     if (!k.slice(3).every(x => x === 'cfg' || x === 'div')) throw new Error('rows: ' + k.join(','));

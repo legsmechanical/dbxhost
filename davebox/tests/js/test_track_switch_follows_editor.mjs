@@ -106,12 +106,12 @@ step('setup: routes — 2,3 Schwung · 4 MIDI · 5 NONE · 6 Move · 7 Conduct',
 
 /* ⭑ RULED (Josh, 2026-09-05, after the build-23 pass): from an EDITOR the switch
  * lands on the new track's SOUND MENU on its INSTRUMENT row — every track kind. */
-/* A MIDI track's menu: its destination, its MIDI FX (since 2026-10-14), a
- * rule, then its own config rows — no instrument chain, no bus, and (since
+/* A MIDI track's menu: its MIDI FX (since 2026-10-14) above its destination
+ * (2026-10-15), a rule, then its own config rows — no instrument chain, no bus, and (since
  * 2026-09-19) no CONFIG door, the rows being inline. */
 const isMidiMenu = () => {
     const k = kinds().split(',');
-    return k[0] === 'trackto' && k[1] === 'block' && k[2] === 'div' && k.length > 3 &&
+    return k[0] === 'block' && k[1] === 'trackto' && k[2] === 'div' && k.length > 3 &&
            k.slice(3).every(x => x === 'cfg' || x === 'div');   /* ruled groups, 2026-09-24 */
 };
 const onInstrumentRow = () => view() === VIEW_BLOCKS && kinds().split(',')[snd.soundPickStateForTest().row] === 'trackto';
@@ -154,7 +154,7 @@ step('⭑ from that MENU a further switch FOLLOWS to the new track\'s MENU (09-0
     if (!snd.soundOpen() || snd.soundTrack() !== 2) throw new Error('the menu did not follow');
     globalThis.tick();
     if (view() !== VIEW_BLOCKS) throw new Error('view ' + view() + ' — a menu switch lands on the menu, not the editor');
-    if (kinds().indexOf('trackto') !== 0) throw new Error('rows: ' + kinds());
+    if (kinds().split(',')[0] !== 'block' || !onInstrumentRow()) throw new Error('rows: ' + kinds() + ' row ' + snd.soundPickStateForTest().row);
     snd.soundExit();
 });
 

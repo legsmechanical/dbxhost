@@ -1028,13 +1028,13 @@ const openTrackConfig = () => {
     mapTap(PURE.bankMapPadForCell(0, 3)); ticks(4);
     if (!SND.soundOpen()) throw new Error('the CONFIG pad did not open TRACK CONFIG');
 };
-function soundRowTo(kind) {
-    const st = SND.soundPickStateForTest();
-    const target = st.kinds.indexOf(kind);
-    if (target < 0) throw new Error('no sound row of kind ' + kind + ' in ' + st.kinds.join(','));
+/* Jog the sound menu's cursor onto the row with this label. */
+function soundRowToLabel(label) {
+    const target = SND.soundPickStateForTest().labels.indexOf(label);
+    if (target < 0) throw new Error('no sound row ' + label);
     for (let g = 0; g < 80 && SND.soundPickStateForTest().row !== target; g++)
         { jog(SND.soundPickStateForTest().row < target ? 1 : -1); ticks(1); }
-    if (SND.soundPickStateForTest().row !== target) throw new Error('jog never reached ' + kind);
+    if (SND.soundPickStateForTest().row !== target) throw new Error('jog never reached ' + label);
 }
 /* Jog the MIDI browser onto the row with this label (then rest, so it is read). */
 function jogToLabel(label) {
@@ -1071,7 +1071,7 @@ screen('block-editor', '14.4 Editing a module', 'Editing an instrument',
 
 screen('fx-browser', '14.2 The menu', 'Adding an effect',
     'Clicking an empty effect block opens the module list — the installed effects, by name.',
-    () => { selectTrack(4); openTrackConfig(); soundRowTo('block'); jog(2); ticks(1);
+    () => { selectTrack(4); openTrackConfig(); soundRowToLabel('FX 2'); ticks(1);
             if (SND.soundPickStateForTest().labels[SND.soundPickStateForTest().row] !== 'FX 2') throw new Error('not on FX 2');
             click(); ticks(6); });
 screen('config-card', '14.1 Opening TRACK CONFIG', 'The CONFIG bank',
