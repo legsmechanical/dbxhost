@@ -433,8 +433,10 @@ function cleanupAfterMoveNativeCoRun() {
  * Ways out: Shift+Step 2 again (Move's own close, then back to Project
  * Settings), Note/Session (to the overview), and Back at the top of Move's
  * menu — Move leaves by itself, and the host tells us: shadow_dbus.c marks
- * move_ui_mode SETTINGS (4) while Move announces a Settings row and drops it
- * on any other screen (src/host/move_settings_text.h).
+ * move_ui_mode SETTINGS (4) while Move announces a Settings row, and drops it
+ * on a non-row screen only after a Back or Shift+Step 2 reached Move — the
+ * Wi-Fi menu's own plain-text lines used to end it (2026-10-15;
+ * src/host/move_settings_text.h).
  *
  * ⚠ moveCoRunTrack stays -1 the whole time: the track co-run's pad and Copy
  * injections key on it, and none of them may fire here. */

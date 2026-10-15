@@ -5837,6 +5837,7 @@ static void shim_init_subsystems(void)
             .master_fx_forward_midi = shadow_master_fx_forward_midi,
             .queue_led = shadow_queue_led,
             .init_led_queue = shadow_init_led_queue,
+            .settings_leave_arm = shadow_dbus_settings_leave_arm,
             .chain_slots = shadow_chain_slots,
             .plugin_v2 = &shadow_plugin_v2,
             .shadow_control = &shadow_control,
@@ -9543,6 +9544,11 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                         corun_framework_exit("Back: exiting co-run");
                         continue;
                     }
+                    /* A Back that goes to Move firmware may take it out of its
+                     * own Settings menu (move_settings_text.h). */
+                    if (owner == CORUN_OWNER_PEER && type == 0xB0 && d1 == CC_BACK && d2 > 0 &&
+                        corun_target(shadow_control) == CORUN_TARGET_MOVE_NATIVE)
+                        shadow_dbus_settings_leave_arm();
                     /* A Back that goes to Move firmware: see whether Move answers. */
                     if (owner == CORUN_OWNER_PEER && type == 0xB0 && d1 == CC_BACK && d2 > 0 &&
                         corun_target(shadow_control) == CORUN_TARGET_MOVE_NATIVE &&

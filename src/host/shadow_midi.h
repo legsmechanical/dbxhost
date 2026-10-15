@@ -75,6 +75,9 @@ typedef struct {
     void (*master_fx_forward_midi)(const uint8_t *msg, int len, int source);
     void (*queue_led)(uint8_t cin, uint8_t status, uint8_t d1, uint8_t d2);
     void (*init_led_queue)(void);
+    /* A Step 2 press was injected to Move (it may be closing Move's own
+     * Settings menu): shadow_dbus_settings_leave_arm. NULL = not wanted. */
+    void (*settings_leave_arm)(void);
     /* Shared state */
     shadow_chain_slot_t *chain_slots;
     const plugin_api_v2_t *volatile *plugin_v2;
