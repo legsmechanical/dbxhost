@@ -124,6 +124,56 @@ static inline void slot_tempo_declare(seq8_instance_t *inst) {
     inst->declared_bpm = bpm;
     if (g_ext && g_ext->set_tempo) g_ext->set_tempo(bpm);
 }
+/* The names published for dAVEBOx's scales (SCALE_IVLS order). Move's own
+ * spelling where the scale is also one of Move's, so one name means one
+ * scale everywhere; the JS SCALE_NAMES table is the same list
+ * (test_move_info_publish.c pins the two together). */
+static const char *const MI_SCALE_NAMES[14] = {
+    "Major", "Minor", "Dorian", "Phrygian", "Lydian", "Mixolydian",
+    "Locrian", "Harmonic Minor", "Melodic Minor",
+    "Pentatonic Major", "Pentatonic Minor", "Blues", "Whole Tone", "Diminished",
+};
+/* Once per block: publish db's key, scale, tempo and transport for modules
+ * that read the host's (move_info.h, schwung_move_info()), when any of them
+ * changes. The key and scale are the EFFECTIVE ones -- a transpose preview's
+ * candidate while it is up -- as for db's own scale-aware effects, so a
+ * module harmonizes with what is heard. What db does not know reads as
+ * move_info's explicit unknown. */
+static void move_info_publish(seq8_instance_t *inst) {
+    if (!g_ext || !g_ext->set_move_info) return;
+    const int     key  = eff_pad_key(inst);
+    const int     scl  = eff_pad_scale(inst);
+    const uint8_t play = inst->playing ? 1 : 0;
+    const float   bpm  = (float)inst->tracks[0].pfx.cached_bpm;
+    if (inst->mi_published && key == inst->mi_key && scl == inst->mi_scale &&
+            play == inst->mi_playing && bpm == inst->mi_bpm) return;
+    inst->mi_published = 1;
+    inst->mi_key = (int8_t)key; inst->mi_scale = (uint8_t)scl;
+    inst->mi_playing = play;    inst->mi_bpm = bpm;
+    move_info_t mi;
+    int i;
+    memset(&mi, 0, sizeof mi);
+    mi.size = sizeof mi;
+    mi.version = MOVE_INFO_VERSION;
+    mi.valid = 1;
+    mi.playing = play;
+    mi.metronome_on = mi.midi_clock_sync = mi.input_monitoring = 255;
+    mi.root_note = (key >= 0 && key < 12) ? (int8_t)key : -1;
+    mi.selected_track = -1;
+    mi.global_quant = -1;
+    mi.tempo = bpm > 0 ? bpm : -1.0f;
+    mi.groove = -1.0f;
+    mi.master_db = -1000.0f;
+    if (scl >= 0 && scl < 14) snprintf(mi.scale, sizeof mi.scale, "%s", MI_SCALE_NAMES[scl]);
+    mi.song_beats = -1.0;
+    for (i = 0; i < MOVE_INFO_TRACKS; i++) {
+        mi.track[i].color_id = -1;
+        mi.track[i].type = -1;
+        mi.track[i].muted = mi.track[i].soloed = mi.track[i].selected = 255;
+        mi.track[i].volume_db = -1000.0f;
+    }
+    g_ext->set_move_info(&mi, sizeof mi);
+}
 /* Once per block, before the tick loops: Start on the play edge, Stop on the
  * stop edge (and when follow takes over mid-play). */
 static inline void slot_clock_edges(seq8_instance_t *inst) {
@@ -273,6 +323,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
 
     /* The slots' transport follows db's own, and the host knows its tempo. */
     slot_tempo_declare(inst);
+    move_info_publish(inst);
     slot_clock_edges(inst);
     {   /* MIDI FX on Move / MIDI tracks: a route change or the effect switched
          * off (set_param) closes what it had sounding, from here. */

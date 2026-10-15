@@ -2339,6 +2339,8 @@ Editing **Key** or **Scale** moves your melodic clips with it:
   of the same size, otherwise to the nearest in-scale note.
 - Drum tracks are untouched.
 - A committed transpose can't be undone — check the preview before you confirm.
+- Instruments and MIDI effects that can follow the host's key (a **Host**
+  setting) follow dAVEBOx's key, scale and tempo, live — the preview too.
 
 ## 17.3 Snapshots
 

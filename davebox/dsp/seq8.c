@@ -28,6 +28,8 @@
 #include <sys/stat.h>
 
 #include "host/plugin_api_v1.h"
+#define MOVE_INFO_NO_READER
+#include "host/move_info.h"
 
 /* ------------------------------------------------------------------ */
 /* Build constants                                                      */
@@ -1301,6 +1303,15 @@ typedef struct {
      * stopped too. 0 = none: while following Move (the host measures Move's
      * clock), and before the first block. */
     float    declared_bpm;
+    /* What db last published as the session's key / scale / tempo /
+     * transport (the extension's set_move_info), so modules that follow the
+     * host's key follow db's. Republished only when one of them changes;
+     * mi_published 0 = never (the first block publishes). */
+    uint8_t  mi_published;
+    int8_t   mi_key;
+    uint8_t  mi_scale;
+    uint8_t  mi_playing;
+    float    mi_bpm;
     /* MovePlay (CC 85) inject state machine — fired from render_block (NOT
      * set_param: a set_param-context inject is unreliable). follow_play_request
      * is the desired Move transport; the drain compares it against

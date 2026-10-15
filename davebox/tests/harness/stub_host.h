@@ -4,6 +4,8 @@
 
 #include <stdint.h>
 #include "host/plugin_api_v1.h"
+#define MOVE_INFO_NO_READER
+#include "host/move_info.h"
 
 typedef enum {
     HX_MIDI_INTERNAL = 0,
@@ -55,6 +57,10 @@ const move_host_ext_v1_t *hx_stub_ext(void);
 float hx_stub_ext_tempo(void);
 int   hx_stub_ext_tempo_calls(void);
 void                      hx_stub_ext_refuse(int on);
+/* set_move_info: what the module last published (NULL = never, or withdrawn),
+ * and how many times it called. */
+const move_info_t *hx_stub_move_info(void);
+int                hx_stub_move_info_calls(void);
 
 /* Config + introspection. */
 void        hx_stub_set_bpm(float bpm);
