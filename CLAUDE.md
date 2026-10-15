@@ -155,17 +155,25 @@ Keep each isolated in its own commit so it is easy to exclude when cherry-pickin
 
 **Never scp individual files** — the install script owns setuid, symlinks and the layout. It
 refuses to deploy over a live SA session (`--force` overrides); the build takes effect at the next
-launch from stock's Tools menu. Upstream's stock installer (`scripts/install.sh`/`uninstall.sh`/
+launch from stock's Tools menu. Upstream's stock installer (its `install.sh`/`uninstall.sh`/
 `package.sh`) was removed 2026-09-24 — no SA path used it. **Manager-only changes**: `schwung-manager` is a
-self-contained Go binary (embeds templates/static), so build the ARM binary, scp to
-`/data/UserData/schwung/schwung-manager` as `ableton` (temp name + `mv -f` to dodge ETXTBSY), then
-`scripts/restart_move.sh` — no reboot.
+self-contained Go binary (embeds templates/static), so `./standalone/scripts/restart-manager.sh`
+is the whole loop: it builds the ARM binary, puts it in the dbx-host install dir (temp name + `mv -f`
+to dodge ETXTBSY) and restarts just the manager on the live session — no session restart.
 
-**Module deploys need a host restart.** Copying a new `dsp.so`/`module.json` is not enough, and
-swapping the synth out and back in leaves the old code live — the deploy looks like a no-op. Use
-`scripts/restart_move.sh` (it stops the launcher, kills Move/schwung procs, removes stale `/dev/shm`
-rings, frees the SPI device and waits for `MoveOriginal`); a **partial** restart leaves stale ring
-segments whose pointers hang slots on reattach. `MOVE_HOST=root@172.16.254.1` for the tether.
+**Deploys need a session relaunch.** Copying a new `dsp.so`/`module.json` in is not enough, and
+swapping the synth out and back in leaves the old code live — the deploy looks like a no-op. End
+the session, install, launch again:
+
+```bash
+ssh ableton@move.local 'sh /data/UserData/dbx-host/scripts/exit-to-stock.sh'
+./standalone/scripts/install-sa.sh
+ssh ableton@move.local 'nohup setsid /data/UserData/schwung/modules/tools/davebox-sa/standalone > /data/UserData/launch.out 2>&1 < /dev/null &'
+```
+
+`exit-to-stock.sh` stops the host with SIGTERM; `launch.sh` then clears the SHM namespace and
+resumes stock Move. Launching again (that last line, or stock's Tools menu) starts the new build.
+`MOVE_HOST=172.16.254.1` for the tether.
 
 Cross-compile via `${CROSS_PREFIX}gcc`. See `BUILDING.md`.
 

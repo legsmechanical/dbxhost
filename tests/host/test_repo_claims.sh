@@ -103,4 +103,17 @@ grep -q "ripgrep" tests/Dockerfile.linux && grep -q "nodejs" tests/Dockerfile.li
     && ok "the parity image carries what the host job needs (ripgrep, node)" \
     || bad "the parity image no longer matches the host-tests job"
 
+# ---- 6. every repo script CLAUDE.md tells you to run exists ----------------
+# CLAUDE.md named scripts/restart_move.sh for months — a script this repo never
+# had — as the way to restart after a deploy (found 2026-10-14).
+miss=0; seen=0
+# Repo-relative paths only (a device path like /data/.../scripts/x.sh is not
+# one), and not on a line that records the script's removal.
+for f in $(grep -v 'removed' CLAUDE.md | perl -ne 'print "$1\n" while m{(?<![\w/.])(?:\./)?((?:scripts|standalone/scripts|davebox/scripts|tools)/[\w./-]+\.(?:sh|py|mjs))}g' | sort -u); do
+    seen=$((seen+1))
+    [ -e "$f" ] || { bad "CLAUDE.md names $f, which does not exist"; miss=1; }
+done
+[ "$seen" -gt 0 ] || bad "found no script paths in CLAUDE.md (the pattern broke)"
+[ "$miss" = 0 ] && [ "$seen" -gt 0 ] && ok "every repo script CLAUDE.md names exists ($seen)"
+
 [ "$fails" = 0 ] && echo "PASS: repo_claims" || { echo "FAIL: repo_claims" >&2; exit 1; }

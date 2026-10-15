@@ -12,12 +12,10 @@
       "Bash(standalone/scripts/install-sa.sh:*)",
       "Bash(standalone/scripts/install-host.sh:*)",
       "Bash(davebox/scripts/install_sound.sh:*)",
-      "Bash(scripts/restart_move.sh:*)",
       "Bash(scripts/test-linux.sh:*)",
       "Bash(./standalone/scripts/install-sa.sh:*)",
       "Bash(./standalone/scripts/install-host.sh:*)",
       "Bash(./davebox/scripts/install_sound.sh:*)",
-      "Bash(./scripts/restart_move.sh:*)",
       "Bash(./scripts/test-linux.sh:*)"
     ]
   },
