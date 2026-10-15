@@ -195,6 +195,17 @@ int main(void) {
                 }
                 answer(h, T, 7);
             }
+            /* ...and its note-off follows it in, held back as long */
+            {
+                int got_off = 0;
+                for (b = 0; b < 600 && !got_off; b++) {
+                    hx_clear_capture(h);
+                    hx_render(h, 1);
+                    if (seen(HX_MIDI_INTERNAL, T, (uint8_t)(0x80 | CH), 52)) got_off = 1;
+                    answer(h, T, 7);
+                }
+                HX_ASSERT(got_off, "a swung step's note-off never went into the module (stuck in it)");
+            }
             hx_set_param(h, "transport", "stop");
             for (b = 0; b < 400; b++) { hx_clear_capture(h); hx_render(h, 1); answer(h, T, 7); }
         }
