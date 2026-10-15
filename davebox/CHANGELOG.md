@@ -60,6 +60,8 @@ the section into a versioned heading at release time.
   **Grv Velocity** and **Grv Random** can be set per track the same way.
 
 ### Changed
+- **MIDI FX sits above the instrument** in a track's sound menu, so the rows
+  follow the signal. The menu still opens on the instrument row.
 - **The bank map's track switches moved to Steps 1–8.** While you hold the jog,
   Steps 1–8 pick the track, each lit in its track colour with the current track
   blinking colour / white. The right-hand pads are dark on the map now.

@@ -211,7 +211,9 @@ step('8. the enum picker over a card', () => {
     for (let b = 0; b < 4 && snd.soundViewForTest() !== 0 && snd.soundViewForTest() !== 18; b++) { cc(51, 127); cc(51, 0); ticks(2); }
     if (snd.soundViewForTest() === 18) { snd.soundShowMenu(); ticks(3); }    /* MIX has no door: the menu as Shift+Note opens it */
     if (snd.soundViewForTest() !== 0) throw new Error('rig: not on the list, view ' + snd.soundViewForTest());
-    for (let g = 0; g < 20 && snd.soundPickStateForTest().row !== 0; g++) { cc(14, 127); ticks(1); }
+    const instr = snd.soundPickStateForTest().kinds.indexOf('trackto');
+    for (let g = 0; g < 20 && snd.soundPickStateForTest().row > instr; g++) { cc(14, 127); ticks(1); }
+    for (let g = 0; g < 20 && snd.soundPickStateForTest().row < instr; g++) { cc(14, 1); ticks(1); }
     shift(true); cc(3, 127); cc(3, 0); shift(false); ticks(3);   /* Shift+click the Instrument row → the picker */
     if (snd.soundViewForTest() !== 17) throw new Error('rig: picker not open, view ' + snd.soundViewForTest());
     assertGesture('enum picker', 'slot:volume', T);

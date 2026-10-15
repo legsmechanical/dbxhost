@@ -1722,8 +1722,8 @@ the rows it has:
 
 | Row | What it does |
 |---|---|
-| **Instmt/Dest** | What the track plays — see [Choosing an instrument](#143-choosing-an-instrument). **Click** to edit it, **Shift + click** to change it. |
-| **MIDI FX** | A Schwung MIDI-effect module in front of the instrument (separate from the [sequencer effects](#9-sequencer-effects)). On Move and MIDI tracks too: the track's notes go through it on their way to Move or the MIDI port. |
+| **MIDI FX** | A Schwung MIDI-effect module in front of the instrument (separate from the [sequencer effects](#9-sequencer-effects)), so it sits above it — the rows follow the signal. On Move and MIDI tracks too: the track's notes go through it on their way to Move or the MIDI port. |
+| **Instmt/Dest** | What the track plays — see [Choosing an instrument](#143-choosing-an-instrument). **Click** to edit it, **Shift + click** to change it. The menu opens on this row. |
 | **FX 1–4** | Four audio (insert) effects after it. Click an **empty** one to pick an effect. On a Move track these are the track's Move FX bus. |
 | **Volume, Pan, Send A, Send B** | The track's levels. **Shift + click** a send to land in that send's own effects (or touch its knob on MIX and click); **Back** brings you home. |
 | **Buses** | Voice groups, on instruments that can split their voices — see [Presets, LFOs and buses](#145-presets-lfos-and-buses) |

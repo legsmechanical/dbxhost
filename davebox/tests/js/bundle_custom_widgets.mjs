@@ -149,9 +149,10 @@ globalThis.onMidiMessageInternal(new Uint8Array([0x90, 68, 100]));
 globalThis.onMidiMessageInternal(new Uint8Array([0x80, 68, 0]));
 cc(3, 0);
 ticks(8);
-/* A fresh Schwung track's menu: Instrument, MIDI FX, FX 1 — dividers are not
- * stops. Two detents lands on FX 1; the registry answers whether it did. */
-cc(14, 1); ticks(2); cc(14, 1); ticks(2);
+/* A fresh Schwung track's menu: MIDI FX, Instrument, FX 1, landing on the
+ * Instrument — dividers are not stops. One detent lands on FX 1; the
+ * registry answers whether it did. */
+cc(14, 1); ticks(2);
 cc(3, 127); cc(3, 0);
 ticks(40);
 
