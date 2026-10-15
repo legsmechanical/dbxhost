@@ -1000,6 +1000,7 @@ export function _tickImpl() {
              * the user still holds re-arms on the next event; a dropped
              * release never does, so end every touch here. */
             S.jogTouched = false;
+            S.jogTouchPhys = false;
             S.knobTouched = -1;
             S.knobPhysIdx = -1;
             bankMapEnd();                 /* a lost jog release must not strand the map */

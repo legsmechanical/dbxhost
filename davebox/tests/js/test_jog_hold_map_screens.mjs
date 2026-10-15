@@ -76,8 +76,6 @@ S.clockFollowTicks = true; S.tickCount = 1000;
 const tick = () => { S.tickCount++; globalThis.tick(); };
 /* The map paints on the PRESS now (2026-10-04); a hold is just time passing. */
 const holdPast = () => { S.tickCount += 2; globalThis.tick(); };
-/* ...and past the click window: letting go after this is no click. */
-const holdLong = () => { S.tickCount += Math.ceil(C.JOG_CLICK_MAX_MS / 10.6) + 1; globalThis.tick(); };
 const ticks = (n) => { for (let i = 0; i < n; i++) tick(); };
 const frame = () => { fb.fill(0); render.drawUI(); return fb.slice(); };
 const ink = (f, x, y, w, h) => { let n = 0; for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) n += f[j * W + i]; return n; };
@@ -227,6 +225,76 @@ step('⭐⭐ on the AUTOMATION screen: hold shows the map; a pick lands on the b
     tap(DELAY); ticks(2);
     release(); ticks(2);
     assert(S.activeBank === 3 && !ccm.doorScreenUp() && !S.bankMapUp, 'after a pick: bank ' + S.activeBank + ' door ' + ccm.doorScreenUp());
+});
+
+/* ---- the finger still on the jog after the click comes up (Josh, 2026-10-15:
+ * "when i let go of the click hold but am still touching jog i should land
+ * with the oled on any bank that shows itself on jog touch. but that doesn't
+ * always happen") ---------------------------------------------------------- */
+const touchOn = () => midi(0x90, K.MoveMainTouch, 127);
+/* A touch release is held back by the touch-release hold (S.touchHoldMs):
+ * let its window pass. */
+const touchOff = () => { midi(0x80, K.MoveMainTouch, 0); ticks(Math.ceil(((S.touchHoldMs | 0) + 50) / 10.6)); };
+const cardUp = () => render.bankCardShown();
+
+step('CONTROL: from the overview — touch, hold, pick, let the click go: the card shows while touching', () => {
+    ccm.bankMapEnd(); home(); ticks(2);
+    touchOn(); press(); holdMap();
+    tap(DELAY); ticks(1);
+    holdMap(); release(); ticks(2);
+    assert(!S.bankMapUp && S.activeBank === 3, 'rig: map ' + S.bankMapUp + ' bank ' + S.activeBank);
+    assert(cardUp(), 'no card with the finger still on the jog');
+    touchOff(); ticks(2);
+    /* (a pick shows its bank for its own window anyway; the TOUCH is what ends) */
+    assert(!S.jogTouched, 'the touch is still on record after the finger left');
+});
+
+step('⭐⭐ over a SCREEN — touch, hold, pick (the pick tears the screen down), let the click go: the card shows while touching', () => {
+    ccm.bankMapEnd(); home(); ticks(2);
+    menuMod.openGlobalMenu();
+    touchOn(); press(); holdMap();
+    assert(S.bankMapUp && S.bankMapFromScreen, 'rig: the map is not over the menu');
+    tap(DELAY); ticks(1);
+    assert(!S.globalMenuOpen, 'rig: the pick did not leave the menu');
+    holdMap(); release(); ticks(2);
+    assert(!S.bankMapUp && S.activeBank === 3, 'rig: map ' + S.bankMapUp + ' bank ' + S.activeBank);
+    assert(cardUp(), 'no card with the finger still on the jog (the screen teardown forgot the touch)');
+    touchOff(); ticks(2);
+    /* (a pick shows its bank for its own window anyway; the TOUCH is what ends) */
+    assert(!S.jogTouched, 'the touch is still on record after the finger left');
+});
+
+step('⭐ a TRACK switch (Step 6) while touching: the card shows on the new track after the click comes up', () => {
+    ccm.bankMapEnd(); home(); ticks(2);
+    const to = S.activeTrack === 5 ? 6 : 5;
+    touchOn(); press(); holdMap();
+    tap(16 + to); ticks(1);
+    assert(S.activeTrack === to, 'rig: no track switch');
+    holdMap(); release(); ticks(2);
+    assert(cardUp(), 'no card on the new track with the finger still on the jog');
+    touchOff(); ticks(2);
+    assert(!S.jogTouched, 'the touch is still on record after the finger left');
+});
+
+step('⭐ a MODULE pad still opens its editor on the release with the finger on the jog', () => {
+    ccm.bankMapEnd(); home(); ticks(2);
+    touchOn(); press(); holdMap();
+    tap(pad(7, 0)); ticks(1);                     /* FX 1 */
+    holdMap(); release(); ticks(6);
+    assert(snd.soundOpen() && snd.soundCompForTest() === 'fx1', 'the FX 1 editor did not open: comp ' + snd.soundCompForTest());
+    touchOff(); snd.soundExit(); ticks(2);
+});
+
+step('⭐ released WITHOUT a pick over a screen: the screen stays, and no card is drawn over it', () => {
+    ccm.bankMapEnd(); home(); ticks(2);
+    menuMod.openGlobalMenu();
+    touchOn(); press(); holdMap();
+    holdMap(); release(); ticks(2);
+    assert(S.globalMenuOpen, 'the menu went away under a hold that picked nothing');
+    touchOff(); ticks(2);
+    menuMod.closeGlobalMenu ? menuMod.closeGlobalMenu() : (S.globalMenuOpen = false);
+    ticks(2);
+    assert(!cardUp(), 'a card was left armed after the finger left');
 });
 
 if (failed) { console.log('FAIL: jog hold map over screens'); process.exit(1); }

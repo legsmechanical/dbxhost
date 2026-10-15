@@ -547,6 +547,12 @@ function _onMidiInternalImpl(data) {
     if (d1 === MoveMainTouch && S.jogTouched &&
             ((status & 0xF0) === 0x80 || ((status & 0xF0) === 0x90 && d2 < 64)))
         _jogTouchRelease();
+    /* ...and the finger itself, both edges, whoever owns the jog: a touch that
+     * began inside a screen (which swallows it) or that a screen teardown
+     * forgot is still a finger on the jog when the bank map lets go
+     * (bankMapTouchResume). */
+    if (d1 === MoveMainTouch && ((status & 0xF0) === 0x80 || (status & 0xF0) === 0x90))
+        S.jogTouchPhys = (status & 0xF0) === 0x90 && d2 >= 64;
 
     /* Pads physically down, both edges above every gate — the bank pad map
      * lets go of each one when it paints. */

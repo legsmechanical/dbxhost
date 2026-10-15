@@ -91,6 +91,9 @@ the section into a versioned heading at release time.
   of a second before it counts as let go.
 
 ### Fixed
+- **Letting go of the bank map with a finger still on the jog shows the bank.**
+  It sometimes did not — after picking from the map over a menu or editor, or
+  when the touch began on a screen that takes the jog.
 - **Chain presets past the 32nd load.** With more than 32 chain presets, some
   never loaded and others loaded the wrong preset. Every preset in the library
   now loads, including ones added while dAVEBOx is running.

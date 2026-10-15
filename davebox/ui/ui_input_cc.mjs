@@ -1463,6 +1463,21 @@ export function bankMapRelease() {
     const menu = S.bankMapDeferred;
     if (menu) { S.bankMapDeferred = null; runBankMapMenu(menu); return; }
     bankMapEnd();
+    bankMapTouchResume();
+}
+
+/* The click came up but the finger is still on the jog (Josh, 2026-10-15:
+ * "when i let go of the click hold but am still touching jog i should land
+ * with the oled on any bank that shows itself on jog touch"). A pick from a
+ * map over a screen tears the screen down, and that teardown forgets the
+ * touch; a touch that began inside a screen was never recorded at all. So
+ * the touch is re-armed from the finger itself — but only where you LANDED
+ * on the overview: a screen you are still on is not a bank. */
+function bankMapTouchResume() {
+    if (!S.jogTouchPhys || S.jogTouched || S.shiftHeld || S.globalMenuOpen) return;
+    if (soundActive() || doorScreenUp() || S.moveCoRunTrack >= 0) return;
+    S.jogTouched = true;
+    forceRedraw();
 }
 
 /* Paint the map: OLED + pads. Every pad still down is let go through the real
