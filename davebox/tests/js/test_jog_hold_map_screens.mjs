@@ -83,8 +83,10 @@ const frame = () => { fb.fill(0); render.drawUI(); return fb.slice(); };
 const ink = (f, x, y, w, h) => { let n = 0; for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) n += f[j * W + i]; return n; };
 const cellInk = (f, c, r) => { const q = kit.bankMapCellRect(c, r); return ink(f, q.x, q.y, q.w, q.h) / (q.w * q.h); };
 const rightDark = () => { for (let r = 0; r < 4; r++) for (let c = 4; c < 8; c++) if ((led[pad(c, r)] | 0) !== 0) return false; return true; };
-/* The track map's tracks are on the step buttons: the whole right grid is dark. */
-const lowerRightDark = () => { for (let r = 0; r < 4; r++) for (let c = 4; c < 8; c++) if ((led[pad(c, r)] | 0) !== 0) return false; return true; };
+/* The track map's right grid: the six MODULE pads lit (MIDI FX + INSTRUMENT
+ * in the third column, FX 1-4 down the fourth), every other cell dark. */
+const MODULE_CELLS = new Set(['6,0', '6,1', '7,0', '7,1', '7,2', '7,3']);
+const lowerRightDark = () => { for (let r = 0; r < 4; r++) for (let c = 4; c < 8; c++) if (((led[pad(c, r)] | 0) !== 0) !== MODULE_CELLS.has(c + ',' + r)) return false; return true; };
 const ccm = await import('../../ui/ui_input_cc.mjs');
 const home = () => { ccm.bankMapEnd(); S.activeBank = 0; S.trackActiveBank[S.activeTrack] = 0; S.bankCardLatched = false;
     S.bankSelectTick = -1; S.pendingSoundEnterTrack = -1; S.trackPadMode[S.activeTrack] = C.PAD_MODE_MELODIC_SCALE ?? 0; };

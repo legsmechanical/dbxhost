@@ -793,6 +793,17 @@ export function engineGeneratorName(moduleId) {
     if (!MODULE_NAME[lower] && !_genNamesScanned) { _genNamesScanned = true; engineListModules('synth'); }
     return MODULE_NAME[lower] || String(moduleId);
 }
+/* The same for any component's module (a MIDI FX, an audio FX): its declared
+ * name, learned from one scan of that component's folder, else the id. */
+const _namesScanned = {};
+export function engineModuleName(moduleId, comp) {
+    if (!moduleId) return '';
+    if (comp === 'synth') return engineGeneratorName(moduleId);
+    const lower = String(moduleId).toLowerCase();
+    const spec = COMPONENTS[comp];
+    if (!MODULE_NAME[lower] && spec && !_namesScanned[spec.scanDir]) { _namesScanned[spec.scanDir] = true; engineListModules(comp); }
+    return MODULE_NAME[lower] || String(moduleId);
+}
 export function engineModuleAbbrev(moduleId) {
     if (!moduleId) return '--';
     const lower = String(moduleId).toLowerCase();

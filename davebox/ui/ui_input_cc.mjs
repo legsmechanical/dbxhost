@@ -38,7 +38,7 @@ import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
          SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock, faderStep, faderWire,
          PAGE_KNOB, pageFloatStep, pageIntDetents } from './ui_engine.mjs';
 import { scaleNudgeNote, stepEntryVelocity,
-         bankCycleForMode, bankListForMode, bankIsDoor, bankPadMapCellAt, bankPadMapActionAt, bankMapCellForPad, bankMapTrackForStep, SESS_PAD_MAP, bankDisplayName } from './ui_pure.mjs';
+         bankCycleForMode, bankListForMode, bankIsDoor, bankPadMapCellAt, bankPadMapActionAt, bankMapCellForPad, bankMapTrackForStep, bankMapModuleAt, SESS_PAD_MAP, bankDisplayName } from './ui_pure.mjs';
 import { saveState, writeSidecar, doClearSession, showActionPopup,
          showActionPopupFor, showActionPopupGauge } from './ui_persistence.mjs';
 import {
@@ -60,10 +60,12 @@ import { autoBankClick, autoBankJog, autoBankBack, autoBankClearClip, autoBankRe
          autoLanePinJump, autoLanePinClear, laneHome } from './ui_automation_bank.mjs';
 import { automationParamEdit, automationCaptureCommit, automationCaptureCommitAfterNotes,
          automationCaptureClear, automationClearBanksQueued } from './ui_automation.mjs';
-import { sessStripTargets } from './ui_engine.mjs';
+import { sessStripTargets, engineLoadedModule, engineModuleName, slotIndex,
+         moveBusForChannel, moveBusPrefix } from './ui_engine.mjs';
+import { moduleIdOf } from './ui_discover.mjs';
 import { BANK_MAP_TRACK_POPUP_MS, seqAutoTargetForKnob, SEQ_AUTO_TARGETS, midiTargetIsMidi, DEFAULT_TRACK_OCTAVE } from './ui_constants.mjs';
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
-         performModuleChange, cancelModuleChange, soundJumpToParam } from './ui_sound.mjs';
+         performModuleChange, cancelModuleChange, soundJumpToParam, soundOpenModule } from './ui_sound.mjs';
 import { soundActive, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVolGestureEnd, soundShiftEdge, soundOpenGenerator, soundOpenInstrPicker,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, macroClearConfirmAnswer,
@@ -1504,8 +1506,9 @@ export function bankMapEnd() {
 function bankMapPadActs(note) {
     const cell = bankMapCellForPad(note);
     if (!cell) return false;
-    /* The right 4x4 is dark on every map. */
-    if (cell.col > 3) return false;
+    /* The right 4x4: the module pads, on the track map. */
+    if (cell.col > 3) return S.bankMapKind !== 'session' &&
+        !!bankMapModuleAt(S.trackRoute[S.activeTrack], S.trackPadMode[S.activeTrack], cell.col, cell.row);
     if (S.bankMapKind === 'session') {
         if (cell.col === 0) return SESS_PAD_MAP.mixer.modes[cell.row] !== undefined;
         if (cell.col === 1) return !!SESS_PAD_MAP.fx.buses[cell.row];
@@ -1531,7 +1534,18 @@ export function bankMapPadTap(note) {
     const pickRest = S.sessionView ? !sessMixerVisible() : !bankCardVisible();
     const cell = bankMapCellForPad(note);
     if (!cell) return;
-    if (cell.col > 3) return;
+    if (cell.col > 3) {
+        /* ⭑ A MODULE PAD (Josh, 2026-10-15): a menu pad like INST — it waits
+         * for the jog's release, then opens that editor. The map's OLED does
+         * not show these, so the pad says what it is, as a track pick does. */
+        if (S.bankMapKind === 'session') return;
+        const t = S.activeTrack;
+        const m = bankMapModuleAt(S.trackRoute[t], S.trackPadMode[t], cell.col, cell.row);
+        if (!m) return;
+        bankMapMenuTap({ kind: 'module', comp: m.comp, col: cell.col, row: cell.row });
+        showActionPopupFor(BANK_MAP_TRACK_POPUP_MS, m.label, bankMapModuleName(t, m.comp));
+        return;
+    }
     if (S.bankMapKind === 'session') {
         if (cell.col === 0) {
             const mode = SESS_PAD_MAP.mixer.modes[cell.row];
@@ -1616,7 +1630,8 @@ function runBankMapMenu(a) {
     bankMapLeaveScreen();
     bankMapEnd();
     if (a.kind === 'bus') { soundEnterBusFx(a.bus); return; }
-    if (a.kind === 'inst') { openTrackInstrument(); return; }
+    if (a.kind === 'inst' || (a.kind === 'module' && a.comp === 'synth')) { openTrackInstrument(); return; }
+    if (a.kind === 'module') { openTrackModule(a.comp); return; }
     if (a.bank === BANK_CONFIG) {
         /* TRACK CONFIG: the menu, over whatever bank you are on; Back from its
          * top returns there. */
@@ -2831,6 +2846,28 @@ function _handleBack(d2) {
  * test: "edit this track's instrument" means the generator's canvas on a
  * Schwung track, co-run on a Move one, and a MIDI track has neither and says so.
  */
+/* What a module pad's popup names: the instrument as the track pick names it
+ * (the generator's own name, Move n, MIDI Ch n...), else the module loaded in
+ * that block on the track's slot — or on its Move bus — else Empty. */
+function bankMapModuleName(t, comp) {
+    if (comp === 'synth') return trackInstrName(t);
+    if (S.trackRoute[t] === 1 && comp !== 'midi_fx1') {
+        const id = moduleIdOf(engineLoadedModule(0, moveBusPrefix(moveBusForChannel(S.trackChannel[t])) + comp));
+        return id ? engineModuleName(id, comp) : 'Empty';
+    }
+    const id = moduleIdOf(engineLoadedModule(slotIndex(t), comp));
+    return id ? engineModuleName(id, comp) : 'Empty';
+}
+/* A MIDI FX / FX module pad, released: that editor, with the return crumb the
+ * INST pad stamps, so Back retraces to where the map was held. */
+function openTrackModule(comp) {
+    const t = S.activeTrack;
+    S.genReturn = { track: t, wasActive: soundActive(),
+                    view: soundActive() ? soundViewForTest() : -1,
+                    latched: !!S.bankCardLatched };
+    if (!soundOpenModule(t, comp)) S.genReturn = null;
+    forceRedraw();
+}
 function openTrackInstrument() {
 const _gt = S.activeTrack;
 /*

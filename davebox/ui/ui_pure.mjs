@@ -268,6 +268,29 @@ export function bankMapPadForCell(col, row) { return 92 - row * 8 + col; }
 export function bankMapTrackForStep(note) {
     return (note >= 16 && note <= 23) ? note - 16 : -1;
 }
+/* The map's MODULE pads (Josh, 2026-10-15): the right 4x4 opens the track's
+ * module editors — MIDI FX over the INSTRUMENT in the third column, FX 1-4
+ * down the far-right one (the signal's order, as on the sound menu). */
+export const BANK_MAP_MODULE_PADS = [
+    { comp: 'midi_fx1', label: 'MIDI FX',    col: 6, row: 0 },
+    { comp: 'synth',    label: 'INSTRUMENT', col: 6, row: 1 },
+    { comp: 'fx1',      label: 'FX 1',       col: 7, row: 0 },
+    { comp: 'fx2',      label: 'FX 2',       col: 7, row: 1 },
+    { comp: 'fx3',      label: 'FX 3',       col: 7, row: 2 },
+    { comp: 'fx4',      label: 'FX 4',       col: 7, row: 3 },
+];
+/* The module pad on a map cell for a track routed `route` (0 Schwung, 1 Move,
+ * 2 MIDI, ROUTE_NONE) with pad mode `padMode`, or null: a pad the track has
+ * nothing behind stays dark. A Conductor plays nothing; a MIDI track has its
+ * MIDI FX only; a track set to None has only the instrument (its picker). */
+export function bankMapModuleAt(route, padMode, col, row) {
+    if (padMode === PAD_MODE_CONDUCT) return null;
+    const p = BANK_MAP_MODULE_PADS.find((m) => m.col === col && m.row === row);
+    if (!p) return null;
+    if (route === 2) return p.comp === 'midi_fx1' ? p : null;
+    if (route !== 0 && route !== 1) return p.comp === 'synth' ? p : null;
+    return p;
+}
 export function bankMapCellForPad(note) {
     const i = note - 68;
     if (i < 0 || i > 31) return null;

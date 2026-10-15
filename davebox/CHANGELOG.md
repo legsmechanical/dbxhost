@@ -8,6 +8,10 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Added
+- **Module shortcuts on the bank map.** While you hold the jog, the right-hand
+  pads open the track's MIDI FX, instrument and FX 1–4 editors. The screen
+  briefly names the slot and what is loaded there; the editor opens when you
+  let go.
 - **Modules follow dAVEBOx's key and scale.** An instrument or MIDI effect
   that follows "the host's key" (set to Host) now gets dAVEBOx's key, scale
   and tempo, and follows them as you change them.
