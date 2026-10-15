@@ -9,7 +9,7 @@ import {
 } from './ui_constants.mjs';
 import { trackClipHasContent, updateSceneMapLEDs } from './ui_scene.mjs';
 import { PROJECT_COLORS, projectColorLED } from './ui_dialogs.mjs';
-import { arpVelLevel, drumVelocityToZone, bankPadMapForMode, SESS_PAD_MAP, bankMapPadForCell, bankMapTrackForStep } from './ui_pure.mjs';
+import { arpVelLevel, drumVelocityToZone, bankPadMapForMode, SESS_PAD_MAP, bankMapPadForCell, bankMapTrackForStep, BANK_MAP_MODULE_PADS, bankMapModuleAt } from './ui_pure.mjs';
 import { knobRingColor, knobRingNorm, ringCellsFor, ringNormOfCell } from './ui_knob_leds.mjs';
 import { automationStateFor } from './ui_automation.mjs';
 import { devSnapOpen, devSnapLedFor } from './ui_devsnap.mjs';
@@ -563,8 +563,8 @@ export function paintProjectPickerSurface() {
 }
 
 /* THE BANK PAD MAP's pads (Josh, 2026-10-02): the left 4x4 coloured by
- * category, the bank you are on White, a bank this track does not have dark,
- * and the whole right 4x4 dark. One painter for all 32, so nothing underneath
+ * category, the bank you are on White, a bank this track does not have dark;
+ * the right 4x4 holds the module pads (2026-10-15), the rest of it dark. One painter for all 32, so nothing underneath
  * shows through. SEQ is yellow, not the previews' green: green is a track
  * colour, and CONFIG / MIX / INST wear the track's own colour. */
 const BANK_MAP_COL_COLORS = [Cyan, Violet, VividYellow, BrightOrange];
@@ -579,7 +579,8 @@ function paintBankMapPads() {
     if (S.bankMapKind === 'session') {
         for (let r = 0; r < 4; r++) {
             col[at(0, r)] = !d && r === S.sessKnobMode ? White : SESS_MAP_COLORS[r];
-            if (SESS_PAD_MAP.fx.buses[r]) col[at(1, r)] = d && d.col === 1 && d.row === r ? White : BrightOrange;
+            const fc = SESS_PAD_MAP.fx.col;
+            if (SESS_PAD_MAP.fx.buses[r]) col[at(fc, r)] = d && d.col === fc && d.row === r ? White : BrightOrange;
         }
     } else {
         const t = S.activeTrack;
@@ -590,6 +591,16 @@ function paintBankMapPads() {
             col[at(ci, r)] = on ? White
                 : own ? trackColor(t) : BANK_MAP_COL_COLORS[ci];
         }));
+        /* The MODULE pads (right 4x4), one colour per kind (Josh,
+         * 2026-10-15: "colors to distinguish between fx, midifx, and
+         * instrument"): the INSTRUMENT the track's own colour, as the INST
+         * pad; MIDI FX Cyan; every audio FX BrightOrange. The one waiting for
+         * the jog's release White. */
+        for (const m of BANK_MAP_MODULE_PADS) {
+            if (!bankMapModuleAt(S.trackRoute[t], S.trackPadMode[t], m.col, m.row)) continue;
+            col[at(m.col, m.row)] = d && d.col === m.col && d.row === m.row ? White
+                : m.comp === 'synth' ? trackColor(t) : m.comp === 'midi_fx1' ? Cyan : BrightOrange;
+        }
     }
     for (let i = 0; i < 32; i++) cachedSetLED(TRACK_PAD_BASE + i, col[i]);
 }

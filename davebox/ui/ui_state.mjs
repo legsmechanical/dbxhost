@@ -567,6 +567,7 @@ export const S = {
     knobTurnedTick: new Array(8).fill(-1),
     bankSelectTick: -1,
     jogTouched: false,
+    jogTouchPhys: false,        /* the finger is on the jog, whoever took the touch (ui.js, both edges) */
     stretchBlockedEndTick: -1,
     noNoteFlashEndTick: -1,
     trackOctave: new Array(8).fill(DEFAULT_TRACK_OCTAVE),

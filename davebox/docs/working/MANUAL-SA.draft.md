@@ -349,8 +349,15 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   its track colour, with the track you are on blinking between its colour and
   white. **Press one** to switch track — the screen flashes **TRACK n** and
   what that track plays. The map stays up, now showing the new track's banks,
-  so the bank you want there is the next tap. Steps 9–16 and the right-hand
-  pads are dark and do nothing. Session View's map leaves the steps alone.
+  so the bank you want there is the next tap. Steps 9–16 are dark and do
+  nothing. Session View's map leaves the steps alone.
+- **The right-hand pads open the track's module editors** while the map is up
+  (Track View): **MIDI FX** (cyan) above **INSTRUMENT** (the track's colour) in
+  the third column, **FX 1–4** (orange) down the far-right column. Tap one and
+  the screen flashes its name and what is loaded there (or **Empty**); like CONFIG, it
+  turns white and opens when you let go of the jog. **Back** from that editor
+  takes you back to where you were. A MIDI track has only MIDI FX, a track set
+  to None only INSTRUMENT, and a Conductor none.
 - **CONFIG**, **AUTOMATION** and **INST** (and Session View's **MASTER**,
   **SEND A** and **SEND B**) open a screen, so they wait: the pad turns white,
   and the screen opens when you let go of the jog. Tap a bank after one and
@@ -431,8 +438,8 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
 map**:
 
 - **Hold the jog**: the **MIXER** column is Volume, Pan, Send A and
-  Send B; beside it, the **FX** column opens the **Master**, **Send A** and
-  **Send B** effects directly, each next to its level. The sends share a color.
+  Send B; one column over (the third), the **FX** column opens the **Master**,
+  **Send A** and **Send B** effects directly, each level with its mixer row. The sends share a color.
   As on a track, a tap on a clicked-open map picks and puts the map away. The
   indicator at the top right names the mixer mode.
 - **Touch a knob** (or the jog) to see the mixer page. On the Send A or Send B

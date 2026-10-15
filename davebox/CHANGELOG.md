@@ -8,6 +8,10 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Added
+- **Module shortcuts on the bank map.** While you hold the jog, the right-hand
+  pads open the track's MIDI FX, instrument and FX 1–4 editors. The screen
+  briefly names the slot and what is loaded there; the editor opens when you
+  let go.
 - **Modules follow dAVEBOx's key and scale.** An instrument or MIDI effect
   that follows "the host's key" (set to Host) now gets dAVEBOx's key, scale
   and tempo, and follows them as you change them.
@@ -60,6 +64,8 @@ the section into a versioned heading at release time.
   **Grv Velocity** and **Grv Random** can be set per track the same way.
 
 ### Changed
+- **Session map: the FX pads moved one column right**, so they no longer sit
+  directly beside the mixer pads.
 - **MIDI FX sits above the instrument** in a track's sound menu, so the rows
   follow the signal. The menu still opens on the instrument row.
 - **The bank map's track switches moved to Steps 1–8.** While you hold the jog,
@@ -87,6 +93,9 @@ the section into a versioned heading at release time.
   of a second before it counts as let go.
 
 ### Fixed
+- **Letting go of the bank map with a finger still on the jog shows the bank.**
+  It sometimes did not — after picking from the map over a menu or editor, or
+  when the touch began on a screen that takes the jog.
 - **Chain presets past the 32nd load.** With more than 32 chain presets, some
   never loaded and others loaded the wrong preset. Every preset in the library
   now loads, including ones added while dAVEBOx is running.

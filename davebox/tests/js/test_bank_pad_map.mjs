@@ -40,7 +40,8 @@ globalThis.host_ensure_dir = () => true; globalThis.host_remove_dir = () => true
 const sentParams = [];
 globalThis.host_module_set_param = (k, v) => { sentParams.push([String(k), String(v)]); };
 let loadedGen = '';   /* what every slot's synth:module read answers */
-globalThis.host_module_get_param = () => ''; globalThis.shadow_get_param = (slot, key) => (key === 'synth:module' ? loadedGen : '');
+const LOADED = {};    /* other <comp>:module reads, by key */
+globalThis.host_module_get_param = () => ''; globalThis.shadow_get_param = (slot, key) => (key === 'synth:module' ? loadedGen : (LOADED[key] || ''));
 globalThis.host_module_get_params = () => null;
 globalThis.shadow_set_param = () => 1; globalThis.host_vol_block = () => {};
 globalThis.host_edit_cc_block = () => {};
@@ -52,6 +53,7 @@ globalThis.move_midi_external_send = () => {};
 globalThis.set_led = () => {}; globalThis.move_midi_inject_to_move = () => {};
 globalThis.host_ext_midi_remap_clear = () => {}; globalThis.host_ext_midi_remap_set = () => {};
 globalThis.host_ext_midi_remap_enable = () => {};
+globalThis.shadow_restore_knob_leds = () => {};
 
 async function main() {
 await import('../../ui/ui.js');
@@ -85,8 +87,10 @@ const frame = () => { fb.fill(0); render.drawUI(); return fb.slice(); };
 const ink = (f, x, y, w, h) => { let n = 0; for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) n += f[j * W + i]; return n; };
 const cellInk = (f, c, r) => { const q = kit.bankMapCellRect(c, r); return ink(f, q.x, q.y, q.w, q.h) / (q.w * q.h); };
 const rightDark = () => { for (let r = 0; r < 4; r++) for (let c = 4; c < 8; c++) if ((led[pad(c, r)] | 0) !== 0) return false; return true; };
-/* The track map's tracks are on the step buttons now: the whole right grid is dark. */
-const lowerRightDark = rightDark;
+/* The track map's right grid: the six MODULE pads lit (MIDI FX + INSTRUMENT
+ * in the third column, FX 1-4 down the fourth), every other cell dark. */
+const MODULE_CELLS = new Set(['6,0', '6,1', '7,0', '7,1', '7,2', '7,3']);
+const lowerRightDark = () => { for (let r = 0; r < 4; r++) for (let c = 4; c < 8; c++) if (((led[pad(c, r)] | 0) !== 0) !== MODULE_CELLS.has(c + ',' + r)) return false; return true; };
 const ccm = await import('../../ui/ui_input_cc.mjs');
 const home = () => { ccm.bankMapEnd(); S.activeBank = 0; S.trackActiveBank[S.activeTrack] = 0; S.bankCardLatched = false;
     S.bankSelectTick = -1; S.pendingSoundEnterTrack = -1; S.trackPadMode[S.activeTrack] = C.PAD_MODE_MELODIC_SCALE ?? 0; };
@@ -106,7 +110,7 @@ step('⭐ PRESS the jog on the overview: the map is ON SCREEN at once (Josh, 202
     assert(cellInk(f, 0, 0) === 0, 'CHORD drew outside the Chord layout');
 });
 
-step('…and ON THE PADS: categories coloured, CLIP White, absent and right half dark', () => {
+step('…and ON THE PADS: categories coloured, CLIP White, absent dark, the right half only its module pads', () => {
     ticks(6);
     assert(led[pad(2, 1)] === K.White, 'CLIP pad is ' + led[pad(2, 1)]);
     assert(led[pad(3, 2)] === K.BrightOrange, 'DELAY pad is ' + led[pad(3, 2)]);
@@ -381,16 +385,22 @@ step('Session: a MIXER pad walks the mode; MASTER opens its effects; the right h
     press(); holdPast();
     assert(S.bankMapUp && S.bankMapKind === 'session', 'session map did not arm');
     ticks(6);
-    assert(led[pad(0, 0)] === K.White && led[pad(0, 1)] === K.Cyan && led[pad(1, 0)] === K.BrightOrange,
+    /* The FX buses sit in the THIRD column, one clear of the mixer (Josh,
+     * 2026-10-15); the second column is dark. */
+    assert(led[pad(0, 0)] === K.White && led[pad(0, 1)] === K.Cyan && led[pad(2, 0)] === K.BrightOrange,
            'session pad colours');
-    assert((led[pad(1, 1)] | 0) === 0 && rightDark(), 'session dark pads');
+    for (let r = 0; r < 4; r++) assert((led[pad(1, r)] | 0) === 0, 'the second column is lit at row ' + r);
+    assert((led[pad(2, 1)] | 0) === 0 && rightDark(), 'session dark pads');
     const f = frame();
-    assert(cellInk(f, 0, 0) > 0.6 && cellInk(f, 1, 1) === 0, 'session screen');
+    assert(cellInk(f, 0, 0) > 0.6 && cellInk(f, 2, 1) === 0, 'session screen');
+    assert(cellInk(f, 2, 0) > 0.05 && cellInk(f, 1, 0) === 0, 'MASTER is not drawn in the third column on screen');
     tap(pad(0, 1));
     assert(S.sessKnobMode === 1, 'PAN did not take: ' + S.sessKnobMode);
     tap(pad(6, 0));
     assert(S.bankMapUp, 'a right-half press did something');
     tap(pad(1, 0));
+    assert(!S.bankMapDeferred, 'the old (second) column still acts');
+    tap(pad(2, 0));
     assert(!snd.soundOpen() && S.bankMapUp, 'a HELD map opened MASTER before the release');
     release();
     assert(snd.soundOpen(), 'MASTER did not open the effect buses on the release');
@@ -406,7 +416,7 @@ step('⭐ Session, held: a MIXER pad walks the mode and the map stays; an FX pad
     tap(pad(0, 2));
     assert(S.sessKnobMode === 2, 'SEND A did not take: ' + S.sessKnobMode);
     assert(S.bankMapUp, 'the held session map went on a mixer pick');
-    tap(pad(1, 2));
+    tap(pad(2, 2));
     assert(!snd.soundOpen() && S.bankMapUp, 'SEND B opened before the release');
     release();
     assert(snd.soundOpen() && !S.bankMapUp, 'SEND B pad: open ' + snd.soundOpen() + ' up ' + S.bankMapUp);
@@ -551,10 +561,10 @@ step('held Session map: MASTER waits; a MIXER pad after it cancels it — the re
     if (snd.soundOpen()) snd.soundExit();
     home(); S.sessionView = true; S.sessKnobMode = 0; tickS(2);
     press(); holdPast();
-    tap(pad(1, 0));                                           /* MASTER: waits */
+    tap(pad(2, 0));                                           /* MASTER: waits */
     assert(S.bankMapUp && !snd.soundOpen(), 'MASTER opened mid-hold');
     ticks(6);
-    assert(led[pad(1, 0)] === K.White && led[pad(0, 0)] !== K.White, 'the waiting MASTER pad is not the White one');
+    assert(led[pad(2, 0)] === K.White && led[pad(0, 0)] !== K.White, 'the waiting MASTER pad is not the White one');
     tap(pad(0, 1));                                           /* PAN */
     assert(S.sessKnobMode === 1 && !S.bankMapDeferred, 'PAN did not take, or MASTER still waits');
     release(); tickS(3);
@@ -588,7 +598,7 @@ const TRK = (t) => 16 + t;
 const await_eng = await import('../../ui/ui_engine.mjs');
 const paintOn = () => { for (let i = 0; i < 80 && !leds.bankMapTrackBlinkOn(S.clockMs); i++) tick(); ticks(1); };
 
-step('⭐ track buttons: Steps 1-8 BRIGHT in their colour, the active one blinks colour/White, Steps 9-16 and the right grid dark', () => {
+step('⭐ track buttons: Steps 1-8 BRIGHT in their colour, the active one blinks colour/White, Steps 9-16 dark, the right grid only its module pads', () => {
     home(); S.sessionView = false;
     const at = S.activeTrack;
     press(); holdPast();
@@ -603,7 +613,7 @@ step('⭐ track buttons: Steps 1-8 BRIGHT in their colour, the active one blinks
     assert(seen.has(C.TRACK_COLORS[at]) && seen.has(K.White) && seen.size === 2,
            'the active track button does not blink colour/White: ' + JSON.stringify([...seen]));
     for (let i = 8; i < 16; i++) assert((led[16 + i] | 0) === 0, 'Step ' + (i + 1) + ' is lit');
-    assert(rightDark(), 'the right grid is lit');
+    assert(lowerRightDark(), 'the right grid shows more than the module pads');
     release(); ticks(2);
 });
 
@@ -622,8 +632,10 @@ step('⭐⭐ HOLD + a track button: the track switches, the map STAYS and the ne
     let diff = 0; for (let i = 0; i < carded.length; i++) diff += carded[i] !== bare[i] ? 1 : 0;
     assert(diff > 40, 'the card is not drawn over the map (' + diff + ' px differ)');
     const until = S.actionPopupEndTick - S.clockMs;
-    assert(until > 0 && until <= 400, 'the card is not brief: ' + until + ' ms');
-    ticks(Math.ceil(450 / 10.6));
+    /* ~twice the first cut (Josh, 2026-10-15), and the header inverted. */
+    assert(until >= 600 && until <= 800, 'the card is not ~700 ms: ' + until + ' ms');
+    assert(S.actionPopupHighlight === 0, 'the TRACK n header is not set off (inverse video): ' + S.actionPopupHighlight);
+    ticks(Math.ceil(850 / 10.6));
     let late = 0; const after = frame(); for (let i = 0; i < after.length; i++) late += after[i] !== bare[i] ? 1 : 0;
     assert(late === 0, 'the card is still up after its window (' + late + ' px)');
     tap(pad(3, 2)); ticks(1);
@@ -693,6 +705,118 @@ step('SESSION map: no track buttons — the right grid is dark and dead, steps l
     assert(S.activeTrack === at, 'a session-map pad switched track');
     assert(!S.bankMapSwallow.has(16 + (at === 6 ? 5 : 6)), 'the session map took a step button');
     holdLong(); release(); ticks(2); S.sessionView = false;
+});
+
+/* ---- THE MODULE PADS (Josh, 2026-10-15) ---------------------------------
+ * "I want these to be shortcuts to the respective module editors. they work
+ * like the other shortcuts - pad map doesn't exit until it is released ...
+ * pressing one of these shortcuts should show a pop-up like the track
+ * shortcuts: [Slot name] / [Full module or instrument name]" — MIDI FX over
+ * INSTRUMENT in the third column, FX 1-4 down the far-right one. */
+const MOD = { midi: pad(6, 0), inst: pad(6, 1), fx1: pad(7, 0), fx2: pad(7, 1), fx3: pad(7, 2), fx4: pad(7, 3) };
+const modLit = () => Object.keys(MOD).filter((k) => (led[MOD[k]] | 0) !== 0).sort().join(',');
+
+step('⭐ module pads: a colour per kind — INSTRUMENT the track\'s, MIDI FX Cyan, every audio FX BrightOrange', () => {
+    ccm.bankMapEnd(); home(); S.sessionView = false;
+    const t = S.activeTrack;
+    press(); holdPast(); ticks(2);
+    const want = { inst: leds.trackColor(t), midi: K.Cyan, fx1: K.BrightOrange, fx2: K.BrightOrange, fx3: K.BrightOrange, fx4: K.BrightOrange };
+    for (const k of Object.keys(MOD)) assert(led[MOD[k]] === want[k], k + ' pad is ' + led[MOD[k]] + ', wanted ' + want[k]);
+    assert(new Set([want.inst, want.midi, want.fx1]).size === 3, 'the three kinds do not differ on this track');
+    release(); ticks(2);
+});
+
+step('⭐⭐ HOLD + MIDI FX pad: the popup names the slot and the module, the map STAYS, the pad turns White; release opens its editor with Back armed', () => {
+    ccm.bankMapEnd(); home(); S.sessionView = false;
+    const t = S.activeTrack;
+    LOADED['midi_fx1:module'] = 'arp';
+    press(); holdPast();
+    tap(MOD.midi); ticks(1);
+    assert(S.bankMapUp, 'the map went away on a module pad');
+    assert(JSON.stringify(S.actionPopupLines) === JSON.stringify(['MIDI FX', 'arp']) && S.actionPopupCard,
+           'popup: ' + JSON.stringify(S.actionPopupLines));
+    const until = S.actionPopupEndTick - S.clockMs;
+    assert(until >= 600 && until <= 800, 'the popup is not ~700 ms like a track pick\'s: ' + until + ' ms');
+    assert(S.actionPopupHighlight === 0, 'the slot-name header is not set off (inverse video)');
+    ticks(1);
+    assert(led[MOD.midi] === K.White, 'the waiting pad is not White: ' + led[MOD.midi]);
+    assert(!snd.soundOpen(), 'it opened before the release');
+    holdLong(); release(); ticks(6);
+    assert(!S.bankMapUp, 'the map is still up after the release');
+    assert(snd.soundOpen() && snd.soundTrack() === t && snd.soundCompForTest() === 'midi_fx1',
+           'not in the MIDI FX editor: open ' + snd.soundOpen() + ' comp ' + snd.soundCompForTest());
+    assert(snd.soundGestureArmed(), 'no return crumb: Back would not retrace to where the map was held');
+    snd.soundExit(); ticks(2);
+    delete LOADED['midi_fx1:module'];
+});
+
+step('an EMPTY block says so; a later pad replaces the waiting one; INSTRUMENT names what the track plays', () => {
+    ccm.bankMapEnd(); home(); S.sessionView = false;
+    press(); holdPast();
+    tap(MOD.fx3); ticks(1);
+    assert(JSON.stringify(S.actionPopupLines) === JSON.stringify(['FX 3', 'Empty']), 'popup: ' + JSON.stringify(S.actionPopupLines));
+    loadedGen = 'moog';
+    await_eng.engineNoteModuleAbbrevs([{ id: 'moog', name: 'Mini Moog', abbrev: 'MG' }]);
+    tap(MOD.inst); ticks(1);
+    assert(JSON.stringify(S.actionPopupLines) === JSON.stringify(['INSTRUMENT', 'Mini Moog']), 'popup: ' + JSON.stringify(S.actionPopupLines));
+    ticks(1);
+    assert(led[MOD.inst] === K.White && led[MOD.fx3] !== K.White, 'the White pad did not move to the later tap');
+    holdLong(); release(); ticks(6);
+    assert(snd.soundOpen() && snd.soundCompForTest() === 'synth', 'INSTRUMENT did not open the generator: comp ' + snd.soundCompForTest());
+    snd.soundExit(); ticks(2);
+    loadedGen = '';
+});
+
+step('a bank tap after a module pad cancels it: the release opens nothing', () => {
+    ccm.bankMapEnd(); home(); S.sessionView = false;
+    press(); holdPast();
+    tap(MOD.fx1); ticks(1);
+    tap(pad(3, 2)); ticks(1);
+    holdLong(); release(); ticks(6);
+    assert(!snd.soundOpen(), 'the module pad still opened after a bank tap');
+    assert(S.activeBank === 3, 'the bank tap did not land: ' + S.activeBank);
+});
+
+step('MIDI track: only MIDI FX is lit, and the dark pads do nothing', () => {
+    ccm.bankMapEnd(); home(); S.sessionView = false;
+    const t = S.activeTrack;
+    S.trackRoute[t] = 2;
+    press(); holdPast(); ticks(2);
+    assert(modLit() === 'midi', 'lit on a MIDI track: ' + modLit());
+    S.actionPopupLines = [];
+    tap(MOD.fx1); tap(MOD.inst); ticks(1);
+    assert(!(S.actionPopupLines || []).length && !S.bankMapDeferred, 'a dark pad acted: ' + JSON.stringify(S.actionPopupLines));
+    release(); ticks(2);
+    S.trackRoute[t] = 0;
+});
+
+step('Conductor: none lit; None: only INSTRUMENT (its picker)', () => {
+    ccm.bankMapEnd(); home(); S.sessionView = false;
+    const t = S.activeTrack;
+    S.trackPadMode[t] = C.PAD_MODE_CONDUCT;
+    press(); holdPast(); ticks(2);
+    assert(modLit() === '', 'lit on a Conductor: ' + modLit());
+    release(); ticks(2);
+    S.trackPadMode[t] = C.PAD_MODE_MELODIC_SCALE ?? 0;
+    S.trackRoute[t] = C.ROUTE_NONE;
+    press(); holdPast(); ticks(2);
+    assert(modLit() === 'inst', 'lit on a None track: ' + modLit());
+    release(); ticks(2);
+    S.trackRoute[t] = 0;
+});
+
+step('Move track: an FX pad names the module on the track\'s Move bus insert', () => {
+    ccm.bankMapEnd(); home(); S.sessionView = false;
+    const t = S.activeTrack;
+    S.trackRoute[t] = 1; S.trackChannel[t] = 2;
+    LOADED['move_fx:2:fx2:module'] = 'freeverb';
+    press(); holdPast(); ticks(2);
+    assert(modLit() === 'fx1,fx2,fx3,fx4,inst,midi', 'lit on a Move track: ' + modLit());
+    tap(MOD.fx2); ticks(1);
+    assert(JSON.stringify(S.actionPopupLines) === JSON.stringify(['FX 2', 'freeverb']), 'popup: ' + JSON.stringify(S.actionPopupLines));
+    ccm.bankMapEnd(); ticks(2);
+    S.trackRoute[t] = 0; S.trackChannel[t] = 1;
+    delete LOADED['move_fx:2:fx2:module'];
 });
 
 if (failed) { console.error('test_bank_pad_map: FAIL'); process.exit(1); }

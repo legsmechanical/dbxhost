@@ -3183,6 +3183,22 @@ export function soundJumpToParam(track, comp, key, autoSel) {
     S.pendingAction = { t: 'open', comp };
     return true;
 }
+/* A track's MIDI FX or audio FX editor, straight from the bank map's module
+ * pads (Josh, 2026-10-15) — what clicking that block's row on the sound menu
+ * does (an empty block opens the module list), entered the way the menu is
+ * entered for the track's route. The caller stamps the return crumb, so Back
+ * retraces to where the map was held. */
+export function soundOpenModule(track, comp) {
+    if (GS.trackRoute[track] === 1) {
+        soundEnterMove(track);
+        if (!S.bus) return false;
+        S.pendingAction = { t: 'open', comp: comp === 'midi_fx1' ? comp : S.bus.prefix + comp };
+    } else {
+        soundEnter(track, slotIndex(track));
+        S.pendingAction = { t: 'open', comp };
+    }
+    return true;
+}
 /* The same return for the sound-mode CARDS (SOUND + CONFIG, MACROS), which the
  * jump reaches through the ordinary deferred entry: spent only when the crumb
  * came from a lane jump, so Shift+Note's retrace keeps its own screens. */

@@ -160,7 +160,7 @@ step('⭐ a VIEW SWITCH closes a map — each view opens on its overview; the re
 step('⭐ MASTER from the Session map opens its effects; Back walks out to the overview', () => {
     rest(); S.sessionView = true;
     cc(3, 127);                                  /* the Session map */
-    note(pureMod.bankMapPadForCell(1, 0), 100); note(pureMod.bankMapPadForCell(1, 0), 0);   /* MASTER */
+    note(pureMod.bankMapPadForCell(pureMod.SESS_PAD_MAP.fx.col, 0), 100); note(pureMod.bankMapPadForCell(pureMod.SESS_PAD_MAP.fx.col, 0), 0);   /* MASTER */
     cc(3, 0);                                    /* it opens on the release */
     for (let i = 0; i < 4; i++) { sndMod.soundTick(); globalThis.tick(); }
     if (!sndMod.soundActive() || !sndMod.soundIsGlobal()) throw new Error('MASTER did not open its effects');
