@@ -93,6 +93,9 @@ the section into a versioned heading at release time.
   of a second before it counts as let go.
 
 ### Fixed
+- **Move Settings: the Wi-Fi menu no longer throws you out.** Entering Wi-Fi
+  from Project Settings → Move Settings... used to drop you back on Project
+  Settings.
 - **Letting go of the bank map with a finger still on the jog shows the bank.**
   It sometimes did not — after picking from the map over a menu or editor, or
   when the touch began on a screen that takes the jog.

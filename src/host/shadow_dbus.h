@@ -75,6 +75,11 @@ void shadow_dbus_stop(void);
  * pressed at the top of Move's editor. Safe from any thread. */
 uint32_t shadow_dbus_text_count(void);
 
+/* An input that LEAVES Move's own Settings menu just went to Move (a Back, or
+ * an injected Step 2 press): the next non-row announcement may end SETTINGS
+ * (move_settings_text.h). Safe from any thread; no I/O. */
+void shadow_dbus_settings_leave_arm(void);
+
 /* Queue a screen reader announcement to be injected via send() hook */
 void send_screenreader_announcement(const char *text);
 

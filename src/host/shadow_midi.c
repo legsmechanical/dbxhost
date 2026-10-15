@@ -146,6 +146,7 @@ static int event_dedup_check_and_record(event_dedup_entry_t *ring, int *head,
  * ============================================================================ */
 
 static void (*host_log)(const char *msg);
+static void (*host_settings_leave_arm)(void);
 static void (*host_midi_out_logf)(const char *fmt, ...);
 static int (*host_midi_out_log_enabled)(void);
 static void (*host_ui_state_update_slot)(int slot);
@@ -178,6 +179,7 @@ static int *host_slot_fx_silence_frames;
 void midi_routing_init(const midi_host_t *host)
 {
     host_log = host->log;
+    host_settings_leave_arm = host->settings_leave_arm;
     host_midi_out_logf = host->midi_out_logf;
     host_midi_out_log_enabled = host->midi_out_log_enabled;
     host_ui_state_update_slot = host->ui_state_update_slot;
@@ -783,6 +785,13 @@ void shadow_drain_midi_inject(void)
             surface_mark("surface.place");
         memcpy(&midi_in[hw_offset], pkt, 4);
         memset(&midi_in[hw_offset + 4], 0, 4);
+        /* Step 2 (note 17) pressed on Move's own surface: with Shift it is
+         * Move's Settings toggle, so a close may follow; a Back (CC 51)
+         * injected to Move may leave it too — the test daemon's route
+         * (move_settings_text.h). */
+        if ((pkt[0] & 0xF0) == 0 && pkt[3] > 0 && host_settings_leave_arm &&
+            (((pkt[1] & 0xF0) == 0x90 && pkt[2] == 17) || ((pkt[1] & 0xF0) == 0xB0 && pkt[2] == 51)))
+            host_settings_leave_arm();
         hw_offset += MIDI_IN_EVT_STRIDE;
         shadow_midi_inject_pop(inject_shm);   /* consume only after a successful inject */
         injected++;

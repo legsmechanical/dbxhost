@@ -187,6 +187,20 @@ void shadow_inject_pending_announcements(void)
  * Handle screen reader text signal
  * ============================================================================ */
 
+/* Something that leaves Move's own Settings menu went to Move
+ * (move_settings_text.h): a Back to Move, or an injected Step 2 press. */
+static move_settings_leave_t settings_leave;
+static uint64_t dbus_now_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000u + (uint64_t)(ts.tv_nsec / 1000000);
+}
+void shadow_dbus_settings_leave_arm(void)
+{
+    move_settings_leave_arm(&settings_leave, dbus_now_ms());
+}
+
 uint32_t shadow_dbus_text_count(void)
 {
     return __atomic_load_n(&dbus_text_count, __ATOMIC_ACQUIRE);
@@ -271,10 +285,8 @@ static void shadow_dbus_handle_text(const char *text)
      * opened it (dAVEBOx's Move Settings... row) learns that Back at the top
      * level took Move out of it. Before the lines below, so an overview or
      * session announcement still sets its own mode. */
-    if (ctrl) {
-        if (move_settings_text_is_row(text)) ctrl->move_ui_mode = 4; /* SETTINGS */
-        else if (ctrl->move_ui_mode == 4 && strncmp(text, "Page ", 5) != 0) ctrl->move_ui_mode = 0;
-    }
+    if (ctrl) ctrl->move_ui_mode = (uint8_t)move_settings_next_mode(ctrl->move_ui_mode, text,
+                                                                     &settings_leave, dbus_now_ms());
 
     /* Set page: detect Set Overview screen for Shift+Vol+Left/Right interception */
     if (strcasecmp(text, "Set Overview") == 0 || strcasecmp(text, "Sets") == 0) {
