@@ -69,7 +69,7 @@ echo "$ch" | grep -q 'strcmp(key, "midi_fx_to_host") == 0' || say "$CH does not 
 [ "$(echo "$ch" | grep -c 'strcmp(key, "midi_fx_to_host") == 0')" -ge 2 ] || say "midi_fx_to_host is not in BOTH set_param and get_param"
 echo "$ch" | grep -q 'inst->midi_fx_to_host = temp_patch->midi_fx_to_host' || say "the load-from-file apply site drops midi_fx_to_host"
 echo "$cp" | grep -q 'json_get_int(json, "midi_fx_to_host", &patch->midi_fx_to_host)' || say "the patch parser does not read midi_fx_to_host"
-echo "$cp" | grep -q 'inst->midi_fx_to_host = inst->patches\[patch_idx\].midi_fx_to_host' || say "the library-patch apply site drops midi_fx_to_host"
+echo "$cp" | grep -q 'inst->midi_fx_to_host = p->midi_fx_to_host' || say "the library-patch apply site drops midi_fx_to_host"
 body "$cm" 'void v2_unload_midi_fx_slot(chain_instance_t *inst, int slot)' | grep -q 'inst->midi_fx_to_host = 0' \
     || say "unloading a MIDI FX does not reset midi_fx_to_host"
 
@@ -77,7 +77,7 @@ for k in midi_fx_host_route; do
   [ "$(echo "$ch" | grep -c "strcmp(key, \"$k\") == 0")" -ge 2 ] || say "$k is not in BOTH set_param and get_param"
   echo "$ch" | grep -q "inst->$k = temp_patch->$k" || say "the load-from-file apply site drops $k"
   echo "$cp" | grep -q "json_get_int(json, \"$k\", &patch->$k)" || say "the patch parser does not read $k"
-  echo "$cp" | grep -q "inst->$k = inst->patches\[patch_idx\].$k" || say "the library-patch apply site drops $k"
+  echo "$cp" | grep -q "inst->$k = p->$k" || say "the library-patch apply site drops $k"
   body "$cm" 'void v2_unload_midi_fx_slot(chain_instance_t *inst, int slot)' | grep -q "inst->$k = 0" \
       || say "unloading a MIDI FX does not reset $k"
   echo "$j" | grep 'const preKeys' -A2 | grep -q "\"$k\"" || say "the slot saver does not READ $k (preKeys)"

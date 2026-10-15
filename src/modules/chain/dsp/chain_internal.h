@@ -50,14 +50,15 @@
 #include "../../../host/shadow_constants.h"
 
 /* Limits */
-/* ⚠ patches[MAX_PATCHES] embeds a full patch_info_t per library patch, and
- * patch_info_t carries the state-blob buffers (MAX_SYNTH_STATE_LEN +
- * (MAX_AUDIO_FX+MAX_MIDI_FX)*MAX_FX_STATE_LEN ≈ 160 KB) — so this array is
- * ~5 MB per chain instance, ~20 MB across four slots. Accepted deliberately:
- * the alternative (per-blob heap indirection) touches every copy/reset site,
- * and the platform has RAM to spare. Revisit the layout before raising
- * MAX_PATCHES or the state caps further. */
-#define MAX_PATCHES 32      /* Max patches to list in browser */
+/* The patch LIBRARY an instance lists: a name and a path per file
+ * (patch_entry_t), and the whole patch is parsed from its file only when it
+ * is loaded, into the instance's one patch_scratch. It used to embed a full
+ * patch_info_t (~250 KB of state buffers) per entry, so it was capped at 32 —
+ * and a library past 32 files was cut SILENTLY to whichever 32 readdir
+ * returned first, while the UI's list (shadow_ui_patches.mjs, every file)
+ * kept counting them all: a pick loaded a different patch, or nothing
+ * ("patch index out of range"). Raise freely; each entry is ~320 bytes. */
+#define MAX_PATCHES 1024    /* Max patches in the library */
 #define MAX_AUDIO_FX 4      /* Max FX loaded per active chain */
 
 /* ⚠⚠ FORK DIVERGENCE — A BUS CHAIN HAS ITS OWN CAP, AND IT IS NOT MAX_AUDIO_FX.
@@ -381,6 +382,12 @@ typedef struct {
      */
 } patch_info_t;
 
+/* One library patch, as listed (see MAX_PATCHES). */
+typedef struct {
+    char name[MAX_NAME_LEN];
+    char path[MAX_PATH_LEN];
+} patch_entry_t;
+
 /* ============================================================================
  * Parameter Smoothing (to avoid zipper noise on knob changes)
  * ============================================================================ */
@@ -618,9 +625,11 @@ typedef struct chain_instance {
     char *fx_ui_hierarchy[MAX_AUDIO_FX];            /* CHAIN_UI_HIERARCHY_LEN each; cached ui_hierarchy JSON */
 
     /* Patch state */
-    patch_info_t patches[MAX_PATCHES];
+    patch_entry_t patches[MAX_PATCHES];
     int patch_count;
     int current_patch;
+    patch_info_t *patch_scratch;      /* a scan's or a load's parse; position storage owns it */
+    long long patches_dir_stamp;      /* the library dir's mtime at the last scan (ns), -1 never */
 
     /* MIDI FX module state */
     void *midi_fx_handles[MAX_MIDI_FX];
@@ -1006,6 +1015,7 @@ static inline void chain_free_position_storage(chain_instance_t *inst) {
         free(inst->fx_params[i]);       inst->fx_params[i] = NULL;
         free(inst->fx_ui_hierarchy[i]); inst->fx_ui_hierarchy[i] = NULL;
     }
+    free(inst->patch_scratch); inst->patch_scratch = NULL;
 }
 static inline int chain_alloc_position_storage(chain_instance_t *inst) {
     for (int i = 0; i < MAX_AUDIO_FX; i++) {
@@ -1016,6 +1026,9 @@ static inline int chain_alloc_position_storage(chain_instance_t *inst) {
             return -1;
         }
     }
+    inst->patch_scratch = (patch_info_t *)calloc(1, sizeof(patch_info_t));
+    if (!inst->patch_scratch) { chain_free_position_storage(inst); return -1; }
+    inst->patches_dir_stamp = -1;
     return 0;
 }
 
@@ -1292,6 +1305,7 @@ CHAIN_INTERNAL int v2_load_patch(chain_instance_t *inst, int patch_idx);
 CHAIN_INTERNAL int v2_parse_patch_file(chain_instance_t *inst, const char *path, patch_info_t *patch);
 CHAIN_INTERNAL int v2_save_patch(chain_instance_t *inst, const char *json_data);
 CHAIN_INTERNAL int v2_scan_patches(chain_instance_t *inst);
+CHAIN_INTERNAL int v2_patches_fresh(chain_instance_t *inst);
 CHAIN_INTERNAL int v2_update_patch(chain_instance_t *inst, int index, const char *json_data);
 
 

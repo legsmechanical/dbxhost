@@ -85,6 +85,9 @@ the section into a versioned heading at release time.
   of a second before it counts as let go.
 
 ### Fixed
+- **Chain presets past the 32nd load.** With more than 32 chain presets, some
+  never loaded and others loaded the wrong preset. Every preset in the library
+  now loads, including ones added while dAVEBOx is running.
 - **Notes to Seq under a groove: overlapping notes keep their own lengths.**
   With a groove on, a note a MIDI effect generated could be recorded up to a
   position too long or too short when another generated note was still
