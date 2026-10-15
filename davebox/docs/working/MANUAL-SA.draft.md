@@ -352,9 +352,9 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   so the bank you want there is the next tap. Steps 9–16 are dark and do
   nothing. Session View's map leaves the steps alone.
 - **The right-hand pads open the track's module editors** while the map is up
-  (Track View), in the track's colour: **MIDI FX** above **INSTRUMENT** in the
-  third column, **FX 1–4** down the far-right column. Tap one and the screen
-  flashes its name and what is loaded there (or **Empty**); like CONFIG, it
+  (Track View): **MIDI FX** (cyan) above **INSTRUMENT** (the track's colour) in
+  the third column, **FX 1–4** (orange) down the far-right column. Tap one and
+  the screen flashes its name and what is loaded there (or **Empty**); like CONFIG, it
   turns white and opens when you let go of the jog. **Back** from that editor
   takes you back to where you were. A MIDI track has only MIDI FX, a track set
   to None only INSTRUMENT, and a Conductor none.

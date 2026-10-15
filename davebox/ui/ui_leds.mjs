@@ -590,11 +590,15 @@ function paintBankMapPads() {
             col[at(ci, r)] = on ? White
                 : own ? trackColor(t) : BANK_MAP_COL_COLORS[ci];
         }));
-        /* The MODULE pads (right 4x4): the track's own chain, so its colour;
-         * the one waiting for the jog's release White. */
+        /* The MODULE pads (right 4x4), one colour per kind (Josh,
+         * 2026-10-15: "colors to distinguish between fx, midifx, and
+         * instrument"): the INSTRUMENT the track's own colour, as the INST
+         * pad; MIDI FX Cyan; every audio FX BrightOrange. The one waiting for
+         * the jog's release White. */
         for (const m of BANK_MAP_MODULE_PADS) {
             if (!bankMapModuleAt(S.trackRoute[t], S.trackPadMode[t], m.col, m.row)) continue;
-            col[at(m.col, m.row)] = d && d.col === m.col && d.row === m.row ? White : trackColor(t);
+            col[at(m.col, m.row)] = d && d.col === m.col && d.row === m.row ? White
+                : m.comp === 'synth' ? trackColor(t) : m.comp === 'midi_fx1' ? Cyan : BrightOrange;
         }
     }
     for (let i = 0; i < 32; i++) cachedSetLED(TRACK_PAD_BASE + i, col[i]);

@@ -626,8 +626,10 @@ step('⭐⭐ HOLD + a track button: the track switches, the map STAYS and the ne
     let diff = 0; for (let i = 0; i < carded.length; i++) diff += carded[i] !== bare[i] ? 1 : 0;
     assert(diff > 40, 'the card is not drawn over the map (' + diff + ' px differ)');
     const until = S.actionPopupEndTick - S.clockMs;
-    assert(until > 0 && until <= 400, 'the card is not brief: ' + until + ' ms');
-    ticks(Math.ceil(450 / 10.6));
+    /* ~twice the first cut (Josh, 2026-10-15), and the header inverted. */
+    assert(until >= 600 && until <= 800, 'the card is not ~700 ms: ' + until + ' ms');
+    assert(S.actionPopupHighlight === 0, 'the TRACK n header is not set off (inverse video): ' + S.actionPopupHighlight);
+    ticks(Math.ceil(850 / 10.6));
     let late = 0; const after = frame(); for (let i = 0; i < after.length; i++) late += after[i] !== bare[i] ? 1 : 0;
     assert(late === 0, 'the card is still up after its window (' + late + ' px)');
     tap(pad(3, 2)); ticks(1);
@@ -708,11 +710,13 @@ step('SESSION map: no track buttons — the right grid is dark and dead, steps l
 const MOD = { midi: pad(6, 0), inst: pad(6, 1), fx1: pad(7, 0), fx2: pad(7, 1), fx3: pad(7, 2), fx4: pad(7, 3) };
 const modLit = () => Object.keys(MOD).filter((k) => (led[MOD[k]] | 0) !== 0).sort().join(',');
 
-step('⭐ module pads: all six in the track\'s colour on a Schwung track', () => {
+step('⭐ module pads: a colour per kind — INSTRUMENT the track\'s, MIDI FX Cyan, every audio FX BrightOrange', () => {
     ccm.bankMapEnd(); home(); S.sessionView = false;
     const t = S.activeTrack;
     press(); holdPast(); ticks(2);
-    for (const k of Object.keys(MOD)) assert(led[MOD[k]] === leds.trackColor(t), k + ' pad is ' + led[MOD[k]]);
+    const want = { inst: leds.trackColor(t), midi: K.Cyan, fx1: K.BrightOrange, fx2: K.BrightOrange, fx3: K.BrightOrange, fx4: K.BrightOrange };
+    for (const k of Object.keys(MOD)) assert(led[MOD[k]] === want[k], k + ' pad is ' + led[MOD[k]] + ', wanted ' + want[k]);
+    assert(new Set([want.inst, want.midi, want.fx1]).size === 3, 'the three kinds do not differ on this track');
     release(); ticks(2);
 });
 
@@ -726,7 +730,8 @@ step('⭐⭐ HOLD + MIDI FX pad: the popup names the slot and the module, the ma
     assert(JSON.stringify(S.actionPopupLines) === JSON.stringify(['MIDI FX', 'arp']) && S.actionPopupCard,
            'popup: ' + JSON.stringify(S.actionPopupLines));
     const until = S.actionPopupEndTick - S.clockMs;
-    assert(until > 0 && until <= 400, 'the popup is not brief like a track pick\'s: ' + until + ' ms');
+    assert(until >= 600 && until <= 800, 'the popup is not ~700 ms like a track pick\'s: ' + until + ' ms');
+    assert(S.actionPopupHighlight === 0, 'the slot-name header is not set off (inverse video)');
     ticks(1);
     assert(led[MOD.midi] === K.White, 'the waiting pad is not White: ' + led[MOD.midi]);
     assert(!snd.soundOpen(), 'it opened before the release');

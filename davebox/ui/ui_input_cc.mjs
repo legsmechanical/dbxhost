@@ -1543,7 +1543,7 @@ export function bankMapPadTap(note) {
         const m = bankMapModuleAt(S.trackRoute[t], S.trackPadMode[t], cell.col, cell.row);
         if (!m) return;
         bankMapMenuTap({ kind: 'module', comp: m.comp, col: cell.col, row: cell.row });
-        showActionPopupFor(BANK_MAP_TRACK_POPUP_MS, m.label, bankMapModuleName(t, m.comp));
+        shortcutPopup(m.label, bankMapModuleName(t, m.comp));
         return;
     }
     if (S.bankMapKind === 'session') {
@@ -1600,7 +1600,7 @@ export function bankMapStepTap(note) {
      * over the map, for a glance (Josh, 2026-10-08: "a very brief
      * 'Track [n]' pop-up" · "under the track line ... the full name of
      * the instrument/destination"). */
-    showActionPopupFor(BANK_MAP_TRACK_POPUP_MS, 'TRACK ' + (nt + 1), trackInstrName(nt));
+    shortcutPopup('TRACK ' + (nt + 1), trackInstrName(nt));
     invalidateLEDCache();
     forceRedraw();
 }
@@ -2846,6 +2846,13 @@ function _handleBack(d2) {
  * test: "edit this track's instrument" means the generator's canvas on a
  * Schwung track, co-run on a Move one, and a MIDI track has neither and says so.
  */
+/* The map shortcuts' popup (track and module pads): the header — the slot or
+ * TRACK n — in inverse video, set off from the name below it (Josh,
+ * 2026-10-15), for BANK_MAP_TRACK_POPUP_MS. */
+function shortcutPopup(head, body) {
+    showActionPopupFor(BANK_MAP_TRACK_POPUP_MS, head, body);
+    S.actionPopupHighlight = 0;
+}
 /* What a module pad's popup names: the instrument as the track pick names it
  * (the generator's own name, Move n, MIDI Ch n...), else the module loaded in
  * that block on the track's slot — or on its Move bus — else Empty. */
