@@ -218,8 +218,7 @@ static int sp_track_config(sp_ctx_t *cx) {
     if (!strcmp(sub, "fxpost")) {
         uint8_t on = (uint8_t)(my_atoi(val) ? 1 : 0);
         if (on != tr->fx_post) {
-            post_release_all(inst, tr);
-            silence_track_from_set_param(inst, tr);
+            silence_track_from_set_param(inst, tr);   /* closes what the module has, too */
             tr->fx_post = on;
             inst->state_dirty = 1;
         }

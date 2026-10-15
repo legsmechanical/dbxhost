@@ -349,7 +349,6 @@ static void ext_transport_stop(seq8_instance_t *inst) {
     inst->cap_select_active = 0;   /* stopping transport closes the tempo selector */
     for (t = 0; t < NUM_TRACKS; t++) {
         play_fx_t *fx = &inst->tracks[t].pfx;
-        post_release_all(inst, &inst->tracks[t]);   /* see silence_track_from_set_param */
         silence_track_notes_v2(inst, &inst->tracks[t]);
         /* Effective route — see silence_track_from_set_param. */
         if (midi_dest_resolve(fx->route, fx->slot, fx->midi_to).route == ROUTE_MOVE) {
@@ -385,7 +384,7 @@ static void ext_transport_stop(seq8_instance_t *inst) {
     inst->ext_tick_pending = 0;
     inst->follow_solo      = 0;   /* solo-clock fallback evaporates when the take stops */
     inst->solo_tick_accum  = 0;
-    send_panic(inst);
+    send_panic(inst);            /* ...which closes what POST modules have (post_release_all) */
     for (t = 0; t < NUM_TRACKS; t++) {
         /* Per-parameter automation goes back to rest on the transport-stop edge. A
          * chain parameter that automation was driving is otherwise abandoned
