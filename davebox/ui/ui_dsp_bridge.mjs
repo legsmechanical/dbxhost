@@ -47,7 +47,7 @@ import { Red } from '/data/UserData/schwung/shared/constants.mjs';
 import { S } from './ui_state.mjs';
 import { slotIndex, syncLinkAudioRoutingFromRoutes,
          invalidateLinkAudioRoutingCache, linkAudioRoutingJustEnabled,
-         engineLoadedModule, engineSetChainParam } from './ui_engine.mjs';
+         engineLoadedModule, engineSetChainParam, engineSet, engineSaveState } from './ui_engine.mjs';
 import { clipHasContent, _clipIsEmpty, bankIsDoor } from './ui_pure.mjs';
 import { showActionPopup, showActionPopupFor, writeSidecar, uuidToStatePath, uuidToUiStatePath,
          uuidToNewProjectPath, freshSidecar } from './ui_persistence.mjs';
@@ -807,7 +807,20 @@ export function pollDSP() {
         S.mergeSoloPlacement = -1;
         S.mergePlacing       = false;   /* clear the "Placing…" indicator */
         if (_wrote) {
+            /* A track whose POST module was in what the merge recorded: the
+             * clip now holds the module's output, so the module is bypassed
+             * (kept, not removed), as a print does — or the clip would play
+             * through it twice. */
+            const _pm = dspGetInt('merge_post_mask') | 0;
+            let _byp = 0;
+            for (let _t = 0; _t < 8; _t++) {
+                if (!(_pm & (1 << _t))) continue;
+                engineSet(slotIndex(_t), 'midi_fx1', 'bypassed', '1');
+                _byp++;
+            }
+            if (_byp) engineSaveState();
             if (_prevMergeState === 2)  showActionPopup('MAX LENGTH', 'REACHED');
+            else if (_byp)              showActionPopup('LIVE MERGE', 'MIDI FX bypassed');
             else if (_wasSolo)          showActionPopup('LIVE MERGE', 'Printed to clip');
             syncClipsFromDsp();
         }

@@ -1422,6 +1422,10 @@ typedef struct {
      * matches MAX_NOTES_PER_CLIP. */
     struct { uint8_t pitch; uint32_t tick_at_on; uint8_t vel; uint16_t gate; } merge_pending[NUM_TRACKS][512];
     uint16_t merge_pending_count[NUM_TRACKS];
+    /* The tracks the last placed Live Merge wrote on whose POST module is in
+     * their output (bit t): the UI bypasses those modules, so the merged
+     * clip does not play through them twice. A print bypasses its own. */
+    uint8_t  merge_post_mask;
 
     /* Live pad input: global key/scale stored for state persistence */
     uint8_t  pad_key;               /* root key 0-11, default 9 (A) */
@@ -2429,10 +2433,12 @@ static void merge_place(seq8_instance_t *inst, int row) {
     if (steps < 1)   steps = 1;
     if (steps > 256) steps = 256;
     int t;
+    inst->merge_post_mask = 0;
     for (t = 0; t < NUM_TRACKS; t++) {
         if (inst->merge_pending_count[t] == 0) continue;
         seq8_track_t *tr = &inst->tracks[t];
         int is_drum = tr->pad_mode == PAD_MODE_DRUM;
+        if (tr->fx_post && !inst->print_state) inst->merge_post_mask |= (uint8_t)(1u << t);
         if (is_drum) {
             /* Empty slot — every path that makes a track DRUM allocates all
              * slots (drum_clips_alloc), and a drum clip copy refuses an empty
@@ -8835,6 +8841,9 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                         inst ? (int)inst->ext_tick_pending : 0);
 
     /* PRINT state, for the UI's progress and its finish (see print_track). */
+    /* Live Merge: the tracks whose POST module the last placement took in. */
+    if (!strcmp(key, "merge_post_mask"))
+        return snprintf(out, out_len, "%d", (int)inst->merge_post_mask);
     if (!strcmp(key, "print_state"))
         return snprintf(out, out_len, "%d", (int)inst->print_state);
     if (!strcmp(key, "playing"))

@@ -1832,6 +1832,9 @@ The last two pages are the same for every module:
   before the module. On a drum track each of the module's notes plays on the
   lane whose note it is, with that lane's effects; a note no lane plays is not
   heard.
+  **Bake** and **Live Merge** record the module's output into the clip and then
+  bypass the module (it stays loaded, so you can undo or switch it back on),
+  so the clip doesn't play through it twice.
 - **Pre**: what you play goes *through* the effect, and the effect's output is
   what you hear, what **Record** writes into the clip and what **Capture** keeps.
   The clip then plays back *without* the effect, so a chord effect records
