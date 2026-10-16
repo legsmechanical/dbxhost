@@ -241,7 +241,6 @@ def compose(take, t, cache):
     # the caption panel
     px, py = ox + ow + 40, oy - 10
     pw, ph = W - px - 40, oh + 20
-    d.rectangle([px, py + 24, px + 5, py + ph - 24], fill=ACCENT)
     tx, tw = px + 44, pw - 80
     d.text((tx, py + 36), take.eyebrow, font=F_EYEBROW, fill=MUTED)
     if cap:
