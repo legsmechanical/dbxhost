@@ -1424,8 +1424,9 @@ recorded on its own and shows in the list as its own row.
 
 Arranging happens in **Session View**: the clip grid on the pads, 8 tracks across
 and 4 rows visible. **+** and **−** scroll one row at a time through all 16 rows.
-The eight knobs are a mixer, one per track; the jog picks what they set (Volume,
-Pan, Send A, Send B).
+The eight knobs are a mixer, one per track. What they set — Volume, Pan, Send A or
+Send B — is the **MIXER** column of the Session View bank map: hold the jog and tap
+one.
 
 <img src="img/pads-session.svg" alt="Session View: a column per track and a row per scene; the side buttons launch the row beside them, the step buttons launch scenes 1–16, and + / − scroll through the 16 rows.">
 
