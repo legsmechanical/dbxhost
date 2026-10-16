@@ -133,7 +133,8 @@ def load_storyboard(path):
 def record_take(storyboard_path, take_dir, host="move.local", pre=None):
     """Record one take: the stream, while the storyboard is performed.
     `pre(bus)` runs before recording starts (put the device where the video
-    begins); it is not in the video."""
+    begins) and the storyboard's POST(bus) after it stops (undo what the take
+    made); neither is in the video."""
     sb = load_storyboard(storyboard_path)
     os.makedirs(take_dir, exist_ok=True)
     with SchwungBus() as bus:
@@ -150,6 +151,8 @@ def record_take(storyboard_path, take_dir, host="move.local", pre=None):
             time.sleep(0.5)
         finally:
             rec.stop()
+        if getattr(sb, "POST", None):                 # tidy up after the take; not in the video
+            sb.POST(bus)
     with open(os.path.join(take_dir, "take.json"), "w") as f:
         json.dump({"storyboard": os.path.basename(storyboard_path), "title": getattr(sb, "TITLE", ""),
                    "number": getattr(sb, "NUMBER", ""), "bpm": getattr(sb, "BPM", 120)}, f)

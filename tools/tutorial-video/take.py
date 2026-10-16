@@ -24,6 +24,7 @@ import render                                  # noqa: E402
 
 HOST = os.environ.get("MOVE_HOST", "move.local")
 DEMO_NAME = "dAVEBOx Tutorial"
+PRISTINE = "/data/UserData/tutorial-demo-pristine"   # a copy of the demo project's folder
 
 
 def ssh(cmd, timeout=60):
@@ -31,7 +32,7 @@ def ssh(cmd, timeout=60):
                           capture_output=True, text=True, timeout=timeout).stdout
 
 
-def fresh_session():
+def fresh_session(load=True):
     ssh("sh /data/UserData/dbx-host/scripts/exit-to-stock.sh >/dev/null 2>&1", timeout=120)
     while ssh("ls /dev/shm | grep -c dbxhost").strip() not in ("0", ""):
         time.sleep(2)
@@ -40,6 +41,13 @@ def fresh_session():
     if len(demo) != 1:
         raise RuntimeError("the demo project %r is not (once) in projects.json" % DEMO_NAME)
     pad = 68 + demo[0]["index"]
+    # Every take starts from the same project: the pristine copy (made by hand,
+    # with the session ended) replaces whatever the last take left behind.
+    proj = "/data/UserData/dbx-host/projects/" + demo[0]["uuid"]
+    out = ssh("test -d %s/dAVEBOx && rm -rf %s && cp -a %s %s && echo restored"
+              % (PRISTINE, proj, PRISTINE, proj))
+    if "restored" not in out:
+        raise RuntimeError("could not restore the demo project from " + PRISTINE)
     ssh("pkill -x schwung-testd; nohup setsid /data/UserData/schwung/modules/tools/davebox-sa/standalone "
         "> /data/UserData/launch.out 2>&1 < /dev/null &")
     while ssh("ls /dev/shm | grep -c dbxhost").strip() in ("0", ""):
@@ -57,6 +65,8 @@ def fresh_session():
             time.sleep(1)
         bus.set_display_mirror(True)
         bus.wait_frame(600)
+        if not load:                                  # the take starts on the picker
+            print("on the picker"); return
         bus.inject_midi(bytes([0x0B, 0xB0, 49, 127])); bus.wait_frame(20)      # Shift + the demo's pad
         bus.inject_midi(bytes([0x09, 0x90, pad, 100])); bus.wait_frame(20)
         bus.inject_midi(bytes([0x08, 0x80, pad, 0])); bus.wait_frame(20)
@@ -76,7 +86,7 @@ def fresh_session():
 def main(storyboard, out_mp4, take_dir=None, fresh=True):
     take_dir = take_dir or os.path.join(HERE, "takes", os.path.splitext(os.path.basename(out_mp4))[0])
     if fresh:
-        fresh_session()
+        fresh_session(load=getattr(director.load_storyboard(storyboard), "LOAD_DEMO", True))
     director.record_take(storyboard, take_dir, host=HOST)
     os.makedirs(os.path.dirname(os.path.abspath(out_mp4)), exist_ok=True)
     render.render(take_dir, out_mp4)

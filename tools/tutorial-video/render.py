@@ -251,7 +251,13 @@ def compose(take, t, cache):
         for line in wrap(d, cap["text"], F_BODY, tw):
             d.text((tx, y), line, font=F_BODY, fill=INK)
             y += 52
-    # the device
+    # the device. Every gesture in a take is injected, which the surface never
+    # shows (highlights come from the director's log), so a knob touch in it can
+    # only be a stray hardware reading — capacitive noise was seen while a project
+    # loaded. Clear the knob-touch bytes rather than draw a touch nobody made.
+    if surf:
+        o = dd.OFF['noteDown']
+        surf = surf[:o] + bytes(10) + surf[o + 10:]
     dev = dd.draw(surf, oled, t * 1000.0, scale=DEV_SCALE, bpm=take.meta.get("bpm", 120))
     for k, a in hl:
         if k in dd.SPOT and k != "c14":
