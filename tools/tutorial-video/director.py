@@ -63,7 +63,11 @@ def _packet(key, down):
     kind, num = key[0], int(key[1:])
     if kind == "c":
         return bytes([0x0B, 0xB0, num, 127 if down else 0])
-    return bytes([0x09, 0x90, num, 100]) if down else bytes([0x08, 0x80, num, 0])
+    # Notes 0-9 are capacitive touches (knobs 1-8, the volume knob, the jog),
+    # which the hardware sends at 127 — Session View's mixer ignored a touch
+    # at 100. Pads and steps play at 100.
+    vel = 127 if num <= 9 else 100
+    return bytes([0x09, 0x90, num, vel]) if down else bytes([0x08, 0x80, num, 0])
 
 
 class Director:
