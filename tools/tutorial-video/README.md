@@ -37,13 +37,20 @@ python3 review_gestures.py takes/01_getting_around sheet.png 0.6           # a f
 - **Knobs scale by how fast they turn.** Detents 90 ms apart barely move a
   value; a real twist is ~14 ms apart (16 detents of OCTAVE = +1).
 - **Rapid `SET_PARAM`s through the test daemon can drop** — read setup back.
-- **A fresh session lands on the project picker, then Session View.** `take.py`
-  ends the session, relaunches, restarts the test daemon after it, and loads
-  the picker's selected (current) project, which must be the demo project.
+- **A fresh session lands on the project picker.** `take.py` ends the session,
+  relaunches, restarts the test daemon after it, and loads the demo project
+  with Shift + its picker pad (68 + its index), then checks the session's
+  library carries its name — it will not record on another project.
+- **The step page's knobs:** a 16-detent fast twist moves Note one scale degree
+  and Length about two steps.
 
 ## The demo project
 
 "dAVEBOx Tutorial": track 1 DR32 with Move's stock 707 kit, track 2 NuSaw as a
 plain bass (attack 0, short release, chorus and delay off), track 3 MiniJV
-preset 0 (A.Piano 1), no audio FX — simple sounds so the sequencer's work is
-clear. 110 BPM, C minor; a four-on-the-floor beat, a bass riff and two chords.
+preset 0 (A.Piano 1), track 4 NuSaw as a lead (one saw, short release, chorus
+and delay off), no audio FX — simple sounds so the sequencer's work is clear.
+110 BPM, C minor; a four-on-the-floor beat, a bass riff and two chords; track
+4's clip is left empty (video 2's setup clears it). Melodic demos play the lead
+at C4 and up, so they carry on speakers without bass. The pad octave is not
+saved, so every fresh session starts it at C2 — a storyboard's PRE sets it.

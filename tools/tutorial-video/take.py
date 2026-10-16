@@ -5,9 +5,11 @@ project, the storyboard's PRE, the take, the render.
 
 Fresh every time, so every take starts in the same state: the dAVEBOx session
 is ended (exit-to-stock.sh) and relaunched, the test daemon restarted after it
-(it must start after the session), and the picker's selected project — the
-current one, which must be the demo project — loaded with a jog click.
+(it must start after the session), and the demo project loaded from the picker
+with Shift + its pad (pad = 68 + its index in projects.json). The take refuses
+to go on unless the session's library then carries the demo's name.
 """
+import json
 import os
 import subprocess
 import sys
@@ -33,9 +35,11 @@ def fresh_session():
     ssh("sh /data/UserData/dbx-host/scripts/exit-to-stock.sh >/dev/null 2>&1", timeout=120)
     while ssh("ls /dev/shm | grep -c dbxhost").strip() not in ("0", ""):
         time.sleep(2)
-    cur = ssh("cat /data/UserData/dbx-host/projects.json")
-    if DEMO_NAME not in cur:
-        raise RuntimeError("the demo project %r is not in projects.json" % DEMO_NAME)
+    projects = json.loads(ssh("cat /data/UserData/dbx-host/projects.json"))["projects"]
+    demo = [p for p in projects if p["name"] == DEMO_NAME]
+    if len(demo) != 1:
+        raise RuntimeError("the demo project %r is not (once) in projects.json" % DEMO_NAME)
+    pad = 68 + demo[0]["index"]
     ssh("pkill -x schwung-testd; nohup setsid /data/UserData/schwung/modules/tools/davebox-sa/standalone "
         "> /data/UserData/launch.out 2>&1 < /dev/null &")
     while ssh("ls /dev/shm | grep -c dbxhost").strip() in ("0", ""):
@@ -53,11 +57,20 @@ def fresh_session():
             time.sleep(1)
         bus.set_display_mirror(True)
         bus.wait_frame(600)
-        bus.inject_midi(bytes([0x0B, 0xB0, 3, 127])); bus.wait_frame(20)
-        bus.inject_midi(bytes([0x0B, 0xB0, 3, 0]))
+        bus.inject_midi(bytes([0x0B, 0xB0, 49, 127])); bus.wait_frame(20)      # Shift + the demo's pad
+        bus.inject_midi(bytes([0x09, 0x90, pad, 100])); bus.wait_frame(20)
+        bus.inject_midi(bytes([0x08, 0x80, pad, 0])); bus.wait_frame(20)
+        bus.inject_midi(bytes([0x0B, 0xB0, 49, 0]))
         bus.wait_frame(1500)
-        name = ssh("cat /data/UserData/UserLibrary/Sets/*/dAVEBOx/name.txt 2>/dev/null")
-        print("loaded; library names:", name.replace("\n", " | "))
+    for _ in range(60):
+        names = ssh("cat /data/UserData/UserLibrary/Sets/*/dAVEBOx/name.txt 2>/dev/null").split("\n")
+        if DEMO_NAME in names:
+            break
+        time.sleep(2)
+    else:
+        raise RuntimeError("the session did not load %r (library names: %r)" % (DEMO_NAME, names))
+    time.sleep(3)
+    print("loaded", DEMO_NAME)
 
 
 def main(storyboard, out_mp4, take_dir=None, fresh=True):
