@@ -64,6 +64,18 @@ the section into a versioned heading at release time.
   **Grv Velocity** and **Grv Random** can be set per track the same way.
 
 ### Changed
+- **A MIDI effect at Post runs first.** The clip's notes now go into the
+  module, and the track's own clip effects — NOTE FX, Harmonize, MIDI Delay,
+  SEQ ARP — work on what the module plays. A MIDI Delay echoes an
+  arpeggiator's notes; Harmonize stacks on a chord module's chords. On a drum
+  track the module's notes play on the lane whose note they are.
+- **Bake runs a Post MIDI effect at once.** Baking a clip whose track has a
+  Post MIDI effect no longer plays the clip: a copy of the effect works through
+  it in a moment, playing or stopped, and the clip holds what you would hear.
+  Drum clips too. Hold **Shift** on the confirm to print it live as before.
+- **Live Merge on a track with a Post MIDI effect** records what you hear —
+  the effect included — and then bypasses the effect, as Bake does, so the
+  merged clip doesn't play through it twice.
 - **Session map: the FX pads moved one column right**, so they no longer sit
   directly beside the mixer pads.
 - **MIDI FX sits above the instrument** in a track's sound menu, so the rows

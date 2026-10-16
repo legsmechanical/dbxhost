@@ -85,11 +85,17 @@ static void looper_release_tracks(seq8_instance_t *inst) {
     for (int t = 0; t < NUM_TRACKS; t++) {
         seq8_track_t *tr = &inst->tracks[t];
         if (!tr->pfx.looper_on || tr->pad_mode == PAD_MODE_CONDUCT) continue;
+        /* What SOUNDS, released as itself: on a POST track that is the
+         * module's output, so a pitch the module also holds raw is not sent
+         * back in instead (its late off would land in the loop, swallowed). */
+        const int hr = inst->post_returning;
+        inst->post_returning = 1;
         for (int p = 0; p < 128; p++)
             if (tr->pfx.active_notes[p].active) pfx_note_off_imm(inst, tr, (uint8_t)p);
         if (tr->pad_mode == PAD_MODE_DRUM)
             for (int l = 0; l < DRUM_LANES; l++)
                 drum_pfx_note_off_imm(inst, tr, &tr->drum_lane_pfx[l], 0);
+        inst->post_returning = hr;
         silence_track_notes_v2(inst, tr);
         looper_flush_pfx_q(&tr->pfx);
         if (tr->pad_mode == PAD_MODE_DRUM)

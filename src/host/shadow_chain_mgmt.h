@@ -185,6 +185,9 @@ extern int (*shadow_chain_take_midi_tick_wake)(void *instance);
  * became one script (2026-09-05). The older note is stale in a way that reads as
  * reassurance, and its documented workaround — scp into /data/UserData/schwung/
  * — would modify the STOCK TREE, which is a red line. Just run install-sa. */
+#include "midi_fx_clone.h"
+/* The chain's slot MIDI FX settings for an offline copy (midi_fx_clone.h). */
+extern chain_midi_fx_clone_source_fn shadow_chain_midi_fx_clone_source;
 extern int (*shadow_chain_midi_fx_apply)(void *instance, const uint8_t *msg, int len,
                                          uint8_t out_msgs[][3], int *out_lens,
                                          int max_out);

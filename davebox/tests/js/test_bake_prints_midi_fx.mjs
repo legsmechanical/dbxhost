@@ -8,8 +8,12 @@ import './_bulk_get_stub.mjs';   /* the bulk read, derived from this test's sing
  * module. Every other bake stays instant. Drives the REAL gesture: Sample
  * press/release in Track View, jog to a loop count, click.
  *
- *   - Post module in play → print_arm "T C N", not `bake`; no wrap question;
- *   - on a Schwung track the slot is told to hand its output back first;
+ *   - Post module in play → print_offline "T C N 0" (the host runs a copy of
+ *     the module, at once, playing or not), not `bake`; no wrap question;
+ *     landed → bypassed, BAKED; refused → BAKE FAILED, nothing bypassed;
+ *   - Shift held on the confirm → the LIVE print, print_arm "T C N";
+ *   - the slot's routing is left alone: the module already runs first, so
+ *     the track's own output -- what the engine records -- has it in;
  *   - the surface is held: Back cancels (print_cancel), other buttons are
  *     swallowed;
  *   - done → the module is bypassed on the track's slot, print_done, BAKED;
@@ -55,6 +59,7 @@ const { S } = await import('../../ui/ui_state.mjs');
 const C = await import('../../ui/ui_constants.mjs');
 const HC = await import('/data/UserData/schwung/shared/constants.mjs');
 const { commitSceneBake } = await import('../../ui/ui_xpose.mjs');
+const PRINT = await import('../../ui/ui_print.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
 S.awaitingProjectSelect = false; S.sessionView = false;
@@ -74,28 +79,75 @@ function setModule(id, bypassed) {
     ENG[T + '|midi_fx1:module'] = id;
     ENG[T + '|midi_fx1:bypassed'] = bypassed ? '1' : '0';
 }
-/* Sample tap → the bake dialog → 2x → click. */
-function bake2x() {
+/* Sample tap → the bake dialog → 2x → click (Shift held on it: LIVE print). */
+function bake2x(live) {
     sets.length = 0; S.pendingDefaultSetParams.length = 0;
     cc(C.MoveSample, 127); cc(C.MoveSample, 0);
     assert(S.confirmBake, 'rig: the bake dialog did not open');
     S.confirmBakeSel = 2;                         /* 2x (0 = cancel, 1 = 1x, 2 = 2x, 3 = 4x) */
+    if (live) S.shiftHeld = true;
     click();
+    S.shiftHeld = false;
 }
 
-step('⭐⭐ a Post module in play: Bake PRINTS — print_arm, no instant bake, no wrap question', () => {
+step('⭐⭐ a Post module in play: Bake goes OFFLINE — print_offline, no live print, no instant bake, no wrap question', () => {
     setModule('arp', false); S.trackFxPre[T] = 0;
     bake2x();
+    assert(swallowed === null, 'a handler threw: ' + swallowed);
+    assert(dsp('print_offline').join() === T + ' ' + S.trackActiveClip[T] + ' 2 0', 'print_offline: ' + JSON.stringify(sets));
+    assert(dsp('print_arm').length === 0 && !all().includes('bake'), 'a live print or the instant bake ran too: ' + JSON.stringify(all()));
+    assert(!S.confirmBake && !S.confirmBakeWrapPhase, 'a dialog is still up (the wrap question?)');
+});
+
+step('⭐⭐ ...it lands: the module is bypassed, the engine told, BAKED shown', () => {
+    sets.length = 0;
+    PRINT_STATE = '3';
+    ticks(6);
+    assert(ENG[T + '|midi_fx1:bypassed'] === '1', 'the module was not bypassed — the clip would play through it twice');
+    assert(dsp('print_done').length === 1, 'print_done: ' + JSON.stringify(sets));
+    assert((S.actionPopupLines || []).join(' ').indexOf('BAKED') >= 0, 'popup: ' + JSON.stringify(S.actionPopupLines));
+    PRINT_STATE = '0';
+    ENG[T + '|midi_fx1:bypassed'] = '0';
+});
+
+step('⭐ an offline bake runs with the transport PLAYING (nothing is played)', () => {
+    S.playing = true;
+    bake2x();
+    S.playing = false;
+    assert(dsp('print_offline').length === 1, 'refused while playing: ' + JSON.stringify(sets));
+    PRINT_STATE = '3'; ticks(6); PRINT_STATE = '0';
+    ENG[T + '|midi_fx1:bypassed'] = '0';
+});
+
+step('⭐ an offline bake that does not run says so, and bypasses nothing', () => {
+    bake2x();
+    PRINT_STATE = '0';
+    ticks(30);
+    assert((S.actionPopupLines || []).join(' ').indexOf('BAKE FAILED') >= 0, 'popup: ' + JSON.stringify(S.actionPopupLines));
+    assert(ENG[T + '|midi_fx1:bypassed'] === '0', 'a failed bake bypassed the module');
+});
+
+step('⭐ a DRUM clip bakes offline too', () => {
+    S.trackPadMode[T] = C.PAD_MODE_DRUM;
+    sets.length = 0;
+    PRINT.printStart(T, S.trackActiveClip[T], 2);
+    assert(dsp('print_offline').length === 1 && dsp('print_arm').length === 0, 'a drum clip did not go offline: ' + JSON.stringify(sets));
+    PRINT_STATE = '3'; ticks(6); PRINT_STATE = '0';
+    ENG[T + '|midi_fx1:bypassed'] = '0';
+    S.trackPadMode[T] = 0;
+});
+
+step('⭐⭐ Shift on the confirm PRINTS live — print_arm, no instant bake, no wrap question', () => {
+    setModule('arp', false); S.trackFxPre[T] = 0;
+    bake2x(true);
     assert(swallowed === null, 'a handler threw: ' + swallowed);
     assert(dsp('print_arm').join() === T + ' ' + S.trackActiveClip[T] + ' 2', 'print_arm: ' + JSON.stringify(sets));
     assert(!all().includes('bake'), 'the instant bake ran too: ' + JSON.stringify(all()));
     assert(!S.confirmBake && !S.confirmBakeWrapPhase, 'a dialog is still up (the wrap question?)');
 });
 
-step('⭐ on a Schwung track the slot hands its output back first', () => {
-    const i = sets.findIndex((x) => x[1] === T + '|midi_fx_host_route' && x[2] === '1');
-    const j = sets.findIndex((x) => x[1] === 'print_arm');
-    assert(i >= 0 && i < j, 'order: ' + JSON.stringify(sets));
+step('⭐ the print leaves the slot\'s routing alone (the module already runs first)', () => {
+    assert(!sets.some((x) => x[1] === T + '|midi_fx_host_route'), 'the print re-routed the slot: ' + JSON.stringify(sets));
 });
 
 step('⭐ while it plays the surface is held: buttons are swallowed', () => {
@@ -112,18 +164,18 @@ step('⭐⭐ DONE: the module is bypassed on the track\'s slot, the engine told,
     assert(ENG[T + '|midi_fx1:bypassed'] === '1', 'the module was not bypassed — the clip would play through it twice');
     assert(dsp('print_done').length === 1, 'print_done: ' + JSON.stringify(sets));
     assert((S.actionPopupLines || []).join(' ').indexOf('BAKED') >= 0, 'popup: ' + JSON.stringify(S.actionPopupLines));
-    assert(ENG[T + '|midi_fx_host_route'] === '0', 'the slot\'s hand-back was left on after the print');
+    assert(!sets.some((x) => x[1] === T + '|midi_fx_host_route'), 'the finish re-routed the slot: ' + JSON.stringify(sets));
     PRINT_STATE = '0';
 });
 
-step('⭐ Back during a print cancels it, and the slot goes back to how it was', () => {
+step('⭐ Back during a print cancels it, and leaves the module as it was', () => {
     setModule('arp', false);
-    bake2x();
+    bake2x(true);
     assert(dsp('print_arm').length === 1, 'rig: not printing');
     sets.length = 0;
     cc(HC.MoveBack, 127); cc(HC.MoveBack, 0);
     assert(dsp('print_cancel').length === 1, 'print_cancel: ' + JSON.stringify(sets));
-    assert(ENG[T + '|midi_fx_host_route'] === '0', 'the hand-back was left on');
+    assert(!sets.some((x) => x[1] === T + '|midi_fx_host_route'), 'the cancel re-routed the slot: ' + JSON.stringify(sets));
     ticks(12);
     assert(ENG[T + '|midi_fx1:bypassed'] === '0', 'a cancelled print bypassed the module');
 });
@@ -132,17 +184,17 @@ for (const [why, id, byp, pre] of [['no module', '', false, 0], ['a bypassed mod
     step('CONTROL: ' + why + ' → the instant bake (the wrap question), no print', () => {
         setModule(id, byp); S.trackFxPre[T] = pre;
         bake2x();
-        assert(dsp('print_arm').length === 0, 'printed: ' + JSON.stringify(sets));
+        assert(dsp('print_arm').length === 0 && dsp('print_offline').length === 0, 'printed: ' + JSON.stringify(sets));
         assert(S.confirmBakeWrapPhase, 'not on the wrap question');
         S.confirmBake = false; S.confirmBakeWrapPhase = false;
         S.trackFxPre[T] = 0;
     });
 }
 
-step('playing: refused with a notice, nothing armed', () => {
+step('a LIVE print while playing: refused with a notice, nothing armed', () => {
     setModule('arp', false);
     S.playing = true;
-    bake2x();
+    bake2x(true);
     S.playing = false;
     assert(dsp('print_arm').length === 0, 'armed while playing');
     assert((S.actionPopupLines || []).join(' ').indexOf('STOP') >= 0, 'no notice: ' + JSON.stringify(S.actionPopupLines));
@@ -160,7 +212,7 @@ step('⭐ a SCENE bake (offline) says which tracks\' MIDI FX it left out', () =>
 });
 
 if (failed) { console.log('FAIL: Bake prints a MIDI FX module'); process.exit(1); }
-console.log('PASS: Bake prints a Post MIDI FX module live, bypasses it after, and cancels clean');
+console.log('PASS: Bake bakes a Post MIDI FX module offline (Shift: prints it live), bypasses it after, and cancels clean');
 process.exit(0);
 }
 main().catch((e) => { console.error(e && e.stack ? e.stack : e); process.exit(1); });

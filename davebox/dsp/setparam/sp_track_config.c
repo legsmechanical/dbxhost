@@ -210,15 +210,16 @@ static int sp_track_config(sp_ctx_t *cx) {
         return 1;
     }
 
-    /* tN_fxslot: 1 = this Move / MIDI track plays through its own slot's MIDI
-     * FX (seq8_track_t.fx_via_slot). The UI sets it with the slot's
-     * `midi_fx_host_route`, while a MIDI FX is loaded. Off closes what the
-     * effect has sounding -- at the next render, where sends are reliable. */
-    if (!strcmp(sub, "fxslot")) {
+    /* tN_fxpost: 1 = the track's MIDI FX module is POST and runs first
+     * (seq8_track_t.fx_post). The UI sets it with the slot's
+     * `midi_fx_host_route`, while a module is loaded at Post. A change closes
+     * what the module has and silences the track: a note sounding through one
+     * path would be released through the other. */
+    if (!strcmp(sub, "fxpost")) {
         uint8_t on = (uint8_t)(my_atoi(val) ? 1 : 0);
-        if (on != tr->fx_via_slot) {
-            if (!on) tr->fx_out_flush = 1;
-            tr->fx_via_slot = on;
+        if (on != tr->fx_post) {
+            silence_track_from_set_param(inst, tr);   /* closes what the module has, too */
+            tr->fx_post = on;
             inst->state_dirty = 1;
         }
         return 1;
@@ -246,7 +247,7 @@ static int sp_track_config(sp_ctx_t *cx) {
         else if (!strcmp(val, "external")) rt = ROUTE_EXTERNAL;
         else if (!strcmp(val, "none"))    rt = ROUTE_NONE;
         else return 1;
-        if (rt != tr->pfx.route) tr->fx_out_flush = 1;   /* what MIDI FX sounded at the old one */
+        if (rt != tr->pfx.route) post_release_all(inst, tr);   /* what its module had, at the old one */
         tr->pfx.route = rt;
         { int _rl; for (_rl = 0; _rl < DRUM_LANES; _rl++) tr->drum_lane_pfx[_rl].route = rt; }
         rui_mark(inst, tidx, tr->active_clip);   /* rui_index route */

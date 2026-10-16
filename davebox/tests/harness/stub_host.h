@@ -57,6 +57,17 @@ const move_host_ext_v1_t *hx_stub_ext(void);
 float hx_stub_ext_tempo(void);
 int   hx_stub_ext_tempo_calls(void);
 void                      hx_stub_ext_refuse(int on);
+/* The offline MIDI FX job stand-in (midi_fx_offline_*): a module that answers
+ * every note `up` higher (+ a major third with `third`); refuse / hold
+ * (stays RUNNING) / fail; what the last begin was given. */
+void hx_stub_mfo_module(int up, int third);
+void hx_stub_mfo_refuse(int on);
+void hx_stub_mfo_hold(int on);
+void hx_stub_mfo_fail(int on);
+int  hx_stub_mfo_begins(void);
+int  hx_stub_mfo_cancels(void);
+int  hx_stub_mfo_state(void);
+const move_midi_fx_offline_ev_t *hx_stub_mfo_input(int *n, int *slot, float *bpm, uint32_t *len, uint32_t *tail);
 /* set_move_info: what the module last published (NULL = never, or withdrawn),
  * and how many times it called. */
 const move_info_t *hx_stub_move_info(void);

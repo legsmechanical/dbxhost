@@ -1821,12 +1821,20 @@ The last two pages are the same for every module:
   removing asks first if macros or automation would be left behind.
   - On a MIDI effect the page also has **Position** (Post / Pre). See below.
 
-**Position — Pre or Post.** Where a MIDI effect module sits, on any kind of track
-(dAVEBOx's own sequencer effects are not affected):
+**Position — Pre or Post.** Where a MIDI effect module sits, on any kind of track:
 
 - **Post** (the default): what you play is recorded as you played it, and the
   effect plays on top — on the clip and on your playing — on the way to the
-  instrument.
+  instrument. It comes **first**: the clip's notes go into the module, and the
+  track's own clip effects (NOTE FX, Harmonize, MIDI Delay, SEQ ARP) work on
+  what the module plays. So a MIDI Delay echoes an arpeggiator's notes, and
+  Harmonize stacks on a chord module's chords. Note length (Gate, Len) is set
+  before the module. On a drum track each of the module's notes plays on the
+  lane whose note it is, with that lane's effects; a note no lane plays is not
+  heard.
+  **Bake** and **Live Merge** record the module's output into the clip and then
+  bypass the module (it stays loaded, so you can undo or switch it back on),
+  so the clip doesn't play through it twice.
 - **Pre**: what you play goes *through* the effect, and the effect's output is
   what you hear, what **Record** writes into the clip and what **Capture** keeps.
   The clip then plays back *without* the effect, so a chord effect records
@@ -2064,14 +2072,19 @@ same, with a clean effects chain to build on.
   tracks, a last **Apply Conductor?** step can fold its transposition into those
   clips. Baking a single clip never applies the Conductor.
 - **A MIDI effect module in play.** When the clip's track has a MIDI effect
-  module set to **Post** (loaded and not bypassed), Bake can't work it out
-  instantly — so it *plays* the clip instead. Pick the loop count; with the
-  transport stopped, the clip plays alone after a one-bar count-in while the
-  screen shows **PRINTING**, and what you hear — dAVEBOx's effects and the
-  module together — becomes the clip. The module is then **bypassed** (not
-  removed), so the clip isn't processed twice; Undo puts the clip back.
-  **Back** cancels and leaves the clip as it was. A **Pre** module is already
-  in the clip, so it bakes instantly as usual.
+  module set to **Post** (loaded and not bypassed), Bake runs the module too:
+  pick the loop count, and in a moment (**BAKING**) the clip holds what you
+  would hear — the module's notes with dAVEBOx's effects on them. It works
+  with the transport running or stopped; nothing is played. The module is
+  then **bypassed** (not removed), so the clip isn't processed twice; Undo
+  puts the clip back. **Back** cancels and leaves the clip as it was. A **Pre**
+  module is already in the clip, so it bakes instantly as usual.
+  - **Shift** held on the confirm **prints** it live instead: with the transport
+    stopped, the clip plays alone after a one-bar count-in (**PRINTING**) and
+    what you hear becomes the clip. Use it if a module bakes differently from
+    how it plays (**BAKE FAILED** suggests it too).
+  - On a **drum** clip each of the module's hits lands on the lane whose note it
+    is, with that lane's effects; a hit no lane plays is dropped.
 - **Scene bakes and Export to Live** stay instant and leave a Post MIDI effect
   module out; they tell you which tracks.
 

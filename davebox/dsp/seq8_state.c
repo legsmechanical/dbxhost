@@ -482,10 +482,10 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
     for (t = 0; t < NUM_TRACKS; t++)
         if (inst->tracks[t].pfx.midi_to)
             fprintf(fp, ",\"t%d_mt\":%d", t, (int)inst->tracks[t].pfx.midi_to);
-    /* MIDI FX on a Move / MIDI track (fx_via_slot), sparse: absent = off. */
+    /* A POST MIDI FX module (fx_post), sparse: absent = off. */
     for (t = 0; t < NUM_TRACKS; t++)
-        if (inst->tracks[t].fx_via_slot)
-            fprintf(fp, ",\"t%d_fs\":1", t);
+        if (inst->tracks[t].fx_post)
+            fprintf(fp, ",\"t%d_fo\":1", t);
     /* ...and a PRE MIDI FX module (fx_pre), sparse: absent = Post. */
     for (t = 0; t < NUM_TRACKS; t++)
         if (inst->tracks[t].fx_pre)
@@ -1147,11 +1147,12 @@ static void seq8_load_state(seq8_instance_t *inst) {
 
         /* `MIDI to Track N` (0 = own instrument). Absent = 0, which is what
          * every set written before this existed means. */
-        snprintf(key, sizeof(key), "t%d_fs", t);
-        inst->tracks[t].fx_via_slot = json_get_int(buf, key, 0) ? 1 : 0;
+        /* What the old project had in its module, and sounding from it. */
+        post_release_all(inst, &inst->tracks[t]);
+        snprintf(key, sizeof(key), "t%d_fo", t);
+        inst->tracks[t].fx_post = json_get_int(buf, key, 0) ? 1 : 0;
         snprintf(key, sizeof(key), "t%d_fp", t);
         inst->tracks[t].fx_pre = json_get_int(buf, key, 0) ? 1 : 0;
-        memset(inst->tracks[t].fx_out_held, 0, sizeof(inst->tracks[t].fx_out_held));
 
         snprintf(key, sizeof(key), "t%d_mt", t);
         {

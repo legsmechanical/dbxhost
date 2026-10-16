@@ -68,8 +68,70 @@ static void stub_set_move_info(const void *info, size_t size) {
 }
 const move_info_t *hx_stub_move_info(void) { return g_ext_mi_live ? &g_ext_mi : NULL; }
 int hx_stub_move_info_calls(void)          { return g_ext_mi_calls; }
+/* The offline MIDI FX job (midi_fx_offline_*), synchronous: a stand-in
+ * module that answers every note `up` semitones higher (and, with `third`,
+ * a major third on top of that). begin stores the job; the next poll finishes
+ * it — unless held (hx_stub_mfo_hold), which keeps it RUNNING. */
+static int   g_mfo_state, g_mfo_up = 12, g_mfo_third, g_mfo_refuse, g_mfo_hold, g_mfo_fail;
+static int   g_mfo_begins, g_mfo_cancels, g_mfo_in_n, g_mfo_slot;
+static float g_mfo_bpm;
+static uint32_t g_mfo_len, g_mfo_tail;
+static move_midi_fx_offline_ev_t g_mfo_in[MOVE_MIDI_FX_OFFLINE_MAX_EV];
+static int stub_mfo_begin(int slot, float bpm, uint32_t len, uint32_t tail,
+                          const move_midi_fx_offline_ev_t *in, int n) {
+    if (g_mfo_refuse || g_mfo_state != MOVE_MIDI_FX_OFFLINE_IDLE || n > MOVE_MIDI_FX_OFFLINE_MAX_EV) return 0;
+    g_mfo_slot = slot; g_mfo_bpm = bpm; g_mfo_len = len; g_mfo_tail = tail; g_mfo_in_n = n;
+    if (n) memcpy(g_mfo_in, in, (size_t)n * sizeof *in);
+    g_mfo_state = MOVE_MIDI_FX_OFFLINE_QUEUED;
+    g_mfo_begins++;
+    return 1;
+}
+static int stub_mfo_poll(move_midi_fx_offline_ev_t *out, int cap, int *out_n, int take) {
+    int st = g_mfo_state;
+    if (out_n) *out_n = 0;
+    if (st == MOVE_MIDI_FX_OFFLINE_QUEUED || st == MOVE_MIDI_FX_OFFLINE_RUNNING) {
+        if (g_mfo_hold) { g_mfo_state = MOVE_MIDI_FX_OFFLINE_RUNNING; return g_mfo_state; }
+        st = g_mfo_fail ? MOVE_MIDI_FX_OFFLINE_FAILED : MOVE_MIDI_FX_OFFLINE_DONE;
+        g_mfo_state = st;
+    }
+    if (st == MOVE_MIDI_FX_OFFLINE_DONE) {
+        int i, n = 0;
+        for (i = 0; i < g_mfo_in_n && n + 2 <= cap; i++) {
+            out[n] = g_mfo_in[i]; out[n].d1 = (uint8_t)(g_mfo_in[i].d1 + g_mfo_up); n++;
+            if (g_mfo_third) { out[n] = g_mfo_in[i]; out[n].d1 = (uint8_t)(g_mfo_in[i].d1 + g_mfo_up + 4); n++; }
+        }
+        if (out_n) *out_n = n;
+    } else if (st == MOVE_MIDI_FX_OFFLINE_FAILED && out_n) {
+        *out_n = MOVE_MIDI_FX_OFFLINE_ERR_LOAD;
+    }
+    if (take && (st == MOVE_MIDI_FX_OFFLINE_DONE || st == MOVE_MIDI_FX_OFFLINE_FAILED)) g_mfo_state = MOVE_MIDI_FX_OFFLINE_IDLE;
+    return st;
+}
+static void stub_mfo_cancel(void) { g_mfo_cancels++; g_mfo_state = MOVE_MIDI_FX_OFFLINE_IDLE; }
+void hx_stub_mfo_module(int up, int third) { g_mfo_up = up; g_mfo_third = third; }
+void hx_stub_mfo_refuse(int on) { g_mfo_refuse = on; }
+void hx_stub_mfo_hold(int on)   { g_mfo_hold = on; }
+void hx_stub_mfo_fail(int on)   { g_mfo_fail = on; }
+int  hx_stub_mfo_begins(void)   { return g_mfo_begins; }
+int  hx_stub_mfo_cancels(void)  { return g_mfo_cancels; }
+int  hx_stub_mfo_state(void)    { return g_mfo_state; }
+const move_midi_fx_offline_ev_t *hx_stub_mfo_input(int *n, int *slot, float *bpm, uint32_t *len, uint32_t *tail) {
+    if (n) *n = g_mfo_in_n; if (slot) *slot = g_mfo_slot; if (bpm) *bpm = g_mfo_bpm;
+    if (len) *len = g_mfo_len; if (tail) *tail = g_mfo_tail;
+    return g_mfo_in;
+}
+
 const move_host_ext_v1_t *hx_stub_ext(void) {
-    static const move_host_ext_v1_t ext = { sizeof(move_host_ext_v1_t), stub_set_slot_param, stub_set_tempo, stub_send_slot_direct, stub_set_move_info };
+    static const move_host_ext_v1_t ext = {
+        .size = sizeof(move_host_ext_v1_t),
+        .set_slot_param = stub_set_slot_param,
+        .set_tempo = stub_set_tempo,
+        .midi_send_slot_direct = stub_send_slot_direct,
+        .set_move_info = stub_set_move_info,
+        .midi_fx_offline_begin = stub_mfo_begin,
+        .midi_fx_offline_poll = stub_mfo_poll,
+        .midi_fx_offline_cancel = stub_mfo_cancel,
+    };
     return &ext;
 }
 void hx_stub_ext_refuse(int on) { g_ext_refuse = on; }

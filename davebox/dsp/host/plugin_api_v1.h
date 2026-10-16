@@ -189,6 +189,8 @@ _Static_assert(sizeof(host_api_v1_t) == 184,
  */
 #define MOVE_PLUGIN_HOST_EXT_V1_SYMBOL "move_plugin_host_ext_v1"
 
+struct move_midi_fx_offline_ev;   /* below: one event of an offline MIDI FX job */
+
 typedef struct move_host_ext_v1 {
     uint32_t size;
 
@@ -239,7 +241,50 @@ typedef struct move_host_ext_v1 {
      * "not provided"). Audio thread or set_param: a copy under a seqlock, no
      * syscalls. The host withdraws it when the module is unloaded. */
     void (*set_move_info)(const void *info, size_t size);
+
+    /* OFFLINE MIDI FX: run chain slot `slot`'s MIDI FX (loaded, not bypassed,
+     * in order) on a note list, as fast as the CPU allows, against a virtual
+     * transport -- for a sequencer that bakes a clip through them. Each
+     * module runs as a private COPY (a separate load of its code, so none of
+     * its globals are the live one's), given the live instance's parameters
+     * and "state", fed Start at tick 0, Clock at 24 PPQN, `in`, and Stop at
+     * `length_ticks`, and ticked `tail_ticks` past it for late note-offs, at
+     * `bpm`. The live instances are not touched after begin returns.
+     *
+     * begin: the caller's set_param or render_block. Copies `in` (sorted by
+     * tick, at most MOVE_MIDI_FX_OFFLINE_MAX_EV) and the live settings; no
+     * I/O. Returns 1 queued, 0 refused (a job is running, nothing active in
+     * the slot, too many events, a setting that does not fit). One job at a
+     * time. The rendering itself runs on a host thread.
+     * poll: the same contexts. Returns the state; on DONE copies up to `cap`
+     * output events (tick order) into `out`, *out_count = how many. `take`
+     * returns a DONE / FAILED job to IDLE. On FAILED, *out_count is the
+     * reason (MOVE_MIDI_FX_OFFLINE_ERR_*).
+     * cancel: any thread; the job ends at its next block. */
+    int  (*midi_fx_offline_begin)(int slot, float bpm, uint32_t length_ticks, uint32_t tail_ticks,
+                                  const struct move_midi_fx_offline_ev *in, int in_count);
+    int  (*midi_fx_offline_poll)(struct move_midi_fx_offline_ev *out, int cap, int *out_count, int take);
+    void (*midi_fx_offline_cancel)(void);
 } move_host_ext_v1_t;
+
+/* One event of an offline MIDI FX job (midi_fx_offline_*). */
+typedef struct move_midi_fx_offline_ev {
+    uint32_t tick;            /* 96 PPQN from the take's start */
+    uint8_t  status, d1, d2;  /* a channel message; the clock is the host's to make */
+    uint8_t  len;             /* 2 or 3 */
+} move_midi_fx_offline_ev_t;
+
+#define MOVE_MIDI_FX_OFFLINE_IDLE     0
+#define MOVE_MIDI_FX_OFFLINE_QUEUED   1
+#define MOVE_MIDI_FX_OFFLINE_RUNNING  2
+#define MOVE_MIDI_FX_OFFLINE_DONE     3
+#define MOVE_MIDI_FX_OFFLINE_FAILED   4
+#define MOVE_MIDI_FX_OFFLINE_MAX_EV   8192
+/* why a job FAILED */
+#define MOVE_MIDI_FX_OFFLINE_ERR_LOAD     1   /* a module's copy could not be made or loaded */
+#define MOVE_MIDI_FX_OFFLINE_ERR_CREATE   2   /* create_instance failed */
+#define MOVE_MIDI_FX_OFFLINE_ERR_OVERFLOW 3   /* more output than MAX_EV */
+#define MOVE_MIDI_FX_OFFLINE_ERR_CANCEL   4   /* cancelled */
 
 typedef void (*move_plugin_host_ext_v1_fn)(const move_host_ext_v1_t *ext);
 

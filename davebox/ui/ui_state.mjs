@@ -467,10 +467,10 @@ export const S = {
      * plays that track's instead. Mirrors the DSP's tN_midi_to. */
     trackMidiTo: Array.from({ length: NUM_TRACKS }, () => 0),
     trackRoute: new Array(8).fill(0),
-    /* 1 = the track plays through its own slot's MIDI FX (a Move or MIDI
-     * track with an effect loaded; the engine's tN_fxslot). Mirrored here for
-     * the external-MIDI path, which must hand a Move track's keyboard notes to
-     * the engine rather than to Move. */
+    /* 1 = the track's notes go through its own slot's MIDI FX module (one is
+     * loaded, Pre or Post: the engine's tN_fxpost / tN_fxpre). Mirrored here
+     * for the external-MIDI path, which must hand a Move track's keyboard
+     * notes to the engine rather than to Move. */
     trackFxSlot: new Array(8).fill(0),
     /* 1 = the track's MIDI FX module is PRE (the engine's tN_fxpre; the
      * module page's Position row). */

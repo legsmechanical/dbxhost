@@ -12,6 +12,7 @@
  * slot's on_midi, read from any sub-plugin's render; see chain_clock_state.h. */
 #include "chain_clock_state.h"
 #include "chain_fx_to_host.h"
+#include "host/midi_fx_clone.h"
 static chain_clock_state_t g_clock = CHAIN_CLOCK_STATE_INIT;
 
 /* The host api handed to init lives in chain_host.c; a fixture that compiles
@@ -417,6 +418,45 @@ int chain_midi_fx_apply(void *instance, const uint8_t *msg, int len,
      * than a rejected one. */
     if (len > 3) return 0;
     return v2_process_midi_fx(inst, msg, len, out_msgs, out_lens, max_out);
+}
+
+/* Exported (midi_fx_clone.h): where this slot's ACTIVE MIDI FX live and what
+ * they are set to, for the host to run copies of them offline. Audio thread:
+ * the same get_param calls the bulk param read makes. A parameter whose value
+ * does not fit is left out (the copy keeps its default); a state blob that
+ * does not fit refuses the whole read, since a copy without its state would
+ * not be the module the user hears. */
+int chain_midi_fx_clone_source(void *instance, mfo_fx_src_t *out, int max) {
+    chain_instance_t *inst = (chain_instance_t *)instance;
+    int fx, n = 0;
+    if (!inst || !out || max < 1) return 0;
+    for (fx = 0; fx < inst->midi_fx_count && fx < MAX_MIDI_FX && n < max; fx++) {
+        midi_fx_api_v1_t *api = inst->midi_fx_plugins[fx];
+        void *fi = inst->midi_fx_instances[fx];
+        mfo_fx_src_t *o = &out[n];
+        int j, k = 0, len;
+        if (inst->midi_fx_bypassed[fx] || !api || !fi || !inst->current_midi_fx_modules[fx][0]) continue;
+        snprintf(o->so_path, sizeof o->so_path, "%s/../midi_fx/%s/dsp.so", inst->module_dir, inst->current_midi_fx_modules[fx]);
+        snprintf(o->dir, sizeof o->dir, "%s/../midi_fx/%s", inst->module_dir, inst->current_midi_fx_modules[fx]);
+        for (j = 0; api->get_param && j < inst->midi_fx_param_counts[fx] && k < MFO_MAX_PARAMS; j++) {
+            const char *key = inst->midi_fx_params[fx][j].key;
+            if (!key[0] || !strcmp(key, "state") || strlen(key) >= sizeof o->key[0]) continue;
+            len = api->get_param(fi, key, o->val[k], (int)sizeof o->val[k]);
+            if (len < 0 || len >= (int)sizeof o->val[k]) continue;
+            o->val[k][len] = '\0';
+            snprintf(o->key[k], sizeof o->key[k], "%s", key);
+            k++;
+        }
+        o->nparams = k;
+        o->state_len = 0;
+        if (api->get_param) {
+            len = api->get_param(fi, "state", o->state, MFO_STATE_MAX);
+            if (len >= MFO_STATE_MAX) return -1;
+            if (len > 0) { o->state[len] = '\0'; o->state_len = len; }
+        }
+        n++;
+    }
+    return n;
 }
 
 /* Call tick on all MIDI FX modules and send generated messages to synth.

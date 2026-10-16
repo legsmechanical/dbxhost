@@ -8,7 +8,7 @@
  *   - offered for EVERY MIDI FX module (the host cannot tell a transform from
  *     a generator), reading Post;
  *   - a click → Pre: the engine's tN_fxpre, the slot's midi_fx_host_route,
- *     and a save; a second click → Post;
+ *     and a save; a second click → Post (tN_fxpost; the slot still hands back);
  *   - a project still carrying the old "Notes to Seq" key opens as Pre, once,
  *     and the key is cleared;
  *   - the row reads a mirror: nothing is read from the device while idle;
@@ -60,7 +60,7 @@ for (const fn of ['host_ensure_dir', 'host_remove_dir', 'host_system_cmd', 'host
                   'host_ext_midi_remap_clear', 'host_ext_midi_remap_set', 'host_ext_midi_remap_enable'])
     globalThis[fn] = () => (fn.indexOf('get') >= 0 ? '' : 0);
 globalThis.host_read_file = (p) => FILES[p] || '';
-/* the engine's writes, in order (tN_fxpre / tN_fxslot) */
+/* the engine's writes, in order (tN_fxpre / tN_fxpost) */
 const dsp = [];
 globalThis.host_module_set_param = (k, v) => { dsp.push([k, String(v)]); };
 globalThis.host_file_exists = (p) => p in FILES;
@@ -149,10 +149,11 @@ step('⭐⭐ THE GESTURE: click it — Pre: the engine and the slot are told, an
     assert(rowOf('Position') && rowOf('Position').value === 'Pre', 'the row reads ' + JSON.stringify(rowOf('Position')));
 });
 
-step('⭐ a second click puts it back to Post', () => {
+step('⭐ a second click puts it back to Post — the module still runs first, so the slot still hands back', () => {
     sets.length = 0; dsp.length = 0;
     click(); ticks(3);                               /* the cursor is still on the row */
-    assert(fxpreW().join() === '0' && routeW().join() === '0', 'writes: ' + JSON.stringify([dsp, sets]));
+    const fxpostW = dsp.filter(([k]) => k === 't' + T + '_fxpost').map(([, v]) => v);
+    assert(fxpreW().join() === '0' && fxpostW.join() === '1' && routeW().join() === '1', 'writes: ' + JSON.stringify([dsp, sets]));
     assert(rowOf('Position').value === 'Post', 'reads ' + rowOf('Position').value);
 });
 
