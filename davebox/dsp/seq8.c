@@ -937,6 +937,10 @@ typedef struct {
      * a Move voice): the pitches, and where they sounded. */
     uint8_t  flush[128];
     uint8_t  flush_any, flush_route, flush_slot, flush_ch;
+    /* Counters (wrap freely): note-ons sent into the module, note-ons it
+     * handed back, and note-ons a Live Merge / print captured on the track.
+     * Read as tN_post_diag; they localise a lost note to a stage. */
+    uint32_t n_sent, n_back, n_captured;
 } post_raw_t;
 
 typedef struct {
@@ -2158,6 +2162,7 @@ static inline int post_takes(const seq8_instance_t *inst, const seq8_track_t *tr
 
 static void post_raw_send(seq8_track_t *tr, uint8_t type, uint8_t d1, uint8_t d2) {
     if (!g_host || !g_host->midi_send_internal_slot) return;
+    if (type == 0x90 && d2 > 0) tr->post.n_sent++;
     const uint8_t st = (uint8_t)(type | (tr->channel & 0x0F));
     const uint8_t msg[4] = { (uint8_t)(st >> 4), st, d1, d2 };
     g_host->midi_send_internal_slot((int)tr->pfx.slot, msg, 4);
@@ -2373,6 +2378,7 @@ static void merge_capture(uint8_t tri, uint8_t status, uint8_t d1, uint8_t d2) {
     if (rel >= 256u * g_inst->merge_tps) {
         merge_finalize(g_inst);              /* max length reached */
     } else if (st == 0x90 && d2 > 0) {
+        g_inst->tracks[tri].post.n_captured++;
         if (g_inst->merge_pending_count[tri] < 512) {
             int _pi = (int)g_inst->merge_pending_count[tri]++;
             g_inst->merge_pending[tri][_pi].pitch      = d1;
@@ -5866,6 +5872,7 @@ static void post_handback(seq8_instance_t *inst, seq8_track_t *tr, uint8_t statu
         return;
     }
     const int held_bypass = inst->emit_bypass_swing;
+    if (is_on) tr->post.n_back++;
     inst->post_returning = 1;
     inst->emit_bypass_swing = 1;
     if (tr->pad_mode == PAD_MODE_DRUM) {
@@ -8019,6 +8026,11 @@ static int pfx_get(seq8_track_t *tr, const char *key, char *out, int out_len) {
     /* 1 = this Move / MIDI track plays through its own slot's MIDI FX. */
     if (!strcmp(key, "fxpost"))
         return snprintf(out, out_len, "%d", (int)tr->fx_post);
+    /* "sent back captured": note-ons into the POST module, out of it, and
+     * captured by a merge / print on this track (post_raw_t counters). */
+    if (!strcmp(key, "post_diag"))
+        return snprintf(out, out_len, "%u %u %u", (unsigned)tr->post.n_sent,
+                        (unsigned)tr->post.n_back, (unsigned)tr->post.n_captured);
     /* 1 = the track's MIDI FX module is PRE (what is played goes through it). */
     if (!strcmp(key, "fxpre"))
         return snprintf(out, out_len, "%d", (int)tr->fx_pre);
