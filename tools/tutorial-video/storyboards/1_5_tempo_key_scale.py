@@ -63,9 +63,10 @@ STEPS = [
     caption("It offers to move the notes you've already written with it. Yes, and "
             "everything plays in D.", title="Key and scale"),
     wait(2.0), point(DIALOG_BTNS, secs=2.0), tap(JOG, 100, check=True), wait(5.0),
-    caption("Scale, just below, works the same way: Major, Minor, Dorian and more.",
-            title="Key and scale"),
-    wait(1.0), turn(JOG_TURN, 1, ms=400), wait(0.5), point("oled:0,26,128,10", secs=3.0), wait(1.5),
+    caption("Scale works the same way. Here, Minor to Dorian.", title="Key and scale"),
+    wait(1.0), turn(JOG_TURN, 1, ms=400), wait(0.5), point("oled:0,26,128,10", secs=1.6),
+    tap(JOG, 100, check=True), wait(1.2), turn(JOG_TURN, 1, ms=400), wait(1.0),
+    tap(JOG, 100, check=True), wait(1.5), point(DIALOG_BTNS, secs=1.4), tap(JOG, 100, check=True), wait(5.0),
     caption("A new project starts in a random key and scale, so set them before you "
             "write a melody.", title="Key and scale"),
     wait(4.5), tap(PLAY), wait(1.0), tap(BACK), wait(1.5),
