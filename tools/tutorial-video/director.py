@@ -15,7 +15,9 @@ put captions, cards and gesture highlights exactly where they happened:
 Steps (plain dicts; helpers below):
   card(title, sub=None, secs=3)      the device is left alone while it shows
   caption(text, title=None)          shown until the next caption / card
-  tap(key, ms=80)                    press + release ('n<note>' or 'c<cc>')
+  tap(key, ms=80, check=False)       press + release ('n<note>' or 'c<cc>'); check=True
+                                     aborts the take (TakeFailed) if the screen does not
+                                     change — a missed click must never edit the wrong row
   hold(key, ms)                      the same, held longer
   press(key) / release(key)          for chords (Shift + ...)
   turn(key, detents, ms=120)         jog 'c14' or a knob 'c71'..'c78'; sign = way
@@ -43,7 +45,12 @@ FRAME_S = 128 / 44100
 
 def card(title, sub=None, secs=3.0): return {"op": "card", "title": title, "sub": sub, "secs": secs}
 def caption(text, title=None):        return {"op": "caption", "text": text, "title": title}
-def tap(key, ms=80):                  return {"op": "tap", "key": key, "ms": ms}
+def tap(key, ms=80, check=False):     return {"op": "tap", "key": key, "ms": ms, "check": check}
+
+
+class TakeFailed(RuntimeError):
+    """A checked press changed nothing on screen: the device missed it, and
+    what follows would act on the wrong screen. take.py records again."""
 def hold(key, ms):                    return {"op": "tap", "key": key, "ms": ms}
 def press(key):                       return {"op": "press", "key": key}
 def release(key):                     return {"op": "release", "key": key}
@@ -102,7 +109,12 @@ class Director:
                 elif op == "caption":
                     self.emit("caption", text=st["text"], title=st.get("title"))
                 elif op == "tap":
+                    before = self.bus.snapshot_display().to_pbm() if st.get("check") else None
                     self.down(st["key"]); self.sleep(st["ms"] / 1000.0); self.up(st["key"])
+                    if before is not None:
+                        self.sleep(0.4)
+                        if self.bus.snapshot_display().to_pbm() == before:
+                            raise TakeFailed("%s changed nothing on screen" % st["key"])
                 elif op == "press":
                     self.down(st["key"])
                 elif op == "release":

@@ -85,9 +85,16 @@ def fresh_session(load=True):
 
 def main(storyboard, out_mp4, take_dir=None, fresh=True):
     take_dir = take_dir or os.path.join(HERE, "takes", os.path.splitext(os.path.basename(out_mp4))[0])
-    if fresh:
-        fresh_session(load=getattr(director.load_storyboard(storyboard), "LOAD_DEMO", True))
-    director.record_take(storyboard, take_dir, host=HOST)
+    for attempt in range(1, 4):
+        if fresh:
+            fresh_session(load=getattr(director.load_storyboard(storyboard), "LOAD_DEMO", True))
+        try:
+            director.record_take(storyboard, take_dir, host=HOST)
+            break
+        except director.TakeFailed as e:
+            print("take %d failed: %s" % (attempt, e))
+            if not fresh or attempt == 3:
+                raise
     os.makedirs(os.path.dirname(os.path.abspath(out_mp4)), exist_ok=True)
     render.render(take_dir, out_mp4)
     print("wrote", out_mp4)
