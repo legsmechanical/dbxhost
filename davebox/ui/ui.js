@@ -573,15 +573,6 @@ function _onMidiInternalImpl(data) {
             /* A press while a hold is still recorded: its release was lost.
              * End the stale hold first, then judge this press afresh. */
             if (S.jogPressMs >= 0) bankMapEnd();
-            /* DIAG (2026-10-16): a click in Project Settings sometimes took the
-             * instant map — this path — as if no menu were open. Name the state
-             * the press was judged on. Remove once the cause is known. */
-            if (S.globalMenuOpen || bankMapArmable())
-                console.log('[jogdiag] press armable=' + bankMapArmable() + ' deferrable=' + bankMapDeferrable() +
-                            ' gm=' + !!S.globalMenuOpen + ' sv=' + !!S.sessionView + ' bank=' + S.activeBank +
-                            ' snd=' + soundActive() + ' cov=' + soundModeCovered() + ' knob=' + S.knobTouched +
-                            ' step=' + S.heldStep + ' pick=' + S.bankPickerSel + ' shift=' + !!S.shiftHeld +
-                            ' prev=' + S.jogPressMs);
             if (bankMapArmable()) { bankMapBegin(); return; }
             /* A click the map cannot take (a knob touched: touch + click) goes
              * to its owner. */
