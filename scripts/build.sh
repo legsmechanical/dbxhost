@@ -314,6 +314,7 @@ if needs_rebuild build/schwung-shim.so \
     src/host/shadow_resample.c src/host/shadow_overlay.c src/host/shadow_pin_scanner.c \
     src/host/shadow_led_queue.c src/host/shadow_state.c \
     src/host/shadow_midi.c src/host/shadow_midi_filter.c src/host/unified_log.c src/host/shim_worker.c \
+    src/host/midi_fx_offline.c src/host/midi_fx_offline.h src/host/midi_fx_offline_render.h src/host/midi_fx_clone.h \
     src/host/shadow_shm_util.c src/host/schwung_trace.c src/host/shadow_test_stream.c src/host/shadow_test_stream.h \
     src/host/sa_master_volume.c src/host/sa_master_volume.h \
     src/host/spawn_command.c src/host/spawn_command.h \
@@ -349,6 +350,7 @@ if needs_rebuild build/schwung-shim.so \
         src/host/shadow_midi_filter.c \
         src/host/unified_log.c \
         src/host/shim_worker.c \
+        src/host/midi_fx_offline.c \
         src/host/shadow_shm_util.c \
         src/host/schwung_trace.c \
         src/host/shadow_test_stream.c \

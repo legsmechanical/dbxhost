@@ -41,6 +41,7 @@
 
 #include "host/plugin_api_v1.h"
 #include "host/move_info_store.h"
+#include "host/midi_fx_offline.h"
 #include "host/audio_fx_api_v2.h"
 #include "host/shadow_constants.h"
 #include "host/display_pull.h"
@@ -1632,7 +1633,16 @@ static const move_host_ext_v1_t overtake_host_ext = {
     .set_tempo = overtake_set_tempo,
     .midi_send_slot_direct = overtake_midi_send_slot_direct,
     .set_move_info = overtake_set_move_info,
+    .midi_fx_offline_begin = midi_fx_offline_begin,
+    .midi_fx_offline_poll = midi_fx_offline_poll,
+    .midi_fx_offline_cancel = midi_fx_offline_cancel,
 };
+
+/* Offline MIDI FX jobs read a slot's chain instance by index. */
+static void *mfo_slot_instance(int slot) {
+    if (slot < 0 || slot >= SHADOW_CHAIN_INSTANCES) return NULL;
+    return shadow_chain_slots[slot].instance;
+}
 
 /* Slot MIDI (plugin_api_v1.h, MOVE_PLUGIN_SLOT_MIDI_V1_SYMBOL): the overtake
  * DSP's entry for a slot's generated MIDI FX output, if it exports one. Looked
@@ -1821,6 +1831,7 @@ static void shadow_overtake_dsp_load(const char *path) {
     if (overtake_dsp_handle) {
         shadow_log("Overtake DSP: unloading previous before loading new");
         move_info_store_put(&g_move_info, NULL, 0);   /* the next module publishes its own */
+        midi_fx_offline_cancel();                     /* its offline job, if any, ends unread */
         /* Stop new off-RT snapshot reads and drain any in flight before freeing. */
         g_snap_rt_safe = 0;
         int snap_idle = snap_wait_idle();
@@ -1972,6 +1983,7 @@ static void shadow_overtake_dsp_unload(void) {
     /* Its declared tempo goes with it, and what it published for move_info. */
     shadow_transport_declare_bpm(0.0f);
     move_info_store_put(&g_move_info, NULL, 0);
+    midi_fx_offline_cancel();
     /* ...and so does its entry for the slots' generated MIDI FX output: it
      * lives in the instance about to be destroyed. First, before anything is
      * torn down; the drain then discards. */
@@ -10724,6 +10736,9 @@ static void shim_spi_init(void)
         shim_worker_set_hooks(&hooks);
     }
     shim_worker_start();
+    /* Offline MIDI FX jobs (move_host_ext_v1_t.midi_fx_offline_*): their own
+     * thread, so a slow or hung module copy holds up nothing else. */
+    midi_fx_offline_start(&shadow_host_api, mfo_slot_instance, &shadow_chain_midi_fx_clone_source);
     snap_worker_start();   /* off-RT remote-snapshot servicer (idle until a browser pulls) */
 
     /* Start LED capture logger thread (gated by flag file) */
