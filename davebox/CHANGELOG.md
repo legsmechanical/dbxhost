@@ -105,6 +105,12 @@ the section into a versioned heading at release time.
   of a second before it counts as let go.
 
 ### Fixed
+- **SEQ ARP no longer leaves a note hanging.** Turning the arp on while a note
+  was sounding kept that note playing until the effects were reset or the
+  transport stopped.
+- **ALL LANES resolution turns from where the lanes are.** The first turn of
+  ALL LANES' resolution knob, either way, used to jump every lane to 1/32;
+  it now moves one step from the selected lane's resolution.
 - **Move Settings: the Wi-Fi menu no longer throws you out.** Entering Wi-Fi
   from Project Settings → Move Settings... used to drop you back on Project
   Settings.
