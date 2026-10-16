@@ -32,16 +32,13 @@ int main(void) {
     HX_ASSERT(dc, "rig: a drum clip");
     const uint8_t n0 = dc->lanes[0].midi_note, n2 = dc->lanes[2].midi_note;
     const int up = (int)n2 - (int)n0;
-    /* the stray: lane 1's hit + up must be NO lane's note */
-    {
-        int l, hit = 0;
-        for (l = 0; l < DRUM_LANES; l++) if (dc->lanes[l].midi_note == (uint8_t)(dc->lanes[1].midi_note + up)) hit = 1;
-        if (hit) { dc->lanes[1].midi_note = 127; }          /* 127 + up: off the map */
-    }
     hx_stub_mfo_module(up, 0);
     hx_set_param(h, "t0_l0_note_add", "0 100 12");
     hx_set_param(h, "t0_l0_note_add", "192 90 12");
     hx_set_param(h, "t0_l1_note_add", "96 100 12");
+    /* lane 1 is re-tuned AFTER its hit was written: it plays (and goes into
+     * the module as) its CURRENT note, 127 — which comes back off the map */
+    dc->lanes[1].midi_note = 127;
     dc->lanes[2].pfx_params.velocity_offset = -20;           /* lane 2's own effect */
     dc->lanes[0].pfx_params.velocity_offset = 15;            /* lane 0's: must NOT reach the module */
     hx_render(h, 2);
@@ -57,6 +54,11 @@ int main(void) {
             if ((in[i].status & 0xF0) != 0x90) continue;
             ons++;
             if (in[i].d1 == n0) { lane0++; HX_ASSERT(in[i].d2 == 100 || in[i].d2 == 90, "a lane's velocity offset reached the module"); }
+        }
+        {
+            int j, l1 = 0;
+            for (j = 0; j < n; j++) if ((in[j].status & 0xF0) == 0x90 && in[j].d1 == 127) l1++;
+            HX_ASSERT(l1 == 2, "a re-tuned lane went in as its old note, not its current one");
         }
         HX_ASSERT(ons == 6 && lane0 == 4, "not every lane's hits, twice, went in as the lane's note");
     }
