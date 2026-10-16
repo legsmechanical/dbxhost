@@ -990,6 +990,7 @@ export function _tickImpl() {
             parallelForgetPushed();
             reconcileParallelAll();
             S.stateLoading = false;
+            S.instrAbbrevAt = 0;          /* the header's [instrument] is the new project's, now — not up to a second later */
             /* The Dave stays until it has stood its minimum (loadDaveTick). */
             /* Load completion is an INPUT-STATE BARRIER for touch state. The
              * resync above blocks the tick for seconds, the shim's UI MIDI

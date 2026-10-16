@@ -807,6 +807,11 @@ export function engineModuleName(moduleId, comp) {
 export function engineModuleAbbrev(moduleId) {
     if (!moduleId) return '--';
     const lower = String(moduleId).toLowerCase();
+    /* The declared mark is learned at a scan. Before one had run this session
+     * the header fell back to the id's first two letters — [NU] for NuSaw,
+     * whose mark is NS — and flipped to [NS] once anything opened a picker.
+     * One scan, as engineGeneratorName makes for the name. */
+    if (!MODULE_ABBREV[lower] && !_genNamesScanned) { _genNamesScanned = true; engineListModules('synth'); }
     return MODULE_ABBREV[lower] || String(moduleId).substring(0, 2).toUpperCase();
 }
 
