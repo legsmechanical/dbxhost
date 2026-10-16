@@ -1,14 +1,13 @@
-"""1 — Getting around: the two views, reading the screen, transport, changing
-track, the bank map, knobs, menus, Back. Captions follow MANUAL-SA §1, §3.2–3.7.
+"""1.3 — Getting around: changing track, the bank map, knobs, menus and Back.
+Captions follow MANUAL-SA §3.3, §3.5–3.7.
 
-Starts (PRE, not in the video) on Track View, track 2 (NuSaw bass), CLIP bank,
-stopped — from a fresh session on the dAVEBOx Tutorial project, which lands in
-Session View.
+Starts (PRE, not in the video) on Track View, track 2 (the NuSaw bass), CLIP
+bank, stopped.
 """
 from director import card, caption, tap, hold, press, release, turn, wait
 
 TITLE = "Getting around"
-NUMBER = 1
+NUMBER = "1.3"
 BPM = 110
 
 SHIFT, PLAY, BACK, NOTE_SESSION, JOG, JOG_TURN = "c49", "c85", "c51", "c50", "c3", "c14"
@@ -32,44 +31,17 @@ def PRE(bus):
 
 
 STEPS = [
-    card("Getting around", "Tutorial 1", 3.0),
+    card("Getting around", "Tutorial 1.3", 3.0),
 
-    caption("dAVEBOx takes over Move's pads, knobs and screen. This is Track View, "
-            "where you build one clip.", title="Track View"),
-    wait(5.5),
-    caption("The header names the bank the knobs are on, CLIP, and on the right what "
-            "the track plays: here a NuSaw synth.", title="Reading the screen"),
-    wait(5.5),
-    caption("Under it: the key and scale, and the track's input velocity.", title="Reading the screen"),
-    wait(4.0),
-    caption("The numbers are the eight tracks. A box marks the one you're on; the "
-            "letter under each is the clip it's on.", title="Reading the screen"),
-    wait(5.5),
-    caption("The footer says what the controls do here.", title="Reading the screen"),
-    wait(3.5),
-
-    caption("Play starts and stops the sequencer.", title="Transport"),
-    wait(1.0), tap(PLAY), wait(5.0),
-    caption("Shift + Play restarts from the top.", title="Transport"),
-    wait(1.0), press(SHIFT), wait(0.3), tap(PLAY), wait(0.3), release(SHIFT), wait(3.0),
-    caption("Play again to stop.", title="Transport"),
-    tap(PLAY), wait(2.0),
-
-    caption("Note/Session switches between Track View and Session View.", title="Two views"),
-    wait(1.5), tap(NOTE_SESSION), wait(2.0),
-    caption("Session View is the clip grid: each column is a track, each row a scene.", title="Two views"),
-    wait(4.0), tap(NOTE_SESSION), wait(2.0),
-    caption("Hold Note/Session to peek at the other view; let go to come back.", title="Two views"),
-    wait(1.0), press(NOTE_SESSION), wait(2.0), release(NOTE_SESSION), wait(2.0),
-
-    caption("There are no track buttons. Hold Shift and turn the jog to change track.", title="Changing track"),
+    caption("There are no track buttons. Hold Shift and turn the jog to change track.",
+            title="Changing track"),
     wait(1.0), press(SHIFT), wait(1.2),
     turn(JOG_TURN, 1), wait(1.2), turn(JOG_TURN, 1), wait(1.2), turn(JOG_TURN, -2, ms=250), wait(1.0),
     release(SHIFT), wait(1.5),
 
-    caption("Hold the jog: the left pads become a map of this track's banks, "
-            "and the screen shows the same map.", title="The bank map"),
-    wait(1.0), press(JOG), wait(4.0),
+    caption("Each track has banks of settings for the knobs. Hold the jog: the left pads "
+            "become a map of them, and the screen shows the same map.", title="The bank map"),
+    wait(1.0), press(JOG), wait(4.5),
     caption("While it's up, Steps 1–8 are the tracks. Press one to switch.", title="The bank map"),
     wait(1.0), tap(STEP(1), 150), wait(2.2), tap(STEP(2), 150), wait(2.0),
     caption("Tap a pad to land on a bank (here NOTE FX), then let go.", title="The bank map"),
@@ -86,20 +58,16 @@ STEPS = [
 
     caption("Shift + Step 2 opens Project Settings.", title="Menus"),
     wait(1.0), press(SHIFT), wait(0.4), tap(STEP(2), 150), wait(0.3), release(SHIFT), wait(2.5),
-    caption("Every list works the same way: turn the jog to move.", title="Menus"),
+    caption("Every list works the same way: turn the jog to move, click to choose.", title="Menus"),
     wait(0.8), turn(JOG_TURN, 3, ms=450), wait(1.0), turn(JOG_TURN, -3, ms=300), wait(1.0),
     caption("Back steps out.", title="Menus"),
     wait(0.8), tap(BACK), wait(2.0),
-    caption("CONFIG, bottom-left of the map, opens the track's TRACK CONFIG.", title="Menus"),
+    caption("CONFIG, bottom-left of the map, opens the track's own menu, TRACK CONFIG.",
+            title="Menus"),
     wait(1.0), press(JOG), wait(1.0), tap(PAD_CONFIG, 150), wait(0.8), release(JOG), wait(2.5),
     turn(JOG_TURN, 2, ms=450), wait(1.0),
     caption("Hold Back to go straight to the overview.", title="Menus"),
     wait(1.0), hold(BACK, 800), wait(2.5),
 
-    caption("From anywhere, Note/Session closes everything and takes you to Session "
-            "View in one press.", title="The way out"),
-    wait(1.0), press(SHIFT), wait(0.4), tap(STEP(2), 150), wait(0.3), release(SHIFT), wait(1.8),
-    tap(NOTE_SESSION), wait(2.5), tap(NOTE_SESSION), wait(2.0),
-
-    card("Next: melodic clips", "Tutorial 2", 3.0),
+    card("Next: choosing a sound", "Tutorial 1.4", 3.0),
 ]

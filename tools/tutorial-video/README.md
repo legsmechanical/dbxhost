@@ -7,10 +7,10 @@ Move's control surface (with the controls being pressed highlighted), and title
 cards.
 
 ```sh
-python3 take.py storyboards/01_getting_around.py out/01_getting_around.mp4   # fresh session, record, render
-python3 render.py takes/01_getting_around out/01_getting_around.mp4        # re-render a take
-python3 review.py takes/01_getting_around sheet.png                        # a frame per caption
-python3 review_gestures.py takes/01_getting_around sheet.png 0.6           # a frame after each press
+python3 take.py storyboards/1_2_two_views.py out/1_2_two_views.mp4   # fresh session, record, render
+python3 render.py takes/1_2_two_views out/1_2_two_views.mp4        # re-render a take
+python3 review.py takes/1_2_two_views sheet.png                        # a frame per caption
+python3 review_gestures.py takes/1_2_two_views sheet.png 0.6           # a frame after each press
 ```
 
 `takes/` and `out/` are gitignored: a take is rebuilt, never committed.

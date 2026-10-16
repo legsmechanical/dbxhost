@@ -24,7 +24,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-import device_draw as dd      # noqa: E402
+import device_draw as dd
+import daves      # noqa: E402
 
 W, H, FPS = 1920, 1080, 30
 # The manual's dark theme (davebox/tools/manual_template.html): ground, surface,
@@ -35,7 +36,7 @@ BEZEL, BEZEL_EDGE = (0x07, 0x05, 0x0d), (0x33, 0x2b, 0x4a)
 BG = GROUND
 OLED_SCALE = 7
 OLED_XY = (40, 34)
-DEV_SCALE = 1.45
+DEV_SCALE = 1.35
 FADE_S = 0.5
 # The manual sets Chivo (display), Source Sans 3 (body) and JetBrains Mono
 # (labels). Source Sans Pro is Source Sans 3's predecessor; Chivo and JetBrains
@@ -135,7 +136,7 @@ class Take:
         if i < 0:
             return None, -1
         if i not in self._oled_cache:
-            self._oled_cache = {i: dd.oled_image(self.screens[i][1])}
+            self._oled_cache = {i: daves.swap(dd.oled_image(self.screens[i][1]))}
         return self._oled_cache[i], i
 
     def surface_at(self, t):
@@ -268,7 +269,7 @@ def compose(take, t, cache):
             cx, cy, r = dd.SPOT[k]
             dd.turn_arrow(dev, cx, cy, r, dr, a, DEV_SCALE)
     dx = (W - dev.width) // 2
-    dy = H - dev.height - 14
+    dy = H - dev.height - 70        # clear of a player's control bar
     img.paste(dev, (dx, dy))
     cache["key"], cache["img"] = key, img
     return img, key
