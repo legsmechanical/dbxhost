@@ -1428,6 +1428,7 @@ export function checkJogHold() {
     if (!bankMapDeferrable()) { S.jogPressMs = -1; return; }
     S.bankMapFromScreen = true;
     S.bankMapKind = S.sessionView ? 'session' : 'track';
+    console.log('[jogdiag] hold->map after ' + (S.clockMs - S.jogPressMs) + ' ms');   /* DIAG 2026-10-16 */
     bankMapArm();
 }
 /* A pick from a map that is up over a screen: leave the screen first, the way
