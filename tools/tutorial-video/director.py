@@ -110,7 +110,16 @@ class Director:
                     self.emit("caption", text=st["text"], title=st.get("title"))
                 elif op == "tap":
                     before = self.bus.snapshot_display().to_pbm() if st.get("check") else None
-                    self.down(st["key"]); self.sleep(st["ms"] / 1000.0); self.up(st["key"])
+                    if st["key"].startswith("c"):
+                        # A button or the jog: the release follows the press at
+                        # once. Sent a round trip apart, a late release over the
+                        # network read as a HOLD (a jog click became the bank
+                        # map). The fingertip still shows for `ms`.
+                        self.down(st["key"]); self.bus.inject_midi(_packet(st["key"], False))
+                        self.sleep(st["ms"] / 1000.0); self.emit("up", key=st["key"])
+                        self.held.remove(st["key"])
+                    else:
+                        self.down(st["key"]); self.sleep(st["ms"] / 1000.0); self.up(st["key"])
                     if before is not None:
                         self.sleep(0.4)
                         if self.bus.snapshot_display().to_pbm() == before:

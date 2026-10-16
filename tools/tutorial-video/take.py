@@ -27,8 +27,15 @@ DEMO_NAME = "dAVEBOx Tutorial"
 PRISTINE = "/data/UserData/tutorial-demo-pristine"   # a copy of the demo project's folder
 
 
+# The tether (MOVE_HOST=172.16.254.1) gets the same host-key handling as the
+# user's own ssh config gives move.local — the Move's keys change with its
+# firmware, so neither keeps one on file.
+SSH_OPTS = ["-o", "ConnectTimeout=8", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+            "-o", "LogLevel=ERROR"]
+
+
 def ssh(cmd, timeout=60):
-    return subprocess.run(["ssh", "-o", "ConnectTimeout=8", "ableton@" + HOST, cmd],
+    return subprocess.run(["ssh"] + SSH_OPTS + ["ableton@" + HOST, cmd],
                           capture_output=True, text=True, timeout=timeout).stdout
 
 
@@ -55,7 +62,7 @@ def fresh_session(load=True):
     ssh("pidof schwung-testd >/dev/null || (nohup setsid /data/UserData/dbx-host/bin/schwung-testd "
         "> /data/UserData/testd.log 2>&1 < /dev/null &)")
     time.sleep(2)
-    subprocess.run("pkill -f '47777:127.0.0.1:47777'; ssh -f -N -o ExitOnForwardFailure=yes "
+    subprocess.run("pkill -f '47777:127.0.0.1:47777'; ssh -f -N -o ExitOnForwardFailure=yes " + " ".join(SSH_OPTS) + " "
                    "-L 47777:127.0.0.1:47777 ableton@" + HOST, shell=True)
     time.sleep(1)
     with SchwungBus() as bus:
