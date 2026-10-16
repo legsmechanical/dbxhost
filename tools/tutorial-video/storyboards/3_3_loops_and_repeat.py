@@ -1,4 +1,4 @@
-"""3.2 — Lane loops and Note Repeat: Loop + jog sets one lane's length (a
+"""3.3 — Lane loops and Note Repeat: Loop + jog sets one lane's length (a
 polyrhythm), Shift + Step 8 turns the right pads into Note Repeat rates, hold
 a rate pad to repeat the selected lane. Captions follow MANUAL-SA §7.2–7.3.
 Starts as drum_setup.PRE_WITH_BEAT leaves it.
@@ -7,14 +7,14 @@ from director import card, caption, tap, hold, press, release, turn, wait, point
 from drum_setup import *                       # noqa: F401,F403
 
 TITLE = "Lane loops and Note Repeat"
-NUMBER = "3.2"
+NUMBER = "3.3"
 BPM = 110
 PRE = PRE_WITH_BEAT
 
 RATES = tuple("n%d" % n for n in (72, 73, 74, 75, 80, 81, 82, 83))   # the right half's bottom two rows
 
 STEPS = [
-    card("Lane loops and Note Repeat", "Tutorial 3.2", 3.0),
+    card("Lane loops and Note Repeat", "Tutorial 3.3", 3.0),
 
     caption("Every lane has its own length. Start the beat.", title="Lane loops"),
     wait(1.5), point(PLAY, secs=1.0), tap(PLAY), wait(3.0),
@@ -40,5 +40,5 @@ STEPS = [
     press(SHIFT), wait(0.3), tap(STEP(8), 150), wait(1.2), tap(STEP(8), 150), wait(0.3), release(SHIFT),
     wait(2.0), tap(PLAY), wait(2.0),
 
-    card("Next: copying, muting and clearing lanes", "Tutorial 3.3", 3.0),
+    card("Next: copying, muting and clearing lanes", "Tutorial 3.4", 3.0),
 ]

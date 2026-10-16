@@ -44,5 +44,5 @@ STEPS = [
     caption("Play stops.", title="Lane banks"),
     wait(0.8), tap(PLAY), wait(2.0),
 
-    card("Next: lane loops and Note Repeat", "Tutorial 3.2", 3.0),
+    card("Next: one lane or all lanes", "Tutorial 3.2", 3.0),
 ]

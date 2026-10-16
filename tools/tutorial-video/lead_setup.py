@@ -65,3 +65,23 @@ def PRE_WITH_RIFF(bus):
         bus.inject_midi(bytes([0x08, 0x80, pad, 0])); bus.wait_frame(30)
         bus.inject_midi(bytes([0x08, 0x80, 15 + step, 0])); bus.wait_frame(60)
     bus.wait_frame(240)
+
+
+def PRE_WITH_CHORDS(bus):
+    """PRE_WITH_RIFF, plus clip B: two long chords for SEQ ARP to play with — C
+    minor (C3 Eb3 G3) held through steps 1-8, A-flat (Ab3 C4 Eb4) through 9-16.
+    Ends back on clip A, stopped."""
+    PRE_WITH_RIFF(bus)
+    cc = lambda n, v: bus.inject_midi(bytes([0x0B, 0xB0, n, v]))
+    def note(n, on): bus.inject_midi(bytes([0x09, 0x90, n, 100]) if on else bytes([0x08, 0x80, n, 0]))
+    def tap_n(n, f=30): note(n, True); bus.wait_frame(f); note(n, False); bus.wait_frame(40)
+    cc(42, 127); bus.wait_frame(20); cc(42, 0); bus.wait_frame(200)        # clip B
+    for first, last, pads in ((1, 8, (68, 70, 72)), (9, 16, (73, 75, 82))):
+        note(15 + first, True); bus.wait_frame(60)                          # hold the step ...
+        for p in pads:
+            tap_n(p)                                                        # ... and add the chord
+        note(15 + first, False); bus.wait_frame(80)
+        note(15 + first, True); bus.wait_frame(500)                         # hold again past the card,
+        tap_n(15 + last)                                                    # stretch to the last step
+        note(15 + first, False); bus.wait_frame(80)
+    cc(43, 127); bus.wait_frame(20); cc(43, 0); bus.wait_frame(200)        # back to clip A

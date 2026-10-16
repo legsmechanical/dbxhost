@@ -1,4 +1,4 @@
-"""3.3 — Lane tools: Mute + lane, Copy + lane then another lane, Delete +
+"""3.4 — Lane tools: Mute + lane, Copy + lane then another lane, Delete +
 lane, Undo. Captions follow MANUAL-SA §7.4. Starts as drum_setup.PRE_WITH_BEAT
 leaves it.
 """
@@ -6,12 +6,12 @@ from director import card, caption, tap, hold, press, release, turn, wait, point
 from drum_setup import *                       # noqa: F401,F403
 
 TITLE = "Copying, muting and clearing lanes"
-NUMBER = "3.3"
+NUMBER = "3.4"
 BPM = 110
 PRE = PRE_WITH_BEAT
 
 STEPS = [
-    card("Copying, muting and clearing lanes", "Tutorial 3.3", 3.0),
+    card("Copying, muting and clearing lanes", "Tutorial 3.4", 3.0),
 
     caption("Start the beat.", title="Lane tools"),
     wait(1.0), point(PLAY, secs=1.0), tap(PLAY), wait(3.0),
