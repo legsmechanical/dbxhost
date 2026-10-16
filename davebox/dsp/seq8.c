@@ -1410,6 +1410,11 @@ typedef struct {
     uint8_t  print_clip;
     uint8_t  print_state;
     uint32_t print_end;          /* the take's length, in merge ticks */
+    /* OFFLINE print (seq8_bake_post.c): the host renders the module on its
+     * own thread; render_block polls (print_state 2 until it lands). */
+    uint8_t  print_offline;
+    uint8_t  print_loops, print_wrap;
+    uint8_t  print_err;          /* why the last offline print did not run / failed (0 = it did) */
     uint8_t  merge_solo_track;   /* 0xFF = capture all 8 tracks (scene mode); else only this
                                   * track's output is captured (Track-View single-clip merge).
                                   * Set on every merge_arm; only read while a merge is active. */
@@ -7982,6 +7987,7 @@ static void clip_send_program(seq8_track_t *tr, const clip_t *cl) {
  * convert includes, or before the reset_all_loop_cycles decl) shifts that output
  * and silently breaks the gate. Do NOT "tidy" the spacing. */
 #include "seq8_bake.c"
+#include "seq8_bake_post.c"
 #include "seq8_convert.c"
 #include "seq8_param_auto.c"
 static void reset_all_loop_cycles(seq8_instance_t *inst);
@@ -8841,6 +8847,9 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                         inst ? (int)inst->ext_tick_pending : 0);
 
     /* PRINT state, for the UI's progress and its finish (see print_track). */
+    /* OFFLINE print: why the last one did not run or failed (0 = it ran). */
+    if (!strcmp(key, "print_err"))
+        return snprintf(out, out_len, "%d", (int)inst->print_err);
     /* Live Merge: the tracks whose POST module the last placement took in. */
     if (!strcmp(key, "merge_post_mask"))
         return snprintf(out, out_len, "%d", (int)inst->merge_post_mask);

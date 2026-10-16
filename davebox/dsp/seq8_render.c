@@ -318,6 +318,8 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
      * a stop / panic / switch-off / route change. */
     post_raw_service(inst);
     post_flush_service(inst);
+    /* An offline print (seq8_bake_post.c): the host's job, landed or not. */
+    bake_post_poll(inst);
 
     /* Clock-follow housekeeping: staleness, MovePlay inject drain, start timeout. */
     seq8_clock_follow_tick(inst, frames);

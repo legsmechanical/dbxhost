@@ -217,6 +217,15 @@ static int sp_globals_misc(sp_ctx_t *cx) {
         }
         return 1;
     }
+    if (!strcmp(key, "print_offline")) {
+        /* print_offline "T C N W": bake clip C of track T through its POST
+         * module OFFLINE, N passes, W = wrap tails (seq8_bake_post.c). The
+         * host renders it; render_block finishes it (print_state 2 -> 3). */
+        int pt = -1, pc = -1, pn = 1, pw = 0;
+        sscanf(val ? val : "", "%d %d %d %d", &pt, &pc, &pn, &pw);
+        bake_post_start(inst, pt, pc, pn, pw);
+        return 1;
+    }
     if (!strcmp(key, "print_done")) {
         /* the UI has taken the finished print (bypassed the module) */
         if (inst->print_state == 3) inst->print_state = 0;
@@ -226,6 +235,11 @@ static int sp_globals_misc(sp_ctx_t *cx) {
         /* Back during a print: the clip is left as it was. */
         if (!inst->print_state) return 1;
         inst->print_state = 0;
+        if (inst->print_offline) {          /* the host's job: nothing to undo here */
+            inst->print_offline = 0;
+            if (g_ext && g_ext->midi_fx_offline_cancel) g_ext->midi_fx_offline_cancel();
+            return 1;
+        }
         if (inst->playing) ext_transport_stop(inst);
         {
             int t;

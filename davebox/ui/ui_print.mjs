@@ -1,13 +1,15 @@
 /* ui_print.mjs — PRINT: Bake of a clip whose track has an active POST MIDI FX
  * module (Josh, 2026-10-14).
  *
- * The offline bake renders dAVEBOx's own sequencer effects and cannot run a
- * MIDI FX module, so a clip whose track has one in play (loaded, not bypassed,
- * Position Post) is baked by PLAYING it: the engine records what the module
- * actually puts out for the chosen number of passes and writes it over the
- * clip (print_arm … print_finish in the engine). Then the module is bypassed,
- * so the clip is not processed twice — kept, not removed, so the bake can be
- * undone and the module reused.
+ * A clip whose track has one in play (loaded, not bypassed, Position Post) is
+ * baked OFFLINE (2026-10-15): the host runs a private copy of the module on
+ * the clip's notes against a virtual transport, and the engine puts the
+ * track's own effects on what it made (print_offline; seq8_bake_post.c). With
+ * Shift held on the confirm, or on a drum track, it is PRINTED live instead:
+ * the engine plays the clip and records what the track puts out for the
+ * chosen number of passes (print_arm … print_finish). Either way the module
+ * is then bypassed, so the clip is not processed twice — kept, not removed,
+ * so the bake can be undone and the module reused.
  *
  * While it runs the screen says so and the surface is held, as Live Merge's
  * notice holds it: Back cancels (the clip is left as it was), everything else
@@ -43,18 +45,27 @@ export function midiFxLeftOut() {
     return out;
 }
 
-/* Start one. False (and a notice) when it cannot: the transport must be
- * stopped, as for Live Merge. */
+/* Start one. OFFLINE by default (print_offline): the host runs a copy of the
+ * module on the clip's notes, at once, while the transport does whatever it
+ * does. Shift held on the confirm, or a drum track, PRINTS it live instead
+ * (print_arm), which needs the transport stopped, as Live Merge does. False
+ * (and a notice) when it cannot start. */
 export function printStart(t, c, loops) {
+    const slot = slotIndex(t);
+    if (!S.shiftHeld && S.trackPadMode[t] !== PAD_MODE_DRUM) {
+        host_module_set_param('print_offline', t + ' ' + c + ' ' + loops + ' 0');
+        printing = { t, c, loops, slot, polled: 0, offline: true };
+        showActionPopupFor(60000, 'BAKING ' + loops + 'x', 'MIDI FX', 'Back cancels');
+        return true;
+    }
     if (S.playing) {
         showActionPopupFor(2500, 'STOP TO BAKE', 'MIDI FX bakes by playing');
         return false;
     }
-    const slot = slotIndex(t);
     /* Nothing to re-route: the module runs first, so the track's own output
      * -- what the engine records -- already has it in. */
     host_module_set_param('print_arm', t + ' ' + c + ' ' + loops);
-    printing = { t, c, loops, slot, polled: 0 };
+    printing = { t, c, loops, slot, polled: 0, offline: false };
     showActionPopupFor(60000, 'PRINTING ' + loops + 'x', 'MIDI FX, live', 'Back cancels');
     return true;
 }
@@ -70,7 +81,8 @@ export function printCancel() {
 /* From the tick: read the engine's state now and then; on DONE, finish. */
 export function printTick() {
     if (!printing) return;
-    if (++printing.polled % 10) return;                 /* ~10 Hz is plenty */
+    /* ~10 Hz is plenty for a live print; an offline one lands in a few ms */
+    if (++printing.polled % (printing.offline ? 2 : 10)) return;
     const raw = host_module_get_param('print_state');
     const st = parseInt(raw, 10);
     if (st === 3) {
@@ -90,12 +102,13 @@ export function printTick() {
             S.pendingDrumResyncTrack = p.t;
         }
         S.screenDirty = true;
-    } else if (st === 0 && printing.polled > 30) {
-        /* the engine dropped it (refused, or stopped under it) */
+    } else if (st === 0 && printing.polled > (printing.offline ? 10 : 30)) {
+        /* the engine dropped it (refused, failed, or stopped under it) */
         const p = printing;
         printing = null;
-        showActionPopupFor(2000, 'BAKE STOPPED');
-    } else if (printing.polled % 50 === 0) {
+        if (p.offline) showActionPopupFor(2500, 'BAKE FAILED', 'MIDI FX would not run', 'Shift+bake prints it live');
+        else           showActionPopupFor(2000, 'BAKE STOPPED');
+    } else if (!printing.offline && printing.polled % 50 === 0) {
         showActionPopupFor(60000, 'PRINTING ' + printing.loops + 'x', 'MIDI FX, live', 'Back cancels');
     }
 }

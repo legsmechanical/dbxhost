@@ -2072,14 +2072,18 @@ same, with a clean effects chain to build on.
   tracks, a last **Apply Conductor?** step can fold its transposition into those
   clips. Baking a single clip never applies the Conductor.
 - **A MIDI effect module in play.** When the clip's track has a MIDI effect
-  module set to **Post** (loaded and not bypassed), Bake can't work it out
-  instantly — so it *plays* the clip instead. Pick the loop count; with the
-  transport stopped, the clip plays alone after a one-bar count-in while the
-  screen shows **PRINTING**, and what you hear — dAVEBOx's effects and the
-  module together — becomes the clip. The module is then **bypassed** (not
-  removed), so the clip isn't processed twice; Undo puts the clip back.
-  **Back** cancels and leaves the clip as it was. A **Pre** module is already
-  in the clip, so it bakes instantly as usual.
+  module set to **Post** (loaded and not bypassed), Bake runs the module too:
+  pick the loop count, and in a moment (**BAKING**) the clip holds what you
+  would hear — the module's notes with dAVEBOx's effects on them. It works
+  with the transport running or stopped; nothing is played. The module is
+  then **bypassed** (not removed), so the clip isn't processed twice; Undo
+  puts the clip back. **Back** cancels and leaves the clip as it was. A **Pre**
+  module is already in the clip, so it bakes instantly as usual.
+  - **Shift** held on the confirm **prints** it live instead: with the transport
+    stopped, the clip plays alone after a one-bar count-in (**PRINTING**) and
+    what you hear becomes the clip. Use it if a module bakes differently from
+    how it plays (**BAKE FAILED** suggests it too). A **drum** clip with a
+    module always prints live, for now.
 - **Scene bakes and Export to Live** stay instant and leave a Post MIDI effect
   module out; they tell you which tracks.
 

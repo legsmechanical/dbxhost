@@ -69,6 +69,11 @@ the section into a versioned heading at release time.
   SEQ ARP — work on what the module plays. A MIDI Delay echoes an
   arpeggiator's notes; Harmonize stacks on a chord module's chords. On a drum
   track the module's notes play on the lane whose note they are.
+- **Bake runs a Post MIDI effect at once.** Baking a clip whose track has a
+  Post MIDI effect no longer plays the clip: a copy of the effect works through
+  it in a moment, playing or stopped, and the clip holds what you would hear.
+  Hold **Shift** on the confirm to print it live as before (drum clips still
+  print live).
 - **Live Merge on a track with a Post MIDI effect** records what you hear —
   the effect included — and then bypasses the effect, as Bake does, so the
   merged clip doesn't play through it twice.
