@@ -46,5 +46,5 @@ STEPS = [
     press(DELETE), wait(0.3), tap(KNOB_TOUCH(2), 300), wait(0.3), release(DELETE), wait(3.0),
     tap(PLAY), wait(2.0),
 
-    card("That's the core of dAVEBOx", "dAVEBOx SA tutorials", 3.5),
+    card("Next: going further", "Tutorial 6.1", 3.0),
 ]
