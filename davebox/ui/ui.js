@@ -591,8 +591,6 @@ function _onMidiInternalImpl(data) {
              * over the screen (checkJogHold). */
             if (bankMapDeferrable()) { jogDeferBegin(); return; }
         }
-        if (d2 !== 127 && (S.jogDeferred || S.jogPressMs >= 0))   /* DIAG 2026-10-16 */
-            console.log('[jogdiag] release deferred=' + !!S.jogDeferred + ' held=' + (nowMs() - S.jogPressMs) + ' ms map=' + !!S.bankMapUp);
         if (d2 !== 127 && jogDeferTake()) {
             /* The short click: the owner gets the PRESS now, exactly as it
              * would have at the press, and then this release (inert for every
