@@ -9,6 +9,7 @@ put captions, cards and gesture highlights exactly where they happened:
   {"t": ..., "kind": "caption", "title": ..., "text": ...}
   {"t": ..., "kind": "down"|"up", "key": "n84"|"c50"|...}      # a control held
   {"t": ..., "kind": "turn", "key": "c14"|"c71".., "dir": 1|-1}
+  {"t": ..., "kind": "point", "targets": [...], "secs": ...}
   {"t": ..., "kind": "begin"|"end"}
 
 Steps (plain dicts; helpers below):
@@ -19,6 +20,9 @@ Steps (plain dicts; helpers below):
   press(key) / release(key)          for chords (Shift + ...)
   turn(key, detents, ms=120)         jog 'c14' or a knob 'c71'..'c78'; sign = way
   wait(secs)
+  point(*targets, secs=1.6)          before an action: box the controls it uses (keys as
+                                     above) or OLED areas ('oled:x,y,w,h', OLED pixels),
+                                     and hold, so the viewer finds them first
 Every press is a real inject (`inject_midi`), which the mirror's own press layer
 cannot see (it reads the raw hardware input) — hence the log.
 """
@@ -45,6 +49,7 @@ def press(key):                       return {"op": "press", "key": key}
 def release(key):                     return {"op": "release", "key": key}
 def turn(key, detents, ms=120):       return {"op": "turn", "key": key, "n": detents, "ms": ms}
 def wait(secs):                       return {"op": "wait", "secs": secs}
+def point(*targets, secs=1.6):        return {"op": "point", "targets": list(targets), "secs": secs}
 
 
 def _packet(key, down):
@@ -109,6 +114,9 @@ class Director:
                         self.bus.inject_midi(bytes([0x0B, 0xB0, num, 1 if way > 0 else 127]))
                         self.emit("turn", key=st["key"], dir=way)
                         self.sleep(st["ms"] / 1000.0)
+                elif op == "point":
+                    self.emit("point", targets=st["targets"], secs=st["secs"])
+                    self.sleep(st["secs"])
                 elif op == "wait":
                     self.sleep(st["secs"])
                 else:

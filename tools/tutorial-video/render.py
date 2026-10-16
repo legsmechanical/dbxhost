@@ -14,6 +14,7 @@ with the picture the way the stream delivered both.
   python3 render.py <take_dir> <out.mp4>
 """
 import base64
+import math
 import bisect
 import json
 import os
@@ -179,6 +180,81 @@ def turns_at(events, t):
     return {k: (d, 1.0 - (t - tt) / FADE_S) for k, (d, tt) in out.items() if t - tt < FADE_S}
 
 
+POINT_IN, POINT_OUT = 0.2, 0.5
+
+
+def points_at(events, t):
+    """[(target, alpha)] for every target a point step is boxing at t: in over
+    POINT_IN, held for its secs, out over POINT_OUT once the action starts."""
+    out = {}
+    for e in events:
+        if e["t"] > t:
+            break
+        if e["kind"] == "point":
+            for k in grouped(e["targets"]):
+                out[k] = (e["t"], e["secs"])
+    res = []
+    for k, (t0, secs) in out.items():
+        dt = t - t0
+        if dt < POINT_IN:
+            a = dt / POINT_IN
+        elif dt < secs:
+            a = 1.0
+        elif dt < secs + POINT_OUT:
+            a = 1.0 - (dt - secs) / POINT_OUT
+        else:
+            continue
+        res.append((k, a))
+    return res
+
+
+def grouped(targets):
+    """Pads, or step buttons, named together are boxed as one group ('g:' +
+    the keys) — a column of four is one box, not four."""
+    out, pads, steps = [], [], []
+    for k in targets:
+        if k.startswith("n") and 68 <= int(k[1:]) <= 99:
+            pads.append(k)
+        elif k.startswith("n") and 16 <= int(k[1:]) <= 31:
+            steps.append(k)
+        else:
+            out.append(k)
+    for g in (pads, steps):
+        if len(g) > 1:
+            out.append("g:" + "+".join(g))
+        else:
+            out += g
+    return out
+
+
+def target_box(k, dx, dy):
+    """The device-pixel box around one control, or a 'g:' group of them."""
+    keys = k[2:].split("+") if k.startswith("g:") else [k]
+    xs0, ys0, xs1, ys1 = [], [], [], []
+    for key in keys:
+        if key not in dd.SPOT:
+            continue
+        cx, cy, r = dd.SPOT[key]
+        r, pad = max(r, 16), 6                 # a small button still gets a box you can find
+        xs0.append(cx - r - pad); ys0.append(cy - r - pad); xs1.append(cx + r + pad); ys1.append(cy + r + pad)
+    if not xs0:
+        return None
+    return [dx + min(xs0) * DEV_SCALE, dy + min(ys0) * DEV_SCALE, dx + max(xs1) * DEV_SCALE, dy + max(ys1) * DEV_SCALE]
+
+
+def point_box(d, box, alpha, t, width):
+    """The pointer: a cyan box with a soft halo, gently pulsing — nothing like
+    a fingertip, so 'look here' never reads as 'pressed'."""
+    pulse = 0.8 + 0.2 * math.sin(t * 2 * math.pi * 1.4)
+    a = int(255 * alpha * pulse)
+    x0, y0, x1, y1 = box
+    for grow, aa in ((14, 0.12), (9, 0.25)):
+        d.rounded_rectangle([x0 - grow, y0 - grow, x1 + grow, y1 + grow], radius=10 + grow,
+                            outline=ACCENT_2 + (int(a * aa),), width=width + 3)
+    d.rounded_rectangle([x0, y0, x1, y1], radius=10, fill=ACCENT_2 + (int(a * 0.16),),
+                        outline=ACCENT_2 + (a,), width=width)
+
+
 def state_at(events, t):
     """The caption and card showing at t."""
     cap, card = None, None
@@ -224,10 +300,11 @@ def compose(take, t, cache):
     surf, si = take.surface_at(t)
     hl = highlights_at(take.events, t)
     tn = turns_at(take.events, t)
+    pts = points_at(take.events, t)
     anim_bucket = int(t * 8)     # LED pulse / blink phase
     key = (oi, si, tuple((k, round(a, 1)) for k, a in sorted(hl)),
            tuple((k, d, round(a, 1)) for k, (d, a) in sorted(tn.items())),
-           cap["t"] if cap else None, anim_bucket)
+           cap["t"] if cap else None, anim_bucket, tuple((k, round(a, 2)) for k, a in sorted(pts)))
     if cache.get("key") == key:
         return cache["img"], key
     img = Image.new("RGB", (W, H), BG)
@@ -271,6 +348,19 @@ def compose(take, t, cache):
     dx = (W - dev.width) // 2
     dy = H - dev.height - 70        # clear of a player's control bar
     img.paste(dev, (dx, dy))
+    if pts:
+        lay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        ld = ImageDraw.Draw(lay)
+        for k, a in pts:
+            if k.startswith("oled:"):
+                x, y, w, h = (int(v) for v in k[5:].split(","))
+                point_box(ld, [ox + x * OLED_SCALE - 8, oy + y * OLED_SCALE - 8,
+                               ox + (x + w) * OLED_SCALE + 8, oy + (y + h) * OLED_SCALE + 8], a, t, 5)
+            else:
+                box = target_box(k, dx, dy)
+                if box:
+                    point_box(ld, box, a, t, 6)
+        img.paste(lay, (0, 0), lay)
     cache["key"], cache["img"] = key, img
     return img, key
 
@@ -294,9 +384,17 @@ def render(take_dir, out_path):
     import wave
     with wave.open(wav, "wb") as w:
         w.setnchannels(2); w.setsampwidth(2); w.setframerate(rate); w.writeframes(bytes(pcm))
+    # Each take's sound peaks at -1 dBFS: the instruments differ by 20 dB (a
+    # Mini-JV piano peaked at -20), and a series should play at one level.
+    import array, math
+    smp = array.array("h"); smp.frombytes(bytes(pcm[:len(pcm) // 2 * 2]))
+    peak = max((abs(v) for v in smp), default=0)
+    peak_db = 20 * math.log10(peak / 32768.0) if peak else -120.0
+    gain_db = min(24.0, -1.0 - peak_db) if peak_db > -40.0 else 0.0   # a silent take is not raised
+    print("audio peak %.1f dBFS, gain %+.1f dB" % (20 * math.log10(max(peak, 1) / 32768.0), gain_db))
     cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", "%dx%d" % (W, H),
            "-r", str(FPS), "-i", "-", "-i", wav, "-c:v", "libx264", "-preset", "medium", "-crf", "18",
-           "-pix_fmt", "yuv420p", "-af", "volume=-3dB", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", out_path]
+           "-pix_fmt", "yuv420p", "-af", "volume=%.2fdB" % gain_db, "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", out_path]
     ff = subprocess.Popen(cmd, stdin=subprocess.PIPE)
     cache = {}
     for i in range(nframes):

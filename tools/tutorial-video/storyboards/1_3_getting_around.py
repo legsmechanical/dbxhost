@@ -4,7 +4,7 @@ Captions follow MANUAL-SA §3.3, §3.5–3.7.
 Starts (PRE, not in the video) on Track View, track 2 (the NuSaw bass), CLIP
 bank, stopped.
 """
-from director import card, caption, tap, hold, press, release, turn, wait
+from director import card, caption, tap, hold, press, release, turn, wait, point
 
 TITLE = "Getting around"
 NUMBER = "1.3"
@@ -30,44 +30,52 @@ def PRE(bus):
     bus.inject_midi(cc(3, 0)); bus.wait_frame(200)
 
 
+MAP_PADS = ("n68", "n69", "n70", "n71", "n76", "n77", "n78", "n79", "n84", "n85", "n86", "n87",
+            "n92", "n93", "n94", "n95")                     # the left half: the bank map
+TRACK_STEPS = tuple(STEP(i) for i in range(1, 9))
+TRACKS = "oled:0,27,128,21"
+
+
 STEPS = [
     card("Getting around", "Tutorial 1.3", 3.0),
 
     caption("There are no track buttons. Hold Shift and turn the jog to change track.",
             title="Changing track"),
-    wait(1.0), press(SHIFT), wait(1.2),
+    wait(2.5), point(SHIFT, JOG_TURN, secs=2.0), press(SHIFT), wait(1.0),
     turn(JOG_TURN, 1), wait(1.2), turn(JOG_TURN, 1), wait(1.2), turn(JOG_TURN, -2, ms=250), wait(1.0),
-    release(SHIFT), wait(1.5),
+    release(SHIFT), wait(1.0), point(TRACKS, secs=2.0), wait(0.5),
 
     caption("Each track has banks of settings for the knobs. Hold the jog: the left pads "
             "become a map of them, and the screen shows the same map.", title="The bank map"),
-    wait(1.0), press(JOG), wait(4.5),
+    wait(3.0), point(JOG, secs=1.6), press(JOG), wait(1.0), point(*MAP_PADS, secs=3.0), wait(0.5),
     caption("While it's up, Steps 1–8 are the tracks. Press one to switch.", title="The bank map"),
-    wait(1.0), tap(STEP(1), 150), wait(2.2), tap(STEP(2), 150), wait(2.0),
+    wait(1.5), point(*TRACK_STEPS, secs=2.0), tap(STEP(1), 150), wait(2.2), tap(STEP(2), 150), wait(2.0),
     caption("Tap a pad to land on a bank (here NOTE FX), then let go.", title="The bank map"),
-    wait(1.0), tap(PAD_NOTE_FX, 150), wait(1.5), release(JOG), wait(2.5),
+    wait(1.5), point(PAD_NOTE_FX, secs=1.6), tap(PAD_NOTE_FX, 150), wait(1.5), release(JOG), wait(2.5),
 
     caption("Touch a knob to see the bank's page; turn it to change a value.", title="Knobs"),
-    wait(1.0), press(KNOB_TOUCH(1)), wait(1.8),
+    wait(2.0), point(KNOB_TOUCH(1), secs=1.6), press(KNOB_TOUCH(1)), wait(1.8),
     turn(KNOB_TURN(1), 16, ms=14), wait(2.0), turn(KNOB_TURN(1), -16, ms=14), wait(1.2),
     release(KNOB_TOUCH(1)), wait(1.5),
     caption("Let go and the overview is back. Each track remembers its bank.", title="Knobs"),
     wait(3.5),
     caption("Back to CLIP: hold the jog and tap its pad.", title="Knobs"),
-    wait(1.0), press(JOG), wait(1.0), tap(PAD_CLIP, 150), wait(1.0), release(JOG), wait(2.0),
+    wait(1.5), point(JOG, PAD_CLIP, secs=1.8), press(JOG), wait(1.0), tap(PAD_CLIP, 150), wait(1.0),
+    release(JOG), wait(2.0),
 
     caption("Shift + Step 2 opens Project Settings.", title="Menus"),
-    wait(1.0), press(SHIFT), wait(0.4), tap(STEP(2), 150), wait(0.3), release(SHIFT), wait(2.5),
+    wait(1.5), point(SHIFT, STEP(2), secs=1.8),
+    press(SHIFT), wait(0.4), tap(STEP(2), 150), wait(0.3), release(SHIFT), wait(2.5),
     caption("Every list works the same way: turn the jog to move, click to choose.", title="Menus"),
-    wait(0.8), turn(JOG_TURN, 3, ms=450), wait(1.0), turn(JOG_TURN, -3, ms=300), wait(1.0),
+    wait(2.0), point(JOG_TURN, secs=1.6), turn(JOG_TURN, 3, ms=450), wait(1.0), turn(JOG_TURN, -3, ms=300), wait(1.0),
     caption("Back steps out.", title="Menus"),
-    wait(0.8), tap(BACK), wait(2.0),
+    wait(1.0), point(BACK, secs=1.6), tap(BACK), wait(2.0),
     caption("CONFIG, bottom-left of the map, opens the track's own menu, TRACK CONFIG.",
             title="Menus"),
-    wait(1.0), press(JOG), wait(1.0), tap(PAD_CONFIG, 150), wait(0.8), release(JOG), wait(2.5),
-    turn(JOG_TURN, 2, ms=450), wait(1.0),
+    wait(2.0), point(JOG, secs=1.2), press(JOG), wait(1.0), point(PAD_CONFIG, secs=1.6), tap(PAD_CONFIG, 150),
+    wait(0.8), release(JOG), wait(2.5), turn(JOG_TURN, 2, ms=450), wait(1.0),
     caption("Hold Back to go straight to the overview.", title="Menus"),
-    wait(1.0), hold(BACK, 800), wait(2.5),
+    wait(1.5), point(BACK, secs=1.6), hold(BACK, 800), wait(2.5),
 
     card("Next: choosing a sound", "Tutorial 1.4", 3.0),
 ]
