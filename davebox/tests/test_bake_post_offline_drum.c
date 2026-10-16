@@ -37,8 +37,14 @@ int main(void) {
     hx_set_param(h, "t0_l0_note_add", "192 90 12");
     hx_set_param(h, "t0_l1_note_add", "96 100 12");
     /* lane 1 is re-tuned AFTER its hit was written: it plays (and goes into
-     * the module as) its CURRENT note, 127 — which comes back off the map */
-    dc->lanes[1].midi_note = 127;
+     * the module as) its CURRENT note — one that comes back (+up) as a pitch
+     * no lane plays, but still a real MIDI note */
+    const uint8_t stray_in = (uint8_t)(120 - up);
+    {
+        int l;
+        for (l = 0; l < DRUM_LANES; l++) HX_ASSERT(dc->lanes[l].midi_note != 120, "rig: 120 is a lane's note");
+    }
+    dc->lanes[1].midi_note = stray_in;
     dc->lanes[2].pfx_params.velocity_offset = -20;           /* lane 2's own effect */
     dc->lanes[0].pfx_params.velocity_offset = 15;            /* lane 0's: must NOT reach the module */
     hx_render(h, 2);
@@ -57,7 +63,7 @@ int main(void) {
         }
         {
             int j, l1 = 0;
-            for (j = 0; j < n; j++) if ((in[j].status & 0xF0) == 0x90 && in[j].d1 == 127) l1++;
+            for (j = 0; j < n; j++) if ((in[j].status & 0xF0) == 0x90 && in[j].d1 == stray_in) l1++;
             HX_ASSERT(l1 == 2, "a re-tuned lane went in as its old note, not its current one");
         }
         HX_ASSERT(ons == 6 && lane0 == 4, "not every lane's hits, twice, went in as the lane's note");
