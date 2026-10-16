@@ -286,7 +286,12 @@ def draw_card(card, t, video_title=""):
         k = i / 239
         c = tuple(int(ACCENT[j] * (1 - k) + ACCENT_2[j] * k) for j in range(3))
         d.line([(W / 2 - 120 + i, 372), (W / 2 - 120 + i, 377)], fill=col(c))
-    d.text((W // 2, 500), card["title"], font=F_CARD, fill=col(INK), anchor="mm")
+    # A long title steps the size down until it fits with a margin either side.
+    f, size = F_CARD, 104
+    while d.textlength(card["title"], font=f) > W - 240 and size > 48:
+        size -= 6
+        f = font(F_DISPLAY, size, 800)
+    d.text((W // 2, 500), card["title"], font=f, fill=col(INK), anchor="mm")
     if card.get("sub"):
         d.text((W // 2, 620), card["sub"].upper(), font=F_CARD_SUB, fill=col(MUTED), anchor="mm")
     return img
