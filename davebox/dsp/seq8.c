@@ -634,6 +634,11 @@ typedef struct {
      * pfx_send with arp_emitting=1 (no further chain processing). */
     arp_engine_t arp;
     uint8_t      arp_emitting;
+    /* Pitches sent out while the arp was OFF that are still sounding (one bit
+     * per pitch). Their note-off may arrive after the arp came on, and the arp
+     * would swallow it — the note then hung until a reset or Stop (device,
+     * 2026-10-16). pfx_send lets such an off through. */
+    uint8_t      arp_bypass_on[16];
     uint8_t      seq_arp_sync;   /* 0=free, 1=sync to global rate boundary */
     /* Runtime */
     uint64_t    sample_counter;
@@ -2715,17 +2720,28 @@ static void pfx_send(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
      * upstream stages (NOTE FX → HARMZ → MIDI DLY immediate emit and queued
      * delay echoes) gets captured into the arp's held buffer instead of out.
      * arp_emitting=1 marks arp's own raw output so it bypasses the gate. */
-    if (fx->arp.style != 0 && !fx->arp_emitting) {
+    if (!fx->arp_emitting && d1 < 128) {
         uint8_t st = status & 0xF0;
-        if (st == 0x90 && d2 > 0) {
-            arp_add_note(&fx->arp, d1, d2);
-            return;
+        int is_on  = (st == 0x90 && d2 > 0);
+        int is_off = (st == 0x80 || (st == 0x90 && d2 == 0));
+        uint8_t bit = (uint8_t)(1u << (d1 & 7));
+        if (fx->arp.style != 0) {
+            if (is_on) {
+                arp_add_note(&fx->arp, d1, d2);
+                return;
+            }
+            if (is_off) {
+                arp_remove_note(&fx->arp, d1);
+                /* A note that went out before the arp came on: its off must
+                 * reach the instrument, or it hangs. */
+                if (!(fx->arp_bypass_on[d1 >> 3] & bit)) return;
+                fx->arp_bypass_on[d1 >> 3] &= (uint8_t)~bit;
+            }
+            /* CC and other messages pass through. */
+        } else {
+            if (is_on)  fx->arp_bypass_on[d1 >> 3] |= bit;
+            if (is_off) fx->arp_bypass_on[d1 >> 3] &= (uint8_t)~bit;
         }
-        if (st == 0x80 || (st == 0x90 && d2 == 0)) {
-            arp_remove_note(&fx->arp, d1);
-            return;
-        }
-        /* CC and other messages pass through. */
     }
     /* Global MIDI Looper hook (post-arp emit). Capture into ring during
      * CAPTURING; suppress emission during LOOPING. Looper-emitted playback

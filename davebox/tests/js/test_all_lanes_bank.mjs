@@ -122,6 +122,27 @@ step('⭐ no confirm: the card shows the knobs, not a "Proceed?" question', () =
     ticks(1);
 });
 
+step('⭐ an unset Res moves ONE notch from the lanes\' resolution, the way it was turned', () => {
+    /* Device, 2026-10-16: the cell reads "--" at rest, and a turn started from
+     * -1 — the first notch either way clamped to index 0, so every lane jumped
+     * to 1/32 and turning DOWN from 1/16 doubled the speed. */
+    const firstWrite = (dir) => {
+        S.bankParams[0][7][0] = -1; S.drumLaneTPS[0] = 24;        /* lanes at 1/16 (index 1) */
+        sets.length = 0;
+        globalThis.onMidiMessageInternal(new Uint8Array([0x90, 0, 127]));
+        let w;
+        for (let i = 0; i < 40 && !w; i++) {
+            cc(71, dir > 0 ? 1 : 127); ticks(1);
+            w = sets.find(x => /_all_lanes_clip_resolution=/.test(x));
+        }
+        globalThis.onMidiMessageInternal(new Uint8Array([0x90, 0, 0])); ticks(1);
+        return w ? w.split('=')[1] : null;
+    };
+    const up = firstWrite(1), down = firstWrite(-1);
+    assert(up === '2', 'clockwise from 1/16 wrote ' + up + ', want 2 (1/8)');
+    assert(down === '0', 'anticlockwise from 1/16 wrote ' + down + ', want 0 (1/32)');
+});
+
 step('⭐ on arrival, EVERY ALL LANES knob reaches the DSP — no OK first', () => {
     const dead = [];
     for (const [k, d, re] of KNOBS) {

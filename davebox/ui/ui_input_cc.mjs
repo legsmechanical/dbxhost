@@ -4160,7 +4160,15 @@ export const DRUM_NOTEFX_SITES = {
  * this is a move, not a retune. */
 export const DRUM_CONFIG_SITES = {          /* ALL LANES bank (drum, bank 7) */
     0: { cls: 'pick', min: 0, max: 5,        /* Res — all-lane resolution */
-         get: (t) => S.bankParams[t][7][0] < 0 ? -1 : S.bankParams[t][7][0],
+         /* Unset (the cell reads "--" at rest), a turn starts from the selected
+          * lane's resolution. It used to start from -1, so the first notch
+          * either way clamped to index 0 — every lane jumped to 1/32, and
+          * turning DOWN from 1/16 doubled the speed (device, 2026-10-16). */
+         get: (t) => {
+             if (S.bankParams[t][7][0] >= 0) return S.bankParams[t][7][0];
+             const i = TPS_VALUES.indexOf(S.drumLaneTPS[t] || 24);
+             return i >= 0 ? i : 1;
+         },
          set: (t, lane, v) => {
              S.bankParams[t][7][0] = v;
              S.drumLaneTPS[t] = TPS_VALUES[v];
