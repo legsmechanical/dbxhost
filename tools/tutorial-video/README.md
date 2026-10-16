@@ -42,7 +42,7 @@ python3 review_gestures.py takes/01_getting_around sheet.png 0.6           # a f
   with Shift + its picker pad (68 + its index), then checks the session's
   library carries its name — it will not record on another project.
 - **The step page's knobs:** a 16-detent fast twist moves Note one scale degree
-  and Length about two steps.
+  and Length about four steps.
 
 ## The demo project
 
