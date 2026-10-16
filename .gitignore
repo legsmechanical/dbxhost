@@ -40,3 +40,4 @@ standalone/bug-report.local.json
 # tutorial videos: takes and renders are rebuilt, never committed
 /tools/tutorial-video/takes/
 /tools/tutorial-video/out/
+/tools/tutorial-video/fonts/

@@ -152,7 +152,7 @@ def record_take(storyboard_path, take_dir, host="move.local", pre=None):
             rec.stop()
     with open(os.path.join(take_dir, "take.json"), "w") as f:
         json.dump({"storyboard": os.path.basename(storyboard_path), "title": getattr(sb, "TITLE", ""),
-                   "bpm": getattr(sb, "BPM", 120)}, f)
+                   "number": getattr(sb, "NUMBER", ""), "bpm": getattr(sb, "BPM", 120)}, f)
     return take_dir
 
 

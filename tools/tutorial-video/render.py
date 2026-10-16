@@ -27,22 +27,54 @@ sys.path.insert(0, HERE)
 import device_draw as dd      # noqa: E402
 
 W, H, FPS = 1920, 1080, 30
-BG = (11, 11, 13)
+# The manual's dark theme (davebox/tools/manual_template.html): ground, surface,
+# ink, muted, rule, the pink and cyan accents, the bezel.
+GROUND, SURFACE, INK, INK_SOFT, MUTED, RULE = (0x11, 0x0e, 0x1b), (0x18, 0x14, 0x26), (0xeb, 0xe7, 0xf5), (0xcd, 0xc6, 0xe0), (0x9a, 0x92, 0xb3), (0x2a, 0x24, 0x40)
+ACCENT, ACCENT_2 = (0xff, 0x5f, 0xa8), (0x4f, 0xd3, 0xe3)
+BEZEL, BEZEL_EDGE = (0x07, 0x05, 0x0d), (0x33, 0x2b, 0x4a)
+BG = GROUND
 OLED_SCALE = 7
 OLED_XY = (40, 34)
 DEV_SCALE = 1.45
 FADE_S = 0.5
-FONT = "/System/Library/Fonts/HelveticaNeue.ttc"
+# The manual sets Chivo (display), Source Sans 3 (body) and JetBrains Mono
+# (labels). Source Sans Pro is Source Sans 3's predecessor; Chivo and JetBrains
+# Mono are used when installed, otherwise Source Sans Pro Bold and Menlo.
+FONT_DIRS = [os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts"),   # the manual's, fetched (gitignored)
+             "/Library/Fonts", os.path.expanduser("~/Library/Fonts"), "/System/Library/Fonts"]
 
 
-def font(size, bold=False):
+def _find(*names):
+    for d in FONT_DIRS:
+        for n in names:
+            p = os.path.join(d, n)
+            if os.path.exists(p):
+                return p
+    return None
+
+
+F_DISPLAY = _find("Chivo[wght].ttf", "Chivo-ExtraBold.ttf", "SourceSansPro-Bold.ttf", "SourceSansPro-Bold.otf")
+F_BODY_P = _find("SourceSans3[wght].ttf", "SourceSans3-Regular.ttf", "SourceSansPro-Regular.ttf", "SourceSansPro-Regular.otf")
+F_SEMI_P = _find("SourceSans3-Semibold.ttf", "SourceSansPro-Semibold.otf", "SourceSansPro-Bold.ttf")
+F_MONO_P = _find("JetBrainsMono[wght].ttf", "JetBrainsMono-Bold.ttf", "Menlo.ttc")
+
+
+def font(path, size, weight=None):
     try:
-        return ImageFont.truetype(FONT, size, index=1 if bold else 0)
+        f = ImageFont.truetype(path, size)
+        if weight and "[wght]" in (path or ""):
+            f.set_variation_by_axes([weight])        # a variable font: the manual's weight
+        return f
     except Exception:
         return ImageFont.load_default()
 
 
-F_TITLE, F_BODY, F_CARD, F_CARD_SUB, F_MARK = font(46, True), font(38), font(84, True), font(44), font(40, True)
+F_TITLE = font(F_DISPLAY, 50, 800)
+F_BODY = font(F_BODY_P, 40, 400)
+F_EYEBROW = font(F_MONO_P, 22, 600)
+F_CARD = font(F_DISPLAY, 104, 800)
+F_CARD_SUB = font(F_MONO_P, 30, 600)
+F_MARK = font(F_DISPLAY, 44, 800)
 
 
 def wrap(draw, text, fnt, width):
@@ -81,6 +113,7 @@ class Take:
         self.audio_t0 = min(t - (pos - pos0) / rate for t, pos, n in blocks) if blocks else self.audio["t0"]
         meta_p = os.path.join(d, "take.json")
         self.meta = json.load(open(meta_p)) if os.path.exists(meta_p) else {}
+        self.eyebrow = ("TUTORIAL %s · %s" % (self.meta.get("number", ""), self.meta.get("title", ""))).upper().strip(" ·")
         self.screen_t = [s[0] for s in self.screens]
         self.surface_t = [s[0] for s in self.surfaces]
         self._oled_cache = {}
@@ -160,16 +193,25 @@ def state_at(events, t):
     return cap, card
 
 
-def draw_card(card, t):
-    img = Image.new("RGB", (W, H), BG)
+def draw_card(card, t, video_title=""):
+    img = Image.new("RGB", (W, H), GROUND)
     d = ImageDraw.Draw(img)
-    a = min(1.0, (t - card["t"]) / 0.3, (card["t"] + card["secs"] - t) / 0.3)
-    a = max(0.0, a)
-    col = lambda c: tuple(int(v * a + BG[i] * (1 - a)) for i, v in enumerate(c))
-    d.text((W // 2, 360), "dAVEBOx", font=F_MARK, fill=col((150, 150, 160)), anchor="mm")
-    d.text((W // 2, 500), card["title"], font=F_CARD, fill=col((240, 240, 240)), anchor="mm")
+    a = max(0.0, min(1.0, (t - card["t"]) / 0.3, (card["t"] + card["secs"] - t) / 0.3))
+    col = lambda c: tuple(int(v * a + GROUND[i] * (1 - a)) for i, v in enumerate(c))
+    # the wordmark, as the manual's: dAVEBOx SA, SA in the accent
+    mark, sa = "dAVEBOx ", "SA"
+    mw = d.textlength(mark, font=F_MARK) + d.textlength(sa, font=F_MARK)
+    x0 = (W - mw) / 2
+    d.text((x0, 330), mark, font=F_MARK, fill=col(INK), anchor="ls")
+    d.text((x0 + d.textlength(mark, font=F_MARK), 330), sa, font=F_MARK, fill=col(ACCENT), anchor="ls")
+    # an accent rule, pink into cyan
+    for i in range(240):
+        k = i / 239
+        c = tuple(int(ACCENT[j] * (1 - k) + ACCENT_2[j] * k) for j in range(3))
+        d.line([(W / 2 - 120 + i, 372), (W / 2 - 120 + i, 377)], fill=col(c))
+    d.text((W // 2, 500), card["title"], font=F_CARD, fill=col(INK), anchor="mm")
     if card.get("sub"):
-        d.text((W // 2, 610), card["sub"], font=F_CARD_SUB, fill=col((170, 170, 180)), anchor="mm")
+        d.text((W // 2, 620), card["sub"].upper(), font=F_CARD_SUB, fill=col(MUTED), anchor="mm")
     return img
 
 
@@ -192,20 +234,24 @@ def compose(take, t, cache):
     # the OLED, large
     ox, oy = OLED_XY
     ow, oh = 128 * OLED_SCALE, 64 * OLED_SCALE
-    d.rectangle([ox - 8, oy - 8, ox + ow + 7, oy + oh + 7], fill=(0, 0, 0), outline=(50, 50, 55), width=2)
+    d.rounded_rectangle([ox - 10, oy - 10, ox + ow + 9, oy + oh + 9], radius=10, fill=BEZEL, outline=BEZEL_EDGE, width=2)
     if oled is not None:
         big = oled.resize((ow, oh), Image.NEAREST).convert("RGB")
         img.paste(big, (ox, oy))
     # the caption panel
-    px, py, pw = ox + ow + 50, oy, W - (ox + ow + 50) - 40
+    px, py = ox + ow + 40, oy - 10
+    pw, ph = W - px - 40, oh + 20
+    d.rectangle([px, py + 24, px + 5, py + ph - 24], fill=ACCENT)
+    tx, tw = px + 44, pw - 80
+    d.text((tx, py + 36), take.eyebrow, font=F_EYEBROW, fill=MUTED)
     if cap:
-        y = py + 10
+        y = py + 86
         if cap.get("title"):
-            d.text((px, y), cap["title"], font=F_TITLE, fill=(255, 205, 70))
-            y += 70
-        for line in wrap(d, cap["text"], F_BODY, pw):
-            d.text((px, y), line, font=F_BODY, fill=(235, 235, 235))
-            y += 50
+            d.text((tx, y), cap["title"], font=F_TITLE, fill=ACCENT)
+            y += 74
+        for line in wrap(d, cap["text"], F_BODY, tw):
+            d.text((tx, y), line, font=F_BODY, fill=INK)
+            y += 52
     # the device
     dev = dd.draw(surf, oled, t * 1000.0, scale=DEV_SCALE, bpm=take.meta.get("bpm", 120))
     for k, a in hl:

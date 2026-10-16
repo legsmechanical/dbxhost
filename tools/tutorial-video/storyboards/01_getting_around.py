@@ -8,6 +8,7 @@ Session View.
 from director import card, caption, tap, hold, press, release, turn, wait
 
 TITLE = "Getting around"
+NUMBER = 1
 BPM = 110
 
 SHIFT, PLAY, BACK, NOTE_SESSION, JOG, JOG_TURN = "c49", "c85", "c51", "c50", "c3", "c14"
@@ -31,7 +32,7 @@ def PRE(bus):
 
 
 STEPS = [
-    card("Getting around", "dAVEBOx · 1", 3.0),
+    card("Getting around", "Tutorial 1", 3.0),
 
     caption("dAVEBOx takes over Move's pads, knobs and screen. This is Track View, "
             "where you build one clip.", title="Track View"),
@@ -100,5 +101,5 @@ STEPS = [
     wait(1.0), press(SHIFT), wait(0.4), tap(STEP(2), 150), wait(0.3), release(SHIFT), wait(1.8),
     tap(NOTE_SESSION), wait(2.5), tap(NOTE_SESSION), wait(2.0),
 
-    card("Next: melodic clips", "dAVEBOx · 2", 3.0),
+    card("Next: melodic clips", "Tutorial 2", 3.0),
 ]
