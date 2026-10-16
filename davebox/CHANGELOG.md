@@ -72,8 +72,7 @@ the section into a versioned heading at release time.
 - **Bake runs a Post MIDI effect at once.** Baking a clip whose track has a
   Post MIDI effect no longer plays the clip: a copy of the effect works through
   it in a moment, playing or stopped, and the clip holds what you would hear.
-  Hold **Shift** on the confirm to print it live as before (drum clips still
-  print live).
+  Drum clips too. Hold **Shift** on the confirm to print it live as before.
 - **Live Merge on a track with a Post MIDI effect** records what you hear —
   the effect included — and then bypasses the effect, as Bake does, so the
   merged clip doesn't play through it twice.

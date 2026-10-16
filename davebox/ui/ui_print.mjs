@@ -5,7 +5,7 @@
  * baked OFFLINE (2026-10-15): the host runs a private copy of the module on
  * the clip's notes against a virtual transport, and the engine puts the
  * track's own effects on what it made (print_offline; seq8_bake_post.c). With
- * Shift held on the confirm, or on a drum track, it is PRINTED live instead:
+ * Shift held on the confirm it is PRINTED live instead:
  * the engine plays the clip and records what the track puts out for the
  * chosen number of passes (print_arm … print_finish). Either way the module
  * is then bypassed, so the clip is not processed twice — kept, not removed,
@@ -47,12 +47,12 @@ export function midiFxLeftOut() {
 
 /* Start one. OFFLINE by default (print_offline): the host runs a copy of the
  * module on the clip's notes, at once, while the transport does whatever it
- * does. Shift held on the confirm, or a drum track, PRINTS it live instead
+ * does. Shift held on the confirm PRINTS it live instead
  * (print_arm), which needs the transport stopped, as Live Merge does. False
  * (and a notice) when it cannot start. */
 export function printStart(t, c, loops) {
     const slot = slotIndex(t);
-    if (!S.shiftHeld && S.trackPadMode[t] !== PAD_MODE_DRUM) {
+    if (!S.shiftHeld) {
         host_module_set_param('print_offline', t + ' ' + c + ' ' + loops + ' 0');
         printing = { t, c, loops, slot, polled: 0, offline: true };
         showActionPopupFor(60000, 'BAKING ' + loops + 'x', 'MIDI FX', 'Back cancels');

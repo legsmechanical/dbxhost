@@ -127,13 +127,13 @@ step('⭐ an offline bake that does not run says so, and bypasses nothing', () =
     assert(ENG[T + '|midi_fx1:bypassed'] === '0', 'a failed bake bypassed the module');
 });
 
-step('a DRUM track still PRINTS live (its offline bake is not built yet)', () => {
+step('⭐ a DRUM clip bakes offline too', () => {
     S.trackPadMode[T] = C.PAD_MODE_DRUM;
     sets.length = 0;
-    const { printStart } = PRINT;
-    printStart(T, S.trackActiveClip[T], 2);
-    assert(dsp('print_arm').length === 1 && dsp('print_offline').length === 0, 'a drum track went offline: ' + JSON.stringify(sets));
-    cc(HC.MoveBack, 127); cc(HC.MoveBack, 0);
+    PRINT.printStart(T, S.trackActiveClip[T], 2);
+    assert(dsp('print_offline').length === 1 && dsp('print_arm').length === 0, 'a drum clip did not go offline: ' + JSON.stringify(sets));
+    PRINT_STATE = '3'; ticks(6); PRINT_STATE = '0';
+    ENG[T + '|midi_fx1:bypassed'] = '0';
     S.trackPadMode[T] = 0;
 });
 

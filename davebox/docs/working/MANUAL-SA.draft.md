@@ -2082,8 +2082,9 @@ same, with a clean effects chain to build on.
   - **Shift** held on the confirm **prints** it live instead: with the transport
     stopped, the clip plays alone after a one-bar count-in (**PRINTING**) and
     what you hear becomes the clip. Use it if a module bakes differently from
-    how it plays (**BAKE FAILED** suggests it too). A **drum** clip with a
-    module always prints live, for now.
+    how it plays (**BAKE FAILED** suggests it too).
+  - On a **drum** clip each of the module's hits lands on the lane whose note it
+    is, with that lane's effects; a hit no lane plays is dropped.
 - **Scene bakes and Export to Live** stay instant and leave a Post MIDI effect
   module out; they tell you which tracks.
 
