@@ -198,6 +198,27 @@ step('⭐ BACK from there closes out to the Session overview', () => {
     S.sessionView = false;
 });
 
+step('⭐ the effect browser opened from the Session map\'s SEND A names the BUS in its crumb, not "T0"', () => {
+    /* The head crumb was 'T' + (track + 1), and a session bus has no track (-1). */
+    snd.soundExit(); ticks(2);
+    S.sessionView = true; ticks(2);
+    cc(3, 127);
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 78, 100]));   /* SEND A: col 2, third row */
+    globalThis.onMidiMessageInternal(new Uint8Array([0x80, 78, 0]));
+    cc(3, 0); ticks(4);
+    const bus = snd.soundBusForTest();
+    if (!bus || bus.id !== 'sendA') throw new Error('rig: SEND A did not open: ' + JSON.stringify(bus));
+    click(); ticks(4);                                  /* FX 1, empty: the browser */
+    if (view() === VIEW_BLOCKS) throw new Error('rig: the click did not open the browser');
+    if (snd.soundCrumbHead() !== 'Send A') throw new Error('crumb head "' + snd.soundCrumbHead() + '"');
+    back(); ticks(4); back(); ticks(4);
+    snd.soundExit(); ticks(2);
+    S.sessionView = false;
+    snd.soundEnter(2, 2); ticks(4);                     /* control: a track still reads as its track */
+    if (snd.soundCrumbHead() !== 'T3') throw new Error('track head "' + snd.soundCrumbHead() + '"');
+    snd.soundExit(); ticks(2);
+});
+
 process.exit(failed);
 }
 main();

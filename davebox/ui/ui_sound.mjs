@@ -1103,6 +1103,14 @@ export function soundBusLevelDirtyForTest(v) {
 }
 /* WHICH bus screen is up, and which door it was opened by — the pair a Back
  * test has to distinguish (see leaveBus). null = not on a bus. */
+/* The pinned head of a chain screen's breadcrumb: the track, or — on a session
+ * effect bus, where there is no track (S.track is -1) — the bus. It read "T0"
+ * there. */
+const BUS_CRUMB = { master: 'Master', sendA: 'Send A', sendB: 'Send B' };
+export function soundCrumbHead() {
+    if (S.bus && S.bus.kind === 'global') return BUS_CRUMB[S.bus.id] || S.bus.title;
+    return 'T' + (S.track + 1);
+}
 export function soundBusForTest() {
     return S.bus ? { id: S.bus.id, kind: S.bus.kind, door: S.busDoor ? S.busDoor.kind : null } : null;
 }
@@ -5662,7 +5670,7 @@ function renderInChain(rows, sel, emptyMsg, opts) {
     /* ⭑ `noCrumbs` buys that band back for a screen that would rather spend the
      * 11px on its own list -- opt-in, so every other chain screen keeps its
      * pinned head. */
-    if (!(opts && opts.noCrumbs)) drawKitCrumbs(['T' + (S.track + 1), ...soundViewPath()]);
+    if (!(opts && opts.noCrumbs)) drawKitCrumbs([soundCrumbHead(), ...soundViewPath()]);
     /* ⭑ HINTS GO ON MV_FOOTER_Y, THE BOTTOM ROW, like every other hint pill in
      * the app (Josh, 2026-09-10: "the pill should sit on the bottom row where
      * they always do"). They were briefly drawn inside the box foot, which rose
