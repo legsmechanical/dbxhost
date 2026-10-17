@@ -62,5 +62,5 @@ STEPS = [
     caption("Tap an empty pad to start a new project. Back closes the picker.", title="The picker"),
     wait(2.0), tap(DEMO, 150), wait(1.0), point(BACK, secs=0.8), tap(BACK), wait(2.0),
 
-    card("That's the tour", "dAVEBOx SA tutorials", 3.5),
+    card("Next: snapshots and buses", "Tutorial 9.1", 3.5),
 ]
