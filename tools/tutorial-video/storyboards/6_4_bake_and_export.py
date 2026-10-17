@@ -53,5 +53,5 @@ STEPS = [
             "in dbx-host/davebox-exports.", title="Export"),
     wait(6.0), tap(BACK), wait(1.0), hold(BACK, 800), wait(1.5),
 
-    card("That's the tour", "dAVEBOx SA tutorials", 3.5),
+    card("Next: pad layouts", "Tutorial 7.1", 3.0),
 ]
