@@ -22,7 +22,7 @@ import { drumPadToLane, drumPadToVelZone, drumVelZoneToVelocity, _clipIsEmpty,
     ARP_VEL_CANON, arpVelLevel, VEL_THRU } from './ui_pure.mjs';
 import { showActionPopup, writeSidecar, saveState } from './ui_persistence.mjs';
 import { computePadNoteMap, syncDrumLaneSteps, setActiveDrumLane,
-    setDrumPerformMode } from './ui_drummodel.mjs';
+    setDrumPerformMode, _padDispatchMutedNow } from './ui_drummodel.mjs';
 import { effectiveClip, invalidateLEDCache, forceRedraw, sendPerfMods,
     PERF_MOD_PAD_MAP } from './ui_leds.mjs';
 import { openGlobalMenuAt } from './ui_menu.mjs';
@@ -427,6 +427,9 @@ function _onPadPressTrackView(status, d1, d2) {
                     S.drumRepeatHeldPad[t]    = padIdx;
                     S.drumRepeatHeldPadVel[t] = vel;
                     S.drumRepeatLatched[t]    = S.loopHeld;
+                    /* A Loop press that latched is not the lone Loop tap that
+                     * unlatches: a quick Loop + rate pad undid its own latch. */
+                    if (S.loopHeld) S.loopTapUnlatchTrack = -1;
                     /* Phase 1 / Bundle 2C-Rpt1: on patched Schwung the
                      * audio-thread drum_pad_event has already called
                      * drum_repeat_start_internal for this press. Firing
@@ -437,7 +440,11 @@ function _onPadPressTrackView(status, d1, d2) {
                      * push (elsewhere in this file) is NOT gated — DSP
                      * doesn't classify release events, so JS owns that
                      * path on both stock and patched. */
-                    if (!S.dspInboundEnabled)
+                    /* ⚠ Unless the engine never saw the press: a held Loop
+                     * mutes pad dispatch (_padDispatchMutedNow), so Loop +
+                     * rate pad — THE latch gesture — reached only this
+                     * handler, which marked the latch and started nothing. */
+                    if (!S.dspInboundEnabled || _padDispatchMutedNow())
                         host_module_set_param('t' + t + '_drum_repeat_start', lane + ' ' + rateIdx + ' ' + vel);
                     /* Latched flag — JS is authoritative DSP-side after
                      * the 2C-Rpt2 fix removed the defensive clear in
@@ -529,14 +536,16 @@ function _onPadPressTrackView(status, d1, d2) {
                     refreshDrumLaneBankParams(t, lane);
                     if (S.drumRepeat2LatchedLanes[t].has(lane)) {
                         S.drumRepeat2LatchedLanes[t].delete(lane);
-                        if (!S.dspInboundEnabled)
+                        /* As for Rpt1: Loop + lane pad never reaches the engine. */
+                        if (!S.dspInboundEnabled || _padDispatchMutedNow())
                             host_module_set_param('t' + t + '_drum_repeat2_lane_off', String(lane));
                         if (S.loopHeld) S.rpt2LoopPadUsed = true;
                     } else {
                         S.drumRepeat2HeldLanes[t].add(lane);
-                        if (S.loopHeld) { S.drumRepeat2LatchedLanes[t].add(lane); S.rpt2LoopPadUsed = true; }
+                        if (S.loopHeld) { S.drumRepeat2LatchedLanes[t].add(lane); S.rpt2LoopPadUsed = true;
+                                          S.loopTapUnlatchTrack = -1; }   /* as for Rpt1 */
                         padPitch[padIdx] = -1;
-                        if (!S.dspInboundEnabled)
+                        if (!S.dspInboundEnabled || _padDispatchMutedNow())
                             host_module_set_param('t' + t + '_drum_repeat2_lane_on', lane + ' ' + d2);
                         /* Phase 1 / Bundle 2C-Rpt2: Loop-held latch via
                          * the atomic latch_held set_param (handler ORs

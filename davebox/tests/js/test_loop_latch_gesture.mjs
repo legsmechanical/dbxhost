@@ -141,6 +141,42 @@ step('a lone tap on a drum track with a latched repeat unlatches it, and does no
     loopTap();
 });
 
+step('⭐ Loop + rate pad (Repeat Play) STARTS the repeat: the engine never sees a pad while Loop is held', () => {
+    melodic(64);
+    S.trackPadMode[T] = 1; S.drumStepPage[T] = 0; S.activeDrumLane[T] = 6;
+    S.drumLaneLength[T] = 64; S.drumLaneLoopStart[T] = 0;
+    S.drumPerformMode[T] = 1; S.dspInboundEnabled = true;
+    const RATE16 = 68 + 5;                              /* pad r1c6 */
+    cc(LOOP, 127);
+    assert(_padDispatchMutedNow(), 'premise: a held Loop mutes pad dispatch to the engine');
+    note(RATE16, 100); note(RATE16, 0); cc(LOOP, 0);
+    assert(S.drumRepeatLatched[T], 'latched');
+    assert(writes().some(w => w === 't0_drum_repeat_start=6 1 100'), 'the UI started it: ' + JSON.stringify(writes()));
+    assert(writes().some(w => w === 't0_drum_repeat_latched=1'), 'and latched it: ' + JSON.stringify(writes()));
+    assert(!writes().some(w => /drum_repeat_stop/.test(w)), 'nothing stopped it: ' + JSON.stringify(writes()));
+    sets.length = 0;
+    note(RATE16, 100); note(RATE16, 0);                 /* no Loop: the engine owns the start */
+    note(RATE16, 100); note(RATE16, 0);
+    assert(!writes().some(w => /drum_repeat_start/.test(w)), 'unmuted, the UI does not double it: ' + JSON.stringify(writes()));
+    S.drumPerformMode[T] = 0; S.dspInboundEnabled = false;
+});
+
+step('⭐ Loop + lane pad (Repeat Set) turns the lane ON, and again turns it off', () => {
+    melodic(64);
+    S.trackPadMode[T] = 1; S.drumStepPage[T] = 0; S.activeDrumLane[T] = 0;
+    S.drumLaneLength[T] = 64; S.drumLaneLoopStart[T] = 0;
+    S.drumPerformMode[T] = 2; S.dspInboundEnabled = true; S.drumRepeat2HeldLanes[T].clear();
+    const LANE7 = 68 + 8 + 2;                           /* pad r2c3, lane 6 */
+    cc(LOOP, 127); note(LANE7, 100); note(LANE7, 0); cc(LOOP, 0);
+    assert(S.drumRepeat2LatchedLanes[T].has(6), 'latched');
+    assert(writes().some(w => w === 't0_drum_repeat2_lane_on=6 100'), 'the UI turned it on: ' + JSON.stringify(writes()));
+    sets.length = 0;
+    cc(LOOP, 127); note(LANE7, 100); note(LANE7, 0); cc(LOOP, 0);
+    assert(!S.drumRepeat2LatchedLanes[T].has(6), 'unlatched');
+    assert(writes().some(w => w === 't0_drum_repeat2_lane_off=6'), 'and off: ' + JSON.stringify(writes()));
+    S.drumPerformMode[T] = 0; S.dspInboundEnabled = false; S.drumRepeat2HeldLanes[T].clear();
+});
+
 step('a tap that clears the TARP latch buffer does not latch', () => {
     melodic(64);
     S.bankParams[T][5][7] = 1; S.tarpHeldNotes[T].add(60);
