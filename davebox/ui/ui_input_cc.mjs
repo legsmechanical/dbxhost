@@ -4704,10 +4704,13 @@ function _sessionKnobParam(knobIdx, d2) {
         if (v > mode.max) v = mode.max;
     }
     if (mode.snap !== undefined) {
+        /* Snap only on the way IN: from outside the zone to inside it. It used
+         * to snap any move that ended inside the zone, so a slow turn LEAVING
+         * centre (0.5 % a detent, the zone 2 %) went 1L, C, 1L, C — pan could
+         * not be moved off centre one detent at a time. */
         const prev = lvl, next = v;
-        if ((prev < mode.snap && next >= mode.snap - mode.snapZone && next <= mode.snap + mode.snapZone) ||
-            (prev > mode.snap && next >= mode.snap - mode.snapZone && next <= mode.snap + mode.snapZone))
-            v = mode.snap;
+        const inZone = (x) => x >= mode.snap - mode.snapZone && x <= mode.snap + mode.snapZone;
+        if (!inZone(prev) && inZone(next)) v = mode.snap;
     }
     if (v === lvl) return;
     S.sessVolLevel[knobIdx] = v;

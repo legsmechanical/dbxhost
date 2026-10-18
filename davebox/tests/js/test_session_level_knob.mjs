@@ -283,6 +283,24 @@ step('⭐ a SEND on the page law: a cold detent is exactly 0.5 %, a 10-detent ba
         throw new Error('Shift moved ' + moved.toFixed(5) + ' — fine is a tenth of the step (0.0005)');
 });
 
+step('⭐ PAN leaves centre one detent at a time, and still snaps to centre on the way in', () => {
+    S.trackChannel[0] = 2;
+    ticks(64);
+    S.sessKnobMode = 1;                          /* PAN */
+    S.knobAccelLast[0] = 0; S.knobAccelAcc[0] = 0;
+    S.sessVolLevel[0] = 0.5;
+    for (let i = 0; i < 6; i++) globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 71, 127]));
+    if (!(S.sessVolLevel[0] < 0.475))
+        throw new Error('six single left detents from centre left pan at ' + S.sessVolLevel[0].toFixed(3) +
+                        ' — the snap zone is catching moves on the way OUT');
+    S.sessVolLevel[0] = 0.53;
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 71, 127]));   /* 0.525, outside */
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 71, 127]));   /* into the zone */
+    if (S.sessVolLevel[0] !== 0.5)
+        throw new Error('approaching centre from outside the zone gave ' + S.sessVolLevel[0] + ', not a snap to 0.5');
+    S.sessKnobMode = 0;
+});
+
 /* Josh, 2026-08-26, having felt the universal rate on all four banks: "volume
  * can be reverted. the rest feel great." A fader wants travel where a pan wants
  * reach — so volume keeps its own, slower sweep, and that override is a DECISION
