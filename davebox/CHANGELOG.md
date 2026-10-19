@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+
+## [0.0.21] — 2026-10-18 (test build, not in the Schwung catalog)
 ### Added
 - **Module shortcuts on the bank map.** While you hold the jog, the right-hand
   pads open the track's MIDI FX, instrument and FX 1–4 editors. The screen
@@ -105,6 +107,15 @@ the section into a versioned heading at release time.
   of a second before it counts as let go.
 
 ### Fixed
+- **Latching a drum repeat with Loop + a rate pad plays it.** Holding Loop and
+  then tapping a rate pad (Repeat Play) or a lane pad (Repeat Set) marked the
+  latch and lit the pad cyan but played nothing; a quick press also undid its own
+  latch. Both now latch a repeat that keeps playing.
+- **Session pan moves off centre one detent at a time.** A slow turn of a pan
+  knob kept snapping back to C; centre is now sticky only on the way in.
+- **The header names the instrument straight away**, on the first screen and
+  right after a project loads.
+- **A send bus's title names the bus** (SEND A > …), not "T0".
 - **SEQ ARP no longer leaves a note hanging.** Turning the arp on while a note
   was sounding kept that note playing until the effects were reset or the
   transport stopped.
