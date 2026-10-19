@@ -211,12 +211,17 @@ int shadow_load_config_from_dir(const char *dir) {
         } else {
             cursor = name_pos + 6;
         }
+        /* 0.0 - 4.0, the same bound as the set path and every other reader.
+         * This was 0.0 - 1.0, so a level saved above unity was dropped here and
+         * the slot came back at its 1.0 default — and the next save wrote 1.0
+         * over it. This is the only loader a session launched into a project
+         * runs; the UI's set-change loader does not run at boot. */
         char *vol_pos = strstr(name_pos, "\"volume\"");
         if (vol_pos) {
             char *vol_colon = strchr(vol_pos, ':');
             if (vol_colon) {
                 float vol = atof(vol_colon + 1);
-                if (vol >= 0.0f && vol <= 1.0f)
+                if (vol >= 0.0f && vol <= 4.0f)
                     host.chain_slots[i].volume = vol;
             }
         }

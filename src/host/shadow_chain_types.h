@@ -35,7 +35,7 @@ typedef struct shadow_chain_slot_t {
     int channel;
     int patch_index;
     int active;
-    float volume;           /* 0.0 to 1.0, user-set level (never modified by mute/solo) */
+    float volume;           /* 0.0 to 4.0, user-set level (never modified by mute/solo) */
     /* Sound-generator level, distinct from `volume` above. `volume` is the
      * slot's OUTPUT BUS fader, applied after the slot's FX — so it scales
      * everything on the channel, including a Move track routed into this slot's
