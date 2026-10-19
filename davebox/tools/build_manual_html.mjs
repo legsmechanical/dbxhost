@@ -342,6 +342,7 @@ function renderQuote(b) {
     if (/^\*\*Like Move:?\*\*/i.test(t)) { kind = 'likemove'; label = 'Like Move'; first.text = t.replace(/^\*\*Like Move:?\*\*:?\s*/i, ''); }
     else if (/^(⚠️?|\*\*⚠)/.test(t)) { kind = 'warn'; label = 'Careful'; first.text = t.replace(/^⚠️?\s*/, ''); }
     else if (/^🚀/.test(t)) { kind = 'tip'; label = 'New here?'; first.text = t.replace(/^🚀\s*(\*\*New here\?\*\*)?\s*/, ''); }
+    else if (/^🎬/.test(t)) { kind = 'video'; label = 'Video'; first.text = t.replace(/^🎬\s*(\*\*Video:?\*\*:?)?\s*/, ''); }
     else if (/^\*\*Tip:?\*\*/i.test(t)) { kind = 'tip'; label = 'Tip'; first.text = t.replace(/^\*\*Tip:?\*\*:?\s*/i, ''); }
     return `<aside class="callout ${kind}"><div class="clabel">${label}</div>${renderBlocks(b.blocks)}</aside>`;
 }

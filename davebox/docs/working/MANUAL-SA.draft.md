@@ -21,6 +21,19 @@ different.
 > minutes from a new project to a looping pattern with effects and scenes. This
 > manual is the full reference.
 
+> 🎬 Seven short videos walk through dAVEBOx on a real Move. Watch the
+> [whole playlist](https://www.youtube.com/playlist?list=PLYG911Ay8pgk), or start with the
+> [four-minute showcase](https://youtu.be/8-Cta7-WApQ). Sections of this manual that a video
+> covers link to the moment it starts.
+>
+> 1. [Getting around](https://youtu.be/3kP6Zwm79_0)
+> 2. [Drums](https://youtu.be/qqZKsu6e244)
+> 3. [Melodic sequencing](https://youtu.be/36-v3uYKR78)
+> 4. [MIDI effects](https://youtu.be/jOnQWmr71JI)
+> 5. [Performance](https://youtu.be/rV0Vhle7INg)
+> 6. [Mixing and automation](https://youtu.be/nrZD8SnbD6Q)
+> 7. [Projects](https://youtu.be/DOw_4zAO6cI)
+
 ## Which manual is this?
 
 This manual covers **dAVEBOx SA** — dAVEBOx running as its own session, on its own
@@ -106,6 +119,8 @@ Everything in dAVEBOx nests like this:
 > dAVEBOx's own). dAVEBOx replaces Move's sequencer, not its instruments.
 
 ## The two views
+
+> 🎬 **Video:** [Tutorial 1.1: Two views](https://youtu.be/3kP6Zwm79_0)
 
 You work in one of two views and switch between them with **Note/Session**:
 
@@ -218,6 +233,8 @@ coloring, copying and deleting them are covered in [Projects](#175-projects).
 
 ## Set tempo, key, and scale
 
+> 🎬 **Video:** [Tutorial 1.4: Tempo and key](https://youtu.be/3kP6Zwm79_0?t=227) (from 3:47)
+
 These live in **Project Settings** (**Shift + Step 2**). Turn the jog to a row,
 click, turn to change the value, and click again to set it:
 
@@ -309,6 +326,8 @@ There are no dedicated track buttons. Change the active track with:
 | **Tap a clip pad** (it also launches or stops that clip), or **Shift + pad** to open the clip in Track View | Session View |
 
 ## 3.6 Parameter banks
+
+> 🎬 **Video:** [Tutorial 1.3: The bank map](https://youtu.be/3kP6Zwm79_0?t=160) (from 2:40)
 
 In Track View, the eight knobs control a **bank** of parameters, and the **bank
 map** — hold the jog — picks which bank. Each track has its own banks,
@@ -470,6 +489,8 @@ a **Shift + Step** shortcut (see the [Quick Reference](#19-quick-reference)).
 
 ## 3.8 Choosing a track's sound
 
+> 🎬 **Video:** [Tutorial 1.5: Instruments](https://youtu.be/3kP6Zwm79_0?t=308) (from 5:08) · [Tutorial 1.6: Adding effects](https://youtu.be/3kP6Zwm79_0?t=374) (from 6:14)
+
 Each track's sound is set in its own menu, **TRACK CONFIG**:
 
 1. Hold the jog, tap the **CONFIG** pad (bottom-left of the bank map) and let go.
@@ -490,6 +511,8 @@ directly: **MIDI FX**, **INSTRUMENT** and **FX 1–4**.
 Everything else in the menu is in [Sound & Track Config](#14-sound--track-config).
 
 ## 3.9 Saving, suspending & exiting
+
+> 🎬 **Video:** [Tutorial 7.1: Projects and Save state](https://youtu.be/DOw_4zAO6cI)
 
 dAVEBOx saves as you go — when you stop the transport, a moment after your last
 edit while stopped, at the end of a recording, and whenever you suspend, quit or
@@ -611,6 +634,8 @@ chapters.
 
 ## 6.1 Playing and placing notes
 
+> 🎬 **Video:** [Tutorial 3.1: Placing notes](https://youtu.be/36-v3uYKR78)
+
 The pads play notes from the current [key and scale](#172-key--scale). **+ / −**
 shifts the pad octave; a new track's pads start one octave up.
 
@@ -661,6 +686,8 @@ CHROMATIC, PIANO or CUSTOM CHORDS:
 <img src="img/pads-melodic.svg" alt="The Scale layout in C major at the default octave: each row starts three scale notes above the row below, the root is filled, ">
 
 ### The Chord layout
+
+> 🎬 **Video:** [Tutorial 3.8: The Chord layout](https://youtu.be/36-v3uYKR78?t=532) (from 8:52)
 
 The **Chord layout** plays a whole chord from one pad, always in the track's key
 and scale. Switching to it shows a card explaining the rows (click the jog or press
@@ -743,6 +770,8 @@ A step holds up to **eight notes**. Build a chord two ways:
 
 ## 6.3 Editing notes
 
+> 🎬 **Video:** [Tutorial 3.2: Editing a step](https://youtu.be/36-v3uYKR78?t=62) (from 1:02)
+
 Holding a step points whatever knobs are on screen at that step:
 
 - On the **STEP** bank (on the bank map, the top pad of the SEQ column, above
@@ -779,6 +808,8 @@ while holding and `JOG BACK` on the step page. Empty steps have no step page.
 
 ### Per-step conditions
 
+> 🎬 **Video:** [Tutorial 3.4: Steps that decide for themselves](https://youtu.be/36-v3uYKR78?t=261) (from 4:21)
+
 Three settings decide *whether and how* a step fires. Each is off by default —
 Iter and Ratch read `--`, Prob reads 100 %:
 
@@ -796,6 +827,8 @@ The conditions belong to the step's notes: removing the step's last note (tap
 its pad while holding the step) clears them, as clearing the step does.
 
 ## 6.4 Recording
+
+> 🎬 **Video:** [Tutorial 3.5: Recording](https://youtu.be/36-v3uYKR78?t=340) (from 5:40)
 
 Press **Record** to play notes into the active clip in real time.
 
@@ -820,6 +853,8 @@ Press **Record** to play notes into the active clip in real time.
 
 ### Step recording
 
+> 🎬 **Video:** [Tutorial 3.7: Step recording](https://youtu.be/36-v3uYKR78?t=483) (from 8:03)
+
 With the transport **stopped** on a melodic track, **Shift + Record** opens step
 entry (drum and Conductor tracks don't have it). Record turns white and one step
 blinks white — the cursor, starting at the first step of the page you're viewing.
@@ -840,6 +875,8 @@ One **undo** takes back the whole step-recording session.
 > Live Merge is unavailable while step entry is open — leave it first.
 
 ## 6.5 Capture
+
+> 🎬 **Video:** [Tutorial 3.6: Capture](https://youtu.be/36-v3uYKR78?t=393) (from 6:33)
 
 dAVEBOx is always listening: play something, then tap **Capture** to keep it.
 
@@ -890,6 +927,8 @@ What Capture does depends on the transport:
   the last lap kept, and stopping clears them.
 
 ## 6.6 Clip length & the loop
+
+> 🎬 **Video:** [Tutorial 3.9: Loop length and pages](https://youtu.be/36-v3uYKR78?t=610) (from 10:10)
 
 A clip plays its **loop** — a run of up to **256 steps**, shown as **pages** of 16.
 The loop *is* the clip's length, and it normally starts on step 1.
@@ -978,6 +1017,8 @@ always off.
 
 ## 7.1 Placing hits
 
+> 🎬 **Video:** [Tutorial 2.1: Lanes, hits and velocity](https://youtu.be/qqZKsu6e244)
+
 Select a lane, then tap **steps 1–16** to add or clear its hits. The steps always
 show the selected lane.
 
@@ -998,6 +1039,8 @@ hit, tapping the same step again doesn't shorten it.)
 
 ## 7.2 Per-lane loops
 
+> 🎬 **Video:** [Tutorial 2.2: Euclidean rhythms and per-lane loops](https://youtu.be/qqZKsu6e244?t=99) (from 1:39)
+
 Each lane has its own loop length: **Loop + jog** on the selected lane. On the
 ALL LANES bank, Loop + jog and the loop-page gestures set every lane at once.
 Lanes of different lengths (kick 16, hat 12, percussion 10) make a polyrhythm
@@ -1008,6 +1051,8 @@ on ALL LANES, every lane's. **Crop** moves it there: DRUM LANE knob 6 for the
 selected lane, ALL LANES knob 5 for every lane.
 
 ## 7.3 Note Repeat
+
+> 🎬 **Video:** [Tutorial 2.3: Note Repeat](https://youtu.be/qqZKsu6e244?t=188) (from 3:08)
 
 Note Repeat retriggers a lane at a steady rate. **Shift + Step 8** cycles the right
 pads between velocity zones and the two repeat modes; entering a repeat mode names
@@ -1062,6 +1107,8 @@ Resetting a bank is covered in [Parameter banks](#36-parameter-banks).
 
 ## 8.1 CLIP bank
 
+> 🎬 **Video:** [Tutorial 3.3: The CLIP bank](https://youtu.be/36-v3uYKR78?t=156) (from 2:36)
+
 A melodic clip's grid, direction, and note transforms.
 
 | Knob | On screen | What it does | Rewrites notes | Default |
@@ -1090,6 +1137,8 @@ Recording needs **Forward** direction; [bake](#161-bake) and
 Forward.
 
 ## 8.2 DRUM LANE bank
+
+> 🎬 **Video:** [Tutorial 2.2: Euclidean rhythms and per-lane loops](https://youtu.be/qqZKsu6e244?t=99) (from 1:39)
 
 The **selected lane's** grid — the drum counterpart to the CLIP bank.
 
@@ -1133,6 +1182,8 @@ starts later than step 1. The track's velocity input (**VelIn**) is on
 
 # 9. Sequencer Effects
 
+> 🎬 **Video:** [Tutorial 4.5: The signal flow](https://youtu.be/jOnQWmr71JI?t=385) (from 6:25)
+
 The sequencer effects work on **notes**, before they reach the instrument — for
 audio effects such as reverb, see [FX 1–4](#142-the-menu). Two kinds shape notes
 beyond the stored clip:
@@ -1165,6 +1216,8 @@ The global [groove](#the-groove) is applied after the chain;
 
 ## 9.1 NOTE FX
 
+> 🎬 **Video:** [Tutorial 4.1: NOTE FX and HARMONY](https://youtu.be/jOnQWmr71JI)
+
 *Melodic & drum.*
 
 Shifts every note's pitch, velocity, timing, and length.
@@ -1189,6 +1242,8 @@ note; knobs 3–6 apply to that lane, and 7–8 are empty.
 
 ## 9.2 HARMONY
 
+> 🎬 **Video:** [Tutorial 4.1: NOTE FX and HARMONY](https://youtu.be/jOnQWmr71JI)
+
 *Melodic.*
 
 Adds up to four voices to every note (0 = off; negative values add the voice
@@ -1199,6 +1254,8 @@ below):
   semitones with it off.
 
 ## 9.3 DELAY
+
+> 🎬 **Video:** [Tutorial 4.2: MIDI DELAY](https://youtu.be/jOnQWmr71JI?t=118) (from 1:58)
 
 *Melodic & drum.*
 
@@ -1219,6 +1276,8 @@ On a drum track DELAY has no pitch controls: knobs 5–7 are Gate, Clock Feedbac
 Retrigger.
 
 ## 9.4 SEQ ARP
+
+> 🎬 **Video:** [Tutorial 4.3: SEQ ARP](https://youtu.be/jOnQWmr71JI?t=201) (from 3:21)
 
 *Melodic. Per clip.*
 
@@ -1252,6 +1311,8 @@ These shape what you play **live** — on the pads or over external MIDI — bef
 it's sequenced, leaving the stored clip untouched.
 
 ### LIVE ARP
+
+> 🎬 **Video:** [Tutorial 4.4: LIVE ARP](https://youtu.be/jOnQWmr71JI?t=309) (from 5:09)
 
 *Melodic. Per track.*
 
@@ -1289,6 +1350,8 @@ says **KNB+CLK NUDGE** or **KNB+CLK VELOCITY**, whichever is next.
 ---
 
 # 10. Automation
+
+> 🎬 **Video:** [Tutorial 6.2: Automation](https://youtu.be/nrZD8SnbD6Q?t=82) (from 1:22) · [Tutorial 6.3: Automating sounds and effects](https://youtu.be/nrZD8SnbD6Q?t=248) (from 4:08)
 
 **Almost anything you can turn in dAVEBOx, you can automate** — a Schwung
 instrument's or effect's parameter, a level, a bank knob, or a MIDI target. There's
@@ -1441,6 +1504,8 @@ recorded on its own and shows in the list as its own row.
 
 # 11. Arranging
 
+> 🎬 **Video:** [Tutorial 1.2: Clips, scenes and the session grid](https://youtu.be/3kP6Zwm79_0?t=69) (from 1:09)
+
 Arranging happens in **Session View**: the clip grid on the pads, 8 tracks across
 and 4 rows visible. **+** and **−** scroll one row at a time through all 16 rows.
 The eight knobs are a mixer, one per track. What they set — Volume, Pan, Send A or
@@ -1492,6 +1557,8 @@ whose clip there is empty falls silent.
 
 ## 11.3 Mute & solo
 
+> 🎬 **Video:** [Tutorial 5.1: Mutes and mute snapshots](https://youtu.be/rV0Vhle7INg)
+
 In Session View each knob stands for its track:
 
 | Gesture | Result |
@@ -1507,6 +1574,8 @@ In Session View each knob stands for its track:
   lane in [Drum Clips](#74-copying-clearing--muting-lanes).
 
 ## 11.4 Mute snapshots
+
+> 🎬 **Video:** [Tutorial 5.1: Mutes and mute snapshots](https://youtu.be/rV0Vhle7INg)
 
 Store up to **16 mute/solo states**; they persist across reboots. In Session View,
 hold **Mute** and the step buttons light (grey = empty, yellow = saved):
@@ -1534,6 +1603,8 @@ For snapshots of the sound itself, see
 ---
 
 # 12. The Conductor
+
+> 🎬 **Video:** [Tutorial 5.3: The Conductor](https://youtu.be/rV0Vhle7INg?t=146) (from 2:26)
 
 A **Conductor** transposes every playing melodic clip in real time, following the
 note it plays: sequence a progression on it and every responding track follows.
@@ -1600,6 +1671,8 @@ The Conductor track itself has no bake and exports as a silent placeholder.
 ---
 
 # 13. Performance Mode
+
+> 🎬 **Video:** [Tutorial 5.2: Performance Mode](https://youtu.be/rV0Vhle7INg?t=73) (from 1:13)
 
 Performance Mode grabs a short loop of what's playing and lets you transform it
 live from a grid of effects. It runs in **Session View**.
@@ -1746,6 +1819,8 @@ Every list works as described in [Menus & Project Settings](#37-menus--project-s
 
 ## 14.2 The menu
 
+> 🎬 **Video:** [Tutorial 1.6: Adding effects](https://youtu.be/3kP6Zwm79_0?t=374) (from 6:14)
+
 The rows run top to bottom in groups, with a line between them. A track shows only
 the rows it has:
 
@@ -1776,6 +1851,8 @@ the click and the Shift chord do.
   track. Mute and solo live on the **Mute** button.
 
 ## 14.3 Choosing an instrument
+
+> 🎬 **Video:** [Tutorial 1.5: Instruments](https://youtu.be/3kP6Zwm79_0?t=308) (from 5:08)
 
 **Shift + click** the Instmt/Dest row for the picker — one list, in groups:
 
@@ -1918,6 +1995,8 @@ has:
 
 ## 14.6 The MACROS bank
 
+> 🎬 **Video:** [Tutorial 5.4: Macros](https://youtu.be/rV0Vhle7INg?t=238) (from 3:58)
+
 **MACROS** is the top pad of the CTRL column on the bank map, with AUTO below it. Its eight knobs play
 whatever you assign to them, and each cell shows its target's value the way the
 module editor does — a dial, a big number, a list square, a fader for a level. A
@@ -1981,6 +2060,8 @@ Assignments belong to the project, and a saved chain preset carries them with it
 
 ## 14.7 Sound snapshots & SnapMorph
 
+> 🎬 **Video:** [Tutorial 5.5: Sound snapshots and SnapMorph](https://youtu.be/rV0Vhle7INg?t=372) (from 6:12)
+
 **Hold Capture** and the 16 step buttons become **sound snapshots**. In Track View
 they hold the active track's sound; in Session View, the whole device's.
 
@@ -2008,6 +2089,8 @@ of the turn, `[2]` next, and so on. The knob is live as soon as two are in.
   export to Live.
 
 ## 14.8 Master FX and the sends
+
+> 🎬 **Video:** [Tutorial 6.1: The session mixer and the sends](https://youtu.be/nrZD8SnbD6Q)
 
 Three buses sit across every track — **MASTER FX** and the two sends, **SEND FX A**
 and **SEND FX B** — each with four effect blocks, edited exactly like a track's.
@@ -2088,6 +2171,8 @@ is suppressed and shows `—`.
 # 16. Bake, Merge & Export
 
 ## 16.1 Bake
+
+> 🎬 **Video:** [Tutorial 4.6: Bake](https://youtu.be/jOnQWmr71JI?t=481) (from 8:01)
 
 **Bake** (the **Sample** button) renders a clip's sequencer effects — NOTE FX,
 HARMONY, DELAY, SEQ ARP — into plain notes, then resets those effects. The clip sounds the
@@ -2188,6 +2273,8 @@ lane, so they exist only while a note is sounding.
 
 ## 16.4 Import a MIDI file
 
+> 🎬 **Video:** [Tutorial 7.2: MIDI import and export](https://youtu.be/DOw_4zAO6cI?t=61) (from 1:01)
+
 **Touch knob 8 on the CLIP or DRUM LANE bank and click the jog** (any track
 except a Conductor, whatever it plays through). The MIDI browser fills the clip
 you are on from a standard MIDI file (`.mid`, `.midi`, `.smf`, `.kar`, `.rmi`).
@@ -2266,6 +2353,8 @@ melodic track can each come back to their own folder.
 
 ## 16.5 Export a clip as a MIDI file
 
+> 🎬 **Video:** [Tutorial 7.2: MIDI import and export](https://youtu.be/DOw_4zAO6cI?t=61) (from 1:01)
+
 Open the track's **TRACK CONFIG** menu, turn to **Export to MIDI** and click. The
 clip you are on is saved as a standard MIDI file, **as it plays**: NOTE FX,
 harmony, the arp and the delay are baked in, a clip with random settings is saved
@@ -2327,6 +2416,8 @@ see [Track settings](#174-track-settings) below.
 | Bluetooth | The Bluetooth radio, for [Bluetooth MIDI](#152-external-midi-in-and-out) devices (shown only when the Move has one) | On, Off | — |
 
 #### The groove
+
+> 🎬 **Video:** [Tutorial 6.4: Groove and swing](https://youtu.be/nrZD8SnbD6Q?t=443) (from 7:23)
 
 One groove plays for the whole project. **Groove** picks it and **Groove Amt**
 says how much of it you hear — at none, everything is on the grid.
@@ -2446,6 +2537,8 @@ Where the track's notes go is the **Instmt/Dest** row near the top of the same m
 see [Choosing an instrument](#143-choosing-an-instrument).
 
 ## 17.5 Projects
+
+> 🎬 **Video:** [Tutorial 7.1: Projects and Save state](https://youtu.be/DOw_4zAO6cI)
 
 dAVEBOx SA keeps its **own projects**, separate from your Move sets. Launching
 dAVEBOx sets your Move sets aside, untouched, and leaving puts them back. Move and

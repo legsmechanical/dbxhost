@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Added
+- **Video tutorials, linked from the manual.** Seven short videos walk through
+  dAVEBOx on a real Move ([playlist](https://www.youtube.com/playlist?list=PLYG911Ay8pgk)).
+  Each section of the manual that a video covers links to the moment it starts.
+
 ### Changed
 - **dAVEBOx SA's folder on the Move is now `daveboxSA`** (it was `dbx-host`).
   It is moved automatically the first time you launch dAVEBOx — your projects,
