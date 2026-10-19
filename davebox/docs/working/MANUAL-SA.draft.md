@@ -806,9 +806,9 @@ Press **Record** to play notes into the active clip in real time.
 
 - **While playing, Record is a punch:** press to drop in, again to drop out, both
   taking effect the moment you press.
-- A take that began with the count-in into an empty clip stops at the end of the
-  page; Record blinks until it does. An empty clip sizes itself in whole pages as
-  you record.
+- A take that began with the count-in into an empty clip keeps going — the clip
+  grows a page at a time for as long as you play. Press **Record** to finish: the
+  clip keeps the page the playhead is in, so press it in the last page you want.
 - Recording adds to what's there and never erases. For a clean take, clear the
   clip first (**Delete + side button**); that also frees its length so the take
   sizes itself to what you play.
@@ -1099,7 +1099,7 @@ The **selected lane's** grid — the drum counterpart to the CLIP bank.
 | 2 | `STRCH` | **Stretch.** Doubling is refused (*NOTES PAST THE LOOP END / CROP FIRST*) if hits lie past the loop's end. | Yes | — |
 | 3 | `SHIFT` | **Shift.** *Alt:* `NUDGE`. | Yes | 0 |
 | 4 | `LGTO` | **Legato** (this lane) — touch the knob and click the jog. | Yes | — |
-| 5 | `EUCLD` | **Euclid** — spread N hits evenly across the lane. Hand-placed hits stay. | Yes | 0 |
+| 5 | `EUCLD` | **Euclid** — spread N hits evenly across the lane. Hand-placed hits on steps the pattern does not use stay; a hand-placed hit on a step it lands on becomes part of it, and turning Euclid down removes it. Try it on an empty lane, and pair it with **Shift** (knob 3) for variations. | Yes | 0 |
 | 6 | `CROP` | **Crop** (this lane) — touch the knob and click the jog. | Yes | — |
 | 7 | `DIR` | **Direction.** *Alt* (`REVRS`): **Reverse Style.** | No | Fwd |
 | 8 | `IMPRT` | **Import MIDI** — touch the knob and click the jog. | Yes | — |
