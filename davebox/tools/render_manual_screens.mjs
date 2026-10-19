@@ -1152,14 +1152,14 @@ function withAutomation() {
     ENGINE.t4_c0_at_has = '1'; S.clipAtHas[4][0] = true;
     AUTO.automationNoteListChangedElsewhere();
 }
-screen('bank-automation', '10.2 The AUTOMATION bank', 'AUTOMATION bank',
+screen('bank-automation', '10.2 The AUTOMATION screen', 'AUTOMATION bank',
     'Everything automated in the clip, with its state.',
     () => { selectTrack(4); withAutomation(); ticks(8);
             toBank(C.BANK_AUTOMATION); ticks(8);});
-screen('automation-menu', '10.2 The AUTOMATION bank', 'AUTOMATION — the menu',
+screen('automation-menu', '10.2 The AUTOMATION screen', 'AUTOMATION — the menu',
     'Click the jog for the menu; turn to a row and click for its operations.',
     () => { selectTrack(4); withAutomation(); ticks(8); toBank(C.BANK_AUTOMATION); ticks(8); click(); ticks(4); jog(1); ticks(2); });
-screen('automation-ops', '10.2 The AUTOMATION bank', 'AUTOMATION — a parameter\'s operations',
+screen('automation-ops', '10.2 The AUTOMATION screen', 'AUTOMATION — a parameter\'s operations',
     'A row\'s operations: Delete, Mute, Mode, Smooth, Wrap, Link, Loop and Rate.',
     () => { selectTrack(4); withAutomation(); ticks(8); toBank(C.BANK_AUTOMATION); ticks(8); click(); ticks(4); jog(1); ticks(2); click(); ticks(4); });
 
