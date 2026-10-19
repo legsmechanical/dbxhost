@@ -22,11 +22,10 @@ Legacy — see [`MANUAL.md`](MANUAL.md) instead.)*
 **There is nothing to set up.** Every dAVEBOx project is created ready to play:
 tracks 1–4 play Move's four instruments — a random drum kit, a bass and two
 polyphonic sounds, like a new Move set — and tracks 5–8 each have a Schwung chain
-of their own. The one thing Move needs is **Link** turned on in its System
-Settings; dAVEBOx warns you if it is off.
+of their own. dAVEBOx turns Move's Link on by itself each time it starts.
 
 1. Open Schwung's tool menu (**Shift + Step 13** — the star) and choose
-   **dAVEBOx**. The screen goes dark for a few seconds while Move restarts; that
+   **dAVEBOx SA**. The screen goes dark for a few seconds while Move restarts; that
    pause is the startup, and nothing has gone wrong.
 2. You land on the **project picker**. dAVEBOx keeps its own projects, separate
    from your Move sets — one pad per project. Nothing is open yet.
@@ -56,12 +55,12 @@ A few things worth knowing before the first lesson:
   the track's *parameter banks* — its effects and clip settings — and the screen
   shows the same map. **Tap a pad** to go to that bank, then **let go** of the
   jog. Letting go without tapping puts the map away without choosing.
-- **There are no track buttons.** While the bank map is up, the top two rows of
-  the **right-hand pads** are the tracks (1–4, then 5–8), each in its own colour.
-  **Tap one** to switch track. Holding **Shift** and turning the jog also walks
+- **There are no track buttons.** While the bank map is up, **Steps 1–8** are the
+  tracks, each lit in its own colour. **Tap one** to switch track. Holding **Shift** and turning the jog also walks
   through the tracks.
 - **Note/Session is the way home.** From any menu, bank or picker, one press
-  brings you back to the view you were in.
+  takes you to Session View. **Holding Back** returns you to the overview of the
+  view you're in.
 - **Two menus:** **Shift + Step 2** opens **Project Settings** (tempo, key, scale,
   saving and leaving). The active track's **TRACK CONFIG** menu (its instrument,
   effects and settings) is the **CONFIG** pad on the bank map — the bottom-left
@@ -99,9 +98,9 @@ lengths later for polyrhythms. Full detail lives in the manual's
 
 Now let's play some notes on another track.
 
-1. **Hold the jog**, tap the **3rd pad in the top row of the right-hand
-   pads** and let go — you're now on track 3, one of Move's polyphonic sounds. (The screen
-   flashes the track's number and what it plays.)
+1. **Hold the jog**, tap **Step 3** and let go — you're now on track 3, one of
+   Move's polyphonic sounds. (The screen briefly shows **TRACK 3** and what it
+   plays.)
 2. The pads now play **pitched notes**, snapped to the project's key and scale.
    Tap around to hear them. **+ / −** shifts the octave.
 3. To sequence a note, **hold a pad and tap a step button** — that step gets the
@@ -111,9 +110,9 @@ Now let's play some notes on another track.
 5. Press **Play** if it isn't already running. Track 3 plays alongside your drums.
 
 A new project starts in a random key and scale. To change them, open **Project
-Settings** (**Shift + Step 2**), choose **Key** or **Scale** and turn the jog — the
-pads rearrange, and while playing you *hear* a live preview. Click to commit; if
-your clips hold notes, it asks whether to move them too. See
+Settings** (**Shift + Step 2**), choose **Key** or **Scale**, click, turn to a new
+one and click. If your clips hold notes it asks whether to move them, and you hear
+the new key while it asks. See
 [Key & Scale](MANUAL-SA.md#172-key--scale) in the manual.
 
 ---
