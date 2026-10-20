@@ -10599,7 +10599,7 @@ function enterMoveFxHierarchyEditor(moveSlot, fxSlot) {
 }
 
 /* Root of the standalone-session tree. */
-const STANDALONE_DIR = "/data/UserData/dbx-host";
+const STANDALONE_DIR = "/data/UserData/daveboxSA";
 
 /* `standaloneSessionActive` is imported from shared/session_state.mjs — ONE
  * definition, because the file browsers ask the same question to decide

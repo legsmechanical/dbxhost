@@ -176,7 +176,7 @@ step('Clear Sess → Yes: the project reloads, then the Project menu is back on 
 
 step('Open Your Dave Box → Back: on its row', () => {
     ready();
-    FILES['/data/UserData/dbx-host/daves-seen.txt'] = '1\n2\n';   /* an album with Daves in it */
+    FILES['/data/UserData/daveboxSA/daves-seen.txt'] = '1\n2\n';   /* an album with Daves in it */
     useRow('Open Your Dave Box');
     ticks(1);
     assert(S.daveBox, 'rig: the Dave Box did not open');

@@ -29,7 +29,7 @@
 #
 # The knob (ask_ui_exit_enabled, below) puts the old should_exit-and-wait step
 # back for A/B: DBX_QUIESCE_ASK_UI_EXIT=1, or
-# touch /data/UserData/dbx-host/quiesce-ask-ui-exit. Default OFF.
+# touch /data/UserData/daveboxSA/quiesce-ask-ui-exit. Default OFF.
 #
 # Deliberately best-effort throughout: if the SHM is missing, or shadow_ui/
 # Move ignore us, we return anyway and the caller proceeds to its kill
@@ -101,7 +101,7 @@ say() {
 # empty, the -x test failed, and the function returned 0 in silence: the whole
 # feature shipped, twice, doing nothing. A guard that skips quietly on a
 # misspelled path is indistinguishable from a feature that ran.
-BLANK_LEDS=/data/UserData/dbx-host/scripts/blank-leds.py
+BLANK_LEDS=/data/UserData/daveboxSA/scripts/blank-leds.py
 blank_leds() {
     if [ ! -x "$BLANK_LEDS" ]; then
         say "WARNING: $BLANK_LEDS missing — LEDs will hold the stock menu"
@@ -164,7 +164,7 @@ paint_splash() {
     # stale marker from a crashed launch cannot suppress the host's own Dave
     # forever; the host ignores one older than 120 s.
     printf '%s skip\n' "$(date +%s)" \
-        > /data/UserData/dbx-host/splash-stage1.txt 2>/dev/null \
+        > /data/UserData/daveboxSA/splash-stage1.txt 2>/dev/null \
         && say "stage-1 marker written (no Dave on tools launch)"
 }
 
@@ -210,11 +210,11 @@ paint_splash() {
 # repaints on its way out, where a frozen one cannot push a frame — so it must
 # be switchable off on the device without a redeploy: set
 # DBX_QUIESCE_GRACEFUL=0, or `touch` the flag file below. Default ON.
-GRACEFUL_OFF_FLAG=/data/UserData/dbx-host/quiesce-graceful-off
+GRACEFUL_OFF_FLAG=/data/UserData/daveboxSA/quiesce-graceful-off
 # ⚠⚠ ABSOLUTE PATH, for the reason spelled out at BLANK_LEDS above: this script
 # runs as `sh quiesce-stock.sh`, nothing is sourced, and a relative path here
 # would skip the whole feature in silence.
-PICK_SIGNAL_THREAD=/data/UserData/dbx-host/scripts/pick-signal-thread.py
+PICK_SIGNAL_THREAD=/data/UserData/daveboxSA/scripts/pick-signal-thread.py
 
 move_live() {
     for p in $(pgrep -x MoveOriginal 2>/dev/null); do
@@ -423,7 +423,7 @@ shadow_ui_live() {
 # ⭑ THE ASK-UI-EXIT KNOB (2026-09-15, A/B against the default above). Puts the
 # should_exit request back for comparison: set DBX_QUIESCE_ASK_UI_EXIT=1, or
 # touch the flag file below. Default OFF — see the file header for why.
-ASK_UI_EXIT_FLAG=/data/UserData/dbx-host/quiesce-ask-ui-exit
+ASK_UI_EXIT_FLAG=/data/UserData/daveboxSA/quiesce-ask-ui-exit
 # ⚠⚠ ABSOLUTE PATH, for the reason spelled out at BLANK_LEDS above.
 ask_ui_exit_enabled() {
     case "${DBX_QUIESCE_ASK_UI_EXIT:-0}" in

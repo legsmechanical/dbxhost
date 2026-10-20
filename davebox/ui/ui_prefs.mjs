@@ -1,6 +1,6 @@
 /*
  * Device-global switches that are not a song's: read once, lazily; written on
- * every change. Each lives in its own small file under dbx-host, beside the
+ * every change. Each lives in its own small file under daveboxSA, beside the
  * Daves switch, so it survives updates and the uninstaller keeps it.
  */
 import { S, nowMs } from './ui_state.mjs';
@@ -11,7 +11,7 @@ import { S, nowMs } from './ui_state.mjs';
  * View, the mixer page in Session View — stays up this long before the
  * overview comes back. Off = it goes with the finger, as before. Device-wide;
  * absent file = Off. */
-export const CARD_HOLD_PATH = '/data/UserData/dbx-host/card-hold.txt';
+export const CARD_HOLD_PATH = '/data/UserData/daveboxSA/card-hold.txt';
 export const CARD_HOLD_CHOICES = [0, 500, 1000, 2000];   /* ms */
 
 export function cardHoldMs() {
@@ -58,7 +58,7 @@ export function cardHoldExpired() {
 /* Seq Follow (Josh, 2026-09-29): ONE switch for the whole device, toggled by
  * holding Left or Right and pressing Play. On = the step page tracks the
  * playhead while the active clip plays. Absent file = On (the old default). */
-export const SEQ_FOLLOW_PATH = '/data/UserData/dbx-host/seq-follow.txt';
+export const SEQ_FOLLOW_PATH = '/data/UserData/daveboxSA/seq-follow.txt';
 
 export function seqFollowOn() {
     if (S.seqFollowOn === null) {
@@ -89,8 +89,8 @@ export function followActive() {
 /* The MIDI browser (ui_midi_import, Josh 2026-09-29): it plays or not as it was
  * left, and places a drum file's sounds by the Map it was last set to. One
  * small file each. (Where each track was is kept in memory only.) */
-export const MIDI_MUTE_PATH  = '/data/UserData/dbx-host/midi-mute.txt';    /* absent = heard */
-export const MIDI_MAP_PATH   = '/data/UserData/dbx-host/midi-map.txt';     /* off | gm | move; absent = gm */
+export const MIDI_MUTE_PATH  = '/data/UserData/daveboxSA/midi-mute.txt';    /* absent = heard */
+export const MIDI_MAP_PATH   = '/data/UserData/daveboxSA/midi-map.txt';     /* off | gm | move; absent = gm */
 
 function readPref(path) {
     try { return host_file_exists(path) ? String(host_read_file(path) || '') : ''; } catch (e) { return ''; }

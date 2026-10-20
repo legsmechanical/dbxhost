@@ -46,7 +46,7 @@
 
 set -eu
 
-DBX_DIR="${DBX_DIR:-/data/UserData/dbx-host}"
+DBX_DIR="${DBX_DIR:-/data/UserData/daveboxSA}"
 # ⭐ THE PROJECT STORE. Projects live here and nowhere else; every verb below
 # enumerates THIS directory. The set library Move sees is a VIEW of it — one
 # symlink per project, maintained by library_slots.py — so no verb here ever

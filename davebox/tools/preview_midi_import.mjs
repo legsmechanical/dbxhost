@@ -81,8 +81,8 @@ const DIRS = new Set(['/data/UserData/Downloads', '/data/UserData/UserLibrary', 
 const MANY = Array.from({ length: 82 }, (_, i) => 'ABSTRG' + String(i).padStart(2, '0') + '.mid');
 for (const n of MANY) FILES['/data/UserData/ABSTR/' + n] = BEAT;
 globalThis.__auditReaddir = (p) => p === '/data/UserData/ABSTR' ? MANY : p === '/data/UserData'
-  ? ['ABSTR', 'Downloads', 'UserLibrary', 'schwung', 'dbx-host', 'Bach Invention 8.mid', 'Groove 3.mid', 'readme.txt'] : [];
-globalThis.__auditStat = (p) => DIRS.has(p) || p.endsWith('/schwung') || p.endsWith('/dbx-host') ? { mode: 0o040000, size: 0 }
+  ? ['ABSTR', 'Downloads', 'UserLibrary', 'schwung', 'daveboxSA', 'Bach Invention 8.mid', 'Groove 3.mid', 'readme.txt'] : [];
+globalThis.__auditStat = (p) => DIRS.has(p) || p.endsWith('/schwung') || p.endsWith('/daveboxSA') ? { mode: 0o040000, size: 0 }
   : FILES[p] ? { mode: 0o100000, size: FILES[p].length } : p.endsWith('.txt') ? { mode: 0o100000, size: 90 } : null;
 globalThis.__auditOpen = (p) => { const b = FILES[p]; if (!b) return null; let pos = 0;
   return { read(buf, off, len) { const n = Math.min(len, b.length - pos); new Uint8Array(buf, off, n).set(b.subarray(pos, pos + n)); pos += n; return n; }, close() {} }; };

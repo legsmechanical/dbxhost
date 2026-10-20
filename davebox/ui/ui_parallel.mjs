@@ -30,14 +30,14 @@
  * its blacklist empty: pre-pinning on a static audit gives back the gain.
  * The list stays as the place a real culprit goes.
  *
- * STORAGE: /data/UserData/dbx-host/parallel-modules.txt, one `id 0|1` per
+ * STORAGE: /data/UserData/daveboxSA/parallel-modules.txt, one `id 0|1` per
  * line. Device-global like the Daves preference (a property of the user's
  * device, not a song's); the deploy merges file by file so it survives an
  * update. Absent file = built-in defaults. */
 
 import { engineLoadedModule, engineSetSlotParam, CHAIN_SLOTS } from './ui_engine.mjs';
 
-export const PARALLEL_PREF_PATH = '/data/UserData/dbx-host/parallel-modules.txt';
+export const PARALLEL_PREF_PATH = '/data/UserData/daveboxSA/parallel-modules.txt';
 export const BUILTIN_OFF = [];
 /* One slot per this many ticks; CHAIN_SLOTS × this = a full sweep (~8 s at
  * 40 ticks/s with 40). */

@@ -29,7 +29,7 @@ set -e
 # a relative source would resolve outside the payload and the one privileged step
 # would fail. config.sh is still authoritative; scripts/check-config.sh pins this
 # line against it so the two cannot drift.
-DBX_DIR=/data/UserData/dbx-host
+DBX_DIR=/data/UserData/daveboxSA
 DBX_HEAL_DIR=/data/UserData/schwung/modules/tools/davebox-sa/bin
 DBX_HEAL_NAME=heal
 DBX_SHIM_SONAME=davebox-shim.so

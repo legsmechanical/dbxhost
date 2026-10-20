@@ -151,7 +151,7 @@ step('⭐ Set as Template (none saved): no question; the DSP save, then the chai
     const iChains = LOG.indexOf('chains saved');
     const iCopy = LOG.findIndex(l => / template-set default proj-uuid '/.test(l));
     assert(iSave >= 0 && iChains > iSave && iCopy > iChains, 'order: ' + J(LOG));
-    const ui = JSON.parse(FILES['/data/UserData/dbx-host/templates/.incoming-ui.json'] || 'null');
+    const ui = JSON.parse(FILES['/data/UserData/daveboxSA/templates/.incoming-ui.json'] || 'null');
     assert(ui && ui.v === 9 && Array.isArray(ui.am), 'the template sidecar was not written: ' + J(ui));
     assert(popup() === 'TEMPLATE / SET', 'popup ' + popup());
 });
@@ -279,9 +279,9 @@ step('the installed modules are handed to the script: what the instrument and ef
     dlg.projectPadPickerTap(8);
     dlg.projectPadPickerClick();
     osStub.__setReaddir(null);
-    const have = FILES['/data/UserData/dbx-host/templates/.have-modules.txt'];
+    const have = FILES['/data/UserData/daveboxSA/templates/.have-modules.txt'];
     assert(have === 'obxd\nfreeverb\n', 'wrote ' + J(have));
-    assert(LOG.some(l => /DBX_HAVE_MODULES='\/data\/UserData\/dbx-host\/templates\/\.have-modules\.txt'.*new-at 8/.test(l)), J(LOG));
+    assert(LOG.some(l => /DBX_HAVE_MODULES='\/data\/UserData\/daveboxSA\/templates\/\.have-modules\.txt'.*new-at 8/.test(l)), J(LOG));
 });
 
 if (failed) { console.log('FAIL: test_project_template_gesture'); process.exit(1); }

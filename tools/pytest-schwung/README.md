@@ -259,7 +259,7 @@ ssh ableton@move.local 'nohup setsid \
   > /data/UserData/launch.out 2>&1 < /dev/null &'
 
 # 2. the daemon is opt-in — start it by hand:
-ssh ableton@move.local 'nohup setsid /data/UserData/dbx-host/bin/schwung-testd \
+ssh ableton@move.local 'nohup setsid /data/UserData/daveboxSA/bin/schwung-testd \
   > /data/UserData/testd.log 2>&1 < /dev/null &'
 
 # 3. forward the port:
@@ -338,9 +338,9 @@ pins it with hand-checkable cases.
   before the next press. The test-bus drain now mirrors an injected CC 49 into
   `shift_held`, and Shift+Step 1 opens dAVEBOx's project picker mid-session.
   Proved with `overtake_midi_log_on` (below) plus a module log line.
-* **To see what the host UI received**, touch `/data/UserData/dbx-host/overtake_midi_log_on`
+* **To see what the host UI received**, touch `/data/UserData/daveboxSA/overtake_midi_log_on`
   BEFORE launching (read once per process): every MIDI event reaching the
-  overtake module is logged as `MIDI_IN:` in `dbx-host/debug.log`.
+  overtake module is logged as `MIDI_IN:` in `daveboxSA/debug.log`.
 * **A fresh dAVEBOx session lands in SESSION VIEW.** `tap("menu")` is CC 50,
   which dAVEBOx uses as Note/Session — it toggles the view, it opens no menu.
 * **The Move's clock is not the dev machine's** (measured ~4.3 s behind). Times
@@ -376,13 +376,13 @@ pins it with hand-checkable cases.
 * **⚠⚠ `mv .gone-X X` NESTS when `X` already exists** — and Move recreates a set
   folder on its own. The payload ends up at `X/.gone-X/`, `project-cmd
   repair-indices` then correctly quarantines the orphan at
-  `dbx-host/sets/quarantine/<date>/`, and the project is gone from the picker.
+  `daveboxSA/sets/quarantine/<date>/`, and the project is gone from the picker.
   It is recoverable from there (it was), but move the payload explicitly rather
   than renaming onto a path that may have come back.
 
 ### Cleanup
 
-`ssh ableton@move.local 'sh /data/UserData/dbx-host/scripts/exit-to-stock.sh'`
+`ssh ableton@move.local 'sh /data/UserData/daveboxSA/scripts/exit-to-stock.sh'`
 ends the session cleanly. Killing `shadow_ui` does **not** — the shim respawns
 it. ⚠ Do not `pkill -f schwung-testd` inside an ssh command: the pattern matches
 the remote shell's own command line and kills the session before the rest runs.

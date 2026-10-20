@@ -11,7 +11,7 @@ permissions:
 jobs:
   # ------------------------------------------------------------------ davebox-sa
   # The CATALOG tarball for the launcher module (2026-09-05, the zero-SSH
-  # install): one archive carrying the whole SA deliverable — the dbx-host host
+  # install): one archive carrying the whole SA deliverable — the daveboxSA host
   # build, the heal helper (unblessed), the chain host and the davebox sequencer
   # module — laid out by standalone/scripts/build-sa-release.sh so the first
   # launch from stock's Tools menu installs it with no SSH. release.json at the
@@ -43,12 +43,12 @@ jobs:
           echo "tag $VERSION · module.json $MJ · release.json $RJ · host base $(cat src/host/version.txt)"
           [ "$MJ" = "$RJ" ] || { echo "module.json and release.json disagree"; exit 1; }
           [ "$RJ" = "$VERSION" ] || { echo "the tag does not match release.json"; exit 1; }
-      - name: Build schwung-manager (Go, for the dbx-host tree)
+      - name: Build schwung-manager (Go, for the daveboxSA tree)
         run: |
           mkdir -p build
           cd schwung-manager
           GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o ../build/schwung-manager -ldflags="-s -w" .
-      - name: Build the dbx-host host (docker, DBX SHM prefix)
+      - name: Build the daveboxSA host (docker, DBX SHM prefix)
         run: ./standalone/scripts/build-host.sh
       - name: Build the heal helper
         run: ./standalone/scripts/build-heal.sh

@@ -165,7 +165,7 @@ extern int (*shadow_chain_synth_requires_continuous)(void *instance);
  * symlink when the payload and its mirror became one script (2026-09-05), and
  * `DBX_OWNED_MODULE_DIRS="chain tools/davebox-sound"` (standalone/config.sh) is
  * rsynced by install-host.sh. Measured: after one install-sa run the device's
- * dbx-host chain dsp.so md5-matched the local build and carried a symbol added
+ * daveboxSA chain dsp.so md5-matched the local build and carried a symbol added
  * minutes earlier, with stock's copy untouched. The stale claim mattered because
  * its documented workaround was to scp into /data/UserData/schwung/ — the STOCK
  * TREE, a red line. Just run install-sa.

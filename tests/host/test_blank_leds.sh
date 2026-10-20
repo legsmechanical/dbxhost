@@ -125,7 +125,7 @@ grep -q 'blank_leds' standalone/scripts/quiesce-stock.sh \
 # function returned 0 in silence — the feature shipped doing nothing, and looked
 # wired the whole time because the grep above passed. So: assert the path is
 # ABSOLUTE and that it is the path the installer actually writes to.
-grep -qE 'BLANK_LEDS=/data/UserData/dbx-host/scripts/blank-leds\.py' standalone/scripts/quiesce-stock.sh \
+grep -qE 'BLANK_LEDS=/data/UserData/daveboxSA/scripts/blank-leds\.py' standalone/scripts/quiesce-stock.sh \
     && ok "leg 1 names an ABSOLUTE path (no undefined variable to expand to nothing)" \
     || bad "the blank path is not absolute — an unset variable makes it a silent no-op"
 grep -q 'DBX_DIR' standalone/scripts/quiesce-stock.sh && {

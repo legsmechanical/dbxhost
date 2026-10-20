@@ -75,8 +75,8 @@ command:
 ```sh
 # only on a stock Schwung without #419 — once, as root
 ssh root@move.local 'sh /data/UserData/schwung/modules/tools/davebox-sa/payload/scripts/layout-install.sh \
-    /data/UserData/schwung/modules/tools/davebox-sa/payload /data/UserData/dbx-host /data/UserData/schwung && \
-    sh /data/UserData/dbx-host/bless.sh'
+    /data/UserData/schwung/modules/tools/davebox-sa/payload /data/UserData/daveboxSA /data/UserData/schwung && \
+    sh /data/UserData/daveboxSA/bless.sh'
 ```
 
 Stock Schwung is never modified — dAVEBOx runs Move under its own build beside

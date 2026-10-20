@@ -129,11 +129,11 @@ appear in the log. ⚠ **Never log from the audio thread at all** — per-event 
 ring drained off-thread.
 
 **The log lives in THIS build's own tree.** `SEQ8_LOG_PATH` is `SEQ8_DBX_DIR "/" SEQ8_STATE_PREFIX
-".log"`, so an SA build writes **`/data/UserData/dbx-host/seq8sa.log`** — beside the host's own
-unified log at `/data/UserData/dbx-host/debug.log`.
+".log"`, so an SA build writes **`/data/UserData/daveboxSA/seq8sa.log`** — beside the host's own
+unified log at `/data/UserData/daveboxSA/debug.log`.
 
 ```sh
-ssh ableton@move.local "tail -f /data/UserData/dbx-host/seq8sa.log"   # SA (prefix seq8sa)
+ssh ableton@move.local "tail -f /data/UserData/daveboxSA/seq8sa.log"   # SA (prefix seq8sa)
 ```
 
 ⚠ It used to be written into the STOCK install, and was the last dAVEBOx file left in a tree we do

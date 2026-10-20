@@ -158,7 +158,7 @@ refuses to deploy over a live SA session (`--force` overrides); the build takes 
 launch from stock's Tools menu. Upstream's stock installer (its `install.sh`/`uninstall.sh`/
 `package.sh`) was removed 2026-09-24 — no SA path used it. **Manager-only changes**: `schwung-manager` is a
 self-contained Go binary (embeds templates/static), so `./standalone/scripts/restart-manager.sh`
-is the whole loop: it builds the ARM binary, puts it in the dbx-host install dir (temp name + `mv -f`
+is the whole loop: it builds the ARM binary, puts it in the daveboxSA install dir (temp name + `mv -f`
 to dodge ETXTBSY) and restarts just the manager on the live session — no session restart.
 
 **Deploys need a session relaunch.** Copying a new `dsp.so`/`module.json` in is not enough, and
@@ -166,7 +166,7 @@ swapping the synth out and back in leaves the old code live — the deploy looks
 the session, install, launch again:
 
 ```bash
-ssh ableton@move.local 'sh /data/UserData/dbx-host/scripts/exit-to-stock.sh'
+ssh ableton@move.local 'sh /data/UserData/daveboxSA/scripts/exit-to-stock.sh'
 ./standalone/scripts/install-sa.sh
 ssh ableton@move.local 'nohup setsid /data/UserData/schwung/modules/tools/davebox-sa/standalone > /data/UserData/launch.out 2>&1 < /dev/null &'
 ```
@@ -174,6 +174,10 @@ ssh ableton@move.local 'nohup setsid /data/UserData/schwung/modules/tools/davebo
 `exit-to-stock.sh` stops the host with SIGTERM; `launch.sh` then clears the SHM namespace and
 resumes stock Move. Launching again (that last line, or stock's Tools menu) starts the new build.
 `MOVE_HOST=172.16.254.1` for the tether.
+
+The device folder is `/data/UserData/daveboxSA` (renamed from `dbx-host` in 2026-10, with no link
+left at the old name). An install still under the old name is moved by its next launch or by
+`install-host.sh`; until then the old paths are the live ones.
 
 Cross-compile via `${CROSS_PREFIX}gcc`. See `BUILDING.md`.
 

@@ -8,8 +8,10 @@
  * RULED (Josh, 2026-09-30): the row is on TRACK CONFIG; the file is the clip AS
  * IT PLAYS — the Ableton export's own render (NOTE FX, harmony, arp and delay
  * baked in, random settings as 8 cycles, a responder folded by the Conductor);
- * and it goes to a "dAVEBOx MIDI" folder in user data, where the MIDI browser
- * can re-import it and Schwung Manager's Files page can download it.
+ * and it goes to the MIDI folder inside dAVEBOx SA's own folder (daveboxSA/MIDI;
+ * it was "dAVEBOx MIDI" at the top of user data until the folder rename, and
+ * the launcher moves an old one in), where the MIDI browser can re-import it
+ * and Schwung Manager's Files page can download it (a "dAVEBOx MIDI" shortcut).
  *
  * The clip is the one on screen (effectiveClip). A drum clip is one file,
  * every lane on its own note, on channel 10. Names never overwrite:
@@ -25,8 +27,9 @@ import { effectiveClip } from './ui_leds.mjs';
 import { SCENE_LETTERS, PAD_MODE_DRUM } from './ui_constants.mjs';
 import { renderClipNotes, sanitizeName, showStopTransportNotice, EXPORT_STAGING } from './ui_export.mjs';
 import { smfWrite, smfLegalize } from './ui_midifile.mjs';
+import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 
-export const MIDI_EXPORT_DIR = '/data/UserData/dAVEBOx MIDI';
+export const MIDI_EXPORT_DIR = DAVEBOX_HOST_DIR + '/MIDI';
 const MAX_SUFFIX = 99;
 
 /* The click (MIDI-handler context): arm, or say why not. */

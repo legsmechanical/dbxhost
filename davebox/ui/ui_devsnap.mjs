@@ -447,7 +447,7 @@ export function devSnapClear(n) {
      *
      * ⚠ THE FENCE IS THE PROJECT'S OWN snapshots/ FOLDER, resolved like the
      * slot dir is. It was a spelled-out Sets regex, and since 2026-09-22 every
-     * slot dir resolves through the Sets symlink into dbx-host/projects/<id>/,
+     * slot dir resolves through the Sets symlink into daveboxSA/projects/<id>/,
      * so the regex never matched on the device: the clear fell back to the
      * blank marker and the old snapshot came back lit and recalled — the bug
      * above, returned. The test rig never resolved the symlink, so it passed. */

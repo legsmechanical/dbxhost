@@ -16,7 +16,7 @@
 #include <unistd.h>
 
 #ifndef SCHWUNG_INSTALL_DIR
-#define SCHWUNG_INSTALL_DIR "/data/UserData/dbx-host"
+#define SCHWUNG_INSTALL_DIR "/data/UserData/daveboxSA"
 #endif
 
 #define SA_MASTER_VOLUME_DEFAULT_PATH SCHWUNG_INSTALL_DIR "/sa_master_volume"

@@ -20,7 +20,7 @@
 # ⭐ KEPT, in place, so a reinstall picks up exactly where the user left off —
 # the launcher rebuilds the set library from projects/ and seeds a first project
 # only when there are none; the first-launch install lays only its own files:
-#   projects/ projects.json davebox-exports/       the user's work
+#   projects/ projects.json davebox-exports/ MIDI/ the user's work
 #   daves-seen.txt daves-window.txt bank-view-map.txt card-hold.txt seq-follow.txt midi-mute.txt midi-map.txt parallel-modules.txt
 #   active_set.txt sets/sa_song_index              last project open
 #   sa_master_volume shadow_config.json config/    settings
@@ -42,12 +42,19 @@
 #      so nothing is read from disk after the delete).
 # Every step is idempotent: an interrupted run is finished by running it again.
 #
-# Overridable for tests only: DBX_DIR STOCK_DIR SETS_DIR BOOT_ROOT SHM_DIR
-# SESSION_LOCK PROC_DIR STOCK_HEAL SHIM_PATH UNIT_PATH DONE_FILE MOD_DIR.
+# ⚠ THE PRE-RENAME FOLDER (DBX_DIR_OLD). dAVEBOx SA's folder was renamed; an
+# install the launcher never got to move still sits at the old name. If only the
+# old one is there it is moved first (one rename, exactly as the launcher does),
+# so everything below works on one tree. If both are there, both are swept with
+# the same keep-list. A leftover symlink at the old name is removed.
+#
+# Overridable for tests only: DBX_DIR DBX_DIR_OLD STOCK_DIR SETS_DIR BOOT_ROOT
+# SHM_DIR SESSION_LOCK PROC_DIR STOCK_HEAL SHIM_PATH UNIT_PATH DONE_FILE MOD_DIR.
 
 set -u
 
-DBX_DIR="${DBX_DIR:-/data/UserData/dbx-host}"
+DBX_DIR="${DBX_DIR:-/data/UserData/daveboxSA}"
+DBX_DIR_OLD="${DBX_DIR_OLD:-/data/UserData/dbx-host}"
 STOCK_DIR="${STOCK_DIR:-/data/UserData/schwung}"
 SETS_DIR="${SETS_DIR:-/data/UserData/UserLibrary/Sets}"
 MOVE_SETTINGS_DIR="${MOVE_SETTINGS_DIR:-/data/UserData/settings}"
@@ -69,7 +76,7 @@ OPEN_TOOL_CMD="$STOCK_DIR/open_tool_cmd.json"
 
 # Top-level names under $DBX_DIR that are the user's, never removed. sets/ is
 # special-cased: only the KEEP_IN_SETS names survive inside it.
-KEEP="projects projects.json templates davebox-exports daves-seen.txt daves-window.txt bank-view-map.txt card-hold.txt seq-follow.txt midi-mute.txt midi-map.txt parallel-modules.txt active_set.txt sa_master_volume shadow_config.json config quarantine settings"
+KEEP="projects projects.json templates davebox-exports MIDI daves-seen.txt daves-window.txt bank-view-map.txt card-hold.txt seq-follow.txt midi-mute.txt midi-map.txt parallel-modules.txt active_set.txt sa_master_volume shadow_config.json config quarantine settings"
 KEEP_IN_SETS="sa_song_index quarantine"
 
 DRY=1
@@ -88,8 +95,36 @@ session_live() {
     [ -n "$_pid" ] && [ -d "$PROC_DIR/$_pid" ]
 }
 
-sets_bound() { [ -d "$LIBRARY" ] && [ "$SETS_DIR" -ef "$LIBRARY" ]; }
-settings_bound() { [ -d "$DBX_DIR/settings" ] && [ "$MOVE_SETTINGS_DIR" -ef "$DBX_DIR/settings" ]; }
+# Either tree's library or settings counts: a session run from the old folder
+# that was never moved can still have them bound.
+sets_bound() {
+    { [ -d "$LIBRARY" ] && [ "$SETS_DIR" -ef "$LIBRARY" ]; } ||
+        { [ -d "$DBX_DIR_OLD/sets/library" ] && [ "$SETS_DIR" -ef "$DBX_DIR_OLD/sets/library" ]; }
+}
+settings_bound() {
+    { [ -d "$DBX_DIR/settings" ] && [ "$MOVE_SETTINGS_DIR" -ef "$DBX_DIR/settings" ]; } ||
+        { [ -d "$DBX_DIR_OLD/settings" ] && [ "$MOVE_SETTINGS_DIR" -ef "$DBX_DIR_OLD/settings" ]; }
+}
+
+# The old tree, when it is a real directory (a symlink there is only a leftover).
+old_tree() { [ -d "$DBX_DIR_OLD" ] && [ ! -L "$DBX_DIR_OLD" ]; }
+
+# Move an install that still sits at the pre-rename name, the way the launcher
+# does: one rename, only when the new name is absent or an empty directory.
+step_rename() {
+    if [ -L "$DBX_DIR_OLD" ]; then
+        act "remove the leftover link $DBX_DIR_OLD" rm -f "$DBX_DIR_OLD"
+        return 0
+    fi
+    old_tree || return 0
+    if [ ! -e "$DBX_DIR" ] && [ ! -L "$DBX_DIR" ]; then
+        act "move $DBX_DIR_OLD to $DBX_DIR" mv "$DBX_DIR_OLD" "$DBX_DIR"
+    elif [ -d "$DBX_DIR" ] && [ ! -L "$DBX_DIR" ] && [ -z "$(ls -A "$DBX_DIR" 2>/dev/null)" ]; then
+        act "move $DBX_DIR_OLD over the empty $DBX_DIR" sh -c 'rmdir "$1" && mv "$2" "$1"' _ "$DBX_DIR" "$DBX_DIR_OLD"
+    else
+        say "  both $DBX_DIR_OLD and $DBX_DIR exist: both are cleaned, each keeping your files"
+    fi
+}
 
 # Directory listings are iterated one NAME per line with globbing off, so a
 # name with a space or a `*` in it is one entry, never several or an expansion.
@@ -110,16 +145,15 @@ is_kept_in_sets() {
     return 1
 }
 
-anything_installed() {
-    [ -d "$SA_MOD_DIR" ] || [ -d "$BOOT_ROOT/davebox" ] ||
-        [ -e "$SHIM_PATH" ] || [ -e "$UNIT_PATH" ] && return 0
-    [ -d "$DBX_DIR" ] || return 1
+# Does dir $1 hold anything that is not kept?
+tree_has_install() {
+    [ -d "$1" ] || return 1
     _found=1
     lines_begin
-    for _e in $(ls -A "$DBX_DIR" 2>/dev/null); do
+    for _e in $(ls -A "$1" 2>/dev/null); do
         is_kept "$_e" && continue
         if [ "$_e" = sets ]; then
-            for _s in $(ls -A "$DBX_DIR/sets" 2>/dev/null); do
+            for _s in $(ls -A "$1/sets" 2>/dev/null); do
                 is_kept_in_sets "$_s" || _found=0
             done
             continue
@@ -128,6 +162,14 @@ anything_installed() {
     done
     lines_end
     return $_found
+}
+
+anything_installed() {
+    [ -d "$SA_MOD_DIR" ] || [ -d "$BOOT_ROOT/davebox" ] ||
+        [ -e "$SHIM_PATH" ] || [ -e "$UNIT_PATH" ] || [ -L "$DBX_DIR_OLD" ] && return 0
+    tree_has_install "$DBX_DIR" && return 0
+    old_tree && tree_has_install "$DBX_DIR_OLD" && return 0
+    return 1
 }
 
 # The helper that can undo root-owned things: ours (blessed from bin/heal.new by
@@ -227,22 +269,28 @@ step_stock_leftovers() {
     say "  (stock's launch-standalone.sh is left alone — a Schwung update restores it)"
 }
 
-step_dbx_dir() {
-    say "$DBX_DIR:"
-    [ -d "$DBX_DIR" ] || { say "  not there"; return 0; }
+sweep_tree() {  # sweep_tree <dir>: remove all but the keep-list
+    _d="$1"
+    say "$_d:"
+    [ -d "$_d" ] && [ ! -L "$_d" ] || { say "  not there"; return 0; }
     lines_begin
-    for _e in $(ls -A "$DBX_DIR"); do
+    for _e in $(ls -A "$_d"); do
         if is_kept "$_e"; then say "  keep:  $_e"; continue; fi
-        if [ "$_e" = sets ] && [ -d "$DBX_DIR/sets" ] && [ ! -L "$DBX_DIR/sets" ]; then
-            for _s in $(ls -A "$DBX_DIR/sets"); do
+        if [ "$_e" = sets ] && [ -d "$_d/sets" ] && [ ! -L "$_d/sets" ]; then
+            for _s in $(ls -A "$_d/sets"); do
                 if is_kept_in_sets "$_s"; then say "  keep:  sets/$_s"; continue; fi
-                act "remove sets/$_s" rm -rf "$DBX_DIR/sets/$_s"
+                act "remove sets/$_s" rm -rf "$_d/sets/$_s"
             done
             continue
         fi
-        act "remove $_e" rm -rf "$DBX_DIR/$_e"
+        act "remove $_e" rm -rf "$_d/$_e"
     done
     lines_end
+}
+
+step_dbx_dir() {
+    sweep_tree "$DBX_DIR"
+    if old_tree; then sweep_tree "$DBX_DIR_OLD"; fi
 }
 
 step_modules() {
@@ -254,7 +302,8 @@ step_modules() {
 report() {
     say ""
     say "Kept: your projects are in $DBX_DIR/projects,"
-    say "      exports in $DBX_DIR/davebox-exports, with your settings beside them."
+    say "      exports in $DBX_DIR/davebox-exports and $DBX_DIR/MIDI, with your settings beside them."
+    old_tree && say "      (and whatever was kept in $DBX_DIR_OLD, the folder's pre-rename name)"
     say "      Reinstall dAVEBOx and it picks up where you left off."
     if [ "$DRY" = 1 ]; then say "Dry run only: nothing was changed. Run with --run to uninstall."
     elif [ "$PROBLEMS" = 0 ]; then say "dAVEBOx is uninstalled."
@@ -280,6 +329,8 @@ main() {
         exit 2
     fi
     bless_own_helper
+    say "Folder:"
+    step_rename
     if ! step_sets; then
         [ "$DRY" = 0 ] && echo 3 > "$DONE_FILE"
         exit 3

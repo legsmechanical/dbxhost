@@ -35,8 +35,8 @@ scp 'ableton@move.local:/data/UserData/schwung/traces/*.otlp.jsonl' .
 
 ⚠ **Those paths are the STOCK install's.** `TRACE_TOUCH_FILE` and `TRACE_DIR`
 are built from `SCHWUNG_INSTALL_DIR`, which this fork overrides — a dbxhost
-build watches `/data/UserData/dbx-host/otlp_trace_on` and writes to
-`/data/UserData/dbx-host/traces`. Touching the stock path while a dAVEBOx
+build watches `/data/UserData/daveboxSA/otlp_trace_on` and writes to
+`/data/UserData/daveboxSA/traces`. Touching the stock path while a dAVEBOx
 session is running enables tracing in *stock's* processes and looks exactly like
 tracing that silently produced nothing. Check which tree you mean:
 `strings <binary> | grep otlp_trace_on`.
@@ -185,7 +185,7 @@ Separate touch-file gates exist alongside `otlp_trace_on` and `debug_log_on`
 (`docs/LOGGING.md`), each independent and independently toggleable:
 
 - **`param_lane_trace_on`**: touching
-  `/data/UserData/dbx-host/param_lane_trace_on` BEFORE `shadow_ui` starts (it is
+  `/data/UserData/daveboxSA/param_lane_trace_on` BEFORE `shadow_ui` starts (it is
   checked once at startup, like `otlp_trace_on`) captures a
   3-second trace of every push onto the parameter write lane and every
   fallback off it (to the pending queue or the mailbox), independent of

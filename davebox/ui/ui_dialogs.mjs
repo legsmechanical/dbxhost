@@ -897,12 +897,12 @@ export function closeConvertConfirm() {
 /* NOTHING logs it — every entry point here is wrapped (_pppGuard).    */
 /* ------------------------------------------------------------------ */
 
-const PROJECT_CMD = '/data/UserData/dbx-host/scripts/project-cmd.sh';
-const PROJECTS_JSON = '/data/UserData/dbx-host/projects.json';
+const PROJECT_CMD = '/data/UserData/daveboxSA/scripts/project-cmd.sh';
+const PROJECTS_JSON = '/data/UserData/daveboxSA/projects.json';
 /* The launcher's queued-work file. project-cmd appends an mv here when it
  * decides a rename touches a set MOVE still has open; its presence is the only
  * way this side can tell "deferred" from "failed". */
-const RELAUNCH_PATCH = '/data/UserData/dbx-host/relaunch_patch.sh';
+const RELAUNCH_PATCH = '/data/UserData/daveboxSA/relaunch_patch.sh';
 
 /* ⭑⭑ DID THE SCRIPT DEFER? — the one question this side must not answer twice.
  *
@@ -933,7 +933,7 @@ function _pppQueueSnapshot() {
  * got it" from "a set was already open underneath" — it takes whatever Move
  * loads as the answer, and the PROJECT DID NOT OPEN verdict, which exists for
  * exactly the case where we asked and did not get it, can never be produced. */
-const INTENDED_SET = '/data/UserData/dbx-host/intended_set.txt';
+const INTENDED_SET = '/data/UserData/daveboxSA/intended_set.txt';
 /* ⭐⭐ THE SAME RECORD, FOR THE NEXT SESSION. A request does NOT survive a Move
  * relaunch: the still-live shim consumes intended_set.txt within ~1.4 s of the
  * pick, about a second before the relaunch tears that shim down, so the new
@@ -947,7 +947,7 @@ const INTENDED_SET = '/data/UserData/dbx-host/intended_set.txt';
  * down, appending the counter it is measured against. Writing BOTH would be
  * pointless (the dying shim would still eat one) and would give two records a
  * chance to disagree — the shape deliberately removed on 2026-09-16. */
-const RELAUNCH_REQUEST = '/data/UserData/dbx-host/relaunch_request.txt';
+const RELAUNCH_REQUEST = '/data/UserData/daveboxSA/relaunch_request.txt';
 
 function _pppRunList() {
     /* host_system_cmd blocks (system()), so the refreshed list is readable
@@ -1321,7 +1321,7 @@ export function prepareSlotFor(projectUuid) {
     host_system_cmd('sh ' + PROJECT_CMD + ' switch-slot ' + projectUuid + ' ' + live);
     _slotRefusedUnreadable = null;
     try {
-        const a = JSON.parse(host_read_file('/data/UserData/dbx-host/slot_switch.json') || '{}');
+        const a = JSON.parse(host_read_file('/data/UserData/daveboxSA/slot_switch.json') || '{}');
         if (a && !a.ok && typeof a.why === 'string' && a.why.indexOf('unreadable:') === 0)
             _slotRefusedUnreadable = a.why.slice('unreadable:'.length);
         return (a && a.ok && typeof a.slot === 'number' && a.slot >= 0) ? a : null;

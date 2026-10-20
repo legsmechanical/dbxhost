@@ -77,6 +77,20 @@ in this repo. What remains reachable by design: the file browser's own copy/move
 The library therefore carries a `DO-NOT-EDIT.txt` written by `set-swap.sh` on every enter. The blast
 radius stays a project that opens blank, which is the accepted contract.
 
+## The umbrella folder rename (2026-10)
+
+dAVEBOx SA's device folder became `/data/UserData/daveboxSA` (was `dbx-host`), and MIDI exports moved
+from `/data/UserData/dAVEBOx MIDI` into its `MIDI/`. The launcher moves an old install with ONE
+`rename(2)` before anything can create the new path, and **no compatibility symlink is left at the
+old name** (the owner's decision): a link would keep every stale path working silently, so a missed
+site would never be found, and the old name would linger on the device and in the MIDI browser for
+good — while the negative sweep in `tests/host/test_repo_claims.sh` makes a missed site in this tree
+fail instead. A dangling leftover link is removed; a valid one is left alone. **The cost is
+downgrade:** a build from before the rename looks for `dbx-host`, finds nothing, and bootstraps a
+fresh, empty install there, so the user's projects stay in `daveboxSA` and are invisible to it until
+the folder is renamed back by hand (`mv daveboxSA dbx-host` over ssh, no session running). Internal
+identifiers (`dbxhost-` SHM prefix, the session lock, `seq8sa`, module ids) were not renamed.
+
 ## Fork-only divergences — the upstream history
 
 These live in this fork's build only and must never be carried into upstream PRs.

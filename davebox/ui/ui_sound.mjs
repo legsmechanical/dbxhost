@@ -7572,7 +7572,7 @@ function menuStep(delta) {
 /* In OUR install, not stock's cache/: dAVEBOx Legacy writes the same name
  * under /data/UserData/schwung/cache, so sharing it meant each product read the
  * other's cached names, and our uninstaller wiped Legacy's cache. */
-const BAKED_CACHE_DIR = '/data/UserData/dbx-host/cache/davebox-presetnames';
+const BAKED_CACHE_DIR = '/data/UserData/daveboxSA/cache/davebox-presetnames';
 const BAKED_CACHE_V = 2;
 
 /* Sampling MOVES the module's preset index — the caller restores it. Kept out

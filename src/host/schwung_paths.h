@@ -15,7 +15,7 @@
  *
  * Override at compile time:
  *
- *   -DSCHWUNG_INSTALL_DIR='"/data/UserData/dbx-host"'
+ *   -DSCHWUNG_INSTALL_DIR='"/data/UserData/daveboxSA"'
  *   -DSCHWUNG_SHM_PREFIX='"/dbxhost-"'
  *
  * ⚠ Change them TOGETHER. A build with its own directory but the stock SHM

@@ -8,11 +8,11 @@ which reads as "the thing never happened".
 
 | file | holds |
 |---|---|
-| `/data/UserData/dbx-host/debug.log` | the SA unified log — **shim, C `unified_log()`, and JS** |
-| `/data/UserData/dbx-host/launch.log` | the launcher / Move's own stdout — `About to load …Song.abl`, memory stats |
+| `/data/UserData/daveboxSA/debug.log` | the SA unified log — **shim, C `unified_log()`, and JS** |
+| `/data/UserData/daveboxSA/launch.log` | the launcher / Move's own stdout — `About to load …Song.abl`, memory stats |
 | `/data/UserData/schwung/debug.log` | the STOCK tree's same-named, different file |
 
-Arm it with `touch /data/UserData/dbx-host/debug_log_on` — **in that tree**, not the stock one.
+Arm it with `touch /data/UserData/daveboxSA/debug_log_on` — **in that tree**, not the stock one.
 
 - ⭑⭑ **JS `console.log` DOES reach `debug.log`**, tagged `[SEQ8]` / `[shadow]`; davebox's own helper
   prefixes `[sound]`. (2026-08-15: concluded otherwise, called working instrumentation blind, and

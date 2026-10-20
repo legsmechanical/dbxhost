@@ -52,7 +52,7 @@ esac
   fail "DBX_OWNED_MODULE_DIRS drifted: '${DBX_OWNED_MODULE_DIRS:-}'"
 
 # davebox-sound must be installed into the OWNED tree, never stock's.
-command grep -q 'INSTALL_DIR="/data/UserData/dbx-host/modules/tools/\${MODULE_ID}"' \
+command grep -q 'INSTALL_DIR="/data/UserData/daveboxSA/modules/tools/\${MODULE_ID}"' \
   davebox/scripts/install_sound.sh ||
   fail "install_sound.sh does not target the owned modules tree — a stock update \
 could overwrite or drop dAVEBOx SA the way v1.0.0 replaced the chain DSP"
@@ -81,7 +81,7 @@ command grep -qE 'rsync .*"\$REPO_ROOT/build/modules/\$own/"' "$inst" ||
 # moves, the pin above is still right but someone should re-derive why.
 command grep -q 'synth:module' src/modules/chain/dsp/chain_host.c ||
   fail "the fork's chain DSP no longer carries the synth:module readback — \
-re-examine whether dbx-host still needs to own modules/chain"
+re-examine whether daveboxSA still needs to own modules/chain"
 # ⚠ intended_set.txt joined this list on 2026-09-19 and MUST be private: it is
 # the request dAVEBOx writes at the pick and the host consumes. Shared between
 # the two installs it would let one host's pick be judged against the other's

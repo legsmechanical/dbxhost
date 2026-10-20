@@ -147,7 +147,7 @@ check "launch.log records the fall-back to default too" \
 # ---- lifecycle: the reader must never outlive the session ----------------
 # The session ends by exec-ing onward to stock (boot) or exiting (tools);
 # neither kills background children. A reader that leaves its tail pipeline
-# behind writes into dbx-host/ forever and gains a copy per session.
+# behind writes into daveboxSA/ forever and gains a copy per session.
 all_gone() { local p; for p in "$@"; do kill -0 "$p" 2>/dev/null && return 1; done; return 0; }
 gone_within() { local n=0; while [ $n -lt 40 ]; do all_gone "$@" && return 0; sleep 0.1; n=$((n+1)); done; return 1; }
 

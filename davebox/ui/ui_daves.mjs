@@ -42,11 +42,11 @@ export const DAVE_SCAN_MAX = DAVE_FOOTER_H;          /* 64 - (64 - 18) */
 const SCAN_HOLD_MS = 0;
 const SCAN_STEP_MS = 128;                            /* per pixel, on the one clock */
 
-const SEEN_PATH = '/data/UserData/dbx-host/daves-seen.txt';
+const SEEN_PATH = '/data/UserData/daveboxSA/daves-seen.txt';
 /* The Daves switch, beside the collection: device-global like the album (a
  * preference of the user's, not a song's; the deploy merges file-by-file so it
  * survives updates). Absent file = OFF (Josh, 2026-09-05: "default is off"). */
-const WINDOW_PREF_PATH = '/data/UserData/dbx-host/daves-window.txt';
+const WINDOW_PREF_PATH = '/data/UserData/daveboxSA/daves-window.txt';
 
 /* dave_num -> frame index, from the pool's own statement. A number in the
  * seen file that no longer maps (a Dave removed from the pool) is skipped —

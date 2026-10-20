@@ -97,9 +97,9 @@ esac
 # ⚠ Before the signal-mask pass below: stock gets the process the selector
 # would have given it, nothing of ours applied.
 # QTS-BEGIN
-_qts=/data/UserData/dbx-host/quit-to-stock
+_qts=/data/UserData/daveboxSA/quit-to-stock
 _qts_stock=/data/UserData/schwung/schwung-entry.sh
-_qts_log=/data/UserData/dbx-host/launch.log
+_qts_log=/data/UserData/daveboxSA/launch.log
 _qts_window=30
 if [ "$_dbx_entry" = boot ] && [ -f "$_qts" ]; then
     _qts_then="$(head -n 1 "$_qts" 2>/dev/null)"
@@ -148,9 +148,84 @@ setsid --wait bash -c '
   # it spawns, and the boot path ends in an exec, which is how it escaped into
   # the next stock session and broke the Tools door.
   DBX_ENTRY="$1"
-  DBX_DIR=/data/UserData/dbx-host
+  DBX_DIR=/data/UserData/daveboxSA
+  # Exported so every script below resolves the SAME install dir from it rather
+  # than from its own fallback default.
+  export DBX_DIR
   HEAL=/data/UserData/schwung/modules/tools/davebox-sa/bin/heal   # the blessed helper (2026-09-05: inside the launcher module dir; no apostrophes in this body)
   LOG=$DBX_DIR/launch.log
+
+  # THE UMBRELLA FOLDER RENAME. An install made under the pre-rename name
+  # (DBX_DIR_OLD) is MOVED here, once, before anything below can create a second,
+  # empty install at the new path (the mkdir just below, and bootstrap, which
+  # lays a fresh payload wherever DBX_DIR says there is none).
+  #   * ONE rename(2): same filesystem, so it is atomic and keeps every inode.
+  #     Never a copy. The setuid helper finds its bind mounts by the SOURCE
+  #     inode, so a mount made from the old path is still recognised as ours.
+  #   * Only while no session holds the lock: a live session runs from the old
+  #     tree, and renaming it underneath would pull its files away mid-session.
+  #   * NEW WINS whenever it is non-empty. The old tree is then left exactly as
+  #     it is -- never merged, never deleted here (the uninstaller removes it).
+  #   * No compatibility link is made at the old path (see RATIONALE.md); a
+  #     dangling one is removed, a valid one left alone.
+  #   * The MIDI export folder that used to sit at the top of user data is
+  #     folded in as $DBX_DIR/MIDI, unless one is already there.
+  # Lifted and run by tests/host/test_install_rename.sh. No apostrophes: this
+  # whole body is one single-quoted string.
+  # MIGRATE-BEGIN
+  DBX_DIR_OLD=/data/UserData/dbx-host
+  _mig_midi_old="/data/UserData/dAVEBOx MIDI"
+  _mig_lock=/dev/shm/.dbxhost-session.lock
+  _mig=""
+  _mig_done=""
+  _mig_hold=""
+  if [ -d "$DBX_DIR_OLD" ] && [ ! -L "$DBX_DIR_OLD" ]; then
+    if ( exec 8>>"$_mig_lock"; flock -n 8 ) 2>/dev/null; then
+      _mig_go=""
+      if [ ! -e "$DBX_DIR" ] && [ ! -L "$DBX_DIR" ]; then
+        _mig_go=1
+      elif [ -d "$DBX_DIR" ] && [ ! -L "$DBX_DIR" ] && [ -z "$(ls -A "$DBX_DIR" 2>/dev/null)" ]; then
+        rmdir "$DBX_DIR" && _mig_go=1 || { _mig_hold=1; _mig="MIGRATION FAILED: could not remove the empty $DBX_DIR"; }
+      else
+        _mig="WARNING: both $DBX_DIR_OLD and $DBX_DIR exist -- keeping $DBX_DIR, leaving the old tree untouched (the uninstaller removes it)"
+      fi
+      if [ -n "$_mig_go" ]; then
+        if mv "$DBX_DIR_OLD" "$DBX_DIR"; then
+          _mig_done=1
+          _mig="migrated $DBX_DIR_OLD -> $DBX_DIR"
+          # The preflight manifest names each owned file by its full path. Re-
+          # point those lines rather than re-record, so a file that changed
+          # since install is still reported as changed.
+          if [ -f "$DBX_DIR/.owned-manifest" ]; then
+            sed "s# $DBX_DIR_OLD/# $DBX_DIR/#" "$DBX_DIR/.owned-manifest" > "$DBX_DIR/.owned-manifest.tmp" \
+              && mv -f "$DBX_DIR/.owned-manifest.tmp" "$DBX_DIR/.owned-manifest"
+          fi
+        else
+          _mig_hold=1
+          _mig="MIGRATION FAILED: mv $DBX_DIR_OLD $DBX_DIR"
+        fi
+      fi
+    else
+      _mig_hold=1
+      _mig="a session holds the lock -- the move of $DBX_DIR_OLD is deferred"
+    fi
+  elif [ -L "$DBX_DIR_OLD" ] && [ ! -e "$DBX_DIR_OLD" ]; then
+    rm -f "$DBX_DIR_OLD" && _mig="removed the dangling $DBX_DIR_OLD link"
+  fi
+  # (An EMPTY MIDI folder does not count as one: the manager start below makes
+  # it so its shortcut shows, and that must not block the fold-in for good.)
+  if [ -z "$_mig_hold" ] && [ -d "$_mig_midi_old" ] && [ ! -L "$_mig_midi_old" ] && [ -d "$DBX_DIR/MIDI" ] && [ ! -L "$DBX_DIR/MIDI" ] \
+     && [ -z "$(ls -A "$DBX_DIR/MIDI" 2>/dev/null)" ]; then
+    rmdir "$DBX_DIR/MIDI" 2>/dev/null
+  fi
+  if [ -z "$_mig_hold" ] && [ -d "$_mig_midi_old" ] && [ ! -L "$_mig_midi_old" ] && [ -d "$DBX_DIR" ] && [ ! -e "$DBX_DIR/MIDI" ] && [ ! -L "$DBX_DIR/MIDI" ]; then
+    mv "$_mig_midi_old" "$DBX_DIR/MIDI" && _mig="${_mig:+$_mig; }MIDI exports moved from $_mig_midi_old into $DBX_DIR/MIDI"
+  fi
+  # MIGRATE-END
+  # A HELD migration (it failed, or a session was live) must not create the new
+  # directory: the next launch would then find both and keep the empty one.
+  # Log beside the old tree instead; the launch is refused once the log is up.
+  if [ -n "$_mig_hold" ]; then LOG=$DBX_DIR_OLD/launch.log; fi
   # ON A FRESH INSTALL THIS DIRECTORY DOES NOT EXIST YET: the first-launch
   # bootstrap creates it further down. Without it the redirect below fails, and
   # this launch -- the launcher AND Move, which inherits this output -- logs
@@ -158,7 +233,7 @@ setsid --wait bash -c '
   # lines out of launch.log to learn which set Move opened, so the first
   # project load of every fresh install timed out back to the picker (the
   # second launch, with the directory in place, worked).
-  mkdir -p "$DBX_DIR"
+  [ -n "$_mig_hold" ] || mkdir -p "$DBX_DIR"
   # Capped: Move prints a memory line every minute into this log for the whole
   # session, so past 1 MB it becomes launch.log.1 (one previous kept).
   [ "$(wc -c < "$LOG" 2>/dev/null || echo 0)" -gt 1048576 ] && mv -f "$LOG" "$LOG.1"
@@ -173,6 +248,7 @@ setsid --wait bash -c '
   # "19:01:56.%2N": there the stamp falls back to whole seconds.
   ts() { _t="$(date +%H:%M:%S.%N | cut -c1-11)"; case "$_t" in *N*) _t="${_t%.*}" ;; esac; echo "$_t phase: $*"; }
   ts "launcher entered (entry=$DBX_ENTRY)"
+  [ -n "$_mig" ] && ts "umbrella folder: $_mig"
   # The mask this session runs under (TERM is bit 14, 0x4000): proof the
   # clearing at the top of this file ran, or was not needed.
   echo "signal mask: $(sed -n "s/^SigBlk:[[:space:]]*//p" /proc/$$/status 2>/dev/null)"
@@ -283,6 +359,12 @@ setsid --wait bash -c '
     unit --resume-launcher || true
     exit 1
   }
+
+  # A held umbrella-folder move (MIGRATE-BEGIN above) refuses HERE, once the
+  # log is up and refuse() exists: carrying on would let bootstrap lay a second,
+  # empty install at the new path beside the real one. Nothing has been touched
+  # yet, and the next launch tries the move again.
+  [ -n "$_mig_hold" ] && refuse "umbrella folder not moved ($_mig)"
 
   # (The old /data marker standalone_active is retired — the lock above IS
   # the "session running" signal now, and readers probe its PID for
@@ -669,11 +751,12 @@ setsid --wait bash -c '
       tail -c 102400 "$mgr_log" > "$mgr_log.tmp" 2>/dev/null && mv "$mgr_log.tmp" "$mgr_log"
     fi
     if [ -x "$DBX_DIR/schwung-manager" ]; then
-      # The file browser opens with a link to the exports folder; made here so
-      # the link is there before the first export.
-      mkdir -p "$DBX_DIR/davebox-exports" 2>/dev/null || true
+      # The file browser opens with links to the exports and MIDI folders; made
+      # here so the links are there before the first export (the manager shows
+      # a shortcut only when its folder exists).
+      mkdir -p "$DBX_DIR/davebox-exports" "$DBX_DIR/MIDI" 2>/dev/null || true
       "$DBX_DIR/schwung-manager" -port 7700 -roots /data/UserData/ \
-        -base "$DBX_DIR" -file-shortcuts "dAVEBOx exports=$DBX_DIR/davebox-exports" \
+        -base "$DBX_DIR" -file-shortcuts "dAVEBOx exports=$DBX_DIR/davebox-exports,dAVEBOx MIDI=$DBX_DIR/MIDI" \
         >>"$mgr_log" 2>&1 &
       echo "started schwung-manager ($!)"
     fi
@@ -1083,7 +1166,7 @@ if [ "$_dbx_entry" = boot ]; then
     # first attempt at this exec failed with NO output anywhere: MoveLauncher
     # ended up alive with only its sentry and no Move, showing "Move
     # terminated", and nothing recorded why.
-    exec >>/data/UserData/dbx-host/launch.log 2>&1
+    exec >>/data/UserData/daveboxSA/launch.log 2>&1
     echo "$(date +%H:%M:%S) boot exit: handing the pid on"
 
     # ⭑ GO STRAIGHT TO STOCK SCHWUNG, not back through the picker. Simpler —

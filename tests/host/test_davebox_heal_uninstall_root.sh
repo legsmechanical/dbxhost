@@ -85,6 +85,33 @@ for bin in heal-full heal-un; do
     [ "$(cat "$T/settings/Settings.json")" = '{"theirs":1}' ] && ok "the user's settings are untouched" || bad "settings touched"
 done
 
+echo "the second, path-free signal: the TARGET listed as a mount point (install-dir rename):"
+# A build that reads its mount table from a fixture. The source does not match
+# (the old install dir is gone), so only the mount table can say "bound".
+build "$T/heal-mi" -DMOUNTINFO_PATH="\"$T/mountinfo\"" || { echo "FAIL: build (mountinfo)"; exit 1; }
+for bin in heal-full heal-un; do
+    installed
+    "$T/$bin" --umount-sets 2>"$T/err"; rc=$?
+    [ "$rc" = 0 ] && grep -q "sets not bound — nothing to undo" "$T/err" \
+        && ok "$bin: a target neither bound nor a mount point is still success (rc 0)" || bad "$bin rc=$rc: $(cat "$T/err")"
+done
+installed
+printf '36 25 179:2 / /data rw,relatime shared:1 - ext4 /dev/root rw\n' > "$T/mountinfo"
+"$T/heal-mi" --umount-sets 2>"$T/err"; rc=$?
+[ "$rc" = 0 ] && grep -q "sets not bound" "$T/err" && ok "another mount point in the table: still nothing to undo" || bad "rc=$rc: $(cat "$T/err")"
+{ printf '1 2 3:4 /'; head -c 5000 /dev/zero | tr '\0' x; printf ' %s rw - ext4 x rw\n' "$T/Sets"; } > "$T/mountinfo"
+"$T/heal-mi" --umount-sets 2>"$T/err"; rc=$?
+[ "$rc" = 0 ] && ok "an over-long line is skipped whole, never half-read as a mount of the target" || bad "rc=$rc: $(cat "$T/err")"
+printf '36 25 179:2 / /data rw - ext4 /dev/root rw\n99 36 179:2 /dbx-old/sets/library %s rw,relatime shared:1 - ext4 /dev/root rw\n' "$T/Sets" > "$T/mountinfo"
+"$T/heal-mi" --umount-sets 2>"$T/err"; rc=$?
+# The fixture's target is not really mounted, so umount(2) fails — which is the
+# proof the verb TRIED: without the second signal it would say "not bound".
+[ "$rc" = 2 ] && grep -q "umount $T/Sets" "$T/err" && ! grep -q "not bound" "$T/err" \
+    && ok "the target listed as a mount point: the unmount is attempted" || bad "rc=$rc: $(cat "$T/err")"
+printf '99 36 179:2 /x %s rw - ext4 /dev/root rw\n' "$T/settings" > "$T/mountinfo"
+"$T/heal-mi" --umount-settings 2>"$T/err"; rc=$?
+[ "$rc" = 2 ] && grep -q "umount $T/settings" "$T/err" && ok "...and the same for the settings folder" || bad "rc=$rc: $(cat "$T/err")"
+
 echo "heal-full --mount-settings:"
 installed; rm -rf "$T/dbx/settings"
 "$T/heal-full" --mount-settings 2>"$T/err"; rc=$?

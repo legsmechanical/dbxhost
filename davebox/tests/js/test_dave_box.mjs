@@ -243,7 +243,7 @@ step('⭐ the DAVES SWITCH: default OFF (no file) → no window; On deals; Off c
     const writes = [];
     globalThis.host_write_file = (p, c) => { writes.push([p, c]); if (p.indexOf('daves-window') >= 0) prefFileContent = c; return true; };
     daves.setDaveWindowOn(true);
-    if (!writes.find(w => w[0].indexOf('/dbx-host/daves-window.txt') >= 0 && w[1].trim() === '1'))
+    if (!writes.find(w => w[0].indexOf('/daveboxSA/daves-window.txt') >= 0 && w[1].trim() === '1'))
         throw new Error('On did not persist to the device-global pref file: ' + JSON.stringify(writes));
     daves.bannerDaveSync();
     if (S.bannerDave !== 0) throw new Error('switch ON did not deal on the next poll, got ' + S.bannerDave);

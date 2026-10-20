@@ -24,7 +24,7 @@ const bad = (l, e) => { console.error(`  FAIL — ${l}: ${e && e.stack ? e.stack
 const step = (l, fn) => { try { fn(); ok(l); } catch (e) { bad(l, e); } };
 
 const SETS = '/data/UserData/UserLibrary/Sets';
-const PROJECTS = '/data/UserData/dbx-host/projects';
+const PROJECTS = '/data/UserData/daveboxSA/projects';
 
 globalThis.host_state_subdir = () => 'dAVEBOx';
 globalThis.host_read_file = () => '';

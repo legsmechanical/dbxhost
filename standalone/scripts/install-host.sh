@@ -56,6 +56,28 @@ say "=== dAVEBOx host deploy -> ${MOVE_USER}@${MOVE_HOST}:${DBX_DIR} ==="
 # --- preflight -------------------------------------------------------------
 $SSH true 2>/dev/null || { echo "cannot reach ${MOVE_HOST}" >&2; exit 1; }
 
+# THE UMBRELLA FOLDER RENAME. An install still under the pre-rename name
+# (DBX_DIR_LEGACY in config.sh) is moved to $DBX_DIR here, the way the launcher
+# moves it at its next launch: one rename, only when no session is live (a live
+# one runs from the old tree) and only when the new name is absent or an empty
+# directory. Otherwise the existing-install check below explains what to do.
+LIVE=0
+if $SSH "p=\$(cat /dev/shm/.dbxhost-session.lock 2>/dev/null) || exit 1; \
+         case \"\$p\" in (*[!0-9]*|'') exit 0;; esac; \
+         [ -d \"/proc/\$p\" ]" 2>/dev/null; then LIVE=1; fi
+if [ "$LIVE" = 0 ]; then
+    $SSH "o='$DBX_DIR_LEGACY'; n='$DBX_DIR'
+          if [ -d \"\$o\" ] && [ ! -L \"\$o\" ]; then
+              if [ ! -e \"\$n\" ] && [ ! -L \"\$n\" ]; then mv \"\$o\" \"\$n\" && echo \"moved \$o -> \$n\"
+              elif [ -d \"\$n\" ] && [ ! -L \"\$n\" ] && [ -z \"\$(ls -A \"\$n\")\" ]; then rmdir \"\$n\" && mv \"\$o\" \"\$n\" && echo \"moved \$o -> \$n (over an empty one)\"
+              else echo \"WARNING: both \$o and \$n exist -- deploying to \$n, the old tree left as it is\"; fi
+          elif [ -L \"\$o\" ] && [ ! -e \"\$o\" ]; then rm -f \"\$o\" && echo \"removed the dangling \$o link\"; fi" || true
+elif $SSH "test -d '$DBX_DIR_LEGACY' && test ! -L '$DBX_DIR_LEGACY' && test ! -e '$DBX_DIR'" 2>/dev/null; then
+    echo "ERROR: the install is still at its pre-rename name ($DBX_DIR_LEGACY) and a session is" >&2
+    echo "       running from it. Leave the session, then re-run: the folder is moved first." >&2
+    exit 1
+fi
+
 $SSH "test -x '$DBX_DIR/schwung' && test -d '$DBX_DIR/shadow'" 2>/dev/null || {
     echo "ERROR: $DBX_DIR does not look like an existing install." >&2
     echo "       This script updates an install; it cannot create one — a first" >&2
@@ -71,9 +93,7 @@ $SSH "test -x '$DBX_DIR/schwung' && test -d '$DBX_DIR/shadow'" 2>/dev/null || {
 # alive. A reboot or crash clears/releases it by construction, so a deploy can
 # never be blocked by a session that already ended. Unreadable/garbled payload
 # counts as live (permissive, matching the host's own reader).
-if $SSH "p=\$(cat /dev/shm/.dbxhost-session.lock 2>/dev/null) || exit 1; \
-         case \"\$p\" in (*[!0-9]*|'') exit 0;; esac; \
-         [ -d \"/proc/\$p\" ]" 2>/dev/null; then
+if [ "$LIVE" = 1 ]; then
     if [ "$FORCE" != "1" ]; then
         echo "" >&2
         echo "REFUSING: a standalone session is running right now." >&2

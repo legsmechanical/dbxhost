@@ -13,7 +13,7 @@
 #     tools/verify-projects.sh [user@host]
 set -uo pipefail
 HOST="${1:-ableton@move.local}"
-DBX=/data/UserData/dbx-host
+DBX=/data/UserData/daveboxSA
 LIB="$DBX/sets/library"
 
 ssh -o ConnectTimeout=8 "$HOST" "DBX=$DBX LIB=$LIB bash -s" <<'REMOTE'

@@ -85,6 +85,55 @@ rc=$(run)
 [ "$rc" = 0 ] && [ "$(cat "$T/f/dbx/schwung")" = "host" ] && grep -q '"version":"v-test"' "$T/f/dbx/sa-build.json" \
     && ok "no stamp → the payload is laid and stamped" || bad "kept the unfinished install: $(cat "$T/out")"
 grep -q "never finished (no stamp)" "$T/out" && ok "...and says why" || bad "no reason: $(cat "$T/out")"
+echo "a release upgrade over a BLESSED install carries the payload's helper with it:"
+# The installed helper is an OLD build that self-updates the way davebox-heal
+# does: a staged bin/heal.new replaces it (still setuid), then it re-runs.
+old_heal() {
+    cat > "$T/f/mod/bin/heal" <<'H'
+#!/bin/sh
+# old-helper
+d="$(dirname "$0")"
+echo "old:$*" >> "$d/heal.log"
+[ -n "${HEAL_STUB_IGNORES_STAGE:-}" ] && exit 0
+[ -f "$d/heal.new" ] && mv -f "$d/heal.new" "$d/heal" && chmod 4755 "$d/heal"
+exit 0
+H
+    chmod 4755 "$T/f/mod/bin/heal"
+}
+mk blesses; rc=$(run)
+printf '{"version":"0.1.0","host":1,"davebox":1,"installed":"x","by":"bootstrap"}\n' > "$T/f/dbx/sa-build.json"
+printf '0.2.0\n' > "$T/f/mod/payload/sa-version.txt"
+old_heal; : > "$T/f/mod/bin/heal.log"
+rc=$(run)
+[ "$rc" = 0 ] && grep -q '"version":"0.2.0"' "$T/f/dbx/sa-build.json" && ok "the upgrade is laid" || bad "not laid: $(cat "$T/out")"
+cmp -s "$T/f/mod/bin/heal" "$T/f/mod/payload/bin/heal" && ok "the installed helper IS the payload's now" || bad "the old helper stayed: $(head -3 "$T/f/mod/bin/heal")"
+[ -u "$T/f/mod/bin/heal" ] && ok "...still blessed" || bad "the helper lost its setuid bit"
+[ ! -f "$T/f/mod/bin/heal.new" ] && ok "...and the stage is consumed" || bad "heal.new left behind"
+grep -qx "old:" "$T/f/mod/bin/heal.log" && ok "...by the OLD helper's own self-update (it was run with no verb)" || bad "the old helper was not asked: $(cat "$T/f/mod/bin/heal.log")"
+grep -q "helper updated from the payload" "$T/out" && ok "...and the log says so" || bad "silent: $(cat "$T/out")"
+
+echo "a helper that does not take the stage is reported, and the stage left for the launch:"
+mk blesses; rc=$(run)
+printf '{"version":"0.1.0","host":1,"davebox":1,"installed":"x","by":"bootstrap"}\n' > "$T/f/dbx/sa-build.json"
+printf '0.2.0\n' > "$T/f/mod/payload/sa-version.txt"
+old_heal
+rc=$(HEAL_STUB_IGNORES_STAGE=1 run)
+[ "$rc" = 0 ] && grep -q "staged but not installed" "$T/out" && [ -f "$T/f/mod/bin/heal.new" ] \
+    && ok "a warning, exit 0, and bin/heal.new kept" || bad "rc=$rc: $(cat "$T/out")"
+
+echo "the same helper is not re-staged, and a dev install never stages one:"
+mk blesses; rc=$(run); : > "$T/f/mod/bin/heal.log"
+printf '{"version":"0.1.0","host":1,"davebox":1,"installed":"x","by":"bootstrap"}\n' > "$T/f/dbx/sa-build.json"
+printf '0.2.0\n' > "$T/f/mod/payload/sa-version.txt"
+rc=$(run)
+[ "$rc" = 0 ] && [ ! -s "$T/f/mod/bin/heal.log" ] && [ ! -f "$T/f/mod/bin/heal.new" ] \
+    && ok "identical helper: nothing staged, nothing run" || bad "rc=$rc log=$(cat "$T/f/mod/bin/heal.log")"
+printf '{"version":"3b281910","host":1,"davebox":1,"installed":"x","by":"install-sa"}\n' > "$T/f/dbx/sa-build.json"
+old_heal; : > "$T/f/mod/bin/heal.log"
+rc=$(run)
+[ "$rc" = 0 ] && [ ! -f "$T/f/mod/bin/heal.new" ] && grep -q "old-helper" "$T/f/mod/bin/heal" \
+    && ok "dev stamp: the payload is not laid and its helper is not staged" || bad "rc=$rc: $(cat "$T/out")"
+
 echo "a stock heal that cannot bless (pre-#419):"
 mk cannot
 rc=$(run)

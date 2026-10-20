@@ -15,7 +15,7 @@
 # The owned list comes from .owned-dirs, written by install-host.sh from
 # config.sh, so this file carries no second copy of it.
 
-DBX_DIR="${DBX_DIR:-/data/UserData/dbx-host}"
+DBX_DIR="${DBX_DIR:-/data/UserData/daveboxSA}"
 STOCK_STUB=/data/UserData/schwung/modules/tools/davebox-sa/standalone
 
 cd "$DBX_DIR" || exit 0

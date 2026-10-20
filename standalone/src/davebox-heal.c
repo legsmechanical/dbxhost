@@ -50,7 +50,10 @@
  * call, and the launcher runs as ableton — hence this verb.
  *
  * Both paths are compile-time constants and no argument reaches them, so this
- * can only ever mount that one source over that one target. It cannot be aimed
+ * can only ever mount that one source over that one target. The UNMOUNT verbs
+ * also act when the kernel's mount table lists the (compile-time) target as a
+ * mount point, even if the source no longer matches — a mount left by a helper
+ * built for an older install dir. That reads only the target, never input. It cannot be aimed
  * anywhere else, and it takes no filesystem type, no options string and no
  * device — MS_BIND of a directory that this install already owns.
  * ⚠ Safety property worth stating: a bind mount HIDES, it never deletes. The
@@ -85,7 +88,7 @@
  * make it runtime-settable. The fallback below is pinned to config.sh by
  * scripts/check-config.sh. */
 #ifndef DBX_DIR
-#define DBX_DIR      "/data/UserData/dbx-host"
+#define DBX_DIR      "/data/UserData/daveboxSA"
 #endif
 #define SRC_SHIM     DBX_DIR "/schwung-shim.so"
 #ifndef DST_SHIM
@@ -343,15 +346,58 @@ static int settings_mount(void) { return bind_dir(SA_SETTINGS, SETTINGS_DIR, "se
 
 #endif
 
+/* Is `target` a mount point right now, by the kernel's own table? The SECOND,
+ * path-free signal for unbind_dir (2026-10, the umbrella folder rename).
+ * dir_is_bound() recognises our mount by its SOURCE, which it can only stat at
+ * the path this binary was compiled with. A mount made by a helper built for
+ * an older install dir — whose source has since been renamed, or is otherwise
+ * gone — no longer matches, and the user would be left looking at a library
+ * nothing can unbind short of a reboot. This asks only about the TARGET, which
+ * is one of the compile-time firmware paths (SETS_DIR, SETTINGS_DIR) and never
+ * argv: no caller-supplied string reaches it, so the verb still cannot be aimed
+ * anywhere else. Field 5 of each mountinfo line is the mount point. Names with
+ * spaces arrive escaped (\040), and neither target has one.
+ * ⚠ It cannot tell OUR mount from anyone else's at the same path. Nothing but
+ * this helper mounts over Move's Sets or settings folder, and an unmount only
+ * ever reveals what was underneath — the user's own files. */
+#ifndef MOUNTINFO_PATH   /* overridable for the test build only */
+#define MOUNTINFO_PATH "/proc/self/mountinfo"
+#endif
+static int target_is_mountpoint(const char *target) {
+    FILE *f = fopen(MOUNTINFO_PATH, "r");
+    if (!f) return 0;
+    char line[4096];
+    int found = 0;
+    while (!found && fgets(line, sizeof line, f)) {
+        size_t n = strlen(line);
+        if (n && line[n - 1] != '\n' && !feof(f)) {
+            /* Longer than the buffer: never a match for our short targets.
+             * Skip the rest, so its tail is not read as a line of its own. */
+            int c;
+            while ((c = fgetc(f)) != EOF && c != '\n') {}
+            continue;
+        }
+        char *save = NULL;
+        char *tok = strtok_r(line, " \n", &save);
+        for (int i = 1; tok && i < 5; i++) tok = strtok_r(NULL, " \n", &save);
+        if (tok && strcmp(tok, target) == 0) found = 1;
+    }
+    fclose(f);
+    return found;
+}
+
 /* Undo it. Not-mounted is SUCCESS, not an error: every teardown path calls this
  * unconditionally (session exit, the launcher's refuse paths, crash recovery),
  * and they must not fail because there was nothing to undo.
+ *
+ * "Bound" is either signal: our source's inode at the target, or the target
+ * listed as a mount point (target_is_mountpoint, above).
  *
  * MNT_DETACH as a fallback for the busy case — a process with a cwd inside the
  * library would otherwise pin the mount forever, and a lazy unmount detaches
  * the tree immediately so the user's real sets are visible again. */
 static int unbind_dir(const char *source, const char *target, const char *what) {
-    if (!dir_is_bound(source, target)) {
+    if (!dir_is_bound(source, target) && !target_is_mountpoint(target)) {
         fprintf(stderr, "davebox-heal: %s not bound — nothing to undo\n", what);
         return 0;
     }

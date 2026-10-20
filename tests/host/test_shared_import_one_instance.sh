@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 # ONE SHARED MODULE, ONE INSTANCE — under a build whose shared/ is NOT the
-# canonical one (dbxhost installs to /data/UserData/dbx-host).
+# canonical one (dbxhost installs to /data/UserData/daveboxSA).
 #
 # The bug this pins (found on device, 2026-09-15): dAVEBOx logged
 # "widgets: monksynth registered custom:monkmouth" and the Vowel cell still drew

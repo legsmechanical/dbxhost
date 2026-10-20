@@ -74,7 +74,13 @@ const DIR = 0o040000, REG = 0o100000;
 globalThis.__stubStat = {
     '/data/UserData/UserLibrary': { mode: DIR, size: 0 },
     '/data/UserData/schwung': { mode: DIR, size: 0 },
-    '/data/UserData/dbx-host': { mode: DIR, size: 0 },
+    '/data/UserData/daveboxSA': { mode: DIR, size: 0 },
+    '/data/UserData/dbx-host': { mode: DIR, size: 0 },              /* the pre-rename folder, left over */
+    '/data/UserData/daveboxSA/MIDI': { mode: DIR, size: 0 },
+    '/data/UserData/daveboxSA/projects': { mode: DIR, size: 0 },
+    '/data/UserData/daveboxSA/scripts': { mode: DIR, size: 0 },
+    '/data/UserData/daveboxSA/launch.log': { mode: REG, size: 10 },
+    '/data/UserData/daveboxSA/old.mid': { mode: REG, size: 10 },
     '/data/UserData/song.mid': { mode: REG, size: SONG.length },
     '/data/UserData/beat.mid': { mode: REG, size: DRUMS.length },
     '/data/UserData/notes.txt': { mode: REG, size: 10 },
@@ -125,9 +131,11 @@ async function main() {
     const { stubParamPagesDevice } = await import('./stubs/param_pages_device.mjs');
     stubParamPagesDevice();
     const osStub = await import('os');
-    osStub.__setReaddir({ '/data/UserData': ['UserLibrary', 'schwung', 'dbx-host', 'song.mid', 'beat.mid', 'cut.mid', LONG, LONGDIR, 'notes.txt', '.hidden'],
+    osStub.__setReaddir({ '/data/UserData': ['UserLibrary', 'schwung', 'dbx-host', 'daveboxSA', 'song.mid', 'beat.mid', 'cut.mid', LONG, LONGDIR, 'notes.txt', '.hidden'],   /* dbx-host: the pre-rename folder */
                           ['/data/UserData/' + LONGDIR]: [],
-                          '/data/UserData/UserLibrary': [] });
+                          '/data/UserData/UserLibrary': [],
+                          '/data/UserData/daveboxSA': ['projects', 'MIDI', 'scripts', 'launch.log', 'old.mid'],
+                          '/data/UserData/daveboxSA/MIDI': [] });
     await import('../../ui/ui.js');
     const { S } = await import('../../ui/ui_state.mjs');
     /* This rig lets go and looks in the same instant; the release hold has its
@@ -214,10 +222,20 @@ async function main() {
     step('the list: the user data folder — folders and MIDI files, the install hidden', () => {
         const l = labels();
         assert(l.includes('UserLibrary') && l.includes('song') && l.includes('beat'), 'missing: ' + JSON.stringify(l));
-        for (const h of ['schwung', 'dbx-host', 'notes', '.hidden']) assert(!l.includes(h), h + ' is listed');
+        for (const h of ['schwung', 'dbx-host', 'notes', '.hidden']) assert(!l.includes(h), h + ' is listed');   /* incl. the pre-rename folder */
         assert(JSON.stringify(MI.miHintsForTest(false).footer[0]) === '["CLK","PICK"]' ||
                JSON.stringify(MI.miHintsForTest(false).footer[0]) === '["CLK","OPEN"]', 'footer ' + JSON.stringify(MI.miHintsForTest(false).footer));
         assert(ink(12, 55) > 0, 'the list drew nothing');
+    });
+
+    step('⭐ dAVEBOx SA\'s own folder is listed, and inside it ONLY the MIDI folder (where exports go)', () => {
+        assert(labels().includes('daveboxSA'), 'daveboxSA is not listed: ' + JSON.stringify(labels()));
+        jogTo('daveboxSA');
+        click();
+        assert(JSON.stringify(labels()) === '["..","MIDI"]', 'inside daveboxSA: ' + JSON.stringify(labels()));
+        jogTo('..');
+        click();
+        assert(labels().includes('song') && labels().includes('daveboxSA'), 'not back at the top: ' + JSON.stringify(labels()));
     });
 
     step('a multi-part file: click goes IN like a folder; its parts are the list', () => {
@@ -607,7 +625,7 @@ async function main() {
         jogTo(LONGDIR); ticks(2);
         ticks(150);                                               /* nothing previews in a folder: only the scroll redraws */
         assert(MI.miMarqueeForTest().off > 0, 'a long folder name, with no preview running, never scrolled: ' + JSON.stringify(MI.miMarqueeForTest()));
-        const d = printed().find(o => o.s.endsWith('/'));
+        const d = printed().find(o => o.s.endsWith('/') && !['UserLibrary/', 'daveboxSA/'].includes(o.s));   /* the long folder's row, not a short one beside it */
         assert(d && LONGDIR.includes(d.s.slice(0, -1)) && !LONGDIR.startsWith(d.s.slice(0, -1)), 'the folder row shows the scrolled name with its /: ' + JSON.stringify(d));
         back(); ticks(2);
     });

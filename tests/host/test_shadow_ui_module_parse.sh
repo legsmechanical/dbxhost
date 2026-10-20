@@ -22,7 +22,7 @@
 # runs AT LOAD (populateCtx, top-level blocks) — that is a runtime ReferenceError,
 # and no parser sees it. After any symbol deletion, sweep the file for the removed
 # identifier by name, and remember the on-device gate that prints the real error:
-#   cd /data/UserData/dbx-host/shadow && timeout 5 ./shadow_ui
+#   cd /data/UserData/daveboxSA/shadow && timeout 5 ./shadow_ui
 # (with a live session's SHM present; without it, it exits before eval and proves
 # nothing). See [[schwung-node-check-wrong-gate-for-shadow-ui-js]].
 set -u

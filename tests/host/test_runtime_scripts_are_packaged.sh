@@ -28,7 +28,7 @@ callers="standalone/scripts/launch.sh src/shadow/shadow_ui.js standalone/scripts
 for f in $callers; do [ -f "$f" ] || fail "$f missing"; done
 
 # Names referenced as <install dir>/scripts/<name>, however the dir is spelled.
-refs=$(command grep -hoE '(\$DBX_DIR|\$\{DBX_DIR\}|/data/UserData/dbx-host|" \+ STANDALONE_DIR \+ ")/scripts/[A-Za-z0-9_.-]+' $callers 2>/dev/null |
+refs=$(command grep -hoE '(\$DBX_DIR|\$\{DBX_DIR\}|/data/UserData/daveboxSA|" \+ STANDALONE_DIR \+ ")/scripts/[A-Za-z0-9_.-]+' $callers 2>/dev/null |
        command sed -E 's:.*/scripts/::' | sort -u)
 
 [ -n "$refs" ] || fail "found no runtime script references — this test would pass vacuously"

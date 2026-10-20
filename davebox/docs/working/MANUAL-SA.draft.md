@@ -185,7 +185,7 @@ It needs Schwung 1.3.0 or newer.
 
 To remove it, install **davebox-uninstall-module.tar.gz** from the same release the
 same way, quit dAVEBOx, and choose **Uninstall dAVEBOx SA** in the tool menu. Your
-projects and settings stay in `/data/UserData/dbx-host`, so a later install picks
+projects and settings stay in `/data/UserData/daveboxSA`, so a later install picks
 them up.
 
 ## Nothing to set up
@@ -2139,7 +2139,7 @@ and all — into plain clips.
 **Project Settings → Export to Ableton** (transport stopped) writes an `.ablbundle`
 that desktop Live opens directly. The screen shows where it was saved: download it
 from the **Files** page of the Schwung web manager (`move.local:7700`), in the
-`dbx-host/davebox-exports` folder. It opens as **8 MIDI tracks × 16 scene slots**
+`daveboxSA/davebox-exports` folder. It opens as **8 MIDI tracks × 16 scene slots**
 with the tempo and root note (not the scale — the set opens in Major).
 
 - **Move tracks** export the real Move instrument and preset. Every track keeps its
@@ -2192,7 +2192,8 @@ lane, so they exist only while a note is sounding.
 except a Conductor, whatever it plays through). The MIDI browser fills the clip
 you are on from a standard MIDI file (`.mid`, `.midi`, `.smf`, `.kar`, `.rmi`).
 Keep your MIDI files anywhere in your user data folder — the **Files** page of
-the Schwung web manager (`move.local:7700`) uploads there. The notes are copied
+the Schwung web manager (`move.local:7700`) uploads there. Your own exports are
+in the `daveboxSA` folder, which shows only its `MIDI` folder. The notes are copied
 into the clip; the file isn't needed afterwards. No MIDI files come with dAVEBOx.
 
 It has three layers, and **Back** steps out of one at a time:
@@ -2272,10 +2273,11 @@ as 8 cycles, and a track that follows the Conductor is saved transposed. A drum
 clip is one file, each lane on its own note (channel 10). A MIDI effect module set
 to **Post** is left out — **Bake** the clip first to keep it.
 
-The file goes to the **dAVEBOx MIDI** folder in your user data, named after the
-project, track and clip (`mngk 3B.mid`); a second export of the same clip adds ` 2`
-rather than overwriting. Download it from the **Files** page of the Schwung web
-manager, or bring it back with [Import MIDI](#164-import-a-midi-file). Stop the
+The file goes to the **MIDI** folder inside dAVEBOx SA's own folder
+(`daveboxSA/MIDI`), named after the project, track and clip (`mngk 3B.mid`); a
+second export of the same clip adds ` 2` rather than overwriting. Download it from
+the **Files** page of the Schwung web manager (the **dAVEBOx MIDI** link at the
+top), or bring it back with [Import MIDI](#164-import-a-midi-file). Stop the
 transport first — like the Ableton export, it won't run while playing.
 ## 16.6 Recording audio
 

@@ -58,7 +58,7 @@
 
 set -eu
 
-DBX_DIR="${DBX_DIR:-/data/UserData/dbx-host}"
+DBX_DIR="${DBX_DIR:-/data/UserData/daveboxSA}"
 SETS_DIR="${SETS_DIR:-/data/UserData/UserLibrary/Sets}"
 # No __pycache__ beside the scripts (the install tree is a manifest-checked payload).
 export PYTHONDONTWRITEBYTECODE=1

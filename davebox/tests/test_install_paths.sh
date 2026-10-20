@@ -11,14 +11,14 @@
 # ⚠⚠ shared/*.mjs IS THE EXCEPTION, AND IT IS NOT WHAT IT LOOKS LIKE. An import
 # of '/data/UserData/schwung/shared/constants.mjs' does NOT load the stock copy:
 # host REWRITES that prefix to SCHWUNG_INSTALL_DIR/shared/ at module-load time
-# (shadow_ui.c, schwung_module_loader). Under SA that is dbx-host/shared/, so
+# (shadow_ui.c, schwung_module_loader). Under SA that is daveboxSA/shared/, so
 # davebox already runs OUR copies. The literal names the MODULE CONTRACT — the
 # string every module hardcodes — not which tree serves it. Section 4 guards it.
-#   /data/UserData/dbx-host/   THIS build's private state. standalone/config.sh
+#   /data/UserData/daveboxSA/   THIS build's private state. standalone/config.sh
 #                              names it: set_state, slot_state, active_set.txt,
 #                              shadow_chain_config.json, shadow_config.json.
 #
-# So `schwung/set_state/<uuid>/` and `dbx-host/set_state/<uuid>/` BOTH exist and
+# So `schwung/set_state/<uuid>/` and `daveboxSA/set_state/<uuid>/` BOTH exist and
 # hold different things, and `active_set.txt` / `shadow_chain_config.json` exist
 # in both trees with independent contents. Reading the stock copy of a private
 # file silently returns another host's state: on hardware the two chain configs
@@ -103,13 +103,13 @@ fi
 #    obvious pin in the file, because the "obvious improvement" it blocks looks
 #    like a safety fix.
 #
-#    dAVEBOx SA runs under dbx-host and must never load the stock tree's
+#    dAVEBOx SA runs under daveboxSA and must never load the stock tree's
 #    shared/*.mjs. IT ALREADY DOESN'T: shadow_ui.c's schwung_module_loader
 #    rewrites the prefix /data/UserData/schwung/shared/ to
 #    SCHWUNG_INSTALL_DIR/shared/, and the SA host is built with
 #    SCHWUNG_INSTALL_DIR=$DBX_DIR (standalone/scripts/build-host.sh).
 #
-#    So "repointing" davebox's imports at /data/UserData/dbx-host/shared/ would
+#    So "repointing" davebox's imports at /data/UserData/daveboxSA/shared/ would
 #    be a REGRESSION, not a fix: the specifier would stop matching
 #    SHARED_IMPORT_CANONICAL, the rewrite would never fire, and the module would
 #    resolve ONE install location literally -- which is the exact coupling the
@@ -125,10 +125,10 @@ fi
 echo ""
 echo "shared-import prefix (the host rewrites it; do not 'fix' it):"
 CANON="/data/UserData/schwung/shared/"
-if grep -rn "UserData/dbx-host/shared/" ui/*.mjs ui/*.js >/dev/null 2>&1; then
-    bad "a davebox import names dbx-host/shared directly -- that BYPASSES the host rewrite"
+if grep -rn "UserData/daveboxSA/shared/" ui/*.mjs ui/*.js >/dev/null 2>&1; then
+    bad "a davebox import names daveboxSA/shared directly -- that BYPASSES the host rewrite"
 else
-    ok "no davebox import hardcodes dbx-host/shared"
+    ok "no davebox import hardcodes daveboxSA/shared"
 fi
 n_imports=$(grep -rho "$CANON[a-z_]*\.mjs" ui/*.mjs ui/*.js 2>/dev/null | sort -u | wc -l | tr -d ' ')
 if [ "$n_imports" -ge 8 ]; then

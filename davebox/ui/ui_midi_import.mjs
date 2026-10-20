@@ -54,6 +54,7 @@ import { TPS_VALUES, SCENE_LETTERS, PAD_MODE_DRUM, PAD_MODE_CONDUCT, DRUM_LANES,
 import { White, VividYellow, Cyan, NeonPink, BrightOrange, NeonGreen, ElectricViolet, BrightRed, Lime } from '/data/UserData/schwung/shared/constants.mjs';
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 import { syncClipsTargeted } from './ui_dsp_bridge.mjs';
+import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { showActionPopup, writeSidecar } from './ui_persistence.mjs';
 import { automationClearClipQueued } from './ui_automation.mjs';
@@ -75,8 +76,13 @@ import {
 } from './ui_midi_notes.mjs';
 
 export const MI_ROOT = '/data/UserData';
-/* Install internals under the root, never a place a user keeps MIDI files. */
+/* Install internals under the root, never a place a user keeps MIDI files.
+ * 'dbx-host' is dAVEBOx SA's folder under its pre-rename name: a tree left
+ * there (the launcher never moves one over a newer folder) stays hidden. */
 const HIDDEN_TOP = new Set(['schwung', 'dbx-host', 'settings', 'boot-targets']);
+/* dAVEBOx SA's own folder is listed, but shows ONLY its MIDI folder — where
+ * Export to MIDI writes — and none of the install around it. */
+const HOST_SHOWN = new Set(['MIDI']);
 export const GRID_LABELS = [0, 1, 2, 3, 4, 5].map(fmtRes);
 const GRID_DEFAULT = 1;          /* 1/16: every new file starts here (Josh, 2026-09-30) */
 
@@ -112,7 +118,9 @@ function fsAdapter(sizes) {
         readdir(path) {
             const out = os.readdir(path) || [];
             const names = Array.isArray(out[0]) ? out[0] : (Array.isArray(out) ? out : []);
-            return path === MI_ROOT ? names.filter(n => !HIDDEN_TOP.has(n)) : names;
+            if (path === MI_ROOT) return names.filter(n => !HIDDEN_TOP.has(n));
+            if (path === DAVEBOX_HOST_DIR) return names.filter(n => HOST_SHOWN.has(n));
+            return names;
         },
         stat(path) {
             const st = os.stat(path);

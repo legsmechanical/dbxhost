@@ -25,7 +25,7 @@
 
 set -eu
 
-DBX_DIR="${DBX_DIR:-/data/UserData/dbx-host}"
+DBX_DIR="${DBX_DIR:-/data/UserData/daveboxSA}"
 # Move's set library: the two slot links. The pressed slot is looked up HERE,
 # through its link — never by picker pad, and never by scanning the store.
 LIBRARY_DIR="${LIBRARY_DIR:-$DBX_DIR/sets/library}"

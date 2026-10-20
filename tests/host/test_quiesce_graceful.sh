@@ -105,7 +105,7 @@ if code | grep -q 'DBX_QUIESCE_GRACEFUL:-1'; then
 else
     bad "DBX_QUIESCE_GRACEFUL has no default-ON parameter expansion"
 fi
-if code | grep -q 'GRACEFUL_OFF_FLAG=/data/UserData/dbx-host/' && code | grep -q '\[ -e "\$GRACEFUL_OFF_FLAG" \]'; then
+if code | grep -q 'GRACEFUL_OFF_FLAG=/data/UserData/daveboxSA/' && code | grep -q '\[ -e "\$GRACEFUL_OFF_FLAG" \]'; then
     ok "a touch-file flag (absolute path) also disables it on the device"
 else
     bad "no absolute-path file flag to disable the graceful exit without a redeploy"

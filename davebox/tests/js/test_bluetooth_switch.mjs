@@ -34,7 +34,7 @@ globalThis.host_ext_midi_remap_enable = () => {}; globalThis.host_autosave_hold 
  * stock unit has no Bluetooth and must not see the row); flipping it records
  * the choice device-global and runs the radio script. Read off the menu the
  * real door opens. */
-const DIR = '/data/UserData/dbx-host';
+const DIR = '/data/UserData/daveboxSA';
 const files = {};                 /* path -> content; absent = no such file */
 const cmds = [];
 let cmdRc = 0;

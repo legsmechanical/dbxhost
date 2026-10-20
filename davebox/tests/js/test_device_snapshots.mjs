@@ -341,15 +341,15 @@ step_('⭑ DELETE + step clears the slot', () => {
 });
 
 /* ⚠⚠ THE DEVICE'S PATHS (2026-10-04 review). Since 2026-09-22 a Sets entry is
- * a symlink into dbx-host/projects/<id>/, so every slot dir RESOLVES there.
+ * a symlink into daveboxSA/projects/<id>/, so every slot dir RESOLVES there.
  * The clear's fence spelled out a Sets path, never matched on the device, fell
  * back to blanking davebox.json — and the slot read filled and recalled again.
  * The case above never resolves the symlink, so it could not see it. */
 step_('⭑ DELETE + step clears the slot when the project resolves out of Sets (the device layout)', () => {
-    os.__setRealpath({ '/data/UserData/UserLibrary/Sets/aaaa-bbbb': '/data/UserData/dbx-host/projects/aaaa-bbbb' });
+    os.__setRealpath({ '/data/UserData/UserLibrary/Sets/aaaa-bbbb': '/data/UserData/daveboxSA/projects/aaaa-bbbb' });
     try {
         const dir = P.deviceSnapDir('aaaa-bbbb', 6);
-        if (dir.indexOf('/data/UserData/dbx-host/projects/aaaa-bbbb/') !== 0) throw new Error('rig did not resolve: ' + dir);
+        if (dir.indexOf('/data/UserData/daveboxSA/projects/aaaa-bbbb/') !== 0) throw new Error('rig did not resolve: ' + dir);
         snapSave(6);
         if (!D.devSnapState().slots[6]) throw new Error('slot 7 did not save');
         files[dir + '/slot_0.json'] = '{}';           /* a host file, as the take leaves one */

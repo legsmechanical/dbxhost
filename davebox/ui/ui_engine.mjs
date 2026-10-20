@@ -666,7 +666,7 @@ export const HAS_SEND_FX = true;
  * it names a path the module composes for the DSP and the exit/project scripts.
  * ⚠ Pinned by standalone/scripts/check-config.sh against config.sh's DBX_DIR —
  * change one and the CI gate names the other. */
-export const DAVEBOX_HOST_DIR = '/data/UserData/dbx-host';
+export const DAVEBOX_HOST_DIR = '/data/UserData/daveboxSA';
 
 /* Runtime claim on the master volume knob: suppresses CC 79 + touch note 8 from
  * reaching Move firmware, so the knob can mean something else without Move also

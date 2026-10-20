@@ -3,7 +3,8 @@
  *
  * Josh, 2026-09-30: "export clip to midi file" — ruled: a TRACK CONFIG row;
  * the clip AS IT PLAYS (the Ableton export's render); a "dAVEBOx MIDI" folder
- * in user data.
+ * in user data — since the folder rename, daveboxSA/MIDI (the manager shows it
+ * as a "dAVEBOx MIDI" shortcut).
  *
  * Open the track's menu, jog to the row, click, let the tick run. The engine's
  * render is stubbed (the DSP half is the Ableton export's, tested there); what
@@ -97,7 +98,11 @@ step('setup: Schwung tracks, stopped, a project named mngk', () => {
     GS.trackPadMode[2] = 0; GS.trackActiveClip[2] = 0; GS.trackQueuedClip[2] = -1;
 });
 
-step('⭐ the row: click → one render of the clip on screen → a .mid in the dAVEBOx MIDI folder, read back note for note', () => {
+step('the export folder is the MIDI folder inside dAVEBOx SA\'s own folder', () => {
+    if (MIDI_EXPORT_DIR !== '/data/UserData/daveboxSA/MIDI') throw new Error('MIDI_EXPORT_DIR = ' + MIDI_EXPORT_DIR);
+});
+
+step('⭐ the row: click → one render of the clip on screen → a .mid in daveboxSA/MIDI, read back note for note', () => {
     clear();
     GS.trackActiveClip[2] = 1;
     HDR['t2_c1_export_cond'] = '768 3 768';

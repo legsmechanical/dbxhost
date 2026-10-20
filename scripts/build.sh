@@ -18,7 +18,7 @@ BOOTSTRAP_SCRIPT="./scripts/bootstrap-build-deps.sh"
 # own directory AND its own shared-memory namespace, or the two will collide
 # (stale rings from an abandoned host hang the next one that reattaches):
 #
-#   SCHWUNG_CFLAGS='-DSCHWUNG_INSTALL_DIR=\"/data/UserData/dbx-host\" -DSCHWUNG_SHM_PREFIX=\"/dbxhost-\"' \
+#   SCHWUNG_CFLAGS='-DSCHWUNG_INSTALL_DIR=\"/data/UserData/daveboxSA\" -DSCHWUNG_SHM_PREFIX=\"/dbxhost-\"' \
 #     ./scripts/build.sh
 #
 # Empty by default, so an ordinary build is byte-identical to one that never

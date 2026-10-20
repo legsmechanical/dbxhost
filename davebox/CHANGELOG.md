@@ -7,6 +7,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Changed
+- **dAVEBOx SA's folder on the Move is now `daveboxSA`** (it was `dbx-host`).
+  It is moved automatically the first time you launch dAVEBOx — your projects,
+  exports and settings come with it.
+- **MIDI exports go to `daveboxSA/MIDI`.** An existing "dAVEBOx MIDI" folder is
+  moved there on that same first launch. The MIDI browser lists the `daveboxSA`
+  folder with just its MIDI folder inside, and the Files page of the Schwung web
+  manager has a **dAVEBOx MIDI** link to it.
 
 ## [0.0.21] — 2026-10-18 (test build, not in the Schwung catalog)
 ### Added

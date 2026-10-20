@@ -365,7 +365,7 @@ func loadTemplates() (templateMap, error) {
 type App struct {
 	tmpl      templateMap
 	fileSvc   *FileService
-	basePath  string // the host install dir (-base), e.g. /data/UserData/dbx-host
+	basePath  string // the host install dir (-base), e.g. /data/UserData/daveboxSA
 	logger    *slog.Logger
 	shmMu     sync.Mutex
 	shm       *ShmConfig // via shmConfig() ONLY — lazy: the manager starts BEFORE the host under SA

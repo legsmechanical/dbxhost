@@ -32,14 +32,14 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-# ⚠ THE OWNED TREE, not the stock one. dAVEBOx SA is loaded only by dbx-host, so
+# ⚠ THE OWNED TREE, not the stock one. dAVEBOx SA is loaded only by daveboxSA, so
 # living under /data/UserData/schwung means a stock update can overwrite or drop
 # it — which is exactly how stock v1.0.0 replaced modules/chain/dsp.so underneath
 # us on 2026-08-30 and left every slot reading "EMPTY". See DBX_OWNED_MODULE_DIRS
 # in standalone/config.sh; install-host.sh creates the split category, and the
 # host scans its OWN modules/tools (shadow_ui_tools.mjs), where stock's tools are
 # still visible as symlinks.
-INSTALL_DIR="/data/UserData/dbx-host/modules/tools/${MODULE_ID}"
+INSTALL_DIR="/data/UserData/daveboxSA/modules/tools/${MODULE_ID}"
 
 [ "$DO_BUILD" = "1" ] && bash scripts/build_sound.sh
 
@@ -94,6 +94,18 @@ if [ "$SESSION_LIVE" = "1" ]; then
     DO_RESTART=0
 fi
 
+# ⚠ Never START the install tree here. An install still under the pre-rename
+# folder name is moved by install-host.sh (or the next launch); a `mkdir -p`
+# below would instead make a second tree at the new name, and the launcher then
+# keeps that one — no host, no projects. Refuse and say which to run.
+DBX_DIR_OLD=/data/UserData/dbx-host   # the pre-rename name (DBX_DIR_LEGACY in standalone/config.sh)
+if ssh "${MOVE_USER}@${MOVE_HOST}" "test ! -d /data/UserData/daveboxSA && test -d ${DBX_DIR_OLD}" 2>/dev/null; then
+    echo "REFUSING: the install is still at its pre-rename name (${DBX_DIR_OLD})." >&2
+    echo "  Run standalone/scripts/install-host.sh (or install-sa.sh) first — it moves the" >&2
+    echo "  folder to /data/UserData/daveboxSA — or launch dAVEBOx once, which does the same." >&2
+    exit 1
+fi
+
 echo "Installing ${MODULE_ID} to ${INSTALL_DIR}..."
 ssh "${MOVE_USER}@${MOVE_HOST}" "mkdir -p ${INSTALL_DIR}"
 scp -r "dist/${MODULE_ID}"/* "${MOVE_USER}@${MOVE_HOST}:${INSTALL_DIR}/"
@@ -105,9 +117,9 @@ echo "Installation complete: ${INSTALL_DIR}"
 # host deploy followed by a module deploy leaves the module hashed as its
 # previous build and every launch reports a false "changed since install".
 if ssh -o ConnectTimeout=5 "${MOVE_USER}@${MOVE_HOST}" \
-     "test -x /data/UserData/dbx-host/scripts/record-manifest.sh" 2>/dev/null; then
+     "test -x /data/UserData/daveboxSA/scripts/record-manifest.sh" 2>/dev/null; then
     ssh -o ConnectTimeout=10 "${MOVE_USER}@${MOVE_HOST}" \
-        "DBX_DIR=/data/UserData/dbx-host sh /data/UserData/dbx-host/scripts/record-manifest.sh" || \
+        "DBX_DIR=/data/UserData/daveboxSA sh /data/UserData/daveboxSA/scripts/record-manifest.sh" || \
         echo "WARNING: could not re-record the owned-file manifest"
 else
     echo "note: no record-manifest.sh on the device yet (run install-host.sh once)"

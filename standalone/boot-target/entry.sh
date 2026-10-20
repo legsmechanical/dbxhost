@@ -35,7 +35,7 @@
 set -u
 
 LAUNCHER=/data/UserData/schwung/modules/tools/davebox-sa/standalone
-LOG=/data/UserData/dbx-host/launch.log
+LOG=/data/UserData/daveboxSA/launch.log
 
 if [ ! -x "$LAUNCHER" ]; then
     # No launcher = no session. Say so where the launch log will be read, then

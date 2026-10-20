@@ -20,7 +20,7 @@
 # exiting (tools door). Neither kills background children, and a `tail -F`
 # pipeline does NOT die with the shell that started it: killing only this
 # script's pid orphans `tail` and the while-loop, which then write into
-# dbx-host/ forever and add one more copy per session. So:
+# daveboxSA/ forever and add one more copy per session. So:
 #   * <owner-pid> is the supervisor. The main shell polls it; when it is gone
 #     the reader tears its whole process tree down and exits (≤ 1 s).
 #   * SIGTERM/INT/HUP do the same teardown, so launch.sh's explicit kill on

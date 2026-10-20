@@ -62,7 +62,7 @@ The launcher mechanism is already upstream. There is nothing to get merged.
 
 This directory lives **in the host repo** — the launcher's only job is to start
 this host, so shipping them together makes host + launcher + heal + installer one
-deliverable with one version. It installs to `/data/UserData/dbx-host/`.
+deliverable with one version. It installs to `/data/UserData/daveboxSA/`.
 
 ⚠ Three files must carry a literal copy of the install dir rather than sourcing
 `config.sh`: `launch.sh` (installed as one self-contained file), `install-privileged.sh`
@@ -111,7 +111,7 @@ launcher calls `davebox-heal` to mirror it.
 
 ## Sharing the user's modules
 
-`dbx-host/modules` is a **symlink to the stock modules directory**, so every
+`daveboxSA/modules` is a **symlink to the stock modules directory**, so every
 module the user has installed is available under the davebox host, with no
 duplication (~354 MB saved) and no version skew.
 
@@ -222,7 +222,7 @@ either way; the D-Bus save covers that regardless of the knob below.
 
 The old `should_exit`-and-wait step is still available for A/B, behind its own
 knob: `DBX_QUIESCE_ASK_UI_EXIT=1`, or
-`touch /data/UserData/dbx-host/quiesce-ask-ui-exit`. Default OFF. When it runs,
+`touch /data/UserData/daveboxSA/quiesce-ask-ui-exit`. Default OFF. When it runs,
 it behaves as before — sets `should_exit`, waits up to 5 s for `shadow_ui` to
 save and exit — before the rest of the sequence below.
 
@@ -235,7 +235,7 @@ waiting up to 3 s. An orderly shutdown quiesces the audio hardware; a
 (−3 dBFS for ~1.5 s, captured 2026-09-15). If Move goes, the freeze is
 skipped; if it does not — or if no zero-mask thread is found — the old
 freeze-and-sweep path runs unchanged. Turn it off with `DBX_QUIESCE_GRACEFUL=0`
-or `touch /data/UserData/dbx-host/quiesce-graceful-off`. Its `shadow_ui_live`
+or `touch /data/UserData/daveboxSA/quiesce-graceful-off`. Its `shadow_ui_live`
 guard (refusing a graceful exit while `shadow_ui` is mid-save) now applies only
 when `should_exit` was actually sent — with the default knob off, `shadow_ui`
 is always still live at this point and was never asked to save, so there is no
@@ -385,7 +385,7 @@ user picked dAVEBOx in the boot picker, which makes it the default (the picker
 has no boot-once). Then the quit came straight back up in dAVEBOx through the
 boot door: one gesture, two outcomes, depending on how the session had started.
 
-So a Tools-door session dates a marker (`dbx-host/quit-to-stock`) as it ends —
+So a Tools-door session dates a marker (`daveboxSA/quit-to-stock`) as it ends —
 on a quit and on a refused launch — and a boot-door start that finds one less
 than 30 s old hands its pid to stock's `schwung-entry.sh` instead of starting a
 session. The marker is consumed either way; an old one is only ever stale, so a

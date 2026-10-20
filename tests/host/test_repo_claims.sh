@@ -116,4 +116,29 @@ done
 [ "$seen" -gt 0 ] || bad "found no script paths in CLAUDE.md (the pattern broke)"
 [ "$miss" = 0 ] && [ "$seen" -gt 0 ] && ok "every repo script CLAUDE.md names exists ($seen)"
 
+# ---- 7. the pre-rename install folder is spelled only by the migration ----
+# dAVEBOx SA's folder on the device was renamed (pre-rename: dbx-host). A path
+# that kept the OLD name is not an error anywhere: it writes into a folder the
+# launcher has just moved away, and quietly makes it again as a second, partial
+# tree. So the old name may appear only on a line that NAMES it as the legacy
+# — the migration sites (DBX_DIR_LEGACY / DBX_DIR_OLD), the MIDI browser's
+# hidden list, or a comment saying "pre-rename"/"legacy". Docs and HTML are
+# history and are not scanned.
+LEGACY_OK='DBX_DIR_LEGACY|DBX_DIR_OLD|HIDDEN_TOP|pre-rename|legacy'
+legacy_all="$(git grep -nI 'dbx-host' -- ':!*.md' ':!*.html' ':!work' 2>/dev/null)"
+# Positive control: the legacy constant itself must be found, or git grep saw
+# nothing (no git, or a worktree whose git dir is not mounted) and an empty
+# result would read as clean.
+if ! printf '%s\n' "$legacy_all" | grep -q '^standalone/config.sh:[0-9]*:DBX_DIR_LEGACY='; then
+    bad "the legacy-name sweep cannot see standalone/config.sh's DBX_DIR_LEGACY (git grep found nothing?)"
+else
+    stray="$(printf '%s\n' "$legacy_all" | grep -viE "$LEGACY_OK" || true)"
+    if [ -n "$stray" ]; then
+        printf '%s\n' "$stray" | sed 's/^/    /' >&2
+        bad "the pre-rename folder name (dbx-host) is spelled outside the migration sites (above)"
+    else
+        ok "the pre-rename folder name appears only where it is named as the legacy ($(printf '%s\n' "$legacy_all" | grep -c .) lines)"
+    fi
+fi
+
 [ "$fails" = 0 ] && echo "PASS: repo_claims" || { echo "FAIL: repo_claims" >&2; exit 1; }

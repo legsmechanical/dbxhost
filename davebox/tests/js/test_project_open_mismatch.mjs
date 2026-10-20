@@ -31,7 +31,7 @@ let failed = 0;
 function ok(l) { console.log(`  ok   — ${l}`); }
 function bad(l, e) { console.error(`  FAIL — ${l}: ${e && e.stack ? e.stack : e}`); failed = 1; }
 
-const HOST_DIR = '/data/UserData/dbx-host';
+const HOST_DIR = '/data/UserData/daveboxSA';
 const ACTIVE = HOST_DIR + '/active_set.txt';
 const SETS = '/data/UserData/UserLibrary/Sets/';
 const P = 'aaaaaaaa-0000-4000-8000-00000000000p'.replace('p', '1');
@@ -110,12 +110,12 @@ globalThis.host_system_cmd = (c) => {
         if (q) rigProjects = rigProjects.map((x) => x === q ? Object.assign({}, x, { name: rn[2].replace(/'\\''/g, "'") }) : x);
     }
     if (/project-cmd\.sh list$/.test(String(c))) {
-        if (listFails) files.delete('/data/UserData/dbx-host/projects.json');
-        else files.set('/data/UserData/dbx-host/projects.json', projectsJson());
+        if (listFails) files.delete('/data/UserData/daveboxSA/projects.json');
+        else files.set('/data/UserData/daveboxSA/projects.json', projectsJson());
     }
     const m = /switch-slot (\S+)/.exec(String(c));
     if (m) {
-        files.set('/data/UserData/dbx-host/slot_switch.json', JSON.stringify(
+        files.set('/data/UserData/daveboxSA/slot_switch.json', JSON.stringify(
             switchSlotFails
                 ? { ok: false, slot: -1, project: '', slot_uuid: '', why: 'rig: refused' }
                 : { ok: true, slot: 1, project: m[1], slot_uuid: SLOT1_UUID, why: '' }));
@@ -833,7 +833,7 @@ step('⭐ LOAD blanks EVERY LED at the press and keeps them dark while it saves 
 });
 
 step('⭐ an ordinary LOAD unwraps a Dave: dealt at the press, recorded in the album, shown until the sequencer is up (Josh, 2026-09-15)', () => {
-    const SEEN = '/data/UserData/dbx-host/daves-seen.txt';
+    const SEEN = '/data/UserData/daveboxSA/daves-seen.txt';
     boot(P, 'Project 1');
     hostPublish(P, 'Project 1', 0, P);
     ticks(40);
@@ -985,7 +985,7 @@ step('⭐⭐ picking the project whose set Move ALREADY holds, at session start,
      * set already loaded after davebox launch." That pick is a load (the
      * already-current fast path: Move is asked for nothing) — it used to show
      * the plain LOADING screen and deal nothing. */
-    const SEEN = '/data/UserData/dbx-host/daves-seen.txt';
+    const SEEN = '/data/UserData/daveboxSA/daves-seen.txt';
     boot(P, 'Project 1');
     hostPublish(P, 'Project 1', 0, P);
     ticks(40);

@@ -440,7 +440,7 @@ export function _tickImpl() {
         if (S.screenDirty) { S.screenDirty = false; drawUI(); }
         if (S.exitFarewell > 0 && --S.exitFarewell === 0) {
             S.exitFarewell = -1;
-            host_system_cmd('sh /data/UserData/dbx-host/scripts/exit-to-stock.sh');
+            host_system_cmd('sh /data/UserData/daveboxSA/scripts/exit-to-stock.sh');
         }
         return;
     }
@@ -2424,7 +2424,7 @@ export function _tickImpl() {
         const _prl = S.pendingProjectRelaunch;
         S.pendingProjectRelaunch = null;
         if (S.switchLoading) S.switchLoading.stage = 'Restarting Move';
-        host_system_cmd('sh /data/UserData/dbx-host/scripts/project-cmd.sh switch ' + _prl);
+        host_system_cmd('sh /data/UserData/daveboxSA/scripts/project-cmd.sh switch ' + _prl);
         return;
     } else if (S.pendingProjectSwitch !== null) {
         /* Pad-picker project switch, one tick after the deferred save. The

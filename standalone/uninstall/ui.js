@@ -79,7 +79,7 @@ function lines(rows, y0) {
 
 /* Every line fits stock's 5x7 proportional font in 124 px (measured against the
  * device's font.png; tests/host/test_uninstall_ui.sh checks every screen). */
-const KEPT = ['Projects & settings', 'kept in /data/', 'UserData/dbx-host'];
+const KEPT = ['Projects & settings', 'kept in /data/', 'UserData/daveboxSA'];
 
 function screenRows() {
     switch (state) {

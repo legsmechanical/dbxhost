@@ -31,7 +31,15 @@
 
 # Where this host's payload lands. Must NOT be the stock install dir
 # (/data/UserData/schwung) — the whole point is sitting beside it untouched.
-DBX_DIR=/data/UserData/dbx-host
+DBX_DIR=/data/UserData/daveboxSA
+
+# The PRE-RENAME name of that directory (it was dbx-host until 2026-10). An
+# existing install is moved to DBX_DIR by the launcher on its first launch, and
+# by install-host.sh / the uninstaller if they reach it first. ONLY those
+# migration sites may spell it — tests/host/test_repo_claims.sh fails on any
+# other line that does. There is deliberately no compatibility symlink: see
+# RATIONALE.md, "The umbrella folder rename".
+DBX_DIR_LEGACY=/data/UserData/dbx-host
 
 # Shared-memory namespace. Must differ from stock's, or the two hosts collide:
 # stale rings from an abandoned host hang the next one that reattaches.

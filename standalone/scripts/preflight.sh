@@ -21,7 +21,7 @@
 # session the user can work in beats a correct one that will not start — the
 # same rule the select-before-load fail-open follows.
 
-DBX_DIR="${DBX_DIR:-/data/UserData/dbx-host}"
+DBX_DIR="${DBX_DIR:-/data/UserData/daveboxSA}"
 STOCK="${STOCK_DIR:-/data/UserData/schwung}"
 LOG="${1:-$DBX_DIR/launch.log}"
 REPORT="$DBX_DIR/preflight_report.txt"

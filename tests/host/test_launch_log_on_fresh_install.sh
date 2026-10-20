@@ -9,7 +9,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 L=standalone/scripts/launch.sh
-mk=$(grep -n '^ *mkdir -p "\$DBX_DIR"$' "$L" | sed -n 1p | cut -d: -f1)
+# (Skipped only while an install-folder move is HELD: then LOG is pointed into
+# the old folder, which exists — see MIGRATE-BEGIN in launch.sh.)
+mk=$(grep -nE '^ *(\[ -n "\$_mig_hold" \] \|\| )?mkdir -p "\$DBX_DIR"$' "$L" | sed -n 1p | cut -d: -f1)
 ex=$(grep -n '^ *exec >>"\$LOG" 2>&1$' "$L" | sed -n 1p | cut -d: -f1)
 [ -n "$ex" ] || { echo "FAIL: the launch.log redirect is not where this test expects it"; exit 1; }
 [ -n "$mk" ] && [ "$mk" -lt "$ex" ] \

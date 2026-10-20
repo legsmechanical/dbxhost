@@ -22,7 +22,7 @@
 
 set -eu
 
-DBX_DIR="${DBX_DIR:-/data/UserData/dbx-host}"
+DBX_DIR="${DBX_DIR:-/data/UserData/daveboxSA}"
 PROJECTS_DIR="${PROJECTS_DIR:-$DBX_DIR/projects}"
 # The library the slots live in — the names are keyed by SLOT now.
 LIBRARY_DIR="${LIBRARY_DIR:-$DBX_DIR/sets/library}"

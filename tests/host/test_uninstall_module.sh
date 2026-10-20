@@ -37,11 +37,11 @@ mk() {  # a fresh device. $1 = heal: blessable | none | stuck (cannot unbind)
     printf '{"tool_id": "davebox-sound"}\n' > "$F/stock/open_tool_cmd.json"
 
     D="$F/dbx"
-    mkdir -p "$D/projects/p1/Move-Set-p1" "$D/davebox-exports" "$D/config" "$D/sets/library" \
+    mkdir -p "$D/projects/p1/Move-Set-p1" "$D/davebox-exports" "$D/MIDI" "$D/config" "$D/sets/library" \
              "$D/sets/template/t" "$D/scripts" "$D/modules/chain" "$D/shadow" "$D/__pycache__"
     echo "song" > "$D/projects/p1/Move-Set-p1/Song.abl"
     mkdir -p "$D/templates/default"; echo '{"tracks": []}' > "$D/templates/default/Song.abl"
-    echo '[]' > "$D/projects.json"; echo bundle > "$D/davebox-exports/a.ablbundle"
+    echo '[]' > "$D/projects.json"; echo bundle > "$D/davebox-exports/a.ablbundle"; echo smf > "$D/MIDI/p1 1A.mid"
     for f in daves-seen.txt daves-window.txt bank-view-map.txt card-hold.txt seq-follow.txt midi-mute.txt midi-map.txt parallel-modules.txt active_set.txt \
              sa_master_volume shadow_config.json; do echo "mine $f" > "$D/$f"; done
     mkdir -p "$D/settings"; echo '{"session": true}' > "$D/settings/Settings.json"
@@ -86,7 +86,7 @@ S
 }
 run() {  # $1 = shell, rest = args. Sets RC; output in $T/out
     _sh="$1"; shift
-    DBX_DIR="$F/dbx" STOCK_DIR="$F/stock" SETS_DIR="$F/UserLibrary/Sets" BOOT_ROOT="$F/boot" \
+    DBX_DIR="$F/dbx" DBX_DIR_OLD="$F/dbx-old" STOCK_DIR="$F/stock" SETS_DIR="$F/UserLibrary/Sets" BOOT_ROOT="$F/boot" \
     MOVE_SETTINGS_DIR="$F/settings" SHM_DIR="$F/shm" PROC_DIR="$F/proc" SHIM_PATH="$F/root/davebox-shim.so" \
     UNIT_PATH="$F/root/davebox-restore.service" DONE_FILE="$F/done" \
         "$_sh" "$F/stock/modules/tools/davebox-uninstall/uninstall.sh" "$@" > "$T/out" 2>&1
@@ -117,23 +117,23 @@ grep -q "nothing was changed" "$T/out" && ! grep -q "is uninstalled" "$T/out" &&
 
 echo "--run on a full install (Sets and settings bound, helper blessable):"
 mk blessable; bound; settings_bound
-for f in projects/p1/Move-Set-p1/Song.abl templates/default/Song.abl projects.json davebox-exports/a.ablbundle daves-seen.txt \
+for f in projects/p1/Move-Set-p1/Song.abl templates/default/Song.abl projects.json davebox-exports/a.ablbundle "MIDI/p1 1A.mid" daves-seen.txt \
          daves-window.txt bank-view-map.txt card-hold.txt seq-follow.txt midi-mute.txt midi-map.txt parallel-modules.txt active_set.txt sa_master_volume \
          shadow_config.json config/tts.json sets/sa_song_index quarantine/seq8sa-1-2.json \
          sets/quarantine/20260921/orphan/Song.abl settings/Settings.json; do cksum "$F/dbx/$f"; done > "$T/kept.before"
 run "$SH" --run
 [ "$RC" = 0 ] && ok "exit 0" || { bad "rc=$RC"; sed 's/^/      /' "$T/out"; }
 [ "$(cat "$F/done" 2>/dev/null)" = 0 ] && ok "done file says 0" || bad "done=$(cat "$F/done" 2>/dev/null)"
-for f in projects/p1/Move-Set-p1/Song.abl templates/default/Song.abl projects.json davebox-exports/a.ablbundle daves-seen.txt \
+for f in projects/p1/Move-Set-p1/Song.abl templates/default/Song.abl projects.json davebox-exports/a.ablbundle "MIDI/p1 1A.mid" daves-seen.txt \
          daves-window.txt bank-view-map.txt card-hold.txt seq-follow.txt midi-mute.txt midi-map.txt parallel-modules.txt active_set.txt sa_master_volume \
          shadow_config.json config/tts.json sets/sa_song_index quarantine/seq8sa-1-2.json \
          sets/quarantine/20260921/orphan/Song.abl settings/Settings.json; do cksum "$F/dbx/$f" 2>&1; done > "$T/kept.after"
 cmp -s "$T/kept.before" "$T/kept.after" && ok "every kept file is byte-identical, in place" || bad "kept files changed: $(diff "$T/kept.before" "$T/kept.after")"
 left="$(cd "$F/dbx" && ls -A | LC_ALL=C sort | tr '\n' ' ')"
-want="$(printf '%s\n' active_set.txt config bank-view-map.txt card-hold.txt daves-seen.txt daves-window.txt davebox-exports parallel-modules.txt \
+want="$(printf '%s\n' active_set.txt config bank-view-map.txt card-hold.txt daves-seen.txt daves-window.txt davebox-exports MIDI parallel-modules.txt \
         seq-follow.txt midi-mute.txt midi-map.txt projects projects.json quarantine sa_master_volume sets settings shadow_config.json templates | LC_ALL=C sort | tr '\n' ' ')"
 [ "$left" = "$want" ] \
-    && ok "dbx-host holds exactly the keep-list" || bad "left: $left"
+    && ok "daveboxSA holds exactly the keep-list" || bad "left: $left"
 [ "$(ls -A "$F/dbx/sets" | LC_ALL=C sort | tr '\n' ' ')" = "quarantine sa_song_index " ] && ok "sets/ holds only sa_song_index and quarantine/" || bad "sets: $(ls -A "$F/dbx/sets")"
 [ ! -L "$F/UserLibrary/Sets" ] && [ "$(cat "$F/UserLibrary/Sets/theirs.txt")" = "their set" ] && ok "Sets/ unbound, the user's own sets there" || bad "Sets"
 [ ! -L "$F/settings" ] && [ "$(cat "$F/settings/Settings.json")" = '{"theirs": true}' ] \
@@ -203,6 +203,36 @@ run "$SH" --check
 [ "$(cat "$T/out")" = absent ] && ok "--check says absent once only kept data remains" || bad "check=$(cat "$T/out")"
 run "$SH" --run
 [ "$RC" = 4 ] || [ "$RC" = 0 ]; [ "$RC" = 0 ] && [ -f "$F/dbx/projects/p1/Move-Set-p1/Song.abl" ] && ok "second run exits 0, projects intact" || bad "rc=$RC: $(cat "$T/out")"
+
+echo "an install still at the PRE-RENAME folder is moved first, then uninstalled:"
+mk blessable; mv "$F/dbx" "$F/dbx-old"
+ino_before="$(ls -di "$F/dbx-old" | awk '{print $1}')"
+run "$SH" --check
+[ "$(cat "$T/out")" = installed ] && ok "--check sees the old folder's install" || bad "check=$(cat "$T/out")"
+snapshot "$T/before"; run "$SH"; snapshot "$T/after"
+cmp -s "$T/before" "$T/after" && grep -q "would: move $F/dbx-old to $F/dbx" "$T/out" && grep -q "would: remove debug.log" "$T/out" \
+    && ok "dry run: says it would move it and clean it, changes nothing" || bad "dry: $(head -20 "$T/out")"
+run "$SH" --run
+[ "$RC" = 0 ] && [ ! -e "$F/dbx-old" ] && [ "$(ls -di "$F/dbx" | awk '{print $1}')" = "$ino_before" ] \
+    && ok "renamed in place (same inode), the old name gone" || bad "rc=$RC: $(cat "$T/out")"
+[ -f "$F/dbx/projects/p1/Move-Set-p1/Song.abl" ] && [ -f "$F/dbx/MIDI/p1 1A.mid" ] && [ ! -e "$F/dbx/schwung" ] \
+    && ok "projects and MIDI kept at the new name, the install removed" || bad "state: $(ls -A "$F/dbx")"
+
+echo "BOTH folders present: each is swept with the keep-list, an old bound library unbound first:"
+mk blessable; cp -R "$F/dbx" "$F/dbx-old"; echo "old song" > "$F/dbx-old/projects/p1/Move-Set-p1/Song.abl"
+rm -rf "$F/UserLibrary/Sets"; ln -s "$F/dbx-old/sets/library" "$F/UserLibrary/Sets"
+run "$SH" --run
+[ "$RC" = 0 ] && grep -q "both $F/dbx-old and $F/dbx exist" "$T/out" && ok "says both are there, exit 0" || bad "rc=$RC: $(cat "$T/out")"
+[ ! -L "$F/UserLibrary/Sets" ] && [ "$(cat "$F/UserLibrary/Sets/theirs.txt")" = "their set" ] \
+    && ok "the OLD folder's library, bound over Sets/, was unbound before anything was removed" || bad "Sets: $(ls -la "$F/UserLibrary")"
+[ ! -e "$F/dbx/schwung" ] && [ ! -e "$F/dbx-old/schwung" ] && ok "the install is removed from both" || bad "left: $(ls -A "$F/dbx" "$F/dbx-old")"
+[ "$(cat "$F/dbx-old/projects/p1/Move-Set-p1/Song.abl")" = "old song" ] && [ "$(cat "$F/dbx/projects/p1/Move-Set-p1/Song.abl")" = "song" ] \
+    && ok "each folder keeps its own projects, nothing merged" || bad "projects merged or lost"
+
+echo "a leftover symlink at the old name:"
+mk blessable; ln -s "$F/nowhere" "$F/dbx-old"
+run "$SH" --run
+[ "$RC" = 0 ] && [ ! -L "$F/dbx-old" ] && [ -f "$F/dbx/projects/p1/Move-Set-p1/Song.abl" ] && ok "removed, the real folder untouched" || bad "rc=$RC link=$(ls -la "$F/dbx-old" 2>&1)"
 
 echo "usage:"
 mk blessable; run "$SH" --delete-everything

@@ -15,7 +15,7 @@
 #                                 names it, and stock's manager registers the row
 #                                 (owned by this module, removed with it; the
 #                                 boot DEFAULT is never touched).
-#     payload/                    the dbx-host tree, laid by layout-install.sh
+#     payload/                    the daveboxSA tree, laid by layout-install.sh
 #       schwung, shadow/, scripts/, lib/, help/, sets/template, splash*, bless.sh …
 #       help/manual.html          the full HTML manual — the manager's Help page
 #                                 (built by davebox/scripts/build_manual_html.sh)

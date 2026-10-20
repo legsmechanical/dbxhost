@@ -266,6 +266,32 @@ check "manager default prefix is STOCK"     "$HERE/../schwung-manager/shmconfig.
 # failure mode the preflight exists to prevent.
 check "preflight owned-module list" "$HERE/scripts/preflight.sh" "${DBX_OWNED_MODULE_DIRS:-chain tools/davebox-sound}"
 
+# ⭑ THE UMBRELLA FOLDER RENAME (2026-10). Every script that runs on the device
+# beside no config.sh carries DBX_DIR as a default or a literal; a copy that
+# missed the rename keeps writing into a folder the launcher just moved away,
+# and creates it again — silently, as a second, partial tree.
+check "launch.sh quit marker"          "$HERE/scripts/launch.sh"            "_qts=$DBX_DIR/quit-to-stock"
+check "launch.sh quit log"             "$HERE/scripts/launch.sh"            "_qts_log=$DBX_DIR/launch.log"
+check "launch.sh boot-exit log"        "$HERE/scripts/launch.sh"            "exec >>$DBX_DIR/launch.log 2>&1"
+check "boot-target entry log"          "$HERE/boot-target/entry.sh"         "LOG=$DBX_DIR/launch.log"
+check "bootstrap default"              "$HERE/scripts/bootstrap.sh"         "DBX_DIR=\"\${DBX_DIR:-$DBX_DIR}\""
+for f in set-swap.sh preflight.sh record-manifest.sh project-cmd.sh select-list.sh select-hook.sh; do
+    check "$f default"                 "$HERE/scripts/$f"                   "DBX_DIR=\"\${DBX_DIR:-$DBX_DIR}\""
+done
+check "quiesce LED blank path"         "$HERE/scripts/quiesce-stock.sh"     "BLANK_LEDS=$DBX_DIR/scripts/blank-leds.py"
+check "pick-splash default"            "$HERE/scripts/pick-splash.py"       "else \"$DBX_DIR\""
+check "module installer target"        "$REPO/davebox/scripts/install_sound.sh" "INSTALL_DIR=\"$DBX_DIR/modules/tools/\${MODULE_ID}\""
+# The migration itself: the launcher, the uninstaller and the module installer
+# name the PRE-RENAME folder. A drift there moves nothing and finds nothing.
+check "launch.sh migrates the legacy"  "$HERE/scripts/launch.sh"            "DBX_DIR_OLD=$DBX_DIR_LEGACY"
+check "launch.sh migration lock"       "$HERE/scripts/launch.sh"            "_mig_lock=$DBX_SESSION_LOCK"
+check "launch.sh old MIDI folder"      "$HERE/scripts/launch.sh"            '_mig_midi_old="/data/UserData/dAVEBOx MIDI"'
+check "uninstall.sh legacy default"    "$HERE/uninstall/uninstall.sh"       "DBX_DIR_OLD=\"\${DBX_DIR_OLD:-$DBX_DIR_LEGACY}\""
+check "install_sound.sh legacy guard"  "$REPO/davebox/scripts/install_sound.sh" "DBX_DIR_OLD=$DBX_DIR_LEGACY "
+# MIDI exports live in the install now, and the manager links to them.
+check "MIDI export dir (davebox UI)"   "$REPO/davebox/ui/ui_midi_export.mjs" "MIDI_EXPORT_DIR = DAVEBOX_HOST_DIR + '/MIDI'"
+check "launch.sh MIDI shortcut"        "$HERE/scripts/launch.sh"            "dAVEBOx MIDI=\$DBX_DIR/MIDI"
+
 if [ "$fail" != "0" ]; then
     echo "config drift — fix the file above, or config.sh if the new value is intended" >&2
     exit 1

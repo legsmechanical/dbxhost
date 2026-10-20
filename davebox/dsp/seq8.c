@@ -113,7 +113,7 @@
  * must never write to; it was the last dAVEBOx file left there. Anything new
  * belongs here. */
 #ifndef SEQ8_DBX_DIR
-#define SEQ8_DBX_DIR            "/data/UserData/dbx-host"
+#define SEQ8_DBX_DIR            "/data/UserData/daveboxSA"
 #endif
 
 #ifndef SEQ8_LOG_PATH

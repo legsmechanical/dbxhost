@@ -21,7 +21,7 @@
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 MOD_DIR="${MOD_DIR:-$(cd "$HERE/../.." && pwd)}"          # …/modules/tools/davebox-sa
-DBX_DIR="${DBX_DIR:-/data/UserData/dbx-host}"
+DBX_DIR="${DBX_DIR:-/data/UserData/daveboxSA}"
 STOCK_DIR="${STOCK_DIR:-/data/UserData/schwung}"
 STOCK_HEAL="${STOCK_HEAL:-$STOCK_DIR/bin/schwung-heal}"
 PAYLOAD="$MOD_DIR/payload"
@@ -89,6 +89,28 @@ if [ "$lay" = 1 ]; then
     # Stamped as soon as the layout is in place — see the missing-stamp rule above.
     printf '{"version":"%s","host":1,"davebox":1,"installed":"%s","by":"bootstrap"}\n' \
         "$want" "$(date -Iseconds 2>/dev/null || date)" > "$DBX_DIR/sa-build.json"
+    # ⚠ THE HELPER RIDES ALONG WITH THE PAYLOAD. Step 1 stages payload/bin/heal
+    # only when the installed helper is NOT blessed, and the launcher re-blesses
+    # by copying the helper it already has -- so on a release upgrade over a
+    # blessed install, a new helper in the payload never reached the device:
+    # the session kept running the one it was first installed with. A helper
+    # compiled for an older layout (an install-dir rename, say) then works on
+    # paths that no longer exist. So when the payload carries a DIFFERENT
+    # helper, stage it and let the current, still-blessed one install it: that
+    # is its own self-update (bin/heal.new -> bin/heal, then a re-exec), the
+    # same route install-host.sh takes.
+    if [ -f "$PAYLOAD/bin/heal" ] && [ -u "$HEAL" ] && ! cmp -s "$PAYLOAD/bin/heal" "$HEAL"; then
+        if cp -f "$PAYLOAD/bin/heal" "$MOD_DIR/bin/heal.new"; then
+            _heal_out="$("$HEAL" 2>&1)" || say "the helper reported a problem while updating: $_heal_out"
+            if [ -f "$MOD_DIR/bin/heal.new" ]; then
+                say "WARNING: the new helper was staged but not installed (bin/heal.new is still there); the launch re-runs it"
+            else
+                say "helper updated from the payload: $(ls -la "$HEAL")"
+            fi
+        else
+            say "WARNING: could not stage the payload's helper -- keeping the installed one"
+        fi
+    fi
 else
     say "install present ($have)"
 fi
