@@ -1462,9 +1462,9 @@ lane**, not the clip's notes (click the row for its operations, below):
   (Smooth and Wrap don't apply there and are hidden).
 - **Smooth** — *On* glides between values, *Off* steps (on parameters that can
   ramp).
-- **Wrap** — *Carry* keeps the last value going round the loop; *Reset* returns the
-  parameter to where the knob sits at rest, until the first lock or recorded move
-  comes round.
+- **Wrap** — *Reset* (default) returns the parameter to where the knob sits at rest,
+  until the first lock or recorded move comes round; *Carry* keeps the last value
+  going round the loop. Lanes saved before this change keep the Wrap they had.
 - **Link** — *On* (default): the automation is transformed with the note sequence —
   Resolution and Beat Stretch scale it, Clock Shift and Nudge move it (inside the
   clip's loop, as they move its notes), doubling the loop copies it forward, and

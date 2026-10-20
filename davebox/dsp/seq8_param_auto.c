@@ -717,7 +717,10 @@ static pa_entry_t *pa_get(seq8_instance_t *inst, int track, int clip, int target
             e->track  = (uint8_t)track;
             e->clip   = (uint8_t)clip;
             e->target = (uint16_t)target;
-            e->flags  = PA_FLAG_ACTIVE;
+            /* Wrap: Reset is the default for a NEW lane (Josh, 2026-10-20:
+             * "Make reset the default wrap option instead of carry"). A lane
+             * loaded from a file keeps its own "f" (pa_parse sets it whole). */
+            e->flags  = PA_FLAG_ACTIVE | PA_FLAG_WRAP_RESET;
             e->rest   = PA_VAL_UNSET;
             return e;
         }

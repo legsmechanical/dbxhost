@@ -62,8 +62,8 @@ int main(void) {
     {
         char _pl[4096];
         hx_get_param(h, "pa_list", _pl, sizeof(_pl));
-        HX_ASSERT(strstr(_pl, "1 0 1 1 1:synth:cutoff 384 0"), "P7: a clip-following entry is pinned to the pre-bake length (384)");
-        HX_ASSERT(strstr(_pl, "1 0 1 1 1:synth:reso 96 0"), "P7: an entry with its own window keeps it");
+        HX_ASSERT(strstr(_pl, "1 0 9 1 1:synth:cutoff 384 0"), "P7: a clip-following entry is pinned to the pre-bake length (384)");
+        HX_ASSERT(strstr(_pl, "1 0 9 1 1:synth:reso 96 0"), "P7: an entry with its own window keeps it");
     }
     HX_ASSERT(inst->tracks[1].clips[0].length == 32, "D3: bake did not unroll to 32 steps");
     hx_destroy(h);
@@ -91,7 +91,7 @@ int main(void) {
             char _pl[4096];
             hx_get_param(h, "pa_list", _pl, sizeof(_pl));
             /* pa_list: … target, loop length, rate, scale %, loop START, step */
-            if (!strstr(_pl, "1 0 1 1 1:synth:cutoff 384 0 100 384 ")) {
+            if (!strstr(_pl, "1 0 9 1 1:synth:cutoff 384 0 100 384 ")) {
                 fprintf(stderr, "FAIL: D3b (loops=%d): the automation was not pinned to the old window (384 ticks from 384): %s\n", loops, _pl);
                 return 1;
             }

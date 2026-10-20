@@ -8,6 +8,11 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 
+### Changed
+- **New automation lanes start on Wrap: Reset.** Before the first point the
+  parameter sits where its knob rests, instead of carrying the last value round
+  the loop. Lanes in existing projects keep the Wrap they were saved with.
+
 ### Added
 - **Stretch an automation value across steps.** On the AUTOMATION screen, hold a
   step of a lane and press a later step: the held step's value now carries up to

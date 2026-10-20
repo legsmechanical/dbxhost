@@ -56,7 +56,8 @@ int main(void) {
 
     pa_entry_t *e = find_lane(in, 0, 0, "1:fx1:mix");
     HX_ASSERT(e && e->count == 2, "setup: two raw points, first later than the window start");
-    HX_ASSERT(!(e->flags & PA_FLAG_WRAP_RESET), "setup: Wrap stays Carry (the default)");
+    hx_set_param(h, "t0_pa_wrap", "0 1:fx1:mix 0");      /* this case is about Carry (no longer the default) */
+    HX_ASSERT(!(e->flags & PA_FLAG_WRAP_RESET), "setup: Wrap set to Carry");
 
     pa_point_t pts[PA_ENTRY_POINTS + 2];
     int n = pa_export_points(&in->tracks[0], e, pts, PA_ENTRY_POINTS + 2);

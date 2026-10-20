@@ -47,6 +47,7 @@ int main(void) {
         hx_set_param(h, "t0_c0_step_0_toggle", "60 100");      /* a playing clip */
         lock(h, "1:fx1:mix", 12, 8192);                        /* step 13: ~50 % */
         lock(h, "1:fx1:mix", 13, 0);                           /* step 14: 0 */
+        hx_set_param(h, "t0_pa_wrap", "0 1:fx1:mix 0");        /* Carry: no longer a new lane's default */
         hx_set_param(h, "transport", "play_focus:0:0");
         HX_ASSERT(in->tracks[0].clip_playing, "setup: the clip plays");
         /* ~1600 blocks ≈ 37 steps at the harness tempo: two passes and change. */
