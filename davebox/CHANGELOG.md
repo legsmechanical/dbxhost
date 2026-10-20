@@ -17,9 +17,10 @@ the section into a versioned heading at release time.
   screen. The **Clear all** row still clears everything.
 
 ### Fixed
-- After a Shift + click jump from the AUTOMATION screen, opening a module from
-  the pad map (INSTRUMENT, MIDI FX, FX 1-4) left the step buttons showing the
-  lane. They return to notes now, as they do for a bank picked from the map.
+- Opening an editor over the AUTOMATION screen — the pad map's INSTRUMENT,
+  MIDI FX or FX pads, after a Shift + click jump or straight from the lane
+  list — left the step buttons showing the lane. They return to notes now, and
+  show the lane again when Back brings you back to the list.
 
 ### Added
 - **Stretch an automation value across steps.** On the AUTOMATION screen, hold a

@@ -765,7 +765,13 @@ export function autoBankTick() {
         return;
     }
     if (lanePin && lanePinTick()) return;
-    if (!autoBankIsActive() || !(S.bankCardLatched || autoMenuUp()) || S.moveCoRunTrack >= 0) {
+    /* ⭑ The steps follow the lane list only while it is ON SCREEN (Josh,
+     * 2026-10-20, on device: "steps should revert to note mode when I leave
+     * the automation areas"). An editor opened over AUTOMATION — the map's
+     * INSTRUMENT / FX pads, INST — leaves the bank and its open list
+     * underneath, so Back returns there; the list must not drive the steps
+     * from behind the editor. A jump's pin and a hold jump answered above. */
+    if (!autoBankIsActive() || !(S.bankCardLatched || autoMenuUp()) || S.moveCoRunTrack >= 0 || soundOpen()) {
         if (viewSent) syncPaView(viewSent.t, 0, null);
         return;
     }

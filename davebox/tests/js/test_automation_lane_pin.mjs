@@ -508,6 +508,37 @@ for (const [kind, pad, what] of [['seq', 90, 'INSTRUMENT'], ['seq', 99, 'FX 1'],
     });
 }
 
+/* Josh, 2026-10-20, on device, after the pin fix: "pad map inst > still shows
+ * automation on steps, and when i hold jog to reveal pad map again, it says
+ * i'm on automation". An editor opened from the map sits OVER the AUTOMATION
+ * bank, its list still open underneath — the list must not drive the steps. */
+for (const [kind, jump] of [['chain', true], ['chain', false], ['level', false]]) {
+    step('⭐ ' + (jump ? kind + ' jump' : 'the AUTOMATION list (' + kind + ')') + ', then the map\'s INSTRUMENT: the steps go back to notes', () => {
+        openMenuOn(TARGETS[kind]); ticks(2);
+        if (jump) { shiftClick(); ticks(10); }
+        assert(S.autoCycle, 'rig: the lane on the steps');
+        cc(3, 127); ticks(60);
+        note(90, 127); ticks(2); note(90, 0); ticks(2);
+        cc(3, 0); ticks(10);
+        assert(snd.soundOpen(), 'rig: the instrument editor opened (bank ' + S.activeBank + ')');
+        assert(!S.autoCycle, 'the lane stayed on the steps behind the editor (bank ' + S.activeBank + ', pin ' + bank.autoLanePinActive() + ')');
+        snd.soundExit(); ticks(4);
+    });
+}
+
+/* The device state the rig's map cannot reach (on the Move the map's pick left
+ * the list open under the editor): an editor up over the OPEN list, no pin. */
+step('⭐ an editor over the open AUTOMATION list, no pin: the list does not drive the steps', () => {
+    openMenuOn(TARGETS.chain); ticks(2);
+    shiftClick(); ticks(10);
+    assert(snd.soundOpen() && bank.autoMenuUp() && bank.autoLanePinActive() && S.autoCycle, 'rig: the jump, list open underneath');
+    bank.autoLanePinClear(); ticks(3);
+    assert(bank.autoMenuUp(), 'rig: the list is still open underneath');
+    assert(!S.autoCycle, 'the list drove the steps from behind the editor');
+    snd.soundExit(); ticks(4);
+    assert(bank.autoMenuUp() && S.autoCycle, 'the editor gone, the list did not take the steps back (menu ' + bank.autoMenuUp() + ')');
+});
+
 if (swallowed !== null) { console.error('  FAIL — a SWALLOWED exception reached the jserr log:\n' + swallowed); failed = 1; }
 if (failed) process.exit(1);
 console.log('test_automation_lane_pin: all ok');
