@@ -122,7 +122,7 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
      *     its own step;
      *   - whatever played on the tick after the span is put back with a point
      *     there when the change would otherwise alter it — except on a Smooth
-     *     lane (not Punch): Smooth means the value never jumps (Josh,
+     *     lane (under Punch it never fires: a point lasts only its step): Smooth means the value never jumps (Josh,
      *     2026-10-20), so the plateau ramps from its end to the next point.
      * Refused whole — nothing written — when the lane has no entry, the held
      * step plays nothing, or the points would not fit.
@@ -185,7 +185,7 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
          * (the span IS the whole window) there is nothing after it. */
         uint32_t after = toEnd + 1;
         if (after >= we) after = ws;
-        int keep_after = !(e->flags & PA_FLAG_SMOOTH && !punch) &&
+        int keep_after = !(e->flags & PA_FLAG_SMOOTH) &&
                          !(wrap ? (after >= from || after <= toEnd)
                                 : (after >= from && after <= toEnd));
         uint16_t after_v = 0;
