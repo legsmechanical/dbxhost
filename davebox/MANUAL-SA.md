@@ -41,9 +41,6 @@ sequencer.
 | **From Schwung** | open **dAVEBOx SA** in official Schwung's **Tools** menu; it asks *"Move will restart to load dAVEBOx. Proceed?"* — click the jog to go, **Back** to stay |
 | **At power-on** | while the screen reads *"Loading Schwung — press Back to change"*, hold **Back**, turn the jog to **dAVEBOx SA** and click |
 
-The boot route needs official Schwung 1.3.0 or newer. On older versions, use the
-Tools route.
-
 ⚠ **Picking a row in that boot menu also makes it your default** — the next
 power-on goes straight there. To change back, hold Back at power-on and pick
 **Schwung**. Leaving dAVEBOx always returns you to Schwung; the default only
@@ -180,20 +177,27 @@ already know works here.
 
 ## Install and remove
 
-dAVEBOx SA is not in the Schwung module catalog yet: you install it by hand,
-from the files on its [release page](https://github.com/legsmechanical/dbxhost/releases).
-It needs Schwung 1.3.0 or newer.
+dAVEBOx SA needs Schwung 1.7.3 or newer.
 
-1. Download **davebox-sa-module.tar.gz** from the release.
-2. Open Schwung Manager in a browser at **move.local:7700** (plain move.local is
-   Ableton's own Move Manager), go to **Modules**, open
-   **Install Custom Module**, choose the file under **From Tarball**, and click
-   **Install from File**.
+1. Open Schwung Manager in a browser at **move.local:7700** (plain move.local is
+   Ableton's own Move Manager) and go to **Modules**.
+2. Find **dAVEBOx SA** in the catalog (under Tools) and click **Install**.
 3. On the Move, open Schwung's tool menu — **Shift + Step 13** — and choose
-   **dAVEBOx SA**. The first launch finishes installing by itself.
+   **dAVEBOx SA**. The first launch finishes installing by itself, in about a
+   minute.
 
-To remove it, install **davebox-uninstall-module.tar.gz** from the same release the
-same way, quit dAVEBOx, and choose **Uninstall dAVEBOx SA** in the tool menu. Your
+**Updates** arrive the same way: Schwung Manager shows when a newer dAVEBOx SA is
+available. Your projects carry over.
+
+If dAVEBOx SA isn't in your catalog yet, install it from its
+[release page](https://github.com/legsmechanical/dbxhost/releases) instead:
+download **davebox-sa-module.tar.gz**, then in **Modules** open **Install Custom
+Module**, choose the file under **From Tarball**, and click **Install from File**.
+
+To remove it, download **davebox-uninstall-module.tar.gz** from the
+[release page](https://github.com/legsmechanical/dbxhost/releases), install it
+the same way (**Install Custom Module → From Tarball**), quit dAVEBOx, and choose
+**Uninstall dAVEBOx SA** in the tool menu. Your
 projects and settings stay in `/data/UserData/daveboxSA`, so a later install picks
 them up.
 

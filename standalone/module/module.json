@@ -1,9 +1,9 @@
 {
   "id": "davebox-sa",
   "name": "dAVEBOx SA",
-  "version": "0.0.21",
+  "version": "1.0.0",
   "abbrev": "dAVEBOx",
-  "description": "Restart Move under the davebox Schwung host and open dAVEBOx. Stock Schwung is untouched and returns on exit or reboot.",
+  "description": "An 8-track MIDI sequencer that runs as its own session: Move restarts into dAVEBOx SA, and stock Schwung comes back, untouched, when you quit.",
   "author": "legsmechanical",
   "api_version": 1,
   "component_type": "tool",

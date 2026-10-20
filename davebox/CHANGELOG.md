@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+
+## [1.0.0] — 2026-10-20
+The first full release. dAVEBOx SA is the successor to dAVEBOx, and replaces
+it in the Schwung module catalog. It needs Schwung 1.7.3 or newer.
+
 ### Added
 - **Video tutorials, linked from the manual.** Seven short videos walk through
   dAVEBOx on a real Move ([playlist](https://www.youtube.com/playlist?list=PLYG911Ay8pgk)).
