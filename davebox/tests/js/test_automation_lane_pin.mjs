@@ -59,6 +59,8 @@ const CHAIN = {
         { key: 'reso', name: 'Reso', type: 'float', min: 0, max: 1, step: 0.01 },
     ]),
 };
+/* An FX 1 loaded too, so the map's FX 1 pad opens an editor. */
+CHAIN['fx1:module'] = 'nusaw'; CHAIN['fx1:ui_hierarchy'] = HIER; CHAIN['fx1:chain_params'] = CHAIN['synth:chain_params'];
 globalThis.host_system_cmd = () => 0; globalThis.host_read_file = () => '';
 globalThis.host_file_exists = () => false;
 let swallowed = null;
@@ -119,6 +121,7 @@ const render = await import('../../ui/ui_render.mjs');
 const movy = await import('../../ui/ui_movy.mjs');
 globalThis.__inp = await import('../../ui/ui_input_cc.mjs');
 const VIEW_EDIT = 1;
+const LEDK = await import('/data/UserData/schwung/shared/constants.mjs');
 
 const T = 1;                                           /* track 2: melodic by default */
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
@@ -170,6 +173,23 @@ function openMenuOn(target) {
     assert(idx >= 0, 'rig: no row for ' + target + ' in ' + JSON.stringify(rows.map(r => r.target)));
     for (let g = 0; g < 10 && S.autoBank.sel !== idx; g++) jog(S.autoBank.sel < idx ? 1 : -1);
     assert(S.autoBank.menu && S.autoBank.sel === idx, 'rig: cursor not on ' + target);
+    return idx;
+}
+/* AUTOMATION the way the device reaches it: the pad map's AUTOMATION door
+ * ([1,1] = pad 85) from CLIP, which stamps the door's way home — and while a
+ * door is up a map pick does NOT tear the screen down (bankMapLeaveScreen). */
+function openMenuViaMap(target) {
+    if (snd.soundOpen()) snd.soundExit();
+    __inp.closeDoorScreen(); bank.autoBankReset();
+    S.activeBank = 0; S.trackActiveBank[T] = 0; S.bankCardLatched = false;
+    ticks(2);
+    cc(3, 127); ticks(60); note(85, 127); ticks(2); note(85, 0); ticks(2); cc(3, 0); ticks(6);
+    assert(__inp.doorScreenUp() && bank.autoMenuUp(), 'rig: the AUTOMATION door is not up (bank ' + S.activeBank + ')');
+    const rows = bank.autoBankRows(T, 0);
+    const idx = rows.findIndex(r => r.target === target);
+    assert(idx >= 0, 'rig: no row for ' + target);
+    for (let g = 0; g < 10 && S.autoBank.sel !== idx; g++) jog(S.autoBank.sel < idx ? 1 : -1);
+    assert(S.autoBank.sel === idx, 'rig: cursor not on ' + target);
     return idx;
 }
 /* `cleared`: the menu state was dropped while you were away — what a bank walk
@@ -465,6 +485,145 @@ step('CONTROL: a bank picked by hand ends the pin', () => {
     const inp = globalThis.__inp;
     S.bankPickerSel = 0; inp.applyBankPick(); ticks(2);
     assert(!bank.autoLanePinActive(), 'a hand-picked bank kept the lane on the steps');
+});
+
+/* Josh, 2026-10-20: "Steps should revert to note mode when I leave the
+ * automation areas (note, this doesn't include when I shift click jog to view
+ * the automated [param] in its context - that should remain in automation mode
+ * until I leave the place it jumped me to)". A jump into SOUND mode — SOUND +
+ * CONFIG, MACROS, a module's editor — is left by a pad-map pick of ANOTHER bank
+ * even when sound mode itself stays open (SOUND -> MACROS). */
+/* [kind, bank, its pad on the map]: MACROS [1,0] = pad 93, SOUND [1,3] = 69,
+ * NOTE FX [3,0] = 95 (row 0 is the top pad row). */
+for (const [kind, to, pad] of [['level', BANK_MACROS, 93], ['midi', BANK_SOUND, 69], ['chain', 1, 95]]) {
+    step('⭐ ' + kind + ' jump, then the PAD MAP to another bank: the steps go back to notes', () => {
+        openMenuOn(TARGETS[kind]); ticks(2);
+        shiftClick(); ticks(kind === 'chain' ? 10 : 4);
+        assert(bank.autoLanePinActive() && S.autoCycle, 'rig: pinned');
+        cc(3, 127); ticks(60);                          /* hold the jog: the map */
+        note(pad, 127); ticks(2); note(pad, 0); ticks(2);
+        cc(3, 0); ticks(6);
+        assert(S.activeBank === to, 'rig: on bank ' + to + ' (got ' + S.activeBank + ')');
+        assert(!bank.autoLanePinActive() && !S.autoCycle, kind + ': the lane stayed on the steps after leaving (bank ' + S.activeBank + ', sound ' + snd.soundOpen() + ')');
+        if (snd.soundOpen()) snd.soundExit();
+        ticks(2);
+    });
+}
+
+/* Josh, 2026-10-20, on device: "shift plus click on the automation row, then
+ * pad map>instrument". The map's MODULE pads (right 4x4: MIDI FX, INSTRUMENT,
+ * FX 1-4) open an editor without picking a bank, so the bank-pick path that
+ * ends the pin never ran. INSTRUMENT [6,1] = pad 90, FX 1 [7,0] = pad 99. */
+for (const [kind, pad, what] of [['seq', 90, 'INSTRUMENT'], ['seq', 99, 'FX 1'], ['morph', 90, 'INSTRUMENT'], ['level', 90, 'INSTRUMENT'], ['midi', 90, 'INSTRUMENT'], ['chain', 90, 'INSTRUMENT'], ['level', 99, 'FX 1']]) {
+    step('⭐ ' + kind + ' jump, then the PAD MAP to ' + what + ': the steps go back to notes', () => {
+        openMenuOn(TARGETS[kind]); ticks(2);
+        shiftClick(); ticks(kind === 'chain' ? 10 : 4);
+        assert(bank.autoLanePinActive() && S.autoCycle, 'rig: pinned');
+        cc(3, 127); ticks(60);                          /* hold the jog: the map */
+        note(pad, 127); ticks(2); note(pad, 0); ticks(2);
+        cc(3, 0); ticks(10);                            /* the module pad opens on release */
+        assert(!bank.autoLanePinActive() && !S.autoCycle, kind + ' -> ' + what + ': the lane stayed on the steps (bank ' + S.activeBank + ', sound ' + snd.soundOpen() + ')');
+        if (snd.soundOpen()) snd.soundExit();
+        ticks(2);
+    });
+}
+
+/* Josh, 2026-10-20, on device, after the pin fix: "pad map inst > still shows
+ * automation on steps, and when i hold jog to reveal pad map again, it says
+ * i'm on automation". An editor opened from the map sits OVER the AUTOMATION
+ * bank, its list still open underneath — the list must not drive the steps. */
+for (const viaMap of [false, true])
+for (const [kind, jump] of [['chain', true], ['chain', false], ['level', false]]) {
+    step('⭐ ' + (jump ? kind + ' jump' : 'the AUTOMATION list (' + kind + ')') + (viaMap ? ' opened from the map' : '') + ', then the map\'s INSTRUMENT: the steps go back to notes', () => {
+        (viaMap ? openMenuViaMap : openMenuOn)(TARGETS[kind]); ticks(2);
+        if (jump) { shiftClick(); ticks(10); }
+        assert(S.autoCycle, 'rig: the lane on the steps');
+        cc(3, 127); ticks(60);
+        note(90, 127); ticks(2); note(90, 0); ticks(2);
+        cc(3, 0); ticks(10);
+        assert(snd.soundOpen(), 'rig: the instrument editor opened (bank ' + S.activeBank + ')');
+        assert(!S.autoCycle, 'the lane stayed on the steps behind the editor (bank ' + S.activeBank + ', pin ' + bank.autoLanePinActive() + ')');
+        snd.soundExit(); ticks(4);
+    });
+}
+
+/* The device state the rig's map cannot reach (on the Move the map's pick left
+ * the list open under the editor): an editor up over the OPEN list, no pin. */
+step('⭐ an editor over the open AUTOMATION list, no pin: the list does not drive the steps', () => {
+    openMenuOn(TARGETS.chain); ticks(2);
+    shiftClick(); ticks(10);
+    assert(snd.soundOpen() && bank.autoMenuUp() && bank.autoLanePinActive() && S.autoCycle, 'rig: the jump, list open underneath');
+    bank.autoLanePinClear(); ticks(3);
+    assert(bank.autoMenuUp(), 'rig: the list is still open underneath');
+    assert(!S.autoCycle, 'the list drove the steps from behind the editor');
+    snd.soundExit(); ticks(4);
+    assert(bank.autoMenuUp() && S.autoCycle, 'the editor gone, the list did not take the steps back (menu ' + bank.autoMenuUp() + ')');
+});
+
+/* Josh, 2026-10-20: "now when i jump from instrument view back to automation,
+ * it stays on instrument. and when i'm IN instrument view it says i'm in
+ * automation on the map ... (same thing happens with fx automation and
+ * jumping to fx module editor on map)". AUTOMATION [1,1] = pad 85,
+ * INST [2,3] = 70, FX 1 [7,0] = 99. */
+for (const viaMap of [false, true])
+/* Josh, later: "it shows that i'm in instrument mode on the pads when viewing
+ * it in the automation context" — a JUMP's editor is still AUTOMATION's. */
+for (const [how, pad, curWant] of [['the jump', null, { c: 1, r: 1 }], ['the map\'s FX 1', 99, null]]) {
+    step('⭐ in an editor over AUTOMATION (' + how + (viaMap ? ', AUTOMATION opened from the map' : '') + '): the map marks the editor, and its AUTOMATION pad goes back to the list', () => {
+        (viaMap ? openMenuViaMap : openMenuOn)(TARGETS.chain); ticks(2);
+        if (pad === null) { shiftClick(); ticks(10); }
+        else { cc(3, 127); ticks(60); note(pad, 127); ticks(2); note(pad, 0); ticks(2); cc(3, 0); ticks(10); }
+        assert(snd.soundInEditor(), 'rig: an editor is up (comp ' + snd.soundCompForTest() + ')');
+        cc(3, 127); ticks(60);                          /* the map, over the editor */
+        assert(S.bankMapUp, 'rig: the map is up');
+        const cur = render.bankMapItems().cur;
+        assert(JSON.stringify(cur) === JSON.stringify(curWant), 'the map marks ' + JSON.stringify(cur) + ', wanted ' + JSON.stringify(curWant) + ' (AUTOMATION is [1,1])');
+        const W = LEDK.White, lit = (p) => leds[p] === W;
+        assert(pad === null ? lit(85) && !lit(90) && !lit(70) : !lit(85) && lit(99) && !lit(90), 'the editor\'s pad is not the White one (90 ' + leds[90] + ', 70 ' + leds[70] + ', 99 ' + leds[99] + ')');
+        note(85, 127); ticks(2); note(85, 0); ticks(2);
+        cc(3, 0); ticks(10);
+        assert(!snd.soundOpen(), 'the editor stayed up after picking AUTOMATION');
+        assert(S.activeBank === BANK_AUTOMATION && bank.autoMenuUp() && S.autoCycle, 'not back on the lane list (bank ' + S.activeBank + ', menu ' + bank.autoMenuUp() + ')');
+        back(); ticks(4); back(); ticks(4);
+    });
+}
+
+/* Josh, 2026-10-20: "BACK from instrument mode puts me back into the
+ * automation list when entered through automation context". A module pick off
+ * the map LEAVES AUTOMATION: Back from that editor returns to the bank the
+ * AUTOMATION door was opened from (CLIP), not to the list. */
+for (const jump of [false, true]) {
+    step('⭐ AUTOMATION from the map' + (jump ? ', a jump' : '') + ', the map\'s INSTRUMENT, then Back: CLIP, not the lane list', () => {
+        openMenuViaMap(TARGETS.chain); ticks(2);
+        if (jump) { shiftClick(); ticks(10); }
+        cc(3, 127); ticks(60); note(90, 127); ticks(2); note(90, 0); ticks(2); cc(3, 0); ticks(10);
+        assert(snd.soundInEditor(), 'rig: the instrument editor is up');
+        assert(!__inp.doorScreenUp() && S.activeBank === 0, 'AUTOMATION is still under the editor (bank ' + S.activeBank + ')');
+        back(); ticks(6);
+        assert(!snd.soundOpen() && S.activeBank === 0 && !bank.autoMenuUp(), 'Back did not land on CLIP (bank ' + S.activeBank + ', menu ' + bank.autoMenuUp() + ', sound ' + snd.soundOpen() + ')');
+    });
+}
+
+step('CONTROL: AUTOMATION from the map, a jump, then Back (no map): the lane list, as ruled', () => {
+    openMenuViaMap(TARGETS.chain); ticks(2);
+    shiftClick(); ticks(10);
+    assert(snd.soundInEditor(), 'rig: the jump opened the editor');
+    back(); ticks(6);
+    assert(!snd.soundOpen() && S.activeBank === BANK_AUTOMATION && bank.autoMenuUp(), 'Back from the jump did not return to the list (bank ' + S.activeBank + ')');
+    back(); ticks(4);
+});
+
+/* The same for an ordinary bank: CLIP [2,1] = pad 86. */
+step('⭐ CLIP, the map\'s INSTRUMENT, then the map\'s CLIP: the editor closes and CLIP is shown', () => {
+    __inp.bankMapEnd();
+    S.bankPickerSel = -1;
+    const mapPick = (p) => { cc(3, 127); ticks(60); note(p, 127); ticks(2); note(p, 0); ticks(2); cc(3, 0); ticks(10); };
+    mapPick(86);
+    assert(S.activeBank === 0 && !snd.soundOpen(), 'rig: on CLIP (bank ' + S.activeBank + ')');
+    mapPick(90);
+    assert(snd.soundInEditor(), 'rig: the instrument editor is up');
+    mapPick(86);
+    assert(!snd.soundOpen() && S.activeBank === 0, 'the editor stayed up after picking CLIP (bank ' + S.activeBank + ')');
 });
 
 if (swallowed !== null) { console.error('  FAIL — a SWALLOWED exception reached the jserr log:\n' + swallowed); failed = 1; }

@@ -50,15 +50,15 @@ int main(void) {
 
         pa_list(h, buf, sizeof(buf));
         HX_ASSERT(list_count(buf) == 2, "two entries expected");
-        HX_ASSERT(strstr(buf, "1 2 1 2 0:fx1:cutoff"), "chain entry: track clip flags count target");
-        HX_ASSERT(strstr(buf, "1 2 1 1 cc:74"), "midi entry listed alongside it");
+        HX_ASSERT(strstr(buf, "1 2 9 2 0:fx1:cutoff"), "chain entry: track clip flags count target (9 = ACTIVE | WRAP_RESET, the new-lane default)");
+        HX_ASSERT(strstr(buf, "1 2 9 1 cc:74"), "midi entry listed alongside it");
         OK("a write creates an entry keyed by its target, and pa_list reports it in one read");
 
         /* Same tick twice replaces rather than appends — a knob held still
          * during recording must not grow the store without bound. */
         pa_set(h, 1, 2, "0:fx1:cutoff", 48, 12000);
         pa_list(h, buf, sizeof(buf));
-        HX_ASSERT(strstr(buf, "1 2 1 2 0:fx1:cutoff"), "point count unchanged after rewriting a tick");
+        HX_ASSERT(strstr(buf, "1 2 9 2 0:fx1:cutoff"), "point count unchanged after rewriting a tick");
         OK("rewriting an existing tick replaces the point");
 
         /* Distinct targets are distinct automation; distinct clips too. */
@@ -137,7 +137,7 @@ int main(void) {
         hx_set_param(h, "t0_pa_clear_step", "0 20 30");
         pa_list(h, buf, sizeof(buf));
         HX_ASSERT(!strstr(buf, "0:fx2:mix"), "the only point of fx2:mix was in the span; entry gone");
-        HX_ASSERT(strstr(buf, "0 0 1 1 0:fx1:cutoff"), "cutoff keeps its out-of-span point");
+        HX_ASSERT(strstr(buf, "0 0 9 1 0:fx1:cutoff"), "cutoff keeps its out-of-span point");
         HX_ASSERT(strstr(buf, "cc:1"), "a parameter automated elsewhere is untouched");
         OK("Delete+step clears every parameter's points in the span, and only there");
 
@@ -162,10 +162,10 @@ int main(void) {
         pa_set(h, 0, 0, "cc:7", 0, 500);
         hx_set_param(h, "t0_pa_active", "0 cc:7 0");
         pa_list(h, buf, sizeof(buf));
-        HX_ASSERT(strstr(buf, "0 0 0 1 cc:7"), "flags cleared to 0, entry and its point kept");
+        HX_ASSERT(strstr(buf, "0 0 8 1 cc:7"), "ACTIVE cleared (8 = Wrap: Reset left alone), entry and its point kept");
         hx_set_param(h, "t0_pa_active", "0 cc:7 1");
         pa_list(h, buf, sizeof(buf));
-        HX_ASSERT(strstr(buf, "0 0 1 1 cc:7"), "reactivates");
+        HX_ASSERT(strstr(buf, "0 0 9 1 cc:7"), "reactivates");
         OK("Mute+knob deactivates WITHOUT deleting — the distinction the spec draws");
         hx_destroy(h);
     }
@@ -229,7 +229,7 @@ int main(void) {
         hx_get_param(h, "pa_store_full", full, sizeof(full));
         HX_ASSERT(full[0] == '0', "a full pool evicts a zombie for a new lane instead of refusing");
         pa_list(h, buf, sizeof(buf));
-        HX_ASSERT(strstr(buf, "1 5 1 1 1:fx1:c") != NULL, "...and the new lane is there");
+        HX_ASSERT(strstr(buf, "1 5 9 1 1:fx1:c") != NULL, "...and the new lane is there");
         OK("a full pool reuses a retired lane");
         hx_destroy(h);
         h = hx_create(NULL);
@@ -441,7 +441,7 @@ int main(void) {
             seq8_load_state(in2);
         }
         pa_list(h, buf, sizeof(buf));
-        HX_ASSERT(strstr(buf, "2 5 3 1 1:synth:filter"), "entry, flags (active|smooth) and count restored");
+        HX_ASSERT(strstr(buf, "2 5 11 1 1:synth:filter"), "entry, flags (active|smooth|wrap reset) and count restored");
         OK("it reloads with the project, flags and all");
 
         /* A project with no automation must leave the store EMPTY rather than

@@ -12,7 +12,8 @@
  *                                  · Loop (clip, or N steps — click to edit,
  *                                  turn, click to set) · Scale (0-200 %, same
  *                                  shape: the lane's values up or down)
- *   Delete + click on the card    → CLEAR ALL, the shortcut
+ *   Delete + click on a lane row  → CLEAR that lane (Josh, 2026-10-20 — it
+ *                                  used to clear ALL, from anywhere)
  *   Back                          → ops → menu → card → (davebox's own: out)
  *
  * Every edit takes an UNDO CHECKPOINT (ui_automation queues it). Smooth/Stepped
@@ -28,7 +29,7 @@
 
 import { S, noteUndoUnit, armBankDisplay } from './ui_state.mjs';
 import { BANK_AUTOMATION, BANK_SOUND, BANK_MACROS, PAD_MODE_DRUM, midiTargetIsMidi, SEQ_AUTO_TARGETS } from './ui_constants.mjs';
-import { soundOpen, soundExit, soundJumpToParam } from './ui_sound.mjs';
+import { soundOpen, soundExit, soundJumpToParam, soundEditorComp } from './ui_sound.mjs';
 import { readBankParams } from './ui_dsp_bridge.mjs';
 import { effectiveClip } from './ui_leds.mjs';
 import { automationEntriesFor, automationTargetLabel, automationClearKey, automationClearPoints,
@@ -254,6 +255,30 @@ export function autoBankClick() {
     const r = rows[a.sel];
     a.ops = { rows: opsFor(t, c, r), sel: 0, row: r };
     a.loopEdit = false; a.rateEdit = false; a.scaleEdit = false;
+}
+/* Delete + jog click (Josh, 2026-10-20: "Get rid of delete + jog click to
+ * clear all automation. Instead, delete + jog click when an automation lane is
+ * selected from the list, should clear just that lane."). The lane under the
+ * cursor is cleared — its row's own Clear (the aftertouch row's Delete, its
+ * only clear). Anywhere else — the card, the Clear all row, an open op — it
+ * does nothing: clearing everything is the Clear all row's click, on purpose. */
+export function autoBankDeleteClick() {
+    const t = S.activeTrack, c = effectiveClip(t);
+    const a = st();
+    if (!a.menu || a.ops) return;
+    const rows = autoBankRows(t, c);
+    const r = rows[a.sel];
+    if (!r) return;
+    if (r.kind === 'at') {
+        S.pendingDefaultSetParams.push({ key: 't' + t + '_c' + c + '_undo_checkpoint', val: '1' });
+        noteUndoUnit();
+        S.pendingDefaultSetParams.push({ key: 't' + t + '_c' + c + '_at_clear', val: '1' });
+        S.clipAtHas[t][c] = false;
+        showActionPopup('AFTERTOUCH', 'CLEARED');
+        return;
+    }
+    if (r.kind !== 'entry') return;
+    if (automationClearPoints(t, c, r.target)) showActionPopup('AUTOMATION', 'CLEARED');
 }
 function runOp(t, c, a) {
     const o = a.ops.rows[a.ops.sel], r = a.ops.row;
@@ -549,6 +574,11 @@ function syncPaView(t, c, target) {
 let lanePin = null;             /* { t, c, target, page, crumb: 'auto'|'sound', bank } */
 export function autoLanePinActive() { return !!lanePin; }
 export function autoLanePinClear() { lanePin = null; }
+/* The editor the bank map marks as where you are, or null for the bank. A
+ * jump's destination is still the automation context (Josh, 2026-10-20: "it
+ * shows that i'm in instrument mode on the pads when viewing it in the
+ * automation context"), so while the pin lives the map marks AUTOMATION. */
+export function autoMapEditorComp() { return lanePin ? null : soundEditorComp(); }
 export function autoLanePinJump(target, crumb, bank) {
     const t = S.activeTrack, c = effectiveClip(t), a = st();
     const page = (a.cycleTarget === target && a.cycleTrack === t && a.cycleClip === c) ? (a.cyclePage | 0) : 0;
@@ -740,7 +770,13 @@ export function autoBankTick() {
         return;
     }
     if (lanePin && lanePinTick()) return;
-    if (!autoBankIsActive() || !(S.bankCardLatched || autoMenuUp()) || S.moveCoRunTrack >= 0) {
+    /* ⭑ The steps follow the lane list only while it is ON SCREEN (Josh,
+     * 2026-10-20, on device: "steps should revert to note mode when I leave
+     * the automation areas"). An editor opened over AUTOMATION — the map's
+     * INSTRUMENT / FX pads, INST — leaves the bank and its open list
+     * underneath, so Back returns there; the list must not drive the steps
+     * from behind the editor. A jump's pin and a hold jump answered above. */
+    if (!autoBankIsActive() || !(S.bankCardLatched || autoMenuUp()) || S.moveCoRunTrack >= 0 || soundOpen()) {
         if (viewSent) syncPaView(viewSent.t, 0, null);
         return;
     }

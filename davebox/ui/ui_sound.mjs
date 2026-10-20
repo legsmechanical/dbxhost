@@ -1562,6 +1562,10 @@ export function soundInEditor() {
     return !!(S.active && !soundIsGlobal() &&
               (S.view === VIEW_EDIT || (ppOn && ppOwnsView())));
 }
+/* The chain component whose editor is up ('synth', 'midi_fx1', 'fx1'..), else
+ * null — what the bank map marks as where you are (an editor sits OVER the
+ * bank, which stays underneath for Back). */
+export function soundEditorComp() { return soundInEditor() && S.comp ? S.comp : null; }
 
 /* The follow itself, route-aware, the same choice tick's reconcile and the
  * `reflavour` action make: a Move-routed track's sound is its bus, a Schwung

@@ -55,7 +55,7 @@ import { computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
 import { effectiveClip, forceRedraw, invalidateLEDCache,
     bankHasAltParams, clearAllLEDs, removeFlagsWrap, sendPerfMods } from './ui_leds.mjs';
 import { exitMoveNativeCoRun, enterMoveNativeCoRun, exitMoveSettingsCoRun, coRunMapScreen } from './ui_corun.mjs';
-import { autoBankClick, autoBankJog, autoBankBack, autoBankClearClip, autoBankReset, autoBankMenuOpen, autoMenuUp,
+import { autoBankClick, autoBankJog, autoBankBack, autoBankDeleteClick, autoBankReset, autoBankMenuOpen, autoMenuUp,
          autoBankJumpTarget, autoBankRestoreMenu, autoCyclePageStep,
          autoLanePinJump, autoLanePinClear, laneHome } from './ui_automation_bank.mjs';
 import { automationParamEdit, automationCaptureCommit, automationCaptureCommitAfterNotes,
@@ -70,7 +70,7 @@ import { soundActive, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVo
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, macroClearConfirmAnswer,
     macroClearConfirmReset, macroClearConfirmOpen, soundKnobCardClick, soundEnterSendFromSessionMixer,
-    soundOnCard, soundEnterBusFx, soundResting, soundCardClick, soundKnobTouched } from './ui_sound.mjs';
+    soundOnCard, soundInEditor, soundEnterBusFx, soundResting, soundCardClick, soundKnobTouched } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { templateConfirmClick } from './ui_template.mjs';
 import { ensureGlobalMenuFresh, openGlobalMenu, openGlobalMenuAt } from './ui_menu.mjs';
@@ -726,7 +726,7 @@ function modalDialogUp() {
     }
 
     /* THE AUTOMATION BANK (latched): the click enters its menu / runs the
-     * selected op; Delete + click is the CLEAR CLIP shortcut (spec §2).
+     * selected op; Delete + click clears the lane under the cursor.
      * Ahead of the generic Delete + click (which resets the bank's params)
      * and of the alt-param toggle — but AFTER every confirm, dialog and the
      * global menu above: it used to sit ahead of them, so a click on the
@@ -734,7 +734,7 @@ function modalDialogUp() {
      * card's op instead (Josh, 2026-09-25). */
     if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && S.moveCoRunTrack < 0 &&
             S.activeBank === BANK_AUTOMATION) {
-        if (S.deleteHeld) autoBankClearClip(); else autoBankClick();
+        if (S.deleteHeld) autoBankDeleteClick(); else autoBankClick();
         S.screenDirty = true;
         forceRedraw();
         return;
@@ -1644,6 +1644,20 @@ function runBankMapMenu(a) {
     const t = S.activeTrack;
     bankMapLeaveScreen();
     bankMapEnd();
+    /* Any pick off the map leaves a lane jump's destination — even one that
+     * re-opens the editor the jump landed on (Josh, 2026-10-20, on device:
+     * Shift + click to the instrument, then the map's INSTRUMENT kept the
+     * steps on the lane). The module pads pick no bank, so applyBankPick's
+     * clear never runs for them. */
+    autoLanePinClear();
+    /* ...and leaves AUTOMATION itself (Josh, 2026-10-20: "BACK from
+     * instrument mode puts me back into the automation list"): a module or
+     * INST pick from the AUTOMATION door gives the door's bank back first, so
+     * the editor opens over the bank you came in from and Back returns there. */
+    if ((a.kind === 'module' || a.kind === 'inst') && doorScreenUp()) {
+        if (soundOpen()) soundExit();
+        closeDoorScreen();
+    }
     if (a.kind === 'bus') { soundEnterBusFx(a.bus); return; }
     if (a.kind === 'inst' || (a.kind === 'module' && a.comp === 'synth')) { openTrackInstrument(); return; }
     if (a.kind === 'module') { openTrackModule(a.comp); return; }
@@ -2976,6 +2990,9 @@ export function openDoorScreen(door) {
     const t = S.activeTrack;
     /* From one door to another, home stays where it was. */
     const home = doorScreenUp() ? S.doorReturn : { bank: S.activeBank, latched: !!S.bankCardLatched };
+    /* An editor over the door's own bank (the map's INSTRUMENT over AUTOMATION):
+     * the door is where you are going, so the editor closes. */
+    if (S.activeBank === door && soundInEditor()) soundExit();
     if (S.activeBank !== door) { S.bankPickerSel = bankListFor(t).indexOf(door); applyBankPick(false); }
     S.doorReturn = { track: t, door: door, bank: home.bank, latched: home.latched };   /* after the commit, which drops it */
     S.bankCardLatched = true;

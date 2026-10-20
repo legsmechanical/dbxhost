@@ -126,7 +126,7 @@ int main(void) {
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         HX_ASSERT(!(entry(h, LINK)->flags & PA_FLAG_UNLINKED), "a new lane is LINKED — the default");
         hx_get_param(h, "pa_list", buf, sizeof buf);
-        HX_ASSERT(strstr(buf, "1 0 5 1 " OFF), "pa_list reports Link: Off as ACTIVE | UNLINKED = 5");
+        HX_ASSERT(strstr(buf, "1 0 13 1 " OFF), "pa_list reports Link: Off as ACTIVE | UNLINKED | WRAP_RESET (the default) = 13");
         char *mem = NULL; size_t len = 0;
         FILE *fp = open_memstream(&mem, &len);
         pa_serialize(in, fp); fclose(fp);
@@ -134,10 +134,10 @@ int main(void) {
         hx_t *h2 = hx_create(NULL);
         pa_parse((seq8_instance_t *)h2->inst, mem, len);
         hx_get_param(h2, "pa_list", buf, sizeof buf);
-        HX_ASSERT(strstr(buf, "1 0 5 1 " OFF), "Link: Off survives save + load");
+        HX_ASSERT(strstr(buf, "1 0 13 1 " OFF), "Link: Off survives save + load");
         hx_set_param(h2, "t1_pa_link", "0 " OFF " 1");
         hx_get_param(h2, "pa_list", buf, sizeof buf);
-        HX_ASSERT(strstr(buf, "1 0 1 1 " OFF), "back On clears only that bit");
+        HX_ASSERT(strstr(buf, "1 0 9 1 " OFF), "back On clears only that bit");
         free(mem); hx_destroy(h2);
         OK("Link: On by default; Off is one flag bit, persisted, and toggles back");
     }

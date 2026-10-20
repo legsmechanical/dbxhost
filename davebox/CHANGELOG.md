@@ -8,6 +8,28 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 
+### Changed
+- **New automation lanes start on Wrap: Reset.** Before the first point the
+  parameter sits where its knob rests, instead of carrying the last value round
+  the loop. Lanes in existing projects keep the Wrap they were saved with.
+- **Delete + click on the AUTOMATION screen clears just the lane under the
+  cursor** — it used to clear all of the clip's automation from anywhere on the
+  screen. The **Clear all** row still clears everything.
+
+### Fixed
+- Opening an editor over the AUTOMATION screen — the pad map's INSTRUMENT,
+  MIDI FX or FX pads, after a Shift + click jump or straight from the lane
+  list — left the step buttons showing the lane. They return to notes now, and
+  show the lane again when Back brings you back to the list.
+- With an editor open from the pad map, the map now marks that editor (INST and
+  the INSTRUMENT pad, or that FX / MIDI FX pad) instead of the bank under it.
+  After a Shift + click jump it marks AUTOMATION, since you are still in the
+  automation context, and picking AUTOMATION there takes you back to the lane
+  list (it used to do nothing).
+- Opening an editor from the pad map while on the AUTOMATION screen now leaves
+  AUTOMATION: Back from the editor returns to the bank you were on before, not
+  to the lane list.
+
 ### Added
 - **Stretch an automation value across steps.** On the AUTOMATION screen, hold a
   step of a lane and press a later step: the held step's value now carries up to
