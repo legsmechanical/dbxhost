@@ -1238,7 +1238,45 @@ function bookUndoCheckpoint(track, clip) {
 function ensureCheckpoint(g) {
     if (g.ckpt) return;
     g.ckpt = true;
+    /* An AUTOMATION hold is one undo, whatever it does — a lock turned after
+     * an extend (or before it) shares the hold's unit. */
+    if (S.heldStepAuto && S.heldStep >= 0) {
+        if (S.stepHoldCkpt) return;
+        S.stepHoldCkpt = true;
+    }
     bookUndoCheckpoint(g.track, g.clip);
+}
+
+/* EXTEND (Josh, 2026-10-20): "holding a step with an automation point and
+ * touching a subsequent step carries that value across all steps. Works like
+ * note length extender and works across bars". The held step's value — what
+ * the lane plays there, a point or between points — runs through the END of
+ * `toStep`; an earlier step wraps round the lane's window. The engine reads
+ * the value and writes the span in one op (tN_pa_extend). The checkpoint and
+ * the write ride the SAME queue, in that order, so undo snapshots before the
+ * write; one per hold, shared with any lock turned in it. */
+/* The same from the NOTE grid (Josh, 2026-10-20: "make it so that it works
+ * outside of automation if the last gesture while step is held was to create
+ * or modify an automation point"): when the held step's last gesture was a
+ * lock, a later step extends THAT lock's lane instead of the note. True when
+ * it took the press. */
+export function automationExtendFromLock(track, toStep) {
+    const L = S.heldLockLast;
+    if (!L || S.heldStepAuto || L.track !== track || L.step !== S.heldStep || toStep === S.heldStep) return false;
+    automationExtendLock(L.track, L.clip, L.target, L.step, toStep, L.tps);
+    return true;
+}
+
+export function automationExtendLock(track, clip, target, fromStep, toStep, tps) {
+    const g = gestures.get(target);
+    if (!(S.heldStepAuto && S.stepHoldCkpt) && !(g && g.ckpt && g.lock)) {
+        bookUndoCheckpoint(track, clip);
+        if (S.heldStepAuto) S.stepHoldCkpt = true;
+    }
+    queueSet('t' + track + '_pa_extend', clip + ' ' + target + ' ' + fromStep + ' ' + toStep + ' ' + tps);
+    S.autoLockLast = null;           /* the values read, not a dialled lock, says what plays now */
+    presenceStale = true;
+    console.log('[auto] extend t' + track + ' c' + clip + ' ' + target + ' ' + fromStep + '->' + toStep);
 }
 
 /* The store's target for a (slot, fullKey) pair: a MIDI target is RAW —
@@ -1334,6 +1372,7 @@ export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) 
         /* What the jump destination shows for the held step until the next
          * values read catches up (autoLaneFocus). */
         S.autoLockLast = { track, clip, target, step: S.heldStep, norm, at: S.clockMs };
+        S.heldLockLast = { track, clip, target, step: S.heldStep, tps };
         automationNoteWrite();
         console.log('[auto] p-lock t' + track + ' c' + clip + ' step ' + S.heldStep + ' ' + target + ' = ' + norm);
         return;

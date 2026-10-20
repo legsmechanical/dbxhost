@@ -267,6 +267,54 @@ step('a hold ended by ANOTHER path (a track switch) still comes back, and correc
     assert(S.trackActiveBank[T] === BANK_AUTOMATION, 'the recorded jump was corrected');
 });
 
+/* EXTEND (Josh, 2026-10-20): "holding a step with an automation point and
+ * touching a subsequent step carries that value across all steps. Works like
+ * note length extender and works across bars". */
+const extendsOf = () => sets.filter(s => s.startsWith('t0_pa_extend='));
+const undoAt = () => sets.findIndex(s => s === 't0_c0_undo_checkpoint=1');
+step('⭐ EXTEND: hold step 3, press step 6 → one undo, then the span 2..5, queued in that order', () => {
+    assert(S.autoCycle && S.autoCycle.target === 'seq:0:delay_level', 'on Level');
+    note(STEP(2), 127); ticks(3);
+    assert(S.activeBank === DELAY, 'jumped');
+    sets.length = 0;
+    note(STEP(5), 127); ticks(2); note(STEP(5), 0); ticks(2);
+    const ex = extendsOf();
+    assert(ex.length === 1 && ex[0] === 't0_pa_extend=0 seq:0:delay_level 2 5 24', 'the extend: ' + JSON.stringify(sets));
+    const u = undoAt(), e = sets.indexOf(ex[0]);
+    assert(u >= 0 && u < e, 'the undo checkpoint goes BEFORE the write: ' + JSON.stringify(sets));
+    assert(S.heldStep === 2 && S.activeBank === DELAY, 'the hold (and the jump) survive the second press');
+    /* A lock turned in the SAME hold shares its undo. */
+    cc(72, 1); ticks(3);
+    assert(sets.filter(s => s === 't0_c0_undo_checkpoint=1').length === 1, 'a second undo in one hold: ' + JSON.stringify(sets));
+    note(STEP(2), 0); ticks(3);
+    assert(S.activeBank === BANK_AUTOMATION && S.heldStep === -1, 'release comes back');
+});
+
+step('⭐ EXTEND wraps: hold step 14, press step 3 → 13..2 round the cycle', () => {
+    note(STEP(13), 127); ticks(3);
+    sets.length = 0;
+    note(STEP(2), 127); ticks(2); note(STEP(2), 0);
+    note(STEP(13), 0); ticks(3);
+    const ex = extendsOf();
+    assert(ex.length === 1 && ex[0] === 't0_pa_extend=0 seq:0:delay_level 13 2 24', 'the wrap: ' + JSON.stringify(sets));
+});
+
+step('⭐ EXTEND across bars: Right pages the lane WHILE the step is held (the jump left AUTOMATION)', () => {
+    S.clipLength[T][C] = 32;
+    auto.automationRefreshPresence(); ticks(3);
+    assert(S.autoCycle && S.autoCycle.pages === 2, 'setup: a two-page lane: ' + JSON.stringify(S.autoCycle));
+    note(STEP(2), 127); ticks(3);
+    assert(S.activeBank === DELAY, 'jumped (off the AUTOMATION bank)');
+    cc(63, 127); cc(63, 0); ticks(2);                    /* Right */
+    assert(S.autoCycle.page === 1, 'Right did not page the lane mid-hold: page ' + S.autoCycle.page);
+    sets.length = 0;
+    note(STEP(4), 127); ticks(2); note(STEP(4), 0);
+    note(STEP(2), 0); ticks(3);
+    const ex = extendsOf();
+    assert(ex.length === 1 && ex[0] === 't0_pa_extend=0 seq:0:delay_level 2 20 24', 'step 3 → bar 2 step 5: ' + JSON.stringify(sets));
+    S.clipLength[T][C] = 16;
+});
+
 if (failed) { console.error('FAIL: test_automation_hold_jump'); process.exit(1); }
 console.log('PASS: test_automation_hold_jump');
 }

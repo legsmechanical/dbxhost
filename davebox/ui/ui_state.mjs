@@ -1066,6 +1066,10 @@ export const S = {
     /* True while the held step is an AUTOMATION hold (a step of the selected
      * lane's cycle on the AUTOMATION bank) — its release commits no note edit. */
     heldStepAuto: false,
+    /* The lock the held step's LAST gesture wrote ({ track, clip, target,
+     * step, tps }), or null: a later step pressed then extends it rather than
+     * the note (Josh, 2026-10-20). Any note edit in the hold clears it. */
+    heldLockLast: null,
     /* Per track: the AUTOMATION bank's selected lane's current tick in its own
      * lane ticks (state_snapshot 57..64, tN_pa_view), -1 = none / not playing. */
     autoLanePos: new Array(8).fill(-1),

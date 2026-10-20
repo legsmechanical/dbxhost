@@ -802,7 +802,10 @@ function updateAutoCycle(t, c, target) {
  * page to, and the pad's grid is not what is on the buttons). */
 export function autoCyclePageStep(delta) {
     const cy = S.autoCycle;
-    if (!cy || cy.t !== S.activeTrack || !(autoBankIsActive() || lanePin)) return false;
+    /* A hold jump keeps the lane's step row, so the arrows page it there too —
+     * an extend reaches a later bar (the jump to a level or MACROS moves the
+     * bank off AUTOMATION, which alone would refuse). */
+    if (!cy || cy.t !== S.activeTrack || !(autoBankIsActive() || lanePin || holdJump)) return false;
     const a = st();
     a.cyclePage = Math.max(0, Math.min(cy.pages - 1, (a.cyclePage | 0) + (delta < 0 ? -1 : 1)));
     cy.page = a.cyclePage;
