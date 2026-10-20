@@ -8,7 +8,8 @@
 #
 # KEY = sha1 over (git hash-object of every TRACKED file the host build reads:
 # src/, scripts/, standalone/config.sh, Dockerfile, schwung-manager/) + the
-# flavour flags. Content-based: an uncommitted edit changes it; a touch does not.
+# flavour flags + whether (and at which commit) the Link SDK is checked out.
+# Content-based: an uncommitted edit changes it; a touch does not.
 # Location: $DBX_BUILD_CACHE (default ~/.cache/dbxhost-build); DBX_BUILD_CACHE=0 disables.
 DBX_BUILD_CACHE_INPUTS="src scripts standalone/config.sh Dockerfile schwung-manager"
 
@@ -26,6 +27,15 @@ dbx_build_cache_key() {
         # shellcheck disable=SC2086
         git ls-files -z -- $DBX_BUILD_CACHE_INPUTS | xargs -0 git hash-object
         printf 'flags:%s\n' "$flags"
+        # The Link SDK is a submodule, so no ls-files above sees it, yet
+        # scripts/build.sh builds link-subscriber only when it is checked out.
+        # Without this line a build made with no SDK was served to every later
+        # build that had one (a release then shipped no link-subscriber).
+        if [ -d libs/link/include/ableton ]; then
+            printf 'link:%s\n' "$(git -C libs/link rev-parse HEAD 2>/dev/null || echo present)"
+        else
+            printf 'link:absent\n'
+        fi
     } ) | { command -v sha1sum >/dev/null 2>&1 && sha1sum || shasum -a 1; } | cut -c1-40
 }
 

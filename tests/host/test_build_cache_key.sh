@@ -33,6 +33,9 @@ printf '#define X 2\n' > "$T/a/src/a.h"; kh=$(dbx_build_cache_key "$T/a" "-DFLAV
 [ "$kh" != "$ka" ] && say "ok   — an UNCOMMITTED header edit changes the key" || bad "uncommitted header edit ignored"
 printf 'junk\n' > "$T/a/src/untracked.c"; ku=$(dbx_build_cache_key "$T/a" "-DFLAV=1")
 [ "$ku" = "$kh" ] && say "ok   — an untracked file is not in the key (documented)" || bad "untracked file changed the key"
+kn=$(dbx_build_cache_key "$T/b" "-DFLAV=1"); mkdir -p "$T/b/libs/link/include/ableton"; kl=$(dbx_build_cache_key "$T/b" "-DFLAV=1")
+[ "$kl" != "$kn" ] && say "ok   — checking out the Link SDK changes the key (link-subscriber is built only with it)" || bad "a build without the Link SDK would be served to one with it"
+rm -rf "$T/b/libs"
 # restore/publish law under a private cache root
 export DBX_BUILD_CACHE="$T/cache"
 mkdir -p "$T/b/build"; printf 'bin' > "$T/b/build/schwung"
