@@ -50,6 +50,8 @@ BUILD_DIR="$B" HEAL_BIN="$T/heal" DAVEBOX_DIST="$D" MANUAL_HTML="$T/no-such.html
     standalone/scripts/build-sa-release.sh "$T/out2" > "$T/log2" 2>&1
 [ $? -ne 0 ] && grep -q "is the Help page" "$T/log2" && ok "...and a release WITHOUT the manual refuses to build" \
     || bad "built without the manual: $(cat "$T/log2")"
+has "davebox-sa/payload/debug_log_on" && ok "a release ships with the debug log on (Josh, 2026-10-20)" || bad "no debug_log_on in a 1.x payload"
+has "davebox-sa/payload/bug-report.json" && ok "...and with the Report a bug page" || bad "no bug-report.json in a 1.x payload"
 has "davebox-sa/payload/link-subscriber" && ok "link-subscriber ships (Move tracks reach the buses)" || bad "no link-subscriber in the payload"
 mv "$B/link-subscriber" "$T/ls.aside"
 BUILD_DIR="$B" HEAL_BIN="$T/heal" DAVEBOX_DIST="$D" MANUAL_HTML="$T/manual.html" SA_VERSION=1.2.3 bash \

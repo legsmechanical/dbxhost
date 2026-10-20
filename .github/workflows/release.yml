@@ -61,7 +61,7 @@ jobs:
           ls -la dAVEBOx-SA-manual.html
       - name: Assemble the catalog tarball
         env:
-          # Test builds (0.0.x) carry the "Report a bug" upload address.
+          # Every release carries the "Report a bug" upload address.
           SA_BUG_REPORT_URL: ${{ secrets.SA_BUG_REPORT_URL }}
           SA_BUG_REPORT_TOKEN: ${{ secrets.SA_BUG_REPORT_TOKEN }}
         run: |
@@ -80,8 +80,8 @@ jobs:
       - name: Attach to the release
         uses: softprops/action-gh-release@v1
         with:
-          # 0.0.x is a TEST build (Josh, 2026-09-28): a GitHub pre-release,
-          # never the repo's "latest", and not in the Schwung catalog.
+          # 0.0.x was a TEST build (Josh, 2026-09-28): a GitHub pre-release,
+          # never the repo's "latest". 1.0 onward is a full release.
           prerelease: ${{ startsWith(github.ref_name, 'v0.0.') || contains(github.ref_name, '-') }}
           files: |
             davebox-sa-module.tar.gz

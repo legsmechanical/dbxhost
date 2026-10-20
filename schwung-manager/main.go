@@ -441,7 +441,7 @@ func (app *App) render(w http.ResponseWriter, r *http.Request, name string, data
 	if cookie, err := r.Cookie("csrf_token"); err == nil {
 		data["CSRFToken"] = cookie.Value
 	}
-	// The footer's "Report a bug" link and the System card (test builds only).
+	// The footer's "Report a bug" link and the System card (when bug-report.json is).
 	if _, set := data["BugReport"]; !set {
 		data["BugReport"] = app.hasBugReport()
 	}
@@ -1367,7 +1367,7 @@ func main() {
 	// System.
 	mux.HandleFunc("GET /system", app.handleSystem)
 	mux.HandleFunc("GET /system/logs", app.handleSystemLogs)
-	// Report a bug (test builds: present only when <base>/bug-report.json is).
+	// Report a bug (present only when <base>/bug-report.json is).
 	mux.HandleFunc("GET /bug-report", app.handleBugReport)
 	mux.HandleFunc("GET /bug-report/plan", app.handleBugReportPlan)
 	mux.HandleFunc("POST /bug-report/send", app.handleBugReportSend)

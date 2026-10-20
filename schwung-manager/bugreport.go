@@ -1,12 +1,12 @@
-// The "Report a bug" page (test builds only).
+// The "Report a bug" page (every dAVEBOx SA release ships it).
 //
 // A tester types what happened, sees exactly which files will leave the
 // device, and presses Send: the manager zips the logs and a project, then
 // POSTs the zip to a Google Apps Script web app that files it in a Drive
 // folder (tools/apps-script/dbx-bug-drop.gs, docs/BUG_REPORTS.md).
 //
-// The page exists only when <base>/bug-report.json does — test builds ship it,
-// releases do not. {"upload_url": ""} keeps the page but makes it download-only.
+// The page exists only when <base>/bug-report.json does — every release ships
+// it. {"upload_url": ""} keeps the page but makes it download-only.
 //
 // The plan (planReport) is the single source of truth: the page renders it and
 // the zipper consumes it, so what the tester is shown is what is sent.
