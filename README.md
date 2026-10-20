@@ -1,126 +1,160 @@
-# dAVEBOx
+# dAVEBOx SA
 
-**A standalone 8-track MIDI sequencer and live environment for Ableton Move.**
+**More better tracks for your Move.**
 
-dAVEBOx turns a Move into a session machine: eight tracks of clips on the pads,
-each track playing either one of Move's own instruments or a hosted synth
-(OB-Xd, Dexed, and the rest of the Schwung module ecosystem), with per-clip
-note effects, conditions and automation, a conductor track for harmonic
-movement, retrospective capture, and a full browser editor on the same WiFi.
+dAVEBOx SA is an 8-track MIDI sequencer for Ableton Move. It takes over the
+pads, knobs and screen and turns the Move into a session machine: clips and
+scenes on the pads, a sound of your choice on every track, note effects and
+automation per clip, and a browser editor on the same Wi-Fi.
 
-It runs as its own session on the device. **The official firmware and the
-official Schwung install are never modified** — launching dAVEBOx relaunches
-Move under this repo's host build, leaving stock untouched on disk, and a
-reboot (even a power cut) always returns the device to stock exactly as it
-was. Your Move sets are never touched either: dAVEBOx keeps its own project
-workspace and swaps it in only while a session runs.
+It is the successor to [dAVEBOx](https://github.com/legsmechanical/schwung-davebox),
+which ran as a module inside [Schwung](https://github.com/charlesvestal/schwung).
+That version is frozen. dAVEBOx SA runs as its own session, on its own build of
+Schwung, and is where everything new happens.
 
-## Highlights
+**[Read the manual](https://legsmechanical.github.io/dbxhost/)** ·
+**[Watch the tutorials](https://www.youtube.com/playlist?list=PLYG911Ay8pgk)** ·
+**[See it in action](https://youtu.be/8-Cta7-WApQ)**
 
-- **8 tracks × 16 scenes** of melodic and drum clips, launched from the pads,
-  with per-step conditions, ratchets, nudge and probability.
-- **One instrument per track, nothing to route**: one of Move's own
-  instruments, a hosted synth (OB-Xd, Dexed and the rest of the Schwung module
-  ecosystem), or external MIDI.
-- **Four insert effects per track** (reorderable), **Send A/B buses**, **Master
-  FX** and **two LFOs per track**, on hosted synths and Move tracks alike.
-- **MACROS**: one knob drives several parameters, each with its own range; MIDI
-  CC, aftertouch and pitch bend are targets too.
-- **Sound snapshots and SnapMorph**: save and recall a track's sound, and glide
-  between snapshots on one knob.
-- **Automation for any parameter** — instrument, effect, level or dAVEBOx's own —
-  with lanes of their own length, Curve/Punch and Wrap, hold-a-step editing, and
-  Capture that keeps knob moves. It exports to Live with the rest of the project.
-- **Note effects per clip**: harmony, MIDI delay with pitch/velocity feedback,
-  arpeggiator, quantise/gate/velocity shaping, all sequenceable.
-- **Chord and Piano pad layouts**, step recording, Import MIDI, and Crop.
-- **A conductor track** that shifts responding tracks harmonically as its own
-  clips play, and **retrospective capture** — what you just played is already
-  recorded.
-- **Projects on the pads**, kept apart from your Move sets, and **Move's own
-  settings** reachable from Project Settings — dAVEBOx keeps its own copy, so
-  your Move's settings stay as they are.
-- **The browser editor** at `http://move.local:7700`: dAVEBOx's own sequencer,
-  mixer and sound-editing pages, live in both directions, a real-time mirror of
-  the device's screen, and the full manual on its Help page.
-- **Boot straight into dAVEBOx** (hold Back at power-on), and instruments render
-  in parallel across the Move's cores.
+---
 
-## Installing
+## What it does
 
-dAVEBOx installs like any other Schwung module, and the first launch does the
-rest itself. **The current builds are test builds** — not in the Schwung catalog
-yet — so the tarball comes from this repo's
-[Releases page](https://github.com/legsmechanical/dbxhost/releases):
+dAVEBOx makes no sound of its own. Every track sends its notes to an
+instrument: one of Move's own, a Schwung synth (OB-Xd, Dexed and the rest of
+the module catalog), or an external synth on the USB-A port.
+
+**Sequencing**
+
+- 8 tracks, 16 clips each, up to 256 steps per clip. Melodic and drum tracks;
+  every drum lane has its own length, so polyrhythms need no setup.
+- Per-step pitch, velocity, length, nudge, probability, conditions and ratchets.
+- Five pad layouts for playing in: Scale, Chromatic, Piano, Chord and your own
+  Custom chords.
+- Capture: whatever you just played is already recorded.
+- A Conductor track transposes the other tracks, in key, as its clips play.
+- Groove: swing, or the feel of any MIDI file or Ableton groove, per project or
+  per track.
+
+**Shaping the notes**
+
+- Every clip has its own note effects: arpeggiator, harmonizer, MIDI delay with
+  pitch and velocity feedback, pitch randomization that stays in key, and
+  quantize, gate and velocity shaping. **Bake** writes the result into the clip
+  so you can stack more on top.
+- Schwung MIDI effect modules on any track — after the clip, or in front of the
+  sequencer so you record what they play. They follow dAVEBOx's key, scale and
+  tempo.
+
+**Sound and mixing**
+
+- Four insert effects per track, two send buses, master effects and two LFOs
+  per track — on Move's instruments as well as Schwung's.
+- Macros: one knob moves several parameters, each over its own range.
+- Sound snapshots, and SnapMorph to glide between them on one knob.
+- Automation for any parameter, in lanes of their own length, recorded from
+  the knobs or drawn per step.
+
+**Playing live**
+
+- Performance mode turns the pads into real-time modulation, with 16 preset slots.
+- Note repeat with groove, latch and multi-lane patterns on drum tracks.
+- 16 mute/solo snapshots, and scenes launched from the pads.
+
+**Getting things in and out**
+
+- Projects live on the pads, separate from your Move sets.
+- Export a project to an Ableton Live set, or any clip to a MIDI file; import
+  MIDI files into clips.
+- The browser editor at `move.local:7700` has the sequencer, mixer and sound
+  pages, a live mirror of the screen you can record, and the full manual.
+
+---
+
+## Your Move stays yours
+
+- **Nothing is installed over stock.** Official Schwung and Move's firmware are
+  never modified. dAVEBOx restarts Move under its own build, and leaving hands
+  the device back to stock.
+- **A reboot returns to stock** — even after a power cut — unless you have made
+  dAVEBOx your boot default.
+- **Your Move sets are untouched.** dAVEBOx keeps its own projects and its own
+  copy of Move's settings.
+- **One folder.** Everything dAVEBOx keeps on the Move — projects, settings,
+  logs and MIDI exports — is in `/data/UserData/daveboxSA`.
+
+---
+
+## Install
+
+You need an Ableton Move with [Schwung](https://github.com/charlesvestal/schwung)
+**1.3.0 or newer**.
+
+The current builds are test builds, not yet in the Schwung module catalog, so
+the install file comes from the [Releases page](https://github.com/legsmechanical/dbxhost/releases):
 
 1. Download `davebox-sa-module.tar.gz` from the newest release.
-2. In Schwung Manager (`http://move.local:7700`): **Modules → Install Custom
-   Module → From Tarball → Install from File**, and pick the tarball.
-3. On the Move: **Shift + Step 13 (Tools) → dAVEBOx SA**. The first launch lays
-   the dAVEBOx host beside stock and asks stock Schwung's own helper to bless
-   dAVEBOx's — about a minute, once.
-   Every later launch is a launch.
+2. Open Schwung Manager at `move.local:7700`, go to **Modules → Install Custom
+   Module**, choose the file under **From Tarball**, and click **Install from
+   File**.
+3. On the Move, press **Shift + Step 13** to open the Tools menu and choose
+   **dAVEBOx SA**. The first launch finishes the install by itself, which takes
+   about a minute.
 
-To remove it, install `davebox-uninstall-module.tar.gz` from the same release
-the same way and run **Uninstall dAVEBOx SA** from Tools. Your projects and
-settings are kept.
+**Start it** from the Tools menu, or hold **Back** while the Move boots and
+pick it. **Leave** with **Quit** in Project Settings (**Shift + Step 2**).
 
-Prerequisites: an Ableton Move with [stock
-Schwung](https://github.com/charlesvestal/schwung) **1.3.0 or newer** installed.
-On a stock Schwung that lacks the "bless a tool's helper" step
-([schwung#419](https://github.com/charlesvestal/schwung/pull/419)) the first
-launch stops before touching anything and the launch log names the one manual
-command:
+**Update** by installing a newer release the same way. Your projects carry
+over; an install from an earlier test build (folder `dbx-host`) is moved into
+`daveboxSA` on its first launch.
+
+**Remove** it by installing `davebox-uninstall-module.tar.gz` from the same
+release and choosing **Uninstall dAVEBOx SA** in the Tools menu. Your projects
+and settings are kept.
+
+New to it? The [Quick Start](davebox/QUICKSTART.md) gets you from an empty
+project to a looping pattern in about fifteen minutes.
+
+---
+
+## Coming from dAVEBOx
+
+The original dAVEBOx — now **dAVEBOx Legacy** — still works and gets no new
+features. The two install side by side, but their projects are separate:
+dAVEBOx SA doesn't open Legacy projects.
+
+---
+
+## For developers
+
+This repo is the whole of dAVEBOx SA: the sequencer module (`davebox/`), a fork
+of [Schwung](https://github.com/charlesvestal/schwung) that hosts it, the
+browser editor and its server (`schwung-manager/`), and the launcher and
+installer (`standalone/`). They ship together under one version. Changes that
+make sense for Schwung itself are offered upstream.
 
 ```sh
-# only on a stock Schwung without #419 — once, as root
-ssh root@move.local 'sh /data/UserData/schwung/modules/tools/davebox-sa/payload/scripts/layout-install.sh \
-    /data/UserData/schwung/modules/tools/davebox-sa/payload /data/UserData/daveboxSA /data/UserData/schwung && \
-    sh /data/UserData/daveboxSA/bless.sh'
+./standalone/scripts/install-sa.sh          # build everything and deploy it to a Move over SSH
+./standalone/scripts/build-sa-release.sh    # assemble the release tarball
 ```
 
-Stock Schwung is never modified — dAVEBOx runs Move under its own build beside
-it, and a reboot always returns to stock.
+- [`standalone/README.md`](standalone/README.md) — the launcher, installer and
+  on-device layout
+- [`BUILDING.md`](BUILDING.md) — the build system and cross-compiling
+- [`docs/`](docs/) — the host's architecture, the module and JS APIs, and the
+  OLED UI specification
+- [`davebox/CHANGELOG.md`](davebox/CHANGELOG.md) — what changed in each release
 
-Developers: `standalone/scripts/install-sa.sh` builds and deploys the whole
-deliverable over SSH to an existing install (the update loop);
-`standalone/scripts/build-sa-release.sh` assembles the release tarball the
-release workflow publishes. See `standalone/README.md`.
-
-Once installed: stock Schwung's **Tools menu → dAVEBOx SA** starts a session;
-**Quit** in Project Settings (**Shift + Step 2**) hands the device back to stock.
-
-## Documentation
-
-- **[The dAVEBOx Manual](https://legsmechanical.github.io/dbxhost/)** — the
-  complete user manual, with every screen pictured. It is also on the browser
-  editor's Help page, and attached to each release as `dAVEBOx-SA-manual.html`.
-- [CHANGELOG](davebox/CHANGELOG.md) — what's new.
-- `docs/` — architecture, module and API references for the underlying
-  framework, and the OLED UI specification.
-
-## Relationship to Schwung
-
-This repo contains the whole deliverable in one place: the sequencer module
-(`davebox/`), a host — a fork of [stock
-Schwung](https://github.com/charlesvestal/schwung) (MIT) carrying the changes
-dAVEBOx depends on — the browser editor and its web server, and the launcher
-and installer. `upstream` is the stock Schwung repo, fetch-only; changes that
-are generic are still offered upstream as PRs. For the framework's own
-documentation (writing modules, the JS/DSP APIs), see stock Schwung's README
-and `docs/MODULES.md` here.
-
-**dAVEBOx Legacy** — the earlier version that ran as an ordinary module inside
-stock Schwung — lives at
-[schwung-davebox](https://github.com/legsmechanical/schwung-davebox) and is
-frozen. This standalone line is its successor; sessions are not compatible
-between the two.
+---
 
 ## License
 
 MIT, as inherited from Schwung — see [LICENSE](LICENSE).
 
-One shipped binary is licensed more strictly than the source: the shim links
-eSpeak NG for the screen reader, so `schwung-shim.so` is conveyed under
-GPL-3.0-or-later, and `link-subscriber` (Ableton Link) is GPL-2.0-or-later.
-See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+Two shipped binaries carry stricter licenses: `schwung-shim.so` links eSpeak NG
+for the screen reader and is GPL-3.0-or-later, and `link-subscriber` (Ableton
+Link) is GPL-2.0-or-later. See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+
+dAVEBOx was built by AI goblins and designed by a human who is not Dave. It
+comes with no warranty: if it breaks your Move, makes your child cry or cleans
+out your fridge, that's on you.
