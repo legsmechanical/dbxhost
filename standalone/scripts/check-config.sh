@@ -71,6 +71,9 @@ check "heal uninstall verb"            "$HERE/src/davebox-heal.c"     "\"--unins
 check "ui.js module dir"               "$HERE/uninstall/ui.js"        "'$DBX_STOCK_DIR/modules/tools/$DBX_UNINSTALL_ID'"
 check "uninstaller module id"          "$HERE/uninstall/module.json"  "\"id\": \"$DBX_UNINSTALL_ID\""
 check "heal umount verb"               "$HERE/src/davebox-heal.c"   "--umount-sets"
+# The unmount verbs' second signal reads the kernel's mount table; the tests
+# point it at a fixture, so only this pin says the shipped build reads the real one.
+check "heal reads the mount table"     "$HERE/src/davebox-heal.c"   '#define MOUNTINFO_PATH "/proc/self/mountinfo"' 
 check "set-swap calls the mount verb"  "$HERE/scripts/set-swap.sh"  "--mount-sets"
 check "set-swap calls the umount verb" "$HERE/scripts/set-swap.sh"  "--umount-sets"
 
