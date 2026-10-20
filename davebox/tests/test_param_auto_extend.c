@@ -222,6 +222,14 @@ int main(void) {
         reextend(h, 2, 3);
         plays(h, r);
         HX_ASSERT(r[4] == orig[4], "and its own base was kept: shortening restores cutoff's step 4");
+        /* The same parameter on ANOTHER clip is another lane too. */
+        hx_set_param(h, "t0_pa_set", "1 " TG " 0 12000");
+        hx_set_param(h, "t0_pa_set", "1 " TG " 48 13000");
+        hx_set_param(h, "t0_pa_extend", "1 " TG " 1 4 24");         /* base = clip 1 */
+        plays(h, orig);
+        reextend(h, 2, 3);                                           /* clip 0, "rebase" */
+        plays(h, r);
+        for (int s = 0; s < 16; s++) HX_ASSERT(r[s] < 12000, "clip 1's points were not pasted into clip 0");
         OK("a base naming another lane is not used");
         hx_destroy(h);
     }
