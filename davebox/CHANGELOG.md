@@ -16,6 +16,11 @@ the section into a versioned heading at release time.
   cursor** — it used to clear all of the clip's automation from anywhere on the
   screen. The **Clear all** row still clears everything.
 
+### Fixed
+- After a Shift + click jump from the AUTOMATION screen, opening a module from
+  the pad map (INSTRUMENT, MIDI FX, FX 1-4) left the step buttons showing the
+  lane. They return to notes now, as they do for a bank picked from the map.
+
 ### Added
 - **Stretch an automation value across steps.** On the AUTOMATION screen, hold a
   step of a lane and press a later step: the held step's value now carries up to

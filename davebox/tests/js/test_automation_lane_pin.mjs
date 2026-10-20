@@ -490,6 +490,24 @@ for (const [kind, to, pad] of [['level', BANK_MACROS, 93], ['midi', BANK_SOUND, 
     });
 }
 
+/* Josh, 2026-10-20, on device: "shift plus click on the automation row, then
+ * pad map>instrument". The map's MODULE pads (right 4x4: MIDI FX, INSTRUMENT,
+ * FX 1-4) open an editor without picking a bank, so the bank-pick path that
+ * ends the pin never ran. INSTRUMENT [6,1] = pad 90, FX 1 [7,0] = pad 99. */
+for (const [kind, pad, what] of [['seq', 90, 'INSTRUMENT'], ['seq', 99, 'FX 1'], ['morph', 90, 'INSTRUMENT'], ['level', 90, 'INSTRUMENT'], ['midi', 90, 'INSTRUMENT'], ['chain', 90, 'INSTRUMENT'], ['level', 99, 'FX 1']]) {
+    step('⭐ ' + kind + ' jump, then the PAD MAP to ' + what + ': the steps go back to notes', () => {
+        openMenuOn(TARGETS[kind]); ticks(2);
+        shiftClick(); ticks(kind === 'chain' ? 10 : 4);
+        assert(bank.autoLanePinActive() && S.autoCycle, 'rig: pinned');
+        cc(3, 127); ticks(60);                          /* hold the jog: the map */
+        note(pad, 127); ticks(2); note(pad, 0); ticks(2);
+        cc(3, 0); ticks(10);                            /* the module pad opens on release */
+        assert(!bank.autoLanePinActive() && !S.autoCycle, kind + ' -> ' + what + ': the lane stayed on the steps (bank ' + S.activeBank + ', sound ' + snd.soundOpen() + ')');
+        if (snd.soundOpen()) snd.soundExit();
+        ticks(2);
+    });
+}
+
 if (swallowed !== null) { console.error('  FAIL — a SWALLOWED exception reached the jserr log:\n' + swallowed); failed = 1; }
 if (failed) process.exit(1);
 console.log('test_automation_lane_pin: all ok');

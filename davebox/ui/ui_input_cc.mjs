@@ -1644,6 +1644,12 @@ function runBankMapMenu(a) {
     const t = S.activeTrack;
     bankMapLeaveScreen();
     bankMapEnd();
+    /* Any pick off the map leaves a lane jump's destination — even one that
+     * re-opens the editor the jump landed on (Josh, 2026-10-20, on device:
+     * Shift + click to the instrument, then the map's INSTRUMENT kept the
+     * steps on the lane). The module pads pick no bank, so applyBankPick's
+     * clear never runs for them. */
+    autoLanePinClear();
     if (a.kind === 'bus') { soundEnterBusFx(a.bus); return; }
     if (a.kind === 'inst' || (a.kind === 'module' && a.comp === 'synth')) { openTrackInstrument(); return; }
     if (a.kind === 'module') { openTrackModule(a.comp); return; }
