@@ -662,6 +662,7 @@ To place notes on the grid, use the **16 step buttons**:
 | Hold a step | The knobs on screen now act on that step (see [Editing notes](#63-editing-notes)). An empty step stays empty until you press a pad while holding it |
 | Press several steps at once | Each empty step gets the last note. On a melodic track, a filled step after the first is silenced but keeps its notes — do it again to bring them back. On a drum track, a filled step is cleared |
 | Hold a step with notes, then tap a later step | Stretch the note to reach it — see [Editing notes](#63-editing-notes) |
+| Hold a step, turn a knob to set a lock, then tap a later step | Stretch the lock's value to reach it — see [Editing notes](#63-editing-notes) |
 | **Copy + step → another step** | Copy the step's notes (same clip); **Shift + Copy** cuts |
 | **Delete + step** | Clear the step, and any automation *locks* on it (a lock is a knob value set for one step — see [Automation](#10-automation)) |
 
@@ -796,6 +797,13 @@ while holding and `JOG BACK` on the step page. Empty steps have no step page.
   later step to set the note's length up to it; tap that step again to shorten it by
   one. **Left / Right** still page, so a note can stretch past the current page.
   (Tapping steps *together*, without the pause, toggles them instead.)
+- **Stretch a lock:** if the last thing you did while holding the step was turn a
+  knob to set a lock, tapping a later step stretches that **lock's value** up to and
+  including it instead, the same as on the [AUTOMATION screen](#102-the-automation-screen):
+  tap the end again to shorten it. While you hold, the range lights **orange**, not the
+  note-length colour, so you can tell which one you're stretching. Only the parameter
+  you turned **last** is stretched.
+  Editing the note again (a STEP knob, a pad) puts the tap back to stretching the note.
 - A note nudged past half a step moves to the neighbouring step when you let go.
 - **+ / −** moves the octave range to reach higher or lower notes.
 
@@ -1432,6 +1440,15 @@ lane**, not the clip's notes (click the row for its operations, below):
   is held it shows the value the lane plays there — shown only, the parameter
   doesn't move until you turn the knob. A module's page keeps its graphics (filter
   curve, envelope) while you're there.
+- **Hold a step, then press a later one** to stretch the held step's value up to and
+  including that step, the way a held note stretches to a tapped step. The value is
+  what the lane plays on the held step, even between two points. Anything already
+  set in between is replaced, and the step after the range plays what it played
+  before. **Left / Right** still page the lane while you hold, so the range can reach
+  into later bars. Pressing an earlier step wraps round the end of the cycle. Press
+  the **end step again** to shorten the range by one, or a step inside it to shorten
+  it there; the steps you give back play what they did before. While you hold, every
+  step of the range blinks like a set value. One **Undo** takes back the whole hold.
 - **Shift + click** a row to jump to where that parameter is edited; **Back**
   returns you to this menu, on the same row. The step buttons keep showing the lane
   there, so you can hold a step and turn the knob to set it.

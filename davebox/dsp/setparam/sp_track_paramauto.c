@@ -20,6 +20,11 @@
  * Values are 14-bit normalized (0..PA_VAL_MAX); JS owns the mapping to and
  * from a parameter's real wire units, because only JS has the chain_params
  * metadata that defines them. */
+/* Defined further down the TU (seq8.c, with the export); pa_extend needs the
+ * same window playback evaluates in. */
+static int pa_export_window(const seq8_track_t *tr, const pa_entry_t *e,
+                            uint32_t *ws, uint32_t *wl, uint32_t *step_ticks);
+
 static int sp_track_paramauto(sp_ctx_t *cx) {
     seq8_instance_t *inst = cx->inst;
     seq8_track_t *tr = cx->tr;
@@ -97,6 +102,119 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         pa_clear_range(e, (uint16_t)from, (uint16_t)to);
         if (!pa_set_point(e, (uint16_t)from, (uint16_t)v)) inst->pa_store_full = PA_FULL_POINTS;
         e->last_sent_valid = 0;   /* see pa_set */
+        pa_mark_dirty(inst);
+        return 1;
+    }
+
+    /* pa_extend: "<clip> <target> <fromStep> <toStep> <tps> [<rebase>]" — carry what the
+     * lane plays at <fromStep> through the END of <toStep> (hold a point on
+     * the AUTOMATION bank, press a later step; the note-length gesture's
+     * twin). Steps are the lane's own, <tps> ticks each. <toStep> below
+     * <fromStep> wraps round the lane's window, as the note-length gesture
+     * wraps round the clip. One engine op, so the value is read before
+     * anything moves:
+     *   - the value is the RAW one the lane's own Mode/Wrap/Smooth produce
+     *     there (a point, or between points) — never scaled, and a resting
+     *     value (Punch / Wrap: Reset) counts as nothing to carry;
+     *   - points inside the span are replaced (a recorded sweep included);
+     *   - a point at the span's start and at its last tick (Smooth stays flat
+     *     to the end), plus one per step under Punch, where a point lasts only
+     *     its own step;
+     *   - whatever played on the tick after the span is put back with a point
+     *     there when the change would otherwise alter it.
+     * Refused whole — nothing written — when the lane has no entry, the held
+     * step plays nothing, or the points would not fit.
+     * <rebase> 0 (or absent) = the hold's first extend: the lane's points are
+     * kept as the BASE. 1 = a later press in the same hold: the base is put
+     * back first and the new span applied to it, so a span can shrink as well
+     * as grow (the note-length gesture's "tap again to shorten"); with
+     * <toStep> == <fromStep> it only puts the base back. A base that names a
+     * different lane is not used (the press is treated as a first). */
+    if (!strcmp(sub, "pa_extend")) {
+        int clip = 0, fs = 0, ts = 0, tps = 0;
+        PA_SKIP_SPACE(p); PA_UINT(p, clip);
+        PA_TARGET(p, tgt);
+        PA_SKIP_SPACE(p); PA_UINT(p, fs);
+        PA_SKIP_SPACE(p); PA_UINT(p, ts);
+        PA_SKIP_SPACE(p); PA_UINT(p, tps);
+        int rebase = 0;
+        PA_SKIP_SPACE(p); PA_UINT(p, rebase);
+        if (clip < 0 || clip >= NUM_CLIPS || tps <= 0) return 1;
+        int id = pa_target_lookup(inst, tgt);
+        if (id < 0 || !pa_may_write(inst, tidx, id)) return 1;
+        pa_entry_t *e = pa_find(inst, tidx, clip, id);
+        if (!e) return 1;
+        const int base_ours = inst->pa_ext_base_valid && inst->pa_ext_base_track == tidx &&
+                              inst->pa_ext_base_clip == clip && inst->pa_ext_base_target == id;
+        if (rebase && base_ours) {
+            memcpy(e->points, inst->pa_ext_base, (size_t)inst->pa_ext_base_count * sizeof(pa_point_t));
+            e->count = inst->pa_ext_base_count;
+            e->last_sent_valid = 0;
+            pa_mark_dirty(inst);
+        } else if (fs != ts && e->count) {
+            memcpy(inst->pa_ext_base, e->points, (size_t)e->count * sizeof(pa_point_t));
+            inst->pa_ext_base_count  = e->count;
+            inst->pa_ext_base_track  = (int16_t)tidx;
+            inst->pa_ext_base_clip   = (int16_t)clip;
+            inst->pa_ext_base_target = (int16_t)id;
+            inst->pa_ext_base_valid  = 1;
+        }
+        if (fs == ts || !e->count) return 1;
+        uint32_t ws = 0, wl = 0, st = 0;
+        if (!pa_export_window(tr, e, &ws, &wl, &st) || !wl) return 1;
+        const uint32_t we = ws + wl;                  /* one past the window */
+        const uint32_t from  = (uint32_t)fs * (uint32_t)tps;
+        uint32_t toEnd = ((uint32_t)ts + 1) * (uint32_t)tps - 1;
+        if (from < ws || from >= we || (uint32_t)ts * (uint32_t)tps < ws) return 1;
+        if (toEnd >= we) toEnd = we - 1;
+        if (we - 1 > 0xFFFF) return 1;                /* point ticks are 16-bit */
+        const int punch = (e->flags & PA_FLAG_PUNCH) != 0;
+        #define PA_EXT_EVAL(tk, vp) (punch ? pa_eval_punch(e, (tk), ws, wl, st, (vp)) \
+                                           : pa_eval_window(e, (tk), ws, wl, (vp)))
+        uint16_t v = 0;
+        if (PA_EXT_EVAL(from, &v) != 1) return 1;     /* rest, or nothing to carry */
+        /* The span as one or two segments of the window. */
+        const int wrap = ts < fs;
+        uint32_t sf[2], se[2];
+        sf[0] = from; se[0] = wrap ? we - 1 : toEnd;
+        sf[1] = ws;   se[1] = toEnd;
+        const int nseg = wrap ? 2 : 1;
+        /* The tick after the span, and what it plays now. Inside the span
+         * (the span IS the whole window) there is nothing after it. */
+        uint32_t after = toEnd + 1;
+        if (after >= we) after = ws;
+        int keep_after = !(wrap ? (after >= from || after <= toEnd)
+                                : (after >= from && after <= toEnd));
+        uint16_t after_v = 0;
+        int after_ev = keep_after ? PA_EXT_EVAL(after, &after_v) : 0;
+        /* Budget first: refuse whole rather than write half a span. */
+        int removed = 0, need = 1;                    /* +1: the restore point, at most */
+        for (int i = 0; i < e->count; i++)
+            for (int s = 0; s < nseg; s++)
+                if (e->points[i].tick >= sf[s] && e->points[i].tick <= se[s]) { removed++; break; }
+        for (int s = 0; s < nseg; s++)
+            need += punch ? (int)((se[s] - sf[s]) / (uint32_t)tps) + 2 : 2;
+        if (e->count - removed + need > PA_ENTRY_POINTS) { inst->pa_store_full = PA_FULL_POINTS; return 1; }
+        pa_cycle_adopt_active(tr, clip, e);           /* see pa_set */
+        for (int s = 0; s < nseg; s++) {
+            pa_clear_range(e, (uint16_t)sf[s], (uint16_t)se[s]);
+            pa_set_point(e, (uint16_t)sf[s], v);
+            if (punch)
+                for (uint32_t tk = sf[s] + (uint32_t)tps; tk < se[s]; tk += (uint32_t)tps)
+                    pa_set_point(e, (uint16_t)tk, v);
+            pa_set_point(e, (uint16_t)se[s], v);
+        }
+        if (after_ev) {
+            uint16_t now = 0;
+            int now_ev = PA_EXT_EVAL(after, &now);
+            if (now_ev != after_ev || now != after_v) {
+                if (after_ev == 1) pa_set_point(e, (uint16_t)after, after_v);
+                /* A resting value cannot be pinned by a point; under Punch the
+                 * span's last point ends with its step, so rest returns anyway. */
+            }
+        }
+        #undef PA_EXT_EVAL
+        e->last_sent_valid = 0;
         pa_mark_dirty(inst);
         return 1;
     }

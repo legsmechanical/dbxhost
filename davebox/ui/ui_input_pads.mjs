@@ -15,7 +15,7 @@ import {
 import { S, loopViewActive, markJsUndo } from './ui_state.mjs';
 import { autoHoldJumpBegin, autoHoldJumpEnd } from './ui_automation_bank.mjs';
 import { nowMs } from './ui_clock.mjs';
-import { automationClearStep } from './ui_automation.mjs';
+import { automationClearStep, automationExtendPress, automationExtendFromLock } from './ui_automation.mjs';
 import { devSnapOpen, devSnapClear, devSnapRecall, devSnapSave } from './ui_devsnap.mjs';
 import { drumPadToLane, drumPadToVelZone, drumVelZoneToVelocity, _clipIsEmpty,
     clipHasContent, effectiveVelocity, stepEntryVelocity,
@@ -137,6 +137,7 @@ function _chordPadPress(padIdx, d2) {
         const pitches = padPitches(padIdx, (S.trackOctave[t] | 0) * 12);
         if (!pitches.length) return true;
         const ac = effectiveClip(t);
+        S.heldLockLast = null;
         S.pendingChordToStep = { t, ac, step: S.heldStep,
             wasEmpty: S.clipSteps[t][ac][S.heldStep] === 0, pitches,
             vel: stepEntryVelocity(t, vel, false) };
@@ -259,6 +260,7 @@ function _customPadPress(padIdx, d2) {
         const pitches = customChordPitches(t, padIdx);
         if (!pitches.length) return true;
         const ac = effectiveClip(t);
+        S.heldLockLast = null;
         S.pendingChordToStep = { t, ac, step: S.heldStep,
             wasEmpty: S.clipSteps[t][ac][S.heldStep] === 0, pitches,
             vel: stepEntryVelocity(t, vel, false) };
@@ -1744,12 +1746,22 @@ export function _onStepButtons(d1, d2) {
             S.stepHoldCkpt  = false;
             S.heldStep      = absStep;
             S.heldStepAuto  = true;
+            S.heldExtend    = null;
             S.stepWasEmpty  = true;              /* nothing for the tick to read */
             S.heldStepNotes = [];
             S.drumHeldReadPending = false;
             /* Any step of the lane jumps to where the parameter is edited
              * for as long as it is held — a point to change, or a new one. */
             autoHoldJumpBegin(absStep);
+            forceRedraw();
+        } else if (S.heldStepAuto && S.heldStep >= 0 && idx !== S.heldStepBtn &&
+                   absStep !== S.heldStep && absStep >= cy.off && absStep < cy.off + cy.len) {
+            /* EXTEND: a later step of the lane, pressed while one is held,
+             * carries the held step's value through it — the note-length
+             * gesture's twin (an earlier step wraps round the cycle). Any
+             * page: the arrows page the lane while the step stays down. */
+            S.stepBtnPressedTick[idx] = -1;
+            automationExtendPress(cy.t, cy.c, cy.target, absStep, cy.off, cy.len, cy.tps);
             forceRedraw();
         }
     } else if (!S.shiftHeld && S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank !== 6) {
@@ -1763,6 +1775,8 @@ export function _onStepButtons(d1, d2) {
             S.heldStepBtn = idx;
             S.stepHoldCkpt = false;
             S.heldStepAuto = false;
+            S.heldLockLast = null;
+            S.heldExtend   = null;
             S.heldStep    = absStep;
             const cur   = S.drumLaneSteps[t][lane][absStep];
             if (cur !== '0') {
@@ -1792,6 +1806,13 @@ export function _onStepButtons(d1, d2) {
                 S.stepEditRand  = 0;
                 S.stepEditRatch = 0;
             }
+            forceRedraw();
+        } else if (automationExtendFromLock(t, S.drumStepPage[t] * 16 + idx,
+                                            S.drumLaneLoopStart[t] | 0, S.drumLaneLength[t])) {
+            /* The hold's last gesture was a lock: the later step extends it. */
+            S.stepBtnPressedTick[idx] = -1;
+            S.stepBtnPressedTick[S.heldStepBtn] = -1;
+            S.stepWasHeld = true;
             forceRedraw();
         } else if (S.stepBtnPressedTick[S.heldStepBtn] >= 0) {
             /* Primary still in tap window: multi-toggle this step immediately */
@@ -1838,6 +1859,8 @@ export function _onStepButtons(d1, d2) {
             S.heldStepBtn  = idx;
             S.stepHoldCkpt = false;
             S.heldStepAuto = false;
+            S.heldLockLast = null;
+            S.heldExtend   = null;
             S.heldStep     = absP;
             const pref_p = 't' + S.activeTrack + '_c' + ac_p + '_step_' + absP;
             /* get_param returns null in MIDI context — use clipSteps mirror to detect
@@ -1878,6 +1901,15 @@ export function _onStepButtons(d1, d2) {
                 S.stepBtnPressedTick[idx] = -1;   /* bypass tap-toggle on release */
                 S.stepWasHeld = true;
             }
+            forceRedraw();
+        } else if (S.activeBank !== 6 &&
+                   automationExtendFromLock(S.activeTrack, S.trackCurrentPage[S.activeTrack] * 16 + idx,
+                                            S.clipLoopStart[S.activeTrack][effectiveClip(S.activeTrack)] | 0,
+                                            S.clipLength[S.activeTrack][effectiveClip(S.activeTrack)])) {
+            /* The hold's last gesture was a lock: the later step extends it. */
+            S.stepBtnPressedTick[idx] = -1;
+            S.stepBtnPressedTick[S.heldStepBtn] = -1;
+            S.stepWasHeld = true;
             forceRedraw();
         } else if (S.stepBtnPressedTick[S.heldStepBtn] >= 0 && S.activeBank !== 6) {
             /* Primary still in tap window: multi-toggle this step immediately.

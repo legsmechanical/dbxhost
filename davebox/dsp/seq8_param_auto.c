@@ -796,6 +796,7 @@ static void pa_reset_all_locked(seq8_instance_t *inst) {
     memset(inst->pa_targets, 0, sizeof(inst->pa_targets));
     memset(inst->pa_res, 0, sizeof(inst->pa_res));   /* another project's parameters */
     memset(inst->pa_defer, 0, sizeof(inst->pa_defer));
+    inst->pa_ext_base_valid = 0;     /* pa_extend's base named the old store */
     inst->pa_dirty = 0;
 }
 

@@ -1705,6 +1705,13 @@ typedef struct {
      * since the #444 port, not the 64 KB this used to say — the chunking is
      * what makes the number not matter, which is the point. */
     pa_entry_t pa_entries[PA_MAX_ENTRIES];
+    /* pa_extend's base: the lane's points as they were before the hold's
+     * FIRST extend, so a later press in the same hold (shorter, longer, the
+     * same end again) rebuilds from them rather than from its own last write. */
+    pa_point_t pa_ext_base[PA_ENTRY_POINTS];
+    uint16_t   pa_ext_base_count;
+    int16_t    pa_ext_base_track, pa_ext_base_clip, pa_ext_base_target;
+    uint8_t    pa_ext_base_valid;
     char       pa_targets[PA_MAX_TARGETS][PA_TARGET_LEN];
     /* How to write each target's chain parameter directly — see pa_res_t. */
     pa_res_t   pa_res[PA_MAX_TARGETS];
