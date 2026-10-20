@@ -467,6 +467,29 @@ step('CONTROL: a bank picked by hand ends the pin', () => {
     assert(!bank.autoLanePinActive(), 'a hand-picked bank kept the lane on the steps');
 });
 
+/* Josh, 2026-10-20: "Steps should revert to note mode when I leave the
+ * automation areas (note, this doesn't include when I shift click jog to view
+ * the automated [param] in its context - that should remain in automation mode
+ * until I leave the place it jumped me to)". A jump into SOUND mode — SOUND +
+ * CONFIG, MACROS, a module's editor — is left by a pad-map pick of ANOTHER bank
+ * even when sound mode itself stays open (SOUND -> MACROS). */
+/* [kind, bank, its pad on the map]: MACROS [1,0] = pad 93, SOUND [1,3] = 69,
+ * NOTE FX [3,0] = 95 (row 0 is the top pad row). */
+for (const [kind, to, pad] of [['level', BANK_MACROS, 93], ['midi', BANK_SOUND, 69], ['chain', 1, 95]]) {
+    step('⭐ ' + kind + ' jump, then the PAD MAP to another bank: the steps go back to notes', () => {
+        openMenuOn(TARGETS[kind]); ticks(2);
+        shiftClick(); ticks(kind === 'chain' ? 10 : 4);
+        assert(bank.autoLanePinActive() && S.autoCycle, 'rig: pinned');
+        cc(3, 127); ticks(60);                          /* hold the jog: the map */
+        note(pad, 127); ticks(2); note(pad, 0); ticks(2);
+        cc(3, 0); ticks(6);
+        assert(S.activeBank === to, 'rig: on bank ' + to + ' (got ' + S.activeBank + ')');
+        assert(!bank.autoLanePinActive() && !S.autoCycle, kind + ': the lane stayed on the steps after leaving (bank ' + S.activeBank + ', sound ' + snd.soundOpen() + ')');
+        if (snd.soundOpen()) snd.soundExit();
+        ticks(2);
+    });
+}
+
 if (swallowed !== null) { console.error('  FAIL — a SWALLOWED exception reached the jserr log:\n' + swallowed); failed = 1; }
 if (failed) process.exit(1);
 console.log('test_automation_lane_pin: all ok');
