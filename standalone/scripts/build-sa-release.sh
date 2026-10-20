@@ -52,6 +52,12 @@ for f in "$BUILD_DIR/schwung" "$BUILD_DIR/shadow/shadow_ui" "$BUILD_DIR/scripts/
 done
 # The Help page IS the manual (Josh, 2026-09-28): a release without it would
 # show testers an empty Help page, so it is required, never skipped.
+# link-subscriber carries Move's instruments into the session's buses (Link
+# Audio). scripts/build.sh only WARNS and carries on when the Link SDK
+# submodule is missing, so a tarball built without it installs cleanly and then
+# routes no Move track through any bus, volume or send -- found on a clean
+# catalog install, 2026-10-20 (an upgrade hid it: the old copy stayed behind).
+[ -x "$BUILD_DIR/link-subscriber" ] || { echo "ERROR: missing $BUILD_DIR/link-subscriber -- Move tracks would play outside every dAVEBOx bus. Fetch the Link SDK (git submodule update --init --recursive libs/link) and rebuild the host" >&2; exit 1; }
 [ -s "$MANUAL_HTML" ] || { echo "ERROR: missing $MANUAL_HTML — the HTML manual (davebox/scripts/build_manual_html.sh) is the Help page" >&2; exit 1; }
 [ -d "$BUILD_DIR/modules/chain" ] || { echo "ERROR: $BUILD_DIR/modules/chain missing (the owned chain host)" >&2; exit 1; }
 

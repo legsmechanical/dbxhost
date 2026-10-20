@@ -9,7 +9,7 @@ fail=0; ok(){ echo "  ok   — $1"; }; bad(){ echo "  FAIL — $1"; fail=1; }
 command -v rsync >/dev/null || { echo "SKIP: rsync missing"; exit 0; }
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 B="$T/build"; mkdir -p "$B/shadow" "$B/scripts" "$B/bin" "$B/modules/chain" "$B/modules/audio_fx/verb" "$B/presets" "$B/patches" "$B/help"
-printf x > "$B/schwung"; printf x > "$B/shadow/shadow_ui"; printf x > "$B/bin/schwung-heal"
+printf x > "$B/schwung"; printf x > "$B/link-subscriber"; chmod +x "$B/link-subscriber"; printf x > "$B/shadow/shadow_ui"; printf x > "$B/bin/schwung-heal"
 cp standalone/scripts/layout-install.sh standalone/scripts/bootstrap.sh "$B/scripts/"; cp standalone/config.sh "$B/scripts/config.sh"
 cp standalone/scripts/install-privileged.sh "$B/bless.sh"
 printf x > "$B/modules/chain/dsp.so"; printf x > "$B/modules/audio_fx/verb/x"; printf x > "$B/presets/p"; printf x > "$B/help/a.md"
@@ -50,6 +50,13 @@ BUILD_DIR="$B" HEAL_BIN="$T/heal" DAVEBOX_DIST="$D" MANUAL_HTML="$T/no-such.html
     standalone/scripts/build-sa-release.sh "$T/out2" > "$T/log2" 2>&1
 [ $? -ne 0 ] && grep -q "is the Help page" "$T/log2" && ok "...and a release WITHOUT the manual refuses to build" \
     || bad "built without the manual: $(cat "$T/log2")"
+has "davebox-sa/payload/link-subscriber" && ok "link-subscriber ships (Move tracks reach the buses)" || bad "no link-subscriber in the payload"
+mv "$B/link-subscriber" "$T/ls.aside"
+BUILD_DIR="$B" HEAL_BIN="$T/heal" DAVEBOX_DIST="$D" MANUAL_HTML="$T/manual.html" SA_VERSION=1.2.3 bash \
+    standalone/scripts/build-sa-release.sh "$T/out3" > "$T/log3" 2>&1
+[ $? -ne 0 ] && grep -q "Move tracks would play outside every dAVEBOx bus" "$T/log3" && [ ! -e "$T/out3/davebox-sa-module.tar.gz" ] \
+    && ok "...and a release WITHOUT link-subscriber refuses to build" || bad "built without link-subscriber: $(cat "$T/log3")"
+mv "$T/ls.aside" "$B/link-subscriber"
 for f in LICENSE THIRD_PARTY_LICENSES.md licenses/GPL-2.0.txt licenses/GPL-3.0.txt; do
     has "davebox-sa/payload/$f" && ok "payload/$f ships (the shim is GPL-3.0-or-later as conveyed)" || bad "payload/$f missing — a GPL binary shipped without its licence"
 done
