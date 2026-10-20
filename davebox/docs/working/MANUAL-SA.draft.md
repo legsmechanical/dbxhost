@@ -1444,7 +1444,8 @@ lane**, not the clip's notes (click the row for its operations, below):
   including that step, the way a held note stretches to a tapped step. The value is
   what the lane plays on the held step, even between two points. Anything already
   set in between is replaced, and the step after the range plays what it played
-  before. **Left / Right** still page the lane while you hold, so the range can reach
+  before — except with **Smooth** on, where the value never jumps: it glides on
+  from the end of the range to the next lock. **Left / Right** still page the lane while you hold, so the range can reach
   into later bars. Pressing an earlier step wraps round the end of the cycle. Press
   the **end step again** to shorten the range by one, or a step inside it to shorten
   it there; the steps you give back play what they did before. While you hold, every

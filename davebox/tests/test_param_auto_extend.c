@@ -90,8 +90,10 @@ int main(void) {
         hx_destroy(h);
     }
 
-    /* 3. Smooth: a ramp 0 → 16000 over the clip; extend from step 4 (between
-     *    points — an interpolated value) to step 7. Flat across, ramp resumes. */
+    /* 3. Smooth: a ramp 0 → 15000 over the clip; extend from step 4 (between
+     *    points — an interpolated value) to step 7. Flat across, then — Smooth
+     *    implies the value never jumps (Josh, 2026-10-20) — NO restore point:
+     *    the plateau ramps from its end to the next point (step 15). */
     {
         hx_t *h = hx_create(NULL);
         pt(h, 0, 0); pt(h, 360, 15000);
@@ -101,9 +103,30 @@ int main(void) {
         plays(h, r);
         HX_ASSERT(before[4] > 0 && before[4] < 15000, "setup: step 4 is between points");
         for (int s = 4; s <= 7; s++) HX_ASSERT(r[s] == before[4], "Smooth: flat at the interpolated value");
-        for (int s = 8; s < 16; s++) HX_ASSERT(r[s] == before[s], "Smooth: the ramp after the span is unchanged");
+        HX_ASSERT(value_at_tick(entry(h), 192) == -1, "Smooth: no restore point after the span");
+        HX_ASSERT(r[8] > before[4] && r[8] < before[8], "Smooth: step 8 ramps on from the plateau, no jump back to the old curve");
+        for (int s = 9; s < 16; s++) HX_ASSERT(r[s] > r[s - 1], "Smooth: rising steadily to the next point");
+        HX_ASSERT(r[15] == before[15], "Smooth: the next point itself is untouched");
         for (int s = 0; s < 4; s++) HX_ASSERT(r[s] == before[s], "Smooth: before the span unchanged");
-        OK("smooth: an interpolated value carried flat, the curve around it intact");
+        OK("smooth: an interpolated value carried flat, then a ramp from the plateau to the next point");
+        hx_destroy(h);
+    }
+
+    /* 3b. Smooth, shortened in the same hold (4→9, then 4→6): the same rule
+     *     from the new end — no restore point, the ramp starts after step 6. */
+    {
+        hx_t *h = hx_create(NULL);
+        pt(h, 0, 0); pt(h, 360, 15000);
+        hx_set_param(h, "t0_pa_smooth", "0 " TG " 1");
+        int before[16]; plays(h, before);
+        extend(h, 4, 9);
+        reextend(h, 4, 6);
+        plays(h, r);
+        for (int s = 4; s <= 6; s++) HX_ASSERT(r[s] == before[4], "Smooth shortened: flat to step 6");
+        HX_ASSERT(value_at_tick(entry(h), 168) == -1 && value_at_tick(entry(h), 240) == -1, "Smooth shortened: no restore point, none left from the longer span");
+        HX_ASSERT(r[7] > before[4] && r[7] < before[7], "Smooth shortened: step 7 ramps on from the plateau");
+        HX_ASSERT(r[15] == before[15], "Smooth shortened: the next point untouched");
+        OK("smooth: a shortened span ramps on from its new end");
         hx_destroy(h);
     }
 
