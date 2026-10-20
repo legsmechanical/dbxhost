@@ -350,12 +350,28 @@ step('Back closes one layer at a time: ops → menu → card → out of bank mod
     back(); ticks(1); assert(!S.bankCardLatched, 'the third Back leaves bank mode');
     assert(S.activeBank === BANK_AUTOMATION, 'Back never changes the bank');
 });
-step('Delete + jog click on the card CLEARS THE CLIP (pa_clear + at_clear, one checkpoint); the list empties', () => {
+step('⭐ Delete + jog click CLEARS THE LANE under the cursor — and nothing else (Josh, 2026-10-20: "Get rid of delete + jog click to clear all automation. Instead, delete + jog click when an automation lane is selected from the list, should clear just that lane.")', () => {
     S.bankCardLatched = true; sets.length = 0;
-    cc(119, 127); click(); cc(119, 0); LIST = ''; ticks(8);   /* past a poll after the clear crosses */
-    assert(sets.some(x => x === 't0_pa_clear=0'), 'pa_clear, got ' + JSON.stringify(sets));
-    assert(sets.some(x => x === 't0_c0_at_clear=1'), 'the aftertouch lane too');
-    assert(sets.filter(x => x.startsWith('t0_c0_undo_checkpoint=')).length >= 1, 'a checkpoint');
+    cc(119, 127); click(); cc(119, 0); ticks(4);                          /* on the CARD: nothing */
+    assert(!sets.some(x => /_pa_clear|_at_clear|_undo_checkpoint/.test(x)), 'the card cleared something: ' + JSON.stringify(sets));
+    click(); ticks(1); assert(menu().menu, 'menu open');
+    const rows = ab.autoBankRows(T, C);
+    const li = rows.findIndex(r => r.kind === 'entry');
+    assert(li >= 0, 'setup: a lane row: ' + JSON.stringify(rows.map(r => r.label)));
+    menu().sel = li; sets.length = 0;
+    cc(119, 127); click(); cc(119, 0); ticks(4);                          /* on a LANE: that lane */
+    const want = 't0_pa_clear_points=' + C + ' ' + rows[li].target;
+    assert(sets.includes(want), 'the lane\'s clear (' + want + '), got ' + JSON.stringify(sets));
+    assert(!sets.some(x => x === 't0_pa_clear=0' || /_at_clear/.test(x)), 'more than the lane was cleared: ' + JSON.stringify(sets));
+    assert(sets.some(x => x.startsWith('t0_c0_undo_checkpoint=')), 'a checkpoint');
+    assert(!menu().ops, 'no ops opened by the Delete + click');
+    menu().sel = ab.autoBankRows(T, C).length; sets.length = 0;          /* the Clear all row */
+    cc(119, 127); click(); cc(119, 0); ticks(4);
+    assert(!sets.some(x => /_pa_clear|_at_clear/.test(x)), 'Delete + click on Clear all cleared: ' + JSON.stringify(sets));
+    /* The plain click on Clear all still clears everything (and leaves the
+     * list empty for the steps after this one). */
+    click(); LIST = ''; ticks(8);
+    assert(sets.some(x => x === 't0_pa_clear=0'), 'Clear all still clears, got ' + JSON.stringify(sets));
     assert(ab.autoBankRows(T, C).length === 0, 'empty list: ' + JSON.stringify(ab.autoBankRows(T, C).map(r => r.label)));
 });
 step('while the menu is open the jog is the menu\'s; after Back a turn still walks no bank (the walk retired 2026-10-04)', () => {

@@ -55,7 +55,7 @@ import { computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
 import { effectiveClip, forceRedraw, invalidateLEDCache,
     bankHasAltParams, clearAllLEDs, removeFlagsWrap, sendPerfMods } from './ui_leds.mjs';
 import { exitMoveNativeCoRun, enterMoveNativeCoRun, exitMoveSettingsCoRun, coRunMapScreen } from './ui_corun.mjs';
-import { autoBankClick, autoBankJog, autoBankBack, autoBankClearClip, autoBankReset, autoBankMenuOpen, autoMenuUp,
+import { autoBankClick, autoBankJog, autoBankBack, autoBankDeleteClick, autoBankReset, autoBankMenuOpen, autoMenuUp,
          autoBankJumpTarget, autoBankRestoreMenu, autoCyclePageStep,
          autoLanePinJump, autoLanePinClear, laneHome } from './ui_automation_bank.mjs';
 import { automationParamEdit, automationCaptureCommit, automationCaptureCommitAfterNotes,
@@ -726,7 +726,7 @@ function modalDialogUp() {
     }
 
     /* THE AUTOMATION BANK (latched): the click enters its menu / runs the
-     * selected op; Delete + click is the CLEAR CLIP shortcut (spec §2).
+     * selected op; Delete + click clears the lane under the cursor.
      * Ahead of the generic Delete + click (which resets the bank's params)
      * and of the alt-param toggle — but AFTER every confirm, dialog and the
      * global menu above: it used to sit ahead of them, so a click on the
@@ -734,7 +734,7 @@ function modalDialogUp() {
      * card's op instead (Josh, 2026-09-25). */
     if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && S.moveCoRunTrack < 0 &&
             S.activeBank === BANK_AUTOMATION) {
-        if (S.deleteHeld) autoBankClearClip(); else autoBankClick();
+        if (S.deleteHeld) autoBankDeleteClick(); else autoBankClick();
         S.screenDirty = true;
         forceRedraw();
         return;

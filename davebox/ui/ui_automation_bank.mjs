@@ -12,7 +12,8 @@
  *                                  · Loop (clip, or N steps — click to edit,
  *                                  turn, click to set) · Scale (0-200 %, same
  *                                  shape: the lane's values up or down)
- *   Delete + click on the card    → CLEAR ALL, the shortcut
+ *   Delete + click on a lane row  → CLEAR that lane (Josh, 2026-10-20 — it
+ *                                  used to clear ALL, from anywhere)
  *   Back                          → ops → menu → card → (davebox's own: out)
  *
  * Every edit takes an UNDO CHECKPOINT (ui_automation queues it). Smooth/Stepped
@@ -254,6 +255,30 @@ export function autoBankClick() {
     const r = rows[a.sel];
     a.ops = { rows: opsFor(t, c, r), sel: 0, row: r };
     a.loopEdit = false; a.rateEdit = false; a.scaleEdit = false;
+}
+/* Delete + jog click (Josh, 2026-10-20: "Get rid of delete + jog click to
+ * clear all automation. Instead, delete + jog click when an automation lane is
+ * selected from the list, should clear just that lane."). The lane under the
+ * cursor is cleared — its row's own Clear (the aftertouch row's Delete, its
+ * only clear). Anywhere else — the card, the Clear all row, an open op — it
+ * does nothing: clearing everything is the Clear all row's click, on purpose. */
+export function autoBankDeleteClick() {
+    const t = S.activeTrack, c = effectiveClip(t);
+    const a = st();
+    if (!a.menu || a.ops) return;
+    const rows = autoBankRows(t, c);
+    const r = rows[a.sel];
+    if (!r) return;
+    if (r.kind === 'at') {
+        S.pendingDefaultSetParams.push({ key: 't' + t + '_c' + c + '_undo_checkpoint', val: '1' });
+        noteUndoUnit();
+        S.pendingDefaultSetParams.push({ key: 't' + t + '_c' + c + '_at_clear', val: '1' });
+        S.clipAtHas[t][c] = false;
+        showActionPopup('AFTERTOUCH', 'CLEARED');
+        return;
+    }
+    if (r.kind !== 'entry') return;
+    if (automationClearPoints(t, c, r.target)) showActionPopup('AUTOMATION', 'CLEARED');
 }
 function runOp(t, c, a) {
     const o = a.ops.rows[a.ops.sel], r = a.ops.row;

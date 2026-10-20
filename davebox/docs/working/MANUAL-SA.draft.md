@@ -410,7 +410,7 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   Touch + click also opens a bank's editors: **Steps** (knob 5) on SEQ ARP and
   LIVE ARP opens Arp Steps, any knob on RPT GROOVE switches between its
   Velocity and Nudge pages, and a knob on MACROS opens that macro.
-  **Delete + click** on AUTOMATION still clears the clip's automation.
+  **Delete + click** on AUTOMATION clears the lane under the cursor.
 
   Each column of the map is a group, and its banks run top to bottom. A bank the
   track doesn't have leaves its pad dark, and nothing moves, so a bank is always
@@ -1487,7 +1487,8 @@ lane**, not the clip's notes (click the row for its operations, below):
 
 The pads' aftertouch row (**PADS**) has only **Delete**.
 
-The last row is **Clear all**; **Delete + click** anywhere on the screen does the same. Every
+With the cursor on a lane, **Delete + click** clears just that lane (its points go; the
+row stays). The last row is **Clear all**: click it to clear everything. Every
 operation is one undo, and **Back** closes one layer at a time. Conductor tracks
 don't have this bank.
 

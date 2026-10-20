@@ -12,6 +12,9 @@ the section into a versioned heading at release time.
 - **New automation lanes start on Wrap: Reset.** Before the first point the
   parameter sits where its knob rests, instead of carrying the last value round
   the loop. Lanes in existing projects keep the Wrap they were saved with.
+- **Delete + click on the AUTOMATION screen clears just the lane under the
+  cursor** — it used to clear all of the clip's automation from anywhere on the
+  screen. The **Clear all** row still clears everything.
 
 ### Added
 - **Stretch an automation value across steps.** On the AUTOMATION screen, hold a
