@@ -2,15 +2,20 @@
 
 **More better tracks for your Move.**
 
-dAVEBOx SA is an 8-track MIDI sequencer for Ableton Move. It takes over the
-pads, knobs and screen and turns the Move into a session machine: clips and
-scenes on the pads, a sound of your choice on every track, note effects and
-automation per clip, and a browser editor on the same Wi-Fi.
+dAVEBOx SA is an 8-track MIDI sequencer for Ableton Move: clips and scenes on
+the pads, a sound of your choice on every track, note effects and automation
+per clip, and a browser editor on the same Wi-Fi.
+
+**SA stands for standalone.** dAVEBOx SA is not a tool or overtake module
+running inside [Schwung](https://github.com/charlesvestal/schwung). When you
+launch it, Move restarts under dAVEBOx's own build of the Schwung host, and
+dAVEBOx *is* the session — the sequencer, the instruments and effects it plays,
+and the screens you work in. Quit, and Move restarts back into your normal
+Schwung, untouched.
 
 It is the successor to [dAVEBOx](https://github.com/legsmechanical/schwung-davebox),
-which ran as a module inside [Schwung](https://github.com/charlesvestal/schwung).
-That version is frozen. dAVEBOx SA runs as its own session, on its own build of
-Schwung, and is where everything new happens.
+which was an ordinary module inside Schwung. That version is frozen; everything
+new happens here.
 
 **[Read the manual](https://legsmechanical.github.io/dbxhost/)** ·
 **[Watch the tutorials](https://www.youtube.com/playlist?list=PLYG911Ay8pgk)** ·
