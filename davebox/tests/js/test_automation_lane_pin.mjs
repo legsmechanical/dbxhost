@@ -566,7 +566,9 @@ step('⭐ an editor over the open AUTOMATION list, no pin: the list does not dri
  * jumping to fx module editor on map)". AUTOMATION [1,1] = pad 85,
  * INST [2,3] = 70, FX 1 [7,0] = 99. */
 for (const viaMap of [false, true])
-for (const [how, pad, curWant] of [['the jump', null, { c: 2, r: 3 }], ['the map\'s FX 1', 99, null]]) {
+/* Josh, later: "it shows that i'm in instrument mode on the pads when viewing
+ * it in the automation context" — a JUMP's editor is still AUTOMATION's. */
+for (const [how, pad, curWant] of [['the jump', null, { c: 1, r: 1 }], ['the map\'s FX 1', 99, null]]) {
     step('⭐ in an editor over AUTOMATION (' + how + (viaMap ? ', AUTOMATION opened from the map' : '') + '): the map marks the editor, and its AUTOMATION pad goes back to the list', () => {
         (viaMap ? openMenuViaMap : openMenuOn)(TARGETS.chain); ticks(2);
         if (pad === null) { shiftClick(); ticks(10); }
@@ -577,8 +579,7 @@ for (const [how, pad, curWant] of [['the jump', null, { c: 2, r: 3 }], ['the map
         const cur = render.bankMapItems().cur;
         assert(JSON.stringify(cur) === JSON.stringify(curWant), 'the map marks ' + JSON.stringify(cur) + ', wanted ' + JSON.stringify(curWant) + ' (AUTOMATION is [1,1])');
         const W = LEDK.White, lit = (p) => leds[p] === W;
-        assert(!lit(85), 'the AUTOMATION pad is lit White under the editor');
-        assert(pad === null ? lit(90) && lit(70) : lit(99) && !lit(90), 'the editor\'s pad is not the White one (90 ' + leds[90] + ', 70 ' + leds[70] + ', 99 ' + leds[99] + ')');
+        assert(pad === null ? lit(85) && !lit(90) && !lit(70) : !lit(85) && lit(99) && !lit(90), 'the editor\'s pad is not the White one (90 ' + leds[90] + ', 70 ' + leds[70] + ', 99 ' + leds[99] + ')');
         note(85, 127); ticks(2); note(85, 0); ticks(2);
         cc(3, 0); ticks(10);
         assert(!snd.soundOpen(), 'the editor stayed up after picking AUTOMATION');
@@ -586,6 +587,31 @@ for (const [how, pad, curWant] of [['the jump', null, { c: 2, r: 3 }], ['the map
         back(); ticks(4); back(); ticks(4);
     });
 }
+
+/* Josh, 2026-10-20: "BACK from instrument mode puts me back into the
+ * automation list when entered through automation context". A module pick off
+ * the map LEAVES AUTOMATION: Back from that editor returns to the bank the
+ * AUTOMATION door was opened from (CLIP), not to the list. */
+for (const jump of [false, true]) {
+    step('⭐ AUTOMATION from the map' + (jump ? ', a jump' : '') + ', the map\'s INSTRUMENT, then Back: CLIP, not the lane list', () => {
+        openMenuViaMap(TARGETS.chain); ticks(2);
+        if (jump) { shiftClick(); ticks(10); }
+        cc(3, 127); ticks(60); note(90, 127); ticks(2); note(90, 0); ticks(2); cc(3, 0); ticks(10);
+        assert(snd.soundInEditor(), 'rig: the instrument editor is up');
+        assert(!__inp.doorScreenUp() && S.activeBank === 0, 'AUTOMATION is still under the editor (bank ' + S.activeBank + ')');
+        back(); ticks(6);
+        assert(!snd.soundOpen() && S.activeBank === 0 && !bank.autoMenuUp(), 'Back did not land on CLIP (bank ' + S.activeBank + ', menu ' + bank.autoMenuUp() + ', sound ' + snd.soundOpen() + ')');
+    });
+}
+
+step('CONTROL: AUTOMATION from the map, a jump, then Back (no map): the lane list, as ruled', () => {
+    openMenuViaMap(TARGETS.chain); ticks(2);
+    shiftClick(); ticks(10);
+    assert(snd.soundInEditor(), 'rig: the jump opened the editor');
+    back(); ticks(6);
+    assert(!snd.soundOpen() && S.activeBank === BANK_AUTOMATION && bank.autoMenuUp(), 'Back from the jump did not return to the list (bank ' + S.activeBank + ')');
+    back(); ticks(4);
+});
 
 /* The same for an ordinary bank: CLIP [2,1] = pad 86. */
 step('⭐ CLIP, the map\'s INSTRUMENT, then the map\'s CLIP: the editor closes and CLIP is shown', () => {

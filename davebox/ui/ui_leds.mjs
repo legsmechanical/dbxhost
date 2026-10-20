@@ -9,7 +9,7 @@ import {
 } from './ui_constants.mjs';
 import { trackClipHasContent, updateSceneMapLEDs } from './ui_scene.mjs';
 import { PROJECT_COLORS, projectColorLED } from './ui_dialogs.mjs';
-import { soundEditorComp } from './ui_sound.mjs';
+import { autoMapEditorComp } from './ui_automation_bank.mjs';
 import { arpVelLevel, drumVelocityToZone, bankPadMapForMode, SESS_PAD_MAP, bankMapPadForCell, bankMapTrackForStep, BANK_MAP_MODULE_PADS, bankMapModuleAt } from './ui_pure.mjs';
 import { knobRingColor, knobRingNorm, ringCellsFor, ringNormOfCell } from './ui_knob_leds.mjs';
 import { automationStateFor } from './ui_automation.mjs';
@@ -611,7 +611,7 @@ function paintBankMapPads() {
         /* An editor up is where you are, not the bank under it (Josh,
          * 2026-10-20: "when i'm IN instrument view it says i'm in automation
          * on the map"): its module pad — and INST, for the instrument — is lit. */
-        const ed = soundEditorComp();
+        const ed = autoMapEditorComp();
         bankPadMapForMode(S.trackPadMode[t], t).forEach((c, ci) => c.cells.forEach((cell, r) => {
             if (!cell) return;
             const own = cell.bank === BANK_CONFIG || cell.bank === BANK_SOUND || cell.action === 'inst';

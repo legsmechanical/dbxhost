@@ -29,7 +29,7 @@
 
 import { S, noteUndoUnit, armBankDisplay } from './ui_state.mjs';
 import { BANK_AUTOMATION, BANK_SOUND, BANK_MACROS, PAD_MODE_DRUM, midiTargetIsMidi, SEQ_AUTO_TARGETS } from './ui_constants.mjs';
-import { soundOpen, soundExit, soundJumpToParam } from './ui_sound.mjs';
+import { soundOpen, soundExit, soundJumpToParam, soundEditorComp } from './ui_sound.mjs';
 import { readBankParams } from './ui_dsp_bridge.mjs';
 import { effectiveClip } from './ui_leds.mjs';
 import { automationEntriesFor, automationTargetLabel, automationClearKey, automationClearPoints,
@@ -574,6 +574,11 @@ function syncPaView(t, c, target) {
 let lanePin = null;             /* { t, c, target, page, crumb: 'auto'|'sound', bank } */
 export function autoLanePinActive() { return !!lanePin; }
 export function autoLanePinClear() { lanePin = null; }
+/* The editor the bank map marks as where you are, or null for the bank. A
+ * jump's destination is still the automation context (Josh, 2026-10-20: "it
+ * shows that i'm in instrument mode on the pads when viewing it in the
+ * automation context"), so while the pin lives the map marks AUTOMATION. */
+export function autoMapEditorComp() { return lanePin ? null : soundEditorComp(); }
 export function autoLanePinJump(target, crumb, bank) {
     const t = S.activeTrack, c = effectiveClip(t), a = st();
     const page = (a.cycleTarget === target && a.cycleTrack === t && a.cycleClip === c) ? (a.cyclePage | 0) : 0;

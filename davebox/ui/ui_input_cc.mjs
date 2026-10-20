@@ -1650,6 +1650,14 @@ function runBankMapMenu(a) {
      * steps on the lane). The module pads pick no bank, so applyBankPick's
      * clear never runs for them. */
     autoLanePinClear();
+    /* ...and leaves AUTOMATION itself (Josh, 2026-10-20: "BACK from
+     * instrument mode puts me back into the automation list"): a module or
+     * INST pick from the AUTOMATION door gives the door's bank back first, so
+     * the editor opens over the bank you came in from and Back returns there. */
+    if ((a.kind === 'module' || a.kind === 'inst') && doorScreenUp()) {
+        if (soundOpen()) soundExit();
+        closeDoorScreen();
+    }
     if (a.kind === 'bus') { soundEnterBusFx(a.bus); return; }
     if (a.kind === 'inst' || (a.kind === 'module' && a.comp === 'synth')) { openTrackInstrument(); return; }
     if (a.kind === 'module') { openTrackModule(a.comp); return; }

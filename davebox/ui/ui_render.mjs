@@ -60,8 +60,8 @@ import {
     effectiveClip,
     bankHasAltParams, altIndicatorActive, autoLanePlayStep
 } from './ui_leds.mjs';
-import { soundRender, soundEditorComp, renderTrackGatewayCard, renderConfigCardPeek, renderMacrosPeek } from './ui_sound.mjs';
-import { drawAutomationBankBody, autoBankMenuOpen, autoMenuUp, autoHoldJumpActive, autoHoldJumpStep, autoLaneFocus } from './ui_automation_bank.mjs';
+import { soundRender, renderTrackGatewayCard, renderConfigCardPeek, renderMacrosPeek } from './ui_sound.mjs';
+import { drawAutomationBankBody, autoBankMenuOpen, autoMenuUp, autoHoldJumpActive, autoHoldJumpStep, autoLaneFocus, autoMapEditorComp } from './ui_automation_bank.mjs';
 import { automationStateFor } from './ui_automation.mjs';
 import { seqAutoTargetForKnob, fmtInstr } from './ui_constants.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
@@ -1608,7 +1608,7 @@ export function bankMapItems() {
     let cur = null;
     /* An editor up: the INST cell for the instrument's, no bank for the rest
      * (their pads are off the screen) — never the bank under the editor. */
-    const ed = soundEditorComp();
+    const ed = autoMapEditorComp();
     const cols = bankPadMapForMode(S.trackPadMode[t], t).map((c, ci) => ({
         label: c.label,
         cells: c.cells.map((cell, r) => {
