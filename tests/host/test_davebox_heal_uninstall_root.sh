@@ -99,7 +99,9 @@ installed
 printf '36 25 179:2 / /data rw,relatime shared:1 - ext4 /dev/root rw\n' > "$T/mountinfo"
 "$T/heal-mi" --umount-sets 2>"$T/err"; rc=$?
 [ "$rc" = 0 ] && grep -q "sets not bound" "$T/err" && ok "another mount point in the table: still nothing to undo" || bad "rc=$rc: $(cat "$T/err")"
-{ printf '1 2 3:4 /'; head -c 5000 /dev/zero | tr '\0' x; printf ' %s rw - ext4 x rw\n' "$T/Sets"; } > "$T/mountinfo"
+# Built so that the TAIL past the 4 KB buffer, read as a line of its own, would
+# put the target in field 5 ("xxx a b c <target>"); the whole line's field 5 is "a".
+{ printf '1 2 3:4 /'; head -c 5000 /dev/zero | tr '\0' x; printf ' a b c %s rw - ext4 x rw\n' "$T/Sets"; } > "$T/mountinfo"
 "$T/heal-mi" --umount-sets 2>"$T/err"; rc=$?
 [ "$rc" = 0 ] && ok "an over-long line is skipped whole, never half-read as a mount of the target" || bad "rc=$rc: $(cat "$T/err")"
 printf '36 25 179:2 / /data rw - ext4 /dev/root rw\n99 36 179:2 /dbx-old/sets/library %s rw,relatime shared:1 - ext4 /dev/root rw\n' "$T/Sets" > "$T/mountinfo"
