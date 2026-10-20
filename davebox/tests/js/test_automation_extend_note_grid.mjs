@@ -67,6 +67,7 @@ const { S } = await import('../../ui/ui_state.mjs');
 S.touchHoldMs = 0;
 const { BANKS } = await import('../../ui/ui_constants.mjs');
 const auto = await import('../../ui/ui_automation.mjs');
+const { EXTEND_LED: EXT } = await import('../../ui/ui_leds.mjs');
 auto.automationResolveOffForTest(true);
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
@@ -136,19 +137,32 @@ step('⭐ across bars on the note grid: Right pages while held, a bar-2 step ext
     S.trackCurrentPage[T] = 0;
 });
 
-step('⭐ SHORTEN on the note grid, and the range shows in the span colour while held', () => {
+step('⭐ SHORTEN on the note grid, and the range shows in an AUTOMATION colour (not the note span\'s) while held', () => {
     holdStep3(); sets.length = 0;
     cc(76, 1); ticks(3);
     note(STEP(7), 127); note(STEP(7), 0); ticks(3);        /* 2..7 */
-    let lit = []; for (let i = 0; i < 16; i++) if (leds[16 + i] === 56) lit.push(i);
-    assert(JSON.stringify(lit) === '[2,3,4,5,6,7]', 'the range 3..8 in the span colour: ' + JSON.stringify(lit));
+    let lit = []; for (let i = 0; i < 16; i++) if (leds[16 + i] === EXT) lit.push(i);
+    assert(JSON.stringify(lit) === '[2,3,4,5,6,7]', 'the range 3..8 in the extend colour: ' + JSON.stringify(lit));
+    assert(EXT !== 56 && !Object.keys(leds).some(k => k >= 16 && k < 32 && leds[k] === 56), 'the note span colour is not used for a lock');
     note(STEP(7), 127); note(STEP(7), 0); ticks(3);        /* again: 2..6 */
-    lit = []; for (let i = 0; i < 16; i++) if (leds[16 + i] === 56) lit.push(i);
+    lit = []; for (let i = 0; i < 16; i++) if (leds[16 + i] === EXT) lit.push(i);
     assert(JSON.stringify(lit) === '[2,3,4,5,6]', 'shortened range: ' + JSON.stringify(lit));
     const ex = extendsOf().map(s => s.slice('t0_pa_extend=0 seq:0:noteFX_gate '.length));
     assert(JSON.stringify(ex) === JSON.stringify(['2 7 24', '2 6 24 1']), 'the presses: ' + JSON.stringify(ex));
     assert(gatesOf().length === 0, 'the note was not touched');
     letGo(7);
+});
+
+step('⭐ only the LAST-turned parameter extends: Gate Time, then Velocity Offset → Velocity Offset alone', () => {
+    holdStep3(); sets.length = 0;
+    cc(76, 1); ticks(3);                                 /* K6 Gate Time */
+    cc(73, 1); ticks(3);                                 /* K3 Velocity Offset */
+    const second = sets.filter(s => s.startsWith('t0_pa_set2=')).map(s => s.split(' ')[1]).filter(t => t !== 'seq:0:noteFX_gate')[0];
+    assert(second, 'setup: K7 locked a second parameter: ' + JSON.stringify(sets));
+    note(STEP(5), 127); note(STEP(5), 0); ticks(3);
+    const ex = extendsOf();
+    assert(ex.length === 1 && ex[0].split(' ')[1] === second, 'only ' + second + ' extends: ' + JSON.stringify(ex));
+    letGo(5);
 });
 
 step('a NOTE edit after the lock hands the gesture back to the note', () => {

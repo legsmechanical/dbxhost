@@ -162,6 +162,9 @@ export function autoGradLevel(v) { return v === 0 ? 0 : Math.min(6, 1 + Math.flo
  * white over dark steps (the one-read-behind state, and a failed read). */
 /* Does the current hold's extend cover `abs`? The span runs from the held
  * step through `to`, wrapping round the window [off, off + len). */
+/* A lock extended from the clip grid: an automation-gradient colour, never
+ * the note span's 56. */
+export const EXTEND_LED = BrightOrange;
 function extendCovers(abs, off, len) {
     const x = S.heldExtend;
     if (!x || S.heldStep !== x.step || x.to === x.step || len <= 0 || abs < off || abs >= off + len) return false;
@@ -370,9 +373,11 @@ export function updateStepLEDs() {
         /* Gate span overlay: fixed index 56 across the steps the held note sounds
          * on = ceil(gate/tps) (gate of exactly N steps covers 0..N-1, not N). */
         if (S.heldExtend && S.heldStep === S.heldExtend.step && S.heldExtend.to !== S.heldExtend.step) {
-            /* The hold extended a lock: its range, in the span colour. */
+            /* The hold extended a lock: its range in an AUTOMATION colour, not
+             * the note span's (Josh, 2026-10-20: "a visual indicator that's
+             * distinct from note extend"). */
             for (let i = 0; i < 16; i++)
-                if (extendCovers(base + i, lsBase, len)) setLED(16 + i, 56);
+                if (extendCovers(base + i, lsBase, len)) setLED(16 + i, EXTEND_LED);
         } else if (S.heldStep >= 0 && S.heldStepNotes.length > 0) {
             const _sTps  = S.drumLaneTPS[t] || 24;
             const _sSpan = Math.ceil(S.stepEditGate / _sTps);
@@ -441,9 +446,10 @@ export function updateStepLEDs() {
      * sounds on = ceil(gate/tps) steps (a gate of exactly N steps ends at the
      * start of step N, so it covers steps 0..N-1 — NOT N). */
     if (S.heldExtend && S.heldStep === S.heldExtend.step && S.heldExtend.to !== S.heldExtend.step) {
-        /* The hold extended a lock: its range, in the span colour. */
+        /* The hold extended a lock: its range in an AUTOMATION colour (see
+         * the drum grid above). */
         for (let i = 0; i < 16; i++)
-            if (extendCovers(base + i, lsBase, len)) setLED(16 + i, 56);
+            if (extendCovers(base + i, lsBase, len)) setLED(16 + i, EXTEND_LED);
     } else if (S.heldStep >= 0 && S.heldStepNotes.length > 0) {
         const _spanTps  = S.clipTPS[S.activeTrack][effectiveClip(S.activeTrack)] || 24;
         const spanSteps = Math.ceil(S.stepEditGate / _spanTps);

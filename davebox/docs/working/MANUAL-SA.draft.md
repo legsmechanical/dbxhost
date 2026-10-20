@@ -800,8 +800,9 @@ while holding and `JOG BACK` on the step page. Empty steps have no step page.
 - **Stretch a lock:** if the last thing you did while holding the step was turn a
   knob to set a lock, tapping a later step stretches that **lock's value** up to and
   including it instead, the same as on the [AUTOMATION screen](#102-the-automation-screen):
-  tap the end again to shorten it, and the range lights in the note-length colour while
-  you hold.
+  tap the end again to shorten it. While you hold, the range lights **orange**, not the
+  note-length colour, so you can tell which one you're stretching. Only the parameter
+  you turned **last** is stretched.
   Editing the note again (a STEP knob, a pad) puts the tap back to stretching the note.
 - A note nudged past half a step moves to the neighbouring step when you let go.
 - **+ / −** moves the octave range to reach higher or lower notes.
