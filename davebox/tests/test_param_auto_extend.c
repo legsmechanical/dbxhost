@@ -25,6 +25,11 @@ static void extend(hx_t *h, int from, int to) {
     snprintf(v, sizeof v, "0 " TG " %d %d 24", from, to);
     hx_set_param(h, "t0_pa_extend", v);
 }
+static void reextend(hx_t *h, int from, int to) {     /* a later press in the same hold */
+    char v[128];
+    snprintf(v, sizeof v, "0 " TG " %d %d 24 1", from, to);
+    hx_set_param(h, "t0_pa_extend", v);
+}
 /* The 14-bit value played at each of the 16 steps; -1 = none. */
 static void plays(hx_t *h, int *raw) {
     char ans[4096];
@@ -173,6 +178,51 @@ int main(void) {
         HX_ASSERT(e->count == n0, "nothing written");
         HX_ASSERT(in->pa_store_full == PA_FULL_POINTS, "the store says full");
         OK("budget: refused whole when the points would not fit");
+        hx_destroy(h);
+    }
+
+    /* 8. SHORTEN: a later press in the same hold rebuilds from the lane as it
+     *    was before the hold's first extend. 1000 @2, 5000 @4, 9000 @6,
+     *    3000 @9: extend 2 → 10, then back to 5 — steps 6..9 play what they
+     *    did originally; then back to the held step — the original lane. */
+    {
+        hx_t *h = hx_create(NULL);
+        pt(h, 0, 200); pt(h, 48, 1000); pt(h, 96, 5000); pt(h, 144, 9000); pt(h, 216, 3000);
+        int orig[16]; plays(h, orig);
+        extend(h, 2, 10);
+        plays(h, r);
+        for (int s = 2; s <= 10; s++) HX_ASSERT(r[s] == 1000, "setup: 2..10 carry");
+        reextend(h, 2, 5);
+        plays(h, r);
+        for (int s = 2; s <= 5; s++) HX_ASSERT(r[s] == 1000, "shortened: 2..5 carry");
+        for (int s = 6; s < 16; s++) HX_ASSERT(r[s] == orig[s], "shortened: 6.. play what they did before the hold");
+        reextend(h, 2, 12);
+        plays(h, r);
+        for (int s = 2; s <= 12; s++) HX_ASSERT(r[s] == 1000, "grown again from the base: 2..12");
+        HX_ASSERT(r[13] == orig[13], "grown again: 13 as before");
+        reextend(h, 2, 2);
+        plays(h, r);
+        for (int s = 0; s < 16; s++) HX_ASSERT(r[s] == orig[s], "back to the held step: the lane as it was");
+        OK("shorten: later presses rebuild from the hold's base, all the way back");
+        hx_destroy(h);
+    }
+
+    /* 9. A base for ANOTHER lane is not used: the rebase press counts as a
+     *    first extend of this one (its own lane is kept as the new base). */
+    {
+        hx_t *h = hx_create(NULL);
+        pt(h, 0, 200); pt(h, 48, 1000); pt(h, 96, 5000);
+        hx_set_param(h, "t0_pa_set", "0 1:synth:reso 0 700");
+        hx_set_param(h, "t0_pa_extend", "0 1:synth:reso 0 3 24");   /* base = reso */
+        int orig[16]; plays(h, orig);
+        reextend(h, 2, 5);                                           /* cutoff, "rebase" */
+        plays(h, r);
+        for (int s = 2; s <= 5; s++) HX_ASSERT(r[s] == 1000, "cutoff extended");
+        HX_ASSERT(r[6] == orig[6], "cutoff after the span as it was (no reso points pasted in)");
+        reextend(h, 2, 3);
+        plays(h, r);
+        HX_ASSERT(r[4] == orig[4], "and its own base was kept: shortening restores cutoff's step 4");
+        OK("a base naming another lane is not used");
         hx_destroy(h);
     }
 

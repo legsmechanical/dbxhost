@@ -103,6 +103,7 @@ export function clearAllMuteSolo() {
  * did to that step", not one detent of it. Same shape as step record. */
 export function stepHoldCheckpoint(t) {
     S.heldLockLast = null;            /* a note edit: the next later step stretches the NOTE */
+    S.heldExtend = null;
     if (S.stepHoldCkpt || S.heldStep < 0) return;
     S.stepHoldCkpt = true;
     if (S.trackPadMode[t] === PAD_MODE_DRUM)

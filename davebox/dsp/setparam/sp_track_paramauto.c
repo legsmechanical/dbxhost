@@ -106,7 +106,7 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         return 1;
     }
 
-    /* pa_extend: "<clip> <target> <fromStep> <toStep> <tps>" — carry what the
+    /* pa_extend: "<clip> <target> <fromStep> <toStep> <tps> [<rebase>]" — carry what the
      * lane plays at <fromStep> through the END of <toStep> (hold a point on
      * the AUTOMATION bank, press a later step; the note-length gesture's
      * twin). Steps are the lane's own, <tps> ticks each. <toStep> below
@@ -123,7 +123,13 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
      *   - whatever played on the tick after the span is put back with a point
      *     there when the change would otherwise alter it.
      * Refused whole — nothing written — when the lane has no entry, the held
-     * step plays nothing, or the points would not fit. */
+     * step plays nothing, or the points would not fit.
+     * <rebase> 0 (or absent) = the hold's first extend: the lane's points are
+     * kept as the BASE. 1 = a later press in the same hold: the base is put
+     * back first and the new span applied to it, so a span can shrink as well
+     * as grow (the note-length gesture's "tap again to shorten"); with
+     * <toStep> == <fromStep> it only puts the base back. A base that names a
+     * different lane is not used (the press is treated as a first). */
     if (!strcmp(sub, "pa_extend")) {
         int clip = 0, fs = 0, ts = 0, tps = 0;
         PA_SKIP_SPACE(p); PA_UINT(p, clip);
@@ -131,11 +137,29 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         PA_SKIP_SPACE(p); PA_UINT(p, fs);
         PA_SKIP_SPACE(p); PA_UINT(p, ts);
         PA_SKIP_SPACE(p); PA_UINT(p, tps);
-        if (clip < 0 || clip >= NUM_CLIPS || tps <= 0 || fs == ts) return 1;
+        int rebase = 0;
+        PA_SKIP_SPACE(p); PA_UINT(p, rebase);
+        if (clip < 0 || clip >= NUM_CLIPS || tps <= 0) return 1;
         int id = pa_target_lookup(inst, tgt);
         if (id < 0 || !pa_may_write(inst, tidx, id)) return 1;
         pa_entry_t *e = pa_find(inst, tidx, clip, id);
-        if (!e || !e->count) return 1;
+        if (!e) return 1;
+        const int base_ours = inst->pa_ext_base_valid && inst->pa_ext_base_track == tidx &&
+                              inst->pa_ext_base_clip == clip && inst->pa_ext_base_target == id;
+        if (rebase && base_ours) {
+            memcpy(e->points, inst->pa_ext_base, (size_t)inst->pa_ext_base_count * sizeof(pa_point_t));
+            e->count = inst->pa_ext_base_count;
+            e->last_sent_valid = 0;
+            pa_mark_dirty(inst);
+        } else if (fs != ts && e->count) {
+            memcpy(inst->pa_ext_base, e->points, (size_t)e->count * sizeof(pa_point_t));
+            inst->pa_ext_base_count  = e->count;
+            inst->pa_ext_base_track  = (int16_t)tidx;
+            inst->pa_ext_base_clip   = (int16_t)clip;
+            inst->pa_ext_base_target = (int16_t)id;
+            inst->pa_ext_base_valid  = 1;
+        }
+        if (fs == ts || !e->count) return 1;
         uint32_t ws = 0, wl = 0, st = 0;
         if (!pa_export_window(tr, e, &ws, &wl, &st) || !wl) return 1;
         const uint32_t we = ws + wl;                  /* one past the window */

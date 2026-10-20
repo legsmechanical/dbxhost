@@ -14,7 +14,8 @@ the section into a versioned heading at release time.
   and including that step, like stretching a note. It reaches into later bars
   (page with Left / Right while holding) and wraps round the end of the cycle.
   It works on the clip's step grid too: hold a step, turn a knob to set a lock,
-  then press a later step to stretch that lock.
+  then press a later step to stretch that lock. Press the end step again to
+  shorten it, as with a note; the range lights up while you hold.
 
 ## [1.0.0] — 2026-10-20
 The first full release. dAVEBOx SA is the successor to dAVEBOx, and replaces

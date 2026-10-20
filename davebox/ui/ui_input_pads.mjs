@@ -15,7 +15,7 @@ import {
 import { S, loopViewActive, markJsUndo } from './ui_state.mjs';
 import { autoHoldJumpBegin, autoHoldJumpEnd } from './ui_automation_bank.mjs';
 import { nowMs } from './ui_clock.mjs';
-import { automationClearStep, automationExtendLock, automationExtendFromLock } from './ui_automation.mjs';
+import { automationClearStep, automationExtendPress, automationExtendFromLock } from './ui_automation.mjs';
 import { devSnapOpen, devSnapClear, devSnapRecall, devSnapSave } from './ui_devsnap.mjs';
 import { drumPadToLane, drumPadToVelZone, drumVelZoneToVelocity, _clipIsEmpty,
     clipHasContent, effectiveVelocity, stepEntryVelocity,
@@ -1746,6 +1746,7 @@ export function _onStepButtons(d1, d2) {
             S.stepHoldCkpt  = false;
             S.heldStep      = absStep;
             S.heldStepAuto  = true;
+            S.heldExtend    = null;
             S.stepWasEmpty  = true;              /* nothing for the tick to read */
             S.heldStepNotes = [];
             S.drumHeldReadPending = false;
@@ -1760,7 +1761,7 @@ export function _onStepButtons(d1, d2) {
              * gesture's twin (an earlier step wraps round the cycle). Any
              * page: the arrows page the lane while the step stays down. */
             S.stepBtnPressedTick[idx] = -1;
-            automationExtendLock(cy.t, cy.c, cy.target, S.heldStep, absStep, cy.tps);
+            automationExtendPress(cy.t, cy.c, cy.target, absStep, cy.off, cy.len, cy.tps);
             forceRedraw();
         }
     } else if (!S.shiftHeld && S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank !== 6) {
@@ -1775,6 +1776,7 @@ export function _onStepButtons(d1, d2) {
             S.stepHoldCkpt = false;
             S.heldStepAuto = false;
             S.heldLockLast = null;
+            S.heldExtend   = null;
             S.heldStep    = absStep;
             const cur   = S.drumLaneSteps[t][lane][absStep];
             if (cur !== '0') {
@@ -1805,7 +1807,8 @@ export function _onStepButtons(d1, d2) {
                 S.stepEditRatch = 0;
             }
             forceRedraw();
-        } else if (automationExtendFromLock(t, S.drumStepPage[t] * 16 + idx)) {
+        } else if (automationExtendFromLock(t, S.drumStepPage[t] * 16 + idx,
+                                            S.drumLaneLoopStart[t] | 0, S.drumLaneLength[t])) {
             /* The hold's last gesture was a lock: the later step extends it. */
             S.stepBtnPressedTick[idx] = -1;
             S.stepBtnPressedTick[S.heldStepBtn] = -1;
@@ -1857,6 +1860,7 @@ export function _onStepButtons(d1, d2) {
             S.stepHoldCkpt = false;
             S.heldStepAuto = false;
             S.heldLockLast = null;
+            S.heldExtend   = null;
             S.heldStep     = absP;
             const pref_p = 't' + S.activeTrack + '_c' + ac_p + '_step_' + absP;
             /* get_param returns null in MIDI context — use clipSteps mirror to detect
@@ -1899,7 +1903,9 @@ export function _onStepButtons(d1, d2) {
             }
             forceRedraw();
         } else if (S.activeBank !== 6 &&
-                   automationExtendFromLock(S.activeTrack, S.trackCurrentPage[S.activeTrack] * 16 + idx)) {
+                   automationExtendFromLock(S.activeTrack, S.trackCurrentPage[S.activeTrack] * 16 + idx,
+                                            S.clipLoopStart[S.activeTrack][effectiveClip(S.activeTrack)] | 0,
+                                            S.clipLength[S.activeTrack][effectiveClip(S.activeTrack)])) {
             /* The hold's last gesture was a lock: the later step extends it. */
             S.stepBtnPressedTick[idx] = -1;
             S.stepBtnPressedTick[S.heldStepBtn] = -1;

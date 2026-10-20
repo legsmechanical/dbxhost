@@ -55,7 +55,9 @@ globalThis.draw_rect = (x, y, w, h, c) => { for (let i = 0; i < w; i++) { px(x +
 globalThis.stipple_rect = () => {};
 globalThis.text_width = (t) => Math.max(0, String(t).length * 6 - 1);
 globalThis.set_pixel = px; globalThis.pixel_print = () => {}; globalThis.flush_display = () => {};
-globalThis.move_midi_internal_send = () => {}; globalThis.move_midi_external_send = () => {}; globalThis.set_led = () => {};
+const leds = {};
+globalThis.move_midi_internal_send = (m) => { const a = Array.from(m);
+    if (a.length >= 4 && (a[1] & 0xF0) === 0x90) leds[a[2]] = a[3]; return true; }; globalThis.move_midi_external_send = () => {}; globalThis.set_led = () => {};
 globalThis.host_ext_midi_remap_clear = () => {}; globalThis.host_ext_midi_remap_set = () => {};
 globalThis.host_ext_midi_remap_enable = () => {};
 
@@ -132,6 +134,21 @@ step('⭐ across bars on the note grid: Right pages while held, a bar-2 step ext
     note(STEP(4), 0); cc(62, 127); cc(62, 0); ticks(2);
     note(STEP(2), 0); ticks(3);
     S.trackCurrentPage[T] = 0;
+});
+
+step('⭐ SHORTEN on the note grid, and the range shows in the span colour while held', () => {
+    holdStep3(); sets.length = 0;
+    cc(76, 1); ticks(3);
+    note(STEP(7), 127); note(STEP(7), 0); ticks(3);        /* 2..7 */
+    let lit = []; for (let i = 0; i < 16; i++) if (leds[16 + i] === 56) lit.push(i);
+    assert(JSON.stringify(lit) === '[2,3,4,5,6,7]', 'the range 3..8 in the span colour: ' + JSON.stringify(lit));
+    note(STEP(7), 127); note(STEP(7), 0); ticks(3);        /* again: 2..6 */
+    lit = []; for (let i = 0; i < 16; i++) if (leds[16 + i] === 56) lit.push(i);
+    assert(JSON.stringify(lit) === '[2,3,4,5,6]', 'shortened range: ' + JSON.stringify(lit));
+    const ex = extendsOf().map(s => s.slice('t0_pa_extend=0 seq:0:noteFX_gate '.length));
+    assert(JSON.stringify(ex) === JSON.stringify(['2 7 24', '2 6 24 1']), 'the presses: ' + JSON.stringify(ex));
+    assert(gatesOf().length === 0, 'the note was not touched');
+    letGo(7);
 });
 
 step('a NOTE edit after the lock hands the gesture back to the note', () => {

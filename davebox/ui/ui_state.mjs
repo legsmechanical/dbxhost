@@ -1070,6 +1070,12 @@ export const S = {
      * step, tps }), or null: a later step pressed then extends it rather than
      * the note (Josh, 2026-10-20). Any note edit in the hold clears it. */
     heldLockLast: null,
+    /* The span the CURRENT hold extended ({ step, to }, steps of the lane's
+     * grid), or null: drawn on the step row while the step stays down, so a
+     * Curve lane — whose extend writes only its ends — shows the range the way
+     * Punch does (Josh, 2026-10-20: "i want it to look the same just while
+     * setting the length, so that there's a visual reference"). */
+    heldExtend: null,
     /* Per track: the AUTOMATION bank's selected lane's current tick in its own
      * lane ticks (state_snapshot 57..64, tN_pa_view), -1 = none / not playing. */
     autoLanePos: new Array(8).fill(-1),

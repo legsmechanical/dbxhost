@@ -299,6 +299,43 @@ step('⭐ EXTEND wraps: hold step 14, press step 3 → 13..2 round the cycle', (
     assert(ex.length === 1 && ex[0] === 't0_pa_extend=0 seq:0:delay_level 13 2 24', 'the wrap: ' + JSON.stringify(sets));
 });
 
+step('⭐ SHORTEN like a note: the end pressed again shortens by one, a new step re-extends — both from the hold\'s base', () => {
+    note(STEP(2), 127); ticks(3);
+    sets.length = 0;
+    note(STEP(5), 127); note(STEP(5), 0); ticks(2);       /* 2..5 */
+    note(STEP(5), 127); note(STEP(5), 0); ticks(2);       /* again: 2..4 */
+    note(STEP(8), 127); note(STEP(8), 0); ticks(2);       /* 2..8 */
+    const ex = extendsOf().map(s => s.slice('t0_pa_extend=0 seq:0:delay_level '.length));
+    assert(JSON.stringify(ex) === JSON.stringify(['2 5 24', '2 4 24 1', '2 8 24 1']), 'the presses: ' + JSON.stringify(ex));
+    /* The range shows while held: every step of 3..9 blinks like a point
+     * (a Curve lane only wrote the ends), steps outside never go dark. */
+    const W = new Array(16).fill(9000);
+    VALS = () => 'seq:0:delay_level ' + W.map(v => v.toString(16).padStart(4, '0')).join('') + '\n';
+    auto.automationRefreshPresence();
+    const everOff = new Array(16).fill(false);
+    for (let k = 0; k < 200; k++) { ticks(1); for (let i = 0; i < 16; i++) if (leds[16 + i] === 0) everOff[i] = true; }
+    for (let i = 3; i <= 8; i++) assert(everOff[i], 'step ' + (i + 1) + ' of the range never blinked: ' + JSON.stringify(everOff));
+    for (const i of [0, 1, 9, 10, 15]) assert(!everOff[i], 'step ' + (i + 1) + ' outside the range blinked: ' + JSON.stringify(everOff));
+    note(STEP(5), 127); note(STEP(5), 0);                  /* 2..5 again */
+    note(STEP(5), 127); note(STEP(5), 0);                  /* 2..4 */
+    note(STEP(4), 127); note(STEP(4), 0);                  /* 2..3 */
+    note(STEP(3), 127); note(STEP(3), 0); ticks(2);        /* back to the held step: nothing extended */
+    assert(extendsOf().slice(-1)[0].endsWith(' 2 2 24 1'), 'all the way back: ' + JSON.stringify(extendsOf().slice(-2)));
+    note(STEP(2), 0); ticks(3);
+    VALS = () => '';
+});
+
+step('a lock turned AFTER an extend: the next press rebuilds from the lane as it is now (no rebase)', () => {
+    note(STEP(2), 127); ticks(3);
+    sets.length = 0;
+    note(STEP(5), 127); note(STEP(5), 0); ticks(2);
+    cc(72, 1); ticks(3);
+    note(STEP(7), 127); note(STEP(7), 0); ticks(2);
+    const ex = extendsOf();
+    assert(ex.length === 2 && ex[1] === 't0_pa_extend=0 seq:0:delay_level 2 7 24', 'no rebase after a lock: ' + JSON.stringify(ex));
+    note(STEP(2), 0); ticks(3);
+});
+
 step('⭐ EXTEND across bars: Right pages the lane WHILE the step is held (the jump left AUTOMATION)', () => {
     S.clipLength[T][C] = 32;
     auto.automationRefreshPresence(); ticks(3);

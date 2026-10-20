@@ -160,6 +160,15 @@ export function autoGradLevel(v) { return v === 0 ? 0 : Math.min(6, 1 + Math.flo
  * as the clip's own grid, so a lane that follows the clip lights exactly the
  * buttons the clip would. Until the values have been read, the points blink
  * white over dark steps (the one-read-behind state, and a failed read). */
+/* Does the current hold's extend cover `abs`? The span runs from the held
+ * step through `to`, wrapping round the window [off, off + len). */
+function extendCovers(abs, off, len) {
+    const x = S.heldExtend;
+    if (!x || S.heldStep !== x.step || x.to === x.step || len <= 0 || abs < off || abs >= off + len) return false;
+    const span = ((x.to - x.step) % len + len) % len;
+    return ((abs - x.step) % len + len) % len <= span;
+}
+
 function paintAutoLane(cy) {
     const base = ((cy.off >> 4) + cy.page) * 16, end = cy.off + cy.len;
     const vals = S.autoLaneVals, m = S.autoBankLit;
@@ -173,7 +182,7 @@ function paintAutoLane(cy) {
         else {
             const v = vals[i];
             color = v < 0 ? LED_OFF
-                  : (blinkOff && m && m.charCodeAt(abs) === 49) ? LED_OFF
+                  : (blinkOff && ((m && m.charCodeAt(abs) === 49) || extendCovers(abs, cy.off, cy.len))) ? LED_OFF
                   : AUTO_GRAD[autoGradLevel(v)];
         }
         setLED(16 + i, color);
@@ -360,7 +369,11 @@ export function updateStepLEDs() {
         }
         /* Gate span overlay: fixed index 56 across the steps the held note sounds
          * on = ceil(gate/tps) (gate of exactly N steps covers 0..N-1, not N). */
-        if (S.heldStep >= 0 && S.heldStepNotes.length > 0) {
+        if (S.heldExtend && S.heldStep === S.heldExtend.step && S.heldExtend.to !== S.heldExtend.step) {
+            /* The hold extended a lock: its range, in the span colour. */
+            for (let i = 0; i < 16; i++)
+                if (extendCovers(base + i, lsBase, len)) setLED(16 + i, 56);
+        } else if (S.heldStep >= 0 && S.heldStepNotes.length > 0) {
             const _sTps  = S.drumLaneTPS[t] || 24;
             const _sSpan = Math.ceil(S.stepEditGate / _sTps);
             for (let i = 0; i < 16; i++) {
@@ -427,7 +440,11 @@ export function updateStepLEDs() {
     /* Gate span overlay: fixed index 56 across all steps the held note actually
      * sounds on = ceil(gate/tps) steps (a gate of exactly N steps ends at the
      * start of step N, so it covers steps 0..N-1 — NOT N). */
-    if (S.heldStep >= 0 && S.heldStepNotes.length > 0) {
+    if (S.heldExtend && S.heldStep === S.heldExtend.step && S.heldExtend.to !== S.heldExtend.step) {
+        /* The hold extended a lock: its range, in the span colour. */
+        for (let i = 0; i < 16; i++)
+            if (extendCovers(base + i, lsBase, len)) setLED(16 + i, 56);
+    } else if (S.heldStep >= 0 && S.heldStepNotes.length > 0) {
         const _spanTps  = S.clipTPS[S.activeTrack][effectiveClip(S.activeTrack)] || 24;
         const spanSteps = Math.ceil(S.stepEditGate / _spanTps);
         for (let i = 0; i < 16; i++) {
