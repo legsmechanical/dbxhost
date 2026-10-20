@@ -70,7 +70,7 @@ import { soundActive, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVo
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, macroClearConfirmAnswer,
     macroClearConfirmReset, macroClearConfirmOpen, soundKnobCardClick, soundEnterSendFromSessionMixer,
-    soundOnCard, soundEnterBusFx, soundResting, soundCardClick, soundKnobTouched } from './ui_sound.mjs';
+    soundOnCard, soundInEditor, soundEnterBusFx, soundResting, soundCardClick, soundKnobTouched } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { templateConfirmClick } from './ui_template.mjs';
 import { ensureGlobalMenuFresh, openGlobalMenu, openGlobalMenuAt } from './ui_menu.mjs';
@@ -2982,6 +2982,9 @@ export function openDoorScreen(door) {
     const t = S.activeTrack;
     /* From one door to another, home stays where it was. */
     const home = doorScreenUp() ? S.doorReturn : { bank: S.activeBank, latched: !!S.bankCardLatched };
+    /* An editor over the door's own bank (the map's INSTRUMENT over AUTOMATION):
+     * the door is where you are going, so the editor closes. */
+    if (S.activeBank === door && soundInEditor()) soundExit();
     if (S.activeBank !== door) { S.bankPickerSel = bankListFor(t).indexOf(door); applyBankPick(false); }
     S.doorReturn = { track: t, door: door, bank: home.bank, latched: home.latched };   /* after the commit, which drops it */
     S.bankCardLatched = true;

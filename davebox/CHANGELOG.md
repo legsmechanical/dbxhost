@@ -21,6 +21,10 @@ the section into a versioned heading at release time.
   MIDI FX or FX pads, after a Shift + click jump or straight from the lane
   list — left the step buttons showing the lane. They return to notes now, and
   show the lane again when Back brings you back to the list.
+- With an editor open, the pad map now marks the editor you are in (INST and the
+  INSTRUMENT pad, or that FX / MIDI FX pad) instead of the bank under it, and
+  picking AUTOMATION on the map from an editor opened over it closes the editor
+  and takes you back to the lane list; it used to do nothing.
 
 ### Added
 - **Stretch an automation value across steps.** On the AUTOMATION screen, hold a
