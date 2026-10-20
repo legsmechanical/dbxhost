@@ -209,6 +209,12 @@ mk blessable; mv "$F/dbx" "$F/dbx-old"
 ino_before="$(ls -di "$F/dbx-old" | awk '{print $1}')"
 run "$SH" --check
 [ "$(cat "$T/out")" = installed ] && ok "--check sees the old folder's install" || bad "check=$(cat "$T/out")"
+# ...and sees it by the OLD folder alone, with every other trace already gone.
+mv "$F/stock/modules/tools/davebox-sa" "$F/sa.aside"; mv "$F/boot/davebox" "$F/boot.aside"
+mv "$F/root" "$F/root.aside"; mkdir "$F/root"
+run "$SH" --check
+[ "$(cat "$T/out")" = installed ] && ok "--check: the old folder alone counts as installed" || bad "check=$(cat "$T/out")"
+rm -rf "$F/root"; mv "$F/root.aside" "$F/root"; mv "$F/sa.aside" "$F/stock/modules/tools/davebox-sa"; mv "$F/boot.aside" "$F/boot/davebox"
 snapshot "$T/before"; run "$SH"; snapshot "$T/after"
 cmp -s "$T/before" "$T/after" && grep -q "would: move $F/dbx-old to $F/dbx" "$T/out" && grep -q "would: remove debug.log" "$T/out" \
     && ok "dry run: says it would move it and clean it, changes nothing" || bad "dry: $(head -20 "$T/out")"
