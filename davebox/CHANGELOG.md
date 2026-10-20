@@ -9,6 +9,10 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Changed
+- **Wrap: Reset with Smooth on now glides up to the first lock.** From the start
+  of the loop the parameter rises from where its knob rests to the first lock,
+  instead of sitting at rest and jumping. It still goes back to rest at the loop
+  start. Projects that use Reset with Smooth will play this way too.
 - **New automation lanes start on Wrap: Reset.** Before the first point the
   parameter sits where its knob rests, instead of carrying the last value round
   the loop. Lanes in existing projects keep the Wrap they were saved with.

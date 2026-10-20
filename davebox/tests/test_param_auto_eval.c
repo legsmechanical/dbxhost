@@ -139,7 +139,13 @@ int main(void) {
       HX_ASSERT(pa_eval_window(&r, 383, 0, 384, &v) == 1 && v == 0, "after the last: the last value to the loop end");
       r.flags |= PA_FLAG_SMOOTH;
       HX_ASSERT(pa_eval_window(&r, 360, 0, 384, &v) == 1 && v == 0, "smooth under Reset: no ramp across the wrap — it holds");
-      HX_ASSERT(pa_eval_window(&r, 100, 0, 384, &v) == PA_EVAL_REST && v == 3000, "…and rest before the first");
+      /* Reset + Smooth (Josh, 2026-10-20: "smooth implies that the value never
+       * jumps"): before the first point it RAMPS from rest at the window start
+       * to the first point — still marked as final (never scaled again). */
+      HX_ASSERT(pa_eval_window(&r, 0, 0, 384, &v) == PA_EVAL_REST && v == 3000, "…the ramp starts at rest at the window start");
+      HX_ASSERT(pa_eval_window(&r, 100, 0, 384, &v) == PA_EVAL_REST && v == 3000 + (8192 - 3000) * 100 / 312,
+                "…and rises toward the first point (100/312 of the way)");
+      r.flags &= (uint8_t)~PA_FLAG_SMOOTH;
       r.rest = PA_VAL_UNSET;
       HX_ASSERT(pa_eval_window(&r, 0, 0, 384, &v) == 1 && v == 8192, "no resting value captured: the first point's value");
       OK("Wrap: Reset — the resting value until the first point; the first point's value if none was captured");
