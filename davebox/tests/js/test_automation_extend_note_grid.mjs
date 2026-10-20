@@ -145,6 +145,15 @@ step('a NOTE edit after the lock hands the gesture back to the note', () => {
     letGo(5);
 });
 
+step('a lock from an EARLIER hold of the same step is forgotten: the next hold stretches the note', () => {
+    holdStep3(); cc(76, 1); ticks(3);
+    note(STEP(2), 0); ticks(3);                          /* that hold ends with a lock as its last gesture */
+    holdStep3(); sets.length = 0;                        /* a new hold, nothing turned */
+    note(STEP(5), 127); ticks(2);
+    assert(extendsOf().length === 0 && gatesOf().length === 1, 'a stale lock was extended: ' + JSON.stringify(sets));
+    letGo(5);
+});
+
 if (failed) { console.error('FAIL: test_automation_extend_note_grid'); process.exit(1); }
 console.log('PASS: test_automation_extend_note_grid');
 }

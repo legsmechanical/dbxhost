@@ -146,7 +146,14 @@ int main(void) {
         int lanes = 0;
         for (int i = 0; i < PA_MAX_ENTRIES; i++) if (in->pa_entries[i].used) lanes++;
         HX_ASSERT(lanes == 1, "an unknown lane is not created");
-        OK("refused: a resting step, an unknown lane");
+        /* A target the store knows (clip 1 has it) but this clip has no lane
+         * for: refused, and no empty lane is left behind on clip 0. */
+        hx_set_param(h, "t0_pa_set", "1 1:synth:drive 0 500");
+        hx_set_param(h, "t0_pa_extend", "0 1:synth:drive 2 5 24");
+        lanes = 0;
+        for (int i = 0; i < PA_MAX_ENTRIES; i++) if (in->pa_entries[i].used) lanes++;
+        HX_ASSERT(lanes == 2, "no empty lane made on the clip without one");
+        OK("refused: a resting step, an unknown lane, a lane this clip lacks");
         hx_destroy(h);
     }
 

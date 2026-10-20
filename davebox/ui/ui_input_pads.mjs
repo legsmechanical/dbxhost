@@ -1746,7 +1746,6 @@ export function _onStepButtons(d1, d2) {
             S.stepHoldCkpt  = false;
             S.heldStep      = absStep;
             S.heldStepAuto  = true;
-            S.heldLockLast  = null;
             S.stepWasEmpty  = true;              /* nothing for the tick to read */
             S.heldStepNotes = [];
             S.drumHeldReadPending = false;
