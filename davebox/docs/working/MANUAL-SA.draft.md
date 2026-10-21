@@ -509,8 +509,12 @@ Each track's sound is set in its own menu, **TRACK CONFIG**:
 5. **Click** the empty **MIDI FX** row to add a MIDI effect in front of the
    instrument — on Move and MIDI tracks too.
 
+A module picked from this menu loads and leaves you on the menu, on its row; click
+the row to edit it.
+
 The right-hand pads of the [bank map](#36-parameter-banks) open these editors
-directly: **MIDI FX**, **INSTRUMENT** and **FX 1–4**. While one is open, the map marks
+directly: **MIDI FX**, **INSTRUMENT** and **FX 1–4**. On an empty one the pad opens
+the module list, and the module you pick opens in its editor. While one is open, the map marks
 it (the instrument also lights **INST**) rather than the bank underneath.
 
 Everything else in the menu is in [Sound & Track Config](#14-sound--track-config).

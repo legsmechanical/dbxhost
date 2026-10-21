@@ -30,7 +30,7 @@ import {
 
 import { S, standDownBankDisplay, stepRevealAvailable, loopViewActive, endLoopLatch, forgetUndo, forgetProjectJs } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
-import { tickPrefetch, dget, applyNewProjectSeed } from './ui_dsp_bridge.mjs';
+import { tickPrefetch, dget, applyNewProjectSeed, midiFxResyncTick } from './ui_dsp_bridge.mjs';
 import { dspGet, prefetchKeys, releaseTrackDigests } from './ui_dsp_get.mjs';
 import { daveBoxTick, bannerDaveSync, loadDaveTick } from './ui_daves.mjs';
 import { devSnapOpen, devSnapEnter, devSnapTick, DEVSNAP_HOLD_MS } from './ui_devsnap.mjs';
@@ -1372,6 +1372,9 @@ export function _tickImpl() {
          * read only when something is staged, and its own write budget caps the
          * rest (see ui_automation.mjs). */
         automationTick();
+        /* A chain preset just loaded: its slot's MIDI FX hand-back follows the
+         * track again (ui_dsp_bridge, midiFxResyncAfterPatch). */
+        midiFxResyncTick();
         /* A SnapMorph turn's values were transient; once the hand is still
          * they go out once more as an edit (ui_snapmorph). */
         morphTick();

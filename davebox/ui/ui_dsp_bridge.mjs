@@ -1374,6 +1374,40 @@ export function syncTrackMidiFx(t, loaded, defer) {
     }
 }
 
+/* ⭐ A CHAIN PRESET CARRIES ITS SLOT'S HAND-BACK FLAG, and a track's half is
+ * not in it. A preset saved from a track with a MIDI FX holds
+ * `midi_fx_host_route: 1` (syncTrackMidiFx set it live), and loading it sets the
+ * slot to hand the effect's output back — while the TRACK's `tN_fxpost` stays
+ * whatever it was. On a track that had no MIDI FX that is 0, and the engine
+ * then only records what comes back and plays none of it: the preset is
+ * SILENT (Josh, 2026-10-21: "Why doesn't plank preset sound when loaded
+ * despite the chain working fine before it was saved?").
+ *
+ * So a preset load re-syncs the track's MIDI FX, both halves, from what the
+ * chain holds once the load has landed. The load is a REQUEST the host applies
+ * a few frames later, and it writes the flag from the file AFTER loading the
+ * modules — so one sync could read the old chain, or be overwritten by the
+ * file's flag. It runs at these delays after the load (each one idempotent);
+ * the last is well past any apply. Tick work: the read is a get_param. */
+const MFX_RESYNC_MS = [150, 500, 1500];
+let mfxResync = [];                      /* { t, at } */
+export function midiFxResyncAfterPatch(t) {
+    mfxResync = mfxResync.filter(r => r.t !== t);
+    for (const d of MFX_RESYNC_MS) mfxResync.push({ t, at: S.clockMs + d });
+}
+export function midiFxResyncTick() {
+    if (!mfxResync.length) return;
+    const due = mfxResync.filter(r => S.clockMs >= r.at);
+    if (!due.length) return;
+    mfxResync = mfxResync.filter(r => S.clockMs < r.at);
+    const seen = new Set();
+    for (const r of due) {
+        if (seen.has(r.t)) continue;
+        seen.add(r.t);
+        if (S.trackRoute[r.t] === 0) syncTrackMidiFx(r.t);
+    }
+}
+
 export function applyTrackConfig(t, key, val) {
     let strVal;
     if (key === 'route') strVal = val === ROUTE_NONE ? 'none' : val === 2 ? 'external' : val === 1 ? 'move' : 'schwung';
