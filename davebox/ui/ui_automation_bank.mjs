@@ -487,49 +487,113 @@ const VALS_REFRESH_MS = 400;
  * any step — dark inside its cycle, which stays on the buttons to hold. */
 const EMPTY_VALS = new Array(16).fill(-1);
 EMPTY_VALS.v14 = new Array(16).fill(-1);
+/* One page of every lane's per-step values, as playback plays them: a Map
+ * target -> 16 values (0..127, -1 = none) with `v14` the 14-bit values, or
+ * null when the read failed. */
+function readValsPage(t, c, base, tps) {
+    const raw = host_module_get_param('t' + t + '_c' + c + '_pa_vals_' + base + '_' + tps);
+    if (raw === null || raw === undefined) return null;
+    const map = new Map();
+    for (const line of String(raw).split('\n')) {
+        const sp = line.lastIndexOf(' ');
+        if (sp <= 0) continue;
+        /* Four hex digits a step: the 14-bit value, ffff = none. The
+         * gradient's 0..127 is derived from it, rounded as the DSP
+         * used to; `v14` keeps the full value for a held step to show in
+         * the parameter's units. (Two digits a step is the older 7-bit
+         * form, read as such.) */
+        const hex = line.slice(sp + 1), v = [], v14 = [];
+        const wide = hex.length >= 64;
+        for (let s = 0; s < 16; s++) {
+            if (wide) {
+                const x = parseInt(hex.substr(s * 4, 4), 16);
+                const ok = isFinite(x) && x !== 0xffff;
+                v14.push(ok ? x : -1);
+                v.push(ok ? Math.min(127, Math.floor((x * 127 + 8191) / 16383)) : -1);
+            } else {
+                const x = parseInt(hex.substr(s * 2, 2), 16);
+                const ok = isFinite(x) && x !== 255;
+                v.push(ok ? x : -1);
+                v14.push(ok ? Math.round(x * 16383 / 127) : -1);
+            }
+        }
+        v.v14 = v14;
+        map.set(line.slice(0, sp), v);
+    }
+    return map;
+}
+/* A lock dialled on the held step changes what the lane plays. At Scale
+ * 100 % the knob's own value is shown until the slow read (autoHeldValue);
+ * at any other Scale the read is the only way to learn what PLAYS, so it
+ * comes once the knob has rested this long instead of on the slow cadence. */
+const LOCK_SETTLE_MS = 50;
+function valsDue(cache, key) {
+    if (cache.key !== key || S.clockMs - cache.at >= VALS_REFRESH_MS) return true;
+    const L = S.autoLockLast;
+    if (!L || L.at < cache.at || S.clockMs - L.at < LOCK_SETTLE_MS) return false;
+    const stt = automationStateFor(L.track, L.clip, L.target);
+    return !!stt && stt.scale !== 100;
+}
+function valsRefresh(cache, key, t, c, base, tps) {
+    const map = readValsPage(t, c, base, tps);
+    cache.at = S.clockMs;
+    if (map) { cache.key = key; cache.map = map; }
+    else if (cache.key !== key) cache.map = null;   /* a failed read of a NEW page shows no stale values */
+}
 function autoLaneValsTick(t, c, target) {
     const cy = S.autoCycle;
     const base = ((cy.off >> 4) + cy.page) * 16;
     const key = t + ' ' + c + ' ' + base + ' ' + cy.tps + ' ' + automationListGen();
-    if (valsCache.key !== key || S.clockMs - valsCache.at >= VALS_REFRESH_MS) {
-        const raw = host_module_get_param('t' + t + '_c' + c + '_pa_vals_' + base + '_' + cy.tps);
-        valsCache.at = S.clockMs;
-        if (raw !== null && raw !== undefined) {
-            const map = new Map();
-            for (const line of String(raw).split('\n')) {
-                const sp = line.lastIndexOf(' ');
-                if (sp <= 0) continue;
-                /* Four hex digits a step: the 14-bit value, ffff = none. The
-                 * gradient's 0..127 is derived from it, rounded as the DSP
-                 * used to; `v14` keeps the full value for a jump destination
-                 * to show in the parameter's units. (Two digits a step is the
-                 * older 7-bit form, read as such.) */
-                const hex = line.slice(sp + 1), v = [], v14 = [];
-                const wide = hex.length >= 64;
-                for (let s = 0; s < 16; s++) {
-                    if (wide) {
-                        const x = parseInt(hex.substr(s * 4, 4), 16);
-                        const ok = isFinite(x) && x !== 0xffff;
-                        v14.push(ok ? x : -1);
-                        v.push(ok ? Math.min(127, Math.floor((x * 127 + 8191) / 16383)) : -1);
-                    } else {
-                        const x = parseInt(hex.substr(s * 2, 2), 16);
-                        const ok = isFinite(x) && x !== 255;
-                        v.push(ok ? x : -1);
-                        v14.push(ok ? Math.round(x * 16383 / 127) : -1);
-                    }
-                }
-                v.v14 = v14;
-                map.set(line.slice(0, sp), v);
-            }
-            valsCache.key = key; valsCache.map = map;
-        } else if (valsCache.key !== key) {
-            valsCache.map = null;             /* a failed read of a NEW page shows no stale colours */
-        }
-    }
+    if (valsDue(valsCache, key)) valsRefresh(valsCache, key, t, c, base, cy.tps);
     const got = (valsCache.key === key && valsCache.map) ? (valsCache.map.get(target) || null) : null;
     const st0 = got ? null : automationStateFor(t, c, target);
     S.autoLaneVals = got || ((valsCache.key === key && valsCache.map && st0 && !st0.count) ? EMPTY_VALS : null);
+}
+
+/* ⭐ THE HELD STEP'S VALUES (Josh, 2026-10-20: "When holding a step with a
+ * real or interpolated automation value, if you're on a screen that shows
+ * that param, have the param temporarily change to show the value at that
+ * step"). One page read covers every lane of the clip, so a screen asks
+ * autoHeldValue(target) for each parameter it draws. The page is the HELD
+ * step's (a hold can page on to extend), on the grid the step was pressed
+ * on: a lane's own cycle on the AUTOMATION steps, else the clip's (a drum
+ * track's active lane). When the gradient's read is that same page, it is
+ * reused — a jump costs no second read. */
+let heldVals = { key: null, map: null, at: -1e9 };
+function heldGeom() {
+    if (S.heldStep < 0) return null;
+    const t = S.activeTrack, cy = S.autoCycle;
+    let c, tps;
+    if (S.heldStepAuto && cy && cy.t === t) { c = cy.c; tps = cy.tps; }
+    else { c = effectiveClip(t); tps = automationStepTicks(t, c); }
+    const base = (S.heldStep >> 4) * 16;
+    return { t, c, tps, base, key: t + ' ' + c + ' ' + base + ' ' + tps + ' ' + automationListGen() };
+}
+function heldValsTick() {
+    const g = heldGeom();
+    if (!g || valsCache.key === g.key) return;
+    if (valsDue(heldVals, g.key)) { valsRefresh(heldVals, g.key, g.t, g.c, g.base, g.tps); S.screenDirty = true; }
+}
+/* What `target` plays at the held step — { norm, wire } in 14 bits and the
+ * parameter's units — or null: no step held, no lane, or no value there. A
+ * lock just dialled on the step answers at once from the knob (only at Scale
+ * 100 %: the read is what PLAYS, scaled) until the next read catches up. */
+export function autoHeldValue(target) {
+    const g = heldGeom();
+    if (!g) return null;
+    const cache = valsCache.key === g.key ? valsCache : heldVals.key === g.key ? heldVals : null;
+    let norm = null;
+    const L = S.autoLockLast;
+    if (L && L.track === g.t && L.clip === g.c && L.target === target && L.step === S.heldStep &&
+            (!cache || L.at >= cache.at)) {
+        const stt = automationStateFor(g.t, g.c, target);
+        if (!stt || stt.scale === 100) norm = L.norm;
+    }
+    if (norm == null && cache && cache.map) {
+        const v = cache.map.get(target);
+        if (v && v.v14 && v.v14[S.heldStep - g.base] >= 0) norm = v.v14[S.heldStep - g.base];
+    }
+    return norm == null ? null : { norm, wire: automationWireValue(target, norm) };
 }
 
 /* The lane the DSP is told to report a position for (tN_pa_view) — sent only
@@ -622,19 +686,9 @@ export function autoLaneFocus() {
              : (lanePin && lanePin.t === t && S.autoCycle && S.autoCycle.target === lanePin.target) ? S.autoCycle : null;
     if (!cy) return null;
     const target = cy.target;
-    let step = -1, norm = null;
-    if (S.heldStepAuto && S.heldStep >= 0) {
-        step = S.heldStep;
-        const L = S.autoLockLast, stt = automationStateFor(t, cy.c, target);
-        if (L && L.track === t && L.clip === cy.c && L.target === target && L.step === step &&
-                L.at >= valsCache.at && (!stt || stt.scale === 100)) {
-            norm = L.norm;
-        } else {
-            const v = S.autoLaneVals, i = step - ((cy.off >> 4) + cy.page) * 16;
-            if (v && v.v14 && i >= 0 && i < 16 && v.v14[i] >= 0) norm = v.v14[i];
-        }
-    }
-    return { target, step, norm, wire: norm == null ? null : automationWireValue(target, norm) };
+    const step = (S.heldStepAuto && S.heldStep >= 0) ? S.heldStep : -1;
+    const hv = step >= 0 ? autoHeldValue(target) : null;
+    return { target, step, norm: hv ? hv.norm : null, wire: hv ? hv.wire : null };
 }
 
 let holdJump = null;
@@ -751,6 +805,10 @@ export function autoHoldJumpEnd() {
 }
 
 export function autoBankTick() {
+    autoBankTickLane();
+    heldValsTick();
+}
+function autoBankTickLane() {
     S.autoBankLit = null;
     S.autoCycle = null;
     S.autoLaneVals = null;

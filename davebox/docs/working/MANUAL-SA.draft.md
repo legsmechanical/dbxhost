@@ -1388,6 +1388,9 @@ Two ways:
 - **Lock a step.** Hold a step and turn a knob: that step takes a **lock**, a value
   the parameter jumps to when the step plays. See
   [Editing notes](#63-editing-notes).
+- **See a step's values.** While you hold a step, every automated parameter on
+  screen shows the value it plays at that step (a lock, a recorded point, or the
+  glide between them), and goes back to its own value when you let go.
 
 A value **holds until the next one**, round the loop too: the clip's last value
 carries through its first steps until the first lock or recorded move comes round.

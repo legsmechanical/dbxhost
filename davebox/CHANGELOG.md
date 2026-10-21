@@ -44,6 +44,10 @@ the section into a versioned heading at release time.
   shorten it, as with a note; the range lights up while you hold. On a Smooth
   lane the value glides on from the end of the range to the next lock instead
   of jumping back.
+- **Hold a step to see its automated values.** While a step is held, every
+  automated parameter on screen — bank cards, the editors, levels, MIDI mix and
+  macros — shows the value it plays at that step, then returns to its own value
+  when you let go.
 
 ## [1.0.0] — 2026-10-20
 The first full release. dAVEBOx SA is the successor to dAVEBOx, and replaces

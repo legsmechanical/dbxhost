@@ -66,7 +66,7 @@ import { setCustomLayout } from './ui_custom_chords.mjs';
 import { forceRedraw, effectiveClip } from './ui_leds.mjs';
 import { automationParamEdit, automationParamTouch, automationStateFor, automationToggleActive,
          automationClearKey, automationEntriesFor, automationFxMoved } from './ui_automation.mjs';
-import { autoBankRestoreMenu, autoLaneFocus } from './ui_automation_bank.mjs';
+import { autoBankRestoreMenu, autoLaneFocus, autoHeldValue } from './ui_automation_bank.mjs';
 import { setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
 import * as ModuleLists from '/data/UserData/schwung/shared/module_lists.mjs';
 import { MoveKnob1, Red, White } from '/data/UserData/schwung/shared/constants.mjs';
@@ -2062,8 +2062,9 @@ function midiMixCells() {
         if (!sp) { cells.push({ kind: 'blank', label: '' }); continue; }
         if (sp.target) {
             const fo = focus && focus.target === sp.target;
-            const fv = fo && focus.wire != null ? parseInt(focus.wire, 10) : NaN;
-            if (isFinite(fv)) cells.focusIdx = i;
+            const hv = t === GS.activeTrack ? autoHeldValue(sp.target) : null;
+            const fv = hv ? parseInt(hv.wire, 10) : NaN;
+            if (fo && isFinite(fv)) cells.focusIdx = i;
             const cell = midiCellFor(sp.target, isFinite(fv) ? fv : midiVal(t, sp.target), sp);
             if (fo) cell.lock = true;
             const st = automationStateFor(t, c, sp.target);
@@ -2218,12 +2219,13 @@ function levelCells() {
         const m = levelPageSpec(i);
         if (!m) { cells.push({ kind: 'blank', label: '' }); continue; }
         const tg = S.slot + ':' + levelFullKey(i);
-        /* The lane a jump came from: marked, and while a step is held it
-         * shows what the lane plays there (autoLaneFocus). */
+        /* The lane a jump came from is marked; while a step is held, every
+         * level with a lane shows what it plays there (autoHeldValue). */
         const fo = focus && focus.target === tg;
-        const fv = fo && focus.wire != null ? parseFloat(focus.wire) : NaN;
+        const hv = t === GS.activeTrack ? autoHeldValue(tg) : null;
+        const fv = hv ? parseFloat(hv.wire) : NaN;
         const v = isFinite(fv) ? fv : S.levelVals[i];
-        if (isFinite(fv)) cells.focusIdx = i;
+        if (fo && isFinite(fv)) cells.focusIdx = i;
         const st = automationStateFor(t, c, tg);
         const cell = { label: m.label, name: m.name, text: m.fmt(v) };
         if (fo) cell.lock = true;
@@ -6973,17 +6975,22 @@ function macroCells(track, live) {
             const li = macroLevelIdx(m);
             const spec = li >= 0 ? (live ? levelKnobSpec(li) : LEVEL_KNOB_SPECS[li]) : null;
             if (!spec) { cells.push(unassigned()); continue; }
-            const v = live ? S.levelVals[li] : null;
+            const hv = live ? autoHeldValue(macroAutoTarget(m, t, i)) : null;
+            const hf = hv ? parseFloat(hv.wire) : NaN;
+            const v = live ? (isFinite(hf) ? hf : S.levelVals[li]) : null;
             cell = { label: spec.label, name: spec.name, text: v == null ? '--' : spec.fmt(v) };
             if (spec.widget === 'arcbip') { cell.kind = 'arcbip'; cell.signed = v == null ? 0 : Math.max(-1, Math.min(1, (v - 0.5) * 2)); }
             else { cell.kind = spec.widget; cell.norm = v == null ? 0 : Math.max(0, Math.min(1, v / spec.max)); }
         } else if (m.kind === 'bank') {
             const meta = bankMacroMeta(m, t);
             if (!meta) { cells.push(unassigned()); continue; }
-            cell = bankMacroCell(m, meta, bankMacroValue(m, t));
+            const tg = live ? macroAutoTarget(m, t, i) : null;
+            const hv = tg ? autoHeldValue(tg) : null;
+            cell = bankMacroCell(m, meta, hv ? (Number(hv.wire) | 0) : bankMacroValue(m, t));
         } else if (m.kind === 'midi') {
             if (!midiTargetOnRoute(m.target, t)) { cells.push(unassigned()); continue; }
-            const fv = focus && focus.target === m.target && focus.wire != null ? parseInt(focus.wire, 10) : NaN;
+            const hv = live ? autoHeldValue(m.target) : null;
+            const fv = hv ? parseInt(hv.wire, 10) : NaN;
             cell = midiCellFor(m.target, isFinite(fv) ? fv : midiVal(t, m.target));
         } else {
             /* ⚠⚠ TWO CACHES, ONE DISPLAY. `macCells/macVals` are the PLAIN
@@ -12263,15 +12270,18 @@ function ppFocusSync() {
     /* A new editor starts with no decorations: forget what the last one had. */
     if (!ppOn) { ppFocusDec = null; return; }
     let dec = null;
-    const f = ppOn && S.track === GS.activeTrack ? autoLaneFocus() : null;
-    if (f) {
-        const i = f.target.indexOf(':');
-        const fk = f.target.slice(i + 1);
-        for (let k = 0; k < 8; k++) {
-            if (paramPagesFullKeyAt(k) !== fk) continue;
-            dec = { [k]: f.wire != null ? { highlight: true, value: f.wire } : { highlight: true } };
-            break;
-        }
+    const act = S.track === GS.activeTrack;
+    const f = act ? autoLaneFocus() : null;
+    const fk = f ? f.target.slice(f.target.indexOf(':') + 1) : null;
+    for (let k = 0; act && k < 8; k++) {
+        const key = paramPagesFullKeyAt(k);
+        if (!key) continue;
+        /* While a step is held, every parameter with a lane shows what it
+         * plays there; the lane a jump came from is highlighted. */
+        const hv = autoHeldValue(S.slot + ':' + key);
+        const d = key === fk ? { highlight: true } : {};
+        if (hv) d.value = hv.wire;
+        if (d.highlight || hv) (dec || (dec = {}))[k] = d;
     }
     const sig = dec ? JSON.stringify(dec) : null;
     if (sig === ppFocusDec) return;

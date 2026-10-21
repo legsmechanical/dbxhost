@@ -61,7 +61,7 @@ import {
     bankHasAltParams, altIndicatorActive, autoLanePlayStep
 } from './ui_leds.mjs';
 import { soundRender, renderTrackGatewayCard, renderConfigCardPeek, renderMacrosPeek } from './ui_sound.mjs';
-import { drawAutomationBankBody, autoBankMenuOpen, autoMenuUp, autoHoldJumpActive, autoHoldJumpStep, autoLaneFocus, autoMapEditorComp } from './ui_automation_bank.mjs';
+import { drawAutomationBankBody, autoBankMenuOpen, autoMenuUp, autoHoldJumpActive, autoHoldJumpStep, autoLaneFocus, autoHeldValue, autoMapEditorComp } from './ui_automation_bank.mjs';
 import { automationStateFor } from './ui_automation.mjs';
 import { seqAutoTargetForKnob, fmtInstr } from './ui_constants.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
@@ -149,15 +149,22 @@ export function trackInstrName(t) {
 }
 
 /* The automation circle on a bank card's cell, for a knob on the seq: list. */
+/* A bank knob's value while a step is held: what its lane plays at that step
+ * (autoHeldValue), else `val`. */
+function heldKnobVal(bank, k, alt, val) {
+    const tg = seqAutoTargetForKnob(S.activeTrack, bank, k, alt);
+    const hv = tg ? autoHeldValue(tg) : null;
+    return hv ? Number(hv.wire) : val;
+}
 /* A bank knob's cell with the LANE IN FOCUS applied (autoLaneFocus): the lock
- * mark when it is the lane's knob, and — while a step is held — the value the
- * lane plays there instead of the knob's. `hi` = highlight this cell. */
+ * mark when it is the lane's knob; while a step is held, every knob with a
+ * lane shows what it plays there instead of where the knob sits. `hi` =
+ * highlight this cell (the focus lane's, while held). */
 function kitFocusCell(knob, val, bank, k, focus) {
     const on = !!focus && seqAutoTargetForKnob(S.activeTrack, bank, k, false) === focus.target;
-    const held = on && focus.wire != null;
-    const cell = kitCellForKnob(knob, held ? Number(focus.wire) : val);
+    const cell = kitCellForKnob(knob, heldKnobVal(bank, k, false, val));
     if (on) cell.lock = true;
-    return { cell, hi: held };
+    return { cell, hi: on && focus.wire != null };
 }
 function markSeqAuto(cell, bank, k, altMode, focus) {
     const t = S.activeTrack;
@@ -2566,11 +2573,9 @@ function drawUIBody() {
                 continue;
             }
             if (_delayShiftClkF) {
-                let _cv = S.delayClockFb[S.activeTrack] | 0;
-                if (_focus && _focus.wire != null && seqAutoTargetForKnob(S.activeTrack, bank, k, true) === _focus.target) {
-                    _cv = parseInt(_focus.wire, 10) | 0;
+                const _cv = heldKnobVal(bank, k, true, S.delayClockFb[S.activeTrack] | 0) | 0;
+                if (_focus && _focus.wire != null && seqAutoTargetForKnob(S.activeTrack, bank, k, true) === _focus.target)
                     _focusIdx = cells.length;
-                }
                 const _cc = { kind: 'arcbip', label: 'ClkFb', name: 'Clock Feedback',
                               text: fmtSign(_cv), signed: Math.max(-1, Math.min(1, _cv / 127)) };
                 markSeqAuto(_cc, bank, k, true, _focus);
@@ -2583,11 +2588,11 @@ function drawUIBody() {
                                       fmtRevStyle(1), fmtRevStyle(0)));
                 continue;
             }
-            /* A held step on the lane in focus: its cell shows what the LANE
-             * plays at that step, not where the knob sits. */
+            /* A held step: the cell shows what its LANE plays at that step,
+             * not where the knob sits; the lane in focus is highlighted. */
             const _isFocus = _focus && _focus.wire != null &&
                              seqAutoTargetForKnob(S.activeTrack, bank, k, false) === _focus.target;
-            const cell = kitCellForKnob(knobs[k], _isFocus ? Number(_focus.wire) : vals[k]);
+            const cell = kitCellForKnob(knobs[k], heldKnobVal(bank, k, false, vals[k]));
             if (_isFocus) _focusIdx = cells.length;
             if (knobAltOn(k)) {
                 if      (knobs[k].dspKey === 'clock_shift')     { cell.label = 'Nudge'; cell.name = 'Nudge'; }
