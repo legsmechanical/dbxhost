@@ -118,6 +118,7 @@ step('setup: track 1 a MOVE track (out of the box), track 2 a Schwung track play
     for (let t = 0; t < 8; t++) S.trackChannel[t] = t + 1;
     S.activeTrack = 0; S.trackRoute[0] = 1; S.trackRoute[1] = 0;
     loaded['1:synth'] = 'nusaw';
+    loaded['0:synth'] = 'parked-gen';              /* left in track 1's slot from before it was Move */
     ticks(8);
 });
 
@@ -136,7 +137,7 @@ step('⭐ None on a MOVE track: the track becomes Schwung (one route write, its 
     if (rw.length !== 1 || !/=schwung$/.test(rw[0])) throw new Error('t0_route writes: ' + JSON.stringify(rw));
     const shared = writes.filter(([tag, k]) => tag === rw[0].split('=')[0] && /^t0_/.test(k) && k !== 't0_route');
     if (shared.length) throw new Error('the route write shares its callback with ' + JSON.stringify(shared));
-    if (loaded['0:synth']) throw new Error('a generator is loaded: ' + loaded['0:synth']);
+    if (loaded['0:synth']) throw new Error('the slot\'s parked generator came back: ' + loaded['0:synth']);
     assertSchwungMenu();
     if (B.instrValueFor(0) !== C.INSTR_SCHWUNG) throw new Error('instrValueFor=' + B.instrValueFor(0));
     R.refreshInstrAbbrev();
@@ -175,6 +176,7 @@ step('⭐ LEGACY: a project saved with a None track opens as a Schwung track wit
 });
 
 step('source pins: nothing sets the None route any more; the DSP still loads it', () => {
+    if (snd.routeForInstr(C.INSTR_NONE) !== 0) throw new Error('routeForInstr(None)=' + snd.routeForInstr(C.INSTR_NONE) + ', not Schwung');
     const snd_ = readFileSync('ui/ui_sound.mjs', 'utf8');
     if (/ROUTE_NONE/.test(snd_)) throw new Error('ui_sound.mjs still branches on the None route');
     const br = readFileSync('ui/ui_dsp_bridge.mjs', 'utf8');
