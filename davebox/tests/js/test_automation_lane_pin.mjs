@@ -595,7 +595,10 @@ step('the lane list\'s footer: CLK OPS, and SHFT JUMP on a lane that has a place
     globalThis.clear_screen(); render.drawUI();
     const h = () => JSON.stringify(movy.kitHintsForTest());
     assert(h() === JSON.stringify([['CLK', 'OPS'], ['SHFT', 'JUMP']]), 'on a lane row: ' + h());
-    S.autoBank.sel = bank.autoBankRows(T, 0).length;                 /* the Clear all row */
+    S.autoBank.sel = bank.autoBankRows(T, 0).length;                 /* + Add lane */
+    globalThis.clear_screen(); render.drawUI();
+    assert(h() === JSON.stringify([['CLK', 'ADD']]), 'on + Add lane: ' + h());
+    S.autoBank.sel = bank.autoBankRows(T, 0).length + 1;             /* the Clear all row */
     globalThis.clear_screen(); render.drawUI();
     assert(h() === JSON.stringify([['CLK', 'CLEAR']]), 'on Clear all (a click clears the clip, nothing to jump to): ' + h());
     S.autoBank.sel = idx;

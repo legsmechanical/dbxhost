@@ -365,7 +365,7 @@ step('⭐ Delete + jog click CLEARS THE LANE under the cursor — and nothing el
     assert(!sets.some(x => x === 't0_pa_clear=0' || /_at_clear/.test(x)), 'more than the lane was cleared: ' + JSON.stringify(sets));
     assert(sets.some(x => x.startsWith('t0_c0_undo_checkpoint=')), 'a checkpoint');
     assert(!menu().ops, 'no ops opened by the Delete + click');
-    menu().sel = ab.autoBankRows(T, C).length; sets.length = 0;          /* the Clear all row */
+    menu().sel = ab.autoBankRows(T, C).length + 1; sets.length = 0;      /* the Clear all row (after + Add lane) */
     cc(119, 127); click(); cc(119, 0); ticks(4);
     assert(!sets.some(x => /_pa_clear|_at_clear/.test(x)), 'Delete + click on Clear all cleared: ' + JSON.stringify(sets));
     /* The plain click on Clear all still clears everything (and leaves the
@@ -375,7 +375,9 @@ step('⭐ Delete + jog click CLEARS THE LANE under the cursor — and nothing el
     assert(ab.autoBankRows(T, C).length === 0, 'empty list: ' + JSON.stringify(ab.autoBankRows(T, C).map(r => r.label)));
 });
 step('while the menu is open the jog is the menu\'s; after Back a turn still walks no bank (the walk retired 2026-10-04)', () => {
-    click(); ticks(1); assert(menu().menu, 'menu open');
+    /* Clear all left the list up (now only + Add lane, which a click would open). */
+    if (!menu().menu) click();
+    ticks(1); assert(menu().menu, 'menu open');
     cc(14, 127); ticks(1);                               /* jog left: the cursor, not the walk */
     assert(S.activeBank === BANK_AUTOMATION, 'the bank did not move under the open menu: ' + S.activeBank);
     back(); ticks(1); assert(!menu().menu, 'menu closed');
@@ -467,11 +469,16 @@ step('⭐⭐ NOTHING automated: a jog click, and a jog HOLD, leave the list up (
     openByMap();
     assert(ab.autoBankRows(T, C).length === 0, 'rig: the clip still lists automation');
     S.actionPopupLines = []; S.actionPopupEndTick = -1; sets.length = 0;
+    assert(menu().sel === 0, 'rig: the cursor is not on the empty list\'s one row, + Add lane');
     click();
-    /* ...and the click is not "Clear all" either: nothing is cleared, nothing announced. */
+    /* ...the click is + Add lane's (the picker), not "Clear all": nothing is
+     * cleared, nothing announced, and Back from the picker is the list again. */
     assert(!(S.actionPopupLines && S.actionPopupLines.length), 'a click on the empty list announced ' + JSON.stringify(S.actionPopupLines));
     ticks(2);
-    assert(!sets.some(x => /pa_clear|at_clear|undo_checkpoint/.test(x)), 'a click on the empty list wrote ' + JSON.stringify(sets));
+    assert(snd.soundOpen(), 'the click on + Add lane did not open the picker');
+    back(); ticks(2);
+    assert(!snd.soundOpen(), 'Back from the picker did not close it');
+    assert(!sets.some(x => /pa_clear|at_clear|undo_checkpoint|pa_add/.test(x)), 'a click on the empty list wrote ' + JSON.stringify(sets));
     assert(menu().menu === true, 'a jog CLICK closed the list — the bare card is back');
     cc(3, 127); ticks(70); cc(3, 0); ticks(2);           /* held well past a click */
     assert(menu().menu === true, 'a jog HOLD closed the list — the bare card is back');
@@ -484,7 +491,7 @@ step('⭐ Clear all from the list\'s last row leaves you ON the screen, list up,
     assert(n >= 1, 'rig: nothing listed');
     for (let i = 0; i < n + 2; i++) cc(14, 1);            /* to the last row: Clear all */
     ticks(1);
-    assert(menu().sel >= n, 'rig: the cursor is not on Clear all (sel ' + menu().sel + ' of ' + n + ')');
+    assert(menu().sel === n + 1, 'rig: the cursor is not on Clear all (sel ' + menu().sel + ' of ' + n + ')');
     sets.length = 0;
     click(); ticks(2);
     LIST = ''; auto.automationRefreshPresence(); ticks(2);

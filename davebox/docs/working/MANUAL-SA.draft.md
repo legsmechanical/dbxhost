@@ -1442,7 +1442,7 @@ everything.
   (steps, when it isn't whole bars; **13 ST/32** when its steps aren't sixteenths),
   or **CLIP** when it follows the clip. A muted row reads **OFF**, a cleared one
   **EMPTY** and its length, and the pads' aftertouch **PADS**.
-- With nothing automated the screen reads *NO AUTOMATION*.
+- With nothing automated the list has only **+ Add lane**.
 
 With the cursor on a row, the step buttons, pages and screen show **that row's
 lane**, not the clip's notes (click the row for its operations, below):
@@ -1510,6 +1510,13 @@ lane**, not the clip's notes (click the row for its operations, below):
 - **Delete** — the lane goes altogether.
 
 The pads' aftertouch row (**PADS**) has only **Delete**.
+
+**+ Add lane** (after the lanes) adds an empty lane, so you can set its Wrap,
+Loop, Rate and Scale before writing anything into it. Click it and choose the
+parameter as you would for a macro — a module, a bank, Levels or MIDI, then the
+parameter (see [The MACROS bank](#146-the-macros-bank)). You come back to the list with the new lane's
+operations open; **Back** from the picker returns without adding one. Choosing a
+parameter that already has a lane in this clip opens that lane.
 
 With the cursor on a lane, **Delete + click** clears just that lane (its points go; the
 row stays). The last row is **Clear all**: click it to clear everything. Every

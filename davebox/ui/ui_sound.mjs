@@ -65,8 +65,8 @@ import { setChordLayout } from './ui_chord_pads.mjs';
 import { setCustomLayout } from './ui_custom_chords.mjs';
 import { forceRedraw, effectiveClip } from './ui_leds.mjs';
 import { automationParamEdit, automationParamTouch, automationStateFor, automationToggleActive,
-         automationClearKey, automationEntriesFor, automationFxMoved } from './ui_automation.mjs';
-import { autoBankRestoreMenu, autoLaneFocus, autoHeldValue } from './ui_automation_bank.mjs';
+         automationClearKey, automationEntriesFor, automationFxMoved, automationAddLane } from './ui_automation.mjs';
+import { autoBankRestoreMenu, autoBankOpenLane, autoLaneFocus, autoHeldValue } from './ui_automation_bank.mjs';
 import { setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
 import * as ModuleLists from '/data/UserData/schwung/shared/module_lists.mjs';
 import { MoveKnob1, Red, White } from '/data/UserData/schwung/shared/constants.mjs';
@@ -942,6 +942,10 @@ const S = {
     mfxDoor: null,              /* a Move track's MIDI FX open: the bus to return to (mfxDoorEnter) */
     knobLegRow: 0,
     knobLegIdx: -1,
+    /* { track, clip } while the MACROS picker is choosing the target of a NEW
+     * AUTOMATION LANE (the AUTOMATION list's "+ Add lane") rather than a knob's;
+     * null otherwise. Set by soundAutoAddLane, spent by its commit or any exit. */
+    knobPickFor: null,
     knobLegEditing: false,
     /* A mapped knob's `v` lives in the STORE, so a sweep dirties the sidecar
      * the way a MIDI knob's value does. ⚠ Its own flag: `midiValsDirty` means
@@ -1211,6 +1215,9 @@ export function soundFileBrowserForTest() {
  * the real path rather than a copy of it. */
 export function soundKnobTargetsForTest() { return knobTargetList(); }
 export function soundKnobParamsForTest() { return S.knobParams; }
+/* The picker's rows as OPENED (filtered for a lane pick), and the lane intent. */
+export function soundKnobPickRowsForTest() { return (S.knobTargets || []).map(t => t.id); }
+export function soundKnobPickForForTest() { return S.knobPickFor; }
 export function soundLevelCellsForTest() { return midiTrack() ? midiMixCells() : levelCells(); }
 export function soundLevelValSetForTest(i, v) { S.levelVals[i] = v; }
 export function soundMacroMergeForTest() { macroMergeAfterPatch(); }
@@ -1851,6 +1858,7 @@ export function soundExit() {
      * is how a return point goes stale and lands you somewhere you never were —
      * see the note on genReturn in ui_state. */
     GS.genReturn = null;
+    S.knobPickFor = null;
     /* Give the edit CCs back to Move FIRST. Everything below can throw or take a
      * slow path, and a stranded claim silently steals the user's native Undo. */
     reconcileEditCcClaim(true);
@@ -4350,6 +4358,10 @@ function qualifyDuplicates(rows) {
 
 function openKnobTargets() {
     S.knobTargets = knobTargetList();
+    /* Choosing a LANE: no (None) to clear, no SnapMorph (its lane is a knob's
+     * position, not a parameter), and only banks with something automatable. */
+    if (S.knobPickFor) S.knobTargets = S.knobTargets.filter(t => t.id && t.id !== MORPH_TARGET &&
+        (t.id.indexOf('bank:') !== 0 || knobParamList(t.id).length));
     /* Seed the cursor on the current assignment's target. ⚠ On the LEG list
      * that is the leg BEING RE-POINTED, not leg 0 — seeding from S.knobAsn
      * (which is always leg 0) opened leg 3's picker on leg 1's component, and
@@ -4409,6 +4421,10 @@ function knobParamList(target) {
         const bank = parseInt(target.slice(5), 10);
         for (const e of BANK_MACRO_ALLOW) {
             if (e.bank !== bank) continue;
+            if (S.knobPickFor) {
+                const sat = SEQ_AUTO_TARGETS[seqAutoKeyFor(e.bank, e.k, e.alt)];
+                if (!sat || !sat.automatable) continue;          /* a lane could not play it */
+            }
             const meta = bankMacroMeta({ kind: 'bank', bank: e.bank, k: e.k, alt: e.alt });
             if (meta) params.push({ key: 'k' + e.k + (e.alt ? ':' + e.alt : ''), label: meta.full });
         }
@@ -4456,7 +4472,7 @@ function knobParamList(target) {
 function openKnobParams(target) {
     S.knobTarget = target;
     S.knobParams = knobParamList(target);
-    const cur = S.knobAsn[S.knobIdx];
+    const cur = S.knobPickFor ? null : S.knobAsn[S.knobIdx];
     const at = (cur && cur.target === target)
         ? S.knobParams.findIndex(p => p.key === cur.param) : -1;
     S.knobParamIdx = at >= 0 ? at : 0;
@@ -4637,6 +4653,40 @@ function commitKnobAssignment(target, param) {
     } else S.view = VIEW_MACROS;
 }
 
+/* ⭐ "+ Add lane" on the AUTOMATION list (Josh, 2026-10-21: "we should also
+ * allow empty lanes to be created from the automation lane list … that way a
+ * user could choose which mode they start in before inputting automation" —
+ * through the MACROS picker, "it's how you choose macros and lfo destination
+ * already"). The picker opens on the track's sound with the lane intent
+ * (S.knobPickFor); picking a parameter adds an EMPTY lane for it and lands back
+ * on the list with that lane's settings open. Back from the picker's top lands
+ * back on the list, cursor where it was (`sel`). */
+export function soundAutoAddLane(track, clip, sel) {
+    GS.genReturn = { track, wasActive: false, view: -1, bank: GS.activeBank | 0, latched: true, autoSel: sel };
+    if (GS.trackRoute[track] === 1) soundEnterMove(track); else soundEnter(track, slotIndex(track));
+    if (!S.active) { GS.genReturn = null; return false; }
+    S.knobPickFor = { track, clip };
+    S.pendingAction = { t: 'knobtarget' };        /* probes components — tick only */
+    S.dirty = true;
+    return true;
+}
+/* The lane's target string is the one a macro on that parameter records to
+ * (macroAutoTarget), so a lane added here and a knob turned later are one lane. */
+function commitAutoLane(target, param) {
+    const pf = S.knobPickFor;
+    if (!pf) return;
+    let m = null;
+    if (target === LEVEL_TARGET && param) m = { kind: 'level', key: param };
+    else if ((target === 'midicc' || target === 'midi') && midiTargetIsMidi(param)) m = { kind: 'midi', target: param };
+    else if (target && target.indexOf('bank:') === 0) m = bankMacroFromAsn(target, param);
+    else if (target && param) m = { kind: 'chain', comp: target, key: param };
+    const tgt = m ? macroAutoTarget(m, pf.track) : null;
+    if (!tgt) return;
+    automationAddLane(pf.track, pf.clip, tgt);    /* false: already a lane — open that one */
+    S.knobPickFor = null;
+    if (soundGestureReturn()) autoBankOpenLane(tgt);
+}
+
 /* ── where a screen SITS in the tree ───────────────────────────────────────
  *
  * The Back handler already knew every one of these edges — as twenty branches
@@ -4702,7 +4752,7 @@ const VIEW_TREE = {
     [VIEW_NOEDITOR]:    { parent: VIEW_BLOCKS,     float: false,
                           crumb: () => 'NO EDITOR' },
     [VIEW_KNOB_TARGET]: { parent: VIEW_MACROS,     float: true, backPure: true,
-                          crumb: () => 'K' + (S.knobIdx + 1) },
+                          crumb: () => S.knobPickFor ? 'Add lane' : 'K' + (S.knobIdx + 1) },
     [VIEW_KNOB_PARAM]:  { parent: VIEW_KNOB_TARGET, float: true, backPure: true,
                           /* ⚠ Falls back: the target is empty until one is
                            * chosen, and now that the current screen IS the last
@@ -10128,7 +10178,8 @@ export function soundOnCC(d1, d2, decodeDelta) {
         }
         else if (S.view === VIEW_KNOB_PARAM) {
             const p = S.knobParams[S.knobParamIdx];
-            if (p) commitKnobAssignment(S.knobTarget, p.key);
+            if (p && S.knobPickFor) commitAutoLane(S.knobTarget, p.key);
+            else if (p) commitKnobAssignment(S.knobTarget, p.key);
         }
         else if (S.view === VIEW_LFO) {
             const item = lfoItems()[S.lfoIdx];
@@ -10717,6 +10768,11 @@ export function soundOnCC(d1, d2, decodeDelta) {
         } else if (S.view === VIEW_SLOTCFG) {
             if (S.slotCfgEditing) S.slotCfgEditing = false;   /* leave edit first */
             else closeSlotCfg();
+        } else if (S.view === VIEW_KNOB_TARGET && S.knobPickFor) {
+            /* Choosing a new lane's target: Back from the top of the picker
+             * returns to the AUTOMATION list it was opened from, adding nothing. */
+            S.knobPickFor = null;
+            if (!soundGestureReturn()) S.view = VIEW_MACROS;
         } else if (S.view === VIEW_KNOB_PARAM && S.knobTarget === MORPH_TARGET) {
             /* The SnapMorph list commits on every pick and stays open; Back
              * is how you leave it, and it lands where a commit lands. */

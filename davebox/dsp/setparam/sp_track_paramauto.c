@@ -355,6 +355,28 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         return 1;
     }
 
+    /* pa_add: "<clip> <target>" — the AUTOMATION list's "+ Add lane": an
+     * EMPTY lane (PA_FLAG_KEEP), listed and saved before anything is written
+     * into it, so its settings can be chosen first. A lane already there is
+     * left as it is; a target another track owns is refused (the conflict is
+     * flagged, as any write's is). A drum lane takes the active pad's cycle. */
+    if (!strcmp(sub, "pa_add")) {
+        int clip = 0;
+        PA_SKIP_SPACE(p); PA_UINT(p, clip);
+        PA_TARGET(p, tgt);
+        if (clip < 0 || clip >= NUM_CLIPS || !tgt[0]) return 1;
+        int id = pa_target_id(inst, tgt);
+        if (id < 0) { inst->pa_store_full = PA_FULL_TARGETS; return 1; }
+        if (!pa_may_write(inst, tidx, id)) return 1;
+        pa_entry_t *e = pa_get(inst, tidx, clip, id);
+        if (!e) { inst->pa_store_full = PA_FULL_ENTRIES; return 1; }
+        if (pa_entry_live(e)) return 1;
+        pa_cycle_adopt_active(tr, clip, e);
+        e->flags |= PA_FLAG_KEEP | PA_FLAG_ACTIVE;   /* a deleted lane re-added plays */
+        pa_mark_dirty(inst);
+        return 1;
+    }
+
     /* pa_clear_step: "<clip> <from> <to>" — Delete + step. Clears EVERY
      * parameter's points in that step (the points it OWNS, pa_clear_owned:
      * never a neighbour's half of a jump pair), which is the one-gesture

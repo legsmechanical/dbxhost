@@ -81,6 +81,9 @@ the section into a versioned heading at release time.
   to the lane list.
 
 ### Added
+- **+ Add lane on the AUTOMATION screen:** add an empty lane for any parameter —
+  chosen as you would choose a macro's — and set its Wrap, Loop, Rate and Scale
+  before writing anything into it.
 - **Stretch an automation value across steps.** On the AUTOMATION screen, hold a
   step of a lane and press a later step: the held step's value now carries up to
   and including that step, like stretching a note. It reaches into later bars

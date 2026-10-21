@@ -1524,6 +1524,25 @@ export function automationClearPoints(track, clip, target) {
     return true;
 }
 
+/* The AUTOMATION list's "+ Add lane": an EMPTY lane for `target` (pa_add,
+ * PA_FLAG_KEEP), listed at once so its settings can be chosen before anything
+ * is written into it. False when the clip already has that lane. A target
+ * another track owns is refused by the DSP: the re-read drops the row and the
+ * poll's warning names the owner. One undo. */
+export function automationAddLane(track, clip, target) {
+    if (!target || automationStateFor(track, clip, target)) return false;
+    bookUndoCheckpoint(track, clip);
+    queueSet('t' + track + '_pa_add', clip + ' ' + target);
+    const k = stateKey(track, clip, target);
+    const s = stateByKey.get(k);
+    if (s) { s.count = 0; s.flags |= FLAG_KEEP | FLAG_ACTIVE; }
+    else stateByKey.set(k, { flags: FLAG_ACTIVE | FLAG_WRAP_RESET | FLAG_KEEP, count: 0, loop: 0, res: 0, scale: 100, lo: 0, st: 0 });
+    anyAutomation = true;
+    listGen++;
+    expectStaged();
+    return true;
+}
+
 /* Delete + step: every parameter's points in that step. */
 /* `queue`: the caller's ordered queue to go BEHIND (S.pendingDefaultSetParams).
  * ⚠ The melodic step clear rides that one-per-tick queue and is what takes the

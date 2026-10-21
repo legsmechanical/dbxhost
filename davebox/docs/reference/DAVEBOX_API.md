@@ -162,6 +162,7 @@ a pair on the tick after it.
 | `tN_pa_rest` | `"<clip> <target> <val>"` | seeds the parameter's resting value (the knob before a gesture first automated it); ignored once one exists |
 | `tN_pa_rest_move` | `"<clip> <target> <val>"` | the knob turned by hand: moves the resting value, unless the track's playing clip automates the parameter. `tN_pa_live` does the same while playing and not recording |
 | `tN_pa_clear_key` | `"<clip> <target>"` | Delete + knob: all of one parameter's automation in the clip |
+| `tN_pa_add` | `"<clip> <target>"` | The AUTOMATION list's + Add lane: an EMPTY lane (`PA_FLAG_KEEP`, on), listed and saved before anything is written. A lane already there is left as it is; a target another track owns is refused (`pa_owner_conflict`); a drum lane takes the active pad's cycle |
 | `tN_pa_clear_step` | `"<clip> <from> <to>"` | Delete + step: every parameter's points that step owns; a lone edge left on the envelope's line is swept away |
 | `tN_pa_clear` | `"<clip>"` | the whole clip's automation |
 | `tN_pa_active` | `"<clip> <target> <0\|1>"` | Mute + knob: deactivate **without** deleting |

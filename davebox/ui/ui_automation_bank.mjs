@@ -7,6 +7,8 @@
  *
  *   card (latched)  → jog click → the MENU: the same list with a cursor, plus a
  *                                  CLEAR CLIP row at the end
+ *   + Add lane      → jog click → the MACROS picker: the parameter chosen gets
+ *                                  an EMPTY lane, opened in its operations
  *   menu row        → jog click → the row's OPERATIONS, floating over the list:
  *                                  Delete · Mute/Unmute · Smooth/Stepped (floats)
  *                                  · Loop (clip, or N steps — click to edit,
@@ -29,7 +31,7 @@
 
 import { S, noteUndoUnit, armBankDisplay } from './ui_state.mjs';
 import { BANK_AUTOMATION, BANK_SOUND, BANK_MACROS, PAD_MODE_DRUM, midiTargetIsMidi, SEQ_AUTO_TARGETS } from './ui_constants.mjs';
-import { soundOpen, soundExit, soundJumpToParam, soundEditorComp } from './ui_sound.mjs';
+import { soundOpen, soundExit, soundJumpToParam, soundEditorComp, soundAutoAddLane } from './ui_sound.mjs';
 import { readBankParams } from './ui_dsp_bridge.mjs';
 import { effectiveClip } from './ui_leds.mjs';
 import { automationEntriesFor, automationTargetLabel, automationClearKey, automationClearPoints,
@@ -100,6 +102,20 @@ export function autoBankRows(track, clip) {
     if (S.clipAtHas[track] && S.clipAtHas[track][clip]) rows.push({ kind: 'at', label: 'Aftertouch (pads)' });
     return rows;
 }
+/* Land on `target`'s row with its operations open — where "+ Add lane" ends,
+ * so the new lane's settings are chosen before anything is written into it. */
+export function autoBankOpenLane(target) {
+    const t = S.activeTrack, c = effectiveClip(t);
+    const a = st();
+    const rows = autoBankRows(t, c);
+    const i = rows.findIndex(r => r.kind === 'entry' && r.target === target);
+    a.menu = true;
+    a.loopEdit = false; a.rateEdit = false; a.scaleEdit = false;
+    if (i < 0) { a.ops = null; return; }
+    a.sel = i;
+    a.ops = { rows: opsFor(t, c, rows[i]), sel: 0, row: rows[i] };
+}
+
 /* The value column is the lane's CYCLE (Josh, 2026-09-24): "4 BAR", "13 ST",
  * "13 ST/32", or "CLIP" when it follows the clip — with lanes at different
  * lengths, how long each one loops is the thing that is hard to remember.
@@ -173,7 +189,10 @@ export function drawAutomationBankBody() {
     const a = st();
     const rows = autoBankRows(t, c);
     const listRows = rows.map(r => ({ label: r.label, value: rowValue(r, t, c) }));
-    if (a.menu) listRows.push({ label: 'Clear all', hdr: true });
+    if (a.menu) {
+        listRows.push({ label: '+ Add lane' });
+        if (rows.length) listRows.push({ label: 'Clear all', hdr: true });
+    }
     if (a.sel >= listRows.length) a.sel = Math.max(0, listRows.length - 1);
     kitUseLayout('bank');
     /* ⚠ h: the list's box ENDS AT THE FOOTER. Left to the screen's height it
@@ -222,8 +241,9 @@ export function drawAutomationBankBody() {
          * where the lane's parameter is edited — hinted only on a lane row
          * that has such a place on this track. */
         const jt = autoBankJumpTarget();
-        const onClearAll = a.sel >= autoBankRows(S.activeTrack, effectiveClip(S.activeTrack)).length;
-        hints = onClearAll ? [['CLK', 'CLEAR']]
+        const nLanes = autoBankRows(S.activeTrack, effectiveClip(S.activeTrack)).length;
+        hints = a.sel === nLanes ? [['CLK', 'ADD']]
+              : a.sel > nLanes ? [['CLK', 'CLEAR']]
               : (jt && laneHome(jt.target, S.activeTrack)) ? [['CLK', 'OPS'], ['SHFT', 'JUMP']] : [['CLK', 'OPS']];
     } else {
         hints = [['CLK', 'MENU'], [S.heldStep >= 0 ? 'JOG' : 'JOG', S.heldStep >= 0 ? 'STEP' : 'BANK'], ['BACK', 'OUT']];
@@ -239,13 +259,10 @@ export function autoBankClick() {
     const rows = autoBankRows(t, c);
     if (a.ops) { runOp(t, c, a); return; }
     if (!a.menu) { a.menu = true; a.sel = 0; return; }
-    /* NOTHING AUTOMATED: the list is one line, "NO AUTOMATION", and there is no
-     * row to click. This used to fall into the Clear-all branch below (sel 0 is
-     * "past the end" of an empty list), which said NONE and CLOSED the list —
-     * leaving the bare card of the days this was a bank, one more click away
-     * from the screen you were already on. */
-    if (!rows.length) return;
-    if (a.sel >= rows.length) { autoBankClearClip(); return; }      /* the Clear all row */
+    if (a.sel === rows.length) { soundAutoAddLane(t, c, a.sel); return; }   /* + Add lane */
+    /* Clear all is listed only when there is a lane to clear: with none, a
+     * click past the end does nothing (it used to say NONE and close the list). */
+    if (a.sel > rows.length) { if (rows.length) autoBankClearClip(); return; }
     const r = rows[a.sel];
     a.ops = { rows: opsFor(t, c, r), sel: 0, row: r };
     a.loopEdit = false; a.rateEdit = false; a.scaleEdit = false;
@@ -396,7 +413,9 @@ export function autoBankJog(delta) {
         }
         return true;
     }
-    const n = autoBankRows(t, c).length + 1;                 /* + Clear all */
+    /* After the lanes: + Add lane, then Clear all when there is a lane. */
+    const nr = autoBankRows(t, c).length;
+    const n = nr + (nr ? 2 : 1);
     a.sel = Math.max(0, Math.min(n - 1, a.sel + delta));
     return true;
 }
