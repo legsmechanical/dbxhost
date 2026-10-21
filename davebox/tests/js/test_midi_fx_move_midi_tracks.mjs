@@ -9,7 +9,7 @@
  * wrong is in the UI, so this drives the REAL gesture — the row on the menu,
  * a click, the picker, a pick, Back — and asserts what reached the engine:
  *
- *   - the row is there on Move and MIDI tracks (and not on None/Conductor);
+ *   - the row is there on Move and MIDI tracks (and not on a Conductor);
  *   - on a MOVE track the screen is the Move BUS (slot 0, keys by prefix,
  *     modules by PATH), and the MIDI FX block is the CHAIN slot's: the pick
  *     must load by ID into the track's slot, never slot 0 or a path;
@@ -215,9 +215,8 @@ step('⭐ a Schwung track\'s pick switches it on too, the slot\'s half first —
     assert(order.indexOf('dsp:t' + T + '_fxpre=0') >= 0, 'Pre was not written off: ' + JSON.stringify(order));
 });
 
-step('CONTROL: no MIDI FX row with no instrument, or on a Conductor', () => {
-    reset(); enterMenu(3);
-    assert(rowAt('midi_fx1') < 0, 'a track with no instrument offers MIDI FX');
+step('CONTROL: no MIDI FX row on a Conductor', () => {
+    reset(); enterMenu(0);
     snd.soundExit(); ticks(2);
     GS.trackRoute[T] = 1; GS.trackPadMode[T] = 2;      /* Conductor, Move parked behind it */
     snd.soundEnterMove(T); ticks(4);
@@ -226,7 +225,7 @@ step('CONTROL: no MIDI FX row with no instrument, or on a Conductor', () => {
     GS.trackPadMode[T] = 0;
 });
 
-step('⭐ a route change carries the effect: on at Schwung, on at Move, OFF at None', () => {
+step('⭐ a route change carries the effect: on at Schwung, on at Move', () => {
     /* The engine's half is DEFERRED to the next tick here: the route write must
      * stand alone in its callback (test_instr_pick_sets_route). */
     const fxq = () => GS.pendingDefaultSetParams.filter((p) => p.key === 't' + T + '_fxpost').map((p) => p.val);
@@ -239,11 +238,9 @@ step('⭐ a route change carries the effect: on at Schwung, on at Move, OFF at N
     assert(!('t' + T + '_fxpost' in dsp), 'the engine switch shared the route write\'s callback');
     bridge.applyTrackConfig(T, 'route', 0);
     assert(ENG[T + '|midi_fx_host_route'] === '1' && fxq().join() === '1,1', 'to Schwung: ' + JSON.stringify(fxq()));
-    bridge.applyTrackConfig(T, 'route', 3);      /* ROUTE_NONE */
-    assert(ENG[T + '|midi_fx_host_route'] === '0' && fxq().join() === '1,1,0', 'to None: ' + JSON.stringify(fxq()));
     delete ENG[T + '|midi_fx1:module'];
     bridge.applyTrackConfig(T, 'route', 2);
-    assert(ENG[T + '|midi_fx_host_route'] === '0' && fxq().join() === '1,1,0,0', 'with NO effect, a MIDI track was switched on');
+    assert(ENG[T + '|midi_fx_host_route'] === '0' && fxq().join() === '1,1,0', 'with NO effect, a MIDI track was switched on');
     GS.pendingDefaultSetParams.length = 0;
 });
 

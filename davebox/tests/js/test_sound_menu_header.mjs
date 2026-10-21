@@ -21,9 +21,11 @@ globalThis.host_ensure_dir = () => true;
 globalThis.host_remove_dir = () => true;
 globalThis.host_module_set_param = () => {};
 globalThis.host_module_get_param = () => '';
+/* Every slot plays NuSaw until something unloads it (None does). */
+const unloaded = {};
 globalThis.shadow_get_param = (slot, k) =>
-    (typeof k === 'string' && k.indexOf('synth:module') >= 0) ? 'nusaw' : '';
-globalThis.shadow_set_param = () => {};
+    (typeof k === 'string' && k.indexOf('synth:module') >= 0 && !unloaded[slot]) ? 'nusaw' : '';
+globalThis.shadow_set_param = (slot, k, v) => { if (k === 'synth:module') unloaded[slot] = !v; };
 globalThis.shadow_save_state_now = () => true;
 globalThis.host_vol_block = () => {};
 globalThis.host_edit_cc_block = () => {};
@@ -87,7 +89,7 @@ step('the sound MENU on a Schwung track is TRACK CONFIG with no glyph, and T3[<a
 });
 step('TRACK CONFIG fits whole beside the widest right label (no glyph, x = 2)', () => {
     /* drawKitBankHeader's budget with no glyph: SCREEN_W - 2 - 2 - (right + 4). */
-    for (const right of ['T8[NONE]', 'T16[CH16]', 'T8[MV16]']) {
+    for (const right of ['T16[CH16]', 'T8[MV16]']) {
         const budget = 128 - 2 - 2 - (fontWidth4x5(right) + 4);
         if (fit4x5('TRACK CONFIG', budget) !== 'TRACK CONFIG')
             throw new Error('cut beside ' + right + ': ' + fit4x5('TRACK CONFIG', budget) + ' (budget ' + budget + ')');
@@ -100,14 +102,14 @@ step('...and the CONFIG screen stacked over it keeps that header', () => {
     if (!h || h.right !== R.bankHeaderRight(false)) throw new Error('config header ' + JSON.stringify(h));
     sound.soundExit(); ticks(2);
 });
-step('a NONE track reads T4[NONE]', () => {
+step('None (a Schwung track with nothing loaded) reads T4[--]', () => {
     B.applyInstrChoice(3, C.INSTR_NONE);
     S.activeTrack = 3; S.instrAbbrevAt = 0; ticks(2);
     sound.soundEnter(3, 3); sound.soundShowMenu(); ticks(2);
     R.refreshInstrAbbrev();
     draw();
     const h = sound.soundMenuHeaderForTest();
-    if (!h || h.right !== 'T4[NONE]') throw new Error('header ' + JSON.stringify(h));
+    if (!h || h.right !== 'T4[--]') throw new Error('header ' + JSON.stringify(h));
     sound.soundExit(); ticks(2);
 });
 step('a GLOBAL bus (Send FX A) is not a track: its own title, no track label', () => {

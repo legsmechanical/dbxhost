@@ -56,8 +56,8 @@ import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
 import { instrOptions, instrPickerRows, moveInstrOwner, fmtInstr, INSTR_SCHWUNG, INSTR_NONE, INSTR_MIDI_CH, INSTR_CONDUCT, INSTR_ROW_LABEL, NUM_CLIPS, fmtVelOverride, BANK_SOUND, BANK_MACROS, BANK_AUTOMATION, BANK_CONFIG, isSoundBank, BANKS, fmtPlayDir, fmtSign,
          BANK_MACRO_ALLOW, BANK_SHORT, seqAutoKeyFor, SEQ_AUTO_TARGETS,
          midiTargetIsMidi, midiTargetCC, midiTargetName, midiTargetShort, midiTargetMax, midiTargetDefault, midiTargetTo14, PB_CENTRE,
-         PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD, ROUTE_NONE, TRACK_PAD_BASE } from './ui_constants.mjs';
-import { applyTrackConfig, applyBankParam, readBankParams, syncTrackMidiFx } from './ui_dsp_bridge.mjs';
+         PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD, TRACK_PAD_BASE } from './ui_constants.mjs';
+import { applyTrackConfig, applyBankParam, readBankParams, syncTrackMidiFx, midiFxResyncAfterPatch } from './ui_dsp_bridge.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { moduleParallelDefault, setModuleParallelDefault, reconcileParallelSlot } from './ui_parallel.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -946,6 +946,13 @@ const S = {
      * AUTOMATION LANE (the AUTOMATION list's "+ Add lane") rather than a knob's;
      * null otherwise. Set by soundAutoAddLane, spent by its commit or any exit. */
     knobPickFor: null,
+    /* True while a module pick began on a TRACK CONFIG row (the Instrument row,
+     * a block row): the pick lands back on the menu instead of entering the
+     * module's editor (Josh, 2026-10-21). A pick from anywhere else — the bank
+     * map's module pads, Shift + hold Note, the editor's own Module page —
+     * still enters the editor. Set where each pick starts (the action
+     * dispatcher, the Instrument row), read by applyModulePick. */
+    pickFromMenu: false,
     knobLegEditing: false,
     /* A mapped knob's `v` lives in the STORE, so a sweep dirties the sidecar
      * the way a MIDI knob's value does. ⚠ Its own flag: `midiValsDirty` means
@@ -1682,7 +1689,7 @@ export function soundFollowTrack(track) {
 /* The words of the no-editor screen, from the track's route. */
 export function noEditorWords(track) {
     const r = GS.trackRoute[track];
-    return r === 1 ? 'Move track' : r === 2 ? 'MIDI track' : r === ROUTE_NONE ? 'no instrument' : 'this track';
+    return r === 1 ? 'Move track' : r === 2 ? 'MIDI track' : 'this track';
 }
 
 /* Read-only, for tests: where a follow landed. */
@@ -2756,6 +2763,8 @@ function doChainPatchLoad(index) {
     S.patchCur = S.patchNames[index] || '';
     S.patchMsg = '';
     macroMergeAfterPatch();       /* the patch's knob mappings become the macros */
+    /* ...and its MIDI FX play through the track again (silent otherwise). */
+    if (!S.bus && S.track >= 0) midiFxResyncAfterPatch(S.track);
     /* A patch swaps every module in the chain — land back on the overview
      * with the block names re-read, looking at what just loaded. */
     S.view = VIEW_BLOCKS;
@@ -3228,15 +3237,6 @@ function soundLaneJumpReturn() {
     return !!(GS.genReturn && GS.genReturn.autoSel != null) && soundGestureReturn();
 }
 
-/* Shift+hold Note/Session on a NONE track (Josh, 2026-09-05: "hold
- * shift+note/session should open the instrument picker"): there is nothing to
- * edit and never the parked chain, so the hold lands on the one choice the
- * track is waiting for — the menu with the picker already open over it. */
-export function soundOpenInstrPicker(track) {
-    soundEnter(track, slotIndex(track));
-    S.pendingAction = { t: 'instrpick' };
-}
-
 export function soundOpenGenerator(track) {
     soundEnter(track, slotIndex(track));
     if (!engineLoadedModule(S.slot, 'synth')) {
@@ -3576,11 +3576,6 @@ function buildPickRows() {
          * placeholder: it is what an EXT track HAS, and it is the row you need
          * to route it back. Track Control stays open on these tracks precisely
          * so that is reachable (see the follow in ui_tick). */
-        /* NONE: even less than EXT — the row that picks one. (Import MIDI
-         * left this menu for the CLIP / DRUM LANE card's K8, 2026-09-29.) */
-        if (GS.trackRoute[S.track] === ROUTE_NONE) {
-            S.pickRows = orderTrackMenu(rows); S.pickRow = pickHomeRow(S.pickRows); S.pickLandHome = false; return;
-        }   /* NONE: even less than EXT — just the row that picks one */
         /* A MIDI-routed track has no chain and no bus, but it IS a track, and
          * davebox's own per-track settings — mode, layout, transpose, velocity
          * in, aftertouch — apply to a note stream leaving the port as much as
@@ -4297,11 +4292,10 @@ function knobTargetList() {
         targets.push({ id, name: String(name), slot: label });
     };
     const midiTrack = S.track >= 0 && GS.trackRoute[S.track] === 2;
-    const noneTrack = S.track >= 0 && GS.trackRoute[S.track] === ROUTE_NONE;   /* no instrument at all (2026-09-05) */
     if (S.bus) {
         /* A Move bus: its insert FX are the components (`move_fx:N:fxK`). */
         for (const n of BUS_BLOCKS) probe(S.bus.prefix + 'fx' + n, 'FX' + n);
-    } else if (!midiTrack && !noneTrack) {
+    } else if (!midiTrack) {
         probe('midi_fx1', 'MIDI FX');
         probe('synth', 'Synth');
         for (let i = 1; i <= 4; i++) probe('fx' + i, 'FX' + i);
@@ -4321,7 +4315,7 @@ function knobTargetList() {
             rows.push({ id: 'bank:' + e.bank, name: BANKS[e.bank].name });
         }
     }
-    if (!midiTrack && !noneTrack) rows.push({ id: LEVEL_TARGET, name: 'Levels' });   /* a MIDI or NONE track has no chain */
+    if (!midiTrack) rows.push({ id: LEVEL_TARGET, name: 'Levels' });   /* a MIDI track has no chain */
     /* SNAPMORPH (18b): a track's macro can morph its sound between its TRACK
      * snapshots — a chain track's chain, or a Move track's bus FX and levels
      * (Josh, 2026-09-13; one track owns a Move instrument, so the bus is its
@@ -4912,12 +4906,36 @@ function commitInstrPick(r) {
         if (GS.trackRoute[S.track] === 0 && GS.trackPadMode[S.track] !== PMC) {
             /* Already a Schwung track: the one you have re-selected just opens
              * (a reload would throw its state away); another one loads. */
-            if (moduleIdOf(engineLoadedModule(S.slot, 'synth')) === r.gen.id) S.pendingAction = { t: 'open', comp: 'synth' };
+            if (moduleIdOf(engineLoadedModule(S.slot, 'synth')) === r.gen.id) {
+                /* From TRACK CONFIG the picker just closes onto the menu. */
+                if (!S.pickFromMenu) S.pendingAction = { t: 'open', comp: 'synth' };
+            }
             else { S.comp = 'synth'; requestModulePick(r.gen); }
         } else {
             /* A Move/MIDI track first becomes Schwung (reflavour rebuilds the
              * screen around the slot), THEN the generator loads into it. */
             S.genAfterReflavour = r.gen;
+            S.instrSel = INSTR_SCHWUNG;
+            commitInstrChoice();
+        }
+        S.dirty = true;
+        return;
+    }
+    if (r.v === INSTR_NONE) {
+        /* ⭐ NONE IS A SCHWUNG TRACK WITH NOTHING LOADED (Josh, 2026-10-21:
+         * "should present as if the track were a schwung track with no
+         * instrument loaded … to facilitate schwung chain preset loading
+         * without having to select a dummy schwung instrument first") — the
+         * state tracks 5-8 of a new project start in. Its chain, levels and
+         * Presets row stay. On a Schwung track it is Remove on the generator
+         * (gated as Remove is: REMOVE MODULE? when its macros or lanes would
+         * go); from anywhere else the track becomes Schwung first and the
+         * slot's generator is then cleared, the generator path's long way. */
+        const none = { id: '', name: '[ none ]' };
+        if (GS.trackRoute[S.track] === 0 && GS.trackPadMode[S.track] !== PMC) {
+            if (engineLoadedModule(S.slot, 'synth')) { S.comp = 'synth'; requestModulePick(none); }
+        } else {
+            S.genAfterReflavour = none;
             S.instrSel = INSTR_SCHWUNG;
             commitInstrChoice();
         }
@@ -5334,11 +5352,10 @@ function commitInstrChoice() {
  *   · seq: (davebox's own bank params)  → every type
  *   · MIDI targets: at / pb            → every type but none; cc:N → MIDI only
  */
-const ROUTE_TYPE_NAMES = { 0: 'SCHWUNG', 1: 'MOVE TRACK', 2: 'MIDI TRACK', 3: 'NO INSTRUMENT' };
+const ROUTE_TYPE_NAMES = { 0: 'SCHWUNG', 1: 'MOVE TRACK', 2: 'MIDI TRACK' };
 export function routeForInstr(v) {
     v = v | 0;
-    if (v === INSTR_SCHWUNG) return 0;
-    if (v === INSTR_NONE) return ROUTE_NONE;
+    if (v === INSTR_SCHWUNG || v === INSTR_NONE) return 0;   /* None: a Schwung track, nothing loaded */
     if (v >= INSTR_MIDI_CH) return 2;      /* a channel or a followed track */
     return 1;
 }
@@ -5349,7 +5366,7 @@ export function targetCompatible(target, newRoute) {
     const t = String(target || '');
     if (t.indexOf('seq:') === 0) return true;
     if (t.indexOf('mac:') === 0) return newRoute === 0 || newRoute === 1;   /* a SnapMorph lane drives a chain or a bus */
-    if (midiTargetIsMidi(t)) return midiTargetCC(t) >= 0 ? newRoute === 2 : newRoute !== ROUTE_NONE;
+    if (midiTargetIsMidi(t)) return midiTargetCC(t) >= 0 ? newRoute === 2 : true;
     const parts = t.split(':');
     if (parts.length < 3) return true;                 /* not a shape this rule knows: leave it */
     const comp = parts.slice(1, -1).join(':'), key = parts[parts.length - 1];
@@ -5359,7 +5376,7 @@ function compCompatible(comp, key, newRoute) {
     if (comp === 'slot' || /^move_fx:\d+$/.test(comp))
         return LEVEL_KEYS[key] ? (newRoute === 0 || newRoute === 1) : (comp === 'slot' ? newRoute === 0 : newRoute === 1);
     if (/^move_fx:\d+:fx\d+$/.test(comp)) return newRoute === 1;
-    if (/^midi_fx\d+$/.test(comp)) return newRoute !== ROUTE_NONE;   /* a track's MIDI FX play on every route */
+    if (/^midi_fx\d+$/.test(comp)) return true;   /* a track's MIDI FX play on every route */
     if (comp === 'synth' || /^fx\d+$/.test(comp)) return newRoute === 0;
     return true;
 }
@@ -5464,7 +5481,7 @@ export function performTypeChange(c) {
 /* No: nothing changed; the picker comes back where it was. */
 export function cancelTypeChange(c) {
     S.genAfterReflavour = null;
-    if (c && S.active && S.track === c.track) S.pendingAction = { t: 'instrpick' };
+    if (c && S.active && S.track === c.track) S.pendingAction = { t: 'instrpick', menu: S.pickFromMenu };
     S.dirty = true;
 }
 
@@ -5493,7 +5510,9 @@ function closeEnumPicker(commitIt) {
     const p = S.enumPick;
     if (!p) return;
     if (commitIt && p.commit) p.commit(p.sel);
-    S.view = p.from;
+    /* Back to the screen underneath — unless the commit itself moved on (a
+     * generator picked from the bank map enters its editor). */
+    if (S.view === VIEW_ENUM) S.view = p.from;
     S.enumPick = null;
     S.dirty = true;
 }
@@ -7914,9 +7933,9 @@ function runActionBody(a) {
         S.pickRow = i >= 0 ? i : 0;
         S.dirty = true;
     }
-    else if (a.t === 'open')    openBlock(a.comp);
-    else if (a.t === 'browse')  openBrowse(a.comp, a.prompt);
-    else if (a.t === 'instrpick') openInstrPicker();
+    else if (a.t === 'open')    { S.pickFromMenu = !!a.menu; openBlock(a.comp); }
+    else if (a.t === 'browse')  { S.pickFromMenu = !!a.menu; openBrowse(a.comp, a.prompt); }
+    else if (a.t === 'instrpick') { S.pickFromMenu = !!a.menu; openInstrPicker(); }
     else if (a.t === 'load')    loadSelected();
     else if (a.t === 'listcycle')  cycleListFilter();
     else if (a.t === 'listmenu')   openListMenu(S.browseList[S.browseIdx], 'browse');
@@ -8631,8 +8650,15 @@ function applyModulePick(mod) {
     S.banksDeferred = false;
     S.livePress = null;                /* the outgoing module's, not the incoming one's */
     S.padVouch = false;
-    S.view = mod.id ? VIEW_EDIT : VIEW_BLOCKS;
+    const toMenu = !mod.id || S.pickFromMenu;
+    S.pickFromMenu = false;
+    S.view = toMenu ? VIEW_BLOCKS : VIEW_EDIT;
     refreshBlockNames();
+    if (toMenu) {
+        /* Back on the menu, on the row that was just filled. */
+        const r = S.pickRows.findIndex(p => S.comp === 'synth' ? p.kind === 'trackto' : (p.kind === 'block' && p.comp === S.comp));
+        if (r >= 0) S.pickRow = r;
+    }
     /* A different module cannot be "on" the old module's preset. */
     setPresetRecord(null);
     S.dirty = true;
@@ -10218,7 +10244,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
                  * ⚠ Shift+click opens the picker (choose something else); a plain
                  * click has nothing to enter, since a Conductor plays nothing. */
                 if (GS.trackPadMode[S.track] === PMC) {
-                    if (GS.shiftHeld || S.shiftHeld) openInstrPicker();
+                    if (GS.shiftHeld || S.shiftHeld) { S.pickFromMenu = true; openInstrPicker(); }
                     S.dirty = true;
                 }
                 else {
@@ -10237,7 +10263,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
                      * nothing). */
                     const route = GS.trackRoute[S.track];
                     const gen = route === 0 ? (S.pickRows[S.pickRow].gen || '') : '';
-                    if (S.shiftHeld || (route === 0 && !gen) || route === ROUTE_NONE) openInstrPicker();
+                    if (S.shiftHeld || (route === 0 && !gen)) { S.pickFromMenu = true; openInstrPicker(); }
                     else if (route === 0) S.pendingAction = { t: 'open', comp: 'synth' };
                     else if (route === 1) S.coRunRequest = S.bus ? S.bus.track : S.track;
                     /* route 2: nothing to enter, nothing happens */
@@ -10446,7 +10472,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * a block IS is rarer and more destructive than editing it, so it
              * costs the modifier and lives only here, at the chain overview
              * where "what is in this block" is the question being asked. */
-            S.pendingAction = { t: S.shiftHeld ? 'browse' : 'open', comp: S.pickRows[S.pickRow].comp };
+            S.pendingAction = { t: S.shiftHeld ? 'browse' : 'open', comp: S.pickRows[S.pickRow].comp, menu: true };
         }
         else if (S.view === VIEW_BROWSE) {
             const row = S.browseList[S.browseIdx];
@@ -12525,8 +12551,7 @@ export function soundWidgetsEnableForTest(on) { ppWidgetsEnabled = !!on; }
 const FX_POS_LABEL = 'Position';
 const FX_TO_SEQ_KEY = 'midi_fx_to_host';     /* the retired key: migrated, then cleared */
 function fxPosOffered() {
-    if (S.comp !== 'midi_fx1' || S.slot < 0 || !S.moduleId || soundIsGlobal()) return false;
-    return GS.trackRoute[S.track] !== ROUTE_NONE;
+    return !(S.comp !== 'midi_fx1' || S.slot < 0 || !S.moduleId || soundIsGlobal());
 }
 function toggleFxPosition() {
     if (!fxPosOffered()) return;

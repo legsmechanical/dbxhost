@@ -68,7 +68,7 @@ async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
-const { BANK_SOUND, BANK_MACROS, ROUTE_NONE, PAD_MODE_CONDUCT, INSTR_ROW_LABEL } = await import('../../ui/ui_constants.mjs');
+const { BANK_SOUND, BANK_MACROS, PAD_MODE_CONDUCT, INSTR_ROW_LABEL } = await import('../../ui/ui_constants.mjs');
 const editops = await import('../../ui/ui_editops.mjs');
 
 const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_SLOTCFG = 8, VIEW_BUSES = 9, VIEW_LFO = 14,
@@ -95,10 +95,10 @@ function enterEditor(t) {
         throw new Error('control failed: the editor did not open on track ' + t + ' (view ' + view() + ')');
 }
 
-step('setup: routes — 2,3 Schwung · 4 MIDI · 5 NONE · 6 Move · 7 Conduct', () => {
+step('setup: routes — 2,3 Schwung · 4 MIDI · 5 Schwung (None: nothing loaded) · 6 Move · 7 Conduct', () => {
     S.sessionView = false; S.globalMenuOpen = false; S.ledInitComplete = true;
     for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; S.trackActiveBank[t] = t % 3; }
-    S.trackRoute[4] = 2; S.trackRoute[5] = ROUTE_NONE; S.trackRoute[6] = 1;
+    S.trackRoute[4] = 2; S.trackRoute[6] = 1;
     S.trackPadMode[7] = PAD_MODE_CONDUCT;
     S.playing = true;
     S.clipSteps[3][0][0] = 1;
@@ -203,14 +203,6 @@ step('⭑ CONFIG rows follow onto a MIDI track, which has its own (shorter) set'
     if (keys.includes('parallel')) throw new Error('a MIDI track showed Parallel: ' + keys.join(','));
 });
 
-step('⭑ CONFIG → NONE: a NONE track has no config — its Instrument-only menu', () => {
-    editops._switchActiveTrack(5);
-    if (!snd.soundOpen() || snd.soundTrack() !== 5) throw new Error('did not follow');
-    settle();
-    if (view() !== VIEW_BLOCKS || kinds() !== 'trackto') throw new Error('view ' + view() + ' rows ' + kinds());
-    snd.soundExit();
-});
-
 step('⭑ the LFOs screen → a MIDI track has no LFOs: its menu; → Schwung: the LFOs screen again', () => {
     enterMenu(2);
     snd.soundQueueActionForTest({ t: 'slotcfg', which: 'sound' }); globalThis.tick();
@@ -276,15 +268,6 @@ step('⚠ the Session FX gateway is GLOBAL: the switch keeps it open, unchanged'
     snd.soundExit();
 });
 
-step('⭑ Schwung → NONE from the EDITOR: the Instrument-only menu, on its row', () => {
-    enterEditor(2);
-    editops._switchActiveTrack(5);
-    if (!snd.soundOpen() || snd.soundTrack() !== 5) throw new Error('did not follow');
-    settle();
-    if (!onInstrumentRow() || kinds() !== 'trackto') throw new Error('view ' + view() + ' rows ' + kinds());
-    snd.soundExit();
-});
-
 step('⭑ Schwung → Move from the EDITOR: its bus MENU (not global), Instrument row', () => {
     enterEditor(2);
     editops._switchActiveTrack(6);
@@ -300,7 +283,7 @@ step('⭑ the walk goes ON from that menu: every further track lands on ITS menu
     editops._switchActiveTrack(4); settle();
     if (!onInstrumentRow()) throw new Error('control: MIDI track not on its Instrument row');
     editops._switchActiveTrack(5); settle();
-    if (view() !== VIEW_BLOCKS || snd.soundTrack() !== 5) throw new Error('walking on to NONE: view ' + view() + ' track ' + snd.soundTrack());
+    if (view() !== VIEW_BLOCKS || snd.soundTrack() !== 5) throw new Error('walking on to track 5: view ' + view() + ' track ' + snd.soundTrack());
     editops._switchActiveTrack(6); settle();
     if (view() !== VIEW_BLOCKS || snd.soundTrack() !== 6) throw new Error('walking on to Move: view ' + view());
     editops._switchActiveTrack(3); settle();

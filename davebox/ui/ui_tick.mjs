@@ -25,12 +25,12 @@ import {
     LED_OFF, NUM_TRACKS, NUM_CLIPS, DRUM_LANES, NUM_STEPS, TPS_VALUES,
     PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_CONDUCT,
     BANK_SOUND, BANK_MACROS, isSoundBank,
-    POLL_INTERVAL, ROUTE_NONE, STEP_JOG_HINT_MS, BANK_CHORD, DEFAULT_TRACK_OCTAVE,
+    POLL_INTERVAL, STEP_JOG_HINT_MS, BANK_CHORD, DEFAULT_TRACK_OCTAVE,
     } from './ui_constants.mjs';
 
 import { S, standDownBankDisplay, stepRevealAvailable, loopViewActive, endLoopLatch, forgetUndo, forgetProjectJs } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
-import { tickPrefetch, dget, applyNewProjectSeed } from './ui_dsp_bridge.mjs';
+import { tickPrefetch, dget, applyNewProjectSeed, midiFxResyncTick } from './ui_dsp_bridge.mjs';
 import { dspGet, prefetchKeys, releaseTrackDigests } from './ui_dsp_get.mjs';
 import { daveBoxTick, bannerDaveSync, loadDaveTick } from './ui_daves.mjs';
 import { devSnapOpen, devSnapEnter, devSnapTick, DEVSNAP_HOLD_MS } from './ui_devsnap.mjs';
@@ -1372,6 +1372,9 @@ export function _tickImpl() {
          * read only when something is staged, and its own write budget caps the
          * rest (see ui_automation.mjs). */
         automationTick();
+        /* A chain preset just loaded: its slot's MIDI FX hand-back follows the
+         * track again (ui_dsp_bridge, midiFxResyncAfterPatch). */
+        midiFxResyncTick();
         /* A SnapMorph turn's values were transient; once the hand is still
          * they go out once more as an edit (ui_snapmorph). */
         morphTick();
@@ -1739,11 +1742,7 @@ export function _tickImpl() {
              * its own, so take it from the source of truth rather than assuming
              * the two agree. Everywhere else: the active track, as before. */
             const _tvT = S.moveCoRunTrack >= 0 ? S.moveCoRunTrack : S.activeTrack;
-            if (S.trackRoute[_tvT] === ROUTE_NONE) {
-                /* NONE: a fader that moved nothing audible is a dead control —
-                 * say so once per gesture, like a MIDI follower (2026-09-05). */
-                if (!S.tvExtWarned) { S.tvExtWarned = true; showActionPopup('NO INSTRUMENT', 'NO VOLUME'); }
-            } else if (S.trackRoute[_tvT] === 2) {
+            if (S.trackRoute[_tvT] === 2) {
                 /* A MIDI-routed track's volume IS standard MIDI volume: send
                  * CC 7 on the track's channel out the port (Josh, 2026-08-24).
                  * One CC per detent, 0-127, seeded from the session-local

@@ -97,12 +97,12 @@ step('a MIDI-routed track\'s menu is its destination, its MIDI FX + its own CONF
     if (k.includes('config')) throw new Error('the CONFIG door came back: ' + k.join(','));
     if (k.filter(x => x === 'block').length !== 1 || k.includes('buslevel')) throw new Error('rows: ' + k.join(','));
 });
-step('a NONE track stays collapsed to the row that picks an instrument', () => {
+step('None is a Schwung track with nothing loaded: the whole chain menu, Presets included (Josh, 2026-10-21)', () => {
     B.applyInstrChoice(2, C.INSTR_NONE);
     S.activeTrack = 2;
     const k = menuFor(2);
-    /* NONE: the instrument row alone — Import MIDI left the track menu for K8 of the CLIP / DRUM LANE card (Josh, 2026-09-29). */
-    if (k.join(',') !== 'trackto') throw new Error('rows: ' + k.join(','));
+    if (S.trackRoute[2] !== 0 || k.filter(x => x === 'block').length < 3 || !k.includes('patches'))
+        throw new Error('route ' + S.trackRoute[2] + ' rows: ' + k.join(','));
 });
 step('the MIDI track\'s config rows: mode, layout, transpose, velin, LOOPER, afttch (Josh, 09-05: the looper is a MIDI looper)', () => {
     S.activeTrack = 1;

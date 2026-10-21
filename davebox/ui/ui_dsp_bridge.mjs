@@ -47,7 +47,7 @@ import { Red } from '/data/UserData/schwung/shared/constants.mjs';
 import { S } from './ui_state.mjs';
 import { slotIndex, syncLinkAudioRoutingFromRoutes,
          invalidateLinkAudioRoutingCache, linkAudioRoutingJustEnabled,
-         engineLoadedModule, engineSetChainParam, engineSet, engineSaveState } from './ui_engine.mjs';
+         engineLoadedModule, engineLoadModule, engineSetChainParam, engineSet, engineSaveState } from './ui_engine.mjs';
 import { clipHasContent, _clipIsEmpty, bankIsDoor } from './ui_pure.mjs';
 import { showActionPopup, showActionPopupFor, writeSidecar, uuidToStatePath, uuidToUiStatePath,
          uuidToNewProjectPath, freshSidecar } from './ui_persistence.mjs';
@@ -1236,6 +1236,23 @@ export function readBankParams(t, bankIdx) {
     }
 }
 
+/* "None" was a route of its own until 2026-10-21; it is now a Schwung track
+ * with nothing loaded (commitInstrPick). A project saved with a None track
+ * opens as that: the route rewritten to Schwung (its own callback — a route
+ * write must not share one with another tN_ key) and the slot's generator,
+ * parked under None, cleared. Silent before, silent after. */
+function migrateNoneRoutes() {
+    for (let t = 0; t < S.trackRoute.length; t++) {
+        if (S.trackRoute[t] !== ROUTE_NONE) continue;
+        S.trackRoute[t] = 0;
+        S.pendingDefaultSetParams.push({ key: 't' + t + '_route', val: 'schwung' });
+        engineLoadModule(slotIndex(t), 'synth', '');
+        syncTrackMidiFx(t, undefined, true);
+        S.instrAbbrevAt = 0;
+        console.log('dbx: track ' + (t + 1) + ' was None: now a Schwung track with nothing loaded');
+    }
+}
+
 function readTrackConfig(t) {
     const ch = dspGet('t' + t + '_channel');
     if (ch !== null && ch !== undefined) S.trackChannel[t] = parseInt(ch, 10) || 1;
@@ -1293,7 +1310,6 @@ export function instrValueFor(t) {
      * finds it again — so asking the route what this track IS would answer with
      * the parked destination and the picker would open on the wrong row. */
     if (S.trackPadMode[t] === PAD_MODE_CONDUCT) return INSTR_CONDUCT;
-    if (S.trackRoute[t] === ROUTE_NONE) return INSTR_NONE;
     if (S.trackRoute[t] === 2) {
         const mt = S.trackMidiTo[t] | 0;
         if (mt > 0) return INSTR_TRACK + (mt - 1);
@@ -1316,7 +1332,9 @@ export function applyInstrChoice(t, v) {
      * of choosing a type. */
     if (v === INSTR_CONDUCT) return false;
     if (v === INSTR_SCHWUNG) { applyTrackConfig(t, 'route', 0); return; }
-    if (v === INSTR_NONE)    { applyTrackConfig(t, 'route', ROUTE_NONE); return; }   /* channel / midi_to untouched: coming back finds them */
+    /* None: a Schwung track with nothing loaded (the UI's gated path is
+     * commitInstrPick; this is the bare setter). */
+    if (v === INSTR_NONE)    { if (S.trackRoute[t] !== 0) applyTrackConfig(t, 'route', 0); engineLoadModule(slotIndex(t), 'synth', ''); return; }
     if (v >= INSTR_TRACK) {
         applyTrackConfig(t, 'midi_to', v - INSTR_TRACK + 1);
         applyTrackConfig(t, 'route', 2);
@@ -1363,7 +1381,7 @@ export function syncTrackMidiFx(t, loaded, defer) {
     const route = S.trackRoute[t];
     /* No module, no Pre: the next one starts at Post. */
     if (!has) S.trackFxPre[t] = 0;
-    const on = has && route !== ROUTE_NONE ? 1 : 0;
+    const on = has ? 1 : 0;
     const pre = on && S.trackFxPre[t] ? 1 : 0;
     engineSetChainParam(slot, 'midi_fx_host_route', on);
     S.trackFxSlot[t] = on;
@@ -1371,6 +1389,40 @@ export function syncTrackMidiFx(t, loaded, defer) {
     for (const [k, v] of writes) {
         if (defer) S.pendingDefaultSetParams.push({ key: k, val: v });
         else host_module_set_param(k, v);
+    }
+}
+
+/* ⭐ A CHAIN PRESET CARRIES ITS SLOT'S HAND-BACK FLAG, and a track's half is
+ * not in it. A preset saved from a track with a MIDI FX holds
+ * `midi_fx_host_route: 1` (syncTrackMidiFx set it live), and loading it sets the
+ * slot to hand the effect's output back — while the TRACK's `tN_fxpost` stays
+ * whatever it was. On a track that had no MIDI FX that is 0, and the engine
+ * then only records what comes back and plays none of it: the preset is
+ * SILENT (Josh, 2026-10-21: "Why doesn't plank preset sound when loaded
+ * despite the chain working fine before it was saved?").
+ *
+ * So a preset load re-syncs the track's MIDI FX, both halves, from what the
+ * chain holds once the load has landed. The load is a REQUEST the host applies
+ * a few frames later, and it writes the flag from the file AFTER loading the
+ * modules — so one sync could read the old chain, or be overwritten by the
+ * file's flag. It runs at these delays after the load (each one idempotent);
+ * the last is well past any apply. Tick work: the read is a get_param. */
+const MFX_RESYNC_MS = [150, 500, 1500];
+let mfxResync = [];                      /* { t, at } */
+export function midiFxResyncAfterPatch(t) {
+    mfxResync = mfxResync.filter(r => r.t !== t);
+    for (const d of MFX_RESYNC_MS) mfxResync.push({ t, at: S.clockMs + d });
+}
+export function midiFxResyncTick() {
+    if (!mfxResync.length) return;
+    const due = mfxResync.filter(r => S.clockMs >= r.at);
+    if (!due.length) return;
+    mfxResync = mfxResync.filter(r => S.clockMs < r.at);
+    const seen = new Set();
+    for (const r of due) {
+        if (seen.has(r.t)) continue;
+        seen.add(r.t);
+        if (S.trackRoute[r.t] === 0) syncTrackMidiFx(r.t);
     }
 }
 
@@ -1540,9 +1592,6 @@ export function queueCaptureNote(t, isOff, pitch, vel) {
 export function liveSendNote(t, type, pitch, vel, rawVel, ext) {
     const ch    = (S.trackChannel[t] - 1) & 0x0F;
     const route = S.trackRoute[t];
-    /* NONE has nowhere to send a live note — not even the parked chain, which
-     * is exactly what falling into the Schwung branch below would do. */
-    if (route === ROUTE_NONE) return;
     const status = type | ch;
     /* PHASE-1: dead on patched Schwung (Bundle 1 gate skips note dispatch
      * for liveSendNote; Bundle 2B applies VelIn in DSP on_midi via
@@ -2108,6 +2157,7 @@ function _syncClipsFromDspInner() {
             }
         }
     }
+    migrateNoneRoutes();
     /* Every track's route is now known: re-derive the Link Audio rebuild flag.
      * The host's flag belongs to the PREVIOUS project, so invalidate the cache
      * first or an unchanged-looking value would suppress the correcting write.

@@ -9,6 +9,15 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Changed
+- **Instrument: None is now a Schwung track with nothing loaded** — the state a
+  new project's tracks 5–8 start in. The track keeps its MIDI effect, effects,
+  levels and Presets, so a chain preset can be loaded without first choosing a
+  stand-in instrument. Choosing None on a Schwung track removes its instrument.
+  Projects with a track set to None open this way (still silent; anything left
+  loaded in that track's slot is cleared).
+- **Picking a module from TRACK CONFIG leaves you on the menu** (on the row you
+  filled) instead of opening its editor; click the row to edit it. Picking from
+  the bank map's module pads still opens the editor.
 - **Automation is one envelope per lane.** Points glide into each other — there
   is no Smooth setting and no Curve / Punch mode any more, and every lane has
   Wrap. Holding a step and turning a knob writes a **punch**: the value held flat
@@ -38,6 +47,9 @@ the section into a versioned heading at release time.
   screen. The **Clear all** row still clears everything.
 
 ### Fixed
+- **A chain preset with a MIDI effect is silent no more** when loaded onto a
+  track that had no MIDI effect (a Plank preset, for example): the track now
+  plays what the effect makes.
 - **Loop double (Shift + Step 15) with automation:** the step buttons now show
   the copied automation on the new half straight away (they kept showing the old
   lane until something else refreshed it — the same after crop, resolution,

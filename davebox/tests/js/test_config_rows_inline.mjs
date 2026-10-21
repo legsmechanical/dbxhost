@@ -307,13 +307,12 @@ step('a MIDI track carries its own shorter set, and no Parallel row', () => {
     assert(!keys.includes('parallel'), 'a MIDI track has no chain to parallelise: ' + keys.join(','));
 });
 
-step('⚠ CONTROL: a NONE track has no config rows at all, and no stray rule', () => {
+step('None is a Schwung track with nothing loaded: its config rows are a Schwung track\'s', () => {
     B.applyInstrChoice(5, C.INSTR_NONE);
     snd.soundExit(); GS.activeTrack = 5; snd.soundEnter(5, 5); ticks(3);
     snd.soundShowMenu(); ticks(2);
     const k = kinds();
-    /* NONE: the instrument row alone — Import MIDI left the track menu for K8 of the CLIP / DRUM LANE card (Josh, 2026-09-29). */
-    assert(k.join(',') === 'trackto', 'a NONE track grew rows: ' + k.join(','));
+    assert(k.includes('cfg') && k.includes('patches'), 'a None track is missing its rows: ' + k.join(','));
 });
 
 if (failed) process.exit(1);
