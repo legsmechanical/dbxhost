@@ -202,9 +202,10 @@ static int pa_format_value(const pa_res_t *r, uint16_t val, char *out, int cap) 
 /* bank is not on the track's pad mode, is dropped, as JS dropped it.   */
 
 enum { PA_SEQ_MELODIC = 0, PA_SEQ_DRUM = 1 };
-typedef struct { const char *key; int16_t min, max; uint8_t mode; } pa_seq_def_t;
+/* `stepped`: a choice, not an amount — never glides (pa_target_stepped). */
+typedef struct { const char *key; int16_t min, max; uint8_t mode; uint8_t stepped; } pa_seq_def_t;
 static const pa_seq_def_t pa_seq_defs[] = {
-    { "clip_playback_dir",         0,    3, PA_SEQ_MELODIC },
+    { "clip_playback_dir",         0,    3, PA_SEQ_MELODIC, 1 },
     { "noteFX_octave",            -4,    4, PA_SEQ_MELODIC },
     { "noteFX_offset",           -24,   24, PA_SEQ_MELODIC },
     { "noteFX_velocity",        -127,  127, PA_SEQ_MELODIC },
@@ -221,16 +222,16 @@ static const pa_seq_def_t pa_seq_defs[] = {
     { "delay_vel_fb",           -127,  127, PA_SEQ_MELODIC },
     { "delay_pitch_fb",          -24,   24, PA_SEQ_MELODIC },
     { "delay_gate_fb",             0,   10, PA_SEQ_MELODIC },
-    { "delay_retrig",              0,    1, PA_SEQ_MELODIC },
+    { "delay_retrig",              0,    1, PA_SEQ_MELODIC, 1 },
     { "delay_pitch_random",        0,   24, PA_SEQ_MELODIC },
     { "delay_clock_fb",         -100,  100, PA_SEQ_MELODIC },
-    { "seq_arp_style",             0,    9, PA_SEQ_MELODIC },
-    { "seq_arp_rate",              0,    9, PA_SEQ_MELODIC },
+    { "seq_arp_style",             0,    9, PA_SEQ_MELODIC, 1 },
+    { "seq_arp_rate",              0,    9, PA_SEQ_MELODIC, 1 },
     { "seq_arp_octaves",          -4,    4, PA_SEQ_MELODIC },
     { "seq_arp_gate",              1,  200, PA_SEQ_MELODIC },
-    { "seq_arp_retrigger",         0,    1, PA_SEQ_MELODIC },
-    { "seq_arp_sync",              0,    1, PA_SEQ_MELODIC },
-    { "all_lanes_playback_dir",    0,    3, PA_SEQ_DRUM    },
+    { "seq_arp_retrigger",         0,    1, PA_SEQ_MELODIC, 1 },
+    { "seq_arp_sync",              0,    1, PA_SEQ_MELODIC, 1 },
+    { "all_lanes_playback_dir",    0,    3, PA_SEQ_DRUM, 1 },
 };
 #define PA_SEQ_COUNT ((int)(sizeof(pa_seq_defs) / sizeof(pa_seq_defs[0])))
 #define PA_SEQ_IDX_CLIP_DIR  0
@@ -523,6 +524,7 @@ static int pa_target_id(seq8_instance_t *inst, const char *target) {
     for (int i = 0; i < PA_MAX_TARGETS; i++) {
         if (inst->pa_targets[i][0]) continue;
         snprintf(inst->pa_targets[i], PA_TARGET_LEN, "%s", target);
+        inst->pa_knob_valid &= ~(1ull << i);      /* a new parameter: no resting value yet */
         return i;
     }
     return -1;   /* target table full */
@@ -602,6 +604,22 @@ static int pa_target_is_midi(const char *t, int *cc) {
         return 1;
     }
     return 0;
+}
+
+/* A STEPPED target never glides between points: nothing lies between its
+ * values. A chain parameter is stepped when JS described it as a choice, or
+ * as a whole number with only two values (a switch); a sequencer key per its
+ * table. A MIDI target always glides (a controller sweep). ⚠ A chain
+ * parameter's description is runtime-only and arrives from JS shortly after a
+ * load, so for that moment a choice glides; harmless (playback re-sends). */
+static int pa_target_stepped(const seq8_instance_t *inst, uint16_t target) {
+    if (target >= PA_MAX_TARGETS) return 0;
+    const char *t = inst->pa_targets[target];
+    int idx;
+    if (pa_target_is_seq(t, NULL, &idx)) return idx >= 0 && pa_seq_defs[idx].stepped;
+    const pa_res_t *r = &inst->pa_res[target];
+    if (!r->valid || strcmp(r->name, t)) return 0;
+    return r->kind == PA_RES_ENUM || (r->kind == PA_RES_INT && r->max - r->min <= 1.0);
 }
 
 /* ------------------------------------------------------------------ */
@@ -721,7 +739,6 @@ static pa_entry_t *pa_get(seq8_instance_t *inst, int track, int clip, int target
              * "Make reset the default wrap option instead of carry"). A lane
              * loaded from a file keeps its own "f" (pa_parse sets it whole). */
             e->flags  = PA_FLAG_ACTIVE | PA_FLAG_WRAP_RESET;
-            e->rest   = PA_VAL_UNSET;
             return e;
         }
         /* Full: make room by evicting one zombie, then look again. */
@@ -798,6 +815,7 @@ static void pa_reset_all_locked(seq8_instance_t *inst) {
     memset(inst->pa_entries, 0, sizeof(inst->pa_entries));
     memset(inst->pa_targets, 0, sizeof(inst->pa_targets));
     memset(inst->pa_res, 0, sizeof(inst->pa_res));   /* another project's parameters */
+    inst->pa_knob_valid = 0;
     memset(inst->pa_defer, 0, sizeof(inst->pa_defer));
     inst->pa_ext_base_valid = 0;     /* pa_extend's base named the old store */
     inst->pa_dirty = 0;
@@ -936,23 +954,146 @@ static void pa_undo_restore(seq8_instance_t *inst, const pa_entry_t *src, uint8_
 /* ------------------------------------------------------------------ */
 /* Point writes                                                        */
 
-/* Insert or replace the point at `tick`, keeping points sorted. Returns 1 on
- * success, 0 when the entry is full. */
+/* JUMP PAIRS. A lane is one envelope of points that glide into each other; a
+ * hard edge — the step into or out of a punched run — is TWO points on one
+ * tick: the first is the value just before that moment, the second the value
+ * from it on. So a tick holds at most two points, in that order, and every
+ * write below keeps it that way. */
+
+/* First index with points[i].tick >= t. */
+static int pa_lower_bound(const pa_entry_t *e, uint32_t t) {
+    int lo = 0, hi = e->count;
+    while (lo < hi) { int mid = (lo + hi) / 2; if (e->points[mid].tick < t) lo = mid + 1; else hi = mid; }
+    return lo;
+}
+
+/* First index with points[i].tick > t. */
+static int pa_upper_bound(const pa_entry_t *e, uint32_t t) {
+    int lo = 0, hi = e->count;
+    while (lo < hi) { int mid = (lo + hi) / 2; if (e->points[mid].tick <= t) lo = mid + 1; else hi = mid; }
+    return lo;
+}
+
+/* How many points sit on tick `t` (0, 1 or 2); *i0 = the first of them. */
+static int pa_at(const pa_entry_t *e, uint32_t t, int *i0) {
+    int lo = pa_lower_bound(e, t), hi = pa_upper_bound(e, t);
+    if (i0) *i0 = lo;
+    return hi - lo;
+}
+
+static int pa_insert_at(pa_entry_t *e, int i, uint16_t tick, uint16_t val) {
+    if (e->count >= PA_ENTRY_POINTS) return 0;
+    memmove(&e->points[i + 1], &e->points[i], (size_t)(e->count - i) * sizeof(pa_point_t));
+    e->points[i].tick = tick;
+    e->points[i].val  = val > PA_VAL_MAX ? PA_VAL_MAX : val;
+    e->count++;
+    return 1;
+}
+
+static void pa_remove_at(pa_entry_t *e, int i, int n) {
+    if (n <= 0) return;
+    memmove(&e->points[i], &e->points[i + n], (size_t)(e->count - i - n) * sizeof(pa_point_t));
+    e->count = (uint16_t)(e->count - n);
+}
+
+/* ONE point at `tick`: whatever was there (a point or a pair) is replaced.
+ * Returns 1 on success, 0 when the entry is full. */
 static int pa_set_point(pa_entry_t *e, uint16_t tick, uint16_t val) {
     if (!e) return 0;
     if (val > PA_VAL_MAX) val = PA_VAL_MAX;
-    int lo = 0, hi = e->count;
-    while (lo < hi) {                      /* first index with points[i].tick >= tick */
-        int mid = (lo + hi) / 2;
-        if (e->points[mid].tick < tick) lo = mid + 1; else hi = mid;
-    }
-    if (lo < e->count && e->points[lo].tick == tick) { e->points[lo].val = val; return 1; }
-    if (e->count >= PA_ENTRY_POINTS) return 0;
-    memmove(&e->points[lo + 1], &e->points[lo], (size_t)(e->count - lo) * sizeof(pa_point_t));
-    e->points[lo].tick = tick;
-    e->points[lo].val  = val;
-    e->count++;
+    int i0, n = pa_at(e, tick, &i0);
+    if (n) { pa_remove_at(e, i0 + 1, n - 1); e->points[i0].val = val; return 1; }
+    return pa_insert_at(e, i0, tick, val);
+}
+
+/* A JUMP at `tick`: exactly two points there, `before` then `from`. Equal
+ * values need no jump and collapse to one point. */
+static int pa_set_pair(pa_entry_t *e, uint16_t tick, uint16_t before, uint16_t from) {
+    if (!e) return 0;
+    if (before > PA_VAL_MAX) before = PA_VAL_MAX;
+    if (from > PA_VAL_MAX) from = PA_VAL_MAX;
+    if (before == from) return pa_set_point(e, tick, from);
+    int i0, n = pa_at(e, tick, &i0);
+    if (n == 0 && e->count + 2 > PA_ENTRY_POINTS) return 0;
+    if (n == 0) { pa_insert_at(e, i0, tick, from); return pa_insert_at(e, i0, tick, before); }
+    if (n == 1 && !pa_insert_at(e, i0 + 1, tick, from)) return 0;
+    e->points[i0].val = before;
+    e->points[i0 + 1].val = from;
     return 1;
+}
+
+/* One HALF of the tick's pair: the value just before `tick` (first) or the
+ * value from it on (second). A lone point already there becomes the other
+ * half; an existing pair keeps its other half. */
+static int pa_set_first(pa_entry_t *e, uint16_t tick, uint16_t val) {
+    int i0, n = pa_at(e, tick, &i0);
+    if (n == 0) return pa_set_point(e, tick, val);
+    return pa_set_pair(e, tick, val, e->points[i0 + n - 1].val);
+}
+static int pa_set_second(pa_entry_t *e, uint16_t tick, uint16_t val) {
+    int i0, n = pa_at(e, tick, &i0);
+    if (n == 0) return pa_set_point(e, tick, val);
+    return pa_set_pair(e, tick, e->points[i0].val, val);
+}
+
+/* Linear value at `t` on the span (ta, va) → (tb, vb), in 64-bit ticks so a
+ * span reaching back across the wrap (ta < 0) is exact. */
+static uint16_t pa_lerp(int64_t ta, uint16_t va, int64_t tb, uint16_t vb, int64_t t) {
+    if (tb <= ta) return va;
+    int64_t v = (int64_t)va + ((int64_t)vb - (int64_t)va) * (t - ta) / (tb - ta);
+    return (uint16_t)(v < 0 ? 0 : v > PA_VAL_MAX ? PA_VAL_MAX : v);
+}
+
+/* Defined further down the TU (seq8.c, with the export): the window a lane
+ * plays in. Pure arithmetic over the track — callable from either thread. */
+static int pa_export_window(const seq8_track_t *tr, const pa_entry_t *e,
+                            uint32_t *ws, uint32_t *wl, uint32_t *step_ticks);
+
+/* THE START POINT. A lane's envelope begins where the parameter was before
+ * any automation: when a lane gets its first point, a point at its window
+ * start carrying the parameter's RESTING value (pa_knob) — stored as the raw
+ * value that PLAYS as it through the lane's Scale. A resting value never
+ * recorded falls back to `fallback` (the first point's own value: a flat
+ * lead-in). Nothing to do on a lane that has points. Returns 0 when full. */
+static int pa_start_point(const seq8_instance_t *inst, const seq8_track_t *tr,
+                          pa_entry_t *e, uint16_t fallback) {
+    if (e->count) return 1;
+    uint32_t ws = 0, wl = 0, st = 0;
+    if (!pa_export_window(tr, e, &ws, &wl, &st) || !wl || ws > 0xFFFFu) return 1;
+    const uint16_t v = (e->target < PA_MAX_TARGETS && ((inst->pa_knob_valid >> e->target) & 1u))
+                     ? pa_unscaled(e, inst->pa_knob[e->target]) : fallback;
+    return pa_set_point(e, (uint16_t)ws, v);
+}
+
+/* STEP OWNERSHIP. Editing works on whole steps: a step [from, to] owns every
+ * point inside it — except on its boundaries, where a jump pair is split: the
+ * FIRST of a pair belongs to the step that ends there (it is that step's value
+ * arriving), the SECOND to the step that starts there. So a step owns the
+ * single point or the second of the pair at `from`, everything in (from, to],
+ * and the first of a pair at `after` (the tick after it, wrapped to the
+ * window start by the caller). Removing them never spills into a neighbour. */
+static void pa_clear_owned(pa_entry_t *e, uint32_t from, uint32_t to, uint32_t after) {
+    int i0, n;
+    if (to > from) {
+        int a = pa_upper_bound(e, from), b = pa_upper_bound(e, to);
+        pa_remove_at(e, a, b - a);
+    }
+    n = pa_at(e, from, &i0);
+    if (n) pa_remove_at(e, i0 + n - 1, 1);
+    if ((after > to || after < from) && pa_at(e, after, &i0) == 2) pa_remove_at(e, i0, 1);
+}
+
+/* A lone point at `t` that the envelope would pass through anyway — on the
+ * line between its neighbours (±1), or for a stepped target equal to the value
+ * before it — is dropped: sound-identical, and it is what a deleted punch
+ * leaves behind (its edges sat on the envelope it was punched into). */
+static void pa_sweep_redundant(pa_entry_t *e, uint32_t t, int stepped) {
+    int i0;
+    if (pa_at(e, t, &i0) != 1 || i0 == 0 || i0 + 1 >= e->count) return;
+    const pa_point_t *a = &e->points[i0 - 1], *m = &e->points[i0], *b = &e->points[i0 + 1];
+    if (a->tick == m->tick || b->tick == m->tick) return;
+    int line = stepped ? a->val : pa_lerp(a->tick, a->val, b->tick, b->val, m->tick);
+    if (m->val - line <= 1 && line - m->val <= 1) pa_remove_at(e, i0, 1);
 }
 
 /* Remove every point in [from, to] inclusive. */
@@ -967,13 +1108,15 @@ static void pa_clear_range(pa_entry_t *e, uint16_t from, uint16_t to) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Evaluation                                                          */
+/* Evaluation, v1 (the pav:1 lane rules: Smooth / Punch / resting value).
+ * Kept ONLY so a pav:1 project can be converted to sound the same under the
+ * envelope model (pa_migrate_v1); nothing plays through these any more. */
 
 /* Value of `e` at clip tick `ct`. Stepped-hold by default: a point holds until
  * the next one, which is also what makes a p-lock last until the next point.
  * With PA_FLAG_SMOOTH, interpolate linearly between neighbours instead.
  * Returns 0 when the entry defines nothing at all (no points). */
-static int pa_eval(const pa_entry_t *e, uint32_t ct, uint16_t *out) {
+static int pa_v1_eval(const pa_entry_t *e, uint32_t ct, uint16_t *out) {
     if (!e || !e->count) return 0;
     /* Before the first point, the first point's value holds — the parameter
      * has a defined automation value everywhere once it has any. */
@@ -1059,20 +1202,6 @@ static void pa_entry_window(const pa_entry_t *e, uint32_t clip_start, uint32_t c
     *ws = (uint32_t)e->loop_off; *wl = win;
 }
 
-/* First index with points[i].tick >= t. */
-static int pa_lower_bound(const pa_entry_t *e, uint32_t t) {
-    int lo = 0, hi = e->count;
-    while (lo < hi) { int mid = (lo + hi) / 2; if (e->points[mid].tick < t) lo = mid + 1; else hi = mid; }
-    return lo;
-}
-
-/* Linear value at `t` on the span (ta, va) → (tb, vb), in 64-bit ticks so a
- * span reaching back across the wrap (ta < 0) is exact. */
-static uint16_t pa_lerp(int64_t ta, uint16_t va, int64_t tb, uint16_t vb, int64_t t) {
-    if (tb <= ta) return va;
-    int64_t v = (int64_t)va + ((int64_t)vb - (int64_t)va) * (t - ta) / (tb - ta);
-    return (uint16_t)(v < 0 ? 0 : v > PA_VAL_MAX ? PA_VAL_MAX : v);
-}
 
 /* pa_eval with the lane's window known: the wrap rule above.
  *
@@ -1088,28 +1217,28 @@ static uint16_t pa_lerp(int64_t ta, uint16_t va, int64_t tb, uint16_t vb, int64_
  * ramp meets the point without a step. The jump back to rest at the loop
  * boundary stays ("reset means reset").
  *
- * Returns 0 = no value, 1 = a lane value, PA_EVAL_REST = a FINAL value the
+ * Returns 0 = no value, 1 = a lane value, PA_V1_REST = a FINAL value the
  * caller must NOT scale: the resting value (Scale moves the lane's values, and
  * rest is not one of them), or a point on the Reset + Smooth lead-in ramp,
  * whose ends are already the values that play. */
-#define PA_EVAL_REST 2
-static int pa_eval_window(const pa_entry_t *e, uint32_t t, uint32_t ws, uint32_t wl, uint16_t *out) {
+#define PA_V1_REST 2
+static int pa_v1_eval_window(const pa_entry_t *e, uint16_t rest, uint32_t t, uint32_t ws, uint32_t wl, uint16_t *out) {
     if (!e || !e->count) return 0;
-    if (!wl) return pa_eval(e, t, out);
+    if (!wl) return pa_v1_eval(e, t, out);
     int fi = pa_lower_bound(e, ws);
     int li = pa_lower_bound(e, ws + wl) - 1;
-    if (fi >= e->count || li < fi) return pa_eval(e, t, out);     /* nothing inside the window */
+    if (fi >= e->count || li < fi) return pa_v1_eval(e, t, out);     /* nothing inside the window */
     const pa_point_t *f = &e->points[fi], *l = &e->points[li];
     if (e->flags & PA_FLAG_WRAP_RESET) {
         if (t < f->tick) {
-            if (e->rest == PA_VAL_UNSET) { *out = f->val; return 1; }
+            if (rest == PA_VAL_UNSET) { *out = f->val; return 1; }
             *out = (e->flags & PA_FLAG_SMOOTH)
-                   ? pa_lerp(ws, e->rest, f->tick, pa_scaled(e, f->val), t)
-                   : e->rest;
-            return PA_EVAL_REST;
+                   ? pa_lerp(ws, rest, f->tick, pa_scaled(e, f->val), t)
+                   : rest;
+            return PA_V1_REST;
         }
         if (t >= l->tick) { *out = l->val; return 1; }
-        return pa_eval(e, t, out);
+        return pa_v1_eval(e, t, out);
     }
     int smooth = (e->flags & PA_FLAG_SMOOTH) != 0;
     if (t < f->tick) {                         /* before the first: carried round from the last */
@@ -1120,7 +1249,7 @@ static int pa_eval_window(const pa_entry_t *e, uint32_t t, uint32_t ws, uint32_t
         *out = smooth ? pa_lerp(l->tick, l->val, (int64_t)f->tick + wl, f->val, t) : l->val;
         return 1;
     }
-    return pa_eval(e, t, out);                 /* between two points inside: unchanged */
+    return pa_v1_eval(e, t, out);                 /* between two points inside: unchanged */
 }
 
 /* MODE: PUNCH (plan 6c4, Josh 2026-09-11: "Steps with p-locks fall back to
@@ -1133,7 +1262,7 @@ static int pa_eval_window(const pa_entry_t *e, uint32_t t, uint32_t ws, uint32_t
  * dropped: see _worklogs/specs/2026-09-11-punch-and-line-locks.md).
  * Wrap and Smooth do not apply. A lane with no resting value falls back to the
  * plain curve. Same return codes as pa_eval_window. */
-static int pa_eval_punch(const pa_entry_t *e, uint32_t t, uint32_t ws, uint32_t wl,
+static int pa_v1_eval_punch(const pa_entry_t *e, uint16_t rest, uint32_t t, uint32_t ws, uint32_t wl,
                          uint32_t step_ticks, uint16_t *out) {
     if (!e || !e->count) return 0;
     if (!step_ticks) step_ticks = TICKS_PER_STEP;
@@ -1142,9 +1271,78 @@ static int pa_eval_punch(const pa_entry_t *e, uint32_t t, uint32_t ws, uint32_t 
         uint32_t pt = e->points[k].tick;
         if (t < (pt / step_ticks) * step_ticks + step_ticks) { *out = e->points[k].val; return 1; }
     }
-    if (e->rest == PA_VAL_UNSET) return pa_eval(e, t, out);
-    *out = e->rest;
-    return PA_EVAL_REST;
+    if (rest == PA_VAL_UNSET) return pa_v1_eval(e, t, out);
+    *out = rest;
+    return PA_V1_REST;
+}
+
+/* ------------------------------------------------------------------ */
+/* Evaluation — THE ENVELOPE                                             */
+/*                                                                      */
+/* A lane is one static envelope: its points glide (linearly) into each  */
+/* other, and a pair on one tick is a jump (see pa_set_pair). What a     */
+/* step shows is what plays. Two readings of it:                         */
+/*   pa_eval_from(t)   — the value FROM tick t on (a pair's second);     */
+/*   pa_eval_before(t) — the value JUST BEFORE t (a pair's first).       */
+/* A STEPPED target (a choice or a switch: nothing lies between its      */
+/* values) never glides — a point holds until the next one.              */
+/*                                                                      */
+/* Inside the lane's window [ws, ws+wl): normally a start point sits at  */
+/* ws (every lane gets one with its first point). Around the loop end    */
+/* Wrap decides: CARRY glides from the last point into the first one     */
+/* across the wrap; RESET holds the last value to the loop end and then  */
+/* jumps. Before the first point (only when the start point was deleted) */
+/* CARRY is that same glide, and RESET plays the first point's value.    */
+/* Points outside the window never play. A lane with none inside it      */
+/* holds its first point's value before it and its last after it.       */
+/* Values are RAW lane values: the caller scales them (pa_scaled).       */
+
+/* `k` = the index of the last point that counts as "at or before t". */
+static int pa_eval_core(const pa_entry_t *e, uint32_t t, uint32_t ws, uint32_t wl,
+                        int stepped, int k, uint16_t *out) {
+    int fi = 0, li = e->count - 1, wrap = 0;
+    if (wl) {
+        int a = pa_lower_bound(e, ws), b = pa_lower_bound(e, ws + wl) - 1;
+        if (a < e->count && b >= a) { fi = a; li = b; wrap = 1; }
+    }
+    const pa_point_t *f = &e->points[fi], *l = &e->points[li];
+    const int reset = (e->flags & PA_FLAG_WRAP_RESET) != 0;
+    int p = k > li ? li : k;
+    if (p < fi) {                                      /* before the first point */
+        if (!wrap || reset) *out = f->val;
+        else *out = stepped ? l->val : pa_lerp((int64_t)l->tick - wl, l->val, f->tick, f->val, t);
+        return 1;
+    }
+    if (p == li) {                                     /* after the last point */
+        if (!wrap || reset || stepped || l->tick == t) *out = l->val;
+        else *out = pa_lerp(l->tick, l->val, (int64_t)f->tick + wl, f->val, t);
+        return 1;
+    }
+    const pa_point_t *a = &e->points[p], *b = &e->points[p + 1];
+    *out = stepped ? a->val : pa_lerp(a->tick, a->val, b->tick, b->val, t);
+    return 1;
+}
+
+static int pa_eval_from(const pa_entry_t *e, uint32_t t, uint32_t ws, uint32_t wl,
+                        int stepped, uint16_t *out) {
+    if (!e || !e->count) return 0;
+    return pa_eval_core(e, t, ws, wl, stepped, pa_upper_bound(e, t) - 1, out);
+}
+
+static int pa_eval_before(const pa_entry_t *e, uint32_t t, uint32_t ws, uint32_t wl,
+                          int stepped, uint16_t *out) {
+    if (!e || !e->count) return 0;
+    if (wl && t == ws) {
+        /* Just before the window start is the END of the previous pass. */
+        int a = pa_lower_bound(e, ws), b = pa_lower_bound(e, ws + wl) - 1;
+        if (a < e->count && b >= a) {
+            const pa_point_t *f = &e->points[a], *l = &e->points[b];
+            if ((e->flags & PA_FLAG_WRAP_RESET) || stepped) *out = l->val;
+            else *out = pa_lerp(l->tick, l->val, (int64_t)f->tick + wl, f->val, (int64_t)ws + wl);
+            return 1;
+        }
+    }
+    return pa_eval_core(e, t, ws, wl, stepped, pa_lower_bound(e, t) - 1, out);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1207,34 +1405,25 @@ static uint16_t pa_scale_u16(uint32_t v, uint32_t num, uint32_t den) {
     return (uint16_t)(s > 0xFFFFu ? 0xFFFFu : s);
 }
 
-/* One lane's points through `op`, rebuilt sorted. Where two points land on one
- * tick (Beat Stretch /2 folding a dense sweep) the one that came LATER wins —
- * it is the value from there on. A point past the store's 16-bit tick range is
- * dropped: the store could never have held it there. Returns 0 when the lane
- * ran out of points (a copy onto a full lane). */
-static int pa_link_entry(pa_entry_t *e, const pa_link_op_t *op) {
+/* One lane's points through `op`, rebuilt sorted. Where several points land
+ * on one tick (Beat Stretch /2 folding a dense sweep) the FIRST and the LAST
+ * are kept — the value arriving there and the value from there on, which is
+ * exactly a jump pair (and one point when they agree). A pair moves as one:
+ * both halves share a tick and the sort is stable. A point past the store's
+ * 16-bit tick range is dropped: the store could never have held it there.
+ * Returns 0 when the lane ran out of points (a copy onto a full lane). */
+/* A COPY (a loop double) continues the old loop into the new half, so the
+ * seam at `dst` must sound like the old loop coming round: a jump pair there,
+ * from what the old window played just before it restarted to what it played
+ * from its start — a Reset lane held, then jumps; a Carry lane arrives where it
+ * glided to anyway (the pair collapses to the copied start point). */
+static int pa_link_entry(pa_entry_t *e, const pa_link_op_t *op, int stepped) {
     pa_point_t tmp[PA_ENTRY_POINTS];
     int n = 0, room = 1;
-    /* A COPY that doubles a Wrap: Reset lane: the copied half must START the
-     * way each pass of the old loop did — at rest (or the first point's value
-     * with no rest), gliding up under Smooth — not hold what the first half
-     * ended on. What the old window plays at its start, pinned at the copy's
-     * start as a point that PLAYS as it (a resting value through the scale). */
-    int pin = 0, hold = 0;
-    uint16_t pin_v = 0, hold_v = 0;
-    if (op->op == PA_LINK_COPY && (e->flags & PA_FLAG_WRAP_RESET) && !(e->flags & PA_FLAG_PUNCH) &&
-            op->span && op->dst <= 0xFFFFu) {
-        uint16_t v;
-        const int ev = pa_eval_window(e, op->src, op->src, op->span, &v);
-        if (ev) { pin = 1; pin_v = (ev == PA_EVAL_REST) ? pa_unscaled(e, v) : v; }
-        /* Under Smooth the first half would GLIDE into that pin; each pass of
-         * the old loop HELD its last value to the end and then jumped. So the
-         * value playing on the window's last tick is held there too. */
-        if (pin && (e->flags & PA_FLAG_SMOOTH) && op->dst > 0 &&
-                pa_eval_window(e, op->src + op->span - 1, op->src, op->span, &v) == 1) {
-            hold = 1; hold_v = v;
-        }
-    }
+    uint16_t seam_in = 0, seam_out = 0;
+    const int seam = op->op == PA_LINK_COPY && op->span && op->dst <= 0xFFFFu &&
+                     pa_eval_before(e, op->src, op->src, op->span, stepped, &seam_in) &&
+                     pa_eval_from(e, op->src, op->src, op->span, stepped, &seam_out);
     for (int i = 0; i < e->count; i++) {
         uint32_t t = e->points[i].tick;
         if (op->op == PA_LINK_SCALE) {
@@ -1265,17 +1454,6 @@ static int pa_link_entry(pa_entry_t *e, const pa_link_op_t *op) {
             tmp[n].val  = e->points[i].val;
             n++;
         }
-        /* The pin goes FIRST so a copied point on the copy's first tick (the
-         * old window had one at its start) wins over it ("the later wins"). */
-        if (pin && room) {
-            if (n + hold >= PA_ENTRY_POINTS) room = 0;
-            else {
-                memmove(&tmp[1 + hold], &tmp[0], (size_t)n * sizeof(pa_point_t));
-                if (hold) { tmp[0].tick = (uint16_t)(op->dst - 1); tmp[0].val = hold_v; }
-                tmp[hold].tick = (uint16_t)op->dst; tmp[hold].val = pin_v;
-                n += 1 + hold;
-            }
-        }
     }
     for (int i = 1; i < n; i++) {                       /* insertion sort: stable */
         pa_point_t k = tmp[i];
@@ -1284,12 +1462,16 @@ static int pa_link_entry(pa_entry_t *e, const pa_link_op_t *op) {
         tmp[j + 1] = k;
     }
     int w = 0;
-    for (int i = 0; i < n; i++) {
-        if (w && tmp[w - 1].tick == tmp[i].tick) tmp[w - 1] = tmp[i];   /* the later wins */
-        else tmp[w++] = tmp[i];
+    for (int i = 0; i < n; ) {
+        int j = i;
+        while (j + 1 < n && tmp[j + 1].tick == tmp[i].tick) j++;
+        tmp[w++] = tmp[i];
+        if (j > i && tmp[j].val != tmp[i].val) tmp[w++] = tmp[j];
+        i = j + 1;
     }
     memcpy(e->points, tmp, (size_t)w * sizeof(pa_point_t));
     e->count = (uint16_t)w;
+    if (seam && room && !pa_set_pair(e, (uint16_t)op->dst, seam_in, seam_out)) room = 0;
     return room;
 }
 
@@ -1363,7 +1545,7 @@ static void pa_link_clip(seq8_instance_t *inst, int track, int clip, const pa_li
         } else if (!pa_follows_clip(e)) {
             continue;
         }
-        if (!pa_link_entry(e, &eop)) full = 1;
+        if (!pa_link_entry(e, &eop, pa_target_stepped(inst, e->target))) full = 1;
         changed = 1;
     }
     if (full) inst->pa_store_full = PA_FULL_POINTS;
@@ -1603,9 +1785,22 @@ static uint32_t pa_lane_step(const seq8_track_t *tr, const pa_entry_t *e, uint32
 /* is also every project written before this existed — that is the whole */
 /* of the migration story, and it needs no version bump.                 */
 
-#define PA_SECTION_VERSION 1
+/* pav:2 (2026-10-21) — the ENVELOPE model: points glide, a jump is a pair of
+ * points on one tick, every lane starts at a start point, the resting value
+ * is the track's ("pk"). A pav:1 file (Smooth / Punch flags, a resting value
+ * per lane in "r") is CONVERTED on load to sound the same (pa_migrate_v1) and
+ * saved as pav:2 from then on. ⚠ A build older than this refuses pav:2 (it
+ * skips an unknown section version), so such a project opens there with no
+ * automation. */
+#define PA_SECTION_VERSION 2
 
-static void pa_parse_locked(seq8_instance_t *inst, const char *buf, size_t blen);
+/* What a pav:1 file said each loaded lane's resting value was ("r"), by entry
+ * slot, for the conversion; PA_VAL_UNSET when none. Written and read only
+ * inside one load, under the writer lock. */
+static uint16_t pa_v1_rest[PA_MAX_ENTRIES];
+
+static int pa_parse_locked(seq8_instance_t *inst, const char *buf, size_t blen);
+static void pa_migrate_v1(seq8_instance_t *inst);
 
 /* Bounded JSON readers. The shared json_get_int searches from a pointer to the
  * end of the document, which is right for a flat key but wrong inside an array
@@ -1670,7 +1865,6 @@ static void pa_serialize_locked(seq8_instance_t *inst, FILE *fp) {
         first = 0;
         fprintf(fp, "{\"t\":%d,\"c\":%d,\"k\":\"%s\",\"f\":%d",
                 (int)e->track, (int)e->clip, inst->pa_targets[e->target], (int)e->flags);
-        if (e->rest != PA_VAL_UNSET) fprintf(fp, ",\"r\":%d", (int)e->rest);
         if (e->loop_len)   fprintf(fp, ",\"ll\":%d", (int)e->loop_len);
         if (e->loop_off)   fprintf(fp, ",\"lo\":%d", (int)e->loop_off);
         if (e->resolution) fprintf(fp, ",\"rs\":%d", (int)e->resolution);
@@ -1683,6 +1877,25 @@ static void pa_serialize_locked(seq8_instance_t *inst, FILE *fp) {
         fprintf(fp, "\"}");
     }
     fprintf(fp, "]");
+    /* The resting values: "pk":[{"k":target,"v":value},…], for every target a
+     * listed lane names (a parameter with no lane has no resting value to
+     * keep). Sparse: absent when none is known. */
+    uint64_t named = 0;
+    for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+        const pa_entry_t *e = &inst->pa_entries[i];
+        if (pa_entry_live(e) && e->target < PA_MAX_TARGETS) named |= 1ull << e->target;
+    }
+    named &= inst->pa_knob_valid;
+    if (named) {
+        fprintf(fp, ",\"pk\":[");
+        int f = 1;
+        for (int t = 0; t < PA_MAX_TARGETS; t++) {
+            if (!((named >> t) & 1u)) continue;
+            fprintf(fp, "%s{\"k\":\"%s\",\"v\":%d}", f ? "" : ",", inst->pa_targets[t], (int)inst->pa_knob[t]);
+            f = 0;
+        }
+        fprintf(fp, "]");
+    }
 }
 
 /* LOAD DEFAULT for drum cycles: a drum lane saved before lanes carried
@@ -1718,24 +1931,27 @@ static void pa_parse(seq8_instance_t *inst, const char *buf, size_t blen) {
      * as they are being filled in. */
     pa_lock(inst);
     pa_write_begin(inst);
-    pa_parse_locked(inst, buf, blen);
+    const int sv = pa_parse_locked(inst, buf, blen);
     pa_pin_drum_cycles(inst);
+    if (sv == 1) pa_migrate_v1(inst);   /* after the cycles: it needs every lane's window */
     memset(inst->pa_live, 0, sizeof(inst->pa_live));
     pa_write_end(inst);
     pa_unlock(inst);
 }
 
-static void pa_parse_locked(seq8_instance_t *inst, const char *buf, size_t blen) {
+/* Returns the section version parsed (0 = none). */
+static int pa_parse_locked(seq8_instance_t *inst, const char *buf, size_t blen) {
     pa_reset_all_locked(inst);
-    if (!buf) return;
+    for (int i = 0; i < PA_MAX_ENTRIES; i++) pa_v1_rest[i] = PA_VAL_UNSET;
+    if (!buf) return 0;
     const char *sec = strstr(buf, "\"pa\":[");
-    if (!sec) return;
+    if (!sec) return 0;
     /* Section version. An unknown one is left alone rather than parsed as this
      * one: reading a newer format with older rules produces plausible-looking
      * garbage, which is worse than no automation. Nothing is deleted — the file
      * belongs to whoever wrote it. */
-    { int sv = json_get_int(buf, "pav", 1);
-      if (sv != PA_SECTION_VERSION) return; }
+    const int sv = json_get_int(buf, "pav", 1);
+    if (sv != 1 && sv != PA_SECTION_VERSION) return 0;
     const char *p = sec + 6;
     const char *doc_end = buf + blen;
 
@@ -1761,7 +1977,8 @@ static void pa_parse_locked(seq8_instance_t *inst, const char *buf, size_t blen)
             if (!e) inst->pa_store_full = PA_FULL_ENTRIES;
             if (e) {
                 e->flags      = (uint8_t)flags;
-                e->rest       = (rest >= 0) ? (uint16_t)rest : PA_VAL_UNSET;
+                if (sv == 1 && rest >= 0 && rest <= PA_VAL_MAX)
+                    pa_v1_rest[e - inst->pa_entries] = (uint16_t)rest;
                 e->loop_len   = (uint16_t)pa_json_int(obj, end, "ll", 0);
                 e->loop_off   = (uint16_t)pa_json_int(obj, end, "lo", 0);
                 e->resolution = (uint16_t)pa_json_int(obj, end, "rs", 0);
@@ -1809,7 +2026,148 @@ static void pa_parse_locked(seq8_instance_t *inst, const char *buf, size_t blen)
         while (p < doc_end && (*p == ' ' || *p == ',')) p++;
         if (p >= doc_end || *p != '{') break;
     }
+    /* The resting values. Only for a target some lane already named: one with
+     * no lane is not interned (and would be freed again on the next gc). */
+    const char *pk = strstr(buf, "\"pk\":[");
+    if (pk) {
+        const char *q = pk + 6;
+        while (q < doc_end && *q == '{') {
+            const char *end = strchr(q, '}');
+            if (!end || end >= doc_end) break;
+            char tgt[PA_TARGET_LEN] = {0};
+            pa_json_str(q, end, "k", tgt, sizeof(tgt));
+            int v = pa_json_int(q, end, "v", -1);
+            int id = pa_target_lookup(inst, tgt);
+            if (id >= 0 && v >= 0 && v <= PA_VAL_MAX) {
+                inst->pa_knob[id] = (uint16_t)v;
+                inst->pa_knob_valid |= 1ull << id;
+            }
+            q = end + 1;
+            while (q < doc_end && (*q == ' ' || *q == ',')) q++;
+        }
+    }
     inst->pa_dirty = 0;
+    return sv;
+}
+
+/* ------------------------------------------------------------------ */
+/* THE pav:1 CONVERSION                                                  */
+/*                                                                      */
+/* A pav:1 lane played by its own rules — Smooth on or off, Mode: Curve  */
+/* or Punch, a resting value of its own — and every one of them is a     */
+/* shape the envelope can draw exactly: glides between points, and jump  */
+/* pairs where the old rules stepped. So each lane is rebuilt to sound   */
+/* the same (±1 of rounding: the glide now runs in the lane's own values */
+/* and is scaled after, where v1 scaled the ends first):                 */
+/*  - a GLIDING lane (Smooth, outside Punch) keeps its points, plus a    */
+/*    start point at the window start carrying what v1 played there, and */
+/*    — where v1 held its last value to the loop end and jumped — the     */
+/*    held value as the first of a pair there;                            */
+/*  - a STEPPED lane (Smooth off, or Punch) becomes a pair at every tick  */
+/*    where v1's value changes: the window start, each point, and under   */
+/*    Punch each point's step end. Between them the envelope is flat — or, */
+/*    where a Punch lane with no resting value fell back to the curve      */
+/*    between its steps, the same glide.                                   */
+/* Values v1 played as the RESTING value are stored as the raw value that */
+/* plays as it through the lane's Scale. Points outside the window never  */
+/* played and are kept as they are; a lane with none inside its window is */
+/* left alone. A lane whose rebuilt points would not fit keeps its old    */
+/* points (and says so: pa_store_full). The parameter's resting value is  */
+/* the one its lane in the track's ACTIVE clip had, else the first seen.  */
+
+/* v1's value at `t`, as a raw lane value. */
+static uint16_t pa_v1_at(const pa_entry_t *e, uint16_t rest, uint32_t t,
+                         uint32_t ws, uint32_t wl, uint32_t st) {
+    uint16_t v = 0;
+    const int ev = (e->flags & PA_FLAG_PUNCH) ? pa_v1_eval_punch(e, rest, t, ws, wl, st, &v)
+                                              : pa_v1_eval_window(e, rest, t, ws, wl, &v);
+    return ev == PA_V1_REST ? pa_unscaled(e, v) : v;
+}
+
+/* One lane, rebuilt in place. Returns 0 when it would not fit (left as is). */
+static int pa_migrate_v1_entry(const seq8_instance_t *inst, pa_entry_t *e, uint16_t rest) {
+    uint32_t ws = 0, wl = 0, st = 0;
+    if (!e->count || e->track >= NUM_TRACKS) return 1;
+    if (!pa_export_window(&inst->tracks[e->track], e, &ws, &wl, &st) || !wl) return 1;
+    const uint32_t we = ws + wl;
+    if (we - 1 > 0xFFFFu) return 1;
+    const int fi = pa_lower_bound(e, ws), li = pa_lower_bound(e, we) - 1;
+    if (fi >= e->count || li < fi) return 1;              /* nothing inside the window */
+    if (!st) st = TICKS_PER_STEP;
+    const int punch = (e->flags & PA_FLAG_PUNCH) != 0;
+    const int glides = (e->flags & PA_FLAG_SMOOTH) && !punch;
+    static pa_entry_t q;
+    q = *e;
+    q.count = 0;
+    int ok = 1;
+    for (int i = 0; i < e->count; i++)                    /* outside the window: as they were */
+        if (i < fi || i > li) ok &= pa_set_point(&q, e->points[i].tick, e->points[i].val);
+    if (glides) {
+        for (int i = fi; i <= li; i++) ok &= pa_set_point(&q, e->points[i].tick, e->points[i].val);
+        if (!pa_at(&q, ws, NULL)) ok &= pa_set_point(&q, (uint16_t)ws, pa_v1_at(e, rest, ws, ws, wl, st));
+        /* Carry under the window rule glides across the loop end, as the
+         * envelope does; every other v1 rule held the last value there. */
+        const int carry_glide = !(e->flags & PA_FLAG_PUNCH) && !(e->flags & PA_FLAG_WRAP_RESET);
+        if (!carry_glide) ok &= pa_set_first(&q, (uint16_t)ws, pa_v1_at(e, rest, we - 1, ws, wl, st));
+    } else {
+        /* The ticks where a stepped v1 lane can change: the window start,
+         * each point inside, and (Punch) the end of each point's step. */
+        static uint32_t bp[2 * PA_ENTRY_POINTS + 2];
+        int nb = 0;
+        bp[nb++] = ws;
+        for (int i = fi; i <= li; i++) {
+            bp[nb++] = e->points[i].tick;
+            if (punch) {
+                const uint32_t end = (e->points[i].tick / st) * st + st;
+                if (end < we) bp[nb++] = end;
+            }
+        }
+        /* Its fallback curve can glide toward a point OUTSIDE the window:
+         * pin where that glide stands on the window's last tick. */
+        if (punch && (e->flags & PA_FLAG_SMOOTH)) bp[nb++] = we - 1;
+        for (int i = 1; i < nb; i++) {                    /* insertion sort, then unique */
+            uint32_t k = bp[i]; int j = i - 1;
+            while (j >= 0 && bp[j] > k) { bp[j + 1] = bp[j]; j--; }
+            bp[j + 1] = k;
+        }
+        for (int i = 0; i < nb; i++) {
+            if (i && bp[i] == bp[i - 1]) continue;
+            const uint32_t b = bp[i];
+            const uint16_t from = pa_v1_at(e, rest, b, ws, wl, st);
+            uint16_t before = pa_v1_at(e, rest, b == ws ? we - 1 : b - 1, ws, wl, st);
+            /* A Punch lane with no resting value fell back to the curve
+             * between its steps — Smooth glides there. The value ARRIVING at
+             * a breakpoint on a glide is the line's own, one tick on. */
+            if ((e->flags & PA_FLAG_SMOOTH) && b >= ws + 2) {
+                const int32_t c = pa_v1_at(e, rest, b - 2, ws, wl, st), x = 2 * (int32_t)before - c;
+                if (c != before) before = (uint16_t)(x < 0 ? 0 : x > PA_VAL_MAX ? PA_VAL_MAX : x);
+            }
+            ok &= pa_set_pair(&q, (uint16_t)b, before, from);
+        }
+    }
+    if (!ok) return 0;
+    memcpy(e->points, q.points, (size_t)q.count * sizeof(pa_point_t));
+    e->count = q.count;
+    return 1;
+}
+
+static void pa_migrate_v1(seq8_instance_t *inst) {
+    /* The resting values: the active clip's lane first, then any. */
+    for (int pass = 0; pass < 2; pass++)
+        for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+            const pa_entry_t *e = &inst->pa_entries[i];
+            if (!e->used || e->target >= PA_MAX_TARGETS || pa_v1_rest[i] == PA_VAL_UNSET) continue;
+            if ((inst->pa_knob_valid >> e->target) & 1u) continue;
+            if (pass == 0 && (e->track >= NUM_TRACKS || inst->tracks[e->track].active_clip != e->clip)) continue;
+            inst->pa_knob[e->target] = pa_v1_rest[i];
+            inst->pa_knob_valid |= 1ull << e->target;
+        }
+    for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+        pa_entry_t *e = &inst->pa_entries[i];
+        if (!pa_entry_live(e)) continue;
+        if (!pa_migrate_v1_entry(inst, e, pa_v1_rest[i])) inst->pa_store_full = PA_FULL_POINTS;
+        e->flags &= (uint8_t)~(PA_FLAG_SMOOTH | PA_FLAG_PUNCH);
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -2010,8 +2368,8 @@ static int pa_cap_pending(const seq8_instance_t *inst, int track) {
 
 /* SPI THREAD. The Capture tap: every captured sweep on `track` becomes real
  * automation in `clip`, written the way the recorder would have written it —
- * clear the cell, set the point, mark the lane SMOOTH because a sweep sampled
- * per cell and held is a staircase. Returns the number of lanes committed.
+ * clear the cell, set the point (the envelope glides between the cells).
+ * Returns the number of lanes committed.
  *
  * ⚠ It commits into the clip the sweep was HEARD in, not whichever clip is
  * focused now: a lane captured against another clip is left alone rather than
@@ -2035,12 +2393,12 @@ static int pa_cap_commit(seq8_instance_t *inst, int track, int clip) {
         if (!e) { inst->pa_store_full = PA_FULL_ENTRIES; continue; }
         pa_cycle_adopt(&inst->tracks[track], e, c->cyc_off, c->cyc_len, c->cyc_st);
         uint16_t cell = c->cell ? c->cell : 1;
+        if (!pa_start_point(inst, &inst->tracks[track], e, c->points[0].val)) inst->pa_store_full = PA_FULL_POINTS;
         for (int p = 0; p < c->count; p++) {
             uint16_t s = c->points[p].tick;
             pa_clear_range(e, s, (uint16_t)(s + cell - 1));
             if (!pa_set_point(e, s, c->points[p].val)) { inst->pa_store_full = PA_FULL_POINTS; break; }
         }
-        e->flags |= PA_FLAG_SMOOTH;
         e->last_sent_valid = 0;            /* playback re-asserts from the new points */
         c->used = 0; c->count = 0;
         lanes++;
@@ -2113,13 +2471,9 @@ static void pa_record_tick(seq8_instance_t *inst, seq8_track_t *tr, int track, i
         if (!e) inst->pa_store_full = PA_FULL_ENTRIES;
         else {
             uint16_t s = (uint16_t)(snap > 0xFFFFu - cell ? 0xFFFFu - cell : snap);
+            if (!pa_start_point(inst, tr, e, l->val)) inst->pa_store_full = PA_FULL_POINTS;
             pa_clear_range(e, s, (uint16_t)(s + cell - 1));
             if (!pa_set_point(e, s, l->val)) inst->pa_store_full = PA_FULL_POINTS;
-            /* A recording is a sweep, and a sweep sampled every half step and
-             * held is a 16-steps-a-second staircase on a filter. So what the
-             * hand recorded plays back SMOOTH: interpolated between the cells
-             * at tick rate. Locks stay stepped — that is their meaning. */
-            e->flags |= PA_FLAG_SMOOTH;
             /* The parameter IS at the live value — the editor set it — so
              * playback need not re-send it when the hand comes off. */
             e->last_sent = l->val; e->last_sent_valid = 1;
@@ -2158,7 +2512,20 @@ typedef void (*pa_midi_emit_fn)(seq8_track_t *tr, int cc, uint16_t val);
 void (*pa_test_midscan_hook)(seq8_instance_t *inst) = 0;
 #endif
 
-/* `lead`: ticks a STEPPED lane reads ahead of the playhead, and `hold` how
+/* Is there a jump pair in (lo, hi]? */
+static int pa_pair_in(const pa_entry_t *e, uint32_t lo, uint32_t hi) {
+    for (int i = pa_upper_bound(e, lo); i + 1 < e->count && e->points[i].tick <= hi; i++)
+        if (e->points[i + 1].tick == e->points[i].tick) return 1;
+    return 0;
+}
+/* …in (a, b], where b below a has wrapped round the window [ws, ws+wl).
+ * Bounded by the lead (a few ticks), so a short walk. */
+static int pa_pair_between(const pa_entry_t *e, uint32_t a, uint32_t b, uint32_t ws, uint32_t wl) {
+    if (b >= a) return pa_pair_in(e, a, b);
+    return pa_pair_in(e, a, ws + wl - 1) || pa_at(e, ws, NULL) == 2 || pa_pair_in(e, ws, b);
+}
+
+/* `lead`: ticks a lane reads ahead of the playhead when a jump is due, and `hold` how
  * long its value is then held — a groove playing a step early plays that
  * step's lock early with it (groove_track_lead). With no early slot due,
  * lead is 0 and hold is the tick's own swing delay. */
@@ -2235,8 +2602,15 @@ static void pa_playback_scan_lead(seq8_instance_t *inst, seq8_track_t *tr, int t
         uint16_t v;
         uint32_t ws, wl;
         pa_lane_window(tr, e, clip_start, clip_ticks, &ws, &wl);
-        uint32_t lt;
-        if (lead && !(e->flags & PA_FLAG_SMOOTH)) {
+        /* A jump lands WITH its step's notes, early or swung; a glide does
+         * not. A stepped target's every change is a jump; a gliding one jumps
+         * only on a pair — so it reads ahead only while a pair is coming up
+         * inside the lead (and, having read ahead to it, stays on it: the
+         * run after a pair is flat, so nothing is taken back). */
+        const int stepped = pa_target_stepped(inst, tgt);
+        uint32_t lt = pa_lane_tick(inst, tr, e, ct, clip_ticks, tr->pa_cycle);
+        if (lead) {
+            uint32_t llt;
             if (pa_lane_cycled(tr, e)) {
                 /* a drum cycle runs on the master clock: read it `lead` on */
                 uint64_t abs = pa_lane_abs(inst, tr) + lead;
@@ -2245,19 +2619,16 @@ static void pa_playback_scan_lead(seq8_instance_t *inst, seq8_track_t *tr, int t
                     pa_rate(e->resolution, &mul, &div);
                     abs = abs * mul / div;
                 }
-                lt = (uint32_t)e->loop_off + (uint32_t)(abs % e->loop_len);
+                llt = (uint32_t)e->loop_off + (uint32_t)(abs % e->loop_len);
             } else {
                 uint32_t lct = ct + lead, lcyc = tr->pa_cycle;
                 if (clip_ticks && lct >= clip_start + clip_ticks) { lct -= clip_ticks; lcyc++; }
-                lt = pa_entry_tick(e, lct, clip_ticks, lcyc);
+                llt = pa_entry_tick(e, lct, clip_ticks, lcyc);
             }
-        } else {
-            lt = pa_lane_tick(inst, tr, e, ct, clip_ticks, tr->pa_cycle);
+            if (stepped || pa_pair_between(e, lt, llt, ws, wl)) lt = llt;
         }
-        int ev = (e->flags & PA_FLAG_PUNCH) ? pa_eval_punch(e, lt, ws, wl, pa_lane_step(tr, e, step_ticks), &v)
-                                            : pa_eval_window(e, lt, ws, wl, &v);
-        if (!ev) continue;
-        if (ev != PA_EVAL_REST) v = pa_scaled(e, v);   /* the lane's scale; never the resting value */
+        if (!pa_eval_from(e, lt, ws, wl, stepped, &v)) continue;
+        v = pa_scaled(e, v);                           /* the lane's scale */
         if (e->last_sent_valid && e->last_sent == v) continue;   /* unchanged */
 
         int cc = 0;
@@ -2270,7 +2641,7 @@ static void pa_playback_scan_lead(seq8_instance_t *inst, seq8_track_t *tr, int t
         out[nout].target = tgt;
         out[nout].val    = v;
         out[nout].midi   = (uint8_t)midi;
-        out[nout].stepped = (e->flags & PA_FLAG_SMOOTH) ? 0 : 1;
+        out[nout].stepped = (uint8_t)(stepped || pa_at(e, lt, NULL) == 2);
         out[nout].cc     = cc;
         nout++;
     }
@@ -2330,9 +2701,9 @@ static void pa_write_cell(seq8_instance_t *inst, int track, int clip, const char
     else {
         uint32_t snap = (tick / cell) * cell;
         uint16_t s = (uint16_t)(snap > 0xFFFFu - cell ? 0xFFFFu - cell : snap);
+        if (!pa_start_point(inst, &inst->tracks[track], e, val)) inst->pa_store_full = PA_FULL_POINTS;
         pa_clear_range(e, s, (uint16_t)(s + cell - 1));
         if (!pa_set_point(e, s, val)) inst->pa_store_full = PA_FULL_POINTS;
-        e->flags |= PA_FLAG_SMOOTH;                /* a pressure sweep, like a knob's */
         inst->pa_dirty = 1; inst->state_dirty = 1;
     }
     pa_write_end(inst);
@@ -2343,29 +2714,18 @@ static void pa_write_cell(seq8_instance_t *inst, int track, int clip, const char
  * driving goes back to the value it held before automation touched it.
  * Without this a parameter is simply abandoned wherever the playhead left it —
  * and for a chain parameter that value is what the slot then persists. */
-/* The value a lane gives back when it stops driving its parameter.
- *
- * ⚠⚠ NOT simply `e->rest`. A lane built by the Capture tap (pa_cap_commit) is
- * created through pa_get and never records a rest, so `rest` is PA_VAL_UNSET —
- * and both release paths used to SKIP those, abandoning the parameter wherever
- * the playhead left it. For a chain parameter the slot then persists that value
- * as if it had been dialled by hand, and switching clips or copying one made
- * two clips look LINKED (Josh, device, 2026-09-12).
- *
- * Evaluation already states the rule this follows — "A lane with no resting
- * value captured falls back to the first point's value" (pa_eval_window) — so
- * this is that one rule, honoured on the way out as well as on the way in.
- * Returns 0 if there is genuinely nothing to give back. */
-static int pa_rest_value(const pa_entry_t *e, uint16_t *out) {
-    if (!e) return 0;
-    /* A RECORDED rest is given back whatever else is true — including for a
-     * RETIRED entry (count 0), which is how Delete+knob puts the parameter back
-     * where it was before the automation existed. Gating this on `count` broke
-     * exactly that, and the existing test caught it. */
-    if (e->rest != PA_VAL_UNSET) { *out = e->rest; return 1; }
-    /* Only the FALLBACK needs a point to fall back to. */
+/* The value a lane gives back when it stops driving its parameter: the
+ * track's RESTING value for it (pa_knob). A lane whose parameter has none
+ * known (a project that never recorded one) gives back what its first point
+ * plays — never nothing: a lane that skipped its release once stranded the
+ * parameter wherever the playhead left it, and the slot then persisted that
+ * value as if dialled by hand (Josh, device, 2026-09-12). Returns 0 only when
+ * there is genuinely nothing to give back. */
+static int pa_rest_value(const seq8_instance_t *inst, const pa_entry_t *e, uint16_t *out) {
+    if (!e || e->target >= PA_MAX_TARGETS) return 0;
+    if ((inst->pa_knob_valid >> e->target) & 1u) { *out = inst->pa_knob[e->target]; return 1; }
     if (!e->count) return 0;
-    *out = e->points[0].val;
+    *out = pa_scaled(e, e->points[0].val);
     return 1;
 }
 
@@ -2385,7 +2745,7 @@ static void pa_release_scan(seq8_instance_t *inst, int track, int clip) {
          * Stop must not undo that. */
         if (!(e->flags & PA_FLAG_ACTIVE)) continue;
         uint16_t back;
-        if (!pa_rest_value(e, &back)) continue;
+        if (!pa_rest_value(inst, e, &back)) continue;
         uint16_t tgt = e->target;
         if (tgt >= PA_MAX_TARGETS) continue;
         if (!pa_target_is_midi(inst->pa_targets[tgt], NULL))
@@ -2395,8 +2755,11 @@ static void pa_release_scan(seq8_instance_t *inst, int track, int clip) {
 
 /* The INCOMING half (Josh, 2026-09-13: the parameter "should jump immediately to
  * the new clip's resting value"). Releasing the outgoing clip alone leaves the
- * parameter at the OLD clip's rest until the new clip's playhead reaches a point,
- * so the sound you get on a switch belongs to the clip you just left.
+ * parameter at the track's resting value until the new clip's playback catches
+ * up, so the sound you get on a switch is not yet the clip you switched to. A
+ * lane's envelope starts at its window start, so that is what it asserts: what
+ * the incoming lane plays there (its start point — the resting value it was
+ * made with, or whatever was written over it), through its Scale.
  *
  * ⚠ The ENTRY FILTER is identical to the release scan's — a retired (count 0) or
  * DEACTIVATED entry drives nothing, so neither may assert, or a switch would
@@ -2412,10 +2775,13 @@ static void pa_assert_scan(seq8_instance_t *inst, int track, int clip) {
         if (!e->used || e->track != track || e->clip != clip) continue;
         if (!e->count) continue;
         if (!(e->flags & PA_FLAG_ACTIVE)) continue;
-        uint16_t back;
-        if (!pa_rest_value(e, &back)) continue;
         uint16_t tgt = e->target;
         if (tgt >= PA_MAX_TARGETS) continue;
+        uint16_t back;
+        uint32_t ws = 0, wl = 0, st = 0;
+        if (pa_export_window(&inst->tracks[track], e, &ws, &wl, &st) && wl &&
+            pa_eval_from(e, ws, ws, wl, pa_target_stepped(inst, tgt), &back)) back = pa_scaled(e, back);
+        else if (!pa_rest_value(inst, e, &back)) continue;
         /* Playback must re-send after this, not believe its cache. */
         e->last_sent_valid = 0;
         if (!pa_target_is_midi(inst->pa_targets[tgt], NULL))
@@ -2486,7 +2852,7 @@ static void pa_release_service(seq8_instance_t *inst) {
         __atomic_exchange_n(&e->release, 0, __ATOMIC_ACQ_REL);
         if (!e->used) continue;
         uint16_t tgt = e->target, back;
-        if (tgt >= PA_MAX_TARGETS || !pa_rest_value(e, &back)) continue;
+        if (tgt >= PA_MAX_TARGETS || !pa_rest_value(inst, e, &back)) continue;
         e->last_sent_valid = 0;
         if (!pa_target_is_midi(inst->pa_targets[tgt], NULL))
             pa_emit_rest(inst, tgt, back, (int)e->clip);

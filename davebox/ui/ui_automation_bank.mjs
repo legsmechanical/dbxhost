@@ -33,7 +33,7 @@ import { soundOpen, soundExit, soundJumpToParam, soundEditorComp } from './ui_so
 import { readBankParams } from './ui_dsp_bridge.mjs';
 import { effectiveClip } from './ui_leds.mjs';
 import { automationEntriesFor, automationTargetLabel, automationClearKey, automationClearPoints,
-         automationToggleActive, automationToggleSmooth, automationToggleWrap, automationToggleMode, automationToggleLink, automationSmoothable,
+         automationToggleActive, automationToggleWrap, automationToggleLink,
          automationSetLoop, automationSetRate, automationRateText, automationSetScale,
          automationClearClip, automationListGen, automationStepTicks, rowCycle,
          cycleText, automationMatchPad, padCycle, automationStateFor, automationWireValue } from './ui_automation.mjs';
@@ -91,7 +91,7 @@ export function autoBankRows(track, clip) {
     const rows = [];
     for (const e of automationEntriesFor(track, clip)) {
         rows.push({ kind: 'entry', target: e.target, label: automationTargetLabel(e.target),
-                    active: e.active, smooth: e.smooth, wrapReset: !!e.wrapReset, punch: !!e.punch,
+                    active: e.active, wrapReset: !!e.wrapReset,
                     linked: e.linked !== false,
                     count: e.count, loop: e.loop, res: e.res, lo: e.lo | 0, st: e.st | 0,
                     scale: isFinite(e.scale) ? e.scale : 100 });
@@ -103,7 +103,7 @@ export function autoBankRows(track, clip) {
 /* The value column is the lane's CYCLE (Josh, 2026-09-24): "4 BAR", "13 ST",
  * "13 ST/32", or "CLIP" when it follows the clip — with lanes at different
  * lengths, how long each one loops is the thing that is hard to remember.
- * Muted still reads OFF; Smooth lives in the row's ops as a setting. */
+ * Muted still reads OFF; Wrap lives in the row's ops as a setting. */
 function rowValue(r, track, clip) {
     if (r.kind === 'at') return 'PADS';
     if (!r.active) return 'OFF';
@@ -117,9 +117,7 @@ function rowValue(r, track, clip) {
 }
 function loopText(steps) { return steps > 0 ? (steps + ' ST') : 'CLIP'; }
 function scaleText(pct) { return (isFinite(pct) ? pct : 100) + '%'; }
-function smoothText(on) { return on ? 'On' : 'Off'; }
 function wrapText(reset) { return reset ? 'Reset' : 'Carry'; }
-function modeText(punch) { return punch ? 'Punch' : 'Curve'; }
 function linkText(linked) { return linked ? 'On' : 'Off'; }
 
 /* A row's step in ticks: a drum lane's own (its cycle's grid), else the
@@ -144,25 +142,14 @@ function opsFor(track, clip, r) {
     /* Delete is LAST, Clear beside it (Josh, 2026-09-25: "delete should be
      * moved to the bottom of the automation menu"). */
     const ops = [{ op: 'active', label: r.active ? 'Mute' : 'Unmute' }];
-    const i = r.target.indexOf(':');
-    const slot = parseInt(r.target.slice(0, i), 10), fullKey = r.target.slice(i + 1);
     /* ⭑ SET-AND-FORGET SETTINGS READ AS SETTINGS (Josh, 2026-09-11): a static
-     * label on the left and the VALUE on the right — "Smooth: On/Off. Wrap:
-     * Carry/Reset." — not an action label that flips its own wording. A click
-     * flips the value in place (see runOp). */
-    /* MODE first: it decides which of the rows below mean anything. In Punch a
-     * point lasts its own step and every other step is at rest — nothing carries
-     * round the loop and nothing glides between points — so Smooth and Wrap are
-     * HIDDEN there (their settings are kept for when the lane goes back to
-     * Curve). Plan 6c4, Josh 2026-09-11. */
-    ops.push({ op: 'mode', label: 'Mode', value: modeText(r.punch) });
-    if (!r.punch) {
-        if (midiTargetIsMidi(r.target) || (isFinite(slot) && automationSmoothable(slot, fullKey)))
-            ops.push({ op: 'smooth', label: 'Smooth', value: smoothText(r.smooth) });
-        ops.push({ op: 'wrap', label: 'Wrap', value: wrapText(r.wrapReset) });
-    }
-    /* LINK (plan 6c): does the lane move with its notes? Shown in both modes —
-     * a Punch lock follows its note as much as a curve does. */
+     * label on the left and the VALUE on the right — "Wrap: Carry/Reset." —
+     * not an action label that flips its own wording. A click flips the value
+     * in place (see runOp). WRAP: what the lane does at the loop end — Carry
+     * glides into its start, Reset holds and jumps back (every lane: there are
+     * no lane modes, every lane is one envelope). */
+    ops.push({ op: 'wrap', label: 'Wrap', value: wrapText(r.wrapReset) });
+    /* LINK (plan 6c): does the lane move with its notes? */
     ops.push({ op: 'link', label: 'Link', value: linkText(r.linked) });
     ops.push({ op: 'loop', label: 'Loop', value: loopValue(track, clip, r, rowLoopSteps(track, clip, r)) });
     /* A drum lane's cycle is a snapshot of the pad it was recorded on; Match
@@ -212,7 +199,7 @@ export function drawAutomationBankBody() {
             label: o.label,
             value: (o.op === 'loop' || o.op === 'rate' || o.op === 'scale')
                 ? ((a.loopEdit || a.rateEdit || a.scaleEdit) && i === a.ops.sel ? '<' + o.value + '>' : o.value)
-                : (o.op === 'smooth' || o.op === 'wrap' || o.op === 'mode' || o.op === 'link' || o.op === 'match') ? o.value : undefined,
+                : (o.op === 'wrap' || o.op === 'link' || o.op === 'match') ? o.value : undefined,
         }));
         drawKitBackdropDim(0, LIST_TOP, 128, MV_FOOTER_Y - LIST_TOP);
         /* ⚠ bottomY: STOP THE BOX ABOVE THE FOOTER. Without it the stacked
@@ -342,32 +329,16 @@ function runOp(t, c, a) {
     } else if (o.op === 'active') {
         const on = automationToggleActive(t, c, r.target);
         if (on !== null) showActionPopup('AUTOMATION', on ? 'ON' : 'MUTED');
-    } else if (o.op === 'mode') {
-        /* A setting, flipped in place — and it changes WHICH rows exist (Smooth
-         * and Wrap come and go), so the list is rebuilt with the cursor kept on
-         * Mode. */
-        const punch = automationToggleMode(t, c, r.target);
-        if (punch !== null) {
-            r.punch = punch;
-            a.ops.rows = opsFor(t, c, r);
-            a.ops.sel = Math.max(0, a.ops.rows.findIndex(x => x.op === 'mode'));
-        }
-        return;
     } else if (o.op === 'link') {
-        /* A setting, flipped in place like Smooth and Wrap. */
+        /* A setting, flipped in place like Wrap. */
         const linked = automationToggleLink(t, c, r.target);
         if (linked !== null) { r.linked = linked; o.value = linkText(linked); }
         return;
-    } else if (o.op === 'smooth' || o.op === 'wrap') {
+    } else if (o.op === 'wrap') {
         /* A setting, not an action: flip it IN PLACE and keep the pop-up open,
          * so the value you just set is the thing you are looking at. */
-        if (o.op === 'smooth') {
-            const on = automationToggleSmooth(t, c, r.target);
-            if (on !== null) { r.smooth = on; o.value = smoothText(on); }
-        } else {
-            const reset = automationToggleWrap(t, c, r.target);
-            if (reset !== null) { r.wrapReset = reset; o.value = wrapText(reset); }
-        }
+        const reset = automationToggleWrap(t, c, r.target);
+        if (reset !== null) { r.wrapReset = reset; o.value = wrapText(reset); }
         return;
     }
     a.ops = null;

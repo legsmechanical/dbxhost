@@ -1072,10 +1072,14 @@ export const S = {
     heldLockLast: null,
     /* The span the CURRENT hold extended ({ step, to }, steps of the lane's
      * grid), or null: drawn on the step row while the step stays down, so a
-     * Curve lane — whose extend writes only its ends — shows the range the way
-     * Punch does (Josh, 2026-10-20: "i want it to look the same just while
-     * setting the length, so that there's a visual reference"). */
+     * stretch — whose ends are its only points — shows the range it covers
+     * (Josh, 2026-10-20: "i want it to look the same just while setting the
+     * length, so that there's a visual reference"). */
     heldExtend: null,
+    /* What the CURRENT hold writes: { type } — 1 PUNCH (a flat run with hard
+     * edges) or 0 POINT (one point the envelope glides through). Every hold
+     * starts as a PUNCH (Josh, 2026-10-21). */
+    heldWrite: { type: 1 },
     /* Per track: the AUTOMATION bank's selected lane's current tick in its own
      * lane ticks (state_snapshot 57..64, tN_pa_view), -1 = none / not playing. */
     autoLanePos: new Array(8).fill(-1),

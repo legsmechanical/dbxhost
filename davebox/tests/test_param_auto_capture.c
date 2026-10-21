@@ -93,8 +93,13 @@ int main(void) {
         HX_ASSERT(e->points[0].tick == 0  && e->points[0].val == 9000, "cell 0");
         HX_ASSERT(e->points[1].tick == 24 && e->points[1].val == 4000, "cell 24");
         HX_ASSERT(e->points[2].tick == 48 && e->points[2].val == 5000, "cell 48");
-        HX_ASSERT(e->flags & PA_FLAG_SMOOTH,
-                  "⚠ a captured sweep plays back SMOOTH — half-step holds are an audible staircase");
+        {   /* ⚠ a captured sweep must GLIDE between its cells — half-step holds
+             * are an audible staircase. Every lane glides now; a cutoff (no
+             * description: an amount, not a choice) is no exception. */
+            uint16_t v = 0;
+            HX_ASSERT(pa_eval_from(e, 12, 0, 384, pa_target_stepped(in, e->target), &v) && v == 6500,
+                      "⚠ a captured sweep glides between its cells (12: halfway 9000 -> 4000)");
+        }
         HX_ASSERT(cap_pending_pa(h) == 0, "the buffer is consumed by the commit");
         HX_ASSERT(cap_seq(h) != seq_before, "and the commit sequence bumped, so JS can toast the edge");
         HX_ASSERT(in->pa_dirty == 1 && in->state_dirty == 1, "the project is dirty — a capture is a real edit");
@@ -229,8 +234,9 @@ int main(void) {
                   "⚠ committing clip 0 writes nothing — that sweep is gone, not silently re-homed");
         hx_set_param(h, "t0_pa_capture_commit", "1");
         HX_ASSERT(in->pa_entries[0].used && in->pa_entries[0].clip == 1 &&
-                  in->pa_entries[0].count == 1,
-                  "and clip 1 gets exactly the sweep that was heard there");
+                  in->pa_entries[0].count == 2 && in->pa_entries[0].points[1].tick == 48 &&
+                  in->pa_entries[0].points[1].val == 7000,
+                  "and clip 1 gets exactly the sweep that was heard there (after its start point)");
         OK("⚠⚠ the same knob swept in a second clip starts a fresh capture");
         hx_destroy(h);
     }

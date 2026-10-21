@@ -234,7 +234,7 @@ step('⚠ a level turn goes through the AUTOMATION OWNER: with a step held it is
     GS.heldStep = 3; GS.heldStepBtn = 3; GS.heldStepNotes = [60]; GS.playing = false;
     GS.clipTPS[2][GS.trackActiveClip[2]] = 24;
     turnBy(0, 2); ticks(2);
-    const lock = modSets.find(x => x.startsWith('t2_pa_set2=') && x.includes(':slot:volume'));
+    const lock = modSets.find(x => x.startsWith('t2_pa_hold_write=') && x.includes(':slot:volume'));
     assert(lock, 'a lock on slot:volume was written, got ' + JSON.stringify(modSets.slice(0, 6)));
     GS.heldStep = -1; GS.heldStepBtn = -1; GS.heldStepNotes = [];
     ticks(3);

@@ -52,11 +52,14 @@ static pa_entry_t *entry(seq8_instance_t *in, const char *tgt) {
     return NULL;
 }
 
-static void lock(hx_t *h, int step, int tps, int v) {
+/* A lock as the UI writes it: a held step turned — a PUNCH over that step
+ * (to `to`, a stretch, when given). */
+static void stretch(hx_t *h, int step, int to, int tps, int v) {
     char val[128];
-    snprintf(val, sizeof val, "0 " TG " %d %d %d", step * tps, step * tps + tps - 1, v);
-    hx_set_param(h, "t0_pa_set2", val);
+    snprintf(val, sizeof val, "0 " TG " %d %d %d %d 1 0", step, to, tps, v);
+    hx_set_param(h, "t0_pa_hold_write", val);
 }
+static void lock(hx_t *h, int step, int tps, int v) { stretch(h, step, step, tps, v); }
 
 /* The order in which TG's staged value changes during `blocks` of playback. */
 static int play_sequence(hx_t *h, int *seq, int max, int blocks) {
@@ -155,7 +158,7 @@ int main(void) {
         hx_set_param(h, "t0_l0_note_add", "0 100 24");
         hx_set_param(h, "t0_l5_clip_length", "64");           /* a 4-bar pad */
         hx_set_param(h, "t0_active_drum_lane", "5");
-        lock(h, 0, 24, 1000);
+        hx_set_param(h, "t0_pa_rest", "0 " TG " 1000");      /* the resting value */
         lock(h, 40, 24, 9000);                                /* step 40: bar 3 */
         HX_ASSERT(cycle_of(h, &ll, &lo, &st) && ll == 64 * 24, "setup: a 4-bar cycle (1536)");
         hx_set_param(h, "t0_active_drum_lane", "0");          /* a 1-bar pad */
@@ -175,19 +178,14 @@ int main(void) {
         HX_ASSERT(entry(in, TG)->count > before, "setup: the recording really wrote points");
         HX_ASSERT(cycle_of(h, &ll, &lo, &st) && ll == 64 * 24,
                   "⭐ RECORDING onto it from the 1-bar pad leaves its cycle at 1536 too");
-        {   /* put the locks back over what that recording wrote */
-            char v[96];
-            snprintf(v, sizeof v, "0 " TG " 0 %d 1000", 8 * 24 - 1);
-            hx_set_param(h, "t0_pa_set2", v);
-        }
+        stretch(h, 0, 39, 24, 1000);                          /* rest again over what that recording wrote */
         lock(h, 4, 24, 5000);
-        hx_set_param(h, "t0_pa_smooth", "0 " TG " 0");       /* a recording turns Smooth on: back to steps */
         hx_set_param(h, "t0_l5_clip_length", "16");           /* the 4-bar pad, shortened */
         HX_ASSERT(cycle_of(h, &ll, &lo, &st) && ll == 64 * 24, "shortening the pad afterwards changes nothing");
         hx_set_param(h, "transport", "play_focus:0:0");
         int seq[16];
         int n = play_sequence(h, seq, 16, 2400);              /* ~55 steps */
-        HX_ASSERT(n >= 3 && seq[0] == 1000 && seq[1] == 5000 && seq[2] == 9000,
+        HX_ASSERT(n >= 4 && seq[0] == 1000 && seq[1] == 5000 && seq[2] == 1000 && seq[3] == 9000,
                   "⭐ under real playback the step-40 lock plays — no drum lane is longer than 16 steps");
         OK("⭐ a lane's cycle outlives the pads: a 4-bar cycle plays in full over 1-bar lanes");
         hx_destroy(h);
@@ -296,25 +294,34 @@ int main(void) {
         hx_set_param(h, "t0_l3_clip_resolution", "0");
         hx_set_param(h, "t0_l3_clip_length", "13");
         hx_set_param(h, "t0_active_drum_lane", "3");
-        lock(h, 12, 12, 4000);                                /* its last step: tick 144 */
+        hx_set_param(h, "t0_pa_rest", "0 " TG " 0");
+        lock(h, 12, 12, 4000);                                /* its last step: a run at 144..155 */
+        /* The run's entry pair (0 -> 4000) and its exit pair, on the cycle's
+         * start (4000 -> 0). Both halves of a pair move as one. */
+        #define RUN_AT(t) (pa_at(entry(in, TG), (t), NULL) == 2 && \
+                           entry(in, TG)->points[pa_lower_bound(entry(in, TG), (t)) + 1].val == 4000)
+        HX_ASSERT(RUN_AT(144), "setup: the run starts at 144");
         hx_set_param(h, "t0_all_lanes_clock_shift", "1");
-        HX_ASSERT(entry(in, TG)->points[0].tick == 0,
-                  "⭐ Clock Shift moves it one of ITS steps and wraps at ITS end (144 -> 0, not 168)");
+        HX_ASSERT(RUN_AT(0), "⭐ Clock Shift moves it one of ITS steps and wraps at ITS end (144 -> 0, not 168)");
         hx_set_param(h, "t0_all_lanes_clock_shift", "1");
-        HX_ASSERT(entry(in, TG)->points[0].tick == 12, "and on by one 12-tick step");
+        HX_ASSERT(RUN_AT(12) && pa_at(entry(in, TG), 24, NULL) == 2, "and on by one 12-tick step, its exit with it");
         hx_set_param(h, "t0_all_lanes_clip_resolution", "1"); /* every lane to 1/16 */
         HX_ASSERT(cycle_of(h, &ll, &lo, &st) && ll == 312 && st == 24,
                   "Resolution 1/32 -> 1/16: the cycle doubles in ticks and takes the new step");
-        HX_ASSERT(entry(in, TG)->points[0].tick == 24, "and the point stays on its step (1 x 24)");
+        HX_ASSERT(RUN_AT(24), "and the run stays on its step (1 x 24)");
+        pa_entry_t old = *entry(in, TG);
         hx_set_param(h, "t0_all_lanes_double_fill", "1");
         HX_ASSERT(cycle_of(h, &ll, &lo, &st) && ll == 624, "Double: the cycle doubles");
         const pa_entry_t *e = entry(in, TG);
-        /* Wrap: Reset (the default): the copied cycle restarts as the old one
-         * did — a point at its start (312) carrying what the cycle played at
-         * tick 0 — then the copied lock. */
-        HX_ASSERT(e->count == 3 && e->points[0].tick == 24 && e->points[1].tick == 312 &&
-                  e->points[2].tick == 24 + 312,
-                  "and its points are copied one cycle forward, the copy restarting at its start");
+        HX_ASSERT(RUN_AT(24) && RUN_AT(24 + 312), "the run, and its copy one cycle on");
+        for (uint32_t t = 0; t < 312; t++) {
+            uint16_t a = 0, b = 0, c = 0;
+            pa_eval_from(&old, t, 0, 312, 0, &a);
+            pa_eval_from(e, t, 0, 624, 0, &b);
+            pa_eval_from(e, t + 312, 0, 624, 0, &c);
+            HX_ASSERT(a == b && a == c, "⭐ the doubled cycle plays the old one twice, tick for tick");
+        }
+        #undef RUN_AT
         OK("⭐ ALL LANES Clock Shift, Resolution and Double move each lane inside its own cycle");
         hx_destroy(h);
     }

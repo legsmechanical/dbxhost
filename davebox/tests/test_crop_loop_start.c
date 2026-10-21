@@ -74,11 +74,24 @@ static int any_step_from(const clip_t *cl, int from) {
 #define DTG  "1:synth:reso"
 #define DTG2 "1:synth:drive"
 
+/* One point. A lane's FIRST point also brings its start point (at its
+ * window start, carrying the resting value); this file is about where points
+ * MOVE, so that start point is deleted again — a lane a user can make — and
+ * the lists below read as written. */
 static void pa_set(hx_t *h, int track, const char *tgt, int tick, int v) {
+    seq8_instance_t *in = (seq8_instance_t *)h->inst;
     char k[32], val[128];
+    const pa_entry_t *e0 = pa_find(in, track, 0, pa_target_lookup(in, tgt));
+    const int first = !e0 || !e0->count;
     snprintf(k, sizeof k, "t%d_pa_set", track);
     snprintf(val, sizeof val, "0 %s %d %d", tgt, tick, v);
     hx_set_param(h, k, val);
+    pa_entry_t *e = pa_find(in, track, 0, pa_target_lookup(in, tgt));
+    if (first && e && e->count == 2) {
+        const int s = e->points[0].tick == (uint16_t)tick ? 1 : 0;
+        memmove(&e->points[s], &e->points[s + 1], (size_t)(e->count - s - 1) * sizeof(pa_point_t));
+        e->count--;
+    }
 }
 static pa_entry_t *pentry(hx_t *h, int track, const char *tgt) {
     return pa_find(I(h), track, 0, pa_target_lookup(I(h), tgt));

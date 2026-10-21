@@ -41,16 +41,17 @@ static int pitches(int *out, int n) {
 }
 
 /* t1 melodic: C on step 1, E on step 5. NOTE FX Octave locked at 0 on step 1
- * and +4 on step 5 — so step 5 must sound 64 + 48 = 112, and step 1 must come
- * back to 60 on the next pass. */
+ * and +4 from step 5 to the end (punches, resting at 0) — so step 5 must sound
+ * 64 + 48 = 112, and step 1 must come back to 60 on the next pass. */
 static hx_t *rig(void) {
     hx_t *h = hx_create(NULL);
     HX_ASSERT(h, "create failed");
     hx_set_param(h, "t1_route", "schwung");
     hx_set_param(h, "t1_c0_step_0_toggle", "60 100");
     hx_set_param(h, "t1_c0_step_4_toggle", "64 100");
-    hx_set_param(h, "t1_pa_set2", "0 seq:1:noteFX_octave 0 23 8192");
-    hx_set_param(h, "t1_pa_set2", "0 seq:1:noteFX_octave 96 119 16383");
+    hx_set_param(h, "t1_pa_rest", "0 seq:1:noteFX_octave 8192");        /* the resting value: 0 */
+    hx_set_param(h, "t1_pa_hold_write", "0 seq:1:noteFX_octave 0 0 24 8192 1 0");
+    hx_set_param(h, "t1_pa_hold_write", "0 seq:1:noteFX_octave 4 15 24 16383 1 0");   /* held to the end */
     return h;
 }
 static void play(hx_t *h) {
@@ -130,7 +131,7 @@ int main(void) {
 
         h = rig();
         I = (seq8_instance_t *)h->inst;
-        hx_set_param(h, "t1_pa_rest", "0 seq:1:noteFX_octave 12287");    /* = +2 */
+        hx_set_param(h, "t1_pa_rest_move", "0 seq:1:noteFX_octave 12287");   /* = +2, turned while stopped */
         play(h);
         hx_render(h, 600);
         hx_set_param(h, "transport", "stop");
@@ -167,8 +168,8 @@ int main(void) {
         hx_set_param(h, "swing_amt", "60");
         hx_set_param(h, "t1_c0_step_0_toggle", "60 100");
         hx_set_param(h, "t1_c0_step_1_toggle", "64 100");                /* a swung step */
-        hx_set_param(h, "t1_pa_set2", "0 seq:1:noteFX_octave 0 23 8192");
-        hx_set_param(h, "t1_pa_set2", "0 seq:1:noteFX_octave 24 47 16383");
+        hx_set_param(h, "t1_pa_hold_write", "0 seq:1:noteFX_octave 0 0 24 8192 1 0");
+        hx_set_param(h, "t1_pa_hold_write", "0 seq:1:noteFX_octave 1 1 24 16383 1 0");
         play(h);
         int swung = 0, p = 0;
         for (int b = 0; b < 400; b++) { hx_render(h, 1); if (I->swing_step_delay > 0) swung = 1; }
@@ -205,9 +206,9 @@ int main(void) {
     {
         hx_t *h = rig();
         seq8_instance_t *I = (seq8_instance_t *)h->inst;
-        hx_set_param(h, "t1_pa_set2", "0 seq:1:all_lanes_playback_dir 0 23 16383");   /* a drum key, melodic track */
-        hx_set_param(h, "t1_pa_set2", "0 seq:1:tarp_style 0 23 16383");               /* not automatable */
-        hx_set_param(h, "t1_pa_set2", "0 seq:1:no_such_key 0 23 16383");
+        hx_set_param(h, "t1_pa_hold_write", "0 seq:1:all_lanes_playback_dir 0 0 24 16383 1 0");   /* a drum key, melodic track */
+        hx_set_param(h, "t1_pa_hold_write", "0 seq:1:tarp_style 0 0 24 16383 1 0");               /* not automatable */
+        hx_set_param(h, "t1_pa_hold_write", "0 seq:1:no_such_key 0 0 24 16383 1 0");
         play(h);
         hx_render(h, 600);
         hx_get_param(h, "pa_pending", buf, sizeof(buf));

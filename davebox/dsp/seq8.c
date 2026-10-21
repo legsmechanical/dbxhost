@@ -1715,6 +1715,14 @@ typedef struct {
     char       pa_targets[PA_MAX_TARGETS][PA_TARGET_LEN];
     /* How to write each target's chain parameter directly — see pa_res_t. */
     pa_res_t   pa_res[PA_MAX_TARGETS];
+    /* THE RESTING VALUE, per target (a target belongs to one track): where the
+     * parameter sits when no clip's automation drives it — heard on Stop and in
+     * every clip without a lane for it, and what a new lane's start point
+     * carries. Set by hand, only while nothing automates the parameter. Bit t
+     * of pa_knob_valid says pa_knob[t] is known; cleared when the target's
+     * slot is interned afresh (pa_target_id), so a reused id never inherits. */
+    uint16_t   pa_knob[PA_MAX_TARGETS];
+    uint64_t   pa_knob_valid;
     pa_defer_t pa_defer[PA_DEFER_MAX];
     uint16_t   pa_host_writes;        /* this render_block's direct writes (capped) */
     uint32_t   pa_host_write_total;   /* direct writes since create (diagnostic) */
@@ -8526,57 +8534,43 @@ static int pa_export_clock(const seq8_track_t *tr, const pa_entry_t *e,
  * lane (its own scale already applied) — factored out of pa_export so it is
  * white-box testable without the device-only EXPORT_PA_PATH file write.
  *
- * 6b2 FOLLOW-UP: Live's clip envelope holds its FIRST breakpoint's value for
- * every time before it — the pre-6b2 dAVEBOx rule. 6b2 (`pa_eval_window`)
- * changed playback: before a lane's first point *inside its own window* (the
- * clip's loop, or the lane's own Loop/Rate window) it now plays its LAST
- * point's value, carried round from the previous pass (Wrap: Carry, the
- * default) — or, under Wrap: Reset, the lane's resting value. Raw points
- * alone can't tell Live that, so when the first point inside the window is
- * later than the window start, prepend a synthetic point AT the window start
- * carrying whatever the real evaluator (pa_eval_punch / pa_eval_window, the
- * same ones playback calls) says plays there: the lane's Mode (Curve/Punch)
- * and Wrap flag decide the value, not a rule duplicated here. A
- * PA_EVAL_REST-coded value is written unscaled, matching playback, which
- * never scales the resting value (see pa_eval_window's own comment).
+ * A lane is an envelope of points Live can draw almost as it is: Live joins
+ * breakpoints with straight lines (the glide) and two breakpoints on one time
+ * are a jump (paBreakpoints offsets the first of a pair a hair earlier). What
+ * Live does NOT do is wrap: before its first breakpoint it holds the first
+ * value, after its last the last. So:
+ *   - a LEAD point at the window start carrying what plays there, when the
+ *     lane's first point is later (its start point was deleted);
+ *   - a TRAIL point at the window end carrying what plays just before the loop
+ *     comes round (Wrap: Carry glides into the next pass's start; Reset holds
+ *     the last value), so a tiled export joins pass to pass as dAVEBOx plays;
+ *   - a STEPPED target (a choice or a switch) holds each value until the next
+ *     point, so the held value is written again at the next point's tick —
+ *     a jump pair Live will not slide across.
+ * Only the points INSIDE the window play (and paTile drops the rest); no window,
+ * or none inside it: every point.
  *
  * `tr` is the lane's owning track (or NULL, e.g. an orphaned entry after a
  * track was cleared) — with no track the lane's window is unknown and the
- * lead point is skipped, same as pa_export always did. Returns the point
- * count written into `pts` (capped at `cap`). */
-static int pa_export_points(const seq8_track_t *tr, const pa_entry_t *e,
+ * lead/trail are skipped. Returns the point count written into `pts` (capped
+ * at `cap`). */
+static int pa_export_points(const seq8_track_t *tr, const pa_entry_t *e, int stepped,
                             pa_point_t *pts, int cap) {
     int n = 0;
     uint32_t ws = 0, wl = 0, step_ticks = TICKS_PER_STEP;
-    const int have_window = pa_export_window(tr, e, &ws, &wl, &step_ticks);
-    /* The points INSIDE the window — what playback plays (pa_eval_window).
-     * Points outside it (kept when a loop is narrowed) never play while a
-     * window holds any, and paTile drops them; reading the lead, the jump
-     * pairs or the trail off them gave values that never play. No window, or
-     * none inside it: every point, as playback then falls back to them all. */
+    const int have_window = pa_export_window(tr, e, &ws, &wl, &step_ticks) && wl;
     int lo = 0, hi = (int)e->count - 1;
-    if (have_window && wl && e->count) {
+    if (have_window && e->count) {
         const int fi = pa_lower_bound(e, ws), li = pa_lower_bound(e, ws + wl) - 1;
         if (fi < (int)e->count && li >= fi) { lo = fi; hi = li; }
     }
-    if (have_window && wl && e->count && e->points[lo].tick > ws && n < cap) {
-        uint16_t v;
-        int ev = (e->flags & PA_FLAG_PUNCH)
-                 ? pa_eval_punch(e, ws, ws, wl, step_ticks, &v)
-                 : pa_eval_window(e, ws, ws, wl, &v);
-        if (ev) {
-            pts[n].tick = (uint16_t)ws;
-            pts[n].val  = (ev == PA_EVAL_REST) ? v : pa_scaled(e, v);
-            n++;
-        }
+    uint16_t v;
+    if (have_window && e->count && e->points[lo].tick > ws && n < cap
+        && pa_eval_from(e, ws, ws, wl, stepped, &v)) {
+        pts[n].tick = (uint16_t)ws;
+        pts[n].val  = pa_scaled(e, v);
+        n++;
     }
-    /* SMOOTH OFF STEPS (pa_eval): each value HOLDS until the next point, then
-     * the lane jumps. Live draws a straight line between two breakpoints, so
-     * the held value is written again AT the next point's tick, just before
-     * it — a jump pair, which paTile and paBreakpoints keep. That covers the
-     * lead too (Reset's rest, Carry's last value, held up to the first point).
-     * Punch is its own story and is left alone. */
-    const int stepped = !(e->flags & (PA_FLAG_SMOOTH | PA_FLAG_PUNCH));
     for (int k = lo; k <= hi && k < PA_ENTRY_POINTS && n < cap; k++) {
         const uint16_t sv = pa_scaled(e, e->points[k].val);
         if (stepped && n > 0 && pts[n - 1].tick < e->points[k].tick && pts[n - 1].val != sv) {
@@ -8588,24 +8582,9 @@ static int pa_export_points(const seq8_track_t *tr, const pa_entry_t *e,
         pts[n].val  = sv;
         n++;
     }
-    /* ...and the TRAIL point, the other half of the same wrap (Josh, testing the
-     * lead point on 2026-09-24: "Wrap doesn't ramp from its last automation point
-     * to the first one"). After a lane's last point inside its window, Wrap:
-     * Carry with Smooth keeps ramping toward the NEXT pass's first point, right
-     * across the loop end — but Live holds its last breakpoint flat to the end
-     * and then jumps to the lead value. A point at the window END carrying what
-     * the evaluator plays there (the same value the lead point carries) makes
-     * Live draw one continuous line: last point -> loop end = loop start -> first
-     * point. Under Reset the lane HOLDS its last value to the loop end and
-     * then jumps back to rest: the trail carries that held value to the end, so
-     * the next pass's lead at the same moment is a jump, not a slide from the
-     * last point down to rest across the whole gap (an export tiles cycles back
-     * to back). Punch has no ramps at all. */
-    if (have_window && n > 0 && n < cap && !(e->flags & PA_FLAG_PUNCH)) {
-        uint32_t we = ws + wl;
-        uint16_t v;
-        if (wl && we <= 0xFFFF && pts[n - 1].tick < we
-            && pa_eval_window(e, we, ws, wl, &v) == 1) {
+    if (have_window && n > 0 && n < cap) {
+        const uint32_t we = ws + wl;
+        if (we <= 0xFFFF && pts[n - 1].tick < we && pa_eval_before(e, ws, ws, wl, stepped, &v)) {
             pts[n].tick = (uint16_t)we;
             pts[n].val  = pa_scaled(e, v);
             n++;
@@ -9144,11 +9123,11 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
             fputc('|', pf);
             /* The SCALE is applied here, as it is at playback: what leaves in
              * the export is what the lane plays, not the raw points. */
-            /* + lead + trail, and a held value before every point when Smooth
-             * is off. Static: the handler is serialized, and 4 KB is too much
+            /* + lead + trail, and a held value before every point of a
+             * stepped target. Static: the handler is serialized, and 4 KB is too much
              * for the realtime thread's stack. */
             static pa_point_t xpts[2 * PA_ENTRY_POINTS + 2];
-            int xn = pa_export_points(etr, e, xpts, 2 * PA_ENTRY_POINTS + 2);
+            int xn = pa_export_points(etr, e, pa_target_stepped(inst, e->target), xpts, 2 * PA_ENTRY_POINTS + 2);
             for (int k = 0; k < xn; k++)
                 fprintf(pf, "%u:%u ", (unsigned)xpts[k].tick, (unsigned)xpts[k].val);
             fputc('\n', pf);
@@ -9683,7 +9662,10 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
              * A step is the clip's own ticks_per_step — the unit a p-lock is
              * written in (a held step writes its point at step * tps). A
              * recorded sweep lays a point every half step, so it lights every
-             * step it covers: the store does not tell a lock from a sweep. */
+             * step it covers: the store does not tell a lock from a sweep.
+             * The FIRST of a jump pair lights nothing: it is the value arriving
+             * from before (a punch's glide-in, a run's hold-end), and the
+             * step it starts is lit by the pair's second. */
             if (!strcmp(p, "_pa_steps")) {
                 int n = 0;
                 if (out_len > 0) out[0] = '\0';           /* an empty clip is an empty STRING */
@@ -9707,6 +9689,7 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                     const uint32_t etps = pa_lane_step(tr, e, tps);
                     memset(mask, '0', SEQ_STEPS);
                     for (int k = 0; k < (int)e->count && k < PA_ENTRY_POINTS; k++) {
+                        if (k + 1 < (int)e->count && e->points[k + 1].tick == e->points[k].tick) continue;
                         uint32_t s = (uint32_t)e->points[k].tick / etps;
                         if (s >= SEQ_STEPS) continue;
                         mask[s] = '1';
@@ -9732,9 +9715,10 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
              * because the jump destinations SHOW a held step's value in the
              * parameter's own units (Josh, 2026-09-25); the step-row gradient
              * derives its 7 bits from it. Evaluated
-             * by the SAME functions playback calls — Mode, Wrap, Smooth and
-             * Scale all apply, the resting value unscaled — so the colours
-             * are what you hear, not the raw points. ONE read per page for the
+             * by the SAME function playback calls (the value FROM the step's
+             * first tick on: a punched step shows its punch, the step after a
+             * run what it jumps back to), Wrap and Scale applied — so the
+             * colours are what you hear, not the raw points. ONE read per page for the
              * whole clip (a target name can outgrow a param key, so it is not
              * in the key). */
             if (!strncmp(p, "_pa_vals_", 9)) {
@@ -9753,18 +9737,13 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                     char hex[65];
                     uint32_t ws = 0, wl = 0, st = TICKS_PER_STEP;
                     const int have = pa_export_window(tr, e, &ws, &wl, &st);
+                    const int stepped = pa_target_stepped(inst, e->target);
                     for (int s = 0; s < 16; s++) {
                         const uint32_t tk = (base + (uint32_t)s) * vtps;
                         int v14 = -1;
                         if (have && wl && tk >= ws && tk < ws + wl) {
                             uint16_t v;
-                            const int ev = (e->flags & PA_FLAG_PUNCH)
-                                         ? pa_eval_punch(e, tk, ws, wl, st, &v)
-                                         : pa_eval_window(e, tk, ws, wl, &v);
-                            if (ev) {
-                                v14 = (int)((ev == PA_EVAL_REST) ? v : pa_scaled(e, v));
-                                if (v14 > PA_VAL_MAX) v14 = PA_VAL_MAX;
-                            }
+                            if (pa_eval_from(e, tk, ws, wl, stepped, &v)) v14 = (int)pa_scaled(e, v);
                         }
                         snprintf(hex + s * 4, 5, "%04x", v14 < 0 ? 0xffff : v14);
                     }

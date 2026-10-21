@@ -78,6 +78,18 @@ static pa_entry_t *entry(hx_t *h, const char *tgt) {
     if (strcmp(_g, want)) { printf("  FAIL — %s\n    got  \"%s\"\n    want \"%s\"\n", msg, _g, want); exit(1); } \
 } while (0)
 
+/* Delete a lane's START point (the one its first write put at the window
+ * start) — a lane a user can make, and one whose points read plainly here: this
+ * file is about where points MOVE, and the start point moves like any other. */
+static void drop_start_t(hx_t *h, int track, const char *tgt) {
+    seq8_instance_t *in = (seq8_instance_t *)h->inst;
+    pa_entry_t *e = pa_find(in, track, 0, pa_target_lookup(in, tgt));
+    HX_ASSERT(e && e->count >= 2 && e->points[0].tick == 0, "setup: a start point to delete");
+    memmove(&e->points[0], &e->points[1], (size_t)(e->count - 1) * sizeof(pa_point_t));
+    e->count--;
+}
+static void drop_start(hx_t *h, const char *tgt) { drop_start_t(h, 1, tgt); }
+
 /* A 16-step clip at 1/16 with a note on step 4, the same lock (step 4 = tick
  * 96) on all three lanes, and a second LINK point on step 15 (tick 360) so the
  * wrap of the rotating ops is visible. OFF is unlinked; OWN has a 4-step Loop. */
@@ -88,6 +100,7 @@ static hx_t *setup(void) {
     pa_set(h, LINK, 360, 7000);
     pa_set(h, OFF, 96, 5000);
     pa_set(h, OWN, 96, 5000);
+    drop_start(h, LINK); drop_start(h, OFF); drop_start(h, OWN);
     hx_set_param(h, "t1_pa_link", "0 " OFF " 0");
     hx_set_param(h, "t1_pa_loop", "0 " OWN " 96 0 0");
     return h;
@@ -224,7 +237,10 @@ int main(void) {
         pa_set(h, LINK, 10, 1000);
         pa_set(h, LINK, 11, 2000);
         hx_set_param(h, "t1_beat_stretch", "-1");
-        PTS_EQ(LINK, "5:2000", "two points on one tick after /2: the LATER one wins");
+        /* Folded onto one tick, the value arriving (the first) and the value
+         * from there on (the last) are kept: a jump pair. The start point
+         * (0:1000) is the lane's own. */
+        PTS_EQ(LINK, "0:1000 5:1000 5:2000", "two points on one tick after /2: the first and the last, a jump");
         hx_destroy(h);
         OK("⭐ Beat Stretch scales linked lanes x2 and /2 — only when the notes moved; a fold keeps the later value");
     }
@@ -234,10 +250,11 @@ int main(void) {
         hx_t *h = setup();
         pa_set(h, LINK, 18 * 24, 3000);          /* sits in the half about to be written over */
         hx_set_param(h, "t1_loop_double_fill", "1");
-        /* Wrap: Reset (the default): the copied half starts as each pass of
-         * the old loop did — the first point's value here (no rest captured)
-         * pinned at 384 — not holding the first half's last value (7000). */
-        PTS_EQ(LINK, "96:5000 360:7000 384:5000 480:5000 744:7000",
+        /* Wrap: Reset (the default): each pass of the old loop HELD its last
+         * value (7000) to the end and then jumped back to what plays at its
+         * start (the first point's value, its start point deleted) — so the
+         * doubled loop does exactly that at the seam: a jump pair at 384. */
+        PTS_EQ(LINK, "96:5000 360:7000 384:7000 384:5000 480:5000 744:7000",
                "Double: steps 0-15 copied to 16-31, REPLACING what was there (step 18's point is gone)");
         PTS_EQ(OFF,  "96:5000", "Double: Off stays");
         PTS_EQ(OWN,  "96:5000", "Double: an own-Loop lane just keeps looping — untouched");
@@ -276,8 +293,8 @@ int main(void) {
         hx_set_param(h, "t0_clock_shift", "1");
         hx_set_param(h, "t0_clip_resolution", "2");
         pa_entry_t *e = pa_find(in, 0, 0, pa_target_lookup(in, "0:synth:cutoff"));
-        HX_ASSERT(e && e->count == 1 && e->points[0].tick == 96,
-                  "a melodic clip op on a drum track moved no playing note, so no automation");
+        HX_ASSERT(e && e->count == 2 && e->points[0].tick == 0 && e->points[1].tick == 96,
+                  "a melodic clip op on a drum track moved no playing note, so no automation (start point and lock in place)");
         hx_destroy(h);
         OK("a melodic op reaching a drum track leaves its automation alone (drums follow ALL LANES only)");
     }
@@ -298,7 +315,7 @@ int main(void) {
             { "t0_all_lanes_clock_shift", "1",     "0:7000 120:5000",   "ALL LANES Clock Shift +1: one step later, the last step wrapping" },
             { "t0_all_lanes_nudge", "1",           "97:5000 361:7000",  "ALL LANES Nudge +1: one tick later" },
             { "t0_all_lanes_beat_stretch", "1",    "192:5000 720:7000", "ALL LANES Stretch x2" },
-            { "t0_all_lanes_double_fill", "1",     "96:5000 360:7000 384:5000 480:5000 744:7000", "ALL LANES Double: copied forward, the copy starting as the old cycle did" },
+            { "t0_all_lanes_double_fill", "1",     "96:5000 360:7000 384:7000 384:5000 480:5000 744:7000", "ALL LANES Double: copied forward, the seam jumping as the old cycle did" },
             /* single-lane ops: the clip's automation stays put */
             { "t0_l0_clip_resolution", "2",        "96:5000 360:7000",  "a SINGLE lane's Resolution moves no automation" },
             { "t0_l0_clock_shift", "1",            "96:5000 360:7000",  "a SINGLE lane's Clock Shift moves no automation" },
@@ -312,6 +329,7 @@ int main(void) {
             hx_set_param(h, "t0_pa_set", "0 " DL " 360 7000");
             hx_set_param(h, "t0_pa_set", "0 " DOFF " 96 5000");
             hx_set_param(h, "t0_pa_link", "0 " DOFF " 0");
+            drop_start_t(h, 0, DL); drop_start_t(h, 0, DOFF);
             hx_set_param(h, ops[i].key, ops[i].val);
             DPTS(ops[i].want, ops[i].msg);
             HX_ASSERT(!strcmp(dpts(h, DOFF), "96:5000"), "and Link: Off stays put");
@@ -324,6 +342,7 @@ int main(void) {
         hx_set_param(h, "t0_l0_note_add", "96 100 12");
         hx_set_param(h, "t0_l0_note_add", "120 100 12");               /* steps 4 and 5 collide at /2 */
         hx_set_param(h, "t0_pa_set", "0 " DL " 96 5000");
+        drop_start_t(h, 0, DL);
         hx_set_param(h, "t0_all_lanes_beat_stretch", "-1");
         HX_ASSERT(((seq8_instance_t *)h->inst)->all_lanes_stretch_result == -1, "setup: the compress was refused");
         DPTS("96:5000", "a refused ALL LANES compress moves no automation");
@@ -338,6 +357,7 @@ int main(void) {
         hx_set_param(h, "t0_l3_clip_length", "32");
         hx_set_param(h, "t0_active_drum_lane", "3");
         hx_set_param(h, "t0_pa_set", "0 " DL " 696 5000");              /* step 29 */
+        drop_start_t(h, 0, DL);
         hx_set_param(h, "t0_all_lanes_clock_shift", "1");
         DPTS("720:5000", "Clock Shift rotates inside the lane's own 32-step cycle (step 29 -> 30)");
         hx_set_param(h, "t0_all_lanes_clock_shift", "1");
@@ -354,6 +374,7 @@ int main(void) {
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         hx_set_param(h, "t0_l0_note_add", "96 100 12");
         hx_set_param(h, "t0_pa_set", "0 " DL " 96 5000");
+        drop_start_t(h, 0, DL);
         hx_set_param(h, "t0_all_lanes_double_fill", "1");
         DPTS("96:5000 384:5000 480:5000", "setup: doubled");
         hx_set_param(h, "undo_restore", "1");
@@ -366,6 +387,7 @@ int main(void) {
         h = hx_create(NULL);
         hx_set_param(h, "t1_c0_step_4_toggle", "60 100");
         pa_set(h, LINK, 96, 5000);
+        drop_start(h, LINK);
         hx_set_param(h, "t1_loop_double_fill", "1");
         PTS_EQ(LINK, "96:5000 384:5000 480:5000", "CONTROL setup: melodic doubled");
         hx_set_param(h, "undo_restore", "1");
@@ -380,8 +402,8 @@ int main(void) {
         for (int linked = 1; linked >= 0; linked--) {
             hx_t *h = hx_create(NULL);
             hx_set_param(h, "t1_c0_step_4_toggle", "60 100");
-            pa_set(h, LINK, 0, 0);
-            pa_set(h, LINK, 96, 8192);                               /* the note's lock */
+            hx_set_param(h, "t1_pa_rest", "0 " LINK " 0");
+            hx_set_param(h, "t1_pa_hold_write", "0 " LINK " 4 4 24 8192 1 0");   /* the note's lock: a punch */
             if (!linked) hx_set_param(h, "t1_pa_link", "0 " LINK " 0");
             hx_set_param(h, "t1_clock_shift", "1");                  /* the note -> step 5 */
             hx_set_param(h, "transport", "play_focus:1:0");

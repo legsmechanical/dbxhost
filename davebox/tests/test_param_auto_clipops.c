@@ -156,7 +156,8 @@ int main(void) {
         pa_entry_t *reso = pa_find(in, 1, 0, pa_target_lookup(in, "1:synth:reso"));
         HX_ASSERT(reso && reso->count == 1, "a NEW parameter gets its own lane — the redone lock does not drive it");
         pa_entry_t *cut = pa_find(in, 1, 0, pa_target_lookup(in, "1:synth:cutoff"));
-        HX_ASSERT(cut && cut->count == 1 && cut->points[0].tick == 96, "and the cutoff lock is still cutoff's");
+        HX_ASSERT(cut && cut->count == 2 && cut->points[1].tick == 96 && cut->points[1].val == 5000,
+                  "and the cutoff lock is still cutoff's (after its start point)");
         hx_destroy(h);
 
         /* CONTROL — the 2026-09-05 invariant still holds: once NO snapshot can

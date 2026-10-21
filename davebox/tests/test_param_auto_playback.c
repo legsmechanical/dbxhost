@@ -275,10 +275,11 @@ int main(void) {
         hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
 
-        /* clip 0 rests at 2000, clip 1 rests at 5000 — same parameter. */
+        /* The track rests at 2000; clip 1's lane STARTS at 5000 — same parameter. */
         hx_set_param(h, "t0_pa_rest", "0 1:fx1:cutoff 2000");
         pa_set(h, 0, 0, "1:fx1:cutoff", 0, 9000);
-        hx_set_param(h, "t0_pa_rest", "1 1:fx1:cutoff 5000");
+        /* clip 1's lane starts at 5000: a punch on its first step. */
+        hx_set_param(h, "t0_pa_hold_write", "1 1:fx1:cutoff 0 0 24 5000 1 0");
         pa_set(h, 0, 1, "1:fx1:cutoff", 192, 11000);
 
         pa_playback_scan(in, &in->tracks[0], 0, 0, 0, 384, NULL);
@@ -298,13 +299,13 @@ int main(void) {
         char *outgoing = strstr(buf, "1:fx1:cutoff 2000");
         char *incoming = strstr(buf, "1:fx1:cutoff 5000");
         HX_ASSERT(incoming != NULL,
-                  "⭐ the INCOMING clip's resting value (5000) was never staged");
+                  "⭐ the INCOMING clip's start value (5000) was never staged");
         /* ⚠ NOT `outgoing == NULL || …` — that passes when the release half has
          * vanished entirely, claiming to have proved an ordering it never saw. */
         HX_ASSERT(outgoing != NULL, "the outgoing release was not staged at all");
         HX_ASSERT(incoming > outgoing,
                   "the incoming rest must be staged AFTER the outgoing one, or the old clip wins");
-        OK("⭐ a clip switch JUMPS to the new clip's resting value (Josh, 09-13)");
+        OK("⭐ a clip switch JUMPS to where the new clip's lane starts (Josh, 09-13)");
         hx_destroy(h);
     }
 
@@ -318,7 +319,8 @@ int main(void) {
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
 
         pa_set(h, 0, 0, "1:fx1:cutoff", 0, 9000);
-        hx_set_param(h, "t0_pa_rest", "1 1:fx1:cutoff 5000");
+        /* clip 1's lane starts at 5000: a punch on its first step. */
+        hx_set_param(h, "t0_pa_hold_write", "1 1:fx1:cutoff 0 0 24 5000 1 0");
         pa_set(h, 0, 1, "1:fx1:cutoff", 192, 11000);
         hx_set_param(h, "t0_pa_active", "1 1:fx1:cutoff 0");   /* clip 1's lane OFF */
 
@@ -362,7 +364,8 @@ int main(void) {
 
         hx_set_param(h, "t0_pa_rest", "0 1:fx1:cutoff 2000");
         pa_set(h, 0, 0, "1:fx1:cutoff", 0, 9000);
-        hx_set_param(h, "t0_pa_rest", "1 1:fx1:cutoff 5000");
+        /* clip 1's lane starts at 5000: a punch on its first step. */
+        hx_set_param(h, "t0_pa_hold_write", "1 1:fx1:cutoff 0 0 24 5000 1 0");
         pa_set(h, 0, 1, "1:fx1:cutoff", 192, 11000);
         pa_playback_scan(in, &in->tracks[0], 0, 0, 0, 384, NULL);
         pending(h, buf, sizeof(buf));
@@ -401,7 +404,8 @@ int main(void) {
 
         hx_set_param(h, "t0_pa_rest", "0 1:fx1:cutoff 2000");
         pa_set(h, 0, 0, "1:fx1:cutoff", 0, 9000);
-        hx_set_param(h, "t0_pa_rest", "1 1:fx1:cutoff 5000");
+        /* clip 1's lane starts at 5000: a punch on its first step. */
+        hx_set_param(h, "t0_pa_hold_write", "1 1:fx1:cutoff 0 0 24 5000 1 0");
         pa_set(h, 0, 1, "1:fx1:cutoff", 192, 11000);
 
         /* Playing, and the launch QUEUED rather than immediate: launch_quant != 0
@@ -457,7 +461,7 @@ int main(void) {
         /* clip 0 drives the parameter; clip 1 has a lane the user then DELETES. */
         hx_set_param(h, "t0_pa_rest", "0 1:fx1:cutoff 2000");
         pa_set(h, 0, 0, "1:fx1:cutoff", 0, 9000);
-        hx_set_param(h, "t0_pa_rest", "1 1:fx1:cutoff 7777");
+        hx_set_param(h, "t0_pa_hold_write", "1 1:fx1:cutoff 0 0 24 7777 1 0");
         pa_set(h, 0, 1, "1:fx1:cutoff", 192, 11000);
         hx_set_param(h, "t0_pa_clear_key", "1 1:fx1:cutoff");     /* Delete + knob */
 
@@ -623,7 +627,7 @@ int main(void) {
 
     /* ---- the per-tick cap rotates: nothing is starved ------------------ */
     {
-        /* Under Smooth every ramping entry changes EVERY tick. If the scan
+        /* A gliding entry changes EVERY tick. If the scan
          * always started at index 0 and stopped at its cap, the entries past
          * the cap would never be reached while the first ones kept moving —
          * silently, forever. The scan resumes where it was cut off. */
@@ -636,10 +640,8 @@ int main(void) {
             snprintf(tgt, sizeof(tgt), "1:fx1:s%d", i);
             pa_set(h, 0, 0, tgt, 0, 0);
             pa_set(h, 0, 0, tgt, 6000, 16383);
-            snprintf(key, sizeof(key), "t0_pa_smooth");
-            snprintf(v, sizeof(v), "0 %s 1", tgt);
-            hx_set_param(h, key, v);
         }
+        (void)key; (void)v;
         int seen[PA_TICK_MAX_STAGE + 4] = {0};
         for (uint32_t ct = 1; ct <= 4; ct++) {          /* every entry moves every tick */
             pa_playback_scan(in, &in->tracks[0], 0, 0, ct, 6144, NULL);
@@ -652,7 +654,7 @@ int main(void) {
         int all = 1;
         for (int i = 0; i < N; i++) if (!seen[i]) all = 0;
         HX_ASSERT(all, "with more ramping entries than the cap, EVERY one is staged within a few ticks");
-        OK("⚠ the capped scan rotates — a 17th Smooth entry is not starved forever");
+        OK("⚠ the capped scan rotates — a 17th gliding entry is not starved forever");
         hx_destroy(h);
     }
 
@@ -728,15 +730,17 @@ int main(void) {
         HX_ASSERT(strstr(buf, "1:fx1:cutoff 2000"), "the rest outlives a clear");
         OK("⚠ Delete+knob: gone from playback and the list, parameter back to rest, rest remembered");
 
-        /* Delete+step emptying an entry retires it the same way. */
+        /* Delete+step on a lane's last lock: what is left is its START point
+         * (the resting value it was made with), so the parameter plays rest. */
         pa_set(h, 0, 0, "1:fx1:cutoff", 24, 7000);
         pa_playback_scan(in, &in->tracks[0], 0, 0, 24, 384, NULL);
         pending(h, buf, sizeof(buf));
         hx_set_param(h, "t0_pa_clear_step", "0 24 47");
         pa_release_service(in);
+        pa_playback_scan(in, &in->tracks[0], 0, 0, 30, 384, NULL);
         pending(h, buf, sizeof(buf));
-        HX_ASSERT(strstr(buf, "1:fx1:cutoff 2000"), "Delete+step that empties an entry: back to rest");
-        OK("Delete+step on the last point behaves like a clear");
+        HX_ASSERT(strstr(buf, "1:fx1:cutoff 2000"), "Delete+step on the last lock: the lane's start point, at rest");
+        OK("Delete+step on the last lock leaves the lane at its resting value");
         hx_destroy(h);
     }
 
@@ -777,7 +781,9 @@ int main(void) {
         pa_record_tick(in, &in->tracks[0], 0, 0, 40, 24, 384);                 /* cell 36..47 */
         pa_entry_t *e = &in->pa_entries[0];
         HX_ASSERT(e->count == 3, "one point per cell along the playhead (the original + two cells)");
-        HX_ASSERT(e->flags & PA_FLAG_SMOOTH, "⚠ a RECORDED entry plays back smooth — half-step holds are an audible staircase");
+        {   uint16_t v = 0;
+            HX_ASSERT(pa_eval_from(e, 30, 0, 384, 0, &v) && v == 5250,
+                      "⚠ a RECORDED sweep glides between its cells — half-step holds are an audible staircase"); }
         HX_ASSERT(e->points[1].tick == 24 && e->points[1].val == 5000, "the first cell holds the value at its start");
         HX_ASSERT(e->points[2].tick == 36 && e->points[2].val == 5500, "the next cell the newer value");
         pa_record_tick(in, &in->tracks[0], 0, 0, 26, 24, 384);                 /* loop wrapped: overwrite cell 24 */

@@ -46,15 +46,14 @@ int main(void) {
     char ans[4096];
     int v[16];
 
-    /* A 16-step clip (window ticks 0..383). Smooth ramp 0 → full over the clip. */
+    /* A 16-step clip (window ticks 0..383). A ramp 0 → full over the clip. */
     pa_set(h, "1:synth:cutoff", 0, 0);
     pa_set(h, "1:synth:cutoff", 360, 16383);            /* step 15 */
-    hx_set_param(h, "t0_pa_smooth", "0 1:synth:cutoff 1");
 
     HX_ASSERT(hx_get_param(h, "t0_c0_pa_vals_0_24", ans, sizeof(ans)) > 0, "the read answers");
     HX_ASSERT(vals_for(ans, "1:synth:cutoff", v), "a line for the lane");
     HX_ASSERT(v[0] == 0 && v[15] == 127, "the ramp runs 0 → 127 across the page");
-    for (int s = 1; s < 16; s++) HX_ASSERT(v[s] > v[s - 1], "Smooth: every step higher than the last");
+    for (int s = 1; s < 16; s++) HX_ASSERT(v[s] > v[s - 1], "the glide: every step higher than the last");
     HX_ASSERT(v[8] >= 66 && v[8] <= 70, "step 9 is about 8/15 of the way (68)");
     {
         int raw[16];
@@ -63,7 +62,7 @@ int main(void) {
         HX_ASSERT(raw[8] > 8738 - 40 && raw[8] < 8738 + 40, "step 9 reads at FULL resolution (~8738 of 16383), not 7-bit");
         HX_ASSERT(raw[8] % 129 != 0 || raw[7] % 129 != 0, "the values are not merely 7-bit values scaled up");
     }
-    OK("⭐ a Smooth ramp reads as the ramp playback plays, step by step");
+    OK("⭐ a ramp reads as the ramp playback plays, step by step");
 
     /* Scale 50 % halves what plays. */
     hx_set_param(h, "t0_pa_scale", "0 1:synth:cutoff 50");

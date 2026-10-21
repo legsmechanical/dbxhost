@@ -136,7 +136,10 @@ int main(void) {
          * parameters — one gesture, not one per knob. */
         hx_set_param(h, "t0_pa_clear_step", "0 20 30");
         pa_list(h, buf, sizeof(buf));
-        HX_ASSERT(!strstr(buf, "0:fx2:mix"), "the only point of fx2:mix was in the span; entry gone");
+        /* A lane is an envelope from its start point on (the point written
+         * at its window start with its first point): deleting its only lock
+         * leaves that, flat. */
+        HX_ASSERT(strstr(buf, "0 0 9 1 0:fx2:mix"), "fx2:mix's lock was in the span: only its start point is left");
         HX_ASSERT(strstr(buf, "0 0 9 1 0:fx1:cutoff"), "cutoff keeps its out-of-span point");
         HX_ASSERT(strstr(buf, "cc:1"), "a parameter automated elsewhere is untouched");
         OK("Delete+step clears every parameter's points in the span, and only there");
@@ -415,8 +418,9 @@ int main(void) {
 
         hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         hx_set_param(h, "state_path", state);
+        hx_set_param(h, "t2_pa_rest", "5 1:synth:filter 4321");   /* the resting value */
         pa_set(h, 2, 5, "1:synth:filter", 12, 7777);
-        hx_set_param(h, "t2_pa_smooth", "5 1:synth:filter 1");
+        hx_set_param(h, "t2_pa_wrap", "5 1:synth:filter 0");      /* Carry: off the default */
         hx_set_param(h, "save", "1");
 
         FILE *fp = fopen(state, "r");
@@ -426,7 +430,8 @@ int main(void) {
         fclose(fp);
         HX_ASSERT(got > 0, "state file not empty");
         HX_ASSERT(strstr(fbuf, "1:synth:filter"), "automation is IN the project state file");
-        HX_ASSERT(strstr(fbuf, "12:7777;"), "point recorded");
+        HX_ASSERT(strstr(fbuf, "0:4321;12:7777;"), "the start point (the resting value) and the point");
+        HX_ASSERT(strstr(fbuf, "\"pk\":[{\"k\":\"1:synth:filter\",\"v\":4321}]"), "the resting value is saved");
         HX_ASSERT(!fopen(autof, "r"), "and NOT in a second file beside it");
         OK("automation is a section of the one project file, not a sidecar");
 
@@ -441,8 +446,12 @@ int main(void) {
             seq8_load_state(in2);
         }
         pa_list(h, buf, sizeof(buf));
-        HX_ASSERT(strstr(buf, "2 5 11 1 1:synth:filter"), "entry, flags (active|smooth|wrap reset) and count restored");
-        OK("it reloads with the project, flags and all");
+        HX_ASSERT(strstr(buf, "2 5 1 2 1:synth:filter"), "entry, flags (active, Wrap: Carry) and count restored");
+        {   seq8_instance_t *in2 = (seq8_instance_t *)h->inst;
+            int id = pa_target_lookup(in2, "1:synth:filter");
+            HX_ASSERT(id >= 0 && ((in2->pa_knob_valid >> id) & 1u) && in2->pa_knob[id] == 4321,
+                      "the resting value comes back with it"); }
+        OK("it reloads with the project, flags and resting value and all");
 
         /* A project with no automation must leave the store EMPTY rather than
          * inheriting the previous project's. */

@@ -4,7 +4,7 @@ import './_bulk_get_stub.mjs';
  * Josh, 2026-10-20: "can we make it so that it works outside of automation if
  * the last gesture while step is held was to create or modify an automation
  * point?" Hold a step on the clip's grid, turn a knob to lock a parameter on
- * it, press a later step: that lock's value is extended (tN_pa_extend), and
+ * it, press a later step: that lock's value is extended (tN_pa_hold_write over the span), and
  * the note is NOT stretched. With no lock — or a note edit after it — the
  * later step stretches the note exactly as before. Performed with real step
  * presses, knob turns and a pad, through the UI's own entry point.
@@ -92,7 +92,11 @@ S.bankCardLatched = false; S.activeBank = NOTEFX; S.trackActiveBank[T] = NOTEFX;
 S.bankParams[T][NOTEFX][5] = 100;
 S.playing = false; S.knobLocked.fill(false);
 
-const extendsOf = () => sets.filter(s => s.startsWith('t0_pa_extend='));
+/* The hold's writes, and among them the STRETCHES (a span longer than the
+ * held step): "t0_pa_hold_write=<clip> <target> <from> <to> <tps> <value> <type> <rebase>". */
+const holdWrites = () => sets.filter(s => s.startsWith('t0_pa_hold_write='));
+const extendsOf = () => holdWrites().filter(s => { const f = s.split(' '); return f[2] !== f[3]; });
+const lockValue = () => { const w = holdWrites().filter(s => s.split(' ')[2] === s.split(' ')[3]); return w.length ? w[w.length - 1].split(' ')[5] : null; };
 const gatesOf = () => sets.filter(s => /^t0_c0_step_2_gate=/.test(s));
 const holdStep3 = () => { note(STEP(2), 127); ticks(40); };
 const letGo = (i) => { note(STEP(i), 0); note(STEP(2), 0); ticks(3); };
@@ -113,11 +117,13 @@ step('⚠ CONTROL: no lock in the hold → a later step stretches the NOTE, as b
 step('⭐ the hold\'s last gesture was a LOCK → a later step EXTENDS that lane, not the note (Josh, 2026-10-20)', () => {
     holdStep3(); sets.length = 0;
     cc(76, 1); ticks(3);                                 /* NOTE FX K6 Gate Time: a lock on step 3 */
-    assert(sets.some(s => s.startsWith('t0_pa_set2=0 seq:0:noteFX_gate 48 71 ')), 'setup: the lock: ' + JSON.stringify(sets));
+    assert(sets.some(s => s.startsWith('t0_pa_hold_write=0 seq:0:noteFX_gate 2 2 24 ')), 'setup: the lock: ' + JSON.stringify(sets));
+    const v = lockValue();
     const nUndo = sets.filter(s => /_undo_checkpoint=1$/.test(s)).length;
     note(STEP(5), 127); ticks(3);
     const ex = extendsOf();
-    assert(ex.length === 1 && ex[0] === 't0_pa_extend=0 seq:0:noteFX_gate 2 5 24', 'the extend: ' + JSON.stringify(sets));
+    assert(ex.length === 1 && ex[0] === 't0_pa_hold_write=0 seq:0:noteFX_gate 2 5 24 ' + v + ' 1 1',
+           'the extend carries the lock\'s value, from the hold\'s base: ' + JSON.stringify(sets));
     assert(gatesOf().length === 0, 'the note was stretched too: ' + JSON.stringify(gatesOf()));
     assert(sets.filter(s => /_undo_checkpoint=1$/.test(s)).length === nUndo, 'the extend shares the lock\'s undo');
     letGo(5);
@@ -131,7 +137,8 @@ step('⭐ across bars on the note grid: Right pages while held, a bar-2 step ext
     assert(S.trackCurrentPage[T] === 1, 'setup: paged, page ' + S.trackCurrentPage[T]);
     note(STEP(4), 127); ticks(3);
     const ex = extendsOf();
-    assert(ex.length === 1 && ex[0] === 't0_pa_extend=0 seq:0:noteFX_gate 2 20 24', 'step 3 → bar 2 step 5: ' + JSON.stringify(sets));
+    assert(ex.length === 1 && ex[0] === 't0_pa_hold_write=0 seq:0:noteFX_gate 2 20 24 ' + lockValue() + ' 1 1',
+           'step 3 → bar 2 step 5: ' + JSON.stringify(sets));
     note(STEP(4), 0); cc(62, 127); cc(62, 0); ticks(2);
     note(STEP(2), 0); ticks(3);
     S.trackCurrentPage[T] = 0;
@@ -147,8 +154,9 @@ step('⭐ SHORTEN on the note grid, and the range shows in an AUTOMATION colour 
     note(STEP(7), 127); note(STEP(7), 0); ticks(3);        /* again: 2..6 */
     lit = []; for (let i = 0; i < 16; i++) if (leds[16 + i] === EXT) lit.push(i);
     assert(JSON.stringify(lit) === '[2,3,4,5,6]', 'shortened range: ' + JSON.stringify(lit));
-    const ex = extendsOf().map(s => s.slice('t0_pa_extend=0 seq:0:noteFX_gate '.length));
-    assert(JSON.stringify(ex) === JSON.stringify(['2 7 24', '2 6 24 1']), 'the presses: ' + JSON.stringify(ex));
+    const ex = extendsOf().map(s => s.slice('t0_pa_hold_write=0 seq:0:noteFX_gate '.length));
+    const v = lockValue();
+    assert(JSON.stringify(ex) === JSON.stringify(['2 7 24 ' + v + ' 1 1', '2 6 24 ' + v + ' 1 1']), 'the presses: ' + JSON.stringify(ex));
     assert(gatesOf().length === 0, 'the note was not touched');
     letGo(7);
 });
@@ -157,7 +165,7 @@ step('⭐ only the LAST-turned parameter extends: Gate Time, then Velocity Offse
     holdStep3(); sets.length = 0;
     cc(76, 1); ticks(3);                                 /* K6 Gate Time */
     cc(73, 1); ticks(3);                                 /* K3 Velocity Offset */
-    const second = sets.filter(s => s.startsWith('t0_pa_set2=')).map(s => s.split(' ')[1]).filter(t => t !== 'seq:0:noteFX_gate')[0];
+    const second = holdWrites().map(s => s.split(' ')[1]).filter(t => t !== 'seq:0:noteFX_gate')[0];
     assert(second, 'setup: K7 locked a second parameter: ' + JSON.stringify(sets));
     note(STEP(5), 127); note(STEP(5), 0); ticks(3);
     const ex = extendsOf();
