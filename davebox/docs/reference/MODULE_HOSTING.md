@@ -291,3 +291,40 @@ this rig has no use for. The renderer is davebox's existing `ui/ui_movy.mjs`, a
 source translation of **schwung-canvaskit**. Per that kit's standing rule it is a
 source to draw upon, not a dependency: `lab/` adds no build step and regenerates
 nothing.
+
+## A module's own chain screen (`ui_chain.js`)
+
+dAVEBOx runs a module's chain screen where stock runs it (`src/shadow/shadow_ui.js`
+`enterComponentEdit` → `loadModuleUi`): opening a component that publishes **no**
+`ui_hierarchy` loads `ui_chain.js` (or the file module.json's `"ui_chain"` names) and
+gives it the screen. A component that publishes a hierarchy gets the shared grid, and a
+module declaring `host_canvas_ui` keeps its place ahead of both. No module is named
+anywhere; the code is `ui/ui_chain_host.mjs` (contract + shims) and `openChainScreenIfOwed`
+in `ui/ui_sound.mjs` (where it opens).
+
+What a script gets, and what each binding means here:
+
+| binding | in dAVEBOx |
+|---|---|
+| `chain_ui.init/tick/onMidiMessageInternal/handleBack` (or changed plain globals) | as stock: `tick` draws every frame; Back asks `handleBack()` first |
+| `host_module_get_param/set_param` | the opened slot + component |
+| `shadow_get_param/set_param` | the real bindings |
+| `shadow_get_ui_slot()` | the opened slot |
+| `shadow_get_display_mode()` | 1 |
+| `shadow_get_shift_held()` | dAVEBOx's Shift |
+| `host_pad_block(1)` | the module gets pads 68–99 (+ pressure) first |
+| `move_midi_inject_to_move` (a pad) | plays the pad through dAVEBOx's own pad path, after the call returns |
+| `host_swap_module()` | closes the screen and opens the module browser |
+| `host_open_file_in_tool` | `false` (SA has no tools) |
+
+Kept by dAVEBOx while the screen is up: Volume (79), Note/Session (50), Play (85),
+Record (86). Shift and Mute reach the module **and** dAVEBOx. Shift + jog closes.
+
+⚠ The shims are installed **around each hosted call** and restored in `finally`, never
+for the screen's lifetime: dAVEBOx calls `host_module_*` for its own DSP from every tick.
+
+Not yet: stock's bare `ui.js` fallback (a module's standalone screen would take over a
+running sequencer — name it with `"ui_chain": "ui.js"` to opt in), the trailing
+My Presets / Module menus (`shadow_component_trailing_menus` — this host has no
+equivalent either), `onPresetsChanged` / `restorePage`, `onMidiMessageExternal`.
+Test: `tests/js/test_chain_ui_screen.mjs`.

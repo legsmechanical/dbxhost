@@ -93,6 +93,7 @@ the section into a versioned heading at release time.
   to the lane list.
 
 ### Added
+- **Modules with their own editor screen now show it** — a module that draws its own editor in Schwung (instead of the standard pages) opens that same screen in dAVEBOx, with its own knob, jog and pad behaviour. A drum module whose pads jump to the drum you hit now does so here too; pads still play and record on the track.
 - **Several project templates, and a Templates screen.** **Save as Template...**
   in Project Settings asks for a name and adds a template; **Templates...** lists
   them, each with Rename, Replace with Current and Delete. Creating a project

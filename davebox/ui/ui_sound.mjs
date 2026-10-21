@@ -33,7 +33,7 @@ import {
     slotIndex, moveBusForChannel, moveBusComp, moveBusPrefix,
     faderStep, faderWire, faderFormatDb, faderGainToTravel, SHIFT_VOL_THROW, trackLevelCardText,
     PAGE_KNOB, pageFloatStep, pageIntStep, pageIntDetents, engineModuleHelp,
-    engineHostsOwnUi } from './ui_engine.mjs';
+    engineHostsOwnUi, engineChainUiPath } from './ui_engine.mjs';
 /* MODULE buses — a splittable module's voice groups. ⚠ NOT davebox's `S.bus`,
  * which is a MIXER POSITION; ui_modbus.mjs's header says why the source keeps
  * them apart even though the screens never collide. */
@@ -140,6 +140,12 @@ import {
     renderCanvasEdit, canvasEditOnMidi, canvasEditBack, canvasEditCrumb,
     canvasEditWantsPads, canvasEditAnimates, canvasEditTakeClose, isCanvasParam,
 } from './ui_canvas.mjs';
+/* A module's own CHAIN SCREEN, opened where stock opens it: a component with
+ * no ui_hierarchy whose module ships ui_chain.js. */
+import {
+    chainUiOpen, chainUiClose, chainUiActive, chainUiTick, chainUiMidi, chainUiBack,
+    chainUiHoldsPads, chainUiTakeSwap, chainUiDead, chainUiError,
+} from './ui_chain_host.mjs';
 import { isWavPosition, wavSiblingKey }
     from '/data/UserData/schwung/shared/param_pages/wav_position.mjs';
 /* The generic rule "do not open an editor on a component that reported a load
@@ -363,6 +369,9 @@ const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
        * not numeric order, so "the next number" is not the one under the
        * cursor. */
       VIEW_CANVAS = 23,
+      /* A module's own CHAIN SCREEN (ui_chain_host.mjs). ⚠ 35: the next free
+       * id (34 is VIEW_HELP). */
+      VIEW_CHAIN = 35,
       /* ⭑ THE CONFIG BANK's card (Josh, 2026-09-26): the TRACK CONFIG list at
        * rest, inside the door's corner brackets; a click makes it live
        * (VIEW_BLOCKS). A card like VIEW_PROMPT / VIEW_MACROS. ⚠ 24: the next
@@ -1711,6 +1720,7 @@ export function soundRetarget(track, slot) {
      * because `S.bus` cannot change in between. */
     if (!(S.bus && S.bus.kind === 'global')) wavEditCloseIfOpen();
     if (!(S.bus && S.bus.kind === 'global')) canvasCloseIfOpen();
+    if (!(S.bus && S.bus.kind === 'global')) chainCloseIfOpen();
     flushForRetarget();
 
     S.track = track;
@@ -1856,6 +1866,7 @@ export function soundExit() {
         String(new Error().stack || '').split('\n').slice(2, 5).map((l) => l.trim()).join(' | '));
     wavEditCloseIfOpen();
     canvasCloseIfOpen();      /* nothing may outlive sound mode itself */
+    chainCloseIfOpen();
     S.help = null;
     /* …INCLUDING the MACROS-clear confirm, which is about a bank that only exists
      * while this mode is open. It draws over everything, so an exit that left it
@@ -2461,7 +2472,69 @@ function openBlock(comp) {
     }
     S.view = VIEW_EDIT;
     runDiscovery();
+    openChainScreenIfOwed();
 }
+
+/*
+ * ⭐ STOCK'S PRECEDENCE, step for step (shadow_ui.js enterComponentEdit): a
+ * module that publishes a ui_hierarchy gets the grid; one that does not gets
+ * its own screen script if it ships one. dAVEBOx's one addition, a module that
+ * declares host_canvas_ui, keeps its place ahead of both. Everything else
+ * falls through to dAVEBOx's own editor, as it always did.
+ */
+function openChainScreenIfOwed() {
+    if (S.view !== VIEW_EDIT || S.hierarchyPublished || S.hosted || !S.moduleId) return false;
+    const path = engineChainUiPath(S.comp, S.moduleId);
+    if (!path) return false;
+    const slot = S.slot, comp = S.comp;
+    chainUiOpen({ path, slot, comp, io: {
+        load: (p) => shadow_load_ui_module(p),
+        getParam: (k) => engineGet(slot, comp, k),
+        setParam: (k, v) => engineSet(slot, comp, k, v),
+        shiftHeld: () => !!GS.shiftHeld,
+        replayPad: (st, d1, d2) => { if (chainPadReplay) chainPadReplay(st, d1, d2); },
+    } });
+    if (chainUiDead()) {
+        /* Could not run it: say so, and leave the block editable the way it
+         * was before this screen existed. */
+        log('chain ui: ' + S.moduleId + ' ' + chainUiError());
+        showActionPopupFor(4000, 'MODULE SCREEN FAILED', chainUiError());
+        chainUiClose();
+        return false;
+    }
+    S.view = VIEW_CHAIN;
+    S.dirty = true;
+    return true;
+}
+
+/* dAVEBOx's own pad path, registered by ui.js (which owns the dispatch), for a
+ * pad the module hands back. */
+let chainPadReplay = null;
+export function soundSetChainPadReplay(fn) { chainPadReplay = fn; }
+
+/* Does the module screen take this pad? Stock's rule: only while it holds the
+ * pad block. It then decides what plays. */
+export function soundChainTakesPad(status, d1, d2) {
+    if (!S.active || S.view !== VIEW_CHAIN || !chainUiActive() || !chainUiHoldsPads()) return false;
+    chainUiMidi(status, d1, d2);
+    chainAfterInput();
+    return true;
+}
+
+function chainAfterInput() {
+    if (chainUiTakeSwap()) { closeChainScreen(); openBrowse(); }
+    S.dirty = true;
+}
+
+/* ONE EXIT for every way out: Back, a swap, a retarget, leaving sound mode. */
+function closeChainScreen(toView = VIEW_BLOCKS) {
+    if (!chainUiActive()) return;
+    chainUiClose();
+    if (S.view === VIEW_CHAIN) S.view = toView;
+    S.dirty = true;
+}
+function chainCloseIfOpen() { if (chainUiActive()) closeChainScreen(); }
+export function soundChainStateForTest() { return { view: S.view === VIEW_CHAIN, active: chainUiActive() }; }
 
 /* The failure this component reports, or null. Reads at CALL TIME against the
  * slot in scope — never a captured one. */
@@ -4795,6 +4868,9 @@ const VIEW_TREE = {
      * the thing it drew. */
     [VIEW_CANVAS]:      { parent: VIEW_EDIT,       float: false,
                           crumb: () => canvasEditCrumb() || 'Canvas' },
+    /* ⚠ Back is the module's first, like the canvas; and it owns all 64 rows. */
+    [VIEW_CHAIN]:       { parent: VIEW_BLOCKS,     float: false,
+                          crumb: () => engineModuleAbbrev(S.moduleId) || 'Module' },
 };
 
 /* Applying an Instrument choice. Extracted so the PICKER and the old
@@ -8021,11 +8097,11 @@ function runDiscovery() {
      * two-second loop means something else entirely on the eight-bar sample
      * that replaced it. Zoom survives leaving the SCREEN (or you lose it every
      * time you glance at another param) but never a module swap. */
-    if (id !== S.moduleId) { wavEditCloseIfOpen(); canvasCloseIfOpen(); wavForgetComponent(S.comp, S.slot); ppWidgetsForget(); }
+    if (id !== S.moduleId) { wavEditCloseIfOpen(); canvasCloseIfOpen(); chainCloseIfOpen(); wavForgetComponent(S.comp, S.slot); ppWidgetsForget(); }
     S.moduleId = id;
     /* A project from before Position: its "Notes to Seq" becomes Pre (one read). */
     fxPosMigrate();
-    if (!id) { S.banks = []; S.banksDeferred = false; S.sections = []; S.dirty = true; return; }
+    if (!id) { S.banks = []; S.banksDeferred = false; S.sections = []; S.hierarchyPublished = false; S.dirty = true; return; }
     /* The page grid will draw this module, so the flat banks -- davebox's own
      * editor, its FALLBACK -- are not built now (DR32's 32 pads made
      * them 1441 pages, most of the time it took to open the editor). A module
@@ -8036,6 +8112,8 @@ function runDiscovery() {
     S.banks = res.banks;
     S.banksDeferred = !!res.banksDeferred;
     S.hosted = res.hostedOverlay || null;
+    /* Stock's test for the grid: a hierarchy was published at all. */
+    S.hierarchyPublished = !!(res.hierarchy && res.hierarchy.levels);
     hostedReset();
     S.presetSpec = res.presetSpec || null;
     S.levels = res.levels || null;
@@ -9475,6 +9553,25 @@ export function soundOnCC(d1, d2, decodeDelta) {
      * davebox's own jog handling below, so the gesture that gets you out also
      * moves you on -- the same behaviour stock has.
      */
+    /*
+     * ⭐ A MODULE'S CHAIN SCREEN gets what stock gives it: every CC but Back.
+     * dAVEBOx keeps the same few the canvas screen keeps — Volume, Note/
+     * Session, Play, Record — because the sequencer is still running under
+     * it. Shift and Mute go to the module AND on to dAVEBOx (Shift+Volume is
+     * the track level everywhere; the module reads Mute for its own gestures).
+     * Shift+jog leaves, as on the canvas.
+     */
+    if (S.view === VIEW_CHAIN && chainUiActive()) {
+        if (d1 === 14 && GS.shiftHeld && d2 !== 0) {
+            /* Closes and does NOT consume, as on the canvas: the turn goes on
+             * to dAVEBOx, so the gesture that gets you out also moves you on. */
+            closeChainScreen();
+        } else if (d1 !== 79 && d1 !== 50 && d1 !== 51 && d1 !== 85 && d1 !== 86) {
+            chainUiMidi(0xB0, d1, d2);
+            chainAfterInput();
+            if (d1 !== 49 && d1 !== 88) return true;
+        }
+    } else
     if (S.view === VIEW_CANVAS && canvasEditActive() &&
         d1 === 14 && GS.shiftHeld && d2 !== 0) {
         closeCanvasScreen();
@@ -10644,6 +10741,12 @@ export function soundOnCC(d1, d2, decodeDelta) {
             closeCanvasScreen();
             return true;
         }
+        /* The module's chain screen climbs its own levels first, as on stock. */
+        if (S.view === VIEW_CHAIN) {
+            if (chainUiBack()) { chainAfterInput(); return true; }
+            closeChainScreen();
+            return true;
+        }
         /* ⭐ ANY SCREEN THE EDITOR OPENED BACKS INTO THE EDITOR. Ahead of the
          * per-view branches below, because those step up davebox's OWN tree —
          * which is not the tree you walked when you arrived from a module page.
@@ -10919,6 +11022,9 @@ export function soundOnNote(status, d1, d2) {
      * canvas: the kit would write the vouch a second time on top of davebox's
      * own, re-arming a press the note already resolved. */
     hostedNote(status, d1, d2);
+    /* A chain screen takes knob touch as stock delivers it: the note itself.
+     * Forwarded, not consumed, like the two above and below. */
+    if (S.view === VIEW_CHAIN && chainUiActive()) { chainUiMidi(status, d1, d2); chainAfterInput(); }
 
     /* The stock editor takes knob touch as the NOTE it is — page_input decodes
      * 0x90/0x80 on notes 0-7 into onKnobTouch, and that press is what claims
@@ -11155,6 +11261,10 @@ export function soundTick() {
     /* ⭑ Only a canvas that ANIMATES is redrawn per tick. A static one (a
      * browser, a menu) redraws on input like every other screen, so it costs
      * nothing to leave open. */
+    /* The chain screen draws in its own tick, which stock calls every frame
+     * from the draw path: so it is redrawn every frame here too. */
+    if (S.view === VIEW_CHAIN && chainUiActive()) S.dirty = true;
+
     if (S.view === VIEW_CANVAS && canvasEditActive()) {
         /* onValues is an event and may close(); a delivery redraws even a
          * canvas with no tick hook of its own. */
@@ -13193,6 +13303,18 @@ function closeCanvasScreen() {
  * component -- a read would go to the new slot with the old component's key,
  * and a write would land an edit on a track the user never opened.
  */
+/* The module draws the whole frame inside its tick. If it is dead, say which
+ * hook died — the one thing nothing else on the device can tell you — with
+ * the way out. */
+function renderChainScreen() {
+    if (!chainUiActive()) return;
+    if (!chainUiDead()) { chainUiTick(); if (!chainUiDead()) return; }
+    clear_screen();
+    print(3, 12, String(engineModuleAbbrev(S.moduleId) || 'Module').slice(0, 24), 1);
+    print(3, 30, String(chainUiError() || 'module screen stopped').slice(0, 24), 1);
+    drawKitHintRow(MV_FOOTER_Y, [['back', 'exit']]);
+}
+
 function canvasCloseIfOpen() {
     if (!canvasEditActive()) return;
     closeCanvasScreen();
@@ -13786,6 +13908,7 @@ export function soundRender() {
     else if (S.view === VIEW_LFO_PARAM) renderLfoParam();
     else if (S.view === VIEW_WAV) renderWavEdit();
     else if (S.view === VIEW_CANVAS) renderCanvasEdit();
+    else if (S.view === VIEW_CHAIN) renderChainScreen();
     else if (S.view === VIEW_ENUM) renderEnumPick();
     else if (S.view === VIEW_PATCHES) renderChainPatches();
     else if (S.view === VIEW_BUSES) renderBuses();
