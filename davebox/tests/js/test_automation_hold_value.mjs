@@ -105,7 +105,7 @@ stubParamPagesDevice();
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const _selectTrack = (await import('../../ui/ui_input_pads.mjs')).selectTrackFromPad;
-const { BANKS, BANK_AUTOMATION, BANK_SOUND, BANK_MACROS, SEQ_AUTO_TARGETS } = await import('../../ui/ui_constants.mjs');
+const { BANKS, BANK_AUTOMATION, BANK_SOUND, BANK_MACROS, SEQ_AUTO_TARGETS, PAD_MODE_DRUM } = await import('../../ui/ui_constants.mjs');
 const auto = await import('../../ui/ui_automation.mjs');
 const bank = await import('../../ui/ui_automation_bank.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
@@ -132,10 +132,11 @@ const wait = (ms) => { const t0 = Date.now(); while (Date.now() - t0 < ms) {} };
 const K = 2;
 const NFX = Object.values(SEQ_AUTO_TARGETS).find(e => e.bank === 1 && e.k === K && !e.alt);
 const SEQ = 'seq:' + T + ':' + NFX.key, CHN = T + ':synth:osc_c';
+const DIR = 'seq:' + T + ':all_lanes_playback_dir', MAC = 'mac:' + T + ':2';
 S.trackActiveClip[T] = 0; S.trackQueuedClip[T] = -1;
 let SCALE = 100;
 const setList = () => {
-    LIST = [SEQ, CHN].map(tg => T + ' 0 1 2 ' + tg + ' 0 0 ' + (tg === SEQ ? SCALE : 100)).join('\n') + '\n';
+    LIST = [SEQ, CHN, DIR, MAC].map(tg => T + ' 0 1 2 ' + tg + ' 0 0 ' + (tg === SEQ ? SCALE : 100)).join('\n') + '\n';
     auto.automationRefreshPresence();
 };
 setList();
@@ -148,7 +149,7 @@ VALS = (base) => {
     return Object.keys(pg).map(tg => tg + ' ' + Array.from({ length: 16 }, (_, s) => hex4(pg[tg][s] != null ? pg[tg][s] : 0xffff)).join('')).join('\n') + '\n';
 };
 const HI = 0x3000, P2 = 0x1000;
-PAGES = { 0: { [SEQ]: { 3: HI }, [CHN]: { 3: HI } }, 16: { [SEQ]: { 4: P2 } } };
+PAGES = { 0: { [SEQ]: { 3: HI }, [CHN]: { 3: HI }, [DIR]: { 3: 16383 }, [MAC]: { 3: 0x2000 } }, 16: { [SEQ]: { 4: P2 } } };
 
 /* What NOTE FX K3's cell reads with the knob at `v` — the reference for "the
  * cell shows the lane's value". */
@@ -294,6 +295,43 @@ step('⭐ Scale 50 %: the turn is NOT shown from the knob; the read after it res
     assert(kText() === kTextAt(Number(auto.automationWireValue(SEQ, NEW))), 'K3 shows ' + kText() + ', not the read value');
     note(STEP(3), 0); ticks(2);
     SCALE = 100; setList(); PAGES[0][SEQ][3] = HI;
+});
+
+step('⭐ a drum track\'s ALL LANES Dir (its one bank-knob lane): the held step\'s direction', () => {
+    if (snd.soundOpen()) snd.soundExit();
+    S.trackPadMode[T] = PAD_MODE_DRUM;
+    S.drumLaneLength[T] = 16; S.drumLaneTPS[T] = 24; S.drumLaneLoopStart[T] = 0;
+    S.activeBank = 7; S.trackActiveBank[T] = 7; S.bankCardLatched = true;
+    S.bankParams[T][7][6] = 0;
+    ticks(2);
+    const dirText = () => { globalThis.clear_screen(); render.drawUI(); return movy.kitCellsForTest().cells[6].text; };
+    const live = dirText();
+    S.bankParams[T][7][6] = Number(auto.automationWireValue(DIR, 16383));
+    const want = dirText();
+    S.bankParams[T][7][6] = 0;
+    assert(want !== live, 'rig: the lane\'s direction draws like the knob\'s (' + live + ')');
+    note(STEP(3), 127); ticks(2);
+    assert(S.heldStep === 3, 'rig: drum step 4 held (' + S.heldStep + ')');
+    assert(dirText() === want, 'Dir shows ' + dirText() + ', not the lane\'s ' + want);
+    note(STEP(3), 0); ticks(2);
+    assert(dirText() === live, 'after release Dir shows ' + dirText());
+    S.trackPadMode[T] = 0;
+});
+
+step('⭐ a SnapMorph knob on MACROS: the held step\'s position', () => {
+    S.activeBank = 1; S.trackActiveBank[T] = 1; ticks(1);
+    if (!S.trackMacros[T]) S.trackMacros[T] = new Array(8).fill(null);
+    S.trackMacros[T][2] = { v: 0, legs: [{ kind: 'morph', snaps: [0, 1], lo: 0, hi: 1 }] };
+    snd.soundEnter(T, T); ticks(3); snd.soundSetBank(BANK_MACROS); ticks(3);
+    const mText = () => { globalThis.clear_screen(); render.drawUI(); return movy.kitCellsForTest().cells[2].text; };
+    const live = mText();
+    assert(live === '0%', 'rig: the SnapMorph knob at 0% (' + live + ', ' + JSON.stringify(movy.kitCellsForTest().cells[2]) + ')');
+    note(STEP(3), 127); ticks(2);
+    assert(S.heldStep === 3, 'rig: step 4 held (' + S.heldStep + ')');
+    assert(mText() === Math.round(0x2000 / 16383 * 100) + '%', 'MORPH shows ' + mText() + ', not the lane\'s position');
+    note(STEP(3), 0); ticks(2);
+    assert(mText() === live, 'after release MORPH shows ' + mText());
+    snd.soundExit(); ticks(2);
 });
 
 if (swallowed !== null) { console.error('  FAIL — a SWALLOWED exception reached the jserr log:\n' + swallowed); failed = 1; }

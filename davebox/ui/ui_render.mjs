@@ -2329,7 +2329,9 @@ function drawUIBody() {
             const t = S.activeTrack;
             const rv = S.bankParams[t][7][0];
             const qv = S.bankParams[t][7][3];
-            const dv = S.bankParams[t][7][6];
+            /* Dir is the drum track's one bank-knob lane: a held step shows
+             * what it plays there (the Reverse alt has no lane). */
+            const dv = knobAltOn(6) ? S.bankParams[t][7][6] : heldKnobVal(7, 6, false, S.bankParams[t][7][6]);
             const DIQ_LABELS = ['Off','1/64','1/32','1/16','1/16t','1/8','1/8t','1/4','1/4t'];
             const _inq = S.drumInpQuant[t] | 0;
             const cells = [

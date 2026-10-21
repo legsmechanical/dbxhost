@@ -6968,7 +6968,10 @@ function macroCells(track, live) {
             /* A SNAPMORPH knob: like a mapped knob, an arc of its own position
              * — its "value" is where it sits between the snapshots. */
             if (live && !macroLive(m)) { cells.push(unassigned()); continue; }
-            const v = live ? mp.v : null;
+            /* Its lane is the knob's own position (0..1): a held step shows
+             * where the lane puts it there. */
+            const hv = live ? autoHeldValue(macroAutoTarget(m, t, i)) : null;
+            const v = live ? (hv ? hv.norm / 16383 : mp.v) : null;
             cell = { kind: 'arc', label: 'MORPH', name: upper(MORPH_LABEL + ' ' + morphSnapsLabel(m)),
                      text: v == null ? '--' : Math.round(v * 100) + '%', norm: v == null ? 0 : v };
         } else if (m.kind === 'level') {
