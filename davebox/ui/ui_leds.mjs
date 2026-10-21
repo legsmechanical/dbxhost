@@ -9,7 +9,7 @@ import {
 } from './ui_constants.mjs';
 import { trackClipHasContent, updateSceneMapLEDs } from './ui_scene.mjs';
 import { PROJECT_COLORS, projectColorLED } from './ui_dialogs.mjs';
-import { autoMapEditorComp } from './ui_automation_bank.mjs';
+import { autoMapEditorComp, autoMapMarkedBank } from './ui_automation_bank.mjs';
 import { arpVelLevel, drumVelocityToZone, bankPadMapForMode, SESS_PAD_MAP, bankMapPadForCell, bankMapTrackForStep, BANK_MAP_MODULE_PADS, bankMapModuleAt } from './ui_pure.mjs';
 import { knobRingColor, knobRingNorm, ringCellsFor, ringNormOfCell } from './ui_knob_leds.mjs';
 import { automationStateFor } from './ui_automation.mjs';
@@ -617,7 +617,7 @@ function paintBankMapPads() {
             const own = cell.bank === BANK_CONFIG || cell.bank === BANK_SOUND || cell.action === 'inst';
             const on = d ? (d.col === ci && d.row === r)
                 : ed !== null ? (cell.action === 'inst' && ed === 'synth')
-                : (cell.bank !== null && cell.bank === S.activeBank);
+                : (cell.bank !== null && cell.bank === autoMapMarkedBank());
             col[at(ci, r)] = on ? White
                 : own ? trackColor(t) : BANK_MAP_COL_COLORS[ci];
         }));

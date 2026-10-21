@@ -61,7 +61,7 @@ import {
     bankHasAltParams, altIndicatorActive, autoLanePlayStep
 } from './ui_leds.mjs';
 import { soundRender, renderTrackGatewayCard, renderConfigCardPeek, renderMacrosPeek } from './ui_sound.mjs';
-import { drawAutomationBankBody, autoBankMenuOpen, autoMenuUp, autoHoldJumpActive, autoHoldJumpStep, autoLaneFocus, autoHeldValue, autoMapEditorComp } from './ui_automation_bank.mjs';
+import { drawAutomationBankBody, autoBankMenuOpen, autoMenuUp, autoHoldJumpActive, autoHoldJumpStep, autoLaneFocus, autoHeldValue, autoMapEditorComp, autoMapMarkedBank } from './ui_automation_bank.mjs';
 import { automationStateFor } from './ui_automation.mjs';
 import { seqAutoTargetForKnob, fmtInstr } from './ui_constants.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
@@ -1620,7 +1620,7 @@ export function bankMapItems() {
         label: c.label,
         cells: c.cells.map((cell, r) => {
             if (cell && (ed !== null ? (cell.action === 'inst' && ed === 'synth')
-                                     : (cell.bank !== null && cell.bank === S.activeBank))) cur = { c: ci, r };
+                                     : (cell.bank !== null && cell.bank === autoMapMarkedBank()))) cur = { c: ci, r };
             return cell ? cell.name : null;
         }),
     }));

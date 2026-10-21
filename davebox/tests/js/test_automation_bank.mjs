@@ -493,6 +493,29 @@ step('⭐ Clear all from the list\'s last row leaves you ON the screen, list up,
     assert(S.activeBank === BANK_AUTOMATION, 'Clear all left the screen');
 });
 
+/* Review, 2026-10-21: the aftertouch row is the LAST row, so clearing it with
+ * Delete + click used to leave the cursor on Clear all — one more click and
+ * the whole clip was gone. The cursor steps up onto the last lane instead. */
+step('Delete + click on the aftertouch row: its row goes and the cursor does NOT land on Clear all', () => {
+    LIST = '0 0 1 2 0:synth:cutoff 0\n'; S.clipAtHas[T][C] = true; AT_HAS = '1';
+    auto.automationRefreshPresence();
+    S.activeBank = BANK_AUTOMATION; S.trackActiveBank[T] = BANK_AUTOMATION; S.bankCardLatched = true;
+    ticks(2);
+    if (!menu().menu) { click(); ticks(1); }
+    const rows = ab.autoBankRows(T, C);
+    const ai = rows.findIndex(r => r.kind === 'at');
+    assert(ai === 1, 'setup: one lane, then aftertouch: ' + JSON.stringify(rows.map(r => r.label)));
+    menu().sel = ai; sets.length = 0;
+    cc(119, 127); click(); cc(119, 0); AT_HAS = ''; ticks(4);
+    assert(sets.some(x => /_at_clear/.test(x)), 'the aftertouch was cleared: ' + JSON.stringify(sets));
+    const after = ab.autoBankRows(T, C);
+    assert(after.length === 1 && menu().sel === 0, 'the cursor is on the lane, not Clear all (sel ' + menu().sel + ' of ' + after.length + ' rows)');
+    sets.length = 0;
+    click(); ticks(4);
+    assert(!sets.some(x => x === 't0_pa_clear=0'), 'the next click cleared the whole clip: ' + JSON.stringify(sets));
+    back(); ticks(1);
+});
+
 if (failed) { console.log('FAIL: automation bank'); process.exit(1); }
 console.log('PASS: the AUTOMATION bank — the list, the menu, the ops, Clear all');
 }

@@ -274,6 +274,9 @@ export function autoBankDeleteClick() {
         noteUndoUnit();
         S.pendingDefaultSetParams.push({ key: 't' + t + '_c' + c + '_at_clear', val: '1' });
         S.clipAtHas[t][c] = false;
+        /* Its row goes, and the cursor must not slide onto Clear all — a
+         * second click there would clear the whole clip. */
+        if (a.sel > 0) a.sel--;
         showActionPopup('AFTERTOUCH', 'CLEARED');
         return;
     }
@@ -482,6 +485,10 @@ function selectedTarget(t, c) {
  * clip changes, and on a slow cadence otherwise (recorded points change values
  * without changing the list) — never per tick: a read is a whole SPI frame. */
 let valsCache = { key: null, map: null, at: -1e9 };
+/* True while the gradient's read is LIVE this tick (a lane drives the steps).
+ * Only then may a held step reuse it: a cache left from an earlier visit to
+ * AUTOMATION is never refreshed, so its values would go stale for the hold. */
+let valsFed = false;
 const VALS_REFRESH_MS = 400;
 /* A lane the page read has no line for (an empty, cleared lane): no value on
  * any step — dark inside its cycle, which stays on the buttons to hold. */
@@ -538,13 +545,16 @@ function valsRefresh(cache, key, t, c, base, tps) {
     const map = readValsPage(t, c, base, tps);
     cache.at = S.clockMs;
     if (map) { cache.key = key; cache.map = map; }
-    else if (cache.key !== key) cache.map = null;   /* a failed read of a NEW page shows no stale values */
+    /* A failed read of a NEW page shows no stale values, and waits out the
+     * slow cadence before trying again rather than reading every tick. */
+    else if (cache.key !== key) { cache.key = key; cache.map = null; }
 }
 function autoLaneValsTick(t, c, target) {
     const cy = S.autoCycle;
     const base = ((cy.off >> 4) + cy.page) * 16;
     const key = t + ' ' + c + ' ' + base + ' ' + cy.tps + ' ' + automationListGen();
     if (valsDue(valsCache, key)) valsRefresh(valsCache, key, t, c, base, cy.tps);
+    valsFed = true;
     const got = (valsCache.key === key && valsCache.map) ? (valsCache.map.get(target) || null) : null;
     const st0 = got ? null : automationStateFor(t, c, target);
     S.autoLaneVals = got || ((valsCache.key === key && valsCache.map && st0 && !st0.count) ? EMPTY_VALS : null);
@@ -571,7 +581,7 @@ function heldGeom() {
 }
 function heldValsTick() {
     const g = heldGeom();
-    if (!g || valsCache.key === g.key) return;
+    if (!g || (valsFed && valsCache.key === g.key)) return;
     if (valsDue(heldVals, g.key)) { valsRefresh(heldVals, g.key, g.t, g.c, g.base, g.tps); S.screenDirty = true; }
 }
 /* What `target` plays at the held step — { norm, wire } in 14 bits and the
@@ -581,7 +591,7 @@ function heldValsTick() {
 export function autoHeldValue(target) {
     const g = heldGeom();
     if (!g) return null;
-    const cache = valsCache.key === g.key ? valsCache : heldVals.key === g.key ? heldVals : null;
+    const cache = (valsFed && valsCache.key === g.key) ? valsCache : heldVals.key === g.key ? heldVals : null;
     let norm = null;
     const L = S.autoLockLast;
     if (L && L.track === g.t && L.clip === g.c && L.target === target && L.step === S.heldStep &&
@@ -643,6 +653,9 @@ export function autoLanePinClear() { lanePin = null; }
  * shows that i'm in instrument mode on the pads when viewing it in the
  * automation context"), so while the pin lives the map marks AUTOMATION. */
 export function autoMapEditorComp() { return lanePin ? null : soundEditorComp(); }
+/* ...and the bank it marks: AUTOMATION while a jump's pin lives, whatever
+ * bank the jump landed on (DELAY, SOUND + CONFIG, MACROS). */
+export function autoMapMarkedBank() { return lanePin ? BANK_AUTOMATION : S.activeBank; }
 export function autoLanePinJump(target, crumb, bank) {
     const t = S.activeTrack, c = effectiveClip(t), a = st();
     const page = (a.cycleTarget === target && a.cycleTrack === t && a.cycleClip === c) ? (a.cyclePage | 0) : 0;
@@ -805,6 +818,7 @@ export function autoHoldJumpEnd() {
 }
 
 export function autoBankTick() {
+    valsFed = false;
     autoBankTickLane();
     heldValsTick();
 }

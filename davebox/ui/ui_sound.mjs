@@ -6970,7 +6970,7 @@ function macroCells(track, live) {
             if (live && !macroLive(m)) { cells.push(unassigned()); continue; }
             /* Its lane is the knob's own position (0..1): a held step shows
              * where the lane puts it there. */
-            const hv = live ? autoHeldValue(macroAutoTarget(m, t, i)) : null;
+            const hv = (live && t === GS.activeTrack) ? autoHeldValue(macroAutoTarget(m, t, i)) : null;
             const v = live ? (hv ? hv.norm / 16383 : mp.v) : null;
             cell = { kind: 'arc', label: 'MORPH', name: upper(MORPH_LABEL + ' ' + morphSnapsLabel(m)),
                      text: v == null ? '--' : Math.round(v * 100) + '%', norm: v == null ? 0 : v };
@@ -6978,7 +6978,7 @@ function macroCells(track, live) {
             const li = macroLevelIdx(m);
             const spec = li >= 0 ? (live ? levelKnobSpec(li) : LEVEL_KNOB_SPECS[li]) : null;
             if (!spec) { cells.push(unassigned()); continue; }
-            const hv = live ? autoHeldValue(macroAutoTarget(m, t, i)) : null;
+            const hv = (live && t === GS.activeTrack) ? autoHeldValue(macroAutoTarget(m, t, i)) : null;
             const hf = hv ? parseFloat(hv.wire) : NaN;
             const v = live ? (isFinite(hf) ? hf : S.levelVals[li]) : null;
             cell = { label: spec.label, name: spec.name, text: v == null ? '--' : spec.fmt(v) };
@@ -6987,12 +6987,12 @@ function macroCells(track, live) {
         } else if (m.kind === 'bank') {
             const meta = bankMacroMeta(m, t);
             if (!meta) { cells.push(unassigned()); continue; }
-            const tg = live ? macroAutoTarget(m, t, i) : null;
+            const tg = (live && t === GS.activeTrack) ? macroAutoTarget(m, t, i) : null;
             const hv = tg ? autoHeldValue(tg) : null;
             cell = bankMacroCell(m, meta, hv ? (Number(hv.wire) | 0) : bankMacroValue(m, t));
         } else if (m.kind === 'midi') {
             if (!midiTargetOnRoute(m.target, t)) { cells.push(unassigned()); continue; }
-            const hv = live ? autoHeldValue(m.target) : null;
+            const hv = (live && t === GS.activeTrack) ? autoHeldValue(m.target) : null;
             const fv = hv ? parseInt(hv.wire, 10) : NaN;
             cell = midiCellFor(m.target, isFinite(fv) ? fv : midiVal(t, m.target));
         } else {
