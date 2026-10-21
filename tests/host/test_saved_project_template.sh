@@ -194,6 +194,32 @@ sh "$CMD" template-set default "$U2" "$UI" seq8sa >/dev/null
 check "a source state of another version gives a template with no state (never a stale one)" test ! -e "$TD/state.json"
 sh "$CMD" list >/dev/null; newest "$T/seen" >/dev/null
 
+# ---- several named templates (Save as Template..., the Templates screen) ----
+sh "$CMD" template-set tzed "$U2" "$UI" seq8sa "Zed Kit" >/dev/null
+sh "$CMD" template-set talpha "$U2" "$UI" seq8sa "Josh's  Alpha" >/dev/null
+check "two named templates sit beside the old one" test -f "$DBX_DIR/templates/tzed/Song.abl" -a -f "$DBX_DIR/templates/talpha/Song.abl" -a -f "$TD/Song.abl"
+py "projects.json lists all three by name (spaces folded, quotes kept); the old one is still \"Template\"" "$DBX_DIR/projects.json" <<'PY'
+import json, sys
+t = json.load(open(sys.argv[1]))["templates"]
+assert [(x["id"], x["name"]) for x in t] == [("talpha", "Josh's Alpha"), ("default", "Template"), ("tzed", "Zed Kit")], t
+PY
+hash_but_meta() { (cd "$1" && find . -type f ! -name meta.json | sort | xargs cksum); }
+hash_but_meta "$DBX_DIR/templates/tzed" > "$T/tzed.before"
+sh "$CMD" template-rename tzed "Beta Kit" >/dev/null
+check "template-rename changes the name" python3 -c "import json,sys; assert json.load(open(sys.argv[1]))['name'] == 'Beta Kit'" "$DBX_DIR/templates/tzed/meta.json"
+check "…and nothing else in the template (hash)" sh -c 'cmp -s "$1" "$2"' _ "$T/tzed.before" "$(hash_but_meta "$DBX_DIR/templates/tzed" > "$T/tzed.after"; echo "$T/tzed.after")"
+check "…and projects.json follows" python3 -c "import json,sys; assert [x['name'] for x in json.load(open(sys.argv[1]))['templates']] == ['Beta Kit', \"Josh's Alpha\", 'Template']" "$DBX_DIR/projects.json"
+check "an empty name is refused" sh -c '! sh "$1" template-rename tzed "  " >/dev/null 2>&1' _ "$CMD"
+check "a bad id is refused" sh -c '! sh "$1" template-rename "../x" "N" >/dev/null 2>&1' _ "$CMD"
+sh "$CMD" template-set tzed "$U2" "$UI" seq8sa >/dev/null
+check "a replace (no name) keeps the template's name" python3 -c "import json,sys; assert json.load(open(sys.argv[1]))['name'] == 'Beta Kit'" "$DBX_DIR/templates/tzed/meta.json"
+python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); d['pick_marker']='tzed'; json.dump(d,open(p,'w'))" "$DBX_DIR/templates/tzed/ui.json"
+DBX_TEMPLATE=tzed DBX_STATE_PREFIX=seq8sa sh "$CMD" new-at 9 >/dev/null
+NZ="$(newest "$T/seen")"
+check "New with DBX_TEMPLATE=<id> takes THAT template" test -n "$(grep -rl pick_marker "$PROJECTS_DIR/$NZ" --include='seq8sa-ui-state.json')"
+sh "$CMD" template-clear tzed >/dev/null; sh "$CMD" template-clear talpha >/dev/null
+check "clearing one leaves the others" python3 -c "import json,sys; assert [x['id'] for x in json.load(open(sys.argv[1]))['templates']] == ['default']" "$DBX_DIR/projects.json"
+
 # ---- clear it: New is blank again -------------------------------------------
 sh "$CMD" template-clear default >/dev/null
 check "template-clear removes it" test ! -e "$TD"

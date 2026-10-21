@@ -219,10 +219,20 @@ def _tdir(templates_dir, tid):
     return os.path.join(templates_dir, tid)
 
 
-def set_template(templates_dir, tid, project_dir, ui_path, prefix, source_name=""):
+def _clean_name(name):
+    return " ".join(str(name or "").split())[:64]
+
+
+def set_template(templates_dir, tid, project_dir, ui_path, prefix, source_name="", name=None):
     """Take the template from a project. The project is only READ. The old
-    template (if any) is replaced whole, never left half-written."""
+    template (if any) is replaced whole, never left half-written. With no
+    name a replace keeps the template's own; a new one is "Template"."""
     final = _tdir(templates_dir, tid)
+    name = _clean_name(name)
+    if not name:
+        old_meta = _read_json(os.path.join(final, "meta.json"))
+        name = _clean_name(old_meta.get("name")) if isinstance(old_meta, dict) else ""
+    name = name or "Template"
     song_dir = ss.song_folder(project_dir)
     sub = ss.state_subdir(project_dir)
     if not song_dir:
@@ -254,7 +264,7 @@ def set_template(templates_dir, tid, project_dir, ui_path, prefix, source_name="
             os.makedirs(host_dst)
         neutral_host(host_dst)
         _write_json(os.path.join(tmp, "meta.json"),
-                    {"id": tid, "name": "Template", "source_name": source_name,
+                    {"id": tid, "name": name, "source_name": source_name,
                      "created": int(time.time()), "state_v": STATE_V, "sidecar_v": SIDECAR_V})
         if os.path.exists(final):
             os.rename(final, old)
@@ -272,9 +282,26 @@ def clear_template(templates_dir, tid):
         os.sync()
 
 
+def rename_template(templates_dir, tid, name):
+    """Only meta.json's name changes; the rest of the template is untouched."""
+    name = _clean_name(name)
+    if not name:
+        raise ValueError("an empty template name")
+    p = os.path.join(_tdir(templates_dir, tid), "meta.json")
+    meta = _read_json(p)
+    if not isinstance(meta, dict):
+        raise ValueError("no template %r" % tid)
+    meta["name"] = name
+    tmp = p + ".tmp"
+    _write_json(tmp, meta)
+    os.replace(tmp, p)
+    if hasattr(os, "sync"):
+        os.sync()
+
+
 def list_templates(templates_dir):
-    """[{id, name, source_name}] — a folder with a readable meta.json and a
-    song; dot-names (a swap in flight) are never listed."""
+    """[{id, name, source_name}] by name — a folder with a readable meta.json
+    and a song; dot-names (a swap in flight) are never listed."""
     out = []
     try:
         names = sorted(os.listdir(templates_dir))
@@ -288,6 +315,7 @@ def list_templates(templates_dir):
         if isinstance(meta, dict) and os.path.isfile(os.path.join(d, ss.SONG_FILE)):
             out.append({"id": n, "name": meta.get("name") or n,
                         "source_name": meta.get("source_name") or ""})
+    out.sort(key=lambda t: (t["name"].lower(), t["id"]))
     return out
 
 
@@ -336,10 +364,13 @@ def read_have(path):
 
 def main(argv):
     if len(argv) < 2:
-        raise SystemExit("usage: project_template.py set|clear|list|song|apply …")
+        raise SystemExit("usage: project_template.py set|clear|rename|list|song|apply …")
     cmd = argv[1]
-    if cmd == "set":        # templates tid project_dir ui_path prefix [source_name]
-        set_template(argv[2], argv[3], argv[4], argv[5], argv[6], argv[7] if len(argv) > 7 else "")
+    if cmd == "set":        # templates tid project_dir ui_path prefix [source_name [name]]
+        set_template(argv[2], argv[3], argv[4], argv[5], argv[6], argv[7] if len(argv) > 7 else "",
+                     argv[8] if len(argv) > 8 else None)
+    elif cmd == "rename":   # templates tid name
+        rename_template(argv[2], argv[3], argv[4])
     elif cmd == "clear":    # templates tid
         clear_template(argv[2], argv[3])
     elif cmd == "list":     # templates

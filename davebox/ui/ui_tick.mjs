@@ -43,7 +43,7 @@ import { saveState, showActionPopup, showActionPopupFor, showTrackVolCard, uuidT
     commitSnapshot, writeSidecar } from './ui_persistence.mjs';
 import { showMenuInfo , projectPadPickerModifiers, openProjectPadPicker,
          projectPickerTextEntryTick, requestSetForSlot, prepareSlotFor, slotRefusedUnreadable, reopenPickerRefusingUnreadable,
-         checkProjectOpened, lockAfterProjectLost } from './ui_dialogs.mjs';
+         checkProjectOpened, lockAfterProjectLost, templateTextEntryTick } from './ui_dialogs.mjs';
 import { sceneAllQueued, updateSceneMapLEDs } from './ui_scene.mjs';
 import { _padDispatchMutedNow, computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
     syncDrumClipContent } from './ui_drummodel.mjs';
@@ -768,6 +768,7 @@ export function _tickImpl() {
         projectPadPickerModifiers();
         projectPickerTextEntryTick();
     }
+    templateTextEntryTick();          /* the keyboard naming a template */
 
     /* Fresh-session boot: open the picker once loading + LED init settle. */
     if (S.pendingOpenProjectPicker && !S.projectOpenFailed && !S.stateLoading && S.ledInitComplete &&
@@ -2189,7 +2190,7 @@ export function _tickImpl() {
         if (S.loopLatched && !S.loopHeld &&
                 (S.sessionView || S.stepIntervalMode || S.globalMenuOpen || soundActive() ||
                  S.moveCoRunTrack >= 0 || S.projectPadPicker || S.stepRecActive ||
-                 S.daveBox || S.snapshotPicker || miActive())) {
+                 S.daveBox || S.snapshotPicker || S.templateManager || miActive())) {
             endLoopLatch();
             invalidateLEDCache();
         }
@@ -2510,9 +2511,8 @@ export function _tickImpl() {
         S.pendingSnapshotCopy = null;
         commitSnapshot(S.currentSetUuid, _sc.id, _sc.label);
     } else if (S.pendingTemplateSet) {
-        /* Set as Template: the same slot as the snapshot copy — the tick
+        /* A template save: the same slot as the snapshot copy — the tick
          * after the 'save' above put the DSP state on disk (ui_template.mjs). */
-        S.pendingTemplateSet = false;
         runTemplateSet();
     }
 

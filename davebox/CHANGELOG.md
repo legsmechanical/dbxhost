@@ -93,6 +93,11 @@ the section into a versioned heading at release time.
   to the lane list.
 
 ### Added
+- **Several project templates, and a Templates screen.** **Save as Template...**
+  in Project Settings asks for a name and adds a template; **Templates...** lists
+  them, each with Rename, Replace with Current and Delete. Creating a project
+  still asks Empty or Template; Template now opens the list to pick from. A
+  template you already had is kept, named "Template".
 - **+ Add lane on the AUTOMATION screen:** add an empty lane for any parameter —
   chosen as you would choose a macro's — and set its Wrap, Loop, Rate and Scale
   before writing anything into it.

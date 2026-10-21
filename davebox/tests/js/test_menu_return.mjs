@@ -205,25 +205,25 @@ step('Load state with snapshots → Back: on Load state', () => {
     SNAPIDX = null;
 });
 
-step('Set as Template (none saved): back in the menu on Set as Template, Clear Template now listed', () => {
+step('Save as Template... (none saved) → Confirm: back in the menu on its row, Templates... now listed', () => {
     ready();
     listing.templates = [];
-    useRow('Set as Template');
-    listing.templates = [{ id: 'default', name: 'Template', source_name: 'x' }];
+    useRow('Save as Template...');
+    for (let i = 0; i < 120; i++) jog(1);        /* the keyboard's last key: Confirm */
+    click();
+    listing.templates = [{ id: 'ta', name: 'Kit', source_name: 'x' }];
     ticks(6);
-    backInMenuAt('Set as Template', 'Set as Template');
-    assert(labels().indexOf('Clear Template') >= 0, 'the menu was not rebuilt: ' + J(labels()));
+    backInMenuAt('Save as Template...', 'Save as Template...');
+    assert(labels().indexOf('Templates...') >= 0, 'the menu was not rebuilt: ' + J(labels()));
 });
 
-step('Clear Template → Yes: back on Set as Template (the Clear row is gone)', () => {
+step('Templates... → Back: on Templates...', () => {
     ready();
-    listing.templates = [{ id: 'default', name: 'Template', source_name: 'x' }];
-    useRow('Clear Template');
-    assert(S.confirmTemplate, 'rig: no clear confirm');
-    jog(-1); click();
-    listing.templates = [];
-    backInMenuAt('Set as Template', 'Clear Template');
-    assert(labels().indexOf('Clear Template') < 0, 'Clear Template still listed');
+    listing.templates = [{ id: 'ta', name: 'Kit', source_name: 'x' }];
+    useRow('Templates...');
+    assert(S.templateManager, 'rig: the TEMPLATES screen did not open');
+    back();
+    backInMenuAt('Templates...', 'Templates... Back');
 });
 
 if (failed) { console.log('FAIL: test_menu_return'); process.exit(1); }

@@ -50,6 +50,7 @@ import {
     drawProjectPadPicker,
     drawProjectOpenFailed,
     drawProjectListFailed,
+    drawTemplateManager, templateTextEntryUp,
 } from './ui_dialogs.mjs';
 import { isBooleanPair } from './ui_cells.mjs';
 import { ensureGlobalMenuFresh } from './ui_menu.mjs';
@@ -1557,7 +1558,7 @@ export function bankCardVisible() {
 /* The same list WITHOUT the global menu and what nests inside it: the layers
  * a jog hold must never put the bank map over (bankMapDeferrable). */
 export function coveredByMoreThanMenu() {
-    return !!(devSnapOpen() || S.stepReveal || S.sessionOverlayHeld || S.snapshotPicker || S.daveBox || miActive() ||
+    return !!(devSnapOpen() || S.stepReveal || S.sessionOverlayHeld || S.snapshotPicker || S.templateManager || S.templateNameEntry || S.daveBox || miActive() ||
         S.projectPadPicker || S.pendingSceneBakePicker ||
         S.mergePlacing || S.mergeNoticePending || S.pendingMergePlacement ||
         S.tempoSelectActive || S.mergeSoloPlacement >= 0 || S.capturePlaceTrack >= 0 ||
@@ -1568,7 +1569,7 @@ export function coveredByMoreThanMenu() {
 }
 
 export function soundModeCovered() {
-    return !!(devSnapOpen() || S.stepReveal || S.sessionOverlayHeld || S.snapshotPicker || S.daveBox || miActive() ||
+    return !!(devSnapOpen() || S.stepReveal || S.sessionOverlayHeld || S.snapshotPicker || S.templateManager || S.templateNameEntry || S.daveBox || miActive() ||
         S.projectPadPicker || S.pendingSceneBakePicker ||
         S.mergePlacing || S.mergeNoticePending || S.pendingMergePlacement ||
         S.tempoSelectActive || S.mergeSoloPlacement >= 0 || S.capturePlaceTrack >= 0 ||
@@ -1877,6 +1878,7 @@ function drawUIBody() {
     if (S.daveBox) { drawDaveBox(); return; }
     if (miActive()) { drawMidiImport(); return; }
     if (S.snapshotPicker) { drawSnapshotPicker(); return; }
+    if (S.templateManager || (S.templateNameEntry && templateTextEntryUp())) { drawTemplateManager(); return; }
     /* ⭑ The exit confirm outranks the picker (2026-09-16). Hold-Back already
      * raised it from here — checkBackHold() has no picker guard — but the
      * picker drew first and returned, so the dialog was LIVE AND INVISIBLE and

@@ -47,7 +47,7 @@ import { sessStripTargets, SESS_KNOB_MODES } from './ui_engine.mjs';
 import { daveBoxRotate } from './ui_daves.mjs';
 import { miActive, miOnKnob, miOnJog, miOnClick, miOnBack, miClose, miJogTouch, miPadTap, miPadRelease } from './ui_midi_import.mjs';
 import {
-    projectPickerTextEntryMidi,
+    projectPickerTextEntryMidi, templateTextEntryMidi,
     projectPadPickerTap, projectPadPickerRotate, projectPadPickerClick
 } from './ui_dialogs.mjs';
 import { MoveShift, MoveLeft, MoveRight, MoveMute } from '/data/UserData/schwung/shared/constants.mjs';
@@ -659,6 +659,9 @@ function _dispatchBelowJogRouter(data, status, d1, d2) {
      * keyboard below, but the picker can be up when sound mode is not. */
     if (S.projectPadPicker && S.projectPadPicker.renameActive &&
             projectPickerTextEntryMidi(data)) return;
+    /* The keyboard naming a template (Save as Template..., Rename): the same
+     * contract, from the Project menu or the TEMPLATES screen. */
+    if (S.templateNameEntry && templateTextEntryMidi(data)) return;
 
     /* Pad pressure arrives as poly aftertouch (0xA0) with the pad note in d1.
      * isNoiseMessage() classifies all 0xA0/0xD0 as noise, so handle pressure
@@ -843,7 +846,7 @@ function _dispatchBelowJogRouter(data, status, d1, d2) {
      * it) and Back (a tap peels it in _backTap, a hold backs out), so
      * pads/steps/transport/knobs can't edit the underlying clip while the
      * picker is on screen. */
-    if (S.snapshotPicker) {
+    if (S.snapshotPicker || S.templateManager) {   /* TEMPLATES: the same modal contract */
         const _ccPick = (status & 0xF0) === 0xB0 &&
             (d1 === 3 || d1 === MoveMainKnob || d1 === MoveNoteSession || d1 === MoveBack);
         if (!_ccPick) return;

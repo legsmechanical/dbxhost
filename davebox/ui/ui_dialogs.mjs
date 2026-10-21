@@ -1,4 +1,5 @@
-import { createProject, hasTemplate } from './ui_template.mjs';
+import { createProject, anyTemplates, templatesKnown, templateNameTaken, cleanTemplateName, armTemplateSet,
+         newTemplateId, templateSaveReady, deleteTemplate, renameTemplate, SAVE_ROW, LIST_ROW } from './ui_template.mjs';
 import { S, conductorTrackIdx } from './ui_state.mjs';
 import { keyRootName } from './ui_chord.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -122,18 +123,6 @@ function drawClearSessionConfirm() {
     dlgHeader('CLEAR SESSION');
     dlgLines(['This will clear the entire', 'project and cannot be undone.']);
     drawYesNoRow(S.confirmClearSel);
-}
-
-function drawTemplateConfirm() {
-    clear_screen();
-    if (S.confirmTemplate.kind === 'clear') {
-        dlgHeader('CLEAR TEMPLATE');
-        dlgLines(['New projects will start', 'empty again.']);
-    } else {
-        dlgHeader('REPLACE TEMPLATE');
-        dlgLines(['This project becomes the', 'template; the saved one', 'is overwritten.']);
-    }
-    drawYesNoRow(S.confirmTemplate.sel);
 }
 
 function drawSaveStateConfirm() {
@@ -278,7 +267,6 @@ export function drawGlobalMenu() {
     if (S.tapTempoOpen)        { drawTapTempoScreen();       return; }
     if (S.exportDoneDialog)    { drawExportDoneDialog();     return; }
     if (S.confirmClearSession) { drawClearSessionConfirm();  return; }
-    if (S.confirmTemplate)     { drawTemplateConfirm();      return; }
     if (S.confirmSaveState)    { drawSaveStateConfirm();     return; }
     if (S.confirmConvertToDrum){ drawConvertToDrumConfirm(); return; }
     if (S.confirmConvertToConduct){ drawConvertToConductConfirm(); return; }
@@ -864,6 +852,183 @@ export function snapshotPickerClick() {
         p.confirm = { kind: 'overwrite', sel: 1, targetId: snap.id };
     }
     S.screenDirty = true;
+}
+
+/* ------------------------------------------------------------------ */
+/* Templates — the Project menu's Save as Template... and Templates... */
+/* (Josh, 2026-10-21: "multiple templates and a template manager").    */
+/* TEMPLATES is a self-contained modal like the snapshot picker:        */
+/* S.templateManager = { list, sel, menu: null|{sel}, confirm: null|    */
+/* {kind:'replace'|'delete', sel} }. Naming is the shared keyboard,     */
+/* S.templateNameEntry = { mode:'save' } | { mode:'rename', id }.       */
+/* Storage and the save chain: ui_template.mjs.                        */
+/* ------------------------------------------------------------------ */
+
+const TEMPLATE_MENU = ['Rename', 'Replace with Current', 'Delete'];
+
+function _tmCurrent() {
+    const m = S.templateManager;
+    return m ? m.list[m.sel] || null : null;
+}
+/* Re-read after a verb (the script re-lists), keeping the cursor on `id`. */
+function _tmRefresh(id) {
+    const m = S.templateManager;
+    if (!m) return;
+    m.list = templatesKnown();
+    const at = m.list.findIndex(t => t.id === id);
+    m.sel = at >= 0 ? at : Math.max(0, Math.min(m.list.length - 1, m.sel));
+}
+
+/* Save as Template...: name it, then the save chain. The Project menu row. */
+export function requestSaveTemplate() {
+    if (!templateSaveReady()) { showActionPopup('TEMPLATE', 'NOT READY'); return; }
+    S.globalMenuOpen = false;
+    S.templateNameEntry = { mode: 'save' };
+    openTextEntry({
+        title: '',
+        initialText: S.currentSetName || '',
+        onConfirm: (name) => {
+            S.templateNameEntry = null;
+            const n = cleanTemplateName(name);
+            if (!n) { S.pendingMenuAt = SAVE_ROW; return; }
+            /* Two templates with one name read as one in both lists. */
+            if (templateNameTaken(n)) { showActionPopup('NAME', 'TAKEN'); S.pendingMenuAt = SAVE_ROW; return; }
+            if (!armTemplateSet({ id: newTemplateId(), name: n })) S.pendingMenuAt = SAVE_ROW;
+        },
+        onCancel: () => { S.templateNameEntry = null; S.pendingMenuAt = SAVE_ROW; S.screenDirty = true; },
+    });
+    S.screenDirty = true;
+}
+
+/* Templates...: the list. The Project menu row (shown while any exist). */
+export function openTemplateManager() {
+    const list = templatesKnown();
+    if (!list.length) return;
+    S.templateManager = { list: list, sel: 0, menu: null, confirm: null };
+    S.globalMenuOpen = false;
+    S.screenDirty = true;
+}
+/* Leaving returns to the Project menu, cursor on the row, unless the caller
+ * is going somewhere else (toMenu === false: Note/Session's go-home). */
+export function closeTemplateManager(toMenu) {
+    const had = !!S.templateManager;
+    S.templateManager = null;
+    if (had && toMenu !== false) S.pendingMenuAt = anyTemplates() ? LIST_ROW : SAVE_ROW;
+    S.screenDirty = true;
+}
+export function templateManagerRotate(delta) {
+    const m = S.templateManager;
+    if (!m || delta === 0) return;
+    const step = delta > 0 ? 1 : -1;      /* stops at both ends — no list wraps */
+    if (m.confirm) m.confirm.sel = m.confirm.sel === 0 ? 1 : 0;
+    else if (m.menu) m.menu.sel = Math.max(0, Math.min(TEMPLATE_MENU.length - 1, m.menu.sel + step));
+    else m.sel = Math.max(0, Math.min(m.list.length - 1, m.sel + step));
+    S.screenDirty = true;
+}
+/* Back: peel one level (confirm → menu → list); false = nothing left to peel. */
+export function templateManagerBack() {
+    const m = S.templateManager;
+    if (!m) return false;
+    if (m.confirm) { m.confirm = null; S.screenDirty = true; return true; }
+    if (m.menu)    { m.menu = null;    S.screenDirty = true; return true; }
+    return false;
+}
+export function templateManagerClick() {
+    const m = S.templateManager;
+    if (!m) return;
+    const t = _tmCurrent();
+    if (!t) { closeTemplateManager(); return; }
+    if (m.confirm) {
+        const c = m.confirm;
+        m.confirm = null;
+        if (c.sel !== 0) { S.screenDirty = true; return; }      /* No: back to the menu */
+        if (c.kind === 'replace') {
+            /* The save chain lands back on the Project menu (runTemplateSet). */
+            S.templateManager = null;
+            if (!armTemplateSet({ id: t.id, name: null })) S.pendingMenuAt = LIST_ROW;
+            S.screenDirty = true;
+            return;
+        }
+        const ok = deleteTemplate(t.id);
+        showActionPopup('TEMPLATE', ok ? 'DELETED' : 'DELETE FAILED');
+        m.menu = null;
+        _tmRefresh(null);
+        if (!m.list.length) closeTemplateManager();   /* the row is gone: Save as Template... */
+        S.screenDirty = true;
+        return;
+    }
+    if (m.menu) {
+        const row = TEMPLATE_MENU[m.menu.sel];
+        if (row === 'Rename') { _tmStartRename(t); return; }
+        m.confirm = { kind: row === 'Delete' ? 'delete' : 'replace', sel: 1 };   /* opens on No */
+        S.screenDirty = true;
+        return;
+    }
+    m.menu = { sel: 0 };
+    S.screenDirty = true;
+}
+function _tmStartRename(t) {
+    S.templateNameEntry = { mode: 'rename', id: t.id };
+    openTextEntry({
+        title: '',
+        initialText: t.name || '',
+        onConfirm: (name) => {
+            S.templateNameEntry = null;
+            const n = cleanTemplateName(name);
+            if (!n || n === t.name) { S.screenDirty = true; return; }
+            if (templateNameTaken(n, t.id)) { showActionPopup('NAME', 'TAKEN'); return; }
+            const ok = renameTemplate(t.id, n);
+            _tmRefresh(t.id);
+            showActionPopup('TEMPLATE', ok ? 'RENAMED' : 'RENAME FAILED');
+        },
+        onCancel: () => { S.templateNameEntry = null; S.screenDirty = true; },
+    });
+    S.screenDirty = true;
+}
+
+/* The keyboard is fully modal and reads raw messages (the picker rename's
+ * contract). True = consumed. */
+export function templateTextEntryMidi(data) {
+    if (!S.templateNameEntry) return false;
+    if (!isTextEntryActive()) { S.templateNameEntry = null; return false; }
+    handleTextEntryMidi(data);
+    S.screenDirty = true;
+    return true;
+}
+export function templateTextEntryTick() {
+    if (S.templateNameEntry && isTextEntryActive() && tickTextEntry()) S.screenDirty = true;
+}
+export function templateTextEntryUp() {
+    return !!(S.templateNameEntry && isTextEntryActive());
+}
+
+/* ⚠ PICKER — opted out of the menu type rule (`hostLabels: false`), as the
+ * snapshot picker is: template names come from the user. */
+export function drawTemplateManager() {
+    clear_screen();
+    if (templateTextEntryUp()) { drawTextEntry(); return; }
+    const m = S.templateManager;
+    if (!m) return;
+    const t = _tmCurrent();
+    if (m.confirm && t) {
+        if (m.confirm.kind === 'delete') {
+            dlgHeader('DELETE TEMPLATE');
+            dlgLines(['Delete ' + truncLabel(t.name || '', 17) + '?', 'Projects made from it', 'are not touched.']);
+        } else {
+            dlgHeader('REPLACE TEMPLATE');
+            dlgLines(['This project replaces', truncLabel(t.name || '', 22) + '.']);
+        }
+        drawYesNoRow(m.confirm.sel);
+        return;
+    }
+    if (m.menu && t) {
+        drawKitHeader(t.name || t.id, false);
+        drawKitList(TEMPLATE_MENU.map(l => ({ label: l, chevron: l === 'Rename' })), m.menu.sel, { hostLabels: false });
+        return;
+    }
+    drawKitHeader('TEMPLATES', false);
+    drawKitList(m.list.map(x => ({ label: x.name || x.id, chevron: true })), m.sel,
+                { emptyMsg: 'No templates', hostLabels: false });
 }
 
 /* Open the generic menu INFO dialog with the given text lines (each argument is
@@ -1615,9 +1780,17 @@ function _projectPadPickerClick_impl() {
     if (p.confirmNew) {
         const c = p.confirmNew;
         /* With a saved template the question is Empty / Template (Josh,
-         * 2026-09-30), both of which create; without one it is today's Yes/No. */
-        if (c.choose || c.sel === 0) {   /* create, then open its menu (or load it: Shift+tap) */
-            createProject(c.k, !!c.choose && c.sel === 1);
+         * 2026-09-30); without one it is today's Yes/No. Template opens the
+         * list of them, and a row there creates (Josh, 2026-10-21: "looks like
+         * today but. [c]licking template takes you to a template picker"). */
+        if (c.choose && c.sel === 1 && !c.pick) {
+            const list = templatesKnown();
+            if (list.length) { c.pick = { list: list, sel: 0 }; S.screenDirty = true; return; }
+            c.sel = 0;                   /* gone since the picker opened: Empty */
+        }
+        if (c.pick || c.choose || c.sel === 0) {   /* create, then open its menu (or load it: Shift+tap) */
+            const tpl = c.pick ? c.pick.list[c.pick.sel] : null;
+            createProject(c.k, tpl ? tpl.id : null);
             const d = _pppRunList();
             if (d) _pppApplyList(p, d);
             if (!p.byIndex[c.k]) { p.confirmNew = null; showActionPopup('CREATE', 'FAILED'); return; }
@@ -1656,7 +1829,10 @@ function _projectPadPickerRotate_impl(delta) {
     const p = S.projectPadPicker;
     if (!p || !delta) return;
     if (p.restarting) return;      /* delete-of-current: teardown in flight */
-    if (p.confirmNew) {
+    if (p.confirmNew && p.confirmNew.pick) {
+        const q = p.confirmNew.pick;      /* stops at both ends, like every list */
+        q.sel = Math.max(0, Math.min(q.list.length - 1, q.sel + (delta > 0 ? 1 : -1)));
+    } else if (p.confirmNew) {
         p.confirmNew.sel = p.confirmNew.sel === 0 ? 1 : 0;
     } else if (p.colorPick) {
         const n = PROJECT_COLORS.length;
@@ -1683,6 +1859,7 @@ function _projectPadPickerBack_impl() {
     if (!p) return false;
     if (p.restarting) return true; /* swallow — teardown in flight */
     if (p.colorPick) { _pppOpenMenu(p, p.colorPick.k); invalidateLEDCache(); return true; }
+    if (p.confirmNew && p.confirmNew.pick) { p.confirmNew.pick = null; return true; }   /* back to Empty / Template */
     if (p.confirmNew) { _pppCloseOverlays(p); _pppReselect(p); return true; }
     /* ⭑ The menu IS the picker's screen now, so there is nothing behind it to
      * peel back to and Back closes the picker outright (returning false hands
@@ -1852,13 +2029,13 @@ function _projectPadPickerTap_impl(k) {
         /* With a saved template, Shift+tap asks Empty / Template too — then
          * creates and loads, as it always has (Josh, 2026-09-30: "creating a
          * project would ask"). */
-        if (!proj && hasTemplate()) {
+        if (!proj && anyTemplates()) {
             p.confirmNew = { k: k, sel: 1, choose: true, load: true };
             S.screenDirty = true;
             return;
         }
         if (!proj) {
-            createProject(k, false);
+            createProject(k, null);
             const d = _pppRunList();
             if (d) _pppApplyList(p, d);
             if (!p.byIndex[k]) { showActionPopup('CREATE', 'FAILED'); return; }
@@ -1875,7 +2052,7 @@ function _projectPadPickerTap_impl(k) {
     if (!proj) {
         _pppCloseOverlays(p);
         /* sel: Yes/No opens on Yes (0); Empty/Template opens on Template (1). */
-        p.confirmNew = hasTemplate() ? { k: k, sel: 1, choose: true } : { k: k, sel: 0 };
+        p.confirmNew = anyTemplates() ? { k: k, sel: 1, choose: true } : { k: k, sel: 0 };
         S.screenDirty = true;
         return;
     }
@@ -1947,6 +2124,13 @@ function _drawProjectPadPicker_impl() {
 
     /* A CONFIRM, so it stays on the shared dialog family — that is what the
      * dialog chassis is for, and its header already matches the kit's. */
+    if (p.confirmNew && p.confirmNew.pick) {
+        /* Template names come from the user: the label font, measured cuts. */
+        drawKitHeader('From template', false);
+        drawKitList(p.confirmNew.pick.list.map(t => ({ label: t.name || t.id })),
+                    p.confirmNew.pick.sel, { hostLabels: false });
+        return;
+    }
     if (p.confirmNew) {
         drawKitHeader('New project');
         /* The question, through the same body helper every other confirm
@@ -1954,7 +2138,7 @@ function _drawProjectPadPicker_impl() {
          * which it never does — so the card showed a header over No/Yes and
          * never said what Yes does (Josh, at the device, 2026-09-21). */
         if (p.confirmNew.choose) {
-            dlgLines(['Start it empty, or from', 'your saved template?']);
+            dlgLines(['Start it empty, or from', 'one of your templates?']);
             drawDialogYesNoRow(p.confirmNew.sel === 1, ['Empty', 'Template']);
             return;
         }
