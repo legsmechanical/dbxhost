@@ -59,17 +59,21 @@ int main(void) {
     hx_set_param(h, "t0_pa_wrap", "0 1:fx1:mix 0");      /* this case is about Carry (no longer the default) */
     HX_ASSERT(!(e->flags & PA_FLAG_WRAP_RESET), "setup: Wrap set to Carry");
 
-    pa_point_t pts[PA_ENTRY_POINTS + 3];
-    int n = pa_export_points(&in->tracks[0], e, pts, PA_ENTRY_POINTS + 3);
+    static pa_point_t pts[2 * PA_ENTRY_POINTS + 2];
+    int n = pa_export_points(&in->tracks[0], e, pts, 2 * PA_ENTRY_POINTS + 2);
 
-    HX_ASSERT(n == 4, "a lead point is prepended and a trail point appended: 4 breakpoints");
+    /* Smooth off STEPS: each value holds to the next point, written as the held
+     * value again at the next point's tick (a jump pair). */
+    HX_ASSERT(n == 6, "lead + (hold, point) x2 + trail: 6 breakpoints");
     HX_ASSERT(pts[0].tick == 0 && pts[0].val == 200,
               "lead point at the window start carries the LAST point's value (200) — "
               "Wrap: Carry, exactly what dAVEBOx plays there; the old export left Live "
               "holding the FIRST point's value (100) for ticks 0..96, which is wrong");
-    HX_ASSERT(pts[1].tick == 96 && pts[1].val == 100, "then the recorded points, unchanged");
-    HX_ASSERT(pts[2].tick == 240 && pts[2].val == 200, "then the recorded points, unchanged");
-    HX_ASSERT(pts[3].tick == 384 && pts[3].val == 200,
+    HX_ASSERT(pts[1].tick == 96 && pts[1].val == 200, "Smooth off: the lead HOLDS to the first point...");
+    HX_ASSERT(pts[2].tick == 96 && pts[2].val == 100, "...then steps onto it");
+    HX_ASSERT(pts[3].tick == 240 && pts[3].val == 100, "Smooth off: 100 holds to the next point...");
+    HX_ASSERT(pts[4].tick == 240 && pts[4].val == 200, "...then steps onto 200");
+    HX_ASSERT(pts[5].tick == 384 && pts[5].val == 200,
               "Smooth off: the trail point at the window end holds the last value — what "
               "dAVEBOx plays there, and what Live would hold anyway");
     OK("⭐ 6b2 follow-up: the export's first breakpoint matches what the lane actually plays");
@@ -83,7 +87,7 @@ int main(void) {
      * point Live held 200 flat from 240 to 384 and then JUMPED to 140. */
     hx_set_param(h, "t0_pa_smooth", "0 1:fx1:mix 1");
     HX_ASSERT(e->flags & PA_FLAG_SMOOTH, "setup: Smooth on");
-    n = pa_export_points(&in->tracks[0], e, pts, PA_ENTRY_POINTS + 3);
+    n = pa_export_points(&in->tracks[0], e, pts, 2 * PA_ENTRY_POINTS + 2);
     HX_ASSERT(n == 4, "Smooth + Carry: lead + 2 raw + trail");
     HX_ASSERT(pts[0].tick == 0 && pts[0].val == 140, "lead = the ramp's value at the loop start (140)");
     HX_ASSERT(pts[3].tick == 384 && pts[3].val == 140,
@@ -97,7 +101,7 @@ int main(void) {
      * export's next lead at that same moment is a jump, not a slide. */
     hx_set_param(h, "t0_pa_wrap", "0 1:fx1:mix 1");
     HX_ASSERT(e->flags & PA_FLAG_WRAP_RESET, "setup: Wrap Reset");
-    n = pa_export_points(&in->tracks[0], e, pts, PA_ENTRY_POINTS + 3);
+    n = pa_export_points(&in->tracks[0], e, pts, 2 * PA_ENTRY_POINTS + 2);
     HX_ASSERT(pts[n - 1].tick == 384 && pts[n - 1].val == 200,
               "Reset: a trail point at the loop end holding the last value (200)");
     HX_ASSERT(pts[n - 2].tick == 240 && pts[n - 2].val == 200, "Reset: after the last recorded point");
@@ -108,20 +112,32 @@ int main(void) {
     hx_set_param(h, "t0_pa_smooth", "0 1:fx1:mix 0");
     hx_set_param(h, "t0_pa_rest", "0 1:fx1:mix 50");
     HX_ASSERT(e->rest == 50 && !(e->flags & PA_FLAG_SMOOTH), "setup: rest 50, Smooth off");
-    n = pa_export_points(&in->tracks[0], e, pts, PA_ENTRY_POINTS + 3);
-    HX_ASSERT(n == 5, "Reset, Smooth off: lead + hold + 2 raw + trail");
+    n = pa_export_points(&in->tracks[0], e, pts, 2 * PA_ENTRY_POINTS + 2);
+    HX_ASSERT(n == 6, "Reset, Smooth off: lead + (hold, point) x2 + trail");
     HX_ASSERT(pts[0].tick == 0 && pts[0].val == 50, "lead = the resting value at the loop start");
     HX_ASSERT(pts[1].tick == 96 && pts[1].val == 50, "the rest again AT the first point's tick: a hold, then the step");
     HX_ASSERT(pts[2].tick == 96 && pts[2].val == 100, "then the first point");
-    HX_ASSERT(pts[4].tick == 384 && pts[4].val == 200, "and the trail");
+    HX_ASSERT(pts[3].tick == 240 && pts[3].val == 100 && pts[4].tick == 240 && pts[4].val == 200, "a step between the points too");
+    HX_ASSERT(pts[5].tick == 384 && pts[5].val == 200, "and the trail");
     OK("⭐ Reset, Smooth off: the rest holds to the first point, then steps");
 
     /* CONTROL: Reset WITH Smooth ramps from rest to the first point — no hold. */
     hx_set_param(h, "t0_pa_smooth", "0 1:fx1:mix 1");
-    n = pa_export_points(&in->tracks[0], e, pts, PA_ENTRY_POINTS + 3);
+    n = pa_export_points(&in->tracks[0], e, pts, 2 * PA_ENTRY_POINTS + 2);
     HX_ASSERT(n == 4 && pts[0].val == 50 && pts[1].tick == 96 && pts[1].val == 100,
               "Reset + Smooth: lead (rest) straight to the first point — Live's ramp is the glide");
     OK("CONTROL: Reset + Smooth keeps the ramp up from rest");
+
+    /* CONTROL: two neighbouring points with the SAME value need no jump pair. */
+    pa_set(h, 0, 0, "1:fx1:mix", 300, 200);
+    hx_set_param(h, "t0_pa_smooth", "0 1:fx1:mix 0");
+    n = pa_export_points(&in->tracks[0], e, pts, 2 * PA_ENTRY_POINTS + 2);
+    {
+        int at300 = 0;
+        for (int i = 0; i < n; i++) if (pts[i].tick == 300) at300++;
+        HX_ASSERT(at300 == 1, "Smooth off, 240 = 200 then 300 = 200: one breakpoint at 300, no pair");
+    }
+    OK("CONTROL: equal neighbours get no jump pair");
 
     hx_destroy(h);
     printf("test_param_auto_export_lead: %d ok\n", ok_count);
