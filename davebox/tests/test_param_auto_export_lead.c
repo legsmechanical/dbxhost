@@ -59,8 +59,8 @@ int main(void) {
     hx_set_param(h, "t0_pa_wrap", "0 1:fx1:mix 0");      /* this case is about Carry (no longer the default) */
     HX_ASSERT(!(e->flags & PA_FLAG_WRAP_RESET), "setup: Wrap set to Carry");
 
-    pa_point_t pts[PA_ENTRY_POINTS + 2];
-    int n = pa_export_points(&in->tracks[0], e, pts, PA_ENTRY_POINTS + 2);
+    pa_point_t pts[PA_ENTRY_POINTS + 3];
+    int n = pa_export_points(&in->tracks[0], e, pts, PA_ENTRY_POINTS + 3);
 
     HX_ASSERT(n == 4, "a lead point is prepended and a trail point appended: 4 breakpoints");
     HX_ASSERT(pts[0].tick == 0 && pts[0].val == 200,
@@ -83,7 +83,7 @@ int main(void) {
      * point Live held 200 flat from 240 to 384 and then JUMPED to 140. */
     hx_set_param(h, "t0_pa_smooth", "0 1:fx1:mix 1");
     HX_ASSERT(e->flags & PA_FLAG_SMOOTH, "setup: Smooth on");
-    n = pa_export_points(&in->tracks[0], e, pts, PA_ENTRY_POINTS + 2);
+    n = pa_export_points(&in->tracks[0], e, pts, PA_ENTRY_POINTS + 3);
     HX_ASSERT(n == 4, "Smooth + Carry: lead + 2 raw + trail");
     HX_ASSERT(pts[0].tick == 0 && pts[0].val == 140, "lead = the ramp's value at the loop start (140)");
     HX_ASSERT(pts[3].tick == 384 && pts[3].val == 140,
@@ -91,13 +91,37 @@ int main(void) {
               "last point -> loop end = loop start -> first point");
     OK("⭐ Smooth + Carry: the export carries the wrap ramp across the loop end");
 
-    /* Reset: after the last point the lane holds it (Live does the same), so
-     * no trail point; the lead is the resting value (or the first point's). */
+    /* Reset: after the last point the lane HOLDS it to the loop end and then
+     * jumps back (to rest, or here — no rest captured — to the first point's
+     * value). The trail carries the held value to the loop end, so a tiled
+     * export's next lead at that same moment is a jump, not a slide. */
     hx_set_param(h, "t0_pa_wrap", "0 1:fx1:mix 1");
     HX_ASSERT(e->flags & PA_FLAG_WRAP_RESET, "setup: Wrap Reset");
-    n = pa_export_points(&in->tracks[0], e, pts, PA_ENTRY_POINTS + 2);
-    HX_ASSERT(pts[n - 1].tick == 240, "Reset: no trail point — the last breakpoint is the last recorded one");
-    OK("Reset: no trail point (the lane holds its last value, as Live does)");
+    n = pa_export_points(&in->tracks[0], e, pts, PA_ENTRY_POINTS + 3);
+    HX_ASSERT(pts[n - 1].tick == 384 && pts[n - 1].val == 200,
+              "Reset: a trail point at the loop end holding the last value (200)");
+    HX_ASSERT(pts[n - 2].tick == 240 && pts[n - 2].val == 200, "Reset: after the last recorded point");
+    OK("⭐ Reset: the trail holds the last value to the loop end");
+
+    /* Reset with a resting value, Smooth OFF: the rest HOLDS to the first point
+     * and then steps — written as the rest again AT the first point's tick. */
+    hx_set_param(h, "t0_pa_smooth", "0 1:fx1:mix 0");
+    hx_set_param(h, "t0_pa_rest", "0 1:fx1:mix 50");
+    HX_ASSERT(e->rest == 50 && !(e->flags & PA_FLAG_SMOOTH), "setup: rest 50, Smooth off");
+    n = pa_export_points(&in->tracks[0], e, pts, PA_ENTRY_POINTS + 3);
+    HX_ASSERT(n == 5, "Reset, Smooth off: lead + hold + 2 raw + trail");
+    HX_ASSERT(pts[0].tick == 0 && pts[0].val == 50, "lead = the resting value at the loop start");
+    HX_ASSERT(pts[1].tick == 96 && pts[1].val == 50, "the rest again AT the first point's tick: a hold, then the step");
+    HX_ASSERT(pts[2].tick == 96 && pts[2].val == 100, "then the first point");
+    HX_ASSERT(pts[4].tick == 384 && pts[4].val == 200, "and the trail");
+    OK("⭐ Reset, Smooth off: the rest holds to the first point, then steps");
+
+    /* CONTROL: Reset WITH Smooth ramps from rest to the first point — no hold. */
+    hx_set_param(h, "t0_pa_smooth", "0 1:fx1:mix 1");
+    n = pa_export_points(&in->tracks[0], e, pts, PA_ENTRY_POINTS + 3);
+    HX_ASSERT(n == 4 && pts[0].val == 50 && pts[1].tick == 96 && pts[1].val == 100,
+              "Reset + Smooth: lead (rest) straight to the first point — Live's ramp is the glide");
+    OK("CONTROL: Reset + Smooth keeps the ramp up from rest");
 
     hx_destroy(h);
     printf("test_param_auto_export_lead: %d ok\n", ok_count);

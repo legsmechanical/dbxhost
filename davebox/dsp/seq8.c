@@ -8558,6 +8558,16 @@ static int pa_export_points(const seq8_track_t *tr, const pa_entry_t *e,
             pts[n].tick = (uint16_t)ws;
             pts[n].val  = (ev == PA_EVAL_REST) ? v : pa_scaled(e, v);
             n++;
+            /* Wrap: Reset without Smooth HOLDS the resting value up to the
+             * first point and then steps onto it; Live ramps between two
+             * breakpoints, so the rest is written again AT the first point's
+             * tick, just before it — the export's jump (paTile keeps it). */
+            if (ev == PA_EVAL_REST && n < cap
+                && (e->flags & (PA_FLAG_WRAP_RESET | PA_FLAG_SMOOTH | PA_FLAG_PUNCH)) == PA_FLAG_WRAP_RESET) {
+                pts[n].tick = e->points[0].tick;
+                pts[n].val  = v;
+                n++;
+            }
         }
     }
     for (int k = 0; k < (int)e->count && k < PA_ENTRY_POINTS && n < cap; k++) {
@@ -8573,10 +8583,12 @@ static int pa_export_points(const seq8_track_t *tr, const pa_entry_t *e,
      * and then jumps to the lead value. A point at the window END carrying what
      * the evaluator plays there (the same value the lead point carries) makes
      * Live draw one continuous line: last point -> loop end = loop start -> first
-     * point. Carry only: under Reset the lane holds its last value after the
-     * last point (Live already does), and Punch has no ramps at all. */
-    if (have_window && n > 0 && n < cap
-        && !(e->flags & (PA_FLAG_PUNCH | PA_FLAG_WRAP_RESET))) {
+     * point. Under Reset the lane HOLDS its last value to the loop end and
+     * then jumps back to rest: the trail carries that held value to the end, so
+     * the next pass's lead at the same moment is a jump, not a slide from the
+     * last point down to rest across the whole gap (an export tiles cycles back
+     * to back). Punch has no ramps at all. */
+    if (have_window && n > 0 && n < cap && !(e->flags & PA_FLAG_PUNCH)) {
         uint32_t we = ws + wl;
         uint16_t v;
         if (wl && we <= 0xFFFF && pts[n - 1].tick < we
@@ -9119,8 +9131,8 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
             fputc('|', pf);
             /* The SCALE is applied here, as it is at playback: what leaves in
              * the export is what the lane plays, not the raw points. */
-            pa_point_t xpts[PA_ENTRY_POINTS + 2];     /* + lead + trail */
-            int xn = pa_export_points(etr, e, xpts, PA_ENTRY_POINTS + 2);
+            pa_point_t xpts[PA_ENTRY_POINTS + 3];     /* + lead + Reset hold + trail */
+            int xn = pa_export_points(etr, e, xpts, PA_ENTRY_POINTS + 3);
             for (int k = 0; k < xn; k++)
                 fprintf(pf, "%u:%u ", (unsigned)xpts[k].tick, (unsigned)xpts[k].val);
             fputc('\n', pf);
