@@ -510,7 +510,8 @@ Each track's sound is set in its own menu, **TRACK CONFIG**:
    instrument — on Move and MIDI tracks too.
 
 The right-hand pads of the [bank map](#36-parameter-banks) open these editors
-directly: **MIDI FX**, **INSTRUMENT** and **FX 1–4**.
+directly: **MIDI FX**, **INSTRUMENT** and **FX 1–4**. While one is open, the map marks
+it (the instrument also lights **INST**) rather than the bank underneath.
 
 Everything else in the menu is in [Sound & Track Config](#14-sound--track-config).
 
@@ -800,7 +801,8 @@ while holding and `JOG BACK` on the step page. Empty steps have no step page.
 - **Stretch a lock:** if the last thing you did while holding the step was turn a
   knob to set a lock, tapping a later step stretches that **lock's value** up to and
   including it instead, the same as on the [AUTOMATION screen](#102-the-automation-screen):
-  tap the end again to shorten it. While you hold, the range lights **orange**, not the
+  tap the end again to shorten it, or turn the knob again to change the whole range.
+  While you hold, the range lights **orange**, not the
   note-length colour, so you can tell which one you're stretching. Only the parameter
   you turned **last** is stretched.
   Editing the note again (a STEP knob, a pad) puts the tap back to stretching the note.
@@ -1451,12 +1453,16 @@ lane**, not the clip's notes (click the row for its operations, below):
   from the end of the range to the next lock. **Left / Right** still page the lane while you hold, so the range can reach
   into later bars. Pressing an earlier step wraps round the end of the cycle. Press
   the **end step again** to shorten the range by one, or a step inside it to shorten
-  it there; the steps you give back play what they did before. While you hold, every
+  it there; the steps you give back play what they did before. Turn the knob again
+  while you still hold and the whole range takes the new value. While you hold, every
   step of the range blinks like a set value. One **Undo** takes back the whole hold.
 - **Shift + click** a row to jump to where that parameter is edited; **Back**
   returns you to this menu, on the same row. The step buttons keep showing the lane
-  there, so you can hold a step and turn the knob to set it.
+  there, so you can hold a step and turn the knob to set it, and the bank map still
+  marks **AUTO**. Leave that place any other way and the jump is over.
 - **Back** at the list closes the screen: you return to the bank you were on, and the step buttons show the clip again.
+  Leaving by the bank map (another bank, or an editor from its right-hand pads) does
+  the same — the steps show notes again.
 
 **Click** a row for its operations:
 
@@ -2283,6 +2289,11 @@ one-way.
 
 Aftertouch and pitch bend are written onto the notes rather than as a separate
 lane, so they exist only while a note is sounding.
+
+Each lane has the same shape in Live as it plays here: it glides where **Smooth** is
+on and steps where it is off, and a **Wrap: Reset** lane holds its last value to the
+end of its loop and drops straight back to rest. Points left outside a lane's loop
+(after the loop was shortened) don't play here, so they aren't exported.
 
 **Not carried:**
 
