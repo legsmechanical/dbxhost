@@ -417,18 +417,19 @@ export function automationRefreshPresence() {
 }
 
 /* The lane flag bits — PA_FLAG_* in dsp/seq8_param_auto.h. UNLINKED is Link: Off
- * (set = off), so every lane written before Note link reads linked. */
-const FLAG_ACTIVE = 1, FLAG_SMOOTH = 2, FLAG_UNLINKED = 4, FLAG_WRAP_RESET = 8, FLAG_PUNCH = 16;
+ * (set = off), so every lane written before Note link reads linked. (2 and 16
+ * were Smooth and Punch, retired with pav:1.) */
+const FLAG_ACTIVE = 1, FLAG_UNLINKED = 4, FLAG_WRAP_RESET = 8;
 /* KEEP (PA_FLAG_KEEP): a lane emptied by Clear and kept — listed with no points. */
 const FLAG_KEEP = 32;
 const laneLive = (s) => !!s && (s.count > 0 || !!(s.flags & FLAG_KEEP));
 
-/* null = not automated; else { active, smooth, wrapReset, count, loop }. */
+/* null = not automated; else { active, wrapReset, linked, count, loop, … }. */
 export function automationStateFor(track, clip, target) {
     const s = stateByKey.get(stateKey(track, clip, target));
     if (!laneLive(s)) return null;
-    return { active: !!(s.flags & FLAG_ACTIVE), smooth: !!(s.flags & FLAG_SMOOTH),
-             wrapReset: !!(s.flags & FLAG_WRAP_RESET), punch: !!(s.flags & FLAG_PUNCH),
+    return { active: !!(s.flags & FLAG_ACTIVE),
+             wrapReset: !!(s.flags & FLAG_WRAP_RESET),
              linked: !(s.flags & FLAG_UNLINKED),
              count: s.count, loop: s.loop | 0, res: s.res | 0,
              scale: isFinite(s.scale) ? s.scale : 100, lo: s.lo | 0, st: s.st | 0 };
@@ -439,9 +440,9 @@ export function automationEntriesFor(track, clip) {
     const pfx = track + ' ' + clip + ' ';
     for (const [k, s] of stateByKey) {
         if (k.indexOf(pfx) !== 0 || !laneLive(s)) continue;
-        out.push({ target: k.slice(pfx.length), active: !!(s.flags & FLAG_ACTIVE), smooth: !!(s.flags & FLAG_SMOOTH),
-                   wrapReset: !!(s.flags & FLAG_WRAP_RESET), punch: !!(s.flags & FLAG_PUNCH),
-             linked: !(s.flags & FLAG_UNLINKED),
+        out.push({ target: k.slice(pfx.length), active: !!(s.flags & FLAG_ACTIVE),
+                   wrapReset: !!(s.flags & FLAG_WRAP_RESET),
+                   linked: !(s.flags & FLAG_UNLINKED),
                    count: s.count, loop: s.loop | 0, res: s.res | 0, scale: isFinite(s.scale) ? s.scale : 100,
                    lo: s.lo | 0, st: s.st | 0 });
     }
@@ -603,7 +604,7 @@ function componentMeta(slot, comp) {
     if (slot === 'seq') return SEQ_AUTO_TARGETS;
     /* A SNAPMORPH lane ("mac:<track>:<knob>"): the knob's own 0..1 position,
      * no metadata to fetch — the empty table makes normValue take the plain
-     * 0..1 path, and automationSmoothable say yes (a morph ramps). */
+     * 0..1 path (a morph is an amount: its lane glides). */
     if (slot === 'mac') return MAC_META;
     const id = slot + ':' + comp;
     let m = metaCache.get(id);
@@ -1209,7 +1210,7 @@ function splitFullKey(fullKey) {
 function gestureFor(target, track, clip, synthetic) {
     let g = gestures.get(target);
     if (!g) {
-        g = { track, clip, rest: false, ckpt: false, live: false, lock: false, synthetic, idle: 0, lastEditMs: S.clockMs };
+        g = { track, clip, rest: false, ckpt: false, live: false, lock: false, norm: null, tps: 0, synthetic, idle: 0, lastEditMs: S.clockMs };
         gestures.set(target, g);
     }
     return g;
@@ -1250,9 +1251,9 @@ function ensureCheckpoint(g) {
 /* EXTEND (Josh, 2026-10-20): "holding a step with an automation point and
  * touching a subsequent step carries that value across all steps. Works like
  * note length extender and works across bars". The held step's value — what
- * the lane plays there, a point or between points — runs through the END of
- * `toStep`; an earlier step wraps round the lane's window. The engine reads
- * the value and writes the span in one op (tN_pa_extend). The checkpoint and
+ * the lane plays there, or the value turned in this hold — runs through the
+ * END of `toStep`; an earlier step wraps round the lane's window. One engine
+ * op writes the span (tN_pa_hold_write, as a turn does). The checkpoint and
  * the write ride the SAME queue, in that order, so undo snapshots before the
  * write; one per hold, shared with any lock turned in it. */
 /* The same from the NOTE grid (Josh, 2026-10-20: "make it so that it works
@@ -1292,13 +1293,53 @@ export function automationExtendLock(track, clip, target, fromStep, toStep, tps,
         bookUndoCheckpoint(track, clip);
         if (S.heldStepAuto) S.stepHoldCkpt = true;
     }
-    queueSet('t' + track + '_pa_extend', clip + ' ' + target + ' ' + fromStep + ' ' + toStep + ' ' + tps + (rebase ? ' 1' : ''));
+    /* A turn already in this hold: its value, across the span. None yet: -1,
+     * the value the held step plays (the engine reads it off the lane). */
+    const turned = !!(g && g.lock && g.norm != null);
+    sendHoldWrite(track, clip, target, fromStep, toStep, tps, turned ? g.norm : -1, rebase || turned);
     S.autoLockLast = null;           /* the values read, not a dialled lock, says what plays now */
     /* toStep === fromStep (shortened all the way back): nothing extended now,
      * but the base stays — a press can grow it again from the original. */
     S.heldExtend = { step: fromStep, to: toStep, track, clip, target, tps };
     presenceStale = true;
     console.log('[auto] extend t' + track + ' c' + clip + ' ' + target + ' ' + fromStep + '->' + toStep);
+}
+
+/* THE SHIFT TAP (Josh, 2026-10-21: "how about hold step, and tapping
+ * shift(or something else) toggles between point or punch" · "yeah, we can
+ * [have a] flash pop up when you change between them"): the hold's write type
+ * flips, a popup names it, and whatever the hold already wrote is written
+ * again as the other type — same value, same span, from the hold's base. */
+export function automationShiftTap() {
+    if (S.heldStep < 0) return;
+    const type = (S.heldWrite && S.heldWrite.type === 0) ? 1 : 0;
+    S.heldWrite = { type };
+    showActionPopupFor(700, type ? 'PUNCH' : 'POINT');
+    const x = S.heldExtend;
+    let xDone = false;
+    for (const [target, g] of gestures) {
+        if (!g.lock || g.norm == null) continue;
+        const stretched = !!(x && x.step === S.heldStep && x.track === g.track && x.target === target);
+        if (stretched) xDone = true;
+        sendHoldWrite(g.track, g.clip, target, S.heldStep, stretched ? x.to : S.heldStep,
+                      stretched ? x.tps : g.tps, g.norm, true);
+    }
+    /* A stretch made with no turn: the held step's own value, re-spread. */
+    if (x && !xDone && x.step === S.heldStep && x.to !== x.step)
+        sendHoldWrite(x.track, x.clip, x.target, x.step, x.to, x.tps, -1, true);
+    presenceStale = true;
+    console.log('[auto] shift tap: ' + (type ? 'PUNCH' : 'POINT'));
+}
+
+/* THE HOLD WRITE (tN_pa_hold_write): every write a held step makes — a turn,
+ * a stretch press, a type flip — is ONE engine op over the span, recomputed
+ * from the lane as it was before the hold (rebase 0 takes that base, 1 builds
+ * on it). The type is the hold's: PUNCH (a flat run with hard edges, the
+ * default each hold) or POINT (one point the envelope glides through). */
+function sendHoldWrite(track, clip, target, fromStep, toStep, tps, norm, rebase) {
+    const type = (S.heldWrite && S.heldWrite.type === 0) ? 0 : 1;
+    queueSet('t' + track + '_pa_hold_write', clip + ' ' + target + ' ' + fromStep + ' ' + toStep + ' ' + tps +
+             ' ' + norm + ' ' + type + ' ' + (rebase ? 1 : 0));
 }
 
 /* The store's target for a (slot, fullKey) pair: a MIDI target is RAW —
@@ -1374,7 +1415,6 @@ export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) 
          * on its own grid (a drum lane's step need not be the pad's). */
         const tps = (S.heldStepAuto && S.autoCycle && S.autoCycle.t === track)
                   ? S.autoCycle.tps : automationStepTicks(track, clip);
-        const from = S.heldStep * tps, to = from + tps - 1;
         ensureRest(g, target, prevNorm());
         ensureCheckpoint(g);
         /* Playback keeps its hands off the target while the lock is being
@@ -1383,25 +1423,25 @@ export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) 
          * knob-touch may never reach the editor while a pad is down, so the
          * step is the hand here, not the touch sensor. */
         if (!g.live) { g.live = true; queueSet('t' + track + '_pa_hold', target); }
+        /* The hold's span for this lane: the held step, or the stretch already
+         * pressed on it. The first write of the hold takes the base. */
+        const x = S.heldExtend;
+        const stretched = !!(x && x.step === S.heldStep && x.track === track && x.target === target);
+        const rebase = g.lock || stretched;
         g.lock = true;
+        g.norm = norm;
+        g.tps = tps;
         /* Turning a knob on a pressed step makes it a HOLD, however quickly the
          * finger came back up — otherwise a fast press-turn-release writes the
          * lock and then the release tap-toggles the note it was written on. The
          * tick's hold-threshold check consumes this and does the rest (closes
          * the tap window, auto-assigns an empty step's note). */
         S.stepHoldPromote = true;
-        queueSet('t' + track + '_pa_set2', clip + ' ' + target + ' ' + from + ' ' + to + ' ' + norm);
+        sendHoldWrite(track, clip, target, S.heldStep, stretched ? x.to : S.heldStep, stretched ? x.tps : tps, norm, rebase);
         /* What the jump destination shows for the held step until the next
          * values read catches up (autoLaneFocus). */
         S.autoLockLast = { track, clip, target, step: S.heldStep, norm, at: S.clockMs };
         S.heldLockLast = { track, clip, target, step: S.heldStep, tps };
-        /* The held point changed under an extend of THIS lane: the span is
-         * sent again as a re-press, so the whole of it takes the new value
-         * (the engine carries what the held step plays NOW over the hold's
-         * base, which still lets a later press shorten it). */
-        const x = S.heldExtend;
-        if (x && x.step === S.heldStep && x.track === track && x.target === target && x.to !== x.step)
-            queueSet('t' + track + '_pa_extend', clip + ' ' + target + ' ' + x.step + ' ' + x.to + ' ' + x.tps + ' 1');
         automationNoteWrite();
         console.log('[auto] p-lock t' + track + ' c' + clip + ' step ' + S.heldStep + ' ' + target + ' = ' + norm);
         return;
@@ -1484,6 +1524,25 @@ export function automationClearPoints(track, clip, target) {
     return true;
 }
 
+/* The AUTOMATION list's "+ Add lane": an EMPTY lane for `target` (pa_add,
+ * PA_FLAG_KEEP), listed at once so its settings can be chosen before anything
+ * is written into it. False when the clip already has that lane. A target
+ * another track owns is refused by the DSP: the re-read drops the row and the
+ * poll's warning names the owner. One undo. */
+export function automationAddLane(track, clip, target) {
+    if (!target || automationStateFor(track, clip, target)) return false;
+    bookUndoCheckpoint(track, clip);
+    queueSet('t' + track + '_pa_add', clip + ' ' + target);
+    const k = stateKey(track, clip, target);
+    const s = stateByKey.get(k);
+    if (s) { s.count = 0; s.flags |= FLAG_KEEP | FLAG_ACTIVE; }
+    else stateByKey.set(k, { flags: FLAG_ACTIVE | FLAG_WRAP_RESET | FLAG_KEEP, count: 0, loop: 0, res: 0, scale: 100, lo: 0, st: 0 });
+    anyAutomation = true;
+    listGen++;
+    expectStaged();
+    return true;
+}
+
 /* Delete + step: every parameter's points in that step. */
 /* `queue`: the caller's ordered queue to go BEHIND (S.pendingDefaultSetParams).
  * ⚠ The melodic step clear rides that one-per-tick queue and is what takes the
@@ -1500,38 +1559,10 @@ export function automationClearStep(track, clip, step, queue) {
     expectStaged();
 }
 
-/* Smooth means something only where interpolation does: a float. An enum
- * under a ramp would step through options it was never given, an int through
- * values the module rounds anyway. */
-export function automationSmoothable(slot, fullKey) {
-    if (slot === 'midi' || midiTargetIsMidi(fullKey)) return true;   /* a controller sweep ramps */
-    const [comp, key] = splitFullKey(fullKey);
-    const p = paramMeta(slot, comp, key);
-    /* Every NUMERIC parameter ramps (device, 2026-09-05: "smooth option is
-     * missing" — the tested synth declares cutoff as an int 0..127, and the
-     * row was floats-only). The lane interpolates in its own 14-bit domain and
-     * the wire value is rounded on the way out, so an int ramps in steps of
-     * one. Only a choice (enum) or a switch (bool) has nothing between its
-     * values. */
-    return !p || (p.type !== 'enum' && p.type !== 'bool');
-}
-
-/* Knob touched + jog click: stepped hold vs linear, per parameter per clip. */
-export function automationToggleSmooth(track, clip, target) {
-    const s = automationStateFor(track, clip, target);
-    if (!s) return null;
-    const on = !s.smooth;
-    bookUndoCheckpoint(track, clip);
-    queueSet('t' + track + '_pa_smooth', clip + ' ' + target + ' ' + (on ? 1 : 0));
-    const cur = stateByKey.get(stateKey(track, clip, target));
-    if (cur) cur.flags = on ? (cur.flags | FLAG_SMOOTH) : (cur.flags & ~FLAG_SMOOTH);
-    return on;
-}
-
-/* Wrap (Josh, 2026-09-11): Carry — the lane's last value carries round the
- * loop (the default) — or Reset: the parameter's RESTING value until the lane's
- * first point (Josh, 2026-09-11). Returns the new state
- * (true = Reset), or null if nothing is automated there. */
+/* Wrap: what a lane does at the loop end — Carry glides from its last point
+ * into its start, Reset (a new lane's default) holds the last value and then
+ * jumps back. Returns the new state (true = Reset), or null if nothing is
+ * automated there. */
 export function automationToggleWrap(track, clip, target) {
     const s = automationStateFor(track, clip, target);
     if (!s) return null;
@@ -1541,20 +1572,6 @@ export function automationToggleWrap(track, clip, target) {
     const cur = stateByKey.get(stateKey(track, clip, target));
     if (cur) cur.flags = reset ? (cur.flags | FLAG_WRAP_RESET) : (cur.flags & ~FLAG_WRAP_RESET);
     return reset;
-}
-
-/* Mode (Josh, 2026-09-11): Curve — the lane is a continuous envelope (the
- * default) — or Punch: a point lasts its own step, then the resting value.
- * Returns the new state (true = Punch), or null if nothing is automated. */
-export function automationToggleMode(track, clip, target) {
-    const s = automationStateFor(track, clip, target);
-    if (!s) return null;
-    const punch = !s.punch;
-    bookUndoCheckpoint(track, clip);
-    queueSet('t' + track + '_pa_mode', clip + ' ' + target + ' ' + (punch ? 1 : 0));
-    const cur = stateByKey.get(stateKey(track, clip, target));
-    if (cur) cur.flags = punch ? (cur.flags | FLAG_PUNCH) : (cur.flags & ~FLAG_PUNCH);
-    return punch;
 }
 
 /* Link (plan 6c, Josh 2026-09-11): On — the lane moves when its clip's notes

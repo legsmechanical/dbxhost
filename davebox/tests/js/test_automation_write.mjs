@@ -112,12 +112,12 @@ const T = 0, C = 0, SLOT = 1;
           '⚠ the resting value is the value BEFORE the first edit (0.25 -> 4096), not the new one');
     check(sets[1] === 't0_c0_undo_checkpoint=1', 'one undo checkpoint opens the gesture');
     check(sets[2] === 't0_pa_hold=1:fx1:cutoff', 'the target is held while the lock is dialled');
-    check(sets[3] === 't0_pa_set2=0 1:fx1:cutoff 72 95 8192',
-          'the lock covers the held step in clip ticks (step 3 x 24 = 72..95) at the NEW value');
+    check(sets[3] === 't0_pa_hold_write=0 1:fx1:cutoff 3 3 24 8192 1 0',
+          'the lock: the held step (3, 24 ticks a step) at the NEW value, a PUNCH, the hold\'s first write (takes the base)');
     automationParamEdit(T, C, SLOT, 'fx1:cutoff', '0.75', '0.5');
     tick();
-    check(sets.length === 5 && sets[4] === 't0_pa_set2=0 1:fx1:cutoff 72 95 12287',
-          'a second turn in the same gesture writes the lock again — no second rest, no second checkpoint, no second hold');
+    check(sets.length === 5 && sets[4] === 't0_pa_hold_write=0 1:fx1:cutoff 3 3 24 12287 1 1',
+          'a second turn in the same gesture rewrites the lock from the base — no second rest, no second checkpoint, no second hold');
     automationParamTouch(T, C, SLOT, 'fx1:cutoff', false);
     tick();
     check(sets.length === 5, 'a touch release while the step is still held ends nothing');
@@ -134,15 +134,15 @@ const T = 0, C = 0, SLOT = 1;
     S.drumLaneTPS[T] = 48;
     automationParamEdit(T, C, SLOT, 'fx1:cutoff', '0.5', '0.25');
     tick();
-    check(sets.indexOf('t0_pa_set2=0 1:fx1:cutoff 144 191 8192') >= 0,
-          'a drum lock covers the held step on the LANE grid (step 3 x 48 = 144..191), got ' + JSON.stringify(sets.filter(x => x.indexOf('pa_set2') >= 0)));
+    check(sets.indexOf('t0_pa_hold_write=0 1:fx1:cutoff 3 3 48 8192 1 0') >= 0,
+          'a drum lock covers the held step on the LANE grid (step 3 of 48 ticks), got ' + JSON.stringify(sets.filter(x => x.indexOf('pa_hold_write') >= 0)));
     S.heldStep = -1; tick();
     S.trackPadMode[T] = 0; S.drumLaneTPS[T] = 24;
 
     reset({ heldStep: 0, playing: true, recordArmed: true });
     automationParamEdit(T, C, SLOT, 'fx1:octave', '2', '0');
     tick();
-    check(sets.some(x => x.startsWith('t0_pa_set2=0 1:fx1:octave 0 23 16383')),
+    check(sets.some(x => x.startsWith('t0_pa_hold_write=0 1:fx1:octave 0 0 24 16383 1 0')),
           'held step during playback: the lock, not a live record (int 2 of -2..2 -> 16383)');
     check(!sets.some(x => x.startsWith('t0_pa_live')), 'and nothing goes live');
 }
@@ -156,7 +156,7 @@ const T = 0, C = 0, SLOT = 1;
     tick();
     check(sets.some(x => x === 't0_pa_hold=1:fx1:cutoff'), '⚠ dialling a lock tells the DSP to HOLD the target');
     check(S.stepHoldPromote === true, '⚠ and promotes the step press to a HOLD, so a fast release cannot tap-toggle the note');
-    check(sets.indexOf('t0_pa_hold=1:fx1:cutoff') < sets.findIndex(x => x.startsWith('t0_pa_set2')), 'before the lock write');
+    check(sets.indexOf('t0_pa_hold=1:fx1:cutoff') < sets.findIndex(x => x.startsWith('t0_pa_hold_write')), 'before the lock write');
     for (let i = 0; i < 40; i++) tick();                       /* a long pause mid-dial */
     check(automationGestureCountForTest() === 1, '⚠ the gesture does NOT expire while the step is held — even with no touch');
     staged = '1:fx1:cutoff 9000';

@@ -42,10 +42,12 @@ static pa_entry_t *entry(seq8_instance_t *in, const char *tgt) {
     return NULL;
 }
 
+/* A lock as the UI writes it: a held step turned — a punch over that step,
+ * jumping in from and back out to the envelope (here, its resting value). */
 static void lock(hx_t *h, int step, int tps, int v) {
     char val[128];
-    snprintf(val, sizeof val, "0 " TG " %d %d %d", step * tps, step * tps + tps - 1, v);
-    hx_set_param(h, "t0_pa_set2", val);
+    snprintf(val, sizeof val, "0 " TG " %d %d %d %d 1 0", step, step, tps, v);
+    hx_set_param(h, "t0_pa_hold_write", val);
 }
 
 /* The order in which TG's staged value changes during `blocks` of playback. */
@@ -107,11 +109,12 @@ int main(void) {
     hx_set_param(h, "t0_l0_note_add", "0 100 24");
     hx_set_param(h, "t0_l2_clip_length", "12");                 /* the hat: 12 steps */
     hx_set_param(h, "t0_active_drum_lane", "2");
+    hx_set_param(h, "t0_pa_rest", "0 " TG " 0");
     lock(h, 2, 24, 9000);
     lock(h, 5, 24, 3000);
     hx_set_param(h, "t0_pa_scale", "0 " TG " 150");
     HX_ASSERT(cycle_of(h, &ll, &lo, &st) && ll == 288, "setup: the lane has the 12-step cycle");
-    HX_ASSERT(listed(h, &fl, &cnt) && cnt == 2, "setup: two points");
+    HX_ASSERT(listed(h, &fl, &cnt) && cnt == 9, "setup: a start point and two punches (a jump pair at each edge)");
 
     /* ---- Clear: empty, listed, settings kept ------------------------------ */
     hx_set_param(h, "t0_c0_undo_checkpoint", "1");
@@ -132,7 +135,10 @@ int main(void) {
     {
         hx_set_param(h, "transport", "play_focus:0:0");
         int seq[64];
-        hx_render(h, 20);                                     /* the one rest re-assert */
+        hx_render(h, 20);                                     /* the one rest re-assert... */
+        {   char buf[8192];
+            hx_get_param(h, "pa_pending", buf, sizeof buf);    /* ...drained */
+            HX_ASSERT(strstr(buf, TG " 0"), "Clear put the parameter back to its resting value"); }
         int n = play_sequence(h, seq, 64, 400);
         HX_ASSERT(n == 0, "the empty lane staged values during playback");
         hx_set_param(h, "transport", "stop");
@@ -142,7 +148,7 @@ int main(void) {
 
     /* ---- undo brings the points back -------------------------------------- */
     hx_set_param(h, "undo_restore", "1");
-    HX_ASSERT(listed(h, &fl, &cnt) && cnt == 2, "⭐ undo restores the two points");
+    HX_ASSERT(listed(h, &fl, &cnt) && cnt == 9, "⭐ undo restores the points");
     hx_set_param(h, "t0_c0_undo_checkpoint", "1");
     hx_set_param(h, "t0_pa_clear_points", "0 " TG);
     HX_ASSERT(listed(h, &fl, &cnt) && cnt == 0, "setup: cleared again");
@@ -157,7 +163,7 @@ int main(void) {
     /* ---- new automation lands in ITS cycle, not the selected pad's -------- */
     hx_set_param(h, "t0_active_drum_lane", "0");                 /* a 16-step pad now */
     lock(h, 3, 24, 7000);
-    HX_ASSERT(listed(h, &fl, &cnt) && cnt == 1, "the lock landed in the kept lane");
+    HX_ASSERT(listed(h, &fl, &cnt) && cnt == 5, "the lock landed in the kept lane (with a fresh start point)");
     HX_ASSERT(cycle_of(h, &ll, &lo, &st) && ll == 288, "⭐ the kept lane keeps its 12-step cycle under a 16-step pad");
     OK("⭐ a lock into a cleared lane keeps the lane's own cycle");
 
@@ -173,8 +179,8 @@ int main(void) {
         for (int t = 1; t < 8; t++)
             for (int c = 0; c < 16; c++)
                 for (int g = 0; g < 2; g++) {
-                    snprintf(k, sizeof k, "t%d_pa_set2", t);
-                    snprintf(v, sizeof v, "%d %d:synth:p%d 0 23 5000", c, t, g);
+                    snprintf(k, sizeof k, "t%d_pa_hold_write", t);
+                    snprintf(v, sizeof v, "%d %d:synth:p%d 0 0 24 5000 1 0", c, t, g);
                     hx_set_param(h, k, v);
                 }
         HX_ASSERT(in->pa_store_full, "setup: the store filled");

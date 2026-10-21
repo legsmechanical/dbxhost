@@ -1747,6 +1747,7 @@ export function _onStepButtons(d1, d2) {
             S.heldStep      = absStep;
             S.heldStepAuto  = true;
             S.heldExtend    = null;
+            S.heldWrite     = { type: 1 };       /* every hold starts as a PUNCH */
             S.stepWasEmpty  = true;              /* nothing for the tick to read */
             S.heldStepNotes = [];
             S.drumHeldReadPending = false;
@@ -1777,6 +1778,7 @@ export function _onStepButtons(d1, d2) {
             S.heldStepAuto = false;
             S.heldLockLast = null;
             S.heldExtend   = null;
+            S.heldWrite    = { type: 1 };        /* every hold starts as a PUNCH */
             S.heldStep    = absStep;
             const cur   = S.drumLaneSteps[t][lane][absStep];
             if (cur !== '0') {
@@ -1861,6 +1863,7 @@ export function _onStepButtons(d1, d2) {
             S.heldStepAuto = false;
             S.heldLockLast = null;
             S.heldExtend   = null;
+            S.heldWrite    = { type: 1 };        /* every hold starts as a PUNCH */
             S.heldStep     = absP;
             const pref_p = 't' + S.activeTrack + '_c' + ac_p + '_step_' + absP;
             /* get_param returns null in MIDI context — use clipSteps mirror to detect

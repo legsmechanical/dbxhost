@@ -283,9 +283,8 @@ step('⭐ THE LANE: the turn recorded the KNOB position on mac:<track>:<knob> an
     assert(chainBulks().length === 1 && chainBulks()[0].transient, 'the chain still gets its transient bulk');
     GS.playing = false; GS.recordArmed = false;
 });
-step('the AUTOMATION list names the lane "SnapMorph K4"; it ramps; it has no bipolar centre; export skips it', () => {
+step('the AUTOMATION list names the lane "SnapMorph K4"; it has no bipolar centre; export skips it', () => {
     assert(auto.automationTargetLabel('mac:2:3') === 'SnapMorph K4', 'label: ' + auto.automationTargetLabel('mac:2:3'));
-    assert(auto.automationSmoothable('mac', '2:3') === true, 'a morph ramps');
     assert(auto.automationBipolarCenter('mac:2:3') === null, 'no centre');
 });
 step('⭐ THE EDIT: the hand comes off, MORPH_FINAL_MS later the last values go out ONCE more as a NON-transient bulk, and only once', () => {

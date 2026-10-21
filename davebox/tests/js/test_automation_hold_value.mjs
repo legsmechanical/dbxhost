@@ -239,9 +239,9 @@ step('⭐ a knob turned during the hold: the cell follows at once', () => {
     const before = kText();
     sets.length = 0;
     cc(71 + K, 5); ticks(1);
-    const w = sets.filter(x => x.indexOf('_pa_set2=') >= 0 && x.indexOf(SEQ) >= 0);
+    const w = sets.filter(x => x.indexOf('_pa_hold_write=') >= 0 && x.indexOf(SEQ) >= 0);
     assert(w.length >= 1, 'rig: the knob wrote no lock: ' + JSON.stringify(sets));
-    const norm = parseInt(w[w.length - 1].split(' ').pop(), 10);
+    const norm = parseInt(w[w.length - 1].split(' ')[5], 10);
     assert(kText() === kTextAt(Number(auto.automationWireValue(SEQ, norm))) && kText() !== before,
            'K3 shows ' + kText() + ' after the turn (was ' + before + ')');
     note(STEP(3), 0); ticks(2);

@@ -113,18 +113,19 @@ typedef struct {
 #define PA_CAP_POINTS      512   /* cells one captured parameter can hold — one full clip */
 
 #define PA_FLAG_ACTIVE     0x01  /* cleared by Mute+knob: kept, but not played */
-#define PA_FLAG_SMOOTH     0x02  /* linear interpolation instead of stepped hold */
+#define PA_FLAG_SMOOTH     0x02  /* RESERVED (pav:1 only): Smooth on. The envelope
+                                  * model glides always; a pav:1 file carries the
+                                  * bit and the conversion (pa_migrate_v1) reads it.
+                                  * Never reuse the value. */
 #define PA_FLAG_UNLINKED   0x04  /* Link: Off — the lane stays put when its notes
                                   * move (plan 6c, Josh 2026-09-11). Clear = linked,
                                   * the default: every existing file reads linked. */
-#define PA_FLAG_WRAP_RESET 0x08  /* Wrap: Reset — before the lane's first point the
-                                  * parameter sits at its RESTING value (Josh,
-                                  * 2026-09-11). Clear = Carry, the default: every
-                                  * existing file reads Carry. */
-#define PA_FLAG_PUNCH      0x10  /* Mode: Punch — a point lasts to the end of its own
-                                  * STEP, then the RESTING value (Josh, 2026-09-11).
-                                  * Clear = Curve, the default. Wrap / Smooth do not
-                                  * apply in Punch. */
+#define PA_FLAG_WRAP_RESET 0x08  /* Wrap: Reset — the last value holds to the loop
+                                  * end, then the lane jumps back to its start (a new
+                                  * lane's default). Clear = Carry: it glides from the
+                                  * last point into the start across the loop end. */
+#define PA_FLAG_PUNCH      0x10  /* RESERVED (pav:1 only): Mode: Punch. Read by the
+                                  * conversion; never reuse the value. */
 #define PA_FLAG_KEEP       0x20  /* CLEARED, KEPT (Josh, 2026-09-25: Clear "clears
                                   * the automation data on the lane (undoable) but
                                   * leaves it in place to add new automation to").
@@ -189,7 +190,6 @@ typedef struct {
     uint8_t  flags;
     uint16_t target;             /* index into pa_targets */
     uint16_t count;
-    uint16_t rest;               /* value before automation existed; PA_VAL_UNSET = none captured */
     /* Independent loop window and resolution. Zero means "follow the clip",
      * which is the whole of v1 behaviour — nothing in the UI writes these yet.
      * They exist so that per-parameter polymetric automation, which the old

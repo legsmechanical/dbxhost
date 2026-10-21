@@ -665,7 +665,7 @@ To place notes on the grid, use the **16 step buttons**:
 | Hold a step with notes, then tap a later step | Stretch the note to reach it — see [Editing notes](#63-editing-notes) |
 | Hold a step, turn a knob to set a lock, then tap a later step | Stretch the lock's value to reach it — see [Editing notes](#63-editing-notes) |
 | **Copy + step → another step** | Copy the step's notes (same clip); **Shift + Copy** cuts |
-| **Delete + step** | Clear the step, and any automation *locks* on it (a lock is a knob value set for one step — see [Automation](#10-automation)) |
+| **Delete + step** | Clear the step, and any automation on it (a lock is a knob value set for one step — see [Automation](#10-automation)) |
 
 Steps past the clip's length are dimmed. These step gestures work on drum steps
 too — see [Drum Clips](#7-drum-clips).
@@ -1387,17 +1387,28 @@ Two ways:
   had. Each time you start, a notice says how long the lane you're recording onto
   is — **● LANE: 2 BAR**, or **● LANE: 13 ST** when it isn't whole bars — the cycle
   the move will repeat on. See [Recording](#64-recording).
-- **Lock a step.** Hold a step and turn a knob: that step takes a **lock**, a value
-  the parameter jumps to when the step plays. See
+- **Lock a step (a punch).** Hold a step and turn a knob: that step takes a
+  **lock** — the value held flat for the whole step. The parameter jumps to it as
+  the step starts and jumps back to what the lane was doing when it ends. Press a
+  later step while you hold to stretch it across several (see
+  [The AUTOMATION screen](#102-the-automation-screen)). See also
   [Editing notes](#63-editing-notes).
+- **Place a point.** Tap **Shift** while you hold the step — before or after
+  turning — and a notice says **POINT**: the step gets a single point instead,
+  which the lane glides into and on from. Tap again for **PUNCH**. Every hold
+  starts as a punch; the footer says what a tap switches to (**SHFT POINT**).
+  Holding Shift while you turn is still fine adjustment.
 - **See a step's values.** While you hold a step, every automated parameter on
   screen shows the value it plays at that step (a lock, a recorded point, or the
   glide between them), and goes back to its own value when you let go.
+- **Delete + step** removes the automation on that step, on every lane. Deleting a
+  punch gives the lane back as it was before it.
 
-A value **holds until the next one**, round the loop too: the clip's last value
-carries through its first steps until the first lock or recorded move comes round.
-A recorded (smooth) move glides from its last value back to its first across the
-loop point.
+**Each lane is one envelope.** Its points glide into each other, and a lock is
+where it jumps. Parameters that are a choice or a switch step from value to value
+instead. A lane starts where its parameter rests: its first point also puts one on
+the lane's first step, carrying the **resting value**. At the end of the loop the
+lane does what its **Wrap** says (below).
 
 **What can be automated:** a Schwung module's editor pages, the levels on
 **MIX** and in the session mixer, the eight **MACROS**, and these
@@ -1409,11 +1420,16 @@ lane and isn't automated. See [Parameter banks](#36-parameter-banks) and
 - An automated knob shows a dot on its cell and a blinking ring.
 - **Mute + touch** mutes that parameter's automation; **Delete + touch** clears it.
   (In the session mixer, Mute + touch still mutes the track.)
-- Without Record, turning an automated knob while playing takes it over until you
-  let go; while stopped, it sets the value the parameter rests at.
+- **The resting value** is where a parameter sits when nothing automates it: on
+  Stop, and in clips without automation for it. There's one per parameter on its
+  track. Turn the knob while stopped, or while a clip with no automation for it is
+  playing, and that's the new resting value. While the playing clip does automate
+  it, turning the knob without Record takes the parameter over until you let go.
 - **Switching clips** returns the old clip's automated parameters to rest; a clip
-  that automates the same parameter starts at its own resting value straight away.
-  A parameter whose automation you muted stays where you put it.
+  that automates the same parameter starts where its own lane starts, straight
+  away. A parameter whose automation you muted stays where you put it.
+- **Projects made before this version** are converted when they open and play the
+  same. Once saved, dAVEBOx 1.0.0 opens them without their automation.
 
 ## 10.2 The AUTOMATION screen
 
@@ -1426,14 +1442,15 @@ everything.
   (steps, when it isn't whole bars; **13 ST/32** when its steps aren't sixteenths),
   or **CLIP** when it follows the clip. A muted row reads **OFF**, a cleared one
   **EMPTY** and its length, and the pads' aftertouch **PADS**.
-- With nothing automated the screen reads *NO AUTOMATION*.
+- With nothing automated the list has only **+ Add lane**.
 
 With the cursor on a row, the step buttons, pages and screen show **that row's
 lane**, not the clip's notes (click the row for its operations, below):
 
 - **Step buttons** are coloured by the value the lane plays on each step — dim for
-  low, bright for high. A step holding a value you set (a lock or a recorded point)
-  blinks off briefly; steps past the end of the cycle are dark grey.
+  low, bright for high. A step with a point on it blinks off briefly — a lock, the
+  step after a lock (where the lane jumps back), a recorded point, or the lane's
+  first step; steps past the end of the cycle are dark grey.
 - **Left / Right** page through the lane's own length: a 4-bar lane under a 1-bar
   clip has four pages. The header shows the cycle and page (**2 BAR PG 1/2**).
 - **The playhead** shows where that lane is in its own cycle.
@@ -1447,10 +1464,11 @@ lane**, not the clip's notes (click the row for its operations, below):
   curve, envelope) while you're there.
 - **Hold a step, then press a later one** to stretch the held step's value up to and
   including that step, the way a held note stretches to a tapped step. The value is
-  what the lane plays on the held step, even between two points. Anything already
-  set in between is replaced, and the step after the range plays what it played
-  before — except with **Smooth** on, where the value never jumps: it glides on
-  from the end of the range to the next lock. **Left / Right** still page the lane while you hold, so the range can reach
+  the one you turned, or — before any turn — what the lane plays on the held step,
+  even between two points. Anything already set in between is replaced. As a punch
+  the range jumps back after its last step to what the lane played there; as a
+  point (Shift tapped) it holds flat to its last step and glides on from there.
+  **Left / Right** still page the lane while you hold, so the range can reach
   into later bars. Pressing an earlier step wraps round the end of the cycle. Press
   the **end step again** to shorten the range by one, or a step inside it to shorten
   it there; the steps you give back play what they did before. Turn the knob again
@@ -1467,19 +1485,13 @@ lane**, not the clip's notes (click the row for its operations, below):
 **Click** a row for its operations:
 
 - **Mute** / **Unmute**.
-- **Mode** — *Curve* plays the lane as a continuous envelope; *Punch* makes each
-  lock last only its own step, with the parameter at rest on every other step
-  (Smooth and Wrap don't apply there and are hidden).
-- **Smooth** — *On* glides between values, *Off* steps (on parameters that can
-  ramp).
-- **Wrap** — *Reset* (default) returns the parameter to where the knob sits at rest,
-  until the first lock or recorded move comes round; with **Smooth** on it glides
-  up from there to the first lock instead of jumping to it. *Carry* keeps the last
-  value going round the loop. Lanes saved before this change keep the Wrap they had.
+- **Wrap** — what the lane does at the end of its loop. *Reset* (default) holds the
+  last value to the end, then jumps back to the lane's start. *Carry* glides from
+  the last point into the start across the loop point. Lanes saved before this
+  change keep the Wrap they had.
 - **Link** — *On* (default): the automation is transformed with the note sequence —
   Resolution and Beat Stretch scale it, Clock Shift and Nudge move it (inside the
-  clip's loop, as they move its notes), doubling the loop copies it forward (so the doubled clip plays as the old loop did twice — a
-  Wrap: Reset lane starts its copy at rest again), and
+  clip's loop, as they move its notes), doubling the loop copies it forward (so the doubled clip plays as the old loop did twice), and
   Crop moves it to step 1 with the loop and removes what lay outside (on a drum
   track, the ALL LANES versions; a lane with its own Loop is left as it is). *Off*: it stays
   put whatever you do to the notes.
@@ -1498,6 +1510,13 @@ lane**, not the clip's notes (click the row for its operations, below):
 - **Delete** — the lane goes altogether.
 
 The pads' aftertouch row (**PADS**) has only **Delete**.
+
+**+ Add lane** (after the lanes) adds an empty lane, so you can set its Wrap,
+Loop, Rate and Scale before writing anything into it. Click it and choose the
+parameter as you would for a macro — a module, a bank, Levels or MIDI, then the
+parameter (see [The MACROS bank](#146-the-macros-bank)). You come back to the list with the new lane's
+operations open; **Back** from the picker returns without adding one. Choosing a
+parameter that already has a lane in this clip opens that lane.
 
 With the cursor on a lane, **Delete + click** clears just that lane (its points go; the
 row stays). The last row is **Clear all**: click it to clear everything. Every
@@ -2291,9 +2310,9 @@ one-way.
 Aftertouch and pitch bend are written onto the notes rather than as a separate
 lane, so they exist only while a note is sounding.
 
-Each lane has the same shape in Live as it plays here: it glides where **Smooth** is
-on and steps where it is off, and a **Wrap: Reset** lane holds its last value to the
-end of its loop and drops straight back to rest. Points left outside a lane's loop
+Each lane has the same shape in Live as it plays here: it glides and jumps where it
+does here, and a **Wrap: Reset** lane holds its last value to the end of its loop and
+drops straight back to its start. Points left outside a lane's loop
 (after the loop was shortened) don't play here, so they aren't exported.
 
 **Not carried:**

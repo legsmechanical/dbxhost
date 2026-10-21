@@ -3,9 +3,9 @@ import './_bulk_get_stub.mjs';
  * 2026-09-02): last on the walk after MACROS, replacing the old AUTO bank 6.
  * The card is the LIST of what is automated in the clip (bracketed corners);
  * the knobs are a no-op; jog click enters the menu (cursor + Clear all);
- * click on a row opens its ops (Delete / Mute / Smooth / Loop); Delete +
+ * click on a row opens its ops (Delete / Mute / Wrap / Loop); Delete +
  * click clears the clip; Back closes one layer at a time; every edit takes an
- * undo checkpoint. Smooth/Stepped moved here from the module editor.
+ * undo checkpoint.
  *
  * Harness: the whole UI (ui.js + onMidiMessageInternal + tick) over a
  * host_module_get_param stub answering pa_list. */
@@ -97,7 +97,7 @@ step('AUTOMATION is bank 14, after MACROS in the melodic and drum banks (CTRL) �
     assert(con.indexOf(BANK_AUTOMATION) < 0, 'conductor: none');
 });
 step('the card lists the clip\'s automation from the owner\'s cache: labels, ON/OFF/SMTH, the pads\' aftertouch as its own row; the knobs are a no-op', () => {
-    LIST = '0 0 1 8 0:synth:cutoff 0\n0 0 2 3 0:synth:voices 48\n0 0 1 2 0:slot:volume 0\n1 0 1 2 1:synth:cutoff 0\n';
+    LIST = '0 0 1 8 0:synth:cutoff 0\n0 0 8 3 0:synth:voices 48\n0 0 1 2 0:slot:volume 0\n1 0 1 2 1:synth:cutoff 0\n';
     auto.automationRefreshPresence();
     S.clipAtHas[T][C] = true; AT_HAS = '1';
     S.activeBank = BANK_AUTOMATION; S.trackActiveBank[T] = BANK_AUTOMATION; S.bankCardLatched = true;
@@ -107,7 +107,7 @@ step('the card lists the clip\'s automation from the owner\'s cache: labels, ON/
     assert(labels.indexOf('Syn>Cutoff') >= 0 && labels.indexOf('Syn>Voices') >= 0 && labels.indexOf('Lvl>Volume') >= 0, 'labels, got ' + JSON.stringify(labels));
     assert(rows[rows.length - 1].kind === 'at', 'aftertouch last');
     const vo = rows.find(r => r.label === 'Syn>Voices');
-    assert(vo && !vo.active && vo.smooth && vo.loop === 48, 'flags and loop parsed: ' + JSON.stringify(vo));
+    assert(vo && !vo.active && vo.wrapReset && vo.loop === 48, 'flags and loop parsed: ' + JSON.stringify(vo));
     draw();
     assert(painted > 200, 'the card drew');
     sets.length = 0;
@@ -253,13 +253,13 @@ step('⭐ CLEAR empties the lane with a checkpoint and KEEPS its row, reading EM
     auto.automationRefreshPresence(); ticks(1);
     assert(ab.autoBankRows(T, C).some(r => r.target === '0:synth:cutoff'), 'after the DSP list the lane is gone');
 });
-step('Smooth/Stepped is an op HERE (every numeric param): cutoff offers it, voices (int) too; Loop edits in steps and writes pa_loop in ticks', () => {
+step('a lane\'s ops: Wrap on every lane, no Smooth; Loop edits in steps and writes pa_loop in ticks', () => {
     S.clipTPS[T][C] = 24; S.clipLength[T][C] = 16;
     const rows = ab.autoBankRows(T, C);
     const ci = rows.findIndex(r => r.label === 'Syn>Cutoff');
     menu().sel = ci; click(); ticks(1);
     let ops = menu().ops.rows.map(o => o.op);
-    assert(ops.indexOf('smooth') >= 0, 'cutoff offers Smooth, got ' + JSON.stringify(ops));
+    assert(ops.indexOf('wrap') >= 0 && ops.indexOf('smooth') < 0, 'Wrap, and no Smooth, got ' + JSON.stringify(ops));
     const li = ops.indexOf('loop');
     for (let i = 0; i < li; i++) cc(14, 1);
     click(); ticks(1);
@@ -341,7 +341,7 @@ step('Smooth/Stepped is an op HERE (every numeric param): cutoff offers it, voic
     auto.automationRefreshPresence();
     back(); ticks(1);
     const vi = ab.autoBankRows(T, C).findIndex(r => r.label === 'Syn>Voices');
-    if (vi >= 0) { menu().sel = vi; click(); ticks(1); ops = menu().ops.rows.map(o => o.op); assert(ops.indexOf('smooth') >= 0, 'an int offers Smooth too (2026-09-05: every numeric param ramps)'); back(); ticks(1); }
+    if (vi >= 0) { menu().sel = vi; click(); ticks(1); ops = menu().ops.rows.map(o => o.op); assert(ops.indexOf('wrap') >= 0, 'an int lane has Wrap too'); back(); ticks(1); }
 });
 step('Back closes one layer at a time: ops → menu → card → out of bank mode', () => {
     menu().sel = 0; click(); ticks(1); assert(menu().ops, 'ops open');
@@ -365,7 +365,7 @@ step('⭐ Delete + jog click CLEARS THE LANE under the cursor — and nothing el
     assert(!sets.some(x => x === 't0_pa_clear=0' || /_at_clear/.test(x)), 'more than the lane was cleared: ' + JSON.stringify(sets));
     assert(sets.some(x => x.startsWith('t0_c0_undo_checkpoint=')), 'a checkpoint');
     assert(!menu().ops, 'no ops opened by the Delete + click');
-    menu().sel = ab.autoBankRows(T, C).length; sets.length = 0;          /* the Clear all row */
+    menu().sel = ab.autoBankRows(T, C).length + 1; sets.length = 0;      /* the Clear all row (after + Add lane) */
     cc(119, 127); click(); cc(119, 0); ticks(4);
     assert(!sets.some(x => /_pa_clear|_at_clear/.test(x)), 'Delete + click on Clear all cleared: ' + JSON.stringify(sets));
     /* The plain click on Clear all still clears everything (and leaves the
@@ -375,7 +375,9 @@ step('⭐ Delete + jog click CLEARS THE LANE under the cursor — and nothing el
     assert(ab.autoBankRows(T, C).length === 0, 'empty list: ' + JSON.stringify(ab.autoBankRows(T, C).map(r => r.label)));
 });
 step('while the menu is open the jog is the menu\'s; after Back a turn still walks no bank (the walk retired 2026-10-04)', () => {
-    click(); ticks(1); assert(menu().menu, 'menu open');
+    /* Clear all left the list up (now only + Add lane, which a click would open). */
+    if (!menu().menu) click();
+    ticks(1); assert(menu().menu, 'menu open');
     cc(14, 127); ticks(1);                               /* jog left: the cursor, not the walk */
     assert(S.activeBank === BANK_AUTOMATION, 'the bank did not move under the open menu: ' + S.activeBank);
     back(); ticks(1); assert(!menu().menu, 'menu closed');
@@ -413,10 +415,10 @@ step('⭑ on the NOTE FX card: Mute + touch mutes Gate Time\'s automation (Mute 
     sets.length = 0;
     S.heldStep = 3; S.heldStepBtn = 3; S.heldStepNotes = [60];
     cc(76, 1); ticks(2);
-    assert(sets.some(x => x.startsWith('t0_pa_set2=') && x.includes(' seq:0:noteFX_gate ')), 'a lock from the card, got ' + JSON.stringify(sets.slice(0, 8)));
+    assert(sets.some(x => x.startsWith('t0_pa_hold_write=') && x.includes(' seq:0:noteFX_gate ')), 'a lock from the card, got ' + JSON.stringify(sets.slice(0, 8)));
     sets.length = 0;
     S.activeBank = 0; cc(71, 1); ticks(2);                   /* CLIP K1 Resolution: not a target */
-    assert(!sets.some(x => x.startsWith('t0_pa_set2=')), 'Resolution still declines the hold');
+    assert(!sets.some(x => x.startsWith('t0_pa_hold_write=')), 'Resolution still declines the hold');
     S.activeBank = 1;
     S.heldStep = -1; S.heldStepBtn = -1; S.heldStepNotes = [];
     /* Delete + touch clears */
@@ -467,11 +469,16 @@ step('⭐⭐ NOTHING automated: a jog click, and a jog HOLD, leave the list up (
     openByMap();
     assert(ab.autoBankRows(T, C).length === 0, 'rig: the clip still lists automation');
     S.actionPopupLines = []; S.actionPopupEndTick = -1; sets.length = 0;
+    assert(menu().sel === 0, 'rig: the cursor is not on the empty list\'s one row, + Add lane');
     click();
-    /* ...and the click is not "Clear all" either: nothing is cleared, nothing announced. */
+    /* ...the click is + Add lane's (the picker), not "Clear all": nothing is
+     * cleared, nothing announced, and Back from the picker is the list again. */
     assert(!(S.actionPopupLines && S.actionPopupLines.length), 'a click on the empty list announced ' + JSON.stringify(S.actionPopupLines));
     ticks(2);
-    assert(!sets.some(x => /pa_clear|at_clear|undo_checkpoint/.test(x)), 'a click on the empty list wrote ' + JSON.stringify(sets));
+    assert(snd.soundOpen(), 'the click on + Add lane did not open the picker');
+    back(); ticks(2);
+    assert(!snd.soundOpen(), 'Back from the picker did not close it');
+    assert(!sets.some(x => /pa_clear|at_clear|undo_checkpoint|pa_add/.test(x)), 'a click on the empty list wrote ' + JSON.stringify(sets));
     assert(menu().menu === true, 'a jog CLICK closed the list — the bare card is back');
     cc(3, 127); ticks(70); cc(3, 0); ticks(2);           /* held well past a click */
     assert(menu().menu === true, 'a jog HOLD closed the list — the bare card is back');
@@ -484,7 +491,7 @@ step('⭐ Clear all from the list\'s last row leaves you ON the screen, list up,
     assert(n >= 1, 'rig: nothing listed');
     for (let i = 0; i < n + 2; i++) cc(14, 1);            /* to the last row: Clear all */
     ticks(1);
-    assert(menu().sel >= n, 'rig: the cursor is not on Clear all (sel ' + menu().sel + ' of ' + n + ')');
+    assert(menu().sel === n + 1, 'rig: the cursor is not on Clear all (sel ' + menu().sel + ' of ' + n + ')');
     sets.length = 0;
     click(); ticks(2);
     LIST = ''; auto.automationRefreshPresence(); ticks(2);

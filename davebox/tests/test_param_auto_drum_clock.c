@@ -21,10 +21,18 @@
 static int ok_count = 0;
 #define OK(msg) do { printf("  ok   — %s\n", msg); ok_count++; } while (0)
 
+/* A lock as the UI writes it: a held step turned — a PUNCH, flat across that
+ * step, jumping back out to the envelope after it. */
 static void lock(hx_t *h, int t, const char *tgt, int step, int tps, int v) {
     char k[32], val[128];
-    snprintf(k, sizeof k, "t%d_pa_set2", t);
-    snprintf(val, sizeof val, "0 %s %d %d %d", tgt, step * tps, step * tps + tps - 1, v);
+    snprintf(k, sizeof k, "t%d_pa_hold_write", t);
+    snprintf(val, sizeof val, "0 %s %d %d %d %d 1 0", tgt, step, step, tps, v);
+    hx_set_param(h, k, val);
+}
+static void rest(hx_t *h, int t, const char *tgt, int v) {
+    char k[32], val[128];
+    snprintf(k, sizeof k, "t%d_pa_rest", t);
+    snprintf(val, sizeof val, "0 %s %d", tgt, v);
     hx_set_param(h, k, val);
 }
 
@@ -54,7 +62,7 @@ int main(void) {
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         hx_set_param(h, "t0_l0_note_add", "0 100 24");        /* a drum track */
         hx_set_param(h, "t0_all_lanes_length", "32");
-        lock(h, 0, "1:synth:cut", 0, 24, 1000);
+        rest(h, 0, "1:synth:cut", 1000);                      /* the resting value: step 0 plays it */
         lock(h, 0, "1:synth:cut", 4, 24, 5000);               /* CONTROL: inside step 16 */
         lock(h, 0, "1:synth:cut", 20, 24, 9000);              /* past step 16 */
         hx_set_param(h, "transport", "play_focus:0:0");
@@ -62,10 +70,11 @@ int main(void) {
         int seq[16];
         /* ~1600 blocks ≈ 37 steps at the harness tempo: one pass and a bit. */
         int n = play_sequence(h, "1:synth:cut", seq, 16, 1600);
-        HX_ASSERT(n >= 2 && seq[0] == 1000 && seq[1] == 5000, "control: the step-0 and step-4 locks play");
-        HX_ASSERT(n >= 3 && seq[2] == 9000,
-                  "the step-20 lock plays, and nothing restarts at step 16 (old clock: 1000 5000 1000 …)");
-        HX_ASSERT(n >= 4 && seq[3] == 1000, "then the clip wraps at 32 and step 0 comes round again");
+        HX_ASSERT(n >= 3 && seq[0] == 1000 && seq[1] == 5000 && seq[2] == 1000,
+                  "control: rest, the step-4 lock, rest");
+        HX_ASSERT(n >= 4 && seq[3] == 9000,
+                  "the step-20 lock plays, and nothing restarts at step 16 (old clock: 1000 5000 1000 5000 …)");
+        HX_ASSERT(n >= 5 && seq[4] == 1000, "then back to rest");
         OK("⭐ under real playback: a lock past step 16 plays, and a 32-step drum clip loops at 32");
         hx_destroy(h);
     }
@@ -106,9 +115,11 @@ int main(void) {
         hx_t *h = hx_create(NULL);
         hx_set_param(h, "t0_l0_note_add", "0 100 24");
         hx_set_param(h, "t0_all_lanes_clip_resolution", "2");   /* 48 tps */
+        rest(h, 0, "1:synth:cut", 0);
         lock(h, 0, "1:synth:cut", 3, 48, 7000);                  /* as the UI now writes it */
         hx_get_param(h, "t0_c0_pa_steps", buf, sizeof buf);
-        HX_ASSERT(strstr(buf, "1:synth:cut 0001\n"), "step 3 on the 48-tick lane grid (old: step 6 on the track's 24)");
+        HX_ASSERT(strstr(buf, "1:synth:cut 10011\n"),
+                  "the start point, step 3 and the step after it on the 48-tick lane grid (old: step 6 on the track's 24)");
         OK("the step map uses the drum track's active lane grid");
         hx_destroy(h);
     }

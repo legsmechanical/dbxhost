@@ -262,10 +262,10 @@ step('⭐ a seq knob turned with a step held on the pinned lane writes the lock 
     note(STEP(5), 127); ticks(1);
     sets.length = 0;
     cc(71 + seq.k, 1); ticks(2);
-    const w = sets.filter(x => x.indexOf('_pa_set2=') >= 0 && x.indexOf(TARGETS.seq) >= 0);
+    const w = sets.filter(x => x.indexOf('_pa_hold_write=') >= 0 && x.indexOf(TARGETS.seq) >= 0);
     assert(w.length >= 1, 'no lock written for the lane, got ' + JSON.stringify(sets));
     const f = w[w.length - 1].split('=')[1].split(' ');
-    assert(f[2] === '120' && f[3] === '143', 'the lock is not on step 6 (ticks 120..143): ' + w[w.length - 1]);
+    assert(f[2] === '5' && f[3] === '5' && f[4] === '24', 'the lock is not on step 6: ' + w[w.length - 1]);
     note(STEP(5), 0); ticks(1);
     back(); ticks(2); back(); ticks(1);
 });
@@ -287,10 +287,10 @@ step('⭐ HOLD a Volume point -> SOUND + CONFIG while held; its knob writes THAT
     assert(S.autoCycle && S.autoCycle.target === TARGETS.level, 'the steps left the lane during the hold');
     sets.length = 0;
     cc(71, 1); ticks(2);                               /* K1 = Volume */
-    const w = sets.filter(x => x.indexOf('_pa_set2=') >= 0 && x.indexOf(TARGETS.level) >= 0);
+    const w = sets.filter(x => x.indexOf('_pa_hold_write=') >= 0 && x.indexOf(TARGETS.level) >= 0);
     assert(w.length >= 1, 'K1 wrote no lock for the lane, got ' + JSON.stringify(sets));
     const f = w[w.length - 1].split('=')[1].split(' ');
-    assert(f[2] === '72' && f[3] === '95', 'the lock is not on step 4 (ticks 72..95): ' + w[w.length - 1]);
+    assert(f[2] === '3' && f[3] === '3' && f[4] === '24', 'the lock is not on step 4: ' + w[w.length - 1]);
     note(STEP(3), 0); ticks(2);
     assert(S.activeBank === BANK_AUTOMATION && !snd.soundOpen(), 'release did not come back: bank ' + S.activeBank + ' open ' + snd.soundOpen());
     assert(S.autoBank.menu && S.autoBank.sel === idx, 'not on the same row: ' + JSON.stringify(S.autoBank));
@@ -331,10 +331,10 @@ step('⭐ HOLD a module point -> its EDITOR on the page holding the key; the kno
     assert(S.autoCycle && S.autoCycle.target === TARGETS.chain, 'the steps left the lane during the hold');
     sets.length = 0;
     cc(71 + pp.page.keys.indexOf('cutoff'), 1); ticks(2);
-    const w = sets.filter(x => x.indexOf('_pa_set2=') >= 0 && x.indexOf(TARGETS.chain) >= 0);
+    const w = sets.filter(x => x.indexOf('_pa_hold_write=') >= 0 && x.indexOf(TARGETS.chain) >= 0);
     assert(w.length >= 1, 'the editor knob wrote no lock, got ' + JSON.stringify(sets));
     const f = w[w.length - 1].split('=')[1].split(' ');
-    assert(f[2] === '72' && f[3] === '95', 'the lock is not on step 4 (ticks 72..95): ' + w[w.length - 1]);
+    assert(f[2] === '3' && f[3] === '3' && f[4] === '24', 'the lock is not on step 4: ' + w[w.length - 1]);
     note(STEP(3), 0); ticks(2);
     assert(!snd.soundOpen() && S.activeBank === BANK_AUTOMATION, 'release did not close the editor');
     assert(S.autoBank.menu && S.autoBank.sel === idx, 'not on the same row: ' + JSON.stringify(S.autoBank));
@@ -445,7 +445,7 @@ step('⭐ a CLEARED (empty, kept) lane: its steps are dark, and holding one stil
         assert(S.activeBank === seq.bank, 'holding a step of the empty lane did not jump: bank ' + S.activeBank);
         sets.length = 0;
         cc(71 + seq.k, 1); ticks(2);
-        assert(sets.some(x => x.indexOf('_pa_set2=') >= 0 && x.indexOf(TARGETS.seq + ' 144 167') >= 0), 'no new value on step 7: ' + JSON.stringify(sets));
+        assert(sets.some(x => x.indexOf('_pa_hold_write=') >= 0 && x.indexOf(TARGETS.seq + ' 6 6 24 ') >= 0), 'no new value on step 7: ' + JSON.stringify(sets));
         note(STEP(6), 0); ticks(2);
         assert(S.activeBank === BANK_AUTOMATION && S.autoBank.sel === idx, 'release did not come back');
         back(); ticks(1);
@@ -595,7 +595,10 @@ step('the lane list\'s footer: CLK OPS, and SHFT JUMP on a lane that has a place
     globalThis.clear_screen(); render.drawUI();
     const h = () => JSON.stringify(movy.kitHintsForTest());
     assert(h() === JSON.stringify([['CLK', 'OPS'], ['SHFT', 'JUMP']]), 'on a lane row: ' + h());
-    S.autoBank.sel = bank.autoBankRows(T, 0).length;                 /* the Clear all row */
+    S.autoBank.sel = bank.autoBankRows(T, 0).length;                 /* + Add lane */
+    globalThis.clear_screen(); render.drawUI();
+    assert(h() === JSON.stringify([['CLK', 'ADD']]), 'on + Add lane: ' + h());
+    S.autoBank.sel = bank.autoBankRows(T, 0).length + 1;             /* the Clear all row */
     globalThis.clear_screen(); render.drawUI();
     assert(h() === JSON.stringify([['CLK', 'CLEAR']]), 'on Clear all (a click clears the clip, nothing to jump to): ' + h());
     S.autoBank.sel = idx;

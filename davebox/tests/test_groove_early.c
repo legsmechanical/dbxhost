@@ -482,8 +482,8 @@ int main(void) {
             hx_set_param(h, "t1_route", "schwung");
             hx_set_param(h, "t1_c0_step_0_toggle", "60 100");
             hx_set_param(h, "t1_c0_step_15_toggle", "64 100");
-            hx_set_param(h, "t1_pa_set2", "0 1:synth:cutoff 0 359 0");
-            hx_set_param(h, "t1_pa_set2", "0 1:synth:cutoff 360 383 16383");   /* step 16: an early slot */
+            hx_set_param(h, "t1_pa_rest", "0 1:synth:cutoff 0");
+            hx_set_param(h, "t1_pa_hold_write", "0 1:synth:cutoff 15 15 24 16383 1 0");   /* step 16: an early slot */
             hx_set_param(h, "pa_resolve", "1:synth:cutoff 1 synth:cutoff 0 0 1 0.01");
             hx_set_param(h, "t1_clip_playback_dir", "1");
             if (g) table(h, 1, -6 * GROOVE_FINE);
@@ -512,8 +512,8 @@ int main(void) {
             hx_set_param(h, "t1_route", "schwung");
             hx_set_param(h, "t1_c0_step_0_toggle", "60 100");
             hx_set_param(h, "t1_c0_step_1_toggle", "64 100");
-            hx_set_param(h, "t1_pa_set2", "0 1:synth:cutoff 0 23 0");
-            hx_set_param(h, "t1_pa_set2", "0 1:synth:cutoff 24 47 16383");
+            hx_set_param(h, "t1_pa_rest", "0 1:synth:cutoff 0");
+            hx_set_param(h, "t1_pa_hold_write", "0 1:synth:cutoff 1 1 24 16383 1 0");   /* a punch on step 2 */
             hx_set_param(h, "pa_resolve", "1:synth:cutoff 1 synth:cutoff 0 0 1 0.01");
             if (g) table(h, 1, -6 * GROOVE_FINE);
             hx_clear_capture(h);
@@ -547,8 +547,12 @@ int main(void) {
             hx_t *h = begin();
             hx_set_param(h, "t1_route", "schwung");
             hx_set_param(h, "t1_c0_step_0_toggle", "60 100");
-            hx_set_param(h, "t1_pa_set2", "0 1:synth:cutoff 0 43 0");
-            hx_set_param(h, "t1_pa_set2", "0 1:synth:cutoff 44 95 16383");   /* 4 ticks before step 3 */
+            hx_set_param(h, "t1_pa_rest", "0 1:synth:cutoff 0");
+            hx_set_param(h, "t1_pa_set", "0 1:synth:cutoff 0 0");
+            {   /* a jump 4 ticks before step 3 (a zoomed-in edit) */
+                seq8_instance_t *I = (seq8_instance_t *)h->inst;
+                pa_set_pair(pa_find(I, 1, 0, pa_target_lookup(I, "1:synth:cutoff")), 44, 0, 16383);
+            }
             hx_set_param(h, "pa_resolve", "1:synth:cutoff 1 synth:cutoff 0 0 1 0.01");
             if (g) table(h, 1, -6 * GROOVE_FINE);
             hx_clear_capture(h);

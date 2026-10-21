@@ -562,6 +562,16 @@ function _onMidiInternalImpl(data) {
         else if (_k === 0x80 || _k === 0x90) S.padPhysDown.delete(d1);
     }
 
+    /* A SHIFT TAP (POINT / PUNCH while a step is held, applyShiftEdge) is Shift
+     * pressed and released with nothing else done: a knob or jog turned while
+     * it is down is fine control, a button, step or pad pressed is a chord.
+     * Touches do not count — a finger on a knob before turning it is neither. */
+    if (S.autoShiftTap && S.shiftHeld && !(status === 0xB0 && d1 === MoveShift)) {
+        const _k = status & 0xF0;
+        if ((_k === 0xB0 && d1 !== MoveMainTouch && d2 > 0) || (_k === 0x90 && d1 > 9 && d1 !== MoveMainTouch && d2 > 0))
+            S.autoShiftTap.turned = true;
+    }
+
     /* THE BANK PAD MAP (Josh, 2026-10-02; 2026-10-04: "hold jog instantly peek
      * the pad map"; hold only since 2026-10-13). Where the map can arm, the
      * PRESS paints it at once and is the map's alone; the RELEASE puts it

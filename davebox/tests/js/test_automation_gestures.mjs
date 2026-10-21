@@ -17,7 +17,7 @@ globalThis.shadow_get_param = () => '';
 globalThis.shadow_set_params = () => true;
 
 import { automationRefreshPresence, automationStateFor, automationToggleActive, automationClearKey,
-         automationClearStep, automationToggleSmooth, automationTick, automationResetCaches }
+         automationClearStep, automationToggleWrap, automationTick, automationResetCaches }
     from '../../ui/ui_automation.mjs';
 import { S } from '../../ui/ui_state.mjs';
 
@@ -30,9 +30,11 @@ automationResetCaches(); S.tickCount = 100; S.playing = false; S.clipTPS[2][1] =
 list = '2 1 1 8 4:synth:cutoff\n2 1 3 3 4:synth:resonance\n5 0 0 2 5:fx1:mix\n';
 automationRefreshPresence();
 let s = automationStateFor(2, 1, '4:synth:cutoff');
-check(s && s.active && !s.smooth && s.count === 8, 'pa_list -> {active, smooth, count} per (track, clip, target)');
+check(s && s.active && !s.wrapReset && s.count === 8, 'pa_list -> {active, wrap, count} per (track, clip, target)');
+list = '2 1 1 8 4:synth:cutoff\n2 1 9 3 4:synth:resonance\n5 0 0 2 5:fx1:mix\n';
+automationRefreshPresence();
 s = automationStateFor(2, 1, '4:synth:resonance');
-check(s && s.active && s.smooth, 'flags 3 = active + smooth');
+check(s && s.active && s.wrapReset, 'flags 9 = active + Wrap: Reset');
 s = automationStateFor(5, 0, '5:fx1:mix');
 check(s && !s.active, 'flags 0 = deactivated');
 check(automationStateFor(2, 0, '4:synth:cutoff') === null, 'another clip: not automated');
@@ -71,11 +73,11 @@ check(sets[0] === 't2_pa_clear_step=1 120 143', 'the step in clip ticks (5 x 24 
 sets.length = 0;
 list = '2 1 1 8 4:synth:cutoff\n';
 automationRefreshPresence();
-check(automationToggleSmooth(2, 1, '4:synth:cutoff') === true, 'stepped -> smooth');
+check(automationToggleWrap(2, 1, '4:synth:cutoff') === true, 'Carry -> Reset');
 tick();
-check(sets[0] === 't2_c1_undo_checkpoint=1' && sets[1] === 't2_pa_smooth=1 4:synth:cutoff 1', 'writes the checkpoint, then pa_smooth 1');
-check(automationStateFor(2, 1, '4:synth:cutoff').smooth === true, 'and the cache follows');
-check(automationToggleSmooth(2, 1, '4:synth:cutoff') === false, 'and back');
+check(sets[0] === 't2_c1_undo_checkpoint=1' && sets[1] === 't2_pa_wrap=1 4:synth:cutoff 1', 'writes the checkpoint, then pa_wrap 1');
+check(automationStateFor(2, 1, '4:synth:cutoff').wrapReset === true, 'and the cache follows');
+check(automationToggleWrap(2, 1, '4:synth:cutoff') === false, 'and back');
 
 console.log(bad === 0 ? `PASS: test_automation_gestures (${ok} checks)` : `FAIL: test_automation_gestures (${bad} failed)`);
 process.exit(bad === 0 ? 0 : 1);

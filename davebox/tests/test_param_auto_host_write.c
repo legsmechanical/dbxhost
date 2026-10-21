@@ -34,20 +34,24 @@ static int find_note_on(int pitch, int from) {
 static int count_sets(void) { return hx_stub_count_kind(HX_PARAM_SET); }
 
 /* t1: a note on step 1 (60) and step 5 (64); cutoff locked low on step 1 and
- * high on step 5. */
-static hx_t *rig(int resolve) {
+ * high on step 5 (punches, as a held step writes them; rest 0). */
+static hx_t *rig_rest(int resolve, int rest) {
     hx_t *h = hx_create(NULL);
+    char rv[64];
+    snprintf(rv, sizeof rv, "0 1:synth:cutoff %d", rest);
     HX_ASSERT(h, "create failed");
     hx_set_param(h, "t1_route", "schwung");
     hx_set_param(h, "t1_c0_step_0_toggle", "60 100");
     hx_set_param(h, "t1_c0_step_4_toggle", "64 100");
-    hx_set_param(h, "t1_pa_set2", "0 1:synth:cutoff 0 23 0");
-    hx_set_param(h, "t1_pa_set2", "0 1:synth:cutoff 96 119 16383");
+    hx_set_param(h, "t1_pa_rest", rv);
+    hx_set_param(h, "t1_pa_hold_write", "0 1:synth:cutoff 0 0 24 0 1 0");
+    hx_set_param(h, "t1_pa_hold_write", "0 1:synth:cutoff 4 4 24 16383 1 0");
     if (resolve) hx_set_param(h, "pa_resolve", "1:synth:cutoff 1 synth:cutoff 0 0 1 0.01");
     hx_clear_capture(h);
     hx_set_param(h, "transport", "play_focus:1:0");
     return h;
 }
+static hx_t *rig(int resolve) { return rig_rest(resolve, 0); }
 
 int main(void) {
     char buf[4096];
@@ -127,8 +131,7 @@ int main(void) {
 
     /* ---- stopping gives the parameter back through the same door */
     {
-        hx_t *h = rig(1);
-        hx_set_param(h, "t1_pa_rest", "0 1:synth:cutoff 8192");
+        hx_t *h = rig_rest(1, 8192);                     /* the resting value: 8192 */
         hx_render(h, 150);
         hx_clear_capture(h);
         hx_set_param(h, "transport", "stop");
@@ -142,7 +145,7 @@ int main(void) {
     {
         hx_t *h = hx_create(NULL);
         seq8_instance_t *I = (seq8_instance_t *)h->inst;
-        hx_set_param(h, "t1_pa_set2", "0 1:synth:cutoff 0 23 0");
+        hx_set_param(h, "t1_pa_hold_write", "0 1:synth:cutoff 0 0 24 0 1 0");
         hx_set_param(h, "pa_resolve", "1:synth:cutoff 1 synth:cutoff 0 0 1 0.01");
         int id = pa_target_lookup(I, "1:synth:cutoff");
         HX_ASSERT(id >= 0, "rig: target not interned");
@@ -203,8 +206,8 @@ int main(void) {
         hx_set_param(h, "swing_amt", "60");
         hx_set_param(h, "t1_c0_step_0_toggle", "60 100");
         hx_set_param(h, "t1_c0_step_1_toggle", "64 100");     /* a swung step */
-        hx_set_param(h, "t1_pa_set2", "0 1:synth:cutoff 0 23 0");
-        hx_set_param(h, "t1_pa_set2", "0 1:synth:cutoff 24 47 16383");
+        hx_set_param(h, "t1_pa_hold_write", "0 1:synth:cutoff 0 0 24 0 1 0");
+        hx_set_param(h, "t1_pa_hold_write", "0 1:synth:cutoff 1 1 24 16383 1 0");
         hx_set_param(h, "pa_resolve", "1:synth:cutoff 1 synth:cutoff 0 0 1 0.01");
         hx_clear_capture(h);
         hx_set_param(h, "transport", "play_focus:1:0");
@@ -235,7 +238,7 @@ int main(void) {
     {
         hx_t *h = hx_create(NULL);
         seq8_instance_t *I = (seq8_instance_t *)h->inst;
-        hx_set_param(h, "t1_pa_set2", "0 1:synth:cutoff 0 23 0");
+        hx_set_param(h, "t1_pa_hold_write", "0 1:synth:cutoff 0 0 24 0 1 0");
         hx_set_param(h, "pa_resolve", "1:synth:cutoff 1 synth:cutoff 0 0 1 0.01");
         int id = pa_target_lookup(I, "1:synth:cutoff");
         hx_clear_capture(h);
@@ -254,7 +257,7 @@ int main(void) {
     {
         hx_t *h = hx_create(NULL);
         seq8_instance_t *I = (seq8_instance_t *)h->inst;
-        hx_set_param(h, "t1_pa_set2", "0 1:synth:cutoff 0 23 0");
+        hx_set_param(h, "t1_pa_hold_write", "0 1:synth:cutoff 0 0 24 0 1 0");
         int id = pa_target_lookup(I, "1:synth:cutoff");
         const char *bad[] = { "", "1:synth:cutoff", "1:synth:cutoff 1 synth:cutoff", "1:synth:cutoff 1 synth:cutoff 9 0 1 0.01",
                               "1:synth:cutoff 1 synth:cutoff 0 1 0 0.01", "1:synth:cutoff x synth:cutoff 0 0 1 0.01",

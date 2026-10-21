@@ -1,5 +1,5 @@
 import './_bulk_get_stub.mjs';
-/* tests/js/test_automation_setting_rows.mjs — Smooth and Wrap are SETTINGS in a
+/* tests/js/test_automation_setting_rows.mjs — Wrap and Link are SETTINGS in a
  * lane's ops pop-up: a static label on the left, the value on the right.
  *
  * Josh, 2026-09-11: "make sure that it and smooth (which are both set and
@@ -76,10 +76,11 @@ const rowsOf = () => S.autoBank.ops.rows;
 const sel = (op) => { const i = rowsOf().findIndex(o => o.op === op); jog(i - S.autoBank.ops.sel); return i; };
 
 step('setup: the lane\'s ops pop-up is open', () => assert(S.autoBank && S.autoBank.ops, 'ops not open'));
-step('⭐ Smooth and Wrap read as SETTINGS: a static label, the value on the right', () => {
-    const sm = rowsOf().find(o => o.op === 'smooth'), wr = rowsOf().find(o => o.op === 'wrap');
-    assert(sm && sm.label === 'Smooth' && sm.value === 'Off', 'Smooth row: ' + JSON.stringify(sm));
+step('⭐ Wrap reads as a SETTING: a static label, the value on the right — on every lane', () => {
+    const wr = rowsOf().find(o => o.op === 'wrap');
     assert(wr && wr.label === 'Wrap' && wr.value === 'Carry', 'Wrap row: ' + JSON.stringify(wr));
+    const ops = rowsOf().map(o => o.op);
+    assert(ops.indexOf('smooth') < 0 && ops.indexOf('mode') < 0, 'no Smooth or Mode rows any more (every lane is one envelope): ' + JSON.stringify(ops));
 });
 step('⭐ clicking Wrap flips it to Reset IN PLACE, writes pa_wrap, and the pop-up stays open', () => {
     sel('wrap'); bulk.length = 0; click(); ticks(2);
@@ -91,28 +92,6 @@ step('⭐ clicking Wrap flips it to Reset IN PLACE, writes pa_wrap, and the pop-
     bulk.length = 0; click(); ticks(2);
     assert(rowsOf().find(o => o.op === 'wrap').value === 'Carry' && bulk.indexOf('t0_pa_wrap=0 0:synth:cutoff 0') >= 0, 'and back to Carry');
 });
-step('⭐ clicking Smooth flips it to On in place, writes pa_smooth, label unchanged', () => {
-    sel('smooth'); bulk.length = 0; click(); ticks(2);
-    const sm = rowsOf().find(o => o.op === 'smooth');
-    assert(S.autoBank.ops && sm.label === 'Smooth' && sm.value === 'On', 'Smooth row after click: ' + JSON.stringify(sm));
-    assert(bulk.indexOf('t0_pa_smooth=0 0:synth:cutoff 1') >= 0, 'no pa_smooth write: ' + JSON.stringify(bulk));
-});
-step('⭐ Mode: Curve -> Punch hides Smooth and Wrap, keeps the cursor on Mode, writes pa_mode', () => {
-    const md = rowsOf().find(o => o.op === 'mode');
-    assert(md && md.label === 'Mode' && md.value === 'Curve', 'Mode row: ' + JSON.stringify(md));
-    sel('mode'); bulk.length = 0; click(); ticks(2);
-    assert(S.autoBank.ops, 'the pop-up closed');
-    const ops = rowsOf().map(o => o.op);
-    assert(rowsOf().find(o => o.op === 'mode').value === 'Punch', 'value did not flip');
-    assert(ops.indexOf('smooth') < 0 && ops.indexOf('wrap') < 0, 'Smooth / Wrap still shown in Punch: ' + JSON.stringify(ops));
-    assert(rowsOf()[S.autoBank.ops.sel].op === 'mode', 'cursor left Mode');
-    assert(bulk.indexOf('t0_pa_mode=0 0:synth:cutoff 1') >= 0, 'no pa_mode write: ' + JSON.stringify(bulk));
-    bulk.length = 0; click(); ticks(2);
-    const back = rowsOf();
-    assert(back.find(o => o.op === 'mode').value === 'Curve' && bulk.indexOf('t0_pa_mode=0 0:synth:cutoff 0') >= 0, 'back to Curve');
-    assert(back.find(o => o.op === 'smooth').value === 'On', 'Smooth came back WITH its setting (On, set above)');
-    assert(back.find(o => o.op === 'wrap'), 'Wrap came back');
-});
 step('⭐ Link reads On by default; a click flips it to Off in place and writes pa_link, after an undo checkpoint', () => {
     const lk = rowsOf().find(o => o.op === 'link');
     assert(lk && lk.label === 'Link' && lk.value === 'On', 'Link row: ' + JSON.stringify(lk));
@@ -122,10 +101,7 @@ step('⭐ Link reads On by default; a click flips it to Off in place and writes 
     const w = bulk.indexOf('t0_pa_link=0 0:synth:cutoff 0');
     assert(w >= 0, 'no pa_link write: ' + JSON.stringify(bulk));
     assert(bulk.indexOf('t0_c0_undo_checkpoint=1') >= 0 && bulk.indexOf('t0_c0_undo_checkpoint=1') < w, 'an undo checkpoint first');
-    sel('mode'); click(); ticks(2);                                     /* Punch */
-    assert(rowsOf().find(o => o.op === 'link'), 'Link stays in Punch — a lock follows its note there too');
-    click(); ticks(2);                                                  /* back to Curve */
-    sel('link'); bulk.length = 0; click(); ticks(2);
+    bulk.length = 0; click(); ticks(2);
     assert(rowsOf().find(o => o.op === 'link').value === 'On' && bulk.indexOf('t0_pa_link=0 0:synth:cutoff 1') >= 0, 'and back On');
 });
 step('CONTROL: an ACTION row still closes the pop-up (Mute)', () => {
@@ -133,12 +109,12 @@ step('CONTROL: an ACTION row still closes the pop-up (Mute)', () => {
     assert(!S.autoBank.ops, 'Mute is an action — the pop-up should close after it');
 });
 step('a reopened pop-up reads the flags back from the lane (Reset from the DSP list)', () => {
-    LIST = '0 0 11 3 0:synth:cutoff 0\n';            /* ACTIVE | SMOOTH | WRAP_RESET */
+    LIST = '0 0 9 3 0:synth:cutoff 0\n';             /* ACTIVE | WRAP_RESET */
     auto.automationRefreshPresence();
     click();                                        /* menu row -> ops */
-    const sm = rowsOf().find(o => o.op === 'smooth'), wr = rowsOf().find(o => o.op === 'wrap');
-    assert(sm.value === 'On' && wr.value === 'Reset', 'from flags 11: ' + JSON.stringify([sm, wr]));
-    assert(rowsOf().find(o => o.op === 'link').value === 'On', 'flags 11 has no UNLINKED bit: linked');
+    const wr = rowsOf().find(o => o.op === 'wrap');
+    assert(wr.value === 'Reset', 'from flags 9: ' + JSON.stringify(wr));
+    assert(rowsOf().find(o => o.op === 'link').value === 'On', 'flags 9 has no UNLINKED bit: linked');
 });
 step('Link: Off reads back from the DSP list (flags 5 = ACTIVE | UNLINKED)', () => {
     cc(51, 127); cc(51, 0); ticks(1);                /* Back: ops -> menu */

@@ -9,9 +9,10 @@ S=ui/ui_sound.mjs
 grep -q "if (S.deleteHeld) {" $S && grep -q "automationClearKey(t, c, target)" $S || f "Delete+touch must clear the parameter's automation (onParamTouch hook)"
 grep -q "else if (S.muteHeld) {" $S && grep -q "automationToggleActive(t, c, target)" $S || f "Mute+touch must toggle the parameter's automation (onParamTouch hook)"
 grep -q "return st.active ? 'auto' : 'auto-off';" $S || f "the label mark must be the tri-state automation circle before the module's tilde"
-# Smooth/Stepped moved to the AUTOMATION bank (spec §2, 2026-09-03): the editor's knob-touch + jog-click toggle is GONE.
-grep -q "automationToggleSmooth(" $S && f "the editor must NOT toggle Smooth any more — that is the AUTOMATION bank's op"
-grep -q "automationToggleSmooth(t, c, r.target)" ui/ui_automation_bank.mjs || f "the AUTOMATION bank must own the Smooth/Stepped op"
+# Smooth left the editor (2026-09-03) and then the model (pav:2, 2026-10-21: every lane glides,
+# punch and point are how a hold writes). Wrap is the AUTOMATION bank's op.
+grep -q "automationToggleSmooth(" $S ui/ui_automation_bank.mjs && f "nothing may toggle Smooth any more — it is gone from the model"
+grep -q "automationToggleWrap(t, c, r.target)" ui/ui_automation_bank.mjs || f "the AUTOMATION bank must own the Wrap op"
 grep -q "setButtonLED(MoveKnob1 + k, st ? (st.active ? Red : White) : 0, true);" $S || f "Mute held paints the rings: unlit none / red active / white deactivated"
 grep -c "paramPagesRepaintKnobs();" $S | grep -q "^3$" || f "the rings are handed back on Mute release, on Delete release, AND when the paint condition ends (three sites)"
 # Both branches, the melodic one BEHIND its note clear (2026-10-04); the order itself is

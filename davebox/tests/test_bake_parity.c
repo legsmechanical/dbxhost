@@ -55,8 +55,8 @@ int main(void) {
     h = hx_create(NULL);
     inst = (seq8_instance_t *)h->inst;
     hx_set_param(h, "t1_c0_step_0_toggle", "60 100");
-    hx_set_param(h, "t1_pa_set2", "0 1:synth:cutoff 0 23 8000");
-    hx_set_param(h, "t1_pa_set2", "0 1:synth:reso 0 23 8000");
+    hx_set_param(h, "t1_pa_set", "0 1:synth:cutoff 0 8000");
+    hx_set_param(h, "t1_pa_set", "0 1:synth:reso 0 8000");
     hx_set_param(h, "t1_pa_loop", "0 1:synth:reso 96 0 0");
     hx_set_param(h, "bake", "1 0 0 2 0 0");   /* loops=2 -> 32 steps */
     {
@@ -82,7 +82,7 @@ int main(void) {
         hx_set_param(h, "t1_c0_loop_set", "1048592");            /* (16 << 16) | 16 */
         HX_ASSERT(inst->tracks[1].clips[0].loop_start == 16 && inst->tracks[1].clips[0].length == 16,
                   "D3b rig: the loop window was not set");
-        hx_set_param(h, "t1_pa_set2", "0 1:synth:cutoff 384 407 8000");
+        hx_set_param(h, "t1_pa_set", "0 1:synth:cutoff 384 8000");
         snprintf(bake, sizeof bake, "1 0 0 %d 0 0", loops);
         hx_set_param(h, "bake", bake);
         HX_ASSERT(inst->tracks[1].clips[0].loop_start == 0, "D3b rig: the bake did not reset the loop start");

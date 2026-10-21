@@ -395,7 +395,7 @@ step('⚠ a macro turn goes through the AUTOMATION OWNER: with a step held it is
     GS.heldStep = 3; GS.heldStepBtn = 3; GS.heldStepNotes = [60]; GS.playing = false;
     GS.clipTPS[2][GS.trackActiveClip[2]] = 24;
     touch(0, true); turnBy(0, 2); ticks(2);
-    const lock = modSets.find(x => x.startsWith('t2_pa_set2=') && x.includes(':synth:cutoff'));
+    const lock = modSets.find(x => x.startsWith('t2_pa_hold_write=') && x.includes(':synth:cutoff'));
     assert(lock, 'a lock on synth:cutoff was written, got ' + JSON.stringify(modSets.slice(0, 6)));
     touch(0, false);
     GS.heldStep = -1; GS.heldStepBtn = -1; GS.heldStepNotes = [];
@@ -551,7 +551,7 @@ step('⭑ a davebox BANK KNOB as a target: K7 → NOTE FX → Gate Time; the tur
     assert(hostSets.some(x => x.startsWith('t2_noteFX_gate=')), 'written by the bank\'s own path, got ' + JSON.stringify(hostSets));
     /* ⭑ A bank param IS an automation target (2026-09-03, `seq:<track>:<key>`):
      * the held step takes a LOCK on it, like a chain knob. */
-    const lock = modSets.find(x => x.startsWith('t2_pa_set2=') && x.includes(' seq:2:noteFX_gate '));
+    const lock = modSets.find(x => x.startsWith('t2_pa_hold_write=') && x.includes(' seq:2:noteFX_gate '));
     assert(lock, 'a lock on seq:2:noteFX_gate, got ' + JSON.stringify(modSets.slice(0, 6)));
     ticks(1);
     assert(lastWrite('knob_7_clear') === '1', 'no chain form: mirrored as CLEAR');
@@ -723,7 +723,7 @@ step('a Move-routed track: the store seeds EMPTY at once (no knob_N reads), Leve
 /* ⚠ This rig has no DSP, so a freshly-recorded lane is NOT in the owner's
  * state map (that is fed by `pa_list` from the DSP). What IS observable is
  * the write the owner emits — `t2_pa_live=<slot>:<fullKey> …` — so that is
- * what these steps read, the way the p-lock step above reads `pa_set2`. */
+ * what these steps read, the way the p-lock step above reads `pa_hold_write`. */
 const liveTargets = () => modSets.filter(x => /^t2_pa_live=/.test(x))
                                  .map(x => x.slice('t2_pa_live='.length).split(' ')[0]);
 /* Seed the owner's state map the way the DSP would, so a CLEAR has something

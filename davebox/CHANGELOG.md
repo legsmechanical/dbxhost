@@ -9,16 +9,30 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Changed
+- **Automation is one envelope per lane.** Points glide into each other — there
+  is no Smooth setting and no Curve / Punch mode any more, and every lane has
+  Wrap. Holding a step and turning a knob writes a **punch**: the value held flat
+  across that step, jumping in from and back out to what the lane was doing
+  around it; press a later step to stretch it across several. Choice and on/off
+  parameters still step from value to value.
+- **Every lane starts where its parameter rests.** A lane's first point brings a
+  point on its first step carrying the parameter's resting value, so a lane that
+  starts later in the loop no longer depends on what the knob happens to be.
+- **One resting value per parameter, per track.** Turning a knob sets it while
+  nothing automates that parameter — when stopped, or in a clip without
+  automation for it. It is what you hear on Stop and in clips without automation.
+  While the playing clip automates the parameter, a turn only overrides it.
+- **Delete + step removes just that step's points** — deleting a punch gives the
+  lane back as it was before it. A step after a punch lights up: it holds the
+  point the punch jumps back to.
+- **Projects from earlier versions are converted when opened** and play the same.
+  Once saved, dAVEBOx 1.0.0 opens them without their automation.
 - **AUTOMATION lane list footer:** shows **SHFT JUMP** on a lane you can jump to,
   and **CLK CLEAR** on the Clear all row; the self-explanatory JOG ROW and BACK
   CARD are gone.
-- **Wrap: Reset with Smooth on now glides up to the first lock.** From the start
-  of the loop the parameter rises from where its knob rests to the first lock,
-  instead of sitting at rest and jumping. It still goes back to rest at the loop
-  start. Projects that use Reset with Smooth will play this way too.
-- **New automation lanes start on Wrap: Reset.** Before the first point the
-  parameter sits where its knob rests, instead of carrying the last value round
-  the loop. Lanes in existing projects keep the Wrap they were saved with.
+- **New automation lanes start on Wrap: Reset:** the last value holds to the end
+  of the loop, then the lane jumps back to its start, instead of gliding round.
+  Lanes in existing projects keep the Wrap they were saved with.
 - **Delete + click on the AUTOMATION screen clears just the lane under the
   cursor** — it used to clear all of the clip's automation from anywhere on the
   screen. The **Clear all** row still clears everything.
@@ -67,6 +81,9 @@ the section into a versioned heading at release time.
   to the lane list.
 
 ### Added
+- **+ Add lane on the AUTOMATION screen:** add an empty lane for any parameter —
+  chosen as you would choose a macro's — and set its Wrap, Loop, Rate and Scale
+  before writing anything into it.
 - **Stretch an automation value across steps.** On the AUTOMATION screen, hold a
   step of a lane and press a later step: the held step's value now carries up to
   and including that step, like stretching a note. It reaches into later bars

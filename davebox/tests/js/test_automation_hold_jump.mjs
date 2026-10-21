@@ -169,8 +169,8 @@ step('⭐ an EMPTY step jumps too, and its knob writes a NEW point there (Josh, 
     assert(S.activeBank === DELAY, 'an empty step did not jump, bank ' + S.activeBank);
     sets.length = 0;
     cc(72, 1); ticks(2);                               /* K2 = DELAY Level */
-    const w = sets.find(x => x.startsWith('t0_pa_set2=0 seq:0:delay_level '));
-    assert(w && w.split(' ').slice(2, 4).join(' ') === '72 95', 'no new point on step 4 (ticks 72..95): ' + JSON.stringify(sets));
+    const w = sets.find(x => x.startsWith('t0_pa_hold_write=0 seq:0:delay_level '));
+    assert(w && w.split(' ').slice(2, 5).join(' ') === '3 3 24', 'no new write on step 4: ' + JSON.stringify(sets));
     note(STEP(3), 0); ticks(2);
     assert(S.activeBank === BANK_AUTOMATION, 'release did not come back, bank ' + S.activeBank);
 });
@@ -209,10 +209,10 @@ step('⭐ the lane\'s knob is MARKED and HIGHLIGHTED and shows the value the lan
 step('⭐ the knob writes the point AT THAT STEP (a span over step 7)', () => {
     sets.length = 0;
     cc(72, 1); ticks(2); cc(72, 1); ticks(2); cc(72, 1); ticks(3);
-    const w = sets.filter(s => s.startsWith('t0_pa_set2=0 seq:0:delay_level 144 167 '));
-    assert(w.length >= 1, 'a lock over ticks 144..167, got ' + JSON.stringify(sets.filter(s => s.indexOf('pa_') >= 0)));
+    const w = sets.filter(s => s.startsWith('t0_pa_hold_write=0 seq:0:delay_level 6 6 24 '));
+    assert(w.length >= 1, 'a lock on step 7, got ' + JSON.stringify(sets.filter(s => s.indexOf('pa_') >= 0)));
     /* The cell shows the value just dialled at once — no read has happened. */
-    const lastNorm = parseInt(w[w.length - 1].split(' ').pop(), 10);
+    const lastNorm = parseInt(w[w.length - 1].split(' ')[5], 10);
     const f = bank.autoLaneFocus();
     assert(f && f.norm === lastNorm, 'the focus did not follow the knob: ' + JSON.stringify(f) + ' vs ' + lastNorm);
     globalThis.clear_screen(); render.drawUI();
@@ -270,7 +270,11 @@ step('a hold ended by ANOTHER path (a track switch) still comes back, and correc
 /* EXTEND (Josh, 2026-10-20): "holding a step with an automation point and
  * touching a subsequent step carries that value across all steps. Works like
  * note length extender and works across bars". */
-const extendsOf = () => sets.filter(s => s.startsWith('t0_pa_extend='));
+/* Every write the hold made on the Level lane, as "<from> <to> <tps> <value>
+ * <type> <rebase>" (a stretch press with no turn carries value -1: the held
+ * step's own value, read by the engine). */
+const HW = 't0_pa_hold_write=0 seq:0:delay_level ';
+const extendsOf = () => sets.filter(s => s.startsWith(HW)).map(s => s.slice(HW.length));
 const undoAt = () => sets.findIndex(s => s === 't0_c0_undo_checkpoint=1');
 step('⭐ EXTEND: hold step 3, press step 6 → one undo, then the span 2..5, queued in that order', () => {
     assert(S.autoCycle && S.autoCycle.target === 'seq:0:delay_level', 'on Level');
@@ -279,8 +283,8 @@ step('⭐ EXTEND: hold step 3, press step 6 → one undo, then the span 2..5, qu
     sets.length = 0;
     note(STEP(5), 127); ticks(2); note(STEP(5), 0); ticks(2);
     const ex = extendsOf();
-    assert(ex.length === 1 && ex[0] === 't0_pa_extend=0 seq:0:delay_level 2 5 24', 'the extend: ' + JSON.stringify(sets));
-    const u = undoAt(), e = sets.indexOf(ex[0]);
+    assert(ex.length === 1 && ex[0] === '2 5 24 -1 1 0', 'the extend: ' + JSON.stringify(sets));
+    const u = undoAt(), e = sets.indexOf(HW + ex[0]);
     assert(u >= 0 && u < e, 'the undo checkpoint goes BEFORE the write: ' + JSON.stringify(sets));
     assert(S.heldStep === 2 && S.activeBank === DELAY, 'the hold (and the jump) survive the second press');
     /* A lock turned in the SAME hold shares its undo. */
@@ -296,7 +300,7 @@ step('⭐ EXTEND wraps: hold step 14, press step 3 → 13..2 round the cycle', (
     note(STEP(2), 127); ticks(2); note(STEP(2), 0);
     note(STEP(13), 0); ticks(3);
     const ex = extendsOf();
-    assert(ex.length === 1 && ex[0] === 't0_pa_extend=0 seq:0:delay_level 13 2 24', 'the wrap: ' + JSON.stringify(sets));
+    assert(ex.length === 1 && ex[0] === '13 2 24 -1 1 0', 'the wrap: ' + JSON.stringify(sets));
 });
 
 step('⭐ SHORTEN like a note: the end pressed again shortens by one, a new step re-extends — both from the hold\'s base', () => {
@@ -305,8 +309,8 @@ step('⭐ SHORTEN like a note: the end pressed again shortens by one, a new step
     note(STEP(5), 127); note(STEP(5), 0); ticks(2);       /* 2..5 */
     note(STEP(5), 127); note(STEP(5), 0); ticks(2);       /* again: 2..4 */
     note(STEP(8), 127); note(STEP(8), 0); ticks(2);       /* 2..8 */
-    const ex = extendsOf().map(s => s.slice('t0_pa_extend=0 seq:0:delay_level '.length));
-    assert(JSON.stringify(ex) === JSON.stringify(['2 5 24', '2 4 24 1', '2 8 24 1']), 'the presses: ' + JSON.stringify(ex));
+    const ex = extendsOf();
+    assert(JSON.stringify(ex) === JSON.stringify(['2 5 24 -1 1 0', '2 4 24 -1 1 1', '2 8 24 -1 1 1']), 'the presses: ' + JSON.stringify(ex));
     /* The range shows while held: every step of 3..9 blinks like a point
      * (a Curve lane only wrote the ends), steps outside never go dark. */
     const W = new Array(16).fill(9000);
@@ -320,16 +324,15 @@ step('⭐ SHORTEN like a note: the end pressed again shortens by one, a new step
     note(STEP(5), 127); note(STEP(5), 0);                  /* 2..4 */
     note(STEP(4), 127); note(STEP(4), 0);                  /* 2..3 */
     note(STEP(3), 127); note(STEP(3), 0); ticks(2);        /* back to the held step: nothing extended */
-    assert(extendsOf().slice(-1)[0].endsWith(' 2 2 24 1'), 'all the way back: ' + JSON.stringify(extendsOf().slice(-2)));
+    assert(extendsOf().slice(-1)[0] === '2 2 24 -1 1 1', 'all the way back: ' + JSON.stringify(extendsOf().slice(-2)));
     note(STEP(2), 0); ticks(3);
     VALS = () => '';
 });
 
 /* A lock turned after an extend must fill the whole span, not just the held
- * step (review, 2026-10-21): the span is sent again as a re-press right after
- * the lock, and later presses still rebuild from the hold's base (the engine
- * carries the held step's CURRENT value over it). */
-step('a lock turned AFTER an extend: the span is re-sent so all of it takes the lock; the next press still rebases', () => {
+ * step (review, 2026-10-21): the turn writes the span it is on, and a later
+ * press carries the turned value, both rebuilt from the hold's base. */
+step('a lock turned AFTER an extend: the turn fills the span; the next press carries its value', () => {
     note(STEP(2), 127); ticks(3);
     sets.length = 0;
     note(STEP(5), 127); note(STEP(5), 0); ticks(2);
@@ -337,13 +340,10 @@ step('a lock turned AFTER an extend: the span is re-sent so all of it takes the 
     note(STEP(7), 127); note(STEP(7), 0); ticks(2);
     const ex = extendsOf();
     note(STEP(2), 0); ticks(3);
-    assert(JSON.stringify(ex) === JSON.stringify(['t0_pa_extend=0 seq:0:delay_level 2 5 24',
-                                                  't0_pa_extend=0 seq:0:delay_level 2 5 24 1',
-                                                  't0_pa_extend=0 seq:0:delay_level 2 7 24 1']),
-           'extend, re-sent after the lock, then a rebased press: ' + JSON.stringify(ex));
-    const i2 = sets.findIndex(x => x.indexOf('_pa_set2=') >= 0);
-    const i3 = sets.indexOf('t0_pa_extend=0 seq:0:delay_level 2 5 24 1');
-    assert(i2 >= 0 && i3 > i2, 'the re-sent span follows the lock in the queue: ' + JSON.stringify(sets.filter(x => x.indexOf('pa_') >= 0)));
+    assert(ex.length === 3 && ex[0] === '2 5 24 -1 1 0', 'the press first: ' + JSON.stringify(ex));
+    const v = ex[1].split(' ')[3];
+    assert(ex[1] === '2 5 24 ' + v + ' 1 1' && v !== '-1', 'the turn writes the whole span, from the base: ' + JSON.stringify(ex));
+    assert(ex[2] === '2 7 24 ' + v + ' 1 1', 'the next press carries the turned value: ' + JSON.stringify(ex));
 });
 
 step('⭐ EXTEND across bars: Right pages the lane WHILE the step is held (the jump left AUTOMATION)', () => {
@@ -358,8 +358,67 @@ step('⭐ EXTEND across bars: Right pages the lane WHILE the step is held (the j
     note(STEP(4), 127); ticks(2); note(STEP(4), 0);
     note(STEP(2), 0); ticks(3);
     const ex = extendsOf();
-    assert(ex.length === 1 && ex[0] === 't0_pa_extend=0 seq:0:delay_level 2 20 24', 'step 3 → bar 2 step 5: ' + JSON.stringify(sets));
+    assert(ex.length === 1 && ex[0] === '2 20 24 -1 1 0', 'step 3 → bar 2 step 5: ' + JSON.stringify(sets));
     S.clipLength[T][C] = 16;
+});
+
+/* THE SHIFT TAP (Josh, 2026-10-21: "how about hold step, and tapping shift(or
+ * something else) toggles between point or punch" · "yeah, we can [have a]
+ * flash pop up when you change between them" · "abs reset on every new hold"). */
+const shift = (on) => cc(49, on ? 127 : 0);
+step('⭐ SHIFT TAP: every hold starts PUNCH; a tap with nothing written flips to POINT, says so, writes nothing', () => {
+    note(STEP(2), 127); ticks(40);
+    assert(S.heldWrite && S.heldWrite.type === 1, 'a new hold is a PUNCH: ' + JSON.stringify(S.heldWrite));
+    const hh = render.bankPageHints(S.activeBank);
+    assert(hh.some(p => p[0] === 'SHFT' && p[1] === 'POINT'), 'the footer names what a tap switches to (SHFT POINT): ' + JSON.stringify(hh));
+    sets.length = 0;
+    shift(true); shift(false); ticks(2);
+    assert(S.heldWrite.type === 0, 'the tap flipped it to POINT');
+    assert(S.actionPopupLines && S.actionPopupLines[0] === 'POINT', 'the popup says POINT: ' + JSON.stringify(S.actionPopupLines));
+    assert(!sets.some(x => x.indexOf('_pa_hold_write=') >= 0), 'nothing written yet: ' + JSON.stringify(sets));
+    note(STEP(2), 0); ticks(3);
+});
+step('⭐ SHIFT TAP after a turn: the same step is written again as the other type, from the base', () => {
+    note(STEP(2), 127); ticks(3);
+    assert(S.heldWrite.type === 1, 'the next hold starts PUNCH again (the tap was per hold)');
+    sets.length = 0;
+    cc(72, 1); ticks(2);
+    const at = S.heldStep + ' ' + S.heldStep + ' 24 ';
+    const first = extendsOf();
+    note(STEP(2), 0); ticks(3);
+    assert(first.length === 1 && / 1 0$/.test(first[0]) && first[0].startsWith(at), 'a punch, the hold\'s first write: ' + JSON.stringify(first));
+    note(STEP(2), 127); ticks(3);
+    sets.length = 0;
+    cc(72, 1); ticks(2);
+    const v = extendsOf()[0].split(' ')[3];
+    shift(true); shift(false); ticks(2);
+    const all = extendsOf();
+    shift(true); shift(false); ticks(2);
+    const again = extendsOf();
+    note(STEP(2), 0); ticks(3);
+    assert(all.length === 2 && all[1] === at + v + ' 0 1', 'rewritten as a POINT, same value, rebased: ' + JSON.stringify(all));
+    assert(again[2] === at + v + ' 1 1', 'and back to a PUNCH: ' + JSON.stringify(again));
+});
+step('Shift HELD while turning is fine control, not a tap: the release changes nothing', () => {
+    note(STEP(2), 127); ticks(3);
+    sets.length = 0;
+    shift(true); cc(72, 1); ticks(2); shift(false); ticks(2);
+    const type = S.heldWrite.type, w = extendsOf();
+    note(STEP(2), 0); ticks(3);
+    assert(type === 1, 'still PUNCH after a fine turn');
+    assert(w.length === 1 && / 1 0$/.test(w[0]), 'one punch write, no rewrite: ' + JSON.stringify(w));
+});
+step('a Shift release the input ring dropped is healed — and a heal is not a tap', () => {
+    note(STEP(2), 127); ticks(3);
+    shift(true); ticks(1);
+    assert(S.autoShiftTap, 'setup: a tap armed');
+    const was = globalThis.shadow_get_shift_held;
+    globalThis.shadow_get_shift_held = () => 0;          /* the hardware says up; the CC never came */
+    ticks(2);
+    globalThis.shadow_get_shift_held = was;
+    assert(!S.shiftHeld, 'setup: the heal ran');
+    assert(S.heldWrite.type === 1, 'the heal did not flip the type: ' + JSON.stringify(S.heldWrite));
+    note(STEP(2), 0); ticks(3);
 });
 
 if (failed) { console.error('FAIL: test_automation_hold_jump'); process.exit(1); }

@@ -160,14 +160,14 @@ step('its grid is 13 steps of 12 ticks', () => {
            'the cycle is 13 steps of 12 from 0, got ' + JSON.stringify(S.autoCycle));
 });
 
-step('⭐ a step held on the grid locks at the LANE\'s step: step 3 = ticks 24..35', () => {
+step('⭐ a step held on the grid locks at the LANE\'s step: step 3 of 12 ticks', () => {
     sets.length = 0;
     note(STEP(2), 127); ticks(3);
     assert(S.activeBank === ALL_LANES, 'jumped to ALL LANES, bank ' + S.activeBank);
     cc(77, 1); ticks(3);
-    const w = sets.filter(s => s.startsWith('t0_pa_set2=0 seq:0:all_lanes_playback_dir '));
-    assert(w.length && w.every(s => s.startsWith('t0_pa_set2=0 seq:0:all_lanes_playback_dir 24 35 ')),
-           'the lock spans ticks 24..35 (the pad\'s 1/16 would be 48..71), got ' + JSON.stringify(w));
+    const w = sets.filter(s => s.startsWith('t0_pa_hold_write=0 seq:0:all_lanes_playback_dir '));
+    assert(w.length && w.every(s => s.startsWith('t0_pa_hold_write=0 seq:0:all_lanes_playback_dir 2 2 12 ')),
+           'the lock is step 2 of 12 ticks (the pad\'s 1/16 would be 24), got ' + JSON.stringify(w));
     note(STEP(2), 0); ticks(3);
     assert(S.activeBank === BANK_AUTOMATION, 'back on AUTOMATION');
 });

@@ -145,23 +145,35 @@ entry with it, so it is refused at the door rather than escaped later. A **space
 **Values are 14-bit normalized** (0..16383). JS owns the mapping to and from a parameter's real
 wire units — only JS has the `chain_params` metadata that defines them.
 
+**The envelope model (pav:2).** A lane is one envelope of points that glide linearly into each
+other; a hard edge is a **jump pair** — two points on one tick, the first the value just before it,
+the second the value from it on (at most two per tick). A *stepped* target (a choice, or a whole
+number with two values) never glides. Every lane gets a **start point** at its window start with its
+first point, carrying the parameter's **resting value** (`pa_knob`, per target: where the parameter
+sits on Stop and in clips without a lane). Wrap: Carry glides from the last point into the start
+across the loop end; Reset holds the last value, then jumps. Editing is per whole step: a step owns
+the single point or the second of a pair on its first tick, everything inside it, and the first of
+a pair on the tick after it.
+
 | set key | value | meaning |
 |---|---|---|
-| `tN_pa_set` | `"<clip> <target> <tick> <val>"` | write one point (a p-lock, or one sample of a recording) |
-| `tN_pa_set2` | `"<clip> <target> <from> <to> <val>"` | flat span, replacing what was in it (multi-step lock) |
-| `tN_pa_rest` | `"<clip> <target> <val>"` | the value the parameter held before automation; **recorded once**, later writes ignored |
+| `tN_pa_set` | `"<clip> <target> <tick> <val>"` | write one point (step record, pad aftertouch); a lane's first point brings its start point |
+| `tN_pa_hold_write` | `"<clip> <target> <fromStep> <toStep> <tps> <val\|-1> <type> <rebase>"` | every write a held step makes. `type` 1 PUNCH: `<val>` flat across the steps, a jump pair in from the envelope and one back out to it; 0 POINT: one point (a second on the span's last tick over several steps). `<toStep>` below `<fromStep>` wraps round the lane's window. `-1` = the value the held step plays. Computed from the hold's BASE (the lane before its first write; `rebase` 0 takes it, 1 builds on it), so turns, type flips and stretch presses are one op. Refused whole when it would not fit |
+| `tN_pa_rest` | `"<clip> <target> <val>"` | seeds the parameter's resting value (the knob before a gesture first automated it); ignored once one exists |
+| `tN_pa_rest_move` | `"<clip> <target> <val>"` | the knob turned by hand: moves the resting value, unless the track's playing clip automates the parameter. `tN_pa_live` does the same while playing and not recording |
 | `tN_pa_clear_key` | `"<clip> <target>"` | Delete + knob: all of one parameter's automation in the clip |
-| `tN_pa_clear_step` | `"<clip> <from> <to>"` | Delete + step: every parameter's points in that span |
+| `tN_pa_add` | `"<clip> <target>"` | The AUTOMATION list's + Add lane: an EMPTY lane (`PA_FLAG_KEEP`, on), listed and saved before anything is written. A lane already there is left as it is; a target another track owns is refused (`pa_owner_conflict`); a drum lane takes the active pad's cycle |
+| `tN_pa_clear_step` | `"<clip> <from> <to>"` | Delete + step: every parameter's points that step owns; a lone edge left on the envelope's line is swept away |
 | `tN_pa_clear` | `"<clip>"` | the whole clip's automation |
 | `tN_pa_active` | `"<clip> <target> <0\|1>"` | Mute + knob: deactivate **without** deleting |
-| `tN_pa_smooth` | `"<clip> <target> <0\|1>"` | stepped hold (default) vs linear interpolation |
+| `tN_pa_wrap` | `"<clip> <target> <0\|1>"` | Wrap: 0 Carry, 1 Reset (a new lane's default) |
 | `tN_pa_loop` | `"<clip> <target> <len> <off> <res>"` | per-parameter loop window + resolution. **Inert in v1** — nothing writes it; it exists so restoring polymetric automation later is UI work, not a storage change |
-| `tN_pa_live` | `"<target> <val>"` | a knob under a hand moved to `<val>` (the track's ACTIVE clip). **The DSP decides what that means** from its own flags: Record on + transport running = written along the playhead one cell (half a step) at a time, overwriting, until release, and the entry is marked **smooth** (a half-step hold is an audible staircase on a sweep; locks stay stepped); otherwise an **override** — playback leaves the target alone. Either way playback never pushes a live target (touch wins) |
+| `tN_pa_live` | `"<target> <val>"` | a knob under a hand moved to `<val>` (the track's ACTIVE clip). **The DSP decides what that means** from its own flags: Record on + transport running = written along the playhead one cell (half a step) at a time, overwriting, until release (the envelope glides between the cells); otherwise an **override** — playback leaves the target alone. Either way playback never pushes a live target (touch wins) |
 | `tN_pa_hold` | `"<target>"` | a hand is dialling a LOCK on this target: playback leaves it alone until `pa_live_end`, and nothing is recorded whatever Record says |
 | `tN_pa_live_end` | `"<target>"` | the hand is off: the target returns to playback, which **re-asserts** its value (override-resume) |
 
 **Ownership.** One target, one track: the first track to automate a target owns it until its
-automation is gone from every clip. `pa_set`/`pa_set2`/`pa_live` from another track are
+automation is gone from every clip. `pa_set`/`pa_hold_write`/`pa_live` from another track are
 **refused** and reported through `pa_owner_conflict`. (The UI cannot ask first — a knob edit
 runs in the MIDI handler, where `get_param` is banned — so the refusal IS the check, and the
 popup follows on the next poll.)
@@ -174,14 +186,18 @@ popup follows on the next poll.)
 | `pa_owner <target>` | the track that owns `<target>` (has automation on it in any clip), or `-1` |
 | `pa_owner_conflict` | a write was refused because another track owns the target: that track + 1, or 0; **reading clears it** |
 
-Flags: `1` active, `2` smooth (so `3` = active+smooth).
+Flags: `1` active, `4` Link: Off, `8` Wrap: Reset, `32` cleared and kept. `2` and `16` (Smooth, Mode: Punch) are pav:1 only — reserved, read by the conversion.
 
 ⚠⚠ **The handler consumes every `pa_` sub-op, known or not.** `sp_track_misc` is dispatched after
 it and ends in an unconditional `pfx_set` + remote-UI rev bump, so falling through would not ignore
 an unknown key.
 
-**Persistence** is the `"pa"` section of the project's one state file (`"pav"` its version), sparse
-— absent when a project has no automation, which is why this needed no state version bump.
+**Persistence** is the `"pa"` section of the project's one state file (`"pav"` its version, now 2),
+sparse — absent when a project has no automation, which is why this needed no state version bump —
+and beside it `"pk":[{"k":target,"v":val},…]`, the resting values. A **pav:1** section (Smooth / Punch
+flags, a resting value per lane in `"r"`) is converted on load to sound the same (`pa_migrate_v1`)
+and saves as pav:2; the active clip's lane's `"r"` becomes the parameter's resting value. ⚠ A build
+from before pav:2 skips the section, so such a project opens there without automation.
 Automation travels with its clip through `clip_copy`/`clip_cut`/`row_copy`/`row_cut` and is covered
 by undo. ⚠ A clip with more than `PA_UNDO_ENTRIES` (16) automated parameters cannot be captured in
 an undo slot; automation is then restored for **no** clip in that operation rather than some.

@@ -64,7 +64,7 @@ function load(list) {
 {
     const src = readFileSync('dsp/seq8_param_auto.c', 'utf8');
     const body = src.slice(src.indexOf('pa_seq_defs[] = {'), src.indexOf('#define PA_SEQ_COUNT'));
-    const rows = [...body.matchAll(/\{\s*"([a-zA-Z0-9_]+)",\s*(-?\d+),\s*(-?\d+),\s*PA_SEQ_(MELODIC|DRUM)\s*\}/g)]
+    const rows = [...body.matchAll(/\{\s*"([a-zA-Z0-9_]+)",\s*(-?\d+),\s*(-?\d+),\s*PA_SEQ_(MELODIC|DRUM)\s*(?:,\s*[01]\s*)?\}/g)]
         .map(m => ({ key: m[1], min: +m[2], max: +m[3], drum: m[4] === 'DRUM' }));
     check(rows.length > 20, 'rig: the engine table was found (' + rows.length + ' rows)');
     const ours = Object.values(SEQ_AUTO_TARGETS).filter(t => t.automatable !== false);

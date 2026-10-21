@@ -3,8 +3,8 @@
  * seq8_set_param.c immediately before set_param. NOT a standalone TU; never
  * compile or lint this file on its own.
  *
- * Covers: pa_set, pa_set2, pa_fx_move, pa_clear_key, pa_clear_step, pa_clear, pa_active,
- * pa_smooth, pa_wrap, pa_mode, pa_link, pa_rest, pa_rest_move, pa_loop, pa_scale, pa_live, pa_hold, pa_live_end.
+ * Covers: pa_set, pa_hold_write, pa_fx_move, pa_clear_key, pa_clear_step, pa_clear, pa_active,
+ * pa_wrap, pa_link, pa_rest, pa_rest_move, pa_loop, pa_scale, pa_live, pa_hold, pa_live_end.
  *
  * The dispatcher holds the writer lock and the seqlock around this handler.
  *
@@ -20,10 +20,6 @@
  * Values are 14-bit normalized (0..PA_VAL_MAX); JS owns the mapping to and
  * from a parameter's real wire units, because only JS has the chain_params
  * metadata that defines them. */
-/* Defined further down the TU (seq8.c, with the export); pa_extend needs the
- * same window playback evaluates in. */
-static int pa_export_window(const seq8_track_t *tr, const pa_entry_t *e,
-                            uint32_t *ws, uint32_t *wl, uint32_t *step_ticks);
 
 static int sp_track_paramauto(sp_ctx_t *cx) {
     seq8_instance_t *inst = cx->inst;
@@ -76,102 +72,60 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         pa_entry_t *e = pa_get(inst, tidx, clip, id);
         if (!e) { inst->pa_store_full = PA_FULL_ENTRIES; return 1; }
         pa_cycle_adopt_active(tr, clip, e);   /* a new drum lane: the pad it was written from */
-        if (!pa_set_point(e, (uint16_t)tick, (uint16_t)v)) inst->pa_store_full = PA_FULL_POINTS;
+        if (!pa_start_point(inst, tr, e, (uint16_t)(v > PA_VAL_MAX ? PA_VAL_MAX : v)) ||
+            !pa_set_point(e, (uint16_t)tick, (uint16_t)v)) inst->pa_store_full = PA_FULL_POINTS;
         e->last_sent_valid = 0;   /* the knob that wrote this also moved the live value */
         pa_mark_dirty(inst);
         return 1;
     }
 
-    /* pa_set2: "<clip> <target> <from> <to> <value>" — write a flat span,
-     * replacing anything already in it. The multi-step p-lock (hold several
-     * steps, turn once) and a held-value overwrite both land here. */
-    if (!strcmp(sub, "pa_set2")) {
-        int clip = 0, from = 0, to = 0, v = 0;
-        PA_SKIP_SPACE(p); PA_UINT(p, clip);
-        PA_TARGET(p, tgt);
-        PA_SKIP_SPACE(p); PA_UINT(p, from);
-        PA_SKIP_SPACE(p); PA_UINT(p, to);
-        PA_SKIP_SPACE(p); PA_UINT(p, v);
-        if (clip < 0 || clip >= NUM_CLIPS || to < from) return 1;
-        int id = pa_target_id(inst, tgt);
-        if (id < 0) { inst->pa_store_full = PA_FULL_TARGETS; return 1; }
-        if (!pa_may_write(inst, tidx, id)) return 1;
-        pa_entry_t *e = pa_get(inst, tidx, clip, id);
-        if (!e) { inst->pa_store_full = PA_FULL_ENTRIES; return 1; }
-        pa_cycle_adopt_active(tr, clip, e);   /* see pa_set */
-        pa_clear_range(e, (uint16_t)from, (uint16_t)to);
-        if (!pa_set_point(e, (uint16_t)from, (uint16_t)v)) inst->pa_store_full = PA_FULL_POINTS;
-        e->last_sent_valid = 0;   /* see pa_set */
-        pa_mark_dirty(inst);
-        return 1;
-    }
-
-    /* pa_extend: "<clip> <target> <fromStep> <toStep> <tps> [<rebase>]" — carry what the
-     * lane plays at <fromStep> through the END of <toStep> (hold a point on
-     * the AUTOMATION bank, press a later step; the note-length gesture's
-     * twin). Steps are the lane's own, <tps> ticks each. <toStep> below
-     * <fromStep> wraps round the lane's window, as the note-length gesture
-     * wraps round the clip. One engine op, so the value is read before
-     * anything moves:
-     *   - the value is the RAW one the lane's own Mode/Wrap/Smooth produce
-     *     there (a point, or between points) — never scaled, and a resting
-     *     value (Punch / Wrap: Reset) counts as nothing to carry;
-     *   - points inside the span are replaced (a recorded sweep included);
-     *   - a point at the span's start and at its last tick (Smooth stays flat
-     *     to the end), plus one per step under Punch, where a point lasts only
-     *     its own step;
-     *   - whatever played on the tick after the span is put back with a point
-     *     there when the change would otherwise alter it — except on a Smooth
-     *     lane (under Punch it never fires: a point lasts only its step): Smooth means the value never jumps (Josh,
-     *     2026-10-20), so the plateau ramps from its end to the next point.
-     * Refused whole — nothing written — when the lane has no entry, the held
-     * step plays nothing, or the points would not fit.
-     * <rebase> 0 (or absent) = the hold's first extend: the lane's points are
-     * kept as the BASE. 1 = a later press in the same hold: the base is put
-     * back first and the new span applied to it, so a span can shrink as well
-     * as grow (the note-length gesture's "tap again to shorten"); with
-     * <toStep> == <fromStep> it only puts the base back. A base that names a
-     * different lane is not used (the press is treated as a first). */
-    if (!strcmp(sub, "pa_extend")) {
-        int clip = 0, fs = 0, ts = 0, tps = 0;
+    /* pa_hold_write: "<clip> <target> <fromStep> <toStep> <tps> <value> <type> <rebase>"
+     * — every write a held step makes (hold a step, turn a knob; press a later
+     * step to stretch it). Steps are the lane's own, <tps> ticks each;
+     * <toStep> below <fromStep> wraps round the lane's window. <type>:
+     *   1 PUNCH — <value> held flat across the whole span, with hard edges: it
+     *     jumps in from what the envelope played just before the span and jumps
+     *     back out to what it played just after (a jump pair at each edge);
+     *   0 POINT — one point at the span's start that the envelope glides into
+     *     and out of; over several steps, a second point on the span's last
+     *     tick holds it flat across them.
+     * <value> -1 = the value the held step plays now (a stretch before any turn).
+     * Every write of a hold is computed from the hold's BASE — the lane as it
+     * was before the hold's first write (<rebase> 0 takes it, 1 builds on it) —
+     * so a turn, a type flip and a stretch re-press are all the same op, and a
+     * span can shrink as well as grow. A lane with no points first gets a START
+     * point at its window start carrying the parameter's resting value.
+     * Refused whole — the lane left as it was — when the points would not fit. */
+    if (!strcmp(sub, "pa_hold_write")) {
+        int clip = 0, fs = 0, ts = 0, tps = 0, v14 = 0, type = 0, rebase = 0, neg = 0;
         PA_SKIP_SPACE(p); PA_UINT(p, clip);
         PA_TARGET(p, tgt);
         PA_SKIP_SPACE(p); PA_UINT(p, fs);
         PA_SKIP_SPACE(p); PA_UINT(p, ts);
         PA_SKIP_SPACE(p); PA_UINT(p, tps);
-        int rebase = 0;
+        PA_SKIP_SPACE(p); if (*p == '-') { neg = 1; p++; } PA_UINT(p, v14);
+        PA_SKIP_SPACE(p); PA_UINT(p, type);
         PA_SKIP_SPACE(p); PA_UINT(p, rebase);
+        if (neg) v14 = -1;
+        if (v14 > PA_VAL_MAX) v14 = PA_VAL_MAX;
         if (clip < 0 || clip >= NUM_CLIPS || tps <= 0) return 1;
         if (fs > 0xFFFF || ts > 0xFFFF || tps > 0xFFFF) return 1;   /* step x tps must not wrap 32 bits */
-        int id = pa_target_lookup(inst, tgt);
-        if (id < 0 || !pa_may_write(inst, tidx, id)) return 1;
-        pa_entry_t *e = pa_find(inst, tidx, clip, id);
-        if (!e) return 1;
+        int id = pa_target_id(inst, tgt);
+        if (id < 0) { inst->pa_store_full = PA_FULL_TARGETS; return 1; }
+        if (!pa_may_write(inst, tidx, id)) return 1;
+        pa_entry_t *e = pa_get(inst, tidx, clip, id);
+        if (!e) { inst->pa_store_full = PA_FULL_ENTRIES; return 1; }
+        pa_cycle_adopt_active(tr, clip, e);   /* a new drum lane: the pad it was written from */
+        /* What the lane holds now, put back on a refusal. */
+        static pa_point_t undo[PA_ENTRY_POINTS];
+        const uint16_t undo_n = e->count;
+        memcpy(undo, e->points, (size_t)undo_n * sizeof(pa_point_t));
         const int base_ours = inst->pa_ext_base_valid && inst->pa_ext_base_track == tidx &&
                               inst->pa_ext_base_clip == clip && inst->pa_ext_base_target == id;
-        uint32_t ws = 0, wl = 0, st = 0;
-        const int win = pa_export_window(tr, e, &ws, &wl, &st) && wl;
-        const int punch = (e->flags & PA_FLAG_PUNCH) != 0;
-        #define PA_EXT_EVAL(tk, vp) (punch ? pa_eval_punch(e, (tk), ws, wl, st, (vp)) \
-                                           : pa_eval_window(e, (tk), ws, wl, (vp)))
-        const uint32_t from  = (uint32_t)fs * (uint32_t)tps;
-        /* A re-press rebuilds from the hold's base — but carries the held
-         * step's value as it plays NOW: a lock dialled after the extend is
-         * newer than the base, and the span must take it. A refusal below
-         * puts the lane back as it was (`undo`), not at the base. */
-        static pa_point_t undo[PA_ENTRY_POINTS];
-        int undo_n = -1, now_ok = 0;
-        uint16_t now_v = 0;
         if (rebase && base_ours) {
-            if (win && fs != ts && e->count && from >= ws && from < ws + wl)
-                now_ok = PA_EXT_EVAL(from, &now_v) == 1;
-            memcpy(undo, e->points, (size_t)e->count * sizeof(pa_point_t));
-            undo_n = e->count;
             memcpy(e->points, inst->pa_ext_base, (size_t)inst->pa_ext_base_count * sizeof(pa_point_t));
             e->count = inst->pa_ext_base_count;
-            e->last_sent_valid = 0;
-            pa_mark_dirty(inst);
-        } else if (fs != ts && e->count) {
+        } else {
             memcpy(inst->pa_ext_base, e->points, (size_t)e->count * sizeof(pa_point_t));
             inst->pa_ext_base_count  = e->count;
             inst->pa_ext_base_track  = (int16_t)tidx;
@@ -179,70 +133,68 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
             inst->pa_ext_base_target = (int16_t)id;
             inst->pa_ext_base_valid  = 1;
         }
-        if (fs == ts || !e->count) { if (!e->count) goto refuse; return 1; }   /* shortened back: the base stands */
-        if (!win) goto refuse;
-        const uint32_t we = ws + wl;                  /* one past the window */
-        uint32_t toEnd = ((uint32_t)ts + 1) * (uint32_t)tps - 1;
+        uint32_t ws = 0, wl = 0, st = 0;
+        if (!pa_export_window(tr, e, &ws, &wl, &st) || !wl) goto refuse;
+        const uint32_t we = ws + wl;                     /* one past the window */
+        if (we - 1 > 0xFFFF) goto refuse;                /* point ticks are 16-bit */
+        const uint32_t from = (uint32_t)fs * (uint32_t)tps;
         if (from < ws || from >= we || (uint32_t)ts * (uint32_t)tps < ws) goto refuse;
-        if (toEnd >= we) toEnd = we - 1;
-        if (we - 1 > 0xFFFF) goto refuse;             /* point ticks are 16-bit */
-        uint16_t v = now_v;
-        if (!now_ok && PA_EXT_EVAL(from, &v) != 1) goto refuse;   /* rest, or nothing to carry */
-        /* The span as one or two segments of the window. */
+        uint32_t to = ((uint32_t)ts + 1) * (uint32_t)tps - 1;
+        if (to >= we) to = we - 1;
         const int wrap = ts < fs;
-        uint32_t sf[2], se[2];
-        sf[0] = from; se[0] = wrap ? we - 1 : toEnd;
-        sf[1] = ws;   se[1] = toEnd;
-        const int nseg = wrap ? 2 : 1;
-        /* The tick after the span, and what it plays now. Inside the span
-         * (the span IS the whole window) there is nothing after it. */
-        uint32_t after = toEnd + 1;
-        if (after >= we) after = ws;
-        int keep_after = !(e->flags & PA_FLAG_SMOOTH) &&
-                         !(wrap ? (after >= from || after <= toEnd)
-                                : (after >= from && after <= toEnd));
-        uint16_t after_v = 0;
-        int after_ev = keep_after ? PA_EXT_EVAL(after, &after_v) : 0;
-        /* Budget first: refuse whole rather than write half a span. */
-        int removed = 0, need = 1;                    /* +1: the restore point, at most */
-        for (int i = 0; i < e->count; i++)
-            for (int s = 0; s < nseg; s++)
-                if (e->points[i].tick >= sf[s] && e->points[i].tick <= se[s]) { removed++; break; }
-        for (int s = 0; s < nseg; s++)
-            need += punch ? (int)((se[s] - sf[s]) / (uint32_t)tps) + 2 : 2;
-        if (e->count - removed + need > PA_ENTRY_POINTS) { inst->pa_store_full = PA_FULL_POINTS; goto refuse; }
-        pa_cycle_adopt_active(tr, clip, e);           /* see pa_set */
-        for (int s = 0; s < nseg; s++) {
-            pa_clear_range(e, (uint16_t)sf[s], (uint16_t)se[s]);
-            pa_set_point(e, (uint16_t)sf[s], v);
-            if (punch)
-                for (uint32_t tk = sf[s] + (uint32_t)tps; tk < se[s]; tk += (uint32_t)tps)
-                    pa_set_point(e, (uint16_t)tk, v);
-            pa_set_point(e, (uint16_t)se[s], v);
-        }
-        if (after_ev) {
+        const int stepped = pa_target_stepped(inst, (uint16_t)id);
+        /* The held step's value as it plays, on the base: what a stretch carries
+         * before any turn. A held step on a lane with nothing to carry and no
+         * value given writes nothing — but a stretch shortened back to the held
+         * step with no value is just the base, put back. */
+        if (v14 < 0) {
             uint16_t now = 0;
-            int now_ev = PA_EXT_EVAL(after, &now);
-            if (now_ev != after_ev || now != after_v) {
-                /* A resting value (Wrap: Reset before the first point, which a
-                 * wrapped span can cover) is pinned by a point that PLAYS as
-                 * the rest through the lane's scale. Under Punch the span's
-                 * last point ends with its step, so rest returns anyway. */
-                if (after_ev == 1) pa_set_point(e, (uint16_t)after, after_v);
-                else if (!punch) pa_set_point(e, (uint16_t)after, pa_unscaled(e, after_v));
-            }
+            if (fs == ts) goto done;
+            if (!pa_eval_from(e, from, ws, wl, stepped, &now)) goto refuse;
+            v14 = now;
         }
-        e->last_sent_valid = 0;
+        /* The lane's own (raw) value; its Scale applies when it plays. */
+        const uint16_t v = (uint16_t)v14;
+        if (!pa_start_point(inst, tr, e, v)) goto full;   /* before evaluating: the punch jumps in from rest */
+        /* The span as one or two segments of the window, and the tick after
+         * each — wrapping to the window start. */
+        uint32_t sf[2], se[2], af[2];
+        sf[0] = from; se[0] = wrap ? we - 1 : to;
+        sf[1] = ws;   se[1] = to;
+        const int nseg = wrap ? 2 : 1;
+        for (int s = 0; s < nseg; s++) af[s] = se[s] + 1 >= we ? ws : se[s] + 1;
+        /* The envelope at the edges, read BEFORE anything moves. */
+        uint16_t v_in = 0, v_out = 0;
+        const uint32_t exit_t = af[nseg - 1];
+        const int whole = exit_t == from;               /* the span IS the window */
+        pa_eval_before(e, from, ws, wl, stepped, &v_in);
+        pa_eval_from(e, exit_t, ws, wl, stepped, &v_out);
+        for (int s = 0; s < nseg; s++) pa_clear_owned(e, sf[s], se[s], af[s]);
+        if (whole) {
+            pa_clear_range(e, (uint16_t)ws, (uint16_t)(we - 1));
+            if (!pa_set_point(e, (uint16_t)ws, v)) goto full;
+        } else if (type == 1) {
+            if (!pa_set_pair(e, (uint16_t)from, v_in, v)) goto full;
+            if (wrap && !pa_set_point(e, (uint16_t)ws, v)) goto full;
+            if (!pa_set_pair(e, (uint16_t)exit_t, v, v_out)) goto full;
+        } else {
+            int i0;
+            if ((pa_at(e, from, &i0) ? !pa_set_second(e, (uint16_t)from, v)
+                                     : !pa_set_point(e, (uint16_t)from, v))) goto full;
+            if (wrap && !pa_set_point(e, (uint16_t)ws, v)) goto full;
+            if (fs != ts && to != from && !pa_set_point(e, (uint16_t)to, v)) goto full;
+        }
+    done:
+        e->last_sent_valid = 0;   /* the knob that wrote this also moved the live value */
         pa_mark_dirty(inst);
         return 1;
+    full:
+        inst->pa_store_full = PA_FULL_POINTS;
     refuse:
-        if (undo_n >= 0) {
-            memcpy(e->points, undo, (size_t)undo_n * sizeof(pa_point_t));
-            e->count = (uint16_t)undo_n;
-            e->last_sent_valid = 0;
-        }
+        memcpy(e->points, undo, (size_t)undo_n * sizeof(pa_point_t));
+        e->count = undo_n;
+        e->last_sent_valid = 0;
         return 1;
-        #undef PA_EXT_EVAL
     }
 
     /* pa_live: "<target> <value>" — a knob under a hand moved to <value>. The
@@ -259,6 +211,20 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         if (!pa_may_write(inst, tidx, id)) return 1;
         if (v > PA_VAL_MAX) v = PA_VAL_MAX;
         pa_live_set(inst, tr, tidx, id, (uint16_t)v, 0);
+        /* Not recording, and the playing clip does not automate it: the knob
+         * is simply where the parameter rests (Josh, 2026-10-21: "resting value
+         * can only be set during playback if the clip isn't playing back
+         * automation of that parameter"). Only for a parameter this track
+         * automates somewhere — the others have no resting value to keep. */
+        if (!(tr->recording && inst->playing) && pa_owner_of(inst, id) == tidx) {
+            const pa_entry_t *d = pa_find(inst, tidx, (int)tr->active_clip, id);
+            if (!(d && d->count && (d->flags & PA_FLAG_ACTIVE)) &&
+                !(((inst->pa_knob_valid >> id) & 1u) && inst->pa_knob[id] == (uint16_t)v)) {
+                inst->pa_knob[id] = (uint16_t)v;
+                inst->pa_knob_valid |= 1ull << id;
+                pa_mark_dirty(inst);
+            }
+        }
         return 1;
     }
 
@@ -300,40 +266,43 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         return 1;
     }
 
-    /* pa_rest: "<clip> <target> <value>" — the value the parameter held before
-     * automation existed, restored on stop / deactivate / clear. Recorded once;
-     * a second write does not move it, or stopping would restore whatever the
-     * automation last happened to play. */
-    if (!strcmp(sub, "pa_rest")) {
+    /* THE RESTING VALUE (pa_knob): where the parameter sits whenever no clip's
+     * automation drives it — Stop, and every clip on the track without a lane
+     * for it. Per parameter, not per clip: it is the track's sound.
+     *
+     * pa_rest: "<clip> <target> <value>" — the knob's value just before a
+     * gesture first wrote automation. Seeds the resting value when the
+     * parameter has none yet (it is the start point every new lane carries);
+     * never moves one that exists, or it would take whatever the automation
+     * happened to be playing.
+     * pa_rest_move: "<clip> <target> <value>" — the knob turned by hand. The
+     * un-automated knob position IS the resting value, so it follows the hand —
+     * but only while nothing automates the parameter: while the track's
+     * playing clip drives it (Josh, 2026-10-21: "resting value can only be set
+     * during playback if the clip isn't playing back automation of that
+     * parameter"), the turn is an override and the resting value stays. Creates
+     * nothing: a parameter that was never automated has no resting value. */
+    if (!strcmp(sub, "pa_rest") || !strcmp(sub, "pa_rest_move")) {
+        const int move = sub[7] == '_';
         int clip = 0, v = 0;
         PA_SKIP_SPACE(p); PA_UINT(p, clip);
         PA_TARGET(p, tgt);
         PA_SKIP_SPACE(p); PA_UINT(p, v);
         if (clip < 0 || clip >= NUM_CLIPS) return 1;
-        pa_entry_t *e = pa_get(inst, tidx, clip, pa_target_id(inst, tgt));
-        if (!e) { inst->pa_store_full = PA_FULL_ENTRIES; return 1; }
-        if (e->rest == PA_VAL_UNSET) { e->rest = (uint16_t)v; pa_mark_dirty(inst); }
-        return 1;
-    }
-
-    /* pa_rest_move: "<clip> <target> <value>" — the knob turned while the
-     * parameter is NOT being driven (transport stopped, or the entry
-     * deactivated). The un-automated knob position IS the resting value, so
-     * it follows the hand: Stop then restores what the user last set, not
-     * what they set before the automation first existed. Creates nothing —
-     * a parameter with no automation has no rest to move — and is ignored
-     * while the entry drives, or Stop would restore whatever the automation
-     * last played. */
-    if (!strcmp(sub, "pa_rest_move")) {
-        int clip = 0, v = 0;
-        PA_SKIP_SPACE(p); PA_UINT(p, clip);
-        PA_TARGET(p, tgt);
-        PA_SKIP_SPACE(p); PA_UINT(p, v);
-        if (clip < 0 || clip >= NUM_CLIPS) return 1;
-        pa_entry_t *e = pa_find(inst, tidx, clip, pa_target_lookup(inst, tgt));
-        if (!e || !pa_entry_live(e)) return 1;           /* a cleared lane's rest still follows */
-        if (inst->playing && (e->flags & PA_FLAG_ACTIVE)) return 1;
-        if (e->rest != (uint16_t)v) { e->rest = (uint16_t)v; pa_mark_dirty(inst); }
+        if (v > PA_VAL_MAX) v = PA_VAL_MAX;
+        int id = move ? pa_target_lookup(inst, tgt) : pa_target_id(inst, tgt);
+        if (id < 0) { if (!move) inst->pa_store_full = PA_FULL_TARGETS; return 1; }
+        const uint64_t bit = 1ull << id;
+        if (!move) {
+            if (inst->pa_knob_valid & bit) return 1;
+        } else if (inst->playing) {
+            const pa_entry_t *d = pa_find(inst, tidx, (int)tr->active_clip, id);
+            if (d && d->count && (d->flags & PA_FLAG_ACTIVE)) return 1;   /* driven: an override */
+        }
+        if ((inst->pa_knob_valid & bit) && inst->pa_knob[id] == (uint16_t)v) return 1;
+        inst->pa_knob[id] = (uint16_t)v;
+        inst->pa_knob_valid |= bit;
+        pa_mark_dirty(inst);
         return 1;
     }
 
@@ -386,9 +355,34 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         return 1;
     }
 
+    /* pa_add: "<clip> <target>" — the AUTOMATION list's "+ Add lane": an
+     * EMPTY lane (PA_FLAG_KEEP), listed and saved before anything is written
+     * into it, so its settings can be chosen first. A lane already there is
+     * left as it is; a target another track owns is refused (the conflict is
+     * flagged, as any write's is). A drum lane takes the active pad's cycle. */
+    if (!strcmp(sub, "pa_add")) {
+        int clip = 0;
+        PA_SKIP_SPACE(p); PA_UINT(p, clip);
+        PA_TARGET(p, tgt);
+        if (clip < 0 || clip >= NUM_CLIPS || !tgt[0]) return 1;
+        int id = pa_target_id(inst, tgt);
+        if (id < 0) { inst->pa_store_full = PA_FULL_TARGETS; return 1; }
+        if (!pa_may_write(inst, tidx, id)) return 1;
+        pa_entry_t *e = pa_get(inst, tidx, clip, id);
+        if (!e) { inst->pa_store_full = PA_FULL_ENTRIES; return 1; }
+        if (pa_entry_live(e)) return 1;
+        pa_cycle_adopt_active(tr, clip, e);
+        e->flags |= PA_FLAG_KEEP | PA_FLAG_ACTIVE;   /* a deleted lane re-added plays */
+        pa_mark_dirty(inst);
+        return 1;
+    }
+
     /* pa_clear_step: "<clip> <from> <to>" — Delete + step. Clears EVERY
-     * parameter's points in that tick span, which is the one-gesture meaning of
-     * "delete what is automated here". */
+     * parameter's points in that step (the points it OWNS, pa_clear_owned:
+     * never a neighbour's half of a jump pair), which is the one-gesture
+     * meaning of "delete what is automated here". A lone edge left on the
+     * envelope's line is swept away, so deleting a punch gives back the
+     * envelope it was punched into. */
     if (!strcmp(sub, "pa_clear_step")) {
         int clip = 0, from = 0, to = 0;
         PA_SKIP_SPACE(p); PA_UINT(p, clip);
@@ -399,7 +393,12 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
             pa_entry_t *e = &inst->pa_entries[i];
             if (!e->used || e->track != tidx || e->clip != clip) continue;
             const int had = e->count;
-            pa_clear_range(e, (uint16_t)from, (uint16_t)to);
+            uint32_t ws = 0, wl = 0, st = 0, after = (uint32_t)to + 1;
+            if (pa_export_window(tr, e, &ws, &wl, &st) && wl && after >= ws + wl) after = ws;
+            pa_clear_owned(e, (uint32_t)from, (uint32_t)to, after);
+            const int stepped = pa_target_stepped(inst, e->target);
+            pa_sweep_redundant(e, (uint32_t)from, stepped);
+            pa_sweep_redundant(e, after, stepped);
             /* Nothing left to play: back to rest. A lane that was already
              * empty (cleared and kept) is left as it is. */
             if (had && !e->count) pa_entry_retire(e);
@@ -445,24 +444,9 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         return 1;
     }
 
-    /* pa_smooth: "<clip> <target> <0|1>" — stepped hold vs linear. */
-    if (!strcmp(sub, "pa_smooth")) {
-        int clip = 0, on = 0;
-        PA_SKIP_SPACE(p); PA_UINT(p, clip);
-        PA_TARGET(p, tgt);
-        PA_SKIP_SPACE(p); PA_UINT(p, on);
-        if (clip < 0 || clip >= NUM_CLIPS) return 1;
-        pa_entry_t *e = pa_find(inst, tidx, clip, pa_target_id(inst, tgt));
-        if (e) {
-            if (on) e->flags |= PA_FLAG_SMOOTH; else e->flags &= (uint8_t)~PA_FLAG_SMOOTH;
-            pa_mark_dirty(inst);
-        }
-        return 1;
-    }
-
-    /* pa_wrap: "<clip> <target> <reset>" — Wrap: Carry (0, the default) carries
-     * the lane's last value round the loop; Reset (1) sits at the parameter's
-     * RESTING value until the lane's first point. */
+    /* pa_wrap: "<clip> <target> <reset>" — Wrap: Carry (0) glides from the
+     * lane's last point into its start across the loop end; Reset (1, a new
+     * lane's default) holds the last value to the loop end, then jumps. */
     if (!strcmp(sub, "pa_wrap")) {
         int clip = 0, reset = 0;
         PA_SKIP_SPACE(p); PA_UINT(p, clip);
@@ -472,22 +456,6 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         pa_entry_t *e = pa_find(inst, tidx, clip, pa_target_id(inst, tgt));
         if (e) {
             if (reset) e->flags |= PA_FLAG_WRAP_RESET; else e->flags &= (uint8_t)~PA_FLAG_WRAP_RESET;
-            pa_mark_dirty(inst);
-        }
-        return 1;
-    }
-
-    /* pa_mode: "<clip> <target> <punch>" — Mode: Curve (0, the default) or Punch
-     * (1): a point lasts its own step, then the resting value. */
-    if (!strcmp(sub, "pa_mode")) {
-        int clip = 0, punch = 0;
-        PA_SKIP_SPACE(p); PA_UINT(p, clip);
-        PA_TARGET(p, tgt);
-        PA_SKIP_SPACE(p); PA_UINT(p, punch);
-        if (clip < 0 || clip >= NUM_CLIPS) return 1;
-        pa_entry_t *e = pa_find(inst, tidx, clip, pa_target_id(inst, tgt));
-        if (e) {
-            if (punch) e->flags |= PA_FLAG_PUNCH; else e->flags &= (uint8_t)~PA_FLAG_PUNCH;
             pa_mark_dirty(inst);
         }
         return 1;
