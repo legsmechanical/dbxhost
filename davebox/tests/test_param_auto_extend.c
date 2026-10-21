@@ -257,6 +257,73 @@ int main(void) {
         hx_destroy(h);
     }
 
+    /* 10. Wrap: Reset, a WRAPPED span over the rest stretch: before it, steps
+     *     0..7 played the resting value (2000); after holding step 12 (12000)
+     *     and pressing step 2, steps 3..7 must still play 2000 — a point that
+     *     plays as the rest — not 12000 carried on to the first lock. With
+     *     Scale 50 % the point is unscaled so it still PLAYS as the rest. */
+    for (int sc = 0; sc < 2; sc++) {
+        hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pa_rest", "0 " TG " 2000");
+        pt(h, 192, 8000); pt(h, 288, 12000);
+        if (sc) hx_set_param(h, "t0_pa_scale", "0 " TG " 50");
+        pa_entry_t *e = entry(h);
+        HX_ASSERT(e && (e->flags & PA_FLAG_WRAP_RESET) && !(e->flags & PA_FLAG_SMOOTH), "setup: Reset, Smooth off");
+        plays(h, r);
+        HX_ASSERT(r[3] == 2000 && r[7] == 2000, "setup: the rest plays before the first lock");
+        extend(h, 12, 2);
+        plays(h, r);
+        const int hi = sc ? 6000 : 12000;
+        for (int s = 0; s <= 2; s++) HX_ASSERT(r[s] == hi, "the wrapped span carries the held lock");
+        for (int s = 3; s <= 7; s++) HX_ASSERT(r[s] >= 1999 && r[s] <= 2001, "after the span: the resting value again");
+        HX_ASSERT(r[8] == (sc ? 4000 : 8000), "the first lock untouched");
+        OK(sc ? "Reset, wrapped span, Scale 50 %: the rest is restored as it plays"
+              : "⭐ Reset, wrapped span: the rest stretch after it plays the rest again");
+        hx_destroy(h);
+    }
+
+    /* 11. A lock dialled AFTER the extend, in the same hold: the UI sends the
+     *     step's pa_set2 and then the span again as a re-press. The whole span
+     *     takes the new value — including the span's last tick — and the base
+     *     still shrinks it back. Stepped and Smooth. */
+    for (int sm = 0; sm < 2; sm++) {
+        hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pa_wrap", "0 " TG " 0");
+        pt(h, 0, 1000); pt(h, 96, 4000); pt(h, 288, 14000);
+        if (sm) hx_set_param(h, "t0_pa_smooth", "0 " TG " 1");
+        hx_set_param(h, "t0_pa_wrap", "0 " TG " 0");
+        extend(h, 4, 8);
+        hx_set_param(h, "t0_pa_set2", "0 " TG " 96 119 9000");
+        reextend(h, 4, 8);
+        plays(h, r);
+        for (int s = 4; s <= 8; s++) HX_ASSERT(r[s] == 9000, "the span plays the new lock");
+        pa_entry_t *e = entry(h);
+        HX_ASSERT(e && value_at_tick(e, 215) == 9000, "the span's last tick holds the new value too");
+        reextend(h, 4, 5);
+        plays(h, r);
+        HX_ASSERT(r[4] == 9000 && r[5] == 9000, "shortened: the new value on what is left");
+        HX_ASSERT(r[7] != 9000, "shortened: the rest of the old span is gone");
+        OK(sm ? "Smooth: a lock after the extend fills the span (no ramp back to the old value)"
+              : "⭐ a lock dialled after the extend fills the whole span, and the base still shortens it");
+        hx_destroy(h);
+    }
+
+    /* 12. A re-press that is REFUSED (here: a held step outside the window)
+     *     leaves the lane exactly as it was — the extend stays — not at the
+     *     base. */
+    {
+        hx_t *h = hx_create(NULL);
+        pt(h, 0, 200); pt(h, 48, 1000); pt(h, 96, 5000); pt(h, 144, 9000);
+        extend(h, 2, 5);
+        int before[16];
+        plays(h, before);
+        hx_set_param(h, "t0_pa_extend", "0 " TG " 20 22 24 1");
+        plays(h, r);
+        for (int s = 0; s < 16; s++) HX_ASSERT(r[s] == before[s], "a refused re-press changed nothing");
+        OK("a refused re-press keeps the extend (refused whole)");
+        hx_destroy(h);
+    }
+
     printf("test_param_auto_extend: %d ok\n", ok_count);
     return 0;
 }

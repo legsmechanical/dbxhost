@@ -1283,7 +1283,7 @@ export function automationExtendPress(track, clip, target, abs, off, len, tps) {
     const x = S.heldExtend;
     const again = !!(x && x.step === S.heldStep && x.target === target && x.track === track);
     automationExtendLock(track, clip, target, S.heldStep, automationExtendTarget(abs, off, len), tps,
-                         again && x.rebase);
+                         again);
 }
 
 export function automationExtendLock(track, clip, target, fromStep, toStep, tps, rebase) {
@@ -1296,7 +1296,7 @@ export function automationExtendLock(track, clip, target, fromStep, toStep, tps,
     S.autoLockLast = null;           /* the values read, not a dialled lock, says what plays now */
     /* toStep === fromStep (shortened all the way back): nothing extended now,
      * but the base stays — a press can grow it again from the original. */
-    S.heldExtend = { step: fromStep, to: toStep, rebase: true, track, clip, target, tps };
+    S.heldExtend = { step: fromStep, to: toStep, track, clip, target, tps };
     presenceStale = true;
     console.log('[auto] extend t' + track + ' c' + clip + ' ' + target + ' ' + fromStep + '->' + toStep);
 }
@@ -1395,9 +1395,13 @@ export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) 
          * values read catches up (autoLaneFocus). */
         S.autoLockLast = { track, clip, target, step: S.heldStep, norm, at: S.clockMs };
         S.heldLockLast = { track, clip, target, step: S.heldStep, tps };
-        /* The held point changed under an extend: the next press rebuilds
-         * from the lane as it is NOW, not from the base it kept. */
-        if (S.heldExtend) S.heldExtend.rebase = false;
+        /* The held point changed under an extend of THIS lane: the span is
+         * sent again as a re-press, so the whole of it takes the new value
+         * (the engine carries what the held step plays NOW over the hold's
+         * base, which still lets a later press shorten it). */
+        const x = S.heldExtend;
+        if (x && x.step === S.heldStep && x.track === track && x.target === target && x.to !== x.step)
+            queueSet('t' + track + '_pa_extend', clip + ' ' + target + ' ' + x.step + ' ' + x.to + ' ' + x.tps + ' 1');
         automationNoteWrite();
         console.log('[auto] p-lock t' + track + ' c' + clip + ' step ' + S.heldStep + ' ' + target + ' = ' + norm);
         return;

@@ -140,6 +140,35 @@ int main(void) {
     OK("CONTROL: equal neighbours get no jump pair");
 
     hx_destroy(h);
+
+    /* ⭐ POINTS OUTSIDE THE WINDOW (kept when a loop is narrowed) never play
+     * while the window holds any: the export reads its lead, its jump pairs
+     * and its trail off the points INSIDE. Lane loop [96, 288): X = 900 at 48
+     * (outside, before), 3000 at 144, 6000 at 240, 7000 at 300 (outside,
+     * after). Reset, Smooth off, rest 500. */
+    {
+        hx_t *h2 = hx_create(NULL);
+        seq8_instance_t *in2 = (seq8_instance_t *)h2->inst;
+        hx_set_param(h2, "t0_pa_rest", "0 1:fx1:mix 500");
+        pa_set(h2, 0, 0, "1:fx1:mix", 48, 900);
+        pa_set(h2, 0, 0, "1:fx1:mix", 144, 3000);
+        pa_set(h2, 0, 0, "1:fx1:mix", 240, 6000);
+        pa_set(h2, 0, 0, "1:fx1:mix", 300, 7000);
+        hx_set_param(h2, "t0_pa_loop", "0 1:fx1:mix 192 96 0");
+        pa_entry_t *e2 = find_lane(in2, 0, 0, "1:fx1:mix");
+        HX_ASSERT(e2 && e2->loop_len == 192 && e2->loop_off == 96, "setup: the lane's own loop 96..288");
+        n = pa_export_points(&in2->tracks[0], e2, pts, 2 * PA_ENTRY_POINTS + 2);
+        for (int i = 0; i < n; i++)
+            HX_ASSERT(pts[i].tick >= 96 && pts[i].tick <= 288, "no breakpoint outside the window");
+        for (int i = 0; i < n; i++)
+            HX_ASSERT(pts[i].val != 900 && pts[i].val != 7000, "no value that never plays");
+        HX_ASSERT(pts[0].tick == 96 && pts[0].val == 500, "the lead: the rest at the window start");
+        HX_ASSERT(pts[1].tick == 144 && pts[1].val == 500 && pts[2].tick == 144 && pts[2].val == 3000,
+                  "the rest holds to the first point INSIDE, then steps");
+        HX_ASSERT(pts[n - 1].tick == 288 && pts[n - 1].val == 6000, "the trail holds the last point inside to the window end");
+        OK("⭐ points outside the window: not exported, and not used for the lead, the steps or the trail");
+        hx_destroy(h2);
+    }
     printf("test_param_auto_export_lead: %d ok\n", ok_count);
     return 0;
 }

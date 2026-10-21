@@ -142,13 +142,31 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         int rebase = 0;
         PA_SKIP_SPACE(p); PA_UINT(p, rebase);
         if (clip < 0 || clip >= NUM_CLIPS || tps <= 0) return 1;
+        if (fs > 0xFFFF || ts > 0xFFFF || tps > 0xFFFF) return 1;   /* step x tps must not wrap 32 bits */
         int id = pa_target_lookup(inst, tgt);
         if (id < 0 || !pa_may_write(inst, tidx, id)) return 1;
         pa_entry_t *e = pa_find(inst, tidx, clip, id);
         if (!e) return 1;
         const int base_ours = inst->pa_ext_base_valid && inst->pa_ext_base_track == tidx &&
                               inst->pa_ext_base_clip == clip && inst->pa_ext_base_target == id;
+        uint32_t ws = 0, wl = 0, st = 0;
+        const int win = pa_export_window(tr, e, &ws, &wl, &st) && wl;
+        const int punch = (e->flags & PA_FLAG_PUNCH) != 0;
+        #define PA_EXT_EVAL(tk, vp) (punch ? pa_eval_punch(e, (tk), ws, wl, st, (vp)) \
+                                           : pa_eval_window(e, (tk), ws, wl, (vp)))
+        const uint32_t from  = (uint32_t)fs * (uint32_t)tps;
+        /* A re-press rebuilds from the hold's base — but carries the held
+         * step's value as it plays NOW: a lock dialled after the extend is
+         * newer than the base, and the span must take it. A refusal below
+         * puts the lane back as it was (`undo`), not at the base. */
+        static pa_point_t undo[PA_ENTRY_POINTS];
+        int undo_n = -1, now_ok = 0;
+        uint16_t now_v = 0;
         if (rebase && base_ours) {
+            if (win && fs != ts && e->count && from >= ws && from < ws + wl)
+                now_ok = PA_EXT_EVAL(from, &now_v) == 1;
+            memcpy(undo, e->points, (size_t)e->count * sizeof(pa_point_t));
+            undo_n = e->count;
             memcpy(e->points, inst->pa_ext_base, (size_t)inst->pa_ext_base_count * sizeof(pa_point_t));
             e->count = inst->pa_ext_base_count;
             e->last_sent_valid = 0;
@@ -161,20 +179,15 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
             inst->pa_ext_base_target = (int16_t)id;
             inst->pa_ext_base_valid  = 1;
         }
-        if (fs == ts || !e->count) return 1;
-        uint32_t ws = 0, wl = 0, st = 0;
-        if (!pa_export_window(tr, e, &ws, &wl, &st) || !wl) return 1;
+        if (fs == ts || !e->count) { if (!e->count) goto refuse; return 1; }   /* shortened back: the base stands */
+        if (!win) goto refuse;
         const uint32_t we = ws + wl;                  /* one past the window */
-        const uint32_t from  = (uint32_t)fs * (uint32_t)tps;
         uint32_t toEnd = ((uint32_t)ts + 1) * (uint32_t)tps - 1;
-        if (from < ws || from >= we || (uint32_t)ts * (uint32_t)tps < ws) return 1;
+        if (from < ws || from >= we || (uint32_t)ts * (uint32_t)tps < ws) goto refuse;
         if (toEnd >= we) toEnd = we - 1;
-        if (we - 1 > 0xFFFF) return 1;                /* point ticks are 16-bit */
-        const int punch = (e->flags & PA_FLAG_PUNCH) != 0;
-        #define PA_EXT_EVAL(tk, vp) (punch ? pa_eval_punch(e, (tk), ws, wl, st, (vp)) \
-                                           : pa_eval_window(e, (tk), ws, wl, (vp)))
-        uint16_t v = 0;
-        if (PA_EXT_EVAL(from, &v) != 1) return 1;     /* rest, or nothing to carry */
+        if (we - 1 > 0xFFFF) goto refuse;             /* point ticks are 16-bit */
+        uint16_t v = now_v;
+        if (!now_ok && PA_EXT_EVAL(from, &v) != 1) goto refuse;   /* rest, or nothing to carry */
         /* The span as one or two segments of the window. */
         const int wrap = ts < fs;
         uint32_t sf[2], se[2];
@@ -197,7 +210,7 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
                 if (e->points[i].tick >= sf[s] && e->points[i].tick <= se[s]) { removed++; break; }
         for (int s = 0; s < nseg; s++)
             need += punch ? (int)((se[s] - sf[s]) / (uint32_t)tps) + 2 : 2;
-        if (e->count - removed + need > PA_ENTRY_POINTS) { inst->pa_store_full = PA_FULL_POINTS; return 1; }
+        if (e->count - removed + need > PA_ENTRY_POINTS) { inst->pa_store_full = PA_FULL_POINTS; goto refuse; }
         pa_cycle_adopt_active(tr, clip, e);           /* see pa_set */
         for (int s = 0; s < nseg; s++) {
             pa_clear_range(e, (uint16_t)sf[s], (uint16_t)se[s]);
@@ -211,15 +224,25 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
             uint16_t now = 0;
             int now_ev = PA_EXT_EVAL(after, &now);
             if (now_ev != after_ev || now != after_v) {
+                /* A resting value (Wrap: Reset before the first point, which a
+                 * wrapped span can cover) is pinned by a point that PLAYS as
+                 * the rest through the lane's scale. Under Punch the span's
+                 * last point ends with its step, so rest returns anyway. */
                 if (after_ev == 1) pa_set_point(e, (uint16_t)after, after_v);
-                /* A resting value cannot be pinned by a point; under Punch the
-                 * span's last point ends with its step, so rest returns anyway. */
+                else if (!punch) pa_set_point(e, (uint16_t)after, pa_unscaled(e, after_v));
             }
         }
-        #undef PA_EXT_EVAL
         e->last_sent_valid = 0;
         pa_mark_dirty(inst);
         return 1;
+    refuse:
+        if (undo_n >= 0) {
+            memcpy(e->points, undo, (size_t)undo_n * sizeof(pa_point_t));
+            e->count = (uint16_t)undo_n;
+            e->last_sent_valid = 0;
+        }
+        return 1;
+        #undef PA_EXT_EVAL
     }
 
     /* pa_live: "<target> <value>" — a knob under a hand moved to <value>. The

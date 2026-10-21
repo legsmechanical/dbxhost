@@ -325,15 +325,25 @@ step('⭐ SHORTEN like a note: the end pressed again shortens by one, a new step
     VALS = () => '';
 });
 
-step('a lock turned AFTER an extend: the next press rebuilds from the lane as it is now (no rebase)', () => {
+/* A lock turned after an extend must fill the whole span, not just the held
+ * step (review, 2026-10-21): the span is sent again as a re-press right after
+ * the lock, and later presses still rebuild from the hold's base (the engine
+ * carries the held step's CURRENT value over it). */
+step('a lock turned AFTER an extend: the span is re-sent so all of it takes the lock; the next press still rebases', () => {
     note(STEP(2), 127); ticks(3);
     sets.length = 0;
     note(STEP(5), 127); note(STEP(5), 0); ticks(2);
     cc(72, 1); ticks(3);
     note(STEP(7), 127); note(STEP(7), 0); ticks(2);
     const ex = extendsOf();
-    assert(ex.length === 2 && ex[1] === 't0_pa_extend=0 seq:0:delay_level 2 7 24', 'no rebase after a lock: ' + JSON.stringify(ex));
     note(STEP(2), 0); ticks(3);
+    assert(JSON.stringify(ex) === JSON.stringify(['t0_pa_extend=0 seq:0:delay_level 2 5 24',
+                                                  't0_pa_extend=0 seq:0:delay_level 2 5 24 1',
+                                                  't0_pa_extend=0 seq:0:delay_level 2 7 24 1']),
+           'extend, re-sent after the lock, then a rebased press: ' + JSON.stringify(ex));
+    const i2 = sets.findIndex(x => x.indexOf('_pa_set2=') >= 0);
+    const i3 = sets.indexOf('t0_pa_extend=0 seq:0:delay_level 2 5 24 1');
+    assert(i2 >= 0 && i3 > i2, 'the re-sent span follows the lock in the queue: ' + JSON.stringify(sets.filter(x => x.indexOf('pa_') >= 0)));
 });
 
 step('⭐ EXTEND across bars: Right pages the lane WHILE the step is held (the jump left AUTOMATION)', () => {
