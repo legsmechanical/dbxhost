@@ -54,8 +54,8 @@ int main(void) {
         plock(h, 1, 2, "cc:74", 3, 24, 100);
         steps(h, 1, 2, buf, sizeof(buf));
         /* A punch lights its step and the step after it (that step starts
-         * with the jump back out — a real point). The value a punch jumps in
-         * FROM (the first of its pair) lights nothing: step 4 stays dark. */
+         * with the jump back out — a real point); the step before it stays
+         * dark (step 4 here). */
         HX_ASSERT(strstr(buf, "0:synth:cutoff 1100011\n"), "cutoff: steps 0 and 5, each with the step after");
         HX_ASSERT(strstr(buf, "cc:74 10011\n"), "cc:74: its start point, step 3 and the step after");
         OK("each lane lists the steps its points are on: start point, punches, their ends");

@@ -665,6 +665,9 @@ export function bankPageHints(bank) {
     /* RPT GROOVE: any knob + click goes to the other page — said on BOTH
      * pages, and FIRST, so the fit rule drops HLD BANKS rather than this. */
     if (bankHasAltParams(S.activeTrack, bank)) hints.unshift(['KNB+CLK', S.altMode ? 'VELOCITY' : 'NUDGE']);
+    /* A held step's knob turn writes a lock: a PUNCH, or — Shift tapped — a
+     * POINT. The pair names what a tap switches TO. */
+    if (held) hints.push(['SHFT', (S.heldWrite && S.heldWrite.type === 0) ? 'PUNCH' : 'POINT']);
     hints.push(['BACK', 'OUT']);
     return hints;
 }

@@ -1080,6 +1080,9 @@ export const S = {
      * edges) or 0 POINT (one point the envelope glides through). Every hold
      * starts as a PUNCH (Josh, 2026-10-21). */
     heldWrite: { type: 1 },
+    /* A Shift press made while a step was held, until its release: { turned }
+     * — set when anything else was done meanwhile (then it is not a tap). */
+    autoShiftTap: null,
     /* Per track: the AUTOMATION bank's selected lane's current tick in its own
      * lane ticks (state_snapshot 57..64, tN_pa_view), -1 = none / not playing. */
     autoLanePos: new Array(8).fill(-1),

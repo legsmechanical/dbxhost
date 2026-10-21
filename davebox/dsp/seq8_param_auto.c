@@ -2060,9 +2060,8 @@ static int pa_parse_locked(seq8_instance_t *inst, const char *buf, size_t blen) 
 /* the same (±1 of rounding: the glide now runs in the lane's own values */
 /* and is scaled after, where v1 scaled the ends first):                 */
 /*  - a GLIDING lane (Smooth, outside Punch) keeps its points, plus a    */
-/*    start point at the window start carrying what v1 played there, and */
-/*    — where v1 held its last value to the loop end and jumped — the     */
-/*    held value as the first of a pair there;                            */
+/*    start point at the window start carrying what v1 played there (its */
+/*    Wrap then does at the loop end what v1's did);                      */
 /*  - a STEPPED lane (Smooth off, or Punch) becomes a pair at every tick  */
 /*    where v1's value changes: the window start, each point, and under   */
 /*    Punch each point's step end. Between them the envelope is flat — or, */
@@ -2105,10 +2104,6 @@ static int pa_migrate_v1_entry(const seq8_instance_t *inst, pa_entry_t *e, uint1
     if (glides) {
         for (int i = fi; i <= li; i++) ok &= pa_set_point(&q, e->points[i].tick, e->points[i].val);
         if (!pa_at(&q, ws, NULL)) ok &= pa_set_point(&q, (uint16_t)ws, pa_v1_at(e, rest, ws, ws, wl, st));
-        /* Carry under the window rule glides across the loop end, as the
-         * envelope does; every other v1 rule held the last value there. */
-        const int carry_glide = !(e->flags & PA_FLAG_PUNCH) && !(e->flags & PA_FLAG_WRAP_RESET);
-        if (!carry_glide) ok &= pa_set_first(&q, (uint16_t)ws, pa_v1_at(e, rest, we - 1, ws, wl, st));
     } else {
         /* The ticks where a stepped v1 lane can change: the window start,
          * each point inside, and (Punch) the end of each point's step. */

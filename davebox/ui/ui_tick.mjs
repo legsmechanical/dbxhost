@@ -425,9 +425,10 @@ export function _tickImpl() {
     /* Sound mode's copy counts as held too: it can outlive the global (a modal
      * picker or a resume clears the global directly), and applyShiftEdge lifts
      * both. */
+    /* (A healed release is not a Shift TAP: the armed tap is dropped first.) */
     if ((S.shiftHeld || soundShiftHeld()) && !shadow_get_shift_held()) {
         console.log('stuck Shift healed — release was dropped by the input ring');
-        applyShiftEdge(false);
+        S.autoShiftTap = null; applyShiftEdge(false);
     }
 
     /* Exit farewell: the EXITING frame and the LED clear were queued when Quit

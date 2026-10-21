@@ -362,6 +362,65 @@ step('⭐ EXTEND across bars: Right pages the lane WHILE the step is held (the j
     S.clipLength[T][C] = 16;
 });
 
+/* THE SHIFT TAP (Josh, 2026-10-21: "how about hold step, and tapping shift(or
+ * something else) toggles between point or punch" · "yeah, we can [have a]
+ * flash pop up when you change between them" · "abs reset on every new hold"). */
+const shift = (on) => cc(49, on ? 127 : 0);
+step('⭐ SHIFT TAP: every hold starts PUNCH; a tap with nothing written flips to POINT, says so, writes nothing', () => {
+    note(STEP(2), 127); ticks(40);
+    assert(S.heldWrite && S.heldWrite.type === 1, 'a new hold is a PUNCH: ' + JSON.stringify(S.heldWrite));
+    const hh = render.bankPageHints(S.activeBank);
+    assert(hh.some(p => p[0] === 'SHFT' && p[1] === 'POINT'), 'the footer names what a tap switches to (SHFT POINT): ' + JSON.stringify(hh));
+    sets.length = 0;
+    shift(true); shift(false); ticks(2);
+    assert(S.heldWrite.type === 0, 'the tap flipped it to POINT');
+    assert(S.actionPopupLines && S.actionPopupLines[0] === 'POINT', 'the popup says POINT: ' + JSON.stringify(S.actionPopupLines));
+    assert(!sets.some(x => x.indexOf('_pa_hold_write=') >= 0), 'nothing written yet: ' + JSON.stringify(sets));
+    note(STEP(2), 0); ticks(3);
+});
+step('⭐ SHIFT TAP after a turn: the same step is written again as the other type, from the base', () => {
+    note(STEP(2), 127); ticks(3);
+    assert(S.heldWrite.type === 1, 'the next hold starts PUNCH again (the tap was per hold)');
+    sets.length = 0;
+    cc(72, 1); ticks(2);
+    const at = S.heldStep + ' ' + S.heldStep + ' 24 ';
+    const first = extendsOf();
+    note(STEP(2), 0); ticks(3);
+    assert(first.length === 1 && / 1 0$/.test(first[0]) && first[0].startsWith(at), 'a punch, the hold\'s first write: ' + JSON.stringify(first));
+    note(STEP(2), 127); ticks(3);
+    sets.length = 0;
+    cc(72, 1); ticks(2);
+    const v = extendsOf()[0].split(' ')[3];
+    shift(true); shift(false); ticks(2);
+    const all = extendsOf();
+    shift(true); shift(false); ticks(2);
+    const again = extendsOf();
+    note(STEP(2), 0); ticks(3);
+    assert(all.length === 2 && all[1] === at + v + ' 0 1', 'rewritten as a POINT, same value, rebased: ' + JSON.stringify(all));
+    assert(again[2] === at + v + ' 1 1', 'and back to a PUNCH: ' + JSON.stringify(again));
+});
+step('Shift HELD while turning is fine control, not a tap: the release changes nothing', () => {
+    note(STEP(2), 127); ticks(3);
+    sets.length = 0;
+    shift(true); cc(72, 1); ticks(2); shift(false); ticks(2);
+    const type = S.heldWrite.type, w = extendsOf();
+    note(STEP(2), 0); ticks(3);
+    assert(type === 1, 'still PUNCH after a fine turn');
+    assert(w.length === 1 && / 1 0$/.test(w[0]), 'one punch write, no rewrite: ' + JSON.stringify(w));
+});
+step('a Shift release the input ring dropped is healed — and a heal is not a tap', () => {
+    note(STEP(2), 127); ticks(3);
+    shift(true); ticks(1);
+    assert(S.autoShiftTap, 'setup: a tap armed');
+    const was = globalThis.shadow_get_shift_held;
+    globalThis.shadow_get_shift_held = () => 0;          /* the hardware says up; the CC never came */
+    ticks(2);
+    globalThis.shadow_get_shift_held = was;
+    assert(!S.shiftHeld, 'setup: the heal ran');
+    assert(S.heldWrite.type === 1, 'the heal did not flip the type: ' + JSON.stringify(S.heldWrite));
+    note(STEP(2), 0); ticks(3);
+});
+
 if (failed) { console.error('FAIL: test_automation_hold_jump'); process.exit(1); }
 console.log('PASS: test_automation_hold_jump');
 }

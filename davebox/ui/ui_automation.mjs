@@ -1210,7 +1210,7 @@ function splitFullKey(fullKey) {
 function gestureFor(target, track, clip, synthetic) {
     let g = gestures.get(target);
     if (!g) {
-        g = { track, clip, rest: false, ckpt: false, live: false, lock: false, norm: null, synthetic, idle: 0, lastEditMs: S.clockMs };
+        g = { track, clip, rest: false, ckpt: false, live: false, lock: false, norm: null, tps: 0, synthetic, idle: 0, lastEditMs: S.clockMs };
         gestures.set(target, g);
     }
     return g;
@@ -1303,6 +1303,32 @@ export function automationExtendLock(track, clip, target, fromStep, toStep, tps,
     S.heldExtend = { step: fromStep, to: toStep, track, clip, target, tps };
     presenceStale = true;
     console.log('[auto] extend t' + track + ' c' + clip + ' ' + target + ' ' + fromStep + '->' + toStep);
+}
+
+/* THE SHIFT TAP (Josh, 2026-10-21: "how about hold step, and tapping
+ * shift(or something else) toggles between point or punch" · "yeah, we can
+ * [have a] flash pop up when you change between them"): the hold's write type
+ * flips, a popup names it, and whatever the hold already wrote is written
+ * again as the other type — same value, same span, from the hold's base. */
+export function automationShiftTap() {
+    if (S.heldStep < 0) return;
+    const type = (S.heldWrite && S.heldWrite.type === 0) ? 1 : 0;
+    S.heldWrite = { type };
+    showActionPopupFor(700, type ? 'PUNCH' : 'POINT');
+    const x = S.heldExtend;
+    let xDone = false;
+    for (const [target, g] of gestures) {
+        if (!g.lock || g.norm == null) continue;
+        const stretched = !!(x && x.step === S.heldStep && x.track === g.track && x.target === target);
+        if (stretched) xDone = true;
+        sendHoldWrite(g.track, g.clip, target, S.heldStep, stretched ? x.to : S.heldStep,
+                      stretched ? x.tps : g.tps, g.norm, true);
+    }
+    /* A stretch made with no turn: the held step's own value, re-spread. */
+    if (x && !xDone && x.step === S.heldStep && x.to !== x.step)
+        sendHoldWrite(x.track, x.clip, x.target, x.step, x.to, x.tps, -1, true);
+    presenceStale = true;
+    console.log('[auto] shift tap: ' + (type ? 'PUNCH' : 'POINT'));
 }
 
 /* THE HOLD WRITE (tN_pa_hold_write): every write a held step makes — a turn,
@@ -1404,6 +1430,7 @@ export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) 
         const rebase = g.lock || stretched;
         g.lock = true;
         g.norm = norm;
+        g.tps = tps;
         /* Turning a knob on a pressed step makes it a HOLD, however quickly the
          * finger came back up — otherwise a fast press-turn-release writes the
          * lock and then the release tap-toggles the note it was written on. The

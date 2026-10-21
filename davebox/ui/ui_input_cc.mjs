@@ -59,7 +59,7 @@ import { autoBankClick, autoBankJog, autoBankBack, autoBankDeleteClick, autoBank
          autoBankJumpTarget, autoBankRestoreMenu, autoCyclePageStep,
          autoLanePinJump, autoLanePinClear, laneHome } from './ui_automation_bank.mjs';
 import { automationParamEdit, automationCaptureCommit, automationCaptureCommitAfterNotes,
-         automationCaptureClear, automationClearBanksQueued } from './ui_automation.mjs';
+         automationCaptureClear, automationClearBanksQueued, automationShiftTap } from './ui_automation.mjs';
 import { sessStripTargets, engineLoadedModule, engineModuleName, slotIndex,
          moveBusForChannel, moveBusPrefix } from './ui_engine.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
@@ -1839,7 +1839,7 @@ let _sessLoopShiftPress = false;   /* Session View: this Loop press was Shift+Lo
 export function syncCoRunShift() {
     if (S.moveCoRunTrack < 0) return;
     const phys = !!shadow_get_shift_held();
-    if (phys !== !!S.shiftHeld) applyShiftEdge(phys);
+    if (phys !== !!S.shiftHeld) { S.autoShiftTap = null; applyShiftEdge(phys); }
 }
 
 export function applyShiftEdge(held) {
@@ -1848,6 +1848,19 @@ export function applyShiftEdge(held) {
         console.log('dbx: SHIFT PRESS reached the module');
     }
     S.shiftHeld = held;
+    /* THE SHIFT TAP (Josh, 2026-10-21: "how about hold step, and tapping
+     * shift ... toggles between point or punch"): with a step held, Shift
+     * pressed and released with nothing else done meanwhile flips what the
+     * hold writes. A knob turned while it is down is fine control and a button
+     * with it is a chord (ui.js marks either), so neither is a tap. No timer.
+     * A release the input ring dropped is healed by a path that clears the
+     * tap first — a heal is not a tap. */
+    if (held) S.autoShiftTap = S.heldStep >= 0 ? { turned: false } : null;
+    else if (S.autoShiftTap) {
+        const tap = S.autoShiftTap;
+        S.autoShiftTap = null;
+        if (!tap.turned && S.heldStep >= 0) automationShiftTap();
+    }
     soundShiftEdge(held);      /* sound mode's own copy: it sees the CC only when it is steering */
     S.screenDirty = true;      /* the overview footer names the Shift chords while it is held (2026-09-05) */
         /* Shift IS the volume-knob claim (Josh, 2026-08-24): while held, Move's
@@ -1876,7 +1889,9 @@ export function applyShiftEdge(held) {
         /* ⚠ A teardown on an input edge — see standDownBankDisplay: it declines
          * if this same pass armed the window (the Shift+click latch arms it) or
          * if the card is latched. This site does NOT re-implement either rule. */
-        if (!S.sessionView) { S.jogTouched = false; standDownBankDisplay(); }
+        /* …except while a step is held: the readout a lock turn armed must
+         * survive a Shift tap. */
+        if (!S.sessionView) { S.jogTouched = false; if (S.heldStep < 0) standDownBankDisplay(); }
         /* Arp step editor: Shift flips the Pitch <-> Velocity page — redraw on
          * both edges so the flip is immediate. */
         if (S.stepIntervalMode && !S.sessionView) forceRedraw();
@@ -2963,7 +2978,7 @@ export function checkShiftStep11Hold() {
     if (S.sessionView || S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM ||
             S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT ||
             S.moveCoRunTrack >= 0 || soundModeCovered() || S.awaitingProjectSelect) return;
-    if (S.shiftHeld) applyShiftEdge(false);
+    if (S.shiftHeld) { S.autoShiftTap = null; applyShiftEdge(false); }
     closeDoorScreen();          /* an AUTOMATION screen up gives its bank back first */
     const t = S.activeTrack;
     if (S.activeBank !== 5) { S.bankPickerSel = bankListFor(t).indexOf(5); applyBankPick(false); }

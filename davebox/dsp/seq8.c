@@ -9663,9 +9663,8 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
              * written in (a held step writes its point at step * tps). A
              * recorded sweep lays a point every half step, so it lights every
              * step it covers: the store does not tell a lock from a sweep.
-             * The FIRST of a jump pair lights nothing: it is the value arriving
-             * from before (a punch's glide-in, a run's hold-end), and the
-             * step it starts is lit by the pair's second. */
+             * A punch lights its step and the step after it (that one starts
+             * with the jump back out — a real point). */
             if (!strcmp(p, "_pa_steps")) {
                 int n = 0;
                 if (out_len > 0) out[0] = '\0';           /* an empty clip is an empty STRING */
@@ -9689,7 +9688,6 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                     const uint32_t etps = pa_lane_step(tr, e, tps);
                     memset(mask, '0', SEQ_STEPS);
                     for (int k = 0; k < (int)e->count && k < PA_ENTRY_POINTS; k++) {
-                        if (k + 1 < (int)e->count && e->points[k + 1].tick == e->points[k].tick) continue;
                         uint32_t s = (uint32_t)e->points[k].tick / etps;
                         if (s >= SEQ_STEPS) continue;
                         mask[s] = '1';
