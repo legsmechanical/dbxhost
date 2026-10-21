@@ -1082,10 +1082,16 @@ static uint16_t pa_lerp(int64_t ta, uint16_t va, int64_t tb, uint16_t vb, int64_
  * take over from there; after the last point the last value holds to the loop
  * end (no ramp across the wrap: the wrap goes back to rest). A lane with no
  * resting value captured falls back to the first point's value.
+ * With SMOOTH (Josh, 2026-10-20: "smooth implies that the value never jumps.
+ * and on reset it does") the stretch before the first point RAMPS from rest at
+ * the window start to what the first point plays — its SCALED value, so the
+ * ramp meets the point without a step. The jump back to rest at the loop
+ * boundary stays ("reset means reset").
  *
- * Returns 0 = no value, 1 = a lane value, PA_EVAL_REST = the RESTING value —
- * which the caller must NOT scale: Scale moves the lane's values, and rest is
- * not one of them. */
+ * Returns 0 = no value, 1 = a lane value, PA_EVAL_REST = a FINAL value the
+ * caller must NOT scale: the resting value (Scale moves the lane's values, and
+ * rest is not one of them), or a point on the Reset + Smooth lead-in ramp,
+ * whose ends are already the values that play. */
 #define PA_EVAL_REST 2
 static int pa_eval_window(const pa_entry_t *e, uint32_t t, uint32_t ws, uint32_t wl, uint16_t *out) {
     if (!e || !e->count) return 0;
@@ -1097,7 +1103,9 @@ static int pa_eval_window(const pa_entry_t *e, uint32_t t, uint32_t ws, uint32_t
     if (e->flags & PA_FLAG_WRAP_RESET) {
         if (t < f->tick) {
             if (e->rest == PA_VAL_UNSET) { *out = f->val; return 1; }
-            *out = e->rest;
+            *out = (e->flags & PA_FLAG_SMOOTH)
+                   ? pa_lerp(ws, e->rest, f->tick, pa_scaled(e, f->val), t)
+                   : e->rest;
             return PA_EVAL_REST;
         }
         if (t >= l->tick) { *out = l->val; return 1; }

@@ -1444,7 +1444,8 @@ lane**, not the clip's notes (click the row for its operations, below):
   including that step, the way a held note stretches to a tapped step. The value is
   what the lane plays on the held step, even between two points. Anything already
   set in between is replaced, and the step after the range plays what it played
-  before. **Left / Right** still page the lane while you hold, so the range can reach
+  before — except with **Smooth** on, where the value never jumps: it glides on
+  from the end of the range to the next lock. **Left / Right** still page the lane while you hold, so the range can reach
   into later bars. Pressing an earlier step wraps round the end of the cycle. Press
   the **end step again** to shorten the range by one, or a step inside it to shorten
   it there; the steps you give back play what they did before. While you hold, every
@@ -1463,8 +1464,9 @@ lane**, not the clip's notes (click the row for its operations, below):
 - **Smooth** — *On* glides between values, *Off* steps (on parameters that can
   ramp).
 - **Wrap** — *Reset* (default) returns the parameter to where the knob sits at rest,
-  until the first lock or recorded move comes round; *Carry* keeps the last value
-  going round the loop. Lanes saved before this change keep the Wrap they had.
+  until the first lock or recorded move comes round; with **Smooth** on it glides
+  up from there to the first lock instead of jumping to it. *Carry* keeps the last
+  value going round the loop. Lanes saved before this change keep the Wrap they had.
 - **Link** — *On* (default): the automation is transformed with the note sequence —
   Resolution and Beat Stretch scale it, Clock Shift and Nudge move it (inside the
   clip's loop, as they move its notes), doubling the loop copies it forward, and
