@@ -44,6 +44,7 @@ import { saveState, writeSidecar, doClearSession, showActionPopup,
 import {
     openSaveSnapshot, closeSnapshotPicker,
     snapshotPickerRotate, snapshotPickerClick,
+    closeTemplateManager, templateManagerRotate, templateManagerClick, templateManagerBack,
     showMenuInfo, closeConvertConfirm,
     closeProjectPadPicker, projectPadPickerModifiers,
     projectPadPickerClick, projectPadPickerRotate, projectPadPickerBack,
@@ -72,7 +73,6 @@ import { soundActive, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVo
     macroClearConfirmReset, macroClearConfirmOpen, soundKnobCardClick, soundEnterSendFromSessionMixer,
     soundOnCard, soundInEditor, soundEnterBusFx, soundResting, soundCardClick, soundKnobTouched } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
-import { templateConfirmClick } from './ui_template.mjs';
 import { ensureGlobalMenuFresh, openGlobalMenu, openGlobalMenuAt } from './ui_menu.mjs';
 /* ⚠ one-way: ui_render never imports this module (checked 2026-08-31) —
  * the visibility predicate must be the render's own or the click gate and
@@ -197,6 +197,10 @@ function _onCC_jog(d1, d2) {
     /* Snapshot picker: jog click resolves a confirm or arms one. */
     if (d1 === 3 && d2 === 127 && S.snapshotPicker) {
         snapshotPickerClick();
+        return;
+    }
+    if (d1 === 3 && d2 === 127 && S.templateManager) {   /* TEMPLATES (ui_dialogs.mjs) */
+        templateManagerClick();
         return;
     }
     /* ⭑ SHIFT + CLICK ON A LANE JUMPS TO ITS PARAMETER (plan 6c2). Ahead of
@@ -606,7 +610,6 @@ function modalDialogUp() {
             S.screenDirty = true;
             return;
         }
-        if (S.confirmTemplate) { templateConfirmClick(); return; }
         if (S.confirmSaveState) {
             const yes = S.confirmSaveSel === 0;
             S.confirmSaveState = false;
@@ -1033,6 +1036,10 @@ function modalDialogUp() {
             snapshotPickerRotate(decodeDelta(d2));
             return;
         }
+        if (S.templateManager) {
+            templateManagerRotate(decodeDelta(d2));
+            return;
+        }
         if (S.confirmBakeScene) {
             const delta = decodeDelta(d2);
             if (delta !== 0) {
@@ -1149,9 +1156,6 @@ function modalDialogUp() {
             } else if (S.confirmClearSession) {
                 const delta = decodeDelta(d2);
                 if (delta !== 0) { S.confirmClearSel = S.confirmClearSel === 0 ? 1 : 0; S.screenDirty = true; }
-            } else if (S.confirmTemplate) {
-                const delta = decodeDelta(d2);
-                if (delta !== 0) { S.confirmTemplate.sel = S.confirmTemplate.sel === 0 ? 1 : 0; S.screenDirty = true; }
             } else if (S.confirmSaveState) {
                 const delta = decodeDelta(d2);
                 if (delta !== 0) { S.confirmSaveSel = S.confirmSaveSel === 0 ? 1 : 0; S.screenDirty = true; }
@@ -2450,7 +2454,7 @@ export function backTapWouldAct() {
     if (S.globalEnumPick) return true;
     if (autoMenuUp() || doorScreenUp()) return true;     /* AUTOMATION's layers / its screen */
     if (S.confirmMacroClear || S.chordPopupOpen) return true;
-    if (S.snapshotPicker || S.tempoSelectActive ||
+    if (S.snapshotPicker || S.templateManager || S.tempoSelectActive ||
         S.mergeNoticePending || S.mergeCountingIn ||
         S.pendingMergePlacement || S.mergeSoloPlacement >= 0 ||
         S.capturePlaceTrack >= 0 || S.pendingSceneBakePicker ||
@@ -2517,7 +2521,7 @@ export function atOverview() {
     if (S.stepRecActive)                                            return false;
     if (S.globalMenuOpen || S.daveBox || S.projectPadPicker)        return false;
     if (miActive())                                                 return false;
-    if (S.snapshotPicker || S.globalEnumPick)                       return false;
+    if (S.snapshotPicker || S.templateManager || S.globalEnumPick)  return false;
     if (S.tapTempoOpen || S.tempoSelectActive)                      return false;
     if (S.mergeNoticePending || S.mergeCountingIn ||
         S.pendingMergePlacement || S.mergeSoloPlacement >= 0)       return false;
@@ -2570,6 +2574,7 @@ function _tearDownToOverview() {
     /* 1. Transient dialogs, pickers and captures. No early returns: this is a
      *    one-press escape, so everything open closes at once. */
     if (S.snapshotPicker) { S.snapshotPicker.confirm = null; closeSnapshotPicker(false); }
+    if (S.templateManager) closeTemplateManager(false);
     if (S.globalEnumPick) closeGlobalEnumPick(false);          /* abandon, never commit */
     if (S.tempoSelectActive) {
         /* Keep the auditioned tempo, exactly as Back and the jog-click do. */
@@ -2621,7 +2626,7 @@ function _tearDownToOverview() {
      * menu open would leave one live and invisible behind the overview. */
     if (S.confirmConvertToDrum || S.confirmConvertToConduct) closeConvertConfirm();
     if (S.globalMenuOpen) {
-        S.confirmClearSession = false; S.confirmSaveState = false; S.confirmTemplate = null;
+        S.confirmClearSession = false; S.confirmSaveState = false;
         S.menuInfoLines = []; S.exportDoneDialog = false;
         S.confirmExportCondPhase = false; S.confirmExport = false;
         S.globalMenuOpen = false; S.lastSentMenuEditValue = null;
@@ -2729,6 +2734,10 @@ function _backTap() {
         else closeSnapshotPicker();
         forceRedraw(); return;
     }
+    if (S.templateManager) {              /* confirm → menu → list → the Project menu */
+        if (!templateManagerBack()) closeTemplateManager();
+        forceRedraw(); return;
+    }
     if (S.globalEnumPick) { closeGlobalEnumPick(false); forceRedraw(); return; }
     /* The AUTOMATION bank's layers (ops → menu → card) close one per press;
      * with none open, Back is davebox's own (out of bank mode). */
@@ -2787,7 +2796,6 @@ function _backTap() {
      *    menu, otherwise the menu itself closes. */
     if (S.globalMenuOpen) {
         if (S.confirmClearSession)        { S.confirmClearSession = false; }
-        else if (S.confirmTemplate)       { S.confirmTemplate = null; }
         else if (S.confirmSaveState)      { S.confirmSaveState = false; }
         else if (S.confirmConvertToDrum)  { closeConvertConfirm(); }
         else if (S.confirmConvertToConduct){ closeConvertConfirm(); }
@@ -4800,7 +4808,7 @@ function _onCC_knobs(d1, d2) {
             }
             return;
         }
-        if (S.globalMenuOpen || S.tapTempoOpen || S.confirmBake || S.confirmClearSession || S.confirmTemplate || S.confirmConvertToDrum || S.confirmModuleChange || S.confirmConvertToConduct || S.menuInfoLines.length > 0 || S.confirmExport || S.exportDoneDialog || S.recordBlockedDialog || S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.bpmMoveInfo) return;
+        if (S.globalMenuOpen || S.tapTempoOpen || S.confirmBake || S.confirmClearSession || S.confirmConvertToDrum || S.confirmModuleChange || S.confirmConvertToConduct || S.menuInfoLines.length > 0 || S.confirmExport || S.exportDoneDialog || S.recordBlockedDialog || S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.bpmMoveInfo) return;
         const knobIdx = d1 - 71;
         S.knobTouched          = knobIdx;
         S.knobTurnedTick[knobIdx] = nowMs();

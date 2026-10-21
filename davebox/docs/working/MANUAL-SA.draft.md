@@ -2465,8 +2465,8 @@ see [Track settings](#174-track-settings) below.
 | Card Hold | How long a knob's page stays on screen after you let go of the knob (the mixer page in Session View) — see [§3.6](#36-parameter-banks) | Off, 0.5 s, 1 s, 2 s | Off |
 | MIDI In | Channel filter for external input — All, or one channel | All, 1–16 | All |
 | Projects... | The project picker — see [Projects](#175-projects) | action | — |
-| Set as Template | Make this project the starting point for new ones — see [Projects](#175-projects) | action | — |
-| Clear Template | Shown while you have a template: new projects start empty again | action | — |
+| Save as Template... | Save this project, under a name you give it, as a starting point for new ones — see [Projects](#175-projects) | action | — |
+| Templates... | Shown while you have templates: rename, replace or delete them | action | — |
 | Save state / Load state | Save or restore a named snapshot — see [§17.3](#173-snapshots) | action | — |
 | Clear Sess | Clear the whole project back to empty (asks first) | action | — |
 | Export to Ableton | Write a Live bundle of the project — see [§16.3](#163-export-to-live) | action | — |
@@ -2632,8 +2632,10 @@ project, 32 slots:
   and opens it in the same press.
 - **Copy:** hold Copy, tap the project, then tap an empty pad. Releasing Copy
   cancels. The copy is a snapshot, colors and all, named "*Name* Copy".
-- **From your template:** once you have saved a template (below), creating a
+- **From a template:** once you have saved a template (below), creating a
   project asks **Empty** or **Template** (Template selected); Shift + tap asks too.
+  **Template** opens the list of your templates; pick one and the project is made
+  from it.
 - **Delete:** hold Delete, tap the project, tap it again to confirm (it blinks red
   in between). Releasing cancels. You can delete the project you're in: the screen
   warns that dAVEBOx will restart, and it returns a few seconds later at the
@@ -2645,16 +2647,28 @@ project, 32 slots:
   again; **Back** returns to the picker. If the project list itself can't be read,
   the screen says so and offers **Retry** or **Quit**.
 
-**Project template.** **Project Settings → Set as Template** saves a copy of the
-project you're in as the starting point for new projects: its project settings,
+**Project templates.** **Project Settings → Save as Template...** asks for a name
+(it starts as the project's) and saves a copy of the project you're in as a
+starting point for new projects: its project settings,
 the instrument and effects on each track with their settings, the MACROS, and
 the track settings (type, layout, transpose, VelIn, aftertouch, looper, and
 where each track plays — a MIDI track's program, a drum track's pad notes). No
 clips, notes or automation come along, and every sequencer bank (NOTE FX,
 HARMONY, DELAY, SEQ ARP, LIVE ARP…) starts at its default. The template is its
-own copy: changing or deleting the project afterwards doesn't touch it. Setting a
-template when you already have one asks before replacing it. **Clear Template**
-(shown while you have one) makes New start empty again.
+own copy: changing or deleting the project afterwards doesn't touch it. Each save
+adds a new template; two templates can't share a name.
+
+**Project Settings → Templates...** (shown while you have any) lists your
+templates. Click one for its menu:
+
+- **Rename** — give it a new name.
+- **Replace with Current** — asks first, then saves the project you're in over
+  it. It keeps its name.
+- **Delete** — asks first. Projects made from it aren't touched. Delete the last
+  one and New starts empty again.
+
+**Back** steps out (the confirm → the template's menu → the list → Project
+Settings).
 
 If a template uses a module this Move doesn't have, the new project starts with
 that slot empty and the screen names what's missing (**MODULES MISSING**).

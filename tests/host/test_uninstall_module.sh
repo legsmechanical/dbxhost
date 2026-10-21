@@ -41,6 +41,7 @@ mk() {  # a fresh device. $1 = heal: blessable | none | stuck (cannot unbind)
              "$D/sets/template/t" "$D/scripts" "$D/modules/chain" "$D/shadow" "$D/__pycache__"
     echo "song" > "$D/projects/p1/Move-Set-p1/Song.abl"
     mkdir -p "$D/templates/default"; echo '{"tracks": []}' > "$D/templates/default/Song.abl"
+    mkdir -p "$D/templates/t2"; echo '{"name": "Kit"}' > "$D/templates/t2/meta.json"
     echo '[]' > "$D/projects.json"; echo bundle > "$D/davebox-exports/a.ablbundle"; echo smf > "$D/MIDI/p1 1A.mid"
     for f in daves-seen.txt daves-window.txt bank-view-map.txt card-hold.txt seq-follow.txt midi-mute.txt midi-map.txt parallel-modules.txt active_set.txt \
              sa_master_volume shadow_config.json; do echo "mine $f" > "$D/$f"; done
@@ -117,14 +118,14 @@ grep -q "nothing was changed" "$T/out" && ! grep -q "is uninstalled" "$T/out" &&
 
 echo "--run on a full install (Sets and settings bound, helper blessable):"
 mk blessable; bound; settings_bound
-for f in projects/p1/Move-Set-p1/Song.abl templates/default/Song.abl projects.json davebox-exports/a.ablbundle "MIDI/p1 1A.mid" daves-seen.txt \
+for f in projects/p1/Move-Set-p1/Song.abl templates/default/Song.abl templates/t2/meta.json projects.json davebox-exports/a.ablbundle "MIDI/p1 1A.mid" daves-seen.txt \
          daves-window.txt bank-view-map.txt card-hold.txt seq-follow.txt midi-mute.txt midi-map.txt parallel-modules.txt active_set.txt sa_master_volume \
          shadow_config.json config/tts.json sets/sa_song_index quarantine/seq8sa-1-2.json \
          sets/quarantine/20260921/orphan/Song.abl settings/Settings.json; do cksum "$F/dbx/$f"; done > "$T/kept.before"
 run "$SH" --run
 [ "$RC" = 0 ] && ok "exit 0" || { bad "rc=$RC"; sed 's/^/      /' "$T/out"; }
 [ "$(cat "$F/done" 2>/dev/null)" = 0 ] && ok "done file says 0" || bad "done=$(cat "$F/done" 2>/dev/null)"
-for f in projects/p1/Move-Set-p1/Song.abl templates/default/Song.abl projects.json davebox-exports/a.ablbundle "MIDI/p1 1A.mid" daves-seen.txt \
+for f in projects/p1/Move-Set-p1/Song.abl templates/default/Song.abl templates/t2/meta.json projects.json davebox-exports/a.ablbundle "MIDI/p1 1A.mid" daves-seen.txt \
          daves-window.txt bank-view-map.txt card-hold.txt seq-follow.txt midi-mute.txt midi-map.txt parallel-modules.txt active_set.txt sa_master_volume \
          shadow_config.json config/tts.json sets/sa_song_index quarantine/seq8sa-1-2.json \
          sets/quarantine/20260921/orphan/Song.abl settings/Settings.json; do cksum "$F/dbx/$f" 2>&1; done > "$T/kept.after"

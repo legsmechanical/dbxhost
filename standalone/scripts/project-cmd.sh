@@ -1514,10 +1514,11 @@ _require_own_tree() { # verb
     _not_native "$1" "$LIBRARY_DIR"
 }
 
-# ---- project templates (Set as Template / Clear Template) ------------------
+# ---- project templates (Save as Template / the Templates screen) -----------
 # The module saves the open project first (its state, sidecar and chains), then
-# writes the template sidecar and calls this. Move's song is flushed here.
-do_template_set() { # id entry-or-project-id ui.json prefix
+# writes the template sidecar and calls this. Move's song is flushed here. A
+# name names a new template; without one a replace keeps the template's name.
+do_template_set() { # id entry-or-project-id ui.json prefix [name]
     [ -n "${1:-}" ] || die "template-set needs an id"
     [ -n "${3:-}" ] && [ -n "${4:-}" ] || die "template-set needs the module's sidecar and state prefix"
     _tp="$(resolve_open_project "${2:-}")"
@@ -1531,7 +1532,7 @@ print(pn.name_of(sys.argv[1]) or "")
 PYEOF
 )"
     python3 "$DBX_PY_DIR/project_template.py" set "$TEMPLATES_DIR" "$1" \
-        "$PROJECTS_DIR/$_tp" "$3" "$4" "$_tname" || die "template-set failed"
+        "$PROJECTS_DIR/$_tp" "$3" "$4" "$_tname" ${5:+"$5"} || die "template-set failed"
     do_list >/dev/null
     printf 'project-cmd: template "%s" taken from %s\n' "$1" "$_tp"
 }
@@ -1541,6 +1542,13 @@ do_template_clear() { # id
     python3 "$DBX_PY_DIR/project_template.py" clear "$TEMPLATES_DIR" "$1" || die "template-clear failed"
     do_list >/dev/null
     printf 'project-cmd: template "%s" cleared\n' "$1"
+}
+
+do_template_rename() { # id name
+    [ -n "${1:-}" ] && [ -n "${2:-}" ] || die "template-rename needs an id and a name"
+    python3 "$DBX_PY_DIR/project_template.py" rename "$TEMPLATES_DIR" "$1" "$2" || die "template-rename failed"
+    do_list >/dev/null
+    printf 'project-cmd: template "%s" renamed\n' "$1"
 }
 
 case "${1:-}" in
@@ -1559,7 +1567,8 @@ case "${1:-}" in
     rename) _require_own_tree rename; shift; do_rename "${1:-}" "${2:-}" ;;
     repair-indices) _require_own_tree repair-indices; do_repair_indices ;;
     fix-order) _require_own_tree fix-order; shift; do_fix_order "${1:-}" ;;
-    template-set) _require_own_tree template-set; shift; do_template_set "${1:-}" "${2:-}" "${3:-}" "${4:-}" ;;
+    template-set) _require_own_tree template-set; shift; do_template_set "${1:-}" "${2:-}" "${3:-}" "${4:-}" "${5:-}" ;;
     template-clear) _require_own_tree template-clear; shift; do_template_clear "${1:-}" ;;
-    *) die "usage: project-cmd.sh list|new <name>|new-at <index> [name]|copy <src> <dst>|delete <index>|switch <index>|color <index> <n>|rename <index> <name>|library-sync|repair-indices|fix-order [uuid]|template-set <id> <entry-or-project> <ui.json> <prefix>|template-clear <id>" ;;
+    template-rename) _require_own_tree template-rename; shift; do_template_rename "${1:-}" "${2:-}" ;;
+    *) die "usage: project-cmd.sh list|new <name>|new-at <index> [name]|copy <src> <dst>|delete <index>|switch <index>|color <index> <n>|rename <index> <name>|library-sync|repair-indices|fix-order [uuid]|template-set <id> <entry-or-project> <ui.json> <prefix> [name]|template-clear <id>|template-rename <id> <name>" ;;
 esac

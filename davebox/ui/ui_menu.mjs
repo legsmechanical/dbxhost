@@ -27,11 +27,11 @@ import { openDaveBox, daveWindowOn, setDaveWindowOn } from './ui_daves.mjs';
 import { bluetoothPresent, bluetoothOn, setBluetoothOn } from './ui_bluetooth.mjs';
 import { cardHoldMs, setCardHoldMs, CARD_HOLD_CHOICES } from './ui_prefs.mjs';
 import { saveState, loadSnapshotManifest, showActionPopup } from './ui_persistence.mjs';
-import { openLoadSnapshot, openProjectPadPicker } from './ui_dialogs.mjs';
+import { openLoadSnapshot, openProjectPadPicker, requestSaveTemplate, openTemplateManager } from './ui_dialogs.mjs';
 import { forceRedraw } from './ui_leds.mjs';
 import { exitMoveNativeCoRun, DAVEBOX_PICKER_KEEP_MASK, enterMoveSettingsCoRun } from './ui_corun.mjs';
 import { requestExport } from './ui_export.mjs';
-import { requestSetTemplate, requestClearTemplate, hasTemplate } from './ui_template.mjs';
+import { anyTemplates, SAVE_ROW, LIST_ROW } from './ui_template.mjs';
 import { xposePreviewSet } from './ui_xpose.mjs';
 import { grooveOptions, grooveCurrentIndex, grooveSelect, grooveLabel,
          GROOVE_SWING_16, GROOVE_SWING_8, GROOVE_TABLE } from './ui_groove.mjs';
@@ -259,14 +259,15 @@ function buildGlobalMenuItems() {
             openProjectPadPicker();
             if (S.projectPadPicker) S.projectPadPicker.fromMenu = true;   /* Back returns here */
         }),
-        /* The saved project TEMPLATE (Josh, 2026-09-30: "put set as template in
-         * the project menu alongside a clear template"). Set takes the project
-         * you are in; Clear shows only while there is one (ui_template.mjs). */
-        createAction('Set as Template', function() {
-            requestSetTemplate();
+        /* Saved project TEMPLATES (Josh, 2026-09-30: "put set as template in
+         * the project menu"; 2026-10-21: "multiple templates and a template
+         * manager"). Save names a new one from the project you are in;
+         * Templates... shows only while there are any (ui_template.mjs). */
+        createAction(SAVE_ROW, function() {
+            requestSaveTemplate();
         }),
-        hasTemplate() ? createAction('Clear Template', function() {
-            requestClearTemplate();
+        anyTemplates() ? createAction(LIST_ROW, function() {
+            openTemplateManager();
         }) : null,
         createDivider(),
         createAction('Save state', function() {

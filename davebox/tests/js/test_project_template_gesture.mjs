@@ -1,10 +1,12 @@
 /* tests/js/test_project_template_gesture.mjs — the saved project template,
  * from the module's side, through the real gestures.
  *
- * Josh, 2026-09-30: Set as Template and Clear Template are rows in the PROJECT
- * menu; setting over a saved template warns first; creating a project asks
- * Empty or From template; a module the template uses that the device lacks
- * leaves that slot empty, with a notice. The copy itself (what a template
+ * Josh, 2026-09-30: template rows in the PROJECT menu; creating a project
+ * asks Empty or From template; a module the template uses that the device
+ * lacks leaves that slot empty, with a notice. Josh, 2026-10-21: "multiple
+ * templates and a template manager" — Save as Template... names a new one,
+ * Templates... lists them (Rename / Replace with Current / Delete), and New's
+ * Template opens a list of them; no default template. The copy itself (what a template
  * holds, how New uses it) is project_template.py's, tested in
  * tests/host/test_saved_project_template.sh.
  *
@@ -100,6 +102,7 @@ const osStub = await import('os');
 const menu = await import('../../ui/ui_menu.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
 const dlg = await import('../../ui/ui_dialogs.mjs');
+const te = await import('/data/UserData/schwung/shared/text_entry.mjs');
 const cc = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
 const click = () => { cc(3, 127); cc(3, 0); };
 const jog = (d) => cc(14, d > 0 ? 1 : 127);
@@ -111,6 +114,7 @@ function ready() {
     S.awaitingProjectSelect = false; S.sessionView = false; S.currentSetUuid = 'proj-uuid';
     S.pendingSetLoad = false; S.pendingDspSync = 0; S.playing = false;
     S.projectPadPicker = null;
+    S.templateManager = null; S.templateNameEntry = null; te.closeTextEntry();   /* nothing left over from a step before */
     if (!S.bankParams || !S.bankParams[0])
         S.bankParams = Array.from({ length: 8 }, () => Array.from({ length: 16 }, () => new Array(8).fill(0)));
 }
@@ -128,78 +132,195 @@ step('the sidecar a template carries: this project\'s kept fields, fresh values 
     S.clipProgram[4][0] = [-1, -1, -1]; S.clipProgram[4][6] = [-1, -1, -1];
 });
 
-step('the Project menu has Set as Template, and no Clear Template while there is none', () => {
+/* What is ON SCREEN: every string drawn through the host font or the kit's,
+ * from the real frame (drawUI), as the device composes it. */
+const render = await import('../../ui/ui_render.mjs');
+const fonts = await import('../../ui/ui_fonts_pp.mjs');
+let INK = [];
+globalThis.print = (x, y, str) => { INK.push(String(str)); };
+fonts.setKitTextTrace((t) => INK.push(t));
+/* Kit list labels draw in capitals; compare without case. */
+const screen = () => { INK = []; render.drawUI(); return INK.join(' | ').toUpperCase(); };
+const back = () => { cc(51, 127); cc(51, 0); ticks(1); };
+const keyboardConfirm = () => { for (let i = 0; i < 120; i++) jog(1); click(); };   /* the last key: Confirm */
+const TPL = (id, name) => ({ id: id, name: name, source_name: 'x' });
+const SAVE = 'Save as Template...', LIST = 'Templates...';
+const menuAt = () => { const it = (S.globalMenuItems || [])[S.globalMenuState ? S.globalMenuState.selectedIndex : -1]; return it && it.label; };
+
+step('the Project menu: Save as Template... after Projects...; no Templates... while there are none; no old rows', () => {
     ready();
     listing.templates = [];
     menu.openGlobalMenu();
     const l = labels();
-    assert(l.indexOf('Set as Template') === l.indexOf('Projects...') + 1, 'rows ' + J(l));
-    assert(l.indexOf('Clear Template') < 0, 'Clear Template with no template');
+    assert(l.indexOf(SAVE) === l.indexOf('Projects...') + 1, 'rows ' + J(l));
+    assert(l.indexOf(LIST) < 0, 'Templates... with no templates');
+    assert(l.indexOf('Set as Template') < 0 && l.indexOf('Clear Template') < 0, 'an old row: ' + J(l));
     S.globalMenuOpen = false;
 });
 
-step('⭐ Set as Template (none saved): no question; the DSP save, then the chains, then the copy', () => {
+step('⭐ Save as Template...: the keyboard, on the project\'s name; Confirm → the DSP save, the chains, then the copy, NAMED', () => {
     ready();
     listing.templates = [];
+    S.currentSetName = "Josh's Kit";
     LOG.length = 0;
-    menu.openGlobalMenuAt('Set as Template');
-    click();
-    assert(!S.confirmTemplate, 'asked with nothing to overwrite');
+    menu.openGlobalMenuAt(SAVE);
+    click(); ticks(1);
+    assert(te.isTextEntryActive(), 'no keyboard');
+    assert(te.getTextEntryBuffer() === "Josh's Kit", 'starts from ' + J(te.getTextEntryBuffer()));
+    assert(!S.globalMenuOpen, 'the menu is still open under the keyboard');
+    const sel0 = S.globalMenuState.selectedIndex;
+    jog(1); ticks(1);
+    assert(te.isTextEntryActive() && S.globalMenuState.selectedIndex === sel0, 'the jog reached the menu under the keyboard');
+    keyboardConfirm();
+    assert(!te.isTextEntryActive(), 'Confirm did not close the keyboard');
     assert(popup() === 'SAVING / TEMPLATE', 'popup ' + popup());
     ticks(4);
     const iSave = LOG.indexOf('set save=1');
     const iChains = LOG.indexOf('chains saved');
-    const iCopy = LOG.findIndex(l => / template-set default proj-uuid '/.test(l));
-    assert(iSave >= 0 && iChains > iSave && iCopy > iChains, 'order: ' + J(LOG));
+    const iCopy = LOG.findIndex(l => / template-set t[0-9a-z]+ proj-uuid '.*' \S+ 'Josh'\\''s Kit'$/.test(l));
+    assert(iSave >= 0 && iChains > iSave && iCopy > iChains, 'order / quoting: ' + J(LOG));
     const ui = JSON.parse(FILES['/data/UserData/daveboxSA/templates/.incoming-ui.json'] || 'null');
     assert(ui && ui.v === 9 && Array.isArray(ui.am), 'the template sidecar was not written: ' + J(ui));
-    assert(popup() === 'TEMPLATE / SET', 'popup ' + popup());
+    assert(popup() === 'TEMPLATE / SAVED', 'popup ' + popup());
 });
 
-step('Set as Template over a saved one: REPLACE TEMPLATE?, No selected; No does nothing', () => {
+step('…a second save ADDS (a fresh id, never the first one\'s), and a name in use is refused', () => {
     ready();
-    listing.templates = [{ id: 'default', name: 'Template', source_name: 'Old' }];
+    const first = /template-set (t[0-9a-z]+) /.exec(LOG.find(l => /template-set/.test(l)))[1];
+    listing.templates = [TPL(first, "Josh's Kit")];
+    S.currentSetName = 'Second';
     LOG.length = 0;
-    menu.openGlobalMenuAt('Set as Template');
-    click();
-    assert(S.confirmTemplate && S.confirmTemplate.kind === 'replace' && S.confirmTemplate.sel === 1, J(S.confirmTemplate));
-    click();                                   /* No */
-    ticks(4);
-    assert(!LOG.some(l => /template-set/.test(l)) && !S.pendingTemplateSet, 'No went ahead: ' + J(LOG));
+    menu.openGlobalMenuAt(SAVE); click(); ticks(1); keyboardConfirm(); ticks(4);
+    const c = LOG.filter(l => /template-set/.test(l));
+    assert(c.length === 1 && c[0].indexOf(' template-set ' + first + ' ') < 0 && /'Second'$/.test(c[0]), J(c));
+    S.currentSetName = "josh's kit";                 /* case does not make it another name */
+    LOG.length = 0;
+    menu.openGlobalMenuAt(SAVE); click(); ticks(1); keyboardConfirm(); ticks(4);
+    assert(!LOG.some(l => /template-set/.test(l)), 'saved over a taken name: ' + J(LOG));
+    assert(popup() === 'NAME / TAKEN', 'popup ' + popup());
 });
 
-step('…and Yes replaces it', () => {
+step('Save as Template... mid-load says NOT READY and opens no keyboard', () => {
     ready();
-    LOG.length = 0;
-    menu.openGlobalMenuAt('Set as Template');
-    click(); jog(-1);                          /* to Yes */
-    assert(S.confirmTemplate.sel === 0, 'sel ' + S.confirmTemplate.sel);
-    click();
-    ticks(4);
-    assert(LOG.some(l => / template-set default proj-uuid /.test(l)), J(LOG));
+    S.pendingSetLoad = true;
+    menu.openGlobalMenuAt(SAVE); click(); ticks(1);
+    assert(!te.isTextEntryActive(), 'a keyboard while loading');
+    assert(popup() === 'TEMPLATE / NOT READY', 'popup ' + popup());
+    S.pendingSetLoad = false; S.globalMenuOpen = false;
 });
 
-step('Clear Template: shown while one is saved; asks; Yes clears', () => {
+step('Back on the keyboard: nothing saved, back on the Project menu at Save as Template...', () => {
     ready();
+    listing.templates = [];
     LOG.length = 0;
+    menu.openGlobalMenuAt(SAVE); click(); ticks(1);
+    assert(te.isTextEntryActive(), 'rig: no keyboard');
+    back(); ticks(8);
+    assert(!te.isTextEntryActive(), 'Back did not close the keyboard');
+    assert(!LOG.some(l => /template-set/.test(l)), J(LOG));
+    assert(S.globalMenuOpen && menuAt() === SAVE, 'not back on the row: ' + menuAt());
+});
+
+step('⭐ Templates...: shown once there are any; the TEMPLATES screen lists them by name, cursor on the first', () => {
+    ready();
+    listing.templates = [TPL('ta', 'Alpha'), TPL('default', 'Template')];   /* the old one, as it lists */
     menu.openGlobalMenu();
-    assert(labels().indexOf('Clear Template') === labels().indexOf('Set as Template') + 1, 'rows ' + J(labels()));
-    menu.openGlobalMenuAt('Clear Template');
-    click();
-    assert(S.confirmTemplate && S.confirmTemplate.kind === 'clear', J(S.confirmTemplate));
-    jog(-1); click();
-    assert(LOG.some(l => /template-clear default$/.test(l)), J(LOG));
-    assert(popup() === 'TEMPLATE / CLEARED', 'popup ' + popup());
+    assert(labels().indexOf(LIST) === labels().indexOf(SAVE) + 1, 'rows ' + J(labels()));
+    menu.openGlobalMenuAt(LIST); click(); ticks(1);
+    assert(S.templateManager && !S.globalMenuOpen, 'the screen did not open');
+    const sc = screen();
+    assert(/TEMPLATES/.test(sc) && /ALPHA/.test(sc) && /TEMPLATE\b/.test(sc), 'on screen: ' + sc);
+    assert(S.templateManager.sel === 0, 'cursor ' + S.templateManager.sel);
 });
 
-step('Back on the confirm closes it and does nothing', () => {
+step('a template\'s menu: its name, Rename, Replace with Current, Delete; Back peels to the list, then the Project menu', () => {
+    jog(1); click(); ticks(1);                         /* the old "Template" */
+    const sc = screen();
+    assert(/TEMPLATE/.test(sc) && /RENAME/.test(sc) && /REPLACE WITH CURRENT/.test(sc) && /DELETE/.test(sc), 'on screen: ' + sc);
+    back();
+    assert(S.templateManager && !S.templateManager.menu, 'Back did not peel to the list');
+    back(); ticks(8);
+    assert(!S.templateManager && S.globalMenuOpen && menuAt() === LIST, 'not back on Templates...: ' + menuAt());
+});
+
+step('⭐ Delete: DELETE TEMPLATE?, on No; No keeps it; Yes deletes THAT id (the legacy "default" too)', () => {
     ready();
     LOG.length = 0;
-    menu.openGlobalMenuAt('Clear Template');
-    click();
-    cc(51, 127); cc(51, 0); ticks(1);
-    assert(!S.confirmTemplate && !LOG.some(l => /template-/.test(l)), J(LOG));
+    menu.openGlobalMenuAt(LIST); click(); ticks(1);
+    jog(1); click(); ticks(1);                         /* Template's menu */
+    jog(1); jog(1); click(); ticks(1);                 /* Delete */
+    assert(/DELETE TEMPLATE/.test(screen()), 'on screen: ' + screen());
+    assert(S.templateManager.confirm.sel === 1, 'opens on Yes');
+    click(); ticks(1);                                 /* No */
+    assert(!LOG.some(l => /template-clear/.test(l)), 'No deleted: ' + J(LOG));
+    assert(S.templateManager.menu && !S.templateManager.confirm, 'No did not return to the menu');
+    click(); ticks(1); jog(-1); click(); ticks(1);     /* Delete → Yes */
+    assert(LOG.some(l => / template-clear default$/.test(l)), J(LOG));
+    assert(popup() === 'TEMPLATE / DELETED', 'popup ' + popup());
+});
+
+step('deleting the LAST one closes the screen: the Project menu, Templates... gone, cursor on Save as Template...', () => {
+    ready();
+    listing.templates = [TPL('ta', 'Alpha')];
+    menu.openGlobalMenuAt(LIST); click(); ticks(1);
+    click(); ticks(1); jog(1); jog(1); click(); ticks(1);
+    listing.templates = [];                            /* what the script re-lists */
+    jog(-1); click(); ticks(8);
+    assert(!S.templateManager, 'the empty screen stayed');
+    assert(S.globalMenuOpen && menuAt() === SAVE && labels().indexOf(LIST) < 0, 'menu ' + menuAt() + ' ' + J(labels()));
+});
+
+step('⭐ Rename: the keyboard on its name; Confirm renames THAT id, quoted; a taken name is refused', () => {
+    ready();
+    listing.templates = [TPL('ta', 'Alpha'), TPL('tb', 'Beta')];
+    LOG.length = 0;
+    menu.openGlobalMenuAt(LIST); click(); ticks(1);
+    click(); ticks(1); click(); ticks(1);              /* Alpha → Rename */
+    assert(te.isTextEntryActive() && te.getTextEntryBuffer() === 'Alpha', 'keyboard ' + te.getTextEntryBuffer());
+    click(); ticks(1);                                 /* type a key */
+    const typed = te.getTextEntryBuffer();
+    keyboardConfirm();
+    const r = LOG.filter(l => /template-rename/.test(l));
+    assert(r.length === 1 && r[0].endsWith(" template-rename ta '" + typed + "'"), J(r));
+    assert(popup() === 'TEMPLATE / RENAMED', 'popup ' + popup());
+    assert(S.templateManager && S.templateManager.menu, 'not back on its menu');
+    /* Beta + the same key would be a name another template has (any case). */
+    const k = typed.slice(-1);
+    listing.templates = [TPL('ta', typed), TPL('tb', 'Beta'), TPL('tc', ('Beta' + k).toUpperCase())];
+    S.templateManager = null;
+    LOG.length = 0;
+    menu.openGlobalMenuAt(LIST); click(); ticks(1);
+    jog(1); click(); ticks(1); click(); ticks(1);      /* Beta → Rename */
+    assert(te.getTextEntryBuffer() === 'Beta', 'rig: keyboard ' + te.getTextEntryBuffer());
+    click(); ticks(1); keyboardConfirm();
+    assert(!LOG.some(l => /template-rename/.test(l)), 'renamed onto a taken name: ' + J(LOG));
+    assert(popup() === 'NAME / TAKEN', 'popup ' + popup());
+    LOG.length = 0;
+    click(); ticks(1); keyboardConfirm();              /* Rename again, unchanged: nothing to do */
+    assert(!LOG.some(l => /template-rename/.test(l)), 'renamed to its own name: ' + J(LOG));
+});
+
+step('⭐ Replace with Current: REPLACE TEMPLATE?, Yes → the save chain on THAT id, no name (it keeps its own)', () => {
+    ready();
+    listing.templates = [TPL('ta', 'Alpha'), TPL('tb', 'Beta')];
+    LOG.length = 0;
+    menu.openGlobalMenuAt(LIST); click(); ticks(1);
+    jog(1); click(); ticks(1); jog(1); click(); ticks(1);        /* Beta → Replace with Current */
+    assert(/REPLACE TEMPLATE/.test(screen()) && /BETA/.test(screen()), 'on screen: ' + screen());
+    jog(-1); click(); ticks(6);
+    const c = LOG.filter(l => /template-set/.test(l));
+    assert(c.length === 1 && / template-set tb proj-uuid '[^']*' \S+$/.test(c[0]), J(c));
+    assert(LOG.indexOf('set save=1') >= 0 && LOG.indexOf('set save=1') < LOG.indexOf(c[0]), 'no save first: ' + J(LOG));
+    assert(!S.templateManager && S.globalMenuOpen && menuAt() === LIST, 'landed on ' + menuAt());
     S.globalMenuOpen = false;
+});
+
+step('Note/Session from TEMPLATES goes home: the screen closes, no menu', () => {
+    ready();
+    listing.templates = [TPL('ta', 'Alpha')];
+    menu.openGlobalMenuAt(LIST); click(); ticks(1);
+    cc(50, 127); cc(50, 0); ticks(8);
+    assert(!S.templateManager && !S.globalMenuOpen, 'still up: ' + J([!!S.templateManager, S.globalMenuOpen]));
 });
 
 /* ---- New, in the picker ---- */
@@ -220,13 +341,25 @@ step('control: no template → New asks Yes/No and creates an empty project', ()
     assert(c.length === 1 && !/DBX_TEMPLATE/.test(c[0]), J(c));
 });
 
-step('⭐ with a template → New asks Empty / Template, on Template; Template creates from it', () => {
+step('⭐ with templates → New asks Empty / Template, on Template; Template opens the list; a row creates from THAT one', () => {
     ready();
-    listing.templates = [{ id: 'default', name: 'Template', source_name: 'Old' }];
+    listing.templates = [TPL('ta', 'Alpha'), TPL('default', 'Template')];
     S.projectPadPicker = picker(); S.shiftHeld = false; LOG.length = 0;
     dlg.projectPadPickerTap(4);
     const cn = S.projectPadPicker.confirmNew;
     assert(cn && cn.choose && cn.sel === 1, J(cn));
+    let sc = screen();
+    assert(/EMPTY/.test(sc) && /TEMPLATE/.test(sc), 'on screen: ' + sc);
+    dlg.projectPadPickerClick();
+    assert(!LOG.some(l => /new-at/.test(l)), 'Template created without the list: ' + J(LOG));
+    sc = screen();
+    assert(/FROM TEMPLATE/.test(sc) && /ALPHA/.test(sc) && /TEMPLATE/.test(sc), 'on screen: ' + sc);
+    assert(cn.pick && cn.pick.sel === 0, 'cursor ' + J(cn.pick));
+    dlg.projectPadPickerBack();
+    assert(!cn.pick && S.projectPadPicker.confirmNew === cn, 'Back did not return to Empty / Template');
+    dlg.projectPadPickerClick();
+    dlg.projectPadPickerRotate(1); dlg.projectPadPickerRotate(1);   /* stops on the last */
+    assert(cn.pick.sel === 1, 'sel ' + cn.pick.sel);
     dlg.projectPadPickerClick();
     const c = LOG.filter(l => /new-at 4/.test(l));
     assert(c.length === 1 && /DBX_TEMPLATE=default /.test(c[0]) && /DBX_HAVE_MODULES=|DBX_MISSING_OUT=/.test(c[0]), J(c));
@@ -251,8 +384,8 @@ step('Shift+tap on an empty pad asks too, then creates and loads', () => {
     dlg.projectPadPickerTap(6);
     assert(S.projectPadPicker.confirmNew && S.projectPadPicker.confirmNew.load && !LOG.some(l => /new-at/.test(l)),
            'Shift+tap created without asking: ' + J(LOG));
-    dlg.projectPadPickerClick();
-    assert(LOG.some(l => /DBX_TEMPLATE=default .*new-at 6/.test(l)), J(LOG));
+    dlg.projectPadPickerClick(); dlg.projectPadPickerClick();      /* Template → the first: Alpha */
+    assert(LOG.some(l => /DBX_TEMPLATE=ta .*new-at 6/.test(l)), J(LOG));
     const pad = S.pendingProjectSwitch && typeof S.pendingProjectSwitch === 'object' ? S.pendingProjectSwitch.pad : S.pendingProjectSwitch;
     assert(pad === 6, 'not loaded: ' + J(S.pendingProjectSwitch));
     S.shiftHeld = false;
@@ -263,7 +396,7 @@ step('⭐ a module the device lacks: the project is made, and the screen names w
     S.projectPadPicker = picker(); S.shiftHeld = false; LOG.length = 0;
     missingAnswer = J({ missing: ['obxd', 'jv880', 'virus'] });
     dlg.projectPadPickerTap(7);
-    dlg.projectPadPickerClick();
+    dlg.projectPadPickerClick(); dlg.projectPadPickerClick();
     missingAnswer = '';
     assert(S.projectPadPicker.byIndex[7], 'not created');
     assert(popup() === 'MODULES MISSING / obxd, jv880 +1 / Those slots are empty', 'popup ' + popup());
@@ -277,7 +410,7 @@ step('the installed modules are handed to the script: what the instrument and ef
     ready();
     S.projectPadPicker = picker(); S.shiftHeld = false; LOG.length = 0;
     dlg.projectPadPickerTap(8);
-    dlg.projectPadPickerClick();
+    dlg.projectPadPickerClick(); dlg.projectPadPickerClick();
     osStub.__setReaddir(null);
     const have = FILES['/data/UserData/daveboxSA/templates/.have-modules.txt'];
     assert(have === 'obxd\nfreeverb\n', 'wrote ' + J(have));

@@ -720,8 +720,9 @@ export const S = {
     bpmWasEditing: false,
     lastSentMenuEditValue: null,
     confirmClearSession: false,
-    confirmTemplate: null,         /* Set/Clear Template's confirm: { kind: 'replace'|'clear', sel } (ui_template.mjs) */
-    pendingTemplateSet: false,     /* Set as Template: runs in ui_tick's save chain a tick after the DSP save */
+    pendingTemplateSet: null,      /* a template save { id, name|null }: runs in ui_tick's save chain a tick after the DSP save (ui_template.mjs) */
+    templateManager: null,         /* the TEMPLATES screen { list, sel, menu, confirm } (ui_dialogs.mjs) */
+    templateNameEntry: null,       /* the keyboard naming a template { mode: 'save'|'rename', id } (ui_dialogs.mjs) */
     confirmSaveState: false,       /* Save state Yes/No confirm dialog open */
     /* State version mismatch confirm dialog — shown when DSP detects an
      * old-format state file. Yes = wipe + clean start; No = exit module. */
