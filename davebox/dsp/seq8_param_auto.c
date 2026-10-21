@@ -1215,6 +1215,26 @@ static uint16_t pa_scale_u16(uint32_t v, uint32_t num, uint32_t den) {
 static int pa_link_entry(pa_entry_t *e, const pa_link_op_t *op) {
     pa_point_t tmp[PA_ENTRY_POINTS];
     int n = 0, room = 1;
+    /* A COPY that doubles a Wrap: Reset lane: the copied half must START the
+     * way each pass of the old loop did — at rest (or the first point's value
+     * with no rest), gliding up under Smooth — not hold what the first half
+     * ended on. What the old window plays at its start, pinned at the copy's
+     * start as a point that PLAYS as it (a resting value through the scale). */
+    int pin = 0, hold = 0;
+    uint16_t pin_v = 0, hold_v = 0;
+    if (op->op == PA_LINK_COPY && (e->flags & PA_FLAG_WRAP_RESET) && !(e->flags & PA_FLAG_PUNCH) &&
+            op->span && op->dst <= 0xFFFFu) {
+        uint16_t v;
+        const int ev = pa_eval_window(e, op->src, op->src, op->span, &v);
+        if (ev) { pin = 1; pin_v = (ev == PA_EVAL_REST) ? pa_unscaled(e, v) : v; }
+        /* Under Smooth the first half would GLIDE into that pin; each pass of
+         * the old loop HELD its last value to the end and then jumped. So the
+         * value playing on the window's last tick is held there too. */
+        if (pin && (e->flags & PA_FLAG_SMOOTH) && op->dst > 0 &&
+                pa_eval_window(e, op->src + op->span - 1, op->src, op->span, &v) == 1) {
+            hold = 1; hold_v = v;
+        }
+    }
     for (int i = 0; i < e->count; i++) {
         uint32_t t = e->points[i].tick;
         if (op->op == PA_LINK_SCALE) {
@@ -1244,6 +1264,17 @@ static int pa_link_entry(pa_entry_t *e, const pa_link_op_t *op) {
             tmp[n].tick = (uint16_t)t;
             tmp[n].val  = e->points[i].val;
             n++;
+        }
+        /* The pin goes FIRST so a copied point on the copy's first tick (the
+         * old window had one at its start) wins over it ("the later wins"). */
+        if (pin && room) {
+            if (n + hold >= PA_ENTRY_POINTS) room = 0;
+            else {
+                memmove(&tmp[1 + hold], &tmp[0], (size_t)n * sizeof(pa_point_t));
+                if (hold) { tmp[0].tick = (uint16_t)(op->dst - 1); tmp[0].val = hold_v; }
+                tmp[hold].tick = (uint16_t)op->dst; tmp[hold].val = pin_v;
+                n += 1 + hold;
+            }
         }
     }
     for (int i = 1; i < n; i++) {                       /* insertion sort: stable */

@@ -230,7 +230,14 @@ export function drawAutomationBankBody() {
               : a.scaleEdit ? [['JOG', 'PCT'], ['CLK', 'DONE'], ['BACK', 'DONE']]
                            : [['CLK', 'DO'], ['JOG', 'OP'], ['BACK', 'LIST']];
     } else if (a.menu) {
-        hints = [['CLK', 'OPS'], ['JOG', 'ROW'], ['BACK', 'CARD']];
+        /* Josh, 2026-10-21: "Need to add hints for shift. Get rid of jog:row
+         * and back:card (those are self explanatory)". Shift + click jumps to
+         * where the lane's parameter is edited — hinted only on a lane row
+         * that has such a place on this track. */
+        const jt = autoBankJumpTarget();
+        const onClearAll = a.sel >= autoBankRows(S.activeTrack, effectiveClip(S.activeTrack)).length;
+        hints = onClearAll ? [['CLK', 'CLEAR']]
+              : (jt && laneHome(jt.target, S.activeTrack)) ? [['CLK', 'OPS'], ['SHFT', 'JUMP']] : [['CLK', 'OPS']];
     } else {
         hints = [['CLK', 'MENU'], [S.heldStep >= 0 ? 'JOG' : 'JOG', S.heldStep >= 0 ? 'STEP' : 'BANK'], ['BACK', 'OUT']];
     }

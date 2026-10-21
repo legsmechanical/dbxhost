@@ -1478,7 +1478,8 @@ lane**, not the clip's notes (click the row for its operations, below):
   value going round the loop. Lanes saved before this change keep the Wrap they had.
 - **Link** — *On* (default): the automation is transformed with the note sequence —
   Resolution and Beat Stretch scale it, Clock Shift and Nudge move it (inside the
-  clip's loop, as they move its notes), doubling the loop copies it forward, and
+  clip's loop, as they move its notes), doubling the loop copies it forward (so the doubled clip plays as the old loop did twice — a
+  Wrap: Reset lane starts its copy at rest again), and
   Crop moves it to step 1 with the loop and removes what lay outside (on a drum
   track, the ALL LANES versions; a lane with its own Loop is left as it is). *Off*: it stays
   put whatever you do to the notes.

@@ -588,6 +588,20 @@ for (const [how, pad, curWant] of [['the jump', null, { c: 1, r: 1 }], ['the map
     });
 }
 
+/* Josh, 2026-10-21: "Automation lane picker. Need to add hints for shift. Get
+ * rid of jog:row and back:card (those are self explanatory)". */
+step('the lane list\'s footer: CLK OPS, and SHFT JUMP on a lane that has a place to jump to; no JOG ROW / BACK CARD', () => {
+    const idx = openMenuOn(TARGETS.seq); ticks(1);
+    globalThis.clear_screen(); render.drawUI();
+    const h = () => JSON.stringify(movy.kitHintsForTest());
+    assert(h() === JSON.stringify([['CLK', 'OPS'], ['SHFT', 'JUMP']]), 'on a lane row: ' + h());
+    S.autoBank.sel = bank.autoBankRows(T, 0).length;                 /* the Clear all row */
+    globalThis.clear_screen(); render.drawUI();
+    assert(h() === JSON.stringify([['CLK', 'CLEAR']]), 'on Clear all (a click clears the clip, nothing to jump to): ' + h());
+    S.autoBank.sel = idx;
+    back(); ticks(1); back(); ticks(1);
+});
+
 /* Review, 2026-10-21: a jump that LANDS ON A BANK (a seq knob -> its bank,
  * a level -> SOUND + CONFIG) is the automation context too: the map marks
  * AUTOMATION, not the bank the jump landed on. */

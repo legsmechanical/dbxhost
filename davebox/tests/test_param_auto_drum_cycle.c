@@ -309,8 +309,12 @@ int main(void) {
         hx_set_param(h, "t0_all_lanes_double_fill", "1");
         HX_ASSERT(cycle_of(h, &ll, &lo, &st) && ll == 624, "Double: the cycle doubles");
         const pa_entry_t *e = entry(in, TG);
-        HX_ASSERT(e->count == 2 && e->points[0].tick == 24 && e->points[1].tick == 24 + 312,
-                  "and its points are copied one cycle forward");
+        /* Wrap: Reset (the default): the copied cycle restarts as the old one
+         * did — a point at its start (312) carrying what the cycle played at
+         * tick 0 — then the copied lock. */
+        HX_ASSERT(e->count == 3 && e->points[0].tick == 24 && e->points[1].tick == 312 &&
+                  e->points[2].tick == 24 + 312,
+                  "and its points are copied one cycle forward, the copy restarting at its start");
         OK("⭐ ALL LANES Clock Shift, Resolution and Double move each lane inside its own cycle");
         hx_destroy(h);
     }

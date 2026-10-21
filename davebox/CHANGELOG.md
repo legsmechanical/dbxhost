@@ -9,6 +9,9 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Changed
+- **AUTOMATION lane list footer:** shows **SHFT JUMP** on a lane you can jump to,
+  and **CLK CLEAR** on the Clear all row; the self-explanatory JOG ROW and BACK
+  CARD are gone.
 - **Wrap: Reset with Smooth on now glides up to the first lock.** From the start
   of the loop the parameter rises from where its knob rests to the first lock,
   instead of sitting at rest and jumping. It still goes back to rest at the loop
@@ -21,6 +24,12 @@ the section into a versioned heading at release time.
   screen. The **Clear all** row still clears everything.
 
 ### Fixed
+- **Loop double (Shift + Step 15) with automation:** the step buttons now show
+  the copied automation on the new half straight away (they kept showing the old
+  lane until something else refreshed it — the same after crop, resolution,
+  stretch, nudge and clock shift), and a Wrap: Reset lane's copy starts at rest
+  again, as each pass of the old loop did, instead of holding what the first
+  half ended on.
 - **Stretching an automation value:** turning the knob after a stretch now
   changes the whole stretched range, not just the held step; a stretch that
   wraps round the loop on a Reset lane gives the resting value back after it;
