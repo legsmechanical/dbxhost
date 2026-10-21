@@ -154,11 +154,13 @@ PAGES = { 0: { [SEQ]: { 3: HI }, [CHN]: { 3: HI }, [DIR]: { 3: 16383 }, [MAC]: {
 /* What NOTE FX K3's cell reads with the knob at `v` — the reference for "the
  * cell shows the lane's value". */
 function kTextAt(v) {
-    const keep = S.bankParams[T][1][K];
-    S.bankParams[T][1][K] = v;
+    /* With NO step held: a held step would draw its lane's value whatever
+     * the knob says, and the reference would agree with anything. */
+    const keep = S.bankParams[T][1][K], held = S.heldStep;
+    S.bankParams[T][1][K] = v; S.heldStep = -1;
     globalThis.clear_screen(); render.drawUI();
     const tx = movy.kitCellsForTest().cells[K].text;
-    S.bankParams[T][1][K] = keep;
+    S.bankParams[T][1][K] = keep; S.heldStep = held;
     return tx;
 }
 function kText() { globalThis.clear_screen(); render.drawUI(); return movy.kitCellsForTest().cells[K].text; }
@@ -274,6 +276,31 @@ step('a hold on the AUTOMATION steps reuses the lane\'s page read: no second rea
     note(STEP(3), 0); ticks(2);
     cc(51, 127); cc(51, 0); ticks(2);
     S.activeBank = 1; S.trackActiveBank[T] = 1;
+});
+
+/* Review, 2026-10-21: a page read left over from an earlier visit to
+ * AUTOMATION is never refreshed once the list is off screen; a hold must not
+ * reuse it, or its values go stale for the whole hold. */
+step('a held step after LEAVING AUTOMATION reads afresh, not the old list\'s page read', () => {
+    if (snd.soundOpen()) snd.soundExit();
+    setList();
+    S.activeBank = BANK_AUTOMATION; S.trackActiveBank[T] = BANK_AUTOMATION; S.bankCardLatched = true;
+    bank.autoBankReset(); ticks(2);
+    cc(3, 127); cc(3, 0);
+    const idx = bank.autoBankRows(T, 0).findIndex(r => r.target === SEQ);
+    for (let g = 0; g < 10 && S.autoBank.sel !== idx; g++) cc(14, S.autoBank.sel < idx ? 1 : 127);
+    ticks(3);
+    assert(S.autoCycle && S.autoCycle.target === SEQ, 'rig: the list read the lane\'s page');
+    cc(51, 127); cc(51, 0); ticks(1);
+    onNoteFx();
+    const NOW = 0x0400;
+    PAGES[0][SEQ][3] = NOW;                 /* the lane changed after that read */
+    valReads.length = 0;
+    note(STEP(3), 127); ticks(2);
+    assert(valReads.indexOf('0_24') >= 0, 'the hold reused the old read: ' + JSON.stringify(valReads));
+    assert(kText() === kTextAt(Number(auto.automationWireValue(SEQ, NOW))), 'K3 shows the stale value ' + kText());
+    note(STEP(3), 0); ticks(2);
+    PAGES[0][SEQ][3] = HI;
 });
 
 step('⭐ Scale 50 %: the turn is NOT shown from the knob; the read after it rests is', () => {

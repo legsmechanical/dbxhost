@@ -1654,7 +1654,8 @@ function runBankMapMenu(a) {
      * instrument mode puts me back into the automation list"): a module or
      * INST pick from the AUTOMATION door gives the door's bank back first, so
      * the editor opens over the bank you came in from and Back returns there. */
-    if ((a.kind === 'module' || a.kind === 'inst') && doorScreenUp()) {
+    if ((a.kind === 'module' || a.kind === 'inst') && doorScreenUp() &&
+            S.doorReturn && S.doorReturn.door === BANK_AUTOMATION) {
         if (soundOpen()) soundExit();
         closeDoorScreen();
     }

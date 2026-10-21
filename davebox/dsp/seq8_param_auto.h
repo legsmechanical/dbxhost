@@ -253,5 +253,15 @@ static inline uint16_t pa_scaled(const pa_entry_t *e, uint16_t v) {
     return (uint16_t)(s > PA_VAL_MAX ? PA_VAL_MAX : s);
 }
 
+/* The raw value that PLAYS as `v` through the lane's scale (pa_scaled's
+ * inverse, to the nearest step). Scale 0 % has no inverse: `v` itself. */
+static inline uint16_t pa_unscaled(const pa_entry_t *e, uint16_t v) {
+    const int32_t pct = (int32_t)pa_scale_pct(e);
+    if (pct <= 0) return v;
+    int32_t c = e->scale_ctr1 ? (int32_t)e->scale_ctr1 - 1 : 0;
+    int32_t d = ((int32_t)v - c) * 100, r = c + (d >= 0 ? (d + pct / 2) / pct : (d - pct / 2) / pct);
+    return (uint16_t)(r < 0 ? 0 : r > PA_VAL_MAX ? PA_VAL_MAX : r);
+}
+
 
 #endif /* SEQ8_PARAM_AUTO_H */

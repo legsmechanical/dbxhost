@@ -8549,7 +8549,17 @@ static int pa_export_points(const seq8_track_t *tr, const pa_entry_t *e,
     int n = 0;
     uint32_t ws = 0, wl = 0, step_ticks = TICKS_PER_STEP;
     const int have_window = pa_export_window(tr, e, &ws, &wl, &step_ticks);
-    if (have_window && wl && e->count && e->points[0].tick > ws && n < cap) {
+    /* The points INSIDE the window — what playback plays (pa_eval_window).
+     * Points outside it (kept when a loop is narrowed) never play while a
+     * window holds any, and paTile drops them; reading the lead, the jump
+     * pairs or the trail off them gave values that never play. No window, or
+     * none inside it: every point, as playback then falls back to them all. */
+    int lo = 0, hi = (int)e->count - 1;
+    if (have_window && wl && e->count) {
+        const int fi = pa_lower_bound(e, ws), li = pa_lower_bound(e, ws + wl) - 1;
+        if (fi < (int)e->count && li >= fi) { lo = fi; hi = li; }
+    }
+    if (have_window && wl && e->count && e->points[lo].tick > ws && n < cap) {
         uint16_t v;
         int ev = (e->flags & PA_FLAG_PUNCH)
                  ? pa_eval_punch(e, ws, ws, wl, step_ticks, &v)
@@ -8567,7 +8577,7 @@ static int pa_export_points(const seq8_track_t *tr, const pa_entry_t *e,
      * lead too (Reset's rest, Carry's last value, held up to the first point).
      * Punch is its own story and is left alone. */
     const int stepped = !(e->flags & (PA_FLAG_SMOOTH | PA_FLAG_PUNCH));
-    for (int k = 0; k < (int)e->count && k < PA_ENTRY_POINTS && n < cap; k++) {
+    for (int k = lo; k <= hi && k < PA_ENTRY_POINTS && n < cap; k++) {
         const uint16_t sv = pa_scaled(e, e->points[k].val);
         if (stepped && n > 0 && pts[n - 1].tick < e->points[k].tick && pts[n - 1].val != sv) {
             pts[n].tick = e->points[k].tick;

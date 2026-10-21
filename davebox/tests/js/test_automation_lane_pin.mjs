@@ -588,6 +588,25 @@ for (const [how, pad, curWant] of [['the jump', null, { c: 1, r: 1 }], ['the map
     });
 }
 
+/* Review, 2026-10-21: a jump that LANDS ON A BANK (a seq knob -> its bank,
+ * a level -> SOUND + CONFIG) is the automation context too: the map marks
+ * AUTOMATION, not the bank the jump landed on. */
+for (const kind of ['seq', 'level']) {
+    step('after a ' + kind + ' jump the map marks AUTOMATION, not the bank it landed on', () => {
+        openMenuOn(TARGETS[kind]); ticks(2);
+        shiftClick(); ticks(10);
+        assert(bank.autoLanePinActive() && S.activeBank !== BANK_AUTOMATION, 'rig: jumped off AUTOMATION (bank ' + S.activeBank + ')');
+        cc(3, 127); ticks(60);
+        assert(S.bankMapUp, 'rig: the map is up');
+        const cur = render.bankMapItems().cur;
+        assert(JSON.stringify(cur) === JSON.stringify({ c: 1, r: 1 }), 'the map marks ' + JSON.stringify(cur) + ', not AUTOMATION [1,1]');
+        assert(leds[85] === LEDK.White, 'the AUTOMATION pad is not the White one (' + leds[85] + ')');
+        cc(3, 0); ticks(10);
+        if (snd.soundOpen()) snd.soundExit();
+        back(); ticks(4); back(); ticks(4);
+    });
+}
+
 /* Josh, 2026-10-20: "BACK from instrument mode puts me back into the
  * automation list when entered through automation context". A module pick off
  * the map LEAVES AUTOMATION: Back from that editor returns to the bank the

@@ -21,6 +21,22 @@ the section into a versioned heading at release time.
   screen. The **Clear all** row still clears everything.
 
 ### Fixed
+- **Stretching an automation value:** turning the knob after a stretch now
+  changes the whole stretched range, not just the held step; a stretch that
+  wraps round the loop on a Reset lane gives the resting value back after it;
+  a refused press no longer undoes the stretch.
+- **Live export** ignores automation points left outside a narrowed loop
+  (they never play), instead of building the loop-end jump and the steps from
+  them.
+- **AUTOMATION screen:** Delete + click on the aftertouch row no longer leaves
+  the cursor on Clear all.
+- **Pad map:** after a Shift + click jump to a bank (a sequencer knob, a level,
+  a macro) the map marks AUTOMATION, as it already did for an editor; an
+  instrument or FX pick from the map closes only the AUTOMATION screen, not
+  another bank you opened from the map.
+- **Holding a step** no longer shows values from an earlier visit to the
+  AUTOMATION screen, and on MACROS shows held values only for the track you
+  are on.
 - **Live export: a Wrap: Reset lane now jumps where it should.** It used to slide
   down from its last value to the resting value across the loop end, and, with
   Smooth off, slide up from rest to the first point. The Live set now holds the
