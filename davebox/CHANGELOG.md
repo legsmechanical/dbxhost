@@ -9,6 +9,9 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Changed
+- **AUTOMATION lane list footer:** shows **SHFT JUMP** on a lane you can jump to,
+  and **CLK CLEAR** on the Clear all row; the self-explanatory JOG ROW and BACK
+  CARD are gone.
 - **Wrap: Reset with Smooth on now glides up to the first lock.** From the start
   of the loop the parameter rises from where its knob rests to the first lock,
   instead of sitting at rest and jumping. It still goes back to rest at the loop
