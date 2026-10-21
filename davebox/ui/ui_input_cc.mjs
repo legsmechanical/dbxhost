@@ -26,7 +26,7 @@ import {
     CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, knobAltFor, ARP_STEPS_KNOB, arpStepsBank, LOOP_NOT_AT_1_MS, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
     TICK_HZ, STEP_ITER_LIST, JOG_HOLD_MAP_MS,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
-    fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool, ROUTE_NONE } from './ui_constants.mjs';
+    fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool } from './ui_constants.mjs';
 import { closeChordPopup, chordEditSlot, chordSlotKnob, chordBankKnob, chordSlotReset } from './ui_chord_pads.mjs';
 import { bakeNeedsPrint, printStart, printModalCC } from './ui_print.mjs';
 import { customLayoutOn, customEditTarget, customChordTranspose, customChordOctaveStep } from './ui_custom_chords.mjs';
@@ -66,7 +66,7 @@ import { moduleIdOf } from './ui_discover.mjs';
 import { BANK_MAP_TRACK_POPUP_MS, seqAutoTargetForKnob, SEQ_AUTO_TARGETS, midiTargetIsMidi, DEFAULT_TRACK_OCTAVE } from './ui_constants.mjs';
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam, soundOpenModule } from './ui_sound.mjs';
-import { soundActive, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVolGestureEnd, soundShiftEdge, soundOpenGenerator, soundOpenInstrPicker,
+import { soundActive, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVolGestureEnd, soundShiftEdge, soundOpenGenerator,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, macroClearConfirmAnswer,
     macroClearConfirmReset, macroClearConfirmOpen, soundKnobCardClick, soundEnterSendFromSessionMixer,
@@ -2948,12 +2948,6 @@ if (S.trackRoute[_gt] === 1) {
     enterMoveNativeCoRun(_gt);
 } else if (S.trackRoute[_gt] === 2) {
     showActionPopup('MIDI TRACK', 'No generator', 'to edit');
-} else if (S.trackRoute[_gt] === ROUTE_NONE) {
-    /* NONE: nothing to edit and never the parked chain — the hold opens the
-     * INSTRUMENT PICKER over the track's menu (Josh, 2026-09-05; the first cut
-     * showed a NO INSTRUMENT popup, which named the gap without offering the
-     * way out). */
-    soundOpenInstrPicker(_gt);
 } else {
     /* An EMPTY generator opens the module picker itself (Josh, 2026-08-27)
      * with 'SELECT GENERATOR' over it — soundOpenGenerator always succeeds,

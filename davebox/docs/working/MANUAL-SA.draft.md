@@ -378,8 +378,8 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   the third column, **FX 1–4** (orange) down the far-right column. Tap one and
   the screen flashes its name and what is loaded there (or **Empty**); like CONFIG, it
   turns white and opens when you let go of the jog. **Back** from that editor
-  takes you back to where you were. A MIDI track has only MIDI FX, a track set
-  to None only INSTRUMENT, and a Conductor none.
+  takes you back to where you were. A MIDI track has only MIDI FX, and a
+  Conductor none.
 - **CONFIG**, **AUTOMATION** and **INST** (and Session View's **MASTER**,
   **SEND A** and **SEND B**) open a screen, so they wait: the pad turns white,
   and the screen opens when you let go of the jog. Tap a bank after one and
@@ -1916,7 +1916,7 @@ the click and the Shift chord do.
 | Group | Makes the track |
 |---|---|
 | **List: All** | (a filter, not an instrument — see below) |
-| **None** | Silent |
+| **None** | A Schwung track with no instrument loaded — the state a new project's tracks 5–8 start in. Its MIDI FX, effects, levels and **Presets** stay, so you can load a chain preset straight away. On a Schwung track it removes the instrument. |
 | **Move 1–4** | Play one of Move's four instruments |
 | **Conductor** | A [Conductor](#12-the-conductor) — converts the track behind a confirm, with the transport stopped |
 | **Every Schwung generator**, by name | A Schwung track, with that instrument loaded |
@@ -1947,8 +1947,8 @@ View only), and work with it as you would on Move.
   screen) to come back, **Note/Session** to leave for Session View, or
   **hold the jog and press Step 1–8** to leave and go straight to that track.
 
-A plain click does nothing on a MIDI channel or a followed track. On a track set to
-**None**, it opens the picker.
+A plain click does nothing on a MIDI channel or a followed track. On a Schwung
+track with no instrument (or set to **None**), it opens the picker.
 
 ## 14.4 Editing a module
 
@@ -2168,7 +2168,7 @@ To reach them, hold the jog in Session View, tap **MASTER**, **SEND A** or **SEN
 A track's destination is its **Instmt/Dest** row, at the top of
 [TRACK CONFIG](#143-choosing-an-instrument): one of **Move 1–4**, a **Schwung
 generator**, a **MIDI channel** (out USB-A), another **track**'s instrument, or
-**None**.
+**None** (a Schwung track with nothing loaded).
 
 - A new project starts with tracks 1–4 on Move 1–4 and tracks 5–8 on Schwung.
 - Several tracks can go to MIDI channels at once for a multitimbral rig.
@@ -2188,7 +2188,6 @@ where the track goes:
 | MIDI channel | Through the sequencer effects, out USB-A |
 | Another track | Through the sequencer effects, into that track's instrument |
 | Move | Straight to Move, without the sequencer effects (they would loop back). With a MIDI FX module loaded, notes go through the module first |
-| None | Nothing |
 
 On a track set to a **MIDI channel**, everything goes out USB-A — the sequence, live
 pads, effects and automation. Transport Stop sends note-offs; **Delete + Play**

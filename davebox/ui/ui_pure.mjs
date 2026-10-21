@@ -282,15 +282,14 @@ export const BANK_MAP_MODULE_PADS = [
     { comp: 'fx4',      label: 'FX 4',       col: 7, row: 3 },
 ];
 /* The module pad on a map cell for a track routed `route` (0 Schwung, 1 Move,
- * 2 MIDI, ROUTE_NONE) with pad mode `padMode`, or null: a pad the track has
- * nothing behind stays dark. A Conductor plays nothing; a MIDI track has its
- * MIDI FX only; a track set to None has only the instrument (its picker). */
+ * 2 MIDI) with pad mode `padMode`, or null: a pad the track has nothing behind
+ * stays dark. A Conductor plays nothing; a MIDI track has its MIDI FX only. A
+ * track set to None is a Schwung track with nothing loaded: every pad. */
 export function bankMapModuleAt(route, padMode, col, row) {
     if (padMode === PAD_MODE_CONDUCT) return null;
     const p = BANK_MAP_MODULE_PADS.find((m) => m.col === col && m.row === row);
     if (!p) return null;
     if (route === 2) return p.comp === 'midi_fx1' ? p : null;
-    if (route !== 0 && route !== 1) return p.comp === 'synth' ? p : null;
     return p;
 }
 export function bankMapCellForPad(note) {

@@ -790,7 +790,7 @@ step('MIDI track: only MIDI FX is lit, and the dark pads do nothing', () => {
     S.trackRoute[t] = 0;
 });
 
-step('Conductor: none lit; None: only INSTRUMENT (its picker)', () => {
+step('Conductor: none lit', () => {
     ccm.bankMapEnd(); home(); S.sessionView = false;
     const t = S.activeTrack;
     S.trackPadMode[t] = C.PAD_MODE_CONDUCT;
@@ -798,10 +798,6 @@ step('Conductor: none lit; None: only INSTRUMENT (its picker)', () => {
     assert(modLit() === '', 'lit on a Conductor: ' + modLit());
     release(); ticks(2);
     S.trackPadMode[t] = C.PAD_MODE_MELODIC_SCALE ?? 0;
-    S.trackRoute[t] = C.ROUTE_NONE;
-    press(); holdPast(); ticks(2);
-    assert(modLit() === 'inst', 'lit on a None track: ' + modLit());
-    release(); ticks(2);
     S.trackRoute[t] = 0;
 });
 

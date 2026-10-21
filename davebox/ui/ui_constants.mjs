@@ -174,7 +174,7 @@ export const INSTR_ROW_LABEL  = 'Instmt/Dest';
  * +1 since 2026-09-24 (Josh). A saved project keeps its own octaves; this is
  * what a new, cleared or never-saved project starts from. */
 export const DEFAULT_TRACK_OCTAVE = 1;
-export const ROUTE_NONE       = 3;      /* S.trackRoute value; DSP `t<N>_route` = 'none' */
+export const ROUTE_NONE       = 3;      /* LEGACY: a project saved with a None track (DSP `t<N>_route` = 'none'); migrated on load (migrateNoneRoutes) — nothing sets it now */
 
 export function fmtInstr(v) {
     v = v | 0;

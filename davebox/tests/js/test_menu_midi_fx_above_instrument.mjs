@@ -113,11 +113,11 @@ step('⭐ back onto a Schwung track from the Move track menu, cursor left on its
     if (st().kinds[0] !== 'block' || !onInstr()) throw new Error('landed on row ' + st().row + ' of ' + st().kinds.join(','));
 });
 
-step('NONE: just its destination row', () => {
+step('None: a Schwung track with nothing loaded — MIDI FX above it, landing on the instrument', () => {
     B.applyInstrChoice(3, C.INSTR_NONE);
     S.activeTrack = 3;
     sound.soundExit(); sound.soundEnter(3, 3); ticks(2);
-    if (st().kinds.join(',') !== 'trackto' || st().row !== 0) throw new Error('rows ' + st().kinds.join(',') + ' row ' + st().row);
+    if (st().kinds[0] !== 'block' || !onInstr()) throw new Error('rows ' + st().kinds.join(',') + ' row ' + st().row);
 });
 
 sound.soundExit();

@@ -20,7 +20,7 @@ import { slotIndex, engineLoadedModule, engineGet, engineSet, engineSetChainPara
          engineSaveState } from './ui_engine.mjs';
 import { showActionPopupFor } from './ui_persistence.mjs';
 import { noteUndoUnit } from './ui_state.mjs';
-import { ROUTE_NONE, PAD_MODE_DRUM } from './ui_constants.mjs';
+import { PAD_MODE_DRUM } from './ui_constants.mjs';
 import { MoveBack, MoveShift } from '/data/UserData/schwung/shared/constants.mjs';
 
 /* { t, c, loops, slot, polled } while a print runs; null otherwise. */
@@ -30,7 +30,7 @@ export function printActive() { return printing !== null; }
 /* Does a bake of track t's clip need a print? Two reads, at the dialog's
  * confirm only. */
 export function bakeNeedsPrint(t) {
-    if (S.trackRoute[t] === ROUTE_NONE || S.trackFxPre[t]) return false;
+    if (S.trackFxPre[t]) return false;
     const slot = slotIndex(t);
     if (!engineLoadedModule(slot, 'midi_fx1')) return false;
     return engineGet(slot, 'midi_fx1', 'bypassed') !== '1';

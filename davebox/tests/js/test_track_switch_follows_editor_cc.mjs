@@ -68,7 +68,7 @@ async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
-const { BANK_SOUND, ROUTE_NONE, PAD_MODE_CONDUCT } = await import('../../ui/ui_constants.mjs');
+const { BANK_SOUND, PAD_MODE_CONDUCT } = await import('../../ui/ui_constants.mjs');
 const { MoveShift, MoveMainKnob } = await import('/data/UserData/schwung/shared/constants.mjs');
 
 const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_NOEDITOR = 21;
@@ -90,10 +90,10 @@ function enterEditor(t) {
  * its SOUND MENU and a fast Shift+scroll dumped him to the overview. This one
  * sends what the hardware sends — Shift CC + jog CC 14 detents — through
  * onMidiMessageInternal, with and without ticks between detents. */
-step('setup: routes — 2,3 Schwung · 4 MIDI · 5 NONE · 6 Move · 7 Schwung', () => {
+step('setup: routes — 2,3 Schwung · 4 MIDI · 5 Schwung (None: nothing loaded) · 6 Move · 7 Schwung', () => {
     S.sessionView = false; S.globalMenuOpen = false; S.ledInitComplete = true;
     for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; S.trackActiveBank[t] = t % 3; }
-    S.trackRoute[4] = 2; S.trackRoute[5] = ROUTE_NONE; S.trackRoute[6] = 1;
+    S.trackRoute[4] = 2; S.trackRoute[6] = 1;
     S.playing = true;
     if (!globalThis.onMidiMessageInternal) throw new Error('no CC entry point');
 });
@@ -110,11 +110,11 @@ step('control: Shift+jog from the editor onto the next Schwung track lands on IT
     if (!onInstrumentRow() || snd.soundTrack() !== 3) throw new Error('view ' + view() + ' row ' + row() + ' track ' + snd.soundTrack());
 });
 
-step('⭑ on through MIDI and onto NONE: each lands on its menu, Instrument row, and it STAYS', () => {
+step('⭑ on through MIDI and onto track 5: each lands on its menu, Instrument row, and it STAYS', () => {
     jog(1); settle();                                   /* → 4 MIDI */
     if (!onInstrumentRow()) throw new Error('MIDI: view ' + view() + ' row ' + row());
-    jog(1); settle();                                   /* → 5 NONE */
-    if (S.activeTrack !== 5 || !onInstrumentRow()) throw new Error('NONE: view ' + view() + ' row ' + row());
+    jog(1); settle();                                   /* → 5 */
+    if (S.activeTrack !== 5 || !onInstrumentRow()) throw new Error('track 5: view ' + view() + ' row ' + row());
     for (let i = 0; i < 6; i++) globalThis.tick();
     if (!onInstrumentRow()) throw new Error('replaced after more ticks: view ' + view());
     shift(false); settle();
@@ -134,7 +134,7 @@ step('⭑ a FAST Shift+scroll (no tick between detents) from the editor across e
     shift(false); settle();
 });
 
-step('⭑ fast burst BACK through Move/NONE/MIDI onto Schwung 3: its menu, Instrument row', () => {
+step('⭑ fast burst BACK through Move/5/MIDI onto Schwung 3: its menu, Instrument row', () => {
     shift(true);
     jog(-1); jog(-1); jog(-1); jog(-1);                /* 7 → 3 */
     settle();
@@ -143,12 +143,12 @@ step('⭑ fast burst BACK through Move/NONE/MIDI onto Schwung 3: its menu, Instr
     shift(false); settle();
 });
 
-step('⭑ fast burst that ENDS on the NONE track: its Instrument-only menu', () => {
+step('⭑ fast burst that ENDS on track 5: its menu, Instrument row', () => {
     shift(true);
     jog(1); jog(1);                                    /* 3 → 5 */
     settle();
     if (S.activeTrack !== 5 || !snd.soundOpen()) throw new Error('track ' + S.activeTrack + ' open ' + snd.soundOpen());
-    if (!onInstrumentRow() || kinds() !== 'trackto') throw new Error('view ' + view() + ' rows ' + kinds());
+    if (!onInstrumentRow()) throw new Error('view ' + view() + ' rows ' + kinds());
     shift(false); settle();
 });
 

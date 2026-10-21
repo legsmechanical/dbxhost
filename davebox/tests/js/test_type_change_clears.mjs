@@ -106,7 +106,7 @@ globalThis.host_module_set_params = (blob) => {
 let paList = '';
 const _g = globalThis.host_module_get_param;
 globalThis.host_module_get_param = (k) => (k === 'pa_list' ? paList : _g(k));
-const routeName = { 0: 'Schwung', 1: 'Move', 2: 'MIDI', 3: 'NONE' };
+const routeName = { 0: 'Schwung', 1: 'Move', 2: 'MIDI' };   /* None is a Schwung track (2026-10-21) */
 
 step('setup', () => {
     globalThis.init();
@@ -129,35 +129,33 @@ step('⚠ a TAKEN Move instrument is refused before the confirm: no modal, nothi
 /* ---- the matrix, one cell at a time ------------------------------------ */
 const T = (target, route) => snd.targetCompatible(target, route);
 step('chain params (synth / fxN) play only on a Schwung track', () => {
-    for (const r of [1, 2, 3]) { if (T('4:synth:cutoff', r)) throw new Error('synth kept on ' + routeName[r]); if (T('4:fx2:mix', r)) throw new Error('fx kept on ' + routeName[r]); }
+    for (const r of [1, 2]) { if (T('4:synth:cutoff', r)) throw new Error('synth kept on ' + routeName[r]); if (T('4:fx2:mix', r)) throw new Error('fx kept on ' + routeName[r]); }
     if (!T('4:synth:cutoff', 0)) throw new Error('synth cleared on Schwung');
 });
-step('chain MIDI FX (midi_fxN) play on Schwung, Move AND MIDI (the parked slot is borrowed), not NONE', () => {
+step('chain MIDI FX (midi_fxN) play on Schwung, Move AND MIDI (the parked slot is borrowed)', () => {
     if (!T('4:midi_fx1:rate', 0) || !T('4:midi_fx1:rate', 1) || !T('4:midi_fx1:rate', 2)) throw new Error('midi_fx cleared where it should route');
-    if (T('4:midi_fx1:rate', 3)) throw new Error('midi_fx kept on NONE');
 });
-step('the levels (slot: volume/pan/sends) survive Schwung ↔ Move (both have a strip), not MIDI or NONE', () => {
+step('the levels (slot: volume/pan/sends) survive Schwung ↔ Move (both have a strip), not MIDI', () => {
     for (const k of ['volume', 'pan', 'send_a', 'send_b']) {
         if (!T('4:slot:' + k, 0) || !T('4:slot:' + k, 1)) throw new Error(k + ' cleared on a strip route');
-        if (T('4:slot:' + k, 2) || T('4:slot:' + k, 3)) throw new Error(k + ' kept on MIDI/NONE');
+        if (T('4:slot:' + k, 2)) throw new Error(k + ' kept on MIDI');
     }
     if (!T('0:move_fx:2:volume', 0) || !T('0:move_fx:2:volume', 1)) throw new Error('a Move bus level does not carry over');
 });
 step('Move bus FX params play only on a Move track', () => {
     if (!T('0:move_fx:2:fx1:cutoff', 1)) throw new Error('bus fx cleared on Move');
-    for (const r of [0, 2, 3]) if (T('0:move_fx:2:fx1:cutoff', r)) throw new Error('bus fx kept on ' + routeName[r]);
+    for (const r of [0, 2]) if (T('0:move_fx:2:fx1:cutoff', r)) throw new Error('bus fx kept on ' + routeName[r]);
 });
 step('seq: targets (the bank params) survive every type', () => {
-    for (const r of [0, 1, 2, 3]) if (!T('seq:4:' + SEQ_KEY + '', r)) throw new Error('seq cleared on ' + routeName[r]);
+    for (const r of [0, 1, 2]) if (!T('seq:4:' + SEQ_KEY + '', r)) throw new Error('seq cleared on ' + routeName[r]);
 });
-step('MIDI targets: at/pb survive every type but NONE; cc:N only a MIDI track', () => {
+step('MIDI targets: at/pb survive every type; cc:N only a MIDI track', () => {
     for (const r of [0, 1, 2]) { if (!T('at', r) || !T('pb', r)) throw new Error('at/pb cleared on ' + routeName[r]); }
-    if (T('at', 3) || T('pb', 3)) throw new Error('at/pb kept on NONE');
-    if (!T('cc:74', 2)) throw new Error('cc cleared on MIDI'); for (const r of [0, 1, 3]) if (T('cc:74', r)) throw new Error('cc kept on ' + routeName[r]);
+    if (!T('cc:74', 2)) throw new Error('cc cleared on MIDI'); for (const r of [0, 1]) if (T('cc:74', r)) throw new Error('cc kept on ' + routeName[r]);
 });
 step('macro LEGS follow the same rule: bank always, level = strip routes, chain by comp, midi by target', () => {
     const L = (leg, r) => snd.legCompatible(leg, r);
-    for (const r of [0, 1, 2, 3]) if (!L({ kind: 'bank', bank: 0, k: 1 }, r)) throw new Error('bank leg cleared');
+    for (const r of [0, 1, 2]) if (!L({ kind: 'bank', bank: 0, k: 1 }, r)) throw new Error('bank leg cleared');
     if (!L({ kind: 'level', key: 'pan' }, 1) || L({ kind: 'level', key: 'pan' }, 2)) throw new Error('level leg rule');
     if (!L({ kind: 'chain', comp: 'synth', key: 'cutoff' }, 0) || L({ kind: 'chain', comp: 'synth', key: 'cutoff' }, 1)) throw new Error('chain leg rule');
     if (!L({ kind: 'chain', comp: 'midi_fx1', key: 'rate' }, 2)) throw new Error('midi_fx leg cleared on MIDI');
