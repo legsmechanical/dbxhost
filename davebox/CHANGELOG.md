@@ -24,6 +24,12 @@ the section into a versioned heading at release time.
   screen. The **Clear all** row still clears everything.
 
 ### Fixed
+- **Loop double (Shift + Step 15) with automation:** the step buttons now show
+  the copied automation on the new half straight away (they kept showing the old
+  lane until something else refreshed it — the same after crop, resolution,
+  stretch, nudge and clock shift), and a Wrap: Reset lane's copy starts at rest
+  again, as each pass of the old loop did, instead of holding what the first
+  half ended on.
 - **Stretching an automation value:** turning the knob after a stretch now
   changes the whole stretched range, not just the held step; a stretch that
   wraps round the loop on a Reset lane gives the resting value back after it;

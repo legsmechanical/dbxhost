@@ -64,9 +64,10 @@ globalThis.host_module_set_param = (k, v) => { sets.push(k + '=' + v); };
 globalThis.host_module_set_params = (blob) => { const it = dec(blob); for (let i = 0; i + 1 < it.length; i += 2) sets.push(it[i] + '=' + it[i + 1]); return true; };
 let STEPS = '';
 const valReads = [];
+let listReads = 0;
 let VALS = () => '';
 globalThis.host_module_get_param = (k) => {
-    if (k === 'pa_list') return LIST;
+    if (k === 'pa_list') { listReads++; return LIST; }
     if (/_pa_steps$/.test(k)) return STEPS;
     const v = /^t\d+_c\d+_pa_vals_(\d+)_(\d+)$/.exec(k);
     if (v) { valReads.push(v[1] + '_' + v[2]); return VALS(parseInt(v[1], 10), parseInt(v[2], 10)); }
@@ -359,6 +360,22 @@ step('⭐ a SnapMorph knob on MACROS: the held step\'s position', () => {
     note(STEP(3), 0); ticks(2);
     assert(mText() === live, 'after release MORPH shows ' + mText());
     snd.soundExit(); ticks(2);
+});
+
+/* Josh, 2026-10-21: "i could swear that i doubled a melodic loop and the
+ * automation wasn't there on the new portion". The engine copies it; the UI
+ * never re-read the lane list, so the step buttons showed the old lane. Every
+ * note-moving edit's re-read now marks the list stale. */
+step('Shift + Step 15 (loop double) makes the lane list re-read', () => {
+    if (snd.soundOpen()) snd.soundExit();
+    S.trackPadMode[T] = 0; onNoteFx();
+    S.clipLength[T][0] = 16; S.clipLoopStart[T][0] = 0;
+    ticks(6);
+    listReads = 0;
+    cc(49, 127); shiftHeld = 1; note(16 + 14, 127); note(16 + 14, 0); cc(49, 0); shiftHeld = 0;
+    ticks(8);
+    assert(sets.some(x => x.indexOf('_loop_double_fill') >= 0), 'rig: the double was not sent: ' + JSON.stringify(sets.slice(-5)));
+    assert(listReads >= 1, 'the lane list was not re-read after the double');
 });
 
 if (swallowed !== null) { console.error('  FAIL — a SWALLOWED exception reached the jserr log:\n' + swallowed); failed = 1; }

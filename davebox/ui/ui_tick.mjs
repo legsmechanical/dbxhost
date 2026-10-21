@@ -34,7 +34,7 @@ import { tickPrefetch, dget, applyNewProjectSeed } from './ui_dsp_bridge.mjs';
 import { dspGet, prefetchKeys, releaseTrackDigests } from './ui_dsp_get.mjs';
 import { daveBoxTick, bannerDaveSync, loadDaveTick } from './ui_daves.mjs';
 import { devSnapOpen, devSnapEnter, devSnapTick, DEVSNAP_HOLD_MS } from './ui_devsnap.mjs';
-import { automationTick, automationPollWarnings } from './ui_automation.mjs';
+import { automationTick, automationPollWarnings, automationNoteListChangedElsewhere } from './ui_automation.mjs';
 import { morphTick } from './ui_snapmorph.mjs';
 import { reconcileParallelAll, parallelForgetPushed, parallelSweepTick } from './ui_parallel.mjs';
 import { autoBankTick } from './ui_automation_bank.mjs';
@@ -1160,6 +1160,10 @@ export function _tickImpl() {
             syncDrumClipContent(S.pendingDrumResyncTrack);
             syncDrumLanesMeta(S.pendingDrumResyncTrack);
             syncDrumLaneSteps(S.pendingDrumResyncTrack, S.activeDrumLane[S.pendingDrumResyncTrack]);
+            /* An edit that moved the notes (double, crop, resolution, stretch,
+             * shift) moved their linked automation too: the lane list and
+             * its step maps are re-read, or the steps show the old lane. */
+            automationNoteListChangedElsewhere();
             forceRedraw();
         }
     }
@@ -1209,6 +1213,7 @@ export function _tickImpl() {
                 S.clipTPS[prt][prac] = TPS_VALUES.indexOf(_tv) >= 0 ? _tv : 24;
             }
             if (prac === S.trackActiveClip[prt]) refreshPerClipBankParams(prt);
+            automationNoteListChangedElsewhere();    /* see the drum resync above */
             forceRedraw();
         }
     }

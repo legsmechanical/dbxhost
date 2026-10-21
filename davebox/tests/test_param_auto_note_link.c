@@ -234,7 +234,10 @@ int main(void) {
         hx_t *h = setup();
         pa_set(h, LINK, 18 * 24, 3000);          /* sits in the half about to be written over */
         hx_set_param(h, "t1_loop_double_fill", "1");
-        PTS_EQ(LINK, "96:5000 360:7000 480:5000 744:7000",
+        /* Wrap: Reset (the default): the copied half starts as each pass of
+         * the old loop did — the first point's value here (no rest captured)
+         * pinned at 384 — not holding the first half's last value (7000). */
+        PTS_EQ(LINK, "96:5000 360:7000 384:5000 480:5000 744:7000",
                "Double: steps 0-15 copied to 16-31, REPLACING what was there (step 18's point is gone)");
         PTS_EQ(OFF,  "96:5000", "Double: Off stays");
         PTS_EQ(OWN,  "96:5000", "Double: an own-Loop lane just keeps looping — untouched");
@@ -295,7 +298,7 @@ int main(void) {
             { "t0_all_lanes_clock_shift", "1",     "0:7000 120:5000",   "ALL LANES Clock Shift +1: one step later, the last step wrapping" },
             { "t0_all_lanes_nudge", "1",           "97:5000 361:7000",  "ALL LANES Nudge +1: one tick later" },
             { "t0_all_lanes_beat_stretch", "1",    "192:5000 720:7000", "ALL LANES Stretch x2" },
-            { "t0_all_lanes_double_fill", "1",     "96:5000 360:7000 480:5000 744:7000", "ALL LANES Double: copied forward" },
+            { "t0_all_lanes_double_fill", "1",     "96:5000 360:7000 384:5000 480:5000 744:7000", "ALL LANES Double: copied forward, the copy starting as the old cycle did" },
             /* single-lane ops: the clip's automation stays put */
             { "t0_l0_clip_resolution", "2",        "96:5000 360:7000",  "a SINGLE lane's Resolution moves no automation" },
             { "t0_l0_clock_shift", "1",            "96:5000 360:7000",  "a SINGLE lane's Clock Shift moves no automation" },
@@ -352,19 +355,19 @@ int main(void) {
         hx_set_param(h, "t0_l0_note_add", "96 100 12");
         hx_set_param(h, "t0_pa_set", "0 " DL " 96 5000");
         hx_set_param(h, "t0_all_lanes_double_fill", "1");
-        DPTS("96:5000 480:5000", "setup: doubled");
+        DPTS("96:5000 384:5000 480:5000", "setup: doubled");
         hx_set_param(h, "undo_restore", "1");
         HX_ASSERT(in->tracks[0].drum_clips[0]->lanes[0].clip.length == 16, "setup: undo restored the lane to 16 steps");
         DPTS("96:5000", "⭐ undo takes the copied automation back with the notes");
         hx_set_param(h, "redo_restore", "1");
-        DPTS("96:5000 480:5000", "and redo brings it back");
+        DPTS("96:5000 384:5000 480:5000", "and redo brings it back");
         hx_destroy(h);
 
         h = hx_create(NULL);
         hx_set_param(h, "t1_c0_step_4_toggle", "60 100");
         pa_set(h, LINK, 96, 5000);
         hx_set_param(h, "t1_loop_double_fill", "1");
-        PTS_EQ(LINK, "96:5000 480:5000", "CONTROL setup: melodic doubled");
+        PTS_EQ(LINK, "96:5000 384:5000 480:5000", "CONTROL setup: melodic doubled");
         hx_set_param(h, "undo_restore", "1");
         PTS_EQ(LINK, "96:5000", "CONTROL: melodic undo takes it back too");
         hx_destroy(h);
