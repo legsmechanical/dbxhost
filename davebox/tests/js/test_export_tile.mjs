@@ -78,6 +78,42 @@ assert(Math.abs(tm[0].val - (100 + 800 * 100 / 156)) < 1e-6 && Math.abs(tm[1].ti
            JSON.stringify(env));
 }
 
+/* ⭐ WRAP: RESET — the lane HOLDS its last value to the loop end, then JUMPS
+ * back to rest (playback: "reset means reset"). The dump (pa_export_points)
+ * carries the held trail and, Smooth off, the rest held up to the first
+ * point; the tiling must keep both halves of each jump, not merge them into a
+ * slide. An 8-step lane (192) over 16 steps: rest 50, first point 96 = 100,
+ * 144 = 200, trail 192 = 200. */
+{
+    const rs = PA.parsePaDump('1 0 1:slot:volume 9 192 0 100 0 192 0 1 1|0:50 96:50 96:100 144:200 192:200 \n')[0];
+    const tr = PA.paTile(rs, 384);
+    const got = tr.map(p => p.tick + ':' + p.val).join(' ');
+    const want = '0:50 96:50 96:100 144:200 192:200 192:50 288:50 288:100 336:200 384:200';
+    assert(got === want, '⭐ Reset: each pass holds 200 to its end and the next starts at rest 50 — a jump at 192, kept', got);
+    assert(PA.paSampleAt(tr, 191) === 200 && PA.paSampleAt(tr, 193) === 50,
+           'Reset: just before the loop end it plays 200, just after it 50 (no slide from 144 down to the next lead)');
+    assert(tr[0].val === 50, 'Reset: the clip starts at rest, not on the previous pass\'s held value', JSON.stringify(tr.slice(0, 2)));
+    const bp = PA.paBreakpoints({ points: tr }, { field: 'volume' });
+    const times = bp.map(b => b.time);
+    assert(times.every((t, i) => i === 0 || t > times[i - 1]),
+           'Reset: every breakpoint time is distinct (the first of a jump is written a hair earlier)', JSON.stringify(times));
+    assert(Math.abs(times[4] - 2) < 1e-4 && times[5] === 2 && bp[4].value !== bp[5].value,
+           'Reset: the jump at beat 2 stays vertical', JSON.stringify(bp.slice(3, 7)));
+    /* Aftertouch rides the notes: a note across the jump samples both sides. */
+    const notes = [{ startTime: 0, duration: 4 }];
+    PA.paAttachPerNote(notes, { points: tr }, { kind: 'note', key: 'Pressure', max: 127 }, 2);
+    const au = notes[0].automations.Pressure;
+    const i2 = au.findIndex(a => a.time === 2);
+    assert(i2 >= 0 && au[i2 + 1] && au[i2 + 1].time < 2.001 && au[i2].value > au[i2 + 1].value,
+           'Reset: a note across the jump drops right after beat 2, not ramping to beat 3', JSON.stringify(au));
+}
+/* CONTROL: Carry's trail and the next lead carry the SAME value — one breakpoint. */
+{
+    const cr = PA.parsePaDump('1 0 1:slot:volume 1 192 0 100 0 192 0 1 1|0:200 96:100 144:200 192:200 \n')[0];
+    const tc = PA.paTile(cr, 384).map(p => p.tick);
+    assert(tc.filter(t => t === 192).length === 1, 'CONTROL: Carry\'s seam is one breakpoint', JSON.stringify(tc));
+}
+
 /* The old dump shape (no clock): the raw points, as before. */
 const old = PA.parsePaDump('0 0 0:slot:pan 3 0 0 100|0:100 156:900 \n')[0];
 assert(old && old.clock === null && PA.paTile(old, 1536) === old.points, 'CONTROL: a lane with no clock keeps its raw points');

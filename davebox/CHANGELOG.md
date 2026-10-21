@@ -21,6 +21,13 @@ the section into a versioned heading at release time.
   screen. The **Clear all** row still clears everything.
 
 ### Fixed
+- **Live export: a Wrap: Reset lane now jumps where it should.** It used to slide
+  down from its last value to the resting value across the loop end, and, with
+  Smooth off, slide up from rest to the first point. The Live set now holds the
+  last value to the loop end and jumps back, as dAVEBOx plays it.
+- **Live export: lanes with Smooth off now step.** dAVEBOx holds each value until
+  the next one; the Live set drew a slide between them. It now holds and jumps
+  the same way.
 - Opening an editor over the AUTOMATION screen — the pad map's INSTRUMENT,
   MIDI FX or FX pads, after a Shift + click jump or straight from the lane
   list — left the step buttons showing the lane. They return to notes now, and

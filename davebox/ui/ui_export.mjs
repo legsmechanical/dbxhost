@@ -559,24 +559,38 @@ function paTile(lane, span) {
         for (const p of cyc) all.push({ tick: base + (p.tick - k.ws) / r, val: p.val });
     const out = [];
     const at = (t) => paSampleAt(all, t);
-    out.push({ tick: 0, val: at(0) });
+    /* The clip starts on what plays FROM tick 0: where a jump falls exactly
+     * there (Wrap: Reset's trail and the next lead), the right-hand value. */
+    let v0 = at(0);
+    for (const p of all) if (Math.abs(p.tick) < 1e-9) v0 = p.val;
+    out.push({ tick: 0, val: v0 });
     for (const p of all) if (p.tick > 0 && p.tick < span && out.length < PA_TILE_CAP - 1) out.push(p);
     out.push({ tick: span, val: at(span) });
-    /* One breakpoint per time: a cycle's trail and the next one's lead meet
-     * on the same tick with the same value. */
+    /* One breakpoint per time where a cycle's trail and the next one's lead
+     * meet with the same value (Carry). Two that DIFFER are a jump (Reset:
+     * the held last value, then the rest) and both stay. */
     const d = [];
     for (const p of out) {
-        if (d.length && Math.abs(d[d.length - 1].tick - p.tick) < 1e-9) d[d.length - 1] = p;
-        else d.push(p);
+        const q = d[d.length - 1];
+        if (q && Math.abs(q.tick - p.tick) < 1e-9 && q.val === p.val) continue;
+        d.push(p);
     }
     return d;
 }
 
+/* A jump (two breakpoints on one tick with different values) is written with
+ * the first of the pair this much EARLIER, so every breakpoint time is
+ * distinct and the step still reads as vertical. In beats; survives the 1e-6
+ * rounding. */
+const PA_JUMP_BEATS = 1e-5;
 /* A mixer lane -> Ableton breakpoints, times in CLIP-RELATIVE BEATS. */
 function paBreakpoints(lane, what) {
-    return lane.points.map(function(pt) {
-        return { time: Math.round((pt.tick / PA_TICKS_PER_BEAT) * 1e6) / 1e6,
-                 value: paValueFor(what, pt.val) };
+    const pts = lane.points;
+    return pts.map(function(pt, i) {
+        let time = pt.tick / PA_TICKS_PER_BEAT;
+        const nx = pts[i + 1];
+        if (nx && nx.tick === pt.tick && nx.val !== pt.val) time -= PA_JUMP_BEATS;
+        return { time: Math.round(time * 1e6) / 1e6, value: paValueFor(what, pt.val) };
     });
 }
 
@@ -594,6 +608,11 @@ function paAttachPerNote(notes, lane, what, semis) {
         for (let k = 0; k < lane.points.length; k++) {
             const rel = (lane.points[k].tick - st) / PA_TICKS_PER_BEAT;
             if (rel > 0 && rel < n.duration) times[rel] = 1;
+            /* A jump here: sample just after it too, or the note ramps from
+             * the value before the jump to the next point. */
+            const nx = lane.points[k + 1];
+            if (nx && nx.tick === lane.points[k].tick && nx.val !== lane.points[k].val
+                    && rel + PA_JUMP_BEATS > 0 && rel + PA_JUMP_BEATS < n.duration) times[rel + PA_JUMP_BEATS] = 1;
         }
         const bps = Object.keys(times).map(Number).sort(function(x, y) { return x - y; })
             .map(function(rel) {
