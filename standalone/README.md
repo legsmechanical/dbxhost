@@ -1,7 +1,9 @@
-# davebox standalone host
+# The dAVEBOx SA launcher and installer
 
 Lets davebox ship host changes **without waiting on upstream Schwung**, and
 **without making users choose** between official Schwung and a davebox build.
+dAVEBOx SA is installed from, launched from and dependent on stock Schwung: it
+plays the modules the user installed there, and quitting returns to it.
 
 ## The idea
 
@@ -35,8 +37,10 @@ preload.
 
 Both properties fall out of this:
 
-- **No upstream dependency.** While our build runs, stock Schwung is not
-  running. Nothing we need has to be merged by anyone.
+- **No wait on upstream for host changes.** While our build runs, stock
+  Schwung's processes are not running, so nothing we need has to be merged by
+  anyone first. Stock's install is still what we were launched from and whose
+  modules we load.
 - **No user choice.** The official install is never modified. It stays on disk,
   keeps updating normally, and a reboot always returns to it — so a broken
   davebox build cannot brick the device.

@@ -1222,7 +1222,7 @@ the first version of this test.
 `card_script` on a parameter gives a module the page: a bordered picture,
 centred, raised while that knob is held or has just been turned, and gone on
 release. `param_card.mjs` owns the frame and the module owns the inside. See
-`docs/MODULES.md` for the author-facing contract.
+`docs/MODULES.md` for the contract (Schwung's; this host honours it).
 
 **Why a surface at all.** The grid's business is eight values at once, in a
 17×15 box each. A card answers a different question — *what does THIS value

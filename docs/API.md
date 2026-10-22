@@ -1,25 +1,23 @@
 # Move Hardware API Reference
 
-This document describes the JavaScript API available for developing Schwung modules.
+This document describes the JavaScript API this host gives Schwung modules.
 
-> **`[FORK-ONLY]`** marks a binding that exists **only in this fork**, not in
-> upstream Schwung. There are three: `host_vol_block`, `host_edit_cc_block` (a
-> JS global in `shadow_ui.js` since the #425 claims bitmap, not a C binding) and
-> `host_canvas_input`. (`host_build_info` was deleted in P3 of the
+> **Write modules against Schwung's API, not this host's.** This host carries
+> every upstream binding, so a module written for Schwung runs here unchanged.
+> The authoritative module-facing reference is upstream's (see the header of
+> `docs/MODULES.md`).
+>
+> **`[FORK-ONLY]`** marks a binding that exists **only in this fork** and is
+> used only by dAVEBOx's own UI. **Do not call one from a module.** There are
+> four: `host_vol_block`, `host_edit_cc_block` (a JS global in `shadow_ui.js`
+> since the #425 claims bitmap, not a C binding), `host_canvas_input` and
+> `host_state_subdir`. (`host_build_info` was deleted in P3 of the
 > re-architecture — one repo ships host and module together, so there is no
 > version skew left to report.) Derive that list from the `JS_SetPropertyStr`
 > registrations diffed against `upstream/main`, never from this document — it
-> has been incomplete before. **And note the binding list is not the whole fork
+> has been incomplete before. **And the binding list is not the whole fork
 > surface:** fork-only *param-key namespaces* (`fx3:`/`fx4:`,
-> `send_fx:a:`/`send_fx:b:`) are invisible to any `typeof` probe — the reason
-> only this repo's own module may use them.
-> A module that calls a fork-only binding must gate on
-> `typeof host_x === 'function'` and carry a working degraded path, because on
-> a stock install the function is simply absent — that absence *is* the
-> capability probe, and needs nothing from upstream to work. Never gate such a
-> feature on "am I in a standalone session" instead: the two are equivalent
-> today but diverge the moment a fork change merges upstream, at which point a
-> session gate wrongly hides a feature stock supports.
+> `send_fx:a:`/`send_fx:b:`) exist too, and are likewise dAVEBOx's alone.
 
 > **Note on contexts.** Two QuickJS hosts register JS bindings:
 > `src/schwung_host.c` (the standalone `schwung` host binary) and

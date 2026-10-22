@@ -93,8 +93,14 @@ being reported.
 ## 📗 Module composition: read the CURRENT `MODULES.md`
 
 Before writing or debugging any `module.json`, UI hierarchy, chain param, knob mapping, menu, DSP
-entry point or JS↔DSP param bridge — read **`docs/MODULES.md` in THIS repo** for dAVEBOx SA work;
-`../schwung-current/docs/MODULES.md` is the upstream-bound contract. ⚠ Do **not** infer the schema
+entry point or JS↔DSP param bridge — read **`docs/MODULES.md` in THIS repo** for dAVEBOx SA work
+(upstream's guide plus notes on how this host honours it); `../schwung-current/docs/MODULES.md` is
+the upstream-bound contract.
+
+📌 **Modules are developed for Schwung, never for this host.** No public doc may offer dbxhost as a
+module target or document a fork-only mechanism as something a module can use; those live in
+`davebox/docs/reference/MODULE_HOSTING.md` as dAVEBOx-internal. Compatibility is this repo's job.
+And dAVEBOx SA is described as launched from and depending on Schwung — never as a replacement. ⚠ Do **not** infer the schema
 by copying another module's `module.json`: the failure mode is that the module loads, the DSP
 instantiates, nothing is logged, and the menu does nothing when you turn a knob. Traps already paid
 for: editable params use **`name`**, not `label`; a file browser is a **`filepath` param type**
@@ -304,13 +310,14 @@ usage and the pruning rules: [`RATIONALE.md`](RATIONALE.md).
 - `RATIONALE.md` — **why the rules are what they are** (history, deleted machinery, incidents)
 - `docs/HOST_REFERENCE.md` — **the shape of each subsystem**: architecture, Move hardware MIDI, SPI,
   deployment layout, gain staging, Link Audio, the signal-chain module, shadow mode, module
-  install/update, external module development
+  install/update
 - `docs/UPSTREAM.md` — upstream watermark: how far `upstream/main` has been reviewed, what was
   applied/skipped, the keep-list of paths this fork owns
 - `docs/UI_LANGUAGE.md` — normative OLED spec. Read before building or rebuilding any screen
 - `docs/PRIMARY_SURFACE.md` — primary surface + service stack
 - `docs/MODULE_BUSES.md` — module buses: the cross-host contract and this fork's divergences
-- `docs/MODULES.md` — module development (module.json, capabilities, DSP API, Remote UI)
+- `docs/MODULES.md` — Schwung's module guide as this host honours it (module.json, capabilities,
+  DSP API, Remote UI); fork-only host mechanisms live in `davebox/docs/reference/MODULE_HOSTING.md`
 - `docs/API.md` — JS API reference. ⚠ Incomplete before; not authoritative for the binding list
 - `docs/SPI_PROTOCOL.md` — the full SPI wire reference (HOST_REFERENCE has the overview)
 - `docs/ARCHITECTURE.md`, `docs/MIDI_INJECTION.md`, `docs/LOGGING.md`, `docs/tracing.md`,
@@ -325,12 +332,12 @@ usage and the pruning rules: [`RATIONALE.md`](RATIONALE.md).
 3. Bump `release.json` (version + download URL) and `standalone/module/module.json` to the same
    version. ⚠ NOT `src/host/version.txt`: that is the Schwung BASE version the host tracks, and
    modules' `min_host_version` is checked against it (`tests/host/test_release_keeps_host_version.sh`)
-4. Update `CLAUDE.md`, `docs/API.md`, `docs/MODULES.md`, `src/shared/help_content.json` and the
-   manual for new/changed behaviour
+4. Update `CLAUDE.md`, `docs/API.md`, `docs/MODULES.md` (only where it says how this host honours
+   Schwung's contract), `davebox/docs/reference/MODULE_HOSTING.md`, `src/shared/help_content.json`
+   and the manual for new/changed behaviour
 5. Update `help.json` in modified tool modules
-6. Bump `min_host_version` for modules depending on new host features
-7. `git tag v0.X.0 && git push --tags`
-8. `gh release edit` with concise bullets
+6. `git tag v0.X.0 && git push --tags`
+7. `gh release edit` with concise bullets
 
 ## Dependencies
 

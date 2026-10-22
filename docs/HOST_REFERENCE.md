@@ -1,5 +1,10 @@
 # dbxhost — host reference
 
+dbxhost is a fork of the Schwung host that runs dAVEBOx SA sessions. It is
+launched from, and depends on, a stock Schwung install: it plays the modules,
+presets and samples installed there. Modules are Schwung modules — see the
+header of `docs/MODULES.md`.
+
 Extracted from `CLAUDE.md` on 2026-09-09 to keep that file the RULES a session must follow, not the reference it occasionally needs. Nothing here changed in the move.
 
 ⚠ Deeper treatments live beside this file: `ARCHITECTURE.md`, `SPI_PROTOCOL.md`, `REALTIME_SAFETY.md`, `MODULE_BUSES.md`, `PARAM_PAGES.md`, `CORUN.md`, `API.md`.
@@ -807,15 +812,9 @@ Required: `id`, `name`, `description`, `author`, `component_type`, `github_repo`
 
 ## External Module Development
 
-External modules live in separate repos (e.g. `move-anything-sf2`, `move-anything-obxd`). Each has:
-
-```
-src/{module.json, ui.js, dsp/}
-scripts/{build.sh, install.sh, Dockerfile}
-.github/workflows/release.yml   # Triggers on v* tags, runs build.sh in Docker, attaches dist/<id>-module.tar.gz
-```
-
-`build.sh` must cross-compile DSP for ARM64 (Docker), package to `dist/<id>/`, and produce `dist/<id>-module.tar.gz`.
-
-Release: bump `src/module.json` version → commit → `git tag v0.2.0 && git push --tags`. schwung-manager sees it within minutes. See `BUILDING.md`.
+Modules are developed for Schwung, following upstream's `docs/MODULES.md` and
+`BUILDING.md`. This host loads whatever stock Schwung has installed
+(`daveboxSA/modules` is a link to stock's modules folder) and has no module
+release path of its own. The catalog notes above describe Schwung's catalog,
+which is also how dAVEBOx SA itself is published.
 

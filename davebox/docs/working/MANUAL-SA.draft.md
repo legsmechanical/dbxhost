@@ -36,9 +36,10 @@ different.
 
 ## Which manual is this?
 
-This manual covers **dAVEBOx SA** — dAVEBOx running as its own session, on its own
-build of the Schwung host. It restarts Move underneath and boots straight into the
-sequencer.
+This manual covers **dAVEBOx SA** — dAVEBOx running as its own session. You start
+it from Schwung, and Move restarts straight into the sequencer, on a fork of the
+Schwung host that plays the modules, presets and samples installed in your
+Schwung. It needs Schwung installed; it doesn't replace it.
 
 **Two ways in, both leading to the same place:**
 
@@ -2698,9 +2699,9 @@ that slot empty and the screen names what's missing (**MODULES MISSING**).
 
 ## 17.6 dAVEBOx and official Schwung
 
-dAVEBOx runs on its own copy of the Schwung host, installed beside official
-Schwung; only one of them runs at a time. What you install or make is shared; each
-keeps its own settings.
+dAVEBOx runs on a fork of the Schwung host, started from and depending on your
+official Schwung install; only one of them runs at a time. What you install or make
+is shared; each keeps its own settings.
 
 | What | Between the two |
 |---|---|

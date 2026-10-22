@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
   "name": "dAVEBOx SA",
-  "description": "An 8-track MIDI sequencer for Ableton Move that runs as its own standalone session, on its own build of the Schwung host. The successor to dAVEBOx. Install it here, then open dAVEBOx SA from the Tools menu: the first launch finishes the install by itself. Stock Schwung is untouched and comes back when you quit.",
+  "description": "An 8-track MIDI sequencer for Ableton Move that runs as its own session, launched from Schwung: Move restarts into dAVEBOx, playing Move's instruments and the modules you installed in Schwung. The successor to dAVEBOx. Install it here, then open dAVEBOx SA from the Tools menu: the first launch finishes the install by itself. Stock Schwung is untouched and comes back when you quit.",
   "download_url": "https://github.com/legsmechanical/dbxhost/releases/download/v1.0.0/davebox-sa-module.tar.gz"
 }
