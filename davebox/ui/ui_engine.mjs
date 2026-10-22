@@ -31,6 +31,7 @@ import { bulkDecode } from '/data/UserData/schwung/shared/snapshot.mjs';
 /* A module-owned page draws through the same clipped, origin-shifted context a
  * widget gets (engineCanvasPageDrawer). */
 import { frameCtx } from '/data/UserData/schwung/shared/param_pages/frame_ctx.mjs';
+import { chainUiPathIn } from './ui_chain_host.mjs';
 
 const MODULES_BASE = '/data/UserData/schwung/modules';
 
@@ -1057,6 +1058,16 @@ export function engineLoadCanvasOverlay(comp, moduleId, script = 'canvas.js', re
     if (!ok) return { overlay: null, named: null, error: error || name + ' failed to load', retry: false };
     if (!overlay && !named) return { overlay: null, named: null, error: name + ' set no canvas_overlay', retry: false };
     return { overlay, named, error: '', retry: false };
+}
+
+/*
+ * The module's own CHAIN SCREEN (ui_chain.js, or module.json's "ui_chain"), or
+ * null — stock's getModuleUiPath over the directory module.json vouches for.
+ * The rule itself lives in ui_chain_host.mjs.
+ */
+export function engineChainUiPath(comp, moduleId) {
+    return chainUiPathIn(moduleDirFor(comp, moduleId),
+                         (p) => host_read_file(p), (p) => host_file_exists(p));
 }
 
 /* Upstream's lookup for a named overlay: a dotted path off the globals, then

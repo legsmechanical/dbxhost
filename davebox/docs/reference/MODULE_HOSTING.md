@@ -291,3 +291,55 @@ this rig has no use for. The renderer is davebox's existing `ui/ui_movy.mjs`, a
 source translation of **schwung-canvaskit**. Per that kit's standing rule it is a
 source to draw upon, not a dependency: `lab/` adds no build step and regenerates
 nothing.
+
+## A module's own chain screen (`ui_chain.js`)
+
+dAVEBOx runs a module's chain screen where stock runs it (`src/shadow/shadow_ui.js`
+`enterComponentEdit` → `loadModuleUi`): opening a component that publishes **no**
+`ui_hierarchy` loads `ui_chain.js` (or the file module.json's `"ui_chain"` names) and
+gives it the screen. A component that publishes a hierarchy gets the shared grid, and a
+module declaring `host_canvas_ui` keeps its place ahead of both. No module is named
+anywhere; the code is `ui/ui_chain_host.mjs` (contract + shims) and `openChainScreenIfOwed`
+in `ui/ui_sound.mjs` (where it opens).
+
+What a script gets, and what each binding means here:
+
+| binding | in dAVEBOx |
+|---|---|
+| `chain_ui.init/tick/onMidiMessageInternal/handleBack` (or changed plain globals) | as stock: `tick` draws every frame; Back asks `handleBack()` first |
+| `host_module_get_param/set_param` | the opened slot + component; a set is an **edit** (below) |
+| `shadow_get_param` | the real binding |
+| `shadow_set_param` | the real binding, except a write to the opened slot's `<comp>:` keys, which is an **edit** |
+| `shadow_get_ui_slot()` | the opened slot |
+| `shadow_get_display_mode()` | 1 |
+| `shadow_get_shift_held()` | dAVEBOx's Shift |
+| `host_pad_block(1)` | the module gets pads 68–99 (+ pressure) first |
+| `move_midi_inject_to_move` (a pad) | plays the pad through dAVEBOx's own pad path, after the call returns |
+| `host_swap_module()` | closes the screen and opens the module browser |
+| `host_open_file_in_tool` | `false` (SA has no tools) |
+
+Kept by dAVEBOx while the screen is up: Volume (79), Note/Session (50), Play (85),
+Record (86). Shift and Mute reach the module **and** dAVEBOx. Shift + jog closes.
+
+⭐ **A parameter the script writes is an edit**, as an editor knob's is: it lands at once,
+and after the call it goes to `automationParamEdit` (a held step makes a lock, Record a
+take). Only keys in the component's `chain_params` count — a module's private keys (9W9's
+`mute_ms`, `mutes`) are written and nothing else. The edit is handed over after the call
+because the automation path writes dAVEBOx's DSP through the shimmed names. Not covered:
+Mute/Delete + knob touch (the script, not dAVEBOx, knows which parameter is under a knob).
+
+⚠ **`tick()` runs at most once per `CHAIN_TICK_MS` (40 ms)**, not every host frame. The
+script shares dAVEBOx's JS thread, so every input dAVEBOx handles (lights, page changes,
+knobs) waits behind its tick, and a grid script's tick makes a blocking engine read.
+Measured on the device: 1.3 ms → 5.6 ms per frame at the full rate. A skipped frame leaves
+the last one on screen. A pad's SOUND is unaffected either way: the engine plays pads on
+the audio thread.
+
+⚠ The shims are installed **around each hosted call** and restored in `finally`, never
+for the screen's lifetime: dAVEBOx calls `host_module_*` for its own DSP from every tick.
+
+Not yet: stock's bare `ui.js` fallback (a module's standalone screen would take over a
+running sequencer — name it with `"ui_chain": "ui.js"` to opt in), the trailing
+My Presets / Module menus (`shadow_component_trailing_menus` — this host has no
+equivalent either), `onPresetsChanged` / `restorePage`, `onMidiMessageExternal`.
+Test: `tests/js/test_chain_ui_screen.mjs`.

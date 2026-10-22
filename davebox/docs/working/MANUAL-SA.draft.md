@@ -1957,6 +1957,15 @@ the jog turns the pages. **Shift + jog** switches track, and the editor follows 
 the new track's instrument. A module that draws some of its own cells (a waveform,
 a picture of its mode) shows them in place of a plain dial.
 
+**A module with its own screen.** Some modules draw their own editor in Schwung
+instead of the standard pages. dAVEBOx shows that same screen, opened the same way:
+the knobs, the jog and the module's own gestures behave as they do in Schwung. If the
+module takes the pads (a drum module that jumps to the drum you hit, say), a pad goes
+to it first and still plays and records on the track. Its knobs record automation like
+any editor knob: hold a step and turn for a lock, or turn while recording. **Back** steps back inside the
+module, then leaves; **Shift + jog** leaves at once. Volume, Note/Session, Play and
+Record stay dAVEBOx's while it is up.
+
 **Touch a knob and click the jog** for a parameter a knob can't turn well:
 
 - a file opens the file browser;

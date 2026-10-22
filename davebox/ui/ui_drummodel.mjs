@@ -320,7 +320,7 @@ export function syncDrumClipContent(t) {
 }
 
 export function syncDrumRepeatState(t, lane) {
-    const raw = host_module_get_param('t' + t + '_l' + lane + '_repeat_state');
+    const raw = dspGet('t' + t + '_l' + lane + '_repeat_state');
     if (!raw) return;
     const v = raw.split(' ');
     if (v.length < 18) return;

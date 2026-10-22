@@ -86,7 +86,7 @@ import { applyBankPick, heldStepJog, bankMapArmable, bankMapBegin, bankMapEnd, b
     bankMapRelease } from './ui_input_cc.mjs';
 import { standDownBankDisplay } from './ui_state.mjs';
 import { _onCCMsg, syncCoRunShift } from './ui_input_cc.mjs';
-import { soundActive, soundOpen, soundResting, soundExit, soundOnCC, soundOnNote, soundOnMidiRaw,
+import { soundChainTakesPad, soundSetChainPadReplay, soundActive, soundOpen, soundResting, soundExit, soundOnCC, soundOnNote, soundOnMidiRaw,
          installGateMemoInvalidation, soundSeqMirror } from './ui_sound.mjs';
 import { soundModeCovered } from './ui_render.mjs';
 import { armCardHold } from './ui_prefs.mjs';
@@ -635,6 +635,16 @@ function _onMidiInternalImpl(data) {
 
     _dispatchBelowJogRouter(data, status, d1, d2);
 }
+/* A pad a module's chain screen handed back ("inject to Move"): in a dAVEBOx
+ * session the pads are dAVEBOx's, so it plays — and records — through the same
+ * gates as a press nobody intercepted. */
+let _modulePadReplaying = false;
+function _replayModulePad(status, d1, d2) {
+    _modulePadReplaying = true;
+    try { _dispatchBelowJogRouter(new Uint8Array([status, d1, d2]), status, d1, d2); }
+    finally { _modulePadReplaying = false; }
+}
+soundSetChainPadReplay(_replayModulePad);
 /* A jog press, for the click delivered late (see the router above). */
 const JOG_PRESS_MSG = new Uint8Array([0xB0, MoveMainButton, 127]);
 /* Everything below the jog router: the modal gates and every owner. Its own
@@ -662,6 +672,14 @@ function _dispatchBelowJogRouter(data, status, d1, d2) {
     /* The keyboard naming a template (Save as Template..., Rename): the same
      * contract, from the Project menu or the TEMPLATES screen. */
     if (S.templateNameEntry && templateTextEntryMidi(data)) return;
+
+    /* A module's CHAIN SCREEN that holds the pad block gets the pads FIRST and
+     * decides what plays — stock's shim rule. What it hands back comes in
+     * through _replayModulePad below, past this gate. */
+    if (d1 >= TRACK_PAD_BASE && d1 < TRACK_PAD_BASE + 32 && !_modulePadReplaying) {
+        const _k = status & 0xF0;
+        if ((_k === 0x90 || _k === 0x80 || _k === 0xA0) && soundChainTakesPad(status, d1, d2)) return;
+    }
 
     /* Pad pressure arrives as poly aftertouch (0xA0) with the pad note in d1.
      * isNoiseMessage() classifies all 0xA0/0xD0 as noise, so handle pressure

@@ -648,6 +648,13 @@ function paramMeta(slot, comp, key) {
     return best ? m[best] : undefined;
 }
 
+/* Is `key` one of the component's published parameters (chain_params)? A
+ * module's own screen also writes private keys — 9W9's silent-select window,
+ * its lane-mute mask — and those are not automation targets. */
+export function automationIsParam(slot, comp, key) {
+    return !!paramMeta(slot, comp, key);
+}
+
 /* 14-bit normalized -> the string the parameter actually takes.
  *
  * The DSP stores automation normalized because only JS has the metadata that

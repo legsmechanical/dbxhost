@@ -29,7 +29,7 @@ import { openGlobalMenuAt } from './ui_menu.mjs';
 import { exitMoveSettingsCoRun, exitMoveNativeCoRun } from './ui_corun.mjs';
 import { openProjectPadPicker, projectPadPickerTap } from './ui_dialogs.mjs';
 import { applyBankParam, applyTrackConfig, readBankParams,
-    refreshPerClipBankParams, refreshDrumLaneBankParams, refreshSeqNotesIfCurrent,
+    refreshPerClipBankParams, refreshDrumLaneBankParams, syncSelectedDrumLane, refreshSeqNotesIfCurrent,
     resyncDrumTrack, liveSendNote,
     pendingDrumNoteOffs, _drumRecNoteOns, _drumRecNoteOffs } from './ui_dsp_bridge.mjs';
 /* One-way edge (ui_sound never imports this file), so no cycle to document.
@@ -534,8 +534,7 @@ function _onPadPressTrackView(status, d1, d2) {
                 const lane = drumPadToLane(padIdx);
                 if (lane >= 0 && lane < DRUM_LANES) {
                     setActiveDrumLane(t, lane);
-                    syncDrumLaneSteps(t, lane);
-                    refreshDrumLaneBankParams(t, lane);
+                    syncSelectedDrumLane(t, lane);
                     if (S.drumRepeat2LatchedLanes[t].has(lane)) {
                         S.drumRepeat2LatchedLanes[t].delete(lane);
                         /* As for Rpt1: Loop + lane pad never reaches the engine. */
@@ -699,8 +698,7 @@ function _onPadPressTrackView(status, d1, d2) {
                      * sound without changing which lane the editor is on. */
                     if (S.activeBank !== 6) {
                         setActiveDrumLane(t, lane);
-                        syncDrumLaneSteps(t, lane);
-                        refreshDrumLaneBankParams(t, lane);
+                        syncSelectedDrumLane(t, lane);
                     }
                     if (S.moveCoRunTrack >= 0) {
                         /* Move co-run: the plain pad-on injected to Move (in _onPadPress)
