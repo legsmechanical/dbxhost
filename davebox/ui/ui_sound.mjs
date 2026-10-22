@@ -65,7 +65,8 @@ import { setChordLayout } from './ui_chord_pads.mjs';
 import { setCustomLayout } from './ui_custom_chords.mjs';
 import { forceRedraw, effectiveClip } from './ui_leds.mjs';
 import { automationParamEdit, automationParamTouch, automationStateFor, automationToggleActive,
-         automationClearKey, automationEntriesFor, automationFxMoved, automationAddLane } from './ui_automation.mjs';
+         automationClearKey, automationEntriesFor, automationFxMoved, automationAddLane,
+         automationIsParam } from './ui_automation.mjs';
 import { autoBankRestoreMenu, autoBankOpenLane, autoLaneFocus, autoHeldValue } from './ui_automation_bank.mjs';
 import { setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
 import * as ModuleLists from '/data/UserData/schwung/shared/module_lists.mjs';
@@ -2486,13 +2487,19 @@ function openChainScreenIfOwed() {
     if (S.view !== VIEW_EDIT || S.hierarchyPublished || S.hosted || !S.moduleId) return false;
     const path = engineChainUiPath(S.comp, S.moduleId);
     if (!path) return false;
-    const slot = S.slot, comp = S.comp;
+    const slot = S.slot, comp = S.comp, track = S.track;
     chainUiOpen({ path, slot, comp, io: {
         load: (p) => shadow_load_ui_module(p),
-        getParam: (k) => engineGet(slot, comp, k),
-        setParam: (k, v) => engineSet(slot, comp, k, v),
         shiftHeld: () => !!GS.shiftHeld,
         replayPad: (st, d1, d2) => { if (chainPadReplay) chainPadReplay(st, d1, d2); },
+        /* A parameter the module's screen changed is an edit, exactly as a
+         * knob in dAVEBOx's own editor (ppIo's onParamEdit): a held step makes
+         * it a lock, Record a take. Private keys (not in chain_params) are
+         * left alone. */
+        onParamEdit: (k, wire, prevWire) => {
+            if (!automationIsParam(slot, comp, k)) return;
+            automationParamEdit(track, effectiveClip(track), slot, comp + ':' + k, wire, prevWire);
+        },
     } });
     if (chainUiDead()) {
         /* Could not run it: say so, and leave the block editable the way it

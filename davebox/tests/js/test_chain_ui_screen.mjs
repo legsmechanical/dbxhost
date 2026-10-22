@@ -45,6 +45,11 @@ const CHAIN_JS = `(function () {
       return;
     }
     if (s === 0xB0 && d[1] === 71) host_module_set_param('vol', String(d[2]));
+    if (s === 0xB0 && d[1] === 72) host_module_set_param('secret', String(d[2]));
+    if (s === 0xB0 && d[1] === 73) {
+      shadow_set_param(shadow_get_ui_slot(), 'fx1:vol', String(d[2]));
+      shadow_set_param(3, 'fx1:vol', '77');
+    }
   }
   function handleBack() { globalThis.__chain.push(['back']); return globalThis.__backStays-- > 0; }
   globalThis.chain_ui = { init: init, tick: tick, onMidiMessageInternal: onMidiMessageInternal, handleBack: handleBack };
@@ -66,7 +71,9 @@ const ORIG_HMSP = (k, v) => { played.push(['hmsp', String(k), String(v)]); };
 const ORIG_HMGP = () => '';
 globalThis.host_module_set_param = ORIG_HMSP;
 globalThis.host_module_get_param = ORIG_HMGP;
-globalThis.host_module_set_params = () => true;
+/* The bulk write dAVEBOx's queue drains through (automation's keys ride it). */
+function decBulk(blob) { const out = []; if (!blob) return out; const nl = blob.indexOf('\n'); const n = parseInt(blob.slice(0, nl), 10) || 0; let p = nl + 1; for (let i = 0; i < n; i++) { const e = blob.indexOf('\n', p); const len = parseInt(blob.slice(p, e), 10) || 0; p = e + 1; out.push(blob.slice(p, p + len)); p += len; } return out; }
+globalThis.host_module_set_params = (blob) => { const it = decBulk(blob); for (let i = 0; i + 1 < it.length; i += 2) played.push(['hmsp', it[i], it[i + 1]]); return true; };
 globalThis.shadow_send_midi_to_dsp = (a) => { played.push(['dsp', Array.from(a || []).join(',')]); };
 globalThis.move_midi_internal_send = (a) => { played.push(['int', Array.from(a || []).join(',')]); };
 const ORIG_INJECT = (a) => { played.push(['move', Array.from(a || []).join(',')]); };
@@ -94,7 +101,8 @@ globalThis.shadow_get_param = (slot, k) => {
     return v === undefined ? '' : v;
 };
 const slotWrites = [];
-globalThis.shadow_set_param = (slot, k, v) => { slotWrites.push([slot, k, String(v)]); engine[slot + ':' + k] = String(v); return 1; };
+const ORIG_SSP = (slot, k, v) => { slotWrites.push([slot, k, String(v)]); engine[slot + ':' + k] = String(v); return 1; };
+globalThis.shadow_set_param = ORIG_SSP;
 
 const texts = [];
 globalThis.clear_screen = () => { texts.length = 0; };
@@ -207,6 +215,49 @@ step('a knob turn reaches the module, and its write lands on THIS slot\'s compon
     cc(71, 5); ticks(1);
     if (!slotWrites.some(([s, k, v]) => s === S.activeTrack && k === 'fx1:vol' && v === '5'))
         throw new Error('writes: ' + JSON.stringify(slotWrites));
+});
+
+/* A knob on the module's own screen is an EDIT, as in dAVEBOx's editor: with a
+ * step held, the module's write becomes a lock (the same tN_pa_hold_write an
+ * editor knob sends, test_sound_bank_knobs). */
+function holdStep(on) {
+    if (on) { S.heldStep = 3; S.heldStepBtn = 3; S.heldStepNotes = [60]; S.playing = false; }
+    else { S.heldStep = -1; S.heldStepBtn = -1; S.heldStepNotes = []; }
+}
+const lockWrites = () => played.filter(p => p[0] === 'hmsp' && /_pa_hold_write$/.test(p[1])).map(p => p[2]);
+
+step('⭐⭐ a step held + a knob on the module\'s screen = a LOCK on <slot>:fx1:vol, sent to dAVEBOx (never to the module)', () => {
+    holdStep(true); played.length = 0; slotWrites.length = 0;
+    cc(71, 9); ticks(2);
+    holdStep(false); ticks(2);
+    if (!slotWrites.some(([s, k, v]) => s === S.activeTrack && k === 'fx1:vol' && v === '9'))
+        throw new Error('the module\'s write did not land: ' + JSON.stringify(slotWrites));
+    const locks = lockWrites();
+    if (!locks.some(v => v.includes(' ' + S.activeTrack + ':fx1:vol ')))
+        throw new Error('no lock for ' + S.activeTrack + ':fx1:vol — dAVEBOx got ' + JSON.stringify(played.filter(p => /_pa_/.test(p[1]))));
+    const leaked = slotWrites.filter(([, k]) => /^fx1:t\d/.test(k));
+    if (leaked.length) throw new Error('automation writes landed on the module: ' + JSON.stringify(leaked));
+});
+
+step('a module\'s PRIVATE key (not in chain_params) is written but never becomes automation', () => {
+    holdStep(true); played.length = 0; slotWrites.length = 0;
+    cc(72, 4); ticks(2);
+    holdStep(false); ticks(2);
+    if (!slotWrites.some(([s, k]) => s === S.activeTrack && k === 'fx1:secret')) throw new Error('private write did not land: ' + JSON.stringify(slotWrites));
+    if (lockWrites().some(v => v.includes('secret'))) throw new Error('a private key became a lock: ' + JSON.stringify(lockWrites()));
+});
+
+step('⭐ a write straight through shadow_set_param(this slot, "fx1:…") is an edit too (9W9\'s route); another slot passes through untouched', () => {
+    const sspBefore = globalThis.shadow_set_param;   /* dAVEBOx wraps the binding at init */
+    holdStep(true); played.length = 0; slotWrites.length = 0;
+    cc(73, 11); ticks(2);
+    holdStep(false); ticks(2);
+    if (!slotWrites.some(([s, k, v]) => s === S.activeTrack && k === 'fx1:vol' && v === '11')) throw new Error('own-slot write missing: ' + JSON.stringify(slotWrites));
+    if (!slotWrites.some(([s, k, v]) => s === 3 && k === 'fx1:vol' && v === '77')) throw new Error('other-slot write did not pass through: ' + JSON.stringify(slotWrites));
+    const locks = lockWrites();
+    if (!locks.some(v => v.includes(' ' + S.activeTrack + ':fx1:vol '))) throw new Error('no lock from the shadow_set_param route: ' + JSON.stringify(locks));
+    if (locks.some(v => v.includes(' 3:fx1:vol '))) throw new Error('another slot\'s write became this track\'s automation: ' + JSON.stringify(locks));
+    if (globalThis.shadow_set_param !== sspBefore) throw new Error('shadow_set_param left shimmed');
 });
 
 step('⭐ Back: the module climbs first (handleBack true = stay), then Back leaves to TRACK CONFIG', () => {

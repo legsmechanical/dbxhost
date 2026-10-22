@@ -307,8 +307,9 @@ What a script gets, and what each binding means here:
 | binding | in dAVEBOx |
 |---|---|
 | `chain_ui.init/tick/onMidiMessageInternal/handleBack` (or changed plain globals) | as stock: `tick` draws every frame; Back asks `handleBack()` first |
-| `host_module_get_param/set_param` | the opened slot + component |
-| `shadow_get_param/set_param` | the real bindings |
+| `host_module_get_param/set_param` | the opened slot + component; a set is an **edit** (below) |
+| `shadow_get_param` | the real binding |
+| `shadow_set_param` | the real binding, except a write to the opened slot's `<comp>:` keys, which is an **edit** |
 | `shadow_get_ui_slot()` | the opened slot |
 | `shadow_get_display_mode()` | 1 |
 | `shadow_get_shift_held()` | dAVEBOx's Shift |
@@ -319,6 +320,13 @@ What a script gets, and what each binding means here:
 
 Kept by dAVEBOx while the screen is up: Volume (79), Note/Session (50), Play (85),
 Record (86). Shift and Mute reach the module **and** dAVEBOx. Shift + jog closes.
+
+⭐ **A parameter the script writes is an edit**, as an editor knob's is: it lands at once,
+and after the call it goes to `automationParamEdit` (a held step makes a lock, Record a
+take). Only keys in the component's `chain_params` count — a module's private keys (9W9's
+`mute_ms`, `mutes`) are written and nothing else. The edit is handed over after the call
+because the automation path writes dAVEBOx's DSP through the shimmed names. Not covered:
+Mute/Delete + knob touch (the script, not dAVEBOx, knows which parameter is under a knob).
 
 ⚠ The shims are installed **around each hosted call** and restored in `finally`, never
 for the screen's lifetime: dAVEBOx calls `host_module_*` for its own DSP from every tick.

@@ -35,6 +35,15 @@
  * it: the replay runs dAVEBOx's own pad path, which writes dAVEBOx's DSP
  * through the very names that are shimmed during the call.
  *
+ * ⭐ A PARAMETER THE SCRIPT WRITES IS AN EDIT, as a knob turn in dAVEBOx's own
+ * editor is: a held step makes it a lock, Record makes it a take. A script may
+ * write through `host_module_set_param` (bare key) or straight through
+ * `shadow_set_param(slot, "comp:key")` — 9W9 does the latter — so both are
+ * caught for this screen's slot and component. The write lands at once; the
+ * EDIT is queued and handed to dAVEBOx after the call, for the same reason the
+ * pad replay is (the automation path writes dAVEBOx's DSP). Which of those
+ * writes is a parameter (and not a module's private key) is dAVEBOx's call.
+ *
  * ⚠ ONE STRIKE, as on the canvas screen: a hook that throws disables the
  * script, the screen SAYS which hook died, and Back still leaves.
  */
@@ -73,17 +82,17 @@ export function chainUiPathIn(dir, readFile, exists) {
  *
  * `io` is dAVEBOx's half, so this file holds no dAVEBOx state:
  *   load(path) -> bool        evaluate the script (shadow_load_ui_module)
- *   getParam(bareKey)         a read on this component
- *   setParam(bareKey, value)  a write on this component
  *   shiftHeld() -> bool
  *   replayPad(status, d1, d2) play a pad the module handed back
- *   swapModule()              the module asked to be swapped
- *   name                      what to call it in an error
+ *   onParamEdit(bareKey, wire, prevWire)  the script changed a parameter
+ *
+ * Reads and writes go to the host's own shadow_get/set_param for `slot` and
+ * `comp`, captured before the call's shims go in.
  */
 export function chainUiOpen({ path, slot, comp, io }) {
     if (!path || !io || typeof io.load !== 'function') return false;
     H = { path, slot, comp, io, ui: null, padBlock: false, dead: false,
-          error: '', replay: [], wantsSwap: false };
+          error: '', replay: [], edits: [], wantsSwap: false };
     const G = globalThis;
     const had = {}, saved = {};
     for (const n of LOAD_NAMES) { had[n] = Object.prototype.hasOwnProperty.call(G, n); saved[n] = G[n]; }
@@ -109,6 +118,7 @@ export function chainUiOpen({ path, slot, comp, io }) {
     for (const n of LOAD_NAMES) {
         if (had[n]) G[n] = saved[n]; else { try { delete G[n]; } catch (e) {} }
     }
+    drainAfterCall(H);
     if (!H.ui) {
         H.error = H.error || (ok ? 'set no chain_ui' : 'failed to load');
         H.dead = true;
@@ -171,7 +181,7 @@ function invoke(hook, arg) {
         try { r = arg === undefined ? fn() : fn(arg); }
         catch (e) { h.error = hook + ' error: ' + e; h.dead = true; h.padBlock = false; r = undefined; }
     });
-    drainReplay(h);
+    drainAfterCall(h);
     return r;
 }
 
@@ -180,9 +190,26 @@ function invoke(hook, arg) {
 function scoped(body) {
     const G = globalThis;
     const h = H;
+    /* The host's real bindings, taken before the shims replace them. */
+    const realGet = G.shadow_get_param, realSet = G.shadow_set_param;
+    const pre = h.comp + ':';
+    const read = (bare) => (typeof realGet === 'function' ? realGet(h.slot, pre + bare) : null);
+    const write = (bare, v) => {
+        const prev = read(bare);
+        const r = typeof realSet === 'function' ? realSet(h.slot, pre + bare, v) : false;
+        h.edits.push([bare, v, prev == null ? '' : String(prev)]);
+        return r;
+    };
     const shims = {
-        host_module_get_param: (k) => h.io.getParam(String(k)),
-        host_module_set_param: (k, v) => h.io.setParam(String(k), String(v)),
+        host_module_get_param: (k) => read(String(k)),
+        host_module_set_param: (k, v) => write(String(k), String(v)),
+        /* A write on THIS screen's slot and component is the script editing
+         * its module; anything else passes straight through. */
+        shadow_set_param: (s, k, v) => {
+            const key = String(k);
+            if ((s | 0) === h.slot && key.startsWith(pre)) return write(key.slice(pre.length), String(v));
+            return typeof realSet === 'function' ? realSet(s, k, v) : false;
+        },
         /* The slot the script edits is the one it was opened on. A script
          * gating on "am I focused" (shadow_get_ui_slot() === my slot) must
          * read yes while its screen is up. */
@@ -215,10 +242,20 @@ function scoped(body) {
     }
 }
 
-function drainReplay(h) {
-    if (!h.replay.length) return;
-    const q = h.replay; h.replay = [];
-    for (const [st, d1, d2] of q) {
-        try { h.io.replayPad(st, d1, d2); } catch (e) { /* dAVEBOx's own path logs its errors */ }
+/* After every hosted call, outside its shims: the edits the script made, then
+ * the pads it handed back, in that order (an edit dialled on a held step must
+ * be booked before the step's release can read it as a tap). */
+function drainAfterCall(h) {
+    if (h.edits.length) {
+        const q = h.edits; h.edits = [];
+        for (const [k, v, prev] of q) {
+            try { if (h.io.onParamEdit) h.io.onParamEdit(k, v, prev); } catch (e) { /* dAVEBOx logs its own */ }
+        }
+    }
+    if (h.replay.length) {
+        const q = h.replay; h.replay = [];
+        for (const [st, d1, d2] of q) {
+            try { h.io.replayPad(st, d1, d2); } catch (e) { /* dAVEBOx's own path logs its errors */ }
+        }
     }
 }
