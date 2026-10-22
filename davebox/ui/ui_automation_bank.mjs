@@ -31,7 +31,7 @@
 
 import { S, noteUndoUnit, armBankDisplay } from './ui_state.mjs';
 import { BANK_AUTOMATION, BANK_SOUND, BANK_MACROS, PAD_MODE_DRUM, midiTargetIsMidi, SEQ_AUTO_TARGETS } from './ui_constants.mjs';
-import { soundOpen, soundExit, soundJumpToParam, soundEditorComp, soundAutoAddLane } from './ui_sound.mjs';
+import { soundOpen, soundExit, soundJumpToParam, soundEditorComp, soundAutoAddLane, soundLaneFocusRow } from './ui_sound.mjs';
 import { readBankParams } from './ui_dsp_bridge.mjs';
 import { effectiveClip } from './ui_leds.mjs';
 import { automationEntriesFor, automationTargetLabel, automationClearKey, automationClearPoints,
@@ -668,7 +668,9 @@ function plotColumns(x0, w, iy, ih, vmax, at) {
  * parameter pages or a drawn (canvas) screen. */
 const PAGE_X = 8, STEP_PX = 7, PAGE_STEPS = 16;
 export function drawLaneFocusOverlay() {
-    const row = kitLaneFocusRow();
+    /* a kit page's marked cell, else the module editor's highlighted knob */
+    let row = kitLaneFocusRow();
+    if (row < 0) row = soundLaneFocusRow();
     if (row < 0) return;
     const f = autoLaneFocus();
     const cy = S.autoCycle;

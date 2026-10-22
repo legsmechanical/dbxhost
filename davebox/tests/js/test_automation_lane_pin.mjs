@@ -327,6 +327,16 @@ step('⭐ HOLD a module point -> its EDITOR on the page holding the key; the kno
     /* ...and it reached the editor's controller, not just dAVEBOx's memo. */
     const held = snd.soundPPForTest().decorations;
     assert(held && held[ci] && held[ci].highlight && held[ci].value === want, 'the controller holds ' + JSON.stringify(held));
+    /* ⭐ the lane's page graph draws over the editor too, in the half the
+     * knob is NOT in (a module's pages mark no kit cell; the editor says
+     * which row its highlighted knob is on). Found on the device. */
+    const rects = [], fr = globalThis.fill_rect;
+    globalThis.fill_rect = (x, y, w, h, c) => { rects.push([x, y, w, h, c]); };
+    globalThis.clear_screen(); render.drawUI();
+    globalThis.fill_rect = fr;
+    const pane = rects.find(r => r[0] === 0 && r[2] === 128 && r[3] > 15 && r[4] === 0);
+    assert(pane, 'no lane graph over the module editor: ' + JSON.stringify(rects.filter(r => r[2] === 128)));
+    assert(ci < 4 ? pane[1] > 25 : pane[1] < 25, 'the graph covers the knob\'s own half (knob ' + ci + ', pane y ' + pane[1] + ')');
     assert(S.trackActiveBank[T] === BANK_AUTOMATION && S.activeBank === BANK_AUTOMATION, 'a bank moved: ' + S.activeBank + '/' + S.trackActiveBank[T]);
     assert(S.autoCycle && S.autoCycle.target === TARGETS.chain, 'the steps left the lane during the hold');
     sets.length = 0;

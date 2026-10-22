@@ -12469,7 +12469,12 @@ function ppRestoreFor(slot, comp) {
  * tick the grid is up — the page, the held step and the value all move — and
  * cleared the moment there is nothing to show. */
 let ppFocusDec = null;
+/* The ROW (0 top, 1 bottom) of the focused lane's knob on the visible page,
+ * or -1: the AUTOMATION lane's page graph covers the other half. */
+let ppFocusRow = -1;
+export function soundLaneFocusRow() { return ppOn && !ppDeclinedDraw ? ppFocusRow : -1; }
 function ppFocusSync() {
+    ppFocusRow = -1;
     /* A new editor starts with no decorations: forget what the last one had. */
     if (!ppOn) { ppFocusDec = null; return; }
     let dec = null;
@@ -12479,6 +12484,7 @@ function ppFocusSync() {
     for (let k = 0; act && k < 8; k++) {
         const key = paramPagesFullKeyAt(k);
         if (!key) continue;
+        if (key === fk && ppFocusRow < 0) ppFocusRow = k < 4 ? 0 : 1;
         /* While a step is held, every parameter with a lane shows what it
          * plays there; the lane a jump came from is highlighted. */
         const hv = autoHeldValue(S.slot + ':' + key);
