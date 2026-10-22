@@ -96,6 +96,9 @@ the section into a versioned heading at release time.
   to the lane list.
 
 ### Added
+- **Custom chords from a USB keyboard** — hold a chord pad and play keys to add
+  or remove notes, or hold keys and tap an empty chord pad. Keys work just like
+  the pads: six notes at most, and edits are not recorded or captured.
 - **Modules with their own editor screen now show it** — a module that draws its own editor in Schwung (instead of the standard pages) opens that same screen in dAVEBOx, with its own knob, jog and pad behaviour. A drum module whose pads jump to the drum you hit now does so here too; pads still play and record on the track. Its knobs are automation like any editor knob: hold a step and turn for a lock, or turn while recording.
 - **Several project templates, and a Templates screen.** **Save as Template...**
   in Project Settings asks for a name and adds a template; **Templates...** lists
