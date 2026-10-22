@@ -43,7 +43,7 @@ import { customLayoutOn, setCustomLayout, customEditTarget, customChordPress, cu
     customChordFromHeard } from './ui_custom_chords.mjs';
 import { handoffRecordingToTrack, recordNoteOn, recordNoteOff,
     openTapTempo, registerTapTempo, extNoteOffAll,
-    stepRecPadPress, stepRecPadRelease } from './ui_record.mjs';
+    stepRecPadPress, stepRecPadRelease, extHeldNotes } from './ui_record.mjs';
 import { setTrackMute, setTrackSolo, clearClip, hardResetClip, copyClip, cutClip,
     copyDrumLane, cutDrumLane, copyDrumClip, cutDrumClip, copyStep, cutStep, clearStep,
     copyPage, pageCopyOk,
@@ -184,6 +184,31 @@ function _chordPadRelease(padIdx, slot) {
 }
 
 
+/* Pitch `heard` goes into held chord k, or comes out of it: one tap of the
+ * hold-a-chord gesture, from a pad or a key. Re-voices the chord if it sounds;
+ * the recorders never see an edit. */
+function _customChordEdit(t, k, heard) {
+    const r = customChordToggle(t, k, heard);
+    if (!r.ok) {
+        if (r.why === 'full') showActionPopup('CHORD FULL', '6 NOTES MAX');
+        else showActionPopup('OUT OF RANGE');
+    }
+    chordApplyRevoice(r.rv, { record: false });
+    forceRedraw();
+}
+
+/* A key on an external keyboard while a Custom chord pad is held: the same
+ * edit as tapping a scale pad — toggle, six at most, as the pads do. The key
+ * sounds through its own path; the caller keeps it out of Record and Capture.
+ * Returns true when the key was an edit. */
+export function customChordKeyEdit(t, pitch) {
+    if (S.heldStep >= 0 || S.sessionView) return false;
+    const k = customEditTarget(t);
+    if (k < 0) return false;
+    _customChordEdit(t, k, pitch);
+    return true;
+}
+
 /* ---- the Custom layout's chord row ----------------------------------------
  * The bottom row plays the user's chords from the engine, like a Chord-layout
  * slot. Holding one turns a tap on the scale rows into an edit of that chord
@@ -200,18 +225,12 @@ function _customPadPress(padIdx, d2) {
         if (base === 0xFF) return true;
         const pitch = base + S.trackOctave[t] * 12;
         if (pitch < 0 || pitch > 127) return true;
-        const r = customChordToggle(t, k, pitch);
-        if (!r.ok) {
-            if (r.why === 'full') showActionPopup('CHORD FULL', '6 NOTES MAX');
-            else showActionPopup('OUT OF RANGE');
-        }
         /* The tapped pad sounds itself (the engine plays it from the pad
          * map) — a preview, as for a held step: booked, never recorded. */
         padPitch[padIdx] = pitch;
         S.liveActiveNotes.add(pitch);
         if (!S.dspInboundEnabled) liveSendNote(t, 0x90, pitch, vel);
-        chordApplyRevoice(r.rv, { record: false });
-        forceRedraw();
+        _customChordEdit(t, k, pitch);
         return true;
     }
     if (S.copyHeld) {
@@ -277,6 +296,8 @@ function _customPadPress(padIdx, d2) {
     if (!customChordGet(t, padIdx).length) {
         const heldNotes = [];
         for (let i = 8; i < 32; i++) if (padPitch[i] >= 0) heldNotes.push(padPitch[i]);
+        /* ...and keys held on an external keyboard, the same way. */
+        for (const [p, info] of extHeldNotes) if (info.track === t) heldNotes.push(p);
         if (heldNotes.length) {
             /* Booked first, while still empty: held and silent, which is
              * how the engine pressed it. */

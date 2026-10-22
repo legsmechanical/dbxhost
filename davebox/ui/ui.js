@@ -80,7 +80,7 @@ import { applyTrackConfig,
     _drumRecNoteOns, _drumRecNoteOffs } from './ui_dsp_bridge.mjs';
 import { recordNoteOn, recordNoteOff,
     extHeldNotes, extCountInCapture } from './ui_record.mjs';
-import { _onPadPress, _onPadRelease, _onPadAftertouch, _onStepButtons } from './ui_input_pads.mjs';
+import { _onPadPress, _onPadRelease, _onPadAftertouch, _onStepButtons, customChordKeyEdit } from './ui_input_pads.mjs';
 import { applyBankPick, heldStepJog, bankMapArmable, bankMapBegin, bankMapEnd, bankMapPadTap, bankMapStepTap,
          bankMapDeferrable, jogDeferBegin, jogDeferTake,
     bankMapRelease } from './ui_input_cc.mjs';
@@ -1206,6 +1206,12 @@ function _onMidiExternalImpl(data) {
         S.lastPlayedNote  = d1;
         S.lastPadVelocity = vel;
         if (!nativeMove) liveSendNote(t, 0x90, d1, vel, false, true);
+        /* A Custom chord pad held: the key edits that chord, as a tapped pad
+         * does — it sounds, and stays out of Record and Capture. */
+        if (customChordKeyEdit(t, d1)) {
+            extHeldNotes.set(d1, { track: t, recording: false, echo: false, cap: false, live: !nativeMove });
+            return;
+        }
         /* ROUTE_MOVE: sequencer inject echoes come back here on cable-2. Skip recording
          * for pitches the sequencer is already S.playing — those are echoes, not keyboard input.
          * Preserve any existing recording-active entry so the keyboard gate isn't overwritten. */

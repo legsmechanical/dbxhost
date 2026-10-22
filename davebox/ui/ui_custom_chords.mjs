@@ -6,6 +6,7 @@
  *
  *   hold a chord pad + tap a scale pad   add / remove that note (six at most)
  *   hold notes + tap an EMPTY chord pad  the pad takes the held notes
+ *   (both also take keys on an external keyboard, played or held)
  *   Copy + chord pad, + another          copy it there (Shift + Copy: move it)
  *   hold a chord pad + Octave up/down    move that chord an octave
  *   Octave up/down                       move the region last touched: the

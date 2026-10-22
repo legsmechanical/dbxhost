@@ -761,6 +761,10 @@ does not change it. Chords are saved per track.
 - **Or notes first:** hold the notes on the upper rows and tap an **empty**
   chord pad — it takes them (the lowest six). A pad that already has a chord
   just plays, so holding a note over the chords never changes one.
+- **From a USB keyboard:** both work with keys too. Hold a chord pad and play
+  keys, or hold keys and tap an empty chord pad. Keys behave just like the pads:
+  each one adds or removes a note, they sound as you play them, and they are
+  not recorded or captured. The keyboard must be on dAVEBOx's MIDI-in channel.
 - **Copy a chord:** hold Copy, tap the chord, then tap each pad that should
   get it. Shift + Copy moves it instead. Undo takes back the last paste.
 - **Octaves:** **+ / −** move the part of the pads you touched last. The
