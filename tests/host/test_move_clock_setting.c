@@ -7,6 +7,7 @@
  * what moved is WHO reads the file (the shim worker) — pinned by
  * test_clock_setting_off_audio.sh.
  */
+#define _DEFAULT_SOURCE    /* glibc: mkstemp is POSIX 2008, which -std=c11 hides */
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
