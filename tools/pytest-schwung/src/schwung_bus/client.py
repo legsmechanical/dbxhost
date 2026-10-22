@@ -212,6 +212,35 @@ class DisplayFrame:
         ]
         return header + ("\n".join(rows) + "\n").encode()
 
+    def to_png(self, scale: int = 4) -> bytes:
+        """An enlarged PNG (lit = white), for LOOKING at a frame.
+
+        ⭑ Text on the OLED is not readable from ``to_ascii`` once it is small
+        or inverted (a list's selected row, a header). An agent that can view
+        images reads a 4x PNG at a glance; write it to a file and open it.
+        Standard library only (zlib), 8-bit greyscale.
+        """
+        import struct
+        import zlib
+        s = max(1, int(scale))
+        w, h = DISPLAY_WIDTH * s, DISPLAY_HEIGHT * s
+        raw = bytearray()
+        for y in range(h):
+            raw.append(0)  # filter: none
+            py = y // s
+            raw.extend(
+                (255 if self.pixel(x // s, py) else 0) for x in range(w)
+            )
+
+        def chunk(tag: bytes, data: bytes) -> bytes:
+            return (struct.pack(">I", len(data)) + tag + data
+                    + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF))
+
+        return (b"\x89PNG\r\n\x1a\n"
+                + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 0, 0, 0, 0))
+                + chunk(b"IDAT", zlib.compress(bytes(raw), 9))
+                + chunk(b"IEND", b""))
+
 
 class SchwungBus:
     """Synchronous client for one schwung-testd instance.

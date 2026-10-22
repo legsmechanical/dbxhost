@@ -310,6 +310,38 @@ row-wise nothing errors — you get plausible-looking noise, and an assertion
 that fails for a reason unrelated to the screen. `tests/test_display_frame.py`
 pins it with hand-checkable cases.
 
+### Looking at a frame: `to_png`
+
+`frame.to_png(scale=4)` returns an enlarged PNG. **Use it whenever text matters** — a list row, a
+header, an inverted (selected) row. `to_ascii` is fine for "did ink move", but small and inverted
+glyphs are unreadable as `#`s, and guessing at them sent a navigation down the wrong screen twice.
+
+```python
+open("frame.png", "wb").write(bus.snapshot_display().to_png())
+```
+
+### Driving dAVEBOx to a screen — a worked route (2026-10-22)
+
+From a fresh launch to a track's TRACK CONFIG, each step confirmed by a PNG:
+
+1. **Project picker:** projects sit on PADS (`index` in `projects.json` → note `68 + index`);
+   the selected project's name is the header. A jog click on **Load** loads it.
+2. **A Dave card** (full-screen art) may follow the load and stays until a press.
+3. **Note/Session (`tap("menu")`, CC 50) TOGGLES** Track View and Session View, and which one a
+   project opens in varies. ⚠ In Session View the bank map is the MIXER's map, so the same pad
+   lands somewhere else — read the screen before picking a pad.
+4. **Bank map:** hold the jog (CC 3 = 127, ~30 frames), press pad 68 (CONFIG), release the jog.
+5. **TRACK CONFIG** rows (Schwung track): MIDI FX, Instmt/Dest, FX 1..FX 4. Jog (CC 14: 1 down,
+   127 up) moves the cursor. On an empty FX row a click opens `Tn > MODULES`; on a loaded one a
+   click edits it and **Shift + click** changes it. The list starts `List: All`, `[ none ]`, then
+   modules A–Z; a click picks and returns to TRACK CONFIG.
+
+⚠ An edit made with `SET_PARAM` straight to a chain does NOT mark the slot changed for the
+editor, so the autosave never writes it. To test anything about what the editor SAVES, make the
+change through the screens as above.
+⚠ The daemon serves ONE client at a time: a second `SchwungBus()` opened while the first is still
+open blocks forever. Open them one after another.
+
 ### Two refusals, on purpose
 
 * `SNAPSHOT_DISPLAY` **refuses** when the mirror is off instead of returning the
