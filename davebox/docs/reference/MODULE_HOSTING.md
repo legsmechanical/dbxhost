@@ -1,20 +1,33 @@
 # Module hosting — davebox as a host for Schwung modules
 
-How davebox loads and edits other Schwung modules (synths, effects) inside its
-own environment, and how that work is staged so it survives the eventual move to
-a standalone host.
+How dAVEBOx loads and edits Schwung modules (synths, effects, MIDI FX) inside its
+own session.
 
-Status: **phase 1, dev rig only.** `lab/` (module id `davebox-lab`) is a
-separate tool module that exercises the pipeline in isolation. Nothing in
-davebox proper depends on it yet.
+**Modules are written for Schwung, not for dAVEBOx.** A module built and tested
+on stock Schwung must work here unchanged; keeping it compatible is this side's
+job. dAVEBOx SA is launched from stock Schwung and plays the modules installed
+there (`daveboxSA/modules` is a link to stock's tree), through the Schwung chain
+host that this repo's fork carries. Nothing below is a contract for module
+authors: the host mechanisms that exist only here (last section) are dAVEBOx's
+own plumbing, offered upstream, and no third-party module should depend on them.
+
+Status: **shipped.** This began in 2026-07 as `lab/` (module id `davebox-lab`), a
+separate tool module that exercised the pipeline in isolation; the pipeline now
+lives in davebox proper (`ui/ui_engine.mjs`, `ui/ui_sound.mjs`), and `lab/` stays
+as a dev rig. The phase-1 sections below are kept for the reasoning they record.
 
 ---
 
 ## Why this exists
 
 The goal is one environment where you sequence *and* choose instruments *and*
-edit effects. The long-term destination is standalone — davebox as its own host,
-owning the device outright.
+edit effects.
+
+*History (2026-07, superseded).* The long-term destination was then written as
+"standalone — davebox as its own host, owning the device outright". That is not
+what dAVEBOx SA became: it runs as its own session on a fork of the Schwung host,
+launched from and dependent on a stock Schwung install. The reasoning of the
+time, kept as written:
 
 Standalone can't be the first step. Schwung's audio engine is compiled into
 `schwung-shim.so`, which is LD_PRELOADed into `MoveOriginal`
@@ -117,7 +130,11 @@ These cost real debugging time upstream in movy; they are encoded in
   Standalone makes these in-process calls, but the discipline is what keeps the
   UI off the audio path later.
 
-## Standalone: what a port would and would not get
+## History: what a standalone port would and would not get (superseded)
+
+⚠ Superseded: dAVEBOx SA did not become its own host owning the device. It runs
+on a fork of the Schwung host, launched from stock Schwung (see the top of this
+file). Kept for the disciplines it records, which still hold.
 
 Settled 2026-07-27. The plan is to finish this as a tool/overtake module, while
 keeping a later standalone port cheap. Recording the honest limits so this
@@ -343,3 +360,91 @@ running sequencer — name it with `"ui_chain": "ui.js"` to opt in), the trailin
 My Presets / Module menus (`shadow_component_trailing_menus` — this host has no
 equivalent either), `onPresetsChanged` / `restorePage`, `onMidiMessageExternal`.
 Test: `tests/js/test_chain_ui_screen.mjs`.
+
+## Host mechanisms only this fork has (dAVEBOx-internal, not a module contract)
+
+Moved here from `docs/MODULES.md` on 2026-10-22 so that guide documents only
+Schwung's contract. These exist for dAVEBOx's own engine (`davebox/dsp/`) and are
+offered upstream (`docs/UPSTREAM.md`). **No third-party module should be written
+against them**: a module that needs one would work only in a dAVEBOx session,
+which is the outcome this split exists to prevent. The text below is unchanged
+from the guide; where it says "a module" or "an overtake DSP", read "dAVEBOx's
+engine".
+
+### Where a MIDI FX's output goes
+
+A MIDI FX's output goes to its own slot's synth. Two per-slot chain parameters
+send a copy somewhere else as well; they are separate axes and do not interact. A
+third sends ALL of it elsewhere instead.
+
+| Chain key (bare, per slot) | Values | What it adds |
+|---|---|---|
+| `midi_fx_pre_mode` | `0` Post (default) / `1` Pre | Pre also injects the output into Move's own MIDI input on the slot's receive channel, so Move's native track plays (and can record) it. |
+| `midi_fx_to_host` | `0` off (default) / `1` on | The notes the effect GENERATES are also handed to the host, for a host-side sequencer to record. Nothing is sent to Move. |
+| `midi_fx_host_route` | `0` off (default) / `1` on | **Instead of** the synth: the effect's WHOLE output — the transform of every note the slot is sent as well as what it generates — goes to the host, and nothing reaches this slot's synth or (in Pre mode) Move. For a host-side sequencer whose track plays an instrument that is not this slot's: it sends the track's notes into the slot only to borrow its MIDI FX, and sends the result on itself. |
+
+`midi_fx_to_host` hands over only what the effect produced on its own:
+
+- output it emits in answer to the clock (Start / Clock / Continue / Stop arriving
+  at its `process_midi`), and
+- output from its per-block `tick`.
+
+It never hands over the output of a NOTE the slot was sent. That is a transform of
+someone's playing — and a sequencer that plays its own clip into the slot would be
+handed back what it already holds, on every pass. So a chord effect contributes
+nothing here; a clock-driven generator or an arpeggiator does. Only channel-voice
+messages cross (never realtime).
+
+All three keys are saved with the slot. `midi_fx_to_host` and `midi_fx_host_route` are reset when the MIDI FX is
+unloaded or swapped (it is a statement about that effect); `midi_fx_pre_mode` is
+not. `midi_fx:pre_capable` reads `1` when the loaded MIDI FX declares
+`capabilities.pre_capable`.
+
+The chain passes the notes to a sink the host registers
+(`chain_set_midi_fx_sink`, an optional export of the chain DSP). With no sink
+registered the key is inert.
+
+#### Receiving them in a module (`move_plugin_slot_midi_v1`)
+
+An overtake DSP — a sequencer that wants to record what a slot's MIDI FX
+generates — exports one function:
+
+```c
+void move_plugin_slot_midi_v1(void *instance, int slot, const uint8_t *msg, int len);
+```
+
+The host looks the symbol up once, after `create_instance`; a module that does
+not export it is never called, and on a host without the feature the export is
+simply dead. It is called on the audio thread, once per message, **after** the
+module's own `render_block` for that frame and never during it — whichever
+thread or call stack the slot produced the message on (a render-pool lane for
+tick output; inside the module's own render, when the module is the clock the
+generator runs from). `slot` is 0-based, `msg` is two or three bytes of
+channel-voice MIDI. The notes have already sounded on the slot's synth: record
+them, do not play them. Realtime rules apply.
+
+Between the slot and the module the host queues (a 64-entry multi-producer
+ring); if it fills, the newest message is dropped. With no module taking the
+notes the host discards them every frame.
+
+### Host extensions (`move_plugin_host_ext_v1`)
+
+`host_api_v1_t` cannot grow, so a capability added later is handed to the module by a
+call: after `create_instance`, the host looks up `move_plugin_host_ext_v1` in the module
+and, if the module exports it, calls it once with a `const move_host_ext_v1_t *` that
+stays valid for the life of the host. Store the pointer; check `ext->size` before
+reading a member (the struct grows at its end). A module that does not export the
+symbol is simply not called, and on a host without extensions the pointer stays NULL —
+keep a fallback.
+
+```c
+static const move_host_ext_v1_t *g_ext;
+void move_plugin_host_ext_v1(const move_host_ext_v1_t *ext) { g_ext = ext; }
+```
+
+| Member | What it does |
+|---|---|
+| `int set_slot_param(int slot, const char *key, const char *value)` | Sets one parameter of chain slot `slot` (0-based) **now**, from `render_block` or `set_param` — on the audio thread, in program order with the module's own `midi_send_internal_slot` calls. A value written before a note is sent to the same slot is in place when that note is voiced. `key` is a chain parameter key (`synth:cutoff`, `fx2:mix`, `slot:volume`, `move_fx:1:volume`). Keys that load or replace something (`…:module`, patches, state) are refused. Transient: the slot is not marked edited. Returns 1 if dispatched, 0 if refused. **Only an overtake DSP is offered this** (the slot it would address is another module's). Audio thread rules apply to the caller: no formatting through `printf`-family calls that allocate, and keep the number of writes per block small — each one costs whatever the target module's `set_param` costs. |
+| `void set_tempo(float bpm)` | For a module that runs its own clock (it sends Start / Clock / Stop through `midi_send_internal`): declares its tempo, so `get_bpm()` answers with exactly that value — while it plays, while it is stopped, and before its first Start — instead of a tempo measured from its block-quantized clock ticks. Call it when the tempo changes; pass `0` to withdraw (for example while following Move's clock, which the host measures itself). A running Move transport still takes precedence. Callable from `render_block` or `set_param`. The host withdraws it when the module is unloaded. |
+| `void set_move_info(const void *info, size_t size)` | For a module that owns the session (an overtake sequencer): publishes what the session's key, scale, tempo and transport are, as a `move_info_t` (`src/host/move_info.h`; `size` = your `sizeof`). The host copies it; every module that reads `move_info.h` (`move_info_read()`, through the shim's `schwung_move_info()`) then gets it. Call it when a field changes, not every block; fill what you do not know with `move_info.h`'s explicit unknowns. Pass `NULL` to withdraw — readers then get 0, "not provided". Audio thread or `set_param`: a copy under a seqlock. The host withdraws it when the module is unloaded. **Fork-only:** upstream fills `move_info` from Move's own set instead. |
+| `int midi_send_slot_direct(int slot, const uint8_t *msg, int len)` | `midi_send_internal_slot`, but delivered to the slot's INSTRUMENT and audio FX past its MIDI FX (and its transpose), with source `MOVE_MIDI_SOURCE_DIRECT`. For a sequencer that runs a slot's MIDI FX on what is played but not on what it plays back, and for sending on what the effect handed back under `midi_fx_host_route`. Voice messages; realtime goes the usual way. Audio thread. |

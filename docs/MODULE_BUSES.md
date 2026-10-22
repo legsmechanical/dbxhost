@@ -1,4 +1,4 @@
-# Module buses — and what a module owes BOTH hosts
+# Module buses — one Schwung contract, honoured by two hosts
 
 A **module bus** is a subset of one module's voices, rendered into its own buffer, with its own
 insert chain and its own two send levels. A drum rack putting its hats through a reverb and its

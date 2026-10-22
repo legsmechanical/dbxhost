@@ -9,12 +9,16 @@ dAVEBOx SA is an 8-track MIDI sequencer for Ableton Move: clips and scenes on
 the pads, a sound of your choice on every track, note effects and automation
 per clip, and a browser editor on the same Wi-Fi.
 
-**SA stands for standalone.** dAVEBOx SA is not a tool or overtake module
-running inside [Schwung](https://github.com/charlesvestal/schwung). When you
-launch it, Move restarts under dAVEBOx's own build of the Schwung host, and
-dAVEBOx *is* the session — the sequencer, the instruments and effects it plays,
-and the screens you work in. Quit, and Move restarts back into your normal
-Schwung, untouched.
+**SA stands for standalone session.** dAVEBOx SA is not a tool or overtake
+module running inside [Schwung](https://github.com/charlesvestal/schwung)'s
+session. When you launch it from Schwung, Move restarts into a dAVEBOx session —
+the sequencer, the screens you work in, and the instruments and effects you have
+installed in Schwung — running on a fork of the Schwung host. Quit, and Move
+restarts back into your normal Schwung, untouched.
+
+**It needs Schwung, and is not a replacement for it.** You install dAVEBOx SA
+from Schwung Manager, start it from Schwung, and it plays the modules, presets
+and samples your Schwung install has.
 
 It is the successor to [dAVEBOx](https://github.com/legsmechanical/schwung-davebox),
 which was an ordinary module inside Schwung. That version is frozen; everything
@@ -153,6 +157,11 @@ browser editor and its server (`schwung-manager/`), and the launcher and
 installer (`standalone/`). They ship together under one version. Changes that
 make sense for Schwung itself are offered upstream.
 
+**Writing a module?** Write it for [Schwung](https://github.com/charlesvestal/schwung),
+following its module guide. A module that works on stock Schwung works in a
+dAVEBOx session; keeping it that way is this repo's job, so there is nothing to
+target here.
+
 ```sh
 ./standalone/scripts/install-sa.sh          # build everything and deploy it to a Move over SSH
 ./standalone/scripts/build-sa-release.sh    # assemble the release tarball
@@ -161,8 +170,8 @@ make sense for Schwung itself are offered upstream.
 - [`standalone/README.md`](standalone/README.md) — the launcher, installer and
   on-device layout
 - [`BUILDING.md`](BUILDING.md) — the build system and cross-compiling
-- [`docs/`](docs/) — the host's architecture, the module and JS APIs, and the
-  OLED UI specification
+- [`docs/`](docs/) — the host's architecture, how it runs Schwung modules, and
+  the OLED UI specification
 - [`davebox/CHANGELOG.md`](davebox/CHANGELOG.md) — what changed in each release
 
 ---

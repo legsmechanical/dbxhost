@@ -1,5 +1,18 @@
 # Module Development Guide
 
+> **Write modules for Schwung, not for this host.** This is upstream Schwung's
+> module guide, carried here because dbxhost runs the same modules. The
+> authoritative copy is upstream's:
+> <https://github.com/charlesvestal/schwung/blob/main/docs/MODULES.md>.
+>
+> A module written and tested on stock Schwung needs nothing extra to run in a
+> dAVEBOx session — keeping it compatible is this host's job, not the module's.
+> Where this copy says "in dAVEBOx…" or "this fork…", it describes how this host
+> honours the Schwung contract; it never adds to it. Host mechanisms that exist
+> only here are dAVEBOx-internal and documented in
+> `davebox/docs/reference/MODULE_HOSTING.md`, not in this guide — do not build a
+> module on them.
+
 Modules are self-contained packages that extend Schwung with new functionality.
 
 ## Module Structure
@@ -76,7 +89,7 @@ for keys anywhere in `module.json`).
 | `claims_edit_ccs` | Module handles Undo (CC 56), Copy (CC 60) and Delete (CC 119) while its UI is on screen; they are withheld from Move firmware for that window. Default off — see "Copy / Delete / Undo" below. |
 | `claims_ccs` | A list of CC numbers the module handles while its UI is on screen; they are withheld from Move firmware for that window. See "Claiming buttons" below. |
 | `claims_edit_ccs` | Shorthand for `claims_ccs: [56, 60, 119]` — Undo, Copy and Delete. Default off. |
-| `pre_capable` | (MIDI FX) The module GENERATES notes of its own — a pattern or step generator — so sending its output somewhere besides its own synth makes sense. A hint: stock's per-slot Pre/Post row is offered regardless, while a host that offers "send this effect's notes to the sequencer" (`midi_fx_to_host`, below) offers it only for modules that declare this. |
+| `pre_capable` | (MIDI FX) The module GENERATES notes of its own — a pattern or step generator — so sending its output somewhere besides its own synth makes sense. A hint: stock's per-slot Pre/Post row is offered regardless. |
 | `raw_midi` | Skip host MIDI transforms (velocity curve, aftertouch filter); module may also bypass internal MIDI filters when set |
 | `raw_ui` | Module owns UI input handling; host won't intercept Back to return to menu (use `host_return_to_menu()` to exit) |
 | `chainable` | Marks a module as usable inside Signal Chain patches (metadata) |
@@ -226,10 +239,6 @@ off the RT thread) and its `set_param` drops anything arriving before the
 instance exists. Seeding writes microseconds after the create, so without the
 queue every declared param was dropped and each insert came up as its module's
 default. The host retries for ~2 s and then gives up with a log line.
-
-⭑ **This fork carries `SLOT_BUSES = 8`** where upstream has 4, so a module may
-declare more buses here — but declare for the smaller number if the module is
-meant to work on both, since the seeding loop simply stops at the host's cap.
 
 ## Per-Module Settings
 
@@ -2198,59 +2207,19 @@ MIDI FX are built identically to other native plugins:
 
 ### Where a MIDI FX's output goes
 
-A MIDI FX's output goes to its own slot's synth. Two per-slot chain parameters
-send a copy somewhere else as well; they are separate axes and do not interact. A
-third sends ALL of it elsewhere instead.
+A MIDI FX's output goes to its own slot's synth.
 
 | Chain key (bare, per slot) | Values | What it adds |
 |---|---|---|
 | `midi_fx_pre_mode` | `0` Post (default) / `1` Pre | Pre also injects the output into Move's own MIDI input on the slot's receive channel, so Move's native track plays (and can record) it. |
-| `midi_fx_to_host` | `0` off (default) / `1` on | The notes the effect GENERATES are also handed to the host, for a host-side sequencer to record. Nothing is sent to Move. |
-| `midi_fx_host_route` | `0` off (default) / `1` on | **Instead of** the synth: the effect's WHOLE output — the transform of every note the slot is sent as well as what it generates — goes to the host, and nothing reaches this slot's synth or (in Pre mode) Move. For a host-side sequencer whose track plays an instrument that is not this slot's: it sends the track's notes into the slot only to borrow its MIDI FX, and sends the result on itself. |
 
-`midi_fx_to_host` hands over only what the effect produced on its own:
-
-- output it emits in answer to the clock (Start / Clock / Continue / Stop arriving
-  at its `process_midi`), and
-- output from its per-block `tick`.
-
-It never hands over the output of a NOTE the slot was sent. That is a transform of
-someone's playing — and a sequencer that plays its own clip into the slot would be
-handed back what it already holds, on every pass. So a chord effect contributes
-nothing here; a clock-driven generator or an arpeggiator does. Only channel-voice
-messages cross (never realtime).
-
-All three keys are saved with the slot. `midi_fx_to_host` and `midi_fx_host_route` are reset when the MIDI FX is
-unloaded or swapped (it is a statement about that effect); `midi_fx_pre_mode` is
-not. `midi_fx:pre_capable` reads `1` when the loaded MIDI FX declares
+`midi_fx_pre_mode` is saved with the slot and kept when the MIDI FX is swapped.
+`midi_fx:pre_capable` reads `1` when the loaded MIDI FX declares
 `capabilities.pre_capable`.
 
-The chain passes the notes to a sink the host registers
-(`chain_set_midi_fx_sink`, an optional export of the chain DSP). With no sink
-registered the key is inert.
-
-#### Receiving them in a module (`move_plugin_slot_midi_v1`)
-
-An overtake DSP — a sequencer that wants to record what a slot's MIDI FX
-generates — exports one function:
-
-```c
-void move_plugin_slot_midi_v1(void *instance, int slot, const uint8_t *msg, int len);
-```
-
-The host looks the symbol up once, after `create_instance`; a module that does
-not export it is never called, and on a host without the feature the export is
-simply dead. It is called on the audio thread, once per message, **after** the
-module's own `render_block` for that frame and never during it — whichever
-thread or call stack the slot produced the message on (a render-pool lane for
-tick output; inside the module's own render, when the module is the clock the
-generator runs from). `slot` is 0-based, `msg` is two or three bytes of
-channel-voice MIDI. The notes have already sounded on the slot's synth: record
-them, do not play them. Realtime rules apply.
-
-Between the slot and the module the host queues (a 64-entry multi-producer
-ring); if it fills, the newest message is dropped. With no module taking the
-notes the host discards them every frame.
+In a dAVEBOx session the host can also hand a MIDI FX's output to the session's
+sequencer. That is a host mechanism, not something a MIDI FX declares or needs to
+know about: a MIDI FX written for Schwung is already compatible.
 
 ### MIDI FX module.json Example
 
@@ -2330,35 +2299,10 @@ typedef struct host_api_v1 {
 } host_api_v1_t;
 ```
 
-#### Host extensions (`move_plugin_host_ext_v1`)
-
-`host_api_v1_t` cannot grow, so a capability added later is handed to the module by a
-call: after `create_instance`, the host looks up `move_plugin_host_ext_v1` in the module
-and, if the module exports it, calls it once with a `const move_host_ext_v1_t *` that
-stays valid for the life of the host. Store the pointer; check `ext->size` before
-reading a member (the struct grows at its end). A module that does not export the
-symbol is simply not called, and on a host without extensions the pointer stays NULL —
-keep a fallback.
-
-```c
-static const move_host_ext_v1_t *g_ext;
-void move_plugin_host_ext_v1(const move_host_ext_v1_t *ext) { g_ext = ext; }
-```
-
-| Member | What it does |
-|---|---|
-| `int set_slot_param(int slot, const char *key, const char *value)` | Sets one parameter of chain slot `slot` (0-based) **now**, from `render_block` or `set_param` — on the audio thread, in program order with the module's own `midi_send_internal_slot` calls. A value written before a note is sent to the same slot is in place when that note is voiced. `key` is a chain parameter key (`synth:cutoff`, `fx2:mix`, `slot:volume`, `move_fx:1:volume`). Keys that load or replace something (`…:module`, patches, state) are refused. Transient: the slot is not marked edited. Returns 1 if dispatched, 0 if refused. **Only an overtake DSP is offered this** (the slot it would address is another module's). Audio thread rules apply to the caller: no formatting through `printf`-family calls that allocate, and keep the number of writes per block small — each one costs whatever the target module's `set_param` costs. |
-| `void set_tempo(float bpm)` | For a module that runs its own clock (it sends Start / Clock / Stop through `midi_send_internal`): declares its tempo, so `get_bpm()` answers with exactly that value — while it plays, while it is stopped, and before its first Start — instead of a tempo measured from its block-quantized clock ticks. Call it when the tempo changes; pass `0` to withdraw (for example while following Move's clock, which the host measures itself). A running Move transport still takes precedence. Callable from `render_block` or `set_param`. The host withdraws it when the module is unloaded. |
-| `void set_move_info(const void *info, size_t size)` | For a module that owns the session (an overtake sequencer): publishes what the session's key, scale, tempo and transport are, as a `move_info_t` (`src/host/move_info.h`; `size` = your `sizeof`). The host copies it; every module that reads `move_info.h` (`move_info_read()`, through the shim's `schwung_move_info()`) then gets it. Call it when a field changes, not every block; fill what you do not know with `move_info.h`'s explicit unknowns. Pass `NULL` to withdraw — readers then get 0, "not provided". Audio thread or `set_param`: a copy under a seqlock. The host withdraws it when the module is unloaded. **Fork-only:** upstream fills `move_info` from Move's own set instead. |
-| `int midi_send_slot_direct(int slot, const uint8_t *msg, int len)` | `midi_send_internal_slot`, but delivered to the slot's INSTRUMENT and audio FX past its MIDI FX (and its transpose), with source `MOVE_MIDI_SOURCE_DIRECT`. For a sequencer that runs a slot's MIDI FX on what is played but not on what it plays back, and for sending on what the effect handed back under `midi_fx_host_route`. Voice messages; realtime goes the usual way. Audio thread. |
-
-
 **Tempo while stopped:** `get_bpm()` retains the last-playing transport's tempo
 after it stops (so a synced LFO that switches from phase-lock to free-run keeps
 the same rate). It updates from emitted clock, so changing an internal
-sequencer's tempo while it is *stopped* is not reflected until it plays again —
-unless that sequencer declares its tempo with the `set_tempo` host extension
-(below), which `get_bpm()` then returns exactly, stopped or playing.
+sequencer's tempo while it is *stopped* is not reflected until it plays again.
 
 ## Audio Specifications
 
@@ -2465,12 +2409,9 @@ manual.)
 
 ### Testing Shadow Mode
 
-1. Build and install Schwung: `./scripts/build.sh && ./scripts/install.sh local`
-2. Launch stock Move (or reboot device)
-3. Toggle shadow mode: **Shift + touch Volume + touch Knob 1**
-4. Use jog wheel to select a slot, click to browse patches
-5. Load a patch that uses your module
-6. Set a Move track to MIDI channel 5-8 and play pads
+Test your module on stock Schwung, following upstream's instructions. To check
+it in a dAVEBOx session as well, install it through Schwung, launch dAVEBOx SA
+from Schwung's Tools menu, and load it on a track from TRACK CONFIG.
 
 ### Capture Rules
 
@@ -2705,270 +2646,8 @@ The built-in MIDI Controller module (`src/modules/controller/`) demonstrates ove
 
 ## Publishing to Module Store
 
-External modules can be distributed via the built-in Module Store. Users can browse, install, update, and remove modules directly from their Move device.
-
-### Requirements
-
-1. Module builds as a self-contained tarball: `<id>-module.tar.gz`
-2. Tarball extracts to a folder matching the module ID (e.g., `minijv/`)
-3. GitHub repository with releases enabled
-4. GitHub Actions workflow for automated builds
-
-### Tarball Structure
-
-```
-<id>-module.tar.gz
-  └── <id>/
-      ├── module.json       # Required
-      ├── ui.js             # Optional: JavaScript UI
-      ├── dsp.so            # Optional: Native DSP plugin
-      └── ...               # Other module files
-```
-
-### Release Workflow
-
-1. **Make changes and update version** in `src/module.json`:
-   ```json
-   {
-     "version": "0.2.0"
-   }
-   ```
-
-2. **Commit and tag the release**:
-   ```bash
-   git add .
-   git commit -m "Release v0.2.0"
-   git tag v0.2.0
-   git push && git push --tags
-   ```
-
-3. **GitHub Actions automatically**:
-   - Builds the module using Docker cross-compilation
-   - Creates `<id>-module.tar.gz`
-   - Attaches it to the GitHub release
-
-4. **Update the catalog** in `move-anything/module-catalog.json` (if not already listed):
-   ```json
-   {
-     "id": "your-module",
-     "name": "Your Module",
-     "description": "What it does",
-     "author": "Your Name",
-     "component_type": "sound_generator",
-     "github_repo": "username/move-anything-yourmodule",
-     "default_branch": "main",
-     "asset_name": "your-module-module.tar.gz",
-     "min_host_version": "0.3.0",
-     "requires": "Optional: external assets needed (e.g. sample files, ROMs)"
-   }
-   ```
-
-5. **Commit catalog update**:
-   ```bash
-   cd move-anything
-   git add module-catalog.json
-   git commit -m "Update your-module to v0.2.0"
-   git push
-   ```
-
-### GitHub Actions Workflow Template
-
-Add `.github/workflows/release.yml` to your module repository:
-
-```yaml
-name: Release
-
-on:
-  push:
-    tags:
-      - 'v*'
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build module
-        run: ./scripts/build.sh
-
-      - name: Package module
-        run: |
-          cd dist
-          tar -czvf ../${{ github.event.repository.name }}-module.tar.gz */
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: ${{ github.event.repository.name }}-module.tar.gz
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Update release.json
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          git fetch origin main
-          git checkout -f main
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          cat > release.json << EOF
-          {
-            "version": "${VERSION}",
-            "download_url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ github.event.repository.name }}-module.tar.gz"
-          }
-          EOF
-
-          git add release.json
-          git commit -m "chore: update release.json for ${{ github.ref_name }}" || echo "No changes to commit"
-          git push origin main
-```
-
-### Catalog Entry Schema (v2)
-
-Each module in `module-catalog.json`:
-
-```json
-{
-  "id": "module-id",
-  "name": "Display Name",
-  "description": "Short description",
-  "author": "Author Name",
-  "component_type": "sound_generator|audio_fx|midi_fx|overtake|utility|tool",
-  "github_repo": "username/repo-name",
-  "default_branch": "main",
-  "asset_name": "module-id-module.tar.gz",
-  "min_host_version": "0.3.0",
-  "requires": "Optional: external assets needed (e.g. ROM files, .sf2 soundfonts)"
-}
-```
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `id` | Yes | Module ID (lowercase hyphenated) |
-| `name` | Yes | Display name |
-| `description` | Yes | Short description |
-| `author` | Yes | Author name |
-| `component_type` | Yes | `sound_generator`, `audio_fx`, `midi_fx`, `overtake`, `utility`, `tool` |
-| `github_repo` | Yes | GitHub `owner/repo` |
-| `default_branch` | Yes | Branch to fetch `release.json` from (usually `main`) |
-| `asset_name` | Yes | Expected tarball filename |
-| `min_host_version` | Yes | Minimum compatible host version |
-| `requires` | No | User-facing note about required external assets |
-
-### release.json
-
-Each module repo must have a `release.json` on its main branch. The Module Store fetches this file (not the GitHub releases API) to determine the latest version and download URL.
-
-```json
-{
-  "version": "0.2.0",
-  "download_url": "https://github.com/username/move-anything-mymodule/releases/download/v0.2.0/mymodule-module.tar.gz"
-}
-```
-
-For a repository that publishes more than one catalog module, use a `modules`
-object keyed by the exact catalog IDs. Each entry has the same fields as a
-single-module release:
-
-```json
-{
-  "modules": {
-    "module-a": {
-      "version": "0.2.0",
-      "download_url": "https://github.com/username/repo/releases/download/v0.2.0/module-a-module.tar.gz"
-    },
-    "module-b": {
-      "version": "0.2.0",
-      "download_url": "https://github.com/username/repo/releases/download/v0.2.0/module-b-module.tar.gz"
-    }
-  }
-}
-```
-
-Schwung Manager and the shared store utilities select the entry matching the
-catalog module ID. If it is missing, the manager falls back to the catalog's
-`asset_name` latest-release URL.
-
-Optional fields: `install_path`, `name`, `description`, `requires`, `post_install`, `repo_url`. Fields like `name`, `description`, and `requires` in `release.json` override their catalog equivalents.
-
-The release workflow should auto-update `release.json` on each tagged release (see the workflow template above for an example).
-
-### How the Module Store Works
-
-1. Fetches `module-catalog.json` from the main branch
-2. For each module, fetches `release.json` from the module's GitHub repo (on `default_branch`)
-3. Compares `release.json` version to installed version
-4. Downloads tarball from `release.json`'s `download_url`
-5. Extracts tarball to category subdirectory (e.g., `modules/sound_generators/<id>/`)
-
-### Component Types
-
-| Type | Description |
-|------|-------------|
-| `sound_generator` | Synthesizers and samplers that produce audio |
-| `audio_fx` | Audio effects that process audio |
-| `midi_fx` | MIDI effects that transform MIDI |
-| `overtake` | Overtake modules (full UI control) |
-| `utility` | Utility modules |
-
-## Host Updates
-
-The Schwung host can also be updated via the Module Store. When an update is available, "Update Host" appears at the top of the Module Store category list.
-
-### Releasing a Host Update
-
-1. **Bump the version** in `src/host/version.txt`:
-   ```
-   1.0.1
-   ```
-
-2. **Build and package**:
-   ```bash
-   ./scripts/build.sh
-   ```
-
-3. **Create a GitHub release** with the tarball:
-   ```bash
-   gh release create v1.0.1 schwung.tar.gz --title "v1.0.1" --notes "Release notes here"
-   ```
-
-4. **Update the catalog** in `module-catalog.json`:
-   ```json
-   {
-     "host": {
-       "name": "Schwung",
-       "github_repo": "charlesvestal/schwung",
-       "asset_name": "schwung.tar.gz",
-       "latest_version": "1.0.1",
-       "min_host_version": "1.0.0"
-     }
-   }
-   ```
-
-5. **Push the catalog update**:
-   ```bash
-   git add module-catalog.json
-   git commit -m "Update host to v1.0.1"
-   git push
-   ```
-
-### How Host Updates Work
-
-1. Module Store fetches `module-catalog.json` from the main branch
-2. Fetches `release.json` from the host repo for the latest version and download URL
-3. Compares to installed version in `/data/UserData/schwung/host/version.txt`
-4. If different, shows "Update Host" option with version numbers
-5. Update downloads the tarball and extracts over the existing installation
-6. User must restart Schwung for changes to take effect
-
-### Catalog Location
-
-The Module Store fetches the catalog from:
-```
-https://raw.githubusercontent.com/charlesvestal/schwung/main/module-catalog.json
-```
+Modules are published to Schwung's Module Store, following upstream's guide:
+<https://github.com/charlesvestal/schwung/blob/main/BUILDING.md#module-store-and-releasejson>
+(release tarball, catalog entry, `release.json`). A
+dAVEBOx session plays whatever Schwung has installed, so there is no separate
+listing or release step for this host.

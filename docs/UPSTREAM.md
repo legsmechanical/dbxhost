@@ -363,6 +363,8 @@ PR there rather than a fork change ([[schwung-only-what-we-originated]]). Filed 
 **`SLOT_BUSES = 8` against upstream's 4.** Pre-existing, restated here because `default_buses`
 makes it module-visible: a module may declare more buses on this fork, and the seeding loop simply
 stops at the host's cap. Documented in `MODULES.md` for authors targeting both.
+⚠ *Corrected 2026-10-22:* `upstream/main` defines `SLOT_BUSES 8` too (`chain_internal.h`,
+`bus_model.mjs`), so there is no divergence here, and the `MODULES.md` note was removed.
 
 ### Reviewed 2026-09-10 — v1.3.1 → v1.4.0 (10 commits)
 

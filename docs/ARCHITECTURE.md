@@ -270,7 +270,7 @@ optional `dsp.so`. Native plugins are dlopen'd by `chain_host` (for
 chainable plugins) or by the shadow UI overtake loader (for
 overtakes). The plugin C API is `host_api_v1_t` + `plugin_api_v2_t`
 (v2 supports multiple instances; v1 is the deprecated singleton API).
-See `docs/MODULES.md` for the full module developer guide.
+See `docs/MODULES.md` for the module contract (Schwung's; this host honours it).
 
 ## Returning to stock Move
 

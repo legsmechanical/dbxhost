@@ -179,20 +179,14 @@ Add your public key at http://move.local/development/ssh
 
 ## Module Development
 
-Rebuild a single module:
-
-```bash
-aarch64-linux-gnu-gcc -g -O3 -shared -fPIC \
-    src/modules/sf2/dsp/sf2_plugin.c \
-    -o build/modules/sf2/dsp.so \
-    -Isrc -Isrc/modules/sf2/dsp -lm
-
-scp build/modules/sf2/dsp.so ableton@move.local:~/move-anything/modules/sf2/
-```
+Modules are developed for Schwung, not for this host: follow upstream's
+[`BUILDING.md`](https://github.com/charlesvestal/schwung/blob/main/BUILDING.md)
+and [`docs/MODULES.md`](https://github.com/charlesvestal/schwung/blob/main/docs/MODULES.md).
+A module that works on stock Schwung works in a dAVEBOx session.
 
 ## Plugin API Versions
 
-The host supports two plugin APIs. **All new modules should use V2.**
+The host supports both of Schwung's plugin APIs.
 
 ### Plugin API v2 (Recommended)
 
