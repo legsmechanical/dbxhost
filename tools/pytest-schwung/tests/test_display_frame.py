@@ -85,6 +85,32 @@ def test_pbm_is_well_formed():
     assert len(pbm.split(b"\n")) == 2 + DISPLAY_HEIGHT + 1
 
 
+def test_png_decodes_to_the_same_pixels_scaled():
+    """Decode the PNG back and check lit pixels land where the frame has them,
+    each as a scale x scale block — including the far corner, so a stride or
+    row-order mistake cannot pass."""
+    import struct
+    import zlib
+    f = frame_with(on=[(0, 0), (127, 63), (5, 9)])
+    png = f.to_png(scale=3)
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    w, h = struct.unpack(">II", png[16:24])
+    assert (w, h) == (128 * 3, 64 * 3)
+    idat = png[png.index(b"IDAT") + 4:png.index(b"IEND") - 8]
+    raw = zlib.decompress(idat)
+    row = 1 + w
+
+    def px(x, y):
+        return raw[y * row + 1 + x]
+
+    for (x, y) in ((0, 0), (127, 63), (5, 9)):
+        for dy in range(3):
+            for dx in range(3):
+                assert px(x * 3 + dx, y * 3 + dy) == 255, (x, y, dx, dy)
+    assert px(3, 0) == 0 and px(6 * 3, 9 * 3) == 0
+    assert sum(1 for v in raw if v == 255) == 3 * 9
+
+
 def test_out_of_range_raises_rather_than_wrapping():
     """An off-screen coordinate is a test bug; silently wrapping to another
     row would answer a question nobody asked."""
