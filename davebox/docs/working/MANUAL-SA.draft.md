@@ -2441,9 +2441,13 @@ top), or bring it back with [Import MIDI](#164-import-a-midi-file). Stop the
 transport first — like the Ableton export, it won't run while playing.
 ## 16.6 Recording audio
 
-dAVEBOx records MIDI, not sound. To record the Move's audio output to a WAV file,
-use the **Quantized Sampler** built into Schwung: hold **Shift**, touch the **Volume** knob and
-press **Sample**.
+dAVEBOx records MIDI, not sound. To record audio, use Schwung's two samplers — both
+work inside dAVEBOx:
+
+- **Quantized Sampler** — hold **Shift**, touch the **Volume** knob and press
+  **Sample**.
+- **Skipback** — hold **Shift**, touch the **Volume** knob and press **Capture**.
+  Its length is set under **Host Settings... → Audio → Skipback Len**.
 
 ---
 

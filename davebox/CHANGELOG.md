@@ -9,6 +9,9 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Changed
+- **The manual now covers Schwung's two samplers inside dAVEBOx**: the
+  Quantized Sampler (Shift + touch Volume + Sample) and Skipback (Shift + touch
+  Volume + Capture), and where to set Skipback's length.
 - **Instrument: None is now a Schwung track with nothing loaded** — the state a
   new project's tracks 5–8 start in. The track keeps its MIDI effect, effects,
   levels and Presets, so a chain preset can be loaded without first choosing a

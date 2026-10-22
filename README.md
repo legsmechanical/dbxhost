@@ -88,6 +88,8 @@ the module catalog), or an external synth on the USB-A port.
   MIDI files into clips.
 - The browser editor at `move.local:7700` has the sequencer, mixer and sound
   pages, a live mirror of the screen you can record, and the full manual.
+- Schwung's Quantized Sampler and Skipback work inside dAVEBOx, to record what
+  you play as audio.
 
 <p align="center">
   <img src="docs/readme/web-sequencer.png" width="760" alt="The browser editor's sequencer: session grid, piano roll, step band and velocity lane"><br>
