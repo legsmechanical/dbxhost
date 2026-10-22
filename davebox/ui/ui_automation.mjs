@@ -1326,6 +1326,12 @@ export function automationExtendLock(track, clip, target, fromStep, toStep, tps,
     console.log('[auto] extend t' + track + ' c' + clip + ' ' + target + ' ' + fromStep + '->' + toStep);
 }
 
+/* The footer pair for a held step: what a Shift tap switches the hold's
+ * writes TO (every hold starts PUNCH, so it first says POINT). */
+export function autoShiftHint() {
+    return ['SHFT', (S.heldWrite && S.heldWrite.type === 0) ? 'PUNCH' : 'POINT'];
+}
+
 /* THE SHIFT TAP (Josh, 2026-10-21: "how about hold step, and tapping
  * shift(or something else) toggles between point or punch" · "yeah, we can
  * [have a] flash pop up when you change between them"): the hold's write type

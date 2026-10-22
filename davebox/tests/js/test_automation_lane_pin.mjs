@@ -44,10 +44,12 @@ const HIER = JSON.stringify({
             ],
             knobs: ['osc_a', 'osc_b', 'osc_c', 'osc_d', 'osc_e', 'osc_f', 'osc_g', 'osc_h'],
         },
+        /* two pages (ten knobs), so a jog has somewhere to page to */
         filter: { name: 'Filter',
                   params: [{ key: 'cutoff', name: 'Cutoff', type: 'float', min: 0, max: 1 },
-                           { key: 'reso', name: 'Reso', type: 'float', min: 0, max: 1 }],
-                  knobs: ['cutoff', 'reso'] },
+                           { key: 'reso', name: 'Reso', type: 'float', min: 0, max: 1 },
+                           ...[1, 2, 3, 4, 5, 6, 7, 8].map(n => ({ key: 'fx_' + n, name: 'Fx ' + n, type: 'float', min: 0, max: 1 }))],
+                  knobs: ['cutoff', 'reso', 'fx_1', 'fx_2', 'fx_3', 'fx_4', 'fx_5', 'fx_6', 'fx_7', 'fx_8'] },
     },
 });
 const CHAIN = {
@@ -57,6 +59,7 @@ const CHAIN = {
         ...['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map(k => ({ key: 'osc_' + k, name: 'Osc ' + k, type: 'float', min: 0, max: 1, step: 0.01 })),
         { key: 'cutoff', name: 'Cutoff', type: 'float', min: 0, max: 1, step: 0.01 },
         { key: 'reso', name: 'Reso', type: 'float', min: 0, max: 1, step: 0.01 },
+        ...[1, 2, 3, 4, 5, 6, 7, 8].map(n => ({ key: 'fx_' + n, name: 'Fx ' + n, type: 'float', min: 0, max: 1, step: 0.01 })),
     ]),
 };
 /* An FX 1 loaded too, so the map's FX 1 pad opens an editor. */
@@ -345,6 +348,18 @@ step('⭐ HOLD a module point -> its EDITOR on the page holding the key; the kno
     assert(w.length >= 1, 'the editor knob wrote no lock, got ' + JSON.stringify(sets));
     const f = w[w.length - 1].split('=')[1].split(' ');
     assert(f[2] === '3' && f[3] === '3' && f[4] === '24', 'the lock is not on step 4: ' + w[w.length - 1]);
+    /* ⭐ only the held lane matters (Josh, 2026-10-22): another knob does
+     * nothing, the jog does not page, and the footer says what Shift does */
+    const other = ci === 0 ? 1 : 0, pageBefore = JSON.stringify(snd.soundPPForTest().page.keys);
+    sets.length = 0;
+    cc(71 + other, 1); cc(71 + other, 1); ticks(2);
+    assert(sets.length === 0, 'another knob wrote during the hold: ' + JSON.stringify(sets));
+    cc(14, 1); ticks(2); cc(14, 127); cc(14, 127); ticks(2); cc(3, 127); cc(3, 0); ticks(2);
+    assert(JSON.stringify(snd.soundPPForTest().page.keys) === pageBefore && snd.soundViewForTest() === VIEW_EDIT,
+           'the jog moved the editor during the hold: ' + JSON.stringify(snd.soundPPForTest().page.keys));
+    globalThis.clear_screen(); render.drawUI();
+    assert(JSON.stringify(movy.kitHintsForTest()) === JSON.stringify([['SHFT', 'POINT']]),
+           'the editor footer during the hold: ' + JSON.stringify(movy.kitHintsForTest()));
     note(STEP(3), 0); ticks(2);
     assert(!snd.soundOpen() && S.activeBank === BANK_AUTOMATION, 'release did not close the editor');
     assert(S.autoBank.menu && S.autoBank.sel === idx, 'not on the same row: ' + JSON.stringify(S.autoBank));

@@ -46,6 +46,7 @@ import { drawKitList, drawKitStackedList, drawKitBackdropDim, drawKitHintRow,
 import { showActionPopup } from './ui_persistence.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
 import { moveBusForChannel } from './ui_engine.mjs';
+import { followActive } from './ui_prefs.mjs';
 
 const LIST_TOP = 11;                 /* the kit list's own default */
 /* The ops pop-up and the lane graph under it (bank layout; the mockups'
@@ -713,7 +714,16 @@ export function drawLaneFocusOverlay() {
     const h = bottom - y + 1;
     fill_rect(0, y, 128, h, 0);
     rectOutline(0, y, 128, h, 1);
-    const iy = y + 2, ih = h - 4;
+    /* ⭑ THE BOTTOM EDGE IS THE PAGE BAR (Josh, 2026-10-22: "nothing indicates
+     * the page of the automation lane you're on"): one segment a page across
+     * the frame, a 1-px gap between, the page shown two rows thick. */
+    fill_rect(0, y + h - 1, 128, 1, 0);
+    const np = Math.max(1, cy.pages | 0), segW = Math.floor((128 - (np - 1)) / np);
+    for (let pg = 0; pg < np; pg++) {
+        const sx = pg * (segW + 1), sw = pg === np - 1 ? 128 - sx : segW;
+        fill_rect(sx, pg === cy.page ? y + h - 2 : y + h - 1, sw, pg === cy.page ? 2 : 1, 1);
+    }
+    const iy = y + 2, ih = h - 5;
     const base = ((cy.off >> 4) + cy.page) * 16;
     const vals = S.autoLaneVals;
     const v14 = vals && vals.v14;
@@ -728,7 +738,7 @@ export function drawLaneFocusOverlay() {
             return a + (b - a) * (c - s * STEP_PX) / STEP_PX;
         });
     }
-    for (let b = 0; b <= PAGE_STEPS; b += 4) set_pixel(PAGE_X + b * STEP_PX - (b === PAGE_STEPS ? 1 : 0), y + h - 2, 1);
+    for (let b = 0; b <= PAGE_STEPS; b += 4) set_pixel(PAGE_X + b * STEP_PX - (b === PAGE_STEPS ? 1 : 0), y + h - 3, 1);
     const held = f.step >= 0 ? f.step - base : -1;
     if (held >= 0 && held < PAGE_STEPS) {
         const hx = PAGE_X + held * STEP_PX;
@@ -737,7 +747,7 @@ export function drawLaneFocusOverlay() {
     if (S.playing && cy.tps) {
         const lt = S.autoLanePos[cy.t], t0 = base * cy.tps;
         if (lt >= t0 && lt < t0 + PAGE_STEPS * cy.tps && lt < (cy.off + cy.len) * cy.tps)
-            fill_rect(PAGE_X + Math.floor((lt - t0) * PAGE_STEPS * STEP_PX / (PAGE_STEPS * cy.tps)), y + 1, 1, h - 2, 1);
+            fill_rect(PAGE_X + Math.floor((lt - t0) * PAGE_STEPS * STEP_PX / (PAGE_STEPS * cy.tps)), y + 1, 1, h - 3, 1);
     }
 }
 
@@ -1088,10 +1098,29 @@ function updateAutoCycle(t, c, target) {
         const viewed = S.trackPadMode[t] === PAD_MODE_DRUM ? (S.drumStepPage[t] | 0) : (S.trackCurrentPage[t] | 0);
         a.cyclePage = cy.follows ? viewed - (cy.off >> 4) : 0;
     }
+    else laneFollow(t, cy, a);
     a.cyclePage = Math.max(0, Math.min(cy.pages - 1, a.cyclePage | 0));
     S.autoCycle = { t, c, target, off: cy.off, len: cy.len, tps: cy.tps,
                     pages: cy.pages, page: a.cyclePage, text: cy.text };
 }
+/* ⭑ SEQ FOLLOW on a lane (Josh, 2026-10-22: "set up the lane on param view
+ * to follow or not follow playback like we do on note mode"): while the
+ * transport runs and Seq Follow is active (the one switch, Play + Left/Right;
+ * paused by paging by hand until the next stop), the lane's page is the page
+ * its playhead is on — on the lane list, a pin's page graph and the step
+ * row alike. Never while a step is held: the held step's page stays put so
+ * an edit or an extend is not moved out from under the finger. Not on the
+ * tick a lane is opened either: the playhead read is still the last lane's. */
+function laneFollow(t, cy, a) {
+    if (!S.playing || S.heldStep >= 0 || !followActive() || !S.trackClipPlaying[t] || !cy.tps) return;
+    const lt = S.autoLanePos[t];
+    if (!(lt >= 0)) return;
+    const p = lt / cy.tps;
+    if (p < cy.off || p >= cy.off + cy.len) return;
+    const page = Math.floor(p / 16) - (cy.off >> 4);
+    if (page !== a.cyclePage) { a.cyclePage = page; S.screenDirty = true; }
+}
+
 /* Left/Right while a row is selected: page through ITS cycle, clamped at the
  * ends. True when consumed — a one-page cycle still consumes them (nothing to
  * page to, and the pad's grid is not what is on the buttons). */
@@ -1104,6 +1133,8 @@ export function autoCyclePageStep(delta) {
     const a = st();
     a.cyclePage = Math.max(0, Math.min(cy.pages - 1, (a.cyclePage | 0) + (delta < 0 ? -1 : 1)));
     cy.page = a.cyclePage;
+    /* paging by hand pauses Seq Follow, as it does on the note steps */
+    if (S.playing) S.followPaused = true;
     return true;
 }
 

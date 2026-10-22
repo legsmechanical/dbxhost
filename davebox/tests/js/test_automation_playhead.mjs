@@ -101,6 +101,9 @@ for (let i = 0; i < 8; i++) { S.trackRoute[i] = 0; S.trackChannel[i] = 1; }
 S.bankParams = Array.from({ length: 8 }, () => Array.from({ length: BANKS.length }, () => new Array(8).fill(0)));
 S.tickCount = 1000; S.pendingDspSync = 0; S.pendingSetLoad = false;
 S.clockFollowTicks = true;
+/* Seq Follow OFF: these steps look at a page the playhead is not on (the
+ * lane's follow has its own test, test_automation_lane_view). */
+S.seqFollowOn = false;
 const T = 0, C = 0;
 const cc    = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
 const click = () => { cc(3, 127); cc(3, 0); };

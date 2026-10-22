@@ -66,8 +66,8 @@ import { setCustomLayout } from './ui_custom_chords.mjs';
 import { forceRedraw, effectiveClip } from './ui_leds.mjs';
 import { automationParamEdit, automationNeedsPrev, automationParamTouch, automationStateFor, automationToggleActive,
          automationClearKey, automationEntriesFor, automationFxMoved, automationAddLane,
-         automationIsParam } from './ui_automation.mjs';
-import { autoBankRestoreMenu, autoBankOpenLane, autoLaneFocus, autoHeldValue } from './ui_automation_bank.mjs';
+         automationIsParam, autoShiftHint } from './ui_automation.mjs';
+import { autoBankRestoreMenu, autoBankOpenLane, autoLaneFocus, autoHeldValue, autoHoldJumpActive } from './ui_automation_bank.mjs';
 import { setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
 import * as ModuleLists from '/data/UserData/schwung/shared/module_lists.mjs';
 import { MoveKnob1, Red, White } from '/data/UserData/schwung/shared/constants.mjs';
@@ -2322,7 +2322,7 @@ export function soundEnterSendFromSessionMixer(key) {
 /* A sound bank card's jog pair: JOG STEP under a held step, else HLD BANKS
  * (the map) unless a knob is touched. */
 function cardJogHints(knobTouched) {
-    if (GS.heldStep >= 0) return [['JOG', 'STEP']];
+    if (GS.heldStep >= 0) return [['JOG', 'STEP'], autoShiftHint()];
     return knobTouched ? [] : [['HLD', 'BANKS']];
 }
 function levelCardHints() {
@@ -9604,6 +9604,12 @@ export function soundOnCC(d1, d2, decodeDelta) {
      * asks davebox for Shift and Mute through ctx (precision mode, and
      * Mute+touch = reset to default), so swallowing them here would leave both
      * gestures dead inside the editor while davebox lost track of them too. */
+    if (ppHoldLocked()) {
+        /* the jog TURN is the hold's already (heldStepJog, ahead of sound
+         * mode); its CLICK would open the editor's menu */
+        if (d1 === 3) return true;
+        if (d1 >= 71 && d1 <= 78 && d1 - 71 !== ppFocusKnob) return true;   /* not the lane's knob */
+    }
     if (ppOn && d1 !== 49 && d1 !== 88) {
         /* ⭐⭐ ONE DETENT PER CALL — feed the editor what STOCK feeds it.
          *
@@ -12471,10 +12477,22 @@ function ppRestoreFor(slot, comp) {
 let ppFocusDec = null;
 /* The ROW (0 top, 1 bottom) of the focused lane's knob on the visible page,
  * or -1: the AUTOMATION lane's page graph covers the other half. */
-let ppFocusRow = -1;
+let ppFocusRow = -1, ppFocusKnob = -1;
 export function soundLaneFocusRow() { return ppOn && !ppDeclinedDraw ? ppFocusRow : -1; }
+/* ⭑ A STEP HELD from the AUTOMATION lane, showing this editor (Josh,
+ * 2026-10-22: "prevent paging around a module editor while in step held mode
+ * and ... block other params from being turned. b/c in that mode only the
+ * lane you're holding the step on is relevant"): the page stays, only the
+ * lane's own knob turns, and the footer says what a Shift tap does. */
+function ppHoldLocked() {
+    return ppOn && GS.heldStep >= 0 && GS.heldStepAuto && autoHoldJumpActive();
+}
+function ppHoldFooter() {
+    fill_rect(0, MV_FOOTER_Y, 128, 64 - MV_FOOTER_Y, 0);
+    drawKitHintRow(MV_FOOTER_Y, [autoShiftHint()]);
+}
 function ppFocusSync() {
-    ppFocusRow = -1;
+    ppFocusRow = -1; ppFocusKnob = -1;
     /* A new editor starts with no decorations: forget what the last one had. */
     if (!ppOn) { ppFocusDec = null; return; }
     let dec = null;
@@ -12484,7 +12502,7 @@ function ppFocusSync() {
     for (let k = 0; act && k < 8; k++) {
         const key = paramPagesFullKeyAt(k);
         if (!key) continue;
-        if (key === fk && ppFocusRow < 0) ppFocusRow = k < 4 ? 0 : 1;
+        if (key === fk && ppFocusRow < 0) { ppFocusRow = k < 4 ? 0 : 1; ppFocusKnob = k; }
         /* While a step is held, every parameter with a lane shows what it
          * plays there; the lane a jump came from is highlighted. */
         const hv = autoHeldValue(S.slot + ':' + key);
@@ -13933,7 +13951,7 @@ export function soundRender() {
      * FALLBACK for that case. ⚠ It is not "the shipped one" — this comment used
      * to say so, inheriting the same false claim as PP_EDITOR's own note. The
      * grid is shipped; renderEdit catches what it will not draw. */
-    else if (ppOn && drawParamPages()) { /* stock's editor drew it */ }
+    else if (ppOn && drawParamPages()) { if (ppHoldLocked()) ppHoldFooter(); }
     else {
         /* ⚠⚠ IT DECLINED. Note it so ppSync takes the grid down on the next
          * tick: without this the knobs keep going to a grid that is not on

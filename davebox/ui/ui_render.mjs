@@ -64,7 +64,7 @@ import {
 import { soundRender, renderTrackGatewayCard, renderConfigCardPeek, renderMacrosPeek } from './ui_sound.mjs';
 import { drawAutomationBankBody, autoBankMenuOpen, autoMenuUp, autoHoldJumpActive, autoHoldJumpStep, autoLaneFocus, autoHeldValue, autoMapEditorComp, autoMapMarkedBank,
          autoOpsOpen, drawAutomationOpsGraph, drawLaneFocusOverlay } from './ui_automation_bank.mjs';
-import { automationStateFor } from './ui_automation.mjs';
+import { automationStateFor, autoShiftHint } from './ui_automation.mjs';
 import { seqAutoTargetForKnob, fmtInstr } from './ui_constants.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
@@ -668,7 +668,7 @@ export function bankPageHints(bank) {
     if (bankHasAltParams(S.activeTrack, bank)) hints.unshift(['KNB+CLK', S.altMode ? 'VELOCITY' : 'NUDGE']);
     /* A held step's knob turn writes a lock: a PUNCH, or — Shift tapped — a
      * POINT. The pair names what a tap switches TO. */
-    if (held) hints.push(['SHFT', (S.heldWrite && S.heldWrite.type === 0) ? 'PUNCH' : 'POINT']);
+    if (held) hints.push(autoShiftHint());
     hints.push(['BACK', 'OUT']);
     return hints;
 }

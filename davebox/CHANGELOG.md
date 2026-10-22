@@ -100,7 +100,13 @@ the section into a versioned heading at release time.
   as a short menu at the top, with the whole lane drawn as a graph below it — the
   page bar along its bottom and the playhead running through both. Holding a step
   (or Shift + click) to reach the parameter's bank, MIX or MACROS shows the lane's
-  current page over the other half of the screen, with the held step marked.
+  current page over the other half of the screen, with the held step marked — on
+  a module's own editor too. A punch draws flat with hard edges, a point as a glide.
+  With Seq Follow on, a lane's page follows its playhead, as the note steps do.
+  The page graph's bottom edge shows which page of the lane you're on. While a step
+  is held in a module's editor, only that lane's knob turns and the editor stays on
+  its page; the footer shows what a Shift tap does (POINT / PUNCH) there and on MIX
+  and MACROS.
 - **Custom chords from a USB keyboard** — hold a chord pad and play keys to add
   or remove notes, or hold keys and tap an empty chord pad. Keys work just like
   the pads: six notes at most, and edits are not recorded or captured.

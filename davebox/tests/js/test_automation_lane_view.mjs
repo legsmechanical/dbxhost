@@ -92,6 +92,7 @@ const click = () => { cc(3, 127); cc(3, 0); };
 const back  = () => { cc(51, 127); cc(51, 0); };
 const jog   = (d) => cc(14, d > 0 ? d : 128 + d);
 const right = () => { cc(63, 127); cc(63, 0); };
+const left = () => { cc(62, 127); cc(62, 0); };
 const shift = (on) => cc(49, on ? 127 : 0);
 const ticks = (n) => { for (let i = 0; i < n; i++) { S.tickCount++; globalThis.tick(); } };
 const STEP = (i) => 16 + i;
@@ -106,6 +107,8 @@ function draw(lt) {
     globalThis.clear_screen(); render.drawUI();
 }
 const rowFull = (y, x0 = 0, x1 = 127) => { for (let x = x0; x <= x1; x++) if (!at(x, y)) return false; return true; };
+/* the page graph's bottom edge: full but for the 1-px gaps between pages */
+const barRow = (y) => { let n = 0; for (let x = 0; x < 128; x++) n += at(x, y) ? 1 : 0; return n >= 126; };
 /* `text` in the 4x5 face at exactly (x, y), ink `pol` on its own cell. */
 function text4At(text, x, y, pol) {
     const save = fb; fb = new Uint8Array(128 * 64);
@@ -231,16 +234,18 @@ step('⭐ HOLD a step on a TOP-row lane (Level, K2): the page over the LOWER hal
     ticks(3);
     assert(S.activeBank === DELAY, 'the hold jumped to DELAY, bank ' + S.activeBank);
     draw();
-    assert(rowFull(31) && rowFull(55), 'the frame is not on rows 31 and 55');
+    assert(rowFull(31) && barRow(55), 'the frame is not on rows 31 and 55');
     for (let y = 31; y <= 55; y++) assert(at(0, y) && at(127, y), 'the frame sides at row ' + y);
-    assert(!rowFull(30) && !rowFull(56), 'the frame is taller than 31..55');
+    assert(!rowFull(30) && !barRow(56), 'the frame is taller than 31..55');
+    /* ⭑ the bottom edge is the PAGE BAR: two pages, a gap at x 63, page 1 two rows thick */
+    assert(!at(63, 55) && at(10, 54) && at(62, 54) && !at(64, 54) && !at(100, 54), 'page 1 is not the thick segment of the bar');
     /* rails: x 8 + 4*7 = 36 and 43, dotted from row 33 */
-    for (let y = 33; y <= 53; y += 2) assert(at(36, y) && at(43, y), 'a rail dot missing at row ' + y);
+    for (let y = 33; y <= 51; y += 2) assert(at(36, y) && at(43, y), 'a rail dot missing at row ' + y);
     assert(!at(36, 34) && !at(43, 34), 'the rails are solid, not dotted');
-    /* beat ticks on the floor (row 54) every 4 steps */
-    for (const x of [8, 36, 64, 92, 119]) assert(at(x, 54), 'a beat tick missing at x ' + x);
+    /* beat ticks under the floor (row 53) every 4 steps */
+    for (const x of [8, 36, 64, 92, 119]) assert(at(x, 53), 'a beat tick missing at x ' + x);
     /* page 1: 0 everywhere but step 2 (full): a glide up into step 2 and down out of it */
-    assert(at(8, 53) && at(15, 33), 'the curve: step 1 at the floor (53), step 2 at the top (33)');
+    assert(at(8, 52) && at(15, 33), 'the curve: step 1 at the floor (52), step 2 at the top (33)');
     let mid = false; for (let y = 36; y <= 50; y++) if (at(11, y)) mid = true;
     assert(mid, 'a continuous lane glides between step values (x 11 has no mid-height ink)');
     assert(traced.includes('BANKS') || traced.length > 0, 'the hint row still draws');
@@ -252,15 +257,16 @@ step('⭐ Right while held: the graph is PAGE 2 (its own values), not page 1', (
     assert(S.autoCycle && S.autoCycle.page === 1, 'Right did not page the lane: ' + JSON.stringify(S.autoCycle));
     assert(reads.some(k => k === 't0_c0_pa_vals_16_24'), 'page 2\'s values were never read');
     draw();
-    assert(at(50, 33) && !at(50, 53), 'page 2 (all full scale) is not drawn flat at the top');
-    for (let y = 33; y <= 53; y += 2) assert(!at(36, y) || y === 33, 'the held step\'s rails show on a page it is not on');
+    assert(at(50, 33) && !at(50, 52), 'page 2 (all full scale) is not drawn flat at the top');
+    assert(at(100, 54) && !at(10, 54), 'the bar does not show page 2');
+    for (let y = 33; y <= 51; y += 2) assert(!at(36, y) || y === 33, 'the held step\'s rails show on a page it is not on');
 });
 
 step('release: the overlay is gone, back on the lane list', () => {
     note(STEP(4), 0); ticks(3);
     assert(S.activeBank === BANK_AUTOMATION, 'release came back, bank ' + S.activeBank);
     draw();
-    assert(!rowFull(31) && !rowFull(55), 'the overlay frame survived the release');
+    assert(!rowFull(31) && !barRow(55), 'the overlay frame survived the release');
 });
 
 step('⭐ HOLD on a BOTTOM-row lane (Pitch Fb, K5): the page over the UPPER half, rows 9..31', () => {
@@ -269,9 +275,9 @@ step('⭐ HOLD on a BOTTOM-row lane (Pitch Fb, K5): the page over the UPPER half
     note(STEP(4), 127); ticks(3);
     assert(S.activeBank === DELAY, 'jumped');
     draw();
-    assert(rowFull(9) && rowFull(31), 'the frame is not on rows 9 and 31');
-    assert(!rowFull(55), 'the lower-half frame drew too');
-    for (let y = 11; y <= 29; y += 2) assert(at(36, y) && at(43, y), 'a rail dot missing at row ' + y);
+    assert(rowFull(9) && barRow(31), 'the frame is not on rows 9 and 31');
+    assert(!barRow(55), 'the lower-half frame drew too');
+    for (let y = 11; y <= 27; y += 2) assert(at(36, y) && at(43, y), 'a rail dot missing at row ' + y);
     note(STEP(4), 0); ticks(3);
 });
 
@@ -281,8 +287,8 @@ step('Shift + click (the pin): the same page graph, no rails (no step held)', ()
     shift(true); click(); shift(false); ticks(4);
     assert(bank.autoLanePinActive() && S.activeBank === DELAY, 'the pin is up on DELAY');
     draw();
-    assert(rowFull(31) && rowFull(55), 'the pin draws the lower-half page graph');
-    let rail = 0; for (let y = 33; y <= 53; y += 2) rail += at(36, y) && at(43, y) && !at(36, y + 1) ? 1 : 0;
+    assert(rowFull(31) && barRow(55), 'the pin draws the lower-half page graph');
+    let rail = 0; for (let y = 33; y <= 51; y += 2) rail += at(36, y) && at(43, y) && !at(36, y + 1) ? 1 : 0;
     assert(rail < 3, 'rails drawn with no step held');
     back(); ticks(3);
 });
@@ -301,9 +307,37 @@ step('⭐ the page graph is the page\'s SHAPE: a punch on step 5 draws flat with
     draw();
     for (const y of [34, 40, 46, 52]) assert(at(36, y) && at(43, y), 'no hard edge at x 36 / 43, row ' + y);
     for (let y = 36; y <= 50; y++) assert(!at(33, y) && !at(46, y), 'a ramp beside the punch at row ' + y);
-    assert(at(39, 33) && at(30, 53) && at(50, 53), 'the punch is not flat at the top with the floor either side');
+    assert(at(39, 33) && at(30, 52) && at(50, 52), 'the punch is not flat at the top with the floor either side');
     note(STEP(9), 0); ticks(3);
     PAGESHAPE = null;
+});
+
+step('⭐ SEQ FOLLOW: the lane\'s page follows its playhead like the note steps; a held step stays; a hand page pauses it (Josh, 2026-10-22)', () => {
+    const run = (lt) => { S.playing = true; S.trackClipPlaying[T] = true; S.autoLanePos[T] = lt; ticks(1); S.autoLanePos[T] = lt; ticks(1); };
+    S.seqFollowOn = true; S.followPaused = false;
+    toLane('seq:0:delay_level');
+    S.autoBank.cyclePage = 0; ticks(2);
+    run(20 * 24);                                        /* step 21: page 2 */
+    assert(S.autoCycle.page === 1, 'the lane did not follow to page 2: ' + S.autoCycle.page);
+    run(3 * 24);
+    assert(S.autoCycle.page === 0, 'back to page 1 with the playhead: ' + S.autoCycle.page);
+    /* a held step pins the page: the playhead moving on does not page it */
+    note(STEP(4), 127); ticks(3);
+    run(20 * 24); run(21 * 24);
+    assert(S.autoCycle.page === 0, 'the page moved under a held step: ' + S.autoCycle.page);
+    note(STEP(4), 0); ticks(3);
+    run(20 * 24);
+    assert(S.autoCycle.page === 1, 'following again after the release: ' + S.autoCycle.page);
+    /* paging by hand pauses it, as on the note steps */
+    left(); ticks(1);
+    assert(S.followPaused, 'Left did not pause Seq Follow');
+    run(22 * 24);
+    assert(S.autoCycle.page === 0, 'the page followed after a hand page: ' + S.autoCycle.page);
+    /* the switch off: no follow */
+    S.followPaused = false; S.seqFollowOn = false;
+    run(22 * 24);
+    assert(S.autoCycle.page === 0, 'followed with Seq Follow off: ' + S.autoCycle.page);
+    S.seqFollowOn = true; S.playing = false; S.autoLanePos[T] = -1; ticks(1);
 });
 
 step('stepped targets are known without a read (the engine\'s table)', () => {

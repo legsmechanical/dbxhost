@@ -1470,10 +1470,13 @@ lane**, not the clip's notes (click the row for its operations, below):
   **<AUTO S7** (step 7). The parameter's cell is highlighted, and while the step
   is held it shows the value the lane plays there — shown only, the parameter
   doesn't move until you turn the knob. A module's page keeps its graphics (filter
-  curve, envelope) while you're there. On a bank, MIX or MACROS the lane's **current
+  curve, envelope) while you're there. On a bank, MIX, MACROS or a module's page the lane's **current
   page** (its 16 steps) is drawn over the half of the screen the parameter isn't in,
   with the held step marked between dotted lines and the playhead when it's on that
-  page.
+  page. Its bottom edge is the lane's page bar: one segment a page, the one shown
+  thicker. In a module's editor only the held lane's knob turns while you hold, and
+  the editor stays on its page. The footer says what a Shift tap switches to
+  (**SHFT POINT** / **SHFT PUNCH**).
 - **Hold a step, then press a later one** to stretch the held step's value up to and
   including that step, the way a held note stretches to a tapped step. The value is
   the one you turned, or — before any turn — what the lane plays on the held step,
@@ -1486,6 +1489,9 @@ lane**, not the clip's notes (click the row for its operations, below):
   it there; the steps you give back play what they did before. Turn the knob again
   while you still hold and the whole range takes the new value. While you hold, every
   step of the range blinks like a set value. One **Undo** takes back the whole hold.
+- With **Seq Follow** on (Play + Left/Right), the lane's page follows its playhead
+  while the transport runs, as the note steps do — except while you're holding a
+  step, which keeps its page. Paging by hand pauses it until you stop.
 - **Shift + click** a row to jump to where that parameter is edited; **Back**
   returns you to this menu, on the same row. The step buttons keep showing the lane
   there, so you can hold a step and turn the knob to set it, and the bank map still
