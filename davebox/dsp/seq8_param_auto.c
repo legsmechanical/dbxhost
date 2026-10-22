@@ -2091,10 +2091,13 @@ static int pa_migrate_v1_entry(const seq8_instance_t *inst, pa_entry_t *e, uint1
     const uint32_t we = ws + wl;
     if (we - 1 > 0xFFFFu) return 1;
     const int fi = pa_lower_bound(e, ws), li = pa_lower_bound(e, we) - 1;
-    if (fi >= e->count || li < fi) return 1;              /* nothing inside the window */
     if (!st) st = TICKS_PER_STEP;
     const int punch = (e->flags & PA_FLAG_PUNCH) != 0;
     const int glides = (e->flags & PA_FLAG_SMOOTH) && !punch;
+    /* Nothing inside the window: a gliding lane already plays the same curve
+     * through the outside points. A stepped or Punch lane does NOT — v1 held
+     * or rested there — so it is rebuilt below, from the window start alone. */
+    if ((fi >= e->count || li < fi) && glides) return 1;
     static pa_entry_t q;
     q = *e;
     q.count = 0;

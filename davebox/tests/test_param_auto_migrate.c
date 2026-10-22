@@ -39,7 +39,10 @@ static int v2_plays(const pa_entry_t *e, uint32_t t, uint32_t ws, uint32_t wl) {
 }
 
 /* One combination. `where`: 0 melodic clip, 1 own Loop [96, 288), 2 drum cycle. */
-static void one(hx_t *h, int where, uint8_t flags, int rest, int scale, int bipolar, int first_on_start, int two_in_step) {
+/* `outside`: a lane with its own Loop whose points ALL fall outside it (the
+ * clip or Loop shortened after the locks were set) — v1 still played them. */
+static void one(hx_t *h, int where, uint8_t flags, int rest, int scale, int bipolar, int first_on_start, int two_in_step,
+                int outside) {
     seq8_instance_t *in = (seq8_instance_t *)h->inst;
     const int track = where == 2 ? 0 : 1;
     int id = pa_target_id(in, "1:synth:cutoff");
@@ -53,12 +56,17 @@ static void one(hx_t *h, int where, uint8_t flags, int rest, int scale, int bipo
     uint32_t base = 0, span = 384;
     if (where == 1) { e->loop_len = 192; e->loop_off = 96; base = 96; span = 192; }
     if (where == 2) { e->loop_len = 144; e->loop_off = 0; e->step_ticks = 12; span = 144; }
+    if (outside) {
+        pa_set_point(e, 10, 1000); pa_set_point(e, 40, 9000);
+        pa_set_point(e, 300, 2000); pa_set_point(e, 330, 15000);
+    } else {
     if (where == 1) pa_set_point(e, 40, 1111);                       /* outside the window */
     pa_set_point(e, (uint16_t)(base + (first_on_start ? 0 : 30)), 3000);
     pa_set_point(e, (uint16_t)(base + 72), 9000);
     if (two_in_step) pa_set_point(e, (uint16_t)(base + 80), 500);    /* same step as 72 (24 or 12 ticks) */
     pa_set_point(e, (uint16_t)(base + span - 40), 6000);
     if (where == 1) pa_set_point(e, 350, 12000);                     /* outside the window */
+    }
     uint32_t ws, wl, st;
     HX_ASSERT(pa_export_window(&in->tracks[track], e, &ws, &wl, &st) && ws == base && wl == span, "setup: the window");
     const uint16_t r = rest < 0 ? PA_VAL_UNSET : (uint16_t)rest;
@@ -69,9 +77,9 @@ static void one(hx_t *h, int where, uint8_t flags, int rest, int scale, int bipo
     for (uint32_t t = ws; t < ws + wl; t++) {
         int a = v1_plays(&old, r, t, ws, wl, st), b = v2_plays(e, t, ws, wl);
         if (b < a - tol || b > a + tol) {
-            printf("  FAIL — where %d flags 0x%02x rest %d scale %d%s first %s%s: tick %u plays %d, v1 played %d\n",
+            printf("  FAIL — where %d flags 0x%02x rest %d scale %d%s first %s%s%s: tick %u plays %d, v1 played %d\n",
                    where, flags, rest, scale, bipolar ? " bipolar" : "", first_on_start ? "on start" : "later",
-                   two_in_step ? " two-in-step" : "", t, b, a);
+                   two_in_step ? " two-in-step" : "", outside ? " all-outside" : "", t, b, a);
             exit(1);
         }
     }
@@ -83,7 +91,13 @@ static void one(hx_t *h, int where, uint8_t flags, int rest, int scale, int bipo
         int b = pa_scaled(e, v);
         /* Carry + Smooth glides INTO the start: one tick short of it is not
          * the limit, so compare to the glide's next value instead. */
-        if (!((old.flags & PA_FLAG_SMOOTH) && !(old.flags & PA_FLAG_WRAP_RESET) && !(old.flags & PA_FLAG_PUNCH)))
+        /* A gliding lane with NO point inside its window is left as it was
+         * (it already plays the same, tick by tick, above), and with nothing
+         * inside the window pa_eval_before has no pass end to report — so
+         * there is no v1 value to compare it with. */
+        const int glides = (old.flags & PA_FLAG_SMOOTH) && !(old.flags & PA_FLAG_PUNCH);
+        if (!(outside && glides) &&
+            !((old.flags & PA_FLAG_SMOOTH) && !(old.flags & PA_FLAG_WRAP_RESET) && !(old.flags & PA_FLAG_PUNCH)))
             HX_ASSERT(b >= a - tol && b <= a + tol, "the loop end: what v1 held there");
     }
     cases++;
@@ -106,7 +120,10 @@ int main(void) {
             for (int f = 0; f < 2; f++) for (int w = 0; w < 2; w++) for (int p = 0; p < 2; p++)
                 for (int r = 0; r < 2; r++) for (int sc = 0; sc < 3; sc++)
                     for (int fs = 0; fs < 2; fs++) for (int two = 0; two < 2; two++)
-                        one(h, where, (uint8_t)(F[f] | W[w] | P[p]), R[r], S[sc][0], S[sc][1], fs, two);
+                        one(h, where, (uint8_t)(F[f] | W[w] | P[p]), R[r], S[sc][0], S[sc][1], fs, two, 0);
+        for (int f = 0; f < 2; f++) for (int w = 0; w < 2; w++) for (int p = 0; p < 2; p++)
+            for (int r = 0; r < 2; r++) for (int sc = 0; sc < 3; sc++)
+                one(h, 1, (uint8_t)(F[f] | W[w] | P[p]), R[r], S[sc][0], S[sc][1], 0, 0, 1);
         printf("  (%d combinations)\n", cases);
         OK("⭐ every pav:1 lane sounds the same after conversion, at every tick (within rounding)");
         hx_destroy(h);
