@@ -1495,8 +1495,9 @@ lane**, not the clip's notes (click the row for its operations, below):
 - **Shift + click** a row to jump to where that parameter is edited; **Back**
   returns you to this menu, on the same row. The step buttons keep showing the lane
   there, so you can hold a step and turn the knob to set it, and the bank map still
-  marks **AUTO**. On a bank, MIX or MACROS the lane's current page is drawn there
-  too, as for a held step. Leave that place any other way and the jump is over.
+  marks **AUTO**. On a bank, MIX, MACROS or a module's page the lane's current page
+  is drawn there too, as for a held step. In a module's editor only the lane's knob
+  turns and the editor stays on its page until you go Back. Leave that place any other way and the jump is over.
 - **Back** at the list closes the screen: you return to the bank you were on, and the step buttons show the clip again.
   Leaving by the bank map (another bank, or an editor from its right-hand pads) does
   the same — the steps show notes again.

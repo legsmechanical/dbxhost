@@ -366,6 +366,44 @@ step('⭐ HOLD a module point -> its EDITOR on the page holding the key; the kno
     back(); ticks(1);
 });
 
+step('⭐ SHIFT + CLICK to a module lane: the editor is the lane\'s view too — other knobs, the jog and its click do nothing; the footer says Back, then Shift under a hold (Josh, 2026-10-22)', () => {
+    const idx = openMenuOn(TARGETS.chain); ticks(2);
+    shiftClick(); ticks(10);
+    assert(bank.autoLanePinActive() && snd.soundViewForTest() === VIEW_EDIT, 'the pin did not open the editor');
+    const pp = snd.soundPPForTest();
+    const ci = pp.page.keys.indexOf('cutoff');
+    assert(ci >= 0, 'not on the page holding cutoff: ' + JSON.stringify(pp.page.keys));
+    const other = ci === 0 ? 1 : 0, pageBefore = JSON.stringify(pp.page.keys);
+    sets.length = 0;
+    cc(71 + other, 1); cc(71 + other, 1); ticks(2);
+    assert(sets.length === 0, 'another knob wrote under the pin: ' + JSON.stringify(sets));
+    /* ...and the header says which one can be set: the band, inverted */
+    assert(snd.soundLaneOnlyShownForTest(), 'a refused knob said nothing');
+    {
+        const rects = [], fr = globalThis.fill_rect;
+        globalThis.fill_rect = (x, y, w, h, c) => { rects.push([x, y, w, h, c]); };
+        globalThis.clear_screen(); render.drawUI();
+        globalThis.fill_rect = fr;
+        assert(rects.some(r => r[0] === 0 && r[1] === 0 && r[2] === 128 && r[3] === 7 && r[4] === 1), 'no inverted header band for "CUTOFF ONLY"');
+    }
+    ticks(150);
+    assert(!snd.soundLaneOnlyShownForTest(), 'the header message did not time out');
+    cc(14, 1); ticks(2); cc(14, 1); ticks(2);
+    assert(JSON.stringify(snd.soundPPForTest().page.keys) === pageBefore, 'the jog paged the editor under the pin: ' + JSON.stringify(snd.soundPPForTest().page.keys));
+    cc(3, 127); cc(3, 0); ticks(2);
+    assert(snd.soundViewForTest() === VIEW_EDIT && JSON.stringify(snd.soundPPForTest().page.keys) === pageBefore, 'the click moved the editor under the pin');
+    sets.length = 0;
+    cc(71 + ci, 1); ticks(2);
+    assert(sets.some(x => /cutoff/.test(x)), 'the lane\'s own knob did nothing under the pin: ' + JSON.stringify(sets));
+    globalThis.clear_screen(); render.drawUI();
+    assert(JSON.stringify(movy.kitHintsForTest()) === JSON.stringify([['BACK', 'OUT']]), 'the pin\'s footer: ' + JSON.stringify(movy.kitHintsForTest()));
+    note(STEP(3), 127); ticks(3);
+    globalThis.clear_screen(); render.drawUI();
+    assert(JSON.stringify(movy.kitHintsForTest()) === JSON.stringify([['SHFT', 'POINT']]), 'the pin\'s footer under a hold: ' + JSON.stringify(movy.kitHintsForTest()));
+    note(STEP(3), 0); ticks(2);
+    back(); ticks(4); back(); ticks(2);
+});
+
 step('a press and release inside ONE tick never opens sound mode', () => {
     openMenuOn(TARGETS.level); ticks(2);
     note(STEP(3), 127); note(STEP(3), 0); ticks(4);

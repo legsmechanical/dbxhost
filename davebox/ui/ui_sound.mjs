@@ -66,8 +66,9 @@ import { setCustomLayout } from './ui_custom_chords.mjs';
 import { forceRedraw, effectiveClip } from './ui_leds.mjs';
 import { automationParamEdit, automationNeedsPrev, automationParamTouch, automationStateFor, automationToggleActive,
          automationClearKey, automationEntriesFor, automationFxMoved, automationAddLane,
-         automationIsParam, autoShiftHint } from './ui_automation.mjs';
-import { autoBankRestoreMenu, autoBankOpenLane, autoLaneFocus, autoHeldValue, autoHoldJumpActive } from './ui_automation_bank.mjs';
+         automationIsParam, autoShiftHint, automationTargetLabel } from './ui_automation.mjs';
+import { fontPrint4x5 } from './ui_fonts_pp.mjs';
+import { autoBankRestoreMenu, autoBankOpenLane, autoLaneFocus, autoHeldValue, autoHoldJumpActive, autoLanePinActive } from './ui_automation_bank.mjs';
 import { setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
 import * as ModuleLists from '/data/UserData/schwung/shared/module_lists.mjs';
 import { MoveKnob1, Red, White } from '/data/UserData/schwung/shared/constants.mjs';
@@ -9604,11 +9605,15 @@ export function soundOnCC(d1, d2, decodeDelta) {
      * asks davebox for Shift and Mute through ctx (precision mode, and
      * Mute+touch = reset to default), so swallowing them here would leave both
      * gestures dead inside the editor while davebox lost track of them too. */
-    if (ppHoldLocked()) {
-        /* the jog TURN is the hold's already (heldStepJog, ahead of sound
-         * mode); its CLICK would open the editor's menu */
-        if (d1 === 3) return true;
-        if (d1 >= 71 && d1 <= 78 && d1 - 71 !== ppFocusKnob) return true;   /* not the lane's knob */
+    if (ppLaneLocked()) {
+        /* no paging (under a hold the jog TURN is the hold's already —
+         * heldStepJog, ahead of sound mode — but a pin has no hold), and no
+         * click into the editor's menu */
+        if (d1 === 14 || d1 === 3) return true;
+        if (d1 >= 71 && d1 <= 78 && d1 - 71 !== ppFocusKnob) {          /* not the lane's knob */
+            ppOnlyUntil = GS.clockMs + PP_ONLY_MS; S.dirty = true;
+            return true;
+        }
     }
     if (ppOn && d1 !== 49 && d1 !== 88) {
         /* ⭐⭐ ONE DETENT PER CALL — feed the editor what STOCK feeds it.
@@ -12479,20 +12484,41 @@ let ppFocusDec = null;
  * or -1: the AUTOMATION lane's page graph covers the other half. */
 let ppFocusRow = -1, ppFocusKnob = -1;
 export function soundLaneFocusRow() { return ppOn && !ppDeclinedDraw ? ppFocusRow : -1; }
-/* ⭑ A STEP HELD from the AUTOMATION lane, showing this editor (Josh,
- * 2026-10-22: "prevent paging around a module editor while in step held mode
- * and ... block other params from being turned. b/c in that mode only the
- * lane you're holding the step on is relevant"): the page stays, only the
- * lane's own knob turns, and the footer says what a Shift tap does. */
-function ppHoldLocked() {
-    return ppOn && GS.heldStep >= 0 && GS.heldStepAuto && autoHoldJumpActive();
+/* ⭑ THE EDITOR AS A LANE'S VIEW — a step held from the AUTOMATION lane, or
+ * a Shift + click there (Josh, 2026-10-22: "prevent paging around a module
+ * editor while in step held mode and ... block other params from being
+ * turned. b/c in that mode only the lane you're holding the step on is
+ * relevant" · "same behavior needs to happen on shift+click automation param
+ * view"): the page stays, only the lane's own knob turns, and the footer says
+ * what a Shift tap does while a step is held, else that Back goes back. */
+function ppLaneLocked() {
+    if (!ppOn) return false;
+    if (GS.heldStep >= 0 && GS.heldStepAuto && autoHoldJumpActive()) return true;
+    return autoLanePinActive();
 }
-function ppHoldFooter() {
+function ppLaneFooter() {
     fill_rect(0, MV_FOOTER_Y, 128, 64 - MV_FOOTER_Y, 0);
-    drawKitHintRow(MV_FOOTER_Y, [autoShiftHint()]);
+    drawKitHintRow(MV_FOOTER_Y, GS.heldStep >= 0 ? [autoShiftHint()] : [['BACK', 'OUT']]);
+    /* A refused knob says why, in the header (Josh, 2026-10-22: "show
+     * something when non-operative params are turned that indicates they
+     * can't be set there. header seems like the place"): the band inverted,
+     * as a touched knob's is, naming the one parameter that can be. */
+    if (ppOnlyUntil > GS.clockMs) {
+        const f = autoLaneFocus();
+        const lbl = f ? automationTargetLabel(f.target) : '';
+        const name = lbl.slice(lbl.lastIndexOf('>') + 1);
+        fill_rect(0, 0, 128, 7, 1);
+        fill_rect(0, 0, 1, 1, 0); fill_rect(127, 0, 1, 1, 0);
+        fontPrint4x5(2, 1, (name + ' ONLY').toUpperCase(), 0);
+    }
 }
+/* Until when the header says "<PARAM> ONLY" (a refused knob turn), or 0. */
+let ppOnlyUntil = 0;
+const PP_ONLY_MS = 1200;
+export function soundLaneOnlyShownForTest() { return ppOnlyUntil > GS.clockMs; }
 function ppFocusSync() {
     ppFocusRow = -1; ppFocusKnob = -1;
+    if (ppOnlyUntil && ppOnlyUntil <= GS.clockMs) { ppOnlyUntil = 0; S.dirty = true; }
     /* A new editor starts with no decorations: forget what the last one had. */
     if (!ppOn) { ppFocusDec = null; return; }
     let dec = null;
@@ -13951,7 +13977,7 @@ export function soundRender() {
      * FALLBACK for that case. ⚠ It is not "the shipped one" — this comment used
      * to say so, inheriting the same false claim as PP_EDITOR's own note. The
      * grid is shipped; renderEdit catches what it will not draw. */
-    else if (ppOn && drawParamPages()) { if (ppHoldLocked()) ppHoldFooter(); }
+    else if (ppOn && drawParamPages()) { if (ppLaneLocked()) ppLaneFooter(); }
     else {
         /* ⚠⚠ IT DECLINED. Note it so ppSync takes the grid down on the next
          * tick: without this the knobs keep going to a grid that is not on

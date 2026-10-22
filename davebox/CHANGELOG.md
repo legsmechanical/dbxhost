@@ -104,8 +104,8 @@ the section into a versioned heading at release time.
   a module's own editor too. A punch draws flat with hard edges, a point as a glide.
   With Seq Follow on, a lane's page follows its playhead, as the note steps do.
   The page graph's bottom edge shows which page of the lane you're on. While a step
-  is held in a module's editor, only that lane's knob turns and the editor stays on
-  its page; the footer shows what a Shift tap does (POINT / PUNCH) there and on MIX
+  is held in a module's editor, or after Shift + click took you there, only that
+  lane's knob turns and the editor stays on its page; the footer shows what a Shift tap does (POINT / PUNCH) there and on MIX
   and MACROS.
 - **Custom chords from a USB keyboard** — hold a chord pad and play keys to add
   or remove notes, or hold keys and tap an empty chord pad. Keys work just like
