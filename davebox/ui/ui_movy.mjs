@@ -2771,7 +2771,16 @@ function drawCellLabel(col, lblY, cell, touched) {
  * see (same reason as levelCardTextForTest). */
 let kitCellsLast = null;
 export function kitCellsForTest() { return kitCellsLast; }
+/* The ROW (0 top, 1 bottom) of the cell a kit page marked as the lane in
+ * focus (`lock`) since the last reset, or -1. The frame resets it before it
+ * draws; the AUTOMATION lane's page graph then knows which half of the screen
+ * the parameter is in — and that a kit page drew it at all (a module's own
+ * parameter pages and drawn screens never mark one). */
+let kitLockRow = -1;
+export function kitLaneFocusRowReset() { kitLockRow = -1; }
+export function kitLaneFocusRow() { return kitLockRow; }
 export function drawKitCells(cells, touchedIdx, env, filt, eq, samp, anim, nowMs) {
+    for (let k = 0; k < cells.length && k < 8; k++) if (cells[k] && cells[k].lock) { kitLockRow = k < 4 ? 0 : 1; break; }
     /* ⭑ THE LANE IN FOCUS IS HIGHLIGHTED (a jump or pin from the AUTOMATION
      * bank marks its parameter's cell `lock`): its label strip inverts like a
      * touched knob's, whenever no knob is touched. It replaced a 2x2 corner
@@ -2947,6 +2956,15 @@ export function drawKitStackedList(depth, rows, sel, opts) {
      * below, which reads as off-centre (Josh spotted it on device). At 10 it is
      * 2 and 1, the same as every other list in the app. */
     const rowH = o.rowH != null ? o.rowH : 10;
+    /* ⭑ `font: '4x5'` — the rows in the BANK-HEADER face (fontPrint4x5,
+     * uppercase), for a short pop-up over a screen that needs the room below
+     * it (the AUTOMATION lane ops, which keep the lower half for the lane's
+     * graph). A tighter list than the stock one: rows of `rowH` (7) from 2px
+     * inside the frame, the selection band inverted, the value right-aligned,
+     * and a 1px scroll thumb at the right with no rail. The cursor pins to the
+     * bottom row once it would leave the window, like a menu, rather than
+     * centring. Callers that pass no `font` are unchanged to the pixel. */
+    if (o.font === '4x5') { drawStackRows4x5(tx, top, STACK_W, h, rows, sel, o.rowH != null ? o.rowH : 7); return; }
     const listTop = top + 6;
     /* ⚠ NO HINT BAND INSIDE THE BOX — it was tried and moved OUT 2026-09-10.
      * Josh: "the pill should sit on the bottom row where they always do." A
@@ -2964,6 +2982,33 @@ export function drawKitStackedList(depth, rows, sel, opts) {
         visible: o.visible,
         emptyMsg: o.emptyMsg,
     });
+}
+
+/* drawKitStackedList's `font: '4x5'` rows inside the box (x, top, w, h). */
+function drawStackRows4x5(x, top, w, h, rows, sel, rowH) {
+    const n = rows.length;
+    if (!n) return;
+    const vis = Math.max(1, Math.floor((h - 3) / rowH));
+    const s = Math.max(0, Math.min(n - 1, sel | 0));
+    const first = Math.max(0, Math.min(s - vis + 1, n - vis));
+    const lt = top + 2;
+    for (let r = 0; r < vis; r++) {
+        const k = first + r;
+        if (k >= n) break;
+        const row = (typeof rows[k] === 'string') ? { label: rows[k] } : (rows[k] || {});
+        const y = lt + r * rowH, on = k === s;
+        if (on) fill_rect(x + 2, y, w - 7, rowH, 1);
+        fontPrint4x5(x + 4, y + 1, String(row.label == null ? '' : row.label).toUpperCase(), on ? 0 : 1);
+        if (row.value != null && row.value !== '') {
+            const v = String(row.value).toUpperCase();
+            fontPrint4x5(x + w - 7 - fontWidth4x5(v), y + 1, v, on ? 0 : 1);
+        }
+    }
+    if (n > vis) {
+        const th = Math.max(3, Math.floor((h - 4) * vis / n));
+        const ty = top + 2 + Math.floor((h - 4 - th) * first / Math.max(1, n - vis));
+        fill_rect(x + w - 3, ty, 1, th, 1);
+    }
 }
 
 /* ── knocking the backdrop back, and saying where you are ──────────────────

@@ -35,6 +35,7 @@
 #define PA_ENTRY_POINTS    512   /* points per entry: 16 bars at 1/32, or a dense recorded sweep */
 #define PA_MAX_TARGETS      64   /* distinct parameters automated anywhere in the project */
 #define PA_TARGET_LEN       64   /* "<slot>:<comp>:<key>" — longest real target seen is 37 (a JV-880 nvram key) */
+#define PA_SHAPE_MAX_SAMPLES 1024 /* tN_cC_pa_shape_<n>: the most samples a lane's shape may ask for */
 #define PA_VAL_MAX       16383   /* values are 14-bit normalized; JS maps to/from wire units */
 #define PA_VAL_UNSET     0xFFFF
 #define PA_UNDO_ENTRIES     16   /* automated params per clip an undo slot can hold */

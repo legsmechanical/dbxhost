@@ -38,14 +38,24 @@ import { automationEntriesFor, automationTargetLabel, automationClearKey, automa
          automationToggleActive, automationToggleWrap, automationToggleLink,
          automationSetLoop, automationSetRate, automationRateText, automationSetScale,
          automationClearClip, automationListGen, automationStepTicks, rowCycle,
-         cycleText, automationMatchPad, padCycle, automationStateFor, automationWireValue } from './ui_automation.mjs';
+         cycleText, automationMatchPad, padCycle, automationStateFor, automationWireValue,
+         automationTargetStepped } from './ui_automation.mjs';
 import { drawKitList, drawKitStackedList, drawKitBackdropDim, drawKitHintRow,
-         drawBrackets, kitUseLayout, MV_FOOTER_Y } from './ui_movy.mjs';
+         drawBrackets, kitUseLayout, kitLaneFocusRow, rectOutline, MV_FOOTER_Y,
+         MV_ROW0_Y, MV_ROW1_Y, MV_LBL1_Y, MV_LBL_H } from './ui_movy.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
 import { moveBusForChannel } from './ui_engine.mjs';
 
 const LIST_TOP = 11;                 /* the kit list's own default */
+/* The ops pop-up and the lane graph under it (bank layout; the mockups'
+ * geometry): the box rows OPS_TOP..OPS_BOTTOM-1, the list behind dimmed from
+ * under the header band, everything from OPS_CLEAR_Y down cleared for the
+ * graph — a full-width rule, the curve, and the page bar on the last rows. */
+const OPS_TOP = 3, OPS_BOTTOM = 34, OPS_DIM_TOP = 9, OPS_CLEAR_Y = 34;
+const GRAPH_RULE_Y = 36, GRAPH_BAR_Y = 60, GRAPH_X = 1, GRAPH_W = 126;
+/* Samples the lane's shape is read at: one a graph column. */
+export const LANE_SHAPE_N = GRAPH_W;
 
 /* The state lives on davebox's global S so a view switch / bank walk can drop
  * it from anywhere: { menu, sel, ops: { rows, sel, row } | null, loopEdit,
@@ -220,21 +230,18 @@ export function drawAutomationBankBody() {
                 ? ((a.loopEdit || a.rateEdit || a.scaleEdit) && i === a.ops.sel ? '<' + o.value + '>' : o.value)
                 : (o.op === 'wrap' || o.op === 'link' || o.op === 'match') ? o.value : undefined,
         }));
-        drawKitBackdropDim(0, LIST_TOP, 128, MV_FOOTER_Y - LIST_TOP);
-        /* ⚠ bottomY: STOP THE BOX ABOVE THE FOOTER. Without it the stacked
-         * list runs to y=62 while the hint row below draws at MV_FOOTER_Y=57 —
-         * six rows of overlap, and since the footer is drawn AFTERWARDS it
-         * painted over the bottom of the pop-up. Josh, 2026-09-10: "the
-         * automation editor pop-up sits behind the bank's hint footer rather
-         * than on top where it should be."
-         * ⭑ Note the backdrop dim beside it already stops at MV_FOOTER_Y — the
-         * footer band was always meant to stay out of the overlay's area, and
-         * only the box's own height had not been told. */
-        drawKitStackedList(1, ors, a.ops.sel, { bottomY: MV_FOOTER_Y - 1 });
-        hints = a.loopEdit ? [['JOG', 'LEN'], ['CLK', 'DONE'], ['BACK', 'DONE']]
-              : a.rateEdit ? [['JOG', 'RATE'], ['CLK', 'DONE'], ['BACK', 'DONE']]
-              : a.scaleEdit ? [['JOG', 'PCT'], ['CLK', 'DONE'], ['BACK', 'DONE']]
-                           : [['CLK', 'DO'], ['JOG', 'OP'], ['BACK', 'LIST']];
+        /* ⭐ THE LANE ON SCREEN (2026-10-22): the pop-up moves UP — over the
+         * lower half of the header — and gets SHORT (four rows in the header
+         * face), so the lower half of the screen is the lane itself: its whole
+         * window as a graph, the page bar as the graph's bottom edge, and the
+         * playhead through both (drawAutomationOpsGraph, called by the bank's
+         * renderer after this). A regular menu, so it carries no hints — the
+         * lane list keeps its own. The list behind is dimmed down to the
+         * pop-up's foot; everything below is the graph's. */
+        drawKitBackdropDim(0, OPS_DIM_TOP, 128, OPS_CLEAR_Y + 1 - OPS_DIM_TOP);
+        fill_rect(0, OPS_CLEAR_Y, 128, 64 - OPS_CLEAR_Y, 0);
+        drawKitStackedList(1, ors, a.ops.sel, { topY: OPS_TOP, bottomY: OPS_BOTTOM, font: '4x5', rowH: 7 });
+        return;
     } else if (a.menu) {
         /* Josh, 2026-10-21: "Need to add hints for shift. Get rid of jog:row
          * and back:card (those are self explanatory)". Shift + click jumps to
@@ -557,6 +564,149 @@ function autoLaneValsTick(t, c, target) {
     S.autoLaneVals = got || ((valsCache.key === key && valsCache.map && st0 && !st0.count) ? EMPTY_VALS : null);
 }
 
+/* ⭐ THE LANE'S SHAPE, for the ops pop-up's graph: the whole window of every
+ * lane of the clip, LANE_SHAPE_N samples each, as playback plays them
+ * (tN_cC_pa_shape_<n>: 0..254 a sample, ff = none). ONE read, from the tick,
+ * only while a lane's ops are open — when the list generation, the lane, the
+ * clip or the lane's own settings change (Loop, Rate, Scale, Wrap, Mute do
+ * not move the list generation), and on the gradient's slow cadence for
+ * recorded points. Never per tick, never from an input handler. */
+let shapeCache = { key: null, map: null, raw: null, at: -1e9 };
+let laneShape = null;            /* the open lane's samples, or null */
+function readShape(t, c) {
+    const raw = host_module_get_param('t' + t + '_c' + c + '_pa_shape_' + LANE_SHAPE_N);
+    if (raw === null || raw === undefined) return null;
+    return String(raw);
+}
+function parseShape(raw) {
+    const map = new Map();
+    for (const line of raw.split('\n')) {
+        const sp = line.lastIndexOf(' ');
+        if (sp <= 0) continue;
+        const hex = line.slice(sp + 1), v = new Array(LANE_SHAPE_N);
+        for (let i = 0; i < LANE_SHAPE_N; i++) {
+            const x = parseInt(hex.substr(i * 2, 2), 16);
+            v[i] = (isFinite(x) && x !== 255) ? x : -1;
+        }
+        map.set(line.slice(0, sp), v);
+    }
+    return map;
+}
+function laneShapeTick(t, c, target) {
+    const st = automationStateFor(t, c, target);
+    const sig = st ? [st.active ? 1 : 0, st.wrapReset ? 1 : 0, st.loop, st.lo, st.st, st.res, st.scale, st.count].join(',') : '-';
+    const key = t + ' ' + c + ' ' + target + ' ' + automationListGen() + ' ' + sig;
+    if (shapeCache.key !== key || S.clockMs - shapeCache.at >= VALS_REFRESH_MS) {
+        const raw = readShape(t, c);
+        shapeCache.at = S.clockMs;
+        if (raw !== null) {
+            if (raw !== shapeCache.raw || shapeCache.key !== key) S.screenDirty = true;
+            shapeCache = { key, map: parseShape(raw), raw, at: S.clockMs };
+        } else if (shapeCache.key !== key) { shapeCache = { key, map: null, raw: null, at: S.clockMs }; }
+    }
+    laneShape = (shapeCache.key === key && shapeCache.map) ? (shapeCache.map.get(target) || null) : null;
+}
+/* True while the ops pop-up of a lane is open on the AUTOMATION screen. */
+export function autoOpsOpen() { return !!(S.autoBank && S.autoBank.ops) && autoMenuUp(); }
+
+/* The lane's playhead as a FRACTIONAL step of its cycle (lane ticks / step),
+ * or -1: the page bar's dot moves by tick, not by step, so it shares one x
+ * with the graph's playhead column. */
+export function autoLanePlayPos(cy) {
+    if (!cy || !S.playing || !cy.tps) return -1;
+    const lt = S.autoLanePos[cy.t];
+    if (!(lt >= 0)) return -1;
+    const p = lt / cy.tps;
+    return (p >= cy.off && p < cy.off + cy.len) ? p : -1;
+}
+
+/* The ops pop-up's lane graph (bank layout, under the pop-up): a full-width
+ * rule as its top, the curve over the lane's WHOLE window across x 1..126 —
+ * the same span the page bar takes below it (drawn by the caller with
+ * drawPositionBarGeom at GRAPH_BAR_Y), so a column is the same lane time in
+ * both — and the playhead from the rule down to the bar. */
+export function drawAutomationOpsGraph(cy) {
+    fill_rect(0, GRAPH_RULE_Y, 128, 1, 1);
+    const iy = GRAPH_RULE_Y + 2, ih = GRAPH_BAR_Y - 1 - iy;     /* one clear row above the bar */
+    const v = laneShape;
+    if (v) plotColumns(GRAPH_X, GRAPH_W, iy, ih, 254, (c) => v[c]);
+    const p = autoLanePlayPos(cy);
+    if (p >= 0) {
+        const px = GRAPH_X + Math.floor((p - cy.off) * GRAPH_W / Math.max(1, cy.len));
+        fill_rect(px, GRAPH_RULE_Y + 1, 1, GRAPH_BAR_Y - GRAPH_RULE_Y - 1, 1);
+    }
+    return { barY: GRAPH_BAR_Y, spanX: GRAPH_X, spanW: GRAPH_W, playStep: p };
+}
+/* A curve, one value a column (`at(c)` -> 0..vmax, or < 0 for none) across
+ * columns x0..x0+w-1 inside rows iy..iy+ih-1; a change between two columns is
+ * joined by a vertical run, so a jump reads as one. */
+function plotColumns(x0, w, iy, ih, vmax, at) {
+    const yOf = (val) => iy + ih - 1 - Math.round(val * (ih - 1) / vmax);
+    let prev = -1;
+    for (let c = 0; c < w; c++) {
+        const val = at(c), px = x0 + c;
+        if (!(val >= 0)) { prev = -1; continue; }
+        const py = yOf(val);
+        if (prev >= 0 && prev !== py) fill_rect(px, Math.min(prev, py), 1, Math.abs(prev - py) + 1, 1);
+        else set_pixel(px, py, 1);
+        prev = py;
+    }
+}
+
+/* ⭐ THE PAGE ON THE PARAMETER'S SCREEN (2026-10-22): while a hold or a Shift
+ * + click jump shows the lane's parameter on a dAVEBOx kit page (its bank
+ * card, the levels, MACROS), the CURRENT step page of the lane is drawn over
+ * the half of the screen the parameter is NOT in — a parameter in the top row
+ * gets the graph over the lower half, one in the bottom row over the upper
+ * half — so the knob being turned stays in view. 16 steps, 7 px each across
+ * x 8..119; beat ticks every 4 steps on the floor; the held step between
+ * dotted rails; the playhead when it is on this page. A stepped target draws
+ * flat steps, a continuous one glides from step value to step value. The
+ * values are the step row's own (tN_cC_pa_vals_, already read for the page):
+ * nothing new is read. The hint row stays. Drawn only where a kit page marked
+ * the lane's cell this frame (kitLaneFocusRow) — never on a module's own
+ * parameter pages or a drawn (canvas) screen. */
+const PAGE_X = 8, STEP_PX = 7, PAGE_STEPS = 16;
+export function drawLaneFocusOverlay() {
+    const row = kitLaneFocusRow();
+    if (row < 0) return;
+    const f = autoLaneFocus();
+    const cy = S.autoCycle;
+    if (!f || !cy || cy.target !== f.target || cy.t !== S.activeTrack) return;
+    /* the far half: from the bottom row's widgets to under its labels, or
+     * from the top row's widgets down to just above the bottom row's */
+    const y = row === 0 ? MV_ROW1_Y - 1 : MV_ROW0_Y;
+    const bottom = row === 0 ? MV_LBL1_Y + MV_LBL_H + 1 : MV_ROW1_Y - 1;
+    const h = bottom - y + 1;
+    fill_rect(0, y, 128, h, 0);
+    rectOutline(0, y, 128, h, 1);
+    const iy = y + 2, ih = h - 4;
+    const base = ((cy.off >> 4) + cy.page) * 16;
+    const vals = S.autoLaneVals;
+    const v14 = vals && vals.v14;
+    if (v14) {
+        const stepped = automationTargetStepped(f.target);
+        plotColumns(PAGE_X, PAGE_STEPS * STEP_PX, iy, ih, 16383, (c) => {
+            const s = Math.floor(c / STEP_PX), a = v14[s];
+            if (!(a >= 0)) return -1;
+            const b = s + 1 < PAGE_STEPS ? v14[s + 1] : -1;
+            if (stepped || !(b >= 0)) return a;
+            return a + (b - a) * (c - s * STEP_PX) / STEP_PX;
+        });
+    }
+    for (let b = 0; b <= PAGE_STEPS; b += 4) set_pixel(PAGE_X + b * STEP_PX - (b === PAGE_STEPS ? 1 : 0), y + h - 2, 1);
+    const held = f.step >= 0 ? f.step - base : -1;
+    if (held >= 0 && held < PAGE_STEPS) {
+        const hx = PAGE_X + held * STEP_PX;
+        for (let yy = iy; yy < iy + ih; yy += 2) { set_pixel(hx, yy, 1); set_pixel(hx + STEP_PX, yy, 1); }
+    }
+    if (S.playing && cy.tps) {
+        const lt = S.autoLanePos[cy.t], t0 = base * cy.tps;
+        if (lt >= t0 && lt < t0 + PAGE_STEPS * cy.tps && lt < (cy.off + cy.len) * cy.tps)
+            fill_rect(PAGE_X + Math.floor((lt - t0) * PAGE_STEPS * STEP_PX / (PAGE_STEPS * cy.tps)), y + 1, 1, h - 2, 1);
+    }
+}
+
 /* ⭐ THE HELD STEP'S VALUES (Josh, 2026-10-20: "When holding a step with a
  * real or interpolated automation value, if you're on a screen that shows
  * that param, have the param temporarily change to show the value at that
@@ -823,6 +973,7 @@ function autoBankTickLane() {
     S.autoBankLit = null;
     S.autoCycle = null;
     S.autoLaneVals = null;
+    laneShape = null;
     /* The held step went away without our release (a track switch, a suspend,
      * any of the other clear sites): the jump ends here. */
     if (holdJump && S.heldStep < 0) autoHoldJumpEnd();
@@ -859,6 +1010,8 @@ function autoBankTickLane() {
     if (target === null) { if (S.autoBank) S.autoBank.cycleTarget = null; return; }
     updateAutoCycle(t, c, target);
     if (S.autoCycle) autoLaneValsTick(t, c, target);
+    /* The ops pop-up shows the lane: its shape, read here (never per tick). */
+    if (S.autoCycle && S.autoBank && S.autoBank.ops) laneShapeTick(t, c, target);
     feedLit(t, c, target);
 }
 
