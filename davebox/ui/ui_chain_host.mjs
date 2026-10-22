@@ -85,6 +85,13 @@ export function chainUiPathIn(dir, readFile, exists) {
  *   shiftHeld() -> bool
  *   replayPad(status, d1, d2) play a pad the module handed back
  *   onParamEdit(bareKey, wire, prevWire)  the script changed a parameter
+ *   wantsPrev(bareKey) -> bool (optional)  whether onParamEdit will need
+ *                             prevWire for this write. Reading it is a blocking
+ *                             round trip, so it is read only when wanted;
+ *                             otherwise prevWire is ''.
+ *
+ * Writes the script makes while it LOADS and in its init() are not edits: they
+ * are the module setting itself up, not the user turning anything.
  *
  * Reads and writes go to the host's own shadow_get/set_param for `slot` and
  * `comp`, captured before the call's shims go in.
@@ -92,7 +99,7 @@ export function chainUiPathIn(dir, readFile, exists) {
 export function chainUiOpen({ path, slot, comp, io }) {
     if (!path || !io || typeof io.load !== 'function') return false;
     H = { path, slot, comp, io, ui: null, padBlock: false, dead: false,
-          error: '', replay: [], edits: [], wantsSwap: false, lastTick: -Infinity };
+          error: '', replay: [], edits: [], wantsSwap: false, lastTick: -Infinity, opening: true };
     const G = globalThis;
     const had = {}, saved = {};
     for (const n of LOAD_NAMES) { had[n] = Object.prototype.hasOwnProperty.call(G, n); saved[n] = G[n]; }
@@ -125,6 +132,7 @@ export function chainUiOpen({ path, slot, comp, io }) {
         return true;           /* the screen still opens, carrying the reason */
     }
     invoke('init');
+    if (H) H.opening = false;
     return true;
 }
 
@@ -154,7 +162,9 @@ let clock = () => Date.now();
 export function chainUiTick() {
     if (!H) return;
     const t = clock();
-    if (t - H.lastTick < CHAIN_TICK_MS) return;
+    /* A clock that stepped BACK (a time sync) ticks at once rather than
+     * freezing the screen until it catches up. */
+    if (t >= H.lastTick && t - H.lastTick < CHAIN_TICK_MS) return;
     H.lastTick = t;
     invoke('tick');
 }
@@ -219,9 +229,11 @@ function scoped(body) {
     const pre = h.comp + ':';
     const read = (bare) => (typeof realGet === 'function' ? realGet(h.slot, pre + bare) : null);
     const write = (bare, v) => {
-        const prev = read(bare);
+        const edit = !h.opening;
+        const wants = edit && (typeof h.io.wantsPrev !== 'function' || h.io.wantsPrev(bare));
+        const prev = wants ? read(bare) : null;
         const r = typeof realSet === 'function' ? realSet(h.slot, pre + bare, v) : false;
-        h.edits.push([bare, v, prev == null ? '' : String(prev)]);
+        if (edit) h.edits.push([bare, v, prev == null ? '' : String(prev)]);
         return r;
     };
     const shims = {

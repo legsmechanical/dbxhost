@@ -64,7 +64,7 @@ import { computePadNoteMap } from './ui_drummodel.mjs';
 import { setChordLayout } from './ui_chord_pads.mjs';
 import { setCustomLayout } from './ui_custom_chords.mjs';
 import { forceRedraw, effectiveClip } from './ui_leds.mjs';
-import { automationParamEdit, automationParamTouch, automationStateFor, automationToggleActive,
+import { automationParamEdit, automationNeedsPrev, automationParamTouch, automationStateFor, automationToggleActive,
          automationClearKey, automationEntriesFor, automationFxMoved, automationAddLane,
          automationIsParam } from './ui_automation.mjs';
 import { autoBankRestoreMenu, autoBankOpenLane, autoLaneFocus, autoHeldValue } from './ui_automation_bank.mjs';
@@ -2496,6 +2496,7 @@ function openChainScreenIfOwed() {
          * knob in dAVEBOx's own editor (ppIo's onParamEdit): a held step makes
          * it a lock, Record a take. Private keys (not in chain_params) are
          * left alone. */
+        wantsPrev: (k) => automationIsParam(slot, comp, k) && automationNeedsPrev(slot, comp + ':' + k),
         onParamEdit: (k, wire, prevWire) => {
             if (!automationIsParam(slot, comp, k)) return;
             automationParamEdit(track, effectiveClip(track), slot, comp + ':' + k, wire, prevWire);

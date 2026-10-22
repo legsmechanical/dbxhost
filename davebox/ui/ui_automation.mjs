@@ -1405,6 +1405,16 @@ function endGesture(target, g) {
     gestures.delete(target);
 }
 
+/* Whether automationParamEdit, called now for this parameter, would read its
+ * prevWire: only the first edit of a gesture names the resting value, and only
+ * while a step is held or the transport plays. Lets a caller skip the blocking
+ * read it would take to supply it. */
+export function automationNeedsPrev(slot, fullKey) {
+    if (S.heldStep < 0 && !S.playing) return false;
+    const g = gestures.get(targetOf(slot, fullKey));
+    return !(g && g.rest);
+}
+
 export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) {
     const target = targetOf(slot, fullKey);
     const [comp, key] = splitFullKey(fullKey);

@@ -29,6 +29,7 @@ const CHAIN_JS = `(function () {
   var MAP = { 68: 'BD', 69: 'SD' };
   function init() {
     globalThis.__chain.push(['init', shadow_get_ui_slot(), host_module_get_param('vol')]);
+    if (globalThis.__initWrite) host_module_set_param('vol', globalThis.__initWrite);
     host_pad_block(1);
   }
   function tick() {
@@ -93,8 +94,10 @@ globalThis.shadow_load_ui_module = (p) => {
 
 const engine = {};
 let hierarchy = '';                             /* '' = published none, as 9W9 does */
+const keyReads = [];                            /* reads of the module's own param keys */
 globalThis.shadow_get_param = (slot, k) => {
     if (typeof slot !== 'number' || slot < 0 || slot > 3) return null;
+    if (/^fx1:(vol|secret)$/.test(String(k))) keyReads.push(String(k));
     if (k === 'fx1:module') return 'chainy';
     if (k === 'fx1:ui_hierarchy') return hierarchy;
     if (k === 'fx1:chain_params') return JSON.stringify([{ key: 'vol', name: 'Vol', type: 'int', min: 0, max: 127 }]);
@@ -285,6 +288,20 @@ step('⭐ a write straight through shadow_set_param(this slot, "fx1:…") is an 
     if (globalThis.shadow_set_param !== sspBefore) throw new Error('shadow_set_param left shimmed');
 });
 
+step('⭐ a write reads the old value only when automation will use it (a blocking round trip each)', () => {
+    holdStep(false); S.playing = false; ticks(40);
+    keyReads.length = 0; slotWrites.length = 0;
+    cc(71, 20); cc(71, 21); ticks(1);
+    if (!slotWrites.some(([, k, v]) => k === 'fx1:vol' && v === '21')) throw new Error('rig: the writes did not land: ' + JSON.stringify(slotWrites));
+    if (keyReads.length) throw new Error('stopped, no step held: read ' + JSON.stringify(keyReads));
+    holdStep(true); keyReads.length = 0;
+    cc(72, 3); ticks(1);
+    if (keyReads.length) throw new Error('a PRIVATE key read its old value: ' + JSON.stringify(keyReads));
+    cc(71, 30); cc(71, 31); cc(71, 32); ticks(1);
+    if (keyReads.length !== 1) throw new Error('a held-step gesture of three writes read ' + keyReads.length + ' times, not once (its first): ' + JSON.stringify(keyReads));
+    holdStep(false); ticks(40);
+});
+
 step('⭐ Back: the module climbs first (handleBack true = stay), then Back leaves to TRACK CONFIG', () => {
     globalThis.__backStays = 1; globalThis.__chain.length = 0;
     cc(51, 127); cc(51, 0); ticks(2);
@@ -297,6 +314,42 @@ step('⭐ Back: the module climbs first (handleBack true = stay), then Back leav
     const after = press(69);
     if (globalThis.__chain.some(e => e[0] === 'midi')) throw new Error('the module still sees pads after leaving');
     if (JSON.stringify(after) !== JSON.stringify(plain69)) throw new Error('pads play differently after leaving: ' + JSON.stringify(after));
+});
+
+step('a write the module makes while it OPENS (load, init) is the module setting itself up, never a lock or take', () => {
+    leaveSound();
+    globalThis.__initWrite = '64';
+    try {
+        /* openFx1's way there, with the step held only for the click that opens
+         * the screen (a held step changes what the menu's own keys do). */
+        openTrackConfigViaMap(); ticks(6);
+        for (let g = 0; ; g++) {
+            const st = snd.soundPickStateForTest();
+            if (st.comps[st.row] === 'fx1') break;
+            if (g > 30) throw new Error('rig: never reached FX 1');
+            cc(14, 1); ticks(1);
+        }
+        holdStep(true); played.length = 0; slotWrites.length = 0;
+        cc(3, 127); cc(3, 0); ticks(6);
+        if (!onChain()) throw new Error('rig: did not reopen');
+        ticks(2);
+        if (!slotWrites.some(([s, k, v]) => s === S.activeTrack && k === 'fx1:vol' && v === '64'))
+            throw new Error('rig: the init write did not land: ' + JSON.stringify(slotWrites));
+        if (lockWrites().some(v => v.includes('fx1:vol'))) throw new Error('an init write became a lock: ' + JSON.stringify(lockWrites()));
+    } finally { globalThis.__initWrite = ''; holdStep(false); ticks(2); }
+});
+
+step('the frame limit: a clock that steps BACK ticks at once instead of freezing the screen', () => {
+    const T = fakeMs + 100000;
+    let now = T;
+    chainHost.chainUiClockForTest(() => now);
+    try {
+        screen();
+        const t0 = globalThis.__ticks | 0;
+        now = T - 60000;
+        screen();
+        if ((globalThis.__ticks | 0) - t0 !== 1) throw new Error('the clock stepped back and the module stopped ticking');
+    } finally { fakeMs = T + 100000; chainHost.chainUiClockForTest(advancing); }
 });
 
 step('a throwing tick: the screen says which hook died, Back still leaves, dAVEBOx keeps ticking', () => {
