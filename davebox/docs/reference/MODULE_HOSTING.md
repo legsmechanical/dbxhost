@@ -328,6 +328,13 @@ take). Only keys in the component's `chain_params` count — a module's private 
 because the automation path writes dAVEBOx's DSP through the shimmed names. Not covered:
 Mute/Delete + knob touch (the script, not dAVEBOx, knows which parameter is under a knob).
 
+⚠ **`tick()` runs at most once per `CHAIN_TICK_MS` (40 ms)**, not every host frame. The
+script shares dAVEBOx's JS thread, so every input dAVEBOx handles (lights, page changes,
+knobs) waits behind its tick, and a grid script's tick makes a blocking engine read.
+Measured on the device: 1.3 ms → 5.6 ms per frame at the full rate. A skipped frame leaves
+the last one on screen. A pad's SOUND is unaffected either way: the engine plays pads on
+the audio thread.
+
 ⚠ The shims are installed **around each hosted call** and restored in `finally`, never
 for the screen's lifetime: dAVEBOx calls `host_module_*` for its own DSP from every tick.
 

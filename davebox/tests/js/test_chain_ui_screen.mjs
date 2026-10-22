@@ -33,6 +33,7 @@ const CHAIN_JS = `(function () {
   }
   function tick() {
     if (globalThis.__throwTick) throw new Error('boom');
+    globalThis.__ticks = (globalThis.__ticks | 0) + 1;
     clear_screen();
     print(2, 2, 'CHAINY ' + level, 1);
   }
@@ -125,6 +126,12 @@ const { S } = await import('../../ui/ui_state.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
 const render = await import('../../ui/ui_render.mjs');
+const chainHost = await import('../../ui/ui_chain_host.mjs');
+/* Every draw is a fresh frame unless a step says otherwise: the screen's frame
+ * limit reads this clock (pinned on its own below). */
+let fakeMs = 0;
+const advancing = () => (fakeMs += 1000);
+chainHost.chainUiClockForTest(advancing);
 
 function ticks(n) { for (let i = 0; i < n; i++) { S.tickCount++; S.clockMs += 11; tickmod._tickImpl(); } }
 const midi = (a, b, c) => globalThis.onMidiMessageInternal(new Uint8Array([a, b, c]));
@@ -203,6 +210,24 @@ step('⭐⭐ a pad goes to the MODULE first (it holds the pad block): the page f
     if (screen().indexOf('CHAINY SD') < 0) throw new Error('the page did not follow the pad: ' + texts.join('|'));
     if (JSON.stringify(got) !== JSON.stringify(plain69))
         throw new Error('the handed-back pad played differently from a plain press:\n  module ' + JSON.stringify(got) + '\n  plain  ' + JSON.stringify(plain69));
+});
+
+step('⭐ the module\'s tick runs at most once per CHAIN_TICK_MS, and a skipped frame leaves the last one up (a slow script tick must not hold up the pads)', () => {
+    const T = fakeMs + 100000;
+    let now = T;
+    chainHost.chainUiClockForTest(() => now);
+    try {
+        const t0 = globalThis.__ticks | 0;
+        screen(); screen(); screen();
+        if ((globalThis.__ticks | 0) - t0 !== 1) throw new Error('three draws in one instant ran the module tick ' + ((globalThis.__ticks | 0) - t0) + ' times, not once');
+        now = T + chainHost.CHAIN_TICK_MS - 1;
+        const s = screen();
+        if ((globalThis.__ticks | 0) - t0 !== 1) throw new Error('ticked again before CHAIN_TICK_MS had passed');
+        if (s.indexOf('CHAINY') < 0) throw new Error('a skipped frame lost the screen: ' + s);
+        now = T + chainHost.CHAIN_TICK_MS;
+        screen();
+        if ((globalThis.__ticks | 0) - t0 !== 2) throw new Error('did not tick once CHAIN_TICK_MS had passed');
+    } finally { fakeMs = now; chainHost.chainUiClockForTest(advancing); }
 });
 
 step('a pad the module keeps (does not hand back) plays nothing', () => {

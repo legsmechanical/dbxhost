@@ -92,7 +92,7 @@ export function chainUiPathIn(dir, readFile, exists) {
 export function chainUiOpen({ path, slot, comp, io }) {
     if (!path || !io || typeof io.load !== 'function') return false;
     H = { path, slot, comp, io, ui: null, padBlock: false, dead: false,
-          error: '', replay: [], edits: [], wantsSwap: false };
+          error: '', replay: [], edits: [], wantsSwap: false, lastTick: -Infinity };
     const G = globalThis;
     const had = {}, saved = {};
     for (const n of LOAD_NAMES) { had[n] = Object.prototype.hasOwnProperty.call(G, n); saved[n] = G[n]; }
@@ -132,11 +132,35 @@ export function chainUiClose() {
     H = null;
 }
 
-/* One frame: the script's tick, which is also its draw. */
+/*
+ * One frame: the script's tick, which is also its draw — at most once per
+ * CHAIN_TICK_MS.
+ *
+ * ⚠⚠ THE SCRIPT SHARES dAVEBOx's JS THREAD. On stock it runs in the shadow
+ * UI, apart from everything else; here every input dAVEBOx handles — the pad's
+ * lights and page change, knobs, the jog — waits behind its tick. A grid
+ * script's tick reads the engine (a blocking round trip, ~4 ms each), so at the
+ * host's full rate it held the thread for ~40% of the time — measured on the
+ * device, 2026-10-22: a frame went from 1.3 ms to 5.6 ms with the screen up.
+ * ⚠ The SOUND of a pad never waits on it: the engine plays pads itself on the
+ * audio thread (on_midi, once tN_padmap is in) and ignores the JS copy.
+ * Josh: "i'm fine with some lag on the screen if that's the trade off".
+ *
+ * A skipped frame leaves the last one on screen: the script clears and draws
+ * the whole frame itself, and nothing else draws over this view.
+ */
+export const CHAIN_TICK_MS = 40;
+let clock = () => Date.now();
 export function chainUiTick() {
     if (!H) return;
+    const t = clock();
+    if (t - H.lastTick < CHAIN_TICK_MS) return;
+    H.lastTick = t;
     invoke('tick');
 }
+
+/* For tests: replace the clock the frame limit reads (null restores it). */
+export function chainUiClockForTest(fn) { clock = fn || (() => Date.now()); }
 
 /* Any MIDI the screen owns. */
 export function chainUiMidi(status, d1, d2) {
