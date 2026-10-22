@@ -147,6 +147,22 @@ export function refreshDrumLaneBankParams(t, lane) {
     S.screenDirty = true;
 }
 
+/* A lane pad selected `lane`: its steps and bank params, on ONE round trip.
+ * Read one by one it was eight (steps, length, loop start, tps, pfx snapshot,
+ * direction, reverse, repeat state) — 23 ms of a blocked JS thread on every
+ * press that changed lanes, measured on the device 2026-10-22. The sound never
+ * waited (the engine plays pads itself); the lights, the screen and the next
+ * input did. Inside a standing prefetch it reads through that one. */
+export function syncSelectedDrumLane(t, lane) {
+    if (digestActive()) { syncDrumLaneSteps(t, lane); refreshDrumLaneBankParams(t, lane); return; }
+    const l = 't' + t + '_l' + lane;
+    prefetchKeys([l + '_steps', l + '_length', l + '_loop_start', l + '_tps',
+                  l + '_pfx_snapshot', l + '_playback_dir', l + '_playback_audio_reverse',
+                  l + '_repeat_state']);
+    try { syncDrumLaneSteps(t, lane); refreshDrumLaneBankParams(t, lane); }
+    finally { releaseTrackDigests(); }
+}
+
 /* Full drum-track resync after a track switch: lane metadata (MIDI notes,
  * mute/solo), the active lane's step pattern, clip non-empty dots, and bank
  * params. The two track-switch entry points (Shift+pad, Shift+jog) must both
