@@ -9766,13 +9766,29 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
              * window. Lane ticks are the lane's own, so its Rate is already
              * in them — the playhead (tN_pa_view) reports the same ticks.
              * ONE read for the whole clip; the UI asks on a change and on a
-             * slow cadence, never per tick. */
+             * slow cadence, never per tick.
+             *
+             * tN_cC_pa_shape_<n>_<t0>_<len>: the same, but the <n> samples
+             * spread across lane ticks t0..t0+len-1 instead of the window —
+             * ONE step page at pixel resolution, for the page graph a hold or
+             * a pin draws ("ff" outside the window). */
             if (!strncmp(p, "_pa_shape_", 10)) {
                 static const char hexd[] = "0123456789abcdef";
                 const char *q = p + 10;
                 uint32_t ns = 0;
                 int any = 0;
                 while (*q >= '0' && *q <= '9' && ns < 100000u) { ns = ns * 10 + (uint32_t)(*q++ - '0'); any = 1; }
+                uint32_t r0 = 0, rl = 0;
+                int ranged = 0;
+                if (any && *q == '_') {
+                    int a0 = 0, a1 = 0;
+                    q++;
+                    while (*q >= '0' && *q <= '9' && r0 < 100000000u) { r0 = r0 * 10 + (uint32_t)(*q++ - '0'); a0 = 1; }
+                    if (*q++ != '_') return -1;
+                    while (*q >= '0' && *q <= '9' && rl < 100000000u) { rl = rl * 10 + (uint32_t)(*q++ - '0'); a1 = 1; }
+                    if (!a0 || !a1 || rl < 1) return -1;
+                    ranged = 1;
+                }
                 if (!any || *q || ns < 1 || ns > PA_SHAPE_MAX_SAMPLES) return -1;
                 int n = 0;
                 if (out_len > 0) out[0] = '\0';
@@ -9793,11 +9809,14 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                     for (uint32_t c = 0; c < ns; c++) {
                         int v8 = -1;
                         if (have) {
-                            const uint32_t tk = ws + (uint32_t)((uint64_t)c * wl / ns);
+                            const uint32_t tk = ranged ? r0 + (uint32_t)((uint64_t)c * rl / ns)
+                                                       : ws + (uint32_t)((uint64_t)c * wl / ns);
+                            if (tk < ws || tk - ws >= wl) goto shape_put;
                             uint16_t v;
                             if (pa_eval_from(e, tk, ws, wl, stepped, &v))
                                 v8 = (int)(((uint32_t)pa_scaled(e, v) * 254u + PA_VAL_MAX / 2) / PA_VAL_MAX);
                         }
+                    shape_put:;
                         const int b = v8 < 0 ? 0xff : v8;
                         out[n++] = hexd[(b >> 4) & 15];
                         out[n++] = hexd[b & 15];

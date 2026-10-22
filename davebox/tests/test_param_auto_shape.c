@@ -212,6 +212,37 @@ int main(void) {
     }
     OK("the line format; malformed keys refused; a short buffer gets no partial line");
 
+    /* ---- a RANGE: one step page at pixel resolution (the page graph) */
+    {
+        hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_c0_step_0_toggle", "60 100");
+        pa_set(h, "1:synth:cutoff", 48, 2000);
+        pa_set(h, "1:synth:cutoff", 200, 14000);
+        pa_set(h, "1:synth:cutoff", 300, 4000);
+        lane_window(h, "1:synth:cutoff", &ws, &wl);
+        HX_ASSERT(ws == 0 && wl == 384, "setup: the clip's 16 steps");
+        char key[64];
+        snprintf(key, sizeof key, "t0_c0_pa_shape_%u", wl);
+        HX_ASSERT(hx_get_param(h, key, g_ans, sizeof g_ans) > 0, "the whole-window read answers");
+        HX_ASSERT(shape_for(g_ans, "1:synth:cutoff", shape[0], 4096) == (int)wl, "one sample a tick");
+        /* ticks 96..383 in 96 samples: every 3rd tick */
+        HX_ASSERT(hx_get_param(h, "t0_c0_pa_shape_96_96_288", g_ans, sizeof g_ans) > 0, "the ranged read answers");
+        int v[200];
+        HX_ASSERT(shape_for(g_ans, "1:synth:cutoff", v, 200) == 96, "96 samples");
+        for (int c = 0; c < 96; c++)
+            HX_ASSERT(v[c] == shape[0][96 + c * 3], "a ranged sample is the window's value at that lane tick");
+        /* a range running past the window: none there */
+        HX_ASSERT(hx_get_param(h, "t0_c0_pa_shape_16_336_96", g_ans, sizeof g_ans) > 0, "past the end answers");
+        HX_ASSERT(shape_for(g_ans, "1:synth:cutoff", v, 200) == 16, "16 samples");
+        HX_ASSERT(v[7] == shape[0][336 + 42] && v[8] == -1 && v[15] == -1, "inside the window a value, past it ff");
+        HX_ASSERT(hx_get_param(h, "t0_c0_pa_shape_16_0", g_ans, sizeof g_ans) < 0, "a range with no length: refused");
+        HX_ASSERT(hx_get_param(h, "t0_c0_pa_shape_16_0_0", g_ans, sizeof g_ans) < 0, "a zero length: refused");
+        HX_ASSERT(hx_get_param(h, "t0_c0_pa_shape_16__4", g_ans, sizeof g_ans) < 0, "no start: refused");
+        HX_ASSERT(hx_get_param(h, "t0_c0_pa_shape_16_0_4x", g_ans, sizeof g_ans) < 0, "junk after the range: refused");
+        hx_destroy(h);
+    }
+    OK("⭐ a ranged read: one page at pixel resolution, the same values the window read has");
+
     printf("test_param_auto_shape: %d ok\n", ok_count);
     return 0;
 }

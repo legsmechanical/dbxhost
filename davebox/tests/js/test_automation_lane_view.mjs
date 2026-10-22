@@ -32,6 +32,7 @@ let STEPS = {};
 const reads = [];                     /* every get_param key, in order */
 let VALS = () => '';
 let SHAPE = '';
+let PAGESHAPE = null;                 /* (t0, len) -> the ranged read's answer */
 globalThis.host_system_cmd = () => 0; globalThis.host_read_file = () => '';
 globalThis.host_file_exists = () => false; globalThis.host_write_file = () => true;
 globalThis.host_ensure_dir = () => true; globalThis.host_remove_dir = () => true;
@@ -47,6 +48,8 @@ globalThis.host_module_get_param = (k) => {
     const v = /^t\d+_c\d+_pa_vals_(\d+)_(\d+)$/.exec(k);
     if (v) return VALS(parseInt(v[1], 10));
     if (/^t0_c0_pa_shape_126$/.test(k)) return SHAPE;
+    const r = /^t0_c0_pa_shape_112_(\d+)_(\d+)$/.exec(k);
+    if (r) return PAGESHAPE ? PAGESHAPE(+r[1], +r[2]) : '';
     return '';
 };
 globalThis.shadow_get_param = () => '';
@@ -282,6 +285,25 @@ step('Shift + click (the pin): the same page graph, no rails (no step held)', ()
     let rail = 0; for (let y = 33; y <= 53; y += 2) rail += at(36, y) && at(43, y) && !at(36, y + 1) ? 1 : 0;
     assert(rail < 3, 'rails drawn with no step held');
     back(); ticks(3);
+});
+
+step('⭐ the page graph is the page\'s SHAPE: a punch on step 5 draws flat with hard edges, not a ramp (Josh, 2026-10-22)', () => {
+    const hex = (v) => v.toString(16).padStart(2, '0');
+    let asked = null;
+    /* 112 samples: 0, then full scale across step 5 (columns 28..34), then 0 */
+    PAGESHAPE = (t0, len) => { asked = [t0, len]; let h = ''; for (let c = 0; c < 112; c++) h += hex(c >= 28 && c < 35 ? 254 : 0); return 'seq:0:delay_level ' + h + '\n'; };
+    S.autoBank.cyclePage = 0; ticks(2);
+    /* the pin above read this page moments ago: let that read age out */
+    S.tickCount += 50;
+    note(STEP(9), 127); ticks(3);
+    assert(S.activeBank === DELAY, 'jumped');
+    assert(asked && asked[0] === 0 && asked[1] === 16 * S.autoCycle.tps, 'the page was not asked for in lane ticks: ' + JSON.stringify(asked) + ' tps ' + S.autoCycle.tps);
+    draw();
+    for (const y of [34, 40, 46, 52]) assert(at(36, y) && at(43, y), 'no hard edge at x 36 / 43, row ' + y);
+    for (let y = 36; y <= 50; y++) assert(!at(33, y) && !at(46, y), 'a ramp beside the punch at row ' + y);
+    assert(at(39, 33) && at(30, 53) && at(50, 53), 'the punch is not flat at the top with the floor either side');
+    note(STEP(9), 0); ticks(3);
+    PAGESHAPE = null;
 });
 
 step('stepped targets are known without a read (the engine\'s table)', () => {

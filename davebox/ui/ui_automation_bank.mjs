@@ -578,13 +578,14 @@ function readShape(t, c) {
     if (raw === null || raw === undefined) return null;
     return String(raw);
 }
-function parseShape(raw) {
+function parseShape(raw, n) {
+    n = n || LANE_SHAPE_N;
     const map = new Map();
     for (const line of raw.split('\n')) {
         const sp = line.lastIndexOf(' ');
         if (sp <= 0) continue;
-        const hex = line.slice(sp + 1), v = new Array(LANE_SHAPE_N);
-        for (let i = 0; i < LANE_SHAPE_N; i++) {
+        const hex = line.slice(sp + 1), v = new Array(n);
+        for (let i = 0; i < n; i++) {
             const x = parseInt(hex.substr(i * 2, 2), 16);
             v[i] = (isFinite(x) && x !== 255) ? x : -1;
         }
@@ -606,6 +607,36 @@ function laneShapeTick(t, c, target) {
     }
     laneShape = (shapeCache.key === key && shapeCache.map) ? (shapeCache.map.get(target) || null) : null;
 }
+/* ⭐ THE PAGE'S SHAPE, for the page graph a hold or a pin draws: the lane's
+ * current step page, one sample a column (PAGE_W), as playback plays it —
+ * tN_cC_pa_shape_<n>_<t0>_<len>, so a punch draws flat with a hard edge and
+ * a point glides, where 16 step values could only join the dots (Josh,
+ * 2026-10-22: "punches and points both draw the same"). Read from the tick
+ * on a new page or lane, on the slow cadence, and once a lock dialled during
+ * the hold has rested; never from a handler or per frame. */
+let pageShapeCache = { key: null, map: null, raw: null, at: -1e9 };
+let pageShape = null;            /* the focused lane's page samples, or null */
+function pageShapeTick(t, c, target) {
+    const cy = S.autoCycle;
+    if (!cy || !cy.tps) { pageShape = null; return; }
+    const base = ((cy.off >> 4) + cy.page) * 16;
+    const st = automationStateFor(t, c, target);
+    const sig = st ? [st.active ? 1 : 0, st.wrapReset ? 1 : 0, st.loop, st.lo, st.st, st.res, st.scale, st.count].join(',') : '-';
+    const key = t + ' ' + c + ' ' + target + ' ' + base + ' ' + cy.tps + ' ' + automationListGen() + ' ' + sig;
+    const L = S.autoLockLast;
+    const locked = !!L && L.at >= pageShapeCache.at && S.clockMs - L.at >= LOCK_SETTLE_MS;
+    if (pageShapeCache.key !== key || locked || S.clockMs - pageShapeCache.at >= VALS_REFRESH_MS) {
+        const raw = host_module_get_param('t' + t + '_c' + c + '_pa_shape_' + PAGE_W + '_' + (base * cy.tps) + '_' + (PAGE_STEPS * cy.tps));
+        pageShapeCache.at = S.clockMs;
+        if (raw !== null && raw !== undefined) {
+            const r = String(raw);
+            if (r !== pageShapeCache.raw || pageShapeCache.key !== key) S.screenDirty = true;
+            pageShapeCache = { key, map: parseShape(r, PAGE_W), raw: r, at: S.clockMs };
+        } else if (pageShapeCache.key !== key) { pageShapeCache = { key, map: null, raw: null, at: S.clockMs }; }
+    }
+    pageShape = (pageShapeCache.key === key && pageShapeCache.map) ? (pageShapeCache.map.get(target) || null) : null;
+}
+
 /* True while the ops pop-up of a lane is open on the AUTOMATION screen. */
 export function autoOpsOpen() { return !!(S.autoBank && S.autoBank.ops) && autoMenuUp(); }
 
@@ -660,13 +691,13 @@ function plotColumns(x0, w, iy, ih, vmax, at) {
  * gets the graph over the lower half, one in the bottom row over the upper
  * half — so the knob being turned stays in view. 16 steps, 7 px each across
  * x 8..119; beat ticks every 4 steps on the floor; the held step between
- * dotted rails; the playhead when it is on this page. A stepped target draws
- * flat steps, a continuous one glides from step value to step value. The
- * values are the step row's own (tN_cC_pa_vals_, already read for the page):
- * nothing new is read. The hint row stays. Drawn only where a kit page marked
- * the lane's cell this frame (kitLaneFocusRow) — never on a module's own
- * parameter pages or a drawn (canvas) screen. */
-const PAGE_X = 8, STEP_PX = 7, PAGE_STEPS = 16;
+ * dotted rails; the playhead when it is on this page. The curve is the page's
+ * shape (pageShapeTick), so a punch has hard edges and a point glides; until
+ * that read lands it is drawn from the step row's own values. The hint row
+ * stays. Drawn where a kit page marked the lane's cell this frame
+ * (kitLaneFocusRow) or a module's editor highlights its knob
+ * (soundLaneFocusRow) — never on a drawn (canvas) screen. */
+const PAGE_X = 8, STEP_PX = 7, PAGE_STEPS = 16, PAGE_W = PAGE_STEPS * STEP_PX;
 export function drawLaneFocusOverlay() {
     /* a kit page's marked cell, else the module editor's highlighted knob */
     let row = kitLaneFocusRow();
@@ -686,7 +717,8 @@ export function drawLaneFocusOverlay() {
     const base = ((cy.off >> 4) + cy.page) * 16;
     const vals = S.autoLaneVals;
     const v14 = vals && vals.v14;
-    if (v14) {
+    if (pageShape) plotColumns(PAGE_X, PAGE_W, iy, ih, 254, (c) => pageShape[c]);
+    else if (v14) {
         const stepped = automationTargetStepped(f.target);
         plotColumns(PAGE_X, PAGE_STEPS * STEP_PX, iy, ih, 16383, (c) => {
             const s = Math.floor(c / STEP_PX), a = v14[s];
@@ -831,6 +863,7 @@ function lanePinTick() {
     p.page = S.autoCycle.page;
     syncPaView(p.t, p.c, p.target);
     autoLaneValsTick(p.t, p.c, p.target);
+    if (p.t === S.activeTrack) pageShapeTick(p.t, p.c, p.target);
     feedLit(p.t, p.c, p.target);
     return true;
 }
@@ -976,6 +1009,7 @@ function autoBankTickLane() {
     S.autoCycle = null;
     S.autoLaneVals = null;
     laneShape = null;
+    pageShape = null;
     /* The held step went away without our release (a track switch, a suspend,
      * any of the other clear sites): the jump ends here. */
     if (holdJump && S.heldStep < 0) autoHoldJumpEnd();
@@ -987,6 +1021,7 @@ function autoBankTickLane() {
         S.autoCycle = j.cycle;
         if (S.activeTrack === j.track) {
             autoLaneValsTick(j.track, j.clip, j.cycle.target);
+            pageShapeTick(j.track, j.clip, j.cycle.target);
             feedLit(j.track, j.clip, j.cycle.target);
         }
         return;
