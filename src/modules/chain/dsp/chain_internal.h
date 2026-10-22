@@ -286,6 +286,9 @@ typedef struct {
     midi_fx_param_t params[MAX_MIDI_FX_PARAMS];  /* Reuse param struct */
     int param_count;
     char state[MAX_FX_STATE_LEN];  /* JSON state for audio FX plugin */
+    int slot;                      /* the position it was saved from (0-based), or -1 when the
+                                    * file names none: then it takes the next position, as files
+                                    * written before positions were saved always did */
 } audio_fx_config_t;
 
 /*
@@ -1119,6 +1122,7 @@ CHAIN_INTERNAL void chain_log(const char *msg);
 CHAIN_INTERNAL void parse_debug_log(const char *msg);
 CHAIN_INTERNAL void v2_chain_log(chain_instance_t *inst, const char *msg);
 CHAIN_INTERNAL int v2_load_audio_fx(chain_instance_t *inst, const char *fx_name);
+CHAIN_INTERNAL int v2_load_audio_fx_at(chain_instance_t *inst, int slot, const char *fx_name);
 CHAIN_INTERNAL int v2_load_synth(chain_instance_t *inst, const char *module_name);
 CHAIN_INTERNAL void v2_synth_panic(chain_instance_t *inst);
 CHAIN_INTERNAL void v2_unload_all_audio_fx(chain_instance_t *inst);

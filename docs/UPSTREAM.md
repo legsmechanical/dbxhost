@@ -531,6 +531,9 @@ upstream's spelling, `fx:move` = `"<from>><to>"`, 1-based.
   move only (no insert/remove verbs), and **a move never crosses an empty position** — the slot save
   compacts, so a hole would not survive a reload. The shim refuses such a move with an answer
   (`chain_move_check.h`), and refuses while the render pool still has a lane in the chain.
+  Since 2026-10-22 the save writes each insert's `"slot"` and the patch load puts it back there
+  (`chain_patch.c`, `v2_load_audio_fx_at`), so a hole now DOES survive a reload; the refusal is
+  kept as it was. Upstream has no holes (a compact list), so this is not one to offer.
 - **Added here:** the same verb on the master, send and Move FX buses (`bus_fx_move.h`, with the
   master's LFO targets retargeted); a snapshot recall that finds the saved modules in another order
   moves them back before restoring state (`planReorders`, `shared/snapshot.mjs`) and reports the
