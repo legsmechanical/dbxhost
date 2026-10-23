@@ -33,8 +33,9 @@
  *
  * Actions: with no argument it mirrors the shim (and installs a staged update
  * of itself, and removes the boot-recovery unit earlier builds installed).
- * --poweroff runs /sbin/shutdown -h now (what Move's own power service runs),
- * for dAVEBOx's SAVE & POWER OFF once the session has ended.
+ * --poweroff tells the XMOS to start its power-off (/opt/move/MoveXmosPower
+ * shutdown) and then halts the OS (/sbin/shutdown -h now), for dAVEBOx's SAVE &
+ * POWER OFF once the session has ended.
  * --pause-launcher / --resume-launcher stop and start move-launcher.service,
  * which is systemd-supervised and would otherwise revive the stock stack a few
  * seconds after the launcher kills it, leaving two hosts fighting over the SPI
@@ -125,6 +126,16 @@
  * test build. */
 #ifndef SHUTDOWN_BIN
 #define SHUTDOWN_BIN "/sbin/shutdown"
+#endif
+/* The power controller's own tool, shipped in /opt/move on every Move. An OS
+ * halt alone does NOT remove power: the XMOS has to be told, and the hook that
+ * tells it at shutdown is not loaded on every image (measured 2026-10-23: the
+ * Move halted, the screen and power stayed on). `shutdown` starts the XMOS's
+ * own sequence — its animation, and power OFF after 30 s if nothing follows —
+ * so the power cut no longer depends on any hook; the OS halts inside that
+ * window. */
+#ifndef XMOS_POWER_BIN
+#define XMOS_POWER_BIN "/opt/move/MoveXmosPower"
 #endif
 
 /* The boot-recovery unit this helper USED to install (2026-09-05 .. 0.0.4):
@@ -310,17 +321,16 @@ static int launcher_unit(const char *verb) { return systemctl_run(verb, MOVE_UNI
 /* Power the Move off. Called by the launcher after the session has torn down
  * and every file is synced; there is nothing left to save by then. A fixed
  * binary with fixed arguments — nothing the caller says reaches the exec. */
-static int power_off(void) {
-    /* No sync() here: it is not in the POSIX surface this file is built
-     * against (-std=c11 -D_POSIX_C_SOURCE, build-heal.sh), the launcher syncs
-     * just before calling, and the shutdown syncs again. */
+/* Run a fixed binary with a fixed argument list and wait. 0 = it ran and
+ * exited 0. */
+static int run_fixed(const char *bin, char *const argv[]) {
     pid_t pid = fork();
     if (pid < 0) {
         fprintf(stderr, "davebox-heal: fork: %s\n", strerror(errno));
         return -1;
     }
     if (pid == 0) {
-        execl(SHUTDOWN_BIN, "shutdown", "-h", "now", (char *)NULL);
+        execv(bin, argv);
         _exit(127);
     }
     int st = 0;
@@ -330,11 +340,27 @@ static int power_off(void) {
         return -1;
     }
     if (!WIFEXITED(st) || WEXITSTATUS(st) != 0) {
-        fprintf(stderr, "davebox-heal: %s -h now failed (status %d)\n", SHUTDOWN_BIN, st);
+        fprintf(stderr, "davebox-heal: %s %s failed (status %d)\n", bin, argv[1] ? argv[1] : "", st);
         return -1;
     }
-    fprintf(stderr, "davebox-heal: %s -h now\n", SHUTDOWN_BIN);
+    fprintf(stderr, "davebox-heal: %s %s\n", bin, argv[1] ? argv[1] : "");
     return 0;
+}
+
+static int power_off(void) {
+    /* No sync() here: it is not in the POSIX surface this file is built
+     * against (-std=c11 -D_POSIX_C_SOURCE, build-heal.sh), the launcher syncs
+     * just before calling, and the shutdown syncs again.
+     *
+     * 1. The XMOS first: from here power goes within 30 s whatever the OS
+     *    does. A failure is reported but does not stop the halt — on an image
+     *    whose shutdown hook works, the OS still gets power cut. */
+    char *xmos[] = { "MoveXmosPower", "shutdown", NULL };
+    int xmos_ok = run_fixed(XMOS_POWER_BIN, xmos) == 0;
+    /* 2. The OS halts (syncing) inside the XMOS's window. */
+    char *halt[] = { "shutdown", "-h", "now", NULL };
+    int halt_ok = run_fixed(SHUTDOWN_BIN, halt) == 0;
+    return (xmos_ok || halt_ok) ? 0 : -1;
 }
 
 #endif
