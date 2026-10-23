@@ -97,6 +97,7 @@ TARGETS = $(BUILD_DIR)/test_project_path \
           $(BUILD_DIR)/test_move_clock_setting \
           $(BUILD_DIR)/test_move_settings_text \
           $(BUILD_DIR)/test_corun_back_top \
+          $(BUILD_DIR)/test_direct_fanout \
           $(BUILD_DIR)/test_render_pool
 
 .PHONY: all test clean
@@ -184,6 +185,9 @@ $(BUILD_DIR)/test_forward_channel: test_forward_channel.c ../../src/host/forward
 	$(CC) $(CFLAGS) -o $@ $<
 
 $(BUILD_DIR)/test_control_layout: test_control_layout.c ../../src/host/shadow_constants.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
+
+$(BUILD_DIR)/test_direct_fanout: test_direct_fanout.c ../../src/host/shadow_direct_fanout.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
 
 # Header-only units: name the headers so a FIRST build (no .d yet) still
