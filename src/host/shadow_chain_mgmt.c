@@ -1736,6 +1736,16 @@ int shadow_inprocess_load_chain(void) {
                 }
                 continue;
             }
+            /* The file exists but holds no chain: the autosave's empty
+             * marker, written when the slot was emptied. That IS the slot's
+             * saved state — falling back to the name below reloaded the
+             * preset the slot was last named after, so a removed instrument
+             * came back at the next launch (device, 2026-10-23: a slot
+             * still named "HATCHET" reloaded Hatchet after Instrument None).
+             * The name lookup is for a slot with no autosave file at all. */
+            shadow_chain_slots[i].active = 0;
+            shadow_chain_slots[i].patch_index = -1;
+            continue;
         }
 
         /* Fall back to name-based lookup from config */
