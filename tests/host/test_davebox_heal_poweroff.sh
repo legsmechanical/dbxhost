@@ -19,7 +19,9 @@ echo "\$*" >> "$T/shutdown.log"
 exit $1
 STUB
     chmod +x "$T/shutdown"
-    gcc -O0 -std=c11 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -Wall -Wextra -Werror \
+    # The REAL build's surface (build-heal.sh): no _GNU_SOURCE. A test built
+    # with more than the release has passed against code the release refused.
+    gcc -O0 -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror \
         -DHEAL_TESTING -DDBX_DIR="\"$T/dbx\"" -DHEAL_DIR="\"$T/heal\"" \
         -DSYSTEMCTL="\"$T/systemctl-unused\"" -DSHUTDOWN_BIN="\"$T/shutdown\"" \
         -DDST_SHIM="\"$T/usr/davebox-shim.so\"" -DSHIM_UID="$(id -u)" -DSHIM_GID="$(id -g)" \

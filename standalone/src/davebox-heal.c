@@ -311,7 +311,9 @@ static int launcher_unit(const char *verb) { return systemctl_run(verb, MOVE_UNI
  * and every file is synced; there is nothing left to save by then. A fixed
  * binary with fixed arguments — nothing the caller says reaches the exec. */
 static int power_off(void) {
-    sync();
+    /* No sync() here: it is not in the POSIX surface this file is built
+     * against (-std=c11 -D_POSIX_C_SOURCE, build-heal.sh), the launcher syncs
+     * just before calling, and the shutdown syncs again. */
     pid_t pid = fork();
     if (pid < 0) {
         fprintf(stderr, "davebox-heal: fork: %s\n", strerror(errno));
