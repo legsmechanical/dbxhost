@@ -39,7 +39,7 @@ func projectsApp(t *testing.T) (*App, string) {
 	writeFile(t, filepath.Join(d, "dAVEBOx", "seq8sa-state.json"), []byte(`{"v":36}`))
 	writeFile(t, filepath.Join(d, "dAVEBOx", "name.txt"), []byte("Brave Castle\n"))
 	writeFile(t, filepath.Join(d, "dAVEBOx", "host", "slot_1.json"),
-		[]byte(`{"chain":{"synth":{"module":"plank"},"audio_fx":[{"module":"plank-amp"}]}}`))
+		[]byte(`{"chain":{"synth":{"module":"plank"},"audio_fx":[{"type":"plank-amp","params":{}}]}}`))
 	// This Move has plank (a sound generator) but not plank-amp. ⚠ It is
 	// reached through a LINK, as the install's categories are (into the stock
 	// tree), and plank-amp is not judged by the pack-entry prefix ("plank-…").

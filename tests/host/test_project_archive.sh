@@ -31,7 +31,7 @@ mkproj() { # uuid name state-v
     echo '{"v":9}' > "$d/dAVEBOx/seq8sa-ui-state.json"
     echo '{"key":3}' > "$d/dAVEBOx/new-project.json"
     printf '%s\n' "$2" > "$d/dAVEBOx/name.txt"
-    echo '{"chain":{"synth":{"module":"hatchet"},"audio_fx":[{"module":"hatchet-amp"}]}}' > "$d/dAVEBOx/host/slot_1.json"
+    echo '{"chain":{"synth":{"module":"hatchet"},"audio_fx":[{"type":"hatchet-amp","params":{}}]}}' > "$d/dAVEBOx/host/slot_1.json"
 }
 U1=11111111-aaaa-4bbb-8ccc-000000000001
 U2=22222222-aaaa-4bbb-8ccc-000000000002
