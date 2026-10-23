@@ -63,6 +63,11 @@ for f in sorted(staged):
             name = name.split(" as ")[0].strip()
             if name in helpers and name + ".py" not in staged:
                 out.append("%s imports %s.py, which the build does not stage" % (f, name))
+    # ...and every helper a staged script RUNS by path ("$DBX_PY_DIR/x.py"),
+    # which no import line shows.
+    for name in re.findall(r"\$\{?DBX_PY_DIR\}?/(\w+)\.py", src):
+        if name in helpers and name + ".py" not in staged:
+            out.append("%s runs %s.py, which the build does not stage" % (f, name))
 print("\n".join(sorted(set(out))))
 PY
 )"

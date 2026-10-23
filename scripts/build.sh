@@ -770,6 +770,10 @@ if [ -d ./standalone ]; then
     # one). project-cmd.sh's list imports it, so without it EVERY list dies on
     # the import and the picker is empty.
     cp ./standalone/scripts/project_template.py ./build/scripts/
+    # project_archive.py: export / import of projects as one zip (the web
+    # manager's Projects page). project-cmd.sh RUNS it by path rather than
+    # importing it, so without it export and import die and nothing else does.
+    cp ./standalone/scripts/project_archive.py ./build/scripts/
     # move-loaded-set-reader.sh: backgrounded by launch.sh to distill
     # MoveOriginal's own "About to load ..." boot line into
     # move_loaded_set.txt (see that script for the file contract).
