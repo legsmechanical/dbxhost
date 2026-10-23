@@ -1,0 +1,75 @@
+{{template "base" .}}
+
+{{define "title"}}Projects - dAVEBOx{{end}}
+
+{{define "content"}}
+<div class="page-header">
+    <h1>Projects</h1>
+</div>
+
+<section class="info-card">
+    <h2>Back up</h2>
+    <p>Download a project as one file to keep on your computer or carry to another Move. <strong>Download all</strong> includes every project and your saved templates.</p>
+    {{if .OpenUUID}}<p class="hint">Stop playback before downloading the open project — its last second of edits may not be saved yet.</p>{{end}}
+    <p><a class="btn btn-primary" href="/projects/export?id=all" download>Download all</a></p>
+    {{if .Projects}}
+    <table class="projects-table">
+        <thead><tr><th>Project</th><th>Last saved</th><th></th></tr></thead>
+        <tbody>
+        {{range .Projects}}
+        <tr>
+            <td>{{.Name}}{{if eq .UUID $.OpenUUID}} <span class="hint">(open now)</span>{{end}}</td>
+            <td>{{if not .StateMTime.IsZero}}{{.StateMTime.Format "2006-01-02 15:04"}}{{end}}</td>
+            <td><a class="btn btn-secondary" href="/projects/export?id={{.UUID}}" download>Download</a></td>
+        </tr>
+        {{end}}
+        </tbody>
+    </table>
+    {{else}}
+    <p>No projects on this Move yet.</p>
+    {{end}}
+</section>
+
+<section class="info-card">
+    <h2>Restore</h2>
+    <p>Upload a file downloaded from this page. Each project in it is added as a <strong>new</strong> project on the next free pad of the project picker — nothing already on the Move is changed. It shows up the next time you open the picker.</p>
+    <form id="project-import" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".zip,application/zip" required>
+        <button type="submit" class="btn btn-primary">Upload</button>
+    </form>
+    <div id="import-status" aria-live="polite"></div>
+</section>
+
+<script>
+(function () {
+    var form = document.getElementById('project-import');
+    var status = document.getElementById('import-status');
+    function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+    function cookie(n) { var m = document.cookie.match('(?:^|; )' + n + '=([^;]*)'); return m ? decodeURIComponent(m[1]) : ''; }
+    form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var btn = form.querySelector('button');
+        btn.disabled = true;
+        status.innerHTML = '<p>Uploading…</p>';
+        fetch('/projects/import', { method: 'POST', body: new FormData(form),
+                                    headers: { 'X-CSRF-Token': cookie('csrf_token') } })
+            .then(function (r) { return r.json().catch(function () { return { error: 'the Move answered ' + r.status }; }); })
+            .then(function (res) {
+                var h = '';
+                if (res.error) h += '<p class="error">Not imported: ' + esc(res.error) + '</p>';
+                (res.imported || []).forEach(function (p) {
+                    h += '<p>Imported <strong>' + esc(p.name) + '</strong> on pad ' + (p.pad + 1) + '.</p>';
+                });
+                (res.templates || []).forEach(function (t) { h += '<p>Template <strong>' + esc(t.name) + '</strong> restored.</p>'; });
+                (res.skipped || []).forEach(function (s) { h += '<p class="error">Skipped ' + esc(s.name) + ': ' + esc(s.why) + '</p>'; });
+                if (res.not_installed && res.not_installed.length)
+                    h += '<p class="hint">Not installed on this Move: ' + res.not_installed.map(esc).join(', ') + ' — those instruments or effects will be empty until you install them.</p>';
+                if (!h) h = '<p>Nothing in that file to import.</p>';
+                status.innerHTML = h;
+            })
+            .catch(function (err) { status.innerHTML = '<p class="error">Upload failed: ' + esc(String(err)) + '</p>'; })
+            .then(function () { btn.disabled = false; });
+    });
+})();
+</script>
+{{end}}

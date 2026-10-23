@@ -35,6 +35,8 @@
 #   color <index> <n>    set (n < 0: clear) the pad-color palette index
 #   rename <index> <name> write the project's name tag; moves nothing, so the
 #                     OPEN project renames in place too (see project_name.py)
+#   export <zip> all|<id>...   write a portable archive (project_archive.py)
+#   import <zip>    bring an archive's projects in as NEW projects on free pads
 #   library-sync    move anything still living IN the library into the store,
 #                     then make the library show exactly one slot per project.
 #                     Run from launch.sh before set-swap enters; idempotent.
@@ -1551,11 +1553,46 @@ do_template_rename() { # id name
     printf 'project-cmd: template "%s" renamed\n' "$1"
 }
 
+# ---- export / import (project_archive.py) -----------------------------------
+# A project, or every project and template, as one zip, and back. Driven by the
+# web manager's Projects page. An import always arrives as NEW projects on free
+# pads and never touches what is there, so it is safe during a live session;
+# the picker lists them the next time it opens.
+do_export() { # out.zip all|<uuid>...
+    _out="${1:-}"; shift || true
+    [ -n "$_out" ] || die "export needs an output path"
+    [ -n "${1:-}" ] || die "export needs 'all' or project ids"
+    # The open project's Move song reaches disk first (the module's own state
+    # is saved by its deferred save; at most about a second behind).
+    save_song
+    if [ "$1" = all ]; then
+        python3 "$DBX_PY_DIR/project_archive.py" export "$PROJECTS_DIR" "$_out" "$DBX_DIR" "$TEMPLATES_DIR"
+    else
+        python3 "$DBX_PY_DIR/project_archive.py" export "$PROJECTS_DIR" "$_out" "$DBX_DIR" - "$@"
+    fi
+}
+
+do_import() { # archive.zip
+    [ -n "${1:-}" ] && [ -f "$1" ] || die "import needs an archive file"
+    _res="$(python3 "$DBX_PY_DIR/project_archive.py" import "$1" "$PROJECTS_DIR" "$DBX_DIR/imports" "$TEMPLATES_DIR")" || _rc=$?
+    [ "${_rc:-0}" -eq 0 ] || { printf '%s\n' "$_res"; exit "${_rc}"; }
+    # Each new project gets the neutral-mixer invariant, as a copy does.
+    for _p in $(printf '%s' "$_res" | python3 -c 'import json,sys; print(" ".join(str(p["pad"]) for p in json.load(sys.stdin).get("imported", [])))'); do
+        do_normalize "$_p" >/dev/null
+    done
+    sync_library >/dev/null
+    do_list >/dev/null
+    # The result is the LAST line, for the caller to parse.
+    printf '%s\n' "$_res"
+}
+
 case "${1:-}" in
     list)   do_list ;;
     new) _require_own_tree new; shift; do_new "${1:-}" ;;
     new-at) _require_own_tree new-at; shift; do_new_at "${1:-}" "${2:-}" ;;
     copy) _require_own_tree copy; shift; do_copy "${1:-}" "${2:-}" ;;
+    export) shift; do_export "$@" ;;
+    import) _require_own_tree import; shift; do_import "${1:-}" ;;
     delete) _require_own_tree delete; shift; do_delete "${1:-}" ;;
     switch) shift; do_switch "${1:-}" ;;
     color) _require_own_tree color; shift; do_color "${1:-}" "${2:-}" ;;

@@ -170,10 +170,15 @@ def module_refs(name, obj):
             syn = chain.get("synth")
             if isinstance(syn, dict) and isinstance(syn.get("module"), str):
                 ids.append(syn["module"])
+            # An effect block names its module in "type" (what the chain
+            # writes and reads, chain_patch.c); "module" is accepted too.
             for key in ("midi_fx", "audio_fx"):
                 for b in chain.get(key) or []:
-                    if isinstance(b, dict) and isinstance(b.get("module"), str):
-                        ids.append(b["module"])
+                    if not isinstance(b, dict):
+                        continue
+                    mid = b.get("type") if isinstance(b.get("type"), str) else b.get("module")
+                    if isinstance(mid, str):
+                        ids.append(mid)
     elif re.match(r"^(master|send|move)_fx_", name):
         for key in ("id", "module"):
             if isinstance(obj.get(key), str):

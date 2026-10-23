@@ -82,6 +82,12 @@ J
 cat > "$P1/dAVEBOx/host/slot_1.json" <<'J'
 {"name": "Gone", "version": 1, "chain": {"synth": {"module": "notonthisdevice"}}}
 J
+# ⚠ The chain names a MIDI or audio effect in "type" (chain_patch.c), not
+# "module" — the form a real slot file has. Instrument here, effects gone.
+cat > "$P1/dAVEBOx/host/slot_2.json" <<'J'
+{"name": "FX", "version": 1, "chain": {"synth": {"module": "obxd"},
+ "midi_fx": [{"type": "gonearp", "params": {}}], "audio_fx": [{"type": "gonefx", "params": {}}]}}
+J
 echo '{"id": "tapedelay", "path": "/x/dsp.so"}' > "$P1/dAVEBOx/host/master_fx_0.json"
 cat > "$P1/dAVEBOx/host/shadow_chain_config.json" <<'J'
 {"slots": [{"name": "Lead", "channel": 1, "volume": 0.7, "muted": 1, "soloed": 1},
@@ -158,7 +164,8 @@ check "no random key/instruments from New's dice" test ! -e "$N/$NS/new-project.
 # Born with a random two-word name (project_name.py), never the template's.
 check "it is named as a new project" sh -c 'grep -Eq "^[A-Z][a-z]+ [A-Z][a-z]+$" "$1"' _ "$N/$NS/name.txt"
 check "a module this device lacks: that slot starts empty" test "$(cat "$N/$NS/host/slot_1.json")" = "{}"
-check "…and is named" python3 -c "import json,sys; assert json.load(open(sys.argv[1]))['missing'] == ['notonthisdevice']" "$T/missing.json"
+check "…and is named" python3 -c "import json,sys; assert json.load(open(sys.argv[1]))['missing'] == ['notonthisdevice', 'gonearp', 'gonefx']" "$T/missing.json"
+check "a MIDI / audio effect this device lacks (named in \"type\"): that slot starts empty too" test "$(cat "$N/$NS/host/slot_2.json")" = "{}"
 check "…and the template itself still has it (it is the device that lacks it)" grep -q notonthisdevice "$TD/host/slot_1.json"
 
 # ---- a template that cannot be used: a blank project, never no project ------

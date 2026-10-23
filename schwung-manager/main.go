@@ -337,6 +337,7 @@ func loadTemplates() (templateMap, error) {
 		"templates/system.html",
 		"templates/help.html",
 		"templates/bug_report.html",
+		"templates/projects.html",
 	}
 
 	m := make(templateMap, len(pages))
@@ -1376,6 +1377,10 @@ func main() {
 	mux.HandleFunc("GET /bug-report/ping", app.handleBugReportPing)
 
 	// Help.
+	// Projects: export / import (projects.go).
+	mux.HandleFunc("GET /projects", app.handleProjects)
+	mux.HandleFunc("GET /projects/export", app.handleProjectExport)
+	mux.HandleFunc("POST /projects/import", app.handleProjectImport)
 	mux.HandleFunc("GET /help", app.handleHelp)
 	mux.HandleFunc("GET /help/"+helpManualName, app.handleHelpManual)
 

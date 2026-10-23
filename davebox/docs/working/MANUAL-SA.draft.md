@@ -2758,6 +2758,23 @@ Settings).
 If a template uses a module this Move doesn't have, the new project starts with
 that slot empty and the screen names what's missing (**MODULES MISSING**).
 
+**Backing up and moving projects.** The **Projects** page of the web manager
+(`move.local:7700`, in a browser during a session) lists your projects:
+
+- **Download** saves one project as a single file on your computer; **Download
+  all** saves every project and your templates in one file. Stop playback before
+  downloading the open project — its last second of edits may not be in the file.
+- **Upload** a downloaded file to restore it, on this Move or another one. Each
+  project in it is added as a **new** project on the first free pad — nothing on
+  the Move is replaced, so restoring a project you still have gives you a second
+  one named "*Name* (imported)". Templates come back too, unless you still have
+  them. New projects appear the next time you open the picker.
+- The page says what came in, what didn't and why — a file saved by a different
+  dAVEBOx version, or no free pad — and names any instrument or effect this Move
+  doesn't have; those slots open empty until you install it.
+- Samples and recordings from your Move library aren't part of a project and
+  don't travel with it.
+
 > **Coming from an earlier dAVEBOx?** Work made when dAVEBOx used your Move sets
 > stays in those sets, visible from Move and official Schwung. dAVEBOx projects
 > start fresh.
