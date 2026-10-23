@@ -373,8 +373,9 @@ engine".
 
 ### The POWER button
 
-`host_power_claim(1)` (a JS binding) says the module on screen answers POWER
-itself. While it is set and the module owns the screen (overtake mode 2), the shim
+A module that exports `globalThis.onPowerButton` answers POWER itself: shadow_ui
+sets the claim (`host_power_claim`) every tick from that export. While it is set
+and the module owns the screen (overtake mode 2), the shim
 holds the power SysEx back from Move (`src/host/shim_power_gate.h`), so Move never
 raises "Press wheel to shut down", and stores the press; `shadow_ui` reads it every
 tick and calls `globalThis.onPowerButton(id)` (0x2A tap, 0x3A hold). The host drops

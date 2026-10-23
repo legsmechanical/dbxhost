@@ -1847,7 +1847,7 @@ function drawUIBody() {
         clear_screen();
         const _xn = 'dAVEBOx';
         hdrPrint(Math.max(0, Math.round((128 - hdrWidth(_xn)) / 2)), 26, _xn, 1);
-        const _xl = 'Exiting...';
+        const _xl = S.exitKind === 'poweroff' ? 'Powering off...' : 'Exiting...';
         mvPrint(Math.max(0, Math.round((128 - mvWidth(_xl)) / 2)), 40, _xl, 1);
         return;
     }

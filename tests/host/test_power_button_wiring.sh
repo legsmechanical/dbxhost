@@ -26,6 +26,12 @@ j = s.find("globalThis.onPowerButton(powerId)")
 k = s.find("runToolCallback(function() { overtakeModuleCallbacks.tick(); });")
 assert 0 < i < j < k, (i, j, k)
 PY
+python3 - "$J" <<'PY' && ok "the claim is derived each tick from the module exporting onPowerButton" || bad "the claim is not derived from the export"
+import sys
+s = open(sys.argv[1]).read()
+i = s.index('host_power_claim(typeof globalThis.onPowerButton === "function" ? 1 : 0);')
+assert i < s.find("shadow_get_power_button()"), "claim set after the read"
+PY
 python3 - "$J" <<'PY' && ok "exitOvertakeMode and suspendOvertakeMode drop the claim" || bad "the claim outlives the module's screen"
 import re, sys
 s = open(sys.argv[1]).read()

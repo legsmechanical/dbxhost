@@ -90,7 +90,7 @@ import { soundChainTakesPad, soundSetChainPadReplay, soundActive, soundOpen, sou
          installGateMemoInvalidation, soundSeqMirror } from './ui_sound.mjs';
 import { soundModeCovered } from './ui_render.mjs';
 import { armCardHold } from './ui_prefs.mjs';
-import { _tickImpl, applyExtMidiRemap, requestSessionExit } from './ui_tick.mjs';
+import { _tickImpl, applyExtMidiRemap, requestSessionExit, requestPowerOff } from './ui_tick.mjs';
 
 /*
  * ⚠⚠ THE WAVE PEAKS IO — WITHOUT THIS, EVERY SAMPLE WIDGET DRAWS NOTHING.
@@ -474,6 +474,12 @@ globalThis.tick = function () {
  * menu's Quit. Falsy on error tells the host to fall back to its own exit. */
 globalThis.onSessionExitRequest = function () {
     try { return requestSessionExit(); } catch (e) { captureError('onSessionExitRequest', e); return false; }
+};
+
+/* The POWER button: exporting this is what makes the host hold the press back
+ * from Move (its own shutdown prompt) and hand it here. */
+globalThis.onPowerButton = function (id) {
+    try { requestPowerOff(id); } catch (e) { captureError('onPowerButton', e); }
 };
 
 /* ------------------------------------------------------------------ */

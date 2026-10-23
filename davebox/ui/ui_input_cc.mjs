@@ -444,6 +444,7 @@ function _onCC_jog(d1, d2) {
         S.confirmExitFromMenu = null;
         if (S.confirmExitSel === 0) {
             if (kind === 'quit') exitSessionNow();
+            else if (kind === 'poweroff') powerOffNow();
             else _suspendModule();
         } else if (_fromMenu) {
             S.pendingMenuAt = _fromMenu;    /* No: back to the Project menu */
@@ -3086,9 +3087,20 @@ export function checkBackHold() {
  * user must land back exactly where they were on No. Idempotent: a second
  * request while it is up changes nothing. */
 export function raiseExitConfirm(kind) {
-    if (S.confirmExit) return;
+    if (S.confirmExit) {
+        /* POWER outranks a quit or suspend already asking: the stronger intent
+         * takes the dialog (back on No), rather than being lost under it. */
+        if (kind === 'poweroff' && S.confirmExit !== 'poweroff') {
+            S.confirmExit = 'poweroff';
+            S.confirmExitSel = 1;
+            S.confirmExitFromMenu = null;
+            S.screenDirty = true;
+            forceRedraw();
+        }
+        return;
+    }
     bankMapEnd();                       /* the confirm must not draw under a map */
-    S.confirmExit = kind === 'quit' ? 'quit' : 'suspend';
+    S.confirmExit = kind === 'quit' ? 'quit' : kind === 'poweroff' ? 'poweroff' : 'suspend';
     S.confirmExitSel = 1;               /* opens on No */
     S.globalMenuOpen = false;
     S.screenDirty = true;
@@ -3121,6 +3133,17 @@ export function exitSessionNow() {
     saveState();                       /* sets pendingSuspendSave */
     S.pendingExitAfterSave = true;     /* drained one tick after the save fires */
     S.globalMenuOpen = false;
+}
+
+/* SAVE & POWER OFF (Josh, 2026-10-23: "turn off", "our own" dialog, a hold
+ * does NOT skip the confirm). Quit's body exactly — stop, save, the farewell
+ * frame — with one difference at the end: the farewell runs power-off.sh,
+ * which saves Move's song, leaves the launcher a marker and ends the session
+ * the same way; the launcher turns the Move off once everything is down. */
+export function powerOffNow() {
+    if (S.exitFarewell !== 0 || S.pendingExitAfterSave) return;   /* already leaving */
+    S.exitKind = 'poweroff';
+    exitSessionNow();
 }
 
 function _onCC_transport(d1, d2) {

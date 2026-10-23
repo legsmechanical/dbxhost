@@ -732,8 +732,11 @@ export const S = {
      * Quit, the host's Shift+Back — raises this modal first. `confirmExit` names
      * the exit it guards ('suspend' | 'quit') or is null; the Yes/No row follows
      * the universal convention (0 = Yes, 1 = No) and opens on No. */
-    confirmExit: null,
-    confirmExitFromMenu: null,   /* the Project menu row that raised the exit confirm: No returns there */
+    confirmExit: null,           /* … or 'poweroff': the POWER button (requestPowerOff) */
+    confirmExitFromMenu: null,
+    /* How the session is leaving, once it is: null = Quit (exit-to-stock.sh),
+     * 'poweroff' = SAVE & POWER OFF (power-off.sh). Read by the farewell. */
+    exitKind: null,   /* the Project menu row that raised the exit confirm: No returns there */
     /* The bank header's [instrument] abbreviation for the ACTIVE track — a cache
      * (ui_render.refreshInstrAbbrev), never a read on the draw path. */
     instrAbbrev: '--',

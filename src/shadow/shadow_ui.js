@@ -18891,12 +18891,17 @@ globalThis.tick = function() {
                         overtakeJogDelta = 0;
                     }
 
-                    /* POWER: a module that claimed the button (host_power_claim)
-                     * gets the press here instead of Move's own shutdown prompt.
-                     * Read and cleared every tick, delivered to the module's
-                     * globalThis.onPowerButton(id) — the onSessionExitRequest
-                     * convention. id: 0x2A tap, 0x3A hold. */
+                    /* POWER: a module that exports globalThis.onPowerButton
+                     * answers the button itself (the onSessionExitRequest
+                     * convention). The claim is DERIVED from that export, every
+                     * tick (idempotent; the binding logs only on a change), so
+                     * the module calls nothing and a resume re-claims by
+                     * itself; exit and suspend drop it. Claimed, the shim holds
+                     * the press back from Move — no "Press wheel to shut down"
+                     * — and it is delivered here. id: 0x2A tap, 0x3A hold. */
                     {
+                        if (typeof host_power_claim === "function")
+                            host_power_claim(typeof globalThis.onPowerButton === "function" ? 1 : 0);
                         const powerId = typeof shadow_get_power_button === "function" ? shadow_get_power_button() : 0;
                         if (powerId && typeof globalThis.onPowerButton === "function") {
                             try { runToolCallback(function() { globalThis.onPowerButton(powerId); }); }

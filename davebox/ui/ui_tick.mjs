@@ -371,6 +371,16 @@ export function requestSessionExit() {
     return true;
 }
 
+/* The POWER button (the host calls globalThis.onPowerButton with its id —
+ * 0x2A tap, 0x3A hold — once the module exports it, and Move's own shutdown
+ * prompt is held back). Tap and hold both ASK (Josh, 2026-10-23: a hold must
+ * not skip the confirm); the modal's Yes runs powerOffNow(). Ignored while the
+ * session is already leaving. */
+export function requestPowerOff() {
+    if (S.exitFarewell !== 0 || S.pendingExitAfterSave) return;
+    raiseExitConfirm('poweroff');
+}
+
 /* A note played DURING the count-in lands on the one, and its length is how
  * long you held it — expressed in the DSP's ticks.
  *
@@ -441,7 +451,9 @@ export function _tickImpl() {
         if (S.screenDirty) { S.screenDirty = false; drawUI(); }
         if (S.exitFarewell > 0 && --S.exitFarewell === 0) {
             S.exitFarewell = -1;
-            host_system_cmd('sh /data/UserData/daveboxSA/scripts/exit-to-stock.sh');
+            host_system_cmd(S.exitKind === 'poweroff'
+                ? 'sh /data/UserData/daveboxSA/scripts/power-off.sh'
+                : 'sh /data/UserData/daveboxSA/scripts/exit-to-stock.sh');
         }
         return;
     }

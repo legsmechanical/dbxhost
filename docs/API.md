@@ -298,8 +298,9 @@ host_pad_block(bool)          // Suppress pad notes (68-99) from reaching Move
 host_power_claim(bool)        // [FORK-ONLY] The overtake module answers the POWER
                               // button: Move's own "Press wheel to shut down" is held
                               // back and the press goes to globalThis.onPowerButton(id)
-                              // (id 0x2A tap, 0x3A hold). Dropped by the host when the
-                              // module stops owning the screen.
+                              // (id 0x2A tap, 0x3A hold). shadow_ui sets it each tick
+                              // from whether the module exports onPowerButton, and
+                              // drops it when the module stops owning the screen.
 host_vol_block(bool)          // [FORK-ONLY] Claim the master volume knob: suppress
                               // CC 79 + its touch note (8) from reaching Move, so a
                               // tool can repurpose the knob without Move also moving
