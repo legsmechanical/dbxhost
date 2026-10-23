@@ -117,6 +117,10 @@ the section into a versioned heading at release time.
   to the lane list.
 
 ### Added
+- **Back up and restore projects** from the web manager's new **Projects** page
+  (`move.local:7700`): download one project or all of them (with your templates)
+  as a single file, and upload one to bring its projects back as new projects —
+  on this Move or another.
 - **See an automation lane.** A lane's operations on the AUTOMATION screen now open
   as a short menu at the top, with the whole lane drawn as a graph below it — the
   page bar along its bottom and the playhead running through both. Holding a step
