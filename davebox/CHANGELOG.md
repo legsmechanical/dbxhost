@@ -68,6 +68,10 @@ the section into a versioned heading at release time.
   screen. The **Clear all** row still clears everything.
 
 ### Fixed
+- **Hatchet PLAYER and Plank PLAYER now fully play their guitar and bass.**
+  Muting, legato, slides, ring, sustain, roll, vibrato and tone settings the
+  player sends never reached the instrument in dAVEBOx (they did on stock), so
+  styles and presets only half applied.
 - **Removing a middle insert effect no longer moves the ones after it** when the
   project reopens. They stay in their slots, and their automation and macros
   still reach them.
