@@ -30,7 +30,8 @@ of their own. dAVEBOx turns Move's Link on by itself each time it starts.
 2. You land on the **project picker**. dAVEBOx keeps its own projects, separate
    from your Move sets — one pad per project. Nothing is open yet.
 3. **Hold Shift and tap an empty pad.** That creates a new project and opens it in
-   one press. (Later, to carry on where you left off, just click the jog wheel: the
+   one press — if you have project templates, it asks Empty or Template first.
+   (Later, to carry on where you left off, just click the jog wheel: the
    project you last had open is already selected.)
 
 You can come back to the picker at any time with **Shift + Step 1**. More in the
@@ -194,7 +195,9 @@ last edit while stopped, and whenever you leave. There is no save button to pres
 - **Project Settings → Quit** does the same.
 - **Project Settings → Suspend session** parks dAVEBOx instead: it keeps playing
   in the background while you use Move.
-- A reboot always returns you to official Schwung.
+- A reboot returns you to official Schwung (unless dAVEBOx is your boot
+  default).
+- The **power button** saves and turns the Move off (it asks first).
 
 For named backups you can return to, use **Save state** in Project Settings — it
 keeps up to 16 timestamped snapshots per project. See

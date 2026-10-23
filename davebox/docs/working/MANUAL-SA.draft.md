@@ -229,7 +229,8 @@ dAVEBOx host, then you land on the **project picker**: one pad per project.
 
 - **Click the jog wheel** to load the project you had open last — its pad pulses
   and the screen shows it with **Load** highlighted.
-- **Shift + tap an empty pad** creates a new project and opens it.
+- **Shift + tap an empty pad** creates a new project and opens it (if you have
+  templates, it asks Empty or Template first).
 - **Shift + tap** any other project's pad loads it.
 - **Shift + Back** leaves dAVEBOx, from anywhere, saving first.
 
@@ -302,7 +303,7 @@ The Track View overview, top to bottom:
 
 - **Header:** the bank the knobs are on, and at the right what the track plays —
   `[MV1]` Move instrument 1, `[CH3]` MIDI channel 3, `[TR2]` track 2's instrument,
-  `[CNDT]` the Conductor, `[NONE]`, or a Schwung instrument's short name.
+  `[CNDT]` the Conductor, `[--]` nothing loaded, or a Schwung instrument's short name.
 - **Under it:** the key and scale (on a drum track, the lane bank and the selected
   lane's note), and the track's input velocity — `VEL:LIVE` follows how hard you
   play.
@@ -444,7 +445,7 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
 
 | Gesture | Result |
 |---|---|
-| **Delete + jog click** | Reset every parameter in the active bank (not ALL LANES, STEP, or the Conductor's ON/OFF, OCTAVE and TIMING). One-shot actions (Stretch, Shift, Legato, Crop) are left alone. On a drum track's RPT GROOVE bank, or any bank while Note Repeat is on, it resets the selected lane's groove |
+| **Delete + jog click** | Reset every parameter in the active bank (not PAD MODE, ALL LANES, STEP, or the Conductor's ON/OFF, OCTAVE and TIMING). One-shot actions (Stretch, Shift, Legato, Crop) are left alone. On a drum track's RPT GROOVE bank, or any bank while Note Repeat is on, it resets the selected lane's groove |
 | **Delete + jog click** on **MACROS** | Unassign all eight macros on the track (**asks first**). Values and automation are left alone |
 | **Shift + Delete + jog click** | Reset all the sequencer effects — NOTE FX, HARMONY, DELAY and SEQ ARP. The CLIP, lane, STEP, MACROS and MIX banks, and automation, are left alone |
 | **Shift + Delete + side button** | Reset the whole clip — notes and all parameters |
@@ -540,7 +541,7 @@ STORAGE** and tries again.
 |---|---|
 | **Shift + Back** | Save and hand the device back to official Schwung, from anywhere |
 | **Project Settings → Quit** | The same |
-| **Project Settings → Suspend session** | Park dAVEBOx — it keeps playing in the background while you use Move or another Schwung tool |
+| **Project Settings → Suspend session** | Park dAVEBOx — it keeps playing in the background while you use Move |
 | **Power button** | **POWER OFF?** — save everything and turn the Move off (tap or hold) |
 | **Reboot** | Returns to official Schwung — unless you made dAVEBOx your boot default |
 
@@ -809,7 +810,7 @@ does not change it. Chords are saved per track.
 - **Octaves:** **+ / −** move the whole surface (`OCTAVE`); **Shift + + / −**
   move only the upper rows (`PAD OCTAVE`), to reach notes in another octave
   while building a chord.
-- **Move one chord an octave:** hold its pad and press **+** or **−**.
+- **Move one chord an octave:** hold its pad and press **+** or **−** (Hold: *Assign* only).
 - **Clear a chord:** Delete + its pad. Undo brings it back.
 - Holding a step and tapping a chord writes the whole chord into the step.
 
@@ -2803,7 +2804,6 @@ is shared; each keeps its own settings.
 | What | Between the two |
 |---|---|
 | **Instruments, audio effects, MIDI FX** | **Shared.** Install or update them in official Schwung and they're in dAVEBOx's pickers. dAVEBOx can't install modules itself. |
-| **Tools** (**Shift + Step 13**) | **Shared.** But a tool installed in official Schwung *after* dAVEBOx shows in dAVEBOx's Tools menu only once dAVEBOx is next installed. |
 | **Module presets** and **chain presets** | **Shared.** Save one in either and it's there in both. |
 | **The instrument picker's lists** | **Shared.** One set of lists. |
 | **Samples and files** | **Shared.** The Files page shows the same folders from either. |
@@ -2914,6 +2914,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | Pads + step / step + pads | Chord entry |
 | Step tap / hold | Toggle / edit |
 | + / − · Left / Right | Octave · page |
+| Shift + + / − | Zone B's octave only (a split, Piano's top octave, the pads above the chords) |
 | Side buttons | Launch the active track's clips (press the playing one to stop it) |
 | Shift + top / bottom side button | Scroll the four visible clips up / down one (the same window for every track) |
 | Jog hold | The bank map, while you hold: tap a pad to pick, let go to play again (inside a menu, an editor or Move's editor, hold about a third of a second); Steps 1–8 switch track; INST opens the instrument; the right-hand pads open the MIDI FX, instrument and FX 1–4 editors |
@@ -2939,6 +2940,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | Delete + Play | Deactivate clips (running) · panic (stopped) |
 | Undo / Shift + Undo | Undo / redo |
 | Back (tap / hold) / Shift + Back | Step out one level / back to the overview / save and leave dAVEBOx (asks first) |
+| Power button | Save and turn the Move off (asks first) |
 | Note/Session (tap / hold) | On an overview: switch / peek view — anywhere else: close it and go to Session View |
 | Shift + Step 2 | Project Settings |
 
@@ -2980,7 +2982,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | 9 | Scale — jump to Scale in Project Settings | Both |
 | 10 | VelIn (Live ↔ 100) — icon lit while fixed | Track |
 | 11 | Tap: LIVE ARP on/off — icon lit while on. Hold: LIVE ARP's page, until Back (the knobs stay on LIVE ARP) | Track (melodic) |
-| 13 | Schwung's Tools menu; hold it to come back from Suspend | Both |
+| 13 | Hold: come back from Suspend | Both |
 | 15 | Double the loop and copy its contents into the new half | Track |
 | 16 | Set NOTE FX Quantize to 100 % | Track |
 

@@ -105,12 +105,12 @@ the section into a versioned heading at release time.
   AUTOMATION screen, and on MACROS shows held values only for the track you
   are on.
 - **Live export: a Wrap: Reset lane now jumps where it should.** It used to slide
-  down from its last value to the resting value across the loop end, and, with
-  Smooth off, slide up from rest to the first point. The Live set now holds the
-  last value to the loop end and jumps back, as dAVEBOx plays it.
-- **Live export: lanes with Smooth off now step.** dAVEBOx holds each value until
-  the next one; the Live set drew a slide between them. It now holds and jumps
-  the same way.
+  down from its last value to the resting value across the loop end. The Live
+  set now holds the last value to the loop end and jumps back, as dAVEBOx plays
+  it.
+- **Live export: choice and on/off lanes now step.** dAVEBOx holds each value
+  until the next one; the Live set drew a slide between them. It now holds and
+  jumps the same way.
 - Opening an editor over the AUTOMATION screen — the pad map's INSTRUMENT,
   MIDI FX or FX pads, after a Shift + click jump or straight from the lane
   list — left the step buttons showing the lane. They return to notes now, and
@@ -161,9 +161,7 @@ the section into a versioned heading at release time.
   (page with Left / Right while holding) and wraps round the end of the cycle.
   It works on the clip's step grid too: hold a step, turn a knob to set a lock,
   then press a later step to stretch that lock. Press the end step again to
-  shorten it, as with a note; the range lights up while you hold. On a Smooth
-  lane the value glides on from the end of the range to the next lock instead
-  of jumping back.
+  shorten it, as with a note; the range lights up while you hold.
 - **Hold a step to see its automated values.** While a step is held, every
   automated parameter on screen — bank cards, the editors, levels, MIDI mix and
   macros — shows the value it plays at that step, then returns to its own value
