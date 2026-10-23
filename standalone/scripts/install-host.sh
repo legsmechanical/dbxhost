@@ -222,7 +222,9 @@ say ""; say "--- reading the device's symlinks (shared with stock — never over
 # `/bin/bash install-host.sh` (or with a minimal PATH) would silently get an EMPTY
 # list — which here means "no symlinks to protect" and would flatten every shared
 # directory. Too dangerous to depend on the interpreter being modern.
-LINKS="$($SSH "find '$DBX_DIR' -maxdepth 1 -type l -printf '%f\n'" 2>/dev/null || true)"
+# No `-printf`: a stock Move's find is BusyBox, which rejects it, and the
+# swallowed error read as "no symlinks" — refusing every install there.
+LINKS="$($SSH "find '$DBX_DIR' -maxdepth 1 -type l | sed 's|.*/||'" 2>/dev/null || true)"
 if [ -z "$LINKS" ]; then
     echo "ERROR: found no symlinks in $DBX_DIR — expected at least presets/patches." >&2
     echo "       Refusing rather than risk flattening shared directories." >&2
