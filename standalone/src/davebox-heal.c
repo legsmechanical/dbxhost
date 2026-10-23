@@ -33,6 +33,8 @@
  *
  * Actions: with no argument it mirrors the shim (and installs a staged update
  * of itself, and removes the boot-recovery unit earlier builds installed).
+ * --poweroff runs /sbin/shutdown -h now (what Move's own power service runs),
+ * for dAVEBOx's SAVE & POWER OFF once the session has ended.
  * --pause-launcher / --resume-launcher stop and start move-launcher.service,
  * which is systemd-supervised and would otherwise revive the stock stack a few
  * seconds after the launcher kills it, leaving two hosts fighting over the SPI
@@ -114,6 +116,16 @@
 #define SYSTEMCTL    "/usr/bin/systemctl"
 #endif
 #define MOVE_UNIT    "move-launcher.service"
+
+/* --poweroff: the command stock Move's own power service runs
+ * (/opt/move/SystemDBusService: "/sbin/shutdown -h now"). On AbletonOS that is
+ * the init's shutdown; on a systemd image it is a link to systemctl, which
+ * takes -h as --poweroff. Either way the shutdown path tells the XMOS to cut
+ * power, as it does when Move powers itself off. Overridable only for the
+ * test build. */
+#ifndef SHUTDOWN_BIN
+#define SHUTDOWN_BIN "/sbin/shutdown"
+#endif
 
 /* The boot-recovery unit this helper USED to install (2026-09-05 .. 0.0.4):
  * a oneshot that ran `set-swap.sh recover` at boot. RETIRED — it is only ever
@@ -294,6 +306,34 @@ static int systemctl_run(const char *verb, const char *unit) {
 }
 #ifndef HEAL_UNINSTALL_ONLY  /* install-only verbs */
 static int launcher_unit(const char *verb) { return systemctl_run(verb, MOVE_UNIT); }
+
+/* Power the Move off. Called by the launcher after the session has torn down
+ * and every file is synced; there is nothing left to save by then. A fixed
+ * binary with fixed arguments — nothing the caller says reaches the exec. */
+static int power_off(void) {
+    sync();
+    pid_t pid = fork();
+    if (pid < 0) {
+        fprintf(stderr, "davebox-heal: fork: %s\n", strerror(errno));
+        return -1;
+    }
+    if (pid == 0) {
+        execl(SHUTDOWN_BIN, "shutdown", "-h", "now", (char *)NULL);
+        _exit(127);
+    }
+    int st = 0;
+    while (waitpid(pid, &st, 0) < 0) {
+        if (errno == EINTR) continue;
+        fprintf(stderr, "davebox-heal: waitpid: %s\n", strerror(errno));
+        return -1;
+    }
+    if (!WIFEXITED(st) || WEXITSTATUS(st) != 0) {
+        fprintf(stderr, "davebox-heal: %s -h now failed (status %d)\n", SHUTDOWN_BIN, st);
+        return -1;
+    }
+    fprintf(stderr, "davebox-heal: %s -h now\n", SHUTDOWN_BIN);
+    return 0;
+}
 
 #endif
 
@@ -579,10 +619,12 @@ int main(int argc, char **argv) {
             return settings_umount() == 0 ? 0 : 2;
         if (strcmp(argv[1], "--uninstall-root") == 0)
             return uninstall_root() == 0 ? 0 : 2;
+        if (strcmp(argv[1], "--poweroff") == 0)
+            return power_off() == 0 ? 0 : 2;
         fprintf(stderr, "davebox-heal: unknown argument %s (expected "
                         "--pause-launcher, --resume-launcher, --mount-sets, "
-                        "--umount-sets, --mount-settings, --umount-settings "
-                        "or --uninstall-root)\n", argv[1]);
+                        "--umount-sets, --mount-settings, --umount-settings, "
+                        "--uninstall-root or --poweroff)\n", argv[1]);
         return 1;
     }
 
