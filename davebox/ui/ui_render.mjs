@@ -40,7 +40,7 @@ import { drawAutoMarkAt,
     pf3Print, pf3Width, drawArcKnobAt, hdrPrint, hdrWidth, bigPrint, bigWidth, bigFit,
     MV_ROW0_Y, MV_KH, MV_BIG_H, MV_ZOOM_X, MV_ZOOM_Y, MV_ZOOM_W, MV_ZOOM_H,
     drawKitHintRow, enumOverlayWouldDraw, MV_FOOTER_Y, MV_BAR_Y,
-    drawKitBigValue, drawKitPrompt, drawKitChip, kitChipWidth, drawBrackets
+    drawKitBigValue, drawKitPrompt, drawKitChip, kitChipWidth, drawBrackets, kitLaneFocusRowReset
 } from './ui_movy.mjs';
 import {
     drawGlobalMenu, drawStateWipeConfirm, drawExitConfirm, drawTypeChangeConfirm, drawModuleSwapConfirm, drawRecordBlockedDialog, drawBpmMoveInfo,
@@ -62,8 +62,9 @@ import {
     bankHasAltParams, altIndicatorActive, autoLanePlayStep
 } from './ui_leds.mjs';
 import { soundRender, renderTrackGatewayCard, renderConfigCardPeek, renderMacrosPeek } from './ui_sound.mjs';
-import { drawAutomationBankBody, autoBankMenuOpen, autoMenuUp, autoHoldJumpActive, autoHoldJumpStep, autoLaneFocus, autoHeldValue, autoMapEditorComp, autoMapMarkedBank } from './ui_automation_bank.mjs';
-import { automationStateFor } from './ui_automation.mjs';
+import { drawAutomationBankBody, autoBankMenuOpen, autoMenuUp, autoHoldJumpActive, autoHoldJumpStep, autoLaneFocus, autoHeldValue, autoMapEditorComp, autoMapMarkedBank,
+         autoOpsOpen, drawAutomationOpsGraph, drawLaneFocusOverlay } from './ui_automation_bank.mjs';
+import { automationStateFor, autoShiftHint } from './ui_automation.mjs';
 import { seqAutoTargetForKnob, fmtInstr } from './ui_constants.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
@@ -667,7 +668,7 @@ export function bankPageHints(bank) {
     if (bankHasAltParams(S.activeTrack, bank)) hints.unshift(['KNB+CLK', S.altMode ? 'VELOCITY' : 'NUDGE']);
     /* A held step's knob turn writes a lock: a PUNCH, or — Shift tapped — a
      * POINT. The pair names what a tap switches TO. */
-    if (held) hints.push(['SHFT', (S.heldWrite && S.heldWrite.type === 0) ? 'PUNCH' : 'POINT']);
+    if (held) hints.push(autoShiftHint());
     hints.push(['BACK', 'OUT']);
     return hints;
 }
@@ -1457,9 +1458,14 @@ export function drawPositionBarGeom(o) {
     const cs = o.playStep;
     const playing = cs >= lsBase && cs < lsBase + len;
     const playPage = playing ? Math.floor((cs - lsBase) / 16) : -1;
-    const barY = 50, barH = 4, segGap = 1;   /* 2026-09-05: the hint footer owns row 57 */
-    const segW   = Math.max(2, Math.floor((120 - (winPages - 1) * segGap) / winPages));
-    const startX = 4;
+    const barY = o.barY != null ? o.barY : 50, barH = 4, segGap = 1;   /* 2026-09-05: the hint footer owns row 57 */
+    /* `spanX`/`spanW`: the bar's pixel span (default x 4, 120 px). The
+     * AUTOMATION ops graph puts it under a 126-px curve as the graph's bottom
+     * edge, so a column is the same lane time in both. `playStep` may be
+     * FRACTIONAL there (lane ticks / step): the dot moves by tick. */
+    const spanW  = o.spanW != null ? o.spanW : 120;
+    const segW   = Math.max(2, Math.floor((spanW - (winPages - 1) * segGap) / winPages));
+    const startX = o.spanX != null ? o.spanX : 4;
     for (let pg = 0; pg < winPages; pg++) {
         const x = startX + pg * (segW + segGap);
         if (pg === viewPage) {
@@ -1677,7 +1683,11 @@ export function drawUI() {
      * below: while awaiting a selection with no picker, drawUIBody would print
      * "Loading" forever over a session that is not loading anything. */
     if (S.projectListFailed) { drawProjectListFailed(); return; }
+    kitLaneFocusRowReset();
     drawUIBody();
+    /* A hold / Shift + click jump's lane page, over the half of the kit page
+     * its parameter is not in — only where a kit page marked that cell. */
+    drawLaneFocusOverlay();
     drawBankLatchBox();
     drawTrackVolCard();
     drawBankPicker();
@@ -2281,7 +2291,15 @@ function drawUIBody() {
             drawBankHeading(bankDisplayName(S.trackPadMode[S.activeTrack], BANK_AUTOMATION), false, false,
                             cy ? cy.text + (cy.pages > 1 ? ' PG ' + (cy.page + 1) + '/' + cy.pages : '') : null);
             drawAutomationBankBody();
-            if (cy && cy.pages > 1)
+            if (autoOpsOpen()) {
+                /* The ops pop-up shows the lane: its graph, and the page bar
+                 * as the graph's bottom edge (always, one page or many). */
+                if (cy) {
+                    const g = drawAutomationOpsGraph(cy);
+                    drawPositionBarGeom({ lsBase: cy.off, len: cy.len, viewPage: cy.page, playStep: g.playStep,
+                                          barY: g.barY, spanX: g.spanX, spanW: g.spanW });
+                }
+            } else if (cy && cy.pages > 1)
                 drawPositionBarGeom({ lsBase: cy.off, len: cy.len, viewPage: cy.page, playStep: autoLanePlayStep(cy) });
             return;
         }

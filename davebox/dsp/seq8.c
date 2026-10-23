@@ -9753,6 +9753,80 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                 pa_unlock(inst);
                 return n;
             }
+            /* tN_cC_pa_shape_<n>: every automated lane of this clip as a
+             * SHAPE — <n> samples spread evenly across the lane's whole
+             * window, for the AUTOMATION bank's lane graph (the ops pop-up
+             * draws one column a sample).
+             *
+             * One line per lane: "<target> <2n hex chars>\n" — sample c is
+             * the value FROM lane tick ws + c*wl/n on, through the SAME
+             * evaluator playback calls (pa_eval_from, a stepped target held,
+             * Wrap applied) and the lane's Scale (pa_scaled), reduced to
+             * 0..254 (v14 * 254 / 16383, rounded); "ff" where the lane has no
+             * window. Lane ticks are the lane's own, so its Rate is already
+             * in them — the playhead (tN_pa_view) reports the same ticks.
+             * ONE read for the whole clip; the UI asks on a change and on a
+             * slow cadence, never per tick.
+             *
+             * tN_cC_pa_shape_<n>_<t0>_<len>: the same, but the <n> samples
+             * spread across lane ticks t0..t0+len-1 instead of the window —
+             * ONE step page at pixel resolution, for the page graph a hold or
+             * a pin draws ("ff" outside the window). */
+            if (!strncmp(p, "_pa_shape_", 10)) {
+                static const char hexd[] = "0123456789abcdef";
+                const char *q = p + 10;
+                uint32_t ns = 0;
+                int any = 0;
+                while (*q >= '0' && *q <= '9' && ns < 100000u) { ns = ns * 10 + (uint32_t)(*q++ - '0'); any = 1; }
+                uint32_t r0 = 0, rl = 0;
+                int ranged = 0;
+                if (any && *q == '_') {
+                    int a0 = 0, a1 = 0;
+                    q++;
+                    while (*q >= '0' && *q <= '9' && r0 < 100000000u) { r0 = r0 * 10 + (uint32_t)(*q++ - '0'); a0 = 1; }
+                    if (*q++ != '_') return -1;
+                    while (*q >= '0' && *q <= '9' && rl < 100000000u) { rl = rl * 10 + (uint32_t)(*q++ - '0'); a1 = 1; }
+                    if (!a0 || !a1 || rl < 1) return -1;
+                    ranged = 1;
+                }
+                if (!any || *q || ns < 1 || ns > PA_SHAPE_MAX_SAMPLES) return -1;
+                int n = 0;
+                if (out_len > 0) out[0] = '\0';
+                pa_lock(inst);
+                for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+                    pa_entry_t *e = &inst->pa_entries[i];
+                    if (!e->used || !e->count || e->track != tidx || e->clip != cidx) continue;
+                    const char *tname = inst->pa_targets[e->target];
+                    const int tl = (int)strlen(tname);
+                    /* target, space, 2n digits, newline, and the NUL */
+                    if (n + tl + 1 + 2 * (int)ns + 2 > out_len) break;   /* see pa_list */
+                    uint32_t ws = 0, wl = 0, st = TICKS_PER_STEP;
+                    const int have = pa_export_window(tr, e, &ws, &wl, &st) && wl;
+                    const int stepped = pa_target_stepped(inst, e->target);
+                    memcpy(out + n, tname, (size_t)tl);
+                    n += tl;
+                    out[n++] = ' ';
+                    for (uint32_t c = 0; c < ns; c++) {
+                        int v8 = -1;
+                        if (have) {
+                            const uint32_t tk = ranged ? r0 + (uint32_t)((uint64_t)c * rl / ns)
+                                                       : ws + (uint32_t)((uint64_t)c * wl / ns);
+                            if (tk < ws || tk - ws >= wl) goto shape_put;
+                            uint16_t v;
+                            if (pa_eval_from(e, tk, ws, wl, stepped, &v))
+                                v8 = (int)(((uint32_t)pa_scaled(e, v) * 254u + PA_VAL_MAX / 2) / PA_VAL_MAX);
+                        }
+                    shape_put:;
+                        const int b = v8 < 0 ? 0xff : v8;
+                        out[n++] = hexd[(b >> 4) & 15];
+                        out[n++] = hexd[b & 15];
+                    }
+                    out[n++] = '\n';
+                    out[n] = '\0';
+                }
+                pa_unlock(inst);
+                return n;
+            }
             if (!strncmp(p, "_length", 7))
                 return snprintf(out, out_len, "%d", (int)cl->length);
             if (!strncmp(p, "_loop_start", 11))

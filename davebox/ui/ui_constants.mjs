@@ -721,6 +721,11 @@ export const BANK_MACRO_ALLOW = [
  * ⚠ Do not empty this list without giving tarp per-clip storage first. */
 export const BANK_AUTOMATION_DENY = [5];
 export const BANK_SHORT = { 0: 'Clip', 1: 'NFX', 2: 'Harm', 3: 'Dly', 4: 'SArp', 5: 'LArp', 7: 'Lanes' };
+/* The sequencer keys that are a CHOICE, not an amount: their lanes never
+ * glide (the engine's pa_seq_defs `stepped` column, pinned to it by
+ * tests/js/test_automation_seq_mirror.mjs). */
+const SEQ_AUTO_STEPPED = ['clip_playback_dir', 'delay_retrig', 'seq_arp_style', 'seq_arp_rate',
+                          'seq_arp_retrigger', 'seq_arp_sync', 'all_lanes_playback_dir'];
 export const SEQ_AUTO_TARGETS = (() => {
     const out = {};
     for (const e of BANK_MACRO_ALLOW) {
@@ -733,7 +738,8 @@ export const SEQ_AUTO_TARGETS = (() => {
             key = pm.dspKey; min = pm.min; max = pm.max; label = pm.full;
         }
         out[key] = { key, bank: e.bank, k: e.k, alt: e.alt || null, min, max, label, type: 'int',
-                     automatable: BANK_AUTOMATION_DENY.indexOf(e.bank) < 0 };
+                     automatable: BANK_AUTOMATION_DENY.indexOf(e.bank) < 0,
+                     stepped: SEQ_AUTO_STEPPED.indexOf(key) >= 0 };
     }
     return out;
 })();

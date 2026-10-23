@@ -1470,7 +1470,13 @@ lane**, not the clip's notes (click the row for its operations, below):
   **<AUTO S7** (step 7). The parameter's cell is highlighted, and while the step
   is held it shows the value the lane plays there — shown only, the parameter
   doesn't move until you turn the knob. A module's page keeps its graphics (filter
-  curve, envelope) while you're there.
+  curve, envelope) while you're there. On a bank, MIX, MACROS or a module's page the lane's **current
+  page** (its 16 steps) is drawn over the half of the screen the parameter isn't in,
+  with the held step marked between dotted lines and the playhead when it's on that
+  page. Its bottom edge is the lane's page bar: one segment a page, the one shown
+  thicker. In a module's editor only the held lane's knob turns while you hold, and
+  the editor stays on its page. The footer says what a Shift tap switches to
+  (**SHFT POINT** / **SHFT PUNCH**).
 - **Hold a step, then press a later one** to stretch the held step's value up to and
   including that step, the way a held note stretches to a tapped step. The value is
   the one you turned, or — before any turn — what the lane plays on the held step,
@@ -1483,15 +1489,24 @@ lane**, not the clip's notes (click the row for its operations, below):
   it there; the steps you give back play what they did before. Turn the knob again
   while you still hold and the whole range takes the new value. While you hold, every
   step of the range blinks like a set value. One **Undo** takes back the whole hold.
+- With **Seq Follow** on (Play + Left/Right), the lane's page follows its playhead
+  while the transport runs, as the note steps do — except while you're holding a
+  step, which keeps its page. Paging by hand pauses it until you stop.
 - **Shift + click** a row to jump to where that parameter is edited; **Back**
   returns you to this menu, on the same row. The step buttons keep showing the lane
   there, so you can hold a step and turn the knob to set it, and the bank map still
-  marks **AUTO**. Leave that place any other way and the jump is over.
+  marks **AUTO**. On a bank, MIX, MACROS or a module's page the lane's current page
+  is drawn there too, as for a held step. In a module's editor only the lane's knob
+  turns and the editor stays on its page until you go Back. Leave that place any other way and the jump is over.
 - **Back** at the list closes the screen: you return to the bank you were on, and the step buttons show the clip again.
   Leaving by the bank map (another bank, or an editor from its right-hand pads) does
   the same — the steps show notes again.
 
-**Click** a row for its operations:
+**Click** a row for its operations. They open as a short menu at the top of the
+screen, and the rest of the screen shows **the lane itself**: its whole length as a
+graph — what it plays, as it plays it — with the page bar along its bottom edge and the
+playhead running through both. The graph follows each change you make here (Wrap,
+Loop, Rate, Scale) and new recording.
 
 - **Mute** / **Unmute**.
 - **Wrap** — what the lane does at the end of its loop. *Reset* (default) holds the

@@ -210,7 +210,9 @@ step('⭐ Match pad shows the selected pad\'s cycle and, clicked, asks for it', 
     assert(mi >= 0 && a.ops.rows[mi].value === '1 BAR', 'Match pad reads the 16-step 1/16 pad: 1 BAR, got ' + JSON.stringify(a.ops.rows[mi]));
     jog(mi - a.ops.sel); ticks(1);
     printed.length = 0; drawScreen();
-    assert(printed.some(x => /^match pad$/i.test(x)), 'the row\'s label is drawn, got ' + JSON.stringify(printed));
+    /* The ops pop-up's rows are in the bank-header face (the lane view,
+     * 2026-10-22), so the label is found by its pixels, not by print(). */
+    assert(drawn('Match pad', true), 'the row\'s label is drawn (4x5 face), got host text ' + JSON.stringify(printed));
     sets.length = 0;
     click(); ticks(2);
     assert(sets.some(s => s === 't0_pa_loop=0 seq:0:all_lanes_playback_dir 0 0 6'), 'pa_loop length 0 = match the pad (the x2 rate kept), got ' + JSON.stringify(sets));

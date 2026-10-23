@@ -717,6 +717,16 @@ Corollaries, each of which was a real screen before the cohesion pass:
   it is about to land on.
   ⚠ **5 rows is the ceiling** for a tall box and the gain is all at the bottom: a 6th needs a top
   edge at y ≤ 6, inside the header band.
+- **Stacked list** — `drawKitStackedList(depth, rows, sel, opts)`: the 108-px box (x 10 at
+  depth 1) a menu floats in over a dimmed screen. `topY` / `bottomY` place the box. `font: '4x5'`
+  draws the rows in the BANK-HEADER face instead (uppercase, `rowH` 7 from 2 px inside the frame,
+  inverted selection band, value right-aligned, a 1-px scroll thumb with no rail, the cursor pinned
+  to the bottom row once it would leave the window) — a short pop-up that leaves the rest of the
+  screen to something else: the AUTOMATION lane ops (box rows 3..33, four rows) over the lane's
+  graph. Callers that pass no `font` are unchanged to the pixel.
+- **Page bar** — `drawPositionBarGeom` (`ui_render.mjs`): rows 50–53 across x 4..123 by default;
+  `barY` / `spanX` / `spanW` move it (the lane graph's bottom edge: row 60, x 1..126, the curve's
+  own span), and a FRACTIONAL `playStep` moves the dot by tick.
 - **Section picker** — `drawKitSectionPicker`, full-screen, one row per section, same selection
   and scrollbar grammar.
 - **Scrollbar** — right-edge rail + a solid 2px thumb, **no arrows**. The rail is the extent of the

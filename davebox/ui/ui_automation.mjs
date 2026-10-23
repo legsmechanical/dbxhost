@@ -777,6 +777,20 @@ function resolveDescriptor(target, budget) {
     return head + '0 ' + min + ' ' + max + ' ' + step;
 }
 
+/* Does `target`'s lane STEP (a choice: never glides) — as the engine decides
+ * it (pa_target_stepped): a sequencer key by its table, a chain parameter by
+ * the description it was resolved with (an enum, or an int spanning at most
+ * one). False when unknown, which draws it as a glide. No read. */
+export function automationTargetStepped(target) {
+    const m = String(target).split(':');
+    if (m[0] === 'seq') { const d = SEQ_AUTO_TARGETS[m[2]]; return !!(d && d.stepped); }
+    const d = resolved.get(String(target));
+    if (!d) return false;
+    const f = d.split(' ');
+    const kind = +f[2], min = +f[3], max = +f[4];
+    return kind === 2 || (kind === 1 && max - min <= 1);
+}
+
 /* Every listed target the engine could be writing itself, described to it.
  * Runs only when the list or the metadata changed; at most ONE component read
  * a tick (each is a blocking round trip). */
@@ -1310,6 +1324,12 @@ export function automationExtendLock(track, clip, target, fromStep, toStep, tps,
     S.heldExtend = { step: fromStep, to: toStep, track, clip, target, tps };
     presenceStale = true;
     console.log('[auto] extend t' + track + ' c' + clip + ' ' + target + ' ' + fromStep + '->' + toStep);
+}
+
+/* The footer pair for a held step: what a Shift tap switches the hold's
+ * writes TO (every hold starts PUNCH, so it first says POINT). */
+export function autoShiftHint() {
+    return ['SHFT', (S.heldWrite && S.heldWrite.type === 0) ? 'PUNCH' : 'POINT'];
 }
 
 /* THE SHIFT TAP (Josh, 2026-10-21: "how about hold step, and tapping

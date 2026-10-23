@@ -44,10 +44,12 @@ const HIER = JSON.stringify({
             ],
             knobs: ['osc_a', 'osc_b', 'osc_c', 'osc_d', 'osc_e', 'osc_f', 'osc_g', 'osc_h'],
         },
+        /* two pages (ten knobs), so a jog has somewhere to page to */
         filter: { name: 'Filter',
                   params: [{ key: 'cutoff', name: 'Cutoff', type: 'float', min: 0, max: 1 },
-                           { key: 'reso', name: 'Reso', type: 'float', min: 0, max: 1 }],
-                  knobs: ['cutoff', 'reso'] },
+                           { key: 'reso', name: 'Reso', type: 'float', min: 0, max: 1 },
+                           ...[1, 2, 3, 4, 5, 6, 7, 8].map(n => ({ key: 'fx_' + n, name: 'Fx ' + n, type: 'float', min: 0, max: 1 }))],
+                  knobs: ['cutoff', 'reso', 'fx_1', 'fx_2', 'fx_3', 'fx_4', 'fx_5', 'fx_6', 'fx_7', 'fx_8'] },
     },
 });
 const CHAIN = {
@@ -57,6 +59,7 @@ const CHAIN = {
         ...['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map(k => ({ key: 'osc_' + k, name: 'Osc ' + k, type: 'float', min: 0, max: 1, step: 0.01 })),
         { key: 'cutoff', name: 'Cutoff', type: 'float', min: 0, max: 1, step: 0.01 },
         { key: 'reso', name: 'Reso', type: 'float', min: 0, max: 1, step: 0.01 },
+        ...[1, 2, 3, 4, 5, 6, 7, 8].map(n => ({ key: 'fx_' + n, name: 'Fx ' + n, type: 'float', min: 0, max: 1, step: 0.01 })),
     ]),
 };
 /* An FX 1 loaded too, so the map's FX 1 pad opens an editor. */
@@ -327,6 +330,16 @@ step('⭐ HOLD a module point -> its EDITOR on the page holding the key; the kno
     /* ...and it reached the editor's controller, not just dAVEBOx's memo. */
     const held = snd.soundPPForTest().decorations;
     assert(held && held[ci] && held[ci].highlight && held[ci].value === want, 'the controller holds ' + JSON.stringify(held));
+    /* ⭐ the lane's page graph draws over the editor too, in the half the
+     * knob is NOT in (a module's pages mark no kit cell; the editor says
+     * which row its highlighted knob is on). Found on the device. */
+    const rects = [], fr = globalThis.fill_rect;
+    globalThis.fill_rect = (x, y, w, h, c) => { rects.push([x, y, w, h, c]); };
+    globalThis.clear_screen(); render.drawUI();
+    globalThis.fill_rect = fr;
+    const pane = rects.find(r => r[0] === 0 && r[2] === 128 && r[3] > 15 && r[4] === 0);
+    assert(pane, 'no lane graph over the module editor: ' + JSON.stringify(rects.filter(r => r[2] === 128)));
+    assert(ci < 4 ? pane[1] > 25 : pane[1] < 25, 'the graph covers the knob\'s own half (knob ' + ci + ', pane y ' + pane[1] + ')');
     assert(S.trackActiveBank[T] === BANK_AUTOMATION && S.activeBank === BANK_AUTOMATION, 'a bank moved: ' + S.activeBank + '/' + S.trackActiveBank[T]);
     assert(S.autoCycle && S.autoCycle.target === TARGETS.chain, 'the steps left the lane during the hold');
     sets.length = 0;
@@ -335,10 +348,60 @@ step('⭐ HOLD a module point -> its EDITOR on the page holding the key; the kno
     assert(w.length >= 1, 'the editor knob wrote no lock, got ' + JSON.stringify(sets));
     const f = w[w.length - 1].split('=')[1].split(' ');
     assert(f[2] === '3' && f[3] === '3' && f[4] === '24', 'the lock is not on step 4: ' + w[w.length - 1]);
+    /* ⭐ only the held lane matters (Josh, 2026-10-22): another knob does
+     * nothing, the jog does not page, and the footer says what Shift does */
+    const other = ci === 0 ? 1 : 0, pageBefore = JSON.stringify(snd.soundPPForTest().page.keys);
+    sets.length = 0;
+    cc(71 + other, 1); cc(71 + other, 1); ticks(2);
+    assert(sets.length === 0, 'another knob wrote during the hold: ' + JSON.stringify(sets));
+    cc(14, 1); ticks(2); cc(14, 127); cc(14, 127); ticks(2); cc(3, 127); cc(3, 0); ticks(2);
+    assert(JSON.stringify(snd.soundPPForTest().page.keys) === pageBefore && snd.soundViewForTest() === VIEW_EDIT,
+           'the jog moved the editor during the hold: ' + JSON.stringify(snd.soundPPForTest().page.keys));
+    globalThis.clear_screen(); render.drawUI();
+    assert(JSON.stringify(movy.kitHintsForTest()) === JSON.stringify([['SHFT', 'POINT']]),
+           'the editor footer during the hold: ' + JSON.stringify(movy.kitHintsForTest()));
     note(STEP(3), 0); ticks(2);
     assert(!snd.soundOpen() && S.activeBank === BANK_AUTOMATION, 'release did not close the editor');
     assert(S.autoBank.menu && S.autoBank.sel === idx, 'not on the same row: ' + JSON.stringify(S.autoBank));
     back(); ticks(1);
+});
+
+step('⭐ SHIFT + CLICK to a module lane: the editor is the lane\'s view too — other knobs, the jog and its click do nothing; the footer says Back, then Shift under a hold (Josh, 2026-10-22)', () => {
+    const idx = openMenuOn(TARGETS.chain); ticks(2);
+    shiftClick(); ticks(10);
+    assert(bank.autoLanePinActive() && snd.soundViewForTest() === VIEW_EDIT, 'the pin did not open the editor');
+    const pp = snd.soundPPForTest();
+    const ci = pp.page.keys.indexOf('cutoff');
+    assert(ci >= 0, 'not on the page holding cutoff: ' + JSON.stringify(pp.page.keys));
+    const other = ci === 0 ? 1 : 0, pageBefore = JSON.stringify(pp.page.keys);
+    sets.length = 0;
+    cc(71 + other, 1); cc(71 + other, 1); ticks(2);
+    assert(sets.length === 0, 'another knob wrote under the pin: ' + JSON.stringify(sets));
+    /* ...and the header says which one can be set: the band, inverted */
+    assert(snd.soundLaneOnlyShownForTest(), 'a refused knob said nothing');
+    {
+        const rects = [], fr = globalThis.fill_rect;
+        globalThis.fill_rect = (x, y, w, h, c) => { rects.push([x, y, w, h, c]); };
+        globalThis.clear_screen(); render.drawUI();
+        globalThis.fill_rect = fr;
+        assert(rects.some(r => r[0] === 0 && r[1] === 0 && r[2] === 128 && r[3] === 7 && r[4] === 1), 'no inverted header band for "CUTOFF ONLY"');
+    }
+    ticks(150);
+    assert(!snd.soundLaneOnlyShownForTest(), 'the header message did not time out');
+    cc(14, 1); ticks(2); cc(14, 1); ticks(2);
+    assert(JSON.stringify(snd.soundPPForTest().page.keys) === pageBefore, 'the jog paged the editor under the pin: ' + JSON.stringify(snd.soundPPForTest().page.keys));
+    cc(3, 127); cc(3, 0); ticks(2);
+    assert(snd.soundViewForTest() === VIEW_EDIT && JSON.stringify(snd.soundPPForTest().page.keys) === pageBefore, 'the click moved the editor under the pin');
+    sets.length = 0;
+    cc(71 + ci, 1); ticks(2);
+    assert(sets.some(x => /cutoff/.test(x)), 'the lane\'s own knob did nothing under the pin: ' + JSON.stringify(sets));
+    globalThis.clear_screen(); render.drawUI();
+    assert(JSON.stringify(movy.kitHintsForTest()) === JSON.stringify([['BACK', 'OUT']]), 'the pin\'s footer: ' + JSON.stringify(movy.kitHintsForTest()));
+    note(STEP(3), 127); ticks(3);
+    globalThis.clear_screen(); render.drawUI();
+    assert(JSON.stringify(movy.kitHintsForTest()) === JSON.stringify([['SHFT', 'POINT']]), 'the pin\'s footer under a hold: ' + JSON.stringify(movy.kitHintsForTest()));
+    note(STEP(3), 0); ticks(2);
+    back(); ticks(4); back(); ticks(2);
 });
 
 step('a press and release inside ONE tick never opens sound mode', () => {
