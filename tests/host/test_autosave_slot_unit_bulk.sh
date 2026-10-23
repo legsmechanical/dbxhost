@@ -50,7 +50,7 @@ function extractFn(name) {
 const sigKeysDecl = (src.match(/const SLOT_MODULE_SIGNATURE_KEYS = \[[^\]]*\];/) || [""])[0];
 ok(sigKeysDecl, "SLOT_MODULE_SIGNATURE_KEYS declaration not found");
 const code = [sigKeysDecl, ...["getSlotParam", "getSlotParamsBulk", "getSlotStateWithRetry",
-    "slotModuleSignatureOf", "readSlotModuleIds", "getSlotModuleSignature", "refreshSlotModuleSignature",
+    "slotModuleSignatureOf", "readSlotModuleIds", "getSlotModuleSignature", "noteSlotSeen", "refreshSlotModuleSignature",
     "buildSlotPatchJson", "autosaveAllSlots"].map(extractFn)].join("\n");
 
 const VALUE_CAP = 128 * 1024;
@@ -127,7 +127,7 @@ function runRig(mode, forSnapshot, refreshOnly) {
         activeSlotStateDir: "/set",
         slots: host.world.map((w) => ({ name: w.name })),
         chainConfigs,
-        lastSlotModuleSignatures: [], slotDirtyCache: [], slotUserCleared: [],
+        lastSlotModuleSignatures: [], slotDirtyCache: [], slotUserCleared: [], slotSeenLoaded: [],
         lastSavedSlotSignature: ["", "", "", "", "jv880|||||"],
         isPresetPreviewActive: () => false,
         host_read_file: () => null,
@@ -144,7 +144,7 @@ function runRig(mode, forSnapshot, refreshOnly) {
         debugLog: () => {},
         shadow_get_param: host.shadow_get_param, shadow_get_params: host.shadow_get_params,
     };
-    const run = new Function(...Object.keys(scope), `let needsRedraw = false;
+    const run = new Function(...Object.keys(scope), `let needsRedraw = false; let autosaveSuppressUntil = 0;
         ${code}
         const ret = [];
         for (let s = 0; s < SHADOW_UI_SLOTS; s++)

@@ -931,6 +931,19 @@ let lastSavedSlotSignature = ["", "", "", ""];
  * for genuine user removals. Reset when the user picks any module, when a
  * set is loaded, or after the empty marker has been written. */
 let slotUserCleared = [false, false, false, false];
+/* Whether THIS SET has been seen with a module in the slot, this session. The
+ * empty-slot guard below protects a slot whose patch failed to load at boot —
+ * such a slot is never seen loaded. One that WAS seen loaded and now reads
+ * empty was emptied on purpose, whoever did it: the host's picker sets
+ * slotUserCleared, but a module UI that clears a slot through the param API
+ * (dAVEBOx's Instrument None / Remove) never reaches that picker, and its
+ * removals were silently kept on disk. Not counted inside the quiet window
+ * after a set change, when the outgoing set's modules can still answer. */
+let slotSeenLoaded = new Array(SHADOW_UI_SLOTS).fill(false);
+function noteSlotSeen(slotIndex, signature) {
+    if (signature && signature.replace(/\|/g, "") !== "" && Date.now() >= autosaveSuppressUntil)
+        slotSeenLoaded[slotIndex] = true;
+}
 
 /* Splash screen state */
 let splashActive = true;
@@ -3487,6 +3500,7 @@ function refreshSlotModuleSignature(slotIndex, knownSignature) {
         ids = readSlotModuleIds(slotIndex);
         signature = slotModuleSignatureOf((k) => ids[k]);
     }
+    noteSlotSeen(slotIndex, signature);
     if (signature !== lastSlotModuleSignatures[slotIndex]) {
         lastSlotModuleSignatures[slotIndex] = signature;
         invalidateFeedbackModuleCache();
@@ -5975,7 +5989,7 @@ function autosaveAllSlots(onlySlot, forSnapshot) {
              * must be persisted (otherwise removals never save — diagnosed
              * 2026-04-29). */
             const slotName = (slots[i] && slots[i].name) || "";
-            if (!slotUserCleared[i] && slotName !== "") {
+            if (!slotUserCleared[i] && !slotSeenLoaded[i] && slotName !== "") {
                 /* Only guard when there's actually content on disk to protect.
                  * If slot_N.json is missing/empty, the chain-config name has
                  * drifted from the saved state — writing the empty marker is
@@ -16311,6 +16325,7 @@ function processSetChangedFlag() {
                  * the new set's emptiness/non-emptiness is determined by its
                  * own files, not by what the user did before the switch. */
                 slotUserCleared[i] = false;
+                slotSeenLoaded[i] = false;
             }
 
             /* Suppress autosave briefly so async DSP settling doesn't
