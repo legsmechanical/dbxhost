@@ -28,6 +28,7 @@ fail=0
 for want in \
   "cp ./standalone/scripts/quiesce-stock.sh ./build/scripts/" \
   "cp ./standalone/scripts/exit-to-stock.sh ./build/scripts/" \
+  "cp ./standalone/scripts/power-off.sh ./build/scripts/" \
   "cp ./standalone/scripts/install-privileged.sh ./build/bless.sh"
 do
   if ! grep -qF -- "$want" scripts/build.sh; then
