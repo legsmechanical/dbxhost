@@ -70,8 +70,25 @@ cp export/ableton-master.json             "dist/${MODULE_ID}/ableton-master.json
 cp export/ableton-export-drift-dummy.json "dist/${MODULE_ID}/drift-dummy.json"
 # Convert source (24-bit stereo 44100Hz) → normalized 16-bit mono 48000Hz for DSP render_block
 python3 - <<'PYEOF'
-import wave, struct, audioop, warnings
-warnings.filterwarnings('ignore')   # suppress audioop deprecation on Python 3.13+
+import wave, struct, math
+
+def ratecv16(samples, inrate, outrate):
+    # audioop.ratecv (mono, 16-bit, default weights, no state), which Python
+    # 3.13 removed — same interpolation, same truncation, byte-identical output.
+    g = math.gcd(inrate, outrate)
+    inrate //= g; outrate //= g
+    out, d, prev, cur, it = [], -outrate, 0, 0, iter(samples)
+    while True:
+        while d < 0:
+            s = next(it, None)
+            if s is None:
+                return struct.pack('<' + 'h' * len(out), *out)
+            prev, cur = cur, s << 16
+            d += outrate
+        while d >= 0:
+            out.append(int((prev * d + cur * (outrate - d)) / outrate) >> 16)
+            d -= inrate
+
 src = "assets/db-click.wav"
 dst = "dist/davebox/click-seq8.wav"
 with wave.open(src, 'rb') as r:
@@ -96,8 +113,7 @@ peak = max(abs(s) for s in samples) if samples else 1
 if peak == 0: peak = 1
 samples = [max(-32768, min(32767, round(s * 32767 / peak))) for s in samples]
 # Resample to 48000 Hz
-raw16 = struct.pack('<' + 'h' * len(samples), *samples)
-raw48, _ = audioop.ratecv(raw16, 2, 1, rate, 48000, None)
+raw48 = ratecv16(samples, rate, 48000)
 with wave.open(dst, 'wb') as w:
     w.setnchannels(1); w.setsampwidth(2); w.setframerate(48000)
     w.writeframes(raw48)
