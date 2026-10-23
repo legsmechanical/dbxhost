@@ -150,7 +150,7 @@ function convertTrackType(t, toDrum) {
      * tN_padmap (without the barrier, same-buffer coalescing drops the convert). */
     if (trackHasAnyData(t)) syncClipsFromDsp();
     else host_module_get_param('t' + t + '_pad_mode');
-    /* A drum track has no Chord layout, so no CHORD bank either. */
+    /* A drum track has no pad modes, so no PADMODE bank either. */
     if (S.trackActiveBank[t] === BANK_CHORD) S.trackActiveBank[t] = 0;
     if (t === S.activeTrack && S.activeBank === BANK_CHORD) S.activeBank = 0;
     if (toDrum) {
@@ -546,7 +546,7 @@ export function _tickImpl() {
         }
     }
 
-    /* A slot or CHORD bank edit is saved once the knobs let go — never while
+    /* A slot or PADMODE bank edit is saved once the knobs let go — never while
      * the transport plays (a file write mid-bar), and only once per edit. */
     if (S.chordDirty && S.knobTouched < 0 && !S.playing) { S.chordDirty = false; writeSidecar(); }
     /* A trigger button's press flash runs for ~0.5 s after the click. */

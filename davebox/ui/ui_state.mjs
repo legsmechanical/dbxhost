@@ -1214,7 +1214,7 @@ export const S = {
      * last pressed in (0 = scale rows, 1 = chord row). Not saved. */
     customOctRegion: new Array(8).fill(0),
     /* Per track: eight chord slots ({deg, stack, inv, spread, bass, oct} —
-     * scale positions, never notes) and the CHORD bank's settings. Filled by
+     * scale positions, never notes) and the PADMODE bank's settings. Filled by
      * ui_chord_pads.mjs at load; saved in the UI sidecar. */
     chordPalette: [],
     chordSettings: [],
@@ -1231,7 +1231,7 @@ export const S = {
     /* Set on landing on the Chord layout: the explainer is up until OK. */
     chordPopupOpen: false,
     /* Push the pad map now (a modifier changed what the slots play), and
-     * save the sidecar (a slot or CHORD bank edit). */
+     * save the sidecar (a slot or PADMODE bank edit). */
     chordPadmapNow: false,
     chordDirty: false,
     /* The slot whose card is up (a knob turned while it was held); -1 = none. */

@@ -414,7 +414,7 @@ export function sidecarObject() {
         am: S.trackAtMode.slice(),
         pchr: S.padLayoutChromatic.map(function(b) { return b ? 1 : 0; }),
         /* The Chord layout (additive on v:9, like pchr): which tracks are on
-         * it, and each such track's eight slots + CHORD bank settings. */
+         * it, and each such track's eight slots + PADMODE bank settings. */
         pchd: S.padLayoutChord.map(function(b) { return b ? 1 : 0; }),
         /* The Piano layout (additive on v:9, like pchr). */
         ppno: S.padLayoutPiano.map(function(b) { return b ? 1 : 0; }),
