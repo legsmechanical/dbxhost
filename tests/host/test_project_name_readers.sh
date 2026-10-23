@@ -30,6 +30,7 @@ got="$(git grep --untracked -l -E "[\"']Move-Set-[\"']|[\"']name\.txt[\"']" \
 want="davebox/ui/ui_persistence.mjs
 schwung-manager/bugreport.go
 schwung-manager/bugreport_test.go
+schwung-manager/projects_test.go
 standalone/scripts/check-config.sh
 standalone/scripts/project_name.py"
 if [ -z "$got" ]; then

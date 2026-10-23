@@ -232,23 +232,33 @@ def _set_xattr(path, name, value):
 
 
 def _modules(project_dir):
+    """(instrument ids, effect ids) the project's host files load. Kept apart
+    because only an instrument id can be a pack entry, "<generator>-<pack>"
+    (chain_host.c), which a reader resolves by prefix."""
     sub = ss.state_subdir(project_dir)
     host = os.path.join(project_dir, sub, pt.HOST_LEAF) if sub else None
-    ids = []
+    synths, effects = [], []
     if host and os.path.isdir(host):
         for n in sorted(os.listdir(host)):
-            if n.endswith(".json"):
-                for i in pt.module_refs(n, pt._read_json(os.path.join(host, n))):
-                    if i not in ids:
-                        ids.append(i)
-    return ids
+            if not n.endswith(".json"):
+                continue
+            obj = pt._read_json(os.path.join(host, n))
+            chain = obj.get("chain") if isinstance(obj, dict) and n.startswith("slot_") else None
+            syn = chain.get("synth") if isinstance(chain, dict) else None
+            synth_id = syn.get("module") if isinstance(syn, dict) else None
+            for i in pt.module_refs(n, obj):
+                dst = synths if i == synth_id else effects
+                if i not in dst:
+                    dst.append(i)
+    return synths, effects
 
 
 def import_archive(archive, projects_dir, staging_root, templates_dir=None):
     """Bring every project in `archive` in as a new project. Returns
     {"imported": [{uuid, name, pad}], "skipped": [{name, why}],
-     "templates": [{id, name}], "modules": [ids the imported projects load]}."""
-    result = {"imported": [], "skipped": [], "templates": [], "modules": []}
+     "templates": [{id, name}], "modules": [every id the imported projects
+     load], "instruments": [the subset loaded as an instrument]}."""
+    result = {"imported": [], "skipped": [], "templates": [], "modules": [], "instruments": []}
     os.makedirs(staging_root, exist_ok=True)
     stage = os.path.join(staging_root, "import-" + uuidlib.uuid4().hex[:12])
     try:
@@ -304,9 +314,11 @@ def import_archive(archive, projects_dir, staging_root, templates_dir=None):
             _set_xattr(np, "user.local-cloud-state", "notSynced")
             _set_xattr(np, "user.was-externally-modified", "false")
             result["imported"].append({"uuid": nu, "name": final, "pad": pad})
-            for m in _modules(np):
-                if m not in result["modules"]:
-                    result["modules"].append(m)
+            synths, effects = _modules(np)
+            for key, ids in (("instruments", synths), ("modules", synths + effects)):
+                for m in ids:
+                    if m not in result[key]:
+                        result[key].append(m)
 
         if templates_dir:
             have = {t["id"] for t in pt.list_templates(templates_dir)}

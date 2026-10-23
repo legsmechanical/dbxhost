@@ -41,6 +41,7 @@
         <a class="sitebrand" href="/" title="dAVEBOx">dAVEBO<span class="dot">x</span></a>
         <span class="sitelinks">
             <a href="/mirror" target="_blank" rel="noopener" title="Live view of the Move's screen">Mirror</a>
+            <a href="/projects" title="Back up and restore projects"{{if eq .Active "projects"}} aria-current="page"{{end}}>Projects</a>
             <a href="/files" title="Browse files on the device"{{if eq .Active "files"}} aria-current="page"{{end}}>Files</a>
             <a href="/help" title="Manual &amp; help"{{if eq .Active "help"}} aria-current="page"{{end}}>Help</a>
             <a href="/config" title="Host configuration"{{if eq .Active "config"}} aria-current="page"{{end}}>Config</a>

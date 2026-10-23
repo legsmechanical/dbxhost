@@ -97,14 +97,15 @@ if touches '^schwung-manager/'; then
     fi
   elif command -v docker >/dev/null 2>&1 && docker version >/dev/null 2>&1; then
     # Same fallback scripts/build.sh uses when go is not installed locally.
-    # Pin matches .github/workflows/ci.yml.
+    # Pin matches .github/workflows/ci.yml. The WHOLE repo is mounted, as CI
+    # checks it out: projects_test.go runs ../standalone/scripts/project-cmd.sh.
     echo "  (no local go — using golang:1.26-bookworm)"
     mkdir -p .cache/go-cache .cache/go-mod-cache
     if ! out=$(docker run --rm \
-        -v "$PWD/schwung-manager:/src" \
+        -v "$PWD:/src" \
         -v "$PWD/.cache/go-cache:/gocache" \
         -v "$PWD/.cache/go-mod-cache:/go-mod-cache" \
-        -u "$(id -u):$(id -g)" -w /src \
+        -u "$(id -u):$(id -g)" -w /src/schwung-manager \
         -e GOCACHE=/gocache -e GOMODCACHE=/go-mod-cache -e GOFLAGS=-buildvcs=false \
         golang:1.26-bookworm \
         bash -c 'go vet ./... && go build ./... && go test ./...' 2>&1); then
