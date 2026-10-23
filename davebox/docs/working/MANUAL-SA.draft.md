@@ -715,8 +715,8 @@ Pad Mode bank.
 - **Trans A / Trans B** — where each zone starts. In Scale it counts scale
   notes, so the pads stay in key (+2 in C major starts on E); in Chrom,
   semitones.
-- Zone B's pads show their colors the other way round — the root white, the
-  other notes in the track color — so the two zones read apart.
+- Zone B's pads show their colors the other way round — the root dim white,
+  the other notes in the track color — so the two zones read apart.
 - Scale and Chrom share the split and the octaves; each keeps its own Transpose.
 
 **Octave buttons.** **+ / −** move the whole surface. **Shift + + / −** move

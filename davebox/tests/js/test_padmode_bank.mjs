@@ -415,7 +415,7 @@ const shiftOct = (d) => { midi(0xB0, 49, 127); midi(0xB0, d > 0 ? 55 : 54, 127);
 const octBtn = (d) => { midi(0xB0, d > 0 ? 55 : 54, 127); midi(0xB0, d > 0 ? 55 : 54, 0); ticks(1); };
 const popupNow = () => (S.actionPopupLines || []).join(' / ');
 
-step('⭐⭐ a split shows its zones apart on the pads: A keeps root = track colour, B inverts (root White, the rest the track colour)', () => {
+step('⭐⭐ a split shows its zones apart on the pads: A keeps root = track colour, B swaps them (root in A\'s dim non-root colour, the rest the track colour)', () => {
     onBank(PM.PM_SCALE);
     const plain = padLeds();
     const trackC = LEDS.trackColor(T);
@@ -424,7 +424,7 @@ step('⭐⭐ a split shows its zones apart on the pads: A keeps root = track col
     /* C major from C: pad 0 (A) and pad 4 (B) are both C. */
     assert(L[0] === trackC && L[0] === plain[0], 'zone A root changed: ' + L[0]);
     assert(L[1] === plain[1] && L[1] !== trackC, 'zone A other notes changed: ' + L[1]);
-    assert(L[4] === 120, 'zone B root is not White (palette 120): ' + L[4]);
+    assert(L[4] === plain[1] && L[4] !== 120, 'zone B root is not zone A\'s dim non-root colour: ' + L[4] + ' (A non-root ' + plain[1] + ')');
     assert(L[5] === trackC, 'zone B other notes are not the track colour: ' + L[5]);
     kn(1, -1); ticks(2);                              /* no split: no zone B */
     const N = padLeds();

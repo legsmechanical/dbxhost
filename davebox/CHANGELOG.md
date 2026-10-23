@@ -17,7 +17,7 @@ the section into a versioned heading at release time.
   layout's explainer card.
 - **Split the pads in Scale and Chrom** into zone A (left / bottom) and zone B
   (right / top), each with its own **Oct** and **Trans**; zone B shows its colors
-  inverted (root white) so the zones read apart.
+  swapped (root dim white, other notes in the track color) so the zones read apart.
 - **Shift + Octave moves zone B only** — the B split, Piano's top octave, or the
   pads above the chords in Chord and Custom. Octave alone moves the whole
   surface, in Custom too (it used to move the part you touched last).
