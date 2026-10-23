@@ -119,8 +119,9 @@ Keep each isolated in its own commit so it is easy to exclude when cherry-pickin
   `CHAIN_COMPONENTS`/`createEmptyChainConfig` in `shadow_ui.js`; set+get_param prefix routing,
   `fxN:bypassed`, knob-mapping and chain_params/ui_hierarchy fallbacks in `chain_host.c`;
   patch/preset parse in `chain_patch.c`; slot activation in `shadow_midi.c` + `shadow_chain_mgmt.c`.
-- **Four fork-only JS bindings:** `host_vol_block`, `host_edit_cc_block`, `host_canvas_input`,
-  `host_state_subdir`. ⚠ Derive this list from the `JS_SetPropertyStr` registrations diffed against
+- **Six fork-only JS bindings:** `host_vol_block`, `host_edit_cc_block`, `host_canvas_input`,
+  `host_state_subdir`, `host_power_claim` (+ the host's own reader `shadow_get_power_button`, and
+  the module hook `onPowerButton` it calls). ⚠ Derive this list from the `JS_SetPropertyStr` registrations diffed against
   `upstream/main`, **not** from `docs/API.md`.
 - **Fork-only param-key namespaces** that no `typeof` check can probe: `fx3:`/`fx4:` and
   `send_fx:a:`/`send_fx:b:`.

@@ -399,6 +399,19 @@ typedef struct shadow_control_t {
      * drops it when the display closes. APPENDED, like claim_cc_bits.
      */
     volatile uint8_t pad_observe;
+    /*
+     * The POWER button, for an overtake module that answers it itself.
+     * power_claim: 1 = the module on screen (overtake mode 2) handles power —
+     * the shim then holds the power SysEx back from Move, so Move never raises
+     * its own "Press wheel to shut down", and instead stores the press here.
+     * Set and cleared by the module (host_power_claim), cleared by the host
+     * when the module stops owning the screen.
+     * power_button: the press, as the SysEx's id byte (0x2A tap, 0x3A hold);
+     * 0 = none. Written by the shim (one byte store, SPI thread), read and
+     * cleared by shadow_ui (shadow_get_power_button). APPENDED.
+     */
+    volatile uint8_t power_claim;
+    volatile uint8_t power_button;
 } shadow_control_t;
 
 /* select_launch sentinel: no trigger pending. */

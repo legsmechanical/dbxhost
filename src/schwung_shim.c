@@ -41,6 +41,7 @@
 
 #include "host/plugin_api_v1.h"
 #include "host/move_info_store.h"
+#include "host/shim_power_gate.h"   /* the POWER button: pass to Move, or hand to a claiming module */
 #include "host/midi_fx_offline.h"
 #include "host/audio_fx_api_v2.h"
 #include "host/shadow_constants.h"
@@ -8362,7 +8363,8 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
              * corrective *retroactive* un-filter of already-written sh_midi
              * slots would need to special-case every filter site above instead
              * of the one line below. */
-            int power_sysex_hit = 0;
+            int power_sysex_hit = 0, power_sysex_lead = 0;
+            uint8_t power_sysex_id = 0;
             if (power_sysex_remaining > 0) {
                 power_sysex_remaining--;
                 power_sysex_hit = 1;
@@ -8374,6 +8376,8 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                        (hw_midi[j + 16] & 0x0F) == 0x04 && hw_midi[j + 17] == 0x3A &&
                        (hw_midi[j + 24] & 0x0F) == 0x06) {
                 power_sysex_hit = 1;
+                power_sysex_lead = 1;
+                power_sysex_id = hw_midi[j + 17];
                 power_sysex_remaining = 3;
             }
 
@@ -8559,8 +8563,16 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
             }
 
             /* Let the power-button SysEx through intact regardless of which
-             * overtake-mode branch above ran — see the lookahead comment. */
-            if (power_sysex_hit) filter = 0;
+             * overtake-mode branch above ran — see the lookahead comment —
+             * UNLESS the module on screen claimed the button
+             * (shadow_control->power_claim): then Move never sees it (no
+             * prompt of its own) and the press is handed to the module
+             * instead. Tap and hold alike; the id byte says which. */
+            if (power_sysex_hit)
+                filter = shim_power_gate(overtake_mode,
+                                         shadow_control ? &shadow_control->power_claim : NULL,
+                                         shadow_control ? &shadow_control->power_button : NULL,
+                                         power_sysex_lead, power_sysex_id);
 
             if (filter) {
                 /* Zero the packet dword in the shadow buffer.  This does NOT
