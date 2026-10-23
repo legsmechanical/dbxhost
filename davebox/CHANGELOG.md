@@ -18,6 +18,8 @@ the section into a versioned heading at release time.
 - **Split the pads in Scale and Chrom** (PADMODE bank): left / right or top /
   bottom halves, each with its own octave and start (in scale steps in Scale,
   so it stays in key; in semitones in Chrom).
+- **Piano: move the top and bottom octaves on their own**, and a **Bass**
+  instrument: four strings, E A D G, seven frets across (PADMODE bank).
 - **The manual now covers Schwung's two samplers inside dAVEBOx**: the
   Quantized Sampler (Shift + touch Volume + Sample) and Skipback (Shift + touch
   Volume + Capture), and where to set Skipback's length.

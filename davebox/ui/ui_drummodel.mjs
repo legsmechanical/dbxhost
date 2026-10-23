@@ -13,7 +13,7 @@ import { dspGet } from './ui_dsp_get.mjs';
 import { chordLayoutOn, fillChordPadMap, padToken } from './ui_chord_pads.mjs';
 import { customLayoutOn, fillCustomPadMap, padOctShift } from './ui_custom_chords.mjs';
 import { miActive } from './ui_midi_import.mjs';
-import { fillGridPadMap } from './ui_pad_mode.mjs';
+import { fillGridPadMap, padModeCfg, INSTR_BASS } from './ui_pad_mode.mjs';
 
 /* PHASE-1: helper for the pad-dispatch mute condition. Modal sources:
  * - sessionView                 — pads launch clips
@@ -123,12 +123,28 @@ export function computePadNoteMap() {
              * ("between the whites"); no black key there → a dark, silent pad.
              * Always from C — a keyboard, not a scale. */
             const base = S.padOctave[t] * 12;
-            for (let i = 0; i < 32; i++) {
-                const col = i % 8;
-                const row = Math.floor(i / 8);
-                const st = (row & 1) ? PIANO_BLACK[col] : PIANO_WHITE[col];
-                const p = st < 0 ? -1 : base + (row >= 2 ? 12 : 0) + st;
-                S.padNoteMap[i] = (p < 0 || p > 127) ? 0xFF : p;
+            const pc = padModeCfg(t).piano;
+            if (pc.instr === INSTR_BASS) {
+                /* Instrument: Bass (Josh, 2026-10-22) — four strings, E A D G
+                 * from the bottom row up, the open string and seven frets
+                 * across; one Oct / Semi for the whole neck. The low E sits
+                 * under the Piano's C. */
+                const e = base - 8 + (pc.bassOct | 0) * 12 + (pc.bassSemi | 0);
+                for (let i = 0; i < 32; i++) {
+                    const p = e + Math.floor(i / 8) * 5 + (i % 8);
+                    S.padNoteMap[i] = (p < 0 || p > 127) ? 0xFF : p;
+                }
+            } else {
+                /* The top two rows and the bottom two each take their own
+                 * octave and semitone shift (PADMODE: Oct / Semi Top, Bot). */
+                for (let i = 0; i < 32; i++) {
+                    const col = i % 8;
+                    const row = Math.floor(i / 8);
+                    const st = (row & 1) ? PIANO_BLACK[col] : PIANO_WHITE[col];
+                    const sh = row >= 2 ? 12 + (pc.octT | 0) * 12 + (pc.semiT | 0) : (pc.octB | 0) * 12 + (pc.semiB | 0);
+                    const p = st < 0 ? -1 : base + sh + st;
+                    S.padNoteMap[i] = (p < 0 || p > 127) ? 0xFF : p;
+                }
             }
         } else {
             /* Scale / Chrom, split into halves or not, each half with its own

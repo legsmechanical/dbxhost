@@ -20,6 +20,10 @@ import { chordLayoutOn, setChordLayout, chordEditSlot, chordSlotCells,
 import { setCustomLayout } from './ui_custom_chords.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 
+function pos(v, lo, hi) { return hi > lo ? ((v | 0) - lo) / (hi - lo) : 0; }
+const signed = (v) => (v > 0 ? '+' + v : String(v | 0));
+const BLANK = { kind: 'blank', label: '' };
+
 export const PM_SCALE = 0, PM_CHROM = 1, PM_PIANO = 2, PM_CHORD = 3, PM_CUSTOM = 4;
 export const PAD_MODE_NAMES = ['Scale', 'Chrom', 'Piano', 'Chord', 'Custom'];
 
@@ -65,13 +69,56 @@ export const ZONE_OCT_MIN = -4, ZONE_OCT_MAX = 4;
 export const SEMI_MIN = -12, SEMI_MAX = 12;       /* Chrom, semitones */
 export const STEP_MIN = -7, STEP_MAX = 7;         /* Scale, scale steps */
 
+/* Piano: the Instrument, the top and bottom halves' shifts, and the Bass
+ * neck's own (Josh, 2026-10-22: Bass takes one Oct / Semi). */
+export const INSTR_PIANO = 0, INSTR_BASS = 1;
+export const INSTR_NAMES = ['Piano', 'Bass'];
+
 export function defaultPadModeCfg() {
-    return { grid: { split: SPLIT_NONE, octA: 0, octB: 0, stepA: 0, stepB: 0, semiA: 0, semiB: 0 } };
+    return { grid: { split: SPLIT_NONE, octA: 0, octB: 0, stepA: 0, stepB: 0, semiA: 0, semiB: 0 },
+             piano: { instr: INSTR_PIANO, octT: 0, semiT: 0, octB: 0, semiB: 0, bassOct: 0, bassSemi: 0 } };
 }
 
 export function padModeCfg(t) {
     if (!S.padModeCfg[t]) S.padModeCfg[t] = defaultPadModeCfg();
     return S.padModeCfg[t];
+}
+
+const SEMI_PAIR = (label, name, oct, semi) => [
+    { kind: 'valsq', label: 'Oct' + label, name: 'Octave' + name, text: signed(oct), ringNorm: pos(oct, ZONE_OCT_MIN, ZONE_OCT_MAX) },
+    { kind: 'valsq', label: 'Semi' + label, name: 'Semitone' + name, text: signed(semi), ringNorm: pos(semi, SEMI_MIN, SEMI_MAX) },
+];
+
+/* Piano: Instrument, then Oct / Semi for the top and the bottom halves — or,
+ * for Bass, one Oct / Semi for the whole neck. */
+function pianoCells(t) {
+    const p = padModeCfg(t).piano;
+    const head = [{ kind: 'enumsq', label: 'Instr', name: 'Instrument', text: INSTR_NAMES[p.instr],
+                    options: INSTR_NAMES, sel: p.instr }];
+    if (p.instr === INSTR_BASS) return head.concat(SEMI_PAIR('', '', p.bassOct, p.bassSemi), [BLANK, BLANK]);
+    return head.concat(SEMI_PAIR('T', ' Top', p.octT, p.semiT), SEMI_PAIR('B', ' Bottom', p.octB, p.semiB));
+}
+
+function pianoKnob(t, cell, steps) {
+    const p = padModeCfg(t).piano;
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    const before = JSON.stringify(p);
+    const bass = p.instr === INSTR_BASS;
+    const o = (k) => { p[k] = clamp(p[k] + steps, ZONE_OCT_MIN, ZONE_OCT_MAX); };
+    const st = (k) => { p[k] = clamp(p[k] + steps, SEMI_MIN, SEMI_MAX); };
+    switch (cell) {
+        case 0: p.instr = clamp(p.instr + steps, 0, INSTR_NAMES.length - 1); break;
+        case 1: o(bass ? 'bassOct' : 'octT'); break;
+        case 2: st(bass ? 'bassSemi' : 'semiT'); break;
+        case 3: if (bass) return false; o('octB'); break;
+        case 4: if (bass) return false; st('semiB'); break;
+        default: return false;
+    }
+    if (JSON.stringify(p) === before) return false;
+    S.chordDirty = true;
+    S.chordPadmapNow = true;
+    S.screenDirty = true;
+    return true;
 }
 
 /* The two halves of the 8x4 grid for a split: each is { c0, r0, w, h } in
@@ -124,13 +171,16 @@ export function restorePadModeSidecar(pmd) {
             octA: n(g.octA, ZONE_OCT_MIN, ZONE_OCT_MAX), octB: n(g.octB, ZONE_OCT_MIN, ZONE_OCT_MAX),
             stepA: n(g.stepA, STEP_MIN, STEP_MAX), stepB: n(g.stepB, STEP_MIN, STEP_MAX),
             semiA: n(g.semiA, SEMI_MIN, SEMI_MAX), semiB: n(g.semiB, SEMI_MIN, SEMI_MAX) };
+        const p = e.piano || {};
+        c.piano = { instr: n(p.instr, 0, INSTR_NAMES.length - 1),
+            octT: n(p.octT, ZONE_OCT_MIN, ZONE_OCT_MAX), semiT: n(p.semiT, SEMI_MIN, SEMI_MAX),
+            octB: n(p.octB, ZONE_OCT_MIN, ZONE_OCT_MAX), semiB: n(p.semiB, SEMI_MIN, SEMI_MAX),
+            bassOct: n(p.bassOct, ZONE_OCT_MIN, ZONE_OCT_MAX), bassSemi: n(p.bassSemi, SEMI_MIN, SEMI_MAX) };
         S.padModeCfg[t] = c;
     }
 }
 
 /* ---- the bank ------------------------------------------------------------ */
-
-const BLANK = { kind: 'blank', label: '' };
 
 function modeCell(t) {
     const m = padModeOf(t);
@@ -139,8 +189,6 @@ function modeCell(t) {
              options: opts, sel: Math.max(0, padModesFor(t).indexOf(m)) };
 }
 
-function pos(v, lo, hi) { return hi > lo ? ((v | 0) - lo) / (hi - lo) : 0; }
-const signed = (v) => (v > 0 ? '+' + v : String(v | 0));
 
 /* Scale / Chrom: Split, then each half's octave and start. With no split the
  * first pair is the whole grid's and the second is empty. */
@@ -188,7 +236,8 @@ function gridKnob(t, cell, steps) {
 export function padModeBankCells(t) {
     const m = padModeOf(t);
     const rest = m === PM_CHORD ? chordBankCells(t)
-        : (m === PM_SCALE || m === PM_CHROM) ? gridCells(t) : [];
+        : (m === PM_SCALE || m === PM_CHROM) ? gridCells(t)
+        : m === PM_PIANO ? pianoCells(t) : [];
     const cells = [modeCell(t)].concat(rest);
     while (cells.length < 8) cells.push(BLANK);
     return cells.slice(0, 8);
@@ -200,7 +249,7 @@ export function padModeKnobDeliberate(t, knob) {
     if (knob === 0) return true;
     const m = padModeOf(t);
     if (m === PM_CHORD) return knob === 7;               /* Slots */
-    if (m === PM_SCALE || m === PM_CHROM) return knob === 1;   /* Split */
+    if (m === PM_SCALE || m === PM_CHROM || m === PM_PIANO) return knob === 1;   /* Split, Instrument */
     return false;
 }
 
@@ -215,6 +264,7 @@ export function padModeBankKnob(t, knob, steps) {
     const m = padModeOf(t);
     if (m === PM_CHORD) return chordBankKnob(t, knob - 1, steps);
     if (m === PM_SCALE || m === PM_CHROM) return gridKnob(t, knob - 1, steps);
+    if (m === PM_PIANO) return pianoKnob(t, knob - 1, steps);
     return false;
 }
 

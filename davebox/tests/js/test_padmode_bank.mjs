@@ -232,6 +232,44 @@ step('⭐ a Conductor plays one plain grid, whatever split it had as a melodic t
     S.trackPadMode[T] = C.PAD_MODE_MELODIC_SCALE; S.padModeCfg[T] = null; ticks(2);
 });
 
+const W_ = [0, 2, 4, 5, 7, 9, 11, 12], B_ = [-1, 1, 3, -1, 6, 8, 10, -1];
+step('⭐⭐ Piano: Oct / Semi Top move the top two rows, Oct / Semi Bot the bottom two; gaps stay silent', () => {
+    onBank(PM.PM_PIANO);
+    const base = (S.padOctave[T] | 0) * 12;
+    const txt = screen().join('|');
+    assert(/INSTR/i.test(txt) && /PIANO/i.test(txt) && /OCTT/i.test(txt) && /SEMIB/i.test(txt), 'the page: ' + txt);
+    kn(2, +1);                                       /* Oct Top +1 */
+    kn(5, -1); kn(5, -1);                            /* Semi Bot -2 */
+    const m = map();
+    for (let i = 0; i < 32; i++) {
+        const c = i % 8, r = Math.floor(i / 8);
+        const st = (r & 1) ? B_[c] : W_[c];
+        const want = st < 0 ? 0xFF : base + st + (r >= 2 ? 24 : -2);
+        assert(m[i] === want, 'pad ' + i + ': ' + m[i] + ' want ' + want);
+    }
+});
+
+step('⭐⭐ Piano → Instrument Bass: four strings E A D G, open + seven frets; one Oct / Semi; Piano keeps its own', () => {
+    onBank(PM.PM_PIANO);
+    kn(2, +1);                                       /* Piano: Oct Top +1, to be kept */
+    kn(1, +1);                                       /* Instrument: Bass */
+    assert(PM.padModeCfg(T).piano.instr === PM.INSTR_BASS, 'not Bass');
+    const e = (S.padOctave[T] | 0) * 12 - 8;
+    let m = map();
+    for (let i = 0; i < 32; i++) assert(m[i] === e + Math.floor(i / 8) * 5 + (i % 8), 'bass pad ' + i + ': ' + m[i]);
+    assert(m[0] % 12 === 4 && m[8] % 12 === 9 && m[16] % 12 === 2 && m[24] % 12 === 7, 'strings not E A D G');
+    const cells = PM.padModeBankCells(T);
+    assert(cells[2].label === 'Oct' && cells[3].label === 'Semi' && cells[4].kind === 'blank' && cells[5].kind === 'blank',
+           'Bass page: ' + cells.map((c) => c.label).join(','));
+    kn(3, +1); kn(4, +1);                            /* Semi +1; K5 does nothing on Bass */
+    m = map();
+    assert(m[0] === e + 1, 'Bass Semi did not move the neck: ' + m[0]);
+    kn(1, -1);                                       /* back to Piano */
+    assert(PM.padModeCfg(T).piano.octT === 1 && PM.padModeCfg(T).piano.octB === 0, 'Piano lost its own: ' + JSON.stringify(PM.padModeCfg(T).piano));
+    PM.restorePadModeSidecar(PM.padModeSidecar());
+    assert(PM.padModeCfg(T).piano.bassSemi === 1 && PM.padModeCfg(T).piano.octT === 1, 'Piano / Bass not saved');
+});
+
 step('⭐ a drum track has no PADMODE: no pad on its map, and the bank is not on its walk', () => {
     home(); S.trackPadMode[T] = C.PAD_MODE_DRUM; ticks(2);
     assert(pure.bankCycleForMode(C.PAD_MODE_DRUM, T).indexOf(C.BANK_PADMODE) < 0, 'PADMODE on the drum walk');

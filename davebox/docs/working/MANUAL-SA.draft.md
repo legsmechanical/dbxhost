@@ -693,6 +693,11 @@ layouts, and the screen flashes IN-SCALE, CHROMATIC, PIANO or CUSTOM CHORDS:
   (C to the next C) and the row above it the black keys, each sitting between
   its two white keys; pads with no black key are dark and silent. The root is in
   the track color and in-scale keys are brighter than the rest.
+  On the PADMODE bank, **Oct T / Semi T** and **Oct B / Semi B** move the top
+  and bottom octave on their own. **Instr** switches the pads to **Bass**: four
+  strings (E A D G from the bottom row up), the open string and seven frets
+  across each, with one **Oct** and **Semi** for the whole neck. Piano and Bass
+  each keep their own settings.
 - **Chord** — below. Leaving it takes its explainer card with it.
 - **Custom** — chords you build yourself on the bottom row, the Scale layout
   on the other three. See [The Custom layout](#the-custom-layout).
