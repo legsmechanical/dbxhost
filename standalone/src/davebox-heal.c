@@ -131,7 +131,8 @@
  * halt alone does NOT remove power: the XMOS has to be told, and the hook that
  * tells it at shutdown is not loaded on every image (measured 2026-10-23: the
  * Move halted, the screen and power stayed on). `shutdown` starts the XMOS's
- * own sequence — its animation, and power OFF after 30 s if nothing follows —
+ * own sequence (`--command shutdown`) — its animation, and power OFF after
+ * 30 s if nothing follows —
  * so the power cut no longer depends on any hook; the OS halts inside that
  * window. */
 #ifndef XMOS_POWER_BIN
@@ -340,10 +341,12 @@ static int run_fixed(const char *bin, char *const argv[]) {
         return -1;
     }
     if (!WIFEXITED(st) || WEXITSTATUS(st) != 0) {
-        fprintf(stderr, "davebox-heal: %s %s failed (status %d)\n", bin, argv[1] ? argv[1] : "", st);
+        fprintf(stderr, "davebox-heal: %s %s%s%s failed (status %d)\n", bin, argv[1] ? argv[1] : "",
+                argv[1] && argv[2] ? " " : "", argv[1] && argv[2] ? argv[2] : "", st);
         return -1;
     }
-    fprintf(stderr, "davebox-heal: %s %s\n", bin, argv[1] ? argv[1] : "");
+    fprintf(stderr, "davebox-heal: %s %s%s%s\n", bin, argv[1] ? argv[1] : "",
+            argv[1] && argv[2] ? " " : "", argv[1] && argv[2] ? argv[2] : "");
     return 0;
 }
 
@@ -355,7 +358,9 @@ static int power_off(void) {
      * 1. The XMOS first: from here power goes within 30 s whatever the OS
      *    does. A failure is reported but does not stop the halt — on an image
      *    whose shutdown hook works, the OS still gets power cut. */
-    char *xmos[] = { "MoveXmosPower", "shutdown", NULL };
+    /* The documented form (--command); the tool exits 0 even when it rejects
+     * a command (measured), so its status says only that it ran. */
+    char *xmos[] = { "MoveXmosPower", "--command", "shutdown", NULL };
     int xmos_ok = run_fixed(XMOS_POWER_BIN, xmos) == 0;
     /* 2. The OS halts (syncing) inside the XMOS's window. */
     char *halt[] = { "shutdown", "-h", "now", NULL };

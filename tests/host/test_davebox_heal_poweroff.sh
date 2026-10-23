@@ -40,8 +40,8 @@ echo "heal --poweroff:"
 build 0
 "$T/heal-bin" --poweroff 2>"$T/err"; rc=$?
 [ "$rc" = 0 ] && ok "returns 0 when shutdown accepts" || bad "rc=$rc: $(cat "$T/err")"
-[ "$(cat "$T/shutdown.log")" = "$(printf 'xmos shutdown\nshutdown -h now')" ] \
-    && ok "tells the XMOS (MoveXmosPower shutdown), THEN halts (shutdown -h now), exactly" || bad "calls: $(cat "$T/shutdown.log")"
+[ "$(cat "$T/shutdown.log")" = "$(printf 'xmos --command shutdown\nshutdown -h now')" ] \
+    && ok "tells the XMOS (MoveXmosPower --command shutdown), THEN halts (shutdown -h now), exactly" || bad "calls: $(cat "$T/shutdown.log")"
 
 build 1 0
 "$T/heal-bin" --poweroff 2>"$T/err"; rc=$?
