@@ -32,6 +32,10 @@
 #     task exactly once per round, the bail that poisons and skips the task
 #     a stuck helper still holds, and the serial-equivalent counter.
 #
+#   - test_shim_power_gate — the POWER button: Move keeps its own prompt
+#     unless the overtake module on screen claimed it; then the press is held
+#     back and stored once per message. And the two bytes were APPENDED.
+#
 #   - test_project_path — dbx_project_dir(): resolving a set-library entry to
 #     the directory a project's files really live in. Today the identity
 #     function, and that claim is pinned as hard as the symlink case, because
@@ -98,6 +102,7 @@ TARGETS = $(BUILD_DIR)/test_project_path \
           $(BUILD_DIR)/test_move_settings_text \
           $(BUILD_DIR)/test_corun_back_top \
           $(BUILD_DIR)/test_direct_fanout \
+          $(BUILD_DIR)/test_shim_power_gate \
           $(BUILD_DIR)/test_render_pool
 
 .PHONY: all test clean
@@ -188,6 +193,9 @@ $(BUILD_DIR)/test_control_layout: test_control_layout.c ../../src/host/shadow_co
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
 
 $(BUILD_DIR)/test_direct_fanout: test_direct_fanout.c ../../src/host/shadow_direct_fanout.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
+
+$(BUILD_DIR)/test_shim_power_gate: test_shim_power_gate.c ../../src/host/shim_power_gate.h ../../src/host/shadow_constants.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
 
 # Header-only units: name the headers so a FIRST build (no .d yet) still

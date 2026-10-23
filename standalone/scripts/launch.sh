@@ -371,6 +371,9 @@ setsid --wait bash -c '
   # liveness. Clear any marker an older launcher left so no stale copy can
   # confuse a build that predates the retirement.)
   rm -f "$DBX_DIR/standalone_active"
+  # A power-off request belongs to the session that wrote it. One a crashed
+  # session left must never power the Move off at the end of THIS one.
+  rm -f "$DBX_DIR/poweroff-request"
 
   # ZERO-SSH INSTALL (2026-09-05). If the helper is not blessed or the install
   # dir is not there, the launcher module payload installs it: bless first via
@@ -1032,6 +1035,26 @@ setsid --wait bash -c '
   rm -f "$DBX_DIR/intended_set.txt" "$DBX_DIR/relaunch_request.txt"
   # Leave no standing open-tool command behind for the stock host to act on.
   rm -f /data/UserData/schwung/open_tool_cmd.json
+  # ⭐ POWER OFF (SAVE & POWER OFF in dAVEBOx, scripts/power-off.sh). Everything
+  # is down and saved by now -- the session, the set swap, the SHM -- so this
+  # is the one safe moment. heal runs the command Move runs to power off
+  # (/sbin/shutdown -h now) and the shutdown has the XMOS cut power. We then
+  # WAIT for it rather than go on: the quit path below would bring Move back
+  # (resume the unit, or return to a caller that restarts Move) in the middle
+  # of the shutdown. Bounded: if the Move is still up after a minute, the
+  # power-off did not happen, and a normal quit is better than a dark screen.
+  if [ -f "$DBX_DIR/poweroff-request" ]; then
+    rm -f "$DBX_DIR/poweroff-request"
+    sync
+    if "$HEAL" --poweroff; then
+      echo "power off: shutdown requested -- waiting for it"
+      _po=0
+      while [ "$_po" -lt 60 ]; do sleep 1; _po=$((_po + 1)); done
+      echo "WARNING: power off: still running after 60 s -- quitting normally instead"
+    else
+      echo "WARNING: power off: heal --poweroff failed -- quitting normally instead"
+    fi
+  fi
   # WHO BRINGS MOVE BACK depends on which caller we have, and getting this wrong
   # is what produced the OLED freak-out after every exit.
   #

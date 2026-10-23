@@ -9,9 +9,10 @@ This document describes the JavaScript API this host gives Schwung modules.
 >
 > **`[FORK-ONLY]`** marks a binding that exists **only in this fork** and is
 > used only by dAVEBOx's own UI. **Do not call one from a module.** There are
-> four: `host_vol_block`, `host_edit_cc_block` (a JS global in `shadow_ui.js`
-> since the #425 claims bitmap, not a C binding), `host_canvas_input` and
-> `host_state_subdir`. (`host_build_info` was deleted in P3 of the
+> six: `host_vol_block`, `host_edit_cc_block` (a JS global in `shadow_ui.js`
+> since the #425 claims bitmap, not a C binding), `host_canvas_input`,
+> `host_state_subdir`, `host_power_claim`, and the host's own
+> `shadow_get_power_button`. (`host_build_info` was deleted in P3 of the
 > re-architecture — one repo ships host and module together, so there is no
 > version skew left to report.) Derive that list from the `JS_SetPropertyStr`
 > registrations diffed against `upstream/main`, never from this document — it
@@ -294,6 +295,12 @@ host_sampler_resume()         // Resume paused recording
 host_sampler_is_paused()      // -> bool
 host_sampler_get_samples_written() // -> int
 host_pad_block(bool)          // Suppress pad notes (68-99) from reaching Move
+host_power_claim(bool)        // [FORK-ONLY] The overtake module answers the POWER
+                              // button: Move's own "Press wheel to shut down" is held
+                              // back and the press goes to globalThis.onPowerButton(id)
+                              // (id 0x2A tap, 0x3A hold). shadow_ui sets it each tick
+                              // from whether the module exports onPowerButton, and
+                              // drops it when the module stops owning the screen.
 host_vol_block(bool)          // [FORK-ONLY] Claim the master volume knob: suppress
                               // CC 79 + its touch note (8) from reaching Move, so a
                               // tool can repurpose the knob without Move also moving

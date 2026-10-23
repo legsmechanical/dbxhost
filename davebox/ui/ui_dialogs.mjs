@@ -301,6 +301,9 @@ export function drawExitConfirm() {
     if (S.confirmExit === 'quit') {
         dlgHeader('QUIT dAVEBOx?');
         dlgLines(['Save and leave the session?', 'The device returns to Move.']);
+    } else if (S.confirmExit === 'poweroff') {
+        dlgHeader('POWER OFF?');
+        dlgLines(['Save the session and', 'turn the Move off?']);
     } else {
         dlgHeader('SUSPEND SESSION?');
         /* the name lives in the HEADER: the 4x5 face has no lowercase, so a

@@ -541,9 +541,14 @@ STORAGE** and tries again.
 | **Shift + Back** | Save and hand the device back to official Schwung, from anywhere |
 | **Project Settings → Quit** | The same |
 | **Project Settings → Suspend session** | Park dAVEBOx — it keeps playing in the background while you use Move or another Schwung tool |
+| **Power button** | **POWER OFF?** — save everything and turn the Move off (tap or hold) |
 | **Reboot** | Returns to official Schwung — unless you made dAVEBOx your boot default |
 
 - Each asks first, opening on **No** — turn to **Yes** and click.
+- **Power off** saves your project, its instruments and effects, and the Move
+  set, shows **Powering off...**, and turns the Move off. Press the power button
+  to start it again as usual. Holding the button asks too — it never skips the
+  question.
 - Leaving — or a reboot, even after a power cut mid-session — brings back your
   official install, **your own Move sets included**.
 - **Suspend** keeps dAVEBOx running in the background. To come back, hold

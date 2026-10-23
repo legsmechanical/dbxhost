@@ -371,6 +371,19 @@ which is the outcome this split exists to prevent. The text below is unchanged
 from the guide; where it says "a module" or "an overtake DSP", read "dAVEBOx's
 engine".
 
+### The POWER button
+
+A module that exports `globalThis.onPowerButton` answers POWER itself: shadow_ui
+sets the claim (`host_power_claim`) every tick from that export. While it is set
+and the module owns the screen (overtake mode 2), the shim
+holds the power SysEx back from Move (`src/host/shim_power_gate.h`), so Move never
+raises "Press wheel to shut down", and stores the press; `shadow_ui` reads it every
+tick and calls `globalThis.onPowerButton(id)` (0x2A tap, 0x3A hold). The host drops
+the claim in `exitOvertakeMode` / `suspendOvertakeMode`, so a parked or exited
+module never swallows the button. The power-off itself is the launcher's, after
+teardown: the module leaves a marker and the launcher runs `heal --poweroff`
+(`/sbin/shutdown -h now`, what Move's own power service runs).
+
 ### Where a MIDI FX's output goes
 
 A MIDI FX's output goes to its own slot's synth. Two per-slot chain parameters

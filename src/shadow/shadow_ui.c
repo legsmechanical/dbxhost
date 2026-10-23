@@ -264,6 +264,17 @@ static JSValue js_shadow_get_ui_flags(JSContext *ctx, JSValueConst this_val, int
     return JS_NewInt32(ctx, shadow_control->ui_flags);
 }
 
+/* shadow_get_power_button() -> int: the power-button press the shim held back
+ * from Move for a module that claimed it (0x2A tap, 0x3A hold; 0 = none).
+ * Read and cleared, like shadow_get_open_tool_cmd. */
+static JSValue js_shadow_get_power_button(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    (void)this_val; (void)argc; (void)argv;
+    if (!shadow_control) return JS_NewInt32(ctx, 0);
+    uint8_t b = shadow_control->power_button;
+    if (b) shadow_control->power_button = 0;
+    return JS_NewInt32(ctx, b);
+}
+
 /* shadow_get_open_tool_cmd() -> int (0=none, 1=open_tool; auto-clears) */
 static JSValue js_shadow_get_open_tool_cmd(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
     (void)this_val; (void)argc; (void)argv;
@@ -2511,6 +2522,25 @@ static JSValue js_shadow_set_display_overlay(JSContext *ctx, JSValueConst this_v
     return JS_UNDEFINED;
 }
 
+/* host_power_claim(enable) - the overtake module on screen answers the POWER
+ * button itself: the shim stops passing the press to Move (no "Press wheel to
+ * shut down") and hands it to shadow_ui, which calls the module's
+ * onPowerButton. Idempotent; logs only on a transition. */
+static JSValue js_host_power_claim(JSContext *ctx, JSValueConst this_val,
+                                   int argc, JSValueConst *argv) {
+    (void)this_val;
+    if (argc < 1 || !shadow_control) return JS_FALSE;
+    int val = 0;
+    JS_ToInt32(ctx, &val, argv[0]);
+    uint8_t next = val ? 1 : 0;
+    if (shadow_control->power_claim != next) {
+        shadow_control->power_claim = next;
+        if (!next) shadow_control->power_button = 0;
+        shadow_ui_log_line(next ? "shadow_ui: power_claim ON" : "shadow_ui: power_claim OFF");
+    }
+    return JS_TRUE;
+}
+
 #define PREVIEW_CMD_PATH SCHWUNG_INSTALL_DIR "/preview_cmd_path.txt"
 
 /* host_pad_observe(enable) - ask the shim to ALSO forward hardware pad notes
@@ -3048,6 +3078,7 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
     JS_SetPropertyStr(ctx, global_obj, "shadow_request_patch", JS_NewCFunction(ctx, js_shadow_request_patch, "shadow_request_patch", 2));
     JS_SetPropertyStr(ctx, global_obj, "shadow_set_focused_slot", JS_NewCFunction(ctx, js_shadow_set_focused_slot, "shadow_set_focused_slot", 1));
     JS_SetPropertyStr(ctx, global_obj, "shadow_get_ui_flags", JS_NewCFunction(ctx, js_shadow_get_ui_flags, "shadow_get_ui_flags", 0));
+    JS_SetPropertyStr(ctx, global_obj, "shadow_get_power_button", JS_NewCFunction(ctx, js_shadow_get_power_button, "shadow_get_power_button", 0));
     JS_SetPropertyStr(ctx, global_obj, "shadow_clear_ui_flags", JS_NewCFunction(ctx, js_shadow_clear_ui_flags, "shadow_clear_ui_flags", 1));
     JS_SetPropertyStr(ctx, global_obj, "shadow_inbound_pad_midi_active", JS_NewCFunction(ctx, js_shadow_inbound_pad_midi_active, "shadow_inbound_pad_midi_active", 0));
     JS_SetPropertyStr(ctx, global_obj, "shadow_overtake_send_external_async_active", JS_NewCFunction(ctx, js_shadow_overtake_send_external_async_active, "shadow_overtake_send_external_async_active", 0));
@@ -3226,6 +3257,7 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
         JS_NewCFunction(ctx, js_shadow_select_headless, "shadow_select_headless", 0));
     JS_SetPropertyStr(ctx, global_obj, "host_claim_ccs", JS_NewCFunction(ctx, js_host_claim_ccs, "host_claim_ccs", 1));
     JS_SetPropertyStr(ctx, global_obj, "host_pad_observe", JS_NewCFunction(ctx, js_host_pad_observe, "host_pad_observe", 1));
+    JS_SetPropertyStr(ctx, global_obj, "host_power_claim", JS_NewCFunction(ctx, js_host_power_claim, "host_power_claim", 1));
 
     /* Register preview player functions */
     JS_SetPropertyStr(ctx, global_obj, "host_preview_play", JS_NewCFunction(ctx, js_host_preview_play, "host_preview_play", 1));

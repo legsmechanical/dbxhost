@@ -724,6 +724,9 @@ mkdir -p ./build/scripts
 if [ -d ./standalone ]; then
     cp ./standalone/scripts/quiesce-stock.sh ./build/scripts/
     cp ./standalone/scripts/exit-to-stock.sh ./build/scripts/
+    # power-off.sh: dAVEBOx's SAVE & POWER OFF -- Move's song saved, a marker
+    # for the launcher, then the same exit; the launcher runs heal --poweroff.
+    cp ./standalone/scripts/power-off.sh ./build/scripts/
     # bluetooth-cmd.sh: the radio on/off behind the menu's Bluetooth row, and
     # the launch-time apply. Does nothing on a unit with no controller.
     cp ./standalone/scripts/bluetooth-cmd.sh ./build/scripts/
@@ -803,6 +806,7 @@ if [ -d ./standalone ]; then
     cp ./standalone/config.sh ./build/scripts/config.sh
     chmod +x ./build/scripts/layout-install.sh ./build/scripts/bootstrap.sh
     chmod +x ./build/scripts/quiesce-stock.sh ./build/scripts/exit-to-stock.sh \
+             ./build/scripts/power-off.sh \
              ./build/scripts/set-swap.sh ./build/scripts/project-cmd.sh \
              ./build/scripts/select-list.sh ./build/scripts/select-hook.sh \
              ./build/scripts/move-loaded-set-reader.sh ./build/scripts/reap-session.sh \

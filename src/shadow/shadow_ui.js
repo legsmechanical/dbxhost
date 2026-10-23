@@ -4340,6 +4340,8 @@ let overtakeExitPending = false;
 
 /* Exit overtake mode back to Move */
 function exitOvertakeMode() {
+    /* The module no longer owns the screen: Move answers POWER again. */
+    if (typeof host_power_claim === "function") host_power_claim(0);
     /* PRIMARY (P4a): the surface is unloading — registration and stack die
      * with it; claims fall back to the classic teardown below. */
     primarySurface = null;
@@ -4414,6 +4416,9 @@ function exitOvertakeMode() {
 
 /* Suspend overtake mode — leave background processes running */
 function suspendOvertakeMode() {
+    /* Parked: Move owns the screen, and its own power prompt with it. The
+     * module claims POWER again on resume. */
+    if (typeof host_power_claim === "function") host_power_claim(0);
     corunTeardown();
     /* PRIMARY (P4a): the registration survives the park (suspend_keeps_js —
      * init() will NOT re-run on resume), but its services are gone and the
@@ -18884,6 +18889,24 @@ globalThis.tick = function() {
                         /* No MIDI handler, just clear accumulators */
                         for (let k = 0; k < NUM_KNOBS; k++) overtakeKnobDelta[k] = 0;
                         overtakeJogDelta = 0;
+                    }
+
+                    /* POWER: a module that exports globalThis.onPowerButton
+                     * answers the button itself (the onSessionExitRequest
+                     * convention). The claim is DERIVED from that export, every
+                     * tick (idempotent; the binding logs only on a change), so
+                     * the module calls nothing and a resume re-claims by
+                     * itself; exit and suspend drop it. Claimed, the shim holds
+                     * the press back from Move — no "Press wheel to shut down"
+                     * — and it is delivered here. id: 0x2A tap, 0x3A hold. */
+                    {
+                        if (typeof host_power_claim === "function")
+                            host_power_claim(typeof globalThis.onPowerButton === "function" ? 1 : 0);
+                        const powerId = typeof shadow_get_power_button === "function" ? shadow_get_power_button() : 0;
+                        if (powerId && typeof globalThis.onPowerButton === "function") {
+                            try { runToolCallback(function() { globalThis.onPowerButton(powerId); }); }
+                            catch (e) { debugLog("OVERTAKE onPowerButton exception: " + e); }
+                        }
                     }
 
                     /* Call the overtake module's tick() function with the
