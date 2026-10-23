@@ -1526,7 +1526,8 @@ lane**, not the clip's notes (click the row for its operations, below):
   page** (its 16 steps) is drawn over the half of the screen the parameter isn't in,
   with the held step marked between dotted lines and the playhead when it's on that
   page. Its bottom edge is the lane's page bar: one segment a page, the one shown
-  thicker. In a module's editor only the held lane's knob turns while you hold, and
+  thicker. In a module's editor only the held lane's knob turns while you hold —
+  turning another shows its name with **ONLY** in the header for a moment — and
   the editor stays on its page. The footer says what a Shift tap switches to
   (**SHFT POINT** / **SHFT PUNCH**).
 - **Hold a step, then press a later one** to stretch the held step's value up to and
@@ -1549,7 +1550,7 @@ lane**, not the clip's notes (click the row for its operations, below):
   there, so you can hold a step and turn the knob to set it, and the bank map still
   marks **AUTO**. On a bank, MIX, MACROS or a module's page the lane's current page
   is drawn there too, as for a held step. In a module's editor only the lane's knob
-  turns and the editor stays on its page until you go Back. Leave that place any other way and the jump is over.
+  turns (another shows **ONLY** in the header) and the editor stays on its page until you go Back. Leave that place any other way and the jump is over.
 - **Back** at the list closes the screen: you return to the bank you were on, and the step buttons show the clip again.
   Leaving by the bank map (another bank, or an editor from its right-hand pads) does
   the same — the steps show notes again.
