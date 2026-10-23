@@ -15,6 +15,9 @@ the section into a versioned heading at release time.
   you switch away and back. The TRACK CONFIG **Layout** row is gone (Shift +
   Step 8 still steps through the layouts). In Chord, **Bass** and **Bass
   Octave** are now one knob: Off, −1 or −2.
+- **Split the pads in Scale and Chrom** (PADMODE bank): left / right or top /
+  bottom halves, each with its own octave and start (in scale steps in Scale,
+  so it stays in key; in semitones in Chrom).
 - **The manual now covers Schwung's two samplers inside dAVEBOx**: the
   Quantized Sampler (Shift + touch Volume + Sample) and Skipback (Shift + touch
   Volume + Capture), and where to set Skipback's length.

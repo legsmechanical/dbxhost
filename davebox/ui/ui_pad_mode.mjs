@@ -53,6 +53,81 @@ export function setPadMode(t, m) {
     return true;
 }
 
+/* ---- per-mode settings ----------------------------------------------------- */
+
+/* Scale and Chrom share the split and each half's octave (Josh, 2026-10-22:
+ * shared); each keeps its own start, since Scale counts it in scale steps
+ * (it stays in key) and Chrom in semitones. Half A is the left (Vertical) or
+ * top (Horizontal) half; with no split, A is the whole grid. */
+export const SPLIT_NONE = 0, SPLIT_VERT = 1, SPLIT_HORZ = 2;
+export const SPLIT_NAMES = ['None', 'Vert', 'Horz'];
+export const ZONE_OCT_MIN = -4, ZONE_OCT_MAX = 4;
+export const SEMI_MIN = -12, SEMI_MAX = 12;       /* Chrom, semitones */
+export const STEP_MIN = -7, STEP_MAX = 7;         /* Scale, scale steps */
+
+export function defaultPadModeCfg() {
+    return { grid: { split: SPLIT_NONE, octA: 0, octB: 0, stepA: 0, stepB: 0, semiA: 0, semiB: 0 } };
+}
+
+export function padModeCfg(t) {
+    if (!S.padModeCfg[t]) S.padModeCfg[t] = defaultPadModeCfg();
+    return S.padModeCfg[t];
+}
+
+/* The two halves of the 8x4 grid for a split: each is { c0, r0, w, h } in
+ * pad columns / rows (row 0 = the bottom row), A first. No split: one half. */
+export function gridZones(split) {
+    if (split === SPLIT_VERT) return [{ c0: 0, r0: 0, w: 4, h: 4 }, { c0: 4, r0: 0, w: 4, h: 4 }];
+    if (split === SPLIT_HORZ) return [{ c0: 0, r0: 2, w: 8, h: 2 }, { c0: 0, r0: 0, w: 8, h: 2 }];
+    return [{ c0: 0, r0: 0, w: 8, h: 4 }];
+}
+
+/* Fill S.padNoteMap for the Scale / Chrom layouts, half by half. Each half is
+ * its own grid from `root`: Scale rows climb three scale notes, Chrom rows
+ * carry on from the end of the row below (so a 4-wide half climbs by 4). */
+export function fillGridPadMap(t, root, intervals, chromatic) {
+    /* A Conductor's pads are a transpose surface with no PADMODE bank: one
+     * plain grid, whatever the track had while it was melodic. */
+    const g = (S.trackPadMode[t] | 0) === PAD_MODE_CONDUCT ? defaultPadModeCfg().grid : padModeCfg(t).grid;
+    const n = intervals.length;
+    gridZones(g.split).forEach((z, zi) => {
+        const oct = (zi ? g.octB : g.octA) | 0;
+        const start = chromatic ? ((zi ? g.semiB : g.semiA) | 0) : ((zi ? g.stepB : g.stepA) | 0);
+        for (let r = 0; r < z.h; r++) {
+            for (let c = 0; c < z.w; c++) {
+                const i = (z.r0 + r) * 8 + z.c0 + c;
+                let p;
+                if (chromatic) {
+                    p = root + oct * 12 + start + c + r * z.w;
+                } else {
+                    const deg = c + r * 3 + start;
+                    p = root + oct * 12 + Math.floor(deg / n) * 12 + intervals[((deg % n) + n) % n];
+                }
+                S.padNoteMap[i] = (p < 0 || p > 127) ? 0xFF : p;
+            }
+        }
+    });
+}
+
+/* The sidecar's `pmd`: per track, null or the settings record. */
+export function padModeSidecar() {
+    return S.padModeCfg.map((c) => (c ? JSON.parse(JSON.stringify(c)) : null));
+}
+
+export function restorePadModeSidecar(pmd) {
+    const n = (x, lo, hi) => (typeof x === 'number' && x >= lo && x <= hi) ? (x | 0) : 0;
+    for (let t = 0; t < 8; t++) {
+        const e = Array.isArray(pmd) ? pmd[t] : null;
+        if (!e || typeof e !== 'object') { S.padModeCfg[t] = null; continue; }
+        const c = defaultPadModeCfg(), g = e.grid || {};
+        c.grid = { split: n(g.split, 0, 2),
+            octA: n(g.octA, ZONE_OCT_MIN, ZONE_OCT_MAX), octB: n(g.octB, ZONE_OCT_MIN, ZONE_OCT_MAX),
+            stepA: n(g.stepA, STEP_MIN, STEP_MAX), stepB: n(g.stepB, STEP_MIN, STEP_MAX),
+            semiA: n(g.semiA, SEMI_MIN, SEMI_MAX), semiB: n(g.semiB, SEMI_MIN, SEMI_MAX) };
+        S.padModeCfg[t] = c;
+    }
+}
+
 /* ---- the bank ------------------------------------------------------------ */
 
 const BLANK = { kind: 'blank', label: '' };
@@ -64,10 +139,56 @@ function modeCell(t) {
              options: opts, sel: Math.max(0, padModesFor(t).indexOf(m)) };
 }
 
+function pos(v, lo, hi) { return hi > lo ? ((v | 0) - lo) / (hi - lo) : 0; }
+const signed = (v) => (v > 0 ? '+' + v : String(v | 0));
+
+/* Scale / Chrom: Split, then each half's octave and start. With no split the
+ * first pair is the whole grid's and the second is empty. */
+function gridCells(t) {
+    const g = padModeCfg(t).grid;
+    const chrom = padModeOf(t) === PM_CHROM;
+    const split = g.split !== SPLIT_NONE;
+    const sk = chrom ? 'semi' : 'step', lo = chrom ? SEMI_MIN : STEP_MIN, hi = chrom ? SEMI_MAX : STEP_MAX;
+    const sl = chrom ? 'Semi' : 'Step';
+    const half = (z) => [
+        { kind: 'valsq', label: 'Oct' + (split ? z : ''), name: 'Octave' + (split ? ' ' + z : ''),
+          text: signed(g['oct' + z]), ringNorm: pos(g['oct' + z], ZONE_OCT_MIN, ZONE_OCT_MAX) },
+        { kind: 'valsq', label: sl + (split ? z : ''), name: (chrom ? 'Semitone' : 'Scale Step') + (split ? ' ' + z : ''),
+          text: signed(g[sk + z]), ringNorm: pos(g[sk + z], lo, hi) },
+    ];
+    return [{ kind: 'enumsq', label: 'Split', name: 'Split', text: SPLIT_NAMES[g.split],
+              options: SPLIT_NAMES, sel: g.split }]
+        .concat(half('A'), split ? half('B') : [BLANK, BLANK]);
+}
+
+function gridKnob(t, cell, steps) {
+    const g = padModeCfg(t).grid;
+    const chrom = padModeOf(t) === PM_CHROM;
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    const before = JSON.stringify(g);
+    const sk = chrom ? 'semi' : 'step', lo = chrom ? SEMI_MIN : STEP_MIN, hi = chrom ? SEMI_MAX : STEP_MAX;
+    switch (cell) {
+        case 0: g.split = clamp(g.split + steps, 0, SPLIT_NAMES.length - 1); break;
+        case 1: g.octA = clamp(g.octA + steps, ZONE_OCT_MIN, ZONE_OCT_MAX); break;
+        case 2: g[sk + 'A'] = clamp(g[sk + 'A'] + steps, lo, hi); break;
+        case 3: if (g.split === SPLIT_NONE) return false;
+                g.octB = clamp(g.octB + steps, ZONE_OCT_MIN, ZONE_OCT_MAX); break;
+        case 4: if (g.split === SPLIT_NONE) return false;
+                g[sk + 'B'] = clamp(g[sk + 'B'] + steps, lo, hi); break;
+        default: return false;
+    }
+    if (JSON.stringify(g) === before) return false;
+    S.chordDirty = true;
+    S.chordPadmapNow = true;
+    S.screenDirty = true;
+    return true;
+}
+
 /* The eight cells of the bank's own page (nothing held). */
 export function padModeBankCells(t) {
     const m = padModeOf(t);
-    const rest = m === PM_CHORD ? chordBankCells(t) : [];
+    const rest = m === PM_CHORD ? chordBankCells(t)
+        : (m === PM_SCALE || m === PM_CHROM) ? gridCells(t) : [];
     const cells = [modeCell(t)].concat(rest);
     while (cells.length < 8) cells.push(BLANK);
     return cells.slice(0, 8);
@@ -77,7 +198,9 @@ export function padModeBankCells(t) {
  * deliberate divisor? */
 export function padModeKnobDeliberate(t, knob) {
     if (knob === 0) return true;
-    if (padModeOf(t) === PM_CHORD) return knob === 7;    /* Slots */
+    const m = padModeOf(t);
+    if (m === PM_CHORD) return knob === 7;               /* Slots */
+    if (m === PM_SCALE || m === PM_CHROM) return knob === 1;   /* Split */
     return false;
 }
 
@@ -89,7 +212,9 @@ export function padModeBankKnob(t, knob, steps) {
         const j = Math.max(0, Math.min(list.length - 1, i + (steps > 0 ? 1 : -1)));
         return setPadMode(t, list[j]);
     }
-    if (padModeOf(t) === PM_CHORD) return chordBankKnob(t, knob - 1, steps);
+    const m = padModeOf(t);
+    if (m === PM_CHORD) return chordBankKnob(t, knob - 1, steps);
+    if (m === PM_SCALE || m === PM_CHROM) return gridKnob(t, knob - 1, steps);
     return false;
 }
 

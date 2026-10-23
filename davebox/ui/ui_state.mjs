@@ -1200,6 +1200,10 @@ export const S = {
      * are the Scale layout (ui_custom_chords.mjs). The setters keep the four
      * layout flags exclusive. */
     padLayoutCustom: new Array(8).fill(false),
+    /* Per track: null, or the PADMODE bank's per-mode settings (ui_pad_mode
+     * padModeCfg) — each mode keeps its own while another is chosen. Saved
+     * (sidecar `pmd`). */
+    padModeCfg: new Array(8).fill(null),
     /* Per track: null, or eight note lists (sorted, at most six notes each) —
      * actual pitches, as heard with the chord row's octave at 0. */
     customChords: new Array(8).fill(null),

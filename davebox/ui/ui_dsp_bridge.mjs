@@ -27,6 +27,7 @@
 
 import { restoreChordSidecar, resetChordTransient, clearHeldChords } from './ui_chord_pads.mjs';
 import { chordPadsOn, restoreCustomSidecar } from './ui_custom_chords.mjs';
+import { restorePadModeSidecar } from './ui_pad_mode.mjs';
 import {
     setButtonLED
 } from '/data/UserData/schwung/shared/input_filter.mjs';
@@ -1862,6 +1863,9 @@ export function restoreUiSidecar(applyDefaultsNow) {
         /* The Custom layout (additive on v:9): absent → no track on it, no
          * chords, the chord row's octave at 0. */
         restoreCustomSidecar(us);
+        /* The PADMODE bank's settings (additive on v:9): absent → every track
+         * on the defaults (no split, nothing transposed). */
+        restorePadModeSidecar(us.pmd);
         resetChordTransient();
         clearHeldChords();
         /* PADMODE is a melodic bank: a track remembered there that is not

@@ -13,6 +13,7 @@ import { dspGet } from './ui_dsp_get.mjs';
 import { chordLayoutOn, fillChordPadMap, padToken } from './ui_chord_pads.mjs';
 import { customLayoutOn, fillCustomPadMap, padOctShift } from './ui_custom_chords.mjs';
 import { miActive } from './ui_midi_import.mjs';
+import { fillGridPadMap } from './ui_pad_mode.mjs';
 
 /* PHASE-1: helper for the pad-dispatch mute condition. Modal sources:
  * - sessionView                 — pads launch clips
@@ -129,28 +130,12 @@ export function computePadNoteMap() {
                 const p = st < 0 ? -1 : base + (row >= 2 ? 12 : 0) + st;
                 S.padNoteMap[i] = (p < 0 || p > 127) ? 0xFF : p;
             }
-        } else if (S.padLayoutChromatic[t]) {
-            for (let i = 0; i < 32; i++) {
-                const col = i % 8;
-                const row = Math.floor(i / 8);
-                /* OOB pads (computed pitch < 0 or > 127) get the 0xFF sentinel
-                 * to match drum vel-zone slots. Previously clamped to 0/127,
-                 * which made multiple OOB pads share the same MIDI note → all
-                 * lit when any one was pressed (LED cache keyed on note). */
-                const p = root + col + row * 8;
-                S.padNoteMap[i] = (p < 0 || p > 127) ? 0xFF : p;
-            }
         } else {
-            const n = intervals.length;
-            for (let i = 0; i < 32; i++) {
-                const col = i % 8;
-                const row = Math.floor(i / 8);
-                const deg = col + row * 3;
-                const oct = Math.floor(deg / n);
-                const semitone = oct * 12 + intervals[deg % n];
-                const p = root + semitone;
-                S.padNoteMap[i] = (p < 0 || p > 127) ? 0xFF : p;
-            }
+            /* Scale / Chrom, split into halves or not, each half with its own
+             * octave and start (the PADMODE bank, ui_pad_mode.mjs). Pads whose
+             * pitch leaves 0..127 get the 0xFF sentinel (clamping made several
+             * pads share a note, so pressing one lit them all). */
+            fillGridPadMap(t, root, intervals, !!S.padLayoutChromatic[t]);
         }
     }
     /* Phase 1: push the resolved active-track map to DSP for audio-thread

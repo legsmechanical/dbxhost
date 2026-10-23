@@ -700,6 +700,19 @@ layouts, and the screen flashes IN-SCALE, CHROMATIC, PIANO or CUSTOM CHORDS:
 A Conductor's pads have Scale and Chrom only, from Shift + Step 8; it has no
 PADMODE bank.
 
+**Splitting the pads (Scale and Chrom).** On the PADMODE bank:
+
+- **Split** — *None*, *Vert* (the left 4x4 and the right 4x4 are two separate
+  note grids) or *Horz* (the top two rows and the bottom two). Half **A** is the
+  left or top one, **B** the right or bottom one.
+- **Oct A / Oct B** — each half's octave. With no split there is one **Oct** for
+  the whole grid.
+- **Step A / Step B** (Scale) — where each half starts, counted in scale notes,
+  so the pads stay in key: +2 in C major starts on E. **Semi A / Semi B**
+  (Chrom) — the same in semitones.
+- Scale and Chrom share the split and the octaves; each keeps its own start.
+  The Octave buttons still move the whole surface, both halves together.
+
 <img src="img/pads-melodic.svg" alt="The Scale layout in C major at the default octave: each row starts three scale notes above the row below, the root is filled, ">
 
 ### The Chord layout
