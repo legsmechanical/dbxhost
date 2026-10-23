@@ -16,7 +16,7 @@ import { instrValueFor } from './ui_dsp_bridge.mjs';
 import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import { chordLabel, noteNames, noteLabel, heldInputNotes, keyUsesFlats, keyRootName, fitHeldLabel } from './ui_chord.mjs';
 import { chordIndicator, chordEditSlot, chordSlotCells } from './ui_chord_pads.mjs';
-import { padModeBankCells } from './ui_pad_mode.mjs';
+import { padModeBankCells, customCardSlot, customCardCells } from './ui_pad_mode.mjs';
 import { triggerPhase } from './ui_trigger.mjs';
 import { LGTO_KNOB, CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, knobAltFor, ARP_STEPS_KNOB, arpStepsBank } from './ui_constants.mjs';
 import { miActive, miRender } from './ui_midi_import.mjs';
@@ -2108,6 +2108,16 @@ function drawUIBody() {
          * uppercase, and "VI" would say major). */
         fill_rect(0, 0, 128, MV_BAR_Y, 0);
         const _ht = fit4x5(_cs.title, 124);
+        fontPrint4x5(Math.round((128 - fontWidth4x5(_ht)) / 2), 1, _ht, 1);
+        fill_rect(0, MV_BAR_Y, 128, 1, 1);
+        return;
+    }
+    /* A held Custom chord: its assign card, titled with the chord it holds. */
+    if (bank === BANK_CHORD && inTimeout && customCardSlot() >= 0) {
+        const _cc = customCardCells(S.activeTrack, customCardSlot());
+        drawKitPage(_cc.title, _cc.cells, false, null);
+        fill_rect(0, 0, 128, MV_BAR_Y, 0);
+        const _ht = fit4x5(_cc.title, 124);
         fontPrint4x5(Math.round((128 - fontWidth4x5(_ht)) / 2), 1, _ht, 1);
         fill_rect(0, MV_BAR_Y, 128, 1, 1);
         return;

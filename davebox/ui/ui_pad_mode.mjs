@@ -17,7 +17,11 @@ import { PAD_MODE_MELODIC_SCALE, PAD_MODE_CONDUCT, BANK_PADMODE } from './ui_con
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { chordLayoutOn, setChordLayout, chordEditSlot, chordSlotCells,
     chordBankCells, chordBankKnob } from './ui_chord_pads.mjs';
-import { setCustomLayout } from './ui_custom_chords.mjs';
+import { setCustomLayout, customLayoutOn, customHeldPad, customChordGet, customChordSet,
+    customChordPitches, OCT_LIMIT, CUSTOM_CHORD_MAX } from './ui_custom_chords.mjs';
+import { chordLabel, keyUsesFlats } from './ui_chord.mjs';
+import { markJsUndo } from './ui_state.mjs';
+import { DEFAULT_TRACK_OCTAVE } from './ui_constants.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 
 function pos(v, lo, hi) { return hi > lo ? ((v | 0) - lo) / (hi - lo) : 0; }
@@ -41,6 +45,7 @@ export function padModesFor(t) {
     return (S.trackPadMode[t] | 0) === PAD_MODE_CONDUCT ? [PM_SCALE, PM_CHROM]
         : [PM_SCALE, PM_CHROM, PM_PIANO, PM_CHORD, PM_CUSTOM];
 }
+
 
 /* Put track t's pads in mode m. Landing on Chord raises its explainer and
  * lands on this bank (setChordLayout). Returns true when the mode changed. */
@@ -76,7 +81,8 @@ export const INSTR_NAMES = ['Piano', 'Bass'];
 
 export function defaultPadModeCfg() {
     return { grid: { split: SPLIT_NONE, octA: 0, octB: 0, stepA: 0, stepB: 0, semiA: 0, semiB: 0 },
-             piano: { instr: INSTR_PIANO, octT: 0, semiT: 0, octB: 0, semiB: 0, bassOct: 0, bassSemi: 0 } };
+             piano: { instr: INSTR_PIANO, octT: 0, semiT: 0, octB: 0, semiB: 0, bassOct: 0, bassSemi: 0 },
+             custom: { play: 0, scaleStep: 0, build: new Array(8).fill(null) } };
 }
 
 export function padModeCfg(t) {
@@ -176,8 +182,189 @@ export function restorePadModeSidecar(pmd) {
             octT: n(p.octT, ZONE_OCT_MIN, ZONE_OCT_MAX), semiT: n(p.semiT, SEMI_MIN, SEMI_MAX),
             octB: n(p.octB, ZONE_OCT_MIN, ZONE_OCT_MAX), semiB: n(p.semiB, SEMI_MIN, SEMI_MAX),
             bassOct: n(p.bassOct, ZONE_OCT_MIN, ZONE_OCT_MAX), bassSemi: n(p.bassSemi, SEMI_MIN, SEMI_MAX) };
+        const u = e.custom || {};
+        c.custom = { play: n(u.play, 0, 1), scaleStep: n(u.scaleStep, STEP_MIN, STEP_MAX),
+            build: Array.from({ length: 8 }, (_, k) => cleanBuild(Array.isArray(u.build) ? u.build[k] : null)) };
         S.padModeCfg[t] = c;
     }
+}
+
+/* ---- Custom ------------------------------------------------------------------ */
+
+/* Hold (Assign / Play), the scale rows' octave and start, the chord row's
+ * octave. The two octaves are the ones the Octave buttons move (trackOctave
+ * and customChordOctave), shown here as views, so knob and buttons agree. */
+const HOLD_NAMES = ['Assign', 'Play'];
+function customCells(t) {
+    const u = padModeCfg(t).custom;
+    const sco = (S.trackOctave[t] | 0) - DEFAULT_TRACK_OCTAVE, cho = S.customChordOctave[t] | 0;
+    return [
+        { kind: 'enumsq', label: 'Hold', name: 'Chord Hold', text: HOLD_NAMES[u.play ? 1 : 0], options: HOLD_NAMES, sel: u.play ? 1 : 0 },
+        { kind: 'valsq', label: 'ScOct', name: 'Scale Octave', text: signed(sco), ringNorm: pos(sco, -4 - DEFAULT_TRACK_OCTAVE, 4 - DEFAULT_TRACK_OCTAVE) },
+        { kind: 'valsq', label: 'ScStp', name: 'Scale Step', text: signed(u.scaleStep), ringNorm: pos(u.scaleStep, STEP_MIN, STEP_MAX) },
+        { kind: 'valsq', label: 'ChOct', name: 'Chord Octave', text: signed(cho), ringNorm: pos(cho, -OCT_LIMIT, OCT_LIMIT) },
+    ];
+}
+
+function customKnob(t, cell, steps) {
+    const u = padModeCfg(t).custom;
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    switch (cell) {
+        case 0: { const v = steps > 0 ? 1 : 0; if (v === (u.play | 0)) return false; u.play = v; break; }
+        case 1: { const v = clamp((S.trackOctave[t] | 0) + steps, -4, 4); if (v === (S.trackOctave[t] | 0)) return false;
+                  S.trackOctave[t] = v; break; }
+        case 2: { const v = clamp((u.scaleStep | 0) + steps, STEP_MIN, STEP_MAX); if (v === (u.scaleStep | 0)) return false;
+                  u.scaleStep = v; break; }
+        case 3: { const v = clamp((S.customChordOctave[t] | 0) + steps, -OCT_LIMIT, OCT_LIMIT);
+                  if (v === (S.customChordOctave[t] | 0)) return false; S.customChordOctave[t] = v; break; }
+        default: return false;
+    }
+    S.chordDirty = true;
+    S.chordPadmapNow = true;
+    S.screenDirty = true;
+    return true;
+}
+
+/* The assign card: hold a Custom chord pad on this bank and build the chord
+ * by name, as the Chord layout's slot card does (Josh, 2026-10-22). A turn
+ * REPLACES the pad's notes (his ruling: "Replace, undoable"); one Undo per
+ * hold brings back what the pad held before. */
+export const QUALS = [
+    ['Maj', [0, 4, 7]], ['Min', [0, 3, 7]], ['Dim', [0, 3, 6]], ['Aug', [0, 4, 8]],
+    ['Sus2', [0, 2, 7]], ['Sus4', [0, 5, 7]], ['7', [0, 4, 7, 10]], ['Maj7', [0, 4, 7, 11]],
+    ['Min7', [0, 3, 7, 10]], ['m7b5', [0, 3, 6, 10]], ['Dim7', [0, 3, 6, 9]], ['6', [0, 4, 7, 9]],
+    ['Min6', [0, 3, 7, 9]], ['Add9', [0, 4, 7, 14]], ['9', [0, 4, 7, 10, 14]], ['Maj9', [0, 4, 7, 11, 14]],
+    ['Min9', [0, 3, 7, 10, 14]], ['7sus4', [0, 5, 7, 10]], ['5', [0, 7]],
+];
+const SPREADS = ['Close', 'Open'];
+const BASSES = ['Off', 'Root', '3rd', '5th'];
+const NOTE_SH = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const NOTE_FL = ['C', 'D\u266d', 'D', 'E\u266d', 'E', 'F', 'G\u266d', 'G', 'A\u266d', 'A', 'B\u266d', 'B'];
+const CARD_OCT = 3;
+
+function cleanBuild(b) {
+    if (!b || typeof b !== 'object' || !b.rec || !Array.isArray(b.notes)) return null;
+    const r = b.rec, n = (x, lo, hi) => (typeof x === 'number' && x >= lo && x <= hi) ? (x | 0) : 0;
+    return { rec: { root: n(r.root, 0, 11), qual: n(r.qual, 0, QUALS.length - 1), inv: n(r.inv, -4, 4),
+                    spread: n(r.spread, 0, 1), bass: n(r.bass, 0, 3), oct: n(r.oct, -CARD_OCT, CARD_OCT) },
+             notes: b.notes.filter((x) => typeof x === 'number').map((x) => x | 0) };
+}
+
+/* Where a card chord's root sits at Oct 0: the scale rows' register at the
+ * default octave, so a built chord lands among the notes it is played with. */
+function cardBase(t) { return ((S.padOctave[t] | 0) + DEFAULT_TRACK_OCTAVE) * 12; }
+
+/* The notes (as stored) a card record spells. */
+export function buildCardChord(t, rec) {
+    const iv = QUALS[rec.qual][1];
+    const base = cardBase(t) + rec.root + rec.oct * 12;
+    let ns = iv.map((i) => base + i).sort((a, b) => a - b);
+    const size = ns.length;
+    const inv = Math.max(-(size - 1), Math.min(size - 1, rec.inv | 0));
+    for (let i = 0; i < inv; i++) { ns[0] += 12; ns.sort((a, b) => a - b); }
+    for (let i = 0; i > inv; i--) { ns[ns.length - 1] -= 12; ns.sort((a, b) => a - b); }
+    if (rec.spread && ns.length >= 3) { ns[1] += 12; ns.sort((a, b) => a - b); }
+    if (rec.bass) {
+        /* Root, 3rd or 5th of the chord (its 1st, 2nd or 3rd tone), below it. */
+        const tone = iv[Math.min(rec.bass - 1, iv.length - 1)];
+        let b = base + (tone % 12);
+        while (b >= ns[0]) b -= 12;
+        ns.unshift(b);
+    }
+    ns = ns.filter((p, i, a) => p >= 0 && p <= 127 && a.indexOf(p) === i);
+    return ns.slice(0, CUSTOM_CHORD_MAX);
+}
+
+/* The card record for chord k: the one it was built with, while its notes
+ * are still those; otherwise the chord its notes spell (his ruling: the card
+ * starts from the chord it recognises); an empty pad starts on the key. */
+function cardRecordFor(t, k) {
+    const u = padModeCfg(t).custom;
+    const notes = customChordGet(t, k);
+    const b = u.build[k];
+    if (b && JSON.stringify(b.notes) === JSON.stringify(notes)) return Object.assign({}, b.rec);
+    const rec = { root: (S.padKey | 0) % 12, qual: 0, inv: 0, spread: 0, bass: 0, oct: 0 };
+    if (!notes.length) return rec;
+    const pcs = [...new Set(notes.map((p) => p % 12))];
+    const bassPc = notes[0] % 12;
+    for (const r of [bassPc].concat(pcs.filter((p) => p !== bassPc))) {
+        const key = pcs.map((pc) => (pc - r + 12) % 12).sort((a, b) => a - b).join(',');
+        const q = QUALS.findIndex(([, iv]) => [...new Set(iv.map((i) => i % 12))].sort((a, b) => a - b).join(',') === key);
+        if (q < 0) continue;
+        rec.root = r; rec.qual = q;
+        const ivs = QUALS[q][1].map((i) => i % 12);
+        rec.inv = Math.max(0, ivs.indexOf((bassPc - r + 12) % 12));
+        break;
+    }
+    if (rec.qual === 0 && pcs.length && !QUALS[0][1].every((i) => pcs.indexOf((rec.root + i) % 12) >= 0)) rec.root = bassPc;
+    /* The octave that puts the rebuilt chord's lowest note nearest the old one. */
+    rec.oct = 0;
+    const low = buildCardChord(t, rec)[0];
+    rec.oct = Math.max(-CARD_OCT, Math.min(CARD_OCT, Math.round((notes[0] - low) / 12)));
+    return rec;
+}
+
+/* The pad the card is for: a held Custom chord pad, on this bank. */
+export function customCardSlot() {
+    const t = S.activeTrack;
+    if (S.activeBank !== BANK_PADMODE || !customLayoutOn(t)) return -1;
+    return customHeldPad(t);
+}
+
+let _card = null;            /* { t, k, was, rec } — the hold being edited */
+function cardSession(t, k) {
+    if (!_card || _card.t !== t || _card.k !== k) _card = { t, k, was: customChordGet(t, k), rec: cardRecordFor(t, k) };
+    return _card;
+}
+/* A different hold starts a fresh card (and a fresh Undo). */
+export function customCardEnd() { _card = null; }
+
+export function customCardCells(t, k) {
+    const c = cardSession(t, k);
+    const r = c.rec;
+    const names = keyUsesFlats(S.padKey | 0, S.padScale | 0) ? NOTE_FL : NOTE_SH;
+    const heard = customChordPitches(t, k);
+    return {
+        title: heard.length ? chordLabel(heard, keyUsesFlats(S.padKey | 0, S.padScale | 0), r.root) : 'EMPTY',
+        cells: [
+            { kind: 'valsq', label: 'Root', name: 'Root', text: names[r.root], ringNorm: pos(r.root, 0, 11) },
+            { kind: 'enumsq', label: 'Qual', name: 'Quality', text: QUALS[r.qual][0], options: QUALS.map((q) => q[0]), sel: r.qual },
+            BLANK,
+            { kind: 'valsq', label: 'Inv', name: 'Inversion', text: signed(r.inv), ringNorm: pos(r.inv, -4, 4) },
+            { kind: 'enumsq', label: 'Sprd', name: 'Spread', text: SPREADS[r.spread], options: SPREADS, sel: r.spread },
+            { kind: 'enumsq', label: 'Bass', name: 'Bass', text: BASSES[r.bass], options: BASSES, sel: r.bass },
+            { kind: 'valsq', label: 'Oct', name: 'Octave', text: signed(r.oct), ringNorm: pos(r.oct, -CARD_OCT, CARD_OCT) },
+            BLANK,
+        ],
+    };
+}
+
+/* One knob step on the card. Writes the chord and books the Undo; returns
+ * the stored notes before and after (the caller re-voices a sounding pad),
+ * or null when nothing changed. */
+export function customCardKnob(t, k, knob, steps) {
+    const c = cardSession(t, k);
+    const r = c.rec;
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    const before = JSON.stringify(r);
+    switch (knob) {
+        case 0: r.root = ((r.root + steps) % 12 + 12) % 12; break;
+        case 1: r.qual = clamp(r.qual + steps, 0, QUALS.length - 1); break;
+        case 3: r.inv = clamp(r.inv + steps, -4, 4); break;
+        case 4: r.spread = clamp(r.spread + steps, 0, 1); break;
+        case 5: r.bass = clamp(r.bass + steps, 0, 3); break;
+        case 6: r.oct = clamp(r.oct + steps, -CARD_OCT, CARD_OCT); break;
+        default: return null;
+    }
+    const prev = customChordGet(t, k);
+    if (JSON.stringify(r) === before && prev.length) return null;
+    const notes = buildCardChord(t, r);
+    customChordSet(t, k, notes);
+    padModeCfg(t).custom.build[k] = { rec: Object.assign({}, r), notes: customChordGet(t, k) };
+    const was = c.was, now = customChordGet(t, k);
+    markJsUndo('chord', function () { customChordSet(t, k, was); }, function () { customChordSet(t, k, now); });
+    S.chordDirty = true;
+    return { prev, now };
 }
 
 /* ---- the bank ------------------------------------------------------------ */
@@ -237,7 +424,8 @@ export function padModeBankCells(t) {
     const m = padModeOf(t);
     const rest = m === PM_CHORD ? chordBankCells(t)
         : (m === PM_SCALE || m === PM_CHROM) ? gridCells(t)
-        : m === PM_PIANO ? pianoCells(t) : [];
+        : m === PM_PIANO ? pianoCells(t)
+        : m === PM_CUSTOM ? customCells(t) : [];
     const cells = [modeCell(t)].concat(rest);
     while (cells.length < 8) cells.push(BLANK);
     return cells.slice(0, 8);
@@ -249,7 +437,7 @@ export function padModeKnobDeliberate(t, knob) {
     if (knob === 0) return true;
     const m = padModeOf(t);
     if (m === PM_CHORD) return knob === 7;               /* Slots */
-    if (m === PM_SCALE || m === PM_CHROM || m === PM_PIANO) return knob === 1;   /* Split, Instrument */
+    if (m === PM_SCALE || m === PM_CHROM || m === PM_PIANO || m === PM_CUSTOM) return knob === 1;   /* Split, Instrument, Hold */
     return false;
 }
 
@@ -265,6 +453,7 @@ export function padModeBankKnob(t, knob, steps) {
     if (m === PM_CHORD) return chordBankKnob(t, knob - 1, steps);
     if (m === PM_SCALE || m === PM_CHROM) return gridKnob(t, knob - 1, steps);
     if (m === PM_PIANO) return pianoKnob(t, knob - 1, steps);
+    if (m === PM_CUSTOM) return customKnob(t, knob - 1, steps);
     return false;
 }
 
@@ -274,5 +463,7 @@ registerRingCells(BANK_PADMODE, () => {
     const t = S.activeTrack;
     if ((S.trackPadMode[t] | 0) !== PAD_MODE_MELODIC_SCALE) return null;
     const k = chordLayoutOn(t) ? chordEditSlot() : -1;
-    return k >= 0 ? chordSlotCells(t, k).cells : padModeBankCells(t);
+    if (k >= 0) return chordSlotCells(t, k).cells;
+    const ck = customCardSlot();
+    return ck >= 0 ? customCardCells(t, ck).cells : padModeBankCells(t);
 });

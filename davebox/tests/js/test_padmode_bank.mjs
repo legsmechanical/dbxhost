@@ -303,6 +303,97 @@ step('⭐⭐ Chord Map → Function: the slots regroup by job (I vi iii | IV ii 
     PM.setPadMode(T, PM.PM_SCALE); ticks(2);
 });
 
+const padN = (i) => C.TRACK_PAD_BASE + i;
+const padOn = (i) => midi(0x90, padN(i), 100), padOff = (i) => midi(0x80, padN(i), 0);
+const onCustom = () => {
+    onBank(PM.PM_CUSTOM);
+    S.customChords[T] = Array.from({ length: 8 }, () => []); S.customChordOctave[T] = 0;
+    S.trackOctave[T] = C.DEFAULT_TRACK_OCTAVE; ticks(2);
+};
+
+step('⭐ Custom: the page is Hold, ScOct, ScStp, ChOct — and the two octaves ARE the ones the Octave buttons move', () => {
+    onCustom();
+    const lab = PM.padModeBankCells(T).map((c) => c.label);
+    assert(JSON.stringify(lab.slice(0, 5)) === JSON.stringify(['Mode', 'Hold', 'ScOct', 'ScStp', 'ChOct']), 'page: ' + lab);
+    assert(PM.padModeBankCells(T)[1].text === 'Assign', 'Hold does not start on Assign');
+    kn(2, +1);
+    assert(S.trackOctave[T] === C.DEFAULT_TRACK_OCTAVE + 1, 'ScOct did not move the scale rows\' octave');
+    kn(4, -1);
+    assert(S.customChordOctave[T] === -1, 'ChOct did not move the chord row\'s octave');
+    padOn(9); padOff(9); midi(0xB0, 55, 127); midi(0xB0, 55, 0); ticks(1);   /* a scale pad, then Octave up */
+    assert(PM.padModeBankCells(T)[2].text === '+2', 'the knob does not read the button\'s octave: ' + PM.padModeBankCells(T)[2].text);
+});
+
+step('⭐ Custom ScStp moves the scale rows along the scale (still in key); the chord row stays', () => {
+    onCustom();
+    S.customChords[T][0] = [60, 64, 67]; ticks(2);
+    const before = map();
+    kn(3, +1); kn(3, +1); ticks(2);
+    const m = map();
+    assert(m[0] === before[0], 'the chord row moved');
+    const root = (S.padOctave[T] | 0) * 12;
+    for (let i = 8; i < 32; i++)
+        assert(m[i] === sc(root, (i % 8) + (Math.floor(i / 8) - 1) * 3 + 2), 'scale pad ' + i + ': ' + m[i]);
+});
+
+step('⭐⭐ Custom Hold: Play — a held chord pad + a scale pad PLAYS both and edits nothing; held notes never fill an empty pad', () => {
+    onCustom();
+    S.customChords[T][0] = [60, 64, 67]; ticks(2);
+    kn(1, +1);                                        /* Hold: Play */
+    assert(PM.padModeCfg(T).custom.play === 1, 'not Play');
+    S.activeBank = 0;
+    padOn(0); padOn(10);
+    assert(JSON.stringify(S.customChords[T][0]) === '[60,64,67]', 'Play edited the chord: ' + S.customChords[T][0]);
+    const heard = S.padNoteMap[10] + S.trackOctave[T] * 12;
+    assert(S.liveActiveNotes.has(heard), 'the scale pad did not sound with the chord held');
+    padOff(10); padOff(0); ticks(1);
+    padOn(12); padOn(3); padOff(3); padOff(12); ticks(1);
+    assert(S.customChords[T][3].length === 0, 'held notes filled an empty pad in Play: ' + S.customChords[T][3]);
+    S.activeBank = C.BANK_PADMODE; kn(1, -1);           /* Assign again: the same gesture edits */
+    S.activeBank = 0;
+    padOn(0); padOn(10); padOff(10); padOff(0); ticks(1);
+    assert(S.customChords[T][0].length === 4, 'Assign did not edit: ' + S.customChords[T][0]);
+});
+
+step('⭐⭐ the assign card: hold a chord pad on PADMODE — Root, Qual … on screen; a turn builds the chord by name; one Undo per hold', () => {
+    onCustom();
+    padOn(2); ticks(1);
+    let txt = screen().join('|');
+    assert(/ROOT/i.test(txt) && /QUAL/i.test(txt) && /EMPTY/i.test(txt), 'no card on an empty pad: ' + txt);
+    kn(1, +1); ticks(1);                              /* Qual: Maj → Min */
+    const base = ((S.padOctave[T] | 0) + C.DEFAULT_TRACK_OCTAVE) * 12;
+    assert(JSON.stringify(S.customChords[T][2]) === JSON.stringify([base, base + 3, base + 7]), 'C minor: ' + S.customChords[T][2]);
+    kn(0, +1); kn(0, +1); ticks(1);                   /* Root: D */
+    assert(JSON.stringify(S.customChords[T][2]) === JSON.stringify([base + 2, base + 5, base + 9]), 'D minor: ' + S.customChords[T][2]);
+    txt = screen().join('|');
+    assert(/DMIN/i.test(txt), 'the card title does not name D minor: ' + txt);
+    kn(3, +1); ticks(1);                              /* first inversion */
+    assert(S.customChords[T][2][0] === base + 5, 'inversion: ' + S.customChords[T][2]);
+    padOff(2); ticks(1);
+    S.undoJs.undo();
+    assert(S.customChords[T][2].length === 0, 'Undo did not bring back the empty pad: ' + S.customChords[T][2]);
+});
+
+step('⭐⭐ the card starts from the chord your notes spell, and a card-built pad reopens where it was', () => {
+    onCustom();
+    const base = ((S.padOctave[T] | 0) + C.DEFAULT_TRACK_OCTAVE) * 12;
+    S.customChords[T][1] = [base + 4, base + 7, base + 12];  /* C major, first inversion (E G C) */
+    ticks(2);
+    padOn(1); ticks(1);
+    const cells = PM.customCardCells(T, 1).cells;
+    assert(cells[0].text === 'C' && cells[1].text === 'Maj' && cells[3].text === '+1', 'recognised: ' + cells.map((c) => c.text));
+    kn(1, +1); kn(1, +1); kn(1, +1); kn(1, +1); kn(1, +1); kn(1, +1); kn(1, +1); kn(1, +1); ticks(1);  /* → Min7 */
+    assert(PM.customCardCells(T, 1).cells[1].text === 'Min7', 'not Min7');
+    const notes = S.customChords[T][1].slice();
+    assert(JSON.stringify(notes.map((p) => (p - base + 120) % 12).sort((a, b) => a - b)) === '[0,3,7,10]', 'Cmin7: ' + notes);
+    padOff(1); ticks(1);
+    const saved = PM.padModeSidecar(); PM.restorePadModeSidecar(JSON.parse(JSON.stringify(saved)));
+    padOn(1); ticks(1);
+    const c2 = PM.customCardCells(T, 1).cells;
+    assert(c2[1].text === 'Min7' && c2[3].text === '+1', 'the card did not reopen where it was: ' + c2.map((c) => c.text));
+    padOff(1); ticks(1);
+});
+
 step('⭐ a drum track has no PADMODE: no pad on its map, and the bank is not on its walk', () => {
     home(); S.trackPadMode[T] = C.PAD_MODE_DRUM; ticks(2);
     assert(pure.bankCycleForMode(C.PAD_MODE_DRUM, T).indexOf(C.BANK_PADMODE) < 0, 'PADMODE on the drum walk');

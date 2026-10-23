@@ -28,9 +28,9 @@ import {
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool } from './ui_constants.mjs';
 import { closeChordPopup, chordEditSlot, chordSlotKnob, chordSlotReset } from './ui_chord_pads.mjs';
-import { padModeBankKnob, padModeKnobDeliberate } from './ui_pad_mode.mjs';
+import { padModeBankKnob, padModeKnobDeliberate, customCardSlot, customCardKnob } from './ui_pad_mode.mjs';
 import { bakeNeedsPrint, printStart, printModalCC } from './ui_print.mjs';
-import { customLayoutOn, customEditTarget, customChordTranspose, customChordOctaveStep } from './ui_custom_chords.mjs';
+import { customLayoutOn, customEditTarget, customChordTranspose, customChordOctaveStep, revoiceIfSounding } from './ui_custom_chords.mjs';
 import { triggerFire } from './ui_trigger.mjs';
 import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay,
          markJsUndoPatch, stepRevealAvailable, loopViewActive, endLoopLatch, knobAltOn } from './ui_state.mjs';
@@ -4836,11 +4836,32 @@ function _onCC_knobs(d1, d2) {
             if (_st && chordSlotKnob(S.activeTrack, S.chordCardSlot, knobIdx, _st)) _chordEdited();
             return;
         }
+        /* A held Custom chord pad: its assign card (build the chord by name). */
+        if (S.activeBank === BANK_CHORD && customCardSlot() >= 0) {
+            const _ck = customCardSlot();
+            const _st = knobStep(knobIdx, d2, KNOB_PICK);
+            if (_st && customCardKnob(S.activeTrack, _ck, knobIdx, _st)) {
+                const _rv = revoiceIfSounding(S.activeTrack, _ck);
+                if (_rv) chordApplyRevoice(_rv, { record: false });
+                computePadNoteMap();
+                forceRedraw();
+            }
+            return;
+        }
         if (S.activeBank === BANK_CHORD) {
             /* PADMODE's own page: K1 Mode, then the mode's settings. Mode and
              * the toggles take the deliberate divisor. */
             const _st = knobStep(knobIdx, d2, padModeKnobDeliberate(S.activeTrack, knobIdx) ? KNOB_DELIB : KNOB_PICK);
-            if (_st && padModeBankKnob(S.activeTrack, knobIdx, _st)) _chordEdited();
+            const _oct = S.trackOctave[S.activeTrack];
+            if (_st && padModeBankKnob(S.activeTrack, knobIdx, _st)) {
+                /* Custom's Scale Oct is the track octave: let go of what the
+                 * pads were holding first, as the Octave buttons do. */
+                if (S.trackOctave[S.activeTrack] !== _oct) {
+                    for (const p of S.liveActiveNotes) queueLiveNoteOff(S.activeTrack, p);
+                    S.liveActiveNotes.clear();
+                }
+                _chordEdited();
+            }
             return;
         }
 

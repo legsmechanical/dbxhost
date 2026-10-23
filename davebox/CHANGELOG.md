@@ -22,6 +22,11 @@ the section into a versioned heading at release time.
   instrument: four strings, E A D G, seven frets across (PADMODE bank).
 - **Chord Map: Function** — regroups the chord pads by job: I vi iii, IV ii,
   V vii°, then I up. Edited chords move with their degree.
+- **Custom chords on the PADMODE bank:** Hold *Play* (a held chord pad just
+  plays, so the scale pads above play with it), the scale rows' octave and
+  start, the chord row's octave — and a **chord card**: hold a chord pad on the
+  bank and build it by name (Root, Quality, Inversion, Spread, Bass, Octave).
+  One Undo per hold.
 - **The manual now covers Schwung's two samplers inside dAVEBOx**: the
   Quantized Sampler (Shift + touch Volume + Sample) and Skipback (Shift + touch
   Volume + Capture), and where to set Skipback's length.

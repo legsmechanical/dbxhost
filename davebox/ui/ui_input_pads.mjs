@@ -38,10 +38,10 @@ import { soundVouchLivePress } from './ui_sound.mjs';
 import { chordLayoutOn, chordRowOf, chordSlotPress, chordSlotRelease, chordModPress,
     chordModRelease, chordPitchHeld, padPitches, ROW_SLOTS, ROW_MODS,
     chordPadHeld } from './ui_chord_pads.mjs';
-import { padModeOf, padModesFor, setPadMode, PM_CHROM, PM_PIANO, PM_CHORD, PM_CUSTOM } from './ui_pad_mode.mjs';
+import { padModeOf, padModesFor, setPadMode, customCardEnd, PM_CHROM, PM_PIANO, PM_CHORD, PM_CUSTOM } from './ui_pad_mode.mjs';
 import { customLayoutOn, customEditTarget, customChordPress, customScalePress,
     customChordPitches, customChordToggle, customChordClear, customChordSet, customChordGet,
-    customChordFromHeard } from './ui_custom_chords.mjs';
+    customChordFromHeard, customPlayMode } from './ui_custom_chords.mjs';
 import { handoffRecordingToTrack, recordNoteOn, recordNoteOff,
     openTapTempo, registerTapTempo, extNoteOffAll,
     stepRecPadPress, stepRecPadRelease, extHeldNotes } from './ui_record.mjs';
@@ -172,6 +172,9 @@ function _chordPadRelease(padIdx, slot) {
         return true;
     }
     if (row !== ROW_SLOTS) return false;
+    /* A Custom chord let go ends its assign card: the next hold is a new
+     * card, with its own Undo. */
+    customCardEnd();
     const pitches = chordSlotRelease(t, padIdx);
     for (const p of pitches) {
         if (_pitchHeldElsewhere(p, padIdx)) continue;
@@ -294,7 +297,8 @@ function _customPadPress(padIdx, d2) {
      * chord just plays, so a melody held over the chords never overwrites
      * one. The notes are sounding from their own pads; the chord's first
      * sound is its next press. */
-    if (!customChordGet(t, padIdx).length) {
+    /* PADMODE Hold: Play — holding notes never fills a chord either. */
+    if (!customPlayMode(t) && !customChordGet(t, padIdx).length) {
         const heldNotes = [];
         for (let i = 8; i < 32; i++) if (padPitch[i] >= 0) heldNotes.push(padPitch[i]);
         /* ...and keys held on an external keyboard, the same way. */

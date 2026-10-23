@@ -803,6 +803,23 @@ does not change it. Chords are saved per track.
 - **Clear a chord:** Delete + its pad. Undo brings it back.
 - Holding a step and tapping a chord writes the whole chord into the step.
 
+**On the PADMODE bank** (Custom):
+
+- **Hold** — *Assign* (default): holding a chord pad edits it, as above. *Play*:
+  holding a chord pad just plays it, so you can play the scale pads with it and
+  nothing is added; holding notes never fills an empty pad either.
+- **ScOct** / **ChOct** — the scale rows' octave and the chord row's octave: the
+  same two the Octave buttons move.
+- **ScStp** — where the scale rows start, counted in scale notes (they stay in
+  key).
+- **Build a chord by name:** hold a chord pad while on the PADMODE bank and the
+  page becomes its card, titled with the chord: **Root**, **Qual** (Maj, Min, Dim,
+  Aug, Sus2, Sus4, 7, Maj7, Min7, m7b5, Dim7, 6, Min6, Add9, 9, Maj9, Min9,
+  7sus4, 5), **Inv**, **Sprd** (Close / Open), **Bass** (Off / Root / 3rd / 5th)
+  and **Oct**. The card starts from the chord the pad already holds; a turn
+  replaces its notes with the chord on the card. One **Undo** brings back what
+  the pad held before you picked it up. It works in Assign and in Play.
+
 ## 6.2 Several notes on one step
 
 A step holds up to **eight notes**. Build a chord two ways:
