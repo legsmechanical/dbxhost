@@ -9,8 +9,8 @@
 import { resetChordTransient } from './ui_chord_pads.mjs';
 import {
     NUM_TRACKS, NUM_STEPS, DRUM_LANES,
-    PAD_MODE_DRUM, PAD_MODE_CONDUCT, BANKS, ACTION_POPUP_MS,
-    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_MACROS, BANK_STEP, isSoundBank
+    PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_MELODIC_SCALE, BANKS, ACTION_POPUP_MS,
+    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_MACROS, BANK_STEP, BANK_PADMODE, isSoundBank
 } from './ui_constants.mjs';
 import { S, noteUndoUnit, markJsUndo } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -28,6 +28,7 @@ import { refreshPerClipBankParams, resetPerClipBankParamsToDefault,
 import { automationClearClipQueued, automationClearBanksQueued,
          automationNoteListChangedElsewhere, automationCarryFilter } from './ui_automation.mjs';
 import { autoBankReset, autoLanePinClear } from './ui_automation_bank.mjs';
+import { resetPadModeBank } from './ui_pad_mode.mjs';
 
 /* Record a MELODIC clip whose automation mirror (clipAtHas) the editop cannot
  * fill purely in JS — pollDSP's local-rev path
@@ -977,6 +978,8 @@ export function resetBankParams(t, bank) {
         return bankDisplayName(PAD_MODE_DRUM, 5);
     }
     if (bank === 5)             { resetTarp(t);             return BANKS[5].name; }
+    /* PAD MODE: the current mode's settings; not a DSP bank, so no automation. */
+    if (bank === BANK_PADMODE && S.trackPadMode[t] === PAD_MODE_MELODIC_SCALE) return resetPadModeBank(t);
     return null;                                     /* 0, 7, SOUND, MACROS, AUTOMATION: own paths */
 }
 

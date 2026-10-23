@@ -512,6 +512,22 @@ export function chordBankKnob(t, cell, steps) {
     return true;
 }
 
+/* Delete + jog click on the bank: every setting back to its default. A Map
+ * change moves the chords back to their Diatonic pads, as the knob does; the
+ * chords themselves are left alone. Returns true when something changed. */
+export function resetChordBank(t) {
+    const s = settingsOf(t);
+    const before = JSON.stringify(s);
+    if ((s.map | 0) !== 0) remapPalette(t, s.map | 0, 0);
+    Object.assign(s, defaultChordSettings());
+    if (JSON.stringify(s) === before) return false;
+    if (t === S.activeTrack) { S.chordHeldSlots = []; heldChords.clear(); }
+    S.chordPadmapNow = true;
+    S.chordDirty = true;
+    S.screenDirty = true;
+    return true;
+}
+
 /* ---- LEDs ---------------------------------------------------------------- */
 
 /* The colour for pad i, or null to let the caller's scale colouring stand.

@@ -14,7 +14,8 @@ the section into a versioned heading at release time.
   Custom) and the other knobs are that layout's settings; each layout keeps its
   settings when you switch away and back. The TRACK CONFIG **Layout** row is
   gone (Shift + Step 8 still steps through the layouts), and so is the Chord
-  layout's explainer card.
+  layout's explainer card. **Delete + jog click** on the bank resets the
+  current layout's settings (Mode, Instr and Custom chords stay).
 - **Split the pads in Scale and Chrom** into zone A (left / bottom) and zone B
   (right / top), each with its own **Oct** and **Trans**; zone B shows its colors
   swapped (root dim white, other notes in the track color) so the zones read apart.

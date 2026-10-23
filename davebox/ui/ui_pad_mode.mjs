@@ -17,7 +17,7 @@ import { PAD_MODE_MELODIC_SCALE, PAD_MODE_CONDUCT, BANK_PADMODE } from './ui_con
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { triggerFire, triggerPhase } from './ui_trigger.mjs';
 import { chordLayoutOn, setChordLayout, chordEditSlot, chordSlotCells,
-    chordBankCells, chordBankKnob } from './ui_chord_pads.mjs';
+    chordBankCells, chordBankKnob, resetChordBank } from './ui_chord_pads.mjs';
 import { setCustomLayout, customLayoutOn, customHeldPad, customChordGet, customChordSet,
     customChordPitches, OCT_LIMIT, CUSTOM_CHORD_MAX } from './ui_custom_chords.mjs';
 import { chordLabel, keyUsesFlats } from './ui_chord.mjs';
@@ -531,6 +531,57 @@ export function padModeBankKnob(t, knob, steps) {
     if (m === PM_PIANO) return pianoKnob(t, knob - 1, steps);
     if (m === PM_CUSTOM) return customKnob(t, knob - 1, steps);
     return false;
+}
+
+/* Delete + jog click on the bank (Josh, 2026-10-23: "it should reset the
+ * current banks params"): the current mode's settings back to their
+ * defaults. Mode and Piano's Instrument stay — they pick the layout, as the
+ * Conductor's ON/OFF does — and Custom's chords stay (Delete + pad clears one).
+ * One Undo brings every value back. Returns the popup's name. */
+export function resetPadModeBank(t) {
+    const snap = () => ({
+        cfg: JSON.stringify(padModeCfg(t)),
+        chord: JSON.stringify(S.chordSettings[t] || null),
+        pal: JSON.stringify(S.chordPalette[t] || null),
+        last: JSON.stringify(S.chordLast[t] || null),
+        cho: S.customChordOctave[t] | 0,
+        oct: S.trackOctave[t] | 0,
+    });
+    const apply = (v) => {
+        S.padModeCfg[t] = JSON.parse(v.cfg);
+        const ch = JSON.parse(v.chord), pal = JSON.parse(v.pal), last = JSON.parse(v.last);
+        S.chordSettings[t] = ch || undefined;
+        S.chordPalette[t] = pal || undefined;
+        S.chordLast[t] = last || undefined;
+        S.customChordOctave[t] = v.cho;
+        S.trackOctave[t] = v.oct;
+        S.chordDirty = true;
+        S.chordPadmapNow = true;
+        S.screenDirty = true;
+    };
+    const was = snap();
+    const m = padModeOf(t), c = padModeCfg(t);
+    if (m === PM_SCALE || m === PM_CHROM) {
+        /* The split and both octaves are shared by the two; the Transpose is
+         * this mode's own (the other keeps its). */
+        const g = c.grid, sk = m === PM_CHROM ? 'semi' : 'step';
+        g.split = SPLIT_NONE; g.octA = 0; g.octB = 0; g[sk + 'A'] = 0; g[sk + 'B'] = 0;
+    } else if (m === PM_PIANO) {
+        const p = c.piano;
+        p.octA = 0; p.semiA = 0; p.octB = 0; p.semiB = 0; p.bassOct = 0; p.bassSemi = 0;
+    } else if (m === PM_CHORD) {
+        resetChordBank(t);
+    } else if (m === PM_CUSTOM) {
+        c.custom.play = 0; c.custom.scaleStep = 0;
+        S.customChordOctave[t] = 0;
+        S.trackOctave[t] = DEFAULT_TRACK_OCTAVE;
+    }
+    const now = snap();
+    if (JSON.stringify(now) !== JSON.stringify(was)) {
+        apply(now);
+        markJsUndo('padmode', function () { apply(was); }, function () { apply(now); });
+    }
+    return 'PAD MODE';
 }
 
 /* The knob rings ride the cells on screen: the held slot's card, or the

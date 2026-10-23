@@ -445,7 +445,7 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
 
 | Gesture | Result |
 |---|---|
-| **Delete + jog click** | Reset every parameter in the active bank (not PAD MODE, ALL LANES, STEP, or the Conductor's ON/OFF, OCTAVE and TIMING). One-shot actions (Stretch, Shift, Legato, Crop) are left alone. On a drum track's RPT GROOVE bank, or any bank while Note Repeat is on, it resets the selected lane's groove |
+| **Delete + jog click** | Reset every parameter in the active bank (not ALL LANES, STEP, or the Conductor's ON/OFF, OCTAVE and TIMING). One-shot actions (Stretch, Shift, Legato, Crop) are left alone. On a drum track's RPT GROOVE bank, or any bank while Note Repeat is on, it resets the selected lane's groove |
 | **Delete + jog click** on **MACROS** | Unassign all eight macros on the track (**asks first**). Values and automation are left alone |
 | **Shift + Delete + jog click** | Reset all the sequencer effects — NOTE FX, HARMONY, DELAY and SEQ ARP. The CLIP, lane, STEP, MACROS and MIX banks, and automation, are left alone |
 | **Shift + Delete + side button** | Reset the whole clip — notes and all parameters |
@@ -710,6 +710,10 @@ layouts, and the screen flashes IN-SCALE, CHROMATIC, PIANO or CUSTOM CHORDS:
 
 A Conductor's pads have Scale and Chrom only, from Shift + Step 8; it has no
 Pad Mode bank.
+
+**Delete + jog click** on the Pad Mode bank resets the current layout's settings.
+Mode and Piano's Instr stay as they are, and so do your Custom chords; Undo
+brings the settings back.
 
 **Splitting the pads (Scale and Chrom).** On the Pad Mode bank:
 

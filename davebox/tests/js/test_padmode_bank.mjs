@@ -519,6 +519,62 @@ step('⭐ a drum track has no PADMODE: no pad on its map, and the bank is not on
     S.trackPadMode[T] = C.PAD_MODE_MELODIC_SCALE; ticks(2);
 });
 
+step('⭐⭐ Delete + jog click on Pad Mode resets the current mode\'s settings (Josh: "it should reset the current banks params"); Mode, Instrument and the chords stay; one Undo brings them back', () => {
+    home(); S.trackPadMode[T] = C.PAD_MODE_MELODIC_SCALE; S.trackRoute[T] = 0;
+    PM.setPadMode(T, PM.PM_SCALE); ticks(2);
+    pickOnMap(C.BANK_PADMODE); S.bankCardLatched = true;
+    const cfg = () => JSON.stringify(PM.padModeCfg(T));
+    const delJog = () => { midi(0xB0, 119, 127); midi(0xB0, 3, 127); midi(0xB0, 3, 0); midi(0xB0, 119, 0); ticks(1); };
+
+    /* Scale: Split, both octaves and Scale's own Transpose; Chrom's stays. */
+    PM.padModeBankKnob(T, 1, 2); PM.padModeBankKnob(T, 2, 1); PM.padModeBankKnob(T, 3, 2);
+    PM.padModeBankKnob(T, 4, -1); PM.padModeBankKnob(T, 5, 3);
+    PM.padModeCfg(T).grid.semiA = 5;
+    const before = cfg(), g = PM.padModeCfg(T).grid;
+    assert(g.split === 2 && g.octA === 1 && g.stepA === 2 && g.octB === -1 && g.stepB === 3, 'setup: ' + before);
+    delJog();
+    const g2 = PM.padModeCfg(T).grid;
+    assert(g2.split === 0 && g2.octA === 0 && g2.octB === 0 && g2.stepA === 0 && g2.stepB === 0, 'Scale not reset: ' + cfg());
+    assert(g2.semiA === 5, 'Chrom\'s Transpose was reset from Scale');
+    assert(PM.padModeOf(T) === PM.PM_SCALE, 'Mode changed: ' + PM.padModeOf(T));
+    assert((S.actionPopupLines || []).join(' ') === 'PAD MODE RESET', 'popup: ' + S.actionPopupLines);
+    S.undoJs.undo();
+    assert(cfg() === before, 'Undo did not bring Scale back: ' + cfg());
+
+    /* Custom: Hold, both octaves, Transpose — never the chords. */
+    PM.setPadMode(T, PM.PM_CUSTOM); ticks(2);
+    PM.padModeBankKnob(T, 1, 1); PM.padModeBankKnob(T, 2, 1); PM.padModeBankKnob(T, 3, 1); PM.padModeBankKnob(T, 4, 2);
+    S.customChords[T][0] = [60, 64, 67];
+    delJog();
+    const u = PM.padModeCfg(T).custom;
+    assert(u.play === 0 && u.scaleStep === 0 && S.customChordOctave[T] === 0 && S.trackOctave[T] === C.DEFAULT_TRACK_OCTAVE,
+        'Custom not reset: ' + JSON.stringify([u.play, u.scaleStep, S.customChordOctave[T], S.trackOctave[T]]));
+    assert(S.customChords[T][0].length === 3, 'the reset cleared a chord');
+    assert(PM.padModeOf(T) === PM.PM_CUSTOM, 'Mode changed from Custom');
+    S.undoJs.undo();
+    assert(PM.padModeCfg(T).custom.play === 1 && S.customChordOctave[T] === 1, 'Undo did not bring Custom back');
+
+    /* Chord: Map back to Diatonic (the chords follow), Pad Oct to 0. */
+    PM.setPadMode(T, PM.PM_CHORD); ticks(2);
+    PM.padModeBankKnob(T, 1, 1); PM.padModeBankKnob(T, 6, 1);
+    assert(S.chordSettings[T].map === 1 && S.chordSettings[T].strum === 1, 'Chord setup');
+    delJog();
+    assert(S.chordSettings[T].map === 0 && S.chordSettings[T].strum === 0, 'Chord not reset: ' + JSON.stringify(S.chordSettings[T]));
+    S.undoJs.undo();
+    assert(S.chordSettings[T].map === 1 && S.chordSettings[T].strum === 1, 'Undo did not bring Chord back');
+
+    /* Piano on Bass: the neck's shifts reset, the Instrument stays Bass. */
+    PM.setPadMode(T, PM.PM_PIANO); ticks(2);
+    PM.padModeBankKnob(T, 1, 1); PM.padModeBankKnob(T, 2, 2);
+    delJog();
+    const p = PM.padModeCfg(T).piano;
+    assert(p.instr === PM.INSTR_BASS && p.bassOct === 0, 'Piano: ' + JSON.stringify(p));
+
+    PM.setPadMode(T, PM.PM_SCALE); S.padModeCfg[T] = null; S.chordSettings[T] = undefined;
+    S.trackOctave[T] = C.DEFAULT_TRACK_OCTAVE; S.customChordOctave[T] = 0; S.customChords[T][0] = [];
+    home(); ticks(2);
+});
+
 step('⭐ a Conductor: no PADMODE, and Shift + Step 8 only flips Scale / Chrom', () => {
     home(); S.trackPadMode[T] = C.PAD_MODE_CONDUCT; ticks(2);
     assert(pure.bankCycleForMode(C.PAD_MODE_CONDUCT, T).indexOf(C.BANK_PADMODE) < 0, 'PADMODE on the Conductor walk');
