@@ -38,6 +38,8 @@ globalThis.shadow_get_param = (slot, key) => {
             { key: 'cutoff', type: 'float', min: 0, max: 1, step: 0.01 },
             { key: 'octave', type: 'int',   min: -2, max: 2 },
             { key: 'mode',   type: 'enum',  options: ['LP', 'HP', 'BP'] },
+            { key: 'pattern', type: 'enum', options: ['1A', '1B', '1C', '1D', '2A', '2B', '2C', '2D',
+                                                       '3A', '3B', '3C', '3D', '4A', '4B', '4C', '4D'] },
         ]);
     return '';
 };
@@ -169,6 +171,23 @@ const T = 0, C = 0, SLOT = 1;
     tick();
     check(automationGestureCountForTest() === 0 && sets.some(x => x === 't0_pa_live_end=1:fx1:cutoff'),
           '⚠ the step coming up ends the gesture and hands the target back to playback');
+}
+
+/* ⚠ An enum the editor sends by NAME (a module that reports its enums as
+ * names): the name is the option, never a number read off its first digit —
+ * "2B" was stored as option 2 ("1C"), and "1A" as option 1 ("1B"). */
+{
+    reset({ playing: true, recordArmed: false });
+    automationParamTouch(T, C, SLOT, 'fx1:pattern', true);
+    automationParamEdit(T, C, SLOT, 'fx1:pattern', '2B', '1A');
+    tick();
+    check(sets[0] === 't0_pa_rest=0 1:fx1:pattern 0', 'an enum by name: the rest "1A" is option 0, not 1 (' + sets[0] + ')');
+    check(sets[1] === 't0_pa_live=1:fx1:pattern ' + Math.round(5 / 15 * 16383), 'the value "2B" is option 5 of 16, not 2 (' + sets[1] + ')');
+    automationParamEdit(T, C, SLOT, 'fx1:pattern', 'LP', '2B');
+    tick();
+    check(sets[2] === 't0_pa_live=1:fx1:pattern 0', 'a name that is not an option still falls back to a number (0)');
+    automationParamTouch(T, C, SLOT, 'fx1:pattern', false);
+    tick();
 }
 
 /* ---- playing: live, and the DSP decides record vs override ------------- */

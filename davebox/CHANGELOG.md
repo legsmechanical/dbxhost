@@ -68,6 +68,10 @@ the section into a versioned heading at release time.
   screen. The **Clear all** row still clears everything.
 
 ### Fixed
+- **Automating a choice that has names (a PLAYER's Pattern) lands on the right
+  one.** Holding a step and choosing "2B" stored "1C" (and the value it rests on
+  was off by one too), so playback played the wrong pattern and the readout
+  disagreed with the knob.
 - **Hatchet PLAYER and Plank PLAYER now fully play their guitar and bass.**
   Muting, legato, slides, ring, sustain, roll, vibrato and tone settings the
   player sends never reached the instrument in dAVEBOx (they did on stock), so
