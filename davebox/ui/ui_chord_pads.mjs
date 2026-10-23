@@ -19,7 +19,6 @@
 import { S } from './ui_state.mjs';
 import { PAD_MODE_MELODIC_SCALE, BANK_CHORD, isSoundBank } from './ui_constants.mjs';
 import { triggerFire, triggerPhase } from './ui_trigger.mjs';
-import { registerRingCells } from './ui_knob_leds.mjs';
 import {
     NUM_SLOTS, STACKS, SPREADS, BASS_TONES, MOD_INV_DOWN, MOD_INV_UP,
     INV_MIN, INV_MAX, OCT_MIN, OCT_MAX,
@@ -61,9 +60,8 @@ export function setChordLayout(t, on) {
      * mode instructions and confirmation should go away when you switch to a
      * different pad mode"). */
     if (!on && was) S.chordPopupOpen = false;
-    /* Leaving the layout leaves its bank too. */
-    if (!on && S.trackActiveBank[t] === BANK_CHORD) S.trackActiveBank[t] = 0;
-    if (!on && t === S.activeTrack && S.activeBank === BANK_CHORD) S.activeBank = 0;
+    /* Leaving the layout keeps the bank: it is PADMODE now, on every melodic
+     * track (Josh, 2026-10-22). */
     S.screenDirty = true;
 }
 
@@ -436,57 +434,59 @@ export function chordSlotKnob(t, k, knob, steps) {
 
 function pos(v, lo, hi) { return hi > lo ? ((v | 0) - lo) / (hi - lo) : 0; }
 
-/* The knob rings on the CHORD bank ride its cells — the held slot's page or
- * the bank's own, whichever is on screen. */
-registerRingCells(BANK_CHORD, () => {
-    const t = S.activeTrack;
-    if (!chordLayoutOn(t)) return null;
-    const k = chordEditSlot();
-    return k >= 0 ? chordSlotCells(t, k).cells : chordBankCells(t);
-});
-
-const ON_OFF = ['Off', 'On'];
 /* The anchor's name on the bank: its slot's numeral ("I", "vi"). */
 function anchorLabel(t, k) {
     const { scale } = effKeyScale();
     return numeral(scale, S.chordPalette[t][k].deg);
 }
 
+/* The Chord mode's knobs on the PADMODE bank, K2..K8 (K1 is Mode, drawn by
+ * ui_pad_mode): Map, Voice, Smooth, Anchor, Bass, Strum, Slots. Bass and its
+ * octave share one knob — Off / -1 / -2 (Josh, 2026-10-22) — so the mode
+ * fits beside Mode and Map. */
+export const CHORD_MAPS = ['Diatonic'];
 export function chordBankCells(t) {
     const s = settingsOf(t);
+    const bassV = s.bass ? (s.bassOct | 0) : 0;
     return [
+        { kind: 'enumsq', label: 'Map', name: 'Chord Map', text: CHORD_MAPS[0],
+          options: CHORD_MAPS, sel: 0 },
         { kind: 'valsq', label: 'Voice', name: 'Voicing', text: s.voicing > 0 ? '+' + s.voicing : String(s.voicing),
           ringNorm: pos(s.voicing, INV_MIN, INV_MAX) },
         { kind: 'enumsq', label: 'Smoth', name: 'Smooth', text: SMOOTH_MODES[s.smooth | 0] || 'Off',
           options: SMOOTH_MODES, sel: s.smooth | 0 },
-        { kind: 'pill', label: 'Bass', name: 'Bass', text: ON_OFF[s.bass ? 1 : 0], norm: s.bass ? 1 : 0 },
-        { kind: 'valsq', label: 'BsOct', name: 'Bass Octave', text: '-' + (s.bassOct | 0), ringNorm: pos(s.bassOct, 1, 2) },
-        { kind: 'valsq', label: 'Strum', name: 'Strum Octave', text: s.strum > 0 ? '+' + s.strum : String(s.strum),
-          ringNorm: pos(s.strum, -1, 2) },
         /* Anchor exists only in Smooth: Anchor (Josh, 2026-09-23) — otherwise
          * the knob is empty, and its ring dark. */
         s.smooth === SMOOTH_ANCHOR
             ? { kind: 'valsq', label: 'Anchr', name: 'Anchor', text: anchorLabel(t, s.anchor | 0),
                 ringNorm: pos(s.anchor, 0, NUM_SLOTS - 1) }
             : { kind: 'blank', label: '' },
+        { kind: 'enumsq', label: 'Bass', name: 'Bass', text: bassV ? '-' + bassV : 'Off',
+          options: ['Off', '-1', '-2'], sel: bassV },
+        { kind: 'valsq', label: 'Strum', name: 'Strum Octave', text: s.strum > 0 ? '+' + s.strum : String(s.strum),
+          ringNorm: pos(s.strum, -1, 2) },
         { kind: 'enumsq', label: 'Slots', name: 'Slots', text: s.select ? 'Select' : 'Play',
           options: ['Play', 'Select'], sel: s.select ? 1 : 0 },
-        { kind: 'blank', label: '' },
     ];
 }
 
-export function chordBankKnob(t, knob, steps) {
+/* One step on cell `cell` of chordBankCells (0 = Map .. 6 = Slots). */
+export function chordBankKnob(t, cell, steps) {
     const s = settingsOf(t);
     const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
     const before = JSON.stringify(s);
-    switch (knob) {
-        case 0: s.voicing = clamp(s.voicing + steps, INV_MIN, INV_MAX); break;
-        case 1: s.smooth = clamp(s.smooth + steps, 0, SMOOTH_MODES.length - 1); break;
-        case 5: if (s.smooth !== SMOOTH_ANCHOR) return false;
+    switch (cell) {
+        case 1: s.voicing = clamp(s.voicing + steps, INV_MIN, INV_MAX); break;
+        case 2: s.smooth = clamp(s.smooth + steps, 0, SMOOTH_MODES.length - 1); break;
+        case 3: if (s.smooth !== SMOOTH_ANCHOR) return false;
                 s.anchor = clamp((s.anchor | 0) + steps, 0, NUM_SLOTS - 1); break;
-        case 2: s.bass = steps > 0 ? 1 : 0; break;
-        case 3: s.bassOct = clamp(s.bassOct + steps, 1, 2); break;
-        case 4: s.strum = clamp(s.strum + steps, -1, 2); break;
+        case 4: {
+            const v = clamp((s.bass ? (s.bassOct | 0) : 0) + steps, 0, 2);
+            s.bass = v ? 1 : 0;
+            if (v) s.bassOct = v;
+            break;
+        }
+        case 5: s.strum = clamp(s.strum + steps, -1, 2); break;
         case 6: s.select = steps > 0 ? 1 : 0; break;
         default: return false;
     }

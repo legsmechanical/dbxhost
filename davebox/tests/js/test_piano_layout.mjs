@@ -39,7 +39,8 @@ globalThis.text_width = (t) => String(t).length * 6;
 
 
 const ledState = {};
-globalThis.move_midi_internal_send = (pkt) => { ledState[pkt[2]] = pkt[3]; return true; };
+/* Notes only: a knob ring is a CC on 71-78, the same numbers as pads 3-10. */
+globalThis.move_midi_internal_send = (pkt) => { if ((pkt[1] & 0xF0) === 0x90) ledState[pkt[2]] = pkt[3]; return true; };
 
 async function main() {
 const { stubParamPagesDevice } = await import('./stubs/param_pages_device.mjs');
@@ -47,6 +48,7 @@ stubParamPagesDevice();
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const C = await import('../../ui/ui_constants.mjs');
+const PM = await import('../../ui/ui_pad_mode.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
 const persist = await import('../../ui/ui_persistence.mjs');
 const leds = await import('../../ui/ui_leds.mjs');
@@ -61,6 +63,15 @@ const ticks = (n) => { for (let i = 0; i < n; i++) { S.tickCount++; S.clockMs +=
 ticks(3);
 const cc = (n, v) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, n, v]));
 const note = (n, on) => globalThis.onMidiMessageInternal(new Uint8Array([on ? 0x90 : 0x80, n, on ? 100 : 0]));
+S.touchHoldMs = 0;   /* knob releases land at once (ui_touch_hold) */
+const touch = (k, on) => globalThis.onMidiMessageInternal(new Uint8Array([on ? 0x90 : 0x80, k, on ? 127 : 0]));
+/* One detent of the PADMODE bank's K1 (the Mode knob), on that bank. */
+const modeKnob = (d) => {
+    S.activeBank = C.BANK_PADMODE; S.trackActiveBank[2] = C.BANK_PADMODE;
+    touch(0, true); const m = PM.padModeOf(2);
+    for (let i = 0; i < 8 && PM.padModeOf(2) === m; i++) { cc(71, d > 0 ? 5 : 123); ticks(1); }
+    touch(0, false); ticks(1);
+};
 const shiftStep8 = () => { cc(49, 127); note(16 + 7, true); note(16 + 7, false); cc(49, 0); ticks(1); };
 const lastPadmap = () => {
     for (let i = sets.length - 1; i >= 0; i--) if (sets[i][0] === 't2_padmap') return sets[i][1].split(' ');
@@ -100,16 +111,15 @@ step('⭐ Piano colours: root in the track colour, in-scale keys brighter than o
     assert(outScale !== 0, 'an out-of-scale key is dark — the keyboard must stay readable');
 });
 
-step('⭐ the Layout row reads Piano and sets it; Scale from the row clears it', () => {
-    const rows = snd.configRowsForTest ? snd.configRowsForTest(2) : null;
-    const r = rows && rows.find((x) => x.key === 'layout');
-    if (!r) throw new Error('no configRowsForTest export or no layout row');
-    assert(r.fmt(r.get()) === 'Piano', 'row reads ' + r.fmt(r.get()));
-    assert(JSON.stringify(r.opts) === JSON.stringify([0, 1, 3, 2, 4]), 'options ' + r.opts);
-    r.set(0); ticks(1);
-    assert(layout() === 'scale', 'row Scale: ' + layout());
-    r.set(3); ticks(1);
-    assert(layout() === 'piano', 'row Piano: ' + layout());
+step('⭐ the PADMODE bank reads Piano on K1 and steps from it: down to Chrom, back up to Piano', () => {
+    S.activeBank = C.BANK_PADMODE;
+    assert(PM.padModeBankCells(2)[0].text === 'Piano', 'K1 reads ' + PM.padModeBankCells(2)[0].text);
+    assert(JSON.stringify(PM.padModeBankCells(2)[0].options) === JSON.stringify(['Scale', 'Chrom', 'Piano', 'Chord', 'Custom']),
+           'options ' + PM.padModeBankCells(2)[0].options);
+    modeKnob(-1);
+    assert(layout() === 'chrom', 'knob down: ' + layout());
+    modeKnob(+1);
+    assert(layout() === 'piano', 'knob up: ' + layout());
 });
 
 step('⭐ the sidecar keeps the Piano layout per track', () => {
@@ -123,18 +133,19 @@ step('⭐ the sidecar keeps the Piano layout per track', () => {
     assert(Array.isArray(j.ppno) && j.ppno[2] === 1 && j.ppno[1] === 0, 'ppno ' + JSON.stringify(j.ppno));
 });
 
-step('⭐ leaving Chord takes its explainer with it — by Shift + Step 8 and by the Layout row', () => {
+step('⭐ leaving Chord takes its explainer with it — by Shift + Step 8 and by the Mode knob', () => {
     shiftStep8();
     assert(layout() === 'chord' && S.chordPopupOpen, 'setup: Chord with its card');
     shiftStep8();
     assert(layout() === 'custom', 'left Chord: ' + layout());
     assert(!S.chordPopupOpen, 'the Chord card stayed up after leaving Chord');
-    const r = snd.configRowsForTest(2).find((x) => x.key === 'layout');
-    r.set(2); ticks(1);
-    assert(S.chordPopupOpen, 'setup: the row onto Chord raises the card');
-    r.set(3); ticks(1);
-    assert(!S.chordPopupOpen, 'the card stayed up after the Layout row left Chord');
-    r.set(0); ticks(1);
+    PM.setPadMode(2, PM.PM_PIANO); ticks(1);
+    modeKnob(+1);
+    assert(layout() === 'chord' && S.chordPopupOpen, 'setup: the knob onto Chord raises the card');
+    cc(3, 127); cc(3, 0); ticks(2);      /* OK — the knob is ours again */
+    modeKnob(-1);
+    assert(layout() === 'piano' && !S.chordPopupOpen, 'the card stayed up after the knob left Chord');
+    PM.setPadMode(2, PM.PM_SCALE); ticks(1);
 });
 
 if (failed) { console.log('FAIL: piano layout'); process.exit(1); }

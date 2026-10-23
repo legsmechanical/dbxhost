@@ -9,6 +9,12 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Changed
+- **The CHORD bank is now the PADMODE bank, on every melodic track.** Its first
+  knob, **Mode**, picks the pad layout (Scale, Chrom, Piano, Chord, Custom) and
+  the other knobs are that layout's settings. Each layout keeps its settings when
+  you switch away and back. The TRACK CONFIG **Layout** row is gone (Shift +
+  Step 8 still steps through the layouts). In Chord, **Bass** and **Bass
+  Octave** are now one knob: Off, −1 or −2.
 - **The manual now covers Schwung's two samplers inside dAVEBOx**: the
   Quantized Sampler (Shift + touch Volume + Sample) and Skipback (Shift + touch
   Volume + Capture), and where to set Skipback's length.

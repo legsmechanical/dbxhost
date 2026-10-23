@@ -41,7 +41,7 @@ import {
     TPS_VALUES, BANKS, PAD_MODE_DRUM, BANK_SOUND, isSoundBank, BANK_AUTOMATION, BANK_CHORD,
     INSTR_MOVE_MAX, INSTR_SCHWUNG, INSTR_MIDI_CH, INSTR_TRACK, moveInstrOwner, moveInstrDuplicates,
     MoveRec, LED_OFF, parseActionRaw, INSTR_NONE, ROUTE_NONE,
-    INSTR_CONDUCT, PAD_MODE_CONDUCT, DEFAULT_TRACK_OCTAVE } from './ui_constants.mjs';
+    INSTR_CONDUCT, PAD_MODE_CONDUCT, PAD_MODE_MELODIC_SCALE, DEFAULT_TRACK_OCTAVE } from './ui_constants.mjs';
 import { Red } from '/data/UserData/schwung/shared/constants.mjs';
 
 import { S } from './ui_state.mjs';
@@ -1852,8 +1852,7 @@ export function restoreUiSidecar(applyDefaultsNow) {
         }
         /* The Chord layout (additive on v:9): absent → no track on it and no
          * palettes, so a project that never used it restores exactly as
-         * before. A track remembered on the CHORD bank without the layout
-         * lands on its default bank. */
+         * before. */
         for (let _t = 0; _t < NUM_TRACKS; _t++)
             S.padLayoutChord[_t] = Array.isArray(us.pchd) ? !!us.pchd[_t] : false;
         /* The Piano layout (additive on v:9): absent → no track on it. */
@@ -1865,11 +1864,13 @@ export function restoreUiSidecar(applyDefaultsNow) {
         restoreCustomSidecar(us);
         resetChordTransient();
         clearHeldChords();
+        /* PADMODE is a melodic bank: a track remembered there that is not
+         * melodic lands on its default bank. */
         for (let _t = 0; _t < NUM_TRACKS; _t++) {
-            if (S.trackActiveBank[_t] === BANK_CHORD && !S.padLayoutChord[_t]) S.trackActiveBank[_t] = 0;
+            if (S.trackActiveBank[_t] === BANK_CHORD && S.trackPadMode[_t] !== PAD_MODE_MELODIC_SCALE) S.trackActiveBank[_t] = 0;
             S.chordLast[_t] = null;
         }
-        if (S.activeBank === BANK_CHORD && !S.padLayoutChord[S.activeTrack]) S.activeBank = 0;
+        if (S.activeBank === BANK_CHORD && S.trackPadMode[S.activeTrack] !== PAD_MODE_MELODIC_SCALE) S.activeBank = 0;
         /* The macro store (additive on v:9). A slot is a MAPPING —
          * `{v, legs:[leg,…]}` — and a LEG is the typed target record plus
          * `lo`/`hi` (2026-09-05). ⭑ The OLD flat shape (the target record

@@ -61,8 +61,6 @@ import { applyTrackConfig, applyBankParam, readBankParams, syncTrackMidiFx, midi
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { moduleParallelDefault, setModuleParallelDefault, reconcileParallelSlot } from './ui_parallel.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
-import { setChordLayout } from './ui_chord_pads.mjs';
-import { setCustomLayout } from './ui_custom_chords.mjs';
 import { forceRedraw, effectiveClip } from './ui_leds.mjs';
 import { automationParamEdit, automationNeedsPrev, automationParamTouch, automationStateFor, automationToggleActive,
          automationClearKey, automationEntriesFor, automationFxMoved, automationAddLane,
@@ -528,34 +526,8 @@ function configRows(t) {
             get: () => GS.trackPadMode[t] | 0,
             set: (v) => requestTrackModeChange(t, v | 0) });
     }
-    /* Pad layout is a melodic idea — a drum track's pads are its lanes. */
-    /* Chord (2) is a third layout: in-key chords on the bottom row
-     * (ui_chord_pads.mjs); Piano (3) two keyboard octaves (2026-09-26). Keys
-     * tracks only — a Conductor has no pads to lay out. The list runs in the
-     * Shift + Step 8 order: Scale, Chrom, Piano, Chord, Custom (4: the user's
-     * own chords on the bottom row, ui_custom_chords.mjs). */
-    const _chordOk = melodic && GS.trackPadMode[t] === 0;
-    rows.push({ key: 'layout', label: 'Layout',
-        opts: _chordOk ? [0, 1, 3, 2, 4] : [0, 1],
-        fmt: (v) => (melodic ? (v === 4 ? 'Custom' : v === 2 ? 'Chord' : v === 3 ? 'Piano' : v ? 'Chrom' : 'Scale') : '-'),
-        get: () => (GS.padLayoutCustom[t] && _chordOk ? 4 : GS.padLayoutChord[t] && _chordOk ? 2 : GS.padLayoutPiano[t] && _chordOk ? 3 : GS.padLayoutChromatic[t] ? 1 : 0),
-        set: (v) => {
-            if (!melodic) return;
-            setCustomLayout(t, v === 4 && _chordOk);
-            if (v === 4 && _chordOk) {
-                setChordLayout(t, false);
-                GS.padLayoutChromatic[t] = false;
-                GS.padLayoutPiano[t] = false;
-            } else if (v === 2 && _chordOk) {
-                setChordLayout(t, true);
-            } else {
-                setChordLayout(t, false);
-                GS.padLayoutChromatic[t] = v === 1;
-                GS.padLayoutPiano[t] = v === 3 && _chordOk;
-            }
-            computePadNoteMap();
-            forceRedraw();
-        } });
+    /* The pad layout lives on the PADMODE bank (K1 Mode) and Shift + Step 8
+     * — the Layout row was removed (Josh, 2026-10-22). */
     /* Conduct emits nothing, so it has nothing to transpose. */
     if (GS.trackPadMode[t] !== PMC) {
         rows.push({ key: 'transpose', label: 'Transpose',

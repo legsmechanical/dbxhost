@@ -130,8 +130,7 @@ export function soundBankOnTrack(padMode, bank, t) {
 /* Every walk, in CATEGORIES (Josh, 2026-09-26): what comes in, what controls
  * it, the sequence, the note FX in signal order, then the mix. The bank
  * navigation overlay draws each category that CAN hold several banks as a
- * labelled group — IN keeps its label with only LIVE ARP (CHORD joins it on a
- * Chord-layout track), and the drum IN with only RPT GROOVE ("keep in
+ * labelled group — IN holds PADMODE and LIVE ARP on a melodic track, and the drum IN with only RPT GROOVE ("keep in
  * category even though there's only 1 bank"). A category of one (`label`
  * null) is a plain row. `depth` 1 nests the group under the row above it: the
  * drum FX apply to the selected DRUM LANE ("need to have this indented under
@@ -154,11 +153,11 @@ export function bankCategoriesForMode(padMode, t) {
         { label: 'FX',   banks: [1, 3], depth: 1 },
         { label: null,   banks: [BANK_SOUND] },
     ];
-    const _t = t === undefined ? S.activeTrack : t;
-    const chord = !!(S.padLayoutChord && S.padLayoutChord[_t]);
+    /* PADMODE heads IN on every melodic track (Josh, 2026-10-22: "make it
+     * available for every track type in melodic mode"). */
     return [
         { label: null,   banks: [BANK_CONFIG] },
-        { label: 'IN',   banks: (chord ? [BANK_CHORD] : []).concat([5]) },
+        { label: 'IN',   banks: [BANK_CHORD, 5] },
         { label: 'CTRL', banks: [BANK_MACROS, BANK_AUTOMATION] },
         { label: 'SEQ',  banks: [BANK_STEP, 0] },
         { label: 'FX',   banks: [1, 2, 3, 4] },
@@ -209,7 +208,7 @@ const BANK_MAP_ACTIONS = {
 };
 const BANK_MAP_ACTION_NAMES = { inst: 'INST' };
 /* AUTOMATION has no space to wrap at and is wider than a cell. */
-const BANK_MAP_SHORT = { [BANK_AUTOMATION]: 'AUTO' };
+const BANK_MAP_SHORT = { [BANK_AUTOMATION]: 'AUTO', [BANK_CHORD]: 'PADS' };
 
 function bankMapFamily(padMode) {
     return padMode === PAD_MODE_CONDUCT ? 'conduct' : padMode === PAD_MODE_DRUM ? 'drum' : 'melodic';

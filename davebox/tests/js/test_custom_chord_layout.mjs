@@ -56,12 +56,14 @@ const snd = await import('../../ui/ui_sound.mjs');
 const render = await import('../../ui/ui_render.mjs');
 const fonts = await import('../../ui/ui_fonts_pp.mjs');
 const CU = await import('../../ui/ui_custom_chords.mjs');
+const PM = await import('../../ui/ui_pad_mode.mjs');
 
 const T = 2;
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
 S.awaitingProjectSelect = false; S.sessionView = false; S.activeTrack = T;
 for (let i = 0; i < 8; i++) { S.trackRoute[i] = 0; S.trackChannel[i] = 1; S.trackPadMode[i] = C.PAD_MODE_MELODIC_SCALE; }
 S.bankParams = Array.from({ length: 8 }, () => Array.from({ length: C.BANKS.length }, () => new Array(8).fill(0)));
+S.touchHoldMs = 0;   /* knob releases land at once (ui_touch_hold) */
 S.midiInChannel = 0; S.padKey = 0; S.padScale = 0; S.dspInboundEnabled = true;   /* C major */
 const ticks = (n) => { for (let i = 0; i < n; i++) { S.tickCount++; S.clockMs += 11; tickmod._tickImpl(); } };
 ticks(3);
@@ -70,6 +72,19 @@ const note = (n, on) => globalThis.onMidiMessageInternal(new Uint8Array([on ? 0x
 const pad = (i, on) => note(C.TRACK_PAD_BASE + i, on);
 const tap = (i) => { pad(i, true); pad(i, false); };
 const shiftStep8 = () => { cc(49, 127); note(16 + 7, true); note(16 + 7, false); cc(49, 0); ticks(1); };
+/* The PADMODE bank's K1, turned a detent at a time until the track is on
+ * mode `m` (0 Scale .. 4 Custom). */
+const touch = (k, on) => globalThis.onMidiMessageInternal(new Uint8Array([on ? 0x90 : 0x80, k, on ? 127 : 0]));
+const toMode = (m) => {
+    S.activeBank = C.BANK_PADMODE; S.trackActiveBank[T] = C.BANK_PADMODE;
+    for (let i = 0; i < 40 && PM.padModeOf(T) !== m; i++) {
+        touch(0, true); cc(71, PM.padModeOf(T) < m ? 5 : 123); ticks(1);
+    }
+    touch(0, false); ticks(1);
+    if (S.chordPopupOpen) { cc(3, 127); cc(3, 0); ticks(2); }
+    /* Back to the start bank, so the screen is the track's own again. */
+    S.activeBank = 0; S.trackActiveBank[T] = 0; S.bankCardLatched = false; S.bankSelectTick = -1; ticks(1);
+};
 const octUp = () => { cc(SC.MoveUp, 127); cc(SC.MoveUp, 0); };
 const octDown = () => { cc(SC.MoveDown, 127); cc(SC.MoveDown, 0); };
 const lastPadmap = () => {
@@ -114,20 +129,22 @@ step('⭐ Shift + Step 8 walks Scale → Chrom → Piano → Chord → Custom �
     }
     assert(eq(seen, ['scale', 'chrom', 'piano', 'chord', 'custom', 'scale']), 'walk: ' + seen);
     assert(said === 'CUSTOM CHORDS', 'landing notice: "' + said + '"');
-    assert(S.trackActiveBank[T] !== C.BANK_CHORD && S.activeBank !== C.BANK_CHORD, 'the CHORD bank stayed after leaving Chord');
+    /* PADMODE is every melodic track's bank: leaving Chord keeps it. */
+    assert(S.trackActiveBank[T] === C.BANK_PADMODE, 'leaving Chord left the PADMODE bank');
 });
 
-step('⭐ the Layout row offers Custom last, sets it and reads it; another value leaves it', () => {
-    const r = snd.configRowsForTest(T).find((x) => x.key === 'layout');
-    assert(eq(r.opts, [0, 1, 3, 2, 4]), 'options ' + r.opts);
-    r.set(4); ticks(1);
-    assert(layout() === 'custom' && r.fmt(r.get()) === 'Custom', layout() + ' / ' + r.fmt(r.get()));
+step('⭐ the PADMODE bank\'s Mode knob reads and sets Custom; another value leaves it', () => {
+    toMode(4); ticks(1);
+    assert(layout() === 'custom' && PM.padModeBankCells(T)[0].text === 'Custom', layout() + ' / ' + PM.padModeBankCells(T)[0].text);
     assert(!S.chordPopupOpen, 'the Chord explainer came up for Custom');
-    r.set(2); ticks(1);
-    assert(layout() === 'chord' && !S.padLayoutCustom[T], 'row Chord: ' + layout());
+    S.activeBank = C.BANK_PADMODE;
+    touch(0, true); for (let i = 0; i < 8 && PM.padModeOf(T) === 4; i++) { cc(71, 123); ticks(1); } touch(0, false); ticks(1);
+    assert(layout() === 'chord' && !S.padLayoutCustom[T], 'knob Chord: ' + layout());
+    /* The explainer comes up under the finger: letting go must still end the touch. */
+    assert(S.chordPopupOpen && S.knobTouched === -1, 'the knob stayed touched under the explainer: ' + S.knobTouched);
     cc(3, 127); cc(3, 0); ticks(2);
-    r.set(4); ticks(1);
-    assert(layout() === 'custom' && !S.padLayoutChord[T] && !S.chordPopupOpen, 'row back to Custom: ' + layout());
+    toMode(4);
+    assert(layout() === 'custom' && !S.padLayoutChord[T] && !S.chordPopupOpen, 'knob back to Custom: ' + layout());
 });
 
 step('⭐⭐ a fresh track: the chord row is silent and dark; rows 2-4 are the Scale layout from the root', () => {
@@ -387,10 +404,10 @@ step('⭐ a chord held while the layout changes still lets go of its notes', () 
     S.customChords[T][1] = [60, 64, 67]; ticks(2);
     pad(1, true);
     assert(S.liveActiveNotes.size === 3, 'setup');
-    snd.configRowsForTest(T).find((x) => x.key === 'layout').set(0); ticks(1);
+    PM.setPadMode(T, PM.PM_SCALE); ticks(1);
     pad(1, false); ticks(2);
     assert(S.liveActiveNotes.size === 0, 'notes stuck: ' + [...S.liveActiveNotes]);
-    snd.configRowsForTest(T).find((x) => x.key === 'layout').set(4); ticks(1);
+    PM.setPadMode(T, PM.PM_CUSTOM); ticks(1);
 });
 
 step('⭐ a lost pad map is noticed by its checksum and pushed again (and a good one is left alone)', () => {

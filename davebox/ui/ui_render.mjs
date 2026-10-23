@@ -15,7 +15,8 @@ import { SESS_KNOB_MODES, engineLoadedModule, engineModuleAbbrev, engineGenerato
 import { instrValueFor } from './ui_dsp_bridge.mjs';
 import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import { chordLabel, noteNames, noteLabel, heldInputNotes, keyUsesFlats, keyRootName, fitHeldLabel } from './ui_chord.mjs';
-import { chordIndicator, chordEditSlot, chordSlotCells, chordBankCells } from './ui_chord_pads.mjs';
+import { chordIndicator, chordEditSlot, chordSlotCells } from './ui_chord_pads.mjs';
+import { padModeBankCells } from './ui_pad_mode.mjs';
 import { triggerPhase } from './ui_trigger.mjs';
 import { LGTO_KNOB, CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, knobAltFor, ARP_STEPS_KNOB, arpStepsBank } from './ui_constants.mjs';
 import { miActive, miRender } from './ui_midi_import.mjs';
@@ -2091,7 +2092,7 @@ function drawUIBody() {
      * drawn above sound mode below). */
     if (S.heldStep >= 0 && S.activeBank === BANK_STEP && drawHeldStepPage()) return;
 
-    /* The CHORD bank is contextual: while a chord slot is held it shows that
+    /* The PADMODE bank is contextual: while a chord slot is held it shows that
      * slot's settings (the knobs edit them), and its own settings otherwise.
      * On any other bank a held chord changes nothing here. */
     /* Only while the bank's page is up (latched, just chosen, or peeked by a
@@ -2112,7 +2113,7 @@ function drawUIBody() {
         return;
     }
     if (bank === BANK_CHORD && inTimeout) {
-        drawKitPage(bankHeaderName(S.activeTrack, BANK_CHORD), chordBankCells(S.activeTrack), false,
+        drawKitPage(bankHeaderName(S.activeTrack, BANK_CHORD), padModeBankCells(S.activeTrack), false,
                     bankPageHints(BANK_CHORD));
         return;
     }

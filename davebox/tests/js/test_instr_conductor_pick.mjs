@@ -267,7 +267,7 @@ step('⭐⭐ a Conductor\'s menu is its TYPE and its own settings — no chain, 
      * hides that one on a Conductor, which emits nothing to transpose — so this
      * names a row a Conductor actually has. */
     const cfg = snd.soundCfgRowsForTest();
-    assert(cfg.includes('layout') && cfg.includes('looper'),
+    assert(cfg.includes('velin') && cfg.includes('looper'),
            'the config rows went with the chain rows: ' + cfg.join(','));
     assert(!cfg.includes('mode'), 'the Mode row came back on a Conductor: ' + cfg.join(','));
 });

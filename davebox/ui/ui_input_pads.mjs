@@ -37,8 +37,9 @@ import { applyBankParam, applyTrackConfig, readBankParams,
 import { soundVouchLivePress } from './ui_sound.mjs';
 import { chordLayoutOn, chordRowOf, chordSlotPress, chordSlotRelease, chordModPress,
     chordModRelease, chordPitchHeld, padPitches, ROW_SLOTS, ROW_MODS,
-    setChordLayout, chordPadHeld } from './ui_chord_pads.mjs';
-import { customLayoutOn, setCustomLayout, customEditTarget, customChordPress, customScalePress,
+    chordPadHeld } from './ui_chord_pads.mjs';
+import { padModeOf, padModesFor, setPadMode, PM_CHROM, PM_PIANO, PM_CHORD, PM_CUSTOM } from './ui_pad_mode.mjs';
+import { customLayoutOn, customEditTarget, customChordPress, customScalePress,
     customChordPitches, customChordToggle, customChordClear, customChordSet, customChordGet,
     customChordFromHeard } from './ui_custom_chords.mjs';
 import { handoffRecordingToTrack, recordNoteOn, recordNoteOff,
@@ -1694,26 +1695,16 @@ export function _onStepButtons(d1, d2) {
                     ['Velocity', 'Repeat Play (Rpt1)', 'Repeat Set (Rpt2)'],
                     S.drumPerformMode[t]);
             } else {
-                /* Scale → Chrom → Piano → Chord → Custom → Scale. Landing on
-                 * Chord raises its explainer instead of the one-word popup. */
-                if (S.padLayoutCustom[t]) {
-                    setCustomLayout(t, false);
-                } else if (S.padLayoutChord[t]) {
-                    setChordLayout(t, false);
-                    S.padLayoutChromatic[t] = false;
-                    S.padLayoutPiano[t] = false;
-                    setCustomLayout(t, true);
-                } else if (S.padLayoutPiano[t]) {
-                    setChordLayout(t, true);
-                } else if (S.padLayoutChromatic[t]) {
-                    S.padLayoutChromatic[t] = false;
-                    S.padLayoutPiano[t] = true;
-                } else {
-                    S.padLayoutChromatic[t] = true;
-                }
-                computePadNoteMap();
-                if (!S.padLayoutChord[t])
-                    showActionPopup(S.padLayoutCustom[t] ? 'CUSTOM CHORDS' : S.padLayoutPiano[t] ? 'PIANO' : S.padLayoutChromatic[t] ? 'CHROMATIC' : 'IN-SCALE');
+                /* Scale → Chrom → Piano → Chord → Custom → Scale (a
+                 * Conductor: Scale ↔ Chrom), through the PADMODE bank's one
+                 * writer. Landing on Chord raises its explainer instead of
+                 * the one-word popup. */
+                const _list = padModesFor(t);
+                const _i = _list.indexOf(padModeOf(t));
+                setPadMode(t, _list[(_i + 1) % _list.length]);
+                const _m = padModeOf(t);
+                if (_m !== PM_CHORD)
+                    showActionPopup(_m === PM_CUSTOM ? 'CUSTOM CHORDS' : _m === PM_PIANO ? 'PIANO' : _m === PM_CHROM ? 'CHROMATIC' : 'IN-SCALE');
             }
         } else if (idx === 9) {
             /* Step 10: toggle VelIn between Live and 100 */

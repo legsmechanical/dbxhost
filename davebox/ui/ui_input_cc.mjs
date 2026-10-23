@@ -27,7 +27,8 @@ import {
     TICK_HZ, STEP_ITER_LIST, JOG_HOLD_MAP_MS,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool } from './ui_constants.mjs';
-import { closeChordPopup, chordEditSlot, chordSlotKnob, chordBankKnob, chordSlotReset } from './ui_chord_pads.mjs';
+import { closeChordPopup, chordEditSlot, chordSlotKnob, chordSlotReset } from './ui_chord_pads.mjs';
+import { padModeBankKnob, padModeKnobDeliberate } from './ui_pad_mode.mjs';
 import { bakeNeedsPrint, printStart, printModalCC } from './ui_print.mjs';
 import { customLayoutOn, customEditTarget, customChordTranspose, customChordOctaveStep } from './ui_custom_chords.mjs';
 import { triggerFire } from './ui_trigger.mjs';
@@ -4823,7 +4824,7 @@ function _onCC_knobs(d1, d2) {
          * reaches the bank editor at all. */
         if (S.sessionView) { _sessionKnobParam(knobIdx, d2); return; }
 
-        /* The CHORD bank is contextual (Josh, 2026-09-23: "we should do all
+        /* The PADMODE bank is contextual (Josh, 2026-09-23, of the CHORD bank it grew from: "we should do all
          * chord edits through the chord bank"): holding a chord slot turns its
          * knobs into that slot's settings; otherwise they are the bank's own.
          * On every OTHER bank a held chord leaves the knobs alone, so sound
@@ -4836,9 +4837,10 @@ function _onCC_knobs(d1, d2) {
             return;
         }
         if (S.activeBank === BANK_CHORD) {
-            /* Bass and Slots are toggles: the deliberate divisor. */
-            const _st = knobStep(knobIdx, d2, (knobIdx === 2 || knobIdx === 6) ? KNOB_DELIB : KNOB_PICK);
-            if (_st && chordBankKnob(S.activeTrack, knobIdx, _st)) _chordEdited();
+            /* PADMODE's own page: K1 Mode, then the mode's settings. Mode and
+             * the toggles take the deliberate divisor. */
+            const _st = knobStep(knobIdx, d2, padModeKnobDeliberate(S.activeTrack, knobIdx) ? KNOB_DELIB : KNOB_PICK);
+            if (_st && padModeBankKnob(S.activeTrack, knobIdx, _st)) _chordEdited();
             return;
         }
 

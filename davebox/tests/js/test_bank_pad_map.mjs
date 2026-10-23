@@ -107,7 +107,7 @@ step('⭐ PRESS the jog on the overview: the map is ON SCREEN at once (Josh, 202
     assert(cellInk(f, 2, 1) > 0.6, 'CLIP (SEQ column, row 2) is not the filled box: ' + cellInk(f, 2, 1));
     assert(cellInk(f, 3, 2) < 0.5 && cellInk(f, 3, 2) > 0.05, 'DELAY is not an outlined box');
     assert(cellInk(f, 2, 2) === 0, 'an absent bank drew something');
-    assert(cellInk(f, 0, 0) === 0, 'CHORD drew outside the Chord layout');
+    assert(cellInk(f, 0, 0) > 0.05, 'PADMODE is not on the map of a Scale track');
 });
 
 step('…and ON THE PADS: categories coloured, CLIP White, absent dark, the right half only its module pads', () => {
