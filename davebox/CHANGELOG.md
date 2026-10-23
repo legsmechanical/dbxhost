@@ -20,6 +20,8 @@ the section into a versioned heading at release time.
   so it stays in key; in semitones in Chrom).
 - **Piano: move the top and bottom octaves on their own**, and a **Bass**
   instrument: four strings, E A D G, seven frets across (PADMODE bank).
+- **Chord Map: Function** — regroups the chord pads by job: I vi iii, IV ii,
+  V vii°, then I up. Edited chords move with their degree.
 - **The manual now covers Schwung's two samplers inside dAVEBOx**: the
   Quantized Sampler (Shift + touch Volume + Sample) and Skipback (Shift + touch
   Volume + Capture), and where to set Skipback's length.

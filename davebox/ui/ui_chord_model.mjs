@@ -53,7 +53,25 @@ export const SMOOTH_MODES = ['Off', 'Follow', 'Anchor'];
 export const SMOOTH_OFF = 0, SMOOTH_FOLLOW = 1, SMOOTH_ANCHOR = 2;
 
 export function defaultChordSettings() {
-    return { voicing: 0, smooth: 0, anchor: 0, bass: 0, bassOct: 1, strum: 0, select: 0 };
+    return { voicing: 0, smooth: 0, anchor: 0, bass: 0, bassOct: 1, strum: 0, select: 0, map: 0 };
+}
+
+/* The chord MAP (Josh, 2026-10-22: "other chord mapping options ... with a
+ * Map param"; he chose Diatonic and Function): which default chord each slot
+ * pad holds, as the degree it starts on. Diatonic runs I..vii, I up; Function
+ * groups them by job — home (I vi iii), away (IV ii), pull home (V vii°), I up
+ * (the Orchid's grouping). A map change moves the slots' chords, edits and
+ * all, so a chord follows its degree to its new pad. */
+export const CHORD_MAP_NAMES = ['Diatonic', 'Function'];
+/* The value box holds six letters, two lines of three. */
+export const CHORD_MAP_SHORT = ['Diat', 'Func'];
+export const CHORD_MAP_ORDERS = [
+    [0, 1, 2, 3, 4, 5, 6, 7],
+    [0, 5, 2, 3, 1, 4, 6, 7],
+];
+export function mapDefaultDeg(map, k) {
+    const o = CHORD_MAP_ORDERS[map | 0] || CHORD_MAP_ORDERS[0];
+    return o[k];
 }
 
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];

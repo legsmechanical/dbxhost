@@ -731,7 +731,7 @@ Back to dismiss) and puts the track on its PADMODE bank.
 <img src="img/pads-chord.svg" alt="The Chord layout in C major: chords on the bottom row, modifiers above them, the last chord's notes to strum, and the scale on top with its root on the fourth pad.">
 
 - **Bottom row:** eight chords — by default I ii iii IV V vi vii° and I an octave
-  up — colored by function (tonic, subdominant, dominant). They follow key and
+  up (the **Map** knob regroups them) — colored by function (tonic, subdominant, dominant). They follow key and
   scale changes.
 - **Row 2:** hold **7**, **9**, **sus2**, **sus4**, **add9** or **5** while you
   press a chord to change it, or press one while a chord is held to change it as it
@@ -743,7 +743,10 @@ Back to dismiss) and puts the track on its PADMODE bank.
 - **Top row:** the scale, with the key's root on the fourth pad — three notes below
   it, four above (`G A B C D E F G` in C major).
 - On the **PADMODE** bank, after **Mode**, the Chord layout's knobs are:
-  - **Map** — how the chords are laid out on the bottom row (Diatonic).
+  - **Map** — how the chords sit on the bottom row. *Diatonic*: I ii iii IV V vi
+    vii° I. *Function* groups them by job: the home chords (I vi iii), the away
+    chords (IV ii), the ones that pull home (V vii°), then I an octave up. A chord
+    you have edited moves with its degree to its new pad.
   - **Voicing** — moves every chord at once.
   - **Smooth** — *Off*; *Follow* (each chord takes the voicing nearest the one you
     played last); *Anchor* (every chord takes the voicing nearest one chord you

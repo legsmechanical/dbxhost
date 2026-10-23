@@ -24,6 +24,7 @@ import {
     INV_MIN, INV_MAX, OCT_MIN, OCT_MAX,
     defaultPalette, defaultChordSettings, slotChord, strumRow, scaleRow, numeral,
     slotFunction, invLabel, degreeSemis, anchorChord, SMOOTH_MODES, SMOOTH_ANCHOR,
+    CHORD_MAP_NAMES, CHORD_MAP_SHORT, CHORD_MAP_ORDERS, mapDefaultDeg,
 } from './ui_chord_model.mjs';
 
 export const ROW_SLOTS = 0, ROW_MODS = 1, ROW_STRUM = 2, ROW_SCALE = 3;
@@ -398,7 +399,7 @@ export function chordSlotCells(t, k) {
  * gesture). Puts the slot back to its default chord; the press flashes. */
 export function chordSlotReset(t, k) {
     ensureChordState(t);
-    Object.assign(S.chordPalette[t][k], { deg: k, stack: 0, inv: 0, spread: 0, bass: 0, oct: 0 });
+    Object.assign(S.chordPalette[t][k], { deg: mapDefaultDeg(settingsOf(t).map, k), stack: 0, inv: 0, spread: 0, bass: 0, oct: 0 });
     triggerFire('chordReset');
     if (!settingsOf(t).select && heldChords.has(k)) S.chordPendingRevoice = revoiceHeld(t);
     S.pendingPadNoteMapRecompute = true;
@@ -444,13 +445,12 @@ function anchorLabel(t, k) {
  * ui_pad_mode): Map, Voice, Smooth, Anchor, Bass, Strum, Slots. Bass and its
  * octave share one knob — Off / -1 / -2 (Josh, 2026-10-22) — so the mode
  * fits beside Mode and Map. */
-export const CHORD_MAPS = ['Diatonic'];
 export function chordBankCells(t) {
     const s = settingsOf(t);
     const bassV = s.bass ? (s.bassOct | 0) : 0;
     return [
-        { kind: 'enumsq', label: 'Map', name: 'Chord Map', text: CHORD_MAPS[0],
-          options: CHORD_MAPS, sel: 0 },
+        { kind: 'enumsq', label: 'Map', name: 'Chord Map', text: CHORD_MAP_SHORT[s.map | 0],
+          options: CHORD_MAP_NAMES, sel: s.map | 0 },
         { kind: 'valsq', label: 'Voice', name: 'Voicing', text: s.voicing > 0 ? '+' + s.voicing : String(s.voicing),
           ringNorm: pos(s.voicing, INV_MIN, INV_MAX) },
         { kind: 'enumsq', label: 'Smoth', name: 'Smooth', text: SMOOTH_MODES[s.smooth | 0] || 'Off',
@@ -470,12 +470,34 @@ export function chordBankCells(t) {
     ];
 }
 
+/* Move every slot's chord from map `from`'s pads to map `to`'s: the chord
+ * that sat on degree d's pad lands on d's pad in the new order. The last
+ * chord played and the anchor follow their chords. */
+function remapPalette(t, from, to) {
+    const A = CHORD_MAP_ORDERS[from], B = CHORD_MAP_ORDERS[to];
+    const pal = S.chordPalette[t];
+    const padOf = (k) => B.indexOf(A[k]);        /* old pad k → its new pad */
+    const next = pal.slice();
+    for (let k = 0; k < pal.length; k++) next[padOf(k)] = pal[k];
+    S.chordPalette[t] = next;
+    if (S.chordLast[t]) S.chordLast[t] = Object.assign({}, S.chordLast[t], { slot: padOf(S.chordLast[t].slot) });
+    const set = S.chordSettings[t];
+    set.anchor = padOf(set.anchor | 0);
+}
+
 /* One step on cell `cell` of chordBankCells (0 = Map .. 6 = Slots). */
 export function chordBankKnob(t, cell, steps) {
     const s = settingsOf(t);
     const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
     const before = JSON.stringify(s);
     switch (cell) {
+        case 0: {
+            const to = clamp((s.map | 0) + steps, 0, CHORD_MAP_NAMES.length - 1);
+            if (to === (s.map | 0)) return false;
+            remapPalette(t, s.map | 0, to);
+            s.map = to;
+            break;
+        }
         case 1: s.voicing = clamp(s.voicing + steps, INV_MIN, INV_MAX); break;
         case 2: s.smooth = clamp(s.smooth + steps, 0, SMOOTH_MODES.length - 1); break;
         case 3: if (s.smooth !== SMOOTH_ANCHOR) return false;
@@ -567,6 +589,7 @@ export function restoreChordSidecar(chd) {
             voicing: n(v.voicing, INV_MIN, INV_MAX, d.voicing), smooth: n(v.smooth, 0, SMOOTH_MODES.length - 1, d.smooth),
             anchor: n(v.anchor, 0, NUM_SLOTS - 1, d.anchor), bass: n(v.bass, 0, 1, d.bass),
             bassOct: n(v.bassOct, 1, 2, d.bassOct), strum: n(v.strum, -1, 2, d.strum), select: n(v.select, 0, 1, d.select),
+            map: n(v.map, 0, CHORD_MAP_NAMES.length - 1, d.map),
         };
     }
 }

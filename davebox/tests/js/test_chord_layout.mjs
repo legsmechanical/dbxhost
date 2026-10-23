@@ -326,9 +326,8 @@ step('⭐ the CHORD bank\'s knob rings: every bound knob lit, the empty ones dar
     const KL = globalThis.__kl;
     S.activeBank = BANK_CHORD; S.trackActiveBank[2] = BANK_CHORD;
     const lit = () => KL.ringCellsFor(BANK_CHORD).map((c) => KL.knobRingColor(0, KL.ringNormOfCell(c)) !== 0);
-    /* PADMODE in Chord: Mode Map Voice Smooth [Anchor: blank in Off] Bass Strum Slots.
-     * Map has one choice until the Function map lands, so its ring is dark. */
-    assert(eq(lit(), [true, false, true, true, false, true, true, true]), 'bank page rings ' + JSON.stringify(lit()));
+    /* PADMODE in Chord: Mode Map Voice Smooth [Anchor: blank in Off] Bass Strum Slots. */
+    assert(eq(lit(), [true, true, true, true, false, true, true, true]), 'bank page rings ' + JSON.stringify(lit()));
     pad(4, true); ticks(1);
     assert(eq(lit(), [true, true, false, true, true, true, true, true]), 'slot page rings ' + JSON.stringify(lit()));
     pad(4, false); ticks(1);

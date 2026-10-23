@@ -55,6 +55,7 @@ const fonts = await import('../../ui/ui_fonts_pp.mjs');
 const PM = await import('../../ui/ui_pad_mode.mjs');
 const ccm = await import('../../ui/ui_input_cc.mjs');
 globalThis.__dm = await import('../../ui/ui_drummodel.mjs');
+globalThis.__cp = await import('../../ui/ui_chord_pads.mjs');
 
 const T = 2;
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
@@ -268,6 +269,38 @@ step('⭐⭐ Piano → Instrument Bass: four strings E A D G, open + seven frets
     assert(PM.padModeCfg(T).piano.octT === 1 && PM.padModeCfg(T).piano.octB === 0, 'Piano lost its own: ' + JSON.stringify(PM.padModeCfg(T).piano));
     PM.restorePadModeSidecar(PM.padModeSidecar());
     assert(PM.padModeCfg(T).piano.bassSemi === 1 && PM.padModeCfg(T).piano.octT === 1, 'Piano / Bass not saved');
+});
+
+step('⭐⭐ Chord Map → Function: the slots regroup by job (I vi iii | IV ii | V vii° | I up), an edited chord moves with its degree, the pads play it', () => {
+    onBank(PM.PM_CHORD);
+    midi(0xB0, 3, 127); midi(0xB0, 3, 0); ticks(2);           /* OK the explainer */
+    const degs = () => S.chordPalette[T].map((x) => x.deg);
+    assert(JSON.stringify(degs()) === '[0,1,2,3,4,5,6,7]', 'Diatonic: ' + degs());
+    S.chordPalette[T][5].stack = 1;                            /* vi made a seventh */
+    S.chordSettings[T].anchor = 5;
+    kn(1, +1); ticks(2);                                       /* Map: Function */
+    assert(S.chordSettings[T].map === 1, 'not Function');
+    assert(JSON.stringify(degs()) === '[0,5,2,3,1,4,6,7]', 'Function: ' + degs());
+    assert(S.chordPalette[T][1].stack === 1, 'the vi7 did not move with vi to pad 2');
+    assert(S.chordSettings[T].anchor === 1, 'the anchor did not follow its chord: ' + S.chordSettings[T].anchor);
+    const pm = lastPadmap().split(' ');
+    const pcs = pm[1].split('+').map((x) => Number(x) % 12).sort((a, b) => a - b);
+    assert(JSON.stringify(pcs) === '[0,4,7,9]', 'pad 2 does not play Amin7: ' + pm[1]);
+    const txt = screen().join('|');
+    assert(/FUNC/i.test(txt), 'the screen does not read Function: ' + txt);
+    S.chordPalette[T][4].deg = 6;                              /* pad 5 (ii) re-rooted ... */
+    globalThis.__cp.chordSlotReset(T, 4);                      /* ... Reset puts ii back, Function's degree there */
+    assert(S.chordPalette[T][4].deg === 1, 'Reset on Function: ' + degs());
+    globalThis.__cp.chordSlotReset(T, 1);
+    assert(S.chordPalette[T][1].deg === 5 && S.chordPalette[T][1].stack === 0, 'Reset pad 2 is not vi');
+    kn(1, -1); ticks(2);                                       /* back to Diatonic */
+    assert(JSON.stringify(degs()) === '[0,1,2,3,4,5,6,7]' && S.chordSettings[T].anchor === 5, 'Diatonic again: ' + degs());
+    kn(1, +1);
+    PM.restorePadModeSidecar(PM.padModeSidecar());
+    const saved = globalThis.__cp.chordSidecar();
+    globalThis.__cp.restoreChordSidecar(JSON.parse(JSON.stringify(saved)));
+    assert(S.chordSettings[T].map === 1 && JSON.stringify(degs()) === '[0,5,2,3,1,4,6,7]', 'Function not saved');
+    PM.setPadMode(T, PM.PM_SCALE); ticks(2);
 });
 
 step('⭐ a drum track has no PADMODE: no pad on its map, and the bank is not on its walk', () => {
