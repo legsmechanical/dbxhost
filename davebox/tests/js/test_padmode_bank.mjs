@@ -487,6 +487,22 @@ step('⭐ the Custom card has Reset on K8 like the Chord card: touch K8 + click 
     assert(JSON.stringify(S.customChords[T][2]) === '[60,64,67]', 'Undo: ' + S.customChords[T][2]);
 });
 
+step('⭐ the option lists use whole words (Josh: "pickers can use the full value name"); the value box keeps the short ones', () => {
+    onBank(PM.PM_SCALE);
+    let c = PM.padModeBankCells(T);
+    assert(c[0].options.includes('Chromatic') && JSON.stringify(c[1].options) === '["None","Vertical","Horizontal"]', 'Mode / Split lists: ' + c[0].options + ' | ' + c[1].options);
+    kn(1, +1);
+    c = PM.padModeBankCells(T);
+    assert(c[1].text === 'Vert', 'the box lost its short form: ' + c[1].text);
+    kn(1, -1);
+    PM.setPadMode(T, PM.PM_CHORD); ticks(2);
+    assert(PM.padModeBankCells(T)[5].options.includes('1 Octave Down'), 'Chord Bass list: ' + PM.padModeBankCells(T)[5].options);
+    onCustom(); S.customChords[T][2] = [60, 64, 67]; ticks(2); padOn(2); ticks(1);
+    const q = PM.customCardCells(T, 2).cells[1];
+    assert(q.options[0] === 'Major' && q.options.includes('Diminished 7') && q.text === 'Maj', 'Stack list / box: ' + q.options.slice(0, 3) + ' / ' + q.text);
+    padOff(2); ticks(1);
+});
+
 step('⭐ the bank is "Pad Mode": the map cell reads PAD MODE, and no PADMODE anywhere', () => {
     home(); S.trackPadMode[T] = C.PAD_MODE_MELODIC_SCALE; PM.setPadMode(T, PM.PM_SCALE); ticks(2);
     assert(C.BANKS[C.BANK_PADMODE].name === 'PAD MODE', 'bank name ' + C.BANKS[C.BANK_PADMODE].name);

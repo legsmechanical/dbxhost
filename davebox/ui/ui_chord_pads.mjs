@@ -452,7 +452,7 @@ export function chordBankCells(t) {
                 ringNorm: pos(s.anchor, 0, NUM_SLOTS - 1) }
             : { kind: 'blank', label: '' },
         { kind: 'enumsq', label: 'Bass', name: 'Bass', text: bassV ? '-' + bassV : 'Off',
-          options: ['Off', '-1', '-2'], sel: bassV },
+          options: ['Off', '1 Octave Down', '2 Octaves Down'], sel: bassV },
         /* The rows above the chords (strum + scale): "Pad Oct", as on Custom;
          * Shift + Octave moves it too. */
         { kind: 'valsq', label: 'Pad Oct', name: 'Pad Octave (strum + scale rows)', text: s.strum > 0 ? '+' + s.strum : String(s.strum),

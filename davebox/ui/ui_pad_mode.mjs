@@ -35,6 +35,7 @@ export const PAD_MODE_NAMES = ['Scale', 'Chrom', 'Piano', 'Chord', 'Custom'];
  * CUSTOM wrapped into "CHR / OM", "CUS / TOM" on the device. The option list
  * keeps the full names. */
 const PAD_MODE_SQ = ['Scale', 'Chrm', 'Piano', 'Chord', 'Cust'];
+const PAD_MODE_FULL = ['Scale', 'Chromatic', 'Piano', 'Chord', 'Custom'];
 
 /* What track t's pads are in now. A Conductor has Scale and Chrom only. */
 export function padModeOf(t) {
@@ -76,6 +77,9 @@ export function setPadMode(t, m) {
  * bottom/left. B is top/right"); with no split, A is the whole grid. */
 export const SPLIT_NONE = 0, SPLIT_VERT = 1, SPLIT_HORZ = 2;
 export const SPLIT_NAMES = ['None', 'Vert', 'Horz'];
+/* The option list has room for whole words (Josh, 2026-10-22: "pickers can
+ * use the full value name"); the value box keeps the short ones. */
+const SPLIT_FULL = ['None', 'Vertical', 'Horizontal'];
 export const ZONE_OCT_MIN = -4, ZONE_OCT_MAX = 4;
 export const SEMI_MIN = -12, SEMI_MAX = 12;       /* Chrom, semitones */
 export const STEP_MIN = -7, STEP_MAX = 7;         /* Scale, scale steps */
@@ -262,6 +266,9 @@ export const QUALS = [
     ['Min6', [0, 3, 7, 9]], ['Add9', [0, 4, 7, 14]], ['9', [0, 4, 7, 10, 14]], ['Maj9', [0, 4, 7, 11, 14]],
     ['Min9', [0, 3, 7, 10, 14]], ['7sus4', [0, 5, 7, 10]], ['5', [0, 7]],
 ];
+const QUAL_FULL = ['Major', 'Minor', 'Diminished', 'Augmented', 'Sus2', 'Sus4', 'Dominant 7', 'Major 7',
+    'Minor 7', 'Half-dim 7 (m7b5)', 'Diminished 7', 'Major 6', 'Minor 6', 'Add 9', 'Dominant 9', 'Major 9',
+    'Minor 9', '7 Sus4', 'Power (5)'];
 const SPREADS = ['Close', 'Open'];
 const BASSES = ['Off', 'Root', '3rd', '5th'];
 const NOTE_SH = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -354,7 +361,7 @@ export function customCardCells(t, k) {
         title: heard.length ? chordLabel(heard, keyUsesFlats(S.padKey | 0, S.padScale | 0), r.root) : 'EMPTY',
         cells: [
             { kind: 'valsq', label: 'Root', name: 'Root', text: names[r.root], ringNorm: pos(r.root, 0, 11) },
-            { kind: 'enumsq', label: 'Stack', name: 'Stack', text: QUALS[r.qual][0], options: QUALS.map((q) => q[0]), sel: r.qual },
+            { kind: 'enumsq', label: 'Stack', name: 'Stack', text: QUALS[r.qual][0], options: QUAL_FULL, sel: r.qual },
             BLANK,
             { kind: 'valsq', label: 'Inv', name: 'Inversion', text: signed(r.inv), ringNorm: pos(r.inv, -4, 4) },
             { kind: 'enumsq', label: 'Sprd', name: 'Spread', text: SPREADS[r.spread], options: SPREADS, sel: r.spread },
@@ -445,7 +452,7 @@ export function shiftOctaveZoneB(t, dir) {
 
 function modeCell(t) {
     const m = padModeOf(t);
-    const opts = padModesFor(t).map((v) => PAD_MODE_NAMES[v]);
+    const opts = padModesFor(t).map((v) => PAD_MODE_FULL[v]);
     return { kind: 'enumsq', label: 'Mode', name: 'Pad Mode', text: PAD_MODE_NAMES[m], sq: PAD_MODE_SQ[m],
              options: opts, sel: Math.max(0, padModesFor(t).indexOf(m)) };
 }
@@ -461,7 +468,7 @@ function gridCells(t) {
     /* Scale's Transpose counts scale notes; the header says so. */
     const half = (z) => ZONE_PAIR(split ? z : '', g['oct' + z], g[sk + z], lo, hi, chrom ? 'Transpose' : 'Transpose (scale)');
     return [{ kind: 'enumsq', label: 'Split', name: 'Split', text: SPLIT_NAMES[g.split],
-              options: SPLIT_NAMES, sel: g.split }]
+              options: SPLIT_FULL, sel: g.split }]
         .concat(half('A'), split ? half('B') : [BLANK, BLANK]);
 }
 

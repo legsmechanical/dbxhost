@@ -114,7 +114,7 @@ step('⭐ Piano colours: root in the track colour, in-scale keys brighter than o
 step('⭐ the PADMODE bank reads Piano on K1 and steps from it: down to Chrom, back up to Piano', () => {
     S.activeBank = C.BANK_PADMODE;
     assert(PM.padModeBankCells(2)[0].text === 'Piano', 'K1 reads ' + PM.padModeBankCells(2)[0].text);
-    assert(JSON.stringify(PM.padModeBankCells(2)[0].options) === JSON.stringify(['Scale', 'Chrom', 'Piano', 'Chord', 'Custom']),
+    assert(JSON.stringify(PM.padModeBankCells(2)[0].options) === JSON.stringify(['Scale', 'Chromatic', 'Piano', 'Chord', 'Custom']),
            'options ' + PM.padModeBankCells(2)[0].options);
     modeKnob(-1);
     assert(layout() === 'chrom', 'knob down: ' + layout());

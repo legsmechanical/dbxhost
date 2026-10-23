@@ -346,7 +346,7 @@ step('the CHORD bank sits on this track\'s walk, after LIVE ARP; Slots → Selec
     S.activeBank = BANK_CHORD; S.trackActiveBank[2] = BANK_CHORD;
     const cells = CP.chordBankCells(2);
     /* Bass and its octave are one knob since 2026-10-22: Off / -1 / -2. */
-    assert(cells[4].kind === 'enumsq' && eq(cells[4].options, ['Off', '-1', '-2']), 'Bass is not Off/-1/-2');
+    assert(cells[4].kind === 'enumsq' && eq(cells[4].options, ['Off', '1 Octave Down', '2 Octaves Down']) && cells[4].text === 'Off', 'Bass is not Off / 1 / 2 Octaves Down');
     assert(cells[2].kind === 'enumsq' && eq(cells[2].options, ['Off', 'Follow', 'Anchor']), 'Smooth is not Off/Follow/Anchor');
     knob(7, +1, 20); knobUp(7); ticks(2);
     assert(S.chordSettings[2].select === 1, 'Select not set');
