@@ -30,6 +30,10 @@ const BLANK = { kind: 'blank', label: '' };
 
 export const PM_SCALE = 0, PM_CHROM = 1, PM_PIANO = 2, PM_CHORD = 3, PM_CUSTOM = 4;
 export const PAD_MODE_NAMES = ['Scale', 'Chrom', 'Piano', 'Chord', 'Custom'];
+/* What the value box shows: it fits 24 px on one line, and CHROM (25 px) and
+ * CUSTOM wrapped into "CHR / OM", "CUS / TOM" on the device. The option list
+ * keeps the full names. */
+const PAD_MODE_SQ = ['Scale', 'Chrm', 'Piano', 'Chord', 'Cust'];
 
 /* What track t's pads are in now. A Conductor has Scale and Chrom only. */
 export function padModeOf(t) {
@@ -195,11 +199,12 @@ export function restorePadModeSidecar(pmd) {
  * octave. The two octaves are the ones the Octave buttons move (trackOctave
  * and customChordOctave), shown here as views, so knob and buttons agree. */
 const HOLD_NAMES = ['Assign', 'Play'];
+const HOLD_SQ = ['Asgn', 'Play'];      /* ASSIGN wrapped into "ASS / IGN" */
 function customCells(t) {
     const u = padModeCfg(t).custom;
     const sco = (S.trackOctave[t] | 0) - DEFAULT_TRACK_OCTAVE, cho = S.customChordOctave[t] | 0;
     return [
-        { kind: 'enumsq', label: 'Hold', name: 'Chord Hold', text: HOLD_NAMES[u.play ? 1 : 0], options: HOLD_NAMES, sel: u.play ? 1 : 0 },
+        { kind: 'enumsq', label: 'Hold', name: 'Chord Hold', text: HOLD_NAMES[u.play ? 1 : 0], sq: HOLD_SQ[u.play ? 1 : 0], options: HOLD_NAMES, sel: u.play ? 1 : 0 },
         { kind: 'valsq', label: 'ScOct', name: 'Scale Octave', text: signed(sco), ringNorm: pos(sco, -4 - DEFAULT_TRACK_OCTAVE, 4 - DEFAULT_TRACK_OCTAVE) },
         { kind: 'valsq', label: 'ScStp', name: 'Scale Step', text: signed(u.scaleStep), ringNorm: pos(u.scaleStep, STEP_MIN, STEP_MAX) },
         { kind: 'valsq', label: 'ChOct', name: 'Chord Octave', text: signed(cho), ringNorm: pos(cho, -OCT_LIMIT, OCT_LIMIT) },
@@ -372,7 +377,7 @@ export function customCardKnob(t, k, knob, steps) {
 function modeCell(t) {
     const m = padModeOf(t);
     const opts = padModesFor(t).map((v) => PAD_MODE_NAMES[v]);
-    return { kind: 'enumsq', label: 'Mode', name: 'Pad Mode', text: PAD_MODE_NAMES[m],
+    return { kind: 'enumsq', label: 'Mode', name: 'Pad Mode', text: PAD_MODE_NAMES[m], sq: PAD_MODE_SQ[m],
              options: opts, sel: Math.max(0, padModesFor(t).indexOf(m)) };
 }
 

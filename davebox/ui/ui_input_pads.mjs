@@ -10,7 +10,7 @@
 import {
     NUM_TRACKS, TRACK_PAD_BASE, DRUM_LANES, STEP_SAVE_FLASH_MS,
     PAD_MODE_DRUM, PAD_MODE_CONDUCT, BANKS,
-    NO_NOTE_FLASH_MS
+    NO_NOTE_FLASH_MS, BANK_PADMODE
 } from './ui_constants.mjs';
 import { S, loopViewActive, markJsUndo } from './ui_state.mjs';
 import { autoHoldJumpBegin, autoHoldJumpEnd } from './ui_automation_bank.mjs';
@@ -320,6 +320,8 @@ function _customPadPress(padIdx, d2) {
         if (S.recordArmed && t === S.recordArmedTrack) recordNoteOn(p, vel, S.recordArmedTrack);
     }
     if (pitches.length) { S.lastPlayedNote = pitches[0]; S.lastPadVelocity = vel; }
+    /* On PADMODE the knobs build it too (the assign card). */
+    else if (S.activeBank === BANK_PADMODE) showActionPopup('EMPTY CHORD', 'HOLD + TAP NOTES', 'OR TURN A KNOB');
     else showActionPopup('EMPTY CHORD', 'HOLD + TAP NOTES');
     forceRedraw();
     return true;

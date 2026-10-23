@@ -56,6 +56,7 @@ const PM = await import('../../ui/ui_pad_mode.mjs');
 const ccm = await import('../../ui/ui_input_cc.mjs');
 globalThis.__dm = await import('../../ui/ui_drummodel.mjs');
 globalThis.__cp = await import('../../ui/ui_chord_pads.mjs');
+globalThis.__dlg = await import('../../ui/ui_dialogs.mjs');
 
 const T = 2;
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
@@ -109,8 +110,8 @@ for (const [name, route] of ROUTES) {
         assert(PM.padModeOf(T) === PM.PM_CHROM, 'K1 did not move the track to Chrom: ' + PM.padModeOf(T));
         ticks(2);
         txt = screen();
-        /* The enum square wraps a long value ("CHR" / "OM"): read it joined. */
-        assert(txt.join('').toUpperCase().includes('CHROM'), 'the screen does not read Chrom: ' + txt.join('|'));
+        /* The box shows the short form, on one line (CHROM wrapped to "CHR" / "OM"). */
+        assert(txt.includes('CHRM') && !txt.includes('OM'), 'the screen does not read Chrm on one line: ' + txt.join('|'));
         assert(lastPadmap() !== before, 'the pad map was not pushed again');
         k1(-1); k1Up();
         assert(PM.padModeOf(T) === PM.PM_SCALE, 'K1 back did not return to Scale');
@@ -334,6 +335,20 @@ step('⭐ Custom ScStp moves the scale rows along the scale (still in key); the 
     const root = (S.padOctave[T] | 0) * 12;
     for (let i = 8; i < 32; i++)
         assert(m[i] === sc(root, (i % 8) + (Math.floor(i / 8) - 1) * 3 + 2), 'scale pad ' + i + ': ' + m[i]);
+});
+
+step('⭐ the long values the device wrapped (CHROM, CUSTOM, ASSIGN) show one-line short forms; the option list keeps the names', () => {
+    onCustom();
+    const txt = screen();
+    assert(txt.includes('CUST') && txt.includes('ASGN') && !txt.includes('IGN') && !txt.includes('TOM'), 'Custom page: ' + txt.join('|'));
+    const c = PM.padModeBankCells(T);
+    assert(c[0].options.includes('Custom') && c[1].options.includes('Assign'), 'the list lost the names');
+    const ex = globalThis.__dlg.CHORD_POPUP_LINES.join('|');
+    assert(/PADMODE BANK/.test(ex) && !/CHORD BANK/.test(ex), 'the Chord explainer still names the CHORD bank: ' + ex);
+    S.activeBank = C.BANK_PADMODE; S.customChords[T][5] = []; padOn(5);
+    const pop = (S.actionPopupLines || []).join(' / ');
+    assert(/TURN A KNOB/.test(pop), 'an empty chord pad on PADMODE does not mention the knobs: ' + pop);
+    padOff(5); ticks(60);
 });
 
 step('⭐⭐ Custom Hold: Play — a held chord pad + a scale pad PLAYS both and edits nothing; held notes never fill an empty pad', () => {

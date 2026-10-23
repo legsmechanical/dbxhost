@@ -164,7 +164,7 @@ export const CHORD_POPUP_LINES = [
     'ROW 2: HOLD + CHORD = CHANGE',
     'ROW 3: STRUM THE LAST CHORD',
     'TOP ROW: THE SCALE',
-    'CHORD BANK: HOLD TO EDIT',
+    'PADMODE BANK: HOLD TO EDIT',
 ];
 export function drawChordPopup() {
     clear_screen();
