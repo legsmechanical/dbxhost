@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include "shadow_midi.h"
 #include "shadow_midi_inject_writer.h"
+#include "shadow_direct_fanout.h"   /* which DIRECT messages reach the other slots' FX */
 #include "shadow_chain_mgmt.h"
 #include "forward_channel.h"   /* AUTO asks the module before the receive channel */
 #include "shadow_led_queue.h"
@@ -463,7 +464,8 @@ void shadow_chain_dispatch_midi_to_slot(int slot, const uint8_t *pkt, int log_on
 }
 
 /* The same, delivered with MOVE_MIDI_SOURCE_DIRECT: the slot plays it on its
- * instrument and audio FX and skips its MIDI FX (and its transpose). */
+ * instrument and audio FX and skips its MIDI FX (and its transpose). Only its
+ * NOTES fan out to the other slots' FX and the master FX. */
 void shadow_chain_dispatch_midi_to_slot_direct(int slot, const uint8_t *pkt, int log_on, int *midi_log_count)
 {
     const plugin_api_v2_t *pv2 = *host_plugin_v2;
@@ -472,7 +474,8 @@ void shadow_chain_dispatch_midi_to_slot_direct(int slot, const uint8_t *pkt, int
     if (slot >= 0 && slot < SHADOW_CHAIN_INSTANCES)
         dispatched = shadow_chain_dispatch_to_one_slot(slot, pkt, pv2, MOVE_MIDI_SOURCE_DIRECT);
 
-    shadow_chain_dispatch_fanout(pkt, pv2);
+    /* Notes only: a CC past the MIDI FX is this slot's (shadow_direct_fanout.h). */
+    if (shadow_direct_fans_out(pkt[1])) shadow_chain_dispatch_fanout(pkt, pv2);
     shadow_chain_dispatch_log(pkt, dispatched, log_on, midi_log_count);
 }
 

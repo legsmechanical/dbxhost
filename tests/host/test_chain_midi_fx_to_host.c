@@ -232,6 +232,24 @@ int main(void) {
             OK(got_n == 0, "DIRECT: something was handed to the host");
         }
 
+        /* A MIDI effect's CCs handed back and sent on DIRECT reach the
+         * instrument -- including the knob-automation range (102-109), which
+         * a CC sent INTO the slot loses to the knob intercept. An effect that
+         * drives its instrument in CCs (a strum protocol) went deaf on the
+         * mute / legato / roll / ring CCs otherwise. */
+        {
+            const uint8_t cc102[3] = { 0xB0, 102, 64 }, cc75[3] = { 0xB0, 75, 1 };
+            inst->midi_fx_host_route = 1;
+            synth_heard = 0;
+            v2_on_midi(inst, cc102, 3, MOVE_MIDI_SOURCE_INTERNAL);
+            OK(synth_heard == 0, "control: CC 102 sent into the slot is the knob intercept's, as on stock");
+            synth_heard = 0; got_n = 0;
+            v2_on_midi(inst, cc102, 3, MOVE_MIDI_SOURCE_DIRECT);
+            v2_on_midi(inst, cc75, 3, MOVE_MIDI_SOURCE_DIRECT);
+            OK(synth_heard == 2, "DIRECT: a CC in the knob range (102 / 75) did not reach the instrument");
+            OK(got_n == 0, "DIRECT: a CC was handed to the host");
+        }
+
         inst->midi_fx_host_route = 0;
         inst->synth_plugin_v2 = NULL; inst->synth_instance = NULL;
     }

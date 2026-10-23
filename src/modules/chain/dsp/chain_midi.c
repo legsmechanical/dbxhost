@@ -695,8 +695,12 @@ void v2_on_midi(void *instance, const uint8_t *msg, int len, int source) {
         }
     }
 
-    /* Handle knob CC mappings */
-    if (len >= 3 && (msg[0] & 0xF0) == 0xB0) {
+    /* Handle knob CC mappings -- on what is sent INTO the slot, in front of
+     * its MIDI FX. Not on DIRECT: that is past the MIDI FX (below), usually
+     * an effect's own output handed back, and an effect's output never meets
+     * this intercept when the chain plays it itself. A MIDI effect that
+     * speaks to its instrument in CCs 71-78 / 102-109 would lose them here. */
+    if (source != MOVE_MIDI_SOURCE_DIRECT && len >= 3 && (msg[0] & 0xF0) == 0xB0) {
         uint8_t cc = msg[1];
         if (cc >= KNOB_CC_START && cc <= KNOB_CC_END) {
             for (int i = 0; i < inst->knob_mapping_count; i++) {

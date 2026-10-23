@@ -224,7 +224,9 @@ typedef struct move_host_ext_v1 {
 
     /* Send MIDI to chain slot `slot`'s INSTRUMENT, skipping the slot's MIDI
      * FX — the same message form and channel handling as
-     * midi_send_internal_slot, delivered with MOVE_MIDI_SOURCE_DIRECT. For a
+     * midi_send_internal_slot, delivered with MOVE_MIDI_SOURCE_DIRECT -- so
+     * past the knob-mapping intercept that stands in front of the MIDI FX
+     * too (CCs 71-78 / 102-109 reach the instrument). For a
      * sequencer that runs a slot's MIDI FX on what is PLAYED but not on what
      * it plays back (the effect's output was already recorded), and for
      * sending on what the effect handed back (midi_fx_host_route). Audio

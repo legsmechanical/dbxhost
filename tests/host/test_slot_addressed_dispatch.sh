@@ -14,6 +14,16 @@ rg -q 'shadow_chain_dispatch_to_one_slot' src/host/shadow_midi.c \
 rg -q 'shadow_chain_dispatch_midi_to_slot\(int slot' src/host/shadow_midi.h \
   || fail "shadow_midi.h missing slot-addressed declaration"
 
+# 1b. A DIRECT send fans out only what shadow_direct_fans_out allows (notes):
+#     a player's CCs on one track must not reach another track's amp.
+python3 - <<'PY' || fail "shadow_chain_dispatch_midi_to_slot_direct does not gate its fan-out on shadow_direct_fans_out"
+s = open("src/host/shadow_midi.c").read()
+i = s.index("void shadow_chain_dispatch_midi_to_slot_direct(")
+body = s[i:s.index("\n}\n", i)]
+assert "if (shadow_direct_fans_out(pkt[1])) shadow_chain_dispatch_fanout(pkt, pv2);" in body, body
+assert body.count("shadow_chain_dispatch_fanout(") == 1, "an ungated fan-out remains"
+PY
+
 # 2. The UI-drain honors the frame's slot tag (byte 3; 0 = legacy channel match).
 rg -q 'slot_tag' src/host/shadow_midi.c \
   || fail "shadow_drain_ui_midi_dsp does not read the slot tag"

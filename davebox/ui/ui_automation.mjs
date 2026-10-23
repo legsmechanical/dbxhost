@@ -1212,6 +1212,13 @@ function normValue(slot, comp, key, wire) {
     if (isNaN(v)) v = 0;
     let t;
     if (p && p.type === 'enum' && Array.isArray(p.options) && p.options.length > 1) {
+        /* ⚠ An enum can arrive as its NAME: the editor sends option names to a
+         * module that reports its enums by name (param_format.mjs
+         * enumWiresNames). Look the name up first — parseFloat would read a
+         * name that starts with a digit as that digit ("2B" -> 2 -> "1C"), and
+         * every other name as 0. */
+        const named = p.options.indexOf(String(wire));
+        if (named >= 0) v = named;
         t = v / (p.options.length - 1);
     } else if (p) {
         const min = (typeof p.min === 'number') ? p.min : 0;
