@@ -135,13 +135,13 @@ export function computePadNoteMap() {
                     S.padNoteMap[i] = (p < 0 || p > 127) ? 0xFF : p;
                 }
             } else {
-                /* The top two rows and the bottom two each take their own
-                 * octave and semitone shift (PADMODE: Oct / Semi Top, Bot). */
+                /* Zone A (the bottom two rows) and zone B (the top two) each
+                 * take their own octave and Transpose (Pad Mode bank). */
                 for (let i = 0; i < 32; i++) {
                     const col = i % 8;
                     const row = Math.floor(i / 8);
                     const st = (row & 1) ? PIANO_BLACK[col] : PIANO_WHITE[col];
-                    const sh = row >= 2 ? 12 + (pc.octT | 0) * 12 + (pc.semiT | 0) : (pc.octB | 0) * 12 + (pc.semiB | 0);
+                    const sh = row >= 2 ? 12 + (pc.octB | 0) * 12 + (pc.semiB | 0) : (pc.octA | 0) * 12 + (pc.semiA | 0);
                     const p = st < 0 ? -1 : base + sh + st;
                     S.padNoteMap[i] = (p < 0 || p > 127) ? 0xFF : p;
                 }

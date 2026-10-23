@@ -1228,8 +1228,6 @@ export const S = {
     chordRevoice: 0,
     /* The per-pad chords the pad map was built with (null = one note). */
     padChordMap: new Array(32).fill(null),
-    /* Set on landing on the Chord layout: the explainer is up until OK. */
-    chordPopupOpen: false,
     /* Push the pad map now (a modifier changed what the slots play), and
      * save the sidecar (a slot or PADMODE bank edit). */
     chordPadmapNow: false,

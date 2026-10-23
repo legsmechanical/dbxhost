@@ -83,7 +83,7 @@ const padLeds = () => { leds.invalidateLEDCache(); leds.updateTrackLEDs(); const
 
 step('⭐ Shift + Step 8 walks Scale → Chrom → Piano → Chord → Custom → Scale', () => {
     const seen = [layout()];
-    for (let i = 0; i < 5; i++) { shiftStep8(); seen.push(layout()); if (S.chordPopupOpen) { cc(3, 127); cc(3, 0); ticks(2); } }
+    for (let i = 0; i < 5; i++) { shiftStep8(); seen.push(layout()); }
     assert(JSON.stringify(seen) === JSON.stringify(['scale', 'chrom', 'piano', 'chord', 'custom', 'scale']), 'walk: ' + seen);
 });
 
@@ -133,22 +133,20 @@ step('⭐ the sidecar keeps the Piano layout per track', () => {
     assert(Array.isArray(j.ppno) && j.ppno[2] === 1 && j.ppno[1] === 0, 'ppno ' + JSON.stringify(j.ppno));
 });
 
-step('⭐ leaving Chord takes its explainer with it — by Shift + Step 8 and by the Mode knob', () => {
+step('⭐ Chord needs no OK any more (explainer retired 2026-10-22): Shift + Step 8 and the Mode knob walk straight through it', () => {
     shiftStep8();
-    assert(layout() === 'chord' && S.chordPopupOpen, 'setup: Chord with its card');
+    assert(layout() === 'chord', 'setup: Chord');
     shiftStep8();
     assert(layout() === 'custom', 'left Chord: ' + layout());
-    assert(!S.chordPopupOpen, 'the Chord card stayed up after leaving Chord');
     PM.setPadMode(2, PM.PM_PIANO); ticks(1);
     modeKnob(+1);
-    assert(layout() === 'chord' && S.chordPopupOpen, 'setup: the knob onto Chord raises the card');
-    cc(3, 127); cc(3, 0); ticks(2);      /* OK — the knob is ours again */
+    assert(layout() === 'chord', 'the knob onto Chord');
     modeKnob(-1);
-    assert(layout() === 'piano' && !S.chordPopupOpen, 'the card stayed up after the knob left Chord');
+    assert(layout() === 'piano', 'the knob straight back off Chord: ' + layout());
     PM.setPadMode(2, PM.PM_SCALE); ticks(1);
 });
 
 if (failed) { console.log('FAIL: piano layout'); process.exit(1); }
-console.log('PASS: the Piano layout, and the Chord card leaves with Chord');
+console.log('PASS: the Piano layout');
 }
 main().catch((e) => { console.error(e); process.exit(1); });

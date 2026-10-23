@@ -81,11 +81,11 @@ const toMode = (m) => {
         touch(0, true); cc(71, PM.padModeOf(T) < m ? 5 : 123); ticks(1);
     }
     touch(0, false); ticks(1);
-    if (S.chordPopupOpen) { cc(3, 127); cc(3, 0); ticks(2); }
     /* Back to the start bank, so the screen is the track's own again. */
     S.activeBank = 0; S.trackActiveBank[T] = 0; S.bankCardLatched = false; S.bankSelectTick = -1; ticks(1);
 };
 const octUp = () => { cc(SC.MoveUp, 127); cc(SC.MoveUp, 0); };
+const shiftOct = (d) => { cc(49, 127); cc(d > 0 ? SC.MoveUp : SC.MoveDown, 127); cc(d > 0 ? SC.MoveUp : SC.MoveDown, 0); cc(49, 0); };
 const octDown = () => { cc(SC.MoveDown, 127); cc(SC.MoveDown, 0); };
 const lastPadmap = () => {
     for (let i = sets.length - 1; i >= 0; i--) if (sets[i][0] === 't2_padmap') return sets[i][1].split(' ');
@@ -125,8 +125,7 @@ step('⭐ Shift + Step 8 walks Scale → Chrom → Piano → Chord → Custom �
     for (let i = 0; i < 5; i++) {
         shiftStep8(); seen.push(layout());
         if (layout() === 'custom') said = popup();
-        if (S.chordPopupOpen) { cc(3, 127); cc(3, 0); ticks(2); }
-    }
+        }
     assert(eq(seen, ['scale', 'chrom', 'piano', 'chord', 'custom', 'scale']), 'walk: ' + seen);
     assert(said === 'CUSTOM CHORDS', 'landing notice: "' + said + '"');
     /* PADMODE is every melodic track's bank: leaving Chord keeps it. */
@@ -136,15 +135,12 @@ step('⭐ Shift + Step 8 walks Scale → Chrom → Piano → Chord → Custom �
 step('⭐ the PADMODE bank\'s Mode knob reads and sets Custom; another value leaves it', () => {
     toMode(4); ticks(1);
     assert(layout() === 'custom' && PM.padModeBankCells(T)[0].text === 'Custom', layout() + ' / ' + PM.padModeBankCells(T)[0].text);
-    assert(!S.chordPopupOpen, 'the Chord explainer came up for Custom');
     S.activeBank = C.BANK_PADMODE;
     touch(0, true); for (let i = 0; i < 8 && PM.padModeOf(T) === 4; i++) { cc(71, 123); ticks(1); } touch(0, false); ticks(1);
     assert(layout() === 'chord' && !S.padLayoutCustom[T], 'knob Chord: ' + layout());
-    /* The explainer comes up under the finger: letting go must still end the touch. */
-    assert(S.chordPopupOpen && S.knobTouched === -1, 'the knob stayed touched under the explainer: ' + S.knobTouched);
-    cc(3, 127); cc(3, 0); ticks(2);
+    assert(S.knobTouched === -1, 'the knob stayed touched: ' + S.knobTouched);
     toMode(4);
-    assert(layout() === 'custom' && !S.padLayoutChord[T] && !S.chordPopupOpen, 'knob back to Custom: ' + layout());
+    assert(layout() === 'custom' && !S.padLayoutChord[T], 'knob back to Custom: ' + layout());
 });
 
 step('⭐⭐ a fresh track: the chord row is silent and dark; rows 2-4 are the Scale layout from the root', () => {
@@ -234,26 +230,27 @@ step('⭐ a seventh note is refused, on screen, and nothing is sent', () => {
     pad(14, false); pad(0, false);
 });
 
-step('⭐⭐ the octave buttons move the region last touched; each has its own octave, and says so', () => {
+step('⭐⭐ Octave moves the WHOLE surface; Shift + Octave moves only the pads above the chords (Josh, 2026-10-22); each says so', () => {
     clearAll();
     S.customChords[T][1] = [60, 64, 67]; ticks(2);
     const to0 = S.trackOctave[T];
-    tap(9);                                          /* a scale pad: region = pads */
+    tap(1);                                          /* a chord pad last: no longer decides anything */
     octUp();
-    assert(S.trackOctave[T] === to0 + 1 && S.customChordOctave[T] === 0, 'pads octave: ' + S.trackOctave[T] + ' / ' + S.customChordOctave[T]);
-    assert(popup() === 'PADS OCTAVE / +1', 'notice: "' + popup() + '"');
+    assert(S.trackOctave[T] === to0 + 1 && S.customChordOctave[T] === 1, 'both up: ' + S.trackOctave[T] + ' / ' + S.customChordOctave[T]);
+    assert(popup() === 'OCTAVE / +1', 'notice: "' + popup() + '"');
     ticks(2);
-    assert(lastPadmap()[1] === '60+64+67', 'the chord row moved with the pads: ' + lastPadmap()[1]);
+    assert(lastPadmap()[1] === '72+76+79', 'the chord row did not move with the pads: ' + lastPadmap()[1]);
     assert(lastPadmap()[8] === String(scalePitch(8)), 'scale row: ' + lastPadmap()[8]);
-    octDown(); ticks(60);
-    tap(1);                                          /* a chord pad: region = chords */
-    const pad8 = lastPadmap()[8];
-    octDown();
-    assert(S.customChordOctave[T] === -1 && S.trackOctave[T] === to0, 'chords octave: ' + S.customChordOctave[T] + ' / ' + S.trackOctave[T]);
-    assert(popup() === 'CHORDS OCTAVE / -1', 'notice: "' + popup() + '"');
+    ticks(60);
+    shiftOct(-1);
+    assert(S.trackOctave[T] === to0 && S.customChordOctave[T] === 1, 'Shift + Octave moved more than the pads: ' + S.trackOctave[T] + ' / ' + S.customChordOctave[T]);
+    assert(popup() === 'PAD OCTAVE / 0', 'notice: "' + popup() + '"');
     ticks(2);
+    assert(lastPadmap()[1] === '72+76+79', 'Shift + Octave moved the chord row: ' + lastPadmap()[1]);
+    ticks(60);
+    octDown(); octDown(); shiftOct(1); shiftOct(1); ticks(2);    /* chords -1, pads back where they were */
+    assert(S.customChordOctave[T] === -1 && S.trackOctave[T] === to0, 'setup for the next step: ' + S.customChordOctave[T] + ' / ' + S.trackOctave[T]);
     assert(lastPadmap()[1] === '48+52+55', 'chord row down an octave: ' + lastPadmap()[1]);
-    assert(lastPadmap()[8] === pad8, 'the scale rows moved with the chords');
     assert(eq(S.customChords[T][1], [60, 64, 67]), 'the stored chord changed');
 });
 

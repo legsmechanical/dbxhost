@@ -208,7 +208,7 @@ const BANK_MAP_ACTIONS = {
 };
 const BANK_MAP_ACTION_NAMES = { inst: 'INST' };
 /* AUTOMATION has no space to wrap at and is wider than a cell. */
-const BANK_MAP_SHORT = { [BANK_AUTOMATION]: 'AUTO', [BANK_CHORD]: 'PADS' };
+const BANK_MAP_SHORT = { [BANK_AUTOMATION]: 'AUTO' };
 
 function bankMapFamily(padMode) {
     return padMode === PAD_MODE_CONDUCT ? 'conduct' : padMode === PAD_MODE_DRUM ? 'drum' : 'melodic';

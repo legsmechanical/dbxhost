@@ -248,7 +248,7 @@ const MANUAL_SCREENS = new Set([
     'bank-delay',              // DELAY bank
     'bank-seqarp',             // SEQ ARP bank
     'bank-livearp',            // LIVE ARP bank
-    'bank-chord',              // PADMODE bank (Chord layout)
+    'bank-chord',              // Pad Mode bank (Chord layout)
     'bank-cond-conduct',       // C-CONDUCT bank
     'bank-cond-notefx',        // C-NOTE FX bank
     'bank-cond-octave',        // C-OCTAVE bank

@@ -591,7 +591,7 @@ export const BANKS = [
      * mode's own settings (Josh, 2026-10-22; was the Chord layout's CHORD
      * bank). On every melodic track's walk. JS-only values, saved in the
      * sidecar; ui_pad_mode owns the cells and the knobs. */
-    { name: 'PADMODE', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
+    { name: 'PAD MODE', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
     /* 16 — CONFIG (BANK_CONFIG) — the TRACK CONFIG menu AS a bank (Josh,
      * 2026-09-26: "I'd like the track config menu to live as a menu on a bank";
      * "no knobs.  it literally shows the menu with the "click to enter" corner

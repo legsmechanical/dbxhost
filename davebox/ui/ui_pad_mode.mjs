@@ -15,6 +15,7 @@
 import { S } from './ui_state.mjs';
 import { PAD_MODE_MELODIC_SCALE, PAD_MODE_CONDUCT, BANK_PADMODE } from './ui_constants.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
+import { triggerFire, triggerPhase } from './ui_trigger.mjs';
 import { chordLayoutOn, setChordLayout, chordEditSlot, chordSlotCells,
     chordBankCells, chordBankKnob } from './ui_chord_pads.mjs';
 import { setCustomLayout, customLayoutOn, customHeldPad, customChordGet, customChordSet,
@@ -68,10 +69,11 @@ export function setPadMode(t, m) {
 
 /* ---- per-mode settings ----------------------------------------------------- */
 
-/* Scale and Chrom share the split and each half's octave (Josh, 2026-10-22:
- * shared); each keeps its own start, since Scale counts it in scale steps
- * (it stays in key) and Chrom in semitones. Half A is the left (Vertical) or
- * top (Horizontal) half; with no split, A is the whole grid. */
+/* Scale and Chrom share the split and each zone's octave (Josh, 2026-10-22:
+ * shared); each keeps its own Transpose, since Scale counts it in scale steps
+ * (it stays in key) and Chrom in semitones. Zone A is the left (Vertical) or
+ * bottom (Horizontal) half, B the right or top (Josh: "A is always
+ * bottom/left. B is top/right"); with no split, A is the whole grid. */
 export const SPLIT_NONE = 0, SPLIT_VERT = 1, SPLIT_HORZ = 2;
 export const SPLIT_NAMES = ['None', 'Vert', 'Horz'];
 export const ZONE_OCT_MIN = -4, ZONE_OCT_MAX = 4;
@@ -85,7 +87,7 @@ export const INSTR_NAMES = ['Piano', 'Bass'];
 
 export function defaultPadModeCfg() {
     return { grid: { split: SPLIT_NONE, octA: 0, octB: 0, stepA: 0, stepB: 0, semiA: 0, semiB: 0 },
-             piano: { instr: INSTR_PIANO, octT: 0, semiT: 0, octB: 0, semiB: 0, bassOct: 0, bassSemi: 0 },
+             piano: { instr: INSTR_PIANO, octA: 0, semiA: 0, octB: 0, semiB: 0, bassOct: 0, bassSemi: 0 },
              custom: { play: 0, scaleStep: 0, build: new Array(8).fill(null) } };
 }
 
@@ -94,19 +96,24 @@ export function padModeCfg(t) {
     return S.padModeCfg[t];
 }
 
-const SEMI_PAIR = (label, name, oct, semi) => [
-    { kind: 'valsq', label: 'Oct' + label, name: 'Octave' + name, text: signed(oct), ringNorm: pos(oct, ZONE_OCT_MIN, ZONE_OCT_MAX) },
-    { kind: 'valsq', label: 'Semi' + label, name: 'Semitone' + name, text: signed(semi), ringNorm: pos(semi, SEMI_MIN, SEMI_MAX) },
+/* A zone's two knobs (Josh, 2026-10-22: the zones are A and B everywhere — A
+ * bottom / left, B top / right — and "Transpose" rather than Semi). `z` is
+ * 'A' / 'B', or '' when there is one zone. */
+const ZONE_PAIR = (z, oct, tr, trLo, trHi, trName) => [
+    { kind: 'valsq', label: 'Oct' + (z ? ' ' + z : ''), name: 'Octave' + (z ? ' ' + z : ''),
+      text: signed(oct), ringNorm: pos(oct, ZONE_OCT_MIN, ZONE_OCT_MAX) },
+    { kind: 'valsq', label: 'Trans' + (z ? ' ' + z : ''), name: (trName || 'Transpose') + (z ? ' ' + z : ''),
+      text: signed(tr), ringNorm: pos(tr, trLo, trHi) },
 ];
 
-/* Piano: Instrument, then Oct / Semi for the top and the bottom halves — or,
- * for Bass, one Oct / Semi for the whole neck. */
+/* Piano: Instrument, then Oct / Transpose for zone A (the bottom octave) and
+ * zone B (the top) — or, for Bass, one pair for the whole neck. */
 function pianoCells(t) {
     const p = padModeCfg(t).piano;
     const head = [{ kind: 'enumsq', label: 'Instr', name: 'Instrument', text: INSTR_NAMES[p.instr],
                     options: INSTR_NAMES, sel: p.instr }];
-    if (p.instr === INSTR_BASS) return head.concat(SEMI_PAIR('', '', p.bassOct, p.bassSemi), [BLANK, BLANK]);
-    return head.concat(SEMI_PAIR('T', ' Top', p.octT, p.semiT), SEMI_PAIR('B', ' Bottom', p.octB, p.semiB));
+    if (p.instr === INSTR_BASS) return head.concat(ZONE_PAIR('', p.bassOct, p.bassSemi, SEMI_MIN, SEMI_MAX), [BLANK, BLANK]);
+    return head.concat(ZONE_PAIR('A', p.octA, p.semiA, SEMI_MIN, SEMI_MAX), ZONE_PAIR('B', p.octB, p.semiB, SEMI_MIN, SEMI_MAX));
 }
 
 function pianoKnob(t, cell, steps) {
@@ -118,8 +125,8 @@ function pianoKnob(t, cell, steps) {
     const st = (k) => { p[k] = clamp(p[k] + steps, SEMI_MIN, SEMI_MAX); };
     switch (cell) {
         case 0: p.instr = clamp(p.instr + steps, 0, INSTR_NAMES.length - 1); break;
-        case 1: o(bass ? 'bassOct' : 'octT'); break;
-        case 2: st(bass ? 'bassSemi' : 'semiT'); break;
+        case 1: o(bass ? 'bassOct' : 'octA'); break;
+        case 2: st(bass ? 'bassSemi' : 'semiA'); break;
         case 3: if (bass) return false; o('octB'); break;
         case 4: if (bass) return false; st('semiB'); break;
         default: return false;
@@ -135,7 +142,7 @@ function pianoKnob(t, cell, steps) {
  * pad columns / rows (row 0 = the bottom row), A first. No split: one half. */
 export function gridZones(split) {
     if (split === SPLIT_VERT) return [{ c0: 0, r0: 0, w: 4, h: 4 }, { c0: 4, r0: 0, w: 4, h: 4 }];
-    if (split === SPLIT_HORZ) return [{ c0: 0, r0: 2, w: 8, h: 2 }, { c0: 0, r0: 0, w: 8, h: 2 }];
+    if (split === SPLIT_HORZ) return [{ c0: 0, r0: 0, w: 8, h: 2 }, { c0: 0, r0: 2, w: 8, h: 2 }];
     return [{ c0: 0, r0: 0, w: 8, h: 4 }];
 }
 
@@ -166,6 +173,19 @@ export function fillGridPadMap(t, root, intervals, chromatic) {
     });
 }
 
+/* Is pad i in zone B of a split Scale / Chrom grid? Zone B's pads invert the
+ * colours (Josh, 2026-10-22: "have A remain the same and B invert the color
+ * scheme (so white is root and track color is other notes)"). */
+export function padInZoneB(t, i) {
+    if ((S.trackPadMode[t] | 0) !== PAD_MODE_MELODIC_SCALE) return false;
+    const m = padModeOf(t);
+    if (m !== PM_SCALE && m !== PM_CHROM) return false;
+    const g = padModeCfg(t).grid;
+    if (g.split === SPLIT_NONE) return false;
+    const z = gridZones(g.split)[1], c = i % 8, r = Math.floor(i / 8);
+    return c >= z.c0 && c < z.c0 + z.w && r >= z.r0 && r < z.r0 + z.h;
+}
+
 /* The sidecar's `pmd`: per track, null or the settings record. */
 export function padModeSidecar() {
     return S.padModeCfg.map((c) => (c ? JSON.parse(JSON.stringify(c)) : null));
@@ -183,7 +203,7 @@ export function restorePadModeSidecar(pmd) {
             semiA: n(g.semiA, SEMI_MIN, SEMI_MAX), semiB: n(g.semiB, SEMI_MIN, SEMI_MAX) };
         const p = e.piano || {};
         c.piano = { instr: n(p.instr, 0, INSTR_NAMES.length - 1),
-            octT: n(p.octT, ZONE_OCT_MIN, ZONE_OCT_MAX), semiT: n(p.semiT, SEMI_MIN, SEMI_MAX),
+            octA: n(p.octA, ZONE_OCT_MIN, ZONE_OCT_MAX), semiA: n(p.semiA, SEMI_MIN, SEMI_MAX),
             octB: n(p.octB, ZONE_OCT_MIN, ZONE_OCT_MAX), semiB: n(p.semiB, SEMI_MIN, SEMI_MAX),
             bassOct: n(p.bassOct, ZONE_OCT_MIN, ZONE_OCT_MAX), bassSemi: n(p.bassSemi, SEMI_MIN, SEMI_MAX) };
         const u = e.custom || {};
@@ -195,9 +215,10 @@ export function restorePadModeSidecar(pmd) {
 
 /* ---- Custom ------------------------------------------------------------------ */
 
-/* Hold (Assign / Play), the scale rows' octave and start, the chord row's
- * octave. The two octaves are the ones the Octave buttons move (trackOctave
- * and customChordOctave), shown here as views, so knob and buttons agree. */
+/* Hold (Assign / Play), the chord row's octave, the pads' octave and
+ * Transpose (in scale notes). The two octaves are the ones the Octave buttons
+ * move (customChordOctave, trackOctave) — Octave both, Shift + Octave the pads
+ * — shown here as views, so knobs and buttons agree. */
 const HOLD_NAMES = ['Assign', 'Play'];
 const HOLD_SQ = ['Asgn', 'Play'];      /* ASSIGN wrapped into "ASS / IGN" */
 function customCells(t) {
@@ -205,9 +226,9 @@ function customCells(t) {
     const sco = (S.trackOctave[t] | 0) - DEFAULT_TRACK_OCTAVE, cho = S.customChordOctave[t] | 0;
     return [
         { kind: 'enumsq', label: 'Hold', name: 'Chord Hold', text: HOLD_NAMES[u.play ? 1 : 0], sq: HOLD_SQ[u.play ? 1 : 0], options: HOLD_NAMES, sel: u.play ? 1 : 0 },
-        { kind: 'valsq', label: 'ScOct', name: 'Scale Octave', text: signed(sco), ringNorm: pos(sco, -4 - DEFAULT_TRACK_OCTAVE, 4 - DEFAULT_TRACK_OCTAVE) },
-        { kind: 'valsq', label: 'ScStp', name: 'Scale Step', text: signed(u.scaleStep), ringNorm: pos(u.scaleStep, STEP_MIN, STEP_MAX) },
-        { kind: 'valsq', label: 'ChOct', name: 'Chord Octave', text: signed(cho), ringNorm: pos(cho, -OCT_LIMIT, OCT_LIMIT) },
+        { kind: 'valsq', label: 'Chd Oct', name: 'Chord Octave', text: signed(cho), ringNorm: pos(cho, -OCT_LIMIT, OCT_LIMIT) },
+        { kind: 'valsq', label: 'Pad Oct', name: 'Pad Octave', text: signed(sco), ringNorm: pos(sco, -4 - DEFAULT_TRACK_OCTAVE, 4 - DEFAULT_TRACK_OCTAVE) },
+        { kind: 'valsq', label: 'Trans', name: 'Pad Transpose (scale)', text: signed(u.scaleStep), ringNorm: pos(u.scaleStep, STEP_MIN, STEP_MAX) },
     ];
 }
 
@@ -216,12 +237,12 @@ function customKnob(t, cell, steps) {
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     switch (cell) {
         case 0: { const v = steps > 0 ? 1 : 0; if (v === (u.play | 0)) return false; u.play = v; break; }
-        case 1: { const v = clamp((S.trackOctave[t] | 0) + steps, -4, 4); if (v === (S.trackOctave[t] | 0)) return false;
-                  S.trackOctave[t] = v; break; }
-        case 2: { const v = clamp((u.scaleStep | 0) + steps, STEP_MIN, STEP_MAX); if (v === (u.scaleStep | 0)) return false;
-                  u.scaleStep = v; break; }
-        case 3: { const v = clamp((S.customChordOctave[t] | 0) + steps, -OCT_LIMIT, OCT_LIMIT);
+        case 1: { const v = clamp((S.customChordOctave[t] | 0) + steps, -OCT_LIMIT, OCT_LIMIT);
                   if (v === (S.customChordOctave[t] | 0)) return false; S.customChordOctave[t] = v; break; }
+        case 2: { const v = clamp((S.trackOctave[t] | 0) + steps, -4, 4); if (v === (S.trackOctave[t] | 0)) return false;
+                  S.trackOctave[t] = v; break; }
+        case 3: { const v = clamp((u.scaleStep | 0) + steps, STEP_MIN, STEP_MAX); if (v === (u.scaleStep | 0)) return false;
+                  u.scaleStep = v; break; }
         default: return false;
     }
     S.chordDirty = true;
@@ -333,13 +354,15 @@ export function customCardCells(t, k) {
         title: heard.length ? chordLabel(heard, keyUsesFlats(S.padKey | 0, S.padScale | 0), r.root) : 'EMPTY',
         cells: [
             { kind: 'valsq', label: 'Root', name: 'Root', text: names[r.root], ringNorm: pos(r.root, 0, 11) },
-            { kind: 'enumsq', label: 'Qual', name: 'Quality', text: QUALS[r.qual][0], options: QUALS.map((q) => q[0]), sel: r.qual },
+            { kind: 'enumsq', label: 'Stack', name: 'Stack', text: QUALS[r.qual][0], options: QUALS.map((q) => q[0]), sel: r.qual },
             BLANK,
             { kind: 'valsq', label: 'Inv', name: 'Inversion', text: signed(r.inv), ringNorm: pos(r.inv, -4, 4) },
             { kind: 'enumsq', label: 'Sprd', name: 'Spread', text: SPREADS[r.spread], options: SPREADS, sel: r.spread },
             { kind: 'enumsq', label: 'Bass', name: 'Bass', text: BASSES[r.bass], options: BASSES, sel: r.bass },
             { kind: 'valsq', label: 'Oct', name: 'Octave', text: signed(r.oct), ringNorm: pos(r.oct, -CARD_OCT, CARD_OCT) },
-            BLANK,
+            /* Reset, as on the Chord card: touch K8 and click the jog. */
+            { kind: 'action', oneWay: true, label: 'Reset', name: 'Reset chord', text: '->', ringBound: true, opens: true,
+              btnPhase: triggerPhase('customReset', S.knobTouched === 7) },
         ],
     };
 }
@@ -372,6 +395,52 @@ export function customCardKnob(t, k, knob, steps) {
     return { prev, now };
 }
 
+/* K8 on the card: the pad goes back to empty (a Custom chord has no other
+ * default). One Undo with the rest of the hold brings it back. */
+export function customCardReset(t, k) {
+    const c = cardSession(t, k);
+    customChordSet(t, k, []);
+    padModeCfg(t).custom.build[k] = null;
+    c.rec = cardRecordFor(t, k);
+    const was = c.was;
+    markJsUndo('chord', function () { customChordSet(t, k, was); }, function () { customChordSet(t, k, []); });
+    triggerFire('customReset');
+    S.chordDirty = true;
+    S.screenDirty = true;
+}
+
+/* ---- Shift + Octave ---------------------------------------------------------
+ * Josh, 2026-10-22: "a shift+octave up/down gesture that transposes just the
+ * B split or the non-chord pads in chord and custom chord. that way you can
+ * change octaves in different zones with a single gesture." Plain Octave
+ * moves the whole surface. Returns the notice [title, value] when the press
+ * was taken, or null where there is no zone B (no split, Bass, a drum or a
+ * Conductor track) — the caller then moves the whole surface. */
+export function shiftOctaveZoneB(t, dir) {
+    if ((S.trackPadMode[t] | 0) !== PAD_MODE_MELODIC_SCALE) return null;
+    const m = padModeOf(t), d = dir > 0 ? 1 : -1;
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    let label, v;
+    if (m === PM_SCALE || m === PM_CHROM) {
+        const g = padModeCfg(t).grid;
+        if (g.split === SPLIT_NONE) return null;
+        g.octB = clamp(g.octB + d, ZONE_OCT_MIN, ZONE_OCT_MAX); v = g.octB; label = 'OCTAVE B';
+    } else if (m === PM_PIANO) {
+        const p = padModeCfg(t).piano;
+        if (p.instr === INSTR_BASS) return null;
+        p.octB = clamp(p.octB + d, ZONE_OCT_MIN, ZONE_OCT_MAX); v = p.octB; label = 'OCTAVE B';
+    } else if (m === PM_CHORD) {
+        chordBankKnob(t, 5, d);                       /* Pad Oct (the strum + scale rows) */
+        v = S.chordSettings[t].strum | 0; label = 'PAD OCTAVE';
+    } else {
+        S.trackOctave[t] = clamp((S.trackOctave[t] | 0) + d, -4, 4);    /* Custom: the pads */
+        v = (S.trackOctave[t] | 0) - DEFAULT_TRACK_OCTAVE; label = 'PAD OCTAVE';
+    }
+    S.chordDirty = true;
+    S.screenDirty = true;
+    return [label, signed(v)];
+}
+
 /* ---- the bank ------------------------------------------------------------ */
 
 function modeCell(t) {
@@ -389,13 +458,8 @@ function gridCells(t) {
     const chrom = padModeOf(t) === PM_CHROM;
     const split = g.split !== SPLIT_NONE;
     const sk = chrom ? 'semi' : 'step', lo = chrom ? SEMI_MIN : STEP_MIN, hi = chrom ? SEMI_MAX : STEP_MAX;
-    const sl = chrom ? 'Semi' : 'Step';
-    const half = (z) => [
-        { kind: 'valsq', label: 'Oct' + (split ? z : ''), name: 'Octave' + (split ? ' ' + z : ''),
-          text: signed(g['oct' + z]), ringNorm: pos(g['oct' + z], ZONE_OCT_MIN, ZONE_OCT_MAX) },
-        { kind: 'valsq', label: sl + (split ? z : ''), name: (chrom ? 'Semitone' : 'Scale Step') + (split ? ' ' + z : ''),
-          text: signed(g[sk + z]), ringNorm: pos(g[sk + z], lo, hi) },
-    ];
+    /* Scale's Transpose counts scale notes; the header says so. */
+    const half = (z) => ZONE_PAIR(split ? z : '', g['oct' + z], g[sk + z], lo, hi, chrom ? 'Transpose' : 'Transpose (scale)');
     return [{ kind: 'enumsq', label: 'Split', name: 'Split', text: SPLIT_NAMES[g.split],
               options: SPLIT_NAMES, sel: g.split }]
         .concat(half('A'), split ? half('B') : [BLANK, BLANK]);

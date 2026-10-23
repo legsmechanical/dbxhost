@@ -45,7 +45,7 @@ import { drawAutoMarkAt,
 } from './ui_movy.mjs';
 import {
     drawGlobalMenu, drawStateWipeConfirm, drawExitConfirm, drawTypeChangeConfirm, drawModuleSwapConfirm, drawRecordBlockedDialog, drawBpmMoveInfo,
-    drawConvertToDrumConfirm, drawConvertToConductConfirm, drawMenuInfo, drawChordPopup,
+    drawConvertToDrumConfirm, drawConvertToConductConfirm, drawMenuInfo,
     drawMacroClearConfirm, drawBakeConfirm, drawSnapshotPicker,
     drawBakeSceneConfirm, drawXposeConfirm,
     drawProjectPadPicker,
@@ -1571,7 +1571,7 @@ export function coveredByMoreThanMenu() {
         S.tempoSelectActive || S.mergeSoloPlacement >= 0 || S.capturePlaceTrack >= 0 ||
         S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.confirmModuleChange || S.bpmMoveInfo || S.recordBlockedDialog ||
         S.confirmConvertToDrum || S.confirmConvertToConduct ||
-        S.chordPopupOpen || S.confirmBakeScene || S.confirmBake || S.confirmMacroClear || S.tapTempoOpen ||
+        S.confirmBakeScene || S.confirmBake || S.confirmMacroClear || S.tapTempoOpen ||
         (S.sessionView && (S.loopHeld || S.perfViewLocked)));
 }
 
@@ -1582,7 +1582,7 @@ export function soundModeCovered() {
         S.tempoSelectActive || S.mergeSoloPlacement >= 0 || S.capturePlaceTrack >= 0 ||
         S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.confirmModuleChange || S.bpmMoveInfo || S.recordBlockedDialog ||
         S.confirmConvertToDrum || S.confirmConvertToConduct ||
-        (S.menuInfoLines && S.menuInfoLines.length > 0) || S.chordPopupOpen ||
+        (S.menuInfoLines && S.menuInfoLines.length > 0) ||
         S.confirmXpose || S.confirmBakeScene || S.confirmBake ||
         S.confirmMacroClear ||   /* MACROS bank clear — opened FROM sound mode, so it must cover it */
         S.globalMenuOpen || S.tapTempoOpen ||
@@ -1954,7 +1954,6 @@ function drawUIBody() {
     if (S.confirmConvertToDrum)    { drawConvertToDrumConfirm();    return; }
     if (S.confirmConvertToConduct) { drawConvertToConductConfirm(); return; }
     if (S.menuInfoLines.length > 0){ drawMenuInfo();                return; }
-    if (S.chordPopupOpen)          { drawChordPopup();              return; }
     if (S.globalMenuOpen || S.tapTempoOpen) { ensureGlobalMenuFresh(); drawGlobalMenu(); return; }
     /* Perf Mode OLED takeover (Session View + Loop held or locked) */
     if (S.sessionView && (S.loopHeld || S.perfViewLocked)) { drawPerfModeOled(); return; }

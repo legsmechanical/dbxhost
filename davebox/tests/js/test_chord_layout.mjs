@@ -5,7 +5,7 @@
  *      in key; the default palette spells I ii iii IV V vi vii° I; stacks,
  *      inversions, spread, bass, Smooth and the strum/scale rows.
  *   2. THE SURFACE, through the real handlers: Shift + step 8 walks Scale →
- *      Chrom → Chord and raises the explainer; the pad map the ENGINE receives
+ *      Chrom → Chord; the pad map the ENGINE receives
  *      carries whole chords; a slot press shows "[vi · AMIN]"; a held modifier
  *      changes the next chord; a tap on a held chord re-voices it in place;
  *      hold a slot + knob edits it; Select mode; the sidecar round trip.
@@ -169,36 +169,21 @@ step('control: a fresh track is on the Scale layout, one note per pad', () => {
     const pm = lastPadmap();
     assert(pm && pm.slice(0, 32).every((t) => t.indexOf('+') < 0), 'a plain map carries no chords');
 });
-step('⭐ Shift + step 8 walks Scale → Chrom → Piano → Chord, and landing on Chord raises the explainer', () => {
+step('⭐ Shift + step 8 walks Scale → Chrom → Piano → Chord; landing on Chord shows no explainer (retired 2026-10-22) and lands on Pad Mode', () => {
     shiftStep8();
     assert(S.padLayoutChromatic[2] && !S.padLayoutChord[2], 'first press: Chrom');
-    assert(!S.chordPopupOpen, 'no explainer on Chrom');
     shiftStep8();
     assert(S.padLayoutPiano[2] && !S.padLayoutChord[2], 'second press: Piano');
-    assert(!S.chordPopupOpen, 'no explainer on Piano');
     shiftStep8();
     assert(S.padLayoutChord[2], 'third press: Chord');
-    assert(S.chordPopupOpen, 'the explainer is up');
-    assert(S.activeBank === BANK_CHORD && S.trackActiveBank[2] === BANK_CHORD, 'landing on Chord did not land on the CHORD bank: ' + S.activeBank);
+    assert(S.activeBank === BANK_CHORD && S.trackActiveBank[2] === BANK_CHORD, 'landing on Chord did not land on the Pad Mode bank: ' + S.activeBank);
     const t = screenText();
-    assert(t.some((s) => s === 'CHORD MODE'), 'explainer title on screen: ' + JSON.stringify(t.slice(0, 8)));
-    assert(t.some((s) => /STRUM/.test(s)), 'it explains the strum row');
+    assert(!t.some((s) => s === 'CHORD MODE'), 'the retired explainer is on screen: ' + JSON.stringify(t.slice(0, 8)));
 });
-step('⭐ while the explainer is up the pads PLAY chords (Josh, 2026-09-24: they keep working until OK)', () => {
+step('⭐ the engine gets whole chords on the bottom row, pads live at once', () => {
     ticks(2);
     const pm = lastPadmap();
-    assert(pm[32] === '0', 'the engine was muted under the explainer: mute token ' + pm[32]);
-    pad(5, true); ticks(1);
-    assert(S.liveActiveNotes.size > 0, 'a pad under the explainer did not play');
-    assert(S.chordPopupOpen, 'a pad press closed the explainer — only OK / Back should');
-    pad(5, false); ticks(1);
-    assert(S.liveActiveNotes.size === 0, 'released, still held: ' + [...S.liveActiveNotes]);
-});
-step('⭐ jog click is OK: the explainer closes and the engine gets whole chords on the bottom row', () => {
-    cc(3, 127); cc(3, 0); ticks(2);
-    assert(!S.chordPopupOpen, 'still up');
-    const pm = lastPadmap();
-    assert(pm[32] === '0', 'pads muted after OK');
+    assert(pm[32] === '0', 'pads muted on landing');
     const want = [0, 1, 2, 3, 4, 5, 6, 7].map((k) => M.slotChord({ key: 0, scale: 0, root: (S.padOctave[2] | 0) * 12,
         slot: M.defaultSlot(k), settings: set0 }).notes.map((p) => p + oct()).join('+'));
     assert(eq(pm.slice(0, 8), want), 'slots ' + pm.slice(0, 8).join(' ') + ' want ' + want.join(' '));
@@ -430,7 +415,7 @@ step('⭐ a held chord released AFTER a layout switch still leaves the held note
     CP.setChordLayout(2, false); ticks(1);               /* the layout changed under the finger */
     pad(3, false); ticks(1);
     assert(S.liveActiveNotes.size === 0, 'stranded: ' + [...S.liveActiveNotes]);
-    CP.setChordLayout(2, true); CP.closeChordPopup(); ticks(2);
+    CP.setChordLayout(2, true); ticks(2);
 });
 step('Inv held for the press, let go, then tapped: the walk goes on from the pressed voicing', () => {
     const start = CP.padPitches(0, oct());

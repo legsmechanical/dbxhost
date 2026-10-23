@@ -56,7 +56,7 @@ const PM = await import('../../ui/ui_pad_mode.mjs');
 const ccm = await import('../../ui/ui_input_cc.mjs');
 globalThis.__dm = await import('../../ui/ui_drummodel.mjs');
 globalThis.__cp = await import('../../ui/ui_chord_pads.mjs');
-globalThis.__dlg = await import('../../ui/ui_dialogs.mjs');
+globalThis.__leds = await import('../../ui/ui_leds.mjs');
 
 const T = 2;
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
@@ -102,7 +102,7 @@ for (const [name, route] of ROUTES) {
         assert(S.activeBank === C.BANK_PADMODE && S.trackActiveBank[T] === C.BANK_PADMODE, 'the tap did not land on PADMODE: ' + S.activeBank);
         S.bankCardLatched = true;          /* the page is up, as after a click on the overview */
         let txt = screen();
-        assert(txt.some((x) => /PADMODE/i.test(x)), 'no PADMODE header: ' + txt.slice(0, 8).join('|'));
+        assert(txt.some((x) => x === 'PAD MODE'), 'no PAD MODE header: ' + txt.slice(0, 8).join('|'));
         assert(txt.includes('Mode') || txt.includes('MODE'), 'no Mode cell: ' + txt.join('|'));
         assert(txt.join('').toUpperCase().includes('SCALE'), 'Mode does not read Scale: ' + txt.join('|'));
         const before = lastPadmap();
@@ -118,15 +118,13 @@ for (const [name, route] of ROUTES) {
     });
 }
 
-step('⭐ K1 onto Chord raises its explainer and stays on PADMODE; off again, the settings of each mode survive', () => {
+step('⭐ K1 onto Chord (no explainer) stays on Pad Mode; off again, the settings of each mode survive', () => {
     home(); S.trackPadMode[T] = C.PAD_MODE_MELODIC_SCALE; S.trackRoute[T] = 0;
     PM.setPadMode(T, PM.PM_PIANO); ticks(2);
     pickOnMap(C.BANK_PADMODE); S.bankCardLatched = true;
     k1(+1); k1Up();
-    assert(PM.padModeOf(T) === PM.PM_CHORD && S.chordPopupOpen, 'not on Chord with its explainer');
+    assert(PM.padModeOf(T) === PM.PM_CHORD, 'not on Chord');
     assert(S.activeBank === C.BANK_PADMODE, 'Chord took the knobs off PADMODE');
-    midi(0xB0, 3, 127); midi(0xB0, 3, 0); ticks(2);       /* OK */
-    assert(!S.chordPopupOpen, 'OK did not close the explainer');
     const txt = screen();
     assert(txt.includes('Map') || txt.includes('MAP'), 'Chord page has no Map: ' + txt.join('|'));
     k1(+1); k1Up();
@@ -154,7 +152,7 @@ step('⭐ Scale, no split: K3 Oct / K4 Step move the whole grid; a step keeps ev
     const plain = map();
     for (let i = 0; i < 32; i++) assert(plain[i] === sc(root, (i % 8) + Math.floor(i / 8) * 3), 'plain pad ' + i);
     const txt = screen().join('|');
-    assert(/SPLIT/i.test(txt) && /NONE/i.test(txt) && /OCT/i.test(txt) && /STEP/i.test(txt), 'the page: ' + txt);
+    assert(/SPLIT/i.test(txt) && /NONE/i.test(txt) && /OCT/i.test(txt) && /TRANS/i.test(txt), 'the page: ' + txt);
     kn(2, +1);                                       /* Oct +1 */
     kn(3, +1); kn(3, +1);                            /* Step +2: starts on E */
     const m = map();
@@ -180,19 +178,20 @@ step('⭐⭐ Scale, Vertical: the left 4x4 and the right 4x4 are two grids, each
         assert(m[i] === want, 'pad ' + i + ' (col ' + c + ' row ' + r + '): ' + m[i] + ' want ' + want);
     }
     const txt = screen().join('|');
-    assert(/OCTA/i.test(txt) && /OCTB/i.test(txt), 'halves not named A / B: ' + txt);
+    assert(/\|OCT A\|/.test(txt) && /\|TRANS A\|/.test(txt) && /\|OCT B\|/.test(txt) && /\|TRANS B\|/.test(txt),
+           'zones not named A / B in full: ' + txt);
 });
 
-step('⭐⭐ Chrom, Horizontal: the top two rows and the bottom two are two grids; Semi moves by semitones', () => {
+step('⭐⭐ Chrom, Horizontal: zone A is the BOTTOM two rows, B the top two (Josh: "A is always bottom/left"); Transpose moves by semitones', () => {
     onBank(PM.PM_CHROM);
     const root = (S.padOctave[T] | 0) * 12;
     kn(1, +1); kn(1, +1);                            /* Split: Horz */
     assert(PM.padModeCfg(T).grid.split === PM.SPLIT_HORZ, 'not Horz');
-    kn(3, +1); kn(3, +1); kn(3, +1);                 /* Semi A +3: the top half starts on E♭ */
+    kn(3, +1); kn(3, +1); kn(3, +1);                 /* Transpose A +3: the bottom half starts on E♭ */
     const m = map();
     for (let i = 0; i < 32; i++) {
         const c = i % 8, r = Math.floor(i / 8);
-        const want = r >= 2 ? root + 3 + c + (r - 2) * 8 : root + c + r * 8;
+        const want = r < 2 ? root + 3 + c + r * 8 : root + c + (r - 2) * 8;
         assert(m[i] === want, 'pad ' + i + ': ' + m[i] + ' want ' + want);
     }
 });
@@ -235,13 +234,13 @@ step('⭐ a Conductor plays one plain grid, whatever split it had as a melodic t
 });
 
 const W_ = [0, 2, 4, 5, 7, 9, 11, 12], B_ = [-1, 1, 3, -1, 6, 8, 10, -1];
-step('⭐⭐ Piano: Oct / Semi Top move the top two rows, Oct / Semi Bot the bottom two; gaps stay silent', () => {
+step('⭐⭐ Piano: Oct / Trans A move the bottom two rows (zone A), Oct / Trans B the top two (B); gaps stay silent', () => {
     onBank(PM.PM_PIANO);
     const base = (S.padOctave[T] | 0) * 12;
     const txt = screen().join('|');
-    assert(/INSTR/i.test(txt) && /PIANO/i.test(txt) && /OCTT/i.test(txt) && /SEMIB/i.test(txt), 'the page: ' + txt);
-    kn(2, +1);                                       /* Oct Top +1 */
-    kn(5, -1); kn(5, -1);                            /* Semi Bot -2 */
+    assert(/INSTR/i.test(txt) && /PIANO/i.test(txt) && /\|OCT A\|/.test(txt) && /\|TRANS B\|/.test(txt), 'the page: ' + txt);
+    kn(4, +1);                                       /* Oct B (top) +1 */
+    kn(3, -1); kn(3, -1);                            /* Trans A (bottom) -2 */
     const m = map();
     for (let i = 0; i < 32; i++) {
         const c = i % 8, r = Math.floor(i / 8);
@@ -253,7 +252,7 @@ step('⭐⭐ Piano: Oct / Semi Top move the top two rows, Oct / Semi Bot the bot
 
 step('⭐⭐ Piano → Instrument Bass: four strings E A D G, open + seven frets; one Oct / Semi; Piano keeps its own', () => {
     onBank(PM.PM_PIANO);
-    kn(2, +1);                                       /* Piano: Oct Top +1, to be kept */
+    kn(2, +1);                                       /* Piano: Oct A +1, to be kept */
     kn(1, +1);                                       /* Instrument: Bass */
     assert(PM.padModeCfg(T).piano.instr === PM.INSTR_BASS, 'not Bass');
     const e = (S.padOctave[T] | 0) * 12 - 8;
@@ -261,15 +260,15 @@ step('⭐⭐ Piano → Instrument Bass: four strings E A D G, open + seven frets
     for (let i = 0; i < 32; i++) assert(m[i] === e + Math.floor(i / 8) * 5 + (i % 8), 'bass pad ' + i + ': ' + m[i]);
     assert(m[0] % 12 === 4 && m[8] % 12 === 9 && m[16] % 12 === 2 && m[24] % 12 === 7, 'strings not E A D G');
     const cells = PM.padModeBankCells(T);
-    assert(cells[2].label === 'Oct' && cells[3].label === 'Semi' && cells[4].kind === 'blank' && cells[5].kind === 'blank',
+    assert(cells[2].label === 'Oct' && cells[3].label === 'Trans' && cells[4].kind === 'blank' && cells[5].kind === 'blank',
            'Bass page: ' + cells.map((c) => c.label).join(','));
     kn(3, +1); kn(4, +1);                            /* Semi +1; K5 does nothing on Bass */
     m = map();
     assert(m[0] === e + 1, 'Bass Semi did not move the neck: ' + m[0]);
     kn(1, -1);                                       /* back to Piano */
-    assert(PM.padModeCfg(T).piano.octT === 1 && PM.padModeCfg(T).piano.octB === 0, 'Piano lost its own: ' + JSON.stringify(PM.padModeCfg(T).piano));
+    assert(PM.padModeCfg(T).piano.octA === 1 && PM.padModeCfg(T).piano.octB === 0, 'Piano lost its own: ' + JSON.stringify(PM.padModeCfg(T).piano));
     PM.restorePadModeSidecar(PM.padModeSidecar());
-    assert(PM.padModeCfg(T).piano.bassSemi === 1 && PM.padModeCfg(T).piano.octT === 1, 'Piano / Bass not saved');
+    assert(PM.padModeCfg(T).piano.bassSemi === 1 && PM.padModeCfg(T).piano.octA === 1, 'Piano / Bass not saved');
 });
 
 step('⭐⭐ Chord Map → Function: the slots regroup by job (I vi iii | IV ii | V vii° | I up), an edited chord moves with its degree, the pads play it', () => {
@@ -312,24 +311,27 @@ const onCustom = () => {
     S.trackOctave[T] = C.DEFAULT_TRACK_OCTAVE; ticks(2);
 };
 
-step('⭐ Custom: the page is Hold, ScOct, ScStp, ChOct — and the two octaves ARE the ones the Octave buttons move', () => {
+step('⭐ Custom: the page is Hold, Chd Oct, Pad Oct, Trans — and the two octaves ARE the ones the Octave buttons move', () => {
     onCustom();
     const lab = PM.padModeBankCells(T).map((c) => c.label);
-    assert(JSON.stringify(lab.slice(0, 5)) === JSON.stringify(['Mode', 'Hold', 'ScOct', 'ScStp', 'ChOct']), 'page: ' + lab);
+    assert(JSON.stringify(lab.slice(0, 5)) === JSON.stringify(['Mode', 'Hold', 'Chd Oct', 'Pad Oct', 'Trans']), 'page: ' + lab);
     assert(PM.padModeBankCells(T)[1].text === 'Assign', 'Hold does not start on Assign');
-    kn(2, +1);
-    assert(S.trackOctave[T] === C.DEFAULT_TRACK_OCTAVE + 1, 'ScOct did not move the scale rows\' octave');
-    kn(4, -1);
-    assert(S.customChordOctave[T] === -1, 'ChOct did not move the chord row\'s octave');
-    padOn(9); padOff(9); midi(0xB0, 55, 127); midi(0xB0, 55, 0); ticks(1);   /* a scale pad, then Octave up */
-    assert(PM.padModeBankCells(T)[2].text === '+2', 'the knob does not read the button\'s octave: ' + PM.padModeBankCells(T)[2].text);
+    const scr = screen().join('|');
+    assert(/\|CHD OCT\|/.test(scr) && /\|PAD OCT\|/.test(scr), 'labels trimmed on screen: ' + scr);
+    kn(3, +1);
+    assert(S.trackOctave[T] === C.DEFAULT_TRACK_OCTAVE + 1, 'Pad Oct did not move the scale rows\' octave');
+    kn(2, -1);
+    assert(S.customChordOctave[T] === -1, 'Chd Oct did not move the chord row\'s octave');
+    midi(0xB0, 55, 127); midi(0xB0, 55, 0); ticks(1);           /* Octave up: both */
+    assert(PM.padModeBankCells(T)[3].text === '+2' && PM.padModeBankCells(T)[2].text === '0',
+           'the knobs do not read the buttons\' octaves: ' + PM.padModeBankCells(T)[3].text + ' / ' + PM.padModeBankCells(T)[2].text);
 });
 
-step('⭐ Custom ScStp moves the scale rows along the scale (still in key); the chord row stays', () => {
+step('⭐ Custom Trans moves the scale rows along the scale (still in key); the chord row stays', () => {
     onCustom();
     S.customChords[T][0] = [60, 64, 67]; ticks(2);
     const before = map();
-    kn(3, +1); kn(3, +1); ticks(2);
+    kn(4, +1); kn(4, +1); ticks(2);                  /* Trans +2 (scale notes) */
     const m = map();
     assert(m[0] === before[0], 'the chord row moved');
     const root = (S.padOctave[T] | 0) * 12;
@@ -343,8 +345,6 @@ step('⭐ the long values the device wrapped (CHROM, CUSTOM, ASSIGN) show one-li
     assert(txt.includes('CUST') && txt.includes('ASGN') && !txt.includes('IGN') && !txt.includes('TOM'), 'Custom page: ' + txt.join('|'));
     const c = PM.padModeBankCells(T);
     assert(c[0].options.includes('Custom') && c[1].options.includes('Assign'), 'the list lost the names');
-    const ex = globalThis.__dlg.CHORD_POPUP_LINES.join('|');
-    assert(/PADMODE BANK/.test(ex) && !/CHORD BANK/.test(ex), 'the Chord explainer still names the CHORD bank: ' + ex);
     S.activeBank = C.BANK_PADMODE; S.customChords[T][5] = []; padOn(5);
     const pop = (S.actionPopupLines || []).join(' / ');
     assert(/TURN A KNOB/.test(pop), 'an empty chord pad on PADMODE does not mention the knobs: ' + pop);
@@ -374,7 +374,7 @@ step('⭐⭐ the assign card: hold a chord pad on PADMODE — Root, Qual … on 
     onCustom();
     padOn(2); ticks(1);
     let txt = screen().join('|');
-    assert(/ROOT/i.test(txt) && /QUAL/i.test(txt) && /EMPTY/i.test(txt), 'no card on an empty pad: ' + txt);
+    assert(/ROOT/i.test(txt) && /STACK/i.test(txt) && /RESET/i.test(txt) && /EMPTY/i.test(txt), 'no card (Chord card\'s labels) on an empty pad: ' + txt);
     kn(1, +1); ticks(1);                              /* Qual: Maj → Min */
     const base = ((S.padOctave[T] | 0) + C.DEFAULT_TRACK_OCTAVE) * 12;
     assert(JSON.stringify(S.customChords[T][2]) === JSON.stringify([base, base + 3, base + 7]), 'C minor: ' + S.customChords[T][2]);
@@ -407,6 +407,92 @@ step('⭐⭐ the card starts from the chord your notes spell, and a card-built p
     const c2 = PM.customCardCells(T, 1).cells;
     assert(c2[1].text === 'Min7' && c2[3].text === '+1', 'the card did not reopen where it was: ' + c2.map((c) => c.text));
     padOff(1); ticks(1);
+});
+
+const LEDS = globalThis.__leds;
+const padLeds = () => { LEDS.invalidateLEDCache(); for (let k = 0; k < 4; k++) LEDS.updateTrackLEDs(); const o = []; for (let i = 0; i < 32; i++) o.push(led[padN(i)] | 0); return o; };
+const shiftOct = (d) => { midi(0xB0, 49, 127); midi(0xB0, d > 0 ? 55 : 54, 127); midi(0xB0, d > 0 ? 55 : 54, 0); midi(0xB0, 49, 0); ticks(1); };
+const octBtn = (d) => { midi(0xB0, d > 0 ? 55 : 54, 127); midi(0xB0, d > 0 ? 55 : 54, 0); ticks(1); };
+const popupNow = () => (S.actionPopupLines || []).join(' / ');
+
+step('⭐⭐ a split shows its zones apart on the pads: A keeps root = track colour, B inverts (root White, the rest the track colour)', () => {
+    onBank(PM.PM_SCALE);
+    const plain = padLeds();
+    const trackC = LEDS.trackColor(T);
+    kn(1, +1); ticks(2);                              /* Vert */
+    const L = padLeds();
+    /* C major from C: pad 0 (A) and pad 4 (B) are both C. */
+    assert(L[0] === trackC && L[0] === plain[0], 'zone A root changed: ' + L[0]);
+    assert(L[1] === plain[1] && L[1] !== trackC, 'zone A other notes changed: ' + L[1]);
+    assert(L[4] === 120, 'zone B root is not White (palette 120): ' + L[4]);
+    assert(L[5] === trackC, 'zone B other notes are not the track colour: ' + L[5]);
+    kn(1, -1); ticks(2);                              /* no split: no zone B */
+    const N = padLeds();
+    assert(N[4] === plain[4] && N[5] === plain[5], 'unsplit pads kept the inverted look');
+});
+
+step('⭐⭐ Shift + Octave moves ZONE B only: the B split, Piano\'s top; plain Octave still moves the whole surface; no split → whole surface', () => {
+    onBank(PM.PM_SCALE);
+    kn(1, +1); ticks(2);                              /* Vert */
+    const to = S.trackOctave[T];
+    const a0 = map()[0], b0 = map()[4];
+    shiftOct(+1); ticks(2);
+    assert(PM.padModeCfg(T).grid.octB === 1 && S.trackOctave[T] === to, 'Shift + Octave: ' + JSON.stringify(PM.padModeCfg(T).grid));
+    assert(map()[0] === a0 && map()[4] === b0 + 12, 'zone pitches: ' + map()[0] + ' / ' + map()[4]);
+    assert(popupNow() === 'OCTAVE B / +1', 'notice: ' + popupNow());
+    octBtn(-1);
+    assert(S.trackOctave[T] === to - 1 && PM.padModeCfg(T).grid.octB === 1, 'plain Octave did not move the whole surface');
+    octBtn(+1);
+    kn(1, -1); ticks(2);                              /* no split */
+    shiftOct(+1);
+    assert(S.trackOctave[T] === to + 1, 'no split: Shift + Octave did not fall through to the whole surface');
+    octBtn(-1);
+    PM.setPadMode(T, PM.PM_PIANO); ticks(2);
+    const top0 = map()[16], bot0 = map()[0];
+    shiftOct(-1); ticks(2);
+    assert(map()[16] === top0 - 12 && map()[0] === bot0, 'Piano: Shift + Octave did not move the top octave alone');
+    assert(PM.padModeCfg(T).piano.octB === -1, 'Piano octB ' + PM.padModeCfg(T).piano.octB);
+    PM.setPadMode(T, PM.PM_SCALE); ticks(2);
+});
+
+step('⭐⭐ Shift + Octave in Chord moves the pads ABOVE the chords (Pad Oct); in Custom the scale pads, not the chord row', () => {
+    onBank(PM.PM_CHORD);
+    const slots0 = lastPadmap().split(' ').slice(0, 8).join(' '), scale0 = map()[24];
+    shiftOct(+1); ticks(2);
+    assert(S.chordSettings[T].strum === 1, 'Pad Oct: ' + S.chordSettings[T].strum);
+    assert(lastPadmap().split(' ').slice(0, 8).join(' ') === slots0, 'the chord pads moved');
+    assert(map()[24] === scale0 + 12, 'the scale row did not move: ' + map()[24] + ' was ' + scale0);
+    assert(popupNow() === 'PAD OCTAVE / +1', 'notice: ' + popupNow());
+    assert(PM.padModeBankCells(T)[6].label === 'Pad Oct', 'Chord page label: ' + PM.padModeBankCells(T)[6].label);
+    shiftOct(-1); ticks(2);
+    onCustom();
+    S.customChords[T][0] = [60, 64, 67]; ticks(2);
+    const cho = S.customChordOctave[T], to = S.trackOctave[T];
+    shiftOct(+1);
+    assert(S.trackOctave[T] === to + 1 && S.customChordOctave[T] === cho, 'Custom Shift + Octave: ' + S.trackOctave[T] + ' / ' + S.customChordOctave[T]);
+});
+
+step('⭐ the Custom card has Reset on K8 like the Chord card: touch K8 + click empties the pad; Undo brings it back', () => {
+    onCustom();
+    S.customChords[T][2] = [60, 64, 67]; ticks(2);
+    padOn(2); ticks(1);
+    const c = PM.customCardCells(T, 2).cells;
+    assert(JSON.stringify(c.map((x) => x.label)) === JSON.stringify(globalThis.__cp.chordSlotCells(T, 0).cells.map((x) => x.label)),
+           'the cards differ: ' + c.map((x) => x.label) + ' vs ' + globalThis.__cp.chordSlotCells(T, 0).cells.map((x) => x.label));
+    midi(0x90, 7, 127); ticks(1);
+    midi(0xB0, 3, 127); midi(0xB0, 3, 0); ticks(1);
+    midi(0x80, 7, 0); padOff(2); ticks(1);
+    assert(S.customChords[T][2].length === 0, 'Reset did not empty the pad: ' + S.customChords[T][2]);
+    S.undoJs.undo();
+    assert(JSON.stringify(S.customChords[T][2]) === '[60,64,67]', 'Undo: ' + S.customChords[T][2]);
+});
+
+step('⭐ the bank is "Pad Mode": the map cell reads PAD MODE, and no PADMODE anywhere', () => {
+    home(); S.trackPadMode[T] = C.PAD_MODE_MELODIC_SCALE; PM.setPadMode(T, PM.PM_SCALE); ticks(2);
+    assert(C.BANKS[C.BANK_PADMODE].name === 'PAD MODE', 'bank name ' + C.BANKS[C.BANK_PADMODE].name);
+    const m = pure.bankPadMapForMode(C.PAD_MODE_MELODIC_SCALE, T);
+    const cell = m[0].cells[0];
+    assert(cell && cell.bank === C.BANK_PADMODE && /PAD MODE/.test(String(cell.name).replace('\n', ' ')), 'map cell: ' + JSON.stringify(cell));
 });
 
 step('⭐ a drum track has no PADMODE: no pad on its map, and the bank is not on its walk', () => {

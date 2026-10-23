@@ -41,36 +41,26 @@ export function chordLayoutOn(t) {
     return !!S.padLayoutChord[t] && (S.trackPadMode[t] | 0) === PAD_MODE_MELODIC_SCALE;
 }
 
-/* Turn the Chord layout on or off for track t. Landing on it raises the
- * explainer (Josh: "Every time you switch to chord. Should have an OK to
- * dismiss so you can take time to read it"). */
+/* Turn the Chord layout on or off for track t. The explainer that landing on
+ * it used to raise is retired (Josh, 2026-10-22: "we can get rid of the chord
+ * mode explanation screen that pops up when you enter"). */
 export function setChordLayout(t, on) {
     const was = !!S.padLayoutChord[t];
     S.padLayoutChord[t] = !!on;
     if (on) ensureChordState(t);
     if (t === S.activeTrack) resetChordTransient();
     if (on && !was) {
-        S.chordPopupOpen = true;
         /* Landing on the layout lands on its bank (Josh, 2026-09-23) — from
          * anywhere, the Sound menu included: the menu never owns the bank
          * (2026-09-24). A resting MACROS / SOUND+CFG mode closes on the next tick. */
         S.trackActiveBank[t] = BANK_CHORD;
         if (t === S.activeTrack) S.activeBank = BANK_CHORD;
     }
-    /* Leaving the layout takes its explainer with it (Josh, 2026-09-26: "chord
-     * mode instructions and confirmation should go away when you switch to a
-     * different pad mode"). */
-    if (!on && was) S.chordPopupOpen = false;
     /* Leaving the layout keeps the bank: it is PADMODE now, on every melodic
      * track (Josh, 2026-10-22). */
     S.screenDirty = true;
 }
 
-/* OK on the explainer. The pads come back through the tick's mute-edge push. */
-export function closeChordPopup() {
-    S.chordPopupOpen = false;
-    S.screenDirty = true;
-}
 
 /* The modifiers and the slot card belong to the ACTIVE track's surface; a
  * track switch or a layout change drops them. Held chords are NOT dropped:
@@ -463,7 +453,9 @@ export function chordBankCells(t) {
             : { kind: 'blank', label: '' },
         { kind: 'enumsq', label: 'Bass', name: 'Bass', text: bassV ? '-' + bassV : 'Off',
           options: ['Off', '-1', '-2'], sel: bassV },
-        { kind: 'valsq', label: 'Strum', name: 'Strum Octave', text: s.strum > 0 ? '+' + s.strum : String(s.strum),
+        /* The rows above the chords (strum + scale): "Pad Oct", as on Custom;
+         * Shift + Octave moves it too. */
+        { kind: 'valsq', label: 'Pad Oct', name: 'Pad Octave (strum + scale rows)', text: s.strum > 0 ? '+' + s.strum : String(s.strum),
           ringNorm: pos(s.strum, -1, 2) },
         { kind: 'enumsq', label: 'Slots', name: 'Slots', text: s.select ? 'Select' : 'Play',
           options: ['Play', 'Select'], sel: s.select ? 1 : 0 },

@@ -9,27 +9,27 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Changed
-- **The CHORD bank is now the PADMODE bank, on every melodic track.** Its first
-  knob, **Mode**, picks the pad layout (Scale, Chrom, Piano, Chord, Custom) and
-  the other knobs are that layout's settings. Each layout keeps its settings when
-  you switch away and back. The TRACK CONFIG **Layout** row is gone (Shift +
-  Step 8 still steps through the layouts). In Chord, **Bass** and **Bass
-  Octave** are now one knob: Off, −1 or −2.
-- **Split the pads in Scale and Chrom** (PADMODE bank): left / right or top /
-  bottom halves, each with its own octave and start (in scale steps in Scale,
-  so it stays in key; in semitones in Chrom).
-- **Piano: move the top and bottom octaves on their own**, and a **Bass**
-  instrument: four strings, E A D G, seven frets across (PADMODE bank).
-- **Chord Map: Function** — regroups the chord pads by job: I vi iii, IV ii,
-  V vii°, then I up. Edited chords move with their degree.
-- **Custom chords on the PADMODE bank:** Hold *Play* (a held chord pad just
-  plays, so the scale pads above play with it), the scale rows' octave and
-  start, the chord row's octave — and a **chord card**: hold a chord pad on the
-  bank and build it by name (Root, Quality, Inversion, Spread, Bass, Octave).
-  One Undo per hold.
-- **The manual now covers Schwung's two samplers inside dAVEBOx**: the
-  Quantized Sampler (Shift + touch Volume + Sample) and Skipback (Shift + touch
-  Volume + Capture), and where to set Skipback's length.
+- **The CHORD bank is now the Pad Mode bank, on every melodic track.** Its
+  first knob, **Mode**, picks the pad layout (Scale, Chrom, Piano, Chord,
+  Custom) and the other knobs are that layout's settings; each layout keeps its
+  settings when you switch away and back. The TRACK CONFIG **Layout** row is
+  gone (Shift + Step 8 still steps through the layouts), and so is the Chord
+  layout's explainer card.
+- **Split the pads in Scale and Chrom** into zone A (left / bottom) and zone B
+  (right / top), each with its own **Oct** and **Trans**; zone B shows its colors
+  inverted (root white) so the zones read apart.
+- **Shift + Octave moves zone B only** — the B split, Piano's top octave, or the
+  pads above the chords in Chord and Custom. Octave alone moves the whole
+  surface, in Custom too (it used to move the part you touched last).
+- **Piano: zone A / B octave and Transpose**, and a **Bass** instrument (four
+  strings, E A D G, seven frets across).
+- **Chord:** **Map** (Diatonic, or Function: I vi iii, IV ii, V vii°, I up);
+  **Bass** and **Bass Octave** are one knob (Off, −1, −2); **Strum** is now
+  **Pad Oct**.
+- **Custom on the Pad Mode bank:** **Hold** *Play* (a held chord pad just plays,
+  so the pads above play with it), **Chd Oct**, **Pad Oct**, **Trans**, and a
+  **chord card** with the Chord card's knobs (Root, Stack, Inv, Sprd, Bass, Oct,
+  Reset): hold a chord pad on the bank and build it by name. One Undo per hold.
 - **Instrument: None is now a Schwung track with nothing loaded** — the state a
   new project's tracks 5–8 start in. The track keeps its MIDI effect, effects,
   levels and Presets, so a chain preset can be loaded without first choosing a
