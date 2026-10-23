@@ -69,6 +69,10 @@ the section into a versioned heading at release time.
   screen. The **Clear all** row still clears everything.
 
 ### Fixed
+- **A track emptied in TRACK CONFIG stays empty.** Setting a Schwung track's
+  instrument to None, or removing its last module, was undone at the next
+  launch: the old instrument came back, sometimes as a preset the track had
+  been named after long before.
 - **Automating a choice that has names (a PLAYER's Pattern) lands on the right
   one.** Holding a step and choosing "2B" stored "1C" (and the value it rests on
   was off by one too), so playback played the wrong pattern and the readout
