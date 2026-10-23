@@ -33,7 +33,7 @@ import { chordLayoutOn, resetChordTransient, bookHeldChord, heldChordOf,
 
 export const CUSTOM_SLOTS = 8;
 export const CUSTOM_CHORD_MAX = 6;      /* the engine's notes-per-pad limit */
-const OCT_LIMIT = 4;
+export const OCT_LIMIT = 4;
 
 /* ---- state ------------------------------------------------------------ */
 
@@ -95,9 +95,13 @@ export function fillCustomPadMap(t, key, scale) {
     const root = (S.padOctave[t] | 0) * 12 + key;
     const intervals = SCALE_INTERVALS[scale] || SCALE_INTERVALS[0];
     const n = intervals.length;
+    /* PADMODE Scale Step: where the scale rows start, in scale notes (they
+     * stay in key, as the Scale layout's Step does). */
+    const c = S.padModeCfg[t];
+    const start = (c && c.custom) ? (c.custom.scaleStep | 0) : 0;
     for (let i = 8; i < 32; i++) {
-        const deg = (i % 8) + (Math.floor(i / 8) - 1) * 3;
-        const p = root + Math.floor(deg / n) * 12 + intervals[deg % n];
+        const deg = (i % 8) + (Math.floor(i / 8) - 1) * 3 + start;
+        const p = root + Math.floor(deg / n) * 12 + intervals[((deg % n) + n) % n];
         S.padNoteMap[i] = (p < 0 || p > 127) ? 0xFF : p;
         S.padChordMap[i] = null;
     }
@@ -108,6 +112,22 @@ export function fillCustomPadMap(t, key, scale) {
 /* The chord the taps and the octave buttons edit: the most recently pressed
  * chord pad still held on track t; -1 when none. */
 export function customEditTarget(t) {
+    if (t !== S.activeTrack || !customLayoutOn(t)) return -1;
+    /* PADMODE Hold: Play (Josh, 2026-10-22) — a held chord pad just plays,
+     * so the scale rows above can be played with it without editing it. */
+    if (customPlayMode(t)) return -1;
+    return customHeldPad(t);
+}
+
+/* Is track t's Custom layout in Play (holding a chord never edits it)? */
+export function customPlayMode(t) {
+    const c = S.padModeCfg[t];
+    return !!(c && c.custom && c.custom.play);
+}
+
+/* The most recently pressed chord pad still held on track t (whatever Hold
+ * is set to); -1 when none. The assign card edits this one. */
+export function customHeldPad(t) {
     if (t !== S.activeTrack || !customLayoutOn(t)) return -1;
     for (let i = S.chordHeldSlots.length - 1; i >= 0; i--) {
         const k = S.chordHeldSlots[i];
@@ -131,7 +151,7 @@ export function customScalePress(t) { S.customOctRegion[t] = 0; }
 
 /* The chord changed while its pad is held: re-voice it where the engine can
  * (the pad is sounding, and still has a note to sound). */
-function revoiceIfSounding(t, k) {
+export function revoiceIfSounding(t, k) {
     const h = heldChordOf(k);
     const after = customChordPitches(t, k);
     if (!h || !h.pitches.length || !after.length) return null;

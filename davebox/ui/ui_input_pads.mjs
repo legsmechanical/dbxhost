@@ -10,7 +10,7 @@
 import {
     NUM_TRACKS, TRACK_PAD_BASE, DRUM_LANES, STEP_SAVE_FLASH_MS,
     PAD_MODE_DRUM, PAD_MODE_CONDUCT, BANKS,
-    NO_NOTE_FLASH_MS
+    NO_NOTE_FLASH_MS, BANK_PADMODE
 } from './ui_constants.mjs';
 import { S, loopViewActive, markJsUndo } from './ui_state.mjs';
 import { autoHoldJumpBegin, autoHoldJumpEnd } from './ui_automation_bank.mjs';
@@ -37,10 +37,11 @@ import { applyBankParam, applyTrackConfig, readBankParams,
 import { soundVouchLivePress } from './ui_sound.mjs';
 import { chordLayoutOn, chordRowOf, chordSlotPress, chordSlotRelease, chordModPress,
     chordModRelease, chordPitchHeld, padPitches, ROW_SLOTS, ROW_MODS,
-    setChordLayout, chordPadHeld } from './ui_chord_pads.mjs';
-import { customLayoutOn, setCustomLayout, customEditTarget, customChordPress, customScalePress,
+    chordPadHeld } from './ui_chord_pads.mjs';
+import { padModeOf, padModesFor, setPadMode, customCardEnd, PM_CHROM, PM_PIANO, PM_CHORD, PM_CUSTOM } from './ui_pad_mode.mjs';
+import { customLayoutOn, customEditTarget, customChordPress, customScalePress,
     customChordPitches, customChordToggle, customChordClear, customChordSet, customChordGet,
-    customChordFromHeard } from './ui_custom_chords.mjs';
+    customChordFromHeard, customPlayMode } from './ui_custom_chords.mjs';
 import { handoffRecordingToTrack, recordNoteOn, recordNoteOff,
     openTapTempo, registerTapTempo, extNoteOffAll,
     stepRecPadPress, stepRecPadRelease, extHeldNotes } from './ui_record.mjs';
@@ -171,6 +172,9 @@ function _chordPadRelease(padIdx, slot) {
         return true;
     }
     if (row !== ROW_SLOTS) return false;
+    /* A Custom chord let go ends its assign card: the next hold is a new
+     * card, with its own Undo. */
+    customCardEnd();
     const pitches = chordSlotRelease(t, padIdx);
     for (const p of pitches) {
         if (_pitchHeldElsewhere(p, padIdx)) continue;
@@ -293,7 +297,8 @@ function _customPadPress(padIdx, d2) {
      * chord just plays, so a melody held over the chords never overwrites
      * one. The notes are sounding from their own pads; the chord's first
      * sound is its next press. */
-    if (!customChordGet(t, padIdx).length) {
+    /* PADMODE Hold: Play — holding notes never fills a chord either. */
+    if (!customPlayMode(t) && !customChordGet(t, padIdx).length) {
         const heldNotes = [];
         for (let i = 8; i < 32; i++) if (padPitch[i] >= 0) heldNotes.push(padPitch[i]);
         /* ...and keys held on an external keyboard, the same way. */
@@ -315,6 +320,8 @@ function _customPadPress(padIdx, d2) {
         if (S.recordArmed && t === S.recordArmedTrack) recordNoteOn(p, vel, S.recordArmedTrack);
     }
     if (pitches.length) { S.lastPlayedNote = pitches[0]; S.lastPadVelocity = vel; }
+    /* On PADMODE the knobs build it too (the assign card). */
+    else if (S.activeBank === BANK_PADMODE) showActionPopup('EMPTY CHORD', 'HOLD + TAP NOTES', 'OR TURN A KNOB');
     else showActionPopup('EMPTY CHORD', 'HOLD + TAP NOTES');
     forceRedraw();
     return true;
@@ -1694,26 +1701,16 @@ export function _onStepButtons(d1, d2) {
                     ['Velocity', 'Repeat Play (Rpt1)', 'Repeat Set (Rpt2)'],
                     S.drumPerformMode[t]);
             } else {
-                /* Scale → Chrom → Piano → Chord → Custom → Scale. Landing on
-                 * Chord raises its explainer instead of the one-word popup. */
-                if (S.padLayoutCustom[t]) {
-                    setCustomLayout(t, false);
-                } else if (S.padLayoutChord[t]) {
-                    setChordLayout(t, false);
-                    S.padLayoutChromatic[t] = false;
-                    S.padLayoutPiano[t] = false;
-                    setCustomLayout(t, true);
-                } else if (S.padLayoutPiano[t]) {
-                    setChordLayout(t, true);
-                } else if (S.padLayoutChromatic[t]) {
-                    S.padLayoutChromatic[t] = false;
-                    S.padLayoutPiano[t] = true;
-                } else {
-                    S.padLayoutChromatic[t] = true;
-                }
-                computePadNoteMap();
-                if (!S.padLayoutChord[t])
-                    showActionPopup(S.padLayoutCustom[t] ? 'CUSTOM CHORDS' : S.padLayoutPiano[t] ? 'PIANO' : S.padLayoutChromatic[t] ? 'CHROMATIC' : 'IN-SCALE');
+                /* Scale → Chrom → Piano → Chord → Custom → Scale (a
+                 * Conductor: Scale ↔ Chrom), through the PADMODE bank's one
+                 * writer. Landing on Chord raises its explainer instead of
+                 * the one-word popup. */
+                const _list = padModesFor(t);
+                const _i = _list.indexOf(padModeOf(t));
+                setPadMode(t, _list[(_i + 1) % _list.length]);
+                const _m = padModeOf(t);
+                if (_m !== PM_CHORD)
+                    showActionPopup(_m === PM_CUSTOM ? 'CUSTOM CHORDS' : _m === PM_PIANO ? 'PIANO' : _m === PM_CHROM ? 'CHROMATIC' : 'IN-SCALE');
             }
         } else if (idx === 9) {
             /* Step 10: toggle VelIn between Live and 100 */

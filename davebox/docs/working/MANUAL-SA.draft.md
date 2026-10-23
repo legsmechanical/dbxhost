@@ -340,7 +340,7 @@ in this order:
 
 | Track | Banks, in order |
 |---|---|
-| **Melodic** | **IN:** CHORD (in the Chord layout) → LIVE ARP · **CTRL:** MACROS · **SEQ:** STEP → CLIP · **FX:** NOTE FX → HARMONY → DELAY → SEQ ARP · MIX |
+| **Melodic** | **IN:** PAD MODE → LIVE ARP · **CTRL:** MACROS · **SEQ:** STEP → CLIP · **FX:** NOTE FX → HARMONY → DELAY → SEQ ARP · MIX |
 | **Drum** | **IN:** RPT GROOVE · **CTRL:** MACROS · **SEQ:** STEP → ALL LANES → DRUM LANE · **FX** (the selected lane's): NOTE FX → DELAY · MIX |
 | **Conductor** | CLIP → STEP → NOTE FX · **RSPD:** ON/OFF → OCTAVE → TIMING |
 
@@ -419,7 +419,7 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
 
   | | IN | CTRL | SEQ | FX |
   |---|---|---|---|---|
-  | **Melodic** | CHORD, LIVE ARP, —, CONFIG | MACROS, AUTO, —, MIX | STEP, CLIP, —, INST | NOTE FX, HARMONY, DELAY, SEQ ARP |
+  | **Melodic** | PAD MODE, LIVE ARP, —, CONFIG | MACROS, AUTO, —, MIX | STEP, CLIP, —, INST | NOTE FX, HARMONY, DELAY, SEQ ARP |
   | **Drum** | —, RPT GROOVE, —, CONFIG | MACROS, AUTO, —, MIX | STEP, DRUM LANE, ALL LANES, INST | NOTE FX, —, DELAY |
   | **Conductor** | —, —, —, CONFIG | ON/OFF, OCTAVE, TIMING (RSPD) | CLIP, STEP | NOTE FX |
 
@@ -571,7 +571,7 @@ A track's **type** sets how you enter notes into it and how it sequences them.
 | Conductor | **Instmt/Dest → Conductor** | Plays no notes of its own; transposes the other tracks — [The Conductor](#12-the-conductor) |
 
 - **Melodic** and **Drums** are the **Mode** row of the track's TRACK CONFIG
-  menu, next to Layout. Scrolling previews the type; clicking commits it.
+  menu. Scrolling previews the type; clicking commits it.
 - **Conductor** is chosen in the **Instmt/Dest** picker instead (**Shift + click**
   the row), just after the Move instruments. To turn a Conductor back into an
   ordinary track, choose an instrument in the same picker.
@@ -677,9 +677,12 @@ too — see [Drum Clips](#7-drum-clips).
 
 ### Pad layouts
 
-**Shift + Step 8** (or the **Layout** row in the track's TRACK
-CONFIG menu) steps through five layouts, and the screen flashes IN-SCALE,
-CHROMATIC, PIANO or CUSTOM CHORDS:
+Each melodic track has its own pad layout, whatever its instrument (Move,
+Schwung, MIDI). Choose it on the **Pad Mode** bank (the top pad of the IN column
+on the bank map): **knob 1, Mode**, picks the layout and the
+other knobs are that layout's own settings. Each layout keeps its settings when
+you switch to another and back. **Shift + Step 8** also steps through the five
+layouts, and the screen flashes IN-SCALE, CHROMATIC, PIANO or CUSTOM CHORDS:
 
 - **Scale** (default) — only in-scale notes, with the root in the track color. Each
   row starts three scale notes above the row below.
@@ -690,9 +693,36 @@ CHROMATIC, PIANO or CUSTOM CHORDS:
   (C to the next C) and the row above it the black keys, each sitting between
   its two white keys; pads with no black key are dark and silent. The root is in
   the track color and in-scale keys are brighter than the rest.
-- **Chord** — below. Leaving it takes its explainer card with it.
+  On the Pad Mode bank, **Oct A / Trans A** move the bottom octave (zone A) and
+  **Oct B / Trans B** the top one (zone B), each on its own. **Instr** switches
+  the pads to **Bass**: four strings (E A D G from the bottom row up), the open
+  string and seven frets across each, with one **Oct** and **Trans** for the
+  whole neck. Piano and Bass each keep their own settings.
+- **Chord** — below.
 - **Custom** — chords you build yourself on the bottom row, the Scale layout
   on the other three. See [The Custom layout](#the-custom-layout).
+
+A Conductor's pads have Scale and Chrom only, from Shift + Step 8; it has no
+Pad Mode bank.
+
+**Splitting the pads (Scale and Chrom).** On the Pad Mode bank:
+
+- **Split** — *None*, *Vert* (the left 4x4 and the right 4x4 are two separate
+  note grids) or *Horz* (the bottom two rows and the top two). Zone **A** is
+  always the left or bottom one, **B** the right or top one.
+- **Oct A / Oct B** — each zone's octave. With no split there is one **Oct** for
+  the whole grid.
+- **Trans A / Trans B** — where each zone starts. In Scale it counts scale
+  notes, so the pads stay in key (+2 in C major starts on E); in Chrom,
+  semitones.
+- Zone B's pads show their colors the other way round — the root dim white,
+  the other notes in the track color — so the two zones read apart.
+- Scale and Chrom share the split and the octaves; each keeps its own Transpose.
+
+**Octave buttons.** **+ / −** move the whole surface. **Shift + + / −** move
+only zone B: the B split, Piano's top octave, or the pads above the chords in
+Chord and Custom. Where there is no zone B (no split, Bass) Shift makes no
+difference.
 
 <img src="img/pads-melodic.svg" alt="The Scale layout in C major at the default octave: each row starts three scale notes above the row below, the root is filled, ">
 
@@ -701,13 +731,12 @@ CHROMATIC, PIANO or CUSTOM CHORDS:
 > 🎬 **Video:** [Tutorial 3.8: The Chord layout](https://youtu.be/36-v3uYKR78?t=532) (from 8:52)
 
 The **Chord layout** plays a whole chord from one pad, always in the track's key
-and scale. Switching to it shows a card explaining the rows (click the jog or press
-Back to dismiss) and puts the track on its CHORD bank.
+and scale. Switching to it with Shift + Step 8 puts the track on its Pad Mode bank.
 
 <img src="img/pads-chord.svg" alt="The Chord layout in C major: chords on the bottom row, modifiers above them, the last chord's notes to strum, and the scale on top with its root on the fourth pad.">
 
 - **Bottom row:** eight chords — by default I ii iii IV V vi vii° and I an octave
-  up — colored by function (tonic, subdominant, dominant). They follow key and
+  up (the **Map** knob regroups them) — colored by function (tonic, subdominant, dominant). They follow key and
   scale changes.
 - **Row 2:** hold **7**, **9**, **sus2**, **sus4**, **add9** or **5** while you
   press a chord to change it, or press one while a chord is held to change it as it
@@ -718,16 +747,21 @@ Back to dismiss) and puts the track on its CHORD bank.
   They stay after you let go.
 - **Top row:** the scale, with the key's root on the fourth pad — three notes below
   it, four above (`G A B C D E F G` in C major).
-- The **CHORD** bank (on the bank map, the top pad of the IN column, above LIVE ARP; Chord layout only) sets:
+- On the **Pad Mode** bank, after **Mode**, the Chord layout's knobs are:
+  - **Map** — how the chords sit on the bottom row. *Diatonic*: I ii iii IV V vi
+    vii° I. *Function* groups them by job: the home chords (I vi iii), the away
+    chords (IV ii), the ones that pull home (V vii°), then I an octave up. A chord
+    you have edited moves with its degree to its new pad.
   - **Voicing** — moves every chord at once.
   - **Smooth** — *Off*; *Follow* (each chord takes the voicing nearest the one you
     played last); *Anchor* (every chord takes the voicing nearest one chord you
     choose on the **Anchor** knob, which appears only in this mode).
-  - **Bass** (adds the root below) and **Bass Octave**.
-  - **Strum** — moves rows 3 and 4 by octaves.
+  - **Bass** — *Off*, or the root added one (*−1*) or two (*−2*) octaves below.
+  - **Pad Oct** — moves rows 3 and 4 (the pads above the chords) by octaves;
+    **Shift + + / −** does the same.
   - **Slots: Play / Select** — in Select the chord pads are silent and only choose
     what row 3 strums.
-- **To edit a chord, hold it while on the CHORD bank.** The page switches to that
+- **To edit a chord, hold it while on the Pad Mode bank.** The page switches to that
   chord, titled with its numeral and name (`vi · AMIN`) — Root, Stack, Inversion,
   Spread, Bass (Off / Root / 3rd / 5th) and Octave, plus Reset on knob 8 (touch it
   and click the jog) — and switches back when you let go.
@@ -767,13 +801,31 @@ does not change it. Chords are saved per track.
   not recorded or captured. The keyboard must be on dAVEBOx's MIDI-in channel.
 - **Copy a chord:** hold Copy, tap the chord, then tap each pad that should
   get it. Shift + Copy moves it instead. Undo takes back the last paste.
-- **Octaves:** **+ / −** move the part of the pads you touched last. The
-  chord row and the upper rows each have their own octave, and the screen says
-  which one moved (`CHORDS OCTAVE` or `PADS OCTAVE`). Move the upper rows to
-  reach notes in another octave while building a chord.
+- **Octaves:** **+ / −** move the whole surface (`OCTAVE`); **Shift + + / −**
+  move only the upper rows (`PAD OCTAVE`), to reach notes in another octave
+  while building a chord.
 - **Move one chord an octave:** hold its pad and press **+** or **−**.
 - **Clear a chord:** Delete + its pad. Undo brings it back.
 - Holding a step and tapping a chord writes the whole chord into the step.
+
+**On the Pad Mode bank** (Custom):
+
+- **Hold** — *Assign* (default): holding a chord pad edits it, as above. *Play*:
+  holding a chord pad just plays it, so you can play the scale pads with it and
+  nothing is added; holding notes never fills an empty pad either.
+- **Chd Oct** — the chord row's octave. **Pad Oct** — the upper rows' octave.
+  These are the same two the Octave buttons move.
+- **Trans** — where the upper rows start, counted in scale notes (they stay in
+  key).
+- **Build a chord by name:** hold a chord pad while on the Pad Mode bank and the
+  page becomes its card — the same knobs as the Chord layout's card, titled with
+  the chord: **Root** (any note), **Stack** (Maj, Min, Dim, Aug, Sus2, Sus4, 7,
+  Maj7, Min7, m7b5, Dim7, 6, Min6, Add9, 9, Maj9, Min9, 7sus4, 5), **Inv**,
+  **Sprd** (*Open* lifts the second-lowest note an octave), **Bass** (Off / Root /
+  3rd / 5th), **Oct** and **Reset** (touch knob 8 and click the jog: the pad
+  empties). The card starts from the chord the pad already holds; a turn
+  replaces its notes with the chord on the card. One **Undo** brings back what
+  the pad held before you picked it up. It works in Assign and in Play.
 
 ## 6.2 Several notes on one step
 
@@ -1910,7 +1962,7 @@ the rows it has:
 | **Buses** | Voice groups, on instruments that can split their voices — see [Presets, LFOs and buses](#145-presets-lfos-and-buses) |
 | **Presets** | Save and load the whole chain |
 | **LFOs** | Two LFOs for the track |
-| **Mode, Layout, Transpose, VelIn, AftTch, Looper, Grv Amt, Export to MIDI, Parallel** — and **Grv Timing, Grv Velocity, Grv Random** when the project uses a loaded groove | The track's own settings — see [Track settings](#174-track-settings) |
+| **Mode, Transpose, VelIn, AftTch, Looper, Grv Amt, Export to MIDI, Parallel** — and **Grv Timing, Grv Velocity, Grv Random** when the project uses a loaded groove | The track's own settings — see [Track settings](#174-track-settings) |
 
 On the Instmt/Dest and effect rows, a hint band at the foot of the menu says what
 the click and the Shift chord do.
@@ -2617,7 +2669,6 @@ are hidden, so the list is shorter on a MIDI track or a Conductor.
 | Setting | Values | Notes |
 |---|---|---|
 | Mode | Melodic, Drums | [Track type](#41-track-type). Scrolling previews; the click commits |
-| Layout | Scale, Chrom, Piano, Chord, Custom | Melodic pad layout ([Chord](#the-chord-layout), [Custom](#the-custom-layout)); reads `-` on a drum track |
 | Transpose | −24…+24 st | Shifts everything the track plays |
 | VelIn | Live, 1–127 | Fixed value overrides input velocity |
 | AftTch | Off, Poly, Chan | Pad-pressure aftertouch (melodic; a Move track offers Off and Poly) |

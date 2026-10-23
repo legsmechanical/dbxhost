@@ -15,7 +15,8 @@ import { SESS_KNOB_MODES, engineLoadedModule, engineModuleAbbrev, engineGenerato
 import { instrValueFor } from './ui_dsp_bridge.mjs';
 import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import { chordLabel, noteNames, noteLabel, heldInputNotes, keyUsesFlats, keyRootName, fitHeldLabel } from './ui_chord.mjs';
-import { chordIndicator, chordEditSlot, chordSlotCells, chordBankCells } from './ui_chord_pads.mjs';
+import { chordIndicator, chordEditSlot, chordSlotCells } from './ui_chord_pads.mjs';
+import { padModeBankCells, customCardSlot, customCardCells } from './ui_pad_mode.mjs';
 import { triggerPhase } from './ui_trigger.mjs';
 import { LGTO_KNOB, CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, knobAltFor, ARP_STEPS_KNOB, arpStepsBank } from './ui_constants.mjs';
 import { miActive, miRender } from './ui_midi_import.mjs';
@@ -44,7 +45,7 @@ import { drawAutoMarkAt,
 } from './ui_movy.mjs';
 import {
     drawGlobalMenu, drawStateWipeConfirm, drawExitConfirm, drawTypeChangeConfirm, drawModuleSwapConfirm, drawRecordBlockedDialog, drawBpmMoveInfo,
-    drawConvertToDrumConfirm, drawConvertToConductConfirm, drawMenuInfo, drawChordPopup,
+    drawConvertToDrumConfirm, drawConvertToConductConfirm, drawMenuInfo,
     drawMacroClearConfirm, drawBakeConfirm, drawSnapshotPicker,
     drawBakeSceneConfirm, drawXposeConfirm,
     drawProjectPadPicker,
@@ -1570,7 +1571,7 @@ export function coveredByMoreThanMenu() {
         S.tempoSelectActive || S.mergeSoloPlacement >= 0 || S.capturePlaceTrack >= 0 ||
         S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.confirmModuleChange || S.bpmMoveInfo || S.recordBlockedDialog ||
         S.confirmConvertToDrum || S.confirmConvertToConduct ||
-        S.chordPopupOpen || S.confirmBakeScene || S.confirmBake || S.confirmMacroClear || S.tapTempoOpen ||
+        S.confirmBakeScene || S.confirmBake || S.confirmMacroClear || S.tapTempoOpen ||
         (S.sessionView && (S.loopHeld || S.perfViewLocked)));
 }
 
@@ -1581,7 +1582,7 @@ export function soundModeCovered() {
         S.tempoSelectActive || S.mergeSoloPlacement >= 0 || S.capturePlaceTrack >= 0 ||
         S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.confirmModuleChange || S.bpmMoveInfo || S.recordBlockedDialog ||
         S.confirmConvertToDrum || S.confirmConvertToConduct ||
-        (S.menuInfoLines && S.menuInfoLines.length > 0) || S.chordPopupOpen ||
+        (S.menuInfoLines && S.menuInfoLines.length > 0) ||
         S.confirmXpose || S.confirmBakeScene || S.confirmBake ||
         S.confirmMacroClear ||   /* MACROS bank clear — opened FROM sound mode, so it must cover it */
         S.globalMenuOpen || S.tapTempoOpen ||
@@ -1953,7 +1954,6 @@ function drawUIBody() {
     if (S.confirmConvertToDrum)    { drawConvertToDrumConfirm();    return; }
     if (S.confirmConvertToConduct) { drawConvertToConductConfirm(); return; }
     if (S.menuInfoLines.length > 0){ drawMenuInfo();                return; }
-    if (S.chordPopupOpen)          { drawChordPopup();              return; }
     if (S.globalMenuOpen || S.tapTempoOpen) { ensureGlobalMenuFresh(); drawGlobalMenu(); return; }
     /* Perf Mode OLED takeover (Session View + Loop held or locked) */
     if (S.sessionView && (S.loopHeld || S.perfViewLocked)) { drawPerfModeOled(); return; }
@@ -2091,7 +2091,7 @@ function drawUIBody() {
      * drawn above sound mode below). */
     if (S.heldStep >= 0 && S.activeBank === BANK_STEP && drawHeldStepPage()) return;
 
-    /* The CHORD bank is contextual: while a chord slot is held it shows that
+    /* The PADMODE bank is contextual: while a chord slot is held it shows that
      * slot's settings (the knobs edit them), and its own settings otherwise.
      * On any other bank a held chord changes nothing here. */
     /* Only while the bank's page is up (latched, just chosen, or peeked by a
@@ -2111,8 +2111,18 @@ function drawUIBody() {
         fill_rect(0, MV_BAR_Y, 128, 1, 1);
         return;
     }
+    /* A held Custom chord: its assign card, titled with the chord it holds. */
+    if (bank === BANK_CHORD && inTimeout && customCardSlot() >= 0) {
+        const _cc = customCardCells(S.activeTrack, customCardSlot());
+        drawKitPage(_cc.title, _cc.cells, false, null);
+        fill_rect(0, 0, 128, MV_BAR_Y, 0);
+        const _ht = fit4x5(_cc.title, 124);
+        fontPrint4x5(Math.round((128 - fontWidth4x5(_ht)) / 2), 1, _ht, 1);
+        fill_rect(0, MV_BAR_Y, 128, 1, 1);
+        return;
+    }
     if (bank === BANK_CHORD && inTimeout) {
-        drawKitPage(bankHeaderName(S.activeTrack, BANK_CHORD), chordBankCells(S.activeTrack), false,
+        drawKitPage(bankHeaderName(S.activeTrack, BANK_CHORD), padModeBankCells(S.activeTrack), false,
                     bankPageHints(BANK_CHORD));
         return;
     }

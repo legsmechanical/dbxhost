@@ -587,11 +587,11 @@ export const BANKS = [
      * sweep and is no longer reachable). The knobs are a NO-OP on the card:
      * stubs, and ui_automation_bank owns the screen and the jog. */
     { name: 'AUTOMATION', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
-    /* 15 — CHORD (BANK_CHORD) — the Chord layout's settings (Voicing, Smooth,
-     * Bass, Bass Octave, Strum, Slots Play/Select). Only on the walk of a
-     * track whose pads are on the Chord layout. JS-only values, saved in the
-     * sidecar; ui_chord_pads owns the cells and the knobs. */
-    { name: 'CHORD', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
+    /* 15 — PADMODE (BANK_PADMODE) — a melodic track's pad mode (K1) and that
+     * mode's own settings (Josh, 2026-10-22; was the Chord layout's CHORD
+     * bank). On every melodic track's walk. JS-only values, saved in the
+     * sidecar; ui_pad_mode owns the cells and the knobs. */
+    { name: 'PAD MODE', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
     /* 16 — CONFIG (BANK_CONFIG) — the TRACK CONFIG menu AS a bank (Josh,
      * 2026-09-26: "I'd like the track config menu to live as a menu on a bank";
      * "no knobs.  it literally shows the menu with the "click to enter" corner
@@ -620,7 +620,9 @@ export const BANK_MACROS = 13;
 /* The AUTOMATION bank: last on the melodic and drum walks, after MACROS. See BANKS[14]. */
 export const BANK_AUTOMATION = 14;
 /* The CHORD bank (see BANKS[15]): after LIVE ARP on a Chord-layout track's walk. */
-export const BANK_CHORD = 15;
+export const BANK_PADMODE = 15;
+/* The bank's old name, kept for the Chord layout's own code. */
+export const BANK_CHORD = BANK_PADMODE;
 /* The CONFIG bank (see BANKS[16]): first on every walk; its card is the TRACK
  * CONFIG menu at rest, the third bank whose screen is sound mode's. */
 export const BANK_CONFIG = 16;

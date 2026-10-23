@@ -1,5 +1,6 @@
 import { chordSidecar } from './ui_chord_pads.mjs';
 import { customSidecar } from './ui_custom_chords.mjs';
+import { padModeSidecar } from './ui_pad_mode.mjs';
 import * as os from 'os';
 import { S } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -413,7 +414,7 @@ export function sidecarObject() {
         am: S.trackAtMode.slice(),
         pchr: S.padLayoutChromatic.map(function(b) { return b ? 1 : 0; }),
         /* The Chord layout (additive on v:9, like pchr): which tracks are on
-         * it, and each such track's eight slots + CHORD bank settings. */
+         * it, and each such track's eight slots + PADMODE bank settings. */
         pchd: S.padLayoutChord.map(function(b) { return b ? 1 : 0; }),
         /* The Piano layout (additive on v:9, like pchr). */
         ppno: S.padLayoutPiano.map(function(b) { return b ? 1 : 0; }),
@@ -421,6 +422,9 @@ export function sidecarObject() {
         /* The Custom layout (additive on v:9): which tracks are on it, each
          * track's eight chords, and the chord row's octave. */
         pcus: _cus.pcus, cch: _cus.cch, cco: _cus.cco,
+        /* The PADMODE bank's settings per track (additive on v:9): null, or
+         * each mode's own (split, the halves' octaves and starts). */
+        pmd: padModeSidecar(),
         /* The macro store, per track: eight MAPPINGS or null (see
          * ui_state.trackMacros) — `{v, legs:[leg,…]}`, a leg being a typed
          * target plus lo/hi. Additive on v:9: absent → unseeded, and ui_sound
@@ -459,7 +463,7 @@ export function sidecarObject() {
  * either KEPT from this project or set to a fresh project's value.
  * tests/js/test_template_sidecar.mjs pins that every field is one or the
  * other, and the defaults against a fresh S. */
-export const TEMPLATE_SIDECAR_KEPT = ['v', 'am', 'pchr', 'pchd', 'ppno', 'pcus', 'mac', 'mcv', 'cpg', 'upr', 'bm', 'grf'];
+export const TEMPLATE_SIDECAR_KEPT = ['v', 'am', 'pchr', 'pchd', 'ppno', 'pcus', 'pmd', 'mac', 'mcv', 'cpg', 'upr', 'bm', 'grf'];
 export function sidecarDefaults() {
     const z8 = () => new Array(NUM_TRACKS).fill(0);
     return {
@@ -489,6 +493,7 @@ export function freshSidecar() {
     out.pchd = new Array(NUM_TRACKS).fill(0);
     out.ppno = new Array(NUM_TRACKS).fill(0);
     out.pcus = new Array(NUM_TRACKS).fill(0);
+    out.pmd  = new Array(NUM_TRACKS).fill(null);
     out.mac  = new Array(NUM_TRACKS).fill(null);
     out.mcv  = Array.from({ length: NUM_TRACKS }, () => ({}));
     out.cpg  = Array.from({ length: NUM_TRACKS }, () => Array.from({ length: NUM_CLIPS }, () => [-1, -1, -1]));

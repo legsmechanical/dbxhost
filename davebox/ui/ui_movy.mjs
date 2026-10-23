@@ -2737,7 +2737,9 @@ function drawCellLabel(col, lblY, cell, touched) {
      * pills already use, so the page now has ONE small face instead of two.
      * ⚠ Trim MEASURED, never by character count: the face is proportional
      * (I is 1px, W is 5), so "six characters" is not a width. */
-    while (text.length > 0 && fontWidth4x5(text) > MV_CELL_W - 2) text = text.slice(0, -1);
+    /* MV_CELL_W - 1: a 31 px label ("TRANS A") still leaves a 1 px gap to its
+     * neighbour's (Josh, 2026-10-22, asked for labels less cryptic). */
+    while (text.length > 0 && fontWidth4x5(text) > MV_CELL_W - 1) text = text.slice(0, -1);
     const tw = fontWidth4x5(text);
     const tx = Math.round(col * MV_CELL_W + MV_CELL_W / 2 - tw / 2);
     /* One clear row above and below the glyphs inside the band — see MV_LBL_H,

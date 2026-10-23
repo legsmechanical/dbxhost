@@ -5,7 +5,7 @@
  *      in key; the default palette spells I ii iii IV V vi vii° I; stacks,
  *      inversions, spread, bass, Smooth and the strum/scale rows.
  *   2. THE SURFACE, through the real handlers: Shift + step 8 walks Scale →
- *      Chrom → Chord and raises the explainer; the pad map the ENGINE receives
+ *      Chrom → Chord; the pad map the ENGINE receives
  *      carries whole chords; a slot press shows "[vi · AMIN]"; a held modifier
  *      changes the next chord; a tap on a held chord re-voices it in place;
  *      hold a slot + knob edits it; Select mode; the sidecar round trip.
@@ -169,36 +169,21 @@ step('control: a fresh track is on the Scale layout, one note per pad', () => {
     const pm = lastPadmap();
     assert(pm && pm.slice(0, 32).every((t) => t.indexOf('+') < 0), 'a plain map carries no chords');
 });
-step('⭐ Shift + step 8 walks Scale → Chrom → Piano → Chord, and landing on Chord raises the explainer', () => {
+step('⭐ Shift + step 8 walks Scale → Chrom → Piano → Chord; landing on Chord shows no explainer (retired 2026-10-22) and lands on Pad Mode', () => {
     shiftStep8();
     assert(S.padLayoutChromatic[2] && !S.padLayoutChord[2], 'first press: Chrom');
-    assert(!S.chordPopupOpen, 'no explainer on Chrom');
     shiftStep8();
     assert(S.padLayoutPiano[2] && !S.padLayoutChord[2], 'second press: Piano');
-    assert(!S.chordPopupOpen, 'no explainer on Piano');
     shiftStep8();
     assert(S.padLayoutChord[2], 'third press: Chord');
-    assert(S.chordPopupOpen, 'the explainer is up');
-    assert(S.activeBank === BANK_CHORD && S.trackActiveBank[2] === BANK_CHORD, 'landing on Chord did not land on the CHORD bank: ' + S.activeBank);
+    assert(S.activeBank === BANK_CHORD && S.trackActiveBank[2] === BANK_CHORD, 'landing on Chord did not land on the Pad Mode bank: ' + S.activeBank);
     const t = screenText();
-    assert(t.some((s) => s === 'CHORD MODE'), 'explainer title on screen: ' + JSON.stringify(t.slice(0, 8)));
-    assert(t.some((s) => /STRUM/.test(s)), 'it explains the strum row');
+    assert(!t.some((s) => s === 'CHORD MODE'), 'the retired explainer is on screen: ' + JSON.stringify(t.slice(0, 8)));
 });
-step('⭐ while the explainer is up the pads PLAY chords (Josh, 2026-09-24: they keep working until OK)', () => {
+step('⭐ the engine gets whole chords on the bottom row, pads live at once', () => {
     ticks(2);
     const pm = lastPadmap();
-    assert(pm[32] === '0', 'the engine was muted under the explainer: mute token ' + pm[32]);
-    pad(5, true); ticks(1);
-    assert(S.liveActiveNotes.size > 0, 'a pad under the explainer did not play');
-    assert(S.chordPopupOpen, 'a pad press closed the explainer — only OK / Back should');
-    pad(5, false); ticks(1);
-    assert(S.liveActiveNotes.size === 0, 'released, still held: ' + [...S.liveActiveNotes]);
-});
-step('⭐ jog click is OK: the explainer closes and the engine gets whole chords on the bottom row', () => {
-    cc(3, 127); cc(3, 0); ticks(2);
-    assert(!S.chordPopupOpen, 'still up');
-    const pm = lastPadmap();
-    assert(pm[32] === '0', 'pads muted after OK');
+    assert(pm[32] === '0', 'pads muted on landing');
     const want = [0, 1, 2, 3, 4, 5, 6, 7].map((k) => M.slotChord({ key: 0, scale: 0, root: (S.padOctave[2] | 0) * 12,
         slot: M.defaultSlot(k), settings: set0 }).notes.map((p) => p + oct()).join('+'));
     assert(eq(pm.slice(0, 8), want), 'slots ' + pm.slice(0, 8).join(' ') + ' want ' + want.join(' '));
@@ -326,7 +311,8 @@ step('⭐ the CHORD bank\'s knob rings: every bound knob lit, the empty ones dar
     const KL = globalThis.__kl;
     S.activeBank = BANK_CHORD; S.trackActiveBank[2] = BANK_CHORD;
     const lit = () => KL.ringCellsFor(BANK_CHORD).map((c) => KL.knobRingColor(0, KL.ringNormOfCell(c)) !== 0);
-    assert(eq(lit(), [true, true, true, true, true, false, true, false]), 'bank page rings ' + JSON.stringify(lit()));
+    /* PADMODE in Chord: Mode Map Voice Smooth [Anchor: blank in Off] Bass Strum Slots. */
+    assert(eq(lit(), [true, true, true, true, false, true, true, true]), 'bank page rings ' + JSON.stringify(lit()));
     pad(4, true); ticks(1);
     assert(eq(lit(), [true, true, false, true, true, true, true, true]), 'slot page rings ' + JSON.stringify(lit()));
     pad(4, false); ticks(1);
@@ -339,7 +325,7 @@ step('⭐ Smooth, through the pads: after i in C minor the engine gets iv as C F
     const plain = lastPadmap()[3].split('+').map(Number);
     assert(eq(plain.map((p) => p - root), [5, 8, 12]), 'plain iv ' + plain);
     S.activeBank = BANK_CHORD; S.trackActiveBank[2] = BANK_CHORD;
-    knob(1, +1); knobUp(1); ticks(1);
+    knob(3, +1); knobUp(3); ticks(1);           /* K4 Smooth */
     assert(S.chordSettings[2].smooth === 1, 'Smooth did not go to Follow');
     S.activeBank = 0; S.trackActiveBank[2] = 0;
     S.chordLast[2] = null;                               /* nothing played yet: i in root position */
@@ -359,9 +345,10 @@ step('⭐ Smooth, through the pads: after i in C minor the engine gets iv as C F
 step('the CHORD bank sits on this track\'s walk, after LIVE ARP; Slots → Select silences the slots', () => {
     S.activeBank = BANK_CHORD; S.trackActiveBank[2] = BANK_CHORD;
     const cells = CP.chordBankCells(2);
-    assert(cells[2].kind === 'pill', 'Bass is not a toggle');
-    assert(cells[1].kind === 'enumsq' && eq(cells[1].options, ['Off', 'Follow', 'Anchor']), 'Smooth is not Off/Follow/Anchor');
-    knob(6, +1, 20); knobUp(6); ticks(2);
+    /* Bass and its octave are one knob since 2026-10-22: Off / -1 / -2. */
+    assert(cells[4].kind === 'enumsq' && eq(cells[4].options, ['Off', '1 Octave Down', '2 Octaves Down']) && cells[4].text === 'Off', 'Bass is not Off / 1 / 2 Octaves Down');
+    assert(cells[2].kind === 'enumsq' && eq(cells[2].options, ['Off', 'Follow', 'Anchor']), 'Smooth is not Off/Follow/Anchor');
+    knob(7, +1, 20); knobUp(7); ticks(2);
     assert(S.chordSettings[2].select === 1, 'Select not set');
     const pm = lastPadmap();
     assert(pm.slice(0, 8).every((t) => t === '255'), 'Select: the engine must not sound the slots: ' + pm.slice(0, 8));
@@ -372,7 +359,7 @@ step('the CHORD bank sits on this track\'s walk, after LIVE ARP; Slots → Selec
     assert(eq(bracketed(), ['[vi · AMIN]']), 'Select, nothing sounding: the selected chord shows: ' + JSON.stringify(bracketed()));
     const strum = lastPadmap().slice(16, 24).map(Number);
     assert(strum.every((p) => [0, 4, 9].indexOf(p % 12) >= 0), 'the strum row follows the selection: ' + strum);
-    knob(6, -1, 20); knobUp(6); ticks(2);
+    knob(7, -1, 20); knobUp(7); ticks(2);
     assert(S.chordSettings[2].select === 0 && lastPadmap()[0].indexOf('+') > 0, 'back to Play');
     S.activeBank = 0; S.trackActiveBank[2] = 0;
 });
@@ -428,7 +415,7 @@ step('⭐ a held chord released AFTER a layout switch still leaves the held note
     CP.setChordLayout(2, false); ticks(1);               /* the layout changed under the finger */
     pad(3, false); ticks(1);
     assert(S.liveActiveNotes.size === 0, 'stranded: ' + [...S.liveActiveNotes]);
-    CP.setChordLayout(2, true); CP.closeChordPopup(); ticks(2);
+    CP.setChordLayout(2, true); ticks(2);
 });
 step('Inv held for the press, let go, then tapped: the walk goes on from the pressed voicing', () => {
     const start = CP.padPitches(0, oct());
@@ -462,24 +449,24 @@ step('⭐ a LOST padmap push heals: the tick reads the engine\'s checksum and re
     try { ticks(10); } finally { globalThis.host_module_get_param = was; }
     assert(!sets.some((x) => x[0] === 't2_padmap'), 'a matching checksum re-pushed anyway: ' + sets.length);
 });
-step('⭐ the CHORD bank is on the jog walk ONLY of a track on the Chord layout', () => {
+step('⭐ the PADMODE bank is on the walk of EVERY melodic track, Chord layout or not', () => {
     const pure = globalThis.__pure;
     assert(pure.bankCycleForMode(0, 2).indexOf(BANK_CHORD) >= 0, 'missing on the Chord track');
-    assert(pure.bankCycleForMode(0, 3).indexOf(BANK_CHORD) < 0, 'on the walk of a Scale track');
+    assert(pure.bankCycleForMode(0, 3).indexOf(BANK_CHORD) >= 0, 'missing on a Scale track');
 });
 step('⭐ Smooth: Anchor — the Anchor knob appears only in that mode; every chord stays near the anchor, whatever came before', () => {
     const KL = globalThis.__kl;
     S.activeBank = BANK_CHORD; S.trackActiveBank[2] = BANK_CHORD;
     try {
-        assert(CP.chordBankCells(2)[5].kind === 'blank', 'Anchor showed in Off');
+        assert(CP.chordBankCells(2)[3].kind === 'blank', 'Anchor showed in Off');
         const before = S.chordSettings[2].anchor;
-        knob(5, +1); knobUp(5);
+        knob(4, +1); knobUp(4);
         assert(S.chordSettings[2].anchor === before, 'the hidden Anchor knob still turned');
-        knob(1, +1); knobUp(1); knob(1, +1); knobUp(1); ticks(1);
+        knob(3, +1); knobUp(3); knob(3, +1); knobUp(3); ticks(1);
         assert(S.chordSettings[2].smooth === 2, 'not Anchor: ' + S.chordSettings[2].smooth);
-        const c5 = CP.chordBankCells(2)[5];
+        const c5 = CP.chordBankCells(2)[3];
         assert(c5.label === 'Anchr' && c5.text === 'I', 'Anchor cell ' + JSON.stringify(c5));
-        assert(KL.knobRingColor(5, KL.ringNormOfCell(c5)) !== 0, 'the Anchor ring is dark in Anchor mode');
+        assert(KL.knobRingColor(4, KL.ringNormOfCell(c5)) !== 0, 'the Anchor ring is dark in Anchor mode');
         const root = (S.padOctave[2] | 0) * 12 + oct();
         const map = () => lastPadmap().slice(0, 8).map((t) => t.split('+').map((p) => Number(p) - root));
         const m1 = map();
@@ -489,9 +476,9 @@ step('⭐ Smooth: Anchor — the Anchor knob appears only in that mode; every ch
         pad(5, true); pad(5, false); ticks(2);
         assert(eq(map(), m1), 'the anchored map moved after playing vi: ' + JSON.stringify(map()));
         /* Move the anchor to vi: the palette re-centres on A C E. */
-        knob(5, +1); knobUp(5); knob(5, +1); knobUp(5); knob(5, +1); knobUp(5);
-        knob(5, +1); knobUp(5); knob(5, +1); knobUp(5); ticks(2);
-        assert(S.chordSettings[2].anchor === 5 && CP.chordBankCells(2)[5].text === 'vi', 'anchor not on vi');
+        knob(4, +1); knobUp(4); knob(4, +1); knobUp(4); knob(4, +1); knobUp(4);
+        knob(4, +1); knobUp(4); knob(4, +1); knobUp(4); ticks(2);
+        assert(S.chordSettings[2].anchor === 5 && CP.chordBankCells(2)[3].text === 'vi', 'anchor not on vi');
         assert(eq(map()[5], [9, 12, 16]) && eq(map()[0], [7, 12, 16]), 'centred on vi: ' + JSON.stringify(map()));
     } finally {
         S.chordSettings[2].smooth = 0; S.chordSettings[2].anchor = 0; S.chordLast[2] = null;
@@ -503,7 +490,7 @@ step('Shift + step 8 again leaves Chord for Scale; the map is plain again', () =
     S.activeBank = BANK_CHORD; S.trackActiveBank[2] = BANK_CHORD;
     shiftStep8();
     assert(!S.padLayoutChord[2] && !S.padLayoutChromatic[2], 'not back on Scale');
-    assert(S.activeBank !== BANK_CHORD, 'left on the CHORD bank of a track without the layout');
+    assert(S.activeBank === BANK_CHORD, 'leaving Chord left the PADMODE bank');
     const pm = lastPadmap();
     assert(pm.slice(0, 32).every((t) => t.indexOf('+') < 0), 'chords left in the map');
 });

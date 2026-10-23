@@ -104,10 +104,10 @@ step('None is a Schwung track with nothing loaded: the whole chain menu, Presets
     if (S.trackRoute[2] !== 0 || k.filter(x => x === 'block').length < 3 || !k.includes('patches'))
         throw new Error('route ' + S.trackRoute[2] + ' rows: ' + k.join(','));
 });
-step('the MIDI track\'s config rows: mode, layout, transpose, velin, LOOPER, afttch (Josh, 09-05: the looper is a MIDI looper)', () => {
+step('the MIDI track\'s config rows: mode, transpose, velin, LOOPER, afttch (Josh, 09-05: the looper is a MIDI looper)', () => {
     S.activeTrack = 1;
     const keys = configRowsFor(1);
-    for (const want of ['mode', 'layout', 'transpose', 'velin', 'afttch'])
+    for (const want of ['mode', 'transpose', 'velin', 'afttch'])
         if (!keys.includes(want)) throw new Error('missing ' + want + ' in ' + keys.join(','));
     if (!keys.includes('looper')) throw new Error('Looper missing on a MIDI track (it loops the note stream): ' + keys.join(','));
 });

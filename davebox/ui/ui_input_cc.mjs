@@ -27,9 +27,10 @@ import {
     TICK_HZ, STEP_ITER_LIST, JOG_HOLD_MAP_MS,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool } from './ui_constants.mjs';
-import { closeChordPopup, chordEditSlot, chordSlotKnob, chordBankKnob, chordSlotReset } from './ui_chord_pads.mjs';
+import { chordEditSlot, chordSlotKnob, chordSlotReset } from './ui_chord_pads.mjs';
+import { padModeBankKnob, padModeKnobDeliberate, customCardSlot, customCardKnob, customCardReset, shiftOctaveZoneB } from './ui_pad_mode.mjs';
 import { bakeNeedsPrint, printStart, printModalCC } from './ui_print.mjs';
-import { customLayoutOn, customEditTarget, customChordTranspose, customChordOctaveStep } from './ui_custom_chords.mjs';
+import { customLayoutOn, customEditTarget, customChordTranspose, customChordOctaveStep, revoiceIfSounding } from './ui_custom_chords.mjs';
 import { triggerFire } from './ui_trigger.mjs';
 import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay,
          markJsUndoPatch, stepRevealAvailable, loopViewActive, endLoopLatch, knobAltOn } from './ui_state.mjs';
@@ -219,6 +220,14 @@ function _onCC_jog(d1, d2) {
             chordEditSlot() >= 0 && S.knobTouched === 7) {
         chordSlotReset(S.activeTrack, chordEditSlot());
         if (S.chordPendingRevoice) { chordApplyRevoice(S.chordPendingRevoice); S.chordPendingRevoice = null; }
+        forceRedraw();
+        return;
+    }
+    /* …and the same on a held Custom chord's card. */
+    if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && S.activeBank === BANK_CHORD &&
+            customCardSlot() >= 0 && S.knobTouched === 7) {
+        customCardReset(S.activeTrack, customCardSlot());
+        computePadNoteMap();
         forceRedraw();
         return;
     }
@@ -594,7 +603,7 @@ function _onCC_jog(d1, d2) {
  * They are MODAL, so handling them first is correct whoever raised them. */
 function modalDialogUp() {
     return !!(S.confirmConvertToDrum || S.confirmConvertToConduct ||
-              (S.menuInfoLines && S.menuInfoLines.length > 0) || S.chordPopupOpen);
+              (S.menuInfoLines && S.menuInfoLines.length > 0));
 }
 
     if (d1 === 3 && d2 === 127 && (S.globalMenuOpen || modalDialogUp())) {
@@ -641,11 +650,6 @@ function modalDialogUp() {
             /* Single-button INFO dialog — any click dismisses. */
             S.menuInfoLines = [];
             S.screenDirty = true;
-            return;
-        }
-        if (S.chordPopupOpen) {
-            /* The Chord layout's explainer — OK. */
-            closeChordPopup();
             return;
         }
         if (S.confirmExportCondPhase) {
@@ -2453,7 +2457,7 @@ export function backTapWouldAct() {
     if (soundActive()) return true;
     if (S.globalEnumPick) return true;
     if (autoMenuUp() || doorScreenUp()) return true;     /* AUTOMATION's layers / its screen */
-    if (S.confirmMacroClear || S.chordPopupOpen) return true;
+    if (S.confirmMacroClear) return true;
     if (S.snapshotPicker || S.templateManager || S.tempoSelectActive ||
         S.mergeNoticePending || S.mergeCountingIn ||
         S.pendingMergePlacement || S.mergeSoloPlacement >= 0 ||
@@ -2786,7 +2790,6 @@ function _backTap() {
                                      S.lastSentMenuEditValue = null; S.bpmWasEditing = false;
                                      forceRedraw(); return; }
     if (S.confirmMacroClear)       { macroClearConfirmReset(); forceRedraw(); return; }
-    if (S.chordPopupOpen)          { closeChordPopup(); forceRedraw(); return; }
     if (S.confirmBake)             { S.confirmBake = false; S.confirmBakeWrapPhase = false; forceRedraw(); return; }
     if (S.recordBlockedDialog)     { S.recordBlockedDialog = false; forceRedraw(); return; }
     if (S.bpmMoveInfo)             { S.bpmMoveInfo = false; forceRedraw(); return; }
@@ -3649,8 +3652,10 @@ function _onCC_transport(d1, d2) {
             syncDrumLaneSteps(S.activeTrack, S.activeDrumLane[S.activeTrack]);
             computePadNoteMap();  /* PHASE-1: drum page change shifts lane mapping; re-push */
             forceRedraw();
+        } else if (S.shiftHeld && _shiftOctavePress(1)) {
+            /* Shift + Octave: zone B only (Pad Mode bank). */
         } else if (_customOctavePress(1)) {
-            /* The Custom layout: a held chord, or the chord row's own octave. */
+            /* The Custom layout: a held chord moves alone. */
         } else {
         for (const p of S.liveActiveNotes) queueLiveNoteOff(S.activeTrack, p);
         S.liveActiveNotes.clear();
@@ -3668,8 +3673,10 @@ function _onCC_transport(d1, d2) {
             syncDrumLaneSteps(S.activeTrack, S.activeDrumLane[S.activeTrack]);
             computePadNoteMap();  /* PHASE-1: drum page change shifts lane mapping; re-push */
             forceRedraw();
+        } else if (S.shiftHeld && _shiftOctavePress(-1)) {
+            /* Shift + Octave: zone B only (Pad Mode bank). */
         } else if (_customOctavePress(-1)) {
-            /* The Custom layout: a held chord, or the chord row's own octave. */
+            /* The Custom layout: a held chord moves alone. */
         } else {
         for (const p of S.liveActiveNotes) queueLiveNoteOff(S.activeTrack, p);
         S.liveActiveNotes.clear();
@@ -4085,10 +4092,11 @@ function lanesOffGrid(t) {
 /* After a slot or CHORD bank edit: re-bake the pads now when asked (the tick
  * does it otherwise). The palette is sidecar state, saved with the rest of it. */
 /* ---- the octave buttons on the Custom layout ------------------------------
- * A held chord pad: the buttons move THAT chord an octave. Otherwise they
- * move the region a pad was last pressed in — the chord row has an octave of
- * its own; the scale rows keep the track's (the caller's path). Each says
- * which it moved. Returns true when the press was taken here. */
+ * A held chord pad: the buttons move THAT chord an octave. Otherwise Octave
+ * moves the whole surface — the chord row's own octave here, the pads' in the
+ * caller's path (Josh, 2026-10-22: Octave moves everything, Shift + Octave the
+ * pads alone; the old "the region last touched" rule is retired). Returns true
+ * when the press was taken here. */
 function _octLabel(v) { return v > 0 ? '+' + v : String(v); }
 function _customOctavePress(dir) {
     const t = S.activeTrack;
@@ -4101,15 +4109,27 @@ function _customOctavePress(dir) {
         forceRedraw();
         return true;
     }
-    if (S.customOctRegion[t] !== 1) return false;
-    showActionPopup('CHORDS OCTAVE', _octLabel(customChordOctaveStep(t, dir)));
-    computePadNoteMap();
-    forceRedraw();
-    return true;
+    customChordOctaveStep(t, dir);
+    return false;
 }
 function _customPadsOctaveNotice() {
     const t = S.activeTrack;
-    if (customLayoutOn(t)) showActionPopup('PADS OCTAVE', _octLabel((S.trackOctave[t] | 0) - DEFAULT_TRACK_OCTAVE));
+    if (customLayoutOn(t)) showActionPopup('OCTAVE', _octLabel((S.trackOctave[t] | 0) - DEFAULT_TRACK_OCTAVE));
+}
+/* Shift + Octave: zone B alone — the B split, Piano's top octave, or the pads
+ * above the chords (shiftOctaveZoneB). Where there is no zone B the press is
+ * not taken and Octave moves the whole surface. */
+function _shiftOctavePress(dir) {
+    const t = S.activeTrack;
+    if (S.trackPadMode[t] === PAD_MODE_DRUM) return false;
+    for (const p of S.liveActiveNotes) queueLiveNoteOff(t, p);
+    S.liveActiveNotes.clear();
+    const said = shiftOctaveZoneB(t, dir);
+    if (!said) return false;
+    computePadNoteMap();
+    showActionPopup(said[0], said[1]);
+    forceRedraw();
+    return true;
 }
 
 function _chordEdited() {
@@ -4823,7 +4843,7 @@ function _onCC_knobs(d1, d2) {
          * reaches the bank editor at all. */
         if (S.sessionView) { _sessionKnobParam(knobIdx, d2); return; }
 
-        /* The CHORD bank is contextual (Josh, 2026-09-23: "we should do all
+        /* The PADMODE bank is contextual (Josh, 2026-09-23, of the CHORD bank it grew from: "we should do all
          * chord edits through the chord bank"): holding a chord slot turns its
          * knobs into that slot's settings; otherwise they are the bank's own.
          * On every OTHER bank a held chord leaves the knobs alone, so sound
@@ -4835,10 +4855,32 @@ function _onCC_knobs(d1, d2) {
             if (_st && chordSlotKnob(S.activeTrack, S.chordCardSlot, knobIdx, _st)) _chordEdited();
             return;
         }
+        /* A held Custom chord pad: its assign card (build the chord by name). */
+        if (S.activeBank === BANK_CHORD && customCardSlot() >= 0) {
+            const _ck = customCardSlot();
+            const _st = knobStep(knobIdx, d2, KNOB_PICK);
+            if (_st && customCardKnob(S.activeTrack, _ck, knobIdx, _st)) {
+                const _rv = revoiceIfSounding(S.activeTrack, _ck);
+                if (_rv) chordApplyRevoice(_rv, { record: false });
+                computePadNoteMap();
+                forceRedraw();
+            }
+            return;
+        }
         if (S.activeBank === BANK_CHORD) {
-            /* Bass and Slots are toggles: the deliberate divisor. */
-            const _st = knobStep(knobIdx, d2, (knobIdx === 2 || knobIdx === 6) ? KNOB_DELIB : KNOB_PICK);
-            if (_st && chordBankKnob(S.activeTrack, knobIdx, _st)) _chordEdited();
+            /* PADMODE's own page: K1 Mode, then the mode's settings. Mode and
+             * the toggles take the deliberate divisor. */
+            const _st = knobStep(knobIdx, d2, padModeKnobDeliberate(S.activeTrack, knobIdx) ? KNOB_DELIB : KNOB_PICK);
+            const _oct = S.trackOctave[S.activeTrack];
+            if (_st && padModeBankKnob(S.activeTrack, knobIdx, _st)) {
+                /* Custom's Scale Oct is the track octave: let go of what the
+                 * pads were holding first, as the Octave buttons do. */
+                if (S.trackOctave[S.activeTrack] !== _oct) {
+                    for (const p of S.liveActiveNotes) queueLiveNoteOff(S.activeTrack, p);
+                    S.liveActiveNotes.clear();
+                }
+                _chordEdited();
+            }
             return;
         }
 

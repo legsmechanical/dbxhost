@@ -1,4 +1,5 @@
 import { miPadColors, miActive, miRingCells } from './ui_midi_import.mjs';
+import { padInZoneB } from './ui_pad_mode.mjs';
 import { S, loopViewActive, knobAltOn } from './ui_state.mjs';
 import {
     NUM_STEPS, NUM_TRACKS, LED_OFF, LEDS_PER_FRAME,
@@ -1049,6 +1050,12 @@ export function updateTrackLEDs() {
                               * reads: in-scale brighter than out. */
                              : inScale ? LightGrey : DarkGrey)
                   : (chromatic && !inScale) ? LED_OFF
+                  /* A split's zone B swaps zone A's two colours: the root in
+                   * A's dim non-root white, the rest in the track colour, so the
+                   * two grids read apart (Josh, 2026-10-22: "dim white, not
+                   * bright"). */
+                  : padInZoneB(S.activeTrack, i)
+                      ? (S.padNoteMap[i] % 12 === _effKey ? nonRootColor : rootColor)
                   : (S.padNoteMap[i] % 12 === _effKey ? rootColor : nonRootColor);
             cachedSetLED(TRACK_PAD_BASE + i, color);
         }

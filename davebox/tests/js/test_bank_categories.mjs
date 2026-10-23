@@ -75,14 +75,14 @@ const inkLeftOfLine = (f, y0, y1) => { let n = 0; for (let y = y0; y < y1; y++) 
  * walk is the list minus the doors — CONFIG and AUTOMATION (Josh, 2026-10-03:
  * "hide config and automation from the bank list"). LIVE ARP came back on
  * the walk on 2026-10-04 ("put the live arp back as a bank"). */
-const MEL_LIST = [C.BANK_CONFIG, 5, C.BANK_MACROS, C.BANK_AUTOMATION, C.BANK_STEP, 0, 1, 2, 3, 4, C.BANK_SOUND];
-const MEL = [5, C.BANK_MACROS, C.BANK_STEP, 0, 1, 2, 3, 4, C.BANK_SOUND];
-step('⭐ the melodic walk is IN, CTRL, SEQ, FX, MIX (the doors are off it); a Chord-layout track adds CHORD at the head of IN', () => {
+const MEL_LIST = [C.BANK_CONFIG, C.BANK_PADMODE, 5, C.BANK_MACROS, C.BANK_AUTOMATION, C.BANK_STEP, 0, 1, 2, 3, 4, C.BANK_SOUND];
+const MEL = [C.BANK_PADMODE, 5, C.BANK_MACROS, C.BANK_STEP, 0, 1, 2, 3, 4, C.BANK_SOUND];
+step('⭐ the melodic walk is IN, CTRL, SEQ, FX, MIX (the doors are off it); PADMODE heads IN on EVERY melodic track, whatever its pad mode', () => {
     S.padLayoutChord = [false, false, false, false, false, false, false, false];
     assert(JSON.stringify(P.bankListForMode(0, 2)) === JSON.stringify(MEL_LIST), 'list: ' + P.bankListForMode(0, 2));
     assert(JSON.stringify(P.bankCycleForMode(0, 2)) === JSON.stringify(MEL), 'plain: ' + P.bankCycleForMode(0, 2));
     S.padLayoutChord[2] = true;
-    assert(JSON.stringify(P.bankCycleForMode(0, 2)) === JSON.stringify([C.BANK_CHORD].concat(MEL)), 'chord: ' + P.bankCycleForMode(0, 2));
+    assert(JSON.stringify(P.bankCycleForMode(0, 2)) === JSON.stringify(MEL), 'chord: ' + P.bankCycleForMode(0, 2));
     S.padLayoutChord[2] = false;
     assert(C.BANK_DEFAULT === 0, 'CLIP stays the start and Back bank');
 });
