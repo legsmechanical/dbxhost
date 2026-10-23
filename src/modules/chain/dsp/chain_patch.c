@@ -1459,6 +1459,28 @@ int v2_parse_patch_file(chain_instance_t *inst, const char *path, patch_info_t *
                     cfg->module[len] = '\0';
                 }
 
+                /* "slot": the position it was saved from. Looked for only
+                 * before the object's first nested { or [, so a "slot" inside
+                 * the module's own params/state can never be mistaken for it
+                 * (the writer puts it straight after "type"). */
+                cfg->slot = -1;
+                {
+                    const char *top_end = obj_end;
+                    for (const char *c = obj_start + 1; c < obj_end; c++) {
+                        if (*c == '{' || *c == '[') { top_end = c; break; }
+                    }
+                    const char *slot_pos = strstr(obj_start, "\"slot\"");
+                    if (slot_pos && slot_pos < top_end) {
+                        const char *sc = strchr(slot_pos + 6, ':');
+                        if (sc && sc < top_end) {
+                            char *num_end = NULL;
+                            long v = strtol(sc + 1, &num_end, 10);
+                            if (num_end && num_end != sc + 1 && v >= 0 && v < MAX_AUDIO_FX)
+                                cfg->slot = (int)v;
+                        }
+                    }
+                }
+
                 /* Parse "params" object if present */
                 const char *params_pos = strstr(obj_start, "\"params\"");
                 {
@@ -2078,7 +2100,13 @@ int v2_load_from_patch_info(chain_instance_t *inst, patch_info_t *patch) {
                      i, cfg->module, cfg->param_count);
             parse_debug_log(dbg);
         }
-        if (v2_load_audio_fx(inst, cfg->module) != 0) {
+        /* Back where it was saved, so an empty position before it stays empty
+         * and everything addressing it by position still finds it. A file
+         * without positions (or a position already taken) loads into the next
+         * one, as before. */
+        int fx_idx = (cfg->slot >= 0 && cfg->slot < MAX_AUDIO_FX && !inst->fx_handles[cfg->slot])
+                   ? cfg->slot : inst->fx_count;
+        if (fx_idx >= MAX_AUDIO_FX || v2_load_audio_fx_at(inst, fx_idx, cfg->module) != 0) {
             snprintf(msg, sizeof(msg), "Failed to load FX: %s", cfg->module);
             v2_chain_log(inst, msg);
             parse_debug_log("[load] FX load failed!");
@@ -2087,7 +2115,6 @@ int v2_load_from_patch_info(chain_instance_t *inst, patch_info_t *patch) {
         }
 
         /* Apply audio FX parameters (e.g., plugin_id for CLAP) */
-        int fx_idx = inst->fx_count - 1;  /* Just loaded */
         {
             char dbg[256];
             snprintf(dbg, sizeof(dbg), "[load] FX loaded, fx_idx=%d is_v2=%d plugins_v2=%p instances=%p",

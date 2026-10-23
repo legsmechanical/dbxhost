@@ -50,6 +50,9 @@ the section into a versioned heading at release time.
   screen. The **Clear all** row still clears everything.
 
 ### Fixed
+- **Removing a middle insert effect no longer moves the ones after it** when the
+  project reopens. They stay in their slots, and their automation and macros
+  still reach them.
 - **A chain preset with a MIDI effect is silent no more** when loaded onto a
   track that had no MIDI effect (a Plank preset, for example): the track now
   plays what the effect makes.

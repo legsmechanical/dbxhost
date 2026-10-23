@@ -5732,6 +5732,7 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
         }
         patch.audio_fx.push({
             type: cfg.fx1.module,
+            slot: 0,
             params: fx1Config,
             bypassed: parseInt(pre("fx1:bypassed") || "0", 10) === 1 ? 1 : 0
         });
@@ -5756,6 +5757,7 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
         }
         patch.audio_fx.push({
             type: cfg.fx2.module,
+            slot: 1,
             params: fx2Config,
             bypassed: parseInt(pre("fx2:bypassed") || "0", 10) === 1 ? 1 : 0
         });
@@ -5778,6 +5780,7 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
         }
         patch.audio_fx.push({
             type: cfg.fx3.module,
+            slot: 2,
             params: fx3Config,
             bypassed: parseInt(pre("fx3:bypassed") || "0", 10) === 1 ? 1 : 0
         });
@@ -5800,6 +5803,7 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
         }
         patch.audio_fx.push({
             type: cfg.fx4.module,
+            slot: 3,
             params: fx4Config,
             bypassed: parseInt(pre("fx4:bypassed") || "0", 10) === 1 ? 1 : 0
         });
@@ -17890,8 +17894,13 @@ globalThis.init = function() {
                     }
                     if (chain && Array.isArray(chain.audio_fx)) {
                         for (let fx = 0; fx < chain.audio_fx.length && fx < 4; fx++) {
-                            if (chain.audio_fx[fx] && chain.audio_fx[fx].bypassed) {
-                                setSlotParam(i, `fx${fx + 1}:bypassed`, "1");
+                            const e = chain.audio_fx[fx];
+                            /* `slot` is the position it was saved from (and
+                             * reloaded into); a file without one loaded in
+                             * order, so its index is its position. */
+                            const pos = (e && Number.isInteger(e.slot) && e.slot >= 0 && e.slot < 4) ? e.slot : fx;
+                            if (e && e.bypassed) {
+                                setSlotParam(i, `fx${pos + 1}:bypassed`, "1");
                             }
                         }
                     }

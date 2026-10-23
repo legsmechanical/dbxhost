@@ -666,6 +666,13 @@ int v2_load_synth(chain_instance_t *inst, const char *module_name) {
     return 0;
 }
 
+/* Load audio FX into a given position — what a patch load uses, so an effect
+ * saved at FX3 behind an empty FX2 comes back at FX3 (anything addressing
+ * "fx3:" — automation, macros — still finds it). */
+int v2_load_audio_fx_at(chain_instance_t *inst, int slot, const char *fx_name) {
+    return v2_load_audio_fx_slot(inst, slot, fx_name);
+}
+
 /* V2 load audio FX */
 int v2_load_audio_fx(chain_instance_t *inst, const char *fx_name) {
     char msg[256];
