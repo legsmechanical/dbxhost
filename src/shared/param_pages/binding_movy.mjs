@@ -539,6 +539,13 @@ function currentParamPage() {
     return controller ? controller.page : null;
 }
 
+/** Is an overlay (the enum peek) drawn over the page this frame? An embedder
+ *  that paints into the page's own chrome -- its footer band, say -- stands
+ *  down while one is, or it draws over the overlay. */
+function paramPagesOverlayShown() {
+    return !!(controller && controller.enumPeek());
+}
+
 /**
  * Which instance of `level` the grid is showing, zero-based; -1 if unknown.
  *
@@ -1570,6 +1577,7 @@ function paramPagesMenuEntered() {
         paramPagesChildIndex,
         paramPagesComponent,
         paramPagesLevelNameOf,
+        paramPagesOverlayShown,
         paramPagesPageLabel,
         paramPagesEnabled,
         paramPagesExitMenu,

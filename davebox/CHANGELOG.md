@@ -144,6 +144,11 @@ the section into a versioned heading at release time.
   to the lane list.
 
 ### Added
+- **The sequencer's page in a module editor.** While the transport runs, the
+  bottom row of a module's pages shows the track's page bar (as on the track
+  overview) in place of the hints, which come back when it stops. With the
+  transport stopped, or on the TRACK CONFIG menu, **Left / Right** show
+  **SEQUENCER PAGE** with the page number (e.g. 2/4).
 - **Back up and restore projects** from the web manager's new **Projects** page
   (`move.local:7700`): download one project or all of them (with your templates)
   as a single file, and upload one to bring its projects back as new projects —

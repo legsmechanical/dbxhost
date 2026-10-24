@@ -2040,6 +2040,13 @@ the jog turns the pages. **Shift + jog** switches track, and the editor follows 
 the new track's instrument. A module that draws some of its own cells (a waveform,
 a picture of its mode) shows them in place of a plain dial.
 
+**The sequencer's page.** **Left / Right** page the sequencer from the editor as
+they do on the track overview. While the transport runs, the bottom row shows the
+track's page bar in place of the hints: the page you're on solid, the page playing
+outlined, and the playhead. The hints come back when the transport stops. With
+the transport stopped, or on the TRACK CONFIG menu, each press shows **SEQUENCER PAGE**
+with the page number instead (2/4 = page 2 of a 4-page loop).
+
 **A module with its own screen.** Some modules draw their own editor in Schwung
 instead of the standard pages. dAVEBOx shows that same screen, opened the same way:
 the knobs, the jog and the module's own gestures behave as they do in Schwung. If the

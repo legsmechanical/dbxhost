@@ -68,7 +68,7 @@ import { moduleIdOf } from './ui_discover.mjs';
 import { BANK_MAP_TRACK_POPUP_MS, SEQ_PAGE_POPUP_MS, seqAutoTargetForKnob, SEQ_AUTO_TARGETS, midiTargetIsMidi, DEFAULT_TRACK_OCTAVE } from './ui_constants.mjs';
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam, soundOpenModule } from './ui_sound.mjs';
-import { soundActive, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVolGestureEnd, soundShiftEdge, soundOpenGenerator,
+import { soundActive, soundPageBarShown, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVolGestureEnd, soundShiftEdge, soundOpenGenerator,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, macroClearConfirmAnswer,
     macroClearConfirmReset, macroClearConfirmOpen, soundKnobCardClick, soundEnterSendFromSessionMixer,
@@ -3669,8 +3669,9 @@ function _onCC_transport(d1, d2) {
          * window-relative, so it reads the same 1..n the bar shows. Shown at
          * either end too, where the page does not move — that is the press
          * saying "this is the last one". Two lines: "SEQUENCER PAGE 16/16" is
-         * wider than the card. */
-        if (soundActive())
+         * wider than the card. Not while the editor's footer IS the page bar
+         * (soundPageBarShown, transport running): the bar shows the move. */
+        if (soundActive() && !soundPageBarShown())
             showActionPopupFor(SEQ_PAGE_POPUP_MS, 'SEQUENCER PAGE',
                                (_pageNow - startPage + 1) + '/' + (lastPage - startPage + 1));
         /* Paging by hand while the transport runs PAUSES Seq Follow, so the view

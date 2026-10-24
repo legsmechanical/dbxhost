@@ -23,11 +23,15 @@ function step(l, fn) {
 const ENGINE = {
     'synth:module': 'nusaw',
     'synth:cutoff': '0.5',
+    'synth:mode': 'Saw',
     'synth:chain_params': JSON.stringify([
         { key: 'cutoff', name: 'Cutoff', type: 'float', min: 0, max: 1, step: 0.01 },
+        { key: 'mode', name: 'Mode', type: 'enum', options: ['Saw', 'Square', 'Noise'] },
     ]),
     'synth:ui_hierarchy': JSON.stringify({ levels: { root: { name: 'NuSaw',
-        params: [{ key: 'cutoff', name: 'Cutoff', type: 'float', min: 0, max: 1 }], knobs: ['cutoff'] } } }),
+        params: [{ key: 'cutoff', name: 'Cutoff', type: 'float', min: 0, max: 1 },
+                 { key: 'mode', name: 'Mode', type: 'enum', options: ['Saw', 'Square', 'Noise'] }],
+        knobs: ['cutoff', 'mode'] } } }),
 };
 globalThis.shadow_get_param = (slot, key) => (ENGINE[key] != null ? ENGINE[key] : '');
 globalThis.shadow_set_param = (slot, key, val) => { ENGINE[key] = String(val); return 1; };
@@ -43,7 +47,7 @@ globalThis.host_write_file = (path, body) => {
     return true;
 };
 for (const fn of ['host_read_file', 'host_file_exists', 'host_ensure_dir', 'host_remove_dir',
-                  'host_system_cmd', 'host_module_set_param', 'host_module_get_param',
+                  'host_system_cmd', 'host_module_set_param', 'host_module_set_params', 'host_module_get_param',
                   'host_send_midi', 'move_midi_inject_to_move', 'host_set_led', 'set_led',
                   'host_get_setting', 'host_set_setting', 'move_midi_internal_send',
                   'host_edit_cc_block', 'host_ext_midi_remap_clear', 'host_ext_midi_remap_set',
@@ -54,7 +58,11 @@ let printed = [];
 globalThis.clear_screen = () => {};
 globalThis.print = (x, y, t) => { printed.push(String(t)); };
 globalThis.pixel_print = () => {};
-globalThis.text_width = (t) => String(t).length * 6; globalThis.fill_rect = () => {};
+globalThis.text_width = (t) => String(t).length * 6;
+/* Every rect, so the page bar's segments can be found by geometry. */
+let rects = [];
+globalThis.fill_rect = (x, y, w, h, v) => { rects.push([x, y, w, h, v ? 1 : 0]); };
+const drew = (x, y, w, h, v) => rects.some((r) => r[0] === x && r[1] === y && r[2] === w && r[3] === h && r[4] === v);
 globalThis.draw_rect = () => {}; globalThis.draw_line = () => {}; globalThis.set_pixel = () => {};
 globalThis.stipple_rect = () => {}; globalThis.flush_display = () => {};
 globalThis.shadow_get_ui_flags = () => 0; globalThis.shadow_get_shift_held = () => 0;
@@ -147,8 +155,70 @@ step('the card goes when its window ends', () => {
     if (printed.indexOf('SEQUENCER PAGE') >= 0) throw new Error('card still drawn after its window');
 });
 
+/* ---- MOCKUP B: while the transport runs, the editor's footer IS the page bar.
+ * The window is 4 pages (steps 16..79), so each segment is 29 px wide from
+ * x = 4 + page * 30, in rows 58..61 (MV_FOOTER_Y + 1, 4 high). */
+const SEG = (p) => 4 + p * 30;
+const play = (on, step) => {
+    S.playing = on; S.trackClipPlaying[T] = on;
+    if (step != null) S.trackCurrentStep[T] = step;
+    S.followPaused = true;            /* the view page is the test's, not Seq Follow's */
+};
+const frame = () => { rects = []; printed = []; rend.drawUI(); };
+
+step('B: PLAYING, the editor footer is the page bar — viewed page solid, the band cleared', () => {
+    S.clockFollowTicks = false;
+    S.trackCurrentPage[T] = 2;        /* window page 2 of 4 (index 1) */
+    play(true, 56);                   /* window step 40: page 3 playing */
+    if (!snd.soundPageBarShown()) throw new Error('soundPageBarShown() is false while playing on the editor');
+    frame();
+    if (!drew(0, 57, 128, 7, 0)) throw new Error('the footer band was not cleared');
+    if (!drew(SEG(1), 58, 29, 4, 1)) throw new Error('no solid segment for the viewed page at x ' + SEG(1));
+    if (!drew(78, 58, 1, 4, 1)) throw new Error('no playhead tick at x 78 (step 56)');
+});
+
+step('B: STOPPED, the hints are back and no bar is drawn', () => {
+    play(false);
+    if (snd.soundPageBarShown()) throw new Error('soundPageBarShown() is true while stopped');
+    frame();
+    if (drew(SEG(1), 58, 29, 4, 1)) throw new Error('the bar drew while stopped');
+    if (drew(0, 57, 128, 7, 0)) throw new Error('the footer band was cleared while stopped');
+});
+
+step('B: while the bar shows, an arrow pages with NO card (the bar shows the move)', () => {
+    play(true, 56);
+    S.actionPopupEndTick = -1;
+    press(LEFT);
+    if (S.trackCurrentPage[T] !== 1) throw new Error('Left did not page: ' + S.trackCurrentPage[T]);
+    play(true);
+    frame();
+    if (printed.indexOf('SEQUENCER PAGE') >= 0) throw new Error('the card drew over the bar');
+    if (!drew(SEG(0), 58, 29, 4, 1)) throw new Error('the bar did not move to page 1');
+});
+
+step('B: the editor REDRAWS when the playhead moves (it is not redrawn every tick)', () => {
+    play(true, 56); ticks(2);
+    play(true, 60);
+    rects = [];
+    ticks(1);
+    if (!drew(85, 58, 1, 4, 1)) throw new Error('the tick did not redraw the bar at the new playhead (x 85)');
+});
+
+step('B: the enum PEEK (turn an enum knob) covers the page — the bar stands down', () => {
+    play(true, 56);
+    if (!snd.soundPageBarShown()) throw new Error('rig: bar not up');
+    cc(72, 1);                        /* knob 2 = Mode, one detent */
+    play(true);
+    if (snd.soundPageBarShown()) throw new Error('soundPageBarShown() stayed true with the peek up');
+    frame();
+    if (drew(SEG(0), 58, 29, 4, 1)) throw new Error('the bar drew over the peek');
+    if (!printed.some((t) => /square/i.test(t)))
+        throw new Error('rig: no peek on screen (printed ' + JSON.stringify(printed.slice(0, 8)) + ')');
+});
+
 step('a DRUM track counts its lane window', () => {
     S.clockFollowTicks = false;
+    play(false);
     S.trackPadMode[T] = PAD_MODE_DRUM;
     S.drumLaneLoopStart[T] = 0;
     S.drumLaneLength[T] = 32;

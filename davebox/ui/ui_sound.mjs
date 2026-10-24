@@ -49,7 +49,7 @@ import { nowMs } from './ui_clock.mjs';
  * safe because both sides only call the binding inside function bodies, never
  * at module-init time — the same contract the ui_record ↔ ui_dsp_bridge cycle
  * documents. bankCardVisible is the ONE owner of card visibility. */
-import { bankCardShown, sessMixerShown, bankHeaderRight } from './ui_render.mjs';
+import { bankCardShown, sessMixerShown, bankHeaderRight, drawTrackPageBar, trackPageBarSig } from './ui_render.mjs';
 /* Destination read/write and the option list. ui_dsp_bridge does not import
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
@@ -172,7 +172,7 @@ const { enterParamPages, exitParamPages, tickParamPages, drawParamPages,
         clearParamPagesTouch, currentParamPage,
         paramPagesPickerOpen, paramPagesMenuEntered,
         paramPagesRefreshTrailing, paramPagesFullKeyAt, paramPagesRepaintKnobs,
-        paramPagesCachedValue, paramPagesLevelNameOf,
+        paramPagesCachedValue, paramPagesLevelNameOf, paramPagesOverlayShown,
         paramPagesPageLabel, paramPagesSetDecorations, paramPagesDecorations } = PP;
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 /* ⚠⚠ THE CANONICAL SPECIFIER, AND IT IS LOAD-BEARING. The registry is the
@@ -12484,6 +12484,35 @@ function ppLaneFooter() {
         fontPrint4x5(2, 1, (name + ' ONLY').toUpperCase(), 0);
     }
 }
+/* ⭑ THE SEQUENCER'S PAGE BAR IN THE EDITOR'S FOOTER while the transport runs
+ * (Josh, 2026-10-24, mockup B: "a very thin playback/page indicator bar at the
+ * bottom of the module editors when transport is running"). The footer's hint
+ * pills give way to the track overview's own bar — viewed page solid, playing
+ * page outlined, the playhead — and come back on stop. Only on the editor's
+ * page itself: a pinned lane's footer (ppLaneFooter) says what the keys do in
+ * that mode and wins; an open picker or entered menu is a layer whose hints
+ * matter; the enum peek covers the page and must not be drawn over. The
+ * session buses have no track, so no bar.
+ * Exported because the arrows' SEQUENCER PAGE card (ui_input_cc) stands down
+ * while this is up: the bar already shows the page the press moved to. */
+export function soundPageBarShown() {
+    return !!(S.active && ppOn && !ppDeclinedDraw && S.view === VIEW_EDIT && !S.hosted &&
+              GS.playing && !soundIsGlobal() && S.track === GS.activeTrack &&
+              !ppLaneLocked() && !ppHasLayer() && !paramPagesOverlayShown());
+}
+function ppPageBarFooter() {
+    fill_rect(0, MV_FOOTER_Y, 128, 64 - MV_FOOTER_Y, 0);
+    drawTrackPageBar(GS.activeTrack, MV_FOOTER_Y + 1);
+}
+/* What the footer bar showed when last drawn ('' = not up): the editor is not
+ * redrawn every tick, so it is marked dirty exactly when the bar would change
+ * — the playhead's step, the viewed page, the window, or the bar coming and
+ * going (Play, Stop, a picker opening). */
+let ppBarSig = '';
+function ppPageBarSync() {
+    const sig = soundPageBarShown() ? trackPageBarSig(GS.activeTrack) : '';
+    if (sig !== ppBarSig) { ppBarSig = sig; S.dirty = true; }
+}
 /* Until when the header says "<PARAM> ONLY" (a refused knob turn), or 0. */
 let ppOnlyUntil = 0;
 const PP_ONLY_MS = 1200;
@@ -12555,6 +12584,7 @@ function ppSync() {
     /* Left the editor entirely: the decline belonged to that entry. */
     if (S.view !== VIEW_EDIT && !(ppOn && ppOwnsView())) ppDeclinedDraw = false;
     ppFocusSync();
+    ppPageBarSync();
 }
 
 /* ---- module-supplied in-grid widgets (upstream #420 / #450 / #472) ---------
@@ -13949,7 +13979,10 @@ export function soundRender() {
      * FALLBACK for that case. ⚠ It is not "the shipped one" — this comment used
      * to say so, inheriting the same false claim as PP_EDITOR's own note. The
      * grid is shipped; renderEdit catches what it will not draw. */
-    else if (ppOn && drawParamPages()) { if (ppLaneLocked()) ppLaneFooter(); }
+    else if (ppOn && drawParamPages()) {
+        if (ppLaneLocked()) ppLaneFooter();
+        else if (soundPageBarShown()) ppPageBarFooter();
+    }
     else {
         /* ⚠⚠ IT DECLINED. Note it so ppSync takes the grid down on the next
          * tick: without this the knobs keep going to a grid that is not on

@@ -1425,7 +1425,7 @@ function drawTempoSelect() {
 /* Drum-view position bar (bottom strip): loop-window pages, view page solid,
  * playing page outlined, playhead dot, off-window extent ticks. Moved here
  * from ui_leds.mjs in P7 — it is OLED drawing, not LED writing. */
-function drawPositionBar(t) {
+function drawPositionBar(t, barY) {
     const ac     = effectiveClip(t);
     const lsBase = S.clipLoopStart[t][ac] | 0;
     const len    = S.clipLength[t][ac];
@@ -1438,7 +1438,7 @@ function drawPositionBar(t) {
     for (let s = lsBase + len; s < NUM_STEPS; s++) if (steps[s] !== 0) { hasRight = true; break; }
     drawPositionBarGeom({ lsBase, len, viewPage: S.trackCurrentPage[t] - (lsBase >> 4),
                           playStep: (S.playing && S.trackClipPlaying[t]) ? cs : -1,
-                          hasLeft, hasRight });
+                          hasLeft, hasRight, barY });
 }
 
 /* ⭐ THE PAGE BAR, one drawing for every screen that shows one (Josh,
@@ -2701,7 +2701,7 @@ function drawUIBody() {
     }
 }
 
-function drawDrumPositionBar(t) {
+function drawDrumPositionBar(t, barY) {
     const lsBase = S.drumLaneLoopStart[t] | 0;
     const len    = S.drumLaneLength[t];
     const cs     = S.drumCurrentStep[t];
@@ -2713,5 +2713,27 @@ function drawDrumPositionBar(t) {
     for (let s = lsBase + len; s < 256; s++) if (steps[s] !== '0') { hasRight = true; break; }
     drawPositionBarGeom({ lsBase, len, viewPage: S.drumStepPage[t] - (lsBase >> 4),
                           playStep: (S.playing && S.trackClipPlaying[t]) ? cs : -1,
-                          hasLeft, hasRight });
+                          hasLeft, hasRight, barY });
+}
+
+/* ⭑ THE TRACK'S PAGE BAR, for a screen other than the overview that shows it
+ * (Josh, 2026-10-24: the module editor's footer while the transport runs —
+ * mockup B). The overview's own drawing, at the caller's row. */
+export function drawTrackPageBar(t, barY) {
+    if (S.trackPadMode[t] === PAD_MODE_DRUM) drawDrumPositionBar(t, barY);
+    else drawPositionBar(t, barY);
+}
+
+/* Everything drawTrackPageBar reads that changes while it is up — so a screen
+ * that is not redrawn every tick (the module editor) redraws exactly when the
+ * bar would look different. The extent ticks are left out: they move only on
+ * an edit, which redraws anyway. */
+export function trackPageBarSig(t) {
+    const drum = S.trackPadMode[t] === PAD_MODE_DRUM;
+    const ac = effectiveClip(t);
+    const ls = drum ? S.drumLaneLoopStart[t] : S.clipLoopStart[t][ac];
+    const len = drum ? S.drumLaneLength[t] : S.clipLength[t][ac];
+    const view = drum ? S.drumStepPage[t] : S.trackCurrentPage[t];
+    const cs = (S.playing && S.trackClipPlaying[t]) ? (drum ? S.drumCurrentStep[t] : S.trackCurrentStep[t]) : -1;
+    return (drum ? 'd' : 'm') + ls + ',' + len + ',' + view + ',' + cs;
 }
