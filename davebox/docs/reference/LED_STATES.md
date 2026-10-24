@@ -48,12 +48,16 @@ stops a pulse or blink. The cache in `input_filter.mjs` knows this: a fade is re
 colour it ends on (the painter's next plain frame is a repeat, so the fade is not cut), a pulse or
 blink as running (the plain colour IS sent, because it stops it).
 
-⚠ **Which group fades once and which repeats is Push 2's table.** Move's firmware writes a hit
-pad's release and a playing clip on channel 9 and a queued clip on channel 14 (§2). Channel 9 is
-"pulse @ quarter" by that table, which fits a playing clip — and a released pad **visibly does not
-animate on Move** (Josh, 2026-10-24: the colour changes at once on note on and note off), so the
-table is not yet confirmed for Move's controller. The one-look atlas (§5) settles it with eyes; the
-code keeps the table in constants so the answer is one edit.
+✅ **Push 2's table IS Move's table, channel for channel** — confirmed by eye 2026-10-24 with the
+atlas (§5) under a 30 BPM LED clock: 1–5 ease once from the old colour to the new and stay (pad 5
+about four seconds at 30 BPM), 6–10 pulse smoothly, 11–15 snap. At a normal tempo the fast pulses
+read as blinks and the fast blinks as pulses, so judge them under a slow clock. Move's firmware
+writes a playing clip on channel 9 and a queued clip on channel 14 (§2); a released pad also goes
+out on channel 9 but visibly does not animate (the colour is already there, so there is nothing to
+pulse between).
+
+📌 **Move's own smooth blink = pulse at a quarter note, channel 9, at song tempo** — a half-second
+breathe at 120 BPM, which is what Josh picked out of the atlas as "the Move look".
 
 📌 **Pads never animate.** dAVEBOx's playing-surface pads change colour at once on note on and note
 off, as Move's do, and that stays. The animations are for the states §4 blinks in software today,

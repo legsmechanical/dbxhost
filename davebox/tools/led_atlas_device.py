@@ -62,3 +62,20 @@ elif cmd == "one":
     ch, pad, a, b = map(int, sys.argv[2:6])
     push([note(0, pad, a)]); time.sleep(0.3); push([note(ch, pad, b)])
     print("pad", pad, "ch", ch, a, "->", b)
+elif cmd == "clock":
+    # Pace the LED controller at a chosen tempo for a while: Start, 24 clocks a
+    # beat, Stop. At 30 BPM a quarter-note animation takes 2 s, so a fade, a
+    # pulse and a blink can be told apart by eye. Run it in the background
+    # (`clock 30 120 &`) and fire `atlas` while it runs.
+    bpm = float(sys.argv[2]) if len(sys.argv) > 2 else 30.0
+    secs = float(sys.argv[3]) if len(sys.argv) > 3 else 60.0
+    period = 60.0 / bpm / 24.0
+    push([[0x0F, 0xFA, 0, 0]])
+    t0 = time.monotonic(); n = 0
+    while time.monotonic() - t0 < secs:
+        push([[0x0F, 0xF8, 0, 0]]); n += 1
+        nxt = t0 + n * period
+        d = nxt - time.monotonic()
+        if d > 0: time.sleep(d)
+    push([[0x0F, 0xFC, 0, 0]])
+    print("clock: %d ticks at %.1f BPM over %.0f s" % (n, bpm, secs))
