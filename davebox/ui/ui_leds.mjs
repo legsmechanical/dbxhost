@@ -4,7 +4,7 @@ import { S, loopViewActive, knobAltOn } from './ui_state.mjs';
 import {
     NUM_STEPS, NUM_TRACKS, LED_OFF, LEDS_PER_FRAME,
     TRACK_COLORS, TRACK_DIM_COLORS, TRACK_PAD_BASE, SCENE_BTN_FLASH_MS,
-    PAD_MODE_DRUM, BANKS, LED_PULSE_24TH, LED_PULSE_4TH, LED_BLINK_4TH,
+    PAD_MODE_DRUM, BANKS, LED_PULSE_24TH, LED_PULSE_4TH, LED_BLINK_8TH,
     POLL_INTERVAL, TAP_TEMPO_FLASH_MS, PARAM_LED_BANKS, CONDUCT_LED_BANKS,
     SEQ8_NAV_FLAGS, MoveNoteSession, BANK_CONFIG, BANK_SOUND
 } from './ui_constants.mjs';
@@ -701,10 +701,12 @@ export function updateSessionLEDs() {
             const hasContent  = isDrumTrack ? S.drumClipNonEmpty[t][sceneIdx] : S.clipNonEmpty[t][sceneIdx];
             const hasActive   = hasContent;
             let color;
-            /* A playing clip PULSES and a queued clip BLINKS in the LED hardware,
-             * at a quarter note of dAVEBOx's LED clock, between the dim and the
-             * full track colour — the channels Move itself writes for those two
-             * states (ch9 / ch14), so a dAVEBOx session breathes like a Move one. */
+            /* A playing clip PULSES at a quarter note (ch9, Move's own write) and
+             * a queued clip BLINKS at an EIGHTH (ch13 — Move uses a quarter, but
+             * a quarter blink beside a quarter pulse is hard to tell apart; Josh,
+             * 2026-10-24: "this should be a faster blink than the playing pulse
+             * ... like 1/8"), both between the dim and the full track colour on
+             * dAVEBOx's LED clock. */
             let anim = 0, from = 0;
             if (!hasContent) {
                 color = isActiveClip ? DarkGrey : LED_OFF;
@@ -715,7 +717,7 @@ export function updateSessionLEDs() {
             } else if (isPlaying) {
                 color = trackColor(t); from = trackDimColor(t); anim = LED_PULSE_4TH;
             } else if (isQueued && S.playing) {
-                color = trackColor(t); from = trackDimColor(t); anim = LED_BLINK_4TH;
+                color = trackColor(t); from = trackDimColor(t); anim = LED_BLINK_8TH;
             } else if (isQueued) {
                 color = trackColor(t);
             } else if (isWillRelaunch) {

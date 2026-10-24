@@ -3,8 +3,8 @@
  * writes for those two states, and the painter does not restart them.
  *
  * The packet shape is the Push 2 two-step: the start colour on channel 0, then
- * the target colour on the animation channel (ch9 = pulse @ quarter, ch14 =
- * blink @ quarter). Each repaint must send NOTHING while the state holds — a
+ * the target colour on the animation channel (ch9 = pulse @ quarter, ch13 =
+ * blink @ eighth — faster than the pulse so the two read apart). Each repaint must send NOTHING while the state holds — a
  * repeat restarts the animation and reads as a flicker. Stopping is a plain
  * write of the resting colour on channel 0.
  */
@@ -22,7 +22,7 @@ async function main() {
 const { S } = await import('../../ui/ui_state.mjs');
 S.clockFollowTicks = true;
 const { updateSessionLEDs, invalidateLEDCache, trackColor, trackDimColor } = await import('../../ui/ui_leds.mjs');
-const { LED_PULSE_4TH, LED_BLINK_4TH } = await import('../../ui/ui_constants.mjs');
+const { LED_PULSE_4TH, LED_BLINK_8TH } = await import('../../ui/ui_constants.mjs');
 
 /* Track 0, scene 0 sits on pad 92 (row 0 of the grid). */
 const T = 0, PAD = 92;
@@ -49,8 +49,8 @@ let w = take();
 S.playing = true; S.trackQueuedClip[T] = 0;
 updateSessionLEDs();
 w = take();
-(w.length === 1 && w[0].ch === LED_BLINK_4TH && w[0].colour === trackColor(T))
-    ? ok(`a queued clip blinks in hardware: track colour on channel ${LED_BLINK_4TH} (the dim start was already on the pad)`)
+(w.length === 1 && w[0].ch === LED_BLINK_8TH && w[0].colour === trackColor(T))
+    ? ok(`a queued clip blinks in hardware: track colour on channel ${LED_BLINK_8TH} (the dim start was already on the pad)`)
     : bad('queued clip', JSON.stringify(w));
 updateSessionLEDs(); updateSessionLEDs(); S.clockMs += 500; updateSessionLEDs();
 w = take();
