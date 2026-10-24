@@ -664,6 +664,9 @@ export const TICK_HZ = 94;
 export const ACTION_POPUP_MS = 520;
 /* The bank map's track pad: shorter than a glance — it confirms a tap. */
 export const BANK_MAP_TRACK_POPUP_MS = 700;   /* twice the first cut (Josh, 2026-10-15) */
+/* The SEQUENCER PAGE card (Left/Right over a sound screen): the same length as
+ * the bank map's track card, the other notice that confirms a tap. */
+export const SEQ_PAGE_POPUP_MS = 700;
 /* Shift+Volume's level card lingers 0.5 s after the last turn (Josh, 2026-09-15:
  * "about half as long" — it was 1 s) — the same window sound mode uses for its
  * own read-out (VOL_SHOW_MS), because they are the same card and must not feel

@@ -65,7 +65,7 @@ import { automationParamEdit, automationCaptureCommit, automationCaptureCommitAf
 import { sessStripTargets, engineLoadedModule, engineModuleName, slotIndex,
          moveBusForChannel, moveBusPrefix } from './ui_engine.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
-import { BANK_MAP_TRACK_POPUP_MS, seqAutoTargetForKnob, SEQ_AUTO_TARGETS, midiTargetIsMidi, DEFAULT_TRACK_OCTAVE } from './ui_constants.mjs';
+import { BANK_MAP_TRACK_POPUP_MS, SEQ_PAGE_POPUP_MS, seqAutoTargetForKnob, SEQ_AUTO_TARGETS, midiTargetIsMidi, DEFAULT_TRACK_OCTAVE } from './ui_constants.mjs';
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam, soundOpenModule } from './ui_sound.mjs';
 import { soundActive, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVolGestureEnd, soundShiftEdge, soundOpenGenerator,
@@ -3640,6 +3640,7 @@ function _onCC_transport(d1, d2) {
         /* A selected AUTOMATION row owns the arrows: they page ITS cycle, and
          * the pad's/clip's page (and SeqFollow) are left alone. */
         if (autoCyclePageStep(d1 === MoveRight ? 1 : -1)) { S.screenDirty = true; return; }
+        var _pageNow;
         if (S.trackPadMode[_t_lr] === PAD_MODE_DRUM) {
             var lsBase = S.drumLaneLoopStart[_t_lr] | 0;
             var startPage = lsBase >> 4;
@@ -3648,6 +3649,7 @@ function _onCC_transport(d1, d2) {
                 S.drumStepPage[_t_lr] = Math.max(startPage, S.drumStepPage[_t_lr] - 1);
             else
                 S.drumStepPage[_t_lr] = Math.min(lastPage, S.drumStepPage[_t_lr] + 1);
+            _pageNow = S.drumStepPage[_t_lr];
         } else {
             var ac = effectiveClip(_t_lr);
             var lsBase = S.clipLoopStart[_t_lr][ac] | 0;
@@ -3657,7 +3659,20 @@ function _onCC_transport(d1, d2) {
                 S.trackCurrentPage[_t_lr] = Math.max(startPage, S.trackCurrentPage[_t_lr] - 1);
             else
                 S.trackCurrentPage[_t_lr] = Math.min(lastPage, S.trackCurrentPage[_t_lr] + 1);
+            _pageNow = S.trackCurrentPage[_t_lr];
         }
+        /* ⭑ A SOUND SCREEN HIDES THE PAGE BAR (Josh, 2026-10-24: "a pop-up
+         * when changing sequencer page in a module editor … 'Sequencer Page
+         * x/x'"). Only the overview draws drawPositionBar, so over a module
+         * editor, its menu or a sound card the arrows paged with nothing on
+         * the OLED to say so. Numbered as the bar numbers its segments:
+         * window-relative, so it reads the same 1..n the bar shows. Shown at
+         * either end too, where the page does not move — that is the press
+         * saying "this is the last one". Two lines: "SEQUENCER PAGE 16/16" is
+         * wider than the card. */
+        if (soundActive())
+            showActionPopupFor(SEQ_PAGE_POPUP_MS, 'SEQUENCER PAGE',
+                               (_pageNow - startPage + 1) + '/' + (lastPage - startPage + 1));
         /* Paging by hand while the transport runs PAUSES Seq Follow, so the view
          * stays where the user went; the next real stop resumes it (the stop edge
          * in ui_dsp_bridge). The switch itself (ui_prefs) is untouched. */
