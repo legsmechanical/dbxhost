@@ -185,9 +185,28 @@ import { setLED, setButtonLED, clearAllLEDs } from '../../shared/input_filter.mj
 setLED(note, color);        // Set pad/step LED (uses note messages)
 setButtonLED(cc, color);    // Set button LED (uses CC messages)
 clearAllLEDs();             // Clear all LEDs
+setLED(note, color, false, anim);       // animate: see below
+setButtonLED(cc, color, false, anim);
+ledAnimOf(note); buttonAnimOf(cc);      // the repeating animation the cache believes is running (0 = none)
 ```
 
 LED values are cached to avoid redundant MIDI sends.
+
+**Animation.** The fourth argument is the status byte's low nibble, which Move's
+LED controller reads as Push 2 does: `0` sets the colour at once; `1`–`5` fade
+from the colour the LED shows to the new one and stop (over a 24th, 16th, 8th,
+quarter or half note); `6`–`10` pulse between the two colours and `11`–`15`
+blink between them, repeating until a plain (`anim` 0) write of a colour stops
+them. The controller paces animations by MIDI clock (`0xF8`, 24 per beat)
+received on cable 0 and resets the phase on Start; with no clock it runs at
+120 BPM. Move's own firmware feeds it that clock while its transport runs, so a
+module whose transport is its own sends the clock itself
+(`move_midi_internal_send([0x0F, 0xF8, 0, 0])`, Start `0xFA` / Stop `0xFC`) if
+its animations are to follow its tempo. The cache treats a fade as the colour
+it ends on (the next plain write of that colour sends nothing, so the fade is
+not cut short) and a pulse / blink as running (the same request again is a
+repeat; the plain colour is sent, because it is what stops it). The host
+carries the status byte unchanged to the hardware.
 
 ## Host Functions (Module Management)
 

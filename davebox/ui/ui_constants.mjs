@@ -31,6 +31,24 @@ export const LED_STEP_ACTIVE     = 36;
 export const LED_STEP_CURSOR     = 127;
 export const SCENE_BTN_FLASH_MS = 425;
 export const LEDS_PER_FRAME      = 8;
+
+/* LED ANIMATION CHANNELS — the status byte's low nibble, read by Move's LED
+ * controller the way Push 2 reads it (src/shared/input_filter.mjs has the
+ * full note). 0 = set at once. 1-5 = FADE from what the LED shows to the new
+ * colour, then stop; 6-10 = PULSE between the two; 11-15 = BLINK between
+ * them; within each group the five speeds are a 24th, 16th, 8th, quarter and
+ * half note of the clock the controller last received (ui_led_clock.mjs
+ * sends dAVEBOx's). Pass one as the `anim` argument of setLED / setButtonLED.
+ * ⚠ Which group fades once and which repeats is Push 2's table; Move's own
+ * firmware writes a hit pad's release and a playing clip on channel 9 and a
+ * queued clip on channel 14. */
+export const LED_ANIM_NONE   = 0;
+export const LED_FADE_24TH = 1, LED_FADE_16TH = 2, LED_FADE_8TH = 3, LED_FADE_4TH = 4, LED_FADE_HALF = 5;
+export const LED_PULSE_24TH = 6, LED_PULSE_16TH = 7, LED_PULSE_8TH = 8, LED_PULSE_4TH = 9, LED_PULSE_HALF = 10;
+export const LED_BLINK_24TH = 11, LED_BLINK_16TH = 12, LED_BLINK_8TH = 13, LED_BLINK_4TH = 14, LED_BLINK_HALF = 15;
+/* The one place a fade is used so far: a pad that stops sounding fades back
+ * to its resting colour, as Move's own pads do. */
+export const LED_FADE_RELEASE = LED_FADE_4TH;
 export const NUM_TRACKS          = 8;
 export const NUM_CLIPS           = 16;
 export const DRUM_LANES          = 32;

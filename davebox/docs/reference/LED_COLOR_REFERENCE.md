@@ -1,5 +1,7 @@
 # LED Color Assignment Reference
 
+> **Superseded 2026-10-24 by [`LED_STATES.md`](LED_STATES.md)** — the current map, with the hardware's animation channels and Move native's own vocabulary. Kept for its per-feature history; its line numbers and several rules are stale.
+
 > Maps every LED color assignment in dAVEBOx, organized by feature/mode. Verified against source: `ui_leds.mjs`, `ui_scene.mjs`, `ui.js`, `ui_constants.mjs`.
 
 ---

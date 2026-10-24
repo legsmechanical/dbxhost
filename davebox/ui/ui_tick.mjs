@@ -31,6 +31,9 @@ import {
 import { S, standDownBankDisplay, stepRevealAvailable, loopViewActive, endLoopLatch, forgetUndo, forgetProjectJs } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { tickPrefetch, dget, applyNewProjectSeed, midiFxResyncTick } from './ui_dsp_bridge.mjs';
+import { ledClockState, ledClockStep, ledClockSend } from './ui_led_clock.mjs';
+/* The LED controller's clock (ui_led_clock.mjs): its memory between ticks. */
+const _ledClock = ledClockState();
 import { dspGet, prefetchKeys, releaseTrackDigests } from './ui_dsp_get.mjs';
 import { daveBoxTick, bannerDaveSync, loadDaveTick } from './ui_daves.mjs';
 import { devSnapOpen, devSnapEnter, devSnapTick, DEVSNAP_HOLD_MS } from './ui_devsnap.mjs';
@@ -1377,6 +1380,9 @@ export function _tickImpl() {
          * STEP_SAVE_HOLD_MS went with it — it had no other reader. */
 
         if ((S.tickCount % POLL_INTERVAL) === 0) { pollDSP(); bannerDaveSync(); S.screenDirty = true; }
+        /* MIDI clock to the LED controller, from the position just polled, so
+         * the hardware's fades / pulses / blinks run at dAVEBOx's tempo. */
+        ledClockSend(ledClockStep(_ledClock, S.playing, S.clockFollowOn, S.masterPos));
 
         /* Per-parameter automation: drain what the DSP staged and push what it
          * cannot write itself. EVERY tick, not on the POLL_INTERVAL cadence —

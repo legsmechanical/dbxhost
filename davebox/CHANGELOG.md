@@ -9,6 +9,11 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Changed
+- **Pads fade back to their colour after a note**, the way Move's own pads do,
+  instead of snapping. The fade is done by the LED hardware itself and runs at
+  dAVEBOx's tempo: while the sequencer plays, dAVEBOx now sends the LED
+  controller the MIDI clock Move would, so hardware-paced animations follow the
+  song (when dAVEBOx follows Move's clock, Move's own clock is used).
 - **The CHORD bank is now the Pad Mode bank, on every melodic track.** Its
   first knob, **Mode**, picks the pad layout (Scale, Chrom, Piano, Chord,
   Custom) and the other knobs are that layout's settings; each layout keeps its

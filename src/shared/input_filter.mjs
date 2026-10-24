@@ -76,24 +76,69 @@ const buttonCache = new Array(128).fill(-1);
  * about the hardware that we have just failed to make true.
  */
 
+/*
+ * THE STATUS CHANNEL IS THE ANIMATION. Move's LED controller reads the low
+ * nibble of a note-on / CC status byte as Push 2 does (Ableton's published
+ * Push 2 MIDI interface, "LED animation"): channel 0 sets the colour at once;
+ * 1-5 fade from the colour the LED shows to the new one and stop (one-shot,
+ * over a 24th / 16th / 8th / quarter / half note); 6-10 pulse between the two
+ * and 11-15 blink between them, repeating. The controller advances the
+ * animation phase on MIDI clock (0xF8, 24 per beat) received on cable 0 and
+ * resets it on Start / Continue; without a clock it runs at 120 BPM.
+ *
+ * Move's own firmware paints this way (measured on the device, 2026-10-24):
+ * a hit pad is written white on channel 0 at the press, and at the release the
+ * target colour goes out on channel 9; a queued clip is its colour on channel
+ * 0 then the alternate on channel 14; a playing clip channel 0 then channel 9.
+ * Nothing in the host rewrites the status byte on the way to the hardware —
+ * the LED queue keys a note's packet by its number and sends the status it was
+ * given — so a caller passes `anim` and the whole path carries it.
+ *
+ * The cache therefore remembers the ANIMATION as well as the colour. The two
+ * together decide whether a write is a repeat: a static write that matches a
+ * static cache is skipped, as before; the same (colour, anim) re-sent while an
+ * animation runs would RESTART it (a new colour on channels 1-15 stops the
+ * transition in flight and starts over), so it is skipped too; and a static
+ * write of the colour a pulse or blink is running on is NOT skipped — it is
+ * the only thing that stops the animation. A one-shot leaves the LED on its
+ * target colour, which is what the cache then claims: it is recorded as a
+ * plain colour, so the painter's next frame — which asks for that colour
+ * without an animation — is a repeat and sends nothing, and the fade runs to
+ * its end instead of being cut by a channel-0 write a tick later.
+ */
+const LED_ANIM_REPEATING = 6;   /* channels 6-15 run until a plain write stops them */
+const ledAnim = new Array(128).fill(0);
+const buttonAnim = new Array(128).fill(0);
+
 /* Set LED color for a note (pad, step, etc.) */
 /* Returns false when the host REFUSED the write (its MIDI-out buffer was full)
  * — nothing is cached then, so a caller keeping its own cache must not either.
- * An unchanged (cached) colour returns true: the hardware already shows it. */
-export function setLED(note, color, force = false) {
-    if (!force && ledCache[note] === color) return true;
-    const sent = move_midi_internal_send([0x09, MidiNoteOn, note, color]);
+ * An unchanged (cached) colour returns true: the hardware already shows it.
+ * `anim` is the animation channel (0 = set at once; see the note above). */
+export function setLED(note, color, force = false, anim = 0) {
+    anim &= 0x0F;
+    if (!force && ledCache[note] === color && ledAnim[note] === anim) return true;
+    const sent = move_midi_internal_send([0x09, MidiNoteOn | anim, note, color]);
     ledCache[note] = sent ? color : -1;
+    ledAnim[note] = (sent && anim >= LED_ANIM_REPEATING) ? anim : 0;
     return !!sent;
 }
 
 /* Set LED color via CC (for buttons) */
-export function setButtonLED(cc, color, force = false) {
-    if (!force && buttonCache[cc] === color) return true;
-    const sent = move_midi_internal_send([0x0b, MidiCC, cc, color]);
+export function setButtonLED(cc, color, force = false, anim = 0) {
+    anim &= 0x0F;
+    if (!force && buttonCache[cc] === color && buttonAnim[cc] === anim) return true;
+    const sent = move_midi_internal_send([0x0b, MidiCC | anim, cc, color]);
     buttonCache[cc] = sent ? color : -1;
+    buttonAnim[cc] = (sent && anim >= LED_ANIM_REPEATING) ? anim : 0;
     return !!sent;
 }
+
+/* What the cache believes an LED is doing: the animation channel of the last
+ * accepted write, 0 when it was a plain colour. A painter deciding whether a
+ * change should fade needs to know whether the LED is mid-animation. */
+export function ledAnimOf(note) { return ledAnim[note]; }
+export function buttonAnimOf(cc) { return buttonAnim[cc]; }
 
 /*
  * Forget what we believe the hardware is showing, without touching it.
@@ -110,7 +155,7 @@ export function setButtonLED(cc, color, force = false) {
  * costs one frame of packets and is the only way back to being correct.
  */
 export function invalidateLedCache() {
-    for (let i = 0; i < 128; i++) { ledCache[i] = -1; buttonCache[i] = -1; }
+    for (let i = 0; i < 128; i++) { ledCache[i] = -1; buttonCache[i] = -1; ledAnim[i] = 0; buttonAnim[i] = 0; }
 }
 
 /* Clear all LEDs */
@@ -118,6 +163,8 @@ export function clearAllLEDs() {
     for (let i = 0; i < 128; i++) {
         ledCache[i] = -1;
         buttonCache[i] = -1;
+        ledAnim[i] = 0;
+        buttonAnim[i] = 0;
     }
     for (let i = 0; i < 128; i++) {
         setLED(i, 0, true);
