@@ -1063,7 +1063,19 @@ screen('instrument-picker', '14.3 Choosing an instrument', 'The Instmt/Dest pick
     });
 screen('block-editor', '14.4 Editing a module', 'Editing an instrument',
     'The knobs edit its parameters; the jog turns the pages.',
-    () => { selectTrack(4); openTrackConfig(); click(); ticks(8); });
+    () => { stopTransport(); selectTrack(4); openTrackConfig(); click(); ticks(8); });
+/* The same editor with the transport running: the footer is the track's page
+ * bar. A 4-bar clip, viewing page 2 while page 3 plays, so every part of the
+ * bar shows (solid, outlined, underlined, the playhead). */
+screen('block-editor-playing', '14.4 Editing a module', 'The page bar in an editor',
+    'While the transport runs, the bottom row is the track\'s page bar: page 2 of 4 on screen (solid), page 3 playing (outlined).',
+    () => {
+        selectTrack(4); openTrackConfig(); click(); ticks(8);
+        S.clipLoopStart[4][0] = 0; S.clipLength[4][0] = 64;
+        S.trackClipPlaying[4] = true; S.trackCurrentStep[4] = 37; S.trackCurrentPage[4] = 1;
+        S.followPaused = true;
+        ticks(2);
+    });
 
 screen('fx-browser', '14.2 The menu', 'Adding an effect',
     'Clicking an empty effect block opens the module list — the installed effects, by name.',
