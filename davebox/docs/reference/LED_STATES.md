@@ -50,9 +50,14 @@ blink as running (the plain colour IS sent, because it stops it).
 
 ⚠ **Which group fades once and which repeats is Push 2's table.** Move's firmware writes a hit
 pad's release and a playing clip on channel 9 and a queued clip on channel 14 (§2). Channel 9 is
-"pulse @ quarter" by that table, which fits a playing clip and does not obviously fit a pad that
-has settled — the one-look atlas (§5) settles it with eyes; the code keeps the table in constants
-so the answer is one edit.
+"pulse @ quarter" by that table, which fits a playing clip — and a released pad **visibly does not
+animate on Move** (Josh, 2026-10-24: the colour changes at once on note on and note off), so the
+table is not yet confirmed for Move's controller. The one-look atlas (§5) settles it with eyes; the
+code keeps the table in constants so the answer is one edit.
+
+📌 **Pads never animate.** dAVEBOx's playing-surface pads change colour at once on note on and note
+off, as Move's do, and that stays. The animations are for the states §4 blinks in software today,
+so a dAVEBOx blink is as smooth as Move's — nothing is moved there until Josh picks from §4.
 
 ### 1.2 The RGB SysEx, for the LEDs the palette cannot name
 
@@ -120,9 +125,9 @@ active track's bank. Everything is in `ui_leds.mjs` unless a file is named.
 | Piano layout | root track colour · in-scale LightGrey · out LightGrey→DarkGrey | — |
 | split zone B | the two colours swapped (root DarkGrey, rest track colour) | — |
 | sounding (played, sequenced, a held step's note, an ARP IN latch) | White | — |
-| **stops sounding** | its resting colour | **hw fade, quarter** (`LED_FADE_RELEASE`, `padSetLED`) — new 2026-10-24 |
-| Chord layout | slots / modifiers / strum rows by kind — `chordPadColor`: tonic Cyan, subdominant Mustard, dominant BrightPink; sounding White | fade on release as above |
-| Custom layout | empty chord pad off, stored Cyan, held White — `customPadColor` | fade on release |
+| stops sounding | its resting colour, at once | — (never animated; see §1) |
+| Chord layout | slots / modifiers / strum rows by kind — `chordPadColor`: tonic Cyan, subdominant Mustard, dominant BrightPink; sounding White | — |
+| Custom layout | empty chord pad off, stored Cyan, held White — `customPadColor` | — |
 | out of range / unmapped | off | — |
 | transpose preview | colours against the candidate key | — |
 | MIDI browser (`miPadColors`) | the browser's own colours where it owns a pad | — |
@@ -133,7 +138,7 @@ Left 4×4 = lanes, right 4×4 = velocity zones (or the repeat editors).
 
 | state | colour | motion |
 |---|---|---|
-| lane sounding | White | — (fades back on release, hw quarter) |
+| lane sounding | White | — |
 | lane just hit (`drumLaneFlashTick`, 2×POLL_INTERVAL ticks) | track colour (DarkGrey if muted) | sw one-shot |
 | lane muted / soloed-out | off | — |
 | selected lane, with hits / empty | White / DarkGrey | — |

@@ -4,7 +4,7 @@ import { S, loopViewActive, knobAltOn } from './ui_state.mjs';
 import {
     NUM_STEPS, NUM_TRACKS, LED_OFF, LEDS_PER_FRAME,
     TRACK_COLORS, TRACK_DIM_COLORS, TRACK_PAD_BASE, SCENE_BTN_FLASH_MS,
-    PAD_MODE_DRUM, BANKS, LED_PULSE_24TH, LED_FADE_RELEASE,
+    PAD_MODE_DRUM, BANKS, LED_PULSE_24TH,
     POLL_INTERVAL, TAP_TEMPO_FLASH_MS, PARAM_LED_BANKS, CONDUCT_LED_BANKS,
     SEQ8_NAV_FLAGS, MoveNoteSession, BANK_CONFIG, BANK_SOUND
 } from './ui_constants.mjs';
@@ -35,9 +35,6 @@ const lastSentButtonLED = new Array(128).fill(-1);
  * Mirrors input_filter's rule so the two caches agree on what is a repeat. */
 const lastSentNoteAnim   = new Array(128).fill(0);
 const lastSentButtonAnim = new Array(128).fill(0);
-/* Which pads were SOUNDING on the last paint: a pad that stops sounding fades
- * back to its colour rather than snapping (Move's own pads do this). */
-const padWasSounding = new Array(32).fill(false);
 
 function clipHasActiveNotes(t, c) {
     const s = S.clipSteps[t][c];
@@ -78,21 +75,11 @@ function cachedSetButtonLED(cc, color, anim = 0) {
     lastSentButtonAnim[cc] = (ok && anim >= LED_PULSE_24TH) ? anim : 0;
 }
 
-/* A pad's paint, with the release fade: `sounding` is whether the pad is
- * lit for a note it is playing this frame; the frame it stops, its new
- * colour goes out as a fade. */
-function padSetLED(i, color, sounding) {
-    const anim = (!sounding && padWasSounding[i]) ? LED_FADE_RELEASE : 0;
-    padWasSounding[i] = !!sounding;
-    cachedSetLED(TRACK_PAD_BASE + i, color, anim);
-}
-
 export function invalidateLEDCache() {
     lastSentNoteLED.fill(-1);
     lastSentButtonLED.fill(-1);
     lastSentNoteAnim.fill(0);
     lastSentButtonAnim.fill(0);
-    padWasSounding.fill(false);
 }
 
 /* Track color. (Conductor tracks formerly forced white — dropped as confusing;
@@ -928,7 +915,6 @@ export function updateTrackLEDs() {
                 const col = i % 8;
                 const row = Math.floor(i / 8);
                 let color;
-                let padSounding = false;   /* a lane pad lit for the hit it is playing */
                 if (col < 4) {
                     const lane = S.drumLanePage[t] * 16 + row * 4 + col;
                     /* Under the MIDI browser no lane shows as selected: its sounds
@@ -939,7 +925,6 @@ export function updateTrackLEDs() {
                     const hasHits  = S.drumLaneHasNotes[t][lane];
                     const laneNote = S.drumLaneNote[t][lane];
                     const sounding = S.liveActiveNotes.has(laneNote);
-                    padSounding = sounding;
                     const flashing = (S.tickCount - S.drumLaneFlashTick[t][lane]) < flashDur;
                     const isMuted  = effectiveDrumMute(t, lane);
                     if (sounding) {
@@ -1009,7 +994,7 @@ export function updateTrackLEDs() {
                     color = (zone === velZone) ? White : (laneLook ? td : DarkGrey);
                 }
                 if (_miOv && _miOv[i] != null) color = _miOv[i];
-                padSetLED(i, color, padSounding);
+                cachedSetLED(TRACK_PAD_BASE + i, color);
             }
         } else {
         const rootColor    = trackColor(S.activeTrack);
@@ -1034,7 +1019,7 @@ export function updateTrackLEDs() {
                 const _p = S.padNoteMap[i];
                 const _h = (i < 8 || _p === 0xFF) ? -1 : _p + S.trackOctave[S.activeTrack] * 12;
                 const _cc = customPadColor(S.activeTrack, i, (_h >= 0 && _h <= 127) ? _h : -1, _customC);
-                if (_cc !== null) { padSetLED(i, _cc, _h >= 0 && _h <= 127 && S.liveActiveNotes.has(_h)); continue; }
+                if (_cc !== null) { cachedSetLED(TRACK_PAD_BASE + i, _cc); continue; }
             }
             /* The Chord layout colours its slot, modifier and strum rows by
              * what they are; the scale row falls through to the scale colours. */
@@ -1043,7 +1028,7 @@ export function updateTrackLEDs() {
                 const _sh = _p === 0xFF ? -1 : _p + S.trackOctave[S.activeTrack] * 12;
                 const _snd = _sh >= 0 && (S.liveActiveNotes.has(_sh) || S.seqActiveNotes.has(_sh));
                 const _cc = chordPadColor(S.activeTrack, i, _snd, _chordC);
-                if (_cc !== null) { padSetLED(i, _cc, _snd); continue; }
+                if (_cc !== null) { cachedSetLED(TRACK_PAD_BASE + i, _cc); continue; }
             }
             /* OOB pads — either (a) sentinel from computePadNoteMap (base pitch
              * before track-octave was out of range), or (b) base + trackOctave
@@ -1052,12 +1037,12 @@ export function updateTrackLEDs() {
              * is pressed (clamping multiple pads to note 0 was the bottom-row
              * ghost-light bug). */
             if (S.padNoteMap[i] === 0xFF) {
-                padSetLED(i, LED_OFF, false);
+                cachedSetLED(TRACK_PAD_BASE + i, LED_OFF);
                 continue;
             }
             const pitchRaw = S.padNoteMap[i] + S.trackOctave[S.activeTrack] * 12;
             if (pitchRaw < 0 || pitchRaw > 127) {
-                padSetLED(i, LED_OFF, false);
+                cachedSetLED(TRACK_PAD_BASE + i, LED_OFF);
                 continue;
             }
             const pitch    = pitchRaw;
@@ -1086,7 +1071,7 @@ export function updateTrackLEDs() {
                   : padInZoneB(S.activeTrack, i)
                       ? (S.padNoteMap[i] % 12 === _effKey ? nonRootColor : rootColor)
                   : (S.padNoteMap[i] % 12 === _effKey ? rootColor : nonRootColor);
-            padSetLED(i, color, sounding || inHeld || inLatch);
+            cachedSetLED(TRACK_PAD_BASE + i, color);
         }
         }
     }
