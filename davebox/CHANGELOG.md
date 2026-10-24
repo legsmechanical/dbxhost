@@ -13,8 +13,10 @@ the section into a versioned heading at release time.
   controller can fade, pulse and blink on its own, and dAVEBOx can now ask it
   to: while the sequencer plays, dAVEBOx sends the LED controller the MIDI
   clock Move would, so those animations follow the song (when dAVEBOx follows
-  Move's clock, Move's own clock is used). Nothing on the surface uses them
-  yet; pads still change colour at once on note on and note off.
+  Move's clock, Move's own clock is used). In Session View a **playing clip
+  now pulses and a queued clip blinks exactly as they do on Move**, smoothly
+  and on the beat, instead of the stepped software blink. Pads still change
+  colour at once on note on and note off.
 - **The CHORD bank is now the Pad Mode bank, on every melodic track.** Its
   first knob, **Mode**, picks the pad layout (Scale, Chrom, Piano, Chord,
   Custom) and the other knobs are that layout's settings; each layout keeps its

@@ -162,9 +162,10 @@ Left 4×4 = lanes, right 4×4 = velocity zones (or the repeat editors).
 |---|---|---|
 | empty, not the active clip / active | off / DarkGrey | — |
 | has content, idle | dim track colour | — |
-| playing | track colour ↔ dim | sw, transport eighth (`S.flashEighth`) |
+| playing | dim → track colour | **hw pulse @ quarter (ch 9)** — Move's own playing-clip write (2026-10-24) |
 | playing, stop pending at page end | dim ↔ off | sw, sixteenth |
-| queued | track ↔ dim (solid track colour while stopped) | sw, sixteenth |
+| queued, transport running | dim → track colour | **hw blink @ quarter (ch 14)** — Move's own queued-clip write (2026-10-24) |
+| queued, transport stopped | solid track colour | — |
 | will relaunch | track colour | — |
 | copy source (clip / row / drum clip) | White ↔ off | sw 220 ms |
 | merge / capture placement target (track's empty clips) | LightGrey ↔ off | sw 220 ms |
@@ -255,12 +256,12 @@ unless they share a divisor). The hardware offers, per LED, one packet: fade / p
 24th, 16th, 8th, quarter or half note of dAVEBOx's tempo, all in phase with each other and with
 the music since the clock is the sequencer's.
 
-Candidates, by how directly they map (decide per state; none is built):
+Candidates, by how directly they map (decide per state; Josh 2026-10-24: *"do 1 and 2"* — the two Session View clip states; the rest stay software until he says):
 
 | today | hardware equivalent | note |
 |---|---|---|
-| playing clip pad / clip button, track ↔ dim at the eighth | **pulse @ 8th** (ch 8) between dim and bright | what Move does for a playing clip (ch9, quarter) |
-| queued clip, track ↔ dim at the sixteenth | **blink @ 16th** (ch 12) | Move: ch14 (quarter) |
+| ✅ playing clip pad (Session View) | **pulse @ quarter** (ch 9) between dim and bright | BUILT 2026-10-24 — Move's own write. Track View's playing-clip blink and the clip buttons are still software |
+| ✅ queued clip pad (Session View), transport running | **blink @ quarter** (ch 14) | BUILT 2026-10-24 — Move's own write |
 | copy source, 220 ms | blink @ 8th (ch 13) at 120 BPM ≈ 250 ms | becomes tempo-relative |
 | automation point / lock blink, 200/100 | blink @ 8th | loses the 2:1 duty; is that a feature? |
 | save flash, two blinks | two writes: blink @ 8th, then the plain colour after 425 ms | or leave as is |

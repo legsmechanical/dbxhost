@@ -4,7 +4,7 @@ import { S, loopViewActive, knobAltOn } from './ui_state.mjs';
 import {
     NUM_STEPS, NUM_TRACKS, LED_OFF, LEDS_PER_FRAME,
     TRACK_COLORS, TRACK_DIM_COLORS, TRACK_PAD_BASE, SCENE_BTN_FLASH_MS,
-    PAD_MODE_DRUM, BANKS, LED_PULSE_24TH,
+    PAD_MODE_DRUM, BANKS, LED_PULSE_24TH, LED_PULSE_4TH, LED_BLINK_4TH,
     POLL_INTERVAL, TAP_TEMPO_FLASH_MS, PARAM_LED_BANKS, CONDUCT_LED_BANKS,
     SEQ8_NAV_FLAGS, MoveNoteSession, BANK_CONFIG, BANK_SOUND
 } from './ui_constants.mjs';
@@ -73,6 +73,16 @@ function cachedSetButtonLED(cc, color, anim = 0) {
     const ok = setButtonLED(cc, color, false, anim) !== false;
     lastSentButtonLED[cc] = ok ? color : -1;
     lastSentButtonAnim[cc] = (ok && anim >= LED_PULSE_24TH) ? anim : 0;
+}
+
+/* A hardware animation between two colours, the Push 2 two-step: the start
+ * colour on channel 0, then the target on the animation channel. Sent only
+ * when the pad is not already running this (target, anim) — a repeat would
+ * restart the animation every frame. A plain cachedSetLED afterwards stops it. */
+function cachedSetLEDAnim(note, from, to, anim) {
+    if (lastSentNoteLED[note] === to && lastSentNoteAnim[note] === anim) return;
+    cachedSetLED(note, from, 0);
+    cachedSetLED(note, to, anim);
 }
 
 export function invalidateLEDCache() {
@@ -691,6 +701,11 @@ export function updateSessionLEDs() {
             const hasContent  = isDrumTrack ? S.drumClipNonEmpty[t][sceneIdx] : S.clipNonEmpty[t][sceneIdx];
             const hasActive   = hasContent;
             let color;
+            /* A playing clip PULSES and a queued clip BLINKS in the LED hardware,
+             * at a quarter note of dAVEBOx's LED clock, between the dim and the
+             * full track colour — the channels Move itself writes for those two
+             * states (ch9 / ch14), so a dAVEBOx session breathes like a Move one. */
+            let anim = 0, from = 0;
             if (!hasContent) {
                 color = isActiveClip ? DarkGrey : LED_OFF;
             } else if (!hasActive) {
@@ -698,9 +713,11 @@ export function updateSessionLEDs() {
             } else if (isPlaying && isPendingStop) {
                 color = (!S.playing || S.flashSixteenth) ? trackDimColor(t) : LED_OFF;
             } else if (isPlaying) {
-                color = S.flashEighth ? trackColor(t) : trackDimColor(t);
+                color = trackColor(t); from = trackDimColor(t); anim = LED_PULSE_4TH;
+            } else if (isQueued && S.playing) {
+                color = trackColor(t); from = trackDimColor(t); anim = LED_BLINK_4TH;
             } else if (isQueued) {
-                color = (!S.playing || S.flashSixteenth) ? trackColor(t) : trackDimColor(t);
+                color = trackColor(t);
             } else if (isWillRelaunch) {
                 color = trackColor(t);
             } else {
@@ -711,16 +728,18 @@ export function updateSessionLEDs() {
                 const isSrcClip     = (S.copySrc.kind === 'clip'      || S.copySrc.kind === 'cut_clip')      && S.copySrc.track === t && S.copySrc.clip === sceneIdx;
                 const isSrcRow      = (S.copySrc.kind === 'row'       || S.copySrc.kind === 'cut_row')       && S.copySrc.row === sceneIdx;
                 const isSrcDrumClip = (S.copySrc.kind === 'drum_clip' || S.copySrc.kind === 'cut_drum_clip') && S.copySrc.track === t && S.copySrc.clip === sceneIdx;
-                if (isSrcClip || isSrcRow || isSrcDrumClip) color = (Math.floor(S.clockMs / 220) % 2) ? White : LED_OFF;
+                if (isSrcClip || isSrcRow || isSrcDrumClip) { color = (Math.floor(S.clockMs / 220) % 2) ? White : LED_OFF; anim = 0; }
             }
             /* Single-clip merge / capture placement: blink the track's EMPTY
              * clips (the viable destinations); leave every other clip at its
              * normal color so the user keeps the session as a reference. */
             const _placeTrack = S.mergeSoloPlacement >= 0 ? S.mergeSoloPlacement
                               : S.capturePlaceTrack >= 0  ? S.capturePlaceTrack : -1;
-            if (_placeTrack >= 0 && t === _placeTrack && !hasContent)
-                color = (Math.floor(S.clockMs / 220) % 2) ? LightGrey : LED_OFF;
-            cachedSetLED(note, color);
+            if (_placeTrack >= 0 && t === _placeTrack && !hasContent) {
+                color = (Math.floor(S.clockMs / 220) % 2) ? LightGrey : LED_OFF; anim = 0;
+            }
+            if (anim) cachedSetLEDAnim(note, from, color, anim);
+            else cachedSetLED(note, color);
         }
     }
 }
