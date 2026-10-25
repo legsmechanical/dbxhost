@@ -100,7 +100,8 @@ import { _resolveLoopGesture, chordApplyRevoice, _onPadRelease, selectTrackFromP
 import { seqFollowOn, setSeqFollowOn } from './ui_prefs.mjs';
 import { openSampleMenu, closeSampleFlow, sampleFlowUp, sampleMenuRotate, sampleMenuPick,
          reopenSampleMenu, menuIndexOf, openResampleOptions, resampleOptionsRotate,
-         resampleOptionsClick, resampleOptionsBack, resampleRunning, cancelResample } from './ui_resample.mjs';
+         resampleOptionsClick, resampleOptionsBack, resampleRunning, cancelResample,
+         resampleModalCC, notPlayingForResample } from './ui_resample.mjs';
 
 /* View lock: double-tap Loop keeps Perf Mode alive after Loop is released.
  * Single tap while locked → unlock + stop loop. */
@@ -2787,7 +2788,6 @@ function _backTap() {
     }
     if (S.capturePlaceTrack >= 0)  { S.capturePlaceTrack = -1; forceRedraw(); return; }
     /* The Sample flow steps back a level; a take running is cancelled. */
-    if (resampleRunning())         { cancelResample(); forceRedraw(); return; }
     if (S.sampleMenu)              { closeSampleFlow(); forceRedraw(); return; }
     if (S.confirmResample)         { resampleOptionsBack(); forceRedraw(); return; }
     if (S.pendingSceneBakePicker && S.sampleFlow) {
@@ -3722,8 +3722,8 @@ function _sampleMenuPick() {
         if (S.sessionView) { S.scenePickFor = 'bake'; S.pendingSceneBakePicker = true; }
         else _openClipBake();
     } else if (id === 'resample') {
-        if (S.playing) { closeSampleFlow(); showActionPopup('RESAMPLE', 'Stop playback', 'first.'); }
-        else { S.scenePickFor = 'resample'; S.pendingSceneBakePicker = true; }
+        if (notPlayingForResample()) { S.scenePickFor = 'resample'; S.pendingSceneBakePicker = true; }
+        else closeSampleFlow();
     } else if (id === 'merge') {
         S.sampleFlow = false;
         _raiseMergeNotice();
@@ -3761,7 +3761,7 @@ function _raiseMergeNotice() {
      * a merge is up. */
     if (S.stepRecActive) { showActionPopup('LIVE MERGE', 'Leave step record', 'first.'); return; }
     if (S.dspMergeState !== 0 || S.mergeNoticePending || S.mergeCountingIn) return;
-    if (S.playing) { showActionPopup('LIVE MERGE', 'Stop playback', 'first.'); return; }
+    if (S.playing) { showActionPopupFor(2500, 'STOP TO MERGE', 'It records from the top'); return; }
     S.mergeNoticePending     = true;
     S.mergeNoticeSingleTrack = S.sessionView ? -1 : S.activeTrack;
 }
@@ -5675,6 +5675,7 @@ export function _onCCMsg(d1, d2) {
     /* A PRINT (Bake of a clip with a MIDI FX module in play) holds the
      * surface while it plays: Back cancels it, the rest is swallowed. */
     if (printModalCC(d1, d2)) return;
+    if (resampleModalCC(d1, d2)) return;
     if (d1 === MoveBack && S.moveCoRunTrack < 0) {
         _handleBack(d2); return;
     }

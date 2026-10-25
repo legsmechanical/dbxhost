@@ -114,6 +114,8 @@ step('⭐⭐ Session View: a Sample tap opens the menu — on screen — Bake / 
     tap(C.MoveSample);
     assert(S.sampleMenu, 'no menu');
     assert(S.sampleMenu.items.map((i) => i.id).join() === 'bake,resample,merge', 'items: ' + JSON.stringify(S.sampleMenu.items));
+    /* the list grammar: a row that opens a screen (the picker) carries the chevron */
+    assert(S.sampleMenu.items.map((i) => !!i.chevron).join() === 'true,true,false', 'chevrons: ' + JSON.stringify(S.sampleMenu.items));
     onScreen(R.drawSampleMenu, 'the Sample menu');
 });
 
@@ -165,10 +167,16 @@ step('⭐⭐ Start: ONE resample_scene, the row / bars / warm-up / tail, a path 
     assert(S.resampleTake, 'no take tracked');
 });
 
-step('⭐ the take: progress by bar, then SAVED only once the host is done writing', () => {
+step('⭐ the take: RESAMPLING by bar, as PRINTING is shown — then RESAMPLED only once the host is done writing', () => {
     S.resampleState = 3; S.resampleFrames = 6 * 88200; S.resampleDone = 2 * 88200 + 5;
     ticks(2);
-    assert((S.actionPopupLines || []).join(' ').indexOf('bar 3/6') >= 0, 'progress: ' + JSON.stringify(S.actionPopupLines));
+    assert(JSON.stringify(S.actionPopupLines) === JSON.stringify(['RESAMPLING', 'Scene A, bar 3/6', 'Back cancels']),
+           'progress: ' + JSON.stringify(S.actionPopupLines));
+    assert(S.actionPopupGauge === -1, 'a gauge — the bar is for values you dial, not a running job');
+    /* the surface is held, as a print holds it: buttons swallowed, Back cancels */
+    S.pendingDefaultSetParams.length = 0; sets.length = 0;
+    tap(HC.MovePlay); tap(C.MoveSample); tap(C.MoveCapture);
+    assert(!S.sampleMenu && sent('transport').length === 0, 'a button got through a running take: ' + JSON.stringify(sets));
     S.pendingDefaultSetParams.length = 0; sets.length = 0;
     S.resampleState = 4; SAMPLING = true;
     ticks(2);
@@ -179,22 +187,22 @@ step('⭐ the take: progress by bar, then SAVED only once the host is done writi
     ticks(2);
     globalThis.__stubStat = null;
     assert(!S.resampleTake, 'the take did not finish');
-    assert((S.actionPopupLines || []).join(' ').indexOf('SAVED') >= 0, 'popup: ' + JSON.stringify(S.actionPopupLines));
+    assert((S.actionPopupLines || [])[0] === 'RESAMPLED', 'popup: ' + JSON.stringify(S.actionPopupLines));
     assert(sent('resample_clear').length === 1, 'the engine was not cleared');
 });
 
-step('⭐ Back during a take cancels it', () => {
+step('⭐ Back during a take cancels it — RESAMPLE CANCELLED', () => {
     reset();
     tap(C.MoveSample); jog(1); click(); tap(43); click();
     assert(S.resampleTake, 'rig: no take');
     S.resampleState = 3; S.resampleFrames = 88200; S.resampleDone = 100;
     S.pendingDefaultSetParams.length = 0;
     back();
-    assert(queued('transport').join() === 'stop', 'Back did not stop the transport');
+    assert(sent('transport').join() === 'stop', 'Back did not stop the transport');
     S.resampleState = 5;
     ticks(2);
     assert(!S.resampleTake, 'the cancel did not finish');
-    assert((S.actionPopupLines || []).join(' ').indexOf('Cancelled') >= 0, 'popup: ' + JSON.stringify(S.actionPopupLines));
+    assert((S.actionPopupLines || [])[0] === 'RESAMPLE CANCELLED', 'popup: ' + JSON.stringify(S.actionPopupLines));
 });
 
 step('⭐ Back steps back a level: options → picker → menu → closed', () => {
@@ -234,13 +242,13 @@ step('⭐ refusals: playing (before the picker), an empty scene (before the opti
     S.playing = true;
     tap(C.MoveSample); jog(1); click();
     assert(!S.pendingSceneBakePicker && !S.sampleMenu, 'a resample picker opened while playing');
-    assert((S.actionPopupLines || []).join(' ').indexOf('Stop playback') >= 0, 'popup: ' + JSON.stringify(S.actionPopupLines));
+    assert((S.actionPopupLines || [])[0] === 'STOP TO RESAMPLE', 'popup: ' + JSON.stringify(S.actionPopupLines));
     reset();
     S.sceneRow = 5;
     tap(C.MoveSample); jog(1); click(); tap(43);  /* row 5: empty */
     S.sceneRow = 0;
     assert(!S.confirmResample, 'options opened on an empty scene');
-    assert((S.actionPopupLines || []).join(' ').indexOf('empty') >= 0, 'popup: ' + JSON.stringify(S.actionPopupLines));
+    assert((S.actionPopupLines || [])[0] === 'NOTHING TO', 'popup: ' + JSON.stringify(S.actionPopupLines));
 });
 
 step('⭐ Live merge (Session View): the all-tracks notice', () => {

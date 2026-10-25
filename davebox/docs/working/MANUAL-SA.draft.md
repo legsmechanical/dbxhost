@@ -2548,8 +2548,9 @@ transport first — like the Ableton export, it won't run while playing.
   records extra bars after the clips stop, for the ring-out — the file is then
   longer than the loop. Both start off.
 - Press the jog on **Start**: the scene plays from the top with no count-in and the
-  metronome silent, a bar count shows, and **SAVED** shows the file's name when it
-  is done. **Back** or **Play** cancels.
+  metronome silent, and **RESAMPLING** counts the bars. **RESAMPLED** shows the
+  file's name when it is done. As with a [MIDI FX print](#161-bake), **Back**
+  cancels and the other buttons wait until it's done.
 - It records the whole mix, after Master FX. Files go to the sample library under
   **Samples → dAVEBOx → Resample**, named after the project, scene, length and tempo
   (`mngk Scene C 4bar 120bpm.wav`), where Move's own sampler can use them. They
