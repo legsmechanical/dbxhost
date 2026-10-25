@@ -8,6 +8,20 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 
+### Added
+- **Resample a scene.** Record what a scene sounds like into a sample, cut to loop
+  exactly: **Sample → Resample scene**, pick the row, then the length (it starts where
+  all the clips line up), an optional warm-up pass so tails carry into the loop, and
+  optional tail bars for the ring-out. It plays from the top, the metronome stays out
+  of it, and the file lands in your sample library under **Samples → dAVEBOx →
+  Resample**, where Move's sampler can use it.
+
+### Changed
+- **Sample opens a menu.** Tap **Sample** and choose: **Bake scene**, **Resample
+  scene** or **Live merge** in Session View; **Bake clip** or **Live merge track** in
+  Track View. **Back** steps back a level. **Shift + Sample** no longer starts a Live
+  Merge — it's in the menu.
+
 ## [1.1.0] — 2026-10-25
 The Pad Mode bank, one-envelope automation, project templates, and backup of
 projects from the web manager. A [video tour of what's new](https://youtu.be/69dkHiiK3-0) walks through

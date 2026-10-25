@@ -1902,7 +1902,7 @@ function drawUIBody() {
     if (S.pendingSceneBakePicker) {
         drawKitPrompt(S.scenePickFor === 'resample' ? 'Resample scene' : 'Bake scene',
                       ['Tap a row or scene', 'step to pick it'],
-                          [['back', 'exit']]);
+                          [['back', S.sampleFlow ? 'menu' : 'exit']]);
         return;
     }
     if (S.mergePlacing) {
