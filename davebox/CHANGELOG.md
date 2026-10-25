@@ -96,20 +96,15 @@ it on a real Move.
   instrument to None, or removing its last module, was undone at the next
   launch: the old instrument came back, sometimes as a preset the track had
   been named after long before.
-- **Automating a choice that has names (a PLAYER's Pattern) lands on the right
-  one.** Holding a step and choosing "2B" stored "1C" (and the value it rests on
-  was off by one too), so playback played the wrong pattern and the readout
-  disagreed with the knob.
-- **Hatchet PLAYER and Plank PLAYER now fully play their guitar and bass.**
-  Muting, legato, slides, ring, sustain, roll, vibrato and tone settings the
-  player sends never reached the instrument in dAVEBOx (they did on stock), so
-  styles and presets only half applied.
+- **Automating a choice that has names lands on the right one.** Holding a step
+  and choosing an option by name could store a different one (and the value it
+  rests on was off by one too), so playback played the wrong option and the
+  readout disagreed with the knob.
 - **Removing a middle insert effect no longer moves the ones after it** when the
   project reopens. They stay in their slots, and their automation and macros
   still reach them.
 - **A chain preset with a MIDI effect is silent no more** when loaded onto a
-  track that had no MIDI effect (a Plank preset, for example): the track now
-  plays what the effect makes.
+  track that had no MIDI effect: the track now plays what the effect makes.
 - **Loop double (Shift + Step 15) with automation:** the step buttons now show
   the copied automation on the new half straight away (they kept showing the old
   lane until something else refreshed it — the same after crop, resolution,
