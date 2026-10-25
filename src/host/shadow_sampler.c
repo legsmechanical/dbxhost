@@ -10,6 +10,7 @@
 #define _GNU_SOURCE
 #include "shadow_sampler.h"
 #include "sampler_wav_trim.h"
+#include "sampler_take.h"
 #include "shadow_transport.h"
 #include "shim_worker.h"
 #include <semaphore.h>
@@ -125,6 +126,15 @@ static volatile int sampler_io_busy = 0;
 static volatile int sampler_pending_preroll = 0;
 static volatile int sampler_pending_custom = 0;  /* 1 = path in pending buf, 2 = read cmd file */
 static char sampler_pending_path[256] = "";
+
+/* A MODULE take (sampler_request_start_module, behind the host extension's
+ * capture_start): a fixed length, captured from unity_view whatever source the
+ * sampler menu has, stopped only by its length or by the module, and silent —
+ * no dot, overlay or announcement, because the module draws its own. */
+volatile int sampler_module_take = 0;
+static int      sampler_take_limited = 0;
+static uint32_t sampler_take_frames_left = 0;
+static uint32_t sampler_take_dropped_blocks = 0;
 #define SAMPLER_CMD_PATH_FILE SCHWUNG_INSTALL_DIR "/sampler_cmd_path.txt"
 
 /* Skipback state */
@@ -460,6 +470,10 @@ static int sampler_arm_common(void) {
     sampler_fade_in_remaining = SAMPLER_FADE_SAMPLES;
     sampler_recording_max_peak = 0;
     sampler_recording_blocks_captured = 0;
+    sampler_module_take = 0;
+    sampler_take_limited = 0;
+    sampler_take_frames_left = 0;
+    sampler_take_dropped_blocks = 0;
     return 0;
 }
 
@@ -511,6 +525,30 @@ int sampler_request_start_custom(const char *path_or_null) {
     return 0;
 }
 
+int sampler_request_start_module(const char *path, uint32_t frames) {
+    /* Only from IDLE: an open sampler menu (ARMED) belongs to the user. */
+    if (!path || !path[0] || sampler_state != SAMPLER_IDLE) return -1;
+    if (sampler_arm_common() != 0) return -1;
+    snprintf(sampler_pending_path, sizeof(sampler_pending_path), "%s", path);
+    sampler_pending_custom = 1;
+    sampler_pending_preroll = 0;
+    sampler_target_pulses = 0;
+    sampler_fallback_target = 0;
+    /* No fade-in: the first frame is the loop's first frame, and a take that
+     * follows a warm-up pass starts on sound that must join the loop's end. */
+    sampler_fade_in_remaining = 0;
+    sampler_take_frames_left = frames;
+    sampler_take_limited = frames > 0;
+    sampler_module_take = 1;
+    sampler_state = SAMPLER_RECORDING;
+    shim_worker_post(SHIM_EVT_SAMPLER_PREP);
+    return 0;
+}
+
+void sampler_request_stop_module(void) {
+    if (sampler_module_take) sampler_request_stop();
+}
+
 void sampler_request_stop(void) {
     if (sampler_state == SAMPLER_PREROLL) {
         s_host.log("Sampler: preroll cancelled");
@@ -534,7 +572,8 @@ void sampler_request_stop(void) {
 
 static void sampler_worker_abort_start(const char *why) {
     s_host.log(why);
-    s_host.announce("Recording failed");
+    if (!sampler_module_take) s_host.announce("Recording failed");
+    sampler_module_take = 0;
     if (sampler_wav_file) {
         fclose(sampler_wav_file);
         sampler_wav_file = NULL;
@@ -766,6 +805,7 @@ void sampler_worker_cancel_preroll(void) {
 void sampler_worker_finalize(void) {
     if (!sampler_writer_running) {
         /* Prepare failed (or never ran) — nothing to finalize. */
+        sampler_module_take = 0;
         if (sampler_state == SAMPLER_FINALIZING) sampler_state = SAMPLER_IDLE;
         sampler_io_busy = 0;
         s_host.overlay_sync();
@@ -838,9 +878,26 @@ void sampler_worker_finalize(void) {
              (float)sampler_samples_written / SAMPLER_SAMPLE_RATE);
     s_host.log(msg);
 
+    if (sampler_take_dropped_blocks > 0) {
+        snprintf(msg, sizeof(msg), "Sampler: module take DROPPED %u blocks (ring full)",
+                 sampler_take_dropped_blocks);
+        s_host.log(msg);
+    }
+
+    /* ⚠ Clear the take flag BEFORE the state goes IDLE: an IDLE sampler is
+     * startable from the audio thread, and a new module take armed in between
+     * would have its flag cleared here. */
+    int was_module_take = sampler_module_take;
+    sampler_module_take = 0;
     sampler_current_recording[0] = '\0';
     sampler_state = SAMPLER_IDLE;
     sampler_io_busy = 0;
+
+    if (was_module_take) {
+        /* The module shows its own result; only the file and the log speak. */
+        s_host.overlay_sync();
+        return;
+    }
 
     s_host.announce("Sample saved");
 
@@ -854,11 +911,19 @@ static void sampler_capture_audio_common(const int16_t *audio) {
     if ((sampler_state != SAMPLER_RECORDING && sampler_state != SAMPLER_PREROLL) || !sampler_ring_buffer) return;
     if (!audio) return;
 
-    size_t samples_to_write = SAMPLER_FRAMES_PER_BLOCK * SAMPLER_NUM_CHANNELS;
+    size_t frames_to_write = SAMPLER_FRAMES_PER_BLOCK;
+    if (sampler_take_limited && sampler_state == SAMPLER_RECORDING)
+        frames_to_write = sampler_take_block_frames(&sampler_take_frames_left,
+                                                    SAMPLER_FRAMES_PER_BLOCK);
+    size_t samples_to_write = frames_to_write * SAMPLER_NUM_CHANNELS;
     size_t buffer_samples = SAMPLER_RING_BUFFER_SAMPLES * SAMPLER_NUM_CHANNELS;
 
     /* Write to ring buffer if space available */
-    if (sampler_ring_available_write() >= samples_to_write) {
+    if (samples_to_write == 0) {
+        /* a fixed-length take that is already complete */
+    } else if (sampler_ring_available_write() < samples_to_write) {
+        if (sampler_module_take) sampler_take_dropped_blocks++;
+    } else {
         size_t write_pos = __atomic_load_n(&sampler_ring_write_pos, __ATOMIC_ACQUIRE);
         int32_t block_peak = 0;
         for (size_t i = 0; i < samples_to_write; i++) {
@@ -888,6 +953,14 @@ static void sampler_capture_audio_common(const int16_t *audio) {
         }
     }
 
+    /* A fixed-length take ends inside the block that completes it, so the
+     * file is exactly as long as asked (sampler_take.h). */
+    if (sampler_take_limited && sampler_state == SAMPLER_RECORDING &&
+            sampler_take_frames_left == 0) {
+        sampler_request_stop();
+        return;
+    }
+
     /* Fallback timeout (only during actual recording, not preroll) */
     if (sampler_state != SAMPLER_RECORDING) return;
     if (!sampler_clock_received && sampler_fallback_target > 0) {
@@ -910,6 +983,9 @@ void sampler_capture_audio(void) {
     /* Select audio source from the SPI mailbox. Used by the MOVE_INPUT path
      * post-ioctl (fresh hardware input). The RESAMPLE path now goes through
      * sampler_capture_audio_from_buffer() so it captures at unity level. */
+    /* A module take records unity_view only (the mix path), whatever the
+     * menu's source — never the input as well. */
+    if (sampler_module_take) return;
     const int16_t *audio = NULL;
     uint8_t *gmmap = s_host.global_mmap_addr ? *s_host.global_mmap_addr : NULL;
     uint8_t *hmmap = s_host.hardware_mmap_addr ? *s_host.hardware_mmap_addr : NULL;
@@ -923,14 +999,15 @@ void sampler_capture_audio(void) {
 }
 
 void sampler_capture_audio_from_buffer(const int16_t *src) {
-    /* Capture from caller-provided unity-level buffer (RESAMPLE path). */
-    if (sampler_source != SAMPLER_SOURCE_RESAMPLE) return;
+    /* Capture from caller-provided unity-level buffer (RESAMPLE path, or a
+     * module take, which is always unity_view). */
+    if (sampler_source != SAMPLER_SOURCE_RESAMPLE && !sampler_module_take) return;
     sampler_capture_audio_common(src);
 }
 
 void sampler_amend_audio(const int16_t *audio) {
     if (sampler_state != SAMPLER_RECORDING || !sampler_ring_buffer || !audio) return;
-    if (sampler_source != SAMPLER_SOURCE_RESAMPLE) return;
+    if (sampler_source != SAMPLER_SOURCE_RESAMPLE || sampler_module_take) return;
 
     size_t block_samples = SAMPLER_FRAMES_PER_BLOCK * SAMPLER_NUM_CHANNELS;
     size_t buffer_samples = SAMPLER_RING_BUFFER_SAMPLES * SAMPLER_NUM_CHANNELS;
@@ -1032,7 +1109,9 @@ void sampler_on_clock(uint8_t status) {
         s_host.overlay_sync();
         s_host.log("Sampler: transport_playing=0 (MIDI Stop)");
         if (sampler_state == SAMPLER_RECORDING) {
-            if (sampler_external_stop_only) {
+            if (sampler_module_take) {
+                /* Move's transport does not own a module's take. */
+            } else if (sampler_external_stop_only) {
                 s_host.log("Sampler: MIDI Stop ignored (external_stop_only)");
             } else {
                 s_host.log("Sampler: stopped by MIDI Stop");

@@ -365,6 +365,8 @@ Mute (CC 88) is passed through to Move firmware (even while shadow UI is shown) 
 
 Shift+Vol+Sample (volume-knob touch required; bare Shift+Sample is the primary module's). Source: resample (incl. Schwung synths) or Move Input. Duration in bars (or until stopped); uses MIDI clock, falls back to project tempo. Starts on note event or play. Saved to `Samples/Schwung/Resampler/YYYY-MM-DD/`.
 
+A module can record through the same sampler with `move_host_ext_v1_t.capture_start/stop` — a **module take** (`sampler_request_start_module`): a fixed number of frames ending inside a block (`sampler_take.h`), always `unity_view`, ignoring MIDI Stop, and silent (no dot, overlay or announcement; the Sample-button intercept stands aside). One take at a time, shared with this sampler.
+
 ### Feedback Protection
 
 Loading a chain module / tool that consumes line-in shows "Speaker Feedback Risk" warning if speakers active AND no line-in cable. Jog-click proceeds, Back aborts.

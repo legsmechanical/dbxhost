@@ -150,6 +150,8 @@ extern int sampler_preroll_fallback_target;
 
 extern int sampler_external_stop_only;
 
+extern volatile int sampler_module_take;  /* a module take is armed or recording */
+
 extern volatile int skipback_overlay_timeout;
 
 /* ============================================================================
@@ -182,6 +184,12 @@ void sampler_announce_menu_item(void);
 int  sampler_request_start(int with_preroll);            /* RT: Shift+Sample paths */
 int  sampler_request_start_custom(const char *path_or_null); /* RT: cmd path file when NULL */
 void sampler_request_stop(void);                          /* RT: any state */
+/* RT: a MODULE take (move_host_ext_v1_t.capture_start) — `frames` long
+ * (0 = until sampler_request_stop_module), captured from unity_view whatever
+ * the menu's source, ignoring MIDI Stop, with no dot / overlay / announcement.
+ * Only from IDLE. 0 armed, -1 refused. */
+int  sampler_request_start_module(const char *path, uint32_t frames);
+void sampler_request_stop_module(void);                   /* RT: a module take only */
 void sampler_worker_prepare(void);                        /* worker */
 void sampler_worker_finalize(void);                       /* worker */
 void sampler_worker_cancel_preroll(void);                 /* worker */
