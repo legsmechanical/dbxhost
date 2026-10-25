@@ -185,6 +185,11 @@ static void chown_to_ableton(const char *path) {
     s_host.run_command(argv);
 }
 
+static int sampler_path_exists(const char *path) {
+    struct stat st;
+    return stat(path, &st) == 0;
+}
+
 static void chown_to_ableton_recursive(const char *path) {
     const char *argv[] = { "chown", "-R", "ableton:users", path, NULL };
     s_host.run_command(argv);
@@ -632,7 +637,10 @@ void sampler_worker_prepare(void) {
             sampler_worker_abort_start("Sampler: start failed - no output path");
             return;
         }
-        /* Create the parent directory */
+        /* Create the parent directory, and hand EVERY directory this creates
+         * to the user Move runs as — not just the leaf. A path two levels
+         * below the existing tree (Samples/<new>/<new>) otherwise left its
+         * middle directory root-owned, where Move cannot delete it. */
         char dir_buf[256];
         snprintf(dir_buf, sizeof(dir_buf), "%s", path_buf);
         char *last_slash = strrchr(dir_buf, '/');
@@ -640,9 +648,11 @@ void sampler_worker_prepare(void) {
             *last_slash = '\0';
             struct stat st;
             if (stat(dir_buf, &st) != 0) {
+                char top[256];
+                sampler_shallowest_missing(dir_buf, sampler_path_exists, top, sizeof(top));
                 const char *mkdir_argv[] = { "mkdir", "-p", dir_buf, NULL };
                 s_host.run_command(mkdir_argv);
-                chown_to_ableton_recursive(dir_buf);
+                chown_to_ableton_recursive(top);
             }
         }
         snprintf(sampler_current_recording, sizeof(sampler_current_recording),
