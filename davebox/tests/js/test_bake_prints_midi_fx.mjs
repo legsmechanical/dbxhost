@@ -6,7 +6,7 @@ import './_bulk_get_stub.mjs';   /* the bulk read, derived from this test's sing
  * bypassed, Position Post) PRINTS: the engine plays the clip and records the
  * module's output (print_arm … print_state 3), then the UI bypasses the
  * module. Every other bake stays instant. Drives the REAL gesture: Sample
- * press/release in Track View, jog to a loop count, click.
+ * press/release in Track View (the Sample menu, Bake clip), jog to a loop count, click.
  *
  *   - Post module in play → print_offline "T C N 0" (the host runs a copy of
  *     the module, at once, playing or not), not `bake`; no wrap question;
@@ -79,10 +79,14 @@ function setModule(id, bypassed) {
     ENG[T + '|midi_fx1:module'] = id;
     ENG[T + '|midi_fx1:bypassed'] = bypassed ? '1' : '0';
 }
-/* Sample tap → the bake dialog → 2x → click (Shift held on it: LIVE print). */
+/* Sample tap → the Sample menu → Bake clip → the bake dialog → 2x → click
+ * (Shift held on it: LIVE print). */
 function bake2x(live) {
     sets.length = 0; S.pendingDefaultSetParams.length = 0;
     cc(C.MoveSample, 127); cc(C.MoveSample, 0);
+    assert(S.sampleMenu && S.sampleMenu.items[S.sampleMenu.sel].id === 'bake',
+           'rig: the Sample menu did not open on Bake clip');
+    click();
     assert(S.confirmBake, 'rig: the bake dialog did not open');
     S.confirmBakeSel = 2;                         /* 2x (0 = cancel, 1 = 1x, 2 = 2x, 3 = 4x) */
     if (live) S.shiftHeld = true;

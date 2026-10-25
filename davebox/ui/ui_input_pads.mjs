@@ -50,6 +50,7 @@ import { setTrackMute, setTrackSolo, clearClip, hardResetClip, copyClip, cutClip
     copyPage, pageCopyOk,
     showModePopup, doDoubleFill,
     _switchActiveTrack, stepHoldCheckpoint , noteUndoUnit } from './ui_editops.mjs';
+import { openResampleOptions } from './ui_resample.mjs';
 
 /* Performance Mode state. Session View + Loop held → pad grid shows Perf Mode.
  * S.perfStack: currently-held R0 length pads (same stack semantics as old looper
@@ -1559,6 +1560,7 @@ export function _onStepButtons(d1, d2) {
          * press selects scene → straight to scene-bake confirm. */
         if (S.pendingSceneBakePicker) {
             S.pendingSceneBakePicker = false;
+            if (S.scenePickFor === 'resample') { openResampleOptions(idx); return; }
             S.confirmBakeScene          = true;
             S.confirmBakeSceneWrapPhase = false;
             S.confirmBakeSceneCondPhase = false;

@@ -98,6 +98,9 @@ import { setTrackMute, setTrackSolo, clearAllMuteSolo,
     resetFxBanks, resetBankParams, resetMidiFxChain, resetTarp, resetRptGroove, resetSingleFxBank, applyConductGridKnob, stepHoldCheckpoint , noteUndoUnit } from './ui_editops.mjs';
 import { _resolveLoopGesture, chordApplyRevoice, _onPadRelease, selectTrackFromPad } from './ui_input_pads.mjs';
 import { seqFollowOn, setSeqFollowOn } from './ui_prefs.mjs';
+import { openSampleMenu, closeSampleFlow, sampleFlowUp, sampleMenuRotate, sampleMenuPick,
+         reopenSampleMenu, menuIndexOf, openResampleOptions, resampleOptionsRotate,
+         resampleOptionsClick, resampleOptionsBack, resampleRunning, cancelResample } from './ui_resample.mjs';
 
 /* View lock: double-tap Loop keeps Perf Mode alive after Loop is released.
  * Single tap while locked → unlock + stop loop. */
@@ -231,6 +234,9 @@ function _onCC_jog(d1, d2) {
         forceRedraw();
         return;
     }
+    /* The Sample menu, and resample's options (ui_resample.mjs). */
+    if (d1 === 3 && d2 === 127 && S.sampleMenu) { _sampleMenuPick(); return; }
+    if (d1 === 3 && d2 === 127 && S.confirmResample) { resampleOptionsClick(); forceRedraw(); return; }
     /* Scene bake confirm: two-phase jog flow — loop count, then wrap yes/no. */
     if (d1 === 3 && d2 === 127 && S.confirmBakeScene) {
         if (S.confirmBakeSceneCondPhase) {
@@ -468,6 +474,7 @@ function _onCC_jog(d1, d2) {
         S.recordBlockedDialog = false;
         if (_sel === 1) {
             /* Open bake confirm at active clip — same path as Capture-bare-tap. */
+            S.sampleFlow = false;          /* not from the Sample menu: Back closes it */
             const _bt = S.activeTrack, _bc = S.trackActiveClip[_bt];
             const _isDrum = S.trackPadMode[_bt] === PAD_MODE_DRUM;
             S.confirmBake             = true;
@@ -1045,6 +1052,8 @@ function modalDialogUp() {
             templateManagerRotate(decodeDelta(d2));
             return;
         }
+        if (S.sampleMenu)      { sampleMenuRotate(decodeDelta(d2)); return; }
+        if (S.confirmResample) { resampleOptionsRotate(decodeDelta(d2)); return; }
         if (S.confirmBakeScene) {
             const delta = decodeDelta(d2);
             if (delta !== 0) {
@@ -1986,6 +1995,7 @@ function _onCC_buttons(d1, d2) {
             if (S.confirmBake)            { S.confirmBake            = false; S.captureUsedAsModifier = true;
                                             S.confirmBakeDrumLoopOpen = false; S.confirmBakeWrapPhase = false; }
             if (S.confirmBakeScene)       { S.confirmBakeScene       = false; S.captureUsedAsModifier = true; }
+            if (sampleFlowUp())           { closeSampleFlow();                S.captureUsedAsModifier = true; }
             computePadNoteMap();
             forceRedraw();
         } else {
@@ -2462,7 +2472,7 @@ export function backTapWouldAct() {
     if (S.snapshotPicker || S.templateManager || S.tempoSelectActive ||
         S.mergeNoticePending || S.mergeCountingIn ||
         S.pendingMergePlacement || S.mergeSoloPlacement >= 0 ||
-        S.capturePlaceTrack >= 0 || S.pendingSceneBakePicker ||
+        S.capturePlaceTrack >= 0 || S.pendingSceneBakePicker || sampleFlowUp() || resampleRunning() ||
         S.confirmBakeScene || S.confirmBakeDrumLoopOpen || S.confirmXpose ||
         S.confirmBake || S.recordBlockedDialog ||
         S.bpmMoveInfo || S.tapTempoOpen || S.globalMenuOpen) return true;
@@ -2531,6 +2541,7 @@ export function atOverview() {
     if (S.mergeNoticePending || S.mergeCountingIn ||
         S.pendingMergePlacement || S.mergeSoloPlacement >= 0)       return false;
     if (S.capturePlaceTrack >= 0 || S.pendingSceneBakePicker)       return false;
+    if (sampleFlowUp())                                             return false;
     if (S.confirmBakeScene || S.confirmBakeDrumLoopOpen ||
         S.confirmXpose || S.confirmBake ||
         S.recordBlockedDialog || S.bpmMoveInfo)                     return false;
@@ -2602,6 +2613,7 @@ function _tearDownToOverview() {
     if (_cancelMerge) S.pendingDefaultSetParams.push({ key: 'merge_cancel', val: '1' });
     if (S.capturePlaceTrack >= 0)  S.capturePlaceTrack = -1;
     if (S.pendingSceneBakePicker)  S.pendingSceneBakePicker = false;
+    closeSampleFlow();
     if (S.confirmBakeScene)        { S.confirmBakeScene = false; S.confirmBakeSceneCondPhase = false; }
     if (S.confirmBakeDrumLoopOpen) S.confirmBakeDrumLoopOpen = false;
     if (S.confirmXpose) {
@@ -2774,6 +2786,19 @@ function _backTap() {
         forceRedraw(); return;
     }
     if (S.capturePlaceTrack >= 0)  { S.capturePlaceTrack = -1; forceRedraw(); return; }
+    /* The Sample flow steps back a level; a take running is cancelled. */
+    if (resampleRunning())         { cancelResample(); forceRedraw(); return; }
+    if (S.sampleMenu)              { closeSampleFlow(); forceRedraw(); return; }
+    if (S.confirmResample)         { resampleOptionsBack(); forceRedraw(); return; }
+    if (S.pendingSceneBakePicker && S.sampleFlow) {
+        const _for = S.scenePickFor;
+        S.pendingSceneBakePicker = false; S.scenePickFor = 'bake';
+        reopenSampleMenu(menuIndexOf(_for)); forceRedraw(); return;
+    }
+    if (S.confirmBakeScene && S.sampleFlow) {
+        S.confirmBakeScene = false; S.confirmBakeSceneCondPhase = false; S.confirmBakeSceneWrapPhase = false;
+        S.pendingSceneBakePicker = true; S.scenePickFor = 'bake'; forceRedraw(); return;
+    }
     if (S.pendingSceneBakePicker)  { S.pendingSceneBakePicker = false; forceRedraw(); return; }
     if (S.confirmBakeScene)        { S.confirmBakeScene = false; S.confirmBakeSceneCondPhase = false; forceRedraw(); return; }
     if (S.confirmBakeDrumLoopOpen) { S.confirmBakeDrumLoopOpen = false; forceRedraw(); return; }
@@ -2791,6 +2816,9 @@ function _backTap() {
                                      S.lastSentMenuEditValue = null; S.bpmWasEditing = false;
                                      forceRedraw(); return; }
     if (S.confirmMacroClear)       { macroClearConfirmReset(); forceRedraw(); return; }
+    if (S.confirmBake && S.sampleFlow && !S.confirmBakeWrapPhase && !S.confirmBakeDrumLoopOpen) {
+        S.confirmBake = false; reopenSampleMenu(menuIndexOf('bake')); forceRedraw(); return;
+    }
     if (S.confirmBake)             { S.confirmBake = false; S.confirmBakeWrapPhase = false; forceRedraw(); return; }
     if (S.recordBlockedDialog)     { S.recordBlockedDialog = false; forceRedraw(); return; }
     if (S.bpmMoveInfo)             { S.bpmMoveInfo = false; forceRedraw(); return; }
@@ -3343,43 +3371,12 @@ function _onCC_transport(d1, d2) {
      *     captured (DSP merge_arm "tN" solo mode) and on stop it commits
      *     straight into that track's focused clip — no placement dialog.
      * Merge state shows on the Record LED (red armed, green capturing). */
-    /* Rec (plain) or the Shift+Sample chord itself while the merge count-in is
+    /* Rec (plain) while the merge count-in is
      * running → CANCEL the merge (nothing is captured; back to idle). Must
      * precede the notice/stop checks below so a mid-count-in press aborts
      * rather than stops. */
-    if ((d1 === MoveRec || (d1 === MoveSample && S.shiftHeld)) &&
-            d2 === 127 && S.mergeCountingIn) {
+    if (d1 === MoveRec && d2 === 127 && S.mergeCountingIn) {
         _cancelMergeCountIn();
-        return;
-    }
-    if (d1 === MoveSample && d2 === 127 && S.shiftHeld) {
-        /* ⚠ Not over an open STEP RECORD session. Step record runs with the
-         * transport STOPPED — exactly the condition that raises the notice —
-         * so without this the notice goes up over the session, plain Rec then
-         * hits the notice block ABOVE the step-record gate below, and a merge
-         * count-in runs while pads still write steps. Same defect class as the
-         * bare-Record fall-through this pass fixes, reached through Sample.
-         * Declining (rather than exiting for them) keeps the two modes
-         * symmetric: step-record entry already refuses while a merge is up. */
-        if (S.stepRecActive) {
-            showActionPopup('LIVE MERGE', 'Leave step record', 'first.');
-            return;
-        }
-        if (S.dspMergeState !== 0) {
-            /* Active capture → stop it (finalizes; opens placement). */
-            S.pendingDefaultSetParams.push({ key: 'merge_stop', val: '1' });
-            /* LED stays green until DSP finalizes at page boundary. */
-        } else if (S.mergeNoticePending) {
-            /* Notice already up → ignore repeat Shift+Sample. */
-        } else if (!S.playing) {
-            /* Shift+Sample does not start the merge directly — it raises a NOTICE.
-             * The user then presses plain Rec to begin the count-in, or Back to
-             * cancel. (Live Merge is a stopped-transport op; ignored if playing.) */
-            S.mergeNoticePending     = true;
-            S.mergeNoticeSingleTrack = S.sessionView ? -1 : S.activeTrack;
-            forceRedraw();
-        }
-        /* else: transport playing + no active merge → ignored (merge is stopped-only) */
         return;
     }
     /* Plain Rec while the Live Merge NOTICE is up → begin the 1-bar count-in.
@@ -3555,7 +3552,13 @@ function _onCC_transport(d1, d2) {
     if (d1 === MoveSample && d2 === 127 && !S.shiftHeld) {
         S.sampleHeld           = true;
         S.sampleUsedAsModifier = false;
-        if (S.confirmBakeScene) {
+        /* A second tap closes whatever of the Sample flow is up. */
+        if (sampleFlowUp() || (S.pendingSceneBakePicker && S.sampleFlow)) {
+            closeSampleFlow();
+            S.pendingSceneBakePicker = false;
+            S.sampleUsedAsModifier   = true;
+            forceRedraw();
+        } else if (S.confirmBakeScene) {
             S.confirmBakeScene     = false;
             S.sampleUsedAsModifier = true;
             forceRedraw();
@@ -3567,36 +3570,19 @@ function _onCC_transport(d1, d2) {
             forceRedraw();
         }
     }
-    /* Sample release (no modifier): BAKE — clip-bake confirm (Track View) or
-     * scene-bake picker (Session View). Moved here off Capture, which is now
-     * capture-only; Live Merge moved to Shift+Record. Sample-held + scene row
-     * still opens scene bake directly (Sample is also a modifier — flagged
-     * via sampleUsedAsModifier). */
+    /* Sample release (no modifier): the SAMPLE MENU (ui_resample.mjs) — Bake /
+     * Resample / Live merge in Session View, Bake clip / Live merge track in
+     * Track View (Josh, 2026-10-25: "a single short dialog/menu when sample is
+     * pressed. pick what you want to do and select how"). It replaced the
+     * scene-bake picker on a tap and the Shift+Sample Live Merge chord. */
     if (d1 === MoveSample && d2 === 0) {
-        /* ⚠ Bake only if the PRESS was tracked as a plain press. A Shift+Sample
-         * press (the Live Merge chord above) never sets sampleHeld, so its
-         * release must not bake — including the shift-released-first ordering,
-         * where the release itself arrives unshifted. */
+        /* ⚠ Only if the PRESS was tracked as a plain press: a Shift+Sample
+         * press never sets sampleHeld, so its release opens nothing —
+         * including the shift-released-first ordering, where the release
+         * itself arrives unshifted. */
         const _sampleWasHeld = S.sampleHeld;
         S.sampleHeld = false;
-        if (_sampleWasHeld && !S.shiftHeld && !S.sampleUsedAsModifier) {
-            if (S.sessionView) {
-                S.pendingSceneBakePicker = true;
-                S.screenDirty = true;
-            } else {
-                const _bt = S.activeTrack, _bc = S.trackActiveClip[_bt];
-                const _isDrum = S.trackPadMode[_bt] === PAD_MODE_DRUM;
-                S.confirmBake             = true;
-                S.confirmBakeIsDrum       = _isDrum;
-                S.confirmBakeIsMultiLoop  = !_isDrum;
-                S.confirmBakeSel          = _isDrum ? 2 : 1;
-                S.confirmBakeTrack        = _bt;
-                S.confirmBakeClip         = _bc;
-                S.confirmBakeDrumLoopOpen = false;
-                S.confirmBakeWrapPhase    = false;
-                S.screenDirty             = true;
-            }
-        }
+        if (_sampleWasHeld && !S.shiftHeld && !S.sampleUsedAsModifier) openSampleMenu();
     }
 
     /* Mute button: Delete+Mute = clear all (both views); toggle mute/solo on active track (Track View only).
@@ -3729,6 +3715,57 @@ function _onCC_transport(d1, d2) {
 
 }
 
+/* The Sample menu's pick (ui_resample.mjs holds the menu itself). */
+function _sampleMenuPick() {
+    const id = sampleMenuPick();
+    if (id === 'bake') {
+        if (S.sessionView) { S.scenePickFor = 'bake'; S.pendingSceneBakePicker = true; }
+        else _openClipBake();
+    } else if (id === 'resample') {
+        if (S.playing) { closeSampleFlow(); showActionPopup('RESAMPLE', 'Stop playback', 'first.'); }
+        else { S.scenePickFor = 'resample'; S.pendingSceneBakePicker = true; }
+    } else if (id === 'merge') {
+        S.sampleFlow = false;
+        _raiseMergeNotice();
+    }
+    forceRedraw();
+}
+
+/* Track View's bake: the confirm for the active track's clip. */
+function _openClipBake() {
+    const _bt = S.activeTrack, _bc = S.trackActiveClip[_bt];
+    const _isDrum = S.trackPadMode[_bt] === PAD_MODE_DRUM;
+    S.confirmBake             = true;
+    S.confirmBakeIsDrum       = _isDrum;
+    S.confirmBakeIsMultiLoop  = !_isDrum;
+    S.confirmBakeSel          = _isDrum ? 2 : 1;
+    S.confirmBakeTrack        = _bt;
+    S.confirmBakeClip         = _bc;
+    S.confirmBakeDrumLoopOpen = false;
+    S.confirmBakeWrapPhase    = false;
+    S.screenDirty             = true;
+}
+
+/* Live merge, from the Sample menu (it was Shift+Sample until 2026-10-25).
+ * View decides the scope: Session View = all 8 tracks, the destination row
+ * picked after; Track View = the active track only. It raises the NOTICE;
+ * plain Rec starts the count-in, Back cancels. A running merge is stopped by
+ * Rec or Play, which is why the menu never needs to. */
+function _raiseMergeNotice() {
+    /* ⚠ Not over an open STEP RECORD session. Step record runs with the
+     * transport STOPPED — exactly the condition that raises the notice — so
+     * without this the notice goes up over the session, plain Rec then hits
+     * the notice block ABOVE the step-record gate, and a merge count-in runs
+     * while pads still write steps. Declining (rather than exiting for them)
+     * keeps the two modes symmetric: step-record entry already refuses while
+     * a merge is up. */
+    if (S.stepRecActive) { showActionPopup('LIVE MERGE', 'Leave step record', 'first.'); return; }
+    if (S.dspMergeState !== 0 || S.mergeNoticePending || S.mergeCountingIn) return;
+    if (S.playing) { showActionPopup('LIVE MERGE', 'Stop playback', 'first.'); return; }
+    S.mergeNoticePending     = true;
+    S.mergeNoticeSingleTrack = S.sessionView ? -1 : S.activeTrack;
+}
+
 function _onCC_side(d1, d2) {
     /* Track buttons CC40-43 */
     if (d1 >= 40 && d1 <= 43 && d2 === 127) {
@@ -3739,6 +3776,7 @@ function _onCC_side(d1, d2) {
          * Picker is consumed before any other gesture so it doesn't double-fire. */
         if (S.pendingSceneBakePicker) {
             S.pendingSceneBakePicker    = false;
+            if (S.scenePickFor === 'resample') { openResampleOptions(clipIdx); return; }
             S.confirmBakeScene          = true;
             S.confirmBakeSceneWrapPhase = false;
             S.confirmBakeSceneCondPhase = false;
@@ -4867,7 +4905,7 @@ function _onCC_knobs(d1, d2) {
             }
             return;
         }
-        if (S.globalMenuOpen || S.tapTempoOpen || S.confirmBake || S.confirmClearSession || S.confirmConvertToDrum || S.confirmModuleChange || S.confirmConvertToConduct || S.menuInfoLines.length > 0 || S.confirmExport || S.exportDoneDialog || S.recordBlockedDialog || S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.bpmMoveInfo) return;
+        if (S.globalMenuOpen || S.tapTempoOpen || S.confirmBake || sampleFlowUp() || S.confirmClearSession || S.confirmConvertToDrum || S.confirmModuleChange || S.confirmConvertToConduct || S.menuInfoLines.length > 0 || S.confirmExport || S.exportDoneDialog || S.recordBlockedDialog || S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.bpmMoveInfo) return;
         const knobIdx = d1 - 71;
         S.knobTouched          = knobIdx;
         S.knobTurnedTick[knobIdx] = nowMs();
@@ -5645,13 +5683,24 @@ export function _onCCMsg(d1, d2) {
      * button/knob is swallowed, press + release. Shift passes so its held state
      * stays accurate for the plain-Rec start. */
     if (S.mergeNoticePending && d1 !== MoveRec && d1 !== MoveBack && d1 !== MoveShift &&
-            d1 !== MoveNoteSession /* the escape law: it must reach the handler */ &&
-            !(d1 === MoveSample && S.shiftHeld) /* the raising CHORD (and its
-            shift-held release) must not dismiss — but a PLAIN Sample tap is
-            swallowed like every other button: letting it through stacked a
-            bake dialog under (track view) or over (session view) the notice
-            (review finding) */) {
+            d1 !== MoveNoteSession /* the escape law: it must reach the handler */) {
+        /* ⚠ Sample included: letting it through stacked the Sample menu over
+         * the notice (review finding, when Shift+Sample raised it). */
         return;
+    }
+    /* The Sample menu: the jog picks, Back steps out, Note/Session escapes;
+     * any other BUTTON closes it and is swallowed, press + release, as the
+     * scene picker below does. Shift passes (a plain modifier). */
+    if (S.sampleMenu && d2 === 127) {
+        const _nonBtn = (d1 >= 71 && d1 <= 78) || (d1 >= 102 && d1 <= 109)
+            || d1 === MoveMainKnob || d1 === MoveMainTouch
+            || d1 === MoveMainButton || d1 === 79 || d1 === MoveShift;
+        if (!_nonBtn && d1 !== MoveNoteSession && d1 !== MoveBack && d1 !== MoveSample) {
+            closeSampleFlow();
+            S._modalSwallowCC = d1;
+            forceRedraw();
+            return;
+        }
     }
     /* Scene-bake picker: "any other btn cancels". The picking controls are
      * the scene launchers (40-43) and session step buttons (16-31); knobs,
@@ -5668,6 +5717,7 @@ export function _onCCMsg(d1, d2) {
          * make the law's behaviour depend on which owner ran first. */
         if (!_pick && !_nonBtn && d1 !== MoveNoteSession) {
             S.pendingSceneBakePicker = false;
+            closeSampleFlow();
             S._modalSwallowCC = d1;
             forceRedraw();
             return;

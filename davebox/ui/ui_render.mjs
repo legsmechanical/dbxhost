@@ -69,6 +69,7 @@ import { automationStateFor, autoShiftHint } from './ui_automation.mjs';
 import { seqAutoTargetForKnob, fmtInstr } from './ui_constants.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
+import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
 
 /* ------------------------------------------------------------------ */
 /* Parameter bank definitions                                           */
@@ -1571,7 +1572,7 @@ export function coveredByMoreThanMenu() {
         S.tempoSelectActive || S.mergeSoloPlacement >= 0 || S.capturePlaceTrack >= 0 ||
         S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.confirmModuleChange || S.bpmMoveInfo || S.recordBlockedDialog ||
         S.confirmConvertToDrum || S.confirmConvertToConduct ||
-        S.confirmBakeScene || S.confirmBake || S.confirmMacroClear || S.tapTempoOpen ||
+        S.confirmBakeScene || S.confirmBake || S.sampleMenu || S.confirmResample || S.confirmMacroClear || S.tapTempoOpen ||
         (S.sessionView && (S.loopHeld || S.perfViewLocked)));
 }
 
@@ -1583,7 +1584,7 @@ export function soundModeCovered() {
         S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.confirmModuleChange || S.bpmMoveInfo || S.recordBlockedDialog ||
         S.confirmConvertToDrum || S.confirmConvertToConduct ||
         (S.menuInfoLines && S.menuInfoLines.length > 0) ||
-        S.confirmXpose || S.confirmBakeScene || S.confirmBake ||
+        S.confirmXpose || S.confirmBakeScene || S.confirmBake || S.sampleMenu || S.confirmResample ||
         S.confirmMacroClear ||   /* MACROS bank clear — opened FROM sound mode, so it must cover it */
         S.globalMenuOpen || S.tapTempoOpen ||
         (S.sessionView && (S.loopHeld || S.perfViewLocked)));
@@ -1899,7 +1900,8 @@ function drawUIBody() {
     if (S.confirmExit)      { drawExitConfirm();      return; }
     if (S.projectPadPicker) { drawProjectPadPicker(); return; }
     if (S.pendingSceneBakePicker) {
-        drawKitPrompt('Bake scene', ['Tap a row or scene', 'step to pick it'],
+        drawKitPrompt(S.scenePickFor === 'resample' ? 'Resample scene' : 'Bake scene',
+                      ['Tap a row or scene', 'step to pick it'],
                           [['back', 'exit']]);
         return;
     }
@@ -1910,7 +1912,7 @@ function drawUIBody() {
         return;
     }
     if (S.mergeNoticePending) {
-        /* Shift+Sample raised this notice; it does NOT start the merge. Plain
+        /* The Sample menu's Live merge raised this notice; it does NOT start the merge. Plain
          * Rec begins the count-in, Back cancels. */
         drawKitPrompt('Live merge',
                           [S.mergeNoticeSingleTrack < 0 ? 'Captures all 8 tracks' : 'Captures this track',
@@ -1944,6 +1946,8 @@ function drawUIBody() {
     if (S.recordBlockedDialog) { drawRecordBlockedDialog(); return; }
     if (S.confirmMacroClear)   { drawMacroClearConfirm();   return; }
     if (S.confirmXpose) { drawXposeConfirm(); return; }
+    if (S.sampleMenu)       { drawSampleMenu();       return; }
+    if (S.confirmResample)  { drawResampleOptions();  return; }
     if (S.confirmBakeScene) { drawBakeSceneConfirm(); return; }
     if (S.confirmBake) { drawBakeConfirm(); return; }
     /* Modal dialogs that either screen can raise. They belong ABOVE Track
