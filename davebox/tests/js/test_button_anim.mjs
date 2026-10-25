@@ -60,8 +60,6 @@ const PULSE = LED_PULSE_4TH, BLINK8 = LED_BLINK_8TH;
  * shows it (the cache), so a pair is either [[0,from],[anim,to]] or just
  * [[anim,to]]. Either way the LAST write is the animated target and nothing
  * else is written on any other channel. */
-/* ⚠ and the two land on DIFFERENT ticks: the host queue keeps one write per
- * CC per frame, so the rig always ticks at least twice before reading. */
 const pulsePair = (w, to, anim) => {
     assert(w.length >= 1 && w.length <= 2, `expected the two-step, got ${JSON.stringify(w)}`);
     const last = w[w.length - 1];
@@ -98,7 +96,7 @@ step('disarming is one plain write, which stops the pulse', () => {
 
 /* ---- Mute, track soloed ---- */
 step('a soloed track pulses the Mute button', () => {
-    reset(); S.trackSoloed[S.activeTrack] = true; ticks(2);
+    reset(); S.trackSoloed[S.activeTrack] = true; tick();
     pulsePair(writesTo(MoveMute), 124, PULSE);
     reset(); ticks(20); assert(writesTo(MoveMute).length === 0, 'resent while soloed');
     S.trackSoloed[S.activeTrack] = false; tick();
@@ -106,7 +104,7 @@ step('a soloed track pulses the Mute button', () => {
 
 /* ---- Loop latched (Track View) ---- */
 step('the latched Loop view pulses the Loop button White', () => {
-    reset(); S.loopLatched = true; ticks(2);
+    reset(); S.loopLatched = true; tick();
     pulsePair(writesTo(MoveLoop), White, PULSE);
     reset(); ticks(20); assert(writesTo(MoveLoop).length === 0, 'resent while latched');
     S.loopLatched = false; tick();
@@ -114,20 +112,20 @@ step('the latched Loop view pulses the Loop button White', () => {
 
 /* ---- Rec: the two at-the-bar flashes are the faster eighth BLINK ---- */
 step('Rec with a stop scheduled BLINKS Red at an eighth (urgency, not a breathe)', () => {
-    reset(); S.recordScheduledStop = true; ticks(2);
+    reset(); S.recordScheduledStop = true; tick();
     pulsePair(writesTo(MoveRec), Red, BLINK8);
     reset(); ticks(20); assert(writesTo(MoveRec).length === 0, 'resent while scheduled');
     S.recordScheduledStop = false; tick();
 });
 step('the merge notice blinks Rec the same way', () => {
-    reset(); S.mergeNoticePending = true; ticks(2);
+    reset(); S.mergeNoticePending = true; tick();
     pulsePair(writesTo(MoveRec), Red, BLINK8);
     S.mergeNoticePending = false; tick();
 });
 
 /* ---- Shift held: the hints pulse, decided in ONE place per button ---- */
 step('Shift held (Track View) pulses Note/Session, Undo, Copy, Mute at 16 and Rec Red — each written ONCE', () => {
-    reset(); S.shiftHeld = true; ticks(2);
+    reset(); S.shiftHeld = true; tick();
     for (const cc of [MoveNoteSession, MoveUndo, MoveCopy, MoveMute]) pulsePair(writesTo(cc), 16, PULSE);
     pulsePair(writesTo(MoveRec), Red, PULSE);
     assert(writesTo(MoveLoop).length === 0, `Loop is not a Shift hint in Track View: ${JSON.stringify(writesTo(MoveLoop))}`);
@@ -145,7 +143,7 @@ step('Shift released: each goes back to its plain colour with one channel-0 writ
     }
 });
 step('Shift held in Session View pulses Loop instead of Mute', () => {
-    S.sessionView = true; ticks(2); reset(); S.shiftHeld = true; ticks(2);
+    S.sessionView = true; ticks(2); reset(); S.shiftHeld = true; tick();
     pulsePair(writesTo(MoveLoop), 16, PULSE);
     assert(writesTo(MoveMute).every(w => w[0] === 0), `Mute animated in Session View: ${JSON.stringify(writesTo(MoveMute))}`);
     S.shiftHeld = false; S.sessionView = false; tick();

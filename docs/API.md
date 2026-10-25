@@ -214,7 +214,12 @@ between the colour the LED showed and the new one, so `setLEDAnim` /
 LED already shows it) and then the target on the animation channel, and send
 nothing at all while the LED is already running that (target, animation) —
 re-sending restarts the animation and reads as a flicker. Decide an LED's final
-state in one place per frame: a plain write after an animated one stops it. The
+state in one place per frame: a plain write after an animated one stops it.
+The host's LED queue (last-writer-wins per note / CC, a budget per tick) keeps a
+pending plain write when an animated write for the same LED follows it, and
+sends the animated one on a later flush, so the start colour reaches the
+hardware in an earlier frame even when both were written in one tick; it also
+serves its keys round-robin, so no LED starves under a backlog. The
 table was confirmed on Move's controller by eye (2026-10-24); Move's own smooth
 blink is pulse at a quarter note (channel 9) at song tempo.
 

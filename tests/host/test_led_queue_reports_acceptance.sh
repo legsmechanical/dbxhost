@@ -50,13 +50,17 @@ command grep -q "globalThis.move_midi_internal_send = function" <<<"$code" || \
 # Both LED branches store and fall through to a shared truthy return. Assert on
 # the STORE-then-return shape rather than counting `return true`, so a stray
 # truthy return elsewhere in the function cannot satisfy this.
-command grep -q "ledQueueNotes\[arr\[2\]\] =" <<<"$code" || \
-  fail "the note-LED branch no longer queues"
-command grep -q "ledQueueCCs\[arr\[2\]\] =" <<<"$code" || \
-  fail "the CC-LED branch no longer queues"
+# Since 2026-10-24 the store goes through queueLedWrite, which keeps a pending
+# PLAIN write when an ANIMATED one for the same LED follows it (the hardware
+# animates from the colour the LED shows, so the plain write must land first,
+# in an earlier frame) — tests/shadow/test_led_queue_two_step.mjs pins that.
+command grep -q "queueLedWrite(ledQueueNotes, ledQueueNotesFollow, arr)" <<<"$code" || \
+  fail "the note-LED branch no longer queues through queueLedWrite"
+command grep -q "queueLedWrite(ledQueueCCs, ledQueueCCsFollow, arr)" <<<"$code" || \
+  fail "the CC-LED branch no longer queues through queueLedWrite"
 
 # Everything after the last queue store, up to the end of the wrapper.
-tail_after_store=$(sed -n '/ledQueueCCs\[arr\[2\]\] =/,$p' <<<"$code")
+tail_after_store=$(sed -n '/queueLedWrite(ledQueueCCs, ledQueueCCsFollow, arr)/,$p' <<<"$code")
 command grep -qE '^\s*return true;' <<<"$tail_after_store" || \
   fail "the LED-queue path does not return a truthy value -- callers will read \
 every queued LED write as REFUSED, defeat their LED cache, and starve the high \

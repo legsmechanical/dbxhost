@@ -1474,13 +1474,45 @@ function clearLedBatch() {
 const LED_QUEUE_MAX_PER_TICK = 16;
 let ledQueueNotes = {};      /* note -> [cin, status, note, color] */
 let ledQueueCCs = {};        /* cc -> [cin, status, cc, color] */
+/* An LED write on an ANIMATION channel (status low nibble 1-15: fade / pulse /
+ * blink) must not cancel a still-pending PLAIN write for the same LED. The
+ * controller animates from the colour the LED shows, so the plain write is the
+ * animation's start colour and has to reach the hardware in an EARLIER frame.
+ * Last-writer-wins would drop it, and the LED then animates from whatever it
+ * happened to show — seen on the device as a pulse to the wrong colour, or no
+ * pulse at all when it already showed the target. The animated write waits
+ * here and takes the pending slot once the plain one has been flushed. */
+let ledQueueNotesFollow = {};
+let ledQueueCCsFollow = {};
+/* Round-robin state, so no key starves: the flush resumes after the last key
+ * it served and alternates which of the two maps goes first. Walking the keys
+ * from the lowest every time let a surface that repaints low notes or CCs
+ * each tick consume the whole budget while the high ones were never reached. */
+let ledQueueCursor = 0;
+let ledQueueCCsFirst = false;
 let ledQueueActive = false;
 let originalMidiInternalSend = null;
+
+/* Queue one LED write into `map`, honouring the start-colour rule above. */
+function queueLedWrite(map, follow, arr) {
+    const key = arr[2];
+    const pkt = [arr[0], arr[1], arr[2], arr[3]];
+    const pending = map[key];
+    if ((arr[1] & 0x0F) !== 0 && pending && (pending[1] & 0x0F) === 0) {
+        follow[key] = pkt;          /* keep the start colour; the animation follows it */
+        return;
+    }
+    map[key] = pkt;                 /* last writer wins among plain writes, and a plain
+                                     * write cancels a held animation: it is what stops one */
+    delete follow[key];
+}
 
 function activateLedQueue() {
     originalMidiInternalSend = globalThis.move_midi_internal_send;
     ledQueueNotes = {};
     ledQueueCCs = {};
+    ledQueueNotesFollow = {};
+    ledQueueCCsFollow = {};
     ledQueueActive = true;
 
     globalThis.move_midi_internal_send = function(arr) {
@@ -1489,9 +1521,9 @@ function activateLedQueue() {
         }
         const type = arr[1] & 0xF0;
         if (type === 0x90) {
-            ledQueueNotes[arr[2]] = [arr[0], arr[1], arr[2], arr[3]];
+            queueLedWrite(ledQueueNotes, ledQueueNotesFollow, arr);
         } else if (type === 0xB0) {
-            ledQueueCCs[arr[2]] = [arr[0], arr[1], arr[2], arr[3]];
+            queueLedWrite(ledQueueCCs, ledQueueCCsFollow, arr);
         } else {
             /* Non-LED messages (sysex, etc.) pass through immediately */
             return originalMidiInternalSend(arr);
@@ -1521,27 +1553,42 @@ function deactivateLedQueue() {
     }
     ledQueueNotes = {};
     ledQueueCCs = {};
+    ledQueueNotesFollow = {};
+    ledQueueCCsFollow = {};
     ledQueueActive = false;
+}
+
+/* Send up to `budget` writes from one map, round-robin from the cursor. A sent
+ * LED whose animated follow-up is held gets that follow-up as its pending
+ * write — sent on a LATER flush, never this one, so the two land in
+ * different frames. Returns how many were sent. */
+function flushLedMap(map, follow, budget) {
+    const keys = Object.keys(map);
+    if (!keys.length || budget <= 0) return 0;
+    const start = ledQueueCursor % keys.length;
+    let sent = 0;
+    for (let i = 0; i < keys.length && sent < budget; i++) {
+        const key = keys[(start + i) % keys.length];
+        originalMidiInternalSend(map[key]);
+        if (follow[key]) { map[key] = follow[key]; delete follow[key]; }
+        else delete map[key];
+        sent++;
+    }
+    ledQueueCursor += sent;
+    return sent;
 }
 
 function flushLedQueue() {
     if (!ledQueueActive || !originalMidiInternalSend) return;
     let count = 0;
-
-    /* Flush note LEDs (pads, steps) */
-    for (let note in ledQueueNotes) {
-        if (count >= LED_QUEUE_MAX_PER_TICK) break;
-        originalMidiInternalSend(ledQueueNotes[note]);
-        delete ledQueueNotes[note];
-        count++;
-    }
-
-    /* Flush CC LEDs (buttons, knob indicators) */
-    for (let cc in ledQueueCCs) {
-        if (count >= LED_QUEUE_MAX_PER_TICK) break;
-        originalMidiInternalSend(ledQueueCCs[cc]);
-        delete ledQueueCCs[cc];
-        count++;
+    /* Alternate which map is served first, so neither starves the other. */
+    ledQueueCCsFirst = !ledQueueCCsFirst;
+    if (ledQueueCCsFirst) {
+        count += flushLedMap(ledQueueCCs, ledQueueCCsFollow, LED_QUEUE_MAX_PER_TICK - count);
+        count += flushLedMap(ledQueueNotes, ledQueueNotesFollow, LED_QUEUE_MAX_PER_TICK - count);
+    } else {
+        count += flushLedMap(ledQueueNotes, ledQueueNotesFollow, LED_QUEUE_MAX_PER_TICK - count);
+        count += flushLedMap(ledQueueCCs, ledQueueCCsFollow, LED_QUEUE_MAX_PER_TICK - count);
     }
 }
 
@@ -4449,6 +4496,8 @@ function suspendOvertakeMode() {
          * only write LEDs on-change rely on this snapshot to reappear on resume. */
         const ledNotesSnapshot = Object.assign({}, ledQueueNotes);
         const ledCCsSnapshot = Object.assign({}, ledQueueCCs);
+        const ledNotesFollowSnapshot = Object.assign({}, ledQueueNotesFollow);
+        const ledCCsFollowSnapshot = Object.assign({}, ledQueueCCsFollow);
 
         deactivateLedQueue();
 
@@ -4480,6 +4529,8 @@ function suspendOvertakeMode() {
             callbacks: overtakeModuleCallbacks,
             ledNotes: ledNotesSnapshot,
             ledCCs: ledCCsSnapshot,
+            ledNotesFollow: ledNotesFollowSnapshot,
+            ledCCsFollow: ledCCsFollowSnapshot,
             dspPath: currentSlot0DspPath,
             selfManaged: overtakeSuspendSelfManaged,
             shimGet: globalThis.host_module_get_param,
@@ -4600,6 +4651,8 @@ function resumeOvertakeModule(moduleId) {
     activateLedQueue();
     if (parked.ledNotes) Object.assign(ledQueueNotes, parked.ledNotes);
     if (parked.ledCCs) Object.assign(ledQueueCCs, parked.ledCCs);
+    if (parked.ledNotesFollow) Object.assign(ledQueueNotesFollow, parked.ledNotesFollow);
+    if (parked.ledCCsFollow) Object.assign(ledQueueCCsFollow, parked.ledCCsFollow);
 
     /* Bug C fix: slot-0 overtake DSP is single-tenant. If another tool loaded
      * its DSP since we suspended, ours got destroyed — reload before the JS

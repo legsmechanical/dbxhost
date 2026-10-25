@@ -76,14 +76,12 @@ function cachedSetButtonLED(cc, color, anim = 0) {
 }
 
 /* A hardware animation between two colours, the Push 2 two-step: the start
- * colour on channel 0, then the target on the animation channel — on TWO
- * frames, because the host's LED queue keeps only the last write per pad per
- * frame (input_filter.setLEDAnim has the full note). Sent only when the pad is
- * not already running this (target, anim) — a repeat would restart the
- * animation every frame. A plain cachedSetLED afterwards stops it. */
+ * colour on channel 0, then the target on the animation channel. Sent only
+ * when the pad is not already running this (target, anim) — a repeat would
+ * restart the animation every frame. A plain cachedSetLED afterwards stops it. */
 function cachedSetLEDAnim(note, from, to, anim) {
     if (lastSentNoteLED[note] === to && lastSentNoteAnim[note] === anim) return;
-    if (lastSentNoteLED[note] !== from || lastSentNoteAnim[note] !== 0) { cachedSetLED(note, from, 0); return; }
+    cachedSetLED(note, from, 0);
     cachedSetLED(note, to, anim);
 }
 

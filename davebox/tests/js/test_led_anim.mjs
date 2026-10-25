@@ -105,29 +105,18 @@ for (const p of [...ledClockStep(ledClockState(), true, false, 0), ...ledClockSt
 
 /* --- 4. the two-step helpers: a repeating animation BETWEEN two colours --- */
 IF.invalidateLedCache(); take();
-/* ⚠ on TWO frames: the host's LED queue keeps only the last write per note per
- * frame, so a start colour and an animated target in one tick arrive as the
- * target alone (the device then pulsed from whatever the pad showed). */
-assert.equal(IF.setLEDAnim(80, 0, 20, 9), false, 'first call: not yet');
-assert.deepEqual(take(), [[0x09, 0x90, 80, 0]], 'first call writes ONLY the start colour on ch0');
-assert.equal(IF.setLEDAnim(80, 0, 20, 9), true, 'second call: running');
-assert.deepEqual(take(), [[0x09, 0x99, 80, 20]], 'second call writes the target on the pulse channel');
+IF.setLEDAnim(80, 0, 20, 9);
+assert.deepEqual(take(), [[0x09, 0x90, 80, 0], [0x09, 0x99, 80, 20]], 'start colour on ch0, target on the pulse channel');
 IF.setLEDAnim(80, 0, 20, 9);
 assert.deepEqual(take(), [], 'the same pair again sends nothing — it would restart the pulse');
 IF.setLEDAnim(80, 0, 20, 13);
-assert.deepEqual(take(), [[0x09, 0x90, 80, 0]], 'a different animation of the same colour is a change: back to the start colour first…');
-IF.setLEDAnim(80, 0, 20, 13);
-assert.deepEqual(take(), [[0x09, 0x9D, 80, 20]], '…then the new animation');
+assert.deepEqual(take(), [[0x09, 0x90, 80, 0], [0x09, 0x9D, 80, 20]], 'a different animation of the same colour is a change, and restarts from the start colour');
 IF.setLED(80, 5);
 assert.deepEqual(take(), [[0x09, 0x90, 80, 5]], 'a plain write stops it');
 IF.setLEDAnim(80, 5, 20, 9);
-assert.deepEqual(take(), [[0x09, 0x99, 80, 20]], 'a start colour the LED already shows goes straight to the animated write');
-IF.setLEDAnim(80, 20, 5, 9);
-assert.deepEqual(take(), [[0x09, 0x90, 80, 20]], 'a start colour the LED shows only as a RUNNING animation is written plainly first (it stops the old one)');
-assert.equal(IF.setButtonLEDAnim(52, 0, 120, 9), false);
-assert.deepEqual(take(), [[0x0B, 0xB0, 52, 0]], 'buttons: start colour first');
+assert.deepEqual(take(), [[0x09, 0x99, 80, 20]], 'a start colour the LED already shows is not re-sent');
 IF.setButtonLEDAnim(52, 0, 120, 9);
-assert.deepEqual(take(), [[0x0B, 0xB9, 52, 120]], 'buttons: then the target on CC channel 9');
+assert.deepEqual(take(), [[0x0B, 0xB0, 52, 0], [0x0B, 0xB9, 52, 120]], 'buttons: the same two-step on CC');
 IF.setButtonLEDAnim(52, 0, 120, 9);
 assert.deepEqual(take(), [], 'buttons: the repeat is skipped too');
 
