@@ -315,6 +315,17 @@ static int sp_globals_misc(sp_ctx_t *cx) {
         }
         return 1;
     }
+    if (!strcmp(key, "resample_scene")) {
+        /* val = "C bars warmup tail |path" — seq8_resample.c. From STOPPED
+         * only: launches row C, starts the transport, records the take. */
+        resample_scene_start(inst, val);
+        return 1;
+    }
+    if (!strcmp(key, "resample_clear")) {
+        /* The UI has read a finished take's outcome. */
+        if (!rs_active(inst)) inst->resample_state = RS_IDLE;
+        return 1;
+    }
     if (!strcmp(key, "perf_mods")) {
         inst->perf_mods_active = (uint32_t)(unsigned int)my_atoi(val);
         return 1;

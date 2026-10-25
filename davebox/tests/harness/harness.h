@@ -36,6 +36,7 @@ static inline hx_t *hx_create_raw(const char *json_defaults) {
     h.inst = h.api->create_instance(".", json_defaults);
     /* As the host does after create_instance: hand over its extensions. */
     hx_stub_ext_refuse(0);
+    hx_stub_capture_reset();
     if (h.inst) move_plugin_host_ext_v1(hx_stub_ext());
     return h.inst ? &h : NULL;
 }
