@@ -208,7 +208,7 @@ function startResample() {
     S.pendingDefaultSetParams.push({ key: 'resample_scene',
         val: r.clip + ' ' + r.bars + ' ' + (r.warm ? 1 : 0) + ' ' + r.tail + ' |' + path });
     S.resampleTake = { path, file: path.slice(RESAMPLE_DIR.length + 1), scene: SCENE_LETTERS[r.clip],
-                       bars: r.bars + r.tail, warm: r.warm, at: nowMs(), seen: false,
+                       bars: r.bars + r.tail, loopBars: r.bars, warm: r.warm, at: nowMs(), seen: false,
                        stopSent: false, shownBar: -1 };
     closeSampleFlow();
     showRunning(S.resampleTake, r.warm ? 'warm-up' : 'starting');
@@ -272,7 +272,10 @@ export function resampleTick() {
         if (!t.stopSent) { t.stopSent = true; S.pendingDefaultSetParams.push({ key: 'transport', val: 'stop' }); }
         if (sampling()) return;                    /* the file is still being written */
         const [s] = os.stat(t.path);
-        if (s) finish(2500, 'RESAMPLED', t.file.length > 18 ? t.file.slice(0, 17) + '~' : t.file);
+        /* What and where, not the file name: the card fits ~18 characters and
+         * the name's distinguishing part (scene, length) is at its END — on the
+         * device it read "Polite Gate Scene~". BAKED's card shape. */
+        if (s) finish(2500, 'RESAMPLED', 'Scene ' + t.scene + ', ' + barsLabel(t.loopBars), 'In Samples/dAVEBOx');
         else   finish(2500, 'RESAMPLE FAILED', 'Not saved');
         return;
     }

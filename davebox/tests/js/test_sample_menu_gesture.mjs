@@ -187,7 +187,8 @@ step('⭐ the take: RESAMPLING by bar, as PRINTING is shown — then RESAMPLED o
     ticks(2);
     globalThis.__stubStat = null;
     assert(!S.resampleTake, 'the take did not finish');
-    assert((S.actionPopupLines || [])[0] === 'RESAMPLED', 'popup: ' + JSON.stringify(S.actionPopupLines));
+    assert(JSON.stringify(S.actionPopupLines) === JSON.stringify(['RESAMPLED', 'Scene A, 4 bars', 'In Samples/dAVEBOx']),
+           'popup: ' + JSON.stringify(S.actionPopupLines));
     assert(sent('resample_clear').length === 1, 'the engine was not cleared');
 });
 
