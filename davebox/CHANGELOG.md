@@ -8,6 +8,15 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-10-25
+The Pad Mode bank, one-envelope automation, project templates, and backup of
+projects from the web manager. A [video tour of what's new](https://youtu.be/69dkHiiK3-0) walks through
+it on a real Move.
+
+> ⚠ **Projects saved in 1.1 lose their automation if opened in 1.0.0.** Projects
+> from earlier versions are converted when 1.1 opens them; once saved, they can't
+> go back. Keep a backup (Projects page in the web manager) if you may downgrade.
+
 ### Changed
 - **LED animations run in the hardware, at dAVEBOx's tempo.** Move's LED
   controller can fade, pulse and blink on its own, and dAVEBOx can now ask it

@@ -30,9 +30,10 @@ different.
 
 ## Which manual is this?
 
-This manual covers **dAVEBOx SA** — dAVEBOx running as its own session, on its own
-build of the Schwung host. It restarts Move underneath and boots straight into the
-sequencer.
+This manual covers **dAVEBOx SA** — dAVEBOx running as its own session. You start
+it from Schwung, and Move restarts straight into the sequencer, on a fork of the
+Schwung host that plays the modules, presets and samples installed in your
+Schwung. It needs Schwung installed; it doesn't replace it.
 
 **Two ways in, both leading to the same place:**
 
@@ -222,7 +223,8 @@ dAVEBOx host, then you land on the **project picker**: one pad per project.
 
 - **Click the jog wheel** to load the project you had open last — its pad pulses
   and the screen shows it with **Load** highlighted.
-- **Shift + tap an empty pad** creates a new project and opens it.
+- **Shift + tap an empty pad** creates a new project and opens it (if you have
+  templates, it asks Empty or Template first).
 - **Shift + tap** any other project's pad loads it.
 - **Shift + Back** leaves dAVEBOx, from anywhere, saving first.
 
@@ -295,7 +297,7 @@ The Track View overview, top to bottom:
 
 - **Header:** the bank the knobs are on, and at the right what the track plays —
   `[MV1]` Move instrument 1, `[CH3]` MIDI channel 3, `[TR2]` track 2's instrument,
-  `[CNDT]` the Conductor, `[NONE]`, or a Schwung instrument's short name.
+  `[CNDT]` the Conductor, `[--]` nothing loaded, or a Schwung instrument's short name.
 - **Under it:** the key and scale (on a drum track, the lane bank and the selected
   lane's note), and the track's input velocity — `VEL:LIVE` follows how hard you
   play.
@@ -333,7 +335,7 @@ in this order:
 
 | Track | Banks, in order |
 |---|---|
-| **Melodic** | **IN:** CHORD (in the Chord layout) → LIVE ARP · **CTRL:** MACROS · **SEQ:** STEP → CLIP · **FX:** NOTE FX → HARMONY → DELAY → SEQ ARP · MIX |
+| **Melodic** | **IN:** PAD MODE → LIVE ARP · **CTRL:** MACROS · **SEQ:** STEP → CLIP · **FX:** NOTE FX → HARMONY → DELAY → SEQ ARP · MIX |
 | **Drum** | **IN:** RPT GROOVE · **CTRL:** MACROS · **SEQ:** STEP → ALL LANES → DRUM LANE · **FX** (the selected lane's): NOTE FX → DELAY · MIX |
 | **Conductor** | CLIP → STEP → NOTE FX · **RSPD:** ON/OFF → OCTAVE → TIMING |
 
@@ -372,8 +374,8 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   the third column, **FX 1–4** (orange) down the far-right column. Tap one and
   the screen flashes its name and what is loaded there (or **Empty**); like CONFIG, it
   turns white and opens when you let go of the jog. **Back** from that editor
-  takes you back to where you were. A MIDI track has only MIDI FX, a track set
-  to None only INSTRUMENT, and a Conductor none.
+  takes you back to where you were. A MIDI track has only MIDI FX, and a
+  Conductor none.
 - **CONFIG**, **AUTOMATION** and **INST** (and Session View's **MASTER**,
   **SEND A** and **SEND B**) open a screen, so they wait: the pad turns white,
   and the screen opens when you let go of the jog. Tap a bank after one and
@@ -404,7 +406,7 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   Touch + click also opens a bank's editors: **Steps** (knob 5) on SEQ ARP and
   LIVE ARP opens Arp Steps, any knob on RPT GROOVE switches between its
   Velocity and Nudge pages, and a knob on MACROS opens that macro.
-  **Delete + click** on AUTOMATION still clears the clip's automation.
+  **Delete + click** on AUTOMATION clears the lane under the cursor.
 
   Each column of the map is a group, and its banks run top to bottom. A bank the
   track doesn't have leaves its pad dark, and nothing moves, so a bank is always
@@ -412,7 +414,7 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
 
   | | IN | CTRL | SEQ | FX |
   |---|---|---|---|---|
-  | **Melodic** | CHORD, LIVE ARP, —, CONFIG | MACROS, AUTO, —, MIX | STEP, CLIP, —, INST | NOTE FX, HARMONY, DELAY, SEQ ARP |
+  | **Melodic** | PAD MODE, LIVE ARP, —, CONFIG | MACROS, AUTO, —, MIX | STEP, CLIP, —, INST | NOTE FX, HARMONY, DELAY, SEQ ARP |
   | **Drum** | —, RPT GROOVE, —, CONFIG | MACROS, AUTO, —, MIX | STEP, DRUM LANE, ALL LANES, INST | NOTE FX, —, DELAY |
   | **Conductor** | —, —, —, CONFIG | ON/OFF, OCTAVE, TIMING (RSPD) | CLIP, STEP | NOTE FX |
 
@@ -503,8 +505,13 @@ Each track's sound is set in its own menu, **TRACK CONFIG**:
 5. **Click** the empty **MIDI FX** row to add a MIDI effect in front of the
    instrument — on Move and MIDI tracks too.
 
+A module picked from this menu loads and leaves you on the menu, on its row; click
+the row to edit it.
+
 The right-hand pads of the [bank map](#36-parameter-banks) open these editors
-directly: **MIDI FX**, **INSTRUMENT** and **FX 1–4**.
+directly: **MIDI FX**, **INSTRUMENT** and **FX 1–4**. On an empty one the pad opens
+the module list, and the module you pick opens in its editor. While one is open, the map marks
+it (the instrument also lights **INST**) rather than the bank underneath.
 
 Everything else in the menu is in [Sound & Track Config](#14-sound--track-config).
 
@@ -528,10 +535,15 @@ STORAGE** and tries again.
 |---|---|
 | **Shift + Back** | Save and hand the device back to official Schwung, from anywhere |
 | **Project Settings → Quit** | The same |
-| **Project Settings → Suspend session** | Park dAVEBOx — it keeps playing in the background while you use Move or another Schwung tool |
+| **Project Settings → Suspend session** | Park dAVEBOx — it keeps playing in the background while you use Move |
+| **Power button** | **POWER OFF?** — save everything and turn the Move off (tap or hold) |
 | **Reboot** | Returns to official Schwung — unless you made dAVEBOx your boot default |
 
 - Each asks first, opening on **No** — turn to **Yes** and click.
+- **Power off** saves your project, its instruments and effects, and the Move
+  set, shows **Powering off...**, and turns the Move off. Press the power button
+  to start it again as usual. Holding the button asks too — it never skips the
+  question.
 - Leaving — or a reboot, even after a power cut mid-session — brings back your
   official install, **your own Move sets included**.
 - **Suspend** keeps dAVEBOx running in the background. To come back, hold
@@ -559,7 +571,7 @@ A track's **type** sets how you enter notes into it and how it sequences them.
 | Conductor | **Instmt/Dest → Conductor** | Plays no notes of its own; transposes the other tracks — [The Conductor](#12-the-conductor) |
 
 - **Melodic** and **Drums** are the **Mode** row of the track's TRACK CONFIG
-  menu, next to Layout. Scrolling previews the type; clicking commits it.
+  menu. Scrolling previews the type; clicking commits it.
 - **Conductor** is chosen in the **Instmt/Dest** picker instead (**Shift + click**
   the row), just after the Move instruments. To turn a Conductor back into an
   ordinary track, choose an instrument in the same picker.
@@ -656,17 +668,21 @@ To place notes on the grid, use the **16 step buttons**:
 | Hold a step | The knobs on screen now act on that step (see [Editing notes](#63-editing-notes)). An empty step stays empty until you press a pad while holding it |
 | Press several steps at once | Each empty step gets the last note. On a melodic track, a filled step after the first is silenced but keeps its notes — do it again to bring them back. On a drum track, a filled step is cleared |
 | Hold a step with notes, then tap a later step | Stretch the note to reach it — see [Editing notes](#63-editing-notes) |
+| Hold a step, turn a knob to set a lock, then tap a later step | Stretch the lock's value to reach it — see [Editing notes](#63-editing-notes) |
 | **Copy + step → another step** | Copy the step's notes (same clip); **Shift + Copy** cuts |
-| **Delete + step** | Clear the step, and any automation *locks* on it (a lock is a knob value set for one step — see [Automation](#10-automation)) |
+| **Delete + step** | Clear the step, and any automation on it (a lock is a knob value set for one step — see [Automation](#10-automation)) |
 
 Steps past the clip's length are dimmed. These step gestures work on drum steps
 too — see [Drum Clips](#7-drum-clips).
 
 ### Pad layouts
 
-**Shift + Step 8** (or the **Layout** row in the track's TRACK
-CONFIG menu) steps through five layouts, and the screen flashes IN-SCALE,
-CHROMATIC, PIANO or CUSTOM CHORDS:
+Each melodic track has its own pad layout, whatever its instrument (Move,
+Schwung, MIDI). Choose it on the **Pad Mode** bank (the top pad of the IN column
+on the bank map): **knob 1, Mode**, picks the layout and the
+other knobs are that layout's own settings. Each layout keeps its settings when
+you switch to another and back. **Shift + Step 8** also steps through the five
+layouts, and the screen flashes IN-SCALE, CHROMATIC, PIANO or CUSTOM CHORDS:
 
 - **Scale** (default) — only in-scale notes, with the root in the track color. Each
   row starts three scale notes above the row below.
@@ -677,9 +693,40 @@ CHROMATIC, PIANO or CUSTOM CHORDS:
   (C to the next C) and the row above it the black keys, each sitting between
   its two white keys; pads with no black key are dark and silent. The root is in
   the track color and in-scale keys are brighter than the rest.
-- **Chord** — below. Leaving it takes its explainer card with it.
+  On the Pad Mode bank, **Oct A / Trans A** move the bottom octave (zone A) and
+  **Oct B / Trans B** the top one (zone B), each on its own. **Instr** switches
+  the pads to **Bass**: four strings (E A D G from the bottom row up), the open
+  string and seven frets across each, with one **Oct** and **Trans** for the
+  whole neck. Piano and Bass each keep their own settings.
+- **Chord** — below.
 - **Custom** — chords you build yourself on the bottom row, the Scale layout
   on the other three. See [The Custom layout](#the-custom-layout).
+
+A Conductor's pads have Scale and Chrom only, from Shift + Step 8; it has no
+Pad Mode bank.
+
+**Delete + jog click** on the Pad Mode bank resets the current layout's settings.
+Mode and Piano's Instr stay as they are, and so do your Custom chords; Undo
+brings the settings back.
+
+**Splitting the pads (Scale and Chrom).** On the Pad Mode bank:
+
+- **Split** — *None*, *Vert* (the left 4x4 and the right 4x4 are two separate
+  note grids) or *Horz* (the bottom two rows and the top two). Zone **A** is
+  always the left or bottom one, **B** the right or top one.
+- **Oct A / Oct B** — each zone's octave. With no split there is one **Oct** for
+  the whole grid.
+- **Trans A / Trans B** — where each zone starts. In Scale it counts scale
+  notes, so the pads stay in key (+2 in C major starts on E); in Chrom,
+  semitones.
+- Zone B's pads show their colors the other way round — the root dim white,
+  the other notes in the track color — so the two zones read apart.
+- Scale and Chrom share the split and the octaves; each keeps its own Transpose.
+
+**Octave buttons.** **+ / −** move the whole surface. **Shift + + / −** move
+only zone B: the B split, Piano's top octave, or the pads above the chords in
+Chord and Custom. Where there is no zone B (no split, Bass) Shift makes no
+difference.
 
 <img src="docs/working/img/pads-melodic.svg" alt="The Scale layout in C major at the default octave: each row starts three scale notes above the row below, the root is filled, ">
 
@@ -688,13 +735,12 @@ CHROMATIC, PIANO or CUSTOM CHORDS:
 > 🎬 **Video:** [Tutorial 3.8: The Chord layout](https://youtu.be/36-v3uYKR78?t=532) (from 8:52)
 
 The **Chord layout** plays a whole chord from one pad, always in the track's key
-and scale. Switching to it shows a card explaining the rows (click the jog or press
-Back to dismiss) and puts the track on its CHORD bank.
+and scale. Switching to it with Shift + Step 8 puts the track on its Pad Mode bank.
 
 <img src="docs/working/img/pads-chord.svg" alt="The Chord layout in C major: chords on the bottom row, modifiers above them, the last chord's notes to strum, and the scale on top with its root on the fourth pad.">
 
 - **Bottom row:** eight chords — by default I ii iii IV V vi vii° and I an octave
-  up — colored by function (tonic, subdominant, dominant). They follow key and
+  up (the **Map** knob regroups them) — colored by function (tonic, subdominant, dominant). They follow key and
   scale changes.
 - **Row 2:** hold **7**, **9**, **sus2**, **sus4**, **add9** or **5** while you
   press a chord to change it, or press one while a chord is held to change it as it
@@ -705,16 +751,21 @@ Back to dismiss) and puts the track on its CHORD bank.
   They stay after you let go.
 - **Top row:** the scale, with the key's root on the fourth pad — three notes below
   it, four above (`G A B C D E F G` in C major).
-- The **CHORD** bank (on the bank map, the top pad of the IN column, above LIVE ARP; Chord layout only) sets:
+- On the **Pad Mode** bank, after **Mode**, the Chord layout's knobs are:
+  - **Map** — how the chords sit on the bottom row. *Diatonic*: I ii iii IV V vi
+    vii° I. *Function* groups them by job: the home chords (I vi iii), the away
+    chords (IV ii), the ones that pull home (V vii°), then I an octave up. A chord
+    you have edited moves with its degree to its new pad.
   - **Voicing** — moves every chord at once.
   - **Smooth** — *Off*; *Follow* (each chord takes the voicing nearest the one you
     played last); *Anchor* (every chord takes the voicing nearest one chord you
     choose on the **Anchor** knob, which appears only in this mode).
-  - **Bass** (adds the root below) and **Bass Octave**.
-  - **Strum** — moves rows 3 and 4 by octaves.
+  - **Bass** — *Off*, or the root added one (*−1*) or two (*−2*) octaves below.
+  - **Pad Oct** — moves rows 3 and 4 (the pads above the chords) by octaves;
+    **Shift + + / −** does the same.
   - **Slots: Play / Select** — in Select the chord pads are silent and only choose
     what row 3 strums.
-- **To edit a chord, hold it while on the CHORD bank.** The page switches to that
+- **To edit a chord, hold it while on the Pad Mode bank.** The page switches to that
   chord, titled with its numeral and name (`vi · AMIN`) — Root, Stack, Inversion,
   Spread, Bass (Off / Root / 3rd / 5th) and Octave, plus Reset on knob 8 (touch it
   and click the jog) — and switches back when you let go.
@@ -748,15 +799,37 @@ does not change it. Chords are saved per track.
 - **Or notes first:** hold the notes on the upper rows and tap an **empty**
   chord pad — it takes them (the lowest six). A pad that already has a chord
   just plays, so holding a note over the chords never changes one.
+- **From a USB keyboard:** both work with keys too. Hold a chord pad and play
+  keys, or hold keys and tap an empty chord pad. Keys behave just like the pads:
+  each one adds or removes a note, they sound as you play them, and they are
+  not recorded or captured. The keyboard must be on dAVEBOx's MIDI-in channel.
 - **Copy a chord:** hold Copy, tap the chord, then tap each pad that should
   get it. Shift + Copy moves it instead. Undo takes back the last paste.
-- **Octaves:** **+ / −** move the part of the pads you touched last. The
-  chord row and the upper rows each have their own octave, and the screen says
-  which one moved (`CHORDS OCTAVE` or `PADS OCTAVE`). Move the upper rows to
-  reach notes in another octave while building a chord.
-- **Move one chord an octave:** hold its pad and press **+** or **−**.
+- **Octaves:** **+ / −** move the whole surface (`OCTAVE`); **Shift + + / −**
+  move only the upper rows (`PAD OCTAVE`), to reach notes in another octave
+  while building a chord.
+- **Move one chord an octave:** hold its pad and press **+** or **−** (Hold: *Assign* only).
 - **Clear a chord:** Delete + its pad. Undo brings it back.
 - Holding a step and tapping a chord writes the whole chord into the step.
+
+**On the Pad Mode bank** (Custom):
+
+- **Hold** — *Assign* (default): holding a chord pad edits it, as above. *Play*:
+  holding a chord pad just plays it, so you can play the scale pads with it and
+  nothing is added; holding notes never fills an empty pad either.
+- **Chd Oct** — the chord row's octave. **Pad Oct** — the upper rows' octave.
+  These are the same two the Octave buttons move.
+- **Trans** — where the upper rows start, counted in scale notes (they stay in
+  key).
+- **Build a chord by name:** hold a chord pad while on the Pad Mode bank and the
+  page becomes its card — the same knobs as the Chord layout's card, titled with
+  the chord: **Root** (any note), **Stack** (Maj, Min, Dim, Aug, Sus2, Sus4, 7,
+  Maj7, Min7, m7b5, Dim7, 6, Min6, Add9, 9, Maj9, Min9, 7sus4, 5), **Inv**,
+  **Sprd** (*Open* lifts the second-lowest note an octave), **Bass** (Off / Root /
+  3rd / 5th), **Oct** and **Reset** (touch knob 8 and click the jog: the pad
+  empties). The card starts from the chord the pad already holds; a turn
+  replaces its notes with the chord on the card. One **Undo** brings back what
+  the pad held before you picked it up. It works in Assign and in Play.
 
 ## 6.2 Several notes on one step
 
@@ -790,6 +863,14 @@ while holding and `JOG BACK` on the step page. Empty steps have no step page.
   later step to set the note's length up to it; tap that step again to shorten it by
   one. **Left / Right** still page, so a note can stretch past the current page.
   (Tapping steps *together*, without the pause, toggles them instead.)
+- **Stretch a lock:** if the last thing you did while holding the step was turn a
+  knob to set a lock, tapping a later step stretches that **lock's value** up to and
+  including it instead, the same as on the [AUTOMATION screen](#102-the-automation-screen):
+  tap the end again to shorten it, or turn the knob again to change the whole range.
+  While you hold, the range lights **orange**, not the
+  note-length colour, so you can tell which one you're stretching. Only the parameter
+  you turned **last** is stretched.
+  Editing the note again (a STEP knob, a pad) puts the tap back to stretching the note.
 - A note nudged past half a step moves to the neighbouring step when you let go.
 - **+ / −** moves the octave range to reach higher or lower notes.
 
@@ -1371,14 +1452,28 @@ Two ways:
   had. Each time you start, a notice says how long the lane you're recording onto
   is — **● LANE: 2 BAR**, or **● LANE: 13 ST** when it isn't whole bars — the cycle
   the move will repeat on. See [Recording](#64-recording).
-- **Lock a step.** Hold a step and turn a knob: that step takes a **lock**, a value
-  the parameter jumps to when the step plays. See
+- **Lock a step (a punch).** Hold a step and turn a knob: that step takes a
+  **lock** — the value held flat for the whole step. The parameter jumps to it as
+  the step starts and jumps back to what the lane was doing when it ends. Press a
+  later step while you hold to stretch it across several (see
+  [The AUTOMATION screen](#102-the-automation-screen)). See also
   [Editing notes](#63-editing-notes).
+- **Place a point.** Tap **Shift** while you hold the step — before or after
+  turning — and a notice says **POINT**: the step gets a single point instead,
+  which the lane glides into and on from. Tap again for **PUNCH**. Every hold
+  starts as a punch; the footer says what a tap switches to (**SHFT POINT**).
+  Holding Shift while you turn is still fine adjustment.
+- **See a step's values.** While you hold a step, every automated parameter on
+  screen shows the value it plays at that step (a lock, a recorded point, or the
+  glide between them), and goes back to its own value when you let go.
+- **Delete + step** removes the automation on that step, on every lane. Deleting a
+  punch gives the lane back as it was before it.
 
-A value **holds until the next one**, round the loop too: the clip's last value
-carries through its first steps until the first lock or recorded move comes round.
-A recorded (smooth) move glides from its last value back to its first across the
-loop point.
+**Each lane is one envelope.** Its points glide into each other, and a lock is
+where it jumps. Parameters that are a choice or a switch step from value to value
+instead. A lane starts where its parameter rests: its first point also puts one on
+the lane's first step, carrying the **resting value**. At the end of the loop the
+lane does what its **Wrap** says (below).
 
 **What can be automated:** a Schwung module's editor pages, the levels on
 **MIX** and in the session mixer, the eight **MACROS**, and these
@@ -1390,11 +1485,16 @@ lane and isn't automated. See [Parameter banks](#36-parameter-banks) and
 - An automated knob shows a dot on its cell and a blinking ring.
 - **Mute + touch** mutes that parameter's automation; **Delete + touch** clears it.
   (In the session mixer, Mute + touch still mutes the track.)
-- Without Record, turning an automated knob while playing takes it over until you
-  let go; while stopped, it sets the value the parameter rests at.
+- **The resting value** is where a parameter sits when nothing automates it: on
+  Stop, and in clips without automation for it. There's one per parameter on its
+  track. Turn the knob while stopped, or while a clip with no automation for it is
+  playing, and that's the new resting value. While the playing clip does automate
+  it, turning the knob without Record takes the parameter over until you let go.
 - **Switching clips** returns the old clip's automated parameters to rest; a clip
-  that automates the same parameter starts at its own resting value straight away.
-  A parameter whose automation you muted stays where you put it.
+  that automates the same parameter starts where its own lane starts, straight
+  away. A parameter whose automation you muted stays where you put it.
+- **Projects made before this version** are converted when they open and play the
+  same. Once saved, dAVEBOx 1.0.0 opens them without their automation.
 
 ## 10.2 The AUTOMATION screen
 
@@ -1407,14 +1507,15 @@ everything.
   (steps, when it isn't whole bars; **13 ST/32** when its steps aren't sixteenths),
   or **CLIP** when it follows the clip. A muted row reads **OFF**, a cleared one
   **EMPTY** and its length, and the pads' aftertouch **PADS**.
-- With nothing automated the screen reads *NO AUTOMATION*.
+- With nothing automated the list has only **+ Add lane**.
 
 With the cursor on a row, the step buttons, pages and screen show **that row's
 lane**, not the clip's notes (click the row for its operations, below):
 
 - **Step buttons** are coloured by the value the lane plays on each step — dim for
-  low, bright for high. A step holding a value you set (a lock or a recorded point)
-  blinks off briefly; steps past the end of the cycle are dark grey.
+  low, bright for high. A step with a point on it blinks off briefly — a lock, the
+  step after a lock (where the lane jumps back), a recorded point, or the lane's
+  first step; steps past the end of the cycle are dark grey.
 - **Left / Right** page through the lane's own length: a 4-bar lane under a 1-bar
   clip has four pages. The header shows the cycle and page (**2 BAR PG 1/2**).
 - **The playhead** shows where that lane is in its own cycle.
@@ -1425,26 +1526,53 @@ lane**, not the clip's notes (click the row for its operations, below):
   **<AUTO S7** (step 7). The parameter's cell is highlighted, and while the step
   is held it shows the value the lane plays there — shown only, the parameter
   doesn't move until you turn the knob. A module's page keeps its graphics (filter
-  curve, envelope) while you're there.
+  curve, envelope) while you're there. On a bank, MIX, MACROS or a module's page the lane's **current
+  page** (its 16 steps) is drawn over the half of the screen the parameter isn't in,
+  with the held step marked between dotted lines and the playhead when it's on that
+  page. Its bottom edge is the lane's page bar: one segment a page, the one shown
+  thicker. In a module's editor only the held lane's knob turns while you hold —
+  turning another shows its name with **ONLY** in the header for a moment — and
+  the editor stays on its page. The footer says what a Shift tap switches to
+  (**SHFT POINT** / **SHFT PUNCH**).
+- **Hold a step, then press a later one** to stretch the held step's value up to and
+  including that step, the way a held note stretches to a tapped step. The value is
+  the one you turned, or — before any turn — what the lane plays on the held step,
+  even between two points. Anything already set in between is replaced. As a punch
+  the range jumps back after its last step to what the lane played there; as a
+  point (Shift tapped) it holds flat to its last step and glides on from there.
+  **Left / Right** still page the lane while you hold, so the range can reach
+  into later bars. Pressing an earlier step wraps round the end of the cycle. Press
+  the **end step again** to shorten the range by one, or a step inside it to shorten
+  it there; the steps you give back play what they did before. Turn the knob again
+  while you still hold and the whole range takes the new value. While you hold, every
+  step of the range blinks like a set value. One **Undo** takes back the whole hold.
+- With **Seq Follow** on (Play + Left/Right), the lane's page follows its playhead
+  while the transport runs, as the note steps do — except while you're holding a
+  step, which keeps its page. Paging by hand pauses it until you stop.
 - **Shift + click** a row to jump to where that parameter is edited; **Back**
   returns you to this menu, on the same row. The step buttons keep showing the lane
-  there, so you can hold a step and turn the knob to set it.
+  there, so you can hold a step and turn the knob to set it, and the bank map still
+  marks **AUTO**. On a bank, MIX, MACROS or a module's page the lane's current page
+  is drawn there too, as for a held step. In a module's editor only the lane's knob
+  turns (another shows **ONLY** in the header) and the editor stays on its page until you go Back. Leave that place any other way and the jump is over.
 - **Back** at the list closes the screen: you return to the bank you were on, and the step buttons show the clip again.
+  Leaving by the bank map (another bank, or an editor from its right-hand pads) does
+  the same — the steps show notes again.
 
-**Click** a row for its operations:
+**Click** a row for its operations. They open as a short menu at the top of the
+screen, and the rest of the screen shows **the lane itself**: its whole length as a
+graph — what it plays, as it plays it — with the page bar along its bottom edge and the
+playhead running through both. The graph follows each change you make here (Wrap,
+Loop, Rate, Scale) and new recording.
 
 - **Mute** / **Unmute**.
-- **Mode** — *Curve* plays the lane as a continuous envelope; *Punch* makes each
-  lock last only its own step, with the parameter at rest on every other step
-  (Smooth and Wrap don't apply there and are hidden).
-- **Smooth** — *On* glides between values, *Off* steps (on parameters that can
-  ramp).
-- **Wrap** — *Carry* keeps the last value going round the loop; *Reset* returns the
-  parameter to where the knob sits at rest, until the first lock or recorded move
-  comes round.
+- **Wrap** — what the lane does at the end of its loop. *Reset* (default) holds the
+  last value to the end, then jumps back to the lane's start. *Carry* glides from
+  the last point into the start across the loop point. Lanes saved before this
+  change keep the Wrap they had.
 - **Link** — *On* (default): the automation is transformed with the note sequence —
   Resolution and Beat Stretch scale it, Clock Shift and Nudge move it (inside the
-  clip's loop, as they move its notes), doubling the loop copies it forward, and
+  clip's loop, as they move its notes), doubling the loop copies it forward (so the doubled clip plays as the old loop did twice), and
   Crop moves it to step 1 with the loop and removes what lay outside (on a drum
   track, the ALL LANES versions; a lane with its own Loop is left as it is). *Off*: it stays
   put whatever you do to the notes.
@@ -1464,7 +1592,15 @@ lane**, not the clip's notes (click the row for its operations, below):
 
 The pads' aftertouch row (**PADS**) has only **Delete**.
 
-The last row is **Clear all**; **Delete + click** anywhere on the screen does the same. Every
+**+ Add lane** (after the lanes) adds an empty lane, so you can set its Wrap,
+Loop, Rate and Scale before writing anything into it. Click it and choose the
+parameter as you would for a macro — a module, a bank, Levels or MIDI, then the
+parameter (see [The MACROS bank](#146-the-macros-bank)). You come back to the list with the new lane's
+operations open; **Back** from the picker returns without adding one. Choosing a
+parameter that already has a lane in this clip opens that lane.
+
+With the cursor on a lane, **Delete + click** clears just that lane (its points go; the
+row stays). The last row is **Clear all**: click it to clear everything. Every
 operation is one undo, and **Back** closes one layer at a time. Conductor tracks
 don't have this bank.
 
@@ -1831,7 +1967,7 @@ the rows it has:
 | **Buses** | Voice groups, on instruments that can split their voices — see [Presets, LFOs and buses](#145-presets-lfos-and-buses) |
 | **Presets** | Save and load the whole chain |
 | **LFOs** | Two LFOs for the track |
-| **Mode, Layout, Transpose, VelIn, AftTch, Looper, Grv Amt, Export to MIDI, Parallel** — and **Grv Timing, Grv Velocity, Grv Random** when the project uses a loaded groove | The track's own settings — see [Track settings](#174-track-settings) |
+| **Mode, Transpose, VelIn, AftTch, Looper, Grv Amt, Export to MIDI, Parallel** — and **Grv Timing, Grv Velocity, Grv Random** when the project uses a loaded groove | The track's own settings — see [Track settings](#174-track-settings) |
 
 On the Instmt/Dest and effect rows, a hint band at the foot of the menu says what
 the click and the Shift chord do.
@@ -1857,7 +1993,7 @@ the click and the Shift chord do.
 | Group | Makes the track |
 |---|---|
 | **List: All** | (a filter, not an instrument — see below) |
-| **None** | Silent |
+| **None** | A Schwung track with no instrument loaded — the state a new project's tracks 5–8 start in. Its MIDI FX, effects, levels and **Presets** stay, so you can load a chain preset straight away. On a Schwung track it removes the instrument. |
 | **Move 1–4** | Play one of Move's four instruments |
 | **Conductor** | A [Conductor](#12-the-conductor) — converts the track behind a confirm, with the transport stopped |
 | **Every Schwung generator**, by name | A Schwung track, with that instrument loaded |
@@ -1888,8 +2024,8 @@ View only), and work with it as you would on Move.
   screen) to come back, **Note/Session** to leave for Session View, or
   **hold the jog and press Step 1–8** to leave and go straight to that track.
 
-A plain click does nothing on a MIDI channel or a followed track. On a track set to
-**None**, it opens the picker.
+A plain click does nothing on a MIDI channel or a followed track. On a Schwung
+track with no instrument (or set to **None**), it opens the picker.
 
 ## 14.4 Editing a module
 
@@ -1897,6 +2033,22 @@ Click an instrument or effect to open its editor: the knobs edit its parameters 
 the jog turns the pages. **Shift + jog** switches track, and the editor follows to
 the new track's instrument. A module that draws some of its own cells (a waveform,
 a picture of its mode) shows them in place of a plain dial.
+
+**The sequencer's page.** **Left / Right** page the sequencer from the editor as
+they do on the track overview. While the transport runs, the bottom row shows the
+track's page bar in place of the hints: the page you're on solid, the page playing
+outlined, and the playhead. The hints come back when the transport stops. With
+the transport stopped, or on the TRACK CONFIG menu, each press shows **SEQUENCER PAGE**
+with the page number instead (2/4 = page 2 of a 4-page loop).
+
+**A module with its own screen.** Some modules draw their own editor in Schwung
+instead of the standard pages. dAVEBOx shows that same screen, opened the same way:
+the knobs, the jog and the module's own gestures behave as they do in Schwung. If the
+module takes the pads (a drum module that jumps to the drum you hit, say), a pad goes
+to it first and still plays and records on the track. Its knobs record automation like
+any editor knob: hold a step and turn for a lock, or turn while recording. **Back** steps back inside the
+module, then leaves; **Shift + jog** leaves at once. Volume, Note/Session, Play and
+Record stay dAVEBOx's while it is up.
 
 **Touch a knob and click the jog** for a parameter a knob can't turn well:
 
@@ -2109,7 +2261,7 @@ To reach them, hold the jog in Session View, tap **MASTER**, **SEND A** or **SEN
 A track's destination is its **Instmt/Dest** row, at the top of
 [TRACK CONFIG](#143-choosing-an-instrument): one of **Move 1–4**, a **Schwung
 generator**, a **MIDI channel** (out USB-A), another **track**'s instrument, or
-**None**.
+**None** (a Schwung track with nothing loaded).
 
 - A new project starts with tracks 1–4 on Move 1–4 and tracks 5–8 on Schwung.
 - Several tracks can go to MIDI channels at once for a multitimbral rig.
@@ -2129,7 +2281,6 @@ where the track goes:
 | MIDI channel | Through the sequencer effects, out USB-A |
 | Another track | Through the sequencer effects, into that track's instrument |
 | Move | Straight to Move, without the sequencer effects (they would loop back). With a MIDI FX module loaded, notes go through the module first |
-| None | Nothing |
 
 On a track set to a **MIDI channel**, everything goes out USB-A — the sequence, live
 pads, effects and automation. Transport Stop sends note-offs; **Delete + Play**
@@ -2255,6 +2406,11 @@ one-way.
 Aftertouch and pitch bend are written onto the notes rather than as a separate
 lane, so they exist only while a note is sounding.
 
+Each lane has the same shape in Live as it plays here: it glides and jumps where it
+does here, and a **Wrap: Reset** lane holds its last value to the end of its loop and
+drops straight back to its start. Points left outside a lane's loop
+(after the loop was shortened) don't play here, so they aren't exported.
+
 **Not carried:**
 
 - **CC automation** — a Move set has no place for a CC curve.
@@ -2368,9 +2524,13 @@ top), or bring it back with [Import MIDI](#164-import-a-midi-file). Stop the
 transport first — like the Ableton export, it won't run while playing.
 ## 16.6 Recording audio
 
-dAVEBOx records MIDI, not sound. To record the Move's audio output to a WAV file,
-use the **Quantized Sampler** built into Schwung: hold **Shift**, touch the **Volume** knob and
-press **Sample**.
+dAVEBOx records MIDI, not sound. To record audio, use Schwung's two samplers — both
+work inside dAVEBOx:
+
+- **Quantized Sampler** — hold **Shift**, touch the **Volume** knob and press
+  **Sample**.
+- **Skipback** — hold **Shift**, touch the **Volume** knob and press **Capture**.
+  Its length is set under **Host Settings... → Audio → Skipback Len**.
 
 ---
 
@@ -2402,8 +2562,8 @@ see [Track settings](#174-track-settings) below.
 | Card Hold | How long a knob's page stays on screen after you let go of the knob (the mixer page in Session View) — see [§3.6](#36-parameter-banks) | Off, 0.5 s, 1 s, 2 s | Off |
 | MIDI In | Channel filter for external input — All, or one channel | All, 1–16 | All |
 | Projects... | The project picker — see [Projects](#175-projects) | action | — |
-| Set as Template | Make this project the starting point for new ones — see [Projects](#175-projects) | action | — |
-| Clear Template | Shown while you have a template: new projects start empty again | action | — |
+| Save as Template... | Save this project, under a name you give it, as a starting point for new ones — see [Projects](#175-projects) | action | — |
+| Templates... | Shown while you have templates: rename, replace or delete them | action | — |
 | Save state / Load state | Save or restore a named snapshot — see [§17.3](#173-snapshots) | action | — |
 | Clear Sess | Clear the whole project back to empty (asks first) | action | — |
 | Export to Ableton | Write a Live bundle of the project — see [§16.3](#163-export-to-live) | action | — |
@@ -2521,7 +2681,6 @@ are hidden, so the list is shorter on a MIDI track or a Conductor.
 | Setting | Values | Notes |
 |---|---|---|
 | Mode | Melodic, Drums | [Track type](#41-track-type). Scrolling previews; the click commits |
-| Layout | Scale, Chrom, Piano, Chord, Custom | Melodic pad layout ([Chord](#the-chord-layout), [Custom](#the-custom-layout)); reads `-` on a drum track |
 | Transpose | −24…+24 st | Shifts everything the track plays |
 | VelIn | Live, 1–127 | Fixed value overrides input velocity |
 | AftTch | Off, Poly, Chan | Pad-pressure aftertouch (melodic; a Move track offers Off and Poly) |
@@ -2569,8 +2728,10 @@ project, 32 slots:
   and opens it in the same press.
 - **Copy:** hold Copy, tap the project, then tap an empty pad. Releasing Copy
   cancels. The copy is a snapshot, colors and all, named "*Name* Copy".
-- **From your template:** once you have saved a template (below), creating a
+- **From a template:** once you have saved a template (below), creating a
   project asks **Empty** or **Template** (Template selected); Shift + tap asks too.
+  **Template** opens the list of your templates; pick one and the project is made
+  from it.
 - **Delete:** hold Delete, tap the project, tap it again to confirm (it blinks red
   in between). Releasing cancels. You can delete the project you're in: the screen
   warns that dAVEBOx will restart, and it returns a few seconds later at the
@@ -2582,19 +2743,48 @@ project, 32 slots:
   again; **Back** returns to the picker. If the project list itself can't be read,
   the screen says so and offers **Retry** or **Quit**.
 
-**Project template.** **Project Settings → Set as Template** saves a copy of the
-project you're in as the starting point for new projects: its project settings,
+**Project templates.** **Project Settings → Save as Template...** asks for a name
+(it starts as the project's) and saves a copy of the project you're in as a
+starting point for new projects: its project settings,
 the instrument and effects on each track with their settings, the MACROS, and
 the track settings (type, layout, transpose, VelIn, aftertouch, looper, and
 where each track plays — a MIDI track's program, a drum track's pad notes). No
 clips, notes or automation come along, and every sequencer bank (NOTE FX,
 HARMONY, DELAY, SEQ ARP, LIVE ARP…) starts at its default. The template is its
-own copy: changing or deleting the project afterwards doesn't touch it. Setting a
-template when you already have one asks before replacing it. **Clear Template**
-(shown while you have one) makes New start empty again.
+own copy: changing or deleting the project afterwards doesn't touch it. Each save
+adds a new template; two templates can't share a name.
+
+**Project Settings → Templates...** (shown while you have any) lists your
+templates. Click one for its menu:
+
+- **Rename** — give it a new name.
+- **Replace with Current** — asks first, then saves the project you're in over
+  it. It keeps its name.
+- **Delete** — asks first. Projects made from it aren't touched. Delete the last
+  one and New starts empty again.
+
+**Back** steps out (the confirm → the template's menu → the list → Project
+Settings).
 
 If a template uses a module this Move doesn't have, the new project starts with
 that slot empty and the screen names what's missing (**MODULES MISSING**).
+
+**Backing up and moving projects.** The **Projects** page of the web manager
+(`move.local:7700`, in a browser during a session) lists your projects:
+
+- **Download** saves one project as a single file on your computer; **Download
+  all** saves every project and your templates in one file. Stop playback before
+  downloading the open project — its last second of edits may not be in the file.
+- **Upload** a downloaded file to restore it, on this Move or another one. Each
+  project in it is added as a **new** project on the first free pad — nothing on
+  the Move is replaced, so restoring a project you still have gives you a second
+  one named "*Name* (imported)". Templates come back too, unless you still have
+  them. New projects appear the next time you open the picker.
+- The page says what came in, what didn't and why — a file saved by a different
+  dAVEBOx version, or no free pad — and names any instrument or effect this Move
+  doesn't have; those slots open empty until you install it.
+- Samples and recordings from your Move library aren't part of a project and
+  don't travel with it.
 
 > **Coming from an earlier dAVEBOx?** Work made when dAVEBOx used your Move sets
 > stays in those sets, visible from Move and official Schwung. dAVEBOx projects
@@ -2612,14 +2802,13 @@ that slot empty and the screen names what's missing (**MODULES MISSING**).
 
 ## 17.6 dAVEBOx and official Schwung
 
-dAVEBOx runs on its own copy of the Schwung host, installed beside official
-Schwung; only one of them runs at a time. What you install or make is shared; each
-keeps its own settings.
+dAVEBOx runs on a fork of the Schwung host, started from and depending on your
+official Schwung install; only one of them runs at a time. What you install or make
+is shared; each keeps its own settings.
 
 | What | Between the two |
 |---|---|
 | **Instruments, audio effects, MIDI FX** | **Shared.** Install or update them in official Schwung and they're in dAVEBOx's pickers. dAVEBOx can't install modules itself. |
-| **Tools** (**Shift + Step 13**) | **Shared.** But a tool installed in official Schwung *after* dAVEBOx shows in dAVEBOx's Tools menu only once dAVEBOx is next installed. |
 | **Module presets** and **chain presets** | **Shared.** Save one in either and it's there in both. |
 | **The instrument picker's lists** | **Shared.** One set of lists. |
 | **Samples and files** | **Shared.** The Files page shows the same folders from either. |
@@ -2730,6 +2919,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | Pads + step / step + pads | Chord entry |
 | Step tap / hold | Toggle / edit |
 | + / − · Left / Right | Octave · page |
+| Shift + + / − | Zone B's octave only (a split, Piano's top octave, the pads above the chords) |
 | Side buttons | Launch the active track's clips (press the playing one to stop it) |
 | Shift + top / bottom side button | Scroll the four visible clips up / down one (the same window for every track) |
 | Jog hold | The bank map, while you hold: tap a pad to pick, let go to play again (inside a menu, an editor or Move's editor, hold about a third of a second); Steps 1–8 switch track; INST opens the instrument; the right-hand pads open the MIDI FX, instrument and FX 1–4 editors |
@@ -2755,6 +2945,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | Delete + Play | Deactivate clips (running) · panic (stopped) |
 | Undo / Shift + Undo | Undo / redo |
 | Back (tap / hold) / Shift + Back | Step out one level / back to the overview / save and leave dAVEBOx (asks first) |
+| Power button | Save and turn the Move off (asks first) |
 | Note/Session (tap / hold) | On an overview: switch / peek view — anywhere else: close it and go to Session View |
 | Shift + Step 2 | Project Settings |
 
@@ -2796,7 +2987,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | 9 | Scale — jump to Scale in Project Settings | Both |
 | 10 | VelIn (Live ↔ 100) — icon lit while fixed | Track |
 | 11 | Tap: LIVE ARP on/off — icon lit while on. Hold: LIVE ARP's page, until Back (the knobs stay on LIVE ARP) | Track (melodic) |
-| 13 | Schwung's Tools menu; hold it to come back from Suspend | Both |
+| 13 | Hold: come back from Suspend | Both |
 | 15 | Double the loop and copy its contents into the new half | Track |
 | 16 | Set NOTE FX Quantize to 100 % | Track |
 
