@@ -30,9 +30,13 @@ function bad(label, got, want) {
 }
 function eq(label, got, want) { (got === want) ? ok(label) : bad(label, got, want); }
 
-/* host surface */
-const ledState = {};
-globalThis.move_midi_internal_send = (pkt) => { ledState[pkt[2]] = pkt[3]; };
+/* host surface — the colour AND the status channel of each note's last write.
+ * Since 2026-10-24 the picker's "moves" is the LED hardware's own pulse: the
+ * cursor is written as its start colour on channel 0, then its target on
+ * channel 9 (pulse @ quarter). The pad then breathes on its own, so the test
+ * reads the CHANNEL for motion and the colour for what it breathes into. */
+const ledState = {}, ledChan = {};
+globalThis.move_midi_internal_send = (pkt) => { ledState[pkt[2]] = pkt[3]; ledChan[pkt[2]] = pkt[1] & 0x0F; return true; };
 globalThis.host_module_set_param = () => {};
 globalThis.host_module_get_param = () => '';
 globalThis.host_system_cmd = () => 0;
@@ -73,6 +77,8 @@ const GREEN = PROJECT_COLORS[2].led;      /* pad 0's colour */
 const BLUE  = PROJECT_COLORS[0].led;      /* pad 1's colour */
 const RED   = PROJECT_COLORS[6].led;      /* pad 2's colour */
 const pad = (i) => ledState[TRACK_PAD_BASE + i];
+const chan = (i) => ledChan[TRACK_PAD_BASE + i];
+const { LED_PULSE_4TH } = await import('../../ui/ui_constants.mjs');
 
 function mkPicker(currentIdx, selectedIdx) {
     return {
@@ -94,38 +100,35 @@ S.ledInitComplete = true;
 
 /* ---- current and selected on DIFFERENT pads ---- */
 S.projectPadPicker = mkPicker(/*current*/1, /*selected*/0);
-paintAt(0);                                  /* blink phase ON */
-const onSel = pad(0), onCur = pad(1), onOther = pad(2);
-paintAt(30);                                 /* blink phase OFF: 30 ticks = 318 ms, the off half of the 400 ms blink */
-const offSel = pad(0), offCur = pad(1), offOther = pad(2);
+const writes = [];                           /* every write to the selected pad, in order */
+const _send = globalThis.move_midi_internal_send;
+globalThis.move_midi_internal_send = (pkt) => { if (pkt[2] === TRACK_PAD_BASE + 0) writes.push([pkt[1] & 0x0F, pkt[3]]); return _send(pkt); };
+paintAt(0);
+eq('selected pad is written off on channel 0 first (the pulse\'s start)', JSON.stringify(writes[0]), JSON.stringify([0, LED_OFF]));
+eq('…then its own colour on the pulse channel (it MOVES, in hardware)', JSON.stringify(writes[1]), JSON.stringify([LED_PULSE_4TH, GREEN]));
+eq('current pad is White', pad(1), White);
+eq('current pad is written on channel 0 (it does not move)', chan(1), 0);
+eq('an ordinary project is its own colour', pad(2), RED);
+eq('an ordinary project does not move', chan(2), 0);
+writes.length = 0;
+paintAt(30); paintAt(60); paintAt(90);
+eq('repaints send NOTHING to the pulsing pad (a repeat would restart it)', writes.length, 0);
+globalThis.move_midi_internal_send = _send;
 
-eq('selected pad shows its own colour on the blink', onSel, GREEN);
-eq('selected pad goes dark off the blink (it MOVES)', offSel, LED_OFF);
-eq('current pad is White on the blink', onCur, White);
-eq('current pad is STILL White off the blink (it does not move)', offCur, White);
-eq('an ordinary project is its own colour', onOther, RED);
-eq('an ordinary project does not blink', offOther, RED);
-
-/* ⭑ THE REGRESSION ITSELF: the two must not look the same in either phase. */
-(onSel !== onCur && offSel !== offCur)
-    ? ok('current and selected differ in BOTH blink phases')
-    : bad('current and selected differ in BOTH blink phases',
-          `on:${onSel}/${onCur} off:${offSel}/${offCur}`, 'different');
+/* ⭑ THE REGRESSION ITSELF: the two must not look the same. */
+(pad(0) !== pad(1) || chan(0) !== chan(1))
+    ? ok('current and selected differ: one is still, the other breathes')
+    : bad('current and selected differ', `${pad(0)}@ch${chan(0)} / ${pad(1)}@ch${chan(1)}`, 'different');
 /* and only ONE of them is the one that moves */
-((onSel !== offSel) && (onCur === offCur))
-    ? ok('exactly one of the two blinks — the selected one')
-    : bad('exactly one of the two blinks', `sel ${onSel}/${offSel}, cur ${onCur}/${offCur}`,
-          'selected changes, current steady');
+((chan(0) === LED_PULSE_4TH) && (chan(1) === 0))
+    ? ok('exactly one of the two moves — the selected one')
+    : bad('exactly one of the two moves', `sel ch${chan(0)}, cur ch${chan(1)}`, 'selected pulses, current steady');
 
 /* ---- current and selected on the SAME pad (the common case on open) ---- */
 S.projectPadPicker = mkPicker(/*current*/1, /*selected*/1);
-paintAt(0);  const onBoth = pad(1);
-paintAt(30); const offBoth = pad(1);        /* 318 ms: the off half */
-eq('both-on-one-pad shows White on the blink', onBoth, White);
-eq('both-on-one-pad shows its own colour off the blink', offBoth, BLUE);
-(onBoth !== offBoth)
-    ? ok('both-on-one-pad pulses, so it reads as selected too')
-    : bad('both-on-one-pad pulses', `${onBoth}/${offBoth}`, 'two different colours');
+paintAt(0);
+eq('both-on-one-pad breathes into White…', pad(1), White);
+eq('…on the pulse channel, so it reads as selected too', chan(1), LED_PULSE_4TH);
 
 /* ---- a plain project must never be mistaken for the current one ---- */
 S.projectPadPicker = mkPicker(/*current*/-1, /*selected*/-1);

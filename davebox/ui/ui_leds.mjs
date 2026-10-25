@@ -545,7 +545,7 @@ function paintProjectPickerLEDs() {
     const blink = (S.clockMs % 400) < 200;
     const menuK = p.menu ? p.menu.k : (p.confirmNew ? p.confirmNew.k : -1);
     for (let i = 0; i < 32; i++) {
-        let color = LED_OFF;
+        let color = LED_OFF, anim = 0, from = LED_OFF;
         const proj = p.byIndex[i];
         const own = projectColorLED(proj);   /* per-project color, default Blue */
         if (p.colorPick && p.colorPick.k === i) {
@@ -558,6 +558,8 @@ function paintProjectPickerLEDs() {
              *   loaded project      solid White, never blinks — a fixed fact
              *   cursor              pulses in the project's OWN colour
              *   both on one pad     pulses White <-> own colour, i.e. both at once
+             * Since 2026-10-24 the pulse is the LED hardware's own (channel 9, a
+             * quarter note of the LED clock), the same breathe as a playing clip.
              * ⚠ White is also one of the ten user-selectable project colours, so
              * colour alone cannot mark "current" — which is exactly why the loaded
              * one is the only pad in the picker that is deliberately STILL. */
@@ -572,15 +574,16 @@ function paintProjectPickerLEDs() {
             }
             else {
                 const isSel = (menuK === i), isCur = (p.current === i);
-                if (isSel && isCur)      color = blink ? White : own;
+                if (isSel && isCur)      { color = White; from = own;     anim = LED_PULSE_4TH; }
                 else if (isCur)          color = White;
-                else if (isSel)          color = blink ? own : LED_OFF;
+                else if (isSel)          { color = own;   from = LED_OFF; anim = LED_PULSE_4TH; }
                 else                     color = own;
             }
         } else if (menuK === i) {
             color = blink ? White : LED_OFF;   /* create-confirm target */
         }
-        cachedSetLED(TRACK_PAD_BASE + i, color);
+        if (anim) cachedSetLEDAnim(TRACK_PAD_BASE + i, from, color, anim);
+        else cachedSetLED(TRACK_PAD_BASE + i, color);
     }
     for (let i = 0; i < 16; i++) {
         cachedSetLED(16 + i, LED_OFF);

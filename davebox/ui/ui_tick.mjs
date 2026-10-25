@@ -18,7 +18,7 @@ import {
 import {
     Red, VividYellow, Green, DarkGrey, White
 } from '/data/UserData/schwung/shared/constants.mjs';
-import { setLED, setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
+import { setLED, setButtonLED, setButtonLEDAnim } from '/data/UserData/schwung/shared/input_filter.mjs';
 
 import {
     MoveNoteSession, MoveUndo, MoveLoop, MoveCopy, MoveRec, MoveCapture, MoveSample,
@@ -26,6 +26,7 @@ import {
     PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_CONDUCT,
     BANK_SOUND, BANK_MACROS, isSoundBank,
     POLL_INTERVAL, STEP_JOG_HINT_MS, BANK_CHORD, DEFAULT_TRACK_OCTAVE,
+    LED_PULSE_4TH, LED_BLINK_8TH,
     } from './ui_constants.mjs';
 
 import { S, standDownBankDisplay, stepRevealAvailable, loopViewActive, endLoopLatch, forgetUndo, forgetProjectJs } from './ui_state.mjs';
@@ -2012,9 +2013,26 @@ export function _tickImpl() {
              * when project load starts. Keep oled."). _pppLoad blanked them;
              * painting nothing here is what keeps them blank while it saves. */
         } else {
+            /* ⭑ Button BLINKS are the LED hardware's (Josh, 2026-10-24: "do the
+             * 1/4 pulse on ... any function buttons that blink"): a state that
+             * holds pulses at a quarter note of dAVEBOx's LED clock (channel 9,
+             * the breathe Move uses for a playing clip), between off and the
+             * button's colour; the two Rec "about to happen at the bar" flashes
+             * are the faster eighth BLINK (channel 13) so urgency still reads as
+             * urgency. Each is written ONCE per state change (setButtonLEDAnim
+             * skips a running repeat), so the rules below must choose the final
+             * state for a button in one place — a plain write after an animated
+             * one STOPS the animation, which is why the Shift hints are decided
+             * up front here rather than painted over the ordinary colour. */
+            const _shiftFlash = S.shiftHeld && !shiftClaimedByGesture();
+            /* Shift+Rec = Live Merge; advertise it only while merge is idle (an
+             * active merge already owns the LED with its red/green state). */
+            const _recShiftHint = _shiftFlash && S.dspMergeState === 0 && !S.recordArmed;
             /* Transport LEDs */
             setButtonLED(MovePlay, S.playing ? Green : LED_OFF);
-            if (S.moveCoRunTrack >= 0) {
+            if (_recShiftHint) {
+                setButtonLEDAnim(MoveRec, LED_OFF, Red, LED_PULSE_4TH);
+            } else if (S.moveCoRunTrack >= 0) {
                 /* Co-run: keep Rec dark — you can't record while a co-run target owns
                  * input, and in Move co-run Move firmware lights its own Record button
                  * (passes through under skip_led_clear). Force OFF every POLL_INTERVAL
@@ -2027,11 +2045,11 @@ export function _tickImpl() {
             } else if (S.recordScheduledStop || S.recordPendingPage) {
                 /* recordScheduledStop = waiting for end-of-page to stop; recordPendingPage =
                  * waiting for next page boundary for DSP to flip recording=1. Both blink. */
-                setButtonLED(MoveRec, Math.floor(S.clockMs / 75) % 2 === 0 ? Red : LED_OFF);
+                setButtonLEDAnim(MoveRec, LED_OFF, Red, LED_BLINK_8TH);
             } else if (S.mergeNoticePending) {
                 /* Live Merge NOTICE up, waiting for you to press Rec to start the
                  * count-in: flash red to draw the eye to the Record button. */
-                setButtonLED(MoveRec, Math.floor(S.clockMs / 110) % 2 === 0 ? Red : LED_OFF);
+                setButtonLEDAnim(MoveRec, LED_OFF, Red, LED_BLINK_8TH);
             } else if (S.dspMergeState === 2 || S.dspMergeState === 3) {
                 /* Live Merge capturing (Shift+Sample): green. */
                 setButtonLED(MoveRec, Green);
@@ -2077,14 +2095,17 @@ export function _tickImpl() {
                         _tarpBlinkOn = (_fc % 2) === 0;
                     }
                 }
-                if (S.sessionView && S.perfViewLocked) {
-                    loopColor = flashAtRate(48) ? White : LED_OFF;
+                let loopAnim = 0;
+                if (_shiftFlash && S.sessionView) {
+                    loopColor = 16; loopAnim = LED_PULSE_4TH;      /* the Shift hint */
+                } else if (S.sessionView && S.perfViewLocked) {
+                    loopColor = White; loopAnim = LED_PULSE_4TH;
                 } else if (S.loopLatched && !S.sessionView) {
-                    /* the latched Loop view blinks as Session View's locked
+                    /* the latched Loop view pulses as Session View's locked
                      * Perf Mode does: tap Loop to close (Josh, 2026-10-01) */
-                    loopColor = flashAtRate(48) ? White : LED_OFF;
+                    loopColor = White; loopAnim = LED_PULSE_4TH;
                 } else if (_rptLatched) {
-                    loopColor = flashAtRate(48) ? White : LED_OFF;
+                    loopColor = White; loopAnim = LED_PULSE_4TH;
                 } else if (_tarpBlinkActive) {
                     loopColor = _tarpBlinkOn ? trackColor(_lt) : LED_OFF;
                 } else if (S.sessionView && S.perfLatchMode) {
@@ -2095,24 +2116,24 @@ export function _tickImpl() {
                      * so Loop's ambient visually matches Delete/Copy at idx 16. */
                     loopColor = 60;
                 }
-                setButtonLED(MoveLoop, loopColor);
+                if (loopAnim) setButtonLEDAnim(MoveLoop, LED_OFF, loopColor, loopAnim);
+                else setButtonLED(MoveLoop, loopColor);
             }
             /* Capture: blink White only when a tap would actually commit buffered
              * input (S.captureArmed — playing, or stopped in an empty session), dim
              * ambient otherwise. Blinking on stopped+non-empty (a no-op) misled. */
-            setButtonLED(MoveCapture,
-                S.captureArmed
-                    ? ((Math.floor(S.clockMs / 220) % 2) ? White : LED_OFF)
-                    : DarkGrey);
+            if (S.captureArmed) setButtonLEDAnim(MoveCapture, LED_OFF, White, LED_PULSE_4TH);
+            else setButtonLED(MoveCapture, DarkGrey);
             {
                 const _muted      = S.trackMuted[S.activeTrack];
                 const _soloed     = S.trackSoloed[S.activeTrack];
-                const _muteBlink  = Math.floor(S.clockMs / 220) % 2;
-                setButtonLED(MoveMute, _muted ? 124 : (_soloed ? (_muteBlink ? 124 : 0) : 16));
+                if (_shiftFlash && !S.sessionView) setButtonLEDAnim(MoveMute, LED_OFF, 16, LED_PULSE_4TH);  /* the Shift hint */
+                else if (_muted)                   setButtonLED(MoveMute, 124);
+                else if (_soloed)                  setButtonLEDAnim(MoveMute, LED_OFF, 124, LED_PULSE_4TH);
+                else                               setButtonLED(MoveMute, 16);
             }
             /* Contextual button LEDs: dim available indicator (16) on actionable buttons. */
             setButtonLED(MoveShift,       16);
-            setButtonLED(MoveNoteSession, 16);
             /* Session/Track view button. In Schwung co-run the CC 50 press AND its
              * LED are owned by the Schwung chain editor (Menu opens master/send FX,
              * editor paints it white via its LED queue) — NOT a dAVEBOx exit. We
@@ -2131,34 +2152,31 @@ export function _tickImpl() {
                 /* Menu open: steady-lit (no blink) — Back exits the menu now, so the
                  * button doesn't need to flash to advertise itself as the exit. */
                 setButtonLED(MoveNoteSession, White);
-            } else if (S.tapTempoOpen) {
-                const _exitBlink = (Math.floor(S.clockMs / 220) % 2) ? 16 : LED_OFF;
-                setButtonLED(MoveNoteSession, _exitBlink);
+            } else if (S.tapTempoOpen || _shiftFlash) {
+                /* the exit hint with Tap Tempo open, or the Shift hint */
+                setButtonLEDAnim(MoveNoteSession, LED_OFF, 16, LED_PULSE_4TH);
+            } else {
+                setButtonLED(MoveNoteSession, 16);
             }
-            setButtonLED(MoveUndo,        16);
+            if (_shiftFlash) {
+                setButtonLEDAnim(MoveUndo, LED_OFF, 16, LED_PULSE_4TH);
+                setButtonLEDAnim(MoveCopy, LED_OFF, 16, LED_PULSE_4TH);
+            } else {
+                setButtonLED(MoveUndo,    16);
+                setButtonLED(MoveCopy,    16);
+            }
             setButtonLED(MoveDelete,      16);
-            setButtonLED(MoveCopy,        16);
             setButtonLED(MoveUp,          16);
             setButtonLED(MoveDown,        16);
             setButtonLED(MoveLeft,  S.sessionView ? LED_OFF : 16);
             setButtonLED(MoveRight, S.sessionView ? LED_OFF : 16);
-            /* Shift-flash: buttons with a Shift-modified function blink 16/OFF while Shift is held.
-             * Sample uses DarkGrey/OFF since index 16 (RoyalBlue) shows wrong on that button. */
-            /* ⭑ Not while another gesture owns Shift — Capture's snapshot layer
+            /* The Shift hints (buttons with a Shift-modified function pulse
+             * 16 while Shift is held — Note/Session, Undo, Copy, Rec, and Loop in
+             * Session View / Mute in Track View) are decided INSIDE each button's
+             * rule above, via `_shiftFlash`, never painted over it afterwards.
+             * ⭑ Not while another gesture owns Shift — Capture's snapshot layer
              * above all (Josh, 2026-09-10). Advertising the general shortcuts over
              * a gesture that does not use them is a promise the press will break. */
-            if (S.shiftHeld && !shiftClaimedByGesture()) {
-                const _sf  = (Math.floor(S.clockMs / 220) % 2) ? 16 : LED_OFF;
-                setButtonLED(MoveNoteSession, _sf);
-                /* Shift+Rec = Live Merge; blink Rec only while merge is idle (an
-                 * active merge already owns the LED with its red/green state). */
-                if (S.dspMergeState === 0 && !S.recordArmed)
-                    setButtonLED(MoveRec, (Math.floor(S.clockMs / 220) % 2) ? Red : LED_OFF);
-                setButtonLED(MoveUndo,        _sf);
-                setButtonLED(MoveCopy,        _sf);
-                if (S.sessionView)  setButtonLED(MoveLoop, _sf);
-                if (!S.sessionView) setButtonLED(MoveMute, _sf);
-            }
 
             if (S.sessionView) {
                 updateSessionLEDs();

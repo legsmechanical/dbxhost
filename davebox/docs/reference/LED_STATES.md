@@ -177,7 +177,7 @@ Left 4×4 = lanes, right 4×4 = velocity zones (or the repeat editors).
 | surface | rule |
 |---|---|
 | **Bank map** (`paintBankMapPads`, jog held) | left 4×4 by column: Cyan, Violet, VividYellow, BrightOrange; CONFIG / MIX / INST pads the track colour; the bank you are on White; a bank the track lacks off; right 4×4 modules: instrument track colour, MIDI FX Cyan, audio FX BrightOrange; the pad waiting for the jog's release White. Session map: VOLUME VividYellow, PAN Cyan, SEND A/B Violet, the active mode White, FX buses BrightOrange |
-| **Project picker** (`paintProjectPickerLEDs`) | project in its own colour (`PROJECT_COLORS`, default Blue); the loaded one solid White; the cursor its colour ↔ off; cursor on the loaded one White ↔ colour; delete-confirm Red ↔ DeepRed; copy source Cyan ↔ DarkGrey; broken DeepRed (↔ off under the cursor); create target White ↔ off; colour-pick preview candidate ↔ off — all sw 400 ms period; steps + icons off; buttons: Copy/Delete 16, Note/Session 16 and Back White if a project is loaded, else off |
+| **Project picker** (`paintProjectPickerLEDs`) | project in its own colour (`PROJECT_COLORS`, default Blue); the loaded one solid White; **the cursor pulses off → its colour, and the cursor on the loaded one pulses colour → White — hw pulse @ quarter (ch 9), 2026-10-24**; delete-confirm Red ↔ DeepRed; copy source Cyan ↔ DarkGrey; broken DeepRed (↔ off under the cursor); create target White ↔ off; colour-pick preview candidate ↔ off — those sw 400 ms period; steps + icons off; buttons: Copy/Delete 16, Note/Session 16 and Back White if a project is loaded, else off |
 | **Arp Steps editor** (SEQ ARP 4 / TRACK ARP 5, `stepIntervalMode`) | column = step (loop length 1–8), rows = velocity level: top lit row track colour, below dim, rest off |
 | **Performance Mode** (`updatePerfModeLEDs`) | R0 rate pads White active / DarkGrey; Hold 73 Red / DeepRed; Sync 74 Green / DeepGreen; Latch 75 track-3 bright / dim; R1 pitch mods White / DeepMagenta; R2 vel-gate White / Mustard; R3 wild White / DarkBlue; steps 16–31: recalled slot White, stored PurpleBlue, empty LightGrey |
 | **Snapshot layer** (Capture held, `devSnapLedFor`) | filled Cyan, white White, dim DarkGrey, empty off — on the steps |
@@ -224,15 +224,23 @@ paints them, by RGB SysEx).
 
 | button | rule |
 |---|---|
+**Since 2026-10-24 every blinking button state is a hardware animation** (Josh: *"do the 1/4 pulse on
+… any function buttons that blink"*): a state that holds **pulses @ quarter (ch 9)** between off and
+the button's colour; Rec's two "about to happen at the bar" flashes are the **eighth blink (ch 13)**
+so urgency still reads as urgency. Each is written once per state change (`setButtonLEDAnim`), and the
+Shift hints are decided inside each button's rule rather than painted over it, so nothing restarts.
+
+| button | rule |
+|---|---|
 | Play 85 | Green playing / off |
-| Rec 86 | armed Red; stop scheduled or page pending Red ↔ off (sw 75 ms); merge notice Red ↔ off (110 ms); merge armed Red, capturing Green; step record White; co-run off (forced); Shift held while idle Red ↔ off (220 ms) |
+| Rec 86 | armed Red; stop scheduled or page pending **Red, hw blink @ 8th**; merge notice **Red, hw blink @ 8th**; merge armed Red, capturing Green; step record White; co-run off (forced); Shift held while merge idle and not armed **Red, hw pulse** |
 | Sample 118 | DarkGrey (bake, always available) |
 | Back 51 | White where a tap acts (`backTapWouldAct`), else off; off in co-run |
-| Loop 58 | locked Perf Mode / latched Loop view / drum repeat latched: White ↔ off at 48 master ticks (`flashAtRate`, transport-synced); ARP IN latched: track colour on each fired note; perf latch mode VividYellow; else scratch 60 (dim) |
-| Capture 52 | armed White ↔ off (220 ms), else DarkGrey |
-| Mute 88 | muted 124; soloed 124 ↔ off (220 ms); else 16 |
-| Shift 49, Note/Session 50, Undo 56, Delete 119, Copy 60, Up/Down 55/54, Left/Right 63/62 | 16 ("available"); Left/Right off in Session View; Note/Session White with the global menu open, 16 ↔ off with Tap Tempo open (220 ms), 16 forced in Move co-run |
-| Shift held | Note/Session, Undo, Copy, Loop (Session) / Mute (Track) 16 ↔ off (220 ms) |
+| Loop 58 | locked Perf Mode / latched Loop view / drum repeat latched: **White, hw pulse**; ARP IN latched: track colour on each fired note (sw, note-synced); perf latch mode VividYellow; else scratch 60 (dim) |
+| Capture 52 | armed **White, hw pulse**, else DarkGrey |
+| Mute 88 | muted 124; soloed **124, hw pulse**; else 16 |
+| Shift 49, Note/Session 50, Undo 56, Delete 119, Copy 60, Up/Down 55/54, Left/Right 63/62 | 16 ("available"); Left/Right off in Session View; Note/Session White with the global menu open, **16 hw pulse with Tap Tempo open**, 16 forced in Move co-run |
+| Shift held | Note/Session, Undo, Copy, Loop (Session) / Mute (Track) **16, hw pulse** |
 
 ### 3.9 Knob rings CC 71–78 (`ui_knob_leds.mjs` + `updateTrackLEDs`)
 
@@ -262,6 +270,9 @@ Candidates, by how directly they map (decide per state; Josh 2026-10-24: *"do 1 
 |---|---|---|
 | ✅ playing clip pad (Session View) | **pulse @ quarter** (ch 9) between dim and bright | BUILT 2026-10-24 — Move's own write. Track View's playing-clip blink and the clip buttons are still software |
 | ✅ queued clip pad (Session View), transport running | **blink @ eighth** (ch 13) | BUILT 2026-10-24 — Move writes a quarter; a quarter blink beside a quarter pulse was hard to tell apart on the device |
+| ✅ project picker cursor (own colour ↔ off, 400 ms) | **pulse @ quarter** (ch 9) off → colour; on the loaded project colour → White | BUILT 2026-10-24 |
+| ✅ every blinking function button (Loop latched, Capture armed, Mute soloed, Tap Tempo exit, the Shift hints, Rec's Shift hint) | **pulse @ quarter** (ch 9) off → colour | BUILT 2026-10-24 |
+| ✅ Rec stop-scheduled / page-pending (75 ms) and merge notice (110 ms) | **blink @ 8th** (ch 13) off → Red | BUILT 2026-10-24 — kept faster than the pulses so it still reads as urgent |
 | copy source, 220 ms | blink @ 8th (ch 13) at 120 BPM ≈ 250 ms | becomes tempo-relative |
 | automation point / lock blink, 200/100 | blink @ 8th | loses the 2:1 duty; is that a feature? |
 | save flash, two blinks | two writes: blink @ 8th, then the plain colour after 425 ms | or leave as is |

@@ -134,6 +134,25 @@ export function setButtonLED(cc, color, force = false, anim = 0) {
     return !!sent;
 }
 
+/* A repeating animation BETWEEN two colours — the two-step the controller
+ * expects: the start colour on channel 0, then the target on the animation
+ * channel, so a pulse breathes from `from` to `to` and a blink snaps between
+ * them. Skipped entirely while the LED is already running this (to, anim),
+ * because re-sending the pair every frame would restart it each time and read
+ * as a flicker. A later plain write of any colour stops it. */
+export function setLEDAnim(note, from, to, anim) {
+    anim &= 0x0F;
+    if (ledCache[note] === to && ledAnim[note] === anim) return true;
+    setLED(note, from, false, 0);
+    return setLED(note, to, false, anim);
+}
+export function setButtonLEDAnim(cc, from, to, anim) {
+    anim &= 0x0F;
+    if (buttonCache[cc] === to && buttonAnim[cc] === anim) return true;
+    setButtonLED(cc, from, false, 0);
+    return setButtonLED(cc, to, false, anim);
+}
+
 /* What the cache believes an LED is doing: the animation channel of the last
  * accepted write, 0 when it was a plain colour. A painter deciding whether a
  * change should fade needs to know whether the LED is mid-animation. */

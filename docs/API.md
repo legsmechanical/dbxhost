@@ -188,6 +188,8 @@ clearAllLEDs();             // Clear all LEDs
 setLED(note, color, false, anim);       // animate: see below
 setButtonLED(cc, color, false, anim);
 ledAnimOf(note); buttonAnimOf(cc);      // the repeating animation the cache believes is running (0 = none)
+setLEDAnim(note, from, to, anim);       // pulse / blink BETWEEN two colours: `from` on channel 0, then
+setButtonLEDAnim(cc, from, to, anim);   //   `to` on the animation channel; skipped while already running
 ```
 
 LED values are cached to avoid redundant MIDI sends.
@@ -206,7 +208,15 @@ its animations are to follow its tempo. The cache treats a fade as the colour
 it ends on (the next plain write of that colour sends nothing, so the fade is
 not cut short) and a pulse / blink as running (the same request again is a
 repeat; the plain colour is sent, because it is what stops it). The host
-carries the status byte unchanged to the hardware.
+carries the status byte unchanged to the hardware. A repeating animation runs
+between the colour the LED showed and the new one, so `setLEDAnim` /
+`setButtonLEDAnim` write the start colour first (on channel 0, skipped if the
+LED already shows it) and then the target on the animation channel, and send
+nothing at all while the LED is already running that (target, animation) —
+re-sending restarts the animation and reads as a flicker. Decide an LED's final
+state in one place per frame: a plain write after an animated one stops it. The
+table was confirmed on Move's controller by eye (2026-10-24); Move's own smooth
+blink is pulse at a quarter note (channel 9) at song tempo.
 
 ## Host Functions (Module Management)
 

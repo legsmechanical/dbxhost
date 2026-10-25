@@ -10,6 +10,7 @@ ring's only producer, so it is SIGSTOPped for the ~1 ms of the write.
   python3 led_atlas_device.py atlas      # pads 68..82: colour A on ch0, then colour B on ch 1..15
   python3 led_atlas_device.py off        # every atlas pad plain off (stops any animation)
   python3 led_atlas_device.py one <ch> <pad> <from> <to>
+  python3 led_atlas_device.py btn <ch> <cc> <from> <to>    # a button LED
 
 Pad n (68+k) shows channel k+1. Bottom row left->right = channels 1..8,
 second row = 9..15. Pad 83 = control: same two colours, channel 0 (snap).
@@ -62,6 +63,11 @@ elif cmd == "one":
     ch, pad, a, b = map(int, sys.argv[2:6])
     push([note(0, pad, a)]); time.sleep(0.3); push([note(ch, pad, b)])
     print("pad", pad, "ch", ch, a, "->", b)
+elif cmd == "btn":
+    # A BUTTON (CC) LED on an animation channel: btn <ch> <cc> <from> <to>
+    ch, cc_, a, b = map(int, sys.argv[2:6])
+    push([[0x0B, 0xB0, cc_, a]]); time.sleep(0.3); push([[0x0B, 0xB0 | ch, cc_, b]])
+    print("button cc", cc_, "ch", ch, a, "->", b)
 elif cmd == "clock":
     # Pace the LED controller at a chosen tempo for a while: Start, 24 clocks a
     # beat, Stop. At 30 BPM a quarter-note animation takes 2 s, so a fade, a

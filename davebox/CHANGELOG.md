@@ -15,8 +15,14 @@ the section into a versioned heading at release time.
   clock Move would, so those animations follow the song (when dAVEBOx follows
   Move's clock, Move's own clock is used). In Session View a **playing clip
   now pulses and a queued clip blinks exactly as they do on Move**, smoothly
-  and on the beat, instead of the stepped software blink. Pads still change
-  colour at once on note on and note off.
+  and on the beat, instead of the stepped software blink. The same smooth
+  pulse now marks the **selected project in the project picker** (the loaded
+  one stays solid white) and **every function button that blinks**: Loop when
+  a view is latched, Capture when armed, Mute when a track is soloed, the exit
+  hint with Tap Tempo open, and the Shift shortcut hints. Rec's "stopping at
+  the end of the page" and merge-notice flashes stay a faster hard blink, so
+  they still read as urgent. Pads still change colour at once on note on and
+  note off.
 - **The CHORD bank is now the Pad Mode bank, on every melodic track.** Its
   first knob, **Mode**, picks the pad layout (Scale, Chrom, Piano, Chord,
   Custom) and the other knobs are that layout's settings; each layout keeps its

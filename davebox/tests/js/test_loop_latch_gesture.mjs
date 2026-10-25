@@ -32,10 +32,11 @@ let printed = [];
 globalThis.print = (x, y, t) => { printed.push(String(t)); };
 let stepLights = {};
 let buttonLights = {};
+let buttonChan = {};      /* the status channel of a button's last write: 0 plain, 9 = hw pulse */
 globalThis.move_midi_internal_send = (m) => {
     const a = Array.from(m);
     if (a.length >= 4 && (a[1] & 0xF0) === 0x90 && a[2] >= 16 && a[2] <= 31) stepLights[a[2] - 16] = a[3];
-    if (a.length >= 4 && (a[1] & 0xF0) === 0xB0) buttonLights[a[2]] = a[3];
+    if (a.length >= 4 && (a[1] & 0xF0) === 0xB0) { buttonLights[a[2]] = a[3]; buttonChan[a[2]] = a[1] & 0x0F; }
     return true;
 };
 globalThis.move_midi_external_send = () => {}; globalThis.set_led = () => {};
@@ -228,17 +229,18 @@ step('page copy works latched, and ends with the latch', () => {
     cc(COPY, 0);
 });
 
-step('the Loop button BLINKS while latched (as Session View\'s locked Perf Mode)', () => {
+step('the Loop button PULSES while latched (as Session View\'s locked Perf Mode) — in the LED hardware', () => {
     melodic(64);
+    buttonLights = {}; buttonChan = {};
     loopTap();
-    const seen = new Set();
-    for (const pos of [0, 48, 96, 144]) {
-        S.masterPos = pos;
-        buttonLights = {}; leds.invalidateLEDCache();
-        ticks(1);
-        if (buttonLights[LOOP] !== undefined) seen.add(buttonLights[LOOP]);
-    }
-    assert(seen.has(White) && seen.has(0), 'Loop LED phases ' + JSON.stringify([...seen]));
+    ticks(1);
+    /* Since 2026-10-24 the blink is the controller's own: White written ONCE on
+     * the pulse channel (9), after which the hardware breathes it off and on. */
+    assert(buttonLights[LOOP] === White, 'Loop LED colour ' + buttonLights[LOOP]);
+    assert(buttonChan[LOOP] === 9, 'Loop LED channel ' + buttonChan[LOOP] + ' (want 9 = pulse @ quarter)');
+    buttonLights = {};
+    for (const pos of [48, 96, 144]) { S.masterPos = pos; ticks(1); }
+    assert(buttonLights[LOOP] === undefined, 'latched Loop LED was re-sent (would restart the pulse): ' + JSON.stringify(buttonLights[LOOP]));
     loopTap();
     buttonLights = {}; leds.invalidateLEDCache(); ticks(1);
     assert(buttonLights[LOOP] !== White, 'closed: no longer white, got ' + buttonLights[LOOP]);
