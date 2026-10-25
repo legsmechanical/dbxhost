@@ -633,6 +633,24 @@ globalThis.tick = function() {
 
 Lifecycle: host clears LEDs ("Loading...") → ~500 ms → `init()` → run → Shift+Vol+Jog Click → host clears LEDs ("Exiting...") → return to Move.
 
+**The LED queue (overtake).** `activateLedQueue` (`src/shadow/shadow_ui.js`) replaces
+`move_midi_internal_send` for note-on / CC packets while a module owns the surface: writes are
+held per note / CC (last writer wins) and `flushLedQueue` sends `LED_QUEUE_MAX_PER_TICK` (16) a
+tick. Its contract, each clause paid for by a bug:
+- **Queueing is acceptance** — the wrapper returns `true`, because `input_filter.mjs` records a
+  falsy return as a refused write and re-sends every LED every frame
+  (`tests/host/test_led_queue_reports_acceptance.sh`).
+- **The status byte is carried unchanged** — its low nibble is the LED controller's animation
+  channel (Push 2's table; `davebox/docs/reference/LED_STATES.md` §1.1 is the one home for it).
+- **An animated write behind a pending plain write for the same key does not replace it** — it
+  waits in a follow slot and goes out on a later flush, so a pulse's start colour reaches the
+  hardware before the animated target even when both were written in one tick
+  (`tests/shadow/test_led_queue_two_step.sh`).
+- **The flush is round-robin from a cursor and alternates CCs-first / notes-first**, so a
+  surface repainting low notes or icons every frame cannot starve the high keys. Both failure
+  modes read as "the painter is flaky" and were device-measured through a wire probe before
+  either was believed.
+
 **The old figure here was "~64 packets, >60/frame overflows", and it was a
 symptom, not a limit.** `shadow_midi_out_t.write_idx` is a byte offset into a
 512-byte buffer and was declared `uint8_t`, so it saturated at 255: only the

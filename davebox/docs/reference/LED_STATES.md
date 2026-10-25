@@ -10,6 +10,10 @@ automation lanes, the Pad Mode layouts and the hardware animations.
 Written 2026-10-24 from `ui_leds.mjs`, `ui_tick.mjs` (the button block), `ui_scene.mjs`,
 `ui_knob_leds.mjs`, `ui_constants.mjs`, `src/shared/constants.mjs`, `src/shared/input_filter.mjs`,
 and a MIDI_OUT capture of Move native on the device (stock Schwung's test stream, same day).
+Updated 2026-10-25: the channel table confirmed by eye, the hardware animations built and merged
+(§4 ✅ rows), the two-step and the host LED queue (§1.1), and the rule that pads and icons never
+animate. ⭐ **This file is the one home for how Move's LEDs work** — the memory notes and the
+API reference point here; a new finding goes here first.
 
 ---
 
@@ -47,6 +51,36 @@ A write of the SAME colour on channels 1–15 restarts the animation; the plain 
 stops a pulse or blink. The cache in `input_filter.mjs` knows this: a fade is remembered as the
 colour it ends on (the painter's next plain frame is a repeat, so the fade is not cut), a pulse or
 blink as running (the plain colour IS sent, because it stops it).
+
+**The two-step.** A pulse or blink runs BETWEEN the colour the LED currently shows and the new
+one, so to pulse dim → bright the painter writes the dim colour on channel 0 and then the bright
+colour on the animation channel. `setLEDAnim(note, from, to, anim)` / `setButtonLEDAnim(cc, from,
+to, anim)` do exactly that, skip the start write when the LED already shows it, and send NOTHING
+while the LED is already running that (to, anim) — a repeat would restart it and read as a
+flicker. `cachedSetLEDAnim` in `ui_leds.mjs` is the same pair behind the painter's own cache.
+Decide an LED's final state in one place per frame: a plain write after the pair stops it.
+
+⚠⚠ **The two-step has to survive the host's LED queue** (`activateLedQueue` / `flushLedQueue`
+in `src/shadow/shadow_ui.js`, live during overtake; budget `LED_QUEUE_MAX_PER_TICK` = 16 packets
+a tick). The queue keeps ONE pending write per note / CC, last writer wins. Before 2026-10-25 the
+start write was therefore dropped whenever both halves landed in one tick — the pulse ran from
+whatever the LED happened to show (red ↔ yellow instead of red ↔ white), or did not run at all
+when the key was re-queued — and the flush walked keys ascending, notes before CCs, so under a
+backlog the function buttons at CC 50+ were never written while the step icons (CC 16–31, forced
+every poll) ate the budget. The symptom reads as a flaky painter; the painter was right every
+time. Since `118c492d1` the queue holds an animated write that arrives behind a pending plain
+write for the same key in a follow slot and sends it on a LATER flush, serves keys round-robin
+from a cursor, and alternates CCs-first / notes-first — so the start colour reaches the hardware
+a frame or two before the animated write, and nothing starves. Pinned by
+`tests/shadow/test_led_queue_two_step.sh`.
+
+**How to verify an animation, in order of trust:** (1) by eye on the device under a slow LED
+clock (`led_atlas_device.py clock 30 120 &`); (2) a wire probe — tap the shim's MIDI-out through
+`schwung-testd` and read the packets per key with their channel and frame — which is the only
+instrument that sees what the queue did; (3) the painter's unit test, which sees the pair leave
+the painter and nothing after. A packet on an animation channel is NOT proof of a visible
+animation (Move's released-pad write on channel 9 shows nothing), and a painter test passing is
+not proof the hardware received both halves.
 
 ✅ **Push 2's table IS Move's table, channel for channel** — confirmed by eye 2026-10-24 with the
 atlas (§5) under a 30 BPM LED clock: 1–5 ease once from the old colour to the new and stay (pad 5
@@ -258,7 +292,8 @@ Sound mode's own pages: Red active / White muted / off (`ui_sound.mjs`).
 
 ## 4. Motions in use, and what they could become
 
-Every motion dAVEBOx shows today is painted in software: a colour recomputed each tick from
+The ✅ rows below are hardware animations since 2026-10-24/25 (merged to main `118c492d1`). Every
+other motion dAVEBOx shows is still painted in software: a colour recomputed each tick from
 `S.clockMs` or a transport flag, re-sent when it changes. Periods in use: **75, 106, 110, 150/300,
 200/100, 220, 400, 440, 900 ms**, plus the transport's **eighth / sixteenth** flags and `flashAtRate(48)`.
 Each costs a packet per LED per toggle and is phase-free (two blinking things are never in step
@@ -266,7 +301,12 @@ unless they share a divisor). The hardware offers, per LED, one packet: fade / p
 24th, 16th, 8th, quarter or half note of dAVEBOx's tempo, all in phase with each other and with
 the music since the clock is the sequencer's.
 
-Candidates, by how directly they map (decide per state; Josh 2026-10-24: *"do 1 and 2"* — the two Session View clip states; the rest stay software until he says):
+Decided so far (Josh, 2026-10-24): *"do 1 and 2"* (the Session View clip states), the queued blink
+*"faster than the playing pulse … like 1/8"*, then the picker cursor and *"any function buttons
+that blink"* — *"all of them"*, single-colour buttons as *"white/off"*. Not decided: the unticked
+rows stay software until he says. Never: pads and step icons (§1.1).
+
+Candidates, by how directly they map:
 
 | today | hardware equivalent | note |
 |---|---|---|
