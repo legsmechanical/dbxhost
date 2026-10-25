@@ -42,8 +42,10 @@ export const LEDS_PER_FRAME      = 8;
  * ⚠ Which group fades once and which repeats is Push 2's table; Move's own
  * firmware writes a playing clip on channel 9 and a queued clip on channel 14.
  * ⚠ Pads NEVER animate: a pad's colour changes at once on note on and note off
- * (Josh, 2026-10-24 — Move's own pads do the same). The animations are for the
- * states dAVEBOx blinks in software today, so they blink as smoothly as Move's. */
+ * (Josh, 2026-10-24 — Move's own pads do the same). The step-button ICONS
+ * (CC 16-31) never animate either (Josh, 2026-10-25): plain channel 0 only.
+ * The animations are for the states dAVEBOx blinks in software today, so
+ * they blink as smoothly as Move's. */
 export const LED_ANIM_NONE   = 0;
 export const LED_FADE_24TH = 1, LED_FADE_16TH = 2, LED_FADE_8TH = 3, LED_FADE_4TH = 4, LED_FADE_HALF = 5;
 export const LED_PULSE_24TH = 6, LED_PULSE_16TH = 7, LED_PULSE_8TH = 8, LED_PULSE_4TH = 9, LED_PULSE_HALF = 10;

@@ -61,7 +61,9 @@ breathe at 120 BPM, which is what Josh picked out of the atlas as "the Move look
 
 📌 **Pads never animate.** dAVEBOx's playing-surface pads change colour at once on note on and note
 off, as Move's do, and that stays. The animations are for the states §4 blinks in software today,
-so a dAVEBOx blink is as smooth as Move's — nothing is moved there until Josh picks from §4.
+so a dAVEBOx blink is as smooth as Move's. **The step-button icons (CC 16–31) never animate
+either** (Josh, 2026-10-25): they are hints and status lights, written plain on channel 0, and any
+change to how they are repainted keeps them that way.
 
 ### 1.2 The RGB SysEx, for the LEDs the palette cannot name
 

@@ -130,6 +130,12 @@ step('Shift held (Track View) pulses Note/Session, Undo, Copy, Mute at 16 and Re
     pulsePair(writesTo(MoveRec), Red, PULSE);
     assert(writesTo(MoveLoop).length === 0, `Loop is not a Shift hint in Track View: ${JSON.stringify(writesTo(MoveLoop))}`);
 });
+step('the step-button ICONS (CC 16-31) never animate — every write to them is channel 0 (Josh, 2026-10-25)', () => {
+    const icon = ccWrites.filter(w => w[0] >= 16 && w[0] <= 31);
+    assert(icon.length > 0, 'rig: no icon writes seen under Shift (the hints should light)');
+    const bad_ = icon.filter(w => w[1] !== 0);
+    assert(bad_.length === 0, `icons on an animation channel: ${JSON.stringify(bad_)}`);
+});
 step('…and while Shift stays held, 40 ticks write nothing to any of them', () => {
     reset(); ticks(40);
     for (const cc of [MoveNoteSession, MoveUndo, MoveCopy, MoveMute, MoveRec])
