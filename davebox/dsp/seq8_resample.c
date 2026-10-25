@@ -20,8 +20,8 @@
  * bars record ring-out, not the loop starting again. Transport stop mid-take
  * (Play, project load) cancels; the host ends the take at that block.
  *
- * The metronome is silent while a take is pending or running: the click is
- * mixed BEFORE Master FX, so it cannot be taken out of the file afterwards. */
+ * The metronome is silent from arming until the UI clears the outcome: the
+ * click is mixed BEFORE Master FX, so it cannot be taken out of the file. */
 
 #define RS_IDLE       0
 #define RS_ARMED      1

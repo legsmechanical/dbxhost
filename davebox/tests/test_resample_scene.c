@@ -83,7 +83,21 @@ int main(void) {
     HX_ASSERT(inst->resample_state == RS_IDLE, "clear did not return to idle");
 
     /* ---- the take ---- */
-    hx_set_param(h, "metro_on", "3");                /* would click on every beat */
+    /* The harness loads no click WAV, so "silent" would be true of any build:
+     * give it one, and prove it sounds when no take is running. */
+    {
+        static int16_t click[256];
+        int c, heard = 0;
+        for (c = 0; c < 256; c++) click[c] = 8000;
+        inst->metro_wav_data = click; inst->metro_wav_frames = 256; inst->metro_vol = 100;
+        hx_set_param(h, "metro_on", "3");            /* clicks on every beat */
+        hx_set_param(h, "transport", "play");
+        for (c = 0; c < 400 && !heard; c++) { hx_render(h, 1); heard = !audio_silent(); }
+        HX_ASSERT(heard, "control: the click never sounded, so silence below would prove nothing");
+        hx_set_param(h, "transport", "stop");
+        hx_render(h, 400);                            /* the click runs out */
+        HX_ASSERT(audio_silent(), "control: stopped, yet still clicking");
+    }
     hx_clear_capture(h);
     hx_set_param(h, "resample_scene", "0 3 0 0 |/x/My S1 3bar 120bpm.wav");
     HX_ASSERT(inst->playing && inst->resample_state == RS_ARMED, "the take did not launch from stopped");
@@ -110,6 +124,10 @@ int main(void) {
               "the take did not finish at its length");
     HX_ASSERT(!inst->tracks[1].clip_playing && !inst->tracks[2].clip_playing,
               "the clips played on past the pass");
+    for (i = 0; i < 200; i++) {                      /* transport still running: beats fall */
+        hx_render(h, 1);
+        HX_ASSERT(audio_silent(), "the click came back before the UI read the outcome");
+    }
     hx_set_param(h, "transport", "stop");
     hx_stub_capture(&stops, NULL, NULL, NULL);
     HX_ASSERT(inst->resample_state == RS_DONE && stops == 0, "stopping after DONE cancelled the take");
