@@ -47,7 +47,7 @@ let w = take();
 
 /* --- queued while the transport runs: dim on ch0, then the colour on the BLINK channel */
 S.playing = true; S.trackQueuedClip[T] = 0;
-updateSessionLEDs();
+updateSessionLEDs(); updateSessionLEDs();
 w = take();
 (w.length === 1 && w[0].ch === LED_BLINK_8TH && w[0].colour === trackColor(T))
     ? ok(`a queued clip blinks in hardware: track colour on channel ${LED_BLINK_8TH} (the dim start was already on the pad)`)
@@ -57,14 +57,29 @@ w = take();
 (w.length === 0) ? ok('…and repaints send nothing while it stays queued (no restart, no flicker)')
                  : bad('queued repaint resent', JSON.stringify(w));
 
-/* --- it launches: dim on ch0 (restart from dim), then the colour on the PULSE channel */
+/* --- it launches: dim on ch0 (restart from dim) on ONE paint, the colour on the
+ * PULSE channel on the NEXT — the host's LED queue keeps one write per pad per
+ * frame, so both in one paint would reach the hardware as the second alone */
 S.trackQueuedClip[T] = -1; S.trackClipPlaying[T] = true;
 updateSessionLEDs();
 w = take();
-(w.length === 2 && w[0].ch === 0 && w[0].colour === trackDimColor(T)
-               && w[1].ch === LED_PULSE_4TH && w[1].colour === trackColor(T))
-    ? ok(`a playing clip pulses in hardware: dim on channel 0, then track colour on channel ${LED_PULSE_4TH}`)
-    : bad('playing clip', JSON.stringify(w));
+(w.length === 1 && w[0].ch === 0 && w[0].colour === trackDimColor(T))
+    ? ok('a clip that launches is first written dim on channel 0, alone in its frame')
+    : bad('playing clip, first paint', JSON.stringify(w));
+updateSessionLEDs();
+w = take();
+(w.length === 1 && w[0].ch === LED_PULSE_4TH && w[0].colour === trackColor(T))
+    ? ok(`…and on the next paint the track colour on channel ${LED_PULSE_4TH}: it pulses dim ↔ colour`)
+    : bad('playing clip, second paint', JSON.stringify(w));
+/* the case the device showed solid: a clip queued while STOPPED is solid track
+ * colour; it launches; the pulse must start from DIM, not from the colour */
+S.playing = false; S.trackClipPlaying[T] = false; S.trackQueuedClip[T] = 0; updateSessionLEDs(); take();
+S.playing = true; S.trackQueuedClip[T] = -1; S.trackClipPlaying[T] = true;
+updateSessionLEDs(); updateSessionLEDs();
+w = take();
+(w.length === 2 && w[0].ch === 0 && w[0].colour === trackDimColor(T) && w[1].ch === LED_PULSE_4TH && w[1].colour === trackColor(T))
+    ? ok('a clip launched from solid (queued while stopped) is taken to dim first, so the pulse is not colour ↔ colour (solid)')
+    : bad('launch from solid', JSON.stringify(w));
 for (let i = 0; i < 50; i++) { S.clockMs += 11; S.tickCount++; updateSessionLEDs(); }
 w = take();
 (w.length === 0) ? ok('…and 50 repaints send nothing while it plays')

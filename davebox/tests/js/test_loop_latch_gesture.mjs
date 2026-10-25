@@ -233,7 +233,7 @@ step('the Loop button PULSES while latched (as Session View\'s locked Perf Mode)
     melodic(64);
     buttonLights = {}; buttonChan = {};
     loopTap();
-    ticks(1);
+    ticks(2);                 /* the two-step: off plainly, then White animated, on two frames */
     /* Since 2026-10-24 the blink is the controller's own: White written ONCE on
      * the pulse channel (9), after which the hardware breathes it off and on. */
     assert(buttonLights[LOOP] === White, 'Loop LED colour ' + buttonLights[LOOP]);

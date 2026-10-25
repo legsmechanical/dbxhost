@@ -103,7 +103,7 @@ S.projectPadPicker = mkPicker(/*current*/1, /*selected*/0);
 const writes = [];                           /* every write to the selected pad, in order */
 const _send = globalThis.move_midi_internal_send;
 globalThis.move_midi_internal_send = (pkt) => { if (pkt[2] === TRACK_PAD_BASE + 0) writes.push([pkt[1] & 0x0F, pkt[3]]); return _send(pkt); };
-paintAt(0);
+paintAt(0); paintAt(1);       /* the two-step spans two paints: the host queue keeps one write per pad per frame */
 eq('selected pad is written off on channel 0 first (the pulse\'s start)', JSON.stringify(writes[0]), JSON.stringify([0, LED_OFF]));
 eq('…then its own colour on the pulse channel (it MOVES, in hardware)', JSON.stringify(writes[1]), JSON.stringify([LED_PULSE_4TH, GREEN]));
 eq('current pad is White', pad(1), White);
@@ -126,7 +126,7 @@ globalThis.move_midi_internal_send = _send;
 
 /* ---- current and selected on the SAME pad (the common case on open) ---- */
 S.projectPadPicker = mkPicker(/*current*/1, /*selected*/1);
-paintAt(0);
+paintAt(0); paintAt(1);
 eq('both-on-one-pad breathes into White…', pad(1), White);
 eq('…on the pulse channel, so it reads as selected too', chan(1), LED_PULSE_4TH);
 

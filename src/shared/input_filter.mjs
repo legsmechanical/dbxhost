@@ -139,17 +139,27 @@ export function setButtonLED(cc, color, force = false, anim = 0) {
  * channel, so a pulse breathes from `from` to `to` and a blink snaps between
  * them. Skipped entirely while the LED is already running this (to, anim),
  * because re-sending the pair every frame would restart it each time and read
- * as a flicker. A later plain write of any colour stops it. */
+ * as a flicker. A later plain write of any colour stops it.
+ *
+ * ⚠ The two writes go out on DIFFERENT frames. The host's LED queue keeps only
+ * the LAST write per note (or CC) per frame, so a start colour and an animated
+ * target sent in one tick reach the hardware as the target alone, and the
+ * controller then pulses from whatever the LED happened to show — a solid pad
+ * when it already showed the target, a colour nobody asked for otherwise
+ * (seen on the device, 2026-10-24). So: the first call writes the start colour
+ * and returns false ("not yet"); the caller paints every tick anyway, and the
+ * next call, finding the start colour on the LED, writes the animated target.
+ * One tick (~10 ms) of plain colour before the animation starts is invisible. */
 export function setLEDAnim(note, from, to, anim) {
     anim &= 0x0F;
     if (ledCache[note] === to && ledAnim[note] === anim) return true;
-    setLED(note, from, false, 0);
+    if (ledCache[note] !== from || ledAnim[note] !== 0) { setLED(note, from, false, 0); return false; }
     return setLED(note, to, false, anim);
 }
 export function setButtonLEDAnim(cc, from, to, anim) {
     anim &= 0x0F;
     if (buttonCache[cc] === to && buttonAnim[cc] === anim) return true;
-    setButtonLED(cc, from, false, 0);
+    if (buttonCache[cc] !== from || buttonAnim[cc] !== 0) { setButtonLED(cc, from, false, 0); return false; }
     return setButtonLED(cc, to, false, anim);
 }
 
