@@ -139,18 +139,23 @@ function drawAudioTrackRest(t) {
     (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankHeaderName(t, S.activeBank), false, true);
     const head = i.mode === AU_MODE_SLICE ? 'Slice ' + (auSelSlice(t) + 1) + '/' + i.n + '  ' : 'Loop  ';
     ovwPrint(4, 9, head + auSampleName(t, c), 1);
-    drawAudioWave(t, c, 3, 18, 122, 30, { sel: auSelSlice(t) });
+    drawInfoRow2();
     drawOverviewTracks(overviewHints());
+    /* the sample where a drum track has its position bar, under the tracks
+     * (found on the device: a taller one ran into the track numbers) */
+    drawAudioWave(t, c, 4, 49, 120, 7, { sel: auSelSlice(t) });
 }
 
 /* The AUDIO editor (ui_audio_editor): the clip's audio on the kit page, a
  * page per jog detent. */
 function drawAudioPanel() {
     const ed = S.auPanel;
+    clear_screen();                      /* it opens over the sound menu */
     const t = ed.t;
-    const pages = auPanelPages(t);
-    const title = 'AUDIO ' + String.fromCharCode(65 + auClipOf(t)) + ' - ' + auPanelTitle(ed) +
-                  ' ' + (Math.min(ed.page | 0, pages.length - 1) + 1) + '/' + pages.length;
+    /* The page's own name — the header has room for no more beside the
+     * track tag (found on the device: "ALL SLICES 4/4" was cut). */
+    const name = auPanelTitle(ed);
+    const title = name === 'CLIP' ? 'CLIP ' + String.fromCharCode(65 + auClipOf(t)) : name;
     drawKitPage(title, auPanelCells(ed), false, [['jog', 'page'], ['tch+clk', 'open']]);
 }
 

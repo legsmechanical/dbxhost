@@ -77,6 +77,17 @@ static void write_ramp(const char *path) {
     for (i = 0; i < n; i++) put_le16(f, (int)(i % 30000));
     fclose(f);
 }
+/* mono 16-bit 44.1 kHz, `secs`: frame i holds i % 30000 */
+static void write_ramp_len(const char *path, double secs) {
+    FILE *f = fopen(path, "wb");
+    uint32_t n = (uint32_t)(44100 * secs), i;
+    fwrite("RIFF", 1, 4, f); put_le32(f, 36 + n * 2); fwrite("WAVEfmt ", 1, 8, f);
+    put_le32(f, 16); put_le16(f, 1); put_le16(f, 1); put_le32(f, 44100); put_le32(f, 88200);
+    put_le16(f, 2); put_le16(f, 16);
+    fwrite("data", 1, 4, f); put_le32(f, n * 2);
+    for (i = 0; i < n; i++) put_le16(f, (int)(i % 30000));
+    fclose(f);
+}
 /* a WAV whose data chunk claims 11 minutes */
 static void write_long(const char *path) {
     FILE *f = fopen(path, "wb");
@@ -166,6 +177,7 @@ int main(void) {
     snprintf(p, sizeof p, "%s/src/loop.aif", g_root); write_aiff(p);
     snprintf(p, sizeof p, "%s/src/long.wav", g_root); write_long(p);
     snprintf(p, sizeof p, "%s/src/ramp.wav", g_root); write_ramp(p);
+    snprintf(p, sizeof p, "%s/src/ramp3.wav", g_root); write_ramp_len(p, 3.0);
 
     /* ---- the mode: picked like the Conductor; the notes go (Q2) ---- */
     h = rig(0); inst = (seq8_instance_t *)h->inst; tr = &inst->tracks[4];
@@ -420,6 +432,24 @@ int main(void) {
     hx_set_param(h, "launch_quant", "0");
     hx_render(h, 4);
 
+    /* ---- a sample longer than its bar plays to the bar's last block: the
+     * restart waits for the bar (found on the device: it came one block early) ---- */
+    snprintf(p, sizeof p, "6|%s/src/ramp3.wav", g_root);
+    hx_set_param(h, "t4_au_pick", p);
+    HX_ASSERT(wait_loaded(h, 4, 6) == 2, "the long ramp did not load");
+    hx_set_param(h, "t4_au_set_bars", "6 1");
+    hx_stub_feed_reset();
+    hx_set_param(h, "t4_launch_clip", "6");
+    hx_set_param(h, "transport", "play");
+    for (i = 0; i < 20 && hx_stub_feed(4, NULL, NULL) == 0; i++) hx_render(h, 1);
+    for (n = 1; n <= 688; n++) hx_render(h, 1);         /* block 688 (from 0) holds frames 88064..88191 */
+    blk = hx_stub_feed_last(4);
+    HX_ASSERT(blk[0] == 88064 % 30000 && blk[254] == 88191 % 30000,
+              "the loop restarted before its bar ended");
+    hx_set_param(h, "transport", "stop");
+    hx_render(h, 4);
+    hx_set_param(h, "t4_launch_clip", "5");
+
     /* ---- review: a Loop clip with Dir Backward still plays forward, once per pass ---- */
     hx_set_param(h, "t4_c5_dir", "1");
     hx_stub_feed_reset();
@@ -467,8 +497,9 @@ int main(void) {
     hx_render(h, 1);
     blk = hx_stub_feed_last(4);
     HX_ASSERT(blk[255] < 2000, "a JmpQ jump did not wait for its boundary");
-    for (i = 0; i < 40; i++) { hx_render(h, 1); blk = hx_stub_feed_last(4); if (blk[255] > 20000) break; }
-    HX_ASSERT(i < 40 && i >= 2, "a JmpQ jump never landed, or landed at once");
+    for (i = 0; i < 80; i++) { hx_render(h, 1); blk = hx_stub_feed_last(4); if (blk[255] > 20000) break; }
+    /* the 1/16 is 24 ticks = 5512 frames: block 43 from the start (4 + i) */
+    HX_ASSERT(i < 80 && 4 + i >= 42 && 4 + i <= 44, "a JmpQ jump did not land on its 1/16");
     hx_set_param(h, "transport", "stop");
     hx_set_param(h, "t4_au_set_jmpq", "5 0");
     hx_render(h, 4);

@@ -670,6 +670,10 @@ function modalDialogUp() {
                 if (_yes) instrPickResume(_target);
             } else if (_yes) S.pendingTrackConvert = { t: _ct, toDrum: true };
             S.screenDirty = true;
+            /* Raised over sound mode, which redraws on its own flag: without
+             * this the dialog stayed on screen after the answer until the next
+             * input (found on the device). */
+            forceRedraw();
             return;
         }
         if (S.confirmPurge) {

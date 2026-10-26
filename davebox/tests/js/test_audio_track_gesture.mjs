@@ -172,6 +172,10 @@ step('⭐⭐ the bank map\'s AUDIO pad opens the AUDIO editor, ON SCREEN', () =>
     assert(S.auPanel && S.auPanel.t === 4 && S.auPanel.page === 0, 'the AUDIO editor did not open');
     const f = shown();
     assert(inked(f) && !same(f, rest), 'the AUDIO editor is not on screen');
+    /* ...and it owns the whole screen: drawn over a full one (the sound menu
+     * it opens from), nothing of that is left (found on the device). */
+    FB.fill(1); render.drawUI(); const over = FB.slice();
+    assert(same(over, f), 'the AUDIO editor leaves what was under it on screen');
     const cells = A.auPanelCells(S.auPanel);
     assert(cells.map((c) => c.label).join() === 'Smpl,Mode,Start,End,Pitch,Gain,Slices,Chop', 'CLIP: ' + cells.map((c) => c.label));
 });
@@ -351,8 +355,11 @@ step('⭐⭐ leaving Audio asks (Q3); Yes converts back and forgets the samples'
     assert(S.confirmConvertToDrum && S.confirmConvertAudio === 'leave', 'leaving Audio did not ask');
     assert(inked(shown()), 'the question is not on screen');
     GET['t4_pad_mode'] = '0';                        /* what the engine answers once converted */
+    const dlg = frame(() => D.drawConvertToDrumConfirm());
     S.confirmConvertToDrumSel = 0; cc(3, 127); cc(3, 0);
     ticks(4);
+    /* the screen the TICK left (no drawUI of our own): not the question */
+    assert(!same(FB.slice(), dlg), 'the answered question stayed on screen (found on the device)');
     assert(sent('t4_convert_to_melodic').length === 1, 'no conversion: ' + JSON.stringify(sentLike(/convert/)));
     assert(S.trackPadMode[4] === 0 && !A.isAudioTrack(4), 'still Audio');
     assert(!S.auInfo[4][0], 'the samples were not forgotten');

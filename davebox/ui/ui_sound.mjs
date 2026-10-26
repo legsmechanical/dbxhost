@@ -5025,6 +5025,11 @@ function commitInstrPick(r) {
     S.instrSel = r.v;
     commitInstrChoice();
 }
+/* A track whose type just changed under an open sound menu (-> Audio): the
+ * menu rebuilds around what the track now is. */
+export function soundTrackTypeChanged(track) {
+    if (S.active && S.track === track) S.pendingAction = { t: 'reflavour' };
+}
 /* The leave-Audio confirm's Yes: the pick it held, now made. */
 export function instrPickResume(r) {
     if (!r) return;

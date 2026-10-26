@@ -90,6 +90,7 @@ import { closeAudioEditor, closeAudioPanel } from './ui_audio_editor.mjs';
 import { applyInstrChoice } from './ui_dsp_bridge.mjs';
 import { INSTR_NONE, PAD_MODE_AUDIO } from './ui_constants.mjs';
 import { bankListForMode } from './ui_pure.mjs';
+import { soundTrackTypeChanged } from './ui_sound.mjs';
 
 const BANK_DISPLAY_MS = 1000;
 const KNOB_TURN_HIGHLIGHT_MS = 600;               /* highlight after turn without touch */
@@ -204,6 +205,7 @@ function convertTrackToAudio(t, takes) {
     else host_module_get_param('t' + t + '_pad_mode');
     auReadTrack(t);
     if (takes) auConvertApply(t, takes);
+    soundTrackTypeChanged(t);               /* an open menu loses MIDI FX, Mode, Transpose */
     /* a bank the Audio walk does not have goes back to CLIP */
     if (bankListForMode(PAD_MODE_AUDIO, t).indexOf(S.trackActiveBank[t]) < 0) S.trackActiveBank[t] = 0;
     if (t === S.activeTrack && bankListForMode(PAD_MODE_AUDIO, t).indexOf(S.activeBank) < 0) S.activeBank = 0;
