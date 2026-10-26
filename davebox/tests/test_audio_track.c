@@ -92,7 +92,7 @@ static void write_ramp_len(const char *path, double secs) {
     for (i = 0; i < n; i++) put_le16(f, (int)(i % 30000));
     fclose(f);
 }
-/* mono 16-bit 44.1 kHz, 3 s of silence with ONE loud frame at 66001 */
+/* mono 16-bit 44.1 kHz, 3 s of silence with ONE loud frame at 66002 (off any sampling stride) */
 static void write_spike(const char *path) {
     FILE *f = fopen(path, "wb");
     uint32_t n = 44100 * 3, i;
@@ -100,7 +100,7 @@ static void write_spike(const char *path) {
     put_le32(f, 16); put_le16(f, 1); put_le16(f, 1); put_le32(f, 44100); put_le32(f, 88200);
     put_le16(f, 2); put_le16(f, 16);
     fwrite("data", 1, 4, f); put_le32(f, n * 2);
-    for (i = 0; i < n; i++) put_le16(f, i == 66001 ? 20000 : 0);
+    for (i = 0; i < n; i++) put_le16(f, i == 66002 ? 20000 : 0);
     fclose(f);
 }
 /* a WAV whose data chunk claims 11 minutes */
