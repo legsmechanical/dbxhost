@@ -1929,6 +1929,7 @@ typedef struct {
     uint32_t    au_lazy_pos;                  /* Lazy chop: frame position for the UI */
     int8_t      au_lazy_track, au_lazy_clip;  /* -1 = no chop running */
     uint8_t     au_lazy_n;                    /* slices tapped so far */
+    uint64_t    au_tick0;                     /* arp_master_tick before this block's render */
 } seq8_instance_t;
 
 /* What the serializer should write for clip (t,c) / lane: the original while a
@@ -10482,6 +10483,7 @@ static int groove_pass_claims(seq8_instance_t *inst, seq8_track_t *tr,
  * sequencer, so a slice hit this block starts at its frame 0, and on every one
  * of render_block's exits (stopped, count-in, ...): pads play slices stopped. */
 static void render_block_audio(void *instance, int16_t *out_lr, int frames) {
+    if (instance) ((seq8_instance_t *)instance)->au_tick0 = (uint64_t)((seq8_instance_t *)instance)->arp_master_tick;
     render_block(instance, out_lr, frames);
     if (instance) au_render((seq8_instance_t *)instance, frames);
 }

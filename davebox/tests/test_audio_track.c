@@ -61,6 +61,18 @@ static void write_aiff(const char *path) {
     for (i = 0; i < n; i++) { put_be16(f, 2000); put_be16(f, -2000 & 0xFFFF); }
     fclose(f);
 }
+/* mono 16-bit 44.1 kHz, 1 s: frame i holds the value i % 30000 (a ramp: where
+ * playback starts is readable off the first sample) */
+static void write_ramp(const char *path) {
+    FILE *f = fopen(path, "wb");
+    uint32_t n = 44100, i;
+    fwrite("RIFF", 1, 4, f); put_le32(f, 36 + n * 2); fwrite("WAVEfmt ", 1, 8, f);
+    put_le32(f, 16); put_le16(f, 1); put_le16(f, 1); put_le32(f, 44100); put_le32(f, 88200);
+    put_le16(f, 2); put_le16(f, 16);
+    fwrite("data", 1, 4, f); put_le32(f, n * 2);
+    for (i = 0; i < n; i++) put_le16(f, (int)(i % 30000));
+    fclose(f);
+}
 /* a WAV whose data chunk claims 11 minutes */
 static void write_long(const char *path) {
     FILE *f = fopen(path, "wb");
@@ -141,6 +153,7 @@ int main(void) {
     snprintf(p, sizeof p, "%s/src/st24.wav", g_root); write_st24(p, 4.0);
     snprintf(p, sizeof p, "%s/src/loop.aif", g_root); write_aiff(p);
     snprintf(p, sizeof p, "%s/src/long.wav", g_root); write_long(p);
+    snprintf(p, sizeof p, "%s/src/ramp.wav", g_root); write_ramp(p);
 
     /* ---- the type ---- */
     h = rig(); inst = (seq8_instance_t *)h->inst;
@@ -162,8 +175,8 @@ int main(void) {
     HX_ASSERT(inst->tracks[4].drum_clips[0]->lanes[0].clip.length == 16, "a Loop pick did not set a 1-bar clip");
 
     /* ---- Slice: a lane hit plays exactly its slice, on the track's slot ---- */
-    hx_set_param(h, "t4_au_set", "0 mode 1");
-    hx_set_param(h, "t4_au_set", "0 slices 8");
+    hx_set_param(h, "t4_au_set_mode", "0 1");
+    hx_set_param(h, "t4_au_set_slices", "0 8");
     hx_stub_feed_reset();
     hx_clear_capture(h);
     au_lane_event(4, 2, 0x90, 1);                  /* velocity 1: ignored */
@@ -178,13 +191,13 @@ int main(void) {
     blk = hx_stub_feed_last(4);
     HX_ASSERT(blk[0] > 6000 && blk[255] == 6000, "slice 6 did not cut slice 3 (mono)");
     /* slice gain -6 dB */
-    hx_set_param(h, "t4_au_slice", "0 1 gain -6");
+    hx_set_param(h, "t4_au_slice_gain", "0 1 -6");
     au_lane_event(4, 1, 0x90, 100);
     hx_render(h, 2);
     blk = hx_stub_feed_last(4);
     HX_ASSERT(blk[255] >= 990 && blk[255] <= 1010, "slice gain -6 dB did not halve the slice");
     /* GATE: note-off ends it within 5 ms */
-    hx_set_param(h, "t4_au_slice", "0 1 play 1");
+    hx_set_param(h, "t4_au_slice_play", "0 1 1");
     au_lane_event(4, 1, 0x90, 100);
     hx_render(h, 1);
     au_lane_event(4, 1, 0x80, 0);
@@ -251,6 +264,42 @@ int main(void) {
     hx_stub_feed_reset();
     hx_render(h, 2);
     HX_ASSERT(hx_stub_feed(4, NULL, NULL) == 0, "the Loop clip kept playing after Stop");
+
+    /* ---- Loop: the sample starts at ITS frame 0 with the clip (the lane
+     * counters run one tick ahead of the tick a block played; reading them
+     * as-is started every loop 230 frames in at 120 bpm, cutting its hit) ---- */
+    snprintf(p, sizeof p, "5|%s/src/ramp.wav", g_root);
+    hx_set_param(h, "t4_au_pick", p);
+    HX_ASSERT(wait_loaded(h, 4, 5) == 2, "the ramp did not load");
+    hx_stub_feed_reset();
+    hx_set_param(h, "t4_launch_clip", "5");
+    hx_set_param(h, "transport", "play");
+    for (i = 0; i < 20 && hx_stub_feed(4, NULL, NULL) == 0; i++) hx_render(h, 1);
+    blk = hx_stub_feed_last(4);
+    HX_ASSERT(hx_stub_feed(4, NULL, NULL) == 1, "the Loop clip did not start");
+    HX_ASSERT(blk[0] == 0 && blk[2] == 1 && blk[254] == 127, "the Loop clip did not start at the sample's first frame");
+    hx_set_param(h, "transport", "stop");
+    hx_render(h, 4);
+    /* ...and a Loop clip LAUNCHED on the bar while playing starts at frame 0
+     * too (the block that plays the bar's first tick: the counters have
+     * already moved past it). */
+    hx_set_param(h, "launch_quant", "5");            /* 1 bar (16 steps) */
+    hx_set_param(h, "t4_launch_clip", "1");
+    hx_set_param(h, "transport", "play");
+    hx_render(h, 10);
+    hx_set_param(h, "t4_launch_clip", "5");
+    for (i = 0; i < 2000; i++) {
+        hx_render(h, 1);
+        blk = hx_stub_feed_last(4);
+        /* the ramp (mono) has taken over by the block's end — its first 64
+         * frames still carry the outgoing loop's fade */
+        if (blk[255] == blk[254] && blk[254] != -4096) break;
+    }
+    HX_ASSERT(i < 2000, "the launched Loop clip never played");
+    HX_ASSERT(blk[254] == 127, "a Loop clip launched on the bar began past its first frame");
+    hx_set_param(h, "transport", "stop");
+    hx_set_param(h, "launch_quant", "0");
+    hx_render(h, 4);
 
     /* ---- the project file keeps it ---- */
     n = hx_get_param(h, "state_full", blob, (int)sizeof blob);

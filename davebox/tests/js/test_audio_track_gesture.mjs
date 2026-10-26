@@ -147,7 +147,7 @@ step('⭐⭐ the bank walk has SAMPLE and SLICE (before MIX), and their cards re
 step('⭐ SAMPLE knobs write the engine: Slices 8 -> 9 (Even)', () => {
     sets.length = 0;
     for (let i = 0; i < 12; i++) cc(75, 1);           /* K5 */
-    assert(sent('t4_au_set').some((v) => v === '0 slices 9'), 'no slices write: ' + JSON.stringify(sent('t4_au_set')));
+    assert(sent('t4_au_set_slices').some((v) => v === '0 9'), 'no slices write: ' + JSON.stringify(sent('t4_au_set_slices')));
     GET['t4_au_info_0'] = '2 0 1 0 9 16 0 1000 0 0 96000 48000 2|Break Phenom 84 bpm.wav';
     A.auMarkStale(4, 0);
     ticks(2);
@@ -233,7 +233,8 @@ step('⭐⭐ Loop mode: no pad plays a lane; pads send jumps (press + release); 
     sets.length = 0;
     S.activeBank = 0; S.bankCardLatched = false;
     note(C.TRACK_PAD_BASE + 9, 100); note(C.TRACK_PAD_BASE + 9, 0);
-    assert(sent('t4_au_jump').join() === '9 1,9 0', 'jumps: ' + sent('t4_au_jump'));
+    assert(sent('t4_au_jump').join() === '9' && sent('t4_au_jump_off').join() === '9',
+           'jumps: ' + sent('t4_au_jump') + ' / ' + sent('t4_au_jump_off'));
     sets.length = 0;
     note(C.TRACK_PAD_BASE + 20, 100);
     assert(sent('t4_au_jump').length === 0, 'a pad past the 16 jump points jumped');

@@ -9,12 +9,18 @@
  *                                  every clip's sample association
  *   tN_au_pick    "C|<abs path>"   copy the file into the project, load it
  *   tN_au_clear   "C"              the clip has no sample
- *   tN_au_set     "C <field> <v>"  mode / slices / jump / start / end / pitch / gain
- *   tN_au_slice   "C L <field> <v>" pos (frames; makes it Manual) / nudge / len /
+ *   tN_au_set_<field>   "C <v>"    mode / slices / jump / start / end / pitch /
+ *                                  gain / bars
+ *   tN_au_slice_<field> "C L <v>"  pos (frames; makes it Manual) / nudge / len /
  *                                  pitch / gain / rev / play / atk / dec
+ *                                  (a key per field: two fields written to one
+ *                                  key in one frame would keep only the second)
  *   tN_au_chop    "C"              one trig per slice, in order (one undo)
- *   tN_au_jump    "K 1|0"          Loop: jump the playing loop to point K (press);
- *                                  stopped, a press auditions from there (release ends)
+ *   tN_au_jump    "K"              Loop: jump the playing loop to point K (a press);
+ *                                  stopped, it auditions from there until
+ *   tN_au_jump_off "K"             the pad's release (its own key: a press and a
+ *                                  release written to ONE key before it drains
+ *                                  keep only the release)
  *   tN_au_lazy    "C 1|0"          Lazy chop: play the sample, taps cut it
  *   tN_au_lazy_tap ""              a tap: the next slice starts here
  * The prefix is consumed whole (a known-or-not tN_au_ key never falls through
@@ -120,7 +126,16 @@ static void au_render(seq8_instance_t *inst, int frames) {
                 if (!lv || at->loop_clip != c || tick < at->last_tick) {
                     double bpm = tr->pfx.cached_bpm > 0 ? tr->pfx.cached_bpm : 120.0;
                     double fpt = 44100.0 * 60.0 / (bpm * PPQN);
-                    double off = (double)tick * fpt * au_semi(cl->pitch) * (double)cl->smp->rate / 44100.0;
+                    /* When this block PLAYED a tick, the lane counters have
+                     * already moved past it (render_block advances them after
+                     * each tick): the clip is at tick - 1, at this block's
+                     * first frame. Read as-is, a loop launched on a tick began
+                     * one tick into the sample and cut its first hit
+                     * (measured on the device: 230 frames at 120 bpm). A block
+                     * with no tick yet (the transport's first) is at `tick`. */
+                    int ticked = (uint64_t)inst->arp_master_tick != inst->au_tick0;
+                    double played = (ticked && tick > 0) ? (double)(tick - 1) : (double)tick;
+                    double off = played * fpt * au_semi(cl->pitch) * (double)cl->smp->rate / 44100.0;
                     au_loop_start(inst, t, c, off);
                 }
                 at->last_tick = tick;
@@ -261,12 +276,12 @@ static int sp_track_audio(sp_ctx_t *cx) {
         return 1;
     }
 
-    if (!strcmp(sub, "set")) {
+    if (!strncmp(sub, "set_", 4)) {
         int v;
         c = au_arg_clip(&p);
         if (c < 0) return 1;
         au_clip_t *cl = &inst->au_clip[tidx][c];
-        au_word(&p, w, sizeof w);
+        snprintf(w, sizeof w, "%s", sub + 4);
         v = my_atoi(p);
         if (!strcmp(w, "mode")) {
             v = clamp_i(v, 0, 1);
@@ -301,7 +316,7 @@ static int sp_track_audio(sp_ctx_t *cx) {
         return 1;
     }
 
-    if (!strcmp(sub, "slice")) {
+    if (!strncmp(sub, "slice_", 6)) {
         int v;
         c = au_arg_clip(&p);
         if (c < 0) return 1;
@@ -311,7 +326,7 @@ static int sp_track_audio(sp_ctx_t *cx) {
         if (l < 0 || l >= AU_MAX_SLICES) return 1;
         au_clip_t *cl = &inst->au_clip[tidx][c];
         au_slice_t *sl = &cl->sl[l];
-        au_word(&p, w, sizeof w);
+        snprintf(w, sizeof w, "%s", sub + 6);
         v = my_atoi(p);
         if (!strcmp(w, "pos")) {
             /* A slice's start, by hand: between its neighbours. */
@@ -370,11 +385,8 @@ static int sp_track_audio(sp_ctx_t *cx) {
         return 1;
     }
 
-    if (!strcmp(sub, "jump")) {
-        int k = my_atoi(p), down;
-        while (*p == ' ') p++;
-        while (*p && *p != ' ') p++;
-        down = *p ? my_atoi(p) : 1;
+    if (!strcmp(sub, "jump") || !strcmp(sub, "jump_off")) {
+        int k = my_atoi(p), down = !strcmp(sub, "jump");
         c = tr->active_clip;
         au_clip_t *cl = &inst->au_clip[tidx][c];
         au_track_t *at = &inst->au_trk[tidx];

@@ -136,7 +136,10 @@ export function auTick() {
     const c = auClipOf(t);
     const key = t + '_' + c;
     const i = S.auInfo[t][c];
-    if (!i || _stale.has(key) || (i.state === 1 && (S.tickCount % 8) === 0)) {
+    /* ...and every ~0.3 s regardless: the engine is the one writer, and a
+     * change that did not come through this UI (an undo, a remote edit) must
+     * not leave the pads in the wrong layout. */
+    if (!i || _stale.has(key) || (i.state === 1 && (S.tickCount % 8) === 0) || (S.tickCount % 30) === 0) {
         const was = i ? i.state : -1;
         const n = auRead(t, c);
         if (n && n.state !== was) S.screenDirty = true;
@@ -210,18 +213,22 @@ export function auClear(t, c) {
     auMarkStale(t, c);
 }
 
+/* A key per field (see the engine): two fields on one key in one frame keep
+ * only the second. */
 function auSet(t, c, field, v) {
-    setKey(t, 'set', c + ' ' + field + ' ' + v);
+    setKey(t, 'set_' + field, c + ' ' + v);
     auMarkStale(t, c);
 }
 function auSetSlice(t, c, l, field, v) {
-    setKey(t, 'slice', c + ' ' + l + ' ' + field + ' ' + v);
+    setKey(t, 'slice_' + field, c + ' ' + l + ' ' + v);
     _sl.delete(t + '_' + c + '_' + l);
     auMarkStale(t, c);
 }
 
 export function auChop(t, c) { setKey(t, 'chop', c); auMarkStale(t, c); S.pendingDrumResync = 2; }
-export function auJump(t, k, down) { setKey(t, 'jump', k + ' ' + (down ? 1 : 0)); }
+/* A press and its release are two keys: one key written twice before it drains
+ * keeps only the second, and a quick tap would never jump. */
+export function auJump(t, k, down) { setKey(t, down ? 'jump' : 'jump_off', k); }
 export function auLazyStart(t, c) { setKey(t, 'lazy', c + ' 1'); }
 export function auLazyStop(t, c) { setKey(t, 'lazy', c + ' 0'); auMarkStale(t, c); }
 export function auLazyTap(t) { setKey(t, 'lazy_tap', 1); }

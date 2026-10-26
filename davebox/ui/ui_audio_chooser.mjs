@@ -126,11 +126,12 @@ export function drawAudioChooser() {
     drawKitHeader('SAMPLE  CLIP ' + CLIP_LETTERS[ch.c] + '  T' + (ch.t + 1), false);
     if (!ch.B) {
         const cur = auInfo(ch.t, ch.c).name;
-        drawKitList(ch.places.map((p) => ({ label: p.none ? (cur ? 'None (clear)' : 'None') : p.label, chevron: !p.none })), ch.sel);
+        drawKitList(ch.places.map((p) => ({ label: p.none ? (cur ? 'None (clear)' : 'None') : p.label, chevron: !p.none })), ch.sel,
+                    { h: MV_FOOTER_Y - 11 });          /* above the hint row */
     } else {
         const rows = ch.B.items.map((it) => ({ label: it.kind === 'dir' ? it.label.replace(/^\[|\]$/g, '') : it.kind === 'up' ? '..' : it.label.replace(/\.(wav|aif|aiff)$/i, ''),
                                                chevron: it.kind === 'dir' }));
-        drawKitList(rows, ch.B.selectedIndex, { emptyMsg: ch.B.error || 'No samples here' });
+        drawKitList(rows, ch.B.selectedIndex, { emptyMsg: ch.B.error || 'No samples here', h: MV_FOOTER_Y - 11 });
     }
     drawKitHintRow(MV_FOOTER_Y, ch.B ? [['clk', 'pick'], ['back', 'up']] : [['clk', 'open'], ['back', 'exit']]);
 }
