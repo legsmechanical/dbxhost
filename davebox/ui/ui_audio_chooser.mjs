@@ -151,7 +151,7 @@ export function auPurgeScan() {
     if (!dir) return out;
     const used = new Set(String(host_module_get_param('au_used') || '').split('\n').filter((x) => x));
     const stateDir = dir.replace(/\/samples$/, '');
-    const re = /"t\d+c\d+_au":"[^|"]*\|((?:[^"\\]|\\.)*)"/g;
+    const re = /"t\d+c\d+_au2?":"[^|"]*\|((?:[^"\\]|\\.)*)"/g;
     for (const f of FS.readdir(stateDir)) {
         if (!/\.json$/.test(f)) continue;
         const body = String(host_read_file(stateDir + '/' + f) || '');

@@ -70,22 +70,27 @@ import { seqAutoTargetForKnob, fmtInstr } from './ui_constants.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
-import { isAudioTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auStartsCached,
-         auPos, auLazy, auSelSlice, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells,
-         AU_MODE_SLICE } from './ui_audio.mjs';
+import { isAudioTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
+         auPos, auLazyState, auSelSlice, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells,
+         auFmtTime, auEnd, AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN } from './ui_audio.mjs';
+import { auEdHome } from './ui_audio_editor.mjs';
+import { drawAudioAsk } from './ui_dialogs.mjs';
 import { drawAudioChooser } from './ui_audio_chooser.mjs';
 
 /* ---- AUDIO: the waveform (ui_audio) ----
  * The clip's sample in a rect: its body, every slice start a dotted tick,
- * the selected slice bracketed, Start..End's outside dimmed, the playhead a
- * solid line. `a`/`b` = the part of the sample shown (fractions). */
+ * the selected slice bracketed (its start and its end), Start..End's outside
+ * hatched off, the playhead a solid line, the editor's cursor a line with a
+ * notch. `A`/`B` = the frames shown (default the whole sample). */
 function drawAudioWave(t, c, x, y, w, h, opts) {
     const o = opts || {};
-    const a = o.a != null ? o.a : 0, b = o.b != null ? o.b : 1;
-    const cols = auWaveColumns(t, c, w, a, b);
     const i = auInfo(t, c);
+    const fr = i.nframes | 0;
+    const A = o.A != null ? o.A : 0, B = o.B != null ? o.B : fr;
+    const cols = fr ? auWaveColumns(t, c, w, A, B) : null;
     const mid = y + Math.floor(h / 2);
-    const fx = (f) => x + Math.round((f - a) / (b - a) * (w - 1));
+    const fx = (f) => x + Math.floor((f - A) / (B - A) * w);
+    const inView = (px) => px >= x && px < x + w;
     if (!cols) {
         const msg = i.state === 1 ? 'LOADING' : i.name ? '' : 'NO SAMPLE';
         if (msg) ovwPrint(x + Math.floor((w - ovwWidth(msg)) / 2), mid - 2, msg, 1);
@@ -97,35 +102,43 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
         fill_rect(x + k, mid - hh, 1, hh * 2 + 1, 1);
     }
     /* outside Start..End: hatched off */
-    const rs = i.rstart / 1000, re = i.rend / 1000;
+    const rs = i.rstart, re = auEnd(i);
     for (let k = 0; k < w; k++) {
-        const f = a + (b - a) * (k + 0.5) / w;
+        const f = A + (B - A) * (k + 0.5) / w;
         if (f < rs || f > re) for (let j = y; j < y + h; j++) if (((k + j) & 1) === 0) set_pixel(x + k, j, 0);
     }
     if (i.mode === AU_MODE_SLICE && !o.noMarks) {
-        const st = auStartsCached(t, c);
+        const mk = auMarks(t, c);
         const sel = o.sel != null ? o.sel : -1;
-        for (let k = 0; k < st.length; k++) {
-            const px = fx(st[k]);
-            if (px < x || px >= x + w) continue;
-            if (k === sel) {
-                fill_rect(px, y, 1, h, 1);
-                fill_rect(px, y, 3, 1, 1); fill_rect(px, y + h - 1, 3, 1, 1);
-            } else {
-                for (let j = y; j < y + h; j += 2) set_pixel(px, j, 1);
+        for (let k = 0; k < mk.length; k++) {
+            const px = fx(mk[k][0]);
+            if (!inView(px) || k === sel) continue;
+            for (let j = y; j < y + h; j += 2) set_pixel(px, j, 1);
+        }
+        if (sel >= 0 && sel < mk.length) {
+            const pa = fx(mk[sel][0]), pb = Math.min(x + w - 1, fx(mk[sel][1]));
+            if (inView(pa)) {
+                fill_rect(pa, y, 1, h, 1);
+                fill_rect(pa, y, 3, 1, 1); fill_rect(pa, y + h - 1, 3, 1, 1);
+            }
+            if (inView(pb)) {
+                fill_rect(pb, y, 1, h, 1);
+                fill_rect(pb - 2, y, 3, 1, 1); fill_rect(pb - 2, y + h - 1, 3, 1, 1);
             }
         }
-        if (sel >= 0 && sel < st.length) {
-            const e = sel + 1 < st.length ? st[sel + 1] : re;
-            const px = Math.min(x + w - 1, fx(e));
-            fill_rect(px, y, 1, h, 1);
-            fill_rect(px - 2, y, 3, 1, 1); fill_rect(px - 2, y + h - 1, 3, 1, 1);
+    }
+    if (o.cur != null) {
+        const px = fx(o.cur);
+        if (inView(px)) {
+            for (let j = y + 3; j < y + h; j += 3) set_pixel(px, j, 1);
+            fill_rect(px - 1, y - 3, 3, 1, 1);
+            set_pixel(px, y - 2, 1);
         }
     }
     const p = auPos();
     if (p.t === t && p.on) {
-        const px = fx(p.abs);
-        if (px >= x && px < x + w) {
+        const px = fx(p.frame);
+        if (inView(px)) {
             fill_rect(px, y - 1, 1, h + 2, 0);
             fill_rect(px + 1, y - 1, 1, h + 2, 1);
         }
@@ -159,24 +172,51 @@ function drawAudioPanel() {
     drawKitPage(title, auPanelCells(ed), false, [['jog', 'page'], ['tch+clk', 'open']]);
 }
 
-/* The slice editor (the AUDIO editor's SLICING page: Edit / Lazy): the sample
- * big, the selected slice bracketed; pads pick and play a slice, the jog
- * moves its start (Shift: fine), Record runs a Lazy chop. */
-function drawAudioSliceEditor() {
+/* The waveform editor (ui_audio_editor): chop (Edit, after Manual / Lazy),
+ * range (the CLIP page's Start / End) and lazy. A line of values over the
+ * sample at the editor's zoom; a question over it when one is open. */
+function drawAudioWaveEditor() {
     const ed = S.auEditor, t = ed.t, c = ed.c, i = auInfo(t, c);
-    const sel = auSelSlice(t);
+    if (ed.ask) {
+        const n = ed.ask.n != null ? ed.ask.n : i.hand;
+        if (ed.ask.kind === 'keep') drawAudioAsk('LAZY CHOP', ['Keep ' + n + ' new chop' + (n === 1 ? '' : 's') + '?'], ed.ask.sel);
+        else drawAudioAsk('MANUAL CHOP', ['Replace chops?', 'The ' + i.hand + ' chops you made go.'], ed.ask.sel);
+        return;
+    }
     clear_screen();
-    drawBankHeading(ed.lazy ? 'LAZY CHOP' : 'SLICES', false);
-    const st = auStartsCached(t, c);
-    const lz = auLazy();
-    let line;
-    if (ed.lazy) line = lz.on ? 'Tap pads: ' + lz.n + ' slices' : 'Rec to start, tap pads';
-    else line = 'Slice ' + (sel + 1) + '/' + i.n + '  ' + (st[sel] != null ? (st[sel] * 100).toFixed(1) + '%' : '--');
-    ovwPrint(4, 11, line, 1);
-    drawAudioWave(t, c, 3, 21, 122, 30, { sel: ed.lazy ? -1 : sel });
-    drawKitHintRow(MV_FOOTER_Y, ed.lazy
-        ? [['rec', lz.on ? 'stop' : 'start'], ['back', 'done']]
-        : [['pad', 'pick'], ['jog', 'move'], ['rec', 'lazy']]);
+    const sel = auSelSlice(t);
+    const rt = i.rate;
+    const right = (txt) => ovwPrint(124 - ovwWidth(txt), 10, txt, 1);
+    if (ed.mode === 'lazy') {
+        const lz = auLazyState();
+        drawBankHeading('LAZY CHOP', false);
+        ovwPrint(4, 10, lz.state === AU_LAZY_RUN ? 'TAP THE LIT PAD' : 'TAP PAD 1 TO START', 1);
+        if (lz.state === AU_LAZY_RUN) right(lz.n + ' CHOP' + (lz.n === 1 ? '' : 'S'));
+        drawAudioWave(t, c, 0, 20, 128, 30, { A: 0, B: i.nframes, sel: -1 });
+        drawKitHintRow(MV_FOOTER_Y, [['pad', lz.state === AU_LAZY_ARMED ? 'play' : 'chop'], ['back', 'stop']]);
+        return;
+    }
+    if (ed.mode === 'range') {
+        drawBankHeading('RANGE', false);
+        ovwPrint(4, 10, 'S ' + auFmtTime(i.rstart, rt), 1);
+        right('E ' + auFmtTime(auEnd(i), rt));
+        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, noMarks: true });
+        drawKitHintRow(MV_FOOTER_Y, [['k1', 'start'], ['k2', 'zoom'], ['k3', 'end']]);
+        return;
+    }
+    const mk = auMarks(t, c);
+    drawBankHeading('CHOP ' + (sel + 1) + '/' + mk.length, false);
+    const m = mk[sel];
+    if (i.even) {
+        /* "Even on": the markers are locked (a touch on them says so again) */
+        ovwPrint(4, 10, 'EVEN ' + i.even + ': LOCKED', 1);
+    } else if (m) {
+        ovwPrint(4, 10, 'S ' + auFmtTime(m[0], rt), 1);
+        right(m[1] === auEdHome(ed, sel) ? 'E HOME' : 'E ' + auFmtTime(m[1], rt));
+    }
+    drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel, cur: i.even ? null : ed.cur });
+    drawKitHintRow(MV_FOOTER_Y, i.even ? [['k4', 'even'], ['k2', 'zoom']]
+                                       : [['jog', 'cursor'], ['clk', 'add'], ['del+pad', 'remove']]);
 }
 
 /* An Audio track's banks (Josh, 2026-10-27): the CLIP bank mirrors ALL LANES
@@ -2026,7 +2066,7 @@ function drawUIBody() {
     if (miActive()) { drawMidiImport(); return; }
     /* AUDIO: the sample chooser, the AUDIO editor and its slice editor. */
     if (S.auChooser) { drawAudioChooser(); return; }
-    if (S.auPanel) { if (S.auEditor) drawAudioSliceEditor(); else drawAudioPanel(); return; }
+    if (S.auPanel) { if (S.auEditor) drawAudioWaveEditor(); else drawAudioPanel(); return; }
     if (S.snapshotPicker) { drawSnapshotPicker(); return; }
     if (S.templateManager || (S.templateNameEntry && templateTextEntryUp())) { drawTemplateManager(); return; }
     /* ⭑ The exit confirm outranks the picker (2026-09-16). Hold-Back already

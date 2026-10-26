@@ -162,6 +162,15 @@ function drawPurgeConfirm() {
     drawYesNoRow(S.confirmPurgeSel);
 }
 
+/* The waveform editor's questions (ui_audio_editor): "Keep N new chops?",
+ * "Replace chops?". sel 0 = Yes. */
+export function drawAudioAsk(title, lines, sel) {
+    clear_screen();
+    dlgHeader(title);
+    dlgLines(lines);
+    drawYesNoRow(sel);
+}
+
 export function drawConvertToConductConfirm() {
     clear_screen();
     dlgHeader('CONVERT');

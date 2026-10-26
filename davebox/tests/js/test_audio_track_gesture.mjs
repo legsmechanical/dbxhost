@@ -14,9 +14,15 @@ import { openTrackConfigViaMap } from './_map_config.mjs';
  *   - the walk: CONFIG door, MACROS, AUTOMATION door, STEP, CLIP, NOTE FX,
  *     DELAY, MIX — no RPT GROOVE / LIVE ARP / PADMODE / HARMONY / SEQ ARP;
  *   - the bank map: the AUDIO pad opens the AUDIO editor; MIDI FX dark;
- *   - the AUDIO editor: on screen; the jog turns pages; knobs write; touch +
- *     click opens the chooser (the knob is let go), the slice editor, Lazy;
+ *   - the AUDIO editor: on screen; the jog turns pages; knobs write (Start in
+ *     frames); touch + click opens the chooser (the knob is let go);
  *     SLICE n edits the last pad tapped; ALL SLICES sets every slice;
+ *   - the chop design (Josh, 2026-10-27): SLICING = Even · Lazy› · Manual› ·
+ *     Edit›; Even turns live; the waveform editor moves a slice's start / end
+ *     by a pixel, zooms, adds a marker at the cursor, Delete + pad removes
+ *     one, locks them while Even is on; Lazy lights only the next pad, taps
+ *     cut, Back asks "Keep N new chops?"; Manual asks before replacing;
+ *     Start / End's touch + click opens the range editor;
  *   - Slice mode: pads 36 + slice, none past the count; the CLIP bank reads
  *     Res Strch Shift Quant Crop InQnt Dir and K4 is NOTE FX Quantize;
  *   - Loop mode: pads jump (press + release), steps do nothing, the CLIP bank
@@ -33,13 +39,16 @@ function assert(c, m) { if (!c) throw new Error(m); }
 
 const sets = [];
 const PEAKS = Array.from({ length: 128 }, (_, i) => ((i * 7) % 100).toString(16).padStart(2, '0').repeat(2)).join('');
-const INFO = (mode, n) => '2 0 ' + mode + ' 0 ' + n + ' 16 0 1000 0 0 96000 48000 2 0 0 0|Break Phenom 84 bpm.wav';
+/* "state err mode even hand jump rstart rend pitch gain frames rate ch revrs nudge jmpq n|name" */
+const INFO = (mode, n, even) => '2 0 ' + mode + ' ' + (even === undefined ? n : even) + ' ' + (even === 0 ? n : 1) +
+    ' 16 0 96000 0 0 96000 48000 2 0 0 0 ' + n + '|Break Phenom 84 bpm.wav';
+const MARKS8 = Array.from({ length: 8 }, (_, k) => (k * 12000) + ' ' + ((k + 1) * 12000)).join(' ');
 const GET = { 't4_au_dir': '/data/UserData/UserLibrary/Sets/x/dAVEBOx/samples',
               't4_au_info_0': INFO(1, 8), 't4_pad_mode': '3',
-              't4_au_peaks_0': PEAKS, 't4_au_pos': '1 250 250 2', 't4_au_lazy': '0 0 0',
-              't4_au_starts_0': '0 125 250 375 500 625 750 875',
-              't4_au_sl_0_0': '0 12000 0 100 0 0 0 0 0 0', 't4_au_sl_0_2': '24000 36000 0 100 0 -3 0 0 0 0',
-              't4_au_all_0': '0 100 0 x 0 0 0 0' };
+              't4_au_peaks_0': PEAKS, 't4_au_pos': '1 24000 2', 't4_au_lazy': '0 0 0',
+              't4_au_marks_0': MARKS8,
+              't4_au_sl_0_0': '0 12000 0 0 0 0 0 0 0', 't4_au_sl_0_2': '24000 36000 0 0 -3 0 0 0 0',
+              't4_au_all_0': '0 x 0 0 0 0' };
 const PREVIEWS = [];
 globalThis.host_preview_play = (p) => { PREVIEWS.push(String(p)); };
 globalThis.host_preview_stop = () => { PREVIEWS.push('stop'); };
@@ -177,7 +186,7 @@ step('⭐⭐ the bank map\'s AUDIO pad opens the AUDIO editor, ON SCREEN', () =>
     FB.fill(1); render.drawUI(); const over = FB.slice();
     assert(same(over, f), 'the AUDIO editor leaves what was under it on screen');
     const cells = A.auPanelCells(S.auPanel);
-    assert(cells.map((c) => c.label).join() === 'Smpl,Mode,Start,End,Pitch,Gain,Slices,Chop', 'CLIP: ' + cells.map((c) => c.label));
+    assert(cells.map((c) => c.label).join() === 'Smpl,Mode,Start,End,Pitch,Gain,Chop,', 'CLIP: ' + cells.map((c) => c.label));
 });
 
 step('⭐ the jog turns its pages: CLIP, SLICING, SLICE n, ALL SLICES', () => {
@@ -215,10 +224,12 @@ step('⭐⭐ Smpl: touch + click opens the CHOOSER, the knob is let go; it audit
     A.auMarkStale(4, 0); ticks(2);
 });
 
-step('⭐ CLIP knobs write the engine: Slices 8 -> 9 (K7)', () => {
+step('⭐ CLIP knobs write the engine: Start in FRAMES, shown as time (K3)', () => {
     reset();
-    for (let i = 0; i < 12; i++) cc(77, 1);
-    assert(sent('t4_au_set_slices').some((v) => v === '0 9'), 'slices: ' + JSON.stringify(sent('t4_au_set_slices')));
+    cc(73, 1);
+    const v = sent('t4_au_set_start');
+    assert(v.length === 1 && /^0 \d+$/.test(v[0]) && parseInt(v[0].split(' ')[1], 10) >= 192, 'start: ' + JSON.stringify(v));
+    assert(/s$/.test(A.auPanelCells(S.auPanel)[2].text), 'Start is not time: ' + A.auPanelCells(S.auPanel)[2].text);
     GET['t4_au_info_0'] = INFO(1, 8);
     A.auMarkStale(4, 0); ticks(2);
 });
@@ -229,65 +240,153 @@ step('⭐⭐ SLICE n edits the last pad tapped; ALL SLICES sets every slice (`--
     jog(1); jog(1);
     ticks(2);
     assert(A.auPanelTitle(S.auPanel) === 'SLICE 3/8', A.auPanelTitle(S.auPanel));
-    assert(A.auPanelCells(S.auPanel)[3].text === '-3 dB', 'slice 3 gain: ' + A.auPanelCells(S.auPanel)[3].text);
+    assert(A.auPanelCells(S.auPanel).map((c) => c.label).join() === 'Pitch,Gain,Revrs,Attk,Decay,Play,,', 'SLICE: sound only');
+    assert(A.auPanelCells(S.auPanel)[1].text === '-3 dB', 'slice 3 gain: ' + A.auPanelCells(S.auPanel)[1].text);
     reset();
-    for (let i = 0; i < 3; i++) cc(74, 1);             /* K4 Gain */
+    for (let i = 0; i < 3; i++) cc(72, 1);             /* K2 Gain */
     assert(sent('t4_au_slice_gain').some((v) => /^0 2 -2$/.test(v)), 'slice gain: ' + JSON.stringify(sent('t4_au_slice_gain')));
     jog(1);
     ticks(2);
     const cells = A.auPanelCells(S.auPanel);
-    assert(cells[3].text === '--' && cells[1].text === '100%', 'ALL SLICES: ' + cells.map((c) => c.text).join());
+    assert(cells[1].text === '--' && cells[0].text === '0 st', 'ALL SLICES: ' + cells.map((c) => c.text).join());
     reset();
-    cc(74, 1);
+    cc(72, 1);
     assert(sent('t4_au_all_gain').length === 1, 'ALL SLICES did not set every slice: ' + JSON.stringify(sentLike(/_au_/)));
     jog(-1); jog(-1); jog(-1);
 });
 
-step('⭐ SLICING: the method turns from Even to Manual and back (Josh, device)', () => {
+step('⭐⭐ SLICING is Even · Lazy› · Manual› · Edit›; Even turns live, both ways', () => {
     jog(1);
-    reset();
-    note(0, 127); for (let i = 0; i < 25; i++) cc(71, 1); note(0, 0);
-    assert(sent('t4_au_set_method').join() === '0 1', 'Even -> Manual: ' + JSON.stringify(sent('t4_au_set_method')));
+    assert(A.auPanelCells(S.auPanel).slice(0, 4).map((c) => c.label).join() === 'Even,Lazy,Manual,Edit',
+           'SLICING: ' + A.auPanelCells(S.auPanel).map((c) => c.label));
     reset();
     note(0, 127); for (let i = 0; i < 25; i++) cc(71, 127); note(0, 0);
-    assert(sent('t4_au_set_method').join() === '0 0', 'Manual -> Even: ' + JSON.stringify(sent('t4_au_set_method')));
+    assert(sent('t4_au_set_even').join() === '0 7', 'Even 8 -> 7: ' + JSON.stringify(sent('t4_au_set_even')));
+    reset();
+    note(0, 127); for (let i = 0; i < 25; i++) cc(71, 1); note(0, 0);
+    assert(sent('t4_au_set_even').join() === '0 8', 'Even 7 -> 8: ' + JSON.stringify(sent('t4_au_set_even')));
     jog(-1);
     GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(2);
 });
 
-step('⭐⭐ SLICING: Edit opens the SLICE EDITOR (pads pick, Record runs a Lazy chop, Back leaves)', () => {
+step('⭐⭐ Edit opens the WAVEFORM EDITOR: Even on locks the markers', () => {
     jog(1);
-    /* K3 turned a while ago (on another page): its touch must still hold
+    /* K4 turned a while ago (on another page): its touch must still hold
      * until the click — the tick clears a TURNED knob's highlight after
      * 600 ms unless a finger is recorded on it (Josh, device: Edit did
      * nothing). */
-    S.knobTurnedTick[2] = S.clockMs - 5000;          /* turned 5 s ago */
-    note(2, 127);
+    S.knobTurnedTick[3] = S.clockMs - 5000;          /* turned 5 s ago */
+    note(3, 127);
     ticks(4);
-    assert(S.knobTouched === 2, 'the touch on Edit was dropped while held: ' + S.knobTouched);
-    click(); note(2, 0);
-    assert(S.auEditor && S.knobTouched === -1, 'the slice editor did not open');
+    assert(S.knobTouched === 3, 'the touch on Edit was dropped while held: ' + S.knobTouched);
+    click(); note(3, 0);
+    assert(S.auEditor && S.auEditor.mode === 'chop' && S.knobTouched === -1, 'the editor did not open');
     ticks(2);
     const f = shown();
-    assert(inked(f), 'the slice editor draws nothing');
-    note(C.TRACK_PAD_BASE + 9, 100); note(C.TRACK_PAD_BASE + 9, 0);   /* row 2, col 2: slice 6 */
-    assert(A.auSelSlice(4) === 5, 'the pad did not pick slice 6');
+    assert(inked(f), 'the editor draws nothing');
     reset();
-    cc(HC.MoveRec, 127); cc(HC.MoveRec, 0);
-    assert(S.auEditor.lazy && sent('t4_au_lazy').join() === '0 1', 'Record did not start a chop');
+    jog(1); click(); cc(71, 1);
+    assert(sentLike(/mark_add|slice_start/).length === 0, 'a marker moved while Even was on');
+    cc(HC.MoveBack, 127); cc(HC.MoveBack, 0);
+    assert(!S.auEditor && S.auPanel, 'Back did not leave the editor for the AUDIO editor');
+});
+
+step('⭐⭐ the waveform editor: pads pick, K1/K3 move by a pixel, K2 zooms, click adds, Delete + pad removes', () => {
+    GET['t4_au_info_0'] = INFO(1, 8, 0);                /* a hand set of 8, Even Off */
+    A.auMarkStale(4, 0); ticks(2);
+    touchClick(3);
+    ticks(2);
+    const ed = S.auEditor;
+    assert(ed && ed.mode === 'chop', 'no editor');
+    note(C.TRACK_PAD_BASE + 9, 100); note(C.TRACK_PAD_BASE + 9, 0);   /* row 2, col 2: slice 6 */
+    assert(A.auSelSlice(4) === 5 && ed.cur === 60000, 'the pad did not pick slice 6: ' + A.auSelSlice(4) + ' ' + ed.cur);
+    reset();
+    note(0, 127); cc(71, 1); note(0, 0);
+    assert(sent('t4_au_slice_start').join() === '0 5 60750', 'K1: one pixel (750 frames): ' + JSON.stringify(sent('t4_au_slice_start')));
+    assert(A.auMarks(4, 0)[4][1] === 60750, 'the slice before did not follow its home end');
+    reset();
+    cc(72, 1);                                       /* K2: zoom in, on the start (last touched) */
+    assert(ed.B - ed.A === 76800 && ed.A <= 60750 && ed.B > 60750, 'zoom: ' + ed.A + '..' + ed.B);
+    cc(73, 1);                                       /* K3: the end, one pixel (600) */
+    assert(sent('t4_au_slice_end').join() === '0 5 72600', 'K3: ' + JSON.stringify(sent('t4_au_slice_end')));
+    assert(ed.last === 'end', 'K3 is not the last touched');
+    cc(73, 127);                                     /* back to home: sent as 0 */
+    assert(sent('t4_au_slice_end').pop() === '0 5 0', 'home: ' + JSON.stringify(sent('t4_au_slice_end')));
+    cc(73, 127);                                     /* sticks at home a few detents */
+    assert(sent('t4_au_slice_end').length === 2, 'the end left home at once');
+    reset();
+    jog(3);
+    assert(ed.cur === 60000 + 3 * 600 && ed.last === 'jog', 'jog: ' + ed.cur);   /* the cursor stays where the pad put it */
+    click();
+    assert(sent('t4_au_mark_add').join() === '0 ' + ed.cur, 'click: ' + JSON.stringify(sent('t4_au_mark_add')));
+    assert(A.auInfo(4, 0).n === 9 && A.auMarks(4, 0).length === 9, 'the marker is not on screen');
+    reset();
+    cc(HC.MoveDelete, 127);
+    note(C.TRACK_PAD_BASE + 0, 100); note(C.TRACK_PAD_BASE + 0, 0);   /* slice 1: stays */
+    note(C.TRACK_PAD_BASE + 2, 100); note(C.TRACK_PAD_BASE + 2, 0);   /* slice 3 */
+    cc(HC.MoveDelete, 0);
+    assert(sent('t4_au_mark_del').join() === '0 2', 'Delete + pad: ' + JSON.stringify(sent('t4_au_mark_del')));
+    assert(inked(shown()), 'the editor draws nothing');
+    cc(HC.MoveBack, 127); cc(HC.MoveBack, 0);
+    assert(!S.auEditor, 'Back');
+    GET['t4_au_info_0'] = INFO(1, 8, 0); A.auMarkStale(4, 0); ticks(20);
+});
+
+step('⭐⭐ Lazy: only the next pad is lit, taps cut, Back asks "Keep N new chops?", Yes edits them', () => {
+    reset();
+    touchClick(1);
+    ticks(1);
+    assert(S.auEditor && S.auEditor.mode === 'lazy' && sent('t4_au_lazy').join() === '0 1', 'Lazy did not arm');
     DM.computePadNoteMap();
     assert(S.padNoteMap[0] === 0xFF, 'the pads still play slices during a chop');
-    GET['t4_au_lazy'] = '1 0 10';
+    GET['t4_au_lazy'] = '1 0 0';
     ticks(4);
+    const lit = () => Array.from({ length: 32 }, (_, i) => LEDS.get(C.TRACK_PAD_BASE + i) || 0).map((v, i) => (v ? i : -1)).filter((i) => i >= 0);
+    assert(lit().join() === '0', 'lit before the first tap: ' + lit().join());
+    note(C.TRACK_PAD_BASE + 5, 100); note(C.TRACK_PAD_BASE + 5, 0);
+    assert(sent('t4_au_lazy_tap').length === 0, 'an unlit pad cut');
     note(C.TRACK_PAD_BASE + 0, 100); note(C.TRACK_PAD_BASE + 0, 0);
-    assert(sent('t4_au_lazy_tap').length === 1, 'a tap did not cut');
+    assert(sent('t4_au_lazy_tap').length === 1, 'pad 1 did not start it');
+    GET['t4_au_lazy'] = '2 1 4000';
+    ticks(4);
+    assert(lit().join() === '1', 'the next lit pad is not slice 2: ' + lit().join());
+    note(C.TRACK_PAD_BASE + 1, 100); note(C.TRACK_PAD_BASE + 1, 0);
+    assert(sent('t4_au_lazy_tap').length === 2, 'the lit pad did not cut');
+    GET['t4_au_lazy'] = '2 2 9000';
+    ticks(4);
     cc(HC.MoveBack, 127); cc(HC.MoveBack, 0);
-    assert(!S.auEditor.lazy, 'Back did not end the chop');
-    cc(HC.MoveBack, 127); cc(HC.MoveBack, 0);
-    assert(!S.auEditor && S.auPanel, 'Back did not leave the slice editor for the AUDIO editor');
+    assert(sent('t4_au_lazy').pop() === '0 0' && S.auEditor.ask && S.auEditor.ask.kind === 'keep', 'Back did not ask');
+    GET['t4_au_lazy'] = '3 2 9000';
+    ticks(4);
+    const f = shown();
+    const own = frame(() => D.drawAudioAsk('LAZY CHOP', ['Keep 2 new chops?'], 0));
+    assert(inked(own) && same(f, own), 'the question is not on screen');
+    click();                                         /* opens on Yes */
+    assert(sent('t4_au_lazy_keep').join() === '1' && S.auEditor && S.auEditor.mode === 'chop', 'Yes did not keep and edit');
     GET['t4_au_lazy'] = '0 0 0';
     cc(HC.MoveBack, 127); cc(HC.MoveBack, 0);
+    assert(!S.auEditor, 'Back');
+});
+
+step('⭐ Manual asks before replacing a hand set; Start / End open the range editor', () => {
+    reset();
+    touchClick(2);
+    assert(S.auEditor && S.auEditor.ask && S.auEditor.ask.kind === 'replace', 'Manual did not ask');
+    click();                                         /* opens on No */
+    assert(!S.auEditor && sent('t4_au_manual').length === 0, 'No replaced');
+    touchClick(2); jog(-1); click();
+    assert(sent('t4_au_manual').join() === '0' && S.auEditor && S.auEditor.mode === 'chop', 'Yes did not replace');
+    cc(HC.MoveBack, 127); cc(HC.MoveBack, 0);
+    jog(-1);
+    reset();
+    touchClick(3);                                   /* CLIP: End */
+    assert(S.auEditor && S.auEditor.mode === 'range' && S.auEditor.last === 'end', 'End did not open the range editor');
+    cc(71, 1);
+    assert(sent('t4_au_set_start').join() === '0 750', 'range K1: ' + JSON.stringify(sent('t4_au_set_start')));
+    cc(HC.MoveBack, 127); cc(HC.MoveBack, 0);
+    cc(HC.MoveBack, 127); cc(HC.MoveBack, 0);
     assert(!S.auPanel, 'Back did not close the AUDIO editor');
+    GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
 });
 
 step('⭐⭐ Slice mode: pads are 36 + slice, none past the count; the CLIP bank mirrors ALL LANES', () => {
@@ -396,7 +495,7 @@ step('⭐⭐ Purge samples: removes what no clip and no saved state uses — onl
     globalThis.__stubStat = { [dir + '/old.wav']: { mode: 0o100644, size: 2097152 },
                               [dir + '/snap "q".wav']: { mode: 0o100644, size: 9 },
                               [dir + '/Break Phenom 84 bpm.wav']: { mode: 0o100644, size: 9 } };
-    const files = { [stateDir + '/seq8sa-snap-1.json']: '{"v":36,"t4c3_au":"0 0 8 16 0 1000 0 0 0 0 0|snap \\"q\\".wav"}' };
+    const files = { [stateDir + '/seq8sa-snap-1.json']: '{"v":36,"t4c3_au2":"0 8 1 16 0 0 0 0 0 0 0|snap \\"q\\".wav"}' };
     const prevRead = globalThis.host_read_file;
     globalThis.host_read_file = (p) => files[p] || '';
     const p = CH.auPurgeScan();

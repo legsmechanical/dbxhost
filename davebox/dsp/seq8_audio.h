@@ -26,9 +26,13 @@
 
 #define AU_MODE_LOOP       0
 #define AU_MODE_SLICE      1
-#define AU_METH_EVEN       0            /* N equal slices of Start..End */
-#define AU_METH_MANUAL     1            /* starts set by hand */
-#define AU_METH_LAZY       2            /* starts tapped in while it played */
+#define AU_GAP             16           /* frames: the least a slice can be */
+#define AU_MIP             256          /* frames per waveform summary entry */
+
+#define AU_LAZY_NONE       0
+#define AU_LAZY_ARMED      1            /* pad 1 lit, nothing playing yet */
+#define AU_LAZY_RUN        2            /* playing; each tap drops a marker */
+#define AU_LAZY_ENDED      3            /* played out / Back: keep or restore? */
 
 #define AU_PLAY_ONE        0            /* to the slice's end */
 #define AU_PLAY_GATE       1            /* for the step's gate */
@@ -42,14 +46,17 @@ typedef struct au_sample {
     uint32_t  rate;
     uint8_t   ch;
     int8_t    peaks[AU_PEAKS][2];   /* per column: min, max (int8 of the int16 range) */
+    int8_t  (*mip)[2];              /* min, max per AU_MIP frames (the zoomed waveform) */
+    uint32_t  nmip;
     char      name[AU_PATH_MAX];    /* the file inside samples/ */
     uint32_t  refs;                 /* clips using it (loader thread only) */
 } au_sample_t;
 
+/* A slice of the HAND SET (made by Lazy / Manual, shaped in the chop editor).
+ * Its sound settings belong to the slice NUMBER: Even's slice k uses them too. */
 typedef struct {
-    uint32_t start;         /* frame (Manual / Lazy); Even computes its own */
-    int16_t  nudge_ms;      /* SLICE bank Start: -500..+500 ms */
-    uint8_t  len_pct;       /* SLICE bank Len: 1..100 % of the slice */
+    uint32_t start;         /* frame */
+    uint32_t end;           /* frame; 0 = HOME: the next slice's start (the clip's End for the last) */
     int8_t   pitch;         /* -24..+24 st */
     int8_t   gain_db;       /* -40..+12 dB */
     uint8_t  rev;
@@ -65,10 +72,11 @@ typedef struct {
     uint8_t      state;              /* 0 none, 1 loading, 2 ready, 3 failed */
     uint8_t      err;                /* AU_ERR_* when failed */
     uint8_t      mode;               /* AU_MODE_* */
-    uint8_t      method;             /* AU_METH_* */
-    uint8_t      nslices;            /* 1..32 */
+    uint8_t      even;               /* 0 = Off (the hand set plays), else 2..32 equal slices of Start..End */
+    uint8_t      nslices;            /* the hand set's slices, 1..32 */
     uint8_t      jump;               /* Loop: 2/4/8/16/32 jump points */
-    uint16_t     rstart, rend;       /* Start / End, in 1/1000 of the sample */
+    uint32_t     rstart, rend;       /* Start / End, sample frames; rend 0 = the sample's end */
+    uint16_t     mig_rs, mig_re;     /* an older project's Start / End in 1/1000, applied when the sample loads (0/0 = none) */
     int8_t       pitch;              /* -24..+24 st */
     int8_t       gain_db;            /* -40..+12 dB */
     uint8_t      revrs;              /* Loop: the sample plays backwards */

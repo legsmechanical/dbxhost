@@ -1215,10 +1215,10 @@ touch a knob and click the jog for a **›** control. **Back** leaves.
 
 | Page | Knobs |
 |---|---|
-| **CLIP** | **Smpl›** choose the sample · **Mode** Loop / Slice · **Start** / **End** the part of the sample that plays · **Pitch** / **Gain** for the whole clip · **Slices** (how many even slices, 1–32) or **Jump** (2–32 jump points) · **Chop›** (Slice mode) one step per slice, in order, so the clip plays the sample back as it was — now as slices you can rearrange |
-| **SLICING** | Slice mode: **Meth** (**Even** cuts the slices evenly; **Manual** and **Lazy** keep the starts where they are, to move by hand — the slice editor and a Lazy chop set it themselves) · **Slices** · **Edit›** the slice editor · **Lazy›** a Lazy chop. Loop mode: **Jump** · **Revrs** · **Nudge** · **JmpQ** (as on the clip bank) |
-| **SLICE n** | The last pad you tapped: **Start** (nudge, ms), **Len** (how much of the slice plays), **Pitch**, **Gain**, **Revrs**, **Attk**, **Decay**, and **Play** — **One** (to the slice's end), **Gate** (as long as the step), **Loop** (loops the slice for the step) |
-| **ALL SLICES** | The same eight, for every slice at once. A knob shows `--` while the slices differ; turning it sets them all |
+| **CLIP** | **Smpl›** choose the sample · **Mode** Loop / Slice · **Start** / **End** the part of the sample that plays, shown as time (touch one and click the jog to set it in the waveform editor) · **Pitch** / **Gain** for the whole clip · **Chop›** (Slice mode) one step per slice, in order, so the clip plays the sample back as it was — now as slices you can rearrange; or **Jump** (Loop mode, 2–32 jump points) |
+| **SLICING** | Slice mode: **Even** · **Lazy›** · **Manual›** · **Edit›** (see *Chops* below). Loop mode: **Jump** · **Revrs** · **Nudge** · **JmpQ** (as on the clip bank) |
+| **SLICE n** | The last pad you tapped: **Pitch**, **Gain**, **Revrs**, **Attk**, **Decay**, and **Play** — **One** (to the slice's end), **Gate** (as long as the step), **Loop** (loops the slice for the step) |
+| **ALL SLICES** | The same six, for every slice at once. A knob shows `--` while the slices differ; turning it sets them all |
 
 **Choosing a sample** (**Smpl›**): the list starts with **This project** (samples it
 already holds), **dAVEBOx Resample**, **Recordings**, **Samples** and the **Core
@@ -1228,12 +1228,35 @@ so the project keeps its sounds when copied or when the library changes. **None*
 clears the clip. Slice mode takes samples up to 4 minutes; Loop mode up to 10. A
 sample whose file has gone reads *Missing: name* and stays silent.
 
-**The slice editor** (**Edit›**) shows the sample with every slice start marked and
-the selected slice bracketed. Tap a pad to pick a slice (it plays); turn the jog to
-move its start (**Shift** for fine) — the slicing becomes *Manual*. **Record**
-starts a **Lazy chop**: the sample plays from its Start and every pad you tap starts
-the next slice there, the first tap being slice 1. It ends when the sample does, on
-**Record** again or on **Back**. **Back** leaves the editor.
+**Chops.** You make chops one of two ways, then shape them in one editor:
+
+- **Lazy›** re-chops the sample by ear. Only pad 1 is lit; tap it and the sample
+  plays from Start to End. Then only the next pad lights: tap it to drop a chop
+  where the sample is. It ends at End or on **Back**, and asks *Keep N new chops?*
+  — **Yes** opens the editor on them, **No** puts your old chops back. **Back**
+  before the first tap changes nothing.
+- **Manual›** starts over with one slice, Start to End, in the editor (it asks
+  first if that would replace chops you made).
+- **Even** cuts Start..End into 2–32 equal slices. It sits *over* your chops
+  rather than replacing them: turn it back to **Off** and they're still there. A
+  slice's sound settings belong to its number, so slice 3 sounds the same either
+  way.
+
+**The waveform editor** (**Edit›**) shows the sample with every chop marked and
+the selected slice bracketed:
+
+| Control | Does |
+|---|---|
+| **Pads** | Pick a slice (it plays) |
+| **K1 Start** / **K3 End** | Move the selected slice's start / end, one screen pixel a detent — a single sample when zoomed all the way in. A slice ends where the next begins (**E HOME**); turn its end away to set its own. Turned back, it stops at home for a moment |
+| **K2 Zoom** | From the whole sample down to one sample a pixel, centred on what you touched last: the cursor (jog), the start (K1) or the end (K3) |
+| **K4 Even** | As on the SLICING page |
+| **Jog** / **click** | Move the cursor (**Shift** for single samples) / add a chop there |
+| **Delete + pad** | Remove that slice's chop: it joins the slice before (slice 1's start stays) |
+
+While **Even** is on, the chops are locked and the editor says so. Touching **Start**
+or **End** on the CLIP page and clicking opens the same editor on the clip's range:
+**K1** Start, **K2** Zoom, **K3** End. **Back** leaves.
 
 **The banks** hold the sequence:
 

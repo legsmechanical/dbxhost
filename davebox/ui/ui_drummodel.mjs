@@ -8,7 +8,7 @@
 
 import { S } from './ui_state.mjs';
 import { PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_AUDIO, DRUM_LANES, DRUM_BASE_NOTE, NUM_CLIPS } from './ui_constants.mjs';
-import { auInfo, auClipOf, auPadToSlice, AU_MODE_SLICE } from './ui_audio.mjs';
+import { auInfo, auClipOf, auPadToSlice, auLazyOpen, AU_MODE_SLICE } from './ui_audio.mjs';
 import { SCALE_INTERVALS } from './ui_pure.mjs';
 import { dspGet } from './ui_dsp_get.mjs';
 import { chordLayoutOn, fillChordPadMap, padToken } from './ui_chord_pads.mjs';
@@ -81,7 +81,7 @@ export function computePadNoteMap() {
          * slice count are silent. Loop mode, and while a Lazy chop cuts, no
          * pad plays (they jump / cut). */
         const i0 = auInfo(t, auClipOf(t));
-        const slice = i0.mode === AU_MODE_SLICE && !(S.auEditor && S.auEditor.lazy);
+        const slice = i0.mode === AU_MODE_SLICE && !auLazyOpen();
         for (let i = 0; i < 32; i++) {
             const k = auPadToSlice(i);
             S.padNoteMap[i] = (slice && k < i0.n) ? (DRUM_BASE_NOTE + k) & 0xFF : 0xFF;

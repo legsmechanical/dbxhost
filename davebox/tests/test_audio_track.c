@@ -13,6 +13,10 @@
  *     gain / GATE; no pitch transform moves it (transpose, NOTE FX octave);
  *     a DELAY echo's velocity is its volume (Q1); ALL SLICES sets every slice;
  *     Chop lays one step per slice at 36..;
+ *   - the hand set (frames): Manual, markers added / removed (steps follow),
+ *     pinned and home ends, Even as an override, the zoomed waveform; Lazy
+ *     armed silent, first tap plays, taps mark, Back / played out, keep or
+ *     restore; an older project's permille Start / End arrive in frames;
  *   - Loop: the voice follows the clip from the sample's first frame; Revrs
  *     plays it backwards, Nudge delays it, JmpQ holds a jump to its boundary;
  *   - the project file keeps it all and a reload loads the samples again; a
@@ -209,7 +213,7 @@ int main(void) {
 
     /* ---- Slice: a note plays exactly its slice, on the track's slot ---- */
     hx_set_param(h, "t4_au_set_mode", "0 1");
-    hx_set_param(h, "t4_au_set_slices", "0 8");
+    hx_set_param(h, "t4_au_set_even", "0 8");
     hx_stub_feed_reset();
     hx_clear_capture(h);
     au_note_event(4, 2, 0x90, 1, 0);               /* velocity 1: ignored */
@@ -273,14 +277,108 @@ int main(void) {
     tr->pfx.delay_level = 0; tr->pfx.repeat_times = 0;
     hx_render(h, 60);
 
-    /* ---- the slicing method turns both ways: Manual keeps Even's starts ---- */
-    hx_set_param(h, "t4_au_set_method", "0 1");
-    HX_ASSERT(inst->au_clip[4][0].method == AU_METH_MANUAL && inst->au_clip[4][0].sl[3].start == 3 * 6000,
-              "Even -> Manual did not keep the even starts");
-    hx_set_param(h, "t4_au_set_method", "0 2");
-    HX_ASSERT(inst->au_clip[4][0].method == AU_METH_LAZY && inst->au_clip[4][0].sl[3].start == 3 * 6000, "-> Lazy");
-    hx_set_param(h, "t4_au_set_method", "0 0");
-    HX_ASSERT(inst->au_clip[4][0].method == AU_METH_EVEN, "-> Even");
+    /* ---- the hand set: Manual, markers added / removed, ends, Even over it ---- */
+    {
+        au_clip_t *ac = &inst->au_clip[4][0];
+        char mk[600];
+        hx_set_param(h, "t4_au_manual", "0");
+        HX_ASSERT(ac->even == 0 && ac->nslices == 1 && ac->sl[0].start == 0, "Manual did not make one slice at Start");
+        hx_set_param(h, "t4_au_mark_add", "0 12000");
+        HX_ASSERT(ac->nslices == 2 && ac->sl[1].start == 12000, "a marker did not split the slice");
+        hx_get_param(h, "t4_au_marks_0", mk, sizeof mk);
+        HX_ASSERT(!strcmp(mk, "0 12000 12000 48000"), "marks: two slices, home ends");
+        /* steps follow a marker: slice 2's step plays the same audio after a split before it */
+        hx_set_param(h, "t4_c0_step_4_toggle", "37");
+        hx_set_param(h, "t4_au_mark_add", "0 6000");
+        HX_ASSERT(ac->nslices == 3 && ac->sl[1].start == 6000 && ac->sl[2].start == 12000, "the middle marker");
+        HX_ASSERT(clip_pitches(inst, 4, 0, pit, 64) == 1 && pit[0] == DRUM_BASE_NOTE + 2, "a split did not move the later slice's step up");
+        hx_set_param(h, "t4_au_mark_add", "0 6005");
+        HX_ASSERT(ac->nslices == 3, "a marker on top of a marker was added");
+        /* slice 2 (6000..12000) plays the third eighth: 2000 */
+        hx_stub_feed_reset();
+        au_note_event(4, 1, 0x90, 100, 0);
+        hx_render(h, 1);
+        HX_ASSERT(hx_stub_feed_last(4)[255] == 2000, "a hand-set slice did not play its own frames");
+        hx_render(h, 60);
+        hx_set_param(h, "t4_au_mark_del", "0 1");
+        HX_ASSERT(ac->nslices == 2 && ac->sl[1].start == 12000, "a marker did not go");
+        HX_ASSERT(clip_pitches(inst, 4, 0, pit, 64) == 1 && pit[0] == DRUM_BASE_NOTE + 1, "a delete did not move the later step down");
+        hx_set_param(h, "t4_au_mark_del", "0 0");
+        HX_ASSERT(ac->nslices == 2 && ac->sl[0].start == 0, "slice 1's start was deleted");
+        hx_set_param(h, "t4_au_wipe", "0");
+        /* ends: pinned, back home on the home frame or 0 */
+        hx_set_param(h, "t4_au_slice_end", "0 0 9000");
+        hx_get_param(h, "t4_au_marks_0", mk, sizeof mk);
+        HX_ASSERT(!strcmp(mk, "0 9000 12000 48000"), "a pinned end");
+        hx_set_param(h, "t4_au_slice_end", "0 0 12000");
+        HX_ASSERT(ac->sl[0].end == 0, "the home frame did not send the end home");
+        hx_set_param(h, "t4_au_slice_end", "0 0 30000");
+        HX_ASSERT(ac->sl[0].end == 30000, "an end past the next start (overlap)");
+        hx_set_param(h, "t4_au_mark_add", "0 6000");
+        HX_ASSERT(ac->sl[0].end == 0 && ac->sl[1].start == 6000 && ac->sl[1].end == 30000,
+                  "a split did not hand the pinned end to the new slice");
+        hx_set_param(h, "t4_au_mark_del", "0 1");
+        HX_ASSERT(ac->sl[0].end == 30000, "a merge did not keep the merged slice's end");
+        hx_set_param(h, "t4_au_slice_end", "0 0 0");
+        /* starts stay between their neighbours */
+        hx_set_param(h, "t4_au_slice_start", "0 1 1");
+        HX_ASSERT(ac->sl[1].start == AU_GAP, "a start passed the one before");
+        hx_set_param(h, "t4_au_slice_start", "0 1 12000");
+        /* Even overrides, keeping the hand set; markers locked while it is on */
+        hx_set_param(h, "t4_au_set_even", "0 4");
+        hx_get_param(h, "t4_au_marks_0", mk, sizeof mk);
+        HX_ASSERT(!strcmp(mk, "0 12000 12000 24000 24000 36000 36000 48000"), "Even 4 over the hand set");
+        hx_set_param(h, "t4_au_mark_add", "0 3000");
+        hx_set_param(h, "t4_au_slice_start", "0 1 13000");
+        HX_ASSERT(ac->nslices == 2 && ac->sl[1].start == 12000, "a marker moved while Even was on");
+        hx_set_param(h, "t4_au_set_even", "0 0");
+        hx_get_param(h, "t4_au_marks_0", mk, sizeof mk);
+        HX_ASSERT(!strcmp(mk, "0 12000 12000 48000"), "Even Off did not bring the hand set back");
+        /* Start / End are frames */
+        hx_set_param(h, "t4_au_set_start", "0 24000");
+        hx_set_param(h, "t4_au_set_even", "0 2");
+        hx_get_param(h, "t4_au_marks_0", mk, sizeof mk);
+        HX_ASSERT(!strcmp(mk, "24000 36000 36000 48000"), "Even did not divide Start..End in frames");
+        hx_set_param(h, "t4_au_set_end", "0 48000");
+        HX_ASSERT(ac->rend == 0, "End at the sample's end is not 'the end'");
+        hx_set_param(h, "t4_au_set_start", "0 0");
+        /* the zoomed waveform: frames 6000..6128, one per column, all 2000 */
+        hx_get_param(h, "t4_au_wave_0_6000_6128", mk, sizeof mk);
+        HX_ASSERT(!strncmp(mk, "00070007", 8) && !strncmp(mk + 127 * 4, "0007", 4), "the zoomed waveform");
+
+        /* ---- Lazy: armed silent, the first tap plays, taps mark, keep / restore ---- */
+        hx_set_param(h, "t4_au_set_even", "0 0");
+        hx_set_param(h, "t4_au_lazy", "0 1");
+        HX_ASSERT(inst->au_lazy_state == AU_LAZY_ARMED, "Lazy did not arm");
+        hx_stub_feed_reset();
+        hx_render(h, 4);
+        HX_ASSERT(hx_stub_feed(4, NULL, NULL) == 0, "an armed Lazy chop played before the first tap");
+        hx_set_param(h, "t4_au_lazy", "0 0");
+        HX_ASSERT(inst->au_lazy_state == AU_LAZY_NONE && ac->nslices == 2 && ac->sl[1].start == 12000,
+                  "Back before the first tap changed the chops");
+        hx_set_param(h, "t4_au_lazy", "0 1");
+        hx_set_param(h, "t4_au_lazy_tap", "");
+        HX_ASSERT(inst->au_lazy_state == AU_LAZY_RUN && ac->nslices == 1 && ac->sl[0].start == 0, "the first tap");
+        hx_render(h, 10);
+        HX_ASSERT(hx_stub_feed(4, NULL, NULL) > 0, "the first tap did not play the sample");
+        hx_set_param(h, "t4_au_lazy_tap", "");
+        HX_ASSERT(ac->nslices == 2 && ac->sl[1].start > 1200 && ac->sl[1].start < 1600, "a tap did not mark the playhead");
+        hx_set_param(h, "t4_au_lazy", "0 0");
+        HX_ASSERT(inst->au_lazy_state == AU_LAZY_ENDED, "Back did not end the chop");
+        hx_set_param(h, "t4_au_lazy_keep", "0");
+        HX_ASSERT(inst->au_lazy_state == AU_LAZY_NONE && ac->nslices == 2 && ac->sl[1].start == 12000,
+                  "No did not put the old chops back");
+        hx_set_param(h, "t4_au_set_even", "0 8");
+        hx_set_param(h, "t4_au_lazy", "0 1");
+        hx_set_param(h, "t4_au_lazy_tap", "");
+        HX_ASSERT(ac->even == 0, "a Lazy chop left Even on");
+        for (i = 0; i < 600 && inst->au_lazy_state == AU_LAZY_RUN; i++) hx_render(h, 1);
+        HX_ASSERT(inst->au_lazy_state == AU_LAZY_ENDED, "the chop did not end with the sample");
+        hx_set_param(h, "t4_au_lazy_keep", "1");
+        HX_ASSERT(inst->au_lazy_state == AU_LAZY_NONE && ac->nslices == 1 && ac->even == 0, "Yes did not keep the new chops");
+        hx_set_param(h, "t4_au_set_even", "0 8");
+        hx_render(h, 20);
+    }
 
     /* ---- ALL SLICES: one value into every slice ---- */
     hx_set_param(h, "t4_au_all_gain", "0 -6");
@@ -289,7 +387,7 @@ int main(void) {
     {
         char ab[64];
         hx_get_param(h, "t4_au_all_0", ab, sizeof ab);
-        HX_ASSERT(!strncmp(ab, "0 100 0 -6 0 0 0 x", 18), "ALL SLICES read does not show the common gain and the differing Play");
+        HX_ASSERT(!strcmp(ab, "0 -6 0 0 0 x"), "ALL SLICES read does not show the common gain and the differing Play");
     }
     hx_set_param(h, "t4_au_all_play", "0 0");
     hx_set_param(h, "t4_au_all_gain", "0 0");
@@ -446,6 +544,14 @@ int main(void) {
     snprintf(p, sizeof p, "6|%s/src/ramp3.wav", g_root);
     hx_set_param(h, "t4_au_pick", p);
     HX_ASSERT(wait_loaded(h, 4, 6) == 2, "the long ramp did not load");
+    {
+        /* a wide window reads the summary: column 64 is frames 66150..67183 (to 7183 -> 28) */
+        char wv[600];
+        unsigned hi = 0;
+        hx_get_param(h, "t4_au_wave_6_0_132300", wv, sizeof wv);
+        sscanf(wv + 64 * 4 + 2, "%2x", &hi);
+        HX_ASSERT(strlen(wv) == 512 && hi >= 27 && hi <= 29, "the wide waveform window");
+    }
     hx_set_param(h, "t4_au_set_bars", "6 1");
     hx_stub_feed_reset();
     hx_set_param(h, "t4_launch_clip", "6");
@@ -533,10 +639,10 @@ int main(void) {
     /* ---- the project file keeps it ---- */
     n = hx_get_param(h, "state_full", blob, (int)sizeof blob);
     HX_ASSERT(n > 0 && (size_t)n < sizeof blob - 1, "state_full failed");
-    HX_ASSERT(strstr(blob, "\"t4_pm\":3") && strstr(blob, "\"t4c0_au\":\"1 0 8 16 0 1000 0 0 0 0 0|mono48.wav\""),
+    HX_ASSERT(strstr(blob, "\"t4_pm\":3") && strstr(blob, "\"t4c0_au2\":\"1 8 1 16 0 0 0 0 0 0 0|mono48.wav\""),
               "the state does not carry the Audio track and clip A");
     HX_ASSERT(!strstr(blob, "\"t4_au\""), "the state still writes the old Audio flag");
-    HX_ASSERT(strstr(blob, "\"t4c0s1_au\":\""), "the state does not carry slice 2's settings");
+    HX_ASSERT(strstr(blob, "\"t4c0s1_au2\":\""), "the state does not carry slice 2's settings");
     {
         FILE *wf = fopen(inst->state_path, "w");
         HX_ASSERT(wf && fwrite(blob, 1, (size_t)n, wf) == (size_t)n, "write state");
@@ -571,6 +677,24 @@ int main(void) {
     hx_set_param(h, "t2_pad_mode", "1");
     HX_ASSERT(inst->tracks[2].pad_mode == PAD_MODE_DRUM && !inst->au_clip[2][0].smp, "pad_mode left Audio holding its samples");
     hx_destroy(h);
+
+    /* ---- a project from before frames: Start / End in 1/1000 wait for the
+     * sample; hand-set starts (already frames) carry over ---- */
+    {
+        FILE *wf;
+        h = hx_create(NULL); inst = (seq8_instance_t *)h->inst;
+        snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
+        wf = fopen(inst->state_path, "w");
+        fprintf(wf, "{\"v\":36,\"t4_pm\":3,\"t4c0_au\":\"1 1 2 16 250 750 0 0 0 0 0|mono48.wav\","
+                    "\"t4c0s1_au\":\"30000 0 100 0 0 0 0 0 0\"}");
+        fclose(wf);
+        seq8_load_state(inst);
+        HX_ASSERT(wait_loaded(h, 4, 0) == 2, "the old project's sample did not load");
+        HX_ASSERT(inst->au_clip[4][0].rstart == 12000 && inst->au_clip[4][0].rend == 36000 &&
+                  inst->au_clip[4][0].even == 0 && inst->au_clip[4][0].nslices == 2 &&
+                  inst->au_clip[4][0].sl[1].start == 30000, "an old project's clip did not come over in frames");
+        hx_destroy(h);
+    }
 
     /* ---- a set from the drum-flag build loads as a drum track ---- */
     {

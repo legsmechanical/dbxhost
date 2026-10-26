@@ -1,4 +1,4 @@
-/* ui_audio_editor.mjs — the AUDIO editor and its slice editor.
+/* ui_audio_editor.mjs — the AUDIO editor and its waveform editor.
  *
  * THE AUDIO EDITOR (S.auPanel) is an Audio track's instrument door — the
  * sound menu's click on "Audio", the bank map's AUDIO pad (Josh, 2026-10-27:
@@ -6,33 +6,46 @@
  * slicing, etc) while clip bank would have all the sequence settings" ·
  * "making the "instrument" be per clip audio settings (and should probably be
  * renamed "audio")"). It edits the track's current clip:
- *   CLIP        Smpl› · Mode · Start · End · Pitch · Gain · Slices/Jump · Chop›
- *   SLICING     Meth · Slices · Edit› · Lazy›     (Loop: Jump · Revrs · Nudge · JmpQ)
- *   SLICE n     Start · Len · Pitch · Gain · Revrs · Attk · Decay · Play
- *   ALL SLICES  the same eight, set on every slice (`--` while they differ)
+ *   CLIP        Smpl› · Mode · Start · End · Pitch · Gain · Chop› (Slice) / Jump (Loop)
+ *   SLICING     Even · Lazy› · Manual› · Edit›     (Loop: Jump · Revrs · Nudge · JmpQ)
+ *   SLICE n     Pitch · Gain · Revrs · Attk · Decay · Play
+ *   ALL SLICES  the same six, set on every slice (`--` while they differ)
  * The jog turns pages; a knob turns its cell; touch a knob + click the jog
- * fires a › cell (the chooser, Chop, the slice editor, Lazy chop). The pads
- * stay live — a tap picks the slice SLICE n edits and plays it. Back closes.
+ * fires a › cell (the chooser, Chop, Lazy, Manual, the editor) — and on the
+ * CLIP page's Start / End opens the waveform editor on the clip's range. The
+ * pads stay live — a tap picks the slice SLICE n edits and plays it. Back
+ * closes.
  *
- * THE SLICE EDITOR (S.auEditor), over the AUDIO editor: the sample big,
- * every slice start marked, the selected slice bracketed.
- *   pads      pick a slice (the engine plays it: the pads still sound)
- *   jog       move the selected slice's start (Shift: fine) — the clip's
- *             slicing becomes Manual
- *   Record    LAZY CHOP: the sample plays from Start; each pad tap starts the
- *             next slice where the sample is. It ends at the sample's end, on
- *             Record again, or on Back.
- *   Back      out (while a chop runs: ends the chop)
- * Knobs and steps are swallowed; Note/Session closes and falls through. */
+ * Chops are CREATED (Lazy, Manual) and EDITED in one editor (Josh,
+ * 2026-10-27: "there should be a unified method for editing those chops,
+ * including deleting chop points, adding new ones, and changing the
+ * start/end of existing points"); Even is an override over them.
+ *
+ * THE WAVEFORM EDITOR (S.auEditor), over the AUDIO editor, in three modes:
+ *   chop   K1 Start · K2 Zoom · K3 End · K4 Even. Pads pick a slice (it
+ *          plays). The jog moves a cursor; a click adds a marker there.
+ *          Delete + pad removes that slice's start (not slice 1's). One
+ *          detent of K1 / K3 / the jog = one screen pixel at the zoom. Zoom
+ *          centres on what was touched last (the jog: the cursor; K1: the
+ *          start; K3: the end). An End turned past home sticks there a few
+ *          detents and reads "home". While Even is on, the markers are locked.
+ *   range  K1 Start · K2 Zoom · K3 End of the clip (from the CLIP page).
+ *   lazy   Lazy chop: pad 1 lit; its tap plays Start..End; then only the next
+ *          pad lights, and its tap drops a marker at the playhead. It ends on
+ *          Back or at End, and asks "Keep N new chops?" (Yes: the editor on
+ *          them; No: the old ones back). Back before the first tap: no change.
+ * Back closes it. Steps are swallowed; Note/Session closes and falls through. */
 
 import { S } from './ui_state.mjs';
-import { MoveBack, MoveRec } from '/data/UserData/schwung/shared/constants.mjs';
+import { MoveBack } from '/data/UserData/schwung/shared/constants.mjs';
 import { MoveMainKnob, MoveMainButton, MoveNoteSession, TRACK_PAD_BASE } from './ui_constants.mjs';
 import { decodeDelta } from '/data/UserData/schwung/shared/input_filter.mjs';
 import { nowMs } from './ui_clock.mjs';
-import { auInfo, auClipOf, auSlice, auSlicePos, auLazyStart, auLazyStop, auLazyTap, auMarkStale,
+import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLazyState, auMarkStale,
          auPanelPages, auPanelPageName, auPanelKnob, auPanelKnobDeliberate, auChop, auPadToSlice,
-         auSelSlice, auSetSelSlice, isAudioTrack, AU_MODE_SLICE } from './ui_audio.mjs';
+         auSelSlice, auSetSelSlice, isAudioTrack, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
+         auMarkAdd, auMarkDel, auManual, auRangeStep, auEvenStep, auEnd,
+         AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN } from './ui_audio.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { ccKnobDelta, knobPick, KNOB_PICK, KNOB_DELIB } from './ui_input_cc.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
@@ -68,15 +81,25 @@ function panelAction(ed, k) {
     const t = ed.t, c = auClipOf(t), i = auInfo(t, c);
     const page = auPanelPageName(ed);
     if (page === 'CLIP' && k === 0) { S.pendingAudioChooser = { t, c }; return true; }
-    if (page === 'CLIP' && k === 7 && i.mode === AU_MODE_SLICE && i.state === 2) {
+    if (page === 'CLIP' && (k === 2 || k === 3) && i.state === 2) {
+        openWaveEditor(t, c, 'range', k === 2 ? 'start' : 'end');
+        return true;
+    }
+    if (page === 'CLIP' && k === 6 && i.mode === AU_MODE_SLICE && i.state === 2) {
         auChop(t, c);
         showActionPopup('CHOPPED', i.n + ' slices to steps');
         return true;
     }
-    if (page === 'SLICING' && i.mode === AU_MODE_SLICE && i.state === 2 && (k === 2 || k === 3)) {
-        S.auEditor = { t, c, lazy: false, lazySeen: false, lazyAt: 0, pos: null };
-        if (k === 3) startLazy(S.auEditor);
-        return true;
+    if (page === 'SLICING' && i.mode === AU_MODE_SLICE && i.state === 2) {
+        if (k === 1) { openWaveEditor(t, c, 'lazy'); return true; }
+        if (k === 2) {
+            /* Manual: a fresh hand set of one slice — asking first when it
+             * would replace chops made by hand */
+            if (i.hand > 1) { openWaveEditor(t, c, 'chop'); S.auEditor.ask = { kind: 'replace', sel: 1 }; }
+            else startManual(t, c);
+            return true;
+        }
+        if (k === 3) { openWaveEditor(t, c, 'chop'); return true; }
     }
     return false;
 }
@@ -109,7 +132,7 @@ export function audioPanelInput(status, d1, d2) {
     if (d1 >= 71 && d1 <= 78) {
         const k = d1 - 71;
         const st = auPanelKnobDeliberate(ed, k) ? knobStep(k, d2, KNOB_DELIB)
-                 : (auPanelPageName(ed) === 'CLIP' && k === 6) || auPanelPageName(ed) === 'SLICING' ? knobStep(k, d2, KNOB_PICK)
+                 : auPanelPageName(ed) === 'SLICING' ? knobStep(k, d2, KNOB_PICK)
                  : ccKnobDelta(d2, k);
         if (st && auPanelKnob(ed, k, st)) S.screenDirty = true;
         return true;
@@ -149,85 +172,325 @@ export function auPadTapped(t, padIdx) {
     if (k < i.n) auSetSelSlice(t, k);
 }
 
-/* ---- the slice editor ---- */
+/* ---- the waveform editor ---- */
+
+const MIN_SPAN = 128;                     /* full zoom: one frame per pixel */
+const END_HOLD = 4;                       /* detents an End sticks at home */
+
+export function openWaveEditor(t, c, mode, last) {
+    const i = auInfo(t, c);
+    const ed = { t, c, mode, A: 0, B: Math.max(MIN_SPAN, i.nframes | 0), cur: 0, last: last || 'jog',
+                 endHold: 0, ask: null, openedAt: S.clockMs | 0 };
+    const mk = auMarks(t, c);
+    const sel = auSelSlice(t);
+    ed.cur = mode === 'chop' && mk[sel] ? mk[sel][0] : i.rstart;
+    S.auEditor = ed;
+    S.knobTouched = -1;
+    if (mode === 'lazy') {
+        auLazyStart(t, c);
+        auSetSelSlice(t, 0);
+    }
+    computePadNoteMap();
+    S.ledsDirtyAudio = true;
+    S.screenDirty = true;
+}
+
+function startManual(t, c) {
+    auManual(t, c);
+    auSetSelSlice(t, 0);
+    const i = auInfo(t, c);
+    S.auInfo[t][c] = Object.assign({}, i, { even: 0, hand: 1, n: 1 });
+    auMarksLocal(t, c, [[i.rstart, auEnd(i)]]);
+    openWaveEditor(t, c, 'chop');
+    S.pendingPadNoteMapRecompute = true;
+}
 
 export function closeAudioEditor() {
     const ed = S.auEditor;
     if (!ed) return;
-    if (ed.lazy) auLazyStop(ed.t, ed.c);
+    if (ed.mode === 'lazy') {
+        /* closed under a running chop (Note/Session, a track change): the old
+         * chops back */
+        const st = auLazyState().state;
+        if (st === AU_LAZY_ARMED || st === AU_LAZY_RUN) auLazyStop(ed.t, ed.c);
+        auLazyKeep(ed.t, ed.c, 0);
+    }
     S.auEditor = null;
     computePadNoteMap();
+    S.ledsDirtyAudio = true;
     S.screenDirty = true;
 }
 
-function startLazy(ed) {
-    ed.lazy = true;
-    ed.lazySeen = false;
-    ed.lazyAt = S.clockMs;
-    auLazyStart(ed.t, ed.c);
-    computePadNoteMap();          /* the pads stop playing slices: they cut */
-}
-function stopLazy(ed) {
-    auLazyStop(ed.t, ed.c);
-    ed.lazy = false;
-    ed.lazySeen = false;
-    computePadNoteMap();
+/* Frames per screen pixel at the editor's zoom (128 pixels across). */
+export function auEdPixel(ed) { return Math.max(1, Math.round((ed.B - ed.A) / 128)); }
+
+/* Keep frame f on screen, scrolling the window (its span kept). */
+function follow(ed, f) {
+    const span = ed.B - ed.A, fr = auInfo(ed.t, ed.c).nframes | 0;
+    if (f >= ed.A && f < ed.B) return;
+    let A = Math.round(f - span / 2);
+    A = Math.max(0, Math.min(Math.max(0, fr - span), A));
+    ed.A = A; ed.B = A + span;
 }
 
-/* Returns true when the message was the slice editor's. */
+/* The points K1 / K3 edit, and the one zoom centres on. */
+function edStart(ed) {
+    const i = auInfo(ed.t, ed.c);
+    if (ed.mode !== 'chop') return i.rstart;
+    const m = auMarks(ed.t, ed.c)[auSelSlice(ed.t)];
+    return m ? m[0] : 0;
+}
+function edEnd(ed) {
+    const i = auInfo(ed.t, ed.c);
+    if (ed.mode !== 'chop') return auEnd(i);
+    const m = auMarks(ed.t, ed.c)[auSelSlice(ed.t)];
+    return m ? m[1] : 0;
+}
+/* Hand-set slice k's home end: the next start, else the clip's End (the
+ * sample's end when the slice starts past End). */
+export function auEdHome(ed, k) {
+    const i = auInfo(ed.t, ed.c), mk = auMarks(ed.t, ed.c);
+    if (k + 1 < mk.length) return mk[k + 1][0];
+    const e = auEnd(i);
+    return mk[k] && e > mk[k][0] ? e : i.nframes;
+}
+
+function zoom(ed, dir) {
+    const i = auInfo(ed.t, ed.c), fr = i.nframes | 0;
+    if (fr <= 0) return false;
+    const span = ed.B - ed.A;
+    let ns = Math.round(dir > 0 ? span * 0.8 : span * 1.25);
+    ns = Math.max(Math.min(MIN_SPAN, fr), Math.min(fr, ns));
+    if (ns === span) return false;
+    const ctr = ed.last === 'start' ? edStart(ed) : ed.last === 'end' ? edEnd(ed) : ed.cur;
+    let A = Math.round(ctr - ns / 2);
+    A = Math.max(0, Math.min(fr - ns, A));
+    ed.A = A; ed.B = A + ns;
+    return true;
+}
+
+/* K1 / K3 in chop mode: the selected slice's start / end by `dd` pixels. */
+function chopPoint(ed, which, dd) {
+    const t = ed.t, c = ed.c, i = auInfo(t, c);
+    if (i.even) { ed.lockedAt = S.clockMs; return true; }          /* "Even on": locked */
+    const k = auSelSlice(t);
+    const mk = auMarks(t, c).map((m) => m.slice());
+    if (!mk[k]) return false;
+    const px = auEdPixel(ed), G = 16;
+    if (which === 'start') {
+        const lo = k > 0 ? mk[k - 1][0] + G : 0;
+        const hi = Math.min(k + 1 < mk.length ? mk[k + 1][0] - G : i.nframes - G, mk[k][1] - G);
+        const v = Math.max(lo, Math.min(hi, mk[k][0] + dd * px));
+        if (v === mk[k][0]) return false;
+        const wasHome = k > 0 && mk[k - 1][1] === mk[k][0];
+        mk[k][0] = v;
+        if (wasHome) mk[k - 1][1] = v;                                 /* the slice before follows (home) */
+        auSliceStart(t, c, k, v);
+        auMarksLocal(t, c, mk);
+        follow(ed, v);
+        return true;
+    }
+    const home = auEdHome(ed, k), b = mk[k][1];
+    if (b === home && ed.endHold > 0) { ed.endHold -= Math.abs(dd); return true; }   /* sticks at home */
+    let v = Math.max(mk[k][0] + G, Math.min(i.nframes, b + dd * px));
+    if (b !== home && (v - home) * (b - home) <= 0) { v = home; ed.endHold = END_HOLD; }
+    if (v === b) return false;
+    mk[k][1] = v;
+    auSliceEnd(t, c, k, v === home ? 0 : v);
+    auMarksLocal(t, c, mk);
+    follow(ed, v);
+    return true;
+}
+
+/* Returns true when the message was the waveform editor's. */
 export function audioEditorInput(status, d1, d2) {
     const ed = S.auEditor;
     if (!ed) return false;
     const hi = status & 0xF0;
+    if (ed.ask) return askInput(ed, status, d1, d2);
     if (hi === 0x90 || hi === 0x80) {
-        if (d1 >= 0 && d1 <= 7) {                            /* knob touches: a release still lets go */
-            if ((hi === 0x80 || d2 < 64) && S.knobTouched === d1) S.knobTouched = -1;
-            if ((hi === 0x80 || d2 < 64) && S.knobPhysIdx === d1) S.knobPhysIdx = -1;
+        if (d1 >= 0 && d1 <= 7) {
+            const on = hi === 0x90 && d2 >= 64;
+            if (on) {
+                S.knobTouched = d1; S.knobPhysIdx = d1;
+                if (d1 === 0) ed.last = 'start';
+                if (d1 === 2) ed.last = 'end';
+            } else {
+                /* a release still lets go (a touch + click opened this) */
+                if (S.knobTouched === d1) S.knobTouched = -1;
+                if (S.knobPhysIdx === d1) S.knobPhysIdx = -1;
+            }
+            S.screenDirty = true;
             return true;
         }
         if (d1 >= 16 && d1 <= 31) return true;               /* steps */
         if (d1 >= TRACK_PAD_BASE && d1 < TRACK_PAD_BASE + 32) {
-            if (hi === 0x90 && d2 > 0) {
-                const k = auPadToSlice(d1 - TRACK_PAD_BASE);
-                if (ed.lazy) { if (ed.lazySeen) auLazyTap(ed.t); return true; }
-                if (k < auInfo(ed.t, ed.c).n) { auSetSelSlice(ed.t, k); ed.pos = null; }
+            const down = hi === 0x90 && d2 > 0;
+            const k = auPadToSlice(d1 - TRACK_PAD_BASE);
+            if (ed.mode === 'lazy') {
+                /* only the lit pad: the next slice in order */
+                if (down) {
+                    const lz = auLazyState();
+                    const next = lz.state === AU_LAZY_RUN ? lz.n : 0;
+                    if (k === next && (lz.state === AU_LAZY_ARMED || lz.state === AU_LAZY_RUN) && next < 32) {
+                        auLazyTap(ed.t);
+                        lz.state = AU_LAZY_RUN; lz.n = next + 1;
+                        S.ledsDirtyAudio = true;
+                        S.screenDirty = true;
+                    }
+                }
+                return true;
+            }
+            const i = auInfo(ed.t, ed.c);
+            if (S.deleteHeld) {
+                /* Delete + pad: that slice's start goes (merges into the one
+                 * before); slice 1's stays */
+                if (down && ed.mode === 'chop' && !i.even && k >= 1 && k < i.n) {
+                    auMarkDel(ed.t, ed.c, k);
+                    const mk = auMarks(ed.t, ed.c).map((m) => m.slice());
+                    if (mk[k - 1][1] === mk[k][0]) mk[k - 1][1] = mk[k][1];
+                    mk.splice(k, 1);
+                    S.auInfo[ed.t][ed.c] = Object.assign({}, i, { hand: i.hand - 1, n: i.n - 1 });
+                    auMarksLocal(ed.t, ed.c, mk);
+                    if (auSelSlice(ed.t) >= mk.length) auSetSelSlice(ed.t, mk.length - 1);
+                    S.pendingPadNoteMapRecompute = true;
+                    S.ledsDirtyAudio = true;
+                } else if (down && i.even) ed.lockedAt = S.clockMs;
+                return true;
+            }
+            if (down && k < i.n) {
+                auSetSelSlice(ed.t, k);
+                const m = auMarks(ed.t, ed.c)[k];
+                if (m) { ed.cur = m[0]; follow(ed, m[0]); }
+                ed.endHold = 0;
+                S.ledsDirtyAudio = true;
                 S.screenDirty = true;
             }
-            /* not lazy: the pad still plays its slice */
-            return !!ed.lazy;
+            return false;                                    /* the pad still plays its slice */
         }
         return false;
     }
     if (status !== 0xB0) return false;
-    if (d1 >= 71 && d1 <= 78) return true;
-    if (d1 === MoveMainKnob && !S.shiftHeld) {
+    const i = auInfo(ed.t, ed.c);
+    if (d1 >= 71 && d1 <= 78) {
+        const k = d1 - 71, dd = decodeDelta(d2);
+        if (!dd || ed.mode === 'lazy' || i.state !== 2) return true;
+        let moved = false;
+        if (k === 1) moved = zoom(ed, dd > 0 ? 1 : -1);
+        else if (k === 0 || k === 2) {
+            ed.last = k === 0 ? 'start' : 'end';
+            if (ed.mode === 'chop') moved = chopPoint(ed, ed.last, dd);
+            else {
+                moved = auRangeStep(ed.t, ed.c, ed.last, dd, auEdPixel(ed));
+                if (moved) follow(ed, ed.last === 'start' ? auInfo(ed.t, ed.c).rstart : auEnd(auInfo(ed.t, ed.c)));
+            }
+        } else if (k === 3 && ed.mode === 'chop') {
+            const st = knobStep(k, d2, KNOB_PICK);
+            if (st) moved = auEvenStep(ed.t, ed.c, st);
+        }
+        if (moved) S.screenDirty = true;
+        return true;
+    }
+    if (d1 === MoveMainKnob) {
         const dd = decodeDelta(d2);
-        if (!dd || ed.lazy) return true;
-        const i = auInfo(ed.t, ed.c);
-        const sel = auSelSlice(ed.t);
-        const r = auSlice(ed.t, ed.c, sel);
-        if (!r || !i.nframes) return true;
-        if (ed.pos == null) ed.pos = r.a;
-        const step = Math.max(1, Math.round(i.nframes / (S.shiftHeld ? 20000 : 1000)));
-        ed.pos = Math.max(0, Math.min(i.nframes - 1, ed.pos + dd * step));
-        auSlicePos(ed.t, ed.c, sel, ed.pos);
-        S.auStartsRev = (S.auStartsRev | 0) + 1;
+        if (!dd || ed.mode === 'lazy' || i.state !== 2) return true;
+        const step = S.shiftHeld ? 1 : auEdPixel(ed);
+        ed.cur = Math.max(0, Math.min((i.nframes | 0) - 1, ed.cur + dd * step));
+        ed.last = 'jog';
+        follow(ed, ed.cur);
         S.screenDirty = true;
         return true;
     }
-    if (d1 === MoveMainButton) return true;
-    if (d1 === MoveRec) {
-        if (d2 >= 64) { if (ed.lazy) stopLazy(ed); else startLazy(ed); auMarkStale(ed.t, ed.c); S.screenDirty = true; }
+    if (d1 === MoveMainButton) {
+        /* click: a marker at the cursor (chop mode) */
+        if (d2 === 127 && ed.mode === 'chop' && i.state === 2) {
+            if (i.even) { ed.lockedAt = S.clockMs; S.screenDirty = true; return true; }
+            const mk = auMarks(ed.t, ed.c);
+            const f = ed.cur;
+            if (mk.length < 32 && !mk.some((m) => Math.abs(m[0] - f) < 16)) {
+                auMarkAdd(ed.t, ed.c, f);
+                const nm = mk.map((m) => m.slice());
+                let k = 0;
+                while (k < nm.length && nm[k][0] < f) k++;
+                if (k > 0) { nm.splice(k, 0, [f, nm[k - 1][1] > f + 16 ? nm[k - 1][1] : (k < nm.length ? nm[k][0] : auEnd(i))]); nm[k - 1][1] = f; }
+                else nm.unshift([f, nm.length ? nm[0][0] : auEnd(i)]);
+                S.auInfo[ed.t][ed.c] = Object.assign({}, i, { hand: i.hand + 1, n: i.n + 1 });
+                auMarksLocal(ed.t, ed.c, nm);
+                S.pendingPadNoteMapRecompute = true;
+                S.ledsDirtyAudio = true;
+            }
+            S.screenDirty = true;
+        }
         return true;
     }
     if (d1 === MoveBack) {
         if (d2 >= 64) { S.backPressTick = nowMs(); S.backHoldFired = false; return true; }
         const held = S.backHoldFired;
         S.backPressTick = -1; S.backHoldFired = false;
-        if (!held) { if (ed.lazy) stopLazy(ed); else closeAudioEditor(); }
+        if (held) return true;
+        if (ed.mode === 'lazy') {
+            const lz = auLazyState();
+            if (lz.state === AU_LAZY_RUN) {
+                /* Back while it plays: it ends, and asks */
+                auLazyStop(ed.t, ed.c);
+                ed.ask = { kind: 'keep', sel: 0, n: lz.n };
+            } else if (lz.state === AU_LAZY_ARMED) {
+                /* before the first tap: no change */
+                auLazyStop(ed.t, ed.c);
+                S.auEditor = null;
+                computePadNoteMap();
+                S.ledsDirtyAudio = true;
+            }
+        } else closeAudioEditor();
         S.screenDirty = true;
         return true;
     }
     if (d1 === MoveNoteSession) { closeAudioPanel(); return false; }
     return false;
+}
+
+/* "Keep N new chops?" / "Replace chops?" — the jog picks, a click answers,
+ * Back is No. */
+function askInput(ed, status, d1, d2) {
+    const hi = status & 0xF0;
+    if (hi === 0x90 || hi === 0x80) {
+        if (d1 >= 0 && d1 <= 7 && (hi === 0x80 || d2 < 64)) {
+            if (S.knobTouched === d1) S.knobTouched = -1;
+            if (S.knobPhysIdx === d1) S.knobPhysIdx = -1;
+        }
+        return true;                                         /* pads and steps wait */
+    }
+    if (status !== 0xB0) return false;
+    if (d1 === MoveMainKnob) {
+        const dd = decodeDelta(d2);
+        if (dd) { ed.ask.sel = dd > 0 ? 1 : 0; S.screenDirty = true; }
+        return true;
+    }
+    let yes = null;
+    if (d1 === MoveMainButton && d2 === 127) yes = ed.ask.sel === 0;
+    if (d1 === MoveBack && d2 < 64) yes = false;
+    if (yes === null) return d1 === MoveMainButton || d1 === MoveBack || (d1 >= 71 && d1 <= 78);
+    const kind = ed.ask.kind;
+    ed.ask = null;
+    S.backPressTick = -1; S.backHoldFired = false;
+    if (kind === 'keep') {
+        auLazyKeep(ed.t, ed.c, yes);
+        if (yes) {
+            /* the editor on the new chops */
+            ed.mode = 'chop';
+            auSetSelSlice(ed.t, 0);
+            auMarkStale(ed.t, ed.c);
+            S.auStartsRev = (S.auStartsRev | 0) + 1;
+        } else {
+            S.auEditor = null;
+        }
+    } else if (kind === 'replace') {
+        if (yes) startManual(ed.t, ed.c);
+        else S.auEditor = null;
+    }
+    computePadNoteMap();
+    S.pendingPadNoteMapRecompute = true;
+    S.ledsDirtyAudio = true;
+    S.screenDirty = true;
+    return true;
 }

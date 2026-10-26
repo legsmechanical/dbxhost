@@ -9,14 +9,19 @@
  * Keys (C = clip, L = slice, all 0-based):
  *   tN_au_pick    "C|<abs path>"   copy the file into the project, load it
  *   tN_au_clear   "C"              the clip has no sample
- *   tN_au_set_<field>   "C <v>"    mode / method / slices / jump / start / end / pitch /
+ *   tN_au_set_<field>   "C <v>"    mode / even (0 Off, 2..32) / jump / start / end
+ *                                  (frames; end 0 = the sample's end) / pitch /
  *                                  gain / bars / revrs / nudge / jmpq
- *   tN_au_slice_<field> "C L <v>"  pos (frames; makes it Manual) / nudge / len /
- *                                  pitch / gain / rev / play / atk / dec
+ *   tN_au_slice_<field> "C L <v>"  start / end (frames, the hand set, Even Off;
+ *                                  end 0 = home) / pitch / gain / rev / play /
+ *                                  atk / dec
  *                                  (a key per field: two fields written to one
  *                                  key in one frame would keep only the second)
- *   tN_au_all_<field>   "C <v>"    the same field of EVERY slice (ALL SLICES;
- *                                  not pos)
+ *   tN_au_all_<field>   "C <v>"    the same sound field of EVERY slice (ALL SLICES)
+ *   tN_au_mark_add "C F"           a marker at frame F: splits the hand-set slice
+ *                                  there (later slices, and their steps, move up one)
+ *   tN_au_mark_del "C L"           slice L's start goes: it merges into L-1 (not 0)
+ *   tN_au_manual  "C"              the hand set becomes one slice, Start..End; Even Off
  *   tN_au_chop    "C"              one step per slice, in order (one undo)
  *   tN_au_wipe    "C"              clip C's steps go (one undo) -- a converted
  *                                  clip that now plays its recording
@@ -26,8 +31,12 @@
  *   tN_au_jump_off "K"             the pad's release (its own key: a press and a
  *                                  release written to ONE key before it drains
  *                                  keep only the release)
- *   tN_au_lazy    "C 1|0"          Lazy chop: play the sample, taps cut it
- *   tN_au_lazy_tap ""              a tap: the next slice starts here
+ *   tN_au_lazy    "C 1|0"          Lazy chop: 1 arms it (the hand set put aside),
+ *                                  0 stops it (Back)
+ *   tN_au_lazy_tap ""              a tap: the first starts the sample at Start,
+ *                                  each later one drops a marker at the playhead
+ *   tN_au_lazy_keep "1|0"          after it ended: keep the new chops, or put the
+ *                                  old hand set back
  * The prefix is consumed whole (a known-or-not tN_au_ key never falls through
  * to the pfx catch-all). */
 
@@ -83,6 +92,20 @@ static void au_apply_results(seq8_instance_t *inst) {
         if (r.smp) {
             int was_pick = cl->name[0] == '\0' || strcmp(cl->name, r.name) != 0;
             snprintf(cl->name, sizeof cl->name, "%s", r.name);
+            if (cl->mig_rs || cl->mig_re) {
+                /* an older project's Start / End, now that the length is known */
+                cl->rstart = (uint32_t)((uint64_t)r.smp->frames * cl->mig_rs / 1000);
+                cl->rend = cl->mig_re >= 1000 ? 0 : (uint32_t)((uint64_t)r.smp->frames * cl->mig_re / 1000);
+                cl->mig_rs = cl->mig_re = 0;
+            }
+            if (was_pick) {
+                /* a new sample: the whole of it, and a hand set of one slice
+                 * (frames of the old one mean nothing here) */
+                int l;
+                cl->rstart = cl->rend = 0;
+                cl->nslices = 1;
+                for (l = 0; l < AU_MAX_SLICES; l++) cl->sl[l].start = cl->sl[l].end = 0;
+            }
             if (was_pick && cl->mode == AU_MODE_LOOP) {
                 double bpm = inst->tracks[r.track].pfx.cached_bpm > 0 ? inst->tracks[r.track].pfx.cached_bpm : 120.0;
                 double bars = (double)r.smp->frames / (double)r.smp->rate * bpm / 240.0;
@@ -101,8 +124,8 @@ static const uint16_t AU_JMPQ_TICKS[4] = { 0, PPQN / 4, PPQN / 2, PPQN };
  * backwards when the clip plays Revrs). Jump points mirror with Revrs: point 0
  * is where the reversed sample starts, its end. */
 static double au_jump_pos(const au_clip_t *cl, int k, double extra) {
-    uint32_t rs = (uint32_t)((uint64_t)cl->smp->frames * cl->rstart / 1000);
-    uint32_t re = (uint32_t)((uint64_t)cl->smp->frames * cl->rend / 1000);
+    uint32_t rs, re;
+    au_range(cl, cl->smp, &rs, &re);
     double d = (double)(re - rs) * k / cl->jump + extra;
     return cl->revrs ? (double)re - 1.0 - d : (double)rs + d;
 }
@@ -205,23 +228,12 @@ static void au_render(seq8_instance_t *inst, int frames) {
         }
     }
     /* Lazy chop: its voice ran to the end -> the chop is done. */
-    if (inst->au_lazy_track >= 0) {
+    if (inst->au_lazy_track >= 0 && inst->au_lazy_state == AU_LAZY_RUN) {
         au_track_t *at = &inst->au_trk[inst->au_lazy_track];
         int live = 0;
         for (i = 0; i < AU_VOICES; i++) if (at->v[i].active) { live = 1; inst->au_lazy_pos = (uint32_t)at->v[i].pos; }
         if (!live) au_lazy_finish(inst);
     }
-}
-
-/* Even -> hand-set: the slices' starts become what Even was computing. */
-static void au_to_manual(au_clip_t *cl) {
-    int k;
-    if (cl->method != AU_METH_EVEN || !cl->smp) { cl->method = AU_METH_MANUAL; return; }
-    for (k = 0; k < cl->nslices; k++) {
-        uint32_t a = 0, b = 0;
-        if (au_slice_range(cl, cl->smp, k, &a, &b)) cl->sl[k].start = a;
-    }
-    cl->method = AU_METH_MANUAL;
 }
 
 /* "C ..." -> clip index, advancing *pp past it. -1 = bad. */
@@ -237,9 +249,7 @@ static int au_arg_clip(const char **pp) {
 
 /* One slice field `w` of sl set to v. 0 = not a field. */
 static int au_slice_field(au_slice_t *sl, const char *w, int v) {
-    if (!strcmp(w, "nudge"))      sl->nudge_ms = (int16_t)clamp_i(v, -500, 500);
-    else if (!strcmp(w, "len"))   sl->len_pct = (uint8_t)clamp_i(v, 1, 100);
-    else if (!strcmp(w, "pitch")) sl->pitch = (int8_t)clamp_i(v, -24, 24);
+    if (!strcmp(w, "pitch"))      sl->pitch = (int8_t)clamp_i(v, -24, 24);
     else if (!strcmp(w, "gain"))  sl->gain_db = (int8_t)clamp_i(v, -40, 12);
     else if (!strcmp(w, "rev"))   sl->rev = (uint8_t)(v ? 1 : 0);
     else if (!strcmp(w, "play"))  sl->play = (uint8_t)clamp_i(v, 0, 2);
@@ -257,6 +267,31 @@ static void au_wipe_steps(seq8_instance_t *inst, int t, int c) {
     if (c == tr->active_clip) silence_track_notes_v2(inst, tr);
     clip_wipe_notes(&tr->clips[c]);
     clip_note_finalize(inst, &tr->clips[c], t, c);
+}
+
+/* Clip (t,c)'s steps follow a hand-set edit, so the sequence keeps playing
+ * the same pieces of the sample: a slice inserted at `at` (dir +1: slices
+ * from `at` move up one; one pushed past the last slice goes) or slice `at`
+ * removed (dir -1: its steps merge into at-1's, later ones move down). */
+static void au_renumber_steps(seq8_instance_t *inst, int t, int c, int at, int dir) {
+    seq8_track_t *tr = &inst->tracks[t];
+    clip_t *cl = &tr->clips[c];
+    int i, any = 0;
+    for (i = 0; i < cl->note_count; i++) {
+        note_t *n = &cl->notes[i];
+        int k = (int)n->pitch - DRUM_BASE_NOTE;
+        if (!n->active || k < at) continue;
+        if (dir > 0) {
+            if (k + 1 >= AU_MAX_SLICES) n->active = 0;
+            else n->pitch = (uint8_t)(n->pitch + 1);
+        } else {
+            n->pitch = (uint8_t)(n->pitch - 1);
+        }
+        any = 1;
+    }
+    if (!any) return;
+    if (c == tr->active_clip) silence_track_notes_v2(inst, tr);
+    clip_note_finalize(inst, cl, t, c);
 }
 
 static int sp_track_audio(sp_ctx_t *cx) {
@@ -321,23 +356,32 @@ static int sp_track_audio(sp_ctx_t *cx) {
             }
             if (v != cl->mode) au_track_kill(inst, tidx, NULL);
             cl->mode = (uint8_t)v;
-        } else if (!strcmp(w, "method")) {
-            /* Even re-cuts the slices evenly; Manual / Lazy keep the starts
-             * there are now, to be moved by hand (Lazy also names how they
-             * came — a Lazy chop re-taps them). */
-            v = clamp_i(v, 0, 2);
-            if (v != AU_METH_EVEN) au_to_manual(cl);
-            cl->method = (uint8_t)v;
-        } else if (!strcmp(w, "slices")) {
-            cl->nslices = (uint8_t)clamp_i(v, 1, AU_MAX_SLICES);
-            cl->method = AU_METH_EVEN;
+        } else if (!strcmp(w, "even")) {
+            /* Even: an override over the hand set, which stays as it is
+             * (Josh: "it'd be nice if even chops are kind of like overrides
+             * so that manual chop points are preserved") */
+            cl->even = (uint8_t)(v < 2 ? 0 : clamp_i(v, 2, AU_MAX_SLICES));
         } else if (!strcmp(w, "jump")) {
             int d = v <= 2 ? 2 : v <= 4 ? 4 : v <= 8 ? 8 : v <= 16 ? 16 : 32;
             cl->jump = (uint8_t)d;
-        } else if (!strcmp(w, "start")) {
-            cl->rstart = (uint16_t)clamp_i(v, 0, cl->rend - 1);
-        } else if (!strcmp(w, "end")) {
-            cl->rend = (uint16_t)clamp_i(v, cl->rstart + 1, 1000);
+        } else if (!strcmp(w, "start") || !strcmp(w, "end")) {
+            /* frames; at least AU_GAP apart. Unloaded, taken as given. */
+            uint32_t fr = cl->smp ? cl->smp->frames : 0, rs, re;
+            if (v < 0) v = 0;
+            cl->mig_rs = cl->mig_re = 0;
+            if (!fr) {
+                if (w[0] == 's') cl->rstart = (uint32_t)v; else cl->rend = (uint32_t)v;
+            } else {
+                au_range(cl, cl->smp, &rs, &re);
+                if (fr <= AU_GAP) return 1;
+                if (w[0] == 's') {
+                    cl->rstart = (uint32_t)clamp_i(v, 0, (int)re - AU_GAP);
+                } else {
+                    if (v == 0) v = (int)fr;
+                    v = clamp_i(v, (int)rs + AU_GAP, (int)fr);
+                    cl->rend = (uint32_t)v >= fr ? 0 : (uint32_t)v;
+                }
+            }
         } else if (!strcmp(w, "pitch")) {
             cl->pitch = (int8_t)clamp_i(v, -24, 24);
         } else if (!strcmp(w, "gain")) {
@@ -372,14 +416,22 @@ static int sp_track_audio(sp_ctx_t *cx) {
         au_slice_t *sl = &cl->sl[l];
         snprintf(w, sizeof w, "%s", sub + 6);
         v = my_atoi(p);
-        if (!strcmp(w, "pos")) {
-            /* A slice's start, by hand: between its neighbours. */
-            if (!cl->smp || l >= cl->nslices) return 1;
-            au_to_manual(cl);
-            int lo = l > 0 ? (int)cl->sl[l - 1].start + 32 : 0;
-            int hi = l + 1 < cl->nslices ? (int)cl->sl[l + 1].start - 32 : (int)cl->smp->frames - 32;
+        if (!strcmp(w, "start")) {
+            /* a hand-set start: between its neighbours' starts, before its
+             * own pinned end. Locked while Even is on. */
+            if (!cl->smp || cl->even || l >= cl->nslices) return 1;
+            int lo = l > 0 ? (int)cl->sl[l - 1].start + AU_GAP : 0;
+            int hi = l + 1 < cl->nslices ? (int)cl->sl[l + 1].start - AU_GAP : (int)cl->smp->frames - AU_GAP;
+            if (sl->end && (int)sl->end - AU_GAP < hi) hi = (int)sl->end - AU_GAP;
             if (hi < lo) return 1;
             sl->start = (uint32_t)clamp_i(v, lo, hi);
+        } else if (!strcmp(w, "end")) {
+            /* a hand-set end: 0 (or the home frame itself) = home; else
+             * pinned, past its start, anywhere up to the sample's end */
+            if (!cl->smp || cl->even || l >= cl->nslices) return 1;
+            uint32_t home = au_home_end(cl, cl->smp, l);
+            if (v <= 0 || (uint32_t)v == home) sl->end = 0;
+            else sl->end = (uint32_t)clamp_i(v, (int)sl->start + AU_GAP, (int)cl->smp->frames);
         } else if (!au_slice_field(sl, w, v)) {
             return 1;
         }
@@ -402,6 +454,68 @@ static int sp_track_audio(sp_ctx_t *cx) {
         return 1;
     }
 
+    if (!strcmp(sub, "mark_add")) {
+        /* Splits the hand-set slice the frame falls in; the new slice has the
+         * default sound, later slices keep theirs (and their steps). The
+         * split slice's pinned end, if any, passes to the new one. */
+        int f, k;
+        c = au_arg_clip(&p);
+        if (c < 0) return 1;
+        au_clip_t *cl = &inst->au_clip[tidx][c];
+        f = my_atoi(p);
+        if (!cl->smp || cl->even || cl->nslices >= AU_MAX_SLICES || f < 0 || (uint32_t)f >= cl->smp->frames) return 1;
+        for (k = 0; k < cl->nslices; k++) {
+            int d = (int)cl->sl[k].start - f;
+            if (d > -AU_GAP && d < AU_GAP) return 1;       /* too close to a marker */
+        }
+        for (k = 0; k < cl->nslices && cl->sl[k].start < (uint32_t)f; k++) {}
+        /* k = the new slice's number: after the slice it splits */
+        memmove(&cl->sl[k + 1], &cl->sl[k], sizeof cl->sl[0] * (size_t)(AU_MAX_SLICES - 1 - k));
+        memset(&cl->sl[k], 0, sizeof cl->sl[k]);
+        cl->sl[k].start = (uint32_t)f;
+        if (k > 0) {
+            cl->sl[k].end = cl->sl[k - 1].end > (uint32_t)f + AU_GAP ? cl->sl[k - 1].end : 0;
+            cl->sl[k - 1].end = 0;
+        }
+        cl->nslices++;
+        au_renumber_steps(inst, tidx, c, k, 1);
+        au_mark(inst, tidx, c);
+        return 1;
+    }
+
+    if (!strcmp(sub, "mark_del")) {
+        /* Slice L's start goes: L merges into L-1, which takes L's end when
+         * its own was home. Slice 1's start stays. */
+        c = au_arg_clip(&p);
+        if (c < 0) return 1;
+        au_clip_t *cl = &inst->au_clip[tidx][c];
+        l = my_atoi(p);
+        if (cl->even || l < 1 || l >= cl->nslices) return 1;
+        if (!cl->sl[l - 1].end) cl->sl[l - 1].end = cl->sl[l].end;
+        memmove(&cl->sl[l], &cl->sl[l + 1], sizeof cl->sl[0] * (size_t)(AU_MAX_SLICES - 1 - l));
+        memset(&cl->sl[AU_MAX_SLICES - 1], 0, sizeof cl->sl[0]);
+        cl->nslices--;
+        au_renumber_steps(inst, tidx, c, l, -1);
+        au_mark(inst, tidx, c);
+        return 1;
+    }
+
+    if (!strcmp(sub, "manual")) {
+        /* a fresh hand set: one slice, Start..End; Even Off. The UI asked
+         * "Replace chops?" first. */
+        c = au_arg_clip(&p);
+        if (c < 0) return 1;
+        au_clip_t *cl = &inst->au_clip[tidx][c];
+        uint32_t rs = cl->rstart, re;
+        if (cl->smp) au_range(cl, cl->smp, &rs, &re);
+        for (l = 0; l < AU_MAX_SLICES; l++) cl->sl[l].start = cl->sl[l].end = 0;
+        cl->sl[0].start = rs;
+        cl->nslices = 1;
+        cl->even = 0;
+        au_mark(inst, tidx, c);
+        return 1;
+    }
+
     if (!strcmp(sub, "chop")) {
         /* One step per slice, where the slice sits in the sample, so the clip
          * plays the sample back as it was — now as slices. The clip's steps
@@ -413,8 +527,8 @@ static int sp_track_audio(sp_ctx_t *cx) {
         clip_t *cl = &tr->clips[c];
         if (!acl->smp) return 1;
         const au_sample_t *s = acl->smp;
-        uint32_t rs = (uint32_t)((uint64_t)s->frames * acl->rstart / 1000);
-        uint32_t re = (uint32_t)((uint64_t)s->frames * acl->rend / 1000);
+        uint32_t rs, re;
+        au_range(acl, s, &rs, &re);
         if (re <= rs) return 1;
         undo_begin_single(inst, tidx, c);
         if (c == tr->active_clip) silence_track_notes_v2(inst, tr);
@@ -423,9 +537,10 @@ static int sp_track_audio(sp_ctx_t *cx) {
             uint32_t tps = cl->ticks_per_step ? cl->ticks_per_step : TICKS_PER_STEP;
             uint32_t len_ticks = (uint32_t)cl->length * tps;
             int32_t last_step = -1;
-            for (l = 0; l < acl->nslices; l++) {
+            int n = au_count(acl);
+            for (l = 0; l < n; l++) {
                 uint32_t a = 0, b = 0;
-                if (!au_slice_range(acl, s, l, &a, &b) || a < rs) continue;
+                if (!au_slice_range(acl, s, l, &a, &b) || a < rs || a >= re) continue;
                 uint32_t tick = (uint32_t)((uint64_t)(a - rs) * len_ticks / (re - rs));
                 uint32_t gate = (uint32_t)((uint64_t)(b - a) * len_ticks / (re - rs));
                 if (tick >= len_ticks) tick = len_ticks ? len_ticks - 1 : 0;
@@ -470,8 +585,8 @@ static int sp_track_audio(sp_ctx_t *cx) {
             return 1;
         }
         {
-            uint32_t rs = (uint32_t)((uint64_t)cl->smp->frames * cl->rstart / 1000);
-            uint32_t re = (uint32_t)((uint64_t)cl->smp->frames * cl->rend / 1000);
+            uint32_t rs, re;
+            au_range(cl, cl->smp, &rs, &re);
             au_loop_start(inst, tidx, c, (double)(re - rs) * k / cl->jump);
         }
         lv = au_loop_voice(at);
@@ -489,38 +604,66 @@ static int sp_track_audio(sp_ctx_t *cx) {
         if (!cl->smp || inst->au_lazy_track >= 0) return 1;
         if ((uint64_t)cl->smp->frames > (uint64_t)cl->smp->rate * AU_SLICE_MAX_SEC) { cl->err = AU_ERR_LONG; return 1; }
         au_track_kill(inst, tidx, NULL);
-        {
-            uint8_t rv = cl->revrs;
-            cl->revrs = 0;                         /* the sample, Start to End, once, forwards */
-            au_loop_start(inst, tidx, c, 0);
-            cl->revrs = rv;
-        }
-        au_voice_t *lv = au_loop_voice(&inst->au_trk[tidx]);
-        if (!lv) return 1;
-        lv->mode_loop = 0; lv->loop = 0;
+        /* the hand set is put aside until the new chops are kept */
+        memcpy(inst->au_lazy_bak, cl->sl, sizeof cl->sl);
+        inst->au_lazy_bak_n = cl->nslices;
+        inst->au_lazy_bak_even = cl->even;
         inst->au_lazy_track = (int8_t)tidx;
         inst->au_lazy_clip = (int8_t)c;
         inst->au_lazy_n = 0;
-        inst->au_lazy_pos = (uint32_t)lv->pos;
+        inst->au_lazy_state = AU_LAZY_ARMED;
+        inst->au_lazy_pos = cl->rstart;
         return 1;
     }
 
     if (!strcmp(sub, "lazy_tap")) {
-        if (inst->au_lazy_track != tidx || inst->au_lazy_n >= AU_MAX_SLICES) return 1;
+        if (inst->au_lazy_track != tidx) return 1;
         au_clip_t *cl = &inst->au_clip[tidx][inst->au_lazy_clip];
         au_track_t *at = &inst->au_trk[tidx];
+        if (!cl->smp) return 1;
+        if (inst->au_lazy_state == AU_LAZY_ARMED) {
+            /* the first tap: slice 1 at Start, and the sample plays once,
+             * forwards, Start..End */
+            uint32_t rs, re;
+            uint8_t rv = cl->revrs;
+            au_range(cl, cl->smp, &rs, &re);
+            cl->revrs = 0;
+            au_loop_start(inst, tidx, inst->au_lazy_clip, 0);
+            cl->revrs = rv;
+            au_voice_t *lv = au_loop_voice(at);
+            if (!lv) return 1;
+            lv->mode_loop = 0; lv->loop = 0;
+            for (l = 0; l < AU_MAX_SLICES; l++) cl->sl[l].start = cl->sl[l].end = 0;
+            cl->sl[0].start = rs;
+            cl->nslices = 1;
+            cl->even = 0;
+            inst->au_lazy_n = 1;
+            inst->au_lazy_pos = rs;
+            inst->au_lazy_state = AU_LAZY_RUN;
+            au_mark(inst, tidx, inst->au_lazy_clip);
+            return 1;
+        }
+        if (inst->au_lazy_state != AU_LAZY_RUN || inst->au_lazy_n >= AU_MAX_SLICES) return 1;
         for (l = 0; l < AU_VOICES; l++) {
             if (!at->v[l].active || at->v[l].rel_len) continue;
             uint32_t pos = (uint32_t)at->v[l].pos;
             /* keep starts ascending */
-            if (inst->au_lazy_n && pos <= cl->sl[inst->au_lazy_n - 1].start + 32) return 1;
+            if (pos < cl->sl[inst->au_lazy_n - 1].start + AU_GAP) return 1;
             cl->sl[inst->au_lazy_n].start = pos;
+            cl->sl[inst->au_lazy_n].end = 0;
             inst->au_lazy_n++;
             cl->nslices = inst->au_lazy_n;
-            cl->method = AU_METH_LAZY;
             au_mark(inst, tidx, inst->au_lazy_clip);
             return 1;
         }
+        return 1;
+    }
+
+    if (!strcmp(sub, "lazy_keep")) {
+        if (inst->au_lazy_track != tidx || inst->au_lazy_state != AU_LAZY_ENDED) return 1;
+        int c2 = inst->au_lazy_clip;
+        au_lazy_keep(inst, my_atoi(p) ? 1 : 0);
+        au_mark(inst, tidx, c2);
         return 1;
     }
 
@@ -540,17 +683,22 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
         return snprintf(out, out_len, "%s", d);
     }
     if (!strncmp(k, "info_", 5)) {
+        /* "state err mode even nslices jump rstart rend pitch gain frames rate ch
+         *  revrs nudge jmpq count|name" -- rstart / rend in frames as they play
+         *  (rend the real end, never 0) once loaded */
         c = my_atoi(k + 5);
         if (c < 0 || c >= NUM_CLIPS) return -1;
         const au_clip_t *cl = &inst->au_clip[t][c];
         const au_sample_t *s = cl->smp;
-        return snprintf(out, out_len, "%d %d %d %d %d %d %d %d %d %d %u %u %d %d %d %d|%s",
-                        cl->state, cl->err, cl->mode, cl->method, cl->nslices, cl->jump,
-                        cl->rstart, cl->rend, cl->pitch, cl->gain_db,
+        uint32_t rs = cl->rstart, re = cl->rend;
+        if (s) au_range(cl, s, &rs, &re);
+        return snprintf(out, out_len, "%d %d %d %d %d %d %u %u %d %d %u %u %d %d %d %d %d|%s",
+                        cl->state, cl->err, cl->mode, cl->even, cl->nslices, cl->jump,
+                        (unsigned)rs, (unsigned)re, cl->pitch, cl->gain_db,
                         s ? (unsigned)s->frames : 0u, s ? (unsigned)s->rate : 0u, s ? s->ch : 0,
-                        cl->revrs, cl->nudge_ms, cl->jmpq, cl->name);
+                        cl->revrs, cl->nudge_ms, cl->jmpq, au_count(cl), cl->name);
     }
-    if (!strncmp(k, "sl_", 3)) {                  /* sl_C_L */
+    if (!strncmp(k, "sl_", 3)) {                  /* sl_C_L: "a b pinned pitch gain rev play atk dec" */
         const char *q = k + 3;
         c = my_atoi(q);
         q = strchr(q, '_');
@@ -561,23 +709,23 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
         const au_slice_t *sl = &cl->sl[l];
         uint32_t a = 0, b = 0;
         if (cl->smp) au_slice_range(cl, cl->smp, l, &a, &b);
-        return snprintf(out, out_len, "%u %u %d %d %d %d %d %d %d %d", (unsigned)a, (unsigned)b,
-                        sl->nudge_ms, sl->len_pct, sl->pitch, sl->gain_db, sl->rev, sl->play,
-                        sl->attack_ms, sl->decay_ms);
+        return snprintf(out, out_len, "%u %u %d %d %d %d %d %d %d", (unsigned)a, (unsigned)b,
+                        !cl->even && l < cl->nslices && sl->end ? 1 : 0,
+                        sl->pitch, sl->gain_db, sl->rev, sl->play, sl->attack_ms, sl->decay_ms);
     }
-    if (!strncmp(k, "all_", 4)) {                 /* ALL SLICES: each field's common value, "x" where slices differ */
+    if (!strncmp(k, "all_", 4)) {                 /* ALL SLICES: "pitch gain rev atk dec play", "x" where slices differ */
         int f, n = 0;
         c = my_atoi(k + 4);
         if (c < 0 || c >= NUM_CLIPS) return -1;
         const au_clip_t *cl = &inst->au_clip[t][c];
-        int cnt = cl->nslices ? cl->nslices : 1;
+        int cnt = au_count(cl);
         out[0] = '\0';
-        for (f = 0; f < 8; f++) {
+        for (f = 0; f < 6; f++) {
             int v0 = 0, same = 1;
             for (l = 0; l < cnt; l++) {
                 const au_slice_t *sl = &cl->sl[l];
-                int v = f == 0 ? sl->nudge_ms : f == 1 ? sl->len_pct : f == 2 ? sl->pitch : f == 3 ? sl->gain_db
-                      : f == 4 ? sl->rev : f == 5 ? sl->attack_ms : f == 6 ? sl->decay_ms : sl->play;
+                int v = f == 0 ? sl->pitch : f == 1 ? sl->gain_db : f == 2 ? sl->rev
+                      : f == 3 ? sl->attack_ms : f == 4 ? sl->decay_ms : sl->play;
                 if (l == 0) v0 = v; else if (v != v0) { same = 0; break; }
             }
             if (same) n += snprintf(out + n, (size_t)(out_len - n), f ? " %d" : "%d", v0);
@@ -585,18 +733,17 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
         }
         return n;
     }
-    if (!strncmp(k, "starts_", 7)) {              /* every slice start, permille of the sample */
-        c = my_atoi(k + 7);
+    if (!strncmp(k, "marks_", 6)) {               /* every slice as it plays: "a b" pairs, frames */
+        c = my_atoi(k + 6);
         if (c < 0 || c >= NUM_CLIPS) return -1;
         const au_clip_t *cl = &inst->au_clip[t][c];
-        int n = 0;
+        int n = 0, cnt = au_count(cl);
         out[0] = '\0';
         if (!cl->smp || !cl->smp->frames) return 0;
-        for (l = 0; l < cl->nslices && n < out_len - 8; l++) {
+        for (l = 0; l < cnt && n < out_len - 24; l++) {
             uint32_t a = 0, b = 0;
-            if (!au_slice_range(cl, cl->smp, l, &a, &b)) break;
-            n += snprintf(out + n, (size_t)(out_len - n), l ? " %u" : "%u",
-                          (unsigned)((uint64_t)a * 1000 / cl->smp->frames));
+            if (!au_slice_range(cl, cl->smp, l, &a, &b)) a = b = 0;
+            n += snprintf(out + n, (size_t)(out_len - n), l ? " %u %u" : "%u %u", (unsigned)a, (unsigned)b);
         }
         return n;
     }
@@ -614,25 +761,66 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
         out[AU_PEAKS * 4] = '\0';
         return AU_PEAKS * 4;
     }
+    if (!strncmp(k, "wave_", 5)) {
+        /* wave_C_A_B: frames A..B as 128 columns, like peaks_ (the zoomed
+         * editor). Reads the AU_MIP summary where a column spans more than
+         * one entry, the samples themselves below that: bounded work either
+         * way (and at most 64 entries a column, spread across it). */
+        static const char hx[] = "0123456789abcdef";
+        const char *q = k + 5;
+        long A, B;
+        c = my_atoi(q);
+        if (c < 0 || c >= NUM_CLIPS || !(q = strchr(q, '_'))) return -1;
+        A = strtol(q + 1, NULL, 10);
+        if (!(q = strchr(q + 1, '_'))) return -1;
+        B = strtol(q + 1, NULL, 10);
+        const au_sample_t *s = inst->au_clip[t][c].smp;
+        if (!s || out_len < AU_PEAKS * 4 + 1 || A < 0 || B <= A) { out[0] = '\0'; return 0; }
+        if ((uint64_t)B > s->frames) B = (long)s->frames;
+        if (B <= A) { out[0] = '\0'; return 0; }
+        for (l = 0; l < AU_PEAKS; l++) {
+            uint32_t a = (uint32_t)(A + (int64_t)(B - A) * l / AU_PEAKS);
+            uint32_t b = (uint32_t)(A + (int64_t)(B - A) * (l + 1) / AU_PEAKS);
+            int lo = 0, hi = 0;
+            if (b <= a) b = a + 1;
+            if (s->mip && b - a >= 2 * AU_MIP) {
+                uint32_t m0 = a / AU_MIP, m1 = (b - 1) / AU_MIP, m, st;
+                if (m1 >= s->nmip) m1 = s->nmip - 1;
+                st = (m1 - m0) / 64 + 1;
+                for (m = m0; m <= m1; m += st) {
+                    if (s->mip[m][0] < lo) lo = s->mip[m][0];
+                    if (s->mip[m][1] > hi) hi = s->mip[m][1];
+                }
+            } else {
+                uint32_t i, st = (b - a) / 256 + 1;
+                for (i = a; i < b && i < s->frames; i += st) {
+                    int v = au_mono(s, i);
+                    if (v < lo) lo = v;
+                    if (v > hi) hi = v;
+                }
+                lo /= 256; hi /= 256;
+            }
+            uint8_t ulo = (uint8_t)(int8_t)lo, uhi = (uint8_t)(int8_t)hi;
+            out[l * 4] = hx[ulo >> 4]; out[l * 4 + 1] = hx[ulo & 15];
+            out[l * 4 + 2] = hx[uhi >> 4]; out[l * 4 + 3] = hx[uhi & 15];
+        }
+        out[AU_PEAKS * 4] = '\0';
+        return AU_PEAKS * 4;
+    }
     if (!strcmp(k, "pos")) {
-        /* "<sounding 0|1> <permille of Start..End> <permille of the sample> <slice | -1 loop>" */
+        /* "<sounding 0|1> <frame> <slice | -1 loop>" */
         const au_track_t *at = &inst->au_trk[t];
         for (l = 0; l < AU_VOICES; l++) {
             const au_voice_t *v = &at->v[l];
             if (!v->active || v->rel_len || !v->smp) continue;
-            const au_clip_t *cl = &inst->au_clip[t][inst->tracks[t].active_clip];
-            double rs = (double)v->smp->frames * cl->rstart / 1000.0, re = (double)v->smp->frames * cl->rend / 1000.0;
-            int rel = re > rs ? (int)((v->pos - rs) * 1000.0 / (re - rs)) : 0;
-            int abs_ = (int)(v->pos * 1000.0 / v->smp->frames);
-            return snprintf(out, out_len, "1 %d %d %d", clamp_i(rel, 0, 999), clamp_i(abs_, 0, 999), v->mode_loop ? -1 : v->slice);
+            return snprintf(out, out_len, "1 %u %d", (unsigned)(v->pos < 0 ? 0 : v->pos), v->mode_loop ? -1 : v->slice);
         }
-        return snprintf(out, out_len, "0 0 0 -1");
+        return snprintf(out, out_len, "0 0 -1");
     }
-    if (!strcmp(k, "lazy")) {
+    if (!strcmp(k, "lazy")) {                     /* "<state AU_LAZY_*> <slices> <frame>" */
         int on = inst->au_lazy_track == t;
-        const au_sample_t *s = on ? inst->au_clip[t][inst->au_lazy_clip].smp : NULL;
-        return snprintf(out, out_len, "%d %d %d", on, on ? inst->au_lazy_n : 0,
-                        s && s->frames ? (int)((uint64_t)inst->au_lazy_pos * 1000 / s->frames) : 0);
+        return snprintf(out, out_len, "%d %d %u", on ? inst->au_lazy_state : 0, on ? inst->au_lazy_n : 0,
+                        on ? (unsigned)inst->au_lazy_pos : 0u);
     }
     return -1;
 }

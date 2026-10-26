@@ -27,7 +27,8 @@ import { chordLayoutOn, chordPadColor } from './ui_chord_pads.mjs';
 import { pianoLayoutOn } from './ui_drummodel.mjs';
 import { customLayoutOn, customPadColor } from './ui_custom_chords.mjs';
 import { setLED, setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
-import { isAudioTrack, auInfo, auClipOf, auPos, auPlayheadJump, auPadToSlice, auSelSlice, AU_MODE_SLICE } from './ui_audio.mjs';
+import { isAudioTrack, auInfo, auClipOf, auPos, auPlayheadJump, auPadToSlice, auSelSlice, auLazyOpen, auLazyState,
+         AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN } from './ui_audio.mjs';
 
 const lastSentNoteLED   = new Array(128).fill(-1);
 const lastSentButtonLED = new Array(128).fill(-1);
@@ -928,9 +929,14 @@ export function updateTrackLEDs() {
             const slice = ai.mode === AU_MODE_SLICE;
             const ph = slice ? -1 : auPlayheadJump(t);
             const sel = auSelSlice(t);
+            /* A Lazy chop: only the next pad in order is lit (Josh chose "The
+             * next pad, lit") — pad 1 before the first tap. */
+            const lz = auLazyOpen() ? auLazyState() : null;
+            const next = lz && lz.state === AU_LAZY_ARMED ? 0 : lz && lz.state === AU_LAZY_RUN ? lz.n : -1;
             for (let i = 0; i < 32; i++) {
                 let color = LED_OFF;
-                if (ai.state !== 2) color = i === 0 ? td : LED_OFF;
+                if (lz) color = auPadToSlice(i) === next ? tc : LED_OFF;
+                else if (ai.state !== 2) color = i === 0 ? td : LED_OFF;
                 else if (slice) {
                     const k = auPadToSlice(i);
                     if (k < ai.n) color = (ap.t === t && ap.on && ap.slice === k) ? White : k === sel ? tc : td;

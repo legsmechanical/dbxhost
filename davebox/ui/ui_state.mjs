@@ -498,7 +498,7 @@ export const S = {
     auSelSlice: new Array(8).fill(0),  /* the slice SLICE n edits: the last pad tapped */
     auStartsRev: 0,          /* bumped when slice starts may have moved */
     auPanel: null,           /* the AUDIO editor: { t, page } (ui_audio_editor.mjs) */
-    auEditor: null,          /* its slice editor: { t, c, lazy, lazySeen, lazyAt, pos } */
+    auEditor: null,          /* its waveform editor: { t, c, mode chop|range|lazy, A, B, cur, last, endHold, ask } */
     auChooser: null,         /* the sample chooser (ui_audio_chooser.mjs) */
     pendingAudioChooser: null,    /* { t, c }: the tick opens the chooser (it lists a folder) */
     confirmConvertAudio: false,   /* the convert confirm: false Drums, 'audio' -> Audio, 'resample' the resample offer, 'leave' Audio -> another */

@@ -1937,6 +1937,9 @@ typedef struct {
     uint32_t    au_lazy_pos;                  /* Lazy chop: frame position for the UI */
     int8_t      au_lazy_track, au_lazy_clip;  /* -1 = no chop running */
     uint8_t     au_lazy_n;                    /* slices tapped so far */
+    uint8_t     au_lazy_state;                /* AU_LAZY_* */
+    uint8_t     au_lazy_bak_n, au_lazy_bak_even;  /* the hand set the chop replaces, until it is kept */
+    au_slice_t  au_lazy_bak[AU_MAX_SLICES];
     uint8_t     au_echo;                      /* a DELAY echo is being sent (its velocity is its volume) */
     uint64_t    au_tick0;                     /* arp_master_tick before this block's render */
 } seq8_instance_t;
