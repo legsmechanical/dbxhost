@@ -5,6 +5,7 @@
  * a multiple of the block, the last block must be PARTIAL, and nothing may be
  * kept after it. */
 #include "../../src/host/sampler_take.h"
+#include "../../src/host/sampler_take_tap.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -69,5 +70,12 @@ int main(void) {
         expect(!strcmp(top, "/data/UserData/UserLibrary/Samples/Schwung/Resampler"),
                "only the leaf missing: the leaf");
     }
+    printf("a one-slot take's source:\n");
+    expect(sampler_take_tap_wants(1, SAMPLER_TAKE_SRC_SLOT, 4, 4), "a slot take keeps its own slot");
+    expect(!sampler_take_tap_wants(1, SAMPLER_TAKE_SRC_SLOT, 4, 3), "...and no other slot");
+    expect(!sampler_take_tap_wants(1, SAMPLER_TAKE_SRC_MIX, 0, 0), "a mix take taps no slot (slot 0 included)");
+    expect(!sampler_take_tap_wants(0, SAMPLER_TAKE_SRC_SLOT, 4, 4), "no take running: nothing is kept");
+    expect(sampler_take_tap_sample(40000) == 32767 && sampler_take_tap_sample(-40000) == -32768
+           && sampler_take_tap_sample(-123) == -123, "a kept sample is the contribution, clamped");
     return fails;
 }

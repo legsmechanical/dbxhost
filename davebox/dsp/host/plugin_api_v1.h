@@ -289,7 +289,18 @@ typedef struct move_host_ext_v1 {
      * (it never stops a recording the caller did not start). */
     int  (*capture_start)(const char *path, uint32_t frames);
     void (*capture_stop)(void);
+
+    /* capture_start, from one SOURCE instead of the mix. MOVE_CAPTURE_SLOT n =
+     * chain slot n's output after its own FX, at its fader and pan -- no send
+     * returns, no Master FX (a "dry" stem). A block the slot does not render
+     * (parked, idle) is silence. MOVE_CAPTURE_MIX ignores `index` and is
+     * exactly capture_start. Everything else -- contexts, timing, the one-take
+     * rule, capture_stop -- is capture_start's. */
+    int  (*capture_start_src)(const char *path, uint32_t frames, int kind, int index);
 } move_host_ext_v1_t;
+
+#define MOVE_CAPTURE_MIX   0
+#define MOVE_CAPTURE_SLOT  1
 
 /* One event of an offline MIDI FX job (midi_fx_offline_*). */
 typedef struct move_midi_fx_offline_ev {

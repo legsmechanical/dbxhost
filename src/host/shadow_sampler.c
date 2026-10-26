@@ -132,6 +132,9 @@ static char sampler_pending_path[256] = "";
  * sampler menu has, stopped only by its length or by the module, and silent —
  * no dot, overlay or announcement, because the module draws its own. */
 volatile int sampler_module_take = 0;
+volatile int sampler_take_src_kind = 0;    /* SAMPLER_TAKE_SRC_* (sampler_take_tap.h) */
+volatile int sampler_take_src_index = 0;
+static int      sampler_take_failed = 0;   /* a block was dropped: the take is void */
 static int      sampler_take_limited = 0;
 static uint32_t sampler_take_frames_left = 0;
 static uint32_t sampler_take_dropped_blocks = 0;
@@ -476,6 +479,9 @@ static int sampler_arm_common(void) {
     sampler_recording_max_peak = 0;
     sampler_recording_blocks_captured = 0;
     sampler_module_take = 0;
+    sampler_take_src_kind = 0;
+    sampler_take_src_index = 0;
+    sampler_take_failed = 0;
     sampler_take_limited = 0;
     sampler_take_frames_left = 0;
     sampler_take_dropped_blocks = 0;
@@ -530,7 +536,7 @@ int sampler_request_start_custom(const char *path_or_null) {
     return 0;
 }
 
-int sampler_request_start_module(const char *path, uint32_t frames) {
+int sampler_request_start_module(const char *path, uint32_t frames, int src_kind, int src_index) {
     /* Only from IDLE: an open sampler menu (ARMED) belongs to the user. */
     if (!path || !path[0] || sampler_state != SAMPLER_IDLE) return -1;
     if (sampler_arm_common() != 0) return -1;
@@ -544,6 +550,8 @@ int sampler_request_start_module(const char *path, uint32_t frames) {
     sampler_fade_in_remaining = 0;
     sampler_take_frames_left = frames;
     sampler_take_limited = frames > 0;
+    sampler_take_src_kind = src_kind;
+    sampler_take_src_index = src_index;
     sampler_module_take = 1;
     sampler_state = SAMPLER_RECORDING;
     shim_worker_post(SHIM_EVT_SAMPLER_PREP);
@@ -893,6 +901,12 @@ void sampler_worker_finalize(void) {
                  sampler_take_dropped_blocks);
         s_host.log(msg);
     }
+    if (sampler_module_take && sampler_take_failed) {
+        /* The data was written, then a block was lost: the file is not the
+         * take that was asked for. Remove it; the module sees no file. */
+        unlink(sampler_current_recording);
+        s_host.log("Sampler: module take VOIDED (a dropped block) -- file removed");
+    }
 
     /* ⚠ Clear the take flag BEFORE the state goes IDLE: an IDLE sampler is
      * startable from the audio thread, and a new module take armed in between
@@ -932,7 +946,16 @@ static void sampler_capture_audio_common(const int16_t *audio) {
     if (samples_to_write == 0) {
         /* a fixed-length take that is already complete */
     } else if (sampler_ring_available_write() < samples_to_write) {
-        if (sampler_module_take) sampler_take_dropped_blocks++;
+        if (sampler_module_take) {
+            /* A module take is a LOOP: a dropped block would leave the file
+             * short by a block and still "saved" -- a loop that no longer
+             * matches its bar length, with nothing to say so. Void it: the
+             * finalize deletes the file, and the module finds none. */
+            sampler_take_dropped_blocks++;
+            sampler_take_failed = 1;
+            sampler_request_stop();
+            return;
+        }
     } else {
         size_t write_pos = __atomic_load_n(&sampler_ring_write_pos, __ATOMIC_ACQUIRE);
         int32_t block_peak = 0;

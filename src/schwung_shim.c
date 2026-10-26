@@ -69,6 +69,7 @@
 #include "host/tts_engine.h"
 #include "host/link_audio.h"
 #include "host/shadow_sampler.h"
+#include "host/sampler_take_tap.h"
 #include "host/shadow_transport.h"
 #include "host/shadow_set_pages.h"
 #include "host/shim_worker.h"
@@ -566,6 +567,11 @@ static int shadow_slot_deferred_valid[SHADOW_CHAIN_INSTANCES];
 
 /* Deferred FX output: FX runs in post-ioctl, result mixed in pre-ioctl */
 static int16_t shadow_slot_fx_deferred[SHADOW_CHAIN_INSTANCES][FRAMES_PER_BLOCK * 2];
+/* A one-slot module take's block (move_host_ext_v1_t.capture_start_src): the
+ * slot's own mix contribution, kept by its mix loop, consumed and cleared at
+ * the mix tail. Untouched unless such a take is running. */
+static int16_t shadow_take_tap[FRAMES_PER_BLOCK * 2];
+static int shadow_take_tap_valid = 0;
 static int shadow_slot_fx_deferred_valid[SHADOW_CHAIN_INSTANCES];
 
 /* Apply a slot's sound-generator level to its dry synth block, in place.
@@ -1631,7 +1637,14 @@ static void overtake_set_tempo(float bpm) { shadow_transport_declare_bpm(bpm); }
 /* Host extension (move_host_ext_v1_t.capture_start/stop): a module take on
  * the sampler — fixed length, unity_view, silent (shadow_sampler.c). */
 static int overtake_capture_start(const char *path, uint32_t frames) {
-    return sampler_request_start_module(path, frames) == 0;
+    return sampler_request_start_module(path, frames, SAMPLER_TAKE_SRC_MIX, 0) == 0;
+}
+
+/* ...from one slot's own output (move_host_ext_v1_t.capture_start_src). */
+static int overtake_capture_start_src(const char *path, uint32_t frames, int kind, int index) {
+    if (kind == MOVE_CAPTURE_MIX) return overtake_capture_start(path, frames);
+    if (kind != MOVE_CAPTURE_SLOT || index < 0 || index >= SHADOW_CHAIN_INSTANCES) return 0;
+    return sampler_request_start_module(path, frames, SAMPLER_TAKE_SRC_SLOT, index) == 0;
 }
 
 static const move_host_ext_v1_t overtake_host_ext = {
@@ -1645,6 +1658,7 @@ static const move_host_ext_v1_t overtake_host_ext = {
     .midi_fx_offline_cancel = midi_fx_offline_cancel,
     .capture_start = overtake_capture_start,
     .capture_stop = sampler_request_stop_module,
+    .capture_start_src = overtake_capture_start_src,
 };
 
 /* Offline MIDI FX jobs read a slot's chain instance by index. */
@@ -3176,14 +3190,18 @@ static void shadow_inprocess_mix_from_buffer(void) {
 
                 /* Add FX output to mailbox */
                 mix_glide_t *mg = shadow_mix_targets(s);   /* the loop glides toward these */
+                const int tap = sampler_take_tap_wants(sampler_module_take, sampler_take_src_kind,
+                                                       sampler_take_src_index, s);
                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
                     float vol = mix_glide_gain(mg, i) * shadow_chain_slots[s].fade.gain;
                     int32_t contrib = (int32_t)lroundf((float)fx_buf[i] * vol);
                     la_acc[i] += contrib;
                     me_full[i] += contrib;
                     me_unity[i] += contrib;
+                    if (tap) shadow_take_tap[i] = sampler_take_tap_sample(contrib);
                     if (i & 1) { shadow_fade_advance(s); mix_glide_advance(mg); }
                 }
+                if (tap) shadow_take_tap_valid = 1;
                 accumulate_sends(s, fx_buf, send_accum);
                 accumulate_bus_sends(s, send_accum);
             }
@@ -3224,13 +3242,17 @@ skip_la_rebuild:
                 }
 
                 mix_glide_t *mg = shadow_mix_targets(s);   /* the loop glides toward these */
+                const int tap = sampler_take_tap_wants(sampler_module_take, sampler_take_src_kind,
+                                                       sampler_take_src_index, s);
                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
                     float vol = mix_glide_gain(mg, i) * shadow_chain_slots[s].fade.gain;
                     int32_t contrib = (int32_t)lroundf((float)fx_buf[i] * vol);
                     me_full[i] += contrib;
                     me_unity[i] += contrib;
+                    if (tap) shadow_take_tap[i] = sampler_take_tap_sample(contrib);
                     if (i & 1) { shadow_fade_advance(s); mix_glide_advance(mg); }
                 }
+                if (tap) shadow_take_tap_valid = 1;
                 accumulate_sends(s, fx_buf, send_accum);
                 accumulate_bus_sends(s, send_accum);
             } else if (shadow_slot_deferred_valid[s]) {
@@ -3271,13 +3293,17 @@ skip_la_rebuild:
                 shadow_slot_fx_track_idle(s, fx_buf);
 
                 mix_glide_t *mg = shadow_mix_targets(s);   /* the loop glides toward these */
+                const int tap = sampler_take_tap_wants(sampler_module_take, sampler_take_src_kind,
+                                                       sampler_take_src_index, s);
                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
                     float vol = mix_glide_gain(mg, i) * shadow_chain_slots[s].fade.gain;
                     int32_t contrib = (int32_t)lroundf((float)fx_buf[i] * vol);
                     me_full[i] += contrib;
                     me_unity[i] += contrib;
+                    if (tap) shadow_take_tap[i] = sampler_take_tap_sample(contrib);
                     if (i & 1) { shadow_fade_advance(s); mix_glide_advance(mg); }
                 }
+                if (tap) shadow_take_tap_valid = 1;
                 accumulate_sends(s, fx_buf, send_accum);
                 accumulate_bus_sends(s, send_accum);
             }
@@ -3607,16 +3633,23 @@ skip_la_rebuild:
 
     /* Capture audio for sampler at unity (Resample source only) — reads from
      * unity_view[] so it captures pre-master-volume audio. */
+    /* A module take records unity_view, or ONE slot's own output (its "dry"
+     * stem, filled by that slot's mix loop above) -- whatever the menu's
+     * source. A slot that did not mix this block (parked, idle) is silence. */
+    static const int16_t take_silence[FRAMES_PER_BLOCK * 2];
+    const int16_t *take_src = unity_view;
+    if (sampler_module_take && sampler_take_src_kind == SAMPLER_TAKE_SRC_SLOT)
+        take_src = shadow_take_tap_valid ? shadow_take_tap : take_silence;
+    shadow_take_tap_valid = 0;
     if (sampler_source == SAMPLER_SOURCE_RESAMPLE) {
-        sampler_capture_audio_from_buffer(unity_view);
+        sampler_capture_audio_from_buffer(take_src);
         sampler_tick_preroll();
         /* Skipback: always capture Resample source into rolling buffer.
          * No init call here — the buffer is allocated at startup by
          * skipback_prepare(). Capture declines the block if it is not ready. */
         skipback_capture(unity_view);
     } else if (sampler_module_take) {
-        /* A module take is always unity_view, whatever the menu's source. */
-        sampler_capture_audio_from_buffer(unity_view);
+        sampler_capture_audio_from_buffer(take_src);
     }
 
     MIX_PHASE_END(MIX_PHASE_TAIL);

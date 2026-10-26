@@ -31,14 +31,34 @@ echo "module take wiring:"
 # The struct grows only at its end (a module reads a member only inside `size`).
 ext_tail() {
     awk '/typedef struct move_host_ext_v1 \{/,/\} move_host_ext_v1_t;/' "$API" \
-        | grep -E '^\s+[a-z].*\(\*' | tail -2 | tr -d ' \n' \
-        | grep -q 'int(\*capture_start)(constchar\*path,uint32_tframes);void(\*capture_stop)(void);'
+        | grep -E '^\s+[a-z].*\(\*' | tail -3 | tr -d ' \n' \
+        | grep -q 'int(\*capture_start)(constchar\*path,uint32_tframes);void(\*capture_stop)(void);int(\*capture_start_src)(constchar\*path,uint32_tframes,intkind,intindex);'
 }
-check "capture_start / capture_stop are the LAST two members of the extension" ext_tail
+check "capture_start / capture_stop / capture_start_src are the LAST members of the extension" ext_tail
 
 filled() { code "$SHIM" | grep -q '\.capture_start = overtake_capture_start' &&
-           code "$SHIM" | grep -q '\.capture_stop = sampler_request_stop_module'; }
-check "the shim fills both members" filled
+           code "$SHIM" | grep -q '\.capture_stop = sampler_request_stop_module' &&
+           code "$SHIM" | grep -q '\.capture_start_src = overtake_capture_start_src'; }
+check "the shim fills all three members" filled
+
+# The dry stem: every slot mix loop keeps the tapped slot's contribution. A site
+# without it records SILENCE for that path (rebuild / deferred / inline), and the
+# path a session takes depends on Link Audio and the chain's FX mode.
+taps() {
+    [ "$(code "$SHIM" | grep -c 'if (tap) shadow_take_tap\[i\] = sampler_take_tap_sample(contrib);')" = 3 ] &&
+    [ "$(code "$SHIM" | grep -c 'me_unity\[i\] += contrib;')" = 3 ]
+}
+check "all three slot mix loops keep the tapped slot's contribution" taps
+
+tail_src() { code "$SHIM" | grep -q 'take_src = shadow_take_tap_valid ? shadow_take_tap : take_silence;' &&
+             [ "$(code "$SHIM" | grep -c 'sampler_capture_audio_from_buffer(take_src);')" = 2 ] &&
+             ! code "$SHIM" | grep -q 'sampler_capture_audio_from_buffer(unity_view);'; }
+check "the take's capture reads its source (tap or mix) on both branches, never unity_view directly" tail_src
+
+void_drop() { code "$SAMP" | grep -A8 'sampler_ring_available_write() < samples_to_write' \
+                  | grep -q 'sampler_take_failed = 1;' &&
+              code "$SAMP" | grep -A3 'if (sampler_module_take && sampler_take_failed)' | grep -q 'unlink(sampler_current_recording);'; }
+check "a dropped block VOIDS a module take and its file is removed" void_drop
 
 button_guard() { code "$SHIM" | grep -q 'if (d1 == CC_RECORD && d2 > 0 && !sampler_module_take)'; }
 check "the Sample-button intercept stands aside during a module take" button_guard
@@ -53,9 +73,10 @@ dots_guarded() {
 }
 check "every recording-dot site excludes a module take" dots_guarded
 
-unity_always() { code "$SHIM" | grep -A2 '} else if (sampler_module_take) {' \
-                     | grep -q 'sampler_capture_audio_from_buffer(unity_view)'; }
-check "a module take captures unity_view whatever the menu's source" unity_always
+unity_always() { code "$SHIM" | grep -q 'const int16_t \*take_src = unity_view;' &&
+                 code "$SHIM" | grep -A1 '} else if (sampler_module_take) {' \
+                     | grep -q 'sampler_capture_audio_from_buffer(take_src)'; }
+check "a module take captures its source (unity_view by default) whatever the menu's source" unity_always
 
 input_skips() { code "$SAMP" | grep -A6 '^void sampler_capture_audio(void)' \
                     | grep -q 'if (sampler_module_take) return;'; }
