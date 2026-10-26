@@ -68,7 +68,7 @@ import { moduleIdOf } from './ui_discover.mjs';
 import { BANK_MAP_TRACK_POPUP_MS, SEQ_PAGE_POPUP_MS, seqAutoTargetForKnob, SEQ_AUTO_TARGETS, midiTargetIsMidi, DEFAULT_TRACK_OCTAVE } from './ui_constants.mjs';
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam, soundOpenModule, instrPickResume } from './ui_sound.mjs';
-import { auPurgeRun } from './ui_audio_chooser.mjs';
+import { auPurgeRun, closeAudioChooser } from './ui_audio_chooser.mjs';
 import { isAudioTrack, audioSliceMode, auLoopKnob } from './ui_audio.mjs';
 
 /* AUDIO's CLIP bank (Slice mode) mirrors ALL LANES over the melodic clip's
@@ -1455,9 +1455,13 @@ export function bankMapArmable() {
  * Move's, so the short one is passed on to Move at the release, and the map
  * shows over Move's editor (ui_corun.mjs coRunMapScreen). */
 export function bankMapDeferrable() {
-    if (S.auChooser || S.auPanel) return false;      /* the Audio screens own the click */
     if (S.shiftHeld || S.deleteHeld || S.copyHeld || S.muteHeld || S.loopHeld) return false;
     if (S.knobTouched >= 0 || soundKnobTouched() || S.heldStep >= 0 || S.bankPickerSel >= 0 || S.stepIntervalMode) return false;
+    /* The Audio screens (the chooser, the AUDIO editor, WAVE) are screens like
+     * any other: a short click is theirs, a hold is the map (Josh, 2026-10-28:
+     * the map did not open from them). Not over a question, and not while a
+     * Lazy chop has the pads. */
+    if (S.auChooser || S.auPanel) return !(S.auEditor && (S.auEditor.ask || S.auEditor.mode === 'lazy'));
     if (S.moveSettingsOpen) return false;
     if (S.moveCoRunTrack >= 0) return true;
     if (S.awaitingProjectSelect || S.stateLoading) return false;
@@ -2645,6 +2649,8 @@ function _tearDownToOverview() {
 
     /* 1. Transient dialogs, pickers and captures. No early returns: this is a
      *    one-press escape, so everything open closes at once. */
+    if (S.auChooser) closeAudioChooser();
+    if (S.auPanel) closeAudioPanel();                          /* WAVE and the AUDIO editor */
     if (S.snapshotPicker) { S.snapshotPicker.confirm = null; closeSnapshotPicker(false); }
     if (S.templateManager) closeTemplateManager(false);
     if (S.globalEnumPick) closeGlobalEnumPick(false);          /* abandon, never commit */

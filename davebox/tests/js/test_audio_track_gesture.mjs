@@ -315,7 +315,32 @@ step('⭐⭐ scrolling a zoomed waveform never stretches the overview (Josh: "th
     delete GET['t4_au_wave_0_' + A0 + '_' + B0];
 });
 
+step('⭐⭐ the map opens from WAVE and the AUDIO editor (hold the jog); a pick leaves them for that bank (Josh)', () => {
+    for (const [col, row, name] of [[2, 2, 'WAVE'], [2, 3, 'AUDIO']]) {
+        mapPad(col, row);
+        assert(S.auPanel, name + ' did not open');
+        S.activeBank = 1;                                /* somewhere else, so the pick is visible */
+        cc(3, 127);                                      /* hold the jog */
+        assert(S.jogDeferred && !S.bankMapUp, 'the press over ' + name + ' was not held back');
+        S.jogPressMs = S.clockMs - C.JOG_HOLD_MAP_MS - 50;   /* ...held past the threshold (this rig's clock) */
+        ticks(2);
+        assert(S.bankMapUp, 'holding the jog over ' + name + ' did not bring up the map');
+        note(P.bankMapPadForCell(2, 1), 100); note(P.bankMapPadForCell(2, 1), 0);   /* CLIP */
+        cc(3, 0); ticks(3);
+        assert(!S.auPanel && !S.auEditor && S.activeBank === 0, 'the pick did not leave ' + name + ' for CLIP: bank ' + S.activeBank);
+    }
+    /* ...and a short click is still the screen's: WAVE (Slice) adds a marker */
+    GET['t4_au_info_0'] = INFO(1, 8, 0); A.auMarkStale(4, 0); ticks(2);
+    mapPad(2, 2);
+    reset();
+    jog(1); click(); ticks(2);
+    assert(sent('t4_au_mark_add').length === 1 && !S.bankMapUp, 'a short click did not reach WAVE: ' + JSON.stringify(sentLike(/_au_/)));
+    back();
+    GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
+});
+
 step('⭐⭐ Shift + click: the picker — Load sample / Chop sample › Lazy · Manual · Even (Josh)', () => {
+    GET['t4_au_info_0'] = INFO(1, 8, 0); A.auMarkStale(4, 0); ticks(2);   /* a hand set of 8, Even Off */
     mapPad(2, 2);
     reset();
     shiftClick();
