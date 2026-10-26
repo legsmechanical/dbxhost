@@ -112,6 +112,8 @@ static int sp_track_config2(sp_ctx_t *cx) {
     }
     if (!strcmp(sub, "pad_mode")) {
         uint8_t new_mode = (uint8_t)clamp_i(my_atoi(val), 0, 1);
+        /* Leaving Audio goes the convert's way: the samples let go. */
+        if (tr->pad_mode == PAD_MODE_AUDIO) convert_track_from_audio(inst, tidx);
         if (new_mode == PAD_MODE_DRUM && tr->pad_mode != PAD_MODE_DRUM)
             drum_clips_alloc(inst, tr);
         else if (new_mode != PAD_MODE_DRUM && tr->pad_mode == PAD_MODE_DRUM)
@@ -125,6 +127,7 @@ static int sp_track_config2(sp_ctx_t *cx) {
      * atomically (single set_param, no coalescing drop). Idempotent guards
      * make a redundant push a no-op. */
     if (!strcmp(sub, "convert_to_drum")) {
+        if (tr->pad_mode == PAD_MODE_AUDIO) convert_track_from_audio(inst, tidx);
         if (tr->pad_mode != PAD_MODE_DRUM) {
             convert_track_melodic_to_drum(inst, tidx);
             rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);   /* content translated */
@@ -143,6 +146,9 @@ static int sp_track_config2(sp_ctx_t *cx) {
         } else if (tr->pad_mode == PAD_MODE_CONDUCT) {
             tr->pad_mode = PAD_MODE_MELODIC_SCALE;  /* note data already melodic */
             rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);
+        } else if (tr->pad_mode == PAD_MODE_AUDIO) {
+            convert_track_from_audio(inst, tidx);
+            rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);
         }
         /* Leaving the Conductor role: clear the one-Conductor latch. */
         if (inst->conductor_track == tidx) {
@@ -157,10 +163,20 @@ static int sp_track_config2(sp_ctx_t *cx) {
         }
         if (tr->pad_mode == PAD_MODE_CONDUCT)
             return 1; /* idempotent: already the Conductor, redundant push is a no-op */
+        if (tr->pad_mode == PAD_MODE_AUDIO) convert_track_from_audio(inst, tidx);
         convert_track_to_conduct(inst, tidx);
         inst->conductor_track = (int8_t)tidx;
         inst->state_dirty = 1;
         rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);   /* rui_cond + content */
+        return 1;
+    }
+
+    /* -> Audio: Instmt/Dest "Audio" (the UI confirms when notes would go). */
+    if (!strcmp(sub, "convert_to_audio")) {
+        if (tr->pad_mode == PAD_MODE_AUDIO) return 1;   /* idempotent */
+        convert_track_to_audio(inst, tidx);
+        if (inst->conductor_track == tidx) inst->conductor_track = -1;
+        rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);
         return 1;
     }
 

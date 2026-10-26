@@ -32,6 +32,10 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             clip_t *src = &inst->tracks[srcT].clips[srcC];
             clip_t *dst = &inst->tracks[dstT].clips[dstC];
             if (srcT == dstT && srcC == dstC) return 1;
+            /* An Audio clip pastes onto an Audio track only, and only an
+             * Audio clip does (its notes are slices, not pitches). */
+            if ((inst->tracks[srcT].pad_mode == PAD_MODE_AUDIO) != (inst->tracks[dstT].pad_mode == PAD_MODE_AUDIO))
+                return 1;
             undo_begin_single(inst, dstT, dstC);
             dst->length        = src->length;
             dst->loop_start    = src->loop_start;
@@ -54,6 +58,7 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             clip_copy_cond_fields(dst, src);
             inst->tracks[dstT].clip_at_auto[dstC] = inst->tracks[srcT].clip_at_auto[srcC];
             pa_copy_clip(inst, srcT, srcC, dstT, dstC);
+            if (inst->tracks[srcT].pad_mode == PAD_MODE_AUDIO) au_copy_clip(inst, srcT, srcC, dstT, dstC, 0);
             if ((int)inst->tracks[dstT].active_clip == dstC)
                 pfx_sync_from_clip(&inst->tracks[dstT]);
             rui_mark(inst, dstT, dstC);   /* only the destination clip changed */
@@ -99,6 +104,7 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             clip_migrate_to_notes(dst);
             clip_copy_cond_fields(dst, src);
             pa_copy_clip(inst, t, srcRow, t, dstRow);
+            if (inst->tracks[t].pad_mode == PAD_MODE_AUDIO) au_copy_clip(inst, t, srcRow, t, dstRow, 0);
             inst->tracks[t].clip_at_auto[dstRow] = inst->tracks[t].clip_at_auto[srcRow];
             if ((int)inst->tracks[t].active_clip == dstRow)
                 pfx_sync_from_clip(&inst->tracks[t]);
@@ -178,6 +184,7 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             seq8_track_t *dstTr = &inst->tracks[dstT];
             clip_t *src = &srcTr->clips[srcC];
             clip_t *dst = &dstTr->clips[dstC];
+            if ((srcTr->pad_mode == PAD_MODE_AUDIO) != (dstTr->pad_mode == PAD_MODE_AUDIO)) return 1;
             undo_begin_clip_pair(inst, srcT, srcC, dstT, dstC);
             dst->length         = src->length;
             dst->loop_start     = src->loop_start;
@@ -199,6 +206,7 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             clip_migrate_to_notes(dst);
             clip_copy_cond_fields(dst, src);
             pa_move_clip(inst, srcT, srcC, dstT, dstC);
+            if (srcTr->pad_mode == PAD_MODE_AUDIO) au_copy_clip(inst, srcT, srcC, dstT, dstC, 1);
             dstTr->clip_at_auto[dstC] = srcTr->clip_at_auto[srcC];
             if ((int)dstTr->active_clip == dstC) pfx_sync_from_clip(dstTr);
             silence_track_notes_v2(inst, srcTr);
@@ -251,6 +259,7 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             clip_migrate_to_notes(dst);
             clip_copy_cond_fields(dst, src);
             pa_move_clip(inst, t, srcRow, t, dstRow);
+            if (tr->pad_mode == PAD_MODE_AUDIO) au_copy_clip(inst, t, srcRow, t, dstRow, 1);
             tr->clip_at_auto[dstRow] = tr->clip_at_auto[srcRow];
             if ((int)tr->active_clip == dstRow) pfx_sync_from_clip(tr);
             silence_track_notes_v2(inst, tr);

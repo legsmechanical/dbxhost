@@ -185,6 +185,12 @@ export const INSTR_NONE       = 40;
  * confirm. A Conductor's ROUTE is left exactly where it was — parked, the way
  * None parks channel/midi_to — so picking a real instrument later finds it. */
 export const INSTR_CONDUCT    = 50;
+/* AUDIO (Josh, 2026-10-27: "audio should be an instrument rather than type" ·
+ * "it shouldn't have a track type. just like conductor doesn't"). Like the
+ * Conductor it is a PAD MODE (PAD_MODE_AUDIO), reached by a conversion
+ * (requestTrackModeChange), never a route write: the track keeps its own
+ * Schwung slot, which plays the clips' samples through its FX. */
+export const INSTR_AUDIO      = 60;
 /* The label on the row that opens the picker. A CONSTANT because it is not just
  * a caption: four places test the string to recognise this picker, and a rename
  * that missed one left a silently dead branch. */
@@ -202,6 +208,7 @@ export function fmtInstr(v) {
     /* ⚠ Before the band checks below: 50 would fall into the `>= INSTR_TRACK`
      * range test and format as '?'. */
     if (v === INSTR_CONDUCT) return 'Conductor';
+    if (v === INSTR_AUDIO)   return 'Audio';
     /* Each band is bounded at BOTH ends. An open-ended `>=` would format a
      * stray value as a plausible destination that does not exist ("MIDI Ch 17"),
      * which is worse than showing it is wrong. */
@@ -287,6 +294,7 @@ export function instrPickerRows(routes, self, gens, channels) {
      * a destination like the rows above it, nor a module like the ones below. */
     rows.push({ divider: true });
     rows.push({ v: INSTR_CONDUCT, label: fmtInstr(INSTR_CONDUCT) });
+    rows.push({ v: INSTR_AUDIO, label: fmtInstr(INSTR_AUDIO) });
     rows.push({ divider: true });
     for (const g of (gens || [])) rows.push({ gen: g, label: String(g.name || g.id) });
     if (gens && gens.length) rows.push({ divider: true });
@@ -843,6 +851,7 @@ export function seqAutoAutomatable(key) {
 export const PAD_MODE_DRUM = 1;
 export const PAD_MODE_MELODIC_SCALE = 0;
 export const PAD_MODE_CONDUCT = 2;
+export const PAD_MODE_AUDIO = 3;      /* Audio: notes are slices (36 + slice) — ui_audio.mjs */
 
 /* ⭑ SINGLE-KNOB ALTS (Josh, 2026-10-03: "switch those params through
  * knob-touch+click and have them display like other knob touch click
@@ -862,6 +871,11 @@ export const KNOB_ALTS = {
         1: { 7: ['Rand', 'Algo'] },                                              /* NOTE FX */
         3: { 0: ['Rate', 'ClkFb'], 7: ['Rand', 'Algo'] },                        /* MIDI DLY */
     },
+    /* AUDIO: the CLIP bank's (Slice mode) at the same knobs; no pitch Random. */
+    audio: {
+        0: { 0: ['Res', 'Zoom'], 2: ['Shift', 'Nudge'], 6: ['Dir', 'Revrs'] },
+        3: { 0: ['Rate', 'ClkFb'] },
+    },
 };
 /* Arp Steps opens from the Steps knob (K5 on SEQ ARP and LIVE ARP) touched +
  * a jog click (Josh, 2026-10-04: "live arp > step editor = knob touch + click
@@ -871,7 +885,7 @@ export function arpStepsBank(padMode, bank) {
     return padMode !== PAD_MODE_DRUM && (bank === 4 || bank === 5);
 }
 export function knobAltFor(padMode, bank, k) {
-    const fam = KNOB_ALTS[padMode === PAD_MODE_DRUM ? 'drum' : 'melodic'][bank];
+    const fam = KNOB_ALTS[padMode === PAD_MODE_DRUM ? 'drum' : padMode === PAD_MODE_AUDIO ? 'audio' : 'melodic'][bank];
     return (fam && fam[k]) || null;
 }
 

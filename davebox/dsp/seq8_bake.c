@@ -91,6 +91,9 @@ static int bake_stage_midi_dly(seq8_instance_t *inst, int scale_aware,
                 else             cumul_pitch += fx->fb_note;
             }
             int echo_pitch;
+            if (fx->track_idx < NUM_TRACKS && inst->tracks[fx->track_idx].pad_mode == PAD_MODE_AUDIO) {
+                cumul_pitch = 0; cumul_deg = 0;            /* Audio: an echo replays its slice */
+            }
             if (scale_aware) {
                 /* live computes the degree delta from the group PRIMARY and
                  * applies it to every copy (pfx_sched_delay_ons) */

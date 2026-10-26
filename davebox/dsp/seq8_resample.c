@@ -51,6 +51,7 @@
 
 #define RS_SRC_WET  0        /* the mix (capture_start) */
 #define RS_SRC_DRY  1        /* one chain slot's own output (capture_start_src) */
+#define RS_SRC_PRE  2        /* the slot's instrument, before its FX (an Audio-track bounce) */
 
 #define RS_BAR_TICKS     (16 * TICKS_PER_STEP)
 #define RS_CAP_BARS      32
@@ -179,10 +180,11 @@ static void resample_render_start(seq8_instance_t *inst, int frames) {
         }
     } else if (inst->resample_state == RS_STARTING) {
         int ok;
-        if (inst->resample_src == RS_SRC_DRY)
+        if (inst->resample_src == RS_SRC_DRY || inst->resample_src == RS_SRC_PRE)
             ok = g_ext && g_ext->capture_start_src &&
                  g_ext->capture_start_src(inst->resample_path, inst->resample_frames,
-                                          MOVE_CAPTURE_SLOT, inst->resample_slot);
+                                          inst->resample_src == RS_SRC_PRE ? MOVE_CAPTURE_SLOT_PRE : MOVE_CAPTURE_SLOT,
+                                          inst->resample_slot);
         else
             ok = g_ext && g_ext->capture_start &&
                  g_ext->capture_start(inst->resample_path, inst->resample_frames);
@@ -280,14 +282,14 @@ static void resample_clip_start(seq8_instance_t *inst, const char *val) {
         dst = midi_dest_resolve(fx->route, fx->slot, fx->midi_to);
     }
     if (!dst.emit || (dst.route != ROUTE_SCHWUNG && dst.route != ROUTE_MOVE)
-            || (src == RS_SRC_DRY && (dst.route != ROUTE_SCHWUNG
+            || ((src == RS_SRC_DRY || src == RS_SRC_PRE) && (dst.route != ROUTE_SCHWUNG
                                       || !g_ext->capture_start_src)))
         inst->resample_err = RS_ERR_ROUTE;
     else if (effective_mute(inst, tr_i))
         inst->resample_err = RS_ERR_MUTED;
     if (inst->resample_err) { inst->resample_state = RS_FAILED; return; }
     rs_remember_armed(inst);
-    inst->resample_src  = (uint8_t)(src == RS_SRC_DRY ? RS_SRC_DRY : RS_SRC_WET);
+    inst->resample_src  = (uint8_t)(src == RS_SRC_DRY ? RS_SRC_DRY : src == RS_SRC_PRE ? RS_SRC_PRE : RS_SRC_WET);
     inst->resample_slot = dst.slot;
     for (t = 0; t < NUM_TRACKS; t++) {
         inst->tracks[t].queued_clip       = -1;

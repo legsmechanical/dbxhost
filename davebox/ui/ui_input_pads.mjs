@@ -13,6 +13,11 @@ import {
     NO_NOTE_FLASH_MS, BANK_PADMODE
 } from './ui_constants.mjs';
 import { S, loopViewActive, markJsUndo } from './ui_state.mjs';
+import { isAudioTrack, audioSliceMode, auPadToJump, auJump } from './ui_audio.mjs';
+import { auPadTapped } from './ui_audio_editor.mjs';
+
+/* AUDIO, Loop mode: the jump point each held pad started (for its release). */
+const audioJumpHeld = new Map();
 import { autoHoldJumpBegin, autoHoldJumpEnd } from './ui_automation_bank.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { automationClearStep, automationExtendPress, automationExtendFromLock } from './ui_automation.mjs';
@@ -362,6 +367,21 @@ function _onPadPressTrackView(status, d1, d2) {
 
     if (d1 >= TRACK_PAD_BASE && d1 < TRACK_PAD_BASE + 32) {
         const padIdx = d1 - TRACK_PAD_BASE;
+
+        /* AUDIO, Loop mode: the pads are JUMP POINTS, row by row from the
+         * bottom-left (8 a row). A tap jumps the playing loop there (live
+         * only: never recorded; JmpQ makes it wait); stopped, a held pad
+         * plays from there. Pads past the clip's Jump count do nothing.
+         * Modifier gestures go on. */
+        if (isAudioTrack(S.activeTrack) && !audioSliceMode(S.activeTrack) &&
+                !S.shiftHeld && !S.deleteHeld && !S.copyHeld && !S.muteHeld) {
+            const k = auPadToJump(S.activeTrack, padIdx);
+            if (k >= 0) { auJump(S.activeTrack, k, true); audioJumpHeld.set(padIdx, k); }
+            S.screenDirty = true;
+            return;
+        }
+        /* AUDIO, Slice mode: a tap picks the slice SLICE n edits (and plays). */
+        if (isAudioTrack(S.activeTrack)) auPadTapped(S.activeTrack, padIdx);
 
 
         /* Drum lane RESET: Shift+Delete+lane pad — full factory reset (length,
@@ -789,7 +809,8 @@ function _onPadPressTrackView(status, d1, d2) {
             /* Step edit: tap pad to toggle note assignment for held step */
             if (S.padNoteMap[padIdx] === 0xFF) return; /* OOB pad — no note to toggle */
             const ac    = effectiveClip(S.activeTrack);
-            const _pitchRaw = S.padNoteMap[padIdx] + S.trackOctave[S.activeTrack] * 12;
+            /* (an Audio track's note is a slice: no octave) */
+            const _pitchRaw = S.padNoteMap[padIdx] + (isAudioTrack(S.activeTrack) ? 0 : S.trackOctave[S.activeTrack] * 12);
             if (_pitchRaw < 0 || _pitchRaw > 127) return; /* OOB after track-octave shift */
             const pitch = _pitchRaw;
             stepHoldCheckpoint(S.activeTrack);
@@ -844,7 +865,7 @@ function _onPadPressTrackView(status, d1, d2) {
              * pitches land outside [0,127]. */
             const basePitch = S.padNoteMap[padIdx];
             if (basePitch === 0xFF) return; /* OOB base */
-            const _pitchRaw = basePitch + S.trackOctave[S.activeTrack] * 12;
+            const _pitchRaw = basePitch + (isAudioTrack(S.activeTrack) ? 0 : S.trackOctave[S.activeTrack] * 12);
             if (_pitchRaw < 0 || _pitchRaw > 127) return; /* OOB after track-octave shift */
             const pitch = _pitchRaw;
             padPitch[padIdx] = pitch;
@@ -1113,16 +1134,18 @@ export function _onPadPress(status, d1, d2) {
                             invalidateLEDCache();
                             showActionPopup(S.shiftHeld ? 'CUT' : 'COPIED');
                         } else if (S.copySrc.kind === 'clip') {
-                            copyClip(S.copySrc.track, S.copySrc.clip, t, clipIdx);
-                            invalidateLEDCache();
-                            forceRedraw();
-                            showActionPopup('PASTED');
+                            if (copyClip(S.copySrc.track, S.copySrc.clip, t, clipIdx) !== false) {
+                                invalidateLEDCache();
+                                forceRedraw();
+                                showActionPopup('PASTED');
+                            }
                         } else if (S.copySrc.kind === 'cut_clip') {
-                            cutClip(S.copySrc.track, S.copySrc.clip, t, clipIdx);
-                            S.copySrc = { kind: 'clip', track: t, clip: clipIdx };
-                            invalidateLEDCache();
-                            forceRedraw();
-                            showActionPopup('PASTED');
+                            if (cutClip(S.copySrc.track, S.copySrc.clip, t, clipIdx) !== false) {
+                                S.copySrc = { kind: 'clip', track: t, clip: clipIdx };
+                                invalidateLEDCache();
+                                forceRedraw();
+                                showActionPopup('PASTED');
+                            }
                         } else if (S.copySrc.kind === 'drum_clip' && isDrumT) {
                             copyDrumClip(S.copySrc.track, S.copySrc.clip, t, clipIdx);
                             invalidateLEDCache();
@@ -1540,6 +1563,11 @@ export function _onStepButtons(d1, d2) {
         forceRedraw();
         return;
     }
+    /* AUDIO, a Loop clip: the step buttons only show where the loop is
+     * (Q7, Josh 2026-10-27: "just show playback") — holding or tapping one
+     * does nothing. Shift and the other modifiers keep their shortcuts. */
+    if (!S.sessionView && isAudioTrack(S.activeTrack) && !audioSliceMode(S.activeTrack) &&
+            !S.shiftHeld && !S.deleteHeld && !S.copyHeld && !S.loopHeld && !S.muteHeld) return;
     /* Delete+step in session view: clear perf preset or mute snapshot slot immediately. */
     if (S.sessionView && S.deleteHeld) {
         if (S.loopHeld || S.perfViewLocked) {
@@ -2005,6 +2033,11 @@ export function toggleLiveArp(t) {
 
 export function _onPadRelease(status, d1, d2) {
     if (S.projectPadPicker && d1 >= 68 && d1 <= 99) return;
+    if (audioJumpHeld.has(d1 - TRACK_PAD_BASE)) {
+        auJump(S.activeTrack, audioJumpHeld.get(d1 - TRACK_PAD_BASE), false);
+        audioJumpHeld.delete(d1 - TRACK_PAD_BASE);
+        return;
+    }
     if (S.mergeNoticePending) return;   /* Live Merge notice is modal (Rec/Back only) */
     if (S.tapTempoOpen && d1 >= 68 && d1 <= 99) return;
     /* Co-run drum hold release: if the hold-threshold inject fired, send note-off

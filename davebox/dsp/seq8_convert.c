@@ -303,3 +303,65 @@ static void convert_track_to_conduct(seq8_instance_t *inst, int t) {
     pfx_sync_from_clip(tr);
     inst->state_dirty = 1;
 }
+
+/* Every clip of track t loses its notes and goes back to a fresh clip's
+ * length; resolution and effects are the caller's. */
+static void convert_wipe_all_notes(seq8_instance_t *inst, int t) {
+    seq8_track_t *tr = &inst->tracks[t];
+    int c;
+    for (c = 0; c < NUM_CLIPS; c++) {
+        clip_wipe_notes(&tr->clips[c]);
+        tr->clips[c].length = SEQ_STEPS_DEFAULT;
+        tr->clips[c].loop_start = 0;
+        clip_build_steps_from_notes(&tr->clips[c]);
+    }
+}
+
+/* -> AUDIO (Instmt/Dest "Audio", like the Conductor: no track type). The
+ * notes go — they were pitches, and on Audio a pitch is a slice (Josh,
+ * 2026-10-27, Q2: "clear them"; the UI confirms first). Effects, automation
+ * and TARP back to a fresh track's; every clip a fresh Audio clip (Loop, no
+ * sample). A drum track is made melodic first. */
+static void convert_track_to_audio(seq8_instance_t *inst, int t) {
+    seq8_track_t *tr = &inst->tracks[t];
+    int c;
+    tr->recording = 0;
+    tr->record_armed = 0;
+    tr->recording_pending_page = 0;
+    silence_track_notes_v2(inst, tr);
+    if (tr->pad_mode == PAD_MODE_DRUM)
+        convert_track_drum_to_melodic(inst, t);
+    for (c = 0; c < NUM_CLIPS; c++) {
+        clip_pfx_params_init(&tr->clips[c].pfx_params);
+        at_auto_reset(&tr->clip_at_auto[c]);
+    }
+    convert_wipe_all_notes(inst, t);
+    memset(tr->at_last_sent, 0xFF, AT_MAX_LANES);
+    tr->at_last_clip = 0xFF;
+    tarp_silence(inst, tr);
+    tarp_init_defaults(tr);
+    tr->transpose = 0;
+    tr->fx_pre = 0;                /* nothing on an Audio track receives MIDI */
+    tr->fx_post = 0;
+    tr->pad_mode = PAD_MODE_AUDIO;
+    au_track_release(inst, t);
+    pfx_sync_from_clip(tr);
+    inst->state_dirty = 1;
+}
+
+/* Leaving AUDIO for an instrument (or the Conductor): every clip's slice
+ * steps go (Josh, 2026-10-27, Q3: "clear them"; the UI confirms first) and
+ * the samples are let go (the files stay in the project until a Purge). The
+ * track is left melodic; the caller converts on from there. */
+static void convert_track_from_audio(seq8_instance_t *inst, int t) {
+    seq8_track_t *tr = &inst->tracks[t];
+    tr->recording = 0;
+    tr->record_armed = 0;
+    tr->recording_pending_page = 0;
+    silence_track_notes_v2(inst, tr);
+    au_track_release(inst, t);
+    convert_wipe_all_notes(inst, t);
+    tr->pad_mode = PAD_MODE_MELODIC_SCALE;
+    pfx_sync_from_clip(tr);
+    inst->state_dirty = 1;
+}

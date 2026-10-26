@@ -27,6 +27,8 @@ import { chordLayoutOn, chordPadColor } from './ui_chord_pads.mjs';
 import { pianoLayoutOn } from './ui_drummodel.mjs';
 import { customLayoutOn, customPadColor } from './ui_custom_chords.mjs';
 import { setLED, setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
+import { isAudioTrack, auInfo, auClipOf, auPos, auPlayheadJump, auPadToSlice, auSelSlice, auLazyOpen, auLazyState,
+         AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN } from './ui_audio.mjs';
 
 const lastSentNoteLED   = new Array(128).fill(-1);
 const lastSentButtonLED = new Array(128).fill(-1);
@@ -914,7 +916,43 @@ export function updateTrackLEDs() {
          * signifier that the inverted pads provided"). Co-run pads wear the
          * same colours as anywhere else. */
         const isDrum = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM;
-        if (isDrum) {
+        if (isAudioTrack(S.activeTrack)) {
+            /* AUDIO (ui_audio). Slice mode: every pad is a slice (left 4x4
+             * 1-16, right 4x4 17-32) — the sounding one white, the selected
+             * one the track colour, the rest dim; past the slice count dark.
+             * Loop mode: the jump points, row by row from the bottom-left, the
+             * one under the playhead white (a moving playhead), each row's
+             * first in the track colour; past the Jump count dark. No sample:
+             * dark but for a dim first pad. */
+            const t = S.activeTrack, tc = trackColor(t), td = trackDimColor(t);
+            const ai = auInfo(t, auClipOf(t)), ap = auPos();
+            const slice = ai.mode === AU_MODE_SLICE;
+            const ph = slice ? -1 : auPlayheadJump(t);
+            const sel = auSelSlice(t);
+            /* A Lazy chop: the next pad in order WHITE (pad 1 before the
+             * first tap), the slices chopped so far in the track colour
+             * (Josh, 2026-10-28: "pads should light to indicate populated as
+             * you go and the next pad should always be white so you know
+             * where to go next"); the rest dark. */
+            const lz = auLazyOpen() ? auLazyState() : null;
+            const next = lz && lz.state === AU_LAZY_ARMED ? 0 : lz && lz.state === AU_LAZY_RUN ? lz.n : -1;
+            const done = lz && lz.state !== AU_LAZY_ARMED ? lz.n : 0;
+            for (let i = 0; i < 32; i++) {
+                let color = LED_OFF;
+                if (lz) {
+                    const k = auPadToSlice(i);
+                    color = k === next ? White : k < done ? tc : LED_OFF;
+                }
+                else if (ai.state !== 2) color = i === 0 ? td : LED_OFF;
+                else if (slice) {
+                    const k = auPadToSlice(i);
+                    if (k < ai.n) color = (ap.t === t && ap.on && ap.slice === k) ? White : k === sel ? tc : td;
+                } else if (i < ai.jump) {
+                    color = i === ph ? White : (i % 8 === 0 ? tc : td);
+                }
+                cachedSetLED(TRACK_PAD_BASE + i, color);
+            }
+        } else if (isDrum) {
             /* Left 4 cols (col 0-3): lane selectors; Right 4 cols (col 4-7): velocity zones */
             const t        = S.activeTrack;
             const selLane  = S.activeDrumLane[t];

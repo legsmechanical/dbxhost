@@ -21,6 +21,23 @@ the section into a versioned heading at release time.
   instrument and effects). After any resample, Play carries on with the clips you had
   armed.
 
+- **Audio.** Choose **Audio** in a track's **Instmt/Dest** picker and each clip
+  plays its own sample — picked from your library (WAV or AIFF, auditioned as you
+  browse) and copied into the project — as a **Loop**, with the pads as jump
+  points, or as up to 32 **Slices** you play from the pads and sequence on the
+  steps. **WAVE** (a new bank map pad) holds the clip's sample: load one, set the
+  loop's start and end, or make chops with a **Lazy chop** (tap them in as the
+  sample plays), by hand or evenly, then shape them in a zoomable editor — move
+  any chop's start and end down to a single sample, add and remove chops.
+  **Even** cuts equal slices, showing them on the pads as you turn. The **AUDIO**
+  editor (the AUDIO pad) holds the clip's sound: mode, pitch and gain, sound
+  settings per slice or for all slices at once, and **>Seq** to lay the slices
+  out on the steps. Loop clips can play backwards, be nudged against
+  the bar and have their jumps wait for the beat. **Project Settings → Purge
+  samples** clears out the ones you no longer use. Choosing Audio on a track that
+  plays an instrument offers to **resample its clips** first, so each comes back as
+  its own audio.
+
 ### Changed
 - **Sample opens a menu.** Tap **Sample** and choose: **Bake scene**, **Resample
   scene** or **Live merge** in Session View; **Bake clip** or **Live merge track** in

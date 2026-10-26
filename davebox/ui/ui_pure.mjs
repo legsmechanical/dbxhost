@@ -12,7 +12,7 @@
  */
 
 import { S } from './ui_state.mjs';
-import { PAD_MODE_DRUM, PAD_MODE_CONDUCT, NUM_STEPS, BANKS,
+import { PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_AUDIO, NUM_STEPS, BANKS,
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION,
     BANK_CHORD, BANK_CONFIG, isSoundBank } from './ui_constants.mjs';
 
@@ -102,6 +102,7 @@ const BANK_WALK_DOORS = {
     melodic: [BANK_CONFIG, BANK_AUTOMATION],
     drum:    [BANK_CONFIG, BANK_AUTOMATION],
     conduct: [BANK_CONFIG],
+    audio:   [BANK_CONFIG, BANK_AUTOMATION],
 };
 export function bankIsDoor(padMode, bank) {
     return BANK_WALK_DOORS[bankMapFamily(padMode)].indexOf(bank) >= 0;
@@ -138,6 +139,19 @@ export function soundBankOnTrack(padMode, bank, t) {
  * Bank 0 stays each track's start and Back bank (BANK_DEFAULT); only the walk
  * moved. */
 export function bankCategoriesForMode(padMode, t) {
+    /* AUDIO (Josh, 2026-10-27): no IN (no RPT GROOVE, no LIVE ARP, no
+     * PADMODE: the pads are slices); the clip bank holds the sequence
+     * settings; NOTE FX and DELAY in their drum (no-pitch) form — "midi
+     * effects on audio tracks should mirror those available on drum tracks"
+     * — so no HARMONY or SEQ ARP. The clip's audio is the AUDIO editor, at
+     * the instrument door. */
+    if (padMode === PAD_MODE_AUDIO) return [
+        { label: null,   banks: [BANK_CONFIG] },
+        { label: 'CTRL', banks: [BANK_MACROS, BANK_AUTOMATION] },
+        { label: 'SEQ',  banks: [BANK_STEP, 0] },
+        { label: 'FX',   banks: [1, 3] },
+        { label: null,   banks: [BANK_SOUND] },
+    ];
     if (padMode === PAD_MODE_CONDUCT) return [
         { label: null,   banks: [BANK_CONFIG] },
         { label: null,   banks: [0] },
@@ -191,11 +205,16 @@ const BANK_MAP_POS = {
                [BANK_RESPONDER]: [1, 0], [BANK_OCTAVE]: [1, 1], [BANK_WHEN]: [1, 2],
                0: [2, 0], [BANK_STEP]: [2, 1],
                1: [3, 0] },
+    audio:   { [BANK_CONFIG]: [0, 3],
+               [BANK_MACROS]: [1, 0], [BANK_AUTOMATION]: [1, 1], [BANK_SOUND]: [1, 3],
+               [BANK_STEP]: [2, 0], 0: [2, 1],
+               1: [3, 0], 3: [3, 2] },
 };
 const BANK_MAP_LABELS = {
     melodic: ['IN', 'CTRL', 'SEQ', 'FX'],
     drum:    ['IN', 'CTRL', 'SEQ', 'FX'],
     conduct: [null, 'RSPD', 'SEQ', 'FX'],
+    audio:   [null, 'CTRL', 'SEQ', 'FX'],
 };
 /* ACTION pads: not banks — a tap goes somewhere (Josh, 2026-10-04: "add an
  * "inst" pad to the right of the mix pad - also red. jumps directly to
@@ -205,13 +224,20 @@ const BANK_MAP_ACTIONS = {
     melodic: { inst: [2, 3] },
     drum:    { inst: [2, 3] },
     conduct: {},
+    /* WAVE (Josh, 2026-10-28, from the Layout Map: "new editor: wav" under
+     * CLIP): the clip's sample — its waveform, chops and the load / chop
+     * picker (ui_audio_editor). */
+    audio:   { inst: [2, 3], wave: [2, 2] },
 };
+/* The instrument door on an Audio track is the AUDIO editor, and says so. */
 const BANK_MAP_ACTION_NAMES = { inst: 'INST' };
+const BANK_MAP_ACTION_NAMES_AUDIO = { inst: 'AUDIO', wave: 'WAVE' };
 /* AUTOMATION has no space to wrap at and is wider than a cell. */
 const BANK_MAP_SHORT = { [BANK_AUTOMATION]: 'AUTO' };
 
 function bankMapFamily(padMode) {
-    return padMode === PAD_MODE_CONDUCT ? 'conduct' : padMode === PAD_MODE_DRUM ? 'drum' : 'melodic';
+    return padMode === PAD_MODE_CONDUCT ? 'conduct' : padMode === PAD_MODE_DRUM ? 'drum'
+         : padMode === PAD_MODE_AUDIO ? 'audio' : 'melodic';
 }
 
 /* The map for one track: 4 columns of { label, cells: [{ bank, name } | null x4] };
@@ -228,7 +254,8 @@ export function bankPadMapForMode(padMode, t) {
     const acts = BANK_MAP_ACTIONS[fam];
     for (const a in acts) {
         const p = acts[a];
-        if (!cols[p[0]].cells[p[1]]) cols[p[0]].cells[p[1]] = { bank: null, action: a, name: BANK_MAP_ACTION_NAMES[a] };
+        if (!cols[p[0]].cells[p[1]]) cols[p[0]].cells[p[1]] = { bank: null, action: a,
+            name: (fam === 'audio' ? BANK_MAP_ACTION_NAMES_AUDIO : BANK_MAP_ACTION_NAMES)[a] };
     }
     return cols;
 }
@@ -288,6 +315,14 @@ export function bankMapModuleAt(route, padMode, col, row) {
     if (padMode === PAD_MODE_CONDUCT) return null;
     const p = BANK_MAP_MODULE_PADS.find((m) => m.col === col && m.row === row);
     if (!p) return null;
+    /* Audio: FX 1-4 lit, the MIDI FX pad dark (nothing on the track receives
+     * MIDI — Q4, Josh 2026-10-27: "agreed"), the instrument pad the AUDIO
+     * editor. */
+    if (padMode === PAD_MODE_AUDIO) {
+        if (p.comp === 'midi_fx1') return null;
+        if (p.comp === 'synth') return Object.assign({}, p, { label: 'AUDIO' });
+        return p;
+    }
     if (route === 2) return p.comp === 'midi_fx1' ? p : null;
     return p;
 }
@@ -332,6 +367,9 @@ export function _clipIsEmpty(t, c) {
 }
 
 export function clipHasContent(t, c) {
+    /* An Audio clip with a sample has content, steps or not (a Loop clip has
+     * none and still plays). */
+    if (S.trackPadMode[t] === PAD_MODE_AUDIO && S.auInfo[t] && S.auInfo[t][c] && S.auInfo[t][c].name) return true;
     const s = S.clipSteps[t][c];
     for (let i = 0; i < NUM_STEPS; i++) if (s[i]) return true;
     return false;

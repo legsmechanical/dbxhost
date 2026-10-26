@@ -42,7 +42,9 @@ import {
     TPS_VALUES, BANKS, PAD_MODE_DRUM, BANK_SOUND, isSoundBank, BANK_AUTOMATION, BANK_CHORD,
     INSTR_MOVE_MAX, INSTR_SCHWUNG, INSTR_MIDI_CH, INSTR_TRACK, moveInstrOwner, moveInstrDuplicates,
     MoveRec, LED_OFF, parseActionRaw, INSTR_NONE, ROUTE_NONE,
-    INSTR_CONDUCT, PAD_MODE_CONDUCT, PAD_MODE_MELODIC_SCALE, DEFAULT_TRACK_OCTAVE } from './ui_constants.mjs';
+    INSTR_CONDUCT, PAD_MODE_CONDUCT, PAD_MODE_MELODIC_SCALE, DEFAULT_TRACK_OCTAVE,
+    INSTR_AUDIO, PAD_MODE_AUDIO } from './ui_constants.mjs';
+import { auReadTrack, auForgetTrack } from './ui_audio.mjs';
 import { Red } from '/data/UserData/schwung/shared/constants.mjs';
 
 import { S } from './ui_state.mjs';
@@ -1296,6 +1298,9 @@ function readTrackConfig(t) {
     /* Bulk read (project load): re-derive after the last track, below. */
     const pm = dspGet('t' + t + '_pad_mode');
     if (pm !== null && pm !== undefined) S.trackPadMode[t] = parseInt(pm, 10) | 0;
+    /* An Audio track: every clip's sample (ui_audio). */
+    if (S.trackPadMode[t] === PAD_MODE_AUDIO) auReadTrack(t);
+    else if (S.auInfo[t].some((x) => x)) auForgetTrack(t);
     const tvo = dspGet('t' + t + '_track_vel_override');
     if (tvo !== null && tvo !== undefined) S.trackVelOverride[t] = parseInt(tvo, 10) | 0;
     const trn = dspGet('t' + t + '_transpose');
@@ -1333,6 +1338,7 @@ export function instrValueFor(t) {
      * finds it again — so asking the route what this track IS would answer with
      * the parked destination and the picker would open on the wrong row. */
     if (S.trackPadMode[t] === PAD_MODE_CONDUCT) return INSTR_CONDUCT;
+    if (S.trackPadMode[t] === PAD_MODE_AUDIO) return INSTR_AUDIO;
     if (S.trackRoute[t] === 2) {
         const mt = S.trackMidiTo[t] | 0;
         if (mt > 0) return INSTR_TRACK + (mt - 1);
@@ -1353,7 +1359,7 @@ export function applyInstrChoice(t, v) {
      * Arriving here means a caller skipped that — refuse rather than write a
      * route for it, which would move the track's destination as a side effect
      * of choosing a type. */
-    if (v === INSTR_CONDUCT) return false;
+    if (v === INSTR_CONDUCT || v === INSTR_AUDIO) return false;
     if (v === INSTR_SCHWUNG) { applyTrackConfig(t, 'route', 0); return; }
     /* None: a Schwung track with nothing loaded (the UI's gated path is
      * commitInstrPick; this is the bare setter). */

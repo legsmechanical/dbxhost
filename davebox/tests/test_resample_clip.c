@@ -117,6 +117,20 @@ int main(void) {
     hx_set_param(h, "resample_clear", "1");
     hx_destroy(h);
 
+    /* ---- src 2: the instrument BEFORE its FX (an Audio-track bounce) ---- */
+    h = rig(); inst = (seq8_instance_t *)h->inst;
+    hx_set_param(h, "resample_clip", "1 0 1 0 0 2 |/x/pre.wav");
+    for (i = 0; i < 40 && inst->resample_state != RS_RECORDING; i++) hx_render(h, 1);
+    hx_stub_capture_src(&kind, &index);
+    HX_ASSERT(inst->resample_state == RS_RECORDING && kind == MOVE_CAPTURE_SLOT_PRE && index == 1,
+              "src 2 did not take track 2's instrument before its FX");
+    hx_set_param(h, "transport", "stop");
+    hx_set_param(h, "resample_clear", "1");
+    hx_set_param(h, "t1_route", "move");
+    hx_set_param(h, "resample_clip", "1 0 1 0 0 2 |/x/pre.wav");
+    HX_ASSERT(!inst->playing && geti(h, "resample_err") == RS_ERR_ROUTE, "src 2 on a Move instrument was taken");
+    hx_destroy(h);
+
     /* ---- refusals: nothing launches ---- */
     h = rig(); inst = (seq8_instance_t *)h->inst;
     hx_set_param(h, "t1_route", "move");

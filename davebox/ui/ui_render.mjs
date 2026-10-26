@@ -24,7 +24,7 @@ import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
 import {
     BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_CONFIG,
-    INSTR_SCHWUNG, INSTR_MOVE_MAX, INSTR_MIDI_CH, INSTR_TRACK, INSTR_CONDUCT,
+    INSTR_SCHWUNG, INSTR_MOVE_MAX, INSTR_MIDI_CH, INSTR_TRACK, INSTR_CONDUCT, INSTR_AUDIO,
     NOTE_KEYS, NUM_CLIPS, NUM_STEPS, NUM_TRACKS, PAD_MODE_CONDUCT, PAD_MODE_DRUM,
     SCALE_DISPLAY, SCENE_LETTERS, TPS_VALUES, STEP_ITER_LIST,
     col4, col5,
@@ -41,7 +41,7 @@ import { drawAutoMarkAt,
     pf3Print, pf3Width, drawArcKnobAt, hdrPrint, hdrWidth, bigPrint, bigWidth, bigFit,
     MV_ROW0_Y, MV_KH, MV_BIG_H, MV_ZOOM_X, MV_ZOOM_Y, MV_ZOOM_W, MV_ZOOM_H,
     drawKitHintRow, enumOverlayWouldDraw, MV_FOOTER_Y, MV_BAR_Y,
-    drawKitBigValue, drawKitPrompt, drawKitChip, kitChipWidth, drawBrackets, kitLaneFocusRowReset
+    drawKitBigValue, drawKitPrompt, drawKitChip, kitChipWidth, drawBrackets, kitLaneFocusRowReset, drawKitList
 } from './ui_movy.mjs';
 import {
     drawGlobalMenu, drawStateWipeConfirm, drawExitConfirm, drawTypeChangeConfirm, drawModuleSwapConfirm, drawRecordBlockedDialog, drawBpmMoveInfo,
@@ -70,6 +70,202 @@ import { seqAutoTargetForKnob, fmtInstr } from './ui_constants.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
+import { isAudioTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
+         auPos, auLazyState, auSelSlice, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells,
+         auFmtTime, auEnd, AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN } from './ui_audio.mjs';
+import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
+import { drawAudioAsk } from './ui_dialogs.mjs';
+import { drawAudioChooser } from './ui_audio_chooser.mjs';
+
+/* ---- AUDIO: the waveform (ui_audio) ----
+ * The clip's sample in a rect: its body, every slice start a dotted tick,
+ * the selected slice bracketed (its start and its end), Start..End's outside
+ * hatched off, the playhead a solid line, the editor's cursor a line with a
+ * notch. Marks are drawn in both inks (a dotted mark alternates white and
+ * black, a solid one is edged in black) so they read over a loud passage as
+ * well as a quiet one (found on the device). `A`/`B` = the frames shown
+ * (default the whole sample). */
+function drawAudioWave(t, c, x, y, w, h, opts) {
+    const o = opts || {};
+    const i = auInfo(t, c);
+    const fr = i.nframes | 0;
+    const A = o.A != null ? o.A : 0, B = o.B != null ? o.B : fr;
+    const cols = fr ? auWaveColumns(t, c, w, A, B) : null;
+    const mid = y + Math.floor(h / 2);
+    const fx = (f) => x + Math.floor((f - A) / (B - A) * w);
+    const inView = (px) => px >= x && px < x + w;
+    if (!cols) {
+        const msg = i.state === 1 ? 'LOADING' : i.name ? '' : 'NO SAMPLE';
+        if (msg) ovwPrint(x + Math.floor((w - ovwWidth(msg)) / 2), mid - 2, msg, 1);
+        else fill_rect(x, mid, w, 1, 1);
+        return;
+    }
+    for (let k = 0; k < w; k++) {
+        const hh = Math.max(0, Math.round(cols[k] * (h - 1) / 2));
+        fill_rect(x + k, mid - hh, 1, hh * 2 + 1, 1);
+    }
+    /* outside Start..End: hatched off */
+    const rs = i.rstart, re = auEnd(i);
+    for (let k = 0; k < w; k++) {
+        const f = A + (B - A) * (k + 0.5) / w;
+        if (f < rs || f > re) for (let j = y; j < y + h; j++) if (((k + j) & 1) === 0) set_pixel(x + k, j, 0);
+    }
+    if (i.mode === AU_MODE_SLICE && !o.noMarks) {
+        const mk = auMarks(t, c);
+        const sel = o.sel != null ? o.sel : -1;
+        for (let k = 0; k < mk.length; k++) {
+            const px = fx(mk[k][0]);
+            if (!inView(px) || k === sel) continue;
+            for (let j = y; j < y + h; j++) set_pixel(px, j, (j - y) & 1 ? 0 : 1);
+        }
+        if (sel >= 0 && sel < mk.length) {
+            const pa = fx(mk[sel][0]), pb = Math.min(x + w - 1, fx(mk[sel][1]));
+            if (inView(pa)) {
+                fill_rect(pa - 1, y, 3, h, 0);
+                fill_rect(pa, y, 1, h, 1);
+                fill_rect(pa, y, 3, 1, 1); fill_rect(pa, y + h - 1, 3, 1, 1);
+            }
+            if (inView(pb)) {
+                fill_rect(pb - 1, y, 3, h, 0);
+                fill_rect(pb, y, 1, h, 1);
+                fill_rect(pb - 2, y, 3, 1, 1); fill_rect(pb - 2, y + h - 1, 3, 1, 1);
+            }
+        }
+    }
+    if (o.cur != null) {
+        const px = fx(o.cur);
+        if (inView(px)) {
+            for (let j = y; j < y + h; j++) set_pixel(px, j, ((j - y) >> 1) & 1 ? 0 : 1);
+            fill_rect(px - 1, y - 3, 3, 1, 1);
+            set_pixel(px, y - 2, 1);
+        }
+    }
+    const p = auPos();
+    if (p.t === t && p.on) {
+        const px = fx(p.frame);
+        if (inView(px)) {
+            fill_rect(px, y - 1, 1, h + 2, 0);
+            fill_rect(px + 1, y - 1, 1, h + 2, 1);
+        }
+    }
+}
+
+/* Track View at rest on an Audio track: the clip's sample — its waveform,
+ * slice marks and playhead (v1 default, Josh 2026-10-27). */
+function drawAudioTrackRest(t) {
+    const c = auClipOf(t), i = auInfo(t, c);
+    (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankHeaderName(t, S.activeBank), false, true);
+    const head = i.mode === AU_MODE_SLICE ? 'Slice ' + (auSelSlice(t) + 1) + '/' + i.n + '  ' : 'Loop  ';
+    ovwPrint(4, 9, head + auSampleName(t, c), 1);
+    drawInfoRow2();
+    drawOverviewTracks(overviewHints());
+    /* the sample where a drum track has its position bar, under the tracks
+     * (found on the device: a taller one ran into the track numbers) */
+    /* the waveform in Loop mode only; slices are sequenced, so Slice mode
+     * shows the page bar and playhead like any track (Josh, 2026-10-28) */
+    if (i.mode === AU_MODE_SLICE) drawPositionBar(t);
+    else drawAudioWave(t, c, 4, 49, 120, 7, {});
+}
+
+/* The AUDIO editor (ui_audio_editor): the clip's audio on the kit page, a
+ * page per jog detent. */
+function drawAudioPanel() {
+    const ed = S.auPanel;
+    clear_screen();                      /* it opens over the sound menu */
+    const t = ed.t;
+    /* The page's own name — the header has room for no more beside the
+     * track tag (found on the device: "ALL SLICES 4/4" was cut). */
+    const name = auPanelTitle(ed);
+    const title = name === 'CLIP' ? 'CLIP ' + String.fromCharCode(65 + auClipOf(t)) : name;
+    drawKitPage(title, auPanelCells(ed), false, [['jog', 'page'], ['tch+clk', 'open']]);
+}
+
+/* The WAVE editor (ui_audio_editor): the clip's sample — CLICK TO LOAD
+ * SAMPLE in the click corners with none, the loop with its Start / End and
+ * Pitch / Gain in Loop mode, the chop editor in Slice mode, a Lazy chop, the
+ * Shift + click picker, and the questions over it. */
+function drawAudioWaveEditor() {
+    const ed = S.auEditor, t = ed.t, c = ed.c, i = auInfo(t, c);
+    if (ed.ask) {
+        const n = ed.ask.n != null ? ed.ask.n : i.hand;
+        if (ed.ask.kind === 'keep') drawAudioAsk('LAZY CHOP', ['Keep ' + n + ' new chop' + (n === 1 ? '' : 's') + '?'], ed.ask.sel);
+        else drawAudioAsk('MANUAL CHOP', ['Replace chops?', 'The ' + i.hand + ' chops you made go.'], ed.ask.sel);
+        return;
+    }
+    clear_screen();
+    if (ed.pick) {
+        drawBankHeading(ed.pick.level === 1 ? 'WAVE' : 'CHOP SAMPLE', false);
+        drawKitList(auPickRows(ed), ed.pick.sel, { h: MV_FOOTER_Y - 11 });
+        drawKitHintRow(MV_FOOTER_Y, ed.pick.editEven ? [['jog', 'count'], ['clk', 'set']] : [['clk', 'pick'], ['back', ed.pick.level === 1 ? 'exit' : 'up']]);
+        return;
+    }
+    auWaveView(ed);
+    const sel = auSelSlice(t);
+    const rt = i.rate;
+    const right = (txt) => ovwPrint(124 - ovwWidth(txt), 10, txt, 1);
+    if (ed.mode === 'lazy') {
+        const lz = auLazyState();
+        drawBankHeading('LAZY CHOP', false);
+        ovwPrint(4, 10, lz.state === AU_LAZY_RUN ? 'TAP THE WHITE PAD' : 'TAP PAD 1 TO START', 1);
+        if (lz.state === AU_LAZY_RUN) right(lz.n + ' CHOP' + (lz.n === 1 ? '' : 'S'));
+        drawAudioWave(t, c, 0, 20, 128, 30, { A: 0, B: i.nframes, sel: -1 });
+        drawKitHintRow(MV_FOOTER_Y, [['pad', lz.state === AU_LAZY_ARMED ? 'play' : 'chop'], ['back', 'stop']]);
+        return;
+    }
+    const sub = auWaveSub(ed);
+    if (sub === 'empty') {
+        /* the click corners round the empty waveform (Josh: "the waveform
+         * view should show the "click" corners and say click to load sample") */
+        drawBankHeading('WAVE', false);
+        drawBrackets(6, 18, 116, 34);
+        const msg = i.state === 1 ? 'LOADING' : 'CLICK TO LOAD SAMPLE';
+        ovwPrint(64 - Math.floor(ovwWidth(msg) / 2), 33, msg, 1);
+        drawKitHintRow(MV_FOOTER_Y, [['clk', 'load'], ['back', 'exit']]);
+        return;
+    }
+    if (sub === 'loop') {
+        drawBankHeading('WAVE  LOOP', false);
+        ovwPrint(4, 10, 'S ' + auFmtTime(i.rstart, rt), 1);
+        right('E ' + auFmtTime(auEnd(i), rt));
+        /* K4 Pitch, K5 Gain: their values between Start and End */
+        const pg = (i.pitch > 0 ? '+' : '') + i.pitch + 'ST ' + (i.gain > 0 ? '+' : '') + i.gain + 'DB';
+        ovwPrint(64 - Math.floor(ovwWidth(pg) / 2), 10, pg, 1);
+        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, noMarks: true, cur: ed.cur });
+        drawKitHintRow(MV_FOOTER_Y, [['k2', 'zoom'], ['sh+clk', 'menu']]);
+        return;
+    }
+    const mk = auMarks(t, c);
+    drawBankHeading('WAVE  ' + (sel + 1) + '/' + mk.length, false);
+    const m = mk[sel];
+    if (m) {
+        ovwPrint(4, 10, 'S ' + auFmtTime(m[0], rt), 1);
+        /* at home the end follows the next slice's start: "NEXT" (Josh) */
+        right(m[1] === auEdHome(ed, sel) ? 'E NEXT' : 'E ' + auFmtTime(m[1], rt));
+    }
+    drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel, cur: ed.cur });
+    /* two hints fit: Shift + click is the one nobody would guess (found on
+     * the device: a third was cut off) */
+    drawKitHintRow(MV_FOOTER_Y, [['clk', 'add'], ['sh+clk', 'menu']]);
+}
+
+/* An Audio track's banks (Josh, 2026-10-27): the CLIP bank mirrors ALL LANES
+ * in Slice mode — Res · Strch · Shift/Nudge · Quant · Crop · InQnt ·
+ * Dir/Revrs · (free) — over the melodic clip's own data, and holds Revrs ·
+ * Nudge · JmpQ in Loop mode; NOTE FX and DELAY lose what moves a pitch (a
+ * pitch is a slice): their drum form. `cells` are the melodic bank's. */
+function audioBankCells(bank, cells) {
+    const t = S.activeTrack;
+    if (!isAudioTrack(t)) return cells;
+    const B = { kind: 'blank', label: '' };
+    if (bank === 0) {
+        if (!audioSliceMode(t)) return auLoopBankCells(t);
+        const q = kitCellForKnob(BANKS[1].knobs[3], S.bankParams[t][1][3]);
+        return [cells[0], cells[1], cells[2], q, cells[5], cells[4], cells[6], B];
+    }
+    if (bank === 1) return cells.map((c, k) => ((k === 0 || k === 1 || k === 7) ? B : c));
+    if (bank === 3) return cells.map((c, k) => ((k === 4 || k === 7) ? B : c));
+    return cells;
+}
 
 /* ------------------------------------------------------------------ */
 /* Parameter bank definitions                                           */
@@ -136,6 +332,7 @@ export function refreshInstrAbbrev() {
      * whatever instrument it used to point at — e.g. [OBXD] on a track that
      * plays nothing. */
     else if (v === INSTR_CONDUCT)                            a = 'CNDT';
+    else if (v === INSTR_AUDIO)                              a = 'AUD';
     S.instrAbbrev = String(a || '--').toUpperCase();
     S.instrAbbrevAt = S.clockMs + 1000;
 }
@@ -1573,6 +1770,7 @@ export function coveredByMoreThanMenu() {
         S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.confirmModuleChange || S.bpmMoveInfo || S.recordBlockedDialog ||
         S.confirmConvertToDrum || S.confirmConvertToConduct ||
         S.confirmBakeScene || S.confirmBake || S.sampleMenu || S.confirmResample || S.confirmMacroClear || S.tapTempoOpen ||
+        S.auChooser || S.auPanel || S.auEditor ||
         (S.sessionView && (S.loopHeld || S.perfViewLocked)));
 }
 
@@ -1587,6 +1785,7 @@ export function soundModeCovered() {
         S.confirmXpose || S.confirmBakeScene || S.confirmBake || S.sampleMenu || S.confirmResample ||
         S.confirmMacroClear ||   /* MACROS bank clear — opened FROM sound mode, so it must cover it */
         S.globalMenuOpen || S.tapTempoOpen ||
+        S.auChooser || S.auPanel || S.auEditor ||   /* the Audio chooser, the AUDIO editor, its slice editor */
         (S.sessionView && (S.loopHeld || S.perfViewLocked)));
 }
 
@@ -1755,8 +1954,13 @@ export function heldStepCells() {
          * (ui_input_cc.mjs, the heldStep knob branch). `ringBound` tells the ring
          * rule that, because it used to infer "dead" from the shape and leave two
          * working pitch controls dark. */
-        { kind: 'blank', label: 'Note', name: 'Note', bigText: noteLabel, ringBound: true },
-        { kind: 'blank', label: 'Oct',  name: 'Note', bigText: noteLabel, ringBound: true },
+        /* AUDIO: K1 is the step's slice (Q6, Josh 2026-10-27: "agreed"); no octave. */
+        isAudioTrack(t)
+            ? { kind: 'blank', label: 'Slice', name: 'Slice', bigText: 'Slice ' + (root - 35), ringBound: true }
+            : { kind: 'blank', label: 'Note', name: 'Note', bigText: noteLabel, ringBound: true },
+        isAudioTrack(t)
+            ? { kind: 'blank', label: '' }
+            : { kind: 'blank', label: 'Oct',  name: 'Note', bigText: noteLabel, ringBound: true },
         { kind: 'valsq', label: 'Leng', name: 'Length',
           text: fmtStepLen(_gateSteps) },
         { kind: 'arc', label: 'Vel', name: 'Velocity', text: String(S.stepEditVel),
@@ -1889,6 +2093,9 @@ function drawUIBody() {
     if (S.sessionOverlayHeld) { drawSessionOverview(); return; }
     if (S.daveBox) { drawDaveBox(); return; }
     if (miActive()) { drawMidiImport(); return; }
+    /* AUDIO: the sample chooser, the AUDIO editor and its slice editor. */
+    if (S.auChooser) { drawAudioChooser(); return; }
+    if (S.auPanel) { if (S.auEditor) drawAudioWaveEditor(); else drawAudioPanel(); return; }
     if (S.snapshotPicker) { drawSnapshotPicker(); return; }
     if (S.templateManager || (S.templateNameEntry && templateTextEntryUp())) { drawTemplateManager(); return; }
     /* ⭑ The exit confirm outranks the picker (2026-09-16). Hold-Back already
@@ -2553,7 +2760,7 @@ function drawUIBody() {
             if (_fc.hi) _focusIdx = cells.length;
             cells.push(_fc.cell);
         }
-        drawKitPage(bankHeaderName(S.activeTrack, 1), markKnobAlts(cells, 1), false, bankPageHints(1), _focusIdx);
+        drawKitPage(bankHeaderName(S.activeTrack, 1), audioBankCells(1, markKnobAlts(cells, 1)), false, bankPageHints(1), _focusIdx);
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 3) {
         /* Drum MIDI DLY: K1-K4 same as melodic, K5=Gate, K6=Clk, K7=Retrg, K8 empty.
          * Drum has no Pfb (no per-lane pitch) and no Rnd (no random pitch fb),
@@ -2642,9 +2849,11 @@ function drawUIBody() {
             markSeqAuto(cell, bank, k, false, _focus);
             cells.push(cell);
         }
-        drawKitPage(bankHeaderName(S.activeTrack, bank), markKnobAlts(cells, bank), false, bankPageHints(bank), _focusIdx);
+        drawKitPage(bankHeaderName(S.activeTrack, bank), audioBankCells(bank, markKnobAlts(cells, bank)), false, bankPageHints(bank), _focusIdx);
         }
 
+    } else if (isAudioTrack(S.activeTrack)) {
+        drawAudioTrackRest(S.activeTrack);
     } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
         /* Drum Track View — idle state */
         const t         = S.activeTrack;

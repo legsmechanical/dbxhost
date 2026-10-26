@@ -4,7 +4,9 @@ import { S, conductorTrackIdx } from './ui_state.mjs';
 import { keyRootName } from './ui_chord.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { STATE_VERSION, SCALE_DISPLAY,
-         NUM_CLIPS, PAD_MODE_DRUM, PAD_MODE_CONDUCT } from './ui_constants.mjs';
+         NUM_CLIPS, PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_AUDIO } from './ui_constants.mjs';
+import { auConvertOffered } from './ui_audio_convert.mjs';
+import { engineLoadedModule, slotIndex } from './ui_engine.mjs';
 /* ⭑ drawMenuList and menuLayoutDefaults are GONE from this file as of the
  * 2026-08-15 cohesion pass — every list here renders on the kit now (§5.0).
  * The header and the button family stay: those are the dialog chassis, which
@@ -134,9 +136,39 @@ function drawSaveStateConfirm() {
 
 export function drawConvertToDrumConfirm() {
     clear_screen();
-    dlgHeader('CONVERT');
-    dlgLines(['Warning:', 'Existing notes may be lost.', 'Proceed?']);
+    /* -> Audio on a track with an instrument and notes (ui_audio_convert). */
+    if (S.confirmConvertAudio === 'resample') {
+        dlgHeader('TO AUDIO');
+        dlgLines(['Resample the clips?', 'Yes: each plays its audio', 'No: the notes are cleared']);
+    } else if (S.confirmConvertAudio === 'audio') {
+        dlgHeader('TO AUDIO');
+        dlgLines(['Warning:', 'Existing notes will be lost.', 'Proceed?']);
+    } else if (S.confirmConvertAudio === 'leave') {
+        dlgHeader('LEAVE AUDIO');
+        dlgLines(['Warning:', 'Steps and samples will', 'be cleared. Proceed?']);
+    } else {
+        dlgHeader('CONVERT');
+        dlgLines(['Warning:', 'Existing notes may be lost.', 'Proceed?']);
+    }
     drawYesNoRow(S.confirmConvertToDrumSel);
+}
+
+function drawPurgeConfirm() {
+    const p = S.confirmPurge;
+    clear_screen();
+    dlgHeader('PURGE SAMPLES');
+    dlgLines(['Remove ' + p.files.length + ' unused sample' + (p.files.length === 1 ? '' : 's'),
+              '(' + (p.bytes / 1048576).toFixed(1) + ' MB) from this project?']);
+    drawYesNoRow(S.confirmPurgeSel);
+}
+
+/* The waveform editor's questions (ui_audio_editor): "Keep N new chops?",
+ * "Replace chops?". sel 0 = Yes. */
+export function drawAudioAsk(title, lines, sel) {
+    clear_screen();
+    dlgHeader(title);
+    dlgLines(lines);
+    drawYesNoRow(sel);
 }
 
 export function drawConvertToConductConfirm() {
@@ -183,7 +215,12 @@ function drawExportDoneDialog() {
     const path = S.exportDonePath || '';
     const LIMIT = 124;
     /* A MIDI FX module the export could not include takes the last line. */
-    const fx = (S.exportMidiFxLeftOut || []).length ? 'No MIDI FX: T' + S.exportMidiFxLeftOut.join(' T') : '';
+    /* Audio tracks are left out (Q5, Josh 2026-10-27: "leave it out for now"),
+     * and the message says so; a MIDI FX module left out says so too. */
+    const au = [];
+    for (let t = 0; t < 8; t++) if (S.trackPadMode[t] === PAD_MODE_AUDIO) au.push(t + 1);
+    const fx = au.length ? 'No Audio: T' + au.join(' T')
+             : (S.exportMidiFxLeftOut || []).length ? 'No MIDI FX: T' + S.exportMidiFxLeftOut.join(' T') : '';
     let y = 14, lines = 0, i = 0;
     while (i < path.length && lines < (fx ? 3 : 4)) {
         let n = 1;
@@ -247,6 +284,7 @@ export function drawGlobalMenu() {
     if (S.tapTempoOpen)        { drawTapTempoScreen();       return; }
     if (S.exportDoneDialog)    { drawExportDoneDialog();     return; }
     if (S.confirmClearSession) { drawClearSessionConfirm();  return; }
+    if (S.confirmPurge)        { drawPurgeConfirm();         return; }
     if (S.confirmSaveState)    { drawSaveStateConfirm();     return; }
     if (S.confirmConvertToDrum){ drawConvertToDrumConfirm(); return; }
     if (S.confirmConvertToConduct){ drawConvertToConductConfirm(); return; }
@@ -1025,6 +1063,7 @@ export function showMenuInfo() {
  * lingering enum edit doesn't replay. Call on Yes, No, and Back-cancel. */
 export function closeConvertConfirm() {
     S.confirmConvertToDrum = false;
+    S.confirmConvertAudio = false;
     S.confirmConvertToConduct = false;
     S.menuInfoLines = [];
     if (S.globalMenuState) S.globalMenuState.editing = false;
@@ -2296,13 +2335,36 @@ export function requestTrackModeChange(t, target) {
         showMenuInfo('Stop playback', 'to change the', 'track type.');
         return;
     }
+    /* -> AUDIO (Instmt/Dest "Audio"). A track that plays an instrument and
+     * has clips is OFFERED a resample first: each clip recorded and loaded
+     * back as its audio (Josh, 2026-10-26). Otherwise notes are cleared after
+     * a confirm (Q2, Josh 2026-10-27: "clear them"); an empty track converts
+     * at once. */
+    if (target === PAD_MODE_AUDIO) {
+        const hasSynth = S.trackRoute[t] === 1 || (S.trackRoute[t] === 0 && !!engineLoadedModule(slotIndex(t), 'synth'));
+        if (auConvertOffered(t, hasSynth)) {
+            S.confirmConvertToDrum = true; S.confirmConvertToDrumSel = 0;
+            S.confirmConvertTrack = t; S.confirmConvertAudio = 'resample';
+            return;
+        }
+        let hasData = false;
+        for (let c = 0; c < NUM_CLIPS; c++)
+            if (S.clipNonEmpty[t][c] || S.drumClipNonEmpty[t][c]) { hasData = true; break; }
+        if (hasData) {
+            S.confirmConvertToDrum = true; S.confirmConvertToDrumSel = 1;
+            S.confirmConvertTrack = t; S.confirmConvertAudio = 'audio';
+        } else {
+            S.pendingTrackConvert = { t: t, toAudio: true };
+        }
+        return;
+    }
     if (target === PAD_MODE_DRUM) {
         let hasData = false;
         for (let c = 0; c < NUM_CLIPS; c++)
             if (S.clipNonEmpty[t][c]) { hasData = true; break; }
         if (hasData) {
             S.confirmConvertToDrum = true; S.confirmConvertToDrumSel = 1;
-            S.confirmConvertTrack = t;
+            S.confirmConvertTrack = t; S.confirmConvertAudio = false;
         } else {
             S.pendingTrackConvert = { t: t, toDrum: true };
         }

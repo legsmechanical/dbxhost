@@ -297,10 +297,26 @@ typedef struct move_host_ext_v1 {
      * exactly capture_start. Everything else -- contexts, timing, the one-take
      * rule, capture_stop -- is capture_start's. */
     int  (*capture_start_src)(const char *path, uint32_t frames, int kind, int index);
+
+    /* AUDIO INTO A CHAIN SLOT: hand the host one block of interleaved stereo
+     * int16 for slot `slot`, mixed into that slot's instrument output BEFORE
+     * its FX -- so it runs through the slot's FX, fader, pan, mute, solo and
+     * sends exactly like the slot's own instrument (and a Dry take records
+     * it). Call it from render_block only; audio handed over in render k is
+     * heard in k+1, the block a note sent in k is voiced in. Several calls for
+     * one slot in one render add up. A slot with no instrument still plays
+     * what it is fed, and is kept awake while it is fed and while its FX ring
+     * out. Returns 1 taken, 0 refused (outside render_block, a bad slot). */
+    int  (*slot_audio_feed)(int slot, const int16_t *lr, uint32_t frames);
 } move_host_ext_v1_t;
 
 #define MOVE_CAPTURE_MIX   0
 #define MOVE_CAPTURE_SLOT  1
+/* capture_start_src: chain slot n's INSTRUMENT, before its FX -- its output at
+ * its synth level, no FX, fader, pan or sends (to bounce an instrument to audio
+ * and keep its effects live). A block the instrument does not render is
+ * silence. On a slot rendering without separate FX it is the slot's output. */
+#define MOVE_CAPTURE_SLOT_PRE 2
 
 /* One event of an offline MIDI FX job (midi_fx_offline_*). */
 typedef struct move_midi_fx_offline_ev {

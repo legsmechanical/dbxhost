@@ -48,7 +48,7 @@ const got = (S.globalMenuItems || []).map((it) => it.type === 'divider' ? '---' 
 const want = ['BPM', '---', 'Metro', 'Metro Vol', '---',
     'Clock Follow', 'Clock Out', '---', 'Groove', 'Groove Amt', '---', 'Key', 'Scale', 'Scale Aware', '---',
     'Launch', 'Beat Marks', 'Card Hold', '---', 'MIDI In', '---', 'Projects...', 'Save as Template...', '---',
-    'Save state', 'Load state', 'Clear Sess', '---', 'Export to Ableton', '---',
+    'Save state', 'Load state', 'Clear Sess', '---', 'Export to Ableton', 'Purge samples', '---',
     'Suspend session', 'Quit', '---', 'Host Settings...', 'Move Settings...', '---', 'Daves', 'Open Your Dave Box'];
 if (JSON.stringify(got) !== JSON.stringify(want)) {
     console.error('  FAIL — the global menu order:\n    got  ' + got.join(' | ') + '\n    want ' + want.join(' | '));

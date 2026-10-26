@@ -70,6 +70,7 @@
 #include "host/link_audio.h"
 #include "host/shadow_sampler.h"
 #include "host/sampler_take_tap.h"
+#include "host/slot_feed.h"
 #include "host/shadow_transport.h"
 #include "host/shadow_set_pages.h"
 #include "host/shim_worker.h"
@@ -214,6 +215,14 @@ static uint32_t overtake_slot_set_refused = 0;  /* ...and refused */
 static uint32_t overtake_render_seq       = 0;  /* bumped before each overtake render_block */
 static uint8_t  overtake_in_render        = 0;
 static uint32_t overtake_last_set_seq[SHADOW_CHAIN_INSTANCES];
+/* Audio the overtake DSP hands each slot (slot_feed.h): filled in its render,
+ * mixed by the slot in the next frame's render task. */
+static slot_feed_t shadow_slot_feed[SHADOW_CHAIN_INSTANCES];
+/* The overtake sequence a feed must carry to be THIS frame's: the current one
+ * when the overtake DSP rendered last frame, else 0 (none). Without it a block
+ * handed over before the DSP unloaded (or while it is not rendering) stayed
+ * "current" and was summed again every frame -- a buzz until the next load. */
+static uint32_t shadow_feed_seq = 0, shadow_feed_seq_seen = 0;
 static uint32_t overtake_last_note_seq[SHADOW_CHAIN_INSTANCES];
 static uint32_t overtake_set_then_note    = 0;
 static uint32_t overtake_note_then_set    = 0;
@@ -610,6 +619,7 @@ static uint32_t preview_pos = 0;
 static int preview_channels = 0;
 static int preview_format = 0;  /* PCM or FLOAT */
 static int preview_bits = 0;
+static int preview_big = 0;     /* AIFF: big-endian PCM */
 static int preview_playing = 0;
 static float preview_gain = 0.5f;
 
@@ -625,6 +635,7 @@ static void preview_close(void) {
     preview_channels = 0;
     preview_format = 0;
     preview_bits = 0;
+    preview_big = 0;
     preview_playing = 0;
 }
 
@@ -647,14 +658,46 @@ static void preview_play(const char *path) {
     if (preview_map == MAP_FAILED) { preview_map = NULL; preview_close(); return; }
 
     const uint8_t *raw = (const uint8_t *)preview_map;
-    if (memcmp(raw, "RIFF", 4) != 0 || memcmp(raw + 8, "WAVE", 4) != 0) {
-        preview_close(); return;
-    }
-
     uint32_t offset = 12;
     uint16_t audio_fmt = 0, nch = 0, bps = 0;
     uint32_t data_off = 0, data_sz = 0;
     int found_fmt = 0, found_data = 0;
+    int big = 0;
+
+    /* AIFF / AIFC: integer PCM, big-endian ('NONE' / 'twos') or little
+     * ('sowt'). Chunk sizes are big-endian; the rate is ignored, as it is for
+     * WAV. */
+    if (memcmp(raw, "FORM", 4) == 0 && (memcmp(raw + 8, "AIFF", 4) == 0 || memcmp(raw + 8, "AIFC", 4) == 0)) {
+        int aifc = memcmp(raw + 8, "AIFC", 4) == 0;
+        big = 1;
+        while (offset + 8 <= preview_map_size) {
+            const uint8_t *c = raw + offset;
+            uint32_t csz = ((uint32_t)c[4] << 24) | ((uint32_t)c[5] << 16) | ((uint32_t)c[6] << 8) | c[7];
+            if (memcmp(c, "COMM", 4) == 0 && csz >= 18 && offset + 8 + 18 <= preview_map_size) {
+                nch = (uint16_t)((c[8] << 8) | c[9]);
+                bps = (uint16_t)((c[14] << 8) | c[15]);
+                audio_fmt = PREVIEW_WAV_FORMAT_PCM;
+                if (aifc && csz >= 22 && offset + 8 + 22 <= preview_map_size) {
+                    if (memcmp(c + 26, "sowt", 4) == 0) big = 0;
+                    else if (memcmp(c + 26, "NONE", 4) != 0 && memcmp(c + 26, "twos", 4) != 0) audio_fmt = 0;
+                }
+                found_fmt = 1;
+            } else if (memcmp(c, "SSND", 4) == 0 && csz >= 8) {
+                uint32_t skip = ((uint32_t)c[8] << 24) | ((uint32_t)c[9] << 16) | ((uint32_t)c[10] << 8) | c[11];
+                data_off = offset + 16 + skip;
+                data_sz  = csz - 8 - skip;
+                found_data = 1;
+                break;
+            }
+            offset += 8 + csz;
+            if (csz & 1) offset++;
+        }
+        if (!found_fmt || !found_data || data_off > preview_map_size) { preview_close(); return; }
+        goto have_format;
+    }
+    if (memcmp(raw, "RIFF", 4) != 0 || memcmp(raw + 8, "WAVE", 4) != 0) {
+        preview_close(); return;
+    }
 
     while (offset + 8 <= preview_map_size) {
         const uint8_t *c = raw + offset;
@@ -676,10 +719,11 @@ static void preview_play(const char *path) {
 
     if (!found_fmt || !found_data) { preview_close(); return; }
 
+have_format:;
     int bytes_per_sample = 0;
     if (audio_fmt == PREVIEW_WAV_FORMAT_PCM && bps == 16) bytes_per_sample = 2;
     else if (audio_fmt == PREVIEW_WAV_FORMAT_PCM && bps == 24) bytes_per_sample = 3;
-    else if (audio_fmt == PREVIEW_WAV_FORMAT_FLOAT && bps == 32) bytes_per_sample = 4;
+    else if (audio_fmt == PREVIEW_WAV_FORMAT_FLOAT && bps == 32 && !big) bytes_per_sample = 4;
     else { preview_close(); return; }
 
     if (nch < 1 || nch > 2) { preview_close(); return; }
@@ -687,6 +731,7 @@ static void preview_play(const char *path) {
 
     preview_format = audio_fmt;
     preview_bits = bps;
+    preview_big = big;
     preview_channels = nch;
     preview_data = (void *)(raw + data_off);
     preview_total_frames = data_sz / (nch * bytes_per_sample);
@@ -723,6 +768,7 @@ static void preview_render(int16_t *buf, int frames) {
     const int nch = preview_channels;
     const int is_float = (preview_format == PREVIEW_WAV_FORMAT_FLOAT);
     const int is_24bit = (preview_format == PREVIEW_WAV_FORMAT_PCM && preview_bits == 24);
+    const int big = preview_big;
 
     for (int i = 0; i < frames; i++) {
         if (preview_pos >= preview_total_frames) {
@@ -737,10 +783,20 @@ static void preview_render(int16_t *buf, int frames) {
         } else if (is_24bit) {
             const uint8_t *d = (const uint8_t *)preview_data;
             int off = preview_pos * nch * 3;
-            int32_t sL = (int32_t)((d[off]<<8) | (d[off+1]<<16) | (d[off+2]<<24)) >> 8;
+            int32_t sL = big ? (int32_t)(((uint32_t)d[off]<<24) | (d[off+1]<<16) | (d[off+2]<<8)) >> 8
+                             : (int32_t)((d[off]<<8) | (d[off+1]<<16) | ((uint32_t)d[off+2]<<24)) >> 8;
             fL = sL / 8388608.0f;
             if (nch == 1) { fR = fL; }
-            else { int32_t sR = (int32_t)((d[off+3]<<8) | (d[off+4]<<16) | (d[off+5]<<24)) >> 8; fR = sR / 8388608.0f; }
+            else {
+                int32_t sR = big ? (int32_t)(((uint32_t)d[off+3]<<24) | (d[off+4]<<16) | (d[off+5]<<8)) >> 8
+                                 : (int32_t)((d[off+3]<<8) | (d[off+4]<<16) | ((uint32_t)d[off+5]<<24)) >> 8;
+                fR = sR / 8388608.0f;
+            }
+        } else if (big) {
+            const uint8_t *d = (const uint8_t *)preview_data;
+            int off = preview_pos * nch * 2;
+            fL = (int16_t)((d[off] << 8) | d[off+1]) / 32768.0f;
+            fR = nch == 1 ? fL : (int16_t)((d[off+2] << 8) | d[off+3]) / 32768.0f;
         } else {
             const int16_t *sd = (const int16_t *)preview_data;
             if (nch == 1) { fL = fR = sd[preview_pos] / 32768.0f; }
@@ -1643,8 +1699,18 @@ static int overtake_capture_start(const char *path, uint32_t frames) {
 /* ...from one slot's own output (move_host_ext_v1_t.capture_start_src). */
 static int overtake_capture_start_src(const char *path, uint32_t frames, int kind, int index) {
     if (kind == MOVE_CAPTURE_MIX) return overtake_capture_start(path, frames);
-    if (kind != MOVE_CAPTURE_SLOT || index < 0 || index >= SHADOW_CHAIN_INSTANCES) return 0;
-    return sampler_request_start_module(path, frames, SAMPLER_TAKE_SRC_SLOT, index) == 0;
+    if ((kind != MOVE_CAPTURE_SLOT && kind != MOVE_CAPTURE_SLOT_PRE) || index < 0 || index >= SHADOW_CHAIN_INSTANCES) return 0;
+    return sampler_request_start_module(path, frames,
+                                        kind == MOVE_CAPTURE_SLOT_PRE ? SAMPLER_TAKE_SRC_PRE : SAMPLER_TAKE_SRC_SLOT,
+                                        index) == 0;
+}
+
+/* Host extension (move_host_ext_v1_t.slot_audio_feed): one block of audio for
+ * a slot, mixed before its FX in the next frame (slot_feed.h). */
+static int overtake_slot_audio_feed(int slot, const int16_t *lr, uint32_t frames) {
+    if (!overtake_in_render || !lr || slot < 0 || slot >= SHADOW_CHAIN_INSTANCES) return 0;
+    slot_feed_put(&shadow_slot_feed[slot], overtake_render_seq, lr, frames);
+    return 1;
 }
 
 static const move_host_ext_v1_t overtake_host_ext = {
@@ -1659,6 +1725,7 @@ static const move_host_ext_v1_t overtake_host_ext = {
     .capture_start = overtake_capture_start,
     .capture_stop = sampler_request_stop_module,
     .capture_start_src = overtake_capture_start_src,
+    .slot_audio_feed = overtake_slot_audio_feed,
 };
 
 /* Offline MIDI FX jobs read a slot's chain instance by index. */
@@ -2120,6 +2187,14 @@ static void shadow_render_slot_task(void *vctx, int s, int lane) {
     struct timespec slot_t0, slot_t1;
     clock_gettime(CLOCK_MONOTONIC, &slot_t0);
 
+    /* Audio the overtake DSP handed this slot last frame: it wakes the slot
+     * like MIDI does, and is summed into the instrument's output below. */
+    const int16_t *feed = slot_feed_current(&shadow_slot_feed[s], shadow_feed_seq);
+    if (feed) {
+        shadow_slot_idle[s] = 0;
+        shadow_slot_silence_frames[s] = 0;
+    }
+
     /* Wake slot from idle if fade is ramping (otherwise gain stays at 0) */
     if (shadow_chain_slots[s].fade.gain != shadow_chain_slots[s].fade.target) {
         shadow_slot_idle[s] = 0;
@@ -2210,6 +2285,7 @@ static void shadow_render_slot_task(void *vctx, int s, int lane) {
         shadow_plugin_v2->render_block(shadow_chain_slots[s].instance,
                                        shadow_slot_deferred[s],
                                        MOVE_FRAMES_PER_BLOCK);
+        if (feed) slot_feed_mix(shadow_slot_deferred[s], feed);
         clock_gettime(CLOCK_MONOTONIC, &synth_t1);
         uint64_t synth_us = (synth_t1.tv_sec - synth_t0.tv_sec) * 1000000ULL +
                             (synth_t1.tv_nsec - synth_t0.tv_nsec) / 1000;
@@ -2225,6 +2301,8 @@ static void shadow_render_slot_task(void *vctx, int s, int lane) {
         memset(render_buffer, 0, sizeof(shadow_slot_fallback[s]));
         shadow_plugin_v2->render_block(shadow_chain_slots[s].instance,
                                        render_buffer, MOVE_FRAMES_PER_BLOCK);
+        /* No FX hook on this path: the feed joins after the slot's FX. */
+        if (feed) slot_feed_mix(render_buffer, feed);
         if (link_audio.enabled && s < LINK_AUDIO_SHADOW_CHANNELS) {
             float cap_vol = shadow_effective_volume(s) * shadow_chain_slots[s].fade.gain;
             for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++)
@@ -2372,8 +2450,33 @@ static void shadow_inprocess_render_to_buffer(void) {
 
     if (shadow_plugin_v2 && shadow_plugin_v2->render_block) {
         uint32_t active_mask = 0, pinned_mask = 0;
+        shadow_feed_seq = (overtake_render_seq != shadow_feed_seq_seen) ? overtake_render_seq : 0;
+        shadow_feed_seq_seen = overtake_render_seq;
         for (int s = 0; s < SHADOW_CHAIN_INSTANCES; s++) {
-            if (!shadow_chain_slots[s].active || !shadow_chain_slots[s].instance) continue;
+            /* A FED slot renders whether or not it holds an instrument (an
+             * empty slot is inactive), and stays rendered while its FX ring
+             * out. A slot with nothing loaded has its fade at 0: it is
+             * SNAPPED open while fed (it was silent, so no click, and a 50 ms
+             * ramp would swallow the first hit) and snapped shut when the feed
+             * lapses (its FX are idle by then) -- a fade left open on an
+             * unrendered slot never advances, and a deferred load waits on it
+             * forever. A slot fading out for a load or clear is left alone. */
+            int was_live = shadow_slot_feed[s].live != 0;
+            int fed_live = slot_feed_tick(&shadow_slot_feed[s], shadow_feed_seq,
+                                          shadow_slot_fx_idle[s]);
+            slot_fade_t *fd = &shadow_chain_slots[s].fade;
+            if (!shadow_chain_slots[s].active && !fd->pending_clear && fd->pending_patch < 0) {
+                if (fed_live) fd->gain = fd->target = 1.0f;
+                else if (was_live) fd->gain = fd->target = 0.0f;
+            } else if (!shadow_chain_slots[s].active && fd->gain > 0.0f) {
+                /* A load or clear waits for this slot's fade to reach 0 -- but a
+                 * slot with nothing loaded is only rendered while fed, so once
+                 * the feed lapses the fade would never move and the load would
+                 * wait forever. Nothing of its own is sounding: let it go now. */
+                fd->gain = 0.0f;
+            }
+            if (!shadow_chain_slots[s].instance) continue;
+            if (!shadow_chain_slots[s].active && !fed_live) continue;
             active_mask |= 1u << s;
             if (shadow_chain_slots[s].render_pinned) pinned_mask |= 1u << s;
         }
@@ -2907,7 +3010,7 @@ static void shadow_inprocess_mix_from_buffer(void) {
              * FX chain, it runs its own inserts. That is the point of the
              * model, and Move>Slot's own 4 inserts cover the effects case. */
 
-            int slot_active = (shadow_chain_slots[s].active &&
+            int slot_active = ((shadow_chain_slots[s].active || shadow_slot_feed[s].live) &&
                                shadow_chain_slots[s].instance &&
                                shadow_slot_deferred_valid[s]);
 
@@ -3637,8 +3740,26 @@ skip_la_rebuild:
      * stem, filled by that slot's mix loop above) -- whatever the menu's
      * source. A slot that did not mix this block (parked, idle) is silence. */
     static const int16_t take_silence[FRAMES_PER_BLOCK * 2];
+    /* A take of a slot's INSTRUMENT before its FX (MOVE_CAPTURE_SLOT_PRE) is
+     * read HERE, from the frame's pre-FX buffer, not tapped in the slot's
+     * render task: that task runs before the module's render that starts the
+     * take, so a tap there missed the take's first block (measured on the
+     * device: frames 0-127 silent). On a slot rendering without separate FX
+     * it is the slot's whole output. */
+    if (sampler_module_take && sampler_take_src_kind == SAMPLER_TAKE_SRC_PRE &&
+            sampler_take_src_index >= 0 && sampler_take_src_index < SHADOW_CHAIN_INSTANCES) {
+        const int ps = sampler_take_src_index;
+        if (shadow_slot_deferred_valid[ps]) {
+            memcpy(shadow_take_tap, shadow_slot_deferred[ps], sizeof(shadow_take_tap));
+            shadow_apply_synth_level(ps, shadow_take_tap);
+            shadow_take_tap_valid = 1;
+        } else if (shadow_slot_fallback_rendered[ps]) {
+            memcpy(shadow_take_tap, shadow_slot_fallback[ps], sizeof(shadow_take_tap));
+            shadow_take_tap_valid = 1;
+        }
+    }
     const int16_t *take_src = unity_view;
-    if (sampler_module_take && sampler_take_src_kind == SAMPLER_TAKE_SRC_SLOT)
+    if (sampler_take_from_tap(sampler_module_take, sampler_take_src_kind))
         take_src = shadow_take_tap_valid ? shadow_take_tap : take_silence;
     shadow_take_tap_valid = 0;
     if (sampler_source == SAMPLER_SOURCE_RESAMPLE) {
@@ -6847,7 +6968,7 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
             for (int i = 0; i < LINK_AUDIO_SHADOW_CHANNELS; i++) {
                 int is_active = la_flowing ||
                                 (i < SHADOW_CHAIN_INSTANCES &&
-                                 shadow_chain_slots[i].active &&
+                                 (shadow_chain_slots[i].active || shadow_slot_feed[i].live) &&
                                  shadow_chain_slots[i].instance != NULL);
                 shadow_pub_audio_shm->slots[i].active = is_active;
             }
