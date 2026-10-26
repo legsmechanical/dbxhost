@@ -48,12 +48,12 @@ import { MoveMainKnob, MoveMainButton, MoveMainTouch, MoveNoteSession, TRACK_PAD
 import { decodeDelta } from '/data/UserData/schwung/shared/input_filter.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLazyState, auMarkStale,
-         auPanelPages, auPanelPageName, auPanelKnob, auPanelKnobDeliberate, auChop, auPadToSlice,
+         auPanelPages, auPanelPageName, auPanelKnob, auPanelKnobClass, auChop, auPadToSlice,
          auSelSlice, auSetSelSlice, isAudioTrack, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
          auMarkAdd, auMarkDel, auManual, auEvenBake, auRangeStep, auSet, auEnd,
          AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
-import { ccKnobDelta, knobPick, KNOB_DELIB } from './ui_input_cc.mjs';
+import { ccKnobDelta, knobPick, KNOB_PICK, KNOB_DELIB } from './ui_input_cc.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 
 /* One step per detent run (ui_input_cc's knobStep; its exports are only used
@@ -122,7 +122,8 @@ export function audioPanelInput(status, d1, d2) {
     if (status !== 0xB0) return false;
     if (d1 >= 71 && d1 <= 78) {
         const k = d1 - 71;
-        const st = auPanelKnobDeliberate(ed, k) ? knobStep(k, d2, KNOB_DELIB) : ccKnobDelta(d2, k);
+        const cls = auPanelKnobClass(ed, k);
+        const st = cls ? knobStep(k, d2, cls === 'pick' ? KNOB_PICK : KNOB_DELIB) : ccKnobDelta(d2, k);
         if (st && auPanelKnob(ed, k, st)) S.screenDirty = true;
         return true;
     }

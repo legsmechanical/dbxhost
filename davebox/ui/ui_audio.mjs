@@ -345,7 +345,11 @@ export function auSampleName(t, c) {
     if (i.state === 3) return i.err === 1 && i.name ? 'Missing: ' + shortName(i.name) : (AU_ERR_TEXT[i.err] || 'Failed');
     return i.name ? shortName(i.name) : 'No sample';
 }
-const fmtSemi = (v) => (v === 0 ? '0 st' : (v > 0 ? '+' : '') + v + ' st');
+/* Pitch as a number in its box, as SHIFT is (Josh, 2026-10-28: the pitch knob
+ * "doesn't read out any values" — an arc moved 1/24 a semitone). */
+const pitchCell = (name, v) => ({ kind: 'valsq', label: 'Pitch', name: name + ' (semitones)',
+                                  text: v == null ? '--' : (v >= 0 ? '+' : '') + v,
+                                  ringNorm: ((v | 0) + 24) / 48 });
 const fmtDb = (v) => (v === 0 ? '0 dB' : (v > 0 ? '+' : '') + v + ' dB');
 const fmtMs = (v) => (v > 0 ? '+' : '') + v + 'ms';
 /* A frame as time: "1.234s", "1:02.35" past a minute. */
@@ -397,7 +401,7 @@ function loopCells(i) {
 /* The sound fields, as cells (SLICE n: one slice; CLIP in Slice mode: every
  * slice, `--` while they differ). */
 const soundCell = {
-    pitch: (r) => ({ kind: 'arcbip', label: 'Pitch', name: 'Slice Pitch', text: r.pitch == null ? '--' : fmtSemi(r.pitch), signed: (r.pitch | 0) / 24 }),
+    pitch: (r) => pitchCell('Slice Pitch', r.pitch),
     gain: (r) => ({ kind: 'arc', label: 'Gain', name: 'Slice Gain', text: r.gain == null ? '--' : fmtDb(r.gain), norm: ((r.gain | 0) + 40) / 52 }),
     rev: (r) => ({ kind: 'enumsq', label: 'Revrs', name: 'Reverse', text: r.rev == null ? '--' : (r.rev ? 'On' : 'Off'), options: ['Off', 'On'], sel: r.rev | 0 }),
     atk: (r) => ({ kind: 'arc', label: 'Attk', name: 'Attack', text: r.atk == null ? '--' : r.atk + 'ms', norm: Math.min(1, (r.atk | 0) / 2000) }),
@@ -415,7 +419,7 @@ export function auPanelCells(ed) {
     const live = (x) => (has || x === BLANK || x.label === 'Mode') ? x : dash(x);
     const mode = { kind: 'enumsq', label: 'Mode', name: 'Mode', text: i.mode ? 'Slice' : 'Loop',
                    sq: i.mode ? 'Slce' : 'Loop', options: ['Loop', 'Slice'], sel: i.mode };
-    const pitch = { kind: 'arcbip', label: 'Pitch', name: 'Pitch', text: fmtSemi(i.pitch), signed: i.pitch / 24 };
+    const pitch = pitchCell('Pitch', i.pitch);
     const gain = { kind: 'arc', label: 'Gain', name: 'Gain', text: fmtDb(i.gain), norm: (i.gain + 40) / 52 };
     if (page === 'CLIP') {
         if (i.mode !== AU_MODE_SLICE) {
@@ -443,12 +447,18 @@ export function auPanelCells(ed) {
     return (!has || l >= i.n) ? cells.map((x) => (x === BLANK ? x : dash(x))) : cells;
 }
 
-/* Knobs that pick (one step per detent) rather than sweep. */
-export function auPanelKnobDeliberate(ed, k) {
+/* How a knob steps (ui_input_cc's classes): '' sweeps; 'pick' a step per
+ * detent run — Pitch, a semitone at a time (Josh, 2026-10-28: the pitch
+ * knob "is very touchy"); 'delib' for toggles and the rest that pick. */
+export function auPanelKnobClass(ed, k) {
     const page = auPanelPageName(ed);
-    if (page === 'CLIP') return auInfo(ed.t, auClipOf(ed.t)).mode === AU_MODE_SLICE
-        ? (k === 0 || k === 3 || k === 6) : (k === 0 || k === 3 || k === 4 || k === 6);
-    return k === 2 || k === 5;
+    if (page === 'CLIP') {
+        if (k === 1) return 'pick';
+        return (auInfo(ed.t, auClipOf(ed.t)).mode === AU_MODE_SLICE
+            ? (k === 0 || k === 3 || k === 6) : (k === 0 || k === 3 || k === 4 || k === 6)) ? 'delib' : '';
+    }
+    if (k === 0) return 'pick';
+    return (k === 2 || k === 5) ? 'delib' : '';
 }
 
 /* One field stepped: the next value, clamped. */

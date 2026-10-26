@@ -102,6 +102,7 @@ const DM = await import('../../ui/ui_drummodel.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
 const render = await import('../../ui/ui_render.mjs');
 globalThis.__ED = await import('../../ui/ui_editops.mjs');
+globalThis.__kc = (await import('../../ui/ui_movy.mjs')).kitCellsForTest;
 const os = await import('os');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
@@ -193,6 +194,32 @@ step('⭐⭐ the bank map\'s AUDIO pad opens the AUDIO editor, ON SCREEN: CLIP i
     assert(cells.map((c) => c.label).join() === 'Mode,Pitch,Gain,Revrs,Attk,Decay,Play,>Seq', 'CLIP (Slice): ' + cells.map((c) => c.label));
 });
 
+step('⭐ Pitch reads as a number and steps a semitone per detent run (Josh: "doesn\'t read out any values and is very touchy")', () => {
+    const cell = () => A.auPanelCells(S.auPanel)[1];
+    assert(cell().kind === 'valsq' && cell().text === '+0', 'CLIP Pitch: ' + JSON.stringify(cell()));
+    reset();
+    note(1, 127);
+    for (let i = 0; i < 30; i++) cc(72, 1);         /* 30 encoder ticks */
+    const n = sent('t4_au_set_pitch').length;
+    assert(n >= 1 && n <= 3, '30 ticks moved Pitch ' + n + ' semitones: ' + JSON.stringify(sent('t4_au_set_pitch')));
+    assert(cell().text === '+' + n, 'the cell does not read the new pitch: ' + cell().text);
+    const kc = globalThis.__kc; shown();
+    assert(kc().cells[1].lit && kc().cells[1].text === '+' + n, 'the touched Pitch does not read out: ' + JSON.stringify(kc().cells[1]));
+    for (let i = 0; i < 30; i++) cc(72, 127);       /* back down */
+    note(1, 0);
+    GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(2);
+    /* SLICE n's Pitch too */
+    jog(1);
+    assert(A.auPanelTitle(S.auPanel).indexOf('SLICE') === 0, 'not on SLICE n');
+    const sc = A.auPanelCells(S.auPanel)[0];
+    assert(sc.label === 'Pitch' && sc.kind === 'valsq' && /^[+-]\d+$/.test(sc.text), 'SLICE Pitch: ' + JSON.stringify(sc));
+    reset();
+    for (let i = 0; i < 30; i++) cc(71, 1);
+    const m = sent('t4_au_slice_pitch').length;
+    assert(m >= 1 && m <= 3, '30 ticks moved the slice pitch ' + m + ' semitones');
+    jog(-1);
+});
+
 step('⭐ the jog turns its pages: CLIP, SLICE n (no SLICING, no ALL SLICES)', () => {
     const titles = [];
     for (let i = 0; i < 3; i++) { titles.push(A.auPanelTitle(S.auPanel)); jog(1); }
@@ -206,7 +233,7 @@ step('⭐⭐ CLIP knobs: Pitch / Gain for the clip, Revrs..Play for every slice 
     A.auMarkStale(4, 0); ticks(2);
     assert(A.auPanelCells(S.auPanel)[4].text === '--', 'Attk: ' + A.auPanelCells(S.auPanel)[4].text);
     reset();
-    cc(72, 1);                                          /* K2 Pitch */
+    for (let i = 0; i < 10; i++) cc(72, 1);             /* K2 Pitch: one detent run (KNOB_PICK) */
     assert(sent('t4_au_set_pitch').join() === '0 1', 'pitch: ' + JSON.stringify(sent('t4_au_set_pitch')));
     cc(75, 1);                                          /* K5 Attk: every slice */
     assert(sent('t4_au_all_atk').length === 1, 'Attk did not set every slice: ' + JSON.stringify(sentLike(/_au_/)));
