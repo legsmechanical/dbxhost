@@ -12,7 +12,9 @@
  *     division — forwards and in Revrs — reads pinned frames: none waits;
  *   - moving Start pins the new points; a let-go chunk is freed only after
  *     two more blocks; a waiting JmpQ jump's target is read ahead;
- *   - two clips on one file share it; the file let go leaves the streamer. */
+ *   - two clips on one file share it; the file let go leaves the streamer;
+ *   - a stereo 24-bit file streams the same frames and waveform as it reads
+ *     whole. */
 #include "harness.h"
 #include <sys/stat.h>
 #include <unistd.h>
@@ -31,6 +33,22 @@ static void write_ramp_len(const char *path, double secs) {
     put_le16(f, 2); put_le16(f, 16);
     fwrite("data", 1, 4, f); put_le32(f, n * 2);
     for (i = 0; i < n; i++) put_le16(f, (int)(i % 30000));
+    fclose(f);
+}
+
+/* stereo 24-bit 48 kHz, `secs`: frame i is (i*37 % 8388607, -(i*91 % 8388607)) */
+static void write_st24(const char *path, double secs) {
+    FILE *f = fopen(path, "wb");
+    uint32_t n = (uint32_t)(48000 * secs), i;
+    fwrite("RIFF", 1, 4, f); put_le32(f, 36 + n * 6); fwrite("WAVEfmt ", 1, 8, f);
+    put_le32(f, 16); put_le16(f, 1); put_le16(f, 2); put_le32(f, 48000); put_le32(f, 48000 * 6);
+    put_le16(f, 6); put_le16(f, 24);
+    fwrite("data", 1, 4, f); put_le32(f, n * 6);
+    for (i = 0; i < n; i++) {
+        int32_t l = (int32_t)((uint64_t)i * 37 % 8388607), r = -(int32_t)((uint64_t)i * 91 % 8388607);
+        fputc(l & 255, f); fputc((l >> 8) & 255, f); fputc((l >> 16) & 255, f);
+        fputc(r & 255, f); fputc((r >> 8) & 255, f); fputc((r >> 16) & 255, f);
+    }
     fclose(f);
 }
 
@@ -98,6 +116,7 @@ int main(void) {
     snprintf(p, sizeof p, "%s/proj/dAVEBOx", g_root); mkdir(p, 0775);
     snprintf(p, sizeof p, "%s/src/ramp60.wav", g_root); write_ramp_len(p, 60.0);
     snprintf(p, sizeof p, "%s/src/ramp2.wav", g_root); write_ramp_len(p, 0.5);
+    snprintf(p, sizeof p, "%s/src/st24.wav", g_root); write_st24(p, 3.0);
 
     h = hx_create(NULL);
     HX_ASSERT(h, "create failed");
@@ -309,6 +328,36 @@ int main(void) {
         usleep(1000);
     }
     HX_ASSERT(n == 0, "a file no clip holds is still in the streamer");
+
+    /* ---- a streamed chunk decodes as the whole-file read does (stereo 24-bit) ---- */
+    {
+        au_sample_t *whole, *str;
+        int e1, e2;
+        uint32_t c, f, diff = 0, nonzero = 0;
+        snprintf(p, sizeof p, "%s/src/st24.wav", g_root);
+        au_stream_sec = 1000;
+        whole = au_read_file(p, &e1);
+        au_stream_sec = 1;
+        str = au_read_file(p, &e2);
+        HX_ASSERT(whole && str && !e1 && !e2 && whole->pcm && !str->pcm, "the stereo file did not read both ways");
+        HX_ASSERT(str->ch == 2 && str->frames == whole->frames && str->rate == 48000, "streamed: wrong shape");
+        HX_ASSERT(!memcmp(str->mip, whole->mip, (size_t)whole->nmip * 2) && !memcmp(str->peaks, whole->peaks, sizeof whole->peaks),
+                  "the streamed waveform differs from the whole file's");
+        HX_ASSERT(au_stream_add(inst, str), "the streamer would not take it");
+        for (c = 0; c < str->nchunks; c++) {
+            au_streamer_t *S = (au_streamer_t *)inst->au_streamer;
+            if (!str->chunk[c]) { pthread_mutex_lock(&S->mu); au_stream_read(S, str, c); pthread_mutex_unlock(&S->mu); }
+            for (f = c * AU_CHUNK; f < (c + 1) * AU_CHUNK && f < str->frames; f++) {
+                const int16_t *a = au_at(str, f), *b = au_at(whole, f);
+                if (!a || a[0] != b[0] || a[1] != b[1]) diff++;
+                if (b[0] || b[1]) nonzero++;
+            }
+        }
+        HX_ASSERT(diff == 0 && nonzero > str->frames / 2, "a streamed chunk decoded differently from the whole file");
+        au_stream_remove(inst, str);
+        au_sample_free(str);
+        au_sample_free(whole);
+    }
 
     hx_destroy(h);
     printf("PASS: test_audio_loop_stream\n");
