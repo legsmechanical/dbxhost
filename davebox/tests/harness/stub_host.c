@@ -126,16 +126,27 @@ const move_midi_fx_offline_ev_t *hx_stub_mfo_input(int *n, int *slot, float *bpm
 static int      g_cap_starts, g_cap_stops, g_cap_block = -1, g_cap_refuse;
 static uint32_t g_cap_frames;
 static char     g_cap_path[256];
+static int      g_cap_kind = -1, g_cap_index = -1;
 static int stub_capture_start(const char *path, uint32_t frames) {
     if (g_cap_refuse) return 0;
-    g_cap_starts++; g_cap_block = g_block; g_cap_frames = frames;
+    g_cap_starts++; g_cap_block = g_block; g_cap_frames = frames; g_cap_kind = 0; g_cap_index = 0;
     snprintf(g_cap_path, sizeof g_cap_path, "%s", path ? path : "");
     return 1;
 }
 static void stub_capture_stop(void) { g_cap_stops++; }
+static int stub_capture_start_src(const char *path, uint32_t frames, int kind, int index) {
+    if (!stub_capture_start(path, frames)) return 0;
+    g_cap_kind = kind; g_cap_index = index;
+    return 1;
+}
+int hx_stub_capture_src(int *kind, int *index) {
+    if (kind) *kind = g_cap_kind; if (index) *index = g_cap_index;
+    return g_cap_starts;
+}
 void hx_stub_capture_reset(void) {
     g_cap_starts = g_cap_stops = g_cap_refuse = 0; g_cap_block = -1;
     g_cap_frames = 0; g_cap_path[0] = '\0';
+    g_cap_kind = -1; g_cap_index = -1;
 }
 void hx_stub_capture_refuse(int on) { g_cap_refuse = on; }
 int  hx_stub_capture(int *stops, int *block, uint32_t *frames, const char **path) {
@@ -156,6 +167,7 @@ const move_host_ext_v1_t *hx_stub_ext(void) {
         .midi_fx_offline_cancel = stub_mfo_cancel,
         .capture_start = stub_capture_start,
         .capture_stop = stub_capture_stop,
+        .capture_start_src = stub_capture_start_src,
     };
     return &ext;
 }

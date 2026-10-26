@@ -179,6 +179,11 @@ static int sp_globals_state(sp_ctx_t *cx) {
             capture_clear(inst);
             pa_cap_clear(inst, -1);
             inst->cap_select_active = 0;
+            /* A resample in flight is cancelled (this path stops the transport
+             * by hand, not through ext_transport_stop), and the clips it would
+             * put back belong to the project being left. */
+            resample_on_transport_stop(inst);
+            inst->resample_restore = 0;
             inst->playing        = 0;
             inst->count_in_ticks = 0;
             /* The Performance Mode looper belongs to the project being left:

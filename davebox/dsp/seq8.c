@@ -1433,6 +1433,10 @@ typedef struct {
     uint32_t resample_bar_frames; /* one bar, for the progress readout */
     uint32_t resample_done;       /* frames captured so far */
     char     resample_path[256];
+    uint8_t  resample_src;        /* RS_SRC_WET (the mix) / RS_SRC_DRY (resample_slot's stem) */
+    uint8_t  resample_slot;
+    uint8_t  resample_restore;    /* put the armed clips back at the next transport stop */
+    uint8_t  resample_prev_clip[NUM_TRACKS], resample_prev_relaunch[NUM_TRACKS];
     uint8_t  merge_solo_track;   /* 0xFF = capture all 8 tracks (scene mode); else only this
                                   * track's output is captured (Track-View single-clip merge).
                                   * Set on every merge_arm; only read while a merge is active. */
@@ -8899,6 +8903,11 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
     /* OFFLINE print: why the last one did not run or failed (0 = it ran). */
     if (!strcmp(key, "resample_err"))
         return snprintf(out, out_len, "%d", (int)inst->resample_err);
+    if (!strncmp(key, "resample_bars_t", 15)) {        /* resample_bars_tT_cC: one clip */
+        const char *cp = strstr(key + 15, "_c");
+        if (!cp) return -1;
+        return snprintf(out, out_len, "%d", resample_clip_bars(inst, my_atoi(key + 15), my_atoi(cp + 2)));
+    }
     if (!strncmp(key, "resample_bars_", 14))
         return snprintf(out, out_len, "%d", resample_scene_bars(inst, my_atoi(key + 14)));
     if (!strcmp(key, "print_err"))
