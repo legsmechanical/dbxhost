@@ -619,6 +619,7 @@ static uint32_t preview_pos = 0;
 static int preview_channels = 0;
 static int preview_format = 0;  /* PCM or FLOAT */
 static int preview_bits = 0;
+static int preview_big = 0;     /* AIFF: big-endian PCM */
 static int preview_playing = 0;
 static float preview_gain = 0.5f;
 
@@ -634,6 +635,7 @@ static void preview_close(void) {
     preview_channels = 0;
     preview_format = 0;
     preview_bits = 0;
+    preview_big = 0;
     preview_playing = 0;
 }
 
@@ -656,14 +658,46 @@ static void preview_play(const char *path) {
     if (preview_map == MAP_FAILED) { preview_map = NULL; preview_close(); return; }
 
     const uint8_t *raw = (const uint8_t *)preview_map;
-    if (memcmp(raw, "RIFF", 4) != 0 || memcmp(raw + 8, "WAVE", 4) != 0) {
-        preview_close(); return;
-    }
-
     uint32_t offset = 12;
     uint16_t audio_fmt = 0, nch = 0, bps = 0;
     uint32_t data_off = 0, data_sz = 0;
     int found_fmt = 0, found_data = 0;
+    int big = 0;
+
+    /* AIFF / AIFC: integer PCM, big-endian ('NONE' / 'twos') or little
+     * ('sowt'). Chunk sizes are big-endian; the rate is ignored, as it is for
+     * WAV. */
+    if (memcmp(raw, "FORM", 4) == 0 && (memcmp(raw + 8, "AIFF", 4) == 0 || memcmp(raw + 8, "AIFC", 4) == 0)) {
+        int aifc = memcmp(raw + 8, "AIFC", 4) == 0;
+        big = 1;
+        while (offset + 8 <= preview_map_size) {
+            const uint8_t *c = raw + offset;
+            uint32_t csz = ((uint32_t)c[4] << 24) | ((uint32_t)c[5] << 16) | ((uint32_t)c[6] << 8) | c[7];
+            if (memcmp(c, "COMM", 4) == 0 && csz >= 18 && offset + 8 + 18 <= preview_map_size) {
+                nch = (uint16_t)((c[8] << 8) | c[9]);
+                bps = (uint16_t)((c[14] << 8) | c[15]);
+                audio_fmt = PREVIEW_WAV_FORMAT_PCM;
+                if (aifc && csz >= 22 && offset + 8 + 22 <= preview_map_size) {
+                    if (memcmp(c + 26, "sowt", 4) == 0) big = 0;
+                    else if (memcmp(c + 26, "NONE", 4) != 0 && memcmp(c + 26, "twos", 4) != 0) audio_fmt = 0;
+                }
+                found_fmt = 1;
+            } else if (memcmp(c, "SSND", 4) == 0 && csz >= 8) {
+                uint32_t skip = ((uint32_t)c[8] << 24) | ((uint32_t)c[9] << 16) | ((uint32_t)c[10] << 8) | c[11];
+                data_off = offset + 16 + skip;
+                data_sz  = csz - 8 - skip;
+                found_data = 1;
+                break;
+            }
+            offset += 8 + csz;
+            if (csz & 1) offset++;
+        }
+        if (!found_fmt || !found_data || data_off > preview_map_size) { preview_close(); return; }
+        goto have_format;
+    }
+    if (memcmp(raw, "RIFF", 4) != 0 || memcmp(raw + 8, "WAVE", 4) != 0) {
+        preview_close(); return;
+    }
 
     while (offset + 8 <= preview_map_size) {
         const uint8_t *c = raw + offset;
@@ -685,10 +719,11 @@ static void preview_play(const char *path) {
 
     if (!found_fmt || !found_data) { preview_close(); return; }
 
+have_format:;
     int bytes_per_sample = 0;
     if (audio_fmt == PREVIEW_WAV_FORMAT_PCM && bps == 16) bytes_per_sample = 2;
     else if (audio_fmt == PREVIEW_WAV_FORMAT_PCM && bps == 24) bytes_per_sample = 3;
-    else if (audio_fmt == PREVIEW_WAV_FORMAT_FLOAT && bps == 32) bytes_per_sample = 4;
+    else if (audio_fmt == PREVIEW_WAV_FORMAT_FLOAT && bps == 32 && !big) bytes_per_sample = 4;
     else { preview_close(); return; }
 
     if (nch < 1 || nch > 2) { preview_close(); return; }
@@ -696,6 +731,7 @@ static void preview_play(const char *path) {
 
     preview_format = audio_fmt;
     preview_bits = bps;
+    preview_big = big;
     preview_channels = nch;
     preview_data = (void *)(raw + data_off);
     preview_total_frames = data_sz / (nch * bytes_per_sample);
@@ -732,6 +768,7 @@ static void preview_render(int16_t *buf, int frames) {
     const int nch = preview_channels;
     const int is_float = (preview_format == PREVIEW_WAV_FORMAT_FLOAT);
     const int is_24bit = (preview_format == PREVIEW_WAV_FORMAT_PCM && preview_bits == 24);
+    const int big = preview_big;
 
     for (int i = 0; i < frames; i++) {
         if (preview_pos >= preview_total_frames) {
@@ -746,10 +783,20 @@ static void preview_render(int16_t *buf, int frames) {
         } else if (is_24bit) {
             const uint8_t *d = (const uint8_t *)preview_data;
             int off = preview_pos * nch * 3;
-            int32_t sL = (int32_t)((d[off]<<8) | (d[off+1]<<16) | (d[off+2]<<24)) >> 8;
+            int32_t sL = big ? (int32_t)(((uint32_t)d[off]<<24) | (d[off+1]<<16) | (d[off+2]<<8)) >> 8
+                             : (int32_t)((d[off]<<8) | (d[off+1]<<16) | ((uint32_t)d[off+2]<<24)) >> 8;
             fL = sL / 8388608.0f;
             if (nch == 1) { fR = fL; }
-            else { int32_t sR = (int32_t)((d[off+3]<<8) | (d[off+4]<<16) | (d[off+5]<<24)) >> 8; fR = sR / 8388608.0f; }
+            else {
+                int32_t sR = big ? (int32_t)(((uint32_t)d[off+3]<<24) | (d[off+4]<<16) | (d[off+5]<<8)) >> 8
+                                 : (int32_t)((d[off+3]<<8) | (d[off+4]<<16) | ((uint32_t)d[off+5]<<24)) >> 8;
+                fR = sR / 8388608.0f;
+            }
+        } else if (big) {
+            const uint8_t *d = (const uint8_t *)preview_data;
+            int off = preview_pos * nch * 2;
+            fL = (int16_t)((d[off] << 8) | d[off+1]) / 32768.0f;
+            fR = nch == 1 ? fL : (int16_t)((d[off+2] << 8) | d[off+3]) / 32768.0f;
         } else {
             const int16_t *sd = (const int16_t *)preview_data;
             if (nch == 1) { fL = fR = sd[preview_pos] / 32768.0f; }
