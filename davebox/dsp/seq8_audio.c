@@ -20,9 +20,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
-#ifdef __linux__
 #include <sched.h>
-#endif
 
 #define AU_POOL_MAX 256
 
@@ -451,19 +449,14 @@ static void au_loader_do(au_loader_t *L, const au_req_t *q) {
 static void *au_loader_main(void *arg) {
     au_loader_t *L = (au_loader_t *)arg;
     seq8_instance_t *inst = L->inst;
-#ifdef __linux__
     {
-        /* Off the realtime class and off the audio core (core 3). */
+        /* Off the realtime class, whoever created it: the audio thread (FIFO)
+         * always preempts it. (No core pinning: the CPU_* macros need
+         * _GNU_SOURCE, which this translation unit does not define.) */
         struct sched_param sp;
-        cpu_set_t cs;
-        int c;
         memset(&sp, 0, sizeof sp);
         pthread_setschedparam(pthread_self(), SCHED_OTHER, &sp);
-        CPU_ZERO(&cs);
-        for (c = 0; c < 3; c++) CPU_SET(c, &cs);
-        pthread_setaffinity_np(pthread_self(), sizeof cs, &cs);
     }
-#endif
     while (L->run) {
         uint32_t t = inst->au_req_tail, h = __atomic_load_n(&inst->au_req_head, __ATOMIC_ACQUIRE);
         if (t == h) { usleep(4000); continue; }
