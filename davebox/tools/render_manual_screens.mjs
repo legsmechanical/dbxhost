@@ -908,6 +908,14 @@ screen('bake-scene-confirm', '16.1 Bake', 'Bake a scene — loops',
             noteOn(STEP(0), 127); noteOff(STEP(0)); ticks(2);
             if (!S.confirmBakeScene) throw new Error('no scene bake confirm'); });
 
+/* 16.6 — Resample a clip (Track View: the current clip) */
+screen('resample-clip-options', '16.6 Recording audio', 'Resample a clip',
+    'Sample → Resample clip in Track View: the current clip alone, Wet (as you hear it) or Dry (just its own chain).',
+    () => { stopTransport(); selectTrack(4); ENGINE.resample_bars_t4_c0 = '1';
+            for (let s = 0; s < 4; s++) { S.clipSteps[4][0][s * 4] = 1; } S.clipNonEmpty[4][0] = true;
+            sampleMenu('resample_clip'); click(); ticks(2);
+            if (!S.confirmResample) throw new Error('no clip resample options'); });
+
 /* 16.6 — Resample a scene */
 screen('resample-options', '16.6 Recording audio', 'Resample a scene',
     'Sample → Resample scene, then a row: the length starts where the clips line up; Warm-up and Tail start off.',

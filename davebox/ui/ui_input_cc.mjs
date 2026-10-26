@@ -101,7 +101,7 @@ import { seqFollowOn, setSeqFollowOn } from './ui_prefs.mjs';
 import { openSampleMenu, closeSampleFlow, sampleFlowUp, sampleMenuRotate, sampleMenuPick,
          reopenSampleMenu, menuIndexOf, openResampleOptions, resampleOptionsRotate,
          resampleOptionsClick, resampleOptionsBack, resampleRunning, cancelResample,
-         resampleModalCC, notPlayingForResample } from './ui_resample.mjs';
+         resampleModalCC, notPlayingForResample, openClipResampleOptions } from './ui_resample.mjs';
 
 /* View lock: double-tap Loop keeps Perf Mode alive after Loop is released.
  * Single tap while locked → unlock + stop loop. */
@@ -3724,6 +3724,12 @@ function _sampleMenuPick() {
     } else if (id === 'resample') {
         if (notPlayingForResample()) { S.scenePickFor = 'resample'; S.pendingSceneBakePicker = true; }
         else closeSampleFlow();
+    } else if (id === 'resample_clip') {
+        /* Session View: pick the clip on the grid. Track View: the active
+         * track's active clip, as Bake clip takes it. */
+        if (!notPlayingForResample()) closeSampleFlow();
+        else if (S.sessionView) { S.scenePickFor = 'resample_clip'; S.pendingSceneBakePicker = true; }
+        else openClipResampleOptions(S.activeTrack, S.trackActiveClip[S.activeTrack], 'menu');
     } else if (id === 'merge') {
         S.sampleFlow = false;
         _raiseMergeNotice();
@@ -3775,6 +3781,8 @@ function _onCC_side(d1, d2) {
          * the scene to bake and goes straight to the scene-bake confirm dialog.
          * Picker is consumed before any other gesture so it doesn't double-fire. */
         if (S.pendingSceneBakePicker) {
+            /* Picking a CLIP: a scene button picks nothing (the pads do). */
+            if (S.scenePickFor === 'resample_clip') return;
             S.pendingSceneBakePicker    = false;
             if (S.scenePickFor === 'resample') { openResampleOptions(clipIdx); return; }
             S.confirmBakeScene          = true;

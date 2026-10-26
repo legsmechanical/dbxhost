@@ -27,7 +27,8 @@ function step(label, fn) { try { fn(); ok(label); } catch (e) { bad(label, e); }
 function assert(c, m) { if (!c) throw new Error(m); }
 
 const sets = [];
-const GET = { resample_bars_0: '3', resample_bars_5: '0', resample_err: '0' };
+const GET = { resample_bars_0: '3', resample_bars_5: '0', resample_err: '0',
+              resample_bars_t2_c0: '2', resample_bars_t2_c1: '0', resample_bars_t4_c0: '1' };
 let SAMPLING = false;
 globalThis.host_system_cmd = () => 0; globalThis.host_read_file = () => '';
 globalThis.host_file_exists = () => false;
@@ -113,9 +114,9 @@ step('⭐⭐ Session View: a Sample tap opens the menu — on screen — Bake / 
     reset();
     tap(C.MoveSample);
     assert(S.sampleMenu, 'no menu');
-    assert(S.sampleMenu.items.map((i) => i.id).join() === 'bake,resample,merge', 'items: ' + JSON.stringify(S.sampleMenu.items));
-    /* the list grammar: a row that opens a screen (the picker) carries the chevron */
-    assert(S.sampleMenu.items.map((i) => !!i.chevron).join() === 'true,true,false', 'chevrons: ' + JSON.stringify(S.sampleMenu.items));
+    assert(S.sampleMenu.items.map((i) => i.id).join() === 'bake,resample,resample_clip,merge', 'items: ' + JSON.stringify(S.sampleMenu.items));
+    /* the list grammar: a row that opens a screen (a picker) carries the chevron */
+    assert(S.sampleMenu.items.map((i) => !!i.chevron).join() === 'true,true,true,false', 'chevrons: ' + JSON.stringify(S.sampleMenu.items));
     onScreen(R.drawSampleMenu, 'the Sample menu');
 });
 
@@ -254,16 +255,16 @@ step('⭐ refusals: playing (before the picker), an empty scene (before the opti
 
 step('⭐ Live merge (Session View): the all-tracks notice', () => {
     reset();
-    tap(C.MoveSample); jog(1); jog(1); click();
+    tap(C.MoveSample); jog(1); jog(1); jog(1); click();
     assert(S.mergeNoticePending && S.mergeNoticeSingleTrack === -1, 'no all-tracks notice');
     back();
 });
 
-step('⭐ Track View: Bake clip / Live merge track; Bake clip → the clip bake, Back → the menu', () => {
+step('⭐ Track View: Bake clip / Resample clip / Live merge track; Bake clip → the clip bake, Back → the menu', () => {
     reset();
     S.sessionView = false;
     tap(C.MoveSample);
-    assert(S.sampleMenu.items.map((i) => i.id).join() === 'bake,merge', 'items: ' + JSON.stringify(S.sampleMenu.items));
+    assert(S.sampleMenu.items.map((i) => i.id).join() === 'bake,resample_clip,merge', 'items: ' + JSON.stringify(S.sampleMenu.items));
     onScreen(R.drawSampleMenu, 'the Track View Sample menu');
     click();
     assert(S.confirmBake, 'no clip bake');
@@ -271,6 +272,100 @@ step('⭐ Track View: Bake clip / Live merge track; Bake clip → the clip bake,
     assert(!S.confirmBake && S.sampleMenu, 'Back did not step back to the menu');
     back();
     S.sessionView = true;
+});
+
+/* ---- Resample clip ---- */
+const T = 2;
+function clipRig(route) {
+    reset();
+    S.trackRoute[T] = route; S.trackMidiTo[T] = 0; S.trackMuted[T] = false;
+    S.trackSoloed.fill(false); S.trackActiveClip[T] = 0; S.activeTrack = T;
+}
+
+step('⭐⭐ Track View: Resample clip → the clip\'s options, on screen — Length from the engine, Source Wet, Start', () => {
+    clipRig(0);
+    S.sessionView = false;
+    tap(C.MoveSample); jog(1);
+    assert(S.sampleMenu.items[S.sampleMenu.sel].id === 'resample_clip', 'the jog did not reach Resample clip');
+    click();
+    const r = S.confirmResample;
+    assert(r && r.track === T && r.clip === 0 && r.bars === 2 && r.src === 0 && r.dryOk && !r.warm,
+           'options: ' + JSON.stringify(r));
+    assert(r.sel === 4, 'the cursor does not start on Start');
+    onScreen(R.drawResampleOptions, 'the clip options');
+    back();
+    assert(!S.confirmResample && S.sampleMenu && S.sampleMenu.items[S.sampleMenu.sel].id === 'resample_clip',
+           'Back did not step back to the menu, on Resample clip');
+    back();
+    S.sessionView = true;
+});
+
+step('⭐⭐ Dry: Source flips to Dry; Start sends ONE resample_clip with src 1 and the 3A name', () => {
+    clipRig(0);
+    S.sessionView = false;
+    tap(C.MoveSample); jog(1); click();
+    jog(-1); jog(-1); jog(-1);                     /* Start → Tail → Warm-up → Source */
+    click();
+    assert(S.confirmResample.src === 1, 'Source did not flip to Dry');
+    jog(1); jog(1); jog(1);
+    click();
+    const v = queued('resample_clip');
+    assert(v.length === 1 && v[0] === '2 0 2 0 0 1 |/data/UserData/UserLibrary/Samples/dAVEBOx/Resample/My Song 3A 2bar 120bpm.wav',
+           'value: ' + JSON.stringify(v));
+    assert(S.resampleTake && S.resampleTake.what === 'Clip 3A', 'take: ' + JSON.stringify(S.resampleTake));
+    S.resampleTake = null; S.sessionView = true;
+});
+
+step('⭐ a Move instrument: Source is "-" and stays Wet; Warm-up starts on', () => {
+    clipRig(1);
+    S.sessionView = false;
+    tap(C.MoveSample); jog(1); click();
+    const r = S.confirmResample;
+    assert(r && !r.dryOk && r.warm, 'options: ' + JSON.stringify(r));
+    jog(-1); jog(-1); jog(-1); click();
+    assert(r.src === 0, 'Dry was chosen on a Move instrument');
+    back(); back();
+    S.sessionView = true;
+});
+
+step('⭐⭐ Session View: Resample clip › → the clip picker, on screen → a pad picks that clip; Back → picker → menu', () => {
+    clipRig(0);
+    tap(C.MoveSample); jog(1); jog(1);
+    assert(S.sampleMenu.items[S.sampleMenu.sel].id === 'resample_clip', 'the jog did not reach Resample clip');
+    click();
+    assert(S.pendingSceneBakePicker && S.scenePickFor === 'resample_clip', 'no clip picker');
+    const clipTitle = frame(() => render.drawUI());
+    S.scenePickFor = 'resample';
+    const sceneTitle = frame(() => render.drawUI());
+    S.scenePickFor = 'resample_clip';
+    assert(inked(clipTitle) && !same(clipTitle, sceneTitle), 'the clip picker looks like the scene picker');
+    tap(43);                                     /* a scene button picks nothing here */
+    assert(S.pendingSceneBakePicker && !S.confirmResample, 'a scene button picked in the CLIP picker');
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 92 + 4, 100]));   /* top row, track 5 */
+    globalThis.onMidiMessageInternal(new Uint8Array([0x80, 92 + 4, 0]));
+    assert(S.confirmResample && S.confirmResample.track === 4 && S.confirmResample.clip === 0,
+           'the pad did not pick track 5 clip A: ' + JSON.stringify(S.confirmResample));
+    back();
+    assert(S.pendingSceneBakePicker && S.scenePickFor === 'resample_clip', 'Back did not return to the clip picker');
+    back();
+    assert(S.sampleMenu && S.sampleMenu.items[S.sampleMenu.sel].id === 'resample_clip', 'Back did not return to the menu');
+    back();
+});
+
+step('⭐ refusals: a MIDI-out track, a muted one, an empty clip', () => {
+    clipRig(2); S.sessionView = false;
+    tap(C.MoveSample); jog(1); click();
+    assert(!S.confirmResample && (S.actionPopupLines || []).join(' ').indexOf('plays MIDI out') >= 0,
+           'MIDI out: ' + JSON.stringify(S.actionPopupLines));
+    clipRig(0); S.sessionView = false; S.trackMuted[T] = true;
+    tap(C.MoveSample); jog(1); click();
+    assert(!S.confirmResample && (S.actionPopupLines || []).join(' ').indexOf('is muted') >= 0,
+           'muted: ' + JSON.stringify(S.actionPopupLines));
+    clipRig(0); S.sessionView = false; S.trackActiveClip[T] = 1;
+    tap(C.MoveSample); jog(1); click();
+    assert(!S.confirmResample && (S.actionPopupLines || []).join(' ').indexOf('3B is empty') >= 0,
+           'empty: ' + JSON.stringify(S.actionPopupLines));
+    S.sessionView = true; S.trackActiveClip[T] = 0;
 });
 
 step('CONTROL: Shift+Sample opens nothing (the chord is gone)', () => {
