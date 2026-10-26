@@ -217,7 +217,8 @@ function drawAudioWaveEditor() {
         ovwPrint(4, 10, 'EVEN ' + i.even + ': LOCKED', 1);
     } else if (m) {
         ovwPrint(4, 10, 'S ' + auFmtTime(m[0], rt), 1);
-        right(m[1] === auEdHome(ed, sel) ? 'E HOME' : 'E ' + auFmtTime(m[1], rt));
+        /* at home the end follows the next slice's start: "NEXT" (Josh) */
+        right(m[1] === auEdHome(ed, sel) ? 'E NEXT' : 'E ' + auFmtTime(m[1], rt));
     }
     drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel, cur: i.even ? null : ed.cur });
     drawKitHintRow(MV_FOOTER_Y, i.even ? [['k4', 'even'], ['k2', 'zoom']]

@@ -1248,7 +1248,7 @@ the selected slice bracketed:
 | Control | Does |
 |---|---|
 | **Pads** | Pick a slice (it plays) |
-| **K1 Start** / **K3 End** | Move the selected slice's start / end, one screen pixel a detent — a single sample when zoomed all the way in. A slice ends where the next begins (**E HOME**); turn its end away to set its own. Turned back, it stops at home for a moment |
+| **K1 Start** / **K3 End** | Move the selected slice's start / end, one screen pixel a detent — a single sample when zoomed all the way in. A slice ends where the next begins (**E NEXT**); turn its end away to set its own. Turned back, it stops there for a moment |
 | **K2 Zoom** | From the whole sample down to one sample a pixel, centred on what you touched last: the cursor (jog), the start (K1) or the end (K3) |
 | **K4 Even** | As on the SLICING page |
 | **Jog** / **click** | Move the cursor (**Shift** for single samples) / add a chop there |
