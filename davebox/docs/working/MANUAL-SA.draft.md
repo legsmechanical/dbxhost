@@ -1227,7 +1227,11 @@ holds), **dAVEBOx Resample**, **Recordings**, **Samples** and the **Core Library
 turn and click into a folder. The file under the cursor plays as you rest on it (WAV
 or AIFF). Click a file to pick it: dAVEBOx **copies it into the project**, so the
 project keeps its sounds when copied or when the library changes. **None** clears
-the clip. Slice mode takes samples up to 4 minutes; Loop mode up to 10. A sample
+the clip. Slice mode takes samples up to 4 minutes; Loop mode up to 30 — a Loop
+sample longer than 4 minutes plays from the card as it goes, so a long one costs
+little memory. Its jumps and its start on the bar are always instant; starting the
+transport partway through the clip, turning Revrs on or moving Start/End while it
+plays can leave a few milliseconds of silence before it comes in, on time. A sample
 whose file has gone reads *Missing: name* and stays silent.
 
 **Chops.** You make chops one of two ways, then shape them in the chop editor:
