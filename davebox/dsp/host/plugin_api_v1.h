@@ -312,6 +312,11 @@ typedef struct move_host_ext_v1 {
 
 #define MOVE_CAPTURE_MIX   0
 #define MOVE_CAPTURE_SLOT  1
+/* capture_start_src: chain slot n's INSTRUMENT, before its FX -- its output at
+ * its synth level, no FX, fader, pan or sends (to bounce an instrument to audio
+ * and keep its effects live). A block the instrument does not render is
+ * silence. On a slot rendering without separate FX it is the slot's output. */
+#define MOVE_CAPTURE_SLOT_PRE 2
 
 /* One event of an offline MIDI FX job (midi_fx_offline_*). */
 typedef struct move_midi_fx_offline_ev {

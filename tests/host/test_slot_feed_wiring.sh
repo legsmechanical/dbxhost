@@ -24,4 +24,13 @@ rendered() { code "$SHIM" | grep -q 'if (!shadow_chain_slots\[s\].active && !fed
 check "a fed slot with no instrument is rendered" rendered
 mix_gate() { code "$SHIM" | grep -q 'int slot_active = ((shadow_chain_slots\[s\].active || shadow_slot_feed\[s\].live) &&'; }
 check "the Link Audio rebuild mixes a fed slot" mix_gate
+fresh() { code "$SHIM" | grep -q 'shadow_feed_seq = (overtake_render_seq != shadow_feed_seq_seen) ? overtake_render_seq : 0;' &&
+         [ "$(code "$SHIM" | grep -c 'shadow_feed_seq)')" -ge 1 ] &&
+         ! code "$SHIM" | grep -q 'slot_feed_current(&shadow_slot_feed\[s\], overtake_render_seq)'; }
+check "a feed counts only when the overtake DSP rendered last frame (no replay after an unload)" fresh
+pending() { code "$SHIM" | grep -B1 -A6 '} else if (!shadow_chain_slots\[s\].active && fd->gain > 0.0f) {' | grep -q 'fd->gain = 0.0f;'; }
+check "a load / clear pending on an empty slot is not left waiting on a fade that cannot move" pending
+pre() { [ "$(code "$SHIM" | grep -c 'sampler_take_tap_wants_pre(sampler_module_take')" = 2 ] &&
+        code "$SHIM" | grep -q 'if (sampler_take_from_tap(sampler_module_take, sampler_take_src_kind))'; }
+check "a before-FX take taps both render paths and the take reads it" pre
 [ "$fails" = 0 ] && echo "PASS: test_slot_feed_wiring" || { echo "FAIL: test_slot_feed_wiring"; exit 1; }
