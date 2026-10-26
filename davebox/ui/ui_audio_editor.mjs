@@ -449,8 +449,8 @@ export function audioEditorInput(status, d1, d2) {
     return false;
 }
 
-/* "Keep N new chops?" / "Replace chops?" — the jog picks, a click answers,
- * Back is No. */
+/* "Keep N new chops?" / "Replace chops?" — the jog picks (clockwise toward
+ * Yes, on the right), a click answers, Back is No. */
 function askInput(ed, status, d1, d2) {
     const hi = status & 0xF0;
     if (hi === 0x90 || hi === 0x80) {
@@ -463,7 +463,7 @@ function askInput(ed, status, d1, d2) {
     if (status !== 0xB0) return false;
     if (d1 === MoveMainKnob) {
         const dd = decodeDelta(d2);
-        if (dd) { ed.ask.sel = dd > 0 ? 1 : 0; S.screenDirty = true; }
+        if (dd) { ed.ask.sel = dd > 0 ? 0 : 1; S.screenDirty = true; }
         return true;
     }
     let yes = null;

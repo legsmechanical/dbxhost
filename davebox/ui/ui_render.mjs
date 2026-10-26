@@ -81,7 +81,10 @@ import { drawAudioChooser } from './ui_audio_chooser.mjs';
  * The clip's sample in a rect: its body, every slice start a dotted tick,
  * the selected slice bracketed (its start and its end), Start..End's outside
  * hatched off, the playhead a solid line, the editor's cursor a line with a
- * notch. `A`/`B` = the frames shown (default the whole sample). */
+ * notch. Marks are drawn in both inks (a dotted mark alternates white and
+ * black, a solid one is edged in black) so they read over a loud passage as
+ * well as a quiet one (found on the device). `A`/`B` = the frames shown
+ * (default the whole sample). */
 function drawAudioWave(t, c, x, y, w, h, opts) {
     const o = opts || {};
     const i = auInfo(t, c);
@@ -113,15 +116,17 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
         for (let k = 0; k < mk.length; k++) {
             const px = fx(mk[k][0]);
             if (!inView(px) || k === sel) continue;
-            for (let j = y; j < y + h; j += 2) set_pixel(px, j, 1);
+            for (let j = y; j < y + h; j++) set_pixel(px, j, (j - y) & 1 ? 0 : 1);
         }
         if (sel >= 0 && sel < mk.length) {
             const pa = fx(mk[sel][0]), pb = Math.min(x + w - 1, fx(mk[sel][1]));
             if (inView(pa)) {
+                fill_rect(pa - 1, y, 3, h, 0);
                 fill_rect(pa, y, 1, h, 1);
                 fill_rect(pa, y, 3, 1, 1); fill_rect(pa, y + h - 1, 3, 1, 1);
             }
             if (inView(pb)) {
+                fill_rect(pb - 1, y, 3, h, 0);
                 fill_rect(pb, y, 1, h, 1);
                 fill_rect(pb - 2, y, 3, 1, 1); fill_rect(pb - 2, y + h - 1, 3, 1, 1);
             }
@@ -130,7 +135,7 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
     if (o.cur != null) {
         const px = fx(o.cur);
         if (inView(px)) {
-            for (let j = y + 3; j < y + h; j += 3) set_pixel(px, j, 1);
+            for (let j = y; j < y + h; j++) set_pixel(px, j, ((j - y) >> 1) & 1 ? 0 : 1);
             fill_rect(px - 1, y - 3, 3, 1, 1);
             set_pixel(px, y - 2, 1);
         }

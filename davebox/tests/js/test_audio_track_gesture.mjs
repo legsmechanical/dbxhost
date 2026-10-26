@@ -374,7 +374,7 @@ step('⭐ Manual asks before replacing a hand set; Start / End open the range ed
     assert(S.auEditor && S.auEditor.ask && S.auEditor.ask.kind === 'replace', 'Manual did not ask');
     click();                                         /* opens on No */
     assert(!S.auEditor && sent('t4_au_manual').length === 0, 'No replaced');
-    touchClick(2); jog(-1); click();
+    touchClick(2); jog(1); click();                  /* clockwise: toward Yes, on the right */
     assert(sent('t4_au_manual').join() === '0' && S.auEditor && S.auEditor.mode === 'chop', 'Yes did not replace');
     cc(HC.MoveBack, 127); cc(HC.MoveBack, 0);
     jog(-1);
