@@ -30,7 +30,11 @@ fresh() { code "$SHIM" | grep -q 'shadow_feed_seq = (overtake_render_seq != shad
 check "a feed counts only when the overtake DSP rendered last frame (no replay after an unload)" fresh
 pending() { code "$SHIM" | grep -B1 -A6 '} else if (!shadow_chain_slots\[s\].active && fd->gain > 0.0f) {' | grep -q 'fd->gain = 0.0f;'; }
 check "a load / clear pending on an empty slot is not left waiting on a fade that cannot move" pending
-pre() { [ "$(code "$SHIM" | grep -c 'sampler_take_tap_wants_pre(sampler_module_take')" = 2 ] &&
+# The before-FX take is read where the take reads its source, from the frame's
+# pre-FX buffer -- a tap in the slot's render task runs before the module's
+# render that starts the take and lost its first block (device, 2026-10-27).
+pre() { code "$SHIM" | grep -A6 'sampler_take_src_kind == SAMPLER_TAKE_SRC_PRE &&' | grep -q 'memcpy(shadow_take_tap, shadow_slot_deferred\[ps\]' &&
+        ! code "$SHIM" | grep -q 'sampler_take_tap_wants_pre(sampler_module_take' &&
         code "$SHIM" | grep -q 'if (sampler_take_from_tap(sampler_module_take, sampler_take_src_kind))'; }
-check "a before-FX take taps both render paths and the take reads it" pre
+check "a before-FX take reads the frame's pre-FX buffer where the take reads its source" pre
 [ "$fails" = 0 ] && echo "PASS: test_slot_feed_wiring" || { echo "FAIL: test_slot_feed_wiring"; exit 1; }
