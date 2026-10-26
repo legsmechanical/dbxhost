@@ -860,7 +860,13 @@ function _dispatchBelowJogRouter(data, status, d1, d2) {
     if (audioChooserOpen()) {
         const hi = status & 0xF0;
         if (hi === 0x90 || hi === 0x80) {
-            if (d1 >= 0 && d1 <= 7) return;
+            /* A knob let go is let go: the touch that opened this (touch +
+             * click) is released IN here, and swallowing it left the knob
+             * touched — the next jog press was touch + click again. */
+            if (d1 >= 0 && d1 <= 7) {
+                if ((hi === 0x80 || d2 < 64) && S.knobTouched === d1) S.knobTouched = -1;
+                return;
+            }
             if (d1 >= 16 && d1 <= 31) return;
             if (d1 >= TRACK_PAD_BASE && d1 < TRACK_PAD_BASE + 32) return;
         } else if (status === 0xB0) {

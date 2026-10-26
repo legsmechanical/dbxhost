@@ -87,6 +87,7 @@ for (let i = 0; i < 8; i++) { S.trackRoute[i] = 0; S.trackChannel[i] = 1; S.trac
 S.bankParams = Array.from({ length: 8 }, () => Array.from({ length: C.BANKS.length }, () => new Array(8).fill(0)));
 S.tickCount = 1000; S.pendingDspSync = 0; S.pendingSetLoad = false; S.playing = false;
 S.activeTrack = 4; S.activeBank = 0;
+S.touchHoldMs = 0;     /* knob-touch releases delivered at once (ui_touch_hold) */
 
 const cc    = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
 const note  = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([d2 ? 0x90 : 0x80, d1, d2]));
@@ -165,9 +166,10 @@ step('⭐⭐ Smpl: touch + click opens the CHOOSER, on screen; it auditions; a c
     sets.length = 0; PREVIEWS.length = 0;
     note(0, 127);                                   /* touch K1 */
     click();
-    note(0, 0);
     ticks(2);
+    note(0, 0);                                     /* ...released with the chooser up */
     assert(S.auChooser && S.auChooser.t === 4, 'the chooser did not open');
+    assert(S.knobTouched === -1, 'the knob stayed touched: the next jog press would be touch + click again');
     assert(S.auChooser.places[0].label === 'This project', 'places: ' + S.auChooser.places.map((p) => p.label));
     onScreen(CH.drawAudioChooser, 'the sample chooser');
     /* into Core Library, a file: it auditions once the cursor rests */
@@ -204,6 +206,7 @@ step('⭐⭐ Slices: touch + click opens the SLICE EDITOR, on screen; a pad pick
     A.auMarkStale(4, 0); ticks(2);
     note(4, 127); click(); note(4, 0);
     assert(S.auEditor && S.auEditor.t === 4, 'the editor did not open');
+    assert(S.knobTouched === -1, 'the knob stayed touched under the editor');
     ticks(2);
     note(C.TRACK_PAD_BASE + 2, 100); note(C.TRACK_PAD_BASE + 2, 0);
     assert(S.auEditor.sel === 2 && S.activeDrumLane[4] === 2, 'the pad did not pick slice 3');
