@@ -25,9 +25,10 @@
  *   chop   K1 Start · K2 Zoom · K3 End · K4 Even. Pads pick a slice (it
  *          plays). The jog moves a cursor; a click adds a marker there.
  *          Delete + pad removes that slice's start (not slice 1's). One
- *          detent of K1 / K3 / the jog = one screen pixel at the zoom. Zoom
- *          centres on what was touched last (the jog: the cursor; K1: the
- *          start; K3: the end). An End turned past home sticks there a few
+ *          detent of K1 / K3 / the jog = one screen pixel at the zoom. What
+ *          was touched last (the jog: the cursor; K1: the start; K3: the end)
+ *          stays in the middle of the screen, the waveform scrolling around
+ *          it; touching one jumps there. An End turned past home sticks there a few
  *          detents and reads "home". While Even is on, the markers are locked.
  *   range  K1 Start · K2 Zoom · K3 End of the clip (from the CLIP page).
  *   lazy   Lazy chop: pad 1 lit; its tap plays Start..End; then only the next
@@ -38,7 +39,7 @@
 
 import { S } from './ui_state.mjs';
 import { MoveBack } from '/data/UserData/schwung/shared/constants.mjs';
-import { MoveMainKnob, MoveMainButton, MoveNoteSession, TRACK_PAD_BASE } from './ui_constants.mjs';
+import { MoveMainKnob, MoveMainButton, MoveMainTouch, MoveNoteSession, TRACK_PAD_BASE } from './ui_constants.mjs';
 import { decodeDelta } from '/data/UserData/schwung/shared/input_filter.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLazyState, auMarkStale,
@@ -224,13 +225,21 @@ export function closeAudioEditor() {
 /* Frames per screen pixel at the editor's zoom (128 pixels across). */
 export function auEdPixel(ed) { return Math.max(1, Math.round((ed.B - ed.A) / 128)); }
 
-/* Keep frame f on screen, scrolling the window (its span kept). */
-function follow(ed, f) {
+/* The point being worked on sits in the MIDDLE of the screen and the
+ * waveform scrolls around it, as far as the sample allows (Josh, 2026-10-28:
+ * "start/end/cursor should always be in the center of screen with waveform
+ * scrolling around it (where there's room) touch start should jump to start,
+ * end to end, and cursor to current cursor position"). `f` defaults to the
+ * focus: what was touched last. The span is kept. */
+function centre(ed, f) {
+    if (f == null) f = focus(ed);
     const span = ed.B - ed.A, fr = auInfo(ed.t, ed.c).nframes | 0;
-    if (f >= ed.A && f < ed.B) return;
     let A = Math.round(f - span / 2);
     A = Math.max(0, Math.min(Math.max(0, fr - span), A));
     ed.A = A; ed.B = A + span;
+}
+function focus(ed) {
+    return ed.last === 'start' ? edStart(ed) : ed.last === 'end' ? edEnd(ed) : ed.cur;
 }
 
 /* The points K1 / K3 edit, and the one zoom centres on. */
@@ -262,10 +271,8 @@ function zoom(ed, dir) {
     let ns = Math.round(dir > 0 ? span * 0.8 : span * 1.25);
     ns = Math.max(Math.min(MIN_SPAN, fr), Math.min(fr, ns));
     if (ns === span) return false;
-    const ctr = ed.last === 'start' ? edStart(ed) : ed.last === 'end' ? edEnd(ed) : ed.cur;
-    let A = Math.round(ctr - ns / 2);
-    A = Math.max(0, Math.min(fr - ns, A));
-    ed.A = A; ed.B = A + ns;
+    ed.B = ed.A + ns;
+    centre(ed);
     return true;
 }
 
@@ -287,7 +294,7 @@ function chopPoint(ed, which, dd) {
         if (wasHome) mk[k - 1][1] = v;                                 /* the slice before follows (home) */
         auSliceStart(t, c, k, v);
         auMarksLocal(t, c, mk);
-        follow(ed, v);
+        centre(ed, v);
         return true;
     }
     const home = auEdHome(ed, k), b = mk[k][1];
@@ -298,7 +305,7 @@ function chopPoint(ed, which, dd) {
     mk[k][1] = v;
     auSliceEnd(t, c, k, v === home ? 0 : v);
     auMarksLocal(t, c, mk);
-    follow(ed, v);
+    centre(ed, v);
     return true;
 }
 
@@ -313,8 +320,11 @@ export function audioEditorInput(status, d1, d2) {
             const on = hi === 0x90 && d2 >= 64;
             if (on) {
                 S.knobTouched = d1; S.knobPhysIdx = d1;
-                if (d1 === 0) ed.last = 'start';
-                if (d1 === 2) ed.last = 'end';
+                /* a touch jumps there: K1 to the start, K3 to the end */
+                if ((d1 === 0 || d1 === 2) && ed.mode !== 'lazy') {
+                    ed.last = d1 === 0 ? 'start' : 'end';
+                    centre(ed);
+                }
             } else {
                 /* a release still lets go (a touch + click opened this) */
                 if (S.knobTouched === d1) S.knobTouched = -1;
@@ -322,6 +332,11 @@ export function audioEditorInput(status, d1, d2) {
             }
             S.screenDirty = true;
             return true;
+        }
+        if (d1 === MoveMainTouch) {
+            /* touching the jog jumps to the cursor */
+            if (hi === 0x90 && d2 >= 64 && ed.mode !== 'lazy') { ed.last = 'jog'; centre(ed); S.screenDirty = true; }
+            return false;
         }
         if (d1 >= 16 && d1 <= 31) return true;               /* steps */
         if (d1 >= TRACK_PAD_BASE && d1 < TRACK_PAD_BASE + 32) {
@@ -361,7 +376,7 @@ export function audioEditorInput(status, d1, d2) {
             if (down && k < i.n) {
                 auSetSelSlice(ed.t, k);
                 const m = auMarks(ed.t, ed.c)[k];
-                if (m) { ed.cur = m[0]; follow(ed, m[0]); }
+                if (m) { ed.cur = m[0]; centre(ed); }
                 ed.endHold = 0;
                 S.ledsDirtyAudio = true;
                 S.screenDirty = true;
@@ -382,7 +397,7 @@ export function audioEditorInput(status, d1, d2) {
             if (ed.mode === 'chop') moved = chopPoint(ed, ed.last, dd);
             else {
                 moved = auRangeStep(ed.t, ed.c, ed.last, dd, auEdPixel(ed));
-                if (moved) follow(ed, ed.last === 'start' ? auInfo(ed.t, ed.c).rstart : auEnd(auInfo(ed.t, ed.c)));
+                if (moved) centre(ed);
             }
         } else if (k === 3 && ed.mode === 'chop') {
             const st = knobStep(k, d2, KNOB_PICK);
@@ -397,7 +412,7 @@ export function audioEditorInput(status, d1, d2) {
         const step = S.shiftHeld ? 1 : auEdPixel(ed);
         ed.cur = Math.max(0, Math.min((i.nframes | 0) - 1, ed.cur + dd * step));
         ed.last = 'jog';
-        follow(ed, ed.cur);
+        centre(ed, ed.cur);
         S.screenDirty = true;
         return true;
     }

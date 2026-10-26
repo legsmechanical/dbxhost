@@ -305,10 +305,18 @@ step('⭐⭐ the waveform editor: pads pick, K1/K3 move by a pixel, K2 zooms, cl
     assert(sent('t4_au_slice_start').join() === '0 5 60750', 'K1: one pixel (750 frames): ' + JSON.stringify(sent('t4_au_slice_start')));
     assert(A.auMarks(4, 0)[4][1] === 60750, 'the slice before did not follow its home end');
     reset();
-    cc(72, 1); cc(72, 1); cc(72, 1);                 /* K2: zoom in, on the start (last touched) */
-    assert(ed.B - ed.A === 49152 && Math.abs((ed.A + ed.B) / 2 - 60750) <= 1, 'zoom is not centred on the start: ' + ed.A + '..' + ed.B);
-    cc(73, 1);                                       /* K3: the end, one pixel (384) */
-    assert(sent('t4_au_slice_end').join() === '0 5 72384', 'K3: ' + JSON.stringify(sent('t4_au_slice_end')));
+    for (let z = 0; z < 6; z++) cc(72, 1);          /* K2: zoom in, on the start (last touched) */
+    assert(ed.B - ed.A === 25166 && Math.abs((ed.A + ed.B) / 2 - 60750) <= 1, 'zoom is not centred on the start: ' + ed.A + '..' + ed.B);
+    cc(73, 1);                                       /* K3: the end, one pixel (197) */
+    assert(sent('t4_au_slice_end').join() === '0 5 72197', 'K3: ' + JSON.stringify(sent('t4_au_slice_end')));
+    const mid = () => (ed.A + ed.B) / 2;
+    assert(Math.abs(mid() - 72197) <= 1, 'the end is not in the middle while K3 turns: ' + ed.A + '..' + ed.B);
+    note(0, 127); note(0, 0);                        /* touch K1: jump to the start */
+    assert(Math.abs(mid() - 60750) <= 1, 'touching K1 did not jump to the start: ' + ed.A + '..' + ed.B);
+    note(9, 127); note(9, 0);                        /* touch the jog: jump to the cursor */
+    assert(Math.abs(mid() - 60000) <= 1, 'touching the jog did not jump to the cursor: ' + ed.A + '..' + ed.B);
+    note(2, 127); note(2, 0);                        /* touch K3: back to the end */
+    assert(Math.abs(mid() - 72197) <= 1, 'touching K3 did not jump to the end: ' + ed.A + '..' + ed.B);
     assert(ed.last === 'end', 'K3 is not the last touched');
     cc(73, 127);                                     /* back to home: sent as 0 */
     assert(sent('t4_au_slice_end').pop() === '0 5 0', 'home: ' + JSON.stringify(sent('t4_au_slice_end')));
@@ -316,7 +324,7 @@ step('⭐⭐ the waveform editor: pads pick, K1/K3 move by a pixel, K2 zooms, cl
     assert(sent('t4_au_slice_end').length === 2, 'the end left home at once');
     reset();
     jog(3);
-    assert(ed.cur === 60000 + 3 * 384 && ed.last === 'jog', 'jog: ' + ed.cur);   /* the cursor stays where the pad put it */
+    assert(ed.cur === 60000 + 3 * 197 && ed.last === 'jog', 'jog: ' + ed.cur);   /* the cursor stays where the pad put it */
     click();
     assert(sent('t4_au_mark_add').join() === '0 ' + ed.cur, 'click: ' + JSON.stringify(sent('t4_au_mark_add')));
     assert(A.auInfo(4, 0).n === 9 && A.auMarks(4, 0).length === 9, 'the marker is not on screen');
