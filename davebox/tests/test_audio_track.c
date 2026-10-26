@@ -273,6 +273,15 @@ int main(void) {
     tr->pfx.delay_level = 0; tr->pfx.repeat_times = 0;
     hx_render(h, 60);
 
+    /* ---- the slicing method turns both ways: Manual keeps Even's starts ---- */
+    hx_set_param(h, "t4_au_set_method", "0 1");
+    HX_ASSERT(inst->au_clip[4][0].method == AU_METH_MANUAL && inst->au_clip[4][0].sl[3].start == 3 * 6000,
+              "Even -> Manual did not keep the even starts");
+    hx_set_param(h, "t4_au_set_method", "0 2");
+    HX_ASSERT(inst->au_clip[4][0].method == AU_METH_LAZY && inst->au_clip[4][0].sl[3].start == 3 * 6000, "-> Lazy");
+    hx_set_param(h, "t4_au_set_method", "0 0");
+    HX_ASSERT(inst->au_clip[4][0].method == AU_METH_EVEN, "-> Even");
+
     /* ---- ALL SLICES: one value into every slice ---- */
     hx_set_param(h, "t4_au_all_gain", "0 -6");
     for (i = 0, n = 0; i < AU_MAX_SLICES; i++) n += inst->au_clip[4][0].sl[i].gain_db == -6;

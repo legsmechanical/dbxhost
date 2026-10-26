@@ -1216,7 +1216,7 @@ touch a knob and click the jog for a **›** control. **Back** leaves.
 | Page | Knobs |
 |---|---|
 | **CLIP** | **Smpl›** choose the sample · **Mode** Loop / Slice · **Start** / **End** the part of the sample that plays · **Pitch** / **Gain** for the whole clip · **Slices** (how many even slices, 1–32) or **Jump** (2–32 jump points) · **Chop›** (Slice mode) one step per slice, in order, so the clip plays the sample back as it was — now as slices you can rearrange |
-| **SLICING** | Slice mode: **Meth** (Even / Manual / Lazy — how the slices were made; turn it to Even to re-cut evenly) · **Slices** · **Edit›** the slice editor · **Lazy›** a Lazy chop. Loop mode: **Jump** · **Revrs** · **Nudge** · **JmpQ** (as on the clip bank) |
+| **SLICING** | Slice mode: **Meth** (**Even** cuts the slices evenly; **Manual** and **Lazy** keep the starts where they are, to move by hand — the slice editor and a Lazy chop set it themselves) · **Slices** · **Edit›** the slice editor · **Lazy›** a Lazy chop. Loop mode: **Jump** · **Revrs** · **Nudge** · **JmpQ** (as on the clip bank) |
 | **SLICE n** | The last pad you tapped: **Start** (nudge, ms), **Len** (how much of the slice plays), **Pitch**, **Gain**, **Revrs**, **Attk**, **Decay**, and **Play** — **One** (to the slice's end), **Gate** (as long as the step), **Loop** (loops the slice for the step) |
 | **ALL SLICES** | The same eight, for every slice at once. A knob shows `--` while the slices differ; turning it sets them all |
 

@@ -90,8 +90,15 @@ export function audioPanelInput(status, d1, d2) {
     const hi = status & 0xF0;
     if (hi === 0x90 || hi === 0x80) {
         if (d1 >= 0 && d1 <= 7) {                            /* knob touches */
-            if (hi === 0x90 && d2 >= 64) S.knobTouched = d1;
-            else if (S.knobTouched === d1) S.knobTouched = -1;
+            /* A PHYSICAL touch, as the knob handler records it: the tick
+             * clears a touched knob ~600 ms after a turn unless knobPhysIdx
+             * says a finger is on it — so a knob turned earlier lost its
+             * touch before the click (found by Josh: Edit did nothing). */
+            if (hi === 0x90 && d2 >= 64) { S.knobTouched = d1; S.knobPhysIdx = d1; S.knobTurnedTick[d1] = -1; }
+            else {
+                if (S.knobTouched === d1) S.knobTouched = -1;
+                if (S.knobPhysIdx === d1) S.knobPhysIdx = -1;
+            }
             S.screenDirty = true;
             return true;
         }
@@ -175,6 +182,7 @@ export function audioEditorInput(status, d1, d2) {
     if (hi === 0x90 || hi === 0x80) {
         if (d1 >= 0 && d1 <= 7) {                            /* knob touches: a release still lets go */
             if ((hi === 0x80 || d2 < 64) && S.knobTouched === d1) S.knobTouched = -1;
+            if ((hi === 0x80 || d2 < 64) && S.knobPhysIdx === d1) S.knobPhysIdx = -1;
             return true;
         }
         if (d1 >= 16 && d1 <= 31) return true;               /* steps */

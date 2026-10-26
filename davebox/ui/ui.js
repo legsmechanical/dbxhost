@@ -713,6 +713,7 @@ function _dispatchBelowJogRouter(data, status, d1, d2) {
              * touched — the next jog press was touch + click again. */
             if (d1 >= 0 && d1 <= 7) {
                 if ((hi === 0x80 || d2 < 64) && S.knobTouched === d1) S.knobTouched = -1;
+                if ((hi === 0x80 || d2 < 64) && S.knobPhysIdx === d1) S.knobPhysIdx = -1;
                 return;
             }
             if (d1 >= 16 && d1 <= 31) return;

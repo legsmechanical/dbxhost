@@ -9,7 +9,7 @@
  * Keys (C = clip, L = slice, all 0-based):
  *   tN_au_pick    "C|<abs path>"   copy the file into the project, load it
  *   tN_au_clear   "C"              the clip has no sample
- *   tN_au_set_<field>   "C <v>"    mode / slices / jump / start / end / pitch /
+ *   tN_au_set_<field>   "C <v>"    mode / method / slices / jump / start / end / pitch /
  *                                  gain / bars / revrs / nudge / jmpq
  *   tN_au_slice_<field> "C L <v>"  pos (frames; makes it Manual) / nudge / len /
  *                                  pitch / gain / rev / play / atk / dec
@@ -321,6 +321,13 @@ static int sp_track_audio(sp_ctx_t *cx) {
             }
             if (v != cl->mode) au_track_kill(inst, tidx, NULL);
             cl->mode = (uint8_t)v;
+        } else if (!strcmp(w, "method")) {
+            /* Even re-cuts the slices evenly; Manual / Lazy keep the starts
+             * there are now, to be moved by hand (Lazy also names how they
+             * came — a Lazy chop re-taps them). */
+            v = clamp_i(v, 0, 2);
+            if (v != AU_METH_EVEN) au_to_manual(cl);
+            cl->method = (uint8_t)v;
         } else if (!strcmp(w, "slices")) {
             cl->nslices = (uint8_t)clamp_i(v, 1, AU_MAX_SLICES);
             cl->method = AU_METH_EVEN;

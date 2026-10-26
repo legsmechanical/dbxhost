@@ -243,9 +243,29 @@ step('⭐⭐ SLICE n edits the last pad tapped; ALL SLICES sets every slice (`--
     jog(-1); jog(-1); jog(-1);
 });
 
+step('⭐ SLICING: the method turns from Even to Manual and back (Josh, device)', () => {
+    jog(1);
+    reset();
+    note(0, 127); for (let i = 0; i < 25; i++) cc(71, 1); note(0, 0);
+    assert(sent('t4_au_set_method').join() === '0 1', 'Even -> Manual: ' + JSON.stringify(sent('t4_au_set_method')));
+    reset();
+    note(0, 127); for (let i = 0; i < 25; i++) cc(71, 127); note(0, 0);
+    assert(sent('t4_au_set_method').join() === '0 0', 'Manual -> Even: ' + JSON.stringify(sent('t4_au_set_method')));
+    jog(-1);
+    GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(2);
+});
+
 step('⭐⭐ SLICING: Edit opens the SLICE EDITOR (pads pick, Record runs a Lazy chop, Back leaves)', () => {
     jog(1);
-    touchClick(2);
+    /* K3 turned a while ago (on another page): its touch must still hold
+     * until the click — the tick clears a TURNED knob's highlight after
+     * 600 ms unless a finger is recorded on it (Josh, device: Edit did
+     * nothing). */
+    S.knobTurnedTick[2] = S.clockMs - 5000;          /* turned 5 s ago */
+    note(2, 127);
+    ticks(4);
+    assert(S.knobTouched === 2, 'the touch on Edit was dropped while held: ' + S.knobTouched);
+    click(); note(2, 0);
     assert(S.auEditor && S.knobTouched === -1, 'the slice editor did not open');
     ticks(2);
     const f = shown();

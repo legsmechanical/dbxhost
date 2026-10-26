@@ -459,11 +459,12 @@ export function auPanelKnob(ed, k, steps) {
             return auLoopKnob(t, k - 1, steps);
         }
         if (k === 0) {
-            /* Method reads how the slices were made; turning it to Even
-             * re-cuts them evenly (Manual comes from moving a start in the
-             * editor, Lazy from a Lazy chop). */
-            if (dir > 0 || i.method === 0) return false;
-            loc.method = 0; auSet(t, c, 'slices', i.n);
+            /* Even re-cuts the slices evenly; Manual and Lazy keep the starts
+             * as they are, to move by hand (Josh, device: "slicing method
+             * can't be changed once it's on even"). */
+            const m = Math.max(0, Math.min(2, i.method + dir));
+            if (m === i.method) return false;
+            loc.method = m; auSet(t, c, 'method', m);
         } else if (k === 1) {
             return auCountKnob(t, c, i, loc, dir);
         } else return false;
