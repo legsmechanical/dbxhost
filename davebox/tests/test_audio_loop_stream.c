@@ -150,13 +150,20 @@ int main(void) {
     for (i = 0; i < 20 && hx_stub_feed(4, NULL, NULL) == 0; i++) hx_render(h, 1);
     /* the start's pins run out at chunk 2 + ext (5 chunks = 40960 frames = block 320) */
     stats(h, NULL, NULL, NULL, &under0);
-    for (n = 1; n < 400; n++) hx_render(h, 1);
+    for (n = 1; n < 320; n++) hx_render(h, 1);
+    blk = hx_stub_feed_last(4);                      /* block 319: frames 40832..40959, the last pinned */
+    HX_ASSERT(blk[0] == ramp_at(319.0 * 128) && abs(blk[254]) < 200,
+              "the voice did not fade out before the chunk it was missing");
+    for (; n < 400; n++) hx_render(h, 1);
     blk = hx_stub_feed_last(4);
     stats(h, NULL, NULL, NULL, &under);
     HX_ASSERT(under > under0, "a voice past its pins found chunks nobody read");
     HX_ASSERT(blk[0] == 0 && blk[254] == 0, "a missing chunk was not silent");
     for (i = 0; i < 4; i++) au_stream_service(inst);
     hx_render(h, 1);                                 /* block 400: fading back in */
+    blk = hx_stub_feed_last(4);
+    HX_ASSERT(abs(blk[0]) < ramp_at(400.0 * 128) / 16 && blk[254] == ramp_at(400.0 * 128 + 127),
+              "the voice did not fade back in after the gap");
     hx_render(h, 1);                                 /* block 401: in */
     blk = hx_stub_feed_last(4);
     HX_ASSERT(blk[0] == ramp_at(401.0 * 128) && blk[254] == ramp_at(401.0 * 128 + 127),
@@ -180,6 +187,7 @@ int main(void) {
         hx_render(h, 1);
         blk = hx_stub_feed_last(4);
         if (abs(blk[0] - ramp_at(at)) > 1 || abs(blk[254] - ramp_at(at + 127)) > 1) bad++;
+        hx_render(h, 60);                            /* on into the next chunk: still pinned */
     }
     stats(h, NULL, NULL, NULL, &under);
     HX_ASSERT(bad == 0, "a jump did not land on its point");
@@ -202,12 +210,36 @@ int main(void) {
         hx_render(h, 1);
         blk = hx_stub_feed_last(4);
         if (abs(blk[0] - ramp_at(at)) > 1 || abs(blk[254] - ramp_at(at - 127)) > 1) bad++;
+        hx_render(h, 60);                            /* back into the chunk before: still pinned */
     }
     stats(h, NULL, NULL, NULL, &under);
     HX_ASSERT(bad == 0, "a Revrs jump did not land on its mirrored point");
     HX_ASSERT(under == under0, "a Revrs jump waited for a chunk");
     hx_set_param(h, "t4_au_set_revrs", "0 0");
     hx_render(h, 2);                                 /* the loop restarts (a restart lands a waiting jump) */
+
+    /* ---- Nudge -500 ms: the loop starts half a second in, from pins alone ---- */
+    for (k = 0; k < 2; k++) {
+        hx_set_param(h, "transport", "stop");
+        hx_render(h, 4);
+        for (i = 0; i < AU_STREAM_GRACE + 5; i++) { hx_render(h, 1); au_stream_service(inst); }
+        hx_set_param(h, "t4_au_set_revrs", k ? "0 1" : "0 0");
+        hx_set_param(h, "t4_au_set_nudge", "0 -500");
+        hx_render(h, 1);
+        stats(h, NULL, NULL, NULL, &under0);
+        hx_stub_feed_reset();
+        hx_set_param(h, "transport", "play");
+        for (i = 0; i < 20 && hx_stub_feed(4, NULL, NULL) == 0; i++) hx_render(h, 1);
+        blk = hx_stub_feed_last(4);
+        HX_ASSERT(abs(blk[0] - ramp_at(k ? FR - 1 - 22050 : 22050)) <= 1, "Nudge -500 ms did not start half a second in");
+        hx_render(h, 60);
+        stats(h, NULL, NULL, NULL, &under);
+        HX_ASSERT(under == under0, k ? "a Revrs loop nudged -500 ms waited for a chunk"
+                                     : "a loop nudged -500 ms waited for a chunk");
+    }
+    hx_set_param(h, "t4_au_set_nudge", "0 0");
+    hx_set_param(h, "t4_au_set_revrs", "0 0");
+    hx_render(h, 2);
 
     /* ---- a waiting JmpQ jump: its target is read before it lands ---- */
     hx_set_param(h, "t4_au_set_jmpq", "0 3");        /* 1/4 */
