@@ -350,6 +350,16 @@ int main(void) {
         hx_get_param(h, "t4_au_marks_0", mk, sizeof mk);
         HX_ASSERT(ac->even == 0 && ac->nslices == 4 && !strcmp(mk, "0 13000 13000 24000 24000 36000 36000 48000"),
                   "an edit while Even was on did not bake it and apply");
+        hx_set_param(h, "t4_au_set_even", "0 4");
+        hx_set_param(h, "t4_au_slice_end", "0 1 20000");
+        HX_ASSERT(ac->even == 0 && ac->nslices == 4 && ac->sl[1].start == 12000 && ac->sl[1].end == 20000,
+                  "an end edit while Even was on did not bake it and apply");
+        hx_set_param(h, "t4_au_set_even", "0 4");
+        hx_set_param(h, "t4_au_mark_add", "0 6000");
+        HX_ASSERT(ac->even == 0 && ac->nslices == 5 && ac->sl[1].start == 6000, "a marker added while Even was on");
+        hx_set_param(h, "t4_au_set_even", "0 4");
+        hx_set_param(h, "t4_au_mark_del", "0 1");
+        HX_ASSERT(ac->even == 0 && ac->nslices == 3 && ac->sl[1].start == 24000, "a marker removed while Even was on");
         hx_set_param(h, "t4_au_set_even", "0 3");
         hx_set_param(h, "t4_au_even_bake", "0");
         HX_ASSERT(ac->even == 0 && ac->nslices == 3 && ac->sl[1].start == 16000 && ac->sl[2].start == 32000, "even_bake");
