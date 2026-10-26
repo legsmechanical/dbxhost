@@ -260,6 +260,8 @@ static int sp_track_clip(sp_ctx_t *cx) {
                         cl->step_ratchet[sidx] = 0;
                     }
                 } else if (cl->step_note_count[sidx] < 8) {
+                    /* Audio: a step holds one slice — the new one replaces it. */
+                    if (tr->pad_mode == PAD_MODE_AUDIO) cl->step_note_count[sidx] = 0;
                     int was_empty = (cl->step_note_count[sidx] == 0);
                     int ni2 = (int)cl->step_note_count[sidx];
                     cl->step_notes[sidx][ni2] = (uint8_t)note;
@@ -754,6 +756,8 @@ static int sp_track_clip(sp_ctx_t *cx) {
             /* Clip clear also removes the clip's aftertouch automation. */
             at_auto_reset(&tr->clip_at_auto[cidx]);
             memset(tr->at_last_sent, 0xFF, AT_MAX_LANES);
+            /* An Audio clip's sample goes with it (the clip is empty after). */
+            if (tr->pad_mode == PAD_MODE_AUDIO) au_clip_reset(inst, tidx, cidx);
             /* Deactivate track if the cleared clip is active or queued */
             if ((int)tr->active_clip == cidx) {
                 silence_track_notes_v2(inst, tr);
@@ -809,6 +813,7 @@ static int sp_track_clip(sp_ctx_t *cx) {
             undo_begin_single(inst, tidx, cidx);
             silence_track_notes_v2(inst, tr);
             clip_init(cl);
+            if (tr->pad_mode == PAD_MODE_AUDIO) au_clip_reset(inst, tidx, cidx);   /* its sample goes too */
             at_auto_reset(&tr->clip_at_auto[cidx]);
             if ((int)tr->active_clip == cidx)
                 pfx_sync_from_clip(tr);

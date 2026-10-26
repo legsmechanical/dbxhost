@@ -46,6 +46,8 @@ import { seqAutoTargetForKnob, MoveLoop } from './ui_constants.mjs';
 import { sessStripTargets, SESS_KNOB_MODES } from './ui_engine.mjs';
 import { daveBoxRotate } from './ui_daves.mjs';
 import { miActive, miOnKnob, miOnJog, miOnClick, miOnBack, miClose, miJogTouch, miPadTap, miPadRelease } from './ui_midi_import.mjs';
+import { audioChooserOpen, audioChooserRotate, audioChooserClick, audioChooserBack, closeAudioChooser } from './ui_audio_chooser.mjs';
+import { audioPanelInput } from './ui_audio_editor.mjs';
 import {
     projectPickerTextEntryMidi, templateTextEntryMidi,
     projectPadPickerTap, projectPadPickerRotate, projectPadPickerClick
@@ -697,6 +699,40 @@ function _dispatchBelowJogRouter(data, status, d1, d2) {
     }
     if (isNoiseMessage(data)) return;
 
+    /* AUDIO's screens (ui_audio_chooser / ui_audio_editor): the sample
+     * chooser takes the jog, its click and Back; the AUDIO editor takes the
+     * knobs, the jog and Back (its slice editor the pads and Record too).
+     * Steps are swallowed so nothing edits the track underneath; Note/Session
+     * closes and falls through; transport, Shift and the volume keep doing
+     * what they do. */
+    if (audioChooserOpen()) {
+        const hi = status & 0xF0;
+        if (hi === 0x90 || hi === 0x80) {
+            /* A knob let go is let go: the touch that opened this (touch +
+             * click) is released IN here, and swallowing it left the knob
+             * touched — the next jog press was touch + click again. */
+            if (d1 >= 0 && d1 <= 7) {
+                if ((hi === 0x80 || d2 < 64) && S.knobTouched === d1) S.knobTouched = -1;
+                return;
+            }
+            if (d1 >= 16 && d1 <= 31) return;
+            if (d1 >= TRACK_PAD_BASE && d1 < TRACK_PAD_BASE + 32) return;
+        } else if (status === 0xB0) {
+            if (d1 >= 71 && d1 <= 78) return;
+            if (d1 === MoveMainKnob && !S.shiftHeld) { const _jd = decodeDelta(d2); if (_jd) audioChooserRotate(_jd); return; }
+            if (d1 === MoveMainButton) { if (d2 === 127) audioChooserClick(); return; }
+            if (d1 === MoveBack) {
+                if (d2 >= 64) { S.backPressTick = nowMs(); S.backHoldFired = false; return; }
+                const _held = S.backHoldFired;
+                S.backPressTick = -1; S.backHoldFired = false;
+                if (!_held) audioChooserBack();
+                return;
+            }
+            if (d1 === MoveNoteSession) closeAudioChooser();
+        }
+    }
+    if (S.auPanel && audioPanelInput(status, d1, d2)) return;
+
     /* A Loop press that is used for anything (a step, a pad, the jog, Play…)
      * is a modifier, not a tap: on release it never latches the loop view.
      * Touches (knobs 0-9 incl. the jog) are not presses. */
@@ -849,6 +885,7 @@ function _dispatchBelowJogRouter(data, status, d1, d2) {
              * keeps doing what it does (the browser claims only what it uses) */
         }
     }
+
 
     /* Master volume knob (CC 79) + its capacitive touch (note 8): PLAIN turns
      * are Move's native main output, EVERYWHERE — sound mode included (Josh,

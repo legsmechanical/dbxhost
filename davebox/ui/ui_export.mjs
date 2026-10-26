@@ -22,7 +22,7 @@ import { nowMs } from './ui_clock.mjs';
 import { slotIndex, DAVEBOX_HOST_DIR, SLOT_LEVEL_MAX, engineGet, engineGetSlotParam } from './ui_engine.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 import { midiFxLeftOut } from './ui_print.mjs';
-import { NUM_TRACKS, NUM_CLIPS, ACTION_POPUP_MS, PAD_MODE_CONDUCT } from './ui_constants.mjs';
+import { NUM_TRACKS, NUM_CLIPS, ACTION_POPUP_MS, PAD_MODE_CONDUCT, PAD_MODE_AUDIO } from './ui_constants.mjs';
 
 /* Our own module directory — where build.sh/build_sound.sh put pack.py and the
  * JSON templates. It MUST follow the build's module id: SA ships as
@@ -265,6 +265,10 @@ function resolveTrack(t, ctx) {
     /* Conductor track: silent placeholder, named "Conductor". */
     if (S.trackPadMode && S.trackPadMode[t] === PAD_MODE_CONDUCT) {
         return dummy('Conductor', defaultColor);
+    }
+    /* Audio track: not exported in v1 (Q5) — a silent placeholder, "Audio". */
+    if (S.trackPadMode && S.trackPadMode[t] === PAD_MODE_AUDIO) {
+        return dummy('Audio', defaultColor);
     }
 
     if (route === ROUTE_MOVE) {
@@ -895,7 +899,7 @@ function buildTrack(t, ctx) {
      * return count 0 → empty slot. The Conductor track emits no MIDI of its
      * own → exported as a dummy with empty clip slots (preserving the 8-track
      * layout); its own clips are never exported as notes. */
-    const isConductor = (S.trackPadMode && S.trackPadMode[t] === PAD_MODE_CONDUCT);
+    const isConductor = (S.trackPadMode && (S.trackPadMode[t] === PAD_MODE_CONDUCT || S.trackPadMode[t] === PAD_MODE_AUDIO));
     const isDrum = !isConductor && !!(S.trackPadMode && S.trackPadMode[t] !== 0);
     const clipSlots = [];
     for (let i = 0; i < EXPORT_SCENES; i++) {

@@ -493,6 +493,19 @@ export const S = {
     pendingMenuAt: null,                      /* a Project Settings row label: the tick opens the menu on it */
     moveCoRunDrumHeld: new Set(),             /* d1 notes of drum lane pads currently held in co-run — per-pad Set so a 2nd simultaneous hold doesn't clobber the 1st's tracking (js-input-1). Plain pad note-off (no Shift injection) sent per held pad on physical release / co-run exit */
     trackPadMode: new Array(8).fill(0),
+    /* AUDIO (ui_audio.mjs): per track per clip, the DSP's tN_au_info_C parsed. */
+    auInfo: Array.from({ length: 8 }, () => new Array(16).fill(null)),
+    auSelSlice: new Array(8).fill(0),  /* the slice SLICE n edits: the last pad tapped */
+    auStartsRev: 0,          /* bumped when slice starts may have moved */
+    auPanel: null,           /* the AUDIO editor: { t, page } (ui_audio_editor.mjs) */
+    auEditor: null,          /* its slice editor: { t, c, lazy, lazySeen, lazyAt, pos } */
+    auChooser: null,         /* the sample chooser (ui_audio_chooser.mjs) */
+    pendingAudioChooser: null,    /* { t, c }: the tick opens the chooser (it lists a folder) */
+    confirmConvertAudio: false,   /* the convert confirm: false Drums, 'audio' -> Audio, 'resample' the resample offer, 'leave' Audio -> another */
+    confirmConvertTarget: null,   /* 'leave': what the track becomes { pm, v } */
+    pendingAuConvertStart: -1,    /* track whose clips the tick starts resampling (ui_audio_convert) */
+    auConvert: null,              /* the conversion's takes in flight */
+    auApply: null,                /* the takes being loaded into the converted clips, one per tick */
     trackVelOverride: new Array(8).fill(0),
     /* Track transpose: semitones (-24..+24) applied to EVERYTHING this track
      * plays, live and sequenced, on its way out — so it lands the same whether
@@ -720,6 +733,8 @@ export const S = {
     bpmWasEditing: false,
     lastSentMenuEditValue: null,
     confirmClearSession: false,
+    confirmPurge: null,        /* Purge unused samples: { files, bytes } awaiting Yes */
+    confirmPurgeSel: 1,
     pendingTemplateSet: null,      /* a template save { id, name|null }: runs in ui_tick's save chain a tick after the DSP save (ui_template.mjs) */
     templateManager: null,         /* the TEMPLATES screen { list, sel, menu, confirm } (ui_dialogs.mjs) */
     templateNameEntry: null,       /* the keyboard naming a template { mode: 'save'|'rename', id } (ui_dialogs.mjs) */

@@ -265,6 +265,11 @@ int main(void) {
     hx_set_param(h, "t4_au_all_gain", "0 -6");
     for (i = 0, n = 0; i < AU_MAX_SLICES; i++) n += inst->au_clip[4][0].sl[i].gain_db == -6;
     HX_ASSERT(n == AU_MAX_SLICES, "ALL SLICES did not set every slice's gain");
+    {
+        char ab[64];
+        hx_get_param(h, "t4_au_all_0", ab, sizeof ab);
+        HX_ASSERT(!strncmp(ab, "0 100 0 -6 0 0 0 x", 18), "ALL SLICES read does not show the common gain and the differing Play");
+    }
     hx_set_param(h, "t4_au_all_play", "0 0");
     hx_set_param(h, "t4_au_all_gain", "0 0");
     hx_set_param(h, "t4_au_slice_gain", "0 1 -6");
@@ -296,6 +301,29 @@ int main(void) {
     /* ---- wipe ---- */
     hx_set_param(h, "t4_au_wipe", "0");
     HX_ASSERT(clip_pitches(inst, 4, 0, pit, 64) == 0, "wipe left notes in the clip");
+
+    /* ---- a step holds one slice: placed by hand or recorded ---- */
+    hx_set_param(h, "t4_c0_step_2_toggle", "38");
+    hx_set_param(h, "t4_c0_step_2_toggle", "40");
+    HX_ASSERT(tr->clips[0].step_note_count[2] == 1 && tr->clips[0].step_notes[2][0] == 40,
+              "a second slice placed on a step did not replace the first");
+    hx_set_param(h, "t4_au_wipe", "0");
+    tr->recording = 1; tr->current_clip_tick = 0;
+    hx_set_param(h, "t4_record_note_on", "e38 100");
+    hx_set_param(h, "t4_record_note_off", "e38");
+    hx_set_param(h, "t4_record_note_on", "e41 100");
+    hx_set_param(h, "t4_record_note_off", "e41");
+    n = clip_pitches(inst, 4, 0, pit, 64);
+    HX_ASSERT(n == 1 && pit[0] == 41, "recording left two slices on one step");
+    /* Loop mode records nothing */
+    hx_set_param(h, "t4_au_set_mode", "0 0");
+    tr->current_clip_tick = 24 * 4;
+    hx_set_param(h, "t4_record_note_on", "e44 100");
+    hx_set_param(h, "t4_record_note_off", "e44");
+    HX_ASSERT(clip_pitches(inst, 4, 0, pit, 64) == 1, "a Loop clip recorded a slice");
+    tr->recording = 0;
+    hx_set_param(h, "t4_au_set_mode", "0 1");
+    hx_set_param(h, "t4_au_wipe", "0");
 
     /* ---- formats + refusals ---- */
     snprintf(p, sizeof p, "1|%s/src/st24.wav", g_root);
@@ -403,6 +431,23 @@ int main(void) {
     hx_set_param(h, "transport", "stop");
     hx_set_param(h, "t4_au_set_jmpq", "5 0");
     hx_render(h, 4);
+
+    /* ---- copy / cut / clear carry the sample; a mismatched paste is refused ---- */
+    hx_set_param(h, "clip_copy", "4 0 4 9");
+    HX_ASSERT(!strcmp(inst->au_clip[4][9].name, "mono48.wav") && inst->au_clip[4][9].mode == AU_MODE_SLICE &&
+              inst->au_clip[4][9].sl[1].gain_db == -6, "a copied clip did not carry its sample and settings");
+    HX_ASSERT(wait_loaded(h, 4, 9) == 2 && inst->au_clip[4][9].smp == inst->au_clip[4][0].smp,
+              "the copy did not load the same sample (once)");
+    hx_set_param(h, "t1_c0_step_0_toggle", "60");
+    hx_set_param(h, "clip_copy", "1 0 4 10");
+    HX_ASSERT(tr->clips[10].note_count == 0, "a melodic clip pasted onto an Audio track");
+    hx_set_param(h, "clip_copy", "4 0 1 3");
+    HX_ASSERT(inst->tracks[1].clips[3].note_count == 0, "an Audio clip pasted onto a melodic track");
+    hx_set_param(h, "clip_cut", "4 9 4 11");
+    HX_ASSERT(!inst->au_clip[4][9].name[0] && !strcmp(inst->au_clip[4][11].name, "mono48.wav"), "a cut did not move the sample");
+    hx_set_param(h, "t4_c11_clear", "");
+    HX_ASSERT(!inst->au_clip[4][11].name[0] && !inst->au_clip[4][11].smp, "clearing an Audio clip kept its sample");
+    HX_ASSERT(inst->au_clip[4][0].smp, "clearing a copy let the original's sample go");
 
     /* ---- the project file keeps it ---- */
     n = hx_get_param(h, "state_full", blob, (int)sizeof blob);

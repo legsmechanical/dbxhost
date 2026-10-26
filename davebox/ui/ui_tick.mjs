@@ -83,6 +83,13 @@ import { cardHoldExpired } from './ui_prefs.mjs';
 import { heldIndicatorChanged } from './ui_chord.mjs';
 import { printTick } from './ui_print.mjs';
 import { resampleTick } from './ui_resample.mjs';
+import { auTick, auReadTrack, auForgetTrack, isAudioTrack } from './ui_audio.mjs';
+import { auConvertStart, auConvertTick, auConvertApply } from './ui_audio_convert.mjs';
+import { openAudioChooser, closeAudioChooser, audioChooserTick } from './ui_audio_chooser.mjs';
+import { closeAudioEditor, closeAudioPanel } from './ui_audio_editor.mjs';
+import { applyInstrChoice } from './ui_dsp_bridge.mjs';
+import { INSTR_NONE, PAD_MODE_AUDIO } from './ui_constants.mjs';
+import { bankListForMode } from './ui_pure.mjs';
 
 const BANK_DISPLAY_MS = 1000;
 const KNOB_TURN_HIGHLIGHT_MS = 600;               /* highlight after turn without touch */
@@ -145,6 +152,9 @@ function convertTrackType(t, toDrum) {
      * the conduct path left stepRecActive true on a track the eligibility
      * gate forbids, and pad writes kept landing). */
     stepRecExit();
+    /* Leaving Audio: the engine clears the steps and lets the samples go
+     * (the same convert key); the UI forgets them. */
+    if (S.trackPadMode[t] === PAD_MODE_AUDIO) { audioScreensClose(t); auForgetTrack(t); }
     host_module_set_param('t' + t + (toDrum ? '_convert_to_drum' : '_convert_to_melodic'), '1');
     S.trackPadMode[t] = toDrum ? PAD_MODE_DRUM : PAD_MODE_MELODIC_SCALE;
     /* Resync inline (this runs in tick(), so get_param works): the first get
@@ -172,12 +182,43 @@ function convertTrackType(t, toDrum) {
     forceRedraw();
 }
 
+/* The Audio screens close when their track stops being Audio. */
+function audioScreensClose(t) {
+    if (S.auPanel && S.auPanel.t === t) closeAudioPanel();
+    if (S.auChooser && S.auChooser.t === t) closeAudioChooser();
+}
+
+/* -> AUDIO (Instmt/Dest "Audio"). The engine clears the notes (Q2, confirmed
+ * before this) and makes every clip a fresh Audio clip; the track keeps (or
+ * takes) its own Schwung slot with no instrument, its FX kept — an Audio track
+ * on a Move track takes a Schwung slot (v1 default, Josh 2026-10-27). `takes`:
+ * the clips' recordings (ui_audio_convert), loaded one per tick. */
+function convertTrackToAudio(t, takes) {
+    stepRecExit();
+    host_module_set_param('t' + t + '_convert_to_audio', '1');
+    applyInstrChoice(t, INSTR_NONE);
+    S.trackPadMode[t] = PAD_MODE_AUDIO;
+    if (S.conductorTrack === t) S.conductorTrack = -1;
+    /* the barrier: the convert lands before the reads and the padmap */
+    if (trackHasAnyData(t)) syncClipsFromDsp();
+    else host_module_get_param('t' + t + '_pad_mode');
+    auReadTrack(t);
+    if (takes) auConvertApply(t, takes);
+    /* a bank the Audio walk does not have goes back to CLIP */
+    if (bankListForMode(PAD_MODE_AUDIO, t).indexOf(S.trackActiveBank[t]) < 0) S.trackActiveBank[t] = 0;
+    if (t === S.activeTrack && bankListForMode(PAD_MODE_AUDIO, t).indexOf(S.activeBank) < 0) S.activeBank = 0;
+    computePadNoteMap();
+    invalidateLEDCache();
+    forceRedraw();
+}
+
 /* Route a track to Conductor. The DSP enforces one-Conductor: if another track
  * already holds the role, the convert handler returns without changing anything.
  * We optimistically flip the local mode, then verify the role next tick via
  * pendingConductReadback to detect (and revert) a refusal. */
 function convertTrackToConduct(t) {
     stepRecExit();   /* same rule as convertTrackType — see its note */
+    if (S.trackPadMode[t] === PAD_MODE_AUDIO) { audioScreensClose(t); auForgetTrack(t); }
     const prevMode = S.trackPadMode[t];
     host_module_set_param('t' + t + '_convert_to_conduct', '1');
     S.trackPadMode[t] = PAD_MODE_CONDUCT;
@@ -517,7 +558,8 @@ export function _tickImpl() {
     if (S.pendingTrackConvert) {
         const _pc = S.pendingTrackConvert;
         S.pendingTrackConvert = null;
-        convertTrackType(_pc.t, _pc.toDrum);
+        if (_pc.toAudio) convertTrackToAudio(_pc.t, _pc.takes);
+        else convertTrackType(_pc.t, _pc.toDrum);
     }
 
     if (S.pendingConductConvert !== null) {
@@ -996,7 +1038,8 @@ export function _tickImpl() {
             {
                 const _rt = [];
                 for (let _t = 0; _t < NUM_TRACKS; _t++)
-                    if (S.trackPadMode[_t] !== PAD_MODE_CONDUCT) _rt.push(_t);
+                    /* the Conductor ignores Audio (v1 default, 2026-10-27) */
+                    if (S.trackPadMode[_t] !== PAD_MODE_CONDUCT && S.trackPadMode[_t] !== PAD_MODE_AUDIO) _rt.push(_t);
                 refreshPerClipBankParamsFor(_rt);       /* one round trip for all of them */
             }
             computePadNoteMap();
@@ -2260,6 +2303,28 @@ export function _tickImpl() {
             S.screenDirty = true;
         }
         miTick();
+
+        /* AUDIO: the sample chooser opens here (it lists a folder); its
+         * audition clock; the active Audio clip's reads; the screens close
+         * when the track changes or Session View takes over. */
+        if (S.pendingAudioChooser) {
+            const _ac = S.pendingAudioChooser;
+            S.pendingAudioChooser = null;
+            if (_ac.t === S.activeTrack && !S.sessionView) openAudioChooser(_ac.t, _ac.c);
+        }
+        if (S.auChooser && (S.auChooser.t !== S.activeTrack || S.sessionView)) closeAudioChooser();
+        if (S.auPanel && (S.auPanel.t !== S.activeTrack || S.sessionView || !isAudioTrack(S.auPanel.t))) closeAudioPanel();
+        if (S.auEditor && !S.auPanel) closeAudioEditor();
+        audioChooserTick();
+        auTick();
+        /* -> Audio with the clips resampled first (ui_audio_convert). */
+        if (S.pendingAuConvertStart >= 0) {
+            const _ct = S.pendingAuConvertStart;
+            S.pendingAuConvertStart = -1;
+            if (!S.playing) auConvertStart(_ct);
+            else showMenuInfo('Stop playback', 'to change the', 'track type.');
+        }
+        auConvertTick();
         if (S.pendingGrooveMenuReturn) {
             S.pendingGrooveMenuReturn = false;
             if (!miActive()) openGlobalMenuAt('Groove');

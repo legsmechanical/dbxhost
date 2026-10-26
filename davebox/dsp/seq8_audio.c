@@ -632,6 +632,20 @@ static void au_note_event(int t, int slice, uint8_t status, uint8_t vel, int ech
     else if ((status & 0xF0) == 0x80 || (status & 0xF0) == 0x90) au_slice_off(inst, t, slice);
 }
 
+/* Audio, recording: step sidx of cl is emptied for the slice about to land
+ * on it (a step holds one slice). */
+static void au_step_take(clip_t *cl, uint16_t sidx, uint32_t tps) {
+    int i;
+    if (sidx >= SEQ_STEPS) return;
+    for (i = 0; i < cl->note_count; i++)
+        if (cl->notes[i].active && note_step(cl->notes[i].tick, cl->length, tps) == sidx) {
+            cl->notes[i].active = 0;
+            cl->occ_dirty = 1;
+        }
+    cl->step_note_count[sidx] = 0;
+    cl->steps[sidx] = 0;
+}
+
 /* Loop mode: start (or restart) the clip's loop voice `off` sample frames into
  * Start..End. */
 static void au_loop_start(seq8_instance_t *inst, int t, int c, double off) {
@@ -879,4 +893,43 @@ static void au_load_state(void *vinst, const char *buf) {
             au_request_load(inst, t, c);
         }
     }
+}
+
+/* ---------------- clip copy / cut / clear (SPI thread) ---------------- */
+
+/* Clip (t,c) back to a fresh Audio clip: its sample let go (the file stays
+ * in the project until a Purge). */
+static void au_clip_reset(seq8_instance_t *inst, int t, int c) {
+    au_clip_t *cl = &inst->au_clip[t][c];
+    uint32_t gen = cl->gen;
+    if (cl->smp) au_track_kill(inst, t, cl->smp);
+    au_drop(inst, cl->smp);
+    au_clip_defaults(cl);
+    cl->gen = gen + 1;
+}
+
+/* A clip copied (or moved: `move`) carries its sample and its settings (v1
+ * default, Josh 2026-10-27: "all sounds good"). The destination loads the
+ * same file from the project — the loader's pool keeps it in memory once. */
+static void au_copy_clip(seq8_instance_t *inst, int st, int sc, int dt, int dc, int move) {
+    au_clip_t *src = &inst->au_clip[st][sc];
+    au_clip_t *dst = &inst->au_clip[dt][dc];
+    char name[AU_PATH_MAX];
+    au_slice_t sl[AU_MAX_SLICES];
+    uint8_t mode = src->mode, method = src->method, ns = src->nslices, jump = src->jump, revrs = src->revrs, jmpq = src->jmpq;
+    uint16_t rs = src->rstart, re = src->rend;
+    int8_t pitch = src->pitch, gain = src->gain_db;
+    int16_t nudge = src->nudge_ms;
+    if (st == dt && sc == dc) return;
+    snprintf(name, sizeof name, "%s", src->name);
+    memcpy(sl, src->sl, sizeof sl);
+    au_clip_reset(inst, dt, dc);
+    dst->mode = mode; dst->method = method; dst->nslices = ns; dst->jump = jump;
+    dst->rstart = rs; dst->rend = re; dst->pitch = pitch; dst->gain_db = gain;
+    dst->revrs = revrs; dst->nudge_ms = nudge; dst->jmpq = jmpq;
+    memcpy(dst->sl, sl, sizeof sl);
+    snprintf(dst->name, sizeof dst->name, "%s", name);
+    if (dst->name[0]) au_request_load(inst, dt, dc);
+    if (move) au_clip_reset(inst, st, sc);
+    inst->state_dirty = 1;
 }

@@ -278,6 +278,12 @@ static int sp_track_record(sp_ctx_t *cx) {
                 continue;
             }
 
+            /* Audio: a Loop clip records nothing (its pads jump); in Slice
+             * mode a step holds one slice, so the new one takes the step. */
+            if (tr->pad_mode == PAD_MODE_AUDIO) {
+                if (inst->au_clip[tidx][tr->active_clip].mode == AU_MODE_LOOP) continue;
+                au_step_take(cl, note_step(abs_tick, cl->length, tps), tps);
+            }
             int ni = clip_insert_note(cl, abs_tick, (uint16_t)GATE_TICKS,
                                       (uint8_t)pitch, (uint8_t)vel);
             if (ni >= 0) {

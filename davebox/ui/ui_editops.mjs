@@ -13,6 +13,23 @@ import {
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_MACROS, BANK_STEP, BANK_PADMODE, isSoundBank
 } from './ui_constants.mjs';
 import { S, noteUndoUnit, markJsUndo } from './ui_state.mjs';
+import { isAudioTrack, auMarkStale } from './ui_audio.mjs';
+
+/* An Audio clip pastes onto an Audio track only, and only an Audio clip does
+ * (its notes are slices) — v1 default, Josh 2026-10-27. The engine refuses
+ * too; this says so instead of mirroring a paste that did not happen. */
+function audioPasteRefused(srcT, dstT) {
+    if (isAudioTrack(srcT) === isAudioTrack(dstT)) return false;
+    showActionPopup("CAN'T PASTE", isAudioTrack(srcT) ? 'Audio clips go on' : 'Notes cannot go on', 'Audio tracks only');
+    return true;
+}
+/* The Audio mirror follows a copy (the engine copied the sample). */
+function audioCopyMirror(srcT, srcC, dstT, dstC, move) {
+    if (!isAudioTrack(dstT)) return;
+    S.auInfo[dstT][dstC] = S.auInfo[srcT][srcC] ? Object.assign({}, S.auInfo[srcT][srcC]) : null;
+    auMarkStale(dstT, dstC);
+    if (move) { S.auInfo[srcT][srcC] = null; auMarkStale(srcT, srcC); }
+}
 import { nowMs } from './ui_clock.mjs';
 import { soundActive, soundOpen, soundExit, soundIsGlobal, soundInEditor, soundFollowTrack, soundOnCard } from './ui_sound.mjs';
 import { isTextEntryActive } from '/data/UserData/schwung/shared/text_entry.mjs';
@@ -172,6 +189,8 @@ export function clearClip(t, ac, keepPlaying) {
     const cmd = (keepPlaying && S.trackClipPlaying[t] && ac === S.trackActiveClip[t])
         ? 't' + t + '_c' + ac + '_clear_keep'
         : 't' + t + '_c' + ac + '_clear';
+    /* An Audio clip's sample goes with a clear (not a keep-playing one). */
+    if (isAudioTrack(t) && cmd.endsWith('_clear')) { S.auInfo[t][ac] = null; auMarkStale(t, ac); }
     S.pendingDefaultSetParams.unshift({ key: cmd, val: '1', _local: true });
     /* Defer drain 1 tick to keep _clear out of the same audio buffer as any
      * sync set_param fan-out that might still be in flight. */
@@ -218,6 +237,7 @@ export function clearClip(t, ac, keepPlaying) {
 /* Full factory reset: clip_init on DSP + JS mirror cleared. Track View only. */
 export function hardResetClip(t, ac) {
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
+    if (isAudioTrack(t)) { S.auInfo[t][ac] = null; auMarkStale(t, ac); }   /* its sample goes too */
     if (S.trackPadMode[t] === PAD_MODE_DRUM) {
         /* Drum clip reset: clip_init all 32 lanes; midi_note preserved */
         S.pendingDefaultSetParams.unshift({ key: 't' + t + '_c' + ac + '_drum_reset', val: '1', _local: true });
@@ -264,6 +284,7 @@ export function hardResetClip(t, ac) {
 /* Copy clip src→dst (single atomic DSP write, JS mirror update). */
 export function copyClip(srcT, srcC, dstT, dstC) {
     if (srcT === dstT && srcC === dstC) return;
+    if (audioPasteRefused(srcT, dstT)) return false;
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'clip_copy', val: `${srcT} ${srcC} ${dstT} ${dstC}`, _local: true });
     /* The DSP moved LANES (pa_copy_clip); this module's mirror is fed only
@@ -279,6 +300,7 @@ export function copyClip(srcT, srcC, dstT, dstC) {
     S.clipLoopStart[dstT][dstC] = S.clipLoopStart[srcT][srcC];
     S.clipNonEmpty[dstT][dstC] = S.clipNonEmpty[srcT][srcC];
     S.clipTPS[dstT][dstC] = S.clipTPS[srcT][srcC];
+    audioCopyMirror(srcT, srcC, dstT, dstC, false);
     if (dstC === S.trackActiveClip[dstT]) {
         S.seqActiveNotes.clear(); S.seqLastStep = -1;
         refreshPerClipBankParams(dstT);
@@ -288,6 +310,7 @@ export function copyClip(srcT, srcC, dstT, dstC) {
 /* Cut clip: copy src→dst then hard-reset src (single atomic DSP write, JS mirror update). */
 export function cutClip(srcT, srcC, dstT, dstC) {
     if (srcT === dstT && srcC === dstC) return;
+    if (audioPasteRefused(srcT, dstT)) return false;
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'clip_cut', val: `${srcT} ${srcC} ${dstT} ${dstC}`, _local: true });
     /* The DSP moved LANES (pa_copy_clip); this module's mirror is fed only
@@ -304,6 +327,7 @@ export function cutClip(srcT, srcC, dstT, dstC) {
     S.clipLoopStart[dstT][dstC] = S.clipLoopStart[srcT][srcC];
     S.clipNonEmpty[dstT][dstC] = S.clipNonEmpty[srcT][srcC];
     S.clipTPS[dstT][dstC] = S.clipTPS[srcT][srcC];
+    audioCopyMirror(srcT, srcC, dstT, dstC, true);
     if (dstC === S.trackActiveClip[dstT]) {
         S.seqActiveNotes.clear(); S.seqLastStep = -1;
         refreshPerClipBankParams(dstT);
@@ -324,6 +348,7 @@ export function copyRow(srcRow, dstRow) {
     if (srcRow === dstRow) return;
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'row_copy', val: `${srcRow} ${dstRow}`, _local: true });
+    for (let t = 0; t < 8; t++) audioCopyMirror(t, srcRow, t, dstRow, false);
     /* The DSP moved LANES (pa_copy_clip); this module's mirror is fed only
      * by pa_list, so ask for a re-read — otherwise the copy PLAYS automation
      * the bank cannot see, and any gesture that checks the mirror first
@@ -353,6 +378,7 @@ export function cutRow(srcRow, dstRow) {
     if (srcRow === dstRow) return;
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'row_cut', val: `${srcRow} ${dstRow}`, _local: true });
+    for (let t = 0; t < 8; t++) audioCopyMirror(t, srcRow, t, dstRow, true);
     /* The DSP moved LANES (pa_copy_clip); this module's mirror is fed only
      * by pa_list, so ask for a re-read — otherwise the copy PLAYS automation
      * the bank cannot see, and any gesture that checks the mirror first

@@ -542,6 +542,26 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
                         sl->nudge_ms, sl->len_pct, sl->pitch, sl->gain_db, sl->rev, sl->play,
                         sl->attack_ms, sl->decay_ms);
     }
+    if (!strncmp(k, "all_", 4)) {                 /* ALL SLICES: each field's common value, "x" where slices differ */
+        int f, n = 0;
+        c = my_atoi(k + 4);
+        if (c < 0 || c >= NUM_CLIPS) return -1;
+        const au_clip_t *cl = &inst->au_clip[t][c];
+        int cnt = cl->nslices ? cl->nslices : 1;
+        out[0] = '\0';
+        for (f = 0; f < 8; f++) {
+            int v0 = 0, same = 1;
+            for (l = 0; l < cnt; l++) {
+                const au_slice_t *sl = &cl->sl[l];
+                int v = f == 0 ? sl->nudge_ms : f == 1 ? sl->len_pct : f == 2 ? sl->pitch : f == 3 ? sl->gain_db
+                      : f == 4 ? sl->rev : f == 5 ? sl->attack_ms : f == 6 ? sl->decay_ms : sl->play;
+                if (l == 0) v0 = v; else if (v != v0) { same = 0; break; }
+            }
+            if (same) n += snprintf(out + n, (size_t)(out_len - n), f ? " %d" : "%d", v0);
+            else n += snprintf(out + n, (size_t)(out_len - n), f ? " x" : "x");
+        }
+        return n;
+    }
     if (!strncmp(k, "starts_", 7)) {              /* every slice start, permille of the sample */
         c = my_atoi(k + 7);
         if (c < 0 || c >= NUM_CLIPS) return -1;

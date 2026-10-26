@@ -102,7 +102,7 @@ export function miStateForTest() { return MI; }
 export function miMarqueeForTest() { return MQ; }
 export function miResetForTest() { MI = null; loadSync = null; CACHE.clear(); META.clear(); MEM.fill(null); }
 /* Offered on every track that plays notes: a Conductor emits none. */
-export function miOffered(track) { return GS.trackPadMode[track] !== PAD_MODE_CONDUCT; }
+export function miOffered(track) { return GS.trackPadMode[track] !== PAD_MODE_CONDUCT && GS.trackPadMode[track] !== 3 /* Audio */; }
 
 /* ---- files ---- */
 

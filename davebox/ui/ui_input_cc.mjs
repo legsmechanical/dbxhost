@@ -67,7 +67,18 @@ import { sessStripTargets, engineLoadedModule, engineModuleName, slotIndex,
 import { moduleIdOf } from './ui_discover.mjs';
 import { BANK_MAP_TRACK_POPUP_MS, SEQ_PAGE_POPUP_MS, seqAutoTargetForKnob, SEQ_AUTO_TARGETS, midiTargetIsMidi, DEFAULT_TRACK_OCTAVE } from './ui_constants.mjs';
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
-         performModuleChange, cancelModuleChange, soundJumpToParam, soundOpenModule } from './ui_sound.mjs';
+         performModuleChange, cancelModuleChange, soundJumpToParam, soundOpenModule, instrPickResume } from './ui_sound.mjs';
+import { auPurgeRun } from './ui_audio_chooser.mjs';
+import { isAudioTrack, audioSliceMode, auLoopKnob } from './ui_audio.mjs';
+
+/* AUDIO's CLIP bank (Slice mode) mirrors ALL LANES over the melodic clip's
+ * knobs (Josh, 2026-10-27: "it seems like clip bank should mirror all lanes
+ * rather than melodic track clip"): Res · Strch · Shift/Nudge · Quant · Crop ·
+ * InQnt · Dir/Revrs · (free). Physical knob -> [bank, knob] it turns, where
+ * that is not the CLIP bank's own same knob. */
+const AUDIO_CROP_KNOB = 4;
+const AUDIO_CLIP_REMAP = { 3: [1, 3], 4: [0, 5], 5: [0, 4] };
+import { openAudioEditor } from './ui_audio_editor.mjs';
 import { soundActive, soundPageBarShown, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVolGestureEnd, soundShiftEdge, soundOpenGenerator,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, macroClearConfirmAnswer,
@@ -311,7 +322,7 @@ function _onCC_jog(d1, d2) {
      * deliberate part, and it is undoable. Delete + click keeps its own
      * meaning (reset the bank), so it is not taken here. */
     if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld &&
-            S.activeBank === 0 && S.knobTouched === LGTO_KNOB) {
+            S.activeBank === 0 && S.knobTouched === LGTO_KNOB && !isAudioTrack(S.activeTrack)) {
         applyLegato(S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM);
         triggerFire('lgto');
         forceRedraw();
@@ -322,7 +333,10 @@ function _onCC_jog(d1, d2) {
      * K5 on ALL LANES) and click. */
     if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld) {
         const _drum = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM;
-        if (S.activeBank === 0 && S.knobTouched === CROP_KNOB) {
+        /* AUDIO's CLIP bank mirrors ALL LANES: Crop is K5 there (Slice mode). */
+        const _au = isAudioTrack(S.activeTrack);
+        if (S.activeBank === 0 && S.knobTouched === (_au ? AUDIO_CROP_KNOB : CROP_KNOB) &&
+                (!_au || audioSliceMode(S.activeTrack))) {
             applyCrop(_drum, false);
             triggerFire('crop');
             forceRedraw();
@@ -340,7 +354,7 @@ function _onCC_jog(d1, d2) {
      * DRUM LANE bank and click. The tick opens it — opening lists a folder —
      * and it draws over the card, which is what Back at its top folder shows. */
     if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld &&
-            S.activeBank === 0 && S.knobTouched === IMPORT_KNOB) {
+            S.activeBank === 0 && S.knobTouched === IMPORT_KNOB && !isAudioTrack(S.activeTrack)) {
         if (miOffered(S.activeTrack)) {
             S.pendingMidiImportOpen = S.activeTrack;
             triggerFire('import');
@@ -638,10 +652,33 @@ function modalDialogUp() {
         if (S.confirmConvertToDrum) {
             const _ct = S.confirmConvertTrack;
             const _yes = S.confirmConvertToDrumSel === 0;
+            const _kind = S.confirmConvertAudio;
+            const _target = S.confirmConvertTarget;
             closeConvertConfirm();
+            S.confirmConvertTarget = null;
             /* Defer to tick() — this runs in the on_midi path where get_param
-             * (inside convertTrackType -> syncClipsFromDsp) returns null. */
-            if (_yes) S.pendingTrackConvert = { t: _ct, toDrum: true };
+             * (inside convertTrackType -> syncClipsFromDsp) returns null.
+             * -> Audio's resample offer: Yes records the clips first
+             * (ui_audio_convert), No is the plain conversion (notes cleared).
+             * Leaving Audio: Yes resumes the instrument pick it interrupted. */
+            if (_kind === 'resample') {
+                if (_yes) S.pendingAuConvertStart = _ct;
+                else S.pendingTrackConvert = { t: _ct, toAudio: true };
+            } else if (_kind === 'audio') {
+                if (_yes) S.pendingTrackConvert = { t: _ct, toAudio: true };
+            } else if (_kind === 'leave') {
+                if (_yes) instrPickResume(_target);
+            } else if (_yes) S.pendingTrackConvert = { t: _ct, toDrum: true };
+            S.screenDirty = true;
+            return;
+        }
+        if (S.confirmPurge) {
+            const _p = S.confirmPurge;
+            S.confirmPurge = null;
+            if (S.confirmPurgeSel === 0) {
+                const _n = auPurgeRun(_p.files);
+                showMenuInfo('Removed ' + _n + ' sample' + (_n === 1 ? '' : 's'), (_p.bytes / 1048576).toFixed(1) + ' MB freed.');
+            }
             S.screenDirty = true;
             return;
         }
@@ -1168,6 +1205,9 @@ function modalDialogUp() {
                 }
             } else if (S.exportDoneDialog) {
                 /* single OK button — jog does nothing */
+            } else if (S.confirmPurge) {
+                const delta = decodeDelta(d2);
+                if (delta !== 0) { S.confirmPurgeSel = S.confirmPurgeSel === 0 ? 1 : 0; S.screenDirty = true; }
             } else if (S.confirmClearSession) {
                 const delta = decodeDelta(d2);
                 if (delta !== 0) { S.confirmClearSel = S.confirmClearSel === 0 ? 1 : 0; S.screenDirty = true; }
@@ -1375,6 +1415,7 @@ export function sessWalkTo(mode, rest) {
  *
  * Where the map may arm: the overviews and the bank pages. */
 export function bankMapArmable() {
+    if (S.auChooser || S.auPanel) return false;      /* the Audio screens own the click */
     if (S.shiftHeld || S.deleteHeld || S.copyHeld || S.muteHeld || S.loopHeld) return false;
     if (S.knobTouched >= 0 || soundKnobTouched() || S.heldStep >= 0 || S.bankPickerSel >= 0 || S.stepIntervalMode) return false;
     if (S.moveCoRunTrack >= 0 || S.moveSettingsOpen || soundModeCovered()) return false;
@@ -1410,6 +1451,7 @@ export function bankMapArmable() {
  * Move's, so the short one is passed on to Move at the release, and the map
  * shows over Move's editor (ui_corun.mjs coRunMapScreen). */
 export function bankMapDeferrable() {
+    if (S.auChooser || S.auPanel) return false;      /* the Audio screens own the click */
     if (S.shiftHeld || S.deleteHeld || S.copyHeld || S.muteHeld || S.loopHeld) return false;
     if (S.knobTouched >= 0 || soundKnobTouched() || S.heldStep >= 0 || S.bankPickerSel >= 0 || S.stepIntervalMode) return false;
     if (S.moveSettingsOpen) return false;
@@ -2827,7 +2869,8 @@ function _backTap() {
     /* 2. Global menu (+ its nested confirms): a nested confirm closes to the
      *    menu, otherwise the menu itself closes. */
     if (S.globalMenuOpen) {
-        if (S.confirmClearSession)        { S.confirmClearSession = false; }
+        if (S.confirmPurge)               { S.confirmPurge = null; }
+        else if (S.confirmClearSession)   { S.confirmClearSession = false; }
         else if (S.confirmSaveState)      { S.confirmSaveState = false; }
         else if (S.confirmConvertToDrum)  { closeConvertConfirm(); }
         else if (S.confirmConvertToConduct){ closeConvertConfirm(); }
@@ -2962,6 +3005,8 @@ function openTrackModule(comp) {
 }
 function openTrackInstrument() {
 const _gt = S.activeTrack;
+/* AUDIO: the instrument door is the AUDIO editor (ui_audio_editor). */
+if (isAudioTrack(_gt)) { if (soundOpen()) soundExit(); openAudioEditor(_gt); forceRedraw(); return; }
 /*
  * ⭑ STAMP WHERE WE ARE FIRST (Josh, 2026-08-29: "when exiting instrument
  * editor entered from shift hold shortcut, it should go back to where you
@@ -3010,7 +3055,7 @@ export function checkShiftStep11Hold() {
     if ((S.clockMs - S.shiftStep11Tick) < BACK_HOLD_MS) return;
     S.shiftStep11Tick = -1;
     if (S.sessionView || S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM ||
-            S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT ||
+            S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT || isAudioTrack(S.activeTrack) ||
             S.moveCoRunTrack >= 0 || soundModeCovered() || S.awaitingProjectSelect) return;
     if (S.shiftHeld) { S.autoShiftTap = null; applyShiftEdge(false); }
     closeDoorScreen();          /* an AUTOMATION screen up gives its bank back first */
@@ -3858,16 +3903,18 @@ function _onCC_side(d1, d2) {
                     invalidateLEDCache();
                     showActionPopup(S.shiftHeld ? 'CUT' : 'COPIED');
                 } else if (S.copySrc.kind === 'clip') {
-                    copyClip(S.copySrc.track, S.copySrc.clip, S.activeTrack, clipIdx);
-                    invalidateLEDCache();
-                    forceRedraw();
-                    showActionPopup('PASTED');
+                    if (copyClip(S.copySrc.track, S.copySrc.clip, S.activeTrack, clipIdx) !== false) {
+                        invalidateLEDCache();
+                        forceRedraw();
+                        showActionPopup('PASTED');
+                    }
                 } else if (S.copySrc.kind === 'cut_clip') {
-                    cutClip(S.copySrc.track, S.copySrc.clip, S.activeTrack, clipIdx);
-                    S.copySrc = { kind: 'clip', track: S.activeTrack, clip: clipIdx };
-                    invalidateLEDCache();
-                    forceRedraw();
-                    showActionPopup('PASTED');
+                    if (cutClip(S.copySrc.track, S.copySrc.clip, S.activeTrack, clipIdx) !== false) {
+                        S.copySrc = { kind: 'clip', track: S.activeTrack, clip: clipIdx };
+                        invalidateLEDCache();
+                        forceRedraw();
+                        showActionPopup('PASTED');
+                    }
                 }
                 /* row/cut_row kinds: swallow — don't mix copy types */
             }
@@ -4664,11 +4711,16 @@ function _onCC_stepedit(d1, d2) {
             S.knobLastDir[knobIdx] = dir;
             if (S.knobAccum[knobIdx] >= KNOB_PICK) {
                 S.knobAccum[knobIdx] = 0;
-                S.heldStepNotes = S.heldStepNotes.map(function(n) {
+                /* AUDIO: the step's slice, one at a time (36..36+31). */
+                S.heldStepNotes = isAudioTrack(t)
+                    ? S.heldStepNotes.slice(0, 1).map((n) => Math.max(36, Math.min(67, n + dir)))
+                    : S.heldStepNotes.map(function(n) {
                     return scaleNudgeNote(n, dir, S.padKey, S.padScale);
                 });
                 host_module_set_param(pfx + '_set_notes', S.heldStepNotes.join(' '));
             }
+        } else if (knobIdx === 1 && isAudioTrack(t)) {
+            return;                       /* no octave: a pitch is a slice */
         } else if (knobIdx === 1) {
             /* K2 Oct: shift all notes ±12 semitones, sens=12 */
             S.knobAccum[knobIdx] = (dir === S.knobLastDir[knobIdx]) ? S.knobAccum[knobIdx] + 1 : 1;
@@ -4913,7 +4965,7 @@ function _onCC_knobs(d1, d2) {
             }
             return;
         }
-        if (S.globalMenuOpen || S.tapTempoOpen || S.confirmBake || sampleFlowUp() || S.confirmClearSession || S.confirmConvertToDrum || S.confirmModuleChange || S.confirmConvertToConduct || S.menuInfoLines.length > 0 || S.confirmExport || S.exportDoneDialog || S.recordBlockedDialog || S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.bpmMoveInfo) return;
+        if (S.globalMenuOpen || S.tapTempoOpen || S.confirmBake || sampleFlowUp() || S.confirmClearSession || S.confirmPurge || S.confirmConvertToDrum || S.confirmModuleChange || S.confirmConvertToConduct || S.menuInfoLines.length > 0 || S.confirmExport || S.exportDoneDialog || S.recordBlockedDialog || S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.bpmMoveInfo) return;
         const knobIdx = d1 - 71;
         S.knobTouched          = knobIdx;
         S.knobTurnedTick[knobIdx] = nowMs();
@@ -4927,6 +4979,7 @@ function _onCC_knobs(d1, d2) {
          * doesn't draw them. Returning here means the session grid no longer
          * reaches the bank editor at all. */
         if (S.sessionView) { _sessionKnobParam(knobIdx, d2); return; }
+
 
         /* The PADMODE bank is contextual (Josh, 2026-09-23, of the CHORD bank it grew from: "we should do all
          * chord edits through the chord bank"): holding a chord slot turns its
@@ -4970,6 +5023,30 @@ function _onCC_knobs(d1, d2) {
         }
 
         const bank    = S.activeBank;
+        /* AUDIO's banks: the CLIP bank in Loop mode is Revrs · Nudge · JmpQ;
+         * in Slice mode it mirrors ALL LANES (AUDIO_CLIP_REMAP; K8 free); NOTE
+         * FX and DELAY take no pitch knobs (their drum form). */
+        if (isAudioTrack(S.activeTrack) && !S.auKnobRemap) {
+            const _t = S.activeTrack;
+            if (bank === 0 && !audioSliceMode(_t)) {
+                if (knobIdx < 3) {
+                    const _st = knobIdx === 1 ? ccKnobDelta(d2, knobIdx) : knobStep(knobIdx, d2, KNOB_DELIB);
+                    if (_st && auLoopKnob(_t, knobIdx, _st)) S.screenDirty = true;
+                }
+                return;
+            }
+            if (bank === 0 && knobIdx === 7) return;
+            if (bank === 1 && (knobIdx === 0 || knobIdx === 1 || knobIdx === 7)) return;
+            if (bank === 3 && (knobIdx === 4 || knobIdx === 7)) return;
+            if (bank === 0 && AUDIO_CLIP_REMAP[knobIdx]) {
+                const [_b, _k] = AUDIO_CLIP_REMAP[knobIdx];
+                const _saved = S.activeBank;
+                S.auKnobRemap = true;
+                S.activeBank = _b;
+                try { _onCC_knobs(71 + _k, d2); } finally { S.activeBank = _saved; S.auKnobRemap = false; }
+                return;
+            }
+        }
         /* Arp Steps interval-mode overlay: K1-K8 set per-step scale-degree
          * offset (±24) for SEQ ARP (bank 4, per-clip) or TARP (bank 5, per-track).
          * Sens=2: ~ half-turn covers the full range. */

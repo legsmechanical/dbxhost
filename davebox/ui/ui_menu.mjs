@@ -27,7 +27,8 @@ import { openDaveBox, daveWindowOn, setDaveWindowOn } from './ui_daves.mjs';
 import { bluetoothPresent, bluetoothOn, setBluetoothOn } from './ui_bluetooth.mjs';
 import { cardHoldMs, setCardHoldMs, CARD_HOLD_CHOICES } from './ui_prefs.mjs';
 import { saveState, loadSnapshotManifest, showActionPopup } from './ui_persistence.mjs';
-import { openLoadSnapshot, openProjectPadPicker, requestSaveTemplate, openTemplateManager } from './ui_dialogs.mjs';
+import { openLoadSnapshot, openProjectPadPicker, requestSaveTemplate, openTemplateManager, showMenuInfo } from './ui_dialogs.mjs';
+import { auPurgeScan } from './ui_audio_chooser.mjs';
 import { forceRedraw } from './ui_leds.mjs';
 import { exitMoveNativeCoRun, DAVEBOX_PICKER_KEEP_MASK, enterMoveSettingsCoRun } from './ui_corun.mjs';
 import { requestExport } from './ui_export.mjs';
@@ -286,6 +287,15 @@ function buildGlobalMenuItems() {
         createDivider(),
         createAction('Export to Ableton', function() {
             requestExport();
+        }),
+        /* Audio clips' samples live in the project; a sample no clip (and no
+         * saved state) uses any more stays until this (ui_audio_chooser).
+         * Josh, 2026-10-26: "we need a mechanism to purge unused samples". */
+        createAction('Purge samples', function() {
+            const p = auPurgeScan();
+            if (!p.files.length) { showMenuInfo('No unused samples', 'in this project.'); return; }
+            S.confirmPurge = p; S.confirmPurgeSel = 1;   /* opens on No */
+            S.screenDirty = true;
         }),
         createDivider(),
         createAction('Suspend session', function() {
