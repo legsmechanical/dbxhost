@@ -33,7 +33,8 @@ the section into a versioned heading at release time.
   editor (the AUDIO pad) holds the clip's sound: mode, pitch and gain, sound
   settings per slice or for all slices at once, and **>Seq** to lay the slices
   out on the steps. Loop clips can play backwards, be nudged against
-  the bar and have their jumps wait for the beat. **Project Settings → Purge
+  the bar and have their jumps wait for the beat; muting an Audio track silences it
+  like a bus, so its loop keeps time and comes back in place. **Project Settings → Purge
   samples** clears out the ones you no longer use. Choosing Audio on a track that
   plays an instrument offers to **resample its clips** first, so each comes back as
   its own audio.
