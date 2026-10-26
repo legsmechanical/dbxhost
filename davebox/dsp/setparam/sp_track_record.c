@@ -272,7 +272,7 @@ static int sp_track_record(sp_ctx_t *cx) {
              * Feed raw input only into the arp held buffer. PHASE-1: on
              * patched Schwung on_midi already called live_note_on (which
              * feeds the arp held buffer), so skip to avoid double-feed. */
-            if (tr->tarp_on && tr->pad_mode != PAD_MODE_DRUM) {
+            if (tr->tarp_on && pad_mode_pitched(tr->pad_mode)) {
                 if (!inst->dsp_inbound_enabled)
                     live_note_on(inst, tr, (uint8_t)pitch, (uint8_t)vel);
                 continue;
@@ -389,7 +389,7 @@ static int sp_track_record(sp_ctx_t *cx) {
              * arp held buffer and let tarp_fire_step own clip recording.
              * PHASE-1: on patched Schwung on_midi already fired live_note_off
              * (which updates the arp held buffer), so skip. */
-            if (tr->tarp_on && tr->pad_mode != PAD_MODE_DRUM) {
+            if (tr->tarp_on && pad_mode_pitched(tr->pad_mode)) {
                 if (!inst->dsp_inbound_enabled)
                     live_note_off(inst, tr, (uint8_t)pitch);
                 continue;

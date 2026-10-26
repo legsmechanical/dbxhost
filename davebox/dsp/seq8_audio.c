@@ -24,6 +24,8 @@
 
 #define AU_POOL_MAX 256
 
+static void clip_compact_notes(clip_t *cl);   /* seq8.c, further down the TU */
+
 typedef struct {
     char         path[256];
     au_sample_t *smp;
@@ -635,13 +637,17 @@ static void au_note_event(int t, int slice, uint8_t status, uint8_t vel, int ech
 /* Audio, recording: step sidx of cl is emptied for the slice about to land
  * on it (a step holds one slice). */
 static void au_step_take(clip_t *cl, uint16_t sidx, uint32_t tps) {
-    int i;
+    int i, took = 0;
     if (sidx >= SEQ_STEPS) return;
     for (i = 0; i < cl->note_count; i++)
         if (cl->notes[i].active && note_step(cl->notes[i].tick, cl->length, tps) == sidx) {
             cl->notes[i].active = 0;
             cl->occ_dirty = 1;
+            took = 1;
         }
+    /* clip_insert_note appends: reclaim the slot, or overdubbing a short loop
+     * fills the clip and recording stops. */
+    if (took) clip_compact_notes(cl);
     cl->step_note_count[sidx] = 0;
     cl->steps[sidx] = 0;
 }
@@ -657,6 +663,7 @@ static void au_loop_start(seq8_instance_t *inst, int t, int c, double off) {
     uint32_t rs = (uint32_t)((uint64_t)s->frames * cl->rstart / 1000);
     uint32_t re = (uint32_t)((uint64_t)s->frames * cl->rend / 1000);
     if (re <= rs + 32) return;
+    if (off >= (double)(re - rs)) return;          /* past the sample's end: silence till the wrap */
     for (i = 0; i < AU_VOICES; i++) if (at->v[i].active) au_voice_release(&at->v[i], 64);
     au_voice_t *v = au_voice_alloc(at);
     memset(v, 0, sizeof *v);

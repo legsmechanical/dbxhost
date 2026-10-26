@@ -2782,7 +2782,9 @@ static void pfx_send(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
         int is_on  = (st == 0x90 && d2 > 0);
         int is_off = (st == 0x80 || (st == 0x90 && d2 == 0));
         uint8_t bit = (uint8_t)(1u << (d1 & 7));
-        if (fx->arp.style != 0) {
+        /* No SEQ ARP on Audio: its octaves and intervals would move slices. */
+        if (fx->arp.style != 0 && !(g_inst && fx->track_idx < NUM_TRACKS &&
+                                    g_inst->tracks[fx->track_idx].pad_mode == PAD_MODE_AUDIO)) {
             if (is_on) {
                 arp_add_note(&fx->arp, d1, d2);
                 return;
@@ -4687,7 +4689,8 @@ static void live_note_on(seq8_instance_t *inst, seq8_track_t *tr,
         }
         return; /* no matching lane — drop silently */
     }
-    if (!tr->tarp_on) {
+    /* No LIVE ARP on Audio: its octaves would move slices. */
+    if (!tr->tarp_on || tr->pad_mode == PAD_MODE_AUDIO) {
         capture_push(inst, tr, CAP_EV_NOTE_ON, pitch, vel);
         inst->emit_bypass_swing = 1;
         pfx_note_on(inst, tr, pitch, vel);
@@ -4766,7 +4769,7 @@ static void live_note_off(seq8_instance_t *inst, seq8_track_t *tr,
                           uint8_t pitch) {
     if (pre_divert(inst, tr, 0x80, pitch, 0)) return;     /* PRE: into the effect first */
     /* The arp's notes end where the arp ends them, not on the pad release. */
-    if (tr->pad_mode == PAD_MODE_DRUM || !tr->tarp_on)
+    if (!pad_mode_pitched(tr->pad_mode) || !tr->tarp_on)   /* drums; Audio (a pitch is a slice) */
         capture_push(inst, tr, CAP_EV_NOTE_OFF, pitch, 0);
     if (tr->pad_mode == PAD_MODE_DRUM) {
         inst->emit_bypass_swing = 1;
@@ -4774,7 +4777,7 @@ static void live_note_off(seq8_instance_t *inst, seq8_track_t *tr,
         inst->emit_bypass_swing = 0;
         return;
     }
-    if (!tr->tarp_on) {
+    if (!tr->tarp_on || tr->pad_mode == PAD_MODE_AUDIO) {
         inst->emit_bypass_swing = 1;
         pfx_note_off_imm(inst, tr, pitch);
         inst->emit_bypass_swing = 0;
@@ -4806,7 +4809,7 @@ static void live_note_off(seq8_instance_t *inst, seq8_track_t *tr,
  * handler's own payload: "[e]p v ..." for an on batch, "[e]p ..." for off. */
 static void pre_record_batch(seq8_instance_t *inst, seq8_track_t *tr, const char *val, int is_on) {
     const int monitor = !inst->dsp_inbound_enabled &&
-        (tr->pfx.route == ROUTE_MOVE || (tr->tarp_on && tr->pad_mode != PAD_MODE_DRUM));
+        (tr->pfx.route == ROUTE_MOVE || (tr->tarp_on && pad_mode_pitched(tr->pad_mode)));
     const char *sp = val ? val : "";
     while (*sp) {
         while (*sp == ' ') sp++;
@@ -5937,7 +5940,7 @@ static void pre_handback(seq8_instance_t *inst, seq8_track_t *tr, uint8_t status
     if (is_on) live_note_on(inst, tr, d1, d2);
     else       live_note_off(inst, tr, d1);
     inst->pre_returning = 0;
-    if (!tr->tarp_on || tr->pad_mode == PAD_MODE_DRUM) (void)slot_fx_record(inst, tr, is_on, d1, d2);
+    if (!tr->tarp_on || !pad_mode_pitched(tr->pad_mode)) (void)slot_fx_record(inst, tr, is_on, d1, d2);
     rui_content(inst);
 }
 

@@ -135,6 +135,15 @@ static void au_render(seq8_instance_t *inst, int frames) {
                 uint32_t tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
                 int32_t tick = (int32_t)(((int)tr->current_step - (int)lc->loop_start) * (int32_t)tps
                                          + (int32_t)tr->tick_in_step);
+                /* A Loop clip always plays forwards in time: with Dir set
+                 * Backward / Pingpong the step counter runs back, and reading
+                 * it would restart the loop every block. Its place in the loop
+                 * then comes from the master clock instead. */
+                if (lc->playback_dir != 0) {
+                    uint32_t lt = (uint32_t)(lc->length ? lc->length : 1) * tps;
+                    uint32_t el = (uint32_t)inst->global_tick * (uint32_t)TICKS_PER_STEP + inst->master_tick_in_step;
+                    tick = (int32_t)(el % lt);
+                }
                 double bpm = tr->pfx.cached_bpm > 0 ? tr->pfx.cached_bpm : 120.0;
                 double fpt = 44100.0 * 60.0 / (bpm * PPQN);
                 double ratio = au_semi(cl->pitch) * (double)cl->smp->rate / 44100.0;
@@ -153,7 +162,14 @@ static void au_render(seq8_instance_t *inst, int frames) {
                      * (-) against the bar. */
                     double off = played * fpt * ratio - (double)cl->nudge_ms * (double)cl->smp->rate / 1000.0;
                     au_loop_start(inst, t, c, off);
-                    at->pending_jump = -1;
+                    /* A JmpQ jump waiting at the wrap lands now: the loop's
+                     * start is a boundary too. */
+                    if (at->pending_jump >= 0) {
+                        au_voice_t *nv = au_loop_voice(at);
+                        if (nv && at->pending_jump < cl->jump && !nv->wait)
+                            nv->pos = au_jump_pos(cl, at->pending_jump, played * fpt * ratio);
+                        at->pending_jump = -1;
+                    }
                 } else if (at->pending_jump >= 0 && cl->jmpq < 4 && AU_JMPQ_TICKS[cl->jmpq]) {
                     /* JmpQ: the jump lands on the boundary it was waiting for. */
                     int32_t q = AU_JMPQ_TICKS[cl->jmpq];
@@ -279,7 +295,7 @@ static int sp_track_audio(sp_ctx_t *cx) {
         c = au_arg_clip(&p);
         if (c < 0) return 1;
         au_clip_t *cl = &inst->au_clip[tidx][c];
-        au_track_kill(inst, tidx, cl->smp);
+        if (cl->smp) au_track_kill(inst, tidx, cl->smp);   /* NULL would kill every voice */
         au_drop(inst, cl->smp);
         cl->smp = NULL;
         cl->name[0] = '\0';

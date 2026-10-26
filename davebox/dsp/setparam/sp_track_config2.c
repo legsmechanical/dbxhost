@@ -112,6 +112,8 @@ static int sp_track_config2(sp_ctx_t *cx) {
     }
     if (!strcmp(sub, "pad_mode")) {
         uint8_t new_mode = (uint8_t)clamp_i(my_atoi(val), 0, 1);
+        /* Leaving Audio goes the convert's way: the samples let go. */
+        if (tr->pad_mode == PAD_MODE_AUDIO) convert_track_from_audio(inst, tidx);
         if (new_mode == PAD_MODE_DRUM && tr->pad_mode != PAD_MODE_DRUM)
             drum_clips_alloc(inst, tr);
         else if (new_mode != PAD_MODE_DRUM && tr->pad_mode == PAD_MODE_DRUM)

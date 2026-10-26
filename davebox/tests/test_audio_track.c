@@ -302,6 +302,35 @@ int main(void) {
     hx_set_param(h, "t4_au_wipe", "0");
     HX_ASSERT(clip_pitches(inst, 4, 0, pit, 64) == 0, "wipe left notes in the clip");
 
+    /* ---- review: clearing an empty clip leaves other clips' voices alone ---- */
+    au_note_event(4, 2, 0x90, 100, 0);
+    hx_render(h, 1);
+    hx_set_param(h, "t4_au_clear", "7");
+    hx_stub_feed_reset();
+    hx_render(h, 1);
+    HX_ASSERT(hx_stub_feed(4, NULL, NULL) == 1, "clearing an empty clip cut the sounding slice");
+    hx_render(h, 60);
+    /* ...and overdubbing one step again and again never fills the clip */
+    tr->recording = 1;
+    for (i = 0; i < 700; i++) {
+        tr->current_clip_tick = 0;
+        hx_set_param(h, "t4_record_note_on", i & 1 ? "e38 100" : "e39 100");
+        hx_set_param(h, "t4_record_note_off", i & 1 ? "e38" : "e39");
+    }
+    tr->recording = 0;
+    HX_ASSERT(tr->clips[0].note_count <= 2 && clip_pitches(inst, 4, 0, pit, 64) == 1,
+              "overdubbing one step grew the clip's notes");
+    /* ...and LIVE ARP leaves slices alone */
+    tr->tarp_on = 1;
+    hx_stub_feed_reset();
+    live_note_on(inst, tr, DRUM_BASE_NOTE + 2, 100);
+    hx_render(h, 1);
+    HX_ASSERT(hx_stub_feed_last(4)[255] == 3000, "LIVE ARP on an Audio track did not play the slice as played");
+    live_note_off(inst, tr, DRUM_BASE_NOTE + 2);
+    tr->tarp_on = 0;
+    hx_render(h, 60);
+    hx_set_param(h, "t4_au_wipe", "0");
+
     /* ---- a step holds one slice: placed by hand or recorded ---- */
     hx_set_param(h, "t4_c0_step_2_toggle", "38");
     hx_set_param(h, "t4_c0_step_2_toggle", "40");
@@ -391,6 +420,18 @@ int main(void) {
     hx_set_param(h, "launch_quant", "0");
     hx_render(h, 4);
 
+    /* ---- review: a Loop clip with Dir Backward still plays forward, once per pass ---- */
+    hx_set_param(h, "t4_c5_dir", "1");
+    hx_stub_feed_reset();
+    hx_set_param(h, "transport", "play");
+    for (i = 0; i < 20 && hx_stub_feed(4, NULL, NULL) == 0; i++) hx_render(h, 1);
+    hx_render(h, 10);
+    blk = hx_stub_feed_last(4);
+    HX_ASSERT(blk[255] > 128 * 9, "a Backward Loop clip kept restarting");
+    hx_set_param(h, "transport", "stop");
+    hx_set_param(h, "t4_c5_dir", "0");
+    hx_render(h, 4);
+
     /* ---- Loop Revrs: backwards from the end ---- */
     hx_set_param(h, "t4_au_set_revrs", "5 1");
     hx_stub_feed_reset();
@@ -478,6 +519,17 @@ int main(void) {
     HX_ASSERT(inst->tracks[4].pad_mode == PAD_MODE_MELODIC_SCALE, "leaving Audio did not make the track melodic");
     HX_ASSERT(!inst->au_clip[4][0].smp && !inst->au_clip[4][0].name[0], "leaving Audio kept clip A's sample");
     HX_ASSERT(inst->tracks[4].clips[0].note_count == 0, "leaving Audio kept the slice steps");
+    hx_destroy(h);
+
+    /* ---- review: the plain pad_mode key leaves Audio the convert's way ---- */
+    h = hx_create(NULL); inst = (seq8_instance_t *)h->inst;
+    snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
+    hx_set_param(h, "t2_convert_to_audio", "");
+    snprintf(p, sizeof p, "0|%s/src/st24.wav", g_root);
+    hx_set_param(h, "t2_au_pick", p);
+    HX_ASSERT(wait_loaded(h, 2, 0) == 2, "pick for the pad_mode check");
+    hx_set_param(h, "t2_pad_mode", "1");
+    HX_ASSERT(inst->tracks[2].pad_mode == PAD_MODE_DRUM && !inst->au_clip[2][0].smp, "pad_mode left Audio holding its samples");
     hx_destroy(h);
 
     /* ---- a set from the drum-flag build loads as a drum track ---- */
