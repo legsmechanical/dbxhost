@@ -1424,6 +1424,15 @@ typedef struct {
     uint8_t  print_offline;
     uint8_t  print_loops, print_wrap;
     uint8_t  print_err;          /* why the last offline print did not run / failed (0 = it did) */
+    /* SCENE RESAMPLE (seq8_resample.c): a scene's audio through the host's
+     * module take. resample_state is RS_*; the ticks are master ticks. */
+    uint8_t  resample_state;
+    uint8_t  resample_err;
+    uint32_t resample_start_tick, resample_end_tick;
+    uint32_t resample_frames;     /* the take: bars + tail */
+    uint32_t resample_bar_frames; /* one bar, for the progress readout */
+    uint32_t resample_done;       /* frames captured so far */
+    char     resample_path[256];
     uint8_t  merge_solo_track;   /* 0xFF = capture all 8 tracks (scene mode); else only this
                                   * track's output is captured (Track-View single-clip merge).
                                   * Set on every merge_arm; only read while a merge is active. */
@@ -8028,6 +8037,7 @@ static void clip_send_program(seq8_track_t *tr, const clip_t *cl) {
 #include "seq8_bake_post.c"
 #include "seq8_convert.c"
 #include "seq8_param_auto.c"
+#include "seq8_resample.c"
 static void reset_all_loop_cycles(seq8_instance_t *inst);
 
 #include "seq8_set_param.c"
@@ -8887,6 +8897,10 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
 
     /* PRINT state, for the UI's progress and its finish (see print_track). */
     /* OFFLINE print: why the last one did not run or failed (0 = it ran). */
+    if (!strcmp(key, "resample_err"))
+        return snprintf(out, out_len, "%d", (int)inst->resample_err);
+    if (!strncmp(key, "resample_bars_", 14))
+        return snprintf(out, out_len, "%d", resample_scene_bars(inst, my_atoi(key + 14)));
     if (!strcmp(key, "print_err"))
         return snprintf(out, out_len, "%d", (int)inst->print_err);
     /* Live Merge: the tracks whose POST module the last placement took in. */
@@ -9264,6 +9278,10 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
             const int on = inst->playing && vt->clip_playing && vt->pa_view_slot;
             pos += snprintf(out + pos, (size_t)(out_len - pos), " %d", on ? (int)vt->pa_view_lt : -1);
         }
+        /* [65..67] scene resample: state (RS_*), frames captured, take frames */
+        pos += snprintf(out + pos, (size_t)(out_len - pos), " %d %u %u",
+                        (int)inst->resample_state, (unsigned)inst->resample_done,
+                        (unsigned)inst->resample_frames);
         return pos;
     }
 

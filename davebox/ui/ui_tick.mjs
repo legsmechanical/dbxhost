@@ -82,6 +82,7 @@ import { openGlobalMenuAt } from './ui_menu.mjs';
 import { cardHoldExpired } from './ui_prefs.mjs';
 import { heldIndicatorChanged } from './ui_chord.mjs';
 import { printTick } from './ui_print.mjs';
+import { resampleTick } from './ui_resample.mjs';
 
 const BANK_DISPLAY_MS = 1000;
 const KNOB_TURN_HIGHLIGHT_MS = 600;               /* highlight after turn without touch */
@@ -627,6 +628,7 @@ export function _tickImpl() {
 
     /* A PRINT in flight (ui_print): its progress and its finish. */
     printTick();
+    resampleTick();
 
     /* Reapply cable-2 channel remap if anything affecting it changed. */
     {
@@ -2051,7 +2053,7 @@ export function _tickImpl() {
                  * count-in: flash red to draw the eye to the Record button. */
                 setButtonLEDAnim(MoveRec, LED_OFF, Red, LED_BLINK_8TH);
             } else if (S.dspMergeState === 2 || S.dspMergeState === 3) {
-                /* Live Merge capturing (Shift+Sample): green. */
+                /* Live Merge capturing: green. */
                 setButtonLED(MoveRec, Green);
             } else if (S.dspMergeState === 1) {
                 /* Live Merge armed, waiting for the bar boundary: red. */
@@ -2060,8 +2062,9 @@ export function _tickImpl() {
                 /* Idle or CAPTURED (capture ended → LED off with Play). */
                 setButtonLED(MoveRec, S.recordArmed ? Red : LED_OFF);
             }
-            /* Sample = bake, always available: dim ambient (same as Capture idle). */
-            setButtonLED(MoveSample, DarkGrey);
+            /* Sample = its menu, always available: dim ambient (same as Capture
+             * idle); red while a scene resample is recording, as Move's own. */
+            setButtonLED(MoveSample, S.resampleTake ? Red : DarkGrey);
             /* Back LED: lit where a TAP is functional — backTapWouldAct mirrors
              * _backTap (a dialog / menu / sound mode's screens / a bank page on
              * screen / an alt to flip back / the perf lock); off at the home

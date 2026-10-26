@@ -104,6 +104,7 @@ function rest() {
     S.playing = false; S.shiftHeld = false; S.recordArmed = false;
     S.dspMergeState = 0; S.mergeNoticePending = false; S.mergeCountingIn = false;
     S.confirmBake = false; S.pendingSceneBakePicker = false;
+    S.sampleMenu = null; S.confirmResample = null; S.sampleFlow = false;
     S.trackCurrentPage[T] = 0; S.sampleHeld = false; S.sampleUsedAsModifier = false;
     /* Wipe the step mirror: hadBefore reads it, and residue from an earlier
      * step would silently flip a fresh step into an "overdub". */
@@ -112,33 +113,49 @@ function rest() {
     clearQ(); sets.length = 0; S.tickCount += 10;
 }
 
-step('⭐ CHORD SHUFFLE: Shift+Sample raises the Live Merge notice — and its release does not bake', () => {
+/* The Sample menu's Live merge (Track View: "Live merge track"). */
+const sampleTap = () => { cc(C.MoveSample, 127); cc(C.MoveSample, 0); };
+const jogBy = (d) => cc(14, d > 0 ? d : 128 + d);
+const jogClick = () => { cc(3, 127); cc(3, 0); };
+function menuLiveMerge() {
+    sampleTap();
+    if (!S.sampleMenu) throw new Error('a Sample tap did not open the Sample menu');
+    while (S.sampleMenu.items[S.sampleMenu.sel].id !== 'merge') {
+        const before = S.sampleMenu.sel; jogBy(1);
+        if (S.sampleMenu.sel === before) throw new Error('the Sample menu has no Live merge');
+    }
+    jogClick();
+}
+
+step('⭐ Live merge is in the Sample menu now — the notice, for this track', () => {
     rest();
-    S.shiftHeld = true;
-    cc(C.MoveSample, 127);
-    if (!S.mergeNoticePending) throw new Error('Shift+Sample did not raise the merge notice');
-    cc(C.MoveSample, 0);                     /* release, shift still down */
-    if (!S.mergeNoticePending) throw new Error('the chord\'s own release dismissed the notice');
-    S.shiftHeld = false;
-    if (S.confirmBake || S.pendingSceneBakePicker)
-        throw new Error('the shifted Sample release BAKED');
+    menuLiveMerge();
+    if (S.sampleMenu) throw new Error('the menu stayed up');
+    if (!S.mergeNoticePending) throw new Error('Live merge did not raise the notice');
+    if (S.mergeNoticeSingleTrack !== S.activeTrack) throw new Error('Track View merge is not this track');
+    if (S.confirmBake || S.pendingSceneBakePicker) throw new Error('Live merge opened a bake');
     cc(HC.MoveBack, 127); cc(HC.MoveBack, 0);  /* Back cancels the notice */
     if (S.mergeNoticePending) throw new Error('Back did not cancel the notice');
 });
 
-step('⭐ ...shift released FIRST: the unshifted Sample release still does not bake', () => {
+step('⭐ Shift+Sample is gone: neither order of release raises or opens anything', () => {
     rest();
+    S.shiftHeld = true;
+    cc(C.MoveSample, 127); cc(C.MoveSample, 0);
+    S.shiftHeld = false;
+    if (S.mergeNoticePending || S.sampleMenu || S.confirmBake)
+        throw new Error('Shift+Sample still does something');
     S.shiftHeld = true;
     cc(C.MoveSample, 127);
     S.shiftHeld = false;                     /* shift up before sample up */
     cc(C.MoveSample, 0);
-    if (S.confirmBake || S.pendingSceneBakePicker)
-        throw new Error('unshifted release of a SHIFTED press baked');
-    S.mergeNoticePending = false;
-    /* control: a genuine plain press+release still bakes */
-    cc(C.MoveSample, 127); cc(C.MoveSample, 0);
-    if (!S.confirmBake) throw new Error('control: plain Sample no longer bakes');
-    S.confirmBake = false;
+    if (S.mergeNoticePending || S.sampleMenu || S.confirmBake)
+        throw new Error('unshifted release of a SHIFTED press opened something');
+    /* control: a genuine plain press+release opens the menu */
+    sampleTap();
+    if (!S.sampleMenu) throw new Error('control: plain Sample no longer opens the menu');
+    cc(HC.MoveBack, 127); cc(HC.MoveBack, 0);
+    if (S.sampleMenu) throw new Error('Back did not close the menu');
 });
 
 step('⭐ Shift+Record no longer touches the merge — it is STEP RECORD now', () => {
@@ -321,7 +338,7 @@ step('⭐ every exit route ends the session: Back, Play, track switch, view swit
     rest();
 });
 
-step('⭐ Shift+SAMPLE is DECLINED over an open session — no merge can open under step record', () => {
+step('⭐ Live merge (Sample menu) is DECLINED over an open session — no merge can open under step record', () => {
     /* The mirror of the entry gate. Step record runs with the transport
      * STOPPED, which is exactly the condition that raises the Live Merge
      * notice — so without a gate here the notice goes up over the session,
@@ -330,10 +347,10 @@ step('⭐ Shift+SAMPLE is DECLINED over an open session — no merge can open un
      * defect class as the bare-Record fall-through, reached through Sample. */
     rest(); rec.stepRecEnter();
     if (!S.stepRecActive) throw new Error('rig: no session open');
-    S.shiftHeld = true; cc(C.MoveSample, 127); cc(C.MoveSample, 0); S.shiftHeld = false;
+    menuLiveMerge();
     if (S.mergeNoticePending)
-        throw new Error('Shift+Sample raised the merge notice over an open session');
-    if (!S.stepRecActive) throw new Error('Shift+Sample ended the session instead of declining');
+        throw new Error('Live merge raised the merge notice over an open session');
+    if (!S.stepRecActive) throw new Error('Live merge ended the session instead of declining');
     /* and the follow-up Rec must still be the session exit, not a count-in */
     cc(C.MoveRec, 127); cc(C.MoveRec, 0);
     if (S.mergeCountingIn) throw new Error('a merge count-in started under the session');
@@ -384,16 +401,16 @@ step('⭐ a TRACK CONVERSION ends the session — pads must not write a re-typed
         throw new Error('convertTrackToConduct no longer exits step record');
 });
 
-step('⭐ the merge NOTICE swallows a PLAIN Sample tap — no bake dialog under it', () => {
-    /* Review finding: the unconditional MoveSample exemption let an unshifted
-     * Sample tap stack the bake confirm under (track view) or over (session
-     * view) the notice. Only the SHIFTED chord passes now. */
+step('⭐ the merge NOTICE swallows a Sample tap — no menu or bake under it', () => {
+    /* Review finding (when Shift+Sample raised it): a Sample tap let through
+     * stacked the bake confirm under (track view) or over (session view) the
+     * notice. Now it would stack the Sample menu. */
     rest();
-    S.shiftHeld = true; cc(C.MoveSample, 127); cc(C.MoveSample, 0); S.shiftHeld = false;
+    menuLiveMerge();
     if (!S.mergeNoticePending) throw new Error('setup: no notice');
     cc(C.MoveSample, 127); cc(C.MoveSample, 0);      /* plain tap under the notice */
-    if (S.confirmBake || S.pendingSceneBakePicker)
-        throw new Error('a plain Sample tap under the notice reached the bake handlers');
+    if (S.sampleMenu || S.confirmBake || S.pendingSceneBakePicker)
+        throw new Error('a Sample tap under the notice reached the Sample menu');
     if (!S.mergeNoticePending) throw new Error('the swallowed tap dismissed the notice');
     S.mergeNoticePending = false;
 });

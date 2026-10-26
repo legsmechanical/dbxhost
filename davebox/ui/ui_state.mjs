@@ -817,6 +817,15 @@ export const S = {
     confirmXposeScale: 0,
     sampleHeld: false,
     sampleUsedAsModifier: false,
+    /* The Sample menu and scene resample (ui_resample.mjs). */
+    sampleMenu: null,              /* { items, sel } while the menu is up */
+    sampleFlow: false,             /* the picker / bake dialog up came from the menu: Back steps back to it */
+    scenePickFor: 'bake',          /* what the scene picker (pendingSceneBakePicker) picks for */
+    confirmResample: null,         /* { clip, bars, warm, tail, sel, editing } — the options */
+    resampleTake: null,            /* { path, file, scene, bars, ... } while a take is up */
+    resampleState: 0,              /* state_snapshot [65..67]: the engine's RS_*, frames done, take frames */
+    resampleDone: 0,
+    resampleFrames: 0,
     pendingSceneBakeResync: 0,
     pendingSceneBakeClip: 0,
     tapTempoOpen: false,

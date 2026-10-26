@@ -159,10 +159,13 @@ printf '%s' "$_cp" | grep -q 'song = ss.song_folder(np)' \
 # So: no path-shaped literal in shipped code outside the two rule files
 # (src/host/dbx_state_subdir.h + its DSP copy, standalone/scripts/state_subdir.py).
 # The devsnap rm fence matches the rule's own pattern, and is allowed by shape.
+# Samples/dAVEBOx/ is a folder in the sample LIBRARY (scene resample's
+# recordings), not a project's state dir — allowed by its full path.
 _spelled="$(grep -rnIE "dAVEBOx(/|\\\\/)|[\"']dAVEBOx[\"'] *[,)]" ../src ui dsp ../standalone/scripts 2>/dev/null \
     | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(\*|//|#|/\*)' \
     | grep -vE '/(dbx_state_subdir\.h|state_subdir\.py):' \
     | grep -vF 'dAVEBOx(~[0-9]+)?\/snapshots' \
+    | grep -vF 'UserLibrary/Samples/dAVEBOx/' \
     | grep -vE "(WORD|_xn|const t) = 'dAVEBOx'|drawWordmark\('dAVEBOx'\)" || true)"
 [ -z "$_spelled" ] \
     && ok "no shipped code spells the state dir as a path — every reader/writer resolves it" \

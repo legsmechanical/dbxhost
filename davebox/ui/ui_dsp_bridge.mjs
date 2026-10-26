@@ -769,6 +769,12 @@ export function pollDSP() {
     /* [57..64] the AUTOMATION bank's selected lane's position, per track. */
     for (let t = 0; t < NUM_TRACKS; t++)
         S.autoLanePos[t] = v.length >= 58 + t ? (parseInt(v[57 + t], 10) | 0) : -1;
+    /* [65..67] scene resample: the engine's state, frames captured, take frames. */
+    if (v.length >= 68) {
+        S.resampleState  = parseInt(v[65], 10) | 0;
+        S.resampleDone   = parseInt(v[66], 10) >>> 0;
+        S.resampleFrames = parseInt(v[67], 10) >>> 0;
+    }
     const _soloTrack = _dspSolo !== 255 ? _dspSolo
                      : (S.mergeSingleTrack >= 0 ? S.mergeSingleTrack : -1);
     /* Arm confirmation: no longer fails on "no empty slot" — placement is

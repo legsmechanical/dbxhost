@@ -344,6 +344,7 @@ static void ext_transport_start(seq8_instance_t *inst) {
  * they fire on the next render pass). */
 static void ext_transport_stop(seq8_instance_t *inst) {
     int t;
+    resample_on_transport_stop(inst);   /* a pending or running take is cancelled */
     capture_clear(inst);   /* Move parity: transport edge drops capture input */
     pa_cap_clear(inst, -1);   /* ...and the captured knob sweeps with it (plan 6e) */
     inst->cap_select_active = 0;   /* stopping transport closes the tempo selector */

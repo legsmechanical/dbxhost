@@ -267,6 +267,28 @@ typedef struct move_host_ext_v1 {
                                   const struct move_midi_fx_offline_ev *in, int in_count);
     int  (*midi_fx_offline_poll)(struct move_midi_fx_offline_ev *out, int cap, int *out_count, int take);
     void (*midi_fx_offline_cancel)(void);
+
+    /* RECORD THE SESSION'S AUDIO to a WAV: the full mix after Master FX,
+     * before master volume (what the sampler's Resample source records),
+     * 16-bit stereo 44.1 kHz, at `path` (absolute; its directory is created).
+     * For a sequencer that resamples what it plays, bar-exact.
+     *
+     * capture_start: the caller's render_block or set_param. Called during
+     * render_block of block k, the take begins with the mix that block's
+     * render is part of, so audio started in that render is its first frame.
+     * `frames` > 0 ends the take after exactly that many frames, inside a
+     * block if need be, so a loop is its exact length; 0 runs until
+     * capture_stop. MIDI Stop does not end it, and the host draws and
+     * announces nothing for it (no dot, no "saved"): the caller shows its
+     * own. Returns 1 armed, 0 refused (the sampler is busy -- a recording,
+     * a save, or the user's sampler menu is open -- or no path). One take at
+     * a time, shared with the host's own sampler. File I/O happens on a host
+     * thread; the caller learns the file is complete when
+     * host_sampler_is_recording() goes false.
+     * capture_stop: the same contexts; ends the caller's take at this block
+     * (it never stops a recording the caller did not start). */
+    int  (*capture_start)(const char *path, uint32_t frames);
+    void (*capture_stop)(void);
 } move_host_ext_v1_t;
 
 /* One event of an offline MIDI FX job (midi_fx_offline_*). */

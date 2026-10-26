@@ -2325,19 +2325,28 @@ is suppressed and shows `—`.
 
 # 16. Bake, Merge & Export
 
+Tap **Sample** for a short menu of what it can do — turn the jog to choose, press it
+to go, and **Back** steps back a level:
+
+- **Session View:** **Bake scene**, **Resample scene**, **Live merge**.
+- **Track View:** **Bake clip**, **Live merge track**.
+
+Bake scene and Resample scene then ask for the row: tap a side button, or a step
+button for any of the 16.
+
 ## 16.1 Bake
 
 > 🎬 **Video:** [Tutorial 4.6: Bake](https://youtu.be/jOnQWmr71JI?t=481) (from 8:01)
 
-**Bake** (the **Sample** button) renders a clip's sequencer effects — NOTE FX,
+**Bake** renders a clip's sequencer effects — NOTE FX,
 HARMONY, DELAY, SEQ ARP — into plain notes, then resets those effects. The clip sounds the
 same, with a clean effects chain to build on.
 
-- **A melodic clip** (Track View): tap **Sample**, then choose the loop count (1× /
+- **A melodic clip** (Track View): **Sample → Bake clip**, then choose the loop count (1× /
   2× / 4×) and whether to wrap the delay tails for a seamless loop.
 - **A drum clip** adds a first choice — the whole clip, or just the selected lane.
-- **A scene** (Session View): tap **Sample**, then tap a side button or a step
-  button to choose the row, then make the same choices. Empty clips are skipped.
+- **A scene** (Session View): **Sample → Bake scene**, choose the row, then make the
+  same choices. Empty clips are skipped.
 - When you bake a scene whose [Conductor](#12-the-conductor) clip has responding
   tracks, a last **Apply Conductor?** step can fold its transposition into those
   clips. Baking a single clip never applies the Conductor.
@@ -2363,8 +2372,8 @@ same, with a clean effects chain to build on.
 **Live Merge** records the actual output of your tracks — arps, delays, knob rides
 and all — into plain clips.
 
-- Arm it with **Shift + Sample** from a stopped transport; a notice says what it
-  will capture and *Press Rec to start*.
+- Arm it from a stopped transport with **Sample → Live merge** (in Track View,
+  **Live merge track**); a notice says what it will capture and *Press Rec to start*.
 - Press **Record** to begin: a 1-bar count-in, then a clean take from the top.
   **Back** cancels at any point, even at the placing step.
 - The view you arm from sets the scope:
@@ -2530,8 +2539,24 @@ top), or bring it back with [Import MIDI](#164-import-a-midi-file). Stop the
 transport first — like the Ableton export, it won't run while playing.
 ## 16.6 Recording audio
 
-dAVEBOx records MIDI, not sound. To record audio, use Schwung's two samplers — both
-work inside dAVEBOx:
+**Resample a scene** to record what it sounds like into a sample, cut to loop exactly:
+
+- With the transport stopped, **Sample → Resample scene**, then choose the row.
+- **Length** starts where all the scene's clips line up again (past 32 bars, the
+  longest clip); turn the jog to change it. **Warm-up** plays the scene once
+  first, so delay and reverb tails carry into the start of the loop. **Tail**
+  records extra bars after the clips stop, for the ring-out — the file is then
+  longer than the loop. Both start off.
+- Press the jog on **Start**: the scene plays from the top with no count-in and the
+  metronome silent, and **RESAMPLING** counts the bars. **RESAMPLED** says
+  what it recorded when it is done. As with a [MIDI FX print](#161-bake), **Back**
+  cancels and the other buttons wait until it's done.
+- It records the whole mix, after Master FX. Files go to the sample library under
+  **Samples → dAVEBOx → Resample**, named after the project, scene, length and tempo
+  (`mngk Scene C 4bar 120bpm.wav`), where Move's own sampler can use them. They
+  are not part of the project.
+
+For anything else, use Schwung's two samplers — both work inside dAVEBOx:
 
 - **Quantized Sampler** — hold **Shift**, touch the **Volume** knob and press
   **Sample**.
@@ -2938,7 +2963,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | Play / Shift + Play / Loop + Play | Start-stop / restart / restart at page |
 | Record / Shift + Record | Record / step record |
 | Capture / Shift + Capture | Keep / clear buffered play |
-| Sample / Shift + Sample | Bake / Live Merge |
+| Sample | Bake clip / Live merge track (a menu) |
 | Mute / Shift + Mute / Delete + Mute | Mute / solo / clear all |
 | Mute + Play | Metronome on / off |
 | Mute + touch knob / Delete + touch knob | Automation on-off / clear |
@@ -3016,7 +3041,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | Hold Capture, then step / Shift + step / Delete + step | Recall / save / clear device sound snapshot |
 | Copy + clip / side button | Copy clip / row |
 | Capture + side button | Snapshot the playing clips to a row |
-| Sample, then side button or step | Bake that row |
+| Sample | Bake scene / Resample scene / Live merge (a menu) |
 | Delete + clip / side button | Clear clip / row |
 | Shift + Delete + clip / side button | Reset clip / row's clips |
 | Loop (tap / hold) | Lock / hold Performance Mode |

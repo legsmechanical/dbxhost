@@ -68,6 +68,12 @@ int  hx_stub_mfo_begins(void);
 int  hx_stub_mfo_cancels(void);
 int  hx_stub_mfo_state(void);
 const move_midi_fx_offline_ev_t *hx_stub_mfo_input(int *n, int *slot, float *bpm, uint32_t *len, uint32_t *tail);
+/* The module take (capture_start / capture_stop): refuse (as a busy sampler
+ * would); how many starts, and what the last was given — the block it was
+ * called in (hx_midi_event.block's clock), its frames and path. */
+void hx_stub_capture_reset(void);
+void hx_stub_capture_refuse(int on);
+int  hx_stub_capture(int *stops, int *block, uint32_t *frames, const char **path);
 /* set_move_info: what the module last published (NULL = never, or withdrawn),
  * and how many times it called. */
 const move_info_t *hx_stub_move_info(void);

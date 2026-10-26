@@ -294,6 +294,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
     inst->block_count++;
     inst->pa_host_writes = 0;          /* this block's direct parameter writes (pa_emit_chain) */
     if (frames > 0) inst->rui_frames += (uint64_t)frames;  /* device clock (remote UI) */
+    resample_render_start(inst, frames);   /* arms / counts a scene resample's take */
     /* Stopped: there is no beat to wait for. */
     if (inst->aud.pending && !inst->playing) aud_apply(inst);
 
@@ -587,6 +588,10 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
 
     seq8_clock_advance(inst);
     while (seq8_tick_due(inst)) {
+
+        /* Scene resample: start / end-of-pass decisions see the tick before
+         * any track plays it. */
+        resample_tick(inst);
 
         /* Looper: tick state machine + emit captured events for current pos.
          * Runs before track logic so arp_emit captures land at the same
@@ -1249,6 +1254,11 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
 
 mix_click:
     /* Mix metro click into output */
+    /* ...never into a scene resample: the click is mixed before Master FX,
+     * so it cannot be taken back out of the file. A beat that falls in a take
+     * is DROPPED, not held — held, it played the moment the take ended, and
+     * the take ends on a bar line. Silent until the UI has read the outcome. */
+    if (inst->resample_state != RS_IDLE) inst->metro_click_pos = UINT32_MAX;
     if (out_lr && frames > 0 && inst->metro_wav_data
             && inst->metro_click_pos != UINT32_MAX && inst->metro_vol > 0) {
         float gain = inst->metro_vol / 100.0f;

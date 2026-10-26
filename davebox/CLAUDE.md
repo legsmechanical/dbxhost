@@ -157,7 +157,7 @@ summary of it.
 
 ## JS layout and internals
 
-JS modules live under `ui/` — `ui.js` plus 26 `ui_*.mjs` — bundled to `dist/davebox-sound/ui.js`.
+JS modules live under `ui/` — `ui.js` plus the `ui_*.mjs` modules — bundled to `dist/davebox-sound/ui.js`.
 
 - `ui_*.mjs` import each other but **NEVER** `ui.js`. The entry file is init + MIDI dispatch +
   `globalThis` wrappers only; all other logic lives in modules.

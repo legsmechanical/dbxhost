@@ -1,6 +1,7 @@
 /* tests/harness/stub_host.c */
 #include "stub_host.h"
 #include <string.h>
+#include <stdio.h>
 
 #define HX_CAP_MAX  8192
 #define HX_LOG_MAX  65536
@@ -121,6 +122,28 @@ const move_midi_fx_offline_ev_t *hx_stub_mfo_input(int *n, int *slot, float *bpm
     return g_mfo_in;
 }
 
+/* capture_start / capture_stop — the host's module take (a scene resample). */
+static int      g_cap_starts, g_cap_stops, g_cap_block = -1, g_cap_refuse;
+static uint32_t g_cap_frames;
+static char     g_cap_path[256];
+static int stub_capture_start(const char *path, uint32_t frames) {
+    if (g_cap_refuse) return 0;
+    g_cap_starts++; g_cap_block = g_block; g_cap_frames = frames;
+    snprintf(g_cap_path, sizeof g_cap_path, "%s", path ? path : "");
+    return 1;
+}
+static void stub_capture_stop(void) { g_cap_stops++; }
+void hx_stub_capture_reset(void) {
+    g_cap_starts = g_cap_stops = g_cap_refuse = 0; g_cap_block = -1;
+    g_cap_frames = 0; g_cap_path[0] = '\0';
+}
+void hx_stub_capture_refuse(int on) { g_cap_refuse = on; }
+int  hx_stub_capture(int *stops, int *block, uint32_t *frames, const char **path) {
+    if (stops) *stops = g_cap_stops; if (block) *block = g_cap_block;
+    if (frames) *frames = g_cap_frames; if (path) *path = g_cap_path;
+    return g_cap_starts;
+}
+
 const move_host_ext_v1_t *hx_stub_ext(void) {
     static const move_host_ext_v1_t ext = {
         .size = sizeof(move_host_ext_v1_t),
@@ -131,6 +154,8 @@ const move_host_ext_v1_t *hx_stub_ext(void) {
         .midi_fx_offline_begin = stub_mfo_begin,
         .midi_fx_offline_poll = stub_mfo_poll,
         .midi_fx_offline_cancel = stub_mfo_cancel,
+        .capture_start = stub_capture_start,
+        .capture_stop = stub_capture_stop,
     };
     return &ext;
 }

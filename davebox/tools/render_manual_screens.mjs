@@ -853,14 +853,28 @@ screen('capture-place', '6.5 Capture', 'Capture — choosing where the take goes
         if (S.capturePlaceTrack < 0) throw new Error('no destination prompt');
     });
 
+/* 16 — the Sample menu (Josh, 2026-10-25) */
+const sampleMenu = (id) => {
+    tap(C.MoveSample); ticks(2);
+    if (!S.sampleMenu) throw new Error('Sample did not open its menu');
+    for (let n = 0; n < 4 && S.sampleMenu.items[S.sampleMenu.sel].id !== id; n++) jog(1);
+    if (S.sampleMenu.items[S.sampleMenu.sel].id !== id) throw new Error('the menu has no ' + id);
+};
+screen('sample-menu-session', '16. Bake, Merge & Export', 'The Sample menu — Session View',
+    'Sample tapped in Session View: bake or resample a scene, or start a Live Merge of all 8 tracks.',
+    () => { stopTransport(); toSession(); sampleMenu('bake'); });
+screen('sample-menu-track', '16. Bake, Merge & Export', 'The Sample menu — Track View',
+    'Sample tapped in Track View: bake the clip, or Live Merge the track.',
+    () => { stopTransport(); sampleMenu('bake'); });
+
 /* 15.2 — Live Merge */
 screen('merge-notice-session', '16.2 Live Merge', 'Live Merge — armed from Session View',
-    'Shift + Sample with the transport stopped: the notice says the merge will capture all 8 tracks; Record starts it.',
-    () => { stopTransport(); toSession(); press(MoveShift); tap(C.MoveSample); release(MoveShift); ticks(2);
+    'Sample → Live merge with the transport stopped: the notice says the merge will capture all 8 tracks; Record starts it.',
+    () => { stopTransport(); toSession(); sampleMenu('merge'); click(); ticks(2);
             if (!S.mergeNoticePending) throw new Error('no merge notice'); });
 screen('merge-notice-track', '16.2 Live Merge', 'Live Merge — armed from Track View',
-    'The same gesture in Track View captures the active track alone.',
-    () => { stopTransport(); press(MoveShift); tap(C.MoveSample); release(MoveShift); ticks(2);
+    'Live merge track, in Track View, captures the active track alone.',
+    () => { stopTransport(); sampleMenu('merge'); click(); ticks(2);
             if (!S.mergeNoticePending) throw new Error('no merge notice'); });
 screen('merge-place-scene', '16.2 Live Merge', 'Live Merge — placing the take',
     'After a Session View merge: tap a row or a scene step to receive the eight clips.',
@@ -880,19 +894,27 @@ screen('merge-place-track', '16.2 Live Merge', 'Live Merge — keeping a single-
 
 /* 15.1 — Bake */
 screen('bake-clip', '16.1 Bake', 'Bake a clip',
-    'Sample tapped in Track View: choose how many loops to render into plain notes.',
-    () => { press(C.MoveSample); release(C.MoveSample); ticks(2); if (!S.confirmBake) throw new Error('no bake confirm'); });
+    'Sample → Bake clip in Track View: choose how many loops to render into plain notes.',
+    () => { sampleMenu('bake'); click(); ticks(2); if (!S.confirmBake) throw new Error('no bake confirm'); });
 screen('bake-drum', '16.1 Bake', 'Bake a drum clip',
     'On a drum track the bake first asks: the whole clip, or just the selected lane.',
-    () => { selectTrack(1); press(C.MoveSample); release(C.MoveSample); ticks(2); if (!S.confirmBake) throw new Error('no bake confirm'); });
+    () => { selectTrack(1); sampleMenu('bake'); click(); ticks(2); if (!S.confirmBake) throw new Error('no bake confirm'); });
 screen('bake-scene-pick', '16.1 Bake', 'Bake a scene — pick the row',
-    'Sample tapped in Session View: tap a row or a scene step to choose what to bake.',
-    () => { toSession(); press(C.MoveSample); release(C.MoveSample); ticks(2); if (!S.pendingSceneBakePicker) throw new Error('no picker'); });
+    'Sample → Bake scene: tap a row or a scene step to choose what to bake.',
+    () => { toSession(); sampleMenu('bake'); click(); ticks(2); if (!S.pendingSceneBakePicker) throw new Error('no picker'); });
 screen('bake-scene-confirm', '16.1 Bake', 'Bake a scene — loops',
     'Row chosen: the same loop-count choice, for every clip in the scene.',
-    () => { toSession(); press(C.MoveSample); release(C.MoveSample); ticks(2);
+    () => { toSession(); sampleMenu('bake'); click(); ticks(2);
             noteOn(STEP(0), 127); noteOff(STEP(0)); ticks(2);
             if (!S.confirmBakeScene) throw new Error('no scene bake confirm'); });
+
+/* 16.6 — Resample a scene */
+screen('resample-options', '16.6 Recording audio', 'Resample a scene',
+    'Sample → Resample scene, then a row: the length starts where the clips line up; Warm-up and Tail start off.',
+    () => { stopTransport(); toSession(); ENGINE.resample_bars_0 = '4';
+            sampleMenu('resample'); click(); ticks(2);
+            noteOn(STEP(0), 127); noteOff(STEP(0)); ticks(2);
+            if (!S.confirmResample) throw new Error('no resample options'); });
 
 /* 3.6 / 16 — Project Settings (Shift + Step 2) */
 const openSettings = () => {

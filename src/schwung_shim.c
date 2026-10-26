@@ -1628,6 +1628,12 @@ static void overtake_set_move_info(const void *info, size_t size) {
  * its own clock declares its exact tempo to the transport service. */
 static void overtake_set_tempo(float bpm) { shadow_transport_declare_bpm(bpm); }
 
+/* Host extension (move_host_ext_v1_t.capture_start/stop): a module take on
+ * the sampler — fixed length, unity_view, silent (shadow_sampler.c). */
+static int overtake_capture_start(const char *path, uint32_t frames) {
+    return sampler_request_start_module(path, frames) == 0;
+}
+
 static const move_host_ext_v1_t overtake_host_ext = {
     .size = sizeof(move_host_ext_v1_t),
     .set_slot_param = overtake_set_slot_param,
@@ -1637,6 +1643,8 @@ static const move_host_ext_v1_t overtake_host_ext = {
     .midi_fx_offline_begin = midi_fx_offline_begin,
     .midi_fx_offline_poll = midi_fx_offline_poll,
     .midi_fx_offline_cancel = midi_fx_offline_cancel,
+    .capture_start = overtake_capture_start,
+    .capture_stop = sampler_request_stop_module,
 };
 
 /* Offline MIDI FX jobs read a slot's chain instance by index. */
@@ -3574,7 +3582,7 @@ skip_la_rebuild:
         } else if (cmd == 3) {
             /* Pause recording */
             shadow_control->sampler_cmd = 0;
-            if (sampler_state == SAMPLER_RECORDING) {
+            if (sampler_state == SAMPLER_RECORDING && !sampler_module_take) {
                 sampler_pause_recording();
             }
         } else if (cmd == 4) {
@@ -3606,6 +3614,9 @@ skip_la_rebuild:
          * No init call here — the buffer is allocated at startup by
          * skipback_prepare(). Capture declines the block if it is not ready. */
         skipback_capture(unity_view);
+    } else if (sampler_module_take) {
+        /* A module take is always unity_view, whatever the menu's source. */
+        sampler_capture_audio_from_buffer(unity_view);
     }
 
     MIX_PHASE_END(MIX_PHASE_TAIL);
@@ -4518,7 +4529,7 @@ static void shadow_swap_display(void)
      * The indicator's enable bit lives in shadow_control->midi_indicator_enabled
      * (set by the shadow UI's midi_indicator_set binding). Reading it here is
      * lock-free and RT-safe — no file I/O on the SPI callback path. */
-    int draw_rec_dot = (sampler_state == SAMPLER_RECORDING && rec_dot_visible());
+    int draw_rec_dot = (sampler_state == SAMPLER_RECORDING && !sampler_module_take && rec_dot_visible());
     extern int midi_indicator_active_notes;
     int draw_midi_ind = shadow_control && shadow_control->midi_indicator_enabled
                         && midi_indicator_active_notes > 0;
@@ -7008,7 +7019,7 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
         int sampler_fullscreen_on = (sampler_fullscreen_active &&
                                      (sampler_state != SAMPLER_IDLE || sampler_overlay_timeout > 0));
         int skipback_overlay_on = (skipback_overlay_timeout > 0);
-        int recording_dot_on = (sampler_state == SAMPLER_RECORDING);
+        int recording_dot_on = (sampler_state == SAMPLER_RECORDING && !sampler_module_take);
 
         /* Read JS display_overlay request */
         uint8_t disp_overlay = shadow_control ? shadow_control->display_overlay : 0;
@@ -7142,7 +7153,7 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
         if (skipback_overlay_timeout > 0) {
             overlay_draw_skipback_toast(composited_jack_display);
         }
-        if (sampler_state == SAMPLER_RECORDING && rec_dot_visible()) {
+        if (sampler_state == SAMPLER_RECORDING && !sampler_module_take && rec_dot_visible()) {
             overlay_fill_rect(composited_jack_display, 123, 1, 4, 4, 1);
         }
         extern int midi_indicator_active_notes;
@@ -7186,7 +7197,7 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
             }
         }
         /* Overlay recording dot on live mirror too */
-        if (sampler_state == SAMPLER_RECORDING && rec_dot_visible()) {
+        if (sampler_state == SAMPLER_RECORDING && !sampler_module_take && rec_dot_visible()) {
             overlay_fill_rect(display_live_shm, 123, 1, 4, 4, 1);
         }
     }
@@ -9080,8 +9091,12 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                     src[j] = 0; src[j+1] = 0; src[j+2] = 0; src[j+3] = 0;
                 }
 
-                /* Sample/Record button (CC 118) - sampler intercept */
-                if (d1 == CC_RECORD && d2 > 0) {
+                /* Sample/Record button (CC 118) - sampler intercept.
+                 * ⚠ Not during a MODULE take (move_host_ext_v1_t.capture_start):
+                 * the module owns that take and its button. Without this a bare
+                 * Sample press — "stop" below whenever the sampler is RECORDING —
+                 * ended the module's loop part-way and never reached the module. */
+                if (d1 == CC_RECORD && d2 > 0 && !sampler_module_take) {
                     /* ⭑ The ARM chord is Shift+VOL+Sample (2026-09-01): bare
                      * Shift+Sample belongs to the primary module now, so an
                      * IDLE sampler ignores it and the event passes through
