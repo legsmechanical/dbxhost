@@ -227,8 +227,11 @@ function drawAudioWaveEditor() {
         drawBankHeading('WAVE  LOOP', false);
         ovwPrint(4, 10, 'S ' + auFmtTime(i.rstart, rt), 1);
         right('E ' + auFmtTime(auEnd(i), rt));
+        /* K4 Pitch, K5 Gain: their values between Start and End */
+        const pg = (i.pitch > 0 ? '+' : '') + i.pitch + 'ST ' + (i.gain > 0 ? '+' : '') + i.gain + 'DB';
+        ovwPrint(64 - Math.floor(ovwWidth(pg) / 2), 10, pg, 1);
         drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, noMarks: true, cur: ed.cur });
-        drawKitHintRow(MV_FOOTER_Y, [['k4', (i.pitch > 0 ? '+' : '') + i.pitch + 'st'], ['k5', (i.gain > 0 ? '+' : '') + i.gain + 'dB'], ['sh+clk', 'menu']]);
+        drawKitHintRow(MV_FOOTER_Y, [['k2', 'zoom'], ['sh+clk', 'menu']]);
         return;
     }
     const mk = auMarks(t, c);
@@ -243,8 +246,10 @@ function drawAudioWaveEditor() {
         right(m[1] === auEdHome(ed, sel) ? 'E NEXT' : 'E ' + auFmtTime(m[1], rt));
     }
     drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel, cur: i.even ? null : ed.cur });
-    drawKitHintRow(MV_FOOTER_Y, i.even ? [['sh+clk', 'chop'], ['k2', 'zoom']]
-                                       : [['clk', 'add'], ['del+pad', 'remove'], ['sh+clk', 'menu']]);
+    /* two hints fit: Shift + click is the one nobody would guess (found on
+     * the device: a third was cut off) */
+    drawKitHintRow(MV_FOOTER_Y, i.even ? [['k2', 'zoom'], ['sh+clk', 'menu']]
+                                       : [['clk', 'add'], ['sh+clk', 'menu']]);
 }
 
 /* An Audio track's banks (Josh, 2026-10-27): the CLIP bank mirrors ALL LANES
