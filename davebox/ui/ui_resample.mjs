@@ -315,7 +315,7 @@ function sampling() {
 /* Every tick while a take is up. */
 export function resampleTick() {
     const t = S.resampleTake;
-    if (!t) return;
+    if (!t || t.convert) return;              /* a conversion's takes: ui_audio_convert */
     const st = S.resampleState | 0;
     if (st === RS_IDLE) {
         /* The engine has not taken the command yet — it lands within a frame

@@ -29,6 +29,11 @@ typedef struct {
     au_sample_t *smp;
 } au_pool_ent_t;
 
+/* Set by au_shutdown: a copy or a read in progress gives up at its next
+ * chunk. destroy_instance runs on the SPI thread and joins the loader, so the
+ * join must not wait out a whole multi-hundred-MB copy or decode. */
+static volatile int au_abort = 0;
+
 typedef struct {
     pthread_t      th;
     volatile int   run;
@@ -258,6 +263,7 @@ static au_sample_t *au_read_file(const char *path, int *err) {
         buf = (uint8_t *)malloc((size_t)chunk * fb);
         if (!buf || fseek(f, fm.data_off, SEEK_SET)) { *err = AU_ERR_MEM; goto fail; }
         while (done < fm.frames) {
+            if (au_abort) { *err = AU_ERR_OPEN; goto fail; }
             uint32_t want = fm.frames - done < chunk ? fm.frames - done : chunk, i;
             size_t got = fread(buf, fb, want, f);
             if (got == 0) break;
@@ -326,8 +332,9 @@ static int au_copy_file(const char *src, const char *dst) {
     if (out >= 0) {
         ssize_t r;
         ok = 1;
-        while ((r = read(in, buf, sizeof buf)) > 0)
-            if (write(out, buf, (size_t)r) != r) { ok = 0; break; }
+        while ((r = read(in, buf, sizeof buf)) > 0) {
+            if (au_abort || write(out, buf, (size_t)r) != r) { ok = 0; break; }
+        }
         if (r < 0) ok = 0;
         if (ok && fsync(out)) ok = 0;
         close(out);
@@ -420,6 +427,7 @@ static void au_res_push(seq8_instance_t *inst, const au_res_t *r) {
             __atomic_store_n(&inst->au_res_head, h + 1, __ATOMIC_RELEASE);
             return;
         }
+        if (au_abort) return;                       /* shutting down: nobody will drain it */
         usleep(2000);
     }
 }
@@ -470,6 +478,7 @@ static void *au_loader_main(void *arg) {
 static void au_init(seq8_instance_t *inst) {
     int t, c;
     au_loader_t *L = (au_loader_t *)calloc(1, sizeof *L);
+    au_abort = 0;
     for (t = 0; t < NUM_TRACKS; t++) {
         for (c = 0; c < NUM_CLIPS; c++) {
             au_clip_t *cl = &inst->au_clip[t][c];
@@ -498,6 +507,7 @@ static void au_shutdown(seq8_instance_t *inst) {
     int i;
     if (!L) return;
     L->run = 0;
+    au_abort = 1;
     if (L->started) pthread_join(L->th, NULL);
     for (i = 0; i < AU_POOL_MAX; i++)
         if (L->pool[i].smp) { free(L->pool[i].smp->pcm); free(L->pool[i].smp); }

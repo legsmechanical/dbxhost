@@ -672,11 +672,16 @@ function modalDialogUp() {
         if (S.confirmConvertToDrum) {
             const _ct = S.confirmConvertTrack;
             const _yes = S.confirmConvertToDrumSel === 0;
+            const _kind = S.confirmConvertAudio;
             closeConvertConfirm();
             /* Defer to tick() — this runs in the on_midi path where get_param
-             * (inside convertTrackType -> syncClipsFromDsp) returns null. */
-            if (_yes) S.pendingTrackConvert = { t: _ct, toDrum: true, toAudio: !!S.confirmConvertAudio };
-            S.confirmConvertAudio = false;
+             * (inside convertTrackType -> syncClipsFromDsp) returns null.
+             * -> Audio's resample offer: Yes records the clips first
+             * (ui_audio_convert), No is the plain conversion. */
+            if (_kind === 'resample') {
+                if (_yes) S.pendingAuConvertStart = _ct;
+                else S.pendingTrackConvert = { t: _ct, toDrum: true, toAudio: true };
+            } else if (_yes) S.pendingTrackConvert = { t: _ct, toDrum: true, toAudio: _kind === 'audio' };
             S.screenDirty = true;
             return;
         }

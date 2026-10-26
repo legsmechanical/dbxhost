@@ -16,6 +16,8 @@
  *                                  (a key per field: two fields written to one
  *                                  key in one frame would keep only the second)
  *   tN_au_chop    "C"              one trig per slice, in order (one undo)
+ *   tN_au_wipe    "C"              every lane's notes of clip C go (one undo) --
+ *                                  a converted clip that now plays its recording
  *   tN_au_jump    "K"              Loop: jump the playing loop to point K (a press);
  *                                  stopped, it auditions from there until
  *   tN_au_jump_off "K"             the pad's release (its own key: a press and a
@@ -155,7 +157,9 @@ static void au_render(seq8_instance_t *inst, int frames) {
                 int32_t v = acc[f];
                 out[f] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
             }
-            if (g_ext && g_ext->slot_audio_feed)
+            /* Only into a Schwung slot of its own: a track routed anywhere
+             * else has no slot to play through (its `slot` is stale). */
+            if (g_ext && g_ext->slot_audio_feed && tr->pfx.route == ROUTE_SCHWUNG)
                 g_ext->slot_audio_feed((int)tr->pfx.slot, out, (uint32_t)frames);
         }
     }
@@ -381,6 +385,21 @@ static int sp_track_audio(sp_ctx_t *cx) {
                 lane_note_apply_op(lc, ln->midi_note, 'a', args);
             }
             clip_note_finalize(inst, lc, tidx, c);
+        }
+        return 1;
+    }
+
+    if (!strcmp(sub, "wipe")) {
+        c = au_arg_clip(&p);
+        if (c < 0 || tr->recording) return 1;
+        drum_clip_t *dc = tr->drum_clips[c];
+        if (!dc) return 1;
+        undo_begin_drum_clip(inst, tidx, c);
+        for (l = 0; l < DRUM_LANES; l++) {
+            drum_lane_t *ln = &dc->lanes[l];
+            if (c == tr->active_clip) drum_pfx_note_off_imm(inst, tr, &tr->drum_lane_pfx[l], ln->midi_note);
+            clip_wipe_notes(&ln->clip);
+            clip_note_finalize(inst, &ln->clip, tidx, c);
         }
         return 1;
     }

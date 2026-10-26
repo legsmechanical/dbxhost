@@ -84,6 +84,7 @@ import { heldIndicatorChanged } from './ui_chord.mjs';
 import { printTick } from './ui_print.mjs';
 import { resampleTick } from './ui_resample.mjs';
 import { auTick, auSetTrackAudio, auReadTrack } from './ui_audio.mjs';
+import { auConvertStart, auConvertTick, auConvertApply } from './ui_audio_convert.mjs';
 import { openAudioChooser, closeAudioChooser, audioChooserTick } from './ui_audio_chooser.mjs';
 import { closeAudioEditor } from './ui_audio_editor.mjs';
 import { applyInstrChoice } from './ui_dsp_bridge.mjs';
@@ -533,6 +534,7 @@ export function _tickImpl() {
             applyInstrChoice(_pc.t, INSTR_NONE);
             host_module_get_param('t' + _pc.t + '_au_on');   /* the barrier: the switch lands before the padmap */
             auReadTrack(_pc.t);
+            if (_pc.takes) auConvertApply(_pc.t, _pc.takes);   /* each clip takes its recording */
             computePadNoteMap();
             invalidateLEDCache();
             forceRedraw();
@@ -2296,6 +2298,14 @@ export function _tickImpl() {
         if (S.auEditor && (S.auEditor.t !== S.activeTrack || S.sessionView)) closeAudioEditor();
         audioChooserTick();
         auTick();
+        /* -> Audio with the clips resampled first (ui_audio_convert). */
+        if (S.pendingAuConvertStart >= 0) {
+            const _ct = S.pendingAuConvertStart;
+            S.pendingAuConvertStart = -1;
+            if (!S.playing) auConvertStart(_ct);
+            else showMenuInfo('Stop playback', 'to change the', 'track type.');
+        }
+        auConvertTick();
         if (S.pendingGrooveMenuReturn) {
             S.pendingGrooveMenuReturn = false;
             if (!miActive()) openGlobalMenuAt('Groove');

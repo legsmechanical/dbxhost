@@ -28,7 +28,8 @@ the section into a versioned heading at release time.
   lanes. Slice evenly, set the starts by hand, or **Lazy chop** by tapping pads while
   it plays; **Chop** lays the slices out on the steps. Two banks shape it: **SAMPLE**
   and **SLICE**. **Project Settings → Purge samples** clears out the ones you no
-  longer use.
+  longer use. Turning a track that plays an instrument into an Audio track offers to
+  **resample its clips** first, so each comes back as its own audio.
 
 ### Changed
 - **Sample opens a menu.** Tap **Sample** and choose: **Bake scene**, **Resample

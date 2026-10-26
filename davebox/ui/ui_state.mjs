@@ -502,7 +502,10 @@ export const S = {
     auEditor: null,          /* the slice editor: { t, c, sel, lazy, lazyStarted } */
     auChooser: null,         /* the sample chooser (ui_audio_chooser.mjs) */
     pendingAudioChooser: null,    /* { t, c }: the tick opens the chooser (it lists a folder) */
-    confirmConvertAudio: false,   /* the convert confirm is for Audio, not Drums */
+    confirmConvertAudio: false,   /* the convert confirm: false Drums, 'audio' -> Audio, 'resample' the resample offer */
+    pendingAuConvertStart: -1,    /* track whose clips the tick starts resampling (ui_audio_convert) */
+    auConvert: null,              /* the conversion's takes in flight */
+    auApply: null,                /* the takes being loaded into the converted clips, one per tick */
     trackVelOverride: new Array(8).fill(0),
     /* Track transpose: semitones (-24..+24) applied to EVERYTHING this track
      * plays, live and sequenced, on its way out — so it lands the same whether

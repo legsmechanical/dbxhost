@@ -602,6 +602,15 @@ velocity) and **resets the sequencer effects** (NOTE FX, HARMONY, DELAY, SEQ ARP
 - **→ Audio** becomes a drum track first (a melodic track with notes asks, as
   above), removes the track's instrument — its effects stay — and plays through
   the track's own Schwung slot. **Drums → Audio** keeps the lanes and their hits.
+- **→ Audio on a track that plays an instrument and has clips** first asks
+  *Resample the clips?* **Yes** records each clip with notes, one after another
+  and each alone, then converts: every clip becomes a **Loop** clip playing its
+  own recording, and its notes are gone. A Schwung instrument is recorded before
+  its effects, which stay on the track, so it sounds the same; a Move instrument
+  is recorded as you hear it (Move's own track effects don't carry over). The
+  recordings go straight into the project. **Back** while it records cancels the
+  whole change. **No** converts without recording (the notes become slices'
+  hits). **Back** on the question changes nothing.
 - **Audio → Drums / Melodic** doesn't ask. The clips let go of their samples; the
   files stay in the project until you [purge them](#75-audio-tracks).
 - **Making a Conductor** always asks (*Make Conductor?*). It keeps the notes and

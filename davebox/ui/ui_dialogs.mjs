@@ -3,6 +3,8 @@ import { createProject, anyTemplates, templatesKnown, templateNameTaken, cleanTe
 import { S, conductorTrackIdx } from './ui_state.mjs';
 import { keyRootName } from './ui_chord.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
+import { auConvertOffered } from './ui_audio_convert.mjs';
+import { engineLoadedModule, slotIndex } from './ui_engine.mjs';
 import { STATE_VERSION, SCALE_DISPLAY,
          NUM_CLIPS, PAD_MODE_DRUM, PAD_MODE_CONDUCT } from './ui_constants.mjs';
 /* ⭑ drawMenuList and menuLayoutDefaults are GONE from this file as of the
@@ -143,8 +145,14 @@ function drawSaveStateConfirm() {
 
 export function drawConvertToDrumConfirm() {
     clear_screen();
-    dlgHeader('CONVERT');
-    dlgLines(['Warning:', 'Existing notes may be lost.', 'Proceed?']);
+    /* -> Audio on a track with an instrument and notes (ui_audio_convert). */
+    if (S.confirmConvertAudio === 'resample') {
+        dlgHeader('TO AUDIO');
+        dlgLines(['Resample the clips?', 'Yes: each becomes its audio', 'No: notes become slices']);
+    } else {
+        dlgHeader('CONVERT');
+        dlgLines(['Warning:', 'Existing notes may be lost.', 'Proceed?']);
+    }
     drawYesNoRow(S.confirmConvertToDrumSel);
 }
 
@@ -1035,6 +1043,7 @@ export function showMenuInfo() {
  * lingering enum edit doesn't replay. Call on Yes, No, and Back-cancel. */
 export function closeConvertConfirm() {
     S.confirmConvertToDrum = false;
+    S.confirmConvertAudio = false;
     S.confirmConvertToConduct = false;
     S.menuInfoLines = [];
     if (S.globalMenuState) S.globalMenuState.editing = false;
@@ -2312,12 +2321,21 @@ export function requestTrackModeChange(t, target) {
      * also removes the instrument (the FX stay). Drums -> Audio keeps the
      * lanes and steps and asks nothing. */
     if (target === 3) {
+        /* A track that plays an instrument and has clips is OFFERED a resample
+         * first: each clip recorded and loaded back as its audio (Josh,
+         * 2026-10-26). Yes / No on the same dialog; Back cancels. */
+        const hasSynth = S.trackRoute[t] === 0 && !!engineLoadedModule(slotIndex(t), 'synth');
+        if (auConvertOffered(t, hasSynth)) {
+            S.confirmConvertToDrum = true; S.confirmConvertToDrumSel = 0;
+            S.confirmConvertTrack = t; S.confirmConvertAudio = 'resample';
+            return;
+        }
         let hasData = false;
         if (cur !== PAD_MODE_DRUM)
             for (let c = 0; c < NUM_CLIPS; c++) if (S.clipNonEmpty[t][c]) { hasData = true; break; }
         if (hasData) {
             S.confirmConvertToDrum = true; S.confirmConvertToDrumSel = 1;
-            S.confirmConvertTrack = t; S.confirmConvertAudio = true;
+            S.confirmConvertTrack = t; S.confirmConvertAudio = 'audio';
         } else {
             S.pendingTrackConvert = { t: t, toDrum: true, toAudio: true };
         }

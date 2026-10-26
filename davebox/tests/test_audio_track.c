@@ -211,6 +211,15 @@ int main(void) {
     hx_render(h, 1);
     HX_ASSERT(hx_stub_feed(4, NULL, NULL) == 0, "a lane past the slices played");
 
+    /* ---- only into a Schwung slot of its own: routed elsewhere, nothing is fed ---- */
+    hx_set_param(h, "t4_route", "move");
+    hx_stub_feed_reset();
+    au_lane_event(4, 2, 0x90, 100);
+    hx_render(h, 2);
+    HX_ASSERT(hx_stub_feed(4, NULL, NULL) == 0 && hx_stub_feed(0, NULL, NULL) == 0, "a Move-routed Audio track fed a slot");
+    hx_set_param(h, "t4_route", "schwung");
+    hx_render(h, 30);
+
     /* ---- Chop: one trig per slice, in order ---- */
     hx_set_param(h, "t4_au_chop", "0");
     for (i = 0, n = 0; i < 8; i++) n += inst->tracks[4].drum_clips[0]->lanes[i].clip.note_count;
@@ -225,6 +234,11 @@ int main(void) {
     HX_ASSERT(hx_stub_feed(4, &first, &energy) > 0 && energy > 0, "the chopped clip played nothing");
     hx_set_param(h, "transport", "stop");
     hx_render(h, 20);
+
+    /* ---- wipe: every lane's notes of the clip go (a converted clip) ---- */
+    hx_set_param(h, "t4_au_wipe", "0");
+    for (i = 0, n = 0; i < 32; i++) n += inst->tracks[4].drum_clips[0]->lanes[i].clip.note_count;
+    HX_ASSERT(n == 0, "wipe left notes in the clip");
 
     /* ---- formats + refusals ---- */
     snprintf(p, sizeof p, "1|%s/src/st24.wav", g_root);
