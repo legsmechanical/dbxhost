@@ -12,6 +12,8 @@
  *     division — forwards and in Revrs — reads pinned frames: none waits;
  *   - moving Start pins the new points; a let-go chunk is freed only after
  *     two more blocks; a waiting JmpQ jump's target is read ahead;
+ *   - Slice mode streams too: with only the pins in, every slice starts at
+ *     once, forwards and Rev;
  *   - two clips on one file share it; the file let go leaves the streamer;
  *   - a stereo 24-bit file streams the same frames and waveform as it reads
  *     whole. */
@@ -307,6 +309,40 @@ int main(void) {
         HX_ASSERT(S->ngrave == 0, "let-go chunks were not freed after two blocks");
     }
 
+    /* ---- Slice streams too: every slice starts (and, Rev, ends) pinned ---- */
+    hx_set_param(h, "transport", "stop");
+    hx_render(h, 4);
+    hx_set_param(h, "t4_au_set_mode", "0 1");
+    hx_set_param(h, "t4_au_set_even", "0 7");     /* 7: no slice start is a Loop point */
+    HX_ASSERT(!inst->au_clip[4][0].smp->pcm, "Slice mode reloaded the file whole");
+    for (i = 0; i < AU_STREAM_GRACE + 5; i++) { hx_render(h, 1); au_stream_service(inst); }
+    for (k = 0; k < 2; k++) {
+        int l;
+        char v[16];
+        snprintf(v, sizeof v, "0 %d", k);
+        hx_set_param(h, "t4_au_all_rev", v);
+        hx_render(h, 1);
+        stats(h, NULL, NULL, NULL, &under0);
+        bad = 0;
+        for (l = 0; l < 7; l++) {
+            double a0 = (double)(uint32_t)((uint64_t)FR * l / 7), b0 = (double)(uint32_t)((uint64_t)FR * (l + 1) / 7);
+            hx_stub_feed_reset();
+            au_note_event(4, l, 0x90, 100, 0);
+            hx_render(h, 1);
+            blk = hx_stub_feed_last(4);
+            /* past the 64-frame fade of the slice it cut */
+            if (k ? abs(blk[200] - ramp_at(b0 - 1 - 100)) > 1 || abs(blk[254] - ramp_at(b0 - 1 - 127)) > 1
+                  : abs(blk[200] - ramp_at(a0 + 100)) > 1 || abs(blk[254] - ramp_at(a0 + 127)) > 1) bad++;
+            hx_render(h, 60);                        /* on into the next chunk: still pinned */
+        }
+        stats(h, NULL, NULL, NULL, &under);
+        HX_ASSERT(bad == 0, k ? "a Rev slice did not start at its end" : "a slice did not start at its start");
+        HX_ASSERT(under == under0, k ? "a Rev slice waited for a chunk" : "a slice waited for a chunk");
+    }
+    hx_set_param(h, "t4_au_all_rev", "0 0");
+    hx_set_param(h, "t4_au_set_mode", "0 0");
+    hx_render(h, 4);
+
     /* ---- two clips on one file share it; let go, it leaves the streamer ---- */
     snprintf(p, sizeof p, "1|%s/src/ramp60.wav", g_root);
     hx_set_param(h, "t4_au_pick", p);
@@ -335,10 +371,8 @@ int main(void) {
         int e1, e2;
         uint32_t c, f, diff = 0, nonzero = 0;
         snprintf(p, sizeof p, "%s/src/st24.wav", g_root);
-        au_stream_sec = 1000;
-        whole = au_read_file(p, &e1);
-        au_stream_sec = 1;
-        str = au_read_file(p, &e2);
+        whole = au_read_file(p, 0, &e1);
+        str = au_read_file(p, 1, &e2);
         HX_ASSERT(whole && str && !e1 && !e2 && whole->pcm && !str->pcm, "the stereo file did not read both ways");
         HX_ASSERT(str->ch == 2 && str->frames == whole->frames && str->rate == 48000, "streamed: wrong shape");
         HX_ASSERT(!memcmp(str->mip, whole->mip, (size_t)whole->nmip * 2) && !memcmp(str->peaks, whole->peaks, sizeof whole->peaks),

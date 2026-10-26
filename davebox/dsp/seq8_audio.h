@@ -134,10 +134,13 @@ typedef struct {
 } au_watch_t;
 
 /* A clip holding a streamed sample, published the same way: its Start..End
- * as it plays (au_range), whose points the streamer keeps pinned. */
+ * as it plays (au_range) and, in Slice mode, its slices (au_slice_range;
+ * a b 0 = none) — what the streamer keeps pinned. */
 typedef struct {
     const void *smp;
     uint32_t    rs, re;
+    uint8_t     mode, n;
+    uint32_t    sa[AU_MAX_SLICES], sb[AU_MAX_SLICES];
 } au_clipw_t;
 
 typedef struct {

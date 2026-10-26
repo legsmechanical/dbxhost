@@ -300,9 +300,12 @@ static void au_peaks_from_mip(au_sample_t *s) {
     }
 }
 
-/* Files longer than this stream (seconds). Slice mode's limit: a streamed
- * sample is then one only a Loop clip can play. The tests lower it. */
-static uint32_t au_stream_sec = AU_SLICE_MAX_SEC;
+/* A file longer than this streams (seconds), in either mode: a slice's
+ * start and end are pinned as a jump point is. Josh, 2026-10-28:
+ * "threshold should be 60 seconds b/c memory is only 2gb on stock move and
+ * ram is already used by other modules and move instruments". The tests
+ * lower it. */
+static uint32_t au_stream_sec = 60;
 
 /* The streamer's state for one streamed sample (STREAMING, below). */
 typedef struct au_stream {
@@ -360,11 +363,12 @@ static void au_sample_free(au_sample_t *s) {
 }
 
 /* Read a WAV / AIFF as int16 (1 or 2 channels; more are folded to the first
- * two). The sample can be no longer than AU_LOOP_MAX_SEC. One pass: a file
- * longer than au_stream_sec keeps only its waveform summary and the chunks
- * a Loop over the whole file pins (the streamer does the rest); a shorter
- * one is read whole. */
-static au_sample_t *au_read_file(const char *path, int *err) {
+ * two). The sample can be no longer than AU_LOOP_MAX_SEC. One pass: with
+ * `may_stream` (the tests read a file both ways), a file longer than
+ * au_stream_sec keeps only its waveform summary and the chunks a Loop over
+ * the whole file pins (the streamer does the rest); otherwise it is read
+ * whole. */
+static au_sample_t *au_read_file(const char *path, int may_stream, int *err) {
     FILE *f = fopen(path, "rb");
     au_fmt_t fm;
     au_sample_t *s = NULL;
@@ -377,7 +381,7 @@ static au_sample_t *au_read_file(const char *path, int *err) {
     *err = au_probe(f, &fm);
     if (*err) goto out;
     if ((uint64_t)fm.frames > (uint64_t)fm.rate * AU_LOOP_MAX_SEC) { *err = AU_ERR_LONG; goto out; }
-    streamed = (uint64_t)fm.frames > (uint64_t)fm.rate * au_stream_sec;
+    streamed = may_stream && (uint64_t)fm.frames > (uint64_t)fm.rate * au_stream_sec;
     s = (au_sample_t *)calloc(1, sizeof *s);
     if (!s) { *err = AU_ERR_MEM; goto out; }
     s->ch = (uint8_t)(fm.ch >= 2 ? 2 : 1);
@@ -558,15 +562,17 @@ static int au_import(const char *src, const char *dir, char *name, size_t name_s
 
 /* ---------------- STREAMING (the streamer thread) ----------------
  *
- * A streamed sample's frames live in chunks (AU_CHUNK frames each). The
+ * Any file over au_stream_sec streams, in Loop or Slice mode. A streamed
+ * sample's frames live in chunks (AU_CHUNK frames each). The
  * streamer is the only thread that fills a chunk slot or empties one; the
  * audio thread only reads them (au_at). Each pass the streamer:
  *   1. wants the chunks each sounding streamed voice reaches in the next
  *      AU_STREAM_AHEAD_MS (in its direction, across the loop's wrap), and
  *      the same from where a waiting JmpQ jump will land (au_watch, written
  *      by the audio thread every block) — nearest first;
- *   2. wants every clip's pins (au_pin_mark), so a jump, a wrap or Revrs
- *      never waits;
+ *   2. wants every clip's pins — a Loop clip's points (au_pins), a Slice
+ *      clip's slice starts and ends — so a jump, a wrap or a slice never
+ *      waits;
  *   3. reads up to AU_STREAM_READS missing chunks, in that order;
  *   4. empties a chunk nobody has wanted for AU_STREAM_GRACE passes. Its
  *      memory is freed only once the audio thread has finished two more
@@ -657,6 +663,18 @@ static void au_stream_want(au_streamer_t *S, int si, uint32_t k) {
 static void au_stream_pin(void *arg, uint32_t k) {
     au_streamer_t *S = (au_streamer_t *)arg;
     au_stream_want(S, S->pin_si, k);
+}
+
+/* A slice a..b: the 2 chunks from its start and the 2 that end at its end. */
+static void au_stream_pin_slice(au_streamer_t *S, int si, uint32_t a, uint32_t b) {
+    uint32_t ca, cb;
+    if (b <= a) return;
+    ca = a >> AU_CHUNK_SHIFT;
+    cb = (b - 1) >> AU_CHUNK_SHIFT;
+    au_stream_want(S, si, ca);
+    au_stream_want(S, si, ca + 1);
+    au_stream_want(S, si, cb);
+    if (cb) au_stream_want(S, si, cb - 1);
 }
 
 /* What a voice (or a waiting jump) at w reaches next: its chunk and the
@@ -759,7 +777,18 @@ static unsigned au_stream_service(seq8_instance_t *inst) {
             rs = __atomic_load_n(&cw->rs, __ATOMIC_RELAXED);
             re = __atomic_load_n(&cw->re, __ATOMIC_RELAXED);
             S->pin_si = si;
-            au_pins(s->nchunks, s->frames, s->rate, rs, re, au_stream_pin, S);
+            if (__atomic_load_n(&cw->mode, __ATOMIC_RELAXED) != AU_MODE_SLICE) {
+                au_pins(s->nchunks, s->frames, s->rate, rs, re, au_stream_pin, S);
+            } else {
+                /* Slice: each slice starts where it is pinned, as a jump does —
+                 * its start (forwards) and its end (Rev) — and Start too (Lazy
+                 * chop plays from there) */
+                int l, n = __atomic_load_n(&cw->n, __ATOMIC_RELAXED);
+                au_stream_pin_slice(S, si, rs, re);
+                for (l = 0; l < n && l < AU_MAX_SLICES; l++)
+                    au_stream_pin_slice(S, si, __atomic_load_n(&cw->sa[l], __ATOMIC_RELAXED),
+                                        __atomic_load_n(&cw->sb[l], __ATOMIC_RELAXED));
+            }
         }
     /* 3. read, nearest need first */
     for (i = 0; i < S->nneed && got < AU_STREAM_READS; i++) {
@@ -841,7 +870,7 @@ static au_sample_t *au_pool_get(au_loader_t *L, const char *path, int *err) {
         if (!L->pool[i].smp && free_i < 0) free_i = i;
     }
     if (free_i < 0) { *err = AU_ERR_MEM; return NULL; }
-    au_sample_t *s = au_read_file(path, err);
+    au_sample_t *s = au_read_file(path, 1, err);
     if (!s) return NULL;
     if (s->st && !au_stream_add(L->inst, s)) { au_sample_free(s); *err = AU_ERR_MEM; return NULL; }
     s->refs = 1;

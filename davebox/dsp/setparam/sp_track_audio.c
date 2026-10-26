@@ -174,9 +174,21 @@ static void au_watch_publish(seq8_instance_t *inst) {
             au_clipw_t *w = &inst->au_clipw[t][i];
             const au_sample_t *s = (cl->smp && !cl->smp->pcm) ? cl->smp : NULL;
             uint32_t rs = 0, re = 0;
+            int l, n = 0;
             if (s) au_range(cl, s, &rs, &re);
+            if (s && cl->mode == AU_MODE_SLICE) {
+                n = au_count(cl);
+                for (l = 0; l < n; l++) {
+                    uint32_t a = 0, b = 0;
+                    if (!au_slice_range(cl, s, l, &a, &b)) a = b = 0;
+                    __atomic_store_n(&w->sa[l], a, __ATOMIC_RELAXED);
+                    __atomic_store_n(&w->sb[l], b, __ATOMIC_RELAXED);
+                }
+            }
             __atomic_store_n(&w->rs, rs, __ATOMIC_RELAXED);
             __atomic_store_n(&w->re, re, __ATOMIC_RELAXED);
+            __atomic_store_n(&w->mode, (uint8_t)(s ? cl->mode : 0), __ATOMIC_RELAXED);
+            __atomic_store_n(&w->n, (uint8_t)n, __ATOMIC_RELAXED);
             __atomic_store_n(&w->smp, (const void *)s, __ATOMIC_RELEASE);
         }
     __atomic_store_n(&inst->au_block, inst->au_block + 1, __ATOMIC_RELEASE);
