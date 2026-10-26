@@ -929,13 +929,20 @@ export function updateTrackLEDs() {
             const slice = ai.mode === AU_MODE_SLICE;
             const ph = slice ? -1 : auPlayheadJump(t);
             const sel = auSelSlice(t);
-            /* A Lazy chop: only the next pad in order is lit (Josh chose "The
-             * next pad, lit") — pad 1 before the first tap. */
+            /* A Lazy chop: the next pad in order WHITE (pad 1 before the
+             * first tap), the slices chopped so far in the track colour
+             * (Josh, 2026-10-28: "pads should light to indicate populated as
+             * you go and the next pad should always be white so you know
+             * where to go next"); the rest dark. */
             const lz = auLazyOpen() ? auLazyState() : null;
             const next = lz && lz.state === AU_LAZY_ARMED ? 0 : lz && lz.state === AU_LAZY_RUN ? lz.n : -1;
+            const done = lz && lz.state !== AU_LAZY_ARMED ? lz.n : 0;
             for (let i = 0; i < 32; i++) {
                 let color = LED_OFF;
-                if (lz) color = auPadToSlice(i) === next ? tc : LED_OFF;
+                if (lz) {
+                    const k = auPadToSlice(i);
+                    color = k === next ? White : k < done ? tc : LED_OFF;
+                }
                 else if (ai.state !== 2) color = i === 0 ? td : LED_OFF;
                 else if (slice) {
                     const k = auPadToSlice(i);

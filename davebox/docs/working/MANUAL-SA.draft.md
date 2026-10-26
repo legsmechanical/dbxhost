@@ -1230,9 +1230,9 @@ sample whose file has gone reads *Missing: name* and stays silent.
 
 **Chops.** You make chops one of two ways, then shape them in one editor:
 
-- **Lazy›** re-chops the sample by ear. Only pad 1 is lit; tap it and the sample
-  plays from Start to End. Then only the next pad lights: tap it to drop a chop
-  where the sample is. It ends at End or on **Back**, and asks *Keep N new chops?*
+- **Lazy›** re-chops the sample by ear. Pad 1 lights white; tap it and the sample
+  plays from Start to End. The next pad is always the white one: tap it to drop a
+  chop where the sample is. The slices you've chopped so far stay lit. It ends at End or on **Back**, and asks *Keep N new chops?*
   — **Yes** opens the editor on them, **No** puts your old chops back. **Back**
   before the first tap changes nothing.
 - **Manual›** starts over with one slice, Start to End, in the editor (it asks

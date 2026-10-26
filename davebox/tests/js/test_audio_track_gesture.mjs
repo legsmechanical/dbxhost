@@ -342,14 +342,16 @@ step('⭐⭐ Lazy: only the next pad is lit, taps cut, Back asks "Keep N new cho
     GET['t4_au_lazy'] = '1 0 0';
     ticks(4);
     const lit = () => Array.from({ length: 32 }, (_, i) => LEDS.get(C.TRACK_PAD_BASE + i) || 0).map((v, i) => (v ? i : -1)).filter((i) => i >= 0);
-    assert(lit().join() === '0', 'lit before the first tap: ' + lit().join());
+    const white = () => lit().filter((i) => LEDS.get(C.TRACK_PAD_BASE + i) === HC.White);
+    assert(lit().join() === '0' && white().join() === '0', 'before the first tap, pad 1 alone, white: ' + lit().join());
     note(C.TRACK_PAD_BASE + 5, 100); note(C.TRACK_PAD_BASE + 5, 0);
     assert(sent('t4_au_lazy_tap').length === 0, 'an unlit pad cut');
     note(C.TRACK_PAD_BASE + 0, 100); note(C.TRACK_PAD_BASE + 0, 0);
     assert(sent('t4_au_lazy_tap').length === 1, 'pad 1 did not start it');
     GET['t4_au_lazy'] = '2 1 4000';
     ticks(4);
-    assert(lit().join() === '1', 'the next lit pad is not slice 2: ' + lit().join());
+    /* the chopped slice stays lit (populated), the next one is white */
+    assert(lit().join() === '0,1' && white().join() === '1', 'after a tap: lit ' + lit().join() + ', white ' + white().join());
     note(C.TRACK_PAD_BASE + 1, 100); note(C.TRACK_PAD_BASE + 1, 0);
     assert(sent('t4_au_lazy_tap').length === 2, 'the lit pad did not cut');
     GET['t4_au_lazy'] = '2 2 9000';
