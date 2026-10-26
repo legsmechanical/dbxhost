@@ -70,6 +70,7 @@
 #include "host/link_audio.h"
 #include "host/shadow_sampler.h"
 #include "host/sampler_take_tap.h"
+#include "host/slot_feed.h"
 #include "host/shadow_transport.h"
 #include "host/shadow_set_pages.h"
 #include "host/shim_worker.h"
@@ -214,6 +215,9 @@ static uint32_t overtake_slot_set_refused = 0;  /* ...and refused */
 static uint32_t overtake_render_seq       = 0;  /* bumped before each overtake render_block */
 static uint8_t  overtake_in_render        = 0;
 static uint32_t overtake_last_set_seq[SHADOW_CHAIN_INSTANCES];
+/* Audio the overtake DSP hands each slot (slot_feed.h): filled in its render,
+ * mixed by the slot in the next frame's render task. */
+static slot_feed_t shadow_slot_feed[SHADOW_CHAIN_INSTANCES];
 static uint32_t overtake_last_note_seq[SHADOW_CHAIN_INSTANCES];
 static uint32_t overtake_set_then_note    = 0;
 static uint32_t overtake_note_then_set    = 0;
@@ -1647,6 +1651,14 @@ static int overtake_capture_start_src(const char *path, uint32_t frames, int kin
     return sampler_request_start_module(path, frames, SAMPLER_TAKE_SRC_SLOT, index) == 0;
 }
 
+/* Host extension (move_host_ext_v1_t.slot_audio_feed): one block of audio for
+ * a slot, mixed before its FX in the next frame (slot_feed.h). */
+static int overtake_slot_audio_feed(int slot, const int16_t *lr, uint32_t frames) {
+    if (!overtake_in_render || !lr || slot < 0 || slot >= SHADOW_CHAIN_INSTANCES) return 0;
+    slot_feed_put(&shadow_slot_feed[slot], overtake_render_seq, lr, frames);
+    return 1;
+}
+
 static const move_host_ext_v1_t overtake_host_ext = {
     .size = sizeof(move_host_ext_v1_t),
     .set_slot_param = overtake_set_slot_param,
@@ -1659,6 +1671,7 @@ static const move_host_ext_v1_t overtake_host_ext = {
     .capture_start = overtake_capture_start,
     .capture_stop = sampler_request_stop_module,
     .capture_start_src = overtake_capture_start_src,
+    .slot_audio_feed = overtake_slot_audio_feed,
 };
 
 /* Offline MIDI FX jobs read a slot's chain instance by index. */
@@ -2120,6 +2133,14 @@ static void shadow_render_slot_task(void *vctx, int s, int lane) {
     struct timespec slot_t0, slot_t1;
     clock_gettime(CLOCK_MONOTONIC, &slot_t0);
 
+    /* Audio the overtake DSP handed this slot last frame: it wakes the slot
+     * like MIDI does, and is summed into the instrument's output below. */
+    const int16_t *feed = slot_feed_current(&shadow_slot_feed[s], overtake_render_seq);
+    if (feed) {
+        shadow_slot_idle[s] = 0;
+        shadow_slot_silence_frames[s] = 0;
+    }
+
     /* Wake slot from idle if fade is ramping (otherwise gain stays at 0) */
     if (shadow_chain_slots[s].fade.gain != shadow_chain_slots[s].fade.target) {
         shadow_slot_idle[s] = 0;
@@ -2210,6 +2231,7 @@ static void shadow_render_slot_task(void *vctx, int s, int lane) {
         shadow_plugin_v2->render_block(shadow_chain_slots[s].instance,
                                        shadow_slot_deferred[s],
                                        MOVE_FRAMES_PER_BLOCK);
+        if (feed) slot_feed_mix(shadow_slot_deferred[s], feed);
         clock_gettime(CLOCK_MONOTONIC, &synth_t1);
         uint64_t synth_us = (synth_t1.tv_sec - synth_t0.tv_sec) * 1000000ULL +
                             (synth_t1.tv_nsec - synth_t0.tv_nsec) / 1000;
@@ -2225,6 +2247,8 @@ static void shadow_render_slot_task(void *vctx, int s, int lane) {
         memset(render_buffer, 0, sizeof(shadow_slot_fallback[s]));
         shadow_plugin_v2->render_block(shadow_chain_slots[s].instance,
                                        render_buffer, MOVE_FRAMES_PER_BLOCK);
+        /* No FX hook on this path: the feed joins after the slot's FX. */
+        if (feed) slot_feed_mix(render_buffer, feed);
         if (link_audio.enabled && s < LINK_AUDIO_SHADOW_CHANNELS) {
             float cap_vol = shadow_effective_volume(s) * shadow_chain_slots[s].fade.gain;
             for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++)
@@ -2373,7 +2397,24 @@ static void shadow_inprocess_render_to_buffer(void) {
     if (shadow_plugin_v2 && shadow_plugin_v2->render_block) {
         uint32_t active_mask = 0, pinned_mask = 0;
         for (int s = 0; s < SHADOW_CHAIN_INSTANCES; s++) {
-            if (!shadow_chain_slots[s].active || !shadow_chain_slots[s].instance) continue;
+            /* A FED slot renders whether or not it holds an instrument (an
+             * empty slot is inactive), and stays rendered while its FX ring
+             * out. A slot with nothing loaded has its fade at 0: it is
+             * SNAPPED open while fed (it was silent, so no click, and a 50 ms
+             * ramp would swallow the first hit) and snapped shut when the feed
+             * lapses (its FX are idle by then) -- a fade left open on an
+             * unrendered slot never advances, and a deferred load waits on it
+             * forever. A slot fading out for a load or clear is left alone. */
+            int was_live = shadow_slot_feed[s].live != 0;
+            int fed_live = slot_feed_tick(&shadow_slot_feed[s], overtake_render_seq,
+                                          shadow_slot_fx_idle[s]);
+            slot_fade_t *fd = &shadow_chain_slots[s].fade;
+            if (!shadow_chain_slots[s].active && !fd->pending_clear && fd->pending_patch < 0) {
+                if (fed_live) fd->gain = fd->target = 1.0f;
+                else if (was_live) fd->gain = fd->target = 0.0f;
+            }
+            if (!shadow_chain_slots[s].instance) continue;
+            if (!shadow_chain_slots[s].active && !fed_live) continue;
             active_mask |= 1u << s;
             if (shadow_chain_slots[s].render_pinned) pinned_mask |= 1u << s;
         }
@@ -2907,7 +2948,7 @@ static void shadow_inprocess_mix_from_buffer(void) {
              * FX chain, it runs its own inserts. That is the point of the
              * model, and Move>Slot's own 4 inserts cover the effects case. */
 
-            int slot_active = (shadow_chain_slots[s].active &&
+            int slot_active = ((shadow_chain_slots[s].active || shadow_slot_feed[s].live) &&
                                shadow_chain_slots[s].instance &&
                                shadow_slot_deferred_valid[s]);
 
@@ -6847,7 +6888,7 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
             for (int i = 0; i < LINK_AUDIO_SHADOW_CHANNELS; i++) {
                 int is_active = la_flowing ||
                                 (i < SHADOW_CHAIN_INSTANCES &&
-                                 shadow_chain_slots[i].active &&
+                                 (shadow_chain_slots[i].active || shadow_slot_feed[i].live) &&
                                  shadow_chain_slots[i].instance != NULL);
                 shadow_pub_audio_shm->slots[i].active = is_active;
             }

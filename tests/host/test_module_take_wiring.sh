@@ -31,10 +31,10 @@ echo "module take wiring:"
 # The struct grows only at its end (a module reads a member only inside `size`).
 ext_tail() {
     awk '/typedef struct move_host_ext_v1 \{/,/\} move_host_ext_v1_t;/' "$API" \
-        | grep -E '^\s+[a-z].*\(\*' | tail -3 | tr -d ' \n' \
-        | grep -q 'int(\*capture_start)(constchar\*path,uint32_tframes);void(\*capture_stop)(void);int(\*capture_start_src)(constchar\*path,uint32_tframes,intkind,intindex);'
+        | grep -E '^\s+[a-z].*\(\*' | tail -4 | tr -d ' \n' \
+        | grep -q 'int(\*capture_start)(constchar\*path,uint32_tframes);void(\*capture_stop)(void);int(\*capture_start_src)(constchar\*path,uint32_tframes,intkind,intindex);int(\*slot_audio_feed)(intslot,constint16_t\*lr,uint32_tframes);'
 }
-check "capture_start / capture_stop / capture_start_src are the LAST members of the extension" ext_tail
+check "capture_start / capture_stop / capture_start_src, then slot_audio_feed, end the extension" ext_tail
 
 filled() { code "$SHIM" | grep -q '\.capture_start = overtake_capture_start' &&
            code "$SHIM" | grep -q '\.capture_stop = sampler_request_stop_module' &&
