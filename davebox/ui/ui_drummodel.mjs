@@ -193,8 +193,11 @@ export function computePadNoteMap() {
         const isDrum = S.trackPadMode[t] === PAD_MODE_DRUM;
         let payload = '';
         for (let i = 0; i < 32; i++) {
-            /* Per pad: the Custom layout's chord row has an octave of its own. */
-            const octShift = isDrum ? 0 : padOctShift(t, i);
+            /* Per pad: the Custom layout's chord row has an octave of its own.
+             * An Audio track's note is a SLICE (36 + slice): no octave — a
+             * track octave left on it sent every pad past the slices, and
+             * the pads went silent (found by Josh on the device). */
+            const octShift = (isDrum || S.trackPadMode[t] === PAD_MODE_AUDIO) ? 0 : padOctShift(t, i);
             let out;
             if (padDispatchMuted && S.sessionView) {
                 out = 0xFF;

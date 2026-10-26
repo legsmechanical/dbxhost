@@ -396,6 +396,26 @@ step('⭐⭐ Slice mode: pads are 36 + slice, none past the count; the CLIP bank
     DM.computePadNoteMap();
     assert(S.padNoteMap[0] === 36 && S.padNoteMap[3] === 39 && S.padNoteMap[7] === 0xFF && S.padNoteMap[8] === 40,
            'padmap: ' + Array.from(S.padNoteMap).slice(0, 12).join());
+    /* ...and what reaches the engine takes no track octave: a slice has no
+     * pitch (Josh, device: the pads went silent with the octave at +1) */
+    S.trackOctave[4] = 1;
+    const was = S.dspInboundEnabled;
+    S.dspInboundEnabled = true;                        /* the engine plays the pads (as on the device) */
+    reset();
+    DM.computePadNoteMap();
+    const pm = sent('t4_padmap').pop() || '';
+    assert(pm.split(' ').slice(0, 4).join() === '36,37,38,39', 'the pushed padmap took the octave: ' + pm.slice(0, 40));
+    /* ...nor does a held step + pad: the step gets the slice tapped */
+    reset();
+    note(16 + 2, 100);
+    ticks(25);
+    note(C.TRACK_PAD_BASE + 1, 100); note(C.TRACK_PAD_BASE + 1, 0);
+    note(16 + 2, 0);
+    ticks(3);
+    const st = sentLike(/_step_2_/).map((x) => x[1]).join('|');
+    assert(/37/.test(st) && !/49/.test(st), 'a held step took the octave: ' + JSON.stringify(sentLike(/_step_2_/)));
+    S.dspInboundEnabled = was;
+    S.trackOctave[4] = 0;
     S.activeBank = 0; S.bankCardLatched = true;
     ticks(1);
     const f = shown();

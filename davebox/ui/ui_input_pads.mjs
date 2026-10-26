@@ -809,7 +809,8 @@ function _onPadPressTrackView(status, d1, d2) {
             /* Step edit: tap pad to toggle note assignment for held step */
             if (S.padNoteMap[padIdx] === 0xFF) return; /* OOB pad — no note to toggle */
             const ac    = effectiveClip(S.activeTrack);
-            const _pitchRaw = S.padNoteMap[padIdx] + S.trackOctave[S.activeTrack] * 12;
+            /* (an Audio track's note is a slice: no octave) */
+            const _pitchRaw = S.padNoteMap[padIdx] + (isAudioTrack(S.activeTrack) ? 0 : S.trackOctave[S.activeTrack] * 12);
             if (_pitchRaw < 0 || _pitchRaw > 127) return; /* OOB after track-octave shift */
             const pitch = _pitchRaw;
             stepHoldCheckpoint(S.activeTrack);
@@ -864,7 +865,7 @@ function _onPadPressTrackView(status, d1, d2) {
              * pitches land outside [0,127]. */
             const basePitch = S.padNoteMap[padIdx];
             if (basePitch === 0xFF) return; /* OOB base */
-            const _pitchRaw = basePitch + S.trackOctave[S.activeTrack] * 12;
+            const _pitchRaw = basePitch + (isAudioTrack(S.activeTrack) ? 0 : S.trackOctave[S.activeTrack] * 12);
             if (_pitchRaw < 0 || _pitchRaw > 127) return; /* OOB after track-octave shift */
             const pitch = _pitchRaw;
             padPitch[padIdx] = pitch;
