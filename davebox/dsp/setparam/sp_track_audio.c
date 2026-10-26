@@ -132,6 +132,56 @@ static double au_jump_pos(const au_clip_t *cl, int k, double extra) {
     return cl->revrs ? (double)re - 1.0 - d : (double)rs + d;
 }
 
+/* Tell the streamer where each streamed voice is and which way it goes,
+ * where a waiting JmpQ jump will land and each streamed clip's range (it
+ * reads nothing else of ours); then count the block (a chunk the
+ * streamer empties is freed two blocks later). */
+static void au_watch_publish(seq8_instance_t *inst) {
+    int t, i;
+    for (t = 0; t < NUM_TRACKS; t++) {
+        au_track_t *at = &inst->au_trk[t];
+        for (i = 0; i <= AU_VOICES; i++) {
+            au_watch_t *w = &inst->au_watch[t][i];
+            const au_sample_t *s = NULL;
+            double pos = 0, step = 0, lo = 0, hi = 0;
+            int loop = 0;
+            if (i < AU_VOICES) {
+                const au_voice_t *v = &at->v[i];
+                if (inst->tracks[t].pad_mode == PAD_MODE_AUDIO && v->active && v->smp && !v->smp->pcm) {
+                    s = v->smp; pos = v->pos; step = v->step; lo = v->lo; hi = v->hi; loop = v->loop || v->mode_loop;
+                }
+            } else if (at->pending_jump >= 0 && inst->tracks[t].pad_mode == PAD_MODE_AUDIO) {
+                const au_clip_t *cl = &inst->au_clip[t][at->loop_clip];
+                if (cl->smp && !cl->smp->pcm && at->pending_jump < cl->jump) {
+                    uint32_t rs, re;
+                    au_range(cl, cl->smp, &rs, &re);
+                    s = cl->smp; pos = au_jump_pos(cl, at->pending_jump, 0);
+                    step = au_semi(cl->pitch) * (double)s->rate / 44100.0 * (cl->revrs ? -1.0 : 1.0);
+                    lo = rs; hi = re; loop = 1;
+                }
+            }
+            __atomic_store_n(&w->pos, (uint32_t)(pos < 0 ? 0 : pos), __ATOMIC_RELAXED);
+            __atomic_store_n(&w->lo, (uint32_t)lo, __ATOMIC_RELAXED);
+            __atomic_store_n(&w->hi, (uint32_t)hi, __ATOMIC_RELAXED);
+            __atomic_store_n(&w->speed, (int32_t)(step * 256.0), __ATOMIC_RELAXED);
+            __atomic_store_n(&w->loop, (uint8_t)loop, __ATOMIC_RELAXED);
+            __atomic_store_n(&w->smp, (const void *)s, __ATOMIC_RELEASE);
+        }
+    }
+    for (t = 0; t < NUM_TRACKS; t++)
+        for (i = 0; i < NUM_CLIPS; i++) {
+            const au_clip_t *cl = &inst->au_clip[t][i];
+            au_clipw_t *w = &inst->au_clipw[t][i];
+            const au_sample_t *s = (cl->smp && !cl->smp->pcm) ? cl->smp : NULL;
+            uint32_t rs = 0, re = 0;
+            if (s) au_range(cl, s, &rs, &re);
+            __atomic_store_n(&w->rs, rs, __ATOMIC_RELAXED);
+            __atomic_store_n(&w->re, re, __ATOMIC_RELAXED);
+            __atomic_store_n(&w->smp, (const void *)s, __ATOMIC_RELEASE);
+        }
+    __atomic_store_n(&inst->au_block, inst->au_block + 1, __ATOMIC_RELEASE);
+}
+
 /* Per block, after the sequencer: the loader's answers, each Audio track's
  * Loop voice following its clip, every voice rendered and fed to the track's
  * own chain slot. */
@@ -222,7 +272,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
              * voices keep running, the level ramps over 64 frames. */
             int mtarget = effective_mute(inst, t) ? 0 : 64;
             memset(acc, 0, sizeof acc);
-            for (i = 0; i < AU_VOICES; i++) if (at->v[i].active) au_voice_render(&at->v[i], acc, frames);
+            for (i = 0; i < AU_VOICES; i++) if (at->v[i].active) inst->au_underruns += au_voice_render(&at->v[i], acc, frames);
             for (f = 0; f < frames; f++) {
                 int32_t l = acc[f * 2], r = acc[f * 2 + 1];
                 if (at->mgain != mtarget) at->mgain = (uint8_t)(at->mgain + (mtarget > at->mgain ? 1 : -1));
@@ -236,6 +286,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
                 g_ext->slot_audio_feed((int)tr->pfx.slot, out, (uint32_t)frames);
         }
     }
+    au_watch_publish(inst);
     /* Lazy chop: its voice ran to the end -> the chop is done. */
     if (inst->au_lazy_track >= 0 && inst->au_lazy_state == AU_LAZY_RUN) {
         au_track_t *at = &inst->au_trk[inst->au_lazy_track];
@@ -725,6 +776,13 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
         au_samples_dir(inst, d, sizeof d);
         return snprintf(out, out_len, "%s", d);
     }
+    if (!strcmp(k, "stream")) {                   /* streaming, for the device check: "samples chunks reads underruns" */
+        au_streamer_t *S = (au_streamer_t *)inst->au_streamer;
+        int n = 0, i;
+        if (S) for (i = 0; i < AU_POOL_MAX; i++) if (__atomic_load_n(&S->smp[i], __ATOMIC_RELAXED)) n++;
+        return snprintf(out, out_len, "%d %u %u %u", n, S ? __atomic_load_n(&S->loaded, __ATOMIC_RELAXED) : 0u,
+                        S ? __atomic_load_n(&S->reads, __ATOMIC_RELAXED) : 0u, (unsigned)inst->au_underruns);
+    }
     if (!strncmp(k, "info_", 5)) {
         /* "state err mode even nslices jump rstart rend pitch gain frames rate ch
          *  revrs nudge jmpq count|name" -- rstart / rend in frames as they play
@@ -837,7 +895,16 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
             } else {
                 uint32_t i, st = (b - a) / 256 + 1;
                 for (i = a; i < b && i < s->frames; i += st) {
-                    int v = au_mono(s, i);
+                    const int16_t *fr = au_at(s, i);
+                    int v;
+                    if (!fr) {                      /* streamed, not in: its summary entry */
+                        if (s->mip && i / AU_MIP < s->nmip) {
+                            if (s->mip[i / AU_MIP][0] * 256 < lo) lo = s->mip[i / AU_MIP][0] * 256;
+                            if (s->mip[i / AU_MIP][1] * 256 > hi) hi = s->mip[i / AU_MIP][1] * 256;
+                        }
+                        continue;
+                    }
+                    v = au_mono_fr(fr, s->ch);
                     if (v < lo) lo = v;
                     if (v > hi) hi = v;
                 }

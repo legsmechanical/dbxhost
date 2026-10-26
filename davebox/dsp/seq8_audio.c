@@ -12,6 +12,9 @@
  * The loader keeps a pool keyed by absolute path, so a sample used by several
  * clips is in memory once.
  *
+ * A file longer than Slice mode allows STREAMS (only a Loop clip can play
+ * it): see STREAMING below — a third thread, the streamer, fills its chunks.
+ *
  * Included into seq8.c's single translation unit after seq8_drum.c. The keys
  * and everything that needs the clip primitives live in
  * setparam/sp_track_audio.c. */
@@ -221,19 +224,35 @@ static int16_t au_conv(const uint8_t *p, const au_fmt_t *fm) {
     return (int16_t)v;
 }
 
-/* One frame as the waveform sees it: the channels mixed. */
+/* Frame i of s, or NULL when s streams and that chunk is not in. SPI thread
+ * only (render and get_param): a chunk it sees stays until two more blocks
+ * have rendered, so the pointer is good for the rest of this call. */
+static inline const int16_t *au_at(const au_sample_t *s, uint32_t i) {
+    const int16_t *c;
+    uint32_t k;
+    if (s->pcm) return s->pcm + (size_t)i * s->ch;
+    k = i >> AU_CHUNK_SHIFT;
+    if (k >= s->nchunks) return NULL;
+    c = __atomic_load_n(&s->chunk[k], __ATOMIC_ACQUIRE);
+    return c ? c + (size_t)(i & (AU_CHUNK - 1)) * s->ch : NULL;
+}
+
+/* One frame as the waveform sees it: the channels mixed (0 for a streamed
+ * frame that is not in). */
+static int au_mono_fr(const int16_t *fr, int ch) {
+    return ch > 1 ? (fr[0] + fr[1]) / 2 : fr[0];
+}
 static int au_mono(const au_sample_t *s, uint32_t i) {
-    int v = s->pcm[(size_t)i * s->ch];
-    if (s->ch > 1) v = (v + s->pcm[(size_t)i * s->ch + 1]) / 2;
-    return v;
+    const int16_t *fr = au_at(s, i);
+    return fr ? au_mono_fr(fr, s->ch) : 0;
 }
 
 /* The waveform's summaries: min / max per AU_MIP frames (so a zoomed view
  * reads a few thousand entries, never the whole sample), and the 128 columns
  * of the whole sample. Loader thread. */
+static void au_peaks_from_mip(au_sample_t *s);
 static void au_make_peaks(au_sample_t *s) {
     uint32_t m, i;
-    int c;
     s->nmip = (s->frames + AU_MIP - 1) / AU_MIP;
     s->mip = s->nmip ? (int8_t (*)[2])malloc((size_t)s->nmip * 2) : NULL;
     if (s->mip) {
@@ -249,6 +268,14 @@ static void au_make_peaks(au_sample_t *s) {
             s->mip[m][1] = (int8_t)(hi / 256);
         }
     } else s->nmip = 0;
+    au_peaks_from_mip(s);
+}
+
+/* The 128 columns of the whole sample: from the summary, else (no memory
+ * for one) sampled from the frames. */
+static void au_peaks_from_mip(au_sample_t *s) {
+    uint32_t m, i;
+    int c;
     for (c = 0; c < AU_PEAKS; c++) {
         uint32_t a = (uint32_t)((uint64_t)s->frames * c / AU_PEAKS);
         uint32_t b = (uint32_t)((uint64_t)s->frames * (c + 1) / AU_PEAKS);
@@ -273,56 +300,165 @@ static void au_make_peaks(au_sample_t *s) {
     }
 }
 
-/* Read a WAV / AIFF into memory as int16 (1 or 2 channels; more are folded to
- * the first two). The sample can be no longer than AU_LOOP_MAX_SEC. */
+/* Files longer than this stream (seconds). Slice mode's limit: a streamed
+ * sample is then one only a Loop clip can play. The tests lower it. */
+static uint32_t au_stream_sec = AU_SLICE_MAX_SEC;
+
+/* The streamer's state for one streamed sample (STREAMING, below). */
+typedef struct au_stream {
+    char      path[512];
+    au_fmt_t  fm;
+    int       fd;          /* streamer: open once it first reads; -1 = not yet */
+    uint32_t *keep;        /* streamer: per chunk, the pass that last wanted it */
+} au_stream_t;
+
+/* A Loop over rs..re must never wait for these chunks: around each of the
+ * 33 points k/32 of the range — every jump point of every division (2..32)
+ * is one of them, and Revrs mirrors point k onto point 32-k — the 2 chunks
+ * after (forward play) and the 2 before (reverse). The start's "after" and
+ * the end's "before" reach half a second further, for Nudge -500 ms.
+ * Calls fn(arg, k) for each chunk k (a chunk may come more than once). */
+static void au_pins(uint32_t nchunks, uint32_t frames, uint32_t rate, uint32_t rs, uint32_t re,
+                    void (*fn)(void *, uint32_t), void *arg) {
+    uint32_t j, k, ext = (rate / 2 + AU_CHUNK - 1) / AU_CHUNK;
+    if (re > frames) re = frames;
+    if (re <= rs || !nchunks) return;
+    for (j = 0; j <= 32; j++) {
+        uint32_t p = rs + (uint32_t)((uint64_t)(re - rs) * j / 32);
+        uint32_t c = p >> AU_CHUNK_SHIFT;
+        uint32_t after = 2 + (j == 0 ? ext : 0), before = 2 + (j == 32 ? ext : 0);
+        for (k = 0; k < after && c + k < nchunks; k++) fn(arg, c + k);
+        for (k = 1; k <= before && k <= c; k++) fn(arg, c - k);
+    }
+}
+static void au_pin_flag(void *arg, uint32_t k) { ((uint8_t *)arg)[k] = 1; }
+
+/* One chunk of a streamed file converted to int16, from raw frames. */
+static void au_conv_frames(const uint8_t *buf, uint32_t n, const au_fmt_t *fm, int ch, int16_t *o) {
+    const uint32_t fb = (uint32_t)fm->ch * (fm->bits / 8), bs = fm->bits / 8;
+    uint32_t i;
+    for (i = 0; i < n; i++) {
+        const uint8_t *fr = buf + (size_t)i * fb;
+        o[(size_t)i * ch] = au_conv(fr, fm);
+        if (ch == 2) o[(size_t)i * ch + 1] = au_conv(fr + bs, fm);
+    }
+}
+
+static void au_sample_free(au_sample_t *s) {
+    uint32_t k;
+    if (!s) return;
+    if (s->chunk) for (k = 0; k < s->nchunks; k++) free(s->chunk[k]);
+    free(s->chunk);
+    if (s->st) {
+        if (s->st->fd >= 0) close(s->st->fd);
+        free(s->st->keep);
+        free(s->st);
+    }
+    free(s->mip);
+    free(s->pcm);
+    free(s);
+}
+
+/* Read a WAV / AIFF as int16 (1 or 2 channels; more are folded to the first
+ * two). The sample can be no longer than AU_LOOP_MAX_SEC. One pass: a file
+ * longer than au_stream_sec keeps only its waveform summary and the chunks
+ * a Loop over the whole file pins (the streamer does the rest); a shorter
+ * one is read whole. */
 static au_sample_t *au_read_file(const char *path, int *err) {
     FILE *f = fopen(path, "rb");
     au_fmt_t fm;
     au_sample_t *s = NULL;
     uint8_t *buf = NULL;
+    int16_t *tmp = NULL;
+    uint8_t *pins = NULL;
+    int streamed;
     *err = AU_ERR_OPEN;
     if (!f) return NULL;
     *err = au_probe(f, &fm);
     if (*err) goto out;
     if ((uint64_t)fm.frames > (uint64_t)fm.rate * AU_LOOP_MAX_SEC) { *err = AU_ERR_LONG; goto out; }
+    streamed = (uint64_t)fm.frames > (uint64_t)fm.rate * au_stream_sec;
     s = (au_sample_t *)calloc(1, sizeof *s);
     if (!s) { *err = AU_ERR_MEM; goto out; }
     s->ch = (uint8_t)(fm.ch >= 2 ? 2 : 1);
     s->rate = fm.rate;
     s->frames = fm.frames;
-    s->pcm = (int16_t *)malloc((size_t)fm.frames * s->ch * sizeof(int16_t));
-    if (!s->pcm) { free(s); s = NULL; *err = AU_ERR_MEM; goto out; }
+    *err = AU_ERR_MEM;
+    if (!streamed) {
+        s->pcm = (int16_t *)malloc((size_t)fm.frames * s->ch * sizeof(int16_t));
+        if (!s->pcm) goto fail;
+    } else {
+        s->nchunks = (fm.frames + AU_CHUNK - 1) / AU_CHUNK;
+        s->nmip = (fm.frames + AU_MIP - 1) / AU_MIP;
+        s->chunk = (int16_t **)calloc(s->nchunks, sizeof *s->chunk);
+        s->mip = (int8_t (*)[2])malloc((size_t)s->nmip * 2);
+        s->st = (au_stream_t *)calloc(1, sizeof *s->st);
+        pins = (uint8_t *)calloc(s->nchunks, 1);
+        tmp = (int16_t *)malloc((size_t)AU_CHUNK * s->ch * sizeof(int16_t));
+        if (!s->chunk || !s->mip || !s->st || !pins || !tmp) goto fail;
+        s->st->fd = -1;
+        s->st->fm = fm;
+        snprintf(s->st->path, sizeof s->st->path, "%s", path);
+        s->st->keep = (uint32_t *)calloc(s->nchunks, sizeof *s->st->keep);
+        if (!s->st->keep) goto fail;
+        au_pins(s->nchunks, fm.frames, fm.rate, 0, fm.frames, au_pin_flag, pins);
+    }
     {
-        const uint32_t fb = (uint32_t)fm.ch * (fm.bits / 8), bs = fm.bits / 8;
-        const uint32_t chunk = 4096;
+        /* Whole: straight into pcm. Streamed: a chunk at a time into tmp,
+         * summarised, and kept when pinned. */
+        const uint32_t fb = (uint32_t)fm.ch * (fm.bits / 8);
+        const uint32_t step = AU_CHUNK;
         uint32_t done = 0;
-        buf = (uint8_t *)malloc((size_t)chunk * fb);
-        if (!buf || fseek(f, fm.data_off, SEEK_SET)) { *err = AU_ERR_MEM; goto fail; }
+        buf = (uint8_t *)malloc((size_t)step * fb);
+        if (!buf || fseek(f, fm.data_off, SEEK_SET)) goto fail;
         while (done < fm.frames) {
             if (au_abort) { *err = AU_ERR_OPEN; goto fail; }
-            uint32_t want = fm.frames - done < chunk ? fm.frames - done : chunk, i;
+            uint32_t want = fm.frames - done < step ? fm.frames - done : step;
             size_t got = fread(buf, fb, want, f);
             if (got == 0) break;
-            for (i = 0; i < got; i++) {
-                const uint8_t *fr = buf + (size_t)i * fb;
-                int16_t *o = s->pcm + (size_t)(done + i) * s->ch;
-                o[0] = au_conv(fr, &fm);
-                if (s->ch == 2) o[1] = au_conv(fr + bs, &fm);
+            if (!streamed) {
+                au_conv_frames(buf, (uint32_t)got, &fm, s->ch, s->pcm + (size_t)done * s->ch);
+            } else {
+                uint32_t k = done >> AU_CHUNK_SHIFT, m, i;
+                memset(tmp, 0, (size_t)AU_CHUNK * s->ch * sizeof(int16_t));
+                au_conv_frames(buf, (uint32_t)got, &fm, s->ch, tmp);
+                for (m = 0; m * AU_MIP < got; m++) {
+                    int lo = 0, hi = 0;
+                    for (i = m * AU_MIP; i < (m + 1) * AU_MIP && i < got; i++) {
+                        int v = au_mono_fr(tmp + (size_t)i * s->ch, s->ch);
+                        if (v < lo) lo = v;
+                        if (v > hi) hi = v;
+                    }
+                    s->mip[(done / AU_MIP) + m][0] = (int8_t)(lo / 256);
+                    s->mip[(done / AU_MIP) + m][1] = (int8_t)(hi / 256);
+                }
+                if (pins[k]) {
+                    s->chunk[k] = tmp;
+                    tmp = (int16_t *)malloc((size_t)AU_CHUNK * s->ch * sizeof(int16_t));
+                    if (!tmp) goto fail;
+                }
             }
             done += (uint32_t)got;
+            if (got < want) break;
         }
         if (done == 0) { *err = AU_ERR_FORMAT; goto fail; }
         s->frames = done;                      /* a short file plays what it has */
+        if (streamed) {
+            s->nchunks = (done + AU_CHUNK - 1) / AU_CHUNK;
+            s->nmip = (done + AU_MIP - 1) / AU_MIP;
+        }
     }
-    au_make_peaks(s);
+    if (streamed) au_peaks_from_mip(s);
+    else au_make_peaks(s);
     *err = AU_ERR_NONE;
     goto out;
 fail:
-    free(s->pcm);
-    free(s);
+    au_sample_free(s);
     s = NULL;
 out:
     free(buf);
+    free(tmp);
+    free(pins);
     fclose(f);
     return s;
 }
@@ -420,6 +556,278 @@ static int au_import(const char *src, const char *dir, char *name, size_t name_s
     return AU_ERR_COPY;
 }
 
+/* ---------------- STREAMING (the streamer thread) ----------------
+ *
+ * A streamed sample's frames live in chunks (AU_CHUNK frames each). The
+ * streamer is the only thread that fills a chunk slot or empties one; the
+ * audio thread only reads them (au_at). Each pass the streamer:
+ *   1. wants the chunks each sounding streamed voice reaches in the next
+ *      AU_STREAM_AHEAD_MS (in its direction, across the loop's wrap), and
+ *      the same from where a waiting JmpQ jump will land (au_watch, written
+ *      by the audio thread every block) — nearest first;
+ *   2. wants every clip's pins (au_pin_mark), so a jump, a wrap or Revrs
+ *      never waits;
+ *   3. reads up to AU_STREAM_READS missing chunks, in that order;
+ *   4. empties a chunk nobody has wanted for AU_STREAM_GRACE passes. Its
+ *      memory is freed only once the audio thread has finished two more
+ *      blocks (au_block): a render that loaded the pointer before the slot
+ *      was emptied has ended by then. The audio thread never frees, never
+ *      locks, never waits.
+ * A chunk not in when a voice reaches it plays silence and the voice keeps
+ * moving (it stays in time), fading out before the gap and back in after.
+ * Samples come and go through au_stream_add / au_stream_remove (the loader,
+ * under the mutex the streamer holds for a whole pass): the streamer never
+ * touches a sample it does not hold, whatever a stale clip or watch points at. */
+
+#define AU_STREAM_AHEAD_MS  1500
+#define AU_STREAM_READS     8
+#define AU_STREAM_GRACE     250
+#define AU_STREAM_NEED      1024
+
+typedef struct { void *p; uint32_t at; } au_grave_t;
+typedef struct { uint16_t si; uint32_t k; } au_need_t;
+
+typedef struct {
+    pthread_t        th;
+    volatile int     run;
+    int              started;
+    pthread_mutex_t  mu;
+    seq8_instance_t *inst;
+    au_sample_t     *smp[AU_POOL_MAX];   /* the streamed samples it holds */
+    uint32_t         pass;
+    au_grave_t      *grave;
+    uint32_t         ngrave, cgrave;
+    uint8_t         *raw;                /* one chunk of file frames */
+    size_t           raw_sz;
+    au_need_t        need[AU_STREAM_NEED];
+    uint32_t         nneed;
+    int              pin_si;             /* the sample au_stream_pin is marking */
+    uint32_t         reads, loaded;      /* chunks read ever / in memory now */
+} au_streamer_t;
+
+#ifdef SEQ8_TESTING
+static int au_stream_manual = 0;         /* tests: no thread; they call au_stream_service */
+#endif
+
+static int au_stream_add(seq8_instance_t *inst, au_sample_t *s) {
+    au_streamer_t *S = (au_streamer_t *)inst->au_streamer;
+    uint32_t k;
+    int i, ok = 0;
+    if (!S) return 0;
+    pthread_mutex_lock(&S->mu);
+    for (i = 0; i < AU_POOL_MAX; i++)
+        if (!S->smp[i]) { __atomic_store_n(&S->smp[i], s, __ATOMIC_RELAXED); ok = 1; break; }
+    if (ok) for (k = 0; k < s->nchunks; k++) if (s->chunk[k]) __atomic_add_fetch(&S->loaded, 1, __ATOMIC_RELAXED);
+    pthread_mutex_unlock(&S->mu);
+    return ok;
+}
+
+/* The loader, before it frees s: by then no clip or voice holds it (the
+ * audio thread dropped it), so its chunks can go at once. */
+static void au_stream_remove(seq8_instance_t *inst, au_sample_t *s) {
+    au_streamer_t *S = (au_streamer_t *)inst->au_streamer;
+    uint32_t k;
+    int i;
+    if (!S) return;
+    pthread_mutex_lock(&S->mu);
+    for (i = 0; i < AU_POOL_MAX; i++) if (S->smp[i] == s) __atomic_store_n(&S->smp[i], (au_sample_t *)NULL, __ATOMIC_RELAXED);
+    for (k = 0; k < s->nchunks; k++) if (s->chunk[k]) __atomic_sub_fetch(&S->loaded, 1, __ATOMIC_RELAXED);
+    pthread_mutex_unlock(&S->mu);
+}
+
+static int au_stream_find(au_streamer_t *S, const void *p) {
+    int i;
+    if (!p) return -1;
+    for (i = 0; i < AU_POOL_MAX; i++) if (S->smp[i] && (const void *)S->smp[i] == p) return i;
+    return -1;
+}
+
+/* Chunk k of sample si is wanted this pass; missing, it joins the reads. */
+static void au_stream_want(au_streamer_t *S, int si, uint32_t k) {
+    au_sample_t *s = S->smp[si];
+    if (k >= s->nchunks || s->st->keep[k] == S->pass) return;
+    s->st->keep[k] = S->pass;
+    if (!s->chunk[k] && S->nneed < AU_STREAM_NEED) {
+        S->need[S->nneed].si = (uint16_t)si;
+        S->need[S->nneed].k = k;
+        S->nneed++;
+    }
+}
+
+static void au_stream_pin(void *arg, uint32_t k) {
+    au_streamer_t *S = (au_streamer_t *)arg;
+    au_stream_want(S, S->pin_si, k);
+}
+
+/* What a voice (or a waiting jump) at w reaches next: its chunk and the
+ * neighbour it interpolates from, then AU_STREAM_AHEAD_MS further on. */
+static void au_stream_watch(au_streamer_t *S, int si, const au_watch_t *w) {
+    au_sample_t *s = S->smp[si];
+    uint32_t lo = w->lo, hi = w->hi, n, j;
+    int64_t f = w->pos, sp = w->speed < 0 ? -(int64_t)w->speed : w->speed;
+    int dir = w->speed < 0 ? -1 : 1;
+    if (hi > s->frames) hi = s->frames;
+    if (hi <= lo || f < lo || f >= hi) return;
+    au_stream_want(S, si, (uint32_t)f >> AU_CHUNK_SHIFT);
+    if (f + 1 < hi) au_stream_want(S, si, (uint32_t)(f + 1) >> AU_CHUNK_SHIFT);
+    n = (uint32_t)((uint64_t)AU_STREAM_AHEAD_MS * 441 / 10 * (uint64_t)(sp ? sp : 256) / 256 / AU_CHUNK) + 2;
+    for (j = 0; j < n; j++) {
+        f += dir * (int64_t)AU_CHUNK;
+        if (f >= hi || f < lo) {
+            if (!w->loop) return;
+            f = dir > 0 ? lo + (f - hi) : hi - (lo - f);
+            if (f < lo || f >= hi) f = dir > 0 ? lo : hi - 1;
+            /* the other end of the loop is where it goes on from */
+            au_stream_want(S, si, (uint32_t)(dir > 0 ? hi - 1 : lo) >> AU_CHUNK_SHIFT);
+        }
+        au_stream_want(S, si, (uint32_t)f >> AU_CHUNK_SHIFT);
+    }
+}
+
+/* Read chunk k of s from its file (the streamer, outside nothing: the mutex
+ * is held, so s cannot go meanwhile). */
+static int au_stream_read(au_streamer_t *S, au_sample_t *s, uint32_t k) {
+    au_stream_t *st = s->st;
+    const uint32_t fb = (uint32_t)st->fm.ch * (st->fm.bits / 8);
+    uint32_t first = k * AU_CHUNK, n = s->frames - first < AU_CHUNK ? s->frames - first : AU_CHUNK;
+    size_t want = (size_t)n * fb;
+    ssize_t got;
+    int16_t *c;
+    if (st->fd < 0) st->fd = open(st->path, O_RDONLY);
+    if (st->fd < 0) return 0;
+    if (S->raw_sz < (size_t)AU_CHUNK * fb) {
+        free(S->raw);
+        S->raw_sz = (size_t)AU_CHUNK * fb;
+        S->raw = (uint8_t *)malloc(S->raw_sz);
+        if (!S->raw) { S->raw_sz = 0; return 0; }
+    }
+    c = (int16_t *)calloc((size_t)AU_CHUNK * s->ch, sizeof(int16_t));
+    if (!c) return 0;
+    got = pread(st->fd, S->raw, want, (off_t)st->fm.data_off + (off_t)first * fb);
+    if (got > 0) au_conv_frames(S->raw, (uint32_t)((size_t)got / fb), &st->fm, s->ch, c);
+    __atomic_store_n(&s->chunk[k], c, __ATOMIC_RELEASE);
+    __atomic_add_fetch(&S->reads, 1, __ATOMIC_RELAXED);
+    __atomic_add_fetch(&S->loaded, 1, __ATOMIC_RELAXED);
+    return 1;
+}
+
+static void au_stream_bury(au_streamer_t *S, void *p) {
+    if (S->ngrave == S->cgrave) {
+        uint32_t nc = S->cgrave ? S->cgrave * 2 : 64;
+        au_grave_t *g = (au_grave_t *)realloc(S->grave, nc * sizeof *g);
+        if (!g) return;                     /* leak one chunk rather than free it early */
+        S->grave = g;
+        S->cgrave = nc;
+    }
+    S->grave[S->ngrave].p = p;
+    S->grave[S->ngrave].at = __atomic_load_n(&S->inst->au_block, __ATOMIC_ACQUIRE) + 2;
+    S->ngrave++;
+}
+
+/* One pass. Returns the chunks it read. */
+static unsigned au_stream_service(seq8_instance_t *inst) {
+    au_streamer_t *S = (au_streamer_t *)inst->au_streamer;
+    uint32_t i, k, now;
+    unsigned got = 0;
+    int t, c, si;
+    if (!S) return 0;
+    pthread_mutex_lock(&S->mu);
+    S->pass++;
+    S->nneed = 0;
+    /* 1. where the voices and the waiting jumps are going */
+    for (t = 0; t < NUM_TRACKS; t++)
+        for (i = 0; i <= AU_VOICES; i++) {
+            au_watch_t w;
+            w.smp = __atomic_load_n(&inst->au_watch[t][i].smp, __ATOMIC_ACQUIRE);
+            if ((si = au_stream_find(S, w.smp)) < 0) continue;
+            w.pos   = __atomic_load_n(&inst->au_watch[t][i].pos, __ATOMIC_RELAXED);
+            w.lo    = __atomic_load_n(&inst->au_watch[t][i].lo, __ATOMIC_RELAXED);
+            w.hi    = __atomic_load_n(&inst->au_watch[t][i].hi, __ATOMIC_RELAXED);
+            w.speed = __atomic_load_n(&inst->au_watch[t][i].speed, __ATOMIC_RELAXED);
+            w.loop  = __atomic_load_n(&inst->au_watch[t][i].loop, __ATOMIC_RELAXED);
+            au_stream_watch(S, si, &w);
+        }
+    /* 2. every clip's pins */
+    for (t = 0; t < NUM_TRACKS; t++)
+        for (c = 0; c < NUM_CLIPS; c++) {
+            const au_clipw_t *cw = &inst->au_clipw[t][c];
+            const void *p = __atomic_load_n(&cw->smp, __ATOMIC_ACQUIRE);
+            uint32_t rs, re;
+            au_sample_t *s;
+            if ((si = au_stream_find(S, p)) < 0) continue;
+            s = S->smp[si];
+            rs = __atomic_load_n(&cw->rs, __ATOMIC_RELAXED);
+            re = __atomic_load_n(&cw->re, __ATOMIC_RELAXED);
+            S->pin_si = si;
+            au_pins(s->nchunks, s->frames, s->rate, rs, re, au_stream_pin, S);
+        }
+    /* 3. read, nearest need first */
+    for (i = 0; i < S->nneed && got < AU_STREAM_READS; i++) {
+        au_sample_t *s = S->smp[S->need[i].si];
+        if (s && !s->chunk[S->need[i].k] && au_stream_read(S, s, S->need[i].k)) got++;
+    }
+    /* 4. let go of what nobody wants */
+    for (si = 0; si < AU_POOL_MAX; si++) {
+        au_sample_t *s = S->smp[si];
+        if (!s) continue;
+        for (k = 0; k < s->nchunks; k++) {
+            if (!s->chunk[k] || S->pass - s->st->keep[k] <= AU_STREAM_GRACE) continue;
+            void *p = s->chunk[k];
+            __atomic_store_n(&s->chunk[k], (int16_t *)NULL, __ATOMIC_RELEASE);
+            au_stream_bury(S, p);
+            __atomic_sub_fetch(&S->loaded, 1, __ATOMIC_RELAXED);
+        }
+    }
+    now = __atomic_load_n(&inst->au_block, __ATOMIC_ACQUIRE);
+    for (i = 0; i < S->ngrave; ) {
+        if ((int32_t)(now - S->grave[i].at) >= 0) { free(S->grave[i].p); S->grave[i] = S->grave[--S->ngrave]; }
+        else i++;
+    }
+    pthread_mutex_unlock(&S->mu);
+    return got;
+}
+
+static void *au_streamer_main(void *arg) {
+    au_streamer_t *S = (au_streamer_t *)arg;
+    {
+        struct sched_param sp;          /* off the realtime class, as the loader */
+        memset(&sp, 0, sizeof sp);
+        pthread_setschedparam(pthread_self(), SCHED_OTHER, &sp);
+    }
+    while (S->run)
+        if (!au_stream_service(S->inst)) usleep(2000);
+    return NULL;
+}
+
+static void au_streamer_init(seq8_instance_t *inst) {
+    au_streamer_t *S = (au_streamer_t *)calloc(1, sizeof *S);
+    inst->au_streamer = S;
+    if (!S) return;
+    S->inst = inst;
+    pthread_mutex_init(&S->mu, NULL);
+    S->run = 1;
+#ifdef SEQ8_TESTING
+    if (au_stream_manual) return;
+#endif
+    if (pthread_create(&S->th, NULL, au_streamer_main, S) == 0) S->started = 1;
+}
+
+/* After the loader has stopped (it is the one that adds and removes). The
+ * samples themselves, chunks and all, are the pool's to free. */
+static void au_streamer_shutdown(seq8_instance_t *inst) {
+    au_streamer_t *S = (au_streamer_t *)inst->au_streamer;
+    uint32_t i;
+    if (!S) return;
+    S->run = 0;
+    if (S->started) pthread_join(S->th, NULL);
+    for (i = 0; i < S->ngrave; i++) free(S->grave[i].p);
+    free(S->grave);
+    free(S->raw);
+    pthread_mutex_destroy(&S->mu);
+    free(S);
+    inst->au_streamer = NULL;
+}
+
 /* ---------------- the loader thread ---------------- */
 
 static au_sample_t *au_pool_get(au_loader_t *L, const char *path, int *err) {
@@ -435,6 +843,7 @@ static au_sample_t *au_pool_get(au_loader_t *L, const char *path, int *err) {
     if (free_i < 0) { *err = AU_ERR_MEM; return NULL; }
     au_sample_t *s = au_read_file(path, err);
     if (!s) return NULL;
+    if (s->st && !au_stream_add(L->inst, s)) { au_sample_free(s); *err = AU_ERR_MEM; return NULL; }
     s->refs = 1;
     snprintf(L->pool[free_i].path, sizeof L->pool[free_i].path, "%s", path);
     L->pool[free_i].smp = s;
@@ -448,9 +857,8 @@ static void au_pool_release(au_loader_t *L, au_sample_t *s) {
         if (s->refs > 1) { s->refs--; return; }
         L->pool[i].smp = NULL;
         L->pool[i].path[0] = '\0';
-        free(s->mip);
-        free(s->pcm);
-        free(s);
+        if (s->st) au_stream_remove(L->inst, s);   /* the streamer lets go first */
+        au_sample_free(s);
         return;
     }
 }
@@ -535,6 +943,7 @@ static void au_init(seq8_instance_t *inst) {
         inst->au_trk[t].mgain = 64;
     }
     inst->au_lazy_track = inst->au_lazy_clip = -1;
+    au_streamer_init(inst);
     inst->au_loader = L;
     if (!L) return;
     L->inst = inst;
@@ -545,12 +954,13 @@ static void au_init(seq8_instance_t *inst) {
 static void au_shutdown(seq8_instance_t *inst) {
     au_loader_t *L = (au_loader_t *)inst->au_loader;
     int i;
-    if (!L) return;
+    if (!L) { au_streamer_shutdown(inst); return; }
     L->run = 0;
     au_abort = 1;
     if (L->started) pthread_join(L->th, NULL);
+    au_streamer_shutdown(inst);
     for (i = 0; i < AU_POOL_MAX; i++)
-        if (L->pool[i].smp) { free(L->pool[i].smp->mip); free(L->pool[i].smp->pcm); free(L->pool[i].smp); }
+        if (L->pool[i].smp) au_sample_free(L->pool[i].smp);
     free(L);
     inst->au_loader = NULL;
 }
@@ -660,6 +1070,7 @@ static void au_slice_on(seq8_instance_t *inst, int t, int slice, float vgain) {
     v->loop = (sl->play == AU_PLAY_LOOP);
     v->gated = (sl->play != AU_PLAY_ONE);
     v->slice = (uint8_t)slice;
+    v->starve = 64;
     v->active = 1;
 }
 
@@ -728,6 +1139,7 @@ static void au_loop_start(seq8_instance_t *inst, int t, int c, double off) {
     if (v->pos >= re || v->pos < rs) return;       /* past the sample's end: silence till the wrap */
     v->gain = au_db(cl->gain_db);
     v->mode_loop = 1;
+    v->starve = 64;
     v->active = 1;
     at->loop_clip = (uint8_t)c;
 }
@@ -739,49 +1151,64 @@ static au_voice_t *au_loop_voice(au_track_t *at) {
     return NULL;
 }
 
-/* Render one voice, adding into acc (stereo int32). Ends it when done. */
-static void au_voice_render(au_voice_t *v, int32_t *acc, int frames) {
+/* Render one voice, adding into acc (stereo int32). Ends it when done.
+ * Returns the frames it found no chunk for (a streamed sample). */
+static uint32_t au_voice_render(au_voice_t *v, int32_t *acc, int frames) {
     const au_sample_t *s = v->smp;
+    uint32_t missed = 0;
     int f;
-    if (!s) { v->active = 0; return; }
+    if (!s) { v->active = 0; return 0; }
     for (f = 0; f < frames; f++) {
         if (v->wait) { v->wait--; continue; }
         if (v->pos < v->lo || v->pos >= v->hi) {
             if (v->loop) {
                 double span = v->hi - v->lo;
-                if (span < 1) { v->active = 0; return; }
+                if (span < 1) { v->active = 0; return missed; }
                 while (v->pos >= v->hi) v->pos -= span;
                 while (v->pos < v->lo) v->pos += span;
-            } else { v->active = 0; return; }
+            } else { v->active = 0; return missed; }
         }
         float e = 1.0f;
         if (v->atk && v->age < v->atk) e = (float)v->age / (float)v->atk;
         if (v->dec) {
             uint32_t d = v->age > v->atk ? v->age - v->atk : 0;
-            if (d >= v->dec) { v->active = 0; return; }
+            if (d >= v->dec) { v->active = 0; return missed; }
             e *= 1.0f - (float)d / (float)v->dec;
         }
         if (v->rel_len) {
-            if (v->rel == 0) { v->active = 0; return; }
+            if (v->rel == 0) { v->active = 0; return missed; }
             e *= (float)v->rel / (float)v->rel_len;
             v->rel--;
         }
         uint32_t i0 = (uint32_t)v->pos;
         float fr = (float)(v->pos - (double)i0);
         uint32_t i1 = i0 + 1 < s->frames ? i0 + 1 : i0;
-        float l, r;
-        if (s->ch == 2) {
-            l = s->pcm[i0 * 2] + (s->pcm[i1 * 2] - s->pcm[i0 * 2]) * fr;
-            r = s->pcm[i0 * 2 + 1] + (s->pcm[i1 * 2 + 1] - s->pcm[i0 * 2 + 1]) * fr;
-        } else {
-            l = r = s->pcm[i0] + (s->pcm[i1] - s->pcm[i0]) * fr;
+        const int16_t *a = au_at(s, i0), *b = au_at(s, i1);
+        float l = 0.0f, r = 0.0f;
+        if (!s->pcm) {
+            /* Streamed: fade out over the 64 frames before a chunk that is
+             * not in, back in once it is (the position keeps moving). */
+            double ahead = v->pos + v->step * 64.0;
+            int ok = a && b && (ahead < v->lo || ahead >= v->hi || au_at(s, (uint32_t)ahead));
+            if (ok) { if (v->starve < 64) v->starve++; }
+            else if (v->starve) v->starve--;
+            e *= (float)v->starve / 64.0f;
         }
+        if (a && b) {
+            if (s->ch == 2) {
+                l = a[0] + (b[0] - a[0]) * fr;
+                r = a[1] + (b[1] - a[1]) * fr;
+            } else {
+                l = r = a[0] + (b[0] - a[0]) * fr;
+            }
+        } else missed++;
         float g = v->gain * e;
         acc[f * 2]     += (int32_t)(l * g);
         acc[f * 2 + 1] += (int32_t)(r * g);
         v->pos += v->step;
         v->age++;
     }
+    return missed;
 }
 
 /* ---------------- Lazy chop ---------------- */

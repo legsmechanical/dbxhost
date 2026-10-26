@@ -103,10 +103,10 @@ static void write_spike(const char *path) {
     for (i = 0; i < n; i++) put_le16(f, i == 66002 ? 20000 : 0);
     fclose(f);
 }
-/* a WAV whose data chunk claims 11 minutes */
+/* a WAV whose data chunk claims 31 minutes (Loop's limit is 30) */
 static void write_long(const char *path) {
     FILE *f = fopen(path, "wb");
-    uint32_t n = 44100u * 660u;
+    uint32_t n = 44100u * 1860u;
     fwrite("RIFF", 1, 4, f); put_le32(f, 36 + n * 2); fwrite("WAVEfmt ", 1, 8, f);
     put_le32(f, 16); put_le16(f, 1); put_le16(f, 1); put_le32(f, 44100); put_le32(f, 88200);
     put_le16(f, 2); put_le16(f, 16);
@@ -521,7 +521,7 @@ int main(void) {
     hx_set_param(h, "t4_au_pick", p);
     st = wait_loaded(h, 4, 3);
     info_state(h, 4, 3, &err, NULL, NULL, NULL, NULL);
-    HX_ASSERT(st == 3 && err == AU_ERR_LONG, "an 11-minute file was not refused as too long");
+    HX_ASSERT(st == 3 && err == AU_ERR_LONG, "a 31-minute file was not refused as too long");
     snprintf(p, sizeof p, "%s/src/mono48.wav", g_root); write_st24(p, 0.25);
     snprintf(p, sizeof p, "4|%s/src/mono48.wav", g_root);
     hx_set_param(h, "t4_au_pick", p);

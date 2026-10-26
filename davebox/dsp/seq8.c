@@ -1942,6 +1942,12 @@ typedef struct {
     au_slice_t  au_lazy_bak[AU_MAX_SLICES];
     uint8_t     au_echo;                      /* a DELAY echo is being sent (its velocity is its volume) */
     uint64_t    au_tick0;                     /* arp_master_tick before this block's render */
+    /* STREAMING (seq8_audio.c): the audio thread's side */
+    void       *au_streamer;                  /* the streamer thread's own state */
+    au_watch_t  au_watch[NUM_TRACKS][AU_VOICES + 1];
+    au_clipw_t  au_clipw[NUM_TRACKS][NUM_CLIPS];
+    uint32_t    au_block;                     /* blocks rendered: a freed chunk waits two */
+    uint32_t    au_underruns;                 /* frames a streamed voice found no chunk for */
 } seq8_instance_t;
 
 /* What the serializer should write for clip (t,c) / lane: the original while a

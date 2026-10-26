@@ -22,12 +22,14 @@
 #define AU_PATH_MAX        160          /* a sample's file name inside samples/ */
 #define AU_PEAKS           128          /* waveform columns kept for the screen */
 #define AU_SLICE_MAX_SEC   240          /* Slice mode: 4 minutes (Josh) */
-#define AU_LOOP_MAX_SEC    600          /* Loop mode, until it streams: 10 minutes */
+#define AU_LOOP_MAX_SEC    1800         /* Loop mode: 30 minutes (longer than Slice's, it streams) */
 
 #define AU_MODE_LOOP       0
 #define AU_MODE_SLICE      1
 #define AU_GAP             16           /* frames: the least a slice can be */
 #define AU_MIP             256          /* frames per waveform summary entry */
+#define AU_CHUNK_SHIFT     13
+#define AU_CHUNK           (1u << AU_CHUNK_SHIFT)   /* frames: a streamed sample's piece (186 ms at 44.1 kHz) */
 
 #define AU_LAZY_NONE       0
 #define AU_LAZY_ARMED      1            /* pad 1 lit, nothing playing yet */
@@ -38,10 +40,21 @@
 #define AU_PLAY_GATE       1            /* for the step's gate */
 #define AU_PLAY_LOOP       2            /* loops the slice for the gate */
 
+struct au_stream;
+
 /* A loaded sample: int16, its own channel count (1 or 2) and rate. Immutable
- * once published; freed only by the loader thread. */
+ * once published (but a streamed one's chunks); freed only by the loader
+ * thread.
+ * STREAMED (a file longer than Slice mode allows, so only a Loop clip ever
+ * plays it): pcm is NULL and the frames live in chunk[], one slot per
+ * AU_CHUNK frames, each NULL or that piece. The streamer thread is the only
+ * one that fills or empties a slot; readers on the audio thread load a slot
+ * once and use it within the block (seq8_audio.c, STREAMING). */
 typedef struct au_sample {
-    int16_t  *pcm;          /* frames * ch */
+    int16_t  *pcm;          /* frames * ch; NULL = streamed */
+    int16_t **chunk;        /* streamed: nchunks slots of AU_CHUNK * ch */
+    uint32_t  nchunks;
+    struct au_stream *st;   /* streamed: the streamer's own state */
     uint32_t  frames;
     uint32_t  rate;
     uint8_t   ch;
@@ -104,9 +117,28 @@ typedef struct {
     uint32_t wait;           /* output frames of silence before it starts (Loop Nudge later) */
     uint8_t  active, loop, mode_loop, slice;
     uint8_t  gated;          /* GATE / LOOP: ends at note-off */
+    uint8_t  starve;         /* streamed: 0..64, its level, down while a chunk is missing (64 at start) */
 } au_voice_t;
 
 #define AU_VOICES 2          /* the sounding one + the one being choked */
+
+/* What the streamer must have ready, published by the audio thread each
+ * block: a voice's place in a streamed sample, or (slot AU_VOICES) where a
+ * waiting JmpQ jump will land. smp NULL = nothing. Read by the streamer
+ * field by field: a torn read only fetches the wrong chunk once. */
+typedef struct {
+    const void *smp;
+    uint32_t    pos, lo, hi;
+    int32_t     speed;       /* sample frames per output frame x 256, negative = reverse */
+    uint8_t     loop;
+} au_watch_t;
+
+/* A clip holding a streamed sample, published the same way: its Start..End
+ * as it plays (au_range), whose points the streamer keeps pinned. */
+typedef struct {
+    const void *smp;
+    uint32_t    rs, re;
+} au_clipw_t;
 
 typedef struct {
     au_voice_t v[AU_VOICES];
