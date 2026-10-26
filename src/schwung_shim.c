@@ -218,6 +218,11 @@ static uint32_t overtake_last_set_seq[SHADOW_CHAIN_INSTANCES];
 /* Audio the overtake DSP hands each slot (slot_feed.h): filled in its render,
  * mixed by the slot in the next frame's render task. */
 static slot_feed_t shadow_slot_feed[SHADOW_CHAIN_INSTANCES];
+/* The overtake sequence a feed must carry to be THIS frame's: the current one
+ * when the overtake DSP rendered last frame, else 0 (none). Without it a block
+ * handed over before the DSP unloaded (or while it is not rendering) stayed
+ * "current" and was summed again every frame -- a buzz until the next load. */
+static uint32_t shadow_feed_seq = 0, shadow_feed_seq_seen = 0;
 static uint32_t overtake_last_note_seq[SHADOW_CHAIN_INSTANCES];
 static uint32_t overtake_set_then_note    = 0;
 static uint32_t overtake_note_then_set    = 0;
@@ -1647,8 +1652,10 @@ static int overtake_capture_start(const char *path, uint32_t frames) {
 /* ...from one slot's own output (move_host_ext_v1_t.capture_start_src). */
 static int overtake_capture_start_src(const char *path, uint32_t frames, int kind, int index) {
     if (kind == MOVE_CAPTURE_MIX) return overtake_capture_start(path, frames);
-    if (kind != MOVE_CAPTURE_SLOT || index < 0 || index >= SHADOW_CHAIN_INSTANCES) return 0;
-    return sampler_request_start_module(path, frames, SAMPLER_TAKE_SRC_SLOT, index) == 0;
+    if ((kind != MOVE_CAPTURE_SLOT && kind != MOVE_CAPTURE_SLOT_PRE) || index < 0 || index >= SHADOW_CHAIN_INSTANCES) return 0;
+    return sampler_request_start_module(path, frames,
+                                        kind == MOVE_CAPTURE_SLOT_PRE ? SAMPLER_TAKE_SRC_PRE : SAMPLER_TAKE_SRC_SLOT,
+                                        index) == 0;
 }
 
 /* Host extension (move_host_ext_v1_t.slot_audio_feed): one block of audio for
@@ -2135,7 +2142,7 @@ static void shadow_render_slot_task(void *vctx, int s, int lane) {
 
     /* Audio the overtake DSP handed this slot last frame: it wakes the slot
      * like MIDI does, and is summed into the instrument's output below. */
-    const int16_t *feed = slot_feed_current(&shadow_slot_feed[s], overtake_render_seq);
+    const int16_t *feed = slot_feed_current(&shadow_slot_feed[s], shadow_feed_seq);
     if (feed) {
         shadow_slot_idle[s] = 0;
         shadow_slot_silence_frames[s] = 0;
@@ -2232,6 +2239,16 @@ static void shadow_render_slot_task(void *vctx, int s, int lane) {
                                        shadow_slot_deferred[s],
                                        MOVE_FRAMES_PER_BLOCK);
         if (feed) slot_feed_mix(shadow_slot_deferred[s], feed);
+        /* A take of the INSTRUMENT before its FX (MOVE_CAPTURE_SLOT_PRE): its
+         * output at its synth level, as the FX would receive it. */
+        if (sampler_take_tap_wants_pre(sampler_module_take, sampler_take_src_kind,
+                                       sampler_take_src_index, s)) {
+            int16_t pre[FRAMES_PER_BLOCK * 2];
+            memcpy(pre, shadow_slot_deferred[s], sizeof(pre));
+            shadow_apply_synth_level(s, pre);
+            memcpy(shadow_take_tap, pre, sizeof(pre));
+            shadow_take_tap_valid = 1;
+        }
         clock_gettime(CLOCK_MONOTONIC, &synth_t1);
         uint64_t synth_us = (synth_t1.tv_sec - synth_t0.tv_sec) * 1000000ULL +
                             (synth_t1.tv_nsec - synth_t0.tv_nsec) / 1000;
@@ -2247,8 +2264,14 @@ static void shadow_render_slot_task(void *vctx, int s, int lane) {
         memset(render_buffer, 0, sizeof(shadow_slot_fallback[s]));
         shadow_plugin_v2->render_block(shadow_chain_slots[s].instance,
                                        render_buffer, MOVE_FRAMES_PER_BLOCK);
-        /* No FX hook on this path: the feed joins after the slot's FX. */
+        /* No FX hook on this path: the feed joins after the slot's FX, and a
+         * before-FX take gets the slot's whole output. */
         if (feed) slot_feed_mix(render_buffer, feed);
+        if (sampler_take_tap_wants_pre(sampler_module_take, sampler_take_src_kind,
+                                       sampler_take_src_index, s)) {
+            memcpy(shadow_take_tap, render_buffer, sizeof(shadow_slot_fallback[s]));
+            shadow_take_tap_valid = 1;
+        }
         if (link_audio.enabled && s < LINK_AUDIO_SHADOW_CHANNELS) {
             float cap_vol = shadow_effective_volume(s) * shadow_chain_slots[s].fade.gain;
             for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++)
@@ -2396,6 +2419,8 @@ static void shadow_inprocess_render_to_buffer(void) {
 
     if (shadow_plugin_v2 && shadow_plugin_v2->render_block) {
         uint32_t active_mask = 0, pinned_mask = 0;
+        shadow_feed_seq = (overtake_render_seq != shadow_feed_seq_seen) ? overtake_render_seq : 0;
+        shadow_feed_seq_seen = overtake_render_seq;
         for (int s = 0; s < SHADOW_CHAIN_INSTANCES; s++) {
             /* A FED slot renders whether or not it holds an instrument (an
              * empty slot is inactive), and stays rendered while its FX ring
@@ -2406,12 +2431,18 @@ static void shadow_inprocess_render_to_buffer(void) {
              * unrendered slot never advances, and a deferred load waits on it
              * forever. A slot fading out for a load or clear is left alone. */
             int was_live = shadow_slot_feed[s].live != 0;
-            int fed_live = slot_feed_tick(&shadow_slot_feed[s], overtake_render_seq,
+            int fed_live = slot_feed_tick(&shadow_slot_feed[s], shadow_feed_seq,
                                           shadow_slot_fx_idle[s]);
             slot_fade_t *fd = &shadow_chain_slots[s].fade;
             if (!shadow_chain_slots[s].active && !fd->pending_clear && fd->pending_patch < 0) {
                 if (fed_live) fd->gain = fd->target = 1.0f;
                 else if (was_live) fd->gain = fd->target = 0.0f;
+            } else if (!shadow_chain_slots[s].active && fd->gain > 0.0f) {
+                /* A load or clear waits for this slot's fade to reach 0 -- but a
+                 * slot with nothing loaded is only rendered while fed, so once
+                 * the feed lapses the fade would never move and the load would
+                 * wait forever. Nothing of its own is sounding: let it go now. */
+                fd->gain = 0.0f;
             }
             if (!shadow_chain_slots[s].instance) continue;
             if (!shadow_chain_slots[s].active && !fed_live) continue;
@@ -3679,7 +3710,7 @@ skip_la_rebuild:
      * source. A slot that did not mix this block (parked, idle) is silence. */
     static const int16_t take_silence[FRAMES_PER_BLOCK * 2];
     const int16_t *take_src = unity_view;
-    if (sampler_module_take && sampler_take_src_kind == SAMPLER_TAKE_SRC_SLOT)
+    if (sampler_take_from_tap(sampler_module_take, sampler_take_src_kind))
         take_src = shadow_take_tap_valid ? shadow_take_tap : take_silence;
     shadow_take_tap_valid = 0;
     if (sampler_source == SAMPLER_SOURCE_RESAMPLE) {

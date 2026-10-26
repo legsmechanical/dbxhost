@@ -77,5 +77,13 @@ int main(void) {
     expect(!sampler_take_tap_wants(0, SAMPLER_TAKE_SRC_SLOT, 4, 4), "no take running: nothing is kept");
     expect(sampler_take_tap_sample(40000) == 32767 && sampler_take_tap_sample(-40000) == -32768
            && sampler_take_tap_sample(-123) == -123, "a kept sample is the contribution, clamped");
+        /* MOVE_CAPTURE_SLOT_PRE: the render task taps, the mix loops do not */
+    expect(sampler_take_tap_wants_pre(1, SAMPLER_TAKE_SRC_PRE, 3, 3) == 1, "PRE: the slot's render task taps");
+    expect(sampler_take_tap_wants(1, SAMPLER_TAKE_SRC_PRE, 3, 3) == 0, "PRE: its mix loop does not");
+    expect(sampler_take_tap_wants_pre(1, SAMPLER_TAKE_SRC_SLOT, 3, 3) == 0, "SLOT: the render task does not");
+    expect(sampler_take_tap_wants_pre(1, SAMPLER_TAKE_SRC_PRE, 3, 2) == 0, "PRE: another slot does not");
+    expect(sampler_take_from_tap(1, SAMPLER_TAKE_SRC_PRE) && sampler_take_from_tap(1, SAMPLER_TAKE_SRC_SLOT)
+           && !sampler_take_from_tap(1, SAMPLER_TAKE_SRC_MIX) && !sampler_take_from_tap(0, SAMPLER_TAKE_SRC_PRE),
+           "the take reads the tap for SLOT and PRE only");
     return fails;
 }
