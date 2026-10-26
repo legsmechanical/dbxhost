@@ -1900,8 +1900,9 @@ function drawUIBody() {
     if (S.confirmExit)      { drawExitConfirm();      return; }
     if (S.projectPadPicker) { drawProjectPadPicker(); return; }
     if (S.pendingSceneBakePicker) {
-        drawKitPrompt(S.scenePickFor === 'resample' ? 'Resample scene' : 'Bake scene',
-                      ['Tap a row or scene', 'step to pick it'],
+        const _clipPick = S.scenePickFor === 'resample_clip';
+        drawKitPrompt(_clipPick ? 'Resample clip' : S.scenePickFor === 'resample' ? 'Resample scene' : 'Bake scene',
+                      _clipPick ? ['Tap a clip pad', 'to pick it'] : ['Tap a row or scene', 'step to pick it'],
                           [['back', S.sampleFlow ? 'menu' : 'exit']]);
         return;
     }

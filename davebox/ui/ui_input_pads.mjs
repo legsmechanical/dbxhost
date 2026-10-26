@@ -50,7 +50,7 @@ import { setTrackMute, setTrackSolo, clearClip, hardResetClip, copyClip, cutClip
     copyPage, pageCopyOk,
     showModePopup, doDoubleFill,
     _switchActiveTrack, stepHoldCheckpoint , noteUndoUnit } from './ui_editops.mjs';
-import { openResampleOptions } from './ui_resample.mjs';
+import { openResampleOptions, openClipResampleOptions } from './ui_resample.mjs';
 
 /* Performance Mode state. Session View + Loop held → pad grid shows Perf Mode.
  * S.perfStack: currently-held R0 length pads (same stack semantics as old looper
@@ -1058,6 +1058,13 @@ export function _onPadPress(status, d1, d2) {
                 const rowBase = 92 - row * 8;
                 if (d1 >= rowBase && d1 < rowBase + NUM_TRACKS) {
                     const t = d1 - rowBase;
+                    /* Resample clip's picker: this pad's clip. */
+                    if (S.pendingSceneBakePicker && S.scenePickFor === 'resample_clip') {
+                        S.pendingSceneBakePicker = false;
+                        openClipResampleOptions(t, S.sceneRow + row, 'picker');
+                        forceRedraw();
+                        return;
+                    }
                     /* Single-clip merge placement: pick a destination clip on
                      * the merge track. Only an empty clip on that track commits;
                      * any other clip-pad press is swallowed (Back cancels). */
@@ -1559,6 +1566,8 @@ export function _onStepButtons(d1, d2) {
         /* Scene-bake picker active (set by Session-View Capture tap): step
          * press selects scene → straight to scene-bake confirm. */
         if (S.pendingSceneBakePicker) {
+            /* Picking a CLIP: a scene step picks nothing (the pads do). */
+            if (S.scenePickFor === 'resample_clip') return;
             S.pendingSceneBakePicker = false;
             if (S.scenePickFor === 'resample') { openResampleOptions(idx); return; }
             S.confirmBakeScene          = true;

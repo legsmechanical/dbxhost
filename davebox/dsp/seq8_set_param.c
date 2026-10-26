@@ -395,6 +395,7 @@ static void ext_transport_stop(seq8_instance_t *inst) {
          * thread may feed the staging ring. */
         pa_release_request(inst, t, (int)inst->tracks[t].active_clip);
     }
+    resample_after_transport_stop(inst);   /* what was armed before a take comes back */
 }
 
 /* Clock-follow: route a transport-start gesture. When Move is already running,

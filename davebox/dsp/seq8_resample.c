@@ -1,9 +1,17 @@
-/* seq8_resample.c — SCENE RESAMPLE: record a scene's audio to a WAV, bar-exact.
+/* seq8_resample.c — RESAMPLE: record a scene's or one clip's audio to a WAV,
+ * bar-exact.
  *
- * From a STOPPED transport, `resample_scene` launches scene row C and starts
- * the transport (no count-in). The take is the host's module take
- * (move_host_ext_v1_t.capture_start): the full mix after Master FX, a fixed
- * number of frames, so the file loops at exactly its bar length.
+ * From a STOPPED transport, `resample_scene` launches scene row C (every
+ * track) and `resample_clip` launches one track's clip alone, and the
+ * transport starts (no count-in). The take is the host's module take
+ * (move_host_ext_v1_t.capture_start): the full mix after Master FX — with one
+ * track playing, that IS the track as you hear it ("Wet") — or, for a clip on
+ * a Schwung chain, capture_start_src's one-slot stem ("Dry": its own chain at
+ * its fader, no sends, no Master FX). A fixed number of frames, so the file
+ * loops at exactly its bar length.
+ *
+ * Whatever was armed before a take (each track's clip and will_relaunch) is put
+ * back when the transport stops after it, so Play resumes what you had.
  *
  *   ARMED     waiting for the pass the take starts on: tick 0, or one pass in
  *             with a warm-up pass (whose tails then sound under the take's
@@ -38,6 +46,11 @@
 #define RS_ERR_BUSY      4   /* a merge, print, count-in or take is under way */
 #define RS_ERR_ARGS      5   /* bad scene / bars / path */
 #define RS_ERR_SAMPLER   6   /* the host's sampler was busy when the take began */
+#define RS_ERR_ROUTE     7   /* the track plays no instrument (external MIDI / none), or Dry off a chain */
+#define RS_ERR_MUTED     8   /* the track is muted, or soloed out */
+
+#define RS_SRC_WET  0        /* the mix (capture_start) */
+#define RS_SRC_DRY  1        /* one chain slot's own output (capture_start_src) */
 
 #define RS_BAR_TICKS     (16 * TICKS_PER_STEP)
 #define RS_CAP_BARS      32
@@ -70,26 +83,43 @@ static void rs_fold(const clip_t *cl, uint32_t *lcm, uint32_t *longest, int *ove
     else *lcm = (uint32_t)l;
 }
 
+/* Fold track `tr`'s clip `c` (each drum lane, or the melodic clip). */
+static void rs_fold_track(const seq8_track_t *tr, int c, uint32_t *lcm, uint32_t *longest, int *over) {
+    int l;
+    if (tr->pad_mode == PAD_MODE_DRUM) {
+        if (!tr->drum_clips[c]) return;
+        for (l = 0; l < DRUM_LANES; l++)
+            rs_fold(&tr->drum_clips[c]->lanes[l].clip, lcm, longest, over);
+    } else {
+        rs_fold(&tr->clips[c], lcm, longest, over);
+    }
+}
+
+static int rs_bars(uint32_t lcm, uint32_t longest, int over) {
+    if (!longest) return 0;
+    if (over) return (int)((longest + RS_BAR_TICKS - 1) / RS_BAR_TICKS);
+    return (int)(lcm / RS_BAR_TICKS);
+}
+
 /* The scene's natural take length in bars: the shortest span after which
  * every non-empty clip in row `c` is back at its start, in whole bars. Past
  * 32 bars, the longest clip rounded up to whole bars. 0 = an empty scene. */
 static int resample_scene_bars(const seq8_instance_t *inst, int c) {
     uint32_t lcm = RS_BAR_TICKS, longest = 0;
-    int over = 0, t, l;
+    int over = 0, t;
     if (c < 0 || c >= NUM_CLIPS) return 0;
-    for (t = 0; t < NUM_TRACKS; t++) {
-        const seq8_track_t *tr = &inst->tracks[t];
-        if (tr->pad_mode == PAD_MODE_DRUM) {
-            if (!tr->drum_clips[c]) continue;
-            for (l = 0; l < DRUM_LANES; l++)
-                rs_fold(&tr->drum_clips[c]->lanes[l].clip, &lcm, &longest, &over);
-        } else {
-            rs_fold(&tr->clips[c], &lcm, &longest, &over);
-        }
-    }
-    if (!longest) return 0;
-    if (over) return (int)((longest + RS_BAR_TICKS - 1) / RS_BAR_TICKS);
-    return (int)(lcm / RS_BAR_TICKS);
+    for (t = 0; t < NUM_TRACKS; t++) rs_fold_track(&inst->tracks[t], c, &lcm, &longest, &over);
+    return rs_bars(lcm, longest, over);
+}
+
+/* One track's clip C: its own length in whole bars — a drum clip's lanes may
+ * differ, so where they line up (the same 32-bar cap). 0 = no notes. */
+static int resample_clip_bars(const seq8_instance_t *inst, int t, int c) {
+    uint32_t lcm = RS_BAR_TICKS, longest = 0;
+    int over = 0;
+    if (t < 0 || t >= NUM_TRACKS || c < 0 || c >= NUM_CLIPS) return 0;
+    rs_fold_track(&inst->tracks[t], c, &lcm, &longest, &over);
+    return rs_bars(lcm, longest, over);
 }
 
 /* Frames in `ticks` master ticks at the running tempo — from the same
@@ -100,12 +130,42 @@ static uint32_t rs_ticks_to_frames(const seq8_instance_t *inst, uint32_t ticks) 
                        + inst->tick_delta / 2) / inst->tick_delta);
 }
 
-/* Transport stop (any path): a pending or running take is cancelled. */
+/* Transport stop (any path), at its START: a pending or running take is
+ * cancelled. */
 static void resample_on_transport_stop(seq8_instance_t *inst) {
     if (!rs_active(inst)) return;
     if (inst->resample_state == RS_RECORDING && g_ext && g_ext->capture_stop)
         g_ext->capture_stop();
     inst->resample_state = RS_CANCELLED;
+}
+
+/* Transport stop, at its END (after it has re-armed what was playing): put
+ * back each track's clip and armed state from before the take, so Play
+ * resumes what you had rather than what the take launched. */
+static void resample_after_transport_stop(seq8_instance_t *inst) {
+    int t;
+    if (!inst->resample_restore) return;
+    inst->resample_restore = 0;
+    for (t = 0; t < NUM_TRACKS; t++) {
+        seq8_track_t *tr = &inst->tracks[t];
+        tr->queued_clip       = -1;
+        tr->pending_page_stop = 0;
+        tr->will_relaunch     = inst->resample_prev_relaunch[t];
+        if (tr->active_clip != inst->resample_prev_clip[t]) {
+            tr->active_clip = inst->resample_prev_clip[t];
+            pfx_sync_from_clip(tr);
+        }
+    }
+}
+
+/* Before a take launches anything: what to put back after it. */
+static void rs_remember_armed(seq8_instance_t *inst) {
+    int t;
+    for (t = 0; t < NUM_TRACKS; t++) {
+        inst->resample_prev_clip[t]     = inst->tracks[t].active_clip;
+        inst->resample_prev_relaunch[t] = inst->tracks[t].will_relaunch;
+    }
+    inst->resample_restore = 1;
 }
 
 /* render_block, before the tick loop: arm the take a render after its first
@@ -118,8 +178,15 @@ static void resample_render_start(seq8_instance_t *inst, int frames) {
             inst->resample_state = RS_DONE;
         }
     } else if (inst->resample_state == RS_STARTING) {
-        if (g_ext && g_ext->capture_start &&
-                g_ext->capture_start(inst->resample_path, inst->resample_frames)) {
+        int ok;
+        if (inst->resample_src == RS_SRC_DRY)
+            ok = g_ext && g_ext->capture_start_src &&
+                 g_ext->capture_start_src(inst->resample_path, inst->resample_frames,
+                                          MOVE_CAPTURE_SLOT, inst->resample_slot);
+        else
+            ok = g_ext && g_ext->capture_start &&
+                 g_ext->capture_start(inst->resample_path, inst->resample_frames);
+        if (ok) {
             inst->resample_done  = 0;
             inst->resample_state = RS_RECORDING;
         } else {
@@ -148,13 +215,9 @@ static void resample_tick(seq8_instance_t *inst) {
     }
 }
 
-/* set_param "resample_scene" = "C bars warmup tail |path". Refusals leave the
- * transport untouched and report through resample_err. */
-static void resample_scene_start(seq8_instance_t *inst, const char *val) {
-    int c = -1, bars = 0, warm = 0, tail = 0, t;
-    const char *path = strchr(val, '|');
+/* The refusals every take shares; 0 = it may start. Sets resample_err. */
+static int rs_refuse(seq8_instance_t *inst, int c, int bars, int tail, const char *path) {
     inst->resample_err = 0;
-    sscanf(val, "%d %d %d %d", &c, &bars, &warm, &tail);
     if (inst->playing)                         inst->resample_err = RS_ERR_PLAYING;
     else if (inst->clock_follow_on)            inst->resample_err = RS_ERR_FOLLOW;
     else if (!g_ext || !g_ext->capture_start)  inst->resample_err = RS_ERR_NO_HOST;
@@ -164,10 +227,12 @@ static void resample_scene_start(seq8_instance_t *inst, const char *val) {
     else if (c < 0 || c >= NUM_CLIPS || bars < 1 || bars > 64 || tail < 0 || tail > 8
              || !path || path[1] != '/' || strlen(path + 1) >= sizeof(inst->resample_path))
                                                inst->resample_err = RS_ERR_ARGS;
-    if (inst->resample_err) {
-        inst->resample_state = RS_FAILED;
-        return;
-    }
+    if (inst->resample_err) inst->resample_state = RS_FAILED;
+    return inst->resample_err;
+}
+
+/* The pass, its frames, and the start — after the take's tracks are queued. */
+static void rs_launch(seq8_instance_t *inst, int bars, int warm, int tail, const char *path) {
     snprintf(inst->resample_path, sizeof(inst->resample_path), "%s", path + 1);
     {
         uint32_t pass = (uint32_t)bars * RS_BAR_TICKS;
@@ -177,11 +242,58 @@ static void resample_scene_start(seq8_instance_t *inst, const char *val) {
         inst->resample_bar_frames = rs_ticks_to_frames(inst, RS_BAR_TICKS);
     }
     inst->resample_done = 0;
+    inst->resample_state = RS_ARMED;
+    ext_transport_start(inst);
+}
+
+/* set_param "resample_scene" = "C bars warmup tail |path". Refusals leave the
+ * transport untouched and report through resample_err. */
+static void resample_scene_start(seq8_instance_t *inst, const char *val) {
+    int c = -1, bars = 0, warm = 0, tail = 0, t;
+    const char *path = strchr(val, '|');
+    sscanf(val, "%d %d %d %d", &c, &bars, &warm, &tail);
+    if (rs_refuse(inst, c, bars, tail, path)) return;
+    rs_remember_armed(inst);
+    inst->resample_src = RS_SRC_WET;
     for (t = 0; t < NUM_TRACKS; t++) {
         inst->tracks[t].queued_clip       = (int8_t)c;
         inst->tracks[t].will_relaunch     = 0;
         inst->tracks[t].pending_page_stop = 0;
     }
-    inst->resample_state = RS_ARMED;
-    ext_transport_start(inst);
+    rs_launch(inst, bars, warm, tail, path);
+}
+
+/* set_param "resample_clip" = "T C bars warmup tail src |path": track T's clip
+ * C ALONE (no other track plays), Wet (the mix) or Dry (T's chain slot). A
+ * MIDI track that follows another records that track's instrument. */
+static void resample_clip_start(seq8_instance_t *inst, const char *val) {
+    int tr_i = -1, c = -1, bars = 0, warm = 0, tail = 0, src = 0, t;
+    const char *path = strchr(val, '|');
+    midi_dest_t dst;
+    sscanf(val, "%d %d %d %d %d %d", &tr_i, &c, &bars, &warm, &tail, &src);
+    if (tr_i < 0 || tr_i >= NUM_TRACKS) {
+        inst->resample_err = RS_ERR_ARGS; inst->resample_state = RS_FAILED; return;
+    }
+    if (rs_refuse(inst, c, bars, tail, path)) return;
+    {
+        const play_fx_t *fx = &inst->tracks[tr_i].pfx;
+        dst = midi_dest_resolve(fx->route, fx->slot, fx->midi_to);
+    }
+    if (!dst.emit || (dst.route != ROUTE_SCHWUNG && dst.route != ROUTE_MOVE)
+            || (src == RS_SRC_DRY && (dst.route != ROUTE_SCHWUNG
+                                      || !g_ext->capture_start_src)))
+        inst->resample_err = RS_ERR_ROUTE;
+    else if (effective_mute(inst, tr_i))
+        inst->resample_err = RS_ERR_MUTED;
+    if (inst->resample_err) { inst->resample_state = RS_FAILED; return; }
+    rs_remember_armed(inst);
+    inst->resample_src  = (uint8_t)(src == RS_SRC_DRY ? RS_SRC_DRY : RS_SRC_WET);
+    inst->resample_slot = dst.slot;
+    for (t = 0; t < NUM_TRACKS; t++) {
+        inst->tracks[t].queued_clip       = -1;
+        inst->tracks[t].will_relaunch     = 0;
+        inst->tracks[t].pending_page_stop = 0;
+    }
+    inst->tracks[tr_i].queued_clip = (int8_t)c;
+    rs_launch(inst, bars, warm, tail, path);
 }

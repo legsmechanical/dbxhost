@@ -74,6 +74,8 @@ const move_midi_fx_offline_ev_t *hx_stub_mfo_input(int *n, int *slot, float *bpm
 void hx_stub_capture_reset(void);
 void hx_stub_capture_refuse(int on);
 int  hx_stub_capture(int *stops, int *block, uint32_t *frames, const char **path);
+/* capture_start_src: the last take's source (MOVE_CAPTURE_MIX for capture_start). */
+int  hx_stub_capture_src(int *kind, int *index);
 /* set_move_info: what the module last published (NULL = never, or withdrawn),
  * and how many times it called. */
 const move_info_t *hx_stub_move_info(void);

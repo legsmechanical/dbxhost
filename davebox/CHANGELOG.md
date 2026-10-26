@@ -15,6 +15,11 @@ the section into a versioned heading at release time.
   optional tail bars for the ring-out. It plays from the top, the metronome stays out
   of it, and the file lands in your sample library under **Samples → dAVEBOx →
   Resample**, where Move's sampler can use it.
+- **Resample a clip.** **Sample → Resample clip** records one track's clip alone — in
+  Session View tap the clip's pad, in Track View it takes the current clip. Choose
+  **Wet** (as you hear it, with sends and Master FX) or **Dry** (just the track's own
+  instrument and effects). After any resample, Play carries on with the clips you had
+  armed.
 
 ### Changed
 - **Sample opens a menu.** Tap **Sample** and choose: **Bake scene**, **Resample

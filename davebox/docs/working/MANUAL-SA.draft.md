@@ -2328,11 +2328,12 @@ is suppressed and shows `—`.
 Tap **Sample** for a short menu of what it can do — turn the jog to choose, press it
 to go, and **Back** steps back a level:
 
-- **Session View:** **Bake scene**, **Resample scene**, **Live merge**.
-- **Track View:** **Bake clip**, **Live merge track**.
+- **Session View:** **Bake scene**, **Resample scene**, **Resample clip**, **Live merge**.
+- **Track View:** **Bake clip**, **Resample clip**, **Live merge track**.
 
 Bake scene and Resample scene then ask for the row: tap a side button, or a step
-button for any of the 16.
+button for any of the 16. Resample clip in Session View asks for the clip: tap its
+pad. In Track View it takes the track's current clip.
 
 ## 16.1 Bake
 
@@ -2555,6 +2556,17 @@ transport first — like the Ableton export, it won't run while playing.
   **Samples → dAVEBOx → Resample**, named after the project, scene, length and tempo
   (`mngk Scene C 4bar 120bpm.wav`), where Move's own sampler can use them. They
   are not part of the project.
+
+**Resample a clip** the same way: **Sample → Resample clip**. Only that track plays
+while it records. Its options add **Source**: **Wet** is the track as you hear it,
+with its send effects and Master FX; **Dry** is just the track's own instrument and
+effects at its level. Dry needs a Schwung instrument — on a Move-instrument track it
+shows `-`, and Warm-up starts on, because a Move instrument sounds a few
+milliseconds late. The file is named like an exported clip (`mngk 3B 2bar 120bpm.wav`).
+A muted track, or one that plays MIDI out, has nothing to record.
+
+After any resample, the clips you had armed are armed again, so Play carries on
+from where you were.
 
 For anything else, use Schwung's two samplers — both work inside dAVEBOx:
 
@@ -2963,7 +2975,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | Play / Shift + Play / Loop + Play | Start-stop / restart / restart at page |
 | Record / Shift + Record | Record / step record |
 | Capture / Shift + Capture | Keep / clear buffered play |
-| Sample | Bake clip / Live merge track (a menu) |
+| Sample | Bake clip / Resample clip / Live merge track (a menu) |
 | Mute / Shift + Mute / Delete + Mute | Mute / solo / clear all |
 | Mute + Play | Metronome on / off |
 | Mute + touch knob / Delete + touch knob | Automation on-off / clear |
@@ -3041,7 +3053,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | Hold Capture, then step / Shift + step / Delete + step | Recall / save / clear device sound snapshot |
 | Copy + clip / side button | Copy clip / row |
 | Capture + side button | Snapshot the playing clips to a row |
-| Sample | Bake scene / Resample scene / Live merge (a menu) |
+| Sample | Bake scene / Resample scene / Resample clip / Live merge (a menu) |
 | Delete + clip / side button | Clear clip / row |
 | Shift + Delete + clip / side button | Reset clip / row's clips |
 | Loop (tap / hold) | Lock / hold Performance Mode |

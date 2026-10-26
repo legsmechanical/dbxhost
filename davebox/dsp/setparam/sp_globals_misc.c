@@ -321,6 +321,11 @@ static int sp_globals_misc(sp_ctx_t *cx) {
         resample_scene_start(inst, val);
         return 1;
     }
+    if (!strcmp(key, "resample_clip")) {
+        /* val = "T C bars warmup tail src |path" — one track's clip, alone. */
+        resample_clip_start(inst, val);
+        return 1;
+    }
     if (!strcmp(key, "resample_clear")) {
         /* The UI has read a finished take's outcome. */
         if (!rs_active(inst)) inst->resample_state = RS_IDLE;
