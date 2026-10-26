@@ -569,7 +569,7 @@ function audioEngine(mode) {
     ENGINE['t' + AU_T + '_au_lazy'] = '0 0 0';
     ENGINE['t' + AU_T + '_au_all_0'] = '0 0 0 0 0 0';
     for (let l = 0; l < 8; l++) ENGINE['t' + AU_T + '_au_sl_0_' + l] = (l * 11025) + ' ' + ((l + 1) * 11025) + ' 0 0 0 0 0 0 0';
-    ENGINE['t' + AU_T + '_au_dir'] = '/data/UserData/UserLibrary/Sets/x/dAVEBOx/samples';
+    ENGINE['t' + AU_T + '_au_dir'] = '/data/UserData/ui-map-fixture/samples';   /* a stand-in: no Sets path */
 }
 async function audioReady(mode) {
     audioEngine(mode);
