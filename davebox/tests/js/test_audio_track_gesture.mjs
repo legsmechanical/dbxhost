@@ -340,6 +340,24 @@ step('⭐⭐ the waveform editor: pads pick, K1/K3 move by a pixel, K2 zooms, cl
     GET['t4_au_info_0'] = INFO(1, 8, 0); A.auMarkStale(4, 0); ticks(20);
 });
 
+step('⭐⭐ scrolling a zoomed waveform never stretches the overview (Josh: "the whole screen turns white")', () => {
+    /* zoomed in, the new window's read pending: the overview stretched fills every column */
+    const A0 = 40000, B0 = 41280;                    /* 10 frames a pixel */
+    const cols = A.auWaveColumns(4, 0, 128, A0, B0);
+    assert(cols && cols.every((v) => v === 0), 'a pending deep window drew the stretched overview: ' + cols.slice(0, 8));
+    /* the read lands: a ramp, column k = k/127 */
+    const ramp = Array.from({ length: 128 }, (_, k) => '00' + k.toString(16).padStart(2, '0')).join('');
+    GET['t4_au_wave_0_' + A0 + '_' + B0] = ramp;
+    ticks(1);
+    const got = A.auWaveColumns(4, 0, 128, A0, B0);
+    assert(Math.abs(got[64] - 64 / 127) < 1e-6, 'the read did not draw: ' + got[64]);
+    /* scrolled 32 pixels on, before ITS read: the last one, shifted */
+    const sc = A.auWaveColumns(4, 0, 128, A0 + 320, B0 + 320);
+    assert(Math.abs(sc[0] - 32 / 127) < 1e-6 && Math.abs(sc[95] - 127 / 127) < 1e-6 && sc[127] === 0,
+           'a scroll did not reuse the last read: ' + [sc[0], sc[95], sc[127]].join());
+    delete GET['t4_au_wave_0_' + A0 + '_' + B0];
+});
+
 step('⭐⭐ Lazy: only the next pad is lit, taps cut, Back asks "Keep N new chops?", Yes edits them', () => {
     reset();
     touchClick(1);

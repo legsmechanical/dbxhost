@@ -67,6 +67,7 @@ let _padKey = '';
 let _marks = { key: '', t: -1, c: -1, v: [], at: -1 };   /* every slice as it plays: [[a, b], ...] frames */
 let _wave = { key: '', amp: null };                       /* the zoomed window's 128 columns */
 let _waveWant = null;                                     /* { t, c, A, B } the editor asks for */
+let _waveLast = null;                                     /* the last window read: drawn from while the next one loads */
 
 export function auParseInfo(raw) {
     if (raw === null || raw === undefined || raw === '') return null;
@@ -230,6 +231,7 @@ export function auTick() {
         const w = _waveWant;
         const raw = String(host_module_get_param('t' + w.t + '_au_wave_' + w.c + '_' + w.A + '_' + w.B) || '');
         _wave = { key: w.key, amp: raw.length >= 512 ? parseCols(raw) : null };
+        if (_wave.amp) _waveLast = { t: w.t, c: w.c, A: w.A, B: w.B, amp: _wave.amp, name: auInfo(w.t, w.c).name };
         _waveWant = null;
         S.screenDirty = true;
     }
@@ -648,25 +650,44 @@ export function auPlayheadJump(t) {
 
 /* ---- the waveform ---- */
 
-/* Columns 0..1 for a w-pixel span of the sample, frames A..B: the zoomed read
- * when the editor has one for exactly that window, else the whole sample's
- * 128 columns stretched (coarse, until the zoomed read lands). */
+/* Columns 0..1 for a w-pixel span of the sample, frames A..B. Each column
+ * comes from the best source that covers it:
+ *   1. the zoomed read of exactly this window;
+ *   2. the last zoomed read, wherever it overlaps (a scroll or a zoom step
+ *      redraws from it at once instead of waiting a tick for the new read);
+ *   3. the whole sample's 128 columns — only where a pixel spans at least
+ *      half of one, so it is never stretched (stretched, one loud column
+ *      filled the screen: found by Josh, "the whole screen turns white while
+ *      adjusting start/end/cursor rapidly");
+ *   4. else nothing (the centre line).
+ * null only when there is no sample or no waveform yet. */
+function fromWindow(win, f0, f1) {
+    if (!win || !win.amp || f1 <= win.A || f0 >= win.B) return null;
+    const span = win.B - win.A;
+    const i0 = Math.max(0, Math.floor((f0 - win.A) / span * 128));
+    const i1 = Math.min(128, Math.max(i0 + 1, Math.ceil((f1 - win.A) / span * 128)));
+    let m = 0;
+    for (let k = i0; k < i1; k++) if (win.amp[k] > m) m = win.amp[k];
+    return m;
+}
 export function auWaveColumns(t, c, w, A, B) {
     const i = auInfo(t, c);
     const fr = i.nframes;
     if (!fr || B <= A) return null;
-    const whole = A <= 0 && B >= fr;
-    const zoom = whole ? null : auWave(t, c, A, B);
-    const amp = zoom || auPeaks(t, c);
-    if (!amp) return null;
-    const a = zoom ? 0 : A / fr, b = zoom ? 1 : B / fr;
+    const peaks = auPeaks(t, c);
+    if (!peaks) return null;
+    const whole = { A: 0, B: fr, amp: peaks };
+    const zoom = (A <= 0 && B >= fr) ? null : auWave(t, c, A, B);
+    const exact = zoom ? { A, B, amp: zoom } : (A <= 0 && B >= fr ? whole : null);
+    const last = (_waveLast && _waveLast.t === t && _waveLast.c === c && _waveLast.name === i.name) ? _waveLast : null;
+    const coarseOk = (B - A) / w >= fr / 128 / 2;
     const out = [];
     for (let x = 0; x < w; x++) {
-        const f0 = a + (b - a) * x / w, f1 = a + (b - a) * (x + 1) / w;
-        const i0 = Math.floor(f0 * 128), i1 = Math.max(i0 + 1, Math.ceil(f1 * 128));
-        let m = 0;
-        for (let k = i0; k < i1 && k < 128; k++) if (amp[k] > m) m = amp[k];
-        out.push(m);
+        const f0 = A + (B - A) * x / w, f1 = A + (B - A) * (x + 1) / w;
+        let m = exact ? fromWindow(exact, f0, f1) : null;
+        if (m === null) m = fromWindow(last, f0, f1);
+        if (m === null && coarseOk) m = fromWindow(whole, f0, f1);
+        out.push(m === null ? 0 : m);
     }
     return out;
 }
