@@ -154,8 +154,9 @@ static void au_render(seq8_instance_t *inst, int frames) {
             au_clip_t *cl = &inst->au_clip[t][c];
             clip_t *lc = &tr->clips[c];
             au_voice_t *lv = au_loop_voice(at);
-            int run = inst->playing && tr->clip_playing && cl->mode == AU_MODE_LOOP && cl->smp &&
-                      !effective_mute(inst, t);
+            /* Mute does not stop the loop: it plays on silently, like a
+             * muted bus, so unmuting picks it up in place (below). */
+            int run = inst->playing && tr->clip_playing && cl->mode == AU_MODE_LOOP && cl->smp;
             if (run) {
                 uint32_t tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
                 int32_t tick = (int32_t)(((int)tr->current_step - (int)lc->loop_start) * (int32_t)tps
@@ -217,11 +218,17 @@ static void au_render(seq8_instance_t *inst, int frames) {
         {
             int32_t acc[256];
             int16_t out[256];
+            /* Mute / solo silence the track's output, as on a bus: the
+             * voices keep running, the level ramps over 64 frames. */
+            int mtarget = effective_mute(inst, t) ? 0 : 64;
             memset(acc, 0, sizeof acc);
             for (i = 0; i < AU_VOICES; i++) if (at->v[i].active) au_voice_render(&at->v[i], acc, frames);
-            for (f = 0; f < frames * 2; f++) {
-                int32_t v = acc[f];
-                out[f] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+            for (f = 0; f < frames; f++) {
+                int32_t l = acc[f * 2], r = acc[f * 2 + 1];
+                if (at->mgain != mtarget) at->mgain = (uint8_t)(at->mgain + (mtarget > at->mgain ? 1 : -1));
+                if (at->mgain < 64) { l = l * at->mgain / 64; r = r * at->mgain / 64; }
+                out[f * 2]     = (int16_t)(l > 32767 ? 32767 : l < -32768 ? -32768 : l);
+                out[f * 2 + 1] = (int16_t)(r > 32767 ? 32767 : r < -32768 ? -32768 : r);
             }
             /* Only into a Schwung slot of its own: a track routed anywhere
              * else has no slot to play through (its `slot` is stale). */

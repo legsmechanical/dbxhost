@@ -532,6 +532,7 @@ static void au_init(seq8_instance_t *inst) {
         memset(&inst->au_trk[t], 0, sizeof inst->au_trk[t]);
         inst->au_trk[t].last_tick = -1;
         inst->au_trk[t].pending_jump = -1;
+        inst->au_trk[t].mgain = 64;
     }
     inst->au_lazy_track = inst->au_lazy_clip = -1;
     inst->au_loader = L;

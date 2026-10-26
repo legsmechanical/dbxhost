@@ -648,6 +648,24 @@ int main(void) {
     hx_set_param(h, "t4_au_set_nudge", "5 0");
     hx_render(h, 4);
 
+    /* ---- Mute is a bus: the loop plays on silently and comes back in place ---- */
+    hx_stub_feed_reset();
+    hx_set_param(h, "transport", "play");
+    for (i = 0; i < 20 && hx_stub_feed(4, NULL, NULL) == 0; i++) hx_render(h, 1);
+    hx_render(h, 9);                                    /* 10 blocks: frames 0..1279 */
+    hx_set_param(h, "t4_mute", "1");
+    hx_render(h, 2);
+    blk = hx_stub_feed_last(4);
+    HX_ASSERT(blk[0] == 0 && blk[254] == 0, "a muted Loop clip was not silent");
+    hx_render(h, 18);                                   /* 30 blocks in all */
+    hx_set_param(h, "t4_mute", "0");
+    hx_render(h, 1);                                    /* block 30: frames 3840..3967, fading in */
+    blk = hx_stub_feed_last(4);
+    HX_ASSERT(blk[254] == 3967, "unmuting restarted the loop instead of carrying on in place");
+    HX_ASSERT(blk[0] < 3840 / 8, "unmuting did not fade in");
+    hx_set_param(h, "transport", "stop");
+    hx_render(h, 4);
+
     /* ---- JmpQ: a jump waits for its 1/16 ---- */
     hx_set_param(h, "t4_au_set_jmpq", "5 1");
     hx_set_param(h, "transport", "play");

@@ -113,6 +113,7 @@ typedef struct {
     int32_t    last_tick;    /* Loop: the clip position last block (wrap = restart) */
     uint8_t    loop_clip;    /* Loop: the clip the loop voice belongs to */
     int8_t     pending_jump; /* Loop, JmpQ on: the jump point waiting for its boundary (-1 none) */
+    uint8_t    mgain;        /* mute as a bus: 0..64, the output's level, ramping one step a frame */
 } au_track_t;
 
 /* Loader mailbox (set_param / render -> loader thread). */
