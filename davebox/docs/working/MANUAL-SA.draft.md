@@ -1239,8 +1239,9 @@ whose file has gone reads *Missing: name* and stays silent.
   puts your old chops back. **Back** before the first tap changes nothing.
 - **Manual** starts over with one slice, Start to End (it asks first if that would
   replace chops you made).
-- **Even** cuts Start..End into 2–32 equal slices (click, turn for the count,
-  click). It sits *over* your chops rather than replacing them: set it back to
+- **Even** cuts Start..End into 2–32 equal slices: click, turn for the count —
+  the pads light for each slice as you turn — and click to keep it (**Back** puts
+  back what you had). It sits *over* your chops rather than replacing them: set it back to
   **Off** and they're still there. A slice's sound settings belong to its number,
   so slice 3 sounds the same either way.
 

@@ -333,8 +333,25 @@ step('⭐⭐ Shift + click: the picker — Load sample / Chop sample › Lazy ·
     /* Even: click edits the count, the jog turns it, a click sets it */
     shiftClick(); jog(1); click(); jog(1); jog(1); click();
     assert(ed.pick.editEven && ed.pick.even === 8, 'Even did not start editing at 8');
+    /* live: each detent slices the clip, and the pads show the count (Josh) */
+    const setP = globalThis.host_module_set_param;
+    globalThis.host_module_set_param = (k, v) => {     /* the engine applies Even, as the real one does */
+        setP(k, v);
+        if (String(k) === 't4_au_set_even') { const e = parseInt(String(v).split(' ')[1], 10); GET['t4_au_info_0'] = e ? INFO(1, e, e) : INFO(1, 1, 0); }
+    };
+    const litPads = () => { ticks(2); return Array.from({ length: 32 }, (_, i) => LEDS.get(C.TRACK_PAD_BASE + i) || 0).filter((v) => v).length; };
+    jog(-1);
+    assert(sent('t4_au_set_even').pop() === '0 7' && A.auInfo(4, 0).n === 7 && litPads() === 7,
+           'Even 7 is not live on the pads: ' + JSON.stringify(sent('t4_au_set_even')) + ' lit ' + litPads());
+    jog(1); jog(1); jog(1);
+    assert(sent('t4_au_set_even').pop() === '0 10' && litPads() === 10, 'Even 10 is not live on the pads: lit ' + litPads());
+    back();                                          /* the clip had Even Off: Back puts that back */
+    assert(sent('t4_au_set_even').pop() === '0 0' && !ed.pick.editEven, 'Back did not put Even Off back: ' + JSON.stringify(sent('t4_au_set_even')));
+    click();                                         /* edit again (from Off: 8), turn to 7, click keeps it */
+    assert(ed.pick.editEven, 'not editing');
     jog(-1); click();
-    assert(sent('t4_au_set_even').join() === '0 7' && !ed.pick, 'Even 7: ' + JSON.stringify(sent('t4_au_set_even')));
+    assert(sent('t4_au_set_even').pop() === '0 7' && !ed.pick, 'Even 7 not kept');
+    globalThis.host_module_set_param = setP;
     /* Manual asks before it replaces the 8 chops made by hand */
     GET['t4_au_info_0'] = INFO(1, 8, 0); A.auMarkStale(4, 0); ticks(2);
     reset();

@@ -394,10 +394,14 @@ function pickInput(ed, status, d1, d2) {
         const dd = decodeDelta(d2);
         if (!dd) return true;
         if (p.editEven) {
-            /* Off, 2..32 */
+            /* Off, 2..32 — live: the clip is sliced as you turn, so the pads
+             * show the count (Josh, 2026-10-28: "can we have even samples
+             * populate dynamically on the pads as we increase/decrease the
+             * number?") */
             let v = p.even + (dd > 0 ? 1 : -1);
             if (v === 1) v = dd > 0 ? 2 : 0;
-            p.even = Math.max(0, Math.min(AU_EVEN_MAX, v));
+            v = Math.max(0, Math.min(AU_EVEN_MAX, v));
+            if (v !== p.even) { p.even = v; setEven(ed, v); }
         } else p.sel = Math.max(0, Math.min(rows.length - 1, p.sel + (dd > 0 ? 1 : -1)));
         S.screenDirty = true;
         return true;
@@ -417,10 +421,16 @@ function pickInput(ed, status, d1, d2) {
             return true;
         }
         if (row.id === 'even') {
-            if (!p.editEven) { const e = auInfo(ed.t, ed.c).even; p.editEven = true; p.even = e || 8; return true; }
-            const v = p.even;
-            ed.pick = null;
-            setEven(ed, v);
+            if (!p.editEven) {
+                /* the clip as it was, for Back; then the count goes live */
+                const i = auInfo(ed.t, ed.c);
+                p.orig = { even: i.even, mode: i.mode };
+                p.editEven = true;
+                p.even = i.even || 8;
+                setEven(ed, p.even);
+                return true;
+            }
+            ed.pick = null;                                  /* kept: it is already applied */
             return true;
         }
         return true;
@@ -428,7 +438,17 @@ function pickInput(ed, status, d1, d2) {
     if (d1 === MoveBack) {
         if (d2 >= 64) { S.backPressTick = nowMs(); S.backHoldFired = false; return true; }
         S.backPressTick = -1; S.backHoldFired = false;
-        if (p.editEven) p.editEven = false;
+        if (p.editEven) {
+            /* Back while turning: the slicing (and mode) it had before */
+            const o = p.orig, t = ed.t, c = ed.c;
+            setEven(ed, o.even);
+            if (o.mode !== AU_MODE_SLICE) {
+                auSet(t, c, 'mode', o.mode);
+                S.auInfo[t][c] = Object.assign({}, auInfo(t, c), { mode: o.mode });
+                S.pendingPadNoteMapRecompute = true;
+            }
+            p.editEven = false;
+        }
         else if (p.level === 2) ed.pick = { level: 1, sel: 1 };
         else ed.pick = null;
         S.screenDirty = true;
