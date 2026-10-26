@@ -8640,6 +8640,18 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
     seq8_instance_t *inst = (seq8_instance_t *)instance;
     if (!key || !out || out_len <= 0) return -1;
 
+    /* au_used: every sample a clip holds, one name per line (Purge). */
+    if (!strcmp(key, "au_used")) {
+        int t, c, n = 0;
+        out[0] = '\0';
+        for (t = 0; t < NUM_TRACKS; t++)
+            for (c = 0; c < NUM_CLIPS; c++) {
+                const char *nm = inst->au_clip[t][c].name;
+                if (!nm[0] || n + (int)strlen(nm) + 2 >= out_len) continue;
+                n += snprintf(out + n, (size_t)(out_len - n), "%s\n", nm);
+            }
+        return n;
+    }
     /* tN_au_*: Audio tracks (setparam/sp_track_audio.c). */
     if (key[0] == 't' && key[2] == '_' && key[3] == 'a' && key[4] == 'u' && key[5] == '_') {
         int r = au_get_param(inst, key, out, out_len);

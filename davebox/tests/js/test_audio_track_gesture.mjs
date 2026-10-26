@@ -242,6 +242,39 @@ step('⭐⭐ Loop mode: no pad plays a lane; pads send jumps (press + release); 
     assert(A.auPlayheadJump(4) === 4, 'the playhead at 25% is not jump point 5 of 16: ' + A.auPlayheadJump(4));
 });
 
+step('⭐⭐ Purge samples: removes what no clip and no saved state uses — only that', () => {
+    const dir = GET['t4_au_dir'];
+    GET['t0_au_dir'] = dir;
+    GET['au_used'] = 'Break Phenom 84 bpm.wav\n';
+    const stateDir = dir.replace(/\/samples$/, '');
+    os.__setReaddir({ [stateDir]: ['seq8sa-state.json', 'seq8sa-snap-1.json', 'samples'],
+                      [dir]: ['Break Phenom 84 bpm.wav', 'old.wav', 'snap \"q\".wav'] });
+    globalThis.__stubStat = { [dir + '/old.wav']: { mode: 0o100644, size: 2097152 },
+                              [dir + '/snap \"q\".wav']: { mode: 0o100644, size: 9 },
+                              [dir + '/Break Phenom 84 bpm.wav']: { mode: 0o100644, size: 9 } };
+    const files = { [stateDir + '/seq8sa-snap-1.json']: '{"v":36,"t4c3_au":"0 0 8 16 0 1000 0 0|snap \\"q\\".wav"}' };
+    const prevRead = globalThis.host_read_file;
+    globalThis.host_read_file = (p) => files[p] || '';
+    const p = CH.auPurgeScan();
+    assert(p.files.length === 1 && p.files[0] === dir + '/old.wav' && p.bytes === 2097152,
+           'purge would remove ' + JSON.stringify(p.files));
+    /* the confirm, answered Yes, removes it */
+    S.globalMenuOpen = true; S.confirmPurge = p; S.confirmPurgeSel = 0;
+    const shown = frame(() => render.drawUI());
+    assert(inked(shown), 'the purge confirm draws nothing');
+    const prevW = globalThis.__stubStdWritten;
+    globalThis.__stubStdWritten = { [dir + '/old.wav']: 'x', [dir + '/Break Phenom 84 bpm.wav']: 'y' };
+    click();
+    assert(!S.confirmPurge, 'the confirm stayed');
+    assert(!(dir + '/old.wav' in globalThis.__stubStdWritten) && (dir + '/Break Phenom 84 bpm.wav' in globalThis.__stubStdWritten),
+           'removed the wrong files: ' + JSON.stringify(Object.keys(globalThis.__stubStdWritten)));
+    assert(S.menuInfoLines.length > 0 && S.menuInfoLines[0] === 'Removed 1 sample', 'no result: ' + JSON.stringify(S.menuInfoLines));
+    globalThis.__stubStdWritten = prevW;
+    S.menuInfoLines = []; S.globalMenuOpen = false;
+    globalThis.host_read_file = prevRead;
+    os.__setReaddir(null); globalThis.__stubStat = null;
+});
+
 step('⭐ Audio -> Drums: Audio off, still a drum track', () => {
     sets.length = 0;
     D.requestTrackModeChange(4, C.PAD_MODE_DRUM);

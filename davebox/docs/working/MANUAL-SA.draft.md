@@ -128,15 +128,16 @@ You work in one of two views and switch between them with **Note/Session**:
 | Pads | Play notes / drum lanes | The clip grid |
 | Steps | The clip's steps | Launch scenes |
 
-## Three kinds of track
+## Four kinds of track
 
-Each track is one of three types, which sets how you enter notes and how the track
+Each track is one of four types, which sets how you enter notes and how the track
 sequences them:
 
 | Type | How it works |
 |---|---|
 | **Melodic** | Scale-snapped notes on the pads and steps — see [Melodic Clips](#6-melodic-clips) |
 | **Drum** | The pads become 32 drum lanes, each its own step sequence — see [Drum Clips](#7-drum-clips) |
+| **Audio** | Each clip plays a sample — as a loop, or chopped into slices you play and sequence like drum lanes — see [Audio tracks](#75-audio-tracks) |
 | **Conductor** | Plays no notes of its own; it transposes the other tracks live — see [The Conductor](#12-the-conductor) |
 
 ## Coming from Move
@@ -574,10 +575,11 @@ A track's **type** sets how you enter notes into it and how it sequences them.
 |---|---|---|
 | Melodic | **Mode → Melodic** | Scale-snapped notes on the pads and steps — [Melodic Clips](#6-melodic-clips) |
 | Drum | **Mode → Drums** | 32 drum lanes, each its own step sequence — [Drum Clips](#7-drum-clips) |
+| Audio | **Mode → Audio** | A sample per clip, looped or sliced — [Audio tracks](#75-audio-tracks) |
 | Conductor | **Instmt/Dest → Conductor** | Plays no notes of its own; transposes the other tracks — [The Conductor](#12-the-conductor) |
 
-- **Melodic** and **Drums** are the **Mode** row of the track's TRACK CONFIG
-  menu. Scrolling previews the type; clicking commits it.
+- **Melodic**, **Drums** and **Audio** are the **Mode** row of the track's TRACK
+  CONFIG menu. Scrolling previews the type; clicking commits it.
 - **Conductor** is chosen in the **Instmt/Dest** picker instead (**Shift + click**
   the row), just after the Move instruments. To turn a Conductor back into an
   ordinary track, choose an instrument in the same picker.
@@ -597,6 +599,11 @@ velocity) and **resets the sequencer effects** (NOTE FX, HARMONY, DELAY, SEQ ARP
   ones), and per-step conditions are dropped.
 - **Drum → Melodic** doesn't ask. The lanes merge into one clip with the length of
   the first lane that has notes, and per-step conditions are dropped.
+- **→ Audio** becomes a drum track first (a melodic track with notes asks, as
+  above), removes the track's instrument — its effects stay — and plays through
+  the track's own Schwung slot. **Drums → Audio** keeps the lanes and their hits.
+- **Audio → Drums / Melodic** doesn't ask. The clips let go of their samples; the
+  files stay in the project until you [purge them](#75-audio-tracks).
 - **Making a Conductor** always asks (*Make Conductor?*). It keeps the notes and
   their conditions, and clears effects, arps and automation. Only one track can be
   the Conductor; trying on a second track says which track already is. Choosing an
@@ -1178,6 +1185,62 @@ top two rows are an 8-step **gate mask** — see the [drum pad diagram](#7-drum-
 - **Delete + lane pad** clears the lane's hits (*LANE CLEARED*).
 - **Shift + Delete + lane pad** resets the lane — hits, length, loop, effects and
   repeat groove — but keeps its sound (*LANE RESET*).
+
+## 7.5 Audio tracks
+
+An **Audio** track is a drum track whose lanes play **slices of a sample** instead
+of sending notes. Everything a drum track does — steps, per-lane length and loop,
+conditions, ratchets, Note Repeat, NOTE FX, DELAY echoes, lane mute and solo,
+recording, Capture — works on slices. Its sound runs through the track's own
+Schwung slot, so its effects, fader, pan, sends and mute apply.
+
+**Each clip has its own sample** and its own **Mode**:
+
+| Mode | How it plays | The pads |
+|---|---|---|
+| **Loop** | The sample plays with the clip, from its start each time the clip comes round. A new pick sets the clip's length to the sample's, in whole bars at the tempo. | **Jump points**: row by row from the bottom-left, 8 a row. Tap one while playing to jump there (not recorded); stopped, hold one to hear from there. The pad under the playback position lights white and moves. |
+| **Slice** | Up to **32 slices**, one per lane, played and sequenced like drum hits. Always one at a time: a new slice cuts the last. Velocity is ignored. | **All 32 pads are slices**: the left 4×4 is slices 1–16, the right 4×4 slices 17–32. |
+
+**Choosing a sample.** On the **SAMPLE** bank, touch **Smpl** and click the jog.
+The list starts with **This project** (samples it already holds), **dAVEBOx
+Resample**, **Recordings**, **Samples** and the **Core Library**; turn and click
+into a folder. The file under the cursor plays as you rest on it (WAV or AIFF).
+Click a file to pick it: dAVEBOx **copies it into the project**, so the project
+keeps its sounds when copied or when the library changes. **None** clears the clip.
+Slice mode takes samples up to 4 minutes; Loop mode up to 10.
+
+**SAMPLE bank** (the current clip):
+
+| Knob | Does |
+|---|---|
+| Smpl | Touch + click: choose the sample |
+| Mode | Loop or Slice |
+| Start / End | The part of the sample that loops or is sliced |
+| Slice (Slice mode) | How many even slices (1–32). Touch + click opens the slice editor |
+| Chop (Slice mode) | Touch + click: one hit per slice, in order, so the clip plays the sample back as it was — now as slices you can rearrange |
+| Jump (Loop mode) | How many jump points: 2, 4, 8, 16 or 32 |
+| Len (Loop mode) | The sample's length |
+| Pitch / Gain | For the whole clip (Pitch changes speed; the clip's length stays) |
+
+**SLICE bank** (the selected slice — the selected lane): **Start** (nudge, ms),
+**Len** (how much of the slice plays), **Pitch**, **Gain**, **Revrs**, **Attk**,
+**Decay**, and **Play** — **One** (to the slice's end), **Gate** (as long as the
+hit), **Loop** (loops the slice for the hit).
+
+**The slice editor** shows the sample with every slice start marked and the
+selected slice bracketed. Tap a pad to pick a slice (it plays); turn the jog to
+move its start (**Shift** for fine) — the slicing becomes *Manual*. **Record**
+starts a **Lazy chop**: the sample plays from its Start and every pad you tap starts
+the next slice there, the first tap being slice 1. It ends when the sample does, on
+**Record** again or on **Back**; then the slices edit like any others. **Back**
+leaves the editor.
+
+**Track View at rest** shows the clip's sample with its slices marked, the selected
+slice bracketed and the playhead moving through it.
+
+**Purge samples.** Samples you no longer use stay in the project. **Project
+Settings → Purge samples** removes every one that no clip and no saved state uses,
+after saying how many and how much space it frees.
 
 ---
 
@@ -2610,6 +2673,7 @@ see [Track settings](#174-track-settings) below.
 | Save state / Load state | Save or restore a named snapshot — see [§17.3](#173-snapshots) | action | — |
 | Clear Sess | Clear the whole project back to empty (asks first) | action | — |
 | Export to Ableton | Write a Live bundle of the project — see [§16.3](#163-export-to-live) | action | — |
+| Purge samples | Remove the project's samples no clip and no saved state uses (asks first) — see [§7.5](#75-audio-tracks) | action | — |
 | Suspend session | Park dAVEBOx and go back to Move (asks first) — see [§3.9](#39-saving-suspending--exiting) | action | — |
 | Quit | Save and hand the device back to official Schwung (asks first) | action | — |
 | Host Settings... | dAVEBOx's copy of Schwung's settings (display, audio and more), over the top of dAVEBOx — see [§17.6](#176-davebox-and-official-schwung) | action | — |

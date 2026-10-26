@@ -21,6 +21,15 @@ the section into a versioned heading at release time.
   instrument and effects). After any resample, Play carries on with the clips you had
   armed.
 
+- **Audio tracks.** A new track type: **Mode → Audio**. Each clip holds its own
+  sample — picked from your library (WAV or AIFF, auditioned as you browse) and
+  copied into the project — and plays it as a **Loop**, with the pads as jump
+  points, or as up to 32 **Slices** you play from all 32 pads and sequence like drum
+  lanes. Slice evenly, set the starts by hand, or **Lazy chop** by tapping pads while
+  it plays; **Chop** lays the slices out on the steps. Two banks shape it: **SAMPLE**
+  and **SLICE**. **Project Settings → Purge samples** clears out the ones you no
+  longer use.
+
 ### Changed
 - **Sample opens a menu.** Tap **Sample** and choose: **Bake scene**, **Resample
   scene** or **Live merge** in Session View; **Bake clip** or **Live merge track** in

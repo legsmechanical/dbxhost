@@ -367,6 +367,8 @@ Shift+Vol+Sample (volume-knob touch required; bare Shift+Sample is the primary m
 
 A module can record through the same sampler with `move_host_ext_v1_t.capture_start/stop` — a **module take** (`sampler_request_start_module`): a fixed number of frames ending inside a block (`sampler_take.h`), always `unity_view`, ignoring MIDI Stop, and silent (no dot, overlay or announcement; the Sample-button intercept stands aside). One take at a time, shared with this sampler. `capture_start_src` takes one chain slot's own output instead (a dry stem: post-FX, at its fader and pan, no sends or Master FX), kept by that slot's mix loop (`sampler_take_tap.h`). A take that drops a block is voided and its file removed.
 
+A module can also play AUDIO through a slot: `move_host_ext_v1_t.slot_audio_feed(slot, lr, frames)` stores one block per slot, stamped with the overtake render's sequence number (`slot_feed.h`); the slot's render task in the next frame sums it into the instrument output before the FX (both render paths), the slot is woken like MIDI wakes it, rendered even with no instrument (`active_mask`, the Link Audio rebuild's `slot_active`), its fade snapped open while fed and shut when the feed lapses after its FX go idle. `tests/host/test_slot_feed.c`, `test_slot_feed_wiring.sh`.
+
 ### Feedback Protection
 
 Loading a chain module / tool that consumes line-in shows "Speaker Feedback Risk" warning if speakers active AND no line-in cable. Jog-click proceeds, Back aborts.

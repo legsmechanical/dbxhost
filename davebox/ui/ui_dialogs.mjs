@@ -125,6 +125,15 @@ function drawClearSessionConfirm() {
     drawYesNoRow(S.confirmClearSel);
 }
 
+function drawPurgeConfirm() {
+    const p = S.confirmPurge;
+    clear_screen();
+    dlgHeader('PURGE SAMPLES');
+    dlgLines(['Remove ' + p.files.length + ' unused sample' + (p.files.length === 1 ? '' : 's'),
+              '(' + (p.bytes / 1048576).toFixed(1) + ' MB) from this project?']);
+    drawYesNoRow(S.confirmPurgeSel);
+}
+
 function drawSaveStateConfirm() {
     clear_screen();
     dlgHeader('SAVE STATE');
@@ -247,6 +256,7 @@ export function drawGlobalMenu() {
     if (S.tapTempoOpen)        { drawTapTempoScreen();       return; }
     if (S.exportDoneDialog)    { drawExportDoneDialog();     return; }
     if (S.confirmClearSession) { drawClearSessionConfirm();  return; }
+    if (S.confirmPurge)        { drawPurgeConfirm();         return; }
     if (S.confirmSaveState)    { drawSaveStateConfirm();     return; }
     if (S.confirmConvertToDrum){ drawConvertToDrumConfirm(); return; }
     if (S.confirmConvertToConduct){ drawConvertToConductConfirm(); return; }

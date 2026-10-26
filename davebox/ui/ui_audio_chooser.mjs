@@ -135,3 +135,40 @@ export function drawAudioChooser() {
     }
     drawKitHintRow(MV_FOOTER_Y, ch.B ? [['clk', 'pick'], ['back', 'up']] : [['clk', 'open'], ['back', 'exit']]);
 }
+
+/* ── PURGE UNUSED SAMPLES (Project menu) ──────────────────────────────────
+ * Josh, 2026-10-26: samples "stay project, but don't come back ... we need a
+ * mechanism to purge unused samples from the project." A file in the
+ * project's samples/ is in use when a clip holds it now (the engine's
+ * au_use list) OR any state file in the project's folder names it — a saved
+ * state (Load state) must still load whole. Runs on the UI thread, never the
+ * audio one. Returns { dir, files: [path], bytes } (files empty: nothing to
+ * purge). */
+function unescJson(s) { return s.replace(/\\(.)/g, '$1'); }
+export function auPurgeScan() {
+    const dir = String(host_module_get_param('t0_au_dir') || '');
+    const out = { dir, files: [], bytes: 0 };
+    if (!dir) return out;
+    const used = new Set(String(host_module_get_param('au_used') || '').split('\n').filter((x) => x));
+    const stateDir = dir.replace(/\/samples$/, '');
+    const re = /"t\d+c\d+_au":"[^|"]*\|((?:[^"\\]|\\.)*)"/g;
+    for (const f of FS.readdir(stateDir)) {
+        if (!/\.json$/.test(f)) continue;
+        const body = String(host_read_file(stateDir + '/' + f) || '');
+        let m;
+        while ((m = re.exec(body)) !== null) used.add(unescJson(m[1]));
+    }
+    for (const f of FS.readdir(dir)) {
+        if (!f || f[0] === '.' || used.has(f)) continue;
+        const [st, err] = (() => { const r = os.stat(dir + '/' + f); return Array.isArray(r) ? r : [r, 0]; })();
+        if (err || !st || (st.mode & 0o170000) === 0o040000) continue;
+        out.files.push(dir + '/' + f);
+        out.bytes += st.size | 0;
+    }
+    return out;
+}
+export function auPurgeRun(files) {
+    let n = 0;
+    for (const p of files) if (os.remove(p) === 0) n++;
+    return n;
+}

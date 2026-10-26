@@ -98,6 +98,7 @@ import { setTrackMute, setTrackSolo, clearAllMuteSolo,
     resetFxBanks, resetBankParams, resetMidiFxChain, resetTarp, resetRptGroove, resetSingleFxBank, applyConductGridKnob, stepHoldCheckpoint , noteUndoUnit } from './ui_editops.mjs';
 import { _resolveLoopGesture, chordApplyRevoice, _onPadRelease, selectTrackFromPad } from './ui_input_pads.mjs';
 import { seqFollowOn, setSeqFollowOn } from './ui_prefs.mjs';
+import { auPurgeRun } from './ui_audio_chooser.mjs';
 import { isAudioTrack, auClipOf, auInfo, auChop, auSampleKnob, auSliceKnob, auSampleKnobDeliberate, auSliceKnobDeliberate,
          AU_MODE_SLICE, BANK_SAMPLE, BANK_SLICE } from './ui_audio.mjs';
 import { openSampleMenu, closeSampleFlow, sampleFlowUp, sampleMenuRotate, sampleMenuPick,
@@ -641,6 +642,16 @@ function modalDialogUp() {
     if (d1 === 3 && d2 === 127 && (S.globalMenuOpen || modalDialogUp())) {
         if (S.exportDoneDialog) {            /* OK dismiss — back to the Project menu */
             S.exportDoneDialog = false;
+            S.screenDirty = true;
+            return;
+        }
+        if (S.confirmPurge) {
+            const _p = S.confirmPurge;
+            S.confirmPurge = null;
+            if (S.confirmPurgeSel === 0) {
+                const _n = auPurgeRun(_p.files);
+                showMenuInfo('Removed ' + _n + ' sample' + (_n === 1 ? '' : 's'), (_p.bytes / 1048576).toFixed(1) + ' MB freed.');
+            }
             S.screenDirty = true;
             return;
         }
@@ -1192,6 +1203,9 @@ function modalDialogUp() {
                 }
             } else if (S.exportDoneDialog) {
                 /* single OK button — jog does nothing */
+            } else if (S.confirmPurge) {
+                const delta = decodeDelta(d2);
+                if (delta !== 0) { S.confirmPurgeSel = S.confirmPurgeSel === 0 ? 1 : 0; S.screenDirty = true; }
             } else if (S.confirmClearSession) {
                 const delta = decodeDelta(d2);
                 if (delta !== 0) { S.confirmClearSel = S.confirmClearSel === 0 ? 1 : 0; S.screenDirty = true; }
@@ -2853,7 +2867,8 @@ function _backTap() {
     /* 2. Global menu (+ its nested confirms): a nested confirm closes to the
      *    menu, otherwise the menu itself closes. */
     if (S.globalMenuOpen) {
-        if (S.confirmClearSession)        { S.confirmClearSession = false; }
+        if (S.confirmPurge)               { S.confirmPurge = null; }
+        else if (S.confirmClearSession)   { S.confirmClearSession = false; }
         else if (S.confirmSaveState)      { S.confirmSaveState = false; }
         else if (S.confirmConvertToDrum)  { closeConvertConfirm(); }
         else if (S.confirmConvertToConduct){ closeConvertConfirm(); }
@@ -4939,7 +4954,7 @@ function _onCC_knobs(d1, d2) {
             }
             return;
         }
-        if (S.globalMenuOpen || S.tapTempoOpen || S.confirmBake || sampleFlowUp() || S.confirmClearSession || S.confirmConvertToDrum || S.confirmModuleChange || S.confirmConvertToConduct || S.menuInfoLines.length > 0 || S.confirmExport || S.exportDoneDialog || S.recordBlockedDialog || S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.bpmMoveInfo) return;
+        if (S.globalMenuOpen || S.tapTempoOpen || S.confirmBake || sampleFlowUp() || S.confirmClearSession || S.confirmPurge || S.confirmConvertToDrum || S.confirmModuleChange || S.confirmConvertToConduct || S.menuInfoLines.length > 0 || S.confirmExport || S.exportDoneDialog || S.recordBlockedDialog || S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.bpmMoveInfo) return;
         const knobIdx = d1 - 71;
         S.knobTouched          = knobIdx;
         S.knobTurnedTick[knobIdx] = nowMs();
