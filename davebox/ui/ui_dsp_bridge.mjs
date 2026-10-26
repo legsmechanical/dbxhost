@@ -64,6 +64,7 @@ import { disarmRecord } from './ui_record.mjs';
 import { followActive } from './ui_prefs.mjs';
 import { dspGet, dspGetInt, dspGetStr, prefetchTrackDigests, releaseTrackDigests,
          prefetchKeys, digestActive } from './ui_dsp_get.mjs';
+import { auReadTrack } from './ui_audio.mjs';
 
 /* Popup counterpart of the host's warnIfLinkDisabled (src/shadow/shadow_ui.js)
  * for a dAVEBOx screen dAVEBOx never opens (the host's own Link/System page).
@@ -1296,6 +1297,13 @@ function readTrackConfig(t) {
     /* Bulk read (project load): re-derive after the last track, below. */
     const pm = dspGet('t' + t + '_pad_mode');
     if (pm !== null && pm !== undefined) S.trackPadMode[t] = parseInt(pm, 10) | 0;
+    /* An Audio track (ui_audio): the flag, and every clip's sample. */
+    const au = dspGet('t' + t + '_au_on');
+    if (au !== null && au !== undefined && au !== '') {
+        S.trackAudio[t] = parseInt(au, 10) ? 1 : 0;
+        if (S.trackAudio[t]) auReadTrack(t);
+        else for (let c = 0; c < 16; c++) S.auInfo[t][c] = null;
+    }
     const tvo = dspGet('t' + t + '_track_vel_override');
     if (tvo !== null && tvo !== undefined) S.trackVelOverride[t] = parseInt(tvo, 10) | 0;
     const trn = dspGet('t' + t + '_transpose');

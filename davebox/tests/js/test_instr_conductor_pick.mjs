@@ -237,7 +237,7 @@ step('⭐ reopening the picker lands the cursor ON Conductor', () => {
     cc(51, 127); cc(51, 0); ticks(2);
 });
 
-step('⭐⭐ the Mode row is GONE on a Conductor, and has two values elsewhere', () => {
+step('⭐⭐ the Mode row is GONE on a Conductor, and has three values elsewhere', () => {
     snd.soundExit(); S.activeTrack = 0; snd.soundEnter(0, 0); ticks(3);
     snd.soundShowMenu(); ticks(2);
     assert(!snd.soundCfgRowsForTest().includes('mode'),
@@ -246,8 +246,9 @@ step('⭐⭐ the Mode row is GONE on a Conductor, and has two values elsewhere',
     snd.soundShowMenu(); ticks(2);
     const mode = snd.soundCfgRowForTest('mode');
     assert(mode, 'an ordinary track lost its Mode row');
-    assert(mode.opts.length === 2, 'Mode still has ' + mode.opts.length + ' values');
-    assert(mode.opts.map(mode.fmt).join(',') === 'Melodic,Drums',
+    /* Audio joined Melodic and Drums as a track type (2026-10-27). */
+    assert(mode.opts.length === 3, 'Mode has ' + mode.opts.length + ' values, not 3');
+    assert(mode.opts.map(mode.fmt).join(',') === 'Melodic,Drums,Audio',
            'Mode reads ' + mode.opts.map(mode.fmt).join(','));
 });
 

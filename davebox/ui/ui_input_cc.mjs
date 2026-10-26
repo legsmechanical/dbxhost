@@ -98,6 +98,8 @@ import { setTrackMute, setTrackSolo, clearAllMuteSolo,
     resetFxBanks, resetBankParams, resetMidiFxChain, resetTarp, resetRptGroove, resetSingleFxBank, applyConductGridKnob, stepHoldCheckpoint , noteUndoUnit } from './ui_editops.mjs';
 import { _resolveLoopGesture, chordApplyRevoice, _onPadRelease, selectTrackFromPad } from './ui_input_pads.mjs';
 import { seqFollowOn, setSeqFollowOn } from './ui_prefs.mjs';
+import { isAudioTrack, auClipOf, auInfo, auChop, auSampleKnob, auSliceKnob, auSampleKnobDeliberate, auSliceKnobDeliberate,
+         AU_MODE_SLICE, BANK_SAMPLE, BANK_SLICE } from './ui_audio.mjs';
 import { openSampleMenu, closeSampleFlow, sampleFlowUp, sampleMenuRotate, sampleMenuPick,
          reopenSampleMenu, menuIndexOf, openResampleOptions, resampleOptionsRotate,
          resampleOptionsClick, resampleOptionsBack, resampleRunning, cancelResample,
@@ -304,6 +306,27 @@ function _onCC_jog(d1, d2) {
         S.screenDirty = true;
         forceRedraw();
         return;
+    }
+
+    /* AUDIO, the SAMPLE bank's triggers (touch + click, as Crop / Legato /
+     * Import): Smpl opens the sample chooser, Slices the slice editor, Chop
+     * lays one trig per slice. */
+    if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld &&
+            S.activeBank === BANK_SAMPLE && isAudioTrack(S.activeTrack) && S.knobTouched >= 0) {
+        const _t = S.activeTrack, _c = auClipOf(_t), _i = auInfo(_t, _c), _k = S.knobTouched;
+        if (_k === 0) { S.pendingAudioChooser = { t: _t, c: _c }; forceRedraw(); return; }
+        if (_k === 4 && _i.mode === AU_MODE_SLICE && _i.state === 2) {
+            S.auEditor = { t: _t, c: _c, sel: Math.min(_i.n - 1, S.activeDrumLane[_t] | 0), lazy: false, lazySeen: false, lazyAt: 0 };
+            S.knobTouched = -1;
+            forceRedraw();
+            return;
+        }
+        if (_k === 5 && _i.mode === AU_MODE_SLICE && _i.state === 2) {
+            auChop(_t, _c);
+            showActionPopup('CHOPPED', _i.n + ' slices to steps');
+            forceRedraw();
+            return;
+        }
     }
 
     /* LEGATO is a trigger (ui_trigger): touch its knob (K4 on the CLIP or
@@ -641,7 +664,8 @@ function modalDialogUp() {
             closeConvertConfirm();
             /* Defer to tick() — this runs in the on_midi path where get_param
              * (inside convertTrackType -> syncClipsFromDsp) returns null. */
-            if (_yes) S.pendingTrackConvert = { t: _ct, toDrum: true };
+            if (_yes) S.pendingTrackConvert = { t: _ct, toDrum: true, toAudio: !!S.confirmConvertAudio };
+            S.confirmConvertAudio = false;
             S.screenDirty = true;
             return;
         }
@@ -1375,6 +1399,7 @@ export function sessWalkTo(mode, rest) {
  *
  * Where the map may arm: the overviews and the bank pages. */
 export function bankMapArmable() {
+    if (S.auChooser || S.auEditor) return false;      /* the audio modals own the click */
     if (S.shiftHeld || S.deleteHeld || S.copyHeld || S.muteHeld || S.loopHeld) return false;
     if (S.knobTouched >= 0 || soundKnobTouched() || S.heldStep >= 0 || S.bankPickerSel >= 0 || S.stepIntervalMode) return false;
     if (S.moveCoRunTrack >= 0 || S.moveSettingsOpen || soundModeCovered()) return false;
@@ -1410,6 +1435,7 @@ export function bankMapArmable() {
  * Move's, so the short one is passed on to Move at the release, and the map
  * shows over Move's editor (ui_corun.mjs coRunMapScreen). */
 export function bankMapDeferrable() {
+    if (S.auChooser || S.auEditor) return false;
     if (S.shiftHeld || S.deleteHeld || S.copyHeld || S.muteHeld || S.loopHeld) return false;
     if (S.knobTouched >= 0 || soundKnobTouched() || S.heldStep >= 0 || S.bankPickerSel >= 0 || S.stepIntervalMode) return false;
     if (S.moveSettingsOpen) return false;
@@ -4950,6 +4976,18 @@ function _onCC_knobs(d1, d2) {
                 computePadNoteMap();
                 forceRedraw();
             }
+            return;
+        }
+        /* AUDIO: the SAMPLE and SLICE banks (ui_audio). Picks step one per
+         * detent run; the sweeps (Start, End, nudge, length, envelope) follow
+         * the continuous curve. */
+        if ((S.activeBank === BANK_SAMPLE || S.activeBank === BANK_SLICE) && isAudioTrack(S.activeTrack)) {
+            const _smp = S.activeBank === BANK_SAMPLE;
+            const _pick = _smp ? (knobIdx === 1 || knobIdx === 4 || knobIdx === 6 || knobIdx === 7)
+                               : (knobIdx === 2 || knobIdx === 3 || knobIdx === 4 || knobIdx === 7);
+            const _st = _pick ? knobStep(knobIdx, d2, (_smp ? auSampleKnobDeliberate(knobIdx) : auSliceKnobDeliberate(knobIdx)) ? KNOB_DELIB : KNOB_PICK)
+                              : ccKnobDelta(d2, knobIdx);
+            if (_st && (_smp ? auSampleKnob : auSliceKnob)(S.activeTrack, knobIdx, _st)) forceRedraw();
             return;
         }
         if (S.activeBank === BANK_CHORD) {

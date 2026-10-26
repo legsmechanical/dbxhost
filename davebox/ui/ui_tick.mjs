@@ -83,6 +83,11 @@ import { cardHoldExpired } from './ui_prefs.mjs';
 import { heldIndicatorChanged } from './ui_chord.mjs';
 import { printTick } from './ui_print.mjs';
 import { resampleTick } from './ui_resample.mjs';
+import { auTick, auSetTrackAudio, auReadTrack } from './ui_audio.mjs';
+import { openAudioChooser, closeAudioChooser, audioChooserTick } from './ui_audio_chooser.mjs';
+import { closeAudioEditor } from './ui_audio_editor.mjs';
+import { applyInstrChoice } from './ui_dsp_bridge.mjs';
+import { INSTR_NONE } from './ui_constants.mjs';
 
 const BANK_DISPLAY_MS = 1000;
 const KNOB_TURN_HIGHLIGHT_MS = 600;               /* highlight after turn without touch */
@@ -517,7 +522,25 @@ export function _tickImpl() {
     if (S.pendingTrackConvert) {
         const _pc = S.pendingTrackConvert;
         S.pendingTrackConvert = null;
-        convertTrackType(_pc.t, _pc.toDrum);
+        /* Audio (ui_audio): off before a conversion away, on after the one
+         * that made it a drum track (the engine wants a drum track). */
+        if (_pc.audioOff) auSetTrackAudio(_pc.t, false);
+        const _wantPm = _pc.toDrum ? PAD_MODE_DRUM : PAD_MODE_MELODIC_SCALE;
+        if (S.trackPadMode[_pc.t] !== _wantPm) convertTrackType(_pc.t, _pc.toDrum);
+        if (_pc.toAudio) {
+            auSetTrackAudio(_pc.t, true);
+            /* Its own Schwung slot, no instrument; the FX stay. */
+            applyInstrChoice(_pc.t, INSTR_NONE);
+            host_module_get_param('t' + _pc.t + '_au_on');   /* the barrier: the switch lands before the padmap */
+            auReadTrack(_pc.t);
+            computePadNoteMap();
+            invalidateLEDCache();
+            forceRedraw();
+        } else if (_pc.audioOff) {
+            computePadNoteMap();
+            invalidateLEDCache();
+            forceRedraw();
+        }
     }
 
     if (S.pendingConductConvert !== null) {
@@ -2260,6 +2283,19 @@ export function _tickImpl() {
             S.screenDirty = true;
         }
         miTick();
+
+        /* AUDIO TRACKS: the sample chooser opens here (it lists a folder);
+         * its audition clock; the active Audio clip's reads; the modals close
+         * when the track changes or Session View takes over. */
+        if (S.pendingAudioChooser) {
+            const _ac = S.pendingAudioChooser;
+            S.pendingAudioChooser = null;
+            if (_ac.t === S.activeTrack && !S.sessionView) openAudioChooser(_ac.t, _ac.c);
+        }
+        if (S.auChooser && (S.auChooser.t !== S.activeTrack || S.sessionView)) closeAudioChooser();
+        if (S.auEditor && (S.auEditor.t !== S.activeTrack || S.sessionView)) closeAudioEditor();
+        audioChooserTick();
+        auTick();
         if (S.pendingGrooveMenuReturn) {
             S.pendingGrooveMenuReturn = false;
             if (!miActive()) openGlobalMenuAt('Groove');

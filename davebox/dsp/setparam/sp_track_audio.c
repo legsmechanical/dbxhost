@@ -450,6 +450,11 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
     t = key[1] - '0';
     const char *k = key + 6;
     if (!strcmp(k, "on")) return snprintf(out, out_len, "%d", inst->tracks[t].audio);
+    if (!strcmp(k, "dir")) {                      /* the project's samples/ (the chooser lists it) */
+        char d[256];
+        au_samples_dir(inst, d, sizeof d);
+        return snprintf(out, out_len, "%s", d);
+    }
     if (!strncmp(k, "info_", 5)) {
         c = my_atoi(k + 5);
         if (c < 0 || c >= NUM_CLIPS) return -1;

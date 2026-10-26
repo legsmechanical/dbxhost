@@ -70,6 +70,101 @@ import { seqAutoTargetForKnob, fmtInstr } from './ui_constants.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
+import { isAudioTrack, auClipOf, auInfo, auSampleCells, auSliceCells, auSampleName, auWaveColumns, auStartsCached,
+         auPos, auLazy, AU_MODE_SLICE, BANK_SAMPLE, BANK_SLICE } from './ui_audio.mjs';
+import { drawAudioChooser } from './ui_audio_chooser.mjs';
+
+/* ---- AUDIO TRACKS: the waveform (ui_audio) ----
+ * The clip's sample in a rect: its body, every slice start a dotted tick,
+ * the selected slice bracketed, Start..End's outside dimmed, the playhead a
+ * solid line. `a`/`b` = the part of the sample shown (fractions). */
+function drawAudioWave(t, c, x, y, w, h, opts) {
+    const o = opts || {};
+    const a = o.a != null ? o.a : 0, b = o.b != null ? o.b : 1;
+    const cols = auWaveColumns(t, c, w, a, b);
+    const i = auInfo(t, c);
+    const mid = y + Math.floor(h / 2);
+    const fx = (f) => x + Math.round((f - a) / (b - a) * (w - 1));
+    if (!cols) {
+        const msg = i.state === 1 ? 'LOADING' : i.name ? '' : 'NO SAMPLE';
+        if (msg) ovwPrint(x + Math.floor((w - ovwWidth(msg)) / 2), mid - 2, msg, 1);
+        else fill_rect(x, mid, w, 1, 1);
+        return;
+    }
+    for (let k = 0; k < w; k++) {
+        const hh = Math.max(0, Math.round(cols[k] * (h - 1) / 2));
+        fill_rect(x + k, mid - hh, 1, hh * 2 + 1, 1);
+    }
+    /* outside Start..End: hatched off */
+    const rs = i.rstart / 1000, re = i.rend / 1000;
+    for (let k = 0; k < w; k++) {
+        const f = a + (b - a) * (k + 0.5) / w;
+        if (f < rs || f > re) for (let j = y; j < y + h; j++) if (((k + j) & 1) === 0) set_pixel(x + k, j, 0);
+    }
+    if (i.mode === AU_MODE_SLICE && !o.noMarks) {
+        const st = auStartsCached(t, c);
+        const sel = o.sel != null ? o.sel : -1;
+        for (let k = 0; k < st.length; k++) {
+            const px = fx(st[k]);
+            if (px < x || px >= x + w) continue;
+            if (k === sel) {
+                fill_rect(px, y, 1, h, 1);
+                fill_rect(px, y, 3, 1, 1); fill_rect(px, y + h - 1, 3, 1, 1);
+            } else {
+                for (let j = y; j < y + h; j += 2) set_pixel(px, j, 1);
+            }
+        }
+        if (sel >= 0 && sel < st.length) {
+            const e = sel + 1 < st.length ? st[sel + 1] : re;
+            const px = Math.min(x + w - 1, fx(e));
+            fill_rect(px, y, 1, h, 1);
+            fill_rect(px - 2, y, 3, 1, 1); fill_rect(px - 2, y + h - 1, 3, 1, 1);
+        }
+    }
+    const p = auPos();
+    if (p.t === t && p.on) {
+        const px = fx(p.abs);
+        if (px >= x && px < x + w) {
+            fill_rect(px, y - 1, 1, h + 2, 0);
+            fill_rect(px + 1, y - 1, 1, h + 2, 1);
+        }
+    }
+}
+
+/* Track View at rest on an Audio track: the drum overview, with the clip's
+ * sample in the place of the position bar. */
+function drawAudioTrackRest(t) {
+    const c = auClipOf(t), i = auInfo(t, c);
+    (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankHeaderName(t, S.activeBank), false, true);
+    const lane = S.activeDrumLane[t] | 0;
+    const head = i.mode === AU_MODE_SLICE
+        ? 'Slice ' + (lane + 1) + '/' + i.n + '  '
+        : 'Loop  ';
+    ovwPrint(4, 9, head + auSampleName(t, c), 1);
+    drawInfoRow2();
+    drawOverviewTracks(overviewHints());
+    drawAudioWave(t, c, 4, 49, 120, 7, { sel: lane });
+}
+
+/* The slice editor (SAMPLE bank, Slices: touch + click): the sample big, the
+ * selected slice bracketed; pads pick and play a slice, the jog moves its
+ * start (Shift: fine), Record runs a Lazy chop. */
+function drawAudioSliceEditor() {
+    const ed = S.auEditor, t = ed.t, c = ed.c, i = auInfo(t, c);
+    clear_screen();
+    drawBankHeading(ed.lazy ? 'LAZY CHOP' : 'SLICES', false);
+    const st = auStartsCached(t, c);
+    const lz = auLazy();
+    let line;
+    if (ed.lazy) line = lz.on ? 'Tap pads: ' + lz.n + ' slices' : 'Rec to start, tap pads';
+    else line = 'Slice ' + (ed.sel + 1) + '/' + i.n + '  ' + (st[ed.sel] != null ? (st[ed.sel] * 100).toFixed(1) + '%' : '--');
+    ovwPrint(4, 11, line, 1);
+    drawAudioWave(t, c, 3, 21, 122, 30, { sel: ed.lazy ? -1 : ed.sel });
+    drawKitHintRow(MV_FOOTER_Y, ed.lazy
+        ? [['rec', lz.on ? 'stop' : 'start'], ['back', 'done']]
+        : [['pad', 'pick'], ['jog', 'move'], ['rec', 'lazy']]);
+}
+
 
 /* ------------------------------------------------------------------ */
 /* Parameter bank definitions                                           */
@@ -811,7 +906,7 @@ function midiNoteName(n) { return noteLabel(n, false); }
  * drum aliases used to live inline in the drum render branch below, which is
  * how the picker ended up listing different names than the header. */
 function bankHeaderName(t, bank) {
-    return bankDisplayName(S.trackPadMode[t], bank);
+    return bankDisplayName(S.trackPadMode[t], bank, t);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1573,6 +1668,7 @@ export function coveredByMoreThanMenu() {
         S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.confirmModuleChange || S.bpmMoveInfo || S.recordBlockedDialog ||
         S.confirmConvertToDrum || S.confirmConvertToConduct ||
         S.confirmBakeScene || S.confirmBake || S.sampleMenu || S.confirmResample || S.confirmMacroClear || S.tapTempoOpen ||
+        S.auChooser || S.auEditor ||
         (S.sessionView && (S.loopHeld || S.perfViewLocked)));
 }
 
@@ -1587,6 +1683,7 @@ export function soundModeCovered() {
         S.confirmXpose || S.confirmBakeScene || S.confirmBake || S.sampleMenu || S.confirmResample ||
         S.confirmMacroClear ||   /* MACROS bank clear — opened FROM sound mode, so it must cover it */
         S.globalMenuOpen || S.tapTempoOpen ||
+        S.auChooser || S.auEditor ||    /* the Audio track's chooser and slice editor */
         (S.sessionView && (S.loopHeld || S.perfViewLocked)));
 }
 
@@ -1889,6 +1986,9 @@ function drawUIBody() {
     if (S.sessionOverlayHeld) { drawSessionOverview(); return; }
     if (S.daveBox) { drawDaveBox(); return; }
     if (miActive()) { drawMidiImport(); return; }
+    /* AUDIO TRACKS' modals: the sample chooser, the slice editor. */
+    if (S.auChooser) { drawAudioChooser(); return; }
+    if (S.auEditor) { drawAudioSliceEditor(); return; }
     if (S.snapshotPicker) { drawSnapshotPicker(); return; }
     if (S.templateManager || (S.templateNameEntry && templateTextEntryUp())) { drawTemplateManager(); return; }
     /* ⭑ The exit confirm outranks the picker (2026-09-16). Hold-Back already
@@ -2285,6 +2385,23 @@ function drawUIBody() {
             renderTrackGatewayCard(S.activeTrack);
             return;
         }
+        /* AUDIO: the SAMPLE and SLICE banks (ui_audio owns the cells). */
+        if ((bank === BANK_SAMPLE || bank === BANK_SLICE) && isAudioTrack(S.activeTrack)) {
+            const _t = S.activeTrack;
+            if (bank === BANK_SAMPLE) {
+                drawKitPage(bankHeaderName(_t, bank), auSampleCells(_t), false, [['tch+clk', 'open']]);
+                return;
+            }
+            const _cells = auSliceCells(_t);
+            if (_cells) {
+                drawKitPage('SLICE ' + ((S.activeDrumLane[_t] | 0) + 1), _cells, false, null);
+            } else {
+                drawBankHeading('SLICE', false);
+                ovwPrint(4, 22, 'A Loop clip has no slices.', 1);
+                ovwPrint(4, 32, 'SAMPLE bank: Mode -> Slice', 1);
+            }
+            return;
+        }
         if (bank === BANK_CONFIG) {
             renderConfigCardPeek(S.activeTrack);
             return;
@@ -2645,6 +2762,8 @@ function drawUIBody() {
         drawKitPage(bankHeaderName(S.activeTrack, bank), markKnobAlts(cells, bank), false, bankPageHints(bank), _focusIdx);
         }
 
+    } else if (isAudioTrack(S.activeTrack)) {
+        drawAudioTrackRest(S.activeTrack);
     } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
         /* Drum Track View — idle state */
         const t         = S.activeTrack;

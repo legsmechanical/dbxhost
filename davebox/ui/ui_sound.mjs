@@ -520,10 +520,12 @@ function configRows(t) {
      * is previewed and applied when the edit closes. The rules (and the
      * confirms) are requestTrackModeChange's; this row only chooses a target. */
     if (GS.trackPadMode[t] !== PMC) {
+        /* 3 = AUDIO: a drum track whose lanes play slices of each clip's
+         * sample (ui_audio.mjs) — a UI value, the pad mode stays DRUM. */
         rows.push({ key: 'mode', label: 'Mode', commitOnClick: true,
-            opts: [0, 1],
-            fmt: (v) => (v ? 'Drums' : 'Melodic'),   /* Josh, 2026-10-01: "key track mode should be melodic" */
-            get: () => GS.trackPadMode[t] | 0,
+            opts: [0, 1, 3],
+            fmt: (v) => (v === 3 ? 'Audio' : v ? 'Drums' : 'Melodic'),   /* Josh, 2026-10-01: "key track mode should be melodic" */
+            get: () => (GS.trackAudio[t] ? 3 : GS.trackPadMode[t] | 0),
             set: (v) => requestTrackModeChange(t, v | 0) });
     }
     /* The pad layout lives on the PADMODE bank (K1 Mode) and Shift + Step 8

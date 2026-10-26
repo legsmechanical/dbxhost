@@ -2290,10 +2290,33 @@ export function projectPickerTextEntryTick()     { return _pppGuard('kbdt', _pro
  * ⚠ The dialogs it raises MUST be drawn above Track Control and must gate its
  * input — see drawUI's pre-soundRender list and soundModeCovered(). */
 export function requestTrackModeChange(t, target) {
-    const cur = S.trackPadMode[t];
+    /* 3 = AUDIO (ui_audio.mjs): a drum track whose lanes play slices. */
+    const cur = S.trackAudio[t] ? 3 : S.trackPadMode[t];
     if (target === cur) return;
     if (S.playing) {
         showMenuInfo('Stop playback', 'to change the', 'track type.');
+        return;
+    }
+    /* -> Audio: a drum track first (its notes become lanes: the same confirm
+     * as Drums when a melodic track has notes), then the Audio switch, which
+     * also removes the instrument (the FX stay). Drums -> Audio keeps the
+     * lanes and steps and asks nothing. */
+    if (target === 3) {
+        let hasData = false;
+        if (cur !== PAD_MODE_DRUM)
+            for (let c = 0; c < NUM_CLIPS; c++) if (S.clipNonEmpty[t][c]) { hasData = true; break; }
+        if (hasData) {
+            S.confirmConvertToDrum = true; S.confirmConvertToDrumSel = 1;
+            S.confirmConvertTrack = t; S.confirmConvertAudio = true;
+        } else {
+            S.pendingTrackConvert = { t: t, toDrum: true, toAudio: true };
+        }
+        return;
+    }
+    /* Audio -> Drums / Melodic: the clips forget their samples (the files stay
+     * in the project). */
+    if (cur === 3) {
+        S.pendingTrackConvert = { t: t, toDrum: target === PAD_MODE_DRUM, audioOff: true };
         return;
     }
     if (target === PAD_MODE_DRUM) {
@@ -2302,7 +2325,7 @@ export function requestTrackModeChange(t, target) {
             if (S.clipNonEmpty[t][c]) { hasData = true; break; }
         if (hasData) {
             S.confirmConvertToDrum = true; S.confirmConvertToDrumSel = 1;
-            S.confirmConvertTrack = t;
+            S.confirmConvertTrack = t; S.confirmConvertAudio = false;
         } else {
             S.pendingTrackConvert = { t: t, toDrum: true };
         }

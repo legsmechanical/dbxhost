@@ -13,6 +13,11 @@ import {
     NO_NOTE_FLASH_MS, BANK_PADMODE
 } from './ui_constants.mjs';
 import { S, loopViewActive, markJsUndo } from './ui_state.mjs';
+import { isAudioTrack, auPadToJump, auJump } from './ui_audio.mjs';
+import { audioSliceMode } from './ui_pure.mjs';
+
+/* AUDIO, Loop mode: the jump point each held pad started (for its release). */
+const audioJumpHeld = new Map();
 import { autoHoldJumpBegin, autoHoldJumpEnd } from './ui_automation_bank.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { automationClearStep, automationExtendPress, automationExtendFromLock } from './ui_automation.mjs';
@@ -362,6 +367,18 @@ function _onPadPressTrackView(status, d1, d2) {
 
     if (d1 >= TRACK_PAD_BASE && d1 < TRACK_PAD_BASE + 32) {
         const padIdx = d1 - TRACK_PAD_BASE;
+
+        /* AUDIO, Loop mode: the pads are JUMP POINTS, row by row from the
+         * bottom-left (8 a row). A tap jumps the playing loop there (live
+         * only: never recorded); stopped, a held pad plays from there. Pads
+         * past the clip's Jump count do nothing. Modifier gestures go on. */
+        if (isAudioTrack(S.activeTrack) && !audioSliceMode(S.activeTrack) &&
+                !S.shiftHeld && !S.deleteHeld && !S.copyHeld && !S.muteHeld) {
+            const k = auPadToJump(S.activeTrack, padIdx);
+            if (k >= 0) { auJump(S.activeTrack, k, true); audioJumpHeld.set(padIdx, k); }
+            S.screenDirty = true;
+            return;
+        }
 
 
         /* Drum lane RESET: Shift+Delete+lane pad — full factory reset (length,
@@ -2005,6 +2022,11 @@ export function toggleLiveArp(t) {
 
 export function _onPadRelease(status, d1, d2) {
     if (S.projectPadPicker && d1 >= 68 && d1 <= 99) return;
+    if (audioJumpHeld.has(d1 - TRACK_PAD_BASE)) {
+        auJump(S.activeTrack, audioJumpHeld.get(d1 - TRACK_PAD_BASE), false);
+        audioJumpHeld.delete(d1 - TRACK_PAD_BASE);
+        return;
+    }
     if (S.mergeNoticePending) return;   /* Live Merge notice is modal (Rec/Back only) */
     if (S.tapTempoOpen && d1 >= 68 && d1 <= 99) return;
     /* Co-run drum hold release: if the hold-threshold inject fired, send note-off

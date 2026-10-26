@@ -493,6 +493,16 @@ export const S = {
     pendingMenuAt: null,                      /* a Project Settings row label: the tick opens the menu on it */
     moveCoRunDrumHeld: new Set(),             /* d1 notes of drum lane pads currently held in co-run — per-pad Set so a 2nd simultaneous hold doesn't clobber the 1st's tracking (js-input-1). Plain pad note-off (no Shift injection) sent per held pad on physical release / co-run exit */
     trackPadMode: new Array(8).fill(0),
+    /* AUDIO TRACKS (ui_audio.mjs): a track whose pad mode is DRUM and whose
+     * lanes play slices of each clip's sample. Mirrors the DSP's tN_au_on. */
+    trackAudio: new Array(8).fill(0),
+    /* Per track per clip: the DSP's tN_au_info_C, parsed (ui_audio auInfo). */
+    auInfo: Array.from({ length: 8 }, () => new Array(16).fill(null)),
+    auStartsRev: 0,          /* bumped when slice starts may have moved */
+    auEditor: null,          /* the slice editor: { t, c, sel, lazy, lazyStarted } */
+    auChooser: null,         /* the sample chooser (ui_audio_chooser.mjs) */
+    pendingAudioChooser: null,    /* { t, c }: the tick opens the chooser (it lists a folder) */
+    confirmConvertAudio: false,   /* the convert confirm is for Audio, not Drums */
     trackVelOverride: new Array(8).fill(0),
     /* Track transpose: semitones (-24..+24) applied to EVERYTHING this track
      * plays, live and sequenced, on its way out — so it lands the same whether

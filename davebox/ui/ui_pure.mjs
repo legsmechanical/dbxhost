@@ -16,6 +16,21 @@ import { PAD_MODE_DRUM, PAD_MODE_CONDUCT, NUM_STEPS, BANKS,
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION,
     BANK_CHORD, BANK_CONFIG, isSoundBank } from './ui_constants.mjs';
 
+/* AUDIO TRACKS (ui_audio.mjs): the bank indices, mirrored here so this module
+ * stays free of ui_audio's imports. A drum-mode track with S.trackAudio set. */
+const BANK_SAMPLE = 17, BANK_SLICE = 18;
+function audioT(padMode, t) {
+    const tt = (t === undefined || t === null) ? S.activeTrack : t;
+    return padMode === PAD_MODE_DRUM && !!(S.trackAudio && S.trackAudio[tt]);
+}
+/* The Audio track's current clip is in Slice mode (ui_audio auClipOf / auInfo). */
+export function audioSliceMode(t) {
+    const qc = S.trackQueuedClip[t];
+    const c = (!S.playing && qc >= 0) ? qc : (S.trackActiveClip[t] | 0);
+    const i = S.auInfo && S.auInfo[t] && S.auInfo[t][c];
+    return !!(i && i.mode === 1);
+}
+
 /* Live pad note input — isomorphic 4ths diatonic layout.
  * EXPORTED for ui.js's computePadNoteMap (impure, moves in Phase 5) — do not
  * un-export as an "unused externally" cleanup while that consumer remains. */
@@ -60,9 +75,15 @@ export const SCALE_INTERVALS = [
  * heading and overlay"; CLIP "rename conduct", ON/OFF "RENAME RESPONDER",
  * TIMING "RENAME WHEN"). */
 const CONDUCT_NAMES = { 0: 'CLIP', [BANK_RESPONDER]: 'ON/OFF', [BANK_WHEN]: 'TIMING' };
-export function bankDisplayName(padMode, bank) {
+export function bankDisplayName(padMode, bank, t) {
     const base = (BANKS[bank] && BANKS[bank].name) || '?';
     if (padMode === PAD_MODE_CONDUCT) return CONDUCT_NAMES[bank] || base;
+    /* An Audio track's lanes are its slices. */
+    if (audioT(padMode, t)) {
+        if (bank === 0) return 'SLICE LANE';
+        if (bank === 5) return 'RPT GROOVE';
+        if (bank === 7) return 'ALL SLICES';
+    }
     if (padMode === PAD_MODE_DRUM) {
         if (bank === 0) return 'DRUM LANE';
         if (bank === 5) return 'RPT GROOVE';
@@ -80,7 +101,7 @@ export function bankDisplayName(padMode, bank) {
  * can both call it without either importing the other. */
 export function bankCycleForMode(padMode, t) {
     /* THE WALK: the track's banks minus the DOORS (below). */
-    return bankListForMode(padMode, t).filter((b) => !bankIsDoor(padMode, b));
+    return bankListForMode(padMode, t).filter((b) => !bankIsDoor(padMode, b, t));
 }
 
 /* THE TRACK'S BANKS, in their full order — every bank this track has, the
@@ -101,10 +122,11 @@ export function bankListForMode(padMode, t) {
 const BANK_WALK_DOORS = {
     melodic: [BANK_CONFIG, BANK_AUTOMATION],
     drum:    [BANK_CONFIG, BANK_AUTOMATION],
+    audio:   [BANK_CONFIG, BANK_AUTOMATION],
     conduct: [BANK_CONFIG],
 };
-export function bankIsDoor(padMode, bank) {
-    return BANK_WALK_DOORS[bankMapFamily(padMode)].indexOf(bank) >= 0;
+export function bankIsDoor(padMode, bank, t) {
+    return BANK_WALK_DOORS[bankMapFamily(padMode, t)].indexOf(bank) >= 0;
 }
 
 /* The walk's categories, for the bank column: the doors left out of each
@@ -113,7 +135,7 @@ export function bankIsDoor(padMode, bank) {
 export function bankWalkCategoriesForMode(padMode, t) {
     const out = [];
     for (const g of bankCategoriesForMode(padMode, t)) {
-        const banks = g.banks.filter((b) => !bankIsDoor(padMode, b));
+        const banks = g.banks.filter((b) => !bankIsDoor(padMode, b, t));
         if (banks.length) out.push(Object.assign({}, g, { banks }));
     }
     return out;
@@ -144,6 +166,16 @@ export function bankCategoriesForMode(padMode, t) {
         { label: null,   banks: [BANK_STEP] },
         { label: null,   banks: [1] },
         { label: 'RSPD', banks: [BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN] },
+    ];
+    /* AUDIO: the drum walk, with the SOUND category (SAMPLE, SLICE) before MIX. */
+    if (audioT(padMode, t)) return [
+        { label: null,   banks: [BANK_CONFIG] },
+        { label: 'IN',   banks: [5] },
+        { label: 'CTRL', banks: [BANK_MACROS, BANK_AUTOMATION] },
+        { label: 'SEQ',  banks: [BANK_STEP, 7, 0] },
+        { label: 'FX',   banks: [1, 3], depth: 1 },
+        { label: 'SND',  banks: [BANK_SAMPLE, BANK_SLICE] },
+        { label: null,   banks: [BANK_SOUND] },
     ];
     if (padMode === PAD_MODE_DRUM) return [
         { label: null,   banks: [BANK_CONFIG] },
@@ -187,6 +219,10 @@ const BANK_MAP_POS = {
                [BANK_MACROS]: [1, 0], [BANK_AUTOMATION]: [1, 1], [BANK_SOUND]: [1, 3],
                [BANK_STEP]: [2, 0], 0: [2, 1], 7: [2, 2],
                1: [3, 0], 3: [3, 2] },
+    audio:   { [BANK_SAMPLE]: [0, 0], 5: [0, 1], [BANK_SLICE]: [0, 2], [BANK_CONFIG]: [0, 3],
+               [BANK_MACROS]: [1, 0], [BANK_AUTOMATION]: [1, 1], [BANK_SOUND]: [1, 3],
+               [BANK_STEP]: [2, 0], 0: [2, 1], 7: [2, 2],
+               1: [3, 0], 3: [3, 2] },
     conduct: { [BANK_CONFIG]: [0, 3],
                [BANK_RESPONDER]: [1, 0], [BANK_OCTAVE]: [1, 1], [BANK_WHEN]: [1, 2],
                0: [2, 0], [BANK_STEP]: [2, 1],
@@ -195,6 +231,7 @@ const BANK_MAP_POS = {
 const BANK_MAP_LABELS = {
     melodic: ['IN', 'CTRL', 'SEQ', 'FX'],
     drum:    ['IN', 'CTRL', 'SEQ', 'FX'],
+    audio:   ['SND', 'CTRL', 'SEQ', 'FX'],
     conduct: [null, 'RSPD', 'SEQ', 'FX'],
 };
 /* ACTION pads: not banks — a tap goes somewhere (Josh, 2026-10-04: "add an
@@ -204,13 +241,15 @@ const BANK_MAP_LABELS = {
 const BANK_MAP_ACTIONS = {
     melodic: { inst: [2, 3] },
     drum:    { inst: [2, 3] },
+    audio:   { inst: [2, 3] },
     conduct: {},
 };
 const BANK_MAP_ACTION_NAMES = { inst: 'INST' };
 /* AUTOMATION has no space to wrap at and is wider than a cell. */
 const BANK_MAP_SHORT = { [BANK_AUTOMATION]: 'AUTO' };
 
-function bankMapFamily(padMode) {
+function bankMapFamily(padMode, t) {
+    if (audioT(padMode, t)) return 'audio';
     return padMode === PAD_MODE_CONDUCT ? 'conduct' : padMode === PAD_MODE_DRUM ? 'drum' : 'melodic';
 }
 
@@ -218,12 +257,12 @@ function bankMapFamily(padMode) {
  * an action pad is { bank: null, action, name }.
  * A walk bank with no position is left off (the table test makes that a failure). */
 export function bankPadMapForMode(padMode, t) {
-    const fam = bankMapFamily(padMode), pos = BANK_MAP_POS[fam];
+    const fam = bankMapFamily(padMode, t), pos = BANK_MAP_POS[fam];
     const cols = BANK_MAP_LABELS[fam].map((label) => ({ label, cells: [null, null, null, null] }));
     for (const b of bankListForMode(padMode, t)) {
         const p = pos[b];
         if (!p || cols[p[0]].cells[p[1]]) continue;
-        cols[p[0]].cells[p[1]] = { bank: b, name: BANK_MAP_SHORT[b] || bankDisplayName(padMode, b) };
+        cols[p[0]].cells[p[1]] = { bank: b, name: BANK_MAP_SHORT[b] || bankDisplayName(padMode, b, t) };
     }
     const acts = BANK_MAP_ACTIONS[fam];
     for (const a in acts) {
@@ -340,6 +379,13 @@ export function clipHasContent(t, c) {
 /** Convert a padIdx (0-31) to drum lane index for the current lane page, or -1 if right half. */
 export function drumPadToLane(padIdx) {
     const col = padIdx % 8;
+    /* AUDIO, Slice mode: all 32 pads are slices — left 4x4 1-16, right 4x4
+     * 17-32. Loop mode: none (the pads jump; ui_audio auPadToJump). */
+    if (audioT(S.trackPadMode[S.activeTrack], S.activeTrack)) {
+        if (!audioSliceMode(S.activeTrack)) return -1;
+        const r = Math.floor(padIdx / 8);
+        return col < 4 ? r * 4 + col : 16 + r * 4 + (col - 4);
+    }
     if (col >= 4) return -1;
     const row = Math.floor(padIdx / 8);
     return S.drumLanePage[S.activeTrack] * 16 + row * 4 + col;
@@ -348,6 +394,8 @@ export function drumPadToLane(padIdx) {
 /** Convert a padIdx (0-31) to velocity zone 0-15, or -1 if left half. */
 export function drumPadToVelZone(padIdx) {
     const col = padIdx % 8;
+    /* AUDIO: velocity is ignored, and the right half is slices 17-32. */
+    if (audioT(S.trackPadMode[S.activeTrack], S.activeTrack)) return -1;
     if (col < 4) return -1;
     const row = Math.floor(padIdx / 8);
     return row * 4 + (col - 4);

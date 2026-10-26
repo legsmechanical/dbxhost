@@ -7552,8 +7552,10 @@ static void on_midi(void *instance, const uint8_t *msg, int len, int source) {
      * track shortcut, modal holds, etc.), skip the right-half drum
      * classification too — otherwise Rpt1/Rpt2 latches on the prior
      * active track when the user is just switching tracks. */
-    if (tr->pad_mode == PAD_MODE_DRUM && inst->drum_right_inert && (padIdx % 8) >= 4) return;
-    if (tr->pad_mode == PAD_MODE_DRUM && !inst->pad_dispatch_muted) {
+    /* An AUDIO track's right half is slices 17-32, not velocity / repeat pads:
+     * every pad plays its lane by note like a left-half drum pad. */
+    if (tr->pad_mode == PAD_MODE_DRUM && !tr->audio && inst->drum_right_inert && (padIdx % 8) >= 4) return;
+    if (tr->pad_mode == PAD_MODE_DRUM && !tr->audio && !inst->pad_dispatch_muted) {
         if (drum_pad_event(inst, tr, t, padIdx, d2, is_on)) {
             return;
         }
@@ -9904,6 +9906,8 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                 if (tr->drum_clips[cidx])
                     for (dl = 0; dl < DRUM_LANES && !any; dl++)
                         if (tr->drum_clips[cidx]->lanes[dl].clip.note_count > 0) any = 1;
+                /* An Audio clip with a sample has content, notes or not. */
+                if (tr->audio && inst->au_clip[tidx][cidx].name[0]) any = 1;
                 return snprintf(out, out_len, "%d", any);
             }
             if (!strncmp(p, "_tps", 4))

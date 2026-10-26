@@ -8,7 +8,7 @@
 
 import { S } from './ui_state.mjs';
 import { PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, DRUM_LANES, DRUM_BASE_NOTE, NUM_CLIPS } from './ui_constants.mjs';
-import { SCALE_INTERVALS } from './ui_pure.mjs';
+import { SCALE_INTERVALS, audioSliceMode } from './ui_pure.mjs';
 import { dspGet } from './ui_dsp_get.mjs';
 import { chordLayoutOn, fillChordPadMap, padToken } from './ui_chord_pads.mjs';
 import { customLayoutOn, fillCustomPadMap, padOctShift } from './ui_custom_chords.mjs';
@@ -74,7 +74,17 @@ export function pianoLayoutOn(t) {
 export function computePadNoteMap() {
     const t = S.activeTrack;
     for (let i = 0; i < 32; i++) S.padChordMap[i] = null;
-    if (S.trackPadMode[t] === PAD_MODE_DRUM) {
+    if (S.trackPadMode[t] === PAD_MODE_DRUM && S.trackAudio[t]) {
+        /* AUDIO (ui_audio): Slice mode — every pad is a slice's lane (left 4x4
+         * 1-16, right 4x4 17-32), each lane its own note; Loop mode, and while
+         * a Lazy chop cuts, no pad plays (the UI jumps / cuts). */
+        const slice = audioSliceMode(t) && !(S.auEditor && S.auEditor.lazy);
+        for (let i = 0; i < 32; i++) {
+            const col = i % 8, row = Math.floor(i / 8);
+            const lane = col < 4 ? row * 4 + col : 16 + row * 4 + (col - 4);
+            S.padNoteMap[i] = slice ? (DRUM_BASE_NOTE + lane) & 0xFF : 0xFF;
+        }
+    } else if (S.trackPadMode[t] === PAD_MODE_DRUM) {
         /* Drum mode: left half (cols 0-3) maps to drum lanes via drumPadToLane;
          * right half (cols 4-7) is velocity zones (no note dispatch).
          * For each pad we store the corresponding lane's midi_note, or 0xFF

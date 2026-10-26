@@ -618,6 +618,13 @@ export const BANKS = [
      * on every walk. All stubs: sound mode owns the screen, and the bank has no
      * knobs. */
     { name: 'CONFIG', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
+    /* 17 — SAMPLE (ui_audio BANK_SAMPLE) — an Audio track's clip: its sample,
+     * Mode (Loop / Slice), Start / End, slices or jump points, pitch, gain.
+     * Values are the engine's (tN_au_*); ui_audio owns the cells and knobs. */
+    { name: 'SAMPLE', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
+    /* 18 — SLICE (ui_audio BANK_SLICE) — the selected slice (= lane) of a
+     * Slice-mode clip: start, length, pitch, gain, reverse, envelope, play. */
+    { name: 'SLICE', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
 ];
 
 /* Conductor bank indices. Bank 0 (CLIP) is reused as the "Conduct" bank. */
