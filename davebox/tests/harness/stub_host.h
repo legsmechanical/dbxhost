@@ -76,6 +76,12 @@ void hx_stub_capture_refuse(int on);
 int  hx_stub_capture(int *stops, int *block, uint32_t *frames, const char **path);
 /* capture_start_src: the last take's source (MOVE_CAPTURE_MIX for capture_start). */
 int  hx_stub_capture_src(int *kind, int *index);
+/* slot_audio_feed: per slot, calls since the reset; the first block (the
+ * hx_midi_event.block clock) that carried sound; the summed |sample|; the last
+ * block handed over (256 interleaved samples). */
+void hx_stub_feed_reset(void);
+int  hx_stub_feed(int slot, int *first_block, uint64_t *energy);
+const int16_t *hx_stub_feed_last(int slot);
 /* set_move_info: what the module last published (NULL = never, or withdrawn),
  * and how many times it called. */
 const move_info_t *hx_stub_move_info(void);

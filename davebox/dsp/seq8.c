@@ -180,6 +180,16 @@ static void seq8_set_state_path(char *out, size_t sz, const char *uuid, int crea
 #define PAD_MODE_MELODIC_SCALE  0   /* isomorphic 4ths diatonic layout */
 #define PAD_MODE_DRUM           1   /* 32-lane drum sequencer */
 #define PAD_MODE_CONDUCT        2   /* Conductor: drives transposition, emits no MIDI */
+#define PAD_MODE_AUDIO          3   /* Audio: the clip plays a sample; a note's pitch
+                                     * is a SLICE (DRUM_BASE_NOTE + slice), never a
+                                     * pitch to transform — see pad_mode_pitched() */
+/* Does this mode's pitch mean a pitch? Every transform that moves a note
+ * (transpose, NOTE FX octave/offset/random, HARMONY, DELAY pitch, Key/Scale
+ * commit, perf pitch mods) asks this, not `!= PAD_MODE_DRUM`: on an Audio
+ * track a moved pitch is a different slice. */
+static inline int pad_mode_pitched(uint8_t pm) {
+    return pm == PAD_MODE_MELODIC_SCALE || pm == PAD_MODE_CONDUCT;
+}
 
 /* Chain slots the host renders, which a ROUTE_SCHWUNG track addresses by index
  * (tN_slot). Must match the host's SHADOW_CHAIN_INSTANCES and the module's
@@ -448,6 +458,7 @@ typedef struct { uint8_t k; uint64_t delay; } groove_early_t;
 
 #define PFX_EV_KEEP         0x02  /* a table groove's own note-off, timed from its note-on: a later note-on's echo flush may bring it forward, never push it back */
 #define PFX_EV_BYPASS_SWING 0x01  /* event already swing-deferred; route directly, skip pfx_send */
+#define PFX_EV_ECHO         0x04  /* a DELAY echo: on an Audio track its velocity is its volume */
 
 typedef struct {
     uint64_t fire_at;
@@ -499,6 +510,7 @@ static const uint16_t DRUM_REPEAT_RATE_TICKS[8] = { 12, 24, 48, 96, 8, 16, 32, 6
 static const uint8_t DRUM_INQ_TICKS[9] = { 0, 6, 12, 24, 16, 48, 32, 96, 64 };
 
 #include "seq8_param_auto.h"
+#include "seq8_audio.h"
 
 /* Per-clip pad-pressure (aftertouch) automation. Interpolated breakpoints like
  * per-clip breakpoints, keyed by pitch (poly) rather than by fixed knob:
@@ -1910,6 +1922,23 @@ typedef struct {
                                     * (0 = exact fill of the loop). Larger than the
                                     * loop pushes trailing notes off the last bar
                                     * (dropped); smaller packs the take to the front. */
+
+    /* AUDIO (seq8_audio.h / seq8_audio.c). au_clip is per track per clip; the
+     * voices and rings are the audio thread's; the loader thread owns its
+     * pool and is the only one that reads files or frees samples. */
+    au_clip_t   au_clip[NUM_TRACKS][NUM_CLIPS];
+    au_track_t  au_trk[NUM_TRACKS];
+    au_req_t    au_req[AU_RING];
+    uint32_t    au_req_head, au_req_tail;     /* head: audio thread writes; tail: loader */
+    au_res_t    au_res[AU_RING];
+    uint32_t    au_res_head, au_res_tail;     /* head: loader writes; tail: audio thread */
+    uint32_t    au_req_dropped;               /* a full ring (should never happen) */
+    void       *au_loader;                    /* the loader thread's own state */
+    uint32_t    au_lazy_pos;                  /* Lazy chop: frame position for the UI */
+    int8_t      au_lazy_track, au_lazy_clip;  /* -1 = no chop running */
+    uint8_t     au_lazy_n;                    /* slices tapped so far */
+    uint8_t     au_echo;                      /* a DELAY echo is being sent (its velocity is its volume) */
+    uint64_t    au_tick0;                     /* arp_master_tick before this block's render */
 } seq8_instance_t;
 
 /* What the serializer should write for clip (t,c) / lane: the original while a
@@ -2801,6 +2830,7 @@ static void pfx_send(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
                     looper_mark_active(g_inst, fx->track_idx, raw_d1, d1);
                     /* Phantom: ghost note at pitch-12, vel/4, gate=cap/8. */
                     if ((g_inst->perf_mods_active & PERF_MOD_PHANTOM) &&
+                            g_inst->tracks[fx->track_idx].pad_mode != PAD_MODE_AUDIO &&
                             g_inst->perf_staccato_count < 32) {
                         int gp = (int)d1 - 12;
                         if (gp >= 0) {
@@ -2906,6 +2936,16 @@ static void pfx_emit(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
     if (g_inst && fx->track_idx < NUM_TRACKS &&
             g_inst->tracks[fx->track_idx].pad_mode == PAD_MODE_CONDUCT)
         return;
+    /* An AUDIO track's notes play slices (pitch DRUM_BASE_NOTE + slice) instead
+     * of leaving as MIDI — every path (steps, pads, ratchets, DELAY echoes,
+     * swing, quantize) funnels through here. Nothing else (CC, AT) leaves. */
+    if (g_inst && fx->track_idx < NUM_TRACKS &&
+            g_inst->tracks[fx->track_idx].pad_mode == PAD_MODE_AUDIO) {
+        uint8_t st = status & 0xF0;
+        if (st == 0x90 || st == 0x80)
+            au_note_event((int)fx->track_idx, (int)d1 - DRUM_BASE_NOTE, status, d2, g_inst->au_echo);
+        return;
+    }
     /* Conductor responder transposition is now applied at note-record level in
      * pfx_note_on (stored into an->gen_notes), so every emitted on AND its
      * matching off carry the same transposed pitch — no emit-time latch needed.
@@ -3407,12 +3447,14 @@ static void pfx_q_fire(play_fx_t *fx, uint64_t now) {
     if (g_inst) g_inst->in_queue_drain = 1;
     int f = 0;
     while (f < fx->event_count && fx->events[f].fire_at <= now) {
+        if (g_inst) g_inst->au_echo = (fx->events[f].flags & PFX_EV_ECHO) ? 1 : 0;
         if (fx->events[f].flags & PFX_EV_BYPASS_SWING)
             pfx_emit(fx, fx->events[f].msg[0], fx->events[f].msg[1], fx->events[f].msg[2]);
         else
             pfx_send(fx, fx->events[f].msg[0], fx->events[f].msg[1], fx->events[f].msg[2]);
         f++;
     }
+    if (g_inst) g_inst->au_echo = 0;
     if (f > 0) {
         fx->event_count -= f;
         if (fx->event_count > 0)
@@ -4065,6 +4107,7 @@ static void pfx_note_off_imm(seq8_instance_t *inst, seq8_track_t *tr,
  * back (NO blank between them, like the phase-2 bake/convert pair); adding one
  * shifts the -E -P output. Do not tidy. */
 #include "seq8_drum.c"
+#include "seq8_audio.c"
 #include "seq8_arp.c"
 
 /* ------------------------------------------------------------------ */
@@ -6850,6 +6893,7 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
     seq8_instance_t *inst = (seq8_instance_t *)calloc(1, sizeof(seq8_instance_t));
     if (!inst) return NULL;
     g_inst = inst;
+    au_init(inst);                 /* audio clips' defaults + the sample loader thread */
 
     inst->sample_rate    = (g_host && g_host->sample_rate > 0)
                            ? (float)g_host->sample_rate : 44100.0f;
@@ -7029,6 +7073,7 @@ static void destroy_instance(void *instance) {
     send_panic(inst);
     g_inst = NULL;
     { int _t; for (_t = 0; _t < NUM_TRACKS; _t++) drum_clips_free(&inst->tracks[_t]); }
+    au_shutdown(inst);             /* joins the loader; frees every sample */
     seq8_ilog(inst, "SEQ8 instance destroyed");
     if (inst->log_fp) fclose(inst->log_fp);
     free(inst);
@@ -8614,6 +8659,24 @@ static int pa_export_points(const seq8_track_t *tr, const pa_entry_t *e, int ste
 static int get_param(void *instance, const char *key, char *out, int out_len) {
     seq8_instance_t *inst = (seq8_instance_t *)instance;
     if (!key || !out || out_len <= 0) return -1;
+
+    /* au_used: every sample a clip holds, one name per line (Purge). */
+    if (!strcmp(key, "au_used")) {
+        int t, c, n = 0;
+        out[0] = '\0';
+        for (t = 0; t < NUM_TRACKS; t++)
+            for (c = 0; c < NUM_CLIPS; c++) {
+                const char *nm = inst->au_clip[t][c].name;
+                if (!nm[0] || n + (int)strlen(nm) + 2 >= out_len) continue;
+                n += snprintf(out + n, (size_t)(out_len - n), "%s\n", nm);
+            }
+        return n;
+    }
+    /* tN_au_*: Audio (setparam/sp_track_audio.c). */
+    if (key[0] == 't' && key[2] == '_' && key[3] == 'a' && key[4] == 'u' && key[5] == '_') {
+        int r = au_get_param(inst, key, out, out_len);
+        if (r >= 0) return r;
+    }
 
     /* One-shot: Clock-Follow start fell back to the solo clock (Move never
      * started). JS polls this and pops a brief warning; reading clears it. */
@@ -10446,6 +10509,15 @@ static int groove_pass_claims(seq8_instance_t *inst, seq8_track_t *tr,
 
 #include "seq8_render.c"
 
+/* render_block, then the Audio tracks' sound for this block — after the
+ * sequencer, so a slice hit this block starts at its frame 0, and on every one
+ * of render_block's exits (stopped, count-in, ...): pads play slices stopped. */
+static void render_block_audio(void *instance, int16_t *out_lr, int frames) {
+    if (instance) ((seq8_instance_t *)instance)->au_tick0 = (uint64_t)((seq8_instance_t *)instance)->arp_master_tick;
+    render_block(instance, out_lr, frames);
+    if (instance) au_render((seq8_instance_t *)instance, frames);
+}
+
 /* ------------------------------------------------------------------ */
 /* API table                                                            */
 /* ------------------------------------------------------------------ */
@@ -10458,7 +10530,7 @@ static plugin_api_v2_t g_api = {
     .set_param        = set_param,
     .get_param        = get_param,
     .get_error        = get_error,
-    .render_block     = render_block,
+    .render_block     = render_block_audio,
 };
 
 plugin_api_v2_t *move_plugin_init_v2(const host_api_v1_t *host) {

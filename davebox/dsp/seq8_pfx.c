@@ -126,6 +126,11 @@ static int pfx_build_harmz_copies(seq8_instance_t *inst, int scale_aware,
 static int pfx_build_gen_notes(seq8_instance_t *inst, int scale_aware,
                                play_fx_t *fx, int orig_note, int transpose,
                                uint8_t *out) {
+    /* Audio: the pitch is a slice — nothing moves it, nothing doubles it. */
+    if (fx->track_idx < NUM_TRACKS && inst->tracks[fx->track_idx].pad_mode == PAD_MODE_AUDIO) {
+        out[0] = (uint8_t)clamp_i(orig_note, 0, 127);
+        return 1;
+    }
     int primary = pfx_apply_notefx(inst, scale_aware, fx, orig_note, transpose);
     return pfx_build_harmz_copies(inst, scale_aware, fx, primary, out);
 }
@@ -193,7 +198,9 @@ static void pfx_sched_delay_ons(seq8_instance_t *inst, int scale_aware,
                 else             cumul_pitch += fx->fb_note;
             }
         }
-        {
+        if (fx->track_idx < NUM_TRACKS && inst->tracks[fx->track_idx].pad_mode == PAD_MODE_AUDIO) {
+            an->reps[i].pitch_offset = 0;      /* an echo replays its slice */
+        } else {
             int pitch = (scale_aware && an->gen_count > 0)
                 ? scale_transpose(inst, (int)an->gen_notes[0], cumul_deg) - (int)an->gen_notes[0]
                 : cumul_pitch;
@@ -219,7 +226,7 @@ static void pfx_sched_delay_ons(seq8_instance_t *inst, int scale_aware,
         for (j = 0; j < an->gen_count; j++) {
             int note = (int)an->gen_notes[j] + an->reps[i].pitch_offset;
             note = clamp_i(note, 0, 127);
-            pfx_q_insert(fx, ft, on_s, (uint8_t)note, an->reps[i].velocity, 0);
+            pfx_q_insert(fx, ft, on_s, (uint8_t)note, an->reps[i].velocity, PFX_EV_ECHO);
         }
 
         cur_delay *= (1.0 + fx->fb_clock / 100.0);

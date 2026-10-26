@@ -68,7 +68,7 @@ static void xpose_commit_all_clips(seq8_instance_t *inst) {
     int t, c;
     for (t = 0; t < NUM_TRACKS; t++) {
         seq8_track_t *tr = &inst->tracks[t];
-        if (tr->pad_mode == PAD_MODE_DRUM) continue;
+        if (!pad_mode_pitched(tr->pad_mode)) continue;    /* drums; Audio (pitch = slice) */
         for (c = 0; c < NUM_CLIPS; c++) {
             clip_t *cl = &tr->clips[c];
             if (cl->note_count == 0) continue;

@@ -271,11 +271,12 @@ static int perf_apply(seq8_instance_t *inst, uint8_t tr_idx,
             pitch = (int)inst->perf_shuffle_pitches[ei];
     }
 
-    /* Pitch transforms: drum tracks bypass semitone-based mods.
+    /* Pitch transforms: drum and Audio tracks bypass semitone-based mods (on
+     * Audio a pitch is a slice).
      * All interval mods use scale_transpose (scale-degree offsets) so results
      * stay in-key. Oct↑/Oct↓ use chromatic ±12 — octave shift is scale-neutral. */
     int is_drum = tr_idx < NUM_TRACKS
-                  && inst->tracks[tr_idx].pad_mode == PAD_MODE_DRUM;
+                  && !pad_mode_pitched(inst->tracks[tr_idx].pad_mode);
     if (!is_drum) {
         /* Cycle-based pitch mods. looper_cycle increments at each loop wrap;
          * the mods animate over cycles instead of being static offsets.
@@ -596,6 +597,7 @@ static void looper_tick(seq8_instance_t *inst) {
                 /* Phantom: ghost note at pitch-12, vel/4, gate=cap/8.
                  * raw_pitch=0xFF in queue is sentinel (not in emitted table). */
                 if ((inst->perf_mods_active & PERF_MOD_PHANTOM) &&
+                        inst->tracks[tr_idx].pad_mode != PAD_MODE_AUDIO &&
                         inst->perf_staccato_count < 32) {
                     int gp = (int)d1 - 12;
                     if (gp >= 0) {

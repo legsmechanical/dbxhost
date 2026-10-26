@@ -804,6 +804,8 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
     /* Per-track: pad_mode (route saved above with channel) */
     for (t = 0; t < NUM_TRACKS; t++)
         fprintf(fp, ",\"t%d_pm\":%d", t, (int)inst->tracks[t].pad_mode);
+    /* Audio: each clip's sample + settings, sparse. */
+    au_save_state(inst, fp);
     /* Per-track: drum lane mute/solo bitmasks (sparse; omit if zero) */
     for (t = 0; t < NUM_TRACKS; t++) {
         if (inst->tracks[t].drum_lane_mute)
@@ -1013,6 +1015,8 @@ static void seq8_load_state(seq8_instance_t *inst) {
     inst->awaiting_select = 0;
     /* "Too big to save" described the project being replaced, not this one. */
     inst->save_refused = 0;
+    /* The samples belong to the project being left, whatever happens next. */
+    au_reset_all(inst);
     FILE *fp = fopen(inst->state_path, "r");
     if (!fp) { seq8_fresh_project_defaults(inst); return; }
     fseek(fp, 0, SEEK_END);
@@ -1285,12 +1289,15 @@ static void seq8_load_state(seq8_instance_t *inst) {
     /* Per-track: pad_mode (route/channel already loaded above) */
     for (t = 0; t < NUM_TRACKS; t++) {
         snprintf(key, sizeof(key), "t%d_pm", t);
-        /* clamp 0..2 so PAD_MODE_CONDUCT (2) survives a reload; clamping to 0..1
-         * silently turned a saved Conductor into a Drum track. */
-        inst->tracks[t].pad_mode = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 2);
+        /* clamp 0..3 so PAD_MODE_CONDUCT (2) and PAD_MODE_AUDIO (3) survive a
+         * reload; clamping to 0..1 silently turned a saved Conductor into a
+         * Drum track. */
+        inst->tracks[t].pad_mode = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 3);
         if (inst->tracks[t].pad_mode == PAD_MODE_DRUM)
             drum_clips_alloc(inst, &inst->tracks[t]);
     }
+    /* Audio (after pad_mode): asks the loader for every Audio clip's sample. */
+    au_load_state(inst, buf);
     /* Per-track: drum lane mute/solo bitmasks */
     for (t = 0; t < NUM_TRACKS; t++) {
         snprintf(key, sizeof(key), "t%ddlm", t);

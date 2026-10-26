@@ -155,6 +155,39 @@ int  hx_stub_capture(int *stops, int *block, uint32_t *frames, const char **path
     return g_cap_starts;
 }
 
+/* slot_audio_feed — audio an Audio track hands its slot. Per slot: calls, the
+ * first block with sound, the summed |sample|, and the last block. */
+#define HX_FEED_SLOTS 8
+static int      g_feed_calls[HX_FEED_SLOTS], g_feed_first[HX_FEED_SLOTS];
+static uint64_t g_feed_energy[HX_FEED_SLOTS];
+static int16_t  g_feed_last[HX_FEED_SLOTS][256];
+static int stub_slot_audio_feed(int slot, const int16_t *lr, uint32_t frames) {
+    uint32_t i;
+    int loud = 0;
+    if (slot < 0 || slot >= HX_FEED_SLOTS || !lr || frames > 128) return 0;
+    g_feed_calls[slot]++;
+    for (i = 0; i < frames * 2; i++) {
+        int v = lr[i] < 0 ? -lr[i] : lr[i];
+        g_feed_energy[slot] += (uint64_t)v;
+        if (v > 8) loud = 1;
+        g_feed_last[slot][i] = lr[i];
+    }
+    if (loud && g_feed_first[slot] < 0) g_feed_first[slot] = g_block;
+    return 1;
+}
+void hx_stub_feed_reset(void) {
+    int s;
+    for (s = 0; s < HX_FEED_SLOTS; s++) { g_feed_calls[s] = 0; g_feed_first[s] = -1; g_feed_energy[s] = 0; }
+    memset(g_feed_last, 0, sizeof g_feed_last);
+}
+int hx_stub_feed(int slot, int *first_block, uint64_t *energy) {
+    if (slot < 0 || slot >= HX_FEED_SLOTS) return 0;
+    if (first_block) *first_block = g_feed_first[slot];
+    if (energy) *energy = g_feed_energy[slot];
+    return g_feed_calls[slot];
+}
+const int16_t *hx_stub_feed_last(int slot) { return (slot >= 0 && slot < HX_FEED_SLOTS) ? g_feed_last[slot] : NULL; }
+
 const move_host_ext_v1_t *hx_stub_ext(void) {
     static const move_host_ext_v1_t ext = {
         .size = sizeof(move_host_ext_v1_t),
@@ -168,6 +201,7 @@ const move_host_ext_v1_t *hx_stub_ext(void) {
         .capture_start = stub_capture_start,
         .capture_stop = stub_capture_stop,
         .capture_start_src = stub_capture_start_src,
+        .slot_audio_feed = stub_slot_audio_feed,
     };
     return &ext;
 }
