@@ -77,10 +77,10 @@ export function audioEditorInput(status, d1, d2) {
         if (!dd || ed.lazy) return true;
         const i = auInfo(ed.t, ed.c);
         const r = auSlice(ed.t, ed.c, ed.sel);
-        if (!r || !i.frames) return true;
+        if (!r || !i.nframes) return true;
         if (ed.pos == null) ed.pos = r.a;
-        const step = Math.max(1, Math.round(i.frames / (S.shiftHeld ? 20000 : 1000)));
-        ed.pos = Math.max(0, Math.min(i.frames - 1, ed.pos + dd * step));
+        const step = Math.max(1, Math.round(i.nframes / (S.shiftHeld ? 20000 : 1000)));
+        ed.pos = Math.max(0, Math.min(i.nframes - 1, ed.pos + dd * step));
         auSlicePos(ed.t, ed.c, ed.sel, ed.pos);
         S.auStartsRev = (S.auStartsRev | 0) + 1;
         S.screenDirty = true;

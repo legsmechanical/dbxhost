@@ -54,13 +54,13 @@ export function auParseInfo(raw) {
     return {
         state: head[0], err: head[1], mode: head[2], method: head[3], n: head[4], jump: head[5],
         rstart: head[6], rend: head[7], pitch: head[8], gain: head[9],
-        frames: head[10], rate: head[11], ch: head[12],
+        nframes: head[10], rate: head[11], ch: head[12],
         name: bar >= 0 ? String(raw).slice(bar + 1) : '',
     };
 }
 
 const DEFAULT_INFO = { state: 0, err: 0, mode: 0, method: 0, n: 8, jump: 16, rstart: 0, rend: 1000,
-                       pitch: 0, gain: 0, frames: 0, rate: 0, ch: 0, name: '' };
+                       pitch: 0, gain: 0, nframes: 0, rate: 0, ch: 0, name: '' };
 
 export function auInfo(t, c) {
     const i = S.auInfo[t] && S.auInfo[t][c];
@@ -97,7 +97,7 @@ function auReadSlice(t, c, l) {
 export function auPeaks(t, c) {
     const p = _peaks.get(t + '_' + c);
     const i = auInfo(t, c);
-    return p && p.name === i.name && p.frames === i.frames ? p.amp : null;
+    return p && p.name === i.name && p.nframes === i.nframes ? p.amp : null;
 }
 function auReadPeaks(t, c) {
     const raw = String(host_module_get_param('t' + t + '_au_peaks_' + c) || '');
@@ -110,7 +110,7 @@ function auReadPeaks(t, c) {
         amp.push(Math.min(1, Math.max(Math.abs(lo), Math.abs(hi)) / 127));
     }
     const i = auInfo(t, c);
-    _peaks.set(t + '_' + c, { name: i.name, frames: i.frames, amp });
+    _peaks.set(t + '_' + c, { name: i.name, nframes: i.nframes, amp });
 }
 
 export function auStarts(t, c) {
@@ -209,7 +209,7 @@ export function auPick(t, c, path) {
 
 export function auClear(t, c) {
     setKey(t, 'clear', c);
-    S.auInfo[t][c] = Object.assign({}, auInfo(t, c), { state: 0, name: '', frames: 0 });
+    S.auInfo[t][c] = Object.assign({}, auInfo(t, c), { state: 0, name: '', nframes: 0 });
     auMarkStale(t, c);
 }
 
@@ -249,9 +249,9 @@ export function auSampleName(t, c) {
 const fmtSemi = (v) => (v === 0 ? '0 st' : (v > 0 ? '+' : '') + v + ' st');
 const fmtDb = (v) => (v === 0 ? '0 dB' : (v > 0 ? '+' : '') + v + ' dB');
 const fmtPct = (v) => (v / 10).toFixed(1) + '%';
-function fmtSecs(frames, rate) {
+function fmtSecs(nframes, rate) {
     if (!rate) return '--';
-    const s = frames / rate;
+    const s = nframes / rate;
     return s >= 60 ? Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0') : s.toFixed(1) + 's';
 }
 
@@ -271,7 +271,7 @@ export function auSampleCells(t) {
         return [smpl, mode, start, end, sl, chop, pitch, gain].map((x) => (has || x === smpl || x === mode) ? x : Object.assign({}, x, { text: '--' }));
     }
     const jump = { kind: 'valsq', label: 'Jump', name: 'Jump Points', text: String(i.jump) };
-    const len = { kind: 'valsq', label: 'Len', name: 'Sample Length', text: fmtSecs(i.frames, i.rate) };
+    const len = { kind: 'valsq', label: 'Len', name: 'Sample Length', text: fmtSecs(i.nframes, i.rate) };
     return [smpl, mode, start, end, jump, len, pitch, gain].map((x) => (has || x === smpl || x === mode) ? x : Object.assign({}, x, { text: '--' }));
 }
 
