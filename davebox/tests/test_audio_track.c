@@ -92,6 +92,17 @@ static void write_ramp_len(const char *path, double secs) {
     for (i = 0; i < n; i++) put_le16(f, (int)(i % 30000));
     fclose(f);
 }
+/* mono 16-bit 44.1 kHz, 3 s of silence with ONE loud frame at 66001 */
+static void write_spike(const char *path) {
+    FILE *f = fopen(path, "wb");
+    uint32_t n = 44100 * 3, i;
+    fwrite("RIFF", 1, 4, f); put_le32(f, 36 + n * 2); fwrite("WAVEfmt ", 1, 8, f);
+    put_le32(f, 16); put_le16(f, 1); put_le16(f, 1); put_le32(f, 44100); put_le32(f, 88200);
+    put_le16(f, 2); put_le16(f, 16);
+    fwrite("data", 1, 4, f); put_le32(f, n * 2);
+    for (i = 0; i < n; i++) put_le16(f, i == 66001 ? 20000 : 0);
+    fclose(f);
+}
 /* a WAV whose data chunk claims 11 minutes */
 static void write_long(const char *path) {
     FILE *f = fopen(path, "wb");
@@ -182,6 +193,7 @@ int main(void) {
     snprintf(p, sizeof p, "%s/src/long.wav", g_root); write_long(p);
     snprintf(p, sizeof p, "%s/src/ramp.wav", g_root); write_ramp(p);
     snprintf(p, sizeof p, "%s/src/ramp3.wav", g_root); write_ramp_len(p, 3.0);
+    snprintf(p, sizeof p, "%s/src/spike.wav", g_root); write_spike(p);
 
     /* ---- the mode: picked like the Conductor; the notes go (Q2) ---- */
     h = rig(0); inst = (seq8_instance_t *)h->inst; tr = &inst->tracks[4];
@@ -551,6 +563,18 @@ int main(void) {
         hx_get_param(h, "t4_au_wave_6_0_132300", wv, sizeof wv);
         sscanf(wv + 64 * 4 + 2, "%2x", &hi);
         HX_ASSERT(strlen(wv) == 512 && hi >= 27 && hi <= 29, "the wide waveform window");
+    }
+    {
+        /* ...and a one-frame spike still shows in a wide window: the summary
+         * holds every frame's peak, where sampling the frames would skip it */
+        char wv[600];
+        unsigned hi = 0;
+        snprintf(p, sizeof p, "7|%s/src/spike.wav", g_root);
+        hx_set_param(h, "t4_au_pick", p);
+        HX_ASSERT(wait_loaded(h, 4, 7) == 2, "the spike did not load");
+        hx_get_param(h, "t4_au_wave_7_0_132300", wv, sizeof wv);
+        sscanf(wv + 63 * 4 + 2, "%2x", &hi);
+        HX_ASSERT(hi == 20000 / 256, "a one-frame peak vanished from the wide waveform");
     }
     hx_set_param(h, "t4_au_set_bars", "6 1");
     hx_stub_feed_reset();
