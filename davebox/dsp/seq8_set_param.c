@@ -1103,6 +1103,7 @@ typedef struct {
 #include "setparam/sp_track_drum2.c"
 #include "setparam/sp_track_live.c"
 #include "setparam/sp_track_misc.c"
+#include "setparam/sp_track_audio.c"
 
 /* Globals handlers (phase 4B, dispatched ABOVE the tN_ block). Unlike the
  * tN_ handlers they use only inst/key/val (no tidx/tr/sub), matching top-level
@@ -1202,6 +1203,8 @@ static void set_param(void *instance, const char *key, const char *val) {
         cx.tidx = tidx;
         cx.tr   = tr;
         cx.sub  = sub;
+        /* tN_au_* — Audio tracks (consumes its whole prefix). */
+        if (sp_track_audio(&cx)) return;
         if (sp_track_config(&cx)) return;
 
         /* tN_cC_* per-clip keys (note ops, nested _step_ parser, resolution,

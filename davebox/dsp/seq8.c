@@ -499,6 +499,7 @@ static const uint16_t DRUM_REPEAT_RATE_TICKS[8] = { 12, 24, 48, 96, 8, 16, 32, 6
 static const uint8_t DRUM_INQ_TICKS[9] = { 0, 6, 12, 24, 16, 48, 32, 96, 64 };
 
 #include "seq8_param_auto.h"
+#include "seq8_audio.h"
 
 /* Per-clip pad-pressure (aftertouch) automation. Interpolated breakpoints like
  * per-clip breakpoints, keyed by pitch (poly) rather than by fixed knob:
@@ -983,6 +984,9 @@ typedef struct {
      * one offset serving both cases. */
     int8_t    transpose;            /* -24..+24 semitones, 0 = off */
     uint8_t   pad_mode;             /* PAD_MODE_MELODIC_SCALE = 0 */
+    /* An AUDIO track: pad_mode stays DRUM (lanes, steps, every drum feature)
+     * and its lanes play slices of the clip's sample (seq8_audio.c). */
+    uint8_t   audio;
     uint8_t   pa_seq_resync;        /* tr->pfx was reloaded from the clip: sequencer lanes re-send */
     uint8_t   stretch_blocked;      /* 1 if last compress was blocked by collision */
     uint8_t   recording;            /* 1 = actively recording (overdub) into active clip */
@@ -1910,6 +1914,21 @@ typedef struct {
                                     * (0 = exact fill of the loop). Larger than the
                                     * loop pushes trailing notes off the last bar
                                     * (dropped); smaller packs the take to the front. */
+
+    /* AUDIO TRACKS (seq8_audio.h / seq8_audio.c). au_clip is per track per
+     * clip; the voices and rings are the audio thread's; the loader thread
+     * owns its pool and is the only one that reads files or frees samples. */
+    au_clip_t   au_clip[NUM_TRACKS][NUM_CLIPS];
+    au_track_t  au_trk[NUM_TRACKS];
+    au_req_t    au_req[AU_RING];
+    uint32_t    au_req_head, au_req_tail;     /* head: audio thread writes; tail: loader */
+    au_res_t    au_res[AU_RING];
+    uint32_t    au_res_head, au_res_tail;     /* head: loader writes; tail: audio thread */
+    uint32_t    au_req_dropped;               /* a full ring (should never happen) */
+    void       *au_loader;                    /* the loader thread's own state */
+    uint32_t    au_lazy_pos;                  /* Lazy chop: frame position for the UI */
+    int8_t      au_lazy_track, au_lazy_clip;  /* -1 = no chop running */
+    uint8_t     au_lazy_n;                    /* slices tapped so far */
 } seq8_instance_t;
 
 /* What the serializer should write for clip (t,c) / lane: the original while a
@@ -4065,6 +4084,7 @@ static void pfx_note_off_imm(seq8_instance_t *inst, seq8_track_t *tr,
  * back (NO blank between them, like the phase-2 bake/convert pair); adding one
  * shifts the -E -P output. Do not tidy. */
 #include "seq8_drum.c"
+#include "seq8_audio.c"
 #include "seq8_arp.c"
 
 /* ------------------------------------------------------------------ */
@@ -6850,6 +6870,7 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
     seq8_instance_t *inst = (seq8_instance_t *)calloc(1, sizeof(seq8_instance_t));
     if (!inst) return NULL;
     g_inst = inst;
+    au_init(inst);                 /* audio clips' defaults + the sample loader thread */
 
     inst->sample_rate    = (g_host && g_host->sample_rate > 0)
                            ? (float)g_host->sample_rate : 44100.0f;
@@ -7029,6 +7050,7 @@ static void destroy_instance(void *instance) {
     send_panic(inst);
     g_inst = NULL;
     { int _t; for (_t = 0; _t < NUM_TRACKS; _t++) drum_clips_free(&inst->tracks[_t]); }
+    au_shutdown(inst);             /* joins the loader; frees every sample */
     seq8_ilog(inst, "SEQ8 instance destroyed");
     if (inst->log_fp) fclose(inst->log_fp);
     free(inst);
@@ -8614,6 +8636,12 @@ static int pa_export_points(const seq8_track_t *tr, const pa_entry_t *e, int ste
 static int get_param(void *instance, const char *key, char *out, int out_len) {
     seq8_instance_t *inst = (seq8_instance_t *)instance;
     if (!key || !out || out_len <= 0) return -1;
+
+    /* tN_au_*: Audio tracks (setparam/sp_track_audio.c). */
+    if (key[0] == 't' && key[2] == '_' && key[3] == 'a' && key[4] == 'u' && key[5] == '_') {
+        int r = au_get_param(inst, key, out, out_len);
+        if (r >= 0) return r;
+    }
 
     /* One-shot: Clock-Follow start fell back to the solo clock (Move never
      * started). JS polls this and pops a brief warning; reading clears it. */
@@ -10446,6 +10474,14 @@ static int groove_pass_claims(seq8_instance_t *inst, seq8_track_t *tr,
 
 #include "seq8_render.c"
 
+/* render_block, then the Audio tracks' sound for this block — after the
+ * sequencer, so a slice hit this block starts at its frame 0, and on every one
+ * of render_block's exits (stopped, count-in, ...): pads play slices stopped. */
+static void render_block_audio(void *instance, int16_t *out_lr, int frames) {
+    render_block(instance, out_lr, frames);
+    if (instance) au_render((seq8_instance_t *)instance, frames);
+}
+
 /* ------------------------------------------------------------------ */
 /* API table                                                            */
 /* ------------------------------------------------------------------ */
@@ -10458,7 +10494,7 @@ static plugin_api_v2_t g_api = {
     .set_param        = set_param,
     .get_param        = get_param,
     .get_error        = get_error,
-    .render_block     = render_block,
+    .render_block     = render_block_audio,
 };
 
 plugin_api_v2_t *move_plugin_init_v2(const host_api_v1_t *host) {

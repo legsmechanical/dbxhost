@@ -19,6 +19,12 @@ static void drum_pfx_emit(drum_pfx_t *px, uint8_t status, uint8_t d1, uint8_t d2
     if (g_inst && px->track_idx < NUM_TRACKS &&
             g_inst->tracks[px->track_idx].pad_mode == PAD_MODE_CONDUCT)
         return;
+    /* An AUDIO track's lane plays its slice instead of sending a note — every
+     * drum path (steps, pads, ratchets, repeats, DELAY echoes) arrives here. */
+    if (g_inst && px->track_idx < NUM_TRACKS && g_inst->tracks[px->track_idx].audio) {
+        au_lane_event((int)px->track_idx, (int)px->lane_idx, status, d2);
+        return;
+    }
     /* Same destination resolution as pfx_emit — a drum lane follows
      * `MIDI to Track N` exactly as a melodic track does. */
     {
