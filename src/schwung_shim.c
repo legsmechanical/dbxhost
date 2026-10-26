@@ -2239,16 +2239,6 @@ static void shadow_render_slot_task(void *vctx, int s, int lane) {
                                        shadow_slot_deferred[s],
                                        MOVE_FRAMES_PER_BLOCK);
         if (feed) slot_feed_mix(shadow_slot_deferred[s], feed);
-        /* A take of the INSTRUMENT before its FX (MOVE_CAPTURE_SLOT_PRE): its
-         * output at its synth level, as the FX would receive it. */
-        if (sampler_take_tap_wants_pre(sampler_module_take, sampler_take_src_kind,
-                                       sampler_take_src_index, s)) {
-            int16_t pre[FRAMES_PER_BLOCK * 2];
-            memcpy(pre, shadow_slot_deferred[s], sizeof(pre));
-            shadow_apply_synth_level(s, pre);
-            memcpy(shadow_take_tap, pre, sizeof(pre));
-            shadow_take_tap_valid = 1;
-        }
         clock_gettime(CLOCK_MONOTONIC, &synth_t1);
         uint64_t synth_us = (synth_t1.tv_sec - synth_t0.tv_sec) * 1000000ULL +
                             (synth_t1.tv_nsec - synth_t0.tv_nsec) / 1000;
@@ -2264,14 +2254,8 @@ static void shadow_render_slot_task(void *vctx, int s, int lane) {
         memset(render_buffer, 0, sizeof(shadow_slot_fallback[s]));
         shadow_plugin_v2->render_block(shadow_chain_slots[s].instance,
                                        render_buffer, MOVE_FRAMES_PER_BLOCK);
-        /* No FX hook on this path: the feed joins after the slot's FX, and a
-         * before-FX take gets the slot's whole output. */
+        /* No FX hook on this path: the feed joins after the slot's FX. */
         if (feed) slot_feed_mix(render_buffer, feed);
-        if (sampler_take_tap_wants_pre(sampler_module_take, sampler_take_src_kind,
-                                       sampler_take_src_index, s)) {
-            memcpy(shadow_take_tap, render_buffer, sizeof(shadow_slot_fallback[s]));
-            shadow_take_tap_valid = 1;
-        }
         if (link_audio.enabled && s < LINK_AUDIO_SHADOW_CHANNELS) {
             float cap_vol = shadow_effective_volume(s) * shadow_chain_slots[s].fade.gain;
             for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++)
@@ -3709,6 +3693,24 @@ skip_la_rebuild:
      * stem, filled by that slot's mix loop above) -- whatever the menu's
      * source. A slot that did not mix this block (parked, idle) is silence. */
     static const int16_t take_silence[FRAMES_PER_BLOCK * 2];
+    /* A take of a slot's INSTRUMENT before its FX (MOVE_CAPTURE_SLOT_PRE) is
+     * read HERE, from the frame's pre-FX buffer, not tapped in the slot's
+     * render task: that task runs before the module's render that starts the
+     * take, so a tap there missed the take's first block (measured on the
+     * device: frames 0-127 silent). On a slot rendering without separate FX
+     * it is the slot's whole output. */
+    if (sampler_module_take && sampler_take_src_kind == SAMPLER_TAKE_SRC_PRE &&
+            sampler_take_src_index >= 0 && sampler_take_src_index < SHADOW_CHAIN_INSTANCES) {
+        const int ps = sampler_take_src_index;
+        if (shadow_slot_deferred_valid[ps]) {
+            memcpy(shadow_take_tap, shadow_slot_deferred[ps], sizeof(shadow_take_tap));
+            shadow_apply_synth_level(ps, shadow_take_tap);
+            shadow_take_tap_valid = 1;
+        } else if (shadow_slot_fallback_rendered[ps]) {
+            memcpy(shadow_take_tap, shadow_slot_fallback[ps], sizeof(shadow_take_tap));
+            shadow_take_tap_valid = 1;
+        }
+    }
     const int16_t *take_src = unity_view;
     if (sampler_take_from_tap(sampler_module_take, sampler_take_src_kind))
         take_src = shadow_take_tap_valid ? shadow_take_tap : take_silence;
