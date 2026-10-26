@@ -25,13 +25,14 @@ the section into a versioned heading at release time.
   plays its own sample — picked from your library (WAV or AIFF, auditioned as you
   browse) and copied into the project — as a **Loop**, with the pads as jump
   points, or as up to 32 **Slices** you play from the pads and sequence on the
-  steps. The **AUDIO** editor (the bank map's AUDIO pad) holds the clip's sound:
-  sample, mode, start and end, pitch and gain, slicing, **Chop** to steps, and
-  sound settings per slice or for all slices at once. Make chops with a **Lazy
-  chop** (tap them in as the sample plays) or by hand, then shape them in a
-  zoomable **waveform editor** — move any chop's start and end down to a single
-  sample, add and remove chops. **Even** slices sit over your own chops without
-  replacing them. Loop clips can play backwards, be nudged against
+  steps. **WAVE** (a new bank map pad) holds the clip's sample: load one, set the
+  loop's start and end, or make chops with a **Lazy chop** (tap them in as the
+  sample plays), by hand or evenly, then shape them in a zoomable editor — move
+  any chop's start and end down to a single sample, add and remove chops.
+  **Even** slices sit over your own chops without replacing them. The **AUDIO**
+  editor (the AUDIO pad) holds the clip's sound: mode, pitch and gain, sound
+  settings per slice or for all slices at once, and **>Seq** to lay the slices
+  out on the steps. Loop clips can play backwards, be nudged against
   the bar and have their jumps wait for the beat. **Project Settings → Purge
   samples** clears out the ones you no longer use. Choosing Audio on a track that
   plays an instrument offers to **resample its clips** first, so each comes back as

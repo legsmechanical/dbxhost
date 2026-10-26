@@ -41,7 +41,7 @@ import { drawAutoMarkAt,
     pf3Print, pf3Width, drawArcKnobAt, hdrPrint, hdrWidth, bigPrint, bigWidth, bigFit,
     MV_ROW0_Y, MV_KH, MV_BIG_H, MV_ZOOM_X, MV_ZOOM_Y, MV_ZOOM_W, MV_ZOOM_H,
     drawKitHintRow, enumOverlayWouldDraw, MV_FOOTER_Y, MV_BAR_Y,
-    drawKitBigValue, drawKitPrompt, drawKitChip, kitChipWidth, drawBrackets, kitLaneFocusRowReset
+    drawKitBigValue, drawKitPrompt, drawKitChip, kitChipWidth, drawBrackets, kitLaneFocusRowReset, drawKitList
 } from './ui_movy.mjs';
 import {
     drawGlobalMenu, drawStateWipeConfirm, drawExitConfirm, drawTypeChangeConfirm, drawModuleSwapConfirm, drawRecordBlockedDialog, drawBpmMoveInfo,
@@ -73,7 +73,7 @@ import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
 import { isAudioTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
          auPos, auLazyState, auSelSlice, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells,
          auFmtTime, auEnd, AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN } from './ui_audio.mjs';
-import { auEdHome } from './ui_audio_editor.mjs';
+import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
 import { drawAudioAsk } from './ui_dialogs.mjs';
 import { drawAudioChooser } from './ui_audio_chooser.mjs';
 
@@ -161,7 +161,10 @@ function drawAudioTrackRest(t) {
     drawOverviewTracks(overviewHints());
     /* the sample where a drum track has its position bar, under the tracks
      * (found on the device: a taller one ran into the track numbers) */
-    drawAudioWave(t, c, 4, 49, 120, 7, { sel: auSelSlice(t) });
+    /* the waveform in Loop mode only; slices are sequenced, so Slice mode
+     * shows the page bar and playhead like any track (Josh, 2026-10-28) */
+    if (i.mode === AU_MODE_SLICE) drawPositionBar(t);
+    else drawAudioWave(t, c, 4, 49, 120, 7, {});
 }
 
 /* The AUDIO editor (ui_audio_editor): the clip's audio on the kit page, a
@@ -177,9 +180,10 @@ function drawAudioPanel() {
     drawKitPage(title, auPanelCells(ed), false, [['jog', 'page'], ['tch+clk', 'open']]);
 }
 
-/* The waveform editor (ui_audio_editor): chop (Edit, after Manual / Lazy),
- * range (the CLIP page's Start / End) and lazy. A line of values over the
- * sample at the editor's zoom; a question over it when one is open. */
+/* The WAVE editor (ui_audio_editor): the clip's sample — CLICK TO LOAD
+ * SAMPLE in the click corners with none, the loop with its Start / End and
+ * Pitch / Gain in Loop mode, the chop editor in Slice mode, a Lazy chop, the
+ * Shift + click picker, and the questions over it. */
 function drawAudioWaveEditor() {
     const ed = S.auEditor, t = ed.t, c = ed.c, i = auInfo(t, c);
     if (ed.ask) {
@@ -189,31 +193,49 @@ function drawAudioWaveEditor() {
         return;
     }
     clear_screen();
+    if (ed.pick) {
+        drawBankHeading(ed.pick.level === 1 ? 'WAVE' : 'CHOP SAMPLE', false);
+        drawKitList(auPickRows(ed), ed.pick.sel, { h: MV_FOOTER_Y - 11 });
+        drawKitHintRow(MV_FOOTER_Y, ed.pick.editEven ? [['jog', 'count'], ['clk', 'set']] : [['clk', 'pick'], ['back', ed.pick.level === 1 ? 'exit' : 'up']]);
+        return;
+    }
+    auWaveView(ed);
     const sel = auSelSlice(t);
     const rt = i.rate;
     const right = (txt) => ovwPrint(124 - ovwWidth(txt), 10, txt, 1);
     if (ed.mode === 'lazy') {
         const lz = auLazyState();
         drawBankHeading('LAZY CHOP', false);
-        ovwPrint(4, 10, lz.state === AU_LAZY_RUN ? 'TAP THE LIT PAD' : 'TAP PAD 1 TO START', 1);
+        ovwPrint(4, 10, lz.state === AU_LAZY_RUN ? 'TAP THE WHITE PAD' : 'TAP PAD 1 TO START', 1);
         if (lz.state === AU_LAZY_RUN) right(lz.n + ' CHOP' + (lz.n === 1 ? '' : 'S'));
         drawAudioWave(t, c, 0, 20, 128, 30, { A: 0, B: i.nframes, sel: -1 });
         drawKitHintRow(MV_FOOTER_Y, [['pad', lz.state === AU_LAZY_ARMED ? 'play' : 'chop'], ['back', 'stop']]);
         return;
     }
-    if (ed.mode === 'range') {
-        drawBankHeading('RANGE', false);
+    const sub = auWaveSub(ed);
+    if (sub === 'empty') {
+        /* the click corners round the empty waveform (Josh: "the waveform
+         * view should show the "click" corners and say click to load sample") */
+        drawBankHeading('WAVE', false);
+        drawBrackets(6, 18, 116, 34);
+        const msg = i.state === 1 ? 'LOADING' : 'CLICK TO LOAD SAMPLE';
+        ovwPrint(64 - Math.floor(ovwWidth(msg) / 2), 33, msg, 1);
+        drawKitHintRow(MV_FOOTER_Y, [['clk', 'load'], ['back', 'exit']]);
+        return;
+    }
+    if (sub === 'loop') {
+        drawBankHeading('WAVE  LOOP', false);
         ovwPrint(4, 10, 'S ' + auFmtTime(i.rstart, rt), 1);
         right('E ' + auFmtTime(auEnd(i), rt));
-        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, noMarks: true });
-        drawKitHintRow(MV_FOOTER_Y, [['k1', 'start'], ['k2', 'zoom'], ['k3', 'end']]);
+        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, noMarks: true, cur: ed.cur });
+        drawKitHintRow(MV_FOOTER_Y, [['k4', (i.pitch > 0 ? '+' : '') + i.pitch + 'st'], ['k5', (i.gain > 0 ? '+' : '') + i.gain + 'dB'], ['sh+clk', 'menu']]);
         return;
     }
     const mk = auMarks(t, c);
-    drawBankHeading('CHOP ' + (sel + 1) + '/' + mk.length, false);
+    drawBankHeading('WAVE  ' + (sel + 1) + '/' + mk.length, false);
     const m = mk[sel];
     if (i.even) {
-        /* "Even on": the markers are locked (a touch on them says so again) */
+        /* "Even on": the markers are locked */
         ovwPrint(4, 10, 'EVEN ' + i.even + ': LOCKED', 1);
     } else if (m) {
         ovwPrint(4, 10, 'S ' + auFmtTime(m[0], rt), 1);
@@ -221,8 +243,8 @@ function drawAudioWaveEditor() {
         right(m[1] === auEdHome(ed, sel) ? 'E NEXT' : 'E ' + auFmtTime(m[1], rt));
     }
     drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel, cur: i.even ? null : ed.cur });
-    drawKitHintRow(MV_FOOTER_Y, i.even ? [['k4', 'even'], ['k2', 'zoom']]
-                                       : [['jog', 'cursor'], ['clk', 'add'], ['del+pad', 'remove']]);
+    drawKitHintRow(MV_FOOTER_Y, i.even ? [['sh+clk', 'chop'], ['k2', 'zoom']]
+                                       : [['clk', 'add'], ['del+pad', 'remove'], ['sh+clk', 'menu']]);
 }
 
 /* An Audio track's banks (Josh, 2026-10-27): the CLIP bank mirrors ALL LANES

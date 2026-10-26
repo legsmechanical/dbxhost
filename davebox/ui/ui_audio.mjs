@@ -222,7 +222,7 @@ export function auTick() {
     if ((ed && ed.t === t) || S.auEditor) {
         const l = auSelSlice(t);
         if (!auSlice(t, c, l)) { auReadSlice(t, c, l); S.screenDirty = true; }
-        if (ed && auPanelPageName(ed) === 'ALL SLICES' && !auAll(t, c)) { auReadAll(t, c); S.screenDirty = true; }
+        if (ed && auPanelPageName(ed) === 'CLIP' && cur.mode === AU_MODE_SLICE && !auAll(t, c)) { auReadAll(t, c); S.screenDirty = true; }
     }
     /* the chop editor's points, re-read a moment after its last edit */
     if (_marks.at >= 0 && (S.tickCount | 0) >= _marks.at) { auMarkStale(t, c); _marks.at = -1; _marks.key = ''; S.screenDirty = true; }
@@ -252,8 +252,8 @@ export function auTick() {
             /* played out (or Back while it ran): "Keep N new chops?" */
             if (nl.state === AU_LAZY_ENDED && !se.ask) se.ask = { kind: 'keep', sel: 0, n: nl.n };
             /* the engine never armed it (no sample, too long): nothing to show */
-            if (nl.state === AU_LAZY_NONE && !se.ask && (S.clockMs | 0) - (se.openedAt | 0) > 1500) {
-                S.auEditor = null;
+            if (nl.state === AU_LAZY_NONE && !se.ask && (S.clockMs | 0) - (se.lazyAt | 0) > 1500) {
+                se.mode = 'wave';
                 S.pendingPadNoteMapRecompute = true;
             }
             S.screenDirty = true;
@@ -363,10 +363,12 @@ const fmtEven = (v) => (v ? String(v) : 'Off');
 
 /* ---- the AUDIO editor's pages ---- */
 
-/* Slice mode: CLIP, SLICING, SLICE n, ALL SLICES. Loop mode: CLIP, SLICING
- * (Jump, Revrs, Nudge, JmpQ). */
+/* The AUDIO editor's pages (Josh, 2026-10-28, from the Layout Map: SLICING
+ * "don't need this - it's now on wave"; ALL SLICES "merge with "clip""; SLICE
+ * n "only show when sliice mode is active"): Slice mode CLIP · SLICE n, Loop
+ * mode CLIP. The sample and its Start / End live on WAVE. */
 export function auPanelPages(t) {
-    return auInfo(t, auClipOf(t)).mode === AU_MODE_SLICE ? ['CLIP', 'SLICING', 'SLICE', 'ALL SLICES'] : ['CLIP', 'SLICING'];
+    return auInfo(t, auClipOf(t)).mode === AU_MODE_SLICE ? ['CLIP', 'SLICE'] : ['CLIP'];
 }
 export function auPanelPageName(ed) {
     const p = auPanelPages(ed.t);
@@ -390,69 +392,60 @@ function loopCells(i) {
     ];
 }
 
+/* The sound fields, as cells (SLICE n: one slice; CLIP in Slice mode: every
+ * slice, `--` while they differ). */
+const soundCell = {
+    pitch: (r) => ({ kind: 'arcbip', label: 'Pitch', name: 'Slice Pitch', text: r.pitch == null ? '--' : fmtSemi(r.pitch), signed: (r.pitch | 0) / 24 }),
+    gain: (r) => ({ kind: 'arc', label: 'Gain', name: 'Slice Gain', text: r.gain == null ? '--' : fmtDb(r.gain), norm: ((r.gain | 0) + 40) / 52 }),
+    rev: (r) => ({ kind: 'enumsq', label: 'Revrs', name: 'Reverse', text: r.rev == null ? '--' : (r.rev ? 'On' : 'Off'), options: ['Off', 'On'], sel: r.rev | 0 }),
+    atk: (r) => ({ kind: 'arc', label: 'Attk', name: 'Attack', text: r.atk == null ? '--' : r.atk + 'ms', norm: Math.min(1, (r.atk | 0) / 2000) }),
+    dec: (r) => ({ kind: 'arc', label: 'Decay', name: 'Decay', text: r.dec == null ? '--' : (r.dec ? r.dec + 'ms' : 'Full'),
+                   norm: r.dec ? Math.min(1, r.dec / 5000) : 1 }),
+    play: (r) => ({ kind: 'enumsq', label: 'Play', name: 'Play Mode', text: r.play == null ? '--' : AU_PLAY_NAMES[r.play], options: AU_PLAY_NAMES, sel: r.play | 0 }),
+};
+/* CLIP, Slice mode: knob k -> the ALL SLICES field it sets (null: a clip knob). */
+const SLICE_CLIP_ALL = [null, null, null, 'rev', 'atk', 'dec', 'play', null];
+
 export function auPanelCells(ed) {
     const t = ed.t, c = auClipOf(t), i = auInfo(t, c);
     const has = i.state === 2;
     const page = auPanelPageName(ed);
+    const live = (x) => (has || x === BLANK || x.label === 'Mode') ? x : dash(x);
+    const mode = { kind: 'enumsq', label: 'Mode', name: 'Mode', text: i.mode ? 'Slice' : 'Loop',
+                   sq: i.mode ? 'Slce' : 'Loop', options: ['Loop', 'Slice'], sel: i.mode };
+    const pitch = { kind: 'arcbip', label: 'Pitch', name: 'Pitch', text: fmtSemi(i.pitch), signed: i.pitch / 24 };
+    const gain = { kind: 'arc', label: 'Gain', name: 'Gain', text: fmtDb(i.gain), norm: (i.gain + 40) / 52 };
     if (page === 'CLIP') {
-        const smpl = { kind: 'action', oneWay: true, label: 'Smpl', name: 'Sample: ' + auSampleName(t, c), text: '->', opens: true };
-        const mode = { kind: 'enumsq', label: 'Mode', name: 'Mode', text: i.mode ? 'Slice' : 'Loop',
-                       sq: i.mode ? 'Slce' : 'Loop', options: ['Loop', 'Slice'], sel: i.mode };
-        const fr = i.nframes || 1, e = auEnd(i);
-        /* time; touch + click opens the waveform editor on the range */
-        const start = { kind: 'arc', label: 'Start', name: 'Start  ' + auFmtTime(i.rstart, i.rate), text: auFmtTime(i.rstart, i.rate), norm: i.rstart / fr };
-        const end = { kind: 'arc', label: 'End', name: 'End  ' + auFmtTime(e, i.rate), text: auFmtTime(e, i.rate), norm: e / fr };
-        const pitch = { kind: 'arcbip', label: 'Pitch', name: 'Pitch', text: fmtSemi(i.pitch), signed: i.pitch / 24 };
-        const gain = { kind: 'arc', label: 'Gain', name: 'Gain', text: fmtDb(i.gain), norm: (i.gain + 40) / 52 };
-        const k7 = i.mode === AU_MODE_SLICE
-            ? { kind: 'action', oneWay: true, label: 'Chop', name: 'Chop to Steps', text: '->', opens: true }
-            : { kind: 'valsq', label: 'Jump', name: 'Jump Points', text: String(i.jump) };
-        return [smpl, mode, start, end, pitch, gain, k7, BLANK].map((x) => (has || x === smpl || x === mode || x === BLANK) ? x : dash(x));
-    }
-    if (page === 'SLICING') {
         if (i.mode !== AU_MODE_SLICE) {
             const jump = { kind: 'valsq', label: 'Jump', name: 'Jump Points', text: String(i.jump) };
-            return [jump].concat(loopCells(i), [BLANK, BLANK, BLANK, BLANK]).map((x) => (has || x === BLANK) ? x : dash(x));
+            return [mode, pitch, gain, jump].concat(loopCells(i), [BLANK]).map(live);
         }
-        /* creators (Lazy, Manual) and the editor; Even an override over the
-         * chops they make */
-        return [
-            { kind: 'valsq', label: 'Even', name: i.even ? 'Even: ' + i.even + ' slices' : 'Even: Off (' + i.hand + ' chops)', text: fmtEven(i.even) },
-            { kind: 'action', oneWay: true, label: 'Lazy', name: 'Lazy Chop', text: '->', opens: true },
-            { kind: 'action', oneWay: true, label: 'Manual', name: 'Manual Chop', text: '->', opens: true },
-            { kind: 'action', oneWay: true, label: 'Edit', name: 'Edit Chops', text: '->', opens: true },
-            BLANK, BLANK, BLANK, BLANK,
-        ].map((x) => (has || x === BLANK) ? x : dash(x));
+        /* every slice's sound here (Josh: "merge the "all slices" items to
+         * this bank"): `--` while the slices differ, a turn sets them all */
+        const a = auAll(t, c);
+        const all = {};
+        ALL_FIELDS.forEach((f, k) => { all[f] = a ? a[k] : null; });
+        const cells = [mode, pitch, gain];
+        for (let k = 3; k < 7; k++) {
+            const cell = soundCell[SLICE_CLIP_ALL[k]](all);
+            cell.name = 'All Slices: ' + cell.name;
+            cells.push(cell);
+        }
+        cells.push({ kind: 'action', oneWay: true, label: '>Seq', name: 'Slices to Sequence', text: '->', opens: true });
+        return cells.map(live);
     }
-    const sliceCells = (r) => [
-        { kind: 'arcbip', label: 'Pitch', name: 'Slice Pitch', text: r.pitch == null ? '--' : fmtSemi(r.pitch), signed: (r.pitch | 0) / 24 },
-        { kind: 'arc', label: 'Gain', name: 'Slice Gain', text: r.gain == null ? '--' : fmtDb(r.gain), norm: ((r.gain | 0) + 40) / 52 },
-        { kind: 'enumsq', label: 'Revrs', name: 'Reverse', text: r.rev == null ? '--' : (r.rev ? 'On' : 'Off'), options: ['Off', 'On'], sel: r.rev | 0 },
-        { kind: 'arc', label: 'Attk', name: 'Attack', text: r.atk == null ? '--' : r.atk + 'ms', norm: Math.min(1, (r.atk | 0) / 2000) },
-        { kind: 'arc', label: 'Decay', name: 'Decay', text: r.dec == null ? '--' : (r.dec ? r.dec + 'ms' : 'Full'),
-          norm: r.dec ? Math.min(1, r.dec / 5000) : 1 },
-        { kind: 'enumsq', label: 'Play', name: 'Play Mode', text: r.play == null ? '--' : AU_PLAY_NAMES[r.play], options: AU_PLAY_NAMES, sel: r.play | 0 },
-        BLANK, BLANK,
-    ];
-    if (page === 'SLICE') {
-        const l = auSelSlice(t);
-        const cells = sliceCells(auSlice(t, c, l) || DEFAULT_SLICE);
-        return (!has || l >= i.n) ? cells.map((x) => (x === BLANK ? x : dash(x))) : cells;
-    }
-    /* ALL SLICES: the value every slice shares; `--` while they differ (a turn
-     * sets them all, starting from slice 1's). */
-    const a = auAll(t, c);
-    const r = {};
-    ALL_FIELDS.forEach((f, k) => { r[f] = a ? a[k] : null; });
-    const cells = sliceCells(r);
-    return has ? cells : cells.map((x) => (x === BLANK ? x : dash(x)));
+    /* SLICE n */
+    const l = auSelSlice(t);
+    const r = auSlice(t, c, l) || DEFAULT_SLICE;
+    const cells = ALL_FIELDS.map((f) => soundCell[f](r)).concat([BLANK, BLANK]);
+    return (!has || l >= i.n) ? cells.map((x) => (x === BLANK ? x : dash(x))) : cells;
 }
 
 /* Knobs that pick (one step per detent) rather than sweep. */
 export function auPanelKnobDeliberate(ed, k) {
     const page = auPanelPageName(ed);
-    if (page === 'CLIP') return k === 1 || k === 6;
-    if (page === 'SLICING') return auInfo(ed.t, auClipOf(ed.t)).mode === AU_MODE_SLICE ? k === 0 : (k === 1 || k === 3);
+    if (page === 'CLIP') return auInfo(ed.t, auClipOf(ed.t)).mode === AU_MODE_SLICE
+        ? (k === 0 || k === 3 || k === 6) : (k === 0 || k === 3 || k === 4 || k === 6);
     return k === 2 || k === 5;
 }
 
@@ -514,24 +507,6 @@ export function auRangeStep(t, c, which, steps, per) {
     return true;
 }
 
-/* Even, one step: Off, 2..32 (live — the hand set stays underneath). */
-export function auEvenStep(t, c, dir) {
-    const i = auInfo(t, c);
-    if (i.state !== 2) return false;
-    let v = i.even + dir;
-    if (v === 1) v = dir > 0 ? 2 : 0;
-    v = Math.max(0, Math.min(AU_EVEN_MAX, v));
-    if (v === i.even) return false;
-    const loc = Object.assign({}, i, { even: v, n: v || i.hand });
-    auSet(t, c, 'even', v);
-    S.auInfo[t][c] = loc;
-    S.auStartsRev = (S.auStartsRev | 0) + 1;
-    if (auSelSlice(t) >= loc.n) auSetSelSlice(t, loc.n - 1);
-    S.pendingPadNoteMapRecompute = true;
-    S.ledsDirtyAudio = true;
-    return true;
-}
-
 /* One knob step on the AUDIO editor. Returns true when something changed. */
 export function auPanelKnob(ed, k, steps) {
     const t = ed.t, c = auClipOf(t), i = auInfo(t, c);
@@ -539,35 +514,44 @@ export function auPanelKnob(ed, k, steps) {
     const page = auPanelPageName(ed);
     const loc = Object.assign({}, i);
     if (page === 'CLIP') {
-        if (k === 1) {
+        if (k === 0) {
             const m = Math.max(0, Math.min(1, i.mode + dir));
             if (m === i.mode) return false;
             loc.mode = m; auSet(t, c, 'mode', m);
             ed.page = 0;
         } else if (i.state !== 2) {
             return false;
-        } else if (k === 2 || k === 3) {
-            return auRangeStep(t, c, k === 2 ? 'start' : 'end', steps);
-        } else if (k === 4) {
+        } else if (k === 1) {
             const v = Math.max(-24, Math.min(24, i.pitch + dir));
             if (v === i.pitch) return false;
             loc.pitch = v; auSet(t, c, 'pitch', v);
-        } else if (k === 5) {
+        } else if (k === 2) {
             const v = Math.max(-40, Math.min(12, i.gain + dir));
             if (v === i.gain) return false;
             loc.gain = v; auSet(t, c, 'gain', v);
-        } else if (k === 6 && i.mode !== AU_MODE_SLICE) {
-            return auJumpKnob(t, c, i, loc, dir);
-        } else return false;
-    } else if (page === 'SLICING') {
-        if (i.state !== 2) return false;
-        if (i.mode !== AU_MODE_SLICE) {
-            if (k === 0) return auJumpKnob(t, c, i, loc, dir);
-            return auLoopKnob(t, k - 1, steps);
+        } else if (i.mode !== AU_MODE_SLICE) {
+            if (k === 3) return auJumpKnob(t, c, i, loc, dir);
+            if (k >= 4 && k <= 6) return auLoopKnob(t, k - 4, steps);
+            return false;
+        } else {
+            const f = SLICE_CLIP_ALL[k];
+            if (!f) return false;
+            const fi = ALL_FIELDS.indexOf(f);
+            const a = auAll(t, c) || [];
+            let base = a[fi];
+            if (base == null) {
+                const s1 = auSlice(t, c, 0);
+                base = s1 ? s1[f] : DEFAULT_SLICE[f];
+            }
+            const v = stepSliceField(f, base, steps);
+            if (v === a[fi]) return false;
+            auSetAll(t, c, f, v);
+            const na = a.length ? a.slice() : new Array(ALL_FIELDS.length).fill(null);
+            na[fi] = v;
+            _all.set(t + '_' + c, na);
+            return true;
         }
-        if (k === 0) return auEvenStep(t, c, dir);
-        return false;
-    } else if (page === 'SLICE') {
+    } else {
         const l = auSelSlice(t);
         if (i.state !== 2 || l >= i.n || k >= ALL_FIELDS.length) return false;
         const r = Object.assign({}, DEFAULT_SLICE, auSlice(t, c, l) || {});
@@ -577,22 +561,6 @@ export function auPanelKnob(ed, k, steps) {
         r[f] = v;
         auSetSlice(t, c, l, f, v);
         _sl.set(t + '_' + c + '_' + l, r);
-        return true;
-    } else {
-        if (i.state !== 2 || k >= ALL_FIELDS.length) return false;
-        const a = auAll(t, c) || [];
-        const f = ALL_FIELDS[k];
-        let base = a[k];
-        if (base == null) {
-            const s1 = auSlice(t, c, 0);
-            base = s1 ? s1[f] : DEFAULT_SLICE[f];
-        }
-        const v = stepSliceField(f, base, steps);
-        if (v === a[k]) return false;
-        auSetAll(t, c, f, v);
-        const na = a.length ? a.slice() : new Array(ALL_FIELDS.length).fill(null);
-        na[k] = v;
-        _all.set(t + '_' + c, na);
         return true;
     }
     S.auInfo[t][c] = loc;

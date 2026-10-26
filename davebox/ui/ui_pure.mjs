@@ -224,11 +224,14 @@ const BANK_MAP_ACTIONS = {
     melodic: { inst: [2, 3] },
     drum:    { inst: [2, 3] },
     conduct: {},
-    audio:   { inst: [2, 3] },
+    /* WAVE (Josh, 2026-10-28, from the Layout Map: "new editor: wav" under
+     * CLIP): the clip's sample — its waveform, chops and the load / chop
+     * picker (ui_audio_editor). */
+    audio:   { inst: [2, 3], wave: [2, 2] },
 };
 /* The instrument door on an Audio track is the AUDIO editor, and says so. */
 const BANK_MAP_ACTION_NAMES = { inst: 'INST' };
-const BANK_MAP_ACTION_NAMES_AUDIO = { inst: 'AUDIO' };
+const BANK_MAP_ACTION_NAMES_AUDIO = { inst: 'AUDIO', wave: 'WAVE' };
 /* AUTOMATION has no space to wrap at and is wider than a cell. */
 const BANK_MAP_SHORT = { [BANK_AUTOMATION]: 'AUTO' };
 

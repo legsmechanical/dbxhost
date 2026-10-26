@@ -78,7 +78,7 @@ import { isAudioTrack, audioSliceMode, auLoopKnob } from './ui_audio.mjs';
  * that is not the CLIP bank's own same knob. */
 const AUDIO_CROP_KNOB = 4;
 const AUDIO_CLIP_REMAP = { 3: [1, 3], 4: [0, 5], 5: [0, 4] };
-import { openAudioEditor } from './ui_audio_editor.mjs';
+import { openAudioEditor, openWave, closeAudioPanel } from './ui_audio_editor.mjs';
 import { soundActive, soundPageBarShown, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVolGestureEnd, soundShiftEdge, soundOpenGenerator,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, macroClearConfirmAnswer,
@@ -1595,7 +1595,7 @@ function bankMapPadActs(note) {
         return false;
     }
     const t = S.activeTrack;
-    if (bankPadMapActionAt(S.trackPadMode[t], cell.col, cell.row) === 'inst') return true;
+    if (bankPadMapActionAt(S.trackPadMode[t], cell.col, cell.row)) return true;
     return bankPadMapCellAt(S.trackPadMode[t], t, cell.col, cell.row) !== null;
 }
 export function bankMapPadTap(note) {
@@ -1637,8 +1637,9 @@ export function bankMapPadTap(note) {
         return;
     }
     const t = S.activeTrack;
-    if (bankPadMapActionAt(S.trackPadMode[t], cell.col, cell.row) === 'inst') {
-        bankMapMenuTap({ kind: 'inst', col: cell.col, row: cell.row });
+    const act = bankPadMapActionAt(S.trackPadMode[t], cell.col, cell.row);
+    if (act === 'inst' || act === 'wave') {
+        bankMapMenuTap({ kind: act, col: cell.col, row: cell.row });
         return;
     }
     const b = bankPadMapCellAt(S.trackPadMode[t], t, cell.col, cell.row);
@@ -1719,13 +1720,21 @@ function runBankMapMenu(a) {
      * instrument mode puts me back into the automation list"): a module or
      * INST pick from the AUTOMATION door gives the door's bank back first, so
      * the editor opens over the bank you came in from and Back returns there. */
-    if ((a.kind === 'module' || a.kind === 'inst') && doorScreenUp() &&
+    if ((a.kind === 'module' || a.kind === 'inst' || a.kind === 'wave') && doorScreenUp() &&
             S.doorReturn && S.doorReturn.door === BANK_AUTOMATION) {
         if (soundOpen()) soundExit();
         closeDoorScreen();
     }
     if (a.kind === 'bus') { soundEnterBusFx(a.bus); return; }
     if (a.kind === 'inst' || (a.kind === 'module' && a.comp === 'synth')) { openTrackInstrument(); return; }
+    if (a.kind === 'wave') {
+        /* the WAVE editor (Audio): the clip's sample, over the bank you were on */
+        if (soundOpen()) soundExit();
+        if (S.auPanel) closeAudioPanel();
+        openWave(t);
+        forceRedraw();
+        return;
+    }
     if (a.kind === 'module') { openTrackModule(a.comp); return; }
     if (a.bank === BANK_CONFIG) {
         /* TRACK CONFIG: the menu, over whatever bank you are on; Back from its
