@@ -237,19 +237,15 @@ function drawAudioWaveEditor() {
     const mk = auMarks(t, c);
     drawBankHeading('WAVE  ' + (sel + 1) + '/' + mk.length, false);
     const m = mk[sel];
-    if (i.even) {
-        /* "Even on": the markers are locked */
-        ovwPrint(4, 10, 'EVEN ' + i.even + ': LOCKED', 1);
-    } else if (m) {
+    if (m) {
         ovwPrint(4, 10, 'S ' + auFmtTime(m[0], rt), 1);
         /* at home the end follows the next slice's start: "NEXT" (Josh) */
         right(m[1] === auEdHome(ed, sel) ? 'E NEXT' : 'E ' + auFmtTime(m[1], rt));
     }
-    drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel, cur: i.even ? null : ed.cur });
+    drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel, cur: ed.cur });
     /* two hints fit: Shift + click is the one nobody would guess (found on
      * the device: a third was cut off) */
-    drawKitHintRow(MV_FOOTER_Y, i.even ? [['k2', 'zoom'], ['sh+clk', 'menu']]
-                                       : [['clk', 'add'], ['sh+clk', 'menu']]);
+    drawKitHintRow(MV_FOOTER_Y, [['clk', 'add'], ['sh+clk', 'menu']]);
 }
 
 /* An Audio track's banks (Josh, 2026-10-27): the CLIP bank mirrors ALL LANES

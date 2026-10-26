@@ -29,7 +29,7 @@ the section into a versioned heading at release time.
   loop's start and end, or make chops with a **Lazy chop** (tap them in as the
   sample plays), by hand or evenly, then shape them in a zoomable editor — move
   any chop's start and end down to a single sample, add and remove chops.
-  **Even** slices sit over your own chops without replacing them. The **AUDIO**
+  **Even** cuts equal slices, showing them on the pads as you turn. The **AUDIO**
   editor (the AUDIO pad) holds the clip's sound: mode, pitch and gain, sound
   settings per slice or for all slices at once, and **>Seq** to lay the slices
   out on the steps. Loop clips can play backwards, be nudged against

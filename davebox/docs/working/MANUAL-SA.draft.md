@@ -1240,10 +1240,9 @@ whose file has gone reads *Missing: name* and stays silent.
 - **Manual** starts over with one slice, Start to End (it asks first if that would
   replace chops you made).
 - **Even** cuts Start..End into 2–32 equal slices: click, turn for the count —
-  the pads light for each slice as you turn — and click to keep it (**Back** puts
-  back what you had). It sits *over* your chops rather than replacing them: set it back to
-  **Off** and they're still there. A slice's sound settings belong to its number,
-  so slice 3 sounds the same either way.
+  the pads light for each slice as you turn — and click to keep them as your
+  chops, to edit like any others (**Back** puts back what you had). A slice's
+  sound settings belong to its number, so slice 3 keeps its sound.
 
 **The chop editor** (WAVE, Slice mode):
 
@@ -1257,7 +1256,7 @@ whose file has gone reads *Missing: name* and stays silent.
 
 Whatever you touched last — the cursor (jog), the start (K1) or the end (K3) — stays
 in the middle of the screen and the waveform scrolls around it; touching one jumps
-there. While **Even** is on, the chops are locked and the editor says so.
+there.
 
 **The AUDIO editor** holds the clip's sound. Open it from the bank map's **AUDIO**
 pad, or by clicking **Audio** in the track's sound menu. Turn the jog for its pages;

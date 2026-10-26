@@ -340,12 +340,22 @@ int main(void) {
         hx_set_param(h, "t4_au_set_even", "0 4");
         hx_get_param(h, "t4_au_marks_0", mk, sizeof mk);
         HX_ASSERT(!strcmp(mk, "0 12000 12000 24000 24000 36000 36000 48000"), "Even 4 over the hand set");
-        hx_set_param(h, "t4_au_mark_add", "0 3000");
-        hx_set_param(h, "t4_au_slice_start", "0 1 13000");
-        HX_ASSERT(ac->nslices == 2 && ac->sl[1].start == 12000, "a marker moved while Even was on");
         hx_set_param(h, "t4_au_set_even", "0 0");
         hx_get_param(h, "t4_au_marks_0", mk, sizeof mk);
         HX_ASSERT(!strcmp(mk, "0 12000 12000 48000"), "Even Off did not bring the hand set back");
+        /* Even is a way to chop, never a lock (Josh): a hand edit while it is
+         * on makes its slices the hand set first, then applies */
+        hx_set_param(h, "t4_au_set_even", "0 4");
+        hx_set_param(h, "t4_au_slice_start", "0 1 13000");
+        hx_get_param(h, "t4_au_marks_0", mk, sizeof mk);
+        HX_ASSERT(ac->even == 0 && ac->nslices == 4 && !strcmp(mk, "0 13000 13000 24000 24000 36000 36000 48000"),
+                  "an edit while Even was on did not bake it and apply");
+        hx_set_param(h, "t4_au_set_even", "0 3");
+        hx_set_param(h, "t4_au_even_bake", "0");
+        HX_ASSERT(ac->even == 0 && ac->nslices == 3 && ac->sl[1].start == 16000 && ac->sl[2].start == 32000, "even_bake");
+        /* back to the two-slice hand set the rest of the test expects */
+        hx_set_param(h, "t4_au_manual", "0");
+        hx_set_param(h, "t4_au_mark_add", "0 12000");
         /* Start / End are frames */
         hx_set_param(h, "t4_au_set_start", "0 24000");
         hx_set_param(h, "t4_au_set_even", "0 2");

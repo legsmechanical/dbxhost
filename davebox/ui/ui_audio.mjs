@@ -328,6 +328,8 @@ export function auSliceEnd(t, c, l, frame) { auSetSlice(t, c, l, 'end', frame); 
 export function auMarkAdd(t, c, frame) { setKey(t, 'mark_add', c + ' ' + frame); auMarkStale(t, c); }
 export function auMarkDel(t, c, l) { setKey(t, 'mark_del', c + ' ' + l); auMarkStale(t, c); }
 export function auManual(t, c) { setKey(t, 'manual', c); auMarkStale(t, c); }
+/* Even's slices become the clip's own chops (Even Off). */
+export function auEvenBake(t, c) { setKey(t, 'even_bake', c); auMarkStale(t, c); }
 
 /* ---- formatting ---- */
 

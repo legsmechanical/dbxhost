@@ -234,7 +234,7 @@ step('⭐⭐ SLICE n edits the last pad tapped', () => {
     assert(!S.auPanel, 'Back did not close the AUDIO editor');
 });
 
-step('⭐⭐ the map\'s WAVE pad opens WAVE (Slice: the chop editor); Even on locks the markers', () => {
+step('⭐⭐ the map\'s WAVE pad opens WAVE (Slice: the chop editor); a clip on Even is edited like any other (Josh)', () => {
     const map = P.bankPadMapForMode(C.PAD_MODE_AUDIO, 4);
     assert(map[2].cells[2] && map[2].cells[2].name === 'WAVE', 'no WAVE pad under CLIP');
     mapPad(2, 2);
@@ -242,10 +242,12 @@ step('⭐⭐ the map\'s WAVE pad opens WAVE (Slice: the chop editor); Even on lo
     ticks(2);
     assert(inked(shown()), 'WAVE draws nothing');
     reset();
-    jog(1); click(); cc(71, 1);
-    assert(sentLike(/mark_add|slice_start/).length === 0, 'a marker moved while Even was on');
+    jog(1); click();                                 /* Even 8: a click still adds a marker */
+    assert(sent('t4_au_mark_add').length === 1 && A.auInfo(4, 0).even === 0 && A.auInfo(4, 0).n === 9,
+           'a marker on a clip on Even: ' + JSON.stringify(sentLike(/_au_/)) + ' even ' + A.auInfo(4, 0).even);
     back();
     assert(!S.auEditor && !S.auPanel, 'Back did not leave WAVE');
+    GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(20);
 });
 
 step('⭐⭐ WAVE in Slice mode: pads pick, K1/K3 move by a pixel, K2 zooms, click adds, Delete + pad removes', () => {
@@ -376,6 +378,9 @@ step('⭐⭐ Shift + click: the picker — Load sample / Chop sample › Lazy ·
     assert(ed.pick.editEven, 'not editing');
     jog(-1); click();
     assert(sent('t4_au_set_even').pop() === '0 7' && !ed.pick, 'Even 7 not kept');
+    /* kept = the clip's own chops now (Josh: "it's just a way to chop them") */
+    assert(sent('t4_au_even_bake').join() === '0' && A.auInfo(4, 0).even === 0 && A.auInfo(4, 0).hand === 7,
+           'Even 7 did not become the chops: ' + JSON.stringify(sent('t4_au_even_bake')));
     globalThis.host_module_set_param = setP;
     /* Manual asks before it replaces the 8 chops made by hand */
     GET['t4_au_info_0'] = INFO(1, 8, 0); A.auMarkStale(4, 0); ticks(2);

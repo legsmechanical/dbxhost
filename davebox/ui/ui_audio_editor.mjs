@@ -24,8 +24,7 @@
  *   Loop        K1 Start · K2 Zoom · K3 End · K4 Pitch · K5 Gain; the jog a cursor
  *   Slice       the chop editor: K1 Start · K2 Zoom · K3 End of the slice the
  *               pads pick (it plays); the jog a cursor and a click adds a marker
- *               there; Delete + pad removes one (not slice 1's); locked while
- *               Even is on. An End turned past the next slice's start sticks
+ *               there; Delete + pad removes one (not slice 1's). An End turned past the next slice's start sticks
  *               there a few detents and reads NEXT.
  * One detent of K1 / K3 / the jog = one screen pixel at the zoom; what was
  * touched last stays in the middle of the screen, the waveform scrolling
@@ -33,7 +32,8 @@
  * SHIFT + CLICK opens the picker (Josh: "editor picker is: "Load sample" and
  * "Chop sample" at first level. Chop sample has second level with options."):
  *   Load sample›   the chooser
- *   Chop sample›   Lazy · Manual · Even (Off / 2-32) — each makes the clip Slice
+ *   Chop sample›   Lazy · Manual · Even (2-32, live on the pads as it turns; a
+ *                  click makes them the clip's chops) — each makes the clip Slice
  * LAZY: pad 1 white; its tap plays Start..End; then the next pad is white and
  * its tap drops a marker at the playhead; chopped slices stay lit. It ends on
  * Back or at End and asks "Keep N new chops?" (Yes keeps them, No brings the
@@ -50,7 +50,7 @@ import { nowMs } from './ui_clock.mjs';
 import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLazyState, auMarkStale,
          auPanelPages, auPanelPageName, auPanelKnob, auPanelKnobDeliberate, auChop, auPadToSlice,
          auSelSlice, auSetSelSlice, isAudioTrack, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
-         auMarkAdd, auMarkDel, auManual, auRangeStep, auSet, auEnd,
+         auMarkAdd, auMarkDel, auManual, auEvenBake, auRangeStep, auSet, auEnd,
          AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { ccKnobDelta, knobPick, KNOB_DELIB } from './ui_input_cc.mjs';
@@ -325,10 +325,20 @@ function zoom(ed, dir) {
     return true;
 }
 
+/* Even is a way to chop, never a lock (Josh, 2026-10-28: "even shouldn't
+ * lock the slices - it's just a way to chop them"): an edit while a clip is
+ * still on Even makes its slices the clip's own chops first. The engine does
+ * the same on the edit's key; this keeps the mirror in step. */
+function bakeLocal(ed) {
+    const i = auInfo(ed.t, ed.c);
+    if (!i.even) return;
+    S.auInfo[ed.t][ed.c] = Object.assign({}, i, { even: 0, hand: i.n });
+}
+
 /* K1 / K3 in Slice mode: the selected slice's start / end by `dd` pixels. */
 function chopPoint(ed, which, dd) {
     const t = ed.t, c = ed.c, i = auInfo(t, c);
-    if (i.even) { ed.lockedAt = S.clockMs; return true; }          /* "Even on": locked */
+    bakeLocal(ed);
     const k = auSelSlice(t);
     const mk = auMarks(t, c).map((m) => m.slice());
     if (!mk[k]) return false;
@@ -377,7 +387,7 @@ export function auPickRows(ed) {
     const i = auInfo(ed.t, ed.c);
     const ev = p.editEven ? p.even : i.even;
     return [{ id: 'lazy', label: 'Lazy' }, { id: 'manual', label: 'Manual' },
-            { id: 'even', label: 'Even', value: ev ? String(ev) : 'Off', editing: !!p.editEven }];
+            { id: 'even', label: 'Even', value: p.editEven || ev ? (ev ? String(ev) : 'Off') : '', editing: !!p.editEven }];
 }
 function pickInput(ed, status, d1, d2) {
     const p = ed.pick, hi = status & 0xF0;
@@ -430,7 +440,15 @@ function pickInput(ed, status, d1, d2) {
                 setEven(ed, p.even);
                 return true;
             }
-            ed.pick = null;                                  /* kept: it is already applied */
+            /* kept: the count becomes the clip's own chops, to edit like any
+             * others (Josh: Even "is just a way to chop them") */
+            ed.pick = null;
+            if (p.even) {
+                const i = auInfo(ed.t, ed.c);
+                auEvenBake(ed.t, ed.c);
+                S.auInfo[ed.t][ed.c] = Object.assign({}, i, { even: 0, hand: p.even, n: p.even });
+                S.auStartsRev = (S.auStartsRev | 0) + 1;
+            }
             return true;
         }
         return true;
@@ -519,17 +537,18 @@ export function audioEditorInput(status, d1, d2) {
             if (S.deleteHeld) {
                 /* Delete + pad: that slice's start goes (merges into the one
                  * before); slice 1's stays */
-                if (down && !i.even && k >= 1 && k < i.n) {
+                if (down && k >= 1 && k < i.n) {
+                    bakeLocal(ed);
                     auMarkDel(ed.t, ed.c, k);
                     const mk = auMarks(ed.t, ed.c).map((m) => m.slice());
                     if (mk[k - 1][1] === mk[k][0]) mk[k - 1][1] = mk[k][1];
                     mk.splice(k, 1);
-                    S.auInfo[ed.t][ed.c] = Object.assign({}, i, { hand: i.hand - 1, n: i.n - 1 });
+                    S.auInfo[ed.t][ed.c] = Object.assign({}, i, { even: 0, hand: i.n - 1, n: i.n - 1 });
                     auMarksLocal(ed.t, ed.c, mk);
                     if (auSelSlice(ed.t) >= mk.length) auSetSelSlice(ed.t, mk.length - 1);
                     S.pendingPadNoteMapRecompute = true;
                     S.ledsDirtyAudio = true;
-                } else if (down && i.even) ed.lockedAt = S.clockMs;
+                }
                 return true;
             }
             if (down && k < i.n) {
@@ -586,7 +605,6 @@ export function audioEditorInput(status, d1, d2) {
         if (sub !== 'chop') return true;
         /* Slice: a marker at the cursor */
         const i = auInfo(ed.t, ed.c);
-        if (i.even) { ed.lockedAt = S.clockMs; return true; }
         const mk = auMarks(ed.t, ed.c);
         const f = ed.cur;
         if (mk.length < 32 && !mk.some((m) => Math.abs(m[0] - f) < 16)) {
@@ -596,7 +614,7 @@ export function audioEditorInput(status, d1, d2) {
             while (k < nm.length && nm[k][0] < f) k++;
             if (k > 0) { nm.splice(k, 0, [f, nm[k - 1][1] > f + 16 ? nm[k - 1][1] : (k < nm.length ? nm[k][0] : auEnd(i))]); nm[k - 1][1] = f; }
             else nm.unshift([f, nm.length ? nm[0][0] : auEnd(i)]);
-            S.auInfo[ed.t][ed.c] = Object.assign({}, i, { hand: i.hand + 1, n: i.n + 1 });
+            S.auInfo[ed.t][ed.c] = Object.assign({}, i, { even: 0, hand: i.n + 1, n: i.n + 1 });
             auMarksLocal(ed.t, ed.c, nm);
             S.pendingPadNoteMapRecompute = true;
             S.ledsDirtyAudio = true;

@@ -22,6 +22,8 @@
  *                                  there (later slices, and their steps, move up one)
  *   tN_au_mark_del "C L"           slice L's start goes: it merges into L-1 (not 0)
  *   tN_au_manual  "C"              the hand set becomes one slice, Start..End; Even Off
+ *   tN_au_even_bake "C"            Even's slices become the hand set; Even Off
+ *                                  (a hand edit while Even is on bakes first)
  *   tN_au_chop    "C"              one step per slice, in order (one undo)
  *   tN_au_wipe    "C"              clip C's steps go (one undo) -- a converted
  *                                  clip that now plays its recording
@@ -294,6 +296,25 @@ static void au_renumber_steps(seq8_instance_t *inst, int t, int c, int at, int d
     clip_note_finalize(inst, cl, t, c);
 }
 
+/* Even's slices become the hand set: N equal slices of Start..End, each end
+ * home, the sound settings staying with their numbers; Even Off. Even is a
+ * way to chop, not a lock (Josh, 2026-10-28: "even shouldn't lock the slices
+ * - it's just a way to chop them"): it is baked by tN_au_even_bake and by
+ * the first hand edit made while it is on. */
+static void au_even_bake(au_clip_t *cl) {
+    uint32_t rs, re;
+    int k, n = cl->even;
+    if (!n || !cl->smp) return;
+    au_range(cl, cl->smp, &rs, &re);
+    if (re <= rs) return;
+    for (k = 0; k < n; k++) {
+        cl->sl[k].start = rs + (uint32_t)((uint64_t)(re - rs) * (uint32_t)k / (uint32_t)n);
+        cl->sl[k].end = 0;
+    }
+    cl->nslices = (uint8_t)n;
+    cl->even = 0;
+}
+
 static int sp_track_audio(sp_ctx_t *cx) {
     seq8_instance_t *inst = cx->inst;
     const char *val = cx->val ? cx->val : "";
@@ -418,8 +439,10 @@ static int sp_track_audio(sp_ctx_t *cx) {
         v = my_atoi(p);
         if (!strcmp(w, "start")) {
             /* a hand-set start: between its neighbours' starts, before its
-             * own pinned end. Locked while Even is on. */
-            if (!cl->smp || cl->even || l >= cl->nslices) return 1;
+             * own pinned end. Even, if on, becomes the hand set first. */
+            if (!cl->smp) return 1;
+            au_even_bake(cl);
+            if (l >= cl->nslices) return 1;
             int lo = l > 0 ? (int)cl->sl[l - 1].start + AU_GAP : 0;
             int hi = l + 1 < cl->nslices ? (int)cl->sl[l + 1].start - AU_GAP : (int)cl->smp->frames - AU_GAP;
             if (sl->end && (int)sl->end - AU_GAP < hi) hi = (int)sl->end - AU_GAP;
@@ -428,7 +451,9 @@ static int sp_track_audio(sp_ctx_t *cx) {
         } else if (!strcmp(w, "end")) {
             /* a hand-set end: 0 (or the home frame itself) = home; else
              * pinned, past its start, anywhere up to the sample's end */
-            if (!cl->smp || cl->even || l >= cl->nslices) return 1;
+            if (!cl->smp) return 1;
+            au_even_bake(cl);
+            if (l >= cl->nslices) return 1;
             uint32_t home = au_home_end(cl, cl->smp, l);
             if (v <= 0 || (uint32_t)v == home) sl->end = 0;
             else sl->end = (uint32_t)clamp_i(v, (int)sl->start + AU_GAP, (int)cl->smp->frames);
@@ -463,7 +488,9 @@ static int sp_track_audio(sp_ctx_t *cx) {
         if (c < 0) return 1;
         au_clip_t *cl = &inst->au_clip[tidx][c];
         f = my_atoi(p);
-        if (!cl->smp || cl->even || cl->nslices >= AU_MAX_SLICES || f < 0 || (uint32_t)f >= cl->smp->frames) return 1;
+        if (!cl->smp) return 1;
+        au_even_bake(cl);
+        if (cl->nslices >= AU_MAX_SLICES || f < 0 || (uint32_t)f >= cl->smp->frames) return 1;
         for (k = 0; k < cl->nslices; k++) {
             int d = (int)cl->sl[k].start - f;
             if (d > -AU_GAP && d < AU_GAP) return 1;       /* too close to a marker */
@@ -490,12 +517,21 @@ static int sp_track_audio(sp_ctx_t *cx) {
         if (c < 0) return 1;
         au_clip_t *cl = &inst->au_clip[tidx][c];
         l = my_atoi(p);
-        if (cl->even || l < 1 || l >= cl->nslices) return 1;
+        au_even_bake(cl);
+        if (l < 1 || l >= cl->nslices) return 1;
         if (!cl->sl[l - 1].end) cl->sl[l - 1].end = cl->sl[l].end;
         memmove(&cl->sl[l], &cl->sl[l + 1], sizeof cl->sl[0] * (size_t)(AU_MAX_SLICES - 1 - l));
         memset(&cl->sl[AU_MAX_SLICES - 1], 0, sizeof cl->sl[0]);
         cl->nslices--;
         au_renumber_steps(inst, tidx, c, l, -1);
+        au_mark(inst, tidx, c);
+        return 1;
+    }
+
+    if (!strcmp(sub, "even_bake")) {
+        c = au_arg_clip(&p);
+        if (c < 0) return 1;
+        au_even_bake(&inst->au_clip[tidx][c]);
         au_mark(inst, tidx, c);
         return 1;
     }
