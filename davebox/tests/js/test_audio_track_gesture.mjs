@@ -919,6 +919,25 @@ step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP /
     S.bankCardLatched = false;
 });
 
+step('⭐⭐ Loop + steps on SAMPLE (Josh: "it\'s not accessible at all in sample view"): the window is set, the screen stays, Start / End re-read', () => {
+    GET['t4_au_info_0'] = INFO(0, 8);
+    A.auMarkStale(4, 0); ticks(3);
+    E.openWave(4); ticks(2);                           /* the map's pad is tested above */
+    assert(S.auEditor, 'SAMPLE did not open');
+    reset();
+    cc(58, 127);                                       /* hold Loop */
+    note(17, 100); note(18, 100);                      /* pages 2..3 */
+    note(18, 0); note(17, 0);
+    cc(58, 0);
+    ticks(2);
+    const ac = S.trackActiveClip[4] | 0;
+    assert(sent('t4_c' + ac + '_loop_set').join() === String((16 << 16) | 32),
+           'Loop + steps over SAMPLE set no window: ' + JSON.stringify(sentLike(/loop_set/)));
+    assert(S.auEditor, 'Loop + steps left SAMPLE');
+    assert(sentLike(/_step_/).length === 0, 'a step press edited the clip');
+    back(); ticks(2);
+});
+
 step('⭐⭐ Loop pads: a progress bar — dim the loop, bright what has played, the playhead pulsing; Revrs fills from the end; stopped all dim (Josh)', () => {
     const tc = globalThis.__tc(4);
     const pad = (i) => LEDS.get(C.TRACK_PAD_BASE + i) || 0;

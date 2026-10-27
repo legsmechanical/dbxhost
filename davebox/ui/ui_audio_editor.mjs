@@ -45,7 +45,7 @@
  * time, and leaves WAVE. Steps are swallowed; Note/Session closes and falls
  * through. */
 
-import { S } from './ui_state.mjs';
+import { S, loopViewActive } from './ui_state.mjs';
 import { MoveBack } from '/data/UserData/schwung/shared/constants.mjs';
 import { MoveMainKnob, MoveMainButton, MoveMainTouch, MoveNoteSession, TRACK_PAD_BASE } from './ui_constants.mjs';
 import { decodeDelta } from '/data/UserData/schwung/shared/input_filter.mjs';
@@ -119,6 +119,10 @@ export function audioPanelInput(status, d1, d2) {
      * does anywhere. Shift + click (the picker) and Shift + a knob (fine
      * steps) stay the screen's. */
     if (shortcutLeaves(status, d1, d2)) { closeAudioPanel(); return false; }
+    /* Loop + steps sets the loop here as anywhere — on a Loop clip, Start
+     * and End with it (Josh, 2026-10-28: "it's not accessible at all in
+     * sample view"); the screen stays */
+    if ((status & 0xE0) === 0x80 && d1 >= 16 && d1 <= 31 && (loopViewActive() || S.loopGestureStart >= 0)) return false;
     if (S.auEditor) return audioEditorInput(status, d1, d2);
     const hi = status & 0xF0;
     if (hi === 0x90 || hi === 0x80) {

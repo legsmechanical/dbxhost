@@ -1176,6 +1176,30 @@ static double au_span_ticks(const au_clip_t *cl, const au_sample_t *s, uint32_t 
     return (double)bars * PPQN * 4 * (double)(re - rs) / (double)s->frames;
 }
 
+/* Loop + steps on a Loop clip (Josh, 2026-10-28: "we should be able to set
+ * a loop length in loop mode that directly changes the start/end point" ·
+ * "just like sequence loop lengths"): Start..End become the part of the
+ * sample under the clip's loop window, the steps laid over the sample's own
+ * Bars from its first frame. */
+static void au_window_to_range(seq8_instance_t *inst, int t, int c) {
+    seq8_track_t *tr = &inst->tracks[t];
+    au_clip_t *cl = &inst->au_clip[t][c];
+    const clip_t *lc = &tr->clips[c];
+    const au_sample_t *s = cl->smp;
+    if (tr->pad_mode != PAD_MODE_AUDIO || cl->mode != AU_MODE_LOOP || !s || s->frames <= 2 * AU_GAP) return;
+    double tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
+    double whole = (double)(cl->bars ? cl->bars : 1) * PPQN * 4;
+    double fa = (double)lc->loop_start * tps / whole * (double)s->frames;
+    double fb = (double)(lc->loop_start + lc->length) * tps / whole * (double)s->frames;
+    uint32_t a = fa >= (double)(s->frames - AU_GAP) ? s->frames - AU_GAP : (uint32_t)(fa + 0.5);
+    uint32_t b = fb >= (double)s->frames ? s->frames : (uint32_t)(fb + 0.5);
+    if (b < a + AU_GAP) b = a + AU_GAP;
+    cl->rstart = a;
+    cl->rend = b >= s->frames ? 0 : b;
+    cl->mig_rs = cl->mig_re = 0;
+    inst->state_dirty = 1;
+}
+
 static int au_count(const au_clip_t *cl) {
     if (cl->even) return cl->even;
     return cl->nslices ? cl->nslices : 1;

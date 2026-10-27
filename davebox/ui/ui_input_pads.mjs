@@ -13,7 +13,7 @@ import {
     NO_NOTE_FLASH_MS, BANK_PADMODE
 } from './ui_constants.mjs';
 import { S, loopViewActive, markJsUndo } from './ui_state.mjs';
-import { isAudioTrack, audioSliceMode } from './ui_audio.mjs';
+import { isAudioTrack, audioSliceMode, auMarkStale } from './ui_audio.mjs';
 import { auPadTapped } from './ui_audio_editor.mjs';
 import { autoHoldJumpBegin, autoHoldJumpEnd } from './ui_automation_bank.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -1308,6 +1308,8 @@ function _fireLoopWindowSet(track, ctx, startStep, lenSteps) {
         if (S.trackCurrentPage[track] < startPage) S.trackCurrentPage[track] = startPage;
         else if (S.trackCurrentPage[track] > lastPage) S.trackCurrentPage[track] = lastPage;
         host_module_set_param('t' + track + '_c' + ac + '_loop_set', String(packed));
+        /* an Audio Loop clip: the DSP moves Start..End with the window */
+        if (isAudioTrack(track) && !audioSliceMode(track)) auMarkStale(track, ac);
     } else if (ctx === 1) {
         /* Drum lane (active lane on this track) */
         const lane = S.activeDrumLane[track];

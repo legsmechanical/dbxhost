@@ -9,6 +9,9 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Changed
+- **Audio: Loop + steps sets a Loop clip's Start and End.** The loop window you hold
+  Loop and tap steps for picks that part of the sample (the steps laid over its
+  Bars), and it works on the SAMPLE screen too.
 - **Audio: Pitch follows Bars.** Tempo **Pitch** retunes a Loop clip to fill the
   sample's own Bars at the tempo, as Sync does, rather than the clip's length.
 - **Audio: SAMPLE sits on the instrument pad, where INST is on other tracks**; the

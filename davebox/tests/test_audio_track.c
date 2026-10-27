@@ -960,6 +960,27 @@ int main(void) {
             lc->length = 8;
         }
 
+        /* Loop + steps on a Loop clip sets Start..End to the part of the
+         * sample under the window, the steps over its Bars (Josh: "a loop
+         * length in loop mode that directly changes the start/end point") */
+        {
+            uint32_t ors = ac->rstart, ore = ac->rend;
+            uint16_t ols = lc->loop_start, olen = lc->length;
+            uint32_t tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
+            double per = (double)ac->smp->frames / (PPQN * 4.0 / tps);   /* frames a step, 1 bar */
+            snprintf(p, sizeof p, "%d", (4 << 16) | 8);
+            hx_set_param(h, "t4_c7_loop_set", p);
+            HX_ASSERT(lc->loop_start == 4 && lc->length == 8, "the window was not set");
+            HX_ASSERT(ac->rstart + 1 >= (uint32_t)(4 * per) && ac->rstart <= (uint32_t)(4 * per) + 1 &&
+                      ac->rend + 1 >= (uint32_t)(12 * per) && ac->rend <= (uint32_t)(12 * per) + 1,
+                      "Start..End did not follow the Loop window");
+            ac->mode = AU_MODE_SLICE;
+            hx_set_param(h, "t4_c7_loop_set", "16");
+            HX_ASSERT(ac->rstart + 1 >= (uint32_t)(4 * per) && ac->rstart <= (uint32_t)(4 * per) + 1, "a Slice clip's window moved Start");
+            ac->mode = AU_MODE_LOOP;
+            ac->rstart = ors; ac->rend = ore; lc->loop_start = ols; lc->length = olen;
+        }
+
         /* >Seq: each chop on the step of its place in the sample's own Bars */
         hx_set_param(h, "t4_au_set_tempo", "7 0");
         hx_set_param(h, "t4_au_set_even", "7 16");
