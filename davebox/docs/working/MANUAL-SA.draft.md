@@ -1221,7 +1221,7 @@ steps keeps them. A new clip starts cut into **16** even chops. From an external
 keyboard, note 36 plays chop 1.
 
 **SAMPLE** holds the clip's sample and its chops — it is the Audio track's instrument
-editor. Open it from the bank map's **SAMPLE** pad (under CLIP) or its instrument pad,
+editor. Open it from the bank map's **SAMPLE** pad (where INST is on other tracks) or its instrument pad,
 by clicking **Audio** in the track's sound menu, or with the instrument shortcut
 (**Shift + hold Note/Session**). What it shows follows the clip:
 
@@ -1283,8 +1283,8 @@ in the middle of the screen and the waveform scrolls around it; touching one jum
 there. The header reads **SLICE n/n** (or **LOOP**); the start or end you're touching
 or turning lights up, and **ZOOM +** / **ZOOM −** shows between them while K2 zooms.
 
-**The SLICE / LOOP bank** holds the clip's sound; it is named for the clip's Mode. Pick it from the bank map's **SLICE** (or **LOOP**)
-pad. It is a bank with **pages**:
+**The SLICE / LOOP bank** holds the clip's sound; it is named for the clip's Mode. Pick it from the bank map's **SLICE** (or **LOOP**) pad, under CLIP
+— it is a bank with **pages**:
 **turn the jog** to flip them (on a bank with one page the turn does nothing); touch
 the jog or a knob to see the page you're on. **Delete + jog click** resets the page
 showing, and only that page.

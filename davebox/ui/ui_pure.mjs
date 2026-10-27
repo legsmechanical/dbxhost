@@ -236,7 +236,7 @@ const BANK_MAP_POS = {
                1: [3, 0] },
     audio:   { [BANK_CHORD]: [0, 0], 5: [0, 1], [BANK_CONFIG]: [0, 3],
                [BANK_MACROS]: [1, 0], [BANK_AUTOMATION]: [1, 1], [BANK_SOUND]: [1, 3],
-               [BANK_STEP]: [2, 0], 0: [2, 1], [BANK_AUDIO]: [2, 3],
+               [BANK_STEP]: [2, 0], 0: [2, 1], [BANK_AUDIO]: [2, 2],
                1: [3, 0] },
 };
 const BANK_MAP_LABELS = {
@@ -256,8 +256,10 @@ const BANK_MAP_ACTIONS = {
     /* WAVE (Josh, 2026-10-28, from the Layout Map: "new editor: wav" under
      * CLIP): the clip's sample — its waveform, chops and the load / chop
      * picker (ui_audio_editor). */
-    /* AUDIO is a bank now, on the pad INST had (Josh, 2026-10-28) */
-    audio:   { wave: [2, 2] },
+    /* SAMPLE is the instrument door, so it sits where INST does on every
+     * other track; the SLICE / LOOP bank under CLIP (Josh, 2026-10-28: "i
+     * thought sample and loop/slice were going to switch spots?") */
+    audio:   { wave: [2, 3] },
 };
 /* The instrument door on an Audio track is the AUDIO editor, and says so. */
 const BANK_MAP_ACTION_NAMES = { inst: 'INST' };

@@ -661,10 +661,10 @@ async function openAudioEditor(mode) {
 await shot('audio-ed-slice-clip', async () => { await openAudioEditor(1); });
 await shot('audio-ed-slice-slice', async () => { await openAudioEditor(1); jog(1); ticks(2); });
 await shot('audio-ed-loop-clip', async () => { await openAudioEditor(0); });
-/* Audio: WAVE (the map's WAVE pad) in each of its states, its picker, Lazy */
+/* Audio: SAMPLE (the map's SAMPLE pad, the instrument slot) in each of its states, its picker, Lazy */
 async function openWaveEd(mode) {
     await audioReady(mode); selectTrack(AU_T); await audioReady(mode);
-    mapTap(PURE.bankMapPadForCell(2, 2));
+    mapTap(PURE.bankMapPadForCell(2, 3));
     ticks(3);
     if (!S.auEditor) throw new Error('WAVE did not open');
 }
