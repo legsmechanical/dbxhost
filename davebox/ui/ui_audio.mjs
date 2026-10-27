@@ -416,7 +416,7 @@ const soundCell = {
     rev: (r) => ({ kind: 'enumsq', label: 'Revrs', name: 'Reverse', text: r.rev == null ? '--' : (r.rev ? 'On' : 'Off'), options: ['Off', 'On'], sel: r.rev | 0 }),
     atk: (r) => ({ kind: 'arc', label: 'Attk', name: 'Attack', text: r.atk == null ? '--' : r.atk + 'ms', norm: Math.min(1, (r.atk | 0) / 2000) }),
     dec: (r) => ({ kind: 'arc', label: 'Decay', name: 'Decay', text: r.dec == null ? '--' : (r.dec ? r.dec + 'ms' : 'Full'),
-                   norm: r.dec ? Math.min(1, r.dec / 5000) : 1 }),
+                   norm: r.dec ? Math.min(1, r.dec / DEC_MAX) * 0.95 : 1 }),   /* Full: the top */
     play: (r) => ({ kind: 'enumsq', label: 'Play', name: 'Play Mode', text: r.play == null ? '--' : AU_PLAY_NAMES[r.play], options: AU_PLAY_NAMES, sel: r.play | 0 }),
 };
 /* CLIP, Slice mode: knob k -> the ALL SLICES field it sets (null: a clip knob).
@@ -473,6 +473,18 @@ export function auPanelKnobClass(ed, k) {
     return (k === 3 || k === 6) ? 'delib' : '';
 }
 
+/* Decay along the dial: shortest at the bottom, 5000 ms, then Full (0, no
+ * decay) one step past it at the top (Josh, 2026-10-28: it "snaps to full at
+ * the max dial position ... when it's turned all the way down. it should be
+ * max at max when it's turned all the way up"). */
+const DEC_MIN = 5, DEC_MAX = 5000;
+function stepDecay(v, steps) {
+    if (v === 0) return steps < 0 ? Math.max(DEC_MIN, DEC_MAX + (steps + 1) * 50) : 0;
+    const n = v + steps * (v < 200 ? 5 : 50);
+    if (n > DEC_MAX) return v === DEC_MAX ? 0 : DEC_MAX;
+    return Math.max(DEC_MIN, n);
+}
+
 /* One field stepped: the next value, clamped. */
 function stepSliceField(f, v, steps) {
     const dir = steps > 0 ? 1 : -1;
@@ -482,7 +494,7 @@ function stepSliceField(f, v, steps) {
     if (f === 'rev') return dir > 0 ? 1 : 0;
     if (f === 'play') return Math.max(0, Math.min(2, v + dir));
     if (f === 'atk') return Math.max(0, Math.min(2000, v + steps * (v < 100 ? 2 : 20)));
-    if (f === 'dec') return Math.max(0, Math.min(5000, v + steps * (v < 200 ? 5 : 50)));
+    if (f === 'dec') return stepDecay(v, steps);
     return v;
 }
 

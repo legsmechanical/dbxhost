@@ -270,6 +270,24 @@ step('⭐⭐ SLICE n edits the last pad tapped', () => {
     assert(!S.auPanel, 'Back did not close the AUDIO editor');
 });
 
+step('⭐ Decay: shortest at the bottom of the dial, Full at the top (Josh: "it should be max at max when it\'s turned all the way up")', () => {
+    mapPad(2, 3);
+    jog(1);
+    const last = () => { const v = sent('t4_au_slice_dec'); return v.length ? v[v.length - 1].split(' ')[2] : null; };
+    reset();
+    cc(76, 127);                                     /* K6 down from Full */
+    assert(last() === '5000', 'down from Full did not land on 5000 ms: ' + last());
+    for (let i = 0; i < 300; i++) cc(76, 127);       /* all the way down */
+    assert(last() === '5' && !sent('t4_au_slice_dec').some((v) => / 0$/.test(v)),
+           'all the way down is not the shortest decay: ' + last());
+    assert(A.auPanelCells(S.auPanel)[5].text === '5ms' && A.auPanelCells(S.auPanel)[5].norm < 0.01, 'the bottom: ' + JSON.stringify(A.auPanelCells(S.auPanel)[5]));
+    for (let i = 0; i < 400; i++) cc(76, 1);         /* all the way up */
+    assert(last() === '0' && A.auPanelCells(S.auPanel)[5].text === 'Full' && A.auPanelCells(S.auPanel)[5].norm === 1,
+           'all the way up is not Full: ' + last());
+    jog(-1);
+    back();
+});
+
 step('⭐⭐ >Seq is on the CLIP bank in Slice mode: touch K8 + click (Josh: ">seq in the clip BANK")', () => {
     S.activeBank = 0; S.bankCardLatched = false;
     assert(!S.auPanel, 'the AUDIO editor is still open');
