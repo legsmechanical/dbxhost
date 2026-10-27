@@ -44,6 +44,15 @@ the section into a versioned heading at release time.
   Track View. **Back** steps back a level. **Shift + Sample** no longer starts a Live
   Merge — it's in the menu.
 
+## [1.1.1] — 2026-10-27
+
+### Fixed
+- **The POWER OFF? question no longer pops up by itself.** On some Moves it
+  appeared every few minutes without the power button being touched. dAVEBOx
+  no longer answers the power button while that is investigated: to turn the
+  Move off, leave dAVEBOx with **Shift + Back** (it saves), then use the power
+  button as usual.
+
 ## [1.1.0] — 2026-10-25
 The Pad Mode bank, one-envelope automation, project templates, and backup of
 projects from the web manager. A [video tour of what's new](https://youtu.be/69dkHiiK3-0) walks through
