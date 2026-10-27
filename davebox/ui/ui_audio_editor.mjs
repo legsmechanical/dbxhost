@@ -48,12 +48,13 @@ import { MoveMainKnob, MoveMainButton, MoveMainTouch, MoveNoteSession, TRACK_PAD
 import { decodeDelta } from '/data/UserData/schwung/shared/input_filter.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLazyState, auMarkStale,
-         auPanelPages, auPanelPageName, auPanelKnob, auPanelKnobDeliberate, auChop, auPadToSlice,
+         auPanelPages, auPanelPageName, auPanelKnob, auPanelKnobClass, auChop, auPadToSlice,
          auSelSlice, auSetSelSlice, isAudioTrack, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
-         auMarkAdd, auMarkDel, auManual, auEvenBake, auRangeStep, auSet, auEnd,
+         auMarkAdd, auMarkDel, auManual, auEvenBake, auRangeStep, auSet, auEnd, auPanelRingCells,
          AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
+import { registerScreenRingCells } from './ui_knob_leds.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
-import { ccKnobDelta, knobPick, KNOB_DELIB } from './ui_input_cc.mjs';
+import { ccKnobDelta, knobPick, KNOB_PICK, KNOB_DELIB } from './ui_input_cc.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 
 /* One step per detent run (ui_input_cc's knobStep; its exports are only used
@@ -85,14 +86,14 @@ export function closeAudioPanel() {
 /* A › cell under the touched knob, fired by the jog click: >Seq, the clip's
  * slices to its steps (Josh: "change "chop" to ">Seq" ("Slices to
  * sequence")"). */
-function panelAction(ed, k) {
-    const t = ed.t, c = auClipOf(t), i = auInfo(t, c);
-    if (auPanelPageName(ed) === 'CLIP' && k === 7 && i.mode === AU_MODE_SLICE && i.state === 2) {
-        auChop(t, c);
-        showActionPopup('SEQUENCED', i.n + ' slices to steps');
-        return true;
-    }
-    return false;
+/* >Seq: track t's clip's slices onto its steps, one per step (the CLIP
+ * bank's K8 in Slice mode, touch + click). Returns true when it ran. */
+export function slicesToSequence(t) {
+    const c = auClipOf(t), i = auInfo(t, c);
+    if (i.mode !== AU_MODE_SLICE || i.state !== 2) return false;
+    auChop(t, c);
+    showActionPopup('SEQUENCED', i.n + ' slices to steps');
+    return true;
 }
 
 /* Returns true when the message was the AUDIO editor's. The pads are not:
@@ -122,7 +123,8 @@ export function audioPanelInput(status, d1, d2) {
     if (status !== 0xB0) return false;
     if (d1 >= 71 && d1 <= 78) {
         const k = d1 - 71;
-        const st = auPanelKnobDeliberate(ed, k) ? knobStep(k, d2, KNOB_DELIB) : ccKnobDelta(d2, k);
+        const cls = auPanelKnobClass(ed, k);
+        const st = cls ? knobStep(k, d2, cls === 'pick' ? KNOB_PICK : KNOB_DELIB) : ccKnobDelta(d2, k);
         if (st && auPanelKnob(ed, k, st)) S.screenDirty = true;
         return true;
     }
@@ -136,7 +138,6 @@ export function audioPanelInput(status, d1, d2) {
         return true;
     }
     if (d1 === MoveMainButton) {
-        if (d2 === 127 && S.knobTouched >= 0) panelAction(ed, S.knobTouched);
         S.screenDirty = true;
         return true;
     }
@@ -371,9 +372,9 @@ function chopPoint(ed, which, dd) {
 /* K4 / K5 in Loop mode: the clip's Pitch / Gain. */
 function clipStep(ed, field, dir) {
     const t = ed.t, c = ed.c, i = auInfo(t, c);
-    const lim = field === 'pitch' ? [-24, 24] : [-40, 12];
-    const v = Math.max(lim[0], Math.min(lim[1], i[field] + dir));
-    if (v === i[field]) return false;
+    const lim = field === 'pitch' ? [-24, 24] : field === 'detune' ? [-50, 50] : [-40, 12];
+    const v = Math.max(lim[0], Math.min(lim[1], (i[field] | 0) + dir));
+    if (v === (i[field] | 0)) return false;
     auSet(t, c, field, v);
     S.auInfo[t][c] = Object.assign({}, i, { [field]: v });
     return true;
@@ -495,7 +496,8 @@ export function audioEditorInput(status, d1, d2) {
         if (d1 >= 0 && d1 <= 7) {
             const on = hi === 0x90 && d2 >= 64;
             if (on) {
-                S.knobTouched = d1; S.knobPhysIdx = d1;
+                S.knobTouched = d1; S.knobPhysIdx = d1; S.knobTurnedTick[d1] = -1;
+                if (d1 === 1) ed.zoomDir = 0;                  /* touched, not turned yet: "ZOOM" */
                 /* a touch jumps there: K1 to the start, K3 to the end */
                 if ((d1 === 0 || d1 === 2) && (sub === 'chop' || sub === 'loop')) {
                     ed.last = d1 === 0 ? 'start' : 'end';
@@ -568,6 +570,15 @@ export function audioEditorInput(status, d1, d2) {
         const k = d1 - 71, dd = decodeDelta(d2);
         if (!dd || (sub !== 'chop' && sub !== 'loop')) return true;
         let moved = false;
+        /* Start, Zoom and End light while turned, as a touched knob does (the
+         * tick lets go KNOB_TURN_HIGHLIGHT_MS after the last turn) — Josh,
+         * 2026-10-28: "start and end values need to be highlighted while
+         * they're turned/touched" */
+        if (k <= 5) {
+            S.knobTouched = k; S.knobTurnedTick[k] = S.clockMs;
+            if (k === 1) ed.zoomDir = dd > 0 ? 1 : -1;
+            S.screenDirty = true;
+        }
         if (k === 1) moved = zoom(ed, dd > 0 ? 1 : -1);
         else if (k === 0 || k === 2) {
             ed.last = k === 0 ? 'start' : 'end';
@@ -576,9 +587,18 @@ export function audioEditorInput(status, d1, d2) {
                 moved = auRangeStep(ed.t, ed.c, ed.last, dd, auEdPixel(ed));
                 if (moved) centre(ed);
             }
-        } else if (sub === 'loop' && (k === 3 || k === 4)) {
+        } else if (k === 3) {
+            /* K4 Gain, K5 Pitch, K6 Detune — the clip's, in either mode (Josh,
+             * 2026-10-28: "put gain on a knob in wave edit mode ... same with
+             * pitch and detune on k5/6"; "The whole clip") */
             const st = ccKnobDelta(d2, k);
-            if (st) moved = clipStep(ed, k === 3 ? 'pitch' : 'gain', st > 0 ? 1 : -1);
+            if (st) moved = clipStep(ed, 'gain', st > 0 ? 1 : -1);
+        } else if (k === 4) {
+            const st = knobStep(k, d2, KNOB_PICK);
+            if (st) moved = clipStep(ed, 'pitch', st);
+        } else if (k === 5) {
+            const st = ccKnobDelta(d2, k);
+            if (st) moved = clipStep(ed, 'detune', st);
         }
         if (moved) S.screenDirty = true;
         return true;
@@ -686,3 +706,32 @@ function askInput(ed, status, d1, d2) {
     S.screenDirty = true;
     return true;
 }
+
+/* WAVE's knob rings: K1 Start, K2 Zoom, K3 End, K4 Gain, K5 Pitch, K6 Detune,
+ * each where it sits; dark with no sample, in a Lazy chop, under the picker or
+ * a question, and on K7 / K8. */
+export function waveRingCells(ed) {
+    if (!ed || ed.ask || ed.pick || ed.mode === 'lazy') return [null, null, null, null, null, null, null, null];
+    const i = auInfo(ed.t, ed.c), fr = i.nframes | 0;
+    const sub = auWaveSub(ed);
+    if (sub !== 'chop' && sub !== 'loop' || !fr) return [null, null, null, null, null, null, null, null];
+    let a = i.rstart, b = auEnd(i);
+    if (sub === 'chop') {
+        const m = auMarks(ed.t, ed.c)[auSelSlice(ed.t)];
+        if (m) { a = m[0]; b = m[1]; }
+    }
+    const span = Math.max(MIN_SPAN, (ed.B | 0) - (ed.A | 0));
+    const zoom = fr > MIN_SPAN ? 1 - Math.log(span / MIN_SPAN) / Math.log(fr / MIN_SPAN) : 0;
+    const at = (n) => ({ kind: 'arc', norm: Math.max(0, Math.min(1, n)) });
+    return [at(a / fr), at(zoom), at(b / fr), at(((i.gain | 0) + 40) / 52),
+            at(((i.pitch | 0) + 24) / 48), at(((i.detune | 0) + 50) / 100), null, null];
+}
+
+/* The rings while an Audio screen holds the knobs: WAVE's, the AUDIO
+ * editor's, none under the sample chooser. */
+registerScreenRingCells(() => {
+    if (S.auChooser) return [null, null, null, null, null, null, null, null];
+    if (!S.auPanel) return null;
+    if (S.auEditor) return waveRingCells(S.auEditor);
+    return auPanelRingCells(S.auPanel);
+});

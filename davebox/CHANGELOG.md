@@ -30,10 +30,13 @@ the section into a versioned heading at release time.
   sample plays), by hand or evenly, then shape them in a zoomable editor — move
   any chop's start and end down to a single sample, add and remove chops.
   **Even** cuts equal slices, showing them on the pads as you turn. The **AUDIO**
-  editor (the AUDIO pad) holds the clip's sound: mode, pitch and gain, sound
-  settings per slice or for all slices at once, and **>Seq** to lay the slices
-  out on the steps. Loop clips can play backwards, be nudged against
-  the bar and have their jumps wait for the beat. **Project Settings → Purge
+  editor (the AUDIO pad) holds the clip's sound: mode, pitch (semitones), detune
+  (cents) and gain, sound settings per slice or for all slices at once; **>Seq**
+  on the CLIP bank lays the slices out on the steps. Loop clips can play backwards, be nudged against
+  the bar and have their jumps wait for the beat; muting an Audio track silences it
+  like a bus, so its loop keeps time and comes back in place. Loop clips take
+  samples up to **30 minutes**, and any sample over a minute plays from the card as
+  it goes — slices and jumps still start instantly. **Project Settings → Purge
   samples** clears out the ones you no longer use. Choosing Audio on a track that
   plays an instrument offers to **resample its clips** first, so each comes back as
   its own audio.

@@ -12,7 +12,7 @@ import { trackClipHasContent, updateSceneMapLEDs } from './ui_scene.mjs';
 import { PROJECT_COLORS, projectColorLED } from './ui_dialogs.mjs';
 import { autoMapEditorComp, autoMapMarkedBank } from './ui_automation_bank.mjs';
 import { arpVelLevel, drumVelocityToZone, bankPadMapForMode, SESS_PAD_MAP, bankMapPadForCell, bankMapTrackForStep, BANK_MAP_MODULE_PADS, bankMapModuleAt } from './ui_pure.mjs';
-import { knobRingColor, knobRingNorm, ringCellsFor, ringNormOfCell } from './ui_knob_leds.mjs';
+import { knobRingColor, knobRingNorm, ringCellsFor, ringNormOfCell, screenRingCells } from './ui_knob_leds.mjs';
 import { automationStateFor } from './ui_automation.mjs';
 import { devSnapOpen, devSnapLedFor } from './ui_devsnap.mjs';
 import { sessStripTargets, SESS_KNOB_MODES } from './ui_engine.mjs';
@@ -642,10 +642,15 @@ function paintBankMapPads() {
          * 2026-10-20: "when i'm IN instrument view it says i'm in automation
          * on the map"): its module pad — and INST, for the instrument — is lit. */
         const ed = autoMapEditorComp();
+        /* ...and an Audio screen is where you are too (Josh, 2026-10-28: "pad
+         * map should show when you're in audio/wave"): WAVE's pad, or AUDIO's. */
+        const au = S.auPanel ? (S.auEditor ? 'wave' : 'inst') : null;
         bankPadMapForMode(S.trackPadMode[t], t).forEach((c, ci) => c.cells.forEach((cell, r) => {
             if (!cell) return;
-            const own = cell.bank === BANK_CONFIG || cell.bank === BANK_SOUND || cell.action === 'inst';
+            /* the track's own pads in its colour — WAVE too, as AUDIO (Josh, 2026-10-28) */
+            const own = cell.bank === BANK_CONFIG || cell.bank === BANK_SOUND || cell.action === 'inst' || cell.action === 'wave';
             const on = d ? (d.col === ci && d.row === r)
+                : au !== null ? cell.action === au
                 : ed !== null ? (cell.action === 'inst' && ed === 'synth')
                 : (cell.bank !== null && cell.bank === autoMapMarkedBank());
             col[at(ci, r)] = on ? White
@@ -1181,6 +1186,7 @@ export function updateTrackLEDs() {
   }
 
     /* Knob LEDs (CC 71-78) */
+    const _scrRing = screenRingCells();
     for (let k = 0; k < NUM_TRACKS; k++) {
         let ledVal = LED_OFF;
         if (S.perfViewLocked) {
@@ -1227,6 +1233,11 @@ export function updateTrackLEDs() {
              * ⚠ Every track is lit, including one with the feature off: the ring
              * is an address here, not a value. */
             ledVal = trackColor(k);
+        } else if (_scrRing) {
+            /* A full-screen editor's own knobs (the AUDIO editor, WAVE): the
+             * kit-page rule over the cells it draws — dark where a knob does
+             * nothing there. */
+            ledVal = knobRingColor(k, ringNormOfCell(_scrRing[k]));
         } else if (miActive()) {
             /* The MIDI browser: its card's cells, dark on a knob that does
              * nothing there (Josh, 2026-09-30) — the kit-page rule below. */

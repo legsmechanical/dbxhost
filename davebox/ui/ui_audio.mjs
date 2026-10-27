@@ -73,21 +73,21 @@ export function auParseInfo(raw) {
     if (raw === null || raw === undefined || raw === '') return null;
     const bar = String(raw).indexOf('|');
     const head = (bar >= 0 ? String(raw).slice(0, bar) : String(raw)).trim().split(/\s+/).map((x) => parseInt(x, 10));
-    if (head.length < 17 || head.some((x) => isNaN(x))) return null;
+    if (head.length < 17 || head.some((x) => isNaN(x))) return null;   /* detune (18th) came later */
     /* even: 0 = Off, else Even's count; hand: the hand set's slices; n: what
      * plays (Even's count or the hand set's); rstart / rend: frames */
     return {
         state: head[0], err: head[1], mode: head[2], even: head[3], hand: head[4], jump: head[5],
         rstart: head[6], rend: head[7], pitch: head[8], gain: head[9],
         nframes: head[10], rate: head[11], ch: head[12],
-        revrs: head[13], nudge: head[14], jmpq: head[15], n: head[16],
+        revrs: head[13], nudge: head[14], jmpq: head[15], n: head[16], detune: head[17] | 0,
         name: bar >= 0 ? String(raw).slice(bar + 1) : '',
     };
 }
 
 const DEFAULT_INFO = { state: 0, err: 0, mode: 0, even: 8, hand: 1, n: 8, jump: 16, rstart: 0, rend: 0,
-                       pitch: 0, gain: 0, nframes: 0, rate: 0, ch: 0, revrs: 0, nudge: 0, jmpq: 0, name: '' };
-const DEFAULT_SLICE = { a: 0, b: 0, pinned: 0, pitch: 0, gain: 0, rev: 0, play: 0, atk: 0, dec: 0 };
+                       pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, revrs: 0, nudge: 0, jmpq: 0, name: '' };
+const DEFAULT_SLICE = { a: 0, b: 0, pinned: 0, pitch: 0, detune: 0, gain: 0, rev: 0, play: 0, atk: 0, dec: 0 };
 
 export function auInfo(t, c) {
     const i = S.auInfo[t] && S.auInfo[t][c];
@@ -119,18 +119,22 @@ function auReadSlice(t, c, l) {
     const raw = host_module_get_param('t' + t + '_au_sl_' + c + '_' + l);
     const v = String(raw || '').trim().split(/\s+/).map((x) => parseInt(x, 10));
     if (v.length < 9 || v.some((x) => isNaN(x))) return null;
-    const r = { a: v[0], b: v[1], pinned: v[2], pitch: v[3], gain: v[4], rev: v[5], play: v[6], atk: v[7], dec: v[8] };
+    const r = { a: v[0], b: v[1], pinned: v[2], pitch: v[3], gain: v[4], rev: v[5], play: v[6], atk: v[7], dec: v[8], detune: v[9] | 0 };
     _sl.set(t + '_' + c + '_' + l, r);
     return r;
 }
-/* SLICE n / ALL SLICES: the six sound fields in page order (Josh chose
+/* ALL SLICES: the sound fields in the engine's `all_C` order (Josh chose
  * "Sound only": the chop editor places the slices), each a number or null. */
-export const ALL_FIELDS = ['pitch', 'gain', 'rev', 'atk', 'dec', 'play'];
+export const ALL_FIELDS = ['pitch', 'gain', 'rev', 'atk', 'dec', 'play', 'detune'];
+/* SLICE n's knobs: Detune beside Pitch (Josh, 2026-10-28: "if we're going to
+ * have a coarse pitch knob, we also need a detune knob. goes for both "clip"
+ * and slice n"). */
+const SLICE_FIELDS = ['pitch', 'detune', 'gain', 'rev', 'atk', 'dec', 'play'];
 export function auAll(t, c) { return _all.get(t + '_' + c) || null; }
 function auReadAll(t, c) {
     const v = String(host_module_get_param('t' + t + '_au_all_' + c) || '').trim().split(/\s+/);
     if (v.length < 6) return null;
-    const r = v.slice(0, 6).map((x) => (x === 'x' ? null : parseInt(x, 10)));
+    const r = ALL_FIELDS.map((f, k) => (v[k] === undefined ? 0 : v[k] === 'x' ? null : parseInt(v[k], 10)));
     _all.set(t + '_' + c, r);
     return r;
 }
@@ -345,13 +349,22 @@ export function auSampleName(t, c) {
     if (i.state === 3) return i.err === 1 && i.name ? 'Missing: ' + shortName(i.name) : (AU_ERR_TEXT[i.err] || 'Failed');
     return i.name ? shortName(i.name) : 'No sample';
 }
-const fmtSemi = (v) => (v === 0 ? '0 st' : (v > 0 ? '+' : '') + v + ' st');
+/* Pitch as a number in its box, as SHIFT is (Josh, 2026-10-28: the pitch knob
+ * "doesn't read out any values" — an arc moved 1/24 a semitone). */
+const pitchCell = (name, v) => ({ kind: 'valsq', label: 'Pitch', name: name + ' (semitones)',
+                                  text: v == null ? '--' : (v >= 0 ? '+' : '') + v,
+                                  ringNorm: ((v | 0) + 24) / 48 });
+/* Detune as a knob (Josh, 2026-10-28: "detune should be a knob"): a centred
+ * arc, the cents read out while it is touched. */
+const detuneCell = (name, v) => ({ kind: 'arcbip', label: 'Detune', name: name + ' (cents)',
+                                   text: v == null ? '--' : (v >= 0 ? '+' : '') + v,
+                                   signed: (v | 0) / 50 });
 const fmtDb = (v) => (v === 0 ? '0 dB' : (v > 0 ? '+' : '') + v + ' dB');
 const fmtMs = (v) => (v > 0 ? '+' : '') + v + 'ms';
 /* A frame as time: "1.234s", "1:02.35" past a minute. */
 export function auFmtTime(frames, rate) {
     const s = (frames | 0) / (rate || 44100);
-    if (s < 60) return s.toFixed(s < 10 ? 3 : 2) + 's';
+    if (s < 60) return s.toFixed(2) + 's';           /* 2 decimals, rounded (Josh, 2026-10-28) */
     const m = Math.floor(s / 60);
     const r = s - m * 60;
     return m + ':' + (r < 10 ? '0' : '') + r.toFixed(2);
@@ -378,7 +391,12 @@ export function auPanelPageName(ed) {
 }
 export function auPanelTitle(ed) {
     const name = auPanelPageName(ed);
-    if (name === 'SLICE') return 'SLICE ' + (auSelSlice(ed.t) + 1) + '/' + auInfo(ed.t, auClipOf(ed.t)).n;
+    const i = auInfo(ed.t, auClipOf(ed.t));
+    if (name === 'SLICE') return 'SLICE ' + (auSelSlice(ed.t) + 1) + '/' + i.n;
+    /* the first page says what it sets (Josh, 2026-10-28: "the "audio" bank
+     * header should read "All slices" on the first page, and "Loop" when not
+     * in slice mode") */
+    if (name === 'CLIP') return i.mode === AU_MODE_SLICE ? 'ALL SLICES' : 'LOOP';
     return name;
 }
 
@@ -397,16 +415,19 @@ function loopCells(i) {
 /* The sound fields, as cells (SLICE n: one slice; CLIP in Slice mode: every
  * slice, `--` while they differ). */
 const soundCell = {
-    pitch: (r) => ({ kind: 'arcbip', label: 'Pitch', name: 'Slice Pitch', text: r.pitch == null ? '--' : fmtSemi(r.pitch), signed: (r.pitch | 0) / 24 }),
+    pitch: (r) => pitchCell('Slice Pitch', r.pitch),
+    detune: (r) => detuneCell('Slice Detune', r.detune),
     gain: (r) => ({ kind: 'arc', label: 'Gain', name: 'Slice Gain', text: r.gain == null ? '--' : fmtDb(r.gain), norm: ((r.gain | 0) + 40) / 52 }),
     rev: (r) => ({ kind: 'enumsq', label: 'Revrs', name: 'Reverse', text: r.rev == null ? '--' : (r.rev ? 'On' : 'Off'), options: ['Off', 'On'], sel: r.rev | 0 }),
     atk: (r) => ({ kind: 'arc', label: 'Attk', name: 'Attack', text: r.atk == null ? '--' : r.atk + 'ms', norm: Math.min(1, (r.atk | 0) / 2000) }),
     dec: (r) => ({ kind: 'arc', label: 'Decay', name: 'Decay', text: r.dec == null ? '--' : (r.dec ? r.dec + 'ms' : 'Full'),
-                   norm: r.dec ? Math.min(1, r.dec / 5000) : 1 }),
+                   norm: r.dec ? Math.min(1, r.dec / DEC_MAX) * 0.95 : 1 }),   /* Full: the top */
     play: (r) => ({ kind: 'enumsq', label: 'Play', name: 'Play Mode', text: r.play == null ? '--' : AU_PLAY_NAMES[r.play], options: AU_PLAY_NAMES, sel: r.play | 0 }),
 };
-/* CLIP, Slice mode: knob k -> the ALL SLICES field it sets (null: a clip knob). */
-const SLICE_CLIP_ALL = [null, null, null, 'rev', 'atk', 'dec', 'play', null];
+/* CLIP, Slice mode: knob k -> the ALL SLICES field it sets (null: a clip knob).
+ * >Seq moved to the CLIP bank (Josh, 2026-10-28: "since it's about the
+ * sequence, maybe we should put >seq in the clip BANK"). */
+const SLICE_CLIP_ALL = [null, null, null, null, 'rev', 'atk', 'dec', 'play'];
 
 export function auPanelCells(ed) {
     const t = ed.t, c = auClipOf(t), i = auInfo(t, c);
@@ -415,51 +436,86 @@ export function auPanelCells(ed) {
     const live = (x) => (has || x === BLANK || x.label === 'Mode') ? x : dash(x);
     const mode = { kind: 'enumsq', label: 'Mode', name: 'Mode', text: i.mode ? 'Slice' : 'Loop',
                    sq: i.mode ? 'Slce' : 'Loop', options: ['Loop', 'Slice'], sel: i.mode };
-    const pitch = { kind: 'arcbip', label: 'Pitch', name: 'Pitch', text: fmtSemi(i.pitch), signed: i.pitch / 24 };
+    const pitch = pitchCell('Pitch', i.pitch);
+    const detune = detuneCell('Detune', i.detune);
     const gain = { kind: 'arc', label: 'Gain', name: 'Gain', text: fmtDb(i.gain), norm: (i.gain + 40) / 52 };
     if (page === 'CLIP') {
         if (i.mode !== AU_MODE_SLICE) {
-            const jump = { kind: 'valsq', label: 'Jump', name: 'Jump Points', text: String(i.jump) };
-            return [mode, pitch, gain, jump].concat(loopCells(i), [BLANK]).map(live);
+            const jump = { kind: 'valsq', label: 'Jump', name: 'Jump Points', text: String(i.jump),
+                           ringNorm: Math.max(0, [2, 4, 8, 16, 32].indexOf(i.jump)) / 4 };
+            return [mode, pitch, detune, gain, jump].concat(loopCells(i)).map(live);
         }
         /* every slice's sound here (Josh: "merge the "all slices" items to
          * this bank"): `--` while the slices differ, a turn sets them all */
         const a = auAll(t, c);
         const all = {};
         ALL_FIELDS.forEach((f, k) => { all[f] = a ? a[k] : null; });
-        const cells = [mode, pitch, gain];
-        for (let k = 3; k < 7; k++) {
+        const cells = [mode, pitch, detune, gain];
+        for (let k = 4; k < 8; k++) {
             const cell = soundCell[SLICE_CLIP_ALL[k]](all);
             cell.name = 'All Slices: ' + cell.name;
             cells.push(cell);
         }
-        cells.push({ kind: 'action', oneWay: true, label: '>Seq', name: 'Slices to Sequence', text: '->', opens: true });
         return cells.map(live);
     }
     /* SLICE n */
     const l = auSelSlice(t);
     const r = auSlice(t, c, l) || DEFAULT_SLICE;
-    const cells = ALL_FIELDS.map((f) => soundCell[f](r)).concat([BLANK, BLANK]);
+    const cells = SLICE_FIELDS.map((f) => soundCell[f](r)).concat([BLANK]);
     return (!has || l >= i.n) ? cells.map((x) => (x === BLANK ? x : dash(x))) : cells;
 }
 
-/* Knobs that pick (one step per detent) rather than sweep. */
-export function auPanelKnobDeliberate(ed, k) {
+/* The AUDIO editor's knob rings: the cells it draws, every working knob
+ * bound (a `--` that a turn sets still lights its floor), dark where a knob
+ * does nothing — a page with no sample, a slice past the count, a blank. */
+export function auPanelRingCells(ed) {
+    const i = auInfo(ed.t, auClipOf(ed.t));
+    const has = i.state === 2;
     const page = auPanelPageName(ed);
-    if (page === 'CLIP') return auInfo(ed.t, auClipOf(ed.t)).mode === AU_MODE_SLICE
-        ? (k === 0 || k === 3 || k === 6) : (k === 0 || k === 3 || k === 4 || k === 6);
-    return k === 2 || k === 5;
+    const off = page === 'SLICE' && (!has || auSelSlice(ed.t) >= i.n);
+    return auPanelCells(ed).map((x) => {
+        if (!x || x.kind === 'blank' || off) return null;
+        if (!has && x.label !== 'Mode') return null;
+        return Object.assign({}, x, { ringBound: true });
+    });
+}
+
+/* How a knob steps (ui_input_cc's classes): '' sweeps; 'pick' a step per
+ * detent run — Pitch, a semitone at a time (Josh, 2026-10-28: the pitch
+ * knob "is very touchy"); 'delib' for toggles and the rest that pick. */
+export function auPanelKnobClass(ed, k) {
+    const page = auPanelPageName(ed);
+    if (page === 'CLIP') {
+        if (k === 1) return 'pick';
+        return (auInfo(ed.t, auClipOf(ed.t)).mode === AU_MODE_SLICE
+            ? (k === 0 || k === 4 || k === 7) : (k === 0 || k === 4 || k === 5 || k === 7)) ? 'delib' : '';
+    }
+    if (k === 0) return 'pick';
+    return (k === 3 || k === 6) ? 'delib' : '';
+}
+
+/* Decay along the dial: shortest at the bottom, 5000 ms, then Full (0, no
+ * decay) one step past it at the top (Josh, 2026-10-28: it "snaps to full at
+ * the max dial position ... when it's turned all the way down. it should be
+ * max at max when it's turned all the way up"). */
+const DEC_MIN = 5, DEC_MAX = 5000;
+function stepDecay(v, steps) {
+    if (v === 0) return steps < 0 ? Math.max(DEC_MIN, DEC_MAX + (steps + 1) * 50) : 0;
+    const n = v + steps * (v < 200 ? 5 : 50);
+    if (n > DEC_MAX) return v === DEC_MAX ? 0 : DEC_MAX;
+    return Math.max(DEC_MIN, n);
 }
 
 /* One field stepped: the next value, clamped. */
 function stepSliceField(f, v, steps) {
     const dir = steps > 0 ? 1 : -1;
     if (f === 'pitch') return Math.max(-24, Math.min(24, v + dir));
+    if (f === 'detune') return Math.max(-50, Math.min(50, v + steps));
     if (f === 'gain') return Math.max(-40, Math.min(12, v + dir));
     if (f === 'rev') return dir > 0 ? 1 : 0;
     if (f === 'play') return Math.max(0, Math.min(2, v + dir));
     if (f === 'atk') return Math.max(0, Math.min(2000, v + steps * (v < 100 ? 2 : 20)));
-    if (f === 'dec') return Math.max(0, Math.min(5000, v + steps * (v < 200 ? 5 : 50)));
+    if (f === 'dec') return stepDecay(v, steps);
     return v;
 }
 
@@ -528,12 +584,16 @@ export function auPanelKnob(ed, k, steps) {
             if (v === i.pitch) return false;
             loc.pitch = v; auSet(t, c, 'pitch', v);
         } else if (k === 2) {
+            const v = Math.max(-50, Math.min(50, (i.detune | 0) + steps));
+            if (v === (i.detune | 0)) return false;
+            loc.detune = v; auSet(t, c, 'detune', v);
+        } else if (k === 3) {
             const v = Math.max(-40, Math.min(12, i.gain + dir));
             if (v === i.gain) return false;
             loc.gain = v; auSet(t, c, 'gain', v);
         } else if (i.mode !== AU_MODE_SLICE) {
-            if (k === 3) return auJumpKnob(t, c, i, loc, dir);
-            if (k >= 4 && k <= 6) return auLoopKnob(t, k - 4, steps);
+            if (k === 4) return auJumpKnob(t, c, i, loc, dir);
+            if (k >= 5 && k <= 7) return auLoopKnob(t, k - 5, steps);
             return false;
         } else {
             const f = SLICE_CLIP_ALL[k];
@@ -555,9 +615,9 @@ export function auPanelKnob(ed, k, steps) {
         }
     } else {
         const l = auSelSlice(t);
-        if (i.state !== 2 || l >= i.n || k >= ALL_FIELDS.length) return false;
+        if (i.state !== 2 || l >= i.n || k >= SLICE_FIELDS.length) return false;
         const r = Object.assign({}, DEFAULT_SLICE, auSlice(t, c, l) || {});
-        const f = ALL_FIELDS[k];
+        const f = SLICE_FIELDS[k];
         const v = stepSliceField(f, r[f], steps);
         if (v === r[f]) return false;
         r[f] = v;

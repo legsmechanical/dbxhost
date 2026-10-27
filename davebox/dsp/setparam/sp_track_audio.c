@@ -132,6 +132,68 @@ static double au_jump_pos(const au_clip_t *cl, int k, double extra) {
     return cl->revrs ? (double)re - 1.0 - d : (double)rs + d;
 }
 
+/* Tell the streamer where each streamed voice is and which way it goes,
+ * where a waiting JmpQ jump will land and each streamed clip's range (it
+ * reads nothing else of ours); then count the block (a chunk the
+ * streamer empties is freed two blocks later). */
+static void au_watch_publish(seq8_instance_t *inst) {
+    int t, i;
+    for (t = 0; t < NUM_TRACKS; t++) {
+        au_track_t *at = &inst->au_trk[t];
+        for (i = 0; i <= AU_VOICES; i++) {
+            au_watch_t *w = &inst->au_watch[t][i];
+            const au_sample_t *s = NULL;
+            double pos = 0, step = 0, lo = 0, hi = 0;
+            int loop = 0;
+            if (i < AU_VOICES) {
+                const au_voice_t *v = &at->v[i];
+                if (inst->tracks[t].pad_mode == PAD_MODE_AUDIO && v->active && v->smp && !v->smp->pcm) {
+                    s = v->smp; pos = v->pos; step = v->step; lo = v->lo; hi = v->hi; loop = v->loop || v->mode_loop;
+                }
+            } else if (at->pending_jump >= 0 && inst->tracks[t].pad_mode == PAD_MODE_AUDIO) {
+                const au_clip_t *cl = &inst->au_clip[t][at->loop_clip];
+                if (cl->smp && !cl->smp->pcm && at->pending_jump < cl->jump) {
+                    uint32_t rs, re;
+                    au_range(cl, cl->smp, &rs, &re);
+                    s = cl->smp; pos = au_jump_pos(cl, at->pending_jump, 0);
+                    step = au_tune(cl->pitch, cl->detune) * (double)s->rate / 44100.0 * (cl->revrs ? -1.0 : 1.0);
+                    lo = rs; hi = re; loop = 1;
+                }
+            }
+            __atomic_store_n(&w->pos, (uint32_t)(pos < 0 ? 0 : pos), __ATOMIC_RELAXED);
+            __atomic_store_n(&w->lo, (uint32_t)lo, __ATOMIC_RELAXED);
+            __atomic_store_n(&w->hi, (uint32_t)hi, __ATOMIC_RELAXED);
+            __atomic_store_n(&w->speed, (int32_t)(step * 256.0), __ATOMIC_RELAXED);
+            __atomic_store_n(&w->loop, (uint8_t)loop, __ATOMIC_RELAXED);
+            __atomic_store_n(&w->smp, (const void *)s, __ATOMIC_RELEASE);
+        }
+    }
+    for (t = 0; t < NUM_TRACKS; t++)
+        for (i = 0; i < NUM_CLIPS; i++) {
+            const au_clip_t *cl = &inst->au_clip[t][i];
+            au_clipw_t *w = &inst->au_clipw[t][i];
+            const au_sample_t *s = (cl->smp && !cl->smp->pcm) ? cl->smp : NULL;
+            uint32_t rs = 0, re = 0;
+            int l, n = 0;
+            if (s) au_range(cl, s, &rs, &re);
+            if (s && cl->mode == AU_MODE_SLICE) {
+                n = au_count(cl);
+                for (l = 0; l < n; l++) {
+                    uint32_t a = 0, b = 0;
+                    if (!au_slice_range(cl, s, l, &a, &b)) a = b = 0;
+                    __atomic_store_n(&w->sa[l], a, __ATOMIC_RELAXED);
+                    __atomic_store_n(&w->sb[l], b, __ATOMIC_RELAXED);
+                }
+            }
+            __atomic_store_n(&w->rs, rs, __ATOMIC_RELAXED);
+            __atomic_store_n(&w->re, re, __ATOMIC_RELAXED);
+            __atomic_store_n(&w->mode, (uint8_t)(s ? cl->mode : 0), __ATOMIC_RELAXED);
+            __atomic_store_n(&w->n, (uint8_t)n, __ATOMIC_RELAXED);
+            __atomic_store_n(&w->smp, (const void *)s, __ATOMIC_RELEASE);
+        }
+    __atomic_store_n(&inst->au_block, inst->au_block + 1, __ATOMIC_RELEASE);
+}
+
 /* Per block, after the sequencer: the loader's answers, each Audio track's
  * Loop voice following its clip, every voice rendered and fed to the track's
  * own chain slot. */
@@ -154,8 +216,9 @@ static void au_render(seq8_instance_t *inst, int frames) {
             au_clip_t *cl = &inst->au_clip[t][c];
             clip_t *lc = &tr->clips[c];
             au_voice_t *lv = au_loop_voice(at);
-            int run = inst->playing && tr->clip_playing && cl->mode == AU_MODE_LOOP && cl->smp &&
-                      !effective_mute(inst, t);
+            /* Mute does not stop the loop: it plays on silently, like a
+             * muted bus, so unmuting picks it up in place (below). */
+            int run = inst->playing && tr->clip_playing && cl->mode == AU_MODE_LOOP && cl->smp;
             if (run) {
                 uint32_t tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
                 int32_t tick = (int32_t)(((int)tr->current_step - (int)lc->loop_start) * (int32_t)tps
@@ -171,7 +234,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
                 }
                 double bpm = tr->pfx.cached_bpm > 0 ? tr->pfx.cached_bpm : 120.0;
                 double fpt = 44100.0 * 60.0 / (bpm * PPQN);
-                double ratio = au_semi(cl->pitch) * (double)cl->smp->rate / 44100.0;
+                double ratio = au_tune(cl->pitch, cl->detune) * (double)cl->smp->rate / 44100.0;
                 /* When this block PLAYED a tick, the clip counters have
                  * already moved past it (render_block advances them after
                  * each tick): the clip is at tick - 1, at this block's first
@@ -217,11 +280,17 @@ static void au_render(seq8_instance_t *inst, int frames) {
         {
             int32_t acc[256];
             int16_t out[256];
+            /* Mute / solo silence the track's output, as on a bus: the
+             * voices keep running, the level ramps over 64 frames. */
+            int mtarget = effective_mute(inst, t) ? 0 : 64;
             memset(acc, 0, sizeof acc);
-            for (i = 0; i < AU_VOICES; i++) if (at->v[i].active) au_voice_render(&at->v[i], acc, frames);
-            for (f = 0; f < frames * 2; f++) {
-                int32_t v = acc[f];
-                out[f] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+            for (i = 0; i < AU_VOICES; i++) if (at->v[i].active) inst->au_underruns += au_voice_render(&at->v[i], acc, frames);
+            for (f = 0; f < frames; f++) {
+                int32_t l = acc[f * 2], r = acc[f * 2 + 1];
+                if (at->mgain != mtarget) at->mgain = (uint8_t)(at->mgain + (mtarget > at->mgain ? 1 : -1));
+                if (at->mgain < 64) { l = l * at->mgain / 64; r = r * at->mgain / 64; }
+                out[f * 2]     = (int16_t)(l > 32767 ? 32767 : l < -32768 ? -32768 : l);
+                out[f * 2 + 1] = (int16_t)(r > 32767 ? 32767 : r < -32768 ? -32768 : r);
             }
             /* Only into a Schwung slot of its own: a track routed anywhere
              * else has no slot to play through (its `slot` is stale). */
@@ -229,6 +298,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
                 g_ext->slot_audio_feed((int)tr->pfx.slot, out, (uint32_t)frames);
         }
     }
+    au_watch_publish(inst);
     /* Lazy chop: its voice ran to the end -> the chop is done. */
     if (inst->au_lazy_track >= 0 && inst->au_lazy_state == AU_LAZY_RUN) {
         au_track_t *at = &inst->au_trk[inst->au_lazy_track];
@@ -252,6 +322,7 @@ static int au_arg_clip(const char **pp) {
 /* One slice field `w` of sl set to v. 0 = not a field. */
 static int au_slice_field(au_slice_t *sl, const char *w, int v) {
     if (!strcmp(w, "pitch"))      sl->pitch = (int8_t)clamp_i(v, -24, 24);
+    else if (!strcmp(w, "detune")) sl->detune = (int8_t)clamp_i(v, -50, 50);
     else if (!strcmp(w, "gain"))  sl->gain_db = (int8_t)clamp_i(v, -40, 12);
     else if (!strcmp(w, "rev"))   sl->rev = (uint8_t)(v ? 1 : 0);
     else if (!strcmp(w, "play"))  sl->play = (uint8_t)clamp_i(v, 0, 2);
@@ -405,6 +476,8 @@ static int sp_track_audio(sp_ctx_t *cx) {
             }
         } else if (!strcmp(w, "pitch")) {
             cl->pitch = (int8_t)clamp_i(v, -24, 24);
+        } else if (!strcmp(w, "detune")) {
+            cl->detune = (int8_t)clamp_i(v, -50, 50);
         } else if (!strcmp(w, "gain")) {
             cl->gain_db = (int8_t)clamp_i(v, -40, 12);
         } else if (!strcmp(w, "revrs")) {
@@ -718,9 +791,16 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
         au_samples_dir(inst, d, sizeof d);
         return snprintf(out, out_len, "%s", d);
     }
+    if (!strcmp(k, "stream")) {                   /* streaming, for the device check: "samples chunks reads underruns" */
+        au_streamer_t *S = (au_streamer_t *)inst->au_streamer;
+        int n = 0, i;
+        if (S) for (i = 0; i < AU_POOL_MAX; i++) if (__atomic_load_n(&S->smp[i], __ATOMIC_RELAXED)) n++;
+        return snprintf(out, out_len, "%d %u %u %u", n, S ? __atomic_load_n(&S->loaded, __ATOMIC_RELAXED) : 0u,
+                        S ? __atomic_load_n(&S->reads, __ATOMIC_RELAXED) : 0u, (unsigned)inst->au_underruns);
+    }
     if (!strncmp(k, "info_", 5)) {
         /* "state err mode even nslices jump rstart rend pitch gain frames rate ch
-         *  revrs nudge jmpq count|name" -- rstart / rend in frames as they play
+         *  revrs nudge jmpq count detune|name" -- rstart / rend in frames as they play
          *  (rend the real end, never 0) once loaded */
         c = my_atoi(k + 5);
         if (c < 0 || c >= NUM_CLIPS) return -1;
@@ -728,13 +808,13 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
         const au_sample_t *s = cl->smp;
         uint32_t rs = cl->rstart, re = cl->rend;
         if (s) au_range(cl, s, &rs, &re);
-        return snprintf(out, out_len, "%d %d %d %d %d %d %u %u %d %d %u %u %d %d %d %d %d|%s",
+        return snprintf(out, out_len, "%d %d %d %d %d %d %u %u %d %d %u %u %d %d %d %d %d %d|%s",
                         cl->state, cl->err, cl->mode, cl->even, cl->nslices, cl->jump,
                         (unsigned)rs, (unsigned)re, cl->pitch, cl->gain_db,
                         s ? (unsigned)s->frames : 0u, s ? (unsigned)s->rate : 0u, s ? s->ch : 0,
-                        cl->revrs, cl->nudge_ms, cl->jmpq, au_count(cl), cl->name);
+                        cl->revrs, cl->nudge_ms, cl->jmpq, au_count(cl), cl->detune, cl->name);
     }
-    if (!strncmp(k, "sl_", 3)) {                  /* sl_C_L: "a b pinned pitch gain rev play atk dec" */
+    if (!strncmp(k, "sl_", 3)) {                  /* sl_C_L: "a b pinned pitch gain rev play atk dec detune" */
         const char *q = k + 3;
         c = my_atoi(q);
         q = strchr(q, '_');
@@ -745,23 +825,23 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
         const au_slice_t *sl = &cl->sl[l];
         uint32_t a = 0, b = 0;
         if (cl->smp) au_slice_range(cl, cl->smp, l, &a, &b);
-        return snprintf(out, out_len, "%u %u %d %d %d %d %d %d %d", (unsigned)a, (unsigned)b,
+        return snprintf(out, out_len, "%u %u %d %d %d %d %d %d %d %d", (unsigned)a, (unsigned)b,
                         !cl->even && l < cl->nslices && sl->end ? 1 : 0,
-                        sl->pitch, sl->gain_db, sl->rev, sl->play, sl->attack_ms, sl->decay_ms);
+                        sl->pitch, sl->gain_db, sl->rev, sl->play, sl->attack_ms, sl->decay_ms, sl->detune);
     }
-    if (!strncmp(k, "all_", 4)) {                 /* ALL SLICES: "pitch gain rev atk dec play", "x" where slices differ */
+    if (!strncmp(k, "all_", 4)) {                 /* ALL SLICES: "pitch gain rev atk dec play detune", "x" where slices differ */
         int f, n = 0;
         c = my_atoi(k + 4);
         if (c < 0 || c >= NUM_CLIPS) return -1;
         const au_clip_t *cl = &inst->au_clip[t][c];
         int cnt = au_count(cl);
         out[0] = '\0';
-        for (f = 0; f < 6; f++) {
+        for (f = 0; f < 7; f++) {
             int v0 = 0, same = 1;
             for (l = 0; l < cnt; l++) {
                 const au_slice_t *sl = &cl->sl[l];
                 int v = f == 0 ? sl->pitch : f == 1 ? sl->gain_db : f == 2 ? sl->rev
-                      : f == 3 ? sl->attack_ms : f == 4 ? sl->decay_ms : sl->play;
+                      : f == 3 ? sl->attack_ms : f == 4 ? sl->decay_ms : f == 5 ? sl->play : sl->detune;
                 if (l == 0) v0 = v; else if (v != v0) { same = 0; break; }
             }
             if (same) n += snprintf(out + n, (size_t)(out_len - n), f ? " %d" : "%d", v0);
@@ -830,7 +910,16 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
             } else {
                 uint32_t i, st = (b - a) / 256 + 1;
                 for (i = a; i < b && i < s->frames; i += st) {
-                    int v = au_mono(s, i);
+                    const int16_t *fr = au_at(s, i);
+                    int v;
+                    if (!fr) {                      /* streamed, not in: its summary entry */
+                        if (s->mip && i / AU_MIP < s->nmip) {
+                            if (s->mip[i / AU_MIP][0] * 256 < lo) lo = s->mip[i / AU_MIP][0] * 256;
+                            if (s->mip[i / AU_MIP][1] * 256 > hi) hi = s->mip[i / AU_MIP][1] * 256;
+                        }
+                        continue;
+                    }
+                    v = au_mono_fr(fr, s->ch);
                     if (v < lo) lo = v;
                     if (v > hi) hi = v;
                 }

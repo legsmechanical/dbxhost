@@ -83,7 +83,7 @@ import { applyTrackConfig,
 import { recordNoteOn, recordNoteOff,
     extHeldNotes, extCountInCapture } from './ui_record.mjs';
 import { _onPadPress, _onPadRelease, _onPadAftertouch, _onStepButtons, customChordKeyEdit } from './ui_input_pads.mjs';
-import { applyBankPick, heldStepJog, bankMapArmable, bankMapBegin, bankMapEnd, bankMapPadTap, bankMapStepTap,
+import { applyBankPick, heldStepJog, bankMapArmable, bankMapScreenNow, bankMapBegin, bankMapEnd, bankMapPadTap, bankMapStepTap,
          bankMapDeferrable, jogDeferBegin, jogDeferTake,
     bankMapRelease } from './ui_input_cc.mjs';
 import { standDownBankDisplay } from './ui_state.mjs';
@@ -592,6 +592,7 @@ function _onMidiInternalImpl(data) {
              * End the stale hold first, then judge this press afresh. */
             if (S.jogPressMs >= 0) bankMapEnd();
             if (bankMapArmable()) { bankMapBegin(); return; }
+            if (bankMapScreenNow()) return;
             /* A click the map cannot take (a knob touched: touch + click) goes
              * to its owner. */
             /* A SCREEN owns this click (a menu, the module editor, a door

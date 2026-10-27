@@ -100,8 +100,10 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
         else fill_rect(x, mid, w, 1, 1);
         return;
     }
+    /* `gain` (dB): drawn as it will play, the loudest at the frame's edge */
+    const g = o.gain ? Math.pow(10, o.gain / 20) : 1;
     for (let k = 0; k < w; k++) {
-        const hh = Math.max(0, Math.round(cols[k] * (h - 1) / 2));
+        const hh = Math.max(0, Math.min(Math.floor((h - 1) / 2), Math.round(cols[k] * g * (h - 1) / 2)));
         fill_rect(x + k, mid - hh, 1, hh * 2 + 1, 1);
     }
     /* outside Start..End: hatched off */
@@ -172,12 +174,9 @@ function drawAudioTrackRest(t) {
 function drawAudioPanel() {
     const ed = S.auPanel;
     clear_screen();                      /* it opens over the sound menu */
-    const t = ed.t;
     /* The page's own name — the header has room for no more beside the
      * track tag (found on the device: "ALL SLICES 4/4" was cut). */
-    const name = auPanelTitle(ed);
-    const title = name === 'CLIP' ? 'CLIP ' + String.fromCharCode(65 + auClipOf(t)) : name;
-    drawKitPage(title, auPanelCells(ed), false, [['jog', 'page'], ['tch+clk', 'open']]);
+    drawKitPage(auPanelTitle(ed), auPanelCells(ed), false, [['jog', 'page']]);
 }
 
 /* The WAVE editor (ui_audio_editor): the clip's sample — CLICK TO LOAD
@@ -203,6 +202,28 @@ function drawAudioWaveEditor() {
     const sel = auSelSlice(t);
     const rt = i.rate;
     const right = (txt) => ovwPrint(124 - ovwWidth(txt), 10, txt, 1);
+    /* The Start / End readouts light while K1 / K3 is touched or turning; K2
+     * shows ZOOM + / - (plain ZOOM on a touch) between them (Josh, 2026-10-28). */
+    const lit = (x, txt, on) => {
+        if (on) fill_rect(x - 2, 9, ovwWidth(txt) + 3, 7, 1);
+        ovwPrint(x, 10, txt, on ? 0 : 1);
+    };
+    const ends = (s, e) => { lit(4, s, S.knobTouched === 0); lit(124 - ovwWidth(e), e, S.knobTouched === 2); };
+    const sgn = (v) => (v > 0 ? '+' : '') + v;
+    /* K2 Zoom, K4 Gain, K5 Pitch, K6 Detune: what the knob in hand is doing */
+    const zoomTxt = S.knobTouched === 1 ? 'ZOOM' + (ed.zoomDir > 0 ? ' +' : ed.zoomDir < 0 ? ' -' : '')
+        : S.knobTouched === 3 ? 'GAIN ' + sgn(i.gain | 0) + 'DB'
+        : S.knobTouched === 4 ? 'PITCH ' + sgn(i.pitch | 0)
+        : S.knobTouched === 5 ? 'DETUNE ' + sgn(i.detune | 0) : '';
+    /* the middle readout, lit like Start / End (it is only there while its
+     * knob is in hand — Josh, 2026-10-28: "nothing in the middle when no
+     * knob is touched"); its strip clears what is under it, so a long one
+     * sits over minutes-long Start / End times rather than into them */
+    const mid = (txt) => {
+        const x = 64 - Math.floor(ovwWidth(txt) / 2);
+        fill_rect(x - 3, 8, ovwWidth(txt) + 5, 9, 0);
+        lit(x, txt, true);
+    };
     if (ed.mode === 'lazy') {
         const lz = auLazyState();
         drawBankHeading('LAZY CHOP', false);
@@ -224,25 +245,22 @@ function drawAudioWaveEditor() {
         return;
     }
     if (sub === 'loop') {
-        drawBankHeading('WAVE  LOOP', false);
-        ovwPrint(4, 10, 'S ' + auFmtTime(i.rstart, rt), 1);
-        right('E ' + auFmtTime(auEnd(i), rt));
-        /* K4 Pitch, K5 Gain: their values between Start and End */
-        const pg = (i.pitch > 0 ? '+' : '') + i.pitch + 'ST ' + (i.gain > 0 ? '+' : '') + i.gain + 'DB';
-        ovwPrint(64 - Math.floor(ovwWidth(pg) / 2), 10, pg, 1);
-        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, noMarks: true, cur: ed.cur });
-        drawKitHintRow(MV_FOOTER_Y, [['k2', 'zoom'], ['sh+clk', 'menu']]);
+        drawBankHeading('LOOP', false);
+        ends('S ' + auFmtTime(i.rstart, rt), 'E ' + auFmtTime(auEnd(i), rt));
+        if (zoomTxt) mid(zoomTxt);
+        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, noMarks: true, cur: ed.cur, gain: i.gain | 0 });
+        drawKitHintRow(MV_FOOTER_Y, [['knobs', 'edit'], ['sh+clk', 'menu']]);   /* Josh: "knobs: edit is fine for a hint" */
         return;
     }
     const mk = auMarks(t, c);
-    drawBankHeading('WAVE  ' + (sel + 1) + '/' + mk.length, false);
+    drawBankHeading('SLICE ' + (sel + 1) + '/' + mk.length, false);
     const m = mk[sel];
     if (m) {
-        ovwPrint(4, 10, 'S ' + auFmtTime(m[0], rt), 1);
         /* at home the end follows the next slice's start: "NEXT" (Josh) */
-        right(m[1] === auEdHome(ed, sel) ? 'E NEXT' : 'E ' + auFmtTime(m[1], rt));
+        ends('S ' + auFmtTime(m[0], rt), m[1] === auEdHome(ed, sel) ? 'E NEXT' : 'E ' + auFmtTime(m[1], rt));
     }
-    drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel, cur: ed.cur });
+    if (zoomTxt) mid(zoomTxt);
+    drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel, cur: ed.cur, gain: i.gain | 0 });
     /* two hints fit: Shift + click is the one nobody would guess (found on
      * the device: a third was cut off) */
     drawKitHintRow(MV_FOOTER_Y, [['clk', 'add'], ['sh+clk', 'menu']]);
@@ -250,7 +268,7 @@ function drawAudioWaveEditor() {
 
 /* An Audio track's banks (Josh, 2026-10-27): the CLIP bank mirrors ALL LANES
  * in Slice mode — Res · Strch · Shift/Nudge · Quant · Crop · InQnt ·
- * Dir/Revrs · (free) — over the melodic clip's own data, and holds Revrs ·
+ * Dir/Revrs · >Seq — over the melodic clip's own data, and holds Revrs ·
  * Nudge · JmpQ in Loop mode; NOTE FX and DELAY lose what moves a pitch (a
  * pitch is a slice): their drum form. `cells` are the melodic bank's. */
 function audioBankCells(bank, cells) {
@@ -260,7 +278,9 @@ function audioBankCells(bank, cells) {
     if (bank === 0) {
         if (!audioSliceMode(t)) return auLoopBankCells(t);
         const q = kitCellForKnob(BANKS[1].knobs[3], S.bankParams[t][1][3]);
-        return [cells[0], cells[1], cells[2], q, cells[5], cells[4], cells[6], B];
+        const seq = { kind: 'action', oneWay: true, label: '>Seq', name: 'Slices to Sequence', text: '->', opens: true,
+                      btnPhase: triggerPhase('seq', S.knobTouched === 7) };
+        return [cells[0], cells[1], cells[2], q, cells[5], cells[4], cells[6], seq];
     }
     if (bank === 1) return cells.map((c, k) => ((k === 0 || k === 1 || k === 7) ? B : c));
     if (bank === 3) return cells.map((c, k) => ((k === 4 || k === 7) ? B : c));
@@ -1826,11 +1846,16 @@ export function bankMapItems() {
     /* An editor up: the INST cell for the instrument's, no bank for the rest
      * (their pads are off the screen) — never the bank under the editor. */
     const ed = autoMapEditorComp();
+    /* ...an Audio screen is where you are too, as on the pads (Josh,
+     * 2026-10-28: "the pad map doesn't indicate that you're on wave or
+     * audio - still shows last bank") */
+    const au = S.auPanel ? (S.auEditor ? 'wave' : 'inst') : null;
     const cols = bankPadMapForMode(S.trackPadMode[t], t).map((c, ci) => ({
         label: c.label,
         cells: c.cells.map((cell, r) => {
-            if (cell && (ed !== null ? (cell.action === 'inst' && ed === 'synth')
-                                     : (cell.bank !== null && cell.bank === autoMapMarkedBank()))) cur = { c: ci, r };
+            if (cell && (au !== null ? cell.action === au
+                         : ed !== null ? (cell.action === 'inst' && ed === 'synth')
+                                       : (cell.bank !== null && cell.bank === autoMapMarkedBank()))) cur = { c: ci, r };
             return cell ? cell.name : null;
         }),
     }));

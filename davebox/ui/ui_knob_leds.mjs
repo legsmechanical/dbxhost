@@ -144,6 +144,17 @@ export function knobRingNorm(knob, value) {
  * with nothing to say (blank, `--`, a text-only value) is null → unlit.
  * `auto` on a cell (an ACTIVE automation) asks for the BLINK (Josh,
  * 2026-09-03: "blink any knob that has automation"). */
+/* A full-screen editor (the AUDIO editor, WAVE) that owns the knobs: its
+ * cells while it is up, so the rings say what ITS knobs do instead of the
+ * bank's under it (Josh, 2026-10-28: "led rings don't respond and are lit on
+ * knobs with no function ... they should follow the usual convention"). The
+ * provider answers null when no such screen is up. */
+let screenRingProvider = null;
+export function registerScreenRingCells(fn) { screenRingProvider = fn; }
+export function screenRingCells() {
+    if (!screenRingProvider) return null;
+    try { return screenRingProvider() || null; } catch (e) { return null; }
+}
 const ringCellProviders = {};
 export function registerRingCells(bank, fn) { ringCellProviders[bank] = fn; }
 export function ringCellsFor(bank) {

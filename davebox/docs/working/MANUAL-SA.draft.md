@@ -1213,10 +1213,13 @@ so its effects, fader, pan, sends and mute apply.
 CLIP). What it shows follows the clip:
 
 - **No sample:** *Click to load sample* — a click opens the sample chooser.
-- **Loop mode:** the loop's waveform. **K1** Start · **K2** Zoom · **K3** End ·
-  **K4** Pitch · **K5** Gain.
+- **Loop mode:** the loop's waveform. **K1** Start · **K2** Zoom · **K3** End.
 - **Slice mode:** the sample with every chop marked and the selected slice
   bracketed — the chop editor below.
+
+In both, **K4** Gain · **K5** Pitch · **K6** Detune set the whole clip; the one in
+hand reads out between Start and End, and the waveform is drawn at the gain it
+plays at. Times read in seconds to two decimals.
 
 **Shift + click** opens WAVE's menu: **Load sample** (the chooser) and **Chop
 sample**, which offers **Lazy**, **Manual** and **Even**. Each makes the clip a
@@ -1227,7 +1230,12 @@ holds), **dAVEBOx Resample**, **Recordings**, **Samples** and the **Core Library
 turn and click into a folder. The file under the cursor plays as you rest on it (WAV
 or AIFF). Click a file to pick it: dAVEBOx **copies it into the project**, so the
 project keeps its sounds when copied or when the library changes. **None** clears
-the clip. Slice mode takes samples up to 4 minutes; Loop mode up to 10. A sample
+the clip. Slice mode takes samples up to 4 minutes; Loop mode up to 30. A sample
+longer than a minute plays from the card as it goes, so a long one costs little
+memory. Its slices, jumps and start on the bar are always instant; starting the
+transport partway through a Loop clip, turning Revrs on or moving Start, End or a
+chop while it plays can leave a few milliseconds of silence before it comes in, on
+time. A sample
 whose file has gone reads *Missing: name* and stays silent.
 
 **Chops.** You make chops one of two ways, then shape them in the chop editor:
@@ -1256,23 +1264,27 @@ whose file has gone reads *Missing: name* and stays silent.
 
 Whatever you touched last — the cursor (jog), the start (K1) or the end (K3) — stays
 in the middle of the screen and the waveform scrolls around it; touching one jumps
-there.
+there. The header reads **SLICE n/n** (or **LOOP**); the start or end you're touching
+or turning lights up, and **ZOOM +** / **ZOOM −** shows between them while K2 zooms.
 
 **The AUDIO editor** holds the clip's sound. Open it from the bank map's **AUDIO**
 pad, or by clicking **Audio** in the track's sound menu. Turn the jog for its pages;
-touch a knob and click the jog for a **›** control. **Back** leaves.
+**Back** leaves. Holding the jog brings up the bank map at once.
+
+**Pitch** moves in semitones (±24) and **Detune** in cents (±50); a slice's own
+Pitch and Detune add to the clip's.
 
 | Page | Knobs |
 |---|---|
-| **CLIP**, Slice mode | **Mode** Loop / Slice · **Pitch** / **Gain** for the whole clip · **Revrs** · **Attk** · **Decay** · **Play** for every slice at once (`--` while the slices differ; turning one sets them all) · **>Seq›** one step per slice, in order, so the clip plays the sample back as it was — now as slices you can rearrange |
-| **CLIP**, Loop mode | **Mode** · **Pitch** · **Gain** · **Jump** (2–32 jump points) · **Revrs** · **Nudge** · **JmpQ** (as on the clip bank) |
-| **SLICE n** (Slice mode) | The last pad you tapped: **Pitch**, **Gain**, **Revrs**, **Attk**, **Decay**, and **Play** — **One** (to the slice's end), **Gate** (as long as the step), **Loop** (loops the slice for the step). Kept if the clip goes back to Loop |
+| **ALL SLICES** (Slice mode) | **Mode** Loop / Slice · **Pitch** · **Detune** · **Gain** for the whole clip · **Revrs** · **Attk** · **Decay** · **Play** for every slice at once (`--` while the slices differ; turning one sets them all) |
+| **LOOP** (Loop mode) | **Mode** · **Pitch** · **Detune** · **Gain** · **Jump** (2–32 jump points) · **Revrs** · **Nudge** · **JmpQ** (as on the clip bank) |
+| **SLICE n** (Slice mode) | The last pad you tapped: **Pitch**, **Detune**, **Gain**, **Revrs**, **Attk**, **Decay**, and **Play** — **One** (to the slice's end), **Gate** (as long as the step), **Loop** (loops the slice for the step). Kept if the clip goes back to Loop |
 
 **The banks** hold the sequence:
 
 | Bank | Knobs |
 |---|---|
-| **CLIP**, Slice mode | As ALL LANES on a drum track: **Res** · **Strch** · **Shift** (alt **Nudge**) · **Quant** · **Crop›** · **InQnt** · **Dir** (alt **Revrs**) |
+| **CLIP**, Slice mode | As ALL LANES on a drum track: **Res** · **Strch** · **Shift** (alt **Nudge**) · **Quant** · **Crop›** · **InQnt** · **Dir** (alt **Revrs**) · **>Seq›** (touch K8, click) lays one step per slice, in order, so the clip plays the sample back as it was — now as slices you can rearrange |
 | **CLIP**, Loop mode | **Revrs** plays the sample backwards · **Nudge** moves it against the bar (ms) · **JmpQ** makes a jump wait for the next 1/16, 1/8 or 1/4 (**Off**: at once) |
 | **NOTE FX**, **DELAY** | As on a drum track — nothing that changes a pitch. A DELAY echo plays its slice again, at its own level, so **Level** and **VelFb** fade the echoes |
 

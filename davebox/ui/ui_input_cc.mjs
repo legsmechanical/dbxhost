@@ -77,8 +77,9 @@ import { isAudioTrack, audioSliceMode, auLoopKnob } from './ui_audio.mjs';
  * InQnt · Dir/Revrs · (free). Physical knob -> [bank, knob] it turns, where
  * that is not the CLIP bank's own same knob. */
 const AUDIO_CROP_KNOB = 4;
+const AUDIO_SEQ_KNOB = 7;
 const AUDIO_CLIP_REMAP = { 3: [1, 3], 4: [0, 5], 5: [0, 4] };
-import { openAudioEditor, openWave, closeAudioPanel } from './ui_audio_editor.mjs';
+import { openAudioEditor, openWave, closeAudioPanel, slicesToSequence } from './ui_audio_editor.mjs';
 import { soundActive, soundPageBarShown, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVolGestureEnd, soundShiftEdge, soundOpenGenerator,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, macroClearConfirmAnswer,
@@ -348,6 +349,17 @@ function _onCC_jog(d1, d2) {
             forceRedraw();
             return;
         }
+    }
+
+    /* >SEQ is a trigger on an Audio track's CLIP bank in Slice mode: touch K8
+     * and click — the slices onto the steps (Josh, 2026-10-28: "since it's
+     * about the sequence, maybe we should put >seq in the clip BANK"). */
+    if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld &&
+            S.activeBank === 0 && S.knobTouched === AUDIO_SEQ_KNOB && isAudioTrack(S.activeTrack) &&
+            audioSliceMode(S.activeTrack)) {
+        if (slicesToSequence(S.activeTrack)) triggerFire('seq');
+        forceRedraw();
+        return;
     }
 
     /* IMPORT MIDI is a trigger too (Josh, 2026-09-29): touch K8 on the CLIP or
@@ -1472,6 +1484,20 @@ export function bankMapDeferrable() {
     if (S.sessionView) return soundOpen() && !S.perfViewLocked;        /* the Session FX editor */
     if (bankIsDoor(S.trackPadMode[S.activeTrack], S.activeBank) || autoMenuUp() || doorScreenUp()) return true;
     return soundActive() && !soundOnCard();
+}
+
+/* A screen with no click of its own shows the map on the PRESS, as a bank
+ * page does — only the pick still leaves the screen first. The AUDIO editor's
+ * pages (Josh, 2026-10-28: "there's a delay when entering pad map from
+ * "audio" editor, but it's not necessary b/c there's no unmodified jog click
+ * gesture available there"); WAVE and the chooser keep the wait: a click is
+ * theirs. Returns true when the map is up. */
+export function bankMapScreenNow() {
+    if (!S.auPanel || S.auEditor || S.auChooser) return false;
+    if (!bankMapDeferrable()) return false;           /* the chords, a touched knob */
+    S.bankMapFromScreen = true;
+    bankMapBegin();
+    return true;
 }
 
 /* The press is taken, undecided: nothing drawn, the owner has not seen it. */
