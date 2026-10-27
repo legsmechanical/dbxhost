@@ -920,7 +920,10 @@ int main(void) {
         hx_set_param(h, "t4_au_set_tempo", "7 2");              /* Fit: the bar squeezed into half */
         bfit = ramp_breaks(h, 300);
         HX_ASSERT(bfit > 0, "Fit did not spread the chops over the clip");
-        /* Pitch: Start..End (88200 frames) over half a bar (1 s) = twice as fast */
+        /* Pitch: Start..End (88200 frames) over the sample's Bars, not the
+         * clip (Josh: "does pitch sync'ing not respect the set bars?"): 1 bar
+         * at 120 is 2 s = as recorded, though the clip is half a bar; 2 bars
+         * is half speed */
         hx_set_param(h, "t4_au_set_tempo", "7 3");
         hx_set_param(h, "transport", "play");
         hx_render(h, 8);
@@ -928,10 +931,34 @@ int main(void) {
             const au_voice_t *lv = NULL;
             for (i = 0; i < AU_VOICES; i++)
                 if (inst->au_trk[4].v[i].active && inst->au_trk[4].v[i].mode_loop && !inst->au_trk[4].v[i].rel_len) lv = &inst->au_trk[4].v[i];
-            HX_ASSERT(lv && lv->step > 2.0 - 1e-9 && lv->step < 2.0 + 1e-9, "Pitch did not retune the loop to fill the clip");
+            HX_ASSERT(lv && lv->step > 1.0 - 1e-9 && lv->step < 1.0 + 1e-9, "Pitch did not retune the loop to its Bars (1)");
+            hx_set_param(h, "t4_au_set_bars", "7 2");
+            hx_render(h, 2);
+            HX_ASSERT(lv->active && lv->step > 0.5 - 1e-9 && lv->step < 0.5 + 1e-9, "Pitch did not retune the loop to its Bars (2)");
+            hx_set_param(h, "t4_au_set_bars", "7 1");
         }
         hx_set_param(h, "transport", "stop");
         hx_render(h, 60);
+
+        /* Loop mode's hidden chop at Start (Josh: "loop mode should always
+         * have a hidden loop marker at the start"): a hand set whose first
+         * chop is a quarter in still plays Start..End whole on Sync */
+        {
+            au_slice_t bak[2];
+            uint8_t be = ac->even, bn = ac->nslices;
+            int bh;
+            memcpy(bak, ac->sl, sizeof bak);
+            lc->length = 16;
+            hx_set_param(h, "t4_au_set_tempo", "7 1");
+            ac->even = 0; ac->nslices = 2;
+            memset(ac->sl, 0, 2 * sizeof ac->sl[0]);
+            ac->sl[0].start = 22050; ac->sl[1].start = 66150;
+            bh = ramp_breaks(h, 300);
+            HX_ASSERT(bh == 0, "Sync left out what comes before the first chop");
+            ac->even = be; ac->nslices = bn;
+            memcpy(ac->sl, bak, sizeof bak);
+            lc->length = 8;
+        }
 
         /* >Seq: each chop on the step of its place in the sample's own Bars */
         hx_set_param(h, "t4_au_set_tempo", "7 0");
@@ -1103,14 +1130,18 @@ int main(void) {
             double want = (double)tps * (double)ac->smp->frames / (2.0 * PPQN * 4);
             HX_ASSERT(got + 1 >= (uint32_t)want && got <= (uint32_t)want + 1, "Sync's reach is not one step of the sample's 2 bars");
         }
-        hx_set_param(h, "t4_au_set_tempo", "7 2");              /* Fit and Pitch play all of it */
+        hx_set_param(h, "t4_au_set_tempo", "7 2");              /* Fit plays all of it */
         hx_get_param(h, "t4_au_info_7", b, sizeof b);
         sscanf(b, "%*d %*d %*d %*d %*d %*d %*u %*u %*d %*d %*u %*u %*d %*d %*d %*d %*d %*d %*d %u", &got);
         HX_ASSERT(got == re - rs, "Fit does not reach the end");
         hx_set_param(h, "t4_au_set_tempo", "7 3");
         hx_get_param(h, "t4_au_info_7", b, sizeof b);
         sscanf(b, "%*d %*d %*d %*d %*d %*d %*u %*u %*d %*d %*u %*u %*d %*d %*d %*d %*d %*d %*d %u", &got);
-        HX_ASSERT(got == re - rs, "Pitch does not reach the end");
+        {
+            /* Pitch: on the sample's Bars too, so Sync's reach */
+            double want = (double)tps * (double)ac->smp->frames / (2.0 * PPQN * 4);
+            HX_ASSERT(got + 1 >= (uint32_t)want && got <= (uint32_t)want + 1, "Pitch's reach is not one step of the sample's 2 bars");
+        }
         hx_set_param(h, "t4_au_set_tempo", "7 0");
         lc->length = was_len;
     }
@@ -1143,6 +1174,22 @@ int main(void) {
     HX_ASSERT(inst->au_clip[4][0].detune == -17 && inst->au_clip[4][0].sl[1].detune == 9, "the reload lost the detunes");
     HX_ASSERT(wait_loaded(h, 4, 0) == 2 && wait_loaded(h, 4, 2) == 2, "the reload did not load the samples");
     HX_ASSERT(inst->au_clip[4][0].smp && inst->au_clip[4][0].smp->frames == 48000, "clip A's sample is not the saved one");
+
+    /* ---- a chop's end fades back the way it came (Josh: "a very short fade
+     * out on slice end so it doesn't click?"), never a hard stop ---- */
+    {
+        au_voice_t v;
+        int32_t acc[2 * 128];
+        memset(&v, 0, sizeof v);
+        v.smp = inst->au_clip[4][0].smp;
+        v.lo = 1000; v.hi = 2000; v.pos = 1990; v.step = 1.0; v.gain = 1.0f; v.starve = 64; v.active = 1;
+        memset(acc, 0, sizeof acc);
+        au_voice_render(&v, acc, 64);
+        HX_ASSERT(v.active && v.tail && v.step < 0 && v.pos < 2000 && v.pos > 1900, "the end did not turn into a tail");
+        memset(acc, 0, sizeof acc);
+        au_voice_render(&v, acc, 128);
+        HX_ASSERT(!v.active, "the tail did not end within AU_TAIL frames");
+    }
 
     /* ---- leaving Audio: samples let go, steps cleared (Q3) ---- */
     hx_set_param(h, "t4_au_chop", "0");

@@ -40,6 +40,8 @@
 #define AU_TEMPO_PITCH     3            /* Loop: the sample retuned (varispeed) to fill the clip's length */
 #define AU_BARS_MAX        64           /* a sample's own length in bars, 1..64 */
 #define AU_GAP             16           /* frames: the least a slice can be */
+#define AU_TAIL            128          /* frames: the fade back from a chop's end (~3 ms) */
+#define AU_SLICE_NONE      (-1)         /* au_range_on: Loop mode's hidden chop at Start */
 #define AU_JOIN            256          /* frames: a slice this near where the sounding one has reached carries it on */
 #define AU_MIP             256          /* frames per waveform summary entry */
 #define AU_CHUNK_SHIFT     13
@@ -135,6 +137,7 @@ typedef struct {
     uint32_t rel_wait;       /* output frames before that release begins (on its tick's frame) */
     uint32_t wait;           /* output frames of silence before it starts (Loop Nudge later; a slice's tick frame) */
     uint8_t  active, loop, mode_loop, slice;
+    uint8_t  tail;           /* in the fade back from its end */
     uint8_t  gated;          /* GATE / LOOP: ends at note-off */
     uint8_t  starve;         /* streamed: 0..64, its level, down while a chunk is missing (64 at start) */
 } au_voice_t;

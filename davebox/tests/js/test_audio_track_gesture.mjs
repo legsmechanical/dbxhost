@@ -527,14 +527,17 @@ step('⭐⭐ WAVE: SLICE n/n or LOOP up top; Start / End light while touched or 
     assert(tx.indexOf('ZOOM') >= 0 && tx.indexOf('ZOOM +') < 0 && tx.indexOf('ZOOM -') < 0, 'a touched K2: ' + JSON.stringify(tx));
     note(1, 0);
     back();
-    /* Loop: LOOP up top; Zoom takes the middle from Pitch / Gain while in hand */
+    /* Loop: the sample's name up top (Josh: "show the sample name in the
+     * header of "sample" instead of "loop""); Zoom takes the middle from
+     * Pitch / Gain while in hand */
     GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(2);
     mapPad(2, 3); ticks(2);
     let lf;
     tx = globalThis.__texts(() => { lf = shown(); });
     assert(tx.indexOf('KNOBS') >= 0 && tx.indexOf('EDIT') >= 0 && tx.indexOf('SH+CLK') >= 0, 'Loop hints: ' + JSON.stringify(tx));
     /* nothing in the middle with no knob in hand (Josh) */
-    assert(tx.indexOf('LOOP') >= 0 && !tx.some((x) => /^(ZOOM [+-]|GAIN |PITCH |DETUNE )|ST$|DB$/.test(x)) && !lf[12 * 128 + 64], 'Loop at rest: ' + JSON.stringify(tx));
+    const nm = A.auSampleName(4, 0).toUpperCase();
+    assert(nm && nm !== 'NO SAMPLE' && tx.some((x) => x.toUpperCase() === nm) && tx.indexOf('LOOP') < 0 && !tx.some((x) => /^(ZOOM [+-]|GAIN |PITCH |DETUNE )|ST$|DB$/.test(x)) && !lf[12 * 128 + 64], 'Loop at rest: ' + JSON.stringify(tx));
     tx = globalThis.__texts(() => { cc(72, 1); lf = shown(); });
     /* ...and in hand it is lit, as Start / End are */
     assert(tx.indexOf('ZOOM +') >= 0 && lf[9 * 128 + 64] && lf[15 * 128 + 64], 'Loop zoom: ' + JSON.stringify(tx));

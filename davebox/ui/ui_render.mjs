@@ -167,7 +167,7 @@ function drawAudioTrackRest(t) {
     /* the waveform in Loop mode only; slices are sequenced, so Slice mode
      * shows the page bar and playhead like any track (Josh, 2026-10-28) */
     if (i.mode === AU_MODE_SLICE) drawPositionBar(t);
-    else drawAudioWave(t, c, 4, 49, 120, 7, {});
+    else drawAudioWave(t, c, 4, 49, 120, 7, { noMarks: true });   /* Josh, 2026-10-28: "no need to show slice points on the track overview waveform preview" */
 }
 
 /* The AUDIO editor (ui_audio_editor): the clip's audio on the kit page, a
@@ -246,7 +246,9 @@ function drawAudioWaveEditor() {
         return;
     }
     if (sub === 'loop') {
-        drawBankHeading('LOOP', false);
+        /* the sample's name (Josh, 2026-10-28: "in loop mode, can we show the
+         * sample name in the header of "sample" instead of "loop"") */
+        drawBankHeading(auSampleName(t, c), false);
         ends('S ' + auFmtTime(i.rstart, rt), 'E ' + auFmtTime(auEnd(i), rt));
         if (zoomTxt) mid(zoomTxt);
         drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, cur: ed.cur, gain: i.gain | 0 });

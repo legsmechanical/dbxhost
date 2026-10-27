@@ -9,6 +9,12 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Changed
+- **Audio: Pitch follows Bars.** Tempo **Pitch** retunes a Loop clip to fill the
+  sample's own Bars at the tempo, as Sync does, rather than the clip's length.
+- **Audio: SAMPLE sits on the instrument pad, where INST is on other tracks**; the
+  SLICE / LOOP bank moves under CLIP. In Loop mode SAMPLE's header shows the sample's
+  name, and the track overview's waveform no longer shows the chops.
+
 - **Audio tracks: one set of chops, and Mode on the CLIP bank.** A clip's chops now
   serve both modes, and its **Mode** (CLIP bank K4) only says what the sequencer does
   with them. **Loop** plays the sample straight through, set and forget; its pads show
@@ -52,6 +58,9 @@ the section into a versioned heading at release time.
   and the instrument shortcut open it.
 
 ### Fixed
+- **Audio: Sync and Fit play what comes before the first chop** — a Loop clip whose
+  first chop is not at its start no longer drops that stretch.
+- **Audio: a chop's end no longer clicks** — every chop ends with a ~3 ms fade.
 - **Audio: the Shift shortcuts work over SAMPLE** (and its sample chooser): Shift + a
   step or Shift + jog leaves it and does what it does everywhere else.
 - **Audio: slices start exactly on their step** (on dAVEBOx's own clock) rather than up to 3 ms early, and chops

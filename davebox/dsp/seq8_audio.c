@@ -1213,22 +1213,34 @@ static int au_slice_range(const au_clip_t *cl, const au_sample_t *s, int k, uint
 /* Chop `slice` of clip (t,c) starts `off` frames into the block: a Slice
  * clip's note, or (sync) a Loop clip's Tempo Sync, which plays every chop to
  * its end (One), backwards in Revrs, and streams past Slice mode's cap. */
+static void au_range_on(seq8_instance_t *inst, int t, int c, int slice, uint32_t a, uint32_t b,
+                        float vgain, uint32_t off, int sync);
 static void au_chop_on(seq8_instance_t *inst, int t, int c, int slice, float vgain, uint32_t off, int sync) {
     au_clip_t *cl = &inst->au_clip[t][c];
     const au_sample_t *s = cl->smp;
-    au_track_t *at = &inst->au_trk[t];
     uint32_t a, b;
-    int i;
     if (!s || (!sync && cl->mode != AU_MODE_SLICE)) return;
     if (!sync && (uint64_t)s->frames > (uint64_t)s->rate * AU_SLICE_MAX_SEC) return;
     if (!au_slice_range(cl, s, slice, &a, &b)) return;
+    au_range_on(inst, t, c, slice, a, b, vgain, off, sync);
+}
+
+/* Frames a..b of clip (t,c)'s sample as chop `slice` (AU_SLICE_NONE: Loop
+ * mode's hidden chop at Start), `off` frames into the block. */
+static void au_range_on(seq8_instance_t *inst, int t, int c, int slice, uint32_t a, uint32_t b,
+                        float vgain, uint32_t off, int sync) {
+    au_clip_t *cl = &inst->au_clip[t][c];
+    const au_sample_t *s = cl->smp;
+    au_track_t *at = &inst->au_trk[t];
+    int i;
+    if (!s || b <= a) return;
     /* A Loop clip on Sync plays its chops as recorded: the clip's pitch,
      * gain and Revrs, never a chop's own sound — no envelope, pitch, gain,
      * reverse or play mode (Josh, 2026-10-28: "the whole point of loop is
      * that it just plays back as recorded, so attack/decay shouldn't play
      * into it"). Those belong to Slice. */
     static const au_slice_t plain;
-    const au_slice_t *sl = sync ? &plain : &cl->sl[slice];
+    const au_slice_t *sl = (sync || slice < 0 || slice >= AU_MAX_SLICES) ? &plain : &cl->sl[slice];
     uint8_t play = sl->play, rev = sync ? cl->revrs : sl->rev;
     double ratio = au_tune(cl->pitch + sl->pitch, cl->detune + sl->detune) * (double)s->rate / 44100.0;
     float gain = au_db(cl->gain_db + sl->gain_db) * vgain;
@@ -1372,6 +1384,18 @@ static uint32_t au_voice_render(au_voice_t *v, int32_t *acc, int frames) {
                 if (span < 1) { v->active = 0; return missed; }
                 while (v->pos >= v->hi) v->pos -= span;
                 while (v->pos < v->lo) v->pos += span;
+            } else if (!v->tail) {
+                /* The end: a short tail back the way it came, fading out, so
+                 * the cut does not click (Josh, 2026-10-28: "a very short fade
+                 * out on slice end so it doesn't click? (maybe even a really
+                 * short added tail loop with a really short fade out that does
+                 * a ping pong reverse")). Mirrored at the edge, so the wave
+                 * carries straight on. */
+                v->pos = v->pos >= v->hi ? 2.0 * v->hi - v->pos - 1.0 : 2.0 * v->lo - v->pos;
+                v->step = -v->step;
+                v->tail = 1;
+                au_voice_release(v, AU_TAIL);
+                if (v->pos < v->lo || v->pos >= v->hi) { v->active = 0; return missed; }
             } else { v->active = 0; return missed; }
         }
         float e = 1.0f;

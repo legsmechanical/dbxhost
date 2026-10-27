@@ -210,16 +210,33 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
         past = (double)inst->tick_accum / (double)inst->tick_delta * (double)frames / fpt;
     double end = au_wrap((double)tick - 1.0 + past, L), start = end - span;
     double nud = (double)cl->nudge_ms * 44.1 / fpt;
+    /* Start..End plays whole, as recorded: each chop runs to the next one's
+     * start, and a hidden chop at Start covers what lies before the first
+     * (Josh, 2026-10-28: "loop mode should always have a hidden loop marker
+     * at the start"). The starts in order, each with its chop. */
+    uint32_t at_[AU_MAX_SLICES + 1];
+    int ck[AU_MAX_SLICES + 1], m = 1, j;
+    at_[0] = rs; ck[0] = AU_SLICE_NONE;
     n = au_count(cl);
     for (k = 0; k < n; k++) {
         uint32_t a, b;
         if (!au_slice_range(cl, s, k, &a, &b) || a < rs || a >= re) continue;
-        double T = (cl->revrs ? (double)(re - (b > re ? re : b)) : (double)(a - rs)) / (double)(re - rs) * P + nud;
+        if (a == rs) { ck[0] = k; continue; }
+        for (j = m; j > 0 && at_[j - 1] > a; j--) { at_[j] = at_[j - 1]; ck[j] = ck[j - 1]; }
+        if (j > 0 && at_[j - 1] == a) {             /* two chops on one frame: one start */
+            for (; j < m; j++) { at_[j] = at_[j + 1]; ck[j] = ck[j + 1]; }
+            continue;
+        }
+        at_[j] = a; ck[j] = k; m++;
+    }
+    for (j = 0; j < m; j++) {
+        uint32_t a = at_[j], b = j + 1 < m ? at_[j + 1] : re;
+        double T = (cl->revrs ? (double)(re - b) : (double)(a - rs)) / (double)(re - rs) * P + nud;
         if (T >= L || T < -L) continue;                 /* past the clip's end: the clip comes round first */
         double d = au_wrap(T - start, L);
         if (d >= span) continue;
         uint32_t off = (uint32_t)(d * fpt);
-        au_chop_on(inst, t, c, k, 1.0f, off >= (uint32_t)frames ? (uint32_t)frames - 1 : off, 1);
+        au_range_on(inst, t, c, ck[j], a, b, 1.0f, off >= (uint32_t)frames ? (uint32_t)frames - 1 : off, 1);
     }
 }
 
@@ -269,11 +286,15 @@ static void au_render(seq8_instance_t *inst, int frames) {
                  * 2026-10-28: ""Pitch" which would retune the loop to fill x
                  * bars") — the clip's Pitch knob gives way to it */
                 double fill = 0.0;
-                if (cl->tempo == AU_TEMPO_PITCH && lc->length) {
+                if (cl->tempo == AU_TEMPO_PITCH) {
+                    /* x = the sample's own Bars, as Sync's (Josh, 2026-10-28:
+                     * "does pitch sync'ing not respect the set bars?"); the
+                     * clip's length only says when it comes round */
                     uint32_t frs, fre;
                     au_range(cl, cl->smp, &frs, &fre);
-                    fill = (double)(fre - frs) / ((double)lc->length * tps * fpt);
-                    ratio = fill;
+                    double P = au_span_ticks(cl, cl->smp, frs, fre);
+                    if (P > 0) fill = (double)(fre - frs) / (P * fpt);
+                    if (fill > 0) ratio = fill;
                 }
                 /* When this block PLAYED a tick, the clip counters have
                  * already moved past it (render_block advances them after
@@ -866,9 +887,9 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
                        - (double)cl->nudge_ms * (double)s->rate / 1000.0;
             if (r < 0) r = 0;
             if (r < (double)reach) reach = (uint32_t)r;
-        } else if (s && cl->tempo == AU_TEMPO_SYNC && reach) {
-            /* Sync: the chops whose place in the sample's own Bars (plus
-             * Nudge) falls before the clip comes round */
+        } else if (s && (cl->tempo == AU_TEMPO_SYNC || cl->tempo == AU_TEMPO_PITCH) && reach) {
+            /* Sync and Pitch: the chops whose place in the sample's own Bars
+             * (plus Nudge) falls before the clip comes round */
             const clip_t *lc = &inst->tracks[t].clips[c];
             double bpm = inst->tracks[t].pfx.cached_bpm > 0 ? inst->tracks[t].pfx.cached_bpm : 120.0;
             uint32_t tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
