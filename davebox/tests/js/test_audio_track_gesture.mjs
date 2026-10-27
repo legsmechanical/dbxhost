@@ -82,7 +82,12 @@ globalThis.stipple_rect = () => {}; globalThis.draw_line = () => {};
 globalThis.text_width = (t) => Math.max(0, String(t).length * 6 - 1);
 globalThis.set_pixel = _px;
 const LEDS = new Map();
-globalThis.move_midi_internal_send = (m) => { if (m && (m[1] & 0xF0) === 0x90) LEDS.set(m[2], m[3]); return true; };
+const CCLEDS = new Map();
+globalThis.move_midi_internal_send = (m) => {
+    if (m && (m[1] & 0xF0) === 0x90) LEDS.set(m[2], m[3]);
+    if (m && (m[1] & 0xF0) === 0xB0) CCLEDS.set(m[2], m[3]);   /* knob rings: CC 71-78 */
+    return true;
+};
 globalThis.move_midi_external_send = () => {}; globalThis.set_led = () => {};
 globalThis.host_ext_midi_remap_clear = () => {}; globalThis.host_ext_midi_remap_set = () => {};
 globalThis.host_ext_midi_remap_enable = () => {};
@@ -103,6 +108,7 @@ const snd = await import('../../ui/ui_sound.mjs');
 const render = await import('../../ui/ui_render.mjs');
 globalThis.__ED = await import('../../ui/ui_editops.mjs');
 globalThis.__kc = (await import('../../ui/ui_movy.mjs')).kitCellsForTest;
+globalThis.__ring = (await import('../../ui/ui_knob_leds.mjs')).screenRingCells;
 const _kitText = [];
 (await import('../../ui/ui_fonts_pp.mjs')).setKitTextTrace((x) => _kitText.push(String(x)));
 globalThis.__texts = (fn) => { _kitText.length = 0; fn(); return _kitText.slice(); };
@@ -467,6 +473,58 @@ step('⭐⭐ WAVE: SLICE n/n or LOOP up top; Start / End light while touched or 
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
 });
 
+step('⭐⭐ WAVE K4 Gain · K5 Pitch · K6 Detune (the clip\'s), read out in the middle; the waveform follows the gain (Josh)', () => {
+    GET['t4_au_info_0'] = INFO(1, 8, 0); A.auMarkStale(4, 0); ticks(2);
+    mapPad(2, 2); ticks(2);
+    const waveInk = () => { const f = shown(); let n = 0; for (let y = 20; y < 50; y++) for (let x = 0; x < 128; x++) n += f[y * 128 + x]; return n; };
+    const quiet = waveInk();
+    reset();
+    let tx = globalThis.__texts(() => { for (let i = 0; i < 6; i++) cc(74, 1); shown(); });
+    assert(sent('t4_au_set_gain').pop() === '0 6' && tx.indexOf('GAIN +6DB') >= 0, 'K4 Gain: ' + JSON.stringify(sent('t4_au_set_gain')) + ' ' + JSON.stringify(tx));
+    /* measured before a tick: this rig's engine stub answers 0 dB to a re-read */
+    assert(waveInk() > quiet, 'the waveform did not grow with +6 dB: ' + quiet + ' -> ' + waveInk());
+    tx = globalThis.__texts(() => { for (let i = 0; i < 10; i++) cc(75, 1); shown(); });
+    assert(sent('t4_au_set_pitch').join() === '0 1' && tx.indexOf('PITCH +1ST') >= 0, 'K5 Pitch: ' + JSON.stringify(sent('t4_au_set_pitch')) + ' ' + JSON.stringify(tx));
+    tx = globalThis.__texts(() => { cc(76, 127); cc(76, 127); shown(); });
+    assert(sent('t4_au_set_detune').join() === '0 -1,0 -2' && tx.indexOf('DETUNE -2C') >= 0, 'K6 Detune: ' + JSON.stringify(sent('t4_au_set_detune')) + ' ' + JSON.stringify(tx));
+    tx = globalThis.__texts(() => { note(3, 127); shown(); });
+    assert(tx.indexOf('GAIN +6DB') >= 0, 'touching K4 does not read out: ' + JSON.stringify(tx));
+    note(3, 0);
+    back();
+    GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
+});
+
+step('⭐⭐ the knob rings follow the Audio screens: lit where a knob works, dark where it does nothing (Josh)', () => {
+    const lit = () => globalThis.__ring().map((c) => (c ? 1 : 0)).join('');
+    assert(globalThis.__ring() === null, 'rings taken with no Audio screen up');
+    mapPad(2, 3);                                    /* the AUDIO editor, ALL SLICES */
+    assert(lit() === '11111111', 'ALL SLICES rings: ' + lit());
+    jog(1);                                          /* SLICE n: K8 is blank */
+    assert(lit() === '11111110', 'SLICE n rings: ' + lit());
+    jog(-1); back();
+    GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(2);
+    mapPad(2, 3);
+    assert(A.auPanelTitle(S.auPanel) === 'LOOP' && lit() === '11111111', 'LOOP rings: ' + lit());
+    back();
+    mapPad(2, 2); ticks(2);                          /* WAVE: K1-K6, not K7 / K8 */
+    assert(lit() === '11111100', 'WAVE rings: ' + lit());
+    ticks(3);                                        /* ...and that is what the knobs get */
+    const sent8 = [71, 72, 73, 74, 75, 76, 77, 78].map((cc_) => (CCLEDS.get(cc_) ? 1 : 0)).join('');
+    assert(sent8 === '11111100', 'the rings sent over WAVE: ' + sent8 + ' ' + JSON.stringify([71, 72, 73, 74, 75, 76, 77, 78].map((x) => CCLEDS.get(x))));
+    const g0 = globalThis.__ring()[3].norm;
+    cc(74, 1);
+    assert(globalThis.__ring()[3].norm > g0, 'the Gain ring did not follow the turn');
+    S.knobTurnedTick[3] = S.clockMs - 1000; ticks(1);
+    back();
+    GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(2);
+});
+
+step('⭐ Start / End read in seconds to 2 decimals, rounded (Josh: "2 decimals, rounded, for the seconds read-out is fine")', () => {
+    assert(A.auFmtTime(55125, 44100) === '1.25s' && A.auFmtTime(237, 44100) === '0.01s' &&
+           A.auFmtTime(44100 * 12.346, 44100) === '12.35s' && A.auFmtTime(44100 * 75.5, 44100) === '1:15.50',
+           [A.auFmtTime(55125, 44100), A.auFmtTime(237, 44100), A.auFmtTime(44100 * 12.346, 44100), A.auFmtTime(44100 * 75.5, 44100)].join());
+});
+
 step('⭐⭐ Shift + click: the picker — Load sample / Chop sample › Lazy · Manual · Even (Josh)', () => {
     GET['t4_au_info_0'] = INFO(1, 8, 0); A.auMarkStale(4, 0); ticks(2);   /* a hand set of 8, Even Off */
     mapPad(2, 2);
@@ -562,17 +620,17 @@ step('⭐⭐ WAVE with no sample: the click corners, CLICK TO LOAD SAMPLE; a cli
     GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(2);
 });
 
-step('⭐⭐ WAVE in Loop mode: K1 Start · K2 Zoom · K3 End · K4 Pitch · K5 Gain', () => {
+step('⭐⭐ WAVE in Loop mode: K1 Start · K2 Zoom · K3 End · K4 Gain · K5 Pitch', () => {
     GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(2);
     mapPad(2, 2);
     assert(E.auWaveSub(S.auEditor) === 'loop', 'not the loop view');
     reset();
     cc(71, 1);
     assert(sent('t4_au_set_start').join() === '0 750', 'K1 Start: ' + JSON.stringify(sent('t4_au_set_start')));
-    cc(74, 1);
-    assert(sent('t4_au_set_pitch').join() === '0 1', 'K4 Pitch: ' + JSON.stringify(sent('t4_au_set_pitch')));
-    cc(75, 127);
-    assert(sent('t4_au_set_gain').join() === '0 -1', 'K5 Gain: ' + JSON.stringify(sent('t4_au_set_gain')));
+    for (let i = 0; i < 10; i++) cc(75, 1);
+    assert(sent('t4_au_set_pitch').join() === '0 1', 'K5 Pitch: ' + JSON.stringify(sent('t4_au_set_pitch')));
+    cc(74, 127);
+    assert(sent('t4_au_set_gain').join() === '0 -1', 'K4 Gain: ' + JSON.stringify(sent('t4_au_set_gain')));
     assert(inked(shown()), 'the loop view draws nothing');
     back();
     GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(20);

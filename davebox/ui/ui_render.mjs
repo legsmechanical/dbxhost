@@ -100,8 +100,10 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
         else fill_rect(x, mid, w, 1, 1);
         return;
     }
+    /* `gain` (dB): drawn as it will play, the loudest at the frame's edge */
+    const g = o.gain ? Math.pow(10, o.gain / 20) : 1;
     for (let k = 0; k < w; k++) {
-        const hh = Math.max(0, Math.round(cols[k] * (h - 1) / 2));
+        const hh = Math.max(0, Math.min(Math.floor((h - 1) / 2), Math.round(cols[k] * g * (h - 1) / 2)));
         fill_rect(x + k, mid - hh, 1, hh * 2 + 1, 1);
     }
     /* outside Start..End: hatched off */
@@ -207,8 +209,19 @@ function drawAudioWaveEditor() {
         ovwPrint(x, 10, txt, on ? 0 : 1);
     };
     const ends = (s, e) => { lit(4, s, S.knobTouched === 0); lit(124 - ovwWidth(e), e, S.knobTouched === 2); };
-    const zoomTxt = S.knobTouched === 1 ? 'ZOOM' + (ed.zoomDir > 0 ? ' +' : ed.zoomDir < 0 ? ' -' : '') : '';
-    const mid = (txt) => ovwPrint(64 - Math.floor(ovwWidth(txt) / 2), 10, txt, 1);
+    const sgn = (v) => (v > 0 ? '+' : '') + v;
+    /* K2 Zoom, K4 Gain, K5 Pitch, K6 Detune: what the knob in hand is doing */
+    const zoomTxt = S.knobTouched === 1 ? 'ZOOM' + (ed.zoomDir > 0 ? ' +' : ed.zoomDir < 0 ? ' -' : '')
+        : S.knobTouched === 3 ? 'GAIN ' + sgn(i.gain | 0) + 'DB'
+        : S.knobTouched === 4 ? 'PITCH ' + sgn(i.pitch | 0) + 'ST'
+        : S.knobTouched === 5 ? 'DETUNE ' + sgn(i.detune | 0) + 'C' : '';
+    /* the middle readout: on a cleared strip, so a long one sits over
+     * minutes-long Start / End times rather than into them */
+    const mid = (txt) => {
+        const x = 64 - Math.floor(ovwWidth(txt) / 2);
+        fill_rect(x - 2, 9, ovwWidth(txt) + 3, 7, 0);
+        ovwPrint(x, 10, txt, 1);
+    };
     if (ed.mode === 'lazy') {
         const lz = auLazyState();
         drawBankHeading('LAZY CHOP', false);
@@ -236,7 +249,7 @@ function drawAudioWaveEditor() {
          * while K2 is in hand) */
         const pg = (i.pitch > 0 ? '+' : '') + i.pitch + 'ST ' + (i.gain > 0 ? '+' : '') + i.gain + 'DB';
         mid(zoomTxt || pg);
-        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, noMarks: true, cur: ed.cur });
+        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, noMarks: true, cur: ed.cur, gain: i.gain | 0 });
         drawKitHintRow(MV_FOOTER_Y, [['k2', 'zoom'], ['sh+clk', 'menu']]);
         return;
     }
@@ -248,7 +261,7 @@ function drawAudioWaveEditor() {
         ends('S ' + auFmtTime(m[0], rt), m[1] === auEdHome(ed, sel) ? 'E NEXT' : 'E ' + auFmtTime(m[1], rt));
     }
     if (zoomTxt) mid(zoomTxt);
-    drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel, cur: ed.cur });
+    drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel, cur: ed.cur, gain: i.gain | 0 });
     /* two hints fit: Shift + click is the one nobody would guess (found on
      * the device: a third was cut off) */
     drawKitHintRow(MV_FOOTER_Y, [['clk', 'add'], ['sh+clk', 'menu']]);

@@ -1213,10 +1213,13 @@ so its effects, fader, pan, sends and mute apply.
 CLIP). What it shows follows the clip:
 
 - **No sample:** *Click to load sample* — a click opens the sample chooser.
-- **Loop mode:** the loop's waveform. **K1** Start · **K2** Zoom · **K3** End ·
-  **K4** Pitch · **K5** Gain.
+- **Loop mode:** the loop's waveform. **K1** Start · **K2** Zoom · **K3** End.
 - **Slice mode:** the sample with every chop marked and the selected slice
   bracketed — the chop editor below.
+
+In both, **K4** Gain · **K5** Pitch · **K6** Detune set the whole clip; the one in
+hand reads out between Start and End, and the waveform is drawn at the gain it
+plays at. Times read in seconds to two decimals.
 
 **Shift + click** opens WAVE's menu: **Load sample** (the chooser) and **Chop
 sample**, which offers **Lazy**, **Manual** and **Even**. Each makes the clip a

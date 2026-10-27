@@ -12,7 +12,7 @@ import { trackClipHasContent, updateSceneMapLEDs } from './ui_scene.mjs';
 import { PROJECT_COLORS, projectColorLED } from './ui_dialogs.mjs';
 import { autoMapEditorComp, autoMapMarkedBank } from './ui_automation_bank.mjs';
 import { arpVelLevel, drumVelocityToZone, bankPadMapForMode, SESS_PAD_MAP, bankMapPadForCell, bankMapTrackForStep, BANK_MAP_MODULE_PADS, bankMapModuleAt } from './ui_pure.mjs';
-import { knobRingColor, knobRingNorm, ringCellsFor, ringNormOfCell } from './ui_knob_leds.mjs';
+import { knobRingColor, knobRingNorm, ringCellsFor, ringNormOfCell, screenRingCells } from './ui_knob_leds.mjs';
 import { automationStateFor } from './ui_automation.mjs';
 import { devSnapOpen, devSnapLedFor } from './ui_devsnap.mjs';
 import { sessStripTargets, SESS_KNOB_MODES } from './ui_engine.mjs';
@@ -1181,6 +1181,7 @@ export function updateTrackLEDs() {
   }
 
     /* Knob LEDs (CC 71-78) */
+    const _scrRing = screenRingCells();
     for (let k = 0; k < NUM_TRACKS; k++) {
         let ledVal = LED_OFF;
         if (S.perfViewLocked) {
@@ -1227,6 +1228,11 @@ export function updateTrackLEDs() {
              * ⚠ Every track is lit, including one with the feature off: the ring
              * is an address here, not a value. */
             ledVal = trackColor(k);
+        } else if (_scrRing) {
+            /* A full-screen editor's own knobs (the AUDIO editor, WAVE): the
+             * kit-page rule over the cells it draws — dark where a knob does
+             * nothing there. */
+            ledVal = knobRingColor(k, ringNormOfCell(_scrRing[k]));
         } else if (miActive()) {
             /* The MIDI browser: its card's cells, dark on a knob that does
              * nothing there (Josh, 2026-09-30) — the kit-page rule below. */

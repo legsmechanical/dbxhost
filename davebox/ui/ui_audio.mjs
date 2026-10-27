@@ -364,7 +364,7 @@ const fmtMs = (v) => (v > 0 ? '+' : '') + v + 'ms';
 /* A frame as time: "1.234s", "1:02.35" past a minute. */
 export function auFmtTime(frames, rate) {
     const s = (frames | 0) / (rate || 44100);
-    if (s < 60) return s.toFixed(s < 10 ? 3 : 2) + 's';
+    if (s < 60) return s.toFixed(2) + 's';           /* 2 decimals, rounded (Josh, 2026-10-28) */
     const m = Math.floor(s / 60);
     const r = s - m * 60;
     return m + ':' + (r < 10 ? '0' : '') + r.toFixed(2);
@@ -441,7 +441,8 @@ export function auPanelCells(ed) {
     const gain = { kind: 'arc', label: 'Gain', name: 'Gain', text: fmtDb(i.gain), norm: (i.gain + 40) / 52 };
     if (page === 'CLIP') {
         if (i.mode !== AU_MODE_SLICE) {
-            const jump = { kind: 'valsq', label: 'Jump', name: 'Jump Points', text: String(i.jump) };
+            const jump = { kind: 'valsq', label: 'Jump', name: 'Jump Points', text: String(i.jump),
+                           ringNorm: Math.max(0, [2, 4, 8, 16, 32].indexOf(i.jump)) / 4 };
             return [mode, pitch, detune, gain, jump].concat(loopCells(i)).map(live);
         }
         /* every slice's sound here (Josh: "merge the "all slices" items to
@@ -462,6 +463,21 @@ export function auPanelCells(ed) {
     const r = auSlice(t, c, l) || DEFAULT_SLICE;
     const cells = SLICE_FIELDS.map((f) => soundCell[f](r)).concat([BLANK]);
     return (!has || l >= i.n) ? cells.map((x) => (x === BLANK ? x : dash(x))) : cells;
+}
+
+/* The AUDIO editor's knob rings: the cells it draws, every working knob
+ * bound (a `--` that a turn sets still lights its floor), dark where a knob
+ * does nothing — a page with no sample, a slice past the count, a blank. */
+export function auPanelRingCells(ed) {
+    const i = auInfo(ed.t, auClipOf(ed.t));
+    const has = i.state === 2;
+    const page = auPanelPageName(ed);
+    const off = page === 'SLICE' && (!has || auSelSlice(ed.t) >= i.n);
+    return auPanelCells(ed).map((x) => {
+        if (!x || x.kind === 'blank' || off) return null;
+        if (!has && x.label !== 'Mode') return null;
+        return Object.assign({}, x, { ringBound: true });
+    });
 }
 
 /* How a knob steps (ui_input_cc's classes): '' sweeps; 'pick' a step per
