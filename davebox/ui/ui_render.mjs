@@ -249,7 +249,7 @@ function drawAudioWaveEditor() {
         ends('S ' + auFmtTime(i.rstart, rt), 'E ' + auFmtTime(auEnd(i), rt));
         if (zoomTxt) mid(zoomTxt);
         drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, noMarks: true, cur: ed.cur, gain: i.gain | 0 });
-        drawKitHintRow(MV_FOOTER_Y, [['k2', 'zoom'], ['sh+clk', 'menu']]);
+        drawKitHintRow(MV_FOOTER_Y, [['knobs', 'edit'], ['sh+clk', 'menu']]);   /* Josh: "knobs: edit is fine for a hint" */
         return;
     }
     const mk = auMarks(t, c);

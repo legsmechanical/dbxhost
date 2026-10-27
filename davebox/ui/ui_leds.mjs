@@ -642,10 +642,14 @@ function paintBankMapPads() {
          * 2026-10-20: "when i'm IN instrument view it says i'm in automation
          * on the map"): its module pad — and INST, for the instrument — is lit. */
         const ed = autoMapEditorComp();
+        /* ...and an Audio screen is where you are too (Josh, 2026-10-28: "pad
+         * map should show when you're in audio/wave"): WAVE's pad, or AUDIO's. */
+        const au = S.auPanel ? (S.auEditor ? 'wave' : 'inst') : null;
         bankPadMapForMode(S.trackPadMode[t], t).forEach((c, ci) => c.cells.forEach((cell, r) => {
             if (!cell) return;
             const own = cell.bank === BANK_CONFIG || cell.bank === BANK_SOUND || cell.action === 'inst';
             const on = d ? (d.col === ci && d.row === r)
+                : au !== null ? cell.action === au
                 : ed !== null ? (cell.action === 'inst' && ed === 'synth')
                 : (cell.bank !== null && cell.bank === autoMapMarkedBank());
             col[at(ci, r)] = on ? White

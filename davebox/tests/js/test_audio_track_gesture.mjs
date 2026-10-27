@@ -415,6 +415,11 @@ step('⭐⭐ the map opens from WAVE (hold the jog) and the AUDIO editor (at onc
             assert(!S.jogDeferred && S.bankMapUp, 'the press over the AUDIO editor did not show the map at once');
         }
         assert(S.bankMapUp, 'holding the jog over ' + name + ' did not bring up the map');
+        /* ...lit where you are: that screen's own pad (Josh: "pad map should show when you're in audio/wave") */
+        ticks(2);
+        assert(LEDS.get(P.bankMapPadForCell(col, row)) === HC.White, 'the map does not light ' + name + '\'s pad: ' + LEDS.get(P.bankMapPadForCell(col, row)));
+        const whites = Array.from({ length: 32 }, (_, i) => LEDS.get(C.TRACK_PAD_BASE + i)).filter((v) => v === HC.White).length;
+        assert(whites === 1, 'the map lights ' + whites + ' pads white over ' + name + ' (the bank under it too?)');
         note(P.bankMapPadForCell(2, 1), 100); note(P.bankMapPadForCell(2, 1), 0);   /* CLIP */
         cc(3, 0); ticks(3);
         assert(!S.auPanel && !S.auEditor && S.activeBank === 0, 'the pick did not leave ' + name + ' for CLIP: bank ' + S.activeBank);
@@ -466,6 +471,7 @@ step('⭐⭐ WAVE: SLICE n/n or LOOP up top; Start / End light while touched or 
     mapPad(2, 2); ticks(2);
     let lf;
     tx = globalThis.__texts(() => { lf = shown(); });
+    assert(tx.indexOf('KNOBS') >= 0 && tx.indexOf('EDIT') >= 0 && tx.indexOf('SH+CLK') >= 0, 'Loop hints: ' + JSON.stringify(tx));
     /* nothing in the middle with no knob in hand (Josh) */
     assert(tx.indexOf('LOOP') >= 0 && !tx.some((x) => /^(ZOOM [+-]|GAIN |PITCH |DETUNE )|ST$|DB$/.test(x)) && !lf[12 * 128 + 64], 'Loop at rest: ' + JSON.stringify(tx));
     tx = globalThis.__texts(() => { cc(72, 1); lf = shown(); });
