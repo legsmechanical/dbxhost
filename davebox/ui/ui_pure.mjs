@@ -14,7 +14,7 @@
 import { S } from './ui_state.mjs';
 import { PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_AUDIO, NUM_STEPS, BANKS,
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION,
-    BANK_CHORD, BANK_CONFIG, isSoundBank } from './ui_constants.mjs';
+    BANK_CHORD, BANK_CONFIG, BANK_AUDIO, isSoundBank } from './ui_constants.mjs';
 
 /* Live pad note input — isomorphic 4ths diatonic layout.
  * EXPORTED for ui.js's computePadNoteMap (impure, moves in Phase 5) — do not
@@ -166,6 +166,8 @@ export function bankCategoriesForMode(padMode, t) {
             { label: 'CTRL', banks: [BANK_MACROS, BANK_AUTOMATION] },
             { label: 'SEQ',  banks: slice ? [BANK_STEP, 0] : [0] },
             { label: 'FX',   banks: slice ? [1] : [] },
+            /* AUDIO: the clip's sound, a bank with pages (Josh, 2026-10-28) */
+            { label: null,   banks: [BANK_AUDIO] },
             { label: null,   banks: [BANK_SOUND] },
         ].filter((g) => g.banks.length);
     }
@@ -224,7 +226,7 @@ const BANK_MAP_POS = {
                1: [3, 0] },
     audio:   { [BANK_CHORD]: [0, 0], 5: [0, 1], [BANK_CONFIG]: [0, 3],
                [BANK_MACROS]: [1, 0], [BANK_AUTOMATION]: [1, 1], [BANK_SOUND]: [1, 3],
-               [BANK_STEP]: [2, 0], 0: [2, 1],
+               [BANK_STEP]: [2, 0], 0: [2, 1], [BANK_AUDIO]: [2, 3],
                1: [3, 0] },
 };
 const BANK_MAP_LABELS = {
@@ -244,7 +246,8 @@ const BANK_MAP_ACTIONS = {
     /* WAVE (Josh, 2026-10-28, from the Layout Map: "new editor: wav" under
      * CLIP): the clip's sample — its waveform, chops and the load / chop
      * picker (ui_audio_editor). */
-    audio:   { inst: [2, 3], wave: [2, 2] },
+    /* AUDIO is a bank now, on the pad INST had (Josh, 2026-10-28) */
+    audio:   { wave: [2, 2] },
 };
 /* The instrument door on an Audio track is the AUDIO editor, and says so. */
 const BANK_MAP_ACTION_NAMES = { inst: 'INST' };

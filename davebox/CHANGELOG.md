@@ -45,7 +45,10 @@ the section into a versioned heading at release time.
 
 - **Audio: Delete + clip clears the sequence only** — the sample, its settings and
   the clip's length stay; **Shift + Delete + clip** resets it, sample and all.
-  **Delete + jog click** in the AUDIO editor resets the page showing.
+  **Delete + jog click** on the AUDIO bank resets the page showing.
+- **Audio: AUDIO is a bank now**, with pages — CLIP, and SLICE n in Slice mode.
+  A plain jog turn flips them; the map's AUDIO pad and the sound menu's Audio row
+  land on it.
 
 ### Fixed
 - **Audio: slices start exactly on their step** (on dAVEBOx's own clock) rather than up to 3 ms early, and chops

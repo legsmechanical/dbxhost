@@ -22,7 +22,7 @@ import {
     LED_OFF, NUM_TRACKS, NUM_CLIPS,
     TRACK_PAD_BASE, TPS_VALUES,
     BANKS, PAD_MODE_DRUM, PAD_MODE_CONDUCT,
-    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_CONFIG, LGTO_KNOB,
+    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_CONFIG, BANK_AUDIO, LGTO_KNOB,
     CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, ARP_STEPS_KNOB, arpStepsBank, LOOP_NOT_AT_1_MS, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
     TICK_HZ, STEP_ITER_LIST, JOG_HOLD_MAP_MS,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
@@ -69,7 +69,8 @@ import { BANK_MAP_TRACK_POPUP_MS, SEQ_PAGE_POPUP_MS, seqAutoTargetForKnob, SEQ_A
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam, soundOpenModule, instrPickResume } from './ui_sound.mjs';
 import { auPurgeRun, closeAudioChooser } from './ui_audio_chooser.mjs';
-import { isAudioTrack, audioSliceMode, auClipBankKnob, knobAltOnTrack, auSetLayout, auSetPage, AU_NOTE_BASE, AU_EVEN_MAX } from './ui_audio.mjs';
+import { isAudioTrack, audioSliceMode, auClipBankKnob, knobAltOnTrack, auSetLayout, auSetPage, AU_NOTE_BASE, AU_EVEN_MAX,
+         auBankOn, auBankEd, auBankPageStep, auPanelKnob, auPanelKnobClass, auPanelReset, auPanelPageName } from './ui_audio.mjs';
 
 /* AUDIO's CLIP bank (Slice mode) mirrors ALL LANES over the melodic clip's
  * knobs (Josh, 2026-10-27: "it seems like clip bank should mirror all lanes
@@ -840,6 +841,16 @@ function modalDialogUp() {
         }
         return;
     }
+    if (d1 === 3 && d2 === 127 && S.deleteHeld && !S.shiftHeld && !S.sessionView && auBankOn()) {
+        /* The AUDIO bank: the page showing only (Josh, 2026-10-28: "for
+         * multi-page banks, we should have delete+jog only reset the active
+         * page"). */
+        const _ed = auBankEd();
+        if (auPanelReset(_ed)) showActionPopup(auPanelPageName(_ed) === 'CLIP' ? 'CLIP' : 'SLICE', 'RESET');
+        S.screenDirty = true;
+        forceRedraw();
+        return;
+    }
     if (d1 === 3 && d2 === 127 && S.deleteHeld && !S.sessionView) {
         /* ⭐ MACROS: clear the track's assignments, after asking. Handled HERE as
          * well as in sound mode's own jog branch, because on the RESTING MACROS
@@ -1398,6 +1409,12 @@ function modalDialogUp() {
                 } else if (doorScreenUp()) {
                     /* A DOOR SCREEN (AUTOMATION's menu) is a screen, not a bank
                      * on the walk: the turn does not walk off it. Back leaves. */
+                } else if (!S.sessionView && auBankOn()) {
+                    /* ⭑ A BANK WITH PAGES (Josh, 2026-10-28: "so we could have
+                     * multi-page banks?" · "yes"): the plain turn, unused on
+                     * the overview, flips its pages — the touch that comes
+                     * with it shows the page. A one-page bank ignores it. */
+                    if (auBankPageStep(delta)) forceRedraw();
                 }
                 /* ⭑ THE JOG TURN NO LONGER SWITCHES BANKS (Josh, 2026-10-04:
                  * "i want to retire jog to switch banks and the bank column
@@ -1794,6 +1811,16 @@ function seqAutoEdit(track, bank, k, altMode, nv, cur) {
  * screen has to be re-entered — BANKS[11] draws nothing on its own).
  * `rest`: the walk under the overview — no display window, a SILENT sound
  * entry (it opens resting; the card is not shown). */
+/* Land on the AUDIO bank (the map's AUDIO pads, the instrument shortcut, the
+ * sound menu's Audio row), its card showing. */
+export function pickAudioBank() {
+    const t = S.activeTrack;
+    if (!isAudioTrack(t)) return;
+    S.bankPickerSel = bankListFor(t).indexOf(BANK_AUDIO);
+    applyBankPick(false);
+    forceRedraw();
+}
+
 export function applyBankPick(rest) {
     const t = S.activeTrack;
     S.doorReturn = null;          /* a bank chosen any other way ends a door screen's way home */
@@ -3053,7 +3080,7 @@ function openTrackModule(comp) {
 function openTrackInstrument() {
 const _gt = S.activeTrack;
 /* AUDIO: the instrument door is the AUDIO editor (ui_audio_editor). */
-if (isAudioTrack(_gt)) { if (soundOpen()) soundExit(); openAudioEditor(_gt); forceRedraw(); return; }
+if (isAudioTrack(_gt)) { if (soundOpen()) soundExit(); pickAudioBank(); return; }
 /*
  * ⭑ STAMP WHERE WE ARE FIRST (Josh, 2026-08-29: "when exiting instrument
  * editor entered from shift hold shortcut, it should go back to where you
@@ -5045,6 +5072,13 @@ function _onCC_knobs(d1, d2) {
          * On every OTHER bank a held chord leaves the knobs alone, so sound
          * and sequencer params stay playable while chords are held. One step
          * per detent. */
+        /* The AUDIO bank: the page showing's knobs (the AUDIO editor's). */
+        if (auBankOn()) {
+            const _ed = auBankEd(), _cls = auPanelKnobClass(_ed, knobIdx);
+            const _st = _cls ? knobStep(knobIdx, d2, _cls === 'pick' ? KNOB_PICK : KNOB_DELIB) : ccKnobDelta(d2, knobIdx);
+            if (_st && auPanelKnob(_ed, knobIdx, _st)) S.screenDirty = true;
+            return;
+        }
         /* PAD MODE on an Audio track: K1 Layout, 4 Rows / 16 Pads. */
         if (S.activeBank === BANK_CHORD && isAudioTrack(S.activeTrack)) {
             if (knobIdx === 0) {

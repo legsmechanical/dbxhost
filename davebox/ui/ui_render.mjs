@@ -23,7 +23,7 @@ import { miActive, miRender } from './ui_midi_import.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
 import {
-    BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_CONFIG,
+    BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_CONFIG, BANK_AUDIO,
     INSTR_SCHWUNG, INSTR_MOVE_MAX, INSTR_MIDI_CH, INSTR_TRACK, INSTR_CONDUCT, INSTR_AUDIO,
     NOTE_KEYS, NUM_CLIPS, NUM_STEPS, NUM_TRACKS, PAD_MODE_CONDUCT, PAD_MODE_DRUM,
     SCALE_DISPLAY, SCENE_LETTERS, TPS_VALUES, STEP_ITER_LIST,
@@ -71,7 +71,7 @@ import { sessStripTargets } from './ui_engine.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
 import { isAudioTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
-         auPos, auLazyState, auSelSlice, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells, auModeCell, knobAltOnTrack,
+         auPos, auLazyState, auSelSlice, auPanelCells, auPanelTitle, auPanelPages, auBankEd, auBankTitle, auLoopBankCells, auModeCell, knobAltOnTrack,
          auPadModeCells, AU_NOTE_BASE,
          auFmtTime, auEnd, AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN } from './ui_audio.mjs';
 import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
@@ -1869,7 +1869,7 @@ export function bankMapItems() {
     /* ...an Audio screen is where you are too, as on the pads (Josh,
      * 2026-10-28: "the pad map doesn't indicate that you're on wave or
      * audio - still shows last bank") */
-    const au = S.auPanel ? (S.auEditor ? 'wave' : 'inst') : null;
+    const au = S.auPanel && S.auEditor ? 'wave' : null;
     const cols = bankPadMapForMode(S.trackPadMode[t], t).map((c, ci) => ({
         label: c.label,
         cells: c.cells.map((cell, r) => {
@@ -2376,6 +2376,12 @@ function drawUIBody() {
         const _ht = fit4x5(_cc.title, 124);
         fontPrint4x5(Math.round((128 - fontWidth4x5(_ht)) / 2), 1, _ht, 1);
         fill_rect(0, MV_BAR_Y, 128, 1, 1);
+        return;
+    }
+    /* AUDIO: the clip's sound, its page showing; the jog turns the pages */
+    if (bank === BANK_AUDIO && inTimeout && isAudioTrack(S.activeTrack)) {
+        drawKitPage(auBankTitle(), auPanelCells(auBankEd()), false,
+                    auPanelPages(S.activeTrack).length > 1 ? [['jog', 'page']] : null);
         return;
     }
     if (bank === BANK_CHORD && inTimeout) {

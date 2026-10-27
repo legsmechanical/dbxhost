@@ -396,7 +396,8 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   Move's screen, and Move's editor is back untouched when you let go. The map
   does not come up over the on-screen keyboard, over a question that needs an
   answer, or while Shift, Delete, Copy, Mute or Loop is held.
-- **Turning the jog** does not change the bank.
+- **Turning the jog** does not change the bank. On a bank with **pages** (an Audio
+  track's AUDIO), it flips the pages, and **Delete + jog click** resets only the page showing.
 - **Touch the jog** to see the current bank's page while your finger rests on it;
   let go and the overview is back. (In Session View it shows the mixer page.)
 - **Touch a knob** to see the bank's page while you touch it — nothing holds a
@@ -1278,10 +1279,11 @@ in the middle of the screen and the waveform scrolls around it; touching one jum
 there. The header reads **SLICE n/n** (or **LOOP**); the start or end you're touching
 or turning lights up, and **ZOOM +** / **ZOOM −** shows between them while K2 zooms.
 
-**The AUDIO editor** holds the clip's sound. Open it from the bank map's **AUDIO**
-pad, or by clicking **Audio** in the track's sound menu. Turn the jog for its pages;
-**Back** leaves. Holding the jog brings up the bank map at once. **Delete + jog
-click** resets every setting on the page showing.
+**The AUDIO bank** holds the clip's sound. Pick it from the bank map's **AUDIO**
+pad, or click **Audio** in the track's sound menu. It is a bank with **pages**:
+**turn the jog** to flip them (on a bank with one page the turn does nothing); touch
+the jog or a knob to see the page you're on. **Delete + jog click** resets the page
+showing, and only that page.
 
 **Pitch** moves in semitones (±24) and **Detune** in cents (±50); a slice's own
 Pitch and Detune add to the clip's. The Mode isn't here: it's on the CLIP bank.
@@ -1310,7 +1312,7 @@ first knob reads **Slice n** and picks the step's chop.
 track only. **Delete + clip** clears its sequence only: the sample, its settings
 and the clip's length stay. **Shift + Delete + clip** resets it completely, sample
 and all. **Undo** covers the steps; the
-AUDIO editor's settings aren't undoable. **Export to Ableton** leaves Audio tracks
+AUDIO bank's settings aren't undoable. **Export to Ableton** leaves Audio tracks
 out for now, and says so when it finishes.
 
 **Track View at rest** shows a Loop clip's sample, its chops marked, with the playhead

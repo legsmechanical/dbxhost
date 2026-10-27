@@ -53,11 +53,12 @@ import { nowMs } from './ui_clock.mjs';
 import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLazyState, auMarkStale,
          auPanelPages, auPanelPageName, auPanelKnob, auPanelKnobClass, auChop, auPadToSlice,
          auSelSlice, auSetSelSlice, isAudioTrack, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
-         auMarkAdd, auMarkDel, auManual, auEvenBake, auRangeStep, auSet, auEnd, auPanelRingCells, auPanelReset,
+         auMarkAdd, auMarkDel, auManual, auEvenBake, auRangeStep, auSet, auEnd, auPanelRingCells, auPanelReset, auBankEd,
          AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
-import { registerScreenRingCells } from './ui_knob_leds.mjs';
+import { registerScreenRingCells, registerRingCells } from './ui_knob_leds.mjs';
+import { BANK_AUDIO } from './ui_constants.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
-import { ccKnobDelta, knobPick, KNOB_PICK, KNOB_DELIB } from './ui_input_cc.mjs';
+import { ccKnobDelta, knobPick, KNOB_PICK, KNOB_DELIB, pickAudioBank } from './ui_input_cc.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 
 /* One step per detent run (ui_input_cc's knobStep; its exports are only used
@@ -76,6 +77,14 @@ export function openAudioEditor(t) {
     S.auPanel = { t, page: 0 };
     S.knobTouched = -1;
     S.screenDirty = true;
+    return true;
+}
+
+/* The AUDIO bank, from a screen that cannot reach the bank pick itself (the
+ * sound menu's Audio row): ui_input_cc owns the pick. */
+export function openAudioBank(t) {
+    if (!isAudioTrack(t) || t !== S.activeTrack) return false;
+    pickAudioBank();
     return true;
 }
 
@@ -726,3 +735,6 @@ registerScreenRingCells(() => {
     if (S.auEditor) return waveRingCells(S.auEditor);
     return auPanelRingCells(S.auPanel);
 });
+
+/* The AUDIO bank's knob rings: its page's cells, as the editor's were. */
+registerRingCells(BANK_AUDIO, () => (isAudioTrack(S.activeTrack) ? auPanelRingCells(auBankEd(S.activeTrack)) : null));

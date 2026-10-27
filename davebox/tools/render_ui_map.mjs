@@ -653,12 +653,10 @@ for (const f of FAMILIES) {
 await shot('audio-loop-rest', async () => { await audioReady(0); selectTrack(AU_T); await audioReady(0); });
 await shot('audio-loop-bank-0', async () => { await audioReady(0); selectTrack(AU_T); await audioReady(0); toBank(0, true); });
 
-/* Audio: the AUDIO editor (the map's AUDIO pad) and its pages, both modes */
+/* Audio: the AUDIO bank (the map's AUDIO pad) and its pages, both modes */
 async function openAudioEditor(mode) {
     await audioReady(mode); selectTrack(AU_T); await audioReady(mode);
-    mapTap(PURE.bankMapPadForCell(2, 3));
-    ticks(3);
-    if (!S.auPanel) throw new Error('the AUDIO editor did not open');
+    toBank(C.BANK_AUDIO, true);
 }
 await shot('audio-ed-slice-clip', async () => { await openAudioEditor(1); });
 await shot('audio-ed-slice-slice', async () => { await openAudioEditor(1); jog(1); ticks(2); });

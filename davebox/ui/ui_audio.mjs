@@ -28,7 +28,7 @@
  * No host_* call happens at module init. */
 
 import { S } from './ui_state.mjs';
-import { PAD_MODE_AUDIO, NUM_CLIPS, BANK_STEP, knobAltFor } from './ui_constants.mjs';
+import { PAD_MODE_AUDIO, NUM_CLIPS, BANK_STEP, BANK_AUDIO, knobAltFor } from './ui_constants.mjs';
 import { bankListForMode } from './ui_pure.mjs';
 
 export const AU_MODE_LOOP = 0, AU_MODE_SLICE = 1;
@@ -236,8 +236,9 @@ export function auTick() {
     const pk = t + '_' + c + '_' + cur.mode + '_' + cur.n + '_' + (auLazyOpen() ? 1 : 0);
     if (pk !== _padKey) { _padKey = pk; S.pendingPadNoteMapRecompute = true; S.ledsDirtyAudio = true; }
     if (cur.state === 2 && !auPeaks(t, c) && (S.tickCount % 8) === 0) { auReadPeaks(t, c); S.screenDirty = true; }
-    const ed = S.auPanel;
-    if ((ed && ed.t === t) || S.auEditor) {
+    /* the AUDIO bank reads what its page shows, as the editor's screen did */
+    const ed = S.auPanel && S.auPanel.t === t ? S.auPanel : auBankOn() ? auBankEd(t) : null;
+    if (ed || S.auEditor) {
         const l = auSelSlice(t);
         if (!auSlice(t, c, l)) { auReadSlice(t, c, l); S.screenDirty = true; }
         if (ed && auPanelPageName(ed) === 'CLIP' && cur.mode === AU_MODE_SLICE && !auAll(t, c)) { auReadAll(t, c); S.screenDirty = true; }
@@ -435,6 +436,29 @@ const fmtEven = (v) => (v ? String(v) : 'Off');
 export function auPanelPages(t) {
     return auInfo(t, auClipOf(t)).mode === AU_MODE_SLICE ? ['CLIP', 'SLICE'] : ['CLIP'];
 }
+/* ---- the AUDIO bank (Josh, 2026-10-28: "can audio be a bank?" · "yes")
+ * The AUDIO editor's pages as a bank: the same cells and knobs, its page per
+ * track, a plain jog turn flipping it (only a bank with more than one page
+ * takes the turn) and Delete + jog click resetting the page showing ("for
+ * multi-page banks, we should have delete+jog only reset the active page"). */
+export function auBankEd(t = S.activeTrack) {
+    const n = auPanelPages(t).length;
+    const p = Math.max(0, Math.min(n - 1, S.auBankPage[t] | 0));
+    return { t, page: p };
+}
+export function auBankOn() { return S.activeBank === BANK_AUDIO && isAudioTrack(S.activeTrack); }
+/* A jog turn on the AUDIO bank: the next / previous page, clamped. True when it moved. */
+export function auBankPageStep(dir) {
+    const t = S.activeTrack, n = auPanelPages(t).length;
+    const p = Math.max(0, Math.min(n - 1, (auBankEd(t).page) + (dir > 0 ? 1 : -1)));
+    if (p === (S.auBankPage[t] | 0)) return false;
+    S.auBankPage[t] = p;
+    S.screenDirty = true;
+    return true;
+}
+/* The bank card's title: the page's own ("ALL SLICES", "LOOP", "SLICE 3/8"). */
+export function auBankTitle(t = S.activeTrack) { return auPanelTitle(auBankEd(t)); }
+
 export function auPanelPageName(ed) {
     const p = auPanelPages(ed.t);
     return p[Math.min(ed.page | 0, p.length - 1)];
