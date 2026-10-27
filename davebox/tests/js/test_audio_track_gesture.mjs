@@ -936,6 +936,9 @@ step('⭐⭐ LIVE ARP: Oct is Step on Audio, a chop per repeat, to ±15 (Josh: "
     const kc = globalThis.__kc; shown();
     const c2 = kc().cells[2];
     assert(c2.label === 'Step' && c2.text === '+15', 'the card: ' + JSON.stringify(c2));
+    S.bankParams[4][5][2] = 4; shown();
+    assert(Math.abs(kc().cells[2].arc - 19 / 30) < 1e-9, 'the touch arc is not on ±15: ' + JSON.stringify(kc().cells[2]));
+    S.bankParams[4][5][2] = 15;
     /* the widget's own range is ±15: Oct's ±4 pinned the ring at its end
      * while the value went on (Josh: "doesn't match the params") */
     const rn = (v) => { S.bankParams[4][5][2] = v; S.ledsDirtyAudio = true; ticks(3); return CCLEDS.get(73); };
