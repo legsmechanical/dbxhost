@@ -213,14 +213,16 @@ function drawAudioWaveEditor() {
     /* K2 Zoom, K4 Gain, K5 Pitch, K6 Detune: what the knob in hand is doing */
     const zoomTxt = S.knobTouched === 1 ? 'ZOOM' + (ed.zoomDir > 0 ? ' +' : ed.zoomDir < 0 ? ' -' : '')
         : S.knobTouched === 3 ? 'GAIN ' + sgn(i.gain | 0) + 'DB'
-        : S.knobTouched === 4 ? 'PITCH ' + sgn(i.pitch | 0) + 'ST'
-        : S.knobTouched === 5 ? 'DETUNE ' + sgn(i.detune | 0) + 'C' : '';
-    /* the middle readout: on a cleared strip, so a long one sits over
-     * minutes-long Start / End times rather than into them */
+        : S.knobTouched === 4 ? 'PITCH ' + sgn(i.pitch | 0)
+        : S.knobTouched === 5 ? 'DETUNE ' + sgn(i.detune | 0) : '';
+    /* the middle readout, lit like Start / End (it is only there while its
+     * knob is in hand — Josh, 2026-10-28: "nothing in the middle when no
+     * knob is touched"); its strip clears what is under it, so a long one
+     * sits over minutes-long Start / End times rather than into them */
     const mid = (txt) => {
         const x = 64 - Math.floor(ovwWidth(txt) / 2);
-        fill_rect(x - 2, 9, ovwWidth(txt) + 3, 7, 0);
-        ovwPrint(x, 10, txt, 1);
+        fill_rect(x - 3, 8, ovwWidth(txt) + 5, 9, 0);
+        lit(x, txt, true);
     };
     if (ed.mode === 'lazy') {
         const lz = auLazyState();
@@ -245,10 +247,7 @@ function drawAudioWaveEditor() {
     if (sub === 'loop') {
         drawBankHeading('LOOP', false);
         ends('S ' + auFmtTime(i.rstart, rt), 'E ' + auFmtTime(auEnd(i), rt));
-        /* K4 Pitch, K5 Gain: their values between Start and End (Zoom's
-         * while K2 is in hand) */
-        const pg = (i.pitch > 0 ? '+' : '') + i.pitch + 'ST ' + (i.gain > 0 ? '+' : '') + i.gain + 'DB';
-        mid(zoomTxt || pg);
+        if (zoomTxt) mid(zoomTxt);
         drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, noMarks: true, cur: ed.cur, gain: i.gain | 0 });
         drawKitHintRow(MV_FOOTER_Y, [['k2', 'zoom'], ['sh+clk', 'menu']]);
         return;

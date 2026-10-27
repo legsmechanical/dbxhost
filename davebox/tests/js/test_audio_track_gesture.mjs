@@ -464,10 +464,13 @@ step('⭐⭐ WAVE: SLICE n/n or LOOP up top; Start / End light while touched or 
     /* Loop: LOOP up top; Zoom takes the middle from Pitch / Gain while in hand */
     GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(2);
     mapPad(2, 2); ticks(2);
-    tx = globalThis.__texts(() => { shown(); });
-    assert(tx.indexOf('LOOP') >= 0 && tx.some((x) => /ST .*DB/.test(x)), 'Loop: ' + JSON.stringify(tx));
-    tx = globalThis.__texts(() => { cc(72, 1); shown(); });
-    assert(tx.indexOf('ZOOM +') >= 0 && !tx.some((x) => /ST .*DB/.test(x)), 'Loop zoom: ' + JSON.stringify(tx));
+    let lf;
+    tx = globalThis.__texts(() => { lf = shown(); });
+    /* nothing in the middle with no knob in hand (Josh) */
+    assert(tx.indexOf('LOOP') >= 0 && !tx.some((x) => /^(ZOOM [+-]|GAIN |PITCH |DETUNE )|ST$|DB$/.test(x)) && !lf[12 * 128 + 64], 'Loop at rest: ' + JSON.stringify(tx));
+    tx = globalThis.__texts(() => { cc(72, 1); lf = shown(); });
+    /* ...and in hand it is lit, as Start / End are */
+    assert(tx.indexOf('ZOOM +') >= 0 && lf[9 * 128 + 64] && lf[15 * 128 + 64], 'Loop zoom: ' + JSON.stringify(tx));
     S.knobTurnedTick[1] = S.clockMs - 1000; ticks(1);
     back();
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
@@ -484,9 +487,9 @@ step('⭐⭐ WAVE K4 Gain · K5 Pitch · K6 Detune (the clip\'s), read out in th
     /* measured before a tick: this rig's engine stub answers 0 dB to a re-read */
     assert(waveInk() > quiet, 'the waveform did not grow with +6 dB: ' + quiet + ' -> ' + waveInk());
     tx = globalThis.__texts(() => { for (let i = 0; i < 10; i++) cc(75, 1); shown(); });
-    assert(sent('t4_au_set_pitch').join() === '0 1' && tx.indexOf('PITCH +1ST') >= 0, 'K5 Pitch: ' + JSON.stringify(sent('t4_au_set_pitch')) + ' ' + JSON.stringify(tx));
+    assert(sent('t4_au_set_pitch').join() === '0 1' && tx.indexOf('PITCH +1') >= 0, 'K5 Pitch: ' + JSON.stringify(sent('t4_au_set_pitch')) + ' ' + JSON.stringify(tx));
     tx = globalThis.__texts(() => { cc(76, 127); cc(76, 127); shown(); });
-    assert(sent('t4_au_set_detune').join() === '0 -1,0 -2' && tx.indexOf('DETUNE -2C') >= 0, 'K6 Detune: ' + JSON.stringify(sent('t4_au_set_detune')) + ' ' + JSON.stringify(tx));
+    assert(sent('t4_au_set_detune').join() === '0 -1,0 -2' && tx.indexOf('DETUNE -2') >= 0, 'K6 Detune: ' + JSON.stringify(sent('t4_au_set_detune')) + ' ' + JSON.stringify(tx));
     tx = globalThis.__texts(() => { note(3, 127); shown(); });
     assert(tx.indexOf('GAIN +6DB') >= 0, 'touching K4 does not read out: ' + JSON.stringify(tx));
     note(3, 0);
