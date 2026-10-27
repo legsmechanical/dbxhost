@@ -650,6 +650,24 @@ int main(void) {
     hx_set_param(h, "t4_au_set_nudge", "5 0");
     hx_render(h, 4);
 
+    /* ---- Loop detune: the loop plays 2^(30/1200) faster ---- */
+    hx_set_param(h, "t4_au_set_detune", "5 30");
+    hx_set_param(h, "transport", "play");
+    for (i = 0; i < 20 && hx_stub_feed(4, NULL, NULL) == 0; i++) hx_render(h, 1);
+    hx_render(h, 2);
+    {
+        int vi, found = 0;
+        for (vi = 0; vi < AU_VOICES; vi++) {
+            const au_voice_t *v = &inst->au_trk[4].v[vi];
+            if (v->active && v->mode_loop && !v->rel_len)
+                found = v->step > au_tune(0, 30) - 1e-9 && v->step < au_tune(0, 30) + 1e-9;
+        }
+        HX_ASSERT(found, "a Loop clip does not play at its detune");
+    }
+    hx_set_param(h, "transport", "stop");
+    hx_set_param(h, "t4_au_set_detune", "5 0");
+    hx_render(h, 4);
+
     /* ---- Mute is a bus: the loop plays on silently and comes back in place ---- */
     hx_stub_feed_reset();
     hx_set_param(h, "transport", "play");
