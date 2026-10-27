@@ -495,7 +495,8 @@ export function audioEditorInput(status, d1, d2) {
         if (d1 >= 0 && d1 <= 7) {
             const on = hi === 0x90 && d2 >= 64;
             if (on) {
-                S.knobTouched = d1; S.knobPhysIdx = d1;
+                S.knobTouched = d1; S.knobPhysIdx = d1; S.knobTurnedTick[d1] = -1;
+                if (d1 === 1) ed.zoomDir = 0;                  /* touched, not turned yet: "ZOOM" */
                 /* a touch jumps there: K1 to the start, K3 to the end */
                 if ((d1 === 0 || d1 === 2) && (sub === 'chop' || sub === 'loop')) {
                     ed.last = d1 === 0 ? 'start' : 'end';
@@ -568,6 +569,15 @@ export function audioEditorInput(status, d1, d2) {
         const k = d1 - 71, dd = decodeDelta(d2);
         if (!dd || (sub !== 'chop' && sub !== 'loop')) return true;
         let moved = false;
+        /* Start, Zoom and End light while turned, as a touched knob does (the
+         * tick lets go KNOB_TURN_HIGHLIGHT_MS after the last turn) — Josh,
+         * 2026-10-28: "start and end values need to be highlighted while
+         * they're turned/touched" */
+        if (k <= 2) {
+            S.knobTouched = k; S.knobTurnedTick[k] = S.clockMs;
+            if (k === 1) ed.zoomDir = dd > 0 ? 1 : -1;
+            S.screenDirty = true;
+        }
         if (k === 1) moved = zoom(ed, dd > 0 ? 1 : -1);
         else if (k === 0 || k === 2) {
             ed.last = k === 0 ? 'start' : 'end';

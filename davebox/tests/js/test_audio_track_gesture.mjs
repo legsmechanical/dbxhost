@@ -103,6 +103,9 @@ const snd = await import('../../ui/ui_sound.mjs');
 const render = await import('../../ui/ui_render.mjs');
 globalThis.__ED = await import('../../ui/ui_editops.mjs');
 globalThis.__kc = (await import('../../ui/ui_movy.mjs')).kitCellsForTest;
+const _kitText = [];
+(await import('../../ui/ui_fonts_pp.mjs')).setKitTextTrace((x) => _kitText.push(String(x)));
+globalThis.__texts = (fn) => { _kitText.length = 0; fn(); return _kitText.slice(); };
 const os = await import('os');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
@@ -224,7 +227,13 @@ step('⭐ Pitch reads as a number and steps a semitone per detent run (Josh: "do
 step('⭐ the jog turns its pages: CLIP, SLICE n (no SLICING, no ALL SLICES)', () => {
     const titles = [];
     for (let i = 0; i < 3; i++) { titles.push(A.auPanelTitle(S.auPanel)); jog(1); }
-    assert(titles.join('|') === 'CLIP|SLICE 1/8|SLICE 1/8', 'pages: ' + titles.join('|'));
+    assert(titles.join('|') === 'ALL SLICES|SLICE 1/8|SLICE 1/8', 'pages: ' + titles.join('|'));
+    /* Loop mode: the one page is LOOP (Josh: "and "Loop" when not in slice mode") */
+    for (let i = 0; i < 3; i++) jog(-1);
+    GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(2);
+    assert(A.auPanelTitle(S.auPanel) === 'LOOP', 'Loop title: ' + A.auPanelTitle(S.auPanel));
+    GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(2);
+    for (let i = 0; i < 3; i++) jog(1);
     for (let i = 0; i < 3; i++) jog(-1);
     assert(S.auPanel.page === 0, 'back to CLIP');
 });
@@ -417,6 +426,43 @@ step('⭐⭐ the map opens from WAVE (hold the jog) and the AUDIO editor (at onc
     reset();
     jog(1); click(); ticks(2);
     assert(sent('t4_au_mark_add').length === 1 && !S.bankMapUp, 'a short click did not reach WAVE: ' + JSON.stringify(sentLike(/_au_/)));
+    back();
+    GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
+});
+
+step('⭐⭐ WAVE: SLICE n/n or LOOP up top; Start / End light while touched or turned; ZOOM + / - / ZOOM between them (Josh)', () => {
+    GET['t4_au_info_0'] = INFO(1, 8, 0); A.auMarkStale(4, 0); ticks(2);   /* a hand set of 8 */
+    mapPad(2, 2);
+    ticks(2);
+    const px = (f, x, y) => f[y * 128 + x];
+    let f, tx = globalThis.__texts(() => { f = shown(); });
+    assert(tx.indexOf('SLICE 1/8') >= 0 || tx.some((x) => /^SLICE \d+\/8$/.test(x)), 'the header: ' + JSON.stringify(tx.slice(0, 6)));
+    assert(!px(f, 2, 9) && !px(f, 3, 15), 'Start is lit with no knob in hand');
+    note(0, 127); f = shown();
+    assert(px(f, 2, 9) && px(f, 2, 15), 'touching K1 did not light Start');
+    note(0, 0); f = shown();
+    assert(!px(f, 2, 9), 'letting go of K1 left Start lit');
+    cc(73, 1); f = shown();                          /* K3 turned, no touch */
+    const rx = 124 - 2;                              /* the end strip runs to x 124 */
+    assert(S.knobTouched === 2 && px(f, rx, 9), 'turning K3 did not light End');
+    S.knobTurnedTick[2] = S.clockMs - 1000; ticks(1); f = shown();
+    assert(S.knobTouched === -1 && !px(f, rx, 9), 'End stayed lit after the turn');
+    tx = globalThis.__texts(() => { cc(72, 1); shown(); });
+    assert(tx.indexOf('ZOOM +') >= 0, 'zooming in: ' + JSON.stringify(tx));
+    tx = globalThis.__texts(() => { cc(72, 127); shown(); });
+    assert(tx.indexOf('ZOOM -') >= 0, 'zooming out: ' + JSON.stringify(tx));
+    tx = globalThis.__texts(() => { note(1, 127); shown(); });
+    assert(tx.indexOf('ZOOM') >= 0 && tx.indexOf('ZOOM +') < 0 && tx.indexOf('ZOOM -') < 0, 'a touched K2: ' + JSON.stringify(tx));
+    note(1, 0);
+    back();
+    /* Loop: LOOP up top; Zoom takes the middle from Pitch / Gain while in hand */
+    GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(2);
+    mapPad(2, 2); ticks(2);
+    tx = globalThis.__texts(() => { shown(); });
+    assert(tx.indexOf('LOOP') >= 0 && tx.some((x) => /ST .*DB/.test(x)), 'Loop: ' + JSON.stringify(tx));
+    tx = globalThis.__texts(() => { cc(72, 1); shown(); });
+    assert(tx.indexOf('ZOOM +') >= 0 && !tx.some((x) => /ST .*DB/.test(x)), 'Loop zoom: ' + JSON.stringify(tx));
+    S.knobTurnedTick[1] = S.clockMs - 1000; ticks(1);
     back();
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
 });

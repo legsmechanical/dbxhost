@@ -172,12 +172,9 @@ function drawAudioTrackRest(t) {
 function drawAudioPanel() {
     const ed = S.auPanel;
     clear_screen();                      /* it opens over the sound menu */
-    const t = ed.t;
     /* The page's own name — the header has room for no more beside the
      * track tag (found on the device: "ALL SLICES 4/4" was cut). */
-    const name = auPanelTitle(ed);
-    const title = name === 'CLIP' ? 'CLIP ' + String.fromCharCode(65 + auClipOf(t)) : name;
-    drawKitPage(title, auPanelCells(ed), false, [['jog', 'page']]);
+    drawKitPage(auPanelTitle(ed), auPanelCells(ed), false, [['jog', 'page']]);
 }
 
 /* The WAVE editor (ui_audio_editor): the clip's sample — CLICK TO LOAD
@@ -203,6 +200,15 @@ function drawAudioWaveEditor() {
     const sel = auSelSlice(t);
     const rt = i.rate;
     const right = (txt) => ovwPrint(124 - ovwWidth(txt), 10, txt, 1);
+    /* The Start / End readouts light while K1 / K3 is touched or turning; K2
+     * shows ZOOM + / - (plain ZOOM on a touch) between them (Josh, 2026-10-28). */
+    const lit = (x, txt, on) => {
+        if (on) fill_rect(x - 2, 9, ovwWidth(txt) + 3, 7, 1);
+        ovwPrint(x, 10, txt, on ? 0 : 1);
+    };
+    const ends = (s, e) => { lit(4, s, S.knobTouched === 0); lit(124 - ovwWidth(e), e, S.knobTouched === 2); };
+    const zoomTxt = S.knobTouched === 1 ? 'ZOOM' + (ed.zoomDir > 0 ? ' +' : ed.zoomDir < 0 ? ' -' : '') : '';
+    const mid = (txt) => ovwPrint(64 - Math.floor(ovwWidth(txt) / 2), 10, txt, 1);
     if (ed.mode === 'lazy') {
         const lz = auLazyState();
         drawBankHeading('LAZY CHOP', false);
@@ -224,24 +230,24 @@ function drawAudioWaveEditor() {
         return;
     }
     if (sub === 'loop') {
-        drawBankHeading('WAVE  LOOP', false);
-        ovwPrint(4, 10, 'S ' + auFmtTime(i.rstart, rt), 1);
-        right('E ' + auFmtTime(auEnd(i), rt));
-        /* K4 Pitch, K5 Gain: their values between Start and End */
+        drawBankHeading('LOOP', false);
+        ends('S ' + auFmtTime(i.rstart, rt), 'E ' + auFmtTime(auEnd(i), rt));
+        /* K4 Pitch, K5 Gain: their values between Start and End (Zoom's
+         * while K2 is in hand) */
         const pg = (i.pitch > 0 ? '+' : '') + i.pitch + 'ST ' + (i.gain > 0 ? '+' : '') + i.gain + 'DB';
-        ovwPrint(64 - Math.floor(ovwWidth(pg) / 2), 10, pg, 1);
+        mid(zoomTxt || pg);
         drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, noMarks: true, cur: ed.cur });
         drawKitHintRow(MV_FOOTER_Y, [['k2', 'zoom'], ['sh+clk', 'menu']]);
         return;
     }
     const mk = auMarks(t, c);
-    drawBankHeading('WAVE  ' + (sel + 1) + '/' + mk.length, false);
+    drawBankHeading('SLICE ' + (sel + 1) + '/' + mk.length, false);
     const m = mk[sel];
     if (m) {
-        ovwPrint(4, 10, 'S ' + auFmtTime(m[0], rt), 1);
         /* at home the end follows the next slice's start: "NEXT" (Josh) */
-        right(m[1] === auEdHome(ed, sel) ? 'E NEXT' : 'E ' + auFmtTime(m[1], rt));
+        ends('S ' + auFmtTime(m[0], rt), m[1] === auEdHome(ed, sel) ? 'E NEXT' : 'E ' + auFmtTime(m[1], rt));
     }
+    if (zoomTxt) mid(zoomTxt);
     drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel, cur: ed.cur });
     /* two hints fit: Shift + click is the one nobody would guess (found on
      * the device: a third was cut off) */

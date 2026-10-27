@@ -1261,7 +1261,8 @@ whose file has gone reads *Missing: name* and stays silent.
 
 Whatever you touched last — the cursor (jog), the start (K1) or the end (K3) — stays
 in the middle of the screen and the waveform scrolls around it; touching one jumps
-there.
+there. The header reads **SLICE n/n** (or **LOOP**); the start or end you're touching
+or turning lights up, and **ZOOM +** / **ZOOM −** shows between them while K2 zooms.
 
 **The AUDIO editor** holds the clip's sound. Open it from the bank map's **AUDIO**
 pad, or by clicking **Audio** in the track's sound menu. Turn the jog for its pages;
@@ -1272,8 +1273,8 @@ Pitch and Detune add to the clip's.
 
 | Page | Knobs |
 |---|---|
-| **CLIP**, Slice mode | **Mode** Loop / Slice · **Pitch** · **Detune** · **Gain** for the whole clip · **Revrs** · **Attk** · **Decay** · **Play** for every slice at once (`--` while the slices differ; turning one sets them all) |
-| **CLIP**, Loop mode | **Mode** · **Pitch** · **Detune** · **Gain** · **Jump** (2–32 jump points) · **Revrs** · **Nudge** · **JmpQ** (as on the clip bank) |
+| **ALL SLICES** (Slice mode) | **Mode** Loop / Slice · **Pitch** · **Detune** · **Gain** for the whole clip · **Revrs** · **Attk** · **Decay** · **Play** for every slice at once (`--` while the slices differ; turning one sets them all) |
+| **LOOP** (Loop mode) | **Mode** · **Pitch** · **Detune** · **Gain** · **Jump** (2–32 jump points) · **Revrs** · **Nudge** · **JmpQ** (as on the clip bank) |
 | **SLICE n** (Slice mode) | The last pad you tapped: **Pitch**, **Detune**, **Gain**, **Revrs**, **Attk**, **Decay**, and **Play** — **One** (to the slice's end), **Gate** (as long as the step), **Loop** (loops the slice for the step). Kept if the clip goes back to Loop |
 
 **The banks** hold the sequence:

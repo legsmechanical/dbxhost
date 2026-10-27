@@ -391,7 +391,12 @@ export function auPanelPageName(ed) {
 }
 export function auPanelTitle(ed) {
     const name = auPanelPageName(ed);
-    if (name === 'SLICE') return 'SLICE ' + (auSelSlice(ed.t) + 1) + '/' + auInfo(ed.t, auClipOf(ed.t)).n;
+    const i = auInfo(ed.t, auClipOf(ed.t));
+    if (name === 'SLICE') return 'SLICE ' + (auSelSlice(ed.t) + 1) + '/' + i.n;
+    /* the first page says what it sets (Josh, 2026-10-28: "the "audio" bank
+     * header should read "All slices" on the first page, and "Loop" when not
+     * in slice mode") */
+    if (name === 'CLIP') return i.mode === AU_MODE_SLICE ? 'ALL SLICES' : 'LOOP';
     return name;
 }
 
