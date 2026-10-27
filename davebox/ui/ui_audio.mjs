@@ -32,7 +32,10 @@ import { PAD_MODE_AUDIO, NUM_CLIPS, BANK_STEP, knobAltFor } from './ui_constants
 import { bankListForMode } from './ui_pure.mjs';
 
 export const AU_MODE_LOOP = 0, AU_MODE_SLICE = 1;
-export const AU_TEMPO_NAMES = ['Free', 'Sync'];
+/* Tempo (Josh, 2026-10-28): Free as recorded · Sync the chops at their places
+ * in the sample's own Bars · Fit spread over the clip · Pitch retuned to fill it */
+export const AU_TEMPO_NAMES = ['Free', 'Sync', 'Fit', 'Pitch'];
+export const AU_BARS_MAX = 64;
 /* Chop k is note k (Josh, 2026-10-28: "might as well do 128"), 32 to a pad
  * page; external MIDI reaches chop 1 at note 36 (ui.js). */
 export const AU_NOTE_BASE = 0, AU_PAGE = 32, AU_EXT_BASE = 36;
@@ -90,12 +93,14 @@ export function auParseInfo(raw) {
         revrs: head[13], nudge: head[14], jmpq: head[15], n: head[16], detune: head[17] | 0, tempo: head[18] | 0,
         /* how far into Start..End a Free loop gets before the clip wraps (-1 unknown) */
         reach: head.length > 19 ? head[19] : -1,
+        /* the sample's own length in bars, as recorded (0 not known yet) */
+        bars: head.length > 20 ? head[20] : 0,
         name: bar >= 0 ? String(raw).slice(bar + 1) : '',
     };
 }
 
 const DEFAULT_INFO = { state: 0, err: 0, mode: 0, even: 16, hand: 1, n: 16, jump: 16, rstart: 0, rend: 0,
-                       pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, revrs: 0, nudge: 0, jmpq: 0, tempo: 0, reach: -1, name: '' };
+                       pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, revrs: 0, nudge: 0, jmpq: 0, tempo: 0, reach: -1, bars: 0, name: '' };
 const DEFAULT_SLICE = { a: 0, b: 0, pinned: 0, pitch: 0, detune: 0, gain: 0, rev: 0, play: 0, atk: 0, dec: 0 };
 
 export function auInfo(t, c) {
@@ -357,7 +362,14 @@ function auSetAll(t, c, field, v) {
     _stale.add(t + '_' + c);
 }
 
-export function auChop(t, c) { setKey(t, 'chop', c); auMarkStale(t, c); }
+/* >Seq. A clip whose length was never set by hand (adaptive) grows to the
+ * sample's Bars; a set length stays, the chops past it out of bounds (Josh,
+ * 2026-10-28). The steps, length and resolution are read back after. */
+export function auChop(t, c) {
+    setKey(t, 'chop', c + ' ' + (S.clipLengthManuallySet[t] && S.clipLengthManuallySet[t][c] ? 0 : 1));
+    auMarkStale(t, c);
+    S.pendingStepsReread = 2; S.pendingStepsRereadTrack = t; S.pendingStepsRereadClip = c;
+}
 export function auLazyStart(t, c) { setKey(t, 'lazy', c + ' 1'); _lazy = { state: AU_LAZY_ARMED, n: 0, frame: 0 }; }
 export function auLazyStop(t, c) { setKey(t, 'lazy', c + ' 0'); auMarkStale(t, c); }
 export function auLazyTap(t) { setKey(t, 'lazy_tap', 1); }
@@ -449,6 +461,18 @@ export function auModeCell(t) {
              sq: i.mode ? 'Slce' : 'Loop', options: ['Loop', 'Slice'], sel: i.mode };
 }
 const revrsCell = (i) => ({ kind: 'enumsq', label: 'Revrs', name: 'Reverse', text: i.revrs ? 'On' : 'Off', options: ['Off', 'On'], sel: i.revrs });
+/* Bars: the sample's own length, as recorded, and the tempo that makes it
+ * (Josh, 2026-10-28: "bars param on clip") — guessed when it is picked. */
+export function auOrigBpm(i) {
+    const secs = i.rate ? i.nframes / i.rate : 0;
+    return secs > 0 && i.bars ? Math.round(i.bars * 2400 / secs) / 10 : 0;
+}
+const BARS_OPTS = Array.from({ length: AU_BARS_MAX }, (_, k) => String(k + 1));
+const barsCell = (i) => {
+    const b = Math.max(1, i.bars | 0), bpm = auOrigBpm(i);
+    return { kind: 'valsq', label: 'Bars', name: 'Bars as recorded' + (bpm ? ' · ' + bpm + ' bpm' : ''),
+             text: String(b), options: BARS_OPTS, sel: b - 1, touchArc: { norm: (b - 1) / (AU_BARS_MAX - 1), bip: false } };
+};
 const nudgeCell = (i) => ({ kind: 'arcbip', label: 'Nudge', name: 'Nudge (start vs the bar)', text: fmtMs(i.nudge), signed: i.nudge / 500 });
 
 /* The sound fields, as cells (SLICE n: one slice; CLIP in Slice mode: every
@@ -569,6 +593,11 @@ export function auClipBankKnob(t, k, steps) {
         const v = Math.max(0, Math.min(AU_TEMPO_NAMES.length - 1, (i.tempo | 0) + (steps > 0 ? 1 : -1)));
         if (v === (i.tempo | 0)) return false;
         loc.tempo = v; auSet(t, c, 'tempo', v);
+    } else if (k === 1 && i.mode !== AU_MODE_SLICE) {
+        if (i.state !== 2) return false;
+        const v = Math.max(1, Math.min(AU_BARS_MAX, (i.bars || 1) + (steps > 0 ? 1 : -1)));
+        if (v === (i.bars | 0)) return false;
+        loc.bars = v; auSet(t, c, 'bars', v);
     } else if (k === 2 && i.mode !== AU_MODE_SLICE) {
         if (i.state !== 2) return false;
         const v = Math.max(-500, Math.min(500, i.nudge + steps * (S.shiftHeld ? 1 : 5)));
@@ -676,10 +705,10 @@ export function knobAltOnTrack(t, padMode, bank, k) {
  * alternate; K4 Mode. ---- */
 export function auLoopBankCells(t) {
     const i = auInfo(t, auClipOf(t));
-    const tempo = { kind: 'enumsq', label: 'Tempo', name: 'Tempo (Free: as recorded · Sync: the chops on the beat)',
+    const tempo = { kind: 'enumsq', label: 'Tempo', name: 'Tempo: Free · Sync · Fit · Pitch',
                     text: AU_TEMPO_NAMES[i.tempo | 0], options: AU_TEMPO_NAMES, sel: i.tempo | 0 };
     const live = (x) => (i.state === 2 ? x : dash(x));
-    return [live(tempo), BLANK, live(nudgeCell(i)), auModeCell(t), BLANK, BLANK, BLANK, BLANK];
+    return [live(tempo), live(barsCell(i)), live(nudgeCell(i)), auModeCell(t), BLANK, BLANK, BLANK, BLANK];
 }
 
 /* ---- PAD MODE on an Audio track: K1 Layout ---- */

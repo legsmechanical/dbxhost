@@ -318,8 +318,17 @@ step('⭐⭐ >Seq is on the CLIP bank in Slice mode: touch K8 + click (Josh: ">s
     assert(kc.cells[7] && kc.cells[7].label === '>Seq', 'CLIP bank K8: ' + JSON.stringify(kc.cells.map((c) => c && c.label)));
     reset();
     click(); note(7, 0);
-    assert(sent('t4_au_chop').join() === '0' && S.knobTouched === -1, '>Seq: ' + JSON.stringify(sentLike(/_au_/)));
+    /* a clip whose length was never set grows to the sample's Bars (Josh: "in adaptive mode, it'd put the whole sequence on") */
+    assert(sent('t4_au_chop').join() === '0 1' && S.knobTouched === -1, '>Seq: ' + JSON.stringify(sentLike(/_au_/)));
     S.actionPopupEndTick = 0;                           /* its popup (wall-clock timed) is not under test */
+    ticks(2);
+    /* a set length stays: the chops past it wait out of bounds */
+    S.clipLengthManuallySet[4][0] = true;
+    reset();
+    note(7, 127); ticks(1); click(); note(7, 0);
+    assert(sent('t4_au_chop').join() === '0 0', '>Seq on a set length: ' + JSON.stringify(sentLike(/_au_/)));
+    S.clipLengthManuallySet[4][0] = false;
+    S.actionPopupEndTick = 0;
     ticks(2);
 });
 
@@ -803,7 +812,7 @@ step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP /
     ticks(2);
     assert(sentLike(/_step_/).length === 0, 'a step press edited a Loop clip: ' + JSON.stringify(sentLike(/_step_/)));
     const cells = A.auLoopBankCells(4);
-    assert(cells.map((c) => c.label).join() === 'Tempo,,Nudge,Mode,,,,', 'loop bank: ' + cells.map((c) => c.label));
+    assert(cells.map((c) => c.label).join() === 'Tempo,Bars,Nudge,Mode,,,,', 'loop bank: ' + cells.map((c) => c.label));
     S.bankCardLatched = true;
     reset();
     cc(73, 1);                                         /* K3 Nudge */
@@ -812,11 +821,22 @@ step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP /
     const lh = JSON.stringify(render.bankPageHints(0));
     S.knobTouched = -1;
     assert(lh.indexOf('CLK') < 0, 'a Loop CLIP knob offers a click: ' + lh);
-    for (let i = 0; i < 25; i++) cc(71, 1);            /* K1 Tempo: Free -> Sync (Josh: "3-way") */
-    assert(sent('t4_au_set_tempo').join() === '0 1' && !sentLike(/_au_set_(revrs|jump|jmpq)/).length,
-           'K1 is not Tempo: ' + JSON.stringify(sentLike(/_au_/)));
-    assert(A.auLoopBankCells(4)[0].text === 'Sync', 'the Tempo cell does not read Sync: ' + A.auLoopBankCells(4)[0].text);
-    for (let i = 0; i < 25; i++) cc(71, 127);
+    /* K1 Tempo: Free · Sync · Fit · Pitch (Josh: "a sync mode that allows you to select either", "Pitch") */
+    const tv = [];
+    for (let i = 0; i < 200; i++) { cc(71, 1); const t = A.auLoopBankCells(4)[0].text; if (tv[tv.length - 1] !== t) tv.push(t); }
+    assert(tv.join() === 'Free,Sync,Fit,Pitch' && sent('t4_au_set_tempo').join() === '0 1,0 2,0 3' && !sentLike(/_au_set_(revrs|jump|jmpq)/).length,
+           'K1 is not Tempo Free · Sync · Fit · Pitch: ' + tv.join() + ' ' + JSON.stringify(sentLike(/_au_/)));
+    for (let i = 0; i < 200; i++) cc(71, 127);
+    /* K2 Bars: the sample's own length, 1..64, with the tempo it makes */
+    reset();
+    for (let i = 0; i < 40; i++) cc(72, 1);
+    const bs = sent('t4_au_set_bars');
+    assert(bs.length && bs[0] === '0 2', 'K2 is not Bars: ' + JSON.stringify(sentLike(/_au_/)));
+    const bc = A.auLoopBankCells(4)[1];
+    const nb = +bc.text;
+    assert(bc.label === 'Bars' && nb >= 2 && bc.name.indexOf((nb * 120) + ' bpm') >= 0, 'the Bars cell: ' + JSON.stringify(bc));
+    for (let i = 0; i < 400; i++) cc(72, 127);
+    assert(A.auLoopBankCells(4)[1].text === '1', 'Bars went below 1: ' + A.auLoopBankCells(4)[1].text);
     S.bankCardLatched = false;
 });
 

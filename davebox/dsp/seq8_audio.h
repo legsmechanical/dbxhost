@@ -35,7 +35,10 @@
 #define AU_MODE_SLICE      1
 
 #define AU_TEMPO_FREE      0            /* Loop: the sample at its own speed, whatever the tempo */
-#define AU_TEMPO_SYNC      1            /* Loop: the chops in order on the clock (au_sync_block) */
+#define AU_TEMPO_SYNC      1            /* Loop: the chops in order on the clock, at their places in the sample's own Bars (au_sync_block) */
+#define AU_TEMPO_FIT       2            /* Loop: the chops in order spread over the clip's length */
+#define AU_TEMPO_PITCH     3            /* Loop: the sample retuned (varispeed) to fill the clip's length */
+#define AU_BARS_MAX        64           /* a sample's own length in bars, 1..64 */
 #define AU_GAP             16           /* frames: the least a slice can be */
 #define AU_JOIN            256          /* frames: a slice this near where the sounding one has reached carries it on */
 #define AU_MIP             256          /* frames per waveform summary entry */
@@ -109,6 +112,7 @@ typedef struct {
     int16_t      nudge_ms;           /* Loop: the sample's start against the bar, -500..+500 ms */
     uint8_t      jmpq;               /* retired (jump quantize): as `jump` */
     uint8_t      tempo;              /* Loop: AU_TEMPO_* (the CLIP bank's K1) */
+    uint8_t      bars;               /* the sample's own length in bars, as recorded (the CLIP bank's K2); 0 = not known yet */
     au_slice_t   sl[AU_MAX_SLICES];
 } au_clip_t;
 
@@ -183,6 +187,7 @@ typedef struct {
 
 typedef struct {
     uint8_t      track, clip, err;
+    uint8_t      bars;       /* the loader's guess at the sample's length in bars (au_guess_bars) */
     uint32_t     gen;
     au_sample_t *smp;
     char         name[AU_PATH_MAX];

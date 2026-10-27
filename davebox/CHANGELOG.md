@@ -28,7 +28,13 @@ the section into a versioned heading at release time.
   External note 36 still plays chop 1.
 - **Audio: Tempo** on the Loop CLIP bank (K1): **Free** plays the loop as recorded,
   **Sync** plays its chops in order on the beat, in time at any tempo, as
-  recorded — a chop's own pitch, gain, reverse and envelope don't apply.
+  recorded — a chop's own pitch, gain, reverse and envelope don't apply; **Fit**
+  spreads them over the clip's length; **Pitch** retunes the loop to fill the clip.
+- **Audio: Bars** (Loop CLIP bank K2): each clip knows its sample's own length in
+  bars, guessed when you pick it (from the file name, else its beats) and shown
+  with the tempo that makes it. Sync and >Seq place the chops by it, so the number
+  of chops no longer changes the speed. >Seq grows a clip whose length you never
+  set; a set length stays, with the chops past it beyond the loop.
 - **Audio: PAD MODE** (IN column) sets the pads' **Layout** — 4 Rows or 16 Pads — and
   **LIVE ARP** comes to Audio tracks, with **Step** (a chop per repeat) in place of Oct.
 - ⚠ A Slice clip's sequence from an earlier build plays the wrong chops: chops are now
