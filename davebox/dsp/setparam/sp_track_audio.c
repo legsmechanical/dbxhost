@@ -813,19 +813,33 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
     }
     if (!strncmp(k, "info_", 5)) {
         /* "state err mode even nslices jump rstart rend pitch gain frames rate ch
-         *  revrs nudge jmpq count detune tempo|name" -- rstart / rend in frames as they play
-         *  (rend the real end, never 0) once loaded */
+         *  revrs nudge jmpq count detune tempo reach|name" -- rstart / rend in frames as they play
+         *  (rend the real end, never 0) once loaded; reach: how far into Start..End a Free
+         *  loop gets before its clip wraps, in frames (End - Start when it all plays) */
         c = my_atoi(k + 5);
         if (c < 0 || c >= NUM_CLIPS) return -1;
         const au_clip_t *cl = &inst->au_clip[t][c];
         const au_sample_t *s = cl->smp;
         uint32_t rs = cl->rstart, re = cl->rend;
         if (s) au_range(cl, s, &rs, &re);
-        return snprintf(out, out_len, "%d %d %d %d %d %d %u %u %d %d %u %u %d %d %d %d %d %d %d|%s",
+        uint32_t reach = re > rs ? re - rs : 0;
+        if (s && cl->tempo == AU_TEMPO_FREE && reach) {
+            /* as au_render plays it: the clip's ticks at the tempo, the
+             * sample's rate and pitch, Nudge taken off */
+            const clip_t *lc = &inst->tracks[t].clips[c];
+            double bpm = inst->tracks[t].pfx.cached_bpm > 0 ? inst->tracks[t].pfx.cached_bpm : 120.0;
+            uint32_t tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
+            double r = (double)lc->length * tps * (44100.0 * 60.0 / (bpm * PPQN))
+                       * au_tune(cl->pitch, cl->detune) * (double)s->rate / 44100.0
+                       - (double)cl->nudge_ms * (double)s->rate / 1000.0;
+            if (r < 0) r = 0;
+            if (r < (double)reach) reach = (uint32_t)r;
+        }
+        return snprintf(out, out_len, "%d %d %d %d %d %d %u %u %d %d %u %u %d %d %d %d %d %d %d %u|%s",
                         cl->state, cl->err, cl->mode, cl->even, cl->nslices, cl->jump,
                         (unsigned)rs, (unsigned)re, cl->pitch, cl->gain_db,
                         s ? (unsigned)s->frames : 0u, s ? (unsigned)s->rate : 0u, s ? s->ch : 0,
-                        cl->revrs, cl->nudge_ms, cl->jmpq, au_count(cl), cl->detune, cl->tempo, cl->name);
+                        cl->revrs, cl->nudge_ms, cl->jmpq, au_count(cl), cl->detune, cl->tempo, (unsigned)reach, cl->name);
     }
     if (!strncmp(k, "sl_", 3)) {                  /* sl_C_L: "a b pinned pitch gain rev play atk dec detune" */
         const char *q = k + 3;

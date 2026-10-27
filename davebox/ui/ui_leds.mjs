@@ -384,7 +384,11 @@ export function updateStepLEDs() {
      * from the end, so their steps mirror. */
     if (isAudioTrack(S.activeTrack) && auInfo(S.activeTrack, auClipOf(S.activeTrack)).mode !== AU_MODE_SLICE) {
         const t = S.activeTrack, c = auClipOf(t), ai = auInfo(t, c), ac = effectiveClip(t);
-        const cs = S.trackCurrentStep[t], base = (S.trackCurrentPage[t] | 0) * 16;
+        /* playing, the row follows the playhead page by page, as a sequence
+         * does (Josh, 2026-10-28: "should follow the sequence playhead like
+         * normal") — there is nothing on a Loop clip's steps to stay and edit */
+        const cs = S.trackCurrentStep[t];
+        const base = (S.playing && S.trackClipPlaying[t] && cs >= 0 ? Math.floor(cs / 16) : (S.trackCurrentPage[t] | 0)) * 16;
         const len = S.clipLength[t][ac], lsBase = S.clipLoopStart[t][ac] | 0;
         const e = auEnd(ai), span = e - ai.rstart;
         let from = 0, to = len;
@@ -964,6 +968,8 @@ export function updateTrackLEDs() {
             const slice = ai.mode === AU_MODE_SLICE;
             const ph = slice ? -1 : auPlayheadChop(t);
             const sel = auSelSlice(t);
+            const mk = !slice && ai.state === 2 && ai.reach >= 0 && ai.reach < auEnd(ai) - ai.rstart ? auMarks(t, auClipOf(t)) : null;
+            const pastReach = (k) => !!(mk && mk[k] && (ai.revrs ? auEnd(ai) - mk[k][1] : mk[k][0] - ai.rstart) >= ai.reach);
             /* A Lazy chop: the next pad in order WHITE (pad 1 before the
              * first tap), the slices chopped so far in the track colour
              * (Josh, 2026-10-28: "pads should light to indicate populated as
@@ -980,6 +986,10 @@ export function updateTrackLEDs() {
                 else if (slice) {
                     if (k < ai.n) color = (ap.t === t && ap.on && ap.slice === k) ? White : k === sel ? tc : td;
                 } else if (k < ai.n) {
+                    /* a Free loop whose clip wraps before the sample ends:
+                     * the chops it never reaches grey (Josh, 2026-10-28: "you
+                     * can't see where the end point is on the pads") */
+                    if (pastReach(k)) { cachedSetLED(TRACK_PAD_BASE + i, DarkGrey); continue; }
                     if (k === ph) { cachedSetLEDAnim(TRACK_PAD_BASE + i, tc, LightGrey, LED_PULSE_4TH); continue; }
                     color = ph >= 0 && (ai.revrs ? k > ph : k < ph) ? tc : td;
                 }
@@ -1300,7 +1310,9 @@ export function updateTrackLEDs() {
              * The shim-side restore edge (`shadow_restore_knob_leds`) exists for
              * the OTHER direction — handing the surface back to Move on exit —
              * and davebox owns the surface for its whole lifetime. */
-            const pm = BANKS[S.activeBank].knobs[k];
+            let pm = BANKS[S.activeBank].knobs[k];
+            /* LIVE ARP's Oct is Step on an Audio track, ±15 (ui_render) */
+            if (S.activeBank === 5 && k === 2 && isAudioTrack(S.activeTrack)) pm = Object.assign({}, pm, { min: -15, max: 15 });
             ledVal = knobRingColor(
                 k, knobRingNorm(pm, S.bankParams[S.activeTrack][S.activeBank][k]));
             /* A knob on the seq: list with automation in this clip: under Mute

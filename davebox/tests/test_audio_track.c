@@ -890,7 +890,45 @@ int main(void) {
         hx_get_param(h, "t4_au_sl_0_1", b, sizeof b);
         HX_ASSERT(strlen(b) > 2 && !strcmp(b + strlen(b) - 2, " 9"), "sl_C_L does not end with the slice's detune");
         hx_get_param(h, "t4_au_info_0", b, sizeof b);
-        HX_ASSERT(strstr(b, " -17 0|"), "info_C does not carry the clip's detune, then its Tempo, before the name");
+        HX_ASSERT(strstr(b, " -17 0 "), "info_C does not carry the clip's detune, then its Tempo");
+    }
+
+    /* ---- reach (Josh, 2026-10-28: "pads outside of the current end point
+     * should be shown as gray"): how far into Start..End a Free loop gets
+     * before its clip wraps — the clip's ticks at the tempo and the pitch,
+     * less Nudge; all of it when the clip outlasts the sample, or on Sync ---- */
+    {
+        char b[256];
+        au_clip_t *ac = &inst->au_clip[4][7];
+        clip_t *lc = &inst->tracks[4].clips[7];
+        uint16_t was_len = lc->length;
+        uint32_t rs, re, got = 0;
+        au_range(ac, ac->smp, &rs, &re);
+        hx_set_param(h, "t4_au_set_tempo", "7 0");
+        lc->length = 1;                                        /* one step: well short of the sample */
+        double bpm = inst->tracks[4].pfx.cached_bpm > 0 ? inst->tracks[4].pfx.cached_bpm : 120.0;
+        uint32_t tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
+        double one = (double)tps * 44100.0 * 60.0 / (bpm * PPQN) * (double)ac->smp->rate / 44100.0;
+        HX_ASSERT(one < (double)(re - rs), "the test sample is shorter than one step");
+        hx_get_param(h, "t4_au_info_7", b, sizeof b);
+        sscanf(b, "%*d %*d %*d %*d %*d %*d %*u %*u %*d %*d %*u %*u %*d %*d %*d %*d %*d %*d %*d %u", &got);
+        HX_ASSERT(got + 1 >= (uint32_t)one && got <= (uint32_t)one + 1, "reach is not one step's worth of the sample");
+        hx_set_param(h, "t4_au_set_pitch", "7 12");            /* an octave up gets twice as far */
+        hx_get_param(h, "t4_au_info_7", b, sizeof b);
+        sscanf(b, "%*d %*d %*d %*d %*d %*d %*u %*u %*d %*d %*u %*u %*d %*d %*d %*d %*d %*d %*d %u", &got);
+        HX_ASSERT(got + 2 >= (uint32_t)(2 * one) && got <= (uint32_t)(2 * one) + 2 || got == re - rs, "reach ignores the pitch");
+        hx_set_param(h, "t4_au_set_pitch", "7 0");
+        lc->length = 256;                                       /* the clip outlasts it: all of it */
+        hx_get_param(h, "t4_au_info_7", b, sizeof b);
+        sscanf(b, "%*d %*d %*d %*d %*d %*d %*u %*u %*d %*d %*u %*u %*d %*d %*d %*d %*d %*d %*d %u", &got);
+        HX_ASSERT(got == re - rs, "a clip longer than the sample does not reach its end");
+        lc->length = 1;
+        hx_set_param(h, "t4_au_set_tempo", "7 1");              /* Sync plays every chop */
+        hx_get_param(h, "t4_au_info_7", b, sizeof b);
+        sscanf(b, "%*d %*d %*d %*d %*d %*d %*u %*u %*d %*d %*u %*u %*d %*d %*d %*d %*d %*d %*d %u", &got);
+        HX_ASSERT(got == re - rs, "Sync does not reach the end");
+        hx_set_param(h, "t4_au_set_tempo", "7 0");
+        lc->length = was_len;
     }
 
     /* ---- the project file keeps it (Tempo and the PAD MODE Layout too) ---- */

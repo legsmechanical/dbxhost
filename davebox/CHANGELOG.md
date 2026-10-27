@@ -32,6 +32,9 @@ the section into a versioned heading at release time.
   **LIVE ARP** comes to Audio tracks, with **Step** (a chop per repeat) in place of Oct.
 - ⚠ A Slice clip's sequence from an earlier build plays the wrong chops: chops are now
   numbered from note 0.
+- **Audio Loop: the pads show where the loop ends.** On Free, the chops a clip never
+  reaches before it comes round are grey; the step buttons follow the playhead page by
+  page.
 
 ### Fixed
 - **Audio: slices start exactly on their step** (on dAVEBOx's own clock) rather than up to 3 ms early, and chops

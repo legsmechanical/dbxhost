@@ -841,6 +841,40 @@ step('⭐⭐ Loop pads: a progress bar — dim the loop, bright what has played,
     GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(4);
 });
 
+step('⭐⭐ Loop pads: a Free loop whose clip wraps before the sample ends greys the chops it never reaches (Josh: "you can\'t see where the end point is")', () => {
+    const pad = (i) => LEDS.get(C.TRACK_PAD_BASE + i) || 0;
+    const reach = (r, rev) => INFO(0, 8).replace(' 96000 48000 2 0 0 0 8|', ' 96000 48000 2 ' + (rev ? 1 : 0) + ' 0 0 8 0 0 ' + r + '|');
+    GET['t4_au_pos'] = '1 6000 -1';
+    GET['t4_au_info_0'] = reach(30000); A.auMarkStale(4, 0);
+    for (let i = 0; i < 6; i++) ticks(1);
+    assert(A.auInfo(4, 0).reach === 30000, 'reach not parsed: ' + A.auInfo(4, 0).reach);
+    assert(pad(2) && pad(2) !== HC.DarkGrey && [3, 4, 7].every((i) => pad(i) === HC.DarkGrey),
+           'the chops past the wrap are not grey: ' + [2, 3, 4, 7].map(pad));
+    /* Revrs reaches in from the end */
+    GET['t4_au_info_0'] = reach(30000, 1); A.auMarkStale(4, 0);
+    for (let i = 0; i < 6; i++) ticks(1);
+    assert([0, 4].every((i) => pad(i) === HC.DarkGrey) && pad(5) && pad(5) !== HC.DarkGrey,
+           'Revrs did not grey from the start: ' + [0, 4, 5].map(pad));
+    /* all of it plays: nothing grey */
+    GET['t4_au_info_0'] = reach(96000); A.auMarkStale(4, 0);
+    for (let i = 0; i < 6; i++) ticks(1);
+    assert([0, 3, 7].every((i) => pad(i) && pad(i) !== HC.DarkGrey), 'a loop that plays whole greys: ' + [0, 3, 7].map(pad));
+    GET['t4_au_pos'] = '1 24000 2';
+    GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(4);
+});
+
+step('⭐⭐ Loop step buttons: playing, the row follows the playhead page by page, as a sequence does (Josh: "like normal")', () => {
+    GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(2);
+    const was = [S.playing, S.trackClipPlaying[4], S.trackCurrentStep[4], S.clipLength[4][0]];
+    S.clipLength[4][0] = 32; S.clipLoopStart[4][0] = 0; S.trackCurrentPage[4] = 0;
+    S.playing = true; S.trackClipPlaying[4] = true; S.trackCurrentStep[4] = 20;
+    S.ledsDirtyAudio = true; ticks(2);
+    const lit = Array.from({ length: 16 }, (_, i) => LEDS.get(16 + i) || 0);
+    assert(lit[4] === HC.White && lit.filter((v) => v === HC.White).length === 1, 'the playhead is not on step 21 of page 2: ' + lit.join());
+    S.playing = was[0]; S.trackClipPlaying[4] = was[1]; S.trackCurrentStep[4] = was[2]; S.clipLength[4][0] = was[3];
+    S.ledsDirtyAudio = true; ticks(2);
+});
+
 step('⭐⭐ 128 chops: Octave Up / Down steps the pad pages, 32 chops a page; a Loop playing follows its playhead; the step buttons show the page (Josh)', () => {
     const marks = (n) => Array.from({ length: n }, (_, k) => Math.round(k * 96000 / n) + ' ' + Math.round((k + 1) * 96000 / n)).join(' ');
     GET['t4_au_info_0'] = INFO(1, 40, 40); GET['t4_au_marks_0'] = marks(40);
@@ -900,7 +934,14 @@ step('⭐⭐ LIVE ARP: Oct is Step on Audio, a chop per repeat, to ±15 (Josh: "
     const v = sent('t4_tarp_octaves');
     assert(v.length && v[v.length - 1] === '15', 'Step did not reach 15: ' + JSON.stringify(v));
     const kc = globalThis.__kc; shown();
-    assert(kc().cells[2].label === 'Step' && kc().cells[2].text === '+15', 'the card: ' + JSON.stringify(kc().cells[2]));
+    const c2 = kc().cells[2];
+    assert(c2.label === 'Step' && c2.text === '+15', 'the card: ' + JSON.stringify(c2));
+    /* the widget's own range is ±15: Oct's ±4 pinned the ring at its end
+     * while the value went on (Josh: "doesn't match the params") */
+    const rn = (v) => { S.bankParams[4][5][2] = v; S.ledsDirtyAudio = true; ticks(3); return CCLEDS.get(73); };
+    const ring = [-15, -4, 4, 15].map(rn);
+    assert(ring[0] !== ring[1] && ring[1] !== ring[2] && ring[2] !== ring[3], 'the ring is not on ±15 (pinned at ±4): ' + ring);
+    S.bankParams[4][5][2] = 15;
     for (let i = 0; i < 300; i++) cc(73, 127);
     S.activeBank = 0; S.bankCardLatched = false;
 });

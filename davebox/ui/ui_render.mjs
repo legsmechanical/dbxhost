@@ -288,10 +288,13 @@ function audioBankCells(bank, cells) {
     if (bank === 5 && cells[2]) {
         const v = S.bankParams[t][5][2] | 0;
         cells = cells.slice();
-        cells[2] = Object.assign({}, cells[2], { label: 'Step', name: 'Step (chops per repeat)',
-                                                 text: v === 0 ? 'Off' : (v > 0 ? '+' : '') + v });
-        if (cells[2].signed !== undefined) cells[2].signed = v / 15;
-        if (cells[2].norm !== undefined) cells[2].norm = (v + 15) / 30;
+        /* its own -15..+15 list: Oct's -4..+4 left the arc and the ring
+         * pinned at the ends while the value went on (Josh, 2026-10-28) */
+        const opts = [];
+        for (let i = -15; i <= 15; i++) opts.push(i === 0 ? '--' : (i > 0 ? '+' : '') + i);
+        cells[2] = withTouchArc(Object.assign({}, cells[2], { label: 'Step', name: 'Step (chops per repeat)',
+                                                 kind: 'valsq', text: v === 0 ? '--' : (v > 0 ? '+' : '') + v,
+                                                 options: opts, sel: v + 15 }), true);
     }
     return cells;
 }
