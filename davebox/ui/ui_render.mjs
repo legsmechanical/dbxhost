@@ -194,7 +194,7 @@ function drawAudioWaveEditor() {
     }
     clear_screen();
     if (ed.pick) {
-        drawBankHeading(ed.pick.level === 1 ? 'WAVE' : 'CHOP SAMPLE', false);
+        drawBankHeading(ed.pick.level === 1 ? 'SAMPLE' : 'CHOP SAMPLE', false);
         drawKitList(auPickRows(ed), ed.pick.sel, { h: MV_FOOTER_Y - 11 });
         drawKitHintRow(MV_FOOTER_Y, ed.pick.editEven ? [['jog', 'count'], ['clk', 'set']] : [['clk', 'pick'], ['back', ed.pick.level === 1 ? 'exit' : 'up']]);
         return;
@@ -238,7 +238,7 @@ function drawAudioWaveEditor() {
     if (sub === 'empty') {
         /* the click corners round the empty waveform (Josh: "the waveform
          * view should show the "click" corners and say click to load sample") */
-        drawBankHeading('WAVE', false);
+        drawBankHeading('SAMPLE', false);
         drawBrackets(6, 18, 116, 34);
         const msg = i.state === 1 ? 'LOADING' : 'CLICK TO LOAD SAMPLE';
         ovwPrint(64 - Math.floor(ovwWidth(msg) / 2), 33, msg, 1);

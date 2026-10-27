@@ -626,11 +626,11 @@ export const BANKS = [
      * on every walk. All stubs: sound mode owns the screen, and the bank has no
      * knobs. */
     { name: 'CONFIG', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
-    /* 17 — AUDIO (BANK_AUDIO) — an Audio track's clip sound, as a bank with
+    /* 17 — VOICE (BANK_AUDIO; named AUDIO until Josh, 2026-10-28: "sample and voice") — an Audio track's clip sound, as a bank with
      * PAGES (Josh, 2026-10-28: "can audio be a bank?" · "yes"): CLIP, and
      * SLICE n in Slice mode; a plain jog turn flips them. ui_audio owns the
      * cells and the knobs (the old AUDIO editor's). */
-    { name: 'AUDIO', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
+    { name: 'VOICE', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
 ];
 
 /* Conductor bank indices. Bank 0 (CLIP) is reused as the "Conduct" bank. */

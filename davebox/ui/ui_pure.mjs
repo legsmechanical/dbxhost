@@ -251,7 +251,7 @@ const BANK_MAP_ACTIONS = {
 };
 /* The instrument door on an Audio track is the AUDIO editor, and says so. */
 const BANK_MAP_ACTION_NAMES = { inst: 'INST' };
-const BANK_MAP_ACTION_NAMES_AUDIO = { inst: 'AUDIO', wave: 'WAVE' };
+const BANK_MAP_ACTION_NAMES_AUDIO = { wave: 'SAMPLE' };
 /* AUTOMATION has no space to wrap at and is wider than a cell. */
 const BANK_MAP_SHORT = { [BANK_AUTOMATION]: 'AUTO' };
 
@@ -336,11 +336,11 @@ export function bankMapModuleAt(route, padMode, col, row) {
     const p = BANK_MAP_MODULE_PADS.find((m) => m.col === col && m.row === row);
     if (!p) return null;
     /* Audio: FX 1-4 lit, the MIDI FX pad dark (nothing on the track receives
-     * MIDI — Q4, Josh 2026-10-27: "agreed"), the instrument pad WAVE, the
+     * MIDI — Q4, Josh 2026-10-27: "agreed"), the instrument pad SAMPLE, the
      * sample's editor (Josh, 2026-10-28). */
     if (padMode === PAD_MODE_AUDIO) {
         if (p.comp === 'midi_fx1') return null;
-        if (p.comp === 'synth') return Object.assign({}, p, { label: 'WAVE' });
+        if (p.comp === 'synth') return Object.assign({}, p, { label: 'SAMPLE' });
         return p;
     }
     if (route === 2) return p.comp === 'midi_fx1' ? p : null;

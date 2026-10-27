@@ -183,7 +183,7 @@ step('⭐⭐ the walk: IN (PAD MODE, LIVE ARP), no RPT GROOVE, HARMONY, SEQ ARP 
     assert(P.bankMapModuleAt(0, C.PAD_MODE_AUDIO, 6, 0) === null, 'the MIDI FX pad is lit (Q4)');
     assert(P.bankMapModuleAt(0, C.PAD_MODE_AUDIO, 7, 0).comp === 'fx1', 'FX 1 is dark');
     const map = P.bankPadMapForMode(C.PAD_MODE_AUDIO, 4);
-    assert(map[2].cells[3] && map[2].cells[3].name === 'AUDIO' && map[2].cells[3].bank === C.BANK_AUDIO, 'the AUDIO pad is not the AUDIO bank: ' + JSON.stringify(map[2].cells[3]));
+    assert(map[2].cells[3] && map[2].cells[3].name === 'VOICE' && map[2].cells[3].bank === C.BANK_AUDIO, 'the VOICE pad is not the VOICE bank: ' + JSON.stringify(map[2].cells[3]));
     /* DELAY left Audio tracks (Josh, 2026-10-28: "let's get rid of delay") */
     assert(!map[3].cells[2], 'the DELAY pad is lit: ' + JSON.stringify(map[3].cells[2]));
 });
@@ -211,7 +211,7 @@ step('⭐⭐ the bank map\'s AUDIO pad is the AUDIO bank (Josh: "can audio be a 
 });
 
 step('⭐⭐ the instrument door on an Audio track is WAVE, the sample\'s editor: the map\'s instrument pad (Josh: "does it make sense ... be the wave editor?" · "make sense")', () => {
-    assert(P.bankMapModuleAt(0, C.PAD_MODE_AUDIO, 6, 1).label === 'WAVE', 'the instrument pad is not labelled WAVE');
+    assert(P.bankMapModuleAt(0, C.PAD_MODE_AUDIO, 6, 1).label === 'SAMPLE', 'the instrument pad is not labelled SAMPLE');
     S.activeBank = 0; S.bankCardLatched = false;
     cc(3, 127); note(P.bankMapPadForCell(6, 1), 100); note(P.bankMapPadForCell(6, 1), 0); cc(3, 0); ticks(3);
     assert(S.auEditor && S.auEditor.mode === 'wave' && S.activeBank === 0, 'the instrument pad did not open WAVE: ' + JSON.stringify({ ed: !!S.auEditor, b: S.activeBank }));
@@ -341,7 +341,7 @@ step('⭐⭐ >Seq is on the CLIP bank in Slice mode: touch K8 + click (Josh: ">s
 
 step('⭐⭐ the map\'s WAVE pad opens WAVE (Slice: the chop editor); a clip on Even is edited like any other (Josh)', () => {
     const map = P.bankPadMapForMode(C.PAD_MODE_AUDIO, 4);
-    assert(map[2].cells[2] && map[2].cells[2].name === 'WAVE', 'no WAVE pad under CLIP');
+    assert(map[2].cells[2] && map[2].cells[2].name === 'SAMPLE', 'no SAMPLE pad under CLIP');
     mapPad(2, 2);
     assert(S.auEditor && S.auEditor.mode === 'wave' && S.auPanel && S.auPanel.wave, 'WAVE did not open');
     ticks(2);
@@ -423,12 +423,12 @@ step('⭐⭐ scrolling a zoomed waveform never stretches the overview (Josh: "th
 });
 
 step('⭐⭐ the map opens from WAVE (hold the jog); a pick leaves it for that bank (Josh)', () => {
-    for (const [col, row, name] of [[2, 2, 'WAVE']]) {
+    for (const [col, row, name] of [[2, 2, 'SAMPLE']]) {
         mapPad(col, row);
         assert(S.auPanel, name + ' did not open');
         S.activeBank = 1;                                /* somewhere else, so the pick is visible */
         cc(3, 127);                                      /* hold the jog */
-        if (name === 'WAVE') {
+        if (name === 'SAMPLE') {
             assert(S.jogDeferred && !S.bankMapUp, 'the press over ' + name + ' was not held back');
             S.jogPressMs = S.clockMs - C.JOG_HOLD_MAP_MS - 50;   /* ...held past the threshold (this rig's clock) */
             ticks(2);
@@ -446,7 +446,7 @@ step('⭐⭐ the map opens from WAVE (hold the jog); a pick leaves it for that b
         const cur = render.bankMapItems().cur;
         assert(cur && cur.c === col && cur.r === row, 'the screen map marks ' + JSON.stringify(cur) + ', not ' + name);
         /* the other one of AUDIO / WAVE is the track's colour, as AUDIO is (Josh: "wave map pad should be track color just like audio") */
-        const other = name === 'WAVE' ? [2, 3] : [2, 2];
+        const other = name === 'SAMPLE' ? [2, 3] : [2, 2];
         assert(LEDS.get(P.bankMapPadForCell(other[0], other[1])) === globalThis.__tc(4),
                'the other Audio pad is not the track colour: ' + LEDS.get(P.bankMapPadForCell(other[0], other[1])) + ' vs ' + globalThis.__tc(4));
         const whites = Array.from({ length: 32 }, (_, i) => LEDS.get(C.TRACK_PAD_BASE + i)).filter((v) => v === HC.White).length;

@@ -397,7 +397,7 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   does not come up over the on-screen keyboard, over a question that needs an
   answer, or while Shift, Delete, Copy, Mute or Loop is held.
 - **Turning the jog** does not change the bank. On a bank with **pages** (an Audio
-  track's AUDIO), it flips the pages, and **Delete + jog click** resets only the page showing.
+  track's VOICE), it flips the pages, and **Delete + jog click** resets only the page showing.
 - **Touch the jog** to see the current bank's page while your finger rests on it;
   let go and the overview is back. (In Session View it shows the mixer page.)
 - **Touch a knob** to see the bank's page while you touch it — nothing holds a
@@ -1220,8 +1220,8 @@ order, so it sounds just as it did — then move them around. A clip that alread
 steps keeps them. A new clip starts cut into **16** even chops. From an external
 keyboard, note 36 plays chop 1.
 
-**WAVE** holds the clip's sample and its chops — it is the Audio track's instrument
-editor. Open it from the bank map's **WAVE** pad (under CLIP) or its instrument pad,
+**SAMPLE** holds the clip's sample and its chops — it is the Audio track's instrument
+editor. Open it from the bank map's **SAMPLE** pad (under CLIP) or its instrument pad,
 by clicking **Audio** in the track's sound menu, or with the instrument shortcut
 (**Shift + hold Note/Session**). What it shows follows the clip:
 
@@ -1235,10 +1235,10 @@ In both, **K4** Gain · **K5** Pitch · **K6** Detune set the whole clip; the on
 hand reads out between Start and End, and the waveform is drawn at the gain it
 plays at. Times read in seconds to two decimals.
 
-**Shift + click** opens WAVE's menu: **Load sample** (the chooser) and **Chop
+**Shift + click** opens SAMPLE's menu: **Load sample** (the chooser) and **Chop
 sample**, which offers **Lazy**, **Manual** and **Even**. None of them changes the
-Mode: the chops serve both. **Back** steps back a level, and leaves WAVE. The Shift
-shortcuts work here as anywhere: **Shift + a step** or **Shift + jog** leaves WAVE and does
+Mode: the chops serve both. **Back** steps back a level, and leaves SAMPLE. The Shift
+shortcuts work here as anywhere: **Shift + a step** or **Shift + jog** leaves SAMPLE and does
 what it always does.
 
 **Choosing a sample:** the list starts with **This project** (samples it already
@@ -1268,7 +1268,7 @@ whose file has gone reads *Missing: name* and stays silent.
   chops, to edit like any others (**Back** puts back what you had). A slice's
   sound settings belong to its number, so slice 3 keeps its sound.
 
-**The chop editor** (WAVE):
+**The chop editor** (SAMPLE):
 
 | Control | Does |
 |---|---|
@@ -1283,7 +1283,7 @@ in the middle of the screen and the waveform scrolls around it; touching one jum
 there. The header reads **SLICE n/n** (or **LOOP**); the start or end you're touching
 or turning lights up, and **ZOOM +** / **ZOOM −** shows between them while K2 zooms.
 
-**The AUDIO bank** holds the clip's sound. Pick it from the bank map's **AUDIO**
+**The VOICE bank** holds the clip's sound. Pick it from the bank map's **VOICE**
 pad. It is a bank with **pages**:
 **turn the jog** to flip them (on a bank with one page the turn does nothing); touch
 the jog or a knob to see the page you're on. **Delete + jog click** resets the page
@@ -1316,7 +1316,7 @@ first knob reads **Slice n** and picks the step's chop.
 track only. **Delete + clip** clears its sequence only: the sample, its settings
 and the clip's length stay. **Shift + Delete + clip** resets it completely, sample
 and all. **Undo** covers the steps; the
-AUDIO bank's settings aren't undoable. **Export to Ableton** leaves Audio tracks
+VOICE bank's settings aren't undoable. **Export to Ableton** leaves Audio tracks
 out for now, and says so when it finishes.
 
 **Track View at rest** shows a Loop clip's sample, its chops marked, with the playhead
