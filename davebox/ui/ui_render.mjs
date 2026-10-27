@@ -1846,11 +1846,16 @@ export function bankMapItems() {
     /* An editor up: the INST cell for the instrument's, no bank for the rest
      * (their pads are off the screen) — never the bank under the editor. */
     const ed = autoMapEditorComp();
+    /* ...an Audio screen is where you are too, as on the pads (Josh,
+     * 2026-10-28: "the pad map doesn't indicate that you're on wave or
+     * audio - still shows last bank") */
+    const au = S.auPanel ? (S.auEditor ? 'wave' : 'inst') : null;
     const cols = bankPadMapForMode(S.trackPadMode[t], t).map((c, ci) => ({
         label: c.label,
         cells: c.cells.map((cell, r) => {
-            if (cell && (ed !== null ? (cell.action === 'inst' && ed === 'synth')
-                                     : (cell.bank !== null && cell.bank === autoMapMarkedBank()))) cur = { c: ci, r };
+            if (cell && (au !== null ? cell.action === au
+                         : ed !== null ? (cell.action === 'inst' && ed === 'synth')
+                                       : (cell.bank !== null && cell.bank === autoMapMarkedBank()))) cur = { c: ci, r };
             return cell ? cell.name : null;
         }),
     }));

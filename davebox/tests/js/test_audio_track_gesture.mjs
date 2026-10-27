@@ -419,6 +419,10 @@ step('⭐⭐ the map opens from WAVE (hold the jog) and the AUDIO editor (at onc
         /* ...lit where you are: that screen's own pad (Josh: "pad map should show when you're in audio/wave") */
         ticks(2);
         assert(LEDS.get(P.bankMapPadForCell(col, row)) === HC.White, 'the map does not light ' + name + '\'s pad: ' + LEDS.get(P.bankMapPadForCell(col, row)));
+        /* ...and the map on the SCREEN says so too (Josh: "the pad map doesn't
+         * indicate that you're on wave or audio - still shows last bank") */
+        const cur = render.bankMapItems().cur;
+        assert(cur && cur.c === col && cur.r === row, 'the screen map marks ' + JSON.stringify(cur) + ', not ' + name);
         /* the other one of AUDIO / WAVE is the track's colour, as AUDIO is (Josh: "wave map pad should be track color just like audio") */
         const other = name === 'WAVE' ? [2, 3] : [2, 2];
         assert(LEDS.get(P.bankMapPadForCell(other[0], other[1])) === globalThis.__tc(4),
