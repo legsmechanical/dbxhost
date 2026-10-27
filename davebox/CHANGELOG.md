@@ -8,6 +8,8 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 
+## [1.1.1] — 2026-10-27
+
 ### Fixed
 - **The POWER OFF? question no longer pops up by itself.** On some Moves it
   appeared every few minutes without the power button being touched. dAVEBOx
