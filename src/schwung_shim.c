@@ -8356,15 +8356,18 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
              * status byte here) same as it would any other cable-0 SysEx,
              * corrupting the one message Move's own shutdown-prompt flow needs
              * intact — so "Press wheel to shut down" never appears and the
-             * device cannot be powered off from inside a tool. The id byte at
-             * offset 17 varies (observed 0x2A on a tap, 0x3A on a ~1.5-2s
-             * hold); match on the fixed header + subcommand only. Lookahead,
+             * device cannot be powered off from inside a tool. Byte offset 17 is
+             * the 0x3A subcommand; the PRESS byte after it (offset 18) varies
+             * (observed 0x2A on a tap, 0x3A on a ~1.5-2s hold) and the value
+             * (offset 19) read 0x64 on both. Only the fixed header + subcommand
+             * are matched: whether this is a press is decided later, off the
+             * SPI thread, by the claiming side (shadow_ui). Lookahead,
              * not a stateful match at the subcommand packet, because a
              * corrective *retroactive* un-filter of already-written sh_midi
              * slots would need to special-case every filter site above instead
              * of the one line below. */
             int power_sysex_hit = 0, power_sysex_lead = 0;
-            uint8_t power_sysex_id = 0;
+            uint8_t power_sysex_id = 0, power_sysex_val = 0;
             if (power_sysex_remaining > 0) {
                 power_sysex_remaining--;
                 power_sysex_hit = 1;
@@ -8377,7 +8380,8 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                        (hw_midi[j + 24] & 0x0F) == 0x06) {
                 power_sysex_hit = 1;
                 power_sysex_lead = 1;
-                power_sysex_id = hw_midi[j + 17];
+                power_sysex_id = hw_midi[j + 18];
+                power_sysex_val = hw_midi[j + 19];
                 power_sysex_remaining = 3;
             }
 
@@ -8569,10 +8573,8 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
              * prompt of its own) and the press is handed to the module
              * instead. Tap and hold alike; the id byte says which. */
             if (power_sysex_hit)
-                filter = shim_power_gate(overtake_mode,
-                                         shadow_control ? &shadow_control->power_claim : NULL,
-                                         shadow_control ? &shadow_control->power_button : NULL,
-                                         power_sysex_lead, power_sysex_id);
+                filter = shim_power_gate(overtake_mode, shadow_control, power_sysex_lead,
+                                         power_sysex_id, power_sysex_val);
 
             if (filter) {
                 /* Zero the packet dword in the shadow buffer.  This does NOT

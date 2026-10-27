@@ -18966,14 +18966,26 @@ globalThis.tick = function() {
                      * the module calls nothing and a resume re-claims by
                      * itself; exit and suspend drop it. Claimed, the shim holds
                      * the press back from Move — no "Press wheel to shut down"
-                     * — and it is delivered here. id: 0x2A tap, 0x3A hold. */
+                     * — and it is delivered here. id: 0x2A tap, 0x3A hold.
+                     * The shim hands over EVERY power SysEx it held back; only
+                     * a known press byte with a non-zero value reaches the
+                     * module. A tester on 1.1.0 got the module's power-off
+                     * question every few minutes untouched, so each message
+                     * is logged with its bytes, delivered or not. */
                     {
                         if (typeof host_power_claim === "function")
                             host_power_claim(typeof globalThis.onPowerButton === "function" ? 1 : 0);
-                        const powerId = typeof shadow_get_power_button === "function" ? shadow_get_power_button() : 0;
-                        if (powerId && typeof globalThis.onPowerButton === "function") {
-                            try { runToolCallback(function() { globalThis.onPowerButton(powerId); }); }
-                            catch (e) { debugLog("OVERTAKE onPowerButton exception: " + e); }
+                        const powerRaw = typeof shadow_get_power_button === "function" ? shadow_get_power_button() : 0;
+                        if (powerRaw) {
+                            const powerId = (powerRaw >> 8) & 0xFF;
+                            const powerVal = powerRaw & 0xFF;
+                            const isPress = (powerId === 0x2A || powerId === 0x3A) && powerVal !== 0;
+                            debugLog("POWER SysEx F0 00 21 1D 01 01 3A " + powerId.toString(16).padStart(2, "0") + " " +
+                                     powerVal.toString(16).padStart(2, "0") + " 00 F7 -> " + (isPress ? "press, to the module" : "NOT a press, dropped"));
+                            if (isPress && typeof globalThis.onPowerButton === "function") {
+                                try { runToolCallback(function() { globalThis.onPowerButton(powerId); }); }
+                                catch (e) { debugLog("OVERTAKE onPowerButton exception: " + e); }
+                            }
                         }
                     }
 

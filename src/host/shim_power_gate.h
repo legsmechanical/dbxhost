@@ -6,21 +6,28 @@
  * lookahead before the MIDI_IN filter). Normally it is passed to Move intact so
  * Move can raise "Press wheel to shut down". An overtake module that claimed
  * the button (shadow_control->power_claim) answers it itself: the SysEx is held
- * back from Move and the press — its id byte, 0x2A tap / 0x3A hold — is stored
- * for shadow_ui to hand to the module. Tap and hold are treated alike here.
+ * back from Move and the message's press and value bytes are stored for
+ * shadow_ui, which decides whether it IS a press (a tester on 1.1.0 got the
+ * module's power-off question every few minutes untouched, so the shim no
+ * longer takes every power SysEx for a press) and logs each one.
  */
 #ifndef SHIM_POWER_GATE_H
 #define SHIM_POWER_GATE_H
 
 #include <stdint.h>
+#include "shadow_constants.h"
 
 /* For one packet of the power SysEx: returns 1 = hold it back from Move,
  * 0 = let it through. `lead` = this is the message's first packet, the one
- * that stores the press (once per message, not once per packet). */
-static inline int shim_power_gate(int overtake_mode, volatile uint8_t *claim,
-                                  volatile uint8_t *button, int lead, uint8_t id) {
-    if (overtake_mode != 2 || !claim || !*claim) return 0;
-    if (lead && button) *button = id;
+ * that stores the bytes (once per message, not once per packet). */
+static inline int shim_power_gate(int overtake_mode, shadow_control_t *ctrl,
+                                  int lead, uint8_t press, uint8_t value) {
+    if (overtake_mode != 2 || !ctrl || !ctrl->power_claim) return 0;
+    if (lead) {
+        ctrl->power_button = press;
+        ctrl->power_value = value;
+        ctrl->power_seen = 1;          /* last: the reader keys on it */
+    }
     return 1;
 }
 

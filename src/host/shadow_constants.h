@@ -406,12 +406,17 @@ typedef struct shadow_control_t {
      * its own "Press wheel to shut down", and instead stores the press here.
      * Set and cleared by the module (host_power_claim), cleared by the host
      * when the module stops owning the screen.
-     * power_button: the press, as the SysEx's id byte (0x2A tap, 0x3A hold);
-     * 0 = none. Written by the shim (one byte store, SPI thread), read and
-     * cleared by shadow_ui (shadow_get_power_button). APPENDED.
+     * power_button / power_value: EVERY claimed power SysEx's press byte
+     * (0x2A tap, 0x3A hold seen so far) and value byte (0x64 seen so far) —
+     * the shim does not judge them; shadow_ui does, and logs each one.
+     * power_seen: 1 = a message is waiting; stored LAST by the shim (SPI
+     * thread), read and cleared by shadow_ui (shadow_get_power_button).
+     * APPENDED.
      */
     volatile uint8_t power_claim;
     volatile uint8_t power_button;
+    volatile uint8_t power_value;
+    volatile uint8_t power_seen;
 } shadow_control_t;
 
 /* select_launch sentinel: no trigger pending. */

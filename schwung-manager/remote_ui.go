@@ -466,8 +466,10 @@ func (ru *RemoteUI) readLoop(ctx context.Context, c *ruClient) {
 	for {
 		var msg wsMessage
 		if err := wsjson.Read(ctx, c.conn, &msg); err != nil {
-			// Client disconnected or context cancelled — normal.
-			ru.logger.Debug("ws read done", "err", err)
+			// Client disconnected or context cancelled. At Info, with the
+			// reason: a tester's page reconnected every few seconds and the
+			// bug report could not say why.
+			ru.logger.Info("ws closed", "err", err)
 			return
 		}
 

@@ -264,15 +264,17 @@ static JSValue js_shadow_get_ui_flags(JSContext *ctx, JSValueConst this_val, int
     return JS_NewInt32(ctx, shadow_control->ui_flags);
 }
 
-/* shadow_get_power_button() -> int: the power-button press the shim held back
- * from Move for a module that claimed it (0x2A tap, 0x3A hold; 0 = none).
+/* shadow_get_power_button() -> int: the power SysEx the shim held back from
+ * Move for a module that claimed it, as 0x10000 | press << 8 | value
+ * (0 = none). Every message, not just presses: the caller judges and logs it.
  * Read and cleared, like shadow_get_open_tool_cmd. */
 static JSValue js_shadow_get_power_button(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
     (void)this_val; (void)argc; (void)argv;
     if (!shadow_control) return JS_NewInt32(ctx, 0);
-    uint8_t b = shadow_control->power_button;
-    if (b) shadow_control->power_button = 0;
-    return JS_NewInt32(ctx, b);
+    if (!shadow_control->power_seen) return JS_NewInt32(ctx, 0);
+    int v = 0x10000 | (shadow_control->power_button << 8) | shadow_control->power_value;
+    shadow_control->power_seen = 0;
+    return JS_NewInt32(ctx, v);
 }
 
 /* shadow_get_open_tool_cmd() -> int (0=none, 1=open_tool; auto-clears) */

@@ -12,9 +12,10 @@ S=src/schwung_shim.c; J=src/shadow/shadow_ui.js; C=src/shadow/shadow_ui.c
 python3 - "$S" <<'PY' && ok "the shim gates the power SysEx through shim_power_gate, with the lead packet's id" || bad "the shim's power-SysEx branch does not call shim_power_gate"
 import re, sys
 s = open(sys.argv[1]).read()
-m = re.search(r"if \(power_sysex_hit\)\s*filter = shim_power_gate\(overtake_mode,[^;]*power_sysex_lead, power_sysex_id\);", s)
+m = re.search(r"if \(power_sysex_hit\)\s*filter = shim_power_gate\(overtake_mode, shadow_control, power_sysex_lead,\s*power_sysex_id, power_sysex_val\);", s)
 assert m, "gate call missing"
-assert "power_sysex_id = hw_midi[j + 17];" in s, "id not taken from the lead packet"
+assert "power_sysex_id = hw_midi[j + 18];" in s, "press byte not taken from offset 18 (17 is the 0x3A subcommand)"
+assert "power_sysex_val = hw_midi[j + 19];" in s, "value byte not taken from offset 19"
 PY
 grep -q '"shadow_get_power_button"' "$C" && grep -q '"host_power_claim"' "$C" \
     && ok "both bindings are registered" || bad "a binding is not registered"
@@ -23,6 +24,8 @@ import sys
 s = open(sys.argv[1]).read()
 i = s.find("shadow_get_power_button()")
 j = s.find("globalThis.onPowerButton(powerId)")
+p = s.find("const isPress = (powerId === 0x2A || powerId === 0x3A) && powerVal !== 0;")
+assert 0 < i < p < j, ("only a known press reaches the module", i, p, j)
 k = s.find("runToolCallback(function() { overtakeModuleCallbacks.tick(); });")
 assert 0 < i < j < k, (i, j, k)
 PY
