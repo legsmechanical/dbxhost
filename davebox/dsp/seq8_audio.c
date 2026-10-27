@@ -1099,8 +1099,14 @@ static void au_chop_on(seq8_instance_t *inst, int t, int c, int slice, float vga
     if (!s || (!sync && cl->mode != AU_MODE_SLICE)) return;
     if (!sync && (uint64_t)s->frames > (uint64_t)s->rate * AU_SLICE_MAX_SEC) return;
     if (!au_slice_range(cl, s, slice, &a, &b)) return;
-    const au_slice_t *sl = &cl->sl[slice];
-    uint8_t play = sync ? AU_PLAY_ONE : sl->play, rev = sync ? (uint8_t)(cl->revrs ^ sl->rev) : sl->rev;
+    /* A Loop clip on Sync plays its chops as recorded: the clip's pitch,
+     * gain and Revrs, never a chop's own sound — no envelope, pitch, gain,
+     * reverse or play mode (Josh, 2026-10-28: "the whole point of loop is
+     * that it just plays back as recorded, so attack/decay shouldn't play
+     * into it"). Those belong to Slice. */
+    static const au_slice_t plain;
+    const au_slice_t *sl = sync ? &plain : &cl->sl[slice];
+    uint8_t play = sl->play, rev = sync ? cl->revrs : sl->rev;
     double ratio = au_tune(cl->pitch + sl->pitch, cl->detune + sl->detune) * (double)s->rate / 44100.0;
     float gain = au_db(cl->gain_db + sl->gain_db) * vgain;
     au_voice_t *v;

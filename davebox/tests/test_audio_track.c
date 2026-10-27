@@ -786,6 +786,16 @@ int main(void) {
     hx_set_param(h, "t4_au_set_tempo", "7 1");
     HX_ASSERT(inst->au_clip[4][7].tempo == AU_TEMPO_SYNC && clip_pitches(inst, 4, 7, pit, 64) == 0,
               "Tempo did not go to Sync (or wrote steps)");
+    /* ...as recorded: the chops' own sound is Slice's, and Sync ignores it
+     * (Josh: "attack/decay shouldn't play into it") — straight through below */
+    hx_set_param(h, "t4_au_all_atk", "7 12");
+    hx_set_param(h, "t4_au_all_dec", "7 30");
+    hx_set_param(h, "t4_au_all_pitch", "7 3");
+    hx_set_param(h, "t4_au_all_gain", "7 -6");
+    hx_set_param(h, "t4_au_all_rev", "7 1");
+    hx_set_param(h, "t4_au_all_play", "7 1");
+    HX_ASSERT(inst->au_clip[4][7].sl[1].attack_ms == 12 && inst->au_clip[4][7].sl[1].pitch == 3 && inst->au_clip[4][7].sl[1].play == 1,
+              "the chops' own sound did not set");
     hx_stub_feed_reset();
     hx_set_param(h, "transport", "play");
     for (i = 0; i < 20 && hx_stub_feed(4, NULL, NULL) == 0; i++) hx_render(h, 1);
@@ -839,6 +849,12 @@ int main(void) {
     hx_set_param(h, "transport", "stop");
     hx_set_param(h, "bpm", "120");
     hx_set_param(h, "t4_au_set_tempo", "7 0");
+    hx_set_param(h, "t4_au_all_atk", "7 0");
+    hx_set_param(h, "t4_au_all_dec", "7 0");
+    hx_set_param(h, "t4_au_all_pitch", "7 0");
+    hx_set_param(h, "t4_au_all_gain", "7 0");
+    hx_set_param(h, "t4_au_all_rev", "7 0");
+    hx_set_param(h, "t4_au_all_play", "7 0");
     hx_render(h, 60);
     hx_set_param(h, "t4_launch_clip", "5");
 
