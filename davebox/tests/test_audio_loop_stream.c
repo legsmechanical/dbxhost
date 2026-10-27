@@ -8,10 +8,10 @@
  *     whole-file loop would;
  *   - a chunk that is not in plays silence, the loop keeps time, and it comes
  *     back at the right frame once read;
- *   - after everything else is let go, a jump to every point of the finest
- *     division — forwards and in Revrs — reads pinned frames: none waits;
+ *   - after everything else is let go, every point of the finest division
+ *     (k/32: where a Remix grid lands) still has its chunks either side;
  *   - moving Start pins the new points; a let-go chunk is freed only after
- *     two more blocks; a waiting JmpQ jump's target is read ahead;
+ *     two more blocks;
  *   - Slice mode streams too: with only the pins in, every slice starts at
  *     once, forwards and Rev;
  *   - two clips on one file share it; the file let go leaves the streamer;
@@ -192,52 +192,21 @@ int main(void) {
     hx_set_param(h, "transport", "stop");
     hx_render(h, 4);
 
-    /* ---- jumps: every point of the finest division, from pins alone ---- */
+    /* ---- the pins: every point of the finest division (k/32 of the range)
+     * holds the chunks either side of it, so a later Remix grid lands on
+     * frames that are in, forwards and in Revrs ---- */
     for (i = 0; i < AU_STREAM_GRACE + 5; i++) { hx_render(h, 1); au_stream_service(inst); }
-    hx_set_param(h, "t4_au_set_jump", "0 32");
-    hx_set_param(h, "transport", "play");
-    for (i = 0; i < 20 && hx_stub_feed(4, NULL, NULL) == 0; i++) hx_render(h, 1);
-    stats(h, NULL, NULL, &reads, &under0);
-    bad = 0;
-    for (k = 0; k < 32; k++) {
-        char kk[8];
-        double at = (double)FR * k / 32;
-        snprintf(kk, sizeof kk, "%d", k);
-        hx_set_param(h, "t4_au_jump", kk);
-        hx_set_param(h, "t4_au_jump_off", kk);
-        hx_render(h, 1);
-        blk = hx_stub_feed_last(4);
-        if (abs(blk[0] - ramp_at(at)) > 1 || abs(blk[254] - ramp_at(at + 127)) > 1) bad++;
-        hx_render(h, 60);                            /* on into the next chunk: still pinned */
+    {
+        au_sample_t *s = inst->au_clip[4][0].smp;
+        bad = 0;
+        for (k = 0; k <= 32; k++) {
+            uint32_t at = (uint32_t)((uint64_t)FR * k / 32), c = at >> AU_CHUNK_SHIFT;
+            if (c < s->nchunks && !s->chunk[c]) bad++;
+            if (c + 1 < s->nchunks && !s->chunk[c + 1]) bad++;
+            if (c >= 1 && !s->chunk[c - 1]) bad++;
+        }
+        HX_ASSERT(bad == 0, "a point of the finest division is not pinned");
     }
-    stats(h, NULL, NULL, NULL, &under);
-    HX_ASSERT(bad == 0, "a jump did not land on its point");
-    HX_ASSERT(under == under0, "a jump waited for a chunk: a point is not pinned");
-    /* Revrs: point k mirrors onto the end, read backwards. Turning Revrs on
-     * restarts the loop at the mirror of where it was — not a point, so the
-     * streamer reads it; the jumps after that come from the pins alone. */
-    hx_set_param(h, "t4_au_set_revrs", "0 1");
-    hx_render(h, 1);
-    for (i = 0; i < 4; i++) au_stream_service(inst);
-    hx_render(h, 2);
-    stats(h, NULL, NULL, NULL, &under0);
-    bad = 0;
-    for (k = 0; k < 32; k++) {
-        char kk[8];
-        double at = (double)FR - 1.0 - (double)FR * k / 32;
-        snprintf(kk, sizeof kk, "%d", k);
-        hx_set_param(h, "t4_au_jump", kk);
-        hx_set_param(h, "t4_au_jump_off", kk);
-        hx_render(h, 1);
-        blk = hx_stub_feed_last(4);
-        if (abs(blk[0] - ramp_at(at)) > 1 || abs(blk[254] - ramp_at(at - 127)) > 1) bad++;
-        hx_render(h, 60);                            /* back into the chunk before: still pinned */
-    }
-    stats(h, NULL, NULL, NULL, &under);
-    HX_ASSERT(bad == 0, "a Revrs jump did not land on its mirrored point");
-    HX_ASSERT(under == under0, "a Revrs jump waited for a chunk");
-    hx_set_param(h, "t4_au_set_revrs", "0 0");
-    hx_render(h, 2);                                 /* the loop restarts (a restart lands a waiting jump) */
 
     /* ---- Nudge -500 ms: the loop starts half a second in, from pins alone ---- */
     for (k = 0; k < 2; k++) {
@@ -262,19 +231,6 @@ int main(void) {
     hx_set_param(h, "t4_au_set_revrs", "0 0");
     hx_render(h, 2);
 
-    /* ---- a waiting JmpQ jump: its target is read before it lands ---- */
-    hx_set_param(h, "t4_au_set_jmpq", "0 3");        /* 1/4 */
-    hx_set_param(h, "t4_au_jump", "7");
-    hx_set_param(h, "t4_au_jump_off", "7");
-    hx_render(h, 1);
-    {
-        uint32_t tgt = (uint32_t)((double)FR * 7 / 32), c = tgt >> AU_CHUNK_SHIFT;
-        au_sample_t *s = inst->au_clip[4][0].smp;
-        HX_ASSERT(inst->au_trk[4].pending_jump == 7, "the JmpQ jump did not wait");
-        for (i = 0; i < 4; i++) au_stream_service(inst);
-        HX_ASSERT(s->chunk[c + 4] != NULL, "a waiting jump's target was not read ahead");
-    }
-    hx_set_param(h, "t4_au_set_jmpq", "0 0");
     hx_set_param(h, "transport", "stop");
     hx_render(h, 4);
 

@@ -44,6 +44,21 @@ static inline int seq8_tick_due(seq8_instance_t *inst) {
     return 0;
 }
 
+/* The frame of this block a tick just consumed by seq8_tick_due fell on.
+ * The block's whole tick_delta was added at its start, so the accumulator
+ * left over says how far past the tick the block runs. Followed clocks
+ * (Move's 0xF8) carry no position inside a block: frame 0. */
+static inline uint8_t seq8_tick_frame(const seq8_instance_t *inst, int frames) {
+    double past;
+    if (inst->follow_solo || inst->clock_follow_on || !inst->tick_delta || frames <= 0) return 0;
+    past = (double)inst->tick_accum / (double)inst->tick_delta * frames;
+    if (past >= frames) return 0;              /* more than a block behind: due at once */
+    {
+        int f = (int)((double)frames - past);
+        return (uint8_t)(f > frames - 1 ? frames - 1 : f);
+    }
+}
+
 /* Stopped-state clock for the free-running arp/delay/repeat tick site (live
  * input arpeggiates / echoes while db transport is stopped). Distinct from the
  * main sequencer seam above: in follow mode while Move is STOPPED (no incoming
@@ -588,6 +603,9 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
 
     seq8_clock_advance(inst);
     while (seq8_tick_due(inst)) {
+        /* Where in this block the tick fell, so an Audio slice it plays
+         * starts on its frame rather than the block's (au_slice_on). */
+        inst->au_tick_off = seq8_tick_frame(inst, frames);
 
         /* Scene resample: start / end-of-pass decisions see the tick before
          * any track plays it. */
@@ -1252,6 +1270,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
         clock_send_f8_tick(inst);  /* continuous 24-PPQN clock out while playing (free-run master) */
         slot_clock_f8_tick(inst);  /* ...and the slots' clock, only while playing */
     }
+    inst->au_tick_off = 0;         /* a pad played between ticks starts at once */
 
 mix_click:
     /* Mix metro click into output */

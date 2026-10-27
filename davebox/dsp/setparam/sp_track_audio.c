@@ -9,9 +9,10 @@
  * Keys (C = clip, L = slice, all 0-based):
  *   tN_au_pick    "C|<abs path>"   copy the file into the project, load it
  *   tN_au_clear   "C"              the clip has no sample
- *   tN_au_set_<field>   "C <v>"    mode / even (0 Off, 2..32) / jump / start / end
+ *   tN_au_set_<field>   "C <v>"    mode / even (0 Off, 2..32) / start / end
  *                                  (frames; end 0 = the sample's end) / pitch /
- *                                  gain / bars / revrs / nudge / jmpq
+ *                                  gain / bars / revrs / nudge. Mode Slice on a
+ *                                  clip with no steps lays the chops on them
  *   tN_au_slice_<field> "C L <v>"  start / end (frames, the hand set, Even Off;
  *                                  end 0 = home) / pitch / gain / rev / play /
  *                                  atk / dec
@@ -27,12 +28,6 @@
  *   tN_au_chop    "C"              one step per slice, in order (one undo)
  *   tN_au_wipe    "C"              clip C's steps go (one undo) -- a converted
  *                                  clip that now plays its recording
- *   tN_au_jump    "K"              Loop: jump the playing loop to point K (a press;
- *                                  JmpQ makes it wait for the next 1/16, 1/8 or
- *                                  1/4); stopped, it auditions from there until
- *   tN_au_jump_off "K"             the pad's release (its own key: a press and a
- *                                  release written to ONE key before it drains
- *                                  keep only the release)
  *   tN_au_lazy    "C 1|0"          Lazy chop: 1 arms it (the hand set put aside),
  *                                  0 stops it (Back)
  *   tN_au_lazy_tap ""              a tap: the first starts the sample at Start,
@@ -119,21 +114,8 @@ static void au_apply_results(seq8_instance_t *inst) {
     }
 }
 
-/* JmpQ ticks: Off / 1/16 / 1/8 / 1/4. */
-static const uint16_t AU_JMPQ_TICKS[4] = { 0, PPQN / 4, PPQN / 2, PPQN };
-
-/* Loop jump point k of clip cl, `extra` sample frames further on (forwards, or
- * backwards when the clip plays Revrs). Jump points mirror with Revrs: point 0
- * is where the reversed sample starts, its end. */
-static double au_jump_pos(const au_clip_t *cl, int k, double extra) {
-    uint32_t rs, re;
-    au_range(cl, cl->smp, &rs, &re);
-    double d = (double)(re - rs) * k / cl->jump + extra;
-    return cl->revrs ? (double)re - 1.0 - d : (double)rs + d;
-}
-
 /* Tell the streamer where each streamed voice is and which way it goes,
- * where a waiting JmpQ jump will land and each streamed clip's range (it
+ * and each streamed clip's range (it
  * reads nothing else of ours); then count the block (a chunk the
  * streamer empties is freed two blocks later). */
 static void au_watch_publish(seq8_instance_t *inst) {
@@ -149,15 +131,6 @@ static void au_watch_publish(seq8_instance_t *inst) {
                 const au_voice_t *v = &at->v[i];
                 if (inst->tracks[t].pad_mode == PAD_MODE_AUDIO && v->active && v->smp && !v->smp->pcm) {
                     s = v->smp; pos = v->pos; step = v->step; lo = v->lo; hi = v->hi; loop = v->loop || v->mode_loop;
-                }
-            } else if (at->pending_jump >= 0 && inst->tracks[t].pad_mode == PAD_MODE_AUDIO) {
-                const au_clip_t *cl = &inst->au_clip[t][at->loop_clip];
-                if (cl->smp && !cl->smp->pcm && at->pending_jump < cl->jump) {
-                    uint32_t rs, re;
-                    au_range(cl, cl->smp, &rs, &re);
-                    s = cl->smp; pos = au_jump_pos(cl, at->pending_jump, 0);
-                    step = au_tune(cl->pitch, cl->detune) * (double)s->rate / 44100.0 * (cl->revrs ? -1.0 : 1.0);
-                    lo = rs; hi = re; loop = 1;
                 }
             }
             __atomic_store_n(&w->pos, (uint32_t)(pos < 0 ? 0 : pos), __ATOMIC_RELAXED);
@@ -250,29 +223,11 @@ static void au_render(seq8_instance_t *inst, int frames) {
                      * (-) against the bar. */
                     double off = played * fpt * ratio - (double)cl->nudge_ms * (double)cl->smp->rate / 1000.0;
                     au_loop_start(inst, t, c, off);
-                    /* A JmpQ jump waiting at the wrap lands now: the loop's
-                     * start is a boundary too. */
-                    if (at->pending_jump >= 0) {
-                        au_voice_t *nv = au_loop_voice(at);
-                        if (nv && at->pending_jump < cl->jump && !nv->wait)
-                            nv->pos = au_jump_pos(cl, at->pending_jump, played * fpt * ratio);
-                        at->pending_jump = -1;
-                    }
-                } else if (at->pending_jump >= 0 && cl->jmpq < 4 && AU_JMPQ_TICKS[cl->jmpq]) {
-                    /* JmpQ: the jump lands on the boundary it was waiting for. */
-                    int32_t q = AU_JMPQ_TICKS[cl->jmpq];
-                    if (tick / q != at->last_tick / q) {
-                        int32_t past = tick - (tick / q) * q;     /* ticks since the boundary */
-                        if (lv && at->pending_jump < cl->jump)
-                            lv->pos = au_jump_pos(cl, at->pending_jump, (double)past * fpt * ratio);
-                        at->pending_jump = -1;
-                    }
                 }
                 at->last_tick = tick;
             } else {
                 if (lv) au_voice_release(lv, 64);
                 at->last_tick = -1;
-                at->pending_jump = -1;
             }
         }
         for (i = 0; i < AU_VOICES; i++) if (at->v[i].active) { any = 1; break; }
@@ -386,6 +341,54 @@ static void au_even_bake(au_clip_t *cl) {
     cl->even = 0;
 }
 
+/* One step per slice, where the slice sits in the sample, so the clip plays
+ * the sample back as it was — now as slices. The clip's steps are replaced; a
+ * step holds one slice (a later slice landing on a taken step is left out).
+ * One undo step. 0 = nothing done (no sample, recording). */
+static int au_chop_steps(seq8_instance_t *inst, int tidx, int c) {
+    seq8_track_t *tr = &inst->tracks[tidx];
+    au_clip_t *acl = &inst->au_clip[tidx][c];
+    clip_t *cl = &tr->clips[c];
+    int l;
+    if (tr->recording || !acl->smp) return 0;
+    const au_sample_t *s = acl->smp;
+    uint32_t rs, re;
+    au_range(acl, s, &rs, &re);
+    if (re <= rs) return 0;
+    undo_begin_single(inst, tidx, c);
+    if (c == tr->active_clip) silence_track_notes_v2(inst, tr);
+    clip_wipe_notes(cl);
+    {
+        uint32_t tps = cl->ticks_per_step ? cl->ticks_per_step : TICKS_PER_STEP;
+        uint32_t len_ticks = (uint32_t)cl->length * tps;
+        int32_t last_step = -1;
+        int n = au_count(acl);
+        for (l = 0; l < n; l++) {
+            uint32_t a = 0, b = 0;
+            if (!au_slice_range(acl, s, l, &a, &b) || a < rs || a >= re) continue;
+            /* rounded: a chop a frame short of its step (5512 of 5512.5) is ON
+             * that step, not on the one before it, where it was left out */
+            uint32_t tick = (uint32_t)(((uint64_t)(a - rs) * len_ticks + (re - rs) / 2) / (re - rs));
+            uint32_t gate = (uint32_t)(((uint64_t)(b - a) * len_ticks + (re - rs) / 2) / (re - rs));
+            if (tick >= len_ticks) tick = len_ticks ? len_ticks - 1 : 0;
+            if ((int32_t)(tick / tps) == last_step) continue;
+            last_step = (int32_t)(tick / tps);
+            if (gate < 1) gate = 1;
+            clip_insert_note(cl, tick, (uint16_t)(gate > 65535 ? 65535 : gate),
+                             (uint8_t)(DRUM_BASE_NOTE + l), (uint8_t)SEQ_VEL);
+        }
+    }
+    clip_note_finalize(inst, cl, tidx, c);
+    return 1;
+}
+
+/* Clip c has no steps at all. */
+static int au_clip_stepless(const clip_t *cl) {
+    int i;
+    for (i = 0; i < cl->note_count; i++) if (cl->notes[i].active) return 0;
+    return 1;
+}
+
 static int sp_track_audio(sp_ctx_t *cx) {
     seq8_instance_t *inst = cx->inst;
     const char *val = cx->val ? cx->val : "";
@@ -447,15 +450,19 @@ static int sp_track_audio(sp_ctx_t *cx) {
                 return 1;
             }
             if (v != cl->mode) au_track_kill(inst, tidx, NULL);
+            /* Loop -> Slice on a clip with no steps: the chops go onto them in
+             * order, so it sounds as the loop did until they are moved (Josh,
+             * 2026-10-28: the in-order sequence; the joins make it seamless). */
+            if (v == AU_MODE_SLICE && cl->mode != AU_MODE_SLICE && au_clip_stepless(&tr->clips[c])) {
+                cl->mode = (uint8_t)v;
+                au_chop_steps(inst, tidx, c);
+            }
             cl->mode = (uint8_t)v;
         } else if (!strcmp(w, "even")) {
             /* Even: an override over the hand set, which stays as it is
              * (Josh: "it'd be nice if even chops are kind of like overrides
              * so that manual chop points are preserved") */
             cl->even = (uint8_t)(v < 2 ? 0 : clamp_i(v, 2, AU_MAX_SLICES));
-        } else if (!strcmp(w, "jump")) {
-            int d = v <= 2 ? 2 : v <= 4 ? 4 : v <= 8 ? 8 : v <= 16 ? 16 : 32;
-            cl->jump = (uint8_t)d;
         } else if (!strcmp(w, "start") || !strcmp(w, "end")) {
             /* frames; at least AU_GAP apart. Unloaded, taken as given. */
             uint32_t fr = cl->smp ? cl->smp->frames : 0, rs, re;
@@ -486,8 +493,6 @@ static int sp_track_audio(sp_ctx_t *cx) {
             if (c == tr->active_clip) au_track_kill(inst, tidx, NULL);
         } else if (!strcmp(w, "nudge")) {
             cl->nudge_ms = (int16_t)clamp_i(v, -500, 500);
-        } else if (!strcmp(w, "jmpq")) {
-            cl->jmpq = (uint8_t)clamp_i(v, 0, 3);
         } else if (!strcmp(w, "bars")) {
             au_clip_set_bars(inst, tidx, c, clamp_i(v, 1, 64));
             return 1;
@@ -626,41 +631,8 @@ static int sp_track_audio(sp_ctx_t *cx) {
     }
 
     if (!strcmp(sub, "chop")) {
-        /* One step per slice, where the slice sits in the sample, so the clip
-         * plays the sample back as it was — now as slices. The clip's steps
-         * are replaced; a step holds one slice (a later slice landing on a
-         * taken step is left out). One undo step. */
         c = au_arg_clip(&p);
-        if (c < 0 || tr->recording) return 1;
-        au_clip_t *acl = &inst->au_clip[tidx][c];
-        clip_t *cl = &tr->clips[c];
-        if (!acl->smp) return 1;
-        const au_sample_t *s = acl->smp;
-        uint32_t rs, re;
-        au_range(acl, s, &rs, &re);
-        if (re <= rs) return 1;
-        undo_begin_single(inst, tidx, c);
-        if (c == tr->active_clip) silence_track_notes_v2(inst, tr);
-        clip_wipe_notes(cl);
-        {
-            uint32_t tps = cl->ticks_per_step ? cl->ticks_per_step : TICKS_PER_STEP;
-            uint32_t len_ticks = (uint32_t)cl->length * tps;
-            int32_t last_step = -1;
-            int n = au_count(acl);
-            for (l = 0; l < n; l++) {
-                uint32_t a = 0, b = 0;
-                if (!au_slice_range(acl, s, l, &a, &b) || a < rs || a >= re) continue;
-                uint32_t tick = (uint32_t)((uint64_t)(a - rs) * len_ticks / (re - rs));
-                uint32_t gate = (uint32_t)((uint64_t)(b - a) * len_ticks / (re - rs));
-                if (tick >= len_ticks) tick = len_ticks ? len_ticks - 1 : 0;
-                if ((int32_t)(tick / tps) == last_step) continue;
-                last_step = (int32_t)(tick / tps);
-                if (gate < 1) gate = 1;
-                clip_insert_note(cl, tick, (uint16_t)(gate > 65535 ? 65535 : gate),
-                                 (uint8_t)(DRUM_BASE_NOTE + l), (uint8_t)SEQ_VEL);
-            }
-        }
-        clip_note_finalize(inst, cl, tidx, c);
+        if (c >= 0) au_chop_steps(inst, tidx, c);
         return 1;
     }
 
@@ -668,38 +640,6 @@ static int sp_track_audio(sp_ctx_t *cx) {
         c = au_arg_clip(&p);
         if (c < 0 || tr->recording) return 1;
         au_wipe_steps(inst, tidx, c);
-        return 1;
-    }
-
-    if (!strcmp(sub, "jump") || !strcmp(sub, "jump_off")) {
-        int k = my_atoi(p), down = !strcmp(sub, "jump");
-        c = tr->active_clip;
-        au_clip_t *cl = &inst->au_clip[tidx][c];
-        au_track_t *at = &inst->au_trk[tidx];
-        if (!cl->smp || cl->mode != AU_MODE_LOOP || k < 0 || k >= cl->jump) return 1;
-        au_voice_t *lv = au_loop_voice(at);
-        if (lv && inst->playing) {
-            /* live only: never recorded */
-            if (down) {
-                if (cl->jmpq) at->pending_jump = (int8_t)k;
-                else lv->pos = au_jump_pos(cl, k, 0);
-            }
-            return 1;
-        }
-        if (inst->playing) return 1;
-        /* Stopped: hear it from there while the pad is held. */
-        if (!down) {
-            for (l = 0; l < AU_VOICES; l++)
-                if (at->v[l].active && at->v[l].gated) au_voice_release(&at->v[l], 220);
-            return 1;
-        }
-        {
-            uint32_t rs, re;
-            au_range(cl, cl->smp, &rs, &re);
-            au_loop_start(inst, tidx, c, (double)(re - rs) * k / cl->jump);
-        }
-        lv = au_loop_voice(at);
-        if (lv) { lv->mode_loop = 0; lv->loop = 0; lv->gated = 1; lv->wait = 0; }
         return 1;
     }
 

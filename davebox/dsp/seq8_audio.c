@@ -960,13 +960,14 @@ static void *au_loader_main(void *arg) {
     return NULL;
 }
 
-/* A clip's audio as a new clip has it: no sample, Loop, Even 8 over a hand set
- * of one slice, 16 jump points, the whole sample. Keeps nothing (the caller
- * bumps gen). */
+/* A clip's audio as a new clip has it: no sample, Loop, Even 16 over a hand
+ * set of one slice (Josh, 2026-10-28: "even 16."), the whole sample. Keeps
+ * nothing (the caller bumps gen). `jump` keeps its old default only so a
+ * default clip still reads as one in the file. */
 static void au_clip_defaults(au_clip_t *cl) {
     memset(cl, 0, sizeof *cl);
     cl->mode = AU_MODE_LOOP;
-    cl->even = 8;
+    cl->even = 16;
     cl->nslices = 1;
     cl->jump = 16;
 }
@@ -979,7 +980,6 @@ static void au_init(seq8_instance_t *inst) {
         for (c = 0; c < NUM_CLIPS; c++) au_clip_defaults(&inst->au_clip[t][c]);
         memset(&inst->au_trk[t], 0, sizeof inst->au_trk[t]);
         inst->au_trk[t].last_tick = -1;
-        inst->au_trk[t].pending_jump = -1;
         inst->au_trk[t].mgain = 64;
     }
     inst->au_lazy_track = inst->au_lazy_clip = -1;
@@ -1014,12 +1014,15 @@ static void au_samples_dir(const seq8_instance_t *inst, char *out, size_t sz) {
 
 /* ---------------- voices (SPI thread) ---------------- */
 
-static void au_voice_release(au_voice_t *v, uint32_t frames) {
+/* Fade voice v out over `frames`, starting `after` frames into the block. */
+static void au_voice_release_at(au_voice_t *v, uint32_t frames, uint32_t after) {
     if (!v->active) return;
-    if (v->rel_len && v->rel <= frames) return;    /* already ending sooner */
+    if (v->rel_len && v->rel_wait + v->rel <= after + frames) return;    /* already ending sooner */
     v->rel_len = frames ? frames : 1;
     v->rel = v->rel_len;
+    v->rel_wait = after;
 }
+static void au_voice_release(au_voice_t *v, uint32_t frames) { au_voice_release_at(v, frames, 0); }
 
 /* Stop every voice of track t reading `smp` (NULL = all) at once — the sample
  * is about to go. */
@@ -1094,17 +1097,42 @@ static void au_slice_on(seq8_instance_t *inst, int t, int slice, float vgain) {
     if ((uint64_t)s->frames > (uint64_t)s->rate * AU_SLICE_MAX_SEC) return;
     if (!au_slice_range(cl, s, slice, &a, &b)) return;
     const au_slice_t *sl = &cl->sl[slice];
+    double ratio = au_tune(cl->pitch + sl->pitch, cl->detune + sl->detune) * (double)s->rate / 44100.0;
+    float gain = au_db(cl->gain_db + sl->gain_db) * vgain;
+    uint32_t off = inst->au_tick_off;              /* the frame of the block its tick fell on */
+    au_voice_t *v;
+    /* A slice that carries straight on from the one sounding — the next chop
+     * of the sample, reached where that voice has got to, at the same rate,
+     * direction and level, with no envelope of its own — is that voice
+     * playing on: no cut, no fade. So the chops laid on the steps in order
+     * play the sample exactly as the Loop does (Josh, 2026-10-28: a Loop clip
+     * switched to Slice must not change the sound). AU_JOIN covers a slice
+     * starting on its block rather than its frame. */
+    if (sl->play == AU_PLAY_ONE && !sl->attack_ms && !sl->decay_ms) {
+        for (i = 0; i < AU_VOICES; i++) {
+            v = &at->v[i];
+            if (!v->active || v->mode_loop || v->rel_len || v->gated || v->atk || v->dec || v->wait ||
+                v->smp != s || v->gain != gain || v->step != (sl->rev ? -ratio : ratio)) continue;
+            double edge = sl->rev ? (double)b - 1.0 : (double)a, at_off = v->pos + v->step * off;
+            if (at_off - edge > AU_JOIN || edge - at_off > AU_JOIN) continue;
+            if (sl->rev) { if (a < v->lo) v->lo = a; }
+            else if (b > v->hi) v->hi = b;
+            v->slice = (uint8_t)slice;
+            v->loop = 0;
+            return;
+        }
+    }
     /* Always monophonic: the slice sounding now is cut (a short fade, no click). */
     for (i = 0; i < AU_VOICES; i++)
-        if (at->v[i].active && !at->v[i].mode_loop) au_voice_release(&at->v[i], 64);
-    au_voice_t *v = au_voice_alloc(at);
-    double ratio = au_tune(cl->pitch + sl->pitch, cl->detune + sl->detune) * (double)s->rate / 44100.0;
+        if (at->v[i].active && !at->v[i].mode_loop) au_voice_release_at(&at->v[i], 64, off);
+    v = au_voice_alloc(at);
     memset(v, 0, sizeof *v);
+    v->wait = off;
     v->smp = s;
     v->lo = a; v->hi = b;
     v->step = sl->rev ? -ratio : ratio;
     v->pos = sl->rev ? (double)b - 1.0 : (double)a;
-    v->gain = au_db(cl->gain_db + sl->gain_db) * vgain;
+    v->gain = gain;
     v->atk = (uint32_t)sl->attack_ms * 441 / 10;
     v->dec = (uint32_t)sl->decay_ms * 441 / 10;
     v->loop = (sl->play == AU_PLAY_LOOP);
@@ -1120,7 +1148,7 @@ static void au_slice_off(seq8_instance_t *inst, int t, int slice) {
     for (i = 0; i < AU_VOICES; i++) {
         au_voice_t *v = &at->v[i];
         if (v->active && !v->mode_loop && v->gated && v->slice == slice && !v->rel_len)
-            au_voice_release(v, 220);                 /* 5 ms */
+            au_voice_release_at(v, 220, inst->au_tick_off);   /* 5 ms, from its tick's frame */
     }
 }
 
@@ -1216,9 +1244,12 @@ static uint32_t au_voice_render(au_voice_t *v, int32_t *acc, int frames) {
             e *= 1.0f - (float)d / (float)v->dec;
         }
         if (v->rel_len) {
-            if (v->rel == 0) { v->active = 0; return missed; }
-            e *= (float)v->rel / (float)v->rel_len;
-            v->rel--;
+            if (v->rel_wait) v->rel_wait--;
+            else {
+                if (v->rel == 0) { v->active = 0; return missed; }
+                e *= (float)v->rel / (float)v->rel_len;
+                v->rel--;
+            }
         }
         uint32_t i0 = (uint32_t)v->pos;
         float fr = (float)(v->pos - (double)i0);
@@ -1315,7 +1346,7 @@ static int au_slice_default(const au_slice_t *sl) {
 
 static int au_clip_default(const au_clip_t *cl) {
     int l;
-    if (cl->name[0] || cl->mode != AU_MODE_LOOP || cl->even != 8 || cl->nslices != 1 || cl->jump != 16 ||
+    if (cl->name[0] || cl->mode != AU_MODE_LOOP || cl->even != 16 || cl->nslices != 1 || cl->jump != 16 ||
         cl->rstart || cl->rend || cl->pitch || cl->detune || cl->gain_db || cl->revrs || cl->nudge_ms ||
         cl->jmpq || cl->mig_rs || cl->mig_re) return 0;
     for (l = 0; l < AU_MAX_SLICES; l++) if (!au_slice_default(&cl->sl[l])) return 0;
@@ -1363,7 +1394,6 @@ static void au_track_release(seq8_instance_t *inst, int t) {
     int c;
     au_track_kill(inst, t, NULL);
     inst->au_trk[t].last_tick = -1;
-    inst->au_trk[t].pending_jump = -1;
     if (inst->au_lazy_track == t) { inst->au_lazy_track = inst->au_lazy_clip = -1; inst->au_lazy_state = AU_LAZY_NONE; }
     for (c = 0; c < NUM_CLIPS; c++) {
         au_clip_t *cl = &inst->au_clip[t][c];

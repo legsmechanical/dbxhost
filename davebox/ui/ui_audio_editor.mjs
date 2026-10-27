@@ -21,7 +21,9 @@
  * the "click" corners and say click to load sample"). What it is follows the
  * clip:
  *   no sample   CLICK TO LOAD SAMPLE: click opens the chooser
- *   Loop        K1 Start · K2 Zoom · K3 End · K4 Pitch · K5 Gain; the jog a cursor
+ *   Loop        K1 Start · K2 Zoom · K3 End of the loop; its chops marked: the
+ *               jog a cursor, a click adds a chop there, a pad moves the cursor
+ *               to its chop, Delete + pad removes one
  *   Slice       the chop editor: K1 Start · K2 Zoom · K3 End of the slice the
  *               pads pick (it plays); the jog a cursor and a click adds a marker
  *               there; Delete + pad removes one (not slice 1's). An End turned past the next slice's start sticks
@@ -33,7 +35,8 @@
  * "Chop sample" at first level. Chop sample has second level with options."):
  *   Load sample›   the chooser
  *   Chop sample›   Lazy · Manual · Even (2-32, live on the pads as it turns; a
- *                  click makes them the clip's chops) — each makes the clip Slice
+ *                  click makes them the clip's chops) — the Mode stays: the
+ *                  chops serve both
  * LAZY: pad 1 white; its tap plays Start..End; then the next pad is white and
  * its tap drops a marker at the playhead; chopped slices stay lit. It ends on
  * Back or at End and asks "Keep N new chops?" (Yes keeps them, No brings the
@@ -206,17 +209,10 @@ export function auWaveView(ed) {
     }
 }
 
-/* The clip becomes Slice (a chop method picked from Loop). */
-function toSlice(t, c) {
-    const i = auInfo(t, c);
-    if (i.mode === AU_MODE_SLICE) return;
-    auSet(t, c, 'mode', 1);
-    S.auInfo[t][c] = Object.assign({}, i, { mode: 1 });
-    S.pendingPadNoteMapRecompute = true;
-}
-
+/* A chop method leaves the Mode alone: the chops serve both (Josh,
+ * 2026-10-28: one set of chops; Mode "tells the sequencer how to handle the
+ * slices"). */
 function startLazy(ed) {
-    toSlice(ed.t, ed.c);
     ed.mode = 'lazy';
     ed.lazyAt = S.clockMs | 0;
     auLazyStart(ed.t, ed.c);
@@ -233,7 +229,6 @@ function endLazy(ed) {
 
 function startManual(ed) {
     const t = ed.t, c = ed.c;
-    toSlice(t, c);
     auManual(t, c);
     auSetSelSlice(t, 0);
     const i = auInfo(t, c);
@@ -246,7 +241,6 @@ function startManual(ed) {
 
 function setEven(ed, v) {
     const t = ed.t, c = ed.c;
-    toSlice(t, c);
     const i = auInfo(t, c);
     auSet(t, c, 'even', v);
     S.auInfo[t][c] = Object.assign({}, i, { even: v, n: v || i.hand });
@@ -435,9 +429,9 @@ function pickInput(ed, status, d1, d2) {
             if (!p.editEven) {
                 /* the clip as it was, for Back; then the count goes live */
                 const i = auInfo(ed.t, ed.c);
-                p.orig = { even: i.even, mode: i.mode };
+                p.orig = { even: i.even };
                 p.editEven = true;
-                p.even = i.even || 8;
+                p.even = i.even || 16;
                 setEven(ed, p.even);
                 return true;
             }
@@ -458,14 +452,8 @@ function pickInput(ed, status, d1, d2) {
         if (d2 >= 64) { S.backPressTick = nowMs(); S.backHoldFired = false; return true; }
         S.backPressTick = -1; S.backHoldFired = false;
         if (p.editEven) {
-            /* Back while turning: the slicing (and mode) it had before */
-            const o = p.orig, t = ed.t, c = ed.c;
-            setEven(ed, o.even);
-            if (o.mode !== AU_MODE_SLICE) {
-                auSet(t, c, 'mode', o.mode);
-                S.auInfo[t][c] = Object.assign({}, auInfo(t, c), { mode: o.mode });
-                S.pendingPadNoteMapRecompute = true;
-            }
+            /* Back while turning: the slicing it had before */
+            setEven(ed, p.orig.even);
             p.editEven = false;
         }
         else if (p.level === 2) ed.pick = { level: 1, sel: 1 };
@@ -534,7 +522,7 @@ export function audioEditorInput(status, d1, d2) {
                 }
                 return true;
             }
-            if (sub !== 'chop') return false;                 /* Loop: the pads jump, as anywhere */
+            if (sub !== 'chop' && sub !== 'loop') return false;
             const i = auInfo(ed.t, ed.c);
             if (S.deleteHeld) {
                 /* Delete + pad: that slice's start goes (merges into the one
@@ -556,12 +544,14 @@ export function audioEditorInput(status, d1, d2) {
             if (down && k < i.n) {
                 auSetSelSlice(ed.t, k);
                 const m = auMarks(ed.t, ed.c)[k];
-                if (m) { ed.cur = m[0]; centre(ed); }
+                if (m) { ed.cur = m[0]; ed.last = 'jog'; centre(ed); }
                 ed.endHold = 0;
                 S.ledsDirtyAudio = true;
                 S.screenDirty = true;
             }
-            return false;                                    /* the pad still plays its slice */
+            /* Slice: the pad still plays its slice; Loop: the cursor goes to
+             * the chop (the pad itself does nothing in Loop mode) */
+            return false;
         }
         return false;
     }
@@ -622,8 +612,8 @@ export function audioEditorInput(status, d1, d2) {
         if (S.shiftHeld) { ed.pick = { level: 1, sel: 0 }; return true; }
         /* no sample: click loads one */
         if (sub === 'empty') { S.pendingAudioChooser = { t: ed.t, c: ed.c }; return true; }
-        if (sub !== 'chop') return true;
-        /* Slice: a marker at the cursor */
+        if (sub !== 'chop' && sub !== 'loop') return true;
+        /* a chop at the cursor, in either mode */
         const i = auInfo(ed.t, ed.c);
         const mk = auMarks(ed.t, ed.c);
         const f = ed.cur;

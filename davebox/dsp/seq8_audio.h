@@ -4,13 +4,17 @@
  * the track's own chain slot through the host's slot_audio_feed (so the
  * slot's FX, fader, sends and a Dry resample all apply). A note's pitch is a
  * slice: DRUM_BASE_NOTE + slice. Each clip holds its own sample, copied into
- * the project (<state dir>/samples/), and its own Mode:
- *   LOOP  — the clip plays the sample like a loop, restarting with the clip;
- *           the pads are jump points (Jump = 2..32 equal points); steps are
+ * the project (<state dir>/samples/), one set of slices (CHOPS) over its
+ * Start..End, and a Mode that says how the sequencer plays them (Josh,
+ * 2026-10-28: "loop vs slice mode should be a clip bank setting. it basically
+ * tells the sequencer how to handle the slices"):
+ *   LOOP  — the clip plays the sample straight through, restarting with the
+ *           clip; set and forget: steps are ignored and the pads only show
+ *           where it is.
+ *   SLICE — the chops on the steps: one sequence per clip (a step holds at
+ *           most one slice), always monophonic (a new slice cuts the last,
+ *           unless it carries straight on from it: au_slice_on). Velocity is
  *           ignored.
- *   SLICE — up to 32 slices, one sequence per clip (a step holds at most one
- *           slice), always monophonic (a new slice cuts the last). Velocity
- *           is ignored, except a DELAY echo's, which is its volume.
  * Engine: seq8_audio.c. Keys: setparam/sp_track_audio.c. Included in seq8.c's
  * single translation unit before the track struct. */
 #ifndef SEQ8_AUDIO_H
@@ -27,6 +31,7 @@
 #define AU_MODE_LOOP       0
 #define AU_MODE_SLICE      1
 #define AU_GAP             16           /* frames: the least a slice can be */
+#define AU_JOIN            256          /* frames: a slice this near where the sounding one has reached carries it on */
 #define AU_MIP             256          /* frames per waveform summary entry */
 #define AU_CHUNK_SHIFT     13
 #define AU_CHUNK           (1u << AU_CHUNK_SHIFT)   /* frames: a streamed sample's piece (186 ms at 44.1 kHz) */
@@ -88,7 +93,7 @@ typedef struct {
     uint8_t      mode;               /* AU_MODE_* */
     uint8_t      even;               /* 0 = Off (the hand set plays), else 2..32 equal slices of Start..End */
     uint8_t      nslices;            /* the hand set's slices, 1..32 */
-    uint8_t      jump;               /* Loop: 2/4/8/16/32 jump points */
+    uint8_t      jump;               /* retired (jump points): read and written only so the file format stays */
     uint32_t     rstart, rend;       /* Start / End, sample frames; rend 0 = the sample's end */
     uint16_t     mig_rs, mig_re;     /* an older project's Start / End in 1/1000, applied when the sample loads (0/0 = none) */
     int8_t       pitch;              /* -24..+24 st */
@@ -96,7 +101,7 @@ typedef struct {
     int8_t       gain_db;            /* -40..+12 dB */
     uint8_t      revrs;              /* Loop: the sample plays backwards */
     int16_t      nudge_ms;           /* Loop: the sample's start against the bar, -500..+500 ms */
-    uint8_t      jmpq;               /* Loop: a jump waits for the next 0 off / 1 1/16 / 2 1/8 / 3 1/4 */
+    uint8_t      jmpq;               /* retired (jump quantize): as `jump` */
     au_slice_t   sl[AU_MAX_SLICES];
 } au_clip_t;
 
@@ -116,7 +121,8 @@ typedef struct {
     uint32_t age;            /* output frames since it started */
     uint32_t atk, dec;       /* frames; dec 0 = none */
     uint32_t rel, rel_len;   /* release (choke / gate end): frames left of rel_len */
-    uint32_t wait;           /* output frames of silence before it starts (Loop Nudge later) */
+    uint32_t rel_wait;       /* output frames before that release begins (on its tick's frame) */
+    uint32_t wait;           /* output frames of silence before it starts (Loop Nudge later; a slice's tick frame) */
     uint8_t  active, loop, mode_loop, slice;
     uint8_t  gated;          /* GATE / LOOP: ends at note-off */
     uint8_t  starve;         /* streamed: 0..64, its level, down while a chunk is missing (64 at start) */
@@ -125,9 +131,9 @@ typedef struct {
 #define AU_VOICES 2          /* the sounding one + the one being choked */
 
 /* What the streamer must have ready, published by the audio thread each
- * block: a voice's place in a streamed sample, or (slot AU_VOICES) where a
- * waiting JmpQ jump will land. smp NULL = nothing. Read by the streamer
- * field by field: a torn read only fetches the wrong chunk once. */
+ * block: a voice's place in a streamed sample (slot AU_VOICES is spare: it
+ * held a waiting JmpQ jump). smp NULL = nothing. Read by the streamer field
+ * by field: a torn read only fetches the wrong chunk once. */
 typedef struct {
     const void *smp;
     uint32_t    pos, lo, hi;
@@ -149,7 +155,6 @@ typedef struct {
     au_voice_t v[AU_VOICES];
     int32_t    last_tick;    /* Loop: the clip position last block (wrap = restart) */
     uint8_t    loop_clip;    /* Loop: the clip the loop voice belongs to */
-    int8_t     pending_jump; /* Loop, JmpQ on: the jump point waiting for its boundary (-1 none) */
     uint8_t    mgain;        /* mute as a bus: 0..64, the output's level, ramping one step a frame */
 } au_track_t;
 

@@ -871,10 +871,10 @@ export const KNOB_ALTS = {
         1: { 7: ['Rand', 'Algo'] },                                              /* NOTE FX */
         3: { 0: ['Rate', 'ClkFb'], 7: ['Rand', 'Algo'] },                        /* MIDI DLY */
     },
-    /* AUDIO: the CLIP bank's (Slice mode) at the same knobs; no pitch Random. */
+    /* AUDIO: the CLIP bank's (Slice mode) at the same knobs; no pitch Random,
+     * no DELAY. A Loop clip's CLIP bank has none (ui_audio knobAltOnTrack). */
     audio: {
         0: { 0: ['Res', 'Zoom'], 2: ['Shift', 'Nudge'], 6: ['Dir', 'Revrs'] },
-        3: { 0: ['Rate', 'ClkFb'] },
     },
 };
 /* Arp Steps opens from the Steps knob (K5 on SEQ ARP and LIVE ARP) touched +

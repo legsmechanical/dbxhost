@@ -4,15 +4,18 @@
  * should be an instrument rather than type" · "it shouldn't have a track
  * type. just like conductor doesn't"): S.trackPadMode[t] === PAD_MODE_AUDIO,
  * melodic clips whose notes are SLICES (pitch 36 + slice). Each clip has its
- * own sample (copied into the project) and a Mode:
- *   - Loop: the clip plays the sample like a loop; the pads are jump points;
- *     the steps only show where it is (Q7: "just show playback").
- *   - Slice: up to 32 slices; all 32 pads are slices (left 4x4 = 1-16, right
- *     4x4 = 17-32); one sequence per clip, a step holds one slice.
- * The AUDIO editor (ui_audio_editor.mjs) holds the clip's audio settings at
- * the instrument door: "inst" ... "would take you an editor with all the
- * audio settings (mode, slicing, etc) while clip bank would have all the
- * sequence settings". Its pages and knobs live here.
+ * own sample (copied into the project), one set of CHOPS over its Start..End,
+ * and a Mode on the CLIP bank that says how the sequencer plays them (Josh,
+ * 2026-10-28: "it basically tells the sequencer how to handle the slices"):
+ *   - Loop: the sample plays straight through, set and forget; the pads show
+ *     where it is (a progress bar), taps do nothing; the steps only show
+ *     where it is (Q7: "just show playback").
+ *   - Slice: the chops on the steps; one sequence per clip, a step holds one
+ *     slice.
+ * The pads are the chops in time order, 8 a row from the bottom-left, in both
+ * modes (Josh: "8 a row timeline").
+ * The AUDIO editor (ui_audio_editor.mjs) is the clip's SOUND, at the
+ * instrument door; its pages and knobs live here.
  *
  * Slicing: chops are CREATED (Lazy, Manual) and then EDITED in one waveform
  * editor; Even is an override over that hand set, which it keeps (Josh,
@@ -25,13 +28,12 @@
  * No host_* call happens at module init. */
 
 import { S } from './ui_state.mjs';
-import { PAD_MODE_AUDIO, NUM_CLIPS } from './ui_constants.mjs';
+import { PAD_MODE_AUDIO, NUM_CLIPS, BANK_STEP, knobAltFor } from './ui_constants.mjs';
+import { bankListForMode } from './ui_pure.mjs';
 
 export const AU_MODE_LOOP = 0, AU_MODE_SLICE = 1;
 export const AU_LAZY_NONE = 0, AU_LAZY_ARMED = 1, AU_LAZY_RUN = 2, AU_LAZY_ENDED = 3;
 export const AU_PLAY_NAMES = ['One', 'Gate', 'Loop'];
-export const AU_JUMPS = [2, 4, 8, 16, 32];
-export const AU_JMPQ_NAMES = ['Off', '1/16', '1/8', '1/4'];
 export const AU_ERR_TEXT = ['', "Can't read file", 'Not WAV / AIFF', 'Too long', 'Out of memory', "Can't copy"];
 
 export function isAudioTrack(t) {
@@ -85,7 +87,7 @@ export function auParseInfo(raw) {
     };
 }
 
-const DEFAULT_INFO = { state: 0, err: 0, mode: 0, even: 8, hand: 1, n: 8, jump: 16, rstart: 0, rend: 0,
+const DEFAULT_INFO = { state: 0, err: 0, mode: 0, even: 16, hand: 1, n: 16, jump: 16, rstart: 0, rend: 0,
                        pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, revrs: 0, nudge: 0, jmpq: 0, name: '' };
 const DEFAULT_SLICE = { a: 0, b: 0, pinned: 0, pitch: 0, detune: 0, gain: 0, rev: 0, play: 0, atk: 0, dec: 0 };
 
@@ -218,7 +220,7 @@ export function auTick() {
         if (n && n.state !== was) S.screenDirty = true;
     }
     const cur = auInfo(t, c);
-    /* The pads follow the clip's Mode (slices / jump points). */
+    /* The pads follow the clip's Mode (play the chops / show the loop). */
     const pk = t + '_' + c + '_' + cur.mode + '_' + cur.n + '_' + (auLazyOpen() ? 1 : 0);
     if (pk !== _padKey) { _padKey = pk; S.pendingPadNoteMapRecompute = true; S.ledsDirtyAudio = true; }
     if (cur.state === 2 && !auPeaks(t, c) && (S.tickCount % 8) === 0) { auReadPeaks(t, c); S.screenDirty = true; }
@@ -227,6 +229,14 @@ export function auTick() {
         const l = auSelSlice(t);
         if (!auSlice(t, c, l)) { auReadSlice(t, c, l); S.screenDirty = true; }
         if (ed && auPanelPageName(ed) === 'CLIP' && cur.mode === AU_MODE_SLICE && !auAll(t, c)) { auReadAll(t, c); S.screenDirty = true; }
+    }
+    /* A bank the track no longer has — STEP and NOTE FX when the clip turns
+     * Loop, DELAY that left Audio tracks (a project's remembered bank: found
+     * on the device) — goes back to CLIP. */
+    if (bankListForMode(PAD_MODE_AUDIO, t).indexOf(S.activeBank) < 0) {
+        S.activeBank = 0;
+        S.trackActiveBank[t] = 0;
+        S.screenDirty = true;
     }
     /* the chop editor's points, re-read a moment after its last edit */
     if (_marks.at >= 0 && (S.tickCount | 0) >= _marks.at) { auMarkStale(t, c); _marks.at = -1; _marks.key = ''; S.screenDirty = true; }
@@ -318,9 +328,6 @@ function auSetAll(t, c, field, v) {
 }
 
 export function auChop(t, c) { setKey(t, 'chop', c); auMarkStale(t, c); }
-/* A press and its release are two keys: one key written twice before it drains
- * keeps only the second, and a quick tap would never jump. */
-export function auJump(t, k, down) { setKey(t, down ? 'jump' : 'jump_off', k); }
 export function auLazyStart(t, c) { setKey(t, 'lazy', c + ' 1'); _lazy = { state: AU_LAZY_ARMED, n: 0, frame: 0 }; }
 export function auLazyStop(t, c) { setKey(t, 'lazy', c + ' 0'); auMarkStale(t, c); }
 export function auLazyTap(t) { setKey(t, 'lazy_tap', 1); }
@@ -381,7 +388,8 @@ const fmtEven = (v) => (v ? String(v) : 'Off');
 /* The AUDIO editor's pages (Josh, 2026-10-28, from the Layout Map: SLICING
  * "don't need this - it's now on wave"; ALL SLICES "merge with "clip""; SLICE
  * n "only show when sliice mode is active"): Slice mode CLIP · SLICE n, Loop
- * mode CLIP. The sample and its Start / End live on WAVE. */
+ * mode CLIP. The sample and its Start / End live on WAVE; Mode is the CLIP
+ * bank's. */
 export function auPanelPages(t) {
     return auInfo(t, auClipOf(t)).mode === AU_MODE_SLICE ? ['CLIP', 'SLICE'] : ['CLIP'];
 }
@@ -403,14 +411,15 @@ export function auPanelTitle(ed) {
 const dash = (x) => Object.assign({}, x, { text: '--' });
 const BLANK = { kind: 'blank', label: '' };
 
-function loopCells(i) {
-    return [
-        { kind: 'enumsq', label: 'Revrs', name: 'Reverse', text: i.revrs ? 'On' : 'Off', options: ['Off', 'On'], sel: i.revrs },
-        { kind: 'arcbip', label: 'Nudge', name: 'Nudge (start vs the bar)', text: fmtMs(i.nudge), signed: i.nudge / 500 },
-        { kind: 'enumsq', label: 'JmpQ', name: 'Jump Quantize', text: AU_JMPQ_NAMES[i.jmpq] || 'Off',
-          options: AU_JMPQ_NAMES, sel: i.jmpq },
-    ];
+/* Mode: how the sequencer plays the chops — the CLIP bank's K4 in both modes
+ * (Josh, 2026-10-28: "loop vs slice mode should be a clip bank setting"). */
+export function auModeCell(t) {
+    const i = auInfo(t, auClipOf(t));
+    return { kind: 'enumsq', label: 'Mode', name: 'Mode', text: i.mode ? 'Slice' : 'Loop',
+             sq: i.mode ? 'Slce' : 'Loop', options: ['Loop', 'Slice'], sel: i.mode };
 }
+const revrsCell = (i) => ({ kind: 'enumsq', label: 'Revrs', name: 'Reverse', text: i.revrs ? 'On' : 'Off', options: ['Off', 'On'], sel: i.revrs });
+const nudgeCell = (i) => ({ kind: 'arcbip', label: 'Nudge', name: 'Nudge (start vs the bar)', text: fmtMs(i.nudge), signed: i.nudge / 500 });
 
 /* The sound fields, as cells (SLICE n: one slice; CLIP in Slice mode: every
  * slice, `--` while they differ). */
@@ -424,38 +433,34 @@ const soundCell = {
                    norm: r.dec ? Math.min(1, r.dec / DEC_MAX) * 0.95 : 1 }),   /* Full: the top */
     play: (r) => ({ kind: 'enumsq', label: 'Play', name: 'Play Mode', text: r.play == null ? '--' : AU_PLAY_NAMES[r.play], options: AU_PLAY_NAMES, sel: r.play | 0 }),
 };
-/* CLIP, Slice mode: knob k -> the ALL SLICES field it sets (null: a clip knob).
+/* CLIP, Slice mode: knob k -> the ALL SLICES field it sets (null: a clip knob):
+ * Pitch · Detune · Gain, then every slice's Revrs · Attk · Decay · Play.
  * >Seq moved to the CLIP bank (Josh, 2026-10-28: "since it's about the
- * sequence, maybe we should put >seq in the clip BANK"). */
-const SLICE_CLIP_ALL = [null, null, null, null, 'rev', 'atk', 'dec', 'play'];
+ * sequence, maybe we should put >seq in the clip BANK"), and Mode with it. */
+const SLICE_CLIP_ALL = [null, null, null, 'rev', 'atk', 'dec', 'play', null];
 
 export function auPanelCells(ed) {
     const t = ed.t, c = auClipOf(t), i = auInfo(t, c);
     const has = i.state === 2;
     const page = auPanelPageName(ed);
-    const live = (x) => (has || x === BLANK || x.label === 'Mode') ? x : dash(x);
-    const mode = { kind: 'enumsq', label: 'Mode', name: 'Mode', text: i.mode ? 'Slice' : 'Loop',
-                   sq: i.mode ? 'Slce' : 'Loop', options: ['Loop', 'Slice'], sel: i.mode };
+    const live = (x) => (has || x === BLANK) ? x : dash(x);
     const pitch = pitchCell('Pitch', i.pitch);
     const detune = detuneCell('Detune', i.detune);
     const gain = { kind: 'arc', label: 'Gain', name: 'Gain', text: fmtDb(i.gain), norm: (i.gain + 40) / 52 };
     if (page === 'CLIP') {
-        if (i.mode !== AU_MODE_SLICE) {
-            const jump = { kind: 'valsq', label: 'Jump', name: 'Jump Points', text: String(i.jump),
-                           ringNorm: Math.max(0, [2, 4, 8, 16, 32].indexOf(i.jump)) / 4 };
-            return [mode, pitch, detune, gain, jump].concat(loopCells(i)).map(live);
-        }
+        if (i.mode !== AU_MODE_SLICE) return [pitch, detune, gain, revrsCell(i), BLANK, BLANK, BLANK, BLANK].map(live);
         /* every slice's sound here (Josh: "merge the "all slices" items to
          * this bank"): `--` while the slices differ, a turn sets them all */
         const a = auAll(t, c);
         const all = {};
         ALL_FIELDS.forEach((f, k) => { all[f] = a ? a[k] : null; });
-        const cells = [mode, pitch, detune, gain];
-        for (let k = 4; k < 8; k++) {
+        const cells = [pitch, detune, gain];
+        for (let k = 3; k < 7; k++) {
             const cell = soundCell[SLICE_CLIP_ALL[k]](all);
             cell.name = 'All Slices: ' + cell.name;
             cells.push(cell);
         }
+        cells.push(BLANK);
         return cells.map(live);
     }
     /* SLICE n */
@@ -474,8 +479,7 @@ export function auPanelRingCells(ed) {
     const page = auPanelPageName(ed);
     const off = page === 'SLICE' && (!has || auSelSlice(ed.t) >= i.n);
     return auPanelCells(ed).map((x) => {
-        if (!x || x.kind === 'blank' || off) return null;
-        if (!has && x.label !== 'Mode') return null;
+        if (!x || x.kind === 'blank' || off || !has) return null;
         return Object.assign({}, x, { ringBound: true });
     });
 }
@@ -486,9 +490,8 @@ export function auPanelRingCells(ed) {
 export function auPanelKnobClass(ed, k) {
     const page = auPanelPageName(ed);
     if (page === 'CLIP') {
-        if (k === 1) return 'pick';
-        return (auInfo(ed.t, auClipOf(ed.t)).mode === AU_MODE_SLICE
-            ? (k === 0 || k === 4 || k === 7) : (k === 0 || k === 4 || k === 5 || k === 7)) ? 'delib' : '';
+        if (k === 0) return 'pick';
+        return (k === 3 || (k === 6 && auInfo(ed.t, auClipOf(ed.t)).mode === AU_MODE_SLICE)) ? 'delib' : '';
     }
     if (k === 0) return 'pick';
     return (k === 3 || k === 6) ? 'delib' : '';
@@ -519,27 +522,26 @@ function stepSliceField(f, v, steps) {
     return v;
 }
 
-/* Loop knobs (the SLICING page in Loop mode, the CLIP bank in Loop mode):
- * 0 Revrs, 1 Nudge, 2 JmpQ. */
-export function auLoopKnob(t, k, steps) {
+/* The CLIP bank's own Audio knobs: Mode (K4, both modes) and, in Loop mode,
+ * Nudge (K3). Returns true when something changed. */
+export function auClipBankKnob(t, k, steps) {
     const c = auClipOf(t), i = auInfo(t, c);
-    if (i.state !== 2) return false;
-    const dir = steps > 0 ? 1 : -1;
     const loc = Object.assign({}, i);
-    if (k === 0) {
-        const v = dir > 0 ? 1 : 0;
-        if (v === i.revrs) return false;
-        loc.revrs = v; auSet(t, c, 'revrs', v);
-    } else if (k === 1) {
+    if (k === 3) {
+        const m = Math.max(0, Math.min(1, i.mode + (steps > 0 ? 1 : -1)));
+        if (m === i.mode) return false;
+        loc.mode = m; auSet(t, c, 'mode', m);
+        if (S.auPanel) S.auPanel.page = 0;
+        S.pendingPadNoteMapRecompute = true;
+        S.ledsDirtyAudio = true;
+    } else if (k === 2 && i.mode !== AU_MODE_SLICE) {
+        if (i.state !== 2) return false;
         const v = Math.max(-500, Math.min(500, i.nudge + steps * (S.shiftHeld ? 1 : 5)));
         if (v === i.nudge) return false;
         loc.nudge = v; auSet(t, c, 'nudge', v);
-    } else if (k === 2) {
-        const v = Math.max(0, Math.min(3, i.jmpq + dir));
-        if (v === i.jmpq) return false;
-        loc.jmpq = v; auSet(t, c, 'jmpq', v);
     } else return false;
     S.auInfo[t][c] = loc;
+    S.auStartsRev = (S.auStartsRev | 0) + 1;
     return true;
 }
 
@@ -572,29 +574,25 @@ export function auPanelKnob(ed, k, steps) {
     const page = auPanelPageName(ed);
     const loc = Object.assign({}, i);
     if (page === 'CLIP') {
-        if (k === 0) {
-            const m = Math.max(0, Math.min(1, i.mode + dir));
-            if (m === i.mode) return false;
-            loc.mode = m; auSet(t, c, 'mode', m);
-            ed.page = 0;
-        } else if (i.state !== 2) {
+        if (i.state !== 2) {
             return false;
-        } else if (k === 1) {
+        } else if (k === 0) {
             const v = Math.max(-24, Math.min(24, i.pitch + dir));
             if (v === i.pitch) return false;
             loc.pitch = v; auSet(t, c, 'pitch', v);
-        } else if (k === 2) {
+        } else if (k === 1) {
             const v = Math.max(-50, Math.min(50, (i.detune | 0) + steps));
             if (v === (i.detune | 0)) return false;
             loc.detune = v; auSet(t, c, 'detune', v);
-        } else if (k === 3) {
+        } else if (k === 2) {
             const v = Math.max(-40, Math.min(12, i.gain + dir));
             if (v === i.gain) return false;
             loc.gain = v; auSet(t, c, 'gain', v);
         } else if (i.mode !== AU_MODE_SLICE) {
-            if (k === 4) return auJumpKnob(t, c, i, loc, dir);
-            if (k >= 5 && k <= 7) return auLoopKnob(t, k - 5, steps);
-            return false;
+            if (k !== 3) return false;
+            const v = dir > 0 ? 1 : 0;
+            if (v === i.revrs) return false;
+            loc.revrs = v; auSet(t, c, 'revrs', v);
         } else {
             const f = SLICE_CLIP_ALL[k];
             if (!f) return false;
@@ -630,52 +628,37 @@ export function auPanelKnob(ed, k, steps) {
     return true;
 }
 
-/* Jump points (Loop mode). */
-function auJumpKnob(t, c, i, loc, dir) {
-    const j = Math.max(0, Math.min(AU_JUMPS.length - 1, AU_JUMPS.indexOf(i.jump) + dir));
-    if (AU_JUMPS[j] === i.jump) return false;
-    loc.jump = AU_JUMPS[j]; auSet(t, c, 'jump', loc.jump);
-    S.auInfo[t][c] = loc;
-    return true;
+/* A knob's click alternate on track t's bank (ui_constants' table), but none
+ * on a Loop clip's CLIP bank: its knobs are Nudge and Mode, not the melodic
+ * clip's Res / Shift / Dir. */
+export function knobAltOnTrack(t, padMode, bank, k) {
+    if (bank === 0 && isAudioTrack(t) && auInfo(t, auClipOf(t)).mode !== AU_MODE_SLICE) return null;
+    return knobAltFor(padMode, bank, k);
 }
 
-/* ---- the CLIP bank in Loop mode (Josh, 2026-10-27: "i can see clip mode
- * being empty in loop mode unless we want to add reverse or stuff like that
- * (which might be cool)" -> Revrs · Nudge · JmpQ). ---- */
+/* ---- the CLIP bank in Loop mode: K3 Nudge, where Slice has Shift and its
+ * Nudge alternate; K4 Mode (K1 is kept for Fit). ---- */
 export function auLoopBankCells(t) {
     const i = auInfo(t, auClipOf(t));
-    const cells = loopCells(i).concat([BLANK, BLANK, BLANK, BLANK, BLANK]);
-    return i.state === 2 ? cells : cells.map((x) => (x === BLANK ? x : dash(x)));
+    const nudge = i.state === 2 ? nudgeCell(i) : dash(nudgeCell(i));
+    return [BLANK, BLANK, nudge, auModeCell(t), BLANK, BLANK, BLANK, BLANK];
 }
 
 /* ---- pads ---- */
 
-/* Slice mode: left 4x4 = slices 1-16, right 4x4 = 17-32 (row by row from the
- * bottom within each half). */
-export function auPadToSlice(padIdx) {
-    const col = padIdx % 8, row = Math.floor(padIdx / 8);
-    return col < 4 ? row * 4 + col : 16 + row * 4 + (col - 4);
-}
-/* Loop mode: jump point k under a pad — row by row from the bottom-left, 8
- * per row; -1 past the clip's Jump count. */
-export function auPadToJump(t, padIdx) {
-    const i = auInfo(t, auClipOf(t));
-    if (i.mode !== AU_MODE_LOOP) return -1;
-    return padIdx < i.jump ? padIdx : -1;
-}
-/* The pad of slice k (auPadToSlice's inverse). */
-export function auSliceToPad(k) {
-    return k < 16 ? Math.floor(k / 4) * 8 + (k % 4) : Math.floor((k - 16) / 4) * 8 + 4 + ((k - 16) % 4);
-}
-/* The jump point the playhead is in (Loop mode), or -1. */
-export function auPlayheadJump(t) {
-    const i = auInfo(t, auClipOf(t));
+/* The chop under a pad, both modes: the timeline, row by row from the
+ * bottom-left, 8 a row (Josh, 2026-10-28: "8 a row timeline"). */
+export function auPadToSlice(padIdx) { return padIdx; }
+/* The pad of chop k (auPadToSlice's inverse). */
+export function auSliceToPad(k) { return k; }
+/* The chop the Loop's playhead is in, or -1 (not sounding, not Loop).
+ * Tick context: it may read the marks. */
+export function auPlayheadChop(t) {
+    const c = auClipOf(t), i = auInfo(t, c);
     if (_pos.t !== t || !_pos.on || i.mode !== AU_MODE_LOOP) return -1;
-    const e = auEnd(i);
-    if (e <= i.rstart) return -1;
-    let rel = (_pos.frame - i.rstart) / (e - i.rstart);
-    if (i.revrs) rel = 1 - rel;
-    return Math.max(0, Math.min(i.jump - 1, Math.floor(rel * i.jump)));
+    const mk = auMarks(t, c);
+    for (let k = 0; k < mk.length; k++) if (_pos.frame >= mk[k][0] && _pos.frame < mk[k][1]) return k;
+    return -1;
 }
 
 /* ---- the waveform ---- */
