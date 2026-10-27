@@ -19,6 +19,8 @@
  *     restore; an older project's permille Start / End arrive in frames;
  *   - Loop: the voice follows the clip from the sample's first frame; Revrs
  *     plays it backwards, Nudge delays it, JmpQ holds a jump to its boundary;
+ *   - detune: cents on top of the semitones, clip + slice, read back, saved;
+ *     a project from before it loads as saved, at 0 cents;
  *   - the project file keeps it all and a reload loads the samples again; a
  *     set from the drum-flag build loads as a drum track. */
 #include "harness.h"
@@ -419,7 +421,7 @@ int main(void) {
     {
         char ab[64];
         hx_get_param(h, "t4_au_all_0", ab, sizeof ab);
-        HX_ASSERT(!strcmp(ab, "0 -6 0 0 0 x"), "ALL SLICES read does not show the common gain and the differing Play");
+        HX_ASSERT(!strcmp(ab, "0 -6 0 0 0 x 0"), "ALL SLICES read does not show the common gain and the differing Play (and detune last)");
     }
     hx_set_param(h, "t4_au_all_play", "0 0");
     hx_set_param(h, "t4_au_all_gain", "0 0");
@@ -698,10 +700,44 @@ int main(void) {
     HX_ASSERT(!inst->au_clip[4][11].name[0] && !inst->au_clip[4][11].smp, "clearing an Audio clip kept its sample");
     HX_ASSERT(inst->au_clip[4][0].smp, "clearing a copy let the original's sample go");
 
+    /* ---- detune: cents on top of the semitones, clip + slice ---- */
+    HX_ASSERT(au_tune(0, 50) > 1.0293022366 && au_tune(0, 50) < 1.0293022367 &&
+              au_tune(1, -100) > 0.9999999 && au_tune(1, -100) < 1.0000001, "au_tune is not 2^(st/12 + ct/1200)");
+    hx_set_param(h, "t4_au_set_detune", "0 -17");
+    hx_set_param(h, "t4_au_slice_detune", "0 1 9");
+    HX_ASSERT(inst->au_clip[4][0].detune == -17 && inst->au_clip[4][0].sl[1].detune == 9, "detune did not set");
+    hx_set_param(h, "t4_au_set_detune", "0 99");
+    HX_ASSERT(inst->au_clip[4][0].detune == 50, "detune is not clamped to 50 cents");
+    hx_set_param(h, "t4_au_set_detune", "0 -17");
+    hx_set_param(h, "t4_launch_clip", "0");
+    hx_render(h, 1);
+    HX_ASSERT(tr->active_clip == 0, "clip A is not the one playing");
+    au_note_event(4, 1, 0x90, 100, 0);
+    {
+        int vi, found = 0;
+        double want = au_tune(inst->au_clip[4][0].pitch + inst->au_clip[4][0].sl[1].pitch, -8) * 48000.0 / 44100.0;
+        for (vi = 0; vi < AU_VOICES; vi++) {
+            const au_voice_t *v = &inst->au_trk[4].v[vi];
+            if (v->active && !v->rel_len && v->slice == 1) {
+                double st = v->step < 0 ? -v->step : v->step;
+                found = st > want - 1e-9 && st < want + 1e-9;
+            }
+        }
+        HX_ASSERT(found, "a slice does not play at the clip's detune plus its own");
+    }
+    hx_render(h, 2);
+    {
+        char b[256];
+        hx_get_param(h, "t4_au_sl_0_1", b, sizeof b);
+        HX_ASSERT(strlen(b) > 2 && !strcmp(b + strlen(b) - 2, " 9"), "sl_C_L does not end with the slice's detune");
+        hx_get_param(h, "t4_au_info_0", b, sizeof b);
+        HX_ASSERT(strstr(b, " -17|"), "info_C does not carry the clip's detune before the name");
+    }
+
     /* ---- the project file keeps it ---- */
     n = hx_get_param(h, "state_full", blob, (int)sizeof blob);
     HX_ASSERT(n > 0 && (size_t)n < sizeof blob - 1, "state_full failed");
-    HX_ASSERT(strstr(blob, "\"t4_pm\":3") && strstr(blob, "\"t4c0_au2\":\"1 8 1 16 0 0 0 0 0 0 0|mono48.wav\""),
+    HX_ASSERT(strstr(blob, "\"t4_pm\":3") && strstr(blob, "\"t4c0_au2\":\"1 8 1 16 0 0 0 0 0 0 0 -17|mono48.wav\""),
               "the state does not carry the Audio track and clip A");
     HX_ASSERT(!strstr(blob, "\"t4_au\""), "the state still writes the old Audio flag");
     HX_ASSERT(strstr(blob, "\"t4c0s1_au2\":\""), "the state does not carry slice 2's settings");
@@ -717,6 +753,7 @@ int main(void) {
     HX_ASSERT(inst->tracks[4].pad_mode == PAD_MODE_AUDIO, "the reload lost the Audio track");
     HX_ASSERT(inst->au_clip[4][0].mode == AU_MODE_SLICE && inst->au_clip[4][0].sl[1].gain_db == -6 &&
               inst->au_clip[4][0].sl[1].play == AU_PLAY_GATE, "the reload lost clip A's settings");
+    HX_ASSERT(inst->au_clip[4][0].detune == -17 && inst->au_clip[4][0].sl[1].detune == 9, "the reload lost the detunes");
     HX_ASSERT(wait_loaded(h, 4, 0) == 2 && wait_loaded(h, 4, 2) == 2, "the reload did not load the samples");
     HX_ASSERT(inst->au_clip[4][0].smp && inst->au_clip[4][0].smp->frames == 48000, "clip A's sample is not the saved one");
 
@@ -755,6 +792,24 @@ int main(void) {
         HX_ASSERT(inst->au_clip[4][0].rstart == 12000 && inst->au_clip[4][0].rend == 36000 &&
                   inst->au_clip[4][0].even == 0 && inst->au_clip[4][0].nslices == 2 &&
                   inst->au_clip[4][0].sl[1].start == 30000, "an old project's clip did not come over in frames");
+        hx_destroy(h);
+    }
+
+    /* ---- a project saved before detune: its fields as they were, 0 cents ---- */
+    {
+        FILE *wf;
+        h = hx_create(NULL); inst = (seq8_instance_t *)h->inst;
+        snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
+        wf = fopen(inst->state_path, "w");
+        fprintf(wf, "{\"v\":36,\"t4_pm\":3,\"t4c0_au2\":\"0 0 1 8 0 0 3 -2 1 40 2|mono48.wav\","
+                    "\"t4c0s1_au2\":\"0 0 5 -4 1 2 10 20\"}");
+        fclose(wf);
+        seq8_load_state(inst);
+        HX_ASSERT(inst->au_clip[4][0].pitch == 3 && inst->au_clip[4][0].gain_db == -2 && inst->au_clip[4][0].revrs == 1 &&
+                  inst->au_clip[4][0].nudge_ms == 40 && inst->au_clip[4][0].jmpq == 2 && inst->au_clip[4][0].detune == 0 &&
+                  !strcmp(inst->au_clip[4][0].name, "mono48.wav"), "a pre-detune clip did not load as saved");
+        HX_ASSERT(inst->au_clip[4][0].sl[1].pitch == 5 && inst->au_clip[4][0].sl[1].decay_ms == 20 &&
+                  inst->au_clip[4][0].sl[1].detune == 0, "a pre-detune slice did not load as saved");
         hx_destroy(h);
     }
 

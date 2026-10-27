@@ -191,7 +191,8 @@ step('⭐⭐ the bank map\'s AUDIO pad opens the AUDIO editor, ON SCREEN: CLIP i
     /* Josh, 2026-10-28: ALL SLICES "merge with "clip""; Start / End "can go
      * since they're on wav"; "change "chop" to ">Seq"" */
     const cells = A.auPanelCells(S.auPanel);
-    assert(cells.map((c) => c.label).join() === 'Mode,Pitch,Gain,Revrs,Attk,Decay,Play,>Seq', 'CLIP (Slice): ' + cells.map((c) => c.label));
+    /* Josh, 2026-10-28: "we also need a detune knob" · ">seq in the clip BANK" */
+    assert(cells.map((c) => c.label).join() === 'Mode,Pitch,Detune,Gain,Revrs,Attk,Decay,Play', 'CLIP (Slice): ' + cells.map((c) => c.label));
 });
 
 step('⭐ Pitch reads as a number and steps a semitone per detent run (Josh: "doesn\'t read out any values and is very touchy")', () => {
@@ -228,19 +229,24 @@ step('⭐ the jog turns its pages: CLIP, SLICE n (no SLICING, no ALL SLICES)', (
     assert(S.auPanel.page === 0, 'back to CLIP');
 });
 
-step('⭐⭐ CLIP knobs: Pitch / Gain for the clip, Revrs..Play for every slice (`--` where they differ), >Seq', () => {
+step('⭐⭐ CLIP knobs: Pitch / Detune / Gain for the clip, Revrs..Play for every slice (`--` where they differ)', () => {
     GET['t4_au_all_0'] = '0 0 0 x 0 0';                 /* the slices' attacks differ */
     A.auMarkStale(4, 0); ticks(2);
-    assert(A.auPanelCells(S.auPanel)[4].text === '--', 'Attk: ' + A.auPanelCells(S.auPanel)[4].text);
+    assert(A.auPanelCells(S.auPanel)[5].text === '--', 'Attk: ' + A.auPanelCells(S.auPanel)[5].text);
     reset();
     for (let i = 0; i < 10; i++) cc(72, 1);             /* K2 Pitch: one detent run (KNOB_PICK) */
     assert(sent('t4_au_set_pitch').join() === '0 1', 'pitch: ' + JSON.stringify(sent('t4_au_set_pitch')));
-    cc(75, 1);                                          /* K5 Attk: every slice */
+    cc(73, 1); cc(73, 1);                               /* K3 Detune: cents */
+    assert(sent('t4_au_set_detune').join() === '0 1,0 2', 'detune: ' + JSON.stringify(sent('t4_au_set_detune')));
+    assert(A.auPanelCells(S.auPanel)[2].label === 'Detune' && A.auPanelCells(S.auPanel)[2].text === '+2',
+           'the Detune cell: ' + JSON.stringify(A.auPanelCells(S.auPanel)[2]));
+    cc(74, 1);                                          /* K4 Gain */
+    assert(sent('t4_au_set_gain').join() === '0 1', 'gain: ' + JSON.stringify(sent('t4_au_set_gain')));
+    cc(76, 1);                                          /* K6 Attk: every slice */
     assert(sent('t4_au_all_atk').length === 1, 'Attk did not set every slice: ' + JSON.stringify(sentLike(/_au_/)));
     reset();
-    touchClick(7);                                      /* K8 >Seq */
-    assert(sent('t4_au_chop').join() === '0' && S.knobTouched === -1, '>Seq: ' + JSON.stringify(sentLike(/_au_/)));
-    S.actionPopupEndTick = 0;                           /* its popup (wall-clock timed) is not under test */
+    touchClick(7);                                      /* K8 is Play now: a click does nothing */
+    assert(!sent('t4_au_chop').length, 'K8 + click still sequences from the AUDIO editor');
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_all_0'] = '0 x 0 0 0 0';
     A.auMarkStale(4, 0); ticks(2);
 });
@@ -251,14 +257,29 @@ step('⭐⭐ SLICE n edits the last pad tapped', () => {
     jog(1);
     ticks(2);
     assert(A.auPanelTitle(S.auPanel) === 'SLICE 3/8', A.auPanelTitle(S.auPanel));
-    assert(A.auPanelCells(S.auPanel).map((c) => c.label).join() === 'Pitch,Gain,Revrs,Attk,Decay,Play,,', 'SLICE: sound only');
-    assert(A.auPanelCells(S.auPanel)[1].text === '-3 dB', 'slice 3 gain: ' + A.auPanelCells(S.auPanel)[1].text);
+    assert(A.auPanelCells(S.auPanel).map((c) => c.label).join() === 'Pitch,Detune,Gain,Revrs,Attk,Decay,Play,', 'SLICE: sound only');
+    assert(A.auPanelCells(S.auPanel)[2].text === '-3 dB', 'slice 3 gain: ' + A.auPanelCells(S.auPanel)[2].text);
     reset();
-    for (let i = 0; i < 3; i++) cc(72, 1);             /* K2 Gain */
+    for (let i = 0; i < 3; i++) cc(73, 1);             /* K3 Gain */
     assert(sent('t4_au_slice_gain').some((v) => /^0 2 -2$/.test(v)), 'slice gain: ' + JSON.stringify(sent('t4_au_slice_gain')));
+    cc(72, 127);                                        /* K2 Detune */
+    assert(sent('t4_au_slice_detune').join() === '0 2 -1', 'slice detune: ' + JSON.stringify(sent('t4_au_slice_detune')));
     jog(-1);
     back();
     assert(!S.auPanel, 'Back did not close the AUDIO editor');
+});
+
+step('⭐⭐ >Seq is on the CLIP bank in Slice mode: touch K8 + click (Josh: ">seq in the clip BANK")', () => {
+    S.activeBank = 0; S.bankCardLatched = false;
+    assert(!S.auPanel, 'the AUDIO editor is still open');
+    note(7, 127); ticks(1); shown();                    /* the touch brings the bank card up */
+    const kc = globalThis.__kc();
+    assert(kc.cells[7] && kc.cells[7].label === '>Seq', 'CLIP bank K8: ' + JSON.stringify(kc.cells.map((c) => c && c.label)));
+    reset();
+    click(); note(7, 0);
+    assert(sent('t4_au_chop').join() === '0' && S.knobTouched === -1, '>Seq: ' + JSON.stringify(sentLike(/_au_/)));
+    S.actionPopupEndTick = 0;                           /* its popup (wall-clock timed) is not under test */
+    ticks(2);
 });
 
 step('⭐⭐ the map\'s WAVE pad opens WAVE (Slice: the chop editor); a clip on Even is edited like any other (Josh)', () => {
@@ -344,20 +365,33 @@ step('⭐⭐ scrolling a zoomed waveform never stretches the overview (Josh: "th
     delete GET['t4_au_wave_0_' + A0 + '_' + B0];
 });
 
-step('⭐⭐ the map opens from WAVE and the AUDIO editor (hold the jog); a pick leaves them for that bank (Josh)', () => {
+step('⭐⭐ the map opens from WAVE (hold the jog) and the AUDIO editor (at once: no click of its own); a pick leaves them for that bank (Josh)', () => {
     for (const [col, row, name] of [[2, 2, 'WAVE'], [2, 3, 'AUDIO']]) {
         mapPad(col, row);
         assert(S.auPanel, name + ' did not open');
         S.activeBank = 1;                                /* somewhere else, so the pick is visible */
         cc(3, 127);                                      /* hold the jog */
-        assert(S.jogDeferred && !S.bankMapUp, 'the press over ' + name + ' was not held back');
-        S.jogPressMs = S.clockMs - C.JOG_HOLD_MAP_MS - 50;   /* ...held past the threshold (this rig's clock) */
-        ticks(2);
+        if (name === 'WAVE') {
+            assert(S.jogDeferred && !S.bankMapUp, 'the press over ' + name + ' was not held back');
+            S.jogPressMs = S.clockMs - C.JOG_HOLD_MAP_MS - 50;   /* ...held past the threshold (this rig's clock) */
+            ticks(2);
+        } else {
+            /* Josh, 2026-10-28: "there's a delay when entering pad map from
+             * "audio" editor, but it's not necessary" */
+            assert(!S.jogDeferred && S.bankMapUp, 'the press over the AUDIO editor did not show the map at once');
+        }
         assert(S.bankMapUp, 'holding the jog over ' + name + ' did not bring up the map');
         note(P.bankMapPadForCell(2, 1), 100); note(P.bankMapPadForCell(2, 1), 0);   /* CLIP */
         cc(3, 0); ticks(3);
         assert(!S.auPanel && !S.auEditor && S.activeBank === 0, 'the pick did not leave ' + name + ' for CLIP: bank ' + S.activeBank);
     }
+    /* the AUDIO editor: the map let go with no pick puts the editor back */
+    mapPad(2, 3);
+    cc(3, 127); ticks(1);
+    assert(S.bankMapUp, 'no map over the AUDIO editor');
+    cc(3, 0); ticks(2);
+    assert(!S.bankMapUp && S.auPanel && !S.auEditor && !S.bankMapFromScreen, 'letting go with no pick did not put the AUDIO editor back');
+    back();
     /* ...and a short click is still the screen's: WAVE (Slice) adds a marker */
     GET['t4_au_info_0'] = INFO(1, 8, 0); A.auMarkStale(4, 0); ticks(2);
     mapPad(2, 2);

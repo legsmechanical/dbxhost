@@ -93,6 +93,17 @@ static double au_semi(int n) {
     while (n--) r *= b;
     return r;
 }
+/* 2^(cents/1200) for |cents| <= 100, without libm: e^x to x^5 (x <= 0.07,
+ * an error below 1e-9). */
+static double au_cents(int cents) {
+    double x = (double)cents * 0.00057762265046662105, r = 1.0, term = 1.0;   /* ln 2 / 1200 */
+    int k;
+    for (k = 1; k <= 5; k++) { term *= x / k; r += term; }
+    return r;
+}
+/* A clip's (or slice's) playback ratio from semitones and cents. */
+static double au_tune(int semis, int cents) { return au_semi(semis) * au_cents(cents); }
+
 static float au_db(int db) {
     double r = 1.0, b = db >= 0 ? 1.1220184543019633 : 0.8912509381337456;
     if (db < 0) db = -db;
@@ -1087,7 +1098,7 @@ static void au_slice_on(seq8_instance_t *inst, int t, int slice, float vgain) {
     for (i = 0; i < AU_VOICES; i++)
         if (at->v[i].active && !at->v[i].mode_loop) au_voice_release(&at->v[i], 64);
     au_voice_t *v = au_voice_alloc(at);
-    double ratio = au_semi(cl->pitch + sl->pitch) * (double)s->rate / 44100.0;
+    double ratio = au_tune(cl->pitch + sl->pitch, cl->detune + sl->detune) * (double)s->rate / 44100.0;
     memset(v, 0, sizeof *v);
     v->smp = s;
     v->lo = a; v->hi = b;
@@ -1158,7 +1169,7 @@ static void au_loop_start(seq8_instance_t *inst, int t, int c, double off) {
     memset(v, 0, sizeof *v);
     v->smp = s;
     v->lo = rs; v->hi = re;
-    v->step = au_semi(cl->pitch) * (double)s->rate / 44100.0;
+    v->step = au_tune(cl->pitch, cl->detune) * (double)s->rate / 44100.0;
     if (off < 0) {                                 /* Nudge later: silence first */
         v->wait = (uint32_t)(-off / v->step + 0.5);
         off = 0;
@@ -1287,10 +1298,11 @@ static void au_lazy_finish(seq8_instance_t *inst) {
 /* ---------------- state (SPI thread: state_load / the save serializer) ----------------
  *
  * Sparse: a clip with a sample or non-default settings `t%dc%d_au2` = "mode
- * even nslices jump rstart rend pitch gain revrs nudge jmpq|name" (frames; the
- * track is Audio by its `t%d_pm`);
+ * even nslices jump rstart rend pitch gain revrs nudge jmpq detune|name"
+ * (frames; the track is Audio by its `t%d_pm`);
  * a slice that differs from the default `t%dc%ds%d_au2` = "start end pitch
- * gain rev play attack decay". The name is the file inside samples/,
+ * gain rev play attack decay detune". Detune came last, so a project from
+ * before it reads 0 cents. The name is the file inside samples/,
  * JSON-escaped.
  * An older project's `t%dc%d_au` ("mode method nslices jump rstart rend ..."
  * with Start / End in 1/1000) is read once: its Start / End wait for the
@@ -1298,13 +1310,13 @@ static void au_lazy_finish(seq8_instance_t *inst) {
 
 static int au_slice_default(const au_slice_t *sl) {
     return !sl->start && !sl->end && !sl->pitch && !sl->gain_db &&
-           !sl->rev && !sl->play && !sl->attack_ms && !sl->decay_ms;
+           !sl->rev && !sl->play && !sl->attack_ms && !sl->decay_ms && !sl->detune;
 }
 
 static int au_clip_default(const au_clip_t *cl) {
     int l;
     if (cl->name[0] || cl->mode != AU_MODE_LOOP || cl->even != 8 || cl->nslices != 1 || cl->jump != 16 ||
-        cl->rstart || cl->rend || cl->pitch || cl->gain_db || cl->revrs || cl->nudge_ms ||
+        cl->rstart || cl->rend || cl->pitch || cl->detune || cl->gain_db || cl->revrs || cl->nudge_ms ||
         cl->jmpq || cl->mig_rs || cl->mig_re) return 0;
     for (l = 0; l < AU_MAX_SLICES; l++) if (!au_slice_default(&cl->sl[l])) return 0;
     return 1;
@@ -1326,9 +1338,9 @@ static void au_save_state(void *vinst, FILE *fp) {
                         cl->even ? 0 : 1, cl->even ? cl->even : cl->nslices, cl->jump, cl->mig_rs,
                         cl->mig_re, cl->pitch, cl->gain_db, cl->revrs, cl->nudge_ms, cl->jmpq);
             } else
-            fprintf(fp, ",\"t%dc%d_au2\":\"%d %d %d %d %u %u %d %d %d %d %d|", t, c, cl->mode, cl->even,
+            fprintf(fp, ",\"t%dc%d_au2\":\"%d %d %d %d %u %u %d %d %d %d %d %d|", t, c, cl->mode, cl->even,
                     cl->nslices, cl->jump, (unsigned)rs, (unsigned)re, cl->pitch, cl->gain_db,
-                    cl->revrs, cl->nudge_ms, cl->jmpq);
+                    cl->revrs, cl->nudge_ms, cl->jmpq, cl->detune);
             for (q = cl->name; *q; q++) {
                 if (*q == '"' || *q == '\\') fputc('\\', fp);
                 if ((unsigned char)*q >= 0x20) fputc(*q, fp);
@@ -1337,9 +1349,9 @@ static void au_save_state(void *vinst, FILE *fp) {
             for (l = 0; l < AU_MAX_SLICES; l++) {
                 const au_slice_t *sl = &cl->sl[l];
                 if (au_slice_default(sl)) continue;
-                fprintf(fp, ",\"t%dc%ds%d_au2\":\"%u %u %d %d %d %d %d %d\"", t, c, l,
+                fprintf(fp, ",\"t%dc%ds%d_au2\":\"%u %u %d %d %d %d %d %d %d\"", t, c, l,
                         (unsigned)sl->start, (unsigned)sl->end, sl->pitch, sl->gain_db,
-                        sl->rev, sl->play, sl->attack_ms, sl->decay_ms);
+                        sl->rev, sl->play, sl->attack_ms, sl->decay_ms, sl->detune);
             }
         }
     }
@@ -1410,7 +1422,7 @@ static void au_load_state(void *vinst, const char *buf) {
         for (c = 0; c < NUM_CLIPS; c++) {
             au_clip_t *cl = &inst->au_clip[t][c];
             const char *p;
-            long v[11] = { 0, 8, 1, 16, 0, 0, 0, 0, 0, 0, 0 };
+            long v[12] = { 0, 8, 1, 16, 0, 0, 0, 0, 0, 0, 0, 0 };
             int old = 0;
             snprintf(key, sizeof key, "t%dc%d_au2", t, c);
             if (!json_str_value(buf, key, &p)) {
@@ -1419,7 +1431,7 @@ static void au_load_state(void *vinst, const char *buf) {
                 old = 1;
                 v[1] = 0; v[2] = 8; v[5] = 1000;
             }
-            au_read_nums(&p, v, 11);
+            au_read_nums(&p, v, old ? 11 : 12);
             cl->mode = (uint8_t)clamp_i((int)v[0], 0, 1);
             if (old) {
                 /* method nslices -> Even (method 0) or a hand set of the same
@@ -1442,6 +1454,7 @@ static void au_load_state(void *vinst, const char *buf) {
             cl->revrs = (uint8_t)(v[8] ? 1 : 0);
             cl->nudge_ms = (int16_t)clamp_i((int)v[9], -500, 500);
             cl->jmpq = (uint8_t)clamp_i((int)v[10], 0, 3);
+            cl->detune = (int8_t)clamp_i((int)v[11], -50, 50);
             if (*p == '|') {
                 size_t n = 0;
                 for (p++; *p && *p != '"' && n + 1 < sizeof cl->name; p++) {
@@ -1452,10 +1465,10 @@ static void au_load_state(void *vinst, const char *buf) {
             }
             for (l = 0; l < AU_MAX_SLICES; l++) {
                 au_slice_t *sl = &cl->sl[l];
-                long w[9] = { 0 };
+                long w[10] = { 0 };
                 snprintf(key, sizeof key, old ? "t%dc%ds%d_au" : "t%dc%ds%d_au2", t, c, l);
                 if (!json_str_value(buf, key, &p)) continue;
-                au_read_nums(&p, w, old ? 1 : 8);
+                au_read_nums(&p, w, old ? 1 : 9);
                 sl->start = (uint32_t)(w[0] < 0 ? 0 : w[0]);
                 if (old) continue;                 /* the old fields do not carry over */
                 sl->end = (uint32_t)(w[1] < 0 ? 0 : w[1]);
@@ -1465,6 +1478,7 @@ static void au_load_state(void *vinst, const char *buf) {
                 sl->play = (uint8_t)clamp_i((int)w[5], 0, 2);
                 sl->attack_ms = (uint16_t)clamp_i((int)w[6], 0, 2000);
                 sl->decay_ms = (uint16_t)clamp_i((int)w[7], 0, 5000);
+                sl->detune = (int8_t)clamp_i((int)w[8], -50, 50);
             }
             /* hand-set starts must rise; a bad file keeps what rises */
             for (l = 1; l < cl->nslices; l++)

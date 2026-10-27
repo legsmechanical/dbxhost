@@ -177,7 +177,7 @@ function drawAudioPanel() {
      * track tag (found on the device: "ALL SLICES 4/4" was cut). */
     const name = auPanelTitle(ed);
     const title = name === 'CLIP' ? 'CLIP ' + String.fromCharCode(65 + auClipOf(t)) : name;
-    drawKitPage(title, auPanelCells(ed), false, [['jog', 'page'], ['tch+clk', 'open']]);
+    drawKitPage(title, auPanelCells(ed), false, [['jog', 'page']]);
 }
 
 /* The WAVE editor (ui_audio_editor): the clip's sample — CLICK TO LOAD
@@ -250,7 +250,7 @@ function drawAudioWaveEditor() {
 
 /* An Audio track's banks (Josh, 2026-10-27): the CLIP bank mirrors ALL LANES
  * in Slice mode — Res · Strch · Shift/Nudge · Quant · Crop · InQnt ·
- * Dir/Revrs · (free) — over the melodic clip's own data, and holds Revrs ·
+ * Dir/Revrs · >Seq — over the melodic clip's own data, and holds Revrs ·
  * Nudge · JmpQ in Loop mode; NOTE FX and DELAY lose what moves a pitch (a
  * pitch is a slice): their drum form. `cells` are the melodic bank's. */
 function audioBankCells(bank, cells) {
@@ -260,7 +260,9 @@ function audioBankCells(bank, cells) {
     if (bank === 0) {
         if (!audioSliceMode(t)) return auLoopBankCells(t);
         const q = kitCellForKnob(BANKS[1].knobs[3], S.bankParams[t][1][3]);
-        return [cells[0], cells[1], cells[2], q, cells[5], cells[4], cells[6], B];
+        const seq = { kind: 'action', oneWay: true, label: '>Seq', name: 'Slices to Sequence', text: '->', opens: true,
+                      btnPhase: triggerPhase('seq', S.knobTouched === 7) };
+        return [cells[0], cells[1], cells[2], q, cells[5], cells[4], cells[6], seq];
     }
     if (bank === 1) return cells.map((c, k) => ((k === 0 || k === 1 || k === 7) ? B : c));
     if (bank === 3) return cells.map((c, k) => ((k === 4 || k === 7) ? B : c));

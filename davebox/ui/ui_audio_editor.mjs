@@ -85,14 +85,14 @@ export function closeAudioPanel() {
 /* A › cell under the touched knob, fired by the jog click: >Seq, the clip's
  * slices to its steps (Josh: "change "chop" to ">Seq" ("Slices to
  * sequence")"). */
-function panelAction(ed, k) {
-    const t = ed.t, c = auClipOf(t), i = auInfo(t, c);
-    if (auPanelPageName(ed) === 'CLIP' && k === 7 && i.mode === AU_MODE_SLICE && i.state === 2) {
-        auChop(t, c);
-        showActionPopup('SEQUENCED', i.n + ' slices to steps');
-        return true;
-    }
-    return false;
+/* >Seq: track t's clip's slices onto its steps, one per step (the CLIP
+ * bank's K8 in Slice mode, touch + click). Returns true when it ran. */
+export function slicesToSequence(t) {
+    const c = auClipOf(t), i = auInfo(t, c);
+    if (i.mode !== AU_MODE_SLICE || i.state !== 2) return false;
+    auChop(t, c);
+    showActionPopup('SEQUENCED', i.n + ' slices to steps');
+    return true;
 }
 
 /* Returns true when the message was the AUDIO editor's. The pads are not:
@@ -137,7 +137,6 @@ export function audioPanelInput(status, d1, d2) {
         return true;
     }
     if (d1 === MoveMainButton) {
-        if (d2 === 127 && S.knobTouched >= 0) panelAction(ed, S.knobTouched);
         S.screenDirty = true;
         return true;
     }

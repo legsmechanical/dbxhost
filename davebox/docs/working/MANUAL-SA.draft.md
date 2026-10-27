@@ -1265,19 +1265,22 @@ there.
 
 **The AUDIO editor** holds the clip's sound. Open it from the bank map's **AUDIO**
 pad, or by clicking **Audio** in the track's sound menu. Turn the jog for its pages;
-touch a knob and click the jog for a **›** control. **Back** leaves.
+**Back** leaves. Holding the jog brings up the bank map at once.
+
+**Pitch** moves in semitones (±24) and **Detune** in cents (±50); a slice's own
+Pitch and Detune add to the clip's.
 
 | Page | Knobs |
 |---|---|
-| **CLIP**, Slice mode | **Mode** Loop / Slice · **Pitch** / **Gain** for the whole clip · **Revrs** · **Attk** · **Decay** · **Play** for every slice at once (`--` while the slices differ; turning one sets them all) · **>Seq›** one step per slice, in order, so the clip plays the sample back as it was — now as slices you can rearrange |
-| **CLIP**, Loop mode | **Mode** · **Pitch** · **Gain** · **Jump** (2–32 jump points) · **Revrs** · **Nudge** · **JmpQ** (as on the clip bank) |
-| **SLICE n** (Slice mode) | The last pad you tapped: **Pitch**, **Gain**, **Revrs**, **Attk**, **Decay**, and **Play** — **One** (to the slice's end), **Gate** (as long as the step), **Loop** (loops the slice for the step). Kept if the clip goes back to Loop |
+| **CLIP**, Slice mode | **Mode** Loop / Slice · **Pitch** · **Detune** · **Gain** for the whole clip · **Revrs** · **Attk** · **Decay** · **Play** for every slice at once (`--` while the slices differ; turning one sets them all) |
+| **CLIP**, Loop mode | **Mode** · **Pitch** · **Detune** · **Gain** · **Jump** (2–32 jump points) · **Revrs** · **Nudge** · **JmpQ** (as on the clip bank) |
+| **SLICE n** (Slice mode) | The last pad you tapped: **Pitch**, **Detune**, **Gain**, **Revrs**, **Attk**, **Decay**, and **Play** — **One** (to the slice's end), **Gate** (as long as the step), **Loop** (loops the slice for the step). Kept if the clip goes back to Loop |
 
 **The banks** hold the sequence:
 
 | Bank | Knobs |
 |---|---|
-| **CLIP**, Slice mode | As ALL LANES on a drum track: **Res** · **Strch** · **Shift** (alt **Nudge**) · **Quant** · **Crop›** · **InQnt** · **Dir** (alt **Revrs**) |
+| **CLIP**, Slice mode | As ALL LANES on a drum track: **Res** · **Strch** · **Shift** (alt **Nudge**) · **Quant** · **Crop›** · **InQnt** · **Dir** (alt **Revrs**) · **>Seq›** (touch K8, click) lays one step per slice, in order, so the clip plays the sample back as it was — now as slices you can rearrange |
 | **CLIP**, Loop mode | **Revrs** plays the sample backwards · **Nudge** moves it against the bar (ms) · **JmpQ** makes a jump wait for the next 1/16, 1/8 or 1/4 (**Off**: at once) |
 | **NOTE FX**, **DELAY** | As on a drum track — nothing that changes a pitch. A DELAY echo plays its slice again, at its own level, so **Level** and **VelFb** fade the echoes |
 

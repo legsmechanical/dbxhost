@@ -156,7 +156,7 @@ static void au_watch_publish(seq8_instance_t *inst) {
                     uint32_t rs, re;
                     au_range(cl, cl->smp, &rs, &re);
                     s = cl->smp; pos = au_jump_pos(cl, at->pending_jump, 0);
-                    step = au_semi(cl->pitch) * (double)s->rate / 44100.0 * (cl->revrs ? -1.0 : 1.0);
+                    step = au_tune(cl->pitch, cl->detune) * (double)s->rate / 44100.0 * (cl->revrs ? -1.0 : 1.0);
                     lo = rs; hi = re; loop = 1;
                 }
             }
@@ -234,7 +234,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
                 }
                 double bpm = tr->pfx.cached_bpm > 0 ? tr->pfx.cached_bpm : 120.0;
                 double fpt = 44100.0 * 60.0 / (bpm * PPQN);
-                double ratio = au_semi(cl->pitch) * (double)cl->smp->rate / 44100.0;
+                double ratio = au_tune(cl->pitch, cl->detune) * (double)cl->smp->rate / 44100.0;
                 /* When this block PLAYED a tick, the clip counters have
                  * already moved past it (render_block advances them after
                  * each tick): the clip is at tick - 1, at this block's first
@@ -322,6 +322,7 @@ static int au_arg_clip(const char **pp) {
 /* One slice field `w` of sl set to v. 0 = not a field. */
 static int au_slice_field(au_slice_t *sl, const char *w, int v) {
     if (!strcmp(w, "pitch"))      sl->pitch = (int8_t)clamp_i(v, -24, 24);
+    else if (!strcmp(w, "detune")) sl->detune = (int8_t)clamp_i(v, -50, 50);
     else if (!strcmp(w, "gain"))  sl->gain_db = (int8_t)clamp_i(v, -40, 12);
     else if (!strcmp(w, "rev"))   sl->rev = (uint8_t)(v ? 1 : 0);
     else if (!strcmp(w, "play"))  sl->play = (uint8_t)clamp_i(v, 0, 2);
@@ -475,6 +476,8 @@ static int sp_track_audio(sp_ctx_t *cx) {
             }
         } else if (!strcmp(w, "pitch")) {
             cl->pitch = (int8_t)clamp_i(v, -24, 24);
+        } else if (!strcmp(w, "detune")) {
+            cl->detune = (int8_t)clamp_i(v, -50, 50);
         } else if (!strcmp(w, "gain")) {
             cl->gain_db = (int8_t)clamp_i(v, -40, 12);
         } else if (!strcmp(w, "revrs")) {
@@ -797,7 +800,7 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
     }
     if (!strncmp(k, "info_", 5)) {
         /* "state err mode even nslices jump rstart rend pitch gain frames rate ch
-         *  revrs nudge jmpq count|name" -- rstart / rend in frames as they play
+         *  revrs nudge jmpq count detune|name" -- rstart / rend in frames as they play
          *  (rend the real end, never 0) once loaded */
         c = my_atoi(k + 5);
         if (c < 0 || c >= NUM_CLIPS) return -1;
@@ -805,13 +808,13 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
         const au_sample_t *s = cl->smp;
         uint32_t rs = cl->rstart, re = cl->rend;
         if (s) au_range(cl, s, &rs, &re);
-        return snprintf(out, out_len, "%d %d %d %d %d %d %u %u %d %d %u %u %d %d %d %d %d|%s",
+        return snprintf(out, out_len, "%d %d %d %d %d %d %u %u %d %d %u %u %d %d %d %d %d %d|%s",
                         cl->state, cl->err, cl->mode, cl->even, cl->nslices, cl->jump,
                         (unsigned)rs, (unsigned)re, cl->pitch, cl->gain_db,
                         s ? (unsigned)s->frames : 0u, s ? (unsigned)s->rate : 0u, s ? s->ch : 0,
-                        cl->revrs, cl->nudge_ms, cl->jmpq, au_count(cl), cl->name);
+                        cl->revrs, cl->nudge_ms, cl->jmpq, au_count(cl), cl->detune, cl->name);
     }
-    if (!strncmp(k, "sl_", 3)) {                  /* sl_C_L: "a b pinned pitch gain rev play atk dec" */
+    if (!strncmp(k, "sl_", 3)) {                  /* sl_C_L: "a b pinned pitch gain rev play atk dec detune" */
         const char *q = k + 3;
         c = my_atoi(q);
         q = strchr(q, '_');
@@ -822,23 +825,23 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
         const au_slice_t *sl = &cl->sl[l];
         uint32_t a = 0, b = 0;
         if (cl->smp) au_slice_range(cl, cl->smp, l, &a, &b);
-        return snprintf(out, out_len, "%u %u %d %d %d %d %d %d %d", (unsigned)a, (unsigned)b,
+        return snprintf(out, out_len, "%u %u %d %d %d %d %d %d %d %d", (unsigned)a, (unsigned)b,
                         !cl->even && l < cl->nslices && sl->end ? 1 : 0,
-                        sl->pitch, sl->gain_db, sl->rev, sl->play, sl->attack_ms, sl->decay_ms);
+                        sl->pitch, sl->gain_db, sl->rev, sl->play, sl->attack_ms, sl->decay_ms, sl->detune);
     }
-    if (!strncmp(k, "all_", 4)) {                 /* ALL SLICES: "pitch gain rev atk dec play", "x" where slices differ */
+    if (!strncmp(k, "all_", 4)) {                 /* ALL SLICES: "pitch gain rev atk dec play detune", "x" where slices differ */
         int f, n = 0;
         c = my_atoi(k + 4);
         if (c < 0 || c >= NUM_CLIPS) return -1;
         const au_clip_t *cl = &inst->au_clip[t][c];
         int cnt = au_count(cl);
         out[0] = '\0';
-        for (f = 0; f < 6; f++) {
+        for (f = 0; f < 7; f++) {
             int v0 = 0, same = 1;
             for (l = 0; l < cnt; l++) {
                 const au_slice_t *sl = &cl->sl[l];
                 int v = f == 0 ? sl->pitch : f == 1 ? sl->gain_db : f == 2 ? sl->rev
-                      : f == 3 ? sl->attack_ms : f == 4 ? sl->decay_ms : sl->play;
+                      : f == 3 ? sl->attack_ms : f == 4 ? sl->decay_ms : f == 5 ? sl->play : sl->detune;
                 if (l == 0) v0 = v; else if (v != v0) { same = 0; break; }
             }
             if (same) n += snprintf(out + n, (size_t)(out_len - n), f ? " %d" : "%d", v0);

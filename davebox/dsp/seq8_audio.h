@@ -76,6 +76,7 @@ typedef struct {
     uint8_t  play;          /* AU_PLAY_* */
     uint16_t attack_ms;     /* 0..2000 */
     uint16_t decay_ms;      /* 0 = full (no decay), else 1..5000 */
+    int8_t   detune;        /* -50..+50 cents, on top of pitch */
 } au_slice_t;
 
 typedef struct {
@@ -91,6 +92,7 @@ typedef struct {
     uint32_t     rstart, rend;       /* Start / End, sample frames; rend 0 = the sample's end */
     uint16_t     mig_rs, mig_re;     /* an older project's Start / End in 1/1000, applied when the sample loads (0/0 = none) */
     int8_t       pitch;              /* -24..+24 st */
+    int8_t       detune;             /* -50..+50 cents, on top of pitch */
     int8_t       gain_db;            /* -40..+12 dB */
     uint8_t      revrs;              /* Loop: the sample plays backwards */
     int16_t      nudge_ms;           /* Loop: the sample's start against the bar, -500..+500 ms */
