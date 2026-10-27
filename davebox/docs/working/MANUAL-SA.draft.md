@@ -397,7 +397,7 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   does not come up over the on-screen keyboard, over a question that needs an
   answer, or while Shift, Delete, Copy, Mute or Loop is held.
 - **Turning the jog** does not change the bank. On a bank with **pages** (an Audio
-  track's VOICE), it flips the pages, and **Delete + jog click** resets only the page showing.
+  track's SLICE or LOOP bank), it flips the pages, and **Delete + jog click** resets only the page showing.
 - **Touch the jog** to see the current bank's page while your finger rests on it;
   let go and the overview is back. (In Session View it shows the mixer page.)
 - **Touch a knob** to see the bank's page while you touch it — nothing holds a
@@ -1283,7 +1283,7 @@ in the middle of the screen and the waveform scrolls around it; touching one jum
 there. The header reads **SLICE n/n** (or **LOOP**); the start or end you're touching
 or turning lights up, and **ZOOM +** / **ZOOM −** shows between them while K2 zooms.
 
-**The VOICE bank** holds the clip's sound. Pick it from the bank map's **VOICE**
+**The SLICE / LOOP bank** holds the clip's sound; it is named for the clip's Mode. Pick it from the bank map's **SLICE** (or **LOOP**)
 pad. It is a bank with **pages**:
 **turn the jog** to flip them (on a bank with one page the turn does nothing); touch
 the jog or a knob to see the page you're on. **Delete + jog click** resets the page
@@ -1316,7 +1316,7 @@ first knob reads **Slice n** and picks the step's chop.
 track only. **Delete + clip** clears its sequence only: the sample, its settings
 and the clip's length stay. **Shift + Delete + clip** resets it completely, sample
 and all. **Undo** covers the steps; the
-VOICE bank's settings aren't undoable. **Export to Ableton** leaves Audio tracks
+SLICE / LOOP bank's settings aren't undoable. **Export to Ableton** leaves Audio tracks
 out for now, and says so when it finishes.
 
 **Track View at rest** shows a Loop clip's sample, its chops marked, with the playhead

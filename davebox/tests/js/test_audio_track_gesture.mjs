@@ -183,7 +183,18 @@ step('⭐⭐ the walk: IN (PAD MODE, LIVE ARP), no RPT GROOVE, HARMONY, SEQ ARP 
     assert(P.bankMapModuleAt(0, C.PAD_MODE_AUDIO, 6, 0) === null, 'the MIDI FX pad is lit (Q4)');
     assert(P.bankMapModuleAt(0, C.PAD_MODE_AUDIO, 7, 0).comp === 'fx1', 'FX 1 is dark');
     const map = P.bankPadMapForMode(C.PAD_MODE_AUDIO, 4);
-    assert(map[2].cells[3] && map[2].cells[3].name === 'VOICE' && map[2].cells[3].bank === C.BANK_AUDIO, 'the VOICE pad is not the VOICE bank: ' + JSON.stringify(map[2].cells[3]));
+    assert(map[2].cells[3] && map[2].cells[3].bank === C.BANK_AUDIO, 'the sound bank pad is not BANK_AUDIO: ' + JSON.stringify(map[2].cells[3]));
+    /* named for the clip's mode (Josh, 2026-10-28: "slice/loop") */
+    {
+        const c = S.trackQueuedClip[4] >= 0 && !S.playing ? S.trackQueuedClip[4] : (S.trackActiveClip[4] | 0);
+        const was = S.auInfo[4][c];
+        S.auInfo[4][c] = Object.assign({}, was || {}, { mode: 0 });
+        assert(P.bankPadMapForMode(C.PAD_MODE_AUDIO, 4)[2].cells[3].name === 'LOOP', 'a Loop clip\'s bank is not LOOP');
+        S.auInfo[4][c] = Object.assign({}, was || {}, { mode: 1 });
+        assert(P.bankPadMapForMode(C.PAD_MODE_AUDIO, 4)[2].cells[3].name === 'SLICE', 'a Slice clip\'s bank is not SLICE');
+        assert(P.bankDisplayName(C.PAD_MODE_AUDIO, C.BANK_AUDIO, 4) === 'SLICE', 'the header name is not SLICE');
+        S.auInfo[4][c] = was;
+    }
     /* DELAY left Audio tracks (Josh, 2026-10-28: "let's get rid of delay") */
     assert(!map[3].cells[2], 'the DELAY pad is lit: ' + JSON.stringify(map[3].cells[2]));
 });

@@ -1048,7 +1048,7 @@ function midiNoteName(n) { return noteLabel(n, false); }
  * drum aliases used to live inline in the drum render branch below, which is
  * how the picker ended up listing different names than the header. */
 function bankHeaderName(t, bank) {
-    return bankDisplayName(S.trackPadMode[t], bank);
+    return bankDisplayName(S.trackPadMode[t], bank, t);
 }
 
 /* ------------------------------------------------------------------ */

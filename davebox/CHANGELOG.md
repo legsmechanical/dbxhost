@@ -18,7 +18,7 @@ the section into a versioned heading at release time.
   steps in order, so it sounds the same. The pads run in time order, 8 a row, in both
   modes; a new clip starts with 16 even chops. SAMPLE edits the chops in Loop too, and
   choosing a chop method no longer switches the Mode.
-- **Audio: the VOICE bank holds the sound only** (Pitch, Detune, Gain, Revrs and the
+- **Audio: the sound bank (SLICE / LOOP) holds the sound only** (Pitch, Detune, Gain, Revrs and the
   slice envelopes); the Loop CLIP bank holds Nudge and Mode. The Slice CLIP bank's
   second Quant is gone (it's on NOTE FX). **DELAY** is gone from Audio tracks, and a
   Loop clip has no STEP or NOTE FX.
@@ -45,9 +45,9 @@ the section into a versioned heading at release time.
 
 - **Audio: Delete + clip clears the sequence only** — the sample, its settings and
   the clip's length stay; **Shift + Delete + clip** resets it, sample and all.
-  **Delete + jog click** on the VOICE bank resets the page showing.
-- **Audio: VOICE is a bank now**, with pages — CLIP, and SLICE n in Slice mode.
-  A plain jog turn flips them; the map's VOICE pad lands on it. **SAMPLE** is the
+  **Delete + jog click** on the SLICE or LOOP bank resets the page showing.
+- **Audio: the clip's sound is a bank now**, named SLICE or LOOP for the clip's mode, with pages — CLIP, and SLICE n in Slice mode.
+  A plain jog turn flips them; the map's SLICE / LOOP pad lands on it. **SAMPLE** is the
   track's instrument editor: the map's instrument pad, the sound menu's Audio row
   and the instrument shortcut open it.
 
@@ -80,8 +80,8 @@ the section into a versioned heading at release time.
   loop's start and end, or make chops with a **Lazy chop** (tap them in as the
   sample plays), by hand or evenly, then shape them in a zoomable editor — move
   any chop's start and end down to a single sample, add and remove chops.
-  **Even** cuts equal slices, showing them on the pads as you turn. The **VOICE**
-  editor (the VOICE pad) holds the clip's sound: mode, pitch (semitones), detune
+  **Even** cuts equal slices, showing them on the pads as you turn. The **SLICE / LOOP**
+  editor (its pad) holds the clip's sound: mode, pitch (semitones), detune
   (cents) and gain, sound settings per slice or for all slices at once; **>Seq**
   on the CLIP bank lays the slices out on the steps. Loop clips can play backwards, be nudged against
   the bar and have their jumps wait for the beat; muting an Audio track silences it

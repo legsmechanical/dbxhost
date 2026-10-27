@@ -60,8 +60,18 @@ export const SCALE_INTERVALS = [
  * heading and overlay"; CLIP "rename conduct", ON/OFF "RENAME RESPONDER",
  * TIMING "RENAME WHEN"). */
 const CONDUCT_NAMES = { 0: 'CLIP', [BANK_RESPONDER]: 'ON/OFF', [BANK_WHEN]: 'TIMING' };
-export function bankDisplayName(padMode, bank) {
+/* An Audio track's sound bank is named for the clip's mode (Josh,
+ * 2026-10-28: "slice/loop"), as its first page is (ALL SLICES / LOOP). The
+ * clip is the one ui_audio's auClipOf edits. */
+function audioBankName(t) {
+    const qc = S.trackQueuedClip ? S.trackQueuedClip[t] : -1;
+    const c = (!S.playing && qc >= 0) ? qc : (S.trackActiveClip ? S.trackActiveClip[t] | 0 : 0);
+    const i = S.auInfo && S.auInfo[t] && S.auInfo[t][c];
+    return i && i.mode === 1 ? 'SLICE' : 'LOOP';
+}
+export function bankDisplayName(padMode, bank, t = S.activeTrack) {
     const base = (BANKS[bank] && BANKS[bank].name) || '?';
+    if (padMode === PAD_MODE_AUDIO && bank === BANK_AUDIO) return audioBankName(t);
     if (padMode === PAD_MODE_CONDUCT) return CONDUCT_NAMES[bank] || base;
     if (padMode === PAD_MODE_DRUM) {
         if (bank === 0) return 'DRUM LANE';
@@ -269,7 +279,7 @@ export function bankPadMapForMode(padMode, t) {
     for (const b of bankListForMode(padMode, t)) {
         const p = pos[b];
         if (!p || cols[p[0]].cells[p[1]]) continue;
-        cols[p[0]].cells[p[1]] = { bank: b, name: BANK_MAP_SHORT[b] || bankDisplayName(padMode, b) };
+        cols[p[0]].cells[p[1]] = { bank: b, name: BANK_MAP_SHORT[b] || bankDisplayName(padMode, b, t) };
     }
     const acts = BANK_MAP_ACTIONS[fam];
     for (const a in acts) {
