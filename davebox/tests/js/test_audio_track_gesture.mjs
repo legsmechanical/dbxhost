@@ -175,9 +175,9 @@ step('⭐⭐ Yes: the engine converts, the slot keeps Schwung with no instrument
     S.clipNonEmpty[4][0] = false;
 });
 
-step('⭐⭐ the walk: no RPT GROOVE, LIVE ARP, PADMODE, HARMONY or SEQ ARP; MIX last', () => {
+step('⭐⭐ the walk: IN (PAD MODE, LIVE ARP), no RPT GROOVE, HARMONY, SEQ ARP or DELAY; MIX last', () => {
     const walk = P.bankCycleForMode(C.PAD_MODE_AUDIO, 4);
-    assert(JSON.stringify(walk) === JSON.stringify([C.BANK_MACROS, C.BANK_STEP, 0, 1, C.BANK_SOUND]), 'walk: ' + walk.join());
+    assert(JSON.stringify(walk) === JSON.stringify([C.BANK_CHORD, 5, C.BANK_MACROS, C.BANK_STEP, 0, 1, C.BANK_SOUND]), 'walk: ' + walk.join());
     const all = P.bankListForMode(C.PAD_MODE_AUDIO, 4);
     assert(all.indexOf(C.BANK_CONFIG) >= 0 && all.indexOf(C.BANK_AUTOMATION) >= 0, 'doors: ' + all.join());
     assert(P.bankMapModuleAt(0, C.PAD_MODE_AUDIO, 6, 0) === null, 'the MIDI FX pad is lit (Q4)');
@@ -718,7 +718,8 @@ step('⭐⭐ Slice mode: pads are 36 + chop in time order, 8 a row, none past th
     ticks(2);
     DM.computePadNoteMap();
     /* Josh, 2026-10-28: "8 a row timeline" */
-    assert(S.padNoteMap[0] === 36 && S.padNoteMap[3] === 39 && S.padNoteMap[7] === 43 && S.padNoteMap[8] === 0xFF,
+    /* chop k is note k (Josh, 2026-10-28: "might as well do 128") */
+    assert(S.padNoteMap[0] === 0 && S.padNoteMap[3] === 3 && S.padNoteMap[7] === 7 && S.padNoteMap[8] === 0xFF,
            'padmap: ' + Array.from(S.padNoteMap).slice(0, 12).join());
     /* ...and what reaches the engine takes no track octave: a slice has no
      * pitch (Josh, device: the pads went silent with the octave at +1) */
@@ -728,7 +729,7 @@ step('⭐⭐ Slice mode: pads are 36 + chop in time order, 8 a row, none past th
     reset();
     DM.computePadNoteMap();
     const pm = sent('t4_padmap').pop() || '';
-    assert(pm.split(' ').slice(0, 4).join() === '36,37,38,39', 'the pushed padmap took the octave: ' + pm.slice(0, 40));
+    assert(pm.split(' ').slice(0, 4).join() === '0,1,2,3', 'the pushed padmap took the octave: ' + pm.slice(0, 40));
     /* ...nor does a held step + pad: the step gets the slice tapped */
     reset();
     note(16 + 2, 100);
@@ -737,7 +738,7 @@ step('⭐⭐ Slice mode: pads are 36 + chop in time order, 8 a row, none past th
     note(16 + 2, 0);
     ticks(3);
     const st = sentLike(/_step_2_/).map((x) => x[1]).join('|');
-    assert(/37/.test(st) && !/49/.test(st), 'a held step took the octave: ' + JSON.stringify(sentLike(/_step_2_/)));
+    assert(/(^|[^0-9])1([^0-9]|$)/.test(st) && !/13/.test(st), 'a held step took the octave: ' + JSON.stringify(sentLike(/_step_2_/)));
     S.dspInboundEnabled = was;
     S.trackOctave[4] = 0;
     S.activeBank = 0; S.bankCardLatched = true;
@@ -776,7 +777,7 @@ step('⭐ NOTE FX takes no pitch knob (Oct, Offset, Random)', () => {
 });
 
 step('⭐ the step editor\'s K1 reads "Slice n"', () => {
-    S.heldStep = 0; S.heldStepNotes = [38]; S.activeBank = C.BANK_STEP;
+    S.heldStep = 0; S.heldStepNotes = [2]; S.activeBank = C.BANK_STEP;
     const cells = render.heldStepCells();
     assert(cells[0].label === 'Slice' && cells[0].bigText === 'Slice 3', 'K1: ' + JSON.stringify(cells[0]));
     S.heldStep = -1; S.heldStepNotes = []; S.activeBank = 0;
@@ -789,7 +790,7 @@ step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP /
     assert(S.activeBank === 0, 'still on NOTE FX with a Loop clip: bank ' + S.activeBank);
     /* Josh, 2026-10-28: "we don't need to show notes at all in loop mode" */
     const walk = P.bankCycleForMode(C.PAD_MODE_AUDIO, 4);
-    assert(JSON.stringify(walk) === JSON.stringify([C.BANK_MACROS, 0, C.BANK_SOUND]), 'Loop walk: ' + walk.join());
+    assert(JSON.stringify(walk) === JSON.stringify([C.BANK_CHORD, 5, C.BANK_MACROS, 0, C.BANK_SOUND]), 'Loop walk: ' + walk.join());
     const map = P.bankPadMapForMode(C.PAD_MODE_AUDIO, 4);
     assert(!map[2].cells[0] && !map[3].cells[0] && map[2].cells[1], 'the Loop map still has STEP / NOTE FX');
     DM.computePadNoteMap();
@@ -802,7 +803,7 @@ step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP /
     ticks(2);
     assert(sentLike(/_step_/).length === 0, 'a step press edited a Loop clip: ' + JSON.stringify(sentLike(/_step_/)));
     const cells = A.auLoopBankCells(4);
-    assert(cells.map((c) => c.label).join() === ',,Nudge,Mode,,,,', 'loop bank: ' + cells.map((c) => c.label));
+    assert(cells.map((c) => c.label).join() === 'Tempo,,Nudge,Mode,,,,', 'loop bank: ' + cells.map((c) => c.label));
     S.bankCardLatched = true;
     reset();
     cc(73, 1);                                         /* K3 Nudge */
@@ -811,8 +812,11 @@ step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP /
     const lh = JSON.stringify(render.bankPageHints(0));
     S.knobTouched = -1;
     assert(lh.indexOf('CLK') < 0, 'a Loop CLIP knob offers a click: ' + lh);
-    for (let i = 0; i < 25; i++) cc(71, 1);            /* K1: nothing yet (Fit) */
-    assert(!sentLike(/_au_set_(revrs|jump|jmpq)/).length, 'K1 wrote: ' + JSON.stringify(sentLike(/_au_/)));
+    for (let i = 0; i < 25; i++) cc(71, 1);            /* K1 Tempo: Free -> Sync (Josh: "3-way") */
+    assert(sent('t4_au_set_tempo').join() === '0 1' && !sentLike(/_au_set_(revrs|jump|jmpq)/).length,
+           'K1 is not Tempo: ' + JSON.stringify(sentLike(/_au_/)));
+    assert(A.auLoopBankCells(4)[0].text === 'Sync', 'the Tempo cell does not read Sync: ' + A.auLoopBankCells(4)[0].text);
+    for (let i = 0; i < 25; i++) cc(71, 127);
     S.bankCardLatched = false;
 });
 
@@ -835,6 +839,83 @@ step('⭐⭐ Loop pads: a progress bar — dim the loop, bright what has played,
     assert(pad(2) !== HC.LightGrey && pad(2) === pad(5) && pad(0) === pad(5) && pad(0) !== tc, 'stopped is not all dim: ' + [pad(0), pad(2), pad(5)]);
     GET['t4_au_pos'] = '1 24000 2';
     GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(4);
+});
+
+step('⭐⭐ 128 chops: Octave Up / Down steps the pad pages, 32 chops a page; a Loop playing follows its playhead; the step buttons show the page (Josh)', () => {
+    const marks = (n) => Array.from({ length: n }, (_, k) => Math.round(k * 96000 / n) + ' ' + Math.round((k + 1) * 96000 / n)).join(' ');
+    GET['t4_au_info_0'] = INFO(1, 40, 40); GET['t4_au_marks_0'] = marks(40);
+    A.auMarkStale(4, 0); ticks(4);
+    S.auPage[4] = 0;
+    assert(A.auPages(4) === 2, 'pages for 40 chops: ' + A.auPages(4));
+    cc(HC.MoveUp, 127); cc(HC.MoveUp, 0); ticks(2);
+    assert(S.auPage[4] === 1, 'Octave Up did not show chops 33-64');
+    DM.computePadNoteMap();
+    assert(S.padNoteMap[0] === 32 && S.padNoteMap[7] === 39 && S.padNoteMap[8] === 0xFF, 'page 2 padmap: ' + Array.from(S.padNoteMap).slice(0, 10).join());
+    cc(HC.MoveUp, 127); cc(HC.MoveUp, 0);
+    assert(S.auPage[4] === 1, 'Octave Up went past the last page');
+    cc(HC.MoveDown, 127); cc(HC.MoveDown, 0); ticks(2);
+    assert(S.auPage[4] === 0, 'Octave Down did not go back');
+    assert(A.auSliceToPad(33, 4) === -1 && A.auSliceToPad(3, 4) === 3, 'auSliceToPad ignores the page');
+    /* Loop: the playhead on chop 35 brings page 2 up; the step buttons light that stretch */
+    GET['t4_au_info_0'] = INFO(0, 40, 40); A.auMarkStale(4, 0);
+    GET['t4_au_pos'] = '1 ' + (Math.round(35 * 96000 / 40) + 10) + ' -1';
+    S.playing = false;
+    for (let i = 0; i < 8; i++) ticks(1);
+    assert(S.auPage[4] === 1, 'the pads did not follow the playhead onto page 2: ' + S.auPage[4]);
+    S.clipLength[4][0] = 16; S.clipLoopStart[4][0] = 0; S.trackCurrentPage[4] = 0;
+    S.ledsDirtyAudio = true; ticks(2);
+    const lit = Array.from({ length: 16 }, (_, i) => LEDS.get(16 + i) || 0);
+    /* chops 33-40 are the last 8/40 of the loop: steps 12.8.. -> 12..15 */
+    assert(lit.slice(13, 16).every((v) => v) && lit.slice(0, 12).every((v) => !v),
+           'the step buttons do not show page 2\'s stretch: ' + lit.join());
+    GET['t4_au_pos'] = '1 24000 2';
+    GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(6);
+    assert(S.auPage[4] === 0, 'a clip of 8 chops kept page 2');
+});
+
+step('⭐⭐ PAD MODE (IN column): Layout 4 Rows / 16 Pads — the 16 Pads order is the left 4x4 then the right (Josh)', () => {
+    const map = P.bankPadMapForMode(C.PAD_MODE_AUDIO, 4);
+    assert(map[0].cells[0] && map[0].cells[0].name === 'PAD MODE' && map[0].cells[1] && map[0].cells[1].name === 'LIVE ARP',
+           'the IN column: ' + JSON.stringify(map[0].cells));
+    S.activeBank = C.BANK_CHORD; S.bankCardLatched = true;
+    reset();
+    for (let i = 0; i < 25; i++) cc(71, 1);
+    assert(sent('t4_au_layout').join() === '1' && S.auLayout[4] === 1, 'K1 did not set 16 Pads: ' + JSON.stringify(sentLike(/layout/)));
+    const kc = globalThis.__kc; shown();
+    assert(kc().cells[0].label === 'Layout' && kc().cells[0].text === '16 Pads', 'the card: ' + JSON.stringify(kc().cells[0]));
+    DM.computePadNoteMap();
+    /* 8 chops: the left 4x4 holds them, the right half (chops 17-32) is dark */
+    assert(S.padNoteMap[0] === 0 && S.padNoteMap[3] === 3 && S.padNoteMap[4] === 0xFF && S.padNoteMap[8] === 4,
+           '16 Pads padmap: ' + Array.from(S.padNoteMap).slice(0, 12).join());
+    for (let i = 0; i < 25; i++) cc(71, 127);
+    assert(S.auLayout[4] === 0, 'K1 did not go back to 4 Rows');
+    DM.computePadNoteMap();
+    S.activeBank = 0; S.bankCardLatched = false;
+});
+
+step('⭐⭐ LIVE ARP: Oct is Step on Audio, a chop per repeat, to ±15 (Josh: "change octave to "step"")', () => {
+    S.activeBank = 5; S.bankCardLatched = true;
+    reset();
+    for (let i = 0; i < 300; i++) cc(73, 1);
+    const v = sent('t4_tarp_octaves');
+    assert(v.length && v[v.length - 1] === '15', 'Step did not reach 15: ' + JSON.stringify(v));
+    const kc = globalThis.__kc; shown();
+    assert(kc().cells[2].label === 'Step' && kc().cells[2].text === '+15', 'the card: ' + JSON.stringify(kc().cells[2]));
+    for (let i = 0; i < 300; i++) cc(73, 127);
+    S.activeBank = 0; S.bankCardLatched = false;
+});
+
+step('⭐ external MIDI: note 36 is chop 1 on an Audio track (a keyboard\'s drum pads)', () => {
+    reset();
+    const was = S.trackRoute[4];
+    S.trackRoute[4] = 2;                                /* the live-note queue: what reaches the engine is visible */
+    globalThis.onMidiMessageExternal(new Uint8Array([0x90, 37, 100]));
+    globalThis.onMidiMessageExternal(new Uint8Array([0x80, 37, 0]));
+    globalThis.onMidiMessageExternal(new Uint8Array([0x90, 20, 100]));   /* below 36: reaches nothing */
+    ticks(2);
+    const live = sentLike(/live_note/).map((x) => x[0] + '=' + x[1]).join(' | ');
+    assert(live === 't4_live_notes=eon 1 100 eoff 1', 'external 37 did not arrive as chop 2 alone: ' + live);
+    S.trackRoute[4] = was;
 });
 
 step('⭐ an Audio clip pastes onto an Audio track only; the copy carries its sample', () => {

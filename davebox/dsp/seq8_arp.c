@@ -91,6 +91,7 @@ static int arp_build_pool(const arp_engine_t *a, int16_t *pool_pitch, uint8_t *p
     int i, j, k;
     int sign = a->octaves < 0 ? -1 : 1;
     int K = a->octaves < 0 ? -(int)a->octaves : (int)a->octaves;
+    int jump = a->oct_step ? a->oct_step : 12;     /* an octave, or one chop on Audio */
     while (K > 0 && N * (K + 1) > ARP_MAX_CYCLE) K--;
 
     /* Held indices in PLAY order (held_order ascending). */
@@ -109,7 +110,7 @@ static int arp_build_pool(const arp_engine_t *a, int16_t *pool_pitch, uint8_t *p
     for (k = 0; k <= K; k++)
         for (j = 0; j < N; j++) {
             uint8_t hi = order_idx[j];
-            pool_pitch[P] = (int16_t)((int)a->held_pitch[hi] + 12 * sign * k);
+            pool_pitch[P] = (int16_t)((int)a->held_pitch[hi] + jump * sign * k);
             pool_held[P]  = hi;
             P++;
         }

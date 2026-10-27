@@ -160,6 +160,9 @@ export function bankCategoriesForMode(padMode, t) {
         const slice = audioClipIsSlice(t === undefined ? S.activeTrack : t);
         return [
             { label: null,   banks: [BANK_CONFIG] },
+            /* IN (2026-10-28: "pad mode bank on IN column" · "let's add an
+             * input arp to it too"): PAD MODE's Layout, and LIVE ARP */
+            { label: 'IN',   banks: [BANK_CHORD, 5] },
             { label: 'CTRL', banks: [BANK_MACROS, BANK_AUTOMATION] },
             { label: 'SEQ',  banks: slice ? [BANK_STEP, 0] : [0] },
             { label: 'FX',   banks: slice ? [1] : [] },
@@ -219,7 +222,7 @@ const BANK_MAP_POS = {
                [BANK_RESPONDER]: [1, 0], [BANK_OCTAVE]: [1, 1], [BANK_WHEN]: [1, 2],
                0: [2, 0], [BANK_STEP]: [2, 1],
                1: [3, 0] },
-    audio:   { [BANK_CONFIG]: [0, 3],
+    audio:   { [BANK_CHORD]: [0, 0], 5: [0, 1], [BANK_CONFIG]: [0, 3],
                [BANK_MACROS]: [1, 0], [BANK_AUTOMATION]: [1, 1], [BANK_SOUND]: [1, 3],
                [BANK_STEP]: [2, 0], 0: [2, 1],
                1: [3, 0] },
@@ -228,7 +231,7 @@ const BANK_MAP_LABELS = {
     melodic: ['IN', 'CTRL', 'SEQ', 'FX'],
     drum:    ['IN', 'CTRL', 'SEQ', 'FX'],
     conduct: [null, 'RSPD', 'SEQ', 'FX'],
-    audio:   [null, 'CTRL', 'SEQ', 'FX'],
+    audio:   ['IN', 'CTRL', 'SEQ', 'FX'],
 };
 /* ACTION pads: not banks — a tap goes somewhere (Josh, 2026-10-04: "add an
  * "inst" pad to the right of the mix pad - also red. jumps directly to

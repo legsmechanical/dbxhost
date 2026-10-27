@@ -27,7 +27,7 @@ import { chordLayoutOn, chordPadColor } from './ui_chord_pads.mjs';
 import { pianoLayoutOn } from './ui_drummodel.mjs';
 import { customLayoutOn, customPadColor } from './ui_custom_chords.mjs';
 import { setLED, setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
-import { isAudioTrack, auInfo, auClipOf, auPos, auPlayheadChop, auPadToSlice, auSelSlice, auLazyOpen, auLazyState,
+import { isAudioTrack, auInfo, auClipOf, auPos, auPlayheadChop, auPadToSlice, auMarks, auPages, auEnd, AU_PAGE, auSelSlice, auLazyOpen, auLazyState,
          AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN } from './ui_audio.mjs';
 
 const lastSentNoteLED   = new Array(128).fill(-1);
@@ -374,6 +374,34 @@ export function updateStepLEDs() {
      * automation mode b/c we can't interact with them"). */
     if (S.autoCycle && S.autoCycle.t === S.activeTrack) {
         paintAutoLane(S.autoCycle);
+        return;
+    }
+
+    /* AUDIO, a Loop clip: no sequence, so the step buttons show the loop —
+     * the steps the pad page's chops cover dim, the playhead white (Josh,
+     * 2026-10-28: "follow the playhead with a "pad page" indicator on the
+     * step buttons"). One page covers the whole loop. Revrs plays the chops
+     * from the end, so their steps mirror. */
+    if (isAudioTrack(S.activeTrack) && auInfo(S.activeTrack, auClipOf(S.activeTrack)).mode !== AU_MODE_SLICE) {
+        const t = S.activeTrack, c = auClipOf(t), ai = auInfo(t, c), ac = effectiveClip(t);
+        const cs = S.trackCurrentStep[t], base = (S.trackCurrentPage[t] | 0) * 16;
+        const len = S.clipLength[t][ac], lsBase = S.clipLoopStart[t][ac] | 0;
+        const e = auEnd(ai), span = e - ai.rstart;
+        let from = 0, to = len;
+        const mk = ai.state === 2 && span > 0 && auPages(t) > 1 ? auMarks(t, c) : null;
+        if (mk && mk.length) {
+            const p = S.auPage[t] | 0, a = mk[Math.min(mk.length - 1, p * AU_PAGE)], b = mk[Math.min(mk.length, (p + 1) * AU_PAGE) - 1];
+            const at = (f) => (ai.revrs ? e - f : f - ai.rstart) / span * len;
+            from = Math.floor(Math.min(at(a[0]), at(b[1]))); to = Math.ceil(Math.max(at(a[0]), at(b[1])));
+        }
+        for (let i = 0; i < 16; i++) {
+            const abs = base + i, rel = abs - lsBase;
+            let color;
+            if (rel < 0 || rel >= len) color = DarkGrey;
+            else if (S.playing && abs === cs) color = White;
+            else color = rel >= from && rel < to ? trackDimColor(t) : LED_OFF;
+            setLED(16 + i, color);
+        }
         return;
     }
 
@@ -922,8 +950,8 @@ export function updateTrackLEDs() {
          * same colours as anywhere else. */
         const isDrum = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM;
         if (isAudioTrack(S.activeTrack)) {
-            /* AUDIO (ui_audio). The pads are the chops, row by row from the
-             * bottom-left, 8 a row; past the chop count dark. Slice mode: the
+            /* AUDIO (ui_audio). The pads are the chops of the pad page
+             * showing, in the track's PAD MODE Layout; past the chop count dark. Slice mode: the
              * sounding one white, the selected one the track colour, the rest
              * dim. Loop mode, a progress bar (Josh, 2026-10-28: "full length
              * in dim track color, played section in bright track color and
@@ -946,17 +974,14 @@ export function updateTrackLEDs() {
             const done = lz && lz.state !== AU_LAZY_ARMED ? lz.n : 0;
             for (let i = 0; i < 32; i++) {
                 let color = LED_OFF;
-                if (lz) {
-                    const k = auPadToSlice(i);
-                    color = k === next ? White : k < done ? tc : LED_OFF;
-                }
+                const k = auPadToSlice(i, t);
+                if (lz) color = k === next ? White : k < done ? tc : LED_OFF;
                 else if (ai.state !== 2) color = i === 0 ? td : LED_OFF;
                 else if (slice) {
-                    const k = auPadToSlice(i);
                     if (k < ai.n) color = (ap.t === t && ap.on && ap.slice === k) ? White : k === sel ? tc : td;
-                } else if (i < ai.n) {
-                    if (i === ph) { cachedSetLEDAnim(TRACK_PAD_BASE + i, tc, LightGrey, LED_PULSE_4TH); continue; }
-                    color = ph >= 0 && (ai.revrs ? i > ph : i < ph) ? tc : td;
+                } else if (k < ai.n) {
+                    if (k === ph) { cachedSetLEDAnim(TRACK_PAD_BASE + i, tc, LightGrey, LED_PULSE_4TH); continue; }
+                    color = ph >= 0 && (ai.revrs ? k > ph : k < ph) ? tc : td;
                 }
                 cachedSetLED(TRACK_PAD_BASE + i, color);
             }

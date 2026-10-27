@@ -69,7 +69,7 @@ import { BANK_MAP_TRACK_POPUP_MS, SEQ_PAGE_POPUP_MS, seqAutoTargetForKnob, SEQ_A
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam, soundOpenModule, instrPickResume } from './ui_sound.mjs';
 import { auPurgeRun, closeAudioChooser } from './ui_audio_chooser.mjs';
-import { isAudioTrack, audioSliceMode, auClipBankKnob, knobAltOnTrack } from './ui_audio.mjs';
+import { isAudioTrack, audioSliceMode, auClipBankKnob, knobAltOnTrack, auSetLayout, auSetPage, AU_NOTE_BASE, AU_EVEN_MAX } from './ui_audio.mjs';
 
 /* AUDIO's CLIP bank (Slice mode) mirrors ALL LANES over the melodic clip's
  * knobs (Josh, 2026-10-27: "it seems like clip bank should mirror all lanes
@@ -3763,7 +3763,13 @@ function _onCC_transport(d1, d2) {
     if (d1 === MoveDown && d2 === 127 && (S.sessionView || S.sessionOverlayHeld) && S.sceneRow < NUM_CLIPS - 4) { S.sceneRow = Math.min(NUM_CLIPS - 4, S.sceneRow + 1); forceRedraw(); }
     if (d1 === MoveUp   && d2 === 127 && (S.sessionView || S.sessionOverlayHeld) && S.sceneRow > 0)              { S.sceneRow = Math.max(0, S.sceneRow - 1);              forceRedraw(); }
     if (d1 === MoveUp   && d2 > 0 && !S.sessionView && !S.sessionOverlayHeld) {
-        if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
+        if (isAudioTrack(S.activeTrack)) {
+            /* Audio: the next pad page of chops, as a drum track's lane page */
+            if (auSetPage(S.activeTrack, (S.auPage[S.activeTrack] | 0) + 1))
+                showActionPopup('CHOPS', ((S.auPage[S.activeTrack] | 0) * 32 + 1) + '-' + ((S.auPage[S.activeTrack] | 0) * 32 + 32));
+            computePadNoteMap();
+            forceRedraw();
+        } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
             setDrumLanePage(S.activeTrack, 1);
             syncDrumLanesMeta(S.activeTrack);
             syncDrumLaneSteps(S.activeTrack, S.activeDrumLane[S.activeTrack]);
@@ -3784,7 +3790,12 @@ function _onCC_transport(d1, d2) {
         }
     }
     if (d1 === MoveDown && d2 > 0 && !S.sessionView && !S.sessionOverlayHeld) {
-        if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
+        if (isAudioTrack(S.activeTrack)) {
+            if (auSetPage(S.activeTrack, (S.auPage[S.activeTrack] | 0) - 1))
+                showActionPopup('CHOPS', ((S.auPage[S.activeTrack] | 0) * 32 + 1) + '-' + ((S.auPage[S.activeTrack] | 0) * 32 + 32));
+            computePadNoteMap();
+            forceRedraw();
+        } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
             setDrumLanePage(S.activeTrack, 0);
             syncDrumLanesMeta(S.activeTrack);
             syncDrumLaneSteps(S.activeTrack, S.activeDrumLane[S.activeTrack]);
@@ -4760,7 +4771,7 @@ function _onCC_stepedit(d1, d2) {
                 S.knobAccum[knobIdx] = 0;
                 /* AUDIO: the step's slice, one at a time (36..36+31). */
                 S.heldStepNotes = isAudioTrack(t)
-                    ? S.heldStepNotes.slice(0, 1).map((n) => Math.max(36, Math.min(67, n + dir)))
+                    ? S.heldStepNotes.slice(0, 1).map((n) => Math.max(AU_NOTE_BASE, Math.min(AU_NOTE_BASE + AU_EVEN_MAX - 1, n + dir)))
                     : S.heldStepNotes.map(function(n) {
                     return scaleNudgeNote(n, dir, S.padKey, S.padScale);
                 });
@@ -5034,6 +5045,14 @@ function _onCC_knobs(d1, d2) {
          * On every OTHER bank a held chord leaves the knobs alone, so sound
          * and sequencer params stay playable while chords are held. One step
          * per detent. */
+        /* PAD MODE on an Audio track: K1 Layout, 4 Rows / 16 Pads. */
+        if (S.activeBank === BANK_CHORD && isAudioTrack(S.activeTrack)) {
+            if (knobIdx === 0) {
+                const _st = knobStep(knobIdx, d2, KNOB_DELIB);
+                if (_st && auSetLayout(S.activeTrack, _st > 0 ? 1 : 0)) { computePadNoteMap(); S.screenDirty = true; }
+            }
+            return;
+        }
         if (S.activeBank === BANK_CHORD && chordEditSlot() >= 0) {
             S.chordCardSlot = chordEditSlot();
             const _st = knobStep(knobIdx, d2, KNOB_PICK);
@@ -5071,13 +5090,13 @@ function _onCC_knobs(d1, d2) {
 
         const bank    = S.activeBank;
         /* AUDIO's banks: the CLIP bank's K4 is Mode in both modes; in Loop
-         * mode K3 is Nudge and the rest do nothing; in Slice mode it mirrors
+         * mode K1 is Tempo, K3 Nudge and the rest do nothing; in Slice mode it mirrors
          * ALL LANES (AUDIO_CLIP_REMAP; K8 >Seq). NOTE FX takes no pitch knobs
          * (its drum form). */
         if (isAudioTrack(S.activeTrack) && !S.auKnobRemap) {
             const _t = S.activeTrack;
             if (bank === 0 && (knobIdx === 3 || !audioSliceMode(_t))) {
-                if (knobIdx === 2 || knobIdx === 3) {
+                if (knobIdx === 0 || knobIdx === 2 || knobIdx === 3) {
                     const _st = knobIdx === 2 ? ccKnobDelta(d2, knobIdx) : knobStep(knobIdx, d2, KNOB_DELIB);
                     if (_st && auClipBankKnob(_t, knobIdx, _st)) S.screenDirty = true;
                 }
@@ -5085,6 +5104,16 @@ function _onCC_knobs(d1, d2) {
             }
             if (bank === 0 && knobIdx === 7) return;
             if (bank === 1 && (knobIdx === 0 || knobIdx === 1 || knobIdx === 7)) return;
+            /* LIVE ARP's Oct is Step on Audio: a chop per repeat, ±15 (Josh,
+             * 2026-10-28: "change octave to "step""). */
+            if (bank === 5 && knobIdx === 2) {
+                const _st = knobStep(knobIdx, d2, KNOB_PICK);
+                if (_st) {
+                    const _v = Math.max(-15, Math.min(15, (S.bankParams[_t][5][2] | 0) + _st));
+                    if (_v !== (S.bankParams[_t][5][2] | 0)) { S.bankParams[_t][5][2] = _v; applyBankParam(_t, 5, 2, _v); S.screenDirty = true; }
+                }
+                return;
+            }
             if (bank === 0 && AUDIO_CLIP_REMAP[knobIdx]) {
                 const [_b, _k] = AUDIO_CLIP_REMAP[knobIdx];
                 const _saved = S.activeBank;

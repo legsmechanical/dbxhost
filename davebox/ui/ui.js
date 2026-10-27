@@ -48,6 +48,7 @@ import { daveBoxRotate } from './ui_daves.mjs';
 import { miActive, miOnKnob, miOnJog, miOnClick, miOnBack, miClose, miJogTouch, miPadTap, miPadRelease } from './ui_midi_import.mjs';
 import { audioChooserOpen, audioChooserRotate, audioChooserClick, audioChooserBack, closeAudioChooser } from './ui_audio_chooser.mjs';
 import { audioPanelInput } from './ui_audio_editor.mjs';
+import { isAudioTrack, AU_EXT_BASE, AU_NOTE_BASE } from './ui_audio.mjs';
 import {
     projectPickerTextEntryMidi, templateTextEntryMidi,
     projectPadPickerTap, projectPadPickerRotate, projectPadPickerClick
@@ -1173,7 +1174,7 @@ function extCaptureWanted(t, pitch) {
 globalThis.onMidiMessageExternal = function (data) { try { _onMidiExternalImpl(data); } catch (e) { captureError('onMidiExternal', e); } };
 function _onMidiExternalImpl(data) {
     const status  = data[0] | 0;
-    const d1      = (data[1] ?? 0) | 0;
+    let   d1      = (data[1] ?? 0) | 0;
     const d2      = (data[2] ?? 0) | 0;
     const msgType = status & 0xF0;
     const msgCh   = (status & 0x0F) + 1;  /* 1-indexed */
@@ -1200,6 +1201,14 @@ function _onMidiExternalImpl(data) {
         if (msgCh !== S.trackChannel[t]) return;
     } else {
         if (S.midiInChannel !== 0 && msgCh !== S.midiInChannel) return;
+    }
+
+    /* Audio: chop k is note k inside, but a keyboard's drum pads start at 36,
+     * so external note 36 is chop 1 (Josh, 2026-10-28: 128 chops). Notes
+     * below it reach nothing. */
+    if (isAudioTrack(t) && (msgType === 0x90 || msgType === 0x80)) {
+        d1 = d1 - AU_EXT_BASE + AU_NOTE_BASE;
+        if (d1 < 0 || d1 > 127) return;
     }
 
     /* Drum track: route by pitch to lanes; skip melodic step assignment */

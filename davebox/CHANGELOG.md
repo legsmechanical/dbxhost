@@ -23,6 +23,16 @@ the section into a versioned heading at release time.
   second Quant is gone (it's on NOTE FX). **DELAY** is gone from Audio tracks, and a
   Loop clip has no STEP or NOTE FX.
 
+- **Audio: 128 chops**, 32 to a pad page — Octave Up / Down steps the pages; a Loop's
+  pads follow its playhead, and its step buttons show the page's stretch of the loop.
+  External note 36 still plays chop 1.
+- **Audio: Tempo** on the Loop CLIP bank (K1): **Free** plays the loop as recorded,
+  **Sync** plays its chops in order on the beat, in time at any tempo.
+- **Audio: PAD MODE** (IN column) sets the pads' **Layout** — 4 Rows or 16 Pads — and
+  **LIVE ARP** comes to Audio tracks, with **Step** (a chop per repeat) in place of Oct.
+- ⚠ A Slice clip's sequence from an earlier build plays the wrong chops: chops are now
+  numbered from note 0.
+
 ### Fixed
 - **Audio: slices start exactly on their step** (on dAVEBOx's own clock) rather than up to 3 ms early, and chops
   played in order join with no click or dip.

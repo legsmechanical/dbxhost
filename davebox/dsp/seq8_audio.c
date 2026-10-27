@@ -677,14 +677,15 @@ static void au_stream_pin(void *arg, uint32_t k) {
 }
 
 /* A slice a..b: the 2 chunks from its start and the 2 that end at its end. */
-static void au_stream_pin_slice(au_streamer_t *S, int si, uint32_t a, uint32_t b) {
+static void au_stream_pin_slice(au_streamer_t *S, int si, uint32_t a, uint32_t b, int full) {
     uint32_t ca, cb;
     if (b <= a) return;
     ca = a >> AU_CHUNK_SHIFT;
     cb = (b - 1) >> AU_CHUNK_SHIFT;
     au_stream_want(S, si, ca);
-    au_stream_want(S, si, ca + 1);
     au_stream_want(S, si, cb);
+    if (!full) return;                     /* past AU_PIN_FULL chops: one chunk each end */
+    au_stream_want(S, si, ca + 1);
     if (cb) au_stream_want(S, si, cb - 1);
 }
 
@@ -795,10 +796,10 @@ static unsigned au_stream_service(seq8_instance_t *inst) {
                  * its start (forwards) and its end (Rev) — and Start too (Lazy
                  * chop plays from there) */
                 int l, n = __atomic_load_n(&cw->n, __ATOMIC_RELAXED);
-                au_stream_pin_slice(S, si, rs, re);
+                au_stream_pin_slice(S, si, rs, re, 1);
                 for (l = 0; l < n && l < AU_MAX_SLICES; l++)
                     au_stream_pin_slice(S, si, __atomic_load_n(&cw->sa[l], __ATOMIC_RELAXED),
-                                        __atomic_load_n(&cw->sb[l], __ATOMIC_RELAXED));
+                                        __atomic_load_n(&cw->sb[l], __ATOMIC_RELAXED), l < AU_PIN_FULL);
             }
         }
     /* 3. read, nearest need first */
@@ -1086,20 +1087,22 @@ static int au_slice_range(const au_clip_t *cl, const au_sample_t *s, int k, uint
     return 1;
 }
 
-static void au_slice_on(seq8_instance_t *inst, int t, int slice, float vgain) {
-    seq8_track_t *tr = &inst->tracks[t];
-    au_clip_t *cl = &inst->au_clip[t][tr->active_clip];
+/* Chop `slice` of clip (t,c) starts `off` frames into the block: a Slice
+ * clip's note, or (sync) a Loop clip's Tempo Sync, which plays every chop to
+ * its end (One), backwards in Revrs, and streams past Slice mode's cap. */
+static void au_chop_on(seq8_instance_t *inst, int t, int c, int slice, float vgain, uint32_t off, int sync) {
+    au_clip_t *cl = &inst->au_clip[t][c];
     const au_sample_t *s = cl->smp;
     au_track_t *at = &inst->au_trk[t];
     uint32_t a, b;
     int i;
-    if (!s || cl->mode != AU_MODE_SLICE) return;
-    if ((uint64_t)s->frames > (uint64_t)s->rate * AU_SLICE_MAX_SEC) return;
+    if (!s || (!sync && cl->mode != AU_MODE_SLICE)) return;
+    if (!sync && (uint64_t)s->frames > (uint64_t)s->rate * AU_SLICE_MAX_SEC) return;
     if (!au_slice_range(cl, s, slice, &a, &b)) return;
     const au_slice_t *sl = &cl->sl[slice];
+    uint8_t play = sync ? AU_PLAY_ONE : sl->play, rev = sync ? (uint8_t)(cl->revrs ^ sl->rev) : sl->rev;
     double ratio = au_tune(cl->pitch + sl->pitch, cl->detune + sl->detune) * (double)s->rate / 44100.0;
     float gain = au_db(cl->gain_db + sl->gain_db) * vgain;
-    uint32_t off = inst->au_tick_off;              /* the frame of the block its tick fell on */
     au_voice_t *v;
     /* A slice that carries straight on from the one sounding — the next chop
      * of the sample, reached where that voice has got to, at the same rate,
@@ -1108,14 +1111,14 @@ static void au_slice_on(seq8_instance_t *inst, int t, int slice, float vgain) {
      * play the sample exactly as the Loop does (Josh, 2026-10-28: a Loop clip
      * switched to Slice must not change the sound). AU_JOIN covers a slice
      * starting on its block rather than its frame. */
-    if (sl->play == AU_PLAY_ONE && !sl->attack_ms && !sl->decay_ms) {
+    if (play == AU_PLAY_ONE && !sl->attack_ms && !sl->decay_ms) {
         for (i = 0; i < AU_VOICES; i++) {
             v = &at->v[i];
             if (!v->active || v->mode_loop || v->rel_len || v->gated || v->atk || v->dec || v->wait ||
-                v->smp != s || v->gain != gain || v->step != (sl->rev ? -ratio : ratio)) continue;
-            double edge = sl->rev ? (double)b - 1.0 : (double)a, at_off = v->pos + v->step * off;
+                v->smp != s || v->gain != gain || v->step != (rev ? -ratio : ratio)) continue;
+            double edge = rev ? (double)b - 1.0 : (double)a, at_off = v->pos + v->step * off;
             if (at_off - edge > AU_JOIN || edge - at_off > AU_JOIN) continue;
-            if (sl->rev) { if (a < v->lo) v->lo = a; }
+            if (rev) { if (a < v->lo) v->lo = a; }
             else if (b > v->hi) v->hi = b;
             v->slice = (uint8_t)slice;
             v->loop = 0;
@@ -1130,16 +1133,20 @@ static void au_slice_on(seq8_instance_t *inst, int t, int slice, float vgain) {
     v->wait = off;
     v->smp = s;
     v->lo = a; v->hi = b;
-    v->step = sl->rev ? -ratio : ratio;
-    v->pos = sl->rev ? (double)b - 1.0 : (double)a;
+    v->step = rev ? -ratio : ratio;
+    v->pos = rev ? (double)b - 1.0 : (double)a;
     v->gain = gain;
     v->atk = (uint32_t)sl->attack_ms * 441 / 10;
     v->dec = (uint32_t)sl->decay_ms * 441 / 10;
-    v->loop = (sl->play == AU_PLAY_LOOP);
-    v->gated = (sl->play != AU_PLAY_ONE);
+    v->loop = (play == AU_PLAY_LOOP);
+    v->gated = (play != AU_PLAY_ONE);
     v->slice = (uint8_t)slice;
     v->starve = 64;
     v->active = 1;
+}
+
+static void au_slice_on(seq8_instance_t *inst, int t, int slice, float vgain) {
+    au_chop_on(inst, t, inst->tracks[t].active_clip, slice, vgain, inst->au_tick_off, 0);
 }
 
 static void au_slice_off(seq8_instance_t *inst, int t, int slice) {
@@ -1329,7 +1336,7 @@ static void au_lazy_finish(seq8_instance_t *inst) {
 /* ---------------- state (SPI thread: state_load / the save serializer) ----------------
  *
  * Sparse: a clip with a sample or non-default settings `t%dc%d_au2` = "mode
- * even nslices jump rstart rend pitch gain revrs nudge jmpq detune|name"
+ * even nslices jump rstart rend pitch gain revrs nudge jmpq detune tempo|name"
  * (frames; the track is Audio by its `t%d_pm`);
  * a slice that differs from the default `t%dc%ds%d_au2` = "start end pitch
  * gain rev play attack decay detune". Detune came last, so a project from
@@ -1348,7 +1355,7 @@ static int au_clip_default(const au_clip_t *cl) {
     int l;
     if (cl->name[0] || cl->mode != AU_MODE_LOOP || cl->even != 16 || cl->nslices != 1 || cl->jump != 16 ||
         cl->rstart || cl->rend || cl->pitch || cl->detune || cl->gain_db || cl->revrs || cl->nudge_ms ||
-        cl->jmpq || cl->mig_rs || cl->mig_re) return 0;
+        cl->jmpq || cl->tempo || cl->mig_rs || cl->mig_re) return 0;
     for (l = 0; l < AU_MAX_SLICES; l++) if (!au_slice_default(&cl->sl[l])) return 0;
     return 1;
 }
@@ -1357,6 +1364,8 @@ static void au_save_state(void *vinst, FILE *fp) {
     seq8_instance_t *inst = (seq8_instance_t *)vinst;
     int t, c, l;
     for (t = 0; t < NUM_TRACKS; t++) {
+        if (inst->tracks[t].pad_mode == PAD_MODE_AUDIO && inst->au_trk[t].layout)
+            fprintf(fp, ",\"t%d_aul\":%d", t, (int)inst->au_trk[t].layout);
         for (c = 0; c < NUM_CLIPS; c++) {
             const au_clip_t *cl = &inst->au_clip[t][c];
             const char *q;
@@ -1369,9 +1378,9 @@ static void au_save_state(void *vinst, FILE *fp) {
                         cl->even ? 0 : 1, cl->even ? cl->even : cl->nslices, cl->jump, cl->mig_rs,
                         cl->mig_re, cl->pitch, cl->gain_db, cl->revrs, cl->nudge_ms, cl->jmpq);
             } else
-            fprintf(fp, ",\"t%dc%d_au2\":\"%d %d %d %d %u %u %d %d %d %d %d %d|", t, c, cl->mode, cl->even,
+            fprintf(fp, ",\"t%dc%d_au2\":\"%d %d %d %d %u %u %d %d %d %d %d %d %d|", t, c, cl->mode, cl->even,
                     cl->nslices, cl->jump, (unsigned)rs, (unsigned)re, cl->pitch, cl->gain_db,
-                    cl->revrs, cl->nudge_ms, cl->jmpq, cl->detune);
+                    cl->revrs, cl->nudge_ms, cl->jmpq, cl->detune, cl->tempo);
             for (q = cl->name; *q; q++) {
                 if (*q == '"' || *q == '\\') fputc('\\', fp);
                 if ((unsigned char)*q >= 0x20) fputc(*q, fp);
@@ -1394,6 +1403,7 @@ static void au_track_release(seq8_instance_t *inst, int t) {
     int c;
     au_track_kill(inst, t, NULL);
     inst->au_trk[t].last_tick = -1;
+    inst->au_trk[t].layout = 0;
     if (inst->au_lazy_track == t) { inst->au_lazy_track = inst->au_lazy_clip = -1; inst->au_lazy_state = AU_LAZY_NONE; }
     for (c = 0; c < NUM_CLIPS; c++) {
         au_clip_t *cl = &inst->au_clip[t][c];
@@ -1449,10 +1459,12 @@ static void au_load_state(void *vinst, const char *buf) {
     int t, c, l;
     for (t = 0; t < NUM_TRACKS; t++) {
         if (inst->tracks[t].pad_mode != PAD_MODE_AUDIO) continue;
+        snprintf(key, sizeof key, "t%d_aul", t);
+        inst->au_trk[t].layout = (uint8_t)(json_get_int(buf, key, 0) ? 1 : 0);
         for (c = 0; c < NUM_CLIPS; c++) {
             au_clip_t *cl = &inst->au_clip[t][c];
             const char *p;
-            long v[12] = { 0, 8, 1, 16, 0, 0, 0, 0, 0, 0, 0, 0 };
+            long v[13] = { 0, 16, 1, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
             int old = 0;
             snprintf(key, sizeof key, "t%dc%d_au2", t, c);
             if (!json_str_value(buf, key, &p)) {
@@ -1461,7 +1473,7 @@ static void au_load_state(void *vinst, const char *buf) {
                 old = 1;
                 v[1] = 0; v[2] = 8; v[5] = 1000;
             }
-            au_read_nums(&p, v, old ? 11 : 12);
+            au_read_nums(&p, v, old ? 11 : 13);
             cl->mode = (uint8_t)clamp_i((int)v[0], 0, 1);
             if (old) {
                 /* method nslices -> Even (method 0) or a hand set of the same
@@ -1485,6 +1497,7 @@ static void au_load_state(void *vinst, const char *buf) {
             cl->nudge_ms = (int16_t)clamp_i((int)v[9], -500, 500);
             cl->jmpq = (uint8_t)clamp_i((int)v[10], 0, 3);
             cl->detune = (int8_t)clamp_i((int)v[11], -50, 50);
+            cl->tempo = (uint8_t)clamp_i((int)v[12], AU_TEMPO_FREE, AU_TEMPO_SYNC);
             if (*p == '|') {
                 size_t n = 0;
                 for (p++; *p && *p != '"' && n + 1 < sizeof cl->name; p++) {

@@ -1352,7 +1352,7 @@ static void seq8_load_state(seq8_instance_t *inst) {
         snprintf(key, sizeof(key), "t%d_tart", t);
         tr2->tarp.rate_idx = (uint8_t)clamp_i(json_get_int(buf, key, ARP_RATE_DEFAULT), 0, 9);
         snprintf(key, sizeof(key), "t%d_taoc", t);
-        tr2->tarp.octaves = (int8_t)clamp_i(json_get_int(buf, key, 0), -ARP_MAX_OCTAVES, ARP_MAX_OCTAVES);
+        tr2->tarp.octaves = (int8_t)clamp_i(json_get_int(buf, key, 0), -15, 15);   /* Audio's Step reaches 15 */
         snprintf(key, sizeof(key), "t%d_tagt", t);
         tr2->tarp.gate_pct = (uint16_t)clamp_i(json_get_int(buf, key, 100), 1, 200);
         snprintf(key, sizeof(key), "t%d_tasm", t);

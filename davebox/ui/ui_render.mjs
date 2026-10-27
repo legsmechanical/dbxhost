@@ -72,6 +72,7 @@ import { registerRingCells } from './ui_knob_leds.mjs';
 import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
 import { isAudioTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
          auPos, auLazyState, auSelSlice, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells, auModeCell, knobAltOnTrack,
+         auPadModeCells, AU_NOTE_BASE,
          auFmtTime, auEnd, AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN } from './ui_audio.mjs';
 import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
 import { drawAudioAsk } from './ui_dialogs.mjs';
@@ -283,6 +284,15 @@ function audioBankCells(bank, cells) {
         return [cells[0], cells[1], cells[2], auModeCell(t), cells[5], cells[4], cells[6], seq];
     }
     if (bank === 1) return cells.map((c, k) => ((k === 0 || k === 1 || k === 7) ? B : c));
+    /* LIVE ARP: Oct is Step, a chop per repeat (Josh, 2026-10-28) */
+    if (bank === 5 && cells[2]) {
+        const v = S.bankParams[t][5][2] | 0;
+        cells = cells.slice();
+        cells[2] = Object.assign({}, cells[2], { label: 'Step', name: 'Step (chops per repeat)',
+                                                 text: v === 0 ? 'Off' : (v > 0 ? '+' : '') + v });
+        if (cells[2].signed !== undefined) cells[2].signed = v / 15;
+        if (cells[2].norm !== undefined) cells[2].norm = (v + 15) / 30;
+    }
     return cells;
 }
 
@@ -1988,7 +1998,7 @@ export function heldStepCells() {
          * working pitch controls dark. */
         /* AUDIO: K1 is the step's slice (Q6, Josh 2026-10-27: "agreed"); no octave. */
         isAudioTrack(t)
-            ? { kind: 'blank', label: 'Slice', name: 'Slice', bigText: 'Slice ' + (root - 35), ringBound: true }
+            ? { kind: 'blank', label: 'Slice', name: 'Slice', bigText: 'Slice ' + (root - AU_NOTE_BASE + 1), ringBound: true }
             : { kind: 'blank', label: 'Note', name: 'Note', bigText: noteLabel, ringBound: true },
         isAudioTrack(t)
             ? { kind: 'blank', label: '' }
@@ -2366,8 +2376,10 @@ function drawUIBody() {
         return;
     }
     if (bank === BANK_CHORD && inTimeout) {
-        drawKitPage(bankHeaderName(S.activeTrack, BANK_CHORD), padModeBankCells(S.activeTrack), false,
-                    bankPageHints(BANK_CHORD));
+        /* an Audio track's PAD MODE: the Layout of its chops on the pads */
+        drawKitPage(bankHeaderName(S.activeTrack, BANK_CHORD),
+                    isAudioTrack(S.activeTrack) ? auPadModeCells(S.activeTrack) : padModeBankCells(S.activeTrack), false,
+                    isAudioTrack(S.activeTrack) ? null : bankPageHints(BANK_CHORD));
         return;
     }
 

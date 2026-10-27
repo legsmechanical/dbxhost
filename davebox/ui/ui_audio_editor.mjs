@@ -161,7 +161,7 @@ export function auPadTapped(t, padIdx) {
     if (!isAudioTrack(t)) return;
     const i = auInfo(t, auClipOf(t));
     if (i.mode !== AU_MODE_SLICE) return;
-    const k = auPadToSlice(padIdx);
+    const k = auPadToSlice(padIdx, t);
     if (k < i.n) auSetSelSlice(t, k);
 }
 
@@ -507,13 +507,13 @@ export function audioEditorInput(status, d1, d2) {
         if (d1 >= 16 && d1 <= 31) return true;               /* steps */
         if (d1 >= TRACK_PAD_BASE && d1 < TRACK_PAD_BASE + 32) {
             const down = hi === 0x90 && d2 > 0;
-            const k = auPadToSlice(d1 - TRACK_PAD_BASE);
+            const k = auPadToSlice(d1 - TRACK_PAD_BASE, ed.t);
             if (sub === 'lazy') {
                 /* only the white pad: the next slice in order */
                 if (down) {
                     const lz = auLazyState();
                     const next = lz.state === AU_LAZY_RUN ? lz.n : 0;
-                    if (k === next && (lz.state === AU_LAZY_ARMED || lz.state === AU_LAZY_RUN) && next < 32) {
+                    if (k === next && (lz.state === AU_LAZY_ARMED || lz.state === AU_LAZY_RUN) && next < AU_EVEN_MAX) {
                         auLazyTap(ed.t);
                         lz.state = AU_LAZY_RUN; lz.n = next + 1;
                         S.ledsDirtyAudio = true;
@@ -617,7 +617,7 @@ export function audioEditorInput(status, d1, d2) {
         const i = auInfo(ed.t, ed.c);
         const mk = auMarks(ed.t, ed.c);
         const f = ed.cur;
-        if (mk.length < 32 && !mk.some((m) => Math.abs(m[0] - f) < 16)) {
+        if (mk.length < AU_EVEN_MAX && !mk.some((m) => Math.abs(m[0] - f) < 16)) {
             auMarkAdd(ed.t, ed.c, f);
             const nm = mk.map((m) => m.slice());
             let k = 0;

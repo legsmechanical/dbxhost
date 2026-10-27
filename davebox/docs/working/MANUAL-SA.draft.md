@@ -1208,13 +1208,16 @@ them:
 
 | Mode | How it plays | The pads | The steps |
 |---|---|---|---|
-| **Loop** | Set and forget: the sample plays straight through with the clip, from its start each time the clip comes round. A new pick sets the clip's length to the sample's, in whole bars at the tempo; the loop doesn't follow later tempo changes. | Show where the loop is: every chop dim in the track colour, the chops played this time round bright, the one playing pulsing. In **Revrs** they fill from the end. Stopped, all dim. Tapping one does nothing. | Show where the loop is; pressing one does nothing. |
-| **Slice** | The chops on the steps, played and sequenced from the pads. One at a time: a new chop cuts the last — unless it's the next piece of the sample, reached right where the last one has got to, which simply plays on. Velocity is ignored. | **The chops**, in time order: row by row from the bottom-left, 8 a row. Pads past the chop count are dark. | One sequence per clip: each step holds one chop. **Hold a step + tap a pad** places that chop; recording works as on a melodic track. |
+| **Loop** | Set and forget: the sample plays straight through with the clip, from its start each time the clip comes round. A new pick sets the clip's length to the sample's, in whole bars at the tempo. **Tempo** says how it meets the tempo: **Free** plays it as recorded, whatever the tempo; **Sync** plays the chops in order on the beat, each at its place in the bar — the same sound at the loop's own tempo, and in time at any other (a slower tempo leaves gaps between chops, a faster one cuts their tails). | Show where the loop is: every chop dim in the track colour, the chops played this time round bright, the one playing pulsing. In **Revrs** they fill from the end. Stopped, all dim. Tapping one does nothing. The pads follow the playhead onto the next page of chops. | Show where the loop is: the steps the pads' page of chops covers dim, the playhead white. |
+| **Slice** | The chops on the steps, played and sequenced from the pads. One at a time: a new chop cuts the last — unless it's the next piece of the sample, reached right where the last one has got to, which simply plays on. Velocity is ignored. | **The chops**, in time order, 32 to a page. Pads past the chop count are dark. | One sequence per clip: each step holds one chop. **Hold a step + tap a pad** places that chop; recording works as on a melodic track. |
 
-The pads are in the same order in both modes. **Switching an empty clip from Loop to
-Slice** puts its chops on the steps in order, so it sounds just as it did — then move
-them around. A clip that already has steps keeps them. A new clip starts cut into **16**
-even chops.
+A clip holds up to **128 chops**, 32 to a pad page: **Octave Up / Down** shows the next
+or previous 32. The pads are in the same order in both modes — set on **PAD MODE**
+(below): **4 Rows** (8 a row from the bottom-left) or **16 Pads** (the left 4×4, then the
+right 4×4). **Switching an empty clip from Loop to Slice** puts its chops on the steps in
+order, so it sounds just as it did — then move them around. A clip that already has
+steps keeps them. A new clip starts cut into **16** even chops. From an external
+keyboard, note 36 plays chop 1.
 
 **WAVE** holds the clip's sample and its chops. Open it from the bank map's **WAVE**
 pad (under CLIP). What it shows follows the clip:
@@ -1293,10 +1296,12 @@ Pitch and Detune add to the clip's. The Mode isn't here: it's on the CLIP bank.
 | Bank | Knobs |
 |---|---|
 | **CLIP**, Slice mode | As ALL LANES on a drum track: **Res** · **Strch** · **Shift** (alt **Nudge**) · **Mode** · **Crop›** · **InQnt** · **Dir** (alt **Revrs**) · **>Seq›** (touch K8, click) lays one step per chop, in order, so the clip plays the sample back as it was — now as chops you can rearrange |
-| **CLIP**, Loop mode | **Nudge** (K3) moves the sample against the bar (ms) · **Mode** (K4) |
+| **CLIP**, Loop mode | **Tempo** (K1) **Free** / **Sync** · **Nudge** (K3) moves the sample against the bar (ms) · **Mode** (K4) |
+| **PAD MODE** | **Layout**: **4 Rows** or **16 Pads**, how the chops sit on the pads |
+| **LIVE ARP** | As on a melodic track, but **Step** replaces Oct: each repeat moves one chop up (or down), up to 15 |
 | **NOTE FX** (Slice mode) | As on a drum track — nothing that changes a pitch. **Quant** lives here only |
 
-There's no RPT GROOVE, LIVE ARP, HARMONY, SEQ ARP, DELAY or MIDI FX on an Audio track,
+There's no RPT GROOVE, HARMONY, SEQ ARP, DELAY or MIDI FX on an Audio track,
 and a Loop clip has no STEP or NOTE FX either: it has no sequence. The step editor's
 first knob reads **Slice n** and picks the step's chop.
 
