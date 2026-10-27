@@ -88,6 +88,13 @@ export function openAudioBank(t) {
     return true;
 }
 
+/* A Shift shortcut over an Audio screen: a step pressed, or the jog turned. */
+export function shortcutLeaves(status, d1, d2) {
+    if (!S.shiftHeld) return false;
+    const hi = status & 0xF0;
+    return (hi === 0x90 && d2 > 0 && d1 >= 16 && d1 <= 31) || (status === 0xB0 && d1 === MoveMainKnob);
+}
+
 export function closeAudioPanel() {
     if (S.auEditor) closeAudioEditor();
     S.auPanel = null;
@@ -113,6 +120,12 @@ export function slicesToSequence(t) {
 export function audioPanelInput(status, d1, d2) {
     const ed = S.auPanel;
     if (!ed) return false;
+    /* Shift + a step or the jog is a SHORTCUT (Josh, 2026-10-28: "regular
+     * shortcuts don't work on waveform editor apart from pad map. shift
+     * shortcuts don't seem to work"): it leaves the screen and runs as it
+     * does anywhere. Shift + click (the picker) and Shift + a knob (fine
+     * steps) stay the screen's. */
+    if (shortcutLeaves(status, d1, d2)) { closeAudioPanel(); return false; }
     if (S.auEditor) return audioEditorInput(status, d1, d2);
     const hi = status & 0xF0;
     if (hi === 0x90 || hi === 0x80) {

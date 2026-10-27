@@ -47,7 +47,7 @@ import { sessStripTargets, SESS_KNOB_MODES } from './ui_engine.mjs';
 import { daveBoxRotate } from './ui_daves.mjs';
 import { miActive, miOnKnob, miOnJog, miOnClick, miOnBack, miClose, miJogTouch, miPadTap, miPadRelease } from './ui_midi_import.mjs';
 import { audioChooserOpen, audioChooserRotate, audioChooserClick, audioChooserBack, closeAudioChooser } from './ui_audio_chooser.mjs';
-import { audioPanelInput } from './ui_audio_editor.mjs';
+import { audioPanelInput, shortcutLeaves } from './ui_audio_editor.mjs';
 import { isAudioTrack, AU_EXT_BASE, AU_NOTE_BASE } from './ui_audio.mjs';
 import {
     projectPickerTextEntryMidi, templateTextEntryMidi,
@@ -707,6 +707,8 @@ function _dispatchBelowJogRouter(data, status, d1, d2) {
      * Steps are swallowed so nothing edits the track underneath; Note/Session
      * closes and falls through; transport, Shift and the volume keep doing
      * what they do. */
+    /* ...a Shift shortcut leaves the chooser too, and the WAVE screen under it */
+    if (audioChooserOpen() && shortcutLeaves(status, d1, d2)) closeAudioChooser();
     if (audioChooserOpen()) {
         const hi = status & 0xF0;
         if (hi === 0x90 || hi === 0x80) {

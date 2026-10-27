@@ -1235,7 +1235,9 @@ plays at. Times read in seconds to two decimals.
 
 **Shift + click** opens WAVE's menu: **Load sample** (the chooser) and **Chop
 sample**, which offers **Lazy**, **Manual** and **Even**. None of them changes the
-Mode: the chops serve both. **Back** steps back a level, and leaves WAVE.
+Mode: the chops serve both. **Back** steps back a level, and leaves WAVE. The Shift
+shortcuts work here as anywhere: **Shift + a step** or **Shift + jog** leaves WAVE and does
+what it always does.
 
 **Choosing a sample:** the list starts with **This project** (samples it already
 holds), **dAVEBOx Resample**, **Recordings**, **Samples** and the **Core Library**;

@@ -458,6 +458,30 @@ step('⭐⭐ the map opens from WAVE (hold the jog); a pick leaves it for that b
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
 });
 
+step('⭐⭐ Shift shortcuts work over WAVE and its chooser: a step or the jog leaves the screen and runs (Josh: "shift shortcuts don\'t seem to work")', () => {
+    /* Shift + Step 2: Project Settings */
+    mapPad(2, 2);
+    assert(S.auEditor, 'WAVE did not open');
+    cc(HC.MoveShift, 127); note(17, 100); note(17, 0); cc(HC.MoveShift, 0); ticks(3);
+    assert(!S.auEditor && !S.auPanel, 'Shift + Step 2 did not leave WAVE');
+    assert(S.globalMenuOpen, 'Shift + Step 2 did not open Project Settings over WAVE');
+    back(); ticks(2);
+    assert(!S.globalMenuOpen, 'Back did not close Project Settings');
+    /* Shift + jog: the track */
+    mapPad(2, 2);
+    const was = S.activeTrack;
+    cc(HC.MoveShift, 127); jog(1); cc(HC.MoveShift, 0); ticks(3);
+    assert(!S.auEditor && S.activeTrack !== was, 'Shift + jog did not leave WAVE for the next track: ' + S.activeTrack);
+    cc(HC.MoveShift, 127); jog(-1); cc(HC.MoveShift, 0); ticks(3);
+    assert(S.activeTrack === was, 'Shift + jog did not come back');
+    /* Shift + click is still WAVE's own (the picker) */
+    mapPad(2, 2);
+    shiftClick(); ticks(2);
+    assert(S.auEditor && S.auEditor.pick, 'Shift + click left WAVE instead of opening its picker');
+    back(); back(); ticks(2);
+    assert(!S.auEditor, 'WAVE did not close');
+});
+
 step('⭐⭐ WAVE: SLICE n/n or LOOP up top; Start / End light while touched or turned; ZOOM + / - / ZOOM between them (Josh)', () => {
     GET['t4_au_info_0'] = INFO(1, 8, 0); A.auMarkStale(4, 0); ticks(2);   /* a hand set of 8 */
     mapPad(2, 2);
@@ -848,7 +872,8 @@ step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP /
     assert(cells.map((c) => c.label).join() === 'Tempo,Bars,Nudge,Mode,,,,', 'loop bank: ' + cells.map((c) => c.label));
     S.bankCardLatched = true;
     reset();
-    cc(73, 1);                                         /* K3 Nudge */
+    /* K3 Nudge: one detent's worth (the knob's acceleration may need a tick or two) */
+    for (let i = 0; i < 4 && !sent('t4_au_set_nudge').length; i++) cc(73, 1);
     assert(sent('t4_au_set_nudge').join() === '0 5', 'K3 is not Nudge: ' + JSON.stringify(sentLike(/_au_/)));
     S.knobTouched = 2;                                 /* K3 Nudge: no click alternate */
     const lh = JSON.stringify(render.bankPageHints(0));

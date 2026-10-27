@@ -51,6 +51,8 @@ the section into a versioned heading at release time.
   land on it.
 
 ### Fixed
+- **Audio: the Shift shortcuts work over WAVE** (and its sample chooser): Shift + a
+  step or Shift + jog leaves it and does what it does everywhere else.
 - **Audio: slices start exactly on their step** (on dAVEBOx's own clock) rather than up to 3 ms early, and chops
   played in order join with no click or dip.
 - **Audio: >Seq dropped chops** whose start fell a fraction before their step (a 2 s
