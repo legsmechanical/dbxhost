@@ -8,6 +8,16 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 
+## [1.1.1-test.1] — 2026-10-27 (test build, not in the Schwung catalog)
+
+### Changed
+- **The power button asks POWER OFF? again**, as in 1.1.0, but only for a real
+  tap or hold. Every power message the Move sends is now written to the log
+  with its contents, and so is each time the question comes up — a bug report
+  sent after it pops up by itself shows what arrived.
+- **The web manager logs why each connection closed**, so a bug report can
+  show why the page keeps reconnecting.
+
 ## [1.1.1] — 2026-10-27
 
 ### Fixed
