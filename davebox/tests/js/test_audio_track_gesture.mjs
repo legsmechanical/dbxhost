@@ -447,6 +447,8 @@ step('⭐⭐ WAVE: SLICE n/n or LOOP up top; Start / End light while touched or 
     ticks(2);
     const px = (f, x, y) => f[y * 128 + x];
     let f, tx = globalThis.__texts(() => { f = shown(); });
+    /* two hints fit; Josh chose CLK ADD · SH+CLK MENU over a knob hint */
+    assert(['CLK', 'ADD', 'SH+CLK', 'MENU'].every((h) => tx.indexOf(h) >= 0), 'Slice hints: ' + JSON.stringify(tx));
     assert(tx.indexOf('SLICE 1/8') >= 0 || tx.some((x) => /^SLICE \d+\/8$/.test(x)), 'the header: ' + JSON.stringify(tx.slice(0, 6)));
     assert(!px(f, 2, 9) && !px(f, 3, 15), 'Start is lit with no knob in hand');
     note(0, 127); f = shown();
