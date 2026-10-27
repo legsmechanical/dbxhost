@@ -109,6 +109,7 @@ const render = await import('../../ui/ui_render.mjs');
 globalThis.__ED = await import('../../ui/ui_editops.mjs');
 globalThis.__kc = (await import('../../ui/ui_movy.mjs')).kitCellsForTest;
 globalThis.__ring = (await import('../../ui/ui_knob_leds.mjs')).screenRingCells;
+globalThis.__tc = (await import('../../ui/ui_leds.mjs')).trackColor;
 const _kitText = [];
 (await import('../../ui/ui_fonts_pp.mjs')).setKitTextTrace((x) => _kitText.push(String(x)));
 globalThis.__texts = (fn) => { _kitText.length = 0; fn(); return _kitText.slice(); };
@@ -418,6 +419,10 @@ step('⭐⭐ the map opens from WAVE (hold the jog) and the AUDIO editor (at onc
         /* ...lit where you are: that screen's own pad (Josh: "pad map should show when you're in audio/wave") */
         ticks(2);
         assert(LEDS.get(P.bankMapPadForCell(col, row)) === HC.White, 'the map does not light ' + name + '\'s pad: ' + LEDS.get(P.bankMapPadForCell(col, row)));
+        /* the other one of AUDIO / WAVE is the track's colour, as AUDIO is (Josh: "wave map pad should be track color just like audio") */
+        const other = name === 'WAVE' ? [2, 3] : [2, 2];
+        assert(LEDS.get(P.bankMapPadForCell(other[0], other[1])) === globalThis.__tc(4),
+               'the other Audio pad is not the track colour: ' + LEDS.get(P.bankMapPadForCell(other[0], other[1])) + ' vs ' + globalThis.__tc(4));
         const whites = Array.from({ length: 32 }, (_, i) => LEDS.get(C.TRACK_PAD_BASE + i)).filter((v) => v === HC.White).length;
         assert(whites === 1, 'the map lights ' + whites + ' pads white over ' + name + ' (the bank under it too?)');
         note(P.bankMapPadForCell(2, 1), 100); note(P.bankMapPadForCell(2, 1), 0);   /* CLIP */

@@ -647,7 +647,8 @@ function paintBankMapPads() {
         const au = S.auPanel ? (S.auEditor ? 'wave' : 'inst') : null;
         bankPadMapForMode(S.trackPadMode[t], t).forEach((c, ci) => c.cells.forEach((cell, r) => {
             if (!cell) return;
-            const own = cell.bank === BANK_CONFIG || cell.bank === BANK_SOUND || cell.action === 'inst';
+            /* the track's own pads in its colour — WAVE too, as AUDIO (Josh, 2026-10-28) */
+            const own = cell.bank === BANK_CONFIG || cell.bank === BANK_SOUND || cell.action === 'inst' || cell.action === 'wave';
             const on = d ? (d.col === ci && d.row === r)
                 : au !== null ? cell.action === au
                 : ed !== null ? (cell.action === 'inst' && ed === 'synth')
