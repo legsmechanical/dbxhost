@@ -354,9 +354,11 @@ export function auSampleName(t, c) {
 const pitchCell = (name, v) => ({ kind: 'valsq', label: 'Pitch', name: name + ' (semitones)',
                                   text: v == null ? '--' : (v >= 0 ? '+' : '') + v,
                                   ringNorm: ((v | 0) + 24) / 48 });
-const detuneCell = (name, v) => ({ kind: 'valsq', label: 'Detune', name: name + ' (cents)',
+/* Detune as a knob (Josh, 2026-10-28: "detune should be a knob"): a centred
+ * arc, the cents read out while it is touched. */
+const detuneCell = (name, v) => ({ kind: 'arcbip', label: 'Detune', name: name + ' (cents)',
                                    text: v == null ? '--' : (v >= 0 ? '+' : '') + v,
-                                   ringNorm: ((v | 0) + 50) / 100 });
+                                   signed: (v | 0) / 50 });
 const fmtDb = (v) => (v === 0 ? '0 dB' : (v > 0 ? '+' : '') + v + ' dB');
 const fmtMs = (v) => (v > 0 ? '+' : '') + v + 'ms';
 /* A frame as time: "1.234s", "1:02.35" past a minute. */

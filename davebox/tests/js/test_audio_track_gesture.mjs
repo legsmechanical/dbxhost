@@ -238,7 +238,8 @@ step('⭐⭐ CLIP knobs: Pitch / Detune / Gain for the clip, Revrs..Play for eve
     assert(sent('t4_au_set_pitch').join() === '0 1', 'pitch: ' + JSON.stringify(sent('t4_au_set_pitch')));
     cc(73, 1); cc(73, 1);                               /* K3 Detune: cents */
     assert(sent('t4_au_set_detune').join() === '0 1,0 2', 'detune: ' + JSON.stringify(sent('t4_au_set_detune')));
-    assert(A.auPanelCells(S.auPanel)[2].label === 'Detune' && A.auPanelCells(S.auPanel)[2].text === '+2',
+    assert(A.auPanelCells(S.auPanel)[2].label === 'Detune' && A.auPanelCells(S.auPanel)[2].kind === 'arcbip' &&
+           A.auPanelCells(S.auPanel)[2].text === '+2' && A.auPanelCells(S.auPanel)[2].signed === 2 / 50,
            'the Detune cell: ' + JSON.stringify(A.auPanelCells(S.auPanel)[2]));
     cc(74, 1);                                          /* K4 Gain */
     assert(sent('t4_au_set_gain').join() === '0 1', 'gain: ' + JSON.stringify(sent('t4_au_set_gain')));
