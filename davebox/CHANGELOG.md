@@ -47,8 +47,9 @@ the section into a versioned heading at release time.
   the clip's length stay; **Shift + Delete + clip** resets it, sample and all.
   **Delete + jog click** on the AUDIO bank resets the page showing.
 - **Audio: AUDIO is a bank now**, with pages — CLIP, and SLICE n in Slice mode.
-  A plain jog turn flips them; the map's AUDIO pad and the sound menu's Audio row
-  land on it.
+  A plain jog turn flips them; the map's AUDIO pad lands on it. **WAVE** is the
+  track's instrument editor: the map's instrument pad, the sound menu's Audio row
+  and the instrument shortcut open it.
 
 ### Fixed
 - **Audio: the Shift shortcuts work over WAVE** (and its sample chooser): Shift + a

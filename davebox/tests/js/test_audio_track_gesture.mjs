@@ -110,7 +110,6 @@ const DM = await import('../../ui/ui_drummodel.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
 const render = await import('../../ui/ui_render.mjs');
 globalThis.__ED = await import('../../ui/ui_editops.mjs');
-globalThis.__CC = await import('../../ui/ui_input_cc.mjs');
 globalThis.__kc = (await import('../../ui/ui_movy.mjs')).kitCellsForTest;
 globalThis.__ring = (await import('../../ui/ui_knob_leds.mjs')).screenRingCells;
 globalThis.__tc = (await import('../../ui/ui_leds.mjs')).trackColor;
@@ -208,10 +207,18 @@ step('⭐⭐ the bank map\'s AUDIO pad is the AUDIO bank (Josh: "can audio be a 
     /* Mode went to the CLIP bank (Josh, 2026-10-28: "loop vs slice mode should be a clip bank setting") */
     const cells = A.auPanelCells(ED());
     assert(cells.map((c) => c.label).join() === 'Pitch,Detune,Gain,Revrs,Attk,Decay,Play,', 'CLIP (Slice): ' + cells.map((c) => c.label));
-    /* the instrument shortcuts land here too: the map's AUDIO module pad, the sound menu's Audio row */
     S.activeBank = 0;
-    globalThis.__CC.pickAudioBank();
-    assert(S.activeBank === C.BANK_AUDIO, 'pickAudioBank did not land on AUDIO');
+});
+
+step('⭐⭐ the instrument door on an Audio track is WAVE, the sample\'s editor: the map\'s instrument pad (Josh: "does it make sense ... be the wave editor?" · "make sense")', () => {
+    assert(P.bankMapModuleAt(0, C.PAD_MODE_AUDIO, 6, 1).label === 'WAVE', 'the instrument pad is not labelled WAVE');
+    S.activeBank = 0; S.bankCardLatched = false;
+    cc(3, 127); note(P.bankMapPadForCell(6, 1), 100); note(P.bankMapPadForCell(6, 1), 0); cc(3, 0); ticks(3);
+    assert(S.auEditor && S.auEditor.mode === 'wave' && S.activeBank === 0, 'the instrument pad did not open WAVE: ' + JSON.stringify({ ed: !!S.auEditor, b: S.activeBank }));
+    back(); ticks(2);
+    assert(!S.auEditor && !S.auPanel, 'Back did not leave WAVE');
+    mapPad(2, 3);                                    /* back on the AUDIO bank for what follows */
+    assert(S.activeBank === C.BANK_AUDIO, 'AUDIO');
 });
 
 step('⭐ Pitch reads as a number and steps a semitone per detent run (Josh: "doesn\'t read out any values and is very touchy")', () => {

@@ -1811,16 +1811,6 @@ function seqAutoEdit(track, bank, k, altMode, nv, cur) {
  * screen has to be re-entered — BANKS[11] draws nothing on its own).
  * `rest`: the walk under the overview — no display window, a SILENT sound
  * entry (it opens resting; the card is not shown). */
-/* Land on the AUDIO bank (the map's AUDIO pads, the instrument shortcut, the
- * sound menu's Audio row), its card showing. */
-export function pickAudioBank() {
-    const t = S.activeTrack;
-    if (!isAudioTrack(t)) return;
-    S.bankPickerSel = bankListFor(t).indexOf(BANK_AUDIO);
-    applyBankPick(false);
-    forceRedraw();
-}
-
 export function applyBankPick(rest) {
     const t = S.activeTrack;
     S.doorReturn = null;          /* a bank chosen any other way ends a door screen's way home */
@@ -3080,7 +3070,10 @@ function openTrackModule(comp) {
 function openTrackInstrument() {
 const _gt = S.activeTrack;
 /* AUDIO: the instrument door is the AUDIO editor (ui_audio_editor). */
-if (isAudioTrack(_gt)) { if (soundOpen()) soundExit(); pickAudioBank(); return; }
+/* ...and WAVE is its editor (Josh, 2026-10-28: "does it make sense for the
+ * "instrument" slot on pad map and the place you land when clicking in sound
+ * config be the wave editor?" · "make sense"); the AUDIO bank keeps its pad. */
+if (isAudioTrack(_gt)) { if (soundOpen()) soundExit(); if (S.auPanel) closeAudioPanel(); openWave(_gt); forceRedraw(); return; }
 /*
  * ⭑ STAMP WHERE WE ARE FIRST (Josh, 2026-08-29: "when exiting instrument
  * editor entered from shift hold shortcut, it should go back to where you

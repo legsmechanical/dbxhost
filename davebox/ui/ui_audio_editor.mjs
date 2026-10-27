@@ -58,7 +58,7 @@ import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLaz
 import { registerScreenRingCells, registerRingCells } from './ui_knob_leds.mjs';
 import { BANK_AUDIO } from './ui_constants.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
-import { ccKnobDelta, knobPick, KNOB_PICK, KNOB_DELIB, pickAudioBank } from './ui_input_cc.mjs';
+import { ccKnobDelta, knobPick, KNOB_PICK, KNOB_DELIB } from './ui_input_cc.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 
 /* One step per detent run (ui_input_cc's knobStep; its exports are only used
@@ -80,13 +80,6 @@ export function openAudioEditor(t) {
     return true;
 }
 
-/* The AUDIO bank, from a screen that cannot reach the bank pick itself (the
- * sound menu's Audio row): ui_input_cc owns the pick. */
-export function openAudioBank(t) {
-    if (!isAudioTrack(t) || t !== S.activeTrack) return false;
-    pickAudioBank();
-    return true;
-}
 
 /* A Shift shortcut over an Audio screen: a step pressed, or the jog turned. */
 export function shortcutLeaves(status, d1, d2) {

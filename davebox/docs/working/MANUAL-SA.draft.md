@@ -1220,8 +1220,10 @@ order, so it sounds just as it did — then move them around. A clip that alread
 steps keeps them. A new clip starts cut into **16** even chops. From an external
 keyboard, note 36 plays chop 1.
 
-**WAVE** holds the clip's sample and its chops. Open it from the bank map's **WAVE**
-pad (under CLIP). What it shows follows the clip:
+**WAVE** holds the clip's sample and its chops — it is the Audio track's instrument
+editor. Open it from the bank map's **WAVE** pad (under CLIP) or its instrument pad,
+by clicking **Audio** in the track's sound menu, or with the instrument shortcut
+(**Shift + hold Note/Session**). What it shows follows the clip:
 
 - **No sample:** *Click to load sample* — a click opens the sample chooser.
 - **Loop mode:** the loop's waveform with its chops marked. **K1** Start · **K2**
@@ -1282,7 +1284,7 @@ there. The header reads **SLICE n/n** (or **LOOP**); the start or end you're tou
 or turning lights up, and **ZOOM +** / **ZOOM −** shows between them while K2 zooms.
 
 **The AUDIO bank** holds the clip's sound. Pick it from the bank map's **AUDIO**
-pad, or click **Audio** in the track's sound menu. It is a bank with **pages**:
+pad. It is a bank with **pages**:
 **turn the jog** to flip them (on a bank with one page the turn does nothing); touch
 the jog or a knob to see the page you're on. **Delete + jog click** resets the page
 showing, and only that page.
