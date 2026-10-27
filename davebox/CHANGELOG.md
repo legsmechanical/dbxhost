@@ -8,7 +8,7 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 
-## [1.1.1-test.1] — 2026-10-27 (test build, not in the Schwung catalog)
+## [1.1.2] — 2026-10-27 (test build, not in the Schwung catalog)
 
 ### Changed
 - **The power button asks POWER OFF? again**, as in 1.1.0, but only for a real
