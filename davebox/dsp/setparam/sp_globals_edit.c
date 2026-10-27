@@ -474,8 +474,12 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             cl->stretch_exp     = 0;
             cl->clock_shift_pos = 0;
             cl->nudge_pos       = 0;
-            cl->ticks_per_step  = TICKS_PER_STEP;
-            cl->loop_start      = 0;
+            /* an Audio clip's length and resolution are its sample's: the
+             * sample stays, only the sequence goes */
+            if (tr->pad_mode != PAD_MODE_AUDIO) {
+                cl->ticks_per_step  = TICKS_PER_STEP;
+                cl->loop_start      = 0;
+            }
             clip_pfx_params_init(&cl->pfx_params);
             cl->note_count = 0;
             memset(cl->notes, 0, sizeof(cl->notes));

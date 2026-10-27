@@ -1280,7 +1280,8 @@ or turning lights up, and **ZOOM +** / **ZOOM −** shows between them while K2 
 
 **The AUDIO editor** holds the clip's sound. Open it from the bank map's **AUDIO**
 pad, or by clicking **Audio** in the track's sound menu. Turn the jog for its pages;
-**Back** leaves. Holding the jog brings up the bank map at once.
+**Back** leaves. Holding the jog brings up the bank map at once. **Delete + jog
+click** resets every setting on the page showing.
 
 **Pitch** moves in semitones (±24) and **Detune** in cents (±50); a slice's own
 Pitch and Detune add to the clip's. The Mode isn't here: it's on the CLIP bank.
@@ -1306,7 +1307,9 @@ and a Loop clip has no STEP or NOTE FX either: it has no sequence. The step edit
 first knob reads **Slice n** and picks the step's chop.
 
 **Copying** an Audio clip carries its sample and settings; it pastes onto an Audio
-track only. Clearing a clip clears its sample too. **Undo** covers the steps; the
+track only. **Delete + clip** clears its sequence only: the sample, its settings
+and the clip's length stay. **Shift + Delete + clip** resets it completely, sample
+and all. **Undo** covers the steps; the
 AUDIO editor's settings aren't undoable. **Export to Ableton** leaves Audio tracks
 out for now, and says so when it finishes.
 

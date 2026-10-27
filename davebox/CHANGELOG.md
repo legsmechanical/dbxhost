@@ -43,6 +43,10 @@ the section into a versioned heading at release time.
   reaches before it comes round are grey; the step buttons follow the playhead page by
   page.
 
+- **Audio: Delete + clip clears the sequence only** — the sample, its settings and
+  the clip's length stay; **Shift + Delete + clip** resets it, sample and all.
+  **Delete + jog click** in the AUDIO editor resets the page showing.
+
 ### Fixed
 - **Audio: slices start exactly on their step** (on dAVEBOx's own clock) rather than up to 3 ms early, and chops
   played in order join with no click or dip.

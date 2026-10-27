@@ -529,6 +529,46 @@ step('⭐⭐ WAVE K4 Gain · K5 Pitch · K6 Detune (the clip\'s), read out in th
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
 });
 
+step('⭐⭐ Delete + jog click in the AUDIO editor resets the page showing (Josh: "reset all params on the page we\'re on in "audio"")', () => {
+    GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(2);
+    mapPad(2, 3);                                    /* the AUDIO editor, CLIP */
+    reset();
+    cc(HC.MoveDelete, 127); click(); cc(HC.MoveDelete, 0);
+    const got = sentLike(/_au_/).map((x) => x[0] + '=' + x[1]).join(' ');
+    assert(['set_pitch=0 0', 'set_detune=0 0', 'set_gain=0 0', 'all_rev=0 0', 'all_atk=0 0', 'all_dec=0 0', 'all_play=0 0']
+           .every((k) => got.indexOf('t4_au_' + k) >= 0), 'CLIP did not reset: ' + got);
+    jog(1);                                          /* SLICE n */
+    A.auSetSelSlice(4, 2);
+    reset();
+    cc(HC.MoveDelete, 127); click(); cc(HC.MoveDelete, 0);
+    const sg = sentLike(/_au_slice_/).map((x) => x[0] + '=' + x[1]).join(' ');
+    assert(['pitch', 'detune', 'gain', 'rev', 'atk', 'dec', 'play'].every((f) => sg.indexOf('t4_au_slice_' + f + '=0 2 0') >= 0),
+           'SLICE 3 did not reset: ' + sg);
+    reset();
+    click();                                         /* a plain click resets nothing */
+    assert(!sentLike(/_au_/).length, 'a plain click reset: ' + JSON.stringify(sentLike(/_au_/)));
+    S.actionPopupEndTick = 0;
+    jog(-1); back(); ticks(2);
+});
+
+step('⭐ Delete + track clears an Audio clip\'s sequence and keeps its sample and length; Shift + Delete is the full reset (Josh)', () => {
+    const ED = globalThis.__ED;
+    GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(2);
+    S.clipLength[4][0] = 48; S.clipLengthManuallySet[4][0] = true;
+    reset();
+    ED.clearClip(4, 0, false);
+    /* the mirror, before the reread (the stub answers a length of 16) */
+    const mirrored = S.clipLength[4][0] === 48 && S.clipLengthManuallySet[4][0];
+    ticks(3);
+    assert(sent('t4_c0_clear').length === 1, 'no clear: ' + JSON.stringify(sentLike(/_c0_/)));
+    assert(A.auInfo(4, 0).name === 'Break Phenom 84 bpm.wav' && S.clipNonEmpty[4][0] && mirrored,
+           'the clear dropped the sample or the length: ' + A.auInfo(4, 0).name + ' ' + S.clipLength[4][0]);
+    ED.hardResetClip(4, 0); ticks(3);
+    assert(sent('t4_c0_hard_reset').length === 1, 'no hard reset');
+    S.clipLength[4][0] = 16; S.clipLengthManuallySet[4][0] = false;
+    A.auMarkStale(4, 0); ticks(2);
+});
+
 step('⭐⭐ the knob rings follow the Audio screens: lit where a knob works, dark where it does nothing (Josh)', () => {
     const lit = () => globalThis.__ring().map((c) => (c ? 1 : 0)).join('');
     assert(globalThis.__ring() === null, 'rings taken with no Audio screen up');

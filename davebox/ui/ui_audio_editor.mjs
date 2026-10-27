@@ -53,7 +53,7 @@ import { nowMs } from './ui_clock.mjs';
 import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLazyState, auMarkStale,
          auPanelPages, auPanelPageName, auPanelKnob, auPanelKnobClass, auChop, auPadToSlice,
          auSelSlice, auSetSelSlice, isAudioTrack, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
-         auMarkAdd, auMarkDel, auManual, auEvenBake, auRangeStep, auSet, auEnd, auPanelRingCells,
+         auMarkAdd, auMarkDel, auManual, auEvenBake, auRangeStep, auSet, auEnd, auPanelRingCells, auPanelReset,
          AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
 import { registerScreenRingCells } from './ui_knob_leds.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -141,6 +141,7 @@ export function audioPanelInput(status, d1, d2) {
         return true;
     }
     if (d1 === MoveMainButton) {
+        if (d2 >= 64 && S.deleteHeld && auPanelReset(ed)) showActionPopup(auPanelPageName(ed) === 'CLIP' ? 'CLIP' : 'SLICE', 'RESET');
         S.screenDirty = true;
         return true;
     }

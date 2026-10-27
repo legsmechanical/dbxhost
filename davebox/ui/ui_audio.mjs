@@ -632,6 +632,33 @@ export function auRangeStep(t, c, which, steps, per) {
 }
 
 /* One knob step on the AUDIO editor. Returns true when something changed. */
+/* Delete + jog click (Josh, 2026-10-28: "can we have delete+click reset all
+ * params on the page we're on in "audio"?"), as on every bank: CLIP — the
+ * clip's Pitch, Detune and Gain, and Revrs in Loop or every slice's Revrs,
+ * Attk, Decay and Play in Slice; SLICE n — that slice's sound. Returns true
+ * when it ran. */
+export function auPanelReset(ed) {
+    const t = ed.t, c = auClipOf(t), i = auInfo(t, c);
+    if (i.state !== 2) return false;
+    if (auPanelPageName(ed) === 'CLIP') {
+        const loc = Object.assign({}, i, { pitch: 0, detune: 0, gain: 0 });
+        auSet(t, c, 'pitch', 0); auSet(t, c, 'detune', 0); auSet(t, c, 'gain', 0);
+        if (i.mode !== AU_MODE_SLICE) { loc.revrs = 0; auSet(t, c, 'revrs', 0); }
+        else {
+            for (const f of SLICE_CLIP_ALL) if (f) auSetAll(t, c, f, DEFAULT_SLICE[f]);
+            _all.delete(t + '_' + c);
+            for (const k of _sl.keys()) if (k.startsWith(t + '_' + c + '_')) _sl.delete(k);
+        }
+        S.auInfo[t][c] = loc;
+        S.auStartsRev = (S.auStartsRev | 0) + 1;
+        return true;
+    }
+    const l = auSelSlice(t);
+    if (l >= i.n) return false;
+    for (const f of SLICE_FIELDS) auSetSlice(t, c, l, f, DEFAULT_SLICE[f]);
+    return true;
+}
+
 export function auPanelKnob(ed, k, steps) {
     const t = ed.t, c = auClipOf(t), i = auInfo(t, c);
     const dir = steps > 0 ? 1 : -1;

@@ -1009,9 +1009,25 @@ int main(void) {
     HX_ASSERT(inst->tracks[1].clips[3].note_count == 0, "an Audio clip pasted onto a melodic track");
     hx_set_param(h, "clip_cut", "4 9 4 11");
     HX_ASSERT(!inst->au_clip[4][9].name[0] && !strcmp(inst->au_clip[4][11].name, "mono48.wav"), "a cut did not move the sample");
+    /* Delete + track clears the sequence only (Josh, 2026-10-28: "shouldn't
+     * clear the sample - only clear the sequence"); Shift + Delete + track
+     * (`_hard_reset`) is the sample and every setting */
+    HX_ASSERT(wait_loaded(h, 4, 11) == 2, "the cut clip did not load");
+    tr->clips[11].length = 48;
+    hx_set_param(h, "t4_au_set_gain", "11 -7");
+    hx_set_param(h, "t4_au_chop", "11");
+    HX_ASSERT(tr->clips[11].note_count > 0, "no sequence to clear");
     hx_set_param(h, "t4_c11_clear", "");
-    HX_ASSERT(!inst->au_clip[4][11].name[0] && !inst->au_clip[4][11].smp, "clearing an Audio clip kept its sample");
-    HX_ASSERT(inst->au_clip[4][0].smp, "clearing a copy let the original's sample go");
+    HX_ASSERT(clip_pitches(inst, 4, 11, pit, 64) == 0, "clearing an Audio clip kept its sequence");
+    HX_ASSERT(!strcmp(inst->au_clip[4][11].name, "mono48.wav") && inst->au_clip[4][11].smp &&
+              inst->au_clip[4][11].gain_db == -7 && tr->clips[11].length == 48,
+              "clearing an Audio clip's sequence lost its sample, settings or length");
+    hx_set_param(h, "row_clear", "11");
+    HX_ASSERT(inst->au_clip[4][11].smp && tr->clips[11].length == 48, "clearing the row lost the Audio clip's sample or length");
+    hx_set_param(h, "t4_c11_hard_reset", "");
+    HX_ASSERT(!inst->au_clip[4][11].name[0] && !inst->au_clip[4][11].smp && inst->au_clip[4][11].gain_db == 0,
+              "the full reset kept the sample or a setting");
+    HX_ASSERT(inst->au_clip[4][0].smp, "resetting a copy let the original's sample go");
 
     /* ---- detune: cents on top of the semitones, clip + slice ---- */
     HX_ASSERT(au_tune(0, 50) > 1.0293022366 && au_tune(0, 50) < 1.0293022367 &&
