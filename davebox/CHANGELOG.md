@@ -8,6 +8,27 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 
+### Changed
+- **Audio tracks: one set of chops, and Mode on the CLIP bank.** A clip's chops now
+  serve both modes, and its **Mode** (CLIP bank K4) only says what the sequencer does
+  with them. **Loop** plays the sample straight through, set and forget; its pads show
+  the loop as a progress bar (dim, bright as it plays, the playing chop pulsing) and
+  taps do nothing — the jump points, **Jump** and **JmpQ** are gone. **Slice** puts the
+  chops on the steps. Switching an empty clip from Loop to Slice lays its chops on the
+  steps in order, so it sounds the same. The pads run in time order, 8 a row, in both
+  modes; a new clip starts with 16 even chops. WAVE edits the chops in Loop too, and
+  choosing a chop method no longer switches the Mode.
+- **Audio: the AUDIO editor holds the sound only** (Pitch, Detune, Gain, Revrs and the
+  slice envelopes); the Loop CLIP bank holds Nudge and Mode. The Slice CLIP bank's
+  second Quant is gone (it's on NOTE FX). **DELAY** is gone from Audio tracks, and a
+  Loop clip has no STEP or NOTE FX.
+
+### Fixed
+- **Audio: slices start exactly on their step** (on dAVEBOx's own clock) rather than up to 3 ms early, and chops
+  played in order join with no click or dip.
+- **Audio: >Seq dropped chops** whose start fell a fraction before their step (a 2 s
+  loop at 120 bpm got 8 of its 16 chops).
+
 ### Added
 - **Resample a scene.** Record what a scene sounds like into a sample, cut to loop
   exactly: **Sample → Resample scene**, pick the row, then the length (it starts where

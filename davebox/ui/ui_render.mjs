@@ -71,7 +71,7 @@ import { sessStripTargets } from './ui_engine.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
 import { isAudioTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
-         auPos, auLazyState, auSelSlice, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells,
+         auPos, auLazyState, auSelSlice, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells, auModeCell,
          auFmtTime, auEnd, AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN } from './ui_audio.mjs';
 import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
 import { drawAudioAsk } from './ui_dialogs.mjs';
@@ -112,7 +112,7 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
         const f = A + (B - A) * (k + 0.5) / w;
         if (f < rs || f > re) for (let j = y; j < y + h; j++) if (((k + j) & 1) === 0) set_pixel(x + k, j, 0);
     }
-    if (i.mode === AU_MODE_SLICE && !o.noMarks) {
+    if (!o.noMarks) {                          /* the chops, in either mode */
         const mk = auMarks(t, c);
         const sel = o.sel != null ? o.sel : -1;
         for (let k = 0; k < mk.length; k++) {
@@ -248,7 +248,7 @@ function drawAudioWaveEditor() {
         drawBankHeading('LOOP', false);
         ends('S ' + auFmtTime(i.rstart, rt), 'E ' + auFmtTime(auEnd(i), rt));
         if (zoomTxt) mid(zoomTxt);
-        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, noMarks: true, cur: ed.cur, gain: i.gain | 0 });
+        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, cur: ed.cur, gain: i.gain | 0 });
         drawKitHintRow(MV_FOOTER_Y, [['knobs', 'edit'], ['sh+clk', 'menu']]);   /* Josh: "knobs: edit is fine for a hint" */
         return;
     }
@@ -267,23 +267,22 @@ function drawAudioWaveEditor() {
 }
 
 /* An Audio track's banks (Josh, 2026-10-27): the CLIP bank mirrors ALL LANES
- * in Slice mode — Res · Strch · Shift/Nudge · Quant · Crop · InQnt ·
- * Dir/Revrs · >Seq — over the melodic clip's own data, and holds Revrs ·
- * Nudge · JmpQ in Loop mode; NOTE FX and DELAY lose what moves a pitch (a
- * pitch is a slice): their drum form. `cells` are the melodic bank's. */
+ * in Slice mode — Res · Strch · Shift/Nudge · Mode · Crop · InQnt · Dir/Revrs
+ * · >Seq — over the melodic clip's own data, and holds Nudge · Mode in Loop
+ * mode (Mode on K4 in both: Josh, 2026-10-28, "loop vs slice mode should be a
+ * clip bank setting"); NOTE FX loses what moves a pitch (a pitch is a slice):
+ * its drum form. `cells` are the melodic bank's. */
 function audioBankCells(bank, cells) {
     const t = S.activeTrack;
     if (!isAudioTrack(t)) return cells;
     const B = { kind: 'blank', label: '' };
     if (bank === 0) {
         if (!audioSliceMode(t)) return auLoopBankCells(t);
-        const q = kitCellForKnob(BANKS[1].knobs[3], S.bankParams[t][1][3]);
         const seq = { kind: 'action', oneWay: true, label: '>Seq', name: 'Slices to Sequence', text: '->', opens: true,
                       btnPhase: triggerPhase('seq', S.knobTouched === 7) };
-        return [cells[0], cells[1], cells[2], q, cells[5], cells[4], cells[6], seq];
+        return [cells[0], cells[1], cells[2], auModeCell(t), cells[5], cells[4], cells[6], seq];
     }
     if (bank === 1) return cells.map((c, k) => ((k === 0 || k === 1 || k === 7) ? B : c));
-    if (bank === 3) return cells.map((c, k) => ((k === 4 || k === 7) ? B : c));
     return cells;
 }
 

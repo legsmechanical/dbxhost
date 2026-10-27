@@ -11,14 +11,16 @@
  *   - Slice: a note plays exactly its slice through the TRACK'S SLOT feed,
  *     sends no MIDI, ignores velocity, cuts the slice before it, honours slice
  *     gain / GATE; no pitch transform moves it (transpose, NOTE FX octave);
- *     a DELAY echo's velocity is its volume (Q1); ALL SLICES sets every slice;
+ *     DELAY echoes nothing (it left Audio tracks); ALL SLICES sets every slice;
  *     Chop lays one step per slice at 36..;
  *   - the hand set (frames): Manual, markers added / removed (steps follow),
  *     pinned and home ends, Even as an override, the zoomed waveform; Lazy
  *     armed silent, first tap plays, taps mark, Back / played out, keep or
  *     restore; an older project's permille Start / End arrive in frames;
  *   - Loop: the voice follows the clip from the sample's first frame; Revrs
- *     plays it backwards, Nudge delays it, JmpQ holds a jump to its boundary;
+ *     plays it backwards, Nudge delays it; a new clip has Even 16, and Slice
+ *     on a clip with no steps lays the chops on them in order, which then play
+ *     the sample straight through (the joins);
  *   - detune: cents on top of the semitones, clip + slice, read back, saved;
  *     a project from before it loads as saved, at 0 cents;
  *   - the project file keeps it all and a reload loads the samples again; a
@@ -225,8 +227,22 @@ int main(void) {
     HX_ASSERT(access(p, R_OK) == 0, "the sample was not copied into the project's samples/");
     HX_ASSERT(tr->clips[0].length == 16, "a Loop pick did not set a 1-bar clip");
 
-    /* ---- Slice: a note plays exactly its slice, on the track's slot ---- */
+    /* ---- Loop -> Slice on a clip with no steps: the chops (Even 16, a new
+     * clip's) go onto the steps in order ---- */
+    HX_ASSERT(inst->au_clip[4][0].even == 16, "a new clip did not start with Even 16");
     hx_set_param(h, "t4_au_set_mode", "0 1");
+    {
+        int np = clip_pitches(inst, 4, 0, pit, 64), k, ordered = np == 16;
+        for (k = 0; ordered && k < 16; k++) if (pit[k] != DRUM_BASE_NOTE + k) ordered = 0;
+        HX_ASSERT(ordered, "switching a stepless clip to Slice did not lay its 16 chops in order");
+    }
+    hx_set_param(h, "t4_au_set_mode", "0 0");
+    hx_set_param(h, "t4_c0_step_0_toggle", "36");        /* a step of the user's own */
+    hx_set_param(h, "t4_au_set_mode", "0 1");
+    HX_ASSERT(clip_pitches(inst, 4, 0, pit, 64) == 15, "switching a clip WITH steps to Slice rewrote them");
+    hx_set_param(h, "t4_au_wipe", "0");
+
+    /* ---- Slice: a note plays exactly its slice, on the track's slot ---- */
     hx_set_param(h, "t4_au_set_even", "0 8");
     hx_stub_feed_reset();
     hx_clear_capture(h);
@@ -275,19 +291,17 @@ int main(void) {
     tr->pfx.octave_shift = 0; tr->pfx.note_offset = 0;
     hx_render(h, 60);
 
-    /* ---- echoes fade: a DELAY echo's velocity is its volume (Q1) ---- */
+    /* ---- DELAY left Audio tracks: an older project's DELAY echoes nothing ---- */
     tr->pfx.delay_time_idx = 3; tr->pfx.delay_level = 64; tr->pfx.repeat_times = 1; tr->pfx.fb_velocity = 0;
     hx_stub_feed_reset();
     live_note_on(inst, tr, DRUM_BASE_NOTE + 2, 100);
     hx_render(h, 1);
     live_note_off(inst, tr, DRUM_BASE_NOTE + 2);
     HX_ASSERT(hx_stub_feed_last(4)[255] == 3000, "the played slice was not at full level");
-    for (i = 0, n = 0; i < 400; i++) {
-        hx_render(h, 1);
-        blk = hx_stub_feed_last(4);
-        if (blk && blk[255] > 1000 && blk[255] < 1500) { n = 1; break; }
-    }
-    HX_ASSERT(n, "the echo did not play at its own (velocity) level");
+    /* the track feeds its slot only while a voice sounds: slice 3 (6000
+     * frames) fills 47 blocks; an echo 1/16 later would play it again */
+    for (i = 0; i < 400; i++) hx_render(h, 1);
+    HX_ASSERT(hx_stub_feed(4, NULL, NULL) <= 48, "a DELAY echo played a slice on an Audio track");
     tr->pfx.delay_level = 0; tr->pfx.repeat_times = 0;
     hx_render(h, 60);
 
@@ -686,20 +700,68 @@ int main(void) {
     hx_set_param(h, "transport", "stop");
     hx_render(h, 4);
 
-    /* ---- JmpQ: a jump waits for its 1/16 ---- */
-    hx_set_param(h, "t4_au_set_jmpq", "5 1");
+    /* ---- the chops in order play the sample straight through: no cut, no
+     * fade at a join (a slice carries on the one sounding, on its tick's
+     * frame). A 2 s ramp is exactly a bar at 120 bpm: 16 chops, 16 steps. ---- */
+    snprintf(p, sizeof p, "%s/src/ramp2.wav", g_root); write_ramp_len(p, 2.0);
+    snprintf(p, sizeof p, "7|%s/src/ramp2.wav", g_root);
+    hx_set_param(h, "t4_au_pick", p);
+    HX_ASSERT(wait_loaded(h, 4, 7) == 2 && tr->clips[7].length == 16, "the 2 s ramp did not load as a bar");
+    hx_set_param(h, "t4_au_set_mode", "7 1");               /* the 16 chops onto the 16 steps */
+    HX_ASSERT(clip_pitches(inst, 4, 7, pit, 64) == 16, "the chops were not laid on the steps");
+    hx_stub_feed_reset();
+    hx_set_param(h, "t4_launch_clip", "7");
     hx_set_param(h, "transport", "play");
-    hx_render(h, 3);
-    hx_set_param(h, "t4_au_jump", "8");                /* half way: frame 22050 */
-    hx_render(h, 1);
-    blk = hx_stub_feed_last(4);
-    HX_ASSERT(blk[255] < 2000, "a JmpQ jump did not wait for its boundary");
-    for (i = 0; i < 80; i++) { hx_render(h, 1); blk = hx_stub_feed_last(4); if (blk[255] > 20000) break; }
-    /* the 1/16 is 24 ticks = 5512 frames: block 43 from the start (4 + i) */
-    HX_ASSERT(i < 80 && 4 + i >= 42 && 4 + i <= 44, "a JmpQ jump did not land on its 1/16");
+    for (i = 0; i < 20 && hx_stub_feed(4, NULL, NULL) == 0; i++) hx_render(h, 1);
+    {
+        int prev = -1, breaks = 0, k, fed = hx_stub_feed(4, NULL, NULL);
+        blk = hx_stub_feed_last(4);
+        for (k = 0; k < 128; k++) if (blk[k * 2]) { prev = blk[k * 2]; }   /* the first block: its last frame */
+        for (n = 0; n < 660; n++) {                          /* ~84,500 frames: short of the wrap at 88,200 */
+            hx_render(h, 1);
+            if (hx_stub_feed(4, NULL, NULL) == fed) { breaks++; continue; }   /* nothing fed: silence */
+            fed = hx_stub_feed(4, NULL, NULL);
+            blk = hx_stub_feed_last(4);
+            for (k = 0; k < 128; k++) {
+                if (blk[k * 2] != (prev + 1) % 30000) breaks++;
+                prev = blk[k * 2];
+            }
+        }
+        HX_ASSERT(breaks == 0, "the chops in order did not play the sample straight through (a cut or a fade at a join)");
+    }
     hx_set_param(h, "transport", "stop");
-    hx_set_param(h, "t4_au_set_jmpq", "5 0");
     hx_render(h, 4);
+
+    /* ---- a slice starts on its tick's frame, not its block's: step 1 is
+     * 24 ticks = 5512.5 frames after step 0, mid-block; the slice before it
+     * plays on, unfaded, up to that frame ---- */
+    hx_render(h, 60);                                         /* the last chop rings out */
+    hx_set_param(h, "t4_au_wipe", "7");
+    hx_set_param(h, "t4_c7_step_0_toggle", "41");             /* chop 6: not followed by its next */
+    hx_set_param(h, "t4_c7_step_1_toggle", "36");             /* chop 1 */
+    hx_stub_feed_reset();
+    hx_set_param(h, "transport", "play");
+    {
+        long g = 0, start = -1, swap = -1;
+        int prev = -1, fed = 0, k;
+        for (n = 0; n < 120 && swap < 0; n++) {
+            hx_render(h, 1);
+            if (hx_stub_feed(4, NULL, NULL) == fed) { g += 128; continue; }
+            fed = hx_stub_feed(4, NULL, NULL);
+            blk = hx_stub_feed_last(4);
+            for (k = 0; k < 128; k++, g++) {
+                int v = blk[k * 2];
+                if (start < 0) { if (v) { start = g; prev = v; } continue; }
+                if (v != (prev + 1) % 30000) { swap = g; break; }
+                prev = v;
+            }
+        }
+        HX_ASSERT(start >= 0 && swap - start >= 5511 && swap - start <= 5514,
+                  "the next slice did not start on its tick's frame (or the one before it faded early)");
+    }
+    hx_set_param(h, "transport", "stop");
+    hx_render(h, 4);
+    hx_set_param(h, "t4_launch_clip", "5");
 
     /* ---- copy / cut / clear carry the sample; a mismatched paste is refused ---- */
     hx_set_param(h, "clip_copy", "4 0 4 9");

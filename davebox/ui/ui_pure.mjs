@@ -138,20 +138,34 @@ export function soundBankOnTrack(padMode, bank, t) {
  * drum lane since they apply per-lane").
  * Bank 0 stays each track's start and Back bank (BANK_DEFAULT); only the walk
  * moved. */
+/* An Audio track's current clip is a Slice clip (ui_audio's auClipOf and
+ * auInfo, read straight from S: this module imports nothing but ui_state). */
+function audioClipIsSlice(t) {
+    const qc = S.trackQueuedClip ? S.trackQueuedClip[t] : -1;
+    const c = (!S.playing && qc >= 0) ? qc : (S.trackActiveClip ? S.trackActiveClip[t] | 0 : 0);
+    const i = S.auInfo && S.auInfo[t] && S.auInfo[t][c];
+    return !!(i && i.mode === 1);
+}
+
 export function bankCategoriesForMode(padMode, t) {
     /* AUDIO (Josh, 2026-10-27): no IN (no RPT GROOVE, no LIVE ARP, no
      * PADMODE: the pads are slices); the clip bank holds the sequence
-     * settings; NOTE FX and DELAY in their drum (no-pitch) form — "midi
-     * effects on audio tracks should mirror those available on drum tracks"
-     * — so no HARMONY or SEQ ARP. The clip's audio is the AUDIO editor, at
-     * the instrument door. */
-    if (padMode === PAD_MODE_AUDIO) return [
-        { label: null,   banks: [BANK_CONFIG] },
-        { label: 'CTRL', banks: [BANK_MACROS, BANK_AUTOMATION] },
-        { label: 'SEQ',  banks: [BANK_STEP, 0] },
-        { label: 'FX',   banks: [1, 3] },
-        { label: null,   banks: [BANK_SOUND] },
-    ];
+     * settings; NOTE FX in its drum (no-pitch) form — "midi effects on audio
+     * tracks should mirror those available on drum tracks" — so no HARMONY or
+     * SEQ ARP, and no DELAY either (2026-10-28: "let's get rid of delay").
+     * The clip's audio is the AUDIO editor, at the instrument door. A Loop
+     * clip has no sequence, so no STEP and no NOTE FX (2026-10-28: "we don't
+     * need to show notes at all in loop mode"). */
+    if (padMode === PAD_MODE_AUDIO) {
+        const slice = audioClipIsSlice(t === undefined ? S.activeTrack : t);
+        return [
+            { label: null,   banks: [BANK_CONFIG] },
+            { label: 'CTRL', banks: [BANK_MACROS, BANK_AUTOMATION] },
+            { label: 'SEQ',  banks: slice ? [BANK_STEP, 0] : [0] },
+            { label: 'FX',   banks: slice ? [1] : [] },
+            { label: null,   banks: [BANK_SOUND] },
+        ].filter((g) => g.banks.length);
+    }
     if (padMode === PAD_MODE_CONDUCT) return [
         { label: null,   banks: [BANK_CONFIG] },
         { label: null,   banks: [0] },
@@ -208,7 +222,7 @@ const BANK_MAP_POS = {
     audio:   { [BANK_CONFIG]: [0, 3],
                [BANK_MACROS]: [1, 0], [BANK_AUTOMATION]: [1, 1], [BANK_SOUND]: [1, 3],
                [BANK_STEP]: [2, 0], 0: [2, 1],
-               1: [3, 0], 3: [3, 2] },
+               1: [3, 0] },
 };
 const BANK_MAP_LABELS = {
     melodic: ['IN', 'CTRL', 'SEQ', 'FX'],

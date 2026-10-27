@@ -1942,6 +1942,7 @@ typedef struct {
     au_slice_t  au_lazy_bak[AU_MAX_SLICES];
     uint8_t     au_echo;                      /* a DELAY echo is being sent (its velocity is its volume) */
     uint64_t    au_tick0;                     /* arp_master_tick before this block's render */
+    uint8_t     au_tick_off;                  /* the frame of this block the tick being played fell on (Slice timing) */
     /* STREAMING (seq8_audio.c): the audio thread's side */
     void       *au_streamer;                  /* the streamer thread's own state */
     au_watch_t  au_watch[NUM_TRACKS][AU_VOICES + 1];
@@ -2948,12 +2949,14 @@ static void pfx_emit(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
             g_inst->tracks[fx->track_idx].pad_mode == PAD_MODE_CONDUCT)
         return;
     /* An AUDIO track's notes play slices (pitch DRUM_BASE_NOTE + slice) instead
-     * of leaving as MIDI — every path (steps, pads, ratchets, DELAY echoes,
-     * swing, quantize) funnels through here. Nothing else (CC, AT) leaves. */
+     * of leaving as MIDI — every path (steps, pads, ratchets, swing, quantize)
+     * funnels through here. Nothing else (CC, AT) leaves, and no DELAY echo:
+     * DELAY left Audio tracks (Josh, 2026-10-28: "let's get rid of delay"), so
+     * an older project's DELAY settings stay quiet. */
     if (g_inst && fx->track_idx < NUM_TRACKS &&
             g_inst->tracks[fx->track_idx].pad_mode == PAD_MODE_AUDIO) {
         uint8_t st = status & 0xF0;
-        if (st == 0x90 || st == 0x80)
+        if ((st == 0x90 || st == 0x80) && !g_inst->au_echo)
             au_note_event((int)fx->track_idx, (int)d1 - DRUM_BASE_NOTE, status, d2, g_inst->au_echo);
         return;
     }
