@@ -23,7 +23,7 @@ import {
     TRACK_PAD_BASE, TPS_VALUES,
     BANKS, PAD_MODE_DRUM, PAD_MODE_CONDUCT,
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_CONFIG, LGTO_KNOB,
-    CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, knobAltFor, ARP_STEPS_KNOB, arpStepsBank, LOOP_NOT_AT_1_MS, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
+    CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, ARP_STEPS_KNOB, arpStepsBank, LOOP_NOT_AT_1_MS, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
     TICK_HZ, STEP_ITER_LIST, JOG_HOLD_MAP_MS,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool } from './ui_constants.mjs';
@@ -69,7 +69,7 @@ import { BANK_MAP_TRACK_POPUP_MS, SEQ_PAGE_POPUP_MS, seqAutoTargetForKnob, SEQ_A
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam, soundOpenModule, instrPickResume } from './ui_sound.mjs';
 import { auPurgeRun, closeAudioChooser } from './ui_audio_chooser.mjs';
-import { isAudioTrack, audioSliceMode, auClipBankKnob } from './ui_audio.mjs';
+import { isAudioTrack, audioSliceMode, auClipBankKnob, knobAltOnTrack } from './ui_audio.mjs';
 
 /* AUDIO's CLIP bank (Slice mode) mirrors ALL LANES over the melodic clip's
  * knobs (Josh, 2026-10-27: "it seems like clip bank should mirror all lanes
@@ -386,7 +386,7 @@ function _onCC_jog(d1, d2) {
      * banks. */
     if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld &&
             !S.copyHeld && !S.muteHeld && S.knobTouched >= 0 &&
-            knobAltFor(S.trackPadMode[S.activeTrack], S.activeBank, S.knobTouched)) {
+            knobAltOnTrack(S.activeTrack, S.trackPadMode[S.activeTrack], S.activeBank, S.knobTouched)) {
         S.knobAlt ^= 1 << S.knobTouched;
         S.screenDirty = true;
         forceRedraw();

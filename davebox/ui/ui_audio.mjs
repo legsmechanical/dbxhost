@@ -28,7 +28,8 @@
  * No host_* call happens at module init. */
 
 import { S } from './ui_state.mjs';
-import { PAD_MODE_AUDIO, NUM_CLIPS, BANK_STEP } from './ui_constants.mjs';
+import { PAD_MODE_AUDIO, NUM_CLIPS, BANK_STEP, knobAltFor } from './ui_constants.mjs';
+import { bankListForMode } from './ui_pure.mjs';
 
 export const AU_MODE_LOOP = 0, AU_MODE_SLICE = 1;
 export const AU_LAZY_NONE = 0, AU_LAZY_ARMED = 1, AU_LAZY_RUN = 2, AU_LAZY_ENDED = 3;
@@ -229,9 +230,10 @@ export function auTick() {
         if (!auSlice(t, c, l)) { auReadSlice(t, c, l); S.screenDirty = true; }
         if (ed && auPanelPageName(ed) === 'CLIP' && cur.mode === AU_MODE_SLICE && !auAll(t, c)) { auReadAll(t, c); S.screenDirty = true; }
     }
-    /* A Loop clip has no sequence: no STEP, no NOTE FX — off them when the
-     * clip turns Loop (ui_pure's walk drops them). */
-    if (cur.mode !== AU_MODE_SLICE && (S.activeBank === 1 || S.activeBank === BANK_STEP)) {
+    /* A bank the track no longer has — STEP and NOTE FX when the clip turns
+     * Loop, DELAY that left Audio tracks (a project's remembered bank: found
+     * on the device) — goes back to CLIP. */
+    if (bankListForMode(PAD_MODE_AUDIO, t).indexOf(S.activeBank) < 0) {
         S.activeBank = 0;
         S.trackActiveBank[t] = 0;
         S.screenDirty = true;
@@ -624,6 +626,14 @@ export function auPanelKnob(ed, k, steps) {
     S.auInfo[t][c] = loc;
     S.auStartsRev = (S.auStartsRev | 0) + 1;
     return true;
+}
+
+/* A knob's click alternate on track t's bank (ui_constants' table), but none
+ * on a Loop clip's CLIP bank: its knobs are Nudge and Mode, not the melodic
+ * clip's Res / Shift / Dir. */
+export function knobAltOnTrack(t, padMode, bank, k) {
+    if (bank === 0 && isAudioTrack(t) && auInfo(t, auClipOf(t)).mode !== AU_MODE_SLICE) return null;
+    return knobAltFor(padMode, bank, k);
 }
 
 /* ---- the CLIP bank in Loop mode: K3 Nudge, where Slice has Shift and its

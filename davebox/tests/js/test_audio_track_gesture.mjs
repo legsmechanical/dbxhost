@@ -756,6 +756,15 @@ step('⭐⭐ Slice mode: pads are 36 + chop in time order, 8 a row, none past th
     reset();
     for (let i = 0; i < 12; i++) cc(78, 1);            /* K8: >Seq, a trigger: a turn does nothing */
     assert(sets.length === 0 && S.pendingDefaultSetParams.length === 0, 'K8 wrote ' + JSON.stringify(sets));
+    /* a touched knob's hint is the Audio bank's own, never the melodic CLIP's
+     * (found on the device: K4 read CLK LEGATO) */
+    const hint = (k) => { S.knobTouched = k; const h = render.bankPageHints(0); S.knobTouched = -1; return JSON.stringify(h); };
+    assert(hint(3).indexOf('LEGATO') < 0 && hint(4) === '[["CLK","CROP"]]' && hint(7) === '[["CLK",">SEQ"]]' &&
+           hint(5).indexOf('CROP') < 0 && hint(7).indexOf('IMPORT') < 0,
+           'Slice CLIP hints: K4 ' + hint(3) + ' K5 ' + hint(4) + ' K6 ' + hint(5) + ' K8 ' + hint(7));
+    /* a bank the track does not have (a project's remembered DELAY) goes back to CLIP */
+    S.activeBank = 3; ticks(2);
+    assert(S.activeBank === 0, 'a remembered DELAY bank stayed on an Audio track: ' + S.activeBank);
 });
 
 step('⭐ NOTE FX takes no pitch knob (Oct, Offset, Random)', () => {
@@ -798,6 +807,10 @@ step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP /
     reset();
     cc(73, 1);                                         /* K3 Nudge */
     assert(sent('t4_au_set_nudge').join() === '0 5', 'K3 is not Nudge: ' + JSON.stringify(sentLike(/_au_/)));
+    S.knobTouched = 2;                                 /* K3 Nudge: no click alternate */
+    const lh = JSON.stringify(render.bankPageHints(0));
+    S.knobTouched = -1;
+    assert(lh.indexOf('CLK') < 0, 'a Loop CLIP knob offers a click: ' + lh);
     for (let i = 0; i < 25; i++) cc(71, 1);            /* K1: nothing yet (Fit) */
     assert(!sentLike(/_au_set_(revrs|jump|jmpq)/).length, 'K1 wrote: ' + JSON.stringify(sentLike(/_au_/)));
     S.bankCardLatched = false;

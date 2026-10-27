@@ -18,7 +18,7 @@ import { chordLabel, noteNames, noteLabel, heldInputNotes, keyUsesFlats, keyRoot
 import { chordIndicator, chordEditSlot, chordSlotCells } from './ui_chord_pads.mjs';
 import { padModeBankCells, customCardSlot, customCardCells } from './ui_pad_mode.mjs';
 import { triggerPhase } from './ui_trigger.mjs';
-import { LGTO_KNOB, CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, knobAltFor, ARP_STEPS_KNOB, arpStepsBank } from './ui_constants.mjs';
+import { LGTO_KNOB, CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, ARP_STEPS_KNOB, arpStepsBank } from './ui_constants.mjs';
 import { miActive, miRender } from './ui_midi_import.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
@@ -71,7 +71,7 @@ import { sessStripTargets } from './ui_engine.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
 import { isAudioTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
-         auPos, auLazyState, auSelSlice, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells, auModeCell,
+         auPos, auLazyState, auSelSlice, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells, auModeCell, knobAltOnTrack,
          auFmtTime, auEnd, AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN } from './ui_audio.mjs';
 import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
 import { drawAudioAsk } from './ui_dialogs.mjs';
@@ -861,18 +861,26 @@ function mapClickHints(bank) {
     return [['HLD', 'BANKS']];
 }
 export function bankPageHints(bank) {
-    /* A touched TRIGGER knob says how to fire it, as stock's footer does. */
-    if (bank === 0 && S.knobTouched === LGTO_KNOB && !S.sessionView) return [['CLK', 'LEGATO']];
-    if (!S.sessionView && ((bank === 0 && S.knobTouched === CROP_KNOB) ||
+    /* A touched TRIGGER knob says how to fire it, as stock's footer does. An
+     * Audio track's CLIP bank has its own: Crop on K5 and >Seq on K8 in Slice
+     * mode, no Legato or Import (K4 is Mode there — found on the device: it
+     * read CLK LEGATO). */
+    const au = isAudioTrack(S.activeTrack);
+    if (au && bank === 0 && !S.sessionView) {
+        if (audioSliceMode(S.activeTrack) && S.knobTouched === 4) return [['CLK', 'CROP']];
+        if (audioSliceMode(S.activeTrack) && S.knobTouched === 7) return [['CLK', '>SEQ']];
+    }
+    if (!au && bank === 0 && S.knobTouched === LGTO_KNOB && !S.sessionView) return [['CLK', 'LEGATO']];
+    if (!S.sessionView && ((!au && bank === 0 && S.knobTouched === CROP_KNOB) ||
             (bank === 7 && S.knobTouched === ALL_LANES_CROP_KNOB &&
              S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM))) return [['CLK', 'CROP']];
-    if (bank === 0 && S.knobTouched === IMPORT_KNOB && !S.sessionView) return [['CLK', 'IMPORT']];
+    if (!au && bank === 0 && S.knobTouched === IMPORT_KNOB && !S.sessionView) return [['CLK', 'IMPORT']];
     /* A touched Steps knob on SEQ ARP / LIVE ARP opens Arp Steps. */
     if (!S.sessionView && S.knobTouched === ARP_STEPS_KNOB &&
             arpStepsBank(S.trackPadMode[S.activeTrack], bank)) return [['CLK', 'STEPS']];
     /* ...and a touched SINGLE-ALT knob says what a click switches it to. */
     if (!S.sessionView && S.knobTouched >= 0) {
-        const a = knobAltFor(S.trackPadMode[S.activeTrack], bank, S.knobTouched);
+        const a = knobAltOnTrack(S.activeTrack, S.trackPadMode[S.activeTrack], bank, S.knobTouched);
         if (a) return [['CLK', (knobAltOn(S.knobTouched) ? a[0] : a[1]).toUpperCase()]];
     }
     /* ⭑ While a step is HELD the jog means something else (spec §2): on any
@@ -898,7 +906,7 @@ export function bankPageHints(bank) {
 function markKnobAlts(cells, bank) {
     const pm = S.trackPadMode[S.activeTrack];
     for (let k = 0; k < cells.length; k++)
-        if (cells[k] && knobAltFor(pm, bank, k)) cells[k].opens = true;
+        if (cells[k] && knobAltOnTrack(S.activeTrack, pm, bank, k)) cells[k].opens = true;
     /* ...and the Steps knob on SEQ ARP / LIVE ARP, the door to Arp Steps. */
     if (arpStepsBank(pm, bank) && cells[ARP_STEPS_KNOB]) cells[ARP_STEPS_KNOB].opens = true;
     return cells;
