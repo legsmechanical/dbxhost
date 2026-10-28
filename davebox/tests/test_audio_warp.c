@@ -237,6 +237,9 @@ int main(void) {
         HX_ASSERT(inst->au_clip[4][1].state == 2, "the 660 Hz sine did not load");
         hx_set_param(h, "t4_au_set_bars", "1 1");
         hx_set_param(h, "t4_au_set_tempo", "1 4");
+        hx_set_param(h, "t4_au_set_tempo", "0 4");          /* the Warp -> Free case above left clip A on Free */
+        HX_ASSERT(inst->au_clip[4][0].tempo == AU_TEMPO_WARP && inst->au_clip[4][1].tempo == AU_TEMPO_WARP,
+                  "both clips are not on Warp");
         hx_set_param(h, "bpm", "100");
         for (k = 0; k < 8; k++) step(h);
         hx_set_param(h, "transport", "play");
