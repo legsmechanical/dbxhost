@@ -8,6 +8,13 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 
+### Added
+- **Audio: Tempo Beats.** A fourth Tempo for Loop clips: the loop is cut at its hits
+  (found when you pick the sample) and each starts on its place in the bar, so drums stay
+  crisp at any tempo. Slower than the loop, the gap after each hit is filled by **Fill**
+  (K5: Off, Loop or Ping, back and forth) and dies away by the next hit with **Fade** (K6);
+  **Sens** (K7) sets how many hits count. Light on the CPU, like Free and Vintage.
+
 ### Changed
 - **Audio: Loop clips have no chops** — they belong to Slice mode now (a clip keeps them
   for when you switch back). SAMPLE shows none, nor a cursor; the pads show the sample in

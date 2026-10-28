@@ -34,13 +34,18 @@ import { bankListForMode } from './ui_pure.mjs';
 export const AU_MODE_LOOP = 0, AU_MODE_SLICE = 1;
 /* Tempo: Free as recorded · Vintage cut on the clock, each piece on its
  * place in the sample's own Bars (Josh, 2026-10-29: "make it as fine as
- * possible and call it "vintage"") · Pitch retuned to fill them. The DSP's
- * values: Free 0, Vintage 1, Pitch 2. */
-export const AU_TEMPO_NAMES = ['Free', 'Vintage', 'Pitch'];
-const AU_TEMPO_VALS = [0, 1, 2];
+ * possible and call it "vintage"") · Pitch retuned to fill them · Beats cut
+ * at its hits, the gaps filled (Josh, 2026-10-29: "only transients"). The
+ * DSP's values: Free 0, Vintage 1, Pitch 2, Beats 3. */
+export const AU_TEMPO_NAMES = ['Free', 'Vintage', 'Pitch', 'Beats'];
+const AU_TEMPO_VALS = [0, 1, 2, 3];
+export const AU_TEMPO_BEATS = 3;
+/* Beats' Fill: the gap after a hit (Ableton's transient loop modes; Ping
+ * the default, as Ableton's — Josh: "go with ableton defaults") */
+export const AU_FILL_NAMES = ['Off', 'Loop', 'Ping'];
 /* the knob's square holds four letters on one line, as Mode's Loop / Slce (found
  * on the device: "Vintage" broke into VIN / TAG) */
-const AU_TEMPO_SQ = ['Free', 'Vint', 'Ptch'];
+const AU_TEMPO_SQ = ['Free', 'Vint', 'Ptch', 'Beat'];
 export function auTempoIdx(i) { const k = AU_TEMPO_VALS.indexOf(i.tempo | 0); return k < 0 ? 0 : k; }
 /* A Loop clip's pads: the sample in even sections, one a pad (Josh,
  * 2026-10-29: "chops should just be completely invisible in loop mode"). */
@@ -112,12 +117,16 @@ export function auParseInfo(raw) {
         bars: head.length > 20 ? head[20] : 0,
         /* Beats' pieces in Start..End at the clip's Sens */
         hits: head.length > 21 ? head[21] : 0,
+        /* Beats: Sens 0..100, Fill (AU_FILL_NAMES), Fade 0..100 */
+        sens: head.length > 22 ? head[22] : 50,
+        fill: head.length > 23 ? head[23] : 2,
+        fade: head.length > 24 ? head[24] : 0,
         name: bar >= 0 ? String(raw).slice(bar + 1) : '',
     };
 }
 
 const DEFAULT_INFO = { state: 0, err: 0, mode: 0, even: 16, hand: 1, n: 16, jump: 16, rstart: 0, rend: 0,
-                       pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, revrs: 0, nudge: 0, jmpq: 0, tempo: 0, reach: -1, bars: 0, hits: 0, name: '' };
+                       pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, revrs: 0, nudge: 0, jmpq: 0, tempo: 0, reach: -1, bars: 0, hits: 0, sens: 50, fill: 2, fade: 0, name: '' };
 const DEFAULT_SLICE = { a: 0, b: 0, pinned: 0, pitch: 0, detune: 0, gain: 0, rev: 0, play: 0, atk: 0, dec: 0 };
 
 export function auInfo(t, c) {
@@ -507,6 +516,10 @@ const barsCell = (i) => {
              text: String(b), options: BARS_OPTS, sel: b - 1, touchArc: { norm: (b - 1) / (AU_BARS_MAX - 1), bip: false } };
 };
 const nudgeCell = (i) => ({ kind: 'arcbip', label: 'Nudge', name: 'Nudge (start vs the bar)', text: fmtMs(i.nudge), signed: i.nudge / 500 });
+const fillCell = (i) => ({ kind: 'enumsq', label: 'Fill', name: 'Fill (the gap after a hit)', text: AU_FILL_NAMES[i.fill | 0] || 'Ping',
+                           sq: AU_FILL_NAMES[i.fill | 0] || 'Ping', options: AU_FILL_NAMES, sel: i.fill | 0 });
+const fadeCell = (i) => ({ kind: 'arc', label: 'Fade', name: 'Fade (by the next hit)', text: (i.fade | 0) + '%', norm: (i.fade | 0) / 100 });
+const sensCell = (i) => ({ kind: 'arc', label: 'Sens', name: 'Sensitivity · ' + (i.hits | 0) + ' hits', text: String(i.sens | 0), norm: (i.sens | 0) / 100 });
 
 /* The sound fields, as cells (SLICE n: one slice; CLIP in Slice mode: every
  * slice, `--` while they differ). */
@@ -610,7 +623,8 @@ function stepSliceField(f, v, steps) {
 }
 
 /* The CLIP bank's own Audio knobs: Mode (K4, both modes) and, in Loop mode,
- * Tempo (K1) and Nudge (K3). Returns true when something changed. */
+ * Tempo (K1), Bars (K2), Nudge (K3) and, on Beats, Fill (K5), Fade (K6) and
+ * Sens (K7). Returns true when something changed. */
 export function auClipBankKnob(t, k, steps) {
     const c = auClipOf(t), i = auInfo(t, c);
     const loc = Object.assign({}, i);
@@ -636,6 +650,15 @@ export function auClipBankKnob(t, k, steps) {
         const v = Math.max(-500, Math.min(500, i.nudge + steps * (S.shiftHeld ? 1 : 5)));
         if (v === i.nudge) return false;
         loc.nudge = v; auSet(t, c, 'nudge', v);
+    } else if (k >= 4 && k <= 6 && i.mode !== AU_MODE_SLICE && (i.tempo | 0) === AU_TEMPO_BEATS) {
+        /* Beats: K5 Fill, K6 Fade, K7 Sens */
+        if (i.state !== 2) return false;
+        const f = k === 4 ? 'fill' : k === 5 ? 'fade' : 'sens';
+        const cur = i[f] | 0;
+        const v = k === 4 ? Math.max(0, Math.min(2, cur + (steps > 0 ? 1 : -1)))
+                          : Math.max(0, Math.min(100, cur + steps * (S.shiftHeld ? 1 : 5)));
+        if (v === cur) return false;
+        loc[f] = v; auSet(t, c, f, v);
     } else return false;
     S.auInfo[t][c] = loc;
     S.auStartsRev = (S.auStartsRev | 0) + 1;
@@ -760,13 +783,15 @@ export function knobAltOnTrack(t, padMode, bank, k) {
     return knobAltFor(padMode, bank, k);
 }
 
-/* ---- the CLIP bank in Loop mode: K1 Tempo (Free · Vintage · Pitch), K3 Nudge, where Slice has Shift and its Nudge
+/* ---- the CLIP bank in Loop mode: K1 Tempo (Free · Vintage · Pitch · Beats), K3 Nudge, where Slice has Shift and its Nudge
  * alternate; K4 Mode. ---- */
 export function auLoopBankCells(t) {
     const i = auInfo(t, auClipOf(t));
-    const tempo = { kind: 'enumsq', label: 'Tempo', name: 'Tempo: Free · Vintage · Pitch',
+    const tempo = { kind: 'enumsq', label: 'Tempo', name: 'Tempo: Free · Vintage · Pitch · Beats',
                     text: AU_TEMPO_NAMES[auTempoIdx(i)], sq: AU_TEMPO_SQ[auTempoIdx(i)], options: AU_TEMPO_NAMES, sel: auTempoIdx(i) };
     const live = (x) => (i.state === 2 ? x : dash(x));
+    if ((i.tempo | 0) === AU_TEMPO_BEATS)
+        return [live(tempo), live(barsCell(i)), live(nudgeCell(i)), auModeCell(t), live(fillCell(i)), live(fadeCell(i)), live(sensCell(i)), BLANK];
     return [live(tempo), live(barsCell(i)), live(nudgeCell(i)), auModeCell(t), BLANK, BLANK, BLANK, BLANK];
 }
 
