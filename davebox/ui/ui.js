@@ -93,7 +93,7 @@ import { soundChainTakesPad, soundSetChainPadReplay, soundActive, soundOpen, sou
          installGateMemoInvalidation, soundSeqMirror } from './ui_sound.mjs';
 import { soundModeCovered } from './ui_render.mjs';
 import { armCardHold } from './ui_prefs.mjs';
-import { _tickImpl, applyExtMidiRemap, requestSessionExit, requestPowerOff } from './ui_tick.mjs';
+import { _tickImpl, applyExtMidiRemap, requestSessionExit } from './ui_tick.mjs';
 
 /*
  * ⚠⚠ THE WAVE PEAKS IO — WITHOUT THIS, EVERY SAMPLE WIDGET DRAWS NOTHING.
@@ -479,11 +479,14 @@ globalThis.onSessionExitRequest = function () {
     try { return requestSessionExit(); } catch (e) { captureError('onSessionExitRequest', e); return false; }
 };
 
-/* The POWER button: exporting this is what makes the host hold the press back
- * from Move (its own shutdown prompt) and hand it here. */
-globalThis.onPowerButton = function (id) {
-    try { requestPowerOff(id); } catch (e) { captureError('onPowerButton', e); }
-};
+/* The POWER button: NOT claimed. Exporting globalThis.onPowerButton makes the
+ * host hold the press back from Move and hand it here, but the shim takes ANY
+ * power SysEx as a press — and a tester on 1.1.0 got the POWER OFF? dialog
+ * every few minutes without touching the button (unpressed SysEx suspected,
+ * not yet captured; src/host/shadow_dbus.c records one more case). Until
+ * the shim can tell a real press from those, the button goes to Move's own
+ * "Press wheel to shut down" prompt, as in 1.0. requestPowerOff and the dialog
+ * stay as they are; re-exporting this brings them back. */
 
 /* ------------------------------------------------------------------ */
 /* MIDI input                                                           */
