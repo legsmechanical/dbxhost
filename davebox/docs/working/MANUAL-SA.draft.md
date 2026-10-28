@@ -1261,8 +1261,8 @@ whose file has gone reads *Missing: name* and stays silent.
   chop where the sample is. The slices you've chopped so far stay lit. It ends at
   End or on **Back**, and asks *Keep N new chops?* — **Yes** keeps them, **No**
   puts your old chops back. **Back** before the first tap changes nothing.
-- **Manual** starts over with one slice, Start to End (it asks first if that would
-  replace chops you made).
+- **Manual** (Slice mode only) starts over with one slice, Start to End, to chop
+  with the cursor (it asks first if that would replace chops you made).
 - **Even** cuts Start..End into 2–32 equal slices: click, turn for the count —
   the pads light for each slice as you turn — and click to keep them as your
   chops, to edit like any others (**Back** puts back what you had). A slice's
@@ -1272,10 +1272,10 @@ whose file has gone reads *Missing: name* and stays silent.
 
 | Control | Does |
 |---|---|
-| **Pads** | Pick a chop and move the cursor to it (in Slice mode it plays) |
+| **Pads** | Pick a chop, move the cursor to it and play it (in Loop mode they do nothing) |
 | **K1 Start** / **K3 End** | Move the selected slice's start / end, one screen pixel a detent — a single sample when zoomed all the way in. A slice ends where the next begins (**E NEXT**); turn its end away to set its own. Turned back, it stops there for a moment |
 | **K2 Zoom** | From the whole sample down to one sample a pixel |
-| **Jog** / **click** | Move the cursor (**Shift** for single samples) / add a chop there |
+| **Jog** / **click** | Move the cursor (**Shift** for single samples) / add a chop there — Slice mode only: Loop mode has no cursor |
 | **Delete + pad** | Remove that slice's chop: it joins the slice before (slice 1's start stays) |
 
 Whatever you touched last — the cursor (jog), the start (K1) or the end (K3) — stays

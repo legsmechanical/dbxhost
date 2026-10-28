@@ -9,6 +9,8 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Changed
+- **Audio: no cursor on SAMPLE in Loop mode** — the jog and click do nothing there,
+  and Chop sample offers Lazy and Even; the cursor and Manual stay in Slice mode.
 - **Audio: Loop + steps sets a Loop clip's Start and End.** The loop window you hold
   Loop and tap steps for picks that part of the sample (the steps laid over its
   Bars), and it works on the SAMPLE screen too.

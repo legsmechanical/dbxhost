@@ -21,9 +21,10 @@
  * the "click" corners and say click to load sample"). What it is follows the
  * clip:
  *   no sample   CLICK TO LOAD SAMPLE: click opens the chooser
- *   Loop        K1 Start · K2 Zoom · K3 End of the loop; its chops marked: the
- *               jog a cursor, a click adds a chop there, a pad moves the cursor
- *               to its chop, Delete + pad removes one
+ *   Loop        K1 Start · K2 Zoom · K3 End of the loop; its chops marked;
+ *               Delete + pad removes one. No cursor (Josh, 2026-10-29: "it
+ *               doesn't make sense ... barely any utility" — "only in slice
+ *               mode"), so no Manual on its Chop picker
  *   Slice       the chop editor: K1 Start · K2 Zoom · K3 End of the slice the
  *               pads pick (it plays); the jog a cursor and a click adds a marker
  *               there; Delete + pad removes one (not slice 1's). An End turned past the next slice's start sticks
@@ -401,7 +402,8 @@ export function auPickRows(ed) {
     if (p.level === 1) return [{ id: 'load', label: 'Load sample', chevron: true }, { id: 'chop', label: 'Chop sample', chevron: true }];
     const i = auInfo(ed.t, ed.c);
     const ev = p.editEven ? p.even : i.even;
-    return [{ id: 'lazy', label: 'Lazy' }, { id: 'manual', label: 'Manual' },
+    /* Manual chops with the cursor, which only Slice has */
+    return [{ id: 'lazy', label: 'Lazy' }, ...(i.mode === AU_MODE_SLICE ? [{ id: 'manual', label: 'Manual' }] : []),
             { id: 'even', label: 'Even', value: p.editEven || ev ? (ev ? String(ev) : 'Off') : '', editing: !!p.editEven }];
 }
 function pickInput(ed, status, d1, d2) {
@@ -520,8 +522,8 @@ export function audioEditorInput(status, d1, d2) {
             return true;
         }
         if (d1 === MoveMainTouch) {
-            /* touching the jog jumps to the cursor */
-            if (hi === 0x90 && d2 >= 64 && (sub === 'chop' || sub === 'loop')) { ed.last = 'jog'; centre(ed); S.screenDirty = true; }
+            /* touching the jog jumps to the cursor (Slice only: Loop has none) */
+            if (hi === 0x90 && d2 >= 64 && sub === 'chop') { ed.last = 'jog'; centre(ed); S.screenDirty = true; }
             return false;
         }
         if (d1 >= 16 && d1 <= 31) return true;               /* steps */
@@ -561,7 +563,7 @@ export function audioEditorInput(status, d1, d2) {
                 }
                 return true;
             }
-            if (down && k < i.n) {
+            if (down && k < i.n && sub === 'chop') {
                 auSetSelSlice(ed.t, k);
                 const m = auMarks(ed.t, ed.c)[k];
                 if (m) { ed.cur = m[0]; ed.last = 'jog'; centre(ed); }
@@ -569,8 +571,8 @@ export function audioEditorInput(status, d1, d2) {
                 S.ledsDirtyAudio = true;
                 S.screenDirty = true;
             }
-            /* Slice: the pad still plays its slice; Loop: the cursor goes to
-             * the chop (the pad itself does nothing in Loop mode) */
+            /* Slice: the pad still plays its slice, and the cursor goes to
+             * it; Loop: nothing */
             return false;
         }
         return false;
@@ -615,7 +617,7 @@ export function audioEditorInput(status, d1, d2) {
     }
     if (d1 === MoveMainKnob) {
         const dd = decodeDelta(d2);
-        if (!dd || (sub !== 'chop' && sub !== 'loop')) return true;
+        if (!dd || sub !== 'chop') return true;              /* the cursor: Slice only */
         const i = auInfo(ed.t, ed.c);
         const step = S.shiftHeld ? 1 : auEdPixel(ed);
         ed.cur = Math.max(0, Math.min((i.nframes | 0) - 1, ed.cur + dd * step));
@@ -632,8 +634,9 @@ export function audioEditorInput(status, d1, d2) {
         if (S.shiftHeld) { ed.pick = { level: 1, sel: 0 }; return true; }
         /* no sample: click loads one */
         if (sub === 'empty') { S.pendingAudioChooser = { t: ed.t, c: ed.c }; return true; }
-        if (sub !== 'chop' && sub !== 'loop') return true;
-        /* a chop at the cursor, in either mode */
+        /* a chop at the cursor — Slice only (Josh, 2026-10-29: the cursor
+         * "only in slice mode") */
+        if (sub !== 'chop') return true;
         const i = auInfo(ed.t, ed.c);
         const mk = auMarks(ed.t, ed.c);
         const f = ed.cur;

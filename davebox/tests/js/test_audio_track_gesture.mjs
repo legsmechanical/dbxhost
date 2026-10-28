@@ -747,13 +747,23 @@ step('⭐⭐ WAVE in Loop mode: K1 Start · K2 Zoom · K3 End · K4 Gain · K5 P
     cc(74, 127);
     assert(sent('t4_au_set_gain').join() === '0 -1', 'K4 Gain: ' + JSON.stringify(sent('t4_au_set_gain')));
     assert(inked(shown()), 'the loop view draws nothing');
-    /* the chops are the Loop's too: a pad takes the cursor to its chop (and
-     * plays nothing), a click adds a chop there, Delete + pad removes one */
+    /* no cursor in Loop (Josh, 2026-10-29: "only in slice mode"): a pad
+     * leaves it, the jog does not move it, a click adds no chop, none is
+     * drawn, and Chop sample has no Manual; Delete + pad still removes one */
     reset();
+    const cur0 = S.auEditor.cur;
     note(C.TRACK_PAD_BASE + 5, 100); note(C.TRACK_PAD_BASE + 5, 0);
-    assert(S.auEditor.cur === 60000 && A.auSelSlice(4) === 5, 'a Loop pad did not take the cursor to its chop: ' + S.auEditor.cur);
-    jog(2); click();
-    assert(sent('t4_au_mark_add').join() === '0 ' + S.auEditor.cur, 'a click in Loop did not add a chop: ' + JSON.stringify(sentLike(/_au_/)));
+    assert(S.auEditor.cur === cur0, 'a Loop pad moved the cursor: ' + S.auEditor.cur);
+    jog(2);
+    assert(S.auEditor.cur === cur0, 'the jog moved a Loop cursor: ' + S.auEditor.cur);
+    click();
+    assert(!sent('t4_au_mark_add').length, 'a click in Loop added a chop: ' + JSON.stringify(sent('t4_au_mark_add')));
+    const f0 = shown(); S.auEditor.cur = cur0 + 30000; S.screenDirty = true;
+    assert(same(shown(), f0), 'a cursor is drawn in Loop');
+    S.auEditor.cur = cur0;
+    S.auEditor.pick = { level: 2, sel: 0 };
+    assert(E.auPickRows(S.auEditor).map((r) => r.id).join() === 'lazy,even', 'Loop\'s Chop picker: ' + E.auPickRows(S.auEditor).map((r) => r.id));
+    S.auEditor.pick = null;
     cc(HC.MoveDelete, 127); note(C.TRACK_PAD_BASE + 3, 100); note(C.TRACK_PAD_BASE + 3, 0); cc(HC.MoveDelete, 0);
     assert(sent('t4_au_mark_del').join() === '0 3', 'Delete + pad in Loop: ' + JSON.stringify(sent('t4_au_mark_del')));
     assert(!sent('t4_au_set_mode').length, 'editing chops changed the Mode');
