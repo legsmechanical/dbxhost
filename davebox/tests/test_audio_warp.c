@@ -11,6 +11,7 @@
 #include <math.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <pthread.h>
 
 #define SR    44100
 #define BEAT  22050u                                /* a quarter note at 120 bpm */
@@ -252,6 +253,12 @@ int main(void) {
     inst = (seq8_instance_t *)h->inst;
     X = (au_warper_t *)inst->au_warper;
     HX_ASSERT(X && X->started, "the stretcher thread did not start");
+    {
+        /* its own name in a thread list, not its creator's (it read as the audio thread) */
+        char nm[32] = "";
+        for (i = 0; i < 200 && strcmp(nm, "dbx-warp"); i++) { pthread_getname_np(X->th, nm, sizeof nm); usleep(1000); }
+        HX_ASSERT(!strcmp(nm, "dbx-warp"), "the stretcher thread is not named dbx-warp");
+    }
     snprintf(p, sizeof p, "0|%s/tone.wav", g_root);
     hx_set_param(h, "t4_au_pick", p);
     for (i = 0; i < 2000 && inst->au_clip[4][0].state == 1; i++) { hx_render(h, 1); usleep(1000); }

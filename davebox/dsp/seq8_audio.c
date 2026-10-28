@@ -24,6 +24,9 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sched.h>
+#if defined(__linux__)
+#include <sys/prctl.h>
+#endif
 
 #define AU_POOL_MAX 256
 
@@ -1382,6 +1385,14 @@ static void au_warp_wait(seq8_instance_t *inst) {
 static void *au_warper_main(void *arg) {
     au_warper_t *X = (au_warper_t *)arg;
     au_thread_unrealtime();             /* off the realtime class, as the streamer */
+    /* its own name: a thread inherits its creator's, and the stretcher read
+     * as "Audio Main/SPI" in the Move's thread list (prctl: no _GNU_SOURCE
+     * here, which pthread_setname_np needs on Linux) */
+#if defined(__linux__)
+    prctl(PR_SET_NAME, "dbx-warp", 0, 0, 0);
+#elif defined(__APPLE__)
+    pthread_setname_np("dbx-warp");
+#endif
     while (__atomic_load_n(&X->run, __ATOMIC_ACQUIRE))
         if (!au_warp_service(X->inst)) usleep(1000);
     return NULL;
