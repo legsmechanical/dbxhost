@@ -898,9 +898,10 @@ int main(void) {
                 if (start < 0) { if (v) { start = g; prev = v0 = v; } continue; }
                 if (chk < 0 && v - prev > 100) {
                     /* a piece starting: on a tick */
-                    double d = (double)(g - start), j = floor(d / 183.75 + 0.5);
-                    if (fabs(d - j * 183.75) > 3) bad++;
-                    want = ((long)v0 + (long)floor(j * 229.6875 + 0.5) + 80) % 30000;
+                    /* (no libm: run.sh links none, and Linux has no implicit -lm) */
+                    double d = (double)(g - start), j = (double)(long)(d / 183.75 + 0.5), e = d - j * 183.75;
+                    if (e > 3 || e < -3) bad++;
+                    want = ((long)v0 + (long)(j * 229.6875 + 0.5) + 80) % 30000;
                     chk = g + 80;
                 }
                 if (g == chk) {
