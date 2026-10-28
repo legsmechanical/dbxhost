@@ -29,6 +29,17 @@ static void write_tone(const char *path, uint32_t bars) {
     fclose(f);
 }
 
+static void write_sine(const char *path, double hz) {
+    FILE *f = fopen(path, "wb");
+    uint32_t i, n = 4 * BEAT;
+    fwrite("RIFF", 1, 4, f); put_le32(f, 36 + n * 2); fwrite("WAVEfmt ", 1, 8, f);
+    put_le32(f, 16); put_le16(f, 1); put_le16(f, 1); put_le32(f, SR); put_le32(f, SR * 2);
+    put_le16(f, 2); put_le16(f, 16);
+    fwrite("data", 1, 4, f); put_le32(f, n * 2);
+    for (i = 0; i < n; i++) put_le16(f, (int)(12000 * sin(2 * M_PI * hz * i / SR)));
+    fclose(f);
+}
+
 static hx_t *rig(void) {
     hx_t *h = hx_create(NULL);
     seq8_instance_t *inst;
@@ -142,6 +153,8 @@ int main(void) {
     mkdir(g_root, 0775);
     snprintf(p, sizeof p, "%s/tone.wav", g_root);
     write_tone(p, 1);
+    snprintf(p, sizeof p, "%s/s660.wav", g_root);
+    write_sine(p, 660);
     snprintf(p, sizeof p, "%s/tone30.wav", g_root);
     write_tone(p, 30);                              /* a minute: streams, most of it never resident */
 
@@ -207,6 +220,57 @@ int main(void) {
     step(h);
     step(h);
     HX_ASSERT(!X->trk[4]->st && !X->trk[4]->held, "the stretcher kept its instance after the clip left Warp");
+
+    /* ---- launch Now from one Warp clip to another while playing (Josh: "the
+     * lag is significantly more than 23ms as compared to switching between
+     * them in pitch mode"): the old clip plays on until the new one's first
+     * frame is due, then they crossfade — no silent block, the new tone due
+     * within a few ms of the launch ---- */
+    {
+        int k, n, b;
+        hx_set_param(h, "t4_au_set_pitch", "0 0");
+        snprintf(p, sizeof p, "1|%s/s660.wav", g_root);
+        hx_set_param(h, "t4_au_pick", p);
+        for (i = 0; i < 2000 && inst->au_clip[4][1].state != 2; i++) { hx_render(h, 1); usleep(1000); }
+        HX_ASSERT(inst->au_clip[4][1].state == 2, "the 660 Hz sine did not load");
+        hx_set_param(h, "t4_au_set_bars", "1 1");
+        hx_set_param(h, "t4_au_set_tempo", "1 4");
+        hx_set_param(h, "bpm", "100");
+        for (k = 0; k < 8; k++) step(h);
+        hx_set_param(h, "transport", "play");
+        for (k = 0; k < 300; k++) step(h);
+        for (b = 0; b < 4; b++) {
+            int fed = hx_stub_feed(4, NULL, NULL), quiet = 0;
+            char m[160];
+            /* mid-beat-3 of tone.wav, where it sounds: a gap would show */
+            hx_set_param(h, "t4_launch_clip", b % 2 ? "0" : "1");
+            for (n = 0; n < 24; n++) {
+                double r = 0;
+                step(h);
+                if (hx_stub_feed(4, NULL, NULL) != fed) {
+                    const int16_t *fb = hx_stub_feed_last(4);
+                    fed = hx_stub_feed(4, NULL, NULL);
+                    for (k = 0; k < 128; k++) r += (double)fb[k * 2] * fb[k * 2];
+                    r = sqrt(r / 128);
+                }
+                /* judged where each side is continuous: into the 660 sine from
+                 * block 2 on (the old clip's tone may be on a silent beat), out
+                 * of it for the first 3 (the new one's may be) — before the fix
+                 * blocks 1..3 were silent */
+                if (r < 3000 && (b % 2 == 0 ? n >= 2 : n < 3)) quiet++;
+            }
+            snprintf(m, sizeof m, "launch %d between Warp clips: %d quiet blocks, the new one due after %.1f ms", b, quiet,
+                     inst->au_trk[4].w.last_wait * 1000.0 / SR);
+            HX_ASSERT(quiet == 0, m);
+            HX_ASSERT(inst->au_trk[4].w.last_wait * 1000.0 / SR <= 4.0, m);
+            HX_ASSERT(inst->tracks[4].active_clip == (b % 2 ? 0 : 1), "the launch did not land");
+            for (k = 0; k < 150 + 37 * b; k++) step(h);
+        }
+        hx_set_param(h, "transport", "stop");
+        for (k = 0; k < 60; k++) step(h);
+        hx_set_param(h, "t4_launch_clip", "0");
+        for (k = 0; k < 8; k++) step(h);
+    }
 
     /* ---- a followed clock (Move's: one 0xF8 every 7 blocks, ~123 bpm on a
      * 120 bpm loop): it plays on, steered, never re-anchoring pulse by pulse ---- */
@@ -319,6 +383,6 @@ int main(void) {
     for (i = 1; i < 3; i++) check_bar(g, 110, i, 0x5, 440, "Warp (streamed)");
     g_stream = 0;
     hx_destroy(h);
-    printf("PASS: Warp (70 / 120 / 160 bpm: the tone on its beats at 440 Hz; Revrs; +12; a tempo change trims, no restart; Free lets go; a followed clock; the thread; a sample cleared while it plays; streamed)\n");
+    printf("PASS: Warp (70 / 120 / 160 bpm: the tone on its beats at 440 Hz; Revrs; +12; a tempo change trims, no restart; Free lets go; launch Now between Warp clips without a gap; a followed clock; the thread; a sample cleared while it plays; streamed)\n");
     return 0;
 }

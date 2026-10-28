@@ -195,9 +195,19 @@ static double au_wrap_signed(double x, double L) {
     return x >= L * 0.5 ? x - L : x;
 }
 
-/* A new anchor at clip tick `at_tick`: what plays now fades out. */
-static void au_warp_anchor(au_warp_trk_t *w, double at_tick, int c) {
-    w->fadeout = w->state == AU_WARP_PLAY ? w->gain : 0;
+/* A new anchor at clip tick `at_tick`. hold: what plays now plays on till the
+ * new one is due (a launch, a snap while playing); else it fades (a stop). */
+static void au_warp_anchor(au_warp_trk_t *w, double at_tick, int c, int hold) {
+    int sounding = w->state == AU_WARP_PLAY || w->hold;
+    if (hold && sounding) {
+        if (w->state == AU_WARP_PLAY) { w->ogain = w->gain; w->oclip = w->clip; }
+        w->hold = 1;
+        w->fadeout = 0;
+    } else {
+        w->hold = 0;
+        w->fadeout = w->state == AU_WARP_PLAY ? w->gain : 0;
+    }
+    w->xf = 0;
     w->gen++;
     w->state = AU_WARP_WAIT;
     w->gain = 0;
@@ -205,10 +215,9 @@ static void au_warp_anchor(au_warp_trk_t *w, double at_tick, int c) {
     w->clip = (uint8_t)c;
     w->cur_anchor = at_tick;
     w->drift = 0;
+    w->waited = 0;
 }
 
-/* Publish the track's command. playing: the clip runs, w->tick is the clip
- * tick at frame 0; else the transport is stopped and tick 0 is kept ready. */
 static void au_warp_block(seq8_instance_t *inst, int t, int c, double L, double fpt, int playing, int ticked) {
     au_warper_t *X = (au_warper_t *)inst->au_warper;
     au_warp_trk_t *w = &inst->au_trk[t].w;
@@ -219,11 +228,11 @@ static void au_warp_block(seq8_instance_t *inst, int t, int c, double L, double 
     au_range(cl, cl->smp, &rs, &re);
     if (!playing) {
         /* stopped: tick 0, ready for the downbeat */
-        if (!w->on || w->clip != c || w->live) au_warp_anchor(w, 0.0, c);
+        if (!w->on || w->clip != c || w->live) au_warp_anchor(w, 0.0, c, 0);
         w->live = 0;
     } else {
         if (!w->on || w->clip != c) {
-            au_warp_anchor(w, au_wrap(w->tick + AU_WARP_LEAD / fpt, L), c);
+            au_warp_anchor(w, au_wrap(w->tick + AU_WARP_LEAD / fpt, L), c, 1);
             w->live = 1;
         }
         if (ticked) w->live = 1;          /* the transport's first tick: the ring's tick 0 is due */
@@ -251,7 +260,10 @@ static void au_warp_off(seq8_instance_t *inst, int t) {
     au_warper_t *X = (au_warper_t *)inst->au_warper;
     au_warp_trk_t *w = &inst->au_trk[t].w;
     if (w->on) {
-        w->fadeout = w->state == AU_WARP_PLAY ? w->gain : 0;
+        w->fadeout = w->state == AU_WARP_PLAY ? w->gain : w->hold ? w->ogain : 0;
+        if (w->hold) w->clip = w->oclip;
+        w->hold = 0;
+        w->xf = 0;
         w->gen++;
         w->on = 0;
         w->state = AU_WARP_WAIT;
@@ -265,67 +277,108 @@ static void au_warp_off(seq8_instance_t *inst, int t) {
     }
 }
 
-/* Read the ring for this block into acc (stereo, x32767 x gain). Returns 1
- * if anything sounded. */
-static int au_warp_mix(seq8_instance_t *inst, int t, int32_t *acc, int frames, float gain) {
+/* Read the ring for this block into acc (stereo, x32767 x the clip's gain).
+ * Two cursors: W->tail plays the last anchor's frames out (held, or fading);
+ * w->ntail reads ahead for the current anchor's, dropping its late ones. In
+ * PLAY they are one, but for the AU_WARP_FADE frames of a hand-over. Returns
+ * 1 if anything sounded. */
+static int au_warp_mix(seq8_instance_t *inst, int t, int32_t *acc, int frames) {
     au_warper_t *X = (au_warper_t *)inst->au_warper;
     au_warp_trk_t *w = &inst->au_trk[t].w;
     au_warp_t *W;
     double L, fpt;
     uint32_t tail, head;
     int f, any = 0;
+    const uint32_t M = AU_WARP_RING - 1;
+    float gn, go;
     if (!X || !(W = X->trk[t])) return 0;
     L = W->cmd.L;
     fpt = W->cmd.fpt;
     if (!(L > 0) || !(fpt > 0)) return 0;
+    gn = au_db(inst->au_clip[t][w->clip].gain_db) * 32767.f / 64.f;
+    go = au_db(inst->au_clip[t][w->oclip].gain_db) * 32767.f / 64.f;
     tail = W->tail;
     head = __atomic_load_n(&W->head, __ATOMIC_ACQUIRE);
+    if ((int32_t)(w->ntail - tail) < 0 || (int32_t)(head - w->ntail) < 0) w->ntail = tail;
     /* how far off the clock the next frame is; too far: anchor again */
-    if (w->on && w->live && w->state == AU_WARP_PLAY && head != tail) {
-        uint32_t i = tail & (AU_WARP_RING - 1);
+    if (w->on && w->live && w->state == AU_WARP_PLAY && !w->xf && head != tail) {
+        uint32_t i = tail & M;
         if (W->gen[i] == w->gen && W->tag[i] >= 0) {
             w->drift = au_wrap_signed((double)W->tag[i] - w->tick, L) * fpt;
-            if (w->drift > AU_WARP_SNAP || w->drift < -AU_WARP_SNAP)
-                au_warp_anchor(w, au_wrap(w->tick + AU_WARP_LEAD / fpt, L), w->clip);
+            if (w->drift > AU_WARP_SNAP || w->drift < -AU_WARP_SNAP) {
+                au_warp_anchor(w, au_wrap(w->tick + AU_WARP_LEAD / fpt, L), w->clip, 1);
+                go = gn;
+            }
         }
     }
     for (f = 0; f < frames; f++) {
         double want = au_wrap(w->tick + (double)f / fpt, L);
-        int have = 0;
-        while (tail != head) {
-            uint32_t i = tail & (AU_WARP_RING - 1);
-            if (W->gen[i] != w->gen) {
-                if (w->fadeout) {           /* the last anchor's sound, fading */
-                    acc[f * 2]     += (int32_t)(W->l[i] * 32767.f * gain * w->fadeout / 64.f);
-                    acc[f * 2 + 1] += (int32_t)(W->r[i] * 32767.f * gain * w->fadeout / 64.f);
-                    w->fadeout--;
-                    have = 1;
+        uint32_t i;
+        if (w->state == AU_WARP_WAIT) {
+            int ready = 0;
+            if (w->on && w->live)
+                while (w->ntail != head) {
+                    i = w->ntail & M;
+                    if (W->gen[i] != w->gen || W->tag[i] < 0) { w->ntail++; continue; }
+                    double e = au_wrap_signed((double)W->tag[i] - want, L) * fpt;
+                    if (e < -0.5) { w->ntail++; continue; }   /* late: skip it */
+                    ready = e <= 0.5;                          /* else early: not yet */
+                    break;
                 }
-                tail++;
-                if (have) break;
-                continue;
-            }
-            if (!w->on || !w->live) break;  /* kept for the downbeat */
-            if (W->tag[i] < 0) { tail++; continue; }
-            if (w->state == AU_WARP_WAIT) {
-                double e = au_wrap_signed((double)W->tag[i] - want, L) * fpt;
-                if (e < -0.5) { tail++; continue; }   /* late: drop it */
-                if (e > 0.5) break;                   /* early: silence till it is due */
+            if (ready) {
                 w->state = AU_WARP_PLAY;
                 w->gain = 0;
+                w->last_wait = w->waited + (uint32_t)f;
+                if (w->hold && tail != w->ntail && W->gen[tail & M] != w->gen) w->xf = AU_WARP_FADE;
+                else { tail = w->ntail; w->hold = 0; }
+            } else {
+                /* the last anchor's sound: on at its level till the new one is
+                 * due (a launch), or fading (a stop) — held only while there is
+                 * some left */
+                if (w->hold && (tail == head || W->gen[tail & M] == w->gen)) w->hold = 0;
+                if (tail != head && W->gen[tail & M] != w->gen && (w->hold || w->fadeout)) {
+                    float k = w->hold ? (float)w->ogain : (float)w->fadeout;
+                    i = tail & M;
+                    acc[f * 2]     += (int32_t)(W->l[i] * go * k);
+                    acc[f * 2 + 1] += (int32_t)(W->r[i] * go * k);
+                    if (!w->hold) w->fadeout--;
+                    if (w->ntail == tail) w->ntail++;
+                    tail++;
+                    any = 1;
+                } else if (!w->hold && !w->fadeout) {
+                    while (tail != head && W->gen[tail & M] != w->gen) tail++;   /* drop them */
+                    if ((int32_t)(w->ntail - tail) < 0) w->ntail = tail;
+                }
+                continue;
             }
-            if (w->gain < AU_WARP_FADE) w->gain++;
-            acc[f * 2]     += (int32_t)(W->l[i] * 32767.f * gain * w->gain / 64.f);
-            acc[f * 2 + 1] += (int32_t)(W->r[i] * 32767.f * gain * w->gain / 64.f);
-            tail++;
-            have = 1;
-            break;
         }
-        if (have) any = 1;
-        else if (w->on && w->live && w->state == AU_WARP_PLAY && tail == head) inst->au_underruns++;
+        /* PLAY */
+        if (w->ntail == head) {
+            if (w->on && w->live) inst->au_underruns++;
+            continue;
+        }
+        i = w->ntail & M;
+        if (w->gain < AU_WARP_FADE) w->gain++;
+        acc[f * 2]     += (int32_t)(W->l[i] * gn * w->gain);
+        acc[f * 2 + 1] += (int32_t)(W->r[i] * gn * w->gain);
+        w->ntail++;
+        if (w->xf) {
+            /* the hand-over: the last anchor's frames fade as the new rise */
+            if (tail != head && (int32_t)(w->ntail - 1 - tail) > 0 && W->gen[tail & M] != w->gen) {
+                float k = (float)w->ogain * (float)(AU_WARP_FADE - w->gain) / (float)AU_WARP_FADE;
+                uint32_t o = tail & M;
+                acc[f * 2]     += (int32_t)(W->l[o] * go * k);
+                acc[f * 2 + 1] += (int32_t)(W->r[o] * go * k);
+                tail++;
+            }
+            if (--w->xf == 0) w->hold = 0;
+        }
+        if (!w->xf) tail = w->ntail;
+        any = 1;
     }
     __atomic_store_n(&W->tail, tail, __ATOMIC_RELEASE);
-    return any || w->fadeout;
+    if (w->on && w->live && w->state == AU_WARP_WAIT) w->waited += (uint32_t)frames;
+    return any || w->fadeout || w->hold;
 }
 
 /* Every chop voice (not the loop's) of track `at` fades out (Vintage stopped). */
@@ -713,7 +766,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
             }
         } else au_warp_off(inst, t);
         for (i = 0; i < AU_VOICES; i++) if (at->v[i].active) { any = 1; break; }
-        if (at->w.on || at->w.fadeout) any = 1;
+        if (at->w.on || at->w.fadeout || at->w.hold) any = 1;
         if (!any) continue;
         {
             int32_t acc[256];
@@ -723,8 +776,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
             int mtarget = effective_mute(inst, t) ? 0 : 64;
             memset(acc, 0, sizeof acc);
             for (i = 0; i < AU_VOICES; i++) if (at->v[i].active) inst->au_underruns += au_voice_render(&at->v[i], acc, frames);
-            if (at->w.on || at->w.fadeout)
-                au_warp_mix(inst, t, acc, frames, au_db(inst->au_clip[t][at->w.clip].gain_db));
+            if (at->w.on || at->w.fadeout || at->w.hold) au_warp_mix(inst, t, acc, frames);
             for (f = 0; f < frames; f++) {
                 int32_t l = acc[f * 2], r = acc[f * 2 + 1];
                 if (at->mgain != mtarget) at->mgain = (uint8_t)(at->mgain + (mtarget > at->mgain ? 1 : -1));
@@ -1443,6 +1495,11 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
             }
         }
         return snprintf(out, out_len, "0 0 -1");
+    }
+    if (!strcmp(k, "warp")) {                     /* Warp, for the device check: "<anchors> <state> <last wait frames> <underruns>" */
+        const au_warp_trk_t *w = &inst->au_trk[t].w;
+        return snprintf(out, out_len, "%u %d %u %u", (unsigned)w->gen, (int)w->state, (unsigned)w->last_wait,
+                        (unsigned)inst->au_underruns);
     }
     if (!strcmp(k, "layout")) return snprintf(out, out_len, "%d", (int)inst->au_trk[t].layout);
     if (!strcmp(k, "lazy")) {                     /* "<state AU_LAZY_*> <slices> <frame>" */

@@ -1056,9 +1056,10 @@ static void au_streamer_shutdown(seq8_instance_t *inst) {
  *     which the stretcher trims away by nudging its speed (AU_WARP_TRIM_*);
  *   - re-anchors when it cannot follow (a launch, a transport start part-way
  *     in, a jump in the clock, a drift past AU_WARP_SNAP): a new anchor
- *     number and a tick AU_WARP_LEAD ahead; it fades out what it was playing,
- *     drops the old anchor's frames and starts the new one when its tags meet
- *     the clock.
+ *     number and a tick AU_WARP_LEAD ahead. While the transport runs it keeps
+ *     playing the old anchor's frames (the ring holds ~46 ms of them) until
+ *     the new one's first frame is due, then crossfades, as Pitch hands a
+ *     launch from voice to voice; stopping, it fades them out.
  * A tempo, Pitch or Detune change is only a new speed or pitch: no restart.
  * A change to the map (Start, End, Bars, Nudge, Revrs, the clip's length)
  * restarts Bungee at the same tick. Bungee crossfades a restart itself: its
@@ -1083,7 +1084,9 @@ static void au_streamer_shutdown(seq8_instance_t *inst) {
 #define AU_WARP_RING     8192         /* frames per track (a power of two) */
 #define AU_WARP_AHEAD    2048         /* frames the stretcher keeps ready (46 ms) */
 #define AU_WARP_ROOM     4096         /* frames free before a grain may be rendered (its output's most) */
-#define AU_WARP_LEAD     1024.0       /* frames: a new anchor is this far ahead of the clock */
+#define AU_WARP_LEAD     640.0        /* frames: a new anchor is this far ahead of the clock — Bungee's
+                                       * first output lands a hop (512) before it, so the new sound is due
+                                       * ~3 ms after the launch; later, its late frames are skipped */
 #define AU_WARP_SNAP     1024.0       /* frames off the clock: re-anchor instead of trimming */
 #define AU_WARP_TRIM_TC  11025.0      /* frames: the trim's time constant (0.25 s) */
 #define AU_WARP_TRIM_MAX 0.03         /* the most the trim moves the speed */
@@ -1124,6 +1127,7 @@ typedef struct {
     float         tnext;                       /* the tag the next frame carries on with (-1: none) */
     uint8_t       carry;                       /* that reset kept time (a map change): tags carry on */
     uint8_t       fresh;                       /* no chunk of the new stream seen since the reset */
+    uint32_t      gstart;                      /* the ring index the current anchor's frames start at */
     const void   *held;                        /* published: the sample it renders from (NULL: idle) */
 } au_warp_t;
 
@@ -1280,7 +1284,7 @@ static void au_warp_reset(au_warp_t *W, double vt, int carry) {
     W->rpos = vt * W->rpt;
     W->carry = (uint8_t)carry;
     W->fresh = 1;
-    if (!carry) W->tnext = -1.f;
+    if (!carry) { W->tnext = -1.f; W->gstart = W->head; }
     au_st_reset(W->st, W->rpos, au_warp_speed(W), c->pitch);
 }
 
@@ -1325,8 +1329,11 @@ static int au_warp_track(au_warper_t *X, au_warp_t *W) {
     }
     {
         int empty = 0;                   /* grains with no output: Bungee filling after a reset */
-        uint32_t tl;
-        while ((tl = __atomic_load_n(&W->tail, __ATOMIC_ACQUIRE), W->head - tl < AU_WARP_AHEAD) &&
+        uint32_t tl, from;
+        /* ahead of what is read, or of the anchor's start: the last anchor's
+         * frames still playing out do not hold the new one back */
+        while ((tl = __atomic_load_n(&W->tail, __ATOMIC_ACQUIRE), from = (int32_t)(tl - W->gstart) > 0 ? tl : W->gstart,
+                W->head - from < AU_WARP_AHEAD) &&
                AU_WARP_RING - (W->head - tl) >= AU_WARP_ROOM && empty < 8) {
             int n = au_warp_grain(X, W);
             got += n;

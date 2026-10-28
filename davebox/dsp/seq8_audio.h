@@ -197,10 +197,17 @@ typedef struct {
     uint8_t  gain;           /* 0..64, ramping a step a frame */
     uint8_t  clip;           /* the clip it was anchored for */
     uint8_t  live;           /* the transport has played: the clock window is real */
-    uint8_t  fadeout;        /* 0..64: the old anchor's frames still playing, fading */
+    uint8_t  fadeout;        /* 0..64: the old anchor's frames still playing, fading (a stop) */
+    uint8_t  hold;           /* the old anchor's frames play on at their level till the new is due (a launch) */
+    uint8_t  ogain, oclip;   /* ...their level and clip */
+    uint8_t  xf;             /* frames of the hand-over crossfade left */
+    uint32_t ntail;          /* the ring index the current anchor's frames are read from (ahead of
+                              * the old ones still playing) */
     double   tick;           /* the clip tick at this block's frame 0 (a followed clock: smoothed) */
     double   cur_anchor;     /* the tick the current anchor starts at */
     double   drift;          /* output frames the frame heard is ahead of the clock */
+    uint32_t waited;         /* output frames since the last anchor, while waiting (the diag: `warp`) */
+    uint32_t last_wait;      /* ...the last anchor's whole wait, once it played */
 } au_warp_trk_t;
 
 typedef struct {
