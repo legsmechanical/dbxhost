@@ -195,8 +195,8 @@ static void au_release_chops(au_track_t *at) {
  * then the next piece cuts it and it jumps to where the clock says. At the
  * loop's own tempo they join throughout and it plays as Free does. The user's chops play no part (Josh: "chops should just be completely
  * invisible in loop mode"). `tick` is the clip counter after this block's
- * ticks: the last one played is tick - 1, and what is left in the clock's
- * accumulator is how far past it the block ends. */
+ * ticks: the last one played is tick - 1; on our own clock, what is left in
+ * its accumulator is how far past it the block ends (a followed clock: below). */
 #define AU_VINTAGE_PER_BLOCK 16
 #define AU_VINTAGE_OVER      8      /* frames */
 /* the least whole number >= x (no libm here) */
@@ -227,6 +227,10 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
         if (!at->vint_ok) { at->vint_from = au_wrap(cur - 1.0, L); at->vint_ok = 1; }
         start = at->vint_from;
         span = au_wrap(cur - start, L);
+        /* the clip counter jumped back without the loop restarting (Loop
+         * moved, Dir changed): play from the tick it is on, not a burst of
+         * everything since */
+        if (span > AU_VINTAGE_PER_BLOCK) { start = au_wrap(cur - 1.0, L); span = au_wrap(cur - start, L); }
         at->vint_from = cur;
         fscale = 0.0;
     }
@@ -254,7 +258,13 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
         }
     }
     for (i = 0; i < m; i++) {
-        double x0 = R * (double)pj[i] / P, x1 = R * (double)(pj[i] + 1) / P;
+        /* Pieces due on one frame in tick order are one stretch of the
+         * sample: under a followed clock each 0xF8 brings 4 ticks at once,
+         * and played as 4 pieces the third cut the first two — a stutter
+         * and a gap every pulse (found by the second review). */
+        int e = i;
+        while (e + 1 < m && pj[e + 1] == pj[e] + 1 && (uint32_t)(pd[e + 1] * fscale) == (uint32_t)(pd[i] * fscale)) e++;
+        double x0 = R * (double)pj[i] / P, x1 = R * (double)(pj[e] + 1) / P;
         if (x1 > R) x1 = R;
         /* each piece runs a few frames into the next, so the rounding of
          * its start against the block never ends it a frame early */
@@ -264,6 +274,7 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
         uint32_t b = cl->revrs ? re - (uint32_t)x0 : rs + (uint32_t)x1;
         uint32_t off = (uint32_t)(pd[i] * fscale);
         au_range_on(inst, t, c, AU_SLICE_NONE, a, b, 1.0f, off >= (uint32_t)frames ? (uint32_t)frames - 1 : off, 1);
+        i = e;
     }
 }
 

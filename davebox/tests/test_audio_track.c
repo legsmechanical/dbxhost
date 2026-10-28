@@ -944,27 +944,39 @@ int main(void) {
         hx_set_param(h, "t4_au_set_nudge", "7 -50");
         HX_ASSERT(ramp_breaks(h, 340) == 0, "Vintage nudged -50 ms broke up at the clip's end");
         hx_set_param(h, "t4_au_set_nudge", "7 0");
-        /* a followed clock (Move's): Vintage sounds, as Free does (it was
-         * silent — every piece fell just past the block's window) */
+        /* a followed clock (Move's): Vintage plays the loop as Free does — no
+         * silence, and no more breaks than Free's (it was silent, every piece
+         * just past the block's window; then, each 0xF8 bringing 4 ticks at
+         * frame 0, the third piece cut the first two: a gap every pulse) */
         {
             const uint8_t st = 0xFA, clk = 0xF8, sp = 0xFC;
-            int mode, fed[2];
+            int mode, silent[2], brk[2];
+            uint16_t was16 = lc->length;
+            lc->length = 16;                                    /* the whole bar */
             for (mode = 0; mode < 2; mode++) {
+                int prev = -1, k2;
                 hx_set_param(h, "t4_au_set_tempo", mode ? "7 1" : "7 0");
                 hx_set_param(h, "clock_follow_on", "1");
                 hx_stub_feed_reset();
                 hx_send_midi(h, &st, 1, MOVE_MIDI_SOURCE_INTERNAL);
                 inst->playing = 1;
                 hx_render(h, 2);
-                fed[mode] = 0;
-                for (i = 0; i < 300; i++) {
+                silent[mode] = brk[mode] = 0;
+                /* one 0xF8 every 7 blocks (896 frames: ~123 bpm on a 120 bpm
+                 * loop); the first 96 blocks settle */
+                for (i = 0; i < 96 * 7; i++) {
+                    int before = hx_stub_feed(4, NULL, NULL);
                     const int16_t *fb;
-                    int k2, any = 0;
-                    hx_send_midi(h, &clk, 1, MOVE_MIDI_SOURCE_INTERNAL);
-                    hx_render(h, 2);
+                    if (i % 7 == 0) hx_send_midi(h, &clk, 1, MOVE_MIDI_SOURCE_INTERNAL);
+                    hx_render(h, 1);
+                    if (i < 96) continue;
+                    if (hx_stub_feed(4, NULL, NULL) == before) { silent[mode]++; prev = -1; continue; }
                     fb = hx_stub_feed_last(4);
-                    for (k2 = 0; fb && k2 < 128; k2++) if (fb[k2 * 2]) any = 1;
-                    fed[mode] += any;
+                    for (k2 = 0; k2 < 128; k2++) {
+                        if (!fb[k2 * 2]) silent[mode]++;
+                        else if (prev >= 0 && fb[k2 * 2] != (prev + 1) % 30000) brk[mode]++;
+                        prev = fb[k2 * 2];
+                    }
                 }
                 hx_send_midi(h, &sp, 1, MOVE_MIDI_SOURCE_INTERNAL);
                 inst->playing = 0;
@@ -972,8 +984,12 @@ int main(void) {
                 hx_set_param(h, "transport", "stop");
                 hx_render(h, 60);
             }
-            HX_ASSERT(fed[0] > 250, "the Free control did not sound under a followed clock");
-            HX_ASSERT(fed[1] > 250, "Vintage was silent under a followed clock");
+            HX_ASSERT(silent[0] < 64 && brk[0] < 200, "the Free control did not play straight under a followed clock");
+            HX_ASSERT(silent[1] < 64, "Vintage fell silent under a followed clock");
+            HX_ASSERT(brk[1] < 1000, "Vintage broke up under a followed clock");
+            lc->length = was16;
+            hx_set_param(h, "bpm", "120");                      /* the followed clock left ~123 */
+            hx_render(h, 2);
         }
         hx_set_param(h, "t4_au_set_tempo", "7 1");
         /* Pitch: Start..End (88200 frames) over the sample's Bars, not the
@@ -1223,6 +1239,11 @@ int main(void) {
     hx_set_param(h, "t4_au_set_tempo", "7 1");
     hx_set_param(h, "t4_au_set_bars", "7 2");
     hx_set_param(h, "t4_au_layout", "1");
+    /* the arp's octaves load by track type: Audio's Step keeps 15, a pitched
+     * track's 15 (only a hand edit or an old build could write it) loads as 4 */
+    hx_set_param(h, "t4_tarp_octaves", "15");
+    HX_ASSERT(inst->tracks[6].pad_mode != PAD_MODE_AUDIO, "t6 is still Audio");
+    inst->tracks[6].tarp.octaves = 15;
     n = hx_get_param(h, "state_full", blob, (int)sizeof blob);
     HX_ASSERT(strstr(blob, " 1 2|ramp2.wav\"") && strstr(blob, "\"t4_aul\":1"), "the state does not keep Tempo Vintage, Bars or the Layout");
     HX_ASSERT(n > 0 && (size_t)n < sizeof blob - 1, "state_full failed");
@@ -1242,6 +1263,8 @@ int main(void) {
     HX_ASSERT(inst->tracks[4].pad_mode == PAD_MODE_AUDIO, "the reload lost the Audio track");
     HX_ASSERT(inst->au_clip[4][7].tempo == AU_TEMPO_VINTAGE && inst->au_clip[4][7].bars == 2 && inst->au_trk[4].layout == 1,
               "the reload lost Tempo Vintage, Bars or the Layout");
+    HX_ASSERT(inst->tracks[4].tarp.octaves == 15 && inst->tracks[6].tarp.octaves == 4,
+              "the arp's octaves did not load by track type");
     HX_ASSERT(inst->au_clip[4][0].mode == AU_MODE_SLICE && inst->au_clip[4][0].sl[1].gain_db == -6 &&
               inst->au_clip[4][0].sl[1].play == AU_PLAY_GATE, "the reload lost clip A's settings");
     HX_ASSERT(inst->au_clip[4][0].detune == -17 && inst->au_clip[4][0].sl[1].detune == 9, "the reload lost the detunes");
