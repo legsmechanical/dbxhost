@@ -37,7 +37,8 @@ shared memory only. It keeps its own licence and imposes nothing on the rest.
 | `lib/libespeak-ng.so.*` | **GPL-3.0-or-later** | Redistributed unmodified |
 | `lib/libflite*.so.*` | BSD-style | Redistributed unmodified |
 | `lib/libsonic.so.*` | Apache-2.0 | Redistributed unmodified |
-| `bin/heal` (`davebox-heal`), `modules/chain`, `modules/tools/davebox-sound` | MIT | This repo's own code |
+| `bin/heal` (`davebox-heal`), `modules/chain` | MIT | This repo's own code |
+| `modules/tools/davebox-sound` (`dsp.so`) | MIT, with MPL-2.0 files | Own code **linked** with Bungee + Eigen (MPL-2.0, file-level, unmodified), PFFFT (BSD-style) and the static libstdc++/libgcc (GCC Runtime Library Exception) |
 
 Corresponding source for the GPL components is available from each project's
 upstream repository, linked in its section below; `libs/link` is a git
@@ -51,6 +52,20 @@ pulling in the libpulse/libX11 chain. It contains no pcaudiolib code.
 `JackShadowDriver`, GPL-2.0-or-later / LGPL-2.1-or-later) is in the tree but
 `scripts/build.sh` removes `lib/jack` from the build, so no jack2-derived
 binary is in this release. See its section below for the source licence.
+
+---
+
+## Bungee, Eigen, PFFFT (WARP's time-stretcher)
+
+**Used in:** `modules/tools/davebox-sound/dsp.so` — stretching Loop clips to the tempo (Warp)
+**Location:** `davebox/dsp/third_party/` (versions: `davebox/dsp/third_party/VERSIONS.md`)
+**Licences:**
+- Bungee (Ableton's fork, https://github.com/Ableton/bungee) — MPL-2.0, `davebox/dsp/third_party/bungee/LICENSE`
+- Eigen (https://gitlab.com/libeigen/eigen) — MPL-2.0 (some files BSD / Apache-2.0), `davebox/dsp/third_party/eigen/COPYING.*`
+- PFFFT (https://bitbucket.org/jpommier/pffft) — BSD-style (FFTPACKv5), in each source file's header
+
+MPL-2.0 is file-level: the vendored files are **unmodified**, their source is in this
+repository and at the upstream URLs above, and the rest of `dsp.so` stays MIT.
 
 ---
 

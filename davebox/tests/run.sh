@@ -15,13 +15,47 @@ FLAGS="-std=c11 -D_GNU_SOURCE -DSEQ8_TESTING -Idsp -Itests/harness -Wall -Wno-un
 OUT="/tmp/davebox-tests"
 mkdir -p "$OUT"
 
+# ---- WARP's stretcher: Bungee (C++) behind dsp/seq8_stretch.h ----------------
+# Built once into a static library every test links (each test contains seq8.c,
+# which calls the shim). Cached by a hash of its sources, so the cold ~30-60 s
+# build happens only when third_party or the shim changes. Same defines as
+# scripts/build_sound.sh. A missing C++ compiler is a FAILURE, not a skip.
+CXX="${CXX:-clang++}"
+case "$(uname)" in Darwin) CXXLIB="-lc++" ;; *) CXXLIB="-lstdc++ -lm" ;; esac
+BUNGEE_LIB="$OUT/libbungee.a"
+if ! command -v "$CXX" >/dev/null 2>&1; then
+    echo "FAIL: $CXX not found - Bungee (WARP) cannot be built, so no test can link" >&2
+    exit 1
+fi
+bungee_stamp="$(cat dsp/seq8_stretch.h dsp/seq8_stretch.cpp $(find dsp/third_party -type f | LC_ALL=C sort) | cksum) $CXX"
+if [ ! -f "$BUNGEE_LIB" ] || [ "$(cat "$BUNGEE_LIB.stamp" 2>/dev/null)" != "$bungee_stamp" ]; then
+    echo "Building Bungee for the tests (cached until its sources change)..."
+    bobj="$OUT/bungee-obj"; rm -rf "$bobj" "$BUNGEE_LIB"; mkdir -p "$bobj"
+    TP=dsp/third_party
+    BDEF="-DNDEBUG -DBUNGEE_VISIBILITY= -DBUNGEE_SELF_TEST=0 -Deigen_assert=BUNGEE_ASSERT1 -DEIGEN_DONT_PARALLELIZE=1 -DBUNGEE_VERSION=\"ableton-c9cd42d\""
+    BINC="-I$TP/bungee -I$TP/eigen -I$TP/pffft -I$TP"
+    bfail=0
+    for f in "$TP"/pffft/pffft.c "$TP"/pffft/fftpack.c; do
+        "$CC" -O2 -c "$f" -o "$bobj/$(basename "$f" .c).o" 2>> "$OUT/bungee.build.log" || bfail=1
+    done
+    for f in "$TP"/bungee/src/*.cpp dsp/seq8_stretch.cpp; do
+        "$CXX" -std=c++20 -O2 -fwrapv $BDEF $BINC -c "$f" -o "$bobj/$(basename "$f" .cpp).o" 2>> "$OUT/bungee.build.log" &
+    done
+    wait
+    [ "$(ls "$bobj"/*.o 2>/dev/null | wc -l)" -eq "$(( $(ls "$TP"/bungee/src/*.cpp | wc -l) + 3 ))" ] || bfail=1
+    if [ "$bfail" -ne 0 ] || ! ar rcs "$BUNGEE_LIB" "$bobj"/*.o; then
+        echo "FAIL: Bungee did not build:"; cat "$OUT/bungee.build.log"; rm -f "$BUNGEE_LIB"; exit 1
+    fi
+    echo "$bungee_stamp" > "$BUNGEE_LIB.stamp"
+fi
+
 pass=0; fail=0
 shopt -s nullglob
 for t in tests/test_*.c; do
     name="$(basename "$t" .c)"
     bin="$OUT/$name"
     log="$OUT/$name.build.log"
-    if ! $CC $FLAGS "$t" tests/harness/stub_host.c tests/harness/compat.c -o "$bin" 2> "$log"; then
+    if ! $CC $FLAGS "$t" tests/harness/stub_host.c tests/harness/compat.c "$BUNGEE_LIB" $CXXLIB -o "$bin" 2> "$log"; then
         echo "BUILD FAIL: $name"; cat "$log"; fail=$((fail+1)); continue
     fi
     if "$bin"; then echo "PASS: $name"; pass=$((pass+1)); else echo "FAIL: $name"; fail=$((fail+1)); fi

@@ -96,13 +96,36 @@ fi
 
 echo "=== Building dAVEBOx SA (state prefix: ${STATE_PREFIX}) ==="
 echo "Compiling DSP..."
-"${CROSS_PREFIX}gcc" -g -O3 -shared -fPIC \
+# Four steps since WARP: the engine (C, one translation unit), PFFFT (C), Bungee
+# and the shim that faces it (C++), then one link. Objects go to dist/obj and
+# are removed after the link, so they never ship. libstdc++ and libgcc are linked
+# STATICALLY: the Move has no promise of a matching libstdc++, and the GLIBC gate
+# below still holds the result to <= 2.35. Flags are the ones the on-device
+# bench measured (-O2: -O3 -ffast-math was ~15% slower for Bungee).
+OBJ="dist/obj"
+rm -rf "$OBJ"; mkdir -p "$OBJ"
+TP=dsp/third_party
+"${CROSS_PREFIX}gcc" -g -O3 -fPIC -c \
     -DSEQ8_STATE_PREFIX="\"${STATE_PREFIX}\"" \
     -DDAVEBOX_MODULE_ID="\"${MODULE_ID}\"" \
-    dsp/seq8.c \
-    -o "dist/${MODULE_ID}/dsp.so" \
-    -I. \
-    -lm
+    dsp/seq8.c -o "$OBJ/seq8.o" -I.
+for f in "$TP/pffft/pffft.c" "$TP/pffft/fftpack.c"; do
+    "${CROSS_PREFIX}gcc" -O2 -mcpu=cortex-a72 -ffast-math -fno-finite-math-only -fPIC -c "$f" \
+        -o "$OBJ/$(basename "$f" .c).o"
+done
+for f in "$TP"/bungee/src/*.cpp dsp/seq8_stretch.cpp; do
+    "${CROSS_PREFIX}g++" -std=c++20 -O2 -mcpu=cortex-a72 -fwrapv -DNDEBUG -fPIC \
+        -DBUNGEE_VISIBILITY= -DBUNGEE_SELF_TEST=0 -Deigen_assert=BUNGEE_ASSERT1 \
+        -DEIGEN_DONT_PARALLELIZE=1 -DBUNGEE_VERSION="\"ableton-c9cd42d\"" \
+        -I"$TP/bungee" -I"$TP/eigen" -I"$TP/pffft" -I"$TP" \
+        -c "$f" -o "$OBJ/$(basename "$f" .cpp).o" &
+done
+wait
+[ "$(ls "$OBJ"/*.o | wc -l)" -eq "$(( $(ls "$TP"/bungee/src/*.cpp | wc -l) + 4 ))" ] || {
+    echo "ERROR: a Bungee / shim object did not compile (see above)" >&2; exit 1; }
+"${CROSS_PREFIX}g++" -shared -o "dist/${MODULE_ID}/dsp.so" "$OBJ"/*.o \
+    -static-libstdc++ -static-libgcc -lm
+rm -rf "$OBJ"   # dist/<module>/ ships wholesale; the objects never sit beside it
 
 cp sound/module.json "dist/${MODULE_ID}/module.json"
 cp web_ui.html       "dist/${MODULE_ID}/"
