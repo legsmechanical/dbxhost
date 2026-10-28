@@ -227,10 +227,10 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
         if (!at->vint_ok) { at->vint_from = au_wrap(cur - 1.0, L); at->vint_ok = 1; }
         start = at->vint_from;
         span = au_wrap(cur - start, L);
-        /* the clip counter jumped back without the loop restarting (Loop
-         * moved, Dir changed): play from the tick it is on, not a burst of
-         * everything since */
-        if (span > AU_VINTAGE_PER_BLOCK) { start = au_wrap(cur - 1.0, L); span = au_wrap(cur - start, L); }
+        /* the clip counter jumped without the loop restarting (Loop moved,
+         * Dir changed): play the pulse just come in (an 0xF8 is PPQN / 24
+         * ticks), not a burst of everything since */
+        if (span > AU_VINTAGE_PER_BLOCK) { start = au_wrap(cur - (double)(PPQN / 24), L); span = au_wrap(cur - start, L); }
         at->vint_from = cur;
         fscale = 0.0;
     }

@@ -987,6 +987,34 @@ int main(void) {
             HX_ASSERT(silent[0] < 64 && brk[0] < 200, "the Free control did not play straight under a followed clock");
             HX_ASSERT(silent[1] < 64, "Vintage fell silent under a followed clock");
             HX_ASSERT(brk[1] < 1000, "Vintage broke up under a followed clock");
+            /* the clip counter jumping back without the loop restarting (Loop
+             * moved, Dir changed): Vintage plays on from the tick it is on,
+             * not a burst from half a clip away */
+            {
+                const int16_t *fb;
+                int v0 = -1, v1 = -1, k3;
+                double Lt = 16.0 * (lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP), vf;
+                hx_set_param(h, "t4_au_set_tempo", "7 1");
+                hx_set_param(h, "clock_follow_on", "1");
+                hx_send_midi(h, &st, 1, MOVE_MIDI_SOURCE_INTERNAL);
+                inst->playing = 1;
+                for (i = 0; i < 70; i++) { if (i % 7 == 0) hx_send_midi(h, &clk, 1, MOVE_MIDI_SOURCE_INTERNAL); hx_render(h, 1); }
+                fb = hx_stub_feed_last(4);
+                for (k3 = 0; k3 < 128; k3++) if (fb[k3 * 2]) v0 = fb[k3 * 2];
+                vf = inst->au_trk[4].vint_from + Lt / 2;
+                inst->au_trk[4].vint_from = vf >= Lt ? vf - Lt : vf;
+                for (i = 0; i < 7; i++) { if (i % 7 == 0) hx_send_midi(h, &clk, 1, MOVE_MIDI_SOURCE_INTERNAL); hx_render(h, 1); }
+                fb = hx_stub_feed_last(4);
+                for (k3 = 0; k3 < 128; k3++) if (fb[k3 * 2]) v1 = fb[k3 * 2];
+                /* 7 blocks on: ~900 frames further, not ~44000 */
+                HX_ASSERT(v0 > 0 && v1 > 0 && abs((v1 - v0 + 30000) % 30000 - 7 * 128) < 2000,
+                          "Vintage burst from a clip counter that jumped back");
+                hx_send_midi(h, &sp, 1, MOVE_MIDI_SOURCE_INTERNAL);
+                inst->playing = 0;
+                hx_set_param(h, "clock_follow_on", "0");
+                hx_set_param(h, "transport", "stop");
+                hx_render(h, 60);
+            }
             lc->length = was16;
             hx_set_param(h, "bpm", "120");                      /* the followed clock left ~123 */
             hx_render(h, 2);
