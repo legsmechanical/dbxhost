@@ -1073,6 +1073,7 @@ int main(void) {
                 hx_set_param(h, "clock_follow_on", "0");
                 hx_set_param(h, "transport", "stop");
                 inst->tracks[1].recording = 0;                  /* the count-in's take, done */
+                inst->tracks[1].clip_playing = 0;
                 hx_render(h, 60);
             }
             lc->length = was16;
