@@ -39,6 +39,27 @@ static int g_soft(uint32_t i) {
     return sign ? a : -a;
 }
 
+/* a buzz: the level jumps up every other block — rises everywhere, none
+ * standing out from the ~100 ms around it */
+static int g_buzz(uint32_t i) { int a = (i / 256) & 1 ? 20000 : 3000; return i & 1 ? a : -a; }
+/* a flam on each beat: a click, and a louder one 1024 frames (4 blocks) later */
+static int g_flam(uint32_t i) {
+    uint32_t ph = i % BEAT;
+    int a = 0;
+    if (ph >= 2048 && ph < 2489) a = 12000;
+    else if (ph >= 3072 && ph < 3513) a = 20000;
+    return i & 1 ? a : -a;
+}
+/* a slow attack on each beat: 6000 for 256 frames, then 20000 — a rise in two
+ * blocks next to each other, which is one hit */
+static int g_slow(uint32_t i) {
+    uint32_t ph = i % BEAT;
+    int a = 0;
+    if (ph >= 2048 && ph < 2304) a = 6000;
+    else if (ph >= 2304 && ph < 2745) a = 20000;
+    return i & 1 ? a : -a;
+}
+
 static au_sample_t *load(const char *name, int stream) {
     char p[300];
     int err = -1;
@@ -60,6 +81,9 @@ int main(void) {
     snprintf(p, sizeof p, "%s/silent.wav", g_root); write_gen(p, 44100, g_silence);
     snprintf(p, sizeof p, "%s/soft.wav", g_root);   write_gen(p, 4 * BEAT, g_soft);
     snprintf(p, sizeof p, "%s/long.wav", g_root);   write_gen(p, 40 * BEAT, g_clicks);
+    snprintf(p, sizeof p, "%s/buzz.wav", g_root);   write_gen(p, 44100, g_buzz);
+    snprintf(p, sizeof p, "%s/flam.wav", g_root);   write_gen(p, 4 * BEAT, g_flam);
+    snprintf(p, sizeof p, "%s/slow.wav", g_root);   write_gen(p, 4 * BEAT, g_slow);
 
     /* ---- clicks: Start + one hit per later click, each just before it ---- */
     s = load("clicks.wav", 0);
@@ -92,6 +116,21 @@ int main(void) {
     s = load("soft.wav", 0);
     HX_ASSERT(au_hit_count(s, 0, s->frames, 0) == 4, "Sens 0 did not keep only the 4 loud hits (Start + 3)");
     HX_ASSERT(au_hit_count(s, 0, s->frames, 100) == 8, "Sens 100 did not keep the soft off-beats too");
+    au_sample_free(s);
+
+    /* ---- a rise only counts against what is around it: a buzz has none
+     * at Sens 0, however big each step ---- */
+    s = load("buzz.wav", 0);
+    HX_ASSERT(au_hit_count(s, 0, s->frames, 0) == 1, "a buzz's steady rises counted as hits at Sens 0");
+    au_sample_free(s);
+    /* ---- a rise over two blocks is one candidate (the bigger) ---- */
+    s = load("slow.wav", 0);
+    HX_ASSERT(s->nhits == 4, "a slow attack gave more than one candidate");
+    au_sample_free(s);
+    /* ---- a flam (two hits 23 ms apart) is one hit, its first ---- */
+    s = load("flam.wav", 0);
+    HX_ASSERT(s->nhits == 8, "a flam's two clicks are not two candidates");
+    HX_ASSERT(au_hit_count(s, 0, s->frames, 100) == 5, "a flam counted as two hits (Start + 4 beats)");
     au_sample_free(s);
 
     /* ---- a streamed file finds exactly the hits a whole one does ---- */
