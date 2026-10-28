@@ -1307,6 +1307,10 @@ static void au_range_on(seq8_instance_t *inst, int t, int c, int slice, uint32_t
     v->gated = (play != AU_PLAY_ONE);
     v->slice = (uint8_t)slice;
     v->starve = 64;
+    /* a Vintage piece is a moment of a loop that plays on through Start..End:
+     * the streamer must read ahead through all of it, not to the piece's end
+     * (a device-free test found Vintage on a streamed file starving) */
+    if (sync) { uint32_t rs, re; au_range(cl, s, &rs, &re); v->wlo = rs; v->whi = re; }
     v->active = 1;
 }
 

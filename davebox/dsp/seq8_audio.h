@@ -141,6 +141,8 @@ typedef struct {
     uint8_t  tail;           /* in the fade back from its end */
     uint8_t  gated;          /* GATE / LOOP: ends at note-off */
     uint8_t  starve;         /* streamed: 0..64, its level, down while a chunk is missing (64 at start) */
+    uint32_t wlo, whi;       /* a Vintage piece: its clip's Start..End, which the streamer reads ahead
+                              * through as for a Loop (whi 0: read ahead within lo..hi) */
 } au_voice_t;
 
 #define AU_VOICES 2          /* the sounding one + the one being choked */
