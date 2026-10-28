@@ -56,6 +56,7 @@ static hx_t *rig(void) {
 /* one block, the stretcher first (by hand; with its thread running, a
  * block's worth of real time instead) */
 static int g_stream = 0;                            /* the streamer too, by hand */
+static int g_late = 0;                              /* blocks the stretcher misses (as one held up on the Move) */
 static void step(hx_t *h) {
     au_warper_t *X = (au_warper_t *)((seq8_instance_t *)h->inst)->au_warper;
     if (g_stream) au_stream_service((seq8_instance_t *)h->inst);
@@ -70,7 +71,8 @@ static void step(hx_t *h) {
             if (!W->cmd.run || ahead >= 1024) break;
             usleep(500);
         }
-    } else au_warp_service((seq8_instance_t *)h->inst);
+    } else if (g_late > 0) g_late--;
+    else au_warp_service((seq8_instance_t *)h->inst);
     hx_render(h, 1);
 }
 
@@ -244,6 +246,7 @@ int main(void) {
             char m[160];
             /* mid-beat-3 of tone.wav, where it sounds: a gap would show */
             hx_set_param(h, "t4_launch_clip", b % 2 ? "0" : "1");
+            if (b == 3) g_late = 4;                 /* a stretcher 11.6 ms late: the old clip covers it */
             for (n = 0; n < 24; n++) {
                 double r = 0;
                 step(h);
@@ -257,12 +260,12 @@ int main(void) {
                  * block 2 on (the old clip's tone may be on a silent beat), out
                  * of it for the first 3 (the new one's may be) — before the fix
                  * blocks 1..3 were silent */
-                if (r < 3000 && (b % 2 == 0 ? n >= 2 : n < 3)) quiet++;
+                if (r < 3000 && (b % 2 == 0 ? n >= 2 : n < (b == 3 ? 5 : 3))) quiet++;
             }
             snprintf(m, sizeof m, "launch %d between Warp clips: %d quiet blocks, the new one due after %.1f ms", b, quiet,
                      inst->au_trk[4].w.last_wait * 1000.0 / SR);
             HX_ASSERT(quiet == 0, m);
-            HX_ASSERT(inst->au_trk[4].w.last_wait * 1000.0 / SR <= 4.0, m);
+            HX_ASSERT(inst->au_trk[4].w.last_wait * 1000.0 / SR <= (b == 3 ? 16.0 : 4.0), m);
             HX_ASSERT(inst->tracks[4].active_clip == (b % 2 ? 0 : 1), "the launch did not land");
             for (k = 0; k < 150 + 37 * b; k++) step(h);
         }
