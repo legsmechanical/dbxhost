@@ -944,37 +944,41 @@ int main(void) {
         hx_set_param(h, "t4_au_set_nudge", "7 -50");
         HX_ASSERT(ramp_breaks(h, 340) == 0, "Vintage nudged -50 ms broke up at the clip's end");
         hx_set_param(h, "t4_au_set_nudge", "7 0");
-        /* a followed clock (Move's): Vintage plays the loop as Free does — no
-         * silence, and no more breaks than Free's (it was silent, every piece
-         * just past the block's window; then, each 0xF8 bringing 4 ticks at
-         * frame 0, the third piece cut the first two: a gap every pulse) */
+        /* a followed clock (Move's): Vintage plays the loop straight, as Free
+         * does, forwards and in Revrs, from the sample's first frame (it was
+         * silent, every piece just past the block's window; then, each 0xF8
+         * bringing 4 ticks at frame 0, the third piece cut the first two;
+         * then the first pulse played only its last tick) */
         {
             const uint8_t st = 0xFA, clk = 0xF8, sp = 0xFC;
-            int mode, silent[2], brk[2];
+            int mode, silent[3], brk[3], first[3];
             uint16_t was16 = lc->length;
             lc->length = 16;                                    /* the whole bar */
-            for (mode = 0; mode < 2; mode++) {
-                int prev = -1, k2;
+            for (mode = 0; mode < 3; mode++) {                  /* Free, Vintage, Vintage Revrs */
+                int prev = -1, k2, rev = mode == 2;
                 hx_set_param(h, "t4_au_set_tempo", mode ? "7 1" : "7 0");
+                hx_set_param(h, "t4_au_set_revrs", rev ? "7 1" : "7 0");
                 hx_set_param(h, "clock_follow_on", "1");
                 hx_stub_feed_reset();
                 hx_send_midi(h, &st, 1, MOVE_MIDI_SOURCE_INTERNAL);
                 inst->playing = 1;
                 hx_render(h, 2);
-                silent[mode] = brk[mode] = 0;
+                silent[mode] = brk[mode] = 0; first[mode] = -1;
                 /* one 0xF8 every 7 blocks (896 frames: ~123 bpm on a 120 bpm
-                 * loop); the first 96 blocks settle */
+                 * loop); breaks and silence count after the first 96 blocks */
                 for (i = 0; i < 96 * 7; i++) {
                     int before = hx_stub_feed(4, NULL, NULL);
                     const int16_t *fb;
                     if (i % 7 == 0) hx_send_midi(h, &clk, 1, MOVE_MIDI_SOURCE_INTERNAL);
                     hx_render(h, 1);
+                    fb = hx_stub_feed(4, NULL, NULL) == before ? NULL : hx_stub_feed_last(4);
+                    for (k2 = 0; fb && first[mode] < 0 && k2 < 128; k2++) if (fb[k2 * 2]) first[mode] = fb[k2 * 2];
                     if (i < 96) continue;
-                    if (hx_stub_feed(4, NULL, NULL) == before) { silent[mode]++; prev = -1; continue; }
-                    fb = hx_stub_feed_last(4);
+                    if (!fb) { silent[mode]++; prev = -1; continue; }
                     for (k2 = 0; k2 < 128; k2++) {
+                        int want = rev ? (prev - 1 + 30000) % 30000 : (prev + 1) % 30000;
                         if (!fb[k2 * 2]) silent[mode]++;
-                        else if (prev >= 0 && fb[k2 * 2] != (prev + 1) % 30000) brk[mode]++;
+                        else if (prev >= 0 && fb[k2 * 2] != want) brk[mode]++;
                         prev = fb[k2 * 2];
                     }
                 }
@@ -984,16 +988,21 @@ int main(void) {
                 hx_set_param(h, "transport", "stop");
                 hx_render(h, 60);
             }
+            hx_set_param(h, "t4_au_set_revrs", "7 0");
             HX_ASSERT(silent[0] < 64 && brk[0] < 200, "the Free control did not play straight under a followed clock");
-            HX_ASSERT(silent[1] < 64, "Vintage fell silent under a followed clock");
+            /* Vintage's breaks: a cut each time the slightly fast clock pulls
+             * it AU_JOIN ahead (~6 here, ~390 samples); a cut a pulse would be
+             * thousands */
+            HX_ASSERT(silent[1] < 64 && silent[2] < 64, "Vintage fell silent under a followed clock");
             HX_ASSERT(brk[1] < 1000, "Vintage broke up under a followed clock");
-            /* the clip counter jumping back without the loop restarting (Loop
-             * moved, Dir changed): Vintage plays on from the tick it is on,
-             * not a burst from half a clip away */
+            HX_ASSERT(brk[2] < 1000, "Vintage in Revrs broke up under a followed clock");
+            HX_ASSERT(first[1] >= 0 && first[1] <= 2, "Vintage's first pulse did not start at the sample's first frame");
+            /* the clip counter jumping (Loop moved, Dir changed) without the
+             * loop restarting: Vintage plays on from where the clip now is,
+             * no burst */
             {
                 const int16_t *fb;
                 int v0 = -1, v1 = -1, k3;
-                double Lt = 16.0 * (lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP), vf;
                 hx_set_param(h, "t4_au_set_tempo", "7 1");
                 hx_set_param(h, "clock_follow_on", "1");
                 hx_send_midi(h, &st, 1, MOVE_MIDI_SOURCE_INTERNAL);
@@ -1001,14 +1010,13 @@ int main(void) {
                 for (i = 0; i < 70; i++) { if (i % 7 == 0) hx_send_midi(h, &clk, 1, MOVE_MIDI_SOURCE_INTERNAL); hx_render(h, 1); }
                 fb = hx_stub_feed_last(4);
                 for (k3 = 0; k3 < 128; k3++) if (fb[k3 * 2]) v0 = fb[k3 * 2];
-                vf = inst->au_trk[4].vint_from + Lt / 2;
-                inst->au_trk[4].vint_from = vf >= Lt ? vf - Lt : vf;
+                tr->current_step = (uint16_t)((tr->current_step + 8) % 16);   /* half a bar on */
                 for (i = 0; i < 7; i++) { if (i % 7 == 0) hx_send_midi(h, &clk, 1, MOVE_MIDI_SOURCE_INTERNAL); hx_render(h, 1); }
                 fb = hx_stub_feed_last(4);
                 for (k3 = 0; k3 < 128; k3++) if (fb[k3 * 2]) v1 = fb[k3 * 2];
-                /* 7 blocks on: ~900 frames further, not ~44000 */
-                HX_ASSERT(v0 > 0 && v1 > 0 && abs((v1 - v0 + 30000) % 30000 - 7 * 128) < 2000,
-                          "Vintage burst from a clip counter that jumped back");
+                /* 7 blocks on and half the bar (44100 frames) further */
+                HX_ASSERT(v0 > 0 && v1 > 0 && abs((v1 - v0 + 2 * 30000 - 44100 % 30000) % 30000 - 7 * 128) < 2000,
+                          "Vintage did not play on from where a jumped clip counter is");
                 hx_send_midi(h, &sp, 1, MOVE_MIDI_SOURCE_INTERNAL);
                 inst->playing = 0;
                 hx_set_param(h, "clock_follow_on", "0");

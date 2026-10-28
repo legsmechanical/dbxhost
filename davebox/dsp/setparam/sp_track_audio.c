@@ -216,22 +216,19 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
         double past = (double)inst->tick_accum / (double)inst->tick_delta * (double)frames / fpt;
         start = au_wrap((double)tick - 1.0 + past, L) - span;
     } else {
-        /* a followed clock (Move's 0xF8) puts its tick on the block's frame 0
-         * (seq8_tick_frame) and says nothing between ticks: the window runs
-         * from where the last one ended to just past the tick played, all of
-         * it due at frame 0, and a block with no tick has none. (Read as our
-         * own clock's, the window ended ON the tick and every piece fell just
-         * outside it — Vintage was silent: found by review, 2026-10-29.) */
-        au_track_t *at = &inst->au_trk[t];
-        double cur = au_wrap((double)tick - 1.0 + 1e-6, L);
-        if (!at->vint_ok) { at->vint_from = au_wrap(cur - 1.0, L); at->vint_ok = 1; }
-        start = at->vint_from;
-        span = au_wrap(cur - start, L);
-        /* the clip counter jumped without the loop restarting (Loop moved,
-         * Dir changed): play the pulse just come in (an 0xF8 is PPQN / 24
-         * ticks), not a burst of everything since */
-        if (span > AU_VINTAGE_PER_BLOCK) { start = au_wrap(cur - (double)(PPQN / 24), L); span = au_wrap(cur - start, L); }
-        at->vint_from = cur;
+        /* a followed clock (Move's 0xF8) puts its ticks on the block's frame
+         * 0 (seq8_tick_frame) and says nothing between them: the pieces due
+         * are the ticks this block consumed (au_tick0: the master tick
+         * before it) — an 0xF8 brings PPQN / 24 at once, a backlog more,
+         * follow_solo one — all at frame 0; a block with none has none.
+         * (Read as our own clock's, the window ended ON the tick and every
+         * piece fell just outside it, so Vintage was silent; a rolling window
+         * from the last block's end then missed the first pulse's first ticks
+         * and burst after a jump. Both found by review, 2026-10-29.) */
+        double n = (double)((uint64_t)inst->arp_master_tick - inst->au_tick0);
+        if (n <= 0) return;
+        span = n;
+        start = au_wrap((double)tick - 1.0 - n + 1e-6, L);
         fscale = 0.0;
     }
     double nud = (double)cl->nudge_ms * 44.1 / fpt;
@@ -347,7 +344,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
                 if (sync) {
                     /* Vintage: the sample cut on the clock (au_sync_block). */
                     if (lv) au_voice_release(lv, 64);
-                    if (!at->sync_on || at->loop_clip != c) { at->sync_on = 1; at->sync_live = 0; at->vint_ok = 0; at->loop_clip = (uint8_t)c; }
+                    if (!at->sync_on || at->loop_clip != c) { at->sync_on = 1; at->sync_live = 0; at->loop_clip = (uint8_t)c; }
                     if (ticked) at->sync_live = 1;          /* the transport's first tick has played */
                     if (at->sync_live) au_sync_block(inst, t, c, tick, (uint32_t)lc->length * tps, fpt, frames);
                 } else {

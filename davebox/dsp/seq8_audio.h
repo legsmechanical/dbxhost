@@ -174,8 +174,6 @@ typedef struct {
     uint8_t    loop_clip;    /* Loop: the clip the loop voice belongs to */
     uint8_t    sync_on;      /* Tempo Vintage: its pieces are playing */
     uint8_t    sync_live;    /* ...and the transport's first tick has played (a window before it means nothing) */
-    uint8_t    vint_ok;      /* Vintage under a followed clock: vint_from is set */
-    double     vint_from;    /* ...the clip tick the last block's window ended at */
     uint8_t    layout;       /* PAD MODE Layout: 0 4 Rows, 1 16 Pads (the UI's; saved as t%d_aul) */
     uint8_t    mgain;        /* mute as a bus: 0..64, the output's level, ramping one step a frame */
 } au_track_t;
