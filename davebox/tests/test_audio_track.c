@@ -255,7 +255,11 @@ int main(void) {
     hx_set_param(h, "t6_convert_to_drum", "");
     hx_set_param(h, "t6_convert_to_audio", "");
     HX_ASSERT(inst->tracks[6].pad_mode == PAD_MODE_AUDIO, "a drum track did not become Audio");
+    /* the arp's Step reaches 15 on Audio; leaving, it comes back to ±4 octaves */
+    hx_set_param(h, "t6_tarp_octaves", "15");
+    HX_ASSERT(inst->tracks[6].tarp.octaves == 15, "Audio's arp Step did not reach 15");
     hx_set_param(h, "t6_convert_to_melodic", "");
+    HX_ASSERT(inst->tracks[6].tarp.octaves == 4, "leaving Audio kept a 15-octave arp");
 
     /* ---- pick: copied into the project, loaded off-thread ---- */
     snprintf(p, sizeof p, "0|%s/src/mono48.wav", g_root);

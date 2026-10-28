@@ -11,8 +11,9 @@
  *   tN_au_clear   "C"              the clip has no sample
  *   tN_au_set_<field>   "C <v>"    mode / even (0 Off, 2..32) / start / end
  *                                  (frames; end 0 = the sample's end) / pitch /
- *                                  gain / bars / revrs / nudge / tempo (0 Free,
- *                                  1 Sync). Mode Slice on a
+ *                                  gain / bars / len_bars (the clip's length) /
+ *                                  revrs / nudge / tempo (0 Free, 1 Vintage,
+ *                                  3 Pitch; 2, the old Fit, sets 1). Mode Slice on a
  *                                  clip with no steps lays the chops on them
  *   tN_au_slice_<field> "C L <v>"  start / end (frames, the hand set, Even Off;
  *                                  end 0 = home) / pitch / gain / rev / play /
@@ -178,7 +179,7 @@ static double au_wrap(double x, double L) {
     return x;
 }
 
-/* Every chop voice (not the loop's) of track `at` fades out (Sync stopped). */
+/* Every chop voice (not the loop's) of track `at` fades out (Vintage stopped). */
 static void au_release_chops(au_track_t *at) {
     int i;
     for (i = 0; i < AU_VOICES; i++) if (at->v[i].active && !at->v[i].mode_loop) au_voice_release(&at->v[i], 64);
@@ -189,9 +190,10 @@ static void au_release_chops(au_track_t *at) {
  * by users"): Start..End cut on the clock's own grid, one piece a tick (1/384
  * note), piece j on tick j of the sample's own Bars, Nudge on top; in Revrs
  * the pieces run from End back, each backwards. A piece plays at the clip's
- * pitch, so a slower tempo leaves a gap after each and a faster one cuts each
- * short; at the loop's own tempo they join (au_range_on) and it plays as Free
- * does. The user's chops play no part (Josh: "chops should just be completely
+ * pitch, so a slower tempo leaves a gap after each; at a faster one the voice
+ * runs on into the next piece (au_range_on's join) until it is AU_JOIN behind,
+ * then the next piece cuts it and it jumps to where the clock says. At the
+ * loop's own tempo they join throughout and it plays as Free does. The user's chops play no part (Josh: "chops should just be completely
  * invisible in loop mode"). `tick` is the clip counter after this block's
  * ticks: the last one played is tick - 1, and what is left in the clock's
  * accumulator is how far past it the block ends. */
@@ -312,7 +314,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
                  * bars") — the clip's Pitch knob gives way to it */
                 double fill = 0.0;
                 if (cl->tempo == AU_TEMPO_PITCH) {
-                    /* x = the sample's own Bars, as Sync's (Josh, 2026-10-28:
+                    /* x = the sample's own Bars, as Vintage's (Josh, 2026-10-28:
                      * "does pitch sync'ing not respect the set bars?"); the
                      * clip's length only says when it comes round */
                     uint32_t frs, fre;

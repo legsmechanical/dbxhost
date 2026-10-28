@@ -1029,6 +1029,7 @@ step('⭐⭐ Loop step buttons: playing, the row follows the playhead page by pa
     S.ledsDirtyAudio = true; ticks(2);
     const lit = Array.from({ length: 16 }, (_, i) => LEDS.get(16 + i) || 0);
     assert(lit[4] === HC.White && lit.filter((v) => v === HC.White).length === 1, 'the playhead is not on step 21 of page 2: ' + lit.join());
+    assert(lit[0] && lit[0] !== HC.DarkGrey && lit.every((v, i) => i === 4 || v === lit[0]), 'the loop\'s other steps are not dim: ' + lit.join());
     S.playing = was[0]; S.trackClipPlaying[4] = was[1]; S.trackCurrentStep[4] = was[2]; S.clipLength[4][0] = was[3];
     S.ledsDirtyAudio = true; ticks(2);
 });
@@ -1060,7 +1061,9 @@ step('⭐⭐ 128 chops: Octave Up / Down steps the pad pages, 32 chops a page (S
     S.clipLength[4][0] = 16; S.clipLoopStart[4][0] = 0; S.trackCurrentPage[4] = 0;
     S.ledsDirtyAudio = true; ticks(2);
     const lit = Array.from({ length: 16 }, (_, i) => LEDS.get(16 + i) || 0);
-    assert(lit.every((v) => v), 'the step buttons do not light the whole loop: ' + lit.join());
+    /* one colour, the track's dim — not DarkGrey (outside a clip), not off */
+    assert(lit[0] && lit.every((v) => v === lit[0]) && lit[0] !== HC.DarkGrey && lit[0] !== HC.White,
+           'the step buttons do not light the whole loop dim: ' + lit.join());
     GET['t4_au_pos'] = '1 24000 2';
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(6);
     assert(S.auPage[4] === 0, 'a clip of 8 chops kept page 2');

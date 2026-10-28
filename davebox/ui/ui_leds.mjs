@@ -378,8 +378,8 @@ export function updateStepLEDs() {
     }
 
     /* AUDIO, a Loop clip: no sequence, so the step buttons show the loop —
-     * its steps dim, the playhead white. One pad page covers the whole loop
-     * (its sections: auLoopMarks), so the steps are all of it. */
+     * the page of its steps showing dim (a clip longer than 16 steps pages,
+     * as a sequence does), the playhead white. */
     if (isAudioTrack(S.activeTrack) && auInfo(S.activeTrack, auClipOf(S.activeTrack)).mode !== AU_MODE_SLICE) {
         const t = S.activeTrack, ac = effectiveClip(t);
         /* playing, the row follows the playhead page by page, as a sequence

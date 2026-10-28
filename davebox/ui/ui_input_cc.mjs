@@ -82,7 +82,7 @@ import { isAudioTrack, audioSliceMode, auClipBankKnob, knobAltOnTrack, auSetLayo
 const AUDIO_CROP_KNOB = 4;
 const AUDIO_SEQ_KNOB = 7;
 const AUDIO_CLIP_REMAP = { 4: [0, 5], 5: [0, 4] };
-import { openAudioEditor, openWave, closeAudioPanel, slicesToSequence } from './ui_audio_editor.mjs';
+import { openWave, closeAudioPanel, slicesToSequence } from './ui_audio_editor.mjs';
 import { soundActive, soundPageBarShown, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVolGestureEnd, soundShiftEdge, soundOpenGenerator,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, macroClearConfirmAnswer,

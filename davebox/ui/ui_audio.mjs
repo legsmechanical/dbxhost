@@ -258,17 +258,9 @@ export function auTick() {
         if (!auSlice(t, c, l)) { auReadSlice(t, c, l); S.screenDirty = true; }
         if (ed && auPanelPageName(ed) === 'CLIP' && cur.mode === AU_MODE_SLICE && !auAll(t, c)) { auReadAll(t, c); S.screenDirty = true; }
     }
-    /* The pad page: within the chops there are; a Loop playing follows its
-     * playhead onto the next page (Josh, 2026-10-28: "follow the playhead"),
-     * when the playhead moves to it — a page flipped by hand stays until then;
-     * a Lazy chop follows its next pad. */
+    /* The pad page: within the chops there are (a Loop clip has one page,
+     * its sections: auPages); a Lazy chop follows its next pad. */
     if ((S.auPage[t] | 0) >= auPages(t)) auSetPage(t, auPages(t) - 1);
-    if (cur.mode !== AU_MODE_SLICE && !auLazyOpen()) {
-        const ph = auPlayheadChop(t);
-        const pp = ph >= 0 ? Math.floor(ph / AU_PAGE) : -1;
-        if (pp >= 0 && pp !== S.auPageFollow[t]) auSetPage(t, pp);
-        S.auPageFollow[t] = pp;
-    }
     if (auLazyOpen()) {
         const lz = auLazyState();
         const next = lz.state === AU_LAZY_RUN ? lz.n : 0;
@@ -629,9 +621,9 @@ export function auClipBankKnob(t, k, steps) {
         S.ledsDirtyAudio = true;
     } else if (k === 0 && i.mode !== AU_MODE_SLICE) {
         if (i.state !== 2) return false;
-        const k = Math.max(0, Math.min(AU_TEMPO_NAMES.length - 1, auTempoIdx(i) + (steps > 0 ? 1 : -1)));
-        if (AU_TEMPO_VALS[k] === (i.tempo | 0)) return false;
-        loc.tempo = AU_TEMPO_VALS[k]; auSet(t, c, 'tempo', loc.tempo);
+        const ti = Math.max(0, Math.min(AU_TEMPO_NAMES.length - 1, auTempoIdx(i) + (steps > 0 ? 1 : -1)));
+        if (AU_TEMPO_VALS[ti] === (i.tempo | 0)) return false;
+        loc.tempo = AU_TEMPO_VALS[ti]; auSet(t, c, 'tempo', loc.tempo);
     } else if (k === 1 && i.mode !== AU_MODE_SLICE) {
         if (i.state !== 2) return false;
         const v = Math.max(1, Math.min(AU_BARS_MAX, (i.bars || 1) + (steps > 0 ? 1 : -1)));

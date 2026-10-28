@@ -37,7 +37,7 @@
 #define AU_TEMPO_FREE      0            /* Loop: the sample at its own speed, whatever the tempo */
 #define AU_TEMPO_VINTAGE   1            /* Loop: cut every tick, each piece on its place in the sample's own Bars (au_sync_block) */
 #define AU_TEMPO_FIT_OLD   2            /* retired (Fit): loads and sets as Vintage */
-#define AU_TEMPO_PITCH     3            /* Loop: the sample retuned (varispeed) to fill the clip's length */
+#define AU_TEMPO_PITCH     3            /* Loop: the sample retuned (varispeed) so Start..End fills its own Bars */
 #define AU_TEMPO_FIX(v)    ((v) == AU_TEMPO_FIT_OLD ? AU_TEMPO_VINTAGE : (v))
 #define AU_BARS_MAX        64           /* a sample's own length in bars, 1..64 */
 #define AU_GAP             16           /* frames: the least a slice can be */
@@ -172,7 +172,7 @@ typedef struct {
     au_voice_t v[AU_VOICES];
     int32_t    last_tick;    /* Loop: the clip position last block (wrap = restart) */
     uint8_t    loop_clip;    /* Loop: the clip the loop voice belongs to */
-    uint8_t    sync_on;      /* Tempo Sync: its chops are playing */
+    uint8_t    sync_on;      /* Tempo Vintage: its pieces are playing */
     uint8_t    sync_live;    /* ...and the transport's first tick has played (a window before it means nothing) */
     uint8_t    vint_ok;      /* Vintage under a followed clock: vint_from is set */
     double     vint_from;    /* ...the clip tick the last block's window ended at */

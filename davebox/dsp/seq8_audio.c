@@ -1168,7 +1168,7 @@ static void au_range(const au_clip_t *cl, const au_sample_t *s, uint32_t *rs, ui
 }
 
 /* How many slices the clip plays: Even's count, else the hand set's. */
-/* Start..End in ticks at the sample's own length in bars (Tempo Sync, >Seq):
+/* Start..End in ticks at the sample's own length in bars (Vintage, Pitch, >Seq):
  * the bars are the whole sample's, so a cropped range is its share of them. */
 static double au_span_ticks(const au_clip_t *cl, const au_sample_t *s, uint32_t rs, uint32_t re) {
     int bars = cl->bars ? cl->bars : 1;
@@ -1235,8 +1235,9 @@ static int au_slice_range(const au_clip_t *cl, const au_sample_t *s, int k, uint
 }
 
 /* Chop `slice` of clip (t,c) starts `off` frames into the block: a Slice
- * clip's note, or (sync) a Loop clip's Tempo Sync, which plays every chop to
- * its end (One), backwards in Revrs, and streams past Slice mode's cap. */
+ * clip's note. (sync: a chop played as a Loop's would be — to its end, the
+ * clip's Revrs, past Slice mode's cap; Vintage itself goes straight to
+ * au_range_on with its own pieces, never the chops.) */
 static void au_range_on(seq8_instance_t *inst, int t, int c, int slice, uint32_t a, uint32_t b,
                         float vgain, uint32_t off, int sync);
 static void au_chop_on(seq8_instance_t *inst, int t, int c, int slice, float vgain, uint32_t off, int sync) {
@@ -1258,7 +1259,7 @@ static void au_range_on(seq8_instance_t *inst, int t, int c, int slice, uint32_t
     au_track_t *at = &inst->au_trk[t];
     int i;
     if (!s || b <= a) return;
-    /* A Loop clip on Sync plays its chops as recorded: the clip's pitch,
+    /* A Loop clip's Vintage pieces (sync) play as recorded: the clip's pitch,
      * gain and Revrs, never a chop's own sound — no envelope, pitch, gain,
      * reverse or play mode (Josh, 2026-10-28: "the whole point of loop is
      * that it just plays back as recorded, so attack/decay shouldn't play
