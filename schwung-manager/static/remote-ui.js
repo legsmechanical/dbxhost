@@ -105,12 +105,25 @@
     // WebSocket connection
     // ------------------------------------------------------------------
 
+    // Compression is turned off for iPhone and iPad: there the socket failed
+    // every few seconds while desktop browsers held it. iPadOS reports itself as
+    // a Mac, so touch support tells the two apart. ?deflate=0 / ?deflate=1 on the
+    // page overrides the choice, for comparing the two on one device.
+    function wsDeflate() {
+        var asked = new URLSearchParams(location.search).get("deflate");
+        if (asked === "0" || asked === "1") return asked === "1";
+        var ua = navigator.userAgent;
+        return !(/iPhone|iPad|iPod/.test(ua) ||
+            (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1));
+    }
+
     function connect() {
         if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) {
             return;
         }
         var proto = location.protocol === "https:" ? "wss:" : "ws:";
-        ws = new WebSocket(proto + "//" + location.host + "/ws/remote-ui");
+        ws = new WebSocket(proto + "//" + location.host + "/ws/remote-ui" +
+            (wsDeflate() ? "" : "?deflate=0"));
 
         ws.onopen = function () {
             reconnectDelay = RECONNECT_DELAY_MIN;

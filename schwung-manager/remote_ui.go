@@ -82,6 +82,9 @@ type ruClient struct {
 	// time). Kept separate from mu so a stalled write blocks only writers.
 	writeMu sync.Mutex
 
+	// when the connection was accepted — the close log says how long it held
+	opened time.Time
+
 	// slots this client is subscribed to (slot index -> true)
 	subs map[uint8]bool
 	// whether this client is subscribed to master FX
@@ -419,22 +422,36 @@ func (ru *RemoteUI) refreshLoop(ctx context.Context) {
 
 // ServeHTTP upgrades the request to a WebSocket and handles messages.
 func (ru *RemoteUI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// permessage-deflate: the rui_* JSON payloads are extremely repetitive
+	// (step grids, note lists), and Move's WiFi is the bottleneck —
+	// negotiated only when the browser offers it. A page may ask for none
+	// with ?deflate=0: on iPhone and iPad the connection was failing every
+	// few seconds while desktop browsers held it.
+	compression := websocket.CompressionContextTakeover
+	if r.URL.Query().Get("deflate") == "0" {
+		compression = websocket.CompressionDisabled
+	}
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		// Allow any origin — the server is on a local network device.
 		InsecureSkipVerify: true,
-		// permessage-deflate: the rui_* JSON payloads are extremely
-		// repetitive (step grids, note lists), and Move's WiFi is the
-		// bottleneck — negotiated only when the browser offers it.
-		CompressionMode: websocket.CompressionContextTakeover,
+		CompressionMode:    compression,
 	})
 	if err != nil {
 		ru.logger.Error("websocket accept failed", "err", err)
 		return
 	}
+	// What was negotiated, and for which browser — a bug report then says
+	// which connections were compressed.
+	ext := w.Header().Get("Sec-WebSocket-Extensions")
+	if ext == "" {
+		ext = "none"
+	}
+	ru.logger.Info("ws open", "deflate", ext, "ua", r.UserAgent())
 
 	client := &ruClient{
-		conn: conn,
-		subs: make(map[uint8]bool),
+		conn:   conn,
+		subs:   make(map[uint8]bool),
+		opened: time.Now(),
 	}
 
 	ru.mu.Lock()
@@ -469,7 +486,7 @@ func (ru *RemoteUI) readLoop(ctx context.Context, c *ruClient) {
 			// Client disconnected or context cancelled. At Info, with the
 			// reason: a tester's page reconnected every few seconds and the
 			// bug report could not say why.
-			ru.logger.Info("ws closed", "err", err)
+			ru.logger.Info("ws closed", "err", err, "after", time.Since(c.opened).Round(time.Millisecond))
 			return
 		}
 
