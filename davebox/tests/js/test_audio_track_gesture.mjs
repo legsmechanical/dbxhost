@@ -924,6 +924,14 @@ step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP /
     assert(tv.join() === 'Free,Vintage,Pitch' && sent('t4_au_set_tempo').join() === '0 1,0 3' && !sentLike(/_au_set_(revrs|jump|jmpq)/).length,
            'K1 is not Tempo Free · Vintage · Pitch: ' + tv.join() + ' ' + JSON.stringify(sentLike(/_au_/)));
     assert(A.auTempoIdx({ tempo: 2 }) === 1 && A.auTempoIdx({ tempo: 3 }) === 2, 'an old Fit / Pitch reads wrong');
+    /* each fits the square on one line (found on the device: VIN / TAG) */
+    const wasInfo = S.auInfo[4][0];
+    for (const v of [0, 1, 3]) {
+        S.auInfo[4][0] = Object.assign({}, wasInfo, { tempo: v });
+        const sq = A.auLoopBankCells(4)[0].sq;
+        assert(sq && sq.length <= 4, 'Tempo ' + v + '\'s square: ' + sq);
+    }
+    S.auInfo[4][0] = wasInfo;
     for (let i = 0; i < 200; i++) cc(71, 127);
     /* K2 Bars: the sample's own length, 1..64, with the tempo it makes */
     reset();

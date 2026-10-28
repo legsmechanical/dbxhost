@@ -38,6 +38,9 @@ export const AU_MODE_LOOP = 0, AU_MODE_SLICE = 1;
  * values: Free 0, Vintage 1, Pitch 3 (2 was Fit, gone: it reads as Vintage). */
 export const AU_TEMPO_NAMES = ['Free', 'Vintage', 'Pitch'];
 const AU_TEMPO_VALS = [0, 1, 3];
+/* the knob's square holds four letters on one line, as Mode's Loop / Slce (found
+ * on the device: "Vintage" broke into VIN / TAG) */
+const AU_TEMPO_SQ = ['Free', 'Vint', 'Ptch'];
 export function auTempoIdx(i) { const k = AU_TEMPO_VALS.indexOf(i.tempo | 0); return k < 0 ? 1 : k; }
 /* A Loop clip's pads: the sample in even sections, one a pad (Josh,
  * 2026-10-29: "chops should just be completely invisible in loop mode"). */
@@ -768,7 +771,7 @@ export function knobAltOnTrack(t, padMode, bank, k) {
 export function auLoopBankCells(t) {
     const i = auInfo(t, auClipOf(t));
     const tempo = { kind: 'enumsq', label: 'Tempo', name: 'Tempo: Free · Vintage · Pitch',
-                    text: AU_TEMPO_NAMES[auTempoIdx(i)], options: AU_TEMPO_NAMES, sel: auTempoIdx(i) };
+                    text: AU_TEMPO_NAMES[auTempoIdx(i)], sq: AU_TEMPO_SQ[auTempoIdx(i)], options: AU_TEMPO_NAMES, sel: auTempoIdx(i) };
     const live = (x) => (i.state === 2 ? x : dash(x));
     return [live(tempo), live(barsCell(i)), live(nudgeCell(i)), auModeCell(t), BLANK, BLANK, BLANK, BLANK];
 }
