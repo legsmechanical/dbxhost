@@ -27,6 +27,7 @@
  *     set from the drum-flag build loads as a drum track. */
 #include "harness.h"
 #include <math.h>
+#include <signal.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -195,6 +196,14 @@ static void write_clicks(const char *path, double secs, double bpm) {
 
 /* Play `blocks` blocks from the transport's start and count where the ramp
  * the clip feeds did not go on by one (a cut, a jump or a silent block). */
+/* a render that never returns is an audio-thread hang on the device */
+static void on_hang(int sig) {
+    static const char m[] = "FAIL: the render hung (audio-thread hang)\n";
+    (void)sig;
+    if (write(2, m, sizeof m - 1) < 0) {}
+    _exit(3);
+}
+
 static int ramp_breaks(hx_t *h, int blocks) {
     const int16_t *b;
     int prev = -1, breaks = 0, k, n, fed;
@@ -1021,6 +1030,45 @@ int main(void) {
                 inst->playing = 0;
                 hx_set_param(h, "clock_follow_on", "0");
                 hx_set_param(h, "transport", "stop");
+                hx_render(h, 60);
+            }
+            /* Record with a count-in under a followed clock: the count-in's
+             * end resets the 32-bit master tick inside the block, and the
+             * tick count underflowed — the render never returned (a frozen
+             * Move: found by review). Vintage plays on after it. */
+            {
+                int guard = 0, fedafter = 0, before;
+                hx_set_param(h, "t4_au_set_tempo", "7 1");
+                hx_set_param(h, "clock_follow_on", "1");
+                hx_send_midi(h, &st, 1, MOVE_MIDI_SOURCE_INTERNAL);
+                inst->playing = 1;
+                for (i = 0; i < 70; i++) { if (i % 7 == 0) hx_send_midi(h, &clk, 1, MOVE_MIDI_SOURCE_INTERNAL); hx_render(h, 1); }
+                hx_set_param(h, "record_count_in", "1");          /* a count-in, then track 1 records */
+                HX_ASSERT(inst->count_in_ticks > 0, "no count-in started");
+                signal(SIGALRM, on_hang);
+                alarm(10);
+                /* and au_wrap ends for any input (the audio thread calls it) */
+                HX_ASSERT(au_wrap(-1.8e19, 384.0) >= 0.0 && au_wrap(-1.8e19, 384.0) < 384.0 &&
+                          au_wrap(1e30, 384.0) == 0.0 && au_wrap(-5.0, 4.0) == 3.0 && au_wrap(9.5, 4.0) == 1.5,
+                          "au_wrap is wrong for a far-out or ordinary value");
+                while (inst->count_in_ticks > 0 && guard++ < 20000) {
+                    if (guard % 7 == 0) hx_send_midi(h, &clk, 1, MOVE_MIDI_SOURCE_INTERNAL);
+                    hx_render(h, 1);
+                }
+                HX_ASSERT(inst->count_in_ticks == 0, "the count-in never ended");
+                hx_stub_feed_reset(); before = hx_stub_feed(4, NULL, NULL);
+                for (i = 0; i < 70; i++) {
+                    if (i % 7 == 0) hx_send_midi(h, &clk, 1, MOVE_MIDI_SOURCE_INTERNAL);
+                    hx_render(h, 1);
+                    if (hx_stub_feed(4, NULL, NULL) != before) { fedafter++; before = hx_stub_feed(4, NULL, NULL); }
+                }
+                alarm(0);
+                HX_ASSERT(fedafter > 50, "Vintage did not play on after a count-in under a followed clock");
+                hx_send_midi(h, &sp, 1, MOVE_MIDI_SOURCE_INTERNAL);
+                inst->playing = 0;
+                hx_set_param(h, "clock_follow_on", "0");
+                hx_set_param(h, "transport", "stop");
+                inst->tracks[1].recording = 0;                  /* the count-in's take, done */
                 hx_render(h, 60);
             }
             lc->length = was16;

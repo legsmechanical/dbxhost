@@ -172,8 +172,13 @@ static void au_watch_publish(seq8_instance_t *inst) {
     __atomic_store_n(&inst->au_block, inst->au_block + 1, __ATOMIC_RELEASE);
 }
 
-/* x into [0, L). */
+/* x into [0, L). It runs on the audio thread, so it must end for ANY x: a
+ * far-out x is reduced in one step (a subtraction loop at x ~ 1e19 never
+ * moves, the step being below the double's precision there — an
+ * underflowed tick count hung the render: found by review, 2026-10-29). */
 static double au_wrap(double x, double L) {
+    if (!(L > 0) || !(x > -1e12 && x < 1e12)) return 0.0;      /* NaN, huge, or no length */
+    if (x >= L || x < 0) x -= L * (double)(long long)(x / L);
     while (x >= L) x -= L;
     while (x < 0) x += L;
     return x;
@@ -225,7 +230,13 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
          * piece fell just outside it, so Vintage was silent; a rolling window
          * from the last block's end then missed the first pulse's first ticks
          * and burst after a jump. Both found by review, 2026-10-29.) */
-        double n = (double)((uint64_t)inst->arp_master_tick - inst->au_tick0);
+        /* arp_master_tick is 32-bit and a count-in's end (or a transport
+         * start) resets it to 0 inside the block: then the ticks since the
+         * reset are its count, and those before it were the count-in's */
+        uint32_t amt = inst->arp_master_tick, t0 = (uint32_t)inst->au_tick0;
+        uint32_t nt = amt >= t0 ? amt - t0 : amt;
+        if (nt > AU_VINTAGE_PER_BLOCK) nt = AU_VINTAGE_PER_BLOCK;
+        double n = (double)nt;
         if (n <= 0) return;
         span = n;
         start = au_wrap((double)tick - 1.0 - n + 1e-6, L);
