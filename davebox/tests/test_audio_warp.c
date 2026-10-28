@@ -67,7 +67,7 @@ static void step(hx_t *h) {
         au_warp_t *W = X->trk[4];
         int k;
         for (k = 0; k < 400; k++) {
-            uint32_t ahead = __atomic_load_n(&W->head, __ATOMIC_ACQUIRE) - W->tail;
+            uint32_t ahead = __atomic_load_n(&W->head, __ATOMIC_ACQUIRE) - __atomic_load_n(&W->rd, __ATOMIC_ACQUIRE);
             if (!W->cmd.run || ahead >= 1024) break;
             usleep(500);
         }
@@ -272,6 +272,15 @@ int main(void) {
             HX_ASSERT(inst->tracks[4].active_clip == (b % 2 ? 0 : 1), "the launch did not land");
             for (k = 0; k < 150 + 37 * b; k++) step(h);
         }
+        /* a stretcher 87 ms late (more than the 46 ms it renders ahead): every
+         * frame it has made for the new clip is late and skipped — it must
+         * render on from the reader, not wait for ever with the reader (found
+         * under TSan: silence for good) */
+        hx_set_param(h, "t4_launch_clip", "1");
+        g_late = 30;
+        for (n = 0; n < 120 && !(n > 30 && inst->au_trk[4].w.state == AU_WARP_PLAY); n++) step(h);
+        HX_ASSERT(inst->au_trk[4].w.state == AU_WARP_PLAY && inst->au_trk[4].w.clip == 1,
+                  "after a stretcher 87 ms late, Warp never played again");
         hx_set_param(h, "transport", "stop");
         for (k = 0; k < 60; k++) step(h);
         hx_set_param(h, "t4_launch_clip", "0");

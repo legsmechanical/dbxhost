@@ -1116,6 +1116,8 @@ typedef struct {
     float         tag[AU_WARP_RING];           /* the clip tick each frame sounds (-1: none) */
     uint32_t      gen[AU_WARP_RING];           /* the anchor it was rendered for */
     uint32_t      head, tail;                  /* stretcher / audio thread */
+    uint32_t      rd;                          /* audio thread: how far it has read the current anchor's
+                                                * frames (past tail while the old ones still play out) */
     uint32_t      read_pos;                    /* the sample frame Bungee reads now (the streamer's watch) */
     /* the stretcher's own */
     au_st_t      *st;
@@ -1329,10 +1331,15 @@ static int au_warp_track(au_warper_t *X, au_warp_t *W) {
     }
     {
         int empty = 0;                   /* grains with no output: Bungee filling after a reset */
-        uint32_t tl, from;
-        /* ahead of what is read, or of the anchor's start: the last anchor's
-         * frames still playing out do not hold the new one back */
-        while ((tl = __atomic_load_n(&W->tail, __ATOMIC_ACQUIRE), from = (int32_t)(tl - W->gstart) > 0 ? tl : W->gstart,
+        uint32_t tl, rd, from;
+        /* ahead of what is read of the current anchor: neither the last
+         * anchor's frames still playing out nor the late ones the audio
+         * thread skipped hold it back (counted from tail, a stretcher more
+         * than AU_WARP_AHEAD late rendered only frames already skipped, and
+         * both threads waited for ever) */
+        while ((tl = __atomic_load_n(&W->tail, __ATOMIC_ACQUIRE), rd = __atomic_load_n(&W->rd, __ATOMIC_ACQUIRE),
+                from = (int32_t)(tl - W->gstart) > 0 ? tl : W->gstart,
+                from = (int32_t)(rd - from) > 0 && (int32_t)(W->head - rd) >= 0 ? rd : from,
                 W->head - from < AU_WARP_AHEAD) &&
                AU_WARP_RING - (W->head - tl) >= AU_WARP_ROOM && empty < 8) {
             int n = au_warp_grain(X, W);

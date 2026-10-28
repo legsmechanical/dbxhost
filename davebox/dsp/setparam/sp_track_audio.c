@@ -346,8 +346,13 @@ static int au_warp_mix(seq8_instance_t *inst, int t, int32_t *acc, int frames) {
                     tail++;
                     any = 1;
                 } else if (!w->hold && !w->fadeout) {
-                    while (tail != head && W->gen[tail & M] != w->gen) tail++;   /* drop them */
+                    /* nothing to play out: drop the old frames, and the late
+                     * ones the look-ahead skipped, so the ring has room (kept,
+                     * a stretcher more than AU_WARP_AHEAD late found it full
+                     * of frames nobody would read and stopped for good) */
+                    while (tail != head && W->gen[tail & M] != w->gen) tail++;
                     if ((int32_t)(w->ntail - tail) < 0) w->ntail = tail;
+                    else if (w->on && w->live) tail = w->ntail;
                 }
                 continue;
             }
@@ -375,6 +380,14 @@ static int au_warp_mix(seq8_instance_t *inst, int t, int32_t *acc, int frames) {
         }
         if (!w->xf) tail = w->ntail;
         any = 1;
+    }
+    /* how far the current anchor's frames are read: past tail only over
+     * frames of THIS anchor (late ones skipped) — never over the old ones the
+     * look-ahead passed, or the stretcher would render more of those */
+    {
+        uint32_t rd = tail;
+        if (w->ntail != tail && W->gen[(w->ntail - 1) & M] == w->gen) rd = w->ntail;
+        __atomic_store_n(&W->rd, rd, __ATOMIC_RELEASE);
     }
     __atomic_store_n(&W->tail, tail, __ATOMIC_RELEASE);
     if (w->on && w->live && w->state == AU_WARP_WAIT) w->waited += (uint32_t)frames;
