@@ -36,9 +36,8 @@
 
 #define AU_TEMPO_FREE      0            /* Loop: the sample at its own speed, whatever the tempo */
 #define AU_TEMPO_VINTAGE   1            /* Loop: cut every tick, each piece on its place in the sample's own Bars (au_sync_block) */
-#define AU_TEMPO_FIT_OLD   2            /* retired (Fit): loads and sets as Vintage */
-#define AU_TEMPO_PITCH     3            /* Loop: the sample retuned (varispeed) so Start..End fills its own Bars */
-#define AU_TEMPO_FIX(v)    ((v) == AU_TEMPO_FIT_OLD ? AU_TEMPO_VINTAGE : (v))
+#define AU_TEMPO_PITCH     2            /* Loop: the sample retuned (varispeed) so Start..End fills its own Bars */
+#define AU_TEMPO_MAX       AU_TEMPO_PITCH
 #define AU_BARS_MAX        64           /* a sample's own length in bars, 1..64 */
 #define AU_GAP             16           /* frames: the least a slice can be */
 #define AU_TAIL            128          /* frames: the fade back from a chop's end (~3 ms) */

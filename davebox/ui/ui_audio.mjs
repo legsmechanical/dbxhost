@@ -35,13 +35,13 @@ export const AU_MODE_LOOP = 0, AU_MODE_SLICE = 1;
 /* Tempo: Free as recorded · Vintage cut on the clock, each piece on its
  * place in the sample's own Bars (Josh, 2026-10-29: "make it as fine as
  * possible and call it "vintage"") · Pitch retuned to fill them. The DSP's
- * values: Free 0, Vintage 1, Pitch 3 (2 was Fit, gone: it reads as Vintage). */
+ * values: Free 0, Vintage 1, Pitch 2. */
 export const AU_TEMPO_NAMES = ['Free', 'Vintage', 'Pitch'];
-const AU_TEMPO_VALS = [0, 1, 3];
+const AU_TEMPO_VALS = [0, 1, 2];
 /* the knob's square holds four letters on one line, as Mode's Loop / Slce (found
  * on the device: "Vintage" broke into VIN / TAG) */
 const AU_TEMPO_SQ = ['Free', 'Vint', 'Ptch'];
-export function auTempoIdx(i) { const k = AU_TEMPO_VALS.indexOf(i.tempo | 0); return k < 0 ? 1 : k; }
+export function auTempoIdx(i) { const k = AU_TEMPO_VALS.indexOf(i.tempo | 0); return k < 0 ? 0 : k; }
 /* A Loop clip's pads: the sample in even sections, one a pad (Josh,
  * 2026-10-29: "chops should just be completely invisible in loop mode"). */
 export const AU_LOOP_SECTIONS = 32;

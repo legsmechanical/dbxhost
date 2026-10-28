@@ -13,7 +13,7 @@
  *                                  (frames; end 0 = the sample's end) / pitch /
  *                                  gain / bars / len_bars (the clip's length) /
  *                                  revrs / nudge / tempo (0 Free, 1 Vintage,
- *                                  3 Pitch; 2, the old Fit, sets 1). Mode Slice on a
+ *                                  2 Pitch). Mode Slice on a
  *                                  clip with no steps lays the chops on them
  *   tN_au_slice_<field> "C L <v>"  start / end (frames, the hand set, Even Off;
  *                                  end 0 = home) / pitch / gain / rev / play /
@@ -654,7 +654,7 @@ static int sp_track_audio(sp_ctx_t *cx) {
             inst->au_trk[tidx].last_tick = -1;     /* the loop restarts from its new end */
             if (c == tr->active_clip) au_track_kill(inst, tidx, NULL);
         } else if (!strcmp(w, "tempo")) {
-            v = AU_TEMPO_FIX(clamp_i(v, AU_TEMPO_FREE, AU_TEMPO_PITCH));
+            v = clamp_i(v, AU_TEMPO_FREE, AU_TEMPO_MAX);
             if (v != cl->tempo && c == tr->active_clip) au_track_kill(inst, tidx, NULL);
             cl->tempo = (uint8_t)v;
         } else if (!strcmp(w, "nudge")) {
