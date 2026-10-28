@@ -38,6 +38,9 @@ typedef struct {
     volatile int *solo_count;
     volatile int *pads_held;   /* count of drum pads (notes 68-99) currently held */
     shadow_screenreader_t **screenreader_shm;
+    /* Tap Back into Move, to close its power prompt (a claimed press). Safe
+     * from the D-Bus thread: it only requests; the shim's frame sends it. */
+    void (*close_move_power_prompt)(void);
 } dbus_host_t;
 
 /* ============================================================================

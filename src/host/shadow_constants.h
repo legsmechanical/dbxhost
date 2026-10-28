@@ -401,17 +401,29 @@ typedef struct shadow_control_t {
     volatile uint8_t pad_observe;
     /*
      * The POWER button, for an overtake module that answers it itself.
-     * power_claim: 1 = the module on screen (overtake mode 2) handles power —
-     * the shim then holds the power SysEx back from Move, so Move never raises
-     * its own "Press wheel to shut down", and instead stores the press here.
-     * Set and cleared by the module (host_power_claim), cleared by the host
-     * when the module stops owning the screen.
-     * power_button: the press, as the SysEx's id byte (0x2A tap, 0x3A hold);
-     * 0 = none. Written by the shim (one byte store, SPI thread), read and
-     * cleared by shadow_ui (shadow_get_power_button). APPENDED.
+     * power_claim: 1 = the module on screen (overtake mode 2) handles power.
+     * Move still gets every power SysEx (src/host/shim_power_gate.h says
+     * why); when Move announces its prompt, the host closes it with Back and
+     * the press goes to the module instead. Set and cleared by the module
+     * (host_power_claim), cleared by the host when the module stops owning
+     * the screen.
+     * power_button / power_value: the first byte (flags) and value byte of
+     * each power SysEx seen while claimed, for shadow_ui's log only.
+     * power_seen: 1 = such a message is waiting; stored LAST by the shim (SPI
+     * thread), read and cleared by shadow_ui (shadow_get_power_button).
+     * APPENDED.
      */
     volatile uint8_t power_claim;
     volatile uint8_t power_button;
+    volatile uint8_t power_value;
+    volatile uint8_t power_seen;
+    /*
+     * power_prompt: 1 = Move raised its power prompt while claimed — the
+     * press for the module. Set by the D-Bus handler
+     * (shim_power_prompt_claimed), read and cleared by shadow_ui
+     * (shadow_get_power_button). APPENDED.
+     */
+    volatile uint8_t power_prompt;
 } shadow_control_t;
 
 /* select_launch sentinel: no trigger pending. */

@@ -144,8 +144,18 @@
     // prefix), rather than a per-slot subscribe.
     var isTool = query.get("tool") === "1";
 
+    // Compression is turned off for iPhone and iPad: there the socket failed
+    // every few seconds while desktop browsers held it. iPadOS reports itself as
+    // a Mac, so touch support tells the two apart. ?deflate=0 / ?deflate=1 on the
+    // page overrides the choice, for comparing the two on one device.
+    var deflate = query.get("deflate");
+    if (deflate !== "0" && deflate !== "1") {
+        var appleTouch = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+            (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+        deflate = appleTouch ? "0" : "1";
+    }
     var wsUrl = (window.location.protocol === "https:" ? "wss://" : "ws://") +
-        window.location.host + "/ws/remote-ui";
+        window.location.host + "/ws/remote-ui" + (deflate === "0" ? "?deflate=0" : "");
 
     var cache = {};               // key -> last known value (mirrors parent cache)
     var listeners = [];           // onParamChange callbacks

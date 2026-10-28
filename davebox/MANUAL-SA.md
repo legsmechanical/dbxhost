@@ -536,13 +536,13 @@ STORAGE** and tries again.
 | **Shift + Back** | Save and hand the device back to official Schwung, from anywhere |
 | **Project Settings → Quit** | The same |
 | **Project Settings → Suspend session** | Park dAVEBOx — it keeps playing in the background while you use Move |
-| **Power button** | Not handled by dAVEBOx for now — leave first (**Shift + Back**), then turn the Move off as usual |
+| **Power button** | **POWER OFF?** — save everything and turn the Move off |
 | **Reboot** | Returns to official Schwung — unless you made dAVEBOx your boot default |
 
 - Each asks first, opening on **No** — turn to **Yes** and click.
-- **To turn the Move off**, leave dAVEBOx first with **Shift + Back** (it saves),
-  then use the power button as usual. dAVEBOx's own power-off question is
-  switched off for now: on some Moves it came up by itself every few minutes.
+- **Power off** saves your project, its instruments and effects, and the Move
+  set, shows **Powering off...**, and turns the Move off. Press the power button
+  to start it again as usual.
 - Leaving — or a reboot, even after a power cut mid-session — brings back your
   official install, **your own Move sets included**.
 - **Suspend** keeps dAVEBOx running in the background. To come back, hold
@@ -2944,7 +2944,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | Delete + Play | Deactivate clips (running) · panic (stopped) |
 | Undo / Shift + Undo | Undo / redo |
 | Back (tap / hold) / Shift + Back | Step out one level / back to the overview / save and leave dAVEBOx (asks first) |
-| Power button | Not handled for now — leave with Shift + Back, then power off |
+| Power button | Save and turn the Move off (asks first) |
 | Note/Session (tap / hold) | On an overview: switch / peek view — anywhere else: close it and go to Session View |
 | Shift + Step 2 | Project Settings |
 

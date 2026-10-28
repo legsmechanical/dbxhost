@@ -1104,6 +1104,7 @@ static volatile int shadow_shift_held = 0;
  * open Move's native Set Overview itself (inject Shift+Step1) and back out of
  * it (inject Back) around the selection. Cleared with the phase. */
 static void shim_select_blank_move_leds(void);   /* defined with the gate below */
+static void shim_close_move_power_prompt(void);  /* defined with the select gate's injector */
 /* Boot-tool LED blank: 1 from shim init until the boot tool takes overtake.
  * A latch, not a live condition — it must not re-arm when that tool later
  * exits to the menu, where Move's LEDs are legitimately the user's surface.
@@ -6062,6 +6063,7 @@ static void shim_init_subsystems(void)
             .solo_count = (volatile int *)&shadow_solo_count,
             .pads_held = (volatile int *)&shadow_pads_held,
             .screenreader_shm = &shadow_screenreader_shm,
+            .close_move_power_prompt = shim_close_move_power_prompt,
         };
         dbus_init(&dbus_host);
     }
@@ -7708,6 +7710,32 @@ static void shim_select_inject(uint8_t cin, uint8_t status, uint8_t d1, uint8_t 
         shadow_log("select gate: inject ring full — gesture event dropped");
 }
 
+/* Close Move's power prompt with a Back tap — for a module that claimed the
+ * power button (src/host/shim_power_gate.h). The D-Bus thread only REQUESTS;
+ * shim_power_back_frame sends down, then up 60 ms later, from the frame (the
+ * same tap the select gate's back-out uses). */
+static volatile int power_back_request = 0;
+static int power_back_state = 0;          /* 0 idle, 1 down sent */
+static uint64_t power_back_next_ms = 0;
+
+static void shim_close_move_power_prompt(void)
+{
+    __atomic_store_n(&power_back_request, 1, __ATOMIC_RELEASE);
+}
+
+static void shim_power_back_frame(void)
+{
+    if (power_back_state == 0) {
+        if (!__atomic_exchange_n(&power_back_request, 0, __ATOMIC_ACQ_REL)) return;
+        shim_select_inject(0x0B, 0xB0, CC_BACK, 127);
+        power_back_state = 1;
+        power_back_next_ms = now_mono_ms() + 60;
+    } else if (now_mono_ms() >= power_back_next_ms) {
+        shim_select_inject(0x0B, 0xB0, CC_BACK, 0);
+        power_back_state = 0;
+    }
+}
+
 /* PRE-IOCTL: blank Move's LED writes while Schwung owns the surface but no
  * tool has taken it yet. Two windows, same problem and same fix:
  *   - BOOT, while a boot tool is pending (boot_tool_led_blank),
@@ -8521,15 +8549,19 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
              * status byte here) same as it would any other cable-0 SysEx,
              * corrupting the one message Move's own shutdown-prompt flow needs
              * intact — so "Press wheel to shut down" never appears and the
-             * device cannot be powered off from inside a tool. The id byte at
-             * offset 17 varies (observed 0x2A on a tap, 0x3A on a ~1.5-2s
-             * hold); match on the fixed header + subcommand only. Lookahead,
+             * device cannot be powered off from inside a tool. Byte offset 17 is
+             * the 0x3A subcommand; the byte after it (offset 18) is a set of
+             * flags (0x2A seen on a tap on the charger, 0x08/0x09/0x28/0x29 in
+             * battery and charger reports) and offset 19 a value (0x64 on a
+             * tap, the battery level in reports). Only the fixed header +
+             * subcommand are matched, and nothing here judges a press — Move
+             * does (src/host/shim_power_gate.h). Lookahead,
              * not a stateful match at the subcommand packet, because a
              * corrective *retroactive* un-filter of already-written sh_midi
              * slots would need to special-case every filter site above instead
              * of the one line below. */
             int power_sysex_hit = 0, power_sysex_lead = 0;
-            uint8_t power_sysex_id = 0;
+            uint8_t power_sysex_id = 0, power_sysex_val = 0;
             if (power_sysex_remaining > 0) {
                 power_sysex_remaining--;
                 power_sysex_hit = 1;
@@ -8542,7 +8574,8 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                        (hw_midi[j + 24] & 0x0F) == 0x06) {
                 power_sysex_hit = 1;
                 power_sysex_lead = 1;
-                power_sysex_id = hw_midi[j + 17];
+                power_sysex_id = hw_midi[j + 18];
+                power_sysex_val = hw_midi[j + 19];
                 power_sysex_remaining = 3;
             }
 
@@ -8729,15 +8762,12 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
 
             /* Let the power-button SysEx through intact regardless of which
              * overtake-mode branch above ran — see the lookahead comment —
-             * UNLESS the module on screen claimed the button
-             * (shadow_control->power_claim): then Move never sees it (no
-             * prompt of its own) and the press is handed to the module
-             * instead. Tap and hold alike; the id byte says which. */
+             * claimed or not: Move decides what is a press, and a claimed
+             * press reaches the module from Move's prompt announcement
+             * (src/host/shim_power_gate.h). */
             if (power_sysex_hit)
-                filter = shim_power_gate(overtake_mode,
-                                         shadow_control ? &shadow_control->power_claim : NULL,
-                                         shadow_control ? &shadow_control->power_button : NULL,
-                                         power_sysex_lead, power_sysex_id);
+                filter = shim_power_gate(overtake_mode, shadow_control, power_sysex_lead,
+                                         power_sysex_id, power_sysex_val);
 
             if (filter) {
                 /* Zero the packet dword in the shadow buffer.  This does NOT
@@ -8835,6 +8865,7 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
      * sh_midi is finalized so its suppressions survive. No-op unless a
      * standalone launcher armed the phase. */
     shim_select_gate_frame(hw_midi, sh_midi);
+    shim_power_back_frame();
 
     /* === SHIFT+MENU SHORTCUT DETECTION AND BLOCKING (POST-IOCTL) ===
      * Scan hardware MIDI_IN for Shift+Menu, perform action, and block from reaching Move.

@@ -2,11 +2,8 @@
  * power-off should "turn off", through "our own" dialog, and a hold must NOT
  * skip the confirm).
  *
- * The button is NOT claimed for now (ui.js, above the MIDI input section): the
- * shim takes any power SysEx as a press, and some arrive unpressed (suspected).
- * So onPowerButton must stay unexported, and the dialog is driven here through
- * requestPowerOff — what the export called — so it is ready to come back.
- * Tap and hold must both raise the POWER OFF? modal and nothing else;
+ * The host calls globalThis.onPowerButton(id) once the module exports it (id
+ * 0x2A tap, 0x3A hold). Both must raise the POWER OFF? modal and nothing else;
  * No leaves everything as it was; Yes runs Quit's own staging (stop, save,
  * farewell) and the farewell runs power-off.sh — never exit-to-stock.sh — with
  * "Powering off..." on screen. A Quit still runs exit-to-stock.sh. */
@@ -110,14 +107,14 @@ step('setup: a booted session in track view', () => {
     globalThis.init();
     S.awaitingProjectSelect = false; S.ledInitComplete = true; S.sessionView = false; S.activeTrack = 0;
     reset();
-    if (typeof globalThis.onPowerButton !== 'undefined')
-        throw new Error('onPowerButton is exported — the host would claim the button again');
+    if (typeof globalThis.onPowerButton !== 'function')
+        throw new Error('onPowerButton is not exported — the host would never claim the button');
 });
 
 for (const [id, what] of [[0x2A, 'a tap'], [0x3A, 'a HOLD']]) {
     step(`${what} on POWER asks first (opens on No) and does nothing else`, () => {
         reset();
-        tickmod.requestPowerOff(id);
+        globalThis.onPowerButton(id);
         if (S.confirmExit !== 'poweroff') throw new Error('modal is ' + S.confirmExit);
         if (S.confirmExitSel !== 1) throw new Error('did not open on No');
         if (armed()) throw new Error('the press already started leaving');
@@ -130,7 +127,7 @@ for (const [id, what] of [[0x2A, 'a tap'], [0x3A, 'a HOLD']]) {
 
 step('No (click on No) closes it and nothing moves', () => {
     reset();
-    tickmod.requestPowerOff(0x2A);
+    globalThis.onPowerButton(0x2A);
     cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
     if (S.confirmExit !== null) throw new Error('still up');
     ticks(10);
@@ -140,7 +137,7 @@ step('No (click on No) closes it and nothing moves', () => {
 step('Yes: stop, save, "Powering off...", then power-off.sh — never exit-to-stock.sh', () => {
     reset();
     S.playing = true;
-    tickmod.requestPowerOff(0x2A);
+    globalThis.onPowerButton(0x2A);
     cc(JOG_TURN, 1);                                  /* No → Yes */
     if (S.confirmExitSel !== 0) throw new Error('the wheel did not move to Yes');
     cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
@@ -161,7 +158,7 @@ step('Yes: stop, save, "Powering off...", then power-off.sh — never exit-to-st
 
 step('a second press while leaving changes nothing', () => {
     const before = sysCmds.length;
-    tickmod.requestPowerOff(0x2A);
+    globalThis.onPowerButton(0x2A);
     if (S.confirmExit) throw new Error('raised a dialog over the farewell');
     if (sysCmds.length !== before) throw new Error('ran again');
 });
@@ -171,7 +168,7 @@ step('POWER over an open Quit confirm takes it (back on No)', () => {
     globalThis.onSessionExitRequest();
     if (S.confirmExit !== 'quit') throw new Error('setup: ' + S.confirmExit);
     cc(JOG_TURN, 1);                                  /* Quit's Yes selected */
-    tickmod.requestPowerOff(0x3A);
+    globalThis.onPowerButton(0x3A);
     if (S.confirmExit !== 'poweroff' || S.confirmExitSel !== 1) throw new Error(S.confirmExit + '/' + S.confirmExitSel);
     if (armed()) throw new Error('acted');
 });

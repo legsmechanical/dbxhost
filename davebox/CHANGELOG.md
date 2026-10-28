@@ -114,6 +114,33 @@ the section into a versioned heading at release time.
   Track View. **Back** steps back a level. **Shift + Sample** no longer starts a Live
   Merge — it's in the menu.
 
+## [1.1.3] — 2026-10-28
+
+### Fixed
+- **The power button asks POWER OFF? again — and only when you press it.**
+  1.1.0 sometimes asked by itself every few minutes (the Move's battery
+  updates were taken for presses), and only the first press of a session
+  worked: the Move kept the rest waiting and showed its own shut-down screen
+  as soon as you left dAVEBOx. The Move now decides what is a press, and
+  dAVEBOx answers it every time. Battery and charger updates reach the Move
+  again too. (1.1.1 had switched the power button off while this was fixed.)
+- **The web page stays connected on iPhone and iPad.** It dropped and
+  reconnected every few seconds there; Mac and PC were fine.
+
+### Changed
+- Power-button messages and web-page connections are written to the log, so
+  a bug report shows what happened.
+
+## [1.1.2] — 2026-10-27 (test build, not in the Schwung catalog)
+
+### Changed
+- **The power button asks POWER OFF? again**, as in 1.1.0, but only for a real
+  tap or hold. Every power message the Move sends is now written to the log
+  with its contents, and so is each time the question comes up — a bug report
+  sent after it pops up by itself shows what arrived.
+- **The web manager logs why each connection closed**, so a bug report can
+  show why the page keeps reconnecting.
+
 ## [1.1.1] — 2026-10-27
 
 ### Fixed

@@ -18964,16 +18964,31 @@ globalThis.tick = function() {
                      * convention). The claim is DERIVED from that export, every
                      * tick (idempotent; the binding logs only on a change), so
                      * the module calls nothing and a resume re-claims by
-                     * itself; exit and suspend drop it. Claimed, the shim holds
-                     * the press back from Move — no "Press wheel to shut down"
-                     * — and it is delivered here. id: 0x2A tap, 0x3A hold. */
+                     * itself; exit and suspend drop it. Claimed, Move still
+                     * gets every power SysEx and decides what is a press: its
+                     * "Press wheel to shut down" announcement is the press,
+                     * the host closes that prompt with Back, and it is
+                     * delivered here (as 0x2A, a tap). The SysEx themselves
+                     * are only logged — they carry battery and charger reports
+                     * as well as the button (src/host/shim_power_gate.h). */
                     {
                         if (typeof host_power_claim === "function")
                             host_power_claim(typeof globalThis.onPowerButton === "function" ? 1 : 0);
-                        const powerId = typeof shadow_get_power_button === "function" ? shadow_get_power_button() : 0;
-                        if (powerId && typeof globalThis.onPowerButton === "function") {
-                            try { runToolCallback(function() { globalThis.onPowerButton(powerId); }); }
-                            catch (e) { debugLog("OVERTAKE onPowerButton exception: " + e); }
+                        for (let n = 0; n < 2; n++) {
+                            const powerRaw = typeof shadow_get_power_button === "function" ? shadow_get_power_button() : 0;
+                            if (!powerRaw) break;
+                            if (powerRaw & 0x20000) {
+                                debugLog("POWER Move raised its power prompt -> closed with Back, press to the module");
+                                if (typeof globalThis.onPowerButton === "function") {
+                                    try { runToolCallback(function() { globalThis.onPowerButton(0x2A); }); }
+                                    catch (e) { debugLog("OVERTAKE onPowerButton exception: " + e); }
+                                }
+                                continue;
+                            }
+                            const powerFlags = (powerRaw >> 8) & 0xFF;
+                            const powerVal = powerRaw & 0xFF;
+                            debugLog("POWER SysEx F0 00 21 1D 01 01 3A " + powerFlags.toString(16).padStart(2, "0") + " " +
+                                     powerVal.toString(16).padStart(2, "0") + " 00 F7 -> passed to Move");
                         }
                     }
 
