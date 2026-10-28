@@ -13,7 +13,8 @@
  *                                  (frames; end 0 = the sample's end) / pitch /
  *                                  gain / bars / len_bars (the clip's length) /
  *                                  revrs / nudge / tempo (0 Free, 1 Vintage,
- *                                  2 Pitch). Mode Slice on a
+ *                                  2 Pitch, 3 Beats) / sens / fill (0 Off,
+ *                                  1 Loop, 2 Ping) / fade. Mode Slice on a
  *                                  clip with no steps lays the chops on them
  *   tN_au_slice_<field> "C L <v>"  start / end (frames, the hand set, Even Off;
  *                                  end 0 = home) / pitch / gain / rev / play /
@@ -302,6 +303,148 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
     }
 }
 
+/* Beats (Josh, 2026-10-29: "assume the beats mode you'd proposed earlier is
+ * lighter than bungee, right? can we still include that as an option" · "no -
+ * only transients"): Start..End cut at its hits (Start, then each hit kept at
+ * the clip's Sens), each piece starting on its place in the sample's own Bars,
+ * as Vintage's ticks do, and playing at the clip's pitch. Faster than the
+ * loop, the next piece cuts it; at its own tempo they join and it plays as
+ * Free does; slower, the gap after each is filled (Fill, Fade:
+ * au_voice_render). In Revrs each piece plays backwards from its end, the
+ * pieces from End back. When nothing sounds and no piece starts in a block
+ * (a launch, a transport start part-way in), the piece under the playhead
+ * starts where it would be by now, unless that is already past its end. */
+#define AU_BEATS_SCAN 4096
+/* the first boundary after frame f (a kept hit), else re */
+static uint32_t au_beat_next(const au_sample_t *s, uint32_t f, uint32_t re, int rmin, int dmin) {
+    uint32_t k, n = 0;
+    for (k = au_hit_from(s, f + 1); k < s->nhits && s->hits[k] < re && n < AU_BEATS_SCAN; k++, n++)
+        if (au_hit_kept(s, k, rmin, dmin)) return s->hits[k];
+    return re;
+}
+/* the last boundary at or before frame f (a kept hit after rs), else rs */
+static uint32_t au_beat_prev(const au_sample_t *s, uint32_t f, uint32_t rs, int rmin, int dmin) {
+    uint32_t k = au_hit_from(s, f + 1), n = 0;
+    while (k-- > 0 && s->hits[k] > rs && n++ < AU_BEATS_SCAN)
+        if (au_hit_kept(s, k, rmin, dmin)) return s->hits[k];
+    return rs;
+}
+/* A Beats piece a..b starting `off` frames into the block, its slot (to the
+ * next piece) `slot` output frames; `in`: sample frames already played. */
+static void au_beat_on(seq8_instance_t *inst, int t, int c, uint32_t a, uint32_t b, uint32_t off, double slot, double in) {
+    const au_clip_t *cl = &inst->au_clip[t][c];
+    au_voice_t *v = au_range_on(inst, t, c, AU_SLICE_NONE, a, b, 1.0f, off, 1);
+    double tl = (double)(b - a) / 4;
+    if (!v) return;
+    if (tl < 64) tl = 64;
+    if (tl > 2048) tl = 2048;
+    if (tl > (double)(b - a)) tl = (double)(b - a);
+    if (in > 0) v->pos += v->step > 0 ? in : -in;
+    v->beats = 1;
+    v->fill = cl->fill;
+    v->fade = cl->fade;
+    v->filling = 0;
+    v->ranon = 0;
+    v->tl = tl;
+    if (slot < 1) slot = 1;
+    /* a new voice counts its age from its first frame; one carried on, from now */
+    v->slot_end = (v->age ? v->age + off : 0) + (uint32_t)(slot + 0.5);
+}
+static void au_beats_block(seq8_instance_t *inst, int t, int c, int32_t tick, uint32_t len_ticks, double fpt, int frames) {
+    au_clip_t *cl = &inst->au_clip[t][c];
+    const au_sample_t *s = cl->smp;
+    au_track_t *at = &inst->au_trk[t];
+    uint32_t rs, re, pa[AU_VINTAGE_PER_BLOCK], pb[AU_VINTAGE_PER_BLOCK];
+    double pd[AU_VINTAGE_PER_BLOCK], pt[AU_VINTAGE_PER_BLOCK];
+    int rmin, dmin, m = 0, q, i, k;
+    if (!s || !len_ticks || fpt <= 0) return;
+    au_range(cl, s, &rs, &re);
+    if (re <= rs) return;
+    double L = (double)len_ticks, span, start, fscale;
+    double P = au_span_ticks(cl, s, rs, re), R = (double)(re - rs);
+    if (P <= 0) return;
+    if (!au_clock_window(inst, tick, L, fpt, frames, &start, &span, &fscale)) return;
+    double nud = (double)cl->nudge_ms * 44.1 / fpt, fpx = R / P;   /* sample frames per tick of its own Bars */
+    au_sens_min(cl->sens, &rmin, &dmin);
+    /* the pieces whose start falls in this block, in the order they sound */
+    for (q = -1; q <= 1; q++) {
+        double lo = start - nud + q * L, hi = lo + span;
+        uint32_t cand[AU_VINTAGE_PER_BLOCK + 1];
+        int nc = 0;
+        if (hi * fpx <= 0 || lo * fpx >= R) continue;
+        if (!cl->revrs) {
+            /* a piece starts at a boundary x (Start or a kept hit), tick (x - rs) / fpx */
+            double xa = lo * fpx;
+            uint32_t f;
+            if (xa <= 0) cand[nc++] = rs;
+            f = rs + (xa <= 0 ? 0 : (uint32_t)xa);
+            for (k = (int)au_hit_from(s, f); (uint32_t)k < s->nhits && nc <= AU_VINTAGE_PER_BLOCK &&
+                 (double)(s->hits[k] - rs) < hi * fpx && s->hits[k] < re; k++) {
+                if (s->hits[k] <= rs || (double)(s->hits[k] - rs) < xa) continue;
+                if (au_hit_kept(s, (uint32_t)k, rmin, dmin)) cand[nc++] = s->hits[k];
+            }
+        } else {
+            /* backwards: a piece starts at its END b (a kept hit or End), tick (re - b) / fpx */
+            double ba = R - hi * fpx, bb = R - lo * fpx;           /* b - rs in (ba, bb] */
+            uint32_t f = rs + (ba < 0 ? 0 : (uint32_t)ba);
+            for (k = (int)au_hit_from(s, f); (uint32_t)k < s->nhits && nc <= AU_VINTAGE_PER_BLOCK &&
+                 (double)(s->hits[k] - rs) <= bb && s->hits[k] < re; k++) {
+                if (s->hits[k] <= rs || (double)(s->hits[k] - rs) <= ba) continue;
+                if (au_hit_kept(s, (uint32_t)k, rmin, dmin)) cand[nc++] = s->hits[k];
+            }
+            if (R > ba && R <= bb && nc <= AU_VINTAGE_PER_BLOCK) cand[nc++] = re;
+        }
+        for (i = 0; i < nc && m < AU_VINTAGE_PER_BLOCK; i++) {
+            uint32_t a, b;
+            double T;
+            if (!cl->revrs) { a = cand[i]; b = au_beat_next(s, a, re, rmin, dmin); T = (double)(a - rs) / fpx; }
+            else { b = cand[i]; a = au_beat_prev(s, b - 1, rs, rmin, dmin); T = (double)(re - b) / fpx; }
+            T += nud;
+            /* as Vintage: past the clip's end the clip comes round first;
+             * before its start (a Nudge earlier) it never plays */
+            if (T >= L || T < 0 || b <= a) continue;
+            double d = au_wrap(T - start, L);
+            if (d >= span) continue;
+            for (k = m; k > 0 && pd[k - 1] > d; k--) { pd[k] = pd[k - 1]; pt[k] = pt[k - 1]; pa[k] = pa[k - 1]; pb[k] = pb[k - 1]; }
+            pd[k] = d; pt[k] = T; pa[k] = a; pb[k] = b; m++;
+        }
+    }
+    for (i = 0; i < m; i++) {
+        double ticks = (double)(pb[i] - pa[i]) / fpx;
+        if (pt[i] + ticks > L) ticks = L - pt[i];
+        uint32_t off = (uint32_t)(pd[i] * fscale);
+        au_beat_on(inst, t, c, pa[i], pb[i], off >= (uint32_t)frames ? (uint32_t)frames - 1 : off, ticks * fpt, 0);
+    }
+    if (m) return;
+    for (i = 0; i < AU_VOICES; i++) if (at->v[i].active && !at->v[i].mode_loop) return;
+    {
+        /* nothing sounds: the piece under the playhead, as far in as it would be by now */
+        double u = au_wrap(start, L) - nud, ratio = au_tune(cl->pitch, cl->detune) * (double)s->rate / 44100.0;
+        uint32_t a, b;
+        double T, in;
+        if (u < 0 || u >= P || u >= L) return;
+        if (!cl->revrs) {
+            uint32_t x = rs + (uint32_t)(u * fpx);
+            if (x >= re) return;
+            a = au_beat_prev(s, x, rs, rmin, dmin);
+            b = au_beat_next(s, a, re, rmin, dmin);
+            T = (double)(a - rs) / fpx;
+        } else {
+            double xr = R - u * fpx;
+            if (xr <= 0) return;
+            uint32_t x = rs + (uint32_t)xr;
+            a = au_beat_prev(s, x >= re ? re - 1 : x, rs, rmin, dmin);
+            b = au_beat_next(s, a, re, rmin, dmin);
+            T = (double)(re - b) / fpx;
+        }
+        in = (u - T) * fpt * ratio;                 /* sample frames it has played by now */
+        if (b <= a || in < 0 || in >= (double)(b - a)) return;   /* in its gap: wait for the next */
+        double ticks = (double)(b - a) / fpx;
+        if (T + nud + ticks > L) ticks = L - T - nud;
+        au_beat_on(inst, t, c, a, b, 0, (ticks - (u - T)) * fpt, in);
+    }
+}
+
 /* Per block, after the sequencer: the loader's answers, each Audio track's
  * Loop voice following its clip, every voice rendered and fed to the track's
  * own chain slot. */
@@ -327,7 +470,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
             /* Mute does not stop the loop: it plays on silently, like a
              * muted bus, so unmuting picks it up in place (below). */
             int run = inst->playing && tr->clip_playing && cl->mode == AU_MODE_LOOP && cl->smp;
-            int sync = run && cl->tempo == AU_TEMPO_VINTAGE;
+            int sync = run && (cl->tempo == AU_TEMPO_VINTAGE || cl->tempo == AU_TEMPO_BEATS);
             if (run) {
                 uint32_t tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
                 int32_t tick = (int32_t)(((int)tr->current_step - (int)lc->loop_start) * (int32_t)tps
@@ -373,7 +516,10 @@ static void au_render(seq8_instance_t *inst, int frames) {
                     if (lv) au_voice_release(lv, 64);
                     if (!at->sync_on || at->loop_clip != c) { at->sync_on = 1; at->sync_live = 0; at->loop_clip = (uint8_t)c; }
                     if (ticked) at->sync_live = 1;          /* the transport's first tick has played */
-                    if (at->sync_live) au_sync_block(inst, t, c, tick, (uint32_t)lc->length * tps, fpt, frames);
+                    if (at->sync_live) {
+                        if (cl->tempo == AU_TEMPO_BEATS) au_beats_block(inst, t, c, tick, (uint32_t)lc->length * tps, fpt, frames);
+                        else au_sync_block(inst, t, c, tick, (uint32_t)lc->length * tps, fpt, frames);
+                    }
                 } else {
                     if (at->sync_on) { au_release_chops(at); at->sync_on = 0; }
                     /* Pitch follows a tempo change at once, not at the wrap */
@@ -669,6 +815,12 @@ static int sp_track_audio(sp_ctx_t *cx) {
             v = clamp_i(v, AU_TEMPO_FREE, AU_TEMPO_MAX);
             if (v != cl->tempo && c == tr->active_clip) au_track_kill(inst, tidx, NULL);
             cl->tempo = (uint8_t)v;
+        } else if (!strcmp(w, "sens")) {
+            cl->sens = (uint8_t)clamp_i(v, 0, 100);           /* Beats: which hits count, from the next piece */
+        } else if (!strcmp(w, "fill")) {
+            cl->fill = (uint8_t)clamp_i(v, AU_FILL_OFF, AU_FILL_PING);
+        } else if (!strcmp(w, "fade")) {
+            cl->fade = (uint8_t)clamp_i(v, 0, 100);
         } else if (!strcmp(w, "nudge")) {
             cl->nudge_ms = (int16_t)clamp_i(v, -500, 500);
         } else if (!strcmp(w, "bars")) {
@@ -927,7 +1079,7 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
     }
     if (!strncmp(k, "info_", 5)) {
         /* "state err mode even nslices jump rstart rend pitch gain frames rate ch
-         *  revrs nudge jmpq count detune tempo reach bars hits|name" -- rstart / rend in frames as they play
+         *  revrs nudge jmpq count detune tempo reach bars hits sens fill fade|name" -- rstart / rend in frames as they play
          *  (rend the real end, never 0) once loaded; reach: how far into Start..End a Free
          *  loop gets before its clip wraps, in frames (End - Start when it all plays); bars: the
          *  sample's own length in bars (0 not known yet); hits: Beats' pieces in Start..End
@@ -950,8 +1102,8 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
                        - (double)cl->nudge_ms * (double)s->rate / 1000.0;
             if (r < 0) r = 0;
             if (r < (double)reach) reach = (uint32_t)r;
-        } else if (s && (cl->tempo == AU_TEMPO_VINTAGE || cl->tempo == AU_TEMPO_PITCH) && reach) {
-            /* Vintage and Pitch: what of the sample's own Bars (plus Nudge)
+        } else if (s && (cl->tempo == AU_TEMPO_VINTAGE || cl->tempo == AU_TEMPO_PITCH || cl->tempo == AU_TEMPO_BEATS) && reach) {
+            /* Vintage, Pitch and Beats: what of the sample's own Bars (plus Nudge)
              * falls before the clip comes round */
             const clip_t *lc = &inst->tracks[t].clips[c];
             double bpm = inst->tracks[t].pfx.cached_bpm > 0 ? inst->tracks[t].pfx.cached_bpm : 120.0;
@@ -964,12 +1116,12 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
                 if (r < (double)reach) reach = (uint32_t)r;
             }
         }
-        return snprintf(out, out_len, "%d %d %d %d %d %d %u %u %d %d %u %u %d %d %d %d %d %d %d %u %d %u|%s",
+        return snprintf(out, out_len, "%d %d %d %d %d %d %u %u %d %d %u %u %d %d %d %d %d %d %d %u %d %u %d %d %d|%s",
                         cl->state, cl->err, cl->mode, cl->even, cl->nslices, cl->jump,
                         (unsigned)rs, (unsigned)re, cl->pitch, cl->gain_db,
                         s ? (unsigned)s->frames : 0u, s ? (unsigned)s->rate : 0u, s ? s->ch : 0,
                         cl->revrs, cl->nudge_ms, cl->jmpq, au_count(cl), cl->detune, cl->tempo, (unsigned)reach, cl->bars,
-                        (unsigned)(s ? au_hit_count(s, rs, re, AU_SENS_DEFAULT) : 0), cl->name);
+                        (unsigned)(s ? au_hit_count(s, rs, re, cl->sens) : 0), cl->sens, cl->fill, cl->fade, cl->name);
     }
     if (!strncmp(k, "sl_", 3)) {                  /* sl_C_L: "a b pinned pitch gain rev play atk dec detune" */
         const char *q = k + 3;
