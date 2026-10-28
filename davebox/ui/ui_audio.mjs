@@ -37,15 +37,15 @@ export const AU_MODE_LOOP = 0, AU_MODE_SLICE = 1;
  * possible and call it "vintage"") · Pitch retuned to fill them · Beats cut
  * at its hits, the gaps filled (Josh, 2026-10-29: "only transients"). The
  * DSP's values: Free 0, Vintage 1, Pitch 2, Beats 3. */
-export const AU_TEMPO_NAMES = ['Free', 'Vintage', 'Pitch', 'Beats'];
-const AU_TEMPO_VALS = [0, 1, 2, 3];
+export const AU_TEMPO_NAMES = ['Free', 'Vintage', 'Pitch', 'Beats', 'Warp'];
+const AU_TEMPO_VALS = [0, 1, 2, 3, 4];
 export const AU_TEMPO_BEATS = 3;
 /* Beats' Fill: the gap after a hit (Ableton's transient loop modes; Ping
  * the default, as Ableton's — Josh: "go with ableton defaults") */
 export const AU_FILL_NAMES = ['Off', 'Loop', 'Ping'];
 /* the knob's square holds four letters on one line, as Mode's Loop / Slce (found
  * on the device: "Vintage" broke into VIN / TAG) */
-const AU_TEMPO_SQ = ['Free', 'Vint', 'Ptch', 'Beat'];
+const AU_TEMPO_SQ = ['Free', 'Vint', 'Ptch', 'Beat', 'Warp'];
 export function auTempoIdx(i) { const k = AU_TEMPO_VALS.indexOf(i.tempo | 0); return k < 0 ? 0 : k; }
 /* A Loop clip's pads: the sample in even sections, one a pad (Josh,
  * 2026-10-29: "chops should just be completely invisible in loop mode"). */
@@ -787,7 +787,7 @@ export function knobAltOnTrack(t, padMode, bank, k) {
  * alternate; K4 Mode. ---- */
 export function auLoopBankCells(t) {
     const i = auInfo(t, auClipOf(t));
-    const tempo = { kind: 'enumsq', label: 'Tempo', name: 'Tempo: Free · Vintage · Pitch · Beats',
+    const tempo = { kind: 'enumsq', label: 'Tempo', name: 'Tempo: Free · Vintage · Pitch · Beats · Warp',
                     text: AU_TEMPO_NAMES[auTempoIdx(i)], sq: AU_TEMPO_SQ[auTempoIdx(i)], options: AU_TEMPO_NAMES, sel: auTempoIdx(i) };
     const live = (x) => (i.state === 2 ? x : dash(x));
     if ((i.tempo | 0) === AU_TEMPO_BEATS)

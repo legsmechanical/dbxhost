@@ -9,6 +9,11 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Added
+- **Audio: Tempo Warp.** A fifth Tempo for Loop clips: the loop is time-stretched to
+  the tempo and keeps its own pitch, so a loop recorded at 90 plays at 128 sounding
+  as it was. Pitch and Detune then transpose it without changing its length. Warp is
+  processor-intensive: one or two warped tracks are fine, but warping many at once
+  can overload the Move and cause clicks or dropouts.
 - **Audio: Tempo Beats.** A fourth Tempo for Loop clips: the loop is cut at its hits
   (found when you pick the sample) and each starts on its place in the bar, so drums stay
   crisp at any tempo. Slower than the loop, the gap after each hit is filled by **Fill**

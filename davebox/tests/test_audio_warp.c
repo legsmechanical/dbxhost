@@ -47,8 +47,18 @@ static int g_stream = 0;                            /* the streamer too, by hand
 static void step(hx_t *h) {
     au_warper_t *X = (au_warper_t *)((seq8_instance_t *)h->inst)->au_warper;
     if (g_stream) au_stream_service((seq8_instance_t *)h->inst);
-    if (X->started) usleep(2900);
-    else au_warp_service((seq8_instance_t *)h->inst);
+    if (X->started) {
+        /* the thread runs on its own; a loaded machine (the hook, CI) can
+         * starve it, so a block waits — a while at most — for the frames it
+         * needs rather than for the wall clock */
+        au_warp_t *W = X->trk[4];
+        int k;
+        for (k = 0; k < 400; k++) {
+            uint32_t ahead = __atomic_load_n(&W->head, __ATOMIC_ACQUIRE) - W->tail;
+            if (!W->cmd.run || ahead >= 1024) break;
+            usleep(500);
+        }
+    } else au_warp_service((seq8_instance_t *)h->inst);
     hx_render(h, 1);
 }
 

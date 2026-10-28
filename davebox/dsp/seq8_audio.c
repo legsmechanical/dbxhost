@@ -47,6 +47,21 @@ typedef struct {
     au_pool_ent_t  pool[AU_POOL_MAX];
 } au_loader_t;
 
+/* A worker created from the audio thread inherits its realtime class: step
+ * down to the ordinary one — only then. Elsewhere (a Mac running the tests)
+ * SCHED_OTHER priority 0 is the very LOWEST, and a loaded machine starved
+ * the loader past a test's wait (the suite's intermittent failure) and the
+ * stretcher's ring. On the Move nothing changes: it does inherit FIFO. */
+static void au_thread_unrealtime(void) {
+    struct sched_param sp;
+    int pol = SCHED_OTHER;
+    memset(&sp, 0, sizeof sp);
+    if (pthread_getschedparam(pthread_self(), &pol, &sp) == 0 && pol != SCHED_OTHER) {
+        memset(&sp, 0, sizeof sp);
+        pthread_setschedparam(pthread_self(), SCHED_OTHER, &sp);
+    }
+}
+
 /* ---------------- rings (SPSC, power-of-two size) ---------------- */
 
 static int au_req_push(seq8_instance_t *inst, const au_req_t *r) {
@@ -977,11 +992,7 @@ static unsigned au_stream_service(seq8_instance_t *inst) {
 
 static void *au_streamer_main(void *arg) {
     au_streamer_t *S = (au_streamer_t *)arg;
-    {
-        struct sched_param sp;          /* off the realtime class, as the loader */
-        memset(&sp, 0, sizeof sp);
-        pthread_setschedparam(pthread_self(), SCHED_OTHER, &sp);
-    }
+    au_thread_unrealtime();             /* off the realtime class, as the loader */
     while (S->run)
         if (!au_stream_service(S->inst)) usleep(2000);
     return NULL;
@@ -1370,18 +1381,7 @@ static void au_warp_wait(seq8_instance_t *inst) {
 
 static void *au_warper_main(void *arg) {
     au_warper_t *X = (au_warper_t *)arg;
-    {
-        /* off the realtime class it inherits from the audio thread, as the
-         * streamer — only then: elsewhere (a Mac running the tests) priority
-         * 0 is the very lowest, and the ring starved */
-        struct sched_param sp;
-        int pol = SCHED_OTHER;
-        memset(&sp, 0, sizeof sp);
-        if (pthread_getschedparam(pthread_self(), &pol, &sp) == 0 && pol != SCHED_OTHER) {
-            memset(&sp, 0, sizeof sp);
-            pthread_setschedparam(pthread_self(), SCHED_OTHER, &sp);
-        }
-    }
+    au_thread_unrealtime();             /* off the realtime class, as the streamer */
     while (__atomic_load_n(&X->run, __ATOMIC_ACQUIRE))
         if (!au_warp_service(X->inst)) usleep(1000);
     return NULL;
@@ -1611,12 +1611,10 @@ static void *au_loader_main(void *arg) {
     au_loader_t *L = (au_loader_t *)arg;
     seq8_instance_t *inst = L->inst;
     {
-        /* Off the realtime class, whoever created it: the audio thread (FIFO)
-         * always preempts it. (No core pinning: the CPU_* macros need
+        /* Off the realtime class it inherits from the audio thread, so the
+         * audio thread (FIFO) always preempts it. (No core pinning: the CPU_* macros need
          * _GNU_SOURCE, which this translation unit does not define.) */
-        struct sched_param sp;
-        memset(&sp, 0, sizeof sp);
-        pthread_setschedparam(pthread_self(), SCHED_OTHER, &sp);
+        au_thread_unrealtime();
     }
     while (L->run) {
         uint32_t t = inst->au_req_tail, h = __atomic_load_n(&inst->au_req_head, __ATOMIC_ACQUIRE);

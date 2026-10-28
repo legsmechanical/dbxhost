@@ -919,17 +919,18 @@ step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP /
     const lh = JSON.stringify(render.bankPageHints(0));
     S.knobTouched = -1;
     assert(lh.indexOf('CLK') < 0, 'a Loop CLIP knob offers a click: ' + lh);
-    /* K1 Tempo: Free · Vintage · Pitch · Beats (Josh, 2026-10-29: Fit gone, Sync
-     * "vintage"; Beats "only transients"), the DSP's values 0 · 1 · 2 · 3; an
-     * unknown value reads as Free */
+    /* K1 Tempo: Free · Vintage · Pitch · Beats · Warp (Josh, 2026-10-29: Fit gone,
+     * Sync "vintage"; Beats "only transients"), the DSP's values 0 · 1 · 2 · 3 · 4;
+     * an unknown value reads as Free */
     const tv = [];
     for (let i = 0; i < 200; i++) { cc(71, 1); const t = A.auLoopBankCells(4)[0].text; if (tv[tv.length - 1] !== t) tv.push(t); }
-    assert(tv.join() === 'Free,Vintage,Pitch,Beats' && sent('t4_au_set_tempo').join() === '0 1,0 2,0 3' && !sentLike(/_au_set_(revrs|jump|jmpq)/).length,
-           'K1 is not Tempo Free · Vintage · Pitch · Beats: ' + tv.join() + ' ' + JSON.stringify(sentLike(/_au_/)));
-    assert(A.auTempoIdx({ tempo: 2 }) === 2 && A.auTempoIdx({ tempo: 3 }) === 3 && A.auTempoIdx({ tempo: 99 }) === 0, 'Pitch / Beats / an unknown value reads wrong');
+    assert(tv.join() === 'Free,Vintage,Pitch,Beats,Warp' && sent('t4_au_set_tempo').join() === '0 1,0 2,0 3,0 4' && !sentLike(/_au_set_(revrs|jump|jmpq)/).length,
+           'K1 is not Tempo Free · Vintage · Pitch · Beats · Warp: ' + tv.join() + ' ' + JSON.stringify(sentLike(/_au_/)));
+    assert(A.auTempoIdx({ tempo: 2 }) === 2 && A.auTempoIdx({ tempo: 3 }) === 3 && A.auTempoIdx({ tempo: 4 }) === 4 &&
+           A.auTempoIdx({ tempo: 99 }) === 0, 'Pitch / Beats / Warp / an unknown value reads wrong');
     /* each fits the square on one line (found on the device: VIN / TAG); Beats is "Beat" (Josh) */
     const wasInfo = S.auInfo[4][0];
-    for (const v of [0, 1, 2, 3]) {
+    for (const v of [0, 1, 2, 3, 4]) {
         S.auInfo[4][0] = Object.assign({}, wasInfo, { tempo: v });
         const sq = A.auLoopBankCells(4)[0].sq;
         assert(sq && sq.length <= 4 && (v !== 3 || sq === 'Beat'), 'Tempo ' + v + '\'s square: ' + sq);

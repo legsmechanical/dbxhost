@@ -1278,8 +1278,8 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
                        - (double)cl->nudge_ms * (double)s->rate / 1000.0;
             if (r < 0) r = 0;
             if (r < (double)reach) reach = (uint32_t)r;
-        } else if (s && (cl->tempo == AU_TEMPO_VINTAGE || cl->tempo == AU_TEMPO_PITCH || cl->tempo == AU_TEMPO_BEATS) && reach) {
-            /* Vintage, Pitch and Beats: what of the sample's own Bars (plus Nudge)
+        } else if (s && cl->tempo != AU_TEMPO_FREE && reach) {
+            /* Vintage, Pitch, Beats and Warp: what of the sample's own Bars (plus Nudge)
              * falls before the clip comes round */
             const clip_t *lc = &inst->tracks[t].clips[c];
             double bpm = inst->tracks[t].pfx.cached_bpm > 0 ? inst->tracks[t].pfx.cached_bpm : 120.0;
@@ -1424,6 +1424,23 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
             const au_voice_t *v = &at->v[l];
             if (!v->active || v->rel_len || !v->smp) continue;
             return snprintf(out, out_len, "1 %u %d", (unsigned)(v->pos < 0 ? 0 : v->pos), v->mode_loop ? -1 : v->slice);
+        }
+        if (at->w.on && at->w.live && at->w.state == AU_WARP_PLAY) {
+            /* Warp has no voice: the frame under the clock, on the clip's map */
+            const au_clip_t *cl = &inst->au_clip[t][at->w.clip];
+            const au_sample_t *s = cl->smp;
+            uint32_t rs, re;
+            if (s) {
+                au_range(cl, s, &rs, &re);
+                double P = au_span_ticks(cl, s, rs, re), fpt = 0;
+                au_warper_t *X = (au_warper_t *)inst->au_warper;
+                if (X && X->trk[t]) fpt = X->trk[t]->cmd.fpt;
+                if (P > 0 && fpt > 0 && re > rs) {
+                    double x = (at->w.tick - (double)cl->nudge_ms * 44.1 / fpt) * (double)(re - rs) / P;
+                    if (x >= 0 && x < (double)(re - rs))
+                        return snprintf(out, out_len, "1 %u -1", cl->revrs ? re - 1 - (uint32_t)x : rs + (uint32_t)x);
+                }
+            }
         }
         return snprintf(out, out_len, "0 0 -1");
     }
