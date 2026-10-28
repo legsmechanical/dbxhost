@@ -4,6 +4,7 @@
 #include <string.h>
 #include <time.h>
 #include "shadow_led_queue.h"
+#include "shim_power_gate.h"   /* Move's power messages are not LEDs */
 #include "unified_log.h"
 
 /* ============================================================================
@@ -521,6 +522,10 @@ void shadow_clear_move_leds_if_overtake(void) {
         uint8_t cin  = midi_out[i] & 0x0F;
         uint8_t type = midi_out[i+1] & 0xF0;
         if (cable != 0) continue;
+        /* Not an LED: Move's power messages keep the power button working
+         * (src/host/shim_power_gate.h). Skip the whole message. */
+        int power_span = move_power_sysex_out_span(midi_out, i, HW_MIDI_OUT_SIZE);
+        if (power_span) { i += power_span - 4; continue; }
         if (type == 0x90) {
             /* Note LEDs (pads) — always cleared; no passthrough list. */
             midi_out[i] = 0;

@@ -23,8 +23,12 @@ grep -q '"shadow_get_power_button"' "$C" && grep -q '"host_power_claim"' "$C" \
 python3 - "$S" "$D" <<'PY' && ok "Move's prompt is the claimed press: the D-Bus handler flags it and closes it with Back" || bad "the claimed prompt is not wired"
 import re, sys
 s = open(sys.argv[1]).read(); d = open(sys.argv[2]).read()
-i = d.index("if (shim_power_prompt_claimed(ctrl, text)) {")
+i = d.index("int power_ours = shim_power_prompt_claimed(ctrl, text, dbus_now_ms(), &power_prompt_last_ms);")
 j = d.index("host.close_move_power_prompt();", i)
+r = d.index("} else if (power_ours == 2) {", j)
+repeat = d[r + 1:d.index("} else if", r + 1)]
+assert "close_move_power_prompt" not in repeat and "power_prompt" not in repeat.replace("power_ours", ""), \
+    "the repeat branch must not close the prompt again or flag a second press"
 k = d.index("} else if (ctrl && strcasecmp(text, MOVE_POWER_PROMPT_TEXT) == 0) {")
 assert i < j < k, "the claimed branch must come first and must not take the screen"
 assert ".close_move_power_prompt = shim_close_move_power_prompt," in s, "callback not given to the D-Bus handler"

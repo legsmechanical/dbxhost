@@ -32,9 +32,12 @@
 #     task exactly once per round, the bail that poisons and skips the task
 #     a stuck helper still holds, and the serial-equivalent counter.
 #
-#   - test_shim_power_gate — the POWER button: Move keeps its own prompt
-#     unless the overtake module on screen claimed it; then the press is held
-#     back and stored once per message. And the two bytes were APPENDED.
+#   - test_shim_power_gate — the POWER button: the SysEx always goes to Move;
+#     a claimed press is Move's own prompt announcement, only in mode 2. And
+#     the bytes were APPENDED.
+#
+#   - test_power_sysex_out — Move's outgoing power messages (the 39 re-arm,
+#     the 3A query) survive a full overtake's LED strip; its LED sysex does not.
 #
 #   - test_project_path — dbx_project_dir(): resolving a set-library entry to
 #     the directory a project's files really live in. Today the identity
@@ -103,6 +106,7 @@ TARGETS = $(BUILD_DIR)/test_project_path \
           $(BUILD_DIR)/test_corun_back_top \
           $(BUILD_DIR)/test_direct_fanout \
           $(BUILD_DIR)/test_shim_power_gate \
+          $(BUILD_DIR)/test_power_sysex_out \
           $(BUILD_DIR)/test_render_pool
 
 .PHONY: all test clean
@@ -194,6 +198,11 @@ $(BUILD_DIR)/test_control_layout: test_control_layout.c ../../src/host/shadow_co
 
 $(BUILD_DIR)/test_direct_fanout: test_direct_fanout.c ../../src/host/shadow_direct_fanout.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
+
+# AddressSanitizer: one case hands the helper a buffer that ends mid-message,
+# and only a read past it — not the result — shows a missing bounds check.
+$(BUILD_DIR)/test_power_sysex_out: test_power_sysex_out.c ../../src/host/shadow_led_queue.c ../../src/host/shim_power_gate.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -fsanitize=address -fno-omit-frame-pointer $(DEPFLAGS) -D_POSIX_C_SOURCE=200809L $(INCLUDES) -I../../src $(filter %.c,$^) -o $@ $(LDFLAGS) -fsanitize=address
 
 $(BUILD_DIR)/test_shim_power_gate: test_shim_power_gate.c ../../src/host/shim_power_gate.h ../../src/host/shadow_constants.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)

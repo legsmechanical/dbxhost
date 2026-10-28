@@ -247,13 +247,17 @@ static void shadow_dbus_handle_text(const char *text)
     shadow_control_t *ctrl = *host.shadow_control_ptr;
     static int shutdown_took_display = 0;
     static uint8_t shutdown_took_overtake = 0;
-    if (shim_power_prompt_claimed(ctrl, text)) {
+    static uint64_t power_prompt_last_ms = 0;
+    int power_ours = shim_power_prompt_claimed(ctrl, text, dbus_now_ms(), &power_prompt_last_ms);
+    if (power_ours == 1) {
         /* The module on screen answers the power button: close Move's prompt
          * now (Back) so no press is left pending in Move, and leave the screen
          * and input with the module, which asks its own question. Nothing is
          * taken, so nothing is restored. */
         host.log("Shutdown prompt while the module claims power — closing it with Back, press to the module");
         if (host.close_move_power_prompt) host.close_move_power_prompt();
+    } else if (power_ours == 2) {
+        /* The same prompt announced again: already handled. */
     } else if (ctrl && strcasecmp(text, MOVE_POWER_PROMPT_TEXT) == 0) {
         host.log("Shutdown prompt detected — saving state and dismissing shadow UI");
         ctrl->ui_flags |= SHADOW_UI_FLAG_SAVE_STATE;

@@ -44,22 +44,25 @@ int main(void) {
     OK(c.power_seen == 0 && c.power_button == 0x08, "a non-lead packet records nothing");
 
     /* Move's prompt announcement: the press, only while claimed in mode 2. */
+    uint64_t last = 0;
     c.power_prompt = 0; c.power_claim = 1; c.overtake_mode = 2;
-    OK(shim_power_prompt_claimed(&c, "Press wheel to shut down") == 1 && c.power_prompt == 1,
+    OK(shim_power_prompt_claimed(&c, "Press wheel to shut down", 1000, &last) == 1 && c.power_prompt == 1,
        "claimed, mode 2: Move's prompt is the module's press");
     c.power_prompt = 0;
-    OK(shim_power_prompt_claimed(&c, "press wheel to SHUT DOWN") == 1 && c.power_prompt == 1,
-       "the announcement matches case-insensitively, as the stock branch does");
+    OK(shim_power_prompt_claimed(&c, "Press wheel to shut down", 1002, &last) == 2 && c.power_prompt == 0,
+       "the same prompt announced again 2 ms later: ours, but not a second press");
+    OK(shim_power_prompt_claimed(&c, "press wheel to SHUT DOWN", 1600, &last) == 1 && c.power_prompt == 1,
+       "a prompt after the repeat window is a new press (case-insensitive, as the stock branch)");
     c.power_prompt = 0;
-    OK(shim_power_prompt_claimed(&c, "Move terminated") == 0 && c.power_prompt == 0,
+    OK(shim_power_prompt_claimed(&c, "Move terminated", 5000, &last) == 0 && c.power_prompt == 0,
        "any other announcement is not a press");
     c.power_claim = 0;
-    OK(shim_power_prompt_claimed(&c, "Press wheel to shut down") == 0 && c.power_prompt == 0,
+    OK(shim_power_prompt_claimed(&c, "Press wheel to shut down", 9000, &last) == 0 && c.power_prompt == 0,
        "not claimed: Move's own prompt flow");
     c.power_claim = 1; c.overtake_mode = 1;
-    OK(shim_power_prompt_claimed(&c, "Press wheel to shut down") == 0 && c.power_prompt == 0,
+    OK(shim_power_prompt_claimed(&c, "Press wheel to shut down", 9000, &last) == 0 && c.power_prompt == 0,
        "claimed but overtake 1 (menu): Move's own prompt flow");
-    OK(shim_power_prompt_claimed(NULL, "Press wheel to shut down") == 0, "no control block: not ours");
+    OK(shim_power_prompt_claimed(NULL, "Press wheel to shut down", 9000, &last) == 0, "no control block: not ours");
 
     /* Layout: appended after pad_observe, inside the segment. */
     OK(offsetof(shadow_control_t, power_claim) > offsetof(shadow_control_t, pad_observe) &&
