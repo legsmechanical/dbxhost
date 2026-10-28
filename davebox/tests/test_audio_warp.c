@@ -67,7 +67,7 @@ static void step(hx_t *h) {
         au_warp_t *W = X->trk[4];
         int k;
         for (k = 0; k < 400; k++) {
-            uint32_t ahead = __atomic_load_n(&W->head, __ATOMIC_ACQUIRE) - __atomic_load_n(&W->rd, __ATOMIC_ACQUIRE);
+            uint32_t ahead = __atomic_load_n(&W->head, __ATOMIC_ACQUIRE) - __atomic_load_n(&W->tail, __ATOMIC_ACQUIRE);
             if (!W->cmd.run || ahead >= 1024) break;
             usleep(500);
         }

@@ -381,14 +381,6 @@ static int au_warp_mix(seq8_instance_t *inst, int t, int32_t *acc, int frames) {
         if (!w->xf) tail = w->ntail;
         any = 1;
     }
-    /* how far the current anchor's frames are read: past tail only over
-     * frames of THIS anchor (late ones skipped) — never over the old ones the
-     * look-ahead passed, or the stretcher would render more of those */
-    {
-        uint32_t rd = tail;
-        if (w->ntail != tail && W->gen[(w->ntail - 1) & M] == w->gen) rd = w->ntail;
-        __atomic_store_n(&W->rd, rd, __ATOMIC_RELEASE);
-    }
     __atomic_store_n(&W->tail, tail, __ATOMIC_RELEASE);
     if (w->on && w->live && w->state == AU_WARP_WAIT) w->waited += (uint32_t)frames;
     return any || w->fadeout || w->hold;
