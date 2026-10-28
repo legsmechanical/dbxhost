@@ -981,6 +981,18 @@ step('⭐⭐ Loop pads: a Free loop whose clip wraps before the sample ends grey
     GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(4);
 });
 
+step('⭐⭐ Loop pads: chops outside Start..End are grey (Josh: "out of start/end range ... aren\'t showing up as dim white")', () => {
+    const pad = (i) => LEDS.get(C.TRACK_PAD_BASE + i) || 0;
+    GET['t4_au_pos'] = '1 30000 -1';
+    GET['t4_au_info_0'] = INFO(0, 8).replace(' 16 0 96000 ', ' 16 24000 72000 '); A.auMarkStale(4, 0);
+    for (let i = 0; i < 6; i++) ticks(1);
+    assert(A.auInfo(4, 0).rstart === 24000, 'rstart not parsed: ' + A.auInfo(4, 0).rstart);
+    assert([0, 1, 6, 7].every((i) => pad(i) === HC.DarkGrey), 'chops outside the range are not grey: ' + [0, 1, 6, 7].map(pad));
+    assert([2, 3, 4, 5].every((i) => pad(i) && pad(i) !== HC.DarkGrey), 'chops inside the range are grey: ' + [2, 3, 4, 5].map(pad));
+    GET['t4_au_pos'] = '1 24000 2';
+    GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(4);
+});
+
 step('⭐⭐ Loop step buttons: playing, the row follows the playhead page by page, as a sequence does (Josh: "like normal")', () => {
     GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(2);
     const was = [S.playing, S.trackClipPlaying[4], S.trackCurrentStep[4], S.clipLength[4][0]];

@@ -61,6 +61,8 @@ the section into a versioned heading at release time.
   and the instrument shortcut open it.
 
 ### Fixed
+- **Audio: Loop pads grey the chops outside Start..End** — they never play, and
+  now look it.
 - **Audio: Sync and Fit play what comes before the first chop** — a Loop clip whose
   first chop is not at its start no longer drops that stretch.
 - **Audio: a chop's end no longer clicks** — every chop ends with a ~3 ms fade.

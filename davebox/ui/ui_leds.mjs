@@ -968,8 +968,14 @@ export function updateTrackLEDs() {
             const slice = ai.mode === AU_MODE_SLICE;
             const ph = slice ? -1 : auPlayheadChop(t);
             const sel = auSelSlice(t);
-            const mk = !slice && ai.state === 2 && ai.reach >= 0 && ai.reach < auEnd(ai) - ai.rstart ? auMarks(t, auClipOf(t)) : null;
-            const pastReach = (k) => !!(mk && mk[k] && (ai.revrs ? auEnd(ai) - mk[k][1] : mk[k][0] - ai.rstart) >= ai.reach);
+            const mk = !slice && ai.state === 2 ? auMarks(t, auClipOf(t)) : null;
+            const reach = ai.reach >= 0 && ai.reach < auEnd(ai) - ai.rstart;
+            /* never played: a chop wholly outside Start..End (Josh,
+             * 2026-10-29: "sections that are out of start/end range on the
+             * sample aren't showing up as dim white on the pads"), or past
+             * where a Free loop wraps */
+            const pastReach = (k) => !!(mk && mk[k] && (mk[k][1] <= ai.rstart || mk[k][0] >= auEnd(ai)
+                || (reach && (ai.revrs ? auEnd(ai) - mk[k][1] : mk[k][0] - ai.rstart) >= ai.reach)));
             /* A Lazy chop: the next pad in order WHITE (pad 1 before the
              * first tap), the slices chopped so far in the track colour
              * (Josh, 2026-10-28: "pads should light to indicate populated as
