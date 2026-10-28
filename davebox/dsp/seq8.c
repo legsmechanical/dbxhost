@@ -1951,6 +1951,7 @@ typedef struct {
     au_clipw_t  au_clipw[NUM_TRACKS][NUM_CLIPS];
     uint32_t    au_block;                     /* blocks rendered: a freed chunk waits two */
     uint32_t    au_underruns;                 /* frames a streamed voice found no chunk for */
+    void       *au_warper;                    /* WARP: the stretcher thread's state (seq8_audio.c) */
 } seq8_instance_t;
 
 /* What the serializer should write for clip (t,c) / lane: the original while a

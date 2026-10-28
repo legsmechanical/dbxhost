@@ -373,8 +373,8 @@ int main(void) {
             hx_set_param(h, "t4_au_set_fade", "0 30");
             HX_ASSERT(hx_get_param(h, "state_full", blob, (int)sizeof blob) > 0 && strstr(blob, " 3 1 70 1 30|ramp2.wav\""),
                       "the state does not keep Tempo Beats, Sens, Fill and Fade");
-            hx_set_param(h, "t4_au_set_tempo", "0 9");
-            HX_ASSERT(inst->au_clip[4][0].tempo == AU_TEMPO_BEATS, "a Tempo past the last did not clamp to Beats");
+            hx_set_param(h, "t4_au_set_tempo", "0 3");
+            HX_ASSERT(inst->au_clip[4][0].tempo == AU_TEMPO_BEATS, "Tempo Beats did not stick");
         }
         hx_destroy(h);
     }

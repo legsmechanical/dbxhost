@@ -38,7 +38,8 @@
 #define AU_TEMPO_VINTAGE   1            /* Loop: cut every tick, each piece on its place in the sample's own Bars (au_sync_block) */
 #define AU_TEMPO_PITCH     2            /* Loop: the sample retuned (varispeed) so Start..End fills its own Bars */
 #define AU_TEMPO_BEATS     3            /* Loop: cut at its hits, each on its place in the sample's own Bars (au_beats_block) */
-#define AU_TEMPO_MAX       AU_TEMPO_BEATS
+#define AU_TEMPO_WARP      4            /* Loop: stretched to the tempo at its own pitch (Bungee, the stretcher thread) */
+#define AU_TEMPO_MAX       AU_TEMPO_WARP
 #define AU_FILL_OFF        0            /* Beats: the gap after a hit is silent (the tail fades) */
 #define AU_FILL_LOOP       1            /* ...the hit's tail loops, crossfaded at the seam */
 #define AU_FILL_PING       2            /* ...the hit's tail plays back and forth (Ableton's default) */
@@ -167,8 +168,8 @@ typedef struct {
 #define AU_VOICES 2          /* the sounding one + the one being choked */
 
 /* What the streamer must have ready, published by the audio thread each
- * block: a voice's place in a streamed sample (slot AU_VOICES is spare: it
- * held a waiting JmpQ jump). smp NULL = nothing. Read by the streamer field
+ * block: a voice's place in a streamed sample; slot AU_VOICES is where Warp's
+ * stretcher reads (it once held a waiting JmpQ jump). smp NULL = nothing. Read by the streamer field
  * by field: a torn read only fetches the wrong chunk once. */
 typedef struct {
     const void *smp;
@@ -187,8 +188,24 @@ typedef struct {
     uint32_t    sa[AU_MAX_SLICES], sb[AU_MAX_SLICES];
 } au_clipw_t;
 
+/* WARP, the audio thread's side of one track (the stretcher's is
+ * au_warp_t in seq8_audio.c). */
+typedef struct {
+    uint32_t gen;            /* the anchor it waits for / plays (the stretcher's frames carry theirs) */
+    uint8_t  on;             /* the track's command says run */
+    uint8_t  state;          /* AU_WARP_WAIT: no frame lined up yet; AU_WARP_PLAY */
+    uint8_t  gain;           /* 0..64, ramping a step a frame */
+    uint8_t  clip;           /* the clip it was anchored for */
+    uint8_t  live;           /* the transport has played: the clock window is real */
+    uint8_t  fadeout;        /* 0..64: the old anchor's frames still playing, fading */
+    double   tick;           /* the clip tick at this block's frame 0 (a followed clock: smoothed) */
+    double   cur_anchor;     /* the tick the current anchor starts at */
+    double   drift;          /* output frames the frame heard is ahead of the clock */
+} au_warp_trk_t;
+
 typedef struct {
     au_voice_t v[AU_VOICES];
+    au_warp_trk_t w;
     int32_t    last_tick;    /* Loop: the clip position last block (wrap = restart) */
     uint8_t    loop_clip;    /* Loop: the clip the loop voice belongs to */
     uint8_t    sync_on;      /* Tempo Vintage: its pieces are playing */

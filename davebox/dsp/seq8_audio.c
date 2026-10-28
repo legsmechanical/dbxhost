@@ -57,9 +57,12 @@ static int au_req_push(seq8_instance_t *inst, const au_req_t *r) {
     return 1;
 }
 
+static void au_warp_forget(seq8_instance_t *inst, const au_sample_t *smp);   /* STRETCHING */
+
 static void au_drop(seq8_instance_t *inst, au_sample_t *smp) {
     au_req_t r;
     if (!smp) return;
+    au_warp_forget(inst, smp);          /* the stretcher reads it too */
     memset(&r, 0, sizeof r);
     r.kind = AU_REQ_DROP;
     r.smp = smp;
@@ -103,6 +106,18 @@ static double au_cents(int cents) {
 }
 /* A clip's (or slice's) playback ratio from semitones and cents. */
 static double au_tune(int semis, int cents) { return au_semi(semis) * au_cents(cents); }
+
+/* x into [0, L). It runs on the audio thread, so it must end for ANY x: a
+ * far-out x is reduced in one step (a subtraction loop at x ~ 1e19 never
+ * moves, the step being below the double's precision there — an
+ * underflowed tick count hung the render: found by review, 2026-10-29). */
+static double au_wrap(double x, double L) {
+    if (!(L > 0) || !(x > -1e12 && x < 1e12)) return 0.0;      /* NaN, huge, or no length */
+    if (x >= L || x < 0) x -= L * (double)(long long)(x / L);
+    while (x >= L) x -= L;
+    while (x < 0) x += L;
+    return x;
+}
 
 static float au_db(int db) {
     double r = 1.0, b = db >= 0 ? 1.1220184543019633 : 0.8912509381337456;
@@ -726,7 +741,7 @@ static int au_import(const char *src, const char *dir, char *name, size_t name_s
 #define AU_STREAM_GRACE     250
 #define AU_STREAM_NEED      1024
 
-typedef struct { void *p; uint32_t at; } au_grave_t;
+typedef struct { void *p; uint32_t at, wp; } au_grave_t;   /* wp: the stretcher's pass (au_warp_mark) */
 typedef struct { uint16_t si; uint32_t k; } au_need_t;
 
 typedef struct {
@@ -750,6 +765,9 @@ typedef struct {
 #ifdef SEQ8_TESTING
 static int au_stream_manual = 0;         /* tests: no thread; they call au_stream_service */
 #endif
+
+static uint32_t au_warp_mark(seq8_instance_t *inst);          /* STRETCHING, below */
+static int au_warp_passed(seq8_instance_t *inst, uint32_t mark);
 
 static int au_stream_add(seq8_instance_t *inst, au_sample_t *s) {
     au_streamer_t *S = (au_streamer_t *)inst->au_streamer;
@@ -876,6 +894,7 @@ static void au_stream_bury(au_streamer_t *S, void *p) {
     }
     S->grave[S->ngrave].p = p;
     S->grave[S->ngrave].at = __atomic_load_n(&S->inst->au_block, __ATOMIC_ACQUIRE) + 2;
+    S->grave[S->ngrave].wp = au_warp_mark(S->inst);   /* and the stretcher's pass under way */
     S->ngrave++;
 }
 
@@ -946,7 +965,10 @@ static unsigned au_stream_service(seq8_instance_t *inst) {
     }
     now = __atomic_load_n(&inst->au_block, __ATOMIC_ACQUIRE);
     for (i = 0; i < S->ngrave; ) {
-        if ((int32_t)(now - S->grave[i].at) >= 0) { free(S->grave[i].p); S->grave[i] = S->grave[--S->ngrave]; }
+        if ((int32_t)(now - S->grave[i].at) >= 0 && au_warp_passed(inst, S->grave[i].wp)) {
+            free(S->grave[i].p);
+            S->grave[i] = S->grave[--S->ngrave];
+        }
         else i++;
     }
     pthread_mutex_unlock(&S->mu);
@@ -994,6 +1016,410 @@ static void au_streamer_shutdown(seq8_instance_t *inst) {
     inst->au_streamer = NULL;
 }
 
+#include "seq8_stretch.h"
+
+/* ---------------- STRETCHING (WARP: the stretcher thread) ----------------
+ *
+ * Tempo Warp plays a Loop clip at its own pitch, stretched so Start..End
+ * fills its own Bars at the tempo (Bungee, behind seq8_stretch.h). Bungee is
+ * far too heavy for the audio thread's budget in bursts (a grain is ~0.3 ms
+ * on a CM5, more on a CM4), so a fourth thread, the stretcher, renders ahead
+ * into a ring per track and the audio thread only reads it (Josh, 2026-10-28:
+ * "render ahead on background").
+ *
+ * What Bungee reads is a VIRTUAL input: the clip's passes one after another,
+ * L ticks each, the sample on each from its Nudge for P ticks (its own Bars)
+ * and silence where it does not reach — at `rpt` input frames a tick, so the
+ * stretcher's position is a clip tick (unwrapped) x rpt. The loop's wrap is
+ * then just more input: no reset, no seam of ours. Revrs reads the sample
+ * backwards on each pass, Bungee still going forwards.
+ *
+ * Every frame in the ring carries its clip TICK (from the input positions
+ * Bungee reports for each output chunk) and the ANCHOR it was rendered for.
+ * The audio thread knows which tick each of its frames should sound (the
+ * clock), so it:
+ *   - plays frames whose tag matches, measuring the drift between the two,
+ *     which the stretcher trims away by nudging its speed (AU_WARP_TRIM_*);
+ *   - re-anchors when it cannot follow (a launch, a transport start part-way
+ *     in, a jump in the clock, a drift past AU_WARP_SNAP): a new anchor
+ *     number and a tick AU_WARP_LEAD ahead; it fades out what it was playing,
+ *     drops the old anchor's frames and starts the new one when its tags meet
+ *     the clock.
+ * A tempo, Pitch or Detune change is only a new speed or pitch: no restart.
+ * A change to the map (Start, End, Bars, Nudge, Revrs, the clip's length)
+ * restarts Bungee at the same tick. Bungee crossfades a restart itself: its
+ * output runs two grains behind its input, so the two chunks after a reset
+ * are the old stream's tail and the blend into the new one (measured: no
+ * gap, a dip of ~2 dB on unrelated tones). Those chunks report the OLD
+ * stream's positions, so they carry the time on (a map change) or no tag at
+ * all (a new anchor: the audio thread drops them).
+ * While the transport is stopped the clip's ring is kept filled from tick 0,
+ * so the downbeat is there the moment it starts.
+ *
+ * The command (audio thread → stretcher) is one struct under a sequence
+ * number (odd while it is written; the stretcher reads it again if it moved).
+ * The ring is SPSC: head is the stretcher's, tail the audio thread's.
+ * The stretcher is a SECOND READER of a streamed sample's chunks and of the
+ * samples themselves, so freeing waits for it too: it marks each pass
+ * (`busy`, `pass`), a chunk the streamer empties is freed only once a pass in
+ * progress at that moment has ended (au_stream_bury), and the loader frees a
+ * sample only after the same (au_warp_wait) — by then au_drop has taken it
+ * out of every command, so no later pass can reach it. */
+
+#define AU_WARP_RING     8192         /* frames per track (a power of two) */
+#define AU_WARP_AHEAD    2048         /* frames the stretcher keeps ready (46 ms) */
+#define AU_WARP_ROOM     4096         /* frames free before a grain may be rendered (its output's most) */
+#define AU_WARP_LEAD     1024.0       /* frames: a new anchor is this far ahead of the clock */
+#define AU_WARP_SNAP     1024.0       /* frames off the clock: re-anchor instead of trimming */
+#define AU_WARP_TRIM_TC  11025.0      /* frames: the trim's time constant (0.25 s) */
+#define AU_WARP_TRIM_MAX 0.03         /* the most the trim moves the speed */
+#define AU_WARP_FADE     64           /* frames: the audio thread's fade in / out */
+#define AU_WARP_FAR      1e9          /* input frames: past this the position is rebased (hours in) */
+
+#define AU_WARP_WAIT     0
+#define AU_WARP_PLAY     1
+
+typedef struct {
+    uint32_t           seq;           /* odd while the audio thread writes */
+    const au_sample_t *smp;
+    uint32_t           rs, re;
+    double             P, L;          /* the sample's own span and the clip's length, ticks */
+    double             fpt;           /* output frames per tick (the tempo) */
+    double             nud;           /* Nudge, ticks */
+    double             pitch;         /* frequency ratio (Pitch, Detune) */
+    double             drift;         /* output frames the heard tag is ahead of the clock */
+    double             anchor_tick;
+    uint32_t           anchor_gen;
+    uint8_t            revrs, run;
+} au_warp_cmd_t;
+
+typedef struct {
+    au_warp_cmd_t cmd;                         /* audio thread -> stretcher */
+    float         l[AU_WARP_RING], r[AU_WARP_RING];
+    float         tag[AU_WARP_RING];           /* the clip tick each frame sounds (-1: none) */
+    uint32_t      gen[AU_WARP_RING];           /* the anchor it was rendered for */
+    uint32_t      head, tail;                  /* stretcher / audio thread */
+    uint32_t      read_pos;                    /* the sample frame Bungee reads now (the streamer's watch) */
+    /* the stretcher's own */
+    au_st_t      *st;
+    uint32_t      st_rate;
+    au_warp_cmd_t cur;                         /* the command it renders */
+    double        rpt;                         /* input frames per tick on the current map */
+    double        vend;                        /* the unwrapped tick the ring ends at */
+    double        rpos;                        /* the input position of the last reset */
+    float         tnext;                       /* the tag the next frame carries on with (-1: none) */
+    uint8_t       carry;                       /* that reset kept time (a map change): tags carry on */
+    uint8_t       fresh;                       /* no chunk of the new stream seen since the reset */
+    const void   *held;                        /* published: the sample it renders from (NULL: idle) */
+} au_warp_t;
+
+typedef struct {
+    pthread_t        th;
+    int              run;                      /* atomic */
+    int              started;
+    seq8_instance_t *inst;
+    au_warp_t       *trk[NUM_TRACKS];
+    float           *in;                       /* the planar scratch, 2 x in_max */
+    int              in_max;
+    uint32_t         pass, busy;               /* passes ended / one is under way */
+    uint32_t         underruns;                /* input frames a streamed chunk was missing for */
+} au_warper_t;
+
+#ifdef SEQ8_TESTING
+static int au_warp_manual = 0;                 /* tests: no thread; they call au_warp_service */
+#endif
+
+/* ---- the audio thread's side of the command ---- */
+/* Every field is copied with relaxed atomics: a seqlock's reader may overlap
+ * a write (it then retries), which plain accesses would make undefined. */
+#define AU_WCP(d, s, f) __atomic_store(&(d)->f, &(s)->f, __ATOMIC_RELAXED)
+#define AU_WCL(d, s, f) __atomic_load(&(s)->f, &(d)->f, __ATOMIC_RELAXED)
+#define AU_WARP_FIELDS(OP, d, s) \
+    OP(d, s, smp); OP(d, s, rs); OP(d, s, re); OP(d, s, P); OP(d, s, L); OP(d, s, fpt); OP(d, s, nud); \
+    OP(d, s, pitch); OP(d, s, drift); OP(d, s, anchor_tick); OP(d, s, anchor_gen); OP(d, s, revrs); OP(d, s, run)
+static void au_warp_cmd_write(au_warp_t *W, const au_warp_cmd_t *c) {
+    uint32_t q = W->cmd.seq;
+    __atomic_store_n(&W->cmd.seq, q + 1, __ATOMIC_RELAXED);
+    __atomic_thread_fence(__ATOMIC_RELEASE);
+    AU_WARP_FIELDS(AU_WCP, &W->cmd, c);
+    __atomic_store_n(&W->cmd.seq, q + 2, __ATOMIC_RELEASE);
+}
+
+/* A sample going back to the loader leaves every command first (au_drop:
+ * the loader then waits out the stretcher's pass before freeing it). */
+static void au_warp_forget(seq8_instance_t *inst, const au_sample_t *smp) {
+    au_warper_t *X = (au_warper_t *)inst->au_warper;
+    int t;
+    if (!X || !smp) return;
+    for (t = 0; t < NUM_TRACKS; t++) {
+        au_warp_t *W = X->trk[t];
+        if (!W || W->cmd.smp != smp) continue;
+        au_warp_cmd_t c = W->cmd;
+        c.smp = NULL;
+        c.run = 0;
+        au_warp_cmd_write(W, &c);
+        inst->au_trk[t].w.on = 0;
+    }
+}
+
+/* ---- the stretcher ---- */
+static int au_warp_cmd_read(au_warp_t *W, au_warp_cmd_t *c) {
+    int tries;
+    for (tries = 0; tries < 8; tries++) {
+        uint32_t a = __atomic_load_n(&W->cmd.seq, __ATOMIC_ACQUIRE);
+        if (a & 1) continue;
+        AU_WARP_FIELDS(AU_WCL, c, &W->cmd);
+        __atomic_thread_fence(__ATOMIC_ACQUIRE);
+        if (__atomic_load_n(&W->cmd.seq, __ATOMIC_RELAXED) == a) return 1;
+    }
+    return 0;
+}
+
+/* the map: what the stretcher reads, and how fast */
+static int au_warp_map_same(const au_warp_cmd_t *a, const au_warp_cmd_t *b) {
+    return a->smp == b->smp && a->rs == b->rs && a->re == b->re && a->P == b->P && a->L == b->L &&
+           a->nud == b->nud && a->revrs == b->revrs;
+}
+static double au_warp_speed(const au_warp_t *W) {
+    const au_warp_cmd_t *c = &W->cur;
+    double sp = W->rpt * 44100.0 / ((double)c->smp->rate * c->fpt), trim = -c->drift / AU_WARP_TRIM_TC;
+    if (trim > AU_WARP_TRIM_MAX) trim = AU_WARP_TRIM_MAX;
+    if (trim < -AU_WARP_TRIM_MAX) trim = -AU_WARP_TRIM_MAX;
+    return sp * (1.0 + trim);
+}
+
+/* virtual input frame v -> one sample frame (L, R), 0 where the sample does
+ * not reach; v is a position on the unwrapped clip ticks x rpt */
+static void au_warp_frame(au_warper_t *X, const au_warp_t *W, double v, float *l, float *r) {
+    const au_warp_cmd_t *c = &W->cur;
+    const au_sample_t *s = c->smp;
+    double R = (double)(c->re - c->rs), x = (au_wrap(v / W->rpt, c->L) - c->nud) * W->rpt, fr;
+    uint32_t i;
+    const int16_t *a, *b;
+    *l = *r = 0.f;
+    if (!(x >= 0) || x >= R) return;
+    if (c->revrs) x = R - 1.0 - x;
+    if (x < 0) x = 0;
+    i = (uint32_t)x;
+    fr = x - (double)i;
+    a = au_at(s, c->rs + i);
+    b = (c->rs + i + 1 < c->re) ? au_at(s, c->rs + i + 1) : a;
+    if (!a || !b) { X->underruns++; return; }
+    {
+        float la = a[0], lb = b[0], ra = s->ch > 1 ? a[1] : la, rb = s->ch > 1 ? b[1] : lb;
+        *l = (float)((la + (lb - la) * fr) / 32768.0);
+        *r = (float)((ra + (rb - ra) * fr) / 32768.0);
+    }
+}
+
+/* one grain into the ring; returns the frames it wrote */
+static int au_warp_grain(au_warper_t *X, au_warp_t *W) {
+    const au_warp_cmd_t *c = &W->cur;
+    const float *ol, *or_;
+    double p0, p1, sp = au_warp_speed(W);
+    int b, e, i, n;
+    uint32_t h = W->head;
+    au_st_want(W->st, sp, c->pitch, &b, &e);
+    if (e - b > X->in_max) e = b + X->in_max;
+    for (i = 0; i < e - b; i++) au_warp_frame(X, W, (double)(b + i), &X->in[i], &X->in[X->in_max + i]);
+    n = au_st_grain(W->st, X->in, X->in_max, &ol, &or_, &p0, &p1);
+    /* A chunk's frames run from p0 to p1, once it is the new stream's (see
+     * above: not while Bungee still plays out the old one, nor while filling) */
+    int ok = n > 0 && p0 == p0 && p1 == p1 && p1 >= p0 && p1 - p0 <= 4.0 * sp * n + 1.0;
+    if (ok && W->fresh) {
+        /* the new stream's first chunk starts a hop before the reset (preroll) */
+        if (p0 >= W->rpos - 2.0 * sp * n - 1.0 && p0 <= W->rpos + 1.0) W->fresh = 0;
+        else ok = 0;
+    }
+    {
+        double mid = (b + e) * 0.5, x = (au_wrap(mid / W->rpt, c->L) - c->nud) * W->rpt;
+        uint32_t f = 0;
+        if (x >= 0 && x < (double)(c->re - c->rs)) f = c->revrs ? c->re - 1 - (uint32_t)x : c->rs + (uint32_t)x;
+        __atomic_store_n(&W->read_pos, f, __ATOMIC_RELAXED);
+    }
+    for (i = 0; i < n; i++) {
+        uint32_t s = (h + (uint32_t)i) & (AU_WARP_RING - 1);
+        W->l[s] = ol[i];
+        W->r[s] = or_[i];
+        if (ok) W->tag[s] = (float)au_wrap((p0 + (p1 - p0) * i / n) / W->rpt, c->L);
+        else if (W->carry && W->tnext >= 0) W->tag[s] = (float)au_wrap(W->tnext + (double)i / c->fpt, c->L);
+        else W->tag[s] = -1.f;
+        W->gen[s] = c->anchor_gen;
+    }
+    if (ok) {
+        W->vend = p1 / W->rpt;
+        W->tnext = (float)au_wrap(W->vend, c->L);
+        W->carry = 0;
+    } else if (n > 0 && W->carry && W->tnext >= 0) {
+        W->tnext = (float)au_wrap(W->tnext + (double)n / c->fpt, c->L);
+    }
+    __atomic_store_n(&W->head, h + (uint32_t)n, __ATOMIC_RELEASE);
+    return n;
+}
+
+/* (re)start Bungee at unwrapped tick `vt` on the current map; carry: the
+ * time goes on (a map change), else it is a new anchor */
+static void au_warp_reset(au_warp_t *W, double vt, int carry) {
+    const au_warp_cmd_t *c = &W->cur;
+    W->rpt = (double)(c->re - c->rs) / c->P;
+    W->vend = vt;
+    W->rpos = vt * W->rpt;
+    W->carry = (uint8_t)carry;
+    W->fresh = 1;
+    if (!carry) W->tnext = -1.f;
+    au_st_reset(W->st, W->rpos, au_warp_speed(W), c->pitch);
+}
+
+static void au_warp_idle(au_warp_t *W) {
+    if (W->st) { au_st_destroy(W->st); W->st = NULL; }
+    W->cur.smp = NULL;
+    W->cur.run = 0;
+    __atomic_store_n(&W->read_pos, 0, __ATOMIC_RELAXED);
+}
+
+/* One track. Returns the frames it rendered. */
+static int au_warp_track(au_warper_t *X, au_warp_t *W) {
+    au_warp_cmd_t c;
+    int got = 0, fresh = 0;
+    if (!au_warp_cmd_read(W, &c)) return 0;
+    if (!c.run || !c.smp || c.re <= c.rs + 32 || !(c.P > 0) || !(c.L > 0) || !(c.fpt > 0) || !(c.pitch > 0)) {
+        au_warp_idle(W);
+        return 0;
+    }
+    if (!W->st || W->cur.smp != c.smp || W->st_rate != c.smp->rate) {
+        if (W->st) au_st_destroy(W->st);
+        W->st = au_st_create((int)c.smp->rate, 44100);
+        W->st_rate = c.smp->rate;
+        W->cur.smp = NULL;
+        if (!W->st) return 0;
+        if (au_st_max_input(W->st) > X->in_max) { au_st_destroy(W->st); W->st = NULL; return 0; }
+        fresh = 1;
+    }
+    if (fresh || c.anchor_gen != W->cur.anchor_gen) {
+        /* a new anchor: start there; the audio thread drops the old frames */
+        W->cur = c;
+        au_warp_reset(W, c.anchor_tick, 0);
+    } else if (!au_warp_map_same(&W->cur, &c) || W->vend * W->rpt > AU_WARP_FAR) {
+        /* the map changed (or hours have run): restart where the ring ends
+         * (Bungee blends the two streams) */
+        double vt = W->vend;
+        if (vt * W->rpt > AU_WARP_FAR) vt = au_wrap(vt, c.L);
+        W->cur = c;
+        au_warp_reset(W, vt, 1);
+    } else {
+        W->cur = c;                     /* tempo, pitch, the drift: the next grain takes them */
+    }
+    {
+        int empty = 0;                   /* grains with no output: Bungee filling after a reset */
+        uint32_t tl;
+        while ((tl = __atomic_load_n(&W->tail, __ATOMIC_ACQUIRE), W->head - tl < AU_WARP_AHEAD) &&
+               AU_WARP_RING - (W->head - tl) >= AU_WARP_ROOM && empty < 8) {
+            int n = au_warp_grain(X, W);
+            got += n;
+            if (n <= 0) empty++;
+        }
+    }
+    return got;
+}
+
+/* One pass over every track. Returns the frames rendered. */
+static unsigned au_warp_service(seq8_instance_t *inst) {
+    au_warper_t *X = (au_warper_t *)inst->au_warper;
+    unsigned got = 0;
+    int t;
+    if (!X) return 0;
+    __atomic_store_n(&X->busy, 1, __ATOMIC_RELAXED);
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);          /* before any sample or chunk is read */
+    for (t = 0; t < NUM_TRACKS; t++) {
+        if (!X->trk[t]) continue;
+        got += (unsigned)au_warp_track(X, X->trk[t]);
+        __atomic_store_n(&X->trk[t]->held, (const void *)X->trk[t]->cur.smp, __ATOMIC_RELAXED);
+    }
+    __atomic_store_n(&X->pass, X->pass + 1, __ATOMIC_RELEASE);
+    __atomic_store_n(&X->busy, 0, __ATOMIC_RELEASE);
+    return got;
+}
+
+/* The streamer, about to free a chunk it emptied, or the loader a sample:
+ * the pass under way now (if any) may still hold it; one that starts later
+ * cannot reach it. Returns the pass number that must have ENDED (pass > it). */
+static uint32_t au_warp_mark(seq8_instance_t *inst) {
+    au_warper_t *X = (au_warper_t *)inst->au_warper;
+    if (!X) return 0;
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);          /* after the pointer was taken away */
+    if (!__atomic_load_n(&X->busy, __ATOMIC_RELAXED)) return __atomic_load_n(&X->pass, __ATOMIC_ACQUIRE) - 1;
+    return __atomic_load_n(&X->pass, __ATOMIC_ACQUIRE);
+}
+static int au_warp_passed(seq8_instance_t *inst, uint32_t mark) {
+    au_warper_t *X = (au_warper_t *)inst->au_warper;
+    if (!X) return 1;
+    return (int32_t)(__atomic_load_n(&X->pass, __ATOMIC_ACQUIRE) - mark) > 0;
+}
+/* The loader, before freeing a sample (au_drop already took it out of every
+ * command). Blocks: the loader may. */
+static void au_warp_wait(seq8_instance_t *inst) {
+    au_warper_t *X = (au_warper_t *)inst->au_warper;
+    uint32_t m;
+    if (!X) return;
+    m = au_warp_mark(inst);
+#ifdef SEQ8_TESTING
+    if (au_warp_manual) return;                   /* a test's pass ends before it returns */
+#endif
+    while (X->started && __atomic_load_n(&X->run, __ATOMIC_ACQUIRE) && !au_warp_passed(inst, m)) usleep(500);
+}
+
+static void *au_warper_main(void *arg) {
+    au_warper_t *X = (au_warper_t *)arg;
+    {
+        /* off the realtime class it inherits from the audio thread, as the
+         * streamer — only then: elsewhere (a Mac running the tests) priority
+         * 0 is the very lowest, and the ring starved */
+        struct sched_param sp;
+        int pol = SCHED_OTHER;
+        memset(&sp, 0, sizeof sp);
+        if (pthread_getschedparam(pthread_self(), &pol, &sp) == 0 && pol != SCHED_OTHER) {
+            memset(&sp, 0, sizeof sp);
+            pthread_setschedparam(pthread_self(), SCHED_OTHER, &sp);
+        }
+    }
+    while (__atomic_load_n(&X->run, __ATOMIC_ACQUIRE))
+        if (!au_warp_service(X->inst)) usleep(1000);
+    return NULL;
+}
+
+static void au_warper_init(seq8_instance_t *inst) {
+    au_warper_t *X = (au_warper_t *)calloc(1, sizeof *X);
+    int t;
+    inst->au_warper = X;
+    if (!X) return;
+    X->inst = inst;
+    X->in_max = 32768;                  /* Bungee asks for 16385 at 44.1 kHz; more for a faster rate */
+    X->in = (float *)calloc(2 * (size_t)X->in_max, sizeof(float));
+    for (t = 0; t < NUM_TRACKS; t++) X->trk[t] = (au_warp_t *)calloc(1, sizeof(au_warp_t));
+    X->run = 1;
+#ifdef SEQ8_TESTING
+    if (au_warp_manual) return;
+#endif
+    if (pthread_create(&X->th, NULL, au_warper_main, X) == 0) X->started = 1;
+}
+
+/* Before the streamer and the pool (it reads their chunks and samples). */
+static void au_warper_shutdown(seq8_instance_t *inst) {
+    au_warper_t *X = (au_warper_t *)inst->au_warper;
+    int t;
+    if (!X) return;
+    __atomic_store_n(&X->run, 0, __ATOMIC_RELEASE);
+    if (X->started) pthread_join(X->th, NULL);
+    for (t = 0; t < NUM_TRACKS; t++) {
+        if (!X->trk[t]) continue;
+        if (X->trk[t]->st) au_st_destroy(X->trk[t]->st);
+        free(X->trk[t]);
+    }
+    free(X->in);
+    free(X);
+    inst->au_warper = NULL;
+}
+
 /* ---------------- the loader thread ---------------- */
 
 static au_sample_t *au_pool_get(au_loader_t *L, const char *path, int *err) {
@@ -1024,6 +1450,7 @@ static void au_pool_release(au_loader_t *L, au_sample_t *s) {
         L->pool[i].smp = NULL;
         L->pool[i].path[0] = '\0';
         if (s->st) au_stream_remove(L->inst, s);   /* the streamer lets go first */
+        au_warp_wait(L->inst);                     /* and the stretcher's pass ends */
         au_sample_free(s);
         return;
     }
@@ -1227,6 +1654,7 @@ static void au_init(seq8_instance_t *inst) {
     }
     inst->au_lazy_track = inst->au_lazy_clip = -1;
     au_streamer_init(inst);
+    au_warper_init(inst);
     inst->au_loader = L;
     if (!L) return;
     L->inst = inst;
@@ -1237,10 +1665,11 @@ static void au_init(seq8_instance_t *inst) {
 static void au_shutdown(seq8_instance_t *inst) {
     au_loader_t *L = (au_loader_t *)inst->au_loader;
     int i;
-    if (!L) { au_streamer_shutdown(inst); return; }
+    if (!L) { au_warper_shutdown(inst); au_streamer_shutdown(inst); return; }
     L->run = 0;
     au_abort = 1;
     if (L->started) pthread_join(L->th, NULL);
+    au_warper_shutdown(inst);          /* it reads the streamer's chunks and the pool's samples */
     au_streamer_shutdown(inst);
     for (i = 0; i < AU_POOL_MAX; i++)
         if (L->pool[i].smp) au_sample_free(L->pool[i].smp);
@@ -1271,6 +1700,7 @@ static void au_voice_release(au_voice_t *v, uint32_t frames) { au_voice_release_
  * is about to go. */
 static void au_track_kill(seq8_instance_t *inst, int t, const au_sample_t *smp) {
     int i;
+    inst->au_trk[t].w.on = 0;          /* Warp: anchors afresh */
     for (i = 0; i < AU_VOICES; i++) {
         au_voice_t *v = &inst->au_trk[t].v[i];
         if (v->active && (!smp || v->smp == smp)) v->active = 0;

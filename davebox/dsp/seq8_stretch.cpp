@@ -4,6 +4,7 @@
 #include "seq8_stretch.h"
 #include "bungee/Bungee.h"
 
+#include <cmath>
 #include <new>
 #include <stdint.h>
 #include <unistd.h>
@@ -26,8 +27,7 @@ extern "C" __attribute__((visibility("hidden"))) uint32_t arc4random(void)
 struct au_st {
     Bungee::Stretcher<Bungee::Basic> s;
     Bungee::Request req;
-    bool primed;    /* just reset: the next grain is the preroll grain preroll() placed */
-    au_st(int in_rate, int out_rate) : s({in_rate, out_rate}, 2, 0), req{}, primed(false) {}
+    au_st(int in_rate, int out_rate) : s({in_rate, out_rate}, 2, 0), req{} {}
 };
 
 static void au_st_set(Bungee::Request &r, double position, double speed, double pitch)
@@ -51,16 +51,10 @@ extern "C" void au_st_reset(au_st_t *st, double position, double speed, double p
 {
     au_st_set(st->req, position, speed, pitch);
     st->s.preroll(st->req);
-    st->primed = true;
 }
 
-extern "C" void au_st_want(au_st_t *st, double position, double speed, double pitch, int *begin, int *end)
+extern "C" void au_st_want(au_st_t *st, double speed, double pitch, int *begin, int *end)
 {
-    /* The caller places every grain (its tick → frame map), except the one
-     * right after a reset: preroll() put that one a hop early, so the grain
-     * after it lands on the reset position with history behind it. */
-    if (!st->primed)
-        st->req.position = position;
     st->req.speed = speed;
     st->req.pitch = pitch;
     Bungee::InputChunk c = st->s.specifyGrain(st->req);
@@ -68,14 +62,16 @@ extern "C" void au_st_want(au_st_t *st, double position, double speed, double pi
     *end = c.end;
 }
 
-extern "C" int au_st_grain(au_st_t *st, const float *in, int stride, const float **out_l, const float **out_r)
+extern "C" int au_st_grain(au_st_t *st, const float *in, int stride, const float **out_l, const float **out_r,
+                           double *p0, double *p1)
 {
     st->s.analyseGrain(in, stride);
     Bungee::OutputChunk o{};
     st->s.synthesiseGrain(o);
     *out_l = o.data;
     *out_r = o.data + o.channelStride;
-    st->primed = false;
-    st->s.next(st->req);   /* clears reset; advances position, which the next want overrides */
+    *p0 = o.request[Bungee::OutputChunk::begin] ? o.request[Bungee::OutputChunk::begin]->position : NAN;
+    *p1 = o.request[Bungee::OutputChunk::end] ? o.request[Bungee::OutputChunk::end]->position : NAN;
+    st->s.next(st->req);   /* clears reset; moves the position on by speed */
     return o.frameCount;
 }

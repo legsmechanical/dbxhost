@@ -135,6 +135,19 @@ static void au_watch_publish(seq8_instance_t *inst) {
                     s = v->smp; pos = v->pos; step = v->step; lo = v->lo; hi = v->hi; loop = v->loop || v->mode_loop;
                     if (v->whi > v->wlo && pos >= v->wlo && pos < v->whi) { lo = v->wlo; hi = v->whi; loop = 1; }
                 }
+            } else {
+                /* the spare slot: Warp's stretcher, where it reads */
+                au_warper_t *X = (au_warper_t *)inst->au_warper;
+                const au_warp_t *W = X ? X->trk[t] : NULL;
+                if (W && at->w.on && W->cmd.smp && !W->cmd.smp->pcm && W->cmd.fpt > 0 && W->cmd.P > 0) {
+                    s = W->cmd.smp;
+                    pos = __atomic_load_n(&W->read_pos, __ATOMIC_RELAXED);
+                    lo = W->cmd.rs;
+                    hi = W->cmd.re;
+                    step = (double)(W->cmd.re - W->cmd.rs) / W->cmd.P / W->cmd.fpt;
+                    if (W->cmd.revrs) step = -step;
+                    loop = 1;
+                }
             }
             __atomic_store_n(&w->pos, (uint32_t)(pos < 0 ? 0 : pos), __ATOMIC_RELAXED);
             __atomic_store_n(&w->lo, (uint32_t)lo, __ATOMIC_RELAXED);
@@ -173,16 +186,146 @@ static void au_watch_publish(seq8_instance_t *inst) {
     __atomic_store_n(&inst->au_block, inst->au_block + 1, __ATOMIC_RELEASE);
 }
 
-/* x into [0, L). It runs on the audio thread, so it must end for ANY x: a
- * far-out x is reduced in one step (a subtraction loop at x ~ 1e19 never
- * moves, the step being below the double's precision there — an
- * underflowed tick count hung the render: found by review, 2026-10-29). */
-static double au_wrap(double x, double L) {
-    if (!(L > 0) || !(x > -1e12 && x < 1e12)) return 0.0;      /* NaN, huge, or no length */
-    if (x >= L || x < 0) x -= L * (double)(long long)(x / L);
-    while (x >= L) x -= L;
-    while (x < 0) x += L;
-    return x;
+/* ---------------- WARP: the audio thread's side ----------------
+ * The stretcher (seq8_audio.c, STRETCHING) renders ahead into the track's
+ * ring; here the command is published, anchors are set, and the ring is read
+ * against the clock. */
+static double au_wrap_signed(double x, double L) {
+    x = au_wrap(x, L);
+    return x >= L * 0.5 ? x - L : x;
+}
+
+/* A new anchor at clip tick `at_tick`: what plays now fades out. */
+static void au_warp_anchor(au_warp_trk_t *w, double at_tick, int c) {
+    w->fadeout = w->state == AU_WARP_PLAY ? w->gain : 0;
+    w->gen++;
+    w->state = AU_WARP_WAIT;
+    w->gain = 0;
+    w->on = 1;
+    w->clip = (uint8_t)c;
+    w->cur_anchor = at_tick;
+    w->drift = 0;
+}
+
+/* Publish the track's command. playing: the clip runs, w->tick is the clip
+ * tick at frame 0; else the transport is stopped and tick 0 is kept ready. */
+static void au_warp_block(seq8_instance_t *inst, int t, int c, double L, double fpt, int playing, int ticked) {
+    au_warper_t *X = (au_warper_t *)inst->au_warper;
+    au_warp_trk_t *w = &inst->au_trk[t].w;
+    au_clip_t *cl = &inst->au_clip[t][c];
+    au_warp_cmd_t cmd;
+    uint32_t rs, re;
+    if (!X || !X->trk[t] || !cl->smp) return;
+    au_range(cl, cl->smp, &rs, &re);
+    if (!playing) {
+        /* stopped: tick 0, ready for the downbeat */
+        if (!w->on || w->clip != c || w->live) au_warp_anchor(w, 0.0, c);
+        w->live = 0;
+    } else {
+        if (!w->on || w->clip != c) {
+            au_warp_anchor(w, au_wrap(w->tick + AU_WARP_LEAD / fpt, L), c);
+            w->live = 1;
+        }
+        if (ticked) w->live = 1;          /* the transport's first tick: the ring's tick 0 is due */
+    }
+    memset(&cmd, 0, sizeof cmd);
+    cmd.smp = cl->smp;
+    cmd.rs = rs;
+    cmd.re = re;
+    cmd.P = au_span_ticks(cl, cl->smp, rs, re);
+    cmd.L = L;
+    cmd.fpt = fpt;
+    cmd.nud = (double)cl->nudge_ms * 44.1 / fpt;
+    cmd.pitch = au_tune(cl->pitch, cl->detune);
+    cmd.drift = w->drift;
+    cmd.anchor_tick = w->cur_anchor;
+    cmd.anchor_gen = w->gen;
+    cmd.revrs = cl->revrs;
+    cmd.run = 1;
+    au_warp_cmd_write(X->trk[t], &cmd);
+}
+
+/* The track goes quiet (not Warp any more, its clip stopped): the stretcher
+ * idles, what was playing fades. */
+static void au_warp_off(seq8_instance_t *inst, int t) {
+    au_warper_t *X = (au_warper_t *)inst->au_warper;
+    au_warp_trk_t *w = &inst->au_trk[t].w;
+    if (w->on) {
+        w->fadeout = w->state == AU_WARP_PLAY ? w->gain : 0;
+        w->gen++;
+        w->on = 0;
+        w->state = AU_WARP_WAIT;
+    }
+    /* (a kill clears `on` without telling the stretcher: tell it here) */
+    if (X && X->trk[t] && X->trk[t]->cmd.run) {
+        au_warp_cmd_t cmd = X->trk[t]->cmd;
+        cmd.run = 0;
+        cmd.anchor_gen = w->gen;
+        au_warp_cmd_write(X->trk[t], &cmd);
+    }
+}
+
+/* Read the ring for this block into acc (stereo, x32767 x gain). Returns 1
+ * if anything sounded. */
+static int au_warp_mix(seq8_instance_t *inst, int t, int32_t *acc, int frames, float gain) {
+    au_warper_t *X = (au_warper_t *)inst->au_warper;
+    au_warp_trk_t *w = &inst->au_trk[t].w;
+    au_warp_t *W;
+    double L, fpt;
+    uint32_t tail, head;
+    int f, any = 0;
+    if (!X || !(W = X->trk[t])) return 0;
+    L = W->cmd.L;
+    fpt = W->cmd.fpt;
+    if (!(L > 0) || !(fpt > 0)) return 0;
+    tail = W->tail;
+    head = __atomic_load_n(&W->head, __ATOMIC_ACQUIRE);
+    /* how far off the clock the next frame is; too far: anchor again */
+    if (w->on && w->live && w->state == AU_WARP_PLAY && head != tail) {
+        uint32_t i = tail & (AU_WARP_RING - 1);
+        if (W->gen[i] == w->gen && W->tag[i] >= 0) {
+            w->drift = au_wrap_signed((double)W->tag[i] - w->tick, L) * fpt;
+            if (w->drift > AU_WARP_SNAP || w->drift < -AU_WARP_SNAP)
+                au_warp_anchor(w, au_wrap(w->tick + AU_WARP_LEAD / fpt, L), w->clip);
+        }
+    }
+    for (f = 0; f < frames; f++) {
+        double want = au_wrap(w->tick + (double)f / fpt, L);
+        int have = 0;
+        while (tail != head) {
+            uint32_t i = tail & (AU_WARP_RING - 1);
+            if (W->gen[i] != w->gen) {
+                if (w->fadeout) {           /* the last anchor's sound, fading */
+                    acc[f * 2]     += (int32_t)(W->l[i] * 32767.f * gain * w->fadeout / 64.f);
+                    acc[f * 2 + 1] += (int32_t)(W->r[i] * 32767.f * gain * w->fadeout / 64.f);
+                    w->fadeout--;
+                    have = 1;
+                }
+                tail++;
+                if (have) break;
+                continue;
+            }
+            if (!w->on || !w->live) break;  /* kept for the downbeat */
+            if (W->tag[i] < 0) { tail++; continue; }
+            if (w->state == AU_WARP_WAIT) {
+                double e = au_wrap_signed((double)W->tag[i] - want, L) * fpt;
+                if (e < -0.5) { tail++; continue; }   /* late: drop it */
+                if (e > 0.5) break;                   /* early: silence till it is due */
+                w->state = AU_WARP_PLAY;
+                w->gain = 0;
+            }
+            if (w->gain < AU_WARP_FADE) w->gain++;
+            acc[f * 2]     += (int32_t)(W->l[i] * 32767.f * gain * w->gain / 64.f);
+            acc[f * 2 + 1] += (int32_t)(W->r[i] * 32767.f * gain * w->gain / 64.f);
+            tail++;
+            have = 1;
+            break;
+        }
+        if (have) any = 1;
+        else if (w->on && w->live && w->state == AU_WARP_PLAY && tail == head) inst->au_underruns++;
+    }
+    __atomic_store_n(&W->tail, tail, __ATOMIC_RELEASE);
+    return any || w->fadeout;
 }
 
 /* Every chop voice (not the loop's) of track `at` fades out (Vintage stopped). */
@@ -458,6 +601,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
         int any = 0;
         if (tr->pad_mode != PAD_MODE_AUDIO) {
             for (i = 0; i < AU_VOICES; i++) at->v[i].active = 0;
+            au_warp_off(inst, t);
             continue;
         }
         /* Loop mode: the voice follows the clip — starts with it, restarts on
@@ -471,6 +615,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
              * muted bus, so unmuting picks it up in place (below). */
             int run = inst->playing && tr->clip_playing && cl->mode == AU_MODE_LOOP && cl->smp;
             int sync = run && (cl->tempo == AU_TEMPO_VINTAGE || cl->tempo == AU_TEMPO_BEATS);
+            int warp = run && cl->tempo == AU_TEMPO_WARP;
             if (run) {
                 uint32_t tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
                 int32_t tick = (int32_t)(((int)tr->current_step - (int)lc->loop_start) * (int32_t)tps
@@ -511,7 +656,28 @@ static void au_render(seq8_instance_t *inst, int frames) {
                 int ticked = (uint64_t)inst->arp_master_tick != inst->au_tick0;
                 double played = (ticked && tick > 0) ? (double)(tick - 1) : (double)tick;
                 if (tick < 0) tick = 0;
-                if (sync) {
+                if (!warp) au_warp_off(inst, t);
+                if (warp) {
+                    /* Warp: the stretcher's ring, read against the clock */
+                    double L = (double)lc->length * tps, start, span, fscale;
+                    if (lv) au_voice_release(lv, 64);
+                    if (at->sync_on) { au_release_chops(at); at->sync_on = 0; }
+                    if (L > 0) {
+                        double est = au_wrap(at->w.tick + (double)frames / fpt, L);
+                        if (!au_clock_window(inst, tick, L, fpt, frames, &start, &span, &fscale)) {
+                            at->w.tick = est;               /* a followed clock between pulses */
+                        } else if (fscale > 0) {
+                            at->w.tick = au_wrap(start, L); /* our own clock: exact */
+                        } else {
+                            /* a followed clock's pulse: its ticks land at frame 0, a
+                             * few at once — steer toward it, never jump unless far */
+                            double err = au_wrap_signed(au_wrap(start, L) - est, L);
+                            if (err > 8.0 || err < -8.0) at->w.tick = au_wrap(start, L);
+                            else at->w.tick = au_wrap(est + (err > 0.25 ? 0.25 : err < -0.25 ? -0.25 : err), L);
+                        }
+                        au_warp_block(inst, t, c, L, fpt, 1, ticked);
+                    }
+                } else if (sync) {
                     /* Vintage: the sample cut on the clock (au_sync_block). */
                     if (lv) au_voice_release(lv, 64);
                     if (!at->sync_on || at->loop_clip != c) { at->sync_on = 1; at->sync_live = 0; at->loop_clip = (uint8_t)c; }
@@ -537,9 +703,17 @@ static void au_render(seq8_instance_t *inst, int frames) {
                 if (lv) au_voice_release(lv, 64);
                 if (at->sync_on) { au_release_chops(at); at->sync_on = 0; }
                 at->last_tick = -1;
+                /* stopped on a Warp clip: its downbeat is rendered ahead */
+                if (!inst->playing && cl->mode == AU_MODE_LOOP && cl->tempo == AU_TEMPO_WARP && cl->smp) {
+                    uint32_t tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
+                    double bpm = tr->pfx.cached_bpm > 0 ? tr->pfx.cached_bpm : 120.0;
+                    double L = (double)lc->length * tps;
+                    if (L > 0) au_warp_block(inst, t, c, L, 44100.0 * 60.0 / (bpm * PPQN), 0, 0);
+                } else au_warp_off(inst, t);
             }
-        }
+        } else au_warp_off(inst, t);
         for (i = 0; i < AU_VOICES; i++) if (at->v[i].active) { any = 1; break; }
+        if (at->w.on || at->w.fadeout) any = 1;
         if (!any) continue;
         {
             int32_t acc[256];
@@ -549,6 +723,8 @@ static void au_render(seq8_instance_t *inst, int frames) {
             int mtarget = effective_mute(inst, t) ? 0 : 64;
             memset(acc, 0, sizeof acc);
             for (i = 0; i < AU_VOICES; i++) if (at->v[i].active) inst->au_underruns += au_voice_render(&at->v[i], acc, frames);
+            if (at->w.on || at->w.fadeout)
+                au_warp_mix(inst, t, acc, frames, au_db(inst->au_clip[t][at->w.clip].gain_db));
             for (f = 0; f < frames; f++) {
                 int32_t l = acc[f * 2], r = acc[f * 2 + 1];
                 if (at->mgain != mtarget) at->mgain = (uint8_t)(at->mgain + (mtarget > at->mgain ? 1 : -1));
