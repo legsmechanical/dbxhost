@@ -26,6 +26,7 @@
  *   - the project file keeps it all and a reload loads the samples again; a
  *     set from the drum-flag build loads as a drum track. */
 #include "harness.h"
+#include <math.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -818,16 +819,17 @@ int main(void) {
     hx_set_param(h, "transport", "stop");
     hx_render(h, 4);
 
-    /* ---- Tempo Sync (Josh, 2026-10-28): a Loop clip's chops in order on the
-     * clock. At the loop's own tempo it plays the sample straight through,
-     * as Free does; at another tempo each chop starts on its place in the bar ---- */
+    /* ---- Tempo Vintage (Josh, 2026-10-29: "make it as fine as possible and
+     * call it "vintage""): the sample cut on the clock, one piece a tick. At
+     * the loop's own tempo it plays the sample straight through, as Free
+     * does; at another tempo each piece starts on its own tick ---- */
     hx_render(h, 60);
-    hx_set_param(h, "t4_au_wipe", "7");                       /* no steps: Sync needs none */
+    hx_set_param(h, "t4_au_wipe", "7");                       /* no steps: Vintage needs none */
     hx_set_param(h, "t4_au_set_mode", "7 0");
     hx_set_param(h, "t4_au_set_tempo", "7 1");
-    HX_ASSERT(inst->au_clip[4][7].tempo == AU_TEMPO_SYNC && clip_pitches(inst, 4, 7, pit, 64) == 0,
-              "Tempo did not go to Sync (or wrote steps)");
-    /* ...as recorded: the chops' own sound is Slice's, and Sync ignores it
+    HX_ASSERT(inst->au_clip[4][7].tempo == AU_TEMPO_VINTAGE && clip_pitches(inst, 4, 7, pit, 64) == 0,
+              "Tempo did not go to Vintage (or wrote steps)");
+    /* ...as recorded: the chops' own sound is Slice's, and Vintage ignores it
      * (Josh: "attack/decay shouldn't play into it") — straight through below */
     hx_set_param(h, "t4_au_all_atk", "7 12");
     hx_set_param(h, "t4_au_all_dec", "7 30");
@@ -856,36 +858,48 @@ int main(void) {
                 prev = blk[k * 2];
             }
         }
-        HX_ASSERT(chops, "Tempo Sync played the loop voice, not its chops");
-        HX_ASSERT(breaks == 0, "Tempo Sync at the loop's own tempo did not play the sample straight through");
+        HX_ASSERT(chops, "Vintage played the loop voice, not its pieces");
+        HX_ASSERT(breaks == 0, "Vintage at the loop's own tempo did not play the sample straight through");
     }
     hx_set_param(h, "transport", "stop");
     hx_render(h, 60);
-    /* at 150 bpm a sixteenth is 4410 frames: chop k starts 4410 k after chop 1 */
+    /* at 150 bpm a tick is 183.75 frames and holds 229.6875 of the sample (a
+     * tick at its own 120): each piece plays on from the last until it has
+     * fallen too far behind (au_range_on's join), then the sample jumps to
+     * where its tick says — always ON a tick, always to that tick's frame
+     * (read once the cut voice's 64-frame fade has gone: the two sum till then) */
     hx_set_param(h, "bpm", "150");
     hx_render(h, 2);
     hx_stub_feed_reset();
     hx_set_param(h, "transport", "play");
     {
-        long g = 0, start = -1, swaps[8];
-        int prev = -1, fed = 0, k, ns = 0;
-        for (n = 0; n < 400 && ns < 4; n++) {
+        long g = 0, start = -1, chk = -1, want = 0;
+        int prev = -1, v0 = 0, fed = 0, k, ns = 0, bad = 0;
+        for (n = 0; n < 400 && ns < 6; n++) {
             hx_render(h, 1);
             if (hx_stub_feed(4, NULL, NULL) == fed) { g += 128; continue; }
             fed = hx_stub_feed(4, NULL, NULL);
             blk = hx_stub_feed_last(4);
             for (k = 0; k < 128; k++, g++) {
                 int v = blk[k * 2];
-                if (start < 0) { if (v) { start = g; prev = v; } continue; }
-                /* a chop starting: a jump forward in the ramp, not the fade of the one cut */
-                if (v - prev > 100 && ns < 8) swaps[ns++] = g - start;
+                if (start < 0) { if (v) { start = g; prev = v0 = v; } continue; }
+                if (chk < 0 && v - prev > 100) {
+                    /* a piece starting: on a tick */
+                    double d = (double)(g - start), j = floor(d / 183.75 + 0.5);
+                    if (fabs(d - j * 183.75) > 3) bad++;
+                    want = ((long)v0 + (long)floor(j * 229.6875 + 0.5) + 80) % 30000;
+                    chk = g + 80;
+                }
+                if (g == chk) {
+                    /* ...from its tick's frame */
+                    if (labs((long)v - want) > 3) bad++;
+                    chk = -1; ns++;
+                }
                 prev = v;
             }
         }
-        HX_ASSERT(start >= 0 && ns >= 3, "Tempo Sync at 150 bpm started no chops after the first");
-        for (k = 0; k < 3; k++)
-            HX_ASSERT(swaps[k] >= 4410 * (k + 1) - 3 && swaps[k] <= 4410 * (k + 1) + 3,
-                      "a Sync chop at 150 bpm did not start on its sixteenth");
+        HX_ASSERT(start >= 0 && ns >= 3, "Vintage at 150 bpm never caught the sample up to the clock");
+        HX_ASSERT(bad == 0, "a Vintage piece at 150 bpm did not start on a tick, at that tick's frame");
     }
     hx_set_param(h, "transport", "stop");
     hx_set_param(h, "bpm", "120");
@@ -899,14 +913,14 @@ int main(void) {
     hx_render(h, 60);
     hx_set_param(h, "t4_launch_clip", "5");
 
-    /* ---- Tempo (Josh, 2026-10-28: "A", then "both"): Sync places the chops
-     * by the SAMPLE's own Bars, so the chop count never changes the speed;
-     * Fit spreads them over the clip; Pitch retunes the loop to fill it ---- */
+    /* ---- Tempo (Josh, 2026-10-28: "A", then "both"): Vintage places the
+     * pieces by the SAMPLE's own Bars; Pitch retunes the loop to fill them.
+     * Fit is gone (Josh, 2026-10-29): it loads and sets as Vintage ---- */
     {
         au_clip_t *ac = &inst->au_clip[4][7];
         clip_t *lc = &tr->clips[7];
         uint16_t was_len = lc->length;
-        int b16, b128, bfit;
+        int b16, b128;
         hx_set_param(h, "t4_launch_clip", "7");
         hx_render(h, 4);
         hx_set_param(h, "t4_au_set_bars", "7 1");               /* ramp2 is 2 s: 1 bar at 120 */
@@ -916,10 +930,9 @@ int main(void) {
         b16 = ramp_breaks(h, 300);                              /* 300 blocks < the half bar's 344 */
         hx_set_param(h, "t4_au_set_even", "7 128");
         b128 = ramp_breaks(h, 300);
-        HX_ASSERT(b16 == 0 && b128 == 0, "Sync on a clip half the sample's Bars did not play its first half as recorded");
-        hx_set_param(h, "t4_au_set_tempo", "7 2");              /* Fit: the bar squeezed into half */
-        bfit = ramp_breaks(h, 300);
-        HX_ASSERT(bfit > 0, "Fit did not spread the chops over the clip");
+        HX_ASSERT(b16 == 0 && b128 == 0, "Vintage on a clip half the sample's Bars did not play its first half as recorded (or the chop count changed it)");
+        hx_set_param(h, "t4_au_set_tempo", "7 2");              /* the old Fit */
+        HX_ASSERT(ac->tempo == AU_TEMPO_VINTAGE, "Fit did not set as Vintage");
         /* Pitch: Start..End (88200 frames) over the sample's Bars, not the
          * clip (Josh: "does pitch sync'ing not respect the set bars?"): 1 bar
          * at 120 is 2 s = as recorded, though the clip is half a bar; 2 bars
@@ -940,9 +953,9 @@ int main(void) {
         hx_set_param(h, "transport", "stop");
         hx_render(h, 60);
 
-        /* Loop mode's hidden chop at Start (Josh: "loop mode should always
-         * have a hidden loop marker at the start"): a hand set whose first
-         * chop is a quarter in still plays Start..End whole on Sync */
+        /* the user's chops play no part (Josh, 2026-10-29: "chops should just
+         * be completely invisible in loop mode"): a hand set whose first chop
+         * is a quarter in still plays Start..End whole on Vintage */
         {
             au_slice_t bak[2];
             uint8_t be = ac->even, bn = ac->nslices;
@@ -954,7 +967,7 @@ int main(void) {
             memset(ac->sl, 0, 2 * sizeof ac->sl[0]);
             ac->sl[0].start = 22050; ac->sl[1].start = 66150;
             bh = ramp_breaks(h, 300);
-            HX_ASSERT(bh == 0, "Sync left out what comes before the first chop");
+            HX_ASSERT(bh == 0, "Vintage followed the user's chops");
             ac->even = be; ac->nslices = bn;
             memcpy(ac->sl, bak, sizeof bak);
             lc->length = 8;
@@ -1114,7 +1127,7 @@ int main(void) {
     /* ---- reach (Josh, 2026-10-28: "pads outside of the current end point
      * should be shown as gray"): how far into Start..End a Free loop gets
      * before its clip wraps — the clip's ticks at the tempo and the pitch,
-     * less Nudge; all of it when the clip outlasts the sample, or on Sync ---- */
+     * less Nudge; all of it when the clip outlasts the sample ---- */
     {
         char b[256];
         au_clip_t *ac = &inst->au_clip[4][7];
@@ -1141,7 +1154,7 @@ int main(void) {
         sscanf(b, "%*d %*d %*d %*d %*d %*d %*u %*u %*d %*d %*u %*u %*d %*d %*d %*d %*d %*d %*d %u", &got);
         HX_ASSERT(got == re - rs, "a clip longer than the sample does not reach its end");
         lc->length = 1;
-        /* Sync: one step's share of the sample's own Bars */
+        /* Vintage: one step's share of the sample's own Bars */
         hx_set_param(h, "t4_au_set_tempo", "7 1");
         hx_set_param(h, "t4_au_set_bars", "7 2");
         hx_get_param(h, "t4_au_info_7", b, sizeof b);
@@ -1149,17 +1162,13 @@ int main(void) {
         {
             /* one step of ticks over the 2 bars' worth (2 * PPQN * 4) of the whole sample */
             double want = (double)tps * (double)ac->smp->frames / (2.0 * PPQN * 4);
-            HX_ASSERT(got + 1 >= (uint32_t)want && got <= (uint32_t)want + 1, "Sync's reach is not one step of the sample's 2 bars");
+            HX_ASSERT(got + 1 >= (uint32_t)want && got <= (uint32_t)want + 1, "Vintage's reach is not one step of the sample's 2 bars");
         }
-        hx_set_param(h, "t4_au_set_tempo", "7 2");              /* Fit plays all of it */
-        hx_get_param(h, "t4_au_info_7", b, sizeof b);
-        sscanf(b, "%*d %*d %*d %*d %*d %*d %*u %*u %*d %*d %*u %*u %*d %*d %*d %*d %*d %*d %*d %u", &got);
-        HX_ASSERT(got == re - rs, "Fit does not reach the end");
         hx_set_param(h, "t4_au_set_tempo", "7 3");
         hx_get_param(h, "t4_au_info_7", b, sizeof b);
         sscanf(b, "%*d %*d %*d %*d %*d %*d %*u %*u %*d %*d %*u %*u %*d %*d %*d %*d %*d %*d %*d %u", &got);
         {
-            /* Pitch: on the sample's Bars too, so Sync's reach */
+            /* Pitch: on the sample's Bars too, so Vintage's reach */
             double want = (double)tps * (double)ac->smp->frames / (2.0 * PPQN * 4);
             HX_ASSERT(got + 1 >= (uint32_t)want && got <= (uint32_t)want + 1, "Pitch's reach is not one step of the sample's 2 bars");
         }
@@ -1172,7 +1181,7 @@ int main(void) {
     hx_set_param(h, "t4_au_set_bars", "7 2");
     hx_set_param(h, "t4_au_layout", "1");
     n = hx_get_param(h, "state_full", blob, (int)sizeof blob);
-    HX_ASSERT(strstr(blob, " 1 2|ramp2.wav\"") && strstr(blob, "\"t4_aul\":1"), "the state does not keep Tempo Sync, Bars or the Layout");
+    HX_ASSERT(strstr(blob, " 1 2|ramp2.wav\"") && strstr(blob, "\"t4_aul\":1"), "the state does not keep Tempo Vintage, Bars or the Layout");
     HX_ASSERT(n > 0 && (size_t)n < sizeof blob - 1, "state_full failed");
     HX_ASSERT(strstr(blob, "\"t4_pm\":3") && strstr(blob, "\"t4c0_au2\":\"1 8 1 16 0 0 0 0 0 0 0 -17 0 ") && strstr(blob, "|mono48.wav\""),
               "the state does not carry the Audio track and clip A");
@@ -1188,8 +1197,8 @@ int main(void) {
     snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
     seq8_load_state(inst);
     HX_ASSERT(inst->tracks[4].pad_mode == PAD_MODE_AUDIO, "the reload lost the Audio track");
-    HX_ASSERT(inst->au_clip[4][7].tempo == AU_TEMPO_SYNC && inst->au_clip[4][7].bars == 2 && inst->au_trk[4].layout == 1,
-              "the reload lost Tempo Sync, Bars or the Layout");
+    HX_ASSERT(inst->au_clip[4][7].tempo == AU_TEMPO_VINTAGE && inst->au_clip[4][7].bars == 2 && inst->au_trk[4].layout == 1,
+              "the reload lost Tempo Vintage, Bars or the Layout");
     HX_ASSERT(inst->au_clip[4][0].mode == AU_MODE_SLICE && inst->au_clip[4][0].sl[1].gain_db == -6 &&
               inst->au_clip[4][0].sl[1].play == AU_PLAY_GATE, "the reload lost clip A's settings");
     HX_ASSERT(inst->au_clip[4][0].detune == -17 && inst->au_clip[4][0].sl[1].detune == 9, "the reload lost the detunes");

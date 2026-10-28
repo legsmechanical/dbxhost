@@ -21,10 +21,10 @@
  * the "click" corners and say click to load sample"). What it is follows the
  * clip:
  *   no sample   CLICK TO LOAD SAMPLE: click opens the chooser
- *   Loop        K1 Start · K2 Zoom · K3 End of the loop; its chops marked;
- *               Delete + pad removes one. No cursor (Josh, 2026-10-29: "it
- *               doesn't make sense ... barely any utility" — "only in slice
- *               mode"), so no Manual on its Chop picker
+ *   Loop        K1 Start · K2 Zoom · K3 End of the loop. No chops (Josh,
+ *               2026-10-29: "chops should just be completely invisible in
+ *               loop mode"), no cursor ("only in slice mode"): the pads, the
+ *               jog and a click do nothing, and Shift + click offers only Load
  *   Slice       the chop editor: K1 Start · K2 Zoom · K3 End of the slice the
  *               pads pick (it plays); the jog a cursor and a click adds a marker
  *               there; Delete + pad removes one (not slice 1's). An End turned past the next slice's start sticks
@@ -399,11 +399,13 @@ function clipStep(ed, field, dir) {
 export function auPickRows(ed) {
     const p = ed.pick;
     if (!p) return [];
-    if (p.level === 1) return [{ id: 'load', label: 'Load sample', chevron: true }, { id: 'chop', label: 'Chop sample', chevron: true }];
     const i = auInfo(ed.t, ed.c);
+    /* Loop: no Chop sample — its chops are invisible (Josh, 2026-10-29) */
+    if (p.level === 1) return i.mode === AU_MODE_SLICE
+        ? [{ id: 'load', label: 'Load sample', chevron: true }, { id: 'chop', label: 'Chop sample', chevron: true }]
+        : [{ id: 'load', label: 'Load sample', chevron: true }];
     const ev = p.editEven ? p.even : i.even;
-    /* Manual chops with the cursor, which only Slice has */
-    return [{ id: 'lazy', label: 'Lazy' }, ...(i.mode === AU_MODE_SLICE ? [{ id: 'manual', label: 'Manual' }] : []),
+    return [{ id: 'lazy', label: 'Lazy' }, { id: 'manual', label: 'Manual' },
             { id: 'even', label: 'Even', value: p.editEven || ev ? (ev ? String(ev) : 'Off') : '', editing: !!p.editEven }];
 }
 function pickInput(ed, status, d1, d2) {
@@ -544,7 +546,8 @@ export function audioEditorInput(status, d1, d2) {
                 }
                 return true;
             }
-            if (sub !== 'chop' && sub !== 'loop') return false;
+            /* Loop: the pads do nothing here — its chops are invisible */
+            if (sub !== 'chop') return sub === 'loop';
             const i = auInfo(ed.t, ed.c);
             if (S.deleteHeld) {
                 /* Delete + pad: that slice's start goes (merges into the one
@@ -563,7 +566,7 @@ export function audioEditorInput(status, d1, d2) {
                 }
                 return true;
             }
-            if (down && k < i.n && sub === 'chop') {
+            if (down && k < i.n) {
                 auSetSelSlice(ed.t, k);
                 const m = auMarks(ed.t, ed.c)[k];
                 if (m) { ed.cur = m[0]; ed.last = 'jog'; centre(ed); }
@@ -571,8 +574,7 @@ export function audioEditorInput(status, d1, d2) {
                 S.ledsDirtyAudio = true;
                 S.screenDirty = true;
             }
-            /* Slice: the pad still plays its slice, and the cursor goes to
-             * it; Loop: nothing */
+            /* the pad still plays its slice, and the cursor goes to it */
             return false;
         }
         return false;

@@ -1676,7 +1676,7 @@ static void au_load_state(void *vinst, const char *buf) {
             cl->nudge_ms = (int16_t)clamp_i((int)v[9], -500, 500);
             cl->jmpq = (uint8_t)clamp_i((int)v[10], 0, 3);
             cl->detune = (int8_t)clamp_i((int)v[11], -50, 50);
-            cl->tempo = (uint8_t)clamp_i((int)v[12], AU_TEMPO_FREE, AU_TEMPO_PITCH);
+            cl->tempo = (uint8_t)AU_TEMPO_FIX(clamp_i((int)v[12], AU_TEMPO_FREE, AU_TEMPO_PITCH));
             cl->bars = (uint8_t)clamp_i((int)v[13], 0, AU_BARS_MAX);
             if (*p == '|') {
                 size_t n = 0;

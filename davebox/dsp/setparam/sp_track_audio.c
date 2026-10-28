@@ -149,9 +149,9 @@ static void au_watch_publish(seq8_instance_t *inst) {
             uint32_t rs = 0, re = 0;
             int l, n = 0;
             if (s) au_range(cl, s, &rs, &re);
-            /* a Slice clip's chops, and a Loop clip's under Tempo Sync: they
-             * start on their own, so each is pinned */
-            int chops = s && (cl->mode == AU_MODE_SLICE || cl->tempo == AU_TEMPO_SYNC || cl->tempo == AU_TEMPO_FIT);
+            /* a Slice clip's chops start on their own, so each is pinned; a
+             * Loop clip on Vintage moves through the sample as Free does */
+            int chops = s && cl->mode == AU_MODE_SLICE;
             if (chops) {
                 n = au_count(cl);
                 for (l = 0; l < n; l++) {
@@ -183,60 +183,64 @@ static void au_release_chops(au_track_t *at) {
     for (i = 0; i < AU_VOICES; i++) if (at->v[i].active && !at->v[i].mode_loop) au_voice_release(&at->v[i], 64);
 }
 
-/* Tempo Sync (Josh, 2026-10-28: "sync would play the slices back matched to
- * tempo (basically doing what slice to sequence does without the actual
- * sequence)"): this block's stretch of the clip, in ticks, and every chop
- * whose place in the bar falls inside it starts on its own frame — chop k at
- * (its start - Start) / (End - Start) of the clip, Nudge on top; in Revrs
- * the mirror order, each chop backwards. At the loop's own tempo the chops
- * join (au_chop_on) and it plays as Free does. `tick` is the clip counter
- * after this block's ticks: the last one played is tick - 1, and what is
- * left in the clock's accumulator is how far past it the block ends. */
+/* Vintage (Josh, 2026-10-29: "make it as fine as possible and call it
+ * "vintage" or something" — "without timestretch - gaps are totally expected
+ * by users"): Start..End cut on the clock's own grid, one piece a tick (1/384
+ * note), piece j on tick j of the sample's own Bars, Nudge on top; in Revrs
+ * the pieces run from End back, each backwards. A piece plays at the clip's
+ * pitch, so a slower tempo leaves a gap after each and a faster one cuts each
+ * short; at the loop's own tempo they join (au_range_on) and it plays as Free
+ * does. The user's chops play no part (Josh: "chops should just be completely
+ * invisible in loop mode"). `tick` is the clip counter after this block's
+ * ticks: the last one played is tick - 1, and what is left in the clock's
+ * accumulator is how far past it the block ends. */
+#define AU_VINTAGE_PER_BLOCK 16
+#define AU_VINTAGE_OVER      8      /* frames */
+/* the least whole number >= x (no libm here) */
+static long au_ceil(double x) { long i = (long)x; return (double)i < x ? i + 1 : i; }
 static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uint32_t len_ticks, double fpt, int frames) {
     au_clip_t *cl = &inst->au_clip[t][c];
     const au_sample_t *s = cl->smp;
     uint32_t rs, re;
-    int n, k;
     if (!s || !len_ticks || fpt <= 0) return;
     au_range(cl, s, &rs, &re);
     if (re <= rs) return;
-    /* Sync: the chops at their places in the sample's own Bars, so the
-     * clip's length only says when it comes round (Josh, 2026-10-28: "A");
-     * Fit: spread over the clip, whatever its length */
     double L = (double)len_ticks, span = (double)frames / fpt, past = 0.0;
-    double P = cl->tempo == AU_TEMPO_FIT ? L : au_span_ticks(cl, s, rs, re);
+    double P = au_span_ticks(cl, s, rs, re), R = (double)(re - rs);
     if (P <= 0) return;
     if (!inst->follow_solo && !inst->clock_follow_on && inst->tick_delta)
         past = (double)inst->tick_accum / (double)inst->tick_delta * (double)frames / fpt;
     double end = au_wrap((double)tick - 1.0 + past, L), start = end - span;
     double nud = (double)cl->nudge_ms * 44.1 / fpt;
-    /* Start..End plays whole, as recorded: each chop runs to the next one's
-     * start, and a hidden chop at Start covers what lies before the first
-     * (Josh, 2026-10-28: "loop mode should always have a hidden loop marker
-     * at the start"). The starts in order, each with its chop. */
-    uint32_t at_[AU_MAX_SLICES + 1];
-    int ck[AU_MAX_SLICES + 1], m = 1, j;
-    at_[0] = rs; ck[0] = AU_SLICE_NONE;
-    n = au_count(cl);
-    for (k = 0; k < n; k++) {
-        uint32_t a, b;
-        if (!au_slice_range(cl, s, k, &a, &b) || a < rs || a >= re) continue;
-        if (a == rs) { ck[0] = k; continue; }
-        for (j = m; j > 0 && at_[j - 1] > a; j--) { at_[j] = at_[j - 1]; ck[j] = ck[j - 1]; }
-        if (j > 0 && at_[j - 1] == a) {             /* two chops on one frame: one start */
-            for (; j < m; j++) { at_[j] = at_[j + 1]; ck[j] = ck[j + 1]; }
-            continue;
+    long G = au_ceil(P - 1e-9);
+    /* the pieces whose tick falls in this block, in the order they sound */
+    long pj[AU_VINTAGE_PER_BLOCK];
+    double pd[AU_VINTAGE_PER_BLOCK];
+    int m = 0, q, i, k;
+    for (q = -1; q <= 1; q++) {
+        double lo = start - nud + q * L;
+        long j;
+        for (j = au_ceil(lo - 1e-9); (double)j < lo + span && m < AU_VINTAGE_PER_BLOCK; j++) {
+            if (j < 0 || j >= G) continue;
+            double T = (double)j + nud;
+            if (T >= L || T < -L) continue;             /* past the clip's end: the clip comes round first */
+            double d = au_wrap(T - start, L);
+            if (d >= span) continue;
+            for (k = m; k > 0 && pd[k - 1] > d; k--) { pd[k] = pd[k - 1]; pj[k] = pj[k - 1]; }
+            pd[k] = d; pj[k] = j; m++;
         }
-        at_[j] = a; ck[j] = k; m++;
     }
-    for (j = 0; j < m; j++) {
-        uint32_t a = at_[j], b = j + 1 < m ? at_[j + 1] : re;
-        double T = (cl->revrs ? (double)(re - b) : (double)(a - rs)) / (double)(re - rs) * P + nud;
-        if (T >= L || T < -L) continue;                 /* past the clip's end: the clip comes round first */
-        double d = au_wrap(T - start, L);
-        if (d >= span) continue;
-        uint32_t off = (uint32_t)(d * fpt);
-        au_range_on(inst, t, c, ck[j], a, b, 1.0f, off >= (uint32_t)frames ? (uint32_t)frames - 1 : off, 1);
+    for (i = 0; i < m; i++) {
+        double x0 = R * (double)pj[i] / P, x1 = R * (double)(pj[i] + 1) / P;
+        if (x1 > R) x1 = R;
+        /* each piece runs a few frames into the next, so the rounding of
+         * its start against the block never ends it a frame early */
+        x1 += AU_VINTAGE_OVER;
+        if (x1 > R) x1 = R;
+        uint32_t a = cl->revrs ? re - (uint32_t)x1 : rs + (uint32_t)x0;
+        uint32_t b = cl->revrs ? re - (uint32_t)x0 : rs + (uint32_t)x1;
+        uint32_t off = (uint32_t)(pd[i] * fpt);
+        au_range_on(inst, t, c, AU_SLICE_NONE, a, b, 1.0f, off >= (uint32_t)frames ? (uint32_t)frames - 1 : off, 1);
     }
 }
 
@@ -265,7 +269,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
             /* Mute does not stop the loop: it plays on silently, like a
              * muted bus, so unmuting picks it up in place (below). */
             int run = inst->playing && tr->clip_playing && cl->mode == AU_MODE_LOOP && cl->smp;
-            int sync = run && (cl->tempo == AU_TEMPO_SYNC || cl->tempo == AU_TEMPO_FIT);
+            int sync = run && cl->tempo == AU_TEMPO_VINTAGE;
             if (run) {
                 uint32_t tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
                 int32_t tick = (int32_t)(((int)tr->current_step - (int)lc->loop_start) * (int32_t)tps
@@ -307,7 +311,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
                 double played = (ticked && tick > 0) ? (double)(tick - 1) : (double)tick;
                 if (tick < 0) tick = 0;
                 if (sync) {
-                    /* Tempo Sync: the chops in order on the clock (au_sync_block). */
+                    /* Vintage: the sample cut on the clock (au_sync_block). */
                     if (lv) au_voice_release(lv, 64);
                     if (!at->sync_on || at->loop_clip != c) { at->sync_on = 1; at->sync_live = 0; at->loop_clip = (uint8_t)c; }
                     if (ticked) at->sync_live = 1;          /* the transport's first tick has played */
@@ -604,7 +608,7 @@ static int sp_track_audio(sp_ctx_t *cx) {
             inst->au_trk[tidx].last_tick = -1;     /* the loop restarts from its new end */
             if (c == tr->active_clip) au_track_kill(inst, tidx, NULL);
         } else if (!strcmp(w, "tempo")) {
-            v = clamp_i(v, AU_TEMPO_FREE, AU_TEMPO_PITCH);
+            v = AU_TEMPO_FIX(clamp_i(v, AU_TEMPO_FREE, AU_TEMPO_PITCH));
             if (v != cl->tempo && c == tr->active_clip) au_track_kill(inst, tidx, NULL);
             cl->tempo = (uint8_t)v;
         } else if (!strcmp(w, "nudge")) {
@@ -887,9 +891,9 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
                        - (double)cl->nudge_ms * (double)s->rate / 1000.0;
             if (r < 0) r = 0;
             if (r < (double)reach) reach = (uint32_t)r;
-        } else if (s && (cl->tempo == AU_TEMPO_SYNC || cl->tempo == AU_TEMPO_PITCH) && reach) {
-            /* Sync and Pitch: the chops whose place in the sample's own Bars
-             * (plus Nudge) falls before the clip comes round */
+        } else if (s && (cl->tempo == AU_TEMPO_VINTAGE || cl->tempo == AU_TEMPO_PITCH) && reach) {
+            /* Vintage and Pitch: what of the sample's own Bars (plus Nudge)
+             * falls before the clip comes round */
             const clip_t *lc = &inst->tracks[t].clips[c];
             double bpm = inst->tracks[t].pfx.cached_bpm > 0 ? inst->tracks[t].pfx.cached_bpm : 120.0;
             uint32_t tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;

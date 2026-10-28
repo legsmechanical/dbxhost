@@ -32,9 +32,21 @@ import { PAD_MODE_AUDIO, NUM_CLIPS, BANK_STEP, BANK_AUDIO, knobAltFor } from './
 import { bankListForMode } from './ui_pure.mjs';
 
 export const AU_MODE_LOOP = 0, AU_MODE_SLICE = 1;
-/* Tempo (Josh, 2026-10-28): Free as recorded · Sync the chops at their places
- * in the sample's own Bars · Fit spread over the clip · Pitch retuned to fill it */
-export const AU_TEMPO_NAMES = ['Free', 'Sync', 'Fit', 'Pitch'];
+/* Tempo: Free as recorded · Vintage cut on the clock, each piece on its
+ * place in the sample's own Bars (Josh, 2026-10-29: "make it as fine as
+ * possible and call it "vintage"") · Pitch retuned to fill them. The DSP's
+ * values: Free 0, Vintage 1, Pitch 3 (2 was Fit, gone: it reads as Vintage). */
+export const AU_TEMPO_NAMES = ['Free', 'Vintage', 'Pitch'];
+const AU_TEMPO_VALS = [0, 1, 3];
+export function auTempoIdx(i) { const k = AU_TEMPO_VALS.indexOf(i.tempo | 0); return k < 0 ? 1 : k; }
+/* A Loop clip's pads: the sample in even sections, one a pad (Josh,
+ * 2026-10-29: "chops should just be completely invisible in loop mode"). */
+export const AU_LOOP_SECTIONS = 32;
+export function auLoopMarks(i) {
+    const n = i.nframes | 0, out = [];
+    for (let k = 0; k < AU_LOOP_SECTIONS; k++) out.push([Math.floor(n * k / AU_LOOP_SECTIONS), Math.floor(n * (k + 1) / AU_LOOP_SECTIONS)]);
+    return out;
+}
 export const AU_BARS_MAX = 64;
 /* Chop k is note k (Josh, 2026-10-28: "might as well do 128"), 32 to a pad
  * page; external MIDI reaches chop 1 at note 36 (ui.js). */
@@ -614,9 +626,9 @@ export function auClipBankKnob(t, k, steps) {
         S.ledsDirtyAudio = true;
     } else if (k === 0 && i.mode !== AU_MODE_SLICE) {
         if (i.state !== 2) return false;
-        const v = Math.max(0, Math.min(AU_TEMPO_NAMES.length - 1, (i.tempo | 0) + (steps > 0 ? 1 : -1)));
-        if (v === (i.tempo | 0)) return false;
-        loc.tempo = v; auSet(t, c, 'tempo', v);
+        const k = Math.max(0, Math.min(AU_TEMPO_NAMES.length - 1, auTempoIdx(i) + (steps > 0 ? 1 : -1)));
+        if (AU_TEMPO_VALS[k] === (i.tempo | 0)) return false;
+        loc.tempo = AU_TEMPO_VALS[k]; auSet(t, c, 'tempo', loc.tempo);
     } else if (k === 1 && i.mode !== AU_MODE_SLICE) {
         if (i.state !== 2) return false;
         const v = Math.max(1, Math.min(AU_BARS_MAX, (i.bars || 1) + (steps > 0 ? 1 : -1)));
@@ -751,13 +763,12 @@ export function knobAltOnTrack(t, padMode, bank, k) {
     return knobAltFor(padMode, bank, k);
 }
 
-/* ---- the CLIP bank in Loop mode: K1 Tempo (Josh, 2026-10-28: "3-way" —
- * Free · Sync, Fit to come), K3 Nudge, where Slice has Shift and its Nudge
+/* ---- the CLIP bank in Loop mode: K1 Tempo (Free · Vintage · Pitch), K3 Nudge, where Slice has Shift and its Nudge
  * alternate; K4 Mode. ---- */
 export function auLoopBankCells(t) {
     const i = auInfo(t, auClipOf(t));
-    const tempo = { kind: 'enumsq', label: 'Tempo', name: 'Tempo: Free · Sync · Fit · Pitch',
-                    text: AU_TEMPO_NAMES[i.tempo | 0], options: AU_TEMPO_NAMES, sel: i.tempo | 0 };
+    const tempo = { kind: 'enumsq', label: 'Tempo', name: 'Tempo: Free · Vintage · Pitch',
+                    text: AU_TEMPO_NAMES[auTempoIdx(i)], options: AU_TEMPO_NAMES, sel: auTempoIdx(i) };
     const live = (x) => (i.state === 2 ? x : dash(x));
     return [live(tempo), live(barsCell(i)), live(nudgeCell(i)), auModeCell(t), BLANK, BLANK, BLANK, BLANK];
 }
@@ -791,7 +802,10 @@ export function auSliceToPad(k, t = S.activeTrack) {
     return j < 16 ? Math.floor(j / 4) * 8 + (j % 4) : Math.floor((j - 16) / 4) * 8 + 4 + ((j - 16) % 4);
 }
 /* How many pad pages the clip's chops fill (at least one). */
-export function auPages(t) { return Math.max(1, Math.ceil(auInfo(t, auClipOf(t)).n / AU_PAGE)); }
+export function auPages(t) {
+    const i = auInfo(t, auClipOf(t));
+    return i.mode === AU_MODE_SLICE ? Math.max(1, Math.ceil(i.n / AU_PAGE)) : 1;   /* Loop: its sections fill one */
+}
 /* Show pad page p of track t (clamped). Returns true when it moved. */
 export function auSetPage(t, p) {
     const np = Math.max(0, Math.min(auPages(t) - 1, p | 0));
@@ -812,12 +826,12 @@ export function auSetLayout(t, v) {
     S.ledsDirtyAudio = true;
     return true;
 }
-/* The chop the Loop's playhead is in, or -1 (not sounding, not Loop).
- * Tick context: it may read the marks. */
+/* The section (auLoopMarks) the Loop's playhead is in, or -1 (not
+ * sounding, not Loop). */
 export function auPlayheadChop(t) {
     const c = auClipOf(t), i = auInfo(t, c);
     if (_pos.t !== t || !_pos.on || i.mode !== AU_MODE_LOOP) return -1;
-    const mk = auMarks(t, c);
+    const mk = auLoopMarks(i);
     for (let k = 0; k < mk.length; k++) if (_pos.frame >= mk[k][0] && _pos.frame < mk[k][1]) return k;
     return -1;
 }

@@ -27,7 +27,7 @@ import { chordLayoutOn, chordPadColor } from './ui_chord_pads.mjs';
 import { pianoLayoutOn } from './ui_drummodel.mjs';
 import { customLayoutOn, customPadColor } from './ui_custom_chords.mjs';
 import { setLED, setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
-import { isAudioTrack, auInfo, auClipOf, auPos, auPlayheadChop, auPadToSlice, auMarks, auPages, auEnd, AU_PAGE, auSelSlice, auLazyOpen, auLazyState,
+import { isAudioTrack, auInfo, auClipOf, auPos, auPlayheadChop, auPadToSlice, auLoopMarks, AU_LOOP_SECTIONS, auEnd, auSelSlice, auLazyOpen, auLazyState,
          AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN } from './ui_audio.mjs';
 
 const lastSentNoteLED   = new Array(128).fill(-1);
@@ -378,32 +378,22 @@ export function updateStepLEDs() {
     }
 
     /* AUDIO, a Loop clip: no sequence, so the step buttons show the loop —
-     * the steps the pad page's chops cover dim, the playhead white (Josh,
-     * 2026-10-28: "follow the playhead with a "pad page" indicator on the
-     * step buttons"). One page covers the whole loop. Revrs plays the chops
-     * from the end, so their steps mirror. */
+     * its steps dim, the playhead white. One pad page covers the whole loop
+     * (its sections: auLoopMarks), so the steps are all of it. */
     if (isAudioTrack(S.activeTrack) && auInfo(S.activeTrack, auClipOf(S.activeTrack)).mode !== AU_MODE_SLICE) {
-        const t = S.activeTrack, c = auClipOf(t), ai = auInfo(t, c), ac = effectiveClip(t);
+        const t = S.activeTrack, ac = effectiveClip(t);
         /* playing, the row follows the playhead page by page, as a sequence
          * does (Josh, 2026-10-28: "should follow the sequence playhead like
          * normal") — there is nothing on a Loop clip's steps to stay and edit */
         const cs = S.trackCurrentStep[t];
         const base = (S.playing && S.trackClipPlaying[t] && cs >= 0 ? Math.floor(cs / 16) : (S.trackCurrentPage[t] | 0)) * 16;
         const len = S.clipLength[t][ac], lsBase = S.clipLoopStart[t][ac] | 0;
-        const e = auEnd(ai), span = e - ai.rstart;
-        let from = 0, to = len;
-        const mk = ai.state === 2 && span > 0 && auPages(t) > 1 ? auMarks(t, c) : null;
-        if (mk && mk.length) {
-            const p = S.auPage[t] | 0, a = mk[Math.min(mk.length - 1, p * AU_PAGE)], b = mk[Math.min(mk.length, (p + 1) * AU_PAGE) - 1];
-            const at = (f) => (ai.revrs ? e - f : f - ai.rstart) / span * len;
-            from = Math.floor(Math.min(at(a[0]), at(b[1]))); to = Math.ceil(Math.max(at(a[0]), at(b[1])));
-        }
         for (let i = 0; i < 16; i++) {
             const abs = base + i, rel = abs - lsBase;
             let color;
             if (rel < 0 || rel >= len) color = DarkGrey;
             else if (S.playing && abs === cs) color = White;
-            else color = rel >= from && rel < to ? trackDimColor(t) : LED_OFF;
+            else color = trackDimColor(t);
             setLED(16 + i, color);
         }
         return;
@@ -968,7 +958,7 @@ export function updateTrackLEDs() {
             const slice = ai.mode === AU_MODE_SLICE;
             const ph = slice ? -1 : auPlayheadChop(t);
             const sel = auSelSlice(t);
-            const mk = !slice && ai.state === 2 ? auMarks(t, auClipOf(t)) : null;
+            const mk = !slice && ai.state === 2 ? auLoopMarks(ai) : null;
             const reach = ai.reach >= 0 && ai.reach < auEnd(ai) - ai.rstart;
             /* never played: a chop wholly outside Start..End (Josh,
              * 2026-10-29: "sections that are out of start/end range on the
@@ -991,7 +981,7 @@ export function updateTrackLEDs() {
                 else if (ai.state !== 2) color = i === 0 ? td : LED_OFF;
                 else if (slice) {
                     if (k < ai.n) color = (ap.t === t && ap.on && ap.slice === k) ? White : k === sel ? tc : td;
-                } else if (k < ai.n) {
+                } else if (k < AU_LOOP_SECTIONS) {
                     /* a Free loop whose clip wraps before the sample ends:
                      * the chops it never reaches grey (Josh, 2026-10-28: "you
                      * can't see where the end point is on the pads") */

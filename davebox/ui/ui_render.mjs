@@ -251,8 +251,9 @@ function drawAudioWaveEditor() {
         drawBankHeading(auSampleName(t, c), false);
         ends('S ' + auFmtTime(i.rstart, rt), 'E ' + auFmtTime(auEnd(i), rt));
         if (zoomTxt) mid(zoomTxt);
-        /* no cursor: it only adds chops, which is Slice's job (Josh, 2026-10-29) */
-        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, gain: i.gain | 0 });
+        /* no cursor and no chops: they are Slice's (Josh, 2026-10-29: "chops
+         * should just be completely invisible in loop mode") */
+        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, gain: i.gain | 0, noMarks: true });
         drawKitHintRow(MV_FOOTER_Y, [['knobs', 'edit'], ['sh+clk', 'menu']]);   /* Josh: "knobs: edit is fine for a hint" */
         return;
     }

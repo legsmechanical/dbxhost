@@ -735,7 +735,7 @@ step('⭐⭐ WAVE with no sample: the click corners, CLICK TO LOAD SAMPLE; a cli
     GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(2);
 });
 
-step('⭐⭐ WAVE in Loop mode: K1 Start · K2 Zoom · K3 End · K4 Gain · K5 Pitch; the chops edit as in Slice', () => {
+step('⭐⭐ WAVE in Loop mode: K1 Start · K2 Zoom · K3 End · K4 Gain · K5 Pitch; no chops, no cursor', () => {
     GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(2);
     mapPad(2, 3);
     assert(E.auWaveSub(S.auEditor) === 'loop', 'not the loop view');
@@ -747,9 +747,10 @@ step('⭐⭐ WAVE in Loop mode: K1 Start · K2 Zoom · K3 End · K4 Gain · K5 P
     cc(74, 127);
     assert(sent('t4_au_set_gain').join() === '0 -1', 'K4 Gain: ' + JSON.stringify(sent('t4_au_set_gain')));
     assert(inked(shown()), 'the loop view draws nothing');
-    /* no cursor in Loop (Josh, 2026-10-29: "only in slice mode"): a pad
-     * leaves it, the jog does not move it, a click adds no chop, none is
-     * drawn, and Chop sample has no Manual; Delete + pad still removes one */
+    /* no chops and no cursor in Loop (Josh, 2026-10-29: "chops should just be
+     * completely invisible in loop mode"; the cursor "only in slice mode"): a
+     * pad leaves it, the jog does not move it, a click adds no chop, neither
+     * is drawn, Delete + pad removes none, and Shift + click offers Load only */
     reset();
     const cur0 = S.auEditor.cur;
     note(C.TRACK_PAD_BASE + 5, 100); note(C.TRACK_PAD_BASE + 5, 0);
@@ -763,11 +764,15 @@ step('⭐⭐ WAVE in Loop mode: K1 Start · K2 Zoom · K3 End · K4 Gain · K5 P
     const f0 = shown(); S.auEditor.cur = cur0 + 30000; S.screenDirty = true;
     assert(same(shown(), f0), 'a cursor is drawn in Loop');
     S.auEditor.cur = cur0;
-    S.auEditor.pick = { level: 2, sel: 0 };
-    assert(E.auPickRows(S.auEditor).map((r) => r.id).join() === 'lazy,even', 'Loop\'s Chop picker: ' + E.auPickRows(S.auEditor).map((r) => r.id));
+    const marked = shown();
+    A.auMarksLocal(4, 0, [[0, 96000]]);                 /* one chop, not eight: nothing drawn changes */
+    assert(same(shown(), marked), 'the chops are drawn in Loop');
+    A.auMarkStale(4, 0); ticks(2);
+    S.auEditor.pick = { level: 1, sel: 0 };
+    assert(E.auPickRows(S.auEditor).map((r) => r.id).join() === 'load', 'Loop\'s picker: ' + E.auPickRows(S.auEditor).map((r) => r.id));
     S.auEditor.pick = null;
     cc(HC.MoveDelete, 127); note(C.TRACK_PAD_BASE + 3, 100); note(C.TRACK_PAD_BASE + 3, 0); cc(HC.MoveDelete, 0);
-    assert(sent('t4_au_mark_del').join() === '0 3', 'Delete + pad in Loop: ' + JSON.stringify(sent('t4_au_mark_del')));
+    assert(!sent('t4_au_mark_del').length, 'Delete + pad in Loop removed a chop: ' + JSON.stringify(sent('t4_au_mark_del')));
     assert(!sent('t4_au_set_mode').length, 'editing chops changed the Mode');
     back();
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
@@ -912,11 +917,13 @@ step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP /
     const lh = JSON.stringify(render.bankPageHints(0));
     S.knobTouched = -1;
     assert(lh.indexOf('CLK') < 0, 'a Loop CLIP knob offers a click: ' + lh);
-    /* K1 Tempo: Free · Sync · Fit · Pitch (Josh: "a sync mode that allows you to select either", "Pitch") */
+    /* K1 Tempo: Free · Vintage · Pitch (Josh, 2026-10-29: Fit gone, Sync "vintage"),
+     * the DSP's values 0 · 1 · 3; an old Fit (2) reads as Vintage */
     const tv = [];
     for (let i = 0; i < 200; i++) { cc(71, 1); const t = A.auLoopBankCells(4)[0].text; if (tv[tv.length - 1] !== t) tv.push(t); }
-    assert(tv.join() === 'Free,Sync,Fit,Pitch' && sent('t4_au_set_tempo').join() === '0 1,0 2,0 3' && !sentLike(/_au_set_(revrs|jump|jmpq)/).length,
-           'K1 is not Tempo Free · Sync · Fit · Pitch: ' + tv.join() + ' ' + JSON.stringify(sentLike(/_au_/)));
+    assert(tv.join() === 'Free,Vintage,Pitch' && sent('t4_au_set_tempo').join() === '0 1,0 3' && !sentLike(/_au_set_(revrs|jump|jmpq)/).length,
+           'K1 is not Tempo Free · Vintage · Pitch: ' + tv.join() + ' ' + JSON.stringify(sentLike(/_au_/)));
+    assert(A.auTempoIdx({ tempo: 2 }) === 1 && A.auTempoIdx({ tempo: 3 }) === 2, 'an old Fit / Pitch reads wrong');
     for (let i = 0; i < 200; i++) cc(71, 127);
     /* K2 Bars: the sample's own length, 1..64, with the tempo it makes */
     reset();
@@ -950,57 +957,58 @@ step('⭐⭐ Loop + steps on SAMPLE (Josh: "it\'s not accessible at all in sampl
     back(); ticks(2);
 });
 
-step('⭐⭐ Loop pads: a progress bar — dim the loop, bright what has played, the playhead pulsing; Revrs fills from the end; stopped all dim (Josh)', () => {
+step('⭐⭐ Loop pads: a progress bar over 32 even sections, not the chops — dim the loop, bright what has played, the playhead pulsing; Revrs fills from the end; stopped all dim (Josh)', () => {
     const tc = globalThis.__tc(4);
     const pad = (i) => LEDS.get(C.TRACK_PAD_BASE + i) || 0;
-    GET['t4_au_pos'] = '1 30000 -1';                   /* chop 3 of 8 (12000 frames each) */
+    /* 8 chops, but the pads are the sample in 32 sections of 3000 frames
+     * (Josh, 2026-10-29: "chops should just be completely invisible in loop mode") */
+    GET['t4_au_pos'] = '1 30000 -1';                   /* section 11 */
     for (let i = 0; i < 6; i++) ticks(1);
-    assert(pad(0) === tc && pad(1) === tc, 'the played chops are not bright: ' + [pad(0), pad(1)] + ' vs ' + tc);
-    assert(pad(2) === HC.LightGrey, 'the playhead chop does not pulse to dim white: ' + pad(2));
-    assert(pad(3) && pad(3) !== tc && pad(7) === pad(3), 'the chops to come are not dim: ' + [pad(3), pad(7)]);
-    assert(!pad(8), 'a pad past the chops is lit: ' + pad(8));
-    /* Revrs: it plays from the end back, so the chops after the playhead have played */
+    assert([0, 5, 9].every((i) => pad(i) === tc), 'the played sections are not bright: ' + [0, 5, 9].map(pad) + ' vs ' + tc);
+    assert(pad(10) === HC.LightGrey, 'the playhead section does not pulse to dim white: ' + pad(10));
+    assert(pad(11) && pad(11) !== tc && pad(31) === pad(11), 'the sections to come are not dim (or the chops show): ' + [pad(11), pad(31)]);
+    /* Revrs: it plays from the end back, so the sections after the playhead have played */
     GET['t4_au_info_0'] = INFO(0, 8).replace(' 96000 48000 2 0 0 0 ', ' 96000 48000 2 1 0 0 ');
     A.auMarkStale(4, 0); for (let i = 0; i < 6; i++) ticks(1);
-    assert(pad(7) === tc && pad(3) === tc && pad(1) !== tc && pad(1), 'Revrs did not fill from the end: ' + [pad(1), pad(3), pad(7)]);
+    assert(pad(31) === tc && pad(11) === tc && pad(9) !== tc && pad(9), 'Revrs did not fill from the end: ' + [pad(9), pad(11), pad(31)]);
     /* stopped: the loop, all dim */
     GET['t4_au_pos'] = '0 0 -1';
     for (let i = 0; i < 6; i++) ticks(1);
-    assert(pad(2) !== HC.LightGrey && pad(2) === pad(5) && pad(0) === pad(5) && pad(0) !== tc, 'stopped is not all dim: ' + [pad(0), pad(2), pad(5)]);
+    assert(pad(10) !== HC.LightGrey && pad(10) === pad(20) && pad(0) === pad(20) && pad(0) !== tc, 'stopped is not all dim: ' + [pad(0), pad(10), pad(20)]);
     GET['t4_au_pos'] = '1 24000 2';
     GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(4);
 });
 
-step('⭐⭐ Loop pads: a Free loop whose clip wraps before the sample ends greys the chops it never reaches (Josh: "you can\'t see where the end point is")', () => {
+step('⭐⭐ Loop pads: a Free loop whose clip wraps before the sample ends greys the sections it never reaches (Josh: "you can\'t see where the end point is")', () => {
     const pad = (i) => LEDS.get(C.TRACK_PAD_BASE + i) || 0;
     const reach = (r, rev) => INFO(0, 8).replace(' 96000 48000 2 0 0 0 8|', ' 96000 48000 2 ' + (rev ? 1 : 0) + ' 0 0 8 0 0 ' + r + '|');
     GET['t4_au_pos'] = '1 6000 -1';
     GET['t4_au_info_0'] = reach(30000); A.auMarkStale(4, 0);
     for (let i = 0; i < 6; i++) ticks(1);
     assert(A.auInfo(4, 0).reach === 30000, 'reach not parsed: ' + A.auInfo(4, 0).reach);
-    assert(pad(2) && pad(2) !== HC.DarkGrey && [3, 4, 7].every((i) => pad(i) === HC.DarkGrey),
-           'the chops past the wrap are not grey: ' + [2, 3, 4, 7].map(pad));
+    assert(pad(9) && pad(9) !== HC.DarkGrey && [10, 20, 31].every((i) => pad(i) === HC.DarkGrey),
+           'the sections past the wrap are not grey: ' + [9, 10, 20, 31].map(pad));
     /* Revrs reaches in from the end */
     GET['t4_au_info_0'] = reach(30000, 1); A.auMarkStale(4, 0);
     for (let i = 0; i < 6; i++) ticks(1);
-    assert([0, 4].every((i) => pad(i) === HC.DarkGrey) && pad(5) && pad(5) !== HC.DarkGrey,
-           'Revrs did not grey from the start: ' + [0, 4, 5].map(pad));
+    assert([0, 21].every((i) => pad(i) === HC.DarkGrey) && pad(22) && pad(22) !== HC.DarkGrey,
+           'Revrs did not grey from the start: ' + [0, 21, 22].map(pad));
     /* all of it plays: nothing grey */
     GET['t4_au_info_0'] = reach(96000); A.auMarkStale(4, 0);
     for (let i = 0; i < 6; i++) ticks(1);
-    assert([0, 3, 7].every((i) => pad(i) && pad(i) !== HC.DarkGrey), 'a loop that plays whole greys: ' + [0, 3, 7].map(pad));
+    assert([0, 15, 31].every((i) => pad(i) && pad(i) !== HC.DarkGrey), 'a loop that plays whole greys: ' + [0, 15, 31].map(pad));
     GET['t4_au_pos'] = '1 24000 2';
     GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(4);
 });
 
-step('⭐⭐ Loop pads: chops outside Start..End are grey (Josh: "out of start/end range ... aren\'t showing up as dim white")', () => {
+step('⭐⭐ Loop pads: sections outside Start..End are grey (Josh: "out of start/end range ... aren\'t showing up as dim white")', () => {
     const pad = (i) => LEDS.get(C.TRACK_PAD_BASE + i) || 0;
     GET['t4_au_pos'] = '1 30000 -1';
     GET['t4_au_info_0'] = INFO(0, 8).replace(' 16 0 96000 ', ' 16 24000 72000 '); A.auMarkStale(4, 0);
     for (let i = 0; i < 6; i++) ticks(1);
     assert(A.auInfo(4, 0).rstart === 24000, 'rstart not parsed: ' + A.auInfo(4, 0).rstart);
-    assert([0, 1, 6, 7].every((i) => pad(i) === HC.DarkGrey), 'chops outside the range are not grey: ' + [0, 1, 6, 7].map(pad));
-    assert([2, 3, 4, 5].every((i) => pad(i) && pad(i) !== HC.DarkGrey), 'chops inside the range are grey: ' + [2, 3, 4, 5].map(pad));
+    assert([0, 7, 24, 31].every((i) => pad(i) === HC.DarkGrey), 'sections outside the range are not grey: ' + [0, 7, 24, 31].map(pad));
+    assert([8, 15, 23].every((i) => pad(i) && pad(i) !== HC.DarkGrey), 'sections inside the range are grey: ' + [8, 15, 23].map(pad));
     GET['t4_au_pos'] = '1 24000 2';
     GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(4);
 });
@@ -1017,7 +1025,7 @@ step('⭐⭐ Loop step buttons: playing, the row follows the playhead page by pa
     S.ledsDirtyAudio = true; ticks(2);
 });
 
-step('⭐⭐ 128 chops: Octave Up / Down steps the pad pages, 32 chops a page; a Loop playing follows its playhead; the step buttons show the page (Josh)', () => {
+step('⭐⭐ 128 chops: Octave Up / Down steps the pad pages, 32 chops a page (Slice); a Loop clip has one page, its sections (Josh)', () => {
     const marks = (n) => Array.from({ length: n }, (_, k) => Math.round(k * 96000 / n) + ' ' + Math.round((k + 1) * 96000 / n)).join(' ');
     GET['t4_au_info_0'] = INFO(1, 40, 40); GET['t4_au_marks_0'] = marks(40);
     A.auMarkStale(4, 0); ticks(4);
@@ -1032,18 +1040,19 @@ step('⭐⭐ 128 chops: Octave Up / Down steps the pad pages, 32 chops a page; a
     cc(HC.MoveDown, 127); cc(HC.MoveDown, 0); ticks(2);
     assert(S.auPage[4] === 0, 'Octave Down did not go back');
     assert(A.auSliceToPad(33, 4) === -1 && A.auSliceToPad(3, 4) === 3, 'auSliceToPad ignores the page');
-    /* Loop: the playhead on chop 35 brings page 2 up; the step buttons light that stretch */
+    /* Loop: its chops are invisible — one page of sections whatever they
+     * number, the playhead late in the sample stays on it, and the step
+     * buttons light the whole loop */
+    S.auPage[4] = 1;
     GET['t4_au_info_0'] = INFO(0, 40, 40); A.auMarkStale(4, 0);
     GET['t4_au_pos'] = '1 ' + (Math.round(35 * 96000 / 40) + 10) + ' -1';
     S.playing = false;
     for (let i = 0; i < 8; i++) ticks(1);
-    assert(S.auPage[4] === 1, 'the pads did not follow the playhead onto page 2: ' + S.auPage[4]);
+    assert(A.auPages(4) === 1 && S.auPage[4] === 0, 'a Loop clip has chop pages: ' + A.auPages(4) + ' / ' + S.auPage[4]);
     S.clipLength[4][0] = 16; S.clipLoopStart[4][0] = 0; S.trackCurrentPage[4] = 0;
     S.ledsDirtyAudio = true; ticks(2);
     const lit = Array.from({ length: 16 }, (_, i) => LEDS.get(16 + i) || 0);
-    /* chops 33-40 are the last 8/40 of the loop: steps 12.8.. -> 12..15 */
-    assert(lit.slice(13, 16).every((v) => v) && lit.slice(0, 12).every((v) => !v),
-           'the step buttons do not show page 2\'s stretch: ' + lit.join());
+    assert(lit.every((v) => v), 'the step buttons do not light the whole loop: ' + lit.join());
     GET['t4_au_pos'] = '1 24000 2';
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(6);
     assert(S.auPage[4] === 0, 'a clip of 8 chops kept page 2');
