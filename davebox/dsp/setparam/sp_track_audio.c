@@ -915,10 +915,11 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
     }
     if (!strncmp(k, "info_", 5)) {
         /* "state err mode even nslices jump rstart rend pitch gain frames rate ch
-         *  revrs nudge jmpq count detune tempo reach bars|name" -- rstart / rend in frames as they play
+         *  revrs nudge jmpq count detune tempo reach bars hits|name" -- rstart / rend in frames as they play
          *  (rend the real end, never 0) once loaded; reach: how far into Start..End a Free
          *  loop gets before its clip wraps, in frames (End - Start when it all plays); bars: the
-         *  sample's own length in bars (0 not known yet) */
+         *  sample's own length in bars (0 not known yet); hits: Beats' pieces in Start..End
+         *  (Start and each hit after it at the clip's Sens; 0 = no sample) */
         c = my_atoi(k + 5);
         if (c < 0 || c >= NUM_CLIPS) return -1;
         const au_clip_t *cl = &inst->au_clip[t][c];
@@ -951,11 +952,12 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
                 if (r < (double)reach) reach = (uint32_t)r;
             }
         }
-        return snprintf(out, out_len, "%d %d %d %d %d %d %u %u %d %d %u %u %d %d %d %d %d %d %d %u %d|%s",
+        return snprintf(out, out_len, "%d %d %d %d %d %d %u %u %d %d %u %u %d %d %d %d %d %d %d %u %d %u|%s",
                         cl->state, cl->err, cl->mode, cl->even, cl->nslices, cl->jump,
                         (unsigned)rs, (unsigned)re, cl->pitch, cl->gain_db,
                         s ? (unsigned)s->frames : 0u, s ? (unsigned)s->rate : 0u, s ? s->ch : 0,
-                        cl->revrs, cl->nudge_ms, cl->jmpq, au_count(cl), cl->detune, cl->tempo, (unsigned)reach, cl->bars, cl->name);
+                        cl->revrs, cl->nudge_ms, cl->jmpq, au_count(cl), cl->detune, cl->tempo, (unsigned)reach, cl->bars,
+                        (unsigned)(s ? au_hit_count(s, rs, re, AU_SENS_DEFAULT) : 0), cl->name);
     }
     if (!strncmp(k, "sl_", 3)) {                  /* sl_C_L: "a b pinned pitch gain rev play atk dec detune" */
         const char *q = k + 3;

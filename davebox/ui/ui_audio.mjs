@@ -110,12 +110,14 @@ export function auParseInfo(raw) {
         reach: head.length > 19 ? head[19] : -1,
         /* the sample's own length in bars, as recorded (0 not known yet) */
         bars: head.length > 20 ? head[20] : 0,
+        /* Beats' pieces in Start..End at the clip's Sens */
+        hits: head.length > 21 ? head[21] : 0,
         name: bar >= 0 ? String(raw).slice(bar + 1) : '',
     };
 }
 
 const DEFAULT_INFO = { state: 0, err: 0, mode: 0, even: 16, hand: 1, n: 16, jump: 16, rstart: 0, rend: 0,
-                       pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, revrs: 0, nudge: 0, jmpq: 0, tempo: 0, reach: -1, bars: 0, name: '' };
+                       pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, revrs: 0, nudge: 0, jmpq: 0, tempo: 0, reach: -1, bars: 0, hits: 0, name: '' };
 const DEFAULT_SLICE = { a: 0, b: 0, pinned: 0, pitch: 0, detune: 0, gain: 0, rev: 0, play: 0, atk: 0, dec: 0 };
 
 export function auInfo(t, c) {

@@ -311,6 +311,127 @@ static void au_peaks_from_mip(au_sample_t *s) {
     }
 }
 
+/* ---------------- hits (Tempo Beats) ----------------
+ * Beats cuts the loop at its hits (Josh, 2026-10-29: "no - only transients.
+ * but there should be a way to adjust transient detection sensitivity"). The
+ * loader finds every CANDIDATE once, from the waveform summary: a block whose
+ * level (au_lvl: ~log, so a quiet hit counts as a loud one does) rises over
+ * the one before, most in the blocks around it, kept with how much it rose
+ * (hit_d) and how much against the ~100 ms around it (hit_r). Sens then picks
+ * which count at play time (au_hit_kept), so turning it needs no new pass. A
+ * hit is placed at its block's START: up to 5.8 ms before the attack, in the
+ * quiet, the right place for a cut; and a streamed file, whose frames are not
+ * all in at load, finds exactly the hits a whole one does. No libm. */
+#define AU_HIT_W      17                 /* blocks each side of the local mean (~100 ms) */
+#define AU_HIT_IOI    9                  /* blocks: the least gap between two kept hits (52 ms) */
+#define AU_HIT_MAX    32768
+
+/* ~8 x log2(a + 1) for a level 0..127: 0..56 */
+static int au_lvl(int a) {
+    unsigned v = (unsigned)(a < 0 ? 0 : a) + 1u;
+    int b = 0;
+    while ((v >> b) > 1u) b++;
+    return 8 * b + (int)(((v << 3) >> b) & 7u);
+}
+static int au_mip_amp(const au_sample_t *s, uint32_t m) {
+    int lo = -s->mip[m][0], hi = s->mip[m][1];
+    return hi > lo ? hi : lo;
+}
+
+static void au_find_hits(au_sample_t *s) {
+    uint32_t n = s->nmip, m, k, cnt = 0, w = 2 * AU_HIT_W + 1;
+    uint8_t *d;
+    uint32_t *sum;
+    if (!s->mip || n < 3) return;
+    d = (uint8_t *)calloc(n, 1);
+    sum = (uint32_t *)malloc(((size_t)n + 1) * sizeof *sum);
+    if (!d || !sum) { free(d); free(sum); return; }
+    for (m = 1; m < n; m++) {
+        int r = au_lvl(au_mip_amp(s, m)) - au_lvl(au_mip_amp(s, m - 1));
+        d[m] = (uint8_t)(r > 0 ? r : 0);
+    }
+    sum[0] = 0;
+    for (m = 0; m < n; m++) sum[m + 1] = sum[m] + d[m];
+    for (int pass = 0; pass < 2; pass++) {
+        k = 0;
+        for (m = 1; m < n && k < AU_HIT_MAX; m++) {
+            uint32_t j, a0, a1, tot;
+            int peak = d[m] >= 2 && au_mip_amp(s, m) >= 2;
+            /* the biggest rise of the blocks around it (the first of a tie) */
+            for (j = m > 2 ? m - 2 : 0; peak && j <= m + 2 && j < n; j++)
+                if ((j < m && d[j] >= d[m]) || (j > m && d[j] > d[m])) peak = 0;
+            if (!peak) continue;
+            if (pass) {
+                a0 = m > AU_HIT_W ? m - AU_HIT_W : 0;
+                a1 = m + AU_HIT_W + 1 < n ? m + AU_HIT_W + 1 : n;
+                tot = sum[a1] - sum[a0];
+                if (tot < w / 2) tot = w / 2;                /* a mean under 0.5 is silence */
+                uint32_t r = (uint32_t)d[m] * 16u * w / tot;
+                s->hits[k] = m * AU_MIP;
+                s->hit_d[k] = d[m];
+                s->hit_r[k] = (uint8_t)(r > 255 ? 255 : r);
+            }
+            k++;
+        }
+        if (!pass) {
+            cnt = k;
+            if (!cnt) break;
+            s->hits = (uint32_t *)malloc((size_t)cnt * sizeof *s->hits);
+            s->hit_d = (uint8_t *)malloc(cnt);
+            s->hit_r = (uint8_t *)malloc(cnt);
+            if (!s->hits || !s->hit_d || !s->hit_r) {
+                free(s->hits); free(s->hit_d); free(s->hit_r);
+                s->hits = NULL; s->hit_d = s->hit_r = NULL;
+                cnt = 0;
+                break;
+            }
+        }
+    }
+    s->nhits = cnt;
+    free(d);
+    free(sum);
+}
+
+/* What Sens 0..100 asks of a candidate: its rise against the ~100 ms around
+ * it (x16: 0 = four times, 50 = twice, 100 = any) and its own rise. */
+static void au_sens_min(int sens, int *rmin, int *dmin) {
+    static const uint8_t r[5] = { 64, 45, 32, 23, 16 };
+    int i, f;
+    if (sens < 0) sens = 0;
+    if (sens > 100) sens = 100;
+    i = sens / 25; f = sens % 25;
+    *rmin = i < 4 ? r[i] + (r[i + 1] - r[i]) * f / 25 : r[4];
+    *dmin = 2 + (100 - sens) * 6 / 100;
+}
+static int au_hit_ok(const au_sample_t *s, uint32_t k, int rmin, int dmin) {
+    return s->hit_r[k] >= rmin && s->hit_d[k] >= dmin;
+}
+/* Candidate k counts: it passes, and no passing one lies in the AU_HIT_IOI
+ * blocks before it (a roll is one hit, its first). Audio-thread safe: at most
+ * a few candidates are looked back at (they are >= 3 blocks apart). */
+static int au_hit_kept(const au_sample_t *s, uint32_t k, int rmin, int dmin) {
+    uint32_t j;
+    if (!au_hit_ok(s, k, rmin, dmin)) return 0;
+    for (j = k; j-- > 0 && s->hits[k] - s->hits[j] < AU_HIT_IOI * AU_MIP; )
+        if (au_hit_ok(s, j, rmin, dmin)) return 0;
+    return 1;
+}
+/* The first candidate at or after frame f. */
+static uint32_t au_hit_from(const au_sample_t *s, uint32_t f) {
+    uint32_t lo = 0, hi = s->nhits;
+    while (lo < hi) { uint32_t mid = (lo + hi) / 2; if (s->hits[mid] < f) lo = mid + 1; else hi = mid; }
+    return lo;
+}
+/* Beats' pieces in a..b at `sens`: Start, and every kept hit after it. */
+static uint32_t au_hit_count(const au_sample_t *s, uint32_t a, uint32_t b, int sens) {
+    int rmin, dmin;
+    uint32_t k, n = 1;
+    if (!s || b <= a) return 0;
+    au_sens_min(sens, &rmin, &dmin);
+    for (k = au_hit_from(s, a + 1); k < s->nhits && s->hits[k] < b; k++) if (au_hit_kept(s, k, rmin, dmin)) n++;
+    return n;
+}
+
 /* A file longer than this streams (seconds), in either mode: a slice's
  * start and end are pinned as a jump point is. Josh, 2026-10-28:
  * "threshold should be 60 seconds b/c memory is only 2gb on stock move and
@@ -369,6 +490,9 @@ static void au_sample_free(au_sample_t *s) {
         free(s->st);
     }
     free(s->mip);
+    free(s->hits);
+    free(s->hit_d);
+    free(s->hit_r);
     free(s->pcm);
     free(s);
 }
@@ -465,6 +589,7 @@ static au_sample_t *au_read_file(const char *path, int may_stream, int *err) {
     }
     if (streamed) au_peaks_from_mip(s);
     else au_make_peaks(s);
+    au_find_hits(s);
     *err = AU_ERR_NONE;
     goto out;
 fail:

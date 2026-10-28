@@ -38,6 +38,7 @@
 #define AU_TEMPO_VINTAGE   1            /* Loop: cut every tick, each piece on its place in the sample's own Bars (au_sync_block) */
 #define AU_TEMPO_PITCH     2            /* Loop: the sample retuned (varispeed) so Start..End fills its own Bars */
 #define AU_TEMPO_MAX       AU_TEMPO_PITCH
+#define AU_SENS_DEFAULT    50           /* Beats: hit sensitivity, 0..100 */
 #define AU_BARS_MAX        64           /* a sample's own length in bars, 1..64 */
 #define AU_GAP             16           /* frames: the least a slice can be */
 #define AU_TAIL            128          /* frames: the fade back from a chop's end (~3 ms) */
@@ -77,6 +78,10 @@ typedef struct au_sample {
     int8_t    peaks[AU_PEAKS][2];   /* per column: min, max (int8 of the int16 range) */
     int8_t  (*mip)[2];              /* min, max per AU_MIP frames (the zoomed waveform) */
     uint32_t  nmip;
+    uint32_t *hits;                 /* Beats: candidate hits, frames (each the start of a rising AU_MIP block), ascending */
+    uint8_t  *hit_d;                /* per candidate: its rise (au_lvl steps) */
+    uint8_t  *hit_r;                /* per candidate: its rise against the ~100 ms around it, x16 */
+    uint32_t  nhits;                /* candidates; Sens picks which count (au_hit_kept) */
     char      name[AU_PATH_MAX];    /* the file inside samples/ */
     uint32_t  refs;                 /* clips using it (loader thread only) */
 } au_sample_t;
