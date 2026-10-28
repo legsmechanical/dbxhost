@@ -216,20 +216,19 @@ static uint32_t au_block_ticks(uint32_t now, uint64_t before) {
 }
 /* the least whole number >= x (no libm here) */
 static long au_ceil(double x) { long i = (long)x; return (double)i < x ? i + 1 : i; }
-static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uint32_t len_ticks, double fpt, int frames) {
-    au_clip_t *cl = &inst->au_clip[t][c];
-    const au_sample_t *s = cl->smp;
-    uint32_t rs, re;
-    if (!s || !len_ticks || fpt <= 0) return;
-    au_range(cl, s, &rs, &re);
-    if (re <= rs) return;
-    double L = (double)len_ticks, span = (double)frames / fpt, start, fscale = fpt;
-    double P = au_span_ticks(cl, s, rs, re), R = (double)(re - rs);
-    if (P <= 0) return;
+/* The clip ticks this block covers, for the pieces cut on the clock (Vintage,
+ * Beats): from `start` (clip ticks, may be below 0 by up to the span) for
+ * `span` ticks; a piece `d` ticks in lands at frame d * fscale. `tick` is the
+ * clip counter after this block's ticks, L the clip's length in ticks. 0 = the
+ * block has none (a followed clock between pulses). */
+static int au_clock_window(seq8_instance_t *inst, int32_t tick, double L, double fpt, int frames,
+                           double *start, double *span, double *fscale) {
+    *span = (double)frames / fpt;
+    *fscale = fpt;
     if (!inst->follow_solo && !inst->clock_follow_on && inst->tick_delta) {
         /* our own clock: the tick played lands `past` before the block's end */
         double past = (double)inst->tick_accum / (double)inst->tick_delta * (double)frames / fpt;
-        start = au_wrap((double)tick - 1.0 + past, L) - span;
+        *start = au_wrap((double)tick - 1.0 + past, L) - *span;
     } else {
         /* a followed clock (Move's 0xF8) puts its ticks on the block's frame
          * 0 (seq8_tick_frame) and says nothing between them: the pieces due
@@ -241,11 +240,24 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
          * from the last block's end then missed the first pulse's first ticks
          * and burst after a jump. Both found by review, 2026-10-29.) */
         double n = (double)au_block_ticks(inst->arp_master_tick, inst->au_tick0);
-        if (n <= 0) return;
-        span = n;
-        start = au_wrap((double)tick - 1.0 - n + 1e-6, L);
-        fscale = 0.0;
+        if (n <= 0) return 0;
+        *span = n;
+        *start = au_wrap((double)tick - 1.0 - n + 1e-6, L);
+        *fscale = 0.0;
     }
+    return 1;
+}
+static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uint32_t len_ticks, double fpt, int frames) {
+    au_clip_t *cl = &inst->au_clip[t][c];
+    const au_sample_t *s = cl->smp;
+    uint32_t rs, re;
+    if (!s || !len_ticks || fpt <= 0) return;
+    au_range(cl, s, &rs, &re);
+    if (re <= rs) return;
+    double L = (double)len_ticks, span, start, fscale;
+    double P = au_span_ticks(cl, s, rs, re), R = (double)(re - rs);
+    if (P <= 0) return;
+    if (!au_clock_window(inst, tick, L, fpt, frames, &start, &span, &fscale)) return;
     double nud = (double)cl->nudge_ms * 44.1 / fpt;
     long G = au_ceil(P - 1e-9);
     /* the pieces whose tick falls in this block, in the order they sound */
