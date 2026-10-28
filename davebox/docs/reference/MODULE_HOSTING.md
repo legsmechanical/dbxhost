@@ -374,11 +374,13 @@ engine".
 ### The POWER button
 
 A module that exports `globalThis.onPowerButton` answers POWER itself: shadow_ui
-sets the claim (`host_power_claim`) every tick from that export. While it is set
-and the module owns the screen (overtake mode 2), the shim
-holds the power SysEx back from Move (`src/host/shim_power_gate.h`), so Move never
-raises "Press wheel to shut down", and stores the press; `shadow_ui` reads it every
-tick and calls `globalThis.onPowerButton(id)` (0x2A tap, 0x3A hold). The host drops
+sets the claim (`host_power_claim`) every tick from that export. Move still gets
+every power SysEx — the same message carries its battery and charger reports, and a
+press held back from Move stays pending there and comes back as Move's own prompt
+when the session ends (`src/host/shim_power_gate.h`). While the claim is set and the
+module owns the screen (overtake mode 2), Move's "Press wheel to shut down"
+announcement IS the press: the D-Bus handler flags it, the shim closes Move's prompt
+with a Back tap, and `shadow_ui` calls `globalThis.onPowerButton(0x2A)`. The host drops
 the claim in `exitOvertakeMode` / `suspendOvertakeMode`, so a parked or exited
 module never swallows the button. The power-off itself is the launcher's, after
 teardown: the module leaves a marker and the launcher runs `heal --poweroff`

@@ -34,6 +34,7 @@
 #include "host/shim_thread.h"   /* shim threads must never receive the host's SIGTERM */
 #include "host/schwung_paths.h"
 #include "host/move_settings_text.h"  /* which announcements are rows of Move's Settings menu */
+#include "host/shim_power_gate.h"      /* a claimed power prompt goes to the module */
 
 /* ============================================================================
  * Internal state
@@ -246,7 +247,14 @@ static void shadow_dbus_handle_text(const char *text)
     shadow_control_t *ctrl = *host.shadow_control_ptr;
     static int shutdown_took_display = 0;
     static uint8_t shutdown_took_overtake = 0;
-    if (ctrl && strcasecmp(text, "Press wheel to shut down") == 0) {
+    if (shim_power_prompt_claimed(ctrl, text)) {
+        /* The module on screen answers the power button: close Move's prompt
+         * now (Back) so no press is left pending in Move, and leave the screen
+         * and input with the module, which asks its own question. Nothing is
+         * taken, so nothing is restored. */
+        host.log("Shutdown prompt while the module claims power — closing it with Back, press to the module");
+        if (host.close_move_power_prompt) host.close_move_power_prompt();
+    } else if (ctrl && strcasecmp(text, MOVE_POWER_PROMPT_TEXT) == 0) {
         host.log("Shutdown prompt detected — saving state and dismissing shadow UI");
         ctrl->ui_flags |= SHADOW_UI_FLAG_SAVE_STATE;
         host.save_state();

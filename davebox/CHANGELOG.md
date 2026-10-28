@@ -8,6 +8,16 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 
+### Fixed
+- **The power button works every time.** In 1.1.0 and the 1.1.2 test build,
+  only the first press of a session reached dAVEBOx; Move kept the rest
+  waiting and showed its own shut-down screen as soon as you left dAVEBOx.
+  Move now gets every press and dAVEBOx closes Move's screen and asks its
+  own POWER OFF?, so nothing is left waiting. Battery and charger updates
+  reach Move again too.
+- **The web page stays connected on iPhone and iPad.** It dropped and
+  reconnected every few seconds there; Mac and PC were fine.
+
 ## [1.1.2] — 2026-10-27 (test build, not in the Schwung catalog)
 
 ### Changed

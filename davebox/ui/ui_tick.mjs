@@ -375,9 +375,9 @@ export function requestSessionExit() {
     return true;
 }
 
-/* The POWER button (the host calls globalThis.onPowerButton with its id —
- * 0x2A tap, 0x3A hold — once the module exports it, and Move's own shutdown
- * prompt is held back). Tap and hold both ASK (Josh, 2026-10-23: a hold must
+/* The POWER button (the host calls globalThis.onPowerButton once the module
+ * exports it — when Move raises its own shutdown prompt, which the host then
+ * closes, so the id is always 0x2A). Tap and hold both ASK (Josh, 2026-10-23: a hold must
  * not skip the confirm); the modal's Yes runs powerOffNow(). Ignored while the
  * session is already leaving. */
 export function requestPowerOff(id) {

@@ -264,13 +264,19 @@ static JSValue js_shadow_get_ui_flags(JSContext *ctx, JSValueConst this_val, int
     return JS_NewInt32(ctx, shadow_control->ui_flags);
 }
 
-/* shadow_get_power_button() -> int: the power SysEx the shim held back from
- * Move for a module that claimed it, as 0x10000 | press << 8 | value
- * (0 = none). Every message, not just presses: the caller judges and logs it.
- * Read and cleared, like shadow_get_open_tool_cmd. */
+/* shadow_get_power_button() -> int, for a module that claimed the button:
+ * 0x20000 = Move raised its power prompt, i.e. the press (the host already
+ * closed Move's prompt); 0x10000 | flags << 8 | value = a power SysEx passed to
+ * Move, for the log; 0 = none. One per call, the press first. Read and
+ * cleared, like shadow_get_open_tool_cmd. */
 static JSValue js_shadow_get_power_button(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
     (void)this_val; (void)argc; (void)argv;
     if (!shadow_control) return JS_NewInt32(ctx, 0);
+    /* Move's prompt first: that is the press. Then the logged SysEx. */
+    if (shadow_control->power_prompt) {
+        shadow_control->power_prompt = 0;
+        return JS_NewInt32(ctx, 0x20000);
+    }
     if (!shadow_control->power_seen) return JS_NewInt32(ctx, 0);
     int v = 0x10000 | (shadow_control->power_button << 8) | shadow_control->power_value;
     shadow_control->power_seen = 0;
@@ -2525,8 +2531,8 @@ static JSValue js_shadow_set_display_overlay(JSContext *ctx, JSValueConst this_v
 }
 
 /* host_power_claim(enable) - the overtake module on screen answers the POWER
- * button itself: the shim stops passing the press to Move (no "Press wheel to
- * shut down") and hands it to shadow_ui, which calls the module's
+ * button itself: when Move raises "Press wheel to shut down", the host closes
+ * it with Back and hands the press to shadow_ui, which calls the module's
  * onPowerButton. Idempotent; logs only on a transition. */
 static JSValue js_host_power_claim(JSContext *ctx, JSValueConst this_val,
                                    int argc, JSValueConst *argv) {

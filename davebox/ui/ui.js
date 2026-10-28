@@ -476,10 +476,9 @@ globalThis.onSessionExitRequest = function () {
     try { return requestSessionExit(); } catch (e) { captureError('onSessionExitRequest', e); return false; }
 };
 
-/* The POWER button (TEST BUILD — 1.1.1 ships it unclaimed): exporting this is
- * what makes the host hold the press back from Move (its own shutdown prompt)
- * and hand it here. shadow_ui now passes only a known press byte, and logs
- * every power SysEx, so a report shows what reaches the Move. */
+/* The POWER button: exporting this claims it. Move still decides what is a
+ * press; when it raises its own shutdown prompt the host closes that prompt and
+ * calls this instead, so POWER OFF? is ours and nothing stays pending in Move. */
 globalThis.onPowerButton = function (id) {
     try { requestPowerOff(id); } catch (e) { captureError('onPowerButton', e); }
 };
