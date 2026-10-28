@@ -756,7 +756,9 @@ step('⭐⭐ WAVE in Loop mode: K1 Start · K2 Zoom · K3 End · K4 Gain · K5 P
     assert(S.auEditor.cur === cur0, 'a Loop pad moved the cursor: ' + S.auEditor.cur);
     jog(2);
     assert(S.auEditor.cur === cur0, 'the jog moved a Loop cursor: ' + S.auEditor.cur);
+    S.auEditor.cur = 6000;                           /* between chops, where Slice would add one */
     click();
+    S.auEditor.cur = cur0;
     assert(!sent('t4_au_mark_add').length, 'a click in Loop added a chop: ' + JSON.stringify(sent('t4_au_mark_add')));
     const f0 = shown(); S.auEditor.cur = cur0 + 30000; S.screenDirty = true;
     assert(same(shown(), f0), 'a cursor is drawn in Loop');
