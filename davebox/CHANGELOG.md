@@ -62,6 +62,9 @@ the section into a versioned heading at release time.
   and the instrument shortcut open it.
 
 ### Fixed
+- **Audio: Vintage plays when dAVEBOx follows Move's clock** — it was silent there.
+- **Audio: Vintage with Nudge earlier** starts the loop further in, as Free does,
+  instead of stuttering at the end of a clip shorter than the sample.
 - **Audio: Loop pads grey what lies outside Start..End** — it never plays, and now
   looks it.
 - **Audio: a chop's end no longer clicks** — every chop ends with a ~3 ms fade.

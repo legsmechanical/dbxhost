@@ -206,12 +206,28 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
     if (!s || !len_ticks || fpt <= 0) return;
     au_range(cl, s, &rs, &re);
     if (re <= rs) return;
-    double L = (double)len_ticks, span = (double)frames / fpt, past = 0.0;
+    double L = (double)len_ticks, span = (double)frames / fpt, start, fscale = fpt;
     double P = au_span_ticks(cl, s, rs, re), R = (double)(re - rs);
     if (P <= 0) return;
-    if (!inst->follow_solo && !inst->clock_follow_on && inst->tick_delta)
-        past = (double)inst->tick_accum / (double)inst->tick_delta * (double)frames / fpt;
-    double end = au_wrap((double)tick - 1.0 + past, L), start = end - span;
+    if (!inst->follow_solo && !inst->clock_follow_on && inst->tick_delta) {
+        /* our own clock: the tick played lands `past` before the block's end */
+        double past = (double)inst->tick_accum / (double)inst->tick_delta * (double)frames / fpt;
+        start = au_wrap((double)tick - 1.0 + past, L) - span;
+    } else {
+        /* a followed clock (Move's 0xF8) puts its tick on the block's frame 0
+         * (seq8_tick_frame) and says nothing between ticks: the window runs
+         * from where the last one ended to just past the tick played, all of
+         * it due at frame 0, and a block with no tick has none. (Read as our
+         * own clock's, the window ended ON the tick and every piece fell just
+         * outside it — Vintage was silent: found by review, 2026-10-29.) */
+        au_track_t *at = &inst->au_trk[t];
+        double cur = au_wrap((double)tick - 1.0 + 1e-6, L);
+        if (!at->vint_ok) { at->vint_from = au_wrap(cur - 1.0, L); at->vint_ok = 1; }
+        start = at->vint_from;
+        span = au_wrap(cur - start, L);
+        at->vint_from = cur;
+        fscale = 0.0;
+    }
     double nud = (double)cl->nudge_ms * 44.1 / fpt;
     long G = au_ceil(P - 1e-9);
     /* the pieces whose tick falls in this block, in the order they sound */
@@ -224,7 +240,11 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
         for (j = au_ceil(lo - 1e-9); (double)j < lo + span && m < AU_VINTAGE_PER_BLOCK; j++) {
             if (j < 0 || j >= G) continue;
             double T = (double)j + nud;
-            if (T >= L || T < -L) continue;             /* past the clip's end: the clip comes round first */
+            /* past the clip's end the clip comes round first; before its
+             * start (a Nudge earlier) it never plays — the loop starts that
+             * much further in, as Free's does (wrapped to the clip's end it
+             * fought the pieces due there: found by review, 2026-10-29) */
+            if (T >= L || T < 0) continue;
             double d = au_wrap(T - start, L);
             if (d >= span) continue;
             for (k = m; k > 0 && pd[k - 1] > d; k--) { pd[k] = pd[k - 1]; pj[k] = pj[k - 1]; }
@@ -240,7 +260,7 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
         if (x1 > R) x1 = R;
         uint32_t a = cl->revrs ? re - (uint32_t)x1 : rs + (uint32_t)x0;
         uint32_t b = cl->revrs ? re - (uint32_t)x0 : rs + (uint32_t)x1;
-        uint32_t off = (uint32_t)(pd[i] * fpt);
+        uint32_t off = (uint32_t)(pd[i] * fscale);
         au_range_on(inst, t, c, AU_SLICE_NONE, a, b, 1.0f, off >= (uint32_t)frames ? (uint32_t)frames - 1 : off, 1);
     }
 }
@@ -314,7 +334,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
                 if (sync) {
                     /* Vintage: the sample cut on the clock (au_sync_block). */
                     if (lv) au_voice_release(lv, 64);
-                    if (!at->sync_on || at->loop_clip != c) { at->sync_on = 1; at->sync_live = 0; at->loop_clip = (uint8_t)c; }
+                    if (!at->sync_on || at->loop_clip != c) { at->sync_on = 1; at->sync_live = 0; at->vint_ok = 0; at->loop_clip = (uint8_t)c; }
                     if (ticked) at->sync_live = 1;          /* the transport's first tick has played */
                     if (at->sync_live) au_sync_block(inst, t, c, tick, (uint32_t)lc->length * tps, fpt, frames);
                 } else {

@@ -933,6 +933,45 @@ int main(void) {
         HX_ASSERT(b16 == 0 && b128 == 0, "Vintage on a clip half the sample's Bars did not play its first half as recorded (or the chop count changed it)");
         hx_set_param(h, "t4_au_set_tempo", "7 2");              /* the old Fit */
         HX_ASSERT(ac->tempo == AU_TEMPO_VINTAGE, "Fit did not set as Vintage");
+        /* Nudge earlier on Vintage starts the loop further in, as Free's does:
+         * the pieces before the clip's start never play (wrapped to its end
+         * they fought the pieces due there, a cut every tick — found by
+         * review). 340 blocks reach the clip's last ticks, short of its wrap. */
+        hx_set_param(h, "t4_au_set_nudge", "7 -50");
+        HX_ASSERT(ramp_breaks(h, 340) == 0, "Vintage nudged -50 ms broke up at the clip's end");
+        hx_set_param(h, "t4_au_set_nudge", "7 0");
+        /* a followed clock (Move's): Vintage sounds, as Free does (it was
+         * silent — every piece fell just past the block's window) */
+        {
+            const uint8_t st = 0xFA, clk = 0xF8, sp = 0xFC;
+            int mode, fed[2];
+            for (mode = 0; mode < 2; mode++) {
+                hx_set_param(h, "t4_au_set_tempo", mode ? "7 1" : "7 0");
+                hx_set_param(h, "clock_follow_on", "1");
+                hx_stub_feed_reset();
+                hx_send_midi(h, &st, 1, MOVE_MIDI_SOURCE_INTERNAL);
+                inst->playing = 1;
+                hx_render(h, 2);
+                fed[mode] = 0;
+                for (i = 0; i < 300; i++) {
+                    const int16_t *fb;
+                    int k2, any = 0;
+                    hx_send_midi(h, &clk, 1, MOVE_MIDI_SOURCE_INTERNAL);
+                    hx_render(h, 2);
+                    fb = hx_stub_feed_last(4);
+                    for (k2 = 0; fb && k2 < 128; k2++) if (fb[k2 * 2]) any = 1;
+                    fed[mode] += any;
+                }
+                hx_send_midi(h, &sp, 1, MOVE_MIDI_SOURCE_INTERNAL);
+                inst->playing = 0;
+                hx_set_param(h, "clock_follow_on", "0");
+                hx_set_param(h, "transport", "stop");
+                hx_render(h, 60);
+            }
+            HX_ASSERT(fed[0] > 250, "the Free control did not sound under a followed clock");
+            HX_ASSERT(fed[1] > 250, "Vintage was silent under a followed clock");
+        }
+        hx_set_param(h, "t4_au_set_tempo", "7 1");
         /* Pitch: Start..End (88200 frames) over the sample's Bars, not the
          * clip (Josh: "does pitch sync'ing not respect the set bars?"): 1 bar
          * at 120 is 2 s = as recorded, though the clip is half a bar; 2 bars
