@@ -626,6 +626,11 @@ export const BANKS = [
      * on every walk. All stubs: sound mode owns the screen, and the bank has no
      * knobs. */
     { name: 'CONFIG', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
+    /* 17 — BANK_AUDIO, shown as SLICE or LOOP by the clip's mode (bankDisplayName; Josh, 2026-10-28: "slice/loop") — an Audio track's clip sound, as a bank with
+     * PAGES (Josh, 2026-10-28: "can audio be a bank?" · "yes"): CLIP, and
+     * SLICE n in Slice mode; a plain jog turn flips them. ui_audio owns the
+     * cells and the knobs (the old AUDIO editor's). */
+    { name: 'SLICE', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
 ];
 
 /* Conductor bank indices. Bank 0 (CLIP) is reused as the "Conduct" bank. */
@@ -653,6 +658,8 @@ export const BANK_CHORD = BANK_PADMODE;
 /* The CONFIG bank (see BANKS[16]): first on every walk; its card is the TRACK
  * CONFIG menu at rest, the third bank whose screen is sound mode's. */
 export const BANK_CONFIG = 16;
+/* The AUDIO bank (see BANKS[17]): an Audio track's only, a bank with pages. */
+export const BANK_AUDIO = 17;
 export function isSoundBank(b) { return b === BANK_SOUND || b === BANK_MACROS || b === BANK_CONFIG; }
 
 /* The track's DEFAULT bank — CLIP on a melodic track, DRUM LANE on a drum one,

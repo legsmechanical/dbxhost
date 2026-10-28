@@ -14,7 +14,7 @@
 import { S } from './ui_state.mjs';
 import { PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_AUDIO, NUM_STEPS, BANKS,
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION,
-    BANK_CHORD, BANK_CONFIG, isSoundBank } from './ui_constants.mjs';
+    BANK_CHORD, BANK_CONFIG, BANK_AUDIO, isSoundBank } from './ui_constants.mjs';
 
 /* Live pad note input — isomorphic 4ths diatonic layout.
  * EXPORTED for ui.js's computePadNoteMap (impure, moves in Phase 5) — do not
@@ -60,8 +60,18 @@ export const SCALE_INTERVALS = [
  * heading and overlay"; CLIP "rename conduct", ON/OFF "RENAME RESPONDER",
  * TIMING "RENAME WHEN"). */
 const CONDUCT_NAMES = { 0: 'CLIP', [BANK_RESPONDER]: 'ON/OFF', [BANK_WHEN]: 'TIMING' };
-export function bankDisplayName(padMode, bank) {
+/* An Audio track's sound bank is named for the clip's mode (Josh,
+ * 2026-10-28: "slice/loop"), as its first page is (ALL SLICES / LOOP). The
+ * clip is the one ui_audio's auClipOf edits. */
+function audioBankName(t) {
+    const qc = S.trackQueuedClip ? S.trackQueuedClip[t] : -1;
+    const c = (!S.playing && qc >= 0) ? qc : (S.trackActiveClip ? S.trackActiveClip[t] | 0 : 0);
+    const i = S.auInfo && S.auInfo[t] && S.auInfo[t][c];
+    return i && i.mode === 1 ? 'SLICE' : 'LOOP';
+}
+export function bankDisplayName(padMode, bank, t = S.activeTrack) {
     const base = (BANKS[bank] && BANKS[bank].name) || '?';
+    if (padMode === PAD_MODE_AUDIO && bank === BANK_AUDIO) return audioBankName(t);
     if (padMode === PAD_MODE_CONDUCT) return CONDUCT_NAMES[bank] || base;
     if (padMode === PAD_MODE_DRUM) {
         if (bank === 0) return 'DRUM LANE';
@@ -160,9 +170,14 @@ export function bankCategoriesForMode(padMode, t) {
         const slice = audioClipIsSlice(t === undefined ? S.activeTrack : t);
         return [
             { label: null,   banks: [BANK_CONFIG] },
+            /* IN (2026-10-28: "pad mode bank on IN column" · "let's add an
+             * input arp to it too"): PAD MODE's Layout, and LIVE ARP */
+            { label: 'IN',   banks: [BANK_CHORD, 5] },
             { label: 'CTRL', banks: [BANK_MACROS, BANK_AUTOMATION] },
             { label: 'SEQ',  banks: slice ? [BANK_STEP, 0] : [0] },
             { label: 'FX',   banks: slice ? [1] : [] },
+            /* AUDIO: the clip's sound, a bank with pages (Josh, 2026-10-28) */
+            { label: null,   banks: [BANK_AUDIO] },
             { label: null,   banks: [BANK_SOUND] },
         ].filter((g) => g.banks.length);
     }
@@ -219,16 +234,16 @@ const BANK_MAP_POS = {
                [BANK_RESPONDER]: [1, 0], [BANK_OCTAVE]: [1, 1], [BANK_WHEN]: [1, 2],
                0: [2, 0], [BANK_STEP]: [2, 1],
                1: [3, 0] },
-    audio:   { [BANK_CONFIG]: [0, 3],
+    audio:   { [BANK_CHORD]: [0, 0], 5: [0, 1], [BANK_CONFIG]: [0, 3],
                [BANK_MACROS]: [1, 0], [BANK_AUTOMATION]: [1, 1], [BANK_SOUND]: [1, 3],
-               [BANK_STEP]: [2, 0], 0: [2, 1],
+               [BANK_STEP]: [2, 0], 0: [2, 1], [BANK_AUDIO]: [2, 2],
                1: [3, 0] },
 };
 const BANK_MAP_LABELS = {
     melodic: ['IN', 'CTRL', 'SEQ', 'FX'],
     drum:    ['IN', 'CTRL', 'SEQ', 'FX'],
     conduct: [null, 'RSPD', 'SEQ', 'FX'],
-    audio:   [null, 'CTRL', 'SEQ', 'FX'],
+    audio:   ['IN', 'CTRL', 'SEQ', 'FX'],
 };
 /* ACTION pads: not banks — a tap goes somewhere (Josh, 2026-10-04: "add an
  * "inst" pad to the right of the mix pad - also red. jumps directly to
@@ -241,11 +256,14 @@ const BANK_MAP_ACTIONS = {
     /* WAVE (Josh, 2026-10-28, from the Layout Map: "new editor: wav" under
      * CLIP): the clip's sample — its waveform, chops and the load / chop
      * picker (ui_audio_editor). */
-    audio:   { inst: [2, 3], wave: [2, 2] },
+    /* SAMPLE is the instrument door, so it sits where INST does on every
+     * other track; the SLICE / LOOP bank under CLIP (Josh, 2026-10-28: "i
+     * thought sample and loop/slice were going to switch spots?") */
+    audio:   { wave: [2, 3] },
 };
 /* The instrument door on an Audio track is the AUDIO editor, and says so. */
 const BANK_MAP_ACTION_NAMES = { inst: 'INST' };
-const BANK_MAP_ACTION_NAMES_AUDIO = { inst: 'AUDIO', wave: 'WAVE' };
+const BANK_MAP_ACTION_NAMES_AUDIO = { wave: 'SAMPLE' };
 /* AUTOMATION has no space to wrap at and is wider than a cell. */
 const BANK_MAP_SHORT = { [BANK_AUTOMATION]: 'AUTO' };
 
@@ -263,7 +281,7 @@ export function bankPadMapForMode(padMode, t) {
     for (const b of bankListForMode(padMode, t)) {
         const p = pos[b];
         if (!p || cols[p[0]].cells[p[1]]) continue;
-        cols[p[0]].cells[p[1]] = { bank: b, name: BANK_MAP_SHORT[b] || bankDisplayName(padMode, b) };
+        cols[p[0]].cells[p[1]] = { bank: b, name: BANK_MAP_SHORT[b] || bankDisplayName(padMode, b, t) };
     }
     const acts = BANK_MAP_ACTIONS[fam];
     for (const a in acts) {
@@ -330,11 +348,11 @@ export function bankMapModuleAt(route, padMode, col, row) {
     const p = BANK_MAP_MODULE_PADS.find((m) => m.col === col && m.row === row);
     if (!p) return null;
     /* Audio: FX 1-4 lit, the MIDI FX pad dark (nothing on the track receives
-     * MIDI — Q4, Josh 2026-10-27: "agreed"), the instrument pad the AUDIO
-     * editor. */
+     * MIDI — Q4, Josh 2026-10-27: "agreed"), the instrument pad SAMPLE, the
+     * sample's editor (Josh, 2026-10-28). */
     if (padMode === PAD_MODE_AUDIO) {
         if (p.comp === 'midi_fx1') return null;
-        if (p.comp === 'synth') return Object.assign({}, p, { label: 'AUDIO' });
+        if (p.comp === 'synth') return Object.assign({}, p, { label: 'SAMPLE' });
         return p;
     }
     if (route === 2) return p.comp === 'midi_fx1' ? p : null;

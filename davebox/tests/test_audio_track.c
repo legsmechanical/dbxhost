@@ -26,6 +26,8 @@
  *   - the project file keeps it all and a reload loads the samples again; a
  *     set from the drum-flag build loads as a drum track. */
 #include "harness.h"
+#include <math.h>
+#include <signal.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -177,6 +179,55 @@ static int clip_pitches(seq8_instance_t *inst, int t, int c, int *out, int max) 
     return n;
 }
 
+/* mono 44.1 kHz: `secs` of quarter-note clicks at `bpm` (a 10 ms decaying burst each) */
+static void write_clicks(const char *path, double secs, double bpm) {
+    FILE *f = fopen(path, "wb");
+    uint32_t n = (uint32_t)(44100 * secs), i, beat = (uint32_t)(44100.0 * 60.0 / bpm);
+    fwrite("RIFF", 1, 4, f); put_le32(f, 36 + n * 2); fwrite("WAVEfmt ", 1, 8, f);
+    put_le32(f, 16); put_le16(f, 1); put_le16(f, 1); put_le32(f, 44100); put_le32(f, 88200);
+    put_le16(f, 2); put_le16(f, 16);
+    fwrite("data", 1, 4, f); put_le32(f, n * 2);
+    for (i = 0; i < n; i++) {
+        uint32_t ph = i % beat;
+        put_le16(f, ph < 441 ? (int)((ph & 1 ? 1 : -1) * (20000 - ph * 40)) : 0);
+    }
+    fclose(f);
+}
+
+/* Play `blocks` blocks from the transport's start and count where the ramp
+ * the clip feeds did not go on by one (a cut, a jump or a silent block). */
+/* a render that never returns is an audio-thread hang on the device */
+static void on_hang(int sig) {
+    static const char m[] = "FAIL: the render hung (audio-thread hang)\n";
+    (void)sig;
+    if (write(2, m, sizeof m - 1) < 0) {}
+    _exit(3);
+}
+
+static int ramp_breaks(hx_t *h, int blocks) {
+    const int16_t *b;
+    int prev = -1, breaks = 0, k, n, fed;
+    hx_stub_feed_reset();
+    hx_set_param(h, "transport", "play");
+    for (n = 0; n < 20 && hx_stub_feed(4, NULL, NULL) == 0; n++) hx_render(h, 1);
+    fed = hx_stub_feed(4, NULL, NULL);
+    b = hx_stub_feed_last(4);
+    for (k = 0; k < 128; k++) if (b[k * 2]) prev = b[k * 2];
+    for (n = 0; n < blocks; n++) {
+        hx_render(h, 1);
+        if (hx_stub_feed(4, NULL, NULL) == fed) { breaks++; continue; }
+        fed = hx_stub_feed(4, NULL, NULL);
+        b = hx_stub_feed_last(4);
+        for (k = 0; k < 128; k++) {
+            if (b[k * 2] != (prev + 1) % 30000) breaks++;
+            prev = b[k * 2];
+        }
+    }
+    hx_set_param(h, "transport", "stop");
+    hx_render(h, 60);
+    return breaks;
+}
+
 int main(void) {
     hx_t *h;
     seq8_instance_t *inst;
@@ -213,7 +264,11 @@ int main(void) {
     hx_set_param(h, "t6_convert_to_drum", "");
     hx_set_param(h, "t6_convert_to_audio", "");
     HX_ASSERT(inst->tracks[6].pad_mode == PAD_MODE_AUDIO, "a drum track did not become Audio");
+    /* the arp's Step reaches 15 on Audio; leaving, it comes back to ±4 octaves */
+    hx_set_param(h, "t6_tarp_octaves", "15");
+    HX_ASSERT(inst->tracks[6].tarp.octaves == 15, "Audio's arp Step did not reach 15");
     hx_set_param(h, "t6_convert_to_melodic", "");
+    HX_ASSERT(inst->tracks[6].tarp.octaves == 4, "leaving Audio kept a 15-octave arp");
 
     /* ---- pick: copied into the project, loaded off-thread ---- */
     snprintf(p, sizeof p, "0|%s/src/mono48.wav", g_root);
@@ -233,11 +288,11 @@ int main(void) {
     hx_set_param(h, "t4_au_set_mode", "0 1");
     {
         int np = clip_pitches(inst, 4, 0, pit, 64), k, ordered = np == 16;
-        for (k = 0; ordered && k < 16; k++) if (pit[k] != DRUM_BASE_NOTE + k) ordered = 0;
+        for (k = 0; ordered && k < 16; k++) if (pit[k] != AU_NOTE_BASE + k) ordered = 0;
         HX_ASSERT(ordered, "switching a stepless clip to Slice did not lay its 16 chops in order");
     }
     hx_set_param(h, "t4_au_set_mode", "0 0");
-    hx_set_param(h, "t4_c0_step_0_toggle", "36");        /* a step of the user's own */
+    hx_set_param(h, "t4_c0_step_0_toggle", "0");         /* a step of the user's own */
     hx_set_param(h, "t4_au_set_mode", "0 1");
     HX_ASSERT(clip_pitches(inst, 4, 0, pit, 64) == 15, "switching a clip WITH steps to Slice rewrote them");
     hx_set_param(h, "t4_au_wipe", "0");
@@ -281,12 +336,12 @@ int main(void) {
     hx_render(h, 40);
     hx_stub_feed_reset();
     hx_clear_capture(h);
-    live_note_on(inst, tr, DRUM_BASE_NOTE + 2, 100);
+    live_note_on(inst, tr, AU_NOTE_BASE + 2, 100);
     hx_render(h, 1);
     blk = hx_stub_feed_last(4);
     HX_ASSERT(hx_stub_feed(4, NULL, NULL) >= 1 && blk[255] == 3000, "a played note did not reach slice 3 untouched");
     HX_ASSERT(note_events_on_slot(4) == 0 && hx_count_midi(h, HX_MIDI_INTERNAL) == 0, "an Audio track sent MIDI");
-    live_note_off(inst, tr, DRUM_BASE_NOTE + 2);
+    live_note_off(inst, tr, AU_NOTE_BASE + 2);
     hx_set_param(h, "t4_transpose", "0");
     tr->pfx.octave_shift = 0; tr->pfx.note_offset = 0;
     hx_render(h, 60);
@@ -294,9 +349,9 @@ int main(void) {
     /* ---- DELAY left Audio tracks: an older project's DELAY echoes nothing ---- */
     tr->pfx.delay_time_idx = 3; tr->pfx.delay_level = 64; tr->pfx.repeat_times = 1; tr->pfx.fb_velocity = 0;
     hx_stub_feed_reset();
-    live_note_on(inst, tr, DRUM_BASE_NOTE + 2, 100);
+    live_note_on(inst, tr, AU_NOTE_BASE + 2, 100);
     hx_render(h, 1);
-    live_note_off(inst, tr, DRUM_BASE_NOTE + 2);
+    live_note_off(inst, tr, AU_NOTE_BASE + 2);
     HX_ASSERT(hx_stub_feed_last(4)[255] == 3000, "the played slice was not at full level");
     /* the track feeds its slot only while a voice sounds: slice 3 (6000
      * frames) fills 47 blocks; an echo 1/16 later would play it again */
@@ -316,10 +371,10 @@ int main(void) {
         hx_get_param(h, "t4_au_marks_0", mk, sizeof mk);
         HX_ASSERT(!strcmp(mk, "0 12000 12000 48000"), "marks: two slices, home ends");
         /* steps follow a marker: slice 2's step plays the same audio after a split before it */
-        hx_set_param(h, "t4_c0_step_4_toggle", "37");
+        hx_set_param(h, "t4_c0_step_4_toggle", "1");
         hx_set_param(h, "t4_au_mark_add", "0 6000");
         HX_ASSERT(ac->nslices == 3 && ac->sl[1].start == 6000 && ac->sl[2].start == 12000, "the middle marker");
-        HX_ASSERT(clip_pitches(inst, 4, 0, pit, 64) == 1 && pit[0] == DRUM_BASE_NOTE + 2, "a split did not move the later slice's step up");
+        HX_ASSERT(clip_pitches(inst, 4, 0, pit, 64) == 1 && pit[0] == AU_NOTE_BASE + 2, "a split did not move the later slice's step up");
         hx_set_param(h, "t4_au_mark_add", "0 6005");
         HX_ASSERT(ac->nslices == 3, "a marker on top of a marker was added");
         /* slice 2 (6000..12000) plays the third eighth: 2000 */
@@ -330,7 +385,7 @@ int main(void) {
         hx_render(h, 60);
         hx_set_param(h, "t4_au_mark_del", "0 1");
         HX_ASSERT(ac->nslices == 2 && ac->sl[1].start == 12000, "a marker did not go");
-        HX_ASSERT(clip_pitches(inst, 4, 0, pit, 64) == 1 && pit[0] == DRUM_BASE_NOTE + 1, "a delete did not move the later step down");
+        HX_ASSERT(clip_pitches(inst, 4, 0, pit, 64) == 1 && pit[0] == AU_NOTE_BASE + 1, "a delete did not move the later step down");
         hx_set_param(h, "t4_au_mark_del", "0 0");
         HX_ASSERT(ac->nslices == 2 && ac->sl[0].start == 0, "slice 1's start was deleted");
         hx_set_param(h, "t4_au_wipe", "0");
@@ -455,7 +510,7 @@ int main(void) {
     hx_set_param(h, "t4_au_chop", "0");
     n = clip_pitches(inst, 4, 0, pit, 64);
     HX_ASSERT(n == 8, "Chop did not lay one step per slice");
-    for (i = 0; i < 8; i++) HX_ASSERT(pit[i] == DRUM_BASE_NOTE + i, "Chop's notes are not slices 1..8 in order");
+    for (i = 0; i < 8; i++) HX_ASSERT(pit[i] == AU_NOTE_BASE + i, "Chop's notes are not slices 1..8 in order");
     HX_ASSERT(tr->clips[0].notes[3].tick == 3 * 48, "slice 4's step is not at 3/8 of the bar");
     hx_stub_feed_reset();
     hx_set_param(h, "t4_launch_clip", "0");
@@ -487,35 +542,50 @@ int main(void) {
     tr->recording = 0;
     HX_ASSERT(tr->clips[0].note_count <= 2 && clip_pitches(inst, 4, 0, pit, 64) == 1,
               "overdubbing one step grew the clip's notes");
-    /* ...and LIVE ARP leaves slices alone */
-    tr->tarp_on = 1;
-    hx_stub_feed_reset();
-    live_note_on(inst, tr, DRUM_BASE_NOTE + 2, 100);
-    hx_render(h, 1);
-    HX_ASSERT(hx_stub_feed_last(4)[255] == 3000, "LIVE ARP on an Audio track did not play the slice as played");
-    live_note_off(inst, tr, DRUM_BASE_NOTE + 2);
-    tr->tarp_on = 0;
+    /* ...and LIVE ARP on Audio repeats a step of one CHOP, not an octave
+     * (Josh, 2026-10-28: "change octave to "step""): Up, Step 2, chop 3 held
+     * plays chops 3, 4, 5 */
+    hx_set_param(h, "t4_tarp_octaves", "9");
+    HX_ASSERT(tr->tarp.octaves == 9, "Step did not reach past an octave's 4 on an Audio track");
+    hx_set_param(h, "t4_tarp_octaves", "2");
+    tr->tarp_on = 1; tr->tarp.style = 1; tr->tarp.rate_idx = 0;
+    live_note_on(inst, tr, AU_NOTE_BASE + 2, 100);
+    {
+        int seen[AU_MAX_SLICES] = { 0 }, vi, other = 0;
+        for (i = 0; i < 400; i++) {
+            hx_render(h, 1);
+            for (vi = 0; vi < AU_VOICES; vi++) {
+                const au_voice_t *v = &inst->au_trk[4].v[vi];
+                if (v->active && !v->mode_loop) seen[v->slice] = 1;
+            }
+        }
+        for (vi = 0; vi < AU_MAX_SLICES; vi++) if (seen[vi] && (vi < 2 || vi > 4)) other = 1;
+        HX_ASSERT(seen[2] && seen[3] && seen[4] && !other, "LIVE ARP Step 2 did not play chops 3, 4, 5 alone");
+    }
+    live_note_off(inst, tr, AU_NOTE_BASE + 2);
+    tr->tarp_on = 0; tr->tarp.style = 0;
+    hx_set_param(h, "t4_tarp_octaves", "0");
     hx_render(h, 60);
     hx_set_param(h, "t4_au_wipe", "0");
 
     /* ---- a step holds one slice: placed by hand or recorded ---- */
-    hx_set_param(h, "t4_c0_step_2_toggle", "38");
-    hx_set_param(h, "t4_c0_step_2_toggle", "40");
-    HX_ASSERT(tr->clips[0].step_note_count[2] == 1 && tr->clips[0].step_notes[2][0] == 40,
+    hx_set_param(h, "t4_c0_step_2_toggle", "2");
+    hx_set_param(h, "t4_c0_step_2_toggle", "4");
+    HX_ASSERT(tr->clips[0].step_note_count[2] == 1 && tr->clips[0].step_notes[2][0] == 4,
               "a second slice placed on a step did not replace the first");
     hx_set_param(h, "t4_au_wipe", "0");
     tr->recording = 1; tr->current_clip_tick = 0;
-    hx_set_param(h, "t4_record_note_on", "e38 100");
-    hx_set_param(h, "t4_record_note_off", "e38");
-    hx_set_param(h, "t4_record_note_on", "e41 100");
-    hx_set_param(h, "t4_record_note_off", "e41");
+    hx_set_param(h, "t4_record_note_on", "e2 100");
+    hx_set_param(h, "t4_record_note_off", "e2");
+    hx_set_param(h, "t4_record_note_on", "e5 100");
+    hx_set_param(h, "t4_record_note_off", "e5");
     n = clip_pitches(inst, 4, 0, pit, 64);
-    HX_ASSERT(n == 1 && pit[0] == 41, "recording left two slices on one step");
+    HX_ASSERT(n == 1 && pit[0] == 5, "recording left two slices on one step");
     /* Loop mode records nothing */
     hx_set_param(h, "t4_au_set_mode", "0 0");
     tr->current_clip_tick = 24 * 4;
-    hx_set_param(h, "t4_record_note_on", "e44 100");
-    hx_set_param(h, "t4_record_note_off", "e44");
+    hx_set_param(h, "t4_record_note_on", "e8 100");
+    hx_set_param(h, "t4_record_note_off", "e8");
     HX_ASSERT(clip_pitches(inst, 4, 0, pit, 64) == 1, "a Loop clip recorded a slice");
     tr->recording = 0;
     hx_set_param(h, "t4_au_set_mode", "0 1");
@@ -612,7 +682,7 @@ int main(void) {
         sscanf(wv + 63 * 4 + 2, "%2x", &hi);
         HX_ASSERT(hi == 20000 / 256, "a one-frame peak vanished from the wide waveform");
     }
-    hx_set_param(h, "t4_au_set_bars", "6 1");
+    hx_set_param(h, "t4_au_set_len_bars", "6 1");
     hx_stub_feed_reset();
     hx_set_param(h, "t4_launch_clip", "6");
     hx_set_param(h, "transport", "play");
@@ -737,8 +807,8 @@ int main(void) {
      * plays on, unfaded, up to that frame ---- */
     hx_render(h, 60);                                         /* the last chop rings out */
     hx_set_param(h, "t4_au_wipe", "7");
-    hx_set_param(h, "t4_c7_step_0_toggle", "41");             /* chop 6: not followed by its next */
-    hx_set_param(h, "t4_c7_step_1_toggle", "36");             /* chop 1 */
+    hx_set_param(h, "t4_c7_step_0_toggle", "5");              /* chop 6: not followed by its next */
+    hx_set_param(h, "t4_c7_step_1_toggle", "0");              /* chop 1 */
     hx_stub_feed_reset();
     hx_set_param(h, "transport", "play");
     {
@@ -761,7 +831,379 @@ int main(void) {
     }
     hx_set_param(h, "transport", "stop");
     hx_render(h, 4);
+
+    /* ---- Tempo Vintage (Josh, 2026-10-29: "make it as fine as possible and
+     * call it "vintage""): the sample cut on the clock, one piece a tick. At
+     * the loop's own tempo it plays the sample straight through, as Free
+     * does; at another tempo each piece starts on its own tick ---- */
+    hx_render(h, 60);
+    hx_set_param(h, "t4_au_wipe", "7");                       /* no steps: Vintage needs none */
+    hx_set_param(h, "t4_au_set_mode", "7 0");
+    hx_set_param(h, "t4_au_set_tempo", "7 1");
+    HX_ASSERT(inst->au_clip[4][7].tempo == AU_TEMPO_VINTAGE && clip_pitches(inst, 4, 7, pit, 64) == 0,
+              "Tempo did not go to Vintage (or wrote steps)");
+    /* ...as recorded: the chops' own sound is Slice's, and Vintage ignores it
+     * (Josh: "attack/decay shouldn't play into it") — straight through below */
+    hx_set_param(h, "t4_au_all_atk", "7 12");
+    hx_set_param(h, "t4_au_all_dec", "7 30");
+    hx_set_param(h, "t4_au_all_pitch", "7 3");
+    hx_set_param(h, "t4_au_all_gain", "7 -6");
+    hx_set_param(h, "t4_au_all_rev", "7 1");
+    hx_set_param(h, "t4_au_all_play", "7 1");
+    HX_ASSERT(inst->au_clip[4][7].sl[1].attack_ms == 12 && inst->au_clip[4][7].sl[1].pitch == 3 && inst->au_clip[4][7].sl[1].play == 1,
+              "the chops' own sound did not set");
+    hx_stub_feed_reset();
+    hx_set_param(h, "transport", "play");
+    for (i = 0; i < 20 && hx_stub_feed(4, NULL, NULL) == 0; i++) hx_render(h, 1);
+    {
+        int prev = -1, breaks = 0, k, fed = hx_stub_feed(4, NULL, NULL), chops = 0, vi;
+        blk = hx_stub_feed_last(4);
+        for (k = 0; k < 128; k++) if (blk[k * 2]) prev = blk[k * 2];
+        for (n = 0; n < 660; n++) {
+            hx_render(h, 1);
+            for (vi = 0; vi < AU_VOICES; vi++)
+                if (inst->au_trk[4].v[vi].active && !inst->au_trk[4].v[vi].mode_loop) chops = 1;
+            if (hx_stub_feed(4, NULL, NULL) == fed) { breaks++; continue; }
+            fed = hx_stub_feed(4, NULL, NULL);
+            blk = hx_stub_feed_last(4);
+            for (k = 0; k < 128; k++) {
+                if (blk[k * 2] != (prev + 1) % 30000) breaks++;
+                prev = blk[k * 2];
+            }
+        }
+        HX_ASSERT(chops, "Vintage played the loop voice, not its pieces");
+        HX_ASSERT(breaks == 0, "Vintage at the loop's own tempo did not play the sample straight through");
+    }
+    hx_set_param(h, "transport", "stop");
+    hx_render(h, 60);
+    /* at 150 bpm a tick is 183.75 frames and holds 229.6875 of the sample (a
+     * tick at its own 120): each piece plays on from the last until it has
+     * fallen too far behind (au_range_on's join), then the sample jumps to
+     * where its tick says — always ON a tick, always to that tick's frame
+     * (read once the cut voice's 64-frame fade has gone: the two sum till then) */
+    hx_set_param(h, "bpm", "150");
+    hx_render(h, 2);
+    hx_stub_feed_reset();
+    hx_set_param(h, "transport", "play");
+    {
+        long g = 0, start = -1, chk = -1, want = 0;
+        int prev = -1, v0 = 0, fed = 0, k, ns = 0, bad = 0;
+        for (n = 0; n < 400 && ns < 6; n++) {
+            hx_render(h, 1);
+            if (hx_stub_feed(4, NULL, NULL) == fed) { g += 128; continue; }
+            fed = hx_stub_feed(4, NULL, NULL);
+            blk = hx_stub_feed_last(4);
+            for (k = 0; k < 128; k++, g++) {
+                int v = blk[k * 2];
+                if (start < 0) { if (v) { start = g; prev = v0 = v; } continue; }
+                if (chk < 0 && v - prev > 100) {
+                    /* a piece starting: on a tick */
+                    double d = (double)(g - start), j = floor(d / 183.75 + 0.5);
+                    if (fabs(d - j * 183.75) > 3) bad++;
+                    want = ((long)v0 + (long)floor(j * 229.6875 + 0.5) + 80) % 30000;
+                    chk = g + 80;
+                }
+                if (g == chk) {
+                    /* ...from its tick's frame */
+                    if (labs((long)v - want) > 3) bad++;
+                    chk = -1; ns++;
+                }
+                prev = v;
+            }
+        }
+        HX_ASSERT(start >= 0 && ns >= 3, "Vintage at 150 bpm never caught the sample up to the clock");
+        HX_ASSERT(bad == 0, "a Vintage piece at 150 bpm did not start on a tick, at that tick's frame");
+    }
+    hx_set_param(h, "transport", "stop");
+    hx_set_param(h, "bpm", "120");
+    hx_set_param(h, "t4_au_set_tempo", "7 0");
+    hx_set_param(h, "t4_au_all_atk", "7 0");
+    hx_set_param(h, "t4_au_all_dec", "7 0");
+    hx_set_param(h, "t4_au_all_pitch", "7 0");
+    hx_set_param(h, "t4_au_all_gain", "7 0");
+    hx_set_param(h, "t4_au_all_rev", "7 0");
+    hx_set_param(h, "t4_au_all_play", "7 0");
+    hx_render(h, 60);
     hx_set_param(h, "t4_launch_clip", "5");
+
+    /* ---- Tempo (Josh, 2026-10-28: "A", then "both"): Vintage places the
+     * pieces by the SAMPLE's own Bars; Pitch retunes the loop to fill them.
+     * Fit is gone (Josh, 2026-10-29): it loads and sets as Vintage ---- */
+    {
+        au_clip_t *ac = &inst->au_clip[4][7];
+        clip_t *lc = &tr->clips[7];
+        uint16_t was_len = lc->length;
+        int b16, b128;
+        hx_set_param(h, "t4_launch_clip", "7");
+        hx_render(h, 4);
+        hx_set_param(h, "t4_au_set_bars", "7 1");               /* ramp2 is 2 s: 1 bar at 120 */
+        lc->length = 8;                                         /* the clip: half of it */
+        hx_set_param(h, "t4_au_set_tempo", "7 1");
+        hx_set_param(h, "t4_au_set_even", "7 16");
+        b16 = ramp_breaks(h, 300);                              /* 300 blocks < the half bar's 344 */
+        hx_set_param(h, "t4_au_set_even", "7 128");
+        b128 = ramp_breaks(h, 300);
+        HX_ASSERT(b16 == 0 && b128 == 0, "Vintage on a clip half the sample's Bars did not play its first half as recorded (or the chop count changed it)");
+        hx_set_param(h, "t4_au_set_tempo", "7 2");              /* the old Fit */
+        HX_ASSERT(ac->tempo == AU_TEMPO_VINTAGE, "Fit did not set as Vintage");
+        /* Nudge earlier on Vintage starts the loop further in, as Free's does:
+         * the pieces before the clip's start never play (wrapped to its end
+         * they fought the pieces due there, a cut every tick — found by
+         * review). 340 blocks reach the clip's last ticks, short of its wrap. */
+        hx_set_param(h, "t4_au_set_nudge", "7 -50");
+        HX_ASSERT(ramp_breaks(h, 340) == 0, "Vintage nudged -50 ms broke up at the clip's end");
+        hx_set_param(h, "t4_au_set_nudge", "7 0");
+        /* a followed clock (Move's): Vintage plays the loop straight, as Free
+         * does, forwards and in Revrs, from the sample's first frame (it was
+         * silent, every piece just past the block's window; then, each 0xF8
+         * bringing 4 ticks at frame 0, the third piece cut the first two;
+         * then the first pulse played only its last tick) */
+        {
+            const uint8_t st = 0xFA, clk = 0xF8, sp = 0xFC;
+            int mode, silent[3], brk[3], first[3];
+            uint16_t was16 = lc->length;
+            lc->length = 16;                                    /* the whole bar */
+            for (mode = 0; mode < 3; mode++) {                  /* Free, Vintage, Vintage Revrs */
+                int prev = -1, k2, rev = mode == 2;
+                hx_set_param(h, "t4_au_set_tempo", mode ? "7 1" : "7 0");
+                hx_set_param(h, "t4_au_set_revrs", rev ? "7 1" : "7 0");
+                hx_set_param(h, "clock_follow_on", "1");
+                hx_stub_feed_reset();
+                hx_send_midi(h, &st, 1, MOVE_MIDI_SOURCE_INTERNAL);
+                inst->playing = 1;
+                hx_render(h, 2);
+                silent[mode] = brk[mode] = 0; first[mode] = -1;
+                /* one 0xF8 every 7 blocks (896 frames: ~123 bpm on a 120 bpm
+                 * loop); breaks and silence count after the first 96 blocks */
+                for (i = 0; i < 96 * 7; i++) {
+                    int before = hx_stub_feed(4, NULL, NULL);
+                    const int16_t *fb;
+                    if (i % 7 == 0) hx_send_midi(h, &clk, 1, MOVE_MIDI_SOURCE_INTERNAL);
+                    hx_render(h, 1);
+                    fb = hx_stub_feed(4, NULL, NULL) == before ? NULL : hx_stub_feed_last(4);
+                    for (k2 = 0; fb && first[mode] < 0 && k2 < 128; k2++) if (fb[k2 * 2]) first[mode] = fb[k2 * 2];
+                    if (i < 96) continue;
+                    if (!fb) { silent[mode]++; prev = -1; continue; }
+                    for (k2 = 0; k2 < 128; k2++) {
+                        int want = rev ? (prev - 1 + 30000) % 30000 : (prev + 1) % 30000;
+                        if (!fb[k2 * 2]) silent[mode]++;
+                        else if (prev >= 0 && fb[k2 * 2] != want) brk[mode]++;
+                        prev = fb[k2 * 2];
+                    }
+                }
+                hx_send_midi(h, &sp, 1, MOVE_MIDI_SOURCE_INTERNAL);
+                inst->playing = 0;
+                hx_set_param(h, "clock_follow_on", "0");
+                hx_set_param(h, "transport", "stop");
+                hx_render(h, 60);
+            }
+            hx_set_param(h, "t4_au_set_revrs", "7 0");
+            HX_ASSERT(silent[0] < 64 && brk[0] < 200, "the Free control did not play straight under a followed clock");
+            /* Vintage's breaks: a cut each time the slightly fast clock pulls
+             * it AU_JOIN ahead (~6 here, ~390 samples); a cut a pulse would be
+             * thousands */
+            HX_ASSERT(silent[1] < 64 && silent[2] < 64, "Vintage fell silent under a followed clock");
+            HX_ASSERT(brk[1] < 1000, "Vintage broke up under a followed clock");
+            HX_ASSERT(brk[2] < 1000, "Vintage in Revrs broke up under a followed clock");
+            HX_ASSERT(first[1] >= 0 && first[1] <= 2, "Vintage's first pulse did not start at the sample's first frame");
+            /* the clip counter jumping (Loop moved, Dir changed) without the
+             * loop restarting: Vintage plays on from where the clip now is,
+             * no burst */
+            {
+                const int16_t *fb;
+                int v0 = -1, v1 = -1, k3;
+                hx_set_param(h, "t4_au_set_tempo", "7 1");
+                hx_set_param(h, "clock_follow_on", "1");
+                hx_send_midi(h, &st, 1, MOVE_MIDI_SOURCE_INTERNAL);
+                inst->playing = 1;
+                for (i = 0; i < 70; i++) { if (i % 7 == 0) hx_send_midi(h, &clk, 1, MOVE_MIDI_SOURCE_INTERNAL); hx_render(h, 1); }
+                fb = hx_stub_feed_last(4);
+                for (k3 = 0; k3 < 128; k3++) if (fb[k3 * 2]) v0 = fb[k3 * 2];
+                tr->current_step = (uint16_t)((tr->current_step + 8) % 16);   /* half a bar on */
+                for (i = 0; i < 7; i++) { if (i % 7 == 0) hx_send_midi(h, &clk, 1, MOVE_MIDI_SOURCE_INTERNAL); hx_render(h, 1); }
+                fb = hx_stub_feed_last(4);
+                for (k3 = 0; k3 < 128; k3++) if (fb[k3 * 2]) v1 = fb[k3 * 2];
+                /* 7 blocks on and half the bar (44100 frames) further */
+                HX_ASSERT(v0 > 0 && v1 > 0 && abs((v1 - v0 + 2 * 30000 - 44100 % 30000) % 30000 - 7 * 128) < 2000,
+                          "Vintage did not play on from where a jumped clip counter is");
+                hx_send_midi(h, &sp, 1, MOVE_MIDI_SOURCE_INTERNAL);
+                inst->playing = 0;
+                hx_set_param(h, "clock_follow_on", "0");
+                hx_set_param(h, "transport", "stop");
+                hx_render(h, 60);
+            }
+            /* Record with a count-in under a followed clock: the count-in's
+             * end resets the 32-bit master tick inside the block, and the
+             * tick count underflowed — the render never returned (a frozen
+             * Move: found by review). Vintage plays on after it. */
+            {
+                int guard = 0, fedafter = 0, before;
+                hx_set_param(h, "t4_au_set_tempo", "7 1");
+                hx_set_param(h, "clock_follow_on", "1");
+                hx_send_midi(h, &st, 1, MOVE_MIDI_SOURCE_INTERNAL);
+                inst->playing = 1;
+                for (i = 0; i < 70; i++) { if (i % 7 == 0) hx_send_midi(h, &clk, 1, MOVE_MIDI_SOURCE_INTERNAL); hx_render(h, 1); }
+                hx_set_param(h, "record_count_in", "1");          /* a count-in, then track 1 records */
+                HX_ASSERT(inst->count_in_ticks > 0, "no count-in started");
+                signal(SIGALRM, on_hang);
+                alarm(10);
+                /* the ticks a block consumed: the difference, or — the master
+                 * tick reset to 0 inside the block — the ticks since */
+                HX_ASSERT(au_block_ticks(40, 36) == 4 && au_block_ticks(3, 420) == 3 && au_block_ticks(0, 420) == 0 &&
+                          au_block_ticks(500, 36) == AU_VINTAGE_PER_BLOCK, "au_block_ticks miscounts");
+                /* and au_wrap ends for any input (the audio thread calls it) */
+                HX_ASSERT(au_wrap(-1.8e19, 384.0) >= 0.0 && au_wrap(-1.8e19, 384.0) < 384.0 &&
+                          au_wrap(1e30, 384.0) == 0.0 && au_wrap(-5.0, 4.0) == 3.0 && au_wrap(9.5, 4.0) == 1.5,
+                          "au_wrap is wrong for a far-out or ordinary value");
+                while (inst->count_in_ticks > 0 && guard++ < 20000) {
+                    if (guard % 7 == 0) hx_send_midi(h, &clk, 1, MOVE_MIDI_SOURCE_INTERNAL);
+                    hx_render(h, 1);
+                }
+                HX_ASSERT(inst->count_in_ticks == 0, "the count-in never ended");
+                hx_stub_feed_reset(); before = hx_stub_feed(4, NULL, NULL);
+                for (i = 0; i < 70; i++) {
+                    if (i % 7 == 0) hx_send_midi(h, &clk, 1, MOVE_MIDI_SOURCE_INTERNAL);
+                    hx_render(h, 1);
+                    if (hx_stub_feed(4, NULL, NULL) != before) { fedafter++; before = hx_stub_feed(4, NULL, NULL); }
+                }
+                alarm(0);
+                HX_ASSERT(fedafter > 50, "Vintage did not play on after a count-in under a followed clock");
+                hx_send_midi(h, &sp, 1, MOVE_MIDI_SOURCE_INTERNAL);
+                inst->playing = 0;
+                hx_set_param(h, "clock_follow_on", "0");
+                hx_set_param(h, "transport", "stop");
+                inst->tracks[1].recording = 0;                  /* the count-in's take, done */
+                inst->tracks[1].clip_playing = 0;
+                hx_render(h, 60);
+            }
+            lc->length = was16;
+            hx_set_param(h, "bpm", "120");                      /* the followed clock left ~123 */
+            hx_render(h, 2);
+        }
+        hx_set_param(h, "t4_au_set_tempo", "7 1");
+        /* Pitch: Start..End (88200 frames) over the sample's Bars, not the
+         * clip (Josh: "does pitch sync'ing not respect the set bars?"): 1 bar
+         * at 120 is 2 s = as recorded, though the clip is half a bar; 2 bars
+         * is half speed */
+        hx_set_param(h, "t4_au_set_tempo", "7 3");
+        hx_set_param(h, "transport", "play");
+        hx_render(h, 8);
+        {
+            const au_voice_t *lv = NULL;
+            for (i = 0; i < AU_VOICES; i++)
+                if (inst->au_trk[4].v[i].active && inst->au_trk[4].v[i].mode_loop && !inst->au_trk[4].v[i].rel_len) lv = &inst->au_trk[4].v[i];
+            HX_ASSERT(lv && lv->step > 1.0 - 1e-9 && lv->step < 1.0 + 1e-9, "Pitch did not retune the loop to its Bars (1)");
+            hx_set_param(h, "t4_au_set_bars", "7 2");
+            hx_render(h, 2);
+            HX_ASSERT(lv->active && lv->step > 0.5 - 1e-9 && lv->step < 0.5 + 1e-9, "Pitch did not retune the loop to its Bars (2)");
+            hx_set_param(h, "t4_au_set_bars", "7 1");
+        }
+        hx_set_param(h, "transport", "stop");
+        hx_render(h, 60);
+
+        /* the user's chops play no part (Josh, 2026-10-29: "chops should just
+         * be completely invisible in loop mode"): a hand set whose first chop
+         * is a quarter in still plays Start..End whole on Vintage */
+        {
+            au_slice_t bak[2];
+            uint8_t be = ac->even, bn = ac->nslices;
+            int bh;
+            memcpy(bak, ac->sl, sizeof bak);
+            lc->length = 16;
+            hx_set_param(h, "t4_au_set_tempo", "7 1");
+            ac->even = 0; ac->nslices = 2;
+            memset(ac->sl, 0, 2 * sizeof ac->sl[0]);
+            ac->sl[0].start = 22050; ac->sl[1].start = 66150;
+            bh = ramp_breaks(h, 300);
+            HX_ASSERT(bh == 0, "Vintage followed the user's chops");
+            ac->even = be; ac->nslices = bn;
+            memcpy(ac->sl, bak, sizeof bak);
+            lc->length = 8;
+        }
+
+        /* Loop + steps on a Loop clip sets Start..End to the part of the
+         * sample under the window, the steps over its Bars (Josh: "a loop
+         * length in loop mode that directly changes the start/end point") */
+        {
+            uint32_t ors = ac->rstart, ore = ac->rend;
+            uint16_t ols = lc->loop_start, olen = lc->length;
+            uint32_t tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
+            double per = (double)ac->smp->frames / (PPQN * 4.0 / tps);   /* frames a step, 1 bar */
+            snprintf(p, sizeof p, "%d", (4 << 16) | 8);
+            hx_set_param(h, "t4_c7_loop_set", p);
+            HX_ASSERT(lc->loop_start == 4 && lc->length == 8, "the window was not set");
+            HX_ASSERT(ac->rstart + 1 >= (uint32_t)(4 * per) && ac->rstart <= (uint32_t)(4 * per) + 1 &&
+                      ac->rend + 1 >= (uint32_t)(12 * per) && ac->rend <= (uint32_t)(12 * per) + 1,
+                      "Start..End did not follow the Loop window");
+            ac->mode = AU_MODE_SLICE;
+            hx_set_param(h, "t4_c7_loop_set", "16");
+            HX_ASSERT(ac->rstart + 1 >= (uint32_t)(4 * per) && ac->rstart <= (uint32_t)(4 * per) + 1, "a Slice clip's window moved Start");
+            ac->mode = AU_MODE_LOOP;
+            ac->rstart = ors; ac->rend = ore; lc->loop_start = ols; lc->length = olen;
+        }
+
+        /* >Seq: each chop on the step of its place in the sample's own Bars */
+        hx_set_param(h, "t4_au_set_tempo", "7 0");
+        hx_set_param(h, "t4_au_set_even", "7 16");
+        hx_set_param(h, "t4_au_chop", "7");                     /* a set length stays: 8 steps */
+        {
+            int got = clip_pitches(inst, 4, 7, pit, 64);
+            HX_ASSERT(got == 16 && lc->length == 8, ">Seq on a set length did not lay all 16 chops (8 out of bounds)");
+            for (i = 0; i < lc->note_count; i++)
+                if (lc->notes[i].active && lc->notes[i].pitch == AU_NOTE_BASE + 12)
+                    HX_ASSERT(lc->notes[i].tick == 12u * (lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP),
+                              ">Seq did not put chop 13 on step 13 of the sample's bar");
+        }
+        hx_set_param(h, "t4_au_set_bars", "7 2");
+        hx_set_param(h, "t4_au_chop", "7 1");                   /* grow: the clip takes the 2 bars */
+        HX_ASSERT(lc->length * (lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP) == 2u * PPQN * 4,
+                  ">Seq with grow did not make the clip the sample's 2 bars");
+        for (i = 0; i < lc->note_count; i++)
+            if (lc->notes[i].active && lc->notes[i].pitch == AU_NOTE_BASE + 5)
+                HX_ASSERT(lc->notes[i].tick == 10u * TICKS_PER_STEP, ">Seq over 2 bars did not put chop 6 on step 11");
+        hx_set_param(h, "t4_au_wipe", "7");
+        lc->length = was_len;
+        (void)ac;
+    }
+
+    /* ---- the guess at a sample's Bars: its name, else its beats, else the
+     * length at the tempo (Josh: "is there a better way to evaluate loop
+     * lengths algorithimically?") ---- */
+    {
+        static const struct { const char *file; double secs, bpm; int want; } G[] = {
+            { "Pad 4bar.wav",          3.0,   0, 4 },    /* the name says, whatever the length (2 at 120) */
+            { "Break Phenom 84 bpm.wav", 2 * 240.0 / 84, 0, 2 },   /* 84 bpm, 5.71 s: 2 bars (3 at 120) */
+            { "clicks80.wav",          2 * 240.0 / 80, 80, 2 },    /* 2 bars at 80, not the 3 its 6 s are at 120 */
+            { "clicks90.wav",          2 * 240.0 / 90, 90, 2 },    /* 90 (2 bars) over 180 (4): its 8ths are silent; not 3 at 120 */
+            { "quiet.wav",             3.0,   0, 2 },    /* nothing to go on: 1.5 bars at 120, rounded */
+        };
+        int g;
+        for (g = 0; g < 5; g++) {
+            snprintf(p, sizeof p, "%s/src/%s", g_root, G[g].file);
+            if (G[g].bpm > 0) write_clicks(p, G[g].secs, G[g].bpm);
+            else {
+                /* silence of the length: nothing for the beats to find */
+                FILE *f = fopen(p, "wb");
+                uint32_t nn = (uint32_t)(44100 * G[g].secs), q;
+                fwrite("RIFF", 1, 4, f); put_le32(f, 36 + nn * 2); fwrite("WAVEfmt ", 1, 8, f);
+                put_le32(f, 16); put_le16(f, 1); put_le16(f, 1); put_le32(f, 44100); put_le32(f, 88200);
+                put_le16(f, 2); put_le16(f, 16);
+                fwrite("data", 1, 4, f); put_le32(f, nn * 2);
+                for (q = 0; q < nn; q++) put_le16(f, 0);
+                fclose(f);
+            }
+            snprintf(p, sizeof p, "12|%s/src/%s", g_root, G[g].file);
+            hx_set_param(h, "t4_au_pick", p);
+            HX_ASSERT(wait_loaded(h, 4, 12) == 2, "a guess sample did not load");
+            if (inst->au_clip[4][12].bars != G[g].want) {
+                fprintf(stderr, "%s: bars %d, want %d\n", G[g].file, inst->au_clip[4][12].bars, G[g].want);
+                HX_ASSERT(0, "the Bars guess is wrong");
+            }
+        }
+        HX_ASSERT(tr->clips[12].length * (tr->clips[12].ticks_per_step ? tr->clips[12].ticks_per_step : TICKS_PER_STEP) == 2u * PPQN * 4,
+                  "a Loop pick did not set the clip to the guessed Bars");
+        hx_set_param(h, "t4_au_clear", "12");
+    }
 
     /* ---- copy / cut / clear carry the sample; a mismatched paste is refused ---- */
     hx_set_param(h, "clip_copy", "4 0 4 9");
@@ -776,9 +1218,25 @@ int main(void) {
     HX_ASSERT(inst->tracks[1].clips[3].note_count == 0, "an Audio clip pasted onto a melodic track");
     hx_set_param(h, "clip_cut", "4 9 4 11");
     HX_ASSERT(!inst->au_clip[4][9].name[0] && !strcmp(inst->au_clip[4][11].name, "mono48.wav"), "a cut did not move the sample");
+    /* Delete + track clears the sequence only (Josh, 2026-10-28: "shouldn't
+     * clear the sample - only clear the sequence"); Shift + Delete + track
+     * (`_hard_reset`) is the sample and every setting */
+    HX_ASSERT(wait_loaded(h, 4, 11) == 2, "the cut clip did not load");
+    tr->clips[11].length = 48;
+    hx_set_param(h, "t4_au_set_gain", "11 -7");
+    hx_set_param(h, "t4_au_chop", "11");
+    HX_ASSERT(tr->clips[11].note_count > 0, "no sequence to clear");
     hx_set_param(h, "t4_c11_clear", "");
-    HX_ASSERT(!inst->au_clip[4][11].name[0] && !inst->au_clip[4][11].smp, "clearing an Audio clip kept its sample");
-    HX_ASSERT(inst->au_clip[4][0].smp, "clearing a copy let the original's sample go");
+    HX_ASSERT(clip_pitches(inst, 4, 11, pit, 64) == 0, "clearing an Audio clip kept its sequence");
+    HX_ASSERT(!strcmp(inst->au_clip[4][11].name, "mono48.wav") && inst->au_clip[4][11].smp &&
+              inst->au_clip[4][11].gain_db == -7 && tr->clips[11].length == 48,
+              "clearing an Audio clip's sequence lost its sample, settings or length");
+    hx_set_param(h, "row_clear", "11");
+    HX_ASSERT(inst->au_clip[4][11].smp && tr->clips[11].length == 48, "clearing the row lost the Audio clip's sample or length");
+    hx_set_param(h, "t4_c11_hard_reset", "");
+    HX_ASSERT(!inst->au_clip[4][11].name[0] && !inst->au_clip[4][11].smp && inst->au_clip[4][11].gain_db == 0,
+              "the full reset kept the sample or a setting");
+    HX_ASSERT(inst->au_clip[4][0].smp, "resetting a copy let the original's sample go");
 
     /* ---- detune: cents on top of the semitones, clip + slice ---- */
     HX_ASSERT(au_tune(0, 50) > 1.0293022366 && au_tune(0, 50) < 1.0293022367 &&
@@ -811,13 +1269,74 @@ int main(void) {
         hx_get_param(h, "t4_au_sl_0_1", b, sizeof b);
         HX_ASSERT(strlen(b) > 2 && !strcmp(b + strlen(b) - 2, " 9"), "sl_C_L does not end with the slice's detune");
         hx_get_param(h, "t4_au_info_0", b, sizeof b);
-        HX_ASSERT(strstr(b, " -17|"), "info_C does not carry the clip's detune before the name");
+        HX_ASSERT(strstr(b, " -17 0 "), "info_C does not carry the clip's detune, then its Tempo");
     }
 
-    /* ---- the project file keeps it ---- */
+    /* ---- reach (Josh, 2026-10-28: "pads outside of the current end point
+     * should be shown as gray"): how far into Start..End a Free loop gets
+     * before its clip wraps — the clip's ticks at the tempo and the pitch,
+     * less Nudge; all of it when the clip outlasts the sample ---- */
+    {
+        char b[256];
+        au_clip_t *ac = &inst->au_clip[4][7];
+        clip_t *lc = &inst->tracks[4].clips[7];
+        uint16_t was_len = lc->length;
+        uint32_t rs, re, got = 0;
+        au_range(ac, ac->smp, &rs, &re);
+        hx_set_param(h, "t4_au_set_tempo", "7 0");
+        lc->length = 1;                                        /* one step: well short of the sample */
+        double bpm = inst->tracks[4].pfx.cached_bpm > 0 ? inst->tracks[4].pfx.cached_bpm : 120.0;
+        uint32_t tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
+        double one = (double)tps * 44100.0 * 60.0 / (bpm * PPQN) * (double)ac->smp->rate / 44100.0;
+        HX_ASSERT(one < (double)(re - rs), "the test sample is shorter than one step");
+        hx_get_param(h, "t4_au_info_7", b, sizeof b);
+        sscanf(b, "%*d %*d %*d %*d %*d %*d %*u %*u %*d %*d %*u %*u %*d %*d %*d %*d %*d %*d %*d %u", &got);
+        HX_ASSERT(got + 1 >= (uint32_t)one && got <= (uint32_t)one + 1, "reach is not one step's worth of the sample");
+        hx_set_param(h, "t4_au_set_pitch", "7 12");            /* an octave up gets twice as far */
+        hx_get_param(h, "t4_au_info_7", b, sizeof b);
+        sscanf(b, "%*d %*d %*d %*d %*d %*d %*u %*u %*d %*d %*u %*u %*d %*d %*d %*d %*d %*d %*d %u", &got);
+        HX_ASSERT(got + 2 >= (uint32_t)(2 * one) && got <= (uint32_t)(2 * one) + 2 || got == re - rs, "reach ignores the pitch");
+        hx_set_param(h, "t4_au_set_pitch", "7 0");
+        lc->length = 256;                                       /* the clip outlasts it: all of it */
+        hx_get_param(h, "t4_au_info_7", b, sizeof b);
+        sscanf(b, "%*d %*d %*d %*d %*d %*d %*u %*u %*d %*d %*u %*u %*d %*d %*d %*d %*d %*d %*d %u", &got);
+        HX_ASSERT(got == re - rs, "a clip longer than the sample does not reach its end");
+        lc->length = 1;
+        /* Vintage: one step's share of the sample's own Bars */
+        hx_set_param(h, "t4_au_set_tempo", "7 1");
+        hx_set_param(h, "t4_au_set_bars", "7 2");
+        hx_get_param(h, "t4_au_info_7", b, sizeof b);
+        sscanf(b, "%*d %*d %*d %*d %*d %*d %*u %*u %*d %*d %*u %*u %*d %*d %*d %*d %*d %*d %*d %u", &got);
+        {
+            /* one step of ticks over the 2 bars' worth (2 * PPQN * 4) of the whole sample */
+            double want = (double)tps * (double)ac->smp->frames / (2.0 * PPQN * 4);
+            HX_ASSERT(got + 1 >= (uint32_t)want && got <= (uint32_t)want + 1, "Vintage's reach is not one step of the sample's 2 bars");
+        }
+        hx_set_param(h, "t4_au_set_tempo", "7 3");
+        hx_get_param(h, "t4_au_info_7", b, sizeof b);
+        sscanf(b, "%*d %*d %*d %*d %*d %*d %*u %*u %*d %*d %*u %*u %*d %*d %*d %*d %*d %*d %*d %u", &got);
+        {
+            /* Pitch: on the sample's Bars too, so Vintage's reach */
+            double want = (double)tps * (double)ac->smp->frames / (2.0 * PPQN * 4);
+            HX_ASSERT(got + 1 >= (uint32_t)want && got <= (uint32_t)want + 1, "Pitch's reach is not one step of the sample's 2 bars");
+        }
+        hx_set_param(h, "t4_au_set_tempo", "7 0");
+        lc->length = was_len;
+    }
+
+    /* ---- the project file keeps it (Tempo and the PAD MODE Layout too) ---- */
+    hx_set_param(h, "t4_au_set_tempo", "7 1");
+    hx_set_param(h, "t4_au_set_bars", "7 2");
+    hx_set_param(h, "t4_au_layout", "1");
+    /* the arp's octaves load by track type: Audio's Step keeps 15, a pitched
+     * track's 15 (only a hand edit or an old build could write it) loads as 4 */
+    hx_set_param(h, "t4_tarp_octaves", "15");
+    HX_ASSERT(inst->tracks[6].pad_mode != PAD_MODE_AUDIO, "t6 is still Audio");
+    inst->tracks[6].tarp.octaves = 15;
     n = hx_get_param(h, "state_full", blob, (int)sizeof blob);
+    HX_ASSERT(strstr(blob, " 1 2|ramp2.wav\"") && strstr(blob, "\"t4_aul\":1"), "the state does not keep Tempo Vintage, Bars or the Layout");
     HX_ASSERT(n > 0 && (size_t)n < sizeof blob - 1, "state_full failed");
-    HX_ASSERT(strstr(blob, "\"t4_pm\":3") && strstr(blob, "\"t4c0_au2\":\"1 8 1 16 0 0 0 0 0 0 0 -17|mono48.wav\""),
+    HX_ASSERT(strstr(blob, "\"t4_pm\":3") && strstr(blob, "\"t4c0_au2\":\"1 8 1 16 0 0 0 0 0 0 0 -17 0 ") && strstr(blob, "|mono48.wav\""),
               "the state does not carry the Audio track and clip A");
     HX_ASSERT(!strstr(blob, "\"t4_au\""), "the state still writes the old Audio flag");
     HX_ASSERT(strstr(blob, "\"t4c0s1_au2\":\""), "the state does not carry slice 2's settings");
@@ -831,11 +1350,31 @@ int main(void) {
     snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
     seq8_load_state(inst);
     HX_ASSERT(inst->tracks[4].pad_mode == PAD_MODE_AUDIO, "the reload lost the Audio track");
+    HX_ASSERT(inst->au_clip[4][7].tempo == AU_TEMPO_VINTAGE && inst->au_clip[4][7].bars == 2 && inst->au_trk[4].layout == 1,
+              "the reload lost Tempo Vintage, Bars or the Layout");
+    HX_ASSERT(inst->tracks[4].tarp.octaves == 15 && inst->tracks[6].tarp.octaves == 4,
+              "the arp's octaves did not load by track type");
     HX_ASSERT(inst->au_clip[4][0].mode == AU_MODE_SLICE && inst->au_clip[4][0].sl[1].gain_db == -6 &&
               inst->au_clip[4][0].sl[1].play == AU_PLAY_GATE, "the reload lost clip A's settings");
     HX_ASSERT(inst->au_clip[4][0].detune == -17 && inst->au_clip[4][0].sl[1].detune == 9, "the reload lost the detunes");
     HX_ASSERT(wait_loaded(h, 4, 0) == 2 && wait_loaded(h, 4, 2) == 2, "the reload did not load the samples");
     HX_ASSERT(inst->au_clip[4][0].smp && inst->au_clip[4][0].smp->frames == 48000, "clip A's sample is not the saved one");
+
+    /* ---- a chop's end fades back the way it came (Josh: "a very short fade
+     * out on slice end so it doesn't click?"), never a hard stop ---- */
+    {
+        au_voice_t v;
+        int32_t acc[2 * 128];
+        memset(&v, 0, sizeof v);
+        v.smp = inst->au_clip[4][0].smp;
+        v.lo = 1000; v.hi = 2000; v.pos = 1990; v.step = 1.0; v.gain = 1.0f; v.starve = 64; v.active = 1;
+        memset(acc, 0, sizeof acc);
+        au_voice_render(&v, acc, 64);
+        HX_ASSERT(v.active && v.tail && v.step < 0 && v.pos < 2000 && v.pos > 1900, "the end did not turn into a tail");
+        memset(acc, 0, sizeof acc);
+        au_voice_render(&v, acc, 128);
+        HX_ASSERT(!v.active, "the tail did not end within AU_TAIL frames");
+    }
 
     /* ---- leaving Audio: samples let go, steps cleared (Q3) ---- */
     hx_set_param(h, "t4_au_chop", "0");

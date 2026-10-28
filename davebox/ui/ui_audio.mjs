@@ -28,10 +28,33 @@
  * No host_* call happens at module init. */
 
 import { S } from './ui_state.mjs';
-import { PAD_MODE_AUDIO, NUM_CLIPS, BANK_STEP, knobAltFor } from './ui_constants.mjs';
+import { PAD_MODE_AUDIO, NUM_CLIPS, BANK_STEP, BANK_AUDIO, knobAltFor } from './ui_constants.mjs';
 import { bankListForMode } from './ui_pure.mjs';
 
 export const AU_MODE_LOOP = 0, AU_MODE_SLICE = 1;
+/* Tempo: Free as recorded · Vintage cut on the clock, each piece on its
+ * place in the sample's own Bars (Josh, 2026-10-29: "make it as fine as
+ * possible and call it "vintage"") · Pitch retuned to fill them. The DSP's
+ * values: Free 0, Vintage 1, Pitch 3 (2 was Fit, gone: it reads as Vintage). */
+export const AU_TEMPO_NAMES = ['Free', 'Vintage', 'Pitch'];
+const AU_TEMPO_VALS = [0, 1, 3];
+/* the knob's square holds four letters on one line, as Mode's Loop / Slce (found
+ * on the device: "Vintage" broke into VIN / TAG) */
+const AU_TEMPO_SQ = ['Free', 'Vint', 'Ptch'];
+export function auTempoIdx(i) { const k = AU_TEMPO_VALS.indexOf(i.tempo | 0); return k < 0 ? 1 : k; }
+/* A Loop clip's pads: the sample in even sections, one a pad (Josh,
+ * 2026-10-29: "chops should just be completely invisible in loop mode"). */
+export const AU_LOOP_SECTIONS = 32;
+export function auLoopMarks(i) {
+    const n = i.nframes | 0, out = [];
+    for (let k = 0; k < AU_LOOP_SECTIONS; k++) out.push([Math.floor(n * k / AU_LOOP_SECTIONS), Math.floor(n * (k + 1) / AU_LOOP_SECTIONS)]);
+    return out;
+}
+export const AU_BARS_MAX = 64;
+/* Chop k is note k (Josh, 2026-10-28: "might as well do 128"), 32 to a pad
+ * page; external MIDI reaches chop 1 at note 36 (ui.js). */
+export const AU_NOTE_BASE = 0, AU_PAGE = 32, AU_EXT_BASE = 36;
+export const AU_LAYOUT_NAMES = ['4 Rows', '16 Pads'];
 export const AU_LAZY_NONE = 0, AU_LAZY_ARMED = 1, AU_LAZY_RUN = 2, AU_LAZY_ENDED = 3;
 export const AU_PLAY_NAMES = ['One', 'Gate', 'Loop'];
 export const AU_ERR_TEXT = ['', "Can't read file", 'Not WAV / AIFF', 'Too long', 'Out of memory', "Can't copy"];
@@ -82,13 +105,17 @@ export function auParseInfo(raw) {
         state: head[0], err: head[1], mode: head[2], even: head[3], hand: head[4], jump: head[5],
         rstart: head[6], rend: head[7], pitch: head[8], gain: head[9],
         nframes: head[10], rate: head[11], ch: head[12],
-        revrs: head[13], nudge: head[14], jmpq: head[15], n: head[16], detune: head[17] | 0,
+        revrs: head[13], nudge: head[14], jmpq: head[15], n: head[16], detune: head[17] | 0, tempo: head[18] | 0,
+        /* how far into Start..End a Free loop gets before the clip wraps (-1 unknown) */
+        reach: head.length > 19 ? head[19] : -1,
+        /* the sample's own length in bars, as recorded (0 not known yet) */
+        bars: head.length > 20 ? head[20] : 0,
         name: bar >= 0 ? String(raw).slice(bar + 1) : '',
     };
 }
 
 const DEFAULT_INFO = { state: 0, err: 0, mode: 0, even: 16, hand: 1, n: 16, jump: 16, rstart: 0, rend: 0,
-                       pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, revrs: 0, nudge: 0, jmpq: 0, name: '' };
+                       pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, revrs: 0, nudge: 0, jmpq: 0, tempo: 0, reach: -1, bars: 0, name: '' };
 const DEFAULT_SLICE = { a: 0, b: 0, pinned: 0, pitch: 0, detune: 0, gain: 0, rev: 0, play: 0, atk: 0, dec: 0 };
 
 export function auInfo(t, c) {
@@ -224,11 +251,24 @@ export function auTick() {
     const pk = t + '_' + c + '_' + cur.mode + '_' + cur.n + '_' + (auLazyOpen() ? 1 : 0);
     if (pk !== _padKey) { _padKey = pk; S.pendingPadNoteMapRecompute = true; S.ledsDirtyAudio = true; }
     if (cur.state === 2 && !auPeaks(t, c) && (S.tickCount % 8) === 0) { auReadPeaks(t, c); S.screenDirty = true; }
-    const ed = S.auPanel;
-    if ((ed && ed.t === t) || S.auEditor) {
+    /* the AUDIO bank reads what its page shows, as the editor's screen did */
+    const ed = S.auPanel && S.auPanel.t === t ? S.auPanel : auBankOn() ? auBankEd(t) : null;
+    if (ed || S.auEditor) {
         const l = auSelSlice(t);
         if (!auSlice(t, c, l)) { auReadSlice(t, c, l); S.screenDirty = true; }
         if (ed && auPanelPageName(ed) === 'CLIP' && cur.mode === AU_MODE_SLICE && !auAll(t, c)) { auReadAll(t, c); S.screenDirty = true; }
+    }
+    /* The pad page: within the chops there are (a Loop clip has one page,
+     * its sections: auPages); a Lazy chop follows its next pad. */
+    if ((S.auPage[t] | 0) >= auPages(t)) auSetPage(t, auPages(t) - 1);
+    if (auLazyOpen()) {
+        const lz = auLazyState();
+        const next = lz.state === AU_LAZY_RUN ? lz.n : 0;
+        if (Math.floor(next / AU_PAGE) !== (S.auPage[t] | 0) && next < AU_EVEN_MAX) {
+            S.auPage[t] = Math.floor(next / AU_PAGE);
+            S.pendingPadNoteMapRecompute = true;
+            S.ledsDirtyAudio = true;
+        }
     }
     /* A bank the track no longer has — STEP and NOTE FX when the clip turns
      * Loop, DELAY that left Audio tracks (a project's remembered bank: found
@@ -278,9 +318,12 @@ export function auTick() {
 /* A Lazy chop is up in the editor (armed, running, or asking to keep). */
 export function auLazyOpen() { return !!(S.auEditor && S.auEditor.mode === 'lazy'); }
 
-/* Every clip of track t, re-read (a project load, a conversion). */
+/* Every clip of track t, re-read (a project load, a conversion), and its
+ * PAD MODE Layout. */
 export function auReadTrack(t) {
     for (let c = 0; c < NUM_CLIPS; c++) auRead(t, c);
+    S.auLayout[t] = parseInt(host_module_get_param('t' + t + '_au_layout'), 10) ? 1 : 0;
+    S.auPage[t] = 0;
 }
 /* A track that is no longer Audio forgets its clips. */
 export function auForgetTrack(t) {
@@ -327,7 +370,14 @@ function auSetAll(t, c, field, v) {
     _stale.add(t + '_' + c);
 }
 
-export function auChop(t, c) { setKey(t, 'chop', c); auMarkStale(t, c); }
+/* >Seq. A clip whose length was never set by hand (adaptive) grows to the
+ * sample's Bars; a set length stays, the chops past it out of bounds (Josh,
+ * 2026-10-28). The steps, length and resolution are read back after. */
+export function auChop(t, c) {
+    setKey(t, 'chop', c + ' ' + (S.clipLengthManuallySet[t] && S.clipLengthManuallySet[t][c] ? 0 : 1));
+    auMarkStale(t, c);
+    S.pendingStepsReread = 2; S.pendingStepsRereadTrack = t; S.pendingStepsRereadClip = c;
+}
 export function auLazyStart(t, c) { setKey(t, 'lazy', c + ' 1'); _lazy = { state: AU_LAZY_ARMED, n: 0, frame: 0 }; }
 export function auLazyStop(t, c) { setKey(t, 'lazy', c + ' 0'); auMarkStale(t, c); }
 export function auLazyTap(t) { setKey(t, 'lazy_tap', 1); }
@@ -379,8 +429,8 @@ export function auFmtTime(frames, rate) {
 /* The clip's real End: 0 in the engine means the sample's end. */
 export function auEnd(i) { return i.rend > 0 ? i.rend : i.nframes; }
 
-/* Even: Off, 2..32. */
-export const AU_EVEN_MAX = 32;
+/* Even: Off, 2..128. */
+export const AU_EVEN_MAX = 128;
 const fmtEven = (v) => (v ? String(v) : 'Off');
 
 /* ---- the AUDIO editor's pages ---- */
@@ -393,6 +443,29 @@ const fmtEven = (v) => (v ? String(v) : 'Off');
 export function auPanelPages(t) {
     return auInfo(t, auClipOf(t)).mode === AU_MODE_SLICE ? ['CLIP', 'SLICE'] : ['CLIP'];
 }
+/* ---- the AUDIO bank (Josh, 2026-10-28: "can audio be a bank?" · "yes")
+ * The AUDIO editor's pages as a bank: the same cells and knobs, its page per
+ * track, a plain jog turn flipping it (only a bank with more than one page
+ * takes the turn) and Delete + jog click resetting the page showing ("for
+ * multi-page banks, we should have delete+jog only reset the active page"). */
+export function auBankEd(t = S.activeTrack) {
+    const n = auPanelPages(t).length;
+    const p = Math.max(0, Math.min(n - 1, S.auBankPage[t] | 0));
+    return { t, page: p };
+}
+export function auBankOn() { return S.activeBank === BANK_AUDIO && isAudioTrack(S.activeTrack); }
+/* A jog turn on the AUDIO bank: the next / previous page, clamped. True when it moved. */
+export function auBankPageStep(dir) {
+    const t = S.activeTrack, n = auPanelPages(t).length;
+    const p = Math.max(0, Math.min(n - 1, (auBankEd(t).page) + (dir > 0 ? 1 : -1)));
+    if (p === (S.auBankPage[t] | 0)) return false;
+    S.auBankPage[t] = p;
+    S.screenDirty = true;
+    return true;
+}
+/* The bank card's title: the page's own ("ALL SLICES", "LOOP", "SLICE 3/8"). */
+export function auBankTitle(t = S.activeTrack) { return auPanelTitle(auBankEd(t)); }
+
 export function auPanelPageName(ed) {
     const p = auPanelPages(ed.t);
     return p[Math.min(ed.page | 0, p.length - 1)];
@@ -419,6 +492,18 @@ export function auModeCell(t) {
              sq: i.mode ? 'Slce' : 'Loop', options: ['Loop', 'Slice'], sel: i.mode };
 }
 const revrsCell = (i) => ({ kind: 'enumsq', label: 'Revrs', name: 'Reverse', text: i.revrs ? 'On' : 'Off', options: ['Off', 'On'], sel: i.revrs });
+/* Bars: the sample's own length, as recorded, and the tempo that makes it
+ * (Josh, 2026-10-28: "bars param on clip") — guessed when it is picked. */
+export function auOrigBpm(i) {
+    const secs = i.rate ? i.nframes / i.rate : 0;
+    return secs > 0 && i.bars ? Math.round(i.bars * 2400 / secs) / 10 : 0;
+}
+const BARS_OPTS = Array.from({ length: AU_BARS_MAX }, (_, k) => String(k + 1));
+const barsCell = (i) => {
+    const b = Math.max(1, i.bars | 0), bpm = auOrigBpm(i);
+    return { kind: 'valsq', label: 'Bars', name: 'Bars as recorded' + (bpm ? ' · ' + bpm + ' bpm' : ''),
+             text: String(b), options: BARS_OPTS, sel: b - 1, touchArc: { norm: (b - 1) / (AU_BARS_MAX - 1), bip: false } };
+};
 const nudgeCell = (i) => ({ kind: 'arcbip', label: 'Nudge', name: 'Nudge (start vs the bar)', text: fmtMs(i.nudge), signed: i.nudge / 500 });
 
 /* The sound fields, as cells (SLICE n: one slice; CLIP in Slice mode: every
@@ -523,7 +608,7 @@ function stepSliceField(f, v, steps) {
 }
 
 /* The CLIP bank's own Audio knobs: Mode (K4, both modes) and, in Loop mode,
- * Nudge (K3). Returns true when something changed. */
+ * Tempo (K1) and Nudge (K3). Returns true when something changed. */
 export function auClipBankKnob(t, k, steps) {
     const c = auClipOf(t), i = auInfo(t, c);
     const loc = Object.assign({}, i);
@@ -534,6 +619,16 @@ export function auClipBankKnob(t, k, steps) {
         if (S.auPanel) S.auPanel.page = 0;
         S.pendingPadNoteMapRecompute = true;
         S.ledsDirtyAudio = true;
+    } else if (k === 0 && i.mode !== AU_MODE_SLICE) {
+        if (i.state !== 2) return false;
+        const ti = Math.max(0, Math.min(AU_TEMPO_NAMES.length - 1, auTempoIdx(i) + (steps > 0 ? 1 : -1)));
+        if (AU_TEMPO_VALS[ti] === (i.tempo | 0)) return false;
+        loc.tempo = AU_TEMPO_VALS[ti]; auSet(t, c, 'tempo', loc.tempo);
+    } else if (k === 1 && i.mode !== AU_MODE_SLICE) {
+        if (i.state !== 2) return false;
+        const v = Math.max(1, Math.min(AU_BARS_MAX, (i.bars || 1) + (steps > 0 ? 1 : -1)));
+        if (v === (i.bars | 0)) return false;
+        loc.bars = v; auSet(t, c, 'bars', v);
     } else if (k === 2 && i.mode !== AU_MODE_SLICE) {
         if (i.state !== 2) return false;
         const v = Math.max(-500, Math.min(500, i.nudge + steps * (S.shiftHeld ? 1 : 5)));
@@ -568,6 +663,33 @@ export function auRangeStep(t, c, which, steps, per) {
 }
 
 /* One knob step on the AUDIO editor. Returns true when something changed. */
+/* Delete + jog click (Josh, 2026-10-28: "can we have delete+click reset all
+ * params on the page we're on in "audio"?"), as on every bank: CLIP — the
+ * clip's Pitch, Detune and Gain, and Revrs in Loop or every slice's Revrs,
+ * Attk, Decay and Play in Slice; SLICE n — that slice's sound. Returns true
+ * when it ran. */
+export function auPanelReset(ed) {
+    const t = ed.t, c = auClipOf(t), i = auInfo(t, c);
+    if (i.state !== 2) return false;
+    if (auPanelPageName(ed) === 'CLIP') {
+        const loc = Object.assign({}, i, { pitch: 0, detune: 0, gain: 0 });
+        auSet(t, c, 'pitch', 0); auSet(t, c, 'detune', 0); auSet(t, c, 'gain', 0);
+        if (i.mode !== AU_MODE_SLICE) { loc.revrs = 0; auSet(t, c, 'revrs', 0); }
+        else {
+            for (const f of SLICE_CLIP_ALL) if (f) auSetAll(t, c, f, DEFAULT_SLICE[f]);
+            _all.delete(t + '_' + c);
+            for (const k of _sl.keys()) if (k.startsWith(t + '_' + c + '_')) _sl.delete(k);
+        }
+        S.auInfo[t][c] = loc;
+        S.auStartsRev = (S.auStartsRev | 0) + 1;
+        return true;
+    }
+    const l = auSelSlice(t);
+    if (l >= i.n) return false;
+    for (const f of SLICE_FIELDS) auSetSlice(t, c, l, f, DEFAULT_SLICE[f]);
+    return true;
+}
+
 export function auPanelKnob(ed, k, steps) {
     const t = ed.t, c = auClipOf(t), i = auInfo(t, c);
     const dir = steps > 0 ? 1 : -1;
@@ -636,27 +758,75 @@ export function knobAltOnTrack(t, padMode, bank, k) {
     return knobAltFor(padMode, bank, k);
 }
 
-/* ---- the CLIP bank in Loop mode: K3 Nudge, where Slice has Shift and its
- * Nudge alternate; K4 Mode (K1 is kept for Fit). ---- */
+/* ---- the CLIP bank in Loop mode: K1 Tempo (Free · Vintage · Pitch), K3 Nudge, where Slice has Shift and its Nudge
+ * alternate; K4 Mode. ---- */
 export function auLoopBankCells(t) {
     const i = auInfo(t, auClipOf(t));
-    const nudge = i.state === 2 ? nudgeCell(i) : dash(nudgeCell(i));
-    return [BLANK, BLANK, nudge, auModeCell(t), BLANK, BLANK, BLANK, BLANK];
+    const tempo = { kind: 'enumsq', label: 'Tempo', name: 'Tempo: Free · Vintage · Pitch',
+                    text: AU_TEMPO_NAMES[auTempoIdx(i)], sq: AU_TEMPO_SQ[auTempoIdx(i)], options: AU_TEMPO_NAMES, sel: auTempoIdx(i) };
+    const live = (x) => (i.state === 2 ? x : dash(x));
+    return [live(tempo), live(barsCell(i)), live(nudgeCell(i)), auModeCell(t), BLANK, BLANK, BLANK, BLANK];
+}
+
+/* ---- PAD MODE on an Audio track: K1 Layout ---- */
+export function auPadModeCells(t) {
+    const v = S.auLayout[t] | 0;
+    return [{ kind: 'enumsq', label: 'Layout', name: 'Pad Layout', text: AU_LAYOUT_NAMES[v], sq: v ? '16' : '4R',
+              options: AU_LAYOUT_NAMES, sel: v }, BLANK, BLANK, BLANK, BLANK, BLANK, BLANK, BLANK];
 }
 
 /* ---- pads ---- */
 
-/* The chop under a pad, both modes: the timeline, row by row from the
- * bottom-left, 8 a row (Josh, 2026-10-28: "8 a row timeline"). */
-export function auPadToSlice(padIdx) { return padIdx; }
-/* The pad of chop k (auPadToSlice's inverse). */
-export function auSliceToPad(k) { return k; }
-/* The chop the Loop's playhead is in, or -1 (not sounding, not Loop).
- * Tick context: it may read the marks. */
+/* The chop under a pad, both modes, on the track's pad page (Octave Up /
+ * Down; 32 chops a page). PAD MODE's Layout (Josh, 2026-10-28: "[4 rows/16
+ * pads] for the 2 modes"): 4 Rows, the timeline, row by row from the
+ * bottom-left, 8 a row; 16 Pads, the left 4x4 then the right 4x4. */
+export function auPadToSlice(padIdx, t = S.activeTrack) {
+    let k = padIdx;
+    if (S.auLayout[t] | 0) {
+        const col = padIdx % 8, row = Math.floor(padIdx / 8);
+        k = col < 4 ? row * 4 + col : 16 + row * 4 + (col - 4);
+    }
+    return (S.auPage[t] | 0) * AU_PAGE + k;
+}
+/* The pad of chop k (auPadToSlice's inverse); -1 off the page showing. */
+export function auSliceToPad(k, t = S.activeTrack) {
+    const page = Math.floor(k / AU_PAGE), j = k % AU_PAGE;
+    if (page !== (S.auPage[t] | 0)) return -1;
+    if (!(S.auLayout[t] | 0)) return j;
+    return j < 16 ? Math.floor(j / 4) * 8 + (j % 4) : Math.floor((j - 16) / 4) * 8 + 4 + ((j - 16) % 4);
+}
+/* How many pad pages the clip's chops fill (at least one). */
+export function auPages(t) {
+    const i = auInfo(t, auClipOf(t));
+    return i.mode === AU_MODE_SLICE ? Math.max(1, Math.ceil(i.n / AU_PAGE)) : 1;   /* Loop: its sections fill one */
+}
+/* Show pad page p of track t (clamped). Returns true when it moved. */
+export function auSetPage(t, p) {
+    const np = Math.max(0, Math.min(auPages(t) - 1, p | 0));
+    if (np === (S.auPage[t] | 0)) return false;
+    S.auPage[t] = np;
+    S.pendingPadNoteMapRecompute = true;
+    S.ledsDirtyAudio = true;
+    S.screenDirty = true;
+    return true;
+}
+/* PAD MODE's Layout, kept by the engine with the project. */
+export function auSetLayout(t, v) {
+    v = v ? 1 : 0;
+    if (v === (S.auLayout[t] | 0)) return false;
+    S.auLayout[t] = v;
+    setKey(t, 'layout', v);
+    S.pendingPadNoteMapRecompute = true;
+    S.ledsDirtyAudio = true;
+    return true;
+}
+/* The section (auLoopMarks) the Loop's playhead is in, or -1 (not
+ * sounding, not Loop). */
 export function auPlayheadChop(t) {
     const c = auClipOf(t), i = auInfo(t, c);
     if (_pos.t !== t || !_pos.on || i.mode !== AU_MODE_LOOP) return -1;
-    const mk = auMarks(t, c);
+    const mk = auLoopMarks(i);
     for (let k = 0; k < mk.length; k++) if (_pos.frame >= mk[k][0] && _pos.frame < mk[k][1]) return k;
     return -1;
 }

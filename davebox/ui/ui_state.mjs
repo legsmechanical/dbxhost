@@ -496,6 +496,9 @@ export const S = {
     /* AUDIO (ui_audio.mjs): per track per clip, the DSP's tN_au_info_C parsed. */
     auInfo: Array.from({ length: 8 }, () => new Array(16).fill(null)),
     auSelSlice: new Array(8).fill(0),  /* the slice SLICE n edits: the last pad tapped */
+    auBankPage: new Array(8).fill(0),  /* the AUDIO bank's page per track: 0 CLIP, 1 SLICE n (Slice mode) */
+    auPage: new Array(8).fill(0),      /* the pad page of chops showing: 0..3, 32 chops a page */
+    auLayout: new Array(8).fill(0),    /* PAD MODE Layout: 0 4 Rows (8 a row), 1 16 Pads (left 4x4, right 4x4) */
     auStartsRev: 0,          /* bumped when slice starts may have moved */
     auPanel: null,           /* the AUDIO editor: { t, page } (ui_audio_editor.mjs) */
     auEditor: null,          /* its waveform editor: { t, c, mode chop|range|lazy, A, B, cur, last, endHold, ask } */

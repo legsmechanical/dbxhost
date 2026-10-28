@@ -298,6 +298,51 @@ int main(void) {
     hx_set_param(h, "t4_au_all_rev", "0 0");
     hx_set_param(h, "t4_au_set_mode", "0 0");
     hx_render(h, 4);
+    /* a Loop clip on Vintage moves through the sample as Free does (the
+     * voices' read-ahead): its chops play no part, so none is pinned */
+    hx_set_param(h, "t4_au_set_tempo", "0 1");
+    hx_render(h, 1);
+    HX_ASSERT(inst->au_clipw[4][0].mode != AU_MODE_SLICE, "a Vintage Loop clip pins its chops");
+    /* ...and the read-ahead alone keeps up with it: at a tempo well away
+     * from the loop's own, slower and faster, forwards and in Revrs, from the
+     * pins alone, through the clip coming round, no piece waits for a chunk */
+    {
+        static const char *bpms[2] = { "90", "160" };
+        clip_t *lc = &inst->tracks[4].clips[0];
+        uint16_t was_len = lc->length;
+        int b, r, heard;
+        hx_set_param(h, "t4_au_set_start", "0 0");
+        hx_set_param(h, "t4_au_set_bars", "0 30");              /* 60 s: 30 bars at 120 */
+        lc->length = 16;                                        /* one bar: it comes round often */
+        for (b = 0; b < 2; b++)
+            for (r = 0; r < 2; r++) {
+                hx_set_param(h, "transport", "stop");
+                hx_set_param(h, "bpm", bpms[b]);
+                hx_set_param(h, "t4_au_set_revrs", r ? "0 1" : "0 0");
+                for (i = 0; i < AU_STREAM_GRACE + 5; i++) { hx_render(h, 1); au_stream_service(inst); }
+                stats(h, NULL, NULL, NULL, &under0);
+                hx_stub_feed_reset();
+                hx_set_param(h, "t4_launch_clip", "0");
+                hx_set_param(h, "transport", "play");
+                heard = 0;
+                for (n = 0; n < 1500; n++) {                    /* ~4.4 s: past the pins, round 2-3 times */
+                    au_stream_service(inst);
+                    hx_render(h, 1);
+                    blk = hx_stub_feed_last(4);
+                    if (blk && blk[128]) heard++;
+                }
+                stats(h, NULL, NULL, NULL, &under);
+                HX_ASSERT(heard > 1000, "Vintage on a streamed loop played (almost) nothing");
+                HX_ASSERT(under == under0, b ? (r ? "Vintage at 160 bpm, Revrs, waited for a chunk" : "Vintage at 160 bpm waited for a chunk")
+                                             : (r ? "Vintage at 90 bpm, Revrs, waited for a chunk" : "Vintage at 90 bpm waited for a chunk"));
+            }
+        hx_set_param(h, "transport", "stop");
+        hx_set_param(h, "bpm", "120");
+        hx_set_param(h, "t4_au_set_revrs", "0 0");
+        lc->length = was_len;
+    }
+    hx_set_param(h, "t4_au_set_tempo", "0 0");
+    hx_render(h, 1);
 
     /* ---- two clips on one file share it; let go, it leaves the streamer ---- */
     snprintf(p, sizeof p, "1|%s/src/ramp60.wav", g_root);

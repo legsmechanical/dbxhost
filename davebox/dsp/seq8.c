@@ -181,7 +181,7 @@ static void seq8_set_state_path(char *out, size_t sz, const char *uuid, int crea
 #define PAD_MODE_DRUM           1   /* 32-lane drum sequencer */
 #define PAD_MODE_CONDUCT        2   /* Conductor: drives transposition, emits no MIDI */
 #define PAD_MODE_AUDIO          3   /* Audio: the clip plays a sample; a note's pitch
-                                     * is a SLICE (DRUM_BASE_NOTE + slice), never a
+                                     * is a SLICE (AU_NOTE_BASE + slice), never a
                                      * pitch to transform — see pad_mode_pitched() */
 /* Does this mode's pitch mean a pitch? Every transform that moves a note
  * (transpose, NOTE FX octave/offset/random, HARMONY, DELAY pitch, Key/Scale
@@ -567,7 +567,9 @@ typedef struct {
     /* Live params mirrored from clip_pfx_params_t via pfx_apply_params */
     uint8_t  style;        /* 0=Off (bypass), 1..9=Up/Dn/U-D/D-U/Cnv/Div/Ord/Rnd/RnO */
     uint8_t  rate_idx;     /* 0..9 (index into ARP_RATE_TICKS) */
-    int8_t   octaves;      /* -4..-1 or +1..+4 (signed; 0 skipped). Negative = descend by 12 per oct. */
+    int8_t   octaves;      /* -4..-1 or +1..+4 (signed; 0 skipped). Negative = descend by 12 per oct.
+                            * LIVE ARP on an Audio track: -15..+15, each repeat one chop (oct_step 1). */
+    uint8_t  oct_step;     /* the jump per repeat: 0 = 12 (an octave); 1 on Audio (a chop) */
     uint16_t gate_pct;     /* 1..200 percent of rate */
     uint8_t  steps_mode;   /* 0=Off, 1=Mute, 2=Skip */
     uint8_t  retrigger;    /* 0/1 — reset cycle/step on new note + clip wrap */
@@ -2948,7 +2950,7 @@ static void pfx_emit(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
     if (g_inst && fx->track_idx < NUM_TRACKS &&
             g_inst->tracks[fx->track_idx].pad_mode == PAD_MODE_CONDUCT)
         return;
-    /* An AUDIO track's notes play slices (pitch DRUM_BASE_NOTE + slice) instead
+    /* An AUDIO track's notes play slices (pitch AU_NOTE_BASE + slice) instead
      * of leaving as MIDI — every path (steps, pads, ratchets, swing, quantize)
      * funnels through here. Nothing else (CC, AT) leaves, and no DELAY echo:
      * DELAY left Audio tracks (Josh, 2026-10-28: "let's get rid of delay"), so
@@ -2957,7 +2959,7 @@ static void pfx_emit(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
             g_inst->tracks[fx->track_idx].pad_mode == PAD_MODE_AUDIO) {
         uint8_t st = status & 0xF0;
         if ((st == 0x90 || st == 0x80) && !g_inst->au_echo)
-            au_note_event((int)fx->track_idx, (int)d1 - DRUM_BASE_NOTE, status, d2, g_inst->au_echo);
+            au_note_event((int)fx->track_idx, (int)d1 - AU_NOTE_BASE, status, d2, g_inst->au_echo);
         return;
     }
     /* Conductor responder transposition is now applied at note-record level in
@@ -4701,8 +4703,11 @@ static void live_note_on(seq8_instance_t *inst, seq8_track_t *tr,
         }
         return; /* no matching lane — drop silently */
     }
-    /* No LIVE ARP on Audio: its octaves would move slices. */
-    if (!tr->tarp_on || tr->pad_mode == PAD_MODE_AUDIO) {
+    /* LIVE ARP on Audio steps a chop per repeat, not an octave (Josh,
+     * 2026-10-28: "change octave to "step" which sets the number of notes
+     * (slices) to jump in single note intervals instead of octaves"). */
+    tr->tarp.oct_step = tr->pad_mode == PAD_MODE_AUDIO ? 1 : 0;
+    if (!tr->tarp_on) {
         capture_push(inst, tr, CAP_EV_NOTE_ON, pitch, vel);
         inst->emit_bypass_swing = 1;
         pfx_note_on(inst, tr, pitch, vel);
@@ -4789,7 +4794,7 @@ static void live_note_off(seq8_instance_t *inst, seq8_track_t *tr,
         inst->emit_bypass_swing = 0;
         return;
     }
-    if (!tr->tarp_on || tr->pad_mode == PAD_MODE_AUDIO) {
+    if (!tr->tarp_on) {
         inst->emit_bypass_swing = 1;
         pfx_note_off_imm(inst, tr, pitch);
         inst->emit_bypass_swing = 0;
@@ -5146,6 +5151,7 @@ static void tarp_tick(seq8_instance_t *inst, seq8_track_t *tr) {
     arp_engine_t *a = &tr->tarp;
     if (!tr->tarp_on || a->style == 0) return;
     if (tr->pad_mode == PAD_MODE_DRUM) return;
+    a->oct_step = tr->pad_mode == PAD_MODE_AUDIO ? 1 : 0;
 
     if (a->pending_retrigger) {
         a->pending_retrigger = 0;

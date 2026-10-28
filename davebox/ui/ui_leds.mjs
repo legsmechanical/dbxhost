@@ -6,7 +6,7 @@ import {
     TRACK_COLORS, TRACK_DIM_COLORS, TRACK_PAD_BASE, SCENE_BTN_FLASH_MS,
     PAD_MODE_DRUM, BANKS, LED_PULSE_24TH, LED_PULSE_4TH, LED_BLINK_8TH,
     POLL_INTERVAL, TAP_TEMPO_FLASH_MS, PARAM_LED_BANKS, CONDUCT_LED_BANKS,
-    SEQ8_NAV_FLAGS, MoveNoteSession, BANK_CONFIG, BANK_SOUND
+    SEQ8_NAV_FLAGS, MoveNoteSession, BANK_CONFIG, BANK_AUDIO, BANK_SOUND
 } from './ui_constants.mjs';
 import { trackClipHasContent, updateSceneMapLEDs } from './ui_scene.mjs';
 import { PROJECT_COLORS, projectColorLED } from './ui_dialogs.mjs';
@@ -27,7 +27,7 @@ import { chordLayoutOn, chordPadColor } from './ui_chord_pads.mjs';
 import { pianoLayoutOn } from './ui_drummodel.mjs';
 import { customLayoutOn, customPadColor } from './ui_custom_chords.mjs';
 import { setLED, setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
-import { isAudioTrack, auInfo, auClipOf, auPos, auPlayheadChop, auPadToSlice, auSelSlice, auLazyOpen, auLazyState,
+import { isAudioTrack, auInfo, auClipOf, auPos, auPlayheadChop, auPadToSlice, auLoopMarks, AU_LOOP_SECTIONS, auEnd, auSelSlice, auLazyOpen, auLazyState,
          AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN } from './ui_audio.mjs';
 
 const lastSentNoteLED   = new Array(128).fill(-1);
@@ -377,6 +377,28 @@ export function updateStepLEDs() {
         return;
     }
 
+    /* AUDIO, a Loop clip: no sequence, so the step buttons show the loop —
+     * the page of its steps showing dim (a clip longer than 16 steps pages,
+     * as a sequence does), the playhead white. */
+    if (isAudioTrack(S.activeTrack) && auInfo(S.activeTrack, auClipOf(S.activeTrack)).mode !== AU_MODE_SLICE) {
+        const t = S.activeTrack, ac = effectiveClip(t);
+        /* playing, the row follows the playhead page by page, as a sequence
+         * does (Josh, 2026-10-28: "should follow the sequence playhead like
+         * normal") — there is nothing on a Loop clip's steps to stay and edit */
+        const cs = S.trackCurrentStep[t];
+        const base = (S.playing && S.trackClipPlaying[t] && cs >= 0 ? Math.floor(cs / 16) : (S.trackCurrentPage[t] | 0)) * 16;
+        const len = S.clipLength[t][ac], lsBase = S.clipLoopStart[t][ac] | 0;
+        for (let i = 0; i < 16; i++) {
+            const abs = base + i, rel = abs - lsBase;
+            let color;
+            if (rel < 0 || rel >= len) color = DarkGrey;
+            else if (S.playing && abs === cs) color = White;
+            else color = trackDimColor(t);
+            setLED(16 + i, color);
+        }
+        return;
+    }
+
     /* Drum mode: step buttons show active lane's steps — identical visualization to melodic. */
     if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
         const t    = S.activeTrack;
@@ -644,11 +666,11 @@ function paintBankMapPads() {
         const ed = autoMapEditorComp();
         /* ...and an Audio screen is where you are too (Josh, 2026-10-28: "pad
          * map should show when you're in audio/wave"): WAVE's pad, or AUDIO's. */
-        const au = S.auPanel ? (S.auEditor ? 'wave' : 'inst') : null;
+        const au = S.auPanel && S.auEditor ? 'wave' : null;
         bankPadMapForMode(S.trackPadMode[t], t).forEach((c, ci) => c.cells.forEach((cell, r) => {
             if (!cell) return;
             /* the track's own pads in its colour — WAVE too, as AUDIO (Josh, 2026-10-28) */
-            const own = cell.bank === BANK_CONFIG || cell.bank === BANK_SOUND || cell.action === 'inst' || cell.action === 'wave';
+            const own = cell.bank === BANK_CONFIG || cell.bank === BANK_SOUND || cell.bank === BANK_AUDIO || cell.action === 'inst' || cell.action === 'wave';
             const on = d ? (d.col === ci && d.row === r)
                 : au !== null ? cell.action === au
                 : ed !== null ? (cell.action === 'inst' && ed === 'synth')
@@ -922,8 +944,8 @@ export function updateTrackLEDs() {
          * same colours as anywhere else. */
         const isDrum = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM;
         if (isAudioTrack(S.activeTrack)) {
-            /* AUDIO (ui_audio). The pads are the chops, row by row from the
-             * bottom-left, 8 a row; past the chop count dark. Slice mode: the
+            /* AUDIO (ui_audio). The pads are the chops of the pad page
+             * showing, in the track's PAD MODE Layout; past the chop count dark. Slice mode: the
              * sounding one white, the selected one the track colour, the rest
              * dim. Loop mode, a progress bar (Josh, 2026-10-28: "full length
              * in dim track color, played section in bright track color and
@@ -936,6 +958,14 @@ export function updateTrackLEDs() {
             const slice = ai.mode === AU_MODE_SLICE;
             const ph = slice ? -1 : auPlayheadChop(t);
             const sel = auSelSlice(t);
+            const mk = !slice && ai.state === 2 ? auLoopMarks(ai) : null;
+            const reach = ai.reach >= 0 && ai.reach < auEnd(ai) - ai.rstart;
+            /* never played: a chop wholly outside Start..End (Josh,
+             * 2026-10-29: "sections that are out of start/end range on the
+             * sample aren't showing up as dim white on the pads"), or past
+             * where a Free loop wraps */
+            const pastReach = (k) => !!(mk && mk[k] && (mk[k][1] <= ai.rstart || mk[k][0] >= auEnd(ai)
+                || (reach && (ai.revrs ? auEnd(ai) - mk[k][1] : mk[k][0] - ai.rstart) >= ai.reach)));
             /* A Lazy chop: the next pad in order WHITE (pad 1 before the
              * first tap), the slices chopped so far in the track colour
              * (Josh, 2026-10-28: "pads should light to indicate populated as
@@ -946,17 +976,18 @@ export function updateTrackLEDs() {
             const done = lz && lz.state !== AU_LAZY_ARMED ? lz.n : 0;
             for (let i = 0; i < 32; i++) {
                 let color = LED_OFF;
-                if (lz) {
-                    const k = auPadToSlice(i);
-                    color = k === next ? White : k < done ? tc : LED_OFF;
-                }
+                const k = auPadToSlice(i, t);
+                if (lz) color = k === next ? White : k < done ? tc : LED_OFF;
                 else if (ai.state !== 2) color = i === 0 ? td : LED_OFF;
                 else if (slice) {
-                    const k = auPadToSlice(i);
                     if (k < ai.n) color = (ap.t === t && ap.on && ap.slice === k) ? White : k === sel ? tc : td;
-                } else if (i < ai.n) {
-                    if (i === ph) { cachedSetLEDAnim(TRACK_PAD_BASE + i, tc, LightGrey, LED_PULSE_4TH); continue; }
-                    color = ph >= 0 && (ai.revrs ? i > ph : i < ph) ? tc : td;
+                } else if (k < AU_LOOP_SECTIONS) {
+                    /* a Free loop whose clip wraps before the sample ends:
+                     * the chops it never reaches grey (Josh, 2026-10-28: "you
+                     * can't see where the end point is on the pads") */
+                    if (pastReach(k)) { cachedSetLED(TRACK_PAD_BASE + i, DarkGrey); continue; }
+                    if (k === ph) { cachedSetLEDAnim(TRACK_PAD_BASE + i, tc, LightGrey, LED_PULSE_4TH); continue; }
+                    color = ph >= 0 && (ai.revrs ? k > ph : k < ph) ? tc : td;
                 }
                 cachedSetLED(TRACK_PAD_BASE + i, color);
             }
@@ -1275,7 +1306,9 @@ export function updateTrackLEDs() {
              * The shim-side restore edge (`shadow_restore_knob_leds`) exists for
              * the OTHER direction — handing the surface back to Move on exit —
              * and davebox owns the surface for its whole lifetime. */
-            const pm = BANKS[S.activeBank].knobs[k];
+            let pm = BANKS[S.activeBank].knobs[k];
+            /* LIVE ARP's Oct is Step on an Audio track, ±15 (ui_render) */
+            if (S.activeBank === 5 && k === 2 && isAudioTrack(S.activeTrack)) pm = Object.assign({}, pm, { min: -15, max: 15 });
             ledVal = knobRingColor(
                 k, knobRingNorm(pm, S.bankParams[S.activeTrack][S.activeBank][k]));
             /* A knob on the seq: list with automation in this clip: under Mute

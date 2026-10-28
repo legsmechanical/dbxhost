@@ -207,7 +207,8 @@ static int sp_track_config2(sp_ctx_t *cx) {
         return 1;
     }
     if (!strcmp(sub, "tarp_octaves")) {
-        int _v = clamp_i(my_atoi(val), -4, 4);
+        int _lim = tr->pad_mode == PAD_MODE_AUDIO ? 15 : 4;    /* Audio: Step, a chop per repeat */
+        int _v = clamp_i(my_atoi(val), -_lim, _lim);
         tr->tarp.octaves = (int8_t)_v;
         inst->state_dirty = 1;
         return 1;

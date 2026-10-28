@@ -2788,7 +2788,7 @@ export function drawKitCells(cells, touchedIdx, env, filt, eq, samp, anim, nowMs
      * touched knob's, whenever no knob is touched. It replaced a 2x2 corner
      * mark — the highlight already said which parameter the lane drives. */
     const lit = (k) => k === touchedIdx || (touchedIdx < 0 && !!(cells[k] && cells[k].lock));
-    kitCellsLast = { touched: touchedIdx, cells: cells.map((c, k) => c ? { label: c.label, text: c.text, lock: !!c.lock, lit: lit(k) } : null) };
+    kitCellsLast = { touched: touchedIdx, cells: cells.map((c, k) => c ? { label: c.label, text: c.text, lock: !!c.lock, lit: lit(k), arc: c.touchArc ? c.touchArc.norm : null } : null) };
     /* ⭑ EVERY SPAN IS DECLARED, NONE IS DETECTED. env / filt / eq / samp all
      * arrive from the caller with an explicit start (and count where it can
      * vary); this file never sniffs a param name to decide a bank has an EQ.

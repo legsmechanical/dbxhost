@@ -3,7 +3,8 @@
  * clips play SLICES of their own sample instead of sending MIDI, mixed into
  * the track's own chain slot through the host's slot_audio_feed (so the
  * slot's FX, fader, sends and a Dry resample all apply). A note's pitch is a
- * slice: DRUM_BASE_NOTE + slice. Each clip holds its own sample, copied into
+ * slice: AU_NOTE_BASE + slice, up to 128 of them (Josh, 2026-10-28: "might
+ * as well do 128"; external MIDI still reaches chop 1 at note 36, in the UI). Each clip holds its own sample, copied into
  * the project (<state dir>/samples/), one set of slices (CHOPS) over its
  * Start..End, and a Mode that says how the sequencer plays them (Josh,
  * 2026-10-28: "loop vs slice mode should be a clip bank setting. it basically
@@ -22,7 +23,9 @@
 
 #include <stdint.h>
 
-#define AU_MAX_SLICES      32
+#define AU_MAX_SLICES      128
+#define AU_NOTE_BASE       0            /* chop k is note k */
+#define AU_PIN_FULL        32           /* chops past this many pin one chunk each end, not two (streaming memory) */
 #define AU_PATH_MAX        160          /* a sample's file name inside samples/ */
 #define AU_PEAKS           128          /* waveform columns kept for the screen */
 #define AU_SLICE_MAX_SEC   240          /* Slice mode: 4 minutes (Josh) */
@@ -30,7 +33,16 @@
 
 #define AU_MODE_LOOP       0
 #define AU_MODE_SLICE      1
+
+#define AU_TEMPO_FREE      0            /* Loop: the sample at its own speed, whatever the tempo */
+#define AU_TEMPO_VINTAGE   1            /* Loop: cut every tick, each piece on its place in the sample's own Bars (au_sync_block) */
+#define AU_TEMPO_FIT_OLD   2            /* retired (Fit): loads and sets as Vintage */
+#define AU_TEMPO_PITCH     3            /* Loop: the sample retuned (varispeed) so Start..End fills its own Bars */
+#define AU_TEMPO_FIX(v)    ((v) == AU_TEMPO_FIT_OLD ? AU_TEMPO_VINTAGE : (v))
+#define AU_BARS_MAX        64           /* a sample's own length in bars, 1..64 */
 #define AU_GAP             16           /* frames: the least a slice can be */
+#define AU_TAIL            128          /* frames: the fade back from a chop's end (~3 ms) */
+#define AU_SLICE_NONE      (-1)         /* au_range_on: Loop mode's hidden chop at Start */
 #define AU_JOIN            256          /* frames: a slice this near where the sounding one has reached carries it on */
 #define AU_MIP             256          /* frames per waveform summary entry */
 #define AU_CHUNK_SHIFT     13
@@ -102,6 +114,8 @@ typedef struct {
     uint8_t      revrs;              /* Loop: the sample plays backwards */
     int16_t      nudge_ms;           /* Loop: the sample's start against the bar, -500..+500 ms */
     uint8_t      jmpq;               /* retired (jump quantize): as `jump` */
+    uint8_t      tempo;              /* Loop: AU_TEMPO_* (the CLIP bank's K1) */
+    uint8_t      bars;               /* the sample's own length in bars, as recorded (the CLIP bank's K2); 0 = not known yet */
     au_slice_t   sl[AU_MAX_SLICES];
 } au_clip_t;
 
@@ -124,8 +138,11 @@ typedef struct {
     uint32_t rel_wait;       /* output frames before that release begins (on its tick's frame) */
     uint32_t wait;           /* output frames of silence before it starts (Loop Nudge later; a slice's tick frame) */
     uint8_t  active, loop, mode_loop, slice;
+    uint8_t  tail;           /* in the fade back from its end */
     uint8_t  gated;          /* GATE / LOOP: ends at note-off */
     uint8_t  starve;         /* streamed: 0..64, its level, down while a chunk is missing (64 at start) */
+    uint32_t wlo, whi;       /* a Vintage piece: its clip's Start..End, which the streamer reads ahead
+                              * through as for a Loop (whi 0: read ahead within lo..hi) */
 } au_voice_t;
 
 #define AU_VOICES 2          /* the sounding one + the one being choked */
@@ -155,6 +172,9 @@ typedef struct {
     au_voice_t v[AU_VOICES];
     int32_t    last_tick;    /* Loop: the clip position last block (wrap = restart) */
     uint8_t    loop_clip;    /* Loop: the clip the loop voice belongs to */
+    uint8_t    sync_on;      /* Tempo Vintage: its pieces are playing */
+    uint8_t    sync_live;    /* ...and the transport's first tick has played (a window before it means nothing) */
+    uint8_t    layout;       /* PAD MODE Layout: 0 4 Rows, 1 16 Pads (the UI's; saved as t%d_aul) */
     uint8_t    mgain;        /* mute as a bus: 0..64, the output's level, ramping one step a frame */
 } au_track_t;
 
@@ -173,6 +193,7 @@ typedef struct {
 
 typedef struct {
     uint8_t      track, clip, err;
+    uint8_t      bars;       /* the loader's guess at the sample's length in bars (au_guess_bars) */
     uint32_t     gen;
     au_sample_t *smp;
     char         name[AU_PATH_MAX];

@@ -663,6 +663,7 @@ static int sp_track_clip(sp_ctx_t *cx) {
                 }
             }
             clip_migrate_to_notes(cl);
+            au_window_to_range(inst, tidx, cidx);   /* an Audio Loop clip: Start..End follow */
             /* Mirror the _length freeze-fix guard (same adaptive record-path
              * hazard: no rev bump while this track is live-recording). */
             if (!tr->recording) rui_mark(inst, tidx, cidx);
@@ -747,8 +748,13 @@ static int sp_track_clip(sp_ctx_t *cx) {
                 cl->step_gate[i] = (uint16_t)GATE_TICKS;
                 memset(cl->note_tick_offset[i], 0, 8 * sizeof(int16_t));
             }
-            cl->length     = SEQ_STEPS_DEFAULT;   /* back to adaptive length */
-            cl->loop_start = 0;
+            /* An Audio clip keeps its length: it is the sample's, not the
+             * sequence's (Josh, 2026-10-28: "delete + track button shouldn't
+             * clear the sample - only clear the sequence") */
+            if (tr->pad_mode != PAD_MODE_AUDIO) {
+                cl->length     = SEQ_STEPS_DEFAULT;   /* back to adaptive length */
+                cl->loop_start = 0;
+            }
             cl->active     = 0;
             cl->note_count = 0;
             memset(cl->notes, 0, sizeof(cl->notes));
@@ -756,8 +762,8 @@ static int sp_track_clip(sp_ctx_t *cx) {
             /* Clip clear also removes the clip's aftertouch automation. */
             at_auto_reset(&tr->clip_at_auto[cidx]);
             memset(tr->at_last_sent, 0xFF, AT_MAX_LANES);
-            /* An Audio clip's sample goes with it (the clip is empty after). */
-            if (tr->pad_mode == PAD_MODE_AUDIO) au_clip_reset(inst, tidx, cidx);
+            /* An Audio clip keeps its sample and settings: only the sequence
+             * goes (Shift + Delete, `_hard_reset`, takes the sample too). */
             /* Deactivate track if the cleared clip is active or queued */
             if ((int)tr->active_clip == cidx) {
                 silence_track_notes_v2(inst, tr);
@@ -790,8 +796,13 @@ static int sp_track_clip(sp_ctx_t *cx) {
                 cl->step_gate[i] = (uint16_t)GATE_TICKS;
                 memset(cl->note_tick_offset[i], 0, 8 * sizeof(int16_t));
             }
-            cl->length     = SEQ_STEPS_DEFAULT;   /* back to adaptive length */
-            cl->loop_start = 0;
+            /* An Audio clip keeps its length: it is the sample's, not the
+             * sequence's (Josh, 2026-10-28: "delete + track button shouldn't
+             * clear the sample - only clear the sequence") */
+            if (tr->pad_mode != PAD_MODE_AUDIO) {
+                cl->length     = SEQ_STEPS_DEFAULT;   /* back to adaptive length */
+                cl->loop_start = 0;
+            }
             cl->active     = 0;
             cl->note_count = 0;
             memset(cl->notes, 0, sizeof(cl->notes));
@@ -813,7 +824,7 @@ static int sp_track_clip(sp_ctx_t *cx) {
             undo_begin_single(inst, tidx, cidx);
             silence_track_notes_v2(inst, tr);
             clip_init(cl);
-            if (tr->pad_mode == PAD_MODE_AUDIO) au_clip_reset(inst, tidx, cidx);   /* its sample goes too */
+            if (tr->pad_mode == PAD_MODE_AUDIO) au_clip_reset(inst, tidx, cidx);   /* its sample and every setting go too */
             at_auto_reset(&tr->clip_at_auto[cidx]);
             if ((int)tr->active_clip == cidx)
                 pfx_sync_from_clip(tr);

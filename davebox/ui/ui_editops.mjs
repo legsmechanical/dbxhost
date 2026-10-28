@@ -189,19 +189,22 @@ export function clearClip(t, ac, keepPlaying) {
     const cmd = (keepPlaying && S.trackClipPlaying[t] && ac === S.trackActiveClip[t])
         ? 't' + t + '_c' + ac + '_clear_keep'
         : 't' + t + '_c' + ac + '_clear';
-    /* An Audio clip's sample goes with a clear (not a keep-playing one). */
-    if (isAudioTrack(t) && cmd.endsWith('_clear')) { S.auInfo[t][ac] = null; auMarkStale(t, ac); }
+    /* An Audio clip keeps its sample, settings and length: only the sequence
+     * goes (Josh, 2026-10-28; Shift + Delete is the full reset). */
+    const _au = isAudioTrack(t);
     S.pendingDefaultSetParams.unshift({ key: cmd, val: '1', _local: true });
     /* Defer drain 1 tick to keep _clear out of the same audio buffer as any
      * sync set_param fan-out that might still be in flight. */
     S.clearDrainHold = 1;
     const len = S.clipLength[t][ac];
     for (let s = 0; s < len; s++) S.clipSteps[t][ac][s] = 0;
-    S.clipNonEmpty[t][ac] = false;
+    S.clipNonEmpty[t][ac] = _au ? !!(S.auInfo[t][ac] && S.auInfo[t][ac].name) : false;
     /* Reset length + loop window → adaptive re-record (mirrors DSP _clear). */
-    S.clipLength[t][ac]           = 16;
-    S.clipLoopStart[t][ac]        = 0;
-    S.clipLengthManuallySet[t][ac] = false;
+    if (!_au) {
+        S.clipLength[t][ac]           = 16;
+        S.clipLoopStart[t][ac]        = 0;
+        S.clipLengthManuallySet[t][ac] = false;
+    }
     S.clipAdaptiveMode[t][ac]      = false;
     /* ⚠ AFTERTOUCH ONLY. `tN_cC_clear` calls at_auto_reset and nothing else —
      * it does NOT touch the per-parameter pool (no pa_ call anywhere in
@@ -618,9 +621,11 @@ export function clearRow(rowIdx) {
         automationClearClipQueued(S.pendingDefaultSetParams, t, rowIdx);
         const len = S.clipLength[t][rowIdx];
         for (let s = 0; s < len; s++) S.clipSteps[t][rowIdx][s] = 0;
-        S.clipNonEmpty[t][rowIdx] = false;
+        /* an Audio clip keeps its sample and its length (row_clear) */
+        const _au = isAudioTrack(t);
+        S.clipNonEmpty[t][rowIdx] = _au ? !!(S.auInfo[t][rowIdx] && S.auInfo[t][rowIdx].name) : false;
         S.drumClipNonEmpty[t][rowIdx] = false;
-        S.clipLoopStart[t][rowIdx] = 0;
+        if (!_au) S.clipLoopStart[t][rowIdx] = 0;
         if (rowIdx === S.trackActiveClip[t]) {
             S.seqActiveNotes.clear(); S.seqLastStep = -1;
             S.trackCurrentPage[t] = 0;

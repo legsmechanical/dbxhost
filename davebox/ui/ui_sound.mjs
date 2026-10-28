@@ -57,7 +57,7 @@ import { instrOptions, instrPickerRows, moveInstrOwner, fmtInstr, INSTR_SCHWUNG,
          BANK_MACRO_ALLOW, BANK_SHORT, seqAutoKeyFor, SEQ_AUTO_TARGETS,
          midiTargetIsMidi, midiTargetCC, midiTargetName, midiTargetShort, midiTargetMax, midiTargetDefault, midiTargetTo14, PB_CENTRE,
          PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD, PAD_MODE_AUDIO as PMA, INSTR_AUDIO, TRACK_PAD_BASE } from './ui_constants.mjs';
-import { openAudioEditor } from './ui_audio_editor.mjs';
+import { openWave } from './ui_audio_editor.mjs';
 import { applyTrackConfig, applyBankParam, readBankParams, syncTrackMidiFx, midiFxResyncAfterPatch } from './ui_dsp_bridge.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { moduleParallelDefault, setModuleParallelDefault, reconcileParallelSlot } from './ui_parallel.mjs';
@@ -10372,11 +10372,11 @@ export function soundOnCC(d1, d2, decodeDelta) {
                     if (GS.shiftHeld || S.shiftHeld) { S.pickFromMenu = true; openInstrPicker(); }
                     S.dirty = true;
                 }
-                /* AUDIO: the click enters the AUDIO editor (the clip's audio
-                 * settings); Shift+click picks something else. */
+                /* AUDIO: the click enters WAVE, the sample's editor (as a
+                 * click enters an instrument's); Shift+click picks something else. */
                 else if (GS.trackPadMode[S.track] === PMA) {
                     if (GS.shiftHeld || S.shiftHeld) { S.pickFromMenu = true; openInstrPicker(); }
-                    else { soundExit(); openAudioEditor(S.track); }
+                    else { const _at = S.track; soundExit(); openWave(_at); }
                     S.dirty = true;
                 }
                 else {

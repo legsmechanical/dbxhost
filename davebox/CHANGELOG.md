@@ -9,21 +9,67 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Changed
+- **Audio: Loop clips have no chops** — they belong to Slice mode now (a clip keeps them
+  for when you switch back). SAMPLE shows none, nor a cursor; the pads show the sample in
+  32 even sections; Chop sample is in Slice mode only.
+- **Audio: Loop + steps sets a Loop clip's Start and End.** The loop window you hold
+  Loop and tap steps for picks that part of the sample (the steps laid over its
+  Bars), and it works on the SAMPLE screen too.
+- **Audio: Pitch follows Bars.** Tempo **Pitch** retunes a Loop clip to fill the
+  sample's own Bars at the tempo, as Vintage does, rather than the clip's length.
+- **Audio: SAMPLE sits on the instrument pad, where INST is on other tracks**; the
+  SLICE / LOOP bank moves under CLIP. In Loop mode SAMPLE's header shows the sample's
+  name, and the track overview's waveform no longer shows the chops.
+
 - **Audio tracks: one set of chops, and Mode on the CLIP bank.** A clip's chops now
   serve both modes, and its **Mode** (CLIP bank K4) only says what the sequencer does
   with them. **Loop** plays the sample straight through, set and forget; its pads show
-  the loop as a progress bar (dim, bright as it plays, the playing chop pulsing) and
+  the loop as a progress bar (dim, bright as it plays, the playing part pulsing) and
   taps do nothing — the jump points, **Jump** and **JmpQ** are gone. **Slice** puts the
   chops on the steps. Switching an empty clip from Loop to Slice lays its chops on the
   steps in order, so it sounds the same. The pads run in time order, 8 a row, in both
-  modes; a new clip starts with 16 even chops. WAVE edits the chops in Loop too, and
-  choosing a chop method no longer switches the Mode.
-- **Audio: the AUDIO editor holds the sound only** (Pitch, Detune, Gain, Revrs and the
+  modes; a new clip starts with 16 even chops. Choosing a chop method no longer switches
+  the Mode.
+- **Audio: the sound bank (SLICE / LOOP) holds the sound only** (Pitch, Detune, Gain, Revrs and the
   slice envelopes); the Loop CLIP bank holds Nudge and Mode. The Slice CLIP bank's
   second Quant is gone (it's on NOTE FX). **DELAY** is gone from Audio tracks, and a
   Loop clip has no STEP or NOTE FX.
 
+- **Audio: 128 chops**, 32 to a pad page — Octave Up / Down steps the pages.
+  External note 36 still plays chop 1.
+- **Audio: Tempo** on the Loop CLIP bank (K1): **Free** plays the loop as recorded;
+  **Vintage** cuts it into tiny pieces on the clock, each on its beat as recorded, so it
+  stays in time at any tempo with an old sampler's gaps and grit; **Pitch** retunes the
+  loop to fill its Bars.
+- **Audio: Bars** (Loop CLIP bank K2): each clip knows its sample's own length in
+  bars, guessed when you pick it (from the file name, else its beats) and shown
+  with the tempo that makes it. Vintage, Pitch and >Seq go by it, so the number
+  of chops no longer changes the speed. >Seq grows a clip whose length you never
+  set; a set length stays, with the chops past it beyond the loop.
+- **Audio: PAD MODE** (IN column) sets the pads' **Layout** — 4 Rows or 16 Pads — and
+  **LIVE ARP** comes to Audio tracks, with **Step** (a chop per repeat) in place of Oct.
+- ⚠ A Slice clip's sequence from an earlier build plays the wrong chops: chops are now
+  numbered from note 0.
+- **Audio Loop: the pads show where the loop ends.** The parts a clip never reaches
+  before it comes round are grey; the step buttons follow the playhead page by page.
+
+- **Audio: Delete + clip clears the sequence only** — the sample, its settings and
+  the clip's length stay; **Shift + Delete + clip** resets it, sample and all.
+  **Delete + jog click** on the SLICE or LOOP bank resets the page showing.
+- **Audio: the clip's sound is a bank now**, named SLICE or LOOP for the clip's mode, with pages — CLIP, and SLICE n in Slice mode.
+  A plain jog turn flips them; the map's SLICE / LOOP pad lands on it. **SAMPLE** is the
+  track's instrument editor: the map's instrument pad, the sound menu's Audio row
+  and the instrument shortcut open it.
+
 ### Fixed
+- **Audio: Vintage plays when dAVEBOx follows Move's clock** — it was silent there.
+- **Audio: Vintage with Nudge earlier** starts the loop further in, as Free does,
+  instead of stuttering at the end of a clip shorter than the sample.
+- **Audio: Loop pads grey what lies outside Start..End** — it never plays, and now
+  looks it.
+- **Audio: a chop's end no longer clicks** — every chop ends with a ~3 ms fade.
+- **Audio: the Shift shortcuts work over SAMPLE** (and its sample chooser): Shift + a
+  step or Shift + jog leaves it and does what it does everywhere else.
 - **Audio: slices start exactly on their step** (on dAVEBOx's own clock) rather than up to 3 ms early, and chops
   played in order join with no click or dip.
 - **Audio: >Seq dropped chops** whose start fell a fraction before their step (a 2 s
@@ -46,12 +92,12 @@ the section into a versioned heading at release time.
   plays its own sample — picked from your library (WAV or AIFF, auditioned as you
   browse) and copied into the project — as a **Loop**, with the pads as jump
   points, or as up to 32 **Slices** you play from the pads and sequence on the
-  steps. **WAVE** (a new bank map pad) holds the clip's sample: load one, set the
+  steps. **SAMPLE** (a new bank map pad) holds the clip's sample: load one, set the
   loop's start and end, or make chops with a **Lazy chop** (tap them in as the
   sample plays), by hand or evenly, then shape them in a zoomable editor — move
   any chop's start and end down to a single sample, add and remove chops.
-  **Even** cuts equal slices, showing them on the pads as you turn. The **AUDIO**
-  editor (the AUDIO pad) holds the clip's sound: mode, pitch (semitones), detune
+  **Even** cuts equal slices, showing them on the pads as you turn. The **SLICE / LOOP**
+  editor (its pad) holds the clip's sound: mode, pitch (semitones), detune
   (cents) and gain, sound settings per slice or for all slices at once; **>Seq**
   on the CLIP bank lays the slices out on the steps. Loop clips can play backwards, be nudged against
   the bar and have their jumps wait for the beat; muting an Audio track silences it

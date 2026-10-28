@@ -23,7 +23,7 @@ import { miActive, miRender } from './ui_midi_import.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
 import {
-    BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_CONFIG,
+    BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_CONFIG, BANK_AUDIO,
     INSTR_SCHWUNG, INSTR_MOVE_MAX, INSTR_MIDI_CH, INSTR_TRACK, INSTR_CONDUCT, INSTR_AUDIO,
     NOTE_KEYS, NUM_CLIPS, NUM_STEPS, NUM_TRACKS, PAD_MODE_CONDUCT, PAD_MODE_DRUM,
     SCALE_DISPLAY, SCENE_LETTERS, TPS_VALUES, STEP_ITER_LIST,
@@ -71,7 +71,8 @@ import { sessStripTargets } from './ui_engine.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
 import { isAudioTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
-         auPos, auLazyState, auSelSlice, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells, auModeCell, knobAltOnTrack,
+         auPos, auLazyState, auSelSlice, auPanelCells, auPanelTitle, auPanelPages, auBankEd, auBankTitle, auLoopBankCells, auModeCell, knobAltOnTrack,
+         auPadModeCells, AU_NOTE_BASE,
          auFmtTime, auEnd, AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN } from './ui_audio.mjs';
 import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
 import { drawAudioAsk } from './ui_dialogs.mjs';
@@ -166,7 +167,7 @@ function drawAudioTrackRest(t) {
     /* the waveform in Loop mode only; slices are sequenced, so Slice mode
      * shows the page bar and playhead like any track (Josh, 2026-10-28) */
     if (i.mode === AU_MODE_SLICE) drawPositionBar(t);
-    else drawAudioWave(t, c, 4, 49, 120, 7, {});
+    else drawAudioWave(t, c, 4, 49, 120, 7, { noMarks: true });   /* Josh, 2026-10-28: "no need to show slice points on the track overview waveform preview" */
 }
 
 /* The AUDIO editor (ui_audio_editor): the clip's audio on the kit page, a
@@ -193,7 +194,7 @@ function drawAudioWaveEditor() {
     }
     clear_screen();
     if (ed.pick) {
-        drawBankHeading(ed.pick.level === 1 ? 'WAVE' : 'CHOP SAMPLE', false);
+        drawBankHeading(ed.pick.level === 1 ? 'SAMPLE' : 'CHOP SAMPLE', false);
         drawKitList(auPickRows(ed), ed.pick.sel, { h: MV_FOOTER_Y - 11 });
         drawKitHintRow(MV_FOOTER_Y, ed.pick.editEven ? [['jog', 'count'], ['clk', 'set']] : [['clk', 'pick'], ['back', ed.pick.level === 1 ? 'exit' : 'up']]);
         return;
@@ -237,7 +238,7 @@ function drawAudioWaveEditor() {
     if (sub === 'empty') {
         /* the click corners round the empty waveform (Josh: "the waveform
          * view should show the "click" corners and say click to load sample") */
-        drawBankHeading('WAVE', false);
+        drawBankHeading('SAMPLE', false);
         drawBrackets(6, 18, 116, 34);
         const msg = i.state === 1 ? 'LOADING' : 'CLICK TO LOAD SAMPLE';
         ovwPrint(64 - Math.floor(ovwWidth(msg) / 2), 33, msg, 1);
@@ -245,10 +246,14 @@ function drawAudioWaveEditor() {
         return;
     }
     if (sub === 'loop') {
-        drawBankHeading('LOOP', false);
+        /* the sample's name (Josh, 2026-10-28: "in loop mode, can we show the
+         * sample name in the header of "sample" instead of "loop"") */
+        drawBankHeading(auSampleName(t, c), false);
         ends('S ' + auFmtTime(i.rstart, rt), 'E ' + auFmtTime(auEnd(i), rt));
         if (zoomTxt) mid(zoomTxt);
-        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, cur: ed.cur, gain: i.gain | 0 });
+        /* no cursor and no chops: they are Slice's (Josh, 2026-10-29: "chops
+         * should just be completely invisible in loop mode") */
+        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, gain: i.gain | 0, noMarks: true });
         drawKitHintRow(MV_FOOTER_Y, [['knobs', 'edit'], ['sh+clk', 'menu']]);   /* Josh: "knobs: edit is fine for a hint" */
         return;
     }
@@ -283,6 +288,18 @@ function audioBankCells(bank, cells) {
         return [cells[0], cells[1], cells[2], auModeCell(t), cells[5], cells[4], cells[6], seq];
     }
     if (bank === 1) return cells.map((c, k) => ((k === 0 || k === 1 || k === 7) ? B : c));
+    /* LIVE ARP: Oct is Step, a chop per repeat (Josh, 2026-10-28) */
+    if (bank === 5 && cells[2]) {
+        const v = S.bankParams[t][5][2] | 0;
+        cells = cells.slice();
+        /* its own -15..+15 list: Oct's -4..+4 left the arc and the ring
+         * pinned at the ends while the value went on (Josh, 2026-10-28) */
+        const opts = [];
+        for (let i = -15; i <= 15; i++) opts.push(i === 0 ? '--' : (i > 0 ? '+' : '') + i);
+        cells[2] = withTouchArc(Object.assign({}, cells[2], { label: 'Step', name: 'Step (chops per repeat)',
+                                                 kind: 'valsq', text: v === 0 ? '--' : (v > 0 ? '+' : '') + v,
+                                                 options: opts, sel: v + 15 }), true);
+    }
     return cells;
 }
 
@@ -1035,7 +1052,7 @@ function midiNoteName(n) { return noteLabel(n, false); }
  * drum aliases used to live inline in the drum render branch below, which is
  * how the picker ended up listing different names than the header. */
 function bankHeaderName(t, bank) {
-    return bankDisplayName(S.trackPadMode[t], bank);
+    return bankDisplayName(S.trackPadMode[t], bank, t);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1856,7 +1873,7 @@ export function bankMapItems() {
     /* ...an Audio screen is where you are too, as on the pads (Josh,
      * 2026-10-28: "the pad map doesn't indicate that you're on wave or
      * audio - still shows last bank") */
-    const au = S.auPanel ? (S.auEditor ? 'wave' : 'inst') : null;
+    const au = S.auPanel && S.auEditor ? 'wave' : null;
     const cols = bankPadMapForMode(S.trackPadMode[t], t).map((c, ci) => ({
         label: c.label,
         cells: c.cells.map((cell, r) => {
@@ -1988,7 +2005,7 @@ export function heldStepCells() {
          * working pitch controls dark. */
         /* AUDIO: K1 is the step's slice (Q6, Josh 2026-10-27: "agreed"); no octave. */
         isAudioTrack(t)
-            ? { kind: 'blank', label: 'Slice', name: 'Slice', bigText: 'Slice ' + (root - 35), ringBound: true }
+            ? { kind: 'blank', label: 'Slice', name: 'Slice', bigText: 'Slice ' + (root - AU_NOTE_BASE + 1), ringBound: true }
             : { kind: 'blank', label: 'Note', name: 'Note', bigText: noteLabel, ringBound: true },
         isAudioTrack(t)
             ? { kind: 'blank', label: '' }
@@ -2365,9 +2382,17 @@ function drawUIBody() {
         fill_rect(0, MV_BAR_Y, 128, 1, 1);
         return;
     }
+    /* AUDIO: the clip's sound, its page showing; the jog turns the pages */
+    if (bank === BANK_AUDIO && inTimeout && isAudioTrack(S.activeTrack)) {
+        drawKitPage(auBankTitle(), auPanelCells(auBankEd()), false,
+                    auPanelPages(S.activeTrack).length > 1 ? [['jog', 'page']] : null);
+        return;
+    }
     if (bank === BANK_CHORD && inTimeout) {
-        drawKitPage(bankHeaderName(S.activeTrack, BANK_CHORD), padModeBankCells(S.activeTrack), false,
-                    bankPageHints(BANK_CHORD));
+        /* an Audio track's PAD MODE: the Layout of its chops on the pads */
+        drawKitPage(bankHeaderName(S.activeTrack, BANK_CHORD),
+                    isAudioTrack(S.activeTrack) ? auPadModeCells(S.activeTrack) : padModeBankCells(S.activeTrack), false,
+                    isAudioTrack(S.activeTrack) ? null : bankPageHints(BANK_CHORD));
         return;
     }
 

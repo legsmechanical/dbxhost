@@ -362,6 +362,9 @@ static void convert_track_from_audio(seq8_instance_t *inst, int t) {
     au_track_release(inst, t);
     convert_wipe_all_notes(inst, t);
     tr->pad_mode = PAD_MODE_MELODIC_SCALE;
+    /* Audio's arp Step reaches ±15 (a chop per repeat); as octaves that is
+     * far past the ±4 a pitched track allows (found by review) */
+    tr->tarp.octaves = (int8_t)clamp_i(tr->tarp.octaves, -4, 4);
     pfx_sync_from_clip(tr);
     inst->state_dirty = 1;
 }
