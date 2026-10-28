@@ -298,6 +298,13 @@ int main(void) {
     hx_set_param(h, "t4_au_all_rev", "0 0");
     hx_set_param(h, "t4_au_set_mode", "0 0");
     hx_render(h, 4);
+    /* a Loop clip on Vintage moves through the sample as Free does (the
+     * voices' read-ahead): its chops play no part, so none is pinned */
+    hx_set_param(h, "t4_au_set_tempo", "0 1");
+    hx_render(h, 1);
+    HX_ASSERT(inst->au_clipw[4][0].mode != AU_MODE_SLICE, "a Vintage Loop clip pins its chops");
+    hx_set_param(h, "t4_au_set_tempo", "0 0");
+    hx_render(h, 1);
 
     /* ---- two clips on one file share it; let go, it leaves the streamer ---- */
     snprintf(p, sizeof p, "1|%s/src/ramp60.wav", g_root);
