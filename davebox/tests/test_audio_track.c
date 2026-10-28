@@ -1047,6 +1047,10 @@ int main(void) {
                 HX_ASSERT(inst->count_in_ticks > 0, "no count-in started");
                 signal(SIGALRM, on_hang);
                 alarm(10);
+                /* the ticks a block consumed: the difference, or — the master
+                 * tick reset to 0 inside the block — the ticks since */
+                HX_ASSERT(au_block_ticks(40, 36) == 4 && au_block_ticks(3, 420) == 3 && au_block_ticks(0, 420) == 0 &&
+                          au_block_ticks(500, 36) == AU_VINTAGE_PER_BLOCK, "au_block_ticks miscounts");
                 /* and au_wrap ends for any input (the audio thread calls it) */
                 HX_ASSERT(au_wrap(-1.8e19, 384.0) >= 0.0 && au_wrap(-1.8e19, 384.0) < 384.0 &&
                           au_wrap(1e30, 384.0) == 0.0 && au_wrap(-5.0, 4.0) == 3.0 && au_wrap(9.5, 4.0) == 1.5,

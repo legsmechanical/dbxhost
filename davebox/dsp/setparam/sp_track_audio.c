@@ -204,6 +204,16 @@ static void au_release_chops(au_track_t *at) {
  * its accumulator is how far past it the block ends (a followed clock: below). */
 #define AU_VINTAGE_PER_BLOCK 16
 #define AU_VINTAGE_OVER      8      /* frames */
+/* The master ticks a block consumed: arp_master_tick now less au_tick0, its
+ * value before the block. It is 32-bit, and a count-in's end (or a transport
+ * start) resets it to 0 inside the block: then the ticks since the reset are
+ * the count, and those before it were the count-in's (read through 64 bits
+ * the count underflowed to ~1.8e19 and the render hung: found by review).
+ * At most AU_VINTAGE_PER_BLOCK. */
+static uint32_t au_block_ticks(uint32_t now, uint64_t before) {
+    uint32_t t0 = (uint32_t)before, n = now >= t0 ? now - t0 : now;
+    return n > AU_VINTAGE_PER_BLOCK ? AU_VINTAGE_PER_BLOCK : n;
+}
 /* the least whole number >= x (no libm here) */
 static long au_ceil(double x) { long i = (long)x; return (double)i < x ? i + 1 : i; }
 static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uint32_t len_ticks, double fpt, int frames) {
@@ -230,13 +240,7 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
          * piece fell just outside it, so Vintage was silent; a rolling window
          * from the last block's end then missed the first pulse's first ticks
          * and burst after a jump. Both found by review, 2026-10-29.) */
-        /* arp_master_tick is 32-bit and a count-in's end (or a transport
-         * start) resets it to 0 inside the block: then the ticks since the
-         * reset are its count, and those before it were the count-in's */
-        uint32_t amt = inst->arp_master_tick, t0 = (uint32_t)inst->au_tick0;
-        uint32_t nt = amt >= t0 ? amt - t0 : amt;
-        if (nt > AU_VINTAGE_PER_BLOCK) nt = AU_VINTAGE_PER_BLOCK;
-        double n = (double)nt;
+        double n = (double)au_block_ticks(inst->arp_master_tick, inst->au_tick0);
         if (n <= 0) return;
         span = n;
         start = au_wrap((double)tick - 1.0 - n + 1e-6, L);
