@@ -19,6 +19,21 @@ __gmon_start__
 _ITM_registerTMCloneTable
 _ITM_deregisterTMCloneTable
 
+# --- WEAK references the static libstdc++ leaves in davebox-sound's dsp.so
+# --- (-static-libstdc++ since WARP links Bungee, C++). Nobody provides them and
+# --- nobody needs to: a weak undefined symbol resolves to NULL, libstdc++ tests
+# --- for that before using libitm's transactional-memory hooks (gcc -fgnu-tm,
+# --- which nothing here uses), and __cxa_pure_virtual is reached only by
+# --- calling a pure virtual — a crash with or without it. `nm -D` shows `w`.
+_ITM_RU1
+_ITM_RU8
+_ITM_addUserCommitAction
+_ITM_memcpyRnWt
+_ITM_memcpyRtWn
+_ZGTtdlPv
+_ZGTtnam
+__cxa_pure_virtual
+
 # --- espeak-ng and flite: the TTS engines are loaded as shared libraries at
 # --- runtime, so the shim references their entry points without linking them.
 espeak_Initialize

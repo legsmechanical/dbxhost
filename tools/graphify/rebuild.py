@@ -33,7 +33,7 @@ CODE_ROOTS = ["src", "davebox", "standalone", "schwung-manager", "tests", "tools
 # Build output, vendored dependencies and minified bundles. graphify's own detector
 # filters these; collect_files() does not, and without this davebox/dist/davebox/ui.js
 # alone contributes a 607-node community that is a duplicate of davebox/ui/.
-EXCLUDE_PARTS = {"dist", "node_modules", "build", ".git", "__pycache__", "vendor", "libs"}
+EXCLUDE_PARTS = {"dist", "node_modules", "build", ".git", "__pycache__", "vendor", "libs", "third_party"}
 EXCLUDE_SUFFIX = (".min.js", ".bundle.js")
 
 # Documentation that is HISTORY, not current design. The semantic pass indexes prose,

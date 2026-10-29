@@ -945,8 +945,9 @@ int main(void) {
         hx_set_param(h, "t4_au_set_even", "7 128");
         b128 = ramp_breaks(h, 300);
         HX_ASSERT(b16 == 0 && b128 == 0, "Vintage on a clip half the sample's Bars did not play its first half as recorded (or the chop count changed it)");
-        hx_set_param(h, "t4_au_set_tempo", "7 2");              /* the old Fit */
-        HX_ASSERT(ac->tempo == AU_TEMPO_VINTAGE, "Fit did not set as Vintage");
+        hx_set_param(h, "t4_au_set_tempo", "7 9");              /* past the last value */
+        HX_ASSERT(ac->tempo == AU_TEMPO_MAX, "a Tempo past the last did not clamp to it");
+        hx_set_param(h, "t4_au_set_tempo", "7 1");
         /* Nudge earlier on Vintage starts the loop further in, as Free's does:
          * the pieces before the clip's start never play (wrapped to its end
          * they fought the pieces due there, a cut every tick — found by
@@ -1086,7 +1087,7 @@ int main(void) {
          * clip (Josh: "does pitch sync'ing not respect the set bars?"): 1 bar
          * at 120 is 2 s = as recorded, though the clip is half a bar; 2 bars
          * is half speed */
-        hx_set_param(h, "t4_au_set_tempo", "7 3");
+        hx_set_param(h, "t4_au_set_tempo", "7 2");
         hx_set_param(h, "transport", "play");
         hx_render(h, 8);
         {
@@ -1313,7 +1314,7 @@ int main(void) {
             double want = (double)tps * (double)ac->smp->frames / (2.0 * PPQN * 4);
             HX_ASSERT(got + 1 >= (uint32_t)want && got <= (uint32_t)want + 1, "Vintage's reach is not one step of the sample's 2 bars");
         }
-        hx_set_param(h, "t4_au_set_tempo", "7 3");
+        hx_set_param(h, "t4_au_set_tempo", "7 2");
         hx_get_param(h, "t4_au_info_7", b, sizeof b);
         sscanf(b, "%*d %*d %*d %*d %*d %*d %*u %*u %*d %*d %*u %*u %*d %*d %*d %*d %*d %*d %*d %u", &got);
         {
@@ -1335,7 +1336,7 @@ int main(void) {
     HX_ASSERT(inst->tracks[6].pad_mode != PAD_MODE_AUDIO, "t6 is still Audio");
     inst->tracks[6].tarp.octaves = 15;
     n = hx_get_param(h, "state_full", blob, (int)sizeof blob);
-    HX_ASSERT(strstr(blob, " 1 2|ramp2.wav\"") && strstr(blob, "\"t4_aul\":1"), "the state does not keep Tempo Vintage, Bars or the Layout");
+    HX_ASSERT(strstr(blob, " 1 2 50 2 0|ramp2.wav\"") && strstr(blob, "\"t4_aul\":1"), "the state does not keep Tempo Vintage, Bars or the Layout");
     HX_ASSERT(n > 0 && (size_t)n < sizeof blob - 1, "state_full failed");
     HX_ASSERT(strstr(blob, "\"t4_pm\":3") && strstr(blob, "\"t4c0_au2\":\"1 8 1 16 0 0 0 0 0 0 0 -17 0 ") && strstr(blob, "|mono48.wav\""),
               "the state does not carry the Audio track and clip A");

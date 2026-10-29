@@ -36,9 +36,15 @@
 
 #define AU_TEMPO_FREE      0            /* Loop: the sample at its own speed, whatever the tempo */
 #define AU_TEMPO_VINTAGE   1            /* Loop: cut every tick, each piece on its place in the sample's own Bars (au_sync_block) */
-#define AU_TEMPO_FIT_OLD   2            /* retired (Fit): loads and sets as Vintage */
-#define AU_TEMPO_PITCH     3            /* Loop: the sample retuned (varispeed) so Start..End fills its own Bars */
-#define AU_TEMPO_FIX(v)    ((v) == AU_TEMPO_FIT_OLD ? AU_TEMPO_VINTAGE : (v))
+#define AU_TEMPO_PITCH     2            /* Loop: the sample retuned (varispeed) so Start..End fills its own Bars */
+#define AU_TEMPO_BEATS     3            /* Loop: cut at its hits, each on its place in the sample's own Bars (au_beats_block) */
+#define AU_TEMPO_WARP      4            /* Loop: stretched to the tempo at its own pitch (Bungee, the stretcher thread) */
+#define AU_TEMPO_MAX       AU_TEMPO_WARP
+#define AU_FILL_OFF        0            /* Beats: the gap after a hit is silent (the tail fades) */
+#define AU_FILL_LOOP       1            /* ...the hit's tail loops, crossfaded at the seam */
+#define AU_FILL_PING       2            /* ...the hit's tail plays back and forth (Ableton's default) */
+#define AU_FILL_DEFAULT    AU_FILL_PING
+#define AU_SENS_DEFAULT    50           /* Beats: hit sensitivity, 0..100 */
 #define AU_BARS_MAX        64           /* a sample's own length in bars, 1..64 */
 #define AU_GAP             16           /* frames: the least a slice can be */
 #define AU_TAIL            128          /* frames: the fade back from a chop's end (~3 ms) */
@@ -78,6 +84,10 @@ typedef struct au_sample {
     int8_t    peaks[AU_PEAKS][2];   /* per column: min, max (int8 of the int16 range) */
     int8_t  (*mip)[2];              /* min, max per AU_MIP frames (the zoomed waveform) */
     uint32_t  nmip;
+    uint32_t *hits;                 /* Beats: candidate hits, frames (each the start of a rising AU_MIP block), ascending */
+    uint8_t  *hit_d;                /* per candidate: its rise (au_lvl steps) */
+    uint8_t  *hit_r;                /* per candidate: its rise against the ~100 ms around it, x16 */
+    uint32_t  nhits;                /* candidates; Sens picks which count (au_hit_kept) */
     char      name[AU_PATH_MAX];    /* the file inside samples/ */
     uint32_t  refs;                 /* clips using it (loader thread only) */
 } au_sample_t;
@@ -116,6 +126,9 @@ typedef struct {
     uint8_t      jmpq;               /* retired (jump quantize): as `jump` */
     uint8_t      tempo;              /* Loop: AU_TEMPO_* (the CLIP bank's K1) */
     uint8_t      bars;               /* the sample's own length in bars, as recorded (the CLIP bank's K2); 0 = not known yet */
+    uint8_t      sens;               /* Beats: hit sensitivity 0..100 (CLIP K7) */
+    uint8_t      fill;               /* Beats: AU_FILL_* (CLIP K5) */
+    uint8_t      fade;               /* Beats: 0..100, how far the fill dies away by the next hit (CLIP K6) */
     au_slice_t   sl[AU_MAX_SLICES];
 } au_clip_t;
 
@@ -141,6 +154,13 @@ typedef struct {
     uint8_t  tail;           /* in the fade back from its end */
     uint8_t  gated;          /* GATE / LOOP: ends at note-off */
     uint8_t  starve;         /* streamed: 0..64, its level, down while a chunk is missing (64 at start) */
+    uint8_t  beats;          /* a Beats piece (the fields below apply) */
+    uint8_t  fill, fade;     /* ...AU_FILL_*, and how far the fill dies by its slot's end */
+    uint8_t  filling;        /* ...past its end: the fill window lo..hi is its tail */
+    uint8_t  ranon;          /* ...played on past its end once, for a join that was due */
+    uint32_t slot_end;       /* ...the age at which the next piece is due (its slot's end) */
+    uint32_t fage, flen;     /* ...frames into the fill, and the fill's length to slot_end */
+    double   tl;             /* ...the fill window's length, sample frames */
     uint32_t wlo, whi;       /* a Vintage piece: its clip's Start..End, which the streamer reads ahead
                               * through as for a Loop (whi 0: read ahead within lo..hi) */
 } au_voice_t;
@@ -148,8 +168,8 @@ typedef struct {
 #define AU_VOICES 2          /* the sounding one + the one being choked */
 
 /* What the streamer must have ready, published by the audio thread each
- * block: a voice's place in a streamed sample (slot AU_VOICES is spare: it
- * held a waiting JmpQ jump). smp NULL = nothing. Read by the streamer field
+ * block: a voice's place in a streamed sample; slot AU_VOICES is where Warp's
+ * stretcher reads (it once held a waiting JmpQ jump). smp NULL = nothing. Read by the streamer field
  * by field: a torn read only fetches the wrong chunk once. */
 typedef struct {
     const void *smp;
@@ -168,8 +188,31 @@ typedef struct {
     uint32_t    sa[AU_MAX_SLICES], sb[AU_MAX_SLICES];
 } au_clipw_t;
 
+/* WARP, the audio thread's side of one track (the stretcher's is
+ * au_warp_t in seq8_audio.c). */
+typedef struct {
+    uint32_t gen;            /* the anchor it waits for / plays (the stretcher's frames carry theirs) */
+    uint8_t  on;             /* the track's command says run */
+    uint8_t  state;          /* AU_WARP_WAIT: no frame lined up yet; AU_WARP_PLAY */
+    uint8_t  gain;           /* 0..64, ramping a step a frame */
+    uint8_t  clip;           /* the clip it was anchored for */
+    uint8_t  live;           /* the transport has played: the clock window is real */
+    uint8_t  fadeout;        /* 0..64: the old anchor's frames still playing, fading (a stop) */
+    uint8_t  hold;           /* the old anchor's frames play on at their level till the new is due (a launch) */
+    uint8_t  ogain, oclip;   /* ...their level and clip */
+    uint8_t  xf;             /* frames of the hand-over crossfade left */
+    uint32_t ntail;          /* the ring index the current anchor's frames are read from (ahead of
+                              * the old ones still playing) */
+    double   tick;           /* the clip tick at this block's frame 0 (a followed clock: smoothed) */
+    double   cur_anchor;     /* the tick the current anchor starts at */
+    double   drift;          /* output frames the frame heard is ahead of the clock */
+    uint32_t waited;         /* output frames since the last anchor, while waiting (the diag: `warp`) */
+    uint32_t last_wait;      /* ...the last anchor's whole wait, once it played */
+} au_warp_trk_t;
+
 typedef struct {
     au_voice_t v[AU_VOICES];
+    au_warp_trk_t w;
     int32_t    last_tick;    /* Loop: the clip position last block (wrap = restart) */
     uint8_t    loop_clip;    /* Loop: the clip the loop voice belongs to */
     uint8_t    sync_on;      /* Tempo Vintage: its pieces are playing */
