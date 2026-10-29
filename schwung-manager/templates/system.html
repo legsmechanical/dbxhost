@@ -13,6 +13,8 @@
         <dl class="detail-list">
             <dt>Version</dt>
             <dd>{{.Version}}</dd>
+            {{if .BaseVersion}}<dt>Schwung base</dt>
+            <dd>{{.BaseVersion}}</dd>{{end}}
         </dl>
         <!-- Updates ship through the installer, not the browser. -->
     </section>

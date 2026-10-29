@@ -6,15 +6,17 @@
  *      then frozen — this is artwork, and it ROTATES: a different frame each
  *      launch (Josh, 2026-08-24). Emitted as splash-N.hex, one per frame.
  *   2. the host's own boot splash, drawn by shadow_ui while the module loads —
- *      this is now TEXT: the wordmark over the Schwung base version. Emitted
- *      pre-rendered as splash2.hex.
+ *      this is now TEXT: the wordmark, dAVEBOx's own version under it, then the
+ *      Schwung base version. Emitted pre-rendered as splash2.hex.
  *
  * ⭑ Why screen 2 is rendered HERE rather than drawn at runtime: the fonts Josh
  * named live in the module (davebox/ui/ui_movy.mjs), and the host half has only
  * its single 6px `print`. Porting two glyph tables across the seam would be a
  * second copy to keep in step forever; rendering with the REAL fonts at build
- * time is one script and cannot drift. The version is a build-time fact anyway
- * — splash_caption.txt was already generated the same way.
+ * time is one script and cannot drift. The versions are build-time facts anyway
+ * — splash_caption.txt was already generated the same way. A version bump in
+ * standalone/module/module.json or src/host/version.txt therefore means running
+ * this again (tests/host/test_splash_assets.sh fails until you do).
  */
 import { readFileSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
@@ -24,6 +26,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..');
 const OUT  = process.argv[2] || join(REPO, 'build');
 const VERSION = readFileSync(join(REPO, 'src', 'host', 'version.txt'), 'utf8').trim();
+/* dAVEBOx's own version: the one a release bumps and the bug report carries.
+ * Testers could find only the base version on the device. */
+const SA_VERSION = JSON.parse(readFileSync(join(REPO, 'standalone', 'module', 'module.json'), 'utf8')).version;
 
 const W = 128, H = 64;
 
@@ -51,15 +56,14 @@ function toHex(px) {
 bitmap.fill(0);
 const WORD = 'dAVEBOx';          /* verbatim — the font carries real d/x glyphs,
                                   * and uppercasing it would destroy the mark */
-const CAP  = 'Schwung base: ' + VERSION;
-/* Optically centred as a PAIR, with a clear line break between them: the
- * wordmark sits above centre and the version below it, rather than each being
- * centred in its own half — two separately-centred lines read as two unrelated
- * screens stacked. */
-const wordX = Math.max(0, Math.round((W - movy.hdrWidth(WORD)) / 2));
-const capX  = Math.max(0, Math.round((W - movy.mvWidth(CAP)) / 2));
-movy.hdrPrint(wordX, 26, WORD, 1);
-movy.mvPrint(capX, 40, CAP, 1);
+const CAP  = 'Schwung base ' + VERSION;
+/* The wordmark keeps its baseline (the farewell screen shares it), dAVEBOx's
+ * version sits right under it, and the base version below with a clear gap, so
+ * the two numbers cannot be read as one. */
+const centre = (s, w) => Math.max(0, Math.round((W - w(s)) / 2));
+movy.hdrPrint(centre(WORD, movy.hdrWidth), 26, WORD, 1);
+movy.mvPrint(centre(SA_VERSION, movy.mvWidth), 38, SA_VERSION, 1);
+movy.mvPrint(centre(CAP, movy.mvWidth), 52, CAP, 1);
 writeFileSync(join(OUT, 'splash2.hex'), toHex(bitmap) + '\n');
 
 /* ---- screen 1: every artwork frame ------------------------------------ */
@@ -82,4 +86,4 @@ writeFileSync(join(OUT, 'splash.hex'),
  * frame, index-aligned with splash-N.hex: index, dave_num, weight, name. */
 writeFileSync(join(OUT, 'splash-pool.tsv'),
     splash.DAVES.map((d, i) => `${i}\t${d.n}\t${d.w}\t${d.name}`).join('\n') + '\n');
-console.log(`splashes: ${n} artwork frames + splash2.hex + splash-pool.tsv (${CAP})`);
+console.log(`splashes: ${n} artwork frames + splash2.hex + splash-pool.tsv (${SA_VERSION} · ${CAP})`);
