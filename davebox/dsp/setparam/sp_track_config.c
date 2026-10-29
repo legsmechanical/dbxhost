@@ -63,16 +63,28 @@ static int sp_track_config(sp_ctx_t *cx) {
             clip_t  *_ncl   = &tr->clips[new_cidx];
             uint16_t newlen = _ncl->length;
             uint16_t _nls   = _ncl->loop_start;
-            if (_ncl->playback_dir == 0) {
-                tr->current_step     = tr->clip_playing
-                                       ? (uint16_t)(_nls + tr->current_step % newlen)
-                                       : (uint16_t)(_nls + inst->global_tick % newlen);
-            } else {
-                /* Non-forward direction: jump to directional initial step.
-                 * Polyrhythmic phase-align across mid-play launch is forward-
-                 * only for now; re-trigger transport to resync cleanly. */
-                tr->current_step = initial_clip_step(_nls, newlen, _ncl->playback_dir);
-                _ncl->pp_dir_state = initial_pp_dir(_ncl->playback_dir);
+            {
+                /* Where the new clip comes in (Josh, 2026-10-28, on a 1-bar and
+                 * a 4-bar clip: "it's not switching at the right spot" → song
+                 * position; "we should fix there too" — every clip type).
+                 * Same length (and both forward) as the playing clip: it takes
+                 * over that clip's phase, as it always did (a clip launched on
+                 * a bar runs from its own start, not the song's). Otherwise, or
+                 * with nothing playing: where it would be had it played since
+                 * the transport started, in any direction — the song position,
+                 * as a quantized launch and a drum lane (below) already do. The
+                 * old clip's step % length put a 4-bar clip launched from a
+                 * 1-bar one always in its first bar; the stopped-clip form
+                 * counted master 1/16 steps against a clip whose steps may be
+                 * quarters; a reversed or ping-pong clip jumped to its start. */
+                const clip_t *_ocl = &tr->clips[tr->active_clip];
+                uint32_t ntps = _ncl->ticks_per_step ? _ncl->ticks_per_step : TICKS_PER_STEP;
+                uint32_t otps = _ocl->ticks_per_step ? _ocl->ticks_per_step : TICKS_PER_STEP;
+                if (tr->clip_playing && _ncl->playback_dir == 0 && _ocl->playback_dir == 0 &&
+                    otps == ntps && _ocl->length == newlen)
+                    tr->current_step = (uint16_t)(_nls + tr->current_step % newlen);
+                else
+                    melodic_anchor_playhead(inst, tr, _ncl);
             }
             /* The OLD clip's automation lets go here TOO. Three other paths
              * switch a clip and all three released — the quantized boundary and

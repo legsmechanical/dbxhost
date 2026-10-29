@@ -21,6 +21,11 @@ the section into a versioned heading at release time.
   **Sens** (K7) sets how many hits count. Light on the CPU, like Free and Vintage.
 
 ### Changed
+- **Launch Now picks up at the song position when the clips differ in length.** A
+  4-bar clip launched from a 1-bar one used to come in somewhere in its first bar; it
+  now comes in where it would be had it been playing all along, as a quantized launch
+  and a drum track already did — for MIDI and audio clips, and in any play direction.
+  Clips of the same length still hand over in step with each other.
 - **Audio: Loop clips have no chops** — they belong to Slice mode now (a clip keeps them
   for when you switch back). SAMPLE shows none, nor a cursor; the pads show the sample in
   32 even sections; Chop sample is in Slice mode only.

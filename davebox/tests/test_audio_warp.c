@@ -245,7 +245,7 @@ int main(void) {
         hx_set_param(h, "transport", "play");
         for (k = 0; k < 300; k++) step(h);
         for (b = 0; b < 4; b++) {
-            int fed = hx_stub_feed(4, NULL, NULL), quiet = 0;
+            int fed = hx_stub_feed(4, NULL, NULL), quiet = 0, blank = 0;
             char m[160];
             /* mid-beat-3 of tone.wav, where it sounds: a gap would show */
             hx_set_param(h, "t4_launch_clip", b % 2 ? "0" : "1");
@@ -264,10 +264,19 @@ int main(void) {
                  * of it for the first 3 (the new one's may be) — before the fix
                  * blocks 1..3 were silent */
                 if (r < 3000 && (b % 2 == 0 ? n >= 2 : n < (b == 3 ? 5 : 3))) quiet++;
+                {
+                    char pb[64];
+                    int sounding = 0;
+                    hx_get_param(h, "t4_au_pos", pb, sizeof pb);
+                    sscanf(pb, "%d", &sounding);
+                    if (!sounding) blank++;       /* the playhead on the screen blinked out */
+                }
             }
             snprintf(m, sizeof m, "launch %d between Warp clips: %d quiet blocks, the new one due after %.1f ms", b, quiet,
                      inst->au_trk[4].w.last_wait * 1000.0 / SR);
             HX_ASSERT(quiet == 0, m);
+            snprintf(m, sizeof m, "launch %d between Warp clips: the playhead blinked out for %d blocks", b, blank);
+            HX_ASSERT(blank == 0, m);
             HX_ASSERT(inst->au_trk[4].w.last_wait * 1000.0 / SR <= (b == 3 ? 16.0 : 4.0), m);
             HX_ASSERT(inst->tracks[4].active_clip == (b % 2 ? 0 : 1), "the launch did not land");
             for (k = 0; k < 150 + 37 * b; k++) step(h);

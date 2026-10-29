@@ -1482,8 +1482,11 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
             if (!v->active || v->rel_len || !v->smp) continue;
             return snprintf(out, out_len, "1 %u %d", (unsigned)(v->pos < 0 ? 0 : v->pos), v->mode_loop ? -1 : v->slice);
         }
-        if (at->w.on && at->w.live && at->w.state == AU_WARP_PLAY) {
-            /* Warp has no voice: the frame under the clock, on the clip's map */
+        if (at->w.on && at->w.live) {
+            /* Warp has no voice: the frame under the clock, on the clip's map —
+             * also while a launch waits for the new clip's first frame (the old
+             * one still sounding), or the playhead blinked out for a block on
+             * every switch */
             const au_clip_t *cl = &inst->au_clip[t][at->w.clip];
             const au_sample_t *s = cl->smp;
             uint32_t rs, re;
