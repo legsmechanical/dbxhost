@@ -219,9 +219,11 @@ int main(void) {
     pick(h, "soft.wav");
     hx_set_param(h, "t4_au_set_trans", "0 1");
     hx_set_param(h, "t4_au_set_sens", "0 0");
-    HX_ASSERT(ac->tr_n == 4 && info_field(h, 4, 0, 21) == 4, "Sens 0: not 4 chops, or info's hits disagrees");
+    HX_ASSERT(ac->tr_n == 4 && info_field(h, 4, 0, 21) == 4 && info_field(h, 4, 0, 22) == 0,
+              "Sens 0: not 4 chops, or info's hits or sens disagrees");
     hx_set_param(h, "t4_au_set_sens", "0 100");
-    HX_ASSERT(ac->tr_n == 8 && info_field(h, 4, 0, 21) == 8 && marks(h, ab, 8) == 8, "Sens 100: not 8 chops");
+    HX_ASSERT(ac->tr_n == 8 && info_field(h, 4, 0, 21) == 8 && info_field(h, 4, 0, 22) == 100 && marks(h, ab, 8) == 8,
+              "Sens 100: not 8 chops, or info's sens disagrees");
     hx_set_param(h, "t4_au_set_trans", "0 0");
 
     /* ---- more hits than 128: the first 128 from Start ---- */
