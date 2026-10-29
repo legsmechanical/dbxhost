@@ -1336,7 +1336,7 @@ int main(void) {
     HX_ASSERT(inst->tracks[6].pad_mode != PAD_MODE_AUDIO, "t6 is still Audio");
     inst->tracks[6].tarp.octaves = 15;
     n = hx_get_param(h, "state_full", blob, (int)sizeof blob);
-    HX_ASSERT(strstr(blob, " 1 2 50 2 0|ramp2.wav\"") && strstr(blob, "\"t4_aul\":1"), "the state does not keep Tempo Vintage, Bars or the Layout");
+    HX_ASSERT(strstr(blob, " 1 2 50|ramp2.wav\"") && strstr(blob, "\"t4_aul\":1"), "the state does not keep Tempo Vintage, Bars or the Layout");
     HX_ASSERT(n > 0 && (size_t)n < sizeof blob - 1, "state_full failed");
     HX_ASSERT(strstr(blob, "\"t4_pm\":3") && strstr(blob, "\"t4c0_au2\":\"1 8 1 16 0 0 0 0 0 0 0 -17 0 ") && strstr(blob, "|mono48.wav\""),
               "the state does not carry the Audio track and clip A");
@@ -1431,6 +1431,30 @@ int main(void) {
                   !strcmp(inst->au_clip[4][0].name, "mono48.wav"), "a pre-detune clip did not load as saved");
         HX_ASSERT(inst->au_clip[4][0].sl[1].pitch == 5 && inst->au_clip[4][0].sl[1].decay_ms == 20 &&
                   inst->au_clip[4][0].sl[1].detune == 0, "a pre-detune slice did not load as saved");
+        hx_destroy(h);
+    }
+
+    /* ---- a project saved while Loop had Beats: 17 numbers (Fill and Fade
+     * last, dropped); Beats (3) and the old Warp (4) both load as Warp (3);
+     * Sens and the name come through, and the next save writes 15 ---- */
+    {
+        FILE *wf;
+        h = hx_create(NULL); inst = (seq8_instance_t *)h->inst;
+        snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
+        wf = fopen(inst->state_path, "w");
+        fprintf(wf, "{\"v\":36,\"t4_pm\":3,\"t4c0_au2\":\"0 16 1 16 0 0 0 0 0 0 0 0 3 2 70 1 30|mono48.wav\","
+                    "\"t4c1_au2\":\"0 16 1 16 0 0 0 0 0 0 0 0 4 2 50 2 0|mono48.wav\"}");
+        fclose(wf);
+        seq8_load_state(inst);
+        HX_ASSERT(inst->au_clip[4][0].tempo == AU_TEMPO_WARP && inst->au_clip[4][1].tempo == AU_TEMPO_WARP,
+                  "a Beats clip or an old Warp clip did not load as Warp");
+        HX_ASSERT(inst->au_clip[4][0].sens == 70 && inst->au_clip[4][0].bars == 2 &&
+                  !strcmp(inst->au_clip[4][0].name, "mono48.wav") && !strcmp(inst->au_clip[4][1].name, "mono48.wav"),
+                  "a Beats-era clip lost its Sens, Bars or name");
+        inst->state_dirty = 1;                               /* state_full answers only when there is something to save */
+        HX_ASSERT(hx_get_param(h, "state_full", blob, (int)sizeof blob) > 0 &&
+                  strstr(blob, " 0 3 2 70|mono48.wav\""),
+                  "the clip is not saved as 15 numbers (Tempo Warp = 3, Sens last)");
         hx_destroy(h);
     }
 

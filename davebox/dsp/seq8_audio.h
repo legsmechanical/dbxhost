@@ -37,14 +37,9 @@
 #define AU_TEMPO_FREE      0            /* Loop: the sample at its own speed, whatever the tempo */
 #define AU_TEMPO_VINTAGE   1            /* Loop: cut every tick, each piece on its place in the sample's own Bars (au_sync_block) */
 #define AU_TEMPO_PITCH     2            /* Loop: the sample retuned (varispeed) so Start..End fills its own Bars */
-#define AU_TEMPO_BEATS     3            /* Loop: cut at its hits, each on its place in the sample's own Bars (au_beats_block) */
-#define AU_TEMPO_WARP      4            /* Loop: stretched to the tempo at its own pitch (Bungee, the stretcher thread) */
+#define AU_TEMPO_WARP      3            /* Loop: stretched to the tempo at its own pitch (Bungee, the stretcher thread) */
 #define AU_TEMPO_MAX       AU_TEMPO_WARP
-#define AU_FILL_OFF        0            /* Beats: the gap after a hit is silent (the tail fades) */
-#define AU_FILL_LOOP       1            /* ...the hit's tail loops, crossfaded at the seam */
-#define AU_FILL_PING       2            /* ...the hit's tail plays back and forth (Ableton's default) */
-#define AU_FILL_DEFAULT    AU_FILL_PING
-#define AU_SENS_DEFAULT    50           /* Beats: hit sensitivity, 0..100 */
+#define AU_SENS_DEFAULT    50           /* Transient chops: hit sensitivity, 0..100 */
 #define AU_BARS_MAX        64           /* a sample's own length in bars, 1..64 */
 #define AU_GAP             16           /* frames: the least a slice can be */
 #define AU_TAIL            128          /* frames: the fade back from a chop's end (~3 ms) */
@@ -84,7 +79,7 @@ typedef struct au_sample {
     int8_t    peaks[AU_PEAKS][2];   /* per column: min, max (int8 of the int16 range) */
     int8_t  (*mip)[2];              /* min, max per AU_MIP frames (the zoomed waveform) */
     uint32_t  nmip;
-    uint32_t *hits;                 /* Beats: candidate hits, frames (each the start of a rising AU_MIP block), ascending */
+    uint32_t *hits;                 /* Transient chops: candidate hits, frames (each the start of a rising AU_MIP block), ascending */
     uint8_t  *hit_d;                /* per candidate: its rise (au_lvl steps) */
     uint8_t  *hit_r;                /* per candidate: its rise against the ~100 ms around it, x16 */
     uint32_t  nhits;                /* candidates; Sens picks which count (au_hit_kept) */
@@ -126,9 +121,7 @@ typedef struct {
     uint8_t      jmpq;               /* retired (jump quantize): as `jump` */
     uint8_t      tempo;              /* Loop: AU_TEMPO_* (the CLIP bank's K1) */
     uint8_t      bars;               /* the sample's own length in bars, as recorded (the CLIP bank's K2); 0 = not known yet */
-    uint8_t      sens;               /* Beats: hit sensitivity 0..100 (CLIP K7) */
-    uint8_t      fill;               /* Beats: AU_FILL_* (CLIP K5) */
-    uint8_t      fade;               /* Beats: 0..100, how far the fill dies away by the next hit (CLIP K6) */
+    uint8_t      sens;               /* Transient chops: hit sensitivity 0..100 (the chop editor's jog) */
     au_slice_t   sl[AU_MAX_SLICES];
 } au_clip_t;
 
@@ -154,13 +147,6 @@ typedef struct {
     uint8_t  tail;           /* in the fade back from its end */
     uint8_t  gated;          /* GATE / LOOP: ends at note-off */
     uint8_t  starve;         /* streamed: 0..64, its level, down while a chunk is missing (64 at start) */
-    uint8_t  beats;          /* a Beats piece (the fields below apply) */
-    uint8_t  fill, fade;     /* ...AU_FILL_*, and how far the fill dies by its slot's end */
-    uint8_t  filling;        /* ...past its end: the fill window lo..hi is its tail */
-    uint8_t  ranon;          /* ...played on past its end once, for a join that was due */
-    uint32_t slot_end;       /* ...the age at which the next piece is due (its slot's end) */
-    uint32_t fage, flen;     /* ...frames into the fill, and the fill's length to slot_end */
-    double   tl;             /* ...the fill window's length, sample frames */
     uint32_t wlo, whi;       /* a Vintage piece: its clip's Start..End, which the streamer reads ahead
                               * through as for a Loop (whi 0: read ahead within lo..hi) */
 } au_voice_t;

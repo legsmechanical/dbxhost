@@ -158,7 +158,7 @@ static int fresh_take(int nocache, int16_t *out, int blocks) {
     for (i = 0; i < 2000 && inst->au_clip[4][0].state != 2; i++) { hx_render(h, 1); usleep(1000); }
     HX_ASSERT(inst->au_clip[4][0].state == 2, "the tone did not load (fresh take)");
     hx_set_param(h, "t4_au_set_bars", "0 1");
-    hx_set_param(h, "t4_au_set_tempo", "0 4");
+    hx_set_param(h, "t4_au_set_tempo", "0 3");
     hx_set_param(h, "t4_launch_clip", "0");
     hx_set_param(h, "bpm", "125");
     au_warp_nocache = nocache;
@@ -189,7 +189,7 @@ static int fresh_stream_take(int nocache, int16_t *out, unsigned *missed) {
     for (i = 0; i < 2000 && inst->au_clip[4][0].state != 2; i++) { hx_render(h, 1); usleep(1000); }
     HX_ASSERT(inst->au_clip[4][0].state == 2 && !inst->au_clip[4][0].smp->pcm, "the minute did not load streamed");
     hx_set_param(h, "t4_au_set_bars", "0 30");
-    hx_set_param(h, "t4_au_set_tempo", "0 4");
+    hx_set_param(h, "t4_au_set_tempo", "0 3");
     hx_set_param(h, "t4_launch_clip", "0");
     hx_set_param(h, "bpm", "125");
     au_warp_nocache = nocache;
@@ -243,7 +243,7 @@ int main(void) {
     for (i = 0; i < 2000 && inst->au_clip[4][0].state == 1; i++) { hx_render(h, 1); usleep(1000); }
     HX_ASSERT(inst->au_clip[4][0].state == 2, "the tone did not load");
     hx_set_param(h, "t4_au_set_bars", "0 1");
-    hx_set_param(h, "t4_au_set_tempo", "0 4");
+    hx_set_param(h, "t4_au_set_tempo", "0 3");
     HX_ASSERT(inst->au_clip[4][0].tempo == AU_TEMPO_WARP, "Tempo did not go to Warp");
     hx_set_param(h, "t4_launch_clip", "0");
 
@@ -338,7 +338,7 @@ int main(void) {
         HX_ASSERT(inst->au_clip[4][1].state == 2, "the 660 Hz sine did not load");
         hx_set_param(h, "t4_au_set_bars", "1 1");
         hx_set_param(h, "t4_au_set_tempo", "1 4");
-        hx_set_param(h, "t4_au_set_tempo", "0 4");          /* the Warp -> Free case above left clip A on Free */
+        hx_set_param(h, "t4_au_set_tempo", "0 3");          /* the Warp -> Free case above left clip A on Free */
         HX_ASSERT(inst->au_clip[4][0].tempo == AU_TEMPO_WARP && inst->au_clip[4][1].tempo == AU_TEMPO_WARP,
                   "both clips are not on Warp");
         hx_set_param(h, "bpm", "100");
@@ -492,7 +492,7 @@ int main(void) {
         const uint8_t stb = 0xFA, clk = 0xF8, sp = 0xFC;
         int loud = 0, total = 0, anchors = 0, k;
         uint32_t g0;
-        hx_set_param(h, "t4_au_set_tempo", "0 4");
+        hx_set_param(h, "t4_au_set_tempo", "0 3");
         hx_set_param(h, "clock_follow_on", "1");
         for (k = 0; k < 8; k++) step(h);
         hx_stub_feed_reset();
@@ -542,7 +542,7 @@ int main(void) {
     for (i = 0; i < 2000 && inst->au_clip[4][0].state == 1; i++) { hx_render(h, 1); usleep(1000); }
     HX_ASSERT(inst->au_clip[4][0].state == 2, "the tone did not load (thread)");
     hx_set_param(h, "t4_au_set_bars", "0 1");
-    hx_set_param(h, "t4_au_set_tempo", "0 4");
+    hx_set_param(h, "t4_au_set_tempo", "0 3");
     hx_set_param(h, "t4_launch_clip", "0");
     hx_set_param(h, "bpm", "100");
     {
@@ -610,7 +610,7 @@ int main(void) {
     for (i = 0; i < 2000 && inst->au_clip[4][0].state == 1; i++) { hx_render(h, 1); usleep(1000); }
     HX_ASSERT(inst->au_clip[4][0].state == 2 && !inst->au_clip[4][0].smp->pcm, "the tone did not load streamed");
     hx_set_param(h, "t4_au_set_bars", "0 30");
-    hx_set_param(h, "t4_au_set_tempo", "0 4");
+    hx_set_param(h, "t4_au_set_tempo", "0 3");
     hx_set_param(h, "t4_launch_clip", "0");
     hx_set_param(h, "bpm", "110");
     {
