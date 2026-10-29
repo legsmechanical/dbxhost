@@ -1911,7 +1911,6 @@ static void au_range(const au_clip_t *cl, const au_sample_t *s, uint32_t *rs, ui
     *re = e;
 }
 
-/* How many slices the clip plays: Even's count, else the hand set's. */
 /* Start..End in ticks at the sample's own length in bars (Vintage, Pitch, >Seq):
  * the bars are the whole sample's, so a cropped range is its share of them. */
 static double au_span_ticks(const au_clip_t *cl, const au_sample_t *s, uint32_t rs, uint32_t re) {
@@ -1925,6 +1924,7 @@ static double au_span_ticks(const au_clip_t *cl, const au_sample_t *s, uint32_t 
  * "just like sequence loop lengths"): Start..End become the part of the
  * sample under the clip's loop window, the steps laid over the sample's own
  * Bars from its first frame. */
+static void au_trans_calc(au_clip_t *cl);
 static void au_window_to_range(seq8_instance_t *inst, int t, int c) {
     seq8_track_t *tr = &inst->tracks[t];
     au_clip_t *cl = &inst->au_clip[t][c];
@@ -1941,10 +1941,30 @@ static void au_window_to_range(seq8_instance_t *inst, int t, int c) {
     cl->rstart = a;
     cl->rend = b >= s->frames ? 0 : b;
     cl->mig_rs = cl->mig_re = 0;
+    au_trans_calc(cl);
     inst->state_dirty = 1;
 }
 
+/* Transient's chops (Josh, 2026-10-28: "keep the first 128. and only make
+ * them within the current sample start end points"): Start, then every hit
+ * kept at the clip's Sens inside Start..End, the first AU_MAX_SLICES. On the
+ * SPI thread, from the handlers and a sample landing; render reads tr_at. */
+static void au_trans_calc(au_clip_t *cl) {
+    const au_sample_t *s = cl->smp;
+    uint32_t rs, re, k;
+    int rmin, dmin, n = 1;
+    if (!cl->trans || !s) return;
+    au_range(cl, s, &rs, &re);
+    au_sens_min(cl->sens, &rmin, &dmin);
+    cl->tr_at[0] = rs;
+    for (k = au_hit_from(s, rs + 1); k < s->nhits && s->hits[k] < re && n < AU_MAX_SLICES; k++)
+        if (au_hit_kept(s, k, rmin, dmin)) cl->tr_at[n++] = s->hits[k];
+    cl->tr_n = (uint8_t)n;
+}
+
+/* How many slices the clip plays: Transient's or Even's, else the hand set's. */
 static int au_count(const au_clip_t *cl) {
+    if (cl->trans) return cl->tr_n ? cl->tr_n : 1;
     if (cl->even) return cl->even;
     return cl->nslices ? cl->nslices : 1;
 }
@@ -1963,7 +1983,13 @@ static int au_slice_range(const au_clip_t *cl, const au_sample_t *s, int k, uint
     uint32_t rs, re;
     int n = au_count(cl);
     if (k < 0 || k >= n) return 0;
-    if (cl->even) {
+    if (cl->trans) {
+        if (k >= cl->tr_n) return 0;
+        au_range(cl, s, &rs, &re);
+        *a = cl->tr_at[k];
+        *b = k + 1 < cl->tr_n ? cl->tr_at[k + 1] : re;
+        if (*b <= *a) return 0;
+    } else if (cl->even) {
         au_range(cl, s, &rs, &re);
         if (re <= rs) return 0;
         *a = rs + (uint32_t)((uint64_t)(re - rs) * k / n);

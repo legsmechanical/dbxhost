@@ -122,6 +122,9 @@ typedef struct {
     uint8_t      tempo;              /* Loop: AU_TEMPO_* (the CLIP bank's K1) */
     uint8_t      bars;               /* the sample's own length in bars, as recorded (the CLIP bank's K2); 0 = not known yet */
     uint8_t      sens;               /* Transient chops: hit sensitivity 0..100 (the chop editor's jog) */
+    uint8_t      trans;              /* Transient: an override over the hand set, like Even; never saved */
+    uint8_t      tr_n;               /* Transient's chops, 1..AU_MAX_SLICES (au_trans_calc) */
+    uint32_t     tr_at[AU_MAX_SLICES]; /* their starts: Start, then each kept hit inside Start..End */
     au_slice_t   sl[AU_MAX_SLICES];
 } au_clip_t;
 

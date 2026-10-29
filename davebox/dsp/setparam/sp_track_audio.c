@@ -26,8 +26,12 @@
  *                                  there (later slices, and their steps, move up one)
  *   tN_au_mark_del "C L"           slice L's start goes: it merges into L-1 (not 0)
  *   tN_au_manual  "C"              the hand set becomes one slice, Start..End; Even Off
- *   tN_au_even_bake "C"            Even's slices become the hand set; Even Off
- *                                  (a hand edit while Even is on bakes first)
+ *   tN_au_even_bake "C"            Even's (or Transient's) slices become the hand
+ *                                  set; the override Off (a hand edit made
+ *                                  while one is on bakes it first)
+ *   tN_au_set_trans "C 1|0"        Transient chops: 1 on (Even Off), 0 cancel —
+ *                                  the hand set was never touched. Not saved
+ *   tN_au_trans_bake "C"           Transient's chops become the hand set
  *   tN_au_chop    "C"              one step per slice, in order (one undo)
  *   tN_au_wipe    "C"              clip C's steps go (one undo) -- a converted
  *                                  clip that now plays its recording
@@ -107,6 +111,7 @@ static void au_apply_results(seq8_instance_t *inst) {
                 cl->nslices = 1;
                 for (l = 0; l < AU_MAX_SLICES; l++) cl->sl[l].start = cl->sl[l].end = 0;
             }
+            au_trans_calc(cl);
             /* the sample's own length in bars: the loader's guess for a new
              * sample, or a project's that predates Bars */
             if ((was_pick || !cl->bars) && r.bars) cl->bars = r.bars;
@@ -738,6 +743,24 @@ static void au_even_bake(au_clip_t *cl) {
     cl->even = 0;
 }
 
+/* Whichever override is on becomes the hand set: Transient's chops (each
+ * end home), else Even's. */
+static void au_gen_bake(au_clip_t *cl) {
+    int k;
+    if (cl->trans) {
+        if (cl->smp && cl->tr_n) {
+            for (k = 0; k < cl->tr_n; k++) {
+                cl->sl[k].start = cl->tr_at[k];
+                cl->sl[k].end = 0;
+            }
+            cl->nslices = cl->tr_n;
+        }
+        cl->trans = 0;
+        return;
+    }
+    au_even_bake(cl);
+}
+
 /* One step per slice, where the slice sits in the sample, so the clip plays
  * the sample back as it was — now as slices. The clip's steps are replaced; a
  * step holds one slice (a later slice landing on a taken step is left out).
@@ -871,6 +894,18 @@ static int sp_track_audio(sp_ctx_t *cx) {
              * (Josh: "it'd be nice if even chops are kind of like overrides
              * so that manual chop points are preserved") */
             cl->even = (uint8_t)(v < 2 ? 0 : clamp_i(v, 2, AU_MAX_SLICES));
+            cl->trans = 0;
+        } else if (!strcmp(w, "trans")) {
+            /* Transient: an override as Even is; 0 cancels it */
+            if (v) {
+                if (!cl->smp) return 1;
+                if ((uint64_t)cl->smp->frames > (uint64_t)cl->smp->rate * AU_SLICE_MAX_SEC) { cl->err = AU_ERR_LONG; return 1; }
+                cl->even = 0;
+                cl->trans = 1;
+                au_trans_calc(cl);
+            } else {
+                cl->trans = 0;
+            }
         } else if (!strcmp(w, "start") || !strcmp(w, "end")) {
             /* frames; at least AU_GAP apart. Unloaded, taken as given. */
             uint32_t fr = cl->smp ? cl->smp->frames : 0, rs, re;
@@ -888,6 +923,7 @@ static int sp_track_audio(sp_ctx_t *cx) {
                     v = clamp_i(v, (int)rs + AU_GAP, (int)fr);
                     cl->rend = (uint32_t)v >= fr ? 0 : (uint32_t)v;
                 }
+                au_trans_calc(cl);
             }
         } else if (!strcmp(w, "pitch")) {
             cl->pitch = (int8_t)clamp_i(v, -24, 24);
@@ -905,6 +941,7 @@ static int sp_track_audio(sp_ctx_t *cx) {
             cl->tempo = (uint8_t)v;
         } else if (!strcmp(w, "sens")) {
             cl->sens = (uint8_t)clamp_i(v, 0, 100);           /* Transient: which hits count */
+            au_trans_calc(cl);
         } else if (!strcmp(w, "nudge")) {
             cl->nudge_ms = (int16_t)clamp_i(v, -500, 500);
         } else if (!strcmp(w, "bars")) {
@@ -936,7 +973,7 @@ static int sp_track_audio(sp_ctx_t *cx) {
             /* a hand-set start: between its neighbours' starts, before its
              * own pinned end. Even, if on, becomes the hand set first. */
             if (!cl->smp) return 1;
-            au_even_bake(cl);
+            au_gen_bake(cl);
             if (l >= cl->nslices) return 1;
             int lo = l > 0 ? (int)cl->sl[l - 1].start + AU_GAP : 0;
             int hi = l + 1 < cl->nslices ? (int)cl->sl[l + 1].start - AU_GAP : (int)cl->smp->frames - AU_GAP;
@@ -947,7 +984,7 @@ static int sp_track_audio(sp_ctx_t *cx) {
             /* a hand-set end: 0 (or the home frame itself) = home; else
              * pinned, past its start, anywhere up to the sample's end */
             if (!cl->smp) return 1;
-            au_even_bake(cl);
+            au_gen_bake(cl);
             if (l >= cl->nslices) return 1;
             uint32_t home = au_home_end(cl, cl->smp, l);
             if (v <= 0 || (uint32_t)v == home) sl->end = 0;
@@ -984,7 +1021,7 @@ static int sp_track_audio(sp_ctx_t *cx) {
         au_clip_t *cl = &inst->au_clip[tidx][c];
         f = my_atoi(p);
         if (!cl->smp) return 1;
-        au_even_bake(cl);
+        au_gen_bake(cl);
         if (cl->nslices >= AU_MAX_SLICES || f < 0 || (uint32_t)f >= cl->smp->frames) return 1;
         for (k = 0; k < cl->nslices; k++) {
             int d = (int)cl->sl[k].start - f;
@@ -1012,7 +1049,7 @@ static int sp_track_audio(sp_ctx_t *cx) {
         if (c < 0) return 1;
         au_clip_t *cl = &inst->au_clip[tidx][c];
         l = my_atoi(p);
-        au_even_bake(cl);
+        au_gen_bake(cl);
         if (l < 1 || l >= cl->nslices) return 1;
         if (!cl->sl[l - 1].end) cl->sl[l - 1].end = cl->sl[l].end;
         memmove(&cl->sl[l], &cl->sl[l + 1], sizeof cl->sl[0] * (size_t)(AU_MAX_SLICES - 1 - l));
@@ -1023,10 +1060,10 @@ static int sp_track_audio(sp_ctx_t *cx) {
         return 1;
     }
 
-    if (!strcmp(sub, "even_bake")) {
+    if (!strcmp(sub, "even_bake") || !strcmp(sub, "trans_bake")) {
         c = au_arg_clip(&p);
         if (c < 0) return 1;
-        au_even_bake(&inst->au_clip[tidx][c]);
+        au_gen_bake(&inst->au_clip[tidx][c]);
         au_mark(inst, tidx, c);
         return 1;
     }
@@ -1043,6 +1080,7 @@ static int sp_track_audio(sp_ctx_t *cx) {
         cl->sl[0].start = rs;
         cl->nslices = 1;
         cl->even = 0;
+        cl->trans = 0;
         au_mark(inst, tidx, c);
         return 1;
     }
@@ -1080,6 +1118,7 @@ static int sp_track_audio(sp_ctx_t *cx) {
         memcpy(inst->au_lazy_bak, cl->sl, sizeof cl->sl);
         inst->au_lazy_bak_n = cl->nslices;
         inst->au_lazy_bak_even = cl->even;
+        cl->trans = 0;
         inst->au_lazy_track = (int8_t)tidx;
         inst->au_lazy_clip = (int8_t)c;
         inst->au_lazy_n = 0;
@@ -1200,12 +1239,12 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
                 if (r < (double)reach) reach = (uint32_t)r;
             }
         }
-        return snprintf(out, out_len, "%d %d %d %d %d %d %u %u %d %d %u %u %d %d %d %d %d %d %d %u %d %u %d|%s",
+        return snprintf(out, out_len, "%d %d %d %d %d %d %u %u %d %d %u %u %d %d %d %d %d %d %d %u %d %u %d %d|%s",
                         cl->state, cl->err, cl->mode, cl->even, cl->nslices, cl->jump,
                         (unsigned)rs, (unsigned)re, cl->pitch, cl->gain_db,
                         s ? (unsigned)s->frames : 0u, s ? (unsigned)s->rate : 0u, s ? s->ch : 0,
                         cl->revrs, cl->nudge_ms, cl->jmpq, au_count(cl), cl->detune, cl->tempo, (unsigned)reach, cl->bars,
-                        (unsigned)(s ? au_hit_count(s, rs, re, cl->sens) : 0), cl->sens, cl->name);
+                        (unsigned)(s ? au_hit_count(s, rs, re, cl->sens) : 0), cl->sens, cl->trans, cl->name);
     }
     if (!strncmp(k, "sl_", 3)) {                  /* sl_C_L: "a b pinned pitch gain rev play atk dec detune" */
         const char *q = k + 3;
