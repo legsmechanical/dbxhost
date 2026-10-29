@@ -195,7 +195,7 @@ function auReadPeaks(t, c) {
  * fast turn never steps from a stale value; the re-read waits for a pause. */
 function marksKey(t, c) {
     const i = auInfo(t, c);
-    return [t, c, i.name, i.nframes, i.n, i.even, i.hand, i.rstart, i.rend, S.auStartsRev | 0].join('_');
+    return [t, c, i.name, i.nframes, i.n, i.even, i.hand, i.rstart, i.rend, i.trans, i.sens, S.auStartsRev | 0].join('_');
 }
 function auReadMarks(t, c) {
     const raw = String(host_module_get_param('t' + t + '_au_marks_' + c) || '').trim();
@@ -398,6 +398,10 @@ export function auMarkDel(t, c, l) { setKey(t, 'mark_del', c + ' ' + l); auMarkS
 export function auManual(t, c) { setKey(t, 'manual', c); auMarkStale(t, c); }
 /* Even's slices become the clip's own chops (Even Off). */
 export function auEvenBake(t, c) { setKey(t, 'even_bake', c); auMarkStale(t, c); }
+/* Transient chops: on (Even Off) or cancelled — the hand set untouched — and
+ * baked into the hand set. */
+export function auTrans(t, c, on) { setKey(t, 'set_trans', c + ' ' + (on ? 1 : 0)); auMarkStale(t, c); }
+export function auTransBake(t, c) { setKey(t, 'trans_bake', c); auMarkStale(t, c); }
 
 /* ---- formatting ---- */
 

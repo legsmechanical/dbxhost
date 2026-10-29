@@ -73,7 +73,7 @@ import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
 import { isAudioTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
          auPos, auLazyState, auSelSlice, auPanelCells, auPanelTitle, auPanelPages, auBankEd, auBankTitle, auLoopBankCells, auModeCell, knobAltOnTrack,
          auPadModeCells, AU_NOTE_BASE,
-         auFmtTime, auEnd, AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN } from './ui_audio.mjs';
+         auFmtTime, auEnd, AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
 import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
 import { drawAudioAsk } from './ui_dialogs.mjs';
 import { drawAudioChooser } from './ui_audio_chooser.mjs';
@@ -181,22 +181,23 @@ function drawAudioPanel() {
 }
 
 /* The WAVE editor (ui_audio_editor): the clip's sample — CLICK TO LOAD
- * SAMPLE in the click corners with none, the loop with its Start / End and
- * Pitch / Gain in Loop mode, the chop editor in Slice mode, a Lazy chop, the
- * Shift + click picker, and the questions over it. */
+ * SAMPLE in the click corners with none, the clip's Start / End and Pitch /
+ * Gain (Slice mode: its chops drawn), the CHOP editor (Even, Transient,
+ * Manual), a Lazy chop, the picker, and the questions over it. */
 function drawAudioWaveEditor() {
     const ed = S.auEditor, t = ed.t, c = ed.c, i = auInfo(t, c);
     if (ed.ask) {
         const n = ed.ask.n != null ? ed.ask.n : i.hand;
         if (ed.ask.kind === 'keep') drawAudioAsk('LAZY CHOP', ['Keep ' + n + ' new chop' + (n === 1 ? '' : 's') + '?'], ed.ask.sel);
-        else drawAudioAsk('MANUAL CHOP', ['Replace chops?', 'The ' + i.hand + ' chops you made go.'], ed.ask.sel);
+        else if (ed.ask.kind === 'chops') drawAudioAsk(ed.chop.kind === 'even' ? 'EVEN' : 'TRANSIENT', ['Keep ' + i.n + ' chop' + (i.n === 1 ? '' : 's') + '?'], ed.ask.sel);
+        else drawAudioAsk('MANUAL', ['Clear all chops?', 'One slice, Start to End.'], ed.ask.sel);
         return;
     }
     clear_screen();
     if (ed.pick) {
         drawBankHeading(ed.pick.level === 1 ? 'SAMPLE' : 'CHOP SAMPLE', false);
         drawKitList(auPickRows(ed), ed.pick.sel, { h: MV_FOOTER_Y - 11 });
-        drawKitHintRow(MV_FOOTER_Y, ed.pick.editEven ? [['jog', 'count'], ['clk', 'set']] : [['clk', 'pick'], ['back', ed.pick.level === 1 ? 'exit' : 'up']]);
+        drawKitHintRow(MV_FOOTER_Y, [['clk', 'pick'], ['back', ed.pick.level === 1 ? 'exit' : 'up']]);
         return;
     }
     auWaveView(ed);
@@ -258,17 +259,40 @@ function drawAudioWaveEditor() {
         return;
     }
     const mk = auMarks(t, c);
-    drawBankHeading('SLICE ' + (sel + 1) + '/' + mk.length, false);
-    const m = mk[sel];
-    if (m) {
-        /* at home the end follows the next slice's start: "NEXT" (Josh) */
-        ends('S ' + auFmtTime(m[0], rt), m[1] === auEdHome(ed, sel) ? 'E NEXT' : 'E ' + auFmtTime(m[1], rt));
+    const kind = ed.mode === 'chop' && ed.chop ? ed.chop.kind : null;
+    /* the jog's value, lit while it turns (as a knob's readout is) */
+    const jogLit = (S.clockMs | 0) - (ed.jogAt | 0) < 600;
+    if (kind === 'even' || kind === 'transient') {
+        /* the count top right; Transient's says when it kept only the first
+         * 128 (Josh, 2026-10-28: "keep the first 128") */
+        const capped = kind === 'transient' && (i.hits | 0) > AU_EVEN_MAX;
+        drawBankHeading(kind === 'even' ? 'EVEN' : 'TRANSIENT', false, false,
+                        (capped ? AU_EVEN_MAX + '+' : i.n) + ' CHOPS');
+        if (zoomTxt) mid(zoomTxt);
+        else if (jogLit) mid(kind === 'even' ? 'COUNT ' + (i.even | 0) : 'SENS ' + (i.sens | 0));
+        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel: -1, gain: i.gain | 0 });
+        drawKitHintRow(MV_FOOTER_Y, [['jog', kind === 'even' ? 'count' : 'sens'], ['back', 'out']]);
+        return;
     }
+    drawBankHeading('SLICE ' + (sel + 1) + '/' + mk.length, false);
+    if (kind === 'manual') {
+        const m = mk[sel];
+        if (m) {
+            /* at home the end follows the next slice's start: "NEXT" (Josh) */
+            ends('S ' + auFmtTime(m[0], rt), m[1] === auEdHome(ed, sel) ? 'E NEXT' : 'E ' + auFmtTime(m[1], rt));
+        }
+        if (zoomTxt) mid(zoomTxt);
+        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel, cur: ed.cur, gain: i.gain | 0 });
+        /* two hints fit (found on the device: a third was cut off); Clear
+         * all is the one nobody would guess (Josh, 2026-10-28) */
+        drawKitHintRow(MV_FOOTER_Y, [['clk', 'add'], ['del+clk', 'clear']]);
+        return;
+    }
+    /* WAVE in Slice mode: the clip's Start / End, its chops, no cursor */
+    ends('S ' + auFmtTime(i.rstart, rt), 'E ' + auFmtTime(auEnd(i), rt));
     if (zoomTxt) mid(zoomTxt);
-    drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel, cur: ed.cur, gain: i.gain | 0 });
-    /* two hints fit: Shift + click is the one nobody would guess (found on
-     * the device: a third was cut off) */
-    drawKitHintRow(MV_FOOTER_Y, [['clk', 'add'], ['sh+clk', 'menu']]);
+    drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel, gain: i.gain | 0 });
+    drawKitHintRow(MV_FOOTER_Y, [['knobs', 'edit'], ['clk', 'menu']]);
 }
 
 /* An Audio track's banks (Josh, 2026-10-27): the CLIP bank mirrors ALL LANES

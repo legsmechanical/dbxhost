@@ -501,7 +501,7 @@ export const S = {
     auLayout: new Array(8).fill(0),    /* PAD MODE Layout: 0 4 Rows (8 a row), 1 16 Pads (left 4x4, right 4x4) */
     auStartsRev: 0,          /* bumped when slice starts may have moved */
     auPanel: null,           /* the AUDIO editor: { t, page } (ui_audio_editor.mjs) */
-    auEditor: null,          /* its waveform editor: { t, c, mode chop|range|lazy, A, B, cur, last, endHold, ask } */
+    auEditor: null,          /* WAVE: { t, c, mode wave|chop|lazy, chop: { kind even|transient|manual, orig }, A, B, cur, last, endHold, ask, pick } */
     auChooser: null,         /* the sample chooser (ui_audio_chooser.mjs) */
     pendingAudioChooser: null,    /* { t, c }: the tick opens the chooser (it lists a folder) */
     confirmConvertAudio: false,   /* the convert confirm: false Drums, 'audio' -> Audio, 'resample' the resample offer, 'leave' Audio -> another */
