@@ -73,7 +73,7 @@ import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
 import { isAudioTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
          auPos, auLazyState, auSelSlice, auPanelCells, auPanelTitle, auPanelPages, auBankEd, auBankTitle, auLoopBankCells, auModeCell, knobAltOnTrack,
          auPadModeCells, AU_NOTE_BASE,
-         auFmtTime, auEnd, AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
+         auFmtTime, auEnd, auOrigBpm, AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
 import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
 import { drawAudioAsk } from './ui_dialogs.mjs';
 import { drawAudioChooser } from './ui_audio_chooser.mjs';
@@ -212,11 +212,14 @@ function drawAudioWaveEditor() {
     };
     const ends = (s, e) => { lit(4, s, S.knobTouched === 0); lit(124 - ovwWidth(e), e, S.knobTouched === 2); };
     const sgn = (v) => (v > 0 ? '+' : '') + v;
-    /* K2 Zoom, K4 Gain, K5 Pitch, K6 Detune: what the knob in hand is doing */
+    /* K2 Zoom, K4 Gain, K5 Pitch, K6 Detune, K7 Bars (with the tempo they
+     * make): what the knob in hand is doing */
+    const bpm = auOrigBpm(i);
     const zoomTxt = S.knobTouched === 1 ? 'ZOOM' + (ed.zoomDir > 0 ? ' +' : ed.zoomDir < 0 ? ' -' : '')
         : S.knobTouched === 3 ? 'GAIN ' + sgn(i.gain | 0) + 'DB'
         : S.knobTouched === 4 ? 'PITCH ' + sgn(i.pitch | 0)
-        : S.knobTouched === 5 ? 'DETUNE ' + sgn(i.detune | 0) : '';
+        : S.knobTouched === 5 ? 'DETUNE ' + sgn(i.detune | 0)
+        : S.knobTouched === 6 ? Math.max(1, i.bars | 0) + ' BARS' + (bpm ? ' = ' + bpm + ' BPM' : '') : '';
     /* the middle readout, lit like Start / End (it is only there while its
      * knob is in hand — Josh, 2026-10-28: "nothing in the middle when no
      * knob is touched"); its strip clears what is under it, so a long one

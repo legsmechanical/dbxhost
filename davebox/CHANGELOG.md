@@ -24,7 +24,8 @@ the section into a versioned heading at release time.
   **Even · Transient · Lazy · Manual**; Even and Transient change live as you turn the
   jog, and **Back** asks *Keep N chops?*. **Manual** edits the chops you have, with
   **Delete + click** to clear them all. SAMPLE itself, in Slice mode, now moves the
-  clip's Start and End rather than a slice's, and a click opens its menu.
+  clip's Start and End rather than a slice's, and a click opens its menu; **K7** sets
+  the sample's **Bars** in either mode (>Seq places chops by them).
 - **Launch Now picks up at the song position when the clips differ in length.** A
   4-bar clip launched from a 1-bar one used to come in somewhere in its first bar; it
   now comes in where it would be had it been playing all along, as a quantized launch

@@ -70,7 +70,7 @@ import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLaz
          auPanelPages, auPanelPageName, auPanelKnob, auPanelKnobClass, auChop, auPadToSlice,
          auSelSlice, auSetSelSlice, isAudioTrack, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
          auMarkAdd, auMarkDel, auManual, auEvenBake, auTrans, auTransBake, auRangeStep, auSet, auEnd, auPanelRingCells, auPanelReset, auBankEd,
-         AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
+         AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX, AU_BARS_MAX } from './ui_audio.mjs';
 import { registerScreenRingCells, registerRingCells } from './ui_knob_leds.mjs';
 import { BANK_AUDIO } from './ui_constants.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -467,6 +467,17 @@ function clipStep(ed, field, dir) {
     S.auInfo[t][c] = Object.assign({}, i, { [field]: v });
     return true;
 }
+/* K7: the sample's own Bars, as recorded — what Loop's tempo and >Seq's step
+ * places follow (Josh, 2026-10-29: "slice still needs bars param for >seq"). */
+function clipBars(ed, dir) {
+    const t = ed.t, c = ed.c, i = auInfo(t, c);
+    const v = Math.max(1, Math.min(AU_BARS_MAX, (i.bars || 1) + dir));
+    if (v === (i.bars | 0)) return false;
+    auSet(t, c, 'bars', v);
+    S.auInfo[t][c] = Object.assign({}, i, { bars: v });
+    S.auStartsRev = (S.auStartsRev | 0) + 1;
+    return true;
+}
 
 /* The picker's rows at its level. */
 export function auPickRows(ed) {
@@ -634,7 +645,7 @@ export function audioEditorInput(status, d1, d2) {
          * tick lets go KNOB_TURN_HIGHLIGHT_MS after the last turn) — Josh,
          * 2026-10-28: "start and end values need to be highlighted while
          * they're turned/touched" */
-        if (k <= 5) {
+        if (k <= 6) {
             S.knobTouched = k; S.knobTurnedTick[k] = S.clockMs;
             if (k === 1) ed.zoomDir = dd > 0 ? 1 : -1;
             S.screenDirty = true;
@@ -659,6 +670,9 @@ export function audioEditorInput(status, d1, d2) {
         } else if (k === 5) {
             const st = ccKnobDelta(d2, k);
             if (st) moved = clipStep(ed, 'detune', st);
+        } else if (k === 6) {
+            const st = knobStep(k, d2, KNOB_PICK);
+            if (st) moved = clipBars(ed, st);
         }
         if (moved) S.screenDirty = true;
         return true;
@@ -797,10 +811,10 @@ function askInput(ed, status, d1, d2) {
     return true;
 }
 
-/* WAVE's knob rings: K1 Start, K2 Zoom, K3 End, K4 Gain, K5 Pitch, K6 Detune,
+/* WAVE's knob rings: K1 Start, K2 Zoom, K3 End, K4 Gain, K5 Pitch, K6 Detune, K7 Bars,
  * each where it sits — the clip's Start / End, the picked slice's in Manual,
  * none in Even / Transient; dark with no sample, in a Lazy chop, under the
- * picker or a question, and on K7 / K8. */
+ * picker or a question, and on K8. */
 export function waveRingCells(ed) {
     if (!ed || ed.ask || ed.pick || ed.mode === 'lazy') return [null, null, null, null, null, null, null, null];
     const i = auInfo(ed.t, ed.c), fr = i.nframes | 0;
@@ -817,7 +831,7 @@ export function waveRingCells(ed) {
     const at = (n) => ({ kind: 'arc', norm: Math.max(0, Math.min(1, n)) });
     const ends = kind !== 'even' && kind !== 'transient';
     return [ends ? at(a / fr) : null, at(zoom), ends ? at(b / fr) : null, at(((i.gain | 0) + 40) / 52),
-            at(((i.pitch | 0) + 24) / 48), at(((i.detune | 0) + 50) / 100), null, null];
+            at(((i.pitch | 0) + 24) / 48), at(((i.detune | 0) + 50) / 100), at(((i.bars || 1) - 1) / (AU_BARS_MAX - 1)), null];
 }
 
 /* The rings while an Audio screen holds the knobs: WAVE's, the AUDIO

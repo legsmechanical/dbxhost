@@ -1233,7 +1233,9 @@ by clicking **Audio** in the track's sound menu, or with the instrument shortcut
   a pad picks its chop and plays it, and the view goes to that chop's start at the
   zoom you have. A click opens the menu.
 
-In both, **K4** Gain · **K5** Pitch · **K6** Detune set the whole clip; the one in
+In both, **K4** Gain · **K5** Pitch · **K6** Detune set the whole clip, and **K7**
+sets **Bars**, the sample's own length as recorded (with the tempo that makes it) —
+what Loop's Tempo and **>Seq**'s step places follow; the one in
 hand reads out between Start and End, and the waveform is drawn at the gain it
 plays at. Times read in seconds to two decimals.
 

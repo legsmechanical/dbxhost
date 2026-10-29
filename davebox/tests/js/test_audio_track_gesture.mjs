@@ -617,6 +617,14 @@ step('⭐⭐ WAVE K4 Gain · K5 Pitch · K6 Detune (the clip\'s), read out in th
     tx = globalThis.__texts(() => { note(3, 127); shown(); });
     assert(tx.indexOf('GAIN +6DB') >= 0, 'touching K4 does not read out: ' + JSON.stringify(tx));
     note(3, 0);
+    /* K7 Bars, the sample's own, with the tempo they make — in Slice mode too,
+     * where >Seq places the chops by them (Josh, 2026-10-29) */
+    GET['t4_au_info_0'] = INFO24(1, 8, 0, 8, 50, 0);   /* Bars 2 */
+    A.auMarkStale(4, 0); ticks(2);
+    const b0 = A.auInfo(4, 0).bars | 0;
+    tx = globalThis.__texts(() => { for (let i = 0; i < 10; i++) cc(77, 1); shown(); });
+    assert(sent('t4_au_set_bars').join() === '0 ' + (b0 + 1) && tx.some((x) => x.indexOf((b0 + 1) + ' BARS = ') === 0 && / BPM$/.test(x)),
+           'K7 Bars: ' + JSON.stringify(sent('t4_au_set_bars')) + ' ' + JSON.stringify(tx));
     back();
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
 });
@@ -674,10 +682,10 @@ step('⭐⭐ the knob rings follow the Audio screens and the AUDIO bank: lit whe
     GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(3);
     assert(A.auBankTitle(4) === 'LOOP' && sent8() === '11110000', 'LOOP rings: ' + sent8());
     S.activeBank = 0;
-    mapPad(2, 3); ticks(2);                          /* WAVE: K1-K6, not K7 / K8 */
-    assert(lit() === '11111100', 'WAVE rings: ' + lit());
+    mapPad(2, 3); ticks(2);                          /* WAVE: K1-K7, not K8 */
+    assert(lit() === '11111110', 'WAVE rings: ' + lit());
     ticks(3);                                        /* ...and that is what the knobs get */
-    assert(sent8() === '11111100', 'the rings sent over WAVE: ' + sent8() + ' ' + JSON.stringify([71, 72, 73, 74, 75, 76, 77, 78].map((x) => CCLEDS.get(x))));
+    assert(sent8() === '11111110', 'the rings sent over WAVE: ' + sent8() + ' ' + JSON.stringify([71, 72, 73, 74, 75, 76, 77, 78].map((x) => CCLEDS.get(x))));
     const g0 = globalThis.__ring()[3].norm;
     cc(74, 1);
     assert(globalThis.__ring()[3].norm > g0, 'the Gain ring did not follow the turn');
@@ -786,7 +794,7 @@ step('⭐⭐ Transient (Chop sample › Transient): the REAL gesture — on, the
     tx = globalThis.__texts(() => shown());
     assert(tx.indexOf('128+ CHOPS') >= 0, 'over the cap: ' + JSON.stringify(tx));
     GET['t4_au_info_0'] = INFO24(1, 4, 0, 4, 53, 1); A.auMarkStale(4, 0); ticks(3);
-    assert(globalThis.__ring().map((c) => (c ? 1 : 0)).join('') === '01011100', 'Transient rings: ' + globalThis.__ring().map((c) => (c ? 1 : 0)).join(''));
+    assert(globalThis.__ring().map((c) => (c ? 1 : 0)).join('') === '01011110', 'Transient rings: ' + globalThis.__ring().map((c) => (c ? 1 : 0)).join(''));
     back();
     assert(ed.ask && ed.ask.kind === 'chops' && same(shown(), frame(() => D.drawAudioAsk('TRANSIENT', ['Keep 4 chops?'], 0))),
            '"Keep 4 chops?" is not on screen');
