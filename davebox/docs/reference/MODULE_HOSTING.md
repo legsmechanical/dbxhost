@@ -386,6 +386,13 @@ module never swallows the button. The power-off itself is the launcher's, after
 teardown: the module leaves a marker and the launcher runs `heal --poweroff`
 (`/sbin/shutdown -h now`, what Move's own power service runs).
 
+The same SysEx is Move's battery report, and while the claim is set `shadow_ui`
+hands each one to `globalThis.onPowerReport(flags, value)` if the module exports
+it: `value` is the charge in percent; in `flags`, 0x20 = on the charger, 0x40 = low,
+0x08 = a press is pending. One arrives each time the level moves by 1% (every 1.5–3
+min on battery) and on plug / unplug — none at launch, so a module that shows the
+level keeps the last one it saw.
+
 ### Where a MIDI FX's output goes
 
 A MIDI FX's output goes to its own slot's synth. Two per-slot chain parameters

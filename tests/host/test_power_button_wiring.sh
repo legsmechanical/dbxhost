@@ -60,4 +60,13 @@ for fn in ("exitOvertakeMode", "suspendOvertakeMode"):
     body = s[s.index("function %s() {" % fn):][:600]
     assert "host_power_claim(0)" in body, fn
 PY
+python3 - "$J" <<'PY' && ok "each power report (the battery level) is handed to onPowerReport, after the log" || bad "the battery report does not reach the module"
+import sys
+s = open(sys.argv[1]).read()
+i = s.index("-> passed to Move")
+j = s.index("globalThis.onPowerReport(powerFlags, powerVal)")
+p = s.index("if (powerRaw & 0x20000) {")
+assert p < i < j, (p, i, j)
+assert s.index("continue;", p) < i, "the prompt branch must not fall through to the report"
+PY
 [ "$fail" = 0 ] && echo "PASS: test_power_button_wiring" || { echo "FAIL: test_power_button_wiring"; exit 1; }

@@ -22,6 +22,7 @@ import { drawKitHeader, drawKitList, fitHdr, hdrWidth, hdrPrint,
          MV_BRAND_HDR_H, drawKitStackedList, drawKitBackdropDim, drawKitCrumbs,
          drawKitBigValue, drawKitHintRow, drawKitMarkHeader, MV_FOOTER_Y } from './ui_movy.mjs';
 import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
+import { drawHeaderBattery, headerBatteryWidth } from './ui_battery.mjs';
 import {
     SNAPSHOT_CAP, snapshotLabel, saveState, loadSnapshotManifest, showActionPopup, showActionPopupFor,
     dropSnapshots, applySnapshotToLive, loadSelectedCurrentProject,
@@ -315,7 +316,11 @@ function drawGlobalMenuList() {
      * value's owner keeps it. */
     /* 'PROJECT SETTINGS' (Josh, 2026-09-24): everything here but the Daves
      * rows is stored per project, so that is what the screen is called. */
-    drawKitHeader('PROJECT SETTINGS', false);
+    /* The battery at the right (ui_battery), the title fitted to what it
+     * leaves; drawn after the header, whose band would cover it. */
+    const _batt = headerBatteryWidth(fontWidth4x5);
+    drawKitHeader('PROJECT SETTINGS', false, _batt ? 128 - 4 - _batt - 3 : undefined);
+    drawHeaderBattery(fontWidth4x5, fontPrint4x5, 128);
     drawKitList(S.globalMenuItems.map(function(item, index) {
         if (isDivider(item)) return { divider: true };
         const isEditing = S.globalMenuState.editing && index === S.globalMenuState.selectedIndex;

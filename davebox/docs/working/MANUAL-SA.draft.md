@@ -2810,6 +2810,9 @@ a second time. With Input Quantize on, the note snaps to the grid and the
 groove moves it from there.
 
 - The menu groups these with a line between each group, in this order.
+- The header shows the battery at the right: its charge in percent, with a plug in
+  place of the battery while the Move is on the charger. Move reports the level only
+  when it changes by 1 %, so just after launch it shows the last level dAVEBOx saw.
 - A new project starts in a random key and scale.
 - **Card Hold**, **Bluetooth**, **Host Settings...** and **Move Settings...** apply to every project, not just this one.
 - **Move Settings...** shows Move's own settings menu on the screen: turn the jog to

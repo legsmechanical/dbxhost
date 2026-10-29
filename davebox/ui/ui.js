@@ -94,6 +94,7 @@ import { soundChainTakesPad, soundSetChainPadReplay, soundActive, soundOpen, sou
 import { soundModeCovered } from './ui_render.mjs';
 import { armCardHold } from './ui_prefs.mjs';
 import { _tickImpl, applyExtMidiRemap, requestSessionExit, requestPowerOff } from './ui_tick.mjs';
+import { batteryReport } from './ui_battery.mjs';
 
 /*
  * ⚠⚠ THE WAVE PEAKS IO — WITHOUT THIS, EVERY SAMPLE WIDGET DRAWS NOTHING.
@@ -484,6 +485,12 @@ globalThis.onSessionExitRequest = function () {
  * calls this instead, so POWER OFF? is ours and nothing stays pending in Move. */
 globalThis.onPowerButton = function (id) {
     try { requestPowerOff(id); } catch (e) { captureError('onPowerButton', e); }
+};
+
+/* Move's battery report, the same SysEx as the button: the level shown in
+ * Project Settings' header (ui_battery). */
+globalThis.onPowerReport = function (flags, value) {
+    try { batteryReport(flags, value); } catch (e) { captureError('onPowerReport', e); }
 };
 
 /* ------------------------------------------------------------------ */

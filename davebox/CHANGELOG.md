@@ -19,6 +19,8 @@ the section into a versioned heading at release time.
   crisp at any tempo. Slower than the loop, the gap after each hit is filled by **Fill**
   (K5: Off, Loop or Ping, back and forth) and dies away by the next hit with **Fade** (K6);
   **Sens** (K7) sets how many hits count. Light on the CPU, like Free and Vintage.
+- **Battery level in Project Settings.** The header shows the charge in percent at
+  the right, with a plug while the Move is on the charger.
 
 ### Changed
 - **The version is easy to find.** The loading screen shows dAVEBOx's version under

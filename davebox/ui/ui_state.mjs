@@ -542,6 +542,7 @@ export const S = {
     pendingSessionAfterCoRun: false, /* Note/Session left a co-run: land on Session View once it has ended (ui_tick) */
     midiMuted: null,     /* MIDI browser preview muted (ui_prefs). null = not yet read */
     midiMap: null,       /* MIDI browser drum Map: off | gm | move (ui_prefs). null = not yet read */
+    battery: null,       /* ui_battery: { pct, charging } from Move's power report; null = not read yet. */
     cardHoldMs: null,    /* Card Hold (ui_prefs): ms a knob's page stays after the release. null = not yet read; absent file = 0 (off). */
     cardHoldUntil: -1,   /* clock ms the held page comes down; -1 = none */
     cardHoldAt: '',      /* where it was armed: view:track:bank */

@@ -335,6 +335,8 @@ host_power_claim(bool)        // [FORK-ONLY] The overtake module answers the POW
                               // globalThis.onPowerButton(0x2A). shadow_ui sets it each tick
                               // from whether the module exports onPowerButton, and
                               // drops it when the module stops owning the screen.
+                              // While claimed, each battery report also reaches
+                              // globalThis.onPowerReport(flags, percent) if exported.
 host_vol_block(bool)          // [FORK-ONLY] Claim the master volume knob: suppress
                               // CC 79 + its touch note (8) from reaching Move, so a
                               // tool can repurpose the knob without Move also moving
