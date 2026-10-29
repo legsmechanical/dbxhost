@@ -18969,8 +18969,9 @@ globalThis.tick = function() {
                      * "Press wheel to shut down" announcement is the press,
                      * the host closes that prompt with Back, and it is
                      * delivered here (as 0x2A, a tap). The SysEx themselves
-                     * are only logged — they carry battery and charger reports
-                     * as well as the button (src/host/shim_power_gate.h). */
+                     * are logged and handed to onPowerReport — they carry
+                     * battery and charger reports as well as the button
+                     * (src/host/shim_power_gate.h). */
                     {
                         if (typeof host_power_claim === "function")
                             host_power_claim(typeof globalThis.onPowerButton === "function" ? 1 : 0);
@@ -18989,6 +18990,15 @@ globalThis.tick = function() {
                             const powerVal = powerRaw & 0xFF;
                             debugLog("POWER SysEx F0 00 21 1D 01 01 3A " + powerFlags.toString(16).padStart(2, "0") + " " +
                                      powerVal.toString(16).padStart(2, "0") + " 00 F7 -> passed to Move");
+                            /* The same message is Move's battery report: the
+                             * value is the charge in percent, flag 0x20 = on the
+                             * charger. A module that exports onPowerReport gets
+                             * each one (no report arrives at launch — the next
+                             * comes when the level moves by 1%). */
+                            if (typeof globalThis.onPowerReport === "function") {
+                                try { runToolCallback(function() { globalThis.onPowerReport(powerFlags, powerVal); }); }
+                                catch (e) { debugLog("OVERTAKE onPowerReport exception: " + e); }
+                            }
                         }
                     }
 

@@ -1115,13 +1115,6 @@ func (app *App) applyShmSetting(key, value string) {
 // -- System --
 
 func (app *App) handleSystem(w http.ResponseWriter, r *http.Request) {
-	// Read version.
-	verBytes, err := os.ReadFile(filepath.Join(app.basePath, "host", "version.txt"))
-	version := "unknown"
-	if err == nil {
-		version = strings.TrimSpace(string(verBytes))
-	}
-
 	// Disk usage via stat (simplified).
 	var diskTotal, diskFree uint64
 	var stat syscall.Statfs_t
@@ -1132,7 +1125,8 @@ func (app *App) handleSystem(w http.ResponseWriter, r *http.Request) {
 
 	data := map[string]any{
 		"Title":       "System",
-		"Version":     version,
+		"Version":     app.bugReportVersion(), // dAVEBOx's own, as on every other page
+		"BaseVersion": app.hostVersionString(),
 		"DiskTotal":   int64(diskTotal),
 		"DiskFree":    int64(diskFree),
 		"DiskUsed":    int64(diskTotal - diskFree),

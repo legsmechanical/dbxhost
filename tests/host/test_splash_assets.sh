@@ -7,7 +7,7 @@
 #      the 'daves' splash on launch") this is dealt ONLY on an in-session
 #      project-load relaunch (shadow_ui.js's own dealer); a cold tools-menu
 #      launch shows no Dave at all any more — see quiesce-stock.sh.
-#   2. text — the wordmark over "Schwung base: <version>"
+#   2. text — the wordmark, dAVEBOx's version, "Schwung base <version>"
 #
 # The artwork assets and the dealer (pick-splash.py / splash-pool.tsv /
 # daves-seen.txt) still exist and are still pinned below: they are what
@@ -16,7 +16,8 @@
 #
 # Screen 2 is pre-rendered at build time (standalone/scripts/make-splashes.mjs)
 # because the fonts it needs live in the module and the host half has only its
-# single 6px print. Pre-rendered means it can go STALE — bump version.txt and
+# single 6px print. Pre-rendered means it can go STALE — bump version.txt (or
+# dAVEBOx's own, standalone/module/module.json) and
 # the committed bitmap still says the old number, silently, forever. That is the
 # failure this file exists for.
 set -u
@@ -57,7 +58,7 @@ if command -v node >/dev/null 2>&1; then
     T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
     if node standalone/scripts/make-splashes.mjs "$T" >/dev/null 2>&1; then
         if [ "$(tr -d '[:space:]' < "$T/splash2.hex")" = "$(tr -d '[:space:]' < "$A/splash2.hex")" ]; then
-            ok "the text screen matches version.txt ($(cat src/host/version.txt))"
+            ok "the text screen matches module.json + version.txt ($(cat src/host/version.txt))"
         else
             bad "splash2.hex is STALE — run: node standalone/scripts/make-splashes.mjs standalone/assets"
         fi

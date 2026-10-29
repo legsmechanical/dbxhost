@@ -473,3 +473,20 @@ func TestSendFlowEndToEnd(t *testing.T) {
 		t.Errorf("a failed upload must offer the download: %s", st.Body.String())
 	}
 }
+
+// The System page's dAVEBOx Version is dAVEBOx's own build stamp, with the
+// Schwung base beside it: it once showed host/version.txt under "dAVEBOx", and
+// a tester read the base version as dAVEBOx's.
+func TestSystemPageVersions(t *testing.T) {
+	b := fixtureBase(t)
+	app := newBugApp(t, b)
+	writeFile(t, filepath.Join(b, "sa-build.json"), []byte(`{"version":"9.8.7","host":1,"davebox":1}`))
+	writeFile(t, filepath.Join(b, "host", "version.txt"), []byte("1.2.3\n"))
+	body := get(app, app.handleSystem, "/system").Body.String()
+	if !strings.Contains(body, "<dt>Version</dt>\n            <dd>9.8.7</dd>") {
+		t.Errorf("dAVEBOx's Version is not its own build stamp:\n%s", body)
+	}
+	if !strings.Contains(body, "<dt>Schwung base</dt>\n            <dd>1.2.3</dd>") {
+		t.Errorf("the Schwung base version is missing")
+	}
+}

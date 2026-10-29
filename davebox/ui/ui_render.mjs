@@ -6,6 +6,7 @@
  * Extracted from ui.js (Phase 5 of the modularity refactor, module 5, final).
  */
 
+import { lowBatteryUp, lowBatteryLines } from './ui_battery.mjs';
 import { S, PERF_FACTORY_PRESETS, stepRevealAvailable, stepHoldEstablished, loopViewActive, knobAltOn } from './ui_state.mjs';
 import { seqFollowOn, cardHoldShows } from './ui_prefs.mjs';
 import { drawDaveBox, drawBannerDave, BANNER_H, drawDaveLoading } from './ui_daves.mjs';
@@ -1978,6 +1979,8 @@ export function drawUI() {
     else if (S.noNoteFlashEndTick >= 0 && S.activeBank !== 6 && !S.sessionView)
         drawNoticeCard(['NO NOTE', 'Play a pad first']);
     else if (actionCardShowing()) drawNoticeCard(S.actionPopupLines, S.actionPopupHighlight);
+    /* LOW BATTERY over all of it, the notices included: it waits for a click. */
+    if (lowBatteryUp()) drawNoticeCard(lowBatteryLines());
 }
 
 /* The held step's page: the STEP bank's layout with THAT step's values. Drawn

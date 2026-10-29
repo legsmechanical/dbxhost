@@ -121,7 +121,7 @@ Keep each isolated in its own commit so it is easy to exclude when cherry-pickin
   patch/preset parse in `chain_patch.c`; slot activation in `shadow_midi.c` + `shadow_chain_mgmt.c`.
 - **Six fork-only JS bindings:** `host_vol_block`, `host_edit_cc_block`, `host_canvas_input`,
   `host_state_subdir`, `host_power_claim` (+ the host's own reader `shadow_get_power_button`, and
-  the module hook `onPowerButton` it calls). ⚠ Derive this list from the `JS_SetPropertyStr` registrations diffed against
+  the module hooks `onPowerButton` and `onPowerReport` it calls). ⚠ Derive this list from the `JS_SetPropertyStr` registrations diffed against
   `upstream/main`, **not** from `docs/API.md`.
 - **Fork-only param-key namespaces** that no `typeof` check can probe: `fx3:`/`fx4:` and
   `send_fx:a:`/`send_fx:b:`.
@@ -332,7 +332,9 @@ usage and the pruning rules: [`RATIONALE.md`](RATIONALE.md).
 2. `./standalone/scripts/install-sa.sh`, verify on hardware
 3. Bump `release.json` (version + download URL) and `standalone/module/module.json` to the same
    version. ⚠ NOT `src/host/version.txt`: that is the Schwung BASE version the host tracks, and
-   modules' `min_host_version` is checked against it (`tests/host/test_release_keeps_host_version.sh`)
+   modules' `min_host_version` is checked against it (`tests/host/test_release_keeps_host_version.sh`).
+   Then `node standalone/scripts/make-splashes.mjs standalone/assets`: the loading screen carries the
+   version as a pre-rendered bitmap
 4. Update `CLAUDE.md`, `docs/API.md`, `docs/MODULES.md` (only where it says how this host honours
    Schwung's contract), `davebox/docs/reference/MODULE_HOSTING.md`, `src/shared/help_content.json`
    and the manual for new/changed behaviour

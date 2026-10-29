@@ -828,7 +828,8 @@ if [ -d ./standalone ]; then
     # ⭑ COMMITTED, not generated here: this build runs inside the cross-compile
     # container, which has no node, and splash2.hex is rendered with the
     # module's fonts (standalone/scripts/make-splashes.mjs). Regenerate that
-    # script's output when the art or src/host/version.txt changes —
+    # script's output when the art, src/host/version.txt or the version in
+    # standalone/module/module.json changes —
     # tests/host/test_splash_assets.sh fails if you forget.
     if [ -f ./standalone/assets/splash.hex ]; then
         cp ./standalone/assets/splash.hex ./build/splash.hex
