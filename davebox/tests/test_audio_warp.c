@@ -343,7 +343,9 @@ int main(void) {
             int prev = 0, have_prev = 0;    /* the last frame of the block before (a crossing between blocks counts) */
             int flips = 0, wasbyp = X->trk[4]->byp, back = 0;
             uint32_t seen = X->trk[4]->head;
-            float lastag = -1.f;
+            /* from the last frame written before this phase: the hand-over
+             * starts right there, and its boundary is what is checked */
+            float lastag = X->trk[4]->tag[(seen - 1) & (AU_WARP_RING - 1)];
             char m[200];
             hx_set_param(h, "bpm", bpm_at[ph]);
             hx_set_param(h, "t4_au_set_pitch", pit_at[ph]);
@@ -387,7 +389,7 @@ int main(void) {
                 }
                 /* bypassing and off the clock by 100 frames (under the hand-back):
                  * its trim is a pitch change, so it stays within a hair */
-                if (ph == 4 && n == 600) {
+                if (ph == 4 && n == 820) {
                     HX_ASSERT(X->trk[4]->byp, "not bypassing before the drift was put in");
                     X->trk[4]->bpos += 100.0;           /* 100 input frames = 100 output frames at its own tempo */
                     seen = X->trk[4]->head;             /* the jump put in is not one of ours */
