@@ -1147,6 +1147,11 @@ typedef struct {
     int           xin;                         /* frames of the crossfade into Bungee left */
     double        bpos;                        /* bypassing: the virtual input position of the next frame */
     double        bstart;                      /* coming back: where the bypass left off */
+    float        *ibuf;                        /* Bungee's last input window, planar (L, then R at +icap) */
+    int           icap;                        /* its frames per channel (au_st_max_input) */
+    int           ib_b, ib_e;                  /* the virtual frames it holds; consecutive grains' windows
+                                                * overlap ~7/8, so only the new part is fetched */
+    uint8_t       ib_ok;                       /* it may be reused (no reset since, no chunk missing in it) */
     double        sp_base;                     /* the untrimmed speed the ring's newest frames were made at */
     uint32_t      settle;                      /* the ring index from which they were: the drift read
                                                 * before it is played is of the old speed's frames */
@@ -1167,6 +1172,7 @@ typedef struct {
 
 #ifdef SEQ8_TESTING
 static int au_warp_manual = 0;                 /* tests: no thread; they call au_warp_service */
+static int au_warp_nocache = 0;                /* tests: fetch every grain's whole input window */
 #endif
 
 /* ---- the audio thread's side of the command ---- */
@@ -1305,9 +1311,33 @@ static int au_warp_grain(au_warper_t *X, au_warp_t *W) {
     if (W->byp) return au_warp_bypass(X, W);
     sp = au_warp_speed(W);
     au_st_want(W->st, sp, c->pitch, &b, &e);
-    if (e - b > X->in_max) e = b + X->in_max;
-    for (i = 0; i < e - b; i++) au_warp_frame(X, W, (double)(b + i), &X->in[i], &X->in[X->in_max + i]);
-    n = au_st_grain(W->st, X->in, X->in_max, &ol, &or_, &p0, &p1);
+    {
+        /* Bungee's input window: the overlap with the last grain's is kept
+         * (shifted down), only the frames past it fetched — that fetch, not
+         * Bungee, was most of the stretcher's cost (measured on the Move:
+         * ~3 % of a core of the 5 %, the same for a mono sample) */
+        float *in = W->ibuf ? W->ibuf : X->in;
+        int cap = W->ibuf ? W->icap : X->in_max, from = b;
+        uint32_t u0 = X->underruns;
+        if (e - b > cap) e = b + cap;
+        if (W->ibuf && W->ib_ok && b >= W->ib_b && b < W->ib_e && e >= W->ib_e
+#ifdef SEQ8_TESTING
+            && !au_warp_nocache
+#endif
+        ) {
+            int keep = W->ib_e - b, shift = b - W->ib_b;
+            if (shift) {
+                memmove(in, in + shift, (size_t)keep * sizeof(float));
+                memmove(in + cap, in + cap + shift, (size_t)keep * sizeof(float));
+            }
+            from = W->ib_e;
+        }
+        for (i = from - b; i < e - b; i++) au_warp_frame(X, W, (double)(b + i), &in[i], &in[cap + i]);
+        W->ib_b = b;
+        W->ib_e = e;
+        W->ib_ok = W->ibuf && X->underruns == u0;    /* a chunk missing: fetch it all again next time */
+        n = au_st_grain(W->st, in, cap, &ol, &or_, &p0, &p1);
+    }
     /* A chunk's frames run from p0 to p1, once it is the new stream's (see
      * above: not while Bungee still plays out the old one, nor while filling) */
     int ok = n > 0 && p0 == p0 && p1 == p1 && p1 >= p0 && p1 - p0 <= 4.0 * sp * n + 1.0;
@@ -1369,6 +1399,7 @@ static void au_warp_reset(au_warp_t *W, double vt, int carry) {
     W->carry = (uint8_t)carry;
     W->fresh = 1;
     W->byp = W->to_byp = W->bstart_on = 0;
+    W->ib_ok = 0;
     if (!carry) { W->tnext = -1.f; W->gstart = W->head; }
     au_st_reset(W->st, W->rpos, au_warp_speed(W), c->pitch);
 }
@@ -1381,12 +1412,17 @@ static void au_warp_byp_start(au_warp_t *W, double vt, int carry) {
     W->bpos = vt * W->rpt;
     W->byp = 1;
     W->to_byp = W->bstart_on = 0;
+    W->ib_ok = 0;
     W->tnext = (float)au_wrap(vt, c->L);
     if (!carry) W->gstart = W->head;
 }
 
 static void au_warp_idle(au_warp_t *W) {
     if (W->st) { au_st_destroy(W->st); W->st = NULL; }
+    free(W->ibuf);
+    W->ibuf = NULL;
+    W->icap = 0;
+    W->ib_ok = 0;
     W->cur.smp = NULL;
     W->cur.run = 0;
     __atomic_store_n(&W->read_pos, 0, __ATOMIC_RELAXED);
@@ -1409,6 +1445,12 @@ static int au_warp_track(au_warper_t *X, au_warp_t *W) {
         W->cur.smp = NULL;
         if (!W->st) return 0;
         if (au_st_max_input(W->st) > X->in_max) { au_st_destroy(W->st); W->st = NULL; return 0; }
+        if (!W->ibuf || W->icap < au_st_max_input(W->st)) {
+            free(W->ibuf);
+            W->icap = au_st_max_input(W->st);
+            W->ibuf = (float *)calloc(2 * (size_t)W->icap, sizeof(float));   /* NULL: the shared scratch, uncached */
+        }
+        W->ib_ok = 0;
         fresh = 1;
     }
     if (fresh || c.anchor_gen != W->cur.anchor_gen) {
@@ -1557,6 +1599,7 @@ static void au_warper_shutdown(seq8_instance_t *inst) {
     for (t = 0; t < NUM_TRACKS; t++) {
         if (!X->trk[t]) continue;
         if (X->trk[t]->st) au_st_destroy(X->trk[t]->st);
+        free(X->trk[t]->ibuf);
         free(X->trk[t]);
     }
     free(X->in);

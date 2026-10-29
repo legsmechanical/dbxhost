@@ -142,6 +142,34 @@ static void check_bar(int g, double bpm, int bar, unsigned on, double hz, const 
     }
 }
 
+/* One Warp take from a fresh instance (Bungee carries a little state across
+ * its own resets, so only fresh instances are repeatable): the tone at 125
+ * bpm, `blocks` blocks from the transport's start, into out. Returns frames. */
+static int fresh_take(int nocache, int16_t *out, int blocks) {
+    hx_t *h;
+    int was_manual = au_warp_manual;
+    au_warp_manual = 1;                     /* by hand: a thread's timing would make takes differ */
+    h = rig();
+    seq8_instance_t *inst = (seq8_instance_t *)h->inst;
+    char p[300];
+    int i, g;
+    snprintf(p, sizeof p, "0|%s/tone.wav", g_root);
+    hx_set_param(h, "t4_au_pick", p);
+    for (i = 0; i < 2000 && inst->au_clip[4][0].state != 2; i++) { hx_render(h, 1); usleep(1000); }
+    HX_ASSERT(inst->au_clip[4][0].state == 2, "the tone did not load (fresh take)");
+    hx_set_param(h, "t4_au_set_bars", "0 1");
+    hx_set_param(h, "t4_au_set_tempo", "0 4");
+    hx_set_param(h, "t4_launch_clip", "0");
+    hx_set_param(h, "bpm", "125");
+    au_warp_nocache = nocache;
+    g = record(h, blocks);
+    au_warp_nocache = 0;
+    memcpy(out, g_rec, sizeof(int16_t) * (size_t)g);
+    hx_destroy(h);
+    au_warp_manual = was_manual;
+    return g;
+}
+
 int main(void) {
     char p[300];
     hx_t *h;
@@ -490,6 +518,26 @@ int main(void) {
     }
     hx_destroy(h);
 
+    /* ---- Bungee's input window is reused from grain to grain (only the new
+     * frames fetched): the output is bit-identical to fetching it whole.
+     * Control first: two fresh takes the same way match ---- */
+    {
+        static int16_t a[REC], c2[REC];
+        int ga, gb, k, diff = 0;
+        char m[120];
+        ga = fresh_take(0, a, 1200);
+        gb = fresh_take(0, c2, 1200);
+        for (k = 0; k < ga && k < gb; k++) diff += a[k] != c2[k];
+        snprintf(m, sizeof m, "two fresh Warp takes differ in %d frames: the cache comparison would prove nothing", diff);
+        HX_ASSERT(ga == gb && diff == 0, m);
+        gb = fresh_take(1, c2, 1200);
+        for (k = 0; k < ga && k < gb; k++) diff += a[k] != c2[k];
+        snprintf(m, sizeof m, "the reused input window changed the output: %d of %d frames differ", diff, ga);
+        HX_ASSERT(ga == gb && diff == 0, m);
+        for (k = 0, diff = 0; k < ga; k++) diff += a[k] != 0;
+        HX_ASSERT(diff > ga / 4, "the takes compared were silent");
+    }
+
     /* ---- a STREAMED sample (its frames come in chunks): with no chunk in,
      * the stretcher reads silence and says so, never hangs; once the
      * streamer runs, following where the stretcher reads, the tone is back
@@ -523,6 +571,6 @@ int main(void) {
     for (i = 1; i < 3; i++) check_bar(g, 110, i, 0x5, 440, "Warp (streamed)");
     g_stream = 0;
     hx_destroy(h);
-    printf("PASS: Warp (70 / 120 / 160 bpm: the tone on its beats at 440 Hz; Revrs; +12; a tempo change trims, no restart; Free lets go; launch Now between Warp clips without a gap; bypassed at its own tempo, handing over to Bungee and back without a gap; a followed clock; the thread; a sample cleared while it plays; streamed)\n");
+    printf("PASS: Warp (70 / 120 / 160 bpm: the tone on its beats at 440 Hz; the input window reused bit-exactly; Revrs; +12; a tempo change trims, no restart; Free lets go; launch Now between Warp clips without a gap; bypassed at its own tempo, handing over to Bungee and back without a gap; a followed clock; the thread; a sample cleared while it plays; streamed)\n");
     return 0;
 }
