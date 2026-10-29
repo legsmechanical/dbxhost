@@ -170,6 +170,52 @@ static int fresh_take(int nocache, int16_t *out, int blocks) {
     return g;
 }
 
+/* The same from a STREAMED minute whose streamer starts late: the first
+ * grains find chunks missing, which then arrive. Returns frames; *missed
+ * the input frames the stretcher found no chunk for. */
+static int fresh_stream_take(int nocache, int16_t *out, unsigned *missed) {
+    hx_t *h;
+    seq8_instance_t *inst;
+    char p[300];
+    int i, n, k, fed = 0, g = 0, was_wm = au_warp_manual, was_sm = au_stream_manual;
+    uint32_t was_sec = au_stream_sec;
+    au_warp_manual = 1;
+    au_stream_manual = 1;
+    au_stream_sec = 1;
+    h = rig();
+    inst = (seq8_instance_t *)h->inst;
+    snprintf(p, sizeof p, "0|%s/tone30.wav", g_root);
+    hx_set_param(h, "t4_au_pick", p);
+    for (i = 0; i < 2000 && inst->au_clip[4][0].state != 2; i++) { hx_render(h, 1); usleep(1000); }
+    HX_ASSERT(inst->au_clip[4][0].state == 2 && !inst->au_clip[4][0].smp->pcm, "the minute did not load streamed");
+    hx_set_param(h, "t4_au_set_bars", "0 30");
+    hx_set_param(h, "t4_au_set_tempo", "0 4");
+    hx_set_param(h, "t4_launch_clip", "0");
+    hx_set_param(h, "bpm", "125");
+    au_warp_nocache = nocache;
+    for (k = 0; k < 8; k++) step(h);
+    hx_stub_feed_reset();
+    hx_set_param(h, "transport", "play");
+    for (n = 0; n < 1600 && g + 128 <= REC; n++) {
+        g_stream = n >= 400;                         /* the streamer starts late (past the pinned head chunks) */
+        step(h);
+        if (hx_stub_feed(4, NULL, NULL) == fed) { for (k = 0; k < 128; k++) out[g++] = 0; continue; }
+        fed = hx_stub_feed(4, NULL, NULL);
+        const int16_t *b = hx_stub_feed_last(4);
+        for (k = 0; k < 128; k++) out[g++] = b[k * 2];
+    }
+    g_stream = 0;
+    au_warp_nocache = 0;
+    *missed = ((au_warper_t *)inst->au_warper)->underruns;
+    hx_set_param(h, "transport", "stop");
+    hx_render(h, 10);
+    hx_destroy(h);
+    au_warp_manual = was_wm;
+    au_stream_manual = was_sm;
+    au_stream_sec = was_sec;
+    return g;
+}
+
 int main(void) {
     char p[300];
     hx_t *h;
@@ -536,6 +582,17 @@ int main(void) {
         HX_ASSERT(ga == gb && diff == 0, m);
         for (k = 0, diff = 0; k < ga; k++) diff += a[k] != 0;
         HX_ASSERT(diff > ga / 4, "the takes compared were silent");
+        /* a fill that found a chunk missing is fetched whole next time: the
+         * chunk's frames, once in, are not zeros kept from the window */
+        {
+            unsigned ma, mb;
+            ga = fresh_stream_take(0, a, &ma);
+            gb = fresh_stream_take(1, c2, &mb);
+            for (k = 0, diff = 0; k < ga && k < gb; k++) diff += a[k] != c2[k];
+            snprintf(m, sizeof m, "streamed, chunks arriving late: the reused window differs in %d frames (missed %u / %u)", diff, ma, mb);
+            HX_ASSERT(ma > 0 && ma == mb, "the streamed takes missed no chunk (or not the same): nothing was tested");
+            HX_ASSERT(ga == gb && diff == 0, m);
+        }
     }
 
     /* ---- a STREAMED sample (its frames come in chunks): with no chunk in,
