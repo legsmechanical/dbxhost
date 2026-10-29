@@ -341,6 +341,9 @@ int main(void) {
             int fed = hx_stub_feed(4, NULL, NULL), quiet = 0, zc = 0, fr = 0;
             double t0 = -1, t1 = -1;       /* the first and last rising crossing (frames, interpolated) */
             int prev = 0, have_prev = 0;    /* the last frame of the block before (a crossing between blocks counts) */
+            int flips = 0, wasbyp = X->trk[4]->byp, back = 0;
+            uint32_t seen = X->trk[4]->head;
+            float lastag = -1.f;
             char m[200];
             hx_set_param(h, "bpm", bpm_at[ph]);
             hx_set_param(h, "t4_au_set_pitch", pit_at[ph]);
@@ -367,6 +370,29 @@ int main(void) {
                     r = sqrt(r / 128);
                 }
                 if (r < 5000) quiet++;
+                if (X->trk[4]->byp != wasbyp) { flips++; wasbyp = X->trk[4]->byp; }
+                /* the ring's frames only ever move on in time across a hand-over
+                 * (Bungee's overlap with what the bypass already wrote is dropped) */
+                {
+                    au_warp_t *W = X->trk[4];
+                    for (; seen != W->head; seen++) {
+                        float tg = W->tag[seen & (AU_WARP_RING - 1)];
+                        if (tg < 0) continue;
+                        if (lastag >= 0) {
+                            double d = au_wrap_signed((double)tg - lastag, W->cmd.L);
+                            if (d < -1e-4 || d > 0.05) back++;
+                        }
+                        lastag = tg;
+                    }
+                }
+                /* bypassing and off the clock by 100 frames (under the hand-back):
+                 * its trim is a pitch change, so it stays within a hair */
+                if (ph == 4 && n == 600) {
+                    HX_ASSERT(X->trk[4]->byp, "not bypassing before the drift was put in");
+                    X->trk[4]->bpos += 100.0;           /* 100 input frames = 100 output frames at its own tempo */
+                    seen = X->trk[4]->head;             /* the jump put in is not one of ours */
+                    lastag = -1.f;
+                }
             }
             double hz = zc > 1 ? (zc - 1) * (double)SR / (t1 - t0) : 0, want = ph == 3 ? 660 * 1.059463 : 660;
             snprintf(m, sizeof m, "bypass hand-over %d (%s bpm, pitch %s): %d quiet blocks, %u re-anchors, %.1f Hz (want %.1f), bypass %d",
@@ -374,6 +400,9 @@ int main(void) {
             HX_ASSERT(quiet == 0 && inst->au_trk[4].w.gen == gen, m);
             HX_ASSERT(fabs(hz - want) < want * 0.003, m);      /* 5 cents */
             HX_ASSERT(X->trk[4]->byp == byp_at[ph], m);
+            snprintf(m, sizeof m, "bypass hand-over %d: %d switches between bypass and Bungee (flapping), %d frames out of time order",
+                     ph, flips, back);
+            HX_ASSERT(flips <= 1 && back == 0, m);
         }
         hx_set_param(h, "transport", "stop");
         for (k = 0; k < 60; k++) step(h);
