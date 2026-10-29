@@ -80,3 +80,9 @@ docs/superpowers/
 
 # Local ARM test binaries (built for the device; never shipped, never committed)
 arm-tests/
+
+# Vendored Eigen (WARP's stretcher) has a header named Core and a src/Core/
+# folder: the `core` (core dump) rule above silently dropped them from the
+# commit, and only a build in a fresh checkout noticed.
+!dsp/third_party/eigen/Eigen/Core
+!dsp/third_party/eigen/Eigen/src/Core/
