@@ -1434,30 +1434,6 @@ int main(void) {
         hx_destroy(h);
     }
 
-    /* ---- a project saved while Loop had Beats: 17 numbers (Fill and Fade
-     * last, dropped); Beats (3) and the old Warp (4) both load as Warp (3);
-     * Sens and the name come through, and the next save writes 15 ---- */
-    {
-        FILE *wf;
-        h = hx_create(NULL); inst = (seq8_instance_t *)h->inst;
-        snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
-        wf = fopen(inst->state_path, "w");
-        fprintf(wf, "{\"v\":36,\"t4_pm\":3,\"t4c0_au2\":\"0 16 1 16 0 0 0 0 0 0 0 0 3 2 70 1 30|mono48.wav\","
-                    "\"t4c1_au2\":\"0 16 1 16 0 0 0 0 0 0 0 0 4 2 50 2 0|mono48.wav\"}");
-        fclose(wf);
-        seq8_load_state(inst);
-        HX_ASSERT(inst->au_clip[4][0].tempo == AU_TEMPO_WARP && inst->au_clip[4][1].tempo == AU_TEMPO_WARP,
-                  "a Beats clip or an old Warp clip did not load as Warp");
-        HX_ASSERT(inst->au_clip[4][0].sens == 70 && inst->au_clip[4][0].bars == 2 &&
-                  !strcmp(inst->au_clip[4][0].name, "mono48.wav") && !strcmp(inst->au_clip[4][1].name, "mono48.wav"),
-                  "a Beats-era clip lost its Sens, Bars or name");
-        inst->state_dirty = 1;                               /* state_full answers only when there is something to save */
-        HX_ASSERT(hx_get_param(h, "state_full", blob, (int)sizeof blob) > 0 &&
-                  strstr(blob, " 0 3 2 70|mono48.wav\""),
-                  "the clip is not saved as 15 numbers (Tempo Warp = 3, Sens last)");
-        hx_destroy(h);
-    }
-
     /* ---- a set from the drum-flag build loads as a drum track ---- */
     {
         FILE *wf;

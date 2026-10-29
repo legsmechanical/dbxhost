@@ -2395,9 +2395,7 @@ static void au_load_state(void *vinst, const char *buf) {
         for (c = 0; c < NUM_CLIPS; c++) {
             au_clip_t *cl = &inst->au_clip[t][c];
             const char *p;
-            /* 15 numbers; a file from before Beats left Loop has two more
-             * (its Fill and Fade), read and dropped */
-            long v[17] = { 0, 16, 1, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, AU_SENS_DEFAULT, 0, 0 };
+            long v[15] = { 0, 16, 1, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, AU_SENS_DEFAULT };
             int old = 0;
             snprintf(key, sizeof key, "t%dc%d_au2", t, c);
             if (!json_str_value(buf, key, &p)) {
@@ -2406,7 +2404,7 @@ static void au_load_state(void *vinst, const char *buf) {
                 old = 1;
                 v[1] = 0; v[2] = 8; v[5] = 1000;
             }
-            au_read_nums(&p, v, old ? 11 : 17);
+            au_read_nums(&p, v, old ? 11 : 15);
             cl->mode = (uint8_t)clamp_i((int)v[0], 0, 1);
             if (old) {
                 /* method nslices -> Even (method 0) or a hand set of the same
