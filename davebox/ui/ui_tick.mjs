@@ -29,6 +29,7 @@ import {
     LED_PULSE_4TH, LED_BLINK_8TH,
     } from './ui_constants.mjs';
 
+import { lowBatteryTick } from './ui_battery.mjs';
 import { S, standDownBankDisplay, stepRevealAvailable, loopViewActive, endLoopLatch, forgetUndo, forgetProjectJs } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { tickPrefetch, dget, applyNewProjectSeed, midiFxResyncTick } from './ui_dsp_bridge.mjs';
@@ -453,6 +454,7 @@ export function prerollGateTicks(countInDurMs, pressedDurMs, maxTicks) {
 
 let _tickGapLogMs = -1e9;
 export function _tickImpl() {
+    lowBatteryTick();   /* first: a later stage throwing must not keep it down */
     /* ⭑⭑ STUCK-MODIFIER RECONCILE — heal a Shift release that never arrived.
      *
      * ⚠ FIRST, and UNCONDITIONAL. The first cut sat beside updateTrackLEDs(),

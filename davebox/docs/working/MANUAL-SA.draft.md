@@ -2813,6 +2813,11 @@ groove moves it from there.
 - The header shows the battery at the right: its charge in percent, with a plug in
   place of the battery while the Move is on the charger. Move reports the level only
   when it changes by 1 %, so just after launch it shows the last level dAVEBOx saw.
+- When Move says the battery is low (around 6 %) and it is not on the charger, a
+  **LOW BATTERY** card comes up over whatever screen you are on. Click the jog to
+  dismiss it; the click does nothing else, and nothing below takes a press while the
+  card is up (the music keeps playing). It comes back every 5 minutes until you plug
+  the Move in.
 - A new project starts in a random key and scale.
 - **Card Hold**, **Bluetooth**, **Host Settings...** and **Move Settings...** apply to every project, not just this one.
 - **Move Settings...** shows Move's own settings menu on the screen: turn the jog to

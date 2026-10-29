@@ -94,7 +94,7 @@ import { soundChainTakesPad, soundSetChainPadReplay, soundActive, soundOpen, sou
 import { soundModeCovered } from './ui_render.mjs';
 import { armCardHold } from './ui_prefs.mjs';
 import { _tickImpl, applyExtMidiRemap, requestSessionExit, requestPowerOff } from './ui_tick.mjs';
-import { batteryReport } from './ui_battery.mjs';
+import { batteryReport, lowBatteryInput } from './ui_battery.mjs';
 
 /*
  * ⚠⚠ THE WAVE PEAKS IO — WITHOUT THIS, EVERY SAMPLE WIDGET DRAWS NOTHING.
@@ -578,6 +578,10 @@ function _onMidiInternalImpl(data) {
         if (_k === 0x90 && d2 > 0) S.padPhysDown.add(d1);
         else if (_k === 0x80 || _k === 0x90) S.padPhysDown.delete(d1);
     }
+
+    /* LOW BATTERY is over everything: it takes every press until a jog click
+     * dismisses it, and the click's release with it (ui_battery). */
+    if (lowBatteryInput(status, d1, d2)) return;
 
     /* A SHIFT TAP (POINT / PUNCH while a step is held, applyShiftEdge) is Shift
      * pressed and released with nothing else done: a knob or jog turned while

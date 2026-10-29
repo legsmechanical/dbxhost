@@ -10,20 +10,22 @@
  * or the charger is plugged / unplugged — none at launch — so the last one is
  * kept in a file and shown until a new one comes. Never seen one: nothing.
  */
-import { S } from './ui_state.mjs';
+import { S, nowMs } from './ui_state.mjs';
+import { MoveMainButton } from './ui_constants.mjs';
 
 export const BATTERY_PATH = '/data/UserData/daveboxSA/battery.txt';
-const CHARGING = 0x20;
+const CHARGING = 0x20, LOW = 0x40;   /* LOW: Move's own flag (on at 6% in a tester's log) */
+export const LOW_BATTERY_EVERY_MS = 5 * 60 * 1000;
 
-/* S.battery: null = not read yet; else { pct, charging } or { pct: -1 }. */
+/* S.battery: null = not read yet; else { pct, charging, low } or { pct: -1 }. */
 function battery() {
     if (S.battery === null) {
-        S.battery = { pct: -1, charging: false };
+        S.battery = { pct: -1, charging: false, low: false };
         try {
             if (host_file_exists(BATTERY_PATH)) {
                 const f = String(host_read_file(BATTERY_PATH) || '').trim().split(/\s+/);
                 const pct = parseInt(f[0], 10), flags = parseInt(f[1], 10);
-                if (pct >= 0 && pct <= 100) S.battery = { pct, charging: !!((flags | 0) & CHARGING) };
+                if (pct >= 0 && pct <= 100) S.battery = { pct, charging: !!((flags | 0) & CHARGING), low: !!((flags | 0) & LOW) };
             }
         } catch (e) { /* unknown until the next report */ }
     }
@@ -33,9 +35,9 @@ function battery() {
 export function batteryReport(flags, value) {
     const pct = value | 0;
     if (pct < 0 || pct > 100) return;
-    const b = battery(), charging = !!((flags | 0) & CHARGING);
-    if (b.pct === pct && b.charging === charging) return;
-    S.battery = { pct, charging };
+    const b = battery(), charging = !!((flags | 0) & CHARGING), low = !!((flags | 0) & LOW);
+    if (b.pct === pct && b.charging === charging && b.low === low) return;
+    S.battery = { pct, charging, low };
     S.dirty = true;
     try { host_write_file(BATTERY_PATH, pct + ' ' + ((flags | 0) & 0xFF) + '\n'); } catch (e) { /* shown anyway */ }
 }
@@ -68,4 +70,46 @@ export function drawHeaderBattery(fontWidth, fontPrint, screenW) {
         const n = Math.max(b.pct > 0 ? 1 : 0, Math.round(7 * b.pct / 100));
         if (n) fill_rect(bx + 1, by + 1, n, 3, 0);
     }
+}
+
+/* ---- LOW BATTERY (Josh, 2026-10-29: "on low battery can we pop up a low
+ * battery pop-up over anywhere in davebox every 5 minutes that requires a
+ * "click to dismiss" ? (make sure the click doesn't fall through to screens
+ * below it)") ----
+ * Up while Move flags the battery low and it is not on the charger; a jog
+ * click dismisses it and it comes back 5 minutes later if still low. While up
+ * it takes every press — the click and its release included — so nothing
+ * below acts on them; releases still pass, so nothing stays held. Plugging in
+ * takes it down. */
+export function lowBatteryUp() { return S.lowBattUp === true; }
+
+export function lowBatteryTick() {
+    const b = battery();
+    if (!b.low || b.charging || b.pct < 0) {
+        if (S.lowBattUp) { S.lowBattUp = false; S.dirty = true; }
+        S.lowBattNextMs = 0;
+        return;
+    }
+    if (!S.lowBattUp && nowMs() >= (S.lowBattNextMs || 0)) { S.lowBattUp = true; S.dirty = true; }
+}
+
+export function lowBatteryLines() { return ['LOW BATTERY', battery().pct + '% left', 'Click to dismiss']; }
+
+/* For every MIDI message, before any screen sees it: true = taken. */
+export function lowBatteryInput(status, d1, d2) {
+    const cc = (status & 0xF0) === 0xB0;
+    if (S.lowBattEatRelease && cc && d1 === MoveMainButton && d2 === 0) { S.lowBattEatRelease = false; return true; }
+    if (!S.lowBattUp) return false;
+    if (cc && d1 === MoveMainButton) {
+        if (d2 > 0) {
+            S.lowBattUp = false;
+            S.lowBattEatRelease = true;
+            S.lowBattNextMs = nowMs() + LOW_BATTERY_EVERY_MS;
+            S.dirty = true;
+        }
+        return true;
+    }
+    const k = status & 0xF0;
+    if (k === 0x80 || (k === 0x90 && d2 === 0) || (cc && d2 === 0)) return false;   /* a release */
+    return true;
 }
