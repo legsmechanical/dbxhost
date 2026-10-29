@@ -5117,15 +5117,14 @@ function _onCC_knobs(d1, d2) {
 
         const bank    = S.activeBank;
         /* AUDIO's banks: the CLIP bank's K4 is Mode in both modes; in Loop
-         * mode K1 is Tempo, K2 Bars, K3 Nudge and the rest do nothing; in Slice mode it mirrors
+         * mode K1 is Tempo, K3 Nudge and the rest do nothing (Bars is SAMPLE's K7); in Slice mode it mirrors
          * ALL LANES (AUDIO_CLIP_REMAP; K8 >Seq). NOTE FX takes no pitch knobs
          * (its drum form). */
         if (isAudioTrack(S.activeTrack) && !S.auKnobRemap) {
             const _t = S.activeTrack;
             if (bank === 0 && (knobIdx === 3 || !audioSliceMode(_t))) {
-                if (knobIdx === 0 || knobIdx === 1 || knobIdx === 2 || knobIdx === 3) {
-                    const _st = knobIdx === 2 ? ccKnobDelta(d2, knobIdx)
-                              : knobStep(knobIdx, d2, knobIdx === 1 ? KNOB_PICK : KNOB_DELIB);
+                if (knobIdx === 0 || knobIdx === 2 || knobIdx === 3) {
+                    const _st = knobIdx === 2 ? ccKnobDelta(d2, knobIdx) : knobStep(knobIdx, d2, KNOB_DELIB);
                     if (_st && auClipBankKnob(_t, knobIdx, _st)) S.screenDirty = true;
                 }
                 return;

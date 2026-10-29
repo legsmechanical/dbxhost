@@ -1025,7 +1025,7 @@ step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP /
     ticks(2);
     assert(sentLike(/_step_/).length === 0, 'a step press edited a Loop clip: ' + JSON.stringify(sentLike(/_step_/)));
     const cells = A.auLoopBankCells(4);
-    assert(cells.map((c) => c.label).join() === 'Tempo,Bars,Nudge,Mode,,,,', 'loop bank: ' + cells.map((c) => c.label));
+    assert(cells.map((c) => c.label).join() === 'Tempo,,Nudge,Mode,,,,', 'loop bank: ' + cells.map((c) => c.label));
     S.bankCardLatched = true;
     reset();
     /* K3 Nudge: one detent's worth (the knob's acceleration may need a tick or two) */
@@ -1058,21 +1058,17 @@ step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP /
         reset();
         for (let i = 0; i < 60; i++) cc(75, 127);
         S.knobAccelLast[5] = 0; cc(76, 1); S.knobAccelLast[6] = 0; cc(77, 1);
-        assert(!sentLike(/_au_set_(fill|fade|sens)/).length && A.auLoopBankCells(4).map((c) => c.label).join() === 'Tempo,Bars,Nudge,Mode,,,,',
+        assert(!sentLike(/_au_set_(fill|fade|sens)/).length && A.auLoopBankCells(4).map((c) => c.label).join() === 'Tempo,,Nudge,Mode,,,,',
                'K5..K7 act on Tempo ' + v + ': ' + JSON.stringify(sentLike(/_au_/)));
     }
     S.auInfo[4][0] = wasInfo;
     for (let i = 0; i < 200; i++) cc(71, 127);
-    /* K2 Bars: the sample's own length, 1..64, with the tempo it makes */
+    /* K2 is blank: Bars moved to SAMPLE's K7 (Josh, 2026-10-29: "drop it
+     * from clip. it's confusing to have it there since a clip has length of
+     * its own") */
     reset();
     for (let i = 0; i < 40; i++) cc(72, 1);
-    const bs = sent('t4_au_set_bars');
-    assert(bs.length && bs[0] === '0 2', 'K2 is not Bars: ' + JSON.stringify(sentLike(/_au_/)));
-    const bc = A.auLoopBankCells(4)[1];
-    const nb = +bc.text;
-    assert(bc.label === 'Bars' && nb >= 2 && bc.name.indexOf((nb * 120) + ' bpm') >= 0, 'the Bars cell: ' + JSON.stringify(bc));
-    for (let i = 0; i < 400; i++) cc(72, 127);
-    assert(A.auLoopBankCells(4)[1].text === '1', 'Bars went below 1: ' + A.auLoopBankCells(4)[1].text);
+    assert(!sent('t4_au_set_bars').length && !sentLike(/_au_/).length, 'K2 on the Loop CLIP bank still acts: ' + JSON.stringify(sentLike(/_au_/)));
     S.bankCardLatched = false;
 });
 

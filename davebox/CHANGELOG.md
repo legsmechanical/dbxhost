@@ -63,7 +63,7 @@ the section into a versioned heading at release time.
   **Vintage** cuts it into tiny pieces on the clock, each on its beat as recorded, so it
   stays in time at any tempo with an old sampler's gaps and grit; **Pitch** retunes the
   loop to fill its Bars.
-- **Audio: Bars** (Loop CLIP bank K2): each clip knows its sample's own length in
+- **Audio: Bars** (SAMPLE's K7): each clip knows its sample's own length in
   bars, guessed when you pick it (from the file name, else its beats) and shown
   with the tempo that makes it. Vintage, Pitch and >Seq go by it, so the number
   of chops no longer changes the speed. >Seq grows a clip whose length you never

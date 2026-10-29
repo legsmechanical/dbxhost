@@ -509,12 +509,6 @@ export function auOrigBpm(i) {
     const secs = i.rate ? i.nframes / i.rate : 0;
     return secs > 0 && i.bars ? Math.round(i.bars * 2400 / secs) / 10 : 0;
 }
-const BARS_OPTS = Array.from({ length: AU_BARS_MAX }, (_, k) => String(k + 1));
-const barsCell = (i) => {
-    const b = Math.max(1, i.bars | 0), bpm = auOrigBpm(i);
-    return { kind: 'valsq', label: 'Bars', name: 'Bars as recorded' + (bpm ? ' · ' + bpm + ' bpm' : ''),
-             text: String(b), options: BARS_OPTS, sel: b - 1, touchArc: { norm: (b - 1) / (AU_BARS_MAX - 1), bip: false } };
-};
 const nudgeCell = (i) => ({ kind: 'arcbip', label: 'Nudge', name: 'Nudge (start vs the bar)', text: fmtMs(i.nudge), signed: i.nudge / 500 });
 
 /* The sound fields, as cells (SLICE n: one slice; CLIP in Slice mode: every
@@ -619,7 +613,9 @@ function stepSliceField(f, v, steps) {
 }
 
 /* The CLIP bank's own Audio knobs: Mode (K4, both modes) and, in Loop mode,
- * Tempo (K1), Bars (K2), Nudge (K3). Returns true when something changed. */
+ * Tempo (K1), Nudge (K3). Bars is SAMPLE's K7 (Josh, 2026-10-29: "drop it from
+ * clip. it's confusing to have it there since a clip has length of its own").
+ * Returns true when something changed. */
 export function auClipBankKnob(t, k, steps) {
     const c = auClipOf(t), i = auInfo(t, c);
     const loc = Object.assign({}, i);
@@ -635,11 +631,6 @@ export function auClipBankKnob(t, k, steps) {
         const ti = Math.max(0, Math.min(AU_TEMPO_NAMES.length - 1, auTempoIdx(i) + (steps > 0 ? 1 : -1)));
         if (AU_TEMPO_VALS[ti] === (i.tempo | 0)) return false;
         loc.tempo = AU_TEMPO_VALS[ti]; auSet(t, c, 'tempo', loc.tempo);
-    } else if (k === 1 && i.mode !== AU_MODE_SLICE) {
-        if (i.state !== 2) return false;
-        const v = Math.max(1, Math.min(AU_BARS_MAX, (i.bars || 1) + (steps > 0 ? 1 : -1)));
-        if (v === (i.bars | 0)) return false;
-        loc.bars = v; auSet(t, c, 'bars', v);
     } else if (k === 2 && i.mode !== AU_MODE_SLICE) {
         if (i.state !== 2) return false;
         const v = Math.max(-500, Math.min(500, i.nudge + steps * (S.shiftHeld ? 1 : 5)));
@@ -776,7 +767,7 @@ export function auLoopBankCells(t) {
     const tempo = { kind: 'enumsq', label: 'Tempo', name: 'Tempo: Free · Vintage · Pitch · Warp',
                     text: AU_TEMPO_NAMES[auTempoIdx(i)], sq: AU_TEMPO_SQ[auTempoIdx(i)], options: AU_TEMPO_NAMES, sel: auTempoIdx(i) };
     const live = (x) => (i.state === 2 ? x : dash(x));
-    return [live(tempo), live(barsCell(i)), live(nudgeCell(i)), auModeCell(t), BLANK, BLANK, BLANK, BLANK];
+    return [live(tempo), BLANK, live(nudgeCell(i)), auModeCell(t), BLANK, BLANK, BLANK, BLANK];
 }
 
 /* ---- PAD MODE on an Audio track: K1 Layout ---- */
