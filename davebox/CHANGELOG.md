@@ -21,6 +21,9 @@ the section into a versioned heading at release time.
   **Sens** (K7) sets how many hits count. Light on the CPU, like Free and Vintage.
 
 ### Changed
+- **The version is easy to find.** The loading screen shows dAVEBOx's version under
+  the wordmark, with the Schwung base version below it, and the web manager's System
+  page lists dAVEBOx's version (it used to show the Schwung base version there).
 - **Launch Now picks up at the song position when the clips differ in length.** A
   4-bar clip launched from a 1-bar one used to come in somewhere in its first bar; it
   now comes in where it would be had it been playing all along, as a quantized launch
