@@ -15,7 +15,16 @@ the section into a versioned heading at release time.
   processor-intensive: one or two warped tracks are fine, but warping many at once
   can overload the Move and cause clicks or dropouts.
 
+- **Audio: Transient chops.** Chop sample › **Transient** cuts a Slice clip at the
+  sample's hits: turn the jog for **Sens** and watch the chops move on the waveform.
+  Only hits between Start and End count, up to 128.
+
 ### Changed
+- **Audio: each chop type opens a chop editor on the waveform.** Chop sample is
+  **Even · Transient · Lazy · Manual**; Even and Transient change live as you turn the
+  jog, and **Back** asks *Keep N chops?*. **Manual** edits the chops you have, with
+  **Delete + click** to clear them all. SAMPLE itself, in Slice mode, now moves the
+  clip's Start and End rather than a slice's, and a click opens its menu.
 - **Launch Now picks up at the song position when the clips differ in length.** A
   4-bar clip launched from a 1-bar one used to come in somewhere in its first bar; it
   now comes in where it would be had it been playing all along, as a quantized launch

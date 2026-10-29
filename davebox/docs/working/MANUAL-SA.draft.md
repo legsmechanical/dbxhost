@@ -1229,14 +1229,17 @@ by clicking **Audio** in the track's sound menu, or with the instrument shortcut
 - **Loop mode:** the loop's waveform. **K1** Start · **K2** Zoom · **K3** End of the
   loop. No chops show, and the pads, the jog and a click do nothing here.
 - **Slice mode:** the sample with every chop marked and the selected chop
-  bracketed — the chop editor below.
+  bracketed. **K1** Start · **K2** Zoom · **K3** End of the clip, as in Loop mode;
+  a pad picks its chop and plays it, and the view goes to that chop's start at the
+  zoom you have. A click opens the menu.
 
 In both, **K4** Gain · **K5** Pitch · **K6** Detune set the whole clip; the one in
 hand reads out between Start and End, and the waveform is drawn at the gain it
 plays at. Times read in seconds to two decimals.
 
-**Shift + click** opens SAMPLE's menu: **Load sample** (the chooser) and, in Slice
-mode, **Chop sample**, which offers **Lazy**, **Manual** and **Even**. **Back** steps back a level, and leaves SAMPLE. The Shift
+**Shift + click** opens SAMPLE's menu (in Slice mode a plain click does too):
+**Load sample** (the chooser) and, in Slice mode, **Chop sample**, which offers
+**Even**, **Transient**, **Lazy** and **Manual**. **Back** steps back a level, and leaves SAMPLE. The Shift
 shortcuts work here as anywhere: **Shift + a step** or **Shift + jog** leaves SAMPLE and does
 what it always does.
 
@@ -1253,21 +1256,25 @@ chop while it plays can leave a few milliseconds of silence before it comes in, 
 time. A sample
 whose file has gone reads *Missing: name* and stays silent.
 
-**Chops.** You make chops one of two ways, then shape them in the chop editor:
+**Chops.** Each kind in **Chop sample** opens the **chop editor**: the waveform
+with the chops on it, changing as you work. The pads play the chops in all of them.
+The Mode stays as it is: the chops serve both modes.
 
+- **Even** cuts Start..End into equal slices, 16 to begin with: turn the jog for
+  the count (2–128), the pads lighting for each slice as you turn.
+- **Transient** cuts at the sample's hits: turn the jog for **Sens** — lower keeps
+  only the strongest, higher every small one (**Shift** for 5 a detent) — and watch
+  the chops move on the wave; the count shows top right. Only hits between Start and
+  End count, and only the first 128 (the count reads **128+** past that).
+- In both, **Back** asks *Keep N chops?* — **Yes** makes them your chops, to edit
+  like any others; **No** puts back what you had. A slice's sound settings belong to
+  its number, so slice 3 keeps its sound.
 - **Lazy** re-chops the sample by ear. Pad 1 lights white; tap it and the sample
   plays from Start to End. The next pad is always the white one: tap it to drop a
   chop where the sample is. The slices you've chopped so far stay lit. It ends at
   End or on **Back**, and asks *Keep N new chops?* — **Yes** keeps them, **No**
   puts your old chops back. **Back** before the first tap changes nothing.
-- **Manual** starts over with one slice, Start to End, to chop
-  with the cursor (it asks first if that would replace chops you made).
-- **Even** cuts Start..End into 2–32 equal slices: click, turn for the count —
-  the pads light for each slice as you turn — and click to keep them as your
-  chops, to edit like any others (**Back** puts back what you had). A slice's
-  sound settings belong to its number, so slice 3 keeps its sound.
-
-**The chop editor** (SAMPLE, Slice mode):
+- **Manual** edits the chops you have, by hand:
 
 | Control | Does |
 |---|---|
@@ -1276,10 +1283,14 @@ whose file has gone reads *Missing: name* and stays silent.
 | **K2 Zoom** | From the whole sample down to one sample a pixel |
 | **Jog** / **click** | Move the cursor (**Shift** for single samples) / add a chop there |
 | **Delete + pad** | Remove that slice's chop: it joins the slice before (slice 1's start stays) |
+| **Delete + click** | *Clear all chops?* — **Yes** leaves one slice, Start to End |
+| **Back** | Back to SAMPLE |
 
-Whatever you touched last — the cursor (jog), the start (K1) or the end (K3) — stays
-in the middle of the screen and the waveform scrolls around it; touching one jumps
-there. The header reads **SLICE n/n** (in Loop mode, the sample's name); the start or end you're touching
+In SAMPLE and Manual, whatever you touched last — the cursor (jog), the start (K1)
+or the end (K3) — stays in the middle of the screen and the waveform scrolls around
+it; touching one jumps there. K2 zooms in every chop editor. The header reads
+**SLICE n/n** (in Loop mode, the sample's name; **EVEN** or **TRANSIENT** with the
+count while you chop); the start or end you're touching
 or turning lights up, and **ZOOM +** / **ZOOM −** shows between them while K2 zooms.
 
 **The SLICE / LOOP bank** holds the clip's sound; it is named for the clip's Mode. Pick it from the bank map's **SLICE** (or **LOOP**) pad, under CLIP
