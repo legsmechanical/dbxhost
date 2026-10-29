@@ -27,7 +27,8 @@ extern "C" __attribute__((visibility("hidden"))) uint32_t arc4random(void)
 struct au_st {
     Bungee::Stretcher<Bungee::Basic> s;
     Bungee::Request req;
-    au_st(int in_rate, int out_rate) : s({in_rate, out_rate}, 2, 0), req{} {}
+    int ch;
+    au_st(int in_rate, int out_rate, int channels) : s({in_rate, out_rate}, channels, 0), req{}, ch(channels) {}
 };
 
 static void au_st_set(Bungee::Request &r, double position, double speed, double pitch)
@@ -38,9 +39,9 @@ static void au_st_set(Bungee::Request &r, double position, double speed, double 
     r.resampleMode = resampleMode_autoOut;
 }
 
-extern "C" au_st_t *au_st_create(int in_rate, int out_rate)
+extern "C" au_st_t *au_st_create(int in_rate, int out_rate, int channels)
 {
-    return new (std::nothrow) au_st(in_rate, out_rate);
+    return new (std::nothrow) au_st(in_rate, out_rate, channels == 1 ? 1 : 2);
 }
 
 extern "C" void au_st_destroy(au_st_t *st) { delete st; }
@@ -69,7 +70,7 @@ extern "C" int au_st_grain(au_st_t *st, const float *in, int stride, const float
     Bungee::OutputChunk o{};
     st->s.synthesiseGrain(o);
     *out_l = o.data;
-    *out_r = o.data + o.channelStride;
+    *out_r = st->ch == 1 ? o.data : o.data + o.channelStride;
     *p0 = o.request[Bungee::OutputChunk::begin] ? o.request[Bungee::OutputChunk::begin]->position : NAN;
     *p1 = o.request[Bungee::OutputChunk::end] ? o.request[Bungee::OutputChunk::end]->position : NAN;
     st->s.next(st->req);   /* clears reset; moves the position on by speed */

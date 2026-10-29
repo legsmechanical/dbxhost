@@ -1060,6 +1060,15 @@ static void au_streamer_shutdown(seq8_instance_t *inst) {
  *     playing the old anchor's frames (the ring holds ~46 ms of them) until
  *     the new one's first frame is due, then crossfades, as Pitch hands a
  *     launch from voice to voice; stopping, it fades them out.
+ * At the loop's own tempo with no Pitch or Detune, Bungee would only hand the
+ * sample back as it is: the stretcher BYPASSES it and copies the virtual input
+ * straight into the ring, tagged the same (the drift trim then varispeeds it
+ * by at most 0.1 %: there it moves the pitch too, so the bypass takes over
+ * only once the drift is under AU_WARP_BYP_IN and hands back above
+ * AU_WARP_BYP_OUT), at almost no cost; it crossfades into Bungee and back as the
+ * tempo or pitch moves off and onto that point (AU_WARP_FADE frames, both
+ * renderings at the same input positions). A mono sample runs a mono
+ * stretcher: half the cost of a stereo one.
  * A tempo, Pitch or Detune change is only a new speed or pitch: no restart.
  * A change to the map (Start, End, Bars, Nudge, Revrs, the clip's length)
  * restarts Bungee at the same tick. Bungee crossfades a restart itself: its
@@ -1090,6 +1099,9 @@ static void au_streamer_shutdown(seq8_instance_t *inst) {
 #define AU_WARP_SNAP     1024.0       /* frames off the clock: re-anchor instead of trimming */
 #define AU_WARP_TRIM_TC  11025.0      /* frames: the trim's time constant (0.25 s) */
 #define AU_WARP_TRIM_MAX 0.03         /* the most the trim moves the speed */
+#define AU_WARP_BYP_TRIM 0.001        /* ...bypassing, where it moves the pitch too (1.7 cents) */
+#define AU_WARP_BYP_IN   16.0         /* frames of drift: the bypass takes over only below it */
+#define AU_WARP_BYP_OUT  128.0        /* ...and hands back to Bungee (which trims at full rate) above it */
 #define AU_WARP_FADE     64           /* frames: the audio thread's fade in / out */
 #define AU_WARP_FAR      1e9          /* input frames: past this the position is rebased (hours in) */
 
@@ -1128,6 +1140,16 @@ typedef struct {
     uint8_t       carry;                       /* that reset kept time (a map change): tags carry on */
     uint8_t       fresh;                       /* no chunk of the new stream seen since the reset */
     uint32_t      gstart;                      /* the ring index the current anchor's frames start at */
+    uint8_t       st_ch;                       /* the stretcher's channels (a mono sample: 1) */
+    uint8_t       byp;                         /* bypassing Bungee: the loop's own tempo, no pitch */
+    uint8_t       to_byp;                      /* ...going there: the next grain crossfades into it */
+    uint8_t       bstart_on;                   /* ...coming back: Bungee's frames before bstart are dropped */
+    int           xin;                         /* frames of the crossfade into Bungee left */
+    double        bpos;                        /* bypassing: the virtual input position of the next frame */
+    double        bstart;                      /* coming back: where the bypass left off */
+    double        sp_base;                     /* the untrimmed speed the ring's newest frames were made at */
+    uint32_t      settle;                      /* the ring index from which they were: the drift read
+                                                * before it is played is of the old speed's frames */
     const void   *held;                        /* published: the sample it renders from (NULL: idle) */
 } au_warp_t;
 
@@ -1201,9 +1223,28 @@ static int au_warp_map_same(const au_warp_cmd_t *a, const au_warp_cmd_t *b) {
 static double au_warp_speed(const au_warp_t *W) {
     const au_warp_cmd_t *c = &W->cur;
     double sp = W->rpt * 44100.0 / ((double)c->smp->rate * c->fpt), trim = -c->drift / AU_WARP_TRIM_TC;
-    if (trim > AU_WARP_TRIM_MAX) trim = AU_WARP_TRIM_MAX;
-    if (trim < -AU_WARP_TRIM_MAX) trim = -AU_WARP_TRIM_MAX;
+    /* bypassing, a trim is a pitch change too (varispeed): a hair at most */
+    double mx = W->byp ? AU_WARP_BYP_TRIM : AU_WARP_TRIM_MAX;
+    if (trim > mx) trim = mx;
+    if (trim < -mx) trim = -mx;
     return sp * (1.0 + trim);
+}
+
+/* The loop's own tempo, no Pitch / Detune: Bungee would hand it back as is.
+ * (No libm in this unit: the bounds by hand. 1e-4 of speed is 0.2 cents.) */
+static int au_warp_native(const au_warp_t *W) {
+    const au_warp_cmd_t *c = &W->cur;
+    double sp = W->rpt * 44100.0 / ((double)c->smp->rate * c->fpt) - 1.0, pd = c->pitch - 1.0;
+    return sp < 1e-4 && sp > -1e-4 && pd < 1e-9 && pd > -1e-9;
+}
+
+/* the sample frame virtual position v reads (the streamer's watch) */
+static void au_warp_watch_at(au_warp_t *W, double v) {
+    const au_warp_cmd_t *c = &W->cur;
+    double x = (au_wrap(v / W->rpt, c->L) - c->nud) * W->rpt;
+    uint32_t f = 0;
+    if (x >= 0 && x < (double)(c->re - c->rs)) f = c->revrs ? c->re - 1 - (uint32_t)x : c->rs + (uint32_t)x;
+    __atomic_store_n(&W->read_pos, f, __ATOMIC_RELAXED);
 }
 
 /* virtual input frame v -> one sample frame (L, R), 0 where the sample does
@@ -1230,13 +1271,39 @@ static void au_warp_frame(au_warper_t *X, const au_warp_t *W, double v, float *l
     }
 }
 
+/* Bypassing: one chunk copied straight from the virtual input (at the
+ * trimmed speed, ~1), tagged as Bungee's frames are. Returns its frames. */
+#define AU_WARP_BYP_CHUNK 512
+static int au_warp_bypass(au_warper_t *X, au_warp_t *W) {
+    const au_warp_cmd_t *c = &W->cur;
+    double sp = au_warp_speed(W);
+    uint32_t h = W->head;
+    int i;
+    for (i = 0; i < AU_WARP_BYP_CHUNK; i++) {
+        uint32_t s = (h + (uint32_t)i) & (AU_WARP_RING - 1);
+        double v = W->bpos + sp * i;
+        au_warp_frame(X, W, v, &W->l[s], &W->r[s]);
+        W->tag[s] = (float)au_wrap(v / W->rpt, c->L);
+        W->gen[s] = c->anchor_gen;
+    }
+    au_warp_watch_at(W, W->bpos);
+    W->bpos += sp * AU_WARP_BYP_CHUNK;
+    if (W->bpos > AU_WARP_FAR) W->bpos = au_wrap(W->bpos / W->rpt, c->L) * W->rpt;   /* the map wraps: no seam */
+    W->vend = W->bpos / W->rpt;
+    W->tnext = (float)au_wrap(W->vend, c->L);
+    __atomic_store_n(&W->head, h + AU_WARP_BYP_CHUNK, __ATOMIC_RELEASE);
+    return AU_WARP_BYP_CHUNK;
+}
+
 /* one grain into the ring; returns the frames it wrote */
 static int au_warp_grain(au_warper_t *X, au_warp_t *W) {
     const au_warp_cmd_t *c = &W->cur;
     const float *ol, *or_;
-    double p0, p1, sp = au_warp_speed(W);
-    int b, e, i, n;
+    double p0, p1, sp;
+    int b, e, i, n, j = 0;
     uint32_t h = W->head;
+    if (W->byp) return au_warp_bypass(X, W);
+    sp = au_warp_speed(W);
     au_st_want(W->st, sp, c->pitch, &b, &e);
     if (e - b > X->in_max) e = b + X->in_max;
     for (i = 0; i < e - b; i++) au_warp_frame(X, W, (double)(b + i), &X->in[i], &X->in[X->in_max + i]);
@@ -1249,30 +1316,47 @@ static int au_warp_grain(au_warper_t *X, au_warp_t *W) {
         if (p0 >= W->rpos - 2.0 * sp * n - 1.0 && p0 <= W->rpos + 1.0) W->fresh = 0;
         else ok = 0;
     }
-    {
-        double mid = (b + e) * 0.5, x = (au_wrap(mid / W->rpt, c->L) - c->nud) * W->rpt;
-        uint32_t f = 0;
-        if (x >= 0 && x < (double)(c->re - c->rs)) f = c->revrs ? c->re - 1 - (uint32_t)x : c->rs + (uint32_t)x;
-        __atomic_store_n(&W->read_pos, f, __ATOMIC_RELAXED);
-    }
+    au_warp_watch_at(W, (b + e) * 0.5);
     for (i = 0; i < n; i++) {
-        uint32_t s = (h + (uint32_t)i) & (AU_WARP_RING - 1);
-        W->l[s] = ol[i];
-        W->r[s] = or_[i];
-        if (ok) W->tag[s] = (float)au_wrap((p0 + (p1 - p0) * i / n) / W->rpt, c->L);
+        uint32_t s = (h + (uint32_t)j) & (AU_WARP_RING - 1);
+        double v = ok ? p0 + (p1 - p0) * i / n : 0;
+        float l = ol[i], r = or_[i];
+        if (W->bstart_on) {
+            /* back from the bypass: it already wrote up to bstart; Bungee
+             * takes over from there, blending in from the bypass's frames at
+             * the same positions */
+            float bl, br, g;
+            if (!ok || v < W->bstart) continue;
+            au_warp_frame(X, W, v, &bl, &br);
+            g = (float)(AU_WARP_FADE - W->xin + 1) / (float)(AU_WARP_FADE + 1);
+            l = l * g + bl * (1.f - g);
+            r = r * g + br * (1.f - g);
+            if (--W->xin <= 0) W->bstart_on = 0;
+        } else if (W->to_byp && ok) {
+            /* into the bypass: Bungee blends out over this chunk's first frames */
+            float bl, br, g = i < AU_WARP_FADE ? (float)(i + 1) / (float)(AU_WARP_FADE + 1) : 1.f;
+            au_warp_frame(X, W, v, &bl, &br);
+            l = l * (1.f - g) + bl * g;
+            r = r * (1.f - g) + br * g;
+        }
+        W->l[s] = l;
+        W->r[s] = r;
+        if (ok) W->tag[s] = (float)au_wrap(v / W->rpt, c->L);
         else if (W->carry && W->tnext >= 0) W->tag[s] = (float)au_wrap(W->tnext + (double)i / c->fpt, c->L);
         else W->tag[s] = -1.f;
         W->gen[s] = c->anchor_gen;
+        j++;
     }
     if (ok) {
         W->vend = p1 / W->rpt;
         W->tnext = (float)au_wrap(W->vend, c->L);
         W->carry = 0;
+        if (W->to_byp) { W->to_byp = 0; W->byp = 1; W->bpos = p1; }
     } else if (n > 0 && W->carry && W->tnext >= 0) {
         W->tnext = (float)au_wrap(W->tnext + (double)n / c->fpt, c->L);
     }
-    __atomic_store_n(&W->head, h + (uint32_t)n, __ATOMIC_RELEASE);
-    return n;
+    __atomic_store_n(&W->head, h + (uint32_t)j, __ATOMIC_RELEASE);
+    return j;
 }
 
 /* (re)start Bungee at unwrapped tick `vt` on the current map; carry: the
@@ -1284,8 +1368,21 @@ static void au_warp_reset(au_warp_t *W, double vt, int carry) {
     W->rpos = vt * W->rpt;
     W->carry = (uint8_t)carry;
     W->fresh = 1;
+    W->byp = W->to_byp = W->bstart_on = 0;
     if (!carry) { W->tnext = -1.f; W->gstart = W->head; }
     au_st_reset(W->st, W->rpos, au_warp_speed(W), c->pitch);
+}
+
+/* start bypassing at unwrapped tick `vt` (carry: the time goes on) */
+static void au_warp_byp_start(au_warp_t *W, double vt, int carry) {
+    const au_warp_cmd_t *c = &W->cur;
+    W->rpt = (double)(c->re - c->rs) / c->P;
+    W->vend = vt;
+    W->bpos = vt * W->rpt;
+    W->byp = 1;
+    W->to_byp = W->bstart_on = 0;
+    W->tnext = (float)au_wrap(vt, c->L);
+    if (!carry) W->gstart = W->head;
 }
 
 static void au_warp_idle(au_warp_t *W) {
@@ -1304,9 +1401,10 @@ static int au_warp_track(au_warper_t *X, au_warp_t *W) {
         au_warp_idle(W);
         return 0;
     }
-    if (!W->st || W->cur.smp != c.smp || W->st_rate != c.smp->rate) {
+    if (!W->st || W->cur.smp != c.smp || W->st_rate != c.smp->rate || W->st_ch != (c.smp->ch > 1 ? 2 : 1)) {
         if (W->st) au_st_destroy(W->st);
-        W->st = au_st_create((int)c.smp->rate, 44100);
+        W->st_ch = (uint8_t)(c.smp->ch > 1 ? 2 : 1);
+        W->st = au_st_create((int)c.smp->rate, 44100, W->st_ch);
         W->st_rate = c.smp->rate;
         W->cur.smp = NULL;
         if (!W->st) return 0;
@@ -1316,16 +1414,41 @@ static int au_warp_track(au_warper_t *X, au_warp_t *W) {
     if (fresh || c.anchor_gen != W->cur.anchor_gen) {
         /* a new anchor: start there; the audio thread drops the old frames */
         W->cur = c;
-        au_warp_reset(W, c.anchor_tick, 0);
-    } else if (!au_warp_map_same(&W->cur, &c) || W->vend * W->rpt > AU_WARP_FAR) {
+        W->rpt = (double)(c.re - c.rs) / c.P;
+        if (au_warp_native(W)) au_warp_byp_start(W, c.anchor_tick, 0);
+        else au_warp_reset(W, c.anchor_tick, 0);
+    } else if (!au_warp_map_same(&W->cur, &c) || (!W->byp && W->vend * W->rpt > AU_WARP_FAR)) {
         /* the map changed (or hours have run): restart where the ring ends
-         * (Bungee blends the two streams) */
+         * (Bungee blends the two streams; the bypass needs no blend) */
         double vt = W->vend;
         if (vt * W->rpt > AU_WARP_FAR) vt = au_wrap(vt, c.L);
         W->cur = c;
-        au_warp_reset(W, vt, 1);
+        W->rpt = (double)(c.re - c.rs) / c.P;
+        if (au_warp_native(W)) au_warp_byp_start(W, vt, 1);
+        else au_warp_reset(W, vt, 1);
     } else {
         W->cur = c;                     /* tempo, pitch, the drift: the next grain takes them */
+        double dr = c.drift < 0 ? -c.drift : c.drift;
+        double spb = W->rpt * 44100.0 / ((double)c.smp->rate * c.fpt), dsp = spb - W->sp_base;
+        /* the drift the audio thread reads is of frames rendered ~AU_WARP_AHEAD
+         * ago: after a tempo change it means nothing for the bypass until the
+         * old speed's frames have played (it switched early, then the drift
+         * grew and it handed back) */
+        int settled = (int32_t)(__atomic_load_n(&W->tail, __ATOMIC_ACQUIRE) - W->settle) >= 0;
+        if (dsp > 1e-9 || dsp < -1e-9) { W->sp_base = spb; W->settle = W->head; settled = 0; }
+        if (W->byp && (!au_warp_native(W) || dr > AU_WARP_BYP_OUT)) {
+            /* off the loop's own tempo / pitch: Bungee again, from where the
+             * bypass left off, blending in */
+            double bp = W->bpos;
+            au_warp_reset(W, W->vend, 1);
+            W->bstart_on = 1;
+            W->bstart = bp;
+            W->xin = AU_WARP_FADE;
+        } else if (!W->byp && !W->to_byp && !W->bstart_on && au_warp_native(W) && dr < AU_WARP_BYP_IN && settled) {
+            W->to_byp = 1;              /* onto it, the drift trimmed: the next grain blends out */
+        } else if (W->to_byp && (!au_warp_native(W) || dr >= AU_WARP_BYP_IN)) {
+            W->to_byp = 0;
+        }
     }
     {
         int empty = 0;                   /* grains with no output: Bungee filling after a reset */

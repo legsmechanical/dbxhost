@@ -184,6 +184,33 @@ int main(void) {
             g = record(h, (int)(3 * 4 * SR * 60.0 / bpms[b] / 128) + 8);
             for (i = 0; i < 3; i++) check_bar(g, bpms[b], i, 0x5, 440, "Warp");
             HX_ASSERT(X->trk[4]->st, "no stretcher was made for the Warp track");
+            HX_ASSERT(X->trk[4]->st_ch == 1, "a mono sample did not get a mono stretcher");
+            if (bpms[b] == 120) {
+                /* the loop's own tempo, no pitch: Bungee is bypassed and the
+                 * sample comes out as it is (the drift trim may varispeed it
+                 * by a hair) */
+                /* compared at its best alignment within a block: Warp lands on
+                 * the tick's own frame, Free / Pitch on the block it falls in
+                 * (measured: Warp ~63 frames earlier) */
+                double best = 1e30, e = 0;
+                int k0 = (int)(1.1 * SR / 4), k, lag, bl = 0;
+                HX_ASSERT(X->trk[4]->byp, "Warp at the loop's own tempo did not bypass Bungee");
+                for (lag = -200; lag <= 200; lag++) {
+                    double d = 0;
+                    e = 0;
+                    for (k = 0; k < 2000; k++) {
+                        int at = 4 * (int)BEAT + k0 + k;                    /* bar 2 */
+                        double want = 12000 * sin(2 * M_PI * 440 * (double)(k0 + k) / SR) * 32767.0 / 32768.0;
+                        d += (g_rec[at + lag] - want) * (g_rec[at + lag] - want);
+                        e += want * want;
+                    }
+                    if (d < best) { best = d; bl = lag; }
+                }
+                printf("  bypass at 120: the sample as it is to %.2f %% (at %d frames)\n", 100.0 * sqrt(best / e), bl);
+                HX_ASSERT(sqrt(best / e) < 0.01, "the bypass did not hand the sample back as it is");
+            } else {
+                HX_ASSERT(!X->trk[4]->byp, "Warp off the loop's tempo bypassed Bungee");
+            }
         }
     }
 
@@ -290,6 +317,64 @@ int main(void) {
         for (n = 0; n < 120 && !(n > 30 && inst->au_trk[4].w.state == AU_WARP_PLAY); n++) step(h);
         HX_ASSERT(inst->au_trk[4].w.state == AU_WARP_PLAY && inst->au_trk[4].w.clip == 1,
                   "after a stretcher 87 ms late, Warp never played again");
+        hx_set_param(h, "transport", "stop");
+        for (k = 0; k < 60; k++) step(h);
+        hx_set_param(h, "t4_launch_clip", "0");
+        for (k = 0; k < 8; k++) step(h);
+    }
+
+    /* ---- the bypass and Bungee hand over without a gap, a restart or a
+     * pitch change: a continuous 660 Hz sine at its own tempo (bypassed),
+     * off it (Bungee), Pitch +1 then 0 (Bungee, bypass) ---- */
+    {
+        int k, n, ph;
+        static const char *bpm_at[] = { "120", "126", "120", "120", "120" };
+        static const char *pit_at[] = { "1 0", "1 0", "1 0", "1 1", "1 0" };
+        static const int byp_at[] = { 1, 0, 1, 0, 1 };
+        hx_set_param(h, "t4_launch_clip", "1");
+        hx_set_param(h, "bpm", "120");
+        for (k = 0; k < 8; k++) step(h);
+        hx_set_param(h, "transport", "play");
+        for (k = 0; k < 200; k++) step(h);
+        for (ph = 0; ph < 5; ph++) {
+            uint32_t gen = inst->au_trk[4].w.gen;
+            int fed = hx_stub_feed(4, NULL, NULL), quiet = 0, zc = 0, fr = 0;
+            double t0 = -1, t1 = -1;       /* the first and last rising crossing (frames, interpolated) */
+            int prev = 0, have_prev = 0;    /* the last frame of the block before (a crossing between blocks counts) */
+            char m[200];
+            hx_set_param(h, "bpm", bpm_at[ph]);
+            hx_set_param(h, "t4_au_set_pitch", pit_at[ph]);
+            for (n = 0; n < 960; n++) {
+                double r = 0;
+                step(h);
+                if (hx_stub_feed(4, NULL, NULL) != fed) {
+                    const int16_t *fb = hx_stub_feed_last(4);
+                    fed = hx_stub_feed(4, NULL, NULL);
+                    for (k = 0; k < 128; k++) {
+                        int a0 = k ? fb[(k - 1) * 2] : prev;
+                        r += (double)fb[k * 2] * fb[k * 2];
+                        if (n >= 880 && (k || have_prev) && a0 < 0 && fb[k * 2] >= 0) {
+                            double a = a0, c = fb[k * 2];
+                            double t = fr + (k - 1) + (-a) / (c - a);
+                            if (t0 < 0) t0 = t;
+                            t1 = t;
+                            zc++;
+                        }
+                    }
+                    prev = fb[127 * 2];
+                    have_prev = n >= 880;
+                    if (n >= 880) fr += 128;
+                    r = sqrt(r / 128);
+                }
+                if (r < 5000) quiet++;
+            }
+            double hz = zc > 1 ? (zc - 1) * (double)SR / (t1 - t0) : 0, want = ph == 3 ? 660 * 1.059463 : 660;
+            snprintf(m, sizeof m, "bypass hand-over %d (%s bpm, pitch %s): %d quiet blocks, %u re-anchors, %.1f Hz (want %.1f), bypass %d",
+                     ph, bpm_at[ph], pit_at[ph], quiet, inst->au_trk[4].w.gen - gen, hz, want, X->trk[4]->byp);
+            HX_ASSERT(quiet == 0 && inst->au_trk[4].w.gen == gen, m);
+            HX_ASSERT(fabs(hz - want) < want * 0.003, m);      /* 5 cents */
+            HX_ASSERT(X->trk[4]->byp == byp_at[ph], m);
+        }
         hx_set_param(h, "transport", "stop");
         for (k = 0; k < 60; k++) step(h);
         hx_set_param(h, "t4_launch_clip", "0");
@@ -407,6 +492,6 @@ int main(void) {
     for (i = 1; i < 3; i++) check_bar(g, 110, i, 0x5, 440, "Warp (streamed)");
     g_stream = 0;
     hx_destroy(h);
-    printf("PASS: Warp (70 / 120 / 160 bpm: the tone on its beats at 440 Hz; Revrs; +12; a tempo change trims, no restart; Free lets go; launch Now between Warp clips without a gap; a followed clock; the thread; a sample cleared while it plays; streamed)\n");
+    printf("PASS: Warp (70 / 120 / 160 bpm: the tone on its beats at 440 Hz; Revrs; +12; a tempo change trims, no restart; Free lets go; launch Now between Warp clips without a gap; bypassed at its own tempo, handing over to Bungee and back without a gap; a followed clock; the thread; a sample cleared while it plays; streamed)\n");
     return 0;
 }

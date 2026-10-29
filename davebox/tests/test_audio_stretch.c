@@ -15,8 +15,9 @@ static float g_src[NSRC];
 /* run the stretcher over the whole source at `speed`, `pitch` (backwards:
  * the input read from the end); returns output frames, writes up to `cap`
  * of channel L into out */
+static int g_ch = 2;
 static int stretch(double speed, double pitch, int backwards, float *out, int cap) {
-    au_st_t *st = au_st_create(SR, SR);
+    au_st_t *st = au_st_create(SR, SR, g_ch);
     int max = au_st_max_input(st), n = 0, b, e, i, got, chunks = 0;
     float *in = calloc(2 * (size_t)max, sizeof *in);
     const float *l, *r;
@@ -81,6 +82,13 @@ int main(void) {
     HX_ASSERT(abs(n - NSRC * 2 / 3) < 4096, "1.5x backwards is not two thirds as long");
     HX_ASSERT(fabs(f - 440) < 5, "backwards changed the pitch");
 
-    printf("PASS: stretcher (half speed, pitch 2, backwards)\n");
+    /* a mono stretcher (a mono sample: half the work): the same result */
+    g_ch = 1;
+    n = stretch(0.5, 1, 0, out, 8 * NSRC);
+    f = freq(out, n);
+    printf("  mono, half speed: %d frames, %.1f Hz\n", n, f);
+    HX_ASSERT(abs(n - 2 * NSRC) < 4096 && fabs(f - 440) < 5, "a mono stretcher at half speed is wrong");
+
+    printf("PASS: stretcher (half speed, pitch 2, backwards; mono)\n");
     return 0;
 }
