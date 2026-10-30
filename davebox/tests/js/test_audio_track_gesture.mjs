@@ -144,7 +144,11 @@ const frame = (draw) => { globalThis.clear_screen(); draw(); return FB.slice(); 
 const same  = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 const inked = (f) => f.some((v) => v);
 const shown = () => frame(() => render.drawUI());
-const reset = () => { sets.length = 0; S.pendingDefaultSetParams.length = 0; };
+/* A step starts its knob turns cold, as a first turn does: the acceleration
+ * reads Date.now() since the knob's last turn, and a turn left by an earlier
+ * step landed in a slower band on CI's slower Linux runner (a fraction of a
+ * step, or none) where it did not on a fast machine. */
+const reset = () => { sets.length = 0; S.pendingDefaultSetParams.length = 0; S.knobAccelLast.fill(0); };
 
 step('⭐ Audio is a row of the Instmt/Dest picker, beside Conductor', () => {
     const rows = C.instrPickerRows(S.trackRoute, 4, [], S.trackChannel);
@@ -647,7 +651,9 @@ step('⭐⭐ WAVE K4 Gain · K5 Pitch · K6 Detune (the clip\'s), read out in th
     const waveInk = () => { const f = shown(); let n = 0; for (let y = 20; y < 50; y++) for (let x = 0; x < 128; x++) n += f[y * 128 + x]; return n; };
     const quiet = waveInk();
     reset();
-    let tx = globalThis.__texts(() => { for (let i = 0; i < 6; i++) cc(74, 1); shown(); });
+    /* each turn from idle, as for Detune below: the acceleration reads Date.now(),
+     * and CI's slower Linux runner took one of six quick turns as a fraction */
+    let tx = globalThis.__texts(() => { for (let i = 0; i < 6; i++) { S.knobAccelLast[3] = 0; cc(74, 1); } shown(); });
     assert(sent('t4_au_set_gain').pop() === '0 6' && tx.indexOf('GAIN +6DB') >= 0, 'K4 Gain: ' + JSON.stringify(sent('t4_au_set_gain')) + ' ' + JSON.stringify(tx));
     /* measured before a tick: this rig's engine stub answers 0 dB to a re-read */
     assert(waveInk() > quiet, 'the waveform did not grow with +6 dB: ' + quiet + ' -> ' + waveInk());
