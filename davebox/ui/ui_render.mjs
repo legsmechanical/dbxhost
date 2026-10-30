@@ -74,7 +74,7 @@ import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
 import { isAudioTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
          auPos, auLazyState, auSelSlice, auSampleP2Cells, auPanelCells, auPanelTitle, auPanelPages, auBankEd, auBankTitle, auLoopBankCells, auModeCell, knobAltOnTrack,
          auPadModeCells, AU_NOTE_BASE,
-         auFmtTime, auEnd, auBpm, auFmtLen, auLenTicks, auIsSlice, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
+         auFmtTime, auEnd, auBpm, auFpt, auFmtLen, auLenTicks, auIsSlice, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
 import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
 import { drawAudioAsk } from './ui_dialogs.mjs';
 import { drawAudioChooser } from './ui_audio_chooser.mjs';
@@ -92,7 +92,10 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
     const i = auInfo(t, c);
     const fr = i.nframes | 0;
     const A = o.A != null ? o.A : 0, B = o.B != null ? o.B : fr;
-    const cols = fr ? auWaveColumns(t, c, w, A, B) : null;
+    /* a view running past the file's end (SAMPLE's clip window when the Length
+     * outlasts the sample) is empty there: only the columns inside are read */
+    const wIn = B > fr ? Math.max(0, Math.min(w, Math.floor((fr - A) / (B - A) * w))) : w;
+    const cols = fr ? (wIn > 0 ? auWaveColumns(t, c, wIn, A, Math.min(B, fr)) : []) : null;
     const mid = y + Math.floor(h / 2);
     const fx = (f) => x + Math.floor((f - A) / (B - A) * w);
     const inView = (px) => px >= x && px < x + w;
@@ -104,7 +107,7 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
     }
     /* `gain` (dB): drawn as it will play, the loudest at the frame's edge */
     const g = o.gain ? Math.pow(10, o.gain / 20) : 1;
-    for (let k = 0; k < w; k++) {
+    for (let k = 0; k < wIn; k++) {
         const hh = Math.max(0, Math.min(Math.floor((h - 1) / 2), Math.round(cols[k] * g * (h - 1) / 2)));
         fill_rect(x + k, mid - hh, 1, hh * 2 + 1, 1);
     }
@@ -152,6 +155,22 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
             set_pixel(px, y - 2, 1);
         }
     }
+    /* bar and beat ticks under it, from Start at the sample's Tempo — where
+     * the clip's beats fall (Josh, 2026-10-29: "for loop mode, giving that
+     * context should show bar indicators under it"); a bar 3 rows, a beat 1 */
+    if (o.beats && o.beats.fpb > 0) {
+        const fpb = o.beats.fpb, org = o.beats.origin;
+        const b0 = Math.ceil((A - org) / fpb), b1 = Math.floor((B - org) / fpb);
+        if (b1 - b0 <= w / 2) {                       /* only while they stay apart */
+            for (let b = Math.max(0, b0); b <= b1; b++) {
+                const px = Math.min(x + w - 1, fx(org + b * fpb));
+                if (!inView(px)) continue;
+                /* compact (the overview strip, a footer under it): a bar 2 rows, a beat 1 */
+                if (o.beats.compact) fill_rect(px, y + h + (b % 4 === 0 ? 0 : 1), 1, b % 4 === 0 ? 2 : 1, 1);
+                else fill_rect(px, y + h + 1, 1, b % 4 === 0 ? 3 : 1, 1);
+            }
+        }
+    }
     const p = auPos();
     if (p.t === t && p.on) {
         const px = fx(p.frame);
@@ -167,7 +186,10 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
 function drawAudioTrackRest(t) {
     const c = auClipOf(t), i = auInfo(t, c);
     (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankHeaderName(t, S.activeBank), false, true);
-    const head = auIsSlice(i) ? 'Slice ' + (auSelSlice(t) + 1) + '/' + i.n + '  ' : 'Loop  ';
+    /* a Loop clip says its sample's Tempo too (Josh, 2026-10-29: "LOOP 112") */
+    const bpm = auBpm(i);
+    const head = auIsSlice(i) ? 'Slice ' + (auSelSlice(t) + 1) + '/' + i.n + '  '
+        : 'Loop ' + (bpm ? (Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) + '  ' : ' ');
     ovwPrint(4, 9, head + auSampleName(t, c), 1);
     drawInfoRow2();
     drawOverviewTracks(overviewHints());
@@ -176,7 +198,14 @@ function drawAudioTrackRest(t) {
     /* the waveform in Loop mode only; slices are sequenced, so Slice mode
      * shows the page bar and playhead like any track (Josh, 2026-10-28) */
     if (auIsSlice(i)) drawPositionBar(t);
-    else drawAudioWave(t, c, 4, 49, 120, 7, { noMarks: true });   /* Josh, 2026-10-28: "no need to show slice points on the track overview waveform preview" */
+    else {
+        /* the clip, as SAMPLE shows it zoomed out: its bars across, the audio
+         * where it lands at the sample's Tempo, empty past the file, the beats
+         * under it and the playhead (Josh, 2026-10-29: "yep") */
+        const lo = i.rstart | 0, hi = Math.round(lo + auLenTicks(t, c, i) * auFpt(i));
+        drawAudioWave(t, c, 4, 49, 120, 6, { noMarks: true, A: lo, B: Math.max(lo + 1, hi),   /* Josh, 2026-10-28: "no need to show slice points on the track overview waveform preview" */
+                                             beats: { origin: lo, fpb: 96 * auFpt(i), compact: true } });
+    }
 }
 
 /* The AUDIO editor (ui_audio_editor): the clip's audio on the kit page, a
@@ -286,7 +315,7 @@ function drawAudioWaveEditor() {
         if (zoomTxt) mid(zoomTxt);
         /* no cursor and no chops: they are Slice's (Josh, 2026-10-29: "chops
          * should just be completely invisible in loop mode") */
-        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, gain: i.gain | 0, noMarks: true });
+        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, gain: i.gain | 0, noMarks: true, beats: { origin: i.rstart, fpb: 96 * auFpt(i) } });
         drawKitHintRow(MV_FOOTER_Y, [['knobs', 'edit'], ['jog', 'page']]);   /* Josh: "knobs: edit is fine for a hint" */
         return;
     }
@@ -327,14 +356,14 @@ function drawAudioWaveEditor() {
         const m = mk[sel];
         if (m) ends('S ' + auFmtTime(m[0], rt), m[1] === auEdHome(ed, sel) ? 'E NEXT' : 'E ' + auFmtTime(m[1], rt));
         if (zoomTxt) mid(zoomTxt);
-        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel, gain: i.gain | 0 });
+        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel, gain: i.gain | 0, beats: { origin: i.rstart, fpb: 96 * auFpt(i) } });
         drawKitHintRow(MV_FOOTER_Y, [['clk', 'chop'], ['jog', 'page']]);
         return;
     }
     /* SAMPLE on a Slice clip: the clip's Start / Length, its chops faint, no cursor */
     ends('S ' + auFmtTime(i.rstart, rt), 'LEN ' + auFmtLen(auLenTicks(t, c, i)));
     if (zoomTxt) mid(zoomTxt);
-    drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, faint: true, gain: i.gain | 0 });
+    drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, faint: true, gain: i.gain | 0, beats: { origin: i.rstart, fpb: 96 * auFpt(i) } });
     drawKitHintRow(MV_FOOTER_Y, [['clk', 'menu'], ['jog', 'page']]);
 }
 

@@ -961,12 +961,12 @@ export function updateTrackLEDs() {
             const slice = auIsSlice(ai);
             const ph = slice ? -1 : auPlayheadChop(t);
             const sel = auSelSlice(t);
-            const mk = !slice && ai.state === 2 ? auLoopMarks(ai) : null;
+            const mk = !slice && ai.state === 2 ? auLoopMarks(ai, t, auClipOf(t)) : null;
             const reach = ai.reach >= 0 && ai.reach < auEnd(ai) - ai.rstart;
-            /* never played: a chop wholly outside Start..End (Josh,
-             * 2026-10-29: "sections that are out of start/end range on the
-             * sample aren't showing up as dim white on the pads"), or past
-             * where a Free loop wraps */
+            /* never played: a section of the clip past the file's end, or
+             * past where the clip comes round (Josh, 2026-10-29: "sections
+             * that are out of start/end range on the sample aren't showing up
+             * as dim white on the pads") */
             const pastReach = (k) => !!(mk && mk[k] && (mk[k][1] <= ai.rstart || mk[k][0] >= auEnd(ai)
                 || (reach && (ai.revrs ? auEnd(ai) - mk[k][1] : mk[k][0] - ai.rstart) >= ai.reach)));
             /* A Lazy chop: the next pad in order WHITE (pad 1 before the

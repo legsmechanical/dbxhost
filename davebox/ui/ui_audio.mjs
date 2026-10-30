@@ -50,12 +50,18 @@ export function auBpm(i) { return (i.bpm10 | 0) / 10; }
 /* Frames of the sample per tick at its Tempo (120 until known): the ticks,
  * steps and bars everything on screen is measured in */
 export function auFpt(i) { return (i.rate || 44100) * 60 / ((i.bpm10 ? i.bpm10 / 10 : 120) * 96); }
-/* A Loop clip's pads: the sample in even sections, one a pad (Josh,
- * 2026-10-29: "chops should just be completely invisible in loop mode"). */
+/* A Loop clip's pads: the CLIP in even sections, one a pad (Josh,
+ * 2026-10-29: "chops should just be completely invisible in loop mode") —
+ * the clip's window, Start for its length at the sample's Tempo, as SAMPLE
+ * shows it zoomed out; sections past the file's end are never played. With no
+ * track (t < 0): the whole sample. */
 export const AU_LOOP_SECTIONS = 32;
-export function auLoopMarks(i) {
-    const n = i.nframes | 0, out = [];
-    for (let k = 0; k < AU_LOOP_SECTIONS; k++) out.push([Math.floor(n * k / AU_LOOP_SECTIONS), Math.floor(n * (k + 1) / AU_LOOP_SECTIONS)]);
+export function auLoopMarks(i, t = -1, c = 0) {
+    const out = [];
+    let a = 0, n = i.nframes | 0;
+    if (t >= 0 && i.state === 2) { a = i.rstart | 0; n = Math.max(AU_LOOP_SECTIONS, Math.round(auLenTicks(t, c, i) * auFpt(i))); }
+    for (let k = 0; k < AU_LOOP_SECTIONS; k++)
+        out.push([a + Math.floor(n * k / AU_LOOP_SECTIONS), a + Math.floor(n * (k + 1) / AU_LOOP_SECTIONS)]);
     return out;
 }
 /* Chop k is note k (Josh, 2026-10-28: "might as well do 128"), 32 to a pad
@@ -935,7 +941,7 @@ export function auSetLayout(t, v) {
 export function auPlayheadChop(t) {
     const c = auClipOf(t), i = auInfo(t, c);
     if (_pos.t !== t || !_pos.on || !auIsLoop(i)) return -1;
-    const mk = auLoopMarks(i);
+    const mk = auLoopMarks(i, t, c);
     for (let k = 0; k < mk.length; k++) if (_pos.frame >= mk[k][0] && _pos.frame < mk[k][1]) return k;
     return -1;
 }

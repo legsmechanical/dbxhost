@@ -33,6 +33,10 @@ the section into a versioned heading at release time.
   Detune · Tempo · **Nudge**) and, a jog turn away, **Sync** · **Revrs** · **Orig** (touch K8
   and click: the sample plays exactly as recorded). A Loop clip's **CLIP** bank holds only
   its Mode.
+- **Audio: SAMPLE zoomed out is the clip** — its bars across, the audio where it lands at
+  the sample's Tempo (squeezed or stretched as you turn it, empty past the end of the
+  sample), a tick per beat under it. Track View at rest shows a Loop clip the same way, with
+  its Tempo, and the Loop pads are the clip in 32 sections, grey past the sample's end.
 - **Audio: SLICES, a Slice clip's own editor** (its pad under CLIP): the chops, K1 / K3
   moving the picked one, a click for the chop types; a jog turn away, that slice's sound,
   or every slice's with Shift held.

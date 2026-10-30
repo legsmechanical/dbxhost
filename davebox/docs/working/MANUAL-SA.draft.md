@@ -1209,7 +1209,7 @@ them:
 
 | Mode | How it plays | The pads | The steps |
 |---|---|---|---|
-| **Loop** | Set and forget: the sample plays with the clip, from **Start** each time the clip comes round, for the clip's own length. Each clip knows its sample's own **Tempo** (SAMPLE's K7) — guessed when you pick it: a tempo in the file's name ("84 bpm") is taken as it is, even with a tail after the loop; else bars in the name ("4bar"), else where its beats fall, else the project's tempo. Turn it if the guess is wrong. A new pick sets the clip to the sample's length in whole bars at that Tempo. **Sync** says how it meets the project's tempo: **Warp** (the default) time-stretches the loop and keeps its pitch — at any tempo it sounds as recorded, only faster or slower, and **Pitch** and **Detune** transpose it without changing its length. Warp is processor-intensive: one or two warped tracks are fine, but warping many tracks at once can overload the Move and cause clicks or dropouts. **Vintage** cuts the sample into tiny pieces on the sequencer's own clock (384 to a bar) and starts each on its place at the sample's Tempo — the same sound at its own tempo, and in time at any other, with the grit of an old sampler. **Pitch** retunes the loop, faster or slower, to the tempo (Pitch and Detune then give way: the tempo sets the speed). Vintage and Pitch cost almost nothing. **Loop + steps** sets the loop as on any clip: the clip plays the part of the sample under those steps, laid over it from Start at its Tempo — on the SAMPLE screen too. A Loop clip has no chops you can see: they belong to Slice mode, and the clip keeps them for when you switch back. Every chop ends with a few milliseconds' fade, so a cut never clicks. | Show where the loop is: the sample in 32 even sections, one a pad, dim in the track colour, the sections played this time round bright, the one playing pulsing. In **Revrs** they fill from the end. Stopped, all dim. Sections the clip never reaches show grey. Tapping one does nothing. | Show where the loop is: its steps dim, the playhead white. Playing, they follow the playhead page by page, as a sequence does. |
+| **Loop** | Set and forget: the sample plays with the clip, from **Start** each time the clip comes round, for the clip's own length. Each clip knows its sample's own **Tempo** (SAMPLE's K7) — guessed when you pick it: a tempo in the file's name ("84 bpm") is taken as it is, even with a tail after the loop; else bars in the name ("4bar"), else where its beats fall, else the project's tempo. Turn it if the guess is wrong. A new pick sets the clip to the sample's length in whole bars at that Tempo. **Sync** says how it meets the project's tempo: **Warp** (the default) time-stretches the loop and keeps its pitch — at any tempo it sounds as recorded, only faster or slower, and **Pitch** and **Detune** transpose it without changing its length. Warp is processor-intensive: one or two warped tracks are fine, but warping many tracks at once can overload the Move and cause clicks or dropouts. **Vintage** cuts the sample into tiny pieces on the sequencer's own clock (384 to a bar) and starts each on its place at the sample's Tempo — the same sound at its own tempo, and in time at any other, with the grit of an old sampler. **Pitch** retunes the loop, faster or slower, to the tempo (Pitch and Detune then give way: the tempo sets the speed). Vintage and Pitch cost almost nothing. **Loop + steps** sets the loop as on any clip: the clip plays the part of the sample under those steps, laid over it from Start at its Tempo — on the SAMPLE screen too. A Loop clip has no chops you can see: they belong to Slice mode, and the clip keeps them for when you switch back. Every chop ends with a few milliseconds' fade, so a cut never clicks. | Show where the loop is: the clip in 32 even sections, one a pad, dim in the track colour, the sections played this time round bright, the one playing pulsing. In **Revrs** they fill from the end. Stopped, all dim. Sections past the end of the sample show grey — the clip never plays them. Tapping one does nothing. | Show where the loop is: its steps dim, the playhead white. Playing, they follow the playhead page by page, as a sequence does. |
 | **Slice** | The chops on the steps, played and sequenced from the pads. One at a time: a new chop cuts the last — unless it's the next piece of the sample, reached right where the last one has got to, which simply plays on. Velocity is ignored. | **The chops**, in time order, 32 to a page. Pads past the chop count are dark. | One sequence per clip: each step holds one chop. **Hold a step + tap a pad** places that chop; recording works as on a melodic track. |
 
 A clip holds up to **128 chops**, 32 to a pad page: **Octave Up / Down** shows the next
@@ -1242,6 +1242,11 @@ follow — and **K8** **Nudge** moves the sample against the bar (ms). The knob 
 reads out between Start and Length, and the waveform is drawn at the gain it plays at.
 Start reads in seconds to two decimals, Length in bars (**1 + 4/16** is a bar and four
 steps).
+
+Zoomed all the way out, SAMPLE's screen **is the clip**: from Start for its Length, the
+audio drawn where it lands at the sample's Tempo — squeezed or stretched as you turn
+Tempo, empty where the Length runs past the end of the sample — with a tick under it
+for each beat and a taller one for each bar. **K2** zooms in from there.
 
 SAMPLE has two pages: **turn the jog** for the second (the header reads **1/2** or
 **2/2**). Page 2 holds what needs no waveform: **Sync** (K1, a Loop clip's: **Vintage**,
@@ -1344,8 +1349,10 @@ and all. **Undo** covers the steps; the
 sound bank's settings aren't undoable. **Export to Ableton** leaves Audio tracks
 out for now, and says so when it finishes.
 
-**Track View at rest** shows a Loop clip's sample with the playhead
-moving through it; a Slice clip shows the page bar and playhead, as any sequenced track does.
+**Track View at rest** shows a Loop clip as SAMPLE does zoomed out — its bars across,
+the audio where it lands at the sample's Tempo, the beats under it and the playhead
+moving through — and its Tempo on the line above (**Loop 112**); a Slice clip shows the
+page bar and playhead, as any sequenced track does.
 
 **Purge samples.** Samples you no longer use stay in the project. **Project
 Settings → Purge samples** removes every one that no clip and no saved state uses,

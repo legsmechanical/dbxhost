@@ -71,7 +71,7 @@ import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLaz
          auSelSlice, auSetSelSlice, isAudioTrack, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
          auMarkAdd, auMarkDel, auManual, auEvenBake, auTrans, auTransBake, auRangeStep, auSet, auEnd, auPanelRingCells, auPanelReset, auBankEd,
          auIsSlice, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX, AU_BPM10_MIN, AU_BPM10_MAX, auLenTicks,
-         auSampleP2Cells, auSampleP2Knob, auOrig, auNudgeStep } from './ui_audio.mjs';
+         auSampleP2Cells, auSampleP2Knob, auOrig, auNudgeStep, auFpt } from './ui_audio.mjs';
 import { registerScreenRingCells, registerRingCells } from './ui_knob_leds.mjs';
 import { BANK_AUDIO } from './ui_constants.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -224,7 +224,7 @@ export function openWave(t, which = 'sample') {
 
 export function openWaveEditor(t, c) {
     const i = auInfo(t, c);
-    const ed = { t, c, mode: 'wave', A: 0, B: Math.max(MIN_SPAN, i.nframes | 0), view: i.name + '|' + i.nframes,
+    const ed = { t, c, mode: 'wave', A: 0, B: Math.max(MIN_SPAN, i.nframes | 0), view: i.name + '|' + i.nframes, full: true,
                  cur: 0, last: 'jog', endHold: 0, ask: null, pick: null, openedAt: S.clockMs | 0 };
     const mk = auMarks(t, c);
     const sel = auSelSlice(t);
@@ -247,9 +247,31 @@ export function auWaveSub(ed) {
 export function auWaveView(ed) {
     const i = auInfo(ed.t, ed.c);
     const v = i.name + '|' + i.nframes;
-    if (ed.view !== v || ed.B > (i.nframes | 0) && i.nframes) {
-        ed.view = v; ed.A = 0; ed.B = Math.max(MIN_SPAN, i.nframes | 0); ed.cur = i.rstart;
+    const [lo, hi] = auViewBounds(ed);
+    if (ed.view !== v) {
+        ed.view = v; ed.full = true; ed.cur = i.rstart;
     }
+    /* zoomed all the way out, the view IS the bounds — on SAMPLE the clip's
+     * window, so turning Start slides the audio under it and Tempo / Length
+     * squeeze or stretch it (Josh, 2026-10-29) */
+    if (ed.full || ed.B - ed.A > hi - lo) { ed.A = lo; ed.B = hi; ed.full = true; }
+    else if (ed.A < lo || ed.B > hi) { const sp = ed.B - ed.A; ed.A = Math.max(lo, Math.min(hi - sp, ed.A)); ed.B = ed.A + sp; }
+}
+/* What the view spans zoomed all the way out. SAMPLE's plain view (no chop
+ * editor up): the clip's window — Start for its Length at the sample's Tempo,
+ * running past the file's end when the Length does (drawn empty) — so the
+ * screen is the clip, the audio where it lands (Josh, 2026-10-29: "the actual
+ * part of the sample that plays needs to stretch, compress, have empty space
+ * after it when zoomed fully out"). Anything else: the whole sample. */
+export function auViewBounds(ed) {
+    const i = auInfo(ed.t, ed.c), fr = i.nframes | 0;
+    const sampleView = ed.ed !== 'slices' && !(ed.mode === 'chop' && ed.chop) && ed.mode !== 'lazy';
+    if (sampleView && fr && i.state === 2) {
+        const lo = i.rstart | 0;
+        const hi = Math.round(lo + auLenTicks(ed.t, ed.c, i) * auFpt(i));
+        if (hi - lo >= MIN_SPAN) return [lo, hi];
+    }
+    return [0, Math.max(MIN_SPAN, fr)];
 }
 
 /* A chop method leaves the Mode alone: the chops serve both (Josh,
@@ -378,9 +400,10 @@ export function auEdPixel(ed) { return Math.max(1, Math.round((ed.B - ed.A) / 12
  * focus: what was touched last. The span is kept. */
 function centre(ed, f) {
     if (f == null) f = focus(ed);
-    const span = ed.B - ed.A, fr = auInfo(ed.t, ed.c).nframes | 0;
+    const span = ed.B - ed.A, [lo, hi] = auViewBounds(ed);
+    if (ed.full) return;                              /* zoomed out: the bounds are the view */
     let A = Math.round(f - span / 2);
-    A = Math.max(0, Math.min(Math.max(0, fr - span), A));
+    A = Math.max(lo, Math.min(Math.max(lo, hi - span), A));
     ed.A = A; ed.B = A + span;
 }
 function focus(ed) {
@@ -412,12 +435,14 @@ export function auEdHome(ed, k) {
 function zoom(ed, dir) {
     const i = auInfo(ed.t, ed.c), fr = i.nframes | 0;
     if (fr <= 0) return false;
+    const [lo, hi] = auViewBounds(ed), full = hi - lo;
     const span = ed.B - ed.A;
     let ns = Math.round(dir > 0 ? span * 0.8 : span * 1.25);
-    ns = Math.max(Math.min(MIN_SPAN, fr), Math.min(fr, ns));
+    ns = Math.max(Math.min(MIN_SPAN, full), Math.min(full, ns));
     if (ns === span) return false;
+    ed.full = ns >= full;
     ed.B = ed.A + ns;
-    centre(ed);
+    if (ed.full) { ed.A = lo; ed.B = hi; } else centre(ed);
     return true;
 }
 

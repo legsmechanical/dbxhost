@@ -807,6 +807,42 @@ step('⭐⭐ SLICES (Josh, 2026-10-29): page 1 the chops — K1 / K3 the slice, 
     GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(2);
 });
 
+step('⭐⭐ SAMPLE zoomed out is the clip: the audio where it lands at its Tempo, empty past the file, a tick a beat (Josh, 2026-10-29)', () => {
+    S.activeBank = 0; S.bankCardLatched = false;
+    /* an 84 BPM sample of 2 s (96000 frames at 48 kHz) in a 1-bar clip: a bar
+     * at 84 is 2.86 s, so the file ends 70% across — the rest is empty */
+    GET['t4_au_info_0'] = INFO24(0, 8, 8, 0, 50, 0);
+    S.clipLength[4][0] = 16; S.clipTPS[4][0] = 24; S.clipLoopStart[4][0] = 0;
+    A.auMarkStale(4, 0); ticks(2);
+    mapPad(2, 3); ticks(2);
+    const ed = S.auEditor, i = A.auInfo(4, 0);
+    const want = Math.round(384 * A.auFpt(i));
+    assert(ed && ed.ed === 'sample' && ed.A === 0 && ed.B === want, 'the view is not the clip\'s bar: ' + (ed && ed.A) + '..' + (ed && ed.B) + ' want 0..' + want);
+    const f = shown(), px = (x, y) => f[y * 128 + x];
+    const inkCol = (x) => { for (let y = 20; y < 50; y++) if (px(x, y)) return true; return false; };
+    const endX = Math.floor(96000 / want * 128);
+    assert(inkCol(10) && inkCol(endX - 2), 'the audio is not drawn up to the file\'s end at x ' + endX);
+    for (let x = endX + 1; x < 128; x++) assert(!inkCol(x), 'past the file\'s end is not empty (x ' + x + ')');
+    /* beats every 32 columns, the bar's two ends taller */
+    const r51 = [...Array(128).keys()].filter((x) => px(x, 51)), r53 = [...Array(128).keys()].filter((x) => px(x, 53));
+    assert(r51.length === 5 && [0, 32, 64, 96, 127].every((x, k) => Math.abs(r51[k] - x) <= 1) && r53.join() === '0,127',
+           'the beat / bar ticks are not under the clip\'s beats: ' + r51 + ' / ' + r53);
+    /* the Tempo knob squeezes it: at 168 the bar holds the whole file and more */
+    reset();
+    for (let i2 = 0; i2 < 84 && (A.auInfo(4, 0).bpm10 | 0) < 1680; i2++) { S.knobAccelLast[6] = 0; cc(77, 1); }
+    shown();                                          /* drawn at once (a tick would re-read this rig's fixed info) */
+    assert(A.auInfo(4, 0).bpm10 >= 1680 && ed.B - ed.A === Math.round(384 * A.auFpt(A.auInfo(4, 0))) && ed.B < want,
+           'turning Tempo up did not shorten the clip\'s window in the sample: ' + ed.A + '..' + ed.B + ' at ' + A.auInfo(4, 0).bpm10);
+    back(); ticks(2);
+    S.activeBank = 0;
+    /* Track View at rest says the Loop clip's Tempo on its info row (Josh: "LOOP 112") */
+    GET['t4_au_info_0'] = INFO24(0, 8, 8, 0, 50, 0); A.auMarkStale(4, 0); ticks(2);
+    S.knobTouched = -1; S.bankCardLatched = false;
+    const rtx = globalThis.__texts(() => shown());
+    assert(rtx.some((x) => /^loop 84 /i.test(x)), 'the info row does not carry the Tempo: ' + JSON.stringify(rtx.slice(0, 4)));
+    GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(2);
+});
+
 step('⭐ Start / End read in seconds to 2 decimals, rounded (Josh: "2 decimals, rounded, for the seconds read-out is fine")', () => {
     assert(A.auFmtTime(55125, 44100) === '1.25s' && A.auFmtTime(237, 44100) === '0.01s' &&
            A.auFmtTime(44100 * 12.346, 44100) === '12.35s' && A.auFmtTime(44100 * 75.5, 44100) === '1:15.50',
@@ -1211,8 +1247,10 @@ step('⭐⭐ Loop + steps on SAMPLE (Josh: "it\'s not accessible at all in sampl
 step('⭐⭐ Loop pads: a progress bar over 32 even sections, not the chops — dim the loop, bright what has played, the playhead pulsing; Revrs fills from the end; stopped all dim (Josh)', () => {
     const tc = globalThis.__tc(4);
     const pad = (i) => LEDS.get(C.TRACK_PAD_BASE + i) || 0;
-    /* 8 chops, but the pads are the sample in 32 sections of 3000 frames
-     * (Josh, 2026-10-29: "chops should just be completely invisible in loop mode") */
+    /* 8 chops, but the pads are the CLIP in 32 sections: a 1-bar clip of this
+     * 2 s sample at 120 is all of it, 3000 frames a section (Josh, 2026-10-29:
+     * "chops should just be completely invisible in loop mode") */
+    S.clipLength[4][0] = 16; S.clipTPS[4][0] = 24; S.clipLoopStart[4][0] = 0;
     GET['t4_au_pos'] = '1 30000 -1';                   /* section 11 */
     for (let i = 0; i < 6; i++) ticks(1);
     assert([0, 5, 9].every((i) => pad(i) === tc), 'the played sections are not bright: ' + [0, 5, 9].map(pad) + ' vs ' + tc);
@@ -1230,36 +1268,33 @@ step('⭐⭐ Loop pads: a progress bar over 32 even sections, not the chops — 
     GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(4);
 });
 
-step('⭐⭐ Loop pads: a Free loop whose clip wraps before the sample ends greys the sections it never reaches (Josh: "you can\'t see where the end point is")', () => {
+step('⭐⭐ Loop pads: the sections of the clip past the file\'s end are grey — it never plays them (Josh: "you can\'t see where the end point is")', () => {
     const pad = (i) => LEDS.get(C.TRACK_PAD_BASE + i) || 0;
-    const reach = (r, rev) => INFO(0, 8).replace(' 96000 48000 2 0 0 0 8|', ' 96000 48000 2 ' + (rev ? 1 : 0) + ' 0 0 8 0 0 ' + r + '|');
     GET['t4_au_pos'] = '1 6000 -1';
-    GET['t4_au_info_0'] = reach(30000); A.auMarkStale(4, 0);
+    /* a 2-bar clip of the 1-bar (2 s at 120) sample: its second half is past the file */
+    S.clipLength[4][0] = 32; S.clipTPS[4][0] = 24; S.clipLoopStart[4][0] = 0;
+    GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0);
     for (let i = 0; i < 6; i++) ticks(1);
-    assert(A.auInfo(4, 0).reach === 30000, 'reach not parsed: ' + A.auInfo(4, 0).reach);
-    assert(pad(9) && pad(9) !== HC.DarkGrey && [10, 20, 31].every((i) => pad(i) === HC.DarkGrey),
-           'the sections past the wrap are not grey: ' + [9, 10, 20, 31].map(pad));
-    /* Revrs reaches in from the end */
-    GET['t4_au_info_0'] = reach(30000, 1); A.auMarkStale(4, 0);
+    assert([0, 15].every((i) => pad(i) && pad(i) !== HC.DarkGrey) && [16, 24, 31].every((i) => pad(i) === HC.DarkGrey),
+           'the sections past the file are not grey: ' + [0, 15, 16, 24, 31].map(pad));
+    /* the clip within the sample: nothing grey */
+    S.clipLength[4][0] = 16; A.auMarkStale(4, 0);
     for (let i = 0; i < 6; i++) ticks(1);
-    assert([0, 21].every((i) => pad(i) === HC.DarkGrey) && pad(22) && pad(22) !== HC.DarkGrey,
-           'Revrs did not grey from the start: ' + [0, 21, 22].map(pad));
-    /* all of it plays: nothing grey */
-    GET['t4_au_info_0'] = reach(96000); A.auMarkStale(4, 0);
-    for (let i = 0; i < 6; i++) ticks(1);
-    assert([0, 15, 31].every((i) => pad(i) && pad(i) !== HC.DarkGrey), 'a loop that plays whole greys: ' + [0, 15, 31].map(pad));
+    assert([0, 15, 31].every((i) => pad(i) && pad(i) !== HC.DarkGrey), 'a clip within the sample greys: ' + [0, 15, 31].map(pad));
     GET['t4_au_pos'] = '1 24000 2';
     GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(4);
 });
 
-step('⭐⭐ Loop pads: sections outside Start..End are grey (Josh: "out of start/end range ... aren\'t showing up as dim white")', () => {
+step('⭐⭐ Loop pads: a later Start moves the clip along the sample, and what passes the file\'s end greys (Josh: "out of start/end range ... aren\'t showing up as dim white")', () => {
     const pad = (i) => LEDS.get(C.TRACK_PAD_BASE + i) || 0;
     GET['t4_au_pos'] = '1 30000 -1';
-    GET['t4_au_info_0'] = INFO(0, 8).replace(' 16 0 96000 ', ' 16 24000 72000 '); A.auMarkStale(4, 0);
+    S.clipLength[4][0] = 16; S.clipTPS[4][0] = 24; S.clipLoopStart[4][0] = 0;
+    /* Start 24000: the bar runs 24000..120000, the file ends at 96000 (section 24) */
+    GET['t4_au_info_0'] = INFO(0, 8).replace(' 16 0 96000 ', ' 16 24000 96000 '); A.auMarkStale(4, 0);
     for (let i = 0; i < 6; i++) ticks(1);
     assert(A.auInfo(4, 0).rstart === 24000, 'rstart not parsed: ' + A.auInfo(4, 0).rstart);
-    assert([0, 7, 24, 31].every((i) => pad(i) === HC.DarkGrey), 'sections outside the range are not grey: ' + [0, 7, 24, 31].map(pad));
-    assert([8, 15, 23].every((i) => pad(i) && pad(i) !== HC.DarkGrey), 'sections inside the range are grey: ' + [8, 15, 23].map(pad));
+    assert([24, 31].every((i) => pad(i) === HC.DarkGrey), 'the sections past the file are not grey: ' + [24, 31].map(pad));
+    assert([0, 8, 23].every((i) => pad(i) && pad(i) !== HC.DarkGrey), 'sections inside the file are grey: ' + [0, 8, 23].map(pad));
     GET['t4_au_pos'] = '1 24000 2';
     GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(4);
 });
@@ -1376,6 +1411,7 @@ step('⭐ an Audio clip pastes onto an Audio track only; the copy carries its sa
     assert(sent('clip_copy').join() === '4 0 4 5', 'Audio -> Audio did not paste');
     assert(A.auInfo(4, 5).name === 'Break Phenom 84 bpm.wav' && S.clipNonEmpty[4][5] === S.clipNonEmpty[4][0], 'the copy did not carry the sample');
 });
+
 
 
 step('⭐⭐ leaving Audio asks (Q3); Yes converts back and forgets the samples', () => {
