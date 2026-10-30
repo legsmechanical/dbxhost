@@ -121,6 +121,7 @@ the section into a versioned heading at release time.
   and the instrument shortcut open it.
 
 ### Fixed
+- **Audio: a step's page names its chop** (it showed a note name, D-2 for chop 3).
 - **Audio: Vintage plays when dAVEBOx follows Move's clock** — it was silent there.
 - **Audio: Vintage with Nudge earlier** starts the loop further in, instead of
   stuttering at the end of a clip shorter than the sample.

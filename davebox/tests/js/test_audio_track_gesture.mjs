@@ -1411,6 +1411,11 @@ step('⭐ the step editor\'s K1 reads "Slice n"', () => {
     S.heldStep = 0; S.heldStepNotes = [2]; S.activeBank = C.BANK_STEP;
     const cells = render.heldStepCells();
     assert(cells[0].label === 'Slice' && cells[0].bigText === 'Slice 3', 'K1: ' + JSON.stringify(cells[0]));
+    /* ...and the page as drawn: the merged box over K1 / K2 says the chop, not
+     * a note name (found on the device: "D-2" for chop 3) */
+    S.heldStepBtn = -1; S.stepWasEmpty = false;
+    const tx = globalThis.__texts(() => frame(() => render.drawHeldStepPage()));
+    assert(tx.indexOf('3') >= 0 && !tx.some((x) => /^D-?2/.test(x)), 'the step page names a note: ' + JSON.stringify(tx));
     S.heldStep = -1; S.heldStepNotes = []; S.activeBank = 0;
 });
 

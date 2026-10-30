@@ -2171,7 +2171,7 @@ export function heldStepCells() {
 registerRingCells(BANK_STEP, () => heldStepCells() ||
     stepBankIdleCells(S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM));
 
-function drawHeldStepPage() {
+export function drawHeldStepPage() {
     if (S.heldStep < 0) return false;
     /* The footer says what the jog does HERE: on the reveal it goes back; on
      * the STEP bank under a hold it does nothing (bankPageHints drops the pair). */
@@ -2207,7 +2207,11 @@ function drawHeldStepPage() {
         const tps = S.clipTPS[S.activeTrack][ac] || 24;
         const _gateSteps = S.stepEditGate / tps;
         const cells = heldStepCells();
-        drawStepEditKitPage(_stepTitle, cells, { name: noteName, sub: noteSub }, _footer);
+        /* an Audio track's step holds a chop: its number in the merged box, over
+         * SLICE (the note name, D-2 for chop 3, read as a pitch: found on the
+         * device, 2026-10-30) */
+        const boxName = isAudioTrack(S.activeTrack) ? String(root - AU_NOTE_BASE + 1) : noteName;
+        drawStepEditKitPage(_stepTitle, cells, { name: boxName, sub: noteSub }, _footer);
         return true;
     } else if (S.stepWasEmpty) {
         drawStepEditKitPage(_stepTitle, null, null, _footer);
