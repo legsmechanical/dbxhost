@@ -270,7 +270,9 @@ function drawAudioWaveEditor() {
     if (ed.pick) {
         drawBankHeading(ed.pick.level === 1 ? 'SAMPLE' : 'CHOP SAMPLE', false);
         drawKitList(auPickRows(ed), ed.pick.sel, { h: MV_FOOTER_Y - 11 });
-        drawKitHintRow(MV_FOOTER_Y, [['clk', 'pick'], ['back', ed.pick.level === 1 ? 'exit' : 'up']]);
+        /* both menus close onto their editor: the chop types have no level
+         * above them since chopping left SAMPLE */
+        drawKitHintRow(MV_FOOTER_Y, [['clk', 'pick'], ['back', ed.pick.level === 1 || ed.pick.only2 ? 'exit' : 'up']]);
         return;
     }
     auWaveView(ed);

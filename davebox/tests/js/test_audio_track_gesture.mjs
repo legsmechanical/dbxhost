@@ -914,6 +914,10 @@ step('⭐⭐ chopping lives only on SLICES: a click there opens the chop types; 
     assert(ed.pick && ed.pick.level === 2 && E.auPickRows(ed).map((r) => r.label).join() === 'Even,Transient,Lazy,Manual',
            'a click on SLICES did not open the chop types: ' + JSON.stringify(ed.pick));
     assert(inked(shown()), 'the chop types draw nothing');
+    {
+        const tx = globalThis.__texts(() => shown());
+        assert(tx.indexOf('EXIT') >= 0 && tx.indexOf('UP') < 0, 'the chop types\' Back hint: ' + JSON.stringify(tx));
+    }
     back();
     assert(!ed.pick && S.auEditor === ed, 'Back did not close the chop types (SLICES stays)');
     back();
