@@ -114,7 +114,15 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
         const f = A + (B - A) * (k + 0.5) / w;
         if (f < rs || f > re) for (let j = y; j < y + h; j++) if (((k + j) & 1) === 0) set_pixel(x + k, j, 0);
     }
-    if (!o.noMarks) {                          /* the chops, in either mode */
+    if (!o.noMarks && o.faint) {
+        /* SAMPLE on a Slice clip: the chops are SLICES' to edit — shown, not
+         * offered: a short tick top and bottom (Josh, 2026-10-29) */
+        for (const m of auMarks(t, c)) {
+            const px = fx(m[0]);
+            if (!inView(px)) continue;
+            fill_rect(px, y, 1, 3, 1); fill_rect(px, y + h - 3, 1, 3, 1);
+        }
+    } else if (!o.noMarks) {                   /* the chops, in either mode */
         const mk = auMarks(t, c);
         const sel = o.sel != null ? o.sel : -1;
         for (let k = 0; k < mk.length; k++) {
@@ -323,10 +331,10 @@ function drawAudioWaveEditor() {
         drawKitHintRow(MV_FOOTER_Y, [['clk', 'chop'], ['jog', 'page']]);
         return;
     }
-    /* SAMPLE on a Slice clip: the clip's Start / Length, its chops, no cursor */
+    /* SAMPLE on a Slice clip: the clip's Start / Length, its chops faint, no cursor */
     ends('S ' + auFmtTime(i.rstart, rt), 'LEN ' + auFmtLen(auLenTicks(t, c, i)));
     if (zoomTxt) mid(zoomTxt);
-    drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel, gain: i.gain | 0 });
+    drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, faint: true, gain: i.gain | 0 });
     drawKitHintRow(MV_FOOTER_Y, [['clk', 'menu'], ['jog', 'page']]);
 }
 

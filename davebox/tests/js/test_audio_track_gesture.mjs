@@ -750,10 +750,27 @@ step('⭐⭐ SLICES (Josh, 2026-10-29): page 1 the chops — K1 / K3 the slice, 
     GET['t4_au_info_0'] = INFO(1, 8, 0); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(2);
     A.auSetSelSlice(4, 2);
     mapPad(2, 2);
-    const ed = S.auEditor;
+    let ed = S.auEditor;
     assert(ed && ed.ed === 'slices' && ed.page !== 1, 'SLICES did not open on its first page');
     let tx = globalThis.__texts(() => shown());
     assert(tx.indexOf('SLICE 3/8') >= 0 && tx.indexOf('1/2') >= 0 && tx.indexOf('CHOP') >= 0, 'SLICES page 1: ' + JSON.stringify(tx));
+    /* the chops: a dotted line through the waveform on SLICES (chop 1 at x 16,
+     * the wave's middle row y 35 cleared — chop 2's column is the fixture's
+     * playhead), a faint tick top and bottom on SAMPLE (the middle left
+     * alone) — shown there, not offered */
+    {
+        const px = (f, x, y) => f[y * 128 + x];
+        let f = shown();
+        assert(!px(f, 16, 35), 'SLICES does not draw chop 1 through the waveform');
+        back(); ticks(2);
+        mapPad(2, 3); ticks(2);
+        f = shown();
+        assert(S.auEditor && S.auEditor.ed === 'sample' && px(f, 16, 35) && px(f, 16, 20) && px(f, 16, 21),
+               'SAMPLE on a Slice clip does not show chop 1 as a faint tick');
+        back(); ticks(2);
+        mapPad(2, 2); ticks(2);
+        ed = S.auEditor;
+    }
     reset();
     cc(71, 1);
     assert(sent('t4_au_slice_start').length === 1 && !sent('t4_au_set_start').length,
