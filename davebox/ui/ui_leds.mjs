@@ -27,7 +27,7 @@ import { chordLayoutOn, chordPadColor } from './ui_chord_pads.mjs';
 import { pianoLayoutOn } from './ui_drummodel.mjs';
 import { customLayoutOn, customPadColor } from './ui_custom_chords.mjs';
 import { setLED, setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
-import { isAudioTrack, auInfo, auClipOf, auPos, auPlayheadChop, auPadToSlice, auLoopMarks, AU_LOOP_SECTIONS, auEnd, auSelSlice, auLazyOpen, auLazyState,
+import { isAudioTrack, auInfo, auClipOf, auPos, auPlayheadChop, auPadToSlice, auLayoutOn, auLoopMarks, AU_LOOP_SECTIONS, auEnd, auSelSlice, auLazyOpen, auLazyState,
          auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN } from './ui_audio.mjs';
 
 const lastSentNoteLED   = new Array(128).fill(-1);
@@ -961,6 +961,13 @@ export function updateTrackLEDs() {
              * under the playhead pulsing on the beat, the rest dim; stopped,
              * all dim. No sample: dark but for a dim first pad. */
             const t = S.activeTrack, tc = trackColor(t), td = trackDimColor(t);
+            /* 16 Pads: the right 4x4 is a second bank, in the partner track's
+             * colours — tracks 1-4 and 5-8 pair up (Josh, 2026-10-30: "the 2
+             * 4x4 regions need to be colored slightly differently to indicate
+             * that they're 2 "banks"" · "track colors 1-4 and 8-7 roughly
+             * correspond to each other. we can just use the corresponding
+             * tracks color") */
+            const twoBanks = auLayoutOn(t), pt = (t + 4) % 8;
             const ai = auInfo(t, auClipOf(t)), ap = auPos();
             const slice = auIsSlice(ai);
             const ph = slice ? -1 : auPlayheadChop(t);
@@ -987,7 +994,12 @@ export function updateTrackLEDs() {
                 if (lz) color = k === next ? White : k < done ? tc : LED_OFF;
                 else if (ai.state !== 2) color = i === 0 ? td : LED_OFF;
                 else if (slice) {
-                    if (k < ai.n) color = (ap.t === t && ap.on && ap.slice === k) ? White : k === sel ? tc : td;
+                    const right = twoBanks && (i % 8) >= 4;
+                    /* sounding, or held down: white (Josh, 2026-10-30: "played
+                     * slice pads should be white" — a short slice could end
+                     * before the position read saw it) */
+                    if (k < ai.n) color = ((ap.t === t && ap.on && ap.slice === k) || S.auPadDown[i]) ? White
+                        : k === sel ? (right ? trackColor(pt) : tc) : (right ? trackDimColor(pt) : td);
                 } else if (k < AU_LOOP_SECTIONS) {
                     /* a Free loop whose clip wraps before the sample ends:
                      * the chops it never reaches grey (Josh, 2026-10-28: "you

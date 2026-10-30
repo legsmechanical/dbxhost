@@ -2024,6 +2024,10 @@ export function toggleLiveArp(t) {
 }
 
 export function _onPadRelease(status, d1, d2) {
+    /* a Slice pad let go: no longer white (ui_leds) */
+    if (d1 >= TRACK_PAD_BASE && d1 < TRACK_PAD_BASE + 32 && S.auPadDown[d1 - TRACK_PAD_BASE]) {
+        S.auPadDown[d1 - TRACK_PAD_BASE] = false; S.ledsDirtyAudio = true;
+    }
     if (S.projectPadPicker && d1 >= 68 && d1 <= 99) return;
     if (S.mergeNoticePending) return;   /* Live Merge notice is modal (Rec/Back only) */
     if (S.tapTempoOpen && d1 >= 68 && d1 <= 99) return;

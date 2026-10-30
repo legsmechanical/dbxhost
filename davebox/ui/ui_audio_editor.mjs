@@ -213,6 +213,7 @@ export function auPadTapped(t, padIdx) {
     if (!auIsSlice(i)) return;
     const k = auPadToSlice(padIdx, t);
     if (k < i.n) auSetSelSlice(t, k);
+    if (padIdx >= 0 && padIdx < 32) { S.auPadDown[padIdx] = true; S.ledsDirtyAudio = true; }
 }
 
 /* ---- the WAVE editor ---- */

@@ -27,6 +27,8 @@ the section into a versioned heading at release time.
 - **Audio: chop a Loop clip from SAMPLE.** A Loop clip's SAMPLE menu adds **Chop
   sample** (Even · Transient · Lazy · Manual): picking one makes it a Slice clip and
   opens that chop editor on SLICES.
+- **Audio: 16 Pads shows two banks.** In the 16 Pads layout the right 4×4 takes the
+  colours of the partner track (1↔5, 2↔6, 3↔7, 4↔8); a Slice pad held down is white.
 - **Resample clip › In place** on an Audio clip: the recording replaces the clip,
   which starts over with it as its sample at default settings.
 - **Audio: Trim and Normalize.** SAMPLE's click opens a menu — Load sample · Trim ·

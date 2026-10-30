@@ -1891,6 +1891,25 @@ step('⭐⭐ PAD MODE (IN column): Layout 4 Rows / 16 Pads — the 16 Pads order
     /* 8 chops: the left 4x4 holds them, the right half (chops 17-32) is dark */
     assert(S.padNoteMap[0] === 0 && S.padNoteMap[3] === 3 && S.padNoteMap[4] === 0xFF && S.padNoteMap[8] === 4,
            '16 Pads padmap: ' + Array.from(S.padNoteMap).slice(0, 12).join());
+    /* two banks: the right 4x4 in the partner track's colours — track 5 pairs
+     * with track 1 (Josh, 2026-10-30: "we can just use the corresponding tracks
+     * color"); a held pad white ("played slice pads should be white") */
+    {
+        const pad = (i) => LEDS.get(C.TRACK_PAD_BASE + i) || 0;
+        GET['t4_au_info_0'] = INFO(1, 24, 0); A.auMarkStale(4, 0); A.auSetSelSlice(4, 0);
+        S.activeBank = 0; S.bankCardLatched = false;
+        DM.computePadNoteMap(); S.ledsDirtyAudio = true; for (let i = 0; i < 6; i++) ticks(1);
+        assert(pad(1) === C.TRACK_DIM_COLORS[4] && pad(4) === C.TRACK_DIM_COLORS[0] && pad(0) === C.TRACK_COLORS[4],
+               'the banks: left ' + pad(1) + ' right ' + pad(4) + ' selected ' + pad(0) + ' (want ' +
+               [C.TRACK_DIM_COLORS[4], C.TRACK_DIM_COLORS[0], C.TRACK_COLORS[4]] + ')');
+        note(C.TRACK_PAD_BASE + 5, 100); ticks(2);
+        assert(pad(5) === HC.White, 'a held pad is not white: ' + pad(5));
+        note(C.TRACK_PAD_BASE + 5, 0); ticks(2);
+        assert(pad(5) === C.TRACK_COLORS[0], 'the released pad (now selected, right bank) is not the partner\'s colour: ' + pad(5));
+        A.auSetSelSlice(4, 0);
+        GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(2);
+        S.activeBank = C.BANK_CHORD; S.bankCardLatched = true;
+    }
     for (let i = 0; i < 25; i++) cc(71, 127);
     assert(S.auLayout[4] === 0, 'K1 did not go back to 4 Rows');
     DM.computePadNoteMap();
