@@ -20,7 +20,7 @@ the section into a versioned heading at release time.
   **Length**: a Loop clip's own length, or how much of the sample a Slice clip chops.
   There is no End. Sync, >Seq and the waveform all go by the Tempo, so a sample with a
   lead-in or a tail lines up once Start sits on its downbeat.
-- **Audio: Transient chops.** Chop sample › **Transient** cuts a Slice clip at the
+- **Audio: Transient chops.** SLICES › **Transient** cuts a Slice clip at the
   sample's hits: turn the jog for **Sens** and watch the chops move on the waveform.
   Only hits in the chopped part count, up to 128.
 - **Battery level in Project Settings.** The header shows the charge in percent at
@@ -29,6 +29,10 @@ the section into a versioned heading at release time.
   again every 5 minutes until the Move is plugged in.
 
 ### Changed
+- **Audio: chopping lives on SLICES.** A click on SAMPLE loads a sample; a click on
+  SLICES offers the chop types. A click in Even, Transient or Lazy keeps the chops and
+  opens Manual on them. **Mode** is K1 of the CLIP bank (Res moves to K4), and PAD MODE is
+  a Slice clip's alone — a Loop clip's pads are always 4 rows.
 - **Audio: SAMPLE has two pages** — the waveform (Start · Zoom · Length · Gain · Pitch ·
   Detune · Tempo · **Nudge**) and, a jog turn away, **Sync** · **Revrs** · **Orig** (touch K8
   and click: the sample plays exactly as recorded). A Loop clip's **CLIP** bank holds only

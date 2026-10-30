@@ -880,8 +880,11 @@ export const KNOB_ALTS = {
     },
     /* AUDIO: the CLIP bank's (Slice mode) at the same knobs; no pitch Random,
      * no DELAY. A Loop clip's CLIP bank has none (ui_audio knobAltOnTrack). */
+    /* Mode is K1 there (Josh, 2026-10-30: "mode needs to move to k1 on clip"),
+     * so Res and its Zoom sit on K4; ui_audio auAltBit keeps Res's alt on its
+     * own bit wherever its knob is. */
     audio: {
-        0: { 0: ['Res', 'Zoom'], 2: ['Shift', 'Nudge'], 6: ['Dir', 'Revrs'] },
+        0: { 3: ['Res', 'Zoom'], 2: ['Shift', 'Nudge'], 6: ['Dir', 'Revrs'] },
     },
 };
 /* Arp Steps opens from the Steps knob (K5 on SEQ ARP and LIVE ARP) touched +

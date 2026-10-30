@@ -72,7 +72,7 @@ import { sessStripTargets } from './ui_engine.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
 import { isAudioTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
-         auPos, auLazyState, auSelSlice, auSampleP2Cells, auPanelCells, auPanelTitle, auPanelPages, auBankEd, auBankTitle, auLoopBankCells, auModeCell, knobAltOnTrack,
+         auPos, auLazyState, auSelSlice, auSampleP2Cells, auPanelCells, auPanelTitle, auPanelPages, auBankEd, auBankTitle, auLoopBankCells, auModeCell, knobAltOnTrack, auAltBit,
          auPadModeCells, AU_NOTE_BASE,
          auFmtTime, auEnd, auBpm, auFpt, auFmtLen, auLenTicks, auIsSlice, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
 import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
@@ -274,7 +274,7 @@ function drawAudioWaveEditor() {
         ovwPrint(4, 10, lz.state === AU_LAZY_RUN ? 'TAP THE WHITE PAD' : 'TAP PAD 1 TO START', 1);
         if (lz.state === AU_LAZY_RUN) right(lz.n + ' CHOP' + (lz.n === 1 ? '' : 'S'));
         drawAudioWave(t, c, 0, 20, 128, 30, { A: 0, B: i.nframes, sel: -1 });
-        drawKitHintRow(MV_FOOTER_Y, [['pad', lz.state === AU_LAZY_ARMED ? 'play' : 'chop'], ['back', 'stop']]);
+        drawKitHintRow(MV_FOOTER_Y, [['pad', lz.state === AU_LAZY_ARMED ? 'play' : 'chop'], ['clk', 'manual']]);   /* two fit; Back stops anywhere */
         return;
     }
     const sub = auWaveSub(ed);
@@ -316,7 +316,7 @@ function drawAudioWaveEditor() {
         /* no cursor and no chops: they are Slice's (Josh, 2026-10-29: "chops
          * should just be completely invisible in loop mode") */
         drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, gain: i.gain | 0, noMarks: true, beats: { origin: i.rstart, fpb: 96 * auFpt(i) } });
-        drawKitHintRow(MV_FOOTER_Y, [['knobs', 'edit'], ['jog', 'page']]);   /* Josh: "knobs: edit is fine for a hint" */
+        drawKitHintRow(MV_FOOTER_Y, [['clk', 'load'], ['jog', 'page']]);
         return;
     }
     const mk = auMarks(t, c);
@@ -332,7 +332,7 @@ function drawAudioWaveEditor() {
         if (zoomTxt) mid(zoomTxt);
         else if (jogLit) mid(kind === 'even' ? 'COUNT ' + (i.even | 0) : 'SENS ' + (i.sens | 0));
         drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel: -1, gain: i.gain | 0 });
-        drawKitHintRow(MV_FOOTER_Y, [['jog', kind === 'even' ? 'count' : 'sens'], ['back', 'out']]);
+        drawKitHintRow(MV_FOOTER_Y, [['jog', kind === 'even' ? 'count' : 'sens'], ['clk', 'manual']]);   /* two fit; Back asks anywhere */
         return;
     }
     if (kind === 'manual') drawBankHeading('SLICE ' + (sel + 1) + '/' + mk.length, false);
@@ -364,7 +364,7 @@ function drawAudioWaveEditor() {
     ends('S ' + auFmtTime(i.rstart, rt), 'LEN ' + auFmtLen(auLenTicks(t, c, i)));
     if (zoomTxt) mid(zoomTxt);
     drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, faint: true, gain: i.gain | 0, beats: { origin: i.rstart, fpb: 96 * auFpt(i) } });
-    drawKitHintRow(MV_FOOTER_Y, [['clk', 'menu'], ['jog', 'page']]);
+    drawKitHintRow(MV_FOOTER_Y, [['clk', 'load'], ['jog', 'page']]);
 }
 
 /* An Audio track's banks (Josh, 2026-10-27): the CLIP bank mirrors ALL LANES
@@ -381,7 +381,8 @@ function audioBankCells(bank, cells) {
         if (!audioSliceMode(t)) return auLoopBankCells(t);
         const seq = { kind: 'action', oneWay: true, label: '>Seq', name: 'Slices to Sequence', text: '->', opens: true,
                       btnPhase: triggerPhase('seq', S.knobTouched === 7) };
-        return [cells[0], cells[1], cells[2], auModeCell(t), cells[5], cells[4], cells[6], seq];
+        /* Mode on K1 (Josh, 2026-10-30), Res where Mode was */
+        return [auModeCell(t), cells[1], cells[2], cells[0], cells[5], cells[4], cells[6], seq];
     }
     if (bank === 1) return cells.map((c, k) => ((k === 0 || k === 1 || k === 7) ? B : c));
     /* LIVE ARP: Oct is Step, a chop per repeat (Josh, 2026-10-28) */
@@ -995,7 +996,7 @@ export function bankPageHints(bank) {
     /* ...and a touched SINGLE-ALT knob says what a click switches it to. */
     if (!S.sessionView && S.knobTouched >= 0) {
         const a = knobAltOnTrack(S.activeTrack, S.trackPadMode[S.activeTrack], bank, S.knobTouched);
-        if (a) return [['CLK', (knobAltOn(S.knobTouched) ? a[0] : a[1]).toUpperCase()]];
+        if (a) return [['CLK', (knobAltOn(auAltBit(S.activeTrack, bank, S.knobTouched)) ? a[0] : a[1]).toUpperCase()]];
     }
     /* ⭑ While a step is HELD the jog means something else (spec §2): on any
      * other bank a right turn REVEALS the step's page — so the pair says so,

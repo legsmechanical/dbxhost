@@ -641,14 +641,15 @@ function stepSliceField(f, v, steps) {
     return v;
 }
 
-/* The CLIP bank's own Audio knob: Mode (K4, both modes) — what kind of clip
+/* The CLIP bank's own Audio knob: Mode (K1, both modes — Josh, 2026-10-30:
+ * "mode needs to move to k1 on clip") — what kind of clip
  * it is (Josh, 2026-10-29: "mode has to live in clip b/c it describes the type
  * of clip it is"); everything about the sound is SAMPLE's.
  * Returns true when something changed. */
 export function auClipBankKnob(t, k, steps) {
     const c = auClipOf(t), i = auInfo(t, c);
     const loc = Object.assign({}, i);
-    if (k === 3) {
+    if (k === 0) {
         const m = Math.max(0, Math.min(1, i.mode + (steps > 0 ? 1 : -1)));
         if (m === i.mode) return false;
         loc.mode = m; auSet(t, c, 'mode', m);
@@ -825,10 +826,16 @@ export function knobAltOnTrack(t, padMode, bank, k) {
     return knobAltFor(padMode, bank, k);
 }
 
-/* ---- the CLIP bank in Loop mode: Mode (K4) alone (Josh, 2026-10-29: "that's
+/* ---- the CLIP bank in Loop mode: Mode (K1) alone (Josh, 2026-10-29: "that's
  * fine") — Sync, Nudge and the rest of the sound are SAMPLE's ---- */
 export function auLoopBankCells(t) {
-    return [BLANK, BLANK, BLANK, auModeCell(t), BLANK, BLANK, BLANK, BLANK];
+    return [auModeCell(t), BLANK, BLANK, BLANK, BLANK, BLANK, BLANK, BLANK];
+}
+/* The alt bit a physical knob flips and reads. On a Slice clip's CLIP bank Res
+ * (and its Zoom) sits on K4, Mode having taken K1; it keeps Res's own bit 0,
+ * which the CLIP cells and the knob it turns read. Every other knob: its own. */
+export function auAltBit(t, bank, k) {
+    return (bank === 0 && k === 3 && isAudioTrack(t) && auIsSlice(auInfo(t, auClipOf(t)))) ? 0 : k;
 }
 
 /* ---- SAMPLE's second page: what needs no waveform (Josh, 2026-10-29) —
@@ -896,9 +903,13 @@ export function auPadModeCells(t) {
  * Down; 32 chops a page). PAD MODE's Layout (Josh, 2026-10-28: "[4 rows/16
  * pads] for the 2 modes"): 4 Rows, the timeline, row by row from the
  * bottom-left, 8 a row; 16 Pads, the left 4x4 then the right 4x4. */
+/* PAD MODE's Layout is a Slice clip's: a Loop clip's pads are always 4 Rows
+ * (Josh, 2026-10-30: "pad mode should only change how slices are played and
+ * displayed. loop mode should always be 4 rows"). */
+export function auLayoutOn(t) { return !!(S.auLayout[t] | 0) && auIsSlice(auInfo(t, auClipOf(t))); }
 export function auPadToSlice(padIdx, t = S.activeTrack) {
     let k = padIdx;
-    if (S.auLayout[t] | 0) {
+    if (auLayoutOn(t)) {
         const col = padIdx % 8, row = Math.floor(padIdx / 8);
         k = col < 4 ? row * 4 + col : 16 + row * 4 + (col - 4);
     }
@@ -908,7 +919,7 @@ export function auPadToSlice(padIdx, t = S.activeTrack) {
 export function auSliceToPad(k, t = S.activeTrack) {
     const page = Math.floor(k / AU_PAGE), j = k % AU_PAGE;
     if (page !== (S.auPage[t] | 0)) return -1;
-    if (!(S.auLayout[t] | 0)) return j;
+    if (!auLayoutOn(t)) return j;
     return j < 16 ? Math.floor(j / 4) * 8 + (j % 4) : Math.floor((j - 16) / 4) * 8 + 4 + ((j - 16) % 4);
 }
 /* How many pad pages the clip's chops fill (at least one). */

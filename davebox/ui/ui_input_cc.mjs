@@ -69,7 +69,7 @@ import { BANK_MAP_TRACK_POPUP_MS, SEQ_PAGE_POPUP_MS, seqAutoTargetForKnob, SEQ_A
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam, soundOpenModule, instrPickResume } from './ui_sound.mjs';
 import { auPurgeRun, closeAudioChooser } from './ui_audio_chooser.mjs';
-import { isAudioTrack, audioSliceMode, auClipBankKnob, knobAltOnTrack, auSetLayout, auSetPage, AU_NOTE_BASE, AU_EVEN_MAX,
+import { isAudioTrack, audioSliceMode, auClipBankKnob, auAltBit, knobAltOnTrack, auSetLayout, auSetPage, AU_NOTE_BASE, AU_EVEN_MAX,
          auBankOn, auBankEd, auBankPageStep, auPanelKnob, auPanelKnobClass, auPanelReset, auPanelPageName } from './ui_audio.mjs';
 
 /* AUDIO's CLIP bank (Slice mode) mirrors ALL LANES over the melodic clip's
@@ -81,7 +81,7 @@ import { isAudioTrack, audioSliceMode, auClipBankKnob, knobAltOnTrack, auSetLayo
  * bank's own same knob. */
 const AUDIO_CROP_KNOB = 4;
 const AUDIO_SEQ_KNOB = 7;
-const AUDIO_CLIP_REMAP = { 4: [0, 5], 5: [0, 4] };
+const AUDIO_CLIP_REMAP = { 3: [0, 0], 4: [0, 5], 5: [0, 4] };   /* K4 Res (Mode took K1) */
 import { openWave, closeAudioPanel, slicesToSequence } from './ui_audio_editor.mjs';
 import { soundActive, soundPageBarShown, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVolGestureEnd, soundShiftEdge, soundOpenGenerator,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
@@ -388,7 +388,7 @@ function _onCC_jog(d1, d2) {
     if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld &&
             !S.copyHeld && !S.muteHeld && S.knobTouched >= 0 &&
             knobAltOnTrack(S.activeTrack, S.trackPadMode[S.activeTrack], S.activeBank, S.knobTouched)) {
-        S.knobAlt ^= 1 << S.knobTouched;
+        S.knobAlt ^= 1 << auAltBit(S.activeTrack, S.activeBank, S.knobTouched);
         S.screenDirty = true;
         forceRedraw();
         return;
@@ -5118,14 +5118,14 @@ function _onCC_knobs(d1, d2) {
         }
 
         const bank    = S.activeBank;
-        /* AUDIO's banks: the CLIP bank's K4 is Mode in both modes and, in
+        /* AUDIO's banks: the CLIP bank's K1 is Mode in both modes and, in
          * Loop mode, the only knob (the sound is SAMPLE's); in Slice mode it
          * mirrors ALL LANES (AUDIO_CLIP_REMAP; K8 >Seq). NOTE FX takes no
          * pitch knobs (its drum form). */
         if (isAudioTrack(S.activeTrack) && !S.auKnobRemap) {
             const _t = S.activeTrack;
-            if (bank === 0 && (knobIdx === 3 || !audioSliceMode(_t))) {
-                if (knobIdx === 3) {
+            if (bank === 0 && (knobIdx === 0 || !audioSliceMode(_t))) {
+                if (knobIdx === 0) {
                     const _st = knobStep(knobIdx, d2, KNOB_DELIB);
                     if (_st && auClipBankKnob(_t, knobIdx, _st)) S.screenDirty = true;
                 }

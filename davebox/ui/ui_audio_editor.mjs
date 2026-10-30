@@ -807,14 +807,27 @@ export function audioEditorInput(status, d1, d2) {
     if (d1 === MoveMainButton) {
         if (d2 !== 127) return true;
         S.screenDirty = true;
-        if (sub === 'lazy') return true;
-        /* no sample: click loads one */
-        if (sub === 'empty') {
-            if (S.shiftHeld) ed.pick = { level: 1, sel: 0 };
-            else S.pendingAudioChooser = { t: ed.t, c: ed.c };
+        /* Manual from any other chop screen, on the chops it made (Josh,
+         * 2026-10-30: "i don't see a reason why manual chopping can't be
+         * available from any other chop screen to edit the chops that are
+         * there"): Lazy ends (what it chopped kept; armed, nothing changes),
+         * Even / Transient keep theirs */
+        if (sub === 'lazy') {
+            const lz = auLazyState();
+            if (lz.state === AU_LAZY_RUN) {
+                auLazyStop(ed.t, ed.c);
+                auLazyKeep(ed.t, ed.c, 1);
+                auSetSelSlice(ed.t, 0);
+                auMarkStale(ed.t, ed.c);
+                S.auStartsRev = (S.auStartsRev | 0) + 1;
+            } else if (lz.state === AU_LAZY_ARMED) auLazyStop(ed.t, ed.c);
+            endLazy(ed);
+            openChop(ed, 'manual');
             return true;
         }
-        if (kind && !hand) return true;                      /* Even / Transient: the jog is all */
+        /* no sample: click loads one */
+        if (sub === 'empty') { S.pendingAudioChooser = { t: ed.t, c: ed.c }; return true; }
+        if (kind && !hand) { closeChop(ed, true); openChop(ed, 'manual'); return true; }
         if (sl && p2) return true;
         if (slEdit) { ed.pick = { level: 2, sel: 0, only2: true }; return true; }   /* the chop types */
         if (p2) {
@@ -823,10 +836,9 @@ export function audioEditorInput(status, d1, d2) {
             return true;
         }
         if (!hand) {
-            /* WAVE: Shift + click the menu, and in Slice mode a click too
-             * (Josh, 2026-10-28: "open the chip menu, including the sample
-             * load items") */
-            if (S.shiftHeld || sub === 'chop') ed.pick = { level: 1, sel: 0 };
+            /* SAMPLE: a click loads a sample — chopping is SLICES' alone (Josh,
+             * 2026-10-30: "chopping should only be on slices") */
+            S.pendingAudioChooser = { t: ed.t, c: ed.c };
             return true;
         }
         /* Manual: Delete + click clears them all (it asks) */

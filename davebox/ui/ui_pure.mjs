@@ -181,7 +181,7 @@ export function bankCategoriesForMode(padMode, t) {
             { label: null,   banks: [BANK_CONFIG] },
             /* IN (2026-10-28: "pad mode bank on IN column" · "let's add an
              * input arp to it too"): PAD MODE's Layout, and LIVE ARP */
-            { label: 'IN',   banks: [BANK_CHORD, 5] },
+            { label: 'IN',   banks: slice ? [BANK_CHORD, 5] : [5] },   /* PAD MODE: a Slice clip's (Josh, 2026-10-30) */
             { label: 'CTRL', banks: [BANK_MACROS, BANK_AUTOMATION] },
             { label: 'SEQ',  banks: slice ? [BANK_STEP, 0] : [0] },
             { label: 'FX',   banks: slice ? [1] : [] },
