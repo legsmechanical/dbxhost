@@ -340,15 +340,18 @@ export const BANK_MAP_MODULE_PADS = [
  * 2 MIDI) with pad mode `padMode`, or null: a pad the track has nothing behind
  * stays dark. A Conductor plays nothing; a MIDI track has its MIDI FX only. A
  * track set to None is a Schwung track with nothing loaded: every pad. */
-export function bankMapModuleAt(route, padMode, col, row) {
+export function bankMapModuleAt(route, padMode, col, row, t) {
     if (padMode === PAD_MODE_CONDUCT) return null;
     const p = BANK_MAP_MODULE_PADS.find((m) => m.col === col && m.row === row);
     if (!p) return null;
-    /* Audio: FX 1-4 lit, the MIDI FX pad dark (nothing on the track receives
-     * MIDI — Q4, Josh 2026-10-27: "agreed"), the instrument pad SAMPLE, the
-     * sample's editor (Josh, 2026-10-28). */
+    /* Audio: FX 1-4 lit, the instrument pad SAMPLE, the sample's editor (Josh,
+     * 2026-10-28). Nothing on the track receives MIDI, so no MIDI FX (Q4, Josh
+     * 2026-10-27: "agreed"): on a Slice clip that pad is SLICES, above SAMPLE
+     * as on the left (Josh, 2026-10-30: "both slice and sample should also be
+     * available in the right 4x4 shortcuts" · "slices above sample"); dark on
+     * a Loop clip. */
     if (padMode === PAD_MODE_AUDIO) {
-        if (p.comp === 'midi_fx1') return null;
+        if (p.comp === 'midi_fx1') return t != null && audioClipIsSlice(t) ? Object.assign({}, p, { comp: 'slices', label: 'SLICES' }) : null;
         if (p.comp === 'synth') return Object.assign({}, p, { label: 'SAMPLE' });
         return p;
     }

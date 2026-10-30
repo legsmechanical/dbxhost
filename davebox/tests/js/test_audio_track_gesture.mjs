@@ -215,6 +215,37 @@ step('⭐⭐ no sound bank: Back from SAMPLE or SLICES returns to the bank that 
     S.activeBank = 0; ticks(2);
 });
 
+step('⭐⭐ the right 4x4: SLICES above SAMPLE on a Slice clip — the track\'s colour, White while its editor is up, a press opens it; dark on a Loop clip (Josh, 2026-10-30: "both slice and sample should also be available in the right 4x4 shortcuts" · "slices above sample")', () => {
+    GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(2);
+    const sl = P.bankMapModuleAt(0, C.PAD_MODE_AUDIO, 6, 0, 4), sa = P.bankMapModuleAt(0, C.PAD_MODE_AUDIO, 6, 1, 4);
+    assert(sl && sl.label === 'SLICES' && sa && sa.label === 'SAMPLE', 'the column: ' + JSON.stringify([sl, sa]));
+    S.activeBank = 0; S.bankCardLatched = false;
+    cc(3, 127); ticks(2);
+    assert(LEDS.get(P.bankMapPadForCell(6, 0)) === globalThis.__tc(4) && LEDS.get(P.bankMapPadForCell(6, 1)) === globalThis.__tc(4),
+           'SLICES / SAMPLE are not the track\'s colour: ' + [LEDS.get(P.bankMapPadForCell(6, 0)), LEDS.get(P.bankMapPadForCell(6, 1))]);
+    note(P.bankMapPadForCell(6, 0), 100); note(P.bankMapPadForCell(6, 0), 0); cc(3, 0); ticks(3);
+    assert(S.auEditor && S.auEditor.ed === 'slices', 'the right SLICES pad did not open SLICES');
+    cc(3, 127);
+    S.jogPressMs = S.clockMs - C.JOG_HOLD_MAP_MS - 50; ticks(2);   /* held past the threshold (this rig's clock) */
+    assert(S.bankMapUp && LEDS.get(P.bankMapPadForCell(6, 0)) === HC.White, 'SLICES\' shortcut is not White with SLICES up');
+    cc(3, 0); ticks(2);
+    for (let n = 0; S.auEditor && n < 4; n++) { back(); ticks(2); }
+    assert(!S.auEditor, 'SLICES did not close');
+    /* a Loop clip: no SLICES there */
+    GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(2);
+    assert(!P.bankMapModuleAt(0, C.PAD_MODE_AUDIO, 6, 0, 4), 'a Loop clip has a SLICES shortcut');
+    cc(3, 127); ticks(2);
+    assert(!LEDS.get(P.bankMapPadForCell(6, 0)), 'the pad above SAMPLE is lit on a Loop clip');
+    note(P.bankMapPadForCell(6, 0), 100); note(P.bankMapPadForCell(6, 0), 0); cc(3, 0); ticks(3);
+    assert(!S.auEditor, 'the dark pad opened something');
+    /* the OLED map joins SLICES and SAMPLE on a Slice clip only */
+    assert(!render.bankMapItems().joins.length, 'a Loop clip\'s map joins pads');
+    GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(2);
+    assert(JSON.stringify(render.bankMapItems().joins) === JSON.stringify([{ c: 2, r0: 2, r1: 3 }]),
+           'SLICES over SAMPLE are not joined: ' + JSON.stringify(render.bankMapItems().joins));
+    S.activeBank = 0; ticks(2);
+});
+
 step('⭐⭐ the instrument door on an Audio track is WAVE, the sample\'s editor: the map\'s instrument pad (Josh: "does it make sense ... be the wave editor?" · "make sense")', () => {
     assert(P.bankMapModuleAt(0, C.PAD_MODE_AUDIO, 6, 1).label === 'SAMPLE', 'the instrument pad is not labelled SAMPLE');
     S.activeBank = 0; S.bankCardLatched = false;
@@ -517,8 +548,11 @@ step('⭐⭐ the map opens from WAVE (hold the jog); a pick leaves it for that b
         const other = name === 'SAMPLE' ? [2, 2] : [2, 3];
         assert(LEDS.get(P.bankMapPadForCell(other[0], other[1])) === globalThis.__tc(4),
                'the other Audio pad is not the track colour: ' + LEDS.get(P.bankMapPadForCell(other[0], other[1])) + ' vs ' + globalThis.__tc(4));
-        const whites = Array.from({ length: 32 }, (_, i) => LEDS.get(C.TRACK_PAD_BASE + i)).filter((v) => v === HC.White).length;
-        assert(whites === 1, 'the map lights ' + whites + ' pads white over ' + name + ' (the bank under it too?)');
+        /* white: SAMPLE on the left map and its shortcut on the right 4x4
+         * (the instrument pad), nothing else — not the bank under it */
+        const whites = Array.from({ length: 32 }, (_, i) => i).filter((i) => LEDS.get(C.TRACK_PAD_BASE + i) === HC.White);
+        const want = [P.bankMapPadForCell(col, row), P.bankMapPadForCell(6, 1)].map((n) => n - C.TRACK_PAD_BASE).sort((a, b) => a - b);
+        assert(JSON.stringify(whites) === JSON.stringify(want), 'the map lights ' + JSON.stringify(whites) + ' white over ' + name + ', not ' + JSON.stringify(want));
         note(P.bankMapPadForCell(2, 1), 100); note(P.bankMapPadForCell(2, 1), 0);   /* CLIP */
         cc(3, 0); ticks(3);
         assert(!S.auPanel && !S.auEditor && S.activeBank === 0, 'the pick did not leave ' + name + ' for CLIP: bank ' + S.activeBank);

@@ -2023,12 +2023,19 @@ export function bankMapItems() {
     }));
     /* A menu pad waiting for the jog's release takes the filled box. */
     if (S.bankMapDeferred) cur = { c: S.bankMapDeferred.col, r: S.bankMapDeferred.row };
-    return { cols, cur };
+    /* SLICES over SAMPLE (a Slice clip's): one instrument, one box */
+    const joins = [];
+    bankPadMapForMode(S.trackPadMode[t], t).forEach((c, ci) => {
+        for (let r = 0; r + 1 < c.cells.length; r++)
+            if (c.cells[r] && c.cells[r].action === 'slices' && c.cells[r + 1] && c.cells[r + 1].action === 'wave')
+                joins.push({ c: ci, r0: r, r1: r + 1 });
+    });
+    return { cols, cur, joins };
 }
 function drawBankMap() {
     if (!S.bankMapUp) return false;
     const m = bankMapItems();
-    drawKitBankMap(m.cols, m.cur);
+    drawKitBankMap(m.cols, m.cur, m.joins);
     return true;
 }
 function drawBankPicker() {

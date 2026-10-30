@@ -33,6 +33,8 @@ the section into a versioned heading at release time.
   again every 5 minutes until the Move is plugged in.
 
 ### Changed
+- **Audio: SLICES and SAMPLE read as one instrument on the bank map** — one box on the
+  screen on a Slice clip — and SLICES joins SAMPLE on the right 4×4's shortcuts, above it.
 - **Audio: a Loop clip's CLIP bank is Mode · Strch · Shift (alt Nudge).** Strch x2 plays
   the loop at half speed across twice the bars (/2 the reverse); Shift moves the audio a
   step at a time inside the clip, wrapping round (the waveform and pads turn with it); Nudge moved here from SAMPLE.

@@ -3140,9 +3140,16 @@ export function bankMapCellRect(c, r) {
     return { x: c * MV_BANKMAP_COL_W, y: MV_BANKMAP_TOP + r * MV_BANKMAP_ROW,
              w: MV_BANKMAP_COL_W - 1, h: MV_BANKMAP_ROW - 1 };
 }
-export function drawKitBankMap(cols, cur) {
+/* `joins` = [{ c, r0, r1 }]: cells r0..r1 of column c are one instrument (an
+ * Audio Slice clip's SLICES and SAMPLE — Josh, 2026-10-30: "connect the sample
+ * and slice pads ... it basically says 'these are part of the same
+ * instrument'"): one box round them, its outer corners rounded as a pad's, a
+ * dotted line on the row between; the current one fills its own half. */
+export function drawKitBankMap(cols, cur, joins) {
     if (!cols) return;
     fill_rect(0, 0, SCREEN_W, 64, 0);
+    const js = joins || [];
+    const joinOf = (c, r) => js.find((j) => j.c === c && r >= j.r0 && r <= j.r1) || null;
     cols.forEach((col, c) => {
         if (!col) return;
         const x0 = c * MV_BANKMAP_COL_W, inner = MV_BANKMAP_COL_W - 5;
@@ -3151,12 +3158,31 @@ export function drawKitBankMap(cols, cur) {
             pf3Print(x0 + Math.round((MV_BANKMAP_COL_W - 1 - lw) / 2), 0, col.label, 1);
             fill_rect(x0 + 2, 6, MV_BANKMAP_COL_W - 5, 1, 1);
         }
+        for (const j of js) {
+            if (j.c !== c) continue;
+            const a = bankMapCellRect(c, j.r0), b = bankMapCellRect(c, j.r1);
+            const H = b.y + b.h - a.y;
+            rectOutline(a.x, a.y, a.w, H, 1);
+            for (let r = j.r0; r < j.r1; r++) {
+                const gy = bankMapCellRect(c, r).y + MV_BANKMAP_ROW - 1;
+                for (let px = a.x + 2; px < a.x + a.w - 2; px += 2) set_pixel(px, gy, 1);
+            }
+            notchCorners(a.x, a.y, a.w, H);
+        }
         col.cells.forEach((name, r) => {
             if (!name) return;
             const { x, y, w, h } = bankMapCellRect(c, r);
             const on = !!(cur && cur.c === c && cur.r === r);
-            if (on) fill_rect(x, y, w, h, 1); else rectOutline(x, y, w, h, 1);
-            notchCorners(x, y, w, h);
+            const j = joinOf(c, r);
+            if (!j) {
+                if (on) fill_rect(x, y, w, h, 1); else rectOutline(x, y, w, h, 1);
+                notchCorners(x, y, w, h);
+            } else if (on) {
+                /* its half filled; only the box's outer corners round off */
+                fill_rect(x, y, w, h, 1);
+                if (r === j.r0) { set_pixel(x, y, 0); set_pixel(x + w - 1, y, 0); }
+                if (r === j.r1) { set_pixel(x, y + h - 1, 0); set_pixel(x + w - 1, y + h - 1, 0); }
+            }
             const sp = name.lastIndexOf(' ');
             const lines = (pf3Width(name) - 1 > inner && sp > 0)
                 ? [name.slice(0, sp), name.slice(sp + 1)] : [name];

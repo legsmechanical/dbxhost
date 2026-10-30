@@ -1620,7 +1620,7 @@ function bankMapPadActs(note) {
     if (!cell) return false;
     /* The right 4x4: the module pads, on the track map. */
     if (cell.col > 3) return S.bankMapKind !== 'session' &&
-        !!bankMapModuleAt(S.trackRoute[S.activeTrack], S.trackPadMode[S.activeTrack], cell.col, cell.row);
+        !!bankMapModuleAt(S.trackRoute[S.activeTrack], S.trackPadMode[S.activeTrack], cell.col, cell.row, S.activeTrack);
     if (S.bankMapKind === 'session') {
         if (cell.col === 0) return SESS_PAD_MAP.mixer.modes[cell.row] !== undefined;
         if (cell.col === SESS_PAD_MAP.fx.col) return !!SESS_PAD_MAP.fx.buses[cell.row];
@@ -1652,8 +1652,14 @@ export function bankMapPadTap(note) {
          * not show these, so the pad says what it is, as a track pick does. */
         if (S.bankMapKind === 'session') return;
         const t = S.activeTrack;
-        const m = bankMapModuleAt(S.trackRoute[t], S.trackPadMode[t], cell.col, cell.row);
+        const m = bankMapModuleAt(S.trackRoute[t], S.trackPadMode[t], cell.col, cell.row, t);
         if (!m) return;
+        if (m.comp === 'slices') {
+            /* the same door as the left map's SLICES */
+            bankMapMenuTap({ kind: 'slices', col: cell.col, row: cell.row });
+            shortcutPopup(m.label, trackInstrName(t));
+            return;
+        }
         bankMapMenuTap({ kind: 'module', comp: m.comp, col: cell.col, row: cell.row });
         shortcutPopup(m.label, bankMapModuleName(t, m.comp));
         return;
