@@ -1643,11 +1643,12 @@ step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP /
     {
         const ac = S.trackActiveClip[4] | 0, len0 = S.clipLength[4][ac] | 0 || 16, tps = S.clipTPS[4][ac] || 24;
         const bpm0 = A.auInfo(4, ac).bpm10 || 1200;
-        /* K2 Strch x2: twice the Length, half the Tempo — half speed over twice the bars */
+        /* K2 Strch x2: twice the Length, twice the Tempo — the audio spans twice
+         * the bars, so it plays at half speed over the doubled clip */
         reset();
         for (let i = 0; i < 40 && !sent('t4_c' + ac + '_loop_set').length; i++) cc(72, 1);
-        assert(sent('t4_c' + ac + '_loop_set').join() === String(len0 * 2) && sent('t4_au_set_bpm').join() === ac + ' ' + Math.round(bpm0 / 2),
-               'Strch x2 is not Length x2 + Tempo /2: ' + JSON.stringify(sentLike(/_au_|_loop_set/)));
+        assert(sent('t4_c' + ac + '_loop_set').join() === String(len0 * 2) && sent('t4_au_set_bpm').join() === ac + ' ' + bpm0 * 2,
+               'Strch x2 is not Length x2 + Tempo x2: ' + JSON.stringify(sentLike(/_au_|_loop_set/)));
         S.knobTouched = 1;
         assert(A.auLoopBankCells(4)[1].text === 'x2', 'Strch does not read x2 while turned: ' + A.auLoopBankCells(4)[1].text);
         S.knobTouched = -1;

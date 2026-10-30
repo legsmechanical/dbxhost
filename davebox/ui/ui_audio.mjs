@@ -658,12 +658,16 @@ export function auClipBankKnob(t, k, steps) {
         return false;
     } else if (k === 1) {
         /* Strch (Josh, 2026-10-30: "an audio-based analog of what they do with
-         * midi"): x2 doubles the Length and halves the Tempo — the loop plays
-         * at half speed across twice the bars — /2 the reverse; the Shift
-         * keeps its place */
+         * midi"): x2 doubles the Length AND the sample's Tempo — the Tempo says
+         * how many bars the audio spans, so twice it spans twice the bars and,
+         * synced, plays at half speed, filling the doubled clip as a MIDI x2
+         * does — /2 the reverse; the Shift keeps its place. (It halved the
+         * Tempo until Josh, 2026-10-30: "it seems like stretch on loop (x2) is
+         * halving the tempo ... resulting in no change in sample playback,
+         * just empty space after it".) */
         const tps = S.clipTPS[t][c] || 24, ls = S.clipLoopStart[t][c] | 0;
         const len = S.clipLength[t][c] | 0 || 16, up = steps > 0;
-        const nl = up ? len * 2 : len / 2, nb = up ? Math.round((i.bpm10 || 1200) / 2) : (i.bpm10 || 1200) * 2;
+        const nl = up ? len * 2 : len / 2, nb = up ? (i.bpm10 || 1200) * 2 : Math.round((i.bpm10 || 1200) / 2);
         if (nl !== Math.floor(nl) || nl < 1 || ls + nl > 256 || nb < AU_BPM10_MIN || nb > AU_BPM10_MAX) return false;
         S.clipLength[t][c] = nl;
         S.clipLengthManuallySet[t][c] = true;
