@@ -352,6 +352,46 @@ step('⭐⭐ Session View: Resample clip › → the clip picker, on screen → 
     back();
 });
 
+step('⭐⭐ an Audio clip offers In place (Josh, 2026-10-30: "resample in place ... replaces the current clip with the new sample at default settings"): the take goes into the project, the clip resets, then picks it', () => {
+    clipRig(0); S.sessionView = false;
+    S.trackPadMode[T] = C.PAD_MODE_AUDIO;
+    S.clipSteps[T][0][0] = 1; S.clipNonEmpty[T][0] = true;
+    GET['t2_au_dir'] = '/data/UserData/daveboxSA/projects/x/dAVEBOx/samples';
+    tap(C.MoveSample); jog(1); click();
+    const r = S.confirmResample;
+    assert(r && r.audio && !r.inPlace, 'options: ' + JSON.stringify(r));
+    assert(S.confirmResample.sel === 5, 'the cursor does not start on Start');
+    onScreen(R.drawResampleOptions, 'the Audio clip options');
+    jog(-1); jog(-1); jog(-1);                     /* Start → Tail → Warm-up → In place */
+    click();
+    assert(r.inPlace, 'In place did not turn on');
+    jog(1); jog(1); jog(1); click();
+    const path = GET['t2_au_dir'] + '/My Song 3A 2bar 120bpm.wav';
+    assert(queued('resample_clip').join() === '2 0 2 0 0 0 |' + path, 'value: ' + queued('resample_clip'));
+    sets.length = 0; S.pendingDefaultSetParams.length = 0;
+    S.resampleState = 3; S.resampleFrames = 2 * 88200; S.resampleDone = 100; ticks(2);
+    S.resampleState = 4; globalThis.__stubStat = { [path]: { size: 100, mode: 0o100644 } };
+    ticks(2);
+    globalThis.__stubStat = null;
+    assert(/In place/.test((S.actionPopupLines || []).join(' ')), 'notice: ' + JSON.stringify(S.actionPopupLines));
+    assert(sent('t2_au_pick').length === 0, 'picked before the reset');
+    assert(sent('t2_c0_hard_reset').length === 1, 'the clip was not reset: ' + JSON.stringify(S.pendingDefaultSetParams));
+    for (let i = 0; i < 6 && sent('t2_au_pick').length === 0; i++) ticks(1);
+    const order = sets.map((x) => x[0]);
+    assert(sent('t2_au_pick').join() === '0|' + path, 'pick: ' + sent('t2_au_pick'));
+    assert(order.indexOf('t2_c0_hard_reset') >= 0 && order.indexOf('t2_c0_hard_reset') < order.indexOf('t2_au_pick'),
+           'the pick did not come after the reset: ' + order.join(','));
+    assert(S.clipSteps[T][0][0] === 0, 'the steps were kept');
+    S.resampleState = 0; S.trackPadMode[T] = 0; S.sessionView = true;
+});
+
+step('⭐ a melodic clip has no In place', () => {
+    clipRig(0); S.sessionView = false;
+    tap(C.MoveSample); jog(1); click();
+    assert(S.confirmResample && !S.confirmResample.audio && S.confirmResample.sel === 4, 'options: ' + JSON.stringify(S.confirmResample));
+    back(); back(); S.sessionView = true;
+});
+
 step('⭐ refusals: a MIDI-out track, a muted one, an empty clip', () => {
     clipRig(2); S.sessionView = false;
     tap(C.MoveSample); jog(1); click();

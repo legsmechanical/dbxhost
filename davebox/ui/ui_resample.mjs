@@ -22,7 +22,9 @@
 import * as os from 'os';
 import { S } from './ui_state.mjs';
 import { showActionPopupFor } from './ui_persistence.mjs';
-import { SCENE_LETTERS } from './ui_constants.mjs';
+import { SCENE_LETTERS, PAD_MODE_AUDIO } from './ui_constants.mjs';
+import { auPick } from './ui_audio.mjs';
+import { hardResetClip } from './ui_editops.mjs';
 import { sanitizeName } from './ui_export.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { drawKitHeader, drawKitList } from './ui_movy.mjs';
@@ -124,9 +126,11 @@ export function drawSampleMenu() {
 /* ---- the options ------------------------------------------------------- */
 
 /* A scene's rows: Length, Warm-up, Tail, Start. A clip's add Source (Wet /
- * Dry) after Length. `rows(r)` names them in order. */
+ * Dry) after Length, and an Audio clip's In place after that. `rows(r)` names
+ * them in order. */
 function rows(r) {
-    return r.track >= 0 ? ['bars', 'src', 'warm', 'tail', 'start'] : ['bars', 'warm', 'tail', 'start'];
+    if (r.track < 0) return ['bars', 'warm', 'tail', 'start'];
+    return r.audio ? ['bars', 'src', 'place', 'warm', 'tail', 'start'] : ['bars', 'src', 'warm', 'tail', 'start'];
 }
 const rowAt = (r) => rows(r)[r.sel];
 
@@ -174,8 +178,13 @@ export function openClipResampleOptions(t, c, from) {
     if (bars <= 0) { closeSampleFlow(); showActionPopupFor(2500, 'NOTHING TO', 'RESAMPLE', 'Clip ' + clipName(t, c) + ' is empty'); return; }
     /* A Move instrument comes back late (it plays out to Move and returns), so
      * its takes start with Warm-up on: the late tail wraps into the loop. */
+    /* An Audio clip can be resampled IN PLACE (Josh, 2026-10-30: "audio track
+     * clip resample should offer "resample in place" resamples and replaces
+     * the current clip with the new sample at default settings"). */
+    const audio = S.trackPadMode[t] === PAD_MODE_AUDIO;
     S.confirmResample = { track: t, clip: c, bars, warm: inst === 'move', tail: 0, src: 0,
-                          dryOk: inst === 'schwung', from: from || 'menu', sel: 4, editing: false };
+                          dryOk: inst === 'schwung', from: from || 'menu', audio, inPlace: false,
+                          sel: audio ? 5 : 4, editing: false };
     S.screenDirty = true;
 }
 
@@ -200,6 +209,7 @@ export function resampleOptionsClick() {
     if (row === 'warm') { r.warm = !r.warm; S.screenDirty = true; return false; }
     /* Source flips like a toggle; on a Move instrument it is not available. */
     if (row === 'src') { if (r.dryOk) r.src = r.src ? 0 : 1; S.screenDirty = true; return false; }
+    if (row === 'place') { r.inPlace = !r.inPlace; S.screenDirty = true; return false; }
     if (row === 'bars' || row === 'tail') { r.editing = !r.editing; S.screenDirty = true; return false; }
     return startResample();
 }
@@ -231,6 +241,7 @@ export function drawResampleOptions() {
         /* Dry needs a Schwung chain: on a Move instrument the value is '-'
          * (UI_LANGUAGE §6: unavailable is said in the value). */
         src:   { label: 'Source',  value: r.dryOk ? (r.src ? 'Dry' : 'Wet') : '-' },
+        place: { label: 'In place', value: r.inPlace ? 'On' : 'Off' },
         warm:  { label: 'Warm-up', value: r.warm ? 'On' : 'Off' },
         tail:  { label: 'Tail',    value: r.tail ? barsLabel(r.tail) : 'Off', editing: editing('tail') },
         start: { label: 'Start', hdr: true },
@@ -242,10 +253,11 @@ export function drawResampleOptions() {
 
 /* ---- the take ---------------------------------------------------------- */
 
-/* A free name in the folder: the base, then " 2" … " 99". */
-function freePath(base) {
+/* A free name in the folder (the library's Resample folder unless given):
+ * the base, then " 2" … " 99". */
+function freePath(base, dir) {
     for (let n = 1; n <= 99; n++) {
-        const p = RESAMPLE_DIR + '/' + base + (n > 1 ? ' ' + n : '') + '.wav';
+        const p = (dir || RESAMPLE_DIR) + '/' + base + (n > 1 ? ' ' + n : '') + '.wav';
         const [st] = os.stat(p);
         if (!st) return p;
     }
@@ -262,7 +274,11 @@ function startResample() {
     const base = sanitizeName(S.currentSetName) + ' ' + what + ' ' + r.bars + 'bar ' + Math.round(bpm) + 'bpm';
     /* The directory is the HOST's to create: it hands every level it makes to
      * the user Move runs as. Made here, it would be root's. */
-    const path = freePath(base);
+    /* In place: into the project's samples/, where the clip's own sample lives */
+    const inPlace = clip && r.audio && r.inPlace;
+    const dir = inPlace ? String(host_module_get_param('t' + r.track + '_au_dir') || '') : '';
+    if (inPlace && !dir) { closeSampleFlow(); showActionPopupFor(2500, 'RESAMPLE FAILED', 'No project'); return false; }
+    const path = freePath(base, dir);
     if (!path) { closeSampleFlow(); showActionPopupFor(2500, 'RESAMPLE FAILED', 'No free file name'); return false; }
     const common = r.bars + ' ' + (r.warm ? 1 : 0) + ' ' + r.tail;
     if (clip)
@@ -273,7 +289,8 @@ function startResample() {
     S.resampleTake = { path, file: path.slice(RESAMPLE_DIR.length + 1),
                        what: clip ? 'Clip ' + what : what,
                        bars: r.bars + r.tail, loopBars: r.bars, warm: r.warm, at: nowMs(), seen: false,
-                       stopSent: false, shownBar: -1 };
+                       stopSent: false, shownBar: -1,
+                       inPlace: inPlace ? { t: r.track, c: r.clip } : null };
     closeSampleFlow();
     showRunning(S.resampleTake, r.warm ? 'warm-up' : 'starting');
     return true;
@@ -314,6 +331,15 @@ function sampling() {
 
 /* Every tick while a take is up. */
 export function resampleTick() {
+    /* In place: the pick goes straight to the engine, the reset through the
+     * queue, so the pick waits until the reset has gone */
+    const ip = S.resampleInPlace;
+    if (ip && !S.clearDrainHold &&
+            !S.pendingDefaultSetParams.some((e) => e.key === 't' + ip.t + '_c' + ip.c + '_hard_reset')) {
+        S.resampleInPlace = null;
+        auPick(ip.t, ip.c, ip.path);
+        S.screenDirty = true;
+    }
     const t = S.resampleTake;
     /* a conversion's takes are auConvertTick's (ui_audio_convert): this one
      * would put "undefined, bar NaN" on its notice and end it early */
@@ -341,7 +367,14 @@ export function resampleTick() {
         /* What and where, not the file name: the card fits ~18 characters and
          * the name's distinguishing part (scene, length) is at its END — on the
          * device it read "Polite Gate Scene~". BAKED's card shape. */
-        if (s) finish(2500, 'RESAMPLED', t.what + ', ' + barsLabel(t.loopBars), 'In Samples/dAVEBOx');
+        if (s && t.inPlace) {
+            /* In place: the clip starts over (its sample, steps and every
+             * setting go, as Shift + Delete takes them), then picks the take */
+            hardResetClip(t.inPlace.t, t.inPlace.c);
+            S.resampleInPlace = { t: t.inPlace.t, c: t.inPlace.c, path: t.path };
+            finish(2500, 'RESAMPLED', t.what + ', ' + barsLabel(t.loopBars), 'In place');
+        }
+        else if (s) finish(2500, 'RESAMPLED', t.what + ', ' + barsLabel(t.loopBars), 'In Samples/dAVEBOx');
         else   finish(2500, 'RESAMPLE FAILED', 'Not saved');
         return;
     }

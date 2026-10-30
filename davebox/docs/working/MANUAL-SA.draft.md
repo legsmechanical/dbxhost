@@ -2768,7 +2768,10 @@ milliseconds late. The file is named like an exported clip (`mngk 3B 2bar 120bpm
 A muted track, or one that plays MIDI out, has nothing to record.
 
 Audio tracks resample like any other. A Loop clip plays its sample with no steps, so
-its length is the clip's own; a Slice clip's is its sequence's.
+its length is the clip's own; a Slice clip's is its sequence's. An Audio clip's
+options add **In place**: turned on, the recording goes into the project instead of
+the library and replaces the clip. The clip starts over with the recording as its
+sample, at default settings (a Loop clip; its steps, chops and settings go).
 
 **Freeze a track** to turn it into audio: open its **TRACK CONFIG** menu, turn to
 **Freeze track** and click. With the transport stopped, every clip with notes is

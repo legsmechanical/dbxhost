@@ -17,6 +17,8 @@ the section into a versioned heading at release time.
 - **Resampling works with Audio tracks.** A Loop clip (which has no steps) is now
   recorded for its own length, by Resample clip and Resample scene alike; before, a
   clip or scene of Loop clips had nothing to resample.
+- **Resample clip › In place** on an Audio clip: the recording replaces the clip,
+  which starts over with it as its sample at default settings.
 - **Audio: Trim and Normalize.** SAMPLE's click opens a menu — Load sample · Trim ·
   Normalize. Trim cuts the file to what the clip plays; Normalize raises its peak to
   full scale. Each asks New (a new sample for this clip, the default) or Overwrite (the
