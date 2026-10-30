@@ -1318,6 +1318,7 @@ map (dark on a Loop clip). Page 1 is the chops, the one the pads last picked bra
 the picked slice's sound — **Pitch**, **Detune**, **Gain**, **Revrs**, **Attk**, **Decay** and
 **Play** (**One** to the slice's end, **Gate** as long as the step, **Loop** for the step);
 **hold Shift** and the same knobs set **every slice** at once (`--` where they differ).
+SAMPLE's **Pitch**, **Detune** and **Gain** are the base every slice adds its own to.
 
 **The sound bank** keeps the sound on Track View's knobs once you leave an editor, to
 play it live: **Back** from SAMPLE or SLICES lands on it, and it follows the one you
@@ -1328,7 +1329,7 @@ showing, and only that page.
 | After | Knobs |
 |---|---|
 | **SAMPLE** | **Start** · **Pitch** · **Detune** · **Gain** · **Revrs** · **Nudge** · **Sync** (a Loop clip's) · **Tempo** |
-| **SLICES** | Two pages, the jog flips them: **ALL SLICES** — **Pitch** · **Detune** · **Gain** for the clip, **Revrs** · **Attk** · **Decay** · **Play** for every slice; and **SLICE n** — the slice the pads (or an external keyboard) last played |
+| **SLICES** | Two pages, the jog flips them: **ALL SLICES** — **Pitch** · **Detune** · **Gain** · **Revrs** · **Attk** · **Decay** · **Play**, set on every slice at once (each slice's own value, as SLICE n shows it); and **SLICE n** — the slice the pads (or an external keyboard) last played |
 
 **The banks** hold the sequence:
 

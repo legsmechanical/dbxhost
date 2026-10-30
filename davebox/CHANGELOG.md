@@ -29,6 +29,9 @@ the section into a versioned heading at release time.
   again every 5 minutes until the Move is plugged in.
 
 ### Changed
+- **Audio: ALL SLICES sets every slice.** Its Pitch, Detune and Gain now set each
+  slice's own value, as its other knobs do; SAMPLE's Pitch, Detune and Gain are the
+  base the slices add to.
 - **Audio: chopping lives on SLICES.** A click on SAMPLE loads a sample; a click on
   SLICES offers the chop types. A click in Even, Transient or Lazy keeps the chops and
   opens Manual on them. **Mode** is K1 of the CLIP bank (Res moves to K4), and PAD MODE is

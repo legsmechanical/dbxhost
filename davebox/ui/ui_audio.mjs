@@ -536,11 +536,14 @@ const soundCell = {
                    norm: r.dec ? Math.min(1, r.dec / DEC_MAX) * 0.95 : 1 }),   /* Full: the top */
     play: (r) => ({ kind: 'enumsq', label: 'Play', name: 'Play Mode', text: r.play == null ? '--' : AU_PLAY_NAMES[r.play], options: AU_PLAY_NAMES, sel: r.play | 0 }),
 };
-/* CLIP, Slice mode: knob k -> the ALL SLICES field it sets (null: a clip knob):
- * Pitch · Detune · Gain, then every slice's Revrs · Attk · Decay · Play.
+/* CLIP, Slice mode: knob k -> the ALL SLICES field it sets, into every slice's
+ * own value: Pitch · Detune · Gain · Revrs · Attk · Decay · Play. SAMPLE's
+ * Pitch / Detune / Gain are the base the slices add to (Josh, 2026-10-30:
+ * "all slice params should ... set them all directly. sample params, however,
+ * should be a base from which everything else is offset").
  * >Seq moved to the CLIP bank (Josh, 2026-10-28: "since it's about the
  * sequence, maybe we should put >seq in the clip BANK"), and Mode with it. */
-const SLICE_CLIP_ALL = [null, null, null, 'rev', 'atk', 'dec', 'play', null];
+const SLICE_CLIP_ALL = ['pitch', 'detune', 'gain', 'rev', 'atk', 'dec', 'play', null];
 
 export function auPanelCells(ed) {
     const t = ed.t, c = auClipOf(t), i = auInfo(t, c);
@@ -572,8 +575,8 @@ export function auPanelCells(ed) {
         const a = auAll(t, c);
         const all = {};
         ALL_FIELDS.forEach((f, k) => { all[f] = a ? a[k] : null; });
-        const cells = [pitch, detune, gain];
-        for (let k = 3; k < 7; k++) {
+        const cells = [];
+        for (let k = 0; k < 7; k++) {
             const cell = soundCell[SLICE_CLIP_ALL[k]](all);
             cell.name = 'All Slices: ' + cell.name;
             cells.push(cell);
@@ -725,15 +728,16 @@ export function auPanelReset(ed) {
     const t = ed.t, c = auClipOf(t), i = auInfo(t, c);
     if (i.state !== 2) return false;
     const pn = auPanelPageName(ed);
+    if (pn === 'CLIP' && auIsSlice(i)) {
+        for (const f of SLICE_CLIP_ALL) if (f) auSetAll(t, c, f, DEFAULT_SLICE[f]);
+        _all.delete(t + '_' + c);
+        for (const k of _sl.keys()) if (k.startsWith(t + '_' + c + '_')) _sl.delete(k);
+        return true;
+    }
     if (pn === 'CLIP' || pn === 'SAMPLE') {
         const loc = Object.assign({}, i, { pitch: 0, detune: 0, gain: 0 });
         auSet(t, c, 'pitch', 0); auSet(t, c, 'detune', 0); auSet(t, c, 'gain', 0);
         if (pn === 'SAMPLE') { loc.revrs = 0; auSet(t, c, 'revrs', 0); loc.nudge = 0; auSet(t, c, 'nudge', 0); }
-        else {
-            for (const f of SLICE_CLIP_ALL) if (f) auSetAll(t, c, f, DEFAULT_SLICE[f]);
-            _all.delete(t + '_' + c);
-            for (const k of _sl.keys()) if (k.startsWith(t + '_' + c + '_')) _sl.delete(k);
-        }
         S.auInfo[t][c] = loc;
         S.auStartsRev = (S.auStartsRev | 0) + 1;
         return true;
@@ -766,15 +770,15 @@ export function auPanelKnob(ed, k, steps) {
                 if (v === (i.bpm10 | 0)) return false;
                 loc.bpm10 = v; auSet(t, c, 'bpm', v);
             } else return false;
-        } else if (k === 0) {
+        } else if (k === 0 && auIsLoop(i)) {
             const v = Math.max(-24, Math.min(24, i.pitch + dir));
             if (v === i.pitch) return false;
             loc.pitch = v; auSet(t, c, 'pitch', v);
-        } else if (k === 1) {
+        } else if (k === 1 && auIsLoop(i)) {
             const v = Math.max(-50, Math.min(50, (i.detune | 0) + steps));
             if (v === (i.detune | 0)) return false;
             loc.detune = v; auSet(t, c, 'detune', v);
-        } else if (k === 2) {
+        } else if (k === 2 && auIsLoop(i)) {
             const v = Math.max(-40, Math.min(12, i.gain + dir));
             if (v === i.gain) return false;
             loc.gain = v; auSet(t, c, 'gain', v);

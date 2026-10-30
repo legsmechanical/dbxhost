@@ -258,12 +258,12 @@ step('⭐⭐ the instrument door on an Audio track is WAVE, the sample\'s editor
 
 step('⭐ Pitch reads as a number and steps a semitone per detent run (Josh: "doesn\'t read out any values and is very touchy")', () => {
     const cell = () => A.auPanelCells(ED())[0];
-    assert(cell().kind === 'valsq' && cell().text === '+0', 'CLIP Pitch: ' + JSON.stringify(cell()));
+    assert(cell().kind === 'valsq' && cell().text === '+0', 'ALL SLICES Pitch: ' + JSON.stringify(cell()));
     reset();
     note(0, 127);
     for (let i = 0; i < 30; i++) cc(71, 1);         /* 30 encoder ticks */
-    const n = sent('t4_au_set_pitch').length;
-    assert(n >= 1 && n <= 3, '30 ticks moved Pitch ' + n + ' semitones: ' + JSON.stringify(sent('t4_au_set_pitch')));
+    const n = sent('t4_au_all_pitch').length;
+    assert(n >= 1 && n <= 3, '30 ticks moved Pitch ' + n + ' semitones: ' + JSON.stringify(sent('t4_au_all_pitch')));
     assert(cell().text === '+' + n, 'the cell does not read the new pitch: ' + cell().text);
     const kc = globalThis.__kc; shown();
     assert(kc().cells[0].lit && kc().cells[0].text === '+' + n, 'the touched Pitch does not read out: ' + JSON.stringify(kc().cells[0]));
@@ -296,20 +296,21 @@ step('⭐ the jog turns its pages after SLICES: ALL SLICES, SLICE n; a Loop clip
     assert(ED().page === 0, 'back to CLIP');
 });
 
-step('⭐⭐ CLIP knobs: Pitch / Detune / Gain for the clip, Revrs..Play for every slice (`--` where they differ)', () => {
+step('⭐⭐ ALL SLICES knobs set every slice\'s own value, Pitch to Play (`--` where they differ); SAMPLE\'s are the base (Josh: "all slice params ... should set them all directly")', () => {
     GET['t4_au_all_0'] = '0 0 0 x 0 0';                 /* the slices' attacks differ */
     A.auMarkStale(4, 0); ticks(2);
     assert(A.auPanelCells(ED())[4].text === '--', 'Attk: ' + A.auPanelCells(ED())[4].text);
     reset();
     for (let i = 0; i < 10; i++) cc(71, 1);             /* K1 Pitch: one detent run (KNOB_PICK) */
-    assert(sent('t4_au_set_pitch').join() === '0 1', 'pitch: ' + JSON.stringify(sent('t4_au_set_pitch')));
+    assert(sent('t4_au_all_pitch').join() === '0 1', 'pitch: ' + JSON.stringify(sentLike(/_au_/)));
     cc(72, 1); cc(72, 1);                               /* K2 Detune: cents */
-    assert(sent('t4_au_set_detune').join() === '0 1,0 2', 'detune: ' + JSON.stringify(sent('t4_au_set_detune')));
+    assert(sent('t4_au_all_detune').join() === '0 1,0 2', 'detune: ' + JSON.stringify(sentLike(/_au_/)));
     assert(A.auPanelCells(ED())[1].label === 'Detune' && A.auPanelCells(ED())[1].kind === 'arcbip' &&
            A.auPanelCells(ED())[1].text === '+2' && A.auPanelCells(ED())[1].signed === 2 / 50,
            'the Detune cell: ' + JSON.stringify(A.auPanelCells(ED())[1]));
     cc(73, 1);                                          /* K3 Gain */
-    assert(sent('t4_au_set_gain').join() === '0 1', 'gain: ' + JSON.stringify(sent('t4_au_set_gain')));
+    assert(sent('t4_au_all_gain').join() === '0 1', 'gain: ' + JSON.stringify(sentLike(/_au_/)));
+    assert(!sentLike(/_au_set_(pitch|detune|gain)$/).length, 'ALL SLICES moved the clip\'s base: ' + JSON.stringify(sentLike(/_au_set_/)));
     cc(75, 1);                                          /* K5 Attk: every slice */
     assert(sent('t4_au_all_atk').length === 1, 'Attk did not set every slice: ' + JSON.stringify(sentLike(/_au_/)));
     reset();
@@ -671,7 +672,8 @@ step('⭐⭐ Delete + jog click on the AUDIO bank resets the page showing, only 
     reset();
     cc(HC.MoveDelete, 127); click(); cc(HC.MoveDelete, 0);
     const got = sentLike(/_au_/).map((x) => x[0] + '=' + x[1]).join(' ');
-    assert(['set_pitch=0 0', 'set_detune=0 0', 'set_gain=0 0', 'all_rev=0 0', 'all_atk=0 0', 'all_dec=0 0', 'all_play=0 0']
+    assert(!sentLike(/_au_set_/).length, 'ALL SLICES reset the clip\'s base: ' + got);
+    assert(['all_pitch=0 0', 'all_detune=0 0', 'all_gain=0 0', 'all_rev=0 0', 'all_atk=0 0', 'all_dec=0 0', 'all_play=0 0']
            .every((k) => got.indexOf('t4_au_' + k) >= 0), 'CLIP did not reset: ' + got);
     jog(1);                                          /* SLICE n */
     A.auSetSelSlice(4, 2);
