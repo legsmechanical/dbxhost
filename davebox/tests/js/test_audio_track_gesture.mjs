@@ -1300,6 +1300,22 @@ step('⭐⭐ a Loop clip\'s Shift turns its waveform: zoomed out, SAMPLE and the
     const ta = rows(f0, 51, 53), tb = rows(f1, 51, 53);
     let beats = 0; for (let x = 0; x < 128; x++) if (ta(x) === tb(x)) beats++;
     assert(beats === 128, 'the beat ticks moved with the audio');
+    /* zoomed in across the Shift's point the view is two windows of the
+     * sample: both stay read — the screen settles, no read every tick */
+    cc(72, 1); ticks(2);
+    {
+        const ed = S.auEditor, P = A.auInfo(4, 0).rstart + 96 * A.auFpt(A.auInfo(4, 0));
+        assert(!ed.full && ed.A < P && ed.B > P, 'the zoomed view does not cross the Shift\'s point: ' + ed.A + '..' + ed.B + ' / ' + P);
+        const get = globalThis.host_module_get_param;
+        let reads = 0;
+        globalThis.host_module_get_param = (k) => { if (/_au_wave_/.test(String(k))) reads++; return get(k); };
+        try {
+            for (let n = 0; n < 6; n++) { shown(); ticks(1); }       /* settle */
+            reads = 0;
+            for (let n = 0; n < 10; n++) { shown(); ticks(1); }
+        } finally { globalThis.host_module_get_param = get; }
+        assert(reads === 0, 'the two pieces keep being re-read: ' + reads + ' reads in 10 ticks');
+    }
     back(); ticks(2);
     /* the Track View strip turns too */
     GET['t4_au_info_0'] = withRot(0); A.auMarkStale(4, 0); ticks(4);
