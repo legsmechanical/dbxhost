@@ -1118,6 +1118,7 @@ typedef struct {
     double             P, L;          /* the sample's own span and the clip's length, ticks */
     double             fpt;           /* output frames per tick (the tempo) */
     double             nud;           /* Nudge, ticks */
+    double             rot;           /* Shift, ticks (0..L): the clip's time rotated, after Nudge */
     double             pitch;         /* frequency ratio (Pitch, Detune) */
     double             drift;         /* output frames the heard tag is ahead of the clock */
     double             anchor_tick;
@@ -1185,7 +1186,7 @@ static int au_warp_nocache = 0;                /* tests: fetch every grain's who
 #define AU_WCL(d, s, f) __atomic_load(&(s)->f, &(d)->f, __ATOMIC_RELAXED)
 #define AU_WARP_FIELDS(OP, d, s) \
     OP(d, s, smp); OP(d, s, rs); OP(d, s, re); OP(d, s, P); OP(d, s, L); OP(d, s, fpt); OP(d, s, nud); \
-    OP(d, s, pitch); OP(d, s, drift); OP(d, s, anchor_tick); OP(d, s, anchor_gen); OP(d, s, revrs); OP(d, s, run)
+    OP(d, s, rot); OP(d, s, pitch); OP(d, s, drift); OP(d, s, anchor_tick); OP(d, s, anchor_gen); OP(d, s, revrs); OP(d, s, run)
 static void au_warp_cmd_write(au_warp_t *W, const au_warp_cmd_t *c) {
     uint32_t q = W->cmd.seq;
     __atomic_store_n(&W->cmd.seq, q + 1, __ATOMIC_RELAXED);
@@ -1227,7 +1228,7 @@ static int au_warp_cmd_read(au_warp_t *W, au_warp_cmd_t *c) {
 /* the map: what the stretcher reads, and how fast */
 static int au_warp_map_same(const au_warp_cmd_t *a, const au_warp_cmd_t *b) {
     return a->smp == b->smp && a->rs == b->rs && a->re == b->re && a->P == b->P && a->L == b->L &&
-           a->nud == b->nud && a->revrs == b->revrs;
+           a->nud == b->nud && a->rot == b->rot && a->revrs == b->revrs;
 }
 static double au_warp_speed(const au_warp_t *W) {
     const au_warp_cmd_t *c = &W->cur;
@@ -1250,7 +1251,7 @@ static int au_warp_native(const au_warp_t *W) {
 /* the sample frame virtual position v reads (the streamer's watch) */
 static void au_warp_watch_at(au_warp_t *W, double v) {
     const au_warp_cmd_t *c = &W->cur;
-    double x = (au_wrap(v / W->rpt, c->L) - c->nud) * W->rpt;
+    double x = (au_wrap(au_wrap(v / W->rpt, c->L) - c->rot, c->L) - c->nud) * W->rpt;
     uint32_t f = 0;
     if (x >= 0 && x < (double)(c->re - c->rs)) f = c->revrs ? c->re - 1 - (uint32_t)x : c->rs + (uint32_t)x;
     __atomic_store_n(&W->read_pos, f, __ATOMIC_RELAXED);
@@ -1261,7 +1262,7 @@ static void au_warp_watch_at(au_warp_t *W, double v) {
 static void au_warp_frame(au_warper_t *X, const au_warp_t *W, double v, float *l, float *r) {
     const au_warp_cmd_t *c = &W->cur;
     const au_sample_t *s = c->smp;
-    double R = (double)(c->re - c->rs), x = (au_wrap(v / W->rpt, c->L) - c->nud) * W->rpt, fr;
+    double R = (double)(c->re - c->rs), x = (au_wrap(au_wrap(v / W->rpt, c->L) - c->rot, c->L) - c->nud) * W->rpt, fr;
     uint32_t i;
     const int16_t *a, *b;
     *l = *r = 0.f;
@@ -2323,7 +2324,7 @@ static void au_lazy_finish(seq8_instance_t *inst) {
  *
  * Sparse: a clip with a sample or non-default settings `t%dc%d_au3` = "mode
  * even nslices jump rstart slen pitch gain revrs nudge jmpq detune sync bpm10
- * sens|name" (rstart in frames, slen in ticks; bpm10 0 = guess again when the
+ * sens rot|name" (rstart in frames, slen in ticks; bpm10 0 = guess again when the
  * sample loads; the track is Audio by its `t%d_pm`); a slice that differs from
  * the default `t%dc%ds%d_au2` = "start end pitch gain rev play attack decay
  * detune". The name is the file inside samples/, JSON-escaped.
@@ -2340,7 +2341,7 @@ static int au_clip_default(const au_clip_t *cl) {
     int l;
     if (cl->name[0] || cl->mode != AU_MODE_LOOP || cl->even != 16 || cl->nslices != 1 || cl->jump != 16 ||
         cl->rstart || cl->slen || cl->pitch || cl->detune || cl->gain_db || cl->revrs || cl->nudge_ms ||
-        cl->jmpq || cl->sync || cl->bpm10 || cl->sens != AU_SENS_DEFAULT) return 0;
+        cl->jmpq || cl->sync || cl->bpm10 || cl->sens != AU_SENS_DEFAULT || cl->rot) return 0;
     for (l = 0; l < AU_MAX_SLICES; l++) if (!au_slice_default(&cl->sl[l])) return 0;
     return 1;
 }
@@ -2355,10 +2356,10 @@ static void au_save_state(void *vinst, FILE *fp) {
             const au_clip_t *cl = &inst->au_clip[t][c];
             const char *q;
             if (au_clip_default(cl)) continue;
-            fprintf(fp, ",\"t%dc%d_au3\":\"%d %d %d %d %u %u %d %d %d %d %d %d %d %d %d|", t, c, cl->mode, cl->even,
+            fprintf(fp, ",\"t%dc%d_au3\":\"%d %d %d %d %u %u %d %d %d %d %d %d %d %d %d %u|", t, c, cl->mode, cl->even,
                     cl->nslices, cl->jump, (unsigned)cl->rstart, (unsigned)cl->slen, cl->pitch, cl->gain_db,
                     cl->revrs, cl->nudge_ms, cl->jmpq, cl->detune, cl->sync, cl->bpm10,
-                    cl->sens);
+                    cl->sens, (unsigned)cl->rot);
             for (q = cl->name; *q; q++) {
                 if (*q == '"' || *q == '\\') fputc('\\', fp);
                 if ((unsigned char)*q >= 0x20) fputc(*q, fp);
@@ -2442,10 +2443,10 @@ static void au_load_state(void *vinst, const char *buf) {
         for (c = 0; c < NUM_CLIPS; c++) {
             au_clip_t *cl = &inst->au_clip[t][c];
             const char *p;
-            long v[15] = { 0, 16, 1, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, AU_SENS_DEFAULT };
+            long v[16] = { 0, 16, 1, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, AU_SENS_DEFAULT, 0 };
             snprintf(key, sizeof key, "t%dc%d_au3", t, c);
             if (!json_str_value(buf, key, &p)) continue;
-            au_read_nums(&p, v, 15);
+            au_read_nums(&p, v, 16);                 /* a line saved before Shift has 15: rot stays 0 */
             cl->mode = (uint8_t)clamp_i((int)v[0], 0, 1);
             cl->even = (uint8_t)(v[1] < 2 ? 0 : clamp_i((int)v[1], 2, AU_MAX_SLICES));
             cl->nslices = (uint8_t)clamp_i((int)v[2], 1, AU_MAX_SLICES);
@@ -2461,6 +2462,7 @@ static void au_load_state(void *vinst, const char *buf) {
             cl->sync = (uint8_t)clamp_i((int)v[12], 0, AU_SYNC_MAX);
             cl->bpm10 = (uint16_t)(v[13] ? clamp_i((int)v[13], AU_BPM10_MIN, AU_BPM10_MAX) : 0);
             cl->sens = (uint8_t)clamp_i((int)v[14], 0, 100);
+            cl->rot = (uint32_t)(v[15] < 0 ? 0 : v[15]);
             if (*p == '|') {
                 size_t n = 0;
                 for (p++; *p && *p != '"' && n + 1 < sizeof cl->name; p++) {

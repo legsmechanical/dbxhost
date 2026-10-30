@@ -251,6 +251,7 @@ static void au_warp_block(seq8_instance_t *inst, int t, int c, double L, double 
     cmd.L = L;
     cmd.fpt = fpt;
     cmd.nud = (double)cl->nudge_ms * 44.1 / fpt;
+    cmd.rot = L > 0 ? au_wrap((double)cl->rot, L) : 0.0;
     cmd.pitch = au_tune(cl->pitch, cl->detune);
     cmd.drift = w->drift;
     cmd.anchor_tick = w->cur_anchor;
@@ -467,22 +468,25 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
     if (P <= 0) return;
     if (!au_clock_window(inst, tick, L, fpt, frames, &start, &span, &fscale)) return;
     double nud = (double)cl->nudge_ms * 44.1 / fpt;
+    /* Shift: the clip's time (after Nudge) rotated later, wrapping in the loop */
+    double rot = au_wrap((double)cl->rot, L);
     long G = au_ceil(P - 1e-9);
     /* the pieces whose tick falls in this block, in the order they sound */
     long pj[AU_VINTAGE_PER_BLOCK];
     double pd[AU_VINTAGE_PER_BLOCK];
     int m = 0, q, i, k;
-    for (q = -1; q <= 1; q++) {
-        double lo = start - nud + q * L;
+    for (q = -2; q <= 1; q++) {
+        double lo = start - nud - rot + q * L;
         long j;
         for (j = au_ceil(lo - 1e-9); (double)j < lo + span && m < AU_VINTAGE_PER_BLOCK; j++) {
             if (j < 0 || j >= G) continue;
-            double T = (double)j + nud;
+            double U = (double)j + nud;
             /* past the clip's end the clip comes round first; before its
              * start (a Nudge earlier) it never plays — the loop starts that
              * much further in, as Free's does (wrapped to the clip's end it
              * fought the pieces due there: found by review, 2026-10-29) */
-            if (T >= L || T < 0) continue;
+            if (U >= L || U < 0) continue;
+            double T = au_wrap(U + rot, L);
             double d = au_wrap(T - start, L);
             if (d >= span) continue;
             for (k = m; k > 0 && pd[k - 1] > d; k--) { pd[k] = pd[k - 1]; pj[k] = pj[k - 1]; }
@@ -609,11 +613,22 @@ static void au_render(seq8_instance_t *inst, int frames) {
                     if (at->sync_on) { au_release_chops(at); at->sync_on = 0; }
                     /* Pitch follows a tempo change at once, not at the wrap */
                     if (lv && fill > 0) lv->step = cl->revrs ? -fill : fill;
-                    if (!lv || at->loop_clip != c || tick < at->last_tick) {
+                    /* Shift: the sample's start falls `rot` ticks into the clip,
+                     * its end wrapping round before it — the voice starts again
+                     * there, as at the loop's top */
+                    double Lp = (double)lc->length * tps;
+                    double rot = Lp > 0 ? au_wrap((double)cl->rot, Lp) : 0.0;
+                    int at_rot = rot > 0 && at->last_tick >= 0 && (double)at->last_tick < rot && (double)tick >= rot;
+                    if (!lv || at->loop_clip != c || tick < at->last_tick || at_rot) {
                         /* Nudge: the sample starts that much later (+) or earlier
                          * (-) against the bar. */
-                        double off = fill > 0 ? (played * fpt - (double)cl->nudge_ms * 44.1) * fill
-                                              : played * fpt * ratio - (double)cl->nudge_ms * (double)cl->smp->rate / 1000.0;
+                        /* the Shift's point is a loop top of its own: the voice
+                         * starts at the block the tick falls in, as at the
+                         * wrap (where `played` is 0); anywhere else, the
+                         * rotated time */
+                        double pr = at_rot ? (double)tick - rot : rot > 0 ? au_wrap(played - rot, Lp) : played;
+                        double off = fill > 0 ? (pr * fpt - (double)cl->nudge_ms * 44.1) * fill
+                                              : pr * fpt * ratio - (double)cl->nudge_ms * (double)cl->smp->rate / 1000.0;
                         au_loop_start(inst, t, c, off, fill);
                     }
                 }
@@ -948,6 +963,9 @@ static int sp_track_audio(sp_ctx_t *cx) {
             au_trans_calc(cl);
         } else if (!strcmp(w, "nudge")) {
             cl->nudge_ms = (int16_t)clamp_i(v, -500, 500);
+        } else if (!strcmp(w, "rot")) {
+            /* Shift: ticks, taken mod the clip's length where it plays */
+            cl->rot = (uint32_t)(v < 0 ? 0 : v);
         } else if (!strcmp(w, "len_bars")) {
             au_clip_set_bars(inst, tidx, c, clamp_i(v, 1, 64));
             return 1;
@@ -1238,12 +1256,12 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
             double w = (double)rs + (double)lc->length * tps * au_fpt_s(cl, s);
             ve = w >= (double)re ? re : (uint32_t)(w + 0.5);
         }
-        return snprintf(out, out_len, "%d %d %d %d %d %d %u %u %d %d %u %u %d %d %d %d %d %d %d %u %d %u %d %d %u|%s",
+        return snprintf(out, out_len, "%d %d %d %d %d %d %u %u %d %d %u %u %d %d %d %d %d %d %d %u %d %u %d %d %u %u|%s",
                         cl->state, cl->err, cl->mode, cl->even, cl->nslices, cl->jump,
                         (unsigned)rs, (unsigned)ve, cl->pitch, cl->gain_db,
                         s ? (unsigned)s->frames : 0u, s ? (unsigned)s->rate : 0u, s ? s->ch : 0,
                         cl->revrs, cl->nudge_ms, cl->jmpq, au_count(cl), cl->detune, cl->sync, (unsigned)reach, cl->bpm10,
-                        (unsigned)(s ? au_hit_count(s, rs, re, cl->sens) : 0), cl->sens, cl->trans, (unsigned)cl->slen, cl->name);
+                        (unsigned)(s ? au_hit_count(s, rs, re, cl->sens) : 0), cl->sens, cl->trans, (unsigned)cl->slen, (unsigned)cl->rot, cl->name);
     }
     if (!strncmp(k, "sl_", 3)) {                  /* sl_C_L: "a b pinned pitch gain rev play atk dec detune" */
         const char *q = k + 3;
@@ -1383,9 +1401,11 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
                 au_range(cl, s, &rs, &re);
                 double P = au_span_ticks(cl, s, rs, re), fpt = 0;
                 au_warper_t *X = (au_warper_t *)inst->au_warper;
-                if (X && X->trk[t]) fpt = X->trk[t]->cmd.fpt;
+                double L = 0;
+                if (X && X->trk[t]) { fpt = X->trk[t]->cmd.fpt; L = X->trk[t]->cmd.L; }
                 if (P > 0 && fpt > 0 && re > rs) {
-                    double x = (at->w.tick - (double)cl->nudge_ms * 44.1 / fpt) * (double)(re - rs) / P;
+                    double wt = L > 0 ? au_wrap(at->w.tick - au_wrap((double)cl->rot, L), L) : at->w.tick;
+                    double x = (wt - (double)cl->nudge_ms * 44.1 / fpt) * (double)(re - rs) / P;
                     if (x >= 0 && x < (double)(re - rs))
                         return snprintf(out, out_len, "1 %u -1", cl->revrs ? re - 1 - (uint32_t)x : rs + (uint32_t)x);
                 }

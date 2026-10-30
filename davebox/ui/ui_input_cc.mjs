@@ -5101,8 +5101,11 @@ function _onCC_knobs(d1, d2) {
         if (isAudioTrack(S.activeTrack) && !S.auKnobRemap) {
             const _t = S.activeTrack;
             if (bank === 0 && (knobIdx === 0 || !audioSliceMode(_t))) {
-                if (knobIdx === 0) {
-                    const _st = knobStep(knobIdx, d2, KNOB_DELIB);
+                /* K1 Mode; a Loop clip's K2 Strch (x2 · /2) and K3 Shift (a
+                 * step a detent) or, alt, Nudge (5 ms, Shift 1) */
+                if (knobIdx <= 2) {
+                    const _nudge = knobIdx === 2 && (S.knobAlt & 4);
+                    const _st = _nudge ? ccKnobDelta(d2, knobIdx) : knobStep(knobIdx, d2, knobIdx === 2 ? KNOB_PICK : KNOB_DELIB);
                     if (_st && auClipBankKnob(_t, knobIdx, _st)) S.screenDirty = true;
                 }
                 return;

@@ -1339,7 +1339,7 @@ or SAMPLE's Gain, Pitch, Detune and Revrs.
 | Bank | Knobs |
 |---|---|
 | **CLIP**, Slice mode | **Mode** · **Strch** · **Shift** (alt **Nudge**) · **Res** (alt **Zoom**) · **Crop›** · **InQnt** · **Dir** (alt **Revrs**) · **>Seq›** (touch K8, click) lays one step per chop, each at its place at the sample's **Tempo**, so the clip plays the sample back as it was — now as chops you can rearrange. A clip whose length you never set grows to hold all of it (a coarser resolution past 256 steps); a length you set stays, and the chops past it wait beyond the loop's end |
-| **CLIP**, Loop mode | **Mode** (K1) only — the sound is SAMPLE's |
+| **CLIP**, Loop mode | **Mode** · **Strch** · **Shift** (alt **Nudge**), as a sequence's in audio. **Strch** x2 doubles the clip's Length and halves the sample's Tempo — the loop plays at half speed across twice the bars; /2 the reverse. **Shift** moves the audio a step later or earlier inside the clip, wrapping round (the pads follow it). **Nudge** moves the sample against the bar, 5 ms a detent (**Shift**: 1). The sound is SAMPLE's |
 | **PAD MODE** (Slice mode) | **Layout**: **4 Rows** or **16 Pads**, how the chops sit on the pads |
 | **LIVE ARP** | As on a melodic track, but **Step** replaces Oct: each repeat moves one chop up (or down), up to 15 |
 | **NOTE FX** (Slice mode) | As on a drum track — nothing that changes a pitch. **Quant** lives here only |

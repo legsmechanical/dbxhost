@@ -1375,17 +1375,60 @@ step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP /
     ticks(2);
     assert(sentLike(/_step_/).length === 0, 'a step press edited a Loop clip: ' + JSON.stringify(sentLike(/_step_/)));
     const cells = A.auLoopBankCells(4);
-    assert(cells.map((c) => c.label).join() === 'Mode,,,,,,,', 'loop bank: ' + cells.map((c) => c.label));
-    /* every knob but Mode does nothing here: the sound is SAMPLE's (Josh,
-     * 2026-10-29: Loop CLIP bank = "Mode alone" — "that's fine") */
+    assert(cells.map((c) => c.label).join() === 'Mode,Strch,Shift,,,,,', 'loop bank: ' + cells.map((c) => c.label));
+    /* Mode · Strch · Shift (alt Nudge): the clip's transforms in audio (Josh,
+     * 2026-10-30: "an audio-based analog of what they do with midi. thinking
+     * of stretch and shift mainly"); the rest do nothing, the sound is SAMPLE's */
     S.bankCardLatched = true;
     reset();
-    for (const k of [72, 73, 74, 75, 76, 77, 78]) { S.knobAccelLast[k - 71] = 0; for (let i = 0; i < 30; i++) cc(k, 1); }   /* K1 is Mode */
-    assert(!sentLike(/_au_/).length, 'a Loop CLIP knob other than Mode acts: ' + JSON.stringify(sentLike(/_au_/)));
-    S.knobTouched = 2;
+    for (const k of [74, 75, 76, 77, 78]) { S.knobAccelLast[k - 71] = 0; for (let i = 0; i < 30; i++) cc(k, 1); }
+    assert(!sentLike(/_au_|_loop_set/).length, 'a Loop CLIP knob past K3 acts: ' + JSON.stringify(sentLike(/_au_|_loop_set/)));
+    {
+        const ac = S.trackActiveClip[4] | 0, len0 = S.clipLength[4][ac] | 0 || 16, tps = S.clipTPS[4][ac] || 24;
+        const bpm0 = A.auInfo(4, ac).bpm10 || 1200;
+        /* K2 Strch x2: twice the Length, half the Tempo — half speed over twice the bars */
+        reset();
+        for (let i = 0; i < 40 && !sent('t4_c' + ac + '_loop_set').length; i++) cc(72, 1);
+        assert(sent('t4_c' + ac + '_loop_set').join() === String(len0 * 2) && sent('t4_au_set_bpm').join() === ac + ' ' + Math.round(bpm0 / 2),
+               'Strch x2 is not Length x2 + Tempo /2: ' + JSON.stringify(sentLike(/_au_|_loop_set/)));
+        S.knobTouched = 1;
+        assert(A.auLoopBankCells(4)[1].text === 'x2', 'Strch does not read x2 while turned: ' + A.auLoopBankCells(4)[1].text);
+        S.knobTouched = -1;
+        assert(A.auLoopBankCells(4)[1].text === '1x', 'Strch does not rest at 1x');
+        /* ...and /2 back */
+        reset();
+        for (let i = 0; i < 40 && !sent('t4_c' + ac + '_loop_set').length; i++) cc(72, 127);
+        assert(sent('t4_c' + ac + '_loop_set').join() === String(len0) && S.clipLength[4][ac] === len0, 'Strch /2 did not come back: ' + JSON.stringify(sentLike(/_loop_set/)));
+        /* K3 Shift: a step a detent run, wrapping round the clip */
+        reset();
+        for (let i = 0; i < 30 && !sent('t4_au_set_rot').length; i++) cc(73, 1);
+        assert(sent('t4_au_set_rot').join() === ac + ' ' + tps && A.auLoopBankCells(4)[2].text === '+1',
+               'Shift is not a step: ' + JSON.stringify(sent('t4_au_set_rot')) + ' ' + A.auLoopBankCells(4)[2].text);
+        reset();
+        for (let i = 0; i < 30 && sent('t4_au_set_rot').length < 2; i++) cc(73, 127);
+        assert(sent('t4_au_set_rot').join() === ac + ' 0,' + ac + ' ' + (len0 * tps - tps), 'Shift does not wrap below 0: ' + JSON.stringify(sent('t4_au_set_rot')));
+        for (let i = 0; i < 30 && A.auInfo(4, ac).rot; i++) cc(73, 1);   /* back to 0 */
+        /* the pads follow it: a quarter-clip Shift puts the clip's first
+         * quarter of audio on pads 9-16 */
+        {
+            const i0 = A.auInfo(4, ac), L = len0 * tps;
+            const plain = A.auLoopMarks(i0, 4, ac), rot = A.auLoopMarks(Object.assign({}, i0, { rot: L / 4 }), 4, ac);
+            assert(JSON.stringify(rot[8]) === JSON.stringify(plain[0]) && JSON.stringify(rot[0]) === JSON.stringify(plain[24]),
+                   'the Loop pads do not rotate with the Shift');
+        }
+        /* alt: Nudge (touch K3 + click, as a sequence's Shift / Nudge) */
+        S.knobAlt |= 4;
+        assert(A.auLoopBankCells(4)[2].label === 'Nudge', 'the alt is not Nudge: ' + A.auLoopBankCells(4)[2].label);
+        reset();
+        S.knobAccelLast[2] = 0; cc(73, 1);
+        assert(sent('t4_au_set_nudge').length === 1 && !sent('t4_au_set_rot').length, 'alt K3 is not Nudge: ' + JSON.stringify(sentLike(/_au_/)));
+        S.knobAccelLast[2] = 0; cc(73, 127);
+        S.knobAlt &= ~4;
+    }
+    S.knobTouched = 3;
     const lh = JSON.stringify(render.bankPageHints(0));
     S.knobTouched = -1;
-    assert(lh.indexOf('CLK') < 0, 'a Loop CLIP knob offers a click: ' + lh);
+    assert(lh.indexOf('CLK') < 0, 'a blank Loop CLIP knob offers a click: ' + lh);
     S.bankCardLatched = false;
 
     /* ...they are on SAMPLE: page 1's K8 Revrs (Nudge left SAMPLE, Josh,

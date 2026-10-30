@@ -62,7 +62,9 @@ export function auLoopMarks(i, t = -1, c = 0) {
     if (t >= 0 && i.state === 2) { a = i.rstart | 0; n = Math.max(AU_LOOP_SECTIONS, Math.round(auLenTicks(t, c, i) * auFpt(i))); }
     for (let k = 0; k < AU_LOOP_SECTIONS; k++)
         out.push([a + Math.floor(n * k / AU_LOOP_SECTIONS), a + Math.floor(n * (k + 1) / AU_LOOP_SECTIONS)]);
-    return out;
+    /* Shift: section k of the clip's time holds the audio rotated into it */
+    const L = t >= 0 ? auLenTicks(t, c, i) : 0, r = L > 0 ? Math.round(((i.rot | 0) % L) / L * AU_LOOP_SECTIONS) % AU_LOOP_SECTIONS : 0;
+    return r ? out.map((_, k) => out[(k - r + AU_LOOP_SECTIONS) % AU_LOOP_SECTIONS]) : out;
 }
 /* Chop k is note k (Josh, 2026-10-28: "might as well do 128"), 32 to a pad
  * page; external MIDI reaches chop 1 at note 36 (ui.js). */
@@ -129,6 +131,8 @@ export function auParseInfo(raw) {
         trans: head.length > 23 ? head[23] : 0,
         /* Slice's Length from Start, ticks at the Tempo (0 = to the end) */
         slen: head.length > 24 ? head[24] : 0,
+        /* Loop's Shift: the audio rotated this many ticks later inside the clip */
+        rot: head.length > 25 ? head[25] : 0,
         name: bar >= 0 ? String(raw).slice(bar + 1) : '',
     };
 }
@@ -640,6 +644,30 @@ export function auClipBankKnob(t, k, steps) {
         if (S.auPanel) S.auPanel.page = 0;
         S.pendingPadNoteMapRecompute = true;
         S.ledsDirtyAudio = true;
+    } else if (!auIsLoop(i) || i.state !== 2) {
+        return false;
+    } else if (k === 1) {
+        /* Strch (Josh, 2026-10-30: "an audio-based analog of what they do with
+         * midi"): x2 doubles the Length and halves the Tempo — the loop plays
+         * at half speed across twice the bars — /2 the reverse; the Shift
+         * keeps its place */
+        const tps = S.clipTPS[t][c] || 24, ls = S.clipLoopStart[t][c] | 0;
+        const len = S.clipLength[t][c] | 0 || 16, up = steps > 0;
+        const nl = up ? len * 2 : len / 2, nb = up ? Math.round((i.bpm10 || 1200) / 2) : (i.bpm10 || 1200) * 2;
+        if (nl !== Math.floor(nl) || nl < 1 || ls + nl > 256 || nb < AU_BPM10_MIN || nb > AU_BPM10_MAX) return false;
+        S.clipLength[t][c] = nl;
+        S.clipLengthManuallySet[t][c] = true;
+        host_module_set_param('t' + t + '_c' + c + '_loop_set', String((ls << 16) | nl));
+        loc.bpm10 = nb; auSet(t, c, 'bpm', nb);
+        if (i.rot) { loc.rot = up ? i.rot * 2 : Math.floor(i.rot / 2); auSet(t, c, 'rot', loc.rot); }
+        S.auStrchDir = { t, dir: up ? 1 : -1 };
+    } else if (k === 2) {
+        if (S.knobAlt & 4) return auNudgeStep(t, c, steps);
+        /* Shift: the audio a step later (or earlier) inside the clip, wrapping
+         * round, as Shift moves a sequence's notes */
+        const tps = S.clipTPS[t][c] || 24, L = (S.clipLength[t][c] | 0 || 16) * tps;
+        const v = (((i.rot | 0) % L + (steps > 0 ? tps : -tps)) % L + L) % L;
+        loc.rot = v; auSet(t, c, 'rot', v);
     } else return false;
     S.auInfo[t][c] = loc;
     S.auStartsRev = (S.auStartsRev | 0) + 1;
@@ -816,14 +844,27 @@ export function auPanelKnob(ed, k, steps) {
  * on a Loop clip's CLIP bank: its knobs are Nudge and Mode, not the melodic
  * clip's Res / Shift / Dir. */
 export function knobAltOnTrack(t, padMode, bank, k) {
-    if (bank === 0 && isAudioTrack(t) && auIsLoop(auInfo(t, auClipOf(t)))) return null;
+    if (bank === 0 && isAudioTrack(t) && auIsLoop(auInfo(t, auClipOf(t)))) return k === 2 ? ['Shift', 'Nudge'] : null;
     return knobAltFor(padMode, bank, k);
 }
 
-/* ---- the CLIP bank in Loop mode: Mode (K1) alone (Josh, 2026-10-29: "that's
- * fine") — Sync, Nudge and the rest of the sound are SAMPLE's ---- */
+/* ---- the CLIP bank in Loop mode: Mode · Strch · Shift (alt Nudge) — the
+ * clip's own transforms in audio (Josh, 2026-10-30: "an audio-based analog of
+ * what they do with midi. thinking of stretch and shift mainly"); the sound is
+ * SAMPLE's ---- */
 export function auLoopBankCells(t) {
-    return [auModeCell(t), BLANK, BLANK, BLANK, BLANK, BLANK, BLANK, BLANK];
+    const c = auClipOf(t), i = auInfo(t, c), has = i.state === 2;
+    const live = (x) => (has ? x : dash(x));
+    const strch = { kind: 'valsq', label: 'Strch', name: 'Stretch: x2 · /2 (Length and Tempo)',
+                    text: (S.auStrchDir && S.auStrchDir.t === t && S.knobTouched === 1) ? (S.auStrchDir.dir > 0 ? 'x2' : '/2') : '1x' };
+    const shift = (S.knobAlt & 4) ? nudgeCell(i)
+        : { kind: 'valsq', label: 'Shift', name: 'Shift (steps, wrapping in the clip)', text: '+' + auShiftSteps(t, c, i) };
+    return [auModeCell(t), live(strch), live(shift), BLANK, BLANK, BLANK, BLANK, BLANK];
+}
+/* Loop's Shift in the clip's steps, 0 .. its length - 1 */
+function auShiftSteps(t, c, i) {
+    const tps = S.clipTPS[t][c] || 24, L = (S.clipLength[t][c] | 0 || 16) * tps;
+    return Math.round(((i.rot | 0) % L) / tps);
 }
 /* The alt bit a physical knob flips and reads. On a Slice clip's CLIP bank Res
  * (and its Zoom) sits on K4, Mode having taken K1; it keeps Res's own bit 0,

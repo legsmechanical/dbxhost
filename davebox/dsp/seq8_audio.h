@@ -123,6 +123,8 @@ typedef struct {
     int8_t       gain_db;            /* -40..+12 dB */
     uint8_t      revrs;              /* Loop: the sample plays backwards */
     int16_t      nudge_ms;           /* Loop: the sample's start against the bar, -500..+500 ms */
+    uint32_t     rot;                /* Loop: Shift — the clip's audio rotated this many ticks later inside
+                                      * the loop, wrapping (taken mod the clip's length where it plays) */
     uint8_t      jmpq;               /* retired (jump quantize): as `jump` */
     uint8_t      sync;               /* Loop: AU_SYNC_* */
     uint16_t     bpm10;              /* the sample's own Tempo x10 (AU_BPM10_*); 0 = not known yet (guessed when it loads) */

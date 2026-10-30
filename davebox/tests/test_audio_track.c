@@ -758,6 +758,65 @@ int main(void) {
     hx_set_param(h, "t4_au_set_nudge", "5 0");
     hx_render(h, 4);
 
+    /* ---- Loop Shift (Josh, 2026-10-30: Stretch and Shift "an audio-based
+     * analog of what they do with midi"): the clip's audio rotated 300 ticks
+     * later inside its 384 — the transport starts 84 ticks into the sample
+     * (its tail wrapped round), and the sample's first frame falls on tick
+     * 300, to the frame: in Pitch (the voice starts again there) and in
+     * Vintage (the pieces rotate) ---- */
+    {
+        int mode;
+        for (mode = 0; mode < 2; mode++) {
+            double fpt = 44100.0 * 60.0 / ((tr->pfx.cached_bpm > 0 ? tr->pfx.cached_bpm : 120.0) * PPQN);
+            double at0 = 300.0 * fpt;                     /* the frame tick 300 falls on */
+            int B = (int)((at0 + 200.0) / 128.0), want, got, f0;
+            HX_ASSERT(tr->clips[5].length * (tr->clips[5].ticks_per_step ? tr->clips[5].ticks_per_step : TICKS_PER_STEP) == 384,
+                      "the Shift test expects a one-bar clip");
+            hx_set_param(h, "t4_au_set_sync", mode ? "5 1" : "5 2");
+            hx_set_param(h, "t4_au_set_rot", "5 300");
+            HX_ASSERT(inst->au_clip[4][5].rot == 300, "set_rot did not set the Shift");
+            hx_stub_feed_reset();
+            hx_set_param(h, "transport", "play");
+            for (i = 0; i < 20 && hx_stub_feed(4, NULL, NULL) == 0; i++) hx_render(h, 1);
+            blk = hx_stub_feed_last(4);                   /* block 0: frames 0..127 */
+            /* the frame tick 0 fell on, read off the sample's 84th tick: Pitch
+             * starts on the block, Vintage on the clock's first tick */
+            f0 = 127 - (int)((double)blk[127 * 2] - 84.0 * fpt + 0.5);
+            HX_ASSERT(blk[127 * 2] > 0 && f0 >= -4 && f0 <= 160,
+                      mode ? "Vintage: Shift 300 did not start the transport 84 ticks into the sample"
+                           : "Pitch: Shift 300 did not start the transport 84 ticks into the sample");
+            /* ...then silence past the sample's end, until the sample starts
+             * again from its first frame on tick 300 (within a block: the
+             * transport's own start is block-aligned) and plays on at speed */
+            for (n = 1; n < B - 4; n++) hx_render(h, 1);
+            {
+                int found = -1, k, b;
+                const int16_t *q;
+                for (b = B - 4; b <= B + 4 && found < 0; b++) {
+                    hx_render(h, 1);
+                    q = hx_stub_feed_last(4);
+                    for (k = 1; k < 128; k++) if (q[(k - 1) * 2] == 0 && q[k * 2] > 0 && q[k * 2] < 4) { found = b * 128 + k; break; }
+                    if (found >= 0) {
+                        int kk = k + 40 < 128 ? k + 40 : 127;
+                        HX_ASSERT(q[kk * 2] - q[k * 2] == kk - k, mode ? "Vintage: after the Shift point the sample did not play on at speed"
+                                                                         : "Pitch: after the Shift point the sample did not play on at speed");
+                    }
+                }
+                want = (int)(f0 + at0 + 0.5);
+                got = found;
+                /* Vintage's pieces sit on the clock, to the frame; Pitch starts
+                 * on the block the tick falls in, as at the loop's top */
+                HX_ASSERT(got >= 0 && got >= want - (mode ? 8 : 160) && got <= want + (mode ? 8 : 160),
+                          mode ? "Vintage: Shift 300 did not put the sample's start at tick 300"
+                               : "Pitch: Shift 300 did not put the sample's start at tick 300");
+            }
+            hx_set_param(h, "transport", "stop");
+            hx_set_param(h, "t4_au_set_rot", "5 0");
+            hx_render(h, 4);
+        }
+        hx_set_param(h, "t4_au_set_sync", "5 2");
+    }
+
     /* ---- Sync Pitch: the tempo sets the speed, so Detune gives way — the
      * loop stays at its Tempo (Warp transposes instead: test_audio_warp) ---- */
     hx_set_param(h, "t4_au_set_detune", "5 30");
@@ -1361,13 +1420,14 @@ int main(void) {
     hx_set_param(h, "t4_au_set_sync", "7 1");
     hx_set_param(h, "t4_au_set_bpm", "7 2400");
     hx_set_param(h, "t4_au_layout", "1");
+    hx_set_param(h, "t4_au_set_rot", "7 12");                 /* Shift */
     /* the arp's octaves load by track type: Audio's Step keeps 15, a pitched
      * track's 15 (only a hand edit or an old build could write it) loads as 4 */
     hx_set_param(h, "t4_tarp_octaves", "15");
     HX_ASSERT(inst->tracks[6].pad_mode != PAD_MODE_AUDIO, "t6 is still Audio");
     inst->tracks[6].tarp.octaves = 15;
     n = hx_get_param(h, "state_full", blob, (int)sizeof blob);
-    HX_ASSERT(strstr(blob, " 1 2400 50|ramp2.wav\"") && strstr(blob, "\"t4_aul\":1"), "the state does not keep Sync Vintage, the Tempo or the Layout");
+    HX_ASSERT(strstr(blob, " 1 2400 50 12|ramp2.wav\"") && strstr(blob, "\"t4_aul\":1"), "the state does not keep Sync Vintage, the Tempo, the Shift or the Layout");
     HX_ASSERT(n > 0 && (size_t)n < sizeof blob - 1, "state_full failed");
     HX_ASSERT(strstr(blob, "\"t4_pm\":3") && strstr(blob, "\"t4c0_au3\":\"1 8 1 16 0 0 0 0 0 0 0 -17 0 ") && strstr(blob, "|mono48.wav\""),
               "the state does not carry the Audio track and clip A");
@@ -1383,8 +1443,8 @@ int main(void) {
     snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
     seq8_load_state(inst);
     HX_ASSERT(inst->tracks[4].pad_mode == PAD_MODE_AUDIO, "the reload lost the Audio track");
-    HX_ASSERT(inst->au_clip[4][7].sync == AU_SYNC_VINTAGE && inst->au_clip[4][7].bpm10 == 2400 && inst->au_trk[4].layout == 1,
-              "the reload lost Sync Vintage, the Tempo or the Layout");
+    HX_ASSERT(inst->au_clip[4][7].sync == AU_SYNC_VINTAGE && inst->au_clip[4][7].bpm10 == 2400 && inst->au_clip[4][7].rot == 12 &&
+              inst->au_trk[4].layout == 1, "the reload lost Sync Vintage, the Tempo, the Shift or the Layout");
     HX_ASSERT(inst->tracks[4].tarp.octaves == 15 && inst->tracks[6].tarp.octaves == 4,
               "the arp's octaves did not load by track type");
     HX_ASSERT(inst->au_clip[4][0].mode == AU_MODE_SLICE && inst->au_clip[4][0].sl[1].gain_db == -6 &&

@@ -496,7 +496,8 @@ export const S = {
     /* AUDIO (ui_audio.mjs): per track per clip, the DSP's tN_au_info_C parsed. */
     auInfo: Array.from({ length: 8 }, () => new Array(16).fill(null)),
     auSelSlice: new Array(8).fill(0),  /* the slice SLICE n edits: the last pad tapped */
-    auSrc: new Array(8).fill('sample'),  /* the sound bank follows the last editor entered: 'sample' | 'slices' */
+    auSrc: new Array(8).fill('sample'),  /* the editor entered last: 'sample' | 'slices' (SLICES' pages read it) */
+    auStrchDir: null,                    /* a Loop clip's Strch turned: { t, dir } — the cell reads x2 / /2 while K2 is in hand */
     auPage: new Array(8).fill(0),      /* the pad page of chops showing: 0..3, 32 chops a page */
     auLayout: new Array(8).fill(0),    /* PAD MODE Layout: 0 4 Rows (8 a row), 1 16 Pads (left 4x4, right 4x4) */
     auStartsRev: 0,          /* bumped when slice starts may have moved */
