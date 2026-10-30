@@ -41,8 +41,10 @@
 #define AU_SYNC_VINTAGE    1            /* cut every tick, each piece on its place at the sample's Tempo (au_sync_block) */
 #define AU_SYNC_PITCH      2            /* the sample retuned (varispeed) to the tempo */
 #define AU_SYNC_MAX        AU_SYNC_PITCH
-#define AU_BPM10_MIN       200          /* a sample's own Tempo, x10: 20.0 .. */
-#define AU_BPM10_MAX       3000         /* .. 300.0 BPM */
+#define AU_BPM10_MIN       1            /* a sample's own Tempo, x10: 0.1 .. */
+#define AU_BPM10_MAX       9999         /* .. 999.9 BPM (Josh, 2026-10-30: "999.9 max and .1 minimum" —
+                                         * it was the project's 20..300, which refused Strch x2 on a loop
+                                         * over 150 BPM; the Tempo says how many bars the audio spans) */
 #define AU_SENS_DEFAULT    50           /* Transient chops: hit sensitivity, 0..100 */
 #define AU_BARS_MAX        64           /* a sample's length in bars at its Tempo, for the guess: 1..64 */
 #define AU_GAP             16           /* frames: the least a slice can be */

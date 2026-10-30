@@ -45,7 +45,7 @@ const AU_SYNC_VALS = [1, 2, 0];
 const AU_SYNC_SQ = ['Vint', 'Ptch', 'Warp'];
 export function auSyncIdx(i) { const k = AU_SYNC_VALS.indexOf(i.sync | 0); return k < 0 ? 2 : k; }
 /* The sample's own Tempo, BPM (0 until it is known), and its bounds x10 */
-export const AU_BPM10_MIN = 200, AU_BPM10_MAX = 3000;
+export const AU_BPM10_MIN = 1, AU_BPM10_MAX = 9999;   /* 0.1 .. 999.9 BPM, as the engine's */
 export function auBpm(i) { return (i.bpm10 | 0) / 10; }
 /* Frames of the sample per tick at its Tempo (120 until known): the ticks,
  * steps and bars everything on screen is measured in */

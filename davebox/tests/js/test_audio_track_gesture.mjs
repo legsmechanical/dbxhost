@@ -1657,6 +1657,16 @@ step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP /
         reset();
         for (let i = 0; i < 40 && !sent('t4_c' + ac + '_loop_set').length; i++) cc(72, 127);
         assert(sent('t4_c' + ac + '_loop_set').join() === String(len0) && S.clipLength[4][ac] === len0, 'Strch /2 did not come back: ' + JSON.stringify(sentLike(/_loop_set/)));
+        /* x2 on a loop over 150 BPM: its Tempo may reach 999.9 (Josh, 2026-10-30:
+         * "999.9 max and .1 minimum"; at the project's 300 cap it refused) */
+        {
+            const i0 = A.auInfo(4, ac);
+            S.auInfo[4][ac] = Object.assign({}, i0, { bpm10: 1600 });
+            reset();
+            for (let i = 0; i < 40 && !sent('t4_c' + ac + '_loop_set').length; i++) cc(72, 1);
+            assert(sent('t4_au_set_bpm').join() === ac + ' 3200', 'Strch x2 refused a 160 BPM loop: ' + JSON.stringify(sentLike(/_bpm|_loop_set/)));
+            S.clipLength[4][ac] = len0; S.auInfo[4][ac] = i0;
+        }
         /* /2 on an odd Length halves down, as MIDI's does (it refused) */
         S.clipLength[4][ac] = 23;
         reset();
