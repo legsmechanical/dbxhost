@@ -1330,6 +1330,14 @@ int main(void) {
         hx_get_param(h, "t4_au_info_7", b, sizeof b);
         sscanf(b, "%*d %*d %*d %*d %*d %*d %*u %*u %*d %*d %*u %*u %*d %*d %*d %*d %*d %*d %*d %u", &got);
         HX_ASSERT(got + 1 >= (uint32_t)one && got <= (uint32_t)one + 1, "reach is not one step of the sample at its Tempo");
+        {
+            /* ...and the end the screen shows is where it stops: Start + its
+             * length at the Tempo, not the file's end (the clip reads on past it) */
+            uint32_t irs = 0, ire = 0;
+            sscanf(b, "%*d %*d %*d %*d %*d %*d %u %u", &irs, &ire);
+            HX_ASSERT(ire - irs + 1 >= (uint32_t)one && ire - irs <= (uint32_t)one + 1 && ire < ac->smp->frames,
+                      "a Loop clip's info end is not Start + its length");
+        }
         lc->length = 256;                                       /* the clip outlasts it: all of it */
         au_range(ac, ac->smp, &rs, &re);
         hx_get_param(h, "t4_au_info_7", b, sizeof b);
