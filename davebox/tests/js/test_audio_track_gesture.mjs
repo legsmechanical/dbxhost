@@ -982,6 +982,10 @@ step('⭐⭐ SLICES › Convert to kit (Josh, 2026-10-30: "convert to kit. creat
         assert(files[KIT], 'no kit written: ' + Object.keys(files).join());
         assert((S.actionPopupLines || [])[0] === 'KIT SAVED', 'notice: ' + JSON.stringify(S.actionPopupLines));
         const kit = JSON.parse(files[KIT]);
+        /* numbers as Ableton writes them: floats keep ".0", the note / choke /
+         * transpose fields are integers */
+        assert(/"Volume": 0\.0\b/.test(files[KIT]) && /"receivingNote": 36,/.test(files[KIT]) &&
+               /"Voice_Transpose": 0,/.test(files[KIT]) && !/"Volume": 0,/.test(files[KIT]), 'numbers not as Ableton writes them');
         assert(kit.kind === 'instrumentRack' && kit.name === 'My Song 5A', 'the rack: ' + kit.kind + ' ' + kit.name);
         /* a native preset as Move writes one: schema 1.8.3, the drum rack with its
          * reverb return, then the rack-wide saturator */

@@ -163,7 +163,14 @@ export function kitJson(name, uri, cells) {
                              rackSaturator()],
                    mixer: { pan: 0.0, 'solo-cue': false, speakerOn: true, volume: 0.0, sends: [] } }],
     };
-    return JSON.stringify(kit, null, 1);
+    return asAbleton(JSON.stringify(kit, null, 1));
+}
+
+/* Numbers as Ableton writes them: a whole number keeps its ".0" (JSON.stringify
+ * drops it) except in the fields Move writes as integers (its own saves). */
+const INT_KEYS = new Set(['color', 'receivingNote', 'sendingNote', 'chokeGroup', 'Voice_Transpose', 'lockId', 'lockSeal']);
+export function asAbleton(text) {
+    return text.replace(/"([^"]+)": (-?\d+)(?=,?\n|,?$)/g, (m, k, v) => (INT_KEYS.has(k) ? m : '"' + k + '": ' + v + '.0'));
 }
 
 const exists = (p) => { const [st] = os.stat(p); return !!st; };
