@@ -1441,6 +1441,10 @@ step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP /
     assert(sentLike(/_step_/).length === 0, 'a step press edited a Loop clip: ' + JSON.stringify(sentLike(/_step_/)));
     const cells = A.auLoopBankCells(4);
     assert(cells.map((c) => c.label).join() === 'Mode,Strch,Shift,,,,,', 'loop bank: ' + cells.map((c) => c.label));
+    /* the header reads the name while the knob is in hand: it must fit (a long
+     * one ran off the screen on the device) */
+    assert(cells.every((c) => !c.name || c.name.length <= 16) && cells[1].name === 'Stretch' && cells[2].name === 'Shift',
+           'names too long for the header: ' + cells.map((c) => c.name));
     /* Mode · Strch · Shift (alt Nudge): the clip's transforms in audio (Josh,
      * 2026-10-30: "an audio-based analog of what they do with midi. thinking
      * of stretch and shift mainly"); the rest do nothing, the sound is SAMPLE's */

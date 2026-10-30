@@ -863,10 +863,12 @@ export function knobAltOnTrack(t, padMode, bank, k) {
 export function auLoopBankCells(t) {
     const c = auClipOf(t), i = auInfo(t, c), has = i.state === 2;
     const live = (x) => (has ? x : dash(x));
-    const strch = { kind: 'valsq', label: 'Strch', name: 'Stretch: x2 · /2 (Length and Tempo)',
+    /* the header reads `name` while the knob is in hand: short, as the MIDI
+     * bank's (a long one ran off the screen: found on the device) */
+    const strch = { kind: 'valsq', label: 'Strch', name: 'Stretch',
                     text: (S.auStrchDir && S.auStrchDir.t === t && S.knobTouched === 1) ? (S.auStrchDir.dir > 0 ? 'x2' : '/2') : '1x' };
     const shift = (S.knobAlt & 4) ? nudgeCell(i)
-        : { kind: 'valsq', label: 'Shift', name: 'Shift (steps, wrapping in the clip)', text: '+' + auShiftSteps(t, c, i) };
+        : { kind: 'valsq', label: 'Shift', name: 'Shift', text: '+' + auShiftSteps(t, c, i) };
     return [auModeCell(t), live(strch), live(shift), BLANK, BLANK, BLANK, BLANK, BLANK];
 }
 /* Loop's Shift in the clip's steps, 0 .. its length - 1 */
