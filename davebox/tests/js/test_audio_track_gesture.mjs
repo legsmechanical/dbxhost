@@ -1010,7 +1010,7 @@ step('⭐⭐ SLICES › Convert to kit (Josh, 2026-10-30: "convert to kit. creat
         assert(c0.Voice_PlaybackStart === 0 && c0.Voice_PlaybackLength === 0.125, 'chop 1 region: ' + c0.Voice_PlaybackStart + ' ' + c0.Voice_PlaybackLength);
         assert(c1.Voice_PlaybackStart === 0.125 && c1.Voice_Transpose === 2 && c1.Voice_Detune === 7 &&
                c1.Voice_Envelope_Mode === 'A-S-R' && c1.Voice_Envelope_Attack === 0.01 &&
-               c1.Voice_Envelope_Hold === 0 && c1.Voice_Envelope_Decay === 0.25, 'chop 2: ' + JSON.stringify(c1));
+               c1.Voice_Envelope_Hold === 0 && Math.abs(c1.Voice_Envelope_Decay - 0.25 * 0.9 * 83.87 / 20) < 1e-9, 'chop 2: ' + JSON.stringify(c1));
         assert(Math.abs(c2.Voice_Gain - Math.pow(10, -3 / 20)) < 1e-9 && c2.Voice_Envelope_Hold === 60 &&
                c2.Voice_Envelope_Mode === 'A-H-D', 'chop 3: ' + JSON.stringify(c2));
         assert(c0.Voice_VelocityToVolume === 0, 'velocity reaches a slice\'s level');

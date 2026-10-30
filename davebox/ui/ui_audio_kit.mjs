@@ -25,6 +25,7 @@
  * the slice's (SAMPLE's are the base, as ALL SLICES sets them):
  *   Pitch -> Voice_Transpose · Detune -> Voice_Detune · Gain -> Voice_Gain
  *   Attk -> Voice_Envelope_Attack · Decay -> Hold 0 + Voice_Envelope_Decay
+ *   (scaled to sound as long: DECAY_SCALE)
  *   (Full: Hold "inf", it plays to the chop's end) · Play One -> Trigger
  *   (A-H-D), Gate and Loop -> Gate (A-S-R; a cell has no loop over its region)
  * Revrs has no place in a drum cell and is dropped (the shared copy's cost).
@@ -49,6 +50,16 @@ export const KIT_SAMPLES  = '/data/UserData/UserLibrary/Samples/dAVEBOx/Exported
 export const KIT_PADS = 32;
 const KIT_MIN = 16;
 const HOLD_INF = 60.0;                 /* a drum cell's "inf" hold */
+/* Decay: a slice fades LINEARLY to silence over its Decay (seq8_audio.c: the
+ * envelope falls by 1/dec a frame); a drum cell decays EXPONENTIALLY, 83.87 dB
+ * over its Decay (DR32's reconstruction of Move's, dr32_voice.h
+ * DR32_DECAY_DB_PER_TIME). The same milliseconds sound much shorter on a pad
+ * (Josh, 2026-10-30: "converted kit decays are shorter on the kits than on the
+ * slices. even though they claim the same ms"). They meet at -20 dB, where a
+ * tail stops being heard: the line is there at 0.9 of its time, the curve at
+ * 20 / 83.87 of its — so a pad's Decay is the slice's x 0.9 x 83.87 / 20. */
+export const DECAY_SCALE = 0.9 * 83.87 / 20;
+const DECAY_MAX = 60.0;
 const ATTACK_MIN = 1e-4;
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -100,7 +111,7 @@ export function kitCell(ch, sl, clip, frames) {
     p.Voice_Detune    = clamp((clip.detune | 0) + (sl.detune | 0), -50, 50);
     p.Voice_Gain      = Math.pow(10, clamp((clip.gain | 0) + (sl.gain | 0), -70, 24) / 20);
     p.Voice_Envelope_Attack = Math.max(ATTACK_MIN, (sl.atk | 0) / 1000);
-    if (sl.dec | 0) { p.Voice_Envelope_Hold = 0.0; p.Voice_Envelope_Decay = (sl.dec | 0) / 1000; }
+    if (sl.dec | 0) { p.Voice_Envelope_Hold = 0.0; p.Voice_Envelope_Decay = Math.min(DECAY_MAX, (sl.dec | 0) / 1000 * DECAY_SCALE); }
     else            { p.Voice_Envelope_Hold = HOLD_INF; }
     p.Voice_Envelope_Mode = (sl.play | 0) === 0 ? 'A-H-D' : 'A-S-R';
     p.Voice_VelocityToVolume = 0.0;

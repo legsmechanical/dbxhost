@@ -1332,7 +1332,9 @@ its chop of it; the preset goes to **Track Presets → dBx-slice**, named after 
 project and clip (`mngk 5A`). Move's own drum tracks load it and play the first 16 pads
 (all 32 stay in the preset); an instrument that loads Move drum racks with more pads,
 such as DR32, gets them all. Each pad takes its slice's **Pitch**, **Detune**, **Gain**,
-**Attk** and **Decay** (with the clip's own Pitch, Detune and Gain under them) and
+**Attk** and **Decay** (a pad's decay curves where a slice's fades straight, so its
+Decay reads about 3.8 times the slice's to sound as long; with the clip's own Pitch,
+Detune and Gain under them) and
 **Play** (One plays the pad through; Gate and Loop hold it as long as you do).
 **Revrs** has no place in a drum pad and is left out. The pads cut each other off, as
 the chops do.
