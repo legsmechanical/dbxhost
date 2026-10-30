@@ -745,6 +745,7 @@ step('⭐⭐ the knob rings follow the Audio screens and the AUDIO bank: lit whe
 step('⭐⭐ SLICES (Josh, 2026-10-29): page 1 the chops — K1 / K3 the slice, a click the chop types; page 2 slice n, Shift every slice; a Loop clip has none', () => {
     S.activeBank = 0; S.bankCardLatched = false;
     GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(2);
+    assert(!P.bankPadMapForMode(C.PAD_MODE_AUDIO, 4)[2].cells[2], 'a Loop clip\'s map shows a SLICES pad (found on the device)');
     mapPad(2, 2);
     assert(!S.auEditor, 'the SLICES door opened on a Loop clip');
     GET['t4_au_info_0'] = INFO(1, 8, 0); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(2);

@@ -296,6 +296,7 @@ export function bankPadMapForMode(padMode, t) {
     const acts = BANK_MAP_ACTIONS[fam];
     for (const a in acts) {
         const p = acts[a];
+        if (a === 'slices' && !audioClipIsSlice(t)) continue;   /* a Loop clip has no slices: no SLICES pad */
         if (!cols[p[0]].cells[p[1]]) cols[p[0]].cells[p[1]] = { bank: null, action: a,
             name: (fam === 'audio' ? BANK_MAP_ACTION_NAMES_AUDIO : BANK_MAP_ACTION_NAMES)[a] };
     }
