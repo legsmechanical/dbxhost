@@ -159,6 +159,134 @@ step('⭐⭐ Back while recording cancels everything: takes removed, nothing con
     assert(sent('t4_convert_to_audio').length === 0, 'it converted anyway');
 });
 
+/* ---- FREEZE TRACK (Josh, 2026-10-30: "freeze track (convert track to
+ * resampled audio)" · "freeze track should have pre or post effect option.
+ * pre leaves the track insert effects in place after. post mutes the them
+ * after" · "freeze track lives on track config") ---- */
+const snd = await import('../../ui/ui_sound.mjs');
+const ENG = {};                                    /* slot 4's FX: fx1 and fx3 loaded */
+globalThis.shadow_get_param = (slot, key) => {
+    if (slot === 4 && /synth/.test(key)) return 'braids';
+    if (slot === 4 && /^fx[13]:module$|^fx[13]_module$/.test(key)) return 'cloudseed';
+    return ENG[slot + ' ' + key] !== undefined ? ENG[slot + ' ' + key] : '';
+};
+const shadowSets = [];
+globalThis.shadow_set_param = (slot, key, val) => { shadowSets.push([slot, String(key), String(val)]); return 1; };
+const sndCC = (d1, d2) => snd.soundOnCC(d1, d2, (v) => (v < 64 ? v : v - 128));
+/* TRACK CONFIG's Freeze track row, clicked */
+function freezeRow(t) {
+    snd.soundExit();
+    S.activeTrack = t;
+    snd.soundEnter(t, t);
+    for (let i = 0; i < 3; i++) snd.soundTick();
+    snd.soundShowMenu();
+    for (let i = 0; i < 2; i++) snd.soundTick();
+    let found = false;
+    for (let guard = 0; guard < 60 && !found; guard++) {
+        const row = snd.soundPickRowSpecForTest();
+        if (row && row.key === 'freeze') { found = true; break; }
+        const st = snd.soundPickStateForTest().row;
+        sndCC(14, 1); snd.soundTick();
+        if (snd.soundPickStateForTest().row === st) break;
+    }
+    assert(found, 'no Freeze track row on track ' + (t + 1) + "'s TRACK CONFIG");
+    assert(sndCC(3, 127), 'the click was not the menu\'s'); sndCC(3, 0);
+}
+const answer = (right) => { if (right) jog(1); click(); };   /* the question opens on its left button */
+const cancelTakes = () => {
+    S.resampleState = 3; ticks(1);
+    cc(HC.MoveBack, 127); cc(HC.MoveBack, 0);
+    S.resampleState = 5; ticks(2);
+    S.resampleState = 0; reset(); ticks(2);
+};
+
+step('⭐⭐ TRACK CONFIG › Freeze track asks FREEZE TRACK 5, Pre or Post, on screen; Back changes nothing', () => {
+    S.trackPadMode[4] = 0; GET['t4_pad_mode'] = '0'; S.resampleState = 0;
+    S.actionPopupLines = []; S.actionPopupEndTick = 0;    /* the last step's notice, not this screen's */
+    reset();
+    freezeRow(4);
+    assert(S.confirmConvertToDrum && S.confirmConvertAudio === 'freeze' && S.confirmConvertTrack === 4, 'no freeze question');
+    assert(S.auFreeze && S.auFreeze.choice, 'a Schwung instrument has no Pre / Post');
+    const f = frame(() => render.drawUI());
+    const own = frame(() => D.drawConvertToDrumConfirm());
+    assert(inked(own) && f.every((v, i) => v === own[i]), 'the question is not what the screen shows');
+    cc(HC.MoveBack, 127); cc(HC.MoveBack, 0);
+    ticks(3);
+    assert(!S.confirmConvertToDrum && !S.auConvert, 'Back did not close it');
+    assert(sent('resample_clip').length === 0, 'Back recorded');
+});
+
+step('⭐⭐ Pre (the first button): every clip before its FX; the FX are left on', () => {
+    reset();
+    freezeRow(4);
+    answer(false);
+    ticks(2);
+    assert(S.auConvert && S.auConvert.list.length === 2 && !S.auConvert.bypass, 'takes: ' + JSON.stringify(S.auConvert));
+    assert(sent('resample_clip').join() === '4 0 1 0 0 2 |' + P0, 'Pre take: ' + sent('resample_clip'));
+    cancelTakes();
+});
+
+step('⭐⭐ Post: every clip through its FX (Dry); once converted, the loaded inserts are bypassed — kept, not removed', () => {
+    reset();
+    freezeRow(4);
+    answer(true);
+    ticks(2);
+    assert(sent('resample_clip').join() === '4 0 1 0 0 1 |' + P0, 'Post take: ' + sent('resample_clip'));
+    globalThis.__stubStat = { [P0]: { mode: 0o100644, size: 9 }, [P2]: { mode: 0o100644, size: 9 } };
+    S.resampleState = 3; ticks(1); S.resampleState = 4; ticks(2);
+    S.resampleState = 0; ticks(1); S.resampleState = 3; ticks(1); S.resampleState = 4; ticks(2);
+    S.resampleState = 0;
+    assert(!S.auConvert, 'the takes did not end');
+    shadowSets.length = 0;
+    ticks(10);
+    assert(sent('t4_au_pick').length === 2, 'picks: ' + sent('t4_au_pick'));
+    const byp = shadowSets.filter((x) => x[0] === 4 && /bypassed/.test(x[1]) && x[2] === '1').map((x) => x[1]).sort();
+    assert(byp.join() === 'fx1:bypassed,fx3:bypassed', 'bypassed: ' + JSON.stringify(shadowSets.filter((x) => /bypass/.test(x[1]))));
+    globalThis.__stubStat = null;
+    S.trackPadMode[4] = 0; GET['t4_pad_mode'] = '0';
+});
+
+step('⭐⭐ a MIDI track that follows another freezes THAT instrument (Pre: before its FX)', () => {
+    S.trackRoute[5] = 2; S.trackMidiTo[5] = 5; S.clipNonEmpty[5][0] = true;
+    GET['t5_au_dir'] = DIR; GET['resample_bars_t5_c0'] = '1';
+    reset();
+    freezeRow(5);
+    answer(false);
+    ticks(2);
+    assert(sent('resample_clip').join() === '5 0 1 0 0 2 |' + DIR + '/My Song 6A 1bar 120bpm.wav',
+           'follower take: ' + sent('resample_clip'));
+    cancelTakes();
+});
+
+step('⭐ a Move instrument has no Pre / Post (as heard): Yes / No, No first', () => {
+    S.trackRoute[5] = 1; S.trackMidiTo[5] = 0;
+    reset();
+    freezeRow(5);
+    assert(S.confirmConvertAudio === 'freeze' && !S.auFreeze.choice, 'a Move track was offered Pre / Post');
+    answer(false);
+    ticks(2);
+    assert(!S.auConvert && sent('resample_clip').length === 0, 'No recorded');
+});
+
+step('⭐ external MIDI, an empty instrument slot, a muted track, playing: no question, a notice', () => {
+    S.trackRoute[5] = 2; S.trackMidiTo[5] = 0;
+    reset(); freezeRow(5);
+    assert(!S.confirmConvertToDrum && S.actionPopupLines[0] === 'NOTHING TO FREEZE' && /MIDI out/.test(S.actionPopupLines[1]),
+           'external: ' + JSON.stringify(S.actionPopupLines));
+    S.trackRoute[5] = 0;                       /* slot 5 holds no synth in this rig */
+    reset(); freezeRow(5);
+    assert(!S.confirmConvertToDrum && /no instrument/.test(S.actionPopupLines[1]), 'empty slot: ' + JSON.stringify(S.actionPopupLines));
+    S.trackMuted[4] = true;
+    reset(); freezeRow(4);
+    assert(!S.confirmConvertToDrum && /muted/.test(S.actionPopupLines[1]), 'muted: ' + JSON.stringify(S.actionPopupLines));
+    S.trackMuted[4] = false;
+    S.playing = true;
+    reset(); freezeRow(4);
+    assert(!S.confirmConvertToDrum && S.actionPopupLines[0] === 'STOP TO FREEZE', 'playing: ' + JSON.stringify(S.actionPopupLines));
+    S.playing = false;
+    snd.soundExit();
+});
+
 if (failed) { console.error('FAIL: test_audio_convert_gesture'); process.exit(1); }
 console.log('PASS: test_audio_convert_gesture');
 }

@@ -62,6 +62,7 @@ import { autoBankClick, autoBankJog, autoBankBack, autoBankDeleteClick, autoBank
          autoLanePinJump, autoLanePinClear, laneHome } from './ui_automation_bank.mjs';
 import { automationParamEdit, automationCaptureCommit, automationCaptureCommitAfterNotes,
          automationCaptureClear, automationClearBanksQueued, automationShiftTap } from './ui_automation.mjs';
+import { freezeTrackAnswer } from './ui_audio_convert.mjs';
 import { sessStripTargets, engineLoadedModule, engineModuleName, slotIndex,
          moveBusForChannel, moveBusPrefix } from './ui_engine.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
@@ -678,6 +679,8 @@ function modalDialogUp() {
             if (_kind === 'resample') {
                 if (_yes) S.pendingAuConvertStart = _ct;
                 else S.pendingTrackConvert = { t: _ct, toAudio: true };
+            } else if (_kind === 'freeze') {
+                freezeTrackAnswer(_yes);
             } else if (_kind === 'audio') {
                 if (_yes) S.pendingTrackConvert = { t: _ct, toAudio: true };
             } else if (_kind === 'leave') {

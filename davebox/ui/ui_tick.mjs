@@ -197,8 +197,9 @@ function audioScreensClose(t) {
  * before this) and makes every clip a fresh Audio clip; the track keeps (or
  * takes) its own Schwung slot with no instrument, its FX kept — an Audio track
  * on a Move track takes a Schwung slot (v1 default, Josh 2026-10-27). `takes`:
- * the clips' recordings (ui_audio_convert), loaded one per tick. */
-function convertTrackToAudio(t, takes) {
+ * the clips' recordings (ui_audio_convert), loaded one per tick; `bypassFx`
+ * (Freeze Post) bypasses the insert FX the recordings already hold. */
+function convertTrackToAudio(t, takes, bypassFx) {
     stepRecExit();
     host_module_set_param('t' + t + '_convert_to_audio', '1');
     applyInstrChoice(t, INSTR_NONE);
@@ -208,7 +209,7 @@ function convertTrackToAudio(t, takes) {
     if (trackHasAnyData(t)) syncClipsFromDsp();
     else host_module_get_param('t' + t + '_pad_mode');
     auReadTrack(t);
-    if (takes) auConvertApply(t, takes);
+    if (takes) auConvertApply(t, takes, bypassFx);
     soundTrackTypeChanged(t);               /* an open menu loses MIDI FX, Mode, Transpose */
     /* a bank the Audio walk does not have goes back to CLIP */
     if (bankListForMode(PAD_MODE_AUDIO, t).indexOf(S.trackActiveBank[t]) < 0) S.trackActiveBank[t] = 0;
@@ -568,7 +569,7 @@ export function _tickImpl() {
     if (S.pendingTrackConvert) {
         const _pc = S.pendingTrackConvert;
         S.pendingTrackConvert = null;
-        if (_pc.toAudio) convertTrackToAudio(_pc.t, _pc.takes);
+        if (_pc.toAudio) convertTrackToAudio(_pc.t, _pc.takes, _pc.bypassFx);
         else convertTrackType(_pc.t, _pc.toDrum);
     }
 

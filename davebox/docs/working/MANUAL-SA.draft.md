@@ -616,6 +616,8 @@ velocity) and **resets the sequencer effects** (NOTE FX, HARMONY, DELAY, SEQ ARP
   own track effects don't carry over). The recordings go straight into the project.
   **Back** while it records cancels the whole change. **No** converts without
   recording (the notes are cleared). **Back** on the question changes nothing.
+  [Freeze track](#166-recording-audio) does the same from TRACK CONFIG, and lets you
+  record the effects too.
 - **Leaving Audio** (choosing an instrument) clears every clip's slice steps and
   lets go of the samples, asking first; the files stay in the project until you
   [purge them](#75-audio).
@@ -2171,7 +2173,7 @@ the rows it has:
 | **Buses** | Voice groups, on instruments that can split their voices — see [Presets, LFOs and buses](#145-presets-lfos-and-buses) |
 | **Presets** | Save and load the whole chain |
 | **LFOs** | Two LFOs for the track |
-| **Mode, Transpose, VelIn, AftTch, Looper, Grv Amt, Export to MIDI, Parallel** — and **Grv Timing, Grv Velocity, Grv Random** when the project uses a loaded groove | The track's own settings — see [Track settings](#174-track-settings) |
+| **Mode, Transpose, VelIn, AftTch, Looper, Grv Amt, Export to MIDI, Freeze track, Parallel** — and **Grv Timing, Grv Velocity, Grv Random** when the project uses a loaded groove | The track's own settings — see [Track settings](#174-track-settings) |
 
 On the Instmt/Dest and effect rows, a hint band at the foot of the menu says what
 the click and the Shift chord do.
@@ -2765,6 +2767,27 @@ shows `-`, and Warm-up starts on, because a Move instrument sounds a few
 milliseconds late. The file is named like an exported clip (`mngk 3B 2bar 120bpm.wav`).
 A muted track, or one that plays MIDI out, has nothing to record.
 
+Audio tracks resample like any other. A Loop clip plays its sample with no steps, so
+its length is the clip's own; a Slice clip's is its sequence's.
+
+**Freeze a track** to turn it into audio: open its **TRACK CONFIG** menu, turn to
+**Freeze track** and click. With the transport stopped, every clip with notes is
+recorded on its own, one after another, and the track becomes an
+[Audio track](#75-audio) with each clip a **Loop** clip playing its recording. The
+notes and the instrument go. It asks first:
+
+- **Pre** (the default) records the instrument before the track's effects, which stay
+  on the Audio track and keep sounding — you can still change them.
+- **Post** records through the effects, then bypasses them so they don't apply twice.
+  They stay in place, so you can switch them back on.
+- A Move instrument is recorded as you hear it, so there is no choice: **Yes** or
+  **No**.
+- **Back** changes nothing; **Back** while it records cancels the whole freeze.
+
+Drum tracks freeze too, and so does a MIDI track that plays another track's
+instrument (it records that instrument with this track's notes). A track that plays
+MIDI out, has no instrument, is muted or has no notes has nothing to freeze.
+
 After any resample, the clips you had armed are armed again, so Play carries on
 from where you were.
 
@@ -2940,6 +2963,7 @@ are hidden, so the list is shorter on a MIDI track or a Conductor.
 | Grv Amt | Global, 0–100 % in 5 % steps | How much of the project's [groove](#the-groove) this track takes. Global follows Project Settings; 0 % plays straight |
 | Grv Timing, Grv Velocity, Grv Random | Global, 0–100 % in 5 % steps | Shown for a loaded groove: this track's own setting for each, or Global to follow Project Settings |
 | Export to MIDI | (click) | Saves the clip you are on, as it plays, as a MIDI file — see [Export a clip as a MIDI file](#165-export-a-clip-as-a-midi-file) |
+| Freeze track | (click) | Records every clip and turns the track into an Audio track, effects Pre or Post — see [Recording audio](#166-recording-audio). Not on an Audio track or the Conductor |
 | Parallel | On, Off | Schwung tracks with an instrument: whether it may render on another core — set per instrument, device-wide |
 
 Where the track's notes go is the **Instmt/Dest** row near the top of the same menu, just under **MIDI FX** —

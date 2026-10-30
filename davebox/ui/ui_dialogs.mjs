@@ -144,6 +144,14 @@ export function drawConvertToDrumConfirm() {
     if (S.confirmConvertAudio === 'resample') {
         dlgHeader('TO AUDIO');
         dlgLines(['Resample the clips?', 'Yes: each plays its audio', 'No: the notes are cleared']);
+    } else if (S.confirmConvertAudio === 'freeze') {
+        dlgHeader('FREEZE TRACK ' + (S.confirmConvertTrack + 1));
+        if (S.auFreeze && S.auFreeze.choice) {
+            dlgLines(['Every clip to audio.', 'Record the effects', 'Pre or Post?']);
+            drawYesNoRow(S.confirmConvertToDrumSel, ['Pre', 'Post']);
+            return;
+        }
+        dlgLines(['Every clip to audio,', 'as heard. Notes and', 'instrument go.']);
     } else if (S.confirmConvertAudio === 'audio') {
         dlgHeader('TO AUDIO');
         dlgLines(['Warning:', 'Existing notes will be lost.', 'Proceed?']);
@@ -2354,6 +2362,7 @@ export function requestTrackModeChange(t, target) {
         if (auConvertOffered(t, hasSynth)) {
             S.confirmConvertToDrum = true; S.confirmConvertToDrumSel = 0;
             S.confirmConvertTrack = t; S.confirmConvertAudio = 'resample';
+            S.auConvertSrc = -1;
             return;
         }
         let hasData = false;

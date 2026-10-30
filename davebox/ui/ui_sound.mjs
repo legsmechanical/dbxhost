@@ -80,6 +80,7 @@ import { MORPH_KIND, MORPH_LABEL, morphSnapshotSlots, morphPrepare, morphReady, 
          morphLegValid, morphInvalidate, morphInvalidateBuses } from './ui_snapmorph.mjs';
 import { requestTrackModeChange, showMenuInfo } from './ui_dialogs.mjs';
 import { requestClipMidiExport } from './ui_midi_export.mjs';
+import { freezeTrackRequest } from './ui_audio_convert.mjs';
 import {
     openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
     closeTextEntry,
@@ -602,6 +603,14 @@ function configRows(t) {
     if (GS.trackPadMode[t] !== PMC && GS.trackPadMode[t] !== PMA) {
         rows.push({ key: 'midi_export', label: 'Export to MIDI',
             action: () => requestClipMidiExport(t),
+            get: () => 0, fmt: () => '...' });
+    }
+    /* Freeze track (Josh, 2026-10-30: "freeze track lives on track config"):
+     * every clip resampled into an Audio clip (ui_audio_convert). Not on an
+     * Audio track (it is audio already) or a Conductor (no sound). */
+    if (GS.trackPadMode[t] !== PMC && GS.trackPadMode[t] !== PMA) {
+        rows.push({ key: 'freeze', label: 'Freeze track',
+            action: () => freezeTrackRequest(t, GS.trackRoute[t] === 0 && !!engineLoadedModule(slotIndex(t), 'synth')),
             get: () => 0, fmt: () => '...' });
     }
     return rows;
@@ -3521,7 +3530,7 @@ const TRACK_MENU_GROUPS = [
     ['Transpose', 'VelIn', 'AftTch'],
     ['Looper'],
     ['Grv Amt', 'Grv Timing', 'Grv Velocity', 'Grv Random'],
-    ['Export to MIDI'],
+    ['Export to MIDI', 'Freeze track'],      /* the one-shot actions on the clips */
     ['Parallel'],
 ];
 const TRACK_MENU_DROPPED = { muted: true, soloed: true };

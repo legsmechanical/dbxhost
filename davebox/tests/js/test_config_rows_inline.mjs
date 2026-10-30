@@ -101,7 +101,7 @@ step('setup: three Schwung tracks and a MIDI one', () => {
     GS.playing = false;
 });
 
-step('⭐ the config rows sit in their ruled groups at the foot (Josh, 2026-09-24; Layout moved to the PADMODE bank 2026-10-22): Mode | Transpose VelIn AftTch | Looper | Grv Amt | Export to MIDI | Parallel', () => {
+step('⭐ the config rows sit in their ruled groups at the foot (Josh, 2026-09-24; Layout moved to the PADMODE bank 2026-10-22): Mode | Transpose VelIn AftTch | Looper | Grv Amt | Export to MIDI Freeze track | Parallel', () => {
     snd.soundExit(); snd.soundEnter(0, 0); ticks(3); snd.soundShowMenu(); ticks(2);
     const k = kinds();
     const firstCfg = k.indexOf('cfg');
@@ -109,7 +109,7 @@ step('⭐ the config rows sit in their ruled groups at the foot (Josh, 2026-09-2
     assert(k[firstCfg - 1] === 'div', 'no rule above the config rows: ' + k.join(','));
     const st = snd.soundPickStateForTest();
     const tail = st.kinds.slice(firstCfg).map((x, i) => x === 'div' ? '---' : st.labels[firstCfg + i]).join('|');
-    assert(/^Mode\|---\|Transpose\|VelIn(\|AftTch)?\|---\|Looper\|---\|Grv Amt\|---\|Export to MIDI\|---\|Parallel$/.test(tail),
+    assert(/^Mode\|---\|Transpose\|VelIn(\|AftTch)?\|---\|Looper\|---\|Grv Amt\|---\|Export to MIDI\|Freeze track\|---\|Parallel$/.test(tail),
            'the foot is not in the ruled order: ' + tail);
     assert(!k.includes('config'), 'the CONFIG door is still there: ' + k.join(','));
     /* The doors it used to sit with are still above it, in their old order. */

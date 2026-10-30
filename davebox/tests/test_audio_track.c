@@ -294,6 +294,35 @@ int main(void) {
     HX_ASSERT(access(p, R_OK) == 0, "the sample was not copied into the project's samples/");
     HX_ASSERT(tr->clips[0].length == 16, "a Loop pick did not set a 1-bar clip");
 
+    /* ---- resample: a Loop clip has no notes and still plays, so it is as long
+     * as the clip; a take of it hears the sample fed to the track's slot ---- */
+    {
+        char b[16];
+        int kind, index;
+        HX_ASSERT(hx_get_param(h, "resample_bars_t4_c0", b, sizeof b) > 0 && atoi(b) == 1,
+                  "a 1-bar Loop clip has no resample length");
+        HX_ASSERT(hx_get_param(h, "resample_bars_0", b, sizeof b) > 0 && atoi(b) == 1,
+                  "a scene holding a Loop clip has no resample length");
+        HX_ASSERT(hx_get_param(h, "resample_bars_t4_c1", b, sizeof b) > 0 && atoi(b) == 0,
+                  "an Audio clip with no sample has a resample length");
+        int sync0 = inst->au_clip[4][0].sync, bpm0 = inst->au_clip[4][0].bpm10;
+        as_recorded(h, 4, 0);                /* Pitch: Warp's stretcher is not run in this file */
+        hx_stub_feed_reset();
+        hx_set_param(h, "resample_clip", "4 0 1 0 0 1 |/x/loop 5A.wav");
+        for (i = 0; i < 40 && inst->resample_state != RS_RECORDING; i++) hx_render(h, 1);
+        hx_stub_capture_src(&kind, &index);
+        HX_ASSERT(inst->resample_state == RS_RECORDING && kind == MOVE_CAPTURE_SLOT && index == tr->pfx.slot,
+                  "a Dry take of a Loop clip did not take the track's slot");
+        hx_render(h, 20);
+        HX_ASSERT(hx_stub_feed(tr->pfx.slot, NULL, &energy) > 0 && energy > 0,
+                  "the Loop clip fed nothing during its take");
+        hx_set_param(h, "transport", "stop");
+        hx_set_param(h, "resample_clear", "1");
+        hx_render(h, 4);
+        snprintf(b, sizeof b, "0 %d", sync0); hx_set_param(h, "t4_au_set_sync", b);
+        snprintf(b, sizeof b, "0 %d", bpm0);  hx_set_param(h, "t4_au_set_bpm", b);
+    }
+
     /* ---- Loop -> Slice on a clip with no steps: the chops (Even 16, a new
      * clip's) go onto the steps in order ---- */
     HX_ASSERT(inst->au_clip[4][0].even == 16, "a new clip did not start with Even 16");

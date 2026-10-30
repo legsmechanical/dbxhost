@@ -505,9 +505,12 @@ export const S = {
     auEditor: null,          /* WAVE: { t, c, mode wave|chop|lazy, chop: { kind even|transient|manual, orig }, A, B, cur, last, endHold, ask, pick } */
     auChooser: null,         /* the sample chooser (ui_audio_chooser.mjs) */
     pendingAudioChooser: null,    /* { t, c }: the tick opens the chooser (it lists a folder) */
-    confirmConvertAudio: false,   /* the convert confirm: false Drums, 'audio' -> Audio, 'resample' the resample offer, 'leave' Audio -> another */
+    confirmConvertAudio: false,   /* the convert confirm: false Drums, 'audio' -> Audio, 'resample' the resample offer, 'freeze' Freeze track, 'leave' Audio -> another */
     confirmConvertTarget: null,   /* 'leave': what the track becomes { pm, v } */
     pendingAuConvertStart: -1,    /* track whose clips the tick starts resampling (ui_audio_convert) */
+    auConvertSrc: -1,             /* Freeze's take source, from its answer (-1: the conversion works it out) */
+    auConvertBypass: false,       /* Freeze Post: bypass the track's insert FX once it has converted */
+    auFreeze: null,               /* Freeze's question: { t, choice (Pre / Post), hasSynth } */
     auConvert: null,              /* the conversion's takes in flight */
     auApply: null,                /* the takes being loaded into the converted clips, one per tick */
     trackVelOverride: new Array(8).fill(0),

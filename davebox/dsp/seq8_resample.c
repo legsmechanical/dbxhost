@@ -73,10 +73,11 @@ static int rs_clip_has_notes(const clip_t *cl) {
     return 0;
 }
 
-/* Fold one clip's loop span (master ticks) into the running LCM and max. */
-static void rs_fold(const clip_t *cl, uint32_t *lcm, uint32_t *longest, int *over) {
+/* Fold one clip's loop span (master ticks) into the running LCM and max.
+ * `sounds`: it plays without notes (an Audio track's Loop clip with a sample). */
+static void rs_fold(const clip_t *cl, int sounds, uint32_t *lcm, uint32_t *longest, int *over) {
     uint32_t span = (uint32_t)cl->length * (uint32_t)cl->ticks_per_step;
-    if (!span || !rs_clip_has_notes(cl)) return;
+    if (!span || !(sounds || rs_clip_has_notes(cl))) return;
     if (span > *longest) *longest = span;
     if (*over) return;
     uint64_t l = (uint64_t)*lcm / rs_gcd(*lcm, span) * span;
@@ -84,15 +85,20 @@ static void rs_fold(const clip_t *cl, uint32_t *lcm, uint32_t *longest, int *ove
     else *lcm = (uint32_t)l;
 }
 
-/* Fold track `tr`'s clip `c` (each drum lane, or the melodic clip). */
-static void rs_fold_track(const seq8_track_t *tr, int c, uint32_t *lcm, uint32_t *longest, int *over) {
+/* Fold track `t`'s clip `c` (each drum lane, or the melodic clip). An Audio
+ * track's Loop clip plays its sample whatever its steps hold: it counts once it
+ * has one; a Slice clip, like any, by its notes (the chops on its steps). */
+static void rs_fold_track(const seq8_instance_t *inst, int t, int c, uint32_t *lcm, uint32_t *longest, int *over) {
+    const seq8_track_t *tr = &inst->tracks[t];
     int l;
     if (tr->pad_mode == PAD_MODE_DRUM) {
         if (!tr->drum_clips[c]) return;
         for (l = 0; l < DRUM_LANES; l++)
-            rs_fold(&tr->drum_clips[c]->lanes[l].clip, lcm, longest, over);
+            rs_fold(&tr->drum_clips[c]->lanes[l].clip, 0, lcm, longest, over);
     } else {
-        rs_fold(&tr->clips[c], lcm, longest, over);
+        const au_clip_t *ac = &inst->au_clip[t][c];
+        int loop = tr->pad_mode == PAD_MODE_AUDIO && ac->mode == AU_MODE_LOOP && ac->name[0];
+        rs_fold(&tr->clips[c], loop, lcm, longest, over);
     }
 }
 
@@ -109,7 +115,7 @@ static int resample_scene_bars(const seq8_instance_t *inst, int c) {
     uint32_t lcm = RS_BAR_TICKS, longest = 0;
     int over = 0, t;
     if (c < 0 || c >= NUM_CLIPS) return 0;
-    for (t = 0; t < NUM_TRACKS; t++) rs_fold_track(&inst->tracks[t], c, &lcm, &longest, &over);
+    for (t = 0; t < NUM_TRACKS; t++) rs_fold_track(inst, t, c, &lcm, &longest, &over);
     return rs_bars(lcm, longest, over);
 }
 
@@ -119,7 +125,7 @@ static int resample_clip_bars(const seq8_instance_t *inst, int t, int c) {
     uint32_t lcm = RS_BAR_TICKS, longest = 0;
     int over = 0;
     if (t < 0 || t >= NUM_TRACKS || c < 0 || c >= NUM_CLIPS) return 0;
-    rs_fold_track(&inst->tracks[t], c, &lcm, &longest, &over);
+    rs_fold_track(inst, t, c, &lcm, &longest, &over);
     return rs_bars(lcm, longest, over);
 }
 
