@@ -1701,6 +1701,14 @@ int main(void) {
         hx_set_param(h, "scale_aware", "1"); hx_set_param(h, "key", "0"); hx_set_param(h, "scale", "0");
         conductor_set_offset_from_note(inst, 64);
         HX_ASSERT(au_cond_now(inst, 4) == 4, "conductor: scale-aware E in C major is not +4");
+        /* an off-scale Conductor note moves an Audio track IN KEY, as it moves a
+         * melodic responder by degrees: D# in C major lands on a C major note */
+        conductor_set_offset_from_note(inst, 63);
+        {
+            int st = au_cond_now(inst, 4), pc = ((st % 12) + 12) % 12;
+            HX_ASSERT(st != 3 && (pc == 0 || pc == 2 || pc == 4 || pc == 5 || pc == 7 || pc == 9 || pc == 11),
+                      "conductor: an off-scale note moved the Audio track out of key");
+        }
         /* not responding: nothing */
         cc->cond_resp[4] = 0;
         HX_ASSERT(au_cond_now(inst, 4) == 0, "conductor: a track that does not respond moved");
