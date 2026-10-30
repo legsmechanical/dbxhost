@@ -1302,11 +1302,11 @@ The Mode stays as it is: the chops serve both modes.
 | **Delete + click** | *Clear all chops?* — **Yes** leaves one slice, the whole chopped part |
 | **Back** | Back to SAMPLE |
 
-In SAMPLE and Manual, whatever you touched last — the cursor (jog), the start (K1)
-or the end (K3) — stays in the middle of the screen and the waveform scrolls around
-it; touching one jumps there. K2 zooms in every chop editor. The header reads
-**SLICE n/n** (in Loop mode, the sample's name; **EVEN** or **TRANSIENT** with the
-count while you chop); the start or end you're touching
+Zoomed in, whatever you touched last — the cursor (jog), a start (K1) or an end (K3)
+— stays in the middle of the screen and the waveform scrolls around it; touching one
+jumps there. K2 zooms in every editor. The header reads the sample's name on SAMPLE,
+**SLICE n/n** on SLICES and in Manual, and **EVEN** or **TRANSIENT** with the count
+while you chop; the start or end you're touching
 or turning lights up, and **ZOOM +** / **ZOOM −** shows between them while K2 zooms.
 
 **SLICES** is a Slice clip's second editor — the **SLICES** pad under CLIP on the bank
@@ -1333,7 +1333,7 @@ showing, and only that page.
 | Bank | Knobs |
 |---|---|
 | **CLIP**, Slice mode | As ALL LANES on a drum track: **Res** · **Strch** · **Shift** (alt **Nudge**) · **Mode** · **Crop›** · **InQnt** · **Dir** (alt **Revrs**) · **>Seq›** (touch K8, click) lays one step per chop, each at its place at the sample's **Tempo**, so the clip plays the sample back as it was — now as chops you can rearrange. A clip whose length you never set grows to hold all of it (a coarser resolution past 256 steps); a length you set stays, and the chops past it wait beyond the loop's end |
-| **CLIP**, Loop mode | **Mode** (K4) only — the sound is SAMPLE's (and the LOOP bank's) |
+| **CLIP**, Loop mode | **Mode** (K4) only — the sound is SAMPLE's (and the sound bank's) |
 | **PAD MODE** | **Layout**: **4 Rows** or **16 Pads**, how the chops sit on the pads |
 | **LIVE ARP** | As on a melodic track, but **Step** replaces Oct: each repeat moves one chop up (or down), up to 15 |
 | **NOTE FX** (Slice mode) | As on a drum track — nothing that changes a pitch. **Quant** lives here only |
