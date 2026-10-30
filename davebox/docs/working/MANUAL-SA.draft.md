@@ -2005,6 +2005,11 @@ last). The bottom-left pad is an octave down.
 - Between Conductor notes the responders return to zero, unless **Cond Lock** is on
   (below). A muted Conductor always holds them at zero.
 - Drum tracks never respond.
+- **Audio tracks** respond by playing their audio higher or lower — never by changing
+  which chop plays. The move is in semitones: with Scale Aware on, as far as the key's
+  root moves by the Conductor's degrees. On **Next** a chop takes the new pitch as it
+  starts and a Loop clip when it comes round; on **Now** what is sounding moves at once.
+  A Loop clip in **Pitch** sync keeps its tempo's speed, so it does not move.
 
 ## 12.3 The Conductor's banks
 

@@ -300,7 +300,7 @@ static void au_warp_block(seq8_instance_t *inst, int t, int c, double L, double 
     cmd.fpt = fpt;
     cmd.nud = (double)cl->nudge_ms * 44.1 / fpt;
     cmd.rot = L > 0 ? au_wrap((double)cl->rot, L) : 0.0;
-    cmd.pitch = au_tune(cl->pitch, cl->detune);
+    cmd.pitch = au_tune(cl->pitch + inst->au_trk[t].cond, cl->detune);   /* the Conductor's, held till the wrap on Next */
     cmd.drift = w->drift;
     cmd.anchor_tick = w->cur_anchor;
     cmd.anchor_gen = w->gen;
@@ -578,6 +578,17 @@ static void au_render(seq8_instance_t *inst, int frames) {
             au_warp_off(inst, t);
             continue;
         }
+        /* The Conductor on Now: a chop already sounding moves with it (the
+         * Loop voice is Tempo Pitch's, whose speed the tempo sets) */
+        if (au_cond_at_once(inst, t)) {
+            int cn = au_cond_now(inst, t);
+            for (i = 0; i < AU_VOICES; i++) {
+                au_voice_t *v = &at->v[i];
+                if (!v->active || v->mode_loop || v->cond == cn) continue;
+                v->step *= au_semi(cn - v->cond);
+                v->cond = (int8_t)cn;
+            }
+        }
         /* Loop mode: the voice follows the clip — starts with it, restarts on
          * each pass, stops with it. Lazy chop owns the track while it runs. */
         if (inst->au_lazy_track != t) {
@@ -605,7 +616,11 @@ static void au_render(seq8_instance_t *inst, int frames) {
                 }
                 double bpm = tr->pfx.cached_bpm > 0 ? tr->pfx.cached_bpm : 120.0;
                 double fpt = 44100.0 * 60.0 / (bpm * PPQN);
-                double ratio = au_tune(cl->pitch, cl->detune) * (double)cl->smp->rate / 44100.0;
+                /* the Conductor's semitones in force: at once on Now, else
+                 * taken when the loop comes round (or as it starts) */
+                if (au_cond_at_once(inst, t) || at->last_tick < 0 || tick < at->last_tick)
+                    at->cond = (int8_t)au_cond_now(inst, t);
+                double ratio = au_tune(cl->pitch + at->cond, cl->detune) * (double)cl->smp->rate / 44100.0;
                 /* Tempo Pitch: retuned so Start..End fills the clip (Josh,
                  * 2026-10-28: ""Pitch" which would retune the loop to fill x
                  * bars") — the clip's Pitch knob gives way to it */
@@ -685,6 +700,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
                 if (lv) au_voice_release(lv, 64);
                 if (at->sync_on) { au_release_chops(at); at->sync_on = 0; }
                 at->last_tick = -1;
+                at->cond = (int8_t)au_cond_now(inst, t);
                 /* stopped on a Warp clip: its downbeat is rendered ahead */
                 if (!inst->playing && cl->mode == AU_MODE_LOOP && cl->sync == AU_SYNC_WARP && cl->smp) {
                     uint32_t tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;

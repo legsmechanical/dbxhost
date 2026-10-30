@@ -27,6 +27,10 @@ the section into a versioned heading at release time.
 - **Audio: chop a Loop clip from SAMPLE.** A Loop clip's SAMPLE menu adds **Chop
   sample** (Even · Transient · Lazy · Manual): picking one makes it a Slice clip and
   opens that chop editor on SLICES.
+- **Audio tracks follow the Conductor.** A responding Audio track plays its audio up or
+  down by the Conductor's transposition (in semitones; with Scale Aware, the key's root
+  moved by its degrees), with the track's octave on top — its chops never change. Next
+  repitches each chop as it starts and a Loop clip when it comes round; Now at once.
 - **Audio: 16 Pads shows two banks.** In the 16 Pads layout the right 4×4 takes the
   colours of the partner track (1↔5, 2↔6, 3↔7, 4↔8); a Slice pad held down is white.
 - **Resample clip › In place** on an Audio clip: the recording replaces the clip,

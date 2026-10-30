@@ -1660,6 +1660,77 @@ int main(void) {
         hx_destroy(h);
     }
 
+    /* ---- THE CONDUCTOR repitches a responding Audio track (Josh, 2026-10-30:
+     * "conductor needs to work on audio tracks" · "repitch"): its chops play
+     * the Conductor's semitones up or down; its notes are never transposed ---- */
+    {
+        double base;
+        au_voice_t *v = NULL;
+        clip_t *cc;
+        int k;
+        h = rig(1); inst = (seq8_instance_t *)h->inst;
+        snprintf(p, sizeof p, "0|%s/src/mono48.wav", g_root); hx_set_param(h, "t4_au_pick", p);
+        HX_ASSERT(wait_loaded(h, 4, 0) == 2, "conductor: the pick");
+        base = (double)inst->au_clip[4][0].smp->rate / 44100.0;   /* the step at Pitch 0 */
+        hx_set_param(h, "t4_au_set_mode", "0 1");             /* Slice */
+        hx_set_param(h, "t6_convert_to_conduct", "1");
+        HX_ASSERT(inst->conductor_track == 6, "conductor: no Conductor");
+        cc = &inst->tracks[6].clips[inst->tracks[6].active_clip];
+        hx_set_param(h, "scale_aware", "0");
+        HX_ASSERT(au_cond_now(inst, 4) == 0, "conductor: a silent Conductor moved the Audio track");
+        conductor_set_offset_from_note(inst, eff_pad_key(inst) + 60 + 3);
+        HX_ASSERT(au_cond_now(inst, 4) == 3, "conductor: +3 semitones did not reach the Audio track");
+        cc->cond_oct[4] = 1;
+        HX_ASSERT(au_cond_now(inst, 4) == 15, "conductor: the track's octave is not added");
+        cc->cond_oct[4] = 0;
+        /* a chop takes it as it starts */
+        au_slice_on(inst, 4, 0, 1.0f);
+        for (k = 0; k < AU_VOICES; k++) if (inst->au_trk[4].v[k].active && !inst->au_trk[4].v[k].mode_loop) v = &inst->au_trk[4].v[k];
+        HX_ASSERT(v && fabs(v->step - base * pow(2.0, 3.0 / 12.0)) < 1e-9, "conductor: the chop did not start 3 semitones up");
+        /* Next (the default): what sounds keeps its pitch */
+        conductor_set_offset_from_note(inst, eff_pad_key(inst) + 60 + 5);
+        hx_render(h, 1);
+        HX_ASSERT(fabs(v->step - base * pow(2.0, 3.0 / 12.0)) < 1e-9, "conductor: Next moved a sounding chop");
+        /* Now: it moves at once */
+        cc->cond_when[4] = 1;
+        hx_render(h, 1);
+        HX_ASSERT(fabs(v->step - base * pow(2.0, 5.0 / 12.0)) < 1e-9, "conductor: Now did not move the sounding chop");
+        /* the chop's own note is untouched: the slice it plays stays the slice */
+        HX_ASSERT(v->slice == 0, "conductor: the chop changed");
+        /* scale-aware: C major, the Conductor on E = 2 degrees = 4 semitones */
+        hx_set_param(h, "scale_aware", "1"); hx_set_param(h, "key", "0"); hx_set_param(h, "scale", "0");
+        conductor_set_offset_from_note(inst, 64);
+        HX_ASSERT(au_cond_now(inst, 4) == 4, "conductor: scale-aware E in C major is not +4");
+        /* not responding: nothing */
+        cc->cond_resp[4] = 0;
+        HX_ASSERT(au_cond_now(inst, 4) == 0, "conductor: a track that does not respond moved");
+        cc->cond_resp[4] = 1;
+        conductor_clear_offset(inst);
+        HX_ASSERT(au_cond_now(inst, 4) == 0, "conductor: a cleared Conductor left the track moved");
+        /* a Loop clip (Vintage): on Next the semitones are taken when the loop
+         * comes round; on Now at once */
+        hx_set_param(h, "scale_aware", "0");
+        cc->cond_when[4] = 0;
+        hx_set_param(h, "t4_au_set_mode", "0 0");
+        hx_set_param(h, "t4_au_set_sync", "0 1");
+        conductor_set_offset_from_note(inst, eff_pad_key(inst) + 60 + 2);
+        hx_set_param(h, "t4_launch_clip", "0");
+        hx_set_param(h, "transport", "play");
+        hx_render(h, 10);
+        HX_ASSERT(inst->au_trk[4].cond == 2, "conductor: a Loop did not start at the Conductor's +2");
+        conductor_set_offset_from_note(inst, eff_pad_key(inst) + 60 + 5);
+        hx_render(h, 20);
+        HX_ASSERT(inst->au_trk[4].cond == 2, "conductor: Next moved a Loop mid-pass");
+        hx_render(h, 760);                                    /* past the 1-bar wrap */
+        HX_ASSERT(inst->au_trk[4].cond == 5, "conductor: Next did not take the Loop's new pitch at the wrap");
+        cc->cond_when[4] = 1;
+        conductor_set_offset_from_note(inst, eff_pad_key(inst) + 60 + 7);
+        hx_render(h, 1);
+        HX_ASSERT(inst->au_trk[4].cond == 7, "conductor: Now did not move a Loop at once");
+        hx_set_param(h, "transport", "stop");
+        hx_destroy(h);
+    }
+
     {
         char cmd[320];
         snprintf(cmd, sizeof cmd, "rm -rf '%s'", g_root);

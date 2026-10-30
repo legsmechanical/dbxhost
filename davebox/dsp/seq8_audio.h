@@ -157,6 +157,7 @@ typedef struct {
     uint32_t wait;           /* output frames of silence before it starts (Loop Nudge later; a slice's tick frame) */
     uint8_t  active, loop, mode_loop, slice;
     uint8_t  tail;           /* in the fade back from its end */
+    int8_t   cond;           /* the Conductor's semitones its step holds (au_cond_now) */
     uint8_t  gated;          /* GATE / LOOP: ends at note-off */
     uint8_t  starve;         /* streamed: 0..64, its level, down while a chunk is missing (64 at start) */
     uint32_t wlo, whi;       /* a Vintage piece: its clip's Start..End, which the streamer reads ahead
@@ -217,6 +218,7 @@ typedef struct {
     uint8_t    sync_live;    /* ...and the transport's first tick has played (a window before it means nothing) */
     uint8_t    layout;       /* PAD MODE Layout: 0 4 Rows, 1 16 Pads (the UI's; saved as t%d_aul) */
     uint8_t    mgain;        /* mute as a bus: 0..64, the output's level, ramping one step a frame */
+    int8_t     cond;         /* Loop: the Conductor's semitones in force (Next: taken at the wrap) */
 } au_track_t;
 
 /* Loader mailbox (set_param / render -> loader thread). */

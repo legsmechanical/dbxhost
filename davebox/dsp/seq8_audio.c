@@ -125,6 +125,35 @@ static double au_cents(int cents) {
 /* A clip's (or slice's) playback ratio from semitones and cents. */
 static double au_tune(int semis, int cents) { return au_semi(semis) * au_cents(cents); }
 
+/* THE CONDUCTOR on an Audio track (Josh, 2026-10-30: "conductor needs to work
+ * on audio tracks" · asked whether it repitches the clips or moves which chop
+ * plays: "repitch"). A responding Audio track plays its audio that many
+ * semitones up or down — its notes are chops, so they are never transposed.
+ * Scale-aware, the key's root moved by the Conductor's degrees, in semitones;
+ * else its semitones; each with the track's octave on top. 0 when it does not
+ * respond, or the Conductor is silent. */
+static int au_cond_now(seq8_instance_t *inst, int t) {
+    if (inst->conductor_track < 0 || !inst->conductor_sounding || t == inst->conductor_track) return 0;
+    seq8_track_t *cnd = &inst->tracks[inst->conductor_track];
+    const clip_t *cc = &cnd->clips[cnd->active_clip];
+    if (!cc->cond_resp[t]) return 0;
+    int oct = cc->cond_oct[t], v;
+    if (inst->scale_aware) {
+        int R = eff_pad_key(inst) + 60, n = (int)SCALE_SIZES[eff_pad_scale(inst)];
+        v = scale_transpose(inst, R, inst->conductor_off_deg + oct * n) - R;
+    } else {
+        v = inst->conductor_off_semi + oct * 12;
+    }
+    return clamp_i(v, -48, 48);
+}
+/* "Now": what sounds moves at once; "Next" (the default) waits for the next
+ * chop, or for a Loop clip the next time round. */
+static int au_cond_at_once(const seq8_instance_t *inst, int t) {
+    if (inst->conductor_track < 0) return 0;
+    const seq8_track_t *cnd = &inst->tracks[inst->conductor_track];
+    return cnd->clips[cnd->active_clip].cond_when[t] == 1;
+}
+
 /* x into [0, L). It runs on the audio thread, so it must end for ANY x: a
  * far-out x is reduced in one step (a subtraction loop at x ~ 1e19 never
  * moves, the step being below the double's precision there — an
@@ -2191,7 +2220,10 @@ static au_voice_t *au_range_on(seq8_instance_t *inst, int t, int c, int slice, u
     static const au_slice_t plain;
     const au_slice_t *sl = (sync || slice < 0 || slice >= AU_MAX_SLICES) ? &plain : &cl->sl[slice];
     uint8_t play = sl->play, rev = sync ? cl->revrs : sl->rev;
-    double ratio = au_tune(cl->pitch + sl->pitch, cl->detune + sl->detune) * (double)s->rate / 44100.0;
+    /* the Conductor: a chop takes it as it starts; a Vintage piece takes the
+     * loop's, held till the wrap on Next */
+    int cs = sync ? (int)at->cond : au_cond_now(inst, t);
+    double ratio = au_tune(cl->pitch + sl->pitch + cs, cl->detune + sl->detune) * (double)s->rate / 44100.0;
     float gain = au_db(cl->gain_db + sl->gain_db) * vgain;
     au_voice_t *v;
     /* A slice that carries straight on from the one sounding — the next chop
@@ -2231,6 +2263,7 @@ static au_voice_t *au_range_on(seq8_instance_t *inst, int t, int c, int slice, u
     v->loop = (play == AU_PLAY_LOOP);
     v->gated = (play != AU_PLAY_ONE);
     v->slice = (uint8_t)slice;
+    v->cond = (int8_t)cs;
     v->starve = 64;
     /* a Vintage piece is a moment of a loop that plays on through Start..End:
      * the streamer must read ahead through all of it, not to the piece's end
@@ -2301,7 +2334,8 @@ static void au_loop_start(seq8_instance_t *inst, int t, int c, double off, doubl
     memset(v, 0, sizeof *v);
     v->smp = s;
     v->lo = rs; v->hi = re;
-    v->step = rate > 0 ? rate : au_tune(cl->pitch, cl->detune) * (double)s->rate / 44100.0;
+    v->step = rate > 0 ? rate : au_tune(cl->pitch + at->cond, cl->detune) * (double)s->rate / 44100.0;
+    v->cond = rate > 0 ? 0 : at->cond;             /* Tempo Pitch: the tempo sets the speed, the Conductor gives way */
     if (off < 0) {                                 /* Nudge later: silence first */
         v->wait = (uint32_t)(-off / v->step + 0.5);
         off = 0;
