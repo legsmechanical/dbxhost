@@ -662,7 +662,38 @@ step('⭐⭐ WAVE K4 Gain · K5 Pitch · K6 Detune (the clip\'s), read out in th
     const bs = sent('t4_au_set_bpm');
     assert(bs.length === 1 && bs[0] === '0 850' && tx.indexOf('TEMPO 85 BPM') >= 0,
            'K7 Tempo: ' + JSON.stringify(bs) + ' ' + JSON.stringify(tx));
+    /* ...and with Shift a tenth (Josh, 2026-10-30: "fine adjust with shift
+     * modifier tempo (needs decimals) and length") */
+    S.shiftHeld = true;
+    tx = globalThis.__texts(() => { S.knobAccelLast[6] = 0; cc(77, 1); shown(); });
+    S.shiftHeld = false;
+    assert(sent('t4_au_set_bpm').pop() === '0 851' && tx.indexOf('TEMPO 85.1 BPM') >= 0,
+           'Shift + K7: ' + JSON.stringify(sent('t4_au_set_bpm')) + ' ' + JSON.stringify(tx));
     back();
+    /* K3 Length on a Loop clip: a bar a detent, a step with Shift */
+    GET['t4_au_info_0'] = INFO24(0, 8, 0, 8, 50, 0);   /* 84 BPM */
+    A.auMarkStale(4, 0); ticks(2);
+    S.clipLength[4][0] = 2; S.clipTPS[4][0] = 24; S.clipLoopStart[4][0] = 0;
+    mapPad(2, 3); ticks(2);
+    const led = S.auEditor;
+    reset();
+    S.knobAccelLast[2] = 0; cc(73, 1);
+    assert(sent('t4_c0_loop_set').join() === '18', 'K3: not a bar: ' + JSON.stringify(sent('t4_c0_loop_set')));
+    S.shiftHeld = true; S.knobAccelLast[2] = 0; cc(73, 127); S.shiftHeld = false;
+    assert(sent('t4_c0_loop_set').pop() === '17', 'Shift + K3: not a step: ' + JSON.stringify(sent('t4_c0_loop_set')));
+    /* Length touched last: Tempo keeps the clip's end on screen (Josh,
+     * 2026-10-30: "if i last touched length, wave view should stay focused on
+     * the end of the clip while adjusting bpm") */
+    S.clipLength[4][0] = 3; A.auMarkStale(4, 0); ticks(2);
+    S.shiftHeld = true; S.knobAccelLast[2] = 0; cc(73, 127); S.shiftHeld = false;   /* 2 steps, inside the file; K3 last */
+    for (let z = 0; z < 3; z++) cc(72, 1);           /* zoom in */
+    const endNow = () => A.auPlayedEnd(4, 0, A.auInfo(4, 0));
+    assert(!led.full && Math.abs(led.B - endNow()) <= 1, 'not on the end before the Tempo turn: ' + led.A + '..' + led.B + ' end ' + endNow());
+    for (let k = 0; k < 4; k++) { S.knobAccelLast[6] = 0; cc(77, 127); }
+    assert(Math.abs(led.B - endNow()) <= 1 && sent('t4_au_set_bpm').length >= 4,
+           'the view left the end while Tempo turned: ' + led.A + '..' + led.B + ' end ' + endNow());
+    back();
+    S.clipLength[4][0] = 16;
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
 });
 

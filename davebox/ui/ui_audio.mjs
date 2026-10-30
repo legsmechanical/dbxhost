@@ -682,17 +682,20 @@ export function auRangeStep(t, c, which, steps, per) {
         if (v === i.rstart) return false;
         loc.rstart = v; auSet(t, c, 'start', v);
     } else if (auIsSlice(i)) {
-        const tps = S.clipTPS[t][c] || 24, fpt = auFpt(i);
+        /* a bar a detent, a step with Shift (Josh, 2026-10-30: "we need to be
+         * able to fine adjust with shift modifier tempo ... and length") */
+        const tps = S.clipTPS[t][c] || 24, fpt = auFpt(i), per = S.shiftHeld ? tps : 384;
         const toEnd = Math.floor((i.nframes - i.rstart) / fpt);
         const cur = i.slen > 0 ? i.slen : Math.ceil(toEnd / tps) * tps;
-        let v = Math.max(tps, cur + steps * tps);
+        let v = Math.max(tps, cur + steps * per);
         if (v >= toEnd) v = 0;
         if (v === (i.slen | 0)) return false;
         loc.slen = v; auSet(t, c, 'slen', v);
         loc.rend = v ? Math.min(i.nframes, Math.round(i.rstart + v * fpt)) : i.nframes;
     } else {
         const len = S.clipLength[t][c] | 0 || 16, ls = S.clipLoopStart[t][c] | 0;
-        const v = Math.max(1, Math.min(256 - ls, len + steps));
+        const per = S.shiftHeld ? 1 : Math.max(1, Math.round(384 / (S.clipTPS[t][c] || 24)));
+        const v = Math.max(1, Math.min(256 - ls, len + steps * per));
         if (v === len) return false;
         S.clipLength[t][c] = v;
         S.clipLengthManuallySet[t][c] = true;
@@ -711,6 +714,12 @@ export function auFmtLen(ticks) {
     const b = Math.floor(ticks / bar), r = Math.round((ticks - b * bar) / st);
     if (!r) return b + (b === 1 ? ' BAR' : ' BARS');
     return b + ' + ' + r + '/16';
+}
+/* Where the clip ends in the file at its Tempo (the engine re-reads it; this is
+ * the screen's until then). */
+export function auPlayedEnd(t, c, i) {
+    if (auIsSlice(i) && !(i.slen > 0)) return i.nframes;
+    return Math.min(i.nframes, Math.round(i.rstart + auLenTicks(t, c, i) * auFpt(i)));
 }
 /* A clip's Length in ticks: a Loop clip's own, Slice's slen (0 = to the end) */
 export function auLenTicks(t, c, i) {

@@ -71,7 +71,7 @@ import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLaz
          auSelSlice, auSetSelSlice, isAudioTrack, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
          auMarkAdd, auMarkDel, auManual, auEvenBake, auTrans, auTransBake, auRangeStep, auSet, auEnd, auPanelRingCells, auPanelReset, auBankEd,
          auIsSlice, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX, AU_BPM10_MIN, AU_BPM10_MAX, auLenTicks,
-         auSampleP2Cells, auSampleP2Knob, auOrig, auNudgeStep, auFpt } from './ui_audio.mjs';
+         auSampleP2Cells, auSampleP2Knob, auOrig, auNudgeStep, auFpt, auPlayedEnd } from './ui_audio.mjs';
 import { registerScreenRingCells, registerRingCells } from './ui_knob_leds.mjs';
 import { BANK_AUDIO } from './ui_constants.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -529,8 +529,14 @@ function clipTempo(ed, dir) {
     const v = Math.max(AU_BPM10_MIN, Math.min(AU_BPM10_MAX, cur + dir * (S.shiftHeld ? 1 : 10)));
     if (v === (i.bpm10 | 0)) return false;
     auSet(t, c, 'bpm', v);
-    S.auInfo[t][c] = Object.assign({}, i, { bpm10: v });
+    const loc = Object.assign({}, i, { bpm10: v });
+    loc.rend = auPlayedEnd(t, c, loc);
+    S.auInfo[t][c] = loc;
     S.auStartsRev = (S.auStartsRev | 0) + 1;
+    /* the view stays on what was touched last: Length's end moves with the
+     * Tempo (Josh, 2026-10-30: "if i last touched length, wave view should
+     * stay focused on the end of the clip while adjusting bpm") */
+    centre(ed);
     return true;
 }
 
@@ -747,7 +753,7 @@ export function audioEditorInput(status, d1, d2) {
             ed.last = k === 0 ? 'start' : 'end';
             if (hand || slEdit) moved = chopPoint(ed, ed.last, dd);
             else {
-                /* K1 Start (a pixel a detent), K3 Length (a step a detent) */
+                /* K1 Start (a pixel a detent), K3 Length (a bar a detent, Shift a step) */
                 moved = k === 0 ? auRangeStep(ed.t, ed.c, 'start', dd, auEdPixel(ed))
                                 : auRangeStep(ed.t, ed.c, 'length', dd > 0 ? 1 : -1);
                 if (moved) centre(ed);

@@ -1227,19 +1227,21 @@ by clicking **Audio** in the track's sound menu, or with the instrument shortcut
 
 - **No sample:** *Click to load sample* — a click opens the sample chooser.
 - **Loop mode:** the loop's waveform. **K1** Start · **K2** Zoom · **K3** Length — the
-  clip's own, a step a detent. No chops show, and the pads, the jog and a click do
+  clip's own, a bar a detent (**Shift**: a step). No chops show, and the pads do
   nothing here.
 - **Slice mode:** the sample with every chop marked and the selected chop
   bracketed. **K1** Start · **K2** Zoom · **K3** Length — how much of the sample is
-  chopped, a step a detent (to the sample's end at most); a pad picks its chop and
-  plays it, and the view goes to that chop's start at the zoom you have. A click
-  opens the menu.
+  chopped, a bar a detent (**Shift**: a step; to the sample's end at most); a pad
+  picks its chop and plays it, and the view goes to that chop's start at the zoom you
+  have.
 
 There is no End: what plays runs from Start for the Length. In both modes **K4** Gain ·
 **K5** Pitch · **K6** Detune set the whole clip, **K7** sets the sample's own
 **Tempo**, 1 BPM a detent (**Shift**: 0.1) — what Sync and **>Seq**'s step places
 follow — and **K8** **Nudge** moves the sample against the bar (ms). The knob in hand
 reads out between Start and Length, and the waveform is drawn at the gain it plays at.
+Zoomed in, the view stays on what you touched last: touch Length, then turn Tempo, and
+the clip's end stays in view as it moves.
 Start reads in seconds to two decimals, Length in bars (**1 + 4/16** is a bar and four
 steps).
 

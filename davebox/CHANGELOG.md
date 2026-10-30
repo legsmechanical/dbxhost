@@ -29,6 +29,8 @@ the section into a versioned heading at release time.
   again every 5 minutes until the Move is plugged in.
 
 ### Changed
+- **Audio: Length moves a bar a detent, a step with Shift**; Tempo a BPM, a tenth with
+  Shift. Turning Tempo after Length keeps the clip's end in view.
 - **Audio: ALL SLICES sets every slice.** Its Pitch, Detune and Gain now set each
   slice's own value, as its other knobs do; SAMPLE's Pitch, Detune and Gain are the
   base the slices add to.
