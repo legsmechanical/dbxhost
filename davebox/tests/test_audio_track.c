@@ -815,6 +815,51 @@ int main(void) {
             hx_render(h, 4);
         }
         hx_set_param(h, "t4_au_set_sync", "5 2");
+        /* ...and where the sample is still sounding at the Shift's point (a
+         * clip shorter than the sample: 4 steps, Shift 2), Pitch jumps back
+         * to the sample's first frame there, not on through it */
+        {
+            uint16_t was_len = tr->clips[5].length;
+            double fpt = 44100.0 * 60.0 / ((tr->pfx.cached_bpm > 0 ? tr->pfx.cached_bpm : 120.0) * PPQN);
+            uint32_t tps = tr->clips[5].ticks_per_step ? tr->clips[5].ticks_per_step : TICKS_PER_STEP;
+            int f0, jump = -1, b, k;
+            const int16_t *q;
+            tr->clips[5].length = 4;
+            snprintf(p, sizeof p, "5 %u", (unsigned)(2 * tps));
+            hx_set_param(h, "t4_au_set_rot", p);
+            hx_stub_feed_reset();
+            hx_set_param(h, "transport", "play");
+            for (i = 0; i < 20 && hx_stub_feed(4, NULL, NULL) == 0; i++) hx_render(h, 1);
+            q = hx_stub_feed_last(4);
+            f0 = 127 - (int)((double)q[127 * 2] - 2.0 * tps * fpt + 0.5);   /* tick 0 reads the sample 2 steps in */
+            HX_ASSERT(q[127 * 2] > 0 && f0 >= -4 && f0 <= 160, "Pitch: a short clip with Shift 2 did not start 2 steps into the sample");
+            for (b = 1; b < 120 && jump < 0; b++) {
+                hx_render(h, 1);
+                q = hx_stub_feed_last(4);
+                for (k = 1; k < 128; k++) if (q[k * 2] < q[(k - 1) * 2] - 100) { jump = b * 128 + k; break; }
+            }
+            HX_ASSERT(jump >= 0 && jump >= (int)(f0 + 2.0 * tps * fpt) - 160 && jump <= (int)(f0 + 2.0 * tps * fpt) + 160,
+                      "Pitch: the sounding sample did not cut at the Shift's point");
+            /* past the cut's fade (the old voice lets go, as at the loop's top):
+             * the sample's opening frames, not on through it (~22000 here) */
+            hx_render(h, 2);
+            q = hx_stub_feed_last(4);
+            HX_ASSERT(q[64 * 2] > 0 && q[64 * 2] < 700, "Pitch: the sounding sample did not go back to its first frame at the Shift's point");
+            hx_set_param(h, "transport", "stop");
+            hx_set_param(h, "t4_au_set_rot", "5 0");
+            tr->clips[5].length = was_len;
+            hx_render(h, 4);
+        }
+        /* Warp reads its map through the Shift: tick r is the clip's own tick 0 */
+        {
+            au_warp_t *Wt = (au_warp_t *)calloc(1, sizeof *Wt);
+            Wt->rpt = 100.0; Wt->cur.rs = 1000; Wt->cur.re = 1000 + 38400; Wt->cur.L = 384.0; Wt->cur.rot = 96.0;
+            au_warp_watch_at(Wt, 96.0 * 100.0);
+            HX_ASSERT(Wt->read_pos == 1000, "Warp: the Shift's point does not read the sample's first frame");
+            au_warp_watch_at(Wt, 0.0);
+            HX_ASSERT(Wt->read_pos == 1000 + 288 * 100, "Warp: tick 0 does not read the rotated tail");
+            free(Wt);
+        }
     }
 
     /* ---- Sync Pitch: the tempo sets the speed, so Detune gives way — the
