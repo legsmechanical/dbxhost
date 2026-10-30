@@ -606,9 +606,10 @@ function configRows(t) {
             get: () => 0, fmt: () => '...' });
     }
     /* Freeze track (Josh, 2026-10-30: "freeze track lives on track config"):
-     * every clip resampled into an Audio clip (ui_audio_convert). Not on an
-     * Audio track (it is audio already) or a Conductor (no sound). */
-    if (GS.trackPadMode[t] !== PMC && GS.trackPadMode[t] !== PMA) {
+     * every clip resampled into an Audio clip (ui_audio_convert) — on an
+     * Audio track, each clip in place ("audio tracks ought to be able to be
+     * frozen ... just like the others"). Not on a Conductor (no sound). */
+    if (GS.trackPadMode[t] !== PMC) {
         rows.push({ key: 'freeze', label: 'Freeze track',
             action: () => freezeTrackRequest(t, GS.trackRoute[t] === 0 && !!engineLoadedModule(slotIndex(t), 'synth')),
             get: () => 0, fmt: () => '...' });

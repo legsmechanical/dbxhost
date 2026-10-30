@@ -24,7 +24,9 @@
 
 import * as os from 'os';
 import { S } from './ui_state.mjs';
-import { NUM_CLIPS, SCENE_LETTERS, PAD_MODE_DRUM } from './ui_constants.mjs';
+import { NUM_CLIPS, SCENE_LETTERS, PAD_MODE_DRUM, PAD_MODE_AUDIO } from './ui_constants.mjs';
+import { clipHasContent } from './ui_pure.mjs';
+import { hardResetClip } from './ui_editops.mjs';
 import { auPick } from './ui_audio.mjs';
 import { showActionPopupFor } from './ui_persistence.mjs';
 import { sanitizeName } from './ui_export.mjs';
@@ -39,7 +41,10 @@ export const AU_SRC_WET = 0;      /* the mix: a Move instrument as heard */
 export const AU_SRC_DRY = 1;      /* one slot's own output, through its FX */
 export const AU_SRC_PRE = 2;      /* the slot's instrument, before its FX */
 
+/* A clip that sounds: one with notes, or an Audio clip with a sample (a Loop
+ * clip has no steps and still plays). */
 function clipHasNotes(t, c) {
+    if (S.trackPadMode[t] === PAD_MODE_AUDIO) return clipHasContent(t, c);
     return S.trackPadMode[t] === PAD_MODE_DRUM ? !!S.drumClipNonEmpty[t][c] : !!S.clipNonEmpty[t][c];
 }
 
@@ -51,6 +56,8 @@ function clipHasNotes(t, c) {
  * not carry over). External MIDI: -1. `hasSynth` is the caller's read of t's
  * own slot. */
 export function auConvertSource(t, hasSynth, post) {
+    /* an Audio track: its clips' samples, fed to its own slot */
+    if (S.trackPadMode[t] === PAD_MODE_AUDIO) return post ? AU_SRC_DRY : AU_SRC_PRE;
     let r = S.trackRoute[t] | 0;
     if (r === 0 && !hasSynth) return -1;
     if (r === 2) {
@@ -92,7 +99,10 @@ export function freezeTrackRequest(t, hasSynth) {
     }
     const anySolo = S.trackSoloed.some((v) => v);
     if (S.trackMuted[t] || (anySolo && !S.trackSoloed[t])) { showActionPopupFor(2500, 'NOTHING TO FREEZE', name + ' is muted'); return; }
-    if (!auConvertHasNotes(t)) { showActionPopupFor(2500, 'NOTHING TO FREEZE', name + ' has no notes'); return; }
+    if (!auConvertHasNotes(t)) {
+        showActionPopupFor(2500, 'NOTHING TO FREEZE', name + (S.trackPadMode[t] === PAD_MODE_AUDIO ? ' has no samples' : ' has no notes'));
+        return;
+    }
     S.confirmConvertToDrum = true; S.confirmConvertToDrumSel = 1;
     S.confirmConvertTrack = t; S.confirmConvertAudio = 'freeze';
     S.auFreeze = { t, choice: pre !== AU_SRC_WET, hasSynth };
@@ -142,13 +152,14 @@ export function auConvertStart(t) {
     const bypass = !!S.auConvertBypass;
     S.auConvertSrc = -1; S.auConvertBypass = false;
     if (src < 0) { showActionPopupFor(2500, 'NOT RESAMPLED', 'Nothing to record'); return false; }
-    S.auConvert = { t, list, i: 0, src, bypass, phase: 'send', at: 0, seen: false, stopSent: false };
+    const inPlace = S.trackPadMode[t] === PAD_MODE_AUDIO;
+    S.auConvert = { t, list, i: 0, src, bypass, inPlace, phase: 'send', at: 0, seen: false, stopSent: false };
     S.resampleTake = { convert: true };
     return true;
 }
 
 function status(cv, line2) {
-    showActionPopupFor(60000, 'TO AUDIO ' + (cv.i + 1) + '/' + cv.list.length,
+    showActionPopupFor(60000, (cv.inPlace ? 'FREEZE ' : 'TO AUDIO ') + (cv.i + 1) + '/' + cv.list.length,
                       (cv.t + 1) + SCENE_LETTERS[cv.list[cv.i].c] + (line2 ? ', ' + line2 : ''), 'Back cancels');
 }
 
@@ -200,17 +211,26 @@ export function auConvertTick() {
         S.pendingDefaultSetParams.push({ key: 'resample_clear', val: '1' });
         cv.i++;
         if (cv.i < cv.list.length) { cv.phase = 'send'; return; }
-        /* Every take is in: convert, then each clip takes its recording. */
+        /* Every take is in: convert, then each clip takes its recording. An
+         * Audio track is audio already: each clip takes its recording IN
+         * PLACE, at default settings (Josh, 2026-10-30: "audio tracks ought to
+         * be able to be frozen (essentially resampling every clip in place)"). */
         S.resampleTake = null;
         S.auConvert = null;
-        S.pendingTrackConvert = { t: cv.t, toAudio: true, bypassFx: cv.bypass,
-                                  takes: cv.list.map((x) => ({ c: x.c, path: x.path })) };
-        showActionPopupFor(2500, 'TO AUDIO', cv.list.length + ' clip' + (cv.list.length === 1 ? '' : 's') + ' resampled');
+        const takes = cv.list.map((x) => ({ c: x.c, path: x.path }));
+        const n = cv.list.length + ' clip' + (cv.list.length === 1 ? '' : 's') + ' resampled';
+        if (cv.inPlace) {
+            S.auApply = { t: cv.t, takes, i: 0, bypassFx: cv.bypass, inPlace: true, reset: -1 };
+            showActionPopupFor(2500, 'FROZEN', n);
+        } else {
+            S.pendingTrackConvert = { t: cv.t, toAudio: true, bypassFx: cv.bypass, takes };
+            showActionPopupFor(2500, 'TO AUDIO', n);
+        }
         return;
     }
     if (st === RS_CANCELLED) {
         if (sampling()) return;
-        abort(cv, 'NOT CONVERTED', 'Cancelled');
+        abort(cv, cv.inPlace ? 'NOT FROZEN' : 'NOT CONVERTED', 'Cancelled');
         return;
     }
     if (st === RS_FAILED) {
@@ -246,7 +266,16 @@ function applyTick() {
         if (a.bypassFx) bypassInserts(a.t);
         return true;
     }
-    const k = a.takes[a.i++];
+    const k = a.takes[a.i];
+    if (a.inPlace) {
+        /* the clip starts over (sample, steps, settings: Shift + Delete's
+         * reset), then picks; the pick goes straight to the engine and the
+         * reset through the queue, so the pick waits for the reset to go */
+        if (a.reset !== a.i) { hardResetClip(a.t, k.c); a.reset = a.i; return true; }
+        if (S.clearDrainHold || S.pendingDefaultSetParams.some((e) => e.key === 't' + a.t + '_c' + k.c + '_hard_reset'))
+            return true;
+    }
+    a.i++;
     auPick(a.t, k.c, k.path);
     return true;
 }

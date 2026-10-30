@@ -257,6 +257,37 @@ step('⭐⭐ Post: every clip through its FX (Dry); once converted, the loaded i
     S.trackPadMode[4] = 0; GET['t4_pad_mode'] = '0';
 });
 
+step('⭐⭐ an Audio track freezes IN PLACE (Josh, 2026-10-30: "audio tracks ought to be able to be frozen (essentially resampling every clip in place) just like the otehrs"): every clip with a sample re-recorded; each resets, then picks its take; nothing converts; Post bypasses', () => {
+    S.trackPadMode[4] = 3; GET['t4_pad_mode'] = '3'; S.resampleState = 0;
+    S.clipNonEmpty[4][0] = false; S.clipNonEmpty[4][2] = false;          /* Loop clips: no steps */
+    S.auInfo[4][0] = Object.assign({}, S.auInfo[4][0] || {}, { state: 2, name: 'loop a.wav' });
+    S.auInfo[4][2] = Object.assign({}, S.auInfo[4][2] || {}, { state: 2, name: 'loop c.wav' });
+    reset();
+    freezeRow(4);
+    assert(S.confirmConvertAudio === 'freeze' && S.auFreeze && S.auFreeze.choice, 'an Audio track has no Pre / Post');
+    answer(true);
+    ticks(2);
+    assert(S.auConvert && S.auConvert.inPlace && S.auConvert.list.length === 2, 'takes: ' + JSON.stringify(S.auConvert));
+    assert(sent('resample_clip').join() === '4 0 1 0 0 1 |' + P0, 'Post take: ' + sent('resample_clip'));
+    S.resampleState = 3; S.resampleFrames = 88200; S.resampleDone = 100; ticks(2);
+    assert(S.actionPopupLines[0] === 'FREEZE 1/2', 'notice: ' + JSON.stringify(S.actionPopupLines));
+    globalThis.__stubStat = { [P0]: { mode: 0o100644, size: 9 }, [P2]: { mode: 0o100644, size: 9 } };
+    S.resampleState = 4; ticks(2);
+    S.resampleState = 0; ticks(1); S.resampleState = 3; ticks(1); S.resampleState = 4; ticks(2);
+    S.resampleState = 0;
+    assert(!S.auConvert, 'the takes did not end');
+    shadowSets.length = 0;
+    ticks(16);
+    globalThis.__stubStat = null;
+    const order = sets.map((x) => x[0]).filter((k) => /^t4_(c[02]_hard_reset|au_pick)$/.test(k));
+    assert(order.join() === 't4_c0_hard_reset,t4_au_pick,t4_c2_hard_reset,t4_au_pick', 'order: ' + order.join());
+    assert(sent('t4_au_pick').join() === '0|' + P0 + ',2|' + P2, 'picks: ' + sent('t4_au_pick'));
+    assert(sent('t4_convert_to_audio').length === 0, 'an Audio track was converted');
+    assert(shadowSets.some((x) => x[0] === 4 && x[1] === 'fx1:bypassed' && x[2] === '1'), 'Post did not bypass');
+    S.trackPadMode[4] = 0; GET['t4_pad_mode'] = '0';
+    S.clipNonEmpty[4][0] = true; S.clipNonEmpty[4][2] = true;
+});
+
 step('⭐⭐ a MIDI track that follows another freezes THAT instrument (Pre: before its FX)', () => {
     S.trackRoute[5] = 2; S.trackMidiTo[5] = 5; S.clipNonEmpty[5][0] = true;
     GET['t5_au_dir'] = DIR; GET['resample_bars_t5_c0'] = '1';

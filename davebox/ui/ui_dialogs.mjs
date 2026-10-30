@@ -147,7 +147,8 @@ export function drawConvertToDrumConfirm() {
     } else if (S.confirmConvertAudio === 'freeze') {
         dlgHeader('FREEZE TRACK ' + (S.confirmConvertTrack + 1));
         if (S.auFreeze && S.auFreeze.choice) {
-            dlgLines(['Every clip to audio.', 'Record the effects', 'Pre or Post?']);
+            dlgLines([S.trackPadMode[S.confirmConvertTrack] === PAD_MODE_AUDIO ? 'Every clip in place.' : 'Every clip to audio.',
+                      'Record the effects', 'Pre or Post?']);
             drawYesNoRow(S.confirmConvertToDrumSel, ['Pre', 'Post']);
             return;
         }
