@@ -582,8 +582,11 @@ export function auPickRows(ed) {
     if (p.level === 1) return i.state === 2
         ? [{ id: 'load', label: 'Load sample', chevron: true }, { id: 'trim', label: 'Trim' }, { id: 'norm', label: 'Normalize' }]
         : [{ id: 'load', label: 'Load sample', chevron: true }];
+    /* Convert to kit (Josh, 2026-10-30: "slice menu option: convert to kit"):
+     * the chops as a Move drum kit (ui_audio_kit) */
     return [{ id: 'even', label: 'Even' }, { id: 'transient', label: 'Transient' },
-            { id: 'lazy', label: 'Lazy' }, { id: 'manual', label: 'Manual' }];
+            { id: 'lazy', label: 'Lazy' }, { id: 'manual', label: 'Manual' }]
+        .concat(i.state === 2 ? [{ id: 'kit', label: 'Convert to kit' }] : []);
 }
 function pickInput(ed, status, d1, d2) {
     const p = ed.pick, hi = status & 0xF0;
@@ -616,6 +619,7 @@ function pickInput(ed, status, d1, d2) {
             ed.ask = { kind: 'edit', op: row.id, sel: 0 };   /* opens on New (Josh: "new copy is default") */
             return true;
         }
+        if (row.id === 'kit') { ed.pick = null; S.pendingAuKit = { t: ed.t, c: ed.c }; return true; }   /* reads + a copy: the tick's */
         ed.pick = null;
         if (row.id === 'lazy') startLazy(ed);
         else openChop(ed, row.id);

@@ -507,6 +507,7 @@ export const S = {
     pendingAudioChooser: null,    /* { t, c }: the tick opens the chooser (it lists a folder) */
     confirmConvertAudio: false,   /* the convert confirm: false Drums, 'audio' -> Audio, 'resample' the resample offer, 'freeze' Flatten track, 'leave' Audio -> another */
     confirmConvertTarget: null,   /* 'leave': what the track becomes { pm, v } */
+    pendingAuKit: null,           /* { t, c }: Convert to kit, run by the tick (ui_audio_kit) */
     pendingAuConvertStart: -1,    /* track whose clips the tick starts resampling (ui_audio_convert) */
     auConvertSrc: -1,             /* Flatten's take source, from its answer (-1: the conversion works it out) */
     auConvertBypass: false,       /* Flatten Post: bypass the track's insert FX once it has converted */

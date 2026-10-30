@@ -833,7 +833,7 @@ step('⭐⭐ SLICES (Josh, 2026-10-29): page 1 the chops — K1 / K3 the slice, 
     S.shiftHeld = false; S.knobTouched = -1;
     reset();
     click();
-    assert(ed.pick && ed.pick.level === 2 && E.auPickRows(ed).map((r) => r.label).join() === 'Even,Transient,Lazy,Manual',
+    assert(ed.pick && ed.pick.level === 2 && E.auPickRows(ed).map((r) => r.label).join() === 'Even,Transient,Lazy,Manual,Convert to kit',
            'a click did not open the chop types: ' + JSON.stringify(ed.pick));
     back();
     assert(!ed.pick && S.auEditor === ed, 'Back did not close the chop types onto SLICES');
@@ -945,7 +945,7 @@ step('⭐⭐ chopping lives only on SLICES: a click there opens the chop types; 
     mapPad(2, 2);
     ed = S.auEditor;
     click();
-    assert(ed.pick && ed.pick.level === 2 && E.auPickRows(ed).map((r) => r.label).join() === 'Even,Transient,Lazy,Manual',
+    assert(ed.pick && ed.pick.level === 2 && E.auPickRows(ed).map((r) => r.label).join() === 'Even,Transient,Lazy,Manual,Convert to kit',
            'a click on SLICES did not open the chop types: ' + JSON.stringify(ed.pick));
     assert(inked(shown()), 'the chop types draw nothing');
     {
@@ -956,6 +956,61 @@ step('⭐⭐ chopping lives only on SLICES: a click there opens the chop types; 
     assert(!ed.pick && S.auEditor === ed, 'Back did not close the chop types (SLICES stays)');
     back();
     GET['t4_au_info_0'] = INFO(1, 8, 0); A.auMarkStale(4, 0); ticks(2);
+});
+
+step('⭐⭐ SLICES › Convert to kit (Josh, 2026-10-30: "convert to kit. creates a move drum rack kit with 32 pad max ... carrying over slice pitch, decay, gain, etc." · "shared copy"): the sample copied once into the library, a pad per chop playing its part of it', () => {
+    GET['t4_au_info_0'] = INFO(1, 8, 0); A.auMarkStale(4, 0); ticks(2);
+    GET['t4_au_sl_0_1'] = '12000 24000 0 2 0 0 1 10 250 7';      /* Pitch +2, Gate, Attk 10 ms, Decay 250 ms, Detune 7 */
+    S.currentSetName = 'My Song';
+    const SAMP = '/data/UserData/UserLibrary/Samples/dAVEBOx/Exported kits/My Song 5A.wav';
+    const KIT = '/data/UserData/UserLibrary/Track Presets/dBx-slice/My Song 5A.ablpreset';
+    const cmds = [], files = {};
+    const cmd0 = globalThis.host_system_cmd, wr0 = globalThis.host_write_file;
+    globalThis.host_system_cmd = (c) => { cmds.push(String(c)); globalThis.__stubStat = { [SAMP]: { mode: 0o100644, size: 9 } }; return 0; };
+    globalThis.host_write_file = (path, body) => { files[String(path)] = String(body); return wr0(path, body); };
+    try {
+        mapPad(2, 2);
+        const ed = S.auEditor;
+        click();
+        const rows = E.auPickRows(ed);
+        for (let k = 0; k < rows.findIndex((r) => r.id === 'kit'); k++) jog(1);
+        click();
+        assert(!ed.pick && S.pendingAuKit, 'the row did not ask for the kit');
+        ticks(2);
+        assert(cmds.length === 1 && cmds[0] === "cp '/data/UserData/UserLibrary/Sets/x/dAVEBOx/samples/Break Phenom 84 bpm.wav' '" + SAMP + "'",
+               'the copy: ' + JSON.stringify(cmds));
+        assert(files[KIT], 'no kit written: ' + Object.keys(files).join());
+        assert((S.actionPopupLines || [])[0] === 'KIT SAVED', 'notice: ' + JSON.stringify(S.actionPopupLines));
+        const kit = JSON.parse(files[KIT]);
+        assert(kit.kind === 'instrumentRack' && kit.name === 'My Song 5A', 'the rack: ' + kit.kind + ' ' + kit.name);
+        /* a native preset as Move writes one: schema 1.8.3, the drum rack with its
+         * reverb return, then the rack-wide saturator */
+        assert(/\/1\.8\.3\/devicePreset\.json$/.test(kit.$schema), 'schema: ' + kit.$schema);
+        assert(kit.chains[0].devices.map((d) => d.kind).join() === 'drumRack,saturator' &&
+               kit.chains[0].devices[0].returnChains[0].devices[0].kind === 'reverb', 'not a native drum rack preset');
+        const pads = kit.chains[0].devices[0].chains;
+        assert(kit.chains[0].devices[0].kind === 'drumRack' && pads.length === 16, 'pads: ' + pads.length + ' (8 chops, filled to 16)');
+        const uri = 'ableton:/user-library/Samples/dAVEBOx/Exported%20kits/My%20Song%205A.wav';
+        const cell = (k) => pads[k].devices[0];
+        assert(pads.every((p, k) => p.drumZoneSettings.receivingNote === 36 + k), 'notes are not 36 up');
+        assert(pads.slice(0, 8).every((p, k) => cell(k).deviceData.sampleUri === uri && p.drumZoneSettings.chokeGroup === 1),
+               'the chops do not share the copy in choke group 1');
+        assert(pads.slice(8).every((p, k) => cell(8 + k).deviceData.sampleUri === null), 'pads past the chops are not empty');
+        const c0 = cell(0).parameters, c1 = cell(1).parameters, c2 = cell(2).parameters;
+        assert(c0.Voice_PlaybackStart === 0 && c0.Voice_PlaybackLength === 0.125, 'chop 1 region: ' + c0.Voice_PlaybackStart + ' ' + c0.Voice_PlaybackLength);
+        assert(c1.Voice_PlaybackStart === 0.125 && c1.Voice_Transpose === 2 && c1.Voice_Detune === 7 &&
+               c1.Voice_Envelope_Mode === 'A-S-R' && c1.Voice_Envelope_Attack === 0.01 &&
+               c1.Voice_Envelope_Hold === 0 && c1.Voice_Envelope_Decay === 0.25, 'chop 2: ' + JSON.stringify(c1));
+        assert(Math.abs(c2.Voice_Gain - Math.pow(10, -3 / 20)) < 1e-9 && c2.Voice_Envelope_Hold === 60 &&
+               c2.Voice_Envelope_Mode === 'A-H-D', 'chop 3: ' + JSON.stringify(c2));
+        assert(c0.Voice_VelocityToVolume === 0, 'velocity reaches a slice\'s level');
+        assert(S.auEditor === ed && !ed.pick, 'the kit did not leave SLICES up');
+        back();
+        S.actionPopupLines = []; S.actionPopupEndTick = 0;     /* the notice is a card over later screens */
+    } finally {
+        globalThis.host_system_cmd = cmd0; globalThis.host_write_file = wr0; globalThis.__stubStat = null;
+        delete GET['t4_au_sl_0_1'];
+    }
 });
 
 step('⭐⭐ Even (SLICES › Even): the chop editor, 16 to start, the jog live on the pads; Back asks "Keep N chops?" — Yes bakes, No puts them back (Josh)', () => {

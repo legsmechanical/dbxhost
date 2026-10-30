@@ -86,6 +86,7 @@ import { printTick } from './ui_print.mjs';
 import { resampleTick } from './ui_resample.mjs';
 import { auTick, auReadTrack, auForgetTrack, isAudioTrack } from './ui_audio.mjs';
 import { auConvertStart, auConvertTick, auConvertApply } from './ui_audio_convert.mjs';
+import { auConvertToKit } from './ui_audio_kit.mjs';
 import { openAudioChooser, closeAudioChooser, audioChooserTick } from './ui_audio_chooser.mjs';
 import { closeAudioEditor, closeAudioPanel, auEditorFollowClip } from './ui_audio_editor.mjs';
 import { applyInstrChoice } from './ui_dsp_bridge.mjs';
@@ -2337,6 +2338,11 @@ export function _tickImpl() {
             else showMenuInfo('Stop playback', 'to change the', 'track type.');
         }
         auConvertTick();
+        if (S.pendingAuKit) {
+            const _k = S.pendingAuKit;
+            S.pendingAuKit = null;
+            auConvertToKit(_k.t, _k.c);
+        }
         if (S.pendingGrooveMenuReturn) {
             S.pendingGrooveMenuReturn = false;
             if (!miActive()) openGlobalMenuAt('Groove');

@@ -169,6 +169,8 @@ export function auMarkStale(t, c) {
 export function auSlice(t, c, l) {
     return _sl.get(t + '_' + c + '_' + l) || null;
 }
+/* Slice l's fields read now (tick context): Convert to kit reads every slice */
+export function auReadSliceNow(t, c, l) { return auReadSlice(t, c, l); }
 function auReadSlice(t, c, l) {
     const raw = host_module_get_param('t' + t + '_au_sl_' + c + '_' + l);
     const v = String(raw || '').trim().split(/\s+/).map((x) => parseInt(x, 10));

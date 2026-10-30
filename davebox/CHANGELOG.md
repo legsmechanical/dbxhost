@@ -18,6 +18,12 @@ the section into a versioned heading at release time.
 - **Resampling works with Audio tracks.** A Loop clip (which has no steps) is now
   recorded for its own length, by Resample clip and Resample scene alike; before, a
   clip or scene of Loop clips had nothing to resample.
+- **Audio: Convert to kit.** SLICES › **Convert to kit** makes a native Move drum rack
+  preset of a Slice clip's chops — a pad each, up to 32 (Move plays the first 16;
+  instruments that load Move drum racks with more pads, such as DR32, all 32), each
+  carrying its slice's Pitch, Detune, Gain, Attack, Decay and Play. The sample is copied
+  once into the library and every pad plays its part of it. Presets go to Track Presets ›
+  dBx-slice.
 - **Resample clip › In place** on an Audio clip: the recording replaces the clip,
   which starts over with it as its sample at default settings.
 - **Audio: Trim and Normalize.** SAMPLE's click opens a menu — Load sample · Trim ·

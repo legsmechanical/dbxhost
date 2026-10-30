@@ -1289,8 +1289,8 @@ chop while it plays can leave a few milliseconds of silence before it comes in, 
 time. A sample
 whose file has gone reads *Missing: name* and stays silent.
 
-**Chops.** A click on **SLICES** offers **Even**, **Transient**, **Lazy** and **Manual**;
-each opens the **chop editor**: the waveform
+**Chops.** A click on **SLICES** offers **Even**, **Transient**, **Lazy** and **Manual**
+(and **Convert to kit**, below). Those four each open the **chop editor**: the waveform
 with the chops on it, changing as you work. The pads play the chops in all of them.
 The Mode stays as it is: the chops serve both modes.
 
@@ -1321,6 +1321,18 @@ The Mode stays as it is: the chops serve both modes.
 | **Delete + pad** | Remove that slice's chop: it joins the slice before (slice 1's start stays) |
 | **Delete + click** | *Clear all chops?* — **Yes** leaves one slice, the whole chopped part |
 | **Back** | Back to SLICES |
+
+**Convert to kit** (the last of SLICES' chop types) makes a Move drum rack preset from
+the chops as they play — your own, Even's or Transient's: a pad for each, up to 32, in
+order. The sample is copied once into **Samples → dAVEBOx → Exported kits** and every pad plays
+its chop of it; the preset goes to **Track Presets → dBx-slice**, named after the
+project and clip (`mngk 5A`). Move's own drum tracks load it and play the first 16 pads
+(all 32 stay in the preset); an instrument that loads Move drum racks with more pads,
+such as DR32, gets them all. Each pad takes its slice's **Pitch**, **Detune**, **Gain**,
+**Attk** and **Decay** (with the clip's own Pitch, Detune and Gain under them) and
+**Play** (One plays the pad through; Gate and Loop hold it as long as you do).
+**Revrs** has no place in a drum pad and is left out. The pads cut each other off, as
+the chops do.
 
 Zoomed in, whatever you touched last — the cursor (jog), a start (K1) or an end (K3)
 — stays in the middle of the screen and the waveform scrolls around it; touching one
