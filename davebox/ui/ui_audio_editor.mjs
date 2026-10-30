@@ -70,7 +70,8 @@ import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLaz
          auPanelPages, auPanelPageName, auPanelKnob, auPanelKnobClass, auChop, auPadToSlice,
          auSelSlice, auSetSelSlice, isAudioTrack, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
          auMarkAdd, auMarkDel, auManual, auEvenBake, auTrans, auTransBake, auRangeStep, auSet, auEnd, auPanelRingCells, auPanelReset, auBankEd,
-         auIsSlice, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX, AU_BPM10_MIN, AU_BPM10_MAX, auLenTicks } from './ui_audio.mjs';
+         auIsSlice, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX, AU_BPM10_MIN, AU_BPM10_MAX, auLenTicks,
+         auSampleP2Cells, auSampleP2Knob, auOrig, auNudgeStep } from './ui_audio.mjs';
 import { registerScreenRingCells, registerRingCells } from './ui_knob_leds.mjs';
 import { BANK_AUDIO } from './ui_constants.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -556,6 +557,10 @@ export function audioEditorInput(status, d1, d2) {
     /* K1 / K3: the clip's Start / End on WAVE, the slice's in Manual; Even
      * and Transient leave them be */
     const ends = sub === 'loop' || (sub === 'chop' && (!kind || hand));
+    /* SAMPLE's two pages, turned by the jog (Josh, 2026-10-29: "the waveform
+     * on page 1 and the params on page 2"); a chop editor keeps the jog */
+    const plain = (sub === 'loop' || sub === 'chop') && !kind;
+    const p2 = plain && ed.page === 1;
     if (hi === 0x90 || hi === 0x80) {
         if (d1 >= 0 && d1 <= 7) {
             const on = hi === 0x90 && d2 >= 64;
@@ -641,13 +646,21 @@ export function audioEditorInput(status, d1, d2) {
     if (d1 >= 71 && d1 <= 78) {
         const k = d1 - 71, dd = decodeDelta(d2);
         if (!dd || (sub !== 'chop' && sub !== 'loop')) return true;
+        if (p2) {
+            /* SAMPLE page 2: K1 Sync, K2 Revrs; K8 Orig fires on touch + click */
+            S.knobTouched = k; S.knobTurnedTick[k] = S.clockMs;
+            const st = knobStep(k, d2, KNOB_PICK);
+            if (st && auSampleP2Knob(ed.t, ed.c, k, st)) S.screenDirty = true;
+            S.screenDirty = true;
+            return true;
+        }
         if ((k === 0 || k === 2) && !ends) return true;
         let moved = false;
         /* Start, Zoom and End light while turned, as a touched knob does (the
          * tick lets go KNOB_TURN_HIGHLIGHT_MS after the last turn) — Josh,
          * 2026-10-28: "start and end values need to be highlighted while
          * they're turned/touched" */
-        if (k <= 6) {
+        if (k <= 7) {
             S.knobTouched = k; S.knobTurnedTick[k] = S.clockMs;
             if (k === 1) ed.zoomDir = dd > 0 ? 1 : -1;
             S.screenDirty = true;
@@ -677,12 +690,22 @@ export function audioEditorInput(status, d1, d2) {
         } else if (k === 6) {
             const st = ccKnobDelta(d2, k);
             if (st) moved = clipTempo(ed, st > 0 ? 1 : -1);
+        } else if (k === 7 && plain) {
+            /* K8 Nudge: the sample against the bar (Josh, 2026-10-29: Tempo
+             * and Nudge "need to be exposed on the waveform view knobs") */
+            const st = ccKnobDelta(d2, k);
+            if (st) moved = auNudgeStep(ed.t, ed.c, st > 0 ? 1 : -1);
         }
         if (moved) S.screenDirty = true;
         return true;
     }
     if (d1 === MoveMainKnob) {
         const dd = decodeDelta(d2);
+        if (dd && plain) {
+            const pg = dd > 0 ? 1 : 0;
+            if (pg !== (ed.page | 0)) { ed.page = pg; S.knobTouched = -1; S.screenDirty = true; }
+            return true;
+        }
         if (!dd || sub !== 'chop') return true;
         const i = auInfo(ed.t, ed.c);
         ed.jogAt = S.clockMs | 0;
@@ -715,6 +738,11 @@ export function audioEditorInput(status, d1, d2) {
             return true;
         }
         if (kind && !hand) return true;                      /* Even / Transient: the jog is all */
+        if (p2) {
+            /* touch K8 + click: Orig */
+            if (S.knobTouched === 7) auOrig(ed.t, ed.c);
+            return true;
+        }
         if (!hand) {
             /* WAVE: Shift + click the menu, and in Slice mode a click too
              * (Josh, 2026-10-28: "open the chip menu, including the sample
@@ -824,8 +852,14 @@ export function waveRingCells(ed) {
     const i = auInfo(ed.t, ed.c), fr = i.nframes | 0;
     const sub = auWaveSub(ed);
     if (sub !== 'chop' && sub !== 'loop' || !fr) return [null, null, null, null, null, null, null, null];
-    let a = i.rstart, b = auEnd(i);
     const kind = chopKind(ed);
+    if (!kind && ed.page === 1) {
+        /* page 2: Sync, Revrs, Orig — lit where a knob works */
+        const cells = auSampleP2Cells(ed.t, ed.c);
+        return cells.map((c, k) => (!c || c.kind === 'blank') ? null
+            : k === 0 ? { kind: 'arc', norm: (c.sel | 0) / 2 } : k === 1 ? { kind: 'arc', norm: c.sel ? 1 : 0 } : { kind: 'arc', norm: 1 });
+    }
+    let a = i.rstart, b = auEnd(i);
     if (kind === 'manual') {
         const m = auMarks(ed.t, ed.c)[auSelSlice(ed.t)];
         if (m) { a = m[0]; b = m[1]; }
@@ -835,7 +869,8 @@ export function waveRingCells(ed) {
     const at = (n) => ({ kind: 'arc', norm: Math.max(0, Math.min(1, n)) });
     const ends = kind !== 'even' && kind !== 'transient';
     return [ends ? at(a / fr) : null, at(zoom), ends ? at(b / fr) : null, at(((i.gain | 0) + 40) / 52),
-            at(((i.pitch | 0) + 24) / 48), at(((i.detune | 0) + 50) / 100), at(((i.bpm10 || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN)), null];
+            at(((i.pitch | 0) + 24) / 48), at(((i.detune | 0) + 50) / 100), at(((i.bpm10 || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN)),
+            kind ? null : at(((i.nudge | 0) + 500) / 1000)];
 }
 
 /* The rings while an Audio screen holds the knobs: WAVE's, the AUDIO

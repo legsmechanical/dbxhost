@@ -72,7 +72,7 @@ import { sessStripTargets } from './ui_engine.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
 import { isAudioTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
-         auPos, auLazyState, auSelSlice, auPanelCells, auPanelTitle, auPanelPages, auBankEd, auBankTitle, auLoopBankCells, auModeCell, knobAltOnTrack,
+         auPos, auLazyState, auSelSlice, auSampleP2Cells, auPanelCells, auPanelTitle, auPanelPages, auBankEd, auBankTitle, auLoopBankCells, auModeCell, knobAltOnTrack,
          auPadModeCells, AU_NOTE_BASE,
          auFmtTime, auEnd, auBpm, auFmtLen, auLenTicks, auIsSlice, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
 import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
@@ -220,7 +220,8 @@ function drawAudioWaveEditor() {
         : S.knobTouched === 3 ? 'GAIN ' + sgn(i.gain | 0) + 'DB'
         : S.knobTouched === 4 ? 'PITCH ' + sgn(i.pitch | 0)
         : S.knobTouched === 5 ? 'DETUNE ' + sgn(i.detune | 0)
-        : S.knobTouched === 6 ? 'TEMPO ' + (bpm ? (Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) + ' BPM' : '--') : '';
+        : S.knobTouched === 6 ? 'TEMPO ' + (bpm ? (Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) + ' BPM' : '--')
+        : S.knobTouched === 7 ? 'NUDGE ' + sgn(i.nudge | 0) + 'MS' : '';
     /* the middle readout, lit like Start / End (it is only there while its
      * knob is in hand — Josh, 2026-10-28: "nothing in the middle when no
      * knob is touched"); its strip clears what is under it, so a long one
@@ -250,16 +251,25 @@ function drawAudioWaveEditor() {
         drawKitHintRow(MV_FOOTER_Y, [['clk', 'load'], ['back', 'exit']]);
         return;
     }
+    /* SAMPLE's second page: Sync, Revrs, Orig (Josh, 2026-10-29: "the
+     * waveform on page 1 and the params on page 2") */
+    const plain = (sub === 'loop' || sub === 'chop') && !(ed.mode === 'chop' && ed.chop);
+    if (plain && ed.page === 1) {
+        drawKitPage(auSampleName(t, c), auSampleP2Cells(t, c), false,
+                    S.knobTouched === 7 ? [['clk', 'orig']] : [['jog', 'page']]);
+        if (S.knobTouched < 0) drawBankHeading(auSampleName(t, c), false, false, '2/2');
+        return;
+    }
     if (sub === 'loop') {
         /* the sample's name (Josh, 2026-10-28: "in loop mode, can we show the
          * sample name in the header of "sample" instead of "loop"") */
-        drawBankHeading(auSampleName(t, c), false);
+        drawBankHeading(auSampleName(t, c), false, false, '1/2');
         ends('S ' + auFmtTime(i.rstart, rt), 'LEN ' + auFmtLen(auLenTicks(t, c, i)));
         if (zoomTxt) mid(zoomTxt);
         /* no cursor and no chops: they are Slice's (Josh, 2026-10-29: "chops
          * should just be completely invisible in loop mode") */
         drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, gain: i.gain | 0, noMarks: true });
-        drawKitHintRow(MV_FOOTER_Y, [['knobs', 'edit'], ['sh+clk', 'menu']]);   /* Josh: "knobs: edit is fine for a hint" */
+        drawKitHintRow(MV_FOOTER_Y, [['knobs', 'edit'], ['jog', 'page']]);   /* Josh: "knobs: edit is fine for a hint" */
         return;
     }
     const mk = auMarks(t, c);
@@ -278,7 +288,8 @@ function drawAudioWaveEditor() {
         drawKitHintRow(MV_FOOTER_Y, [['jog', kind === 'even' ? 'count' : 'sens'], ['back', 'out']]);
         return;
     }
-    drawBankHeading('SLICE ' + (sel + 1) + '/' + mk.length, false);
+    if (kind === 'manual') drawBankHeading('SLICE ' + (sel + 1) + '/' + mk.length, false);
+    else drawBankHeading(auSampleName(t, c), false, false, '1/2');
     if (kind === 'manual') {
         const m = mk[sel];
         if (m) {
@@ -296,7 +307,7 @@ function drawAudioWaveEditor() {
     ends('S ' + auFmtTime(i.rstart, rt), 'LEN ' + auFmtLen(auLenTicks(t, c, i)));
     if (zoomTxt) mid(zoomTxt);
     drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel, gain: i.gain | 0 });
-    drawKitHintRow(MV_FOOTER_Y, [['knobs', 'edit'], ['clk', 'menu']]);
+    drawKitHintRow(MV_FOOTER_Y, [['clk', 'menu'], ['jog', 'page']]);
 }
 
 /* An Audio track's banks (Josh, 2026-10-27): the CLIP bank mirrors ALL LANES

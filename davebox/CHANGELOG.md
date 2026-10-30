@@ -29,6 +29,11 @@ the section into a versioned heading at release time.
   again every 5 minutes until the Move is plugged in.
 
 ### Changed
+- **Audio: SAMPLE has two pages** — the waveform (Start · Zoom · Length · Gain · Pitch ·
+  Detune · Tempo · **Nudge**) and, a jog turn away, **Sync** · **Revrs** · **Orig** (touch K8
+  and click: the sample plays exactly as recorded). The **LOOP** bank puts Start, Pitch,
+  Detune, Gain, Revrs, Nudge, Sync and Tempo on Track View's knobs to play live, and a
+  Loop clip's **CLIP** bank holds only its Mode.
 - **Audio: each chop type opens a chop editor on the waveform.** Chop sample is
   **Even · Transient · Lazy · Manual**; Even and Transient change live as you turn the
   jog, and **Back** asks *Keep N chops?*. **Manual** edits the chops you have, with

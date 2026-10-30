@@ -1236,11 +1236,17 @@ by clicking **Audio** in the track's sound menu, or with the instrument shortcut
   opens the menu.
 
 There is no End: what plays runs from Start for the Length. In both modes **K4** Gain ·
-**K5** Pitch · **K6** Detune set the whole clip, and **K7** sets the sample's own
+**K5** Pitch · **K6** Detune set the whole clip, **K7** sets the sample's own
 **Tempo**, 1 BPM a detent (**Shift**: 0.1) — what Sync and **>Seq**'s step places
-follow. The knob in hand reads out between Start and Length, and the waveform is
-drawn at the gain it plays at. Start reads in seconds to two decimals, Length in
-bars (**1 + 4/16** is a bar and four steps).
+follow — and **K8** **Nudge** moves the sample against the bar (ms). The knob in hand
+reads out between Start and Length, and the waveform is drawn at the gain it plays at.
+Start reads in seconds to two decimals, Length in bars (**1 + 4/16** is a bar and four
+steps).
+
+SAMPLE has two pages: **turn the jog** for the second (the header reads **1/2** or
+**2/2**). Page 2 holds what needs no waveform: **Sync** (K1, a Loop clip's: **Vintage**,
+**Pitch** or **Warp**), **Revrs** (K2), and **Orig** (touch K8 and click): the sample's
+Tempo becomes the project's, so it plays exactly as recorded.
 
 **Shift + click** opens SAMPLE's menu (in Slice mode a plain click does too):
 **Load sample** (the chooser) and, in Slice mode, **Chop sample**, which offers
@@ -1298,7 +1304,7 @@ it; touching one jumps there. K2 zooms in every chop editor. The header reads
 count while you chop); the start or end you're touching
 or turning lights up, and **ZOOM +** / **ZOOM −** shows between them while K2 zooms.
 
-**The SLICE / LOOP bank** holds the clip's sound; it is named for the clip's Mode. Pick it from the bank map's **SLICE** (or **LOOP**) pad, under CLIP
+**The SLICE / LOOP bank** puts the clip's sound on the knobs in Track View, to play live — the same settings SAMPLE edits; it is named for the clip's Mode. Pick it from the bank map's **SLICE** (or **LOOP**) pad, under CLIP
 — it is a bank with **pages**:
 **turn the jog** to flip them (on a bank with one page the turn does nothing); touch
 the jog or a knob to see the page you're on. **Delete + jog click** resets the page
@@ -1310,7 +1316,7 @@ Pitch and Detune add to the clip's. The Mode isn't here: it's on the CLIP bank.
 | Page | Knobs |
 |---|---|
 | **ALL SLICES** (Slice mode) | **Pitch** · **Detune** · **Gain** for the whole clip · **Revrs** · **Attk** · **Decay** · **Play** for every slice at once (`--` while the slices differ; turning one sets them all) |
-| **LOOP** (Loop mode) | **Pitch** · **Detune** · **Gain** · **Revrs** (plays the sample backwards) |
+| **LOOP** (Loop mode) | **Start** · **Pitch** · **Detune** · **Gain** · **Revrs** (plays the sample backwards) · **Nudge** · **Sync** · **Tempo** |
 | **SLICE n** (Slice mode) | The last pad you tapped: **Pitch**, **Detune**, **Gain**, **Revrs**, **Attk**, **Decay**, and **Play** — **One** (to the slice's end), **Gate** (as long as the step), **Loop** (loops the slice for the step). Kept if the clip goes back to Loop |
 
 **The banks** hold the sequence:
@@ -1318,7 +1324,7 @@ Pitch and Detune add to the clip's. The Mode isn't here: it's on the CLIP bank.
 | Bank | Knobs |
 |---|---|
 | **CLIP**, Slice mode | As ALL LANES on a drum track: **Res** · **Strch** · **Shift** (alt **Nudge**) · **Mode** · **Crop›** · **InQnt** · **Dir** (alt **Revrs**) · **>Seq›** (touch K8, click) lays one step per chop, each at its place at the sample's **Tempo**, so the clip plays the sample back as it was — now as chops you can rearrange. A clip whose length you never set grows to hold all of it (a coarser resolution past 256 steps); a length you set stays, and the chops past it wait beyond the loop's end |
-| **CLIP**, Loop mode | **Sync** (K1) **Vintage** / **Pitch** / **Warp** · **Nudge** (K3) moves the sample against the bar (ms) · **Mode** (K4) |
+| **CLIP**, Loop mode | **Mode** (K4) only — the sound is SAMPLE's (and the LOOP bank's) |
 | **PAD MODE** | **Layout**: **4 Rows** or **16 Pads**, how the chops sit on the pads |
 | **LIVE ARP** | As on a melodic track, but **Step** replaces Oct: each repeat moves one chop up (or down), up to 15 |
 | **NOTE FX** (Slice mode) | As on a drum track — nothing that changes a pitch. **Quant** lives here only |

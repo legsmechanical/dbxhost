@@ -361,7 +361,15 @@ step('⭐⭐ the map\'s WAVE pad opens WAVE; in Slice mode a click opens the SAM
     assert(inked(shown()), 'WAVE draws nothing');
     reset();
     const ed = S.auEditor;
-    jog(1); click();
+    /* the jog turns SAMPLE's pages (Josh, 2026-10-29: "the waveform on page 1
+     * and the params on page 2"): over to Sync / Revrs / Orig and back */
+    jog(1); ticks(1);
+    let ptx = globalThis.__texts(() => shown());
+    assert(ed.page === 1 && ptx.indexOf('2/2') >= 0 && ptx.indexOf('ORIG') >= 0, 'the jog did not turn to page 2: ' + JSON.stringify(ptx));
+    jog(-1); ticks(1);
+    ptx = globalThis.__texts(() => shown());
+    assert(ed.page === 0 && ptx.indexOf('1/2') >= 0, 'the jog did not turn back to page 1: ' + JSON.stringify(ptx));
+    click();
     assert(ed.pick && ed.pick.level === 1 && E.auPickRows(ed).map((r) => r.id).join() === 'load,chop',
            'a click did not open the SAMPLE menu: ' + JSON.stringify(ed.pick));
     assert(!sentLike(/_au_(mark_add|set_even)/).length, 'a click on WAVE edited the chops: ' + JSON.stringify(sentLike(/_au_/)));
@@ -384,7 +392,8 @@ step('⭐⭐ WAVE in Slice mode edits the CLIP: K1 / K3 its Start / End, no curs
            'K1 is not the clip\'s Start: ' + JSON.stringify(sentLike(/_au_/)));
     const cur0 = ed.cur;
     jog(2);
-    assert(ed.cur === cur0, 'the jog moved a cursor on WAVE: ' + ed.cur);
+    assert(ed.cur === cur0 && ed.page === 1, 'the jog moved a cursor on WAVE (it turns the page): ' + ed.cur);
+    jog(-2);
     cc(HC.MoveDelete, 127); note(C.TRACK_PAD_BASE + 2, 100); note(C.TRACK_PAD_BASE + 2, 0); cc(HC.MoveDelete, 0);
     assert(!sent('t4_au_mark_del').length, 'Delete + pad removed a chop on WAVE');
     /* zoomed in, a pad goes to its chop's start and the zoom stays (Josh,
@@ -522,7 +531,7 @@ step('⭐⭐ the map opens from WAVE (hold the jog); a pick leaves it for that b
     GET['t4_au_info_0'] = INFO(1, 8, 0); A.auMarkStale(4, 0); ticks(2);
     mapPad(2, 3);
     reset();
-    jog(1); click(); ticks(2);
+    click(); ticks(2);
     assert(S.auEditor.pick && !S.bankMapUp, 'a short click did not reach WAVE: ' + JSON.stringify(S.auEditor.pick));
     back(); back();
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
@@ -558,9 +567,10 @@ step('⭐⭐ WAVE: SLICE n/n or LOOP up top; Start / End light while touched or 
     ticks(2);
     const px = (f, x, y) => f[y * 128 + x];
     let f, tx = globalThis.__texts(() => { f = shown(); });
-    /* the knobs edit the clip, a click opens the menu (Josh, 2026-10-28) */
-    assert(['KNOBS', 'EDIT', 'CLK', 'MENU'].every((h) => tx.indexOf(h) >= 0), 'Slice hints: ' + JSON.stringify(tx));
-    assert(tx.indexOf('SLICE 1/8') >= 0 || tx.some((x) => /^SLICE \d+\/8$/.test(x)), 'the header: ' + JSON.stringify(tx.slice(0, 6)));
+    /* a click opens the menu (Josh, 2026-10-28), the jog turns the page; SAMPLE
+     * page 1 of 2 under the sample's name (SLICE n/N is SLICES') */
+    assert(['CLK', 'MENU', 'JOG', 'PAGE'].every((h) => tx.indexOf(h) >= 0), 'Slice hints: ' + JSON.stringify(tx));
+    assert(tx.indexOf('1/2') >= 0 && tx.some((x) => /^BREAK PHENOM/.test(x)), 'the header: ' + JSON.stringify(tx.slice(0, 6)));
     assert(!px(f, 2, 9) && !px(f, 3, 15), 'Start is lit with no knob in hand');
     note(0, 127); f = shown();
     assert(px(f, 2, 9) && px(f, 2, 15), 'touching K1 did not light Start');
@@ -586,7 +596,8 @@ step('⭐⭐ WAVE: SLICE n/n or LOOP up top; Start / End light while touched or 
     mapPad(2, 3); ticks(2);
     let lf;
     tx = globalThis.__texts(() => { lf = shown(); });
-    assert(tx.indexOf('KNOBS') >= 0 && tx.indexOf('EDIT') >= 0 && tx.indexOf('SH+CLK') >= 0, 'Loop hints: ' + JSON.stringify(tx));
+    assert(tx.indexOf('KNOBS') >= 0 && tx.indexOf('EDIT') >= 0 && tx.indexOf('JOG') >= 0 && tx.indexOf('PAGE') >= 0 && tx.indexOf('1/2') >= 0,
+           'Loop hints: ' + JSON.stringify(tx));
     /* nothing in the middle with no knob in hand (Josh) */
     const nm = A.auSampleName(4, 0).toUpperCase();
     assert(nm && nm !== 'NO SAMPLE' && tx.some((x) => x.toUpperCase() === nm) && tx.indexOf('LOOP') < 0 && !tx.some((x) => /^(ZOOM [+-]|GAIN |PITCH |DETUNE )|ST$|DB$/.test(x)) && !lf[12 * 128 + 64], 'Loop at rest: ' + JSON.stringify(tx));
@@ -682,12 +693,26 @@ step('⭐⭐ the knob rings follow the Audio screens and the AUDIO bank: lit whe
     assert(sent8() === '11111110', 'SLICE n rings: ' + sent8());
     jog(-1);
     GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(3);
-    assert(A.auBankTitle(4) === 'LOOP' && sent8() === '11110000', 'LOOP rings: ' + sent8());
+    assert(A.auBankTitle(4) === 'LOOP' && sent8() === '11111111', 'LOOP rings: ' + sent8());
+    /* the Track View bank on a Loop clip is the performance page (Josh,
+     * 2026-10-29: "automatable and performance oriented params exposed on the
+     * knobs in track overview"): Start · Pitch · Detune · Gain · Revrs ·
+     * Nudge · Sync · Tempo */
+    {
+        const ed = A.auBankEd(4);
+        assert(A.auPanelCells(ed).map((c) => c.label).join() === 'Start,Pitch,Detune,Gain,Revrs,Nudge,Sync,Tempo',
+               'the LOOP page: ' + A.auPanelCells(ed).map((c) => c.label).join());
+        reset();
+        A.auPanelKnob(ed, 0, 1);
+        A.auPanelKnob(ed, 7, 1);
+        assert(sent('t4_au_set_start').length === 1 && sent('t4_au_set_bpm').length === 1,
+               'K1 Start / K8 Tempo on the LOOP page: ' + JSON.stringify(sentLike(/_au_/)));
+    }
     S.activeBank = 0;
-    mapPad(2, 3); ticks(2);                          /* WAVE: K1-K7, not K8 */
-    assert(lit() === '11111110', 'WAVE rings: ' + lit());
+    mapPad(2, 3); ticks(2);                          /* SAMPLE page 1: K1-K8 (K8 Nudge) */
+    assert(lit() === '11111111', 'WAVE rings: ' + lit());
     ticks(3);                                        /* ...and that is what the knobs get */
-    assert(sent8() === '11111110', 'the rings sent over WAVE: ' + sent8() + ' ' + JSON.stringify([71, 72, 73, 74, 75, 76, 77, 78].map((x) => CCLEDS.get(x))));
+    assert(sent8() === '11111111', 'the rings sent over WAVE: ' + sent8() + ' ' + JSON.stringify([71, 72, 73, 74, 75, 76, 77, 78].map((x) => CCLEDS.get(x))));
     const g0 = globalThis.__ring()[3].norm;
     cc(74, 1);
     assert(globalThis.__ring()[3].norm > g0, 'the Gain ring did not follow the turn');
@@ -1007,7 +1032,7 @@ step('⭐ the step editor\'s K1 reads "Slice n"', () => {
     S.heldStep = -1; S.heldStepNotes = []; S.activeBank = 0;
 });
 
-step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP / NOTE FX; the CLIP bank is Nudge · Mode', () => {
+step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP / NOTE FX; the CLIP bank is Mode alone, the sound on SAMPLE', () => {
     S.activeBank = 1;                                  /* on NOTE FX when the clip turns Loop */
     GET['t4_au_info_0'] = INFO(0, 8);
     A.auMarkStale(4, 0); ticks(4);
@@ -1027,52 +1052,54 @@ step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP /
     ticks(2);
     assert(sentLike(/_step_/).length === 0, 'a step press edited a Loop clip: ' + JSON.stringify(sentLike(/_step_/)));
     const cells = A.auLoopBankCells(4);
-    assert(cells.map((c) => c.label).join() === 'Sync,,Nudge,Mode,,,,', 'loop bank: ' + cells.map((c) => c.label));
+    assert(cells.map((c) => c.label).join() === ',,,Mode,,,,', 'loop bank: ' + cells.map((c) => c.label));
+    /* every knob but Mode does nothing here: the sound is SAMPLE's (Josh,
+     * 2026-10-29: Loop CLIP bank = "Mode alone" — "that's fine") */
     S.bankCardLatched = true;
     reset();
-    /* K3 Nudge: one detent's worth (the knob's acceleration may need a tick or two) */
-    for (let i = 0; i < 4 && !sent('t4_au_set_nudge').length; i++) cc(73, 1);
-    assert(sent('t4_au_set_nudge').join() === '0 5', 'K3 is not Nudge: ' + JSON.stringify(sentLike(/_au_/)));
-    S.knobTouched = 2;                                 /* K3 Nudge: no click alternate */
+    for (const k of [71, 72, 73, 75, 76, 77, 78]) { S.knobAccelLast[k - 71] = 0; for (let i = 0; i < 6; i++) cc(k, 1); }
+    assert(!sentLike(/_au_/).length, 'a Loop CLIP knob other than Mode acts: ' + JSON.stringify(sentLike(/_au_/)));
+    S.knobTouched = 2;
     const lh = JSON.stringify(render.bankPageHints(0));
     S.knobTouched = -1;
     assert(lh.indexOf('CLK') < 0, 'a Loop CLIP knob offers a click: ' + lh);
-    /* K1 Sync: Vintage · Pitch · Warp (Josh, 2026-10-29: Free left, "leave it
-     * as sync. and make warp the default."), the DSP's values 1 · 2 · 0; a new
-     * clip is on Warp, and an unknown value reads as Warp */
-    assert(A.auLoopBankCells(4)[0].text === 'Warp', 'a new clip is not on Warp: ' + A.auLoopBankCells(4)[0].text);
-    for (let i = 0; i < 200; i++) cc(71, 127);
+    S.bankCardLatched = false;
+
+    /* ...they are on SAMPLE: page 1's K8 Nudge, page 2's K1 Sync (Vintage ·
+     * Pitch · Warp, the DSP's 1 · 2 · 0; a new clip on Warp), K2 Revrs, and
+     * touch K8 + click Orig (Josh, 2026-10-29) */
+    mapPad(2, 3); ticks(2);
+    reset();
+    S.knobAccelLast[7] = 0; cc(78, 1);
+    assert(sent('t4_au_set_nudge').join() === '0 5', 'SAMPLE K8 is not Nudge: ' + JSON.stringify(sentLike(/_au_/)));
+    jog(1); ticks(1);
+    const ed = S.auEditor;
+    assert(ed.page === 1, 'the jog did not turn SAMPLE to page 2');
+    assert(A.auSampleP2Cells(4, 0).map((c) => c.label).join() === 'Sync,Revrs,,,,,,Orig', 'page 2: ' + A.auSampleP2Cells(4, 0).map((c) => c.label));
+    assert(A.auSampleP2Cells(4, 0)[0].text === 'Warp', 'a new clip is not on Warp: ' + A.auSampleP2Cells(4, 0)[0].text);
+    for (let i = 0; i < 40; i++) cc(71, 127);
     reset();
     const tv = [];
-    for (let i = 0; i < 200; i++) { cc(71, 1); const t = A.auLoopBankCells(4)[0].text; if (tv[tv.length - 1] !== t) tv.push(t); }
-    assert(tv.join() === 'Vintage,Pitch,Warp' && sent('t4_au_set_sync').join() === '0 2,0 0' && !sentLike(/_au_set_(revrs|jump|jmpq|tempo)/).length,
+    for (let i = 0; i < 40; i++) { cc(71, 1); const t = A.auSampleP2Cells(4, 0)[0].text; if (tv[tv.length - 1] !== t) tv.push(t); }
+    assert(tv.join() === 'Vintage,Pitch,Warp' && sent('t4_au_set_sync').join() === '0 2,0 0',
            'K1 is not Sync Vintage · Pitch · Warp: ' + tv.join() + ' ' + JSON.stringify(sentLike(/_au_/)));
     assert(A.auSyncIdx({ sync: 1 }) === 0 && A.auSyncIdx({ sync: 2 }) === 1 && A.auSyncIdx({ sync: 0 }) === 2 &&
            A.auSyncIdx({ sync: 99 }) === 2, 'Vintage / Pitch / Warp / an unknown value reads wrong');
-    /* each fits the square on one line (found on the device: VIN / TAG) */
-    const wasInfo = S.auInfo[4][0];
     for (const v of [0, 1, 2]) {
-        S.auInfo[4][0] = Object.assign({}, wasInfo, { sync: v });
-        const sq = A.auLoopBankCells(4)[0].sq;
+        const was = S.auInfo[4][0];
+        S.auInfo[4][0] = Object.assign({}, was, { sync: v });
+        const sq = A.auSampleP2Cells(4, 0)[0].sq;
+        S.auInfo[4][0] = was;
         assert(sq && sq.length <= 4, 'Sync ' + v + '\'s square: ' + sq);
     }
-    /* K5..K7 are blank and do nothing on every Sync (Beats' Fill / Fade /
-     * Sens are gone; Sens lives in the Transient chop editor) */
-    for (const v of [0, 1, 2]) {
-        S.auInfo[4][0] = Object.assign({}, wasInfo, { sync: v });
-        reset();
-        for (let i = 0; i < 60; i++) cc(75, 127);
-        S.knobAccelLast[5] = 0; cc(76, 1); S.knobAccelLast[6] = 0; cc(77, 1);
-        assert(!sentLike(/_au_set_(fill|fade|sens)/).length && A.auLoopBankCells(4).map((c) => c.label).join() === 'Sync,,Nudge,Mode,,,,',
-               'K5..K7 act on Sync ' + v + ': ' + JSON.stringify(sentLike(/_au_/)));
-    }
-    S.auInfo[4][0] = wasInfo;
-    for (let i = 0; i < 200; i++) cc(71, 127);
-    /* K2 is blank: the clip has a length of its own, and the sample's Tempo
-     * is SAMPLE's K7 (Josh, 2026-10-29: "drop it from clip") */
     reset();
-    for (let i = 0; i < 40; i++) cc(72, 1);
-    assert(!sent('t4_au_set_bars').length && !sentLike(/_au_/).length, 'K2 on the Loop CLIP bank still acts: ' + JSON.stringify(sentLike(/_au_/)));
+    for (let i = 0; i < 20 && !sent('t4_au_set_revrs').length; i++) cc(72, 1);
+    assert(sent('t4_au_set_revrs').join() === '0 1', 'K2 is not Revrs: ' + JSON.stringify(sentLike(/_au_/)));
+    for (let i = 0; i < 20 && sent('t4_au_set_revrs').length < 2; i++) cc(72, 127);
+    reset();
+    note(7, 127); click(); note(7, 0); ticks(1);
+    assert(sent('t4_au_set_orig').join() === '0 0', 'touch K8 + click is not Orig: ' + JSON.stringify(sentLike(/_au_/)));
+    jog(-1); back(); ticks(2);
     S.bankCardLatched = false;
 });
 

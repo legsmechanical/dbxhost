@@ -538,7 +538,19 @@ export function auPanelCells(ed) {
     const detune = detuneCell('Detune', i.detune);
     const gain = { kind: 'arc', label: 'Gain', name: 'Gain', text: fmtDb(i.gain), norm: (i.gain + 40) / 52 };
     if (page === 'CLIP') {
-        if (auIsLoop(i)) return [pitch, detune, gain, revrsCell(i), BLANK, BLANK, BLANK, BLANK].map(live);
+        /* a Loop clip's performance page (Josh, 2026-10-29: "automatable and
+         * performance oriented params exposed on the knobs in track overview") */
+        if (auIsLoop(i)) {
+            const fr = i.nframes || 1;
+            const start = { kind: 'arc', label: 'Start', name: 'Start', text: auFmtTime(i.rstart, i.rate), norm: i.rstart / fr };
+            const sync = { kind: 'enumsq', label: 'Sync', name: 'Sync: Vintage · Pitch · Warp',
+                           text: AU_SYNC_NAMES[auSyncIdx(i)], sq: AU_SYNC_SQ[auSyncIdx(i)], options: AU_SYNC_NAMES, sel: auSyncIdx(i) };
+            const bpm = auBpm(i);
+            const tempo = { kind: 'valsq', label: 'Tempo', name: 'Tempo (the sample\'s own)',
+                            text: bpm ? String(Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) : '--',
+                            norm: ((i.bpm10 || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN) };
+            return [start, pitch, detune, gain, revrsCell(i), nudgeCell(i), sync, tempo].map(live);
+        }
         /* every slice's sound here (Josh: "merge the "all slices" items to
          * this bank"): `--` while the slices differ, a turn sets them all */
         const a = auAll(t, c);
@@ -580,8 +592,10 @@ export function auPanelRingCells(ed) {
 export function auPanelKnobClass(ed, k) {
     const page = auPanelPageName(ed);
     if (page === 'CLIP') {
+        const sl = auIsSlice(auInfo(ed.t, auClipOf(ed.t)));
+        if (!sl) return (k === 4 || k === 6) ? 'delib' : (k === 1 ? 'pick' : '');   /* Loop: Revrs, Sync deliberate; Pitch picks */
         if (k === 0) return 'pick';
-        return (k === 3 || (k === 6 && auIsSlice(auInfo(ed.t, auClipOf(ed.t))))) ? 'delib' : '';
+        return (k === 3 || k === 6) ? 'delib' : '';
     }
     if (k === 0) return 'pick';
     return (k === 3 || k === 6) ? 'delib' : '';
@@ -612,8 +626,9 @@ function stepSliceField(f, v, steps) {
     return v;
 }
 
-/* The CLIP bank's own Audio knobs: Mode (K4, both modes) and, in Loop mode,
- * Sync (K1), Nudge (K3). The Tempo is SAMPLE's K7.
+/* The CLIP bank's own Audio knob: Mode (K4, both modes) — what kind of clip
+ * it is (Josh, 2026-10-29: "mode has to live in clip b/c it describes the type
+ * of clip it is"); everything about the sound is SAMPLE's.
  * Returns true when something changed. */
 export function auClipBankKnob(t, k, steps) {
     const c = auClipOf(t), i = auInfo(t, c);
@@ -625,16 +640,6 @@ export function auClipBankKnob(t, k, steps) {
         if (S.auPanel) S.auPanel.page = 0;
         S.pendingPadNoteMapRecompute = true;
         S.ledsDirtyAudio = true;
-    } else if (k === 0 && auIsLoop(i)) {
-        if (i.state !== 2) return false;
-        const ti = Math.max(0, Math.min(AU_SYNC_NAMES.length - 1, auSyncIdx(i) + (steps > 0 ? 1 : -1)));
-        if (AU_SYNC_VALS[ti] === (i.sync | 0)) return false;
-        loc.sync = AU_SYNC_VALS[ti]; auSet(t, c, 'sync', loc.sync);
-    } else if (k === 2 && auIsLoop(i)) {
-        if (i.state !== 2) return false;
-        const v = Math.max(-500, Math.min(500, i.nudge + steps * (S.shiftHeld ? 1 : 5)));
-        if (v === i.nudge) return false;
-        loc.nudge = v; auSet(t, c, 'nudge', v);
     } else return false;
     S.auInfo[t][c] = loc;
     S.auStartsRev = (S.auStartsRev | 0) + 1;
@@ -730,6 +735,20 @@ export function auPanelKnob(ed, k, steps) {
     if (page === 'CLIP') {
         if (i.state !== 2) {
             return false;
+        } else if (auIsLoop(i)) {
+            /* Start · Pitch · Detune · Gain · Revrs · Nudge · Sync · Tempo */
+            if (k === 0) return auRangeStep(t, c, 'start', steps);
+            if (k === 1) { const v = Math.max(-24, Math.min(24, i.pitch + dir)); if (v === i.pitch) return false; loc.pitch = v; auSet(t, c, 'pitch', v); }
+            else if (k === 2) { const v = Math.max(-50, Math.min(50, (i.detune | 0) + steps)); if (v === (i.detune | 0)) return false; loc.detune = v; auSet(t, c, 'detune', v); }
+            else if (k === 3) { const v = Math.max(-40, Math.min(12, i.gain + dir)); if (v === i.gain) return false; loc.gain = v; auSet(t, c, 'gain', v); }
+            else if (k === 4) { const v = dir > 0 ? 1 : 0; if (v === i.revrs) return false; loc.revrs = v; auSet(t, c, 'revrs', v); }
+            else if (k === 5) return auNudgeStep(t, c, steps);
+            else if (k === 6) return auSampleP2Knob(t, c, 0, steps);
+            else if (k === 7) {
+                const v = Math.max(AU_BPM10_MIN, Math.min(AU_BPM10_MAX, (i.bpm10 || 1200) + steps * (S.shiftHeld ? 1 : 10)));
+                if (v === (i.bpm10 | 0)) return false;
+                loc.bpm10 = v; auSet(t, c, 'bpm', v);
+            } else return false;
         } else if (k === 0) {
             const v = Math.max(-24, Math.min(24, i.pitch + dir));
             if (v === i.pitch) return false;
@@ -790,14 +809,62 @@ export function knobAltOnTrack(t, padMode, bank, k) {
     return knobAltFor(padMode, bank, k);
 }
 
-/* ---- the CLIP bank in Loop mode: K1 Sync (Vintage · Pitch · Warp), K3 Nudge, where Slice has Shift and its Nudge
- * alternate; K4 Mode. ---- */
+/* ---- the CLIP bank in Loop mode: Mode (K4) alone (Josh, 2026-10-29: "that's
+ * fine") — Sync, Nudge and the rest of the sound are SAMPLE's ---- */
 export function auLoopBankCells(t) {
-    const i = auInfo(t, auClipOf(t));
+    return [BLANK, BLANK, BLANK, auModeCell(t), BLANK, BLANK, BLANK, BLANK];
+}
+
+/* ---- SAMPLE's second page: what needs no waveform (Josh, 2026-10-29) —
+ * K1 Sync (a Loop clip's), K2 Revrs, K8 Orig (touch + click: the Tempo =
+ * the project's, so the sample plays as recorded; "orig") ---- */
+export function auSampleP2Cells(t, c) {
+    const i = auInfo(t, c);
+    const loop = auIsLoop(i);
     const sync = { kind: 'enumsq', label: 'Sync', name: 'Sync: Vintage · Pitch · Warp',
                    text: AU_SYNC_NAMES[auSyncIdx(i)], sq: AU_SYNC_SQ[auSyncIdx(i)], options: AU_SYNC_NAMES, sel: auSyncIdx(i) };
+    const orig = { kind: 'action', oneWay: true, label: 'Orig', name: 'Orig: the Tempo = the project\'s', text: '->', opens: false };
     const live = (x) => (i.state === 2 ? x : dash(x));
-    return [live(sync), BLANK, live(nudgeCell(i)), auModeCell(t), BLANK, BLANK, BLANK, BLANK];
+    return [loop ? live(sync) : BLANK, live(revrsCell(i)), BLANK, BLANK, BLANK, BLANK, BLANK, live(orig)];
+}
+/* A turn on SAMPLE's second page. Returns true when something changed. */
+export function auSampleP2Knob(t, c, k, steps) {
+    const i = auInfo(t, c);
+    if (i.state !== 2 || !steps) return false;
+    const loc = Object.assign({}, i);
+    if (k === 0 && auIsLoop(i)) {
+        const ti = Math.max(0, Math.min(AU_SYNC_NAMES.length - 1, auSyncIdx(i) + (steps > 0 ? 1 : -1)));
+        if (AU_SYNC_VALS[ti] === (i.sync | 0)) return false;
+        loc.sync = AU_SYNC_VALS[ti]; auSet(t, c, 'sync', loc.sync);
+    } else if (k === 1) {
+        const v = steps > 0 ? 1 : 0;
+        if (v === (i.revrs | 0)) return false;
+        loc.revrs = v; auSet(t, c, 'revrs', v);
+    } else return false;
+    S.auInfo[t][c] = loc;
+    S.auStartsRev = (S.auStartsRev | 0) + 1;
+    return true;
+}
+/* Orig: the sample's Tempo becomes the project's */
+export function auOrig(t, c) {
+    const i = auInfo(t, c);
+    if (i.state !== 2) return false;
+    auSet(t, c, 'orig', 0);
+    const bpm = S.bpmMirror > 0 ? S.bpmMirror : 120;   /* the DSP sets the same from its own */
+    S.auInfo[t][c] = Object.assign({}, i, { bpm10: Math.round(bpm * 10) });
+    S.auStartsRev = (S.auStartsRev | 0) + 1;
+    return true;
+}
+/* Nudge (SAMPLE's K8): the sample against the bar, 5 ms a detent (Shift 1) */
+export function auNudgeStep(t, c, steps) {
+    const i = auInfo(t, c);
+    if (i.state !== 2 || !steps) return false;
+    const v = Math.max(-500, Math.min(500, (i.nudge | 0) + steps * (S.shiftHeld ? 1 : 5)));
+    if (v === (i.nudge | 0)) return false;
+    auSet(t, c, 'nudge', v);
+    S.auInfo[t][c] = Object.assign({}, i, { nudge: v });
+    S.auStartsRev = (S.auStartsRev | 0) + 1;
+    return true;
 }
 
 /* ---- PAD MODE on an Audio track: K1 Layout ---- */
