@@ -386,9 +386,8 @@ export function auPick(t, c, path, join) {
 }
 
 /* One undo step over clips `cs` of track t, before they are replaced (their
- * resets and picks then join it) */
+ * resets and picks then join it; the first reset marks Undo available) */
 export function auUndoClips(t, cs) {
-    noteUndoUnit();
     setKey(t, 'undo', cs.join(' '));
 }
 

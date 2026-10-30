@@ -1130,13 +1130,27 @@ step('⭐⭐ SAMPLE\'s menu: Trim and Normalize ask Overwrite or New (New first)
         assert(!same(asked, frame(() => D.drawAudioAsk('TRIM', lines, 0))), 'control: the buttons do not read Overwrite / New');
     }
     let tx;
+    S.undoAvailable = false;
     click(); ticks(1);
     assert(!ed.ask && sent('t4_au_edit').join() === '0 0 0', 'New did not trim into a new sample: ' + JSON.stringify(sent('t4_au_edit')));
-    GET['t4_au_info_0'] = part; A.auMarkStale(4, 0); ticks(2);
-    /* Trim › Overwrite */
+    assert(S.undoAvailable, 'Trim New is not an undo step');
+    /* Undo: the clip's info is read again at once (its sample came back) */
+    GET['t4_au_info_0'] = part; GET['last_restore'] = 'm 4 0';
+    S.pendingUndoSync = 1; S.tickCount = 1001; ticks(1);
+    assert(A.auInfo(4, 0).state === 2 && A.auInfo(4, 0).rstart === 24000, 'the undo did not re-read the Audio clip: ' + JSON.stringify(A.auInfo(4, 0)));
+    delete GET['last_restore'];
+    A.auMarkStale(4, 0); ticks(2);
+    /* Trim › Overwrite: no undo step (it cannot be undone) */
     reset();
+    S.undoAvailable = false;
     menu(1); jog(-1); click(); ticks(1);
     assert(sent('t4_au_edit').join() === '0 0 1', 'Overwrite did not trim the file: ' + JSON.stringify(sent('t4_au_edit')));
+    assert(!S.undoAvailable, 'Overwrite offered an Undo it cannot do');
+    GET['t4_au_info_0'] = part; A.auMarkStale(4, 0); ticks(2);
+    /* None (the chooser's): an undo step */
+    S.undoAvailable = false;
+    A.auClear(4, 0);
+    assert(S.undoAvailable, 'None is not an undo step');
     GET['t4_au_info_0'] = part; A.auMarkStale(4, 0); ticks(2);
     /* Normalize › Back: nothing */
     reset();
