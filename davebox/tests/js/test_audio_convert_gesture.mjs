@@ -139,9 +139,10 @@ step('⭐⭐ ...then clip C, then the conversion, then each clip takes its recor
     assert(!S.auConvert && !S.resampleTake, 'the takes did not end');
     ticks(8);
     assert(sent('t4_convert_to_audio').length === 1, 'not converted');
-    assert(sets.findIndex((x) => x[0] === 't4_convert_to_audio') < sets.findIndex((x) => x[0] === 't4_au_pick'),
+    assert(sets.findIndex((x) => x[0] === 't4_convert_to_audio') < sets.findIndex((x) => x[0] === 't4_au_pick_join'),
            'a take was loaded before the conversion');
-    assert(sent('t4_au_pick').join() === '0|' + P0 + ',2|' + P2, 'picks: ' + sent('t4_au_pick'));
+    assert(sent('t4_au_pick_join').join() === '0|' + P0 + ',2|' + P2 && !sent('t4_au_pick').length && !sent('t4_au_undo').length,
+           'a conversion\'s picks took an undo step: ' + sent('t4_au_pick'));
     globalThis.__stubStat = null;
 });
 
@@ -259,7 +260,7 @@ step('⭐⭐ Post: every clip through its FX (Dry); once converted, the loaded i
     assert(!S.auConvert, 'the takes did not end');
     shadowSets.length = 0;
     ticks(10);
-    assert(sent('t4_au_pick').length === 2, 'picks: ' + sent('t4_au_pick'));
+    assert(sent('t4_au_pick_join').length === 2, 'picks: ' + sent('t4_au_pick_join'));
     const byp = shadowSets.filter((x) => x[0] === 4 && /bypassed/.test(x[1]) && x[2] === '1').map((x) => x[1]).sort();
     assert(byp.join() === 'fx1:bypassed,fx3:bypassed', 'bypassed: ' + JSON.stringify(shadowSets.filter((x) => /bypass/.test(x[1]))));
     /* TRACK CONFIG, still open where Freeze was asked for, shows them bypassed
@@ -294,9 +295,13 @@ step('⭐⭐ an Audio track freezes IN PLACE (Josh, 2026-10-30: "audio tracks ou
     shadowSets.length = 0;
     ticks(16);
     globalThis.__stubStat = null;
-    const order = sets.map((x) => x[0]).filter((k) => /^t4_(c[02]_hard_reset|au_pick)$/.test(k));
-    assert(order.join() === 't4_c0_hard_reset,t4_au_pick,t4_c2_hard_reset,t4_au_pick', 'order: ' + order.join());
-    assert(sent('t4_au_pick').join() === '0|' + P0 + ',2|' + P2, 'picks: ' + sent('t4_au_pick'));
+    /* one undo step over both clips, taken first; each reset and pick joins it */
+    const order = sets.map((x) => x[0]).filter((k) => /^t4_(c[02]_hard_reset|au_pick|au_pick_join|au_undo)$/.test(k));
+    assert(order.join() === 't4_au_undo,t4_c0_hard_reset,t4_au_pick_join,t4_c2_hard_reset,t4_au_pick_join', 'order: ' + order.join());
+    assert(sent('t4_au_undo').join() === '0 2', 'undo step: ' + sent('t4_au_undo'));
+    assert(sent('t4_c0_hard_reset').concat(sent('t4_c2_hard_reset')).join() === 'j,j', 'a reset took its own undo step');
+    assert(sent('t4_au_pick_join').join() === '0|' + P0 + ',2|' + P2, 'picks: ' + sent('t4_au_pick_join'));
+    assert(S.undoAvailable, 'Undo is not available after Flatten');
     assert(sent('t4_convert_to_audio').length === 0, 'an Audio track was converted');
     assert(shadowSets.some((x) => x[0] === 4 && x[1] === 'fx1:bypassed' && x[2] === '1'), 'Post did not bypass');
     S.trackPadMode[4] = 0; GET['t4_pad_mode'] = '0'; NOSYNTH = false;

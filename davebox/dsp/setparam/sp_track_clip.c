@@ -821,8 +821,9 @@ static int sp_track_clip(sp_ctx_t *cx) {
             return 1;
         }
         if (!strncmp(p, "_hard_reset", 11) && p[11] == '\0') {
-            /* tN_cC_hard_reset — full factory reset: undo snapshot, silence, clip_init */
-            undo_begin_single(inst, tidx, cidx);
+            /* tN_cC_hard_reset — full factory reset: undo snapshot, silence, clip_init.
+             * "j": the snapshot was taken already (tN_au_undo) — this joins it */
+            if (!val || strcmp(val, "j")) undo_begin_single(inst, tidx, cidx);
             silence_track_notes_v2(inst, tr);
             clip_init(cl);
             if (tr->pad_mode == PAD_MODE_AUDIO) au_clip_reset(inst, tidx, cidx);   /* its sample and every setting go too */

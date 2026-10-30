@@ -374,13 +374,15 @@ step('⭐⭐ an Audio clip offers In place (Josh, 2026-10-30: "resample in place
     ticks(2);
     globalThis.__stubStat = null;
     assert(/In place/.test((S.actionPopupLines || []).join(' ')), 'notice: ' + JSON.stringify(S.actionPopupLines));
-    assert(sent('t2_au_pick').length === 0, 'picked before the reset');
-    assert(sent('t2_c0_hard_reset').length === 1, 'the clip was not reset: ' + JSON.stringify(S.pendingDefaultSetParams));
-    for (let i = 0; i < 6 && sent('t2_au_pick').length === 0; i++) ticks(1);
+    assert(sent('t2_au_pick_join').length === 0, 'picked before the reset');
+    assert(sent('t2_c0_hard_reset').join() === 'j', 'the clip was not reset, joining the undo step: ' + JSON.stringify(S.pendingDefaultSetParams));
+    for (let i = 0; i < 6 && sent('t2_au_pick_join').length === 0; i++) ticks(1);
     const order = sets.map((x) => x[0]);
-    assert(sent('t2_au_pick').join() === '0|' + path, 'pick: ' + sent('t2_au_pick'));
-    assert(order.indexOf('t2_c0_hard_reset') >= 0 && order.indexOf('t2_c0_hard_reset') < order.indexOf('t2_au_pick'),
-           'the pick did not come after the reset: ' + order.join(','));
+    assert(sent('t2_au_pick_join').join() === '0|' + path && !sent('t2_au_pick').length, 'pick: ' + sent('t2_au_pick_join'));
+    assert(order.indexOf('t2_au_undo') >= 0 && order.indexOf('t2_au_undo') < order.indexOf('t2_c0_hard_reset') &&
+           order.indexOf('t2_c0_hard_reset') < order.indexOf('t2_au_pick_join'),
+           'not undo step, reset, pick: ' + order.join(','));
+    assert(sent('t2_au_undo').join() === '0' && S.undoAvailable, 'In place is not one undo step');
     assert(S.clipSteps[T][0][0] === 0, 'the steps were kept');
     S.resampleState = 0; S.trackPadMode[T] = 0; S.sessionView = true;
 });

@@ -238,7 +238,7 @@ export function clearClip(t, ac, keepPlaying) {
 }
 
 /* Full factory reset: clip_init on DSP + JS mirror cleared. Track View only. */
-export function hardResetClip(t, ac) {
+export function hardResetClip(t, ac, join) {
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
     if (isAudioTrack(t)) { S.auInfo[t][ac] = null; auMarkStale(t, ac); }   /* its sample goes too */
     if (S.trackPadMode[t] === PAD_MODE_DRUM) {
@@ -263,7 +263,8 @@ export function hardResetClip(t, ac) {
         automationClearClipQueued(S.pendingDefaultSetParams, t, ac);
         return;
     }
-    S.pendingDefaultSetParams.unshift({ key: 't' + t + '_c' + ac + '_hard_reset', val: '1', _local: true });
+    /* join: the undo step was taken already (auUndoClips) */
+    S.pendingDefaultSetParams.unshift({ key: 't' + t + '_c' + ac + '_hard_reset', val: join ? 'j' : '1', _local: true });
     S.clearDrainHold = 1;
     _markLocalTouch(t, ac);   /* aftertouch wiped DSP-side; re-read to mirror */
     /* ⚠ `_hard_reset` is clip_init + at_auto_reset — it does NOT clear the

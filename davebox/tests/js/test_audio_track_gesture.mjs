@@ -1178,9 +1178,11 @@ step('⭐⭐ Load sample: the chooser opens over WAVE, auditions, a click picks 
     S.auChooser.restAt = 1;
     ticks(2);
     assert(PREVIEWS.indexOf('/data/CoreLibrary/Samples/Loops/Break.wav') >= 0, 'no audition: ' + PREVIEWS.join());
+    S.undoAvailable = false; S.redoAvailable = true;
     click();
     assert(!S.auChooser && S.auEditor && S.auEditor.mode === 'wave', 'the chooser did not close back onto WAVE');
     assert(sent('t4_au_pick').join() === '0|/data/CoreLibrary/Samples/Loops/Break.wav', 'pick: ' + sent('t4_au_pick'));
+    assert(S.undoAvailable && !S.redoAvailable, 'a pick is not an undo step');
     os.__setReaddir(null); globalThis.__stubStat = null;
     back();
     GET['t4_au_info_0'] = INFO(1, 8);

@@ -1599,6 +1599,12 @@ typedef struct {
     uint8_t redo_clip_indices[UNDO_MAX_CLIPS];
     uint8_t redo_clip_count;
     uint8_t redo_valid;
+    /* An Audio clip's sample side, with the same slots (au_undo_snap): its
+     * sample's name and every setting. on = the clip was an Audio clip. */
+    au_clip_t undo_au[UNDO_MAX_CLIPS];
+    uint8_t   undo_au_on[UNDO_MAX_CLIPS];
+    au_clip_t redo_au[UNDO_MAX_CLIPS];
+    uint8_t   redo_au_on[UNDO_MAX_CLIPS];
 
     /* Drum-clip recording undo/redo — mutually exclusive with melodic undo_valid. */
     uint8_t  drum_undo_valid;
@@ -7744,6 +7750,61 @@ static void on_midi(void *instance, const uint8_t *msg, int len, int source) {
 /* Undo/redo helpers                                                    */
 /* ------------------------------------------------------------------ */
 
+/* An Audio clip's sample side, kept with its undo snapshot: the name and
+ * every setting, not the loaded audio — a restore loads the file again by
+ * name (samples/ keeps it until a Purge). */
+static void au_undo_snap(seq8_instance_t *inst, au_clip_t *dst, uint8_t *on, int t, int c) {
+    *on = inst->tracks[t].pad_mode == PAD_MODE_AUDIO;
+    if (!*on) return;
+    *dst = inst->au_clip[t][c];
+    dst->smp = NULL;
+    dst->gen = 0;
+    dst->state = dst->err = 0;
+}
+
+/* ...and back. The same file, loaded, keeps its audio and takes the
+ * settings; another (or none) lets the clip's go and loads the snapshot's,
+ * its settings kept (a load under the clip's own name is not a pick:
+ * au_apply_results). Called after apply_clip_restore. */
+static void au_undo_restore(seq8_instance_t *inst, const au_clip_t *src, uint8_t on, int t, int c) {
+    au_clip_t *cl = &inst->au_clip[t][c];
+    uint32_t gen;
+    if (!on || inst->tracks[t].pad_mode != PAD_MODE_AUDIO) return;
+    if (cl->smp && cl->state == 2 && src->name[0] && !strcmp(cl->name, src->name)) {
+        au_sample_t *smp = cl->smp;
+        gen = cl->gen;
+        *cl = *src;
+        cl->smp = smp;
+        cl->gen = gen;
+        cl->state = 2;
+    } else {
+        au_clip_reset(inst, t, c);
+        gen = cl->gen;
+        *cl = *src;
+        cl->gen = gen;
+        if (cl->name[0]) au_request_load(inst, t, c);
+    }
+    rui_mark(inst, t, c);
+    inst->state_dirty = 1;
+}
+
+/* A sample file about to be overwritten: an undo or redo step holding a
+ * clip on it goes whole (half a step restored is worse than none). */
+static void au_undo_forget(seq8_instance_t *inst, const char *name) {
+    int i;
+    if (!name[0]) return;
+    for (i = 0; i < (int)inst->undo_clip_count; i++)
+        if (inst->undo_au_on[i] && !strcmp(inst->undo_au[i].name, name)) {
+            inst->undo_valid = 0;
+            inst->drum_row_undo_valid = 0;
+        }
+    for (i = 0; i < (int)inst->redo_clip_count; i++)
+        if (inst->redo_au_on[i] && !strcmp(inst->redo_au[i].name, name)) {
+            inst->redo_valid = 0;
+            inst->drum_row_redo_valid = 0;
+        }
+}
+
 static void undo_begin_single(seq8_instance_t *inst, int t, int c) {
     if (inst->undo_locked) return;
     inst->undo_clip_count    = 1;
@@ -7753,6 +7814,7 @@ static void undo_begin_single(seq8_instance_t *inst, int t, int c) {
     pa_undo_capture(inst, inst->undo_pa[0], &inst->undo_pa_count[0],
                     &inst->undo_pa_partial[0], t, c);
     memcpy(&inst->undo_auto_at[0], &inst->tracks[t].clip_at_auto[c], sizeof(at_auto_t));
+    au_undo_snap(inst, &inst->undo_au[0], &inst->undo_au_on[0], t, c);
     inst->undo_valid = 1;
     inst->redo_valid = 0;
     inst->drum_undo_valid = 0;
@@ -7857,6 +7919,7 @@ static void undo_begin_row(seq8_instance_t *inst, int row_c) {
         pa_undo_capture(inst, inst->undo_pa[t], &inst->undo_pa_count[t],
                         &inst->undo_pa_partial[t], t, row_c);
         memcpy(&inst->undo_auto_at[t], &inst->tracks[t].clip_at_auto[row_c], sizeof(at_auto_t));
+        au_undo_snap(inst, &inst->undo_au[t], &inst->undo_au_on[t], t, row_c);
     }
     inst->undo_valid = 1;
     inst->redo_valid = 0;
@@ -7876,15 +7939,41 @@ static void undo_begin_clip_pair(seq8_instance_t *inst, int srcT, int srcC, int 
     pa_undo_capture(inst, inst->undo_pa[0], &inst->undo_pa_count[0],
                     &inst->undo_pa_partial[0], srcT, srcC);
     memcpy(&inst->undo_auto_at[0], &inst->tracks[srcT].clip_at_auto[srcC], sizeof(at_auto_t));
+    au_undo_snap(inst, &inst->undo_au[0], &inst->undo_au_on[0], srcT, srcC);
     inst->undo_clip_tracks[1]  = (uint8_t)dstT;
     inst->undo_clip_indices[1] = (uint8_t)dstC;
     memcpy(&inst->undo_clips[1], &inst->tracks[dstT].clips[dstC], sizeof(clip_t));
     pa_undo_capture(inst, inst->undo_pa[1], &inst->undo_pa_count[1],
                     &inst->undo_pa_partial[1], dstT, dstC);
     memcpy(&inst->undo_auto_at[1], &inst->tracks[dstT].clip_at_auto[dstC], sizeof(at_auto_t));
+    au_undo_snap(inst, &inst->undo_au[1], &inst->undo_au_on[1], dstT, dstC);
     inst->undo_valid = 1;
     inst->redo_valid = 0;
     inst->drum_undo_valid = 0;
+}
+
+/* Snapshot clips cs[0..n) of track t as one undo step (Flatten's takes in
+ * place: every clip it replaces comes back with one Undo). */
+static void undo_begin_track_clips(seq8_instance_t *inst, int t, const uint8_t *cs, int n) {
+    int i;
+    if (inst->undo_locked || n < 1) return;
+    if (n > UNDO_MAX_CLIPS) n = UNDO_MAX_CLIPS;
+    inst->undo_clip_count = (uint8_t)n;
+    for (i = 0; i < n; i++) {
+        int c = cs[i];
+        inst->undo_clip_tracks[i]  = (uint8_t)t;
+        inst->undo_clip_indices[i] = (uint8_t)c;
+        memcpy(&inst->undo_clips[i], &inst->tracks[t].clips[c], sizeof(clip_t));
+        pa_undo_capture(inst, inst->undo_pa[i], &inst->undo_pa_count[i],
+                        &inst->undo_pa_partial[i], t, c);
+        memcpy(&inst->undo_auto_at[i], &inst->tracks[t].clip_at_auto[c], sizeof(at_auto_t));
+        au_undo_snap(inst, &inst->undo_au[i], &inst->undo_au_on[i], t, c);
+    }
+    inst->undo_valid = 1;
+    inst->redo_valid = 0;
+    inst->drum_undo_valid = 0;
+    inst->drum_row_undo_valid = 0;
+    inst->drum_row_redo_valid = 0;
 }
 
 /* Snapshot two full rows (src + dst, 16 clips) for row cut operations. */
@@ -7898,12 +7987,14 @@ static void undo_begin_row_pair(seq8_instance_t *inst, int srcRow, int dstRow) {
         pa_undo_capture(inst, inst->undo_pa[t], &inst->undo_pa_count[t],
                         &inst->undo_pa_partial[t], t, srcRow);
         memcpy(&inst->undo_auto_at[t], &inst->tracks[t].clip_at_auto[srcRow], sizeof(at_auto_t));
+        au_undo_snap(inst, &inst->undo_au[t], &inst->undo_au_on[t], t, srcRow);
         inst->undo_clip_tracks[t + NUM_TRACKS]  = (uint8_t)t;
         inst->undo_clip_indices[t + NUM_TRACKS] = (uint8_t)dstRow;
         memcpy(&inst->undo_clips[t + NUM_TRACKS], &inst->tracks[t].clips[dstRow], sizeof(clip_t));
         pa_undo_capture(inst, inst->undo_pa[t + NUM_TRACKS], &inst->undo_pa_count[t + NUM_TRACKS],
                         &inst->undo_pa_partial[t + NUM_TRACKS], t, dstRow);
         memcpy(&inst->undo_auto_at[t + NUM_TRACKS], &inst->tracks[t].clip_at_auto[dstRow], sizeof(at_auto_t));
+        au_undo_snap(inst, &inst->undo_au[t + NUM_TRACKS], &inst->undo_au_on[t + NUM_TRACKS], t, dstRow);
     }
     inst->undo_valid = 1;
     inst->redo_valid = 0;
@@ -7928,6 +8019,7 @@ static void undo_begin_scene_bake(seq8_instance_t *inst, int clip) {
             pa_undo_capture(inst, inst->undo_pa[mc], &inst->undo_pa_count[mc],
                             &inst->undo_pa_partial[mc], t, clip);
             memcpy(&inst->undo_auto_at[mc], &inst->tracks[t].clip_at_auto[clip], sizeof(at_auto_t));
+            au_undo_snap(inst, &inst->undo_au[mc], &inst->undo_au_on[mc], t, clip);
             mc++;
         }
     }

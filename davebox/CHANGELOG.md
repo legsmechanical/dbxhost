@@ -9,6 +9,10 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Added
+- **Audio: Undo brings a clip's sample back.** Loading a sample, None, Shift + Delete,
+  Resample In place, Flatten track (one Undo for every clip it replaced) and Trim or
+  Normalize to a New sample are now undoable: the clip gets its old sample back, with
+  its settings. An Overwrite still can't be undone.
 - **Flatten track.** TRACK CONFIG › **Flatten track** records every clip and turns the
   track into an Audio track, each clip playing its recording. **Pre** records the
   instrument before the track's effects and leaves them on; **Post** records through

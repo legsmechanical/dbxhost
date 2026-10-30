@@ -23,7 +23,7 @@ import * as os from 'os';
 import { S } from './ui_state.mjs';
 import { showActionPopupFor } from './ui_persistence.mjs';
 import { SCENE_LETTERS, PAD_MODE_AUDIO } from './ui_constants.mjs';
-import { auPick } from './ui_audio.mjs';
+import { auPick, auUndoClips } from './ui_audio.mjs';
 /* a cycle through ui_sound: used only inside function bodies */
 import { flattenStart } from './ui_audio_convert.mjs';
 import { hardResetClip } from './ui_editops.mjs';
@@ -345,7 +345,7 @@ export function resampleTick() {
     if (ip && !S.clearDrainHold &&
             !S.pendingDefaultSetParams.some((e) => e.key === 't' + ip.t + '_c' + ip.c + '_hard_reset')) {
         S.resampleInPlace = null;
-        auPick(ip.t, ip.c, ip.path);
+        auPick(ip.t, ip.c, ip.path, true);
         S.screenDirty = true;
     }
     const t = S.resampleTake;
@@ -378,7 +378,8 @@ export function resampleTick() {
         if (s && t.inPlace) {
             /* In place: the clip starts over (its sample, steps and every
              * setting go, as Shift + Delete takes them), then picks the take */
-            hardResetClip(t.inPlace.t, t.inPlace.c);
+            auUndoClips(t.inPlace.t, [t.inPlace.c]);   /* the reset and the pick: one undo */
+            hardResetClip(t.inPlace.t, t.inPlace.c, true);
             S.resampleInPlace = { t: t.inPlace.t, c: t.inPlace.c, path: t.path };
             finish(2500, 'RESAMPLED', t.what + ', ' + barsLabel(t.loopBars), 'In place');
         }

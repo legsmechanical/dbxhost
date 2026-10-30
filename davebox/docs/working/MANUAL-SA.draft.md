@@ -1383,8 +1383,11 @@ first knob reads **Slice n** and picks the step's chop.
 **Copying** an Audio clip carries its sample and settings; it pastes onto an Audio
 track only. **Delete + clip** clears its sequence only: the sample, its settings
 and the clip's length stay. **Shift + Delete + clip** resets it completely, sample
-and all. **Undo** covers the steps; the
-sample's settings aren't undoable. **Export to Ableton** leaves Audio tracks
+and all. **Undo** covers the steps, and the sample too: loading a sample, **None**,
+**Shift + Delete**, Resample **In place**, **Flatten track** (one Undo for every clip)
+and a Trim or Normalize to a **New** sample each come back with one Undo, the old
+sample with its settings. Turning a setting isn't an undo step of its own, and an
+**Overwrite** can't be undone. **Export to Ableton** leaves Audio tracks
 out for now, and says so when it finishes.
 
 **Track View at rest** shows a Loop clip as SAMPLE does zoomed out — its bars across,

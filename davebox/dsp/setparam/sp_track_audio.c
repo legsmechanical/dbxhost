@@ -913,11 +913,14 @@ static int sp_track_audio(sp_ctx_t *cx) {
     if (strncmp(sub, "au_", 3)) return 0;
     sub += 3;
 
-    if (!strcmp(sub, "pick")) {
+    /* pick: one undo step; pick_join: part of the step already taken (In
+     * place and Flatten: tN_au_undo, then the clip's reset, then this) */
+    if (!strcmp(sub, "pick") || !strcmp(sub, "pick_join")) {
         au_req_t r;
         c = au_arg_clip(&p);
         if (c < 0 || *p != '|' || !p[1]) return 1;
         au_clip_t *cl = &inst->au_clip[tidx][c];
+        if (sub[4] == '\0') undo_begin_single(inst, tidx, c);
         memset(&r, 0, sizeof r);
         r.kind = AU_REQ_PICK;
         r.track = (uint8_t)tidx; r.clip = (uint8_t)c;
@@ -966,6 +969,11 @@ static int sp_track_audio(sp_ctx_t *cx) {
             if (re <= rs || (rs == 0 && re >= cl->smp->frames)) return 1;   /* nothing to trim */
             r.a = rs; r.b = re;
         }
+        /* New: one undo step (the old file is still there). Overwrite cannot
+         * be undone, and a snapshot of any clip on that file would put its
+         * settings back over different audio: those go */
+        if (!r.ow) undo_begin_single(inst, tidx, c);
+        else au_undo_forget(inst, cl->name);
         r.gen = ++cl->gen;
         cl->state = 1;
         cl->err = 0;
@@ -974,10 +982,21 @@ static int sp_track_audio(sp_ctx_t *cx) {
         return 1;
     }
 
+    /* "C C ...": one undo step over these clips, before a Flatten replaces
+     * them (each reset then joins it: tN_cC_hard_reset "j") */
+    if (!strcmp(sub, "undo")) {
+        uint8_t cs[NUM_CLIPS];
+        int n = 0;
+        while (n < NUM_CLIPS && (c = au_arg_clip(&p)) >= 0) cs[n++] = (uint8_t)c;
+        undo_begin_track_clips(inst, tidx, cs, n);
+        return 1;
+    }
+
     if (!strcmp(sub, "clear")) {
         c = au_arg_clip(&p);
         if (c < 0) return 1;
         au_clip_t *cl = &inst->au_clip[tidx][c];
+        undo_begin_single(inst, tidx, c);
         if (cl->smp) au_track_kill(inst, tidx, cl->smp);   /* NULL would kill every voice */
         au_drop(inst, cl->smp);
         cl->smp = NULL;

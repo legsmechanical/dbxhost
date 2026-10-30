@@ -44,7 +44,7 @@ import {
     MoveRec, LED_OFF, parseActionRaw, INSTR_NONE, ROUTE_NONE,
     INSTR_CONDUCT, PAD_MODE_CONDUCT, PAD_MODE_MELODIC_SCALE, DEFAULT_TRACK_OCTAVE,
     INSTR_AUDIO, PAD_MODE_AUDIO } from './ui_constants.mjs';
-import { auReadTrack, auForgetTrack } from './ui_audio.mjs';
+import { auReadTrack, auForgetTrack, isAudioTrack, auRead } from './ui_audio.mjs';
 import { Red } from '/data/UserData/schwung/shared/constants.mjs';
 
 import { S } from './ui_state.mjs';
@@ -2303,6 +2303,9 @@ export function syncClipsTargeted(infoStr) {
              * whole branch. */
             if (c === S.trackActiveClip[t]) refreshPerClipBankParams(t);
         }
+        /* an Audio clip's sample side came back with it (a reload reads as
+         * loading, polled until it lands) */
+        if (isAudioTrack(t)) auRead(t, c);
         const _ath = host_module_get_param('t' + t + '_c' + c + '_at_has');
         S.clipAtHas[t][c] = (_ath !== null && parseInt(_ath, 10) === 1);
     }

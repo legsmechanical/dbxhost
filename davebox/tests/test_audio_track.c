@@ -1793,6 +1793,89 @@ int main(void) {
         hx_destroy(h);
     }
 
+    /* ---- undo: an Audio clip's sample side comes back with its steps ---- */
+    {
+        au_clip_t *ac;
+        char n1[160], n2[160], n3[160];   /* the names as imported (a name taken gets ~2) */
+        h = rig(1); inst = (seq8_instance_t *)h->inst; tr = &inst->tracks[4];
+        ac = &inst->au_clip[4][0];
+        /* a pick is one undo step: undo empties the clip again, redo picks it back */
+        snprintf(p, sizeof p, "0|%s/src/mono48.wav", g_root); hx_set_param(h, "t4_au_pick", p);
+        HX_ASSERT(wait_loaded(h, 4, 0) == 2, "undo: the first pick did not load");
+        snprintf(n1, sizeof n1, "%s", ac->name);
+        hx_set_param(h, "t4_au_set_gain", "0 -9");
+        hx_set_param(h, "t4_au_set_start", "0 1000");
+        /* a second pick: undo puts the first sample back with ITS settings */
+        snprintf(p, sizeof p, "0|%s/src/ramp.wav", g_root); hx_set_param(h, "t4_au_pick", p);
+        HX_ASSERT(wait_loaded(h, 4, 0) == 2 && strcmp(ac->name, n1), "undo: the second pick did not load");
+        snprintf(n2, sizeof n2, "%s", ac->name);
+        HX_ASSERT(ac->rstart == 0, "undo: a pick kept the old Start");
+        hx_set_param(h, "undo_restore", "1");
+        HX_ASSERT(wait_loaded(h, 4, 0) == 2 && !strcmp(ac->name, n1), "undo: the pick's sample did not come back");
+        HX_ASSERT(ac->gain_db == -9 && ac->rstart == 1000, "undo: the old sample came back without its settings");
+        HX_ASSERT(ac->smp && !strcmp(ac->smp->name, n1), "undo: the clip plays another sample than it names");
+        hx_set_param(h, "redo_restore", "1");
+        HX_ASSERT(wait_loaded(h, 4, 0) == 2 && !strcmp(ac->name, n2) && ac->rstart == 0 && ac->gain_db == -9,
+                  "redo: the second pick did not come back as it was");
+        /* the same file: settings only, the loaded audio kept (no reload) */
+        hx_set_param(h, "t4_au_set_gain", "0 -3");
+        {
+            uint32_t gen;
+            const au_sample_t *now;
+            hx_set_param(h, "t4_c0_hard_reset", "");
+            snprintf(p, sizeof p, "0|%s/src/ramp.wav", g_root); hx_set_param(h, "t4_au_pick_join", p);
+            HX_ASSERT(wait_loaded(h, 4, 0) == 2 && ac->gain_db == 0 && !strcmp(ac->name, n2),
+                      "In place: the reset + pick did not land at defaults");
+            gen = ac->gen; now = ac->smp;
+            hx_set_param(h, "undo_restore", "1");
+            HX_ASSERT(ac->state == 2 && ac->gen == gen && ac->smp == now && ac->gain_db == -3,
+                      "undo of a reset + pick_join of the same file did not keep its audio and restore its settings");
+        }
+        /* Shift + Delete (the reset alone) and the chooser's None: undoable */
+        hx_set_param(h, "t4_c0_hard_reset", "");
+        HX_ASSERT(!ac->name[0], "the reset kept the sample");
+        hx_set_param(h, "undo_restore", "1");
+        HX_ASSERT(wait_loaded(h, 4, 0) == 2 && !strcmp(ac->name, n2) && ac->gain_db == -3, "undo of Shift + Delete lost the sample");
+        hx_set_param(h, "t4_au_clear", "0");
+        hx_set_param(h, "undo_restore", "1");
+        HX_ASSERT(wait_loaded(h, 4, 0) == 2 && !strcmp(ac->name, n2), "undo of None lost the sample");
+        /* Flatten: one step over every clip it replaces, each reset joining it */
+        snprintf(p, sizeof p, "2|%s/src/mono48.wav", g_root); hx_set_param(h, "t4_au_pick", p);
+        HX_ASSERT(wait_loaded(h, 4, 2) == 2, "undo: clip C did not load");
+        snprintf(n3, sizeof n3, "%s", inst->au_clip[4][2].name);
+        tr->clips[2].length = 32;
+        hx_set_param(h, "t4_au_undo", "0 2");
+        hx_set_param(h, "t4_c0_hard_reset", "j");
+        snprintf(p, sizeof p, "0|%s/src/spike.wav", g_root); hx_set_param(h, "t4_au_pick_join", p);
+        hx_set_param(h, "t4_c2_hard_reset", "j");
+        snprintf(p, sizeof p, "2|%s/src/spike.wav", g_root); hx_set_param(h, "t4_au_pick_join", p);
+        HX_ASSERT(wait_loaded(h, 4, 0) == 2 && wait_loaded(h, 4, 2) == 2 &&
+                  strcmp(ac->name, n2) && strcmp(inst->au_clip[4][2].name, n3), "Flatten's picks did not land");
+        hx_set_param(h, "undo_restore", "1");
+        HX_ASSERT(wait_loaded(h, 4, 0) == 2 && wait_loaded(h, 4, 2) == 2 &&
+                  !strcmp(ac->name, n2) && !strcmp(inst->au_clip[4][2].name, n3) &&
+                  tr->clips[2].length == 32, "one undo did not bring back every clip Flatten replaced");
+        /* Trim New: undo goes back to the untrimmed file, Start where it was */
+        hx_set_param(h, "t4_au_set_start", "0 4000");
+        hx_set_param(h, "t4_au_set_mode", "0 1");
+        hx_set_param(h, "t4_au_edit", "0 0 0");
+        HX_ASSERT(wait_loaded(h, 4, 0) == 2 && strcmp(ac->name, n2) && ac->rstart == 0, "Trim New did not land");
+        hx_set_param(h, "undo_restore", "1");
+        HX_ASSERT(wait_loaded(h, 4, 0) == 2 && !strcmp(ac->name, n2) && ac->rstart == 4000, "undo of Trim New");
+        /* Overwrite: a step holding a clip on that file goes (clip B shares it) */
+        snprintf(p, sizeof p, "1|%s/src/ramp.wav", g_root); hx_set_param(h, "t4_au_pick", p);
+        HX_ASSERT(wait_loaded(h, 4, 1) == 2 && !strcmp(inst->au_clip[4][1].name, n2), "setup: clip B is not on clip A's file");
+        hx_set_param(h, "t4_c1_hard_reset", "");
+        HX_ASSERT(inst->undo_valid, "setup: no undo step");
+        hx_set_param(h, "t4_au_edit", "0 0 1");
+        HX_ASSERT(!inst->undo_valid, "an Overwrite left an undo step that would restore over different audio");
+        HX_ASSERT(wait_loaded(h, 4, 0) == 2, "Trim Overwrite did not land");
+        /* a melodic track's undo carries no sample side */
+        hx_set_param(h, "t1_c0_hard_reset", "");
+        HX_ASSERT(!inst->undo_au_on[0], "a melodic clip's snapshot is marked Audio");
+        hx_destroy(h);
+    }
+
     {
         char cmd[320];
         snprintf(cmd, sizeof cmd, "rm -rf '%s'", g_root);

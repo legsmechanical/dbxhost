@@ -27,7 +27,7 @@
  *
  * No host_* call happens at module init. */
 
-import { S } from './ui_state.mjs';
+import { S, noteUndoUnit } from './ui_state.mjs';
 /* a cycle (ui_audio_editor imports this module): used only inside a function body */
 import { lazyFinish } from './ui_audio_editor.mjs';
 import { PAD_MODE_AUDIO, NUM_CLIPS, BANK_STEP, knobAltFor } from './ui_constants.mjs';
@@ -375,13 +375,25 @@ export function auClipHasSample(t, c) {
 
 function setKey(t, sub, val) { host_module_set_param('t' + t + '_au_' + sub, String(val)); }
 
-export function auPick(t, c, path) {
-    setKey(t, 'pick', c + '|' + path);
+/* A pick is one undo step; `join`: part of a step already taken (In place
+ * and Flatten: auUndoClips, then the clip's reset, then this), or of none
+ * (a track's conversion to Audio). */
+export function auPick(t, c, path, join) {
+    if (!join) noteUndoUnit();
+    setKey(t, join ? 'pick_join' : 'pick', c + '|' + path);
     S.auInfo[t][c] = Object.assign({}, auInfo(t, c), { state: 1, err: 0, name: '' });
     auMarkStale(t, c);
 }
 
+/* One undo step over clips `cs` of track t, before they are replaced (their
+ * resets and picks then join it) */
+export function auUndoClips(t, cs) {
+    noteUndoUnit();
+    setKey(t, 'undo', cs.join(' '));
+}
+
 export function auClear(t, c) {
+    noteUndoUnit();
     setKey(t, 'clear', c);
     S.auInfo[t][c] = Object.assign({}, auInfo(t, c), { state: 0, name: '', nframes: 0 });
     auMarkStale(t, c);
@@ -940,6 +952,7 @@ export function auSampleP2Knob(t, c, k, steps) {
 export function auEdit(t, c, op, ow) {
     const i = auInfo(t, c);
     if (i.state !== 2) return false;
+    if (!ow) noteUndoUnit();   /* Overwrite cannot be undone (the engine drops a step on that file) */
     setKey(t, 'edit', c + ' ' + (op ? 1 : 0) + ' ' + (ow ? 1 : 0));
     S.auInfo[t][c] = Object.assign({}, i, { state: 1 });
     auMarkStale(t, c);

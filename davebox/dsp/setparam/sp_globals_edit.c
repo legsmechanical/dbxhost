@@ -604,6 +604,7 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             pa_undo_capture(inst, inst->redo_pa[i], &inst->redo_pa_count[i],
                             &inst->redo_pa_partial[i], t, c);
             memcpy(&inst->redo_auto_at[i], &inst->tracks[t].clip_at_auto[c], sizeof(at_auto_t));
+            au_undo_snap(inst, &inst->redo_au[i], &inst->redo_au_on[i], t, c);
         }
         inst->redo_valid = 1;
         apply_clip_restore(inst, inst->undo_clips,
@@ -619,6 +620,7 @@ static int sp_globals_edit(sp_ctx_t *cx) {
                                       pa_undo_any_partial(inst->undo_pa_partial,
                                                           (int)inst->undo_clip_count)), t, c);
             memcpy(&inst->tracks[t].clip_at_auto[c], &inst->undo_auto_at[i], sizeof(at_auto_t));
+            au_undo_restore(inst, &inst->undo_au[i], inst->undo_au_on[i], t, c);
             if ((int)inst->tracks[t].active_clip == c)
                 memset(inst->tracks[t].at_last_sent, 0xFF, AT_MAX_LANES);
         }
@@ -739,6 +741,7 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             pa_undo_capture(inst, inst->undo_pa[i], &inst->undo_pa_count[i],
                             &inst->undo_pa_partial[i], t, c);
             memcpy(&inst->undo_auto_at[i], &inst->tracks[t].clip_at_auto[c], sizeof(at_auto_t));
+            au_undo_snap(inst, &inst->undo_au[i], &inst->undo_au_on[i], t, c);
         }
         inst->undo_valid = 1;
         apply_clip_restore(inst, inst->redo_clips,
@@ -751,6 +754,7 @@ static int sp_globals_edit(sp_ctx_t *cx) {
                                       pa_undo_any_partial(inst->redo_pa_partial,
                                                           (int)inst->redo_clip_count)), t, c);
             memcpy(&inst->tracks[t].clip_at_auto[c], &inst->redo_auto_at[i], sizeof(at_auto_t));
+            au_undo_restore(inst, &inst->redo_au[i], inst->redo_au_on[i], t, c);
             if ((int)inst->tracks[t].active_clip == c)
                 memset(inst->tracks[t].at_last_sent, 0xFF, AT_MAX_LANES);
         }

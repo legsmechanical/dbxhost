@@ -27,7 +27,7 @@ import { S } from './ui_state.mjs';
 import { NUM_CLIPS, SCENE_LETTERS, PAD_MODE_DRUM, PAD_MODE_AUDIO } from './ui_constants.mjs';
 import { clipHasContent } from './ui_pure.mjs';
 import { hardResetClip } from './ui_editops.mjs';
-import { auPick } from './ui_audio.mjs';
+import { auPick, auUndoClips } from './ui_audio.mjs';
 import { showActionPopupFor } from './ui_persistence.mjs';
 import { sanitizeName } from './ui_export.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -270,11 +270,13 @@ function applyTick() {
         /* the clip starts over (sample, steps, settings: Shift + Delete's
          * reset), then picks; the pick goes straight to the engine and the
          * reset through the queue, so the pick waits for the reset to go */
-        if (a.reset !== a.i) { hardResetClip(a.t, k.c); a.reset = a.i; return true; }
+        /* one undo step brings back every clip it replaces */
+        if (a.reset < 0) auUndoClips(a.t, a.takes.map((x) => x.c));
+        if (a.reset !== a.i) { hardResetClip(a.t, k.c, true); a.reset = a.i; return true; }
         if (S.clearDrainHold || S.pendingDefaultSetParams.some((e) => e.key === 't' + a.t + '_c' + k.c + '_hard_reset'))
             return true;
     }
     a.i++;
-    auPick(a.t, k.c, k.path);
+    auPick(a.t, k.c, k.path, true);
     return true;
 }
