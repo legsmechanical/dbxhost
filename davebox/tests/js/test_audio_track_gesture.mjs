@@ -1275,6 +1275,46 @@ step('⭐⭐ the sequence works with SAMPLE or SLICES up, as under any instrumen
     S.activeBank = 0; ticks(2);
 });
 
+step('⭐⭐ a Loop clip\'s Shift turns its waveform: zoomed out, SAMPLE and the Track View strip show the audio rotated inside the clip, the beats still (Josh, 2026-10-30: "make the waveform rotate. feature isn\'t done until it is")', () => {
+    const base = INFO24(0, 8, 0, 8, 50, 0);                   /* Loop, 84 BPM, Shift 0 */
+    const withRot = (r) => base.replace(/ 0\|/, ' 0 ' + r + '|');   /* ...slen 0, then the Shift */
+    const ac = S.trackActiveClip[4] | 0;
+    S.clipLength[4][ac] = 16; S.clipTPS[4][ac] = 24;
+    const wasPos = GET['t4_au_pos'];
+    GET['t4_au_pos'] = '0 0 -1';                              /* no playhead in the way */
+    GET['t4_au_info_0'] = withRot(0); A.auMarkStale(4, 0); ticks(4);
+    assert(A.auInfo(4, 0).rot === 0, 'the fixture: ' + A.auInfo(4, 0).rot);
+    mapPad(2, 3); ticks(4);
+    assert(S.auEditor && S.auEditor.full, 'SAMPLE is not zoomed out');
+    const rows = (f, y0, y1) => (x) => { let v = ''; for (let y = y0; y <= y1; y++) v += f[y * 128 + x] ? 1 : 0; return v; };
+    const f0 = shown();
+    GET['t4_au_info_0'] = withRot(96); A.auMarkStale(4, 0); ticks(4);   /* a quarter of 384 ticks */
+    assert(A.auInfo(4, 0).rot === 96, 'the Shift was not read: ' + A.auInfo(4, 0).rot);
+    const f1 = shown();
+    const a = rows(f0, 20, 49), b = rows(f1, 20, 49);
+    let moved = 0, same = 0;
+    for (let x = 0; x < 128; x++) { if (b(x) === a((x - 32 + 128) % 128)) moved++; if (b(x) === a(x)) same++; }
+    assert(moved >= 124, 'the waveform did not turn a quarter of the screen: ' + moved + '/128 columns match');
+    assert(same < 100, 'control: the waveform looks the same unturned (' + same + '/128): the fixture cannot show a turn');
+    /* the beats stay where the clip's beats are */
+    const ta = rows(f0, 51, 53), tb = rows(f1, 51, 53);
+    let beats = 0; for (let x = 0; x < 128; x++) if (ta(x) === tb(x)) beats++;
+    assert(beats === 128, 'the beat ticks moved with the audio');
+    back(); ticks(2);
+    /* the Track View strip turns too */
+    GET['t4_au_info_0'] = withRot(0); A.auMarkStale(4, 0); ticks(4);
+    S.activeBank = 0; S.bankCardLatched = false;
+    const g0 = shown();
+    GET['t4_au_info_0'] = withRot(96); A.auMarkStale(4, 0); ticks(4);
+    const g1 = shown();
+    const sa = rows(g0, 49, 54), sb = rows(g1, 49, 54);
+    let smoved = 0, ssame = 0;
+    for (let x = 4; x < 124; x++) { if (sb(x) === sa(4 + ((x - 4 - 30 + 120) % 120))) smoved++; if (sb(x) === sa(x)) ssame++; }
+    assert(smoved >= 116 && ssame < 110, 'the Track View strip did not turn: ' + smoved + ' moved, ' + ssame + ' same of 120');
+    GET['t4_au_pos'] = wasPos;
+    GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
+});
+
 step('⭐⭐ Slice mode: pads are 36 + chop in time order, 8 a row, none past the count; the CLIP bank mirrors ALL LANES', () => {
     ticks(2);
     DM.computePadNoteMap();

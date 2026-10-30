@@ -74,7 +74,7 @@ import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
 import { isAudioTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
          auPos, auLazyState, auSelSlice, auSampleP2Cells, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells, auModeCell, knobAltOnTrack, auAltBit,
          auPadModeCells, AU_NOTE_BASE,
-         auFmtTime, auEnd, auBpm, auFpt, auFmtLen, auLenTicks, auIsSlice, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
+         auFmtTime, auEnd, auBpm, auFpt, auFmtLen, auLenTicks, auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
 import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
 import { drawAudioAsk } from './ui_dialogs.mjs';
 import { drawAudioChooser } from './ui_audio_chooser.mjs';
@@ -92,10 +92,40 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
     const i = auInfo(t, c);
     const fr = i.nframes | 0;
     const A = o.A != null ? o.A : 0, B = o.B != null ? o.B : fr;
+    /* A Loop clip's Shift, where the view is the clip's time (`clipTime`:
+     * SAMPLE's Loop view, the Track View strip): the audio rotated inside the
+     * clip as it plays — clip frame v shows sample frame rot(v) — the beats
+     * staying put (Josh, 2026-10-30: "make the waveform rotate. feature isn't
+     * done until it is") */
+    const org = i.rstart | 0, cLen = o.clipTime ? auLenTicks(t, c, i) * auFpt(i) : 0;
+    const Lt = o.clipTime ? auLenTicks(t, c, i) : 0;
+    const by = o.clipTime && auIsLoop(i) && i.rot && Lt > 0 ? ((i.rot | 0) % Lt) * auFpt(i) : 0;
+    const rot = (v) => org + (((v - org - by) % cLen) + cLen) % cLen;      /* clip frame -> sample frame */
+    const unrot = (f) => org + (((f - org + by) % cLen) + cLen) % cLen;    /* sample frame -> clip frame */
     /* a view running past the file's end (SAMPLE's clip window when the Length
      * outlasts the sample) is empty there: only the columns inside are read */
-    const wIn = B > fr ? Math.max(0, Math.min(w, Math.floor((fr - A) / (B - A) * w))) : w;
-    const cols = fr ? (wIn > 0 ? auWaveColumns(t, c, wIn, A, Math.min(B, fr)) : []) : null;
+    const colsFor = (n, a, b) => {
+        const nIn = b > fr ? Math.max(0, Math.min(n, Math.floor((fr - a) / (b - a) * n))) : n;
+        const cc = nIn > 0 ? auWaveColumns(t, c, nIn, a, Math.min(b, fr)) : [];
+        return cc ? Array.from({ length: n }, (_, k) => (k < nIn ? cc[k] : null)) : null;   /* null: past the file, empty */
+    };
+    let wIn = w, cols = null;
+    if (fr && by > 0) {
+        /* two pieces, split where the sample's start now falls */
+        const P = org + by;
+        const seg = (vA, vB) => {
+            const p0 = Math.round((vA - A) / (B - A) * w), p1 = Math.round((vB - A) / (B - A) * w);
+            if (p1 <= p0) return [];
+            const a = rot(vA);
+            return colsFor(p1 - p0, a, a + (vB - vA));
+        };
+        const parts = (P > A && P < B) ? [seg(A, P), seg(P, B)] : [seg(A, B)];
+        cols = parts.some((x) => x === null) ? null : [].concat(...parts);
+    } else if (fr) {
+        wIn = B > fr ? Math.max(0, Math.min(w, Math.floor((fr - A) / (B - A) * w))) : w;
+        cols = wIn > 0 ? auWaveColumns(t, c, wIn, A, Math.min(B, fr)) : [];
+    }
+    if (cols) wIn = Math.min(w, cols.length);
     const mid = y + Math.floor(h / 2);
     const fx = (f) => x + Math.floor((f - A) / (B - A) * w);
     const inView = (px) => px >= x && px < x + w;
@@ -108,13 +138,14 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
     /* `gain` (dB): drawn as it will play, the loudest at the frame's edge */
     const g = o.gain ? Math.pow(10, o.gain / 20) : 1;
     for (let k = 0; k < wIn; k++) {
+        if (cols[k] == null) continue;
         const hh = Math.max(0, Math.min(Math.floor((h - 1) / 2), Math.round(cols[k] * g * (h - 1) / 2)));
         fill_rect(x + k, mid - hh, 1, hh * 2 + 1, 1);
     }
     /* outside Start..End: hatched off */
     const rs = i.rstart, re = auEnd(i);
     for (let k = 0; k < w; k++) {
-        const f = A + (B - A) * (k + 0.5) / w;
+        const v = A + (B - A) * (k + 0.5) / w, f = by > 0 ? rot(v) : v;
         if (f < rs || f > re) for (let j = y; j < y + h; j++) if (((k + j) & 1) === 0) set_pixel(x + k, j, 0);
     }
     if (!o.noMarks && o.faint) {
@@ -173,7 +204,7 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
     }
     const p = auPos();
     if (p.t === t && p.on) {
-        const px = fx(p.frame);
+        const px = fx(by > 0 ? unrot(p.frame) : p.frame);
         if (inView(px)) {
             fill_rect(px, y - 1, 1, h + 2, 0);
             fill_rect(px + 1, y - 1, 1, h + 2, 1);
@@ -203,7 +234,7 @@ function drawAudioTrackRest(t) {
          * where it lands at the sample's Tempo, empty past the file, the beats
          * under it and the playhead (Josh, 2026-10-29: "yep") */
         const lo = i.rstart | 0, hi = Math.round(lo + auLenTicks(t, c, i) * auFpt(i));
-        drawAudioWave(t, c, 4, 49, 120, 6, { noMarks: true, A: lo, B: Math.max(lo + 1, hi),   /* Josh, 2026-10-28: "no need to show slice points on the track overview waveform preview" */
+        drawAudioWave(t, c, 4, 49, 120, 6, { noMarks: true, clipTime: true, A: lo, B: Math.max(lo + 1, hi),   /* Josh, 2026-10-28: "no need to show slice points on the track overview waveform preview" */
                                              beats: { origin: lo, fpb: 96 * auFpt(i), compact: true } });
     }
 }
@@ -315,7 +346,7 @@ function drawAudioWaveEditor() {
         if (zoomTxt) mid(zoomTxt);
         /* no cursor and no chops: they are Slice's (Josh, 2026-10-29: "chops
          * should just be completely invisible in loop mode") */
-        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, gain: i.gain | 0, noMarks: true, beats: { origin: i.rstart, fpb: 96 * auFpt(i) } });
+        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, gain: i.gain | 0, noMarks: true, clipTime: true, beats: { origin: i.rstart, fpb: 96 * auFpt(i) } });
         drawKitHintRow(MV_FOOTER_Y, [['clk', 'load'], ['jog', 'page']]);
         return;
     }

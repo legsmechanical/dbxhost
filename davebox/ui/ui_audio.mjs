@@ -105,8 +105,10 @@ let _pos = { t: -1, on: 0, frame: 0, slice: -1 };
 let _lazy = { state: 0, n: 0, frame: 0 };
 let _padKey = '';
 let _marks = { key: '', t: -1, c: -1, v: [], at: -1 };   /* every slice as it plays: [[a, b], ...] frames */
-let _wave = { key: '', amp: null };                       /* the zoomed window's 128 columns */
-let _waveWant = null;                                     /* { t, c, A, B } the editor asks for */
+let _waves = [];                                          /* the zoomed windows read, newest first: [{ key, amp }] —
+                                                           * two, so a Shifted Loop clip's two pieces both stay */
+let _waveWant = [];                                       /* [{ t, c, A, B, key }] the screen asks for */
+const WAVE_KEEP = 2;
 let _waveLast = null;                                     /* the last window read: drawn from while the next one loads */
 
 export function auParseInfo(raw) {
@@ -236,8 +238,12 @@ export function auMarksLocal(t, c, v) {
  * tick has read it (one read per window). */
 export function auWave(t, c, A, B) {
     const key = t + '_' + c + '_' + A + '_' + B + '_' + auInfo(t, c).name;
-    if (_wave.key === key) return _wave.amp;
-    _waveWant = { t, c, A, B, key };
+    const got = _waves.find((w) => w.key === key);
+    if (got) return got.amp;
+    if (!_waveWant.some((w) => w.key === key)) {
+        _waveWant.push({ t, c, A, B, key });
+        if (_waveWant.length > WAVE_KEEP) _waveWant.shift();   /* only what the screen still asks for */
+    }
     return null;
 }
 function parseCols(raw) {
@@ -304,13 +310,15 @@ export function auTick() {
     /* the chop editor's points, re-read a moment after its last edit */
     if (_marks.at >= 0 && (S.tickCount | 0) >= _marks.at) { auMarkStale(t, c); _marks.at = -1; _marks.key = ''; S.screenDirty = true; }
     /* the zoomed waveform the editor asked for (one read per window) */
-    if (_waveWant && _waveWant.key !== _wave.key) {
-        const w = _waveWant;
-        const raw = String(host_module_get_param('t' + w.t + '_au_wave_' + w.c + '_' + w.A + '_' + w.B) || '');
-        _wave = { key: w.key, amp: raw.length >= 512 ? parseCols(raw) : null };
-        if (_wave.amp) _waveLast = { t: w.t, c: w.c, A: w.A, B: w.B, amp: _wave.amp, name: auInfo(w.t, w.c).name };
-        _waveWant = null;
-        S.screenDirty = true;
+    if (_waveWant.length) {
+        const w = _waveWant.shift();
+        if (!_waves.some((x) => x.key === w.key)) {
+            const raw = String(host_module_get_param('t' + w.t + '_au_wave_' + w.c + '_' + w.A + '_' + w.B) || '');
+            const amp = raw.length >= 512 ? parseCols(raw) : null;
+            _waves = [{ key: w.key, amp }].concat(_waves).slice(0, WAVE_KEEP);
+            if (amp) _waveLast = { t: w.t, c: w.c, A: w.A, B: w.B, amp, name: auInfo(w.t, w.c).name };
+            S.screenDirty = true;
+        }
     }
     if ((S.tickCount % 3) === 0) {
         const raw = String(host_module_get_param('t' + t + '_au_pos') || '').trim().split(/\s+/).map((x) => parseInt(x, 10));

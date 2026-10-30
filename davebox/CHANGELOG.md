@@ -31,7 +31,7 @@ the section into a versioned heading at release time.
 ### Changed
 - **Audio: a Loop clip's CLIP bank is Mode · Strch · Shift (alt Nudge).** Strch x2 plays
   the loop at half speed across twice the bars (/2 the reverse); Shift moves the audio a
-  step at a time inside the clip, wrapping round; Nudge moved here from SAMPLE.
+  step at a time inside the clip, wrapping round (the waveform and pads turn with it); Nudge moved here from SAMPLE.
 - **Audio: the sequence works with SAMPLE or SLICES up.** Steps, Record and hold a step
   + jog (its step page) work there as under any instrument's editor.
 - **Audio: no sound bank on Track View.** The sample's settings live in SAMPLE and
