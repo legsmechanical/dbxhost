@@ -81,26 +81,27 @@ export function auConvertOffered(t, hasSynth) {
     return auConvertSource(t, hasSynth, false) >= 0 && auConvertHasNotes(t);
 }
 
-/* FREEZE TRACK (a TRACK CONFIG row; Josh, 2026-10-30: "freeze track (convert
+/* FLATTEN TRACK (a TRACK CONFIG row, named Freeze track until Josh, 2026-10-30:
+ * "let's rename \"freeze track\" to \"flatten track\""; Josh, 2026-10-30: "freeze track (convert
  * track to resampled audio)" · "freeze track should have pre or post effect
  * option. pre leaves the track insert effects in place after. post mutes them
  * after" · "freeze track lives on track config"): the same conversion, asked
- * for on its own. The refusals come first; then FREEZE TRACK N with Pre /
+ * for on its own. The refusals come first; then FLATTEN TRACK N with Pre /
  * Post (Pre first; Back cancels). A Move instrument records as heard, so it
  * has no choice: Yes / No, No first. */
 export function freezeTrackRequest(t, hasSynth) {
     const name = 'Track ' + (t + 1);
-    if (S.playing) { showActionPopupFor(2500, 'STOP TO FREEZE', 'It plays from the top'); return; }
-    if (S.clockFollowOn) { showActionPopupFor(2500, 'NOT FROZEN', 'Clock Follow is on'); return; }
+    if (S.playing) { showActionPopupFor(2500, 'STOP TO FLATTEN', 'It plays from the top'); return; }
+    if (S.clockFollowOn) { showActionPopupFor(2500, 'NOT FLATTENED', 'Clock Follow is on'); return; }
     const pre = auConvertSource(t, hasSynth, false);
     if (pre < 0) {
-        showActionPopupFor(2500, 'NOTHING TO FREEZE', S.trackRoute[t] === 0 ? name + ' has no instrument' : name + ' plays MIDI out');
+        showActionPopupFor(2500, 'NOTHING TO FLATTEN', S.trackRoute[t] === 0 ? name + ' has no instrument' : name + ' plays MIDI out');
         return;
     }
     const anySolo = S.trackSoloed.some((v) => v);
-    if (S.trackMuted[t] || (anySolo && !S.trackSoloed[t])) { showActionPopupFor(2500, 'NOTHING TO FREEZE', name + ' is muted'); return; }
+    if (S.trackMuted[t] || (anySolo && !S.trackSoloed[t])) { showActionPopupFor(2500, 'NOTHING TO FLATTEN', name + ' is muted'); return; }
     if (!auConvertHasNotes(t)) {
-        showActionPopupFor(2500, 'NOTHING TO FREEZE', name + (S.trackPadMode[t] === PAD_MODE_AUDIO ? ' has no samples' : ' has no notes'));
+        showActionPopupFor(2500, 'NOTHING TO FLATTEN', name + (S.trackPadMode[t] === PAD_MODE_AUDIO ? ' has no samples' : ' has no notes'));
         return;
     }
     S.confirmConvertToDrum = true; S.confirmConvertToDrumSel = 1;
@@ -159,7 +160,7 @@ export function auConvertStart(t) {
 }
 
 function status(cv, line2) {
-    showActionPopupFor(60000, (cv.inPlace ? 'FREEZE ' : 'TO AUDIO ') + (cv.i + 1) + '/' + cv.list.length,
+    showActionPopupFor(60000, (cv.inPlace ? 'FLATTEN ' : 'TO AUDIO ') + (cv.i + 1) + '/' + cv.list.length,
                       (cv.t + 1) + SCENE_LETTERS[cv.list[cv.i].c] + (line2 ? ', ' + line2 : ''), 'Back cancels');
 }
 
@@ -221,7 +222,7 @@ export function auConvertTick() {
         const n = cv.list.length + ' clip' + (cv.list.length === 1 ? '' : 's') + ' resampled';
         if (cv.inPlace) {
             S.auApply = { t: cv.t, takes, i: 0, bypassFx: cv.bypass, inPlace: true, reset: -1 };
-            showActionPopupFor(2500, 'FROZEN', n);
+            showActionPopupFor(2500, 'FLATTENED', n);
         } else {
             S.pendingTrackConvert = { t: cv.t, toAudio: true, bypassFx: cv.bypass, takes };
             showActionPopupFor(2500, 'TO AUDIO', n);
@@ -230,7 +231,7 @@ export function auConvertTick() {
     }
     if (st === RS_CANCELLED) {
         if (sampling()) return;
-        abort(cv, cv.inPlace ? 'NOT FROZEN' : 'NOT CONVERTED', 'Cancelled');
+        abort(cv, cv.inPlace ? 'NOT FLATTENED' : 'NOT CONVERTED', 'Cancelled');
         return;
     }
     if (st === RS_FAILED) {
@@ -247,8 +248,8 @@ export function auConvertTick() {
 export function auConvertApply(t, takes, bypassFx) {
     S.auApply = { t, takes: takes.slice(), i: 0, bypassFx: !!bypassFx };
 }
-/* Freeze Post: the takes hold the track's insert FX, so they are bypassed —
- * kept, not removed, as a bake leaves its MIDI FX. TRACK CONFIG, where Freeze
+/* Flatten Post: the takes hold the track's insert FX, so they are bypassed —
+ * kept, not removed, as a bake leaves its MIDI FX. TRACK CONFIG, where Flatten
  * was asked for, re-reads its rows: it rebuilt them at the conversion, before
  * this, and went on reading the FX as playing (found on the device). */
 const FX_BLOCKS = ['fx1', 'fx2', 'fx3', 'fx4'];

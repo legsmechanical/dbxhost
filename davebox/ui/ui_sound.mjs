@@ -605,12 +605,12 @@ function configRows(t) {
             action: () => requestClipMidiExport(t),
             get: () => 0, fmt: () => '...' });
     }
-    /* Freeze track (Josh, 2026-10-30: "freeze track lives on track config"):
+    /* Flatten track (named Freeze track until 2026-10-30; Josh: "freeze track lives on track config"):
      * every clip resampled into an Audio clip (ui_audio_convert) — on an
      * Audio track, each clip in place ("audio tracks ought to be able to be
      * frozen ... just like the others"). Not on a Conductor (no sound). */
     if (GS.trackPadMode[t] !== PMC) {
-        rows.push({ key: 'freeze', label: 'Freeze track',
+        rows.push({ key: 'freeze', label: 'Flatten track',
             action: () => freezeTrackRequest(t, GS.trackRoute[t] === 0 && !!engineLoadedModule(slotIndex(t), 'synth')),
             get: () => 0, fmt: () => '...' });
     }
@@ -3532,7 +3532,7 @@ const TRACK_MENU_GROUPS = [
     ['Transpose', 'VelIn', 'AftTch'],
     ['Looper'],
     ['Grv Amt', 'Grv Timing', 'Grv Velocity', 'Grv Random'],
-    ['Export to MIDI', 'Freeze track'],      /* the one-shot actions on the clips */
+    ['Export to MIDI', 'Flatten track'],      /* the one-shot actions on the clips */
     ['Parallel'],
 ];
 const TRACK_MENU_DROPPED = { muted: true, soloed: true };

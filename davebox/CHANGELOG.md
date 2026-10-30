@@ -9,11 +9,11 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Added
-- **Freeze track.** TRACK CONFIG › **Freeze track** records every clip and turns the
+- **Flatten track.** TRACK CONFIG › **Flatten track** records every clip and turns the
   track into an Audio track, each clip playing its recording. **Pre** records the
   instrument before the track's effects and leaves them on; **Post** records through
   them and then bypasses them. Works on melodic and drum tracks, and on a MIDI track
-  that plays another track's instrument. An Audio track freezes in place: each clip
+  that plays another track's instrument. An Audio track flattens in place: each clip
   re-recorded and starting over with its recording.
 - **Resampling works with Audio tracks.** A Loop clip (which has no steps) is now
   recorded for its own length, by Resample clip and Resample scene alike; before, a

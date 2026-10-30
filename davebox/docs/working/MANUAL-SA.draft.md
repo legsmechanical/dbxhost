@@ -616,7 +616,7 @@ velocity) and **resets the sequencer effects** (NOTE FX, HARMONY, DELAY, SEQ ARP
   own track effects don't carry over). The recordings go straight into the project.
   **Back** while it records cancels the whole change. **No** converts without
   recording (the notes are cleared). **Back** on the question changes nothing.
-  [Freeze track](#166-recording-audio) does the same from TRACK CONFIG, and lets you
+  [Flatten track](#166-recording-audio) does the same from TRACK CONFIG, and lets you
   record the effects too.
 - **Leaving Audio** (choosing an instrument) clears every clip's slice steps and
   lets go of the samples, asking first; the files stay in the project until you
@@ -2173,7 +2173,7 @@ the rows it has:
 | **Buses** | Voice groups, on instruments that can split their voices — see [Presets, LFOs and buses](#145-presets-lfos-and-buses) |
 | **Presets** | Save and load the whole chain |
 | **LFOs** | Two LFOs for the track |
-| **Mode, Transpose, VelIn, AftTch, Looper, Grv Amt, Export to MIDI, Freeze track, Parallel** — and **Grv Timing, Grv Velocity, Grv Random** when the project uses a loaded groove | The track's own settings — see [Track settings](#174-track-settings) |
+| **Mode, Transpose, VelIn, AftTch, Looper, Grv Amt, Export to MIDI, Flatten track, Parallel** — and **Grv Timing, Grv Velocity, Grv Random** when the project uses a loaded groove | The track's own settings — see [Track settings](#174-track-settings) |
 
 On the Instmt/Dest and effect rows, a hint band at the foot of the menu says what
 the click and the Shift chord do.
@@ -2773,8 +2773,8 @@ options add **In place**: turned on, the recording goes into the project instead
 the library and replaces the clip. The clip starts over with the recording as its
 sample, at default settings (a Loop clip; its steps, chops and settings go).
 
-**Freeze a track** to turn it into audio: open its **TRACK CONFIG** menu, turn to
-**Freeze track** and click. With the transport stopped, every clip with notes is
+**Flatten a track** to turn it into audio: open its **TRACK CONFIG** menu, turn to
+**Flatten track** and click. With the transport stopped, every clip with notes is
 recorded on its own, one after another, and the track becomes an
 [Audio track](#75-audio) with each clip a **Loop** clip playing its recording. The
 notes and the instrument go. It asks first:
@@ -2785,13 +2785,13 @@ notes and the instrument go. It asks first:
   They stay in place, so you can switch them back on.
 - A Move instrument is recorded as you hear it, so there is no choice: **Yes** or
   **No**.
-- **Back** changes nothing; **Back** while it records cancels the whole freeze.
+- **Back** changes nothing; **Back** while it records cancels the whole flatten.
 
-Drum tracks freeze too, and so does a MIDI track that plays another track's
+Drum tracks flatten too, and so does a MIDI track that plays another track's
 instrument (it records that instrument with this track's notes). An **Audio track**
-freezes in place: every clip with a sample is recorded and starts over with its
+flattens in place: every clip with a sample is recorded and starts over with its
 recording, at default settings, as [In place](#166-recording-audio) does for one clip. A track that plays
-MIDI out, has no instrument, is muted or has no notes (or samples) has nothing to freeze.
+MIDI out, has no instrument, is muted or has no notes (or samples) has nothing to flatten.
 
 After any resample, the clips you had armed are armed again, so Play carries on
 from where you were.
@@ -2968,7 +2968,7 @@ are hidden, so the list is shorter on a MIDI track or a Conductor.
 | Grv Amt | Global, 0–100 % in 5 % steps | How much of the project's [groove](#the-groove) this track takes. Global follows Project Settings; 0 % plays straight |
 | Grv Timing, Grv Velocity, Grv Random | Global, 0–100 % in 5 % steps | Shown for a loaded groove: this track's own setting for each, or Global to follow Project Settings |
 | Export to MIDI | (click) | Saves the clip you are on, as it plays, as a MIDI file — see [Export a clip as a MIDI file](#165-export-a-clip-as-a-midi-file) |
-| Freeze track | (click) | Records every clip and turns the track into an Audio track, effects Pre or Post — on an Audio track, each clip in place — see [Recording audio](#166-recording-audio). Not on the Conductor |
+| Flatten track | (click) | Records every clip and turns the track into an Audio track, effects Pre or Post — on an Audio track, each clip in place — see [Recording audio](#166-recording-audio). Not on the Conductor |
 | Parallel | On, Off | Schwung tracks with an instrument: whether it may render on another core — set per instrument, device-wide |
 
 Where the track's notes go is the **Instmt/Dest** row near the top of the same menu, just under **MIDI FX** —

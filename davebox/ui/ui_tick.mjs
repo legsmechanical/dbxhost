@@ -198,7 +198,7 @@ function audioScreensClose(t) {
  * takes) its own Schwung slot with no instrument, its FX kept — an Audio track
  * on a Move track takes a Schwung slot (v1 default, Josh 2026-10-27). `takes`:
  * the clips' recordings (ui_audio_convert), loaded one per tick; `bypassFx`
- * (Freeze Post) bypasses the insert FX the recordings already hold. */
+ * (Flatten Post) bypasses the insert FX the recordings already hold. */
 function convertTrackToAudio(t, takes, bypassFx) {
     stepRecExit();
     host_module_set_param('t' + t + '_convert_to_audio', '1');

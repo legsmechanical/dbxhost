@@ -170,8 +170,9 @@ step('⭐⭐ Back while recording cancels everything: takes removed, nothing con
  * after" · "freeze track lives on track config") ---- */
 const snd = await import('../../ui/ui_sound.mjs');
 const ENG = {};                                    /* slot 4's FX: fx1 and fx3 loaded */
+let NOSYNTH = false;                               /* an Audio track's slot holds no instrument */
 globalThis.shadow_get_param = (slot, key) => {
-    if (slot === 4 && /synth/.test(key)) return 'braids';
+    if (slot === 4 && /synth/.test(key)) return NOSYNTH ? '' : 'braids';
     if (slot === 4 && /^fx[13]:module$|^fx[13]_module$/.test(key)) return 'cloudseed';
     return ENG[slot + ' ' + key] !== undefined ? ENG[slot + ' ' + key] : '';
 };
@@ -194,7 +195,7 @@ function freezeRow(t) {
         sndCC(14, 1); snd.soundTick();
         if (snd.soundPickStateForTest().row === st) break;
     }
-    assert(found, 'no Freeze track row on track ' + (t + 1) + "'s TRACK CONFIG");
+    assert(found, 'no Flatten track row on track ' + (t + 1) + "'s TRACK CONFIG");
     assert(sndCC(3, 127), 'the click was not the menu\'s'); sndCC(3, 0);
 }
 const answer = (right) => { if (right) jog(1); click(); };   /* the question opens on its left button */
@@ -258,7 +259,7 @@ step('⭐⭐ Post: every clip through its FX (Dry); once converted, the loaded i
 });
 
 step('⭐⭐ an Audio track freezes IN PLACE (Josh, 2026-10-30: "audio tracks ought to be able to be frozen (essentially resampling every clip in place) just like the otehrs"): every clip with a sample re-recorded; each resets, then picks its take; nothing converts; Post bypasses', () => {
-    S.trackPadMode[4] = 3; GET['t4_pad_mode'] = '3'; S.resampleState = 0;
+    S.trackPadMode[4] = 3; GET['t4_pad_mode'] = '3'; S.resampleState = 0; NOSYNTH = true;
     S.clipNonEmpty[4][0] = false; S.clipNonEmpty[4][2] = false;          /* Loop clips: no steps */
     S.auInfo[4][0] = Object.assign({}, S.auInfo[4][0] || {}, { state: 2, name: 'loop a.wav' });
     S.auInfo[4][2] = Object.assign({}, S.auInfo[4][2] || {}, { state: 2, name: 'loop c.wav' });
@@ -270,7 +271,7 @@ step('⭐⭐ an Audio track freezes IN PLACE (Josh, 2026-10-30: "audio tracks ou
     assert(S.auConvert && S.auConvert.inPlace && S.auConvert.list.length === 2, 'takes: ' + JSON.stringify(S.auConvert));
     assert(sent('resample_clip').join() === '4 0 1 0 0 1 |' + P0, 'Post take: ' + sent('resample_clip'));
     S.resampleState = 3; S.resampleFrames = 88200; S.resampleDone = 100; ticks(2);
-    assert(S.actionPopupLines[0] === 'FREEZE 1/2', 'notice: ' + JSON.stringify(S.actionPopupLines));
+    assert(S.actionPopupLines[0] === 'FLATTEN 1/2', 'notice: ' + JSON.stringify(S.actionPopupLines));
     globalThis.__stubStat = { [P0]: { mode: 0o100644, size: 9 }, [P2]: { mode: 0o100644, size: 9 } };
     S.resampleState = 4; ticks(2);
     S.resampleState = 0; ticks(1); S.resampleState = 3; ticks(1); S.resampleState = 4; ticks(2);
@@ -284,7 +285,7 @@ step('⭐⭐ an Audio track freezes IN PLACE (Josh, 2026-10-30: "audio tracks ou
     assert(sent('t4_au_pick').join() === '0|' + P0 + ',2|' + P2, 'picks: ' + sent('t4_au_pick'));
     assert(sent('t4_convert_to_audio').length === 0, 'an Audio track was converted');
     assert(shadowSets.some((x) => x[0] === 4 && x[1] === 'fx1:bypassed' && x[2] === '1'), 'Post did not bypass');
-    S.trackPadMode[4] = 0; GET['t4_pad_mode'] = '0';
+    S.trackPadMode[4] = 0; GET['t4_pad_mode'] = '0'; NOSYNTH = false;
     S.clipNonEmpty[4][0] = true; S.clipNonEmpty[4][2] = true;
 });
 
@@ -326,7 +327,7 @@ step('⭐ ...and so does a MIDI track that follows a Move instrument: Yes record
 step('⭐ external MIDI, an empty instrument slot, a muted track, playing: no question, a notice', () => {
     S.trackRoute[5] = 2; S.trackMidiTo[5] = 0;
     reset(); freezeRow(5);
-    assert(!S.confirmConvertToDrum && S.actionPopupLines[0] === 'NOTHING TO FREEZE' && /MIDI out/.test(S.actionPopupLines[1]),
+    assert(!S.confirmConvertToDrum && S.actionPopupLines[0] === 'NOTHING TO FLATTEN' && /MIDI out/.test(S.actionPopupLines[1]),
            'external: ' + JSON.stringify(S.actionPopupLines));
     S.trackRoute[5] = 0;                       /* slot 5 holds no synth in this rig */
     reset(); freezeRow(5);
@@ -337,7 +338,7 @@ step('⭐ external MIDI, an empty instrument slot, a muted track, playing: no qu
     S.trackMuted[4] = false;
     S.playing = true;
     reset(); freezeRow(4);
-    assert(!S.confirmConvertToDrum && S.actionPopupLines[0] === 'STOP TO FREEZE', 'playing: ' + JSON.stringify(S.actionPopupLines));
+    assert(!S.confirmConvertToDrum && S.actionPopupLines[0] === 'STOP TO FLATTEN', 'playing: ' + JSON.stringify(S.actionPopupLines));
     S.playing = false;
     snd.soundExit();
 });
