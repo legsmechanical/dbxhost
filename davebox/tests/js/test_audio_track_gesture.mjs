@@ -1227,6 +1227,54 @@ step('⭐⭐ SLICES zoomed out is SAMPLE\'s window: Start for its Length, widene
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
 });
 
+step('⭐⭐ the sequence works with SAMPLE or SLICES up, as under any instrument editor: a step tap, Record, hold a step + jog for its page (Josh, 2026-10-30: "note sequencing via step and record should work in sample and slice just like any other mode ... as should step editing via jog turn")', () => {
+    GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(2);
+    S.activeBank = 0; S.bankCardLatched = false;
+    const ac = S.trackActiveClip[4] | 0;
+    const tap = (k) => { note(16 + k, 127); note(16 + k, 0); ticks(3); };
+    const keys = () => sets.map((x) => x[0]).filter((k) => /^t4_/.test(k)).join();
+    /* the control: what a tap does in Track View */
+    reset(); tap(3);
+    const tv = keys();
+    assert(tv.length, 'control: a step tap in Track View sends nothing');
+    tap(3);                                           /* and back */
+    for (const [r, name] of [[3, 'SAMPLE'], [2, 'SLICES']]) {
+        mapPad(2, r);
+        assert(S.auEditor && S.auEditor.ed === name.toLowerCase(), name + ' did not open');
+        reset(); tap(3);
+        assert(keys() === tv && S.auEditor, 'a step tap over ' + name + ' is not Track View\'s: ' + keys() + ' vs ' + tv);
+        tap(3);
+        back(); ticks(2);
+    }
+    /* Record: the same as in Track View */
+    const r0 = S.recordArmed;
+    cc(HC.MoveRec, 127); cc(HC.MoveRec, 0); ticks(2);
+    const r1 = S.recordArmed;
+    cc(HC.MoveRec, 127); cc(HC.MoveRec, 0); ticks(2);
+    assert(r1 !== r0 && S.recordArmed === r0, 'control: Record does not toggle in Track View');
+    mapPad(2, 2);
+    cc(HC.MoveRec, 127); cc(HC.MoveRec, 0); ticks(2);
+    assert(S.recordArmed === r1 && S.auEditor, 'Record over SLICES did not do what it does in Track View');
+    cc(HC.MoveRec, 127); cc(HC.MoveRec, 0); ticks(2);
+    assert(S.recordArmed === r0, 'Record over SLICES did not toggle back');
+    /* hold a filled step + jog right: its page, over the editor; left: back */
+    S.clipSteps[4][ac][5] = 1; S.clipNonEmpty[4][ac] = true;
+    note(21, 127); S.tickCount += 25; ticks(1);
+    assert(S.heldStep === 5, 'the step is not held over SLICES: ' + S.heldStep);
+    jog(1); ticks(1);
+    let tx = globalThis.__texts(() => shown());
+    assert(S.stepReveal && S.auEditor && !(S.auEditor.page | 0) && tx.indexOf('CHOP') < 0,
+           'hold + jog right did not show the step\'s page over SLICES: ' + JSON.stringify({ rev: S.stepReveal, page: S.auEditor && S.auEditor.page, tx }));
+    S.stepRevealJogTick = -100000;                   /* past the reveal's debounce */
+    jog(-1); ticks(1);
+    tx = globalThis.__texts(() => shown());
+    assert(!S.stepReveal && tx.indexOf('CHOP') >= 0, 'jog left did not come back to SLICES: ' + JSON.stringify({ panel: S.auPanel, ed: !!S.auEditor, held: S.heldStep, rev: S.stepReveal, tx: tx.slice(0, 4) }));
+    note(21, 0); ticks(3);
+    S.clipSteps[4][ac][5] = 0;
+    leave();
+    S.activeBank = 0; ticks(2);
+});
+
 step('⭐⭐ Slice mode: pads are 36 + chop in time order, 8 a row, none past the count; the CLIP bank mirrors ALL LANES', () => {
     ticks(2);
     DM.computePadNoteMap();

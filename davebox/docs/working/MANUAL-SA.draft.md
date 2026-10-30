@@ -1328,7 +1328,9 @@ with **Attk** and **Decay** on K1 / K2. On both pages, **hold Shift** and the sl
 SAMPLE's **Pitch**, **Detune** and **Gain** are the base every slice adds its own to.
 
 The sample's settings live in SAMPLE and SLICES, as an instrument's live in its editor:
-**Back** returns to the bank you were on. On a grid page (page 2 of either),
+**Back** returns to the bank you were on. The sequence keeps working while either is up:
+tap or hold steps, **Record**, and **hold a step + jog right** for its step page, as
+under any instrument's editor. On a grid page (page 2 of either),
 **Delete + click** resets that page's knobs — the picked slice, every slice with Shift,
 or SAMPLE's Gain, Pitch, Detune and Revrs.
 

@@ -63,7 +63,7 @@
 
 import { S, loopViewActive } from './ui_state.mjs';
 import { MoveBack } from '/data/UserData/schwung/shared/constants.mjs';
-import { MoveMainKnob, MoveMainButton, MoveMainTouch, MoveNoteSession, TRACK_PAD_BASE } from './ui_constants.mjs';
+import { MoveMainKnob, MoveMainButton, MoveMainTouch, MoveNoteSession, MoveRec, TRACK_PAD_BASE } from './ui_constants.mjs';
 import { decodeDelta } from '/data/UserData/schwung/shared/input_filter.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLazyState, auMarkStale,
@@ -139,6 +139,17 @@ export function audioPanelInput(status, d1, d2) {
      * and End with it (Josh, 2026-10-28: "it's not accessible at all in
      * sample view"); the screen stays */
     if ((status & 0xE0) === 0x80 && d1 >= 16 && d1 <= 31 && (loopViewActive() || S.loopGestureStart >= 0)) return false;
+    /* The sequence works here as under any instrument's editor (Josh,
+     * 2026-10-30: "note sequencing via step and record should work in sample
+     * and slice just like any other mode ... as should step editing via jog
+     * turn"): the steps, Record, and a held step's jog — and, while that jog
+     * shows the step's page, the knobs it edits with. */
+    if (S.auEditor && !S.auEditor.ask && S.auEditor.mode !== 'lazy') {
+        if ((status & 0xE0) === 0x80 && d1 >= 16 && d1 <= 31) return false;
+        if (status === 0xB0 && d1 === MoveRec) return false;
+        if (status === 0xB0 && d1 === MoveMainKnob && S.heldStep >= 0) return false;
+        if (S.stepReveal && (((status & 0xE0) === 0x80 && d1 <= 7) || (status === 0xB0 && d1 >= 71 && d1 <= 78))) return false;
+    }
     if (S.auEditor) return audioEditorInput(status, d1, d2);
     const hi = status & 0xF0;
     if (hi === 0x90 || hi === 0x80) {
@@ -992,9 +1003,8 @@ export function waveRingCells(ed) {
  * editor's, none under the sample chooser. */
 registerScreenRingCells(() => {
     if (S.auChooser) return [null, null, null, null, null, null, null, null];
-    if (!S.auPanel) return null;
+    if (!S.auPanel || S.stepReveal) return null;      /* a held step's page: its own rings */
     if (S.auEditor) return waveRingCells(S.auEditor);
     return auPanelRingCells(S.auPanel);
 });
 
-/* The AUDIO bank's knob rings: its page's cells, as the editor's were. */

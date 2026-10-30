@@ -29,6 +29,8 @@ the section into a versioned heading at release time.
   again every 5 minutes until the Move is plugged in.
 
 ### Changed
+- **Audio: the sequence works with SAMPLE or SLICES up.** Steps, Record and hold a step
+  + jog (its step page) work there as under any instrument's editor.
 - **Audio: no sound bank on Track View.** The sample's settings live in SAMPLE and
   SLICES, as an instrument's do; Back returns to the bank you were on. Delete + click on
   an editor's grid page resets that page.
@@ -90,7 +92,7 @@ the section into a versioned heading at release time.
   steps in order, so it sounds the same. The pads run in time order, 8 a row, in both
   modes; a new clip starts with 16 even chops. Choosing a chop method no longer switches
   the Mode.
-- **Audio: the Slice CLIP bank's second Quant is gone (it's on NOTE FX). **DELAY** is gone from Audio tracks, and a
+- **Audio: the Slice CLIP bank's second Quant is gone** (it's on NOTE FX). **DELAY** is gone from Audio tracks, and a
   Loop clip has no STEP or NOTE FX.
 
 - **Audio: 128 chops**, 32 to a pad page — Octave Up / Down steps the pages.

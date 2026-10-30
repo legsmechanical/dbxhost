@@ -2247,7 +2247,8 @@ function drawUIBody() {
     if (miActive()) { drawMidiImport(); return; }
     /* AUDIO: the sample chooser, the AUDIO editor and its slice editor. */
     if (S.auChooser) { drawAudioChooser(); return; }
-    if (S.auPanel) { if (S.auEditor) drawAudioWaveEditor(); else drawAudioPanel(); return; }
+    /* ...under a held step's page (hold + jog right), as sound mode is */
+    if (S.auPanel && !S.stepReveal) { if (S.auEditor) drawAudioWaveEditor(); else drawAudioPanel(); return; }
     if (S.snapshotPicker) { drawSnapshotPicker(); return; }
     if (S.templateManager || (S.templateNameEntry && templateTextEntryUp())) { drawTemplateManager(); return; }
     /* ⭑ The exit confirm outranks the picker (2026-09-16). Hold-Back already
