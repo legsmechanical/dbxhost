@@ -258,7 +258,7 @@ function drawAudioWaveEditor() {
         : S.knobTouched === 4 ? 'PITCH ' + sgn(i.pitch | 0)
         : S.knobTouched === 5 ? 'DETUNE ' + sgn(i.detune | 0)
         : S.knobTouched === 6 ? 'TEMPO ' + (bpm ? (Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) + ' BPM' : '--')
-        : S.knobTouched === 7 ? 'NUDGE ' + sgn(i.nudge | 0) + 'MS' : '';
+        : S.knobTouched === 7 ? 'REVRS ' + (i.revrs ? 'ON' : 'OFF') : '';
     /* the middle readout, lit like Start / End (it is only there while its
      * knob is in hand — Josh, 2026-10-28: "nothing in the middle when no
      * knob is touched"); its strip clears what is under it, so a long one
@@ -303,7 +303,7 @@ function drawAudioWaveEditor() {
     }
     if (plain && ed.page === 1) {
         drawKitPage(auSampleName(t, c), auSampleP2Cells(t, c), false,
-                    S.knobTouched === 7 ? [['clk', 'orig']] : [['jog', 'page']]);
+                    S.knobTouched === 0 ? [['clk', 'orig']] : [['jog', 'page']]);
         if (S.knobTouched < 0) drawBankHeading(auSampleName(t, c), false, false, '2/2');
         return;
     }
@@ -355,7 +355,11 @@ function drawAudioWaveEditor() {
         /* SLICES page 1: the picked slice's start / end, its bracket, no cursor */
         const m = mk[sel];
         if (m) ends('S ' + auFmtTime(m[0], rt), m[1] === auEdHome(ed, sel) ? 'E NEXT' : 'E ' + auFmtTime(m[1], rt));
-        if (zoomTxt) mid(zoomTxt);
+        if (S.knobTouched >= 3) {
+            /* K4-K8: the slice's (every slice's with Shift), as on page 2 */
+            const cell = auPanelCells({ t, page: S.shiftHeld ? 0 : 1 })[S.knobTouched];
+            if (cell && cell.label) mid((S.shiftHeld ? 'ALL ' : '') + (cell.label + ' ' + cell.text).toUpperCase());
+        } else if (zoomTxt) mid(zoomTxt);
         drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel, gain: i.gain | 0, beats: { origin: i.rstart, fpb: 96 * auFpt(i) } });
         drawKitHintRow(MV_FOOTER_Y, [['clk', 'chop'], ['jog', 'page']]);
         return;

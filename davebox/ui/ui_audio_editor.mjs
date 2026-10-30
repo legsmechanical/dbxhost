@@ -551,6 +551,19 @@ function clipTempo(ed, dir) {
     return true;
 }
 
+/* SAMPLE's K4-K8, on both its pages: K4 Gain, K5 Pitch, K6 Detune — the
+ * clip's, in either mode (Josh, 2026-10-28: "put gain on a knob in wave edit
+ * mode ... same with pitch and detune on k5/6"; "The whole clip") — K7 the
+ * sample's Tempo, K8 Revrs (Nudge left SAMPLE, Josh, 2026-10-30). */
+function sampleKnob(ed, k, d2) {
+    if (k === 3) { const st = ccKnobDelta(d2, k); return !!st && clipStep(ed, 'gain', st > 0 ? 1 : -1); }
+    if (k === 4) { const st = knobStep(k, d2, KNOB_PICK); return !!st && clipStep(ed, 'pitch', st); }
+    if (k === 5) { const st = ccKnobDelta(d2, k); return !!st && clipStep(ed, 'detune', st); }
+    if (k === 6) { const st = ccKnobDelta(d2, k); return !!st && clipTempo(ed, st > 0 ? 1 : -1); }
+    if (k === 7) { const st = knobStep(k, d2, KNOB_DELIB); return !!st && auSampleP2Knob(ed.t, ed.c, 7, st); }
+    return false;
+}
+
 /* The picker's rows at its level. */
 export function auPickRows(ed) {
     const p = ed.pick;
@@ -729,8 +742,10 @@ export function audioEditorInput(status, d1, d2) {
     if (d1 >= 71 && d1 <= 78) {
         const k = d1 - 71, dd = decodeDelta(d2);
         if (!dd || (sub !== 'chop' && sub !== 'loop')) return true;
-        if (p2 && sl) {
-            /* SLICES page 2: slice n, or every slice with Shift held */
+        if ((p2 && sl) || (slEdit && k > 2)) {
+            /* SLICES: page 2, and page 1's K4-K8 — the same knobs (Josh,
+             * 2026-10-30: they "need to correspond to the slice params and work
+             * with shift for all slices too"): slice n, every slice with Shift */
             S.knobTouched = k; S.knobTurnedTick[k] = S.clockMs;
             const ped = { t: ed.t, page: S.shiftHeld ? 0 : 1 };
             const cls = auPanelKnobClass(ped, k);
@@ -739,12 +754,14 @@ export function audioEditorInput(status, d1, d2) {
             S.screenDirty = true;
             return true;
         }
-        if (slEdit && k > 2) return true;                    /* SLICES page 1: K1-K3 only */
         if (p2) {
-            /* SAMPLE page 2: K1 Sync, K2 Revrs; K8 Orig fires on touch + click */
+            /* SAMPLE page 2: page 1's knobs in their places — K2 Sync where Zoom
+             * is, no Start / Length; K1 Orig fires on touch + click */
             S.knobTouched = k; S.knobTurnedTick[k] = S.clockMs;
-            const st = knobStep(k, d2, KNOB_PICK);
-            if (st && auSampleP2Knob(ed.t, ed.c, k, st)) S.screenDirty = true;
+            if (k === 1) {
+                const st = knobStep(k, d2, KNOB_PICK);
+                if (st) auSampleP2Knob(ed.t, ed.c, k, st);
+            } else if (k > 2) sampleKnob(ed, k, d2);
             S.screenDirty = true;
             return true;
         }
@@ -769,27 +786,7 @@ export function audioEditorInput(status, d1, d2) {
                                 : auRangeStep(ed.t, ed.c, 'length', dd > 0 ? 1 : -1);
                 if (moved) centre(ed);
             }
-        } else if (k === 3) {
-            /* K4 Gain, K5 Pitch, K6 Detune — the clip's, in either mode (Josh,
-             * 2026-10-28: "put gain on a knob in wave edit mode ... same with
-             * pitch and detune on k5/6"; "The whole clip") */
-            const st = ccKnobDelta(d2, k);
-            if (st) moved = clipStep(ed, 'gain', st > 0 ? 1 : -1);
-        } else if (k === 4) {
-            const st = knobStep(k, d2, KNOB_PICK);
-            if (st) moved = clipStep(ed, 'pitch', st);
-        } else if (k === 5) {
-            const st = ccKnobDelta(d2, k);
-            if (st) moved = clipStep(ed, 'detune', st);
-        } else if (k === 6) {
-            const st = ccKnobDelta(d2, k);
-            if (st) moved = clipTempo(ed, st > 0 ? 1 : -1);
-        } else if (k === 7 && plain) {
-            /* K8 Nudge: the sample against the bar (Josh, 2026-10-29: Tempo
-             * and Nudge "need to be exposed on the waveform view knobs") */
-            const st = ccKnobDelta(d2, k);
-            if (st) moved = auNudgeStep(ed.t, ed.c, st > 0 ? 1 : -1);
-        }
+        } else if (k < 7 || plain) moved = sampleKnob(ed, k, d2);
         if (moved) S.screenDirty = true;
         return true;
     }
@@ -849,8 +846,8 @@ export function audioEditorInput(status, d1, d2) {
         if (sl && p2) return true;
         if (slEdit) { ed.pick = { level: 2, sel: 0, only2: true }; return true; }   /* the chop types */
         if (p2) {
-            /* touch K8 + click: Orig */
-            if (S.knobTouched === 7) auOrig(ed.t, ed.c);
+            /* touch K1 + click: Orig */
+            if (S.knobTouched === 0) auOrig(ed.t, ed.c);
             return true;
         }
         if (!hand) {
@@ -963,12 +960,15 @@ export function waveRingCells(ed) {
     if (sub !== 'chop' && sub !== 'loop' || !fr) return [null, null, null, null, null, null, null, null];
     const kind = chopKind(ed);
     const slp = ed.ed === 'slices' && sub === 'chop' && !kind;
-    if (slp && ed.page === 1) return auPanelRingCells({ t: ed.t, page: S.shiftHeld ? 0 : 1 });
+    const at = (n) => ({ kind: 'arc', norm: Math.max(0, Math.min(1, n)) });
+    const slRings = () => auPanelRingCells({ t: ed.t, page: S.shiftHeld ? 0 : 1 });
+    if (slp && ed.page === 1) return slRings();
+    const sampleRings = () => [at(((i.gain | 0) + 40) / 52), at(((i.pitch | 0) + 24) / 48), at(((i.detune | 0) + 50) / 100),
+                               at(((i.bpm10 || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN)), at(i.revrs ? 1 : 0)];
     if (!kind && ed.page === 1) {
-        /* page 2: Sync, Revrs, Orig — lit where a knob works */
+        /* page 2: Orig, Sync, then page 1's K4-K8 — lit where a knob works */
         const cells = auSampleP2Cells(ed.t, ed.c);
-        return cells.map((c, k) => (!c || c.kind === 'blank') ? null
-            : k === 0 ? { kind: 'arc', norm: (c.sel | 0) / 2 } : k === 1 ? { kind: 'arc', norm: c.sel ? 1 : 0 } : { kind: 'arc', norm: 1 });
+        return [at(1), cells[1] && cells[1].kind !== 'blank' ? at((cells[1].sel | 0) / 2) : null, null].concat(sampleRings());
     }
     let a = i.rstart, b = auEnd(i);
     if (kind === 'manual' || slp) {
@@ -978,16 +978,13 @@ export function waveRingCells(ed) {
     if (slp) {
         const span = Math.max(MIN_SPAN, (ed.B | 0) - (ed.A | 0));
         const zoom = fr > MIN_SPAN ? 1 - Math.log(span / MIN_SPAN) / Math.log(fr / MIN_SPAN) : 0;
-        const at = (n) => ({ kind: 'arc', norm: Math.max(0, Math.min(1, n)) });
-        return [at(a / fr), at(zoom), at(b / fr), null, null, null, null, null];
+        return [at(a / fr), at(zoom), at(b / fr)].concat(slRings().slice(3));
     }
     const span = Math.max(MIN_SPAN, (ed.B | 0) - (ed.A | 0));
     const zoom = fr > MIN_SPAN ? 1 - Math.log(span / MIN_SPAN) / Math.log(fr / MIN_SPAN) : 0;
-    const at = (n) => ({ kind: 'arc', norm: Math.max(0, Math.min(1, n)) });
     const ends = kind !== 'even' && kind !== 'transient';
-    return [ends ? at(a / fr) : null, at(zoom), ends ? at(b / fr) : null, at(((i.gain | 0) + 40) / 52),
-            at(((i.pitch | 0) + 24) / 48), at(((i.detune | 0) + 50) / 100), at(((i.bpm10 || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN)),
-            kind ? null : at(((i.nudge | 0) + 500) / 1000)];
+    const sr = sampleRings();
+    return [ends ? at(a / fr) : null, at(zoom), ends ? at(b / fr) : null, sr[0], sr[1], sr[2], sr[3], kind ? null : sr[4]];
 }
 
 /* The rings while an Audio screen holds the knobs: WAVE's, the AUDIO

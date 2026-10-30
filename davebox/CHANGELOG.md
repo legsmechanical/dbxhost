@@ -29,6 +29,10 @@ the section into a versioned heading at release time.
   again every 5 minutes until the Move is plugged in.
 
 ### Changed
+- **Audio: the editors' second pages show the first's knobs as a grid.** SAMPLE page 2
+  is Orig · Sync · Gain · Pitch · Detune · Tempo · Revrs, each on its page 1 knob; SAMPLE's
+  K8 is Revrs. SLICES page 1's K4–K8 set the picked slice (Shift: every slice), as page 2
+  does, with Attk and Decay on page 2's K1 / K2. Nudge leaves SAMPLE.
 - **Audio: SLICES shows SAMPLE's part of the sample.** Zoomed out it is Start for its
   Length, as on SAMPLE, and chopping stays inside it.
 - **Audio: Length moves a bar a detent, a step with Shift**; Tempo a BPM, a tenth with

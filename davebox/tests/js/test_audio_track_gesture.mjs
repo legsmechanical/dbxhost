@@ -231,10 +231,10 @@ step('⭐⭐ the sound bank follows the last editor entered, a plain grid; Back 
     /* a knob touch shows its page as a plain grid, never the waveform */
     note(0, 127); ticks(1);
     const kc = globalThis.__kc; shown();
-    assert(kc().cells.map((c) => c && c.label).join() === 'Pitch,Detune,Gain,Revrs,Attk,Decay,Play,', 'ALL SLICES card: ' + JSON.stringify(kc().cells.map((c) => c && c.label)));
+    assert(kc().cells.map((c) => c && c.label).join() === 'Attk,Decay,,Gain,Pitch,Detune,Revrs,Play', 'ALL SLICES card: ' + JSON.stringify(kc().cells.map((c) => c && c.label)));
     note(0, 0); ticks(1);
     const cells = A.auPanelCells(ED());
-    assert(cells.map((c) => c.label).join() === 'Pitch,Detune,Gain,Revrs,Attk,Decay,Play,', 'ALL SLICES: ' + cells.map((c) => c.label));
+    assert(cells.map((c) => c.label).join() === 'Attk,Decay,,Gain,Pitch,Detune,Revrs,Play', 'ALL SLICES: ' + cells.map((c) => c.label));
     /* SAMPLE, then Back: the sample's page */
     toSoundBank('sample');
     assert(S.activeBank === C.BANK_AUDIO && A.auBankTitle(4) === 'SAMPLE' && A.auPanelPages(4).length === 1,
@@ -257,26 +257,26 @@ step('⭐⭐ the instrument door on an Audio track is WAVE, the sample\'s editor
 });
 
 step('⭐ Pitch reads as a number and steps a semitone per detent run (Josh: "doesn\'t read out any values and is very touchy")', () => {
-    const cell = () => A.auPanelCells(ED())[0];
+    const cell = () => A.auPanelCells(ED())[4];
     assert(cell().kind === 'valsq' && cell().text === '+0', 'ALL SLICES Pitch: ' + JSON.stringify(cell()));
     reset();
-    note(0, 127);
-    for (let i = 0; i < 30; i++) cc(71, 1);         /* 30 encoder ticks */
+    note(4, 127);
+    for (let i = 0; i < 30; i++) cc(75, 1);         /* K5 Pitch: 30 encoder ticks */
     const n = sent('t4_au_all_pitch').length;
     assert(n >= 1 && n <= 3, '30 ticks moved Pitch ' + n + ' semitones: ' + JSON.stringify(sent('t4_au_all_pitch')));
     assert(cell().text === '+' + n, 'the cell does not read the new pitch: ' + cell().text);
     const kc = globalThis.__kc; shown();
-    assert(kc().cells[0].lit && kc().cells[0].text === '+' + n, 'the touched Pitch does not read out: ' + JSON.stringify(kc().cells[0]));
-    for (let i = 0; i < 30; i++) cc(71, 127);       /* back down */
-    note(0, 0);
+    assert(kc().cells[4].lit && kc().cells[4].text === '+' + n, 'the touched Pitch does not read out: ' + JSON.stringify(kc().cells[4]));
+    for (let i = 0; i < 30; i++) cc(75, 127);       /* back down */
+    note(4, 0);
     GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(2);
     /* SLICE n's Pitch too */
     jog(1);
     assert(A.auBankTitle(4).indexOf('SLICE') === 0, 'not on SLICE n');
-    const sc = A.auPanelCells(ED())[0];
+    const sc = A.auPanelCells(ED())[4];
     assert(sc.label === 'Pitch' && sc.kind === 'valsq' && /^[+-]\d+$/.test(sc.text), 'SLICE Pitch: ' + JSON.stringify(sc));
     reset();
-    for (let i = 0; i < 30; i++) cc(71, 1);
+    for (let i = 0; i < 30; i++) cc(75, 1);
     const m = sent('t4_au_slice_pitch').length;
     assert(m >= 1 && m <= 3, '30 ticks moved the slice pitch ' + m + ' semitones');
     jog(-1);
@@ -299,22 +299,22 @@ step('⭐ the jog turns its pages after SLICES: ALL SLICES, SLICE n; a Loop clip
 step('⭐⭐ ALL SLICES knobs set every slice\'s own value, Pitch to Play (`--` where they differ); SAMPLE\'s are the base (Josh: "all slice params ... should set them all directly")', () => {
     GET['t4_au_all_0'] = '0 0 0 x 0 0';                 /* the slices' attacks differ */
     A.auMarkStale(4, 0); ticks(2);
-    assert(A.auPanelCells(ED())[4].text === '--', 'Attk: ' + A.auPanelCells(ED())[4].text);
+    assert(A.auPanelCells(ED())[0].text === '--', 'Attk: ' + A.auPanelCells(ED())[0].text);
     reset();
-    for (let i = 0; i < 10; i++) cc(71, 1);             /* K1 Pitch: one detent run (KNOB_PICK) */
+    for (let i = 0; i < 10; i++) cc(75, 1);             /* K5 Pitch: one detent run (KNOB_PICK) */
     assert(sent('t4_au_all_pitch').join() === '0 1', 'pitch: ' + JSON.stringify(sentLike(/_au_/)));
-    cc(72, 1); cc(72, 1);                               /* K2 Detune: cents */
+    cc(76, 1); cc(76, 1);                               /* K6 Detune: cents */
     assert(sent('t4_au_all_detune').join() === '0 1,0 2', 'detune: ' + JSON.stringify(sentLike(/_au_/)));
-    assert(A.auPanelCells(ED())[1].label === 'Detune' && A.auPanelCells(ED())[1].kind === 'arcbip' &&
-           A.auPanelCells(ED())[1].text === '+2' && A.auPanelCells(ED())[1].signed === 2 / 50,
-           'the Detune cell: ' + JSON.stringify(A.auPanelCells(ED())[1]));
-    cc(73, 1);                                          /* K3 Gain */
+    assert(A.auPanelCells(ED())[5].label === 'Detune' && A.auPanelCells(ED())[5].kind === 'arcbip' &&
+           A.auPanelCells(ED())[5].text === '+2' && A.auPanelCells(ED())[5].signed === 2 / 50,
+           'the Detune cell: ' + JSON.stringify(A.auPanelCells(ED())[5]));
+    cc(74, 1);                                          /* K4 Gain */
     assert(sent('t4_au_all_gain').join() === '0 1', 'gain: ' + JSON.stringify(sentLike(/_au_/)));
     assert(!sentLike(/_au_set_(pitch|detune|gain)$/).length, 'ALL SLICES moved the clip\'s base: ' + JSON.stringify(sentLike(/_au_set_/)));
-    cc(75, 1);                                          /* K5 Attk: every slice */
+    cc(71, 1);                                          /* K1 Attk: every slice */
     assert(sent('t4_au_all_atk').length === 1, 'Attk did not set every slice: ' + JSON.stringify(sentLike(/_au_/)));
     reset();
-    touchClick(7);                                      /* K8 is blank: a click does nothing */
+    touchClick(2);                                      /* K3 is blank: a click does nothing */
     assert(!sent('t4_au_chop').length, 'K8 + click still sequences from the AUDIO editor');
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_all_0'] = '0 x 0 0 0 0';
     A.auMarkStale(4, 0); ticks(2);
@@ -326,12 +326,12 @@ step('⭐⭐ SLICE n edits the last pad tapped', () => {
     jog(1);
     ticks(2);
     assert(A.auBankTitle(4) === 'SLICE 3/8', A.auBankTitle(4));
-    assert(A.auPanelCells(ED()).map((c) => c.label).join() === 'Pitch,Detune,Gain,Revrs,Attk,Decay,Play,', 'SLICE: sound only');
-    assert(A.auPanelCells(ED())[2].text === '-3 dB', 'slice 3 gain: ' + A.auPanelCells(ED())[2].text);
+    assert(A.auPanelCells(ED()).map((c) => c.label).join() === 'Attk,Decay,,Gain,Pitch,Detune,Revrs,Play', 'SLICE: sound only');
+    assert(A.auPanelCells(ED())[3].text === '-3 dB', 'slice 3 gain: ' + A.auPanelCells(ED())[3].text);
     reset();
-    for (let i = 0; i < 3; i++) cc(73, 1);             /* K3 Gain */
+    for (let i = 0; i < 3; i++) cc(74, 1);             /* K4 Gain */
     assert(sent('t4_au_slice_gain').some((v) => /^0 2 -2$/.test(v)), 'slice gain: ' + JSON.stringify(sent('t4_au_slice_gain')));
-    cc(72, 127);                                        /* K2 Detune */
+    cc(76, 127);                                        /* K6 Detune */
     assert(sent('t4_au_slice_detune').join() === '0 2 -1', 'slice detune: ' + JSON.stringify(sent('t4_au_slice_detune')));
     jog(-1);
 });
@@ -340,14 +340,14 @@ step('⭐ Decay: shortest at the bottom of the dial, Full at the top (Josh: "it 
     jog(1);
     const last = () => { const v = sent('t4_au_slice_dec'); return v.length ? v[v.length - 1].split(' ')[2] : null; };
     reset();
-    cc(76, 127);                                     /* K6 down from Full */
+    cc(72, 127);                                     /* K2 down from Full */
     assert(last() === '5000', 'down from Full did not land on 5000 ms: ' + last());
-    for (let i = 0; i < 300; i++) cc(76, 127);       /* all the way down */
+    for (let i = 0; i < 300; i++) cc(72, 127);       /* all the way down */
     assert(last() === '5' && !sent('t4_au_slice_dec').some((v) => / 0$/.test(v)),
            'all the way down is not the shortest decay: ' + last());
-    assert(A.auPanelCells(ED())[5].text === '5ms' && A.auPanelCells(ED())[5].norm < 0.01, 'the bottom: ' + JSON.stringify(A.auPanelCells(ED())[5]));
-    for (let i = 0; i < 400; i++) cc(76, 1);         /* all the way up */
-    assert(last() === '0' && A.auPanelCells(ED())[5].text === 'Full' && A.auPanelCells(ED())[5].norm === 1,
+    assert(A.auPanelCells(ED())[1].text === '5ms' && A.auPanelCells(ED())[1].norm < 0.01, 'the bottom: ' + JSON.stringify(A.auPanelCells(ED())[1]));
+    for (let i = 0; i < 400; i++) cc(72, 1);         /* all the way up */
+    assert(last() === '0' && A.auPanelCells(ED())[1].text === 'Full' && A.auPanelCells(ED())[1].norm === 1,
            'all the way up is not Full: ' + last());
     jog(-1);
     S.activeBank = 0;
@@ -743,10 +743,10 @@ step('⭐⭐ the knob rings follow the Audio screens and the AUDIO bank: lit whe
     const lit = () => globalThis.__ring().map((c) => (c ? 1 : 0)).join('');
     const sent8 = () => [71, 72, 73, 74, 75, 76, 77, 78].map((cc_) => (CCLEDS.get(cc_) ? 1 : 0)).join('');
     assert(globalThis.__ring() === null, 'rings taken with no Audio screen up');
-    toSoundBank('slices'); ticks(3);                 /* the sound bank, ALL SLICES: K8 is blank */
-    assert(sent8() === '11111110', 'ALL SLICES rings: ' + sent8());
-    jog(1); ticks(3);                                /* SLICE n: K8 is blank */
-    assert(sent8() === '11111110', 'SLICE n rings: ' + sent8());
+    toSoundBank('slices'); ticks(3);                 /* the sound bank, ALL SLICES: K3 is blank */
+    assert(sent8() === '11011111', 'ALL SLICES rings: ' + sent8());
+    jog(1); ticks(3);                                /* SLICE n: K3 is blank */
+    assert(sent8() === '11011111', 'SLICE n rings: ' + sent8());
     jog(-1);
     GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(3);
     assert(A.auBankTitle(4) === 'SAMPLE' && sent8() === '11111111', 'SAMPLE rings (a Loop clip): ' + sent8());
@@ -812,8 +812,19 @@ step('⭐⭐ SLICES (Josh, 2026-10-29): page 1 the chops — K1 / K3 the slice, 
     assert(sent('t4_au_slice_start').length === 1 && !sent('t4_au_set_start').length,
            'K1 is not the slice\'s start: ' + JSON.stringify(sentLike(/_au_/)));
     reset();
-    for (let i = 0; i < 6; i++) cc(77, 1);
-    assert(!sentLike(/_au_/).length, 'K7 acts on SLICES page 1: ' + JSON.stringify(sentLike(/_au_/)));
+    /* K4-K8 are the slice's, as on page 2 (Josh, 2026-10-30) */
+    for (let i = 0; i < 20 && !sent('t4_au_slice_rev').length; i++) cc(77, 1);
+    assert(sent('t4_au_slice_rev').join() === '0 2 1' && !sent('t4_au_set_revrs').length,
+           'SLICES page 1 K7 is not the slice\'s Revrs: ' + JSON.stringify(sentLike(/_au_/)));
+    for (let i = 0; i < 20 && sent('t4_au_slice_rev').length < 2; i++) cc(77, 127);
+    reset();
+    S.knobTouched = -1; S.shiftHeld = true;
+    cc(74, 1);
+    tx = globalThis.__texts(() => shown());
+    assert(sent('t4_au_all_gain').length === 1 && !sent('t4_au_set_gain').length && tx.some((x) => /^ALL GAIN /.test(x)),
+           'Shift + page 1 K4 is not every slice\'s Gain: ' + JSON.stringify(sentLike(/_au_/)) + ' ' + JSON.stringify(tx));
+    S.shiftHeld = false; S.knobTouched = -1;
+    reset();
     click();
     assert(ed.pick && ed.pick.level === 2 && E.auPickRows(ed).map((r) => r.label).join() === 'Even,Transient,Lazy,Manual',
            'a click did not open the chop types: ' + JSON.stringify(ed.pick));
@@ -823,17 +834,17 @@ step('⭐⭐ SLICES (Josh, 2026-10-29): page 1 the chops — K1 / K3 the slice, 
     tx = globalThis.__texts(() => shown());
     assert(ed.page === 1 && tx.indexOf('2/2') >= 0 && tx.some((x) => /^SLICE 3\/8$/.test(x)), 'SLICES page 2: ' + JSON.stringify(tx));
     reset();
-    for (let i = 0; i < 30; i++) cc(71, 1);
-    assert(sent('t4_au_slice_pitch').length >= 1 && !sent('t4_au_set_pitch').length, 'page 2 K1 is not slice 3\'s Pitch: ' + JSON.stringify(sentLike(/_au_/)));
+    for (let i = 0; i < 30; i++) cc(75, 1);
+    assert(sent('t4_au_slice_pitch').length >= 1 && !sent('t4_au_set_pitch').length, 'page 2 K5 is not slice 3\'s Pitch: ' + JSON.stringify(sentLike(/_au_/)));
     /* Shift held: every slice (a bare Shift tap is a host shortcut this rig
      * does not stub, so the hold is the state the knobs read) */
     S.knobTouched = -1; S.shiftHeld = true; ticks(1);
     tx = globalThis.__texts(() => shown());
     assert(tx.indexOf('ALL SLICES') >= 0, 'Shift did not show ALL SLICES: ' + JSON.stringify(tx));
     reset();
-    for (let i = 0; i < 40 && !sentLike(/_au_all_rev/).length; i++) cc(74, 1);
-    assert(sentLike(/_au_all_rev/).length === 1, 'Shift + K4 is not every slice\'s Revrs: ' + JSON.stringify(sentLike(/_au_/)));
-    for (let i = 0; i < 40 && sentLike(/_au_all_rev/).length < 2; i++) cc(74, 127);
+    for (let i = 0; i < 40 && !sentLike(/_au_all_rev/).length; i++) cc(77, 1);
+    assert(sentLike(/_au_all_rev/).length === 1, 'Shift + K7 is not every slice\'s Revrs: ' + JSON.stringify(sentLike(/_au_/)));
+    for (let i = 0; i < 40 && sentLike(/_au_all_rev/).length < 2; i++) cc(77, 127);
     S.shiftHeld = false; S.knobTouched = -1;
     jog(-1);
     back(); ticks(2);
@@ -1361,41 +1372,49 @@ step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP /
     assert(lh.indexOf('CLK') < 0, 'a Loop CLIP knob offers a click: ' + lh);
     S.bankCardLatched = false;
 
-    /* ...they are on SAMPLE: page 1's K8 Nudge, page 2's K1 Sync (Vintage ·
-     * Pitch · Warp, the DSP's 1 · 2 · 0; a new clip on Warp), K2 Revrs, and
-     * touch K8 + click Orig (Josh, 2026-10-29) */
+    /* ...they are on SAMPLE: page 1's K8 Revrs (Nudge left SAMPLE, Josh,
+     * 2026-10-30); page 2 is page 1's knobs as a grid in their places — K2
+     * Sync (Vintage · Pitch · Warp, the DSP's 1 · 2 · 0; a new clip on Warp)
+     * where Zoom is, no Start / Length, K1 Orig on its own (touch + click) */
     mapPad(2, 3); ticks(2);
     reset();
-    S.knobAccelLast[7] = 0; cc(78, 1);
-    assert(sent('t4_au_set_nudge').join() === '0 5', 'SAMPLE K8 is not Nudge: ' + JSON.stringify(sentLike(/_au_/)));
+    for (let i = 0; i < 20 && !sent('t4_au_set_revrs').length; i++) cc(78, 1);
+    assert(sent('t4_au_set_revrs').join() === '0 1' && !sent('t4_au_set_nudge').length, 'SAMPLE K8 is not Revrs: ' + JSON.stringify(sentLike(/_au_/)));
+    for (let i = 0; i < 20 && sent('t4_au_set_revrs').length < 2; i++) cc(78, 127);
     jog(1); ticks(1);
     const ed = S.auEditor;
     assert(ed.page === 1, 'the jog did not turn SAMPLE to page 2');
-    assert(A.auSampleP2Cells(4, 0).map((c) => c.label).join() === 'Sync,Revrs,,,,,,Orig', 'page 2: ' + A.auSampleP2Cells(4, 0).map((c) => c.label));
-    assert(A.auSampleP2Cells(4, 0)[7].opens === true, 'Orig does not wear the click corners (Josh: "orig needs the corners to indicate it\'s a click gesture")');
-    assert(A.auSampleP2Cells(4, 0)[0].text === 'Warp', 'a new clip is not on Warp: ' + A.auSampleP2Cells(4, 0)[0].text);
-    for (let i = 0; i < 40; i++) cc(71, 127);
+    assert(A.auSampleP2Cells(4, 0).map((c) => c.label).join() === 'Orig,Sync,,Gain,Pitch,Detune,Tempo,Revrs', 'page 2: ' + A.auSampleP2Cells(4, 0).map((c) => c.label));
+    assert(A.auSampleP2Cells(4, 0)[0].opens === true, 'Orig does not wear the click corners (Josh: "orig needs the corners to indicate it\'s a click gesture")');
+    assert(A.auSampleP2Cells(4, 0)[1].text === 'Warp', 'a new clip is not on Warp: ' + A.auSampleP2Cells(4, 0)[1].text);
+    for (let i = 0; i < 40; i++) cc(72, 127);
     reset();
     const tv = [];
-    for (let i = 0; i < 40; i++) { cc(71, 1); const t = A.auSampleP2Cells(4, 0)[0].text; if (tv[tv.length - 1] !== t) tv.push(t); }
+    for (let i = 0; i < 40; i++) { cc(72, 1); const t = A.auSampleP2Cells(4, 0)[1].text; if (tv[tv.length - 1] !== t) tv.push(t); }
     assert(tv.join() === 'Vintage,Pitch,Warp' && sent('t4_au_set_sync').join() === '0 2,0 0',
-           'K1 is not Sync Vintage · Pitch · Warp: ' + tv.join() + ' ' + JSON.stringify(sentLike(/_au_/)));
+           'K2 is not Sync Vintage · Pitch · Warp: ' + tv.join() + ' ' + JSON.stringify(sentLike(/_au_/)));
     assert(A.auSyncIdx({ sync: 1 }) === 0 && A.auSyncIdx({ sync: 2 }) === 1 && A.auSyncIdx({ sync: 0 }) === 2 &&
            A.auSyncIdx({ sync: 99 }) === 2, 'Vintage / Pitch / Warp / an unknown value reads wrong');
     for (const v of [0, 1, 2]) {
         const was = S.auInfo[4][0];
         S.auInfo[4][0] = Object.assign({}, was, { sync: v });
-        const sq = A.auSampleP2Cells(4, 0)[0].sq;
+        const sq = A.auSampleP2Cells(4, 0)[1].sq;
         S.auInfo[4][0] = was;
         assert(sq && sq.length <= 4, 'Sync ' + v + '\'s square: ' + sq);
     }
     reset();
-    for (let i = 0; i < 20 && !sent('t4_au_set_revrs').length; i++) cc(72, 1);
-    assert(sent('t4_au_set_revrs').join() === '0 1', 'K2 is not Revrs: ' + JSON.stringify(sentLike(/_au_/)));
-    for (let i = 0; i < 20 && sent('t4_au_set_revrs').length < 2; i++) cc(72, 127);
+    /* page 1's knobs work here too: K4 Gain, K7 Tempo, K8 Revrs */
+    S.knobAccelLast[3] = 0; cc(74, 1);
+    S.knobAccelLast[6] = 0; cc(77, 1);
+    for (let i = 0; i < 20 && !sent('t4_au_set_revrs').length; i++) cc(78, 1);
+    assert(sent('t4_au_set_gain').length === 1 && sent('t4_au_set_bpm').length === 1 && sent('t4_au_set_revrs').join() === '0 1',
+           'page 2 K4 / K7 / K8 are not Gain / Tempo / Revrs: ' + JSON.stringify(sentLike(/_au_/)));
+    for (let i = 0; i < 20 && sent('t4_au_set_revrs').length < 2; i++) cc(78, 127);
     reset();
-    note(7, 127); click(); note(7, 0); ticks(1);
-    assert(sent('t4_au_set_orig').join() === '0 0', 'touch K8 + click is not Orig: ' + JSON.stringify(sentLike(/_au_/)));
+    note(6, 127); click(); note(6, 0); ticks(1);
+    assert(!sent('t4_au_set_orig').length, 'touch K7 (Tempo) + click fired Orig (Josh: "tempo and touch orig shouldn\'t share a knob")');
+    note(0, 127); click(); note(0, 0); ticks(1);
+    assert(sent('t4_au_set_orig').join() === '0 0', 'touch K1 + click is not Orig: ' + JSON.stringify(sentLike(/_au_/)));
     jog(-1); back(); ticks(2);
     S.bankCardLatched = false;
 });

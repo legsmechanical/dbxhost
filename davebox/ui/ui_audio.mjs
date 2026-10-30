@@ -543,7 +543,11 @@ const soundCell = {
  * should be a base from which everything else is offset").
  * >Seq moved to the CLIP bank (Josh, 2026-10-28: "since it's about the
  * sequence, maybe we should put >seq in the clip BANK"), and Mode with it. */
-const SLICE_CLIP_ALL = ['pitch', 'detune', 'gain', 'rev', 'atk', 'dec', 'play', null];
+/* The slice knobs, on SLICES' two pages and the ALL SLICES / SLICE n pages:
+ * K4-K8 the same on both editor pages (Josh, 2026-10-30: the slice params
+ * "duplicate of slice p2 params"; one knob, one param on both pages), Attk and
+ * Decay on page 2's K1 / K2 where page 1 has Start and Zoom. */
+export const SLICE_GRID = ['atk', 'dec', null, 'gain', 'pitch', 'detune', 'rev', 'play'];
 
 export function auPanelCells(ed) {
     const t = ed.t, c = auClipOf(t), i = auInfo(t, c);
@@ -575,19 +579,17 @@ export function auPanelCells(ed) {
         const a = auAll(t, c);
         const all = {};
         ALL_FIELDS.forEach((f, k) => { all[f] = a ? a[k] : null; });
-        const cells = [];
-        for (let k = 0; k < 7; k++) {
-            const cell = soundCell[SLICE_CLIP_ALL[k]](all);
+        return SLICE_GRID.map((f) => {
+            if (!f) return BLANK;
+            const cell = soundCell[f](all);
             cell.name = 'All Slices: ' + cell.name;
-            cells.push(cell);
-        }
-        cells.push(BLANK);
-        return cells.map(live);
+            return cell;
+        }).map(live);
     }
     /* SLICE n */
     const l = auSelSlice(t);
     const r = auSlice(t, c, l) || DEFAULT_SLICE;
-    const cells = SLICE_FIELDS.map((f) => soundCell[f](r)).concat([BLANK]);
+    const cells = SLICE_GRID.map((f) => (f ? soundCell[f](r) : BLANK));
     return (!has || l >= i.n) ? cells.map((x) => (x === BLANK ? x : dash(x))) : cells;
 }
 
@@ -611,12 +613,9 @@ export function auPanelRingCells(ed) {
 export function auPanelKnobClass(ed, k) {
     const page = auPanelPageName(ed);
     if (page === 'SAMPLE') return (k === 4 || k === 6) ? 'delib' : (k === 1 ? 'pick' : '');   /* Revrs, Sync deliberate; Pitch picks */
-    if (page === 'CLIP') {
-        if (k === 0) return 'pick';
-        return (k === 3 || k === 6) ? 'delib' : '';
-    }
-    if (k === 0) return 'pick';
-    return (k === 3 || k === 6) ? 'delib' : '';
+    /* ALL SLICES / SLICE n: Pitch picks; Revrs and Play are deliberate */
+    if (k === 4) return 'pick';
+    return (k === 6 || k === 7) ? 'delib' : '';
 }
 
 /* Decay along the dial: shortest at the bottom, 5000 ms, then Full (0, no
@@ -738,7 +737,7 @@ export function auPanelReset(ed) {
     if (i.state !== 2) return false;
     const pn = auPanelPageName(ed);
     if (pn === 'CLIP' && auIsSlice(i)) {
-        for (const f of SLICE_CLIP_ALL) if (f) auSetAll(t, c, f, DEFAULT_SLICE[f]);
+        for (const f of SLICE_GRID) if (f) auSetAll(t, c, f, DEFAULT_SLICE[f]);
         _all.delete(t + '_' + c);
         for (const k of _sl.keys()) if (k.startsWith(t + '_' + c + '_')) _sl.delete(k);
         return true;
@@ -773,7 +772,7 @@ export function auPanelKnob(ed, k, steps) {
             else if (k === 3) { const v = Math.max(-40, Math.min(12, i.gain + dir)); if (v === i.gain) return false; loc.gain = v; auSet(t, c, 'gain', v); }
             else if (k === 4) { const v = dir > 0 ? 1 : 0; if (v === i.revrs) return false; loc.revrs = v; auSet(t, c, 'revrs', v); }
             else if (k === 5) return auNudgeStep(t, c, steps);
-            else if (k === 6) return auIsLoop(i) && auSampleP2Knob(t, c, 0, steps);
+            else if (k === 6) return auIsLoop(i) && auSampleP2Knob(t, c, 1, steps);
             else if (k === 7) {
                 const v = Math.max(AU_BPM10_MIN, Math.min(AU_BPM10_MAX, (i.bpm10 || 1200) + steps * (S.shiftHeld ? 1 : 10)));
                 if (v === (i.bpm10 | 0)) return false;
@@ -797,7 +796,7 @@ export function auPanelKnob(ed, k, steps) {
             if (v === i.revrs) return false;
             loc.revrs = v; auSet(t, c, 'revrs', v);
         } else {
-            const f = SLICE_CLIP_ALL[k];
+            const f = SLICE_GRID[k];
             if (!f) return false;
             const fi = ALL_FIELDS.indexOf(f);
             const a = auAll(t, c) || [];
@@ -816,9 +815,9 @@ export function auPanelKnob(ed, k, steps) {
         }
     } else {
         const l = auSelSlice(t);
-        if (i.state !== 2 || l >= i.n || k >= SLICE_FIELDS.length) return false;
+        if (i.state !== 2 || l >= i.n || !SLICE_GRID[k]) return false;
         const r = Object.assign({}, DEFAULT_SLICE, auSlice(t, c, l) || {});
-        const f = SLICE_FIELDS[k];
+        const f = SLICE_GRID[k];
         const v = stepSliceField(f, r[f], steps);
         if (v === r[f]) return false;
         r[f] = v;
@@ -861,18 +860,28 @@ export function auSampleP2Cells(t, c) {
                    text: AU_SYNC_NAMES[auSyncIdx(i)], sq: AU_SYNC_SQ[auSyncIdx(i)], options: AU_SYNC_NAMES, sel: auSyncIdx(i) };
     const orig = { kind: 'action', oneWay: true, label: 'Orig', name: 'Orig: Tempo = project\'s', text: '->', opens: true };   /* corners: a click gesture (Josh) */
     const live = (x) => (i.state === 2 ? x : dash(x));
-    return [loop ? live(sync) : BLANK, live(revrsCell(i)), BLANK, BLANK, BLANK, BLANK, BLANK, live(orig)];
+    /* page 1's knobs as a grid, where they keep their places (Josh, 2026-10-30:
+     * "the sample waveform knob params ... duplicated on p 2 of sample";
+     * "start and length don't need to be in sample p2"); Orig on its own knob
+     * ("tempo and touch orig shouldn't share a knob") */
+    const bpm = auBpm(i);
+    const tempo = { kind: 'valsq', label: 'Tempo', name: 'Tempo (the sample\'s own)',
+                    text: bpm ? String(Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) : '--',
+                    norm: ((i.bpm10 || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN) };
+    const gain = { kind: 'arc', label: 'Gain', name: 'Gain', text: fmtDb(i.gain), norm: (i.gain + 40) / 52 };
+    return [live(orig), loop ? live(sync) : BLANK, BLANK, live(gain), live(pitchCell('Pitch', i.pitch)),
+            live(detuneCell('Detune', i.detune)), live(tempo), live(revrsCell(i))];
 }
 /* A turn on SAMPLE's second page. Returns true when something changed. */
 export function auSampleP2Knob(t, c, k, steps) {
     const i = auInfo(t, c);
     if (i.state !== 2 || !steps) return false;
     const loc = Object.assign({}, i);
-    if (k === 0 && auIsLoop(i)) {
+    if (k === 1 && auIsLoop(i)) {
         const ti = Math.max(0, Math.min(AU_SYNC_NAMES.length - 1, auSyncIdx(i) + (steps > 0 ? 1 : -1)));
         if (AU_SYNC_VALS[ti] === (i.sync | 0)) return false;
         loc.sync = AU_SYNC_VALS[ti]; auSet(t, c, 'sync', loc.sync);
-    } else if (k === 1) {
+    } else if (k === 7) {
         const v = steps > 0 ? 1 : 0;
         if (v === (i.revrs | 0)) return false;
         loc.revrs = v; auSet(t, c, 'revrs', v);

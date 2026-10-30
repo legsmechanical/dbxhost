@@ -1238,7 +1238,7 @@ by clicking **Audio** in the track's sound menu, or with the instrument shortcut
 There is no End: what plays runs from Start for the Length. In both modes **K4** Gain ·
 **K5** Pitch · **K6** Detune set the whole clip, **K7** sets the sample's own
 **Tempo**, 1 BPM a detent (**Shift**: 0.1) — what Sync and **>Seq**'s step places
-follow — and **K8** **Nudge** moves the sample against the bar (ms). The knob in hand
+follow — and **K8** is **Revrs**. The knob in hand
 reads out between Start and Length, and the waveform is drawn at the gain it plays at.
 Zoomed in, the view stays on what you touched last: touch Length, then turn Tempo, and
 the clip's end stays in view as it moves.
@@ -1251,9 +1251,11 @@ Tempo, empty where the Length runs past the end of the sample — with a tick un
 for each beat and a taller one for each bar. **K2** zooms in from there.
 
 SAMPLE has two pages: **turn the jog** for the second (the header reads **1/2** or
-**2/2**). Page 2 holds what needs no waveform: **Sync** (K1, a Loop clip's: **Vintage**,
-**Pitch** or **Warp**), **Revrs** (K2), and **Orig** (touch K8 and click): the sample's
-Tempo becomes the project's, so it plays exactly as recorded.
+**2/2**). Page 2 shows page 1's knobs as a grid, every name and value at once, each on
+the same knob — **Gain** · **Pitch** · **Detune** · **Tempo** · **Revrs** on K4–K8 — plus what
+needs no waveform: **Orig** (touch K1 and click: the sample's Tempo becomes the
+project's, so it plays exactly as recorded) and **Sync** (K2, a Loop clip's:
+**Vintage**, **Pitch** or **Warp**). Start and Length are page 1's alone.
 
 A **click** on SAMPLE opens the chooser to load a sample (**Shift + click** does the
 same). Chopping lives on **SLICES** alone. **Back** leaves SAMPLE. The Shift
@@ -1318,10 +1320,11 @@ map (dark on a Loop clip). Zoomed out it shows what SAMPLE shows — Start for i
 and the chop editors keep their chops and cursor inside it (a chop left outside by a later
 Start or Length widens the view to it). Page 1 is the chops, the one the pads last picked bracketed:
 **K1** / **K3** move its start / end, **K2** zooms, and a click opens the chop types
-(**Even** · **Transient** · **Lazy** · **Manual**, as above). **Turn the jog** for page 2,
-the picked slice's sound — **Pitch**, **Detune**, **Gain**, **Revrs**, **Attk**, **Decay** and
-**Play** (**One** to the slice's end, **Gate** as long as the step, **Loop** for the step);
-**hold Shift** and the same knobs set **every slice** at once (`--` where they differ).
+(**Even** · **Transient** · **Lazy** · **Manual**, as above). **K4–K8** are the picked slice's
+**Gain** · **Pitch** · **Detune** · **Revrs** · **Play** (**One** to the slice's end, **Gate** as
+long as the step, **Loop** for the step). **Turn the jog** for page 2, the same as a grid,
+with **Attk** and **Decay** on K1 / K2. On both pages, **hold Shift** and the slice knobs set
+**every slice** at once (`--` where they differ).
 SAMPLE's **Pitch**, **Detune** and **Gain** are the base every slice adds its own to.
 
 **The sound bank** keeps the sound on Track View's knobs once you leave an editor, to
