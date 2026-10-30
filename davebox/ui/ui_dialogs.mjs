@@ -97,7 +97,10 @@ function dlgLines(lines, bottom) {
 }
 
 function drawYesNoRow(sel, labels) {
-    drawDialogYesNoRow(sel === 0, labels);
+    /* labels of their own (Overwrite / New): buttons sized to them — the fixed
+     * 46px box clipped "Overwrite" at both ends (found on the device) */
+    if (labels) drawDialogButtonRow(46, 13, [{ label: labels[0], sel: sel === 1 }, { label: labels[1], sel: sel === 0 }]);
+    else drawDialogYesNoRow(sel === 0);
 }
 
 /* Single filled OK button (info dialogs), centered horizontally at a caller-set
