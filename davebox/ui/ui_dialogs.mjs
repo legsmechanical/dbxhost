@@ -96,8 +96,8 @@ function dlgLines(lines, bottom) {
     }
 }
 
-function drawYesNoRow(sel) {
-    drawDialogYesNoRow(sel === 0);
+function drawYesNoRow(sel, labels) {
+    drawDialogYesNoRow(sel === 0, labels);
 }
 
 /* Single filled OK button (info dialogs), centered horizontally at a caller-set
@@ -165,11 +165,12 @@ function drawPurgeConfirm() {
 
 /* The waveform editor's questions (ui_audio_editor): "Keep N new chops?",
  * "Replace chops?". sel 0 = Yes. */
-export function drawAudioAsk(title, lines, sel) {
+/* `labels`: [left, right] for the buttons (default No / Yes); sel 0 is the right one */
+export function drawAudioAsk(title, lines, sel, labels) {
     clear_screen();
     dlgHeader(title);
     dlgLines(lines);
-    drawYesNoRow(sel);
+    drawYesNoRow(sel, labels);
 }
 
 export function drawConvertToConductConfirm() {

@@ -361,9 +361,14 @@ step('⭐⭐ the map\'s SAMPLE pad opens SAMPLE; a click there loads a sample �
     jog(-1); ticks(1);
     ptx = globalThis.__texts(() => shown());
     assert(ed.page === 0 && ptx.indexOf('1/2') >= 0, 'the jog did not turn back to page 1: ' + JSON.stringify(ptx));
+    /* a click opens SAMPLE's menu (Josh, 2026-10-30: "it should load a menu for
+     * consistency"): Load sample · Trim · Normalize */
     click(); ticks(2);
-    assert(S.auChooser && !ed.pick && S.auEditor === ed, 'a click did not open the sample chooser: ' + JSON.stringify({ ch: !!S.auChooser, pick: ed.pick }));
+    assert(ed.pick && ed.pick.level === 1 && E.auPickRows(ed).map((r) => r.label).join() === 'Load sample,Trim,Normalize',
+           'a click did not open SAMPLE\'s menu: ' + JSON.stringify({ pick: ed.pick, rows: E.auPickRows(ed).map((r) => r.label) }));
     assert(!sentLike(/_au_(mark_add|set_even)/).length, 'a click on SAMPLE edited the chops: ' + JSON.stringify(sentLike(/_au_/)));
+    click(); ticks(2);                              /* Load sample */
+    assert(S.auChooser && !ed.pick && S.auEditor === ed, 'Load sample did not open the chooser: ' + JSON.stringify({ ch: !!S.auChooser, pick: ed.pick }));
     back(); ticks(2);
     assert(!S.auChooser && S.auEditor === ed, 'Back did not close the chooser onto SAMPLE');
     back();
@@ -544,12 +549,12 @@ step('⭐⭐ Shift shortcuts work over WAVE and its chooser: a step or the jog l
     assert(!S.auEditor && S.activeTrack !== was, 'Shift + jog did not leave WAVE for the next track: ' + S.activeTrack);
     cc(HC.MoveShift, 127); jog(-1); cc(HC.MoveShift, 0); ticks(3);
     assert(S.activeTrack === was, 'Shift + jog did not come back');
-    /* Shift + click is still SAMPLE's own (it loads, as a click does) */
+    /* Shift + click is still SAMPLE's own (its menu, as a click) */
     mapPad(2, 3);
     shiftClick(); ticks(2);
-    assert(S.auEditor && S.auChooser, 'Shift + click left SAMPLE instead of opening the chooser');
+    assert(S.auEditor && S.auEditor.pick, 'Shift + click left SAMPLE instead of opening its menu');
     back(); ticks(2);
-    assert(S.auEditor && !S.auChooser, 'Back did not close the chooser onto SAMPLE');
+    assert(S.auEditor && !S.auEditor.pick, 'Back did not close the menu onto SAMPLE');
     back(); ticks(2);
     assert(!S.auEditor, 'WAVE did not close');
 });
@@ -562,7 +567,7 @@ step('⭐⭐ WAVE: SLICE n/n or LOOP up top; Start / End light while touched or 
     let f, tx = globalThis.__texts(() => { f = shown(); });
     /* a click loads (chopping is SLICES' alone), the jog turns the page; SAMPLE
      * page 1 of 2 under the sample's name (SLICE n/N is SLICES') */
-    assert(['CLK', 'LOAD', 'JOG', 'PAGE'].every((h) => tx.indexOf(h) >= 0), 'Slice hints: ' + JSON.stringify(tx));
+    assert(['CLK', 'MENU', 'JOG', 'PAGE'].every((h) => tx.indexOf(h) >= 0), 'Slice hints: ' + JSON.stringify(tx));
     assert(tx.indexOf('1/2') >= 0 && tx.some((x) => /^BREAK PHENOM/.test(x)), 'the header: ' + JSON.stringify(tx.slice(0, 6)));
     assert(!px(f, 2, 9) && !px(f, 3, 15), 'Start is lit with no knob in hand');
     note(0, 127); f = shown();
@@ -589,7 +594,7 @@ step('⭐⭐ WAVE: SLICE n/n or LOOP up top; Start / End light while touched or 
     mapPad(2, 3); ticks(2);
     let lf;
     tx = globalThis.__texts(() => { lf = shown(); });
-    assert(tx.indexOf('CLK') >= 0 && tx.indexOf('LOAD') >= 0 && tx.indexOf('JOG') >= 0 && tx.indexOf('PAGE') >= 0 && tx.indexOf('1/2') >= 0,
+    assert(tx.indexOf('CLK') >= 0 && tx.indexOf('MENU') >= 0 && tx.indexOf('JOG') >= 0 && tx.indexOf('PAGE') >= 0 && tx.indexOf('1/2') >= 0,
            'Loop hints: ' + JSON.stringify(tx));
     /* nothing in the middle with no knob in hand (Josh) */
     const nm = A.auSampleName(4, 0).toUpperCase();
@@ -897,10 +902,11 @@ step('⭐⭐ chopping lives only on SLICES: a click there opens the chop types; 
     reset();
     shiftClick(); ticks(2);
     let ed = S.auEditor;
-    assert(ed && ed.ed === 'sample' && !ed.pick && S.auChooser, 'Shift + click on SAMPLE did not load: ' + JSON.stringify(ed && ed.pick));
+    assert(ed && ed.ed === 'sample' && ed.pick && ed.pick.level === 1 && !E.auPickRows(ed).some((r) => /chop/i.test(r.label)),
+           'Shift + click on SAMPLE is not its menu (without chopping): ' + JSON.stringify(ed && ed.pick));
     assert(sentLike(/mark_add/).length === 0, 'Shift + click also added a marker');
     back(); ticks(2);
-    assert(!S.auChooser && S.auEditor === ed, 'Back did not close the chooser onto SAMPLE');
+    assert(!ed.pick && S.auEditor === ed, 'Back did not close the menu onto SAMPLE');
     back();
     mapPad(2, 2);
     ed = S.auEditor;
@@ -1006,10 +1012,58 @@ step('⭐⭐ Transient (SLICES › Transient): the REAL gesture — on, the jog 
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
 });
 
+step('⭐⭐ SAMPLE\'s menu: Trim and Normalize ask Overwrite or New (New first), Back changes nothing; Trim with nothing to cut says so (Josh, 2026-10-30: "trim and normalize options" · "dialog: overwrite or new sample" · "new copy is default")', () => {
+    /* a clip that plays part of its file: Start 24000 for 96 ticks */
+    const part = INFO24(1, 4, 0, 4, 50, 0).replace(' 16 0 96000 ', ' 16 24000 58286 ').replace(/ 0\|/, ' 96|');
+    GET['t4_au_info_0'] = part; A.auMarkStale(4, 0); ticks(2);
+    assert(A.auTrimCuts(4, 0), 'the fixture leaves nothing to cut');
+    mapPad(2, 3);
+    const ed = S.auEditor;
+    const menu = (row) => { click(); ticks(1); for (let i = 0; i < row; i++) jog(1); click(); ticks(1); };
+    /* Trim › the question, on New */
+    reset();
+    menu(1);
+    assert(ed.ask && ed.ask.kind === 'edit' && ed.ask.op === 'trim' && ed.ask.sel === 0, 'Trim did not ask, on New: ' + JSON.stringify(ed.ask));
+    {
+        const lines = ['Cut the file to', 'what the clip plays.'];
+        const asked = frame(() => D.drawAudioAsk('TRIM', lines, 0, ['Overwrite', 'New']));
+        assert(same(shown(), asked), 'the Trim question is not on screen');
+        assert(!same(asked, frame(() => D.drawAudioAsk('TRIM', lines, 0))), 'control: the buttons do not read Overwrite / New');
+    }
+    let tx;
+    click(); ticks(1);
+    assert(!ed.ask && sent('t4_au_edit').join() === '0 0 0', 'New did not trim into a new sample: ' + JSON.stringify(sent('t4_au_edit')));
+    GET['t4_au_info_0'] = part; A.auMarkStale(4, 0); ticks(2);
+    /* Trim › Overwrite */
+    reset();
+    menu(1); jog(-1); click(); ticks(1);
+    assert(sent('t4_au_edit').join() === '0 0 1', 'Overwrite did not trim the file: ' + JSON.stringify(sent('t4_au_edit')));
+    GET['t4_au_info_0'] = part; A.auMarkStale(4, 0); ticks(2);
+    /* Normalize › Back: nothing */
+    reset();
+    menu(2);
+    tx = globalThis.__texts(() => shown());
+    assert(ed.ask && ed.ask.op === 'norm' && tx.indexOf('NORMALIZE') >= 0, 'Normalize did not ask: ' + JSON.stringify(tx));
+    back(); ticks(1);
+    assert(!ed.ask && !sent('t4_au_edit').length && S.auEditor === ed, 'Back did something: ' + JSON.stringify(sent('t4_au_edit')));
+    /* Normalize › New */
+    menu(2); click(); ticks(1);
+    assert(sent('t4_au_edit').join() === '0 1 0', 'Normalize did not make a new sample: ' + JSON.stringify(sent('t4_au_edit')));
+    /* the whole file already: Trim says so and asks nothing */
+    GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(2);
+    assert(!A.auTrimCuts(4, 0), 'a clip on the whole file has something to cut');
+    reset();
+    menu(1);
+    assert(!ed.ask && !sent('t4_au_edit').length, 'Trim with nothing to cut asked or sent');
+    back(); ticks(2);
+    S.actionPopupEndTick = 0;
+    GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
+});
+
 step('⭐⭐ Load sample: the chooser opens over WAVE, auditions, a click picks and lands back on WAVE', () => {
     mapPad(2, 3);
     reset(); PREVIEWS.length = 0;
-    click();                                         /* SAMPLE: a click loads */
+    click(); click();                                /* SAMPLE's menu › Load sample */
     ticks(2);
     assert(S.auChooser && S.auChooser.t === 4, 'the chooser did not open');
     assert(S.auChooser.places[0].label === 'This project', 'places: ' + S.auChooser.places.map((p) => p.label));
@@ -1081,7 +1135,7 @@ step('⭐⭐ WAVE in Loop mode: K1 Start · K2 Zoom · K3 End · K4 Gain · K5 P
     assert(same(shown(), marked), 'the chops are drawn in Loop');
     A.auMarkStale(4, 0); ticks(2);
     S.auEditor.pick = { level: 1, sel: 0 };
-    assert(E.auPickRows(S.auEditor).map((r) => r.id).join() === 'load', 'Loop\'s picker: ' + E.auPickRows(S.auEditor).map((r) => r.id));
+    assert(E.auPickRows(S.auEditor).map((r) => r.id).join() === 'load,trim,norm', 'Loop\'s menu (no chopping): ' + E.auPickRows(S.auEditor).map((r) => r.id));
     S.auEditor.pick = null;
     cc(HC.MoveDelete, 127); note(C.TRACK_PAD_BASE + 3, 100); note(C.TRACK_PAD_BASE + 3, 0); cc(HC.MoveDelete, 0);
     assert(!sent('t4_au_mark_del').length, 'Delete + pad in Loop removed a chop: ' + JSON.stringify(sent('t4_au_mark_del')));

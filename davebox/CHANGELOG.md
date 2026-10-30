@@ -9,6 +9,10 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Added
+- **Audio: Trim and Normalize.** SAMPLE's click opens a menu — Load sample · Trim ·
+  Normalize. Trim cuts the file to what the clip plays; Normalize raises its peak to
+  full scale. Each asks New (a new sample for this clip, the default) or Overwrite (the
+  file itself, for every clip using it).
 - **Audio: Sync Warp**, the default for Loop clips: the loop is time-stretched to
   the tempo and keeps its own pitch, so a loop recorded at 90 plays at 128 sounding
   as it was. Pitch and Detune then transpose it without changing its length. Warp is

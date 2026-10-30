@@ -1257,8 +1257,20 @@ needs no waveform: **Orig** (touch K1 and click: the sample's Tempo becomes the
 project's, so it plays exactly as recorded) and **Sync** (K2, a Loop clip's:
 **Vintage**, **Pitch** or **Warp**). Start and Length are page 1's alone.
 
-A **click** on SAMPLE opens the chooser to load a sample (**Shift + click** does the
-same). Chopping lives on **SLICES** alone. **Back** leaves SAMPLE. The Shift
+A **click** on SAMPLE opens its menu (**Shift + click** does the same):
+
+- **Load sample** — the chooser (below).
+- **Trim** — cuts the file to what the clip plays, Start for its Length. Start moves to
+  the beginning and the chops move with the audio. A clip that already plays its whole
+  file has nothing to cut.
+- **Normalize** — raises the file's loudest point to full scale.
+
+Trim and Normalize ask **New** (the default: a new sample for this clip, named
+*… trim* or *… norm*, the original kept in the project) or **Overwrite** (the
+project's copy itself — every clip using it changes). **Back** changes nothing. Both
+write a 16-bit WAV; the clip keeps its settings.
+
+Chopping lives on **SLICES** alone. **Back** leaves SAMPLE. The Shift
 shortcuts work here as anywhere: **Shift + a step** or **Shift + jog** leaves SAMPLE and does
 what it always does.
 

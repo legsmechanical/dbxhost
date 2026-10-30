@@ -862,6 +862,70 @@ int main(void) {
         }
     }
 
+    /* ---- Trim / Normalize (Josh, 2026-10-30: "trim and normalize options";
+     * "dialog: overwrite or new sample"): the loader writes a 16-bit WAV and
+     * the clip lands on it with its settings kept ---- */
+    {
+        au_clip_t *ac = &inst->au_clip[4][13];
+        clip_t *lc = &tr->clips[13];
+        uint32_t tps, want, i;
+        int pk = 0;
+        snprintf(p, sizeof p, "%s/src/rampe.wav", g_root); write_ramp(p);
+        snprintf(p, sizeof p, "13|%s/src/rampe.wav", g_root);
+        hx_set_param(h, "t4_au_pick", p);
+        HX_ASSERT(wait_loaded(h, 4, 13) == 2, "the edit ramp did not load");
+        as_recorded(h, 4, 13);
+        hx_set_param(h, "t4_au_set_pitch", "13 3");
+        tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
+        ac->rstart = 1000; lc->length = 4;
+        {
+            uint16_t bpm0 = ac->bpm10;
+            want = (uint32_t)(1000.0 + 4.0 * tps * au_fpt_s(ac, ac->smp) + 0.5) - 1000;
+            hx_set_param(h, "t4_au_edit", "13 0 0");               /* Trim, a new sample */
+            HX_ASSERT(wait_loaded(h, 4, 13) == 2, "Trim did not land");
+            HX_ASSERT(!strcmp(ac->name, "rampe trim.wav"), "Trim's new sample is not \"rampe trim.wav\"");
+            HX_ASSERT(ac->smp->pcm && ac->smp->frames + 1 >= want && ac->smp->frames <= want + 1 &&
+                      ac->smp->pcm[0] == 1000 && ac->smp->pcm[1] == 1001, "Trim did not keep exactly what the clip plays");
+            HX_ASSERT(ac->rstart == 0 && ac->bpm10 == bpm0 && ac->pitch == 3 && lc->length == 4,
+                      "Trim did not keep the clip's settings (Start moves to the cut)");
+        }
+        snprintf(p, sizeof p, "%s/proj/dAVEBOx/samples/rampe.wav", g_root);
+        HX_ASSERT(au_file_size(p) == 44 + 44100 * 2, "a new-sample Trim touched the original");
+        hx_set_param(h, "t4_au_edit", "13 1 0");                   /* Normalize, a new sample */
+        HX_ASSERT(wait_loaded(h, 4, 13) == 2 && !strcmp(ac->name, "rampe trim norm.wav"), "Normalize did not land as \"rampe trim norm.wav\"");
+        for (i = 0; i < ac->smp->frames; i++) if (ac->smp->pcm[i] > pk) pk = ac->smp->pcm[i];
+        HX_ASSERT(pk == 32767 && ac->smp->pcm[0] > 1000, "Normalize did not raise the peak to full scale");
+        /* nothing to trim (the clip plays the whole file): no request */
+        {
+            uint32_t g = ac->gen;
+            ac->rstart = 0; lc->length = 256;
+            hx_set_param(h, "t4_au_edit", "13 0 0");
+            HX_ASSERT(ac->gen == g && ac->state == 2, "a Trim with nothing to cut still ran");
+        }
+        /* Overwrite: the file itself; another clip on it reloads, moved with the cut */
+        {
+            au_clip_t *b14 = &inst->au_clip[4][14], *b15 = &inst->au_clip[4][15];
+            snprintf(p, sizeof p, "%s/src/rampo.wav", g_root); write_ramp(p);
+            snprintf(p, sizeof p, "14|%s/src/rampo.wav", g_root); hx_set_param(h, "t4_au_pick", p);
+            HX_ASSERT(wait_loaded(h, 4, 14) == 2, "rampo did not load in 14");
+            snprintf(p, sizeof p, "15|%s/src/rampo.wav", g_root); hx_set_param(h, "t4_au_pick", p);
+            HX_ASSERT(wait_loaded(h, 4, 15) == 2 && b14->smp == b15->smp, "clips 14 and 15 do not share rampo");
+            as_recorded(h, 4, 14);
+            b14->rstart = 2000; tr->clips[14].length = 4;
+            b15->rstart = 3000;
+            hx_set_param(h, "t4_au_edit", "14 0 1");               /* Trim, overwrite */
+            HX_ASSERT(wait_loaded(h, 4, 14) == 2 && !strcmp(b14->name, "rampo.wav"), "an overwrite renamed the sample");
+            HX_ASSERT(b14->smp->pcm[0] == 2000 && b14->rstart == 0, "the overwrite did not trim clip 14's file");
+            for (i = 0; i < 400 && (b15->state != 2 || b15->smp == NULL || b15->smp->pcm[0] != 2000); i++) { hx_render(h, 1); usleep(1000); }
+            HX_ASSERT(b15->state == 2 && b15->smp == b14->smp && b15->smp->pcm[0] == 2000 && b15->rstart == 1000,
+                      "the other clip on the overwritten file did not reload it, moved with the cut");
+        }
+        hx_set_param(h, "t4_au_clear", "13");
+        hx_set_param(h, "t4_au_clear", "14");
+        hx_set_param(h, "t4_au_clear", "15");
+        hx_render(h, 4);
+    }
+
     /* ---- Sync Pitch: the tempo sets the speed, so Detune gives way — the
      * loop stays at its Tempo (Warp transposes instead: test_audio_warp) ---- */
     hx_set_param(h, "t4_au_set_detune", "5 30");

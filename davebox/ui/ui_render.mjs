@@ -259,7 +259,11 @@ function drawAudioWaveEditor() {
         const n = ed.ask.n != null ? ed.ask.n : i.hand;
         if (ed.ask.kind === 'keep') drawAudioAsk('LAZY CHOP', ['Keep ' + n + ' new chop' + (n === 1 ? '' : 's') + '?'], ed.ask.sel);
         else if (ed.ask.kind === 'chops') drawAudioAsk(ed.chop.kind === 'even' ? 'EVEN' : 'TRANSIENT', ['Keep ' + i.n + ' chop' + (i.n === 1 ? '' : 's') + '?'], ed.ask.sel);
-        else drawAudioAsk('MANUAL', ['Clear all chops?', 'One slice, Start to End.'], ed.ask.sel);
+        else if (ed.ask.kind === 'edit') {
+            drawAudioAsk(ed.ask.op === 'norm' ? 'NORMALIZE' : 'TRIM',
+                         ed.ask.op === 'norm' ? ['Raise the peak', 'to full scale.'] : ['Cut the file to', 'what the clip plays.'],
+                         ed.ask.sel, ['Overwrite', 'New']);
+        } else drawAudioAsk('MANUAL', ['Clear all chops?', 'One slice, Start to End.'], ed.ask.sel);
         return;
     }
     clear_screen();
@@ -347,7 +351,7 @@ function drawAudioWaveEditor() {
         /* no cursor and no chops: they are Slice's (Josh, 2026-10-29: "chops
          * should just be completely invisible in loop mode") */
         drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, gain: i.gain | 0, noMarks: true, clipTime: true, beats: { origin: i.rstart, fpb: 96 * auFpt(i) } });
-        drawKitHintRow(MV_FOOTER_Y, [['clk', 'load'], ['jog', 'page']]);
+        drawKitHintRow(MV_FOOTER_Y, [['clk', 'menu'], ['jog', 'page']]);
         return;
     }
     const mk = auMarks(t, c);
@@ -399,7 +403,7 @@ function drawAudioWaveEditor() {
     ends('S ' + auFmtTime(i.rstart, rt), 'LEN ' + auFmtLen(auLenTicks(t, c, i)));
     if (zoomTxt) mid(zoomTxt);
     drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, faint: true, gain: i.gain | 0, beats: { origin: i.rstart, fpb: 96 * auFpt(i) } });
-    drawKitHintRow(MV_FOOTER_Y, [['clk', 'load'], ['jog', 'page']]);
+    drawKitHintRow(MV_FOOTER_Y, [['clk', 'menu'], ['jog', 'page']]);
 }
 
 /* An Audio track's banks (Josh, 2026-10-27): the CLIP bank mirrors ALL LANES

@@ -71,7 +71,7 @@ import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLaz
          auSelSlice, auSetSelSlice, isAudioTrack, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
          auMarkAdd, auMarkDel, auManual, auEvenBake, auTrans, auTransBake, auRangeStep, auSet, auEnd, auPanelRingCells, auPanelReset,
          auIsSlice, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX, AU_BPM10_MIN, AU_BPM10_MAX, auLenTicks,
-         auSampleP2Cells, auSampleP2Knob, auSampleReset, auOrig, auNudgeStep, auFpt, auPlayedEnd } from './ui_audio.mjs';
+         auSampleP2Cells, auSampleP2Knob, auSampleReset, auEdit, auTrimCuts, auOrig, auNudgeStep, auFpt, auPlayedEnd } from './ui_audio.mjs';
 import { registerScreenRingCells } from './ui_knob_leds.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { ccKnobDelta, knobPick, KNOB_PICK, KNOB_DELIB } from './ui_input_cc.mjs';
@@ -576,9 +576,11 @@ export function auPickRows(ed) {
     const p = ed.pick;
     if (!p) return [];
     const i = auInfo(ed.t, ed.c);
-    /* Loop: no Chop sample — its chops are invisible (Josh, 2026-10-29) */
-    if (p.level === 1) return auIsSlice(i)
-        ? [{ id: 'load', label: 'Load sample', chevron: true }, { id: 'chop', label: 'Chop sample', chevron: true }]
+    /* SAMPLE's menu (Josh, 2026-10-30: "it should load a menu for consistency.
+     * AND i want to add trim and normalize options there"); chopping is
+     * SLICES' alone */
+    if (p.level === 1) return i.state === 2
+        ? [{ id: 'load', label: 'Load sample', chevron: true }, { id: 'trim', label: 'Trim' }, { id: 'norm', label: 'Normalize' }]
         : [{ id: 'load', label: 'Load sample', chevron: true }];
     return [{ id: 'even', label: 'Even' }, { id: 'transient', label: 'Transient' },
             { id: 'lazy', label: 'Lazy' }, { id: 'manual', label: 'Manual' }];
@@ -607,7 +609,13 @@ function pickInput(ed, status, d1, d2) {
         S.screenDirty = true;
         if (!row) return true;
         if (row.id === 'load') { ed.pick = null; S.pendingAudioChooser = { t: ed.t, c: ed.c }; return true; }
-        if (row.id === 'chop') { ed.pick = { level: 2, sel: 0 }; return true; }
+        if (row.id === 'trim' || row.id === 'norm') {
+            ed.pick = null;
+            /* nothing to cut: say so rather than ask */
+            if (row.id === 'trim' && !auTrimCuts(ed.t, ed.c)) { showActionPopup('TRIM', 'Nothing to cut'); return true; }
+            ed.ask = { kind: 'edit', op: row.id, sel: 0 };   /* opens on New (Josh: "new copy is default") */
+            return true;
+        }
         ed.pick = null;
         if (row.id === 'lazy') startLazy(ed);
         else openChop(ed, row.id);
@@ -862,9 +870,10 @@ export function audioEditorInput(status, d1, d2) {
             return true;
         }
         if (!hand) {
-            /* SAMPLE: a click loads a sample — chopping is SLICES' alone (Josh,
-             * 2026-10-30: "chopping should only be on slices") */
-            S.pendingAudioChooser = { t: ed.t, c: ed.c };
+            /* SAMPLE: a click opens its menu — Load sample · Trim · Normalize
+             * (Josh, 2026-10-30: "it should load a menu for consistency");
+             * chopping is SLICES' alone */
+            ed.pick = { level: 1, sel: 0 };
             return true;
         }
         /* Manual: Delete + click clears them all (it asks) */
@@ -937,6 +946,16 @@ function askInput(ed, status, d1, d2) {
     if (d1 === MoveMainButton && d2 === 127) yes = ed.ask.sel === 0;
     if (d1 === MoveBack && d2 < 64) yes = false;
     if (yes === null) return d1 === MoveMainButton || d1 === MoveBack || (d1 >= 71 && d1 <= 78);
+    if (ed.ask.kind === 'edit') {
+        /* Trim / Normalize: New (a sample for this clip) or Overwrite (the
+         * project's copy, every clip on it); Back changes nothing */
+        const op = ed.ask.op, ow = ed.ask.sel === 1;
+        ed.ask = null;
+        S.backPressTick = -1; S.backHoldFired = false;
+        if (d1 === MoveMainButton) auEdit(ed.t, ed.c, op === 'norm' ? 1 : 0, ow);
+        S.screenDirty = true;
+        return true;
+    }
     const kind = ed.ask.kind;
     ed.ask = null;
     S.backPressTick = -1; S.backHoldFired = false;

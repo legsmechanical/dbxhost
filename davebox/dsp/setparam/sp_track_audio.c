@@ -80,6 +80,20 @@ static void au_clip_set_bars(seq8_instance_t *inst, int t, int c, int bars) {
     au_mark(inst, t, c);
 }
 
+/* Trim took `cut` frames off the front of a clip's file: its Start and its
+ * chops move back with the audio. */
+static void au_clip_shift(au_clip_t *cl, uint32_t cut) {
+    int l;
+    if (!cut) return;
+    cl->rstart = cl->rstart > cut ? cl->rstart - cut : 0;
+    for (l = 0; l < AU_MAX_SLICES; l++) {
+        au_slice_t *sl = &cl->sl[l];
+        if (!sl->start && !sl->end) continue;
+        sl->start = sl->start > cut ? sl->start - cut : 0;
+        if (sl->end) sl->end = sl->end > cut ? sl->end - cut : 1;       /* 0 stays HOME */
+    }
+}
+
 /* The loader's answers, once per block. A pick that lands sets a Loop clip's
  * length to the sample's, in whole bars at the tempo (at least one). */
 static void au_apply_results(seq8_instance_t *inst) {
@@ -91,13 +105,47 @@ static void au_apply_results(seq8_instance_t *inst) {
         if (r.track >= NUM_TRACKS || r.clip >= NUM_CLIPS) { au_drop(inst, r.smp); continue; }
         au_clip_t *cl = &inst->au_clip[r.track][r.clip];
         if (r.gen != cl->gen) { au_drop(inst, r.smp); continue; }       /* superseded */
+        if (r.edit && !r.smp) {
+            /* a Trim / Normalize that failed: the clip keeps the sample it had */
+            cl->state = cl->smp ? 2 : 3;
+            cl->err = r.err;
+            au_mark(inst, r.track, r.clip);
+            continue;
+        }
         au_sample_t *old = cl->smp;
         if (old) { au_track_kill(inst, r.track, old); au_drop(inst, old); }
         cl->smp = r.smp;
         cl->err = r.err;
         cl->state = r.smp ? 2 : 3;
         if (r.smp) {
-            int was_pick = cl->name[0] == '\0' || strcmp(cl->name, r.name) != 0;
+            int was_pick = !r.edit && (cl->name[0] == '\0' || strcmp(cl->name, r.name) != 0);
+            if (r.edit) {
+                /* Trim / Normalize: the same clip, its settings kept, its
+                 * positions where the audio went */
+                au_clip_shift(cl, r.cut);
+                if (r.ow && old) {
+                    /* overwritten: every other clip on that file reloads it,
+                     * its positions moved the same way */
+                    int t2, c2;
+                    for (t2 = 0; t2 < NUM_TRACKS; t2++)
+                        for (c2 = 0; c2 < NUM_CLIPS; c2++) {
+                            au_clip_t *o = &inst->au_clip[t2][c2];
+                            au_req_t q;
+                            if (o == cl || o->smp != old) continue;
+                            au_clip_shift(o, r.cut);
+                            memset(&q, 0, sizeof q);
+                            q.kind = AU_REQ_LOAD;
+                            q.track = (uint8_t)t2; q.clip = (uint8_t)c2;
+                            snprintf(q.path, sizeof q.path, "%s", o->name);
+                            au_samples_dir(inst, q.dir, sizeof q.dir);
+                            if (!q.dir[0]) continue;
+                            q.gen = ++o->gen;
+                            o->state = 1;
+                            au_req_push(inst, &q);
+                            au_mark(inst, t2, c2);
+                        }
+                }
+            }
             snprintf(cl->name, sizeof cl->name, "%s", r.name);
             if (was_pick) {
                 /* a new sample: the whole of it, and a hand set of one slice
@@ -865,6 +913,48 @@ static int sp_track_audio(sp_ctx_t *cx) {
         cl->name[0] = '\0';                        /* a pick: the result names it */
         cl->err = 0;
         au_req_push(inst, &r);
+        return 1;
+    }
+
+    /* "C op ow": Trim (op 0) — the file cut to what the clip plays, Start
+     * for its Length — or Normalize (op 1); ow 1 overwrites the project's
+     * copy, 0 makes a new sample for this clip (the loader does the work) */
+    if (!strcmp(sub, "edit")) {
+        au_req_t r;
+        int op = 0, ow = 0;
+        c = au_arg_clip(&p);
+        if (c < 0) return 1;
+        if (sscanf(p, "%d %d", &op, &ow) < 1) return 1;
+        au_clip_t *cl = &inst->au_clip[tidx][c];
+        if (!cl->smp || cl->state != 2 || !cl->name[0]) return 1;
+        memset(&r, 0, sizeof r);
+        r.kind = AU_REQ_EDIT;
+        r.track = (uint8_t)tidx; r.clip = (uint8_t)c;
+        r.op = op ? AU_EDIT_NORM : AU_EDIT_TRIM;
+        r.ow = ow ? 1 : 0;
+        snprintf(r.path, sizeof r.path, "%s", cl->name);
+        au_samples_dir(inst, r.dir, sizeof r.dir);
+        if (!r.dir[0]) return 1;
+        if (r.op == AU_EDIT_TRIM) {
+            uint32_t rs, re;
+            au_range(cl, cl->smp, &rs, &re);
+            if (cl->mode == AU_MODE_LOOP) {
+                /* from Start (a loop start inside the clip stays where it is)
+                 * to where the clip's length ends */
+                const clip_t *lc = &inst->tracks[tidx].clips[c];
+                uint32_t tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
+                double w = (double)rs + (double)lc->length * tps * au_fpt_s(cl, cl->smp);
+                if (w < (double)re) re = (uint32_t)(w + 0.5);
+                rs = cl->rstart < rs ? cl->rstart : rs;
+            }
+            if (re <= rs || (rs == 0 && re >= cl->smp->frames)) return 1;   /* nothing to trim */
+            r.a = rs; r.b = re;
+        }
+        r.gen = ++cl->gen;
+        cl->state = 1;
+        cl->err = 0;
+        au_req_push(inst, &r);
+        au_mark(inst, tidx, c);
         return 1;
     }
 

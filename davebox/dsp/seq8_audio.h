@@ -221,6 +221,10 @@ typedef struct {
 #define AU_REQ_PICK   1      /* copy `path` into samples/, then load it */
 #define AU_REQ_LOAD   2      /* load samples/`path` (state load) */
 #define AU_REQ_DROP   3      /* release a sample (smp) */
+#define AU_REQ_EDIT   4      /* Trim / Normalize samples/`path` into a 16-bit WAV, then load it */
+
+#define AU_EDIT_TRIM  0      /* keep frames a..b: what the clip plays */
+#define AU_EDIT_NORM  1      /* the whole file, its peak raised to full scale */
 
 typedef struct {
     uint8_t      kind, track, clip, mode;
@@ -228,6 +232,8 @@ typedef struct {
     au_sample_t *smp;
     char         path[256];
     char         dir[256];   /* the project's samples/ directory */
+    uint8_t      op, ow;     /* AU_REQ_EDIT: AU_EDIT_*; 1 = overwrite the file, 0 = a new sample */
+    uint32_t     a, b;       /* AU_REQ_EDIT, Trim: the frames kept */
 } au_req_t;
 
 typedef struct {
@@ -236,6 +242,8 @@ typedef struct {
     uint32_t     gen;
     au_sample_t *smp;
     char         name[AU_PATH_MAX];
+    uint8_t      edit, ow;   /* an AU_REQ_EDIT's answer: the clip keeps its settings; ow = the file was overwritten */
+    uint32_t     cut;        /* ...frames the edit took off the front (Trim): every position moves back by it */
 } au_res_t;
 
 #define AU_RING 512

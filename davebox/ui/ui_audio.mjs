@@ -923,6 +923,23 @@ export function auSampleP2Knob(t, c, k, steps) {
     S.auStartsRev = (S.auStartsRev | 0) + 1;
     return true;
 }
+/* Trim (op 0) / Normalize (op 1) the clip's sample: a new sample for this
+ * clip, or `ow` the project's copy (every clip on it). The engine does it off
+ * the audio thread; the clip reads as loading until it lands. */
+export function auEdit(t, c, op, ow) {
+    const i = auInfo(t, c);
+    if (i.state !== 2) return false;
+    setKey(t, 'edit', c + ' ' + (op ? 1 : 0) + ' ' + (ow ? 1 : 0));
+    S.auInfo[t][c] = Object.assign({}, i, { state: 1 });
+    auMarkStale(t, c);
+    return true;
+}
+/* Whether Trim would cut anything: the clip plays less than the whole file */
+export function auTrimCuts(t, c) {
+    const i = auInfo(t, c);
+    if (i.state !== 2 || !i.nframes) return false;
+    return (i.rstart | 0) > 0 || auPlayedEnd(t, c, i) < i.nframes;
+}
 /* Delete + click on SAMPLE's page 2: Gain, Pitch, Detune and Revrs back to
  * their defaults (Tempo and Sync are the sample's, not a sound to reset). */
 export function auSampleReset(t, c) {

@@ -1792,6 +1792,116 @@ static void au_res_push(seq8_instance_t *inst, const au_res_t *r) {
     }
 }
 
+/* ---- Trim / Normalize (Josh, 2026-10-30: "trim and normalize options" on
+ * SAMPLE's menu; "dialog: overwrite or new sample"; "new copy is default").
+ * The loader thread reads samples/<path> a chunk at a time and writes a 16-bit
+ * WAV — Trim: frames a..b, what the clip plays; Normalize: the whole file, its
+ * peak raised to full scale — through a temp file and a rename, so a reader
+ * never sees half of it. A new sample is "<stem> trim.wav" / "<stem> norm.wav"
+ * ("~2"... when taken); overwriting keeps the name. ---- */
+static void au_wav_header(uint8_t h[44], uint32_t frames, uint32_t rate, uint32_t ch) {
+    uint32_t data = frames * ch * 2, v;
+    memcpy(h, "RIFF", 4); v = 36 + data; memcpy(h + 4, &v, 4);
+    memcpy(h + 8, "WAVEfmt ", 8); v = 16; memcpy(h + 16, &v, 4);
+    { uint16_t f = 1, c = (uint16_t)ch, ba = (uint16_t)(ch * 2), bits = 16;
+      memcpy(h + 20, &f, 2); memcpy(h + 22, &c, 2); memcpy(h + 24, &rate, 4);
+      v = rate * ch * 2; memcpy(h + 28, &v, 4); memcpy(h + 32, &ba, 2); memcpy(h + 34, &bits, 2); }
+    memcpy(h + 36, "data", 4); memcpy(h + 40, &data, 4);
+}
+static int au_edit_name(const char *dir, const char *src, const char *tag, char *name, size_t name_sz) {
+    char stem[AU_PATH_MAX], dst[600];
+    int k;
+    snprintf(stem, sizeof stem, "%s", src);
+    { char *dot = strrchr(stem, '.'); if (dot) *dot = '\0'; }
+    for (k = 1; k < 1000; k++) {
+        if (k == 1) snprintf(name, name_sz, "%s %s.wav", stem, tag);
+        else snprintf(name, name_sz, "%s %s~%d.wav", stem, tag, k);
+        snprintf(dst, sizeof dst, "%s/%s", dir, name);
+        if (au_file_size(dst) < 0) return 0;
+    }
+    return 1;
+}
+static int au_edit_file(const au_req_t *q, char *name, size_t name_sz, uint32_t *cut) {
+    char src[600], dst[600], tmp[610];
+    FILE *f, *o = NULL;
+    au_fmt_t fm;
+    uint8_t *buf = NULL;
+    int16_t *pcm = NULL;
+    uint32_t a, b, ch, fb, done, peak = 0;
+    double gain = 1.0;
+    int err, pass, ok = 1;
+    *cut = 0;
+    snprintf(src, sizeof src, "%s/%s", q->dir, q->path);
+    f = fopen(src, "rb");
+    if (!f) return AU_ERR_OPEN;
+    err = au_probe(f, &fm);
+    if (err) { fclose(f); return err; }
+    ch = fm.ch >= 2 ? 2 : 1;
+    fb = (uint32_t)fm.ch * (fm.bits / 8);
+    a = q->op == AU_EDIT_TRIM ? q->a : 0;
+    b = q->op == AU_EDIT_TRIM ? q->b : fm.frames;
+    if (b > fm.frames) b = fm.frames;
+    if (a >= b) { fclose(f); return AU_ERR_FORMAT; }
+    if (q->ow) snprintf(name, name_sz, "%s", q->path);
+    else if (au_edit_name(q->dir, q->path, q->op == AU_EDIT_TRIM ? "trim" : "norm", name, name_sz)) { fclose(f); return AU_ERR_COPY; }
+    snprintf(dst, sizeof dst, "%s/%s", q->dir, name);
+    snprintf(tmp, sizeof tmp, "%s.tmp", dst);
+    buf = (uint8_t *)malloc((size_t)AU_CHUNK * fb);
+    pcm = (int16_t *)malloc((size_t)AU_CHUNK * ch * sizeof(int16_t));
+    if (!buf || !pcm) { err = AU_ERR_MEM; goto out; }
+    /* Normalize: the peak first; Trim: one pass */
+    for (pass = q->op == AU_EDIT_NORM ? 0 : 1; pass < 2; pass++) {
+        if (pass == 1) {
+            uint8_t h[44];
+            if (q->op == AU_EDIT_NORM) {
+                if (!peak) { err = AU_ERR_FORMAT; goto out; }            /* silence: nothing to raise */
+                gain = 32767.0 / (double)peak;
+            }
+            o = fopen(tmp, "wb");
+            if (!o) { err = AU_ERR_COPY; goto out; }
+            au_wav_header(h, b - a, fm.rate, ch);
+            if (fwrite(h, 1, 44, o) != 44) { ok = 0; break; }
+        }
+        if (fseek(f, (long)fm.data_off + (long)a * (long)fb, SEEK_SET)) { err = AU_ERR_OPEN; goto out; }
+        for (done = a; done < b; ) {
+            uint32_t want = b - done < AU_CHUNK ? b - done : AU_CHUNK, i;
+            size_t got;
+            if (au_abort) { err = AU_ERR_OPEN; goto out; }
+            got = fread(buf, fb, want, f);
+            if (!got) { ok = 0; break; }
+            au_conv_frames(buf, (uint32_t)got, &fm, (uint8_t)ch, pcm);
+            if (pass == 0) {
+                for (i = 0; i < (uint32_t)got * ch; i++) { uint32_t m = (uint32_t)(pcm[i] < 0 ? -(int)pcm[i] : pcm[i]); if (m > peak) peak = m; }
+            } else {
+                if (gain != 1.0)
+                    for (i = 0; i < (uint32_t)got * ch; i++) {
+                        double v = (double)pcm[i] * gain;
+                        pcm[i] = (int16_t)(v > 32767.0 ? 32767 : v < -32768.0 ? -32768 : (int)(v < 0 ? v - 0.5 : v + 0.5));
+                    }
+                if (fwrite(pcm, sizeof(int16_t) * ch, got, o) != got) { ok = 0; break; }
+            }
+            done += (uint32_t)got;
+        }
+    }
+    if (!ok) { err = AU_ERR_COPY; goto out; }
+    if (fflush(o) || fsync(fileno(o))) { err = AU_ERR_COPY; goto out; }
+    fclose(o); o = NULL;
+    if (rename(tmp, dst)) { err = AU_ERR_COPY; goto out; }
+    {
+        /* owned like the folder it lands in, as an imported sample is */
+        struct stat st;
+        if (stat(q->dir, &st) == 0 && chown(dst, st.st_uid, st.st_gid)) { /* best effort */ }
+    }
+    *cut = a;
+    err = AU_ERR_NONE;
+out:
+    if (o) { fclose(o); unlink(tmp); }
+    fclose(f);
+    free(buf);
+    free(pcm);
+    return err;
+}
+
 static void au_loader_do(au_loader_t *L, const au_req_t *q) {
     seq8_instance_t *inst = L->inst;
     au_res_t r;
@@ -1802,6 +1912,18 @@ static void au_loader_do(au_loader_t *L, const au_req_t *q) {
     r.track = q->track; r.clip = q->clip; r.gen = q->gen;
     if (q->kind == AU_REQ_PICK) {
         err = au_import(q->path, q->dir, r.name, sizeof r.name);
+    } else if (q->kind == AU_REQ_EDIT) {
+        r.edit = 1; r.ow = q->ow;
+        err = au_edit_file(q, r.name, sizeof r.name, &r.cut);
+        if (!err && q->ow) {
+            /* the old audio under that name is gone: the next get reads the
+             * new file (clips still holding the old sample keep it until
+             * they reload — the audio thread reloads them at once) */
+            int i;
+            snprintf(path, sizeof path, "%s/%s", q->dir, r.name);
+            for (i = 0; i < AU_POOL_MAX; i++)
+                if (L->pool[i].smp && !strcmp(L->pool[i].path, path)) L->pool[i].path[0] = '\0';
+        }
     } else {
         snprintf(r.name, sizeof r.name, "%s", q->path);
     }
