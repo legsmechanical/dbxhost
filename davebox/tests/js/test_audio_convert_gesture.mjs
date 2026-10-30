@@ -268,6 +268,19 @@ step('⭐ a Move instrument has no Pre / Post (as heard): Yes / No, No first', (
     assert(!S.auConvert && sent('resample_clip').length === 0, 'No recorded');
 });
 
+step('⭐ ...and so does a MIDI track that follows a Move instrument: Yes records it as heard (Wet)', () => {
+    S.trackRoute[6] = 1; S.trackRoute[5] = 2; S.trackMidiTo[5] = 7;
+    reset();
+    freezeRow(5);
+    assert(S.confirmConvertAudio === 'freeze' && !S.auFreeze.choice, 'a follower of a Move track was offered Pre / Post');
+    answer(true);
+    ticks(2);
+    assert(sent('resample_clip').join() === '5 0 1 0 0 0 |' + DIR + '/My Song 6A 1bar 120bpm.wav',
+           'take: ' + sent('resample_clip'));
+    cancelTakes();
+    S.trackRoute[6] = 0;
+});
+
 step('⭐ external MIDI, an empty instrument slot, a muted track, playing: no question, a notice', () => {
     S.trackRoute[5] = 2; S.trackMidiTo[5] = 0;
     reset(); freezeRow(5);
