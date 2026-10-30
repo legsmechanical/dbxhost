@@ -1327,23 +1327,17 @@ with **Attk** and **Decay** on K1 / K2. On both pages, **hold Shift** and the sl
 **every slice** at once (`--` where they differ).
 SAMPLE's **Pitch**, **Detune** and **Gain** are the base every slice adds its own to.
 
-**The sound bank** keeps the sound on Track View's knobs once you leave an editor, to
-play it live: **Back** from SAMPLE or SLICES lands on it, and it follows the one you
-left. It is a plain set of knobs — the waveform is the editors' alone — and has no pad
-of its own: SAMPLE and SLICES are its doors. **Delete + jog click** resets the page
-showing, and only that page.
-
-| After | Knobs |
-|---|---|
-| **SAMPLE** | **Start** · **Pitch** · **Detune** · **Gain** · **Revrs** · **Nudge** · **Sync** (a Loop clip's) · **Tempo** |
-| **SLICES** | Two pages, the jog flips them: **ALL SLICES** — **Pitch** · **Detune** · **Gain** · **Revrs** · **Attk** · **Decay** · **Play**, set on every slice at once (each slice's own value, as SLICE n shows it); and **SLICE n** — the slice the pads (or an external keyboard) last played |
+The sample's settings live in SAMPLE and SLICES, as an instrument's live in its editor:
+**Back** returns to the bank you were on. On a grid page (page 2 of either),
+**Delete + click** resets that page's knobs — the picked slice, every slice with Shift,
+or SAMPLE's Gain, Pitch, Detune and Revrs.
 
 **The banks** hold the sequence:
 
 | Bank | Knobs |
 |---|---|
 | **CLIP**, Slice mode | **Mode** · **Strch** · **Shift** (alt **Nudge**) · **Res** (alt **Zoom**) · **Crop›** · **InQnt** · **Dir** (alt **Revrs**) · **>Seq›** (touch K8, click) lays one step per chop, each at its place at the sample's **Tempo**, so the clip plays the sample back as it was — now as chops you can rearrange. A clip whose length you never set grows to hold all of it (a coarser resolution past 256 steps); a length you set stays, and the chops past it wait beyond the loop's end |
-| **CLIP**, Loop mode | **Mode** (K1) only — the sound is SAMPLE's (and the sound bank's) |
+| **CLIP**, Loop mode | **Mode** (K1) only — the sound is SAMPLE's |
 | **PAD MODE** (Slice mode) | **Layout**: **4 Rows** or **16 Pads**, how the chops sit on the pads |
 | **LIVE ARP** | As on a melodic track, but **Step** replaces Oct: each repeat moves one chop up (or down), up to 15 |
 | **NOTE FX** (Slice mode) | As on a drum track — nothing that changes a pitch. **Quant** lives here only |
@@ -1356,7 +1350,7 @@ first knob reads **Slice n** and picks the step's chop.
 track only. **Delete + clip** clears its sequence only: the sample, its settings
 and the clip's length stay. **Shift + Delete + clip** resets it completely, sample
 and all. **Undo** covers the steps; the
-sound bank's settings aren't undoable. **Export to Ableton** leaves Audio tracks
+sample's settings aren't undoable. **Export to Ableton** leaves Audio tracks
 out for now, and says so when it finishes.
 
 **Track View at rest** shows a Loop clip as SAMPLE does zoomed out — its bars across,

@@ -28,7 +28,7 @@
  * No host_* call happens at module init. */
 
 import { S } from './ui_state.mjs';
-import { PAD_MODE_AUDIO, NUM_CLIPS, BANK_STEP, BANK_AUDIO, knobAltFor } from './ui_constants.mjs';
+import { PAD_MODE_AUDIO, NUM_CLIPS, BANK_STEP, knobAltFor } from './ui_constants.mjs';
 import { bankListForMode, AU_MODE_LOOP, AU_MODE_SLICE, auIsSlice, auIsLoop } from './ui_pure.mjs';
 
 export { AU_MODE_LOOP, AU_MODE_SLICE, auIsSlice, auIsLoop } from './ui_pure.mjs';
@@ -270,8 +270,8 @@ export function auTick() {
     const pk = t + '_' + c + '_' + cur.mode + '_' + cur.n + '_' + (auLazyOpen() ? 1 : 0);
     if (pk !== _padKey) { _padKey = pk; S.pendingPadNoteMapRecompute = true; S.ledsDirtyAudio = true; }
     if (cur.state === 2 && !auPeaks(t, c) && (S.tickCount % 8) === 0) { auReadPeaks(t, c); S.screenDirty = true; }
-    /* the AUDIO bank reads what its page shows, as the editor's screen did */
-    const ed = S.auPanel && S.auPanel.t === t ? S.auPanel : auBankOn() ? auBankEd(t) : null;
+    /* the editor reads what its page shows */
+    const ed = S.auPanel && S.auPanel.t === t ? S.auPanel : null;
     if (ed || S.auEditor) {
         const l = auSelSlice(t);
         if (!auSlice(t, c, l)) { auReadSlice(t, c, l); S.screenDirty = true; }
@@ -473,28 +473,10 @@ const fmtEven = (v) => (v ? String(v) : 'Off');
 export function auPanelPages(t) {
     return (S.auSrc[t] === 'slices' && auIsSlice(auInfo(t, auClipOf(t)))) ? ['CLIP', 'SLICE'] : ['SAMPLE'];
 }
-/* ---- the AUDIO bank (Josh, 2026-10-28: "can audio be a bank?" · "yes")
- * The AUDIO editor's pages as a bank: the same cells and knobs, its page per
- * track, a plain jog turn flipping it (only a bank with more than one page
- * takes the turn) and Delete + jog click resetting the page showing ("for
- * multi-page banks, we should have delete+jog only reset the active page"). */
-export function auBankEd(t = S.activeTrack) {
-    const n = auPanelPages(t).length;
-    const p = Math.max(0, Math.min(n - 1, S.auBankPage[t] | 0));
-    return { t, page: p };
-}
-export function auBankOn() { return S.activeBank === BANK_AUDIO && isAudioTrack(S.activeTrack); }
-/* A jog turn on the AUDIO bank: the next / previous page, clamped. True when it moved. */
-export function auBankPageStep(dir) {
-    const t = S.activeTrack, n = auPanelPages(t).length;
-    const p = Math.max(0, Math.min(n - 1, (auBankEd(t).page) + (dir > 0 ? 1 : -1)));
-    if (p === (S.auBankPage[t] | 0)) return false;
-    S.auBankPage[t] = p;
-    S.screenDirty = true;
-    return true;
-}
-/* The bank card's title: the page's own ("ALL SLICES", "LOOP", "SLICE 3/8"). */
-export function auBankTitle(t = S.activeTrack) { return auPanelTitle(auBankEd(t)); }
+/* There is no Track View sound bank: the sample's params are its editors'
+ * alone, as an instrument's are (Josh, 2026-10-30: "putting the params on
+ * track overview is a mistake ... just fall back to the last regular knob
+ * bank"). Macros and automation reach them as any instrument's. */
 
 export function auPanelPageName(ed) {
     const p = auPanelPages(ed.t);
@@ -887,6 +869,16 @@ export function auSampleP2Knob(t, c, k, steps) {
         loc.revrs = v; auSet(t, c, 'revrs', v);
     } else return false;
     S.auInfo[t][c] = loc;
+    S.auStartsRev = (S.auStartsRev | 0) + 1;
+    return true;
+}
+/* Delete + click on SAMPLE's page 2: Gain, Pitch, Detune and Revrs back to
+ * their defaults (Tempo and Sync are the sample's, not a sound to reset). */
+export function auSampleReset(t, c) {
+    const i = auInfo(t, c);
+    if (i.state !== 2) return false;
+    for (const f of ['gain', 'pitch', 'detune', 'revrs']) auSet(t, c, f, 0);
+    S.auInfo[t][c] = Object.assign({}, i, { gain: 0, pitch: 0, detune: 0, revrs: 0 });
     S.auStartsRev = (S.auStartsRev | 0) + 1;
     return true;
 }

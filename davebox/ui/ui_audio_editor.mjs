@@ -69,11 +69,10 @@ import { nowMs } from './ui_clock.mjs';
 import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLazyState, auMarkStale,
          auPanelPages, auPanelPageName, auPanelKnob, auPanelKnobClass, auChop, auPadToSlice,
          auSelSlice, auSetSelSlice, isAudioTrack, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
-         auMarkAdd, auMarkDel, auManual, auEvenBake, auTrans, auTransBake, auRangeStep, auSet, auEnd, auPanelRingCells, auPanelReset, auBankEd,
+         auMarkAdd, auMarkDel, auManual, auEvenBake, auTrans, auTransBake, auRangeStep, auSet, auEnd, auPanelRingCells, auPanelReset,
          auIsSlice, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX, AU_BPM10_MIN, AU_BPM10_MAX, auLenTicks,
-         auSampleP2Cells, auSampleP2Knob, auOrig, auNudgeStep, auFpt, auPlayedEnd } from './ui_audio.mjs';
-import { registerScreenRingCells, registerRingCells } from './ui_knob_leds.mjs';
-import { BANK_AUDIO } from './ui_constants.mjs';
+         auSampleP2Cells, auSampleP2Knob, auSampleReset, auOrig, auNudgeStep, auFpt, auPlayedEnd } from './ui_audio.mjs';
+import { registerScreenRingCells } from './ui_knob_leds.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { ccKnobDelta, knobPick, KNOB_PICK, KNOB_DELIB } from './ui_input_cc.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
@@ -209,9 +208,7 @@ const END_HOLD = 4;                       /* detents an End sticks at NEXT */
 
 /* The map's SAMPLE / SLICES pads: the editor on the track's current clip,
  * over an AUDIO editor (so the screens and input routes are the AUDIO
- * editor's). Each is a door of the Track View sound bank, which then follows
- * it (Josh, 2026-10-29: "sample and slices pads are the doors"). SLICES is a
- * Slice clip's. */
+ * editor's). SLICES is a Slice clip's. */
 export function openWave(t, which = 'sample') {
     if (!isAudioTrack(t)) return false;
     if (which === 'slices' && !auIsSlice(auInfo(t, auClipOf(t)))) return false;
@@ -619,18 +616,11 @@ function pickInput(ed, status, d1, d2) {
 }
 
 /* Back from SAMPLE / SLICES: out of it — and out of the AUDIO editor it
- * opened over — onto the Track View sound bank, which follows the editor left
- * (Josh, 2026-10-29: "a way to continue to interact with the audio params
- * outside of the main editing screens"). */
+ * opened over — onto the bank that was showing, as any instrument editor
+ * leaves (Josh, 2026-10-30: "just fall back to the last regular knob bank"). */
 function leaveWave() {
-    const t = S.auEditor ? S.auEditor.t : S.activeTrack;
     if (S.auPanel && S.auPanel.wave) closeAudioPanel();
     else closeAudioEditor();
-    if (t === S.activeTrack && isAudioTrack(t)) {
-        S.activeBank = BANK_AUDIO;
-        S.trackActiveBank[t] = BANK_AUDIO;
-        S.auBankPage[t] = 0;
-    }
 }
 
 /* Returns true when the message was the WAVE editor's. */
@@ -843,6 +833,17 @@ export function audioEditorInput(status, d1, d2) {
         /* no sample: click loads one */
         if (sub === 'empty') { S.pendingAudioChooser = { t: ed.t, c: ed.c }; return true; }
         if (kind && !hand) { closeChop(ed, true); openChop(ed, 'manual'); return true; }
+        if (p2 && S.deleteHeld) {
+            /* Delete + click: the page showing back to its defaults, as on a
+             * bank (Josh, 2026-10-28: "for multi-page banks, we should have
+             * delete+jog only reset the active page") — slice n, every slice
+             * with Shift; SAMPLE's Gain, Pitch, Detune and Revrs */
+            if (sl) {
+                if (auPanelReset({ t: ed.t, page: S.shiftHeld ? 0 : 1 })) showActionPopup(S.shiftHeld ? 'ALL SLICES' : 'SLICE', 'RESET');
+            } else if (auSampleReset(ed.t, ed.c)) showActionPopup('SAMPLE', 'RESET');
+            S.screenDirty = true;
+            return true;
+        }
         if (sl && p2) return true;
         if (slEdit) { ed.pick = { level: 2, sel: 0, only2: true }; return true; }   /* the chop types */
         if (p2) {
@@ -997,4 +998,3 @@ registerScreenRingCells(() => {
 });
 
 /* The AUDIO bank's knob rings: its page's cells, as the editor's were. */
-registerRingCells(BANK_AUDIO, () => (isAudioTrack(S.activeTrack) ? auPanelRingCells(auBankEd(S.activeTrack)) : null));

@@ -6,7 +6,7 @@ import {
     TRACK_COLORS, TRACK_DIM_COLORS, TRACK_PAD_BASE, SCENE_BTN_FLASH_MS,
     PAD_MODE_DRUM, BANKS, LED_PULSE_24TH, LED_PULSE_4TH, LED_BLINK_8TH,
     POLL_INTERVAL, TAP_TEMPO_FLASH_MS, PARAM_LED_BANKS, CONDUCT_LED_BANKS,
-    SEQ8_NAV_FLAGS, MoveNoteSession, BANK_CONFIG, BANK_AUDIO, BANK_SOUND
+    SEQ8_NAV_FLAGS, MoveNoteSession, BANK_CONFIG, BANK_SOUND
 } from './ui_constants.mjs';
 import { trackClipHasContent, updateSceneMapLEDs } from './ui_scene.mjs';
 import { PROJECT_COLORS, projectColorLED } from './ui_dialogs.mjs';
@@ -671,7 +671,7 @@ function paintBankMapPads() {
         bankPadMapForMode(S.trackPadMode[t], t).forEach((c, ci) => c.cells.forEach((cell, r) => {
             if (!cell) return;
             /* the track's own pads in its colour — WAVE too, as AUDIO (Josh, 2026-10-28) */
-            const own = cell.bank === BANK_CONFIG || cell.bank === BANK_SOUND || cell.bank === BANK_AUDIO || cell.action === 'inst' || cell.action === 'wave'
+            const own = cell.bank === BANK_CONFIG || cell.bank === BANK_SOUND || cell.action === 'inst' || cell.action === 'wave'
                 || (cell.action === 'slices' && sliceClip);
             if (cell.action === 'slices' && !sliceClip) { col[at(ci, r)] = 0; return; }   /* a Loop clip has no slices: dark */
             const on = d ? (d.col === ci && d.row === r)

@@ -14,7 +14,7 @@
 import { S } from './ui_state.mjs';
 import { PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_AUDIO, NUM_STEPS, BANKS,
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION,
-    BANK_CHORD, BANK_CONFIG, BANK_AUDIO, isSoundBank } from './ui_constants.mjs';
+    BANK_CHORD, BANK_CONFIG, isSoundBank } from './ui_constants.mjs';
 
 /* Live pad note input — isomorphic 4ths diatonic layout.
  * EXPORTED for ui.js's computePadNoteMap (impure, moves in Phase 5) — do not
@@ -69,18 +69,8 @@ export const AU_MODE_LOOP = 0, AU_MODE_SLICE = 1;
 export function auIsSlice(i) { return !!(i && i.mode === AU_MODE_SLICE); }
 export function auIsLoop(i) { return !!i && !auIsSlice(i); }
 
-/* An Audio track's sound bank is named for the editor it follows (Josh,
- * 2026-10-29: "sample and slices pads are the doors"): SLICES after SLICES on
- * a Slice clip, else SAMPLE. The clip is the one ui_audio's auClipOf edits. */
-function audioBankName(t) {
-    const qc = S.trackQueuedClip ? S.trackQueuedClip[t] : -1;
-    const c = (!S.playing && qc >= 0) ? qc : (S.trackActiveClip ? S.trackActiveClip[t] | 0 : 0);
-    const i = S.auInfo && S.auInfo[t] && S.auInfo[t][c];
-    return (S.auSrc && S.auSrc[t] === 'slices' && auIsSlice(i)) ? 'SLICES' : 'SAMPLE';
-}
 export function bankDisplayName(padMode, bank, t = S.activeTrack) {
     const base = (BANKS[bank] && BANKS[bank].name) || '?';
-    if (padMode === PAD_MODE_AUDIO && bank === BANK_AUDIO) return audioBankName(t);
     if (padMode === PAD_MODE_CONDUCT) return CONDUCT_NAMES[bank] || base;
     if (padMode === PAD_MODE_DRUM) {
         if (bank === 0) return 'DRUM LANE';
@@ -185,8 +175,6 @@ export function bankCategoriesForMode(padMode, t) {
             { label: 'CTRL', banks: [BANK_MACROS, BANK_AUTOMATION] },
             { label: 'SEQ',  banks: slice ? [BANK_STEP, 0] : [0] },
             { label: 'FX',   banks: slice ? [1] : [] },
-            /* AUDIO: the clip's sound, a bank with pages (Josh, 2026-10-28) */
-            { label: null,   banks: [BANK_AUDIO] },
             { label: null,   banks: [BANK_SOUND] },
         ].filter((g) => g.banks.length);
     }
@@ -266,9 +254,7 @@ const BANK_MAP_ACTIONS = {
      * CLIP): the clip's sample — its waveform, chops and the load / chop
      * picker (ui_audio_editor). */
     /* SAMPLE is the instrument door, so it sits where INST does on every
-     * other track; SLICES under CLIP, lit on a Slice clip. The two are the
-     * doors of the Track View sound bank (BANK_AUDIO), which has no pad of
-     * its own (Josh, 2026-10-29: "sample and slices pads are the doors") */
+     * other track; SLICES under CLIP, lit on a Slice clip */
     audio:   { wave: [2, 3], slices: [2, 2] },
 };
 /* The instrument door on an Audio track is the AUDIO editor, and says so. */

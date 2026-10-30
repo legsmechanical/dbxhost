@@ -29,6 +29,9 @@ the section into a versioned heading at release time.
   again every 5 minutes until the Move is plugged in.
 
 ### Changed
+- **Audio: no sound bank on Track View.** The sample's settings live in SAMPLE and
+  SLICES, as an instrument's do; Back returns to the bank you were on. Delete + click on
+  an editor's grid page resets that page.
 - **Audio: the editors' second pages show the first's knobs as a grid.** SAMPLE page 2
   is Orig · Sync · Gain · Pitch · Detune · Tempo · Revrs, each on its page 1 knob; SAMPLE's
   K8 is Revrs. SLICES page 1's K4–K8 set the picked slice (Shift: every slice), as page 2
@@ -55,11 +58,7 @@ the section into a versioned heading at release time.
 - **Audio: SLICES, a Slice clip's own editor** (its pad under CLIP): the chops, K1 / K3
   moving the picked one, a click for the chop types; a jog turn away, that slice's sound,
   or every slice's with Shift held.
-- **Audio: the sound bank follows the editor you left.** Back from SAMPLE or SLICES lands
-  on a plain set of knobs in Track View — the sample's (Start, Pitch, Detune, Gain, Revrs,
-  Nudge, Sync, Tempo) or the slices' (ALL SLICES / SLICE n) — to keep playing it. It has no
-  pad of its own any more: SAMPLE and SLICES are its doors.
-- **Audio: each chop type opens a chop editor on the waveform.** Chop sample is
+- **Audio: each chop type opens a chop editor on the waveform.** The chop types are
   **Even · Transient · Lazy · Manual**; Even and Transient change live as you turn the
   jog, and **Back** asks *Keep N chops?*. **Manual** edits the chops you have, with
   **Delete + click** to clear them all. SAMPLE itself, in Slice mode, now moves the
@@ -91,9 +90,7 @@ the section into a versioned heading at release time.
   steps in order, so it sounds the same. The pads run in time order, 8 a row, in both
   modes; a new clip starts with 16 even chops. Choosing a chop method no longer switches
   the Mode.
-- **Audio: the sound bank (SLICE / LOOP) holds the sound only** (Pitch, Detune, Gain, Revrs and the
-  slice envelopes); the Loop CLIP bank holds Nudge and Mode. The Slice CLIP bank's
-  second Quant is gone (it's on NOTE FX). **DELAY** is gone from Audio tracks, and a
+- **Audio: the Slice CLIP bank's second Quant is gone (it's on NOTE FX). **DELAY** is gone from Audio tracks, and a
   Loop clip has no STEP or NOTE FX.
 
 - **Audio: 128 chops**, 32 to a pad page — Octave Up / Down steps the pages.
