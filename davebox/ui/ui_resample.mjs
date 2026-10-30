@@ -315,7 +315,9 @@ function sampling() {
 /* Every tick while a take is up. */
 export function resampleTick() {
     const t = S.resampleTake;
-    if (!t) return;
+    /* a conversion's takes are auConvertTick's (ui_audio_convert): this one
+     * would put "undefined, bar NaN" on its notice and end it early */
+    if (!t || t.convert) return;
     const st = S.resampleState | 0;
     if (st === RS_IDLE) {
         /* The engine has not taken the command yet — it lands within a frame

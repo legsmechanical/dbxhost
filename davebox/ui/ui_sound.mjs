@@ -1040,6 +1040,7 @@ export function soundPickStateForTest() {
     return { kinds: S.pickRows.map(r => r.kind), comps: S.pickRows.map(r => r.comp || null),
              labels: S.pickRows.map(r => r.label || null),
              names: S.pickRows.map(r => r.name || null),
+             bypassed: S.pickRows.map(r => r.bypassed || 0),
              row: S.pickRow, view: S.view, shift: S.shiftHeld,
              enumPick: S.enumPick ? S.enumPick.label : null };
 }

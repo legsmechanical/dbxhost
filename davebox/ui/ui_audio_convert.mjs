@@ -30,6 +30,8 @@ import { showActionPopupFor } from './ui_persistence.mjs';
 import { sanitizeName } from './ui_export.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { engineLoadedModule, engineSet, slotIndex } from './ui_engine.mjs';
+/* a cycle (ui_sound imports this module): used only inside a function body */
+import { soundTrackTypeChanged } from './ui_sound.mjs';
 
 const RS_IDLE = 0, RS_ARMED = 1, RS_STARTING = 2, RS_RECORDING = 3,
       RS_DONE = 4, RS_CANCELLED = 5, RS_FAILED = 6;
@@ -226,12 +228,15 @@ export function auConvertApply(t, takes, bypassFx) {
     S.auApply = { t, takes: takes.slice(), i: 0, bypassFx: !!bypassFx };
 }
 /* Freeze Post: the takes hold the track's insert FX, so they are bypassed —
- * kept, not removed, as a bake leaves its MIDI FX. */
+ * kept, not removed, as a bake leaves its MIDI FX. TRACK CONFIG, where Freeze
+ * was asked for, re-reads its rows: it rebuilt them at the conversion, before
+ * this, and went on reading the FX as playing (found on the device). */
 const FX_BLOCKS = ['fx1', 'fx2', 'fx3', 'fx4'];
 function bypassInserts(t) {
     const slot = slotIndex(t);
     for (const b of FX_BLOCKS)
         if (engineLoadedModule(slot, b)) engineSet(slot, b, 'bypassed', '1');
+    soundTrackTypeChanged(t);
 }
 function applyTick() {
     const a = S.auApply;

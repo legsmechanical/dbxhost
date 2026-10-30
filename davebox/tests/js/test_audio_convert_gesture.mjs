@@ -121,7 +121,12 @@ step('⭐⭐ Yes: clip A recorded alone, before its FX, into the project', () =>
 step('⭐⭐ ...then clip C, then the conversion, then each clip takes its recording', () => {
     S.resampleState = 1; ticks(1);
     S.resampleState = 3; S.resampleFrames = 88200; S.resampleDone = 1000; ticks(1);
+    /* the notice is the conversion's own, never the plain resample's (on the
+     * device it read "undefined, bar NaN/undefined") */
+    assert(S.actionPopupLines[0] === 'TO AUDIO 1/2' && S.actionPopupLines[1] === '5A, bar 1/1',
+           'the notice: ' + JSON.stringify(S.actionPopupLines));
     S.resampleState = 4; SAMPLING = true; ticks(1);
+    assert(S.resampleTake && S.resampleTake.convert, 'the plain resample tick ended the conversion\'s take');
     assert(sent('transport').indexOf('stop') >= 0, 'no stop at the end of the take');
     globalThis.__stubStat = { [P0]: { mode: 0o100644, size: 9 } };
     SAMPLING = false; ticks(1);
@@ -171,7 +176,7 @@ globalThis.shadow_get_param = (slot, key) => {
     return ENG[slot + ' ' + key] !== undefined ? ENG[slot + ' ' + key] : '';
 };
 const shadowSets = [];
-globalThis.shadow_set_param = (slot, key, val) => { shadowSets.push([slot, String(key), String(val)]); return 1; };
+globalThis.shadow_set_param = (slot, key, val) => { shadowSets.push([slot, String(key), String(val)]); ENG[slot + ' ' + key] = String(val); return 1; };
 const sndCC = (d1, d2) => snd.soundOnCC(d1, d2, (v) => (v < 64 ? v : v - 128));
 /* TRACK CONFIG's Freeze track row, clicked */
 function freezeRow(t) {
@@ -242,6 +247,12 @@ step('⭐⭐ Post: every clip through its FX (Dry); once converted, the loaded i
     assert(sent('t4_au_pick').length === 2, 'picks: ' + sent('t4_au_pick'));
     const byp = shadowSets.filter((x) => x[0] === 4 && /bypassed/.test(x[1]) && x[2] === '1').map((x) => x[1]).sort();
     assert(byp.join() === 'fx1:bypassed,fx3:bypassed', 'bypassed: ' + JSON.stringify(shadowSets.filter((x) => /bypass/.test(x[1]))));
+    /* TRACK CONFIG, still open where Freeze was asked for, shows them bypassed
+     * (on the device it went on showing them playing until reopened) */
+    for (let i = 0; i < 6; i++) snd.soundTick();
+    const st = snd.soundPickStateForTest();
+    const fx1 = st.comps.indexOf('fx1');
+    assert(fx1 >= 0 && st.bypassed[fx1] === 1, 'TRACK CONFIG does not show FX 1 bypassed: ' + JSON.stringify(st.bypassed));
     globalThis.__stubStat = null;
     S.trackPadMode[4] = 0; GET['t4_pad_mode'] = '0';
 });
