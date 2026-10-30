@@ -1135,6 +1135,8 @@ step('⭐⭐ SAMPLE\'s menu: Trim and Normalize ask Overwrite or New (New first)
     assert(!ed.ask && sent('t4_au_edit').join() === '0 0 0', 'New did not trim into a new sample: ' + JSON.stringify(sent('t4_au_edit')));
     assert(S.undoAvailable, 'Trim New is not an undo step');
     /* Undo: the clip's info is read again at once (its sample came back) */
+    GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(1);
+    assert(A.auInfo(4, 0).rstart !== 24000, 'setup: the mirror already reads the restored clip');
     GET['t4_au_info_0'] = part; GET['last_restore'] = 'm 4 0';
     S.pendingUndoSync = 1; S.tickCount = 1001; ticks(1);
     assert(A.auInfo(4, 0).state === 2 && A.auInfo(4, 0).rstart === 24000, 'the undo did not re-read the Audio clip: ' + JSON.stringify(A.auInfo(4, 0)));
