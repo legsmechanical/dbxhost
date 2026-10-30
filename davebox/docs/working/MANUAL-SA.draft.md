@@ -1209,7 +1209,7 @@ them:
 
 | Mode | How it plays | The pads | The steps |
 |---|---|---|---|
-| **Loop** | Set and forget: the sample plays straight through with the clip, from its start each time the clip comes round. Each clip knows its sample's own length, **Bars** (SAMPLE's K7), guessed when you pick it — from the file's name ("4bar", "84 bpm"), else from where its beats fall, else its length at the tempo — and shown with the tempo that makes it; turn it if the guess is wrong. A new pick sets the clip's length to those bars. **Tempo** says how it meets the tempo: **Free** plays it as recorded, whatever the tempo; **Vintage** cuts the sample into tiny pieces on the sequencer's own clock (384 to a bar) and starts each on its place in the sample's own bars, as recorded — the same sound at the loop's own tempo, and in time at any other, with the grit of an old sampler: a slower tempo leaves tiny gaps, a faster one cuts the pieces short. A clip shorter than the bars plays the first of them. **Loop + steps** sets the loop as on any clip, and moves **Start** and **End** with it to the part of the sample under those steps (the steps laid over its Bars from its first frame) — on the SAMPLE screen too. **Pitch** retunes the whole loop, faster or slower, to fill its own **Bars** at the tempo (like Vintage, a clip shorter than the bars plays the first of them). **Warp** time-stretches the loop to fill its own **Bars** at the tempo and keeps its pitch — at any tempo it sounds as recorded, only faster or slower; **Pitch** and **Detune** (WAVE bank) then transpose it without changing its length. Warp is processor-intensive: one or two warped tracks are fine, but warping many tracks at once can overload the Move and cause clicks or dropouts — the other Tempos cost almost nothing. A Loop clip has no chops you can see: they belong to Slice mode, and the clip keeps them for when you switch back. Every chop ends with a few milliseconds' fade, so a cut never clicks. | Show where the loop is: the sample in 32 even sections, one a pad, dim in the track colour, the sections played this time round bright, the one playing pulsing. In **Revrs** they fill from the end. Stopped, all dim. A clip that comes round before the sample ends never reaches the sections past that point: they show grey. So do sections wholly before **Start** or after **End**. Tapping one does nothing. | Show where the loop is: its steps dim, the playhead white. Playing, they follow the playhead page by page, as a sequence does. |
+| **Loop** | Set and forget: the sample plays with the clip, from **Start** each time the clip comes round, for the clip's own length. Each clip knows its sample's own **Tempo** (SAMPLE's K7) — guessed when you pick it: a tempo in the file's name ("84 bpm") is taken as it is, even with a tail after the loop; else bars in the name ("4bar"), else where its beats fall, else the project's tempo. Turn it if the guess is wrong. A new pick sets the clip to the sample's length in whole bars at that Tempo. **Sync** says how it meets the project's tempo: **Warp** (the default) time-stretches the loop and keeps its pitch — at any tempo it sounds as recorded, only faster or slower, and **Pitch** and **Detune** transpose it without changing its length. Warp is processor-intensive: one or two warped tracks are fine, but warping many tracks at once can overload the Move and cause clicks or dropouts. **Vintage** cuts the sample into tiny pieces on the sequencer's own clock (384 to a bar) and starts each on its place at the sample's Tempo — the same sound at its own tempo, and in time at any other, with the grit of an old sampler. **Pitch** retunes the loop, faster or slower, to the tempo (Pitch and Detune then give way: the tempo sets the speed). Vintage and Pitch cost almost nothing. **Loop + steps** sets the loop as on any clip: the clip plays the part of the sample under those steps, laid over it from Start at its Tempo — on the SAMPLE screen too. A Loop clip has no chops you can see: they belong to Slice mode, and the clip keeps them for when you switch back. Every chop ends with a few milliseconds' fade, so a cut never clicks. | Show where the loop is: the sample in 32 even sections, one a pad, dim in the track colour, the sections played this time round bright, the one playing pulsing. In **Revrs** they fill from the end. Stopped, all dim. Sections the clip never reaches show grey. Tapping one does nothing. | Show where the loop is: its steps dim, the playhead white. Playing, they follow the playhead page by page, as a sequence does. |
 | **Slice** | The chops on the steps, played and sequenced from the pads. One at a time: a new chop cuts the last — unless it's the next piece of the sample, reached right where the last one has got to, which simply plays on. Velocity is ignored. | **The chops**, in time order, 32 to a page. Pads past the chop count are dark. | One sequence per clip: each step holds one chop. **Hold a step + tap a pad** places that chop; recording works as on a melodic track. |
 
 A clip holds up to **128 chops**, 32 to a pad page: **Octave Up / Down** shows the next
@@ -1226,18 +1226,21 @@ by clicking **Audio** in the track's sound menu, or with the instrument shortcut
 (**Shift + hold Note/Session**). What it shows follows the clip:
 
 - **No sample:** *Click to load sample* — a click opens the sample chooser.
-- **Loop mode:** the loop's waveform. **K1** Start · **K2** Zoom · **K3** End of the
-  loop. No chops show, and the pads, the jog and a click do nothing here.
+- **Loop mode:** the loop's waveform. **K1** Start · **K2** Zoom · **K3** Length — the
+  clip's own, a step a detent. No chops show, and the pads, the jog and a click do
+  nothing here.
 - **Slice mode:** the sample with every chop marked and the selected chop
-  bracketed. **K1** Start · **K2** Zoom · **K3** End of the clip, as in Loop mode;
-  a pad picks its chop and plays it, and the view goes to that chop's start at the
-  zoom you have. A click opens the menu.
+  bracketed. **K1** Start · **K2** Zoom · **K3** Length — how much of the sample is
+  chopped, a step a detent (to the sample's end at most); a pad picks its chop and
+  plays it, and the view goes to that chop's start at the zoom you have. A click
+  opens the menu.
 
-In both, **K4** Gain · **K5** Pitch · **K6** Detune set the whole clip, and **K7**
-sets **Bars**, the sample's own length as recorded (with the tempo that makes it) —
-what Loop's Tempo and **>Seq**'s step places follow; the one in
-hand reads out between Start and End, and the waveform is drawn at the gain it
-plays at. Times read in seconds to two decimals.
+There is no End: what plays runs from Start for the Length. In both modes **K4** Gain ·
+**K5** Pitch · **K6** Detune set the whole clip, and **K7** sets the sample's own
+**Tempo**, 1 BPM a detent (**Shift**: 0.1) — what Sync and **>Seq**'s step places
+follow. The knob in hand reads out between Start and Length, and the waveform is
+drawn at the gain it plays at. Start reads in seconds to two decimals, Length in
+bars (**1 + 4/16** is a bar and four steps).
 
 **Shift + click** opens SAMPLE's menu (in Slice mode a plain click does too):
 **Load sample** (the chooser) and, in Slice mode, **Chop sample**, which offers
@@ -1253,7 +1256,7 @@ project keeps its sounds when copied or when the library changes. **None** clear
 the clip. Slice mode takes samples up to 4 minutes; Loop mode up to 30. A sample
 longer than a minute plays from the card as it goes, so a long one costs little
 memory. Its slices and its start on the bar are always instant; starting the
-transport partway through a Loop clip, turning Revrs on or moving Start, End or a
+transport partway through a Loop clip, turning Revrs on or moving Start, Length or a
 chop while it plays can leave a few milliseconds of silence before it comes in, on
 time. A sample
 whose file has gone reads *Missing: name* and stays silent.
@@ -1262,30 +1265,30 @@ whose file has gone reads *Missing: name* and stays silent.
 with the chops on it, changing as you work. The pads play the chops in all of them.
 The Mode stays as it is: the chops serve both modes.
 
-- **Even** cuts Start..End into equal slices, 16 to begin with: turn the jog for
+- **Even** cuts the chopped part (Start for its Length) into equal slices, 16 to begin with: turn the jog for
   the count (2–128), the pads lighting for each slice as you turn.
 - **Transient** cuts at the sample's hits: turn the jog for **Sens** — lower keeps
   only the strongest, higher every small one (**Shift** for 5 a detent) — and watch
-  the chops move on the wave; the count shows top right. Only hits between Start and
-  End count, and only the first 128 (the count reads **128+** past that).
+  the chops move on the wave; the count shows top right. Only hits in the chopped
+  part count, and only the first 128 (the count reads **128+** past that).
 - In both, **Back** asks *Keep N chops?* — **Yes** makes them your chops, to edit
   like any others; **No** puts back what you had. A slice's sound settings belong to
   its number, so slice 3 keeps its sound.
-- **Lazy** re-chops the sample by ear. Pad 1 lights white; tap it and the sample
-  plays from Start to End. The next pad is always the white one: tap it to drop a
+- **Lazy** re-chops the sample by ear. Pad 1 lights white; tap it and the chopped
+  part plays. The next pad is always the white one: tap it to drop a
   chop where the sample is. The slices you've chopped so far stay lit. It ends at
-  End or on **Back**, and asks *Keep N new chops?* — **Yes** keeps them, **No**
+  its end or on **Back**, and asks *Keep N new chops?* — **Yes** keeps them, **No**
   puts your old chops back. **Back** before the first tap changes nothing.
 - **Manual** edits the chops you have, by hand:
 
 | Control | Does |
 |---|---|
 | **Pads** | Pick a chop, move the cursor to it and play it |
-| **K1 Start** / **K3 End** | Move the selected slice's start / end, one screen pixel a detent — a single sample when zoomed all the way in. A slice ends where the next begins (**E NEXT**); turn its end away to set its own. Turned back, it stops there for a moment |
+| **K1** / **K3** | Move the selected slice's start / end, one screen pixel a detent — a single sample when zoomed all the way in. A slice ends where the next begins (**E NEXT**); turn its end away to set its own. Turned back, it stops there for a moment |
 | **K2 Zoom** | From the whole sample down to one sample a pixel |
 | **Jog** / **click** | Move the cursor (**Shift** for single samples) / add a chop there |
 | **Delete + pad** | Remove that slice's chop: it joins the slice before (slice 1's start stays) |
-| **Delete + click** | *Clear all chops?* — **Yes** leaves one slice, Start to End |
+| **Delete + click** | *Clear all chops?* — **Yes** leaves one slice, the whole chopped part |
 | **Back** | Back to SAMPLE |
 
 In SAMPLE and Manual, whatever you touched last — the cursor (jog), the start (K1)
@@ -1314,8 +1317,8 @@ Pitch and Detune add to the clip's. The Mode isn't here: it's on the CLIP bank.
 
 | Bank | Knobs |
 |---|---|
-| **CLIP**, Slice mode | As ALL LANES on a drum track: **Res** · **Strch** · **Shift** (alt **Nudge**) · **Mode** · **Crop›** · **InQnt** · **Dir** (alt **Revrs**) · **>Seq›** (touch K8, click) lays one step per chop, each at its place in the sample's own **Bars**, so the clip plays the sample back as it was — now as chops you can rearrange. A clip whose length you never set grows to hold all of it (a coarser resolution past 256 steps); a length you set stays, and the chops past it wait beyond the loop's end |
-| **CLIP**, Loop mode | **Tempo** (K1) **Free** / **Vintage** / **Pitch** / **Warp** · **Nudge** (K3) moves the sample against the bar (ms) · **Mode** (K4) |
+| **CLIP**, Slice mode | As ALL LANES on a drum track: **Res** · **Strch** · **Shift** (alt **Nudge**) · **Mode** · **Crop›** · **InQnt** · **Dir** (alt **Revrs**) · **>Seq›** (touch K8, click) lays one step per chop, each at its place at the sample's **Tempo**, so the clip plays the sample back as it was — now as chops you can rearrange. A clip whose length you never set grows to hold all of it (a coarser resolution past 256 steps); a length you set stays, and the chops past it wait beyond the loop's end |
+| **CLIP**, Loop mode | **Sync** (K1) **Vintage** / **Pitch** / **Warp** · **Nudge** (K3) moves the sample against the bar (ms) · **Mode** (K4) |
 | **PAD MODE** | **Layout**: **4 Rows** or **16 Pads**, how the chops sit on the pads |
 | **LIVE ARP** | As on a melodic track, but **Step** replaces Oct: each repeat moves one chop up (or down), up to 15 |
 | **NOTE FX** (Slice mode) | As on a drum track — nothing that changes a pitch. **Quant** lives here only |

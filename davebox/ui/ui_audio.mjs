@@ -32,19 +32,24 @@ import { PAD_MODE_AUDIO, NUM_CLIPS, BANK_STEP, BANK_AUDIO, knobAltFor } from './
 import { bankListForMode, AU_MODE_LOOP, AU_MODE_SLICE, auIsSlice, auIsLoop } from './ui_pure.mjs';
 
 export { AU_MODE_LOOP, AU_MODE_SLICE, auIsSlice, auIsLoop } from './ui_pure.mjs';
-/* Tempo: Free as recorded · Vintage cut on the clock, each piece on its
- * place in the sample's own Bars (Josh, 2026-10-29: "make it as fine as
- * possible and call it "vintage"") · Pitch retuned to fill them · Warp
- * stretched to the tempo at its own pitch. The DSP's values: Free 0, Vintage
- * 1, Pitch 2, Warp 3. (Beats, cut at the hits, became Slice's Transient chops:
- * Josh, 2026-10-29, "i need to be able to see the points its creating on the
- * wave".) */
-export const AU_TEMPO_NAMES = ['Free', 'Vintage', 'Pitch', 'Warp'];
-const AU_TEMPO_VALS = [0, 1, 2, 3];
+/* Sync: how a Loop clip keeps to the tempo, every one at the sample's own
+ * Tempo (Josh, 2026-10-29: Free left — "orig" sets the Tempo to the
+ * project's instead — and "leave it as sync. and make warp the default."):
+ * Vintage cut on the clock, each piece on its place · Pitch retuned ·
+ * Warp stretched at its own pitch. The DSP's values: Warp 0, Vintage 1,
+ * Pitch 2. */
+export const AU_SYNC_NAMES = ['Vintage', 'Pitch', 'Warp'];
+const AU_SYNC_VALS = [1, 2, 0];
 /* the knob's square holds four letters on one line, as Mode's Loop / Slce (found
  * on the device: "Vintage" broke into VIN / TAG) */
-const AU_TEMPO_SQ = ['Free', 'Vint', 'Ptch', 'Warp'];
-export function auTempoIdx(i) { const k = AU_TEMPO_VALS.indexOf(i.tempo | 0); return k < 0 ? 0 : k; }
+const AU_SYNC_SQ = ['Vint', 'Ptch', 'Warp'];
+export function auSyncIdx(i) { const k = AU_SYNC_VALS.indexOf(i.sync | 0); return k < 0 ? 2 : k; }
+/* The sample's own Tempo, BPM (0 until it is known), and its bounds x10 */
+export const AU_BPM10_MIN = 200, AU_BPM10_MAX = 3000;
+export function auBpm(i) { return (i.bpm10 | 0) / 10; }
+/* Frames of the sample per tick at its Tempo (120 until known): the ticks,
+ * steps and bars everything on screen is measured in */
+export function auFpt(i) { return (i.rate || 44100) * 60 / ((i.bpm10 ? i.bpm10 / 10 : 120) * 96); }
 /* A Loop clip's pads: the sample in even sections, one a pad (Josh,
  * 2026-10-29: "chops should just be completely invisible in loop mode"). */
 export const AU_LOOP_SECTIONS = 32;
@@ -53,7 +58,6 @@ export function auLoopMarks(i) {
     for (let k = 0; k < AU_LOOP_SECTIONS; k++) out.push([Math.floor(n * k / AU_LOOP_SECTIONS), Math.floor(n * (k + 1) / AU_LOOP_SECTIONS)]);
     return out;
 }
-export const AU_BARS_MAX = 64;
 /* Chop k is note k (Josh, 2026-10-28: "might as well do 128"), 32 to a pad
  * page; external MIDI reaches chop 1 at note 36 (ui.js). */
 export const AU_NOTE_BASE = 0, AU_PAGE = 32, AU_EXT_BASE = 36;
@@ -108,21 +112,23 @@ export function auParseInfo(raw) {
         state: head[0], err: head[1], mode: head[2], even: head[3], hand: head[4], jump: head[5],
         rstart: head[6], rend: head[7], pitch: head[8], gain: head[9],
         nframes: head[10], rate: head[11], ch: head[12],
-        revrs: head[13], nudge: head[14], jmpq: head[15], n: head[16], detune: head[17] | 0, tempo: head[18] | 0,
-        /* how far into Start..End a Free loop gets before the clip wraps (-1 unknown) */
+        revrs: head[13], nudge: head[14], jmpq: head[15], n: head[16], detune: head[17] | 0, sync: head[18] | 0,
+        /* how much of Start..End sounds before the clip comes round (-1 unknown) */
         reach: head.length > 19 ? head[19] : -1,
-        /* the sample's own length in bars, as recorded (0 not known yet) */
-        bars: head.length > 20 ? head[20] : 0,
+        /* the sample's own Tempo x10 (0 not known yet) */
+        bpm10: head.length > 20 ? head[20] : 0,
         /* Transient's chops in Start..End at the clip's Sens (0..100) */
         hits: head.length > 21 ? head[21] : 0,
         sens: head.length > 22 ? head[22] : 50,
         trans: head.length > 23 ? head[23] : 0,
+        /* Slice's Length from Start, ticks at the Tempo (0 = to the end) */
+        slen: head.length > 24 ? head[24] : 0,
         name: bar >= 0 ? String(raw).slice(bar + 1) : '',
     };
 }
 
 const DEFAULT_INFO = { state: 0, err: 0, mode: 0, even: 16, hand: 1, n: 16, jump: 16, rstart: 0, rend: 0,
-                       pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, revrs: 0, nudge: 0, jmpq: 0, tempo: 0, reach: -1, bars: 0, hits: 0, sens: 50, trans: 0, name: '' };
+                       pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, revrs: 0, nudge: 0, jmpq: 0, sync: 0, reach: -1, bpm10: 0, hits: 0, sens: 50, trans: 0, slen: 0, name: '' };
 const DEFAULT_SLICE = { a: 0, b: 0, pinned: 0, pitch: 0, detune: 0, gain: 0, rev: 0, play: 0, atk: 0, dec: 0 };
 
 export function auInfo(t, c) {
@@ -503,12 +509,6 @@ export function auModeCell(t) {
              sq: auIsSlice(i) ? 'Slce' : 'Loop', options: ['Loop', 'Slice'], sel: i.mode };
 }
 const revrsCell = (i) => ({ kind: 'enumsq', label: 'Revrs', name: 'Reverse', text: i.revrs ? 'On' : 'Off', options: ['Off', 'On'], sel: i.revrs });
-/* Bars: the sample's own length, as recorded, and the tempo that makes it
- * (Josh, 2026-10-28: "bars param on clip") — guessed when it is picked. */
-export function auOrigBpm(i) {
-    const secs = i.rate ? i.nframes / i.rate : 0;
-    return secs > 0 && i.bars ? Math.round(i.bars * 2400 / secs) / 10 : 0;
-}
 const nudgeCell = (i) => ({ kind: 'arcbip', label: 'Nudge', name: 'Nudge (start vs the bar)', text: fmtMs(i.nudge), signed: i.nudge / 500 });
 
 /* The sound fields, as cells (SLICE n: one slice; CLIP in Slice mode: every
@@ -613,8 +613,7 @@ function stepSliceField(f, v, steps) {
 }
 
 /* The CLIP bank's own Audio knobs: Mode (K4, both modes) and, in Loop mode,
- * Tempo (K1), Nudge (K3). Bars is SAMPLE's K7 (Josh, 2026-10-29: "drop it from
- * clip. it's confusing to have it there since a clip has length of its own").
+ * Sync (K1), Nudge (K3). The Tempo is SAMPLE's K7.
  * Returns true when something changed. */
 export function auClipBankKnob(t, k, steps) {
     const c = auClipOf(t), i = auInfo(t, c);
@@ -628,9 +627,9 @@ export function auClipBankKnob(t, k, steps) {
         S.ledsDirtyAudio = true;
     } else if (k === 0 && auIsLoop(i)) {
         if (i.state !== 2) return false;
-        const ti = Math.max(0, Math.min(AU_TEMPO_NAMES.length - 1, auTempoIdx(i) + (steps > 0 ? 1 : -1)));
-        if (AU_TEMPO_VALS[ti] === (i.tempo | 0)) return false;
-        loc.tempo = AU_TEMPO_VALS[ti]; auSet(t, c, 'tempo', loc.tempo);
+        const ti = Math.max(0, Math.min(AU_SYNC_NAMES.length - 1, auSyncIdx(i) + (steps > 0 ? 1 : -1)));
+        if (AU_SYNC_VALS[ti] === (i.sync | 0)) return false;
+        loc.sync = AU_SYNC_VALS[ti]; auSet(t, c, 'sync', loc.sync);
     } else if (k === 2 && auIsLoop(i)) {
         if (i.state !== 2) return false;
         const v = Math.max(-500, Math.min(500, i.nudge + steps * (S.shiftHeld ? 1 : 5)));
@@ -642,26 +641,57 @@ export function auClipBankKnob(t, k, steps) {
     return true;
 }
 
-/* The clip's Start / End by `steps` (frames: 1/500 of the sample a step,
- * Shift 1/5000). Returns true when it moved. */
+/* The clip's Start by `steps` (frames: 1/500 of the sample a step, Shift
+ * 1/5000), or its Length by `steps` steps — no End anywhere (Josh,
+ * 2026-10-29: "having end available in one mode but not the other feels like
+ * it's going to be confusing"). A Loop clip's Length is the clip's own (its
+ * loop window, from where it starts); Slice's is how much of the sample is
+ * chopped, in ticks at the Tempo, 0 = to the end. Returns true when it moved. */
 export function auRangeStep(t, c, which, steps, per) {
     const i = auInfo(t, c);
     if (i.state !== 2 || !i.nframes) return false;
-    const st = per != null ? per : Math.max(1, Math.round(i.nframes / (S.shiftHeld ? 5000 : 500)));
     const loc = Object.assign({}, i);
-    const e = auEnd(i), G = 16;
+    const G = 16;
     if (which === 'start') {
-        const v = Math.max(0, Math.min(e - G, i.rstart + steps * st));
+        const st = per != null ? per : Math.max(1, Math.round(i.nframes / (S.shiftHeld ? 5000 : 500)));
+        const v = Math.max(0, Math.min(i.nframes - G, i.rstart + steps * st));
         if (v === i.rstart) return false;
         loc.rstart = v; auSet(t, c, 'start', v);
+    } else if (auIsSlice(i)) {
+        const tps = S.clipTPS[t][c] || 24, fpt = auFpt(i);
+        const toEnd = Math.floor((i.nframes - i.rstart) / fpt);
+        const cur = i.slen > 0 ? i.slen : Math.ceil(toEnd / tps) * tps;
+        let v = Math.max(tps, cur + steps * tps);
+        if (v >= toEnd) v = 0;
+        if (v === (i.slen | 0)) return false;
+        loc.slen = v; auSet(t, c, 'slen', v);
+        loc.rend = v ? Math.min(i.nframes, Math.round(i.rstart + v * fpt)) : i.nframes;
     } else {
-        const v = Math.max(i.rstart + G, Math.min(i.nframes, e + steps * st));
-        if (v === e) return false;
-        loc.rend = v >= i.nframes ? 0 : v; auSet(t, c, 'end', v);
+        const len = S.clipLength[t][c] | 0 || 16, ls = S.clipLoopStart[t][c] | 0;
+        const v = Math.max(1, Math.min(256 - ls, len + steps));
+        if (v === len) return false;
+        S.clipLength[t][c] = v;
+        S.clipLengthManuallySet[t][c] = true;
+        host_module_set_param('t' + t + '_c' + c + '_loop_set', String((ls << 16) | v));
+        loc.rend = Math.min(i.nframes, Math.round(i.rstart + v * (S.clipTPS[t][c] || 24) * auFpt(i)));
     }
     S.auInfo[t][c] = loc;
     S.auStartsRev = (S.auStartsRev | 0) + 1;
     return true;
+}
+
+/* A length in ticks as the screen says it: whole bars, else bars + 16ths
+ * (Move's "1 + 0/16"). */
+export function auFmtLen(ticks) {
+    const bar = 384, st = 24;
+    const b = Math.floor(ticks / bar), r = Math.round((ticks - b * bar) / st);
+    if (!r) return b + (b === 1 ? ' BAR' : ' BARS');
+    return b + ' + ' + r + '/16';
+}
+/* A clip's Length in ticks: a Loop clip's own, Slice's slen (0 = to the end) */
+export function auLenTicks(t, c, i) {
+    if (!auIsSlice(i)) return (S.clipLength[t][c] | 0 || 16) * (S.clipTPS[t][c] || 24);
+    return i.slen > 0 ? i.slen : Math.max(0, Math.round((i.nframes - i.rstart) / auFpt(i)));
 }
 
 /* One knob step on the AUDIO editor. Returns true when something changed. */
@@ -760,14 +790,14 @@ export function knobAltOnTrack(t, padMode, bank, k) {
     return knobAltFor(padMode, bank, k);
 }
 
-/* ---- the CLIP bank in Loop mode: K1 Tempo (Free · Vintage · Pitch · Warp), K3 Nudge, where Slice has Shift and its Nudge
+/* ---- the CLIP bank in Loop mode: K1 Sync (Vintage · Pitch · Warp), K3 Nudge, where Slice has Shift and its Nudge
  * alternate; K4 Mode. ---- */
 export function auLoopBankCells(t) {
     const i = auInfo(t, auClipOf(t));
-    const tempo = { kind: 'enumsq', label: 'Tempo', name: 'Tempo: Free · Vintage · Pitch · Warp',
-                    text: AU_TEMPO_NAMES[auTempoIdx(i)], sq: AU_TEMPO_SQ[auTempoIdx(i)], options: AU_TEMPO_NAMES, sel: auTempoIdx(i) };
+    const sync = { kind: 'enumsq', label: 'Sync', name: 'Sync: Vintage · Pitch · Warp',
+                   text: AU_SYNC_NAMES[auSyncIdx(i)], sq: AU_SYNC_SQ[auSyncIdx(i)], options: AU_SYNC_NAMES, sel: auSyncIdx(i) };
     const live = (x) => (i.state === 2 ? x : dash(x));
-    return [live(tempo), BLANK, live(nudgeCell(i)), auModeCell(t), BLANK, BLANK, BLANK, BLANK];
+    return [live(sync), BLANK, live(nudgeCell(i)), auModeCell(t), BLANK, BLANK, BLANK, BLANK];
 }
 
 /* ---- PAD MODE on an Audio track: K1 Layout ---- */

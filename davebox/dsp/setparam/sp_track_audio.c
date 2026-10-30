@@ -9,11 +9,13 @@
  * Keys (C = clip, L = slice, all 0-based):
  *   tN_au_pick    "C|<abs path>"   copy the file into the project, load it
  *   tN_au_clear   "C"              the clip has no sample
- *   tN_au_set_<field>   "C <v>"    mode / even (0 Off, 2..32) / start / end
- *                                  (frames; end 0 = the sample's end) / pitch /
- *                                  gain / bars / len_bars (the clip's length) /
- *                                  revrs / nudge / tempo (0 Free, 1 Vintage,
- *                                  2 Pitch, 3 Warp) / sens (Transient's).
+ *   tN_au_set_<field>   "C <v>"    mode / even (0 Off, 2..32) / start (frames)
+ *                                  / slen (Slice's Length, ticks; 0 = to the
+ *                                  end) / pitch / gain / bpm (the sample's own
+ *                                  Tempo x10) / orig (Tempo = the project's) /
+ *                                  len_bars (the clip's length) / revrs / nudge
+ *                                  / sync (0 Warp, 1 Vintage, 2 Pitch) / sens
+ *                                  (Transient's).
  *                                  Mode Slice on a clip with no steps lays the
  *                                  chops on them
  *   tN_au_slice_<field> "C L <v>"  start / end (frames, the hand set, Even Off;
@@ -97,25 +99,24 @@ static void au_apply_results(seq8_instance_t *inst) {
         if (r.smp) {
             int was_pick = cl->name[0] == '\0' || strcmp(cl->name, r.name) != 0;
             snprintf(cl->name, sizeof cl->name, "%s", r.name);
-            if (cl->mig_rs || cl->mig_re) {
-                /* an older project's Start / End, now that the length is known */
-                cl->rstart = (uint32_t)((uint64_t)r.smp->frames * cl->mig_rs / 1000);
-                cl->rend = cl->mig_re >= 1000 ? 0 : (uint32_t)((uint64_t)r.smp->frames * cl->mig_re / 1000);
-                cl->mig_rs = cl->mig_re = 0;
-            }
             if (was_pick) {
                 /* a new sample: the whole of it, and a hand set of one slice
                  * (frames of the old one mean nothing here) */
                 int l;
-                cl->rstart = cl->rend = 0;
+                cl->rstart = cl->slen = 0;
                 cl->nslices = 1;
                 for (l = 0; l < AU_MAX_SLICES; l++) cl->sl[l].start = cl->sl[l].end = 0;
             }
             au_trans_calc(cl);
-            /* the sample's own length in bars: the loader's guess for a new
-             * sample, or a project's that predates Bars */
-            if ((was_pick || !cl->bars) && r.bars) cl->bars = r.bars;
-            if (was_pick && cl->mode == AU_MODE_LOOP) au_clip_set_bars(inst, r.track, r.clip, cl->bars ? cl->bars : 1);
+            /* the sample's own Tempo: the loader's guess for a new sample, or
+             * one a project never set */
+            if ((was_pick || !cl->bpm10) && r.bpm10) cl->bpm10 = r.bpm10;
+            if (was_pick && cl->mode == AU_MODE_LOOP) {
+                /* a Loop clip as long as the sample, in whole bars at its Tempo */
+                double bars = (double)r.smp->frames / (double)r.smp->rate * (cl->bpm10 ? cl->bpm10 / 10.0 : 120.0) / 240.0;
+                int nb = (int)(bars + 0.5);
+                au_clip_set_bars(inst, r.track, r.clip, nb < 1 ? 1 : nb > 64 ? 64 : nb);
+            }
             au_mark(inst, r.track, r.clip);
         }
     }
@@ -535,8 +536,8 @@ static void au_render(seq8_instance_t *inst, int frames) {
             /* Mute does not stop the loop: it plays on silently, like a
              * muted bus, so unmuting picks it up in place (below). */
             int run = inst->playing && tr->clip_playing && cl->mode == AU_MODE_LOOP && cl->smp;
-            int sync = run && cl->tempo == AU_TEMPO_VINTAGE;
-            int warp = run && cl->tempo == AU_TEMPO_WARP;
+            int sync = run && cl->sync == AU_SYNC_VINTAGE;
+            int warp = run && cl->sync == AU_SYNC_WARP;
             if (run) {
                 uint32_t tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
                 int32_t tick = (int32_t)(((int)tr->current_step - (int)lc->loop_start) * (int32_t)tps
@@ -557,7 +558,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
                  * 2026-10-28: ""Pitch" which would retune the loop to fill x
                  * bars") — the clip's Pitch knob gives way to it */
                 double fill = 0.0;
-                if (cl->tempo == AU_TEMPO_PITCH) {
+                if (cl->sync == AU_SYNC_PITCH) {
                     /* x = the sample's own Bars, as Vintage's (Josh, 2026-10-28:
                      * "does pitch sync'ing not respect the set bars?"); the
                      * clip's length only says when it comes round */
@@ -622,7 +623,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
                 if (at->sync_on) { au_release_chops(at); at->sync_on = 0; }
                 at->last_tick = -1;
                 /* stopped on a Warp clip: its downbeat is rendered ahead */
-                if (!inst->playing && cl->mode == AU_MODE_LOOP && cl->tempo == AU_TEMPO_WARP && cl->smp) {
+                if (!inst->playing && cl->mode == AU_MODE_LOOP && cl->sync == AU_SYNC_WARP && cl->smp) {
                     uint32_t tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
                     double bpm = tr->pfx.cached_bpm > 0 ? tr->pfx.cached_bpm : 120.0;
                     double L = (double)lc->length * tps;
@@ -906,25 +907,19 @@ static int sp_track_audio(sp_ctx_t *cx) {
             } else {
                 cl->trans = 0;
             }
-        } else if (!strcmp(w, "start") || !strcmp(w, "end")) {
-            /* frames; at least AU_GAP apart. Unloaded, taken as given. */
-            uint32_t fr = cl->smp ? cl->smp->frames : 0, rs, re;
+        } else if (!strcmp(w, "start")) {
+            /* frames, short of the sample's end by a slice at least.
+             * Unloaded, taken as given. */
+            uint32_t fr = cl->smp ? cl->smp->frames : 0;
             if (v < 0) v = 0;
-            cl->mig_rs = cl->mig_re = 0;
-            if (!fr) {
-                if (w[0] == 's') cl->rstart = (uint32_t)v; else cl->rend = (uint32_t)v;
-            } else {
-                au_range(cl, cl->smp, &rs, &re);
-                if (fr <= AU_GAP) return 1;
-                if (w[0] == 's') {
-                    cl->rstart = (uint32_t)clamp_i(v, 0, (int)re - AU_GAP);
-                } else {
-                    if (v == 0) v = (int)fr;
-                    v = clamp_i(v, (int)rs + AU_GAP, (int)fr);
-                    cl->rend = (uint32_t)v >= fr ? 0 : (uint32_t)v;
-                }
-                au_trans_calc(cl);
-            }
+            if (fr && fr <= AU_GAP) return 1;
+            cl->rstart = fr ? (uint32_t)clamp_i(v, 0, (int)(fr - AU_GAP)) : (uint32_t)v;
+            au_trans_calc(cl);
+        } else if (!strcmp(w, "slen")) {
+            /* Slice: Length from Start, ticks at the sample's Tempo (0 = to
+             * its end). A Loop clip's Length is the clip's own. */
+            cl->slen = (uint32_t)(v < 0 ? 0 : v);
+            au_trans_calc(cl);
         } else if (!strcmp(w, "pitch")) {
             cl->pitch = (int8_t)clamp_i(v, -24, 24);
         } else if (!strcmp(w, "detune")) {
@@ -935,18 +930,24 @@ static int sp_track_audio(sp_ctx_t *cx) {
             cl->revrs = (uint8_t)(v ? 1 : 0);
             inst->au_trk[tidx].last_tick = -1;     /* the loop restarts from its new end */
             if (c == tr->active_clip) au_track_kill(inst, tidx, NULL);
-        } else if (!strcmp(w, "tempo")) {
-            v = clamp_i(v, AU_TEMPO_FREE, AU_TEMPO_MAX);
-            if (v != cl->tempo && c == tr->active_clip) au_track_kill(inst, tidx, NULL);
-            cl->tempo = (uint8_t)v;
+        } else if (!strcmp(w, "sync")) {
+            v = clamp_i(v, 0, AU_SYNC_MAX);
+            if (v != cl->sync && c == tr->active_clip) au_track_kill(inst, tidx, NULL);
+            cl->sync = (uint8_t)v;
+        } else if (!strcmp(w, "bpm") || !strcmp(w, "orig")) {
+            /* the sample's own Tempo x10; Orig = the project's, so the sample
+             * plays as it was recorded (Josh, 2026-10-29: "orig") */
+            if (w[0] == 'o') {
+                double bpm = tr->pfx.cached_bpm > 0 ? tr->pfx.cached_bpm : 120.0;
+                v = (int)(bpm * 10.0 + 0.5);
+            }
+            cl->bpm10 = (uint16_t)clamp_i(v, AU_BPM10_MIN, AU_BPM10_MAX);
+            au_trans_calc(cl);
         } else if (!strcmp(w, "sens")) {
             cl->sens = (uint8_t)clamp_i(v, 0, 100);           /* Transient: which hits count */
             au_trans_calc(cl);
         } else if (!strcmp(w, "nudge")) {
             cl->nudge_ms = (int16_t)clamp_i(v, -500, 500);
-        } else if (!strcmp(w, "bars")) {
-            /* the sample's own length in bars (the CLIP bank's K2) */
-            cl->bars = (uint8_t)clamp_i(v, 1, AU_BARS_MAX);
         } else if (!strcmp(w, "len_bars")) {
             au_clip_set_bars(inst, tidx, c, clamp_i(v, 1, 64));
             return 1;
@@ -1202,32 +1203,21 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
     }
     if (!strncmp(k, "info_", 5)) {
         /* "state err mode even nslices jump rstart rend pitch gain frames rate ch
-         *  revrs nudge jmpq count detune tempo reach bars hits sens|name" -- rstart / rend in frames as they play
-         *  (rend the real end, never 0) once loaded; reach: how far into Start..End a Free
-         *  loop gets before its clip wraps, in frames (End - Start when it all plays); bars: the
-         *  sample's own length in bars (0 not known yet); hits: Transient's chops in Start..End
-         *  (Start and each hit after it at the clip's Sens; 0 = no sample) */
+         *  revrs nudge jmpq count detune sync reach bpm10 hits sens trans slen|name"
+         *  -- rstart / rend: what the clip plays of the sample, in frames, once
+         *  loaded (Start + Length at the sample's Tempo — a Loop clip's Length
+         *  its own; rend stops at the file); reach: how much of that sounds before the clip comes round
+         *  (Nudge taken off); bpm10: the sample's own Tempo x10 (0 not known yet);
+         *  hits: Transient's chops in it; slen: Slice's Length in ticks (0 = to
+         *  the end) */
         c = my_atoi(k + 5);
         if (c < 0 || c >= NUM_CLIPS) return -1;
         const au_clip_t *cl = &inst->au_clip[t][c];
         const au_sample_t *s = cl->smp;
-        uint32_t rs = cl->rstart, re = cl->rend;
+        uint32_t rs = cl->rstart, re = cl->rstart;
         if (s) au_range(cl, s, &rs, &re);
         uint32_t reach = re > rs ? re - rs : 0;
-        if (s && cl->tempo == AU_TEMPO_FREE && reach) {
-            /* as au_render plays it: the clip's ticks at the tempo, the
-             * sample's rate and pitch, Nudge taken off */
-            const clip_t *lc = &inst->tracks[t].clips[c];
-            double bpm = inst->tracks[t].pfx.cached_bpm > 0 ? inst->tracks[t].pfx.cached_bpm : 120.0;
-            uint32_t tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
-            double r = (double)lc->length * tps * (44100.0 * 60.0 / (bpm * PPQN))
-                       * au_tune(cl->pitch, cl->detune) * (double)s->rate / 44100.0
-                       - (double)cl->nudge_ms * (double)s->rate / 1000.0;
-            if (r < 0) r = 0;
-            if (r < (double)reach) reach = (uint32_t)r;
-        } else if (s && cl->tempo != AU_TEMPO_FREE && reach) {
-            /* Vintage, Pitch and Warp: what of the sample's own Bars (plus Nudge)
-             * falls before the clip comes round */
+        if (s && reach && cl->mode == AU_MODE_LOOP) {
             const clip_t *lc = &inst->tracks[t].clips[c];
             double bpm = inst->tracks[t].pfx.cached_bpm > 0 ? inst->tracks[t].pfx.cached_bpm : 120.0;
             uint32_t tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
@@ -1239,12 +1229,21 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
                 if (r < (double)reach) reach = (uint32_t)r;
             }
         }
-        return snprintf(out, out_len, "%d %d %d %d %d %d %u %u %d %d %u %u %d %d %d %d %d %d %d %u %d %u %d %d|%s",
+        /* a Loop clip reads on past its window (au_range); what it PLAYS ends
+         * at Start + its length, and that is the end the screen shows */
+        uint32_t ve = re;
+        if (s && cl->mode == AU_MODE_LOOP) {
+            const clip_t *lc = &inst->tracks[t].clips[c];
+            uint32_t tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
+            double w = (double)rs + (double)lc->length * tps * au_fpt_s(cl, s);
+            ve = w >= (double)re ? re : (uint32_t)(w + 0.5);
+        }
+        return snprintf(out, out_len, "%d %d %d %d %d %d %u %u %d %d %u %u %d %d %d %d %d %d %d %u %d %u %d %d %u|%s",
                         cl->state, cl->err, cl->mode, cl->even, cl->nslices, cl->jump,
-                        (unsigned)rs, (unsigned)re, cl->pitch, cl->gain_db,
+                        (unsigned)rs, (unsigned)ve, cl->pitch, cl->gain_db,
                         s ? (unsigned)s->frames : 0u, s ? (unsigned)s->rate : 0u, s ? s->ch : 0,
-                        cl->revrs, cl->nudge_ms, cl->jmpq, au_count(cl), cl->detune, cl->tempo, (unsigned)reach, cl->bars,
-                        (unsigned)(s ? au_hit_count(s, rs, re, cl->sens) : 0), cl->sens, cl->trans, cl->name);
+                        cl->revrs, cl->nudge_ms, cl->jmpq, au_count(cl), cl->detune, cl->sync, (unsigned)reach, cl->bpm10,
+                        (unsigned)(s ? au_hit_count(s, rs, re, cl->sens) : 0), cl->sens, cl->trans, (unsigned)cl->slen, cl->name);
     }
     if (!strncmp(k, "sl_", 3)) {                  /* sl_C_L: "a b pinned pitch gain rev play atk dec detune" */
         const char *q = k + 3;

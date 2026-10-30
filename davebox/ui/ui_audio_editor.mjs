@@ -70,7 +70,7 @@ import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLaz
          auPanelPages, auPanelPageName, auPanelKnob, auPanelKnobClass, auChop, auPadToSlice,
          auSelSlice, auSetSelSlice, isAudioTrack, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
          auMarkAdd, auMarkDel, auManual, auEvenBake, auTrans, auTransBake, auRangeStep, auSet, auEnd, auPanelRingCells, auPanelReset, auBankEd,
-         auIsSlice, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX, AU_BARS_MAX } from './ui_audio.mjs';
+         auIsSlice, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX, AU_BPM10_MIN, AU_BPM10_MAX, auLenTicks } from './ui_audio.mjs';
 import { registerScreenRingCells, registerRingCells } from './ui_knob_leds.mjs';
 import { BANK_AUDIO } from './ui_constants.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -467,14 +467,16 @@ function clipStep(ed, field, dir) {
     S.auInfo[t][c] = Object.assign({}, i, { [field]: v });
     return true;
 }
-/* K7: the sample's own Bars, as recorded — what Loop's tempo and >Seq's step
- * places follow (Josh, 2026-10-29: "slice still needs bars param for >seq"). */
-function clipBars(ed, dir) {
+/* K7: the sample's own Tempo, 1 BPM a detent (Shift 0.1) — what Sync and
+ * >Seq's step places follow (Josh, 2026-10-29: Move's "tempo knob to set the
+ * original tempo"). */
+function clipTempo(ed, dir) {
     const t = ed.t, c = ed.c, i = auInfo(t, c);
-    const v = Math.max(1, Math.min(AU_BARS_MAX, (i.bars || 1) + dir));
-    if (v === (i.bars | 0)) return false;
-    auSet(t, c, 'bars', v);
-    S.auInfo[t][c] = Object.assign({}, i, { bars: v });
+    const cur = i.bpm10 || 1200;
+    const v = Math.max(AU_BPM10_MIN, Math.min(AU_BPM10_MAX, cur + dir * (S.shiftHeld ? 1 : 10)));
+    if (v === (i.bpm10 | 0)) return false;
+    auSet(t, c, 'bpm', v);
+    S.auInfo[t][c] = Object.assign({}, i, { bpm10: v });
     S.auStartsRev = (S.auStartsRev | 0) + 1;
     return true;
 }
@@ -655,7 +657,9 @@ export function audioEditorInput(status, d1, d2) {
             ed.last = k === 0 ? 'start' : 'end';
             if (hand) moved = chopPoint(ed, ed.last, dd);
             else {
-                moved = auRangeStep(ed.t, ed.c, ed.last, dd, auEdPixel(ed));
+                /* K1 Start (a pixel a detent), K3 Length (a step a detent) */
+                moved = k === 0 ? auRangeStep(ed.t, ed.c, 'start', dd, auEdPixel(ed))
+                                : auRangeStep(ed.t, ed.c, 'length', dd > 0 ? 1 : -1);
                 if (moved) centre(ed);
             }
         } else if (k === 3) {
@@ -671,8 +675,8 @@ export function audioEditorInput(status, d1, d2) {
             const st = ccKnobDelta(d2, k);
             if (st) moved = clipStep(ed, 'detune', st);
         } else if (k === 6) {
-            const st = knobStep(k, d2, KNOB_PICK);
-            if (st) moved = clipBars(ed, st);
+            const st = ccKnobDelta(d2, k);
+            if (st) moved = clipTempo(ed, st > 0 ? 1 : -1);
         }
         if (moved) S.screenDirty = true;
         return true;
@@ -831,7 +835,7 @@ export function waveRingCells(ed) {
     const at = (n) => ({ kind: 'arc', norm: Math.max(0, Math.min(1, n)) });
     const ends = kind !== 'even' && kind !== 'transient';
     return [ends ? at(a / fr) : null, at(zoom), ends ? at(b / fr) : null, at(((i.gain | 0) + 40) / 52),
-            at(((i.pitch | 0) + 24) / 48), at(((i.detune | 0) + 50) / 100), at(((i.bars || 1) - 1) / (AU_BARS_MAX - 1)), null];
+            at(((i.pitch | 0) + 24) / 48), at(((i.detune | 0) + 50) / 100), at(((i.bpm10 || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN)), null];
 }
 
 /* The rings while an Audio screen holds the knobs: WAVE's, the AUDIO

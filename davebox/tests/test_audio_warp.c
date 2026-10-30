@@ -157,8 +157,8 @@ static int fresh_take(int nocache, int16_t *out, int blocks) {
     hx_set_param(h, "t4_au_pick", p);
     for (i = 0; i < 2000 && inst->au_clip[4][0].state != 2; i++) { hx_render(h, 1); usleep(1000); }
     HX_ASSERT(inst->au_clip[4][0].state == 2, "the tone did not load (fresh take)");
-    hx_set_param(h, "t4_au_set_bars", "0 1");
-    hx_set_param(h, "t4_au_set_tempo", "0 3");
+    hx_set_param(h, "t4_au_set_bpm", "0 1200");     /* the file is at 120 */
+    hx_set_param(h, "t4_au_set_sync", "0 0");
     hx_set_param(h, "t4_launch_clip", "0");
     hx_set_param(h, "bpm", "125");
     au_warp_nocache = nocache;
@@ -188,8 +188,8 @@ static int fresh_stream_take(int nocache, int16_t *out, unsigned *missed) {
     hx_set_param(h, "t4_au_pick", p);
     for (i = 0; i < 2000 && inst->au_clip[4][0].state != 2; i++) { hx_render(h, 1); usleep(1000); }
     HX_ASSERT(inst->au_clip[4][0].state == 2 && !inst->au_clip[4][0].smp->pcm, "the minute did not load streamed");
-    hx_set_param(h, "t4_au_set_bars", "0 30");
-    hx_set_param(h, "t4_au_set_tempo", "0 3");
+    hx_set_param(h, "t4_au_set_bpm", "0 1200");     /* the file is at 120 */
+    hx_set_param(h, "t4_au_set_sync", "0 0");
     hx_set_param(h, "t4_launch_clip", "0");
     hx_set_param(h, "bpm", "125");
     au_warp_nocache = nocache;
@@ -242,9 +242,9 @@ int main(void) {
     hx_set_param(h, "t4_au_pick", p);
     for (i = 0; i < 2000 && inst->au_clip[4][0].state == 1; i++) { hx_render(h, 1); usleep(1000); }
     HX_ASSERT(inst->au_clip[4][0].state == 2, "the tone did not load");
-    hx_set_param(h, "t4_au_set_bars", "0 1");
-    hx_set_param(h, "t4_au_set_tempo", "0 3");
-    HX_ASSERT(inst->au_clip[4][0].tempo == AU_TEMPO_WARP, "Tempo did not go to Warp");
+    hx_set_param(h, "t4_au_set_bpm", "0 1200");     /* the file is at 120 */
+    hx_set_param(h, "t4_au_set_sync", "0 0");
+    HX_ASSERT(inst->au_clip[4][0].sync == AU_SYNC_WARP, "Tempo did not go to Warp");
     hx_set_param(h, "t4_launch_clip", "0");
 
     /* ---- the tempo moves the tone, never its pitch ---- */
@@ -264,7 +264,7 @@ int main(void) {
                  * sample comes out as it is (the drift trim may varispeed it
                  * by a hair) */
                 /* compared at its best alignment within a block: Warp lands on
-                 * the tick's own frame, Free / Pitch on the block it falls in
+                 * the tick's own frame, Pitch on the block it falls in
                  * (measured: Warp ~63 frames earlier) */
                 double best = 1e30, e = 0;
                 int k0 = (int)(1.1 * SR / 4), k, lag, bl = 0;
@@ -318,8 +318,8 @@ int main(void) {
         for (k = 0; k < 60; k++) step(h);
     }
 
-    /* ---- Warp -> Free: the stretcher lets go of its instance ---- */
-    hx_set_param(h, "t4_au_set_tempo", "0 0");
+    /* ---- Warp -> Pitch: the stretcher lets go of its instance ---- */
+    hx_set_param(h, "t4_au_set_sync", "0 2");
     step(h);
     step(h);
     HX_ASSERT(!X->trk[4]->st && !X->trk[4]->held, "the stretcher kept its instance after the clip left Warp");
@@ -336,10 +336,10 @@ int main(void) {
         hx_set_param(h, "t4_au_pick", p);
         for (i = 0; i < 2000 && inst->au_clip[4][1].state != 2; i++) { hx_render(h, 1); usleep(1000); }
         HX_ASSERT(inst->au_clip[4][1].state == 2, "the 660 Hz sine did not load");
-        hx_set_param(h, "t4_au_set_bars", "1 1");
-        hx_set_param(h, "t4_au_set_tempo", "1 4");
-        hx_set_param(h, "t4_au_set_tempo", "0 3");          /* the Warp -> Free case above left clip A on Free */
-        HX_ASSERT(inst->au_clip[4][0].tempo == AU_TEMPO_WARP && inst->au_clip[4][1].tempo == AU_TEMPO_WARP,
+        hx_set_param(h, "t4_au_set_bpm", "1 1200");     /* the file is at 120 */
+        hx_set_param(h, "t4_au_set_sync", "1 0");
+        hx_set_param(h, "t4_au_set_sync", "0 0");          /* the Warp -> Pitch case above left clip A on Pitch */
+        HX_ASSERT(inst->au_clip[4][0].sync == AU_SYNC_WARP && inst->au_clip[4][1].sync == AU_SYNC_WARP,
                   "both clips are not on Warp");
         hx_set_param(h, "bpm", "100");
         for (k = 0; k < 8; k++) step(h);
@@ -492,7 +492,7 @@ int main(void) {
         const uint8_t stb = 0xFA, clk = 0xF8, sp = 0xFC;
         int loud = 0, total = 0, anchors = 0, k;
         uint32_t g0;
-        hx_set_param(h, "t4_au_set_tempo", "0 3");
+        hx_set_param(h, "t4_au_set_sync", "0 0");
         hx_set_param(h, "clock_follow_on", "1");
         for (k = 0; k < 8; k++) step(h);
         hx_stub_feed_reset();
@@ -541,8 +541,8 @@ int main(void) {
     hx_set_param(h, "t4_au_pick", p);
     for (i = 0; i < 2000 && inst->au_clip[4][0].state == 1; i++) { hx_render(h, 1); usleep(1000); }
     HX_ASSERT(inst->au_clip[4][0].state == 2, "the tone did not load (thread)");
-    hx_set_param(h, "t4_au_set_bars", "0 1");
-    hx_set_param(h, "t4_au_set_tempo", "0 3");
+    hx_set_param(h, "t4_au_set_bpm", "0 1200");     /* the file is at 120 */
+    hx_set_param(h, "t4_au_set_sync", "0 0");
     hx_set_param(h, "t4_launch_clip", "0");
     hx_set_param(h, "bpm", "100");
     {
@@ -609,8 +609,8 @@ int main(void) {
     hx_set_param(h, "t4_au_pick", p);
     for (i = 0; i < 2000 && inst->au_clip[4][0].state == 1; i++) { hx_render(h, 1); usleep(1000); }
     HX_ASSERT(inst->au_clip[4][0].state == 2 && !inst->au_clip[4][0].smp->pcm, "the tone did not load streamed");
-    hx_set_param(h, "t4_au_set_bars", "0 30");
-    hx_set_param(h, "t4_au_set_tempo", "0 3");
+    hx_set_param(h, "t4_au_set_bpm", "0 1200");     /* the file is at 120 */
+    hx_set_param(h, "t4_au_set_sync", "0 0");
     hx_set_param(h, "t4_launch_clip", "0");
     hx_set_param(h, "bpm", "110");
     {
@@ -628,6 +628,6 @@ int main(void) {
     for (i = 1; i < 3; i++) check_bar(g, 110, i, 0x5, 440, "Warp (streamed)");
     g_stream = 0;
     hx_destroy(h);
-    printf("PASS: Warp (70 / 120 / 160 bpm: the tone on its beats at 440 Hz; the input window reused bit-exactly; Revrs; +12; a tempo change trims, no restart; Free lets go; launch Now between Warp clips without a gap; bypassed at its own tempo, handing over to Bungee and back without a gap; a followed clock; the thread; a sample cleared while it plays; streamed)\n");
+    printf("PASS: Warp (70 / 120 / 160 bpm: the tone on its beats at 440 Hz; the input window reused bit-exactly; Revrs; +12; a tempo change trims, no restart; Pitch lets go; launch Now between Warp clips without a gap; bypassed at its own tempo, handing over to Bungee and back without a gap; a followed clock; the thread; a sample cleared while it plays; streamed)\n");
     return 0;
 }

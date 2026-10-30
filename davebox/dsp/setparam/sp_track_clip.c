@@ -663,7 +663,8 @@ static int sp_track_clip(sp_ctx_t *cx) {
                 }
             }
             clip_migrate_to_notes(cl);
-            au_window_to_range(inst, tidx, cidx);   /* an Audio Loop clip: Start..End follow */
+            /* an Audio Loop clip needs nothing here: what it plays of the
+             * sample is read from this window (au_range) */
             /* Mirror the _length freeze-fix guard (same adaptive record-path
              * hazard: no rev bump while this track is live-recording). */
             if (!tr->recording) rui_mark(inst, tidx, cidx);

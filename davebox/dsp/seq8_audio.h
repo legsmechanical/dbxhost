@@ -34,13 +34,17 @@
 #define AU_MODE_LOOP       0
 #define AU_MODE_SLICE      1
 
-#define AU_TEMPO_FREE      0            /* Loop: the sample at its own speed, whatever the tempo */
-#define AU_TEMPO_VINTAGE   1            /* Loop: cut every tick, each piece on its place in the sample's own Bars (au_sync_block) */
-#define AU_TEMPO_PITCH     2            /* Loop: the sample retuned (varispeed) so Start..End fills its own Bars */
-#define AU_TEMPO_WARP      3            /* Loop: stretched to the tempo at its own pitch (Bungee, the stretcher thread) */
-#define AU_TEMPO_MAX       AU_TEMPO_WARP
+/* Sync: how a Loop clip keeps to the tempo. Every one follows the sample's own
+ * Tempo (bpm10); there is no free-running loop (Josh, 2026-10-29: Free left,
+ * Orig sets Tempo to the project's instead). Warp is the default. */
+#define AU_SYNC_WARP       0            /* stretched to the tempo at its own pitch (Bungee, the stretcher thread) */
+#define AU_SYNC_VINTAGE    1            /* cut every tick, each piece on its place at the sample's Tempo (au_sync_block) */
+#define AU_SYNC_PITCH      2            /* the sample retuned (varispeed) to the tempo */
+#define AU_SYNC_MAX        AU_SYNC_PITCH
+#define AU_BPM10_MIN       200          /* a sample's own Tempo, x10: 20.0 .. */
+#define AU_BPM10_MAX       3000         /* .. 300.0 BPM */
 #define AU_SENS_DEFAULT    50           /* Transient chops: hit sensitivity, 0..100 */
-#define AU_BARS_MAX        64           /* a sample's own length in bars, 1..64 */
+#define AU_BARS_MAX        64           /* a sample's length in bars at its Tempo, for the guess: 1..64 */
 #define AU_GAP             16           /* frames: the least a slice can be */
 #define AU_TAIL            128          /* frames: the fade back from a chop's end (~3 ms) */
 #define AU_SLICE_NONE      (-1)         /* au_range_on: Loop mode's hidden chop at Start */
@@ -111,16 +115,17 @@ typedef struct {
     uint8_t      even;               /* 0 = Off (the hand set plays), else 2..32 equal slices of Start..End */
     uint8_t      nslices;            /* the hand set's slices, 1..32 */
     uint8_t      jump;               /* retired (jump points): read and written only so the file format stays */
-    uint32_t     rstart, rend;       /* Start / End, sample frames; rend 0 = the sample's end */
-    uint16_t     mig_rs, mig_re;     /* an older project's Start / End in 1/1000, applied when the sample loads (0/0 = none) */
+    uint32_t     rstart;             /* Start, sample frames */
+    uint32_t     slen;               /* Slice: Length from Start, in ticks at the sample's Tempo (0 = to the
+                                      * sample's end). Loop: unused, its Length is the clip's (au_range) */
     int8_t       pitch;              /* -24..+24 st */
     int8_t       detune;             /* -50..+50 cents, on top of pitch */
     int8_t       gain_db;            /* -40..+12 dB */
     uint8_t      revrs;              /* Loop: the sample plays backwards */
     int16_t      nudge_ms;           /* Loop: the sample's start against the bar, -500..+500 ms */
     uint8_t      jmpq;               /* retired (jump quantize): as `jump` */
-    uint8_t      tempo;              /* Loop: AU_TEMPO_* (the CLIP bank's K1) */
-    uint8_t      bars;               /* the sample's own length in bars, as recorded (the CLIP bank's K2); 0 = not known yet */
+    uint8_t      sync;               /* Loop: AU_SYNC_* */
+    uint16_t     bpm10;              /* the sample's own Tempo x10 (AU_BPM10_*); 0 = not known yet (guessed when it loads) */
     uint8_t      sens;               /* Transient chops: hit sensitivity 0..100 (the chop editor's jog) */
     uint8_t      trans;              /* Transient: an override over the hand set, like Even; never saved */
     uint8_t      tr_n;               /* Transient's chops, 1..AU_MAX_SLICES (au_trans_calc) */
@@ -225,7 +230,7 @@ typedef struct {
 
 typedef struct {
     uint8_t      track, clip, err;
-    uint8_t      bars;       /* the loader's guess at the sample's length in bars (au_guess_bars) */
+    uint16_t     bpm10;      /* the loader's guess at the sample's own Tempo x10 (au_guess_bpm10) */
     uint32_t     gen;
     au_sample_t *smp;
     char         name[AU_PATH_MAX];

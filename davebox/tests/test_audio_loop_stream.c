@@ -137,6 +137,11 @@ int main(void) {
     HX_ASSERT(chunks < (FR + AU_CHUNK - 1) / AU_CHUNK / 2, "the pins are most of the file");
     HX_ASSERT(reads == 0, "the streamer read before it was asked");
 
+    /* played as recorded, sample for sample: Sync Pitch at the project's
+     * Tempo (Orig) — what Free was before it left */
+    hx_set_param(h, "t4_au_set_sync", "0 2");
+    hx_set_param(h, "t4_au_set_orig", "0 0");
+
     /* ---- the loop starts from frame 0 at once (pinned) ---- */
     hx_stub_feed_reset();
     hx_set_param(h, "t4_launch_clip", "0");

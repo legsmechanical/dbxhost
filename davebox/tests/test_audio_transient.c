@@ -174,9 +174,14 @@ int main(void) {
     HX_ASSERT(ac->tr_n == 3 && ac->tr_at[0] == 30000, "Transient did not follow Start");
     hx_set_param(h, "t4_au_set_start", "0 0");
     HX_ASSERT(ac->tr_n == 4, "Transient did not follow Start back");
-    hx_set_param(h, "t4_au_set_end", "0 50000");
-    HX_ASSERT(ac->tr_n == 3, "Transient did not follow End");
-    hx_set_param(h, "t4_au_set_end", "0 0");
+    {
+        /* Length (Slice: ticks at the sample's Tempo) ending at frame 50000 */
+        char lb[32];
+        snprintf(lb, sizeof lb, "0 %u", (unsigned)(50000.0 / au_fpt_s(ac, ac->smp)));
+        hx_set_param(h, "t4_au_set_slen", lb);
+        HX_ASSERT(ac->tr_n == 3, "Transient did not follow Length");
+        hx_set_param(h, "t4_au_set_slen", "0 0");
+    }
 
     /* ---- cancel: the hand set as it was, Even stays Off ---- */
     hx_set_param(h, "t4_au_set_trans", "0 0");
@@ -192,7 +197,7 @@ int main(void) {
     /* ---- never saved: the file holds the hand set ---- */
     inst->state_dirty = 1;
     HX_ASSERT(hx_get_param(h, "state_full", blob, (int)sizeof blob) > 0, "state_full");
-    HX_ASSERT(strstr(blob, "\"t4c0_au2\":\"1 0 2 ") && strstr(blob, "\"t4c0s1_au2\":\"30000 ") && !strstr(blob, "\"t4c0s2_au2\""),
+    HX_ASSERT(strstr(blob, "\"t4c0_au3\":\"1 0 2 ") && strstr(blob, "\"t4c0s1_au2\":\"30000 ") && !strstr(blob, "\"t4c0s2_au2\""),
               "a save while Transient is on did not write the untouched hand set");
 
     /* ---- bake: Transient's chops become the hand set ---- */

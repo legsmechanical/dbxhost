@@ -45,8 +45,8 @@ const PEAKS = Array.from({ length: 128 }, (_, i) => ((i * 7) % 100).toString(16)
 /* "state err mode even hand jump rstart rend pitch gain frames rate ch revrs nudge jmpq n|name" */
 const INFO = (mode, n, even) => '2 0 ' + mode + ' ' + (even === undefined ? n : even) + ' ' + (even === 0 ? n : 1) +
     ' 16 0 96000 0 0 96000 48000 2 0 0 0 ' + n + '|Break Phenom 84 bpm.wav';
-/* ...with the fields after n: detune tempo reach bars hits sens trans */
-const INFO24 = (mode, n, even, hits, sens, trans) => INFO(mode, n, even).replace('|', ' 0 0 96000 2 ' + hits + ' ' + sens + ' ' + trans + '|');
+/* ...with the fields after n: detune sync reach bpm10 hits sens trans slen (the sample at 84 BPM) */
+const INFO24 = (mode, n, even, hits, sens, trans) => INFO(mode, n, even).replace('|', ' 0 0 96000 840 ' + hits + ' ' + sens + ' ' + trans + ' 0|');
 const MARKS8 = Array.from({ length: 8 }, (_, k) => (k * 12000) + ' ' + ((k + 1) * 12000)).join(' ');
 const GET = { 't4_au_dir': '/data/UserData/UserLibrary/Sets/x/dAVEBOx/samples',
               't4_au_info_0': INFO(1, 8), 't4_pad_mode': '3',
@@ -617,14 +617,16 @@ step('⭐⭐ WAVE K4 Gain · K5 Pitch · K6 Detune (the clip\'s), read out in th
     tx = globalThis.__texts(() => { note(3, 127); shown(); });
     assert(tx.indexOf('GAIN +6DB') >= 0, 'touching K4 does not read out: ' + JSON.stringify(tx));
     note(3, 0);
-    /* K7 Bars, the sample's own, with the tempo they make — in Slice mode too,
-     * where >Seq places the chops by them (Josh, 2026-10-29) */
-    GET['t4_au_info_0'] = INFO24(1, 8, 0, 8, 50, 0);   /* Bars 2 */
+    /* K7 the sample's own Tempo, 1 BPM a step — in Slice mode too, where
+     * >Seq places the chops by it (Josh, 2026-10-29: Move's "tempo knob to
+     * set the original tempo") */
+    GET['t4_au_info_0'] = INFO24(1, 8, 0, 8, 50, 0);   /* 84 BPM */
     A.auMarkStale(4, 0); ticks(2);
-    const b0 = A.auInfo(4, 0).bars | 0;
-    tx = globalThis.__texts(() => { for (let i = 0; i < 10; i++) cc(77, 1); shown(); });
-    assert(sent('t4_au_set_bars').join() === '0 ' + (b0 + 1) && tx.some((x) => x.indexOf((b0 + 1) + ' BARS = ') === 0 && / BPM$/.test(x)),
-           'K7 Bars: ' + JSON.stringify(sent('t4_au_set_bars')) + ' ' + JSON.stringify(tx));
+    assert(A.auInfo(4, 0).bpm10 === 840, 'the Tempo was not read: ' + A.auInfo(4, 0).bpm10);
+    tx = globalThis.__texts(() => { S.knobAccelLast[6] = 0; cc(77, 1); shown(); });
+    const bs = sent('t4_au_set_bpm');
+    assert(bs.length === 1 && bs[0] === '0 850' && tx.indexOf('TEMPO 85 BPM') >= 0,
+           'K7 Tempo: ' + JSON.stringify(bs) + ' ' + JSON.stringify(tx));
     back();
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
 });
@@ -1025,7 +1027,7 @@ step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP /
     ticks(2);
     assert(sentLike(/_step_/).length === 0, 'a step press edited a Loop clip: ' + JSON.stringify(sentLike(/_step_/)));
     const cells = A.auLoopBankCells(4);
-    assert(cells.map((c) => c.label).join() === 'Tempo,,Nudge,Mode,,,,', 'loop bank: ' + cells.map((c) => c.label));
+    assert(cells.map((c) => c.label).join() === 'Sync,,Nudge,Mode,,,,', 'loop bank: ' + cells.map((c) => c.label));
     S.bankCardLatched = true;
     reset();
     /* K3 Nudge: one detent's worth (the knob's acceleration may need a tick or two) */
@@ -1035,37 +1037,39 @@ step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP /
     const lh = JSON.stringify(render.bankPageHints(0));
     S.knobTouched = -1;
     assert(lh.indexOf('CLK') < 0, 'a Loop CLIP knob offers a click: ' + lh);
-    /* K1 Tempo: Free · Vintage · Pitch · Warp (Josh, 2026-10-29: Fit gone,
-     * Sync "vintage"; Beats left Loop to become Slice's Transient chops), the
-     * DSP's values 0 · 1 · 2 · 3; an unknown value reads as Free */
+    /* K1 Sync: Vintage · Pitch · Warp (Josh, 2026-10-29: Free left, "leave it
+     * as sync. and make warp the default."), the DSP's values 1 · 2 · 0; a new
+     * clip is on Warp, and an unknown value reads as Warp */
+    assert(A.auLoopBankCells(4)[0].text === 'Warp', 'a new clip is not on Warp: ' + A.auLoopBankCells(4)[0].text);
+    for (let i = 0; i < 200; i++) cc(71, 127);
+    reset();
     const tv = [];
     for (let i = 0; i < 200; i++) { cc(71, 1); const t = A.auLoopBankCells(4)[0].text; if (tv[tv.length - 1] !== t) tv.push(t); }
-    assert(tv.join() === 'Free,Vintage,Pitch,Warp' && sent('t4_au_set_tempo').join() === '0 1,0 2,0 3' && !sentLike(/_au_set_(revrs|jump|jmpq)/).length,
-           'K1 is not Tempo Free · Vintage · Pitch · Warp: ' + tv.join() + ' ' + JSON.stringify(sentLike(/_au_/)));
-    assert(A.auTempoIdx({ tempo: 2 }) === 2 && A.auTempoIdx({ tempo: 3 }) === 3 &&
-           A.auTempoIdx({ tempo: 4 }) === 0 && A.auTempoIdx({ tempo: 99 }) === 0, 'Pitch / Warp / an unknown value reads wrong');
+    assert(tv.join() === 'Vintage,Pitch,Warp' && sent('t4_au_set_sync').join() === '0 2,0 0' && !sentLike(/_au_set_(revrs|jump|jmpq|tempo)/).length,
+           'K1 is not Sync Vintage · Pitch · Warp: ' + tv.join() + ' ' + JSON.stringify(sentLike(/_au_/)));
+    assert(A.auSyncIdx({ sync: 1 }) === 0 && A.auSyncIdx({ sync: 2 }) === 1 && A.auSyncIdx({ sync: 0 }) === 2 &&
+           A.auSyncIdx({ sync: 99 }) === 2, 'Vintage / Pitch / Warp / an unknown value reads wrong');
     /* each fits the square on one line (found on the device: VIN / TAG) */
     const wasInfo = S.auInfo[4][0];
-    for (const v of [0, 1, 2, 3]) {
-        S.auInfo[4][0] = Object.assign({}, wasInfo, { tempo: v });
+    for (const v of [0, 1, 2]) {
+        S.auInfo[4][0] = Object.assign({}, wasInfo, { sync: v });
         const sq = A.auLoopBankCells(4)[0].sq;
-        assert(sq && sq.length <= 4, 'Tempo ' + v + '\'s square: ' + sq);
+        assert(sq && sq.length <= 4, 'Sync ' + v + '\'s square: ' + sq);
     }
-    /* K5..K7 are blank and do nothing on every Tempo (Beats' Fill / Fade /
+    /* K5..K7 are blank and do nothing on every Sync (Beats' Fill / Fade /
      * Sens are gone; Sens lives in the Transient chop editor) */
-    for (const v of [0, 1, 2, 3]) {
-        S.auInfo[4][0] = Object.assign({}, wasInfo, { tempo: v });
+    for (const v of [0, 1, 2]) {
+        S.auInfo[4][0] = Object.assign({}, wasInfo, { sync: v });
         reset();
         for (let i = 0; i < 60; i++) cc(75, 127);
         S.knobAccelLast[5] = 0; cc(76, 1); S.knobAccelLast[6] = 0; cc(77, 1);
-        assert(!sentLike(/_au_set_(fill|fade|sens)/).length && A.auLoopBankCells(4).map((c) => c.label).join() === 'Tempo,,Nudge,Mode,,,,',
-               'K5..K7 act on Tempo ' + v + ': ' + JSON.stringify(sentLike(/_au_/)));
+        assert(!sentLike(/_au_set_(fill|fade|sens)/).length && A.auLoopBankCells(4).map((c) => c.label).join() === 'Sync,,Nudge,Mode,,,,',
+               'K5..K7 act on Sync ' + v + ': ' + JSON.stringify(sentLike(/_au_/)));
     }
     S.auInfo[4][0] = wasInfo;
     for (let i = 0; i < 200; i++) cc(71, 127);
-    /* K2 is blank: Bars moved to SAMPLE's K7 (Josh, 2026-10-29: "drop it
-     * from clip. it's confusing to have it there since a clip has length of
-     * its own") */
+    /* K2 is blank: the clip has a length of its own, and the sample's Tempo
+     * is SAMPLE's K7 (Josh, 2026-10-29: "drop it from clip") */
     reset();
     for (let i = 0; i < 40; i++) cc(72, 1);
     assert(!sent('t4_au_set_bars').length && !sentLike(/_au_/).length, 'K2 on the Loop CLIP bank still acts: ' + JSON.stringify(sentLike(/_au_/)));

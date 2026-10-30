@@ -74,7 +74,7 @@ import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
 import { isAudioTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
          auPos, auLazyState, auSelSlice, auPanelCells, auPanelTitle, auPanelPages, auBankEd, auBankTitle, auLoopBankCells, auModeCell, knobAltOnTrack,
          auPadModeCells, AU_NOTE_BASE,
-         auFmtTime, auEnd, auOrigBpm, auIsSlice, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
+         auFmtTime, auEnd, auBpm, auFmtLen, auLenTicks, auIsSlice, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
 import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
 import { drawAudioAsk } from './ui_dialogs.mjs';
 import { drawAudioChooser } from './ui_audio_chooser.mjs';
@@ -213,14 +213,14 @@ function drawAudioWaveEditor() {
     };
     const ends = (s, e) => { lit(4, s, S.knobTouched === 0); lit(124 - ovwWidth(e), e, S.knobTouched === 2); };
     const sgn = (v) => (v > 0 ? '+' : '') + v;
-    /* K2 Zoom, K4 Gain, K5 Pitch, K6 Detune, K7 Bars (with the tempo they
-     * make): what the knob in hand is doing */
-    const bpm = auOrigBpm(i);
+    /* K2 Zoom, K4 Gain, K5 Pitch, K6 Detune, K7 the sample's Tempo: what
+     * the knob in hand is doing */
+    const bpm = auBpm(i);
     const zoomTxt = S.knobTouched === 1 ? 'ZOOM' + (ed.zoomDir > 0 ? ' +' : ed.zoomDir < 0 ? ' -' : '')
         : S.knobTouched === 3 ? 'GAIN ' + sgn(i.gain | 0) + 'DB'
         : S.knobTouched === 4 ? 'PITCH ' + sgn(i.pitch | 0)
         : S.knobTouched === 5 ? 'DETUNE ' + sgn(i.detune | 0)
-        : S.knobTouched === 6 ? Math.max(1, i.bars | 0) + ' BARS' + (bpm ? ' = ' + bpm + ' BPM' : '') : '';
+        : S.knobTouched === 6 ? 'TEMPO ' + (bpm ? (Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) + ' BPM' : '--') : '';
     /* the middle readout, lit like Start / End (it is only there while its
      * knob is in hand — Josh, 2026-10-28: "nothing in the middle when no
      * knob is touched"); its strip clears what is under it, so a long one
@@ -254,7 +254,7 @@ function drawAudioWaveEditor() {
         /* the sample's name (Josh, 2026-10-28: "in loop mode, can we show the
          * sample name in the header of "sample" instead of "loop"") */
         drawBankHeading(auSampleName(t, c), false);
-        ends('S ' + auFmtTime(i.rstart, rt), 'E ' + auFmtTime(auEnd(i), rt));
+        ends('S ' + auFmtTime(i.rstart, rt), 'LEN ' + auFmtLen(auLenTicks(t, c, i)));
         if (zoomTxt) mid(zoomTxt);
         /* no cursor and no chops: they are Slice's (Josh, 2026-10-29: "chops
          * should just be completely invisible in loop mode") */
@@ -292,8 +292,8 @@ function drawAudioWaveEditor() {
         drawKitHintRow(MV_FOOTER_Y, [['clk', 'add'], ['del+clk', 'clear']]);
         return;
     }
-    /* WAVE in Slice mode: the clip's Start / End, its chops, no cursor */
-    ends('S ' + auFmtTime(i.rstart, rt), 'E ' + auFmtTime(auEnd(i), rt));
+    /* WAVE in Slice mode: the clip's Start / Length, its chops, no cursor */
+    ends('S ' + auFmtTime(i.rstart, rt), 'LEN ' + auFmtLen(auLenTicks(t, c, i)));
     if (zoomTxt) mid(zoomTxt);
     drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel, gain: i.gain | 0 });
     drawKitHintRow(MV_FOOTER_Y, [['knobs', 'edit'], ['clk', 'menu']]);
