@@ -227,6 +227,7 @@ step('⭐⭐ the sound bank follows the last editor entered, a plain grid; Back 
     back(); ticks(2);
     assert(!S.auEditor && !S.auPanel && S.activeBank === C.BANK_AUDIO, 'Back from SLICES did not land on the sound bank: ' + S.activeBank);
     assert(ED().page === 0 && A.auBankTitle(4) === 'ALL SLICES', 'not on ALL SLICES: ' + A.auBankTitle(4));
+    assert(render.bankHeaderGlyph(C.BANK_AUDIO, C.PAD_MODE_AUDIO) === 'audio', 'the sound bank\'s header icon is not the audio one (Josh: "audio icon")');
     /* a knob touch shows its page as a plain grid, never the waveform */
     note(0, 127); ticks(1);
     const kc = globalThis.__kc; shown();

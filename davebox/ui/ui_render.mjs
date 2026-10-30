@@ -415,7 +415,8 @@ function audioBankCells(bank, cells) {
  * (2026-09-03: "just like pre-existing ones"). */
 export function bankHeaderGlyph(bank, padMode) {
     const mode = padMode === undefined ? S.trackPadMode[S.activeTrack] : padMode;
-    if (bank === BANK_SOUND) return 'audio';
+    /* the sound banks, an Audio track's too (Josh, 2026-10-29: "audio icon") */
+    if (bank === BANK_SOUND || bank === BANK_AUDIO) return 'audio';
     /* CONFIG wears no glyph, like the TRACK CONFIG menu it shows (Josh,
      * 2026-09-25: "get rid of the little icon on the header left"). */
     if (bank === BANK_CONFIG) return null;
