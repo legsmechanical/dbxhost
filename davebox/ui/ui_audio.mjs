@@ -667,8 +667,11 @@ export function auClipBankKnob(t, k, steps) {
          * just empty space after it".) */
         const tps = S.clipTPS[t][c] || 24, ls = S.clipLoopStart[t][c] | 0;
         const len = S.clipLength[t][c] | 0 || 16, up = steps > 0;
-        const nl = up ? len * 2 : len / 2, nb = up ? (i.bpm10 || 1200) * 2 : Math.round((i.bpm10 || 1200) / 2);
-        if (nl !== Math.floor(nl) || nl < 1 || ls + nl > 256 || nb < AU_BPM10_MIN || nb > AU_BPM10_MAX) return false;
+        /* an odd Length halves down, as a MIDI clip's /2 does (it refused
+         * here, and a Loop clip's Length is its sample's, often odd — Josh,
+         * 2026-10-30: "doesn't want to /2 at all") */
+        const nl = up ? len * 2 : Math.floor(len / 2), nb = up ? (i.bpm10 || 1200) * 2 : Math.round((i.bpm10 || 1200) / 2);
+        if (nl < 1 || ls + nl > 256 || nb < AU_BPM10_MIN || nb > AU_BPM10_MAX) return false;
         S.clipLength[t][c] = nl;
         S.clipLengthManuallySet[t][c] = true;
         host_module_set_param('t' + t + '_c' + c + '_loop_set', String((ls << 16) | nl));

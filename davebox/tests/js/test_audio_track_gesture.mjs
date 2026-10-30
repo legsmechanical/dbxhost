@@ -1657,6 +1657,12 @@ step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP /
         reset();
         for (let i = 0; i < 40 && !sent('t4_c' + ac + '_loop_set').length; i++) cc(72, 127);
         assert(sent('t4_c' + ac + '_loop_set').join() === String(len0) && S.clipLength[4][ac] === len0, 'Strch /2 did not come back: ' + JSON.stringify(sentLike(/_loop_set/)));
+        /* /2 on an odd Length halves down, as MIDI's does (it refused) */
+        S.clipLength[4][ac] = 23;
+        reset();
+        for (let i = 0; i < 40 && !sent('t4_c' + ac + '_loop_set').length; i++) cc(72, 127);
+        assert(sent('t4_c' + ac + '_loop_set').join() === '11' && S.clipLength[4][ac] === 11, 'Strch /2 refused an odd Length: ' + JSON.stringify(sentLike(/_loop_set|_bpm/)));
+        S.clipLength[4][ac] = len0;
         /* K3 Shift: a step a detent run, wrapping round the clip */
         reset();
         for (let i = 0; i < 30 && !sent('t4_au_set_rot').length; i++) cc(73, 1);
