@@ -1314,7 +1314,9 @@ while you chop; the start or end you're touching
 or turning lights up, and **ZOOM +** / **ZOOM −** shows between them while K2 zooms.
 
 **SLICES** is a Slice clip's second editor — the **SLICES** pad under CLIP on the bank
-map (dark on a Loop clip). Page 1 is the chops, the one the pads last picked bracketed:
+map (dark on a Loop clip). Zoomed out it shows what SAMPLE shows — Start for its Length —
+and the chop editors keep their chops and cursor inside it (a chop left outside by a later
+Start or Length widens the view to it). Page 1 is the chops, the one the pads last picked bracketed:
 **K1** / **K3** move its start / end, **K2** zooms, and a click opens the chop types
 (**Even** · **Transient** · **Lazy** · **Manual**, as above). **Turn the jog** for page 2,
 the picked slice's sound — **Pitch**, **Detune**, **Gain**, **Revrs**, **Attk**, **Decay** and

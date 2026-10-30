@@ -29,6 +29,8 @@ the section into a versioned heading at release time.
   again every 5 minutes until the Move is plugged in.
 
 ### Changed
+- **Audio: SLICES shows SAMPLE's part of the sample.** Zoomed out it is Start for its
+  Length, as on SAMPLE, and chopping stays inside it.
 - **Audio: Length moves a bar a detent, a step with Shift**; Tempo a BPM, a tenth with
   Shift. Turning Tempo after Length keeps the clip's end in view.
 - **Audio: ALL SLICES sets every slice.** Its Pitch, Detune and Gain now set each

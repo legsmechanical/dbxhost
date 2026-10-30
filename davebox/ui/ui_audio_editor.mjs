@@ -271,6 +271,17 @@ export function auViewBounds(ed) {
         const hi = Math.round(lo + auLenTicks(ed.t, ed.c, i) * auFpt(i));
         if (hi - lo >= MIN_SPAN) return [lo, hi];
     }
+    if (fr && i.state === 2 && auIsSlice(i)) {
+        /* SLICES and the chop editors: SAMPLE's Start for its Length — the
+         * chopped part, the same waveform SAMPLE shows — widened only to a
+         * chop left outside it by a later Start / Length (Josh, 2026-10-30:
+         * "sample's start and length should set the zone limits for viewing
+         * and chopping the waveform in slice") */
+        let lo = i.rstart | 0, hi = auPlayedEnd(ed.t, ed.c, i);
+        for (const m of auMarks(ed.t, ed.c)) { if (m[0] < lo) lo = m[0]; if (m[1] > hi) hi = m[1]; }
+        lo = Math.max(0, lo); hi = Math.min(fr, hi);
+        if (hi - lo >= MIN_SPAN) return [lo, hi];
+    }
     return [0, Math.max(MIN_SPAN, fr)];
 }
 
@@ -484,10 +495,10 @@ function chopPoint(ed, which, dd) {
     const k = auSelSlice(t);
     const mk = auMarks(t, c).map((m) => m.slice());
     if (!mk[k]) return false;
-    const px = auEdPixel(ed), G = 16;
+    const px = auEdPixel(ed), G = 16, [blo, bhi] = auViewBounds(ed);
     if (which === 'start') {
-        const lo = k > 0 ? mk[k - 1][0] + G : 0;
-        const hi = Math.min(k + 1 < mk.length ? mk[k + 1][0] - G : i.nframes - G, mk[k][1] - G);
+        const lo = k > 0 ? mk[k - 1][0] + G : Math.min(blo, mk[k][0]);
+        const hi = Math.min(k + 1 < mk.length ? mk[k + 1][0] - G : bhi - G, mk[k][1] - G);
         const v = Math.max(lo, Math.min(hi, mk[k][0] + dd * px));
         if (v === mk[k][0]) return false;
         const wasHome = k > 0 && mk[k - 1][1] === mk[k][0];
@@ -500,7 +511,7 @@ function chopPoint(ed, which, dd) {
     }
     const home = auEdHome(ed, k), b = mk[k][1];
     if (b === home && ed.endHold > 0) { ed.endHold -= Math.abs(dd); return true; }   /* sticks at home */
-    let v = Math.max(mk[k][0] + G, Math.min(i.nframes, b + dd * px));
+    let v = Math.max(mk[k][0] + G, Math.min(Math.max(bhi, b), b + dd * px));
     if (b !== home && (v - home) * (b - home) <= 0) { v = home; ed.endHold = END_HOLD; }
     if (v === b) return false;
     mk[k][1] = v;
@@ -803,7 +814,8 @@ export function audioEditorInput(status, d1, d2) {
             if (v !== (i.sens | 0)) setSens(ed, v);
         } else if (hand) {
             const step = S.shiftHeld ? 1 : auEdPixel(ed);
-            ed.cur = Math.max(0, Math.min((i.nframes | 0) - 1, ed.cur + dd * step));
+            const [blo, bhi] = auViewBounds(ed);   /* the chopped part (and any chop past it) */
+            ed.cur = Math.max(blo, Math.min(bhi - 1, ed.cur + dd * step));
             ed.last = 'jog';
             centre(ed, ed.cur);
         }

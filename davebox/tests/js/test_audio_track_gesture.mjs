@@ -1215,6 +1215,39 @@ step('⭐⭐ PAD MODE is a Slice clip\'s alone: a Loop clip\'s IN column has non
     ticks(20);
 });
 
+step('⭐⭐ SLICES zoomed out is SAMPLE\'s window: Start for its Length, widened only to a chop left outside it; the Manual cursor stays inside (Josh, 2026-10-30: "sample\'s start and length should set the zone limits for viewing and chopping the waveform in slice")', () => {
+    /* Start 24000, Length 96 ticks at 84 BPM (357.14 frames a tick): to 58286 */
+    const short = INFO24(1, 4, 0, 4, 50, 0).replace(' 16 0 96000 ', ' 16 24000 58286 ').replace(/ 0\|/, ' 96|');
+    GET['t4_au_info_0'] = short;
+    GET['t4_au_marks_0'] = '24000 32000 32000 40000 40000 48000 48000 58286';
+    A.auMarkStale(4, 0); ticks(2);
+    assert(A.auInfo(4, 0).rstart === 24000 && A.auInfo(4, 0).slen === 96, 'the fixture: ' + JSON.stringify(A.auInfo(4, 0)));
+    mapPad(2, 3); ticks(2); shown();
+    const sa = [S.auEditor.A, S.auEditor.B];
+    back(); ticks(2);
+    mapPad(2, 2); ticks(2); shown();
+    const ed = S.auEditor;
+    assert(ed.ed === 'slices' && ed.full && ed.A === 24000 && Math.abs(ed.B - 58286) <= 1,
+           'SLICES zoomed out is not the window: ' + ed.A + '..' + ed.B);
+    assert(ed.A === sa[0] && Math.abs(ed.B - sa[1]) <= 1, 'SLICES and SAMPLE differ: ' + ed.A + '..' + ed.B + ' vs ' + sa.join('..'));
+    /* Manual: the cursor cannot leave the chopped part */
+    click(); jog(1); jog(1); jog(1); click();
+    assert(ed.chop && ed.chop.kind === 'manual', 'Manual did not open');
+    for (let i = 0; i < 300; i++) jog(-1);
+    assert(ed.cur >= 24000, 'the cursor left the chopped part: ' + ed.cur);
+    back(); ticks(2);
+    if (S.auEditor && S.auEditor.ask) { jog(-1); click(); }
+    while (S.auEditor) { back(); ticks(1); }
+    /* a Start moved after chopping leaves chop 1 outside: the view widens to it */
+    GET['t4_au_marks_0'] = '10000 32000 32000 40000 40000 48000 48000 58286';
+    S.auStartsRev = (S.auStartsRev | 0) + 1;         /* the marks are cached until the clip changes */
+    A.auMarkStale(4, 0); ticks(2);
+    mapPad(2, 2); ticks(2); shown();
+    assert(S.auEditor.A === 10000 && Math.abs(S.auEditor.B - 58286) <= 1, 'not widened to the chop outside: ' + S.auEditor.A + '..' + S.auEditor.B);
+    back(); ticks(2);
+    GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
+});
+
 step('⭐⭐ Slice mode: pads are 36 + chop in time order, 8 a row, none past the count; the CLIP bank mirrors ALL LANES', () => {
     ticks(2);
     DM.computePadNoteMap();
