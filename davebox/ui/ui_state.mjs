@@ -505,14 +505,14 @@ export const S = {
     auEditor: null,          /* WAVE: { t, c, mode wave|chop|lazy, chop: { kind even|transient|manual, orig }, A, B, cur, last, endHold, ask, pick } */
     auChooser: null,         /* the sample chooser (ui_audio_chooser.mjs) */
     pendingAudioChooser: null,    /* { t, c }: the tick opens the chooser (it lists a folder) */
-    confirmConvertAudio: false,   /* the convert confirm: false Drums, 'audio' -> Audio, 'resample' the resample offer, 'freeze' Flatten track, 'leave' Audio -> another */
+    confirmConvertAudio: false,   /* the convert confirm: false Drums, 'audio' -> Audio, 'resample' the resample offer, 'leave' Audio -> another */
     confirmConvertTarget: null,   /* 'leave': what the track becomes { pm, v } */
     pendingAuKit: null,
     auPadDown: new Array(32).fill(false),   /* Slice pads held: white while down (Josh, 2026-10-30: "played slice pads should be white") */           /* { t, c }: Convert to kit, run by the tick (ui_audio_kit) */
     pendingAuConvertStart: -1,    /* track whose clips the tick starts resampling (ui_audio_convert) */
     auConvertSrc: -1,             /* Flatten's take source, from its answer (-1: the conversion works it out) */
     auConvertBypass: false,       /* Flatten Post: bypass the track's insert FX once it has converted */
-    auFreeze: null,               /* Flatten's question: { t, choice (Pre / Post), hasSynth } */
+    auConvertWarm: false,         /* Flatten's Warm-up: each take plays its clip once first */
     auConvert: null,              /* the conversion's takes in flight */
     auApply: null,                /* the takes being loaded into the converted clips, one per tick */
     trackVelOverride: new Array(8).fill(0),

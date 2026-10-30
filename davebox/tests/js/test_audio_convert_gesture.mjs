@@ -198,7 +198,10 @@ function freezeRow(t) {
     assert(found, 'no Flatten track row on track ' + (t + 1) + "'s TRACK CONFIG");
     assert(sndCC(3, 127), 'the click was not the menu\'s'); sndCC(3, 0);
 }
-const answer = (right) => { if (right) jog(1); click(); };   /* the question opens on its left button */
+/* Flatten's options open on Flatten: Effects · Warm-up · Flatten (no Effects
+ * for a Move instrument). `post`: Effects to Post first. */
+const RS = await import('../../ui/ui_resample.mjs');
+const answer = (post) => { if (post) { jog(-1); jog(-1); click(); jog(1); jog(1); } click(); };
 const cancelTakes = () => {
     S.resampleState = 3; ticks(1);
     cc(HC.MoveBack, 127); cc(HC.MoveBack, 0);
@@ -206,29 +209,40 @@ const cancelTakes = () => {
     S.resampleState = 0; reset(); ticks(2);
 };
 
-step('⭐⭐ TRACK CONFIG › Freeze track asks FREEZE TRACK 5, Pre or Post, on screen; Back changes nothing', () => {
+step('⭐⭐ TRACK CONFIG › Flatten track opens its options — Effects Pre, Warm-up Off, Flatten — on screen; Back changes nothing', () => {
     S.trackPadMode[4] = 0; GET['t4_pad_mode'] = '0'; S.resampleState = 0;
     S.actionPopupLines = []; S.actionPopupEndTick = 0;    /* the last step's notice, not this screen's */
     reset();
     freezeRow(4);
-    assert(S.confirmConvertToDrum && S.confirmConvertAudio === 'freeze' && S.confirmConvertTrack === 4, 'no freeze question');
-    assert(S.auFreeze && S.auFreeze.choice, 'a Schwung instrument has no Pre / Post');
+    const r = S.confirmResample;
+    assert(r && r.flatten && r.track === 4 && r.choice && !r.post && !r.warm && r.sel === 2, 'no Flatten options: ' + JSON.stringify(r));
     const f = frame(() => render.drawUI());
-    const own = frame(() => D.drawConvertToDrumConfirm());
-    assert(inked(own) && f.every((v, i) => v === own[i]), 'the question is not what the screen shows');
+    const own = frame(() => RS.drawResampleOptions());
+    assert(inked(own) && f.every((v, i) => v === own[i]), 'the options are not what the screen shows');
     cc(HC.MoveBack, 127); cc(HC.MoveBack, 0);
     ticks(3);
-    assert(!S.confirmConvertToDrum && !S.auConvert, 'Back did not close it');
+    assert(!S.confirmResample && !S.auConvert, 'Back did not close them');
     assert(sent('resample_clip').length === 0, 'Back recorded');
 });
 
-step('⭐⭐ Pre (the first button): every clip before its FX; the FX are left on', () => {
+step('⭐⭐ Pre (the default): every clip before its FX; the FX are left on', () => {
     reset();
     freezeRow(4);
     answer(false);
     ticks(2);
     assert(S.auConvert && S.auConvert.list.length === 2 && !S.auConvert.bypass, 'takes: ' + JSON.stringify(S.auConvert));
     assert(sent('resample_clip').join() === '4 0 1 0 0 2 |' + P0, 'Pre take: ' + sent('resample_clip'));
+    cancelTakes();
+});
+
+step('⭐⭐ Warm-up (Josh, 2026-10-30: "Freeze track needs warm up option"): turned On, each take plays its clip once first', () => {
+    reset();
+    freezeRow(4);
+    jog(-1); click();                                 /* Warm-up On */
+    assert(S.confirmResample.warm, 'Warm-up did not turn On');
+    jog(1); click();                                  /* Flatten */
+    ticks(2);
+    assert(sent('resample_clip').join() === '4 0 1 1 0 2 |' + P0, 'the take is not warmed up: ' + sent('resample_clip'));
     cancelTakes();
 });
 
@@ -265,7 +279,7 @@ step('⭐⭐ an Audio track freezes IN PLACE (Josh, 2026-10-30: "audio tracks ou
     S.auInfo[4][2] = Object.assign({}, S.auInfo[4][2] || {}, { state: 2, name: 'loop c.wav' });
     reset();
     freezeRow(4);
-    assert(S.confirmConvertAudio === 'freeze' && S.auFreeze && S.auFreeze.choice, 'an Audio track has no Pre / Post');
+    assert(S.confirmResample && S.confirmResample.flatten && S.confirmResample.choice, 'an Audio track has no Pre / Post');
     answer(true);
     ticks(2);
     assert(S.auConvert && S.auConvert.inPlace && S.auConvert.list.length === 2, 'takes: ' + JSON.stringify(S.auConvert));
@@ -301,24 +315,25 @@ step('⭐⭐ a MIDI track that follows another freezes THAT instrument (Pre: bef
     cancelTakes();
 });
 
-step('⭐ a Move instrument has no Pre / Post (as heard): Yes / No, No first', () => {
+step('⭐ a Move instrument has no Effects row (as heard); Warm-up starts On, as Resample clip\'s; Back changes nothing', () => {
     S.trackRoute[5] = 1; S.trackMidiTo[5] = 0;
     reset();
     freezeRow(5);
-    assert(S.confirmConvertAudio === 'freeze' && !S.auFreeze.choice, 'a Move track was offered Pre / Post');
-    answer(false);
+    const r = S.confirmResample;
+    assert(r && r.flatten && !r.choice && r.warm && r.sel === 1, 'a Move track\'s options: ' + JSON.stringify(r));
+    cc(HC.MoveBack, 127); cc(HC.MoveBack, 0);
     ticks(2);
-    assert(!S.auConvert && sent('resample_clip').length === 0, 'No recorded');
+    assert(!S.confirmResample && !S.auConvert && sent('resample_clip').length === 0, 'Back recorded');
 });
 
-step('⭐ ...and so does a MIDI track that follows a Move instrument: Yes records it as heard (Wet)', () => {
+step('⭐ ...and so does a MIDI track that follows a Move instrument: Flatten records it as heard (Wet), warmed up', () => {
     S.trackRoute[6] = 1; S.trackRoute[5] = 2; S.trackMidiTo[5] = 7;
     reset();
     freezeRow(5);
-    assert(S.confirmConvertAudio === 'freeze' && !S.auFreeze.choice, 'a follower of a Move track was offered Pre / Post');
-    answer(true);
+    assert(S.confirmResample && S.confirmResample.flatten && !S.confirmResample.choice, 'a follower of a Move track was offered Pre / Post');
+    click();
     ticks(2);
-    assert(sent('resample_clip').join() === '5 0 1 0 0 0 |' + DIR + '/My Song 6A 1bar 120bpm.wav',
+    assert(sent('resample_clip').join() === '5 0 1 1 0 0 |' + DIR + '/My Song 6A 1bar 120bpm.wav',
            'take: ' + sent('resample_clip'));
     cancelTakes();
     S.trackRoute[6] = 0;
@@ -327,18 +342,18 @@ step('⭐ ...and so does a MIDI track that follows a Move instrument: Yes record
 step('⭐ external MIDI, an empty instrument slot, a muted track, playing: no question, a notice', () => {
     S.trackRoute[5] = 2; S.trackMidiTo[5] = 0;
     reset(); freezeRow(5);
-    assert(!S.confirmConvertToDrum && S.actionPopupLines[0] === 'NOTHING TO FLATTEN' && /MIDI out/.test(S.actionPopupLines[1]),
+    assert(!S.confirmResample && S.actionPopupLines[0] === 'NOTHING TO FLATTEN' && /MIDI out/.test(S.actionPopupLines[1]),
            'external: ' + JSON.stringify(S.actionPopupLines));
     S.trackRoute[5] = 0;                       /* slot 5 holds no synth in this rig */
     reset(); freezeRow(5);
-    assert(!S.confirmConvertToDrum && /no instrument/.test(S.actionPopupLines[1]), 'empty slot: ' + JSON.stringify(S.actionPopupLines));
+    assert(!S.confirmResample && /no instrument/.test(S.actionPopupLines[1]), 'empty slot: ' + JSON.stringify(S.actionPopupLines));
     S.trackMuted[4] = true;
     reset(); freezeRow(4);
-    assert(!S.confirmConvertToDrum && /muted/.test(S.actionPopupLines[1]), 'muted: ' + JSON.stringify(S.actionPopupLines));
+    assert(!S.confirmResample && /muted/.test(S.actionPopupLines[1]), 'muted: ' + JSON.stringify(S.actionPopupLines));
     S.trackMuted[4] = false;
     S.playing = true;
     reset(); freezeRow(4);
-    assert(!S.confirmConvertToDrum && S.actionPopupLines[0] === 'STOP TO FLATTEN', 'playing: ' + JSON.stringify(S.actionPopupLines));
+    assert(!S.confirmResample && S.actionPopupLines[0] === 'STOP TO FLATTEN', 'playing: ' + JSON.stringify(S.actionPopupLines));
     S.playing = false;
     snd.soundExit();
 });

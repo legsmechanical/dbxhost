@@ -2799,14 +2799,17 @@ sample, at default settings (a Loop clip; its steps, chops and settings go).
 **Flatten track** and click. With the transport stopped, every clip with notes is
 recorded on its own, one after another, and the track becomes an
 [Audio track](#75-audio) with each clip a **Loop** clip playing its recording. The
-notes and the instrument go. It asks first:
+notes and the instrument go. Its options come first; press the jog on **Flatten** to
+start:
 
-- **Pre** (the default) records the instrument before the track's effects, which stay
-  on the Audio track and keep sounding — you can still change them.
-- **Post** records through the effects, then bypasses them so they don't apply twice.
-  They stay in place, so you can switch them back on.
-- A Move instrument is recorded as you hear it, so there is no choice: **Yes** or
-  **No**.
+- **Effects**: **Pre** (the default) records the instrument before the track's effects,
+  which stay on the Audio track and keep sounding — you can still change them. **Post**
+  records through the effects, then bypasses them so they don't apply twice. They stay
+  in place, so you can switch them back on. A Move instrument is recorded as you hear
+  it, so it has no Effects row.
+- **Warm-up** plays each clip once before recording it, so delay and reverb tails carry
+  into the start of the loop. It starts on for a Move instrument (which sounds a few
+  milliseconds late), off otherwise.
 - **Back** changes nothing; **Back** while it records cancels the whole flatten.
 
 Drum tracks flatten too, and so does a MIDI track that plays another track's

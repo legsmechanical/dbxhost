@@ -24,6 +24,8 @@ import { S } from './ui_state.mjs';
 import { showActionPopupFor } from './ui_persistence.mjs';
 import { SCENE_LETTERS, PAD_MODE_AUDIO } from './ui_constants.mjs';
 import { auPick } from './ui_audio.mjs';
+/* a cycle through ui_sound: used only inside function bodies */
+import { flattenStart } from './ui_audio_convert.mjs';
 import { hardResetClip } from './ui_editops.mjs';
 import { sanitizeName } from './ui_export.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -129,6 +131,7 @@ export function drawSampleMenu() {
  * Dry) after Length, and an Audio clip's In place after that. `rows(r)` names
  * them in order. */
 function rows(r) {
+    if (r.flatten) return r.choice ? ['fx', 'warm', 'start'] : ['warm', 'start'];   /* Flatten track's (ui_audio_convert) */
     if (r.track < 0) return ['bars', 'warm', 'tail', 'start'];
     return r.audio ? ['bars', 'src', 'place', 'warm', 'tail', 'start'] : ['bars', 'src', 'warm', 'tail', 'start'];
 }
@@ -210,6 +213,8 @@ export function resampleOptionsClick() {
     /* Source flips like a toggle; on a Move instrument it is not available. */
     if (row === 'src') { if (r.dryOk) r.src = r.src ? 0 : 1; S.screenDirty = true; return false; }
     if (row === 'place') { r.inPlace = !r.inPlace; S.screenDirty = true; return false; }
+    if (row === 'fx') { r.post = !r.post; S.screenDirty = true; return false; }
+    if (r.flatten) { S.confirmResample = null; flattenStart(r); S.screenDirty = true; return true; }
     if (row === 'bars' || row === 'tail') { r.editing = !r.editing; S.screenDirty = true; return false; }
     return startResample();
 }
@@ -221,6 +226,7 @@ export function resampleOptionsBack() {
     if (!r) return;
     if (r.editing) { r.editing = false; S.screenDirty = true; return; }
     S.confirmResample = null;
+    if (r.flatten) { S.screenDirty = true; return; }      /* back to TRACK CONFIG */
     if (r.track >= 0 && r.from === 'menu') {
         reopenSampleMenu(menuIndexOf('resample_clip'));
         return;
@@ -242,12 +248,14 @@ export function drawResampleOptions() {
          * (UI_LANGUAGE §6: unavailable is said in the value). */
         src:   { label: 'Source',  value: r.dryOk ? (r.src ? 'Dry' : 'Wet') : '-' },
         place: { label: 'In place', value: r.inPlace ? 'On' : 'Off' },
+        fx:    { label: 'Effects', value: r.post ? 'Post' : 'Pre' },
         warm:  { label: 'Warm-up', value: r.warm ? 'On' : 'Off' },
         tail:  { label: 'Tail',    value: r.tail ? barsLabel(r.tail) : 'Off', editing: editing('tail') },
-        start: { label: 'Start', hdr: true },
+        start: { label: r.flatten ? 'Flatten' : 'Start', hdr: true },
     };
-    drawKitHeader(r.track >= 0 ? 'RESAMPLE CLIP ' + clipName(r.track, r.clip)
-                               : 'RESAMPLE SCENE ' + SCENE_LETTERS[r.clip], false);
+    drawKitHeader(r.flatten ? 'FLATTEN TRACK ' + (r.track + 1)
+                : r.track >= 0 ? 'RESAMPLE CLIP ' + clipName(r.track, r.clip)
+                : 'RESAMPLE SCENE ' + SCENE_LETTERS[r.clip], false);
     drawKitList(rows(r).map((n) => all[n]), r.sel);
 }
 

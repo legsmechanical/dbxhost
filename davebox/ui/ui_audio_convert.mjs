@@ -85,10 +85,12 @@ export function auConvertOffered(t, hasSynth) {
  * "let's rename \"freeze track\" to \"flatten track\""; Josh, 2026-10-30: "freeze track (convert
  * track to resampled audio)" · "freeze track should have pre or post effect
  * option. pre leaves the track insert effects in place after. post mutes them
- * after" · "freeze track lives on track config"): the same conversion, asked
- * for on its own. The refusals come first; then FLATTEN TRACK N with Pre /
- * Post (Pre first; Back cancels). A Move instrument records as heard, so it
- * has no choice: Yes / No, No first. */
+ * after" · "freeze track lives on track config" · "Freeze track needs warm up
+ * option"): the same conversion, asked for on its own. The refusals come
+ * first; then its options, on the Resample options screen (ui_resample,
+ * `flatten`): Effects Pre / Post (Pre first; a Move instrument records as
+ * heard, so it has none), Warm-up (on for a Move instrument, as Resample
+ * clip's), and Flatten. Back cancels. */
 export function freezeTrackRequest(t, hasSynth) {
     const name = 'Track ' + (t + 1);
     if (S.playing) { showActionPopupFor(2500, 'STOP TO FLATTEN', 'It plays from the top'); return; }
@@ -104,22 +106,18 @@ export function freezeTrackRequest(t, hasSynth) {
         showActionPopupFor(2500, 'NOTHING TO FLATTEN', name + (S.trackPadMode[t] === PAD_MODE_AUDIO ? ' has no samples' : ' has no notes'));
         return;
     }
-    S.confirmConvertToDrum = true; S.confirmConvertToDrumSel = 1;
-    S.confirmConvertTrack = t; S.confirmConvertAudio = 'freeze';
-    S.auFreeze = { t, choice: pre !== AU_SRC_WET, hasSynth };
+    const choice = pre !== AU_SRC_WET;
+    S.confirmResample = { flatten: true, track: t, clip: -1, choice, hasSynth, post: false,
+                          warm: !choice && S.trackPadMode[t] !== PAD_MODE_AUDIO, sel: choice ? 2 : 1, editing: false };
+    S.screenDirty = true;
 }
 
-/* Its answer (input context): `right` is the right-hand button — Post, or
- * Yes where there is no choice. */
-export function freezeTrackAnswer(right) {
-    const f = S.auFreeze;
-    S.auFreeze = null;
-    if (!f) return;
-    if (!f.choice && !right) return;
-    const post = f.choice && right;
-    S.auConvertSrc = auConvertSource(f.t, f.hasSynth, post);
-    S.auConvertBypass = post;
-    S.pendingAuConvertStart = f.t;
+/* Its options' Flatten (input context): the takes start from the tick. */
+export function flattenStart(r) {
+    S.auConvertSrc = auConvertSource(r.track, r.hasSynth, r.choice && r.post);
+    S.auConvertBypass = !!(r.choice && r.post);
+    S.auConvertWarm = !!r.warm;
+    S.pendingAuConvertStart = r.track;
 }
 
 function sampling() {
@@ -150,11 +148,11 @@ export function auConvertStart(t) {
     /* the source as the question read it (the slot's instrument is not read
      * here); a follower's or a Move track's needs no slot read */
     const src = S.auConvertSrc >= 0 ? S.auConvertSrc : auConvertSource(t, true, false);
-    const bypass = !!S.auConvertBypass;
-    S.auConvertSrc = -1; S.auConvertBypass = false;
+    const bypass = !!S.auConvertBypass, warm = !!S.auConvertWarm;
+    S.auConvertSrc = -1; S.auConvertBypass = false; S.auConvertWarm = false;
     if (src < 0) { showActionPopupFor(2500, 'NOT RESAMPLED', 'Nothing to record'); return false; }
     const inPlace = S.trackPadMode[t] === PAD_MODE_AUDIO;
-    S.auConvert = { t, list, i: 0, src, bypass, inPlace, phase: 'send', at: 0, seen: false, stopSent: false };
+    S.auConvert = { t, list, i: 0, src, bypass, warm, inPlace, phase: 'send', at: 0, seen: false, stopSent: false };
     S.resampleTake = { convert: true };
     return true;
 }
@@ -183,7 +181,7 @@ export function auConvertTick() {
         /* The previous take's clear must have landed (the engine is idle). */
         if (st !== RS_IDLE || sampling()) return;
         S.pendingDefaultSetParams.push({ key: 'resample_clip',
-            val: cv.t + ' ' + e.c + ' ' + e.bars + ' 0 0 ' + cv.src + ' |' + e.path });
+            val: cv.t + ' ' + e.c + ' ' + e.bars + ' ' + (cv.warm ? 1 : 0) + ' 0 ' + cv.src + ' |' + e.path });
         cv.phase = 'run'; cv.at = nowMs(); cv.seen = false; cv.stopSent = false; cv.shown = -1;
         status(cv, 'starting');
         return;

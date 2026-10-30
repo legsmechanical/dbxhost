@@ -14,7 +14,8 @@ the section into a versioned heading at release time.
   instrument before the track's effects and leaves them on; **Post** records through
   them and then bypasses them. Works on melodic and drum tracks, and on a MIDI track
   that plays another track's instrument. An Audio track flattens in place: each clip
-  re-recorded and starting over with its recording.
+  re-recorded and starting over with its recording. Its options add **Warm-up**: each
+  clip plays once before it is recorded, so its tails carry into the loop.
 - **Resampling works with Audio tracks.** A Loop clip (which has no steps) is now
   recorded for its own length, by Resample clip and Resample scene alike; before, a
   clip or scene of Loop clips had nothing to resample.

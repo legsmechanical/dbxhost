@@ -144,15 +144,6 @@ export function drawConvertToDrumConfirm() {
     if (S.confirmConvertAudio === 'resample') {
         dlgHeader('TO AUDIO');
         dlgLines(['Resample the clips?', 'Yes: each plays its audio', 'No: the notes are cleared']);
-    } else if (S.confirmConvertAudio === 'freeze') {
-        dlgHeader('FLATTEN TRACK ' + (S.confirmConvertTrack + 1));
-        if (S.auFreeze && S.auFreeze.choice) {
-            dlgLines([S.trackPadMode[S.confirmConvertTrack] === PAD_MODE_AUDIO ? 'Every clip in place.' : 'Every clip to audio.',
-                      'Record the effects', 'Pre or Post?']);
-            drawYesNoRow(S.confirmConvertToDrumSel, ['Pre', 'Post']);
-            return;
-        }
-        dlgLines(['Every clip to audio,', 'as heard. Notes and', 'instrument go.']);
     } else if (S.confirmConvertAudio === 'audio') {
         dlgHeader('TO AUDIO');
         dlgLines(['Warning:', 'Existing notes will be lost.', 'Proceed?']);
