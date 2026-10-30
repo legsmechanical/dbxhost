@@ -1227,6 +1227,7 @@ step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP /
     const ed = S.auEditor;
     assert(ed.page === 1, 'the jog did not turn SAMPLE to page 2');
     assert(A.auSampleP2Cells(4, 0).map((c) => c.label).join() === 'Sync,Revrs,,,,,,Orig', 'page 2: ' + A.auSampleP2Cells(4, 0).map((c) => c.label));
+    assert(A.auSampleP2Cells(4, 0)[7].opens === true, 'Orig does not wear the click corners (Josh: "orig needs the corners to indicate it\'s a click gesture")');
     assert(A.auSampleP2Cells(4, 0)[0].text === 'Warp', 'a new clip is not on Warp: ' + A.auSampleP2Cells(4, 0)[0].text);
     for (let i = 0; i < 40; i++) cc(71, 127);
     reset();

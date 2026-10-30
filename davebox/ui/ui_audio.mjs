@@ -839,7 +839,7 @@ export function auSampleP2Cells(t, c) {
     const loop = auIsLoop(i);
     const sync = { kind: 'enumsq', label: 'Sync', name: 'Sync: Vintage · Pitch · Warp',
                    text: AU_SYNC_NAMES[auSyncIdx(i)], sq: AU_SYNC_SQ[auSyncIdx(i)], options: AU_SYNC_NAMES, sel: auSyncIdx(i) };
-    const orig = { kind: 'action', oneWay: true, label: 'Orig', name: 'Orig: Tempo = project\'s', text: '->', opens: false };
+    const orig = { kind: 'action', oneWay: true, label: 'Orig', name: 'Orig: Tempo = project\'s', text: '->', opens: true };   /* corners: a click gesture (Josh) */
     const live = (x) => (i.state === 2 ? x : dash(x));
     return [loop ? live(sync) : BLANK, live(revrsCell(i)), BLANK, BLANK, BLANK, BLANK, BLANK, live(orig)];
 }
