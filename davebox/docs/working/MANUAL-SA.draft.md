@@ -1266,13 +1266,16 @@ A **click** on SAMPLE opens its menu (**Shift + click** does the same):
   the beginning and the chops move with the audio. A clip that already plays its whole
   file has nothing to cut.
 - **Normalize** — raises the file's loudest point to full scale.
+- **Chop sample** (a Loop clip's) — **Even**, **Transient**, **Lazy** or **Manual**:
+  the clip becomes a Slice clip and that chop editor opens on SLICES (see Chops,
+  below), where Back then leaves you.
 
 Trim and Normalize ask **New** (the default: a new sample for this clip, named
 *… trim* or *… norm*, the original kept in the project) or **Overwrite** (the
 project's copy itself — every clip using it changes). **Back** changes nothing. Both
 write a 16-bit WAV; the clip keeps its settings.
 
-Chopping lives on **SLICES** alone. **Back** leaves SAMPLE. The Shift
+Otherwise chopping lives on **SLICES**. **Back** leaves SAMPLE. The Shift
 shortcuts work here as anywhere: **Shift + a step** or **Shift + jog** leaves SAMPLE and does
 what it always does.
 

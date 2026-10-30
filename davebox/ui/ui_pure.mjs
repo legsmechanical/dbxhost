@@ -67,6 +67,8 @@ const CONDUCT_NAMES = { 0: 'CLIP', [BANK_RESPONDER]: 'ON/OFF', [BANK_WHEN]: 'TIM
  * tests/test_au_mode_helpers.sh. */
 export const AU_MODE_LOOP = 0, AU_MODE_SLICE = 1;
 export function auIsSlice(i) { return !!(i && i.mode === AU_MODE_SLICE); }
+/* The Mode value for a Slice (true) or Loop clip, for the code that sets one. */
+export function auModeValue(slice) { return slice ? AU_MODE_SLICE : AU_MODE_LOOP; }
 export function auIsLoop(i) { return !!i && !auIsSlice(i); }
 
 export function bankDisplayName(padMode, bank, t = S.activeTrack) {

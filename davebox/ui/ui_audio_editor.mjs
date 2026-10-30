@@ -39,7 +39,10 @@
  *                  editor on the waveform (Josh, 2026-10-28: "you select the
  *                  chop type, including manual, and then adjust the chops
  *                  with the waveform in view and then press back to get back
- *                  to the regular view"); the Mode stays: the chops serve both
+ *                  to the regular view"). Since 2026-10-30 chopping is
+ *                  SLICES' (its click), and SAMPLE's menu offers Chop sample
+ *                  only on a Loop clip, which a chop turns into a Slice clip
+ *                  (toSlice) with the editor moving to SLICES
  * THE CHOP EDITOR (ed.mode 'chop', ed.chop.kind):
  *   Even       the jog sets the count, live on the pads
  *   Transient  the jog sets Sens (Shift: 5 a detent); the chops are Start and
@@ -73,6 +76,7 @@ import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLaz
          auIsSlice, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX, AU_BPM10_MIN, AU_BPM10_MAX, auLenTicks,
          auSampleP2Cells, auSampleP2Knob, auSampleReset, auEdit, auTrimCuts, auOrig, auNudgeStep, auFpt, auPlayedEnd } from './ui_audio.mjs';
 import { registerScreenRingCells } from './ui_knob_leds.mjs';
+import { auModeValue } from './ui_pure.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { ccKnobDelta, knobPick, KNOB_PICK, KNOB_DELIB } from './ui_input_cc.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
@@ -346,6 +350,22 @@ function setSens(ed, v) {
     chopsMoved(t, i.n);
 }
 
+/* A chop picked on a Loop clip (SAMPLE › Chop sample): the clip becomes a
+ * Slice clip, as Mode does on the CLIP bank (the engine puts its chops on the
+ * steps when it has none), and the editor becomes SLICES — the chop editor
+ * opens there and its Back lands there. */
+function toSlice(ed) {
+    const t = ed.t, c = ed.c, i = auInfo(t, c);
+    if (auIsSlice(i)) return;
+    auSet(t, c, 'mode', auModeValue(true));
+    S.auInfo[t][c] = Object.assign({}, i, { mode: auModeValue(true) });
+    S.auSrc[t] = 'slices';
+    ed.ed = 'slices';
+    S.auStartsRev = (S.auStartsRev | 0) + 1;
+    S.pendingPadNoteMapRecompute = true;
+    S.ledsDirtyAudio = true;
+}
+
 /* The CHOP editor on `kind`, from the picker. */
 function openChop(ed, kind) {
     const t = ed.t, c = ed.c, i = auInfo(t, c);
@@ -579,14 +599,19 @@ export function auPickRows(ed) {
     /* SAMPLE's menu (Josh, 2026-10-30: "it should load a menu for consistency.
      * AND i want to add trim and normalize options there"); chopping is
      * SLICES' alone */
+    /* ...and on a Loop clip, Chop sample (Josh, 2026-10-30: "when mode is loop
+     * and the sample menu is opened, can we add chopping options to the menu
+     * there, which switch the clip into slice mode?") */
     if (p.level === 1) return i.state === 2
         ? [{ id: 'load', label: 'Load sample', chevron: true }, { id: 'trim', label: 'Trim' }, { id: 'norm', label: 'Normalize' }]
+            .concat(auIsSlice(i) ? [] : [{ id: 'chop', label: 'Chop sample', chevron: true }])
         : [{ id: 'load', label: 'Load sample', chevron: true }];
     /* Convert to kit (Josh, 2026-10-30: "slice menu option: convert to kit"):
-     * the chops as a Move drum kit (ui_audio_kit) */
+     * the chops as a Move drum kit (ui_audio_kit) — a Slice clip's: a Loop
+     * clip chopping from SAMPLE has none yet */
     return [{ id: 'even', label: 'Even' }, { id: 'transient', label: 'Transient' },
             { id: 'lazy', label: 'Lazy' }, { id: 'manual', label: 'Manual' }]
-        .concat(i.state === 2 ? [{ id: 'kit', label: 'Convert to kit' }] : []);
+        .concat(i.state === 2 && auIsSlice(i) ? [{ id: 'kit', label: 'Convert to kit' }] : []);
 }
 function pickInput(ed, status, d1, d2) {
     const p = ed.pick, hi = status & 0xF0;
@@ -620,7 +645,9 @@ function pickInput(ed, status, d1, d2) {
             return true;
         }
         if (row.id === 'kit') { ed.pick = null; S.pendingAuKit = { t: ed.t, c: ed.c }; return true; }   /* reads + a copy: the tick's */
+        if (row.id === 'chop') { ed.pick = { level: 2, sel: 0, from: p.sel }; return true; }
         ed.pick = null;
+        toSlice(ed);                                         /* a Loop clip's chop: it becomes a Slice clip */
         if (row.id === 'lazy') startLazy(ed);
         else openChop(ed, row.id);
         return true;
@@ -628,7 +655,7 @@ function pickInput(ed, status, d1, d2) {
     if (d1 === MoveBack) {
         if (d2 >= 64) { S.backPressTick = nowMs(); S.backHoldFired = false; return true; }
         S.backPressTick = -1; S.backHoldFired = false;
-        if (p.level === 2 && !p.only2) ed.pick = { level: 1, sel: 1 };
+        if (p.level === 2 && !p.only2) ed.pick = { level: 1, sel: p.from != null ? p.from : 1 };
         else ed.pick = null;                                  /* SLICES opens straight onto the chop types */
         S.screenDirty = true;
         return true;

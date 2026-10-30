@@ -1238,13 +1238,44 @@ step('⭐⭐ WAVE in Loop mode: K1 Start · K2 Zoom · K3 End · K4 Gain · K5 P
     assert(same(shown(), marked), 'the chops are drawn in Loop');
     A.auMarkStale(4, 0); ticks(2);
     S.auEditor.pick = { level: 1, sel: 0 };
-    assert(E.auPickRows(S.auEditor).map((r) => r.id).join() === 'load,trim,norm', 'Loop\'s menu (no chopping): ' + E.auPickRows(S.auEditor).map((r) => r.id));
+    /* a Loop clip's menu offers Chop sample (Josh, 2026-10-30), which makes it
+     * a Slice clip — its own step below */
+    assert(E.auPickRows(S.auEditor).map((r) => r.id).join() === 'load,trim,norm,chop', 'Loop\'s menu: ' + E.auPickRows(S.auEditor).map((r) => r.id));
     S.auEditor.pick = null;
     cc(HC.MoveDelete, 127); note(C.TRACK_PAD_BASE + 3, 100); note(C.TRACK_PAD_BASE + 3, 0); cc(HC.MoveDelete, 0);
     assert(!sent('t4_au_mark_del').length, 'Delete + pad in Loop removed a chop: ' + JSON.stringify(sent('t4_au_mark_del')));
     assert(!sent('t4_au_set_mode').length, 'editing chops changed the Mode');
     back();
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
+});
+
+step('⭐⭐ a Loop clip\'s SAMPLE menu: Chop sample › Even makes it a Slice clip and opens Even on SLICES; Back steps back to the menu (Josh, 2026-10-30: "when mode is loop and the sample menu is opened, can we add chopping options to the menu there, which switch the clip into slice mode?")', () => {
+    GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(2);
+    mapPad(2, 3);
+    const ed = S.auEditor;
+    assert(ed && ed.ed === 'sample' && E.auWaveSub(ed) === 'loop', 'not SAMPLE on a Loop clip');
+    reset();
+    click();
+    let rows = E.auPickRows(ed);
+    assert(ed.pick && ed.pick.level === 1 && rows.map((r) => r.id).join() === 'load,trim,norm,chop' && rows[3].chevron,
+           'the menu: ' + JSON.stringify(rows));
+    assert(inked(shown()), 'the menu draws nothing');
+    jog(1); jog(1); jog(1); click();
+    rows = E.auPickRows(ed);
+    assert(ed.pick && ed.pick.level === 2 && rows.map((r) => r.id).join() === 'even,transient,lazy,manual',
+           'Chop sample did not open the chop types (no Convert to kit on a Loop clip): ' + JSON.stringify(rows));
+    back();
+    assert(ed.pick && ed.pick.level === 1 && ed.pick.sel === 3, 'Back did not step back to Chop sample: ' + JSON.stringify(ed.pick));
+    assert(!sent('t4_au_set_mode').length, 'browsing the menu changed the Mode');
+    click();                                       /* Chop sample again */
+    click();                                       /* Even */
+    const order = sentLike(/^t4_au_set_(mode|even)$/).map((x) => x[0] + '=' + x[1]);
+    /* Even opens on the clip's own count (8 here; 16 on a clip with none) */
+    assert(order.join() === 't4_au_set_mode=0 1,t4_au_set_even=0 8', 'Mode to Slice, then Even: ' + order.join());
+    assert(!ed.pick && ed.ed === 'slices' && S.auSrc[4] === 'slices' && E.auWaveSub(ed) === 'chop', 'not on SLICES as a Slice clip');
+    assert(ed.mode === 'chop' && ed.chop && ed.chop.kind === 'even', 'Even did not open: ' + JSON.stringify(ed.chop));
+    E.closeAudioPanel();
+    GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; S.auSrc[4] = 'sample'; A.auMarkStale(4, 0); ticks(20);
 });
 
 step('⭐⭐ Lazy (SLICES › Lazy): the next pad white, taps cut, Back asks "Keep N new chops?", Yes stays on WAVE', () => {

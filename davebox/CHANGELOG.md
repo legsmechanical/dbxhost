@@ -24,6 +24,9 @@ the section into a versioned heading at release time.
   carrying its slice's Pitch, Detune, Gain, Attack, Decay and Play. The sample is copied
   once into the library and every pad plays its part of it. Presets go to Track Presets ›
   dBx-slice.
+- **Audio: chop a Loop clip from SAMPLE.** A Loop clip's SAMPLE menu adds **Chop
+  sample** (Even · Transient · Lazy · Manual): picking one makes it a Slice clip and
+  opens that chop editor on SLICES.
 - **Resample clip › In place** on an Audio clip: the recording replaces the clip,
   which starts over with it as its sample at default settings.
 - **Audio: Trim and Normalize.** SAMPLE's click opens a menu — Load sample · Trim ·
