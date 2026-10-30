@@ -48,6 +48,21 @@ static void write_mono48(const char *path) {
     for (i = 0; i < n; i++) put_le16(f, (int)((i / 6000) + 1) * 1000);
     fclose(f);
 }
+/* mono 16-bit 44.1 kHz, 2 s: a 440 Hz triangle, +-12000 (no libm: run.sh links none) */
+static void write_tri(const char *path) {
+    FILE *f = fopen(path, "wb");
+    uint32_t n = 88200, i;
+    fwrite("RIFF", 1, 4, f); put_le32(f, 36 + n * 2); fwrite("WAVEfmt ", 1, 8, f);
+    put_le32(f, 16); put_le16(f, 1); put_le16(f, 1); put_le32(f, 44100); put_le32(f, 88200);
+    put_le16(f, 2); put_le16(f, 16);
+    fwrite("data", 1, 4, f); put_le32(f, n * 2);
+    for (i = 0; i < n; i++) {
+        double ph = (double)(i * 440 % 44100) / 44100.0;          /* 0..1 */
+        double v = ph < 0.5 ? -1.0 + 4.0 * ph : 3.0 - 4.0 * ph;   /* -1..1..-1 */
+        put_le16(f, (int)(v * 12000.0));
+    }
+    fclose(f);
+}
 /* stereo 24-bit 44.1 kHz, `secs`: L = +4096, R = -4096 (as int16) */
 static void write_st24(const char *path, double secs) {
     FILE *f = fopen(path, "wb");
@@ -1102,8 +1117,10 @@ int main(void) {
     /* at 150 bpm a tick is 183.75 frames and holds 229.6875 of the sample (a
      * tick at its own 120): each piece plays on from the last until it has
      * fallen too far behind (au_range_on's join), then the sample jumps to
-     * where its tick says — always ON a tick, always to that tick's frame
-     * (read once the cut voice's 64-frame fade has gone: the two sum till then) */
+     * where its tick says — always ON a tick, always to that tick's frame.
+     * The jump is a CROSSFADE (AU_VINTAGE_XF): it shows as the ramp rising
+     * faster than a frame a frame, from the tick's frame; read 140 frames on,
+     * past the fade and before the next tick, it is that tick's place */
     hx_set_param(h, "bpm", "150");
     hx_render(h, 2);
     hx_stub_feed_reset();
@@ -1119,17 +1136,18 @@ int main(void) {
             for (k = 0; k < 128; k++, g++) {
                 int v = blk[k * 2];
                 if (start < 0) { if (v) { start = g; prev = v0 = v; } continue; }
-                if (chk < 0 && v - prev > 100) {
-                    /* a piece starting: on a tick */
+                if (chk < 0 && v - prev > 1 && v - prev < 20000) {
+                    /* a piece starting (the crossfade's first frame): on a tick */
                     /* (no libm: run.sh links none, and Linux has no implicit -lm) */
-                    double d = (double)(g - start), j = (double)(long)(d / 183.75 + 0.5), e = d - j * 183.75;
-                    if (e > 3 || e < -3) bad++;
-                    want = ((long)v0 + (long)(j * 229.6875 + 0.5) + 80) % 30000;
-                    chk = g + 80;
+                    double d = (double)(g - 1 - start), j = (double)(long)(d / 183.75 + 0.5), e = d - j * 183.75;
+                    /* the fade's first frames barely tilt the ramp: seen a frame or few late */
+                    if (e > 6 || e < -3) bad++;
+                    want = ((long)v0 + (long)(j * 229.6875 + 0.5) + 141) % 30000;
+                    chk = g + 140;
                 }
                 if (g == chk) {
-                    /* ...from its tick's frame */
-                    if (labs((long)v - want) > 3) bad++;
+                    /* ...from its tick's frame (the fades round a few units) */
+                    if (labs((long)v - want) > 4) bad++;
                     chk = -1; ns++;
                 }
                 prev = v;
@@ -1657,6 +1675,42 @@ int main(void) {
         seq8_load_state(inst);
         HX_ASSERT(inst->tracks[4].pad_mode == PAD_MODE_DRUM, "an old Audio set did not load as drums");
         HX_ASSERT(!inst->au_clip[4][0].name[0], "an old Audio set's clip keys were applied to a drum track");
+        hx_destroy(h);
+    }
+
+    /* ---- VINTAGE CROSSFADES its pieces (Josh, 2026-10-30, by ear: "vintage is
+     * super noisy in general" · chose every tick crossfaded, 128 frames): at
+     * 3/4 speed a 440 Hz triangle's pieces cut every tick, and a hard cut steps
+     * the wave by up to 24000 in a frame. Crossfaded, no frame steps by more
+     * than the wave's own slope (~480) and a share of the jump spread over the
+     * fade ---- */
+    {
+        int fed = 0, maxd = 0, prev = 0, have = 0, k;
+        h = rig(1); inst = (seq8_instance_t *)h->inst;
+        snprintf(p, sizeof p, "%s/src/tri.wav", g_root); write_tri(p);
+        snprintf(p, sizeof p, "0|%s/src/tri.wav", g_root); hx_set_param(h, "t4_au_pick", p);
+        HX_ASSERT(wait_loaded(h, 4, 0) == 2, "vintage xf: the pick");
+        hx_set_param(h, "t4_au_set_sync", "0 1");
+        hx_set_param(h, "t4_au_set_bpm", "0 1600");               /* a 120 project: 3/4 speed */
+        hx_set_param(h, "t4_launch_clip", "0");
+        hx_stub_feed_reset();
+        hx_set_param(h, "transport", "play");
+        hx_render(h, 20);
+        fed = hx_stub_feed(4, NULL, NULL);
+        for (n = 0; n < 300; n++) {
+            hx_render(h, 1);
+            if (hx_stub_feed(4, NULL, NULL) == fed) { have = 0; continue; }
+            fed = hx_stub_feed(4, NULL, NULL);
+            blk = hx_stub_feed_last(4);
+            for (k = 0; k < 128; k++) {
+                int v = blk[k * 2];
+                if (have) { int d = v > prev ? v - prev : prev - v; if (d > maxd) maxd = d; }
+                prev = v; have = 1;
+            }
+        }
+        HX_ASSERT(maxd > 300, "vintage xf: the triangle did not play");
+        HX_ASSERT(maxd < 1200, "vintage xf: a piece cut the wave in one frame (no crossfade)");
+        hx_set_param(h, "transport", "stop");
         hx_destroy(h);
     }
 

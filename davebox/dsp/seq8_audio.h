@@ -49,6 +49,15 @@
 #define AU_BARS_MAX        64           /* a sample's length in bars at its Tempo, for the guess: 1..64 */
 #define AU_GAP             16           /* frames: the least a slice can be */
 #define AU_TAIL            128          /* frames: the fade back from a chop's end (~3 ms) */
+/* Vintage's pieces CROSSFADE: each fades in over this many output frames while
+ * the one it cuts fades out (Josh, 2026-10-30, by ear on the device: "vintage
+ * is super noisy in general" · "i feel like there are ways to mitigate it";
+ * of a hard cut, every tick crossfaded, every 1/16 and every 1/8, he chose
+ * every tick crossfaded, 128 frames). A hard cut 190 times a second at 120 BPM
+ * was a buzz: on a 440 Hz tone at 3/4 speed the noise beat the tone by 5 dB;
+ * crossfaded, the tone is 12 dB above it. A piece at the sample's own speed
+ * still carries straight on (au_range_on), no fade. */
+#define AU_VINTAGE_XF        128    /* frames */
 #define AU_SLICE_NONE      (-1)         /* au_range_on: Loop mode's hidden chop at Start */
 #define AU_JOIN            256          /* frames: a slice this near where the sounding one has reached carries it on */
 #define AU_MIP             256          /* frames per waveform summary entry */
@@ -164,7 +173,9 @@ typedef struct {
                               * through as for a Loop (whi 0: read ahead within lo..hi) */
 } au_voice_t;
 
-#define AU_VOICES 2          /* the sounding one + the one being choked */
+#define AU_VOICES 3          /* the sounding one, the one being choked, and room for a Vintage piece
+                              * that waits into the block while the last cut still fades (with 2 it took
+                              * that voice at the block's start and its fade's tail stepped: a click) */
 
 /* What the streamer must have ready, published by the audio thread each
  * block: a voice's place in a streamed sample; slot AU_VOICES is where Warp's

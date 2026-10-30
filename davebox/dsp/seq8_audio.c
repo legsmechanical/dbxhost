@@ -2236,7 +2236,8 @@ static au_voice_t *au_range_on(seq8_instance_t *inst, int t, int c, int slice, u
     if (play == AU_PLAY_ONE && !sl->attack_ms && !sl->decay_ms) {
         for (i = 0; i < AU_VOICES; i++) {
             v = &at->v[i];
-            if (!v->active || v->mode_loop || v->rel_len || v->gated || v->atk || v->dec || v->wait ||
+            /* (a Vintage piece past its fade-in carries on like any) */
+            if (!v->active || v->mode_loop || v->rel_len || v->gated || (v->atk && !(sync && v->age >= v->atk)) || v->dec || v->wait ||
                 v->smp != s || v->gain != gain || v->step != (rev ? -ratio : ratio)) continue;
             double edge = rev ? (double)b - 1.0 : (double)a, at_off = v->pos + v->step * off;
             if (at_off - edge > AU_JOIN || edge - at_off > AU_JOIN) continue;
@@ -2248,8 +2249,12 @@ static au_voice_t *au_range_on(seq8_instance_t *inst, int t, int c, int slice, u
         }
     }
     /* Always monophonic: the slice sounding now is cut (a short fade, no click). */
+    int cut = 0;
     for (i = 0; i < AU_VOICES; i++)
-        if (at->v[i].active && !at->v[i].mode_loop) au_voice_release_at(&at->v[i], 64, off);
+        if (at->v[i].active && !at->v[i].mode_loop && !at->v[i].rel_len) {
+            au_voice_release_at(&at->v[i], sync ? AU_VINTAGE_XF : 64, off);   /* Vintage: the crossfade's fade-out */
+            cut = 1;
+        }
     v = au_voice_alloc(at);
     memset(v, 0, sizeof *v);
     v->wait = off;
@@ -2258,7 +2263,9 @@ static au_voice_t *au_range_on(seq8_instance_t *inst, int t, int c, int slice, u
     v->step = rev ? -ratio : ratio;
     v->pos = rev ? (double)b - 1.0 : (double)a;
     v->gain = gain;
-    v->atk = (uint32_t)sl->attack_ms * 441 / 10;
+    /* Vintage: the crossfade's fade-in — only over a piece it cut; from
+     * silence (the downbeat at Play) it starts at once, its attack whole */
+    v->atk = sync ? (cut ? AU_VINTAGE_XF : 0) : (uint32_t)sl->attack_ms * 441 / 10;
     v->dec = (uint32_t)sl->decay_ms * 441 / 10;
     v->loop = (play == AU_PLAY_LOOP);
     v->gated = (play != AU_PLAY_ONE);

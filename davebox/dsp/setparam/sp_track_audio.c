@@ -552,7 +552,7 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
         if (x1 > R) x1 = R;
         /* each piece runs a few frames into the next, so the rounding of
          * its start against the block never ends it a frame early */
-        x1 += AU_VINTAGE_OVER;
+        x1 += AU_VINTAGE_OVER + 4.0 * AU_VINTAGE_XF;   /* ...and on through its fade-out, up to 4x speed */
         if (x1 > R) x1 = R;
         uint32_t a = cl->revrs ? re - (uint32_t)x1 : rs + (uint32_t)x0;
         uint32_t b = cl->revrs ? re - (uint32_t)x0 : rs + (uint32_t)x1;
