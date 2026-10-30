@@ -1042,10 +1042,20 @@ export function auSetLayout(t, v) {
  * sounding, not Loop). */
 export function auPlayheadChop(t) {
     const c = auClipOf(t), i = auInfo(t, c);
-    if (_pos.t !== t || !_pos.on || !auIsLoop(i)) return -1;
-    const mk = auLoopMarks(i, t, c);
-    for (let k = 0; k < mk.length; k++) if (_pos.frame >= mk[k][0] && _pos.frame < mk[k][1]) return k;
-    return -1;
+    if (!auIsLoop(i)) return -1;
+    if (_pos.t === t && _pos.on) {
+        const mk = auLoopMarks(i, t, c);
+        for (let k = 0; k < mk.length; k++) if (_pos.frame >= mk[k][0] && _pos.frame < mk[k][1]) return k;
+    }
+    /* nothing sounding while the clip plays — it has run past its file: the
+     * sequence's own place, as the step buttons follow it (Josh, 2026-10-30:
+     * "loop pad playhead should continue to follow the SEQUENCE on the pads
+     * even when it's going beyond the audio") */
+    if (!S.playing || !S.trackClipPlaying[t]) return -1;
+    const cs = S.trackCurrentStep[t], len = S.clipLength[t][c] | 0, ls = S.clipLoopStart[t][c] | 0;
+    if (cs < 0 || len <= 0) return -1;
+    const ks = Math.max(0, Math.min(AU_LOOP_SECTIONS - 1, Math.floor((cs - ls) * AU_LOOP_SECTIONS / len)));
+    return i.revrs ? AU_LOOP_SECTIONS - 1 - ks : ks;
 }
 
 /* ---- the waveform ---- */

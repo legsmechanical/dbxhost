@@ -1794,6 +1794,19 @@ step('⭐⭐ Loop pads: the sections of the clip past the file\'s end are grey �
     for (let i = 0; i < 6; i++) ticks(1);
     assert([0, 15].every((i) => pad(i) && pad(i) !== HC.DarkGrey) && [16, 24, 31].every((i) => pad(i) === HC.DarkGrey),
            'the sections past the file are not grey: ' + [0, 15, 16, 24, 31].map(pad));
+    /* ...and the playhead goes on through them, following the sequence (Josh,
+     * 2026-10-30: "loop pad playhead should continue to follow the SEQUENCE on
+     * the pads even when it's going beyond the audio"): nothing sounds there */
+    {
+        const was = [S.playing, S.trackClipPlaying[4], S.trackCurrentStep[4]];
+        GET['t4_au_pos'] = '0 0 -1';
+        S.playing = true; S.trackClipPlaying[4] = true; S.trackCurrentStep[4] = 24;   /* step 25 of 32: section 24 */
+        for (let i = 0; i < 6; i++) ticks(1);
+        assert(pad(24) === HC.LightGrey && pad(16) === HC.DarkGrey && pad(31) === HC.DarkGrey,
+               'the playhead stopped at the file\'s end: ' + [16, 24, 31].map(pad));
+        S.playing = was[0]; S.trackClipPlaying[4] = was[1]; S.trackCurrentStep[4] = was[2];
+        GET['t4_au_pos'] = '1 6000 -1';
+    }
     /* the clip within the sample: nothing grey */
     S.clipLength[4][0] = 16; A.auMarkStale(4, 0);
     for (let i = 0; i < 6; i++) ticks(1);

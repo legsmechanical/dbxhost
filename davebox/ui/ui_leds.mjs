@@ -992,8 +992,10 @@ export function updateTrackLEDs() {
                     /* a Free loop whose clip wraps before the sample ends:
                      * the chops it never reaches grey (Josh, 2026-10-28: "you
                      * can't see where the end point is on the pads") */
-                    if (pastReach(k)) { cachedSetLED(TRACK_PAD_BASE + i, DarkGrey); continue; }
+                    /* the playhead first: it goes on through the sections past
+                     * the file, following the sequence */
                     if (k === ph) { cachedSetLEDAnim(TRACK_PAD_BASE + i, tc, LightGrey, LED_PULSE_4TH); continue; }
+                    if (pastReach(k)) { cachedSetLED(TRACK_PAD_BASE + i, DarkGrey); continue; }
                     color = ph >= 0 && (ai.revrs ? k > ph : k < ph) ? tc : td;
                 }
                 cachedSetLED(TRACK_PAD_BASE + i, color);
