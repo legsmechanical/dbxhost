@@ -74,7 +74,7 @@ import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
 import { isAudioTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
          auPos, auLazyState, auSelSlice, auPanelCells, auPanelTitle, auPanelPages, auBankEd, auBankTitle, auLoopBankCells, auModeCell, knobAltOnTrack,
          auPadModeCells, AU_NOTE_BASE,
-         auFmtTime, auEnd, auOrigBpm, AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
+         auFmtTime, auEnd, auOrigBpm, auIsSlice, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
 import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
 import { drawAudioAsk } from './ui_dialogs.mjs';
 import { drawAudioChooser } from './ui_audio_chooser.mjs';
@@ -159,7 +159,7 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
 function drawAudioTrackRest(t) {
     const c = auClipOf(t), i = auInfo(t, c);
     (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankHeaderName(t, S.activeBank), false, true);
-    const head = i.mode === AU_MODE_SLICE ? 'Slice ' + (auSelSlice(t) + 1) + '/' + i.n + '  ' : 'Loop  ';
+    const head = auIsSlice(i) ? 'Slice ' + (auSelSlice(t) + 1) + '/' + i.n + '  ' : 'Loop  ';
     ovwPrint(4, 9, head + auSampleName(t, c), 1);
     drawInfoRow2();
     drawOverviewTracks(overviewHints());
@@ -167,7 +167,7 @@ function drawAudioTrackRest(t) {
      * (found on the device: a taller one ran into the track numbers) */
     /* the waveform in Loop mode only; slices are sequenced, so Slice mode
      * shows the page bar and playhead like any track (Josh, 2026-10-28) */
-    if (i.mode === AU_MODE_SLICE) drawPositionBar(t);
+    if (auIsSlice(i)) drawPositionBar(t);
     else drawAudioWave(t, c, 4, 49, 120, 7, { noMarks: true });   /* Josh, 2026-10-28: "no need to show slice points on the track overview waveform preview" */
 }
 

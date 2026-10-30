@@ -60,6 +60,15 @@ export const SCALE_INTERVALS = [
  * heading and overlay"; CLIP "rename conduct", ON/OFF "RENAME RESPONDER",
  * TIMING "RENAME WHEN"). */
 const CONDUCT_NAMES = { 0: 'CLIP', [BANK_RESPONDER]: 'ON/OFF', [BANK_WHEN]: 'TIMING' };
+/* An audio clip's Mode. ⚠ Test it ONLY through these two: the raw values
+ * read as a yes/no (`mode === 1`, `mode !== AU_MODE_SLICE`), and a third Mode
+ * (a one-shot is planned) would then be Slice to one test and Loop to the
+ * other. auIsLoop = plays the sample through (not Slice). Pinned by
+ * tests/test_au_mode_helpers.sh. */
+export const AU_MODE_LOOP = 0, AU_MODE_SLICE = 1;
+export function auIsSlice(i) { return !!(i && i.mode === AU_MODE_SLICE); }
+export function auIsLoop(i) { return !!i && !auIsSlice(i); }
+
 /* An Audio track's sound bank is named for the clip's mode (Josh,
  * 2026-10-28: "slice/loop"), as its first page is (ALL SLICES / LOOP). The
  * clip is the one ui_audio's auClipOf edits. */
@@ -67,7 +76,7 @@ function audioBankName(t) {
     const qc = S.trackQueuedClip ? S.trackQueuedClip[t] : -1;
     const c = (!S.playing && qc >= 0) ? qc : (S.trackActiveClip ? S.trackActiveClip[t] | 0 : 0);
     const i = S.auInfo && S.auInfo[t] && S.auInfo[t][c];
-    return i && i.mode === 1 ? 'SLICE' : 'LOOP';
+    return auIsSlice(i) ? 'SLICE' : 'LOOP';
 }
 export function bankDisplayName(padMode, bank, t = S.activeTrack) {
     const base = (BANKS[bank] && BANKS[bank].name) || '?';
@@ -154,7 +163,7 @@ function audioClipIsSlice(t) {
     const qc = S.trackQueuedClip ? S.trackQueuedClip[t] : -1;
     const c = (!S.playing && qc >= 0) ? qc : (S.trackActiveClip ? S.trackActiveClip[t] | 0 : 0);
     const i = S.auInfo && S.auInfo[t] && S.auInfo[t][c];
-    return !!(i && i.mode === 1);
+    return auIsSlice(i);
 }
 
 export function bankCategoriesForMode(padMode, t) {

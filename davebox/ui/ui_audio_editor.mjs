@@ -70,7 +70,7 @@ import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLaz
          auPanelPages, auPanelPageName, auPanelKnob, auPanelKnobClass, auChop, auPadToSlice,
          auSelSlice, auSetSelSlice, isAudioTrack, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
          auMarkAdd, auMarkDel, auManual, auEvenBake, auTrans, auTransBake, auRangeStep, auSet, auEnd, auPanelRingCells, auPanelReset, auBankEd,
-         AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX, AU_BARS_MAX } from './ui_audio.mjs';
+         auIsSlice, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX, AU_BARS_MAX } from './ui_audio.mjs';
 import { registerScreenRingCells, registerRingCells } from './ui_knob_leds.mjs';
 import { BANK_AUDIO } from './ui_constants.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -118,7 +118,7 @@ export function closeAudioPanel() {
  * bank's K8 in Slice mode, touch + click). Returns true when it ran. */
 export function slicesToSequence(t) {
     const c = auClipOf(t), i = auInfo(t, c);
-    if (i.mode !== AU_MODE_SLICE || i.state !== 2) return false;
+    if (!auIsSlice(i) || i.state !== 2) return false;
     auChop(t, c);
     showActionPopup('SEQUENCED', i.n + ' slices to steps');
     return true;
@@ -196,7 +196,7 @@ export function audioPanelInput(status, d1, d2) {
 export function auPadTapped(t, padIdx) {
     if (!isAudioTrack(t)) return;
     const i = auInfo(t, auClipOf(t));
-    if (i.mode !== AU_MODE_SLICE) return;
+    if (!auIsSlice(i)) return;
     const k = auPadToSlice(padIdx, t);
     if (k < i.n) auSetSelSlice(t, k);
 }
@@ -221,7 +221,7 @@ export function openWaveEditor(t, c) {
                  cur: 0, last: 'jog', endHold: 0, ask: null, pick: null, openedAt: S.clockMs | 0 };
     const mk = auMarks(t, c);
     const sel = auSelSlice(t);
-    ed.cur = i.mode === AU_MODE_SLICE && mk[sel] ? mk[sel][0] : i.rstart;
+    ed.cur = auIsSlice(i) && mk[sel] ? mk[sel][0] : i.rstart;
     S.auEditor = ed;
     S.knobTouched = -1;
     computePadNoteMap();
@@ -234,7 +234,7 @@ export function openWaveEditor(t, c) {
 export function auWaveSub(ed) {
     const i = auInfo(ed.t, ed.c);
     if (i.state !== 2 || !i.nframes) return 'empty';
-    return i.mode === AU_MODE_SLICE ? 'chop' : 'loop';
+    return auIsSlice(i) ? 'chop' : 'loop';
 }
 /* A sample that arrived (or changed) since the view was set: show all of it. */
 export function auWaveView(ed) {
@@ -485,7 +485,7 @@ export function auPickRows(ed) {
     if (!p) return [];
     const i = auInfo(ed.t, ed.c);
     /* Loop: no Chop sample — its chops are invisible (Josh, 2026-10-29) */
-    if (p.level === 1) return i.mode === AU_MODE_SLICE
+    if (p.level === 1) return auIsSlice(i)
         ? [{ id: 'load', label: 'Load sample', chevron: true }, { id: 'chop', label: 'Chop sample', chevron: true }]
         : [{ id: 'load', label: 'Load sample', chevron: true }];
     return [{ id: 'even', label: 'Even' }, { id: 'transient', label: 'Transient' },

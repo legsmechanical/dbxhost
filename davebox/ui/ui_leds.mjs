@@ -28,7 +28,7 @@ import { pianoLayoutOn } from './ui_drummodel.mjs';
 import { customLayoutOn, customPadColor } from './ui_custom_chords.mjs';
 import { setLED, setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
 import { isAudioTrack, auInfo, auClipOf, auPos, auPlayheadChop, auPadToSlice, auLoopMarks, AU_LOOP_SECTIONS, auEnd, auSelSlice, auLazyOpen, auLazyState,
-         AU_MODE_SLICE, AU_LAZY_ARMED, AU_LAZY_RUN } from './ui_audio.mjs';
+         auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN } from './ui_audio.mjs';
 
 const lastSentNoteLED   = new Array(128).fill(-1);
 const lastSentButtonLED = new Array(128).fill(-1);
@@ -380,7 +380,7 @@ export function updateStepLEDs() {
     /* AUDIO, a Loop clip: no sequence, so the step buttons show the loop —
      * the page of its steps showing dim (a clip longer than 16 steps pages,
      * as a sequence does), the playhead white. */
-    if (isAudioTrack(S.activeTrack) && auInfo(S.activeTrack, auClipOf(S.activeTrack)).mode !== AU_MODE_SLICE) {
+    if (isAudioTrack(S.activeTrack) && auIsLoop(auInfo(S.activeTrack, auClipOf(S.activeTrack)))) {
         const t = S.activeTrack, ac = effectiveClip(t);
         /* playing, the row follows the playhead page by page, as a sequence
          * does (Josh, 2026-10-28: "should follow the sequence playhead like
@@ -955,7 +955,7 @@ export function updateTrackLEDs() {
              * all dim. No sample: dark but for a dim first pad. */
             const t = S.activeTrack, tc = trackColor(t), td = trackDimColor(t);
             const ai = auInfo(t, auClipOf(t)), ap = auPos();
-            const slice = ai.mode === AU_MODE_SLICE;
+            const slice = auIsSlice(ai);
             const ph = slice ? -1 : auPlayheadChop(t);
             const sel = auSelSlice(t);
             const mk = !slice && ai.state === 2 ? auLoopMarks(ai) : null;
