@@ -1687,7 +1687,9 @@ export function bankMapPadTap(note) {
     }
     const t = S.activeTrack;
     const act = bankPadMapActionAt(S.trackPadMode[t], cell.col, cell.row);
-    if (act === 'inst' || act === 'wave') {
+    if (act === 'inst' || act === 'wave' || act === 'slices') {
+        /* SLICES is a Slice clip's (the pad is dark on a Loop clip) */
+        if (act === 'slices' && !audioSliceMode(t)) return;
         bankMapMenuTap({ kind: act, col: cell.col, row: cell.row });
         return;
     }
@@ -1769,18 +1771,18 @@ function runBankMapMenu(a) {
      * instrument mode puts me back into the automation list"): a module or
      * INST pick from the AUTOMATION door gives the door's bank back first, so
      * the editor opens over the bank you came in from and Back returns there. */
-    if ((a.kind === 'module' || a.kind === 'inst' || a.kind === 'wave') && doorScreenUp() &&
+    if ((a.kind === 'module' || a.kind === 'inst' || a.kind === 'wave' || a.kind === 'slices') && doorScreenUp() &&
             S.doorReturn && S.doorReturn.door === BANK_AUTOMATION) {
         if (soundOpen()) soundExit();
         closeDoorScreen();
     }
     if (a.kind === 'bus') { soundEnterBusFx(a.bus); return; }
     if (a.kind === 'inst' || (a.kind === 'module' && a.comp === 'synth')) { openTrackInstrument(); return; }
-    if (a.kind === 'wave') {
-        /* the WAVE editor (Audio): the clip's sample, over the bank you were on */
+    if (a.kind === 'wave' || a.kind === 'slices') {
+        /* the SAMPLE / SLICES editor (Audio): the clip's sample or its chops */
         if (soundOpen()) soundExit();
         if (S.auPanel) closeAudioPanel();
-        openWave(t);
+        openWave(t, a.kind === 'slices' ? 'slices' : 'sample');
         forceRedraw();
         return;
     }

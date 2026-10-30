@@ -69,14 +69,14 @@ export const AU_MODE_LOOP = 0, AU_MODE_SLICE = 1;
 export function auIsSlice(i) { return !!(i && i.mode === AU_MODE_SLICE); }
 export function auIsLoop(i) { return !!i && !auIsSlice(i); }
 
-/* An Audio track's sound bank is named for the clip's mode (Josh,
- * 2026-10-28: "slice/loop"), as its first page is (ALL SLICES / LOOP). The
- * clip is the one ui_audio's auClipOf edits. */
+/* An Audio track's sound bank is named for the editor it follows (Josh,
+ * 2026-10-29: "sample and slices pads are the doors"): SLICES after SLICES on
+ * a Slice clip, else SAMPLE. The clip is the one ui_audio's auClipOf edits. */
 function audioBankName(t) {
     const qc = S.trackQueuedClip ? S.trackQueuedClip[t] : -1;
     const c = (!S.playing && qc >= 0) ? qc : (S.trackActiveClip ? S.trackActiveClip[t] | 0 : 0);
     const i = S.auInfo && S.auInfo[t] && S.auInfo[t][c];
-    return auIsSlice(i) ? 'SLICE' : 'LOOP';
+    return (S.auSrc && S.auSrc[t] === 'slices' && auIsSlice(i)) ? 'SLICES' : 'SAMPLE';
 }
 export function bankDisplayName(padMode, bank, t = S.activeTrack) {
     const base = (BANKS[bank] && BANKS[bank].name) || '?';
@@ -245,7 +245,7 @@ const BANK_MAP_POS = {
                1: [3, 0] },
     audio:   { [BANK_CHORD]: [0, 0], 5: [0, 1], [BANK_CONFIG]: [0, 3],
                [BANK_MACROS]: [1, 0], [BANK_AUTOMATION]: [1, 1], [BANK_SOUND]: [1, 3],
-               [BANK_STEP]: [2, 0], 0: [2, 1], [BANK_AUDIO]: [2, 2],
+               [BANK_STEP]: [2, 0], 0: [2, 1],
                1: [3, 0] },
 };
 const BANK_MAP_LABELS = {
@@ -266,13 +266,14 @@ const BANK_MAP_ACTIONS = {
      * CLIP): the clip's sample — its waveform, chops and the load / chop
      * picker (ui_audio_editor). */
     /* SAMPLE is the instrument door, so it sits where INST does on every
-     * other track; the SLICE / LOOP bank under CLIP (Josh, 2026-10-28: "i
-     * thought sample and loop/slice were going to switch spots?") */
-    audio:   { wave: [2, 3] },
+     * other track; SLICES under CLIP, lit on a Slice clip. The two are the
+     * doors of the Track View sound bank (BANK_AUDIO), which has no pad of
+     * its own (Josh, 2026-10-29: "sample and slices pads are the doors") */
+    audio:   { wave: [2, 3], slices: [2, 2] },
 };
 /* The instrument door on an Audio track is the AUDIO editor, and says so. */
 const BANK_MAP_ACTION_NAMES = { inst: 'INST' };
-const BANK_MAP_ACTION_NAMES_AUDIO = { wave: 'SAMPLE' };
+const BANK_MAP_ACTION_NAMES_AUDIO = { wave: 'SAMPLE', slices: 'SLICES' };
 /* AUTOMATION has no space to wrap at and is wider than a cell. */
 const BANK_MAP_SHORT = { [BANK_AUTOMATION]: 'AUTO' };
 

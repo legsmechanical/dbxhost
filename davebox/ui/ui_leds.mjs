@@ -666,11 +666,14 @@ function paintBankMapPads() {
         const ed = autoMapEditorComp();
         /* ...and an Audio screen is where you are too (Josh, 2026-10-28: "pad
          * map should show when you're in audio/wave"): WAVE's pad, or AUDIO's. */
-        const au = S.auPanel && S.auEditor ? 'wave' : null;
+        const au = S.auPanel && S.auEditor ? (S.auEditor.ed === 'slices' ? 'slices' : 'wave') : null;
+        const sliceClip = isAudioTrack(t) && auIsSlice(auInfo(t, auClipOf(t)));
         bankPadMapForMode(S.trackPadMode[t], t).forEach((c, ci) => c.cells.forEach((cell, r) => {
             if (!cell) return;
             /* the track's own pads in its colour — WAVE too, as AUDIO (Josh, 2026-10-28) */
-            const own = cell.bank === BANK_CONFIG || cell.bank === BANK_SOUND || cell.bank === BANK_AUDIO || cell.action === 'inst' || cell.action === 'wave';
+            const own = cell.bank === BANK_CONFIG || cell.bank === BANK_SOUND || cell.bank === BANK_AUDIO || cell.action === 'inst' || cell.action === 'wave'
+                || (cell.action === 'slices' && sliceClip);
+            if (cell.action === 'slices' && !sliceClip) { col[at(ci, r)] = 0; return; }   /* a Loop clip has no slices: dark */
             const on = d ? (d.col === ci && d.row === r)
                 : au !== null ? cell.action === au
                 : ed !== null ? (cell.action === 'inst' && ed === 'synth')

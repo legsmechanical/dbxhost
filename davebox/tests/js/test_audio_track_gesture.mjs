@@ -185,16 +185,25 @@ step('⭐⭐ the walk: IN (PAD MODE, LIVE ARP), no RPT GROOVE, HARMONY, SEQ ARP 
     assert(P.bankMapModuleAt(0, C.PAD_MODE_AUDIO, 6, 0) === null, 'the MIDI FX pad is lit (Q4)');
     assert(P.bankMapModuleAt(0, C.PAD_MODE_AUDIO, 7, 0).comp === 'fx1', 'FX 1 is dark');
     const map = P.bankPadMapForMode(C.PAD_MODE_AUDIO, 4);
-    assert(map[2].cells[2] && map[2].cells[2].bank === C.BANK_AUDIO, 'the sound bank pad is not BANK_AUDIO: ' + JSON.stringify(map[2].cells[2]));
-    /* named for the clip's mode (Josh, 2026-10-28: "slice/loop") */
+    /* SAMPLE and SLICES are the sound bank's doors; it has no pad of its own
+     * (Josh, 2026-10-29: "sample and slices pads are the doors") */
+    assert(map[2].cells[2] && map[2].cells[2].action === 'slices' && map[2].cells[2].name === 'SLICES',
+           'the SLICES door is not under CLIP: ' + JSON.stringify(map[2].cells[2]));
+    assert(map[2].cells[3] && map[2].cells[3].action === 'wave' && map[2].cells[3].name === 'SAMPLE', 'no SAMPLE door');
+    assert(!map.some((c) => c.cells.some((x) => x && x.bank === C.BANK_AUDIO)), 'the sound bank has a pad of its own');
+    /* the sound bank is named for the editor it follows: SLICES after SLICES on
+     * a Slice clip, else SAMPLE */
     {
         const c = S.trackQueuedClip[4] >= 0 && !S.playing ? S.trackQueuedClip[4] : (S.trackActiveClip[4] | 0);
-        const was = S.auInfo[4][c];
+        const was = S.auInfo[4][c], wasSrc = S.auSrc[4];
+        S.auSrc[4] = 'slices';
         S.auInfo[4][c] = Object.assign({}, was || {}, { mode: 0 });
-        assert(P.bankPadMapForMode(C.PAD_MODE_AUDIO, 4)[2].cells[2].name === 'LOOP', 'a Loop clip\'s bank is not LOOP');
+        assert(P.bankDisplayName(C.PAD_MODE_AUDIO, C.BANK_AUDIO, 4) === 'SAMPLE', 'a Loop clip\'s sound bank is not SAMPLE');
         S.auInfo[4][c] = Object.assign({}, was || {}, { mode: 1 });
-        assert(P.bankPadMapForMode(C.PAD_MODE_AUDIO, 4)[2].cells[2].name === 'SLICE', 'a Slice clip\'s bank is not SLICE');
-        assert(P.bankDisplayName(C.PAD_MODE_AUDIO, C.BANK_AUDIO, 4) === 'SLICE', 'the header name is not SLICE');
+        assert(P.bankDisplayName(C.PAD_MODE_AUDIO, C.BANK_AUDIO, 4) === 'SLICES', 'after SLICES the header name is not SLICES');
+        S.auSrc[4] = 'sample';
+        assert(P.bankDisplayName(C.PAD_MODE_AUDIO, C.BANK_AUDIO, 4) === 'SAMPLE', 'after SAMPLE the header name is not SAMPLE');
+        S.auSrc[4] = wasSrc;
         S.auInfo[4][c] = was;
     }
     /* DELAY left Audio tracks (Josh, 2026-10-28: "let's get rid of delay") */
@@ -206,20 +215,32 @@ const back = () => { cc(HC.MoveBack, 127); cc(HC.MoveBack, 0); };
 const shiftClick = () => { cc(HC.MoveShift, 127); click(); cc(HC.MoveShift, 0); };
 /* the AUDIO bank's page (it was the AUDIO editor's screen) */
 const ED = () => A.auBankEd(4);
+/* the Track View sound bank, the way you get there: through an editor and Back
+ * (Josh, 2026-10-29: "sample and slices pads are the doors") */
+const toSoundBank = (which) => { mapPad(2, which === 'slices' ? 2 : 3); back(); ticks(2); };
 
-step('⭐⭐ the bank map\'s AUDIO pad is the AUDIO bank (Josh: "can audio be a bank?" · "yes"): CLIP is the clip\'s sound', () => {
+step('⭐⭐ the sound bank follows the last editor entered, a plain grid; Back from an editor lands on it (Josh, 2026-10-29)', () => {
     S.activeBank = 0; S.bankCardLatched = false;
+    /* SLICES, then Back: ALL SLICES / SLICE n */
     mapPad(2, 2);
-    assert(S.activeBank === C.BANK_AUDIO && !S.auPanel, 'the AUDIO pad did not land on the AUDIO bank: ' + S.activeBank);
-    assert(ED().page === 0, 'not on its first page');
-    /* a knob touch shows its page, as on any bank */
+    assert(S.auEditor && S.auEditor.ed === 'slices', 'the SLICES door did not open SLICES');
+    back(); ticks(2);
+    assert(!S.auEditor && !S.auPanel && S.activeBank === C.BANK_AUDIO, 'Back from SLICES did not land on the sound bank: ' + S.activeBank);
+    assert(ED().page === 0 && A.auBankTitle(4) === 'ALL SLICES', 'not on ALL SLICES: ' + A.auBankTitle(4));
+    /* a knob touch shows its page as a plain grid, never the waveform */
     note(0, 127); ticks(1);
     const kc = globalThis.__kc; shown();
-    assert(kc().cells.map((c) => c && c.label).join() === 'Pitch,Detune,Gain,Revrs,Attk,Decay,Play,', 'CLIP (Slice) card: ' + JSON.stringify(kc().cells.map((c) => c && c.label)));
+    assert(kc().cells.map((c) => c && c.label).join() === 'Pitch,Detune,Gain,Revrs,Attk,Decay,Play,', 'ALL SLICES card: ' + JSON.stringify(kc().cells.map((c) => c && c.label)));
     note(0, 0); ticks(1);
-    /* Mode went to the CLIP bank (Josh, 2026-10-28: "loop vs slice mode should be a clip bank setting") */
     const cells = A.auPanelCells(ED());
-    assert(cells.map((c) => c.label).join() === 'Pitch,Detune,Gain,Revrs,Attk,Decay,Play,', 'CLIP (Slice): ' + cells.map((c) => c.label));
+    assert(cells.map((c) => c.label).join() === 'Pitch,Detune,Gain,Revrs,Attk,Decay,Play,', 'ALL SLICES: ' + cells.map((c) => c.label));
+    /* SAMPLE, then Back: the sample's page */
+    toSoundBank('sample');
+    assert(S.activeBank === C.BANK_AUDIO && A.auBankTitle(4) === 'SAMPLE' && A.auPanelPages(4).length === 1,
+           'Back from SAMPLE did not land on the sample\'s page: ' + A.auBankTitle(4));
+    assert(A.auPanelCells(ED()).map((c) => c.label).join() === 'Start,Pitch,Detune,Gain,Revrs,Nudge,,Tempo',
+           'the SAMPLE page on a Slice clip: ' + A.auPanelCells(ED()).map((c) => c.label));
+    toSoundBank('slices');                            /* ALL SLICES / SLICE n for what follows */
     S.activeBank = 0;
 });
 
@@ -229,9 +250,9 @@ step('⭐⭐ the instrument door on an Audio track is WAVE, the sample\'s editor
     cc(3, 127); note(P.bankMapPadForCell(6, 1), 100); note(P.bankMapPadForCell(6, 1), 0); cc(3, 0); ticks(3);
     assert(S.auEditor && S.auEditor.mode === 'wave' && S.activeBank === 0, 'the instrument pad did not open WAVE: ' + JSON.stringify({ ed: !!S.auEditor, b: S.activeBank }));
     back(); ticks(2);
-    assert(!S.auEditor && !S.auPanel, 'Back did not leave WAVE');
-    mapPad(2, 2);                                    /* back on the AUDIO bank for what follows */
-    assert(S.activeBank === C.BANK_AUDIO, 'AUDIO');
+    assert(!S.auEditor && !S.auPanel && S.activeBank === C.BANK_AUDIO, 'Back did not leave WAVE for the sound bank');
+    toSoundBank('slices');                           /* ALL SLICES / SLICE n for what follows */
+    assert(S.activeBank === C.BANK_AUDIO && A.auBankTitle(4) === 'ALL SLICES', 'AUDIO');
 });
 
 step('⭐ Pitch reads as a number and steps a semitone per detent run (Josh: "doesn\'t read out any values and is very touchy")', () => {
@@ -260,14 +281,14 @@ step('⭐ Pitch reads as a number and steps a semitone per detent run (Josh: "do
     jog(-1);
 });
 
-step('⭐ the jog turns its pages: CLIP, SLICE n (no SLICING, no ALL SLICES)', () => {
+step('⭐ the jog turns its pages after SLICES: ALL SLICES, SLICE n; a Loop clip\'s one page is SAMPLE', () => {
     const titles = [];
     for (let i = 0; i < 3; i++) { titles.push(A.auBankTitle(4)); jog(1); }
     assert(titles.join('|') === 'ALL SLICES|SLICE 1/8|SLICE 1/8', 'pages: ' + titles.join('|'));
-    /* Loop mode: the one page is LOOP (Josh: "and "Loop" when not in slice mode") */
+    /* a Loop clip has no slices: the one page is SAMPLE */
     for (let i = 0; i < 3; i++) jog(-1);
     GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(2);
-    assert(A.auBankTitle(4) === 'LOOP', 'Loop title: ' + A.auBankTitle(4));
+    assert(A.auBankTitle(4) === 'SAMPLE', 'Loop title: ' + A.auBankTitle(4));
     GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(2);
     for (let i = 0; i < 3; i++) jog(1);
     for (let i = 0; i < 3; i++) jog(-1);
@@ -644,7 +665,7 @@ step('⭐⭐ WAVE K4 Gain · K5 Pitch · K6 Detune (the clip\'s), read out in th
 
 step('⭐⭐ Delete + jog click on the AUDIO bank resets the page showing, only that page (Josh: "for multi-page banks, we should have delete+jog only reset the active page")', () => {
     GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(2);
-    mapPad(2, 2);                                    /* the AUDIO bank, CLIP */
+    toSoundBank('slices');                           /* the sound bank, ALL SLICES */
     reset();
     cc(HC.MoveDelete, 127); click(); cc(HC.MoveDelete, 0);
     const got = sentLike(/_au_/).map((x) => x[0] + '=' + x[1]).join(' ');
@@ -687,26 +708,26 @@ step('⭐⭐ the knob rings follow the Audio screens and the AUDIO bank: lit whe
     const lit = () => globalThis.__ring().map((c) => (c ? 1 : 0)).join('');
     const sent8 = () => [71, 72, 73, 74, 75, 76, 77, 78].map((cc_) => (CCLEDS.get(cc_) ? 1 : 0)).join('');
     assert(globalThis.__ring() === null, 'rings taken with no Audio screen up');
-    mapPad(2, 2); ticks(3);                          /* the AUDIO bank, ALL SLICES: K8 is blank */
+    toSoundBank('slices'); ticks(3);                 /* the sound bank, ALL SLICES: K8 is blank */
     assert(sent8() === '11111110', 'ALL SLICES rings: ' + sent8());
     jog(1); ticks(3);                                /* SLICE n: K8 is blank */
     assert(sent8() === '11111110', 'SLICE n rings: ' + sent8());
     jog(-1);
     GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(3);
-    assert(A.auBankTitle(4) === 'LOOP' && sent8() === '11111111', 'LOOP rings: ' + sent8());
-    /* the Track View bank on a Loop clip is the performance page (Josh,
+    assert(A.auBankTitle(4) === 'SAMPLE' && sent8() === '11111111', 'SAMPLE rings (a Loop clip): ' + sent8());
+    /* the Track View bank on a Loop clip is the sample's page (Josh,
      * 2026-10-29: "automatable and performance oriented params exposed on the
      * knobs in track overview"): Start · Pitch · Detune · Gain · Revrs ·
      * Nudge · Sync · Tempo */
     {
         const ed = A.auBankEd(4);
         assert(A.auPanelCells(ed).map((c) => c.label).join() === 'Start,Pitch,Detune,Gain,Revrs,Nudge,Sync,Tempo',
-               'the LOOP page: ' + A.auPanelCells(ed).map((c) => c.label).join());
+               'the SAMPLE page: ' + A.auPanelCells(ed).map((c) => c.label).join());
         reset();
         A.auPanelKnob(ed, 0, 1);
         A.auPanelKnob(ed, 7, 1);
         assert(sent('t4_au_set_start').length === 1 && sent('t4_au_set_bpm').length === 1,
-               'K1 Start / K8 Tempo on the LOOP page: ' + JSON.stringify(sentLike(/_au_/)));
+               'K1 Start / K8 Tempo on the SAMPLE page: ' + JSON.stringify(sentLike(/_au_/)));
     }
     S.activeBank = 0;
     mapPad(2, 3); ticks(2);                          /* SAMPLE page 1: K1-K8 (K8 Nudge) */
@@ -718,6 +739,54 @@ step('⭐⭐ the knob rings follow the Audio screens and the AUDIO bank: lit whe
     assert(globalThis.__ring()[3].norm > g0, 'the Gain ring did not follow the turn');
     S.knobTurnedTick[3] = S.clockMs - 1000; ticks(1);
     back();
+    GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(2);
+});
+
+step('⭐⭐ SLICES (Josh, 2026-10-29): page 1 the chops — K1 / K3 the slice, a click the chop types; page 2 slice n, Shift every slice; a Loop clip has none', () => {
+    S.activeBank = 0; S.bankCardLatched = false;
+    GET['t4_au_info_0'] = INFO(0, 8); A.auMarkStale(4, 0); ticks(2);
+    mapPad(2, 2);
+    assert(!S.auEditor, 'the SLICES door opened on a Loop clip');
+    GET['t4_au_info_0'] = INFO(1, 8, 0); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(2);
+    A.auSetSelSlice(4, 2);
+    mapPad(2, 2);
+    const ed = S.auEditor;
+    assert(ed && ed.ed === 'slices' && ed.page !== 1, 'SLICES did not open on its first page');
+    let tx = globalThis.__texts(() => shown());
+    assert(tx.indexOf('SLICE 3/8') >= 0 && tx.indexOf('1/2') >= 0 && tx.indexOf('CHOP') >= 0, 'SLICES page 1: ' + JSON.stringify(tx));
+    reset();
+    cc(71, 1);
+    assert(sent('t4_au_slice_start').length === 1 && !sent('t4_au_set_start').length,
+           'K1 is not the slice\'s start: ' + JSON.stringify(sentLike(/_au_/)));
+    reset();
+    for (let i = 0; i < 6; i++) cc(77, 1);
+    assert(!sentLike(/_au_/).length, 'K7 acts on SLICES page 1: ' + JSON.stringify(sentLike(/_au_/)));
+    click();
+    assert(ed.pick && ed.pick.level === 2 && E.auPickRows(ed).map((r) => r.label).join() === 'Even,Transient,Lazy,Manual',
+           'a click did not open the chop types: ' + JSON.stringify(ed.pick));
+    back();
+    assert(!ed.pick && S.auEditor === ed, 'Back did not close the chop types onto SLICES');
+    jog(1); ticks(1);
+    tx = globalThis.__texts(() => shown());
+    assert(ed.page === 1 && tx.indexOf('2/2') >= 0 && tx.some((x) => /^SLICE 3\/8$/.test(x)), 'SLICES page 2: ' + JSON.stringify(tx));
+    reset();
+    for (let i = 0; i < 30; i++) cc(71, 1);
+    assert(sent('t4_au_slice_pitch').length >= 1 && !sent('t4_au_set_pitch').length, 'page 2 K1 is not slice 3\'s Pitch: ' + JSON.stringify(sentLike(/_au_/)));
+    /* Shift held: every slice (a bare Shift tap is a host shortcut this rig
+     * does not stub, so the hold is the state the knobs read) */
+    S.knobTouched = -1; S.shiftHeld = true; ticks(1);
+    tx = globalThis.__texts(() => shown());
+    assert(tx.indexOf('ALL SLICES') >= 0, 'Shift did not show ALL SLICES: ' + JSON.stringify(tx));
+    reset();
+    for (let i = 0; i < 40 && !sentLike(/_au_all_rev/).length; i++) cc(74, 1);
+    assert(sentLike(/_au_all_rev/).length === 1, 'Shift + K4 is not every slice\'s Revrs: ' + JSON.stringify(sentLike(/_au_/)));
+    for (let i = 0; i < 40 && sentLike(/_au_all_rev/).length < 2; i++) cc(74, 127);
+    S.shiftHeld = false; S.knobTouched = -1;
+    jog(-1);
+    back(); ticks(2);
+    assert(!S.auEditor && S.activeBank === C.BANK_AUDIO && A.auBankTitle(4) === 'ALL SLICES', 'Back from SLICES did not land on its bank');
+    S.activeBank = 0;
+    A.auSetSelSlice(4, 0);
     GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(2);
 });
 
@@ -1291,6 +1360,7 @@ step('⭐ an Audio clip pastes onto an Audio track only; the copy carries its sa
     assert(A.auInfo(4, 5).name === 'Break Phenom 84 bpm.wav' && S.clipNonEmpty[4][5] === S.clipNonEmpty[4][0], 'the copy did not carry the sample');
 });
 
+
 step('⭐⭐ leaving Audio asks (Q3); Yes converts back and forgets the samples', () => {
     S.clipNonEmpty[4][0] = true;
     reset();
@@ -1352,6 +1422,8 @@ step('⭐⭐ Purge samples: removes what no clip and no saved state uses — onl
     globalThis.host_read_file = prevRead;
     os.__setReaddir(null); globalThis.__stubStat = null;
 });
+
+
 
 if (failed) { console.error('FAIL: test_audio_track_gesture'); process.exit(1); }
 console.log('PASS: test_audio_track_gesture');

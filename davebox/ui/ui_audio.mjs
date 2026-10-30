@@ -457,8 +457,15 @@ const fmtEven = (v) => (v ? String(v) : 'Off');
  * n "only show when sliice mode is active"): Slice mode CLIP · SLICE n, Loop
  * mode CLIP. The sample and its Start / End live on WAVE; Mode is the CLIP
  * bank's. */
+/* The Track View sound bank's pages FOLLOW THE LAST EDITOR ENTERED (Josh,
+ * 2026-10-29: "if the last thing you entered was slice, then knobs in
+ * overview should be page-able, with one page for all slices and one for
+ * current slice ... if it was sample, it should have the sample params
+ * exposed"; "sample and slices pads are the doors"): after SLICES, ALL
+ * SLICES ('CLIP') and SLICE n; after SAMPLE — or on a clip with no slices —
+ * the sample's one page. Always a plain param grid, never the waveform. */
 export function auPanelPages(t) {
-    return auIsSlice(auInfo(t, auClipOf(t))) ? ['CLIP', 'SLICE'] : ['CLIP'];
+    return (S.auSrc[t] === 'slices' && auIsSlice(auInfo(t, auClipOf(t)))) ? ['CLIP', 'SLICE'] : ['SAMPLE'];
 }
 /* ---- the AUDIO bank (Josh, 2026-10-28: "can audio be a bank?" · "yes")
  * The AUDIO editor's pages as a bank: the same cells and knobs, its page per
@@ -494,7 +501,7 @@ export function auPanelTitle(ed) {
     /* the first page says what it sets (Josh, 2026-10-28: "the "audio" bank
      * header should read "All slices" on the first page, and "Loop" when not
      * in slice mode") */
-    if (name === 'CLIP') return auIsSlice(i) ? 'ALL SLICES' : 'LOOP';
+    if (name === 'CLIP') return 'ALL SLICES';
     return name;
 }
 
@@ -537,10 +544,11 @@ export function auPanelCells(ed) {
     const pitch = pitchCell('Pitch', i.pitch);
     const detune = detuneCell('Detune', i.detune);
     const gain = { kind: 'arc', label: 'Gain', name: 'Gain', text: fmtDb(i.gain), norm: (i.gain + 40) / 52 };
-    if (page === 'CLIP') {
-        /* a Loop clip's performance page (Josh, 2026-10-29: "automatable and
-         * performance oriented params exposed on the knobs in track overview") */
-        if (auIsLoop(i)) {
+    if (page === 'SAMPLE') {
+        /* the sample's page (Josh, 2026-10-29: "automatable and performance
+         * oriented params exposed on the knobs in track overview"); Sync is a
+         * Loop clip's */
+        {
             const fr = i.nframes || 1;
             const start = { kind: 'arc', label: 'Start', name: 'Start', text: auFmtTime(i.rstart, i.rate), norm: i.rstart / fr };
             const sync = { kind: 'enumsq', label: 'Sync', name: 'Sync: Vintage · Pitch · Warp',
@@ -549,8 +557,10 @@ export function auPanelCells(ed) {
             const tempo = { kind: 'valsq', label: 'Tempo', name: 'Tempo (the sample\'s own)',
                             text: bpm ? String(Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) : '--',
                             norm: ((i.bpm10 || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN) };
-            return [start, pitch, detune, gain, revrsCell(i), nudgeCell(i), sync, tempo].map(live);
+            return [start, pitch, detune, gain, revrsCell(i), nudgeCell(i), auIsLoop(i) ? sync : BLANK, tempo].map(live);
         }
+    }
+    if (page === 'CLIP') {
         /* every slice's sound here (Josh: "merge the "all slices" items to
          * this bank"): `--` while the slices differ, a turn sets them all */
         const a = auAll(t, c);
@@ -591,9 +601,8 @@ export function auPanelRingCells(ed) {
  * knob "is very touchy"); 'delib' for toggles and the rest that pick. */
 export function auPanelKnobClass(ed, k) {
     const page = auPanelPageName(ed);
+    if (page === 'SAMPLE') return (k === 4 || k === 6) ? 'delib' : (k === 1 ? 'pick' : '');   /* Revrs, Sync deliberate; Pitch picks */
     if (page === 'CLIP') {
-        const sl = auIsSlice(auInfo(ed.t, auClipOf(ed.t)));
-        if (!sl) return (k === 4 || k === 6) ? 'delib' : (k === 1 ? 'pick' : '');   /* Loop: Revrs, Sync deliberate; Pitch picks */
         if (k === 0) return 'pick';
         return (k === 3 || k === 6) ? 'delib' : '';
     }
@@ -708,10 +717,11 @@ export function auLenTicks(t, c, i) {
 export function auPanelReset(ed) {
     const t = ed.t, c = auClipOf(t), i = auInfo(t, c);
     if (i.state !== 2) return false;
-    if (auPanelPageName(ed) === 'CLIP') {
+    const pn = auPanelPageName(ed);
+    if (pn === 'CLIP' || pn === 'SAMPLE') {
         const loc = Object.assign({}, i, { pitch: 0, detune: 0, gain: 0 });
         auSet(t, c, 'pitch', 0); auSet(t, c, 'detune', 0); auSet(t, c, 'gain', 0);
-        if (auIsLoop(i)) { loc.revrs = 0; auSet(t, c, 'revrs', 0); }
+        if (pn === 'SAMPLE') { loc.revrs = 0; auSet(t, c, 'revrs', 0); loc.nudge = 0; auSet(t, c, 'nudge', 0); }
         else {
             for (const f of SLICE_CLIP_ALL) if (f) auSetAll(t, c, f, DEFAULT_SLICE[f]);
             _all.delete(t + '_' + c);
@@ -732,10 +742,10 @@ export function auPanelKnob(ed, k, steps) {
     const dir = steps > 0 ? 1 : -1;
     const page = auPanelPageName(ed);
     const loc = Object.assign({}, i);
-    if (page === 'CLIP') {
+    if (page === 'CLIP' || page === 'SAMPLE') {
         if (i.state !== 2) {
             return false;
-        } else if (auIsLoop(i)) {
+        } else if (page === 'SAMPLE') {
             /* Start · Pitch · Detune · Gain · Revrs · Nudge · Sync · Tempo */
             if (k === 0) return auRangeStep(t, c, 'start', steps);
             if (k === 1) { const v = Math.max(-24, Math.min(24, i.pitch + dir)); if (v === i.pitch) return false; loc.pitch = v; auSet(t, c, 'pitch', v); }
@@ -743,7 +753,7 @@ export function auPanelKnob(ed, k, steps) {
             else if (k === 3) { const v = Math.max(-40, Math.min(12, i.gain + dir)); if (v === i.gain) return false; loc.gain = v; auSet(t, c, 'gain', v); }
             else if (k === 4) { const v = dir > 0 ? 1 : 0; if (v === i.revrs) return false; loc.revrs = v; auSet(t, c, 'revrs', v); }
             else if (k === 5) return auNudgeStep(t, c, steps);
-            else if (k === 6) return auSampleP2Knob(t, c, 0, steps);
+            else if (k === 6) return auIsLoop(i) && auSampleP2Knob(t, c, 0, steps);
             else if (k === 7) {
                 const v = Math.max(AU_BPM10_MIN, Math.min(AU_BPM10_MAX, (i.bpm10 || 1200) + steps * (S.shiftHeld ? 1 : 10)));
                 if (v === (i.bpm10 | 0)) return false;

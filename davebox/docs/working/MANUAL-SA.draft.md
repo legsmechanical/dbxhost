@@ -1304,20 +1304,24 @@ it; touching one jumps there. K2 zooms in every chop editor. The header reads
 count while you chop); the start or end you're touching
 or turning lights up, and **ZOOM +** / **ZOOM −** shows between them while K2 zooms.
 
-**The SLICE / LOOP bank** puts the clip's sound on the knobs in Track View, to play live — the same settings SAMPLE edits; it is named for the clip's Mode. Pick it from the bank map's **SLICE** (or **LOOP**) pad, under CLIP
-— it is a bank with **pages**:
-**turn the jog** to flip them (on a bank with one page the turn does nothing); touch
-the jog or a knob to see the page you're on. **Delete + jog click** resets the page
+**SLICES** is a Slice clip's second editor — the **SLICES** pad under CLIP on the bank
+map (dark on a Loop clip). Page 1 is the chops, the one the pads last picked bracketed:
+**K1** / **K3** move its start / end, **K2** zooms, and a click opens the chop types
+(**Even** · **Transient** · **Lazy** · **Manual**, as above). **Turn the jog** for page 2,
+the picked slice's sound — **Pitch**, **Detune**, **Gain**, **Revrs**, **Attk**, **Decay** and
+**Play** (**One** to the slice's end, **Gate** as long as the step, **Loop** for the step);
+**hold Shift** and the same knobs set **every slice** at once (`--` where they differ).
+
+**The sound bank** keeps the sound on Track View's knobs once you leave an editor, to
+play it live: **Back** from SAMPLE or SLICES lands on it, and it follows the one you
+left. It is a plain set of knobs — the waveform is the editors' alone — and has no pad
+of its own: SAMPLE and SLICES are its doors. **Delete + jog click** resets the page
 showing, and only that page.
 
-**Pitch** moves in semitones (±24) and **Detune** in cents (±50); a slice's own
-Pitch and Detune add to the clip's. The Mode isn't here: it's on the CLIP bank.
-
-| Page | Knobs |
+| After | Knobs |
 |---|---|
-| **ALL SLICES** (Slice mode) | **Pitch** · **Detune** · **Gain** for the whole clip · **Revrs** · **Attk** · **Decay** · **Play** for every slice at once (`--` while the slices differ; turning one sets them all) |
-| **LOOP** (Loop mode) | **Start** · **Pitch** · **Detune** · **Gain** · **Revrs** (plays the sample backwards) · **Nudge** · **Sync** · **Tempo** |
-| **SLICE n** (Slice mode) | The last pad you tapped: **Pitch**, **Detune**, **Gain**, **Revrs**, **Attk**, **Decay**, and **Play** — **One** (to the slice's end), **Gate** (as long as the step), **Loop** (loops the slice for the step). Kept if the clip goes back to Loop |
+| **SAMPLE** | **Start** · **Pitch** · **Detune** · **Gain** · **Revrs** · **Nudge** · **Sync** (a Loop clip's) · **Tempo** |
+| **SLICES** | Two pages, the jog flips them: **ALL SLICES** — **Pitch** · **Detune** · **Gain** for the clip, **Revrs** · **Attk** · **Decay** · **Play** for every slice; and **SLICE n** — the slice the pads (or an external keyboard) last played |
 
 **The banks** hold the sequence:
 
@@ -1337,7 +1341,7 @@ first knob reads **Slice n** and picks the step's chop.
 track only. **Delete + clip** clears its sequence only: the sample, its settings
 and the clip's length stay. **Shift + Delete + clip** resets it completely, sample
 and all. **Undo** covers the steps; the
-SLICE / LOOP bank's settings aren't undoable. **Export to Ableton** leaves Audio tracks
+sound bank's settings aren't undoable. **Export to Ableton** leaves Audio tracks
 out for now, and says so when it finishes.
 
 **Track View at rest** shows a Loop clip's sample with the playhead

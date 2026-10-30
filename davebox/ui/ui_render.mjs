@@ -254,6 +254,16 @@ function drawAudioWaveEditor() {
     /* SAMPLE's second page: Sync, Revrs, Orig (Josh, 2026-10-29: "the
      * waveform on page 1 and the params on page 2") */
     const plain = (sub === 'loop' || sub === 'chop') && !(ed.mode === 'chop' && ed.chop);
+    const sl = ed.ed === 'slices' && sub === 'chop';
+    if (sl && plain && ed.page === 1) {
+        /* SLICES page 2: slice n's sound, every slice's with Shift held (Josh,
+         * 2026-10-29: "a shift+turn with an appropriate hint on page 2") */
+        const ped = { t, page: S.shiftHeld ? 0 : 1 };
+        drawKitPage(auPanelTitle(ped), auPanelCells(ped), false,
+                    S.shiftHeld ? [['jog', 'page']] : [['sh', 'all slices'], ['jog', 'page']]);
+        if (S.knobTouched < 0) drawBankHeading(auPanelTitle(ped), false, false, '2/2');
+        return;
+    }
     if (plain && ed.page === 1) {
         drawKitPage(auSampleName(t, c), auSampleP2Cells(t, c), false,
                     S.knobTouched === 7 ? [['clk', 'orig']] : [['jog', 'page']]);
@@ -289,6 +299,7 @@ function drawAudioWaveEditor() {
         return;
     }
     if (kind === 'manual') drawBankHeading('SLICE ' + (sel + 1) + '/' + mk.length, false);
+    else if (sl) drawBankHeading('SLICE ' + (sel + 1) + '/' + mk.length, false, false, '1/2');
     else drawBankHeading(auSampleName(t, c), false, false, '1/2');
     if (kind === 'manual') {
         const m = mk[sel];
@@ -303,7 +314,16 @@ function drawAudioWaveEditor() {
         drawKitHintRow(MV_FOOTER_Y, [['clk', 'add'], ['del+clk', 'clear']]);
         return;
     }
-    /* WAVE in Slice mode: the clip's Start / Length, its chops, no cursor */
+    if (sl) {
+        /* SLICES page 1: the picked slice's start / end, its bracket, no cursor */
+        const m = mk[sel];
+        if (m) ends('S ' + auFmtTime(m[0], rt), m[1] === auEdHome(ed, sel) ? 'E NEXT' : 'E ' + auFmtTime(m[1], rt));
+        if (zoomTxt) mid(zoomTxt);
+        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel, gain: i.gain | 0 });
+        drawKitHintRow(MV_FOOTER_Y, [['clk', 'chop'], ['jog', 'page']]);
+        return;
+    }
+    /* SAMPLE on a Slice clip: the clip's Start / Length, its chops, no cursor */
     ends('S ' + auFmtTime(i.rstart, rt), 'LEN ' + auFmtLen(auLenTicks(t, c, i)));
     if (zoomTxt) mid(zoomTxt);
     drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel, gain: i.gain | 0 });
@@ -1912,7 +1932,7 @@ export function bankMapItems() {
     /* ...an Audio screen is where you are too, as on the pads (Josh,
      * 2026-10-28: "the pad map doesn't indicate that you're on wave or
      * audio - still shows last bank") */
-    const au = S.auPanel && S.auEditor ? 'wave' : null;
+    const au = S.auPanel && S.auEditor ? (S.auEditor.ed === 'slices' ? 'slices' : 'wave') : null;
     const cols = bankPadMapForMode(S.trackPadMode[t], t).map((c, ci) => ({
         label: c.label,
         cells: c.cells.map((cell, r) => {

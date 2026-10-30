@@ -207,12 +207,18 @@ export function auPadTapped(t, padIdx) {
 const MIN_SPAN = 128;                     /* full zoom: one frame per pixel */
 const END_HOLD = 4;                       /* detents an End sticks at NEXT */
 
-/* The map's WAVE pad: the WAVE editor on the track's current clip, over an
- * AUDIO editor (so the screens and input routes are the AUDIO editor's). */
-export function openWave(t) {
+/* The map's SAMPLE / SLICES pads: the editor on the track's current clip,
+ * over an AUDIO editor (so the screens and input routes are the AUDIO
+ * editor's). Each is a door of the Track View sound bank, which then follows
+ * it (Josh, 2026-10-29: "sample and slices pads are the doors"). SLICES is a
+ * Slice clip's. */
+export function openWave(t, which = 'sample') {
     if (!isAudioTrack(t)) return false;
+    if (which === 'slices' && !auIsSlice(auInfo(t, auClipOf(t)))) return false;
+    S.auSrc[t] = which;
     S.auPanel = { t, page: 0, wave: true };
     openWaveEditor(t, auClipOf(t));
+    S.auEditor.ed = which;
     return true;
 }
 
@@ -527,8 +533,8 @@ function pickInput(ed, status, d1, d2) {
     if (d1 === MoveBack) {
         if (d2 >= 64) { S.backPressTick = nowMs(); S.backHoldFired = false; return true; }
         S.backPressTick = -1; S.backHoldFired = false;
-        if (p.level === 2) ed.pick = { level: 1, sel: 1 };
-        else ed.pick = null;
+        if (p.level === 2 && !p.only2) ed.pick = { level: 1, sel: 1 };
+        else ed.pick = null;                                  /* SLICES opens straight onto the chop types */
         S.screenDirty = true;
         return true;
     }
@@ -536,10 +542,19 @@ function pickInput(ed, status, d1, d2) {
     return false;
 }
 
-/* Back from WAVE: out of it — and out of the AUDIO editor it opened over. */
+/* Back from SAMPLE / SLICES: out of it — and out of the AUDIO editor it
+ * opened over — onto the Track View sound bank, which follows the editor left
+ * (Josh, 2026-10-29: "a way to continue to interact with the audio params
+ * outside of the main editing screens"). */
 function leaveWave() {
+    const t = S.auEditor ? S.auEditor.t : S.activeTrack;
     if (S.auPanel && S.auPanel.wave) closeAudioPanel();
     else closeAudioEditor();
+    if (t === S.activeTrack && isAudioTrack(t)) {
+        S.activeBank = BANK_AUDIO;
+        S.trackActiveBank[t] = BANK_AUDIO;
+        S.auBankPage[t] = 0;
+    }
 }
 
 /* Returns true when the message was the WAVE editor's. */
@@ -561,6 +576,11 @@ export function audioEditorInput(status, d1, d2) {
      * on page 1 and the params on page 2"); a chop editor keeps the jog */
     const plain = (sub === 'loop' || sub === 'chop') && !kind;
     const p2 = plain && ed.page === 1;
+    /* SLICES (Josh, 2026-10-29): page 1 the chops — K1 / K3 the picked slice's
+     * start / end, K2 Zoom, a click the chop types; page 2 the slice's sound,
+     * Shift held for every slice */
+    const sl = ed.ed === 'slices' && sub === 'chop';
+    const slEdit = sl && plain && !p2;
     if (hi === 0x90 || hi === 0x80) {
         if (d1 >= 0 && d1 <= 7) {
             const on = hi === 0x90 && d2 >= 64;
@@ -646,6 +666,17 @@ export function audioEditorInput(status, d1, d2) {
     if (d1 >= 71 && d1 <= 78) {
         const k = d1 - 71, dd = decodeDelta(d2);
         if (!dd || (sub !== 'chop' && sub !== 'loop')) return true;
+        if (p2 && sl) {
+            /* SLICES page 2: slice n, or every slice with Shift held */
+            S.knobTouched = k; S.knobTurnedTick[k] = S.clockMs;
+            const ped = { t: ed.t, page: S.shiftHeld ? 0 : 1 };
+            const cls = auPanelKnobClass(ped, k);
+            const st = cls === 'pick' ? knobStep(k, d2, KNOB_PICK) : cls === 'delib' ? knobStep(k, d2, KNOB_DELIB) : ccKnobDelta(d2, k);
+            if (st && auPanelKnob(ped, k, st)) { S.pendingPadNoteMapRecompute = true; }
+            S.screenDirty = true;
+            return true;
+        }
+        if (slEdit && k > 2) return true;                    /* SLICES page 1: K1-K3 only */
         if (p2) {
             /* SAMPLE page 2: K1 Sync, K2 Revrs; K8 Orig fires on touch + click */
             S.knobTouched = k; S.knobTurnedTick[k] = S.clockMs;
@@ -668,7 +699,7 @@ export function audioEditorInput(status, d1, d2) {
         if (k === 1) moved = zoom(ed, dd > 0 ? 1 : -1);
         else if (k === 0 || k === 2) {
             ed.last = k === 0 ? 'start' : 'end';
-            if (hand) moved = chopPoint(ed, ed.last, dd);
+            if (hand || slEdit) moved = chopPoint(ed, ed.last, dd);
             else {
                 /* K1 Start (a pixel a detent), K3 Length (a step a detent) */
                 moved = k === 0 ? auRangeStep(ed.t, ed.c, 'start', dd, auEdPixel(ed))
@@ -738,6 +769,8 @@ export function audioEditorInput(status, d1, d2) {
             return true;
         }
         if (kind && !hand) return true;                      /* Even / Transient: the jog is all */
+        if (sl && p2) return true;
+        if (slEdit) { ed.pick = { level: 2, sel: 0, only2: true }; return true; }   /* the chop types */
         if (p2) {
             /* touch K8 + click: Orig */
             if (S.knobTouched === 7) auOrig(ed.t, ed.c);
@@ -853,6 +886,8 @@ export function waveRingCells(ed) {
     const sub = auWaveSub(ed);
     if (sub !== 'chop' && sub !== 'loop' || !fr) return [null, null, null, null, null, null, null, null];
     const kind = chopKind(ed);
+    const slp = ed.ed === 'slices' && sub === 'chop' && !kind;
+    if (slp && ed.page === 1) return auPanelRingCells({ t: ed.t, page: S.shiftHeld ? 0 : 1 });
     if (!kind && ed.page === 1) {
         /* page 2: Sync, Revrs, Orig — lit where a knob works */
         const cells = auSampleP2Cells(ed.t, ed.c);
@@ -860,9 +895,15 @@ export function waveRingCells(ed) {
             : k === 0 ? { kind: 'arc', norm: (c.sel | 0) / 2 } : k === 1 ? { kind: 'arc', norm: c.sel ? 1 : 0 } : { kind: 'arc', norm: 1 });
     }
     let a = i.rstart, b = auEnd(i);
-    if (kind === 'manual') {
+    if (kind === 'manual' || slp) {
         const m = auMarks(ed.t, ed.c)[auSelSlice(ed.t)];
         if (m) { a = m[0]; b = m[1]; }
+    }
+    if (slp) {
+        const span = Math.max(MIN_SPAN, (ed.B | 0) - (ed.A | 0));
+        const zoom = fr > MIN_SPAN ? 1 - Math.log(span / MIN_SPAN) / Math.log(fr / MIN_SPAN) : 0;
+        const at = (n) => ({ kind: 'arc', norm: Math.max(0, Math.min(1, n)) });
+        return [at(a / fr), at(zoom), at(b / fr), null, null, null, null, null];
     }
     const span = Math.max(MIN_SPAN, (ed.B | 0) - (ed.A | 0));
     const zoom = fr > MIN_SPAN ? 1 - Math.log(span / MIN_SPAN) / Math.log(fr / MIN_SPAN) : 0;
