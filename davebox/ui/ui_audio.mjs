@@ -28,6 +28,8 @@
  * No host_* call happens at module init. */
 
 import { S } from './ui_state.mjs';
+/* a cycle (ui_audio_editor imports this module): used only inside a function body */
+import { lazyFinish } from './ui_audio_editor.mjs';
 import { PAD_MODE_AUDIO, NUM_CLIPS, BANK_STEP, knobAltFor } from './ui_constants.mjs';
 import { bankListForMode, AU_MODE_LOOP, AU_MODE_SLICE, auIsSlice, auIsLoop } from './ui_pure.mjs';
 
@@ -336,8 +338,8 @@ export function auTick() {
                 S.ledsDirtyAudio = true;
             }
             _lazy = nl;
-            /* played out (or Back while it ran): "Keep N new chops?" */
-            if (nl.state === AU_LAZY_ENDED && !se.ask) se.ask = { kind: 'keep', sel: 0, n: nl.n };
+            /* played out: what it chopped is kept, no question (Josh, 2026-10-30) */
+            if (nl.state === AU_LAZY_ENDED && se.mode === 'lazy') lazyFinish(se);
             /* the engine never armed it (no sample, too long): nothing to show */
             if (nl.state === AU_LAZY_NONE && !se.ask && (S.clockMs | 0) - (se.lazyAt | 0) > 1500) {
                 se.mode = 'wave';

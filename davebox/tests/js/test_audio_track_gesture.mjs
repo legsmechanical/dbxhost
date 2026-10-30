@@ -1023,7 +1023,7 @@ step('⭐⭐ SLICES › Convert to kit (Josh, 2026-10-30: "convert to kit. creat
     }
 });
 
-step('⭐⭐ Even (SLICES › Even): the chop editor, 16 to start, the jog live on the pads; Back asks "Keep N chops?" — Yes bakes, No puts them back (Josh)', () => {
+step('⭐⭐ Even (SLICES › Even): the chop editor, 16 to start, the jog live on the pads; Back or a click keeps the chops, no question (Josh, 2026-10-30: "click in editor closes the editor and saves the slices just like back. and get rid of the comfirmation for back")', () => {
     GET['t4_au_info_0'] = INFO(1, 8, 0); A.auMarkStale(4, 0); ticks(2);
     mapPad(2, 2);
     const ed = S.auEditor;
@@ -1038,7 +1038,7 @@ step('⭐⭐ Even (SLICES › Even): the chop editor, 16 to start, the jog live 
         assert(ed.mode === 'chop' && ed.chop.kind === 'even' && sent('t4_au_set_even').join() === '0 16',
                'Even did not open its editor at 16 (Josh: "even 16."): ' + JSON.stringify(sent('t4_au_set_even')));
         let tx = globalThis.__texts(() => assert(inked(shown()), 'Even draws nothing'));
-        assert(tx.indexOf('EVEN') >= 0 && tx.indexOf('16 CHOPS') >= 0 && tx.indexOf('MANUAL') >= 0, 'Even screen: ' + JSON.stringify(tx));
+        assert(tx.indexOf('EVEN') >= 0 && tx.indexOf('16 CHOPS') >= 0 && tx.indexOf('DONE') >= 0 && tx.indexOf('MANUAL') < 0, 'Even screen: ' + JSON.stringify(tx));
         const litPads = () => { ticks(2); return Array.from({ length: 32 }, (_, i) => LEDS.get(C.TRACK_PAD_BASE + i) || 0).filter((v) => v).length; };
         jog(-1);
         assert(sent('t4_au_set_even').pop() === '0 15' && A.auInfo(4, 0).n === 15 && litPads() === 15,
@@ -1052,25 +1052,23 @@ step('⭐⭐ Even (SLICES › Even): the chop editor, 16 to start, the jog live 
         assert(A.auSelSlice(4) === 3, 'a pad in Even did not pick its chop');
         note(C.TRACK_PAD_BASE + 3, 0);
         back();
-        assert(ed.ask && ed.ask.kind === 'chops', 'Back did not ask');
-        assert(same(shown(), frame(() => D.drawAudioAsk('EVEN', ['Keep 18 chops?'], 0))), '"Keep 18 chops?" is not on screen');
-        click();                                      /* opens on Yes */
+        assert(!ed.ask, 'Back asked');
         assert(sent('t4_au_even_bake').join() === '0' && ed.mode === 'wave' && A.auInfo(4, 0).even === 0 && A.auInfo(4, 0).hand === 18,
-               'Yes did not make the 18 the clip\'s chops: ' + JSON.stringify(sentLike(/_au_/)));
+               'Back did not make the 18 the clip\'s chops: ' + JSON.stringify(sentLike(/_au_/)));
         assert(!sent('t4_au_set_mode').length, 'choosing Even set the Mode');
-        /* No: the slicing it had before (here, the hand set: Even Off) */
+        /* a click: the same, and no Manual */
         GET['t4_au_info_0'] = INFO(1, 8, 0); A.auMarkStale(4, 0); ticks(2);
         reset();
         click(); click(); jog(1);
-        back(); jog(-1); click();
-        assert(sent('t4_au_set_even').pop() === '0 0' && !sent('t4_au_even_bake').length && ed.mode === 'wave',
-               'No did not put Even Off back: ' + JSON.stringify(sentLike(/_au_/)));
+        click();
+        assert(!ed.ask && sent('t4_au_even_bake').join() === '0' && ed.mode === 'wave' && !ed.chop,
+               'a click did not keep the chops and close Even: ' + JSON.stringify({ ask: ed.ask, mode: ed.mode, chop: ed.chop }));
     } finally { globalThis.host_module_set_param = setP; }
     back();
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
 });
 
-step('⭐⭐ Transient (SLICES › Transient): the REAL gesture — on, the jog turns Sens, the marks follow, Back asks; Yes bakes, No cancels (Josh)', () => {
+step('⭐⭐ Transient (SLICES › Transient): the REAL gesture — on, the jog turns Sens, the marks follow; Back or a click keeps the chops, no question (Josh)', () => {
     GET['t4_au_info_0'] = INFO(1, 8, 0); A.auMarkStale(4, 0); ticks(2);
     mapPad(2, 2);
     const ed = S.auEditor;
@@ -1099,17 +1097,15 @@ step('⭐⭐ Transient (SLICES › Transient): the REAL gesture — on, the jog 
     GET['t4_au_info_0'] = INFO24(1, 4, 0, 4, 53, 1); A.auMarkStale(4, 0); ticks(3);
     assert(globalThis.__ring().map((c) => (c ? 1 : 0)).join('') === '01011110', 'Transient rings: ' + globalThis.__ring().map((c) => (c ? 1 : 0)).join(''));
     back();
-    assert(ed.ask && ed.ask.kind === 'chops' && same(shown(), frame(() => D.drawAudioAsk('TRANSIENT', ['Keep 4 chops?'], 0))),
-           '"Keep 4 chops?" is not on screen');
-    click();
-    assert(sent('t4_au_trans_bake').join() === '0' && ed.mode === 'wave' && S.auEditor === ed, 'Yes did not bake: ' + JSON.stringify(sentLike(/_au_/)));
-    /* No: cancelled, the hand set as it was */
+    assert(!ed.ask && sent('t4_au_trans_bake').join() === '0' && ed.mode === 'wave' && S.auEditor === ed,
+           'Back did not keep the chops, without asking: ' + JSON.stringify(sentLike(/_au_/)));
+    /* a click: the same */
     GET['t4_au_info_0'] = INFO(1, 8, 0); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(2);
     reset();
     click(); jog(1); click();
-    back(); jog(-1); click();
-    assert(sent('t4_au_set_trans').join() === '0 1,0 0' && !sent('t4_au_trans_bake').length && ed.mode === 'wave',
-           'No did not cancel: ' + JSON.stringify(sentLike(/_au_/)));
+    click();
+    assert(!ed.ask && sent('t4_au_trans_bake').join() === '0' && ed.mode === 'wave' && !ed.chop,
+           'a click did not keep the chops and close Transient: ' + JSON.stringify(sentLike(/_au_/)));
     back();
     assert(!S.auEditor, 'WAVE did not close');
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
@@ -1278,7 +1274,7 @@ step('⭐⭐ a Loop clip\'s SAMPLE menu: Chop sample › Even makes it a Slice c
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; S.auSrc[4] = 'sample'; A.auMarkStale(4, 0); ticks(20);
 });
 
-step('⭐⭐ Lazy (SLICES › Lazy): the next pad white, taps cut, Back asks "Keep N new chops?", Yes stays on WAVE', () => {
+step('⭐⭐ Lazy (SLICES › Lazy): the next pad white, taps cut; Back ends it keeping them, no question, and stays on WAVE; played out, the same', () => {
     mapPad(2, 2);
     reset();
     click(); jog(1); jog(1); click();                 /* SLICES › Lazy */
@@ -1304,46 +1300,25 @@ step('⭐⭐ Lazy (SLICES › Lazy): the next pad white, taps cut, Back asks "Ke
     GET['t4_au_lazy'] = '2 2 9000';
     ticks(4);
     back();
-    assert(sent('t4_au_lazy').pop() === '0 0' && S.auEditor.ask && S.auEditor.ask.kind === 'keep', 'Back did not ask');
-    GET['t4_au_lazy'] = '3 2 9000';
-    ticks(4);
-    const f = shown();
-    const own = frame(() => D.drawAudioAsk('LAZY CHOP', ['Keep 2 new chops?'], 0));
-    assert(inked(own) && same(f, own), 'the question is not on screen');
-    click();                                         /* opens on Yes */
-    assert(sent('t4_au_lazy_keep').join() === '1' && S.auEditor && S.auEditor.mode === 'wave', 'Yes did not keep and stay on WAVE');
+    assert(sent('t4_au_lazy').pop() === '0 0' && !S.auEditor.ask && sent('t4_au_lazy_keep').join() === '1' && S.auEditor.mode === 'wave',
+           'Back did not end Lazy keeping its chops, without asking: ' + JSON.stringify(sentLike(/_au_lazy/)));
+    GET['t4_au_lazy'] = '0 0 0'; ticks(4);
+    /* played out to its end: kept, no question */
+    reset();
+    click(); jog(1); jog(1); click();
+    GET['t4_au_lazy'] = '1 0 0'; ticks(4);
+    note(C.TRACK_PAD_BASE + 0, 100); note(C.TRACK_PAD_BASE + 0, 0);
+    GET['t4_au_lazy'] = '2 1 4000'; ticks(4);
+    GET['t4_au_lazy'] = '3 1 4000'; ticks(4);
+    assert(!S.auEditor.ask && sent('t4_au_lazy_keep').join() === '1' && S.auEditor.mode === 'wave',
+           'played out, Lazy did not keep its chops without asking: ' + JSON.stringify(sentLike(/_au_lazy/)));
     GET['t4_au_lazy'] = '0 0 0';
     back();
     assert(!S.auEditor && !S.auPanel, 'Back');
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
 });
 
-step('⭐⭐ a click in Even / Transient / Lazy keeps the chops and opens Manual on them (Josh: "manual chopping can\'t be available from any other chop screen to edit the chops that are there")', () => {
-    const toManual = (label) => {
-        const ed = S.auEditor;
-        assert(ed.mode === 'chop' && ed.chop && ed.chop.kind === 'manual' && !ed.ask && !ed.pick,
-               label + ': a click did not open Manual: ' + JSON.stringify({ mode: ed.mode, chop: ed.chop, ask: ed.ask, pick: ed.pick }));
-        assert(!sent('t4_au_manual').length, label + ': Manual cleared the chops');
-        let n = 0;
-        while (S.auEditor && n++ < 6) { if (S.auEditor.ask) { jog(-1); click(); } else back(); ticks(1); }
-        assert(!S.auEditor, label + ': could not leave');
-    };
-    /* Even: baked into a hand set, then Manual */
-    GET['t4_au_info_0'] = INFO(1, 8, 0); A.auMarkStale(4, 0); ticks(2);
-    mapPad(2, 2); reset();
-    click(); click();                                 /* SLICES › Even */
-    assert(S.auEditor.chop && S.auEditor.chop.kind === 'even', 'Even did not open');
-    click();
-    assert(sent('t4_au_even_bake').join() === '0', 'Even: the click did not keep the chops: ' + JSON.stringify(sentLike(/_au_/)));
-    toManual('Even');
-    /* Transient */
-    GET['t4_au_info_0'] = INFO(1, 8, 0); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(2);
-    mapPad(2, 2); reset();
-    click(); jog(1); click();                         /* SLICES › Transient */
-    assert(S.auEditor.chop && S.auEditor.chop.kind === 'transient', 'Transient did not open');
-    click();
-    assert(sent('t4_au_trans_bake').join() === '0', 'Transient: the click did not keep the chops: ' + JSON.stringify(sentLike(/_au_/)));
-    toManual('Transient');
+step('⭐⭐ a click in Lazy ends it keeping what was tapped (armed: nothing to keep), and never opens Manual (Josh, 2026-10-30: "get rid of click to insert a [slice] outside of manual mode")', () => {
     /* Lazy, running: ends, keeps what was tapped */
     GET['t4_au_info_0'] = INFO(1, 8, 0); A.auMarkStale(4, 0); ticks(2);
     mapPad(2, 2); reset();
@@ -1354,17 +1329,18 @@ step('⭐⭐ a click in Even / Transient / Lazy keeps the chops and opens Manual
     click();
     assert(sent('t4_au_lazy').pop() === '0 0' && sent('t4_au_lazy_keep').join() === '1',
            'Lazy (running): the click did not end and keep: ' + JSON.stringify(sentLike(/_au_lazy/)));
+    assert(S.auEditor.mode === 'wave' && !S.auEditor.chop && !S.auEditor.ask, 'Lazy (running): the click did not land on SLICES');
     GET['t4_au_lazy'] = '0 0 0';
-    toManual('Lazy (running)');
     /* Lazy, armed with no tap: nothing to keep */
-    mapPad(2, 2); reset();
+    reset();
     click(); jog(1); jog(1); click();
     GET['t4_au_lazy'] = '1 0 0'; ticks(4);
     click();
-    assert(sent('t4_au_lazy').pop() === '0 0' && !sent('t4_au_lazy_keep').length,
+    assert(sent('t4_au_lazy').pop() === '0 0' && !sent('t4_au_lazy_keep').length && S.auEditor.mode === 'wave' && !S.auEditor.chop,
            'Lazy (armed): ' + JSON.stringify(sentLike(/_au_lazy/)));
     GET['t4_au_lazy'] = '0 0 0';
-    toManual('Lazy (armed)');
+    back();
+    assert(!S.auEditor, 'could not leave');
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
 });
 

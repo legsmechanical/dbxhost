@@ -27,6 +27,9 @@ the section into a versioned heading at release time.
 - **Audio: chop a Loop clip from SAMPLE.** A Loop clip's SAMPLE menu adds **Chop
   sample** (Even · Transient · Lazy · Manual): picking one makes it a Slice clip and
   opens that chop editor on SLICES.
+- **Audio: chop editors close without asking.** In Even, Transient and Lazy, a click or
+  Back keeps the chops and returns to SLICES (no *Keep N chops?*); a click no longer
+  opens Manual.
 - **Audio: Vintage is far less noisy.** Its pieces now crossfade into each other (about
   3 ms) instead of cutting hard ~190 times a second, which buzzed whenever a loop's Tempo
   differed from the project's.

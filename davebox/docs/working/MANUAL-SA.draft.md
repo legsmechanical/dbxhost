@@ -1304,16 +1304,15 @@ The Mode stays as it is: the chops serve both modes.
   only the strongest, higher every small one (**Shift** for 5 a detent) — and watch
   the chops move on the wave; the count shows top right. Only hits in the chopped
   part count, and only the first 128 (the count reads **128+** past that).
-- In both, **Back** asks *Keep N chops?* — **Yes** makes them your chops, to edit
-  like any others; **No** puts back what you had. A slice's sound settings belong to
-  its number, so slice 3 keeps its sound.
+- In both, **Back** or a **click** keeps them as your chops, to edit like any others,
+  and returns to SLICES. A slice's sound settings belong to its number, so slice 3
+  keeps its sound.
 - **Lazy** re-chops the sample by ear. Pad 1 lights white; tap it and the chopped
   part plays. The next pad is always the white one: tap it to drop a
   chop where the sample is. The slices you've chopped so far stay lit. It ends at
-  its end or on **Back**, and asks *Keep N new chops?* — **Yes** keeps them, **No**
-  puts your old chops back. **Back** before the first tap changes nothing.
-- A **click** in Even, Transient or Lazy keeps the chops as they are (Lazy stops
-  there) and opens **Manual** on them, to fine-tune by hand.
+  its end, on **Back** or on a **click**, keeping the chops you made. **Back** before
+  the first tap changes nothing.
+- To fine-tune any of them by hand, open **Manual** afterwards.
 - **Manual** edits the chops you have, by hand:
 
 | Control | Does |

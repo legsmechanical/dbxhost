@@ -53,14 +53,16 @@
  *              click asks "Clear all chops?" (one slice, Start..End). An End
  *              turned past the next slice's start sticks there a few detents
  *              and reads NEXT.
- *   Back in Even / Transient asks "Keep N chops?" (Josh: "back is dialog:
- *   keep n chops?"): Yes makes them the clip's own, No leaves the chops as
- *   they were; Manual's Back just returns. The pads play the chops in all
- *   three (Josh: "yes - and in manual").
+ *   A click or Back in Even / Transient closes it and the chops are the
+ *   clip's own — no question (Josh, 2026-10-30: "click in editor closes the
+ *   editor and saves the slices just like back. and get rid of the
+ *   confirmation for back"; it asked "Keep N chops?" and a click opened
+ *   Manual); Manual's click adds a chop, its Back just returns. The pads play
+ *   the chops in all three (Josh: "yes - and in manual").
  * LAZY: pad 1 white; its tap plays Start..End; then the next pad is white and
  * its tap drops a marker at the playhead; chopped slices stay lit. It ends on
- * Back or at End and asks "Keep N new chops?" (Yes keeps them, No brings the
- * old ones back); Back before the first tap changes nothing. Back leaves the
+ * a click, Back or at End, keeping what it chopped (it asked "Keep N new
+ * chops?"); Back before the first tap changes nothing. Back leaves the
  * picker a level at a time, the chop editor for WAVE, and WAVE. Steps are
  * swallowed; Note/Session closes and falls through. */
 
@@ -73,7 +75,7 @@ import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLaz
          auPanelPages, auPanelPageName, auPanelKnob, auPanelKnobClass, auChop, auPadToSlice,
          auSelSlice, auSetSelSlice, isAudioTrack, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
          auMarkAdd, auMarkDel, auManual, auEvenBake, auTrans, auTransBake, auRangeStep, auSet, auEnd, auPanelRingCells, auPanelReset,
-         auIsSlice, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX, AU_BPM10_MIN, AU_BPM10_MAX, auLenTicks,
+         auIsSlice, AU_LAZY_ARMED, AU_LAZY_RUN, AU_LAZY_ENDED, AU_EVEN_MAX, AU_BPM10_MIN, AU_BPM10_MAX, auLenTicks,
          auSampleP2Cells, auSampleP2Knob, auSampleReset, auEdit, auTrimCuts, auOrig, auNudgeStep, auFpt, auPlayedEnd } from './ui_audio.mjs';
 import { registerScreenRingCells } from './ui_knob_leds.mjs';
 import { auModeValue } from './ui_pure.mjs';
@@ -307,6 +309,19 @@ function startLazy(ed) {
     auSetSelSlice(ed.t, 0);
     computePadNoteMap();
     S.ledsDirtyAudio = true;
+}
+/* Lazy ends (a click, Back, or played out) keeping what it chopped; armed,
+ * before the first tap, nothing changes. */
+export function lazyFinish(ed) {
+    const lz = auLazyState();
+    if (lz.state === AU_LAZY_RUN || lz.state === AU_LAZY_ENDED) {
+        if (lz.state === AU_LAZY_RUN) auLazyStop(ed.t, ed.c);
+        auLazyKeep(ed.t, ed.c, 1);
+        auSetSelSlice(ed.t, 0);
+        auMarkStale(ed.t, ed.c);
+        S.auStartsRev = (S.auStartsRev | 0) + 1;
+    } else if (lz.state === AU_LAZY_ARMED) auLazyStop(ed.t, ed.c);
+    endLazy(ed);
 }
 function endLazy(ed) {
     ed.mode = 'wave';
@@ -862,27 +877,15 @@ export function audioEditorInput(status, d1, d2) {
     if (d1 === MoveMainButton) {
         if (d2 !== 127) return true;
         S.screenDirty = true;
-        /* Manual from any other chop screen, on the chops it made (Josh,
-         * 2026-10-30: "i don't see a reason why manual chopping can't be
-         * available from any other chop screen to edit the chops that are
-         * there"): Lazy ends (what it chopped kept; armed, nothing changes),
+        /* A click outside Manual closes the chop editor, the chops kept, as
+         * Back does (Josh, 2026-10-30: "get rid of click to insert a [slice]
+         * outside of manual mode. click in editor closes the editor and saves
+         * the slices just like back"): Lazy ends keeping what it chopped,
          * Even / Transient keep theirs */
-        if (sub === 'lazy') {
-            const lz = auLazyState();
-            if (lz.state === AU_LAZY_RUN) {
-                auLazyStop(ed.t, ed.c);
-                auLazyKeep(ed.t, ed.c, 1);
-                auSetSelSlice(ed.t, 0);
-                auMarkStale(ed.t, ed.c);
-                S.auStartsRev = (S.auStartsRev | 0) + 1;
-            } else if (lz.state === AU_LAZY_ARMED) auLazyStop(ed.t, ed.c);
-            endLazy(ed);
-            openChop(ed, 'manual');
-            return true;
-        }
+        if (sub === 'lazy') { lazyFinish(ed); return true; }
         /* no sample: click loads one */
         if (sub === 'empty') { S.pendingAudioChooser = { t: ed.t, c: ed.c }; return true; }
-        if (kind && !hand) { closeChop(ed, true); openChop(ed, 'manual'); return true; }
+        if (kind && !hand) { closeChop(ed, true); return true; }
         if (p2 && S.deleteHeld) {
             /* Delete + click: the page showing back to its defaults, as on a
              * bank (Josh, 2026-10-28: "for multi-page banks, we should have
@@ -934,21 +937,11 @@ export function audioEditorInput(status, d1, d2) {
         const held = S.backHoldFired;
         S.backPressTick = -1; S.backHoldFired = false;
         if (held) return true;
-        if (sub === 'lazy') {
-            const lz = auLazyState();
-            if (lz.state === AU_LAZY_RUN) {
-                /* Back while it plays: it ends, and asks */
-                auLazyStop(ed.t, ed.c);
-                ed.ask = { kind: 'keep', sel: 0, n: lz.n };
-            } else if (lz.state === AU_LAZY_ARMED) {
-                /* before the first tap: no change */
-                auLazyStop(ed.t, ed.c);
-                endLazy(ed);
-            }
-        } else if (kind === 'even' || kind === 'transient') {
-            /* Josh, 2026-10-28: "back is dialog: keep n chops?" */
-            ed.ask = { kind: 'chops', sel: 0 };
-        } else if (kind) closeChop(ed, false);
+        /* Back closes a chop editor keeping its chops, no question (Josh,
+         * 2026-10-30: "get rid of the comfirmation for back") */
+        if (sub === 'lazy') lazyFinish(ed);
+        else if (kind === 'even' || kind === 'transient') closeChop(ed, true);
+        else if (kind) closeChop(ed, false);
         else leaveWave();
         S.screenDirty = true;
         return true;
@@ -957,7 +950,7 @@ export function audioEditorInput(status, d1, d2) {
     return false;
 }
 
-/* "Keep N new chops?" / "Keep N chops?" / "Clear all chops?" — the jog picks
+/* Manual's "Clear all chops?" and SAMPLE's Trim / Normalize — the jog picks
  * (clockwise toward Yes, on the right), a click answers, Back is No. */
 function askInput(ed, status, d1, d2) {
     const hi = status & 0xF0;
@@ -991,17 +984,7 @@ function askInput(ed, status, d1, d2) {
     const kind = ed.ask.kind;
     ed.ask = null;
     S.backPressTick = -1; S.backHoldFired = false;
-    if (kind === 'keep') {
-        auLazyKeep(ed.t, ed.c, yes);
-        if (yes) {
-            auSetSelSlice(ed.t, 0);
-            auMarkStale(ed.t, ed.c);
-            S.auStartsRev = (S.auStartsRev | 0) + 1;
-        }
-        endLazy(ed);
-    } else if (kind === 'chops') {
-        closeChop(ed, yes);
-    } else if (kind === 'clear' && yes) {
+    if (kind === 'clear' && yes) {
         clearChops(ed);
     }
     computePadNoteMap();

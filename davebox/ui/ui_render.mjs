@@ -256,10 +256,7 @@ function drawAudioPanel() {
 function drawAudioWaveEditor() {
     const ed = S.auEditor, t = ed.t, c = ed.c, i = auInfo(t, c);
     if (ed.ask) {
-        const n = ed.ask.n != null ? ed.ask.n : i.hand;
-        if (ed.ask.kind === 'keep') drawAudioAsk('LAZY CHOP', ['Keep ' + n + ' new chop' + (n === 1 ? '' : 's') + '?'], ed.ask.sel);
-        else if (ed.ask.kind === 'chops') drawAudioAsk(ed.chop.kind === 'even' ? 'EVEN' : 'TRANSIENT', ['Keep ' + i.n + ' chop' + (i.n === 1 ? '' : 's') + '?'], ed.ask.sel);
-        else if (ed.ask.kind === 'edit') {
+        if (ed.ask.kind === 'edit') {
             drawAudioAsk(ed.ask.op === 'norm' ? 'NORMALIZE' : 'TRIM',
                          ed.ask.op === 'norm' ? ['Raise the peak', 'to full scale.'] : ['Cut the file to', 'what the clip plays.'],
                          ed.ask.sel, ['Overwrite', 'New']);
@@ -311,7 +308,7 @@ function drawAudioWaveEditor() {
         ovwPrint(4, 10, lz.state === AU_LAZY_RUN ? 'TAP THE WHITE PAD' : 'TAP PAD 1 TO START', 1);
         if (lz.state === AU_LAZY_RUN) right(lz.n + ' CHOP' + (lz.n === 1 ? '' : 'S'));
         drawAudioWave(t, c, 0, 20, 128, 30, { A: 0, B: i.nframes, sel: -1 });
-        drawKitHintRow(MV_FOOTER_Y, [['pad', lz.state === AU_LAZY_ARMED ? 'play' : 'chop'], ['clk', 'manual']]);   /* two fit; Back stops anywhere */
+        drawKitHintRow(MV_FOOTER_Y, [['pad', lz.state === AU_LAZY_ARMED ? 'play' : 'chop'], ['clk', 'done']]);   /* two fit; a click or Back ends it, keeping the chops */
         return;
     }
     const sub = auWaveSub(ed);
@@ -369,7 +366,7 @@ function drawAudioWaveEditor() {
         if (zoomTxt) mid(zoomTxt);
         else if (jogLit) mid(kind === 'even' ? 'COUNT ' + (i.even | 0) : 'SENS ' + (i.sens | 0));
         drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel: -1, gain: i.gain | 0 });
-        drawKitHintRow(MV_FOOTER_Y, [['jog', kind === 'even' ? 'count' : 'sens'], ['clk', 'manual']]);   /* two fit; Back asks anywhere */
+        drawKitHintRow(MV_FOOTER_Y, [['jog', kind === 'even' ? 'count' : 'sens'], ['clk', 'done']]);   /* two fit; a click or Back keeps the chops */
         return;
     }
     if (kind === 'manual') drawBankHeading('SLICE ' + (sel + 1) + '/' + mk.length, false);
