@@ -120,7 +120,7 @@ step('⭐⭐ Yes: clip A recorded alone, before its FX, into the project', () =>
 
 step('⭐⭐ ...then clip C, then the conversion, then each clip takes its recording', () => {
     S.resampleState = 1; ticks(1);
-    S.resampleState = 3; S.resampleFrames = 88200; S.resampleDone = 1000; ticks(1);
+    S.resampleState = 3; S.resampleFrames = 88200; S.resampleDone = 1000; ticks(3);
     /* the notice is the conversion's own, never the plain resample's (on the
      * device it read "undefined, bar NaN/undefined") */
     assert(S.actionPopupLines[0] === 'TO AUDIO 1/2' && S.actionPopupLines[1] === '5A, bar 1/1',
