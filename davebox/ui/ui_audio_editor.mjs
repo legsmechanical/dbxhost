@@ -389,6 +389,27 @@ export function closeAudioEditor() {
     S.screenDirty = true;
 }
 
+/* The editor follows the track's clip (Josh, 2026-10-30: "when i switch clips
+ * in track mode with a waveform editor up it doesn't change to the new
+ * clip"): a launch or a queued pick moves it onto the clip now current — a
+ * running chop or a question on the old one undone first, as any way out of
+ * the editor undoes it. SLICES on a clip with no slices becomes SAMPLE (an
+ * empty clip: click to load). SAMPLE keeps its page. Once a tick. */
+export function auEditorFollowClip() {
+    const ed = S.auEditor;
+    if (!ed || !S.auPanel || !isAudioTrack(ed.t)) return;
+    const c = auClipOf(ed.t);
+    if (c === ed.c) return;
+    const t = ed.t, page = ed.page | 0;
+    let which = ed.ed || 'sample';
+    closeAudioEditor();
+    if (which === 'slices' && !auIsSlice(auInfo(t, c))) which = 'sample';
+    S.auSrc[t] = which;
+    openWaveEditor(t, c);
+    S.auEditor.ed = which;
+    S.auEditor.page = which === 'sample' ? page : 0;
+}
+
 /* Frames per screen pixel at the editor's zoom (128 pixels across). */
 export function auEdPixel(ed) { return Math.max(1, Math.round((ed.B - ed.A) / 128)); }
 

@@ -87,7 +87,7 @@ import { resampleTick } from './ui_resample.mjs';
 import { auTick, auReadTrack, auForgetTrack, isAudioTrack } from './ui_audio.mjs';
 import { auConvertStart, auConvertTick, auConvertApply } from './ui_audio_convert.mjs';
 import { openAudioChooser, closeAudioChooser, audioChooserTick } from './ui_audio_chooser.mjs';
-import { closeAudioEditor, closeAudioPanel } from './ui_audio_editor.mjs';
+import { closeAudioEditor, closeAudioPanel, auEditorFollowClip } from './ui_audio_editor.mjs';
 import { applyInstrChoice } from './ui_dsp_bridge.mjs';
 import { INSTR_NONE, PAD_MODE_AUDIO } from './ui_constants.mjs';
 import { bankListForMode } from './ui_pure.mjs';
@@ -2325,6 +2325,7 @@ export function _tickImpl() {
         if (S.auChooser && (S.auChooser.t !== S.activeTrack || S.sessionView)) closeAudioChooser();
         if (S.auPanel && (S.auPanel.t !== S.activeTrack || S.sessionView || !isAudioTrack(S.auPanel.t))) closeAudioPanel();
         if (S.auEditor && !S.auPanel) closeAudioEditor();
+        auEditorFollowClip();
         audioChooserTick();
         auTick();
         /* -> Audio with the clips resampled first (ui_audio_convert). */

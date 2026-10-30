@@ -809,6 +809,33 @@ step('⭐⭐ SLICES (Josh, 2026-10-29): page 1 the chops — K1 / K3 the slice, 
     GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(2);
 });
 
+step('⭐⭐ the editor follows the clip: a side button with SAMPLE or SLICES up moves it onto that clip (Josh, 2026-10-30: "it doesn\'t change to the new clip")', () => {
+    S.activeBank = 0; S.bankCardLatched = false;
+    S.sceneRow = 0;
+    GET['t4_au_info_0'] = INFO(1, 8, 0); GET['t4_au_marks_0'] = MARKS8;
+    delete GET['t4_au_info_1'];
+    A.auMarkStale(4, 0); ticks(2);
+    mapPad(2, 3); ticks(2);
+    assert(S.auEditor && S.auEditor.c === 0, 'SAMPLE did not open on clip A');
+    const sideB = () => { cc(42, 127); cc(42, 0); ticks(4); };      /* the second side button: clip B */
+    sideB();
+    let tx = globalThis.__texts(() => shown());
+    assert(S.auEditor && S.auEditor.c === 1 && A.auClipOf(4) === 1, 'SAMPLE did not move to clip B: ' + (S.auEditor && S.auEditor.c));
+    assert(tx.indexOf('CLICK TO LOAD SAMPLE') >= 0, 'clip B (empty) is not shown: ' + JSON.stringify(tx));
+    cc(43, 127); cc(43, 0); ticks(4);                               /* back to clip A */
+    assert(S.auEditor && S.auEditor.c === 0, 'SAMPLE did not move back to clip A');
+    back(); ticks(2);
+    /* SLICES onto a clip with no slices: SAMPLE */
+    mapPad(2, 2); ticks(2);
+    assert(S.auEditor && S.auEditor.ed === 'slices', 'SLICES did not open');
+    sideB();
+    assert(S.auEditor && S.auEditor.c === 1 && S.auEditor.ed === 'sample', 'SLICES on an empty clip did not become SAMPLE: ' + JSON.stringify(S.auEditor && { c: S.auEditor.c, ed: S.auEditor.ed }));
+    cc(43, 127); cc(43, 0); ticks(4);
+    back(); ticks(2);
+    S.activeBank = 0;
+    GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(2);
+});
+
 step('⭐⭐ SAMPLE zoomed out is the clip: the audio where it lands at its Tempo, empty past the file, a tick a beat (Josh, 2026-10-29)', () => {
     S.activeBank = 0; S.bankCardLatched = false;
     /* an 84 BPM sample of 2 s (96000 frames at 48 kHz) in a 1-bar clip: a bar
