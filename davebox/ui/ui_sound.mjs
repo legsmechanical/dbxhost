@@ -4341,6 +4341,15 @@ function legUnitMeta(leg) {
 }
 /* A bound's raw value, and the raw step a detent moves it: about a
  * thousandth of the range (Tempo 1 BPM, Decay 5 ms), Shift a single unit. */
+/* A NEW leg's starting range, where the whole one is no use to a hand: an
+ * Audio clip's Tempo runs to 999.9 BPM, so its leg starts at Hi 400.0 (Josh,
+ * 2026-10-31: "bound it by default to say 400 … override-able in the menu"). */
+const AU_BPM10_LEG_HI = 4000;
+function legDefaultRange(m) {
+    if (m.kind !== AU_KIND || m.key !== 'au_bpm') return null;
+    const st = SEQ_AUTO_TARGETS.au_bpm;
+    return { hi: (AU_BPM10_LEG_HI - st.min) / (st.max - st.min) };
+}
 function legBoundRaw(meta, f) { return Math.round(meta.min + f * (meta.max - meta.min)); }
 function legBoundStep(meta) { return S.shiftHeld ? 1 : Math.max(1, Math.round((meta.max - meta.min) / 1000)); }
 function legBoundText(leg, f) {
@@ -4780,7 +4789,7 @@ function commitKnobAssignment(target, param) {
     } else if (j >= 0 && j < legs.length) {
         legs[j] = Object.assign({}, m, { lo: legs[j].lo, hi: legs[j].hi });
     } else {
-        legs.push(Object.assign({ lo: 0, hi: 1 }, m));
+        legs.push(Object.assign({ lo: 0, hi: 1 }, m, legDefaultRange(m)));
     }
     store[i] = legs.length ? { v: store[i] ? store[i].v : null, legs } : null;
     S.knobAsn[i] = asnFromMacro(macroLeg0(store[i]));
@@ -6584,7 +6593,11 @@ function bankMacroCell(m, meta, v) {
     if (span <= 1) { cell.kind = 'pill'; cell.norm = v ? 1 : 0; }
     else if (span <= 16) { cell.kind = 'valsq'; }
     else if (meta.min < 0) { cell.kind = 'arcbip'; cell.signed = Math.max(-1, Math.min(1, (v - (meta.min + meta.max) / 2) / (span / 2))); }
-    else { cell.kind = 'arc'; cell.norm = Math.max(0, Math.min(1, (v - meta.min) / span)); }
+    else {
+        /* a ranged leg's arc runs Lo..Hi: Tempo held to 120-140 is full at 140 */
+        const [a, b] = (typeof m.lo === 'number' && legRanged(m)) ? legBounds(m, meta.min, meta.max) : [meta.min, meta.max];
+        cell.kind = 'arc'; cell.norm = b > a ? Math.max(0, Math.min(1, (v - a) / (b - a))) : 0;
+    }
     return cell;
 }
 const MACRO_UNTURNABLE = { file: 1, text: 1, opaque: 1 };

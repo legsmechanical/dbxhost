@@ -210,6 +210,33 @@ step('⭐ Lo / Hi on an Audio leg are in its own units: Tempo shows BPM and step
     snd.soundSetViewForTest(19); ticks(1);
 });
 
+step('⭐ a NEW Tempo leg starts bounded at Hi 400.0 (the menu can widen it); a ranged leg\'s dial runs Lo..Hi', () => {
+    if (snd.soundViewForTest() !== 19) { snd.soundSetViewForTest(19); ticks(1); }
+    const tn = (k, on) => note(k, on ? 127 : 0);
+    tn(1, true); click(); tn(1, false); ticks(2);                       /* K2, empty: the picker */
+    pickRow('au:au');
+    pickParam('au_bpm');
+    const leg = S.trackMacros[4][1] && S.trackMacros[4][1].legs[0];
+    assert(leg && leg.key === 'au_bpm' && leg.lo === 0 && Math.round(1 + leg.hi * 9998) === 4000, 'K2 leg: ' + JSON.stringify(leg));
+    assert(snd.soundViewForTest() === 20, 'a bounded pick lands on its leg list, view ' + snd.soundViewForTest());
+    assert(snd.soundKnobLegRowsForTest()[2].value === '400.0', 'Hi reads ' + snd.soundKnobLegRowsForTest()[2].value);
+    /* a Gain leg keeps the whole range */
+    snd.soundSetViewForTest(19); ticks(1);
+    tn(2, true); click(); tn(2, false); ticks(2);
+    pickRow('au:au'); pickParam('au_gain');
+    const g = S.trackMacros[4][2].legs[0];
+    assert(g.lo === 0 && g.hi === 1, 'a Gain leg was bounded: ' + JSON.stringify(g));
+    /* the dial: Tempo held to 120-140 at 140 is full, at 130 half */
+    S.trackMacros[4][1] = { v: null, legs: [{ kind: 'au', key: 'au_bpm', lo: (1200 - 1) / 9998, hi: (1400 - 1) / 9998 }] };
+    const arcAt = (b) => { GET['t4_au_info_0'] = INFO(0).replace(/ 1200\|/, ' ' + b + '|'); A.auMarkStale(4, 0); ticks(2); return snd.soundMacrosForTest().drawn[1]; };
+    let c = arcAt(1400);
+    assert(c.kind === 'arc' && Math.abs(c.norm - 1) < 1e-6, 'at 140: ' + JSON.stringify(c));
+    c = arcAt(1300);
+    assert(Math.abs(c.norm - 0.5) < 0.01, 'at 130: ' + JSON.stringify(c));
+    GET['t4_au_info_0'] = INFO(0); A.auMarkStale(4, 0);
+    S.trackMacros[4][1] = null; S.trackMacros[4][2] = null; snd.soundSetViewForTest(19); ticks(2);
+});
+
 step('off an Audio track the rows are gone and the macro reads UNASSIGNED', () => {
     S.trackPadMode[4] = 0;
     const ids = snd.soundKnobTargetsForTest().map(t => t.id);

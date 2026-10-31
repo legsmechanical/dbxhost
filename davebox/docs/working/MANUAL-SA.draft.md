@@ -2436,7 +2436,8 @@ Ctff          Syn>cutoff
   while it closes a reverb. On a list parameter they choose a span of the list. You
   hear a range as you set it. A module parameter's range is a percentage; a dAVEBOx
   bank knob's or an Audio clip setting's is in its own units (Tempo in BPM, 1 BPM a
-  detent, **Shift** for 0.1).
+  detent, **Shift** for 0.1). A new Tempo target starts with **Hi** at 400 BPM; raise it
+  here if you need more. With a range set, the knob's dial runs from Lo to Hi.
 - **Travel** — **Bounded** (the default) keeps the parameter's own feel and stops
   at the range; **Full** spreads the range across the knob's whole sweep. Full
   suits a filter, not a parameter with only a few values. On a dAVEBOx bank knob or
