@@ -143,6 +143,12 @@ typedef struct {
     uint8_t      trans;              /* Transient: an override over the hand set, like Even; never saved */
     uint8_t      tr_n;               /* Transient's chops, 1..AU_MAX_SLICES (au_trans_calc) */
     uint32_t     tr_at[AU_MAX_SLICES]; /* their starts: Start, then each kept hit inside Start..End */
+    uint8_t      tr_due;             /* tr_at needs working out again (au_trans_settle: once a block, not a detent) */
+    /* the info read's Transient count, kept for the (sample, gen, Start, End,
+     * Sens) it was counted for: counting walks every candidate (review) */
+    const void  *hc_smp;
+    uint32_t     hc_gen, hc_rs, hc_re, hc_n;
+    int16_t      hc_sens;
     au_slice_t   sl[AU_MAX_SLICES];
 } au_clip_t;
 

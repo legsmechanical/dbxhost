@@ -41,6 +41,12 @@ typedef struct {
  * chunk. destroy_instance runs on the SPI thread and joins the loader, so the
  * join must not wait out a whole multi-hundred-MB copy or decode. */
 static volatile int au_abort = 0;
+/* What the loader is reading now, for "Loading 42%" (review: a long file read
+ * with no sign of progress): the clip (t*16+c, -1 none) and frames read of
+ * how many. One loader thread writes; get_param reads (a torn pair only
+ * misreports one percentage). */
+static volatile int      au_ld_key = -1;
+static volatile uint32_t au_ld_done, au_ld_total;
 
 typedef struct {
     pthread_t      th;
@@ -587,6 +593,102 @@ static void au_sample_free(au_sample_t *s) {
  * au_stream_sec keeps only its waveform summary and the chunks a Loop over
  * the whole file pins (the streamer does the rest); otherwise it is read
  * whole. */
+/* THE WAVEFORM SUMMARY OF A STREAMED FILE, kept (review, 2026-10-31: every
+ * project load read a long file whole — ~475 MB for 30 minutes — only to
+ * rebuild its summary). `<project>/dAVEBOx/.peaks/<name>.mip`, beside
+ * samples/ (never in it: the chooser and Purge list samples/). Its header
+ * names the file it summarises — size, mtime, frames, rate, channels — so an
+ * Overwrite (or any change) makes it stale and it is rebuilt. The transient
+ * candidates come from the summary, so they need no keeping. Loader thread. */
+static int au_mkdirs(const char *dir);   /* below */
+#define AU_MIP_MAGIC 0x3150494Du   /* "MIP1" */
+typedef struct {
+    uint32_t magic, frames, rate, nmip;
+    uint64_t size;
+    int64_t  mtime;
+    uint16_t ch, pad[3];
+} au_mip_hdr_t;
+
+static int au_mip_path(const char *path, char *out, size_t sz, char *dir, size_t dsz) {
+    const char *base = strrchr(path, '/');
+    int dl;
+    if (!base) return 0;
+    dl = (int)(base - path);
+    /* samples/<name> -> .peaks/<name>.mip, one level up */
+    if (dl < 8 || strncmp(base - 7, "samples", 7)) return 0;
+    snprintf(dir, dsz, "%.*s.peaks", dl - 7, path);
+    snprintf(out, sz, "%s/%s.mip", dir, base + 1);
+    return 1;
+}
+
+static void au_mip_hdr_for(au_mip_hdr_t *h, const struct stat *st, const au_sample_t *s) {
+    memset(h, 0, sizeof *h);
+    h->magic = AU_MIP_MAGIC;
+    h->frames = s->frames; h->rate = s->rate; h->nmip = s->nmip; h->ch = s->ch;
+    h->size = (uint64_t)st->st_size; h->mtime = (int64_t)st->st_mtime;
+}
+
+/* The summary for `path` into s->mip (s->frames/nmip set from it), or 0. */
+static int au_mip_load(const char *path, au_sample_t *s, const au_fmt_t *fm) {
+    char mp[600], md[600];
+    struct stat st;
+    au_mip_hdr_t h;
+    FILE *f;
+    int ok = 0;
+    if (!au_mip_path(path, mp, sizeof mp, md, sizeof md) || stat(path, &st)) return 0;
+    f = fopen(mp, "rb");
+    if (!f) return 0;
+    if (fread(&h, sizeof h, 1, f) == 1 && h.magic == AU_MIP_MAGIC && h.size == (uint64_t)st.st_size &&
+        h.mtime == (int64_t)st.st_mtime && h.rate == fm->rate && h.frames && h.frames <= fm->frames &&
+        h.ch == s->ch && h.nmip == (h.frames + AU_MIP - 1) / AU_MIP && h.nmip <= s->nmip &&
+        fread(s->mip, 2, h.nmip, f) == h.nmip) {
+        s->frames = h.frames;
+        s->nmip = h.nmip;
+        s->nchunks = (h.frames + AU_CHUNK - 1) / AU_CHUNK;
+        ok = 1;
+    }
+    fclose(f);
+    return ok;
+}
+
+static void au_mip_save(const char *path, const au_sample_t *s) {
+    char mp[600], md[600], tmp[640];
+    struct stat st;
+    au_mip_hdr_t h;
+    FILE *f;
+    if (!au_mip_path(path, mp, sizeof mp, md, sizeof md) || stat(path, &st) || au_mkdirs(md)) return;
+    au_mip_hdr_for(&h, &st, s);
+    snprintf(tmp, sizeof tmp, "%s.tmp", mp);
+    f = fopen(tmp, "wb");
+    if (!f) return;
+    if (fwrite(&h, sizeof h, 1, f) == 1 && fwrite(s->mip, 2, s->nmip, f) == s->nmip && !fflush(f)) {
+        fclose(f);
+        if (rename(tmp, mp)) unlink(tmp);
+        else if (stat(md, &st) == 0 && chown(mp, st.st_uid, st.st_gid)) { /* best effort */ }
+    } else {
+        fclose(f);
+        unlink(tmp);
+    }
+}
+
+/* A streamed file whose summary was kept: only the pinned chunks are read. */
+static int au_read_pinned(FILE *f, const au_fmt_t *fm, au_sample_t *s, const uint8_t *pins, uint8_t *buf) {
+    const uint32_t fb = (uint32_t)fm->ch * (fm->bits / 8);
+    uint32_t k;
+    for (k = 0; k < s->nchunks; k++) {
+        uint32_t a = k * AU_CHUNK, want = s->frames - a < AU_CHUNK ? s->frames - a : AU_CHUNK;
+        int16_t *c;
+        if (!pins[k]) continue;
+        if (au_abort || fseek(f, fm->data_off + (long)a * (long)fb, SEEK_SET)) return 0;
+        c = (int16_t *)calloc((size_t)AU_CHUNK * s->ch, sizeof(int16_t));
+        if (!c) return 0;
+        if (fread(buf, fb, want, f) != want) { free(c); return 0; }
+        au_conv_frames(buf, want, fm, s->ch, c);
+        s->chunk[k] = c;
+    }
+    return 1;
+}
+
 static au_sample_t *au_read_file(const char *path, int may_stream, int *err) {
     FILE *f = fopen(path, "rb");
     au_fmt_t fm;
@@ -626,6 +728,15 @@ static au_sample_t *au_read_file(const char *path, int may_stream, int *err) {
         if (!s->st->keep) goto fail;
         au_pins(s->nchunks, fm.frames, fm.rate, 0, fm.frames, au_pin_flag, pins);
     }
+    if (streamed && au_mip_load(path, s, &fm)) {
+        /* its summary was kept: read only what stays in memory */
+        buf = (uint8_t *)malloc((size_t)AU_CHUNK * fm.ch * (fm.bits / 8));
+        if (!buf || !au_read_pinned(f, &fm, s, pins, buf)) goto fail;
+        au_peaks_from_mip(s);
+        au_find_hits(s);
+        *err = AU_ERR_NONE;
+        goto out;
+    }
     {
         /* Whole: straight into pcm. Streamed: a chunk at a time into tmp,
          * summarised, and kept when pinned. */
@@ -634,8 +745,10 @@ static au_sample_t *au_read_file(const char *path, int may_stream, int *err) {
         uint32_t done = 0;
         buf = (uint8_t *)malloc((size_t)step * fb);
         if (!buf || fseek(f, fm.data_off, SEEK_SET)) goto fail;
+        au_ld_total = fm.frames;
         while (done < fm.frames) {
             if (au_abort) { *err = AU_ERR_OPEN; goto fail; }
+            au_ld_done = done;
             uint32_t want = fm.frames - done < step ? fm.frames - done : step;
             size_t got = fread(buf, fb, want, f);
             if (got == 0) break;
@@ -671,7 +784,7 @@ static au_sample_t *au_read_file(const char *path, int may_stream, int *err) {
             s->nmip = (done + AU_MIP - 1) / AU_MIP;
         }
     }
-    if (streamed) au_peaks_from_mip(s);
+    if (streamed) { au_peaks_from_mip(s); au_mip_save(path, s); }
     else au_make_peaks(s);
     au_find_hits(s);
     *err = AU_ERR_NONE;
@@ -1976,6 +2089,8 @@ static void au_loader_do(au_loader_t *L, const au_req_t *q) {
     if (q->kind == AU_REQ_DROP) { au_pool_release(L, q->smp); return; }
     memset(&r, 0, sizeof r);
     r.track = q->track; r.clip = q->clip; r.gen = q->gen;
+    au_ld_done = au_ld_total = 0;
+    au_ld_key = (int)q->track * NUM_CLIPS + (int)q->clip;
     if (q->kind == AU_REQ_PICK) {
         err = au_import(q->path, q->dir, r.name, sizeof r.name);
     } else if (q->kind == AU_REQ_EDIT) {
@@ -2003,6 +2118,7 @@ static void au_loader_do(au_loader_t *L, const au_req_t *q) {
         }
     }
     r.err = (uint8_t)err;
+    au_ld_key = -1;
     au_res_push(inst, &r);
 }
 
@@ -2181,6 +2297,27 @@ static void au_trans_calc(au_clip_t *cl) {
     cl->tr_n = (uint8_t)n;
 }
 
+/* Transient's chops, worked out if a change marked them due: the knob
+ * handlers mark (each detent would walk every candidate), and this runs once
+ * a block (au_render), before a read (au_get_param) and before a chop plays. */
+static void au_trans_settle(au_clip_t *cl) {
+    if (!cl->tr_due) return;
+    cl->tr_due = 0;
+    au_trans_calc(cl);
+}
+
+/* The info read's Transient count, recounted only when what it counts changed. */
+static uint32_t au_hit_count_cached(au_clip_t *cl, uint32_t rs, uint32_t re) {
+    const au_sample_t *s = cl->smp;
+    if (!s) return 0;
+    if (cl->hc_smp != (const void *)s || cl->hc_gen != cl->gen || cl->hc_rs != rs || cl->hc_re != re ||
+        cl->hc_sens != (int16_t)cl->sens) {
+        cl->hc_n = au_hit_count(s, rs, re, cl->sens);
+        cl->hc_smp = s; cl->hc_gen = cl->gen; cl->hc_rs = rs; cl->hc_re = re; cl->hc_sens = (int16_t)cl->sens;
+    }
+    return cl->hc_n;
+}
+
 /* How many slices the clip plays: Transient's or Even's, else the hand set's. */
 static int au_count(const au_clip_t *cl) {
     if (cl->trans) return cl->tr_n ? cl->tr_n : 1;
@@ -2231,6 +2368,7 @@ static au_voice_t *au_range_on(seq8_instance_t *inst, int t, int c, int slice, u
                                float vgain, uint32_t off, int sync);
 static void au_chop_on(seq8_instance_t *inst, int t, int c, int slice, float vgain, uint32_t off, int sync) {
     au_clip_t *cl = &inst->au_clip[t][c];
+    au_trans_settle(cl);
     const au_sample_t *s = cl->smp;
     uint32_t a, b;
     if (!s || (!sync && cl->mode != AU_MODE_SLICE)) return;

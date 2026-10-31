@@ -580,6 +580,9 @@ static void au_render(seq8_instance_t *inst, int frames) {
     int t, i, f;
     if (frames <= 0 || frames > 128) return;
     au_apply_results(inst);
+    for (t = 0; t < NUM_TRACKS; t++)
+        if (inst->tracks[t].pad_mode == PAD_MODE_AUDIO)
+            for (i = 0; i < NUM_CLIPS; i++) au_trans_settle(&inst->au_clip[t][i]);
     for (t = 0; t < NUM_TRACKS; t++) {
         seq8_track_t *tr = &inst->tracks[t];
         au_track_t *at = &inst->au_trk[t];
@@ -837,6 +840,7 @@ static void au_even_bake(au_clip_t *cl) {
 /* Whichever override is on becomes the hand set: Transient's chops (each
  * end home), else Even's. */
 static void au_gen_bake(au_clip_t *cl) {
+    au_trans_settle(cl);
     int k;
     if (cl->trans) {
         if (cl->smp && cl->tr_n) {
@@ -1065,12 +1069,12 @@ static int sp_track_audio(sp_ctx_t *cx) {
             if (v < 0) v = 0;
             if (fr && fr <= AU_GAP) return 1;
             cl->rstart = fr ? (uint32_t)clamp_i(v, 0, (int)(fr - AU_GAP)) : (uint32_t)v;
-            au_trans_calc(cl);
+            cl->tr_due = 1;                                      /* au_trans_settle */
         } else if (!strcmp(w, "slen")) {
             /* Slice: Length from Start, ticks at the sample's Tempo (0 = to
              * its end). A Loop clip's Length is the clip's own. */
             cl->slen = (uint32_t)(v < 0 ? 0 : v);
-            au_trans_calc(cl);
+            cl->tr_due = 1;                                      /* au_trans_settle */
         } else if (!strcmp(w, "pitch")) {
             cl->pitch = (int8_t)clamp_i(v, -24, 24);
         } else if (!strcmp(w, "detune")) {
@@ -1093,10 +1097,10 @@ static int sp_track_audio(sp_ctx_t *cx) {
                 v = (int)(bpm * 10.0 + 0.5);
             }
             cl->bpm10 = (uint16_t)clamp_i(v, AU_BPM10_MIN, AU_BPM10_MAX);
-            au_trans_calc(cl);
+            cl->tr_due = 1;                                      /* au_trans_settle */
         } else if (!strcmp(w, "sens")) {
             cl->sens = (uint8_t)clamp_i(v, 0, 100);           /* Transient: which hits count */
-            au_trans_calc(cl);
+            cl->tr_due = 1;                                      /* au_trans_settle */
         } else if (!strcmp(w, "nudge")) {
             cl->nudge_ms = (int16_t)clamp_i(v, -500, 500);
         } else if (!strcmp(w, "rot")) {
@@ -1341,6 +1345,7 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
     int t, c, l;
     if (key[0] != 't' || key[1] < '0' || key[1] > '7' || strncmp(key + 2, "_au_", 4)) return -1;
     t = key[1] - '0';
+    for (c = 0; c < NUM_CLIPS; c++) au_trans_settle(&inst->au_clip[t][c]);   /* a read sees the knob's last turn */
     const char *k = key + 6;
     if (!strcmp(k, "on")) return snprintf(out, out_len, "%d", inst->tracks[t].pad_mode == PAD_MODE_AUDIO);
     if (!strcmp(k, "dir")) {                      /* the project's samples/ (the chooser lists it) */
@@ -1354,6 +1359,12 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
         if (S) for (i = 0; i < AU_POOL_MAX; i++) if (__atomic_load_n(&S->smp[i], __ATOMIC_RELAXED)) n++;
         return snprintf(out, out_len, "%d %u %u %u", n, S ? __atomic_load_n(&S->loaded, __ATOMIC_RELAXED) : 0u,
                         S ? __atomic_load_n(&S->reads, __ATOMIC_RELAXED) : 0u, (unsigned)inst->au_underruns);
+    }
+    if (!strncmp(k, "progress_", 9)) {           /* progress_C: "done total" frames while the loader reads clip C, else "0 0" */
+        c = atoi(k + 9);
+        if (c >= 0 && c < NUM_CLIPS && au_ld_key == t * NUM_CLIPS + c)
+            return snprintf(out, out_len, "%u %u", (unsigned)au_ld_done, (unsigned)au_ld_total);
+        return snprintf(out, out_len, "0 0");
     }
     if (!strncmp(k, "info_", 5)) {
         /* "state err mode even nslices jump rstart rend pitch gain frames rate ch
@@ -1397,7 +1408,7 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
                         (unsigned)rs, (unsigned)ve, cl->pitch, cl->gain_db,
                         s ? (unsigned)s->frames : 0u, s ? (unsigned)s->rate : 0u, s ? s->ch : 0,
                         cl->revrs, cl->nudge_ms, cl->jmpq, au_count(cl), cl->detune, cl->sync, (unsigned)reach, cl->bpm10,
-                        (unsigned)(s ? au_hit_count(s, rs, re, cl->sens) : 0), cl->sens, cl->trans, (unsigned)cl->slen, (unsigned)cl->rot, cl->name);
+                        (unsigned)au_hit_count_cached(cl, rs, re), cl->sens, cl->trans, (unsigned)cl->slen, (unsigned)cl->rot, cl->name);
     }
     if (!strncmp(k, "sl_", 3)) {                  /* sl_C_L: "a b pinned pitch gain rev play atk dec detune" */
         const char *q = k + 3;

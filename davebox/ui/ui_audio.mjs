@@ -115,6 +115,7 @@ const _all = new Map();        /* "t_c" -> ALL SLICES: 6 values, null where the 
 const _peaks = new Map();      /* "t_c" -> { name, amp: [128 numbers 0..1] } */
 const _stale = new Set();      /* "t_c" whose info must be re-read */
 const _loading = new Set();    /* "t_c" read as loading: re-read until it lands */
+const _prog = new Map();       /* "t_c" -> percent read, while the loader reads that clip's file */
 const _editWatch = new Map();  /* "t_c" -> 'TRIM' / 'NORMALIZE': a Trim / Normalize waiting for its answer */
 let _pos = { t: -1, on: 0, frame: 0, slice: -1 };
 let _lazy = { state: 0, n: 0, frame: 0 };
@@ -313,6 +314,12 @@ export function auTick() {
         if (n && n.state !== was) S.screenDirty = true;
     }
     const cur = auInfo(t, c);
+    /* a long file: how far the loader has read it */
+    if (cur.state === 1 && (S.tickCount % 8) === 4) {
+        const pr = String(host_module_get_param('t' + t + '_au_progress_' + c) || '').split(' ').map((x) => parseInt(x, 10));
+        const pct = pr[1] > 0 ? Math.floor(pr[0] * 100 / pr[1]) : 0;
+        if (pct !== (_prog.get(key) | 0)) { _prog.set(key, pct); S.screenDirty = true; }
+    } else if (cur.state !== 1) _prog.delete(key);
     /* The pads follow the clip's Mode (play the chops / show the loop). */
     const pk = t + '_' + c + '_' + cur.mode + '_' + cur.n + '_' + (auLazyOpen() ? 1 : 0);
     if (pk !== _padKey) { _padKey = pk; S.pendingPadNoteMapRecompute = true; S.ledsDirtyAudio = true; }
@@ -513,7 +520,10 @@ function shortName(name) {
  * 2026-10-27: "all sounds good"). */
 export function auSampleName(t, c) {
     const i = auInfo(t, c);
-    if (i.state === 1) return 'Loading...';
+    if (i.state === 1) {
+        const p = _prog.get(t + '_' + c);
+        return p > 0 && p < 100 ? 'Loading ' + p + '%' : 'Loading...';
+    }
     if (i.state === 3) return i.err === 1 && i.name ? 'Missing: ' + shortName(i.name) : (AU_ERR_TEXT[i.err] || 'Failed');
     return i.name ? shortName(i.name) : 'No sample';
 }

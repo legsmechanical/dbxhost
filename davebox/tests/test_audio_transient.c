@@ -170,17 +170,17 @@ int main(void) {
     }
 
     /* ---- Start moves past click 1: worked out again, chop 1 at Start ---- */
-    hx_set_param(h, "t4_au_set_start", "0 30000");
+    hx_set_param(h, "t4_au_set_start", "0 30000"); au_trans_settle(ac);   /* a reader settles the marked chops */
     HX_ASSERT(ac->tr_n == 3 && ac->tr_at[0] == 30000, "Transient did not follow Start");
-    hx_set_param(h, "t4_au_set_start", "0 0");
+    hx_set_param(h, "t4_au_set_start", "0 0"); au_trans_settle(ac);   /* a reader settles the marked chops */
     HX_ASSERT(ac->tr_n == 4, "Transient did not follow Start back");
     {
         /* Length (Slice: ticks at the sample's Tempo) ending at frame 50000 */
         char lb[32];
         snprintf(lb, sizeof lb, "0 %u", (unsigned)(50000.0 / au_fpt_s(ac, ac->smp)));
-        hx_set_param(h, "t4_au_set_slen", lb);
+        hx_set_param(h, "t4_au_set_slen", lb); au_trans_settle(ac);   /* a reader settles the marked chops */
         HX_ASSERT(ac->tr_n == 3, "Transient did not follow Length");
-        hx_set_param(h, "t4_au_set_slen", "0 0");
+        hx_set_param(h, "t4_au_set_slen", "0 0"); au_trans_settle(ac);   /* a reader settles the marked chops */
     }
 
     /* ---- cancel: the hand set as it was, Even stays Off ---- */
@@ -223,17 +223,17 @@ int main(void) {
     /* ---- Sens: low keeps the loud hits, high the soft ones too ---- */
     pick(h, "soft.wav");
     hx_set_param(h, "t4_au_set_trans", "0 1");
-    hx_set_param(h, "t4_au_set_sens", "0 0");
+    hx_set_param(h, "t4_au_set_sens", "0 0"); au_trans_settle(ac);   /* a reader settles the marked chops */
     HX_ASSERT(ac->tr_n == 4 && info_field(h, 4, 0, 21) == 4 && info_field(h, 4, 0, 22) == 0,
               "Sens 0: not 4 chops, or info's hits or sens disagrees");
-    hx_set_param(h, "t4_au_set_sens", "0 100");
+    hx_set_param(h, "t4_au_set_sens", "0 100"); au_trans_settle(ac);   /* a reader settles the marked chops */
     HX_ASSERT(ac->tr_n == 8 && info_field(h, 4, 0, 21) == 8 && info_field(h, 4, 0, 22) == 100 && marks(h, ab, 8) == 8,
               "Sens 100: not 8 chops, or info's sens disagrees");
     hx_set_param(h, "t4_au_set_trans", "0 0");
 
     /* ---- more hits than 128: the first 128 from Start ---- */
     pick(h, "dense.wav");
-    hx_set_param(h, "t4_au_set_sens", "0 100");
+    hx_set_param(h, "t4_au_set_sens", "0 100"); au_trans_settle(ac);   /* a reader settles the marked chops */
     hx_set_param(h, "t4_au_set_trans", "0 1");
     HX_ASSERT(info_field(h, 4, 0, 21) > AU_MAX_SLICES, "the dense file has too few hits for the test");
     HX_ASSERT(ac->tr_n == AU_MAX_SLICES && ac->tr_at[0] == 0 && ac->tr_at[1] <= DENSE && ac->tr_at[127] <= 127 * DENSE, "the cap did not keep the first 128 from Start");

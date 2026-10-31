@@ -2007,6 +2007,17 @@ step('⭐⭐ refusals are SAID (review, 2026-10-31): Slice on a sample over 4 mi
     S.clipLength[t][c] = keepLen; GET['t4_au_info_' + c] = keepInfo; A.auMarkStale(t, c); ticks(2);
 });
 
+step('⭐ a long file says how far it has loaded (review: "Loading..." with no sign of progress)', () => {
+    const c = S.trackActiveClip[4] | 0, keep = GET['t4_au_info_' + c];
+    GET['t4_au_info_' + c] = keep.replace(/^2 /, '1 ');
+    GET['t4_au_progress_' + c] = '500 1000';
+    A.auMarkStale(4, c); ticks(9);
+    assert(A.auSampleName(4, c) === 'Loading 50%', 'loading text: ' + A.auSampleName(4, c));
+    GET['t4_au_info_' + c] = keep; delete GET['t4_au_progress_' + c];
+    A.auMarkStale(4, c); ticks(2);
+    assert(!/Loading/.test(A.auSampleName(4, c)), 'still loading: ' + A.auSampleName(4, c));
+});
+
 step('⭐⭐ leaving Audio asks (Q3); Yes converts back and forgets the samples', () => {
     S.clipNonEmpty[4][0] = true;
     reset();

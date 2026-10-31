@@ -1915,6 +1915,25 @@ int main(void) {
         /* control: the same file again IS reused */
         snprintf(p, sizeof p, "2|%s/same.wav", d1); hx_set_param(h, "t4_au_pick", p);
         HX_ASSERT(wait_loaded(h, 4, 2) == 2 && !strcmp(inst->au_clip[4][2].name, n0), "review: the same file was not reused");
+        /* Transient's chops: a knob turn marks them due; a read (or the
+         * block) works them out — once, not a walk per detent */
+        {
+            char b[512];
+            au_clip_t *cl = &inst->au_clip[4][0];
+            hx_get_param(h, "t4_au_progress_0", b, sizeof b);
+        HX_ASSERT(!strcmp(b, "0 0"), "review: progress reads as loading with nothing loading");
+        hx_set_param(h, "t4_au_set_trans", "0 1");
+            hx_set_param(h, "t4_au_set_sens", "0 30");
+            HX_ASSERT(cl->tr_due == 1, "review: a Sens turn worked the chops out at once");
+            hx_get_param(h, "t4_au_info_0", b, sizeof b);
+            HX_ASSERT(cl->tr_due == 0 && cl->tr_n >= 1 && cl->tr_at[0] == cl->rstart, "review: a read did not settle Transient's chops");
+            HX_ASSERT(cl->hc_smp == (const void *)cl->smp && cl->hc_sens == 30, "review: the info count was not kept");
+            hx_set_param(h, "t4_au_set_sens", "0 70");
+            hx_render(h, 1);
+            HX_ASSERT(cl->tr_due == 0, "review: the block did not settle Transient's chops");
+            hx_get_param(h, "t4_au_info_0", b, sizeof b);
+            HX_ASSERT(cl->hc_sens == 70, "review: the info count was not recounted for a new Sens");
+        }
         hx_destroy(h);
     }
     {

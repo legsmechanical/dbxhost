@@ -20,6 +20,7 @@
 #include "harness.h"
 #include <sys/stat.h>
 #include <unistd.h>
+#include <sys/time.h>
 
 static char g_root[256];
 
@@ -397,6 +398,48 @@ int main(void) {
         au_stream_remove(inst, str);
         au_sample_free(str);
         au_sample_free(whole);
+    }
+
+    /* ---- the waveform summary is KEPT (review, 2026-10-31): a load of a
+     * streamed file whose summary matches reads only its pinned chunks ---- */
+    {
+        char sp[400], mp[400];
+        struct stat st0;
+        struct timeval tv[2];
+        au_sample_t *live, *again;
+        uint32_t m;
+        int e = 0, i;
+        FILE *f;
+        snprintf(sp, sizeof sp, "%s/proj/dAVEBOx/samples/ramp60.wav", g_root);
+        snprintf(mp, sizeof mp, "%s/proj/dAVEBOx/.peaks/ramp60.wav.mip", g_root);
+        live = au_read_file(sp, 1, &e);                       /* the reference, as the file is now */
+        HX_ASSERT(live && !e && !live->pcm, "setup: the 60 s ramp does not stream");
+        m = live->nmip / 2;                                   /* the middle: no pin there */
+        HX_ASSERT(stat(mp, &st0) == 0 && st0.st_size > 0, "no summary was kept beside samples/");
+        HX_ASSERT(live->mip[m][1] > 10, "setup: the middle of the ramp is quiet");
+        /* the audio changes (silence over the middle), its size and time do not */
+        HX_ASSERT(stat(sp, &st0) == 0, "setup: stat the sample");
+        f = fopen(sp, "r+b");
+        HX_ASSERT(f, "setup: open the sample");
+        fseek(f, 44 + (long)(m - 64) * AU_MIP * 2, SEEK_SET);
+        for (i = 0; i < 128 * AU_MIP * 2; i++) fputc(0, f);
+        fclose(f);
+        tv[0].tv_sec = st0.st_atime; tv[0].tv_usec = 0;
+        tv[1].tv_sec = st0.st_mtime; tv[1].tv_usec = 0;
+        utimes(sp, tv);
+        again = au_read_file(sp, 1, &e);
+        HX_ASSERT(again && !e && !again->pcm, "the kept-summary load failed");
+        HX_ASSERT(again->nmip == live->nmip && again->mip[m][1] == live->mip[m][1] && again->frames == live->frames,
+                  "the load rebuilt the summary instead of reading the kept one");
+        HX_ASSERT(again->nhits == live->nhits, "the transient candidates differ from the kept summary's");
+        au_sample_free(again);
+        /* a newer file: the kept summary is stale and rebuilt from the audio */
+        tv[1].tv_sec = st0.st_mtime + 10;
+        utimes(sp, tv);
+        again = au_read_file(sp, 1, &e);
+        HX_ASSERT(again && !e && again->mip[m][1] == 0, "a changed file was summarised from the stale summary");
+        au_sample_free(again);
+        au_sample_free(live);
     }
 
     hx_destroy(h);

@@ -169,6 +169,13 @@ the section into a versioned heading at release time.
   and the instrument shortcut open it.
 
 ### Fixed
+- **Audio: long files open fast after the first time.** A streamed sample's waveform
+  summary is kept beside the project's samples, so loading a project (or undoing back
+  to a sample) no longer reads the whole file again; a changed file is summarised anew.
+- **Audio: a long file shows how far it has loaded** (Loading 42%).
+- **Audio: turning Start, Length, Tempo or Sens on a long Slice clip is lighter** on the
+  engine: Transient's chops are worked out once per audio block, and the hit count is
+  kept until what it counts changes.
 - **Audio: two different files with the same name and size no longer share audio** — the
   second was taken for the first and played its sound.
 - **Audio: Trim drops chops past the new end** (they stayed lit but played nothing).
