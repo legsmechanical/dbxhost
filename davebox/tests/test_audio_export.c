@@ -74,7 +74,7 @@ static int16_t g_live[44100 * 7];
  * agrees exactly a tick on); the render keeps the grid, as Live will, so
  * those are compared a tick later. A Vintage clip whose pieces carry on (AU_JOIN) differs bar
  * to bar live as well, so only one that cuts every piece is compared. */
-static int vs_live(int sync, int bpm10) {
+static int vs_live(int sync, int bpm10, int nudge) {
     hx_t *h = hx_create(NULL);
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
     char p[300], b[1024];
@@ -88,6 +88,7 @@ static int vs_live(int sync, int bpm10) {
     /* sync -1: a Slice clip, Even 16 laid on its steps */
     if (sync < 0) hx_set_param(h, "t4_au_set_mode", "0 1");
     else { snprintf(b, sizeof b, "0 %d", sync); hx_set_param(h, "t4_au_set_sync", b); }
+    if (nudge) { snprintf(b, sizeof b, "0 %d", nudge); hx_set_param(h, "t4_au_set_nudge", b); }
     if (hx_get_param(h, "t4_c0_au_export", b, sizeof b) <= 0 || b[0] != (sync < 0 ? 'S' : 'R')) return -1;
     snprintf(p, sizeof p, "%s/au_4_0.wav", au_export_dir);
     int16_t *w = read_wav(p, &frames, &rate, &ch);
@@ -218,12 +219,28 @@ int main(void) {
         HX_ASSERT(bad == 0, "Vintage did not lay each piece on its tick");
         HX_ASSERT(w[(uint32_t)(60 * fpt)] == 0 && w[(uint32_t)(300 * fpt)] == 0, "Vintage sounded past the sample's ticks");
         free(w);
+        /* a sample longer than its clip (at 480, 2 bars of it against the
+         * clip's one): only the pieces inside the clip play — each tick
+         * reads from its own part of the sample (a piece carries on up to
+         * AU_JOIN), never from the half past the clip's end */
+        hx_set_param(h, "t4_au_set_bpm", "0 4800");
+        HX_ASSERT(hx_get_param(h, "t4_c0_au_export", b, sizeof b) > 0 && b[0] == 'R', "a long Vintage clip was not rendered");
+        w = read_wav(p, &frames, &rate, &ch);
+        HX_ASSERT(w, "no long Vintage render");
+        double fl = 44100.0 * 60.0 / (480.0 * 96.0);
+        for (k = 1, bad = 0; k < 380; k += 3) {
+            int v = w[(uint32_t)((double)k * fpt) + 180] - 1;
+            if (v < (int)(k * fl) || v > (int)(k * fl) + 900) bad++;
+        }
+        HX_ASSERT(bad == 0, "a Vintage clip played a piece from past its end");
+        free(w);
         hx_set_param(h, "t4_au_set_bpm", "0 2400");
         printf("  ok   — a Vintage Loop clip renders, a piece on each tick\n");
 
         /* Warp on Revrs: the reversed sample, its frame 0 the sample's end */
         hx_set_param(h, "t4_au_set_sync", "0 0");
         hx_set_param(h, "t4_au_set_revrs", "0 1");
+        hx_set_param(h, "t4_au_set_start", "0 1000");      /* forwards the window starts at 1000 */
         HX_ASSERT(hx_get_param(h, "t4_c0_au_export", b, sizeof b) > 0 && b[0] == 'L', "a Warp clip was rendered");
         snprintf(p, sizeof p, "|%s/au_4_0_rev.wav", stage);
         HX_ASSERT(strstr(b, p) != NULL, "a Warp clip on Revrs does not name the reversed sample");
@@ -236,6 +253,7 @@ int main(void) {
         HX_ASSERT(w && frames == 44100 && ch == 1 && w[0] == 1 + 44099 % 30000 && w[44099] == 1, "the sample is not reversed");
         free(w);
         hx_set_param(h, "t4_au_set_revrs", "0 0");
+        hx_set_param(h, "t4_au_set_start", "0 0");
         printf("  ok   — a Warp clip on Revrs goes as its sample reversed\n");
     }
 
@@ -322,12 +340,18 @@ int main(void) {
     hx_destroy(h);
 
     {
-        static const int cases[][3] = { { 2, 2400, 16 }, { 2, 1500, 16 }, { 2, 900, 16 }, { 1, 300, 0 }, { 1, 1200, 0 }, { -1, 2400, 16 }, { -1, 900, 16 } };
-        for (k = 0; k < 7; k++) {
-            int bad = vs_live(cases[k][0], cases[k][1]);
-            if (bad < 0 || bad > cases[k][2])
-                printf("FAIL: Sync %d at %d: %d frames differ from the engine\n", cases[k][0], cases[k][1], bad);
-            HX_ASSERT(bad >= 0 && bad <= cases[k][2], "a Loop render does not match the engine playing it");
+        /* sync, the sample's Tempo x10, Nudge ms, frames allowed to differ:
+         * a Nudge puts Vintage's pieces between ticks, where live rounds a
+         * piece's frame its own way — one frame, which inside a crossfade
+         * over the ramp's jump back to 1 is one crossfade of difference */
+        static const int cases[][4] = { { 2, 2400, 0, 16 }, { 2, 1500, 0, 16 }, { 2, 900, 0, 16 }, { 2, 2400, 37, 16 },
+                                        { 1, 300, 0, 0 }, { 1, 1200, 0, 0 }, { 1, 300, 37, AU_VINTAGE_XF }, { 1, 300, -61, AU_VINTAGE_XF },
+                                        { -1, 2400, 0, 16 }, { -1, 900, 0, 16 } };
+        for (k = 0; k < 10; k++) {
+            int bad = vs_live(cases[k][0], cases[k][1], cases[k][2]);
+            if (bad < 0 || bad > cases[k][3])
+                printf("FAIL: Sync %d at %d, Nudge %d: %d frames differ from the engine\n", cases[k][0], cases[k][1], cases[k][2], bad);
+            HX_ASSERT(bad >= 0 && bad <= cases[k][3], "a render does not match the engine playing it");
         }
     }
     printf("  ok   — Pitch, Vintage and Slice renders match the engine playing the clip\n");
