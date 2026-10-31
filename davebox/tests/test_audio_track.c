@@ -1892,6 +1892,44 @@ int main(void) {
         hx_destroy(h);
     }
 
+    /* ---- review fixes: a same-name, same-size file is not taken for the
+     * same audio; Trim drops chops past the new end ---- */
+    {
+        char d1[300], d2[300], n0[160];
+        FILE *f;
+        snprintf(d1, sizeof d1, "%s/src/one", g_root); mkdir(d1, 0775);
+        snprintf(d2, sizeof d2, "%s/src/two", g_root); mkdir(d2, 0775);
+        snprintf(p, sizeof p, "%s/same.wav", d1); write_ramp(p);
+        snprintf(p, sizeof p, "%s/same.wav", d2); write_ramp(p);
+        f = fopen(p, "r+b");                                  /* same size, one sample different */
+        HX_ASSERT(f, "review: open the second file");
+        fseek(f, -2, SEEK_END); fputc(0x55, f); fputc(0x55, f); fclose(f);
+        h = rig(1); inst = (seq8_instance_t *)h->inst;
+        snprintf(p, sizeof p, "0|%s/same.wav", d1); hx_set_param(h, "t4_au_pick", p);
+        HX_ASSERT(wait_loaded(h, 4, 0) == 2, "review: the first same.wav");
+        snprintf(n0, sizeof n0, "%s", inst->au_clip[4][0].name);
+        snprintf(p, sizeof p, "1|%s/same.wav", d2); hx_set_param(h, "t4_au_pick", p);
+        HX_ASSERT(wait_loaded(h, 4, 1) == 2, "review: the second same.wav");
+        HX_ASSERT(strcmp(inst->au_clip[4][1].name, n0) != 0,
+                  "review: a different file of the same name and size was taken for the same audio");
+        /* control: the same file again IS reused */
+        snprintf(p, sizeof p, "2|%s/same.wav", d1); hx_set_param(h, "t4_au_pick", p);
+        HX_ASSERT(wait_loaded(h, 4, 2) == 2 && !strcmp(inst->au_clip[4][2].name, n0), "review: the same file was not reused");
+        hx_destroy(h);
+    }
+    {
+        au_clip_t cl;
+        memset(&cl, 0, sizeof cl);
+        cl.nslices = 3;
+        cl.sl[0].start = 0;    cl.sl[0].end = 800;
+        cl.sl[1].start = 5000;
+        cl.sl[2].start = 9000; cl.sl[2].end = 9500;
+        au_clip_shift(&cl, 1000, 6000);
+        HX_ASSERT(cl.nslices == 2 && cl.sl[1].start == 4000 && !cl.sl[2].start && !cl.sl[2].end,
+                  "review: Trim kept a chop past the new end");
+        HX_ASSERT(cl.sl[0].end == 0, "review: an end before its start was not sent HOME");
+    }
+
     /* ---- undo: an Audio clip's sample side comes back with its steps ---- */
     {
         au_clip_t *ac;

@@ -1943,6 +1943,8 @@ typedef struct {
     au_res_t    au_res[AU_RING];
     uint32_t    au_res_head, au_res_tail;     /* head: loader writes; tail: audio thread */
     uint32_t    au_req_dropped;               /* a full ring (should never happen) */
+    void       *au_drop_pend[16];             /* samples whose release found the ring full: retried (au_drop) */
+    uint8_t     au_drop_npend;
     void       *au_loader;                    /* the loader thread's own state */
     uint32_t    au_lazy_pos;                  /* Lazy chop: frame position for the UI */
     int8_t      au_lazy_track, au_lazy_clip;  /* -1 = no chop running */

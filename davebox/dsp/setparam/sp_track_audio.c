@@ -80,23 +80,34 @@ static void au_clip_set_bars(seq8_instance_t *inst, int t, int c, int bars) {
     au_mark(inst, t, c);
 }
 
-/* Trim took `cut` frames off the front of a clip's file: its Start and its
- * chops move back with the audio. */
-static void au_clip_shift(au_clip_t *cl, uint32_t cut) {
+/* Trim took `cut` frames off the front of a clip's file, now `frames` long:
+ * its Start and its chops move back with the audio. A chop that now starts
+ * past the end goes (it would stay lit and counted but play nothing), and an
+ * end no longer past its start goes HOME (review). */
+static void au_clip_shift(au_clip_t *cl, uint32_t cut, uint32_t frames) {
     int l;
-    if (!cut) return;
     cl->rstart = cl->rstart > cut ? cl->rstart - cut : 0;
+    if (frames && cl->rstart >= frames) cl->rstart = 0;
     for (l = 0; l < AU_MAX_SLICES; l++) {
         au_slice_t *sl = &cl->sl[l];
         if (!sl->start && !sl->end) continue;
         sl->start = sl->start > cut ? sl->start - cut : 0;
-        if (sl->end) sl->end = sl->end > cut ? sl->end - cut : 1;       /* 0 stays HOME */
+        if (sl->end) sl->end = sl->end > cut ? sl->end - cut : 0;       /* 0 = HOME */
+        if (sl->end && sl->end <= sl->start) sl->end = 0;
+    }
+    if (frames) {
+        int n = cl->nslices;
+        for (l = 1; l < n; l++)                                         /* the hand set is ascending */
+            if (cl->sl[l].start >= frames) { n = l; break; }
+        for (l = n; l < cl->nslices; l++) memset(&cl->sl[l], 0, sizeof cl->sl[l]);
+        cl->nslices = (uint8_t)(n < 1 ? 1 : n);
     }
 }
 
 /* The loader's answers, once per block. A pick that lands sets a Loop clip's
  * length to the sample's, in whole bars at the tempo (at least one). */
 static void au_apply_results(seq8_instance_t *inst) {
+    au_drop_retry(inst);                        /* releases that found the ring full */
     for (;;) {
         uint32_t t = inst->au_res_tail, h = __atomic_load_n(&inst->au_res_head, __ATOMIC_ACQUIRE);
         if (t == h) return;
@@ -122,7 +133,7 @@ static void au_apply_results(seq8_instance_t *inst) {
             if (r.edit) {
                 /* Trim / Normalize: the same clip, its settings kept, its
                  * positions where the audio went */
-                au_clip_shift(cl, r.cut);
+                au_clip_shift(cl, r.cut, r.smp->frames);
                 if (r.ow && old) {
                     /* overwritten: every other clip on that file reloads it,
                      * its positions moved the same way */
@@ -132,7 +143,7 @@ static void au_apply_results(seq8_instance_t *inst) {
                             au_clip_t *o = &inst->au_clip[t2][c2];
                             au_req_t q;
                             if (o == cl || o->smp != old) continue;
-                            au_clip_shift(o, r.cut);
+                            au_clip_shift(o, r.cut, r.smp->frames);
                             memset(&q, 0, sizeof q);
                             q.kind = AU_REQ_LOAD;
                             q.track = (uint8_t)t2; q.clip = (uint8_t)c2;

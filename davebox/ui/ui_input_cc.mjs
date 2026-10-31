@@ -69,7 +69,7 @@ import { BANK_MAP_TRACK_POPUP_MS, SEQ_PAGE_POPUP_MS, seqAutoTargetForKnob, SEQ_A
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam, soundOpenModule, instrPickResume } from './ui_sound.mjs';
 import { auPurgeRun, closeAudioChooser } from './ui_audio_chooser.mjs';
-import { isAudioTrack, audioSliceMode, auClipBankKnob, auAltBit, knobAltOnTrack, auSetLayout, auSetPage, AU_NOTE_BASE, AU_EVEN_MAX } from './ui_audio.mjs';
+import { isAudioTrack, audioSliceMode, auClipBankKnob, auAltBit, knobAltOnTrack, auSetLayout, auSetPage, AU_NOTE_BASE, AU_EVEN_MAX, auInfo } from './ui_audio.mjs';
 
 /* AUDIO's CLIP bank (Slice mode) mirrors ALL LANES over the melodic clip's
  * knobs (Josh, 2026-10-27: "it seems like clip bank should mirror all lanes
@@ -4780,9 +4780,12 @@ function _onCC_stepedit(d1, d2) {
             S.knobLastDir[knobIdx] = dir;
             if (S.knobAccum[knobIdx] >= KNOB_PICK) {
                 S.knobAccum[knobIdx] = 0;
-                /* AUDIO: the step's slice, one at a time (36..36+31). */
+                /* AUDIO: the step's slice, one at a time, within the chops the
+                 * clip has (to the engine's 128 it could reach one that plays
+                 * nothing: review) */
+                const _chops = isAudioTrack(t) ? Math.max(1, Math.min(AU_EVEN_MAX, auInfo(t, S.trackActiveClip[t] | 0).n | 0)) : 0;
                 S.heldStepNotes = isAudioTrack(t)
-                    ? S.heldStepNotes.slice(0, 1).map((n) => Math.max(AU_NOTE_BASE, Math.min(AU_NOTE_BASE + AU_EVEN_MAX - 1, n + dir)))
+                    ? S.heldStepNotes.slice(0, 1).map((n) => Math.max(AU_NOTE_BASE, Math.min(AU_NOTE_BASE + _chops - 1, n + dir)))
                     : S.heldStepNotes.map(function(n) {
                     return scaleNudgeNote(n, dir, S.padKey, S.padScale);
                 });

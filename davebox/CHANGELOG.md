@@ -169,6 +169,10 @@ the section into a versioned heading at release time.
   and the instrument shortcut open it.
 
 ### Fixed
+- **Audio: two different files with the same name and size no longer share audio** — the
+  second was taken for the first and played its sound.
+- **Audio: Trim drops chops past the new end** (they stayed lit but played nothing).
+- **Audio: a held step's knob 1 stops at the clip's last chop.**
 - **Audio: after Flatten every clip shows its take in Session View.** Only the current clip
   was read again, so the others looked empty until selected.
 - **Audio: refusals are said.** Slice, Transient and Lazy on a sample over 4 minutes

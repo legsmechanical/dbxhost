@@ -1589,6 +1589,16 @@ step('⭐ NOTE FX takes no pitch knob (Oct, Offset, Random)', () => {
     S.activeBank = 0;
 });
 
+step('⭐ a held step\'s K1 stops at the clip\'s last chop (review: it ran on to chop 128, which plays nothing)', () => {
+    const n = A.auInfo(4, S.trackActiveClip[4] | 0).n;
+    assert(n > 1 && n < 128, 'setup: chops ' + n);
+    S.heldStep = 0; S.heldStepNotes = [A.AU_NOTE_BASE + n - 2]; S.activeBank = C.BANK_STEP; S.heldStepBtn = 16;
+    reset();
+    for (let i = 0; i < 60; i++) cc(71, 1);
+    assert(S.heldStepNotes[0] === A.AU_NOTE_BASE + n - 1, 'K1 went past the last chop: ' + S.heldStepNotes + ' (chops ' + n + ')');
+    S.heldStep = -1; S.heldStepNotes = []; S.heldStepBtn = -1; S.activeBank = 0;
+});
+
 step('⭐ the step editor\'s K1 reads "Slice n"', () => {
     S.heldStep = 0; S.heldStepNotes = [2]; S.activeBank = C.BANK_STEP;
     const cells = render.heldStepCells();

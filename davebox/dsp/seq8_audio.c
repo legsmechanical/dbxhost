@@ -77,14 +77,33 @@ static int au_req_push(seq8_instance_t *inst, const au_req_t *r) {
 
 static void au_warp_forget(seq8_instance_t *inst, const au_sample_t *smp);   /* STRETCHING */
 
-static void au_drop(seq8_instance_t *inst, au_sample_t *smp) {
+static int au_drop_push(seq8_instance_t *inst, au_sample_t *smp) {
     au_req_t r;
-    if (!smp) return;
-    au_warp_forget(inst, smp);          /* the stretcher reads it too */
     memset(&r, 0, sizeof r);
     r.kind = AU_REQ_DROP;
     r.smp = smp;
-    au_req_push(inst, &r);
+    return au_req_push(inst, &r);
+}
+
+/* A release that found the ring full waits here and is sent again once the
+ * loader has made room (au_drop_retry, every block) — or the loader never
+ * counts the clip off and the sample is never freed (found by review: a
+ * project switch drops up to 128 at once while the loader may be deep in a
+ * long read). */
+static void au_drop_retry(seq8_instance_t *inst) {
+    while (inst->au_drop_npend && au_drop_push(inst, (au_sample_t *)inst->au_drop_pend[inst->au_drop_npend - 1]))
+        inst->au_drop_npend--;
+}
+
+static void au_drop(seq8_instance_t *inst, au_sample_t *smp) {
+    if (!smp) return;
+    au_warp_forget(inst, smp);          /* the stretcher reads it too */
+    au_drop_retry(inst);                /* the older ones first */
+    if (inst->au_drop_npend || !au_drop_push(inst, smp)) {
+        if (inst->au_drop_npend < (uint8_t)(sizeof inst->au_drop_pend / sizeof inst->au_drop_pend[0]))
+            inst->au_drop_pend[inst->au_drop_npend++] = smp;
+        /* else: 16 waiting already — the ring has been full for a long while */
+    }
 }
 
 /* ---------------- file reading (loader thread) ---------------- */
@@ -729,9 +748,27 @@ static int au_copy_file(const char *src, const char *dst) {
     return ok;
 }
 
+/* Whether two files of the same size hold the same bytes (loader thread). */
+static int au_same_bytes(const char *a, const char *b) {
+    int fa = open(a, O_RDONLY), fb = open(b, O_RDONLY), same = fa >= 0 && fb >= 0;
+    static char ba[16384], bb[16384];
+    while (same) {
+        ssize_t ra = read(fa, ba, sizeof ba), rb = read(fb, bb, sizeof bb);
+        if (ra != rb || ra < 0) same = 0;
+        else if (ra == 0) break;
+        else if (memcmp(ba, bb, (size_t)ra)) same = 0;
+        if (au_abort) same = 0;
+    }
+    if (fa >= 0) close(fa);
+    if (fb >= 0) close(fb);
+    return same;
+}
+
 /* Copy `src` into `dir` (the project's samples/) unless it is already there.
- * The same name and size there IS this file (reused); the same name with a
- * different size gets "~2", "~3"... Writes the name it ends up with. */
+ * The same name, size AND bytes there IS this file (reused); otherwise the
+ * name gets "~2", "~3"... (the same name and size alone was taken as the same
+ * audio: two fixed-length bounces of one name played the first — review).
+ * Writes the name it ends up with. */
 static int au_import(const char *src, const char *dir, char *name, size_t name_sz) {
     const char *base = strrchr(src, '/');
     char dst[300], stem[AU_PATH_MAX], ext[16] = "";
@@ -755,7 +792,7 @@ static int au_import(const char *src, const char *dir, char *name, size_t name_s
         else snprintf(name, name_sz, "%s~%d%s", stem, k, ext);
         snprintf(dst, sizeof dst, "%s/%s", dir, name);
         long have = au_file_size(dst);
-        if (have == sz) return AU_ERR_NONE;            /* already copied */
+        if (have == sz && au_same_bytes(src, dst)) return AU_ERR_NONE;   /* already copied */
         if (have < 0) return au_copy_file(src, dst) ? AU_ERR_NONE : AU_ERR_COPY;
     }
     return AU_ERR_COPY;
