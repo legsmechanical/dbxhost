@@ -33,6 +33,13 @@ const STAGE = '/data/UserData/daveboxSA/davebox-exports/staging';
 const AU = {
     t4_c0_au_export: 'L 44100 88200 22050 1200 -6 12 -3 0 0 96 0 384|' + PROJ + '/Break 120.wav',
     t4_c1_au_export: 'S 80000 384|' + STAGE + '/au_4_1.wav',
+    /* clip 3: a Loop clip on Vintage, rendered (88200 frames, 384 ticks: 120) */
+    t4_c3_au_export: 'R 88200 384|' + STAGE + '/au_4_3.wav',
+    /* clip 4: a Warp clip on Revrs: the DSP's reversed copy, its window at 0;
+     * Nudge -250 ms: the sample half a beat earlier, so the window starts in */
+    t4_c4_au_export: 'L 44100 88200 0 1200 0 0 0 1 0 0 -250 384|' + STAGE + '/au_4_4_rev.wav',
+    /* clip 5: Nudge +250 ms from Start 0: it cannot lead with silence */
+    t4_c5_au_export: 'L 44100 88200 0 1200 0 0 0 0 0 0 250 384|' + PROJ + '/Break 120.wav',
 };
 globalThis.host_module_get_param = (k) => (k in AU ? AU[k] : /_export/.test(k) ? '0 0 0' : '');
 globalThis.host_read_file = () => '';
@@ -82,6 +89,23 @@ step('⭐ a Slice clip: the render bundled under a readable name, at its own tem
     assert(near(c.warping.tempoAfterLastMarker, 132.3), 'tempo ' + c.warping.tempoAfterLastMarker);
     assert(c.region.start === 0 && near(c.region.end, 4) && near(c.region.loop.end, 4), 'region ' + JSON.stringify(c.region));
     assert(c.transpose === 0 && c.gain === 0 && c.detune === 0, 'a render carries its sound already');
+});
+step('⭐ a rendered Loop clip (Pitch / Vintage) goes as its render, at its tempo', () => {
+    const c = tr.clipSlots[3].clip;
+    assert(c && c.sampleUri === 'Samples/' + encodeURIComponent('T5 D loop.wav'), 'uri ' + (c && c.sampleUri));
+    assert(ctx.samples.some((s) => s.src === STAGE + '/au_4_3.wav'), 'not in the pack manifest');
+    assert(near(c.warping.tempoAfterLastMarker, 120) && near(c.region.loop.end, 4) && c.transpose === 0, JSON.stringify(c));
+});
+step('⭐ a Warp clip on Revrs goes as the reversed copy; Nudge moves its window', () => {
+    const c = tr.clipSlots[4].clip;
+    assert(c && c.sampleUri === 'Samples/' + encodeURIComponent('T5 E reversed.wav'), 'uri ' + (c && c.sampleUri));
+    assert(ctx.samples.some((s) => s.src === STAGE + '/au_4_4_rev.wav' && s.dest === 'T5 E reversed.wav'), 'not in the pack manifest');
+    /* -250 ms at 120 = half a beat further in */
+    assert(near(c.region.loop.start, 0.5) && near(c.region.loop.end, 4.5), 'loop ' + JSON.stringify(c.region));
+});
+step('a Nudge later than the sample\'s start cannot lead with silence: it starts at 0', () => {
+    const c = tr.clipSlots[5].clip;
+    assert(near(c.region.loop.start, 0) && near(c.region.loop.end, 4), 'loop ' + JSON.stringify(c.region));
 });
 step('every clip wears the track colour, and the shape matches Move\'s', () => {
     for (const k of [0, 1]) {

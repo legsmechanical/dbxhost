@@ -586,6 +586,112 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
     }
 }
 
+/* ---------------- Export: a Loop clip rendered offline ---------------- */
+
+/* Clip (t,c), a Loop clip on Sync Pitch or Vintage, as audio for the Ableton
+ * export — Live warps every clip, so it has neither (Josh, 2026-10-31: "the
+ * mix": what Live can carry goes as the sample, what it cannot is rendered).
+ * The clip plays as on the device with the clock exact: Pitch, one voice
+ * retuned to fill the clip, started at the loop's top and at the Shift's
+ * point; Vintage, one piece per tick of the sample's own Tempo, each where
+ * the clock puts it (au_sync_block's arithmetic). Into a private track, two
+ * passes, the second kept, `len` ticks at `bpm`, to `path` (44.1 kHz 16-bit
+ * stereo). Left out: the Conductor, the Audio lanes. Returns frames, or -1. */
+static long au_export_loop(seq8_instance_t *inst, int t, int c, uint32_t len, double bpm, const char *path) {
+    au_clip_t *cl = &inst->au_clip[t][c];
+    au_sample_t *own = NULL;
+    static au_track_t trk;
+    uint8_t h[44];
+    uint32_t rs, re;
+    if (!cl->smp || cl->mode != AU_MODE_LOOP || cl->sync == AU_SYNC_WARP || !len || bpm <= 0) return -1;
+    const au_sample_t *s = au_xsample(inst, cl, &own);
+    if (!s) return -1;
+    au_range(cl, s, &rs, &re);
+    double fpt = 44100.0 * 60.0 / (bpm * (double)PPQN), L = (double)len;
+    double P = au_span_ticks(cl, s, rs, re), R = (double)(re - rs);
+    if (re <= rs + 32 || P <= 0) { au_sample_free(own); return -1; }
+    uint32_t f0 = (uint32_t)(L * fpt + 0.5), total = (uint32_t)(2 * L * fpt + 0.5);
+    double rot = au_wrap((double)cl->rot, L);
+    FILE *f = fopen(path, "wb");
+    if (!f) { au_sample_free(own); return -1; }
+    au_wav_header(h, total - f0, 44100, 2);
+    fwrite(h, 1, sizeof h, f);
+    memset(&trk, 0, sizeof trk);
+    uint32_t k, frame = 0;
+    if (cl->sync == AU_SYNC_PITCH) {
+        double fill = R / (P * fpt);
+        for (k = 0; k < 2 * len; k++) {
+            uint32_t tick = k % len;
+            /* the loop's top, and the Shift's point: the sample starts again
+             * (as the live block: `pr` the rotated time, 0 at the Shift) */
+            if (tick == 0 || (rot > 0 && (double)tick == rot)) {
+                double pr = (rot > 0 && (double)tick == rot) ? 0.0 : (rot > 0 ? au_wrap(-rot, L) : 0.0);
+                double off = (pr * fpt - (double)cl->nudge_ms * 44.1) * fill;
+                au_loop_start_in(&trk, cl, s, c, off, fill);
+            }
+            au_xrender(&trk, f, &frame, (uint32_t)((double)(k + 1) * fpt + 0.5), f0);
+        }
+    } else {
+        /* Vintage: piece j of the sample (its own Tempo's ticks) sounds at the
+         * clip's tick U = j + Nudge, rotated by the Shift; one before the
+         * clip's start or past its end never plays */
+        double nud = (double)cl->nudge_ms * 44.1 / fpt;
+        long G = au_ceil(P - 1e-9), j;
+        for (k = 0; k < 2 * len; k++) {
+            uint32_t b0 = (uint32_t)((double)k * fpt + 0.5);
+            double lo = (double)(k % len), hi = lo + 1.0;
+            for (j = 0; j < G; j++) {
+                double U = (double)j + nud;
+                if (U >= L || U < 0) continue;
+                double T = au_wrap(U + rot, L);
+                if (T < lo || T >= hi) continue;
+                double x0 = R * (double)j / P, x1 = R * (double)(j + 1) / P;
+                if (x1 > R) x1 = R;
+                x1 += AU_VINTAGE_OVER + 4.0 * AU_VINTAGE_XF;
+                if (x1 > R) x1 = R;
+                uint32_t a = au_revrs(cl) ? re - (uint32_t)x1 : rs + (uint32_t)x0;
+                uint32_t b = au_revrs(cl) ? re - (uint32_t)x0 : rs + (uint32_t)x1;
+                double at = ((double)(k - k % len) + T) * fpt;
+                uint32_t off = at > (double)b0 ? (uint32_t)(at - (double)b0) : 0;
+                au_range_on_in(&trk, s, 0, cl, c, AU_SLICE_NONE, a, b, 1.0f, off, 1);
+            }
+            au_xrender(&trk, f, &frame, (uint32_t)((double)(k + 1) * fpt + 0.5), f0);
+        }
+    }
+    int bad = ferror(f);
+    au_sample_free(own);
+    if (fclose(f) || bad) return -1;
+    return (long)(total - f0);
+}
+
+/* Clip (t,c)'s whole sample backwards, for a Warp clip on Revrs: Live warps
+ * the reversed file forwards (its frame 0 is the sample's end). Its own rate
+ * and channels. Returns frames, or -1. */
+static long au_export_reversed(seq8_instance_t *inst, int t, int c, const char *path) {
+    au_clip_t *cl = &inst->au_clip[t][c];
+    au_sample_t *own = NULL;
+    uint8_t h[44];
+    static int16_t buf[2 * 4096];
+    const au_sample_t *s = au_xsample(inst, cl, &own);
+    if (!s || !s->frames) { au_sample_free(own); return -1; }
+    FILE *f = fopen(path, "wb");
+    if (!f) { au_sample_free(own); return -1; }
+    au_wav_header(h, s->frames, s->rate, s->ch);
+    fwrite(h, 1, sizeof h, f);
+    uint32_t i = s->frames, n;
+    while (i > 0) {
+        for (n = 0; n < 4096 && i > 0; n++) {
+            i--;
+            memcpy(buf + n * s->ch, s->pcm + (size_t)i * s->ch, sizeof(int16_t) * s->ch);
+        }
+        fwrite(buf, sizeof(int16_t) * s->ch, n, f);
+    }
+    int bad = ferror(f);
+    au_sample_free(own);
+    if (fclose(f) || bad) return -1;
+    return (long)s->frames;
+}
+
 /* A sounding voice follows its clip's Pitch, Detune and Gain — and its
  * chop's, ALL SLICES' lanes over them — as automation moves them (au_pitch,
  * au_sl_eff): its speed by the change since it last looked, its level from

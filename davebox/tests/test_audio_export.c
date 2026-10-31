@@ -6,7 +6,10 @@
  *      tempo, each chop on its step playing its own frames, silence after it;
  *   3. a chop sounding over the loop point is heard at the start (the
  *      sequence plays twice and the second pass is kept);
- *   4. no sample: no line. */
+ *   4. no sample: no line;
+ *   5. a Loop clip on Sync Pitch or Vintage is rendered, as Live has
+ *      neither; a Warp clip on Revrs goes as its sample reversed;
+ *   6. those renders, and a Slice clip's, match the engine playing the clip. */
 #include "harness.h"
 #include <math.h>
 #include <sys/stat.h>
@@ -58,6 +61,60 @@ static int16_t *read_wav(const char *path, uint32_t *frames, uint32_t *rate, int
     for (i = 0; i < *frames; i++) l[i] = all[i * (uint32_t)*ch];
     free(all);
     return l;
+}
+
+/* ---- 6. against the engine itself: the clip played live (the transport,
+ * the slot feed captured block by block) and its render agree. ---- */
+static int16_t g_live[44100 * 7];
+/* How many frames of the render differ by more than 8 from the live take's
+ * second bar, at the best alignment within +-16 frames. Pitch's voice runs
+ * 8 frames apart from the live one (its start against the block). What the
+ * sequencer's ticks start live — a Vintage piece, a Slice chop — lands ONE
+ * TICK after its grid frame in this harness (measured 2026-10-31: the take
+ * agrees exactly a tick on); the render keeps the grid, as Live will, so
+ * those are compared a tick later. A Vintage clip whose pieces carry on (AU_JOIN) differs bar
+ * to bar live as well, so only one that cuts every piece is compared. */
+static int vs_live(int sync, int bpm10) {
+    hx_t *h = hx_create(NULL);
+    seq8_instance_t *inst = (seq8_instance_t *)h->inst;
+    char p[300], b[1024];
+    uint32_t frames, rate;
+    int ch, n, fed, best = 1 << 30, o;
+    snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
+    hx_set_param(h, "t4_convert_to_audio", "");
+    snprintf(p, sizeof p, "0|%s/src/ramp.wav", g_root); hx_set_param(h, "t4_au_pick", p);
+    if (wait_loaded(h, 4, 0) != 2) return -1;
+    snprintf(b, sizeof b, "0 %d", bpm10); hx_set_param(h, "t4_au_set_bpm", b);
+    /* sync -1: a Slice clip, Even 16 laid on its steps */
+    if (sync < 0) hx_set_param(h, "t4_au_set_mode", "0 1");
+    else { snprintf(b, sizeof b, "0 %d", sync); hx_set_param(h, "t4_au_set_sync", b); }
+    if (hx_get_param(h, "t4_c0_au_export", b, sizeof b) <= 0 || b[0] != (sync < 0 ? 'S' : 'R')) return -1;
+    snprintf(p, sizeof p, "%s/au_4_0.wav", au_export_dir);
+    int16_t *w = read_wav(p, &frames, &rate, &ch);
+    if (!w) return -1;
+    int slot = inst->tracks[4].pfx.slot, blocks = (int)(sizeof g_live / sizeof g_live[0]) / 128;
+    hx_stub_feed_reset();
+    hx_set_param(h, "t4_launch_clip", "0");
+    hx_set_param(h, "transport", "play");
+    fed = hx_stub_feed(slot, NULL, NULL);
+    for (n = 0; n < blocks; n++) {
+        hx_render(h, 1);
+        int f2 = hx_stub_feed(slot, NULL, NULL);
+        const int16_t *bl = hx_stub_feed_last(slot);
+        for (int k = 0; k < 128; k++) g_live[n * 128 + k] = f2 != fed ? bl[k * 2] : 0;
+        fed = f2;
+    }
+    hx_set_param(h, "transport", "stop");
+    hx_render(h, 20);
+    int lag = sync != 2 ? (int)(44100.0 * 60.0 / (120.0 * 96.0) + 0.5) : 0;
+    for (o = -16; o <= 16; o++) {
+        int bad = 0;
+        for (uint32_t i = 0; i < frames; i++) if (abs(g_live[(int)frames + lag + o + (int)i] - w[i]) > 8) bad++;
+        if (bad < best) best = bad;
+    }
+    free(w);
+    hx_destroy(h);
+    return best;
 }
 
 int main(void) {
@@ -113,6 +170,74 @@ int main(void) {
     hx_set_param(h, "t4_au_set_pitch", "0 0");
     hx_set_param(h, "t4_au_set_gain", "0 0");
     hx_set_param(h, "t4_au_set_start", "0 0");
+
+    /* ---- 5. Loop clips Live cannot warp itself are rendered: Sync Pitch
+     * retunes the sample to fill the clip; Vintage cuts it on the clock at
+     * its own pitch. A Warp clip on Revrs goes as the sample reversed. ---- */
+    {
+        double bpm = inst->tracks[0].pfx.cached_bpm > 0 ? inst->tracks[0].pfx.cached_bpm : (double)BPM_DEFAULT;
+        double fpt = 44100.0 * 60.0 / (bpm * 96.0);
+        uint32_t frames, rate;
+        int ch, bad = 0;
+        long fr = 0;
+        unsigned lt = 0;
+        int16_t *w;
+        /* the 1 s sample is a bar at 240, the clip a bar at the project's
+         * 120: Pitch plays it at half speed */
+        hx_set_param(h, "t4_au_set_sync", "0 2");
+        HX_ASSERT(hx_get_param(h, "t4_c0_au_export", b, sizeof b) > 0 && b[0] == 'R', "a Pitch clip was not rendered");
+        HX_ASSERT(sscanf(b, "R %ld %u", &fr, &lt) == 2 && lt == 384, "the render line");
+        snprintf(p, sizeof p, "%s/au_4_0.wav", stage);
+        w = read_wav(p, &frames, &rate, &ch);
+        HX_ASSERT(w && frames == (uint32_t)fr && rate == 44100 && ch == 2, "the Pitch render's header");
+        for (k = 1; k < 8; k++) {
+            uint32_t at = (uint32_t)(k * 10000);
+            int want_v = 1 + (int)((double)at * 44100.0 / (384.0 * fpt) + 0.5) % 30000;
+            if (abs(w[at] - want_v) > 2) bad++;
+        }
+        HX_ASSERT(bad == 0, "Pitch did not retune the sample to fill the clip");
+        free(w);
+        printf("  ok   — a Sync Pitch Loop clip renders, retuned to fill the clip\n");
+
+        /* Vintage: tick j of the sample's own Tempo sounds at the clip's
+         * tick j, at its own speed. At 30 BPM a sample tick is 919 frames
+         * against the clip's 230, so every piece is a cut (a piece within
+         * AU_JOIN of where the sounding one has got to carries it on, live
+         * and here alike); its 48 ticks spent, the clip is silent. */
+        hx_set_param(h, "t4_au_set_bpm", "0 300");
+        hx_set_param(h, "t4_au_set_sync", "0 1");
+        HX_ASSERT(hx_get_param(h, "t4_c0_au_export", b, sizeof b) > 0 && b[0] == 'R', "a Vintage clip was not rendered");
+        w = read_wav(p, &frames, &rate, &ch);
+        HX_ASSERT(w, "no Vintage render");
+        double fs = 44100.0 * 60.0 / (30.0 * 96.0);
+        for (k = 1, bad = 0; k < 48; k++) {
+            uint32_t at = (uint32_t)((double)k * fpt) + 180;
+            int want_v = 1 + (int)((double)k * fs + 180) % 30000;
+            if (abs(w[at] - want_v) > 3) bad++;
+        }
+        HX_ASSERT(bad == 0, "Vintage did not lay each piece on its tick");
+        HX_ASSERT(w[(uint32_t)(60 * fpt)] == 0 && w[(uint32_t)(300 * fpt)] == 0, "Vintage sounded past the sample's ticks");
+        free(w);
+        hx_set_param(h, "t4_au_set_bpm", "0 2400");
+        printf("  ok   — a Vintage Loop clip renders, a piece on each tick\n");
+
+        /* Warp on Revrs: the reversed sample, its frame 0 the sample's end */
+        hx_set_param(h, "t4_au_set_sync", "0 0");
+        hx_set_param(h, "t4_au_set_revrs", "0 1");
+        HX_ASSERT(hx_get_param(h, "t4_c0_au_export", b, sizeof b) > 0 && b[0] == 'L', "a Warp clip was rendered");
+        snprintf(p, sizeof p, "|%s/au_4_0_rev.wav", stage);
+        HX_ASSERT(strstr(b, p) != NULL, "a Warp clip on Revrs does not name the reversed sample");
+        {
+            unsigned r1, f1, rs1;
+            HX_ASSERT(sscanf(b, "L %u %u %u", &r1, &f1, &rs1) == 3 && rs1 == 0, "the reversed window does not start at its frame 0");
+        }
+        snprintf(p, sizeof p, "%s/au_4_0_rev.wav", stage);
+        w = read_wav(p, &frames, &rate, &ch);
+        HX_ASSERT(w && frames == 44100 && ch == 1 && w[0] == 1 + 44099 % 30000 && w[44099] == 1, "the sample is not reversed");
+        free(w);
+        hx_set_param(h, "t4_au_set_revrs", "0 0");
+        printf("  ok   — a Warp clip on Revrs goes as its sample reversed\n");
+    }
 
     /* ---- 2. a Slice clip renders: chop k on step k, its own frames ---- */
     hx_set_param(h, "t4_au_set_mode", "0 1");         /* Even 16, laid on the 16 steps in order */
@@ -195,6 +320,18 @@ int main(void) {
     printf("  ok   — the loop point carries what sounds over it\n");
 
     hx_destroy(h);
+
+    {
+        static const int cases[][3] = { { 2, 2400, 16 }, { 2, 1500, 16 }, { 2, 900, 16 }, { 1, 300, 0 }, { 1, 1200, 0 }, { -1, 2400, 16 }, { -1, 900, 16 } };
+        for (k = 0; k < 7; k++) {
+            int bad = vs_live(cases[k][0], cases[k][1]);
+            if (bad < 0 || bad > cases[k][2])
+                printf("FAIL: Sync %d at %d: %d frames differ from the engine\n", cases[k][0], cases[k][1], bad);
+            HX_ASSERT(bad >= 0 && bad <= cases[k][2], "a Loop render does not match the engine playing it");
+        }
+    }
+    printf("  ok   — Pitch, Vintage and Slice renders match the engine playing the clip\n");
+
     snprintf(b, sizeof b, "rm -rf '%s'", g_root);
     if (system(b)) {}
     printf("PASS test_audio_export\n");

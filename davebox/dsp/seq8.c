@@ -10166,9 +10166,12 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
             }
             if (!strcmp(p, "_au_export")) {
                 /* An Audio clip for the Ableton export, one line:
-                 *   Loop:  "L <rate> <frames> <rs> <bpm10> <pitch> <detune> <gain>
+                 *   Loop, Warp: "L <rate> <frames> <rs> <bpm10> <pitch> <detune> <gain>
                  *           <revrs> <sync> <rot> <nudge_ms> <loop_ticks>|<sample path>"
-                 *          (rs: where the clip's window starts in the sample, au_range)
+                 *          (rs: where the clip's window starts in the sample, au_range;
+                 *          on Revrs the path is the sample reversed, rs in it)
+                 *   Loop, Pitch / Vintage: "R <frames> <loop_ticks>|<wav path>" —
+                 *          rendered offline into staging (au_export_loop)
                  *   Slice: "S <frames> <span>|<wav path>" — rendered offline into
                  *          staging (au_export_slice), one cycle at the project tempo
                  *   ""     no sample, not loaded, or nothing to render. */
@@ -10176,18 +10179,36 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                 au_clip_t *ac = &inst->au_clip[t_idx][cidx];
                 const au_sample_t *as = ac->smp;
                 if (tr->pad_mode != PAD_MODE_AUDIO || !as || !ac->name[0]) return 0;
+                double bpm = inst->tracks[0].pfx.cached_bpm > 0 ? inst->tracks[0].pfx.cached_bpm : (double)BPM_DEFAULT;
+                char wav[256];
                 if (ac->mode == AU_MODE_LOOP) {
-                    char dir[512];
+                    char dir[512], file[700];
                     uint32_t rs, re;
+                    uint32_t tps = cl->ticks_per_step ? cl->ticks_per_step : TICKS_PER_STEP;
+                    uint32_t lt = (uint32_t)cl->length * tps;
+                    /* Sync Pitch / Vintage: Live has neither — rendered */
+                    if (ac->sync != AU_SYNC_WARP) {
+                        snprintf(wav, sizeof wav, "%s/au_%d_%d.wav", au_export_dir, t_idx, cidx);
+                        long fr = au_export_loop(inst, t_idx, cidx, lt, bpm, wav);
+                        if (fr <= 0) return 0;
+                        return snprintf(out, out_len, "R %ld %u|%s", fr, (unsigned)lt, wav);
+                    }
                     au_range(ac, as, &rs, &re);
                     au_samples_dir(inst, dir, sizeof dir);
-                    uint32_t tps = cl->ticks_per_step ? cl->ticks_per_step : TICKS_PER_STEP;
-                    return snprintf(out, out_len, "L %u %u %u %u %d %d %d %d %d %u %d %u|%s/%s",
+                    snprintf(file, sizeof file, "%s/%s", dir, ac->name);
+                    /* Warp on Revrs: the sample backwards, warped forwards —
+                     * its frame 0 is the sample's end, where Revrs starts */
+                    if (au_revrs(ac)) {
+                        snprintf(wav, sizeof wav, "%s/au_%d_%d_rev.wav", au_export_dir, t_idx, cidx);
+                        if (au_export_reversed(inst, t_idx, cidx, wav) <= 0) return 0;
+                        rs = as->frames - re;
+                        snprintf(file, sizeof file, "%s", wav);
+                    }
+                    return snprintf(out, out_len, "L %u %u %u %u %d %d %d %d %d %u %d %u|%s",
                                     (unsigned)as->rate, (unsigned)as->frames, (unsigned)rs,
                                     (unsigned)(ac->bpm10 ? ac->bpm10 : 1200), (int)ac->pitch,
                                     (int)ac->detune, (int)ac->gain_db, (int)ac->revrs, (int)ac->sync,
-                                    (unsigned)ac->rot, (int)ac->nudge_ms,
-                                    (unsigned)cl->length * tps, dir, ac->name);
+                                    (unsigned)ac->rot, (int)ac->nudge_ms, lt, file);
                 }
                 static bake_note_t rmc_au[BAKE_BUF * 8];
                 static au_xnote_t xn_au[BAKE_BUF * 8];
@@ -10211,9 +10232,7 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                     xn_au[m].slice = (int16_t)(rmc_au[k].pitch - AU_NOTE_BASE);
                     m++;
                 }
-                char wav[256];
                 snprintf(wav, sizeof wav, "%s/au_%d_%d.wav", au_export_dir, t_idx, cidx);
-                double bpm = inst->tracks[0].pfx.cached_bpm > 0 ? inst->tracks[0].pfx.cached_bpm : (double)BPM_DEFAULT;
                 long fr = au_export_slice(inst, t_idx, cidx, xn_au, m, span, bpm, wav);
                 if (fr <= 0) return 0;
                 return snprintf(out, out_len, "S %ld %u|%s", fr, (unsigned)span, wav);

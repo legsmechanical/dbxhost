@@ -2654,11 +2654,11 @@ with the tempo and root note (not the scale — the set opens in Major).
 - **Schwung, MIDI and Conductor tracks get a placeholder** (so does a Move track
   with no matching Move instrument), **switched off**: the notes are there, but
   nothing plays until you drop in your own instrument.
-- **Audio tracks become Live audio tracks.** A **Loop** clip brings its sample,
-  warped at the clip's **Tempo**, with its Start, length, **Shift**, Pitch, Detune and
-  Gain. A **Slice** clip is rendered to audio — one loop of what the chops play — and
-  warped at the project tempo. Revrs, Nudge and Sync's Pitch / Vintage don't carry
-  (Live warps every clip), nor do the Audio automation lanes.
+- **Audio tracks become Live audio tracks.** A **Loop** clip on **Warp** brings its
+  sample, warped at the clip's **Tempo**, with its Start, length, **Shift**, **Nudge**,
+  **Revrs**, Pitch, Detune and Gain. A Loop clip on **Pitch** or **Vintage** sync, and
+  every **Slice** clip, is rendered to audio — one loop of what it plays — since Live
+  has neither. The Audio automation lanes and the Conductor don't carry.
 - **Schwung tracks are named for what they played** — `SCH-nusaw`, or
   `SCH-nusaw - Big Lead` when the module reports a patch name (most modules don't).
 - **Send levels come across**, along with two empty return tracks to send to.

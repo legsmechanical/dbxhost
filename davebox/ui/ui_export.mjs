@@ -899,14 +899,20 @@ function withSendLevels(mixer, t) {
  * the sample's own tempo (Move read 120 off the file; setting 240 on the Move
  * wrote 240, the region unchanged).
  *
- *   Loop clip  → the sample itself, warped at the clip's Tempo: the window
- *                from Start for the clip's length, Pitch / Detune / Gain as
- *                the clip's transpose / detune / gain, Shift as the start
- *                marker inside the loop.
- *   Slice clip → rendered offline by the DSP (`_au_export`) to a WAV one cycle
- *                long at the project tempo, warped at that tempo.
- * Not carried: Revrs, Nudge, Sync's Pitch / Vintage (Live warps), the Audio
- * lanes (only the mixer's come across, as for any track). */
+ * (Josh, 2026-10-31: "the mix") What Live can play itself goes as the
+ * sample; what it cannot is rendered by the DSP (`_au_export`):
+ *   Loop clip, Warp → the sample itself, warped at the clip's Tempo: the
+ *                window from Start for the clip's length, Pitch / Detune /
+ *                Gain as the clip's transpose / detune / gain, Shift as the
+ *                start marker inside the loop, Nudge as the window moved
+ *                (a Nudge later than Start's frame 0 cannot lead with
+ *                silence: it starts at 0). On Revrs the DSP writes the sample
+ *                reversed and the clip warps that.
+ *   Loop clip, Sync Pitch / Vintage (Live has neither) → rendered, one cycle.
+ *   Slice clip → rendered, one cycle.
+ * A render is warped at the tempo it was rendered at.
+ * Not carried: the Audio lanes (only the mixer's come across, as for any
+ * track), the Conductor. */
 function auClipName(t, c) { return 'T' + (t + 1) + ' ' + String.fromCharCode(65 + c); }
 
 export function parseAuExport(line) {
@@ -921,7 +927,8 @@ export function parseAuExport(line) {
                  detune: n(6), gain: n(7), revrs: n(8), sync: n(9), rot: n(10), nudge: n(11),
                  loopTicks: n(12), path: path };
     }
-    if (f[0] === 'S' && f.length >= 3) return { kind: 'slice', frames: n(1), span: n(2), path: path };
+    if ((f[0] === 'S' || f[0] === 'R') && f.length >= 3)
+        return { kind: f[0] === 'S' ? 'slice' : 'render', frames: n(1), span: n(2), path: path };
     return null;
 }
 
@@ -934,9 +941,12 @@ function buildAudioClip(t, c, ctx) {
     let sampleUri, tempo, start, len, play, gain = 0, transpose = 0, detune = 0, span;
     if (a.kind === 'loop') {
         if (!(a.rate > 0) || !(a.bpm10 > 0) || !(a.loopTicks > 0)) return null;
-        sampleUri = 'Samples/' + encodeURIComponent(assignSampleDest(ctx, a.path));
+        /* on Revrs the path is the DSP's reversed copy: named for its clip */
+        const name = a.revrs ? auClipName(t, c) + ' reversed.wav' : undefined;
+        sampleUri = 'Samples/' + encodeURIComponent(assignSampleDest(ctx, a.path, name));
         tempo = a.bpm10 / 10;
-        start = round6(a.rs / a.rate * tempo / 60);
+        /* Nudge: the sample that much later (+) or earlier (-) against the bar */
+        start = round6(Math.max(0, a.rs / a.rate - (a.nudge || 0) / 1000) * tempo / 60);
         len = a.loopTicks / 96;
         /* Shift: the audio rotated later, so the clip starts that far before
          * the end of its loop */
@@ -946,7 +956,8 @@ function buildAudioClip(t, c, ctx) {
         span = a.loopTicks;
     } else {
         if (!(a.frames > 0) || !(a.span > 0)) return null;
-        sampleUri = 'Samples/' + encodeURIComponent(assignSampleDest(ctx, a.path, auClipName(t, c) + ' slices.wav'));
+        sampleUri = 'Samples/' + encodeURIComponent(assignSampleDest(ctx, a.path,
+            auClipName(t, c) + (a.kind === 'slice' ? ' slices.wav' : ' loop.wav')));
         /* the render's own tempo, off its length: the DSP rendered at the
          * engine's exact tempo, and the `bpm` read here is rounded */
         tempo = round6(a.span / 96 * 60 * 44100 / a.frames);

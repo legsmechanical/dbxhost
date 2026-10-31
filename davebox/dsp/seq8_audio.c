@@ -2548,10 +2548,15 @@ static void au_step_take(clip_t *cl, uint16_t sidx, uint32_t tps) {
  * Start..End. */
 /* `rate`: sample frames per output frame, 0 = the clip's own (pitch and the
  * sample's rate); Tempo Pitch passes the one that fills the clip. */
+static void au_loop_start_in(au_track_t *at, au_clip_t *cl, const au_sample_t *s, int c, double off, double rate);
 static void au_loop_start(seq8_instance_t *inst, int t, int c, double off, double rate) {
     au_clip_t *cl = &inst->au_clip[t][c];
-    const au_sample_t *s = cl->smp;
-    au_track_t *at = &inst->au_trk[t];
+    au_loop_start_in(&inst->au_trk[t], cl, cl->smp, c, off, rate);
+}
+
+/* The same, into any track's voices from any copy of the sample: the export
+ * renders a Loop clip into a private track (au_export_loop). */
+static void au_loop_start_in(au_track_t *at, au_clip_t *cl, const au_sample_t *s, int c, double off, double rate) {
     int i;
     uint32_t rs, re;
     if (!s) return;
@@ -2676,6 +2681,40 @@ static int au_xnote_cmp(const void *x, const void *y) {
     return a->tick < b->tick ? -1 : a->tick > b->tick;
 }
 
+/* Render private track `trk` from *frame up to `next`, writing what falls
+ * at or after f0 (the kept pass) to f as 16-bit stereo. */
+static void au_xrender(au_track_t *trk, FILE *f, uint32_t *frame, uint32_t next, uint32_t f0) {
+    static int32_t acc[2 * 4096];
+    static int16_t pcm[2 * 4096];
+    while (*frame < next) {
+        int len = (int)(next - *frame > 4096 ? 4096 : next - *frame), j;
+        memset(acc, 0, sizeof(int32_t) * 2 * (size_t)len);
+        for (j = 0; j < AU_VOICES; j++) if (trk->v[j].active) au_voice_render(&trk->v[j], acc, len);
+        if (*frame + (uint32_t)len > f0) {
+            int from = *frame >= f0 ? 0 : (int)(f0 - *frame);
+            for (j = from * 2; j < len * 2; j++)
+                pcm[j] = (int16_t)(acc[j] > 32767 ? 32767 : acc[j] < -32768 ? -32768 : acc[j]);
+            fwrite(pcm + from * 2, sizeof(int16_t) * 2, (size_t)(len - from), f);
+        }
+        *frame += (uint32_t)len;
+    }
+}
+
+/* The sample a render reads: the clip's own, or — streamed — the whole file,
+ * read for the render (*own: to free after). NULL: none. */
+static const au_sample_t *au_xsample(seq8_instance_t *inst, au_clip_t *cl, au_sample_t **own) {
+    const au_sample_t *s = cl->smp;
+    *own = NULL;
+    if (!s || s->pcm) return s;
+    char dir[512], file[700];
+    int err = 0;
+    au_samples_dir(inst, dir, sizeof dir);
+    snprintf(file, sizeof file, "%s/%s", dir, cl->name);
+    *own = au_read_file(file, 0, &err);
+    if (!*own || !(*own)->pcm) { au_sample_free(*own); *own = NULL; return NULL; }
+    return *own;
+}
+
 /* Clip (t,c)'s Slice sequence as audio, for the Ableton export (Josh,
  * 2026-10-31: "render slice clips to audio"): the notes `xn` (sorted here)
  * over `span` ticks at `bpm`, played through the engine's own chop voices
@@ -2689,22 +2728,12 @@ static int au_xnote_cmp(const void *x, const void *y) {
 static long au_export_slice(seq8_instance_t *inst, int t, int c, au_xnote_t *xn, int n,
                             uint32_t span, double bpm, const char *path) {
     au_clip_t *cl = &inst->au_clip[t][c];
-    const au_sample_t *s = cl->smp;
     au_sample_t *own = NULL;
     static au_track_t trk;
-    static int32_t acc[2 * 4096];
-    static int16_t pcm[2 * 4096];
     uint8_t h[44];
-    if (!s || cl->mode != AU_MODE_SLICE || !span || bpm <= 0 || n < 0) return -1;
-    if (!s->pcm) {
-        char dir[512], file[700];
-        int err = 0;
-        au_samples_dir(inst, dir, sizeof dir);
-        snprintf(file, sizeof file, "%s/%s", dir, cl->name);
-        own = au_read_file(file, 0, &err);
-        if (!own || !own->pcm) { au_sample_free(own); return -1; }
-        s = own;
-    }
+    if (!cl->smp || cl->mode != AU_MODE_SLICE || !span || bpm <= 0 || n < 0) return -1;
+    const au_sample_t *s = au_xsample(inst, cl, &own);
+    if (!s) return -1;
     au_trans_settle(cl);
     if (n > 1) qsort(xn, (size_t)n, sizeof *xn, au_xnote_cmp);
     double fpt = 44100.0 * 60.0 / (bpm * (double)PPQN);
@@ -2737,19 +2766,7 @@ static long au_export_slice(seq8_instance_t *inst, int t, int c, au_xnote_t *xn,
             if (au_slice_range(cl, s, xn[on].slice, &a, &b))
                 au_range_on_in(&trk, s, 0, cl, c, xn[on].slice, a, b, 1.0f, 0, 0);
         }
-        uint32_t next = (uint32_t)((double)(k + 1) * fpt + 0.5);
-        while (frame < next) {
-            int len = (int)(next - frame > 4096 ? 4096 : next - frame), j;
-            memset(acc, 0, sizeof(int32_t) * 2 * (size_t)len);
-            for (j = 0; j < AU_VOICES; j++) if (trk.v[j].active) au_voice_render(&trk.v[j], acc, len);
-            if (frame + (uint32_t)len > f0) {
-                int from = frame >= f0 ? 0 : (int)(f0 - frame);
-                for (j = from * 2; j < len * 2; j++)
-                    pcm[j] = (int16_t)(acc[j] > 32767 ? 32767 : acc[j] < -32768 ? -32768 : acc[j]);
-                fwrite(pcm + from * 2, sizeof(int16_t) * 2, (size_t)(len - from), f);
-            }
-            frame += (uint32_t)len;
-        }
+        au_xrender(&trk, f, &frame, (uint32_t)((double)(k + 1) * fpt + 0.5), f0);
     }
     int bad = ferror(f);
     if (fclose(f) || bad) { au_sample_free(own); return -1; }
