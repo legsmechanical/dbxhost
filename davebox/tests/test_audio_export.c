@@ -94,6 +94,7 @@ int main(void) {
     hx_set_param(h, "t4_au_set_bpm", "0 2400");      /* its 1 s is one bar at 240 */
     hx_set_param(h, "t4_au_set_pitch", "0 -3");
     hx_set_param(h, "t4_au_set_gain", "0 -6");
+    hx_set_param(h, "t4_au_set_start", "0 1000");
     HX_ASSERT(hx_get_param(h, "t4_c0_au_export", b, sizeof b) > 0, "a Loop clip exported nothing");
     {
         unsigned rate, frames, rs, bpm10, rot, loopt;
@@ -102,7 +103,7 @@ int main(void) {
         HX_ASSERT(b[0] == 'L' && sscanf(b, "L %u %u %u %u %d %d %d %d %d %u %d %u",
                   &rate, &frames, &rs, &bpm10, &pitch, &detune, &gain, &revrs, &sync, &rot, &nudge, &loopt) == 12,
                   "the Loop line does not parse");
-        HX_ASSERT(rate == 44100 && frames == 44100 && rs == 0, "the Loop line's sample");
+        HX_ASSERT(rate == 44100 && frames == 44100 && rs == 1000, "the Loop line's sample");
         HX_ASSERT(bpm10 == 2400 && pitch == -3 && detune == 0 && gain == -6, "the Loop line's settings");
         HX_ASSERT(loopt == (unsigned)inst->tracks[4].clips[0].length * 24, "the Loop line's length is not the clip's");
         snprintf(want, sizeof want, "|%s/proj/dAVEBOx/samples/ramp.wav", g_root);
@@ -111,9 +112,11 @@ int main(void) {
     printf("  ok   — a Loop clip describes itself\n");
     hx_set_param(h, "t4_au_set_pitch", "0 0");
     hx_set_param(h, "t4_au_set_gain", "0 0");
+    hx_set_param(h, "t4_au_set_start", "0 0");
 
     /* ---- 2. a Slice clip renders: chop k on step k, its own frames ---- */
     hx_set_param(h, "t4_au_set_mode", "0 1");         /* Even 16, laid on the 16 steps in order */
+    hx_set_param(h, "t4_au_slice_pitch", "0 5 12");   /* chop 5 an octave up: its own sound */
     HX_ASSERT(hx_get_param(h, "t4_c0_au_export", b, sizeof b) > 0 && b[0] == 'S', "a Slice clip exported no render");
     {
         long fr = 0;
@@ -136,7 +139,7 @@ int main(void) {
         int bad = 0, loud = 0;
         for (k = 1; k < 16; k++) {
             uint32_t at = (uint32_t)(k * 24 * fpt + 0.5) + 40;
-            int want_v = 1 + (int)((44100 * k) / 16 + 40) % 30000;
+            int want_v = 1 + (int)((44100 * k) / 16 + (k == 5 ? 80 : 40)) % 30000;
             if (abs(w[at] - want_v) > 2) bad++;
             /* well after the chop's 2756 frames and its fade: silence */
             uint32_t after = (uint32_t)(k * 24 * fpt + 0.5) + 3200;
@@ -176,6 +179,17 @@ int main(void) {
          * the gate's end (step 2), silence well after it */
         HX_ASSERT(w[10] != 0 && w[stepf + 10] != 0, "the chop held over the loop point is not at the start");
         HX_ASSERT(w[2 * stepf + 1000] == 0, "the chop sounded past its gate");
+        free(w);
+        /* a gate that ends inside the cycle ends in the pass that is kept */
+        hx_set_param(h, "t4_c0_step_15_toggle", "0");
+        hx_set_param(h, "t4_c0_step_4_toggle", "0");
+        HX_ASSERT(cl->note_count == 1, "the step-4 note did not land");
+        cl->notes[0].gate = 24;
+        HX_ASSERT(hx_get_param(h, "t4_c0_au_export", b, sizeof b) > 0 && b[0] == 'S', "no render of step 4");
+        w = read_wav(p, &frames, &rate, &ch);
+        HX_ASSERT(w, "no WAV of step 4");
+        HX_ASSERT(w[4 * stepf + 10] != 0, "the step-4 chop did not sound");
+        HX_ASSERT(w[5 * stepf + 1000] == 0 && w[9 * stepf] == 0, "the step-4 chop sounded past its gate");
         free(w);
     }
     printf("  ok   — the loop point carries what sounds over it\n");
