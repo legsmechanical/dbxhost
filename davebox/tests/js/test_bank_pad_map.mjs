@@ -328,6 +328,23 @@ step('drum track: RPT GROOVE where LIVE ARP is, ALL LANES under DRUM LANE, MIX o
     S.trackPadMode[2] = 0;
 });
 
+step('⭐⭐ drum track: DRUM LANE and ALL LANES are ONE box on the map (Josh, 2026-10-30: "connect all lanes and drum lane pads in pad map like we just did with slice sample")', () => {
+    home();
+    S.activeTrack = 2; S.trackPadMode[2] = C.PAD_MODE_DRUM;
+    assert(JSON.stringify(pure.bankMapJoins(C.PAD_MODE_DRUM, 2)) === JSON.stringify([{ c: 2, r0: 1, r1: 2 }]),
+           'joins: ' + JSON.stringify(pure.bankMapJoins(C.PAD_MODE_DRUM, 2)));
+    assert(!pure.bankMapJoins(C.PAD_MODE_MELODIC_SCALE ?? 0, 2).length, 'a melodic map joins pads');
+    press(); holdPast();
+    const f = frame();
+    const lane = kit.bankMapCellRect(2, 1), all = kit.bankMapCellRect(2, 2), stp = kit.bankMapCellRect(2, 0);
+    const gapJoined = lane.y + lane.h, gapApart = stp.y + stp.h;  /* the row between two cells */
+    assert(ink(f, lane.x + 2, gapJoined, lane.w - 4, 1) > 4, 'no dotted rule between DRUM LANE and ALL LANES: not joined on screen');
+    assert(ink(f, stp.x + 2, gapApart, stp.w - 4, 1) === 0, 'STEP is joined to DRUM LANE');
+    assert(f[gapJoined * W + lane.x] === 1 && f[gapJoined * W + lane.x + lane.w - 1] === 1, 'the box\'s sides are broken between the two');
+    release(); ticks(2);
+    S.trackPadMode[2] = 0;
+});
+
 const ab = await import('../../ui/ui_automation_bank.mjs');
 const tickS = (n) => { for (let i = 0; i < n; i++) { tick(); snd.soundTick(); } };
 const backBtn = () => { midi(0xB0, 51, 127); midi(0xB0, 51, 0); tickS(2); };

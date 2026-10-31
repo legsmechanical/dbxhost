@@ -73,6 +73,8 @@ the section into a versioned heading at release time.
   again every 5 minutes until the Move is plugged in.
 
 ### Changed
+- **Drum tracks: DRUM LANE and ALL LANES are one box on the bank map**, as SLICES and
+  SAMPLE are on an Audio Slice clip.
 - **Audio: SLICES and SAMPLE read as one instrument on the bank map** — one box on the
   screen on a Slice clip — and SLICES joins SAMPLE on the right 4×4's shortcuts, above it.
 - **Audio: a Loop clip's CLIP bank is Mode · Strch · Shift (alt Nudge).** Strch x2 plays

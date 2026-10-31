@@ -426,6 +426,9 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   | **Drum** | —, RPT GROOVE, —, CONFIG | MACROS, AUTO, —, MIX | STEP, DRUM LANE, ALL LANES, INST | NOTE FX, —, DELAY |
   | **Conductor** | —, —, —, CONFIG | ON/OFF, OCTAVE, TIMING (RSPD) | CLIP, STEP | NOTE FX |
 
+  On a drum track the screen's map draws DRUM LANE and ALL LANES as one box: two
+  views of the same lanes.
+
   The pads wear their group's color; the bank you're on is white, and CONFIG,
   MIX and INST wear the track's color. **CONFIG** and **AUTOMATION** open their
   menus (TRACK CONFIG, the AUTOMATION menu) when you let go of the jog; **Back**

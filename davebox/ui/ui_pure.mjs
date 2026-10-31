@@ -291,6 +291,28 @@ export function bankPadMapForMode(padMode, t) {
     return cols;
 }
 
+/* Pads that are ONE thing, drawn as one box on the map: [{ c, r0, r1 }].
+ * An Audio Slice clip's SLICES over SAMPLE (Josh, 2026-10-30: "connect the
+ * sample and slice pads ... it basically says 'these are part of the same
+ * instrument'"), and a drum track's DRUM LANE over ALL LANES (Josh, 2026-10-30:
+ * "connect all lanes and drum lane pads in pad map like we just did with slice
+ * sample"). */
+const BANK_MAP_JOINS = {
+    audio: [(x) => x.action === 'slices', (x) => x.action === 'wave'],
+    drum:  [(x) => x.bank === 0, (x) => x.bank === 7],
+};
+export function bankMapJoins(padMode, t) {
+    const pair = BANK_MAP_JOINS[bankMapFamily(padMode)], joins = [];
+    if (!pair) return joins;
+    bankPadMapForMode(padMode, t).forEach((col, c) => {
+        for (let r = 0; r + 1 < col.cells.length; r++) {
+            const a = col.cells[r], b = col.cells[r + 1];
+            if (a && b && pair[0](a) && pair[1](b)) joins.push({ c, r0: r, r1: r + 1 });
+        }
+    });
+    return joins;
+}
+
 /* The action under a map pad ('inst'), or null. */
 export function bankPadMapActionAt(padMode, col, row) {
     const acts = BANK_MAP_ACTIONS[bankMapFamily(padMode)];

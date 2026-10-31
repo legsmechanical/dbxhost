@@ -591,6 +591,9 @@ for (const [b, slug, section, title, caption] of MEL_BANKS)
 screen('bank-overview-walk', '3.6 Parameter banks', 'The bank pad map',
     'Hold the jog: the left 4×4 pads become the track\'s banks, one column per group, and the screen draws the same map; the current bank is filled. Let go and the pads play again.',
     () => { toBank(3, false); press(3); ticks(2); if (!S.bankMapUp) throw new Error('holding the jog did not show the map'); });
+screen('bank-overview-drum', '3.6 Parameter banks', 'The bank pad map on a drum track',
+    'On a drum track DRUM LANE and ALL LANES share one box: two views of the same lanes.',
+    () => { selectTrack(1); toBank(0, false); press(3); ticks(2); if (!S.bankMapUp) throw new Error('holding the jog did not show the map'); });
 screen('bank-clip-alt', '8.1 CLIP bank', 'CLIP bank — alternate parameters',
     'Touch a knob and click the jog to switch it to its alternate: here Res is Zoom, Shift is Nudge and Dir is Reverse Style.',
     () => { toBank(0); for (const k of [0, 2, 6]) { knobTouch(k); click(); knobRelease(k); } ticks(2);
