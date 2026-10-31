@@ -4656,6 +4656,13 @@ function compWide(id) {
     const e = COMPONENT_NAMES[compBare(id)];
     return e ? e.wide : compBare(id).toUpperCase();
 }
+/* The param list's crumb: a component's short name, else the row it was
+ * picked from (`Sample`, `CLIP`, `Levels`) — never the raw id (`au:au`). */
+function knobTargetCrumb() {
+    if (COMPONENT_NAMES[compBare(S.knobTarget)]) return compShort(S.knobTarget);
+    const row = (S.knobTargets || []).find(t => t.id === S.knobTarget);
+    return row ? row.name : compShort(S.knobTarget);
+}
 function compParamLabel(target, param) {
     if (!target || !param) return '';
     if (target === LEVEL_TARGET) {
@@ -4899,7 +4906,7 @@ const VIEW_TREE = {
                            * chosen, and now that the current screen IS the last
                            * crumb, an empty one would silently drop the tail of
                            * the path rather than merely look odd. */
-                          crumb: () => compShort(S.knobTarget) || 'Param' },
+                          crumb: () => knobTargetCrumb() || 'Param' },
     [VIEW_LFO_TARGET]:  { parent: VIEW_LFO,        float: true, backPure: true,
                           crumb: () => 'Target' },
     [VIEW_LFO_PARAM]:   { parent: VIEW_LFO_TARGET, float: true, backPure: true,

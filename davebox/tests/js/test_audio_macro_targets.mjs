@@ -115,6 +115,8 @@ step('⭐⭐ + Add lane on a Loop clip: Sample (no All Slices); Sample > Pitch a
     assert(rows.indexOf('au:au') >= 0, 'no Sample row: ' + JSON.stringify(rows));
     assert(rows.indexOf('au:aus') < 0, 'All Slices offered for a Loop clip\'s lane: ' + JSON.stringify(rows));
     pickRow('au:au');
+    const path = JSON.stringify(snd.soundViewPath());
+    assert(path.indexOf('Sample') >= 0 && path.indexOf('au:') < 0, 'the crumb names the raw id: ' + path);
     const keys = snd.soundKnobParamsForTest().map(p => p.key).join(',');
     assert(keys === 'au_gain,au_pitch,au_detune,au_bpm,au_revrs', 'Sample lists ' + keys);
     pickParam('au_pitch');
