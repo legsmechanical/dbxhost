@@ -201,7 +201,7 @@ static int pa_format_value(const pa_res_t *r, uint16_t val, char *out, int cap) 
 /* A seq target never reaches the ring: an unknown key, or one whose    */
 /* bank is not on the track's pad mode, is dropped, as JS dropped it.   */
 
-enum { PA_SEQ_MELODIC = 0, PA_SEQ_DRUM = 1 };
+enum { PA_SEQ_MELODIC = 0, PA_SEQ_DRUM = 1, PA_SEQ_AUDIO = 2 };
 /* `stepped`: a choice, not an amount — never glides (pa_target_stepped). */
 typedef struct { const char *key; int16_t min, max; uint8_t mode; uint8_t stepped; } pa_seq_def_t;
 static const pa_seq_def_t pa_seq_defs[] = {
@@ -231,11 +231,21 @@ static const pa_seq_def_t pa_seq_defs[] = {
     { "seq_arp_gate",              1,  200, PA_SEQ_MELODIC },
     { "seq_arp_retrigger",         0,    1, PA_SEQ_MELODIC, 1 },
     { "seq_arp_sync",              0,    1, PA_SEQ_MELODIC, 1 },
+    /* An Audio clip's sound (the SAMPLE editor's K4-K8): held LIVE over the
+     * clip's own setting while a lane plays (au_clip_t ov) — pa_seq_apply */
+    { "au_pitch",                -24,   24, PA_SEQ_AUDIO },
+    { "au_detune",               -50,   50, PA_SEQ_AUDIO },
+    { "au_gain",                 -40,   12, PA_SEQ_AUDIO },
+    { "au_revrs",                  0,    1, PA_SEQ_AUDIO, 1 },
+    { "au_bpm",                    1, 9999, PA_SEQ_AUDIO },      /* the sample's Tempo x10: AU_BPM10_MIN..MAX */
     { "all_lanes_playback_dir",    0,    3, PA_SEQ_DRUM, 1 },
 };
+_Static_assert(AU_BPM10_MIN == 1 && AU_BPM10_MAX == 9999, "au_bpm's row is AU_BPM10_MIN..MAX");
 #define PA_SEQ_COUNT ((int)(sizeof(pa_seq_defs) / sizeof(pa_seq_defs[0])))
 #define PA_SEQ_IDX_CLIP_DIR  0
 #define PA_SEQ_IDX_LANES_DIR (PA_SEQ_COUNT - 1)
+#define PA_SEQ_IDX_AU        26                /* au_pitch; the five run to au_bpm */
+#define PA_SEQ_IS_AU(i)      ((i) >= PA_SEQ_IDX_AU && (i) < PA_SEQ_IDX_AU + 5)
 
 static void pfx_set(seq8_instance_t *inst, seq8_track_t *tr,
                     clip_pfx_params_t *cp, const char *key, const char *val);
@@ -260,12 +270,23 @@ static int pa_target_is_seq(const char *t, int *track, int *idx) {
 /* Is this key's bank on the track's pad mode? */
 static int pa_seq_on_mode(const seq8_track_t *tr, int idx) {
     if (tr->pad_mode == PAD_MODE_CONDUCT) return 0;
+    if (pa_seq_defs[idx].mode == PA_SEQ_AUDIO) return tr->pad_mode == PAD_MODE_AUDIO;
     return (tr->pad_mode == PAD_MODE_DRUM) == (pa_seq_defs[idx].mode == PA_SEQ_DRUM);
 }
 
 /* The value in force on `clip` of this track, in the knob's own units. */
-static int pa_seq_read(const seq8_track_t *tr, int clip, int idx) {
+static int pa_seq_read(const seq8_instance_t *inst, const seq8_track_t *tr, int clip, int idx) {
     const play_fx_t *fx = &tr->pfx;
+    if (PA_SEQ_IS_AU(idx)) {
+        const au_clip_t *cl = &inst->au_clip[tr - inst->tracks][clip];
+        switch (idx - PA_SEQ_IDX_AU) {
+        case 0:  return au_pitch(cl);
+        case 1:  return au_detune(cl);
+        case 2:  return au_gain(cl);
+        case 3:  return au_revrs(cl);
+        default: return (int)au_bpm10(cl);
+        }
+    }
     if (idx == PA_SEQ_IDX_CLIP_DIR) return (int)tr->clips[clip].playback_dir;
     if (idx == PA_SEQ_IDX_LANES_DIR)
         return tr->drum_clips[clip] ? (int)tr->drum_clips[clip]->lanes[0].clip.playback_dir : 0;
@@ -297,6 +318,45 @@ static int pa_seq_read(const seq8_track_t *tr, int clip, int idx) {
     case 25: return (int)fx->seq_arp_sync;
     }
     return 0;
+}
+
+/* An Audio clip's Pitch / Detune / Gain / Revrs / Tempo (f 0..4), at v.
+ * PLAYBACK holds it live over the clip's own setting (au_clip_t ov), which
+ * stays; REST gives the setting back — it becomes v, as a bank knob's stored
+ * value does, and the live value goes. Revrs turning over restarts the loop
+ * from its new end, as the knob does. AUDIO THREAD. */
+static void pa_au_apply(seq8_instance_t *inst, int track, int clip, int f, int v, int is_rest, int live) {
+    au_clip_t *cl = &inst->au_clip[track][clip];
+    static const uint8_t bit[5] = { AU_OV_PITCH, AU_OV_DETUNE, AU_OV_GAIN, AU_OV_REVRS, AU_OV_BPM };
+    int was_rev = au_revrs(cl);
+    unsigned was_bpm = au_bpm10(cl);
+    if (is_rest) {
+        int moved = 0;
+        switch (f) {
+        case 0: moved = cl->pitch != v;   cl->pitch = (int8_t)v; break;
+        case 1: moved = cl->detune != v;  cl->detune = (int8_t)v; break;
+        case 2: moved = cl->gain_db != v; cl->gain_db = (int8_t)v; break;
+        case 3: moved = cl->revrs != (v ? 1 : 0); cl->revrs = (uint8_t)(v ? 1 : 0); break;
+        default: moved = cl->bpm10 != v; cl->bpm10 = (uint16_t)v; break;
+        }
+        cl->ov &= (uint8_t)~bit[f];
+        if (moved) { inst->state_dirty = 1; rui_mark(inst, track, clip); }
+    } else {
+        if (!live) return;               /* a lane of a clip not playing holds nothing */
+        switch (f) {
+        case 0: cl->ov_pitch = (int8_t)v; break;
+        case 1: cl->ov_detune = (int8_t)v; break;
+        case 2: cl->ov_gain = (int8_t)v; break;
+        case 3: cl->ov_revrs = (uint8_t)(v ? 1 : 0); break;
+        default: cl->ov_bpm10 = (uint16_t)v; break;
+        }
+        cl->ov |= bit[f];
+    }
+    if (au_bpm10(cl) != was_bpm) cl->tr_due = 1;               /* Transient's chops move with it */
+    if (live && au_revrs(cl) != was_rev) {
+        inst->au_trk[track].last_tick = -1;
+        au_track_kill(inst, track, NULL);
+    }
 }
 
 /* AUDIO THREAD. `rest_clip` < 0: a playback value, for the playing clip.
@@ -334,6 +394,8 @@ static void pa_seq_apply(seq8_instance_t *inst, int track, int idx, uint16_t val
         if (is_rest) { inst->state_dirty = 1; rui_mark(inst, track, clip); }
         return;
     }
+
+    if (PA_SEQ_IS_AU(idx)) { pa_au_apply(inst, track, clip, idx - PA_SEQ_IDX_AU, v, is_rest, live); return; }
 
     /* A play-effects key. A clip that is not the playing one has no live
      * surface, and playback never touched what it stores: nothing to do. */
@@ -374,7 +436,7 @@ static int pa_seq_vals(const seq8_instance_t *inst, char *out, int out_len) {
         if (!pa_target_is_seq(inst->pa_targets[e->target], &st, &si)) continue;
         if (si < 0 || st != (int)e->track || !pa_seq_on_mode(tr, si)) continue;
         int w = snprintf(out + n, (size_t)(out_len - n), "%d %s %d\n", st,
-                         pa_seq_defs[si].key, pa_seq_read(tr, (int)e->clip, si));
+                         pa_seq_defs[si].key, pa_seq_read(inst, tr, (int)e->clip, si));
         if (w < 0 || n + w >= out_len) { out[n] = '\0'; break; }
         n += w;
     }

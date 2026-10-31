@@ -152,8 +152,23 @@ typedef struct {
     const void  *hc_smp;
     uint32_t     hc_gen, hc_rs, hc_re, hc_n;
     int16_t      hc_sens;
+    /* AUTOMATION's live values: what a playing lane holds Pitch, Detune,
+     * Gain, Revrs and Tempo at (pa_seq_apply), over the clip's own settings,
+     * which stay as they were. Bit AU_OV_* set = that one is held. Never
+     * saved; the clip's own setting takes over again when its lane gives the
+     * value back, a hand sets it, or the clip stops being the playing one. */
+    uint8_t      ov;
+    int8_t       ov_pitch, ov_detune, ov_gain;
+    uint8_t      ov_revrs;
+    uint16_t     ov_bpm10;
     au_slice_t   sl[AU_MAX_SLICES];
 } au_clip_t;
+
+#define AU_OV_PITCH     0x01
+#define AU_OV_DETUNE    0x02
+#define AU_OV_GAIN      0x04
+#define AU_OV_REVRS     0x08
+#define AU_OV_BPM       0x10
 
 #define AU_ERR_NONE     0
 #define AU_ERR_OPEN     1   /* could not read the file */
@@ -181,6 +196,15 @@ typedef struct {
     uint8_t  starve;         /* streamed: 0..64, its level, down while a chunk is missing (64 at start) */
     uint32_t wlo, whi;       /* a Vintage piece: its clip's Start..End, which the streamer reads ahead
                               * through as for a Loop (whi 0: read ahead within lo..hi) */
+    /* following the clip's Pitch / Detune / Gain as they move (automation)
+     * while it sounds: what it was started with — the clip's part, and the
+     * chop's own on top (au_voice_follow) */
+    uint8_t  clip;           /* the clip it plays */
+    uint8_t  fpitch;         /* its pitch follows (not Tempo Pitch's, whose speed the tempo sets) */
+    int8_t   ps, pc;         /* the clip's semitones and cents in its step */
+    int8_t   sdb;            /* the chop's own gain, dB */
+    int8_t   gdb;            /* the clip's gain in v->gain, dB */
+    float    vg;             /* its velocity's level */
 } au_voice_t;
 
 #define AU_VOICES 3          /* the sounding one, the one being choked, and room for a Vintage piece

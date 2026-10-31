@@ -38,6 +38,9 @@ the section into a versioned heading at release time.
     In place, Flatten, a New Trim or Normalize); an Overwrite can't be undone.
   - **The Conductor** repitches a responding Audio track, its chops unchanged; a scene
     bake's **Apply Conductor** folds a steady shift into the clip's Pitch.
+  - **Automation**: SAMPLE's **Gain**, **Pitch**, **Detune**, **Tempo** and **Revrs** record
+    and lock like any knob. A playing lane moves the sound live, chops already sounding
+    included, and the clip's own setting comes back on Stop.
   - **LIVE ARP** plays chops (**Step** in place of Oct); NOTE FX keeps what doesn't move
     a pitch; there is no DELAY. Muting an Audio track silences it like a bus, so its loop
     keeps time. **Delete + clip** clears the sequence only; **Shift + Delete** resets the

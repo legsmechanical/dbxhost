@@ -32,7 +32,8 @@ import { showActionPopupFor } from './ui_persistence.mjs';
 import { dspGet } from './ui_dsp_get.mjs';
 /* a cycle (ui_audio_editor imports this module): used only inside a function body */
 import { lazyFinish } from './ui_audio_editor.mjs';
-import { PAD_MODE_AUDIO, NUM_CLIPS, BANK_STEP, knobAltFor } from './ui_constants.mjs';
+import { PAD_MODE_AUDIO, NUM_CLIPS, BANK_STEP, knobAltFor, auAutoKey } from './ui_constants.mjs';
+import { automationParamEdit, automationParamTouch } from './ui_automation.mjs';
 import { bankListForMode, AU_MODE_LOOP, AU_MODE_SLICE, auIsSlice, auIsLoop } from './ui_pure.mjs';
 
 export { AU_MODE_LOOP, AU_MODE_SLICE, auIsSlice, auIsLoop } from './ui_pure.mjs';
@@ -479,6 +480,35 @@ export function auSet(t, c, field, v) {
     setKey(t, 'set_' + field, c + ' ' + v);
     auMarkStale(t, c);
 }
+/* AUTOMATION (Josh, 2026-10-31: Pitch, Detune, Gain, Revrs as a switch, and
+ * Tempo). A hand on one of them — `field` is the info's name: gain, pitch,
+ * detune, bpm10, revrs — is heard as its `seq:<t>:au_*` target, as a bank
+ * knob's turn is: Record takes it, a held step locks it, a plain turn is a
+ * plain turn. The engine holds a playing lane's value live over the clip's
+ * setting and the hand's write takes over from it (sp_track_audio set_). */
+export function auAutoEdit(t, c, field, nv, cur) {
+    const key = auAutoKey(field);
+    if (key) automationParamEdit(t, c, 'seq', t + ':' + key, String(nv), String(cur));
+}
+export function auAutoTouch(t, c, field, down) {
+    const key = auAutoKey(field);
+    if (key) automationParamTouch(t, c, 'seq', t + ':' + key, down);
+}
+/* THE SCREEN'S COPY of a playing lane (soundSeqMirror hands it over): the
+ * value the engine holds track t's playing clip at, into the info the SAMPLE
+ * editor draws from. Writes nothing to the engine. */
+export function auAutoMirror(t, field, val) {
+    const c = S.trackActiveClip[t] | 0;
+    const i = S.auInfo[t] && S.auInfo[t][c];
+    if (!i || i.state !== 2) return false;
+    if ((i[field] | 0) === val) return true;
+    const loc = Object.assign({}, i, { [field]: val });
+    if (field === 'bpm10') { loc.rend = auPlayedEnd(t, c, loc); S.auStartsRev = (S.auStartsRev | 0) + 1; }
+    if (field === 'revrs') S.auStartsRev = (S.auStartsRev | 0) + 1;
+    S.auInfo[t][c] = loc;
+    S.screenDirty = true;
+    return true;
+}
 function auSetSlice(t, c, l, field, v) {
     setKey(t, 'slice_' + field, c + ' ' + l + ' ' + v);
     _sl.delete(t + '_' + c + '_' + l);
@@ -888,16 +918,16 @@ export function auPanelKnob(ed, k, steps) {
         } else if (page === 'SAMPLE') {
             /* Start · Pitch · Detune · Gain · Revrs · Nudge · Sync · Tempo */
             if (k === 0) return auRangeStep(t, c, 'start', steps);
-            if (k === 1) { const v = Math.max(-24, Math.min(24, i.pitch + dir)); if (v === i.pitch) return false; loc.pitch = v; auSet(t, c, 'pitch', v); }
-            else if (k === 2) { const v = Math.max(-50, Math.min(50, (i.detune | 0) + steps)); if (v === (i.detune | 0)) return false; loc.detune = v; auSet(t, c, 'detune', v); }
-            else if (k === 3) { const v = Math.max(-40, Math.min(12, i.gain + dir)); if (v === i.gain) return false; loc.gain = v; auSet(t, c, 'gain', v); }
-            else if (k === 4) { const v = dir > 0 ? 1 : 0; if (v === i.revrs) return false; loc.revrs = v; auSet(t, c, 'revrs', v); }
+            if (k === 1) { const v = Math.max(-24, Math.min(24, i.pitch + dir)); if (v === i.pitch) return false; loc.pitch = v; auSet(t, c, 'pitch', v); auAutoEdit(t, c, 'pitch', v, i.pitch); }
+            else if (k === 2) { const v = Math.max(-50, Math.min(50, (i.detune | 0) + steps)); if (v === (i.detune | 0)) return false; loc.detune = v; auSet(t, c, 'detune', v); auAutoEdit(t, c, 'detune', v, i.detune | 0); }
+            else if (k === 3) { const v = Math.max(-40, Math.min(12, i.gain + dir)); if (v === i.gain) return false; loc.gain = v; auSet(t, c, 'gain', v); auAutoEdit(t, c, 'gain', v, i.gain); }
+            else if (k === 4) { const v = dir > 0 ? 1 : 0; if (v === i.revrs) return false; loc.revrs = v; auSet(t, c, 'revrs', v); auAutoEdit(t, c, 'revrs', v, i.revrs | 0); }
             else if (k === 5) return auNudgeStep(t, c, steps);
             else if (k === 6) return auIsLoop(i) && auSampleP2Knob(t, c, 1, steps);
             else if (k === 7) {
                 const v = Math.max(AU_BPM10_MIN, Math.min(AU_BPM10_MAX, (i.bpm10 || 1200) + steps * (S.shiftHeld ? 1 : 10)));
                 if (v === (i.bpm10 | 0)) return false;
-                loc.bpm10 = v; auSet(t, c, 'bpm', v);
+                loc.bpm10 = v; auSet(t, c, 'bpm', v); auAutoEdit(t, c, 'bpm10', v, i.bpm10 | 0);
             } else return false;
         } else {
             /* CLIP: a Slice clip's ALL SLICES (auPanelPages: the page is a Slice clip's alone) */
@@ -1004,7 +1034,7 @@ export function auSampleP2Knob(t, c, k, steps) {
     } else if (k === 7) {
         const v = steps > 0 ? 1 : 0;
         if (v === (i.revrs | 0)) return false;
-        loc.revrs = v; auSet(t, c, 'revrs', v);
+        loc.revrs = v; auSet(t, c, 'revrs', v); auAutoEdit(t, c, 'revrs', v, i.revrs | 0);
     } else return false;
     S.auInfo[t][c] = loc;
     S.auStartsRev = (S.auStartsRev | 0) + 1;

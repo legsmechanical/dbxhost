@@ -324,11 +324,11 @@ static void au_warp_block(seq8_instance_t *inst, int t, int c, double L, double 
     cmd.fpt = fpt;
     cmd.nud = (double)cl->nudge_ms * 44.1 / fpt;
     cmd.rot = L > 0 ? au_wrap((double)cl->rot, L) : 0.0;
-    cmd.pitch = au_tune(cl->pitch + inst->au_trk[t].cond, cl->detune);   /* the Conductor's, held till the wrap on Next */
+    cmd.pitch = au_tune(au_pitch(cl) + inst->au_trk[t].cond, au_detune(cl));   /* the Conductor's, held till the wrap on Next */
     cmd.drift = w->drift;
     cmd.anchor_tick = w->cur_anchor;
     cmd.anchor_gen = w->gen;
-    cmd.revrs = cl->revrs;
+    cmd.revrs = (uint8_t)au_revrs(cl);
     cmd.run = 1;
     au_warp_cmd_write(X->trk[t], &cmd);
 }
@@ -374,8 +374,8 @@ static int au_warp_mix(seq8_instance_t *inst, int t, int32_t *acc, int frames) {
     L = W->cmd.L;
     fpt = W->cmd.fpt;
     if (!(L > 0) || !(fpt > 0)) return 0;
-    gn = au_db(inst->au_clip[t][w->clip].gain_db) * 32767.f / 64.f;
-    go = au_db(inst->au_clip[t][w->oclip].gain_db) * 32767.f / 64.f;
+    gn = au_db(au_gain(&inst->au_clip[t][w->clip])) * 32767.f / 64.f;
+    go = au_db(au_gain(&inst->au_clip[t][w->oclip])) * 32767.f / 64.f;
     tail = W->tail;
     head = __atomic_load_n(&W->head, __ATOMIC_ACQUIRE);
     if ((int32_t)(w->ntail - tail) < 0 || (int32_t)(head - w->ntail) < 0) w->ntail = tail;
@@ -578,11 +578,33 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
          * its start against the block never ends it a frame early */
         x1 += AU_VINTAGE_OVER + 4.0 * AU_VINTAGE_XF;   /* ...and on through its fade-out, up to 4x speed */
         if (x1 > R) x1 = R;
-        uint32_t a = cl->revrs ? re - (uint32_t)x1 : rs + (uint32_t)x0;
-        uint32_t b = cl->revrs ? re - (uint32_t)x0 : rs + (uint32_t)x1;
+        uint32_t a = au_revrs(cl) ? re - (uint32_t)x1 : rs + (uint32_t)x0;
+        uint32_t b = au_revrs(cl) ? re - (uint32_t)x0 : rs + (uint32_t)x1;
         uint32_t off = (uint32_t)(pd[i] * fscale);
         au_range_on(inst, t, c, AU_SLICE_NONE, a, b, 1.0f, off >= (uint32_t)frames ? (uint32_t)frames - 1 : off, 1);
         i = e;
+    }
+}
+
+/* A sounding voice follows its clip's Pitch, Detune and Gain as automation
+ * moves them (au_pitch & co): its speed by the change since it last looked,
+ * its level from the clip's gain with its chop's own on top. A Tempo Pitch
+ * loop's speed is the tempo's, so only its level follows. */
+static void au_voice_follow(seq8_instance_t *inst, int t) {
+    au_track_t *at = &inst->au_trk[t];
+    int i;
+    for (i = 0; i < AU_VOICES; i++) {
+        au_voice_t *v = &at->v[i];
+        if (!v->active || v->clip >= NUM_CLIPS) continue;
+        const au_clip_t *cl = &inst->au_clip[t][v->clip];
+        int g = au_gain(cl), ps, pc;
+        if (g != v->gdb) { v->gain = au_db(g + v->sdb) * v->vg; v->gdb = (int8_t)g; }
+        if (!v->fpitch) continue;
+        ps = au_pitch(cl); pc = au_detune(cl);
+        if (ps != v->ps || pc != v->pc) {
+            v->step *= au_tune(ps - v->ps, pc - v->pc);
+            v->ps = (int8_t)ps; v->pc = (int8_t)pc;
+        }
     }
 }
 
@@ -605,6 +627,13 @@ static void au_render(seq8_instance_t *inst, int frames) {
             au_warp_off(inst, t);
             continue;
         }
+        /* a lane's live value is the PLAYING clip's: one left behind by a
+         * clip switch is gone (its lane gives the value back at the switch) */
+        for (i = 0; i < NUM_CLIPS; i++)
+            if (i != tr->active_clip && inst->au_clip[t][i].ov) {
+                if (inst->au_clip[t][i].ov & AU_OV_BPM) inst->au_clip[t][i].tr_due = 1;
+                inst->au_clip[t][i].ov = 0;
+            }
         /* The Conductor on Now: a chop already sounding moves with it (the
          * Loop voice is Tempo Pitch's, whose speed the tempo sets) */
         if (au_cond_at_once(inst, t)) {
@@ -647,7 +676,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
                  * taken when the loop comes round (or as it starts) */
                 if (au_cond_at_once(inst, t) || at->last_tick < 0 || tick < at->last_tick)
                     at->cond = (int8_t)au_cond_now(inst, t);
-                double ratio = au_tune(cl->pitch + at->cond, cl->detune) * (double)cl->smp->rate / 44100.0;
+                double ratio = au_tune(au_pitch(cl) + at->cond, au_detune(cl)) * (double)cl->smp->rate / 44100.0;
                 /* Tempo Pitch: retuned so Start..End fills the clip (Josh,
                  * 2026-10-28: ""Pitch" which would retune the loop to fill x
                  * bars") — the clip's Pitch knob gives way to it */
@@ -702,7 +731,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
                 } else {
                     if (at->sync_on) { au_release_chops(at); at->sync_on = 0; }
                     /* Pitch follows a tempo change at once, not at the wrap */
-                    if (lv && fill > 0) lv->step = cl->revrs ? -fill : fill;
+                    if (lv && fill > 0) lv->step = au_revrs(cl) ? -fill : fill;
                     /* Shift: the sample's start falls `rot` ticks into the clip,
                      * its end wrapping round before it — the voice starts again
                      * there, as at the loop's top */
@@ -747,6 +776,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
              * voices keep running, the level ramps over 64 frames. */
             int mtarget = effective_mute(inst, t) ? 0 : 64;
             memset(acc, 0, sizeof acc);
+            au_voice_follow(inst, t);
             for (i = 0; i < AU_VOICES; i++) if (at->v[i].active) inst->au_underruns += au_voice_render(&at->v[i], acc, frames);
             if (at->w.on || at->w.fadeout || at->w.hold) au_warp_mix(inst, t, acc, frames);
             for (f = 0; f < frames; f++) {
@@ -1092,13 +1122,19 @@ static int sp_track_audio(sp_ctx_t *cx) {
             cl->slen = (uint32_t)(v < 0 ? 0 : v);
             cl->tr_due = 1;                                      /* au_trans_settle */
         } else if (!strcmp(w, "pitch")) {
+            /* a hand's setting is what plays: a lane's live value gives way
+             * (each of these five; the lane takes it again at its next change) */
             cl->pitch = (int8_t)clamp_i(v, -24, 24);
+            cl->ov &= (uint8_t)~AU_OV_PITCH;
         } else if (!strcmp(w, "detune")) {
             cl->detune = (int8_t)clamp_i(v, -50, 50);
+            cl->ov &= (uint8_t)~AU_OV_DETUNE;
         } else if (!strcmp(w, "gain")) {
             cl->gain_db = (int8_t)clamp_i(v, -40, 12);
+            cl->ov &= (uint8_t)~AU_OV_GAIN;
         } else if (!strcmp(w, "revrs")) {
             cl->revrs = (uint8_t)(v ? 1 : 0);
+            cl->ov &= (uint8_t)~AU_OV_REVRS;
             inst->au_trk[tidx].last_tick = -1;     /* the loop restarts from its new end */
             if (c == tr->active_clip) au_track_kill(inst, tidx, NULL);
         } else if (!strcmp(w, "sync")) {
@@ -1113,6 +1149,7 @@ static int sp_track_audio(sp_ctx_t *cx) {
                 v = (int)(bpm * 10.0 + 0.5);
             }
             cl->bpm10 = (uint16_t)clamp_i(v, AU_BPM10_MIN, AU_BPM10_MAX);
+            cl->ov &= (uint8_t)~AU_OV_BPM;
             cl->tr_due = 1;                                      /* au_trans_settle */
         } else if (!strcmp(w, "sens")) {
             cl->sens = (uint8_t)clamp_i(v, 0, 100);           /* Transient: which hits count */
@@ -1308,11 +1345,13 @@ static int sp_track_audio(sp_ctx_t *cx) {
             /* the first tap: slice 1 at Start, and the sample plays once,
              * forwards, Start..End */
             uint32_t rs, re;
-            uint8_t rv = cl->revrs;
+            uint8_t rv = cl->revrs, ov = cl->ov;
             au_range(cl, cl->smp, &rs, &re);
             cl->revrs = 0;
+            cl->ov &= (uint8_t)~AU_OV_REVRS;
             au_loop_start(inst, tidx, inst->au_lazy_clip, 0, 0);
             cl->revrs = rv;
+            cl->ov = ov;
             au_voice_t *lv = au_loop_voice(at);
             if (!lv) return 1;
             lv->mode_loop = 0; lv->loop = 0;
@@ -1418,9 +1457,9 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
         }
         return snprintf(out, out_len, "%d %d %d %d %d %d %u %u %d %d %u %u %d %d %d %d %d %d %d %u %d %u %d %d %u %u|%s",
                         cl->state, cl->err, cl->mode, cl->even, cl->nslices, cl->jump,
-                        (unsigned)rs, (unsigned)ve, cl->pitch, cl->gain_db,
+                        (unsigned)rs, (unsigned)ve, au_pitch(cl), au_gain(cl),
                         s ? (unsigned)s->frames : 0u, s ? (unsigned)s->rate : 0u, s ? s->ch : 0,
-                        cl->revrs, cl->nudge_ms, cl->jmpq, au_count(cl), cl->detune, cl->sync, (unsigned)reach, cl->bpm10,
+                        au_revrs(cl), cl->nudge_ms, cl->jmpq, au_count(cl), au_detune(cl), cl->sync, (unsigned)reach, au_bpm10(cl),
                         (unsigned)au_hit_count_cached(cl, rs, re), cl->sens, cl->trans, (unsigned)cl->slen, (unsigned)cl->rot, cl->name);
     }
     if (!strncmp(k, "sl_", 3)) {                  /* sl_C_L: "a b pinned pitch gain rev play atk dec detune" */
@@ -1567,7 +1606,7 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
                     double wt = L > 0 ? au_wrap(at->w.tick - au_wrap((double)cl->rot, L), L) : at->w.tick;
                     double x = (wt - (double)cl->nudge_ms * 44.1 / fpt) * (double)(re - rs) / P;
                     if (x >= 0 && x < (double)(re - rs))
-                        return snprintf(out, out_len, "1 %u -1", cl->revrs ? re - 1 - (uint32_t)x : rs + (uint32_t)x);
+                        return snprintf(out, out_len, "1 %u -1", au_revrs(cl) ? re - 1 - (uint32_t)x : rs + (uint32_t)x);
                 }
             }
         }

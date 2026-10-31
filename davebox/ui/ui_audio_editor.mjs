@@ -67,12 +67,14 @@ import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLaz
          auSelSlice, auSetSelSlice, isAudioTrack, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
          auMarkAdd, auMarkDel, auManual, auEvenBake, auTrans, auTransBake, auRangeStep, auSet, auEnd, auPanelRingCells, auPanelReset,
          auIsSlice, AU_LAZY_ARMED, AU_LAZY_RUN, AU_LAZY_ENDED, AU_EVEN_MAX, AU_BPM10_MIN, AU_BPM10_MAX, auLenTicks,
-         auSampleP2Cells, auSampleP2Knob, auSampleReset, auEdit, auTrimCuts, auOrig, auNudgeStep, auFpt, auPlayedEnd, auTooLongToChop } from './ui_audio.mjs';
+         auSampleP2Cells, auSampleP2Knob, auSampleReset, auEdit, auTrimCuts, auOrig, auNudgeStep, auFpt, auPlayedEnd, auTooLongToChop, auAutoEdit, auAutoTouch } from './ui_audio.mjs';
 import { registerScreenRingCells } from './ui_knob_leds.mjs';
 import { auModeValue } from './ui_pure.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { ccKnobDelta, knobPick, KNOB_PICK, KNOB_DELIB } from './ui_input_cc.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
+import { automationClearKey, automationToggleActive } from './ui_automation.mjs';
+import { auAutoKey } from './ui_constants.mjs';
 
 /* One step per detent run (ui_input_cc's knobStep; its exports are only used
  * inside function bodies here — the two modules import each other). */
@@ -507,6 +509,7 @@ function clipStep(ed, field, dir) {
     const v = Math.max(lim[0], Math.min(lim[1], (i[field] | 0) + dir));
     if (v === (i[field] | 0)) return false;
     auSet(t, c, field, v);
+    auAutoEdit(t, c, field, v, i[field] | 0);
     S.auInfo[t][c] = Object.assign({}, i, { [field]: v });
     return true;
 }
@@ -519,6 +522,7 @@ function clipTempo(ed, dir) {
     const v = Math.max(AU_BPM10_MIN, Math.min(AU_BPM10_MAX, cur + dir * (S.shiftHeld ? 1 : 10)));
     if (v === (i.bpm10 | 0)) return false;
     auSet(t, c, 'bpm', v);
+    auAutoEdit(t, c, 'bpm10', v, cur);
     const loc = Object.assign({}, i, { bpm10: v });
     loc.rend = auPlayedEnd(t, c, loc);
     S.auInfo[t][c] = loc;
@@ -541,6 +545,15 @@ function sampleKnob(ed, k, d2) {
     if (k === 6) { const st = ccKnobDelta(d2, k); return !!st && clipTempo(ed, st > 0 ? 1 : -1); }
     if (k === 7) { const st = knobStep(k, d2, KNOB_DELIB); return !!st && auSampleP2Knob(ed.t, ed.c, 7, st); }
     return false;
+}
+
+/* The automatable setting knob k turns on the screen as it is (sampleKnob's
+ * K4-K8 on SAMPLE; SLICES' are the slice's own, not automatable), or null. */
+const SAMPLE_AUTO_FIELD = { 3: 'gain', 4: 'pitch', 5: 'detune', 6: 'bpm10', 7: 'revrs' };
+function sampleAutoField(k, plain, p2, sl, slEdit) {
+    if ((p2 && sl) || (slEdit && k > 2)) return null;
+    if (k === 7 && !plain && !p2) return null;
+    return SAMPLE_AUTO_FIELD[k] || null;
 }
 
 /* The picker's rows at its level. */
@@ -652,6 +665,20 @@ export function audioEditorInput(status, d1, d2) {
     if (hi === 0x90 || hi === 0x80) {
         if (d1 >= 0 && d1 <= 7) {
             const on = hi === 0x90 && d2 >= 64;
+            /* an automatable knob here (sampleKnob's): the touch opens its
+             * gesture, Delete + touch clears its lane, Mute + touch switches
+             * the lane off / on — as a bank knob's touch does */
+            const af = sampleAutoField(d1, plain, p2, sl, slEdit);
+            if (af) {
+                if (on && S.deleteHeld) {
+                    if (automationClearKey(ed.t, ed.c, 'seq:' + ed.t + ':' + auAutoKey(af))) showActionPopup('AUTOMATION', 'CLEARED');
+                } else if (on && S.muteHeld) {
+                    S.muteUsedAsModifier = true;
+                    const r = automationToggleActive(ed.t, ed.c, 'seq:' + ed.t + ':' + auAutoKey(af));
+                    if (r !== null) showActionPopup('AUTOMATION', r ? 'ON' : 'OFF');
+                }
+                auAutoTouch(ed.t, ed.c, af, on);
+            }
             if (on) {
                 S.knobTouched = d1; S.knobPhysIdx = d1; S.knobTurnedTick[d1] = -1;
                 if (d1 === 1) ed.zoomDir = 0;                  /* touched, not turned yet: "ZOOM" */

@@ -107,7 +107,7 @@ int main(void) {
         (void)I;
         hx_get_param(h, "pa_seq_keys", buf, sizeof(buf));
         int lines = 0; for (char *c = buf; *c; c++) if (*c == '\n') lines++;
-        HX_ASSERT(lines == PA_SEQ_COUNT && lines == 27, "pa_seq_keys does not list the whole table");
+        HX_ASSERT(lines == PA_SEQ_COUNT && lines == 32, "pa_seq_keys does not list the whole table");
         HX_ASSERT(strstr(buf, "noteFX_gate 0 400 0\n") && strstr(buf, "all_lanes_playback_dir 0 3 1\n"),
                   "pa_seq_keys rows are not '<key> <min> <max> <mode>'");
         hx_destroy(h);
@@ -235,7 +235,7 @@ int main(void) {
         HX_ASSERT(tr->drum_clips[tr->active_clip]->lanes[0].clip.playback_dir == 3 &&
                   tr->drum_clips[tr->active_clip]->lanes[DRUM_LANES - 1].clip.playback_dir == 3,
                   "the all-lanes direction did not reach every lane");
-        HX_ASSERT(pa_seq_read(tr, tr->active_clip, PA_SEQ_IDX_LANES_DIR) == 3, "the all-lanes direction does not read back");
+        HX_ASSERT(pa_seq_read(I, tr, tr->active_clip, PA_SEQ_IDX_LANES_DIR) == 3, "the all-lanes direction does not read back");
         hx_destroy(h);
         printf("  ok   — off-mode, unknown and conduct are dropped; the drum key reaches every lane\n");
     }
@@ -247,10 +247,11 @@ int main(void) {
         seq8_track_t *tr = &I->tracks[1];
         for (int i = 0; i < PA_SEQ_COUNT - 1; i++) {
             const pa_seq_def_t *d = &pa_seq_defs[i];
+            if (PA_SEQ_IS_AU(i)) continue;           /* an Audio track's: tests/test_audio_automation.c */
             pa_seq_apply(I, 1, i, 16383, -1);
-            int hi = pa_seq_read(tr, tr->active_clip, i);
+            int hi = pa_seq_read(I, tr, tr->active_clip, i);
             pa_seq_apply(I, 1, i, 0, -1);
-            int lo = pa_seq_read(tr, tr->active_clip, i);
+            int lo = pa_seq_read(I, tr, tr->active_clip, i);
             if (hi != d->max || lo != d->min) {
                 fprintf(stderr, "FAIL: %s wrote %d..%d, the table says %d..%d — the table, the writer and "
                                 "the reader disagree\n", d->key, lo, hi, (int)d->min, (int)d->max);
@@ -258,13 +259,13 @@ int main(void) {
             }
             /* and the rest writes the clip's stored copy as well as the live one */
             pa_seq_apply(I, 1, i, 16383, tr->active_clip);
-            HX_ASSERT(pa_seq_read(tr, tr->active_clip, i) == d->max, "a rest did not write the live value");
+            HX_ASSERT(pa_seq_read(I, tr, tr->active_clip, i) == d->max, "a rest did not write the live value");
         }
         clip_pfx_params_t *cp = &tr->clips[tr->active_clip].pfx_params;
         HX_ASSERT(cp->gate_time == 400 && cp->fb_clock == 100 && cp->seq_arp_gate == 200 && cp->octaver == 4,
                   "a rest did not reach the clip's stored settings");
         hx_destroy(h);
-        printf("  ok   — all %d melodic keys read back at both ends of their range\n", PA_SEQ_COUNT - 1);
+        printf("  ok   — all %d melodic keys read back at both ends of their range\n", PA_SEQ_COUNT - 1 - 5);
     }
 
     printf("PASS test_param_auto_seq_apply\n");

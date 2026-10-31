@@ -198,6 +198,16 @@ static float au_db(int db) {
     return (float)r;
 }
 
+/* What the clip plays at NOW: an automation lane's live value where one holds
+ * it (au_clip_t ov), else the clip's own setting. Everything that makes sound
+ * reads these; what is saved, shown as stored, copied or compared reads the
+ * fields. */
+static inline int au_pitch(const au_clip_t *cl)  { return (cl->ov & AU_OV_PITCH)  ? cl->ov_pitch  : cl->pitch; }
+static inline int au_detune(const au_clip_t *cl) { return (cl->ov & AU_OV_DETUNE) ? cl->ov_detune : cl->detune; }
+static inline int au_gain(const au_clip_t *cl)   { return (cl->ov & AU_OV_GAIN)   ? cl->ov_gain   : cl->gain_db; }
+static inline int au_revrs(const au_clip_t *cl)  { return (cl->ov & AU_OV_REVRS)  ? cl->ov_revrs  : cl->revrs; }
+static inline unsigned au_bpm10(const au_clip_t *cl) { return (cl->ov & AU_OV_BPM) ? cl->ov_bpm10 : cl->bpm10; }
+
 /* Sample encodings the converter knows. */
 #define AU_ENC_PCM  0     /* signed integer (8-bit WAV is unsigned: flagged) */
 #define AU_ENC_FLT  1
@@ -2239,7 +2249,8 @@ static au_voice_t *au_voice_alloc(au_track_t *at) {
 /* Frames of sample s per tick at the clip's own Tempo (Josh, 2026-10-29: a
  * Tempo knob "to set the original tempo"; 120 until it is known). */
 static double au_fpt_s(const au_clip_t *cl, const au_sample_t *s) {
-    double bpm = cl->bpm10 ? cl->bpm10 / 10.0 : 120.0;
+    unsigned b10 = au_bpm10(cl);
+    double bpm = b10 ? b10 / 10.0 : 120.0;
     return (double)s->rate * 60.0 / (bpm * PPQN);
 }
 
@@ -2403,12 +2414,12 @@ static au_voice_t *au_range_on(seq8_instance_t *inst, int t, int c, int slice, u
      * into it"). Those belong to Slice. */
     static const au_slice_t plain;
     const au_slice_t *sl = (sync || slice < 0 || slice >= AU_MAX_SLICES) ? &plain : &cl->sl[slice];
-    uint8_t play = sl->play, rev = sync ? cl->revrs : sl->rev;
+    uint8_t play = sl->play, rev = sync ? (uint8_t)au_revrs(cl) : sl->rev;
     /* the Conductor: a chop takes it as it starts; a Vintage piece takes the
      * loop's, held till the wrap on Next */
     int cs = sync ? (int)at->cond : au_cond_now(inst, t);
-    double ratio = au_tune(cl->pitch + sl->pitch + cs, cl->detune + sl->detune) * (double)s->rate / 44100.0;
-    float gain = au_db(cl->gain_db + sl->gain_db) * vgain;
+    double ratio = au_tune(au_pitch(cl) + sl->pitch + cs, au_detune(cl) + sl->detune) * (double)s->rate / 44100.0;
+    float gain = au_db(au_gain(cl) + sl->gain_db) * vgain;
     au_voice_t *v;
     /* A slice that carries straight on from the one sounding — the next chop
      * of the sample, reached where that voice has got to, at the same rate,
@@ -2456,6 +2467,10 @@ static au_voice_t *au_range_on(seq8_instance_t *inst, int t, int c, int slice, u
     v->slice = (uint8_t)slice;
     v->cond = (int8_t)cs;
     v->starve = 64;
+    v->clip = (uint8_t)c;
+    v->fpitch = 1;
+    v->ps = (int8_t)au_pitch(cl); v->pc = (int8_t)au_detune(cl);
+    v->sdb = sl->gain_db; v->gdb = (int8_t)au_gain(cl); v->vg = vgain;
     /* a Vintage piece is a moment of a loop that plays on through Start..End:
      * the streamer must read ahead through all of it, not to the piece's end
      * (a device-free test found Vintage on a streamed file starving) */
@@ -2525,16 +2540,20 @@ static void au_loop_start(seq8_instance_t *inst, int t, int c, double off, doubl
     memset(v, 0, sizeof *v);
     v->smp = s;
     v->lo = rs; v->hi = re;
-    v->step = rate > 0 ? rate : au_tune(cl->pitch + at->cond, cl->detune) * (double)s->rate / 44100.0;
+    v->step = rate > 0 ? rate : au_tune(au_pitch(cl) + at->cond, au_detune(cl)) * (double)s->rate / 44100.0;
     v->cond = rate > 0 ? 0 : at->cond;             /* Tempo Pitch: the tempo sets the speed, the Conductor gives way */
     if (off < 0) {                                 /* Nudge later: silence first */
         v->wait = (uint32_t)(-off / v->step + 0.5);
         off = 0;
     }
-    if (cl->revrs) { v->pos = (double)re - 1.0 - off; v->step = -v->step; }
+    if (au_revrs(cl)) { v->pos = (double)re - 1.0 - off; v->step = -v->step; }
     else v->pos = (double)rs + off;
     if (v->pos >= re || v->pos < rs) return;       /* past the sample's end: silence till the wrap */
-    v->gain = au_db(cl->gain_db);
+    v->gain = au_db(au_gain(cl));
+    v->clip = (uint8_t)c;
+    v->fpitch = !(rate > 0);
+    v->ps = (int8_t)au_pitch(cl); v->pc = (int8_t)au_detune(cl);
+    v->gdb = (int8_t)au_gain(cl); v->vg = 1.0f;
     v->mode_loop = 1;
     v->starve = 64;
     v->active = 1;
@@ -2869,6 +2888,7 @@ static void au_copy_clip(seq8_instance_t *inst, int st, int sc, int dt, int dc, 
     tmp.state = 0;
     tmp.err = 0;
     tmp.gen = gen;
+    tmp.ov = 0;                  /* a lane's live value stays where it plays */
     inst->au_clip[dt][dc] = tmp;
     if (tmp.name[0]) au_request_load(inst, dt, dc);
     if (move) au_clip_reset(inst, st, sc);

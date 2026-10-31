@@ -1251,6 +1251,12 @@ the clip's end stays in view as it moves.
 Start reads in seconds to two decimals, Length in bars (**1 + 4/16** is a bar and four
 steps).
 
+**Gain, Pitch, Detune, Tempo and Revrs can be automated** like any knob (see
+[Automation](#10-automation)): record them, or hold a step and turn. While a lane
+plays, the knob shows the value it is playing at and a sounding chop follows it; the
+clip's own setting comes back on Stop. A lane on Revrs flips the loop at its step.
+On SLICES the knobs are a chop's own sound, which isn't automated.
+
 Zoomed all the way out, SAMPLE's screen **is the clip**: from Start for its Length, the
 audio drawn where it lands at the sample's Tempo — squeezed or stretched as you turn
 Tempo, empty where the Length runs past the end of the sample — with a tick under it
@@ -1710,7 +1716,9 @@ lane does what its **Wrap** says (below).
 **What can be automated:** a Schwung module's editor pages, the levels on
 **MIX** and in the session mixer, the eight **MACROS**, and these
 dAVEBOx bank knobs — CLIP and ALL LANES direction, NOTE FX (all but `LEN>`),
-HARMONY, DELAY, and SEQ ARP (all but `STEPS`). On a drum track, NOTE FX is set per
+HARMONY, DELAY, and SEQ ARP (all but `STEPS`) — and an Audio clip's **Gain**, **Pitch**,
+**Detune**, **Tempo** and **Revrs** on SAMPLE (listed as **Smp>Gain** and so on; holding
+one of their steps opens SAMPLE). On a drum track, NOTE FX is set per
 lane and isn't automated. See [Parameter banks](#36-parameter-banks) and
 [Sequencer Effects](#9-sequencer-effects).
 
