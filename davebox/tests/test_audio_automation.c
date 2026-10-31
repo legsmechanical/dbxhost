@@ -13,7 +13,8 @@
  *   5. a sounding chop follows Pitch, Detune and Gain as they move
  *      (au_voice_follow); a Tempo Pitch loop's speed does not;
  *   6. off-mode: an au_ key on a track that is not Audio does nothing;
- *   7. a live value never travels with a copy or an undo snapshot. */
+ *   7. a live value never travels with a copy or an undo snapshot;
+ *   8. ALL SLICES' seven: every chop held live, rest only lets go. */
 #include "harness.h"
 #include <math.h>
 #include <sys/stat.h>
@@ -273,6 +274,55 @@ int main(void) {
                   "undo: the restore did not take the setting back and leave the playing lane's value");
         hx_destroy(h);
         printf("  ok   — a live value never travels with a copy or an undo snapshot\n");
+    }
+
+    /* ==== 8. ALL SLICES: every chop held live over its own; rest only lets go ==== */
+    {
+        h = rig(AU_SYNC_PITCH); inst = (seq8_instance_t *)h->inst; cl = &inst->au_clip[4][0];
+        seq8_track_t *tr = &inst->tracks[4];
+        hx_set_param(h, "t4_au_set_mode", "0 1");
+        hx_set_param(h, "t4_au_slice_gain", "0 1 -6");            /* the chops differ */
+        /* each key: both ends read back live, then rest writes NOTHING */
+        for (int i = PA_SEQ_IDX_AUS; i < PA_SEQ_IDX_AUS + 7; i++) {
+            const pa_seq_def_t *d = &pa_seq_defs[i];
+            pa_seq_apply(inst, 4, i, 16383, -1);
+            int hi = pa_seq_read(inst, tr, tr->active_clip, i);
+            pa_seq_apply(inst, 4, i, 0, -1);
+            int lo = pa_seq_read(inst, tr, tr->active_clip, i);
+            if (hi != d->max || lo != d->min) {
+                fprintf(stderr, "FAIL: %s read %d..%d live, the table says %d..%d\n", d->key, lo, hi, (int)d->min, (int)d->max);
+                return 1;
+            }
+        }
+        HX_ASSERT(cl->ovs == 0x7F && cl->sl[1].gain_db == -6 && cl->sl[0].gain_db == 0 && cl->sl[0].pitch == 0,
+                  "all slices: playback did not hold all seven live, or it wrote the chops");
+        pa_seq_apply(inst, 4, PA_SEQ_IDX_AUS + 1, 16383, -1);
+        HX_ASSERT(cl->ovs_dec == 0, "all slices: Decay's 5001 is not Full (0)");
+        for (int i = PA_SEQ_IDX_AUS; i < PA_SEQ_IDX_AUS + 7; i++) pa_seq_apply(inst, 4, i, 16383, tr->active_clip);
+        HX_ASSERT(cl->ovs == 0 && cl->sl[1].gain_db == -6 && cl->sl[0].gain_db == 0 && cl->sl[3].pitch == 0,
+                  "all slices: rest wrote a value into the chops (it must only let go)");
+        /* a chop starts at the lane's sound; a sounding one follows it */
+        au_voice_t *v = au_range_on(inst, 4, 0, 1, 0, 44100, 1.0f, 0, 0);
+        HX_ASSERT(v && fabsf(v->gain - au_db(-6)) < 1e-5f, "all slices: rig — chop 2 is not at its own -6 dB");
+        double s0 = v->step;
+        cl->ovs = AU_OVS_GAIN | AU_OVS_PITCH; cl->ovs_gain = 3; cl->ovs_pitch = 12;
+        au_voice_follow(inst, 4);
+        HX_ASSERT(fabsf(v->gain - au_db(3)) < 1e-5f && fabs(v->step / s0 - 2.0) < 1e-6,
+                  "all slices: a sounding chop did not follow the lane's Gain and Pitch");
+        au_voice_t *v2 = au_range_on(inst, 4, 0, 2, 0, 44100, 1.0f, 0, 0);
+        HX_ASSERT(v2 && fabsf(v2->gain - au_db(3)) < 1e-5f && fabs(v2->step / s0 - 2.0) < 1e-6,
+                  "all slices: a new chop did not start at the lane's sound");
+        hx_get_param(h, "t4_au_all_0", b, sizeof b);
+        HX_ASSERT(!strncmp(b, "12 3 ", 5), "all slices: the ALL SLICES read does not show what plays");
+        hx_set_param(h, "t4_au_all_gain", "0 -2");
+        HX_ASSERT(!(cl->ovs & AU_OVS_GAIN) && (cl->ovs & AU_OVS_PITCH), "all slices: a hand's setting did not take over its own field only");
+        hx_set_param(h, "t4_launch_clip", "1");
+        for (int i = 0; i < 4000 && inst->tracks[4].active_clip != 1; i++) hx_render(h, 1);
+        hx_render(h, 2);
+        HX_ASSERT(inst->tracks[4].active_clip == 1, "all slices: rig — clip 1 did not take over");
+        HX_ASSERT(cl->ovs == 0, "all slices: a clip switch left the live values on the clip that stopped");
+        hx_destroy(h);
+        printf("  ok   — ALL SLICES: every chop held live, sounding ones follow; rest only lets go; a hand wins\n");
     }
 
     snprintf(p, sizeof p, "rm -rf %s", g_root);

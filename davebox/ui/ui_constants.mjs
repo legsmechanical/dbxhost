@@ -774,7 +774,23 @@ const AU_AUTO_KEYS = [
     { key: 'au_bpm',    k: 6, min: 1,   max: 9999, label: 'Tempo',  field: 'bpm10' },   /* AU_BPM10_MIN..MAX: x10 */
     { key: 'au_revrs',  k: 7, min: 0,   max: 1,    label: 'Revrs',  field: 'revrs', stepped: true },
 ];
-export const BANK_SHORT = { 0: 'Clip', 1: 'NFX', 2: 'Harm', 3: 'Dly', 4: 'SArp', 5: 'LArp', 7: 'Lanes', [AU_AUTO_BANK]: 'Smp' };
+/* ...and ALL SLICES' (SLICES with Shift): every chop held at the lane's value
+ * over its own; `k` is the knob on SLICES. Decay's lane runs 5..5001, 5001
+ * being Full (the clip's 0), at the dial's top as on the knob. */
+export const AU_SLICES_BANK = 'aus';
+const AU_SLICES_KEYS = [
+    { key: 'au_s_atk',    k: 0, min: 0,   max: 2000, label: 'Attack', field: 'atk' },
+    { key: 'au_s_dec',    k: 1, min: 5,   max: 5001, label: 'Decay',  field: 'dec' },
+    { key: 'au_s_gain',   k: 3, min: -40, max: 12,   label: 'Gain',   field: 'gain' },
+    { key: 'au_s_pitch',  k: 4, min: -24, max: 24,   label: 'Pitch',  field: 'pitch' },
+    { key: 'au_s_detune', k: 5, min: -50, max: 50,   label: 'Detune', field: 'detune' },
+    { key: 'au_s_rev',    k: 6, min: 0,   max: 1,    label: 'Rev',    field: 'rev', stepped: true },
+    { key: 'au_s_play',   k: 7, min: 0,   max: 2,    label: 'Play',   field: 'play', stepped: true },
+];
+export const BANK_SHORT = { 0: 'Clip', 1: 'NFX', 2: 'Harm', 3: 'Dly', 4: 'SArp', 5: 'LArp', 7: 'Lanes',
+                            [AU_AUTO_BANK]: 'Smp', [AU_SLICES_BANK]: 'Slcs' };
+/* A `seq:` key of an Audio clip's: its clip settings' or ALL SLICES'. */
+export function auAutoBank(bank) { return bank === AU_AUTO_BANK || bank === AU_SLICES_BANK; }
 /* The sequencer keys that are a CHOICE, not an amount: their lanes never
  * glide (the engine's pa_seq_defs `stepped` column, pinned to it by
  * tests/js/test_automation_seq_mirror.mjs). */
@@ -795,15 +811,21 @@ export const SEQ_AUTO_TARGETS = (() => {
                      automatable: BANK_AUTOMATION_DENY.indexOf(e.bank) < 0,
                      stepped: SEQ_AUTO_STEPPED.indexOf(key) >= 0 };
     }
-    for (const a of AU_AUTO_KEYS)
-        out[a.key] = { key: a.key, bank: AU_AUTO_BANK, k: a.k, alt: null, min: a.min, max: a.max, label: a.label,
-                       type: 'int', automatable: true, stepped: !!a.stepped, field: a.field };
+    for (const [bank, list] of [[AU_AUTO_BANK, AU_AUTO_KEYS], [AU_SLICES_BANK, AU_SLICES_KEYS]])
+        for (const a of list)
+            out[a.key] = { key: a.key, bank, k: a.k, alt: null, min: a.min, max: a.max, label: a.label,
+                           type: 'int', automatable: true, stepped: !!a.stepped, field: a.field };
     return out;
 })();
 /* The `seq:` key automating an Audio clip's info field (pitch, detune, gain,
  * revrs, bpm10), or null. */
 export function auAutoKey(field) {
     for (const a of AU_AUTO_KEYS) if (a.field === field) return a.key;
+    return null;
+}
+/* ...and of ALL SLICES' field (atk, dec, gain, pitch, detune, rev, play). */
+export function auSlicesAutoKey(field) {
+    for (const a of AU_SLICES_KEYS) if (a.field === field) return a.key;
     return null;
 }
 /* The automation TARGET of a bank card's knob k on `track` — "seq:<t>:<key>"

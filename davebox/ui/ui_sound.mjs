@@ -54,11 +54,11 @@ import { bankCardShown, sessMixerShown, bankHeaderRight, drawTrackPageBar, track
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
 import { instrOptions, instrPickerRows, moveInstrOwner, fmtInstr, INSTR_SCHWUNG, INSTR_NONE, INSTR_MIDI_CH, INSTR_CONDUCT, INSTR_ROW_LABEL, NUM_CLIPS, fmtVelOverride, BANK_SOUND, BANK_MACROS, BANK_AUTOMATION, BANK_CONFIG, isSoundBank, BANKS, fmtPlayDir, fmtSign,
-         BANK_MACRO_ALLOW, BANK_SHORT, seqAutoKeyFor, SEQ_AUTO_TARGETS, AU_AUTO_BANK,
+         BANK_MACRO_ALLOW, BANK_SHORT, seqAutoKeyFor, SEQ_AUTO_TARGETS, AU_AUTO_BANK, AU_SLICES_BANK, auAutoBank,
          midiTargetIsMidi, midiTargetCC, midiTargetName, midiTargetShort, midiTargetMax, midiTargetDefault, midiTargetTo14, PB_CENTRE,
          PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD, PAD_MODE_AUDIO as PMA, INSTR_AUDIO, TRACK_PAD_BASE } from './ui_constants.mjs';
 import { openWave } from './ui_audio_editor.mjs';
-import { auAutoMirror } from './ui_audio.mjs';
+import { auAutoMirror, auSlicesAutoMirror } from './ui_audio.mjs';
 import { applyTrackConfig, applyBankParam, readBankParams, syncTrackMidiFx, midiFxResyncAfterPatch } from './ui_dsp_bridge.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { moduleParallelDefault, setModuleParallelDefault, reconcileParallelSlot } from './ui_parallel.mjs';
@@ -6321,7 +6321,7 @@ function macroLive(m) {
  * the K1 alternate (S.delayClockFb, touch + click), and the ALL LANES direction is a
  * custom knob (bankParams[t][7][6], -1 = unset). */
 function bankMacroOnMode(bank, padMode) {
-    if (bank === AU_AUTO_BANK) return false;     /* an Audio clip's sound: no bank card, not a macro (soundSeqMirror) */
+    if (auAutoBank(bank)) return false;          /* an Audio clip's sound: no bank card, not a macro (soundSeqMirror) */
     if (padMode === PMC) return false;
     if (bank === 7) return padMode === PMD;
     if (bank === 5) return true;
@@ -6388,6 +6388,7 @@ export function soundSeqMirror(track, key, val) {
     const nv = Math.max(st.min, Math.min(st.max, val | 0));
     /* an Audio clip's sound: the SAMPLE editor's copy */
     if (st.bank === AU_AUTO_BANK) return GS.trackPadMode[track] === PMA && auAutoMirror(track, st.field, nv);
+    if (st.bank === AU_SLICES_BANK) return GS.trackPadMode[track] === PMA && auSlicesAutoMirror(track, st.field, nv);
     const m = { kind: 'bank', bank: st.bank, k: st.k };
     if (st.alt) m.alt = st.alt;
     if (!bankMacroOnMode(m.bank, GS.trackPadMode[track])) return false;   /* off-mode: nothing to show */

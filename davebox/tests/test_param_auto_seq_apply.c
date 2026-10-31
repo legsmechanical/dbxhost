@@ -107,7 +107,7 @@ int main(void) {
         (void)I;
         hx_get_param(h, "pa_seq_keys", buf, sizeof(buf));
         int lines = 0; for (char *c = buf; *c; c++) if (*c == '\n') lines++;
-        HX_ASSERT(lines == PA_SEQ_COUNT && lines == 32, "pa_seq_keys does not list the whole table");
+        HX_ASSERT(lines == PA_SEQ_COUNT && lines == 39, "pa_seq_keys does not list the whole table");
         HX_ASSERT(strstr(buf, "noteFX_gate 0 400 0\n") && strstr(buf, "all_lanes_playback_dir 0 3 1\n"),
                   "pa_seq_keys rows are not '<key> <min> <max> <mode>'");
         hx_destroy(h);
@@ -265,7 +265,7 @@ int main(void) {
         HX_ASSERT(cp->gate_time == 400 && cp->fb_clock == 100 && cp->seq_arp_gate == 200 && cp->octaver == 4,
                   "a rest did not reach the clip's stored settings");
         hx_destroy(h);
-        printf("  ok   — all %d melodic keys read back at both ends of their range\n", PA_SEQ_COUNT - 1 - 5);
+        printf("  ok   — all %d melodic keys read back at both ends of their range\n", PA_SEQ_COUNT - 1 - 12);
     }
 
     printf("PASS test_param_auto_seq_apply\n");

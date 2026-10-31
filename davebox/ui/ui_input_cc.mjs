@@ -65,7 +65,7 @@ import { automationParamEdit, automationCaptureCommit, automationCaptureCommitAf
 import { sessStripTargets, engineLoadedModule, engineModuleName, slotIndex,
          moveBusForChannel, moveBusPrefix } from './ui_engine.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
-import { BANK_MAP_TRACK_POPUP_MS, SEQ_PAGE_POPUP_MS, seqAutoTargetForKnob, SEQ_AUTO_TARGETS, AU_AUTO_BANK, midiTargetIsMidi, DEFAULT_TRACK_OCTAVE } from './ui_constants.mjs';
+import { BANK_MAP_TRACK_POPUP_MS, SEQ_PAGE_POPUP_MS, seqAutoTargetForKnob, SEQ_AUTO_TARGETS, AU_AUTO_BANK, auAutoBank, midiTargetIsMidi, DEFAULT_TRACK_OCTAVE } from './ui_constants.mjs';
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam, soundOpenModule, instrPickResume } from './ui_sound.mjs';
 import { auPurgeRun, closeAudioChooser } from './ui_audio_chooser.mjs';
@@ -1892,12 +1892,12 @@ function autoLaneJump() {
     if (tgt.indexOf('seq:') === 0) {
         const st = SEQ_AUTO_TARGETS[tgt.split(':')[2]];
         if (!st) { showActionPopup('NO EDITOR'); return; }
-        if (st.bank === AU_AUTO_BANK) {
-            /* an Audio clip's sound: the SAMPLE editor, over the AUTOMATION
-             * bank — its Back comes back here */
+        if (auAutoBank(st.bank)) {
+            /* an Audio clip's sound: SAMPLE (ALL SLICES': SLICES), over the
+             * AUTOMATION bank — its Back comes back here */
             if (soundOpen()) soundExit();
             if (S.auPanel) closeAudioPanel();
-            openWave(t, 'sample');
+            openWave(t, st.bank === AU_AUTO_BANK ? 'sample' : 'slices');
             forceRedraw();
             return;
         }

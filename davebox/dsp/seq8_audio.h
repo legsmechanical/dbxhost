@@ -161,6 +161,12 @@ typedef struct {
     int8_t       ov_pitch, ov_detune, ov_gain;
     uint8_t      ov_revrs;
     uint16_t     ov_bpm10;
+    /* ...and ALL SLICES' (Attack, Decay, Gain, Pitch, Detune, Rev, Play):
+     * every chop of the clip plays at the lane's value over its own (AU_OVS_*) */
+    uint8_t      ovs;
+    int8_t       ovs_pitch, ovs_detune, ovs_gain;
+    uint8_t      ovs_rev, ovs_play;
+    uint16_t     ovs_atk, ovs_dec;
     au_slice_t   sl[AU_MAX_SLICES];
 } au_clip_t;
 
@@ -169,6 +175,13 @@ typedef struct {
 #define AU_OV_GAIN      0x04
 #define AU_OV_REVRS     0x08
 #define AU_OV_BPM       0x10
+#define AU_OVS_ATK      0x01
+#define AU_OVS_DEC      0x02
+#define AU_OVS_GAIN     0x04
+#define AU_OVS_PITCH    0x08
+#define AU_OVS_DETUNE   0x10
+#define AU_OVS_REV      0x20
+#define AU_OVS_PLAY     0x40
 
 #define AU_ERR_NONE     0
 #define AU_ERR_OPEN     1   /* could not read the file */
@@ -201,9 +214,10 @@ typedef struct {
      * chop's own on top (au_voice_follow) */
     uint8_t  clip;           /* the clip it plays */
     uint8_t  fpitch;         /* its pitch follows (not Tempo Pitch's, whose speed the tempo sets) */
-    int8_t   ps, pc;         /* the clip's semitones and cents in its step */
-    int8_t   sdb;            /* the chop's own gain, dB */
-    int8_t   gdb;            /* the clip's gain in v->gain, dB */
+    uint8_t  usl;            /* it plays its chop's sound (au_sl_eff), not a Loop's or a Vintage piece's */
+    int8_t   ps;             /* semitones in its step: the clip's and its chop's */
+    int16_t  pc;             /* cents in its step: the same */
+    int8_t   gdb;            /* dB in v->gain: the same */
     float    vg;             /* its velocity's level */
 } au_voice_t;
 

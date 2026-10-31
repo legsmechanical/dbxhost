@@ -30,7 +30,7 @@
  * (one chain_params read per component, ever). */
 
 import { S, noteUndoUnit, armBankDisplay } from './ui_state.mjs';
-import { BANK_AUTOMATION, BANK_SOUND, BANK_MACROS, PAD_MODE_DRUM, midiTargetIsMidi, SEQ_AUTO_TARGETS, AU_AUTO_BANK } from './ui_constants.mjs';
+import { BANK_AUTOMATION, BANK_SOUND, BANK_MACROS, PAD_MODE_DRUM, midiTargetIsMidi, SEQ_AUTO_TARGETS, AU_AUTO_BANK, auAutoBank } from './ui_constants.mjs';
 import { openWave, closeAudioPanel } from './ui_audio_editor.mjs';
 import { soundOpen, soundExit, soundJumpToParam, soundEditorComp, soundAutoAddLane, soundLaneFocusRow } from './ui_sound.mjs';
 import { readBankParams } from './ui_dsp_bridge.mjs';
@@ -947,10 +947,10 @@ export function autoHoldJumpBegin(absStep) {
     const mp = (home && (home.kind === 'module' || home.kind === 'busfx')) ? home : null;
     if (!sat && sb < 0 && !mp) { showActionPopup('NO EDITOR'); return false; }
     const a = st();
-    if (sat && sat.bank === AU_AUTO_BANK) {
-        /* An Audio clip's sound: the SAMPLE editor over the AUTOMATION bank,
-         * for as long as the step is held (its K4-K8 lock the step). */
-        openWave(cy.t, 'sample');
+    if (sat && auAutoBank(sat.bank)) {
+        /* An Audio clip's sound: SAMPLE (or SLICES, for ALL SLICES') over the
+         * AUTOMATION bank, for as long as the step is held (its knobs lock it). */
+        openWave(cy.t, sat.bank === AU_AUTO_BANK ? 'sample' : 'slices');
         holdJump = { track: cy.t, clip: cy.c, bank: BANK_AUTOMATION, wave: true, altWas: !!S.altMode, knobAltWas: S.knobAlt, sel: a.sel,
                      opsSel: a.ops ? a.ops.sel : -1, cycle: Object.assign({}, cy), step: absStep };
         return true;

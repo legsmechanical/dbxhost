@@ -67,14 +67,14 @@ import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLaz
          auSelSlice, auSetSelSlice, isAudioTrack, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
          auMarkAdd, auMarkDel, auManual, auEvenBake, auTrans, auTransBake, auRangeStep, auSet, auEnd, auPanelRingCells, auPanelReset,
          auIsSlice, AU_LAZY_ARMED, AU_LAZY_RUN, AU_LAZY_ENDED, AU_EVEN_MAX, AU_BPM10_MIN, AU_BPM10_MAX, auLenTicks,
-         auSampleP2Cells, auSampleP2Knob, auSampleReset, auEdit, auTrimCuts, auOrig, auNudgeStep, auFpt, auPlayedEnd, auTooLongToChop, auAutoEdit, auAutoTouch } from './ui_audio.mjs';
+         auSampleP2Cells, auSampleP2Knob, auSampleReset, auEdit, auTrimCuts, auOrig, auNudgeStep, auFpt, auPlayedEnd, auTooLongToChop, auAutoEdit, auAutoTouch, auSlicesAutoTouch, SLICE_GRID } from './ui_audio.mjs';
 import { registerScreenRingCells } from './ui_knob_leds.mjs';
 import { auModeValue } from './ui_pure.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { ccKnobDelta, knobPick, KNOB_PICK, KNOB_DELIB } from './ui_input_cc.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 import { automationClearKey, automationToggleActive } from './ui_automation.mjs';
-import { auAutoKey } from './ui_constants.mjs';
+import { auAutoKey, auSlicesAutoKey } from './ui_constants.mjs';
 
 /* One step per detent run (ui_input_cc's knobStep; its exports are only used
  * inside function bodies here — the two modules import each other). */
@@ -668,17 +668,26 @@ export function audioEditorInput(status, d1, d2) {
             /* an automatable knob here (sampleKnob's): the touch opens its
              * gesture, Delete + touch clears its lane, Mute + touch switches
              * the lane off / on — as a bank knob's touch does */
+            /* ...and SLICES' with Shift held: ALL SLICES' (a single chop's own
+             * sound is not automated) */
             const af = sampleAutoField(d1, plain, p2, sl, slEdit);
-            if (af) {
+            const asf = !af && S.shiftHeld && ((p2 && sl) || (slEdit && d1 > 2)) ? SLICE_GRID[d1] : null;
+            const akey = af ? auAutoKey(af) : asf ? auSlicesAutoKey(asf) : null;
+            if (akey) {
+                const tgt = 'seq:' + ed.t + ':' + akey;
                 if (on && S.deleteHeld) {
-                    if (automationClearKey(ed.t, ed.c, 'seq:' + ed.t + ':' + auAutoKey(af))) showActionPopup('AUTOMATION', 'CLEARED');
+                    if (automationClearKey(ed.t, ed.c, tgt)) showActionPopup('AUTOMATION', 'CLEARED');
                 } else if (on && S.muteHeld) {
                     S.muteUsedAsModifier = true;
-                    const r = automationToggleActive(ed.t, ed.c, 'seq:' + ed.t + ':' + auAutoKey(af));
+                    const r = automationToggleActive(ed.t, ed.c, tgt);
                     if (r !== null) showActionPopup('AUTOMATION', r ? 'ON' : 'OFF');
                 }
-                auAutoTouch(ed.t, ed.c, af, on);
+                if (af) auAutoTouch(ed.t, ed.c, af, on);
+                else auSlicesAutoTouch(ed.t, ed.c, asf, on);
             }
+            /* a release lets go of ALL SLICES' gesture whether or not Shift is
+             * still down (a touch begun with it would otherwise stay open) */
+            if (!on && !af && SLICE_GRID[d1]) auSlicesAutoTouch(ed.t, ed.c, SLICE_GRID[d1], false);
             if (on) {
                 S.knobTouched = d1; S.knobPhysIdx = d1; S.knobTurnedTick[d1] = -1;
                 if (d1 === 1) ed.zoomDir = 0;                  /* touched, not turned yet: "ZOOM" */

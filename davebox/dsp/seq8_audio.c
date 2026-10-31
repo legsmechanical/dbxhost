@@ -207,6 +207,18 @@ static inline int au_detune(const au_clip_t *cl) { return (cl->ov & AU_OV_DETUNE
 static inline int au_gain(const au_clip_t *cl)   { return (cl->ov & AU_OV_GAIN)   ? cl->ov_gain   : cl->gain_db; }
 static inline int au_revrs(const au_clip_t *cl)  { return (cl->ov & AU_OV_REVRS)  ? cl->ov_revrs  : cl->revrs; }
 static inline unsigned au_bpm10(const au_clip_t *cl) { return (cl->ov & AU_OV_BPM) ? cl->ov_bpm10 : cl->bpm10; }
+/* Chop k's sound as it plays: its own, with ALL SLICES' lanes over it (ovs). */
+static inline void au_sl_eff(const au_clip_t *cl, int k, au_slice_t *o) {
+    *o = cl->sl[k];
+    if (!cl->ovs) return;
+    if (cl->ovs & AU_OVS_ATK)    o->attack_ms = cl->ovs_atk;
+    if (cl->ovs & AU_OVS_DEC)    o->decay_ms = cl->ovs_dec;
+    if (cl->ovs & AU_OVS_GAIN)   o->gain_db = cl->ovs_gain;
+    if (cl->ovs & AU_OVS_PITCH)  o->pitch = cl->ovs_pitch;
+    if (cl->ovs & AU_OVS_DETUNE) o->detune = cl->ovs_detune;
+    if (cl->ovs & AU_OVS_REV)    o->rev = cl->ovs_rev;
+    if (cl->ovs & AU_OVS_PLAY)   o->play = cl->ovs_play;
+}
 
 /* Sample encodings the converter knows. */
 #define AU_ENC_PCM  0     /* signed integer (8-bit WAV is unsigned: flagged) */
@@ -2413,7 +2425,9 @@ static au_voice_t *au_range_on(seq8_instance_t *inst, int t, int c, int slice, u
      * that it just plays back as recorded, so attack/decay shouldn't play
      * into it"). Those belong to Slice. */
     static const au_slice_t plain;
-    const au_slice_t *sl = (sync || slice < 0 || slice >= AU_MAX_SLICES) ? &plain : &cl->sl[slice];
+    au_slice_t eff;
+    const au_slice_t *sl = &plain;
+    if (!sync && slice >= 0 && slice < AU_MAX_SLICES) { au_sl_eff(cl, slice, &eff); sl = &eff; }
     uint8_t play = sl->play, rev = sync ? (uint8_t)au_revrs(cl) : sl->rev;
     /* the Conductor: a chop takes it as it starts; a Vintage piece takes the
      * loop's, held till the wrap on Next */
@@ -2469,8 +2483,9 @@ static au_voice_t *au_range_on(seq8_instance_t *inst, int t, int c, int slice, u
     v->starve = 64;
     v->clip = (uint8_t)c;
     v->fpitch = 1;
-    v->ps = (int8_t)au_pitch(cl); v->pc = (int8_t)au_detune(cl);
-    v->sdb = sl->gain_db; v->gdb = (int8_t)au_gain(cl); v->vg = vgain;
+    v->usl = sl != &plain;
+    v->ps = (int8_t)(au_pitch(cl) + sl->pitch); v->pc = (int16_t)(au_detune(cl) + sl->detune);
+    v->gdb = (int8_t)(au_gain(cl) + sl->gain_db); v->vg = vgain;
     /* a Vintage piece is a moment of a loop that plays on through Start..End:
      * the streamer must read ahead through all of it, not to the piece's end
      * (a device-free test found Vintage on a streamed file starving) */
@@ -2552,7 +2567,7 @@ static void au_loop_start(seq8_instance_t *inst, int t, int c, double off, doubl
     v->gain = au_db(au_gain(cl));
     v->clip = (uint8_t)c;
     v->fpitch = !(rate > 0);
-    v->ps = (int8_t)au_pitch(cl); v->pc = (int8_t)au_detune(cl);
+    v->ps = (int8_t)au_pitch(cl); v->pc = (int16_t)au_detune(cl);
     v->gdb = (int8_t)au_gain(cl); v->vg = 1.0f;
     v->mode_loop = 1;
     v->starve = 64;
@@ -2888,7 +2903,7 @@ static void au_copy_clip(seq8_instance_t *inst, int st, int sc, int dt, int dc, 
     tmp.state = 0;
     tmp.err = 0;
     tmp.gen = gen;
-    tmp.ov = 0;                  /* a lane's live value stays where it plays */
+    tmp.ov = tmp.ovs = 0;        /* a lane's live value stays where it plays */
     inst->au_clip[dt][dc] = tmp;
     if (tmp.name[0]) au_request_load(inst, dt, dc);
     if (move) au_clip_reset(inst, st, sc);

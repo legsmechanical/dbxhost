@@ -40,7 +40,7 @@ import { automationTick, automationResetCaches, automationRefreshPresence, autom
          automationParamTouch, automationWantsSeqVals } from '../../ui/ui_automation.mjs';
 import { S } from '../../ui/ui_state.mjs';
 import { tickPrefetch } from '../../ui/ui_dsp_bridge.mjs';
-import { POLL_INTERVAL, SEQ_AUTO_TARGETS, AU_AUTO_BANK } from '../../ui/ui_constants.mjs';
+import { POLL_INTERVAL, SEQ_AUTO_TARGETS, auAutoBank } from '../../ui/ui_constants.mjs';
 
 let ok = 0, bad = 0;
 const check = (cond, msg) => {
@@ -67,7 +67,7 @@ function load(list) {
     const rows = [...body.matchAll(/\{\s*"([a-zA-Z0-9_]+)",\s*(-?\d+),\s*(-?\d+),\s*PA_SEQ_(MELODIC|DRUM|AUDIO)\s*(?:,\s*([01])\s*)?\}/g)]
         .map(m => ({ key: m[1], min: +m[2], max: +m[3], mode: m[4], stepped: m[5] === '1' }));
     check(rows.length > 20, 'rig: the engine table was found (' + rows.length + ' rows)');
-    check(rows.filter(r => r.mode === 'AUDIO').length === 5, 'rig: the five Audio rows were parsed');
+    check(rows.filter(r => r.mode === 'AUDIO').length === 12, 'rig: the twelve Audio rows were parsed');
     check(rows.some(r => r.stepped) && rows.some(r => !r.stepped), 'rig: the stepped column was parsed (both kinds seen)');
     const ours = Object.values(SEQ_AUTO_TARGETS).filter(t => t.automatable !== false);
     check(Object.values(SEQ_AUTO_TARGETS).some(t => t.automatable === false),
@@ -77,7 +77,7 @@ function load(list) {
         const r = rows.find(x => x.key === t.key);
         if (!r) { diffs.push(t.key + ': not in the engine'); continue; }
         if (r.min !== t.min || r.max !== t.max) diffs.push(t.key + ': ' + r.min + '..' + r.max + ' there, ' + t.min + '..' + t.max + ' here');
-        if (r.mode !== (t.bank === 7 ? 'DRUM' : t.bank === AU_AUTO_BANK ? 'AUDIO' : 'MELODIC')) diffs.push(t.key + ': pad mode differs');
+        if (r.mode !== (t.bank === 7 ? 'DRUM' : auAutoBank(t.bank) ? 'AUDIO' : 'MELODIC')) diffs.push(t.key + ': pad mode differs');
         /* the lane graph draws a stepped lane flat, a gliding one sloped */
         if (r.stepped !== !!t.stepped) diffs.push(t.key + ': stepped ' + r.stepped + ' there, ' + !!t.stepped + ' here');
     }

@@ -143,6 +143,30 @@ step('SLICES\' K4-K8 are the slice\'s own sound: no automation', () => {
     S.playing = false;
 });
 
+step('⭐⭐ ALL SLICES (SLICES with Shift): K4 Gain written to every chop AND heard as seq:4:au_s_gain', () => {
+    GET['t4_au_info_0'] = INFO(1); A.auMarkStale(4, 0); ticks(2);
+    if (!(S.auEditor && S.auEditor.ed === 'slices')) { E.openWave(4, 'slices'); ticks(2); }
+    assert(S.auEditor && S.auEditor.ed === 'slices', 'SLICES did not open');
+    S.playing = true;
+    sets.length = 0;
+    S.shiftHeld = true;
+    note(3, 127);
+    for (let i = 0; i < 8 && !sent('t4_au_all_gain').length; i++) cc(74, 1);
+    ticks(1);
+    S.shiftHeld = false;
+    note(3, 0); ticks(1);                 /* Shift let go first: the release still ends it */
+    assert(sent('t4_au_all_gain').length >= 1, 'ALL SLICES\' Gain was not written: ' + JSON.stringify(sets));
+    assert(sent('t4_pa_live').some((v) => v.indexOf('seq:4:au_s_gain ') === 0), 'not heard as seq:4:au_s_gain: ' + JSON.stringify(sent('t4_pa_live')));
+    assert(sent('t4_pa_live_end').includes('seq:4:au_s_gain'), 'the release did not end the gesture');
+    S.playing = false;
+    assert(snd.soundSeqMirror(4, 'au_s_dec', 5001) === true, 'the ALL SLICES mirror refused');
+    assert(A.auAll(4, 0)[A.ALL_FIELDS.indexOf('dec')] === 0, 'Decay\'s 5001 did not show as Full (0) on ALL SLICES');
+    snd.soundSeqMirror(4, 'au_s_pitch', 7);
+    assert(A.auAll(4, 0)[A.ALL_FIELDS.indexOf('pitch')] === 7, 'ALL SLICES does not show the lane\'s Pitch');
+    assert(AU.automationTargetLabel('seq:4:au_s_play') === 'Slcs>Play' && AU.automationTargetStepped('seq:4:au_s_play'),
+           'label / stepping: ' + AU.automationTargetLabel('seq:4:au_s_play'));
+});
+
 step('⭐ the lane\'s value reaches the editor\'s info; the lane is called "Smp>Gain"', () => {
     GET['t4_au_info_0'] = INFO(0); A.auMarkStale(4, 0); ticks(2);
     assert(snd.soundSeqMirror(4, 'au_gain', -12) === true, 'the mirror refused an Audio lane');

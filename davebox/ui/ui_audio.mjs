@@ -32,7 +32,7 @@ import { showActionPopupFor } from './ui_persistence.mjs';
 import { dspGet } from './ui_dsp_get.mjs';
 /* a cycle (ui_audio_editor imports this module): used only inside a function body */
 import { lazyFinish } from './ui_audio_editor.mjs';
-import { PAD_MODE_AUDIO, NUM_CLIPS, BANK_STEP, knobAltFor, auAutoKey } from './ui_constants.mjs';
+import { PAD_MODE_AUDIO, NUM_CLIPS, BANK_STEP, knobAltFor, auAutoKey, auSlicesAutoKey } from './ui_constants.mjs';
 import { automationParamEdit, automationParamTouch } from './ui_automation.mjs';
 import { bankListForMode, AU_MODE_LOOP, AU_MODE_SLICE, auIsSlice, auIsLoop } from './ui_pure.mjs';
 
@@ -494,6 +494,33 @@ export function auAutoTouch(t, c, field, down) {
     const key = auAutoKey(field);
     if (key) automationParamTouch(t, c, 'seq', t + ':' + key, down);
 }
+/* ALL SLICES' (SLICES with Shift): `field` atk, dec, gain, pitch, detune, rev,
+ * play. Decay's lane value for Full (0) is 5001, the dial's top. */
+const auDecWire = (f, v) => (f === 'dec' && (v | 0) === 0 ? 5001 : v | 0);
+export function auSlicesAutoEdit(t, c, field, nv, cur) {
+    const key = auSlicesAutoKey(field);
+    if (key) automationParamEdit(t, c, 'seq', t + ':' + key, String(auDecWire(field, nv)), String(auDecWire(field, cur)));
+}
+export function auSlicesAutoTouch(t, c, field, down) {
+    const key = auSlicesAutoKey(field);
+    if (key) automationParamTouch(t, c, 'seq', t + ':' + key, down);
+}
+/* THE SCREEN'S COPY of a playing ALL SLICES lane: every chop's cached record
+ * and the ALL SLICES row take the value the engine holds them at. */
+export function auSlicesAutoMirror(t, field, val) {
+    const c = S.trackActiveClip[t] | 0;
+    const v = field === 'dec' && val >= 5001 ? 0 : val;
+    const fi = ALL_FIELDS.indexOf(field);
+    if (fi < 0) return false;
+    const a = _all.get(t + '_' + c);
+    if (a && a[fi] === v) return true;
+    const na = a ? a.slice() : new Array(ALL_FIELDS.length).fill(null);
+    na[fi] = v;
+    _all.set(t + '_' + c, na);
+    for (const [k, r] of _sl) if (k.startsWith(t + '_' + c + '_') && r) r[field] = v;
+    S.screenDirty = true;
+    return true;
+}
 /* THE SCREEN'S COPY of a playing lane (soundSeqMirror hands it over): the
  * value the engine holds track t's playing clip at, into the info the SAMPLE
  * editor draws from. Writes nothing to the engine. */
@@ -943,6 +970,7 @@ export function auPanelKnob(ed, k, steps) {
             const v = stepSliceField(f, base, steps);
             if (v === a[fi]) return false;
             auSetAll(t, c, f, v);
+            auSlicesAutoEdit(t, c, f, v, base);
             const na = a.length ? a.slice() : new Array(ALL_FIELDS.length).fill(null);
             na[fi] = v;
             _all.set(t + '_' + c, na);

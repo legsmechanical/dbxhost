@@ -586,10 +586,11 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
     }
 }
 
-/* A sounding voice follows its clip's Pitch, Detune and Gain as automation
- * moves them (au_pitch & co): its speed by the change since it last looked,
- * its level from the clip's gain with its chop's own on top. A Tempo Pitch
- * loop's speed is the tempo's, so only its level follows. */
+/* A sounding voice follows its clip's Pitch, Detune and Gain — and its
+ * chop's, ALL SLICES' lanes over them — as automation moves them (au_pitch,
+ * au_sl_eff): its speed by the change since it last looked, its level from
+ * both gains. A Tempo Pitch loop's speed is the tempo's, so only its level
+ * follows. */
 static void au_voice_follow(seq8_instance_t *inst, int t) {
     au_track_t *at = &inst->au_trk[t];
     int i;
@@ -597,13 +598,18 @@ static void au_voice_follow(seq8_instance_t *inst, int t) {
         au_voice_t *v = &at->v[i];
         if (!v->active || v->clip >= NUM_CLIPS) continue;
         const au_clip_t *cl = &inst->au_clip[t][v->clip];
-        int g = au_gain(cl), ps, pc;
-        if (g != v->gdb) { v->gain = au_db(g + v->sdb) * v->vg; v->gdb = (int8_t)g; }
+        au_slice_t sl;
+        int g, ps, pc;
+        if (v->usl && v->slice < AU_MAX_SLICES) au_sl_eff(cl, v->slice, &sl);
+        else memset(&sl, 0, sizeof sl);
+        g = au_gain(cl) + sl.gain_db;
+        if (g != v->gdb) { v->gain = au_db(g) * v->vg; v->gdb = (int8_t)g; }
         if (!v->fpitch) continue;
-        ps = au_pitch(cl); pc = au_detune(cl);
+        ps = au_pitch(cl) + sl.pitch; pc = au_detune(cl) + sl.detune;
         if (ps != v->ps || pc != v->pc) {
-            v->step *= au_tune(ps - v->ps, pc - v->pc);
-            v->ps = (int8_t)ps; v->pc = (int8_t)pc;
+            int dc = pc - v->pc;                          /* up to 200: au_cents is good to 100 */
+            v->step *= au_semi(ps - v->ps) * au_cents(dc / 2) * au_cents(dc - dc / 2);
+            v->ps = (int8_t)ps; v->pc = (int16_t)pc;
         }
     }
 }
@@ -630,9 +636,9 @@ static void au_render(seq8_instance_t *inst, int frames) {
         /* a lane's live value is the PLAYING clip's: one left behind by a
          * clip switch is gone (its lane gives the value back at the switch) */
         for (i = 0; i < NUM_CLIPS; i++)
-            if (i != tr->active_clip && inst->au_clip[t][i].ov) {
+            if (i != tr->active_clip && (inst->au_clip[t][i].ov || inst->au_clip[t][i].ovs)) {
                 if (inst->au_clip[t][i].ov & AU_OV_BPM) inst->au_clip[t][i].tr_due = 1;
-                inst->au_clip[t][i].ov = 0;
+                inst->au_clip[t][i].ov = inst->au_clip[t][i].ovs = 0;
             }
         /* The Conductor on Now: a chop already sounding moves with it (the
          * Loop voice is Tempo Pitch's, whose speed the tempo sets) */
@@ -1216,6 +1222,10 @@ static int sp_track_audio(sp_ctx_t *cx) {
         v = my_atoi(p);
         for (l = 0; l < AU_MAX_SLICES; l++)
             if (!au_slice_field(&cl->sl[l], w, v)) return 1;
+        /* a hand's setting is what plays: ALL SLICES' lane on it gives way */
+        cl->ovs &= (uint8_t)~(!strcmp(w, "atk") ? AU_OVS_ATK : !strcmp(w, "dec") ? AU_OVS_DEC
+                            : !strcmp(w, "gain") ? AU_OVS_GAIN : !strcmp(w, "pitch") ? AU_OVS_PITCH
+                            : !strcmp(w, "detune") ? AU_OVS_DETUNE : !strcmp(w, "rev") ? AU_OVS_REV : AU_OVS_PLAY);
         au_mark(inst, tidx, c);
         return 1;
     }
@@ -1470,8 +1480,10 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
         l = my_atoi(q + 1);
         if (l < 0 || l >= AU_MAX_SLICES) return -1;
         const au_clip_t *cl = &inst->au_clip[t][c];
-        const au_slice_t *sl = &cl->sl[l];
+        au_slice_t se;                            /* as it plays: ALL SLICES' lanes over it */
+        const au_slice_t *sl = &se;
         uint32_t a = 0, b = 0;
+        au_sl_eff(cl, l, &se);
         if (cl->smp) au_slice_range(cl, cl->smp, l, &a, &b);
         return snprintf(out, out_len, "%u %u %d %d %d %d %d %d %d %d", (unsigned)a, (unsigned)b,
                         !cl->even && l < cl->nslices && sl->end ? 1 : 0,
@@ -1487,7 +1499,9 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
         for (f = 0; f < 7; f++) {
             int v0 = 0, same = 1;
             for (l = 0; l < cnt; l++) {
-                const au_slice_t *sl = &cl->sl[l];
+                au_slice_t se;
+                const au_slice_t *sl = &se;
+                au_sl_eff(cl, l, &se);
                 int v = f == 0 ? sl->pitch : f == 1 ? sl->gain_db : f == 2 ? sl->rev
                       : f == 3 ? sl->attack_ms : f == 4 ? sl->decay_ms : f == 5 ? sl->play : sl->detune;
                 if (l == 0) v0 = v; else if (v != v0) { same = 0; break; }

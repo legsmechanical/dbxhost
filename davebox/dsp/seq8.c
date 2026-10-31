@@ -7764,7 +7764,7 @@ static void au_undo_snap(seq8_instance_t *inst, au_clip_t *dst, uint8_t *on, int
     dst->smp = NULL;
     dst->gen = 0;
     dst->state = dst->err = 0;
-    dst->ov = 0;                 /* a lane's live value is the moment's, not the clip's */
+    dst->ov = dst->ovs = 0;      /* a lane's live value is the moment's, not the clip's */
 }
 
 /* ...and back. The same file, loaded, keeps its audio and takes the
@@ -7777,7 +7777,9 @@ static void au_undo_restore(seq8_instance_t *inst, const au_clip_t *src, uint8_t
     if (!on || inst->tracks[t].pad_mode != PAD_MODE_AUDIO) return;
     /* a lane playing now keeps holding what it holds: the restore takes the
      * settings, not the moment */
-    uint8_t ov = cl->ov, ov_rv = cl->ov_revrs;
+    uint8_t ov = cl->ov, ov_rv = cl->ov_revrs, ovs = cl->ovs, ovs_rv = cl->ovs_rev, ovs_pl = cl->ovs_play;
+    int8_t ovs_p = cl->ovs_pitch, ovs_d = cl->ovs_detune, ovs_g = cl->ovs_gain;
+    uint16_t ovs_a = cl->ovs_atk, ovs_dc = cl->ovs_dec;
     int8_t ov_p = cl->ov_pitch, ov_d = cl->ov_detune, ov_g = cl->ov_gain;
     uint16_t ov_b = cl->ov_bpm10;
     if (cl->smp && cl->state == 2 && src->name[0] && !strcmp(cl->name, src->name)) {
@@ -7796,6 +7798,8 @@ static void au_undo_restore(seq8_instance_t *inst, const au_clip_t *src, uint8_t
     }
     cl->ov = ov; cl->ov_pitch = ov_p; cl->ov_detune = ov_d; cl->ov_gain = ov_g;
     cl->ov_revrs = ov_rv; cl->ov_bpm10 = ov_b;
+    cl->ovs = ovs; cl->ovs_pitch = ovs_p; cl->ovs_detune = ovs_d; cl->ovs_gain = ovs_g;
+    cl->ovs_rev = ovs_rv; cl->ovs_play = ovs_pl; cl->ovs_atk = ovs_a; cl->ovs_dec = ovs_dc;
     rui_mark(inst, t, c);
     inst->state_dirty = 1;
 }
