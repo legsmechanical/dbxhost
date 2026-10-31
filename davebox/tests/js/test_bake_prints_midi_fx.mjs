@@ -37,7 +37,8 @@ globalThis.host_write_file = (path, body) => {
     return true;
 };
 globalThis.host_module_set_param = (k, v) => { sets.push(['dsp', String(k), String(v)]); };
-globalThis.host_module_get_param = (k) => (k === 'print_state' ? PRINT_STATE : '');
+let BAKE_AU_KEPT = '0';
+globalThis.host_module_get_param = (k) => (k === 'print_state' ? PRINT_STATE : k === 'bake_au_kept' ? BAKE_AU_KEPT : '');
 const ENG = {};                                  /* `${slot}|${key}` */
 globalThis.shadow_get_param = (slot, key) => (ENG[slot + '|' + key] !== undefined ? ENG[slot + '|' + key] : '');
 globalThis.shadow_set_param = (slot, key, v) => { ENG[slot + '|' + key] = String(v); sets.push(['chain', slot + '|' + key, String(v)]); return 1; };
@@ -58,7 +59,7 @@ await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const C = await import('../../ui/ui_constants.mjs');
 const HC = await import('/data/UserData/schwung/shared/constants.mjs');
-const { commitSceneBake } = await import('../../ui/ui_xpose.mjs');
+const { commitSceneBake, sceneBakeHasConductor } = await import('../../ui/ui_xpose.mjs');
 const PRINT = await import('../../ui/ui_print.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
@@ -213,6 +214,33 @@ step('⭐ a SCENE bake (offline) says which tracks\' MIDI FX it left out', () =>
     setModule('', false);
     commitSceneBake(0, 1, 0, 0);
     assert(!/MIDI FX/.test((S.actionPopupLines || []).join(' ')), 'warned with no module: ' + JSON.stringify(S.actionPopupLines));
+});
+
+step('⭐⭐ Apply Conductor on Audio tracks: asked for an Audio responder alone; one folded, the other named as still following', () => {
+    setModule('', false);
+    const keep = S.trackPadMode.slice();
+    for (let t = 0; t < 8; t++) S.trackPadMode[t] = C.PAD_MODE_DRUM;
+    S.trackPadMode[6] = C.PAD_MODE_CONDUCT;
+    S.trackPadMode[4] = C.PAD_MODE_AUDIO; S.trackPadMode[5] = C.PAD_MODE_AUDIO;
+    S.condResp[0] = [0, 0, 0, 0, 1, 1, 0, 0];
+    assert(sceneBakeHasConductor(0), 'an Audio responder alone did not offer Apply Conductor');
+    S.trackPadMode[4] = C.PAD_MODE_DRUM; S.trackPadMode[5] = C.PAD_MODE_DRUM;
+    assert(!sceneBakeHasConductor(0), 'control: drum tracks offered Apply Conductor');
+    S.trackPadMode[4] = C.PAD_MODE_AUDIO; S.trackPadMode[5] = C.PAD_MODE_AUDIO;
+    BAKE_AU_KEPT = String(1 << 5);                    /* the engine: T6's shift changes */
+    sets.length = 0; S.pendingDefaultSetParams.length = 0; S.actionPopupLines = [];
+    commitSceneBake(0, 1, 0, 1);
+    assert(S.pendingDefaultSetParams.some((e) => e.key === 'bake_scene' && e.val === '0 1 0 1'), 'no bake sent');
+    ticks(4);
+    const txt = (S.actionPopupLines || []).join(' ');
+    assert(/Still follows/.test(txt) && /T6/.test(txt) && !/T5/.test(txt), 'notice: ' + JSON.stringify(S.actionPopupLines));
+    assert(S.condResp[0][4] === 0 && S.condResp[0][5] === 1, 'responders: ' + JSON.stringify(S.condResp[0]));
+    /* nothing kept: no notice */
+    S.condResp[0] = [0, 0, 0, 0, 1, 1, 0, 0]; BAKE_AU_KEPT = '0'; S.actionPopupLines = [];
+    commitSceneBake(0, 1, 0, 1); ticks(4);
+    assert(!/Still follows/.test((S.actionPopupLines || []).join(' ')) && !S.condResp[0][4] && !S.condResp[0][5],
+           'all folded, yet: ' + JSON.stringify(S.actionPopupLines) + ' ' + JSON.stringify(S.condResp[0]));
+    for (let t = 0; t < 8; t++) S.trackPadMode[t] = keep[t];
 });
 
 if (failed) { console.log('FAIL: Bake prints a MIDI FX module'); process.exit(1); }

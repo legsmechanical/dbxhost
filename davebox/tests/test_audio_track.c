@@ -1793,6 +1793,79 @@ int main(void) {
         hx_destroy(h);
     }
 
+    /* ---- scene bake, Apply Conductor (Josh, 2026-10-30: "a"): an Audio clip's
+     * chops are never transposed; ONE shift folds into its Pitch, a changing
+     * one leaves it following the Conductor ---- */
+    {
+        clip_t *cc, *ac_steps;
+        au_clip_t *ac;
+        char v[32], b[16];
+        int R;
+        h = rig(1); inst = (seq8_instance_t *)h->inst;
+        snprintf(p, sizeof p, "0|%s/src/mono48.wav", g_root); hx_set_param(h, "t4_au_pick", p);
+        HX_ASSERT(wait_loaded(h, 4, 0) == 2, "bake cond: the pick");
+        ac = &inst->au_clip[4][0];
+        ac_steps = &inst->tracks[4].clips[0];
+        hx_set_param(h, "t6_convert_to_conduct", "1");
+        hx_set_param(h, "scale_aware", "0");
+        cc = &inst->tracks[6].clips[0];
+        R = eff_pad_key(inst) + 60;
+        snprintf(v, sizeof v, "%d", R + 3); hx_set_param(h, "t6_c0_step_0_toggle", v);
+        HX_ASSERT(cc->note_count == 1, "bake cond: the Conductor's note");
+        cc->cond_lock = 1;                                    /* +3 held the whole clip */
+        ac_steps->length = cc->length;
+
+        /* a Loop clip, one shift: folded into Pitch; the track stops following */
+        cc->cond_resp[4] = 1; cc->cond_when[4] = 0;
+        hx_set_param(h, "bake_scene", "0 1 0 1");
+        HX_ASSERT(ac->pitch == 3 && !cc->cond_resp[4], "bake cond: one shift did not fold into a Loop clip's Pitch");
+        hx_get_param(h, "bake_au_kept", b, sizeof b);
+        HX_ASSERT(!strcmp(b, "0"), "bake cond: a folded track reads as kept");
+
+        /* +5 from step 8: a Loop on Next takes the shift at its wrap only — still one */
+        snprintf(v, sizeof v, "%d", R + 5); hx_set_param(h, "t6_c0_step_8_toggle", v);
+        HX_ASSERT(cc->note_count == 2, "bake cond: the second Conductor note");
+        ac->pitch = 0; cc->cond_resp[4] = 1;
+        hx_set_param(h, "bake_scene", "0 1 0 1");
+        HX_ASSERT(ac->pitch == 3 && !cc->cond_resp[4], "bake cond: a Loop on Next did not fold the shift at its wrap");
+        /* ...on Now it hears both: left alone, still following, named */
+        ac->pitch = 0; cc->cond_resp[4] = 1; cc->cond_when[4] = 1;
+        hx_set_param(h, "bake_scene", "0 1 0 1");
+        HX_ASSERT(ac->pitch == 0 && cc->cond_resp[4], "bake cond: a changing shift was folded, or the track stopped following");
+        hx_get_param(h, "bake_au_kept", b, sizeof b);
+        HX_ASSERT(!strcmp(b, "16"), "bake cond: the kept track is not named (bit 4)");
+        cc->cond_when[4] = 0;
+
+        /* a Slice clip: the shift at each chop's onset; the chops never move */
+        hx_set_param(h, "t4_au_set_mode", "0 1");
+        hx_set_param(h, "t4_au_chop", "0");
+        HX_ASSERT(ac_steps->note_count > 1, "bake cond: no chops on steps");
+        ac_steps->notes[1].tick = 12 * 24;                    /* the second chop on step 13, under the +5 */
+        {
+            int i, pit_before[64], nb = clip_pitches(inst, 4, 0, pit_before, 64), pit_after[64];
+            ac->pitch = 0; cc->cond_resp[4] = 1;
+            hx_set_param(h, "bake_scene", "0 1 0 1");
+            HX_ASSERT(clip_pitches(inst, 4, 0, pit_after, 64) == nb, "bake cond: the bake lost chops");
+            for (i = 0; i < nb; i++) HX_ASSERT(pit_after[i] == pit_before[i], "bake cond: a chop was transposed");
+        }
+        /* chops on steps 1 and 13 hear +3 and +5: kept */
+        HX_ASSERT(ac->pitch == 0 && cc->cond_resp[4], "bake cond: a Slice clip's changing shift was folded");
+        /* the +5 note gone: one shift, folded */
+        hx_set_param(h, "t6_c0_step_8_toggle", v);
+        HX_ASSERT(cc->note_count == 1 || !cc->notes[1].active, "bake cond: the +5 note did not go");
+        hx_set_param(h, "bake_scene", "0 1 0 1");
+        HX_ASSERT(ac->pitch == 3 && !cc->cond_resp[4], "bake cond: a Slice clip's one shift did not fold");
+        /* a Pitch that cannot hold it: left following */
+        ac->pitch = 23; cc->cond_resp[4] = 1;
+        hx_set_param(h, "bake_scene", "0 1 0 1");
+        HX_ASSERT(ac->pitch == 23 && cc->cond_resp[4], "bake cond: a fold past +24 was clamped instead of kept");
+        /* without Apply Conductor nothing moves and the track keeps following */
+        ac->pitch = 0;
+        hx_set_param(h, "bake_scene", "0 1 0 0");
+        HX_ASSERT(ac->pitch == 0 && cc->cond_resp[4], "bake cond: a plain bake touched the Conductor");
+        hx_destroy(h);
+    }
+
     /* ---- undo: an Audio clip's sample side comes back with its steps ---- */
     {
         au_clip_t *ac;

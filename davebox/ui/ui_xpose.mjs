@@ -5,7 +5,7 @@
  * Extracted from ui.js (Phase 5b prep, increment 3 of the modularity refactor).
  */
 
-import { NUM_TRACKS, NUM_CLIPS, PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE } from './ui_constants.mjs';
+import { NUM_TRACKS, NUM_CLIPS, PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_AUDIO } from './ui_constants.mjs';
 import { S, conductorTrackIdx } from './ui_state.mjs';
 import { noteUndoUnit } from './ui_editops.mjs';
 import { showActionPopup, showActionPopupFor } from './ui_persistence.mjs';
@@ -15,7 +15,7 @@ import { forceRedraw } from './ui_leds.mjs';
 
 /* True when scene-baking at clipIdx should offer "Apply Conductor?":
  * a Conductor exists and its clip at clipIdx has at least one responder On for a
- * non-conductor melodic track (something there is to fold). */
+ * non-conductor melodic or Audio track (something there is to fold). */
 /* conductorTrackIdx moved to ui_state.mjs so ui_export.mjs can import it
  * without an import cycle (it was an unbound global there — audit
  * js-modules-1). Imported at the top of this file. */
@@ -28,7 +28,7 @@ export function sceneBakeHasConductor(clipIdx) {
     let t;
     for (t = 0; t < 8; t++) {
         if (t === ct) continue;
-        if (S.trackPadMode[t] !== PAD_MODE_MELODIC_SCALE) continue;
+        if (S.trackPadMode[t] !== PAD_MODE_MELODIC_SCALE && S.trackPadMode[t] !== PAD_MODE_AUDIO) continue;
         if (mask[t]) return true;
     }
     return false;
@@ -50,6 +50,7 @@ export function commitSceneBake(clipIdx, loops, wrap, apply) {
     else showActionPopup('SCENE', 'BAKED');
     S.pendingSceneBakeResync = 2;
     S.pendingSceneBakeClip   = clipIdx;
+    S.pendingSceneBakeApply  = !!apply;   /* the resync asks which Audio tracks were folded */
     /* DSP cleared the conductor clip's responder flags for the baked tracks.
      * Mirror that locally so the Responder bank UI reflects the auto-disable
      * without waiting for the next full per-clip re-read. */

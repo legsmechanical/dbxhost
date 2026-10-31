@@ -928,6 +928,82 @@ static void bake_drum_lane(seq8_instance_t *inst, int t, int c, int lane, int lo
  * longest lane so that lane still loops seamlessly (rare degenerate case). */
 #define EXPORT_DRUM_MAX_TICKS 24576u   /* 64 bars * 384 ticks/bar */
 
+/* SCENE bake "Apply Conductor?" on an Audio clip (Josh, 2026-10-30: "a").
+ * Its notes are chops, so they are never transposed: the Conductor repitches
+ * an Audio track (au_cond_now). The shift is folded into the clip's Pitch
+ * only when it is ONE shift wherever the clip takes it — a Slice clip at each
+ * chop's onset, a Loop clip at its wrap (Next) or all through (Now), over
+ * every pass until both windows line up. Returns 1 and sets *semis then, 0
+ * when it changes (or the Pitch cannot hold it): the clip is left alone and
+ * the track keeps following live. Call before bake_clip changes the clip. */
+#define AU_BAKE_PASSES 64
+static int au_bake_cond(seq8_instance_t *inst, int t, int c, int *semis) {
+    clip_t *cl = &inst->tracks[t].clips[c];
+    clip_t *cc;
+    au_clip_t *ac = &inst->au_clip[t][c];
+    play_fx_t cfx;
+    uint32_t rng = 0xC04D1234u;
+    int have = 0, v0 = 0, k, ni, oct;
+    *semis = 0;
+    if (inst->conductor_track < 0 || t == inst->conductor_track) return 0;
+    cc = &inst->tracks[inst->conductor_track].clips[c];
+    if (!cc->cond_resp[t]) return 0;
+    oct = cc->cond_oct[t];
+    pfx_init_defaults(&cfx);
+    pfx_apply_params(&cfx, &cc->pfx_params);
+    cfx.track_idx = (uint8_t)inst->conductor_track;
+    cfx.route     = ROUTE_SCHWUNG;
+    cfx.rng       = 0xC04DBEEFu;
+    uint32_t tps  = cl->ticks_per_step ? cl->ticks_per_step : TICKS_PER_STEP;
+    uint32_t ctps = cc->ticks_per_step ? cc->ticks_per_step : TICKS_PER_STEP;
+    uint32_t rwin = (uint32_t)cl->length * tps, cwin = (uint32_t)cc->length * ctps;
+    uint32_t span, g;
+    if (!rwin) return 0;
+    if (!cwin) cwin = rwin;
+    g = u32_gcd(rwin, cwin);
+    span = rwin / g * cwin;                                  /* both windows line up */
+    if (span / rwin > AU_BAKE_PASSES) span = rwin * AU_BAKE_PASSES;
+
+#define AU_BAKE_AT(abs) do {                                                   \
+        int _d = 0, _s = 0, _v;                                                \
+        if (!conductor_bake_offset(inst, cc, &cfx, (abs), &rng, &_d, &_s)) _d = _s = 0; \
+        if (inst->scale_aware) {                                               \
+            int _R = eff_pad_key(inst) + 60, _n = (int)SCALE_SIZES[eff_pad_scale(inst)]; \
+            _v = scale_transpose(inst, _R, _d + oct * _n) - _R;                \
+        } else _v = _s + oct * 12;                                             \
+        if (!have) { v0 = _v; have = 1; } else if (_v != v0) return 0;         \
+    } while (0)
+
+    if (ac->mode == AU_MODE_SLICE) {
+        uint32_t ws = (uint32_t)cl->loop_start * tps;
+        for (k = 0; (uint32_t)k * rwin < span; k++)
+            for (ni = 0; ni < cl->note_count; ni++) {
+                const note_t *n = &cl->notes[ni];
+                if (!n->active || n->tick < ws || n->tick >= ws + rwin) continue;
+                AU_BAKE_AT((uint32_t)k * rwin + (n->tick - ws));
+            }
+    } else if (cc->cond_when[t] != 1) {
+        for (k = 0; (uint32_t)k * rwin < span; k++) AU_BAKE_AT((uint32_t)k * rwin);
+    } else {
+        /* Now: the shift moves only where a Conductor note starts or ends */
+        uint32_t cs = (uint32_t)cc->loop_start * ctps;
+        for (k = 0; (uint32_t)k * cwin < span; k++) {
+            AU_BAKE_AT((uint32_t)k * cwin);
+            for (ni = 0; ni < cc->note_count; ni++) {
+                const note_t *n = &cc->notes[ni];
+                if (!n->active || n->tick < cs || n->tick >= cs + cwin) continue;
+                AU_BAKE_AT((uint32_t)k * cwin + (n->tick - cs));
+                if (n->tick - cs + n->gate < cwin) AU_BAKE_AT((uint32_t)k * cwin + (n->tick - cs + n->gate));
+            }
+        }
+    }
+#undef AU_BAKE_AT
+    if (!have) v0 = 0;                                        /* no chop plays: nothing to move */
+    if ((int)ac->pitch + v0 < -24 || (int)ac->pitch + v0 > 24) return 0;
+    *semis = v0;
+    return 1;
+}
+
 static uint32_t u32_gcd(uint32_t a, uint32_t b) {
     while (b) { uint32_t t = a % b; a = b; b = t; }
     return a;

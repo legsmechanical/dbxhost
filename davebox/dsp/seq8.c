@@ -1635,6 +1635,7 @@ typedef struct {
     uint8_t drum_row_undo_clips[2];
     uint8_t drum_row_redo_clips[2];
     uint8_t undo_locked; /* set during scene bake to block individual undo_begin calls */
+    uint8_t bake_au_kept; /* the last scene bake's Audio tracks left following the Conductor (bit t) */
     drum_rec_snap_lane_t drum_row_undo_lanes[2][NUM_TRACKS][DRUM_LANES];
     drum_rec_snap_lane_t drum_row_redo_lanes[2][NUM_TRACKS][DRUM_LANES];
 
@@ -9056,6 +9057,10 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         return snprintf(out, out_len, "%d", inst ? (int)inst->pad_note_map[inst->active_track][0] : 255);
     if (!strcmp(key, "last_restore"))
         return snprintf(out, out_len, "%s", inst->last_restore_info);
+    /* the last scene bake's Audio tracks whose Conductor shift changed: not
+     * folded, still following (bit t) */
+    if (!strcmp(key, "bake_au_kept"))
+        return snprintf(out, out_len, "%d", (int)inst->bake_au_kept);
 
     if (!strcmp(key, "clock_follow_on"))
         return snprintf(out, out_len, "%d", inst ? (int)inst->clock_follow_on : 0);

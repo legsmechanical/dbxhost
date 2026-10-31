@@ -290,14 +290,32 @@ static int sp_globals_misc(sp_ctx_t *cx) {
             sn = clamp_i(sn, 1, 4);
             sw = sw ? 1 : 0;
             sa = sa ? 1 : 0;
+            uint8_t au_kept = 0;      /* Audio tracks whose shift changes: still following */
+            int au_fold[NUM_TRACKS];
             undo_begin_scene_bake(inst, sc);  /* snapshots conductor clip incl. cond_resp[] */
+            for (t = 0; t < NUM_TRACKS; t++) {
+                au_fold[t] = 0;
+                if (sa && inst->tracks[t].pad_mode == PAD_MODE_AUDIO && inst->conductor_track >= 0 &&
+                    inst->tracks[inst->conductor_track].clips[sc].cond_resp[t] &&
+                    !au_bake_cond(inst, t, sc, &au_fold[t]))
+                    au_kept |= (uint8_t)(1u << t);
+            }
             inst->undo_locked = 1;
             for (t = 0; t < NUM_TRACKS; t++) {
                 if (inst->tracks[t].pad_mode == PAD_MODE_DRUM)
                     bake_drum_clip(inst, t, sc, sn, sw);
-                else
+                else if (inst->tracks[t].pad_mode == PAD_MODE_AUDIO) {
+                    /* its notes are chops: never transposed (au_bake_cond) */
+                    bake_clip(inst, t, sc, sn, sw, 0);
+                    if (sa && au_fold[t]) {
+                        au_clip_t *ac = &inst->au_clip[t][sc];
+                        ac->pitch = (int8_t)(ac->pitch + au_fold[t]);
+                        rui_mark(inst, t, sc);
+                    }
+                } else
                     bake_clip(inst, t, sc, sn, sw, sa);
             }
+            inst->bake_au_kept = au_kept;
             inst->undo_locked = 0;
             /* Auto-disable: clear the Conductor clip C's responder flags for the
              * tracks just folded, so live playback won't double-apply. */
@@ -307,6 +325,7 @@ static int sp_globals_misc(sp_ctx_t *cx) {
                     if (t == inst->conductor_track) continue;
                     if (inst->tracks[t].pad_mode == PAD_MODE_DRUM) continue;
                     if (inst->tracks[t].pad_mode == PAD_MODE_CONDUCT) continue;
+                    if (au_kept & (1u << t)) continue;      /* not folded: it keeps following */
                     if (ccl->cond_resp[t]) ccl->cond_resp[t] = 0;
                 }
             }

@@ -42,6 +42,9 @@ the section into a versioned heading at release time.
   down by the Conductor's transposition (in semitones; with Scale Aware, the key's root
   moved by its degrees), with the track's octave on top — its chops never change. Next
   repitches each chop as it starts and a Loop clip when it comes round; Now at once.
+  A scene bake's **Apply Conductor** puts a single shift into the clip's Pitch; a
+  shift that changes during the clip is left playing live, and the notice says which
+  track still follows.
 - **Audio: 16 Pads shows two banks.** In the 16 Pads layout the right 4×4 takes the
   colours of the partner track (1↔5, 2↔6, 3↔7, 4↔8); a Slice pad held down is white.
 - **Resample clip › In place** on an Audio clip: the recording replaces the clip,

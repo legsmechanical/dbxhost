@@ -30,7 +30,7 @@ import {
     } from './ui_constants.mjs';
 
 import { lowBatteryTick } from './ui_battery.mjs';
-import { S, standDownBankDisplay, stepRevealAvailable, loopViewActive, endLoopLatch, forgetUndo, forgetProjectJs } from './ui_state.mjs';
+import { S, standDownBankDisplay, stepRevealAvailable, loopViewActive, endLoopLatch, forgetUndo, forgetProjectJs, conductorTrackIdx } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { tickPrefetch, dget, applyNewProjectSeed, midiFxResyncTick } from './ui_dsp_bridge.mjs';
 import { ledClockState, ledClockStep, ledClockSend } from './ui_led_clock.mjs';
@@ -84,7 +84,7 @@ import { cardHoldExpired } from './ui_prefs.mjs';
 import { heldIndicatorChanged } from './ui_chord.mjs';
 import { printTick } from './ui_print.mjs';
 import { resampleTick } from './ui_resample.mjs';
-import { auTick, auReadTrack, auForgetTrack, isAudioTrack } from './ui_audio.mjs';
+import { auTick, auReadTrack, auForgetTrack, isAudioTrack, auRead } from './ui_audio.mjs';
 import { auConvertStart, auConvertTick, auConvertApply } from './ui_audio_convert.mjs';
 import { auConvertToKit } from './ui_audio_kit.mjs';
 import { openAudioChooser, closeAudioChooser, audioChooserTick } from './ui_audio_chooser.mjs';
@@ -1318,7 +1318,22 @@ export function _tickImpl() {
                         S.clipTPS[_t][sc] = TPS_VALUES.indexOf(_tv) >= 0 ? _tv : 24;
                     }
                     if (sc === S.trackActiveClip[_t]) refreshPerClipBankParams(_t);
+                    if (isAudioTrack(_t)) auRead(_t, sc);   /* Apply Conductor may have moved its Pitch */
                 }
+            }
+            /* Apply Conductor on Audio tracks: one shift was folded into the
+             * clip's Pitch (it stops following); a changing one was left, the
+             * track still following — say which (bake_au_kept, bit t) */
+            if (S.pendingSceneBakeApply) {
+                S.pendingSceneBakeApply = false;
+                const kept = parseInt(host_module_get_param('bake_au_kept'), 10) | 0;
+                const mask = S.condResp[sc | 0], ct = conductorTrackIdx(), names = [];
+                for (let _t = 0; _t < NUM_TRACKS; _t++) {
+                    if (_t === ct || !isAudioTrack(_t) || !mask || !mask[_t]) continue;
+                    if (kept & (1 << _t)) names.push(_t + 1);
+                    else mask[_t] = 0;
+                }
+                if (names.length) showActionPopupFor(3500, 'SCENE BAKED', 'Still follows the', 'Conductor: T' + names.join(' T'));
             }
             forceRedraw();
         }

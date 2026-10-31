@@ -2575,7 +2575,11 @@ same, with a clean effects chain to build on.
   same choices. Empty clips are skipped.
 - When you bake a scene whose [Conductor](#12-the-conductor) clip has responding
   tracks, a last **Apply Conductor?** step can fold its transposition into those
-  clips. Baking a single clip never applies the Conductor.
+  clips. Baking a single clip never applies the Conductor. An **Audio** clip's chops
+  never move: when the Conductor holds one shift wherever the clip hears it, the
+  shift goes into the clip's **Pitch** and the track stops following; when it
+  changes, the clip is left alone and the track keeps following the Conductor live
+  (the notice names it).
 - **A MIDI effect module in play.** When the clip's track has a MIDI effect
   module set to **Post** (loaded and not bypassed), Bake runs the module too:
   pick the loop count, and in a moment (**BAKING**) the clip holds what you

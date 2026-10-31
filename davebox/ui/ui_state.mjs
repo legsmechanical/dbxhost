@@ -855,6 +855,7 @@ export const S = {
     resampleFrames: 0,
     pendingSceneBakeResync: 0,
     pendingSceneBakeClip: 0,
+    pendingSceneBakeApply: false,
     tapTempoOpen: false,
     tapTempoTapTimes: [],
     tapTempoBpm: 120,
