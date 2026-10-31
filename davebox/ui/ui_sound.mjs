@@ -6428,6 +6428,9 @@ function macroLive(m) {
 function bankMacroOnMode(bank, padMode) {
     if (auAutoBank(bank)) return false;          /* an Audio clip's sound: no bank card, not a macro (soundSeqMirror) */
     if (padMode === PMC) return false;
+    /* An Audio track: no HARMONY, DELAY, SEQ ARP or LIVE ARP target (Josh,
+     * 2026-10-31: "nope") — CLIP and NOTE FX stay. */
+    if (padMode === PMA && bank >= 2 && bank <= 5) return false;
     if (bank === 7) return padMode === PMD;
     if (bank === 5) return true;
     return padMode !== PMD;

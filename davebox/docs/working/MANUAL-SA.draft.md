@@ -2412,6 +2412,7 @@ ASSIGN** (nothing assigned yet) or **CLK EDIT**.
 - On an Audio track the list also has **Sample** (SAMPLE's Gain, Pitch, Detune,
   Tempo and Revrs) and **All Slices** (ALL SLICES' settings). The knob turns the
   clip the track is on, as the editor's own knob would, and records the same lane.
+  Of the banks it offers only **CLIP** and **NOTE FX**.
 - **(None)** at the top clears the knob.
 - If the same module sits in two slots, the slot is shown beside its name.
 

@@ -114,6 +114,8 @@ step('⭐⭐ + Add lane on a Loop clip: Sample (no All Slices); Sample > Pitch a
     const rows = snd.soundKnobPickRowsForTest();
     assert(rows.indexOf('au:au') >= 0, 'no Sample row: ' + JSON.stringify(rows));
     assert(rows.indexOf('au:aus') < 0, 'All Slices offered for a Loop clip\'s lane: ' + JSON.stringify(rows));
+    const banks = rows.filter(id => id.indexOf('bank:') === 0).join(',');
+    assert(banks === 'bank:0,bank:1', 'an Audio track offers banks ' + banks + ' (CLIP and NOTE FX only)');
     pickRow('au:au');
     const path = JSON.stringify(snd.soundViewPath());
     assert(path.indexOf('Sample') >= 0 && path.indexOf('au:') < 0, 'the crumb names the raw id: ' + path);

@@ -41,7 +41,8 @@ the section into a versioned heading at release time.
   - **Automation**: SAMPLE's **Gain**, **Pitch**, **Detune**, **Tempo** and **Revrs**, and
     SLICES' **ALL SLICES** settings, record and lock like any knob. A playing lane moves
     the sound live, chops already sounding included, and each setting comes back on Stop.
-    **+ Add lane** and the macro picker offer them too (**Sample**, **All Slices**).
+    **+ Add lane** and the macro picker offer them too (**Sample**, **All Slices**), and
+    no longer offer HARMONY, DELAY, SEQ ARP or LIVE ARP on an Audio track.
   - A macro with a range on a dAVEBOx bank knob or an Audio setting steps across that
     range, not the whole one (Tempo held to 120–140 BPM: 0.1 BPM a detent, not 5).
     Its **Lo** and **Hi** are set and shown in the setting's own units (BPM, dB…), not %.
