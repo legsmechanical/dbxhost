@@ -2412,11 +2412,22 @@ static void au_chop_on(seq8_instance_t *inst, int t, int c, int slice, float vga
 /* Frames a..b of clip (t,c)'s sample as chop `slice` (AU_SLICE_NONE: Loop
  * mode's hidden chop at Start), `off` frames into the block. */
 /* Returns the voice it started or carried on (NULL: none). */
+static au_voice_t *au_range_on_in(au_track_t *at, const au_sample_t *s, int cs, au_clip_t *cl, int c,
+                                  int slice, uint32_t a, uint32_t b, float vgain, uint32_t off, int sync);
 static au_voice_t *au_range_on(seq8_instance_t *inst, int t, int c, int slice, uint32_t a, uint32_t b,
                                float vgain, uint32_t off, int sync) {
     au_clip_t *cl = &inst->au_clip[t][c];
-    const au_sample_t *s = cl->smp;
-    au_track_t *at = &inst->au_trk[t];
+    if (!cl->smp || b <= a) return NULL;
+    /* the Conductor: a chop takes it as it starts; a Vintage piece takes the
+     * loop's, held till the wrap on Next */
+    int cs = sync ? (int)inst->au_trk[t].cond : au_cond_now(inst, t);
+    return au_range_on_in(&inst->au_trk[t], cl->smp, cs, cl, c, slice, a, b, vgain, off, sync);
+}
+
+/* The same, into any track's voices from any copy of the sample: the export
+ * renders a Slice clip into a private track (au_export_slice). */
+static au_voice_t *au_range_on_in(au_track_t *at, const au_sample_t *s, int cs, au_clip_t *cl, int c,
+                                  int slice, uint32_t a, uint32_t b, float vgain, uint32_t off, int sync) {
     int i;
     if (!s || b <= a) return NULL;
     /* A Loop clip's Vintage pieces (sync) play as recorded: the clip's pitch,
@@ -2429,9 +2440,6 @@ static au_voice_t *au_range_on(seq8_instance_t *inst, int t, int c, int slice, u
     const au_slice_t *sl = &plain;
     if (!sync && slice >= 0 && slice < AU_MAX_SLICES) { au_sl_eff(cl, slice, &eff); sl = &eff; }
     uint8_t play = sl->play, rev = sync ? (uint8_t)au_revrs(cl) : sl->rev;
-    /* the Conductor: a chop takes it as it starts; a Vintage piece takes the
-     * loop's, held till the wrap on Next */
-    int cs = sync ? (int)at->cond : au_cond_now(inst, t);
     double ratio = au_tune(au_pitch(cl) + sl->pitch + cs, au_detune(cl) + sl->detune) * (double)s->rate / 44100.0;
     float gain = au_db(au_gain(cl) + sl->gain_db) * vgain;
     au_voice_t *v;
@@ -2655,6 +2663,98 @@ static uint32_t au_voice_render(au_voice_t *v, int32_t *acc, int frames) {
         v->age++;
     }
     return missed;
+}
+
+/* ---------------- Export: a Slice clip rendered offline ---------------- */
+
+/* A note of the clip as it plays (the export's render): its tick, its gate in
+ * ticks, and the chop it plays. */
+typedef struct { uint32_t tick, gate; int16_t slice; } au_xnote_t;
+
+static int au_xnote_cmp(const void *x, const void *y) {
+    const au_xnote_t *a = x, *b = y;
+    return a->tick < b->tick ? -1 : a->tick > b->tick;
+}
+
+/* Clip (t,c)'s Slice sequence as audio, for the Ableton export (Josh,
+ * 2026-10-31: "render slice clips to audio"): the notes `xn` (sorted here)
+ * over `span` ticks at `bpm`, played through the engine's own chop voices
+ * into a PRIVATE track — the live track's voices are never touched — and
+ * written to `path` as a 44.1 kHz 16-bit stereo WAV one cycle long. The
+ * sequence plays twice and the second cycle is kept, so a chop sounding over
+ * the loop point is heard at the start as it is when the clip comes round.
+ * Left out: the Conductor and the DELAY echoes' fade (every chop at full
+ * level). A streamed sample is read whole for the render and freed after.
+ * Returns the frames written, or -1. */
+static long au_export_slice(seq8_instance_t *inst, int t, int c, au_xnote_t *xn, int n,
+                            uint32_t span, double bpm, const char *path) {
+    au_clip_t *cl = &inst->au_clip[t][c];
+    const au_sample_t *s = cl->smp;
+    au_sample_t *own = NULL;
+    static au_track_t trk;
+    static int32_t acc[2 * 4096];
+    static int16_t pcm[2 * 4096];
+    uint8_t h[44];
+    if (!s || cl->mode != AU_MODE_SLICE || !span || bpm <= 0 || n < 0) return -1;
+    if (!s->pcm) {
+        char dir[512], file[700];
+        int err = 0;
+        au_samples_dir(inst, dir, sizeof dir);
+        snprintf(file, sizeof file, "%s/%s", dir, cl->name);
+        own = au_read_file(file, 0, &err);
+        if (!own || !own->pcm) { au_sample_free(own); return -1; }
+        s = own;
+    }
+    au_trans_settle(cl);
+    if (n > 1) qsort(xn, (size_t)n, sizeof *xn, au_xnote_cmp);
+    double fpt = 44100.0 * 60.0 / (bpm * (double)PPQN);
+    uint32_t f0 = (uint32_t)((double)span * fpt + 0.5), total = (uint32_t)((double)span * 2 * fpt + 0.5);
+    FILE *f = fopen(path, "wb");
+    if (!f) { au_sample_free(own); return -1; }
+    au_wav_header(h, total - f0, 44100, 2);
+    fwrite(h, 1, sizeof h, f);
+    memset(&trk, 0, sizeof trk);
+    uint32_t k, frame = 0;
+    int on = 0, i;
+    for (k = 0; k < span * 2; k++) {
+        uint32_t tick = k % span;
+        if (tick == 0 && k) on = 0;
+        /* the gates that end on this tick first (a note of either pass),
+         * then what starts on it */
+        for (i = 0; i < n; i++) {
+            uint32_t end = xn[i].tick + xn[i].gate;
+            if (end != k && end + span != k) continue;
+            int v;
+            for (v = 0; v < AU_VOICES; v++) {
+                au_voice_t *vo = &trk.v[v];
+                if (vo->active && vo->gated && vo->slice == xn[i].slice && !vo->rel_len)
+                    au_voice_release_at(vo, 220, 0);
+            }
+        }
+        while (on < n && xn[on].tick < tick) on++;
+        for (; on < n && xn[on].tick == tick; on++) {
+            uint32_t a, b;
+            if (au_slice_range(cl, s, xn[on].slice, &a, &b))
+                au_range_on_in(&trk, s, 0, cl, c, xn[on].slice, a, b, 1.0f, 0, 0);
+        }
+        uint32_t next = (uint32_t)((double)(k + 1) * fpt + 0.5);
+        while (frame < next) {
+            int len = (int)(next - frame > 4096 ? 4096 : next - frame), j;
+            memset(acc, 0, sizeof(int32_t) * 2 * (size_t)len);
+            for (j = 0; j < AU_VOICES; j++) if (trk.v[j].active) au_voice_render(&trk.v[j], acc, len);
+            if (frame + (uint32_t)len > f0) {
+                int from = frame >= f0 ? 0 : (int)(f0 - frame);
+                for (j = from * 2; j < len * 2; j++)
+                    pcm[j] = (int16_t)(acc[j] > 32767 ? 32767 : acc[j] < -32768 ? -32768 : acc[j]);
+                fwrite(pcm + from * 2, sizeof(int16_t) * 2, (size_t)(len - from), f);
+            }
+            frame += (uint32_t)len;
+        }
+    }
+    int bad = ferror(f);
+    if (fclose(f) || bad) { au_sample_free(own); return -1; }
+    au_sample_free(own);
+    return (long)(total - f0);
 }
 
 /* ---------------- Lazy chop ---------------- */

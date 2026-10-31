@@ -238,7 +238,10 @@ static uint32_t bake_apply_quantize(uint32_t tick, uint16_t tps, uint16_t length
  * is 16KB, too small for big clips (drum LCM merges, multi-cycle bakes); the
  * render writes notes here and get_param returns only the small header, JS reads
  * this file (host_read_file handles up to 4MB; a single clip is well under). */
-#define EXPORT_RENDER_PATH SEQ8_DBX_DIR "/davebox-exports/staging/render.txt"
+#define EXPORT_STAGING_DIR SEQ8_DBX_DIR "/davebox-exports/staging"
+#define EXPORT_RENDER_PATH EXPORT_STAGING_DIR "/render.txt"
+/* where an Audio clip's Slice render goes (`_au_export`); a test points it off-device */
+static const char *au_export_dir = EXPORT_STAGING_DIR;
 /* Companion to the note render: every automation lane's points, same staging
  * dir so the export's existing cleanup removes it too. See `pa_export`. */
 #define EXPORT_PA_PATH     SEQ8_DBX_DIR "/davebox-exports/staging/automation.txt"

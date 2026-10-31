@@ -10164,6 +10164,60 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                 }
                 return snprintf(out, out_len, "%u %d %u", (unsigned)span, n, (unsigned)span);
             }
+            if (!strcmp(p, "_au_export")) {
+                /* An Audio clip for the Ableton export, one line:
+                 *   Loop:  "L <rate> <frames> <rs> <bpm10> <pitch> <detune> <gain>
+                 *           <revrs> <sync> <rot> <nudge_ms> <loop_ticks>|<sample path>"
+                 *          (rs: where the clip's window starts in the sample, au_range)
+                 *   Slice: "S <frames> <span>|<wav path>" — rendered offline into
+                 *          staging (au_export_slice), one cycle at the project tempo
+                 *   ""     no sample, not loaded, or nothing to render. */
+                int t_idx = (int)(tr - inst->tracks);
+                au_clip_t *ac = &inst->au_clip[t_idx][cidx];
+                const au_sample_t *as = ac->smp;
+                if (tr->pad_mode != PAD_MODE_AUDIO || !as || !ac->name[0]) return 0;
+                if (ac->mode == AU_MODE_LOOP) {
+                    char dir[512];
+                    uint32_t rs, re;
+                    au_range(ac, as, &rs, &re);
+                    au_samples_dir(inst, dir, sizeof dir);
+                    uint32_t tps = cl->ticks_per_step ? cl->ticks_per_step : TICKS_PER_STEP;
+                    return snprintf(out, out_len, "L %u %u %u %u %d %d %d %d %d %u %d %u|%s/%s",
+                                    (unsigned)as->rate, (unsigned)as->frames, (unsigned)rs,
+                                    (unsigned)(ac->bpm10 ? ac->bpm10 : 1200), (int)ac->pitch,
+                                    (int)ac->detune, (int)ac->gain_db, (int)ac->revrs, (int)ac->sync,
+                                    (unsigned)ac->rot, (int)ac->nudge_ms,
+                                    (unsigned)cl->length * tps, dir, ac->name);
+                }
+                static bake_note_t rmc_au[BAKE_BUF * 8];
+                static au_xnote_t xn_au[BAKE_BUF * 8];
+                clip_pfx_params_t *cp = &cl->pfx_params;
+                int hasDelay  = (cp->delay_level > 0);
+                int hasRandom = (cp->note_random > 0)
+                             || (cp->seq_arp_style == 8) || (cp->seq_arp_style == 9)
+                             || (cp->fb_note_random > 0 && hasDelay);
+                int loops     = hasRandom ? 8 : 1;
+                int wrap_from = hasDelay  ? 0 : loops;
+                uint32_t span = 0, cyc = 0;
+                int n = render_melodic_clip(inst, t_idx, cidx, loops, wrap_from,
+                                            rmc_au, BAKE_BUF * 8, &span, &cyc, 0);
+                (void)cyc;
+                if (n <= 0 || !span) return 0;
+                int k, m = 0;
+                for (k = 0; k < n; k++) {
+                    if ((int)rmc_au[k].pitch - AU_NOTE_BASE < 0 || (int)rmc_au[k].pitch - AU_NOTE_BASE >= AU_MAX_SLICES) continue;
+                    xn_au[m].tick = rmc_au[k].tick;
+                    xn_au[m].gate = rmc_au[k].gate ? rmc_au[k].gate : 1;
+                    xn_au[m].slice = (int16_t)(rmc_au[k].pitch - AU_NOTE_BASE);
+                    m++;
+                }
+                char wav[256];
+                snprintf(wav, sizeof wav, "%s/au_%d_%d.wav", au_export_dir, t_idx, cidx);
+                double bpm = inst->tracks[0].pfx.cached_bpm > 0 ? inst->tracks[0].pfx.cached_bpm : (double)BPM_DEFAULT;
+                long fr = au_export_slice(inst, t_idx, cidx, xn_au, m, span, bpm, wav);
+                if (fr <= 0) return 0;
+                return snprintf(out, out_len, "S %ld %u|%s", fr, (unsigned)span, wav);
+            }
             if (!strcmp(p, "_export_cond")) {
                 /* Apply-Conductor export variant: identical to _export but folds
                  * the Conductor's transposition (non-destructively) against the
