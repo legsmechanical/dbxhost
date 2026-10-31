@@ -166,6 +166,23 @@ step('⭐⭐ a macro on Sample > Gain: touch + click picks it, a turn writes the
     assert(cell && String(cell.text) === ('+' + g + 'DB'), 'the page cell does not show the clip\'s Gain: ' + JSON.stringify(cell));
 });
 
+step('⭐ a BOUNDED leg turns across its own span: Tempo held to 120-140 BPM steps 0.1 BPM a detent, unranged 5 BPM', () => {
+    const tempoStep = (lo, hi) => {
+        GET['t4_au_info_0'] = INFO(0); A.auMarkStale(4, 0); ticks(2);       /* bpm10 1200 */
+        S.trackMacros[4][0] = { v: null, legs: [{ kind: 'au', key: 'au_bpm', lo, hi }] };
+        ticks(3);
+        sets.length = 0;
+        for (let i = 0; i < 8 && !sent('t4_au_set_bpm').length; i++) { cc(71, 1); ticks(1); }
+        const w = sent('t4_au_set_bpm');
+        assert(w.length >= 1, 'the turn did not write Tempo: ' + JSON.stringify(sets));
+        return parseInt(w[0].split(' ')[1], 10) - 1200;
+    };
+    const ranged = tempoStep((1200 - 1) / 9998, (1400 - 1) / 9998);
+    assert(ranged === 1, 'a 120-140 leg moved ' + ranged + ' tenths of a BPM, not 1');
+    const whole = tempoStep(0, 1);
+    assert(whole === 50, 'an unranged leg moved ' + whole + ' tenths, not 50 (the page law over 1..9999)');
+});
+
 step('off an Audio track the rows are gone and the macro reads UNASSIGNED', () => {
     S.trackPadMode[4] = 0;
     const ids = snd.soundKnobTargetsForTest().map(t => t.id);

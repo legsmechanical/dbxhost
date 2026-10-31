@@ -2437,7 +2437,9 @@ Ctff          Syn>cutoff
   hear a range as you set it.
 - **Travel** — **Bounded** (the default) keeps the parameter's own feel and stops
   at the range; **Full** spreads the range across the knob's whole sweep. Full
-  suits a filter, not a parameter with only a few values.
+  suits a filter, not a parameter with only a few values. On a dAVEBOx bank knob or
+  an Audio clip's setting, Bounded steps as finely as the range is narrow: Tempo held
+  to 120–140 BPM moves 0.1 BPM a detent.
 
 A knob on a single target behaves like that target: its own dial, its own steps.
 A knob on **several** targets shows its own position as a percentage under a short

@@ -6536,6 +6536,14 @@ function bankMacroTravel(meta) {
     const sens = (meta.sens && meta.sens > 1) ? meta.sens : pageIntDetents(meta.min, meta.max);
     return { step, sens };
 }
+/* ...and for a macro LEG on one: a ranged leg turns across its OWN span (Josh,
+ * 2026-10-31: bounded at 120-140 BPM, "pretty useless if i can only make 4 big
+ * 5 bpm jumps") — the same law, over Lo..Hi instead of the whole range. */
+function legIntTravel(leg, meta) {
+    if (!legRanged(leg)) return bankMacroTravel(meta);
+    const [a, b] = legBounds(leg, meta.min, meta.max);
+    return bankMacroTravel(Object.assign({}, meta, { min: Math.round(a), max: Math.round(b) }));
+}
 function bankMacroCell(m, meta, v) {
     const span = meta.max - meta.min;
     const cell = { label: meta.abbrev, name: meta.full, text: String(meta.fmt ? meta.fmt(v) : v).toUpperCase() };
@@ -7043,7 +7051,7 @@ function macroTick() {
             const meta = auMacroMeta(m);
             const cur = meta ? auMacroValue(S.track, m.key, false) : null;
             if (cur == null) { S.knobAccum[i] = 0; continue; }
-            const tr = bankMacroTravel(meta);
+            const tr = legIntTravel(m, meta);
             let steps = 0;
             while (S.knobAccum[i] >= tr.sens) { steps++; S.knobAccum[i] -= tr.sens; }
             while (S.knobAccum[i] <= -tr.sens) { steps--; S.knobAccum[i] += tr.sens; }
@@ -7056,7 +7064,7 @@ function macroTick() {
         if (m && m.kind === 'bank') {
             const meta = bankMacroMeta(m);
             if (!meta) { S.knobAccum[i] = 0; continue; }
-            const tr = bankMacroTravel(meta);
+            const tr = legIntTravel(m, meta);
             let steps = 0;
             while (S.knobAccum[i] >= tr.sens) { steps++; S.knobAccum[i] -= tr.sens; }
             while (S.knobAccum[i] <= -tr.sens) { steps--; S.knobAccum[i] += tr.sens; }

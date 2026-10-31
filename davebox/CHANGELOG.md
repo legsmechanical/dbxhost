@@ -42,6 +42,8 @@ the section into a versioned heading at release time.
     SLICES' **ALL SLICES** settings, record and lock like any knob. A playing lane moves
     the sound live, chops already sounding included, and each setting comes back on Stop.
     **+ Add lane** and the macro picker offer them too (**Sample**, **All Slices**).
+  - A macro with a range on a dAVEBOx bank knob or an Audio setting steps across that
+    range, not the whole one (Tempo held to 120–140 BPM: 0.1 BPM a detent, not 5).
   - **LIVE ARP** plays chops (**Step** in place of Oct); NOTE FX keeps what doesn't move
     a pitch; there is no DELAY. Muting an Audio track silences it like a bus, so its loop
     keeps time. **Delete + clip** clears the sequence only; **Shift + Delete** resets the
