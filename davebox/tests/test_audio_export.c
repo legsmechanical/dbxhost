@@ -152,8 +152,8 @@ int main(void) {
     {
         uint32_t frames, rate;
         int ch;
-        /* the last step's chop held to a 3-step gate on a 16-step clip: gated
-         * play, so it runs over the loop point into steps 0..1 */
+        /* the last step's chop held to a 3-step gate on a 16-step clip, in
+         * Loop play, so it runs over the loop point into steps 0..1 */
         clip_t *cl = &inst->tracks[4].clips[0];
         int i;
         for (i = 0; i < cl->note_count; i++) if (cl->notes[i].active) cl->notes[i].active = 0;
@@ -162,21 +162,20 @@ int main(void) {
         hx_set_param(h, "t4_c0_step_15_toggle", "0");
         HX_ASSERT(cl->note_count == 1, "the one step did not land");
         cl->notes[0].gate = 24 * 3;
+        hx_set_param(h, "t4_au_all_play", "0 2");    /* AU_PLAY_LOOP: it sounds for its gate */
         HX_ASSERT(hx_get_param(h, "t4_c0_au_export", b, sizeof b) > 0 && b[0] == 'S', "no render of one step");
         snprintf(p, sizeof p, "%s/au_4_0.wav", stage);
         int16_t *w = read_wav(p, &frames, &rate, &ch);
         HX_ASSERT(w, "no WAV of one step");
-        /* chop 0 plays 2756 frames from the last step's start; a step is
-         * longer than that at 120, so the wrap carries the tail only when the
-         * step is shorter — what must hold either way: the render's first
-         * frames equal what the chop would be playing then, or silence when
-         * it has ended before the loop point */
         double bpm = inst->tracks[0].pfx.cached_bpm > 0 ? inst->tracks[0].pfx.cached_bpm : (double)BPM_DEFAULT;
         double fpt = 44100.0 * 60.0 / (bpm * 96.0);
         uint32_t stepf = (uint32_t)(24 * fpt + 0.5), from = (uint32_t)(15 * 24 * fpt + 0.5);
         HX_ASSERT(w[from + 10] == 11, "the last step's chop did not start on it");
-        if (stepf < 2756) HX_ASSERT(w[10] == 1 + (int)(frames - from + 10), "the chop over the loop point is not at the start");
-        else HX_ASSERT(w[10] == 0, "something sounded at the start of a clip whose only chop ended");
+        /* Loop play holds the chop for its 3-step gate: on through steps 0
+         * and 1 of the next pass, so the render's start sounds; released at
+         * the gate's end (step 2), silence well after it */
+        HX_ASSERT(w[10] != 0 && w[stepf + 10] != 0, "the chop held over the loop point is not at the start");
+        HX_ASSERT(w[2 * stepf + 1000] == 0, "the chop sounded past its gate");
         free(w);
     }
     printf("  ok   — the loop point carries what sounds over it\n");
