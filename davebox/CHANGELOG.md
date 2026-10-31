@@ -167,6 +167,9 @@ the section into a versioned heading at release time.
   and the instrument shortcut open it.
 
 ### Fixed
+- **Undoing a scene bake with Apply Conductor brings the responders back on screen.**
+  The tracks came back responding, but the Conductor's RESPONDERS bank still showed
+  them off, and the next scene bake did not offer Apply Conductor.
 - **Audio: a step's page names its chop** (it showed a note name, D-2 for chop 3).
 - **Audio: Vintage plays when dAVEBOx follows Move's clock** — it was silent there.
 - **Audio: Vintage with Nudge earlier** starts the loop further in, instead of

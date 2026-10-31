@@ -47,7 +47,7 @@ import {
 import { auReadTrack, auForgetTrack, isAudioTrack, auRead } from './ui_audio.mjs';
 import { Red } from '/data/UserData/schwung/shared/constants.mjs';
 
-import { S } from './ui_state.mjs';
+import { S, conductorTrackIdx } from './ui_state.mjs';
 import { slotIndex, syncLinkAudioRoutingFromRoutes,
          invalidateLinkAudioRoutingCache, linkAudioRoutingJustEnabled,
          engineLoadedModule, engineLoadModule, engineSetChainParam, engineSet, engineSaveState } from './ui_engine.mjs';
@@ -2265,6 +2265,28 @@ function _syncClipsFromDspInner() {
 /* Targeted re-sync after undo/redo: re-read only the affected clips rather than all 64.
  * infoStr format: "d t c" (drum) or "m t0 c0 t1 c1 ..." (melodic, 1-16 pairs).
  * Falls back to full syncClipsFromDsp() if infoStr is missing or unparseable. */
+/* The Conductor's clip c: its per-track responder bank values (RESP / TIMING /
+ * OCT, the CdLk) read into the mirror. GET shapes: _cond_resp / _cond_when =
+ * 8-char '0'/'1' strings; _cond_oct = 8 space-separated signed ints. */
+export function readConductorClip(ct, c, get = host_module_get_param) {
+    const resp = get('t' + ct + '_c' + c + '_cond_resp');
+    const when = get('t' + ct + '_c' + c + '_cond_when');
+    const oct  = get('t' + ct + '_c' + c + '_cond_oct');
+    if (typeof resp === 'string' && resp.length >= NUM_TRACKS)
+        for (let k = 0; k < NUM_TRACKS; k++) S.condResp[c][k] = resp.charAt(k) === '1' ? 1 : 0;
+    if (typeof when === 'string' && when.length >= NUM_TRACKS)
+        for (let k = 0; k < NUM_TRACKS; k++) S.condWhen[c][k] = when.charAt(k) === '1' ? 1 : 0;
+    if (typeof oct === 'string' && oct.length > 0) {
+        const op = oct.split(' ');
+        for (let k = 0; k < NUM_TRACKS && k < op.length; k++) {
+            const ov = parseInt(op[k], 10);
+            if (!isNaN(ov)) S.condOct[c][k] = ov;
+        }
+    }
+    const lk = get('t' + ct + '_c' + c + '_cond_lock');
+    S.condLock[c] = (lk === '1' || lk === 1) ? 1 : 0;
+}
+
 export function syncClipsTargeted(infoStr) {
     if (!infoStr) { syncClipsFromDsp(); return; }
     const parts = infoStr.split(' ');
@@ -2306,6 +2328,9 @@ export function syncClipsTargeted(infoStr) {
         /* an Audio clip's sample side came back with it (a reload reads as
          * loading, polled until it lands) */
         if (isAudioTrack(t)) auRead(t, c);
+        /* the Conductor's clip: its responder flags came back too (an Apply
+         * Conductor bake had turned them off) */
+        if (t === conductorTrackIdx()) readConductorClip(t, c);
         const _ath = host_module_get_param('t' + t + '_c' + c + '_at_has');
         S.clipAtHas[t][c] = (_ath !== null && parseInt(_ath, 10) === 1);
     }

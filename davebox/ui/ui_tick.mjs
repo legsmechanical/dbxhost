@@ -89,7 +89,7 @@ import { auConvertStart, auConvertTick, auConvertApply } from './ui_audio_conver
 import { auConvertToKit } from './ui_audio_kit.mjs';
 import { openAudioChooser, closeAudioChooser, audioChooserTick } from './ui_audio_chooser.mjs';
 import { closeAudioEditor, closeAudioPanel, auEditorFollowClip } from './ui_audio_editor.mjs';
-import { applyInstrChoice } from './ui_dsp_bridge.mjs';
+import { applyInstrChoice, readConductorClip } from './ui_dsp_bridge.mjs';
 import { INSTR_NONE, PAD_MODE_AUDIO } from './ui_constants.mjs';
 import { bankListForMode } from './ui_pure.mjs';
 import { soundTrackTypeChanged } from './ui_sound.mjs';
@@ -1015,29 +1015,7 @@ export function _tickImpl() {
                         _ck.push('t' + _ct + '_c' + _c + _s);
                 prefetchKeys(_ck);
                 try {
-                for (let _c = 0; _c < NUM_CLIPS; _c++) {
-                    const _resp = dspGet('t' + _ct + '_c' + _c + '_cond_resp');
-                    const _when = dspGet('t' + _ct + '_c' + _c + '_cond_when');
-                    const _oct  = dspGet('t' + _ct + '_c' + _c + '_cond_oct');
-                    if (typeof _resp === 'string' && _resp.length >= NUM_TRACKS) {
-                        for (let _k = 0; _k < NUM_TRACKS; _k++)
-                            S.condResp[_c][_k] = (_resp.charAt(_k) === '1') ? 1 : 0;
-                    }
-                    if (typeof _when === 'string' && _when.length >= NUM_TRACKS) {
-                        for (let _k = 0; _k < NUM_TRACKS; _k++)
-                            S.condWhen[_c][_k] = (_when.charAt(_k) === '1') ? 1 : 0;
-                    }
-                    if (typeof _oct === 'string' && _oct.length > 0) {
-                        const _op = _oct.split(' ');
-                        for (let _k = 0; _k < NUM_TRACKS && _k < _op.length; _k++) {
-                            const _ov = parseInt(_op[_k], 10);
-                            if (!isNaN(_ov)) S.condOct[_c][_k] = _ov;
-                        }
-                    }
-                    /* CdLk: single 0/1 per clip. */
-                    const _clk = dspGet('t' + _ct + '_c' + _c + '_cond_lock');
-                    S.condLock[_c] = (_clk === '1' || _clk === 1) ? 1 : 0;
-                }
+                for (let _c = 0; _c < NUM_CLIPS; _c++) readConductorClip(_ct, _c, dspGet);
                 } finally { releaseTrackDigests(); }
             } else {
                 S.conductorTrack = -1;

@@ -39,8 +39,9 @@ globalThis.host_write_file = (path, body) => {
 globalThis.host_module_set_param = (k, v) => { sets.push(['dsp', String(k), String(v)]); };
 let BAKE_AU_KEPT = '0';
 const AU_INFO = '2 0 0 16 1 16 0 88200 3 0 88200 44100 2 0 0 0 16 0 0 88200 1200 4 50 0|clip.wav';
+const GETS = {};
 globalThis.host_module_get_param = (k) => (k === 'print_state' ? PRINT_STATE : k === 'bake_au_kept' ? BAKE_AU_KEPT :
-    k === 't4_au_info_0' ? AU_INFO : '');
+    k === 't4_au_info_0' ? AU_INFO : GETS[k] !== undefined ? GETS[k] : '');
 const ENG = {};                                  /* `${slot}|${key}` */
 globalThis.shadow_get_param = (slot, key) => (ENG[slot + '|' + key] !== undefined ? ENG[slot + '|' + key] : '');
 globalThis.shadow_set_param = (slot, key, v) => { ENG[slot + '|' + key] = String(v); sets.push(['chain', slot + '|' + key, String(v)]); return 1; };
@@ -244,6 +245,16 @@ step('⭐⭐ Apply Conductor on Audio tracks: asked for an Audio responder alone
     commitSceneBake(0, 1, 0, 1); ticks(4);
     assert(!/Still follows/.test((S.actionPopupLines || []).join(' ')) && !S.condResp[0][4] && !S.condResp[0][5],
            'all folded, yet: ' + JSON.stringify(S.actionPopupLines) + ' ' + JSON.stringify(S.condResp[0]));
+    /* Undo brings the engine's flags back: the screen's come back with them
+     * (it went on showing them off, and the next bake did not ask) */
+    GETS['last_restore'] = 'm 6 0 4 0 5 0';
+    GETS['t6_c0_cond_resp'] = '00001100'; GETS['t6_c0_cond_when'] = '00000100';
+    GETS['t6_c0_cond_oct'] = '0 0 0 0 0 1 0 0'; GETS['t6_c0_cond_lock'] = '1';
+    S.pendingUndoSync = 1; ticks(1);
+    assert(S.condResp[0][4] === 1 && S.condResp[0][5] === 1 && S.condWhen[0][5] === 1 && S.condOct[0][5] === 1 && S.condLock[0] === 1,
+           'the Undo did not bring the responders back on screen: ' + JSON.stringify([S.condResp[0], S.condWhen[0], S.condOct[0], S.condLock[0]]));
+    assert(sceneBakeHasConductor(0), 'after the Undo the next bake would not ask Apply Conductor');
+    for (const k of Object.keys(GETS)) delete GETS[k];
     for (let t = 0; t < 8; t++) S.trackPadMode[t] = keep[t];
 });
 
