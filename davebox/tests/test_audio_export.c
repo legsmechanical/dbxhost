@@ -74,7 +74,7 @@ static int16_t g_live[44100 * 7];
  * agrees exactly a tick on); the render keeps the grid, as Live will, so
  * those are compared a tick later. A Vintage clip whose pieces carry on (AU_JOIN) differs bar
  * to bar live as well, so only one that cuts every piece is compared. */
-static int vs_live(int sync, int bpm10, int nudge) {
+static int vs_live(int sync, int bpm10, int nudge, int rot) {
     hx_t *h = hx_create(NULL);
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
     char p[300], b[1024];
@@ -89,6 +89,7 @@ static int vs_live(int sync, int bpm10, int nudge) {
     if (sync < 0) hx_set_param(h, "t4_au_set_mode", "0 1");
     else { snprintf(b, sizeof b, "0 %d", sync); hx_set_param(h, "t4_au_set_sync", b); }
     if (nudge) { snprintf(b, sizeof b, "0 %d", nudge); hx_set_param(h, "t4_au_set_nudge", b); }
+    if (rot) { snprintf(b, sizeof b, "0 %d", rot); hx_set_param(h, "t4_au_set_rot", b); }
     if (hx_get_param(h, "t4_c0_au_export", b, sizeof b) <= 0 || b[0] != (sync < 0 ? 'S' : 'R')) return -1;
     snprintf(p, sizeof p, "%s/au_4_0.wav", au_export_dir);
     int16_t *w = read_wav(p, &frames, &rate, &ch);
@@ -198,6 +199,23 @@ int main(void) {
         }
         HX_ASSERT(bad == 0, "Pitch did not retune the sample to fill the clip");
         free(w);
+        /* Shift a beat: the sample starts at the clip's tick 96, its last
+         * beat wrapped round before it. Checked against the grid, not the
+         * engine: live, a Pitch loop restarts at Shift on its block's
+         * boundary, and drifts 4 sample frames a bar (seen 2026-10-31) */
+        hx_set_param(h, "t4_au_set_rot", "0 96");
+        HX_ASSERT(hx_get_param(h, "t4_c0_au_export", b, sizeof b) > 0 && b[0] == 'R', "a Shifted Pitch clip was not rendered");
+        w = read_wav(p, &frames, &rate, &ch);
+        HX_ASSERT(w, "no Shifted Pitch render");
+        {
+            double half = 44100.0 / (384.0 * fpt), sh = 96 * fpt;
+            int want_a = 1 + (int)((288 * fpt + 2000) * half + 0.5) % 30000;       /* before: the last beat */
+            int want_b = 1 + (int)((3 * 10000.0 - sh) * half + 0.5) % 30000;       /* after: from the top */
+            HX_ASSERT(abs(w[2000] - want_a) <= 2, "before its Shift a clip does not play its wrapped end");
+            HX_ASSERT(abs(w[30000] - want_b) <= 2, "a Shifted clip does not start its sample at the Shift");
+        }
+        free(w);
+        hx_set_param(h, "t4_au_set_rot", "0 0");
         printf("  ok   — a Sync Pitch Loop clip renders, retuned to fill the clip\n");
 
         /* Vintage: tick j of the sample's own Tempo sounds at the clip's
@@ -340,15 +358,17 @@ int main(void) {
     hx_destroy(h);
 
     {
-        /* sync, the sample's Tempo x10, Nudge ms, frames allowed to differ:
+        /* sync, the sample's Tempo x10, Nudge ms, frames allowed to differ,
+         * Shift ticks:
          * a Nudge puts Vintage's pieces between ticks, where live rounds a
          * piece's frame its own way — one frame, which inside a crossfade
          * over the ramp's jump back to 1 is one crossfade of difference */
-        static const int cases[][4] = { { 2, 2400, 0, 16 }, { 2, 1500, 0, 16 }, { 2, 900, 0, 16 }, { 2, 2400, 37, 16 },
+        static const int cases[][5] = { { 2, 2400, 0, 16 }, { 2, 1500, 0, 16 }, { 2, 900, 0, 16 }, { 2, 2400, 37, 16 },
                                         { 1, 300, 0, 0 }, { 1, 1200, 0, 0 }, { 1, 300, 37, AU_VINTAGE_XF }, { 1, 300, -61, AU_VINTAGE_XF },
-                                        { -1, 2400, 0, 16 }, { -1, 900, 0, 16 } };
-        for (k = 0; k < 10; k++) {
-            int bad = vs_live(cases[k][0], cases[k][1], cases[k][2]);
+                                        { -1, 2400, 0, 16 }, { -1, 900, 0, 16 },
+                                        { 1, 300, 0, 0, 50 } };
+        for (k = 0; k < 11; k++) {
+            int bad = vs_live(cases[k][0], cases[k][1], cases[k][2], cases[k][4]);
             if (bad < 0 || bad > cases[k][3])
                 printf("FAIL: Sync %d at %d, Nudge %d: %d frames differ from the engine\n", cases[k][0], cases[k][1], cases[k][2], bad);
             HX_ASSERT(bad >= 0 && bad <= cases[k][3], "a render does not match the engine playing it");
