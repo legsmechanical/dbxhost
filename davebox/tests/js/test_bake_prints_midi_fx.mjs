@@ -37,7 +37,7 @@ globalThis.host_write_file = (path, body) => {
     return true;
 };
 globalThis.host_module_set_param = (k, v) => { sets.push(['dsp', String(k), String(v)]); };
-let BAKE_AU_KEPT = '0';
+let BAKE_AU_KEPT = '0 0';                         /* "seq kept" */
 const AU_INFO = '2 0 0 16 1 16 0 88200 3 0 88200 44100 2 0 0 0 16 0 0 88200 1200 4 50 0|clip.wav';
 const GETS = {};
 globalThis.host_module_get_param = (k) => (k === 'print_state' ? PRINT_STATE : k === 'bake_au_kept' ? BAKE_AU_KEPT :
@@ -230,19 +230,24 @@ step('⭐⭐ Apply Conductor on Audio tracks: asked for an Audio responder alone
     S.trackPadMode[4] = C.PAD_MODE_DRUM; S.trackPadMode[5] = C.PAD_MODE_DRUM;
     assert(!sceneBakeHasConductor(0), 'control: drum tracks offered Apply Conductor');
     S.trackPadMode[4] = C.PAD_MODE_AUDIO; S.trackPadMode[5] = C.PAD_MODE_AUDIO;
-    BAKE_AU_KEPT = String(1 << 5);                    /* the engine: T6's shift changes */
     S.auInfo[4][0] = null;
     sets.length = 0; S.pendingDefaultSetParams.length = 0; S.actionPopupLines = [];
+    BAKE_AU_KEPT = '7 0';
     commitSceneBake(0, 1, 0, 1);
     assert(S.pendingDefaultSetParams.some((e) => e.key === 'bake_scene' && e.val === '0 1 0 1'), 'no bake sent');
-    ticks(4);
+    /* the bake still waits in the queue: the engine's count has not moved — nothing read yet */
+    ticks(6);
+    assert(!/Still follows/.test((S.actionPopupLines || []).join(' ')) && S.condResp[0][4] === 1 && !S.auInfo[4][0],
+           'the resync read before the bake had run: ' + JSON.stringify(S.actionPopupLines));
+    BAKE_AU_KEPT = '8 ' + (1 << 5);                   /* it ran: T6's shift changes */
+    ticks(2);
     const txt = (S.actionPopupLines || []).join(' ');
     assert(/Still follows/.test(txt) && /T6/.test(txt) && !/T5/.test(txt), 'notice: ' + JSON.stringify(S.actionPopupLines));
     assert(S.condResp[0][4] === 0 && S.condResp[0][5] === 1, 'responders: ' + JSON.stringify(S.condResp[0]));
     assert(S.auInfo[4][0] && S.auInfo[4][0].pitch === 3, 'the folded clip\'s Pitch was not read back: ' + JSON.stringify(S.auInfo[4][0]));
     /* nothing kept: no notice */
-    S.condResp[0] = [0, 0, 0, 0, 1, 1, 0, 0]; BAKE_AU_KEPT = '0'; S.actionPopupLines = [];
-    commitSceneBake(0, 1, 0, 1); ticks(4);
+    S.condResp[0] = [0, 0, 0, 0, 1, 1, 0, 0]; S.actionPopupLines = [];
+    commitSceneBake(0, 1, 0, 1); BAKE_AU_KEPT = '9 0'; ticks(4);
     assert(!/Still follows/.test((S.actionPopupLines || []).join(' ')) && !S.condResp[0][4] && !S.condResp[0][5],
            'all folded, yet: ' + JSON.stringify(S.actionPopupLines) + ' ' + JSON.stringify(S.condResp[0]));
     /* Undo brings the engine's flags back: the screen's come back with them

@@ -1272,7 +1272,10 @@ export function _tickImpl() {
     }
     if (S.pendingSceneBakeResync > 0) {
         S.pendingSceneBakeResync--;
-        if (S.pendingSceneBakeResync === 0) {
+        const _bk = S.pendingSceneBakeResync === 0 ? String(host_module_get_param('bake_au_kept') || '').split(' ') : null;
+        if (_bk && (parseInt(_bk[0], 10) | 0) === S.pendingSceneBakeSeq && S.pendingSceneBakeWait++ < 100) {
+            S.pendingSceneBakeResync = 1;                     /* the bake has not run yet: next tick */
+        } else if (_bk) {
             const sc = S.pendingSceneBakeClip;
             for (let _t = 0; _t < NUM_TRACKS; _t++) {
                 if (S.trackPadMode[_t] === PAD_MODE_DRUM) {
@@ -1304,7 +1307,7 @@ export function _tickImpl() {
              * track still following — say which (bake_au_kept, bit t) */
             if (S.pendingSceneBakeApply) {
                 S.pendingSceneBakeApply = false;
-                const kept = parseInt(host_module_get_param('bake_au_kept'), 10) | 0;
+                const kept = parseInt(_bk[1], 10) | 0;
                 const mask = S.condResp[sc | 0], ct = conductorTrackIdx(), names = [];
                 for (let _t = 0; _t < NUM_TRACKS; _t++) {
                     if (_t === ct || !isAudioTrack(_t) || !mask || !mask[_t]) continue;

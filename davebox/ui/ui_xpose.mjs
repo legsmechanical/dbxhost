@@ -50,7 +50,11 @@ export function commitSceneBake(clipIdx, loops, wrap, apply) {
     else showActionPopup('SCENE', 'BAKED');
     S.pendingSceneBakeResync = 2;
     S.pendingSceneBakeClip   = clipIdx;
-    S.pendingSceneBakeApply  = !!apply;   /* the resync asks which Audio tracks were folded */
+    /* the resync waits for THIS bake to have run (it waits in the queue; the
+     * engine counts its bakes), then asks which Audio tracks were folded */
+    S.pendingSceneBakeApply  = !!apply;
+    S.pendingSceneBakeSeq    = parseInt(host_module_get_param('bake_au_kept'), 10) | 0;
+    S.pendingSceneBakeWait   = 0;
     /* DSP cleared the conductor clip's responder flags for the baked tracks.
      * Mirror that locally so the Responder bank UI reflects the auto-disable
      * without waiting for the next full per-clip re-read. */

@@ -1820,7 +1820,7 @@ int main(void) {
         hx_set_param(h, "bake_scene", "0 1 0 1");
         HX_ASSERT(ac->pitch == 3 && !cc->cond_resp[4], "bake cond: one shift did not fold into a Loop clip's Pitch");
         hx_get_param(h, "bake_au_kept", b, sizeof b);
-        HX_ASSERT(!strcmp(b, "0"), "bake cond: a folded track reads as kept");
+        HX_ASSERT(!strcmp(b, "1 0"), "bake cond: a folded track reads as kept, or the bake was not counted");
 
         /* +5 from step 8: a Loop on Next takes the shift at its wrap only — still one */
         snprintf(v, sizeof v, "%d", R + 5); hx_set_param(h, "t6_c0_step_8_toggle", v);
@@ -1833,7 +1833,7 @@ int main(void) {
         hx_set_param(h, "bake_scene", "0 1 0 1");
         HX_ASSERT(ac->pitch == 0 && cc->cond_resp[4], "bake cond: a changing shift was folded, or the track stopped following");
         hx_get_param(h, "bake_au_kept", b, sizeof b);
-        HX_ASSERT(!strcmp(b, "16"), "bake cond: the kept track is not named (bit 4)");
+        HX_ASSERT(!strcmp(b, "3 16"), "bake cond: the kept track is not named (bit 4), or the bakes not counted");
         cc->cond_when[4] = 0;
 
         /* a Slice clip: the shift at each chop's onset; the chops never move */

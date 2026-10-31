@@ -316,6 +316,7 @@ static int sp_globals_misc(sp_ctx_t *cx) {
                     bake_clip(inst, t, sc, sn, sw, sa);
             }
             inst->bake_au_kept = au_kept;
+            inst->bake_seq++;
             inst->undo_locked = 0;
             /* Auto-disable: clear the Conductor clip C's responder flags for the
              * tracks just folded, so live playback won't double-apply. */
