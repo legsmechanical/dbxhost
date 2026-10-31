@@ -38,7 +38,9 @@ globalThis.host_write_file = (path, body) => {
 };
 globalThis.host_module_set_param = (k, v) => { sets.push(['dsp', String(k), String(v)]); };
 let BAKE_AU_KEPT = '0';
-globalThis.host_module_get_param = (k) => (k === 'print_state' ? PRINT_STATE : k === 'bake_au_kept' ? BAKE_AU_KEPT : '');
+const AU_INFO = '2 0 0 16 1 16 0 88200 3 0 88200 44100 2 0 0 0 16 0 0 88200 1200 4 50 0|clip.wav';
+globalThis.host_module_get_param = (k) => (k === 'print_state' ? PRINT_STATE : k === 'bake_au_kept' ? BAKE_AU_KEPT :
+    k === 't4_au_info_0' ? AU_INFO : '');
 const ENG = {};                                  /* `${slot}|${key}` */
 globalThis.shadow_get_param = (slot, key) => (ENG[slot + '|' + key] !== undefined ? ENG[slot + '|' + key] : '');
 globalThis.shadow_set_param = (slot, key, v) => { ENG[slot + '|' + key] = String(v); sets.push(['chain', slot + '|' + key, String(v)]); return 1; };
@@ -228,6 +230,7 @@ step('⭐⭐ Apply Conductor on Audio tracks: asked for an Audio responder alone
     assert(!sceneBakeHasConductor(0), 'control: drum tracks offered Apply Conductor');
     S.trackPadMode[4] = C.PAD_MODE_AUDIO; S.trackPadMode[5] = C.PAD_MODE_AUDIO;
     BAKE_AU_KEPT = String(1 << 5);                    /* the engine: T6's shift changes */
+    S.auInfo[4][0] = null;
     sets.length = 0; S.pendingDefaultSetParams.length = 0; S.actionPopupLines = [];
     commitSceneBake(0, 1, 0, 1);
     assert(S.pendingDefaultSetParams.some((e) => e.key === 'bake_scene' && e.val === '0 1 0 1'), 'no bake sent');
@@ -235,6 +238,7 @@ step('⭐⭐ Apply Conductor on Audio tracks: asked for an Audio responder alone
     const txt = (S.actionPopupLines || []).join(' ');
     assert(/Still follows/.test(txt) && /T6/.test(txt) && !/T5/.test(txt), 'notice: ' + JSON.stringify(S.actionPopupLines));
     assert(S.condResp[0][4] === 0 && S.condResp[0][5] === 1, 'responders: ' + JSON.stringify(S.condResp[0]));
+    assert(S.auInfo[4][0] && S.auInfo[4][0].pitch === 3, 'the folded clip\'s Pitch was not read back: ' + JSON.stringify(S.auInfo[4][0]));
     /* nothing kept: no notice */
     S.condResp[0] = [0, 0, 0, 0, 1, 1, 0, 0]; BAKE_AU_KEPT = '0'; S.actionPopupLines = [];
     commitSceneBake(0, 1, 0, 1); ticks(4);

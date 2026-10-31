@@ -946,8 +946,7 @@ static int au_bake_cond(seq8_instance_t *inst, int t, int c, int *semis) {
     int have = 0, v0 = 0, k, ni, oct;
     *semis = 0;
     if (inst->conductor_track < 0 || t == inst->conductor_track) return 0;
-    cc = &inst->tracks[inst->conductor_track].clips[c];
-    if (!cc->cond_resp[t]) return 0;
+    cc = &inst->tracks[inst->conductor_track].clips[c];   /* the caller checked it responds */
     oct = cc->cond_oct[t];
     pfx_init_defaults(&cfx);
     pfx_apply_params(&cfx, &cc->pfx_params);

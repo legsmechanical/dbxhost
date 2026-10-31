@@ -1855,6 +1855,32 @@ int main(void) {
         HX_ASSERT(cc->note_count == 1 || !cc->notes[1].active, "bake cond: the +5 note did not go");
         hx_set_param(h, "bake_scene", "0 1 0 1");
         HX_ASSERT(ac->pitch == 3 && !cc->cond_resp[4], "bake cond: a Slice clip's one shift did not fold");
+        /* a chop past the clip's end never plays: its shift does not count */
+        {
+            note_t *n = &ac_steps->notes[ac_steps->note_count - 1];
+            uint32_t was = n->tick;
+            snprintf(v, sizeof v, "%d", R + 5); hx_set_param(h, "t6_c0_step_8_toggle", v);   /* +5 back */
+            n->tick = 24 * 24;                                /* step 25: would land on the +5 */
+            ac->pitch = 0; cc->cond_resp[4] = 1;
+            for (int i = 0; i < ac_steps->note_count; i++) if (&ac_steps->notes[i] != n && ac_steps->notes[i].active) ac_steps->notes[i].tick = 0;
+            hx_set_param(h, "bake_scene", "0 1 0 1");
+            HX_ASSERT(ac->pitch == 3 && !cc->cond_resp[4], "bake cond: a chop past the end counted");
+            n->tick = was;
+            hx_set_param(h, "t6_c0_step_8_toggle", v);        /* +5 gone again */
+        }
+        /* the track's octave goes in with the shift */
+        ac->pitch = 0; cc->cond_resp[4] = 1; cc->cond_oct[4] = 1;
+        hx_set_param(h, "bake_scene", "0 1 0 1");
+        HX_ASSERT(ac->pitch == 15, "bake cond: the track's octave was not folded");
+        cc->cond_oct[4] = 0;
+        /* a Loop on Now, the Conductor's note let go mid-clip (no Lock): the
+         * shift ends there, so it changes — kept */
+        hx_set_param(h, "t4_au_set_mode", "0 0");
+        ac->pitch = 0; cc->cond_resp[4] = 1; cc->cond_when[4] = 1; cc->cond_lock = 0;
+        HX_ASSERT(cc->notes[0].active && cc->notes[0].gate < cc->length * 24, "setup: the Conductor note fills the clip");
+        hx_set_param(h, "bake_scene", "0 1 0 1");
+        HX_ASSERT(ac->pitch == 0 && cc->cond_resp[4], "bake cond: a shift that ends mid-clip was folded");
+        cc->cond_when[4] = 0; cc->cond_lock = 1;
         /* a Pitch that cannot hold it: left following */
         ac->pitch = 23; cc->cond_resp[4] = 1;
         hx_set_param(h, "bake_scene", "0 1 0 1");
