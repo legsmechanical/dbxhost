@@ -4286,8 +4286,8 @@ function knobLegRows() {
         const leg = legs[j];
         const a = asnFromMacro(leg);
         rows.push({ kind: 'leg', leg: j, label: legShortName(leg), hdr: true, value: knobAsnLabel(a) });
-        rows.push({ kind: 'lo', leg: j, label: ' Lo', value: Math.round(leg.lo * 100) + '%' });
-        rows.push({ kind: 'hi', leg: j, label: ' Hi', value: Math.round(leg.hi * 100) + '%' });
+        rows.push({ kind: 'lo', leg: j, label: ' Lo', value: legBoundText(leg, leg.lo) });
+        rows.push({ kind: 'hi', leg: j, label: ' Hi', value: legBoundText(leg, leg.hi) });
         /* TRAVEL, under the two bounds it qualifies (Josh, 2026-09-10). Two
          * states, so the click IS the edit — the slot-settings idiom for a
          * toggle; the jog also flips it while the row is being edited.
@@ -4330,12 +4330,39 @@ function knobLegTravelToggle(row) {
     S.dirty = true;
 }
 const LEG_RANGE_STEP = 0.01;
+/* A dAVEBOx bank knob's or an Audio setting's leg sets Lo / Hi IN ITS OWN
+ * UNITS (Josh, 2026-10-31: bounding Tempo at 120 and 140 BPM — 1 % of
+ * 0.1..999.9 BPM is 10 BPM). Its descriptor, else null: a module parameter's
+ * range stays a percentage. */
+function legUnitMeta(leg) {
+    if (leg.kind === AU_KIND) return auMacroMeta(leg);
+    if (leg.kind === 'bank') return bankMacroMeta(leg);
+    return null;
+}
+/* A bound's raw value, and the raw step a detent moves it: about a
+ * thousandth of the range (Tempo 1 BPM, Decay 5 ms), Shift a single unit. */
+function legBoundRaw(meta, f) { return Math.round(meta.min + f * (meta.max - meta.min)); }
+function legBoundStep(meta) { return S.shiftHeld ? 1 : Math.max(1, Math.round((meta.max - meta.min) / 1000)); }
+function legBoundText(leg, f) {
+    const meta = legUnitMeta(leg);
+    if (!meta) return Math.round(f * 100) + '%';
+    const v = legBoundRaw(meta, f);
+    return String(meta.fmt ? meta.fmt(v) : v);
+}
 function knobLegRangeTurn(row, delta) {
     const mp = macroMapping(S.knobIdx);
     const leg = macroLegs(mp)[row.leg];
     if (!leg) return;
     const was = leg[row.kind];
-    const nv = Math.max(0, Math.min(1, Math.round((was + delta * LEG_RANGE_STEP) * 100) / 100));
+    const um = legUnitMeta(leg);
+    let nv;
+    if (um && um.max > um.min) {
+        const st = legBoundStep(um);
+        /* onto the step's grid from wherever it was, then one step a detent */
+        const r = legBoundRaw(um, was), g = delta > 0 ? Math.floor(r / st) * st : Math.ceil(r / st) * st;
+        const raw = Math.max(um.min, Math.min(um.max, g + delta * st));
+        nv = (raw - um.min) / (um.max - um.min);
+    } else nv = Math.max(0, Math.min(1, Math.round((was + delta * LEG_RANGE_STEP) * 100) / 100));
     if (nv === was) return;
     leg[row.kind] = nv;
     /* ⭑ The caches are NOT dropped: a cell is the target's metadata and a val

@@ -2434,7 +2434,9 @@ Ctff          Syn>cutoff
 - **Lo** and **Hi** set how far the parameter travels as the knob goes from bottom
   to top. Set **Hi below Lo** and it runs backwards, so one knob can open a filter
   while it closes a reverb. On a list parameter they choose a span of the list. You
-  hear a range as you set it.
+  hear a range as you set it. A module parameter's range is a percentage; a dAVEBOx
+  bank knob's or an Audio clip setting's is in its own units (Tempo in BPM, 1 BPM a
+  detent, **Shift** for 0.1).
 - **Travel** — **Bounded** (the default) keeps the parameter's own feel and stops
   at the range; **Full** spreads the range across the knob's whole sweep. Full
   suits a filter, not a parameter with only a few values. On a dAVEBOx bank knob or

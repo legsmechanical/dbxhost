@@ -44,6 +44,7 @@ the section into a versioned heading at release time.
     **+ Add lane** and the macro picker offer them too (**Sample**, **All Slices**).
   - A macro with a range on a dAVEBOx bank knob or an Audio setting steps across that
     range, not the whole one (Tempo held to 120–140 BPM: 0.1 BPM a detent, not 5).
+    Its **Lo** and **Hi** are set and shown in the setting's own units (BPM, dB…), not %.
   - **LIVE ARP** plays chops (**Step** in place of Oct); NOTE FX keeps what doesn't move
     a pitch; there is no DELAY. Muting an Audio track silences it like a bus, so its loop
     keeps time. **Delete + clip** clears the sequence only; **Shift + Delete** resets the

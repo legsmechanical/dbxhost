@@ -183,6 +183,31 @@ step('⭐ a BOUNDED leg turns across its own span: Tempo held to 120-140 BPM ste
     assert(whole === 50, 'an unranged leg moved ' + whole + ' tenths, not 50 (the page law over 1..9999)');
 });
 
+step('⭐ Lo / Hi on an Audio leg are in its own units: Tempo shows BPM and steps 1 BPM a detent (Shift 0.1)', () => {
+    S.trackMacros[4][0] = { v: null, legs: [{ kind: 'au', key: 'au_bpm', lo: 0, hi: 1 }] };
+    ticks(2);
+    snd.soundSetViewForTest(20); snd.soundSetLegRowForTest(1);
+    const row = () => snd.soundKnobLegRowsForTest()[1];
+    assert(row().kind === 'lo' && row().value === '0.1', 'Lo reads ' + JSON.stringify(row()));
+    assert(snd.soundKnobLegRowsForTest()[2].value === '999.9', 'Hi reads ' + snd.soundKnobLegRowsForTest()[2].value);
+    click();                                                 /* edit Lo */
+    for (let i = 0; i < 120; i++) jog(1);
+    assert(row().value === '120.0', 'Lo after 120 detents: ' + row().value);
+    cc(49, 127); jog(1); jog(1); cc(49, 0);
+    assert(row().value === '120.2', 'Shift steps 0.1 BPM: ' + row().value);
+    jog(-1);
+    assert(row().value === '120.0', 'a plain detent down lands on the whole BPM: ' + row().value);
+    click(); ticks(1);
+    const lo = S.trackMacros[4][0].legs[0].lo;
+    assert(Math.round(1 + lo * 9998) === 1200, 'stored Lo is not 120.0 BPM: ' + lo);
+    /* a module parameter's leg is still a percentage */
+    S.trackMacros[4][0] = { v: null, legs: [{ kind: 'level', key: 'volume', lo: 0.25, hi: 1 }] };
+    ticks(1);
+    assert(row().value === '25%', 'a level leg\'s Lo reads ' + row().value);
+    S.trackMacros[4][0] = null;
+    snd.soundSetViewForTest(19); ticks(1);
+});
+
 step('off an Audio track the rows are gone and the macro reads UNASSIGNED', () => {
     S.trackPadMode[4] = 0;
     const ids = snd.soundKnobTargetsForTest().map(t => t.id);
