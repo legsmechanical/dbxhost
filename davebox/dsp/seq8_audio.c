@@ -1027,6 +1027,10 @@ static void au_stream_pin_slice(au_streamer_t *S, int si, uint32_t a, uint32_t b
     cb = (b - 1) >> AU_CHUNK_SHIFT;
     au_stream_want(S, si, ca);
     au_stream_want(S, si, cb);
+    /* a start within two blocks of its chunk's end runs into the next at
+     * once: that one too, whatever the count (a chop past 32 began silent
+     * until the streamer caught up — found by test, 2026-10-31) */
+    if ((a & (AU_CHUNK - 1)) + 2 * 128 > AU_CHUNK) au_stream_want(S, si, ca + 1);
     if (!full) return;                     /* past AU_PIN_FULL chops: one chunk each end */
     au_stream_want(S, si, ca + 1);
     if (cb) au_stream_want(S, si, cb - 1);

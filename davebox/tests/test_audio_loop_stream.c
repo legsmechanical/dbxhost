@@ -306,7 +306,11 @@ int main(void) {
     hx_render(h, 4);
     /* a Loop clip on Vintage moves through the sample as Free does (the
      * voices' read-ahead): its chops play no part, so none is pinned */
-    hx_set_param(h, "t4_au_set_tempo", "0 1");
+    /* (these keys were set_tempo / set_bars, which no longer exist and did
+     * nothing: the block ran on Sync Pitch — found 2026-10-31) */
+    int was_sync = inst->au_clip[4][0].sync;
+    hx_set_param(h, "t4_au_set_sync", "0 1");                   /* Vintage */
+    HX_ASSERT(inst->au_clip[4][0].sync == AU_SYNC_VINTAGE, "setup: the loop is not on Vintage");
     hx_render(h, 1);
     HX_ASSERT(inst->au_clipw[4][0].mode != AU_MODE_SLICE, "a Vintage Loop clip pins its chops");
     /* ...and the read-ahead alone keeps up with it: at a tempo well away
@@ -318,7 +322,7 @@ int main(void) {
         uint16_t was_len = lc->length;
         int b, r, heard;
         hx_set_param(h, "t4_au_set_start", "0 0");
-        hx_set_param(h, "t4_au_set_bars", "0 30");              /* 60 s: 30 bars at 120 */
+        hx_set_param(h, "t4_au_set_bpm", "0 1200");             /* 60 s: 30 bars at 120 */
         lc->length = 16;                                        /* one bar: it comes round often */
         for (b = 0; b < 2; b++)
             for (r = 0; r < 2; r++) {
@@ -347,7 +351,11 @@ int main(void) {
         hx_set_param(h, "t4_au_set_revrs", "0 0");
         lc->length = was_len;
     }
-    hx_set_param(h, "t4_au_set_tempo", "0 0");
+    {
+        char sv[16];
+        snprintf(sv, sizeof sv, "0 %d", was_sync);
+        hx_set_param(h, "t4_au_set_sync", sv);
+    }
     hx_render(h, 1);
 
     /* ---- two clips on one file share it; let go, it leaves the streamer ---- */

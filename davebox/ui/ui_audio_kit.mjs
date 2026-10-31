@@ -44,6 +44,7 @@ import { auInfo, auMarks, auReadSliceNow } from './ui_audio.mjs';
 import { showActionPopupFor } from './ui_persistence.mjs';
 import { prefetchKeys, releaseTrackDigests } from './ui_dsp_get.mjs';
 import { sanitizeName } from './ui_export.mjs';
+import { auIsSlice } from './ui_pure.mjs';
 
 export const USER_LIBRARY = '/data/UserData/UserLibrary';
 export const KIT_PRESETS  = USER_LIBRARY + '/Track Presets/dBx-slice';   /* Josh: "a subfolder of the user preset library called dBx-slice" */
@@ -202,7 +203,10 @@ function freeName(base, ext) {
 export function auConvertToKit(t, c) {
     const info = auInfo(t, c);
     if (info.state !== 2 || !info.name) { showActionPopupFor(2500, 'NO KIT', 'No sample'); return null; }
-    const chops = auMarks(t, c).slice(0, KIT_PADS);
+    /* a Slice clip's chops only (the menu offers it nowhere else; this says so
+     * too, rather than kit a Loop clip's unseen Even chops — found by test) */
+    if (!auIsSlice(info)) { showActionPopupFor(2500, 'NO KIT', 'Not a Slice clip'); return null; }
+    const all = auMarks(t, c), chops = all.slice(0, KIT_PADS);
     if (!chops.length) { showActionPopupFor(2500, 'NO KIT', 'No chops'); return null; }
     const dir = String(host_module_get_param('t' + t + '_au_dir') || '');
     if (!dir) { showActionPopupFor(2500, 'NO KIT', 'No project'); return null; }
@@ -226,6 +230,8 @@ export function auConvertToKit(t, c) {
         showActionPopupFor(2500, 'NO KIT', 'Could not save');
         return null;
     }
-    showActionPopupFor(3000, 'KIT SAVED', name, chops.length + ' pad' + (chops.length === 1 ? '' : 's'));
+    /* past 32 chops the kit holds the first 32: say how many were left out */
+    showActionPopupFor(3000, 'KIT SAVED', name, chops.length + ' pad' + (chops.length === 1 ? '' : 's') +
+                       (all.length > chops.length ? ' (' + (all.length - chops.length) + ' left out)' : ''));
     return name;
 }
