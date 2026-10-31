@@ -9577,6 +9577,19 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                     pos += snprintf(out + pos, (size_t)(out_len - pos), "%s=%s\n", fkey, val);
                 }
             }
+            /* an Audio track: every clip's sample info and the pad Layout (17
+             * requests before — review, 2026-10-31) */
+            if (tr->pad_mode == PAD_MODE_AUDIO) {
+                for (c = -1; c < NUM_CLIPS; c++) {
+                    if (c < 0) snprintf(fkey, sizeof(fkey), "t%d_au_layout", tidx);
+                    else snprintf(fkey, sizeof(fkey), "t%d_au_info_%d", tidx, c);
+                    int n = get_param(instance, fkey, val, (int)sizeof(val));
+                    if (n <= 0) continue;
+                    int need = (int)strlen(fkey) + 1 + n + 1;
+                    if (pos + need >= out_len) return pos;
+                    pos += snprintf(out + pos, (size_t)(out_len - pos), "%s=%s\n", fkey, val);
+                }
+            }
             return pos;
         }
 

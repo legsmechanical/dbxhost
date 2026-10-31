@@ -936,7 +936,8 @@ static void bake_drum_lane(seq8_instance_t *inst, int t, int c, int lane, int lo
  * every pass until both windows line up. Returns 1 and sets *semis then, 0
  * when it changes (or the Pitch cannot hold it): the clip is left alone and
  * the track keeps following live. Call before bake_clip changes the clip. */
-#define AU_BAKE_PASSES 64
+#define AU_BAKE_PASSES 64      /* what bounds the work: bake_scene runs on the SPI thread, and
+                                 * the Audio fold walks every note of every pass of the span */
 static int au_bake_cond(seq8_instance_t *inst, int t, int c, int *semis) {
     clip_t *cl = &inst->tracks[t].clips[c];
     clip_t *cc;

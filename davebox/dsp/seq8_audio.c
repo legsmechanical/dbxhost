@@ -1764,6 +1764,9 @@ static void au_warper_init(seq8_instance_t *inst) {
     X->inst = inst;
     X->in_max = 32768;                  /* Bungee asks for 16385 at 44.1 kHz; more for a faster rate */
     X->in = (float *)calloc(2 * (size_t)X->in_max, sizeof(float));
+    /* ~128 KB a track, held for the session — but a calloc this size is
+     * mapped zero pages on Linux: no memory is really taken until Warp
+     * writes them, so a project with no Audio pays nothing for them (review). */
     for (t = 0; t < NUM_TRACKS; t++) X->trk[t] = (au_warp_t *)calloc(1, sizeof(au_warp_t));
     X->run = 1;
 #ifdef SEQ8_TESTING
@@ -2113,6 +2116,8 @@ static void au_loader_do(au_loader_t *L, const au_req_t *q) {
         r.smp = au_pool_get(L, path, &err);
         if (r.smp && !r.smp->name[0]) snprintf(r.smp->name, sizeof r.smp->name, "%s", r.name);
         if (r.smp) {
+            /* read off the audio thread's own field, unsynchronised: an
+             * aligned double, and a torn read only skews one Tempo guess */
             double bpm = inst->tracks[q->track].pfx.cached_bpm;
             r.bpm10 = (uint16_t)au_guess_bpm10(r.smp, r.name, bpm > 0 ? bpm : 120.0);
         }

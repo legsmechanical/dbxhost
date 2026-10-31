@@ -201,7 +201,10 @@ static void au_watch_publish(seq8_instance_t *inst) {
                     if (v->whi > v->wlo && pos >= v->wlo && pos < v->whi) { lo = v->wlo; hi = v->whi; loop = 1; }
                 }
             } else {
-                /* the spare slot: Warp's stretcher, where it reads */
+                /* the spare slot: Warp's stretcher, where it reads. W->cmd is
+                 * read plainly here, on the SPI thread — fine, this thread is
+                 * its only writer (the stretcher copies it out through the
+                 * seqlock); the one place "the audio thread never reads W" bends */
                 au_warper_t *X = (au_warper_t *)inst->au_warper;
                 const au_warp_t *W = X ? X->trk[t] : NULL;
                 if (W && at->w.on && W->cmd.smp && !W->cmd.smp->pcm && W->cmd.fpt > 0 && W->cmd.P > 0) {

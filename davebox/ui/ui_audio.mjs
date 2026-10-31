@@ -29,6 +29,7 @@
 
 import { S, noteUndoUnit } from './ui_state.mjs';
 import { showActionPopupFor } from './ui_persistence.mjs';
+import { dspGet } from './ui_dsp_get.mjs';
 /* a cycle (ui_audio_editor imports this module): used only inside a function body */
 import { lazyFinish } from './ui_audio_editor.mjs';
 import { PAD_MODE_AUDIO, NUM_CLIPS, BANK_STEP, knobAltFor } from './ui_constants.mjs';
@@ -178,7 +179,8 @@ export function dspAnswer(key) {
 
 /* Re-read clip (t,c) now (tick context only). */
 export function auRead(t, c) {
-    const i = auParseInfo(host_module_get_param('t' + t + '_au_info_' + c));
+    /* dspGet: inside a bulk read (a project load) the track's digest carries it */
+    const i = auParseInfo(dspGet('t' + t + '_au_info_' + c));
     if (!i) return null;                          /* no answer (a timed-out read): still stale, read again */
     S.auInfo[t][c] = i;
     /* A clip with a sample has content (Session View, launching). */
@@ -207,7 +209,7 @@ export function auSlice(t, c, l) {
 /* Slice l's fields read now (tick context): Convert to kit reads every slice */
 export function auReadSliceNow(t, c, l) { return auReadSlice(t, c, l); }
 function auReadSlice(t, c, l) {
-    const raw = host_module_get_param('t' + t + '_au_sl_' + c + '_' + l);
+    const raw = dspGet('t' + t + '_au_sl_' + c + '_' + l);
     const v = String(raw || '').trim().split(/\s+/).map((x) => parseInt(x, 10));
     if (v.length < 9 || v.some((x) => isNaN(x))) return null;
     const r = { a: v[0], b: v[1], pinned: v[2], pitch: v[3], gain: v[4], rev: v[5], play: v[6], atk: v[7], dec: v[8], detune: v[9] | 0 };
@@ -364,7 +366,11 @@ export function auTick() {
             S.screenDirty = true;
         }
     }
-    if ((S.tickCount % 3) === 0) {
+    /* the playhead: only while something can sound — playing, a pad down, a
+     * Lazy chop, an editor auditioning — and until the last read says it has
+     * stopped (it cost ~9 % of the tick stopped and silent: review) */
+    const _sounding = S.playing || _pos.on || auLazyOpen() || !!S.auEditor || S.auPadDown.some((x) => x);
+    if ((S.tickCount % 3) === 0 && _sounding) {
         const raw = String(host_module_get_param('t' + t + '_au_pos') || '').trim().split(/\s+/).map((x) => parseInt(x, 10));
         const np = { t, on: raw[0] | 0, frame: raw[1] | 0, slice: isNaN(raw[2]) ? -1 : raw[2] };
         if (np.on !== _pos.on || np.frame !== _pos.frame || np.slice !== _pos.slice) { S.screenDirty = true; S.ledsDirtyAudio = true; }
@@ -424,7 +430,7 @@ export function auLazyOpen() { return !!(S.auEditor && S.auEditor.mode === 'lazy
  * PAD MODE Layout. */
 export function auReadTrack(t) {
     for (let c = 0; c < NUM_CLIPS; c++) auRead(t, c);
-    const lay = host_module_get_param('t' + t + '_au_layout');
+    const lay = dspGet('t' + t + '_au_layout');
     if (lay !== null && lay !== undefined && lay !== '') S.auLayout[t] = parseInt(lay, 10) ? 1 : 0;   /* no answer: keep it */
     S.auPage[t] = 0;
 }

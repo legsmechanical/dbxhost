@@ -42,6 +42,7 @@ import { S } from './ui_state.mjs';
 import { SCENE_LETTERS } from './ui_constants.mjs';
 import { auInfo, auMarks, auReadSliceNow } from './ui_audio.mjs';
 import { showActionPopupFor } from './ui_persistence.mjs';
+import { prefetchKeys, releaseTrackDigests } from './ui_dsp_get.mjs';
 import { sanitizeName } from './ui_export.mjs';
 
 export const USER_LIBRARY = '/data/UserData/UserLibrary';
@@ -215,7 +216,11 @@ export function auConvertToKit(t, c) {
     const dst = KIT_SAMPLES + '/' + name + ext;
     try { host_system_cmd('cp ' + shq(src) + ' ' + shq(dst)); } catch (e) { /* checked below */ }
     if (!exists(dst)) { showActionPopupFor(2500, 'NO KIT', 'Could not copy'); return null; }
-    const cells = chops.map((ch, k) => kitCell(ch, auReadSliceNow(t, c, k) || {}, info, info.nframes));
+    /* every chop's sound in ONE round trip (32 reads were ~90 ms: review) */
+    prefetchKeys(chops.map((ch, k) => 't' + t + '_au_sl_' + c + '_' + k));
+    let cells;
+    try { cells = chops.map((ch, k) => kitCell(ch, auReadSliceNow(t, c, k) || {}, info, info.nframes)); }
+    finally { releaseTrackDigests(); }
     if (!host_write_file(KIT_PRESETS + '/' + name + '.ablpreset', kitJson(name, kitUri(dst), cells))) {
         try { os.remove(dst); } catch (e) { /* never written */ }
         showActionPopupFor(2500, 'NO KIT', 'Could not save');

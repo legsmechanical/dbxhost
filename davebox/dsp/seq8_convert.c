@@ -343,6 +343,15 @@ static void convert_track_to_audio(seq8_instance_t *inst, int t) {
     tr->transpose = 0;
     tr->fx_pre = 0;                /* nothing on an Audio track receives MIDI */
     tr->fx_post = 0;
+    /* its audio goes to its own chain slot and nowhere else (au_render feeds
+     * only ROUTE_SCHWUNG): routed elsewhere it would play silently. The UI
+     * picks the slot as it converts; the engine makes it so whatever asks. */
+    if (tr->pfx.route != ROUTE_SCHWUNG) {
+        int _l;
+        post_release_all(inst, tr);
+        tr->pfx.route = ROUTE_SCHWUNG;
+        for (_l = 0; _l < DRUM_LANES; _l++) tr->drum_lane_pfx[_l].route = ROUTE_SCHWUNG;
+    }
     tr->pad_mode = PAD_MODE_AUDIO;
     au_track_release(inst, t);
     pfx_sync_from_clip(tr);

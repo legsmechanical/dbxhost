@@ -1920,7 +1920,17 @@ int main(void) {
         {
             char b[512];
             au_clip_t *cl = &inst->au_clip[4][0];
-            hx_get_param(h, "t4_au_progress_0", b, sizeof b);
+            hx_get_param(h, "t4_digest", blob, sizeof blob);
+        HX_ASSERT(strstr(blob, "t4_au_info_0=2 ") && strstr(blob, "t4_au_info_15=") && strstr(blob, "t4_au_layout="),
+                  "review: the track's digest does not carry its Audio clips");
+        /* a track routed to Move becomes Audio on its own slot (au_render feeds only that) */
+        hx_set_param(h, "t2_route", "move");
+        hx_set_param(h, "t2_convert_to_audio", "");
+        HX_ASSERT(inst->tracks[2].pad_mode == PAD_MODE_AUDIO && inst->tracks[2].pfx.route == ROUTE_SCHWUNG,
+                  "review: an Audio track kept a route its audio never reaches");
+        hx_get_param(h, "t1_digest", blob, sizeof blob);
+        HX_ASSERT(!strstr(blob, "_au_info_"), "review: a melodic track's digest carries Audio clips");
+        hx_get_param(h, "t4_au_progress_0", b, sizeof b);
         HX_ASSERT(!strcmp(b, "0 0"), "review: progress reads as loading with nothing loading");
         hx_set_param(h, "t4_au_set_trans", "0 1");
             hx_set_param(h, "t4_au_set_sens", "0 30");

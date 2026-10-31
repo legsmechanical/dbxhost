@@ -974,6 +974,8 @@ step('⭐⭐ SLICES › Convert to kit (Josh, 2026-10-30: "convert to kit. creat
     const cmd0 = globalThis.host_system_cmd, wr0 = globalThis.host_write_file;
     globalThis.host_system_cmd = (c) => { cmds.push(String(c)); globalThis.__stubStat = { [SAMP]: { mode: 0o100644, size: 9 } }; return 0; };
     globalThis.host_write_file = (path, body) => { files[String(path)] = String(body); return wr0(path, body); };
+    const bulk = [], gp0 = globalThis.host_module_get_params;
+    globalThis.host_module_get_params = (blob) => { bulk.push(String(blob)); return ''; };
     try {
         mapPad(2, 2);
         const ed = S.auEditor;
@@ -987,6 +989,9 @@ step('⭐⭐ SLICES › Convert to kit (Josh, 2026-10-30: "convert to kit. creat
                'the copy: ' + JSON.stringify(cmds));
         assert(files[KIT], 'no kit written: ' + Object.keys(files).join());
         assert((S.actionPopupLines || [])[0] === 'KIT SAVED', 'notice: ' + JSON.stringify(S.actionPopupLines));
+        const slBulk = bulk.filter((b) => /_au_sl_/.test(b));
+        assert(slBulk.length === 1 && /t4_au_sl_\d+_0/.test(slBulk[0]) && /t4_au_sl_\d+_7/.test(slBulk[0]),
+               'the chops were not read in one round trip: ' + slBulk.length + ' bulk reads');
         const kit = JSON.parse(files[KIT]);
         /* numbers as Ableton writes them: floats keep ".0", the note / choke /
          * transpose fields are integers */
@@ -1018,7 +1023,7 @@ step('⭐⭐ SLICES › Convert to kit (Josh, 2026-10-30: "convert to kit. creat
         back();
         S.actionPopupLines = []; S.actionPopupEndTick = 0;     /* the notice is a card over later screens */
     } finally {
-        globalThis.host_system_cmd = cmd0; globalThis.host_write_file = wr0; globalThis.__stubStat = null;
+        globalThis.host_system_cmd = cmd0; globalThis.host_write_file = wr0; globalThis.host_module_get_params = gp0; globalThis.__stubStat = null;
         delete GET['t4_au_sl_0_1'];
     }
 });
@@ -2005,6 +2010,23 @@ step('⭐⭐ refusals are SAID (review, 2026-10-31): Slice on a sample over 4 mi
     assert(A.auClipBankKnob(t, 1, 1) === false, 'Strch x2 went past 256 steps');
     assert(/EXPAND LIMIT/.test((S.actionPopupLines || []).join(' ')), 'Strch at its limit was silent: ' + JSON.stringify(S.actionPopupLines));
     S.clipLength[t][c] = keepLen; GET['t4_au_info_' + c] = keepInfo; A.auMarkStale(t, c); ticks(2);
+});
+
+step('⭐ the playhead is asked for only while something can sound (review: ~9 % of the tick, stopped and silent)', () => {
+    const g0 = globalThis.host_module_get_param; let n = 0;
+    globalThis.host_module_get_param = (k) => { if (/_au_pos$/.test(k)) n++; return g0(k); };
+    try {
+        const ed = S.auEditor, pl = S.playing, pos0 = GET['t4_au_pos'];
+        S.auEditor = null; S.playing = false; S.auPadDown.fill(false);
+        GET['t4_au_pos'] = '0 0 -1';                     /* nothing sounding */
+        ticks(12);   /* the first read may find the last sound ending */
+        n = 0; ticks(12);
+        assert(n === 0, 'stopped and silent, the playhead was read ' + n + ' times');
+        S.playing = true; ticks(12);
+        assert(n > 0, 'playing, the playhead was not read');
+        S.playing = pl; S.auEditor = ed;
+        if (pos0 === undefined) delete GET['t4_au_pos']; else GET['t4_au_pos'] = pos0;
+    } finally { globalThis.host_module_get_param = g0; }
 });
 
 step('⭐ a long file says how far it has loaded (review: "Loading..." with no sign of progress)', () => {
