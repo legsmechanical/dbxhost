@@ -27,7 +27,7 @@ import { S } from './ui_state.mjs';
 import { NUM_CLIPS, SCENE_LETTERS, PAD_MODE_DRUM, PAD_MODE_AUDIO } from './ui_constants.mjs';
 import { clipHasContent } from './ui_pure.mjs';
 import { hardResetClip } from './ui_editops.mjs';
-import { auPick, auUndoClips } from './ui_audio.mjs';
+import { auPick, auUndoClips, dspAnswer } from './ui_audio.mjs';
 import { showActionPopupFor } from './ui_persistence.mjs';
 import { sanitizeName } from './ui_export.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -126,14 +126,14 @@ function sampling() {
 
 /* Tick context (reads the clips' lengths and the project folder). */
 export function auConvertStart(t) {
-    const dir = String(host_module_get_param('t' + t + '_au_dir') || '');
+    const dir = dspAnswer('t' + t + '_au_dir') || '';
     if (!dir) { showActionPopupFor(2500, 'NOT RESAMPLED', 'No project'); return false; }
     const list = [];
     const bpm = (S.bpmMirror > 0 && isFinite(S.bpmMirror)) ? Math.round(S.bpmMirror) : 120;
     const proj = sanitizeName(S.currentSetName || 'Project');
     for (let c = 0; c < NUM_CLIPS; c++) {
         if (!clipHasNotes(t, c)) continue;
-        const bars = parseInt(host_module_get_param('resample_bars_t' + t + '_c' + c), 10) | 0;
+        const bars = parseInt(dspAnswer('resample_bars_t' + t + '_c' + c), 10) | 0;
         if (bars <= 0) continue;
         const base = proj + ' ' + (t + 1) + SCENE_LETTERS[c] + ' ' + bars + 'bar ' + bpm + 'bpm';
         let path = null;

@@ -152,6 +152,7 @@ typedef struct {
 #define AU_ERR_LONG     3   /* longer than the mode allows */
 #define AU_ERR_MEM      4
 #define AU_ERR_COPY     5   /* could not copy it into the project */
+#define AU_ERR_SILENT   6   /* Normalize: the file is silent, nothing to raise */
 
 typedef struct {
     const au_sample_t *smp;

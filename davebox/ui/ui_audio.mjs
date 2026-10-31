@@ -28,6 +28,7 @@
  * No host_* call happens at module init. */
 
 import { S, noteUndoUnit } from './ui_state.mjs';
+import { showActionPopupFor } from './ui_persistence.mjs';
 /* a cycle (ui_audio_editor imports this module): used only inside a function body */
 import { lazyFinish } from './ui_audio_editor.mjs';
 import { PAD_MODE_AUDIO, NUM_CLIPS, BANK_STEP, knobAltFor } from './ui_constants.mjs';
@@ -74,7 +75,17 @@ export const AU_NOTE_BASE = 0, AU_PAGE = 32, AU_EXT_BASE = 36;
 export const AU_LAYOUT_NAMES = ['4 Rows', '16 Pads'];
 export const AU_LAZY_NONE = 0, AU_LAZY_ARMED = 1, AU_LAZY_RUN = 2, AU_LAZY_ENDED = 3;
 export const AU_PLAY_NAMES = ['One', 'Gate', 'Loop'];
-export const AU_ERR_TEXT = ['', "Can't read file", 'Not WAV / AIFF', 'Too long', 'Out of memory', "Can't copy"];
+export const AU_ERR_TEXT = ['', "Can't read file", 'Not WAV / AIFF', 'Too long', 'Out of memory', "Can't copy", 'Nothing to raise'];
+export const AU_SLICE_MAX_SEC = 240;      /* the engine's Slice limit (seq8_audio.h): 4 minutes */
+
+/* A sample too long to chop: Slice, Transient and Lazy are refused, and said
+ * so — the engine refused them silently (found by review). */
+export function auTooLongToChop(t, c) {
+    const i = auInfo(t, c);
+    if (i.state !== 2 || !(i.rate > 0) || i.nframes <= i.rate * AU_SLICE_MAX_SEC) return false;
+    showActionPopupFor(2500, 'TOO LONG TO CHOP', 'Slices: 4 minutes', 'at most');
+    return true;
+}
 
 export function isAudioTrack(t) {
     return t >= 0 && t < 8 && S.trackPadMode[t] === PAD_MODE_AUDIO;
@@ -103,6 +114,8 @@ const _sl = new Map();         /* "t_c_l" -> slice record */
 const _all = new Map();        /* "t_c" -> ALL SLICES: 6 values, null where the slices differ */
 const _peaks = new Map();      /* "t_c" -> { name, amp: [128 numbers 0..1] } */
 const _stale = new Set();      /* "t_c" whose info must be re-read */
+const _loading = new Set();    /* "t_c" read as loading: re-read until it lands */
+const _editWatch = new Map();  /* "t_c" -> 'TRIM' / 'NORMALIZE': a Trim / Normalize waiting for its answer */
 let _pos = { t: -1, on: 0, frame: 0, slice: -1 };
 let _lazy = { state: 0, n: 0, frame: 0 };
 let _padKey = '';
@@ -150,15 +163,34 @@ export function auInfo(t, c) {
     return i || DEFAULT_INFO;
 }
 
+/* A read that must be an ANSWER: an empty one (a timed-out mailbox round
+ * trip — CLAUDE.md: null is "unknown", never a value) is asked again, twice;
+ * still nothing gives null, for the caller to say so rather than read it as 0
+ * or "" (found by review: "Clip 3B is empty", "No project"). */
+export function dspAnswer(key) {
+    for (let i = 0; i < 3; i++) {
+        const v = host_module_get_param(key);
+        if (v !== null && v !== undefined && v !== '') return String(v);
+    }
+    return null;
+}
+
 /* Re-read clip (t,c) now (tick context only). */
 export function auRead(t, c) {
     const i = auParseInfo(host_module_get_param('t' + t + '_au_info_' + c));
-    if (i) {
-        S.auInfo[t][c] = i;
-        /* A clip with a sample has content (Session View, launching). */
-        if (i.name && S.clipNonEmpty && S.clipNonEmpty[t]) S.clipNonEmpty[t][c] = true;
-    }
+    if (!i) return null;                          /* no answer (a timed-out read): still stale, read again */
+    S.auInfo[t][c] = i;
+    /* A clip with a sample has content (Session View, launching). */
+    if (i.name && S.clipNonEmpty && S.clipNonEmpty[t]) S.clipNonEmpty[t][c] = true;
     _stale.delete(t + '_' + c);
+    if (i.state === 1) _loading.add(t + '_' + c); else _loading.delete(t + '_' + c);
+    /* a Trim / Normalize answered: one that failed keeps the old sample (state
+     * 2, err set) — say so, or it reads as nothing happening */
+    const ew = _editWatch.get(t + '_' + c);
+    if (ew && i.state !== 1) {
+        _editWatch.delete(t + '_' + c);
+        if (i.err) showActionPopupFor(2500, 'NOT ' + (ew === 'TRIM' ? 'TRIMMED' : 'NORMALIZED'), AU_ERR_TEXT[i.err] || 'Failed');
+    }
     return i;
 }
 
@@ -266,6 +298,7 @@ export function auPos() { return _pos; }
 /* Tick: keep the active Audio track's current clip fresh — a loading clip
  * until it lands, a stale one at once, the playhead every few ticks. */
 export function auTick() {
+    auTickOthers();
     const t = S.activeTrack;
     if (!isAudioTrack(t)) { _pos.on = 0; return; }
     const c = auClipOf(t);
@@ -331,8 +364,11 @@ export function auTick() {
         _pos = np;
         const se = S.auEditor;
         if (auLazyOpen()) {
-            const lz = String(host_module_get_param('t' + t + '_au_lazy') || '').trim().split(/\s+/).map((x) => parseInt(x, 10));
-            const nl = { state: lz[0] | 0, n: lz[1] | 0, frame: lz[2] | 0 };
+            const lzRaw = host_module_get_param('t' + t + '_au_lazy');
+            const lz = String(lzRaw || '').trim().split(/\s+/).map((x) => parseInt(x, 10));
+            /* no answer (a timed-out read) is not "never armed": keep what we had */
+            const nl = (lzRaw === null || lzRaw === undefined || lzRaw === '' || isNaN(lz[0]))
+                ? _lazy : { state: lz[0] | 0, n: lz[1] | 0, frame: lz[2] | 0 };
             if (nl.state !== _lazy.state || nl.n !== _lazy.n) {
                 S.auStartsRev = (S.auStartsRev | 0) + 1; auMarkStale(t, c);
                 S.ledsDirtyAudio = true;
@@ -350,6 +386,30 @@ export function auTick() {
     }
 }
 
+/* Every other Audio clip a change left stale or loading — a Flatten's or a
+ * conversion's picks, an Undo's reloads — one read every few ticks, so Session
+ * View and the clip lists see them land without each being selected (found by
+ * review: only the current clip was ever re-read). */
+function auTickOthers() {
+    if ((S.tickCount % 4) !== 0) return;
+    const cur = S.activeTrack + '_' + auClipOf(S.activeTrack);
+    /* a key on a track that is not Audio (auForgetTrack marks its clips) goes */
+    const pick = (set) => {
+        for (const k of set) {
+            if (k === cur) continue;
+            if (isAudioTrack(parseInt(k, 10))) return k;
+            set.delete(k);
+        }
+        return null;
+    };
+    const key = pick(_stale) || ((S.tickCount % 8) === 0 ? pick(_loading) : null);
+    if (!key) return;
+    const [t, c] = key.split('_').map((x) => parseInt(x, 10));
+    const was = auInfo(t, c).state;
+    const n = auRead(t, c);
+    if (n && n.state !== was) S.screenDirty = true;
+}
+
 /* A Lazy chop is up in the editor (armed, running, or asking to keep). */
 export function auLazyOpen() { return !!(S.auEditor && S.auEditor.mode === 'lazy'); }
 
@@ -357,7 +417,8 @@ export function auLazyOpen() { return !!(S.auEditor && S.auEditor.mode === 'lazy
  * PAD MODE Layout. */
 export function auReadTrack(t) {
     for (let c = 0; c < NUM_CLIPS; c++) auRead(t, c);
-    S.auLayout[t] = parseInt(host_module_get_param('t' + t + '_au_layout'), 10) ? 1 : 0;
+    const lay = host_module_get_param('t' + t + '_au_layout');
+    if (lay !== null && lay !== undefined && lay !== '') S.auLayout[t] = parseInt(lay, 10) ? 1 : 0;   /* no answer: keep it */
     S.auPage[t] = 0;
 }
 /* A track that is no longer Audio forgets its clips. */
@@ -663,6 +724,7 @@ export function auClipBankKnob(t, k, steps) {
     if (k === 0) {
         const m = Math.max(0, Math.min(1, i.mode + (steps > 0 ? 1 : -1)));
         if (m === i.mode) return false;
+        if (auIsSlice({ mode: m }) && auTooLongToChop(t, c)) return false;
         loc.mode = m; auSet(t, c, 'mode', m);
         if (S.auPanel) S.auPanel.page = 0;
         S.pendingPadNoteMapRecompute = true;
@@ -678,13 +740,17 @@ export function auClipBankKnob(t, k, steps) {
          * Tempo until Josh, 2026-10-30: "it seems like stretch on loop (x2) is
          * halving the tempo ... resulting in no change in sample playback,
          * just empty space after it".) */
-        const tps = S.clipTPS[t][c] || 24, ls = S.clipLoopStart[t][c] | 0;
+        const ls = S.clipLoopStart[t][c] | 0;
         const len = S.clipLength[t][c] | 0 || 16, up = steps > 0;
         /* an odd Length halves down, as a MIDI clip's /2 does (it refused
          * here, and a Loop clip's Length is its sample's, often odd — Josh,
          * 2026-10-30: "doesn't want to /2 at all") */
         const nl = up ? len * 2 : Math.floor(len / 2), nb = up ? (i.bpm10 || 1200) * 2 : Math.round((i.bpm10 || 1200) / 2);
-        if (nl < 1 || ls + nl > 256 || nb < AU_BPM10_MIN || nb > AU_BPM10_MAX) return false;
+        if (nl < 1 || ls + nl > 256 || nb < AU_BPM10_MIN || nb > AU_BPM10_MAX) {
+            /* at its limit: said, as a MIDI clip's Strch says it (it was silent: review) */
+            showActionPopupFor(1500, 'BEAT STRETCH', up ? 'EXPAND LIMIT' : 'COMPRESS LIMIT');
+            return false;
+        }
         S.clipLength[t][c] = nl;
         S.clipLengthManuallySet[t][c] = true;
         host_module_set_param('t' + t + '_c' + c + '_loop_set', String((ls << 16) | nl));
@@ -952,6 +1018,7 @@ export function auEdit(t, c, op, ow) {
     const i = auInfo(t, c);
     if (i.state !== 2) return false;
     if (!ow) noteUndoUnit();   /* Overwrite cannot be undone (the engine drops a step on that file) */
+    _editWatch.set(t + '_' + c, op ? 'NORMALIZE' : 'TRIM');   /* its answer: a refusal is said (auRead) */
     setKey(t, 'edit', c + ' ' + (op ? 1 : 0) + ' ' + (ow ? 1 : 0));
     S.auInfo[t][c] = Object.assign({}, i, { state: 1 });
     auMarkStale(t, c);

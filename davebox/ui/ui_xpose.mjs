@@ -53,7 +53,9 @@ export function commitSceneBake(clipIdx, loops, wrap, apply) {
     /* the resync waits for THIS bake to have run (it waits in the queue; the
      * engine counts its bakes), then asks which Audio tracks were folded */
     S.pendingSceneBakeApply  = !!apply;
-    S.pendingSceneBakeSeq    = parseInt(host_module_get_param('bake_au_kept'), 10) | 0;
+    /* no answer: -1, the resync then waits a few ticks instead (ui_tick) */
+    const seqRaw = host_module_get_param('bake_au_kept');
+    S.pendingSceneBakeSeq    = (seqRaw === null || seqRaw === undefined || seqRaw === '') ? -1 : (parseInt(seqRaw, 10) | 0);
     S.pendingSceneBakeWait   = 0;
     /* DSP cleared the conductor clip's responder flags for the baked tracks.
      * Mirror that locally so the Responder bank UI reflects the auto-disable

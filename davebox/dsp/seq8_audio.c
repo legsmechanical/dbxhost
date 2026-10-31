@@ -1883,7 +1883,7 @@ static int au_edit_file(const au_req_t *q, char *name, size_t name_sz, uint32_t 
         if (pass == 1) {
             uint8_t h[44];
             if (q->op == AU_EDIT_NORM) {
-                if (!peak) { err = AU_ERR_FORMAT; goto out; }            /* silence: nothing to raise */
+                if (!peak) { err = AU_ERR_SILENT; goto out; }            /* silence: nothing to raise */
                 gain = 32767.0 / (double)peak;
             }
             o = fopen(tmp, "wb");

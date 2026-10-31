@@ -1967,6 +1967,36 @@ step('⭐ an Audio clip pastes onto an Audio track only; the copy carries its sa
 
 
 
+step('⭐⭐ refusals are SAID (review, 2026-10-31): Slice on a sample over 4 minutes, a failed Trim, Strch at its limit', () => {
+    const t = 4, c = S.trackActiveClip[4] | 0;
+    const keepInfo = GET['t4_au_info_' + c], keepLen = S.clipLength[t][c];
+    const LONG = '2 0 0 16 1 16 0 11025000 0 0 11025000 44100 2 0 0 0 16 0 0 0 1200 0 50 0 0 0|long.wav';   /* 250 s, Loop */
+    GET['t4_au_info_' + c] = LONG; A.auMarkStale(t, c); ticks(2);
+    reset(); S.actionPopupLines = [];
+    assert(A.auClipBankKnob(t, 0, 1) === false, 'Mode turned to Slice on a 250 s sample');
+    assert(!sent('t4_au_set_mode').length, 'Slice was sent: ' + sent('t4_au_set_mode'));
+    assert(/TOO LONG TO CHOP/.test((S.actionPopupLines || []).join(' ')), 'no notice: ' + JSON.stringify(S.actionPopupLines));
+    /* control: a short sample turns to Slice */
+    GET['t4_au_info_' + c] = LONG.replace(/11025000/g, '441000'); A.auMarkStale(t, c); ticks(2);
+    reset();
+    assert(A.auClipBankKnob(t, 0, 1) === true && sent('t4_au_set_mode').length === 1, 'control: a 10 s sample did not turn to Slice');
+    /* a Trim that fails keeps the sample (state 2, err): said */
+    GET['t4_au_info_' + c] = LONG.replace(/11025000/g, '441000'); A.auMarkStale(t, c); ticks(2);
+    reset(); S.actionPopupLines = [];
+    assert(A.auEdit(t, c, 0, 0), 'the Trim was not sent');
+    GET['t4_au_info_' + c] = LONG.replace(/11025000/g, '441000').replace(/^2 0 /, '2 5 ');
+    ticks(3);
+    assert(/NOT TRIMMED/.test((S.actionPopupLines || []).join(' ')) && /copy/i.test((S.actionPopupLines || []).join(' ')),
+           'a failed Trim was silent: ' + JSON.stringify(S.actionPopupLines));
+    /* Strch x2 past 256 steps: said */
+    GET['t4_au_info_' + c] = LONG.replace(/11025000/g, '441000'); A.auMarkStale(t, c); ticks(2);
+    S.clipLength[t][c] = 256; S.clipLoopStart[t][c] = 0;
+    reset(); S.actionPopupLines = [];
+    assert(A.auClipBankKnob(t, 1, 1) === false, 'Strch x2 went past 256 steps');
+    assert(/EXPAND LIMIT/.test((S.actionPopupLines || []).join(' ')), 'Strch at its limit was silent: ' + JSON.stringify(S.actionPopupLines));
+    S.clipLength[t][c] = keepLen; GET['t4_au_info_' + c] = keepInfo; A.auMarkStale(t, c); ticks(2);
+});
+
 step('⭐⭐ leaving Audio asks (Q3); Yes converts back and forgets the samples', () => {
     S.clipNonEmpty[4][0] = true;
     reset();

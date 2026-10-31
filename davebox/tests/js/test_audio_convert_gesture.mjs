@@ -202,6 +202,7 @@ function freezeRow(t) {
 /* Flatten's options open on Flatten: Effects · Warm-up · Flatten (no Effects
  * for a Move instrument). `post`: Effects to Post first. */
 const RS = await import('../../ui/ui_resample.mjs');
+const await_au = await import('../../ui/ui_audio.mjs');
 const answer = (post) => { if (post) { jog(-1); jog(-1); click(); jog(1); jog(1); } click(); };
 const cancelTakes = () => {
     S.resampleState = 3; ticks(1);
@@ -302,6 +303,17 @@ step('⭐⭐ an Audio track freezes IN PLACE (Josh, 2026-10-30: "audio tracks ou
     assert(sent('t4_c0_hard_reset').concat(sent('t4_c2_hard_reset')).join() === 'j,j', 'a reset took its own undo step');
     assert(sent('t4_au_pick_join').join() === '0|' + P0 + ',2|' + P2, 'picks: ' + sent('t4_au_pick_join'));
     assert(S.undoAvailable, 'Undo is not available after Flatten');
+    /* the takes land: the clip that is NOT current is re-read too, so Session
+     * View sees it (found by review: only the current clip was re-read) */
+    S.trackActiveClip[4] = 0;
+    const INFO_TAKE = (n) => '2 0 0 16 1 16 0 88200 0 0 88200 44100 2 0 0 0 16 0 0 88200 1200 4 50 0 0 0|' + n;
+    GET['t4_au_info_0'] = INFO_TAKE('My Song 5A 1bar 120bpm.wav');
+    GET['t4_au_info_2'] = INFO_TAKE('My Song 5C 2bar 120bpm.wav');
+    ticks(40);
+    const AU = await_au;
+    assert(AU.auInfo(4, 2).state === 2 && AU.auInfo(4, 2).name === 'My Song 5C 2bar 120bpm.wav' && S.clipNonEmpty[4][2],
+           'the non-current clip still reads as loading / empty: ' + JSON.stringify(AU.auInfo(4, 2)));
+    delete GET['t4_au_info_0']; delete GET['t4_au_info_2'];
     assert(sent('t4_convert_to_audio').length === 0, 'an Audio track was converted');
     assert(shadowSets.some((x) => x[0] === 4 && x[1] === 'fx1:bypassed' && x[2] === '1'), 'Post did not bypass');
     S.trackPadMode[4] = 0; GET['t4_pad_mode'] = '0'; NOSYNTH = false;

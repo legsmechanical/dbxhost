@@ -169,6 +169,14 @@ the section into a versioned heading at release time.
   and the instrument shortcut open it.
 
 ### Fixed
+- **Audio: after Flatten every clip shows its take in Session View.** Only the current clip
+  was read again, so the others looked empty until selected.
+- **Audio: refusals are said.** Slice, Transient and Lazy on a sample over 4 minutes
+  (TOO LONG TO CHOP), a Trim or Normalize that fails (NOT TRIMMED / NOT NORMALIZED and
+  why, e.g. Nothing to raise on a silent file), and a Loop clip's Strch at its limit.
+- **Audio: a slow engine reply is no longer read as an answer** — a 16 Pads track kept
+  its layout after a load, Lazy no longer gave up mid-chop, and Resample no longer said
+  a clip was empty; it says No response instead.
 - **Undoing a scene bake with Apply Conductor brings the responders back on screen.**
   The tracks came back responding, but the Conductor's RESPONDERS bank still showed
   them off, and the next scene bake did not offer Apply Conductor.

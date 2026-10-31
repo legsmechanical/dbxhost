@@ -1273,7 +1273,9 @@ export function _tickImpl() {
     if (S.pendingSceneBakeResync > 0) {
         S.pendingSceneBakeResync--;
         const _bk = S.pendingSceneBakeResync === 0 ? String(host_module_get_param('bake_au_kept') || '').split(' ') : null;
-        if (_bk && (parseInt(_bk[0], 10) | 0) === S.pendingSceneBakeSeq && S.pendingSceneBakeWait++ < 100) {
+        const _bkSeen = _bk && _bk[0] !== '' && !isNaN(parseInt(_bk[0], 10));
+        if (_bk && (S.pendingSceneBakeSeq < 0 ? S.pendingSceneBakeWait++ < 4
+                    : (!_bkSeen || (parseInt(_bk[0], 10) | 0) === S.pendingSceneBakeSeq) && S.pendingSceneBakeWait++ < 100)) {
             S.pendingSceneBakeResync = 1;                     /* the bake has not run yet: next tick */
         } else if (_bk) {
             const sc = S.pendingSceneBakeClip;

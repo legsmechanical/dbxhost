@@ -23,7 +23,7 @@ import * as os from 'os';
 import { S } from './ui_state.mjs';
 import { showActionPopupFor } from './ui_persistence.mjs';
 import { SCENE_LETTERS, PAD_MODE_AUDIO } from './ui_constants.mjs';
-import { auPick, auUndoClips } from './ui_audio.mjs';
+import { auPick, auUndoClips, dspAnswer } from './ui_audio.mjs';
 /* a cycle through ui_sound: used only inside function bodies */
 import { flattenStart } from './ui_audio_convert.mjs';
 import { hardResetClip } from './ui_editops.mjs';
@@ -148,7 +148,9 @@ export function notPlayingForResample() {
 export function openResampleOptions(c) {
     if (!notPlayingForResample()) { closeSampleFlow(); return; }
     if (S.clockFollowOn) { closeSampleFlow(); showActionPopupFor(2500, 'RESAMPLE FAILED', RS_ERR_TEXT[2]); return; }
-    const bars = parseInt(host_module_get_param('resample_bars_' + c), 10) | 0;
+    const barsRaw = dspAnswer('resample_bars_' + c);
+    if (barsRaw === null) { closeSampleFlow(); showActionPopupFor(2500, 'RESAMPLE FAILED', 'No response', 'Try again'); return; }
+    const bars = parseInt(barsRaw, 10) | 0;
     if (bars <= 0) { closeSampleFlow(); showActionPopupFor(2500, 'NOTHING TO', 'RESAMPLE', 'Scene ' + SCENE_LETTERS[c] + ' is empty'); return; }
     S.confirmResample = { track: -1, clip: c, bars, warm: false, tail: 0, src: 0, dryOk: false,
                           sel: 3, editing: false };
@@ -177,7 +179,9 @@ export function openClipResampleOptions(t, c, from) {
     if (S.trackMuted[t] || (anySolo && !S.trackSoloed[t])) {
         closeSampleFlow(); showActionPopupFor(2500, 'NOTHING TO', 'RESAMPLE', 'Track ' + (t + 1) + ' is muted'); return;
     }
-    const bars = parseInt(host_module_get_param('resample_bars_t' + t + '_c' + c), 10) | 0;
+    const barsRaw = dspAnswer('resample_bars_t' + t + '_c' + c);
+    if (barsRaw === null) { closeSampleFlow(); showActionPopupFor(2500, 'RESAMPLE FAILED', 'No response', 'Try again'); return; }
+    const bars = parseInt(barsRaw, 10) | 0;
     if (bars <= 0) { closeSampleFlow(); showActionPopupFor(2500, 'NOTHING TO', 'RESAMPLE', 'Clip ' + clipName(t, c) + ' is empty'); return; }
     /* A Move instrument comes back late (it plays out to Move and returns), so
      * its takes start with Warm-up on: the late tail wraps into the loop. */
@@ -284,7 +288,7 @@ function startResample() {
      * the user Move runs as. Made here, it would be root's. */
     /* In place: into the project's samples/, where the clip's own sample lives */
     const inPlace = clip && r.audio && r.inPlace;
-    const dir = inPlace ? String(host_module_get_param('t' + r.track + '_au_dir') || '') : '';
+    const dir = inPlace ? (dspAnswer('t' + r.track + '_au_dir') || '') : '';
     if (inPlace && !dir) { closeSampleFlow(); showActionPopupFor(2500, 'RESAMPLE FAILED', 'No project'); return false; }
     const path = freePath(base, dir);
     if (!path) { closeSampleFlow(); showActionPopupFor(2500, 'RESAMPLE FAILED', 'No free file name'); return false; }

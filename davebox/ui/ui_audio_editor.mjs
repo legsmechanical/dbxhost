@@ -76,7 +76,7 @@ import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLaz
          auSelSlice, auSetSelSlice, isAudioTrack, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
          auMarkAdd, auMarkDel, auManual, auEvenBake, auTrans, auTransBake, auRangeStep, auSet, auEnd, auPanelRingCells, auPanelReset,
          auIsSlice, AU_LAZY_ARMED, AU_LAZY_RUN, AU_LAZY_ENDED, AU_EVEN_MAX, AU_BPM10_MIN, AU_BPM10_MAX, auLenTicks,
-         auSampleP2Cells, auSampleP2Knob, auSampleReset, auEdit, auTrimCuts, auOrig, auNudgeStep, auFpt, auPlayedEnd } from './ui_audio.mjs';
+         auSampleP2Cells, auSampleP2Knob, auSampleReset, auEdit, auTrimCuts, auOrig, auNudgeStep, auFpt, auPlayedEnd, auTooLongToChop } from './ui_audio.mjs';
 import { registerScreenRingCells } from './ui_knob_leds.mjs';
 import { auModeValue } from './ui_pure.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -663,6 +663,7 @@ function pickInput(ed, status, d1, d2) {
         if (row.id === 'kit') { ed.pick = null; S.pendingAuKit = { t: ed.t, c: ed.c }; return true; }   /* reads + a copy: the tick's */
         if (row.id === 'chop') { ed.pick = { level: 2, sel: 0, from: p.sel }; return true; }
         ed.pick = null;
+        if (auTooLongToChop(ed.t, ed.c)) return true;        /* over 4 minutes: no chops (and no Slice) */
         toSlice(ed);                                         /* a Loop clip's chop: it becomes a Slice clip */
         if (row.id === 'lazy') startLazy(ed);
         else openChop(ed, row.id);
