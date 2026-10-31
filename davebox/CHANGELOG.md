@@ -41,6 +41,7 @@ the section into a versioned heading at release time.
   - **Automation**: SAMPLE's **Gain**, **Pitch**, **Detune**, **Tempo** and **Revrs**, and
     SLICES' **ALL SLICES** settings, record and lock like any knob. A playing lane moves
     the sound live, chops already sounding included, and each setting comes back on Stop.
+    **+ Add lane** and the macro picker offer them too (**Sample**, **All Slices**).
   - **LIVE ARP** plays chops (**Step** in place of Oct); NOTE FX keeps what doesn't move
     a pitch; there is no DELAY. Muting an Audio track silences it like a bus, so its loop
     keeps time. **Delete + clip** clears the sequence only; **Shift + Delete** resets the

@@ -43,7 +43,7 @@ import {
     INSTR_MOVE_MAX, INSTR_SCHWUNG, INSTR_MIDI_CH, INSTR_TRACK, moveInstrOwner, moveInstrDuplicates,
     MoveRec, LED_OFF, parseActionRaw, INSTR_NONE, ROUTE_NONE,
     INSTR_CONDUCT, PAD_MODE_CONDUCT, PAD_MODE_MELODIC_SCALE, DEFAULT_TRACK_OCTAVE,
-    INSTR_AUDIO, PAD_MODE_AUDIO } from './ui_constants.mjs';
+    INSTR_AUDIO, PAD_MODE_AUDIO, SEQ_AUTO_TARGETS, auAutoBank } from './ui_constants.mjs';
 import { auReadTrack, auForgetTrack, isAudioTrack, auRead } from './ui_audio.mjs';
 import { Red } from '/data/UserData/schwung/shared/constants.mjs';
 
@@ -1922,6 +1922,8 @@ export function restoreUiSidecar(applyDefaultsNow) {
             }
             else if (_e.kind === 'midi' && typeof _e.target === 'string' && /^(cc:\d+|at|pb)$/.test(_e.target))
                 _l = { kind: 'midi', target: _e.target };
+            else if (_e.kind === 'au' && SEQ_AUTO_TARGETS[_e.key] && auAutoBank(SEQ_AUTO_TARGETS[_e.key].bank))
+                _l = { kind: 'au', key: _e.key };       /* an Audio clip's sound (ui_sound AU_KIND) */
             if (!_l) return null;
             /* A range is a pair of 0..1 fractions; lo > hi is a legitimate
              * INVERTED leg (Josh, 2026-09-05), so only the BOUNDS are checked.

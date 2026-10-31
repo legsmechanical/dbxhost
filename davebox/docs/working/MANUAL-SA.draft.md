@@ -1838,7 +1838,8 @@ The pads' aftertouch row (**PADS**) has only **Delete**.
 
 **+ Add lane** (after the lanes) adds an empty lane, so you can set its Wrap,
 Loop, Rate and Scale before writing anything into it. Click it and choose the
-parameter as you would for a macro — a module, a bank, Levels or MIDI, then the
+parameter as you would for a macro — a module, a bank, Levels or MIDI (on an Audio
+track also **Sample** or, for a Slice clip, **All Slices**), then the
 parameter (see [The MACROS bank](#146-the-macros-bank)). You come back to the list with the new lane's
 operations open; **Back** from the picker returns without adding one. Choosing a
 parameter that already has a lane in this clip opens that lane.
@@ -2408,6 +2409,9 @@ ASSIGN** (nothing assigned yet) or **CLK EDIT**.
 
 - On an unassigned knob, choose a module (or a **bank**, **Levels**, **MIDI**,
   or **SnapMorph**), then a parameter, and you're back on the MACROS page.
+- On an Audio track the list also has **Sample** (SAMPLE's Gain, Pitch, Detune,
+  Tempo and Revrs) and **All Slices** (ALL SLICES' settings). The knob turns the
+  clip the track is on, as the editor's own knob would, and records the same lane.
 - **(None)** at the top clears the knob.
 - If the same module sits in two slots, the slot is shown beside its name.
 

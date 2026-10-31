@@ -58,7 +58,7 @@ import { instrOptions, instrPickerRows, moveInstrOwner, fmtInstr, INSTR_SCHWUNG,
          midiTargetIsMidi, midiTargetCC, midiTargetName, midiTargetShort, midiTargetMax, midiTargetDefault, midiTargetTo14, PB_CENTRE,
          PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD, PAD_MODE_AUDIO as PMA, INSTR_AUDIO, TRACK_PAD_BASE } from './ui_constants.mjs';
 import { openWave } from './ui_audio_editor.mjs';
-import { auAutoMirror, auSlicesAutoMirror } from './ui_audio.mjs';
+import { auAutoMirror, auSlicesAutoMirror, auMacroValue, auMacroWrite, auInfo } from './ui_audio.mjs';
 import { applyTrackConfig, applyBankParam, readBankParams, syncTrackMidiFx, midiFxResyncAfterPatch } from './ui_dsp_bridge.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { moduleParallelDefault, setModuleParallelDefault, reconcileParallelSlot } from './ui_parallel.mjs';
@@ -107,7 +107,7 @@ import {
     drawKitStackedList, drawKitBackdropDim, drawKitCrumbs, kitStackBox, drawBrackets,
     MV_BAR_Y,
     hdrPrint, mvPrint, mvWidth, shapeSample, plotLine, hudCard, drawLevelCard, MV_ROW1_Y } from './ui_movy.mjs';
-import { bankCyclePos, bankCycleForMode } from './ui_pure.mjs';
+import { bankCyclePos, bankCycleForMode, auIsSlice } from './ui_pure.mjs';
 /* ⭐⭐ THE MODULE EDITOR IS THE HOST'S, AND NOW LITERALLY THE SAME FILE.
  *
  * `createParamPagesBinding` is the editor the shadow UI runs; davebox creates
@@ -4216,7 +4216,38 @@ function asnFromMacro(m) {
     if (m.kind === 'level') return { target: LEVEL_TARGET, param: m.key };
     if (m.kind === 'bank') return { target: 'bank:' + m.bank, param: 'k' + m.k + (m.alt ? ':' + m.alt : '') };
     if (m.kind === 'midi') return { target: midiTargetCC(m.target) >= 0 ? 'midicc' : 'midi', param: m.target };
+    if (m.kind === AU_KIND) { const st = SEQ_AUTO_TARGETS[m.key]; return { target: AU_TARGET + (st ? st.bank : ''), param: m.key }; }
     return { target: m.comp, param: m.key };
+}
+
+/* AN AUDIO CLIP'S SOUND as a target (Josh, 2026-10-31): `{kind:'au', key}`,
+ * key one of the `seq:` keys of SEQ_AUTO_TARGETS' Audio banks — the SAMPLE
+ * editor's (Smp) or ALL SLICES' (Slcs). It drives the clip the track is on,
+ * as the editor's own knob does, and records to the same lane. The picker's
+ * rows are `au:<bank>`, on an Audio track only. */
+const AU_KIND = 'au';
+const AU_TARGET = 'au:';
+function auMacroFromAsn(target, param) {
+    const st = SEQ_AUTO_TARGETS[param];
+    return (st && auAutoBank(st.bank) && target === AU_TARGET + st.bank) ? { kind: AU_KIND, key: param } : null;
+}
+/* The knob's descriptor, as bankMacroMeta's — or null off an Audio track. */
+function auMacroMeta(m, track) {
+    const t = (track == null) ? S.track : track;
+    const st = SEQ_AUTO_TARGETS[m.key];
+    if (t < 0 || !st || !auAutoBank(st.bank) || GS.trackPadMode[t] !== PMA) return null;
+    const sl = st.bank === AU_SLICES_BANK;
+    return { abbrev: st.label, full: (sl ? 'All Slices ' : 'Sample ') + st.label, min: st.min, max: st.max,
+             fmt: v => auMacroText(st.field, v), sens: st.stepped ? 16 : 0 };
+}
+function auMacroText(f, v) {
+    if (f === 'revrs' || f === 'rev') return v ? 'On' : 'Off';
+    if (f === 'play') return ['One', 'Gate', 'Loop'][v] || '--';
+    if (f === 'bpm10') return (v / 10).toFixed(1);
+    if (f === 'dec') return v >= 5001 ? 'Full' : v + 'ms';
+    if (f === 'atk') return v + 'ms';
+    if (f === 'gain') return (v > 0 ? '+' : '') + v + 'dB';
+    return (v > 0 ? '+' : '') + v;
 }
 
 /* The assign screens' row form back to a bank target; null unless allow-listed. */
@@ -4386,6 +4417,11 @@ function knobTargetList() {
             rows.push({ id: 'bank:' + e.bank, name: BANKS[e.bank].name });
         }
     }
+    /* An Audio track's clip sound: the SAMPLE editor's, and ALL SLICES'. */
+    if (S.track >= 0 && GS.trackPadMode[S.track] === PMA) {
+        rows.push({ id: AU_TARGET + AU_AUTO_BANK, name: 'Sample' });
+        rows.push({ id: AU_TARGET + AU_SLICES_BANK, name: 'All Slices' });
+    }
     if (!midiTrack) rows.push({ id: LEVEL_TARGET, name: 'Levels' });   /* a MIDI track has no chain */
     /* SNAPMORPH (18b): a track's macro can morph its sound between its TRACK
      * snapshots — a chain track's chain, or a Move track's bus FX and levels
@@ -4426,7 +4462,9 @@ function openKnobTargets() {
     /* Choosing a LANE: no (None) to clear, no SnapMorph (its lane is a knob's
      * position, not a parameter), and only banks with something automatable. */
     if (S.knobPickFor) S.knobTargets = S.knobTargets.filter(t => t.id && t.id !== MORPH_TARGET &&
-        (t.id.indexOf('bank:') !== 0 || knobParamList(t.id).length));
+        (t.id.indexOf('bank:') !== 0 || knobParamList(t.id).length) &&
+        /* a lane is one clip's: ALL SLICES is a Slice clip's only */
+        (t.id !== AU_TARGET + AU_SLICES_BANK || auIsSlice(auInfo(S.knobPickFor.track, S.knobPickFor.clip))));
     /* Seed the cursor on the current assignment's target. ⚠ On the LEG list
      * that is the leg BEING RE-POINTED, not leg 0 — seeding from S.knobAsn
      * (which is always leg 0) opened leg 3's picker on leg 1's component, and
@@ -4480,6 +4518,11 @@ function knobParamList(target) {
             params.push({ key: 'snap:' + n, label: 'Snapshot ' + (n + 1),
                           mark: at >= 0 ? '[' + (at + 1) + ']' : '' });
         }
+        return params;
+    }
+    if (target.indexOf(AU_TARGET) === 0) {
+        for (const key in SEQ_AUTO_TARGETS)
+            if (AU_TARGET + SEQ_AUTO_TARGETS[key].bank === target) params.push({ key, label: SEQ_AUTO_TARGETS[key].label });
         return params;
     }
     if (target.indexOf('bank:') === 0) {
@@ -4599,6 +4642,10 @@ function compParamLabel(target, param) {
     }
     if (target === 'midicc' || target === 'midi') return 'MIDI>' + midiTargetName(param);
     if (target === MORPH_TARGET) return 'Snap>' + param;        /* SnapMorph over snapshots 1+3 */
+    if (target.indexOf(AU_TARGET) === 0) {
+        const st = SEQ_AUTO_TARGETS[param];
+        return (st ? BANK_SHORT[st.bank] : 'Smp') + '>' + (st ? st.label : param);
+    }
     return compShort(target) + '>' + param;
 }
 
@@ -4688,6 +4735,7 @@ function commitKnobAssignment(target, param) {
     if (target === LEVEL_TARGET && param) m = { kind: 'level', key: param };
     else if ((target === 'midicc' || target === 'midi') && midiTargetIsMidi(param)) m = { kind: 'midi', target: param };
     else if (target && target.indexOf('bank:') === 0) m = bankMacroFromAsn(target, param);
+    else if (target && target.indexOf(AU_TARGET) === 0) m = auMacroFromAsn(target, param);
     else if (target && param) m = { kind: 'chain', comp: target, key: param };
 
     const legs = macroLegs(store[i]).slice();
@@ -4744,6 +4792,7 @@ function commitAutoLane(target, param) {
     if (target === LEVEL_TARGET && param) m = { kind: 'level', key: param };
     else if ((target === 'midicc' || target === 'midi') && midiTargetIsMidi(param)) m = { kind: 'midi', target: param };
     else if (target && target.indexOf('bank:') === 0) m = bankMacroFromAsn(target, param);
+    else if (target && target.indexOf(AU_TARGET) === 0) m = auMacroFromAsn(target, param);
     else if (target && param) m = { kind: 'chain', comp: target, key: param };
     const tgt = m ? macroAutoTarget(m, pf.track) : null;
     if (!tgt) return;
@@ -5486,7 +5535,7 @@ function compCompatible(comp, key, newRoute) {
 /* A macro LEG: chain / level / bank / midi (see the mapping model). */
 export function legCompatible(leg, newRoute) {
     if (!leg) return true;
-    if (leg.kind === 'bank') return true;
+    if (leg.kind === 'bank' || leg.kind === AU_KIND) return true;
     if (leg.kind === MORPH_KIND) return newRoute === 0 || newRoute === 1;   /* a chain, or a Move track's bus */
     if (leg.kind === 'midi') return targetCompatible(leg.target, newRoute);
     if (leg.kind === 'level') return newRoute === 0 || newRoute === 1;
@@ -6115,6 +6164,13 @@ function legWriteNorm(t, leg, f, cell, prev, knob) {
         if (ref) automationParamEdit(t, effectiveClip(t), ref.slot, ref.fullKey, String(nv), String(was));
         return nv;
     }
+    if (leg.kind === AU_KIND) {
+        const meta = auMacroMeta(leg, t), was = meta ? auMacroValue(t, leg.key, false) : null;
+        if (was == null) return null;
+        const nv = Math.round(meta.min + f * (meta.max - meta.min));
+        auMacroWrite(t, leg.key, nv);
+        return nv;
+    }
     if (leg.kind === 'midi') {
         if (!midiTargetOnRoute(leg.target, t)) return null;
         const was = midiVal(t, leg.target);
@@ -6143,6 +6199,7 @@ function legReadRaw(t, leg, cell) {
     if (leg.kind === MORPH_KIND) return 0;
     if (leg.kind === 'level') { const li = macroLevelIdx(leg); return (li >= 0 && levelKnobSpec(li)) ? S.levelVals[li] : null; }
     if (leg.kind === 'bank') return bankMacroMeta(leg, t) ? bankMacroValue(leg, t) : null;
+    if (leg.kind === AU_KIND) return auMacroMeta(leg, t) ? auMacroValue(t, leg.key, true) : null;
     if (leg.kind === 'midi') return midiTargetOnRoute(leg.target, t) ? midiVal(t, leg.target) : null;
     if (!cell || cell.vanished) return null;
     return parseValue(cell, engineGet(S.slot, leg.comp, leg.key));   /* ⚠ a round trip */
@@ -6154,6 +6211,7 @@ function legRawToNorm(t, leg, cell, raw) {
     if (leg.kind === MORPH_KIND) { /* already a 0..1 position */ }
     else if (leg.kind === 'level') { const s2 = levelKnobSpec(macroLevelIdx(leg)); if (!s2) return null; max = s2.max; }
     else if (leg.kind === 'bank') { const m2 = bankMacroMeta(leg, t); if (!m2) return null; min = m2.min; max = m2.max; }
+    else if (leg.kind === AU_KIND) { const m2 = auMacroMeta(leg, t); if (!m2) return null; min = m2.min; max = m2.max; }
     else if (leg.kind === 'midi') { max = midiTargetMax(leg.target); }
     else { if (!cell || cell.vanished) return null; min = cell.min; max = cell.max; }
     if (max === min) return null;
@@ -6213,6 +6271,7 @@ function legShortName(leg) {
     if (leg.kind === MORPH_KIND) return 'Morph';
     if (leg.kind === 'level') { const s = LEVEL_KNOB_SPECS[macroLevelIdx(leg)]; return s ? s.label : 'Lvl'; }
     if (leg.kind === 'bank') { const m = bankMacroMeta(leg); return m ? m.abbrev : 'Bank'; }
+    if (leg.kind === AU_KIND) { const st = SEQ_AUTO_TARGETS[leg.key]; return st ? st.label : 'Smp'; }
     if (leg.kind === 'midi') return midiTargetName(leg.target).split(' ')[0];
     const c = S.knobMeta[leg.comp] && S.knobMeta[leg.comp].find(q => q && q.key === leg.key);
     return c ? shortLabel(String(c.name || c.label || leg.key)) : leg.key;
@@ -6286,6 +6345,7 @@ function macroAutoTarget(m, track, knob) {
     const t = (track == null) ? S.track : track;
     if (m.kind === MORPH_KIND) return (knob == null) ? null : 'mac:' + t + ':' + knob;
     if (m.kind === 'bank') { const key = seqAutoKeyFor(m.bank, m.k, m.alt); return key ? 'seq:' + t + ':' + key : null; }
+    if (m.kind === AU_KIND) return 'seq:' + t + ':' + m.key;
     if (m.kind === 'midi') return m.target;
     return S.slot + ':' + macroFullKey(m);
 }
@@ -6294,6 +6354,7 @@ function macroAutoRef(m, track, knob) {
     const t = (track == null) ? S.track : track;
     if (m.kind === MORPH_KIND) return (knob == null) ? null : { slot: 'mac', fullKey: t + ':' + knob };
     if (m.kind === 'bank') { const key = seqAutoKeyFor(m.bank, m.k, m.alt); return key ? { slot: 'seq', fullKey: t + ':' + key } : null; }
+    if (m.kind === AU_KIND) return { slot: 'seq', fullKey: t + ':' + m.key };
     if (m.kind === 'midi') return { slot: 'midi', fullKey: m.target };
     return { slot: S.slot, fullKey: macroFullKey(m) };
 }
@@ -6305,6 +6366,7 @@ function macroLive(m) {
     if (m.kind === MORPH_KIND) return morphLegValid(m) && S.track >= 0 && ((GS.trackRoute[S.track] | 0) === 0 || (GS.trackRoute[S.track] | 0) === 1);
     if (m.kind === 'level') return !!macroLevelSpec(m);
     if (m.kind === 'bank') return !!bankMacroMeta(m);
+    if (m.kind === AU_KIND) return !!auMacroMeta(m);
     if (m.kind === 'midi') return midiTargetOnRoute(m.target, S.track);
     return true;
 }
@@ -6977,6 +7039,20 @@ function macroTick() {
             if (nv !== cur) { midiSendValue(S.track, m.target, nv, cur, true); S.dirty = true; }
             continue;
         }
+        if (m && m.kind === AU_KIND) {
+            const meta = auMacroMeta(m);
+            const cur = meta ? auMacroValue(S.track, m.key, false) : null;
+            if (cur == null) { S.knobAccum[i] = 0; continue; }
+            const tr = bankMacroTravel(meta);
+            let steps = 0;
+            while (S.knobAccum[i] >= tr.sens) { steps++; S.knobAccum[i] -= tr.sens; }
+            while (S.knobAccum[i] <= -tr.sens) { steps--; S.knobAccum[i] += tr.sens; }
+            if (!steps) continue;
+            let nv = Math.max(meta.min, Math.min(meta.max, cur + legSteps(m, steps) * tr.step));
+            nv = Math.round(legClamp(nv, m, meta.min, meta.max));
+            if (auMacroWrite(S.track, m.key, nv)) S.dirty = true;   /* records as the editor's knob does */
+            continue;
+        }
         if (m && m.kind === 'bank') {
             const meta = bankMacroMeta(m);
             if (!meta) { S.knobAccum[i] = 0; continue; }
@@ -7169,6 +7245,13 @@ function macroCells(track, live) {
             const tg = (live && t === GS.activeTrack) ? macroAutoTarget(m, t, i) : null;
             const hv = tg ? autoHeldValue(tg) : null;
             cell = bankMacroCell(m, meta, hv ? (Number(hv.wire) | 0) : bankMacroValue(m, t));
+        } else if (m.kind === AU_KIND) {
+            const meta = auMacroMeta(m, t);
+            if (!meta) { cells.push(unassigned()); continue; }
+            const hv = (live && t === GS.activeTrack) ? autoHeldValue(macroAutoTarget(m, t, i)) : null;
+            const v = hv ? (Number(hv.wire) | 0) : auMacroValue(t, m.key, false);
+            /* no sample yet (or ALL SLICES on a Loop clip): nothing to drive */
+            cell = v == null ? Object.assign(bankMacroCell(m, meta, meta.min), { text: '--' }) : bankMacroCell(m, meta, v);
         } else if (m.kind === 'midi') {
             if (!midiTargetOnRoute(m.target, t)) { cells.push(unassigned()); continue; }
             const hv = (live && t === GS.activeTrack) ? autoHeldValue(m.target) : null;

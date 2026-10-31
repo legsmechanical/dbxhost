@@ -32,7 +32,7 @@ import { showActionPopupFor } from './ui_persistence.mjs';
 import { dspGet } from './ui_dsp_get.mjs';
 /* a cycle (ui_audio_editor imports this module): used only inside a function body */
 import { lazyFinish } from './ui_audio_editor.mjs';
-import { PAD_MODE_AUDIO, NUM_CLIPS, BANK_STEP, knobAltFor, auAutoKey, auSlicesAutoKey } from './ui_constants.mjs';
+import { PAD_MODE_AUDIO, NUM_CLIPS, BANK_STEP, knobAltFor, auAutoKey, auSlicesAutoKey, SEQ_AUTO_TARGETS, AU_AUTO_BANK, auAutoBank } from './ui_constants.mjs';
 import { automationParamEdit, automationParamTouch } from './ui_automation.mjs';
 import { bankListForMode, AU_MODE_LOOP, AU_MODE_SLICE, auIsSlice, auIsLoop } from './ui_pure.mjs';
 
@@ -533,6 +533,52 @@ export function auAutoMirror(t, field, val) {
     if (field === 'bpm10') { loc.rend = auPlayedEnd(t, c, loc); S.auStartsRev = (S.auStartsRev | 0) + 1; }
     if (field === 'revrs') S.auStartsRev = (S.auStartsRev | 0) + 1;
     S.auInfo[t][c] = loc;
+    S.screenDirty = true;
+    return true;
+}
+/* A MACRO on an Audio clip's sound: `key` is one of the `seq:` keys above
+ * (au_* or au_s_*), its value on track t's current clip in lane units
+ * (Decay's Full is 5001), or null where there is nothing to drive — no
+ * sample yet, or ALL SLICES on a Loop clip. `read` (tick context only): an
+ * ALL SLICES row not yet read is read now. */
+export function auMacroValue(t, key, read) {
+    const st = SEQ_AUTO_TARGETS[key];
+    if (!st || !auAutoBank(st.bank) || !isAudioTrack(t)) return null;
+    const c = auClipOf(t), i = auInfo(t, c);
+    if (i.state !== 2) return null;
+    if (st.bank === AU_AUTO_BANK) return st.field === 'bpm10' ? (i.bpm10 || 1200) : (i[st.field] | 0);
+    if (!auIsSlice(i)) return null;
+    let a = auAll(t, c);
+    if (!a && read) a = auReadAll(t, c);
+    let v = a ? a[ALL_FIELDS.indexOf(st.field)] : null;
+    if (v == null) { const s1 = auSlice(t, c, 0); v = s1 ? s1[st.field] : DEFAULT_SLICE[st.field]; }
+    return auDecWire(st.field, v);
+}
+/* ...and its write, as the SAMPLE / SLICES knob makes it: the clip's own
+ * setting, heard by automation as that knob's turn. True when it moved. */
+export function auMacroWrite(t, key, nv) {
+    const st = SEQ_AUTO_TARGETS[key];
+    const cur = auMacroValue(t, key, false);
+    if (cur == null) return false;
+    nv = Math.max(st.min, Math.min(st.max, nv | 0));
+    if (nv === cur) return false;
+    const c = auClipOf(t), f = st.field;
+    if (st.bank === AU_AUTO_BANK) {
+        const loc = Object.assign({}, auInfo(t, c), { [f]: nv });
+        auSet(t, c, f === 'bpm10' ? 'bpm' : f, nv);
+        auAutoEdit(t, c, f, nv, cur);
+        if (f === 'bpm10') loc.rend = auPlayedEnd(t, c, loc);
+        if (f === 'bpm10' || f === 'revrs') S.auStartsRev = (S.auStartsRev | 0) + 1;
+        S.auInfo[t][c] = loc;
+    } else {
+        const fv = f === 'dec' && nv >= 5001 ? 0 : nv;
+        const a = auAll(t, c);
+        auSetAll(t, c, f, fv);
+        auSlicesAutoEdit(t, c, f, fv, f === 'dec' && cur >= 5001 ? 0 : cur);
+        const na = a ? a.slice() : new Array(ALL_FIELDS.length).fill(null);
+        na[ALL_FIELDS.indexOf(f)] = fv;
+        _all.set(t + '_' + c, na);
+    }
     S.screenDirty = true;
     return true;
 }
