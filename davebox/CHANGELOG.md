@@ -9,204 +9,43 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Added
-- **Audio: Undo brings a clip's sample back.** Loading a sample, None, Shift + Delete,
-  Resample In place, Flatten track (one Undo for every clip it replaced) and Trim or
-  Normalize to a New sample are now undoable: the clip gets its old sample back, with
-  its settings. An Overwrite still can't be undone.
-- **Flatten track.** TRACK CONFIG › **Flatten track** records every clip and turns the
-  track into an Audio track, each clip playing its recording. **Pre** records the
-  instrument before the track's effects and leaves them on; **Post** records through
-  them and then bypasses them. Works on melodic and drum tracks, and on a MIDI track
-  that plays another track's instrument. An Audio track flattens in place: each clip
-  re-recorded and starting over with its recording. Its options add **Warm-up**: each
-  clip plays once before it is recorded, so its tails carry into the loop.
-- **Resampling works with Audio tracks.** A Loop clip (which has no steps) is now
-  recorded for its own length, by Resample clip and Resample scene alike; before, a
-  clip or scene of Loop clips had nothing to resample.
-- **Audio: Convert to kit.** SLICES › **Convert to kit** makes a native Move drum rack
-  preset of a Slice clip's chops — a pad each, up to 32 (Move plays the first 16;
-  instruments that load Move drum racks with more pads, such as DR32, all 32), each
-  carrying its slice's Pitch, Detune, Gain, Attack, Decay and Play. The sample is copied
-  once into the library and every pad plays its part of it. Presets go to Track Presets ›
-  dBx-slice.
-- **Audio: chop a Loop clip from SAMPLE.** A Loop clip's SAMPLE menu adds **Chop
-  sample** (Even · Transient · Lazy · Manual): picking one makes it a Slice clip and
-  opens that chop editor on SLICES.
-- **Audio: chop editors close without asking.** In Even, Transient and Lazy, a click or
-  Back keeps the chops and returns to SLICES (no *Keep N chops?*); a click no longer
-  opens Manual.
-- **Audio: Vintage is far less noisy.** Its pieces now crossfade into each other (about
-  3 ms) instead of cutting hard ~190 times a second, which buzzed whenever a loop's Tempo
-  differed from the project's.
-- **Audio tracks follow the Conductor.** A responding Audio track plays its audio up or
-  down by the Conductor's transposition (in semitones; with Scale Aware, the key's root
-  moved by its degrees), with the track's octave on top — its chops never change. Next
-  repitches each chop as it starts and a Loop clip when it comes round; Now at once.
-  A scene bake's **Apply Conductor** puts a single shift into the clip's Pitch; a
-  shift that changes during the clip is left playing live, and the notice says which
-  track still follows.
-- **Audio: 16 Pads shows two banks.** In the 16 Pads layout the right 4×4 takes the
-  colours of the partner track (1↔5, 2↔6, 3↔7, 4↔8); a Slice pad held down is white.
-- **Resample clip › In place** on an Audio clip: the recording replaces the clip,
-  which starts over with it as its sample at default settings.
-- **Audio: Trim and Normalize.** SAMPLE's click opens a menu — Load sample · Trim ·
-  Normalize. Trim cuts the file to what the clip plays; Normalize raises its peak to
-  full scale. Each asks New (a new sample for this clip, the default) or Overwrite (the
-  file itself, for every clip using it).
-- **Audio: Sync Warp**, the default for Loop clips: the loop is time-stretched to
-  the tempo and keeps its own pitch, so a loop recorded at 90 plays at 128 sounding
-  as it was. Pitch and Detune then transpose it without changing its length. Warp is
-  processor-intensive: one or two warped tracks are fine, but warping many at once
-  can overload the Move and cause clicks or dropouts.
-- **Audio: each sample has a Tempo, and a clip plays from Start for its Length.**
-  SAMPLE's K7 sets the sample's own tempo (guessed when you pick it — a tempo in the
-  file's name is taken as it is, even with a tail after the loop), and **K3** is the
-  **Length**: a Loop clip's own length, or how much of the sample a Slice clip chops.
-  There is no End. Sync, >Seq and the waveform all go by the Tempo, so a sample with a
-  lead-in or a tail lines up once Start sits on its downbeat.
-- **Audio: Transient chops.** SLICES › **Transient** cuts a Slice clip at the
-  sample's hits: turn the jog for **Sens** and watch the chops move on the waveform.
-  Only hits in the chopped part count, up to 128.
-- **Battery level in Project Settings.** The header shows the charge in percent at
-  the right, with a plug while the Move is on the charger. When Move says the battery
-  is low, a **LOW BATTERY** card comes up over any screen until you click the jog, and
-  again every 5 minutes until the Move is plugged in.
-
-### Changed
-- **Drum tracks: DRUM LANE and ALL LANES are one box on the bank map**, as SLICES and
-  SAMPLE are on an Audio Slice clip.
-- **Audio: SLICES and SAMPLE read as one instrument on the bank map** — one box on the
-  screen on a Slice clip — and SLICES joins SAMPLE on the right 4×4's shortcuts, above it.
-- **Audio: a Loop clip's CLIP bank is Mode · Strch · Shift (alt Nudge).** Strch x2 plays
-  the loop at half speed across twice the bars (/2 the reverse); Shift moves the audio a
-  step at a time inside the clip, wrapping round (the waveform and pads turn with it); Nudge moved here from SAMPLE.
-- **Audio: the sequence works with SAMPLE or SLICES up.** Steps, Record and hold a step
-  + jog (its step page) work there as under any instrument's editor.
-- **Audio: no sound bank on Track View.** The sample's settings live in SAMPLE and
-  SLICES, as an instrument's do; Back returns to the bank you were on. Delete + click on
-  an editor's grid page resets that page.
-- **Audio: the editors' second pages show the first's knobs as a grid.** SAMPLE page 2
-  is Orig · Sync · Gain · Pitch · Detune · Tempo · Revrs, each on its page 1 knob; SAMPLE's
-  K8 is Revrs. SLICES page 1's K4–K8 set the picked slice (Shift: every slice), as page 2
-  does, with Attk and Decay on page 2's K1 / K2. Nudge leaves SAMPLE.
-- **Audio: SLICES shows SAMPLE's part of the sample.** Zoomed out it is Start for its
-  Length, as on SAMPLE, and chopping stays inside it.
-- **Audio: Length moves a bar a detent, a step with Shift**; Tempo a BPM, a tenth with
-  Shift. Turning Tempo after Length keeps the clip's end in view.
-- **Audio: ALL SLICES sets every slice.** Its Pitch, Detune and Gain now set each
-  slice's own value, as its other knobs do; SAMPLE's Pitch, Detune and Gain are the
-  base the slices add to.
-- **Audio: chopping lives on SLICES.** A click on SAMPLE loads a sample; a click on
-  SLICES offers the chop types. A click in Even, Transient or Lazy keeps the chops and
-  opens Manual on them. **Mode** is K1 of the CLIP bank (Res moves to K4), and PAD MODE is
-  a Slice clip's alone — a Loop clip's pads are always 4 rows.
-- **Audio: SAMPLE has two pages** — the waveform (Start · Zoom · Length · Gain · Pitch ·
-  Detune · Tempo · **Nudge**) and, a jog turn away, **Sync** · **Revrs** · **Orig** (touch K8
-  and click: the sample plays exactly as recorded). A Loop clip's **CLIP** bank holds only
-  its Mode.
-- **Audio: SAMPLE zoomed out is the clip** — its bars across, the audio where it lands at
-  the sample's Tempo (squeezed or stretched as you turn it, empty past the end of the
-  sample), a tick per beat under it. Track View at rest shows a Loop clip the same way, with
-  its Tempo, and the Loop pads are the clip in 32 sections, grey past the sample's end.
-- **Audio: SLICES, a Slice clip's own editor** (its pad under CLIP): the chops, K1 / K3
-  moving the picked one, a click for the chop types; a jog turn away, that slice's sound,
-  or every slice's with Shift held.
-- **Audio: each chop type opens a chop editor on the waveform.** The chop types are
-  **Even · Transient · Lazy · Manual**; Even and Transient change live as you turn the
-  jog, and **Back** asks *Keep N chops?*. **Manual** edits the chops you have, with
-  **Delete + click** to clear them all. SAMPLE itself, in Slice mode, now moves the
-  clip's Start and Length rather than a slice's, and a click opens its menu.
-- **The version is easy to find.** The loading screen shows dAVEBOx's version under
-  the wordmark, with the Schwung base version below it, and the web manager's System
-  page lists dAVEBOx's version (it used to show the Schwung base version there).
-- **Launch Now picks up at the song position when the clips differ in length.** A
-  4-bar clip launched from a 1-bar one used to come in somewhere in its first bar; it
-  now comes in where it would be had it been playing all along, as a quantized launch
-  and a drum track already did — for MIDI and audio clips, and in any play direction.
-  Clips of the same length still hand over in step with each other.
-- **Audio: Loop clips have no chops** — they belong to Slice mode now (a clip keeps them
-  for when you switch back). SAMPLE shows none, nor a cursor; the pads show the sample in
-  32 even sections; Chop sample is in Slice mode only.
-- **Audio: Loop + steps picks the part of the sample a Loop clip plays.** The loop
-  window you hold Loop and tap steps for is laid over the sample from Start at its
-  Tempo, and it works on the SAMPLE screen too.
-- **Audio: SAMPLE sits on the instrument pad, where INST is on other tracks**; the
-  SLICE / LOOP bank moves under CLIP. In Loop mode SAMPLE's header shows the sample's
-  name, and the track overview's waveform no longer shows the chops.
-
-- **Audio tracks: one set of chops, and Mode on the CLIP bank.** A clip's chops now
-  serve both modes, and its **Mode** (CLIP bank K4) only says what the sequencer does
-  with them. **Loop** plays the sample straight through, set and forget; its pads show
-  the loop as a progress bar (dim, bright as it plays, the playing part pulsing) and
-  taps do nothing — the jump points, **Jump** and **JmpQ** are gone. **Slice** puts the
-  chops on the steps. Switching an empty clip from Loop to Slice lays its chops on the
-  steps in order, so it sounds the same. The pads run in time order, 8 a row, in both
-  modes; a new clip starts with 16 even chops. Choosing a chop method no longer switches
-  the Mode.
-- **Audio: the Slice CLIP bank's second Quant is gone** (it's on NOTE FX). **DELAY** is gone from Audio tracks, and a
-  Loop clip has no STEP or NOTE FX.
-
-- **Audio: 128 chops**, 32 to a pad page — Octave Up / Down steps the pages.
-  External note 36 still plays chop 1.
-- **Audio: Sync** on the Loop CLIP bank (K1): **Vintage** cuts the loop into tiny
-  pieces on the clock, each on its beat as recorded, so it stays in time at any tempo
-  with an old sampler's gaps and grit; **Pitch** retunes the loop to the tempo;
-  **Warp** stretches it. >Seq grows a clip whose length you never set; a set length
-  stays, with the chops past it beyond the loop.
-- **Audio: PAD MODE** (IN column) sets the pads' **Layout** — 4 Rows or 16 Pads — and
-  **LIVE ARP** comes to Audio tracks, with **Step** (a chop per repeat) in place of Oct.
-- ⚠ A Slice clip's sequence from an earlier build plays the wrong chops: chops are now
-  numbered from note 0.
-- **Audio Loop: the pads show where the loop ends.** The parts a clip never reaches
-  before it comes round are grey; the step buttons follow the playhead page by page.
-
-- **Audio: Delete + clip clears the sequence only** — the sample, its settings and
-  the clip's length stay; **Shift + Delete + clip** resets it, sample and all.
-  **Delete + jog click** on the SLICE or LOOP bank resets the page showing.
-- **Audio: the clip's sound is a bank now**, named SLICE or LOOP for the clip's mode, with pages — CLIP, and SLICE n in Slice mode.
-  A plain jog turn flips them; the map's SLICE / LOOP pad lands on it. **SAMPLE** is the
-  track's instrument editor: the map's instrument pad, the sound menu's Audio row
-  and the instrument shortcut open it.
-
-### Fixed
-- **Audio: a Loop pick sets clips up to 256 bars long** — it stopped at 64, without a word.
-- **Audio: long files open fast after the first time.** A streamed sample's waveform
-  summary is kept beside the project's samples, so loading a project (or undoing back
-  to a sample) no longer reads the whole file again; a changed file is summarised anew.
-- **Audio: a long file shows how far it has loaded** (Loading 42%).
-- **Audio: turning Start, Length, Tempo or Sens on a long Slice clip is lighter** on the
-  engine: Transient's chops are worked out once per audio block, and the hit count is
-  kept until what it counts changes.
-- **Audio: two different files with the same name and size no longer share audio** — the
-  second was taken for the first and played its sound.
-- **Audio: Trim drops chops past the new end** (they stayed lit but played nothing).
-- **Audio: a held step's knob 1 stops at the clip's last chop.**
-- **Audio: after Flatten every clip shows its take in Session View.** Only the current clip
-  was read again, so the others looked empty until selected.
-- **Audio: refusals are said.** Slice, Transient and Lazy on a sample over 4 minutes
-  (TOO LONG TO CHOP), a Trim or Normalize that fails (NOT TRIMMED / NOT NORMALIZED and
-  why, e.g. Nothing to raise on a silent file), and a Loop clip's Strch at its limit.
-- **Audio: a slow engine reply is no longer read as an answer** — a 16 Pads track kept
-  its layout after a load, Lazy no longer gave up mid-chop, and Resample no longer said
-  a clip was empty; it says No response instead.
-- **Undoing a scene bake with Apply Conductor brings the responders back on screen.**
-  The tracks came back responding, but the Conductor's RESPONDERS bank still showed
-  them off, and the next scene bake did not offer Apply Conductor.
-- **Audio: a step's page names its chop** (it showed a note name, D-2 for chop 3).
-- **Audio: Vintage plays when dAVEBOx follows Move's clock** — it was silent there.
-- **Audio: Vintage with Nudge earlier** starts the loop further in, instead of
-  stuttering at the end of a clip shorter than the sample.
-- **Audio: Loop pads grey what the clip never reaches** — it never plays, and now
-  looks it.
-- **Audio: a chop's end no longer clicks** — every chop ends with a ~3 ms fade.
-- **Audio: the Shift shortcuts work over SAMPLE** (and its sample chooser): Shift + a
-  step or Shift + jog leaves it and does what it does everywhere else.
-- **Audio: slices start exactly on their step** (on dAVEBOx's own clock) rather than up to 3 ms early, and chops
-  played in order join with no click or dip.
-- **Audio: >Seq dropped chops** whose start fell a fraction before their step (a 2 s
-  loop at 120 bpm got 8 of its 16 chops).
-
-### Added
+- **Audio tracks.** Choose **Audio** in a track's **Instmt/Dest** picker and each clip
+  plays its own sample — picked from your library (WAV or AIFF, auditioned as you
+  browse) and copied into the project. A track that plays an instrument first offers to
+  **resample its clips**, so each comes back as its own audio.
+  - **Two modes** (the CLIP bank's **Mode**). **Loop** is set and forget: the sample
+    plays with the clip, from **Start** each time it comes round. Each sample has its own
+    **Tempo** (guessed from its name or its beats when you pick it), and **Sync** says how
+    it meets the project's: **Warp** (the default) time-stretches it and keeps its pitch —
+    processor-intensive, so warp only a few tracks at once; **Vintage** cuts it into tiny
+    crossfaded pieces on the clock, an old sampler's sound; **Pitch** retunes it. A Loop
+    clip's CLIP bank is **Mode · Strch · Shift** (alt **Nudge**); Loop + steps picks the
+    part of the sample it plays, and its pads show the clip in 32 sections. **Slice** puts
+    the sample's chops on the steps: up to 128 chops, 32 to a pad page, laid out as
+    **4 Rows** or **16 Pads** (PAD MODE; two banks in the partner track's colours).
+  - **SAMPLE** (the instrument pad on the bank map) is the clip's sample: the waveform,
+    zoomable, with Start · Zoom · Length · Gain · Pitch · Detune · Tempo · Revrs, and a
+    second page with Orig and Sync. A click opens **Load sample · Trim · Normalize** (and
+    **Chop sample** on a Loop clip); Trim and Normalize make a **New** sample or
+    **Overwrite** the file.
+  - **SLICES** (a Slice clip's editor) makes the chops: **Even**, **Transient** (cut at
+    the hits; the jog sets Sens), **Lazy** (tap them in as it plays) or **Manual**, each
+    live on the pads; a click or Back keeps them. Each chop has its own Pitch, Detune,
+    Gain, Revrs, Attack, Decay and Play, or set them all at once. **>Seq** lays the chops
+    on the steps; **Convert to kit** makes a native Move drum rack preset of them (a pad
+    each, up to 32, in Track Presets › dBx-slice).
+  - **Undo** brings a clip's sample back with its settings (a pick, None, Shift + Delete,
+    In place, Flatten, a New Trim or Normalize); an Overwrite can't be undone.
+  - **The Conductor** repitches a responding Audio track, its chops unchanged; a scene
+    bake's **Apply Conductor** folds a steady shift into the clip's Pitch.
+  - **LIVE ARP** plays chops (**Step** in place of Oct); NOTE FX keeps what doesn't move
+    a pitch; there is no DELAY. Muting an Audio track silences it like a bus, so its loop
+    keeps time. **Delete + clip** clears the sequence only; **Shift + Delete** resets the
+    clip, sample and all.
+  - **Long samples**: Loop clips take up to **30 minutes** (a pick sets up to 256 bars),
+    Slice clips up to 4; anything over a minute plays from the card as it goes, and opens
+    quickly after the first time. **Project Settings → Purge samples** clears out the
+    ones no clip uses.
 - **Resample a scene.** Record what a scene sounds like into a sample, cut to loop
   exactly: **Sample → Resample scene**, pick the row, then the length (it starts where
   all the clips line up), an optional warm-up pass so tails carry into the loop, and
@@ -216,34 +55,41 @@ the section into a versioned heading at release time.
 - **Resample a clip.** **Sample → Resample clip** records one track's clip alone — in
   Session View tap the clip's pad, in Track View it takes the current clip. Choose
   **Wet** (as you hear it, with sends and Master FX) or **Dry** (just the track's own
-  instrument and effects). After any resample, Play carries on with the clips you had
-  armed.
-
-- **Audio.** Choose **Audio** in a track's **Instmt/Dest** picker and each clip
-  plays its own sample — picked from your library (WAV or AIFF, auditioned as you
-  browse) and copied into the project — as a **Loop**, with the pads as jump
-  points, or as up to 32 **Slices** you play from the pads and sequence on the
-  steps. **SAMPLE** (a new bank map pad) holds the clip's sample: load one, set the
-  loop's start and end, or make chops with a **Lazy chop** (tap them in as the
-  sample plays), by hand or evenly, then shape them in a zoomable editor — move
-  any chop's start and end down to a single sample, add and remove chops.
-  **Even** cuts equal slices, showing them on the pads as you turn. The **SLICE / LOOP**
-  editor (its pad) holds the clip's sound: mode, pitch (semitones), detune
-  (cents) and gain, sound settings per slice or for all slices at once; **>Seq**
-  on the CLIP bank lays the slices out on the steps. Loop clips can play backwards, be nudged against
-  the bar and have their jumps wait for the beat; muting an Audio track silences it
-  like a bus, so its loop keeps time and comes back in place. Loop clips take
-  samples up to **30 minutes**, and any sample over a minute plays from the card as
-  it goes — slices and jumps still start instantly. **Project Settings → Purge
-  samples** clears out the ones you no longer use. Choosing Audio on a track that
-  plays an instrument offers to **resample its clips** first, so each comes back as
-  its own audio.
+  instrument and effects). An Audio clip can be resampled **In place**: the recording
+  replaces it. After any resample, Play carries on with the clips you had armed.
+- **Flatten track.** TRACK CONFIG › **Flatten track** records every clip and turns the
+  track into an Audio track, each clip playing its recording. **Pre** records the
+  instrument before the track's effects and leaves them on; **Post** records through
+  them and then bypasses them. Works on melodic and drum tracks, and on a MIDI track
+  that plays another track's instrument. An Audio track flattens in place: each clip
+  re-recorded and starting over with its recording. Its options add **Warm-up**: each
+  clip plays once before it is recorded, so its tails carry into the loop. One Undo
+  brings every clip back.
+- **Battery level in Project Settings.** The header shows the charge in percent at
+  the right, with a plug while the Move is on the charger. When Move says the battery
+  is low, a **LOW BATTERY** card comes up over any screen until you click the jog, and
+  again every 5 minutes until the Move is plugged in.
 
 ### Changed
 - **Sample opens a menu.** Tap **Sample** and choose: **Bake scene**, **Resample
   scene** or **Live merge** in Session View; **Bake clip** or **Live merge track** in
   Track View. **Back** steps back a level. **Shift + Sample** no longer starts a Live
   Merge — it's in the menu.
+- **Drum tracks: DRUM LANE and ALL LANES are one box on the bank map**, as SLICES and
+  SAMPLE are on an Audio Slice clip.
+- **The version is easy to find.** The loading screen shows dAVEBOx's version under
+  the wordmark, with the Schwung base version below it, and the web manager's System
+  page lists dAVEBOx's version (it used to show the Schwung base version there).
+- **Launch Now picks up at the song position when the clips differ in length.** A
+  4-bar clip launched from a 1-bar one used to come in somewhere in its first bar; it
+  now comes in where it would be had it been playing all along, as a quantized launch
+  and a drum track already did — for MIDI and audio clips, and in any play direction.
+  Clips of the same length still hand over in step with each other.
+
+### Fixed
+- **Undoing a scene bake with Apply Conductor brings the responders back on screen.**
+  The tracks came back responding, but the Conductor's RESPONDERS bank still showed
+  them off, and the next scene bake did not offer Apply Conductor.
 
 ## [1.1.3] — 2026-10-28
 
