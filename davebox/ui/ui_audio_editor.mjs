@@ -1,20 +1,11 @@
 /* ui_audio_editor.mjs — the AUDIO editor and the WAVE editor.
  *
- * THE AUDIO EDITOR (S.auPanel) is an Audio track's instrument door — the
- * sound menu's click on "Audio", the bank map's AUDIO pad (Josh, 2026-10-27:
- * "inst ... would take you an editor with all the audio settings"). It edits
- * the track's current clip's SOUND (Josh, 2026-10-28, from the Layout Map:
- * SLICING "don't need this - it's now on wave"; ALL SLICES "merge with
- * "clip""):
- *   CLIP, Slice mode  Mode · Pitch · Gain · Revrs · Attk · Decay · Play (every
- *                     slice, `--` while they differ) · >Seq› (slices to steps)
- *   CLIP, Loop mode   Mode · Pitch · Gain · Jump · Revrs · Nudge · JmpQ
- *   SLICE n           Pitch · Gain · Revrs · Attk · Decay · Play (Slice mode)
- * The jog turns pages; a knob turns its cell; touch + click fires >Seq. The
- * pads stay live — a tap picks the slice SLICE n edits. Back closes.
+ * S.auPanel is the frame the editor opens in (openWave: the bank map's SAMPLE
+ * and SLICES pads); its pages (auPanelPages) are SAMPLE's, or on a Slice
+ * clip's SLICES the ALL SLICES page (CLIP) and SLICE n. The standalone AUDIO
+ * panel of 2026-10-27 is retired (removed after review, 2026-10-31).
  *
- * THE WAVE EDITOR (S.auEditor, opened by the map's WAVE pad, with an AUDIO
- * editor under it that Back closes too) is the clip's SAMPLE (Josh: "new
+ * THE EDITOR (S.auEditor, in that frame; Back closes both) is the clip's SAMPLE (Josh: "new
  * editor: wav — initial page should show the loop waveform in loop mode, with
  * adjustable zoom, start/end, pitch, and gain. in slice mode, it should show
  * the slice editor. if no sample is loaded yet - the waveform view should show
@@ -90,17 +81,9 @@ function knobStep(k, d2, need) {
     return steps === 0 ? 0 : (steps > 0 ? 1 : -1);
 }
 
-/* ---- the AUDIO editor ---- */
-
-export function audioPanelOpen() { return !!S.auPanel; }
-
-export function openAudioEditor(t) {
-    if (!isAudioTrack(t)) return false;
-    S.auPanel = { t, page: 0 };
-    S.knobTouched = -1;
-    S.screenDirty = true;
-    return true;
-}
+/* ---- the AUDIO editor: S.auPanel is the frame the SAMPLE / SLICES editor
+ * (S.auEditor) opens in (openWave) — never one without the other since the
+ * retired AUDIO panel (removed after review, 2026-10-31) ---- */
 
 
 /* A Shift shortcut over an Audio screen: a step pressed, or the jog turned. */
@@ -156,54 +139,7 @@ export function audioPanelInput(status, d1, d2) {
         if (S.stepReveal && (((status & 0xE0) === 0x80 && d1 <= 7) || (status === 0xB0 && d1 >= 71 && d1 <= 78))) return false;
     }
     if (S.auEditor) return audioEditorInput(status, d1, d2);
-    const hi = status & 0xF0;
-    if (hi === 0x90 || hi === 0x80) {
-        if (d1 >= 0 && d1 <= 7) {                            /* knob touches */
-            /* A PHYSICAL touch, as the knob handler records it: the tick
-             * clears a touched knob ~600 ms after a turn unless knobPhysIdx
-             * says a finger is on it — so a knob turned earlier lost its
-             * touch before the click (found by Josh: Edit did nothing). */
-            if (hi === 0x90 && d2 >= 64) { S.knobTouched = d1; S.knobPhysIdx = d1; S.knobTurnedTick[d1] = -1; }
-            else {
-                if (S.knobTouched === d1) S.knobTouched = -1;
-                if (S.knobPhysIdx === d1) S.knobPhysIdx = -1;
-            }
-            S.screenDirty = true;
-            return true;
-        }
-        if (d1 >= 16 && d1 <= 31) return true;               /* steps */
-        return false;
-    }
-    if (status !== 0xB0) return false;
-    if (d1 >= 71 && d1 <= 78) {
-        const k = d1 - 71;
-        const cls = auPanelKnobClass(ed, k);
-        const st = cls ? knobStep(k, d2, cls === 'pick' ? KNOB_PICK : KNOB_DELIB) : ccKnobDelta(d2, k);
-        if (st && auPanelKnob(ed, k, st)) S.screenDirty = true;
-        return true;
-    }
-    if (d1 === MoveMainKnob && !S.shiftHeld) {
-        const dd = decodeDelta(d2);
-        if (dd) {
-            const n = auPanelPages(ed.t).length;
-            ed.page = Math.max(0, Math.min(n - 1, (ed.page | 0) + (dd > 0 ? 1 : -1)));
-            S.screenDirty = true;
-        }
-        return true;
-    }
-    if (d1 === MoveMainButton) {
-        if (d2 >= 64 && S.deleteHeld && auPanelReset(ed)) showActionPopup(auPanelPageName(ed) === 'CLIP' ? 'CLIP' : 'SLICE', 'RESET');
-        S.screenDirty = true;
-        return true;
-    }
-    if (d1 === MoveBack) {
-        if (d2 >= 64) { S.backPressTick = nowMs(); S.backHoldFired = false; return true; }
-        const held = S.backHoldFired;
-        S.backPressTick = -1; S.backHoldFired = false;
-        if (!held) closeAudioPanel();
-        return true;
-    }
-    if (d1 === MoveNoteSession) { closeAudioPanel(); return false; }
+    closeAudioPanel();                 /* a frame with no editor: nothing to show */
     return false;
 }
 
@@ -995,7 +931,7 @@ function askInput(ed, status, d1, d2) {
     return true;
 }
 
-/* WAVE's knob rings: K1 Start, K2 Zoom, K3 End, K4 Gain, K5 Pitch, K6 Detune, K7 Bars,
+/* SAMPLE's knob rings: K1 Start, K2 Zoom, K3 End, K4 Gain, K5 Pitch, K6 Detune, K7 Tempo, K8 Revrs,
  * each where it sits — the clip's Start / End, the picked slice's in Manual,
  * none in Even / Transient; dark with no sample, in a Lazy chop, under the
  * picker or a question, and on K8. */

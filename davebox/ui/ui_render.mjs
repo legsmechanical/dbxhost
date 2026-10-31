@@ -241,13 +241,6 @@ function drawAudioTrackRest(t) {
 
 /* The AUDIO editor (ui_audio_editor): the clip's audio on the kit page, a
  * page per jog detent. */
-function drawAudioPanel() {
-    const ed = S.auPanel;
-    clear_screen();                      /* it opens over the sound menu */
-    /* The page's own name — the header has room for no more beside the
-     * track tag (found on the device: "ALL SLICES 4/4" was cut). */
-    drawKitPage(auPanelTitle(ed), auPanelCells(ed), false, [['jog', 'page']]);
-}
 
 /* The WAVE editor (ui_audio_editor): the clip's sample — CLICK TO LOAD
  * SAMPLE in the click corners with none, the clip's Start / End and Pitch /
@@ -406,10 +399,10 @@ function drawAudioWaveEditor() {
 }
 
 /* An Audio track's banks (Josh, 2026-10-27): the CLIP bank mirrors ALL LANES
- * in Slice mode — Res · Strch · Shift/Nudge · Mode · Crop · InQnt · Dir/Revrs
- * · >Seq — over the melodic clip's own data, and holds Nudge · Mode in Loop
- * mode (Mode on K4 in both: Josh, 2026-10-28, "loop vs slice mode should be a
- * clip bank setting"); NOTE FX loses what moves a pitch (a pitch is a slice):
+ * in Slice mode over the melodic clip's own data, and holds Mode · Strch ·
+ * Shift (alt Nudge) in Loop mode (auLoopBankCells) — Mode on K1 in both (Josh,
+ * 2026-10-28: "loop vs slice mode should be a clip bank setting"); NOTE FX
+ * loses what moves a pitch (a pitch is a slice):
  * its drum form. `cells` are the melodic bank's. */
 function audioBankCells(bank, cells) {
     const t = S.activeTrack;
@@ -1015,8 +1008,7 @@ function mapClickHints(bank) {
 export function bankPageHints(bank) {
     /* A touched TRIGGER knob says how to fire it, as stock's footer does. An
      * Audio track's CLIP bank has its own: Crop on K5 and >Seq on K8 in Slice
-     * mode, no Legato or Import (K4 is Mode there — found on the device: it
-     * read CLK LEGATO). */
+     * mode, no Legato or Import (found on the device: it read CLK LEGATO). */
     const au = isAudioTrack(S.activeTrack);
     if (au && bank === 0 && !S.sessionView) {
         if (audioSliceMode(S.activeTrack) && S.knobTouched === 4) return [['CLK', 'CROP']];
@@ -2287,7 +2279,7 @@ function drawUIBody() {
     /* AUDIO: the sample chooser, the AUDIO editor and its slice editor. */
     if (S.auChooser) { drawAudioChooser(); return; }
     /* ...under a held step's page (hold + jog right), as sound mode is */
-    if (S.auPanel && !S.stepReveal) { if (S.auEditor) drawAudioWaveEditor(); else drawAudioPanel(); return; }
+    if (S.auPanel && !S.stepReveal && S.auEditor) { drawAudioWaveEditor(); return; }
     if (S.snapshotPicker) { drawSnapshotPicker(); return; }
     if (S.templateManager || (S.templateNameEntry && templateTextEntryUp())) { drawTemplateManager(); return; }
     /* ⭑ The exit confirm outranks the picker (2026-09-16). Hold-Back already

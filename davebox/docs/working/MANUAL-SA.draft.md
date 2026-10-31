@@ -1214,7 +1214,7 @@ them:
 
 | Mode | How it plays | The pads | The steps |
 |---|---|---|---|
-| **Loop** | Set and forget: the sample plays with the clip, from **Start** each time the clip comes round, for the clip's own length. Each clip knows its sample's own **Tempo** (SAMPLE's K7, 0.1–999.9 BPM) — guessed when you pick it: a tempo in the file's name ("84 bpm") is taken as it is, even with a tail after the loop; else bars in the name ("4bar"), else where its beats fall, else the project's tempo. Turn it if the guess is wrong. A new pick sets the clip to the sample's length in whole bars at that Tempo. **Sync** says how it meets the project's tempo: **Warp** (the default) time-stretches the loop and keeps its pitch — at any tempo it sounds as recorded, only faster or slower, and **Pitch** and **Detune** transpose it without changing its length. Warp is processor-intensive: one or two warped tracks are fine, but warping many tracks at once can overload the Move and cause clicks or dropouts. **Vintage** cuts the sample into tiny pieces on the sequencer's own clock (384 to a bar) and starts each on its place at the sample's Tempo, crossfading from one to the next — the same sound at its own tempo, and in time at any other, with the grit of an old sampler. **Pitch** retunes the loop, faster or slower, to the tempo (Pitch and Detune then give way: the tempo sets the speed). Vintage and Pitch cost almost nothing. **Loop + steps** sets the loop as on any clip: the clip plays the part of the sample under those steps, laid over it from Start at its Tempo — on the SAMPLE screen too. A Loop clip has no chops you can see: they belong to Slice mode, and the clip keeps them for when you switch back. Every chop ends with a few milliseconds' fade, so a cut never clicks. | Show where the loop is: the clip in 32 even sections, one a pad, dim in the track colour, the sections played this time round bright, the one playing pulsing. In **Revrs** they fill from the end. Stopped, all dim. Sections past the end of the sample show grey — the clip never plays them. Tapping one does nothing. | Show where the loop is: its steps dim, the playhead white. Playing, they follow the playhead page by page, as a sequence does. |
+| **Loop** | Set and forget: the sample plays with the clip, from **Start** each time the clip comes round, for the clip's own length. Each clip knows its sample's own **Tempo** (SAMPLE's K7, 0.1–999.9 BPM) — guessed when you pick it: a tempo in the file's name ("84 bpm") is taken as it is, even with a tail after the loop; else bars in the name ("4bar"), else where its beats fall, else the project's tempo. Turn it if the guess is wrong. A new pick sets the clip to the sample's length in whole bars at that Tempo (up to 256 bars). **Sync** says how it meets the project's tempo: **Warp** (the default) time-stretches the loop and keeps its pitch — at any tempo it sounds as recorded, only faster or slower, and **Pitch** and **Detune** transpose it without changing its length. Warp is processor-intensive: one or two warped tracks are fine, but warping many tracks at once can overload the Move and cause clicks or dropouts. **Vintage** cuts the sample into tiny pieces on the sequencer's own clock (384 to a bar) and starts each on its place at the sample's Tempo, crossfading from one to the next — the same sound at its own tempo, and in time at any other, with the grit of an old sampler. **Pitch** retunes the loop, faster or slower, to the tempo (Pitch and Detune then give way: the tempo sets the speed). Vintage and Pitch cost almost nothing. **Loop + steps** sets the loop as on any clip: the clip plays the part of the sample under those steps, laid over it from Start at its Tempo — on the SAMPLE screen too. A Loop clip has no chops you can see: they belong to Slice mode, and the clip keeps them for when you switch back. Every chop ends with a few milliseconds' fade, so a cut never clicks. | Show where the loop is: the clip in 32 even sections, one a pad, dim in the track colour, the sections played this time round bright, the one playing pulsing. In **Revrs** they fill from the end. Stopped, all dim. Sections past the end of the sample show grey — the clip never plays them. Tapping one does nothing. | Show where the loop is: its steps dim, the playhead white. Playing, they follow the playhead page by page, as a sequence does. |
 | **Slice** | The chops on the steps, played and sequenced from the pads. One at a time: a new chop cuts the last — unless it's the next piece of the sample, reached right where the last one has got to, which simply plays on. Velocity is ignored. | **The chops**, in time order, 32 to a page; a chop playing, or a pad held, is white. Pads past the chop count are dark. | One sequence per clip: each step holds one chop. **Hold a step + tap a pad** places that chop; recording works as on a melodic track. |
 
 A clip holds up to **128 chops**, 32 to a pad page: **Octave Up / Down** shows the next
@@ -1277,7 +1277,10 @@ A **click** on SAMPLE opens its menu (**Shift + click** does the same):
 Trim and Normalize ask **New** (the default: a new sample for this clip, named
 *… trim* or *… norm*, the original kept in the project) or **Overwrite** (the
 project's copy itself — every clip using it changes). **Back** changes nothing. Both
-write a 16-bit WAV; the clip keeps its settings.
+write a 16-bit WAV; the clip keeps its settings. If one can't be done the clip keeps
+its sample and the screen says why (*NOT NORMALIZED / Nothing to raise* on a silent
+file). A sample over 4 minutes can't be chopped: Slice, Transient and Lazy say
+*TOO LONG TO CHOP*.
 
 Otherwise chopping lives on **SLICES**. **Back** leaves SAMPLE. The Shift
 shortcuts work here as anywhere: **Shift + a step** or **Shift + jog** leaves SAMPLE and does
@@ -1374,7 +1377,7 @@ or SAMPLE's Gain, Pitch, Detune and Revrs.
 | Bank | Knobs |
 |---|---|
 | **CLIP**, Slice mode | **Mode** · **Strch** · **Shift** (alt **Nudge**) · **Res** (alt **Zoom**) · **Crop›** · **InQnt** · **Dir** (alt **Revrs**) · **>Seq›** (touch K8, click) lays one step per chop, each at its place at the sample's **Tempo**, so the clip plays the sample back as it was — now as chops you can rearrange. A clip whose length you never set grows to hold all of it (a coarser resolution past 256 steps); a length you set stays, and the chops past it wait beyond the loop's end |
-| **CLIP**, Loop mode | **Mode** · **Strch** · **Shift** (alt **Nudge**), as a sequence's in audio. **Strch** x2 doubles the clip's Length and the sample's Tempo — the loop plays at half speed across twice the bars; /2 the reverse. **Shift** moves the audio a step later or earlier inside the clip, wrapping round — the waveform and the pads turn with it, the beats staying where they are. **Nudge** moves the sample against the bar, 5 ms a detent (**Shift**: 1). The sound is SAMPLE's |
+| **CLIP**, Loop mode | **Mode** · **Strch** · **Shift** (alt **Nudge**), as a sequence's in audio. **Strch** x2 doubles the clip's Length and the sample's Tempo — the loop plays at half speed across twice the bars; /2 the reverse. Past 256 steps or the Tempo's range it says *BEAT STRETCH / EXPAND LIMIT* (or *COMPRESS LIMIT*). **Shift** moves the audio a step later or earlier inside the clip, wrapping round — the waveform and the pads turn with it, the beats staying where they are. **Nudge** moves the sample against the bar, 5 ms a detent (**Shift**: 1). The sound is SAMPLE's |
 | **PAD MODE** (Slice mode) | **Layout**: **4 Rows** or **16 Pads**, how the chops sit on the pads |
 | **LIVE ARP** | As on a melodic track, but **Step** replaces Oct: each repeat moves one chop up (or down), up to 15 |
 | **NOTE FX** (Slice mode) | As on a drum track — nothing that changes a pitch. **Quant** lives here only |
@@ -2776,7 +2779,8 @@ transport first — like the Ableton export, it won't run while playing.
 
 **Resample a scene** to record what it sounds like into a sample, cut to loop exactly:
 
-- With the transport stopped, **Sample → Resample scene**, then choose the row.
+- With the transport stopped (and Clock Follow off), **Sample → Resample scene**, then
+  choose the row.
 - **Length** starts where all the scene's clips line up again (past 32 bars, the
   longest clip); turn the jog to change it. **Warm-up** plays the scene once
   first, so delay and reverb tails carry into the start of the loop. **Tail**
@@ -2806,7 +2810,7 @@ the library and replaces the clip. The clip starts over with the recording as it
 sample, at default settings (a Loop clip; its steps, chops and settings go).
 
 **Flatten a track** to turn it into audio: open its **TRACK CONFIG** menu, turn to
-**Flatten track** and click. With the transport stopped, every clip with notes is
+**Flatten track** and click. With the transport stopped (and Clock Follow off), every clip with notes is
 recorded on its own, one after another, and the track becomes an
 [Audio track](#75-audio) with each clip a **Loop** clip playing its recording. The
 notes and the instrument go. Its options come first; press the jog on **Flatten** to

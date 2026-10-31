@@ -1001,7 +1001,7 @@ export function updateTrackLEDs() {
                     if (k < ai.n) color = ((ap.t === t && ap.on && ap.slice === k) || S.auPadDown[i]) ? White
                         : k === sel ? (right ? trackColor(pt) : tc) : (right ? trackDimColor(pt) : td);
                 } else if (k < AU_LOOP_SECTIONS) {
-                    /* a Free loop whose clip wraps before the sample ends:
+                    /* a Loop clip that wraps before the sample ends:
                      * the chops it never reaches grey (Josh, 2026-10-28: "you
                      * can't see where the end point is on the pads") */
                     /* the playhead first: it goes on through the sections past

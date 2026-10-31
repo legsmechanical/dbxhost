@@ -1892,6 +1892,17 @@ int main(void) {
         hx_destroy(h);
     }
 
+    /* ---- a long Loop pick: past 64 bars (the old silent cap), up to 256 ---- */
+    {
+        snprintf(p, sizeof p, "%s/src/fast 300 bpm.wav", g_root); write_ramp_len(p, 55.0);   /* 68.75 bars at 300 */
+        h = rig(1); inst = (seq8_instance_t *)h->inst; tr = &inst->tracks[4];
+        snprintf(p, sizeof p, "0|%s/src/fast 300 bpm.wav", g_root); hx_set_param(h, "t4_au_pick", p);
+        HX_ASSERT(wait_loaded(h, 4, 0) == 2 && inst->au_clip[4][0].bpm10 == 3000, "long pick: setup");
+        HX_ASSERT((uint32_t)tr->clips[0].length * tr->clips[0].ticks_per_step == 69u * PPQN * 4,
+                  "a Loop pick past 64 bars was cut to 64");
+        hx_destroy(h);
+    }
+
     /* ---- review fixes: a same-name, same-size file is not taken for the
      * same audio; Trim drops chops past the new end ---- */
     {

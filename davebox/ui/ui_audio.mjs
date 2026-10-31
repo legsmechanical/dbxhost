@@ -136,10 +136,11 @@ export function auParseInfo(raw) {
     /* even: 0 = Off, else Even's count; hand: the hand set's slices; n: what
      * plays (Even's count or the hand set's); rstart / rend: frames */
     return {
-        state: head[0], err: head[1], mode: head[2], even: head[3], hand: head[4], jump: head[5],
+        /* head[5] and head[15]: the retired jump / jmpq, kept in the format, read by nothing */
+        state: head[0], err: head[1], mode: head[2], even: head[3], hand: head[4],
         rstart: head[6], rend: head[7], pitch: head[8], gain: head[9],
         nframes: head[10], rate: head[11], ch: head[12],
-        revrs: head[13], nudge: head[14], jmpq: head[15], n: head[16], detune: head[17] | 0, sync: head[18] | 0,
+        revrs: head[13], nudge: head[14], n: head[16], detune: head[17] | 0, sync: head[18] | 0,
         /* how much of Start..End sounds before the clip comes round (-1 unknown) */
         reach: head.length > 19 ? head[19] : -1,
         /* the sample's own Tempo x10 (0 not known yet) */
@@ -156,8 +157,8 @@ export function auParseInfo(raw) {
     };
 }
 
-const DEFAULT_INFO = { state: 0, err: 0, mode: 0, even: 16, hand: 1, n: 16, jump: 16, rstart: 0, rend: 0,
-                       pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, revrs: 0, nudge: 0, jmpq: 0, sync: 0, reach: -1, bpm10: 0, hits: 0, sens: 50, trans: 0, slen: 0, name: '' };
+const DEFAULT_INFO = { state: 0, err: 0, mode: 0, even: 16, hand: 1, n: 16, rstart: 0, rend: 0,
+                       pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, revrs: 0, nudge: 0, sync: 0, reach: -1, bpm10: 0, hits: 0, sens: 50, trans: 0, slen: 0, name: '' };
 const DEFAULT_SLICE = { a: 0, b: 0, pinned: 0, pitch: 0, detune: 0, gain: 0, rev: 0, play: 0, atk: 0, dec: 0 };
 
 export function auInfo(t, c) {
@@ -562,11 +563,9 @@ const fmtEven = (v) => (v ? String(v) : 'Off');
 
 /* ---- the AUDIO editor's pages ---- */
 
-/* The AUDIO editor's pages (Josh, 2026-10-28, from the Layout Map: SLICING
- * "don't need this - it's now on wave"; ALL SLICES "merge with "clip""; SLICE
- * n "only show when sliice mode is active"): Slice mode CLIP · SLICE n, Loop
- * mode CLIP. The sample and its Start / End live on WAVE; Mode is the CLIP
- * bank's. */
+/* The editor's pages: SAMPLE's one, or on a Slice clip's SLICES the ALL
+ * SLICES page (named CLIP) and SLICE n (Josh, 2026-10-28: SLICE n "only show
+ * when sliice mode is active"). Mode is the CLIP bank's. */
 /* The Track View sound bank's pages FOLLOW THE LAST EDITOR ENTERED (Josh,
  * 2026-10-29: "if the last thing you entered was slice, then knobs in
  * overview should be page-able, with one page for all slices and one for
@@ -864,10 +863,10 @@ export function auPanelReset(ed) {
         for (const k of _sl.keys()) if (k.startsWith(t + '_' + c + '_')) _sl.delete(k);
         return true;
     }
-    if (pn === 'CLIP' || pn === 'SAMPLE') {
-        const loc = Object.assign({}, i, { pitch: 0, detune: 0, gain: 0 });
+    if (pn === 'SAMPLE') {
+        const loc = Object.assign({}, i, { pitch: 0, detune: 0, gain: 0, revrs: 0, nudge: 0 });
         auSet(t, c, 'pitch', 0); auSet(t, c, 'detune', 0); auSet(t, c, 'gain', 0);
-        if (pn === 'SAMPLE') { loc.revrs = 0; auSet(t, c, 'revrs', 0); loc.nudge = 0; auSet(t, c, 'nudge', 0); }
+        auSet(t, c, 'revrs', 0); auSet(t, c, 'nudge', 0);
         S.auInfo[t][c] = loc;
         S.auStartsRev = (S.auStartsRev | 0) + 1;
         return true;
@@ -900,24 +899,8 @@ export function auPanelKnob(ed, k, steps) {
                 if (v === (i.bpm10 | 0)) return false;
                 loc.bpm10 = v; auSet(t, c, 'bpm', v);
             } else return false;
-        } else if (k === 0 && auIsLoop(i)) {
-            const v = Math.max(-24, Math.min(24, i.pitch + dir));
-            if (v === i.pitch) return false;
-            loc.pitch = v; auSet(t, c, 'pitch', v);
-        } else if (k === 1 && auIsLoop(i)) {
-            const v = Math.max(-50, Math.min(50, (i.detune | 0) + steps));
-            if (v === (i.detune | 0)) return false;
-            loc.detune = v; auSet(t, c, 'detune', v);
-        } else if (k === 2 && auIsLoop(i)) {
-            const v = Math.max(-40, Math.min(12, i.gain + dir));
-            if (v === i.gain) return false;
-            loc.gain = v; auSet(t, c, 'gain', v);
-        } else if (auIsLoop(i)) {
-            if (k !== 3) return false;
-            const v = dir > 0 ? 1 : 0;
-            if (v === i.revrs) return false;
-            loc.revrs = v; auSet(t, c, 'revrs', v);
         } else {
+            /* CLIP: a Slice clip's ALL SLICES (auPanelPages: the page is a Slice clip's alone) */
             const f = SLICE_GRID[k];
             if (!f) return false;
             const fi = ALL_FIELDS.indexOf(f);

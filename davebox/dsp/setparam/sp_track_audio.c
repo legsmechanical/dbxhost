@@ -7,20 +7,27 @@
  * melodic clips whose notes are slices: pitch AU_NOTE_BASE + slice.
  *
  * Keys (C = clip, L = slice, all 0-based):
- *   tN_au_pick    "C|<abs path>"   copy the file into the project, load it
- *   tN_au_clear   "C"              the clip has no sample
- *   tN_au_set_<field>   "C <v>"    mode / even (0 Off, 2..32) / start (frames)
- *                                  / slen (Slice's Length, ticks; 0 = to the
- *                                  end) / pitch / gain / bpm (the sample's own
- *                                  Tempo x10) / orig (Tempo = the project's) /
- *                                  len_bars (the clip's length) / revrs / nudge
- *                                  / sync (0 Warp, 1 Vintage, 2 Pitch) / sens
- *                                  (Transient's).
+ *   tN_au_pick    "C|<abs path>"   copy the file into the project, load it (one undo step)
+ *   tN_au_pick_join "C|<abs path>" the same, joining the undo step already taken
+ *                                  (In place / Flatten: tN_au_undo, the reset, this)
+ *   tN_au_undo    "C C ..."        one undo step over these clips (Flatten)
+ *   tN_au_clear   "C"              the clip has no sample (one undo step)
+ *   tN_au_edit    "C op ow"        Trim (op 0) / Normalize (op 1); ow 1 overwrites
+ *                                  the project's copy (no undo), 0 makes a new
+ *                                  sample (one undo step)
+ *   tN_au_set_<field>   "C <v>"    mode / even (0 Off, else Even's count) / start
+ *                                  (frames) / slen (Slice's Length, ticks; 0 = to
+ *                                  the end) / pitch / detune / gain / bpm (the
+ *                                  sample's own Tempo x10) / orig (Tempo = the
+ *                                  project's) / revrs / nudge / rot (Loop's Shift,
+ *                                  ticks) / sync (0 Warp, 1 Vintage, 2 Pitch) /
+ *                                  sens (Transient's) / trans (1 on, 0 cancel — the
+ *                                  hand set untouched; not saved).
  *                                  Mode Slice on a clip with no steps lays the
  *                                  chops on them
  *   tN_au_slice_<field> "C L <v>"  start / end (frames, the hand set, Even Off;
- *                                  end 0 = home) / pitch / gain / rev / play /
- *                                  atk / dec
+ *                                  end 0 = home) / pitch / detune / gain / rev /
+ *                                  play / atk / dec
  *                                  (a key per field: two fields written to one
  *                                  key in one frame would keep only the second)
  *   tN_au_all_<field>   "C <v>"    the same sound field of EVERY slice (ALL SLICES)
@@ -31,12 +38,11 @@
  *   tN_au_even_bake "C"            Even's (or Transient's) slices become the hand
  *                                  set; the override Off (a hand edit made
  *                                  while one is on bakes it first)
- *   tN_au_set_trans "C 1|0"        Transient chops: 1 on (Even Off), 0 cancel —
- *                                  the hand set was never touched. Not saved
  *   tN_au_trans_bake "C"           Transient's chops become the hand set
  *   tN_au_chop    "C"              one step per slice, in order (one undo)
- *   tN_au_wipe    "C"              clip C's steps go (one undo) -- a converted
- *                                  clip that now plays its recording
+ *   tN_au_wipe    "C"              clip C's steps go, the clip still playing (one
+ *                                  undo) — the tests' and a remote's; the UI
+ *                                  clears with tN_cC_clear
  *   tN_au_layout  "0|1"            PAD MODE Layout: 4 Rows / 16 Pads (saved t%d_aul)
  *   tN_au_lazy    "C 1|0"          Lazy chop: 1 arms it (the hand set put aside),
  *                                  0 stops it (Back)
@@ -44,6 +50,8 @@
  *                                  each later one drops a marker at the playhead
  *   tN_au_lazy_keep "1|0"          after it ended: keep the new chops, or put the
  *                                  old hand set back
+ * Reads (au_get_param): on, dir, stream, progress_C, info_C, sl_C_L, all_C,
+ * marks_C, peaks_C, wave_C_A_B, pos, warp, layout, lazy.
  * The prefix is consumed whole (a known-or-not tN_au_ key never falls through
  * to the pfx catch-all). */
 
@@ -174,7 +182,9 @@ static void au_apply_results(seq8_instance_t *inst) {
                 /* a Loop clip as long as the sample, in whole bars at its Tempo */
                 double bars = (double)r.smp->frames / (double)r.smp->rate * (cl->bpm10 ? cl->bpm10 / 10.0 : 120.0) / 240.0;
                 int nb = (int)(bars + 0.5);
-                au_clip_set_bars(inst, r.track, r.clip, nb < 1 ? 1 : nb > 64 ? 64 : nb);
+                /* up to 256 bars: the coarsest resolution (a bar a step) holds them
+                 * (it stopped at 64, silently: review) */
+                au_clip_set_bars(inst, r.track, r.clip, nb < 1 ? 1 : nb > SEQ_STEPS ? SEQ_STEPS : nb);
             }
             au_mark(inst, r.track, r.clip);
         }
@@ -786,8 +796,11 @@ static int au_slice_field(au_slice_t *sl, const char *w, int v) {
     return 1;
 }
 
-/* Clip (t,c)'s steps go, as a melodic clear does, keeping its length,
- * resolution and effects. One undo step. */
+
+/* Clip (t,c)'s steps go, keeping its length, resolution, effects and its
+ * place playing (a clip clear also stops it and resets every step's
+ * velocity and gate). One undo step. tN_au_wipe: the tests' and a remote's —
+ * the UI clears with tN_cC_clear. */
 static void au_wipe_steps(seq8_instance_t *inst, int t, int c) {
     seq8_track_t *tr = &inst->tracks[t];
     undo_begin_single(inst, t, c);
@@ -1109,9 +1122,6 @@ static int sp_track_audio(sp_ctx_t *cx) {
         } else if (!strcmp(w, "rot")) {
             /* Shift: ticks, taken mod the clip's length where it plays */
             cl->rot = (uint32_t)(v < 0 ? 0 : v);
-        } else if (!strcmp(w, "len_bars")) {
-            au_clip_set_bars(inst, tidx, c, clamp_i(v, 1, 64));
-            return 1;
         } else {
             return 1;
         }

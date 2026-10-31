@@ -133,7 +133,7 @@ export function drawAudioChooser() {
                                                chevron: it.kind === 'dir' }));
         drawKitList(rows, ch.B.selectedIndex, { emptyMsg: ch.B.error || 'No samples here', h: MV_FOOTER_Y - 11 });
     }
-    drawKitHintRow(MV_FOOTER_Y, ch.B ? [['clk', 'pick'], ['back', 'up']] : [['clk', 'open'], ['back', 'exit']]);
+    drawKitHintRow(MV_FOOTER_Y, ch.B ? [['clk', 'pick'], ['back', 'out']] : [['clk', 'open'], ['back', 'exit']]);
 }
 
 /* ── PURGE UNUSED SAMPLES (Project menu) ──────────────────────────────────

@@ -25,7 +25,10 @@
 
 #define AU_MAX_SLICES      128
 #define AU_NOTE_BASE       0            /* chop k is note k */
-#define AU_PIN_FULL        32           /* chops past this many pin one chunk each end, not two (streaming memory) */
+#define AU_PIN_FULL        32           /* a streamed clip's first 32 chops pin two chunks each end, the rest
+                                         * one: 128 chops x 2 x 2 chunks of a long file is too much memory
+                                         * for the stock Move's 2 GB, and a chop's first chunk is what a
+                                         * hit needs at once (the streamer fetches the rest ahead) */
 #define AU_PATH_MAX        160          /* a sample's file name inside samples/ */
 #define AU_PEAKS           128          /* waveform columns kept for the screen */
 #define AU_SLICE_MAX_SEC   240          /* Slice mode: 4 minutes (Josh) */
@@ -123,8 +126,8 @@ typedef struct {
     uint8_t      state;              /* 0 none, 1 loading, 2 ready, 3 failed */
     uint8_t      err;                /* AU_ERR_* when failed */
     uint8_t      mode;               /* AU_MODE_* */
-    uint8_t      even;               /* 0 = Off (the hand set plays), else 2..32 equal slices of Start..End */
-    uint8_t      nslices;            /* the hand set's slices, 1..32 */
+    uint8_t      even;               /* 0 = Off (the hand set plays), else 2..AU_MAX_SLICES equal slices of Start..End */
+    uint8_t      nslices;            /* the hand set's slices, 1..AU_MAX_SLICES (128) */
     uint8_t      jump;               /* retired (jump points): read and written only so the file format stays */
     uint32_t     rstart;             /* Start, sample frames */
     uint32_t     slen;               /* Slice: Length from Start, in ticks at the sample's Tempo (0 = to the

@@ -169,6 +169,7 @@ the section into a versioned heading at release time.
   and the instrument shortcut open it.
 
 ### Fixed
+- **Audio: a Loop pick sets clips up to 256 bars long** — it stopped at 64, without a word.
 - **Audio: long files open fast after the first time.** A streamed sample's waveform
   summary is kept beside the project's samples, so loading a project (or undoing back
   to a sample) no longer reads the whole file again; a changed file is summarised anew.
