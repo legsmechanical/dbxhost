@@ -27,11 +27,12 @@ const PROJ = '/data/UserData/daveboxSA/projects/p1/dAVEBOx/samples';
 const STAGE = '/data/UserData/daveboxSA/davebox-exports/staging';
 /* clip 0: a Loop clip, 1 bar of a 2 s sample at 120 (bpm10 1200), Start at
  * 0.5 s, Pitch -6, Detune +12, Gain -3, Shift a beat (96 ticks).
- * clip 1: a Slice clip rendered, 384 ticks over 88200 frames (120 BPM).
+ * clip 1: a Slice clip rendered, 384 ticks over 80000 frames (132.3 BPM:
+ *         the engine's exact tempo, which the rounded `bpm` read is not).
  * clip 2: nothing. */
 const AU = {
     t4_c0_au_export: 'L 44100 88200 22050 1200 -6 12 -3 0 0 96 0 384|' + PROJ + '/Break 120.wav',
-    t4_c1_au_export: 'S 88200 384|' + STAGE + '/au_4_1.wav',
+    t4_c1_au_export: 'S 80000 384|' + STAGE + '/au_4_1.wav',
 };
 globalThis.host_module_get_param = (k) => (k in AU ? AU[k] : /_export/.test(k) ? '0 0 0' : '');
 globalThis.host_read_file = () => '';
@@ -78,7 +79,7 @@ step('⭐ a Slice clip: the render bundled under a readable name, at its own tem
     assert(c, 'no clip');
     assert(c.sampleUri === 'Samples/' + encodeURIComponent('T5 B slices.wav'), 'uri ' + c.sampleUri);
     assert(ctx.samples.some((s) => s.src === STAGE + '/au_4_1.wav' && s.dest === 'T5 B slices.wav'), 'not in the pack manifest');
-    assert(near(c.warping.tempoAfterLastMarker, 120), 'tempo ' + c.warping.tempoAfterLastMarker);
+    assert(near(c.warping.tempoAfterLastMarker, 132.3), 'tempo ' + c.warping.tempoAfterLastMarker);
     assert(c.region.start === 0 && near(c.region.end, 4) && near(c.region.loop.end, 4), 'region ' + JSON.stringify(c.region));
     assert(c.transpose === 0 && c.gain === 0 && c.detune === 0, 'a render carries its sound already');
 });
