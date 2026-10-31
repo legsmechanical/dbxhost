@@ -220,12 +220,7 @@ function drawExportDoneDialog() {
     const path = S.exportDonePath || '';
     const LIMIT = 124;
     /* A MIDI FX module the export could not include takes the last line. */
-    /* Audio tracks are left out (Q5, Josh 2026-10-27: "leave it out for now"),
-     * and the message says so; a MIDI FX module left out says so too. */
-    const au = [];
-    for (let t = 0; t < 8; t++) if (S.trackPadMode[t] === PAD_MODE_AUDIO) au.push(t + 1);
-    const fx = au.length ? 'No Audio: T' + au.join(' T')
-             : (S.exportMidiFxLeftOut || []).length ? 'No MIDI FX: T' + S.exportMidiFxLeftOut.join(' T') : '';
+    const fx = (S.exportMidiFxLeftOut || []).length ? 'No MIDI FX: T' + S.exportMidiFxLeftOut.join(' T') : '';
     let y = 14, lines = 0, i = 0;
     while (i < path.length && lines < (fx ? 3 : 4)) {
         let n = 1;

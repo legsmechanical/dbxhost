@@ -1402,8 +1402,8 @@ and all. **Undo** covers the steps, and the sample too: loading a sample, **None
 **Shift + Delete**, Resample **In place**, **Flatten track** (one Undo for every clip)
 and a Trim or Normalize to a **New** sample each come back with one Undo, the old
 sample with its settings. Turning a setting isn't an undo step of its own, and an
-**Overwrite** can't be undone. **Export to Ableton** leaves Audio tracks
-out for now, and says so when it finishes.
+**Overwrite** can't be undone. **Export to Ableton** brings Audio tracks across as
+Live audio tracks — see [§16.3](#163-export-to-live).
 
 **Track View at rest** shows a Loop clip as SAMPLE does zoomed out — its bars across,
 the audio where it lands at the sample's Tempo, the beats under it and the playhead
@@ -2646,7 +2646,7 @@ and all — into plain clips.
 **Project Settings → Export to Ableton** (transport stopped) writes an `.ablbundle`
 that desktop Live opens directly. The screen shows where it was saved: download it
 from the **Files** page of the Schwung web manager (`move.local:7700`), in the
-`daveboxSA/davebox-exports` folder. It opens as **8 MIDI tracks × 16 scene slots**
+`daveboxSA/davebox-exports` folder. It opens as **8 tracks × 16 scene slots**
 with the tempo and root note (not the scale — the set opens in Major).
 
 - **Move tracks** export the real Move instrument and preset. Every track keeps its
@@ -2654,6 +2654,11 @@ with the tempo and root note (not the scale — the set opens in Major).
 - **Schwung, MIDI and Conductor tracks get a placeholder** (so does a Move track
   with no matching Move instrument), **switched off**: the notes are there, but
   nothing plays until you drop in your own instrument.
+- **Audio tracks become Live audio tracks.** A **Loop** clip brings its sample,
+  warped at the clip's **Tempo**, with its Start, length, **Shift**, Pitch, Detune and
+  Gain. A **Slice** clip is rendered to audio — one loop of what the chops play — and
+  warped at the project tempo. Revrs, Nudge and Sync's Pitch / Vintage don't carry
+  (Live warps every clip), nor do the Audio automation lanes.
 - **Schwung tracks are named for what they played** — `SCH-nusaw`, or
   `SCH-nusaw - Big Lead` when the module reports a patch name (most modules don't).
 - **Send levels come across**, along with two empty return tracks to send to.

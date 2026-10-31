@@ -150,9 +150,9 @@ function resolveSampleUri(uri) {
 /* Assign the bundle-relative dest basename for a source file, deduping so two
  * different sources never collide on one name (and the same source reused
  * across tracks shares one copy). Records {src,dest} in ctx.samples once. */
-function assignSampleDest(ctx, src) {
+function assignSampleDest(ctx, src, name) {
     if (ctx.sampleBySrc[src]) return ctx.sampleBySrc[src];
-    const base = src.split('/').pop();
+    const base = name || src.split('/').pop();
     let dest = base;
     if (ctx.usedDest[dest]) {
         const dot  = base.lastIndexOf('.');
@@ -266,9 +266,10 @@ function resolveTrack(t, ctx) {
     if (S.trackPadMode && S.trackPadMode[t] === PAD_MODE_CONDUCT) {
         return dummy('Conductor', defaultColor);
     }
-    /* Audio track: not exported in v1 (Q5) — a silent placeholder, "Audio". */
+    /* Audio track: a Live audio track (buildAudioTrack), audio effects only —
+     * none, as nothing of the slot's chain comes across. */
     if (S.trackPadMode && S.trackPadMode[t] === PAD_MODE_AUDIO) {
-        return dummy('Audio', defaultColor);
+        return { devices: [], name: 'Audio ' + (t + 1), color: defaultColor, mixer: null };
     }
 
     if (route === ROUTE_MOVE) {
@@ -890,16 +891,118 @@ function withSendLevels(mixer, t) {
     return mixer;
 }
 
+/* ── AUDIO TRACKS ─────────────────────────────────────────────────────────
+ * (Josh, 2026-10-31: "render slice clips to audio") One Live audio track per
+ * Audio track. The shape is Move's own, captured from a set made on the Move
+ * with an audio track: the track is `kind: "audio"`, and a clip names its
+ * sample, its region and loop IN BEATS, and `warping.tempoAfterLastMarker` —
+ * the sample's own tempo (Move read 120 off the file; setting 240 on the Move
+ * wrote 240, the region unchanged).
+ *
+ *   Loop clip  → the sample itself, warped at the clip's Tempo: the window
+ *                from Start for the clip's length, Pitch / Detune / Gain as
+ *                the clip's transpose / detune / gain, Shift as the start
+ *                marker inside the loop.
+ *   Slice clip → rendered offline by the DSP (`_au_export`) to a WAV one cycle
+ *                long at the project tempo, warped at that tempo.
+ * Not carried: Revrs, Nudge, Sync's Pitch / Vintage (Live warps), the Audio
+ * lanes (only the mixer's come across, as for any track). */
+function auClipName(t, c) { return 'T' + (t + 1) + ' ' + String.fromCharCode(65 + c); }
+
+export function parseAuExport(line) {
+    if (!line) return null;
+    const bar = line.indexOf('|');
+    if (bar < 0) return null;
+    const f = line.slice(0, bar).trim().split(/\s+/);
+    const path = line.slice(bar + 1);
+    const n = (i) => parseInt(f[i], 10);
+    if (f[0] === 'L' && f.length >= 13) {
+        return { kind: 'loop', rate: n(1), frames: n(2), rs: n(3), bpm10: n(4), pitch: n(5),
+                 detune: n(6), gain: n(7), revrs: n(8), sync: n(9), rot: n(10), nudge: n(11),
+                 loopTicks: n(12), path: path };
+    }
+    if (f[0] === 'S' && f.length >= 3) return { kind: 'slice', frames: n(1), span: n(2), path: path };
+    return null;
+}
+
+function round6(x) { return Math.round(x * 1e6) / 1e6; }
+
+/* One Audio clip as a Live audio clip, or null (no sample, nothing to render). */
+function buildAudioClip(t, c, ctx) {
+    const a = parseAuExport(host_module_get_param('t' + t + '_c' + c + '_au_export'));
+    if (!a) return null;
+    let sampleUri, tempo, start, len, play, gain = 0, transpose = 0, detune = 0, span;
+    if (a.kind === 'loop') {
+        if (!(a.rate > 0) || !(a.bpm10 > 0) || !(a.loopTicks > 0)) return null;
+        sampleUri = 'Samples/' + encodeURIComponent(assignSampleDest(ctx, a.path));
+        tempo = a.bpm10 / 10;
+        start = round6(a.rs / a.rate * tempo / 60);
+        len = a.loopTicks / 96;
+        /* Shift: the audio rotated later, so the clip starts that far before
+         * the end of its loop */
+        const rot = ((a.rot % a.loopTicks) + a.loopTicks) % a.loopTicks;
+        play = rot ? round6(start + (a.loopTicks - rot) / 96) : start;
+        gain = a.gain; transpose = a.pitch; detune = a.detune;
+        span = a.loopTicks;
+    } else {
+        if (!(a.frames > 0) || !(a.span > 0)) return null;
+        sampleUri = 'Samples/' + encodeURIComponent(assignSampleDest(ctx, a.path, auClipName(t, c) + ' slices.wav'));
+        /* the render's own tempo, off its length: the DSP rendered at the
+         * engine's exact tempo, and the `bpm` read here is rounded */
+        tempo = round6(a.span / 96 * 60 * 44100 / a.frames);
+        start = 0; play = 0;
+        len = a.span / 96;
+        span = a.span;
+    }
+    paDecorateClip(t, c, [], ctx, span);
+    return {
+        isPlaying: false,
+        name: '',
+        color: null,
+        isEnabled: true,
+        timeSignature: { upper: 4, lower: 4 },
+        region: { start: play, end: round6(start + len), loop: { start: start, end: round6(start + len), isEnabled: true } },
+        stepEditorScrollPosition: 0.0,
+        sampleUri: sampleUri,
+        warping: { markers: [], tempoAfterLastMarker: tempo },
+        gain: gain,
+        transpose: transpose,
+        detune: detune,
+        envelopes: []
+    };
+}
+
+function buildAudioTrack(t, r, ctx) {
+    const clipSlots = [];
+    for (let i = 0; i < EXPORT_SCENES; i++) {
+        const clip = buildAudioClip(t, i, ctx);
+        if (clip) clip.color = r.color;
+        if (clip && ctx.paEnvelopes && ctx.paEnvelopes.length) clip.envelopes = ctx.paEnvelopes;
+        clipSlots.push({ hasStop: true, clip: clip });
+    }
+    return {
+        kind: 'audio',
+        name: r.name,
+        color: r.color,
+        isSelected: t === 0,
+        clipSlots: clipSlots,
+        devices: r.devices,
+        mixer: paStampMixer(withSendLevels(r.mixer || defaultMixer(), t), ctx.paMixerIds[t] || {})
+    };
+}
+export function exportAudioTrackForTest(t, ctx) { const r = resolveTrack(t, ctx); paPrepareTrack(t, r, ctx); return buildAudioTrack(t, r, ctx); }
+
 function buildTrack(t, ctx) {
     const r = resolveTrack(t, ctx);
     /* Ids must exist on the mixer before any clip can point at one. */
     paPrepareTrack(t, r, ctx);
+    if (S.trackPadMode && S.trackPadMode[t] === PAD_MODE_AUDIO) return buildAudioTrack(t, r, ctx);
     /* Melodic tracks bake clip notes via _export; drum tracks flatten their
      * polymetric lanes via _export_drum. DSP is authoritative — empty clips
      * return count 0 → empty slot. The Conductor track emits no MIDI of its
      * own → exported as a dummy with empty clip slots (preserving the 8-track
      * layout); its own clips are never exported as notes. */
-    const isConductor = (S.trackPadMode && (S.trackPadMode[t] === PAD_MODE_CONDUCT || S.trackPadMode[t] === PAD_MODE_AUDIO));
+    const isConductor = (S.trackPadMode && S.trackPadMode[t] === PAD_MODE_CONDUCT);
     const isDrum = !isConductor && !!(S.trackPadMode && S.trackPadMode[t] !== 0);
     const clipSlots = [];
     for (let i = 0; i < EXPORT_SCENES; i++) {
