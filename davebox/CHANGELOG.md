@@ -90,6 +90,9 @@ the section into a versioned heading at release time.
   Clips of the same length still hand over in step with each other.
 
 ### Fixed
+- **A knob turned while playing sets where its automation rests.** Turned with nothing
+  recording or automating it, it is the value Stop brings back, as a turn while stopped
+  is — it used to keep whatever the first turn found, so Stop could undo a later one.
 - **Undoing a scene bake with Apply Conductor brings the responders back on screen.**
   The tracks came back responding, but the Conductor's RESPONDERS bank still showed
   them off, and the next scene bake did not offer Apply Conductor.

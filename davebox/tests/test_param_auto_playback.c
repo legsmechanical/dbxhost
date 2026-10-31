@@ -142,7 +142,18 @@ int main(void) {
         for (int i = 0; i < PA_MAX_TARGETS; i++) tgts_after += (in->pa_targets[i][0] != 0);
         HX_ASSERT(before == after && tgts_before == tgts_after,
                   "⚠ a parameter with no automation: nothing created — no entry, no target slot");
-        OK("the resting value follows a knob turned while stopped; never while driven; creates nothing");
+        /* playing, the clip NOT driving it (muted lane): the plain turn moves the rest */
+        in->playing = 1;
+        hx_set_param(h, "t0_pa_active", "0 1:fx1:cutoff 0");
+        hx_set_param(h, "t0_pa_rest_move", "0 1:fx1:cutoff 6000");
+        int id = pa_target_lookup(in, "1:fx1:cutoff");
+        HX_ASSERT(id >= 0 && in->pa_knob[id] == 6000, "⚠ playing, not driven: a plain turn is the new resting value");
+        /* ...but not while the track records: the turn was automation */
+        in->tracks[0].recording = 1;
+        hx_set_param(h, "t0_pa_rest_move", "0 1:fx1:cutoff 7000");
+        HX_ASSERT(in->pa_knob[id] == 6000, "⚠ recording: the turn must not move the rest the new lane starts from");
+        in->tracks[0].recording = 0;
+        OK("the resting value follows a knob turned while stopped, or playing undriven; never while driven or recording; creates nothing");
         hx_destroy(h);
     }
 

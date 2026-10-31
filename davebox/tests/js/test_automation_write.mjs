@@ -211,6 +211,8 @@ const T = 0, C = 0, SLOT = 1;
     tick();
     check(sets[3] === 't0_pa_live_end=1:fx1:mode', '⚠ release ends the live target on the NEXT tick — that is what makes automation RESUME');
     check(presenceReads === 1, 'and the gesture end asks the DSP ONCE whether anything was actually recorded');
+    check(sets[4] === 't0_pa_rest_move=0 1:fx1:mode 0',
+          '⭐ the playing gesture\'s end names where the hand LEFT the knob (its last turn, 0) as the resting value (the engine refuses it if recorded or driven), got ' + sets[4]);
 
     reset({ playing: true, recordArmed: true });
     automationParamTouch(T, C, SLOT, 'fx1:cutoff', true);

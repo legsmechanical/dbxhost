@@ -280,8 +280,11 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
      * but only while nothing automates the parameter: while the track's
      * playing clip drives it (Josh, 2026-10-21: "resting value can only be set
      * during playback if the clip isn't playing back automation of that
-     * parameter"), the turn is an override and the resting value stays. Creates
-     * nothing: a parameter that was never automated has no resting value. */
+     * parameter"), the turn is an override and the resting value stays, and
+     * while the track records the turn is automation, which starts from the
+     * rest it had. Sent at a playing gesture's end with where the hand left
+     * the knob (ui_automation endGesture). Creates nothing: a parameter that
+     * was never automated has no resting value. */
     if (!strcmp(sub, "pa_rest") || !strcmp(sub, "pa_rest_move")) {
         const int move = sub[7] == '_';
         int clip = 0, v = 0;
@@ -298,6 +301,7 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         } else if (inst->playing) {
             const pa_entry_t *d = pa_find(inst, tidx, (int)tr->active_clip, id);
             if (d && d->count && (d->flags & PA_FLAG_ACTIVE)) return 1;   /* driven: an override */
+            if (tr->recording) return 1;      /* recorded: the lane starts at the rest it had */
         }
         if ((inst->pa_knob_valid & bit) && inst->pa_knob[id] == (uint16_t)v) return 1;
         inst->pa_knob[id] = (uint16_t)v;

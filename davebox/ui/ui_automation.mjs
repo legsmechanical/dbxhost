@@ -1429,6 +1429,15 @@ export function automationParamTouch(track, clip, slot, fullKey, down) {
 
 function endGesture(target, g) {
     if (g.live) { queueSet('t' + g.track + '_pa_live_end', target); presenceStale = true; }
+    /* A turn while playing that recorded nothing and overrode nothing is a
+     * plain turn: where the hand left the knob is the new RESTING value, as a
+     * turn while stopped is (the manual's rule). The engine refuses it while
+     * the track records or its playing clip drives the parameter — then the
+     * turn was automation, or an override, and the rest stays (pa_rest_move).
+     * Without this the rest stayed where the FIRST playing turn found it, and
+     * Stop after a later take put the knob back there. */
+    if (g.live && !g.lock && g.liveNorm != null)
+        queueSet('t' + g.track + '_pa_rest_move', g.clip + ' ' + target + ' ' + g.liveNorm);
     gestures.delete(target);
 }
 
@@ -1517,6 +1526,7 @@ export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) 
     automationNoteWrite();
     if (!g.live) console.log('[auto] live t' + track + ' c' + clip + ' ' + target + ' rec=' + (S.recordArmed ? 1 : 0) + ' playing=' + (S.playing ? 1 : 0));
     g.live = true;
+    g.liveNorm = norm;
     queueSet('t' + track + '_pa_live', target + ' ' + norm, track + ' ' + target);
 }
 
