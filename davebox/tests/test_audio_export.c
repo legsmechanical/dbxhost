@@ -75,7 +75,7 @@ static int16_t g_live[44100 * 7];
  * to bar live as well, so only one that cuts every piece is compared. */
 #define PITCH_SEAM (3 * 64)     /* three of the voice's 64-frame releases */
 static int vs_live(int sync, int bpm10, int nudge, int rot) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
     char p[300], b[1024];
     uint32_t frames, rate;
@@ -127,7 +127,7 @@ static int vs_live(int sync, int bpm10, int nudge, int rot) {
  * frame plays. Returns the starts off the grid by more than a frame, or
  * -1; *n gets how many starts there were. ---- */
 static int vs_grid(int rot, int *n) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
     char p[300], b[64];
     int off = 0, k;
@@ -180,7 +180,7 @@ int main(void) {
     snprintf(stage, sizeof stage, "%s/stage", g_root);
     au_export_dir = stage;
 
-    h = hx_create(NULL);
+    h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     HX_ASSERT(h, "create failed");
     inst = (seq8_instance_t *)h->inst;
     snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);

@@ -888,19 +888,38 @@ static void au_render(seq8_instance_t *inst, int frames) {
         } else au_warp_off(inst, t);
         for (i = 0; i < AU_VOICES; i++) if (at->v[i].active) { any = 1; break; }
         if (at->w.on || at->w.fadeout || at->w.hold) any = 1;
+        if (at->dl_tail) any = 1;                 /* the lead's delay still playing out */
         if (!any) continue;
         {
-            int32_t acc[256];
+            int32_t acc[256], accl[256];
             int16_t out[256];
             /* Mute / solo silence the track's output, as on a bus: the
              * voices keep running, the level ramps over 64 frames. */
             int mtarget = effective_mute(inst, t) ? 0 : 64;
+            /* THE LEAD (LEAD_BLOCKS): what the sequencer played is heard
+             * LEAD_FRAMES later, with the MIDI the lead holds — through dl.
+             * A pad's voice (live) is heard at once. None while following
+             * Move's clock, as for the MIDI. */
+            int led = lead_active(inst);
             memset(acc, 0, sizeof acc);
+            memset(accl, 0, sizeof accl);
             au_voice_follow(inst, t);
-            for (i = 0; i < AU_VOICES; i++) if (at->v[i].active) inst->au_underruns += au_voice_render(&at->v[i], acc, frames);
+            for (i = 0; i < AU_VOICES; i++) if (at->v[i].active)
+                inst->au_underruns += au_voice_render(&at->v[i], at->v[i].live ? accl : acc, frames);
             if (at->w.on || at->w.fadeout || at->w.hold) au_warp_mix(inst, t, acc, frames);
+            if (!led && at->dl_tail) { memset(at->dl, 0, sizeof at->dl); at->dl_tail = 0; }
             for (f = 0; f < frames; f++) {
                 int32_t l = acc[f * 2], r = acc[f * 2 + 1];
+                if (led) {
+                    int32_t *d = &at->dl[at->dl_pos * 2];
+                    int32_t ol = d[0], or_ = d[1];
+                    d[0] = l; d[1] = r;
+                    if (l || r) at->dl_tail = LEAD_FRAMES;
+                    else if (at->dl_tail) at->dl_tail--;
+                    if (++at->dl_pos >= LEAD_FRAMES) at->dl_pos = 0;
+                    l = ol; r = or_;
+                }
+                l += accl[f * 2]; r += accl[f * 2 + 1];
                 if (at->mgain != mtarget) at->mgain = (uint8_t)(at->mgain + (mtarget > at->mgain ? 1 : -1));
                 if (at->mgain < 64) { l = l * at->mgain / 64; r = r * at->mgain / 64; }
                 out[f * 2]     = (int16_t)(l > 32767 ? 32767 : l < -32768 ? -32768 : l);

@@ -95,7 +95,7 @@ static void set_path(seq8_instance_t *inst) {
 }
 
 static hx_t *rig(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     HX_ASSERT(h, "create failed");
     set_path((seq8_instance_t *)h->inst);
     hx_set_param(h, "t4_convert_to_audio", "");
@@ -124,7 +124,7 @@ static hx_t *save_and_reload(hx_t *h) {
     HX_ASSERT(wf && fwrite(g_blob, 1, (size_t)n, wf) == (size_t)n, "save: write the state file");
     fclose(wf);
     hx_destroy(h);
-    h = hx_create(NULL);
+    h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     HX_ASSERT(h, "reload: create failed");
     inst = (seq8_instance_t *)h->inst;
     set_path(inst);
@@ -224,7 +224,7 @@ int main(void) {
         /* gone.wav deleted from samples/, then the project reloaded */
         snprintf(p, sizeof p, "%s/proj/dAVEBOx/samples/gone.wav", g_root);
         HX_ASSERT(unlink(p) == 0, "missing setup: could not delete samples/gone.wav");
-        h = hx_create(NULL); inst = (seq8_instance_t *)h->inst;
+        h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */ inst = (seq8_instance_t *)h->inst;
         set_path(inst);
         seq8_load_state(inst);
         HX_ASSERT(wait_loaded(h, 4, 1) == 3, "missing: a sample deleted from samples/ did not fail its load (state 3)");
@@ -264,7 +264,7 @@ int main(void) {
         hx_destroy(h);
 
         /* no project: no state path, so no samples/ */
-        h = hx_create(NULL); inst = (seq8_instance_t *)h->inst;
+        h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */ inst = (seq8_instance_t *)h->inst;
         inst->state_path[0] = '\0';
         hx_set_param(h, "t4_convert_to_audio", "");
         pick(h, 4, 0, "ramp.wav");

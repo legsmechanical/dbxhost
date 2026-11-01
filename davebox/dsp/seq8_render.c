@@ -91,12 +91,18 @@ static inline int seq8_stopped_tick_due(seq8_instance_t *inst) {
  * 0x0F, so 0x20 | (rt>>4) = 0x2F. Requires Schwung 0.9.16+ (the audio-thread-safe
  * midi_send_external SPSC ring). */
 static void clock_send_raw(seq8_instance_t *inst, uint8_t rt) {
-    (void)inst;
+    if (lead_hold_clock(inst, 1, rt)) return;          /* in time with the notes (LEAD_BLOCKS) */
     if (g_host && g_host->midi_send_external) {
         const uint8_t pkt[4] = { (uint8_t)(0x20 | ((rt >> 4) & 0x0F)), rt, 0, 0 };
         g_host->midi_send_external(pkt, 4);
     }
 }
+/* A click from this tick: heard with the notes, LEAD_FRAMES on (the lead). */
+static inline void metro_click_start(seq8_instance_t *inst) {
+    inst->metro_click_pos = 0;
+    inst->metro_wait = lead_active(inst) ? LEAD_FRAMES : 0;
+}
+
 /* Per-master-tick 0xF8 emit: 96 PPQN / 4 = 24 PPQN. Self-gates: only emits when
  * clock-out is on and db is free-running (Move owns external sync when following). */
 static inline void clock_send_f8_tick(seq8_instance_t *inst) {
@@ -127,6 +133,7 @@ static void print_finish(seq8_instance_t *inst) {
  * is where a slot's MIDI FX and synced LFOs read Start, clock and Stop from.
  * Same message form as a note ([type, status, d1, d2]). Audio thread only. */
 static void slot_clock_send(uint8_t rt) {
+    if (lead_hold_clock(g_inst, 0, rt)) return;        /* in time with the notes (LEAD_BLOCKS) */
     if (g_host && g_host->midi_send_internal) {
         const uint8_t msg[4] = { 0x0F, rt, 0, 0 };
         g_host->midi_send_internal(msg, 4);
@@ -307,6 +314,9 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
         memset(out_lr, 0, (size_t)frames * 2 * sizeof(int16_t));
 
     inst->block_count++;
+    /* What the lead held for this block goes first, ahead of anything this
+     * block plays (see LEAD_BLOCKS). */
+    lead_drain(inst, 0, 0);
     inst->pa_host_writes = 0;          /* this block's direct parameter writes (pa_emit_chain) */
     if (frames > 0) inst->rui_frames += (uint64_t)frames;  /* device clock (remote UI) */
     resample_render_start(inst, frames);   /* arms / counts a scene resample's take */
@@ -385,7 +395,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                     inst->count_in_ticks--;
                     if (inst->count_in_ticks > 0) {
                         int new_q = (int)(inst->count_in_ticks / PPQN);
-                        if (new_q != old_q) { inst->metro_beat_count++; inst->metro_click_pos = 0; }
+                        if (new_q != old_q) { inst->metro_beat_count++; metro_click_start(inst); }
                     }
                 } else {
                     inst->count_in_ticks--;
@@ -650,13 +660,13 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
         if (inst->metro_on >= 2 && inst->master_tick_in_step == 0 && inst->global_tick % 4 == 0) {
             if (inst->metro_on == 3) {
                 inst->metro_beat_count++;
-                inst->metro_click_pos = 0;
+                metro_click_start(inst);
             } else {
                 int _tt;
                 for (_tt = 0; _tt < NUM_TRACKS; _tt++)
                     if (inst->tracks[_tt].recording) {
                         inst->metro_beat_count++;
-                        inst->metro_click_pos = 0;
+                        metro_click_start(inst);
                         break;
                     }
             }
@@ -1283,8 +1293,13 @@ mix_click:
     if (out_lr && frames > 0 && inst->metro_wav_data
             && inst->metro_click_pos != UINT32_MAX && inst->metro_vol > 0) {
         float gain = inst->metro_vol / 100.0f;
-        int _ci;
-        for (_ci = 0; _ci < frames && inst->metro_click_pos < inst->metro_wav_frames; _ci++) {
+        int _ci = 0;
+        if (inst->metro_wait) {              /* the lead's wait first (metro_click_start) */
+            uint32_t w = inst->metro_wait < (uint32_t)frames ? inst->metro_wait : (uint32_t)frames;
+            inst->metro_wait -= w;
+            _ci = (int)w;
+        }
+        for (; _ci < frames && inst->metro_click_pos < inst->metro_wav_frames; _ci++) {
             float s = (float)inst->metro_wav_data[inst->metro_click_pos] / 32768.0f * gain;
             int32_t v = (int32_t)(s * 32767.0f);
             if (v > 32767) v = 32767; else if (v < -32768) v = -32768;

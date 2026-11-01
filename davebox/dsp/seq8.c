@@ -176,6 +176,36 @@ static void seq8_set_state_path(char *out, size_t sz, const char *uuid, int crea
                             * the track's chain slot is PARKED, not destroyed (TRACK_OWNS_ITS_INSTRUMENT
                             * decision 1) — midi_dest_resolve drops every event before any route sees it */
 
+/* THE LEAD. Move plays what is injected into it LEAD_BLOCKS blocks after a
+ * Schwung slot plays the same note (measured on the device, 2026-11-01: one
+ * block because the shim drains the inject ring before the render that made
+ * the note, about two inside Move; load adds more, never less). So the
+ * sequencer's output for Move goes out at once and everything else it sends
+ * is held LEAD_BLOCKS blocks (lead_hold): both sound together. Whole blocks,
+ * because no MIDI send takes a frame offset. Live playing is never held, and
+ * nothing is while following Move's clock (its ticks cannot be led). */
+#define LEAD_BLOCKS 3
+#define LEAD_FRAMES (LEAD_BLOCKS * MOVE_FRAMES_PER_BLOCK)   /* an Audio track's sequenced sound, delayed as much */
+#define LEAD_RING   1024           /* a power of two */
+#define LEAD_PA_RING 64            /* held chain-parameter writes (a power of two) */
+#define LEAD_MELODIC 0
+#define LEAD_DRUM    1
+#define LEAD_PARAM   2             /* a set_slot_param: its words in lead_pa[aux] */
+#define LEAD_CLOCK   3             /* a realtime byte (st): track 0 = to the slots, 1 = to USB-A */
+typedef struct {
+    uint32_t due;                  /* block_count it goes out in */
+    uint8_t  kind;                 /* LEAD_MELODIC / LEAD_DRUM / LEAD_PARAM */
+    uint8_t  track, lane;          /* whose play-effects send it (drum: the lane's) */
+    uint8_t  st, d1, d2;
+    uint16_t aux;                  /* LEAD_PARAM: its lead_pa slot */
+} lead_ev_t;
+typedef struct {
+    uint8_t  slot;
+    uint16_t target, val;          /* the automation target and value (for the fallback) */
+    char     key[64];              /* PA_TARGET_LEN */
+    char     value[32];
+} lead_pa_t;
+
 /* Pad input modes */
 #define PAD_MODE_MELODIC_SCALE  0   /* isomorphic 4ths diatonic layout */
 #define PAD_MODE_DRUM           1   /* 32-lane drum sequencer */
@@ -1308,6 +1338,15 @@ typedef struct {
     int      pre_returning;           /* 1 while pre_handback plays a PRE effect's output: live_note_on/off must not send it back in */
     int      post_returning;          /* 1 while post_handback plays a POST module's output: it goes through the track's effects, not back into the module */
     int      in_queue_drain;          /* set inside pfx_q_fire/drum_pfx_q_fire so re-entered pfx_send/drum_pfx_send skip the swing block (preserving arp/looper/merge hooks but preventing re-queue) */
+    lead_ev_t lead_q[LEAD_RING];      /* THE LEAD: what is held LEAD_BLOCKS (lead_hold) */
+    lead_pa_t lead_pa[LEAD_PA_RING];  /* the held parameter writes' words */
+    uint32_t lead_pa_head;            /* lead_pa: next free (freed in order with lead_q) */
+    uint32_t lead_pa_tail;
+    uint32_t lead_head, lead_tail;    /* lead_q: head the writer's, tail the drain's (one thread) */
+    uint32_t lead_full;               /* sends that found lead_q full and went at once (should stay 0) */
+    int      lead_draining;           /* 1 inside lead_drain: what it sends is never held again */
+    uint8_t  lead_off;                /* 1 = no lead at all: the tests that pin the engine's own timing (the lead is test_move_lead's) */
+    int      lead_rendering;          /* 1 inside the render: only what the sequencer plays there is held (a set_param handler's sends — stop, panic, a load — go at once) */
     uint64_t swing_step_delay_offbeat;/* offbeat-step swing offset in samples; kept current independent of which step we're on so schedule-time swing helper doesn't recompute */
 
     /* ---- Clock-follow sync (Tier-1) ----------------------------------------
@@ -1405,6 +1444,7 @@ typedef struct {
     const int16_t *metro_wav_data;  /* points into mmap; NULL = not loaded */
     uint32_t metro_wav_frames;
     uint32_t metro_click_pos;       /* UINT32_MAX = not playing */
+    uint32_t metro_wait;            /* frames before it starts (the lead: metro_click_start) */
 
     /* Print mode: bake chain output into step data */
     uint8_t  printing;
@@ -1450,6 +1490,7 @@ typedef struct {
     uint8_t  resample_src;        /* RS_SRC_WET (the mix) / RS_SRC_DRY (resample_slot's stem) */
     uint8_t  resample_slot;
     uint8_t  resample_restore;    /* put the armed clips back at the next transport stop */
+    uint8_t  resample_lead_wait;  /* renders STARTING waits before capturing (LEAD_BLOCKS) */
     uint8_t  resample_prev_clip[NUM_TRACKS], resample_prev_relaunch[NUM_TRACKS];
     uint8_t  merge_solo_track;   /* 0xFF = capture all 8 tracks (scene mode); else only this
                                   * track's output is captured (Track-View single-clip merge).
@@ -2949,6 +2990,82 @@ static void pfx_send(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
     pfx_emit(fx, status, d1, d2);
 }
 
+/* Hold a message the sequencer sends anywhere but Move for LEAD_BLOCKS blocks
+ * (see LEAD_BLOCKS). 1 = held, the caller sends nothing now. Not held: live
+ * playing (emit_bypass_swing), what the drain itself sends, anything bound for
+ * Move or nowhere, anything sent outside the render (a set_param handler: a
+ * stop, a panic, a load, the UI's own sends), and everything while the clock
+ * follows Move's. A full ring
+ * sends at once (counted in lead_full). */
+/* Is there a lead at all? Not while following Move's clock (its ticks cannot
+ * be led), nor with lead_off (the engine-timing tests). */
+static inline int lead_active(const seq8_instance_t *inst) {
+    return !inst->lead_off && !inst->clock_follow_on && !inst->follow_solo;
+}
+/* Is what is being played now the sequencer's (led), not live playing? */
+static int lead_now(const seq8_instance_t *inst) {
+    return inst && inst->lead_rendering && !inst->emit_bypass_swing && !inst->lead_draining
+        && lead_active(inst);
+}
+static int lead_hold(uint8_t route, uint8_t slot, uint8_t midi_to,
+                     int track, int drum, int lane, uint8_t st, uint8_t d1, uint8_t d2) {
+    seq8_instance_t *inst = g_inst;
+    if (!lead_now(inst)) return 0;
+    midi_dest_t dst = midi_dest_resolve(route, slot, midi_to);
+    if (!dst.emit || dst.route == ROUTE_MOVE) return 0;
+    if (inst->lead_head - inst->lead_tail >= LEAD_RING) { inst->lead_full++; return 0; }
+    lead_ev_t *e = &inst->lead_q[inst->lead_head & (LEAD_RING - 1)];
+    e->due   = inst->block_count + LEAD_BLOCKS;
+    e->kind  = (uint8_t)(drum ? LEAD_DRUM : LEAD_MELODIC);
+    e->track = (uint8_t)track;
+    e->lane  = (uint8_t)lane;
+    e->st = st; e->d1 = d1; e->d2 = d2;
+    inst->lead_head++;
+    return 1;
+}
+
+/* The same hold for a chain-parameter write the render makes (an automation
+ * lane, a step's lock): it goes out with the notes it was written beside.
+ * 1 = held. */
+static int lead_hold_param(seq8_instance_t *inst, uint8_t slot, const char *key, const char *value,
+                           uint16_t target, uint16_t val) {
+    if (!inst->lead_rendering || inst->lead_draining || !lead_active(inst)) return 0;
+    if (inst->lead_head - inst->lead_tail >= LEAD_RING ||
+            inst->lead_pa_head - inst->lead_pa_tail >= LEAD_PA_RING) { inst->lead_full++; return 0; }
+    lead_pa_t *p = &inst->lead_pa[inst->lead_pa_head & (LEAD_PA_RING - 1)];
+    p->slot = slot; p->target = target; p->val = val;
+    snprintf(p->key, sizeof p->key, "%s", key);
+    snprintf(p->value, sizeof p->value, "%s", value);
+    lead_ev_t *e = &inst->lead_q[inst->lead_head & (LEAD_RING - 1)];
+    e->due  = inst->block_count + LEAD_BLOCKS;
+    e->kind = LEAD_PARAM;
+    e->aux  = (uint16_t)(inst->lead_pa_head & (LEAD_PA_RING - 1));
+    inst->lead_pa_head++;
+    inst->lead_head++;
+    return 1;
+}
+
+/* The same hold for a realtime byte the render sends (Start / clock / Stop
+ * to the slots' MIDI FX and synced LFOs, or to USB-A): it keeps time with the
+ * notes. to_ext 1 = USB-A. 1 = held. */
+static int lead_hold_clock(seq8_instance_t *inst, int to_ext, uint8_t rt) {
+    if (!inst || !inst->lead_rendering || inst->lead_draining || !lead_active(inst)) return 0;
+    if (inst->lead_head - inst->lead_tail >= LEAD_RING) { inst->lead_full++; return 0; }
+    lead_ev_t *e = &inst->lead_q[inst->lead_head & (LEAD_RING - 1)];
+    e->due   = inst->block_count + LEAD_BLOCKS;
+    e->kind  = LEAD_CLOCK;
+    e->track = (uint8_t)(to_ext ? 1 : 0);
+    e->st    = rt;
+    inst->lead_head++;
+    return 1;
+}
+
+static void pfx_emit_now(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2);
+static void clock_send_raw(seq8_instance_t *inst, uint8_t rt);
+static void slot_clock_send(uint8_t rt);
+static void lead_drain(seq8_instance_t *inst, int all, int drop_ons);
+static void pa_ring_push(seq8_instance_t *inst, uint16_t target, uint16_t val);
+
 /* Route a MIDI message directly to the track's output bus, bypassing all
  * pfx_send hooks (ARP, looper, merge, swing). Used for already-deferred events. */
 static void pfx_emit(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
@@ -2974,6 +3091,16 @@ static void pfx_emit(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
             au_note_event((int)fx->track_idx, (int)d1 - AU_NOTE_BASE, status, d2, g_inst->au_echo);
         return;
     }
+    if (lead_hold(fx->route, fx->slot, fx->midi_to, fx->track_idx, 0, 0, status, d1, d2)) return;
+    pfx_emit_now(fx, status, d1, d2);
+}
+
+/* What pfx_emit sends, when it goes: at once, or out of the lead's hold. The
+ * refcount gate is HERE so it counts what is actually sent, in the order it
+ * is sent — counted when held, a live note on the same pitch as a held one
+ * would be dropped, and its off sent ahead of the held on would leave that
+ * on hanging. */
+static void pfx_emit_now(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
     /* Conductor responder transposition is now applied at note-record level in
      * pfx_note_on (stored into an->gen_notes), so every emitted on AND its
      * matching off carry the same transposed pitch — no emit-time latch needed.
@@ -3051,6 +3178,9 @@ static void send_panic_ex(seq8_instance_t *inst, int full) {
     uint8_t    slot_hot[SEQ8_CHAIN_SLOTS] = { 0 };   /* a note is (or was) sounding there */
     uint16_t   slot_chs[SEQ8_CHAIN_SLOTS] = { 0 };   /* channels its tracks send on */
     int t, ch, n, s;
+    /* What the lead holds goes first — its note-offs, never its note-ons:
+     * those were due after this stop / panic in what is heard. */
+    lead_drain(inst, 1, 1);
     /* Which chain slots have anything sounding, BEFORE the refcounts are
      * zeroed: those get the full sweep; a silent slot costs nothing. */
     for (t = 0; t < NUM_TRACKS; t++) {
@@ -4137,6 +4267,43 @@ static void pfx_note_off_imm(seq8_instance_t *inst, seq8_track_t *tr,
 #include "seq8_drum.c"
 #include "seq8_audio.c"
 #include "seq8_arp.c"
+
+/* Send what the lead held and is now due, in the order it was held (every
+ * held message, so a note-off never overtakes its note-on). all = 1 sends
+ * everything at once: the clock went to following Move's, or a panic / stop
+ * that bypasses the emit paths must not be followed by notes held from
+ * before it. drop_ons = 1 drops the held note-ons instead (their offs still
+ * go, harmless when the on never did). */
+static void lead_drain(seq8_instance_t *inst, int all, int drop_ons) {
+    if (!lead_active(inst)) all = 1;
+    inst->lead_draining = 1;
+    while (inst->lead_tail != inst->lead_head) {
+        const lead_ev_t *e = &inst->lead_q[inst->lead_tail & (LEAD_RING - 1)];
+        if (!all && (int32_t)(e->due - inst->block_count) > 0) break;
+        inst->lead_tail++;
+        if (e->kind == LEAD_PARAM) {
+            lead_pa_t *p = &inst->lead_pa[e->aux & (LEAD_PA_RING - 1)];
+            inst->lead_pa_tail++;
+            if (!(g_ext && g_ext->set_slot_param && g_ext->set_slot_param((int)p->slot, p->key, p->value)))
+                pa_ring_push(inst, p->target, p->val);
+            continue;
+        }
+        if (e->kind == LEAD_CLOCK) {
+            if (e->track) clock_send_raw(inst, e->st);
+            else          slot_clock_send(e->st);
+            continue;
+        }
+        if (drop_ons && (e->st & 0xF0) == 0x90 && e->d2 > 0) continue;
+        if (e->track >= NUM_TRACKS) continue;
+        if (e->kind == LEAD_DRUM) {
+            if (e->lane < DRUM_LANES)
+                drum_pfx_emit_now(&inst->tracks[e->track].drum_lane_pfx[e->lane], e->st, e->d1, e->d2);
+        } else {
+            pfx_emit_now(&inst->tracks[e->track].pfx, e->st, e->d1, e->d2);
+        }
+    }
+    inst->lead_draining = 0;
+}
 
 /* ------------------------------------------------------------------ */
 /* TRACK ARP engine (per-track, live-input first stage)               */
@@ -10735,8 +10902,10 @@ static int groove_pass_claims(seq8_instance_t *inst, seq8_track_t *tr,
  * of render_block's exits (stopped, count-in, ...): pads play slices stopped. */
 static void render_block_audio(void *instance, int16_t *out_lr, int frames) {
     if (instance) ((seq8_instance_t *)instance)->au_tick0 = (uint64_t)((seq8_instance_t *)instance)->arp_master_tick;
+    if (instance) ((seq8_instance_t *)instance)->lead_rendering = 1;
     render_block(instance, out_lr, frames);
     if (instance) au_render((seq8_instance_t *)instance, frames);
+    if (instance) ((seq8_instance_t *)instance)->lead_rendering = 0;
 }
 
 /* ------------------------------------------------------------------ */

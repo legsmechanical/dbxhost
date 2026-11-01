@@ -81,7 +81,14 @@ int main(void) {
     hx_set_param(h, "transport", "stop");
     hx_render(h, 200);
     HX_ASSERT(count_rt(0xFC) == 1, "stop did not send exactly one Stop");
-    HX_ASSERT(count_rt(0xF8) == 0 && count_rt(0xFA) == 0, "clock or Start after stop");
+    /* the clock held from just before the stop (the lead, LEAD_BLOCKS) still
+     * goes out, ahead of the Stop; nothing after it */
+    {
+        int i, fc = first_rt(0xFC);
+        for (i = fc + 1; i < hx_stub_event_count(); i++)
+            HX_ASSERT(!is_rt(hx_stub_event(i), 0xF8) && !is_rt(hx_stub_event(i), 0xFA), "clock or Start after stop");
+        HX_ASSERT(count_rt(0xFA) == 0, "a Start around the stop");
+    }
     printf("  ok   — stop: one Stop, then silence\n");
 
     /* A second play starts again. */

@@ -101,6 +101,11 @@ the section into a versioned heading at release time.
   Clips of the same length still hand over in step with each other.
 
 ### Fixed
+- **Tracks playing Move's own instruments are in time with everything else.** Move
+  plays a note it is sent about 9 ms after a Schwung instrument or an Audio track
+  would, so a Move drum track always trailed the rest. dAVEBOx now plays its sequence
+  for Move that much early — notes, arps, repeats and automation alike — so every
+  track lands on the beat together. Pads you play live respond as before.
 - **A Sync Pitch loop plays in time with the other tracks.** It started a few
   milliseconds ahead of the notes at Play, crept earlier at each pass, and with Shift
   set it restarted twice a bar. It now starts on the beat with everything else, once

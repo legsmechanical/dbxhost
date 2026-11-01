@@ -186,6 +186,9 @@ static void resample_render_start(seq8_instance_t *inst, int frames) {
         }
     } else if (inst->resample_state == RS_STARTING) {
         int ok;
+        /* What the take's tracks play is heard LEAD_BLOCKS blocks after the
+         * tick that plays it (see LEAD_BLOCKS): the take starts as late. */
+        if (inst->resample_lead_wait > 0) { inst->resample_lead_wait--; return; }
         if (inst->resample_src == RS_SRC_DRY || inst->resample_src == RS_SRC_PRE)
             ok = g_ext && g_ext->capture_start_src &&
                  g_ext->capture_start_src(inst->resample_path, inst->resample_frames,
@@ -211,8 +214,10 @@ static void resample_tick(seq8_instance_t *inst) {
     if (inst->resample_state != RS_ARMED && inst->resample_state != RS_RECORDING
             && inst->resample_state != RS_STARTING) return;
     abs = inst->global_tick * TICKS_PER_STEP + inst->master_tick_in_step;
-    if (inst->resample_state == RS_ARMED && abs >= inst->resample_start_tick)
-        inst->resample_state = RS_STARTING;
+    if (inst->resample_state == RS_ARMED && abs >= inst->resample_start_tick) {
+        inst->resample_state     = RS_STARTING;
+        inst->resample_lead_wait = LEAD_BLOCKS;
+    }
     /* The pass is over: every clip stops at this bar line, before any track
      * plays it, so the tail is ring-out. */
     if (abs == inst->resample_end_tick) {

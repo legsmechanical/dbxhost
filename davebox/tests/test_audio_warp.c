@@ -41,7 +41,7 @@ static void write_sine(const char *path, double hz) {
 }
 
 static hx_t *rig(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     seq8_instance_t *inst;
     char p[300];
     HX_ASSERT(h, "create failed");

@@ -76,6 +76,11 @@ static int compare_playback(hx_t *h, const char *tgt, const int *shape, uint32_t
     snprintf(pat, sizeof pat, "%s ", tgt);
     const char *ck = strchr(strchr(tgt, ':') + 1, ':') ? strchr(tgt, ':') + 1 : tgt;   /* "synth:mode" */
     int ev0 = hx_stub_event_count();
+    /* A value through the host is held with the notes (the lead): what goes
+     * out this block was played LEAD_BLOCKS blocks ago, so it is compared with
+     * the lane tick of then. The ring's (the UI's) is not held. */
+    long lt_hist[LEAD_BLOCKS + 1];
+    for (int i = 0; i <= LEAD_BLOCKS; i++) lt_hist[i] = -1;
     for (int b = 0; b < blocks; b++) {
         hx_render(h, 1);
         if (host) {
@@ -88,8 +93,11 @@ static int compare_playback(hx_t *h, const char *tgt, const int *shape, uint32_t
             hx_get_param(h, "pa_pending", g_ans, sizeof g_ans);
             for (char *p = strstr(g_ans, pat); p; p = strstr(p + 1, pat)) last = v8_of(atoi(p + strlen(pat)));
         }
-        const long lt = snap_field(h, 57);
-        if (lt >= 0 && (uint32_t)lt != ws + ((seq8_instance_t *)h->inst)->tracks[0].pa_last_ct % wl) g_off_clock++;
+        const long lt_now = snap_field(h, 57);
+        if (lt_now >= 0 && (uint32_t)lt_now != ws + ((seq8_instance_t *)h->inst)->tracks[0].pa_last_ct % wl) g_off_clock++;
+        for (int i = LEAD_BLOCKS; i > 0; i--) lt_hist[i] = lt_hist[i - 1];
+        lt_hist[0] = lt_now;
+        const long lt = host ? lt_hist[LEAD_BLOCKS] : lt_now;
         if (last < 0 || lt < 0) continue;
         HX_ASSERT((uint32_t)lt >= ws && (uint32_t)lt < ws + wl, "the playhead stays inside the lane's window");
         const int s = shape[lt - ws];

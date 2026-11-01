@@ -121,7 +121,7 @@ int main(void) {
     snprintf(p, sizeof p, "%s/src/ramp2.wav", g_root); write_ramp_len(p, 0.5);
     snprintf(p, sizeof p, "%s/src/st24.wav", g_root); write_st24(p, 3.0);
 
-    h = hx_create(NULL);
+    h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     HX_ASSERT(h, "create failed");
     inst = (seq8_instance_t *)h->inst;
     snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);

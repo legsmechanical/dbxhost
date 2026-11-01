@@ -2409,6 +2409,10 @@ static void au_chop_on(seq8_instance_t *inst, int t, int c, int slice, float vga
     au_range_on(inst, t, c, slice, a, b, vgain, off, sync);
 }
 
+/* 1 while a pad's slice is being started (au_slice_on): its voice is marked
+ * live. The audio thread only. */
+static int au_live_mark = 0;
+
 /* Frames a..b of clip (t,c)'s sample as chop `slice` (AU_SLICE_NONE: Loop
  * mode's hidden chop at Start), `off` frames into the block. */
 /* Returns the voice it started or carried on (NULL: none). */
@@ -2498,12 +2502,15 @@ static au_voice_t *au_range_on_in(au_track_t *at, const au_sample_t *s, int cs, 
      * the streamer must read ahead through all of it, not to the piece's end
      * (a device-free test found Vintage on a streamed file starving) */
     if (sync) { uint32_t rs, re; au_range(cl, s, &rs, &re); v->wlo = rs; v->whi = re; }
+    v->live = (uint8_t)au_live_mark;
     v->active = 1;
     return v;
 }
 
 static void au_slice_on(seq8_instance_t *inst, int t, int slice, float vgain) {
+    au_live_mark = !lead_now(inst);       /* a pad's slice skips the lead's delay */
     au_chop_on(inst, t, inst->tracks[t].active_clip, slice, vgain, inst->au_tick_off, 0);
+    au_live_mark = 0;
 }
 
 static void au_slice_off(seq8_instance_t *inst, int t, int slice) {

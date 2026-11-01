@@ -186,7 +186,7 @@ static int note_events_on_slot(int slot) {
 }
 
 static hx_t *rig(int audio) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     seq8_instance_t *inst;
     char p[300];
     HX_ASSERT(h, "create failed");
@@ -1619,7 +1619,7 @@ int main(void) {
         fclose(wf);
     }
     hx_destroy(h);
-    h = hx_create(NULL); inst = (seq8_instance_t *)h->inst;
+    h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */ inst = (seq8_instance_t *)h->inst;
     snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
     seq8_load_state(inst);
     HX_ASSERT(inst->tracks[4].pad_mode == PAD_MODE_AUDIO, "the reload lost the Audio track");
@@ -1659,7 +1659,7 @@ int main(void) {
     hx_destroy(h);
 
     /* ---- review: the plain pad_mode key leaves Audio the convert's way ---- */
-    h = hx_create(NULL); inst = (seq8_instance_t *)h->inst;
+    h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */ inst = (seq8_instance_t *)h->inst;
     snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
     hx_set_param(h, "t2_convert_to_audio", "");
     snprintf(p, sizeof p, "0|%s/src/st24.wav", g_root);
@@ -1675,7 +1675,7 @@ int main(void) {
      * read as Start + Length its End would be a nonsense Length ---- */
     {
         FILE *wf;
-        h = hx_create(NULL); inst = (seq8_instance_t *)h->inst;
+        h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */ inst = (seq8_instance_t *)h->inst;
         snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
         wf = fopen(inst->state_path, "w");
         fprintf(wf, "{\"v\":36,\"t4_pm\":3,\"t4c0_au2\":\"0 0 1 8 0 36000 3 -2 1 40 2 0 1 2 50|mono48.wav\","
@@ -1691,7 +1691,7 @@ int main(void) {
     /* ---- a set from the drum-flag build loads as a drum track ---- */
     {
         FILE *wf;
-        h = hx_create(NULL); inst = (seq8_instance_t *)h->inst;
+        h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */ inst = (seq8_instance_t *)h->inst;
         snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
         wf = fopen(inst->state_path, "w");
         fprintf(wf, "{\"v\":36,\"t4_pm\":1,\"t4_au\":1,\"t4c0_au\":\"1 0 8 16 0 1000 0 0|mono48.wav\"}");

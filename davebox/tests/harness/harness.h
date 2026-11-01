@@ -13,6 +13,11 @@
 #include "stub_host.h"
 #include "../../dsp/seq8.c"  /* white-box: defines move_plugin_init_v2 + statics */
 
+/* The engine's own timing, without the lead (LEAD_BLOCKS: the MIDI hold and
+ * an Audio track's output delay). For tests that pin WHERE the engine plays
+ * something against its clock; test_move_lead pins the lead on top of it. */
+#define HX_NO_LEAD(h) (((seq8_instance_t *)(h)->inst)->lead_off = 1)
+
 typedef struct {
     plugin_api_v2_t *api;
     void *inst;             /* cast to the davebox instance type for white-box reads */

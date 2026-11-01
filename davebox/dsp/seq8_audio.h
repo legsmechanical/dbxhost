@@ -215,6 +215,7 @@ typedef struct {
     uint8_t  clip;           /* the clip it plays */
     uint8_t  fpitch;         /* its pitch follows (not Tempo Pitch's, whose speed the tempo sets) */
     uint8_t  usl;            /* it plays its chop's sound (au_sl_eff), not a Loop's or a Vintage piece's */
+    uint8_t  live;           /* a pad started it: heard at once, not through the lead's delay (au_render) */
     int8_t   ps;             /* semitones in its step: the clip's and its chop's */
     int16_t  pc;             /* cents in its step: the same */
     int8_t   gdb;            /* dB in v->gain: the same */
@@ -278,6 +279,11 @@ typedef struct {
     uint8_t    layout;       /* PAD MODE Layout: 0 4 Rows, 1 16 Pads (the UI's; saved as t%d_aul) */
     uint8_t    mgain;        /* mute as a bus: 0..64, the output's level, ramping one step a frame */
     int8_t     cond;         /* Loop: the Conductor's semitones in force (Next: taken at the wrap) */
+    /* THE LEAD: what the sequencer plays here is heard LEAD_FRAMES later, with
+     * the MIDI the lead holds (LEAD_BLOCKS); a pad's voice is not delayed */
+    int32_t    dl[LEAD_FRAMES * 2];
+    uint16_t   dl_pos;       /* dl: the next frame out (and in) */
+    uint16_t   dl_tail;      /* frames of sound still in dl (0: nothing to play out) */
 } au_track_t;
 
 /* Loader mailbox (set_param / render -> loader thread). */

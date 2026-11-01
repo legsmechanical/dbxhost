@@ -152,7 +152,10 @@ int main(void) {
         }
         hx_stub_capture(NULL, &block, &frames, NULL);
         HX_ASSERT(starting_block > first_note_block() + 100, "warm-up did not delay the take");
-        HX_ASSERT(block == starting_block + 1, "the warm-up take was not armed one render later");
+        /* what the tick plays is heard LEAD_BLOCKS later (the lead), and the
+         * take starts with it */
+        HX_ASSERT(block == starting_block + 1 + LEAD_BLOCKS,
+                  "the warm-up take was not armed one render after the pass's first tick is heard");
         HX_ASSERT(frames == BAR_FRAMES, "the warm-up take is not one bar");
     }
     hx_destroy(h);
@@ -181,7 +184,7 @@ int main(void) {
     hx_stub_capture_refuse(1);
     hx_set_param(h, "resample_scene", "0 1 0 0 |/x/b.wav");
     for (i = 0; i < 40 && inst->resample_state == RS_ARMED; i++) hx_render(h, 1);
-    hx_render(h, 1);
+    hx_render(h, 1 + LEAD_BLOCKS);                  /* the take starts when the tick is heard */
     HX_ASSERT(inst->resample_state == RS_FAILED && geti(h, "resample_err") == RS_ERR_SAMPLER,
               "a refused take was not reported");
     hx_destroy(h);

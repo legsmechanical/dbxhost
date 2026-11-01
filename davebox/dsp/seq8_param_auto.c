@@ -529,7 +529,8 @@ static void pa_emit_chain(seq8_instance_t *inst, uint16_t target, uint16_t val) 
         if (r->valid && !strcmp(r->name, inst->pa_targets[target])) {
             char buf[32];
             if (pa_format_value(r, val, buf, (int)sizeof(buf)) &&
-                    g_ext->set_slot_param((int)r->slot, r->key, buf)) {
+                    (lead_hold_param(inst, r->slot, r->key, buf, target, val) ||
+                     g_ext->set_slot_param((int)r->slot, r->key, buf))) {
                 inst->pa_host_writes++;
                 inst->pa_host_write_total++;
                 return;
