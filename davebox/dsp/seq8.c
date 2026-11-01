@@ -9278,6 +9278,18 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
     if (!strcmp(key, "bake_au_kept"))
         return snprintf(out, out_len, "%u %d", (unsigned)inst->bake_seq, (int)inst->bake_au_kept);
 
+    /* The lead, for measuring it: "active held full lead_ticks dl0..dl7"
+     * (dlN: frames of sound still in track N's Audio delay line). */
+    if (!strcmp(key, "lead_stat")) {
+        int n = snprintf(out, out_len, "%d %u %u %u", lead_active(inst),
+                         (unsigned)(inst->lead_head - inst->lead_tail), (unsigned)inst->lead_full,
+                         (unsigned)lead_ticks(inst));
+        for (int t = 0; t < NUM_TRACKS && n < out_len; t++)
+            n += snprintf(out + n, (size_t)(out_len - n), " %u", (unsigned)inst->au_trk[t].dl_tail);
+        return n;
+    }
+    if (!strcmp(key, "lead_off")) return snprintf(out, out_len, "%d", (int)inst->lead_off);
+
     if (!strcmp(key, "clock_follow_on"))
         return snprintf(out, out_len, "%d", inst ? (int)inst->clock_follow_on : 0);
     if (!strcmp(key, "clock_send_on"))

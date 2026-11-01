@@ -398,6 +398,14 @@ static int sp_globals_transport(sp_ctx_t *cx) {
         return 1;
     }
 
+    /* The lead off (1) or on (0): measuring it on the device, A against B in
+     * one session. Not saved. What is held goes out at once. */
+    if (!strcmp(key, "lead_off")) {
+        inst->lead_off = (uint8_t)(my_atoi(val) ? 1 : 0);
+        if (inst->lead_off) lead_drain(inst, 1, 0);
+        return 1;
+    }
+
     if (!strcmp(key, "clock_follow_on")) {
         uint8_t on = (uint8_t)(my_atoi(val) ? 1 : 0);
         if (on == inst->clock_follow_on) { inst->state_dirty = 1; return 1; }
