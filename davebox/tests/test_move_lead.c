@@ -309,17 +309,18 @@ int main(void) {
 
     /* ---- recording: where it was heard ---- */
     {
-        hx_t *h = hx_create(NULL);
-        uint32_t L = lead_ticks((seq8_instance_t *)h->inst);
-        hx_destroy(h);
-        HX_ASSERT(L > 0, "control: the lead is some ticks at 120 BPM");
+        /* LEAD_FRAMES at 120 BPM, in ticks, to the nearest: 384 / 229.69 = 1.67 -> 2 */
+        const int L = (int)((double)LEAD_FRAMES / (44100.0 * 60.0 / (120.0 * PPQN)) + 0.5);
+        HX_ASSERT(L == 2, "control: the lead is 2 ticks at 120 BPM");
         for (int drum = 0; drum < 2; drum++) {
-            int off = record_at(1, drum, 100), on = record_at(0, drum, 100);
-            snprintf(m, sizeof m, "%s: pressed at tick 100, recorded at %d without the lead, %d with", drum ? "drum" : "melodic", off, on);
-            HX_ASSERT(off == 100, m);
-            HX_ASSERT(on == 100 - (int)L, m);
-            printf("  ok   — recording (%s): a press at sequencer tick 100 lands at %d, where it was heard (%u ticks back)\n",
-                   drum ? "a drum lane" : "melodic", on, L);
+            /* the drum press is 1 tick into step 4: stepped back it lands in step 3 */
+            const int at = drum ? 4 * TICKS_PER_STEP + 1 : 100;
+            int off = record_at(1, drum, (uint32_t)at), on = record_at(0, drum, (uint32_t)at);
+            snprintf(m, sizeof m, "%s: pressed at tick %d, recorded at %d without the lead, %d with", drum ? "drum" : "melodic", at, off, on);
+            HX_ASSERT(off == at, m);
+            HX_ASSERT(on == at - L, m);
+            printf("  ok   — recording (%s): a press at sequencer tick %d lands at %d, where it was heard (%d ticks back)\n",
+                   drum ? "a drum lane" : "melodic", at, on, L);
         }
     }
     { char cmd[300]; snprintf(cmd, sizeof cmd, "rm -rf %s", g_root); if (system(cmd)) {} }
