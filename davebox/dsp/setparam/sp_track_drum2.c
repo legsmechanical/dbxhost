@@ -728,6 +728,13 @@ static int sp_track_drum2(sp_ctx_t *cx) {
                     base_step = tr->drum_current_step[lane];
                     base_off  = (int16_t)tr->drum_tick_in_step[lane];
                 }
+                {   /* the moment it was heard, not the sequencer's (the lead) */
+                    uint32_t ws = (uint32_t)dlc->loop_start * TICKS_PER_STEP;
+                    uint32_t bt = lead_back(inst, (uint32_t)base_step * TICKS_PER_STEP + (uint32_t)(base_off > 0 ? base_off : 0),
+                                            ws, (uint32_t)dlc->length * TICKS_PER_STEP);
+                    base_step = (uint16_t)(bt / TICKS_PER_STEP);
+                    base_off  = (int16_t)(bt % TICKS_PER_STEP);
+                }
                 uint8_t  diq  = tr->drum_inp_quant;
                 /* the press as it was struck: the gate is measured from this,
                  * against a release that is not moved either */
@@ -865,6 +872,8 @@ static int sp_track_drum2(sp_ctx_t *cx) {
                         off_tick = (uint32_t)tr->drum_current_step[lane2] * tps2
                                    + tr->drum_tick_in_step[lane2];
                     }
+                    off_tick = lead_back(inst, off_tick, (uint32_t)dlc2->loop_start * tps2,
+                                         (uint32_t)dlc2->length * tps2);   /* with its press (the lead) */
                     uint32_t  clip_ticks = (uint32_t)dlc2->length * tps2;
                     uint32_t  gate;
                     if (off_tick >= on_tick) gate = off_tick - on_tick;

@@ -237,6 +237,8 @@ static int sp_track_record(sp_ctx_t *cx) {
             } else {
                 abs_tick = fallback_tick;
             }
+            /* the moment it was heard, not the sequencer's (the lead) */
+            abs_tick = lead_back(inst, abs_tick, (uint32_t)cl->loop_start * tps, clip_ticks);
             /* Per-track InQ: 9 values (0=Off..8=1/4T) via DRUM_INQ_TICKS.
              * Shared per-track field with drum tracks (drum_inp_quant is
              * historical name; field is per-track-type-agnostic). Global
@@ -384,6 +386,7 @@ static int sp_track_record(sp_ctx_t *cx) {
             } else {
                 off_tick = fallback_off_tick;
             }
+            off_tick = lead_back(inst, off_tick, (uint32_t)cl->loop_start * tps, clip_ticks);   /* the lead */
 
             /* TRACK ARP active: note was never written to rec_pending; update
              * arp held buffer and let tarp_fire_step own clip recording.

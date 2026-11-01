@@ -134,7 +134,7 @@ static void play_render_check(hx_t *h, int focus, int n_blocks, const char *name
 /* Scenario 1: melodic_basic — track 1 (melodic), c0 steps 0/4/8/12 cycling
  * pitches 60/64/67/60. 640 blocks = one full 16-step bar -> 4 on/off pairs. */
 static void scn_melodic_basic(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     HX_ASSERT(h, "melodic_basic create failed");
     hx_set_param(h, "t1_c0_step_0_toggle",  "60 100");
     hx_set_param(h, "t1_c0_step_4_toggle",  "64 90");
@@ -147,7 +147,7 @@ static void scn_melodic_basic(void) {
 /* Scenario 2: drum_basic — track 0 (drum by default), lane 0 @ step 0 and
  * lane 1 @ step 4. Pitches DRUM_BASE_NOTE(36)+lane. 400 blocks -> 2 pairs. */
 static void scn_drum_basic(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     HX_ASSERT(h, "drum_basic create failed");
     hx_set_param(h, "t0_l0_step_0_toggle", "110");
     hx_set_param(h, "t0_l1_step_4_toggle", "70");
@@ -159,7 +159,7 @@ static void scn_drum_basic(void) {
  * (offbeat, swung). Swing is a sample delay invisible to byte-capture; the
  * golden freezes the ordered emission. */
 static void scn_swing_offbeat(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     HX_ASSERT(h, "swing_offbeat create failed");
     hx_set_param(h, "swing_amt", "60");
     hx_set_param(h, "t1_c0_step_0_toggle", "60 100");
@@ -174,7 +174,7 @@ static void scn_swing_offbeat(void) {
  * tN_cC_pfx_set). A 3-note chord (60/64/67) held one bar (gate 384) feeds the
  * arp buffer; style 1 = Up arpeggiates 60,64,67,60,64,67... 400 blocks. */
 static void scn_seq_arp(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     HX_ASSERT(h, "seq_arp create failed");
     hx_set_param(h, "t1_c0_step_0_add",  "60 0 100 64 0 100 67 0 100");
     hx_set_param(h, "t1_c0_step_0_gate", "384");            /* hold the chord */
@@ -189,7 +189,7 @@ static void scn_seq_arp(void) {
  * runs even with transport stopped (free-running arp clock), so no play
  * needed — render directly. */
 static void scn_track_arp(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     HX_ASSERT(h, "track_arp create failed");
     hx_set_param(h, "t1_padmap", PADMAP_CHROMATIC);   /* arms dsp_inbound + active_track */
     hx_set_param(h, "t1_tarp_style", "1");            /* Up; flips tarp_on=1 */
@@ -209,7 +209,7 @@ static void scn_track_arp(void) {
  * delay_level 100 + delay_repeats 3 + delay_time 3 -> the note plus 3 echoes
  * (each at reduced velocity). 400 blocks. */
 static void scn_midi_delay(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     HX_ASSERT(h, "midi_delay create failed");
     hx_set_param(h, "t1_c0_step_0_toggle", "60 100");
     hx_set_param(h, "t1_c0_pfx_set", "delay_level 100");
@@ -242,7 +242,7 @@ static void scn_midi_delay(void) {
  * safety-net sweep emits an extra off for pitch 60 right after line 1's on.
  * Real, deterministic DSP behavior — a Phase 3 split must reproduce it too. */
 static void scn_looper(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     HX_ASSERT(h, "looper create failed");
     hx_set_param(h, "t1_padmap", PADMAP_CHROMATIC); /* arm live input on track 1 */
     hx_set_param(h, "t1_track_looper", "1");         /* enroll track 1 in the looper */

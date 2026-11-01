@@ -50,7 +50,7 @@ int main(void) {
 
     /* ---- the whole gesture, end to end -------------------------------- */
     {
-        hx_t *h = hx_create(NULL);
+        hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
         hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         seq8_track_t *tr = &in->tracks[0];
@@ -112,7 +112,7 @@ int main(void) {
         /* Without this, a Capture tap after a recording pass would write the
          * same sweep into the lane a second time. Every other assertion in
          * this file passes whether or not this holds. */
-        hx_t *h = hx_create(NULL);
+        hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
         hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         seq8_track_t *tr = &in->tracks[0];
@@ -132,7 +132,7 @@ int main(void) {
 
     /* ---- playing only, and the transport edge clears -------------------- */
     {
-        hx_t *h = hx_create(NULL);
+        hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
         hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         seq8_track_t *tr = &in->tracks[0];
@@ -156,7 +156,7 @@ int main(void) {
 
     /* ---- Shift+Capture clears without committing ------------------------ */
     {
-        hx_t *h = hx_create(NULL);
+        hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
         hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         seq8_track_t *tr = &in->tracks[0];
@@ -176,7 +176,7 @@ int main(void) {
 
     /* ---- a sweep belongs to the clip it was heard in --------------------- */
     {
-        hx_t *h = hx_create(NULL);
+        hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
         hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         seq8_track_t *tr = &in->tracks[0];
@@ -207,7 +207,7 @@ int main(void) {
          *
          * ⚠ This case is the one a mutation caught: every other assertion in
          * this file passes with the reset deleted. */
-        hx_t *h = hx_create(NULL);
+        hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
         hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         seq8_track_t *tr = &in->tracks[0];
@@ -246,7 +246,7 @@ int main(void) {
      * clip, automation included, before writing), then the sweep commit, with
      * no checkpoint of its own. */
     {
-        hx_t *h = hx_create(NULL);
+        hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
         hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         seq8_track_t *tr = &in->tracks[1];       /* melodic */

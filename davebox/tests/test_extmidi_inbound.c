@@ -81,7 +81,7 @@ static int count_note_ons(int pitch) {
 
 /* ---- Case 10: stock-Schwung fallback unchanged (always on) --------------- */
 static void case10_stock_fallback(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     HX_ASSERT(h, "c10 create");
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
     /* dsp_inbound_enabled defaults 0 (no padmap pushed). */
@@ -118,7 +118,7 @@ static seq8_track_t *arm_melodic(hx_t *h, int t) {
 
 /* Case 2: channel filter IN → press slot stamped at current_clip_tick. */
 static void case2_channel_in(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
     seq8_track_t *tr = arm_melodic(h, 1);    /* channel 1 */
     tr->recording = 1;
@@ -132,7 +132,7 @@ static void case2_channel_in(void) {
 
 /* Case 3: channel filter OUT → no slot. */
 static void case3_channel_out(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
     seq8_track_t *tr = arm_melodic(h, 1);    /* channel 1 */
     tr->recording = 1;
@@ -147,7 +147,7 @@ static void case3_channel_out(void) {
  * tick (not the late handler current_clip_tick), gate from the stamped release.
  * The JS push for an ext note carries the per-note ext marker ("e64 100"). */
 static void case4_record_timing(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     seq8_track_t *tr = arm_melodic(h, 1);
     tr->recording = 1;
 
@@ -174,7 +174,7 @@ static void case4_record_timing(void) {
 /* Case 5: live monitor on ROUTE_MOVE — the ext branch must NOT emit (Move plays
  * natively); guards against the double-play regression. */
 static void case5_no_double_play(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     seq8_track_t *tr = arm_melodic(h, 1);
     tr->recording = 1;
     hx_clear_capture(h);
@@ -190,7 +190,7 @@ static void case5_no_double_play(void) {
 
 /* Case 6: drum lane press slot + record. Uses t0 (drum, ch0, ROUTE_MOVE). */
 static void case6_drum_lane(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
     seq8_track_t *tr = &inst->tracks[0];
     HX_ASSERT(tr->pad_mode == PAD_MODE_DRUM, "c6 t0 expected drum");
@@ -221,7 +221,7 @@ static void case6_drum_lane(void) {
 /* Case 7: preroll/count-in window. Outside the last-1/8 → no stamp; inside →
  * stamp at loop_start tick. */
 static void case7_preroll(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
     seq8_track_t *tr = arm_melodic(h, 1);
     tr->recording = 0;
@@ -245,7 +245,7 @@ static void case7_preroll(void) {
 /* Case 8: seq-echo suppression. A sequencer-emitted pitch (in play_pending)
  * fed back via the cable-2 echo must NOT be recorded; a non-echo pitch must. */
 static void case8_seq_echo(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
     seq8_track_t *tr = arm_melodic(h, 1);
     tr->recording = 1;
@@ -268,7 +268,7 @@ static void case8_seq_echo(void) {
 /* Case 9: cross-track note-off. Press on track A; switch active to B; the
  * note-off (arriving on B's channel per the remap) must release on A's slot. */
 static void case9_cross_track(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
     seq8_track_t *ta = arm_melodic(h, 1);     /* A = track1, ch1 */
     ta->recording = 1;
@@ -298,7 +298,7 @@ static void case9_cross_track(void) {
  * non-internal 3-byte note event = ext. (Safe: the inbound/route/channel
  * filters still apply, and the ext branch never emits on its own.) */
 static void case_src_unexpected(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
     seq8_track_t *tr = arm_melodic(h, 1);
     tr->recording = 1;
@@ -318,7 +318,7 @@ static void case_src_unexpected(void) {
  * payloads: tN_live_notes "eon p v"/"eoff p", record payloads "e<p> [v]".
  * Plain (pad-origin) tokens stay suppressed under inbound. */
 static void case11_path_b_ext_tokens(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
     /* Track 4 defaults ROUTE_SCHWUNG, melodic, channel 4. */
     seq8_track_t *tr = &inst->tracks[4];
@@ -367,7 +367,7 @@ static void case11_path_b_ext_tokens(void) {
 
     /* Drum Path B: ROUTE_SCHWUNG drum track records an ext-marked hit at the
      * live playhead (fallback — no slot). */
-    hx_t *h2 = hx_create(NULL);
+    hx_t *h2 = hx_create(NULL); HX_NO_LEAD(h2);   /* the engine against its clock */
     seq8_instance_t *inst2 = (seq8_instance_t *)h2->inst;
     seq8_track_t *dt = &inst2->tracks[0];
     HX_ASSERT(dt->pad_mode == PAD_MODE_DRUM, "c11 t0 expected drum");
@@ -391,7 +391,7 @@ static void case11_path_b_ext_tokens(void) {
  * also corrupting tarp_physical). Plain tokens must stay suppressed whenever
  * inbound is on, on EVERY route. */
 static void case12_pad_single_fire_nonmove(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
     seq8_track_t *tr = &inst->tracks[4];
     HX_ASSERT(tr->pad_mode != PAD_MODE_DRUM, "c12 t4 expected melodic");
@@ -414,7 +414,7 @@ static void case12_pad_single_fire_nonmove(void) {
  * on_midi stamp for non-Move pad recording). Uniform rule: plain note under
  * inbound requires + consumes the slot. */
 static void case13_pad_record_stamp_nonmove(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
     seq8_track_t *tr = &inst->tracks[4];
     hx_set_param(h, "t4_padmap", MAP32);
@@ -435,7 +435,7 @@ static void case13_pad_record_stamp_nonmove(void) {
  * "60 100 e72 90": plain 60 consumes its stamped slot; ext 72 (no slot) uses
  * the fallback tick. Both land. */
 static void case14_mixed_batch(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
     seq8_track_t *tr = &inst->tracks[4];
     hx_set_param(h, "t4_padmap", MAP32);
@@ -468,7 +468,7 @@ static void case14_mixed_batch(void) {
  *   - slot present (future host MIDI_IN->on_midi note delivery / Option B) ->
  *     the slot tick still wins. */
 static void case15_routemove_ext_fallback(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
     seq8_track_t *tr = arm_melodic(h, 1);
     tr->recording = 1;
@@ -496,7 +496,7 @@ static void case15_routemove_ext_fallback(void) {
 /* Case 16: the same no-slot ext push on a NON-Move track also takes the
  * fallback tick — the rule is now uniform across routes (no route split). */
 static void case16_ext_fallback_nonmove(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
     seq8_track_t *tr = &inst->tracks[4];   /* ROUTE_SCHWUNG melodic */
     hx_set_param(h, "t4_padmap", MAP32);

@@ -13,7 +13,9 @@
  *     in what is heard) and leaves no note hanging;
  *   - an Audio track's sequenced sound (a Pitch loop, Slice chops on steps) and
  *     the click come out exactly LEAD_FRAMES later than without the lead,
- *     and a pad's chop not at all later. */
+ *     and a pad's chop not at all later;
+ *   - recording: a pad pressed at the same sequencer moment records the lead
+ *     EARLIER (where it was heard), on a melodic track and a drum lane. */
 #include "harness.h"
 #include <stdio.h>
 #include <string.h>
@@ -114,6 +116,49 @@ static int first_click(hx_t *h, int blocks) {
         at += MOVE_FRAMES_PER_BLOCK;
     }
     return -1;
+}
+
+
+/* Record one pad at the sequencer's clip tick `at` (melodic track 4 or drum
+ * track 0, lane 0) and return the tick it was recorded at (-1 = none). */
+static int record_at(int lead_off, int drum, uint32_t at) {
+    hx_t *h = hx_create(NULL);
+    seq8_instance_t *inst = (seq8_instance_t *)h->inst;
+    int t = drum ? 0 : 4;
+    seq8_track_t *tr = &inst->tracks[t];
+    char k[48];
+    if (lead_off) HX_NO_LEAD(h);
+    if (drum) { hx_set_param(h, "t0_drum_repeat_stop", "1"); hx_set_param(h, "t0_drum_repeat2_lane_off", "1"); }
+    snprintf(k, sizeof k, "t%d_route", t); hx_set_param(h, k, "schwung");
+    snprintf(k, sizeof k, "t%d_launch_clip", t); hx_set_param(h, k, "0");
+    inst->dsp_inbound_enabled = 1;
+    inst->active_track = (uint8_t)t;
+    inst->drum_right_inert = 0;
+    inst->pad_dispatch_muted = 0;
+    inst->pad_note_map[t][0] = drum ? 36 : 60;
+    tr->drum_inp_quant = 0;                                   /* InQ off: the tick as pressed */
+    hx_set_param(h, "transport", "play");
+    tr->recording = 1;
+    for (int i = 0; i < 400; i++) {
+        uint32_t now = drum ? (uint32_t)tr->drum_current_step[0] * TICKS_PER_STEP + tr->drum_tick_in_step[0]
+                            : tr->current_clip_tick;
+        if (now == at) break;
+        hx_render(h, 1);
+    }
+    { uint8_t on[3] = { 0x90, 68, 100 }; hx_send_midi(h, on, 3, 0); }
+    snprintf(k, sizeof k, drum ? "t%d_drum_record_note_on" : "t%d_record_note_on", t);
+    hx_set_param(h, k, drum ? "36 100" : "60 100");
+    hx_render(h, 2);
+    { uint8_t off[3] = { 0x80, 68, 0 }; hx_send_midi(h, off, 3, 0); }
+    snprintf(k, sizeof k, drum ? "t%d_drum_record_note_off" : "t%d_record_note_off", t);
+    hx_set_param(h, k, drum ? "36" : "60");
+    tr->recording = 0;
+    hx_set_param(h, "transport", "stop");
+    clip_t *cl = drum ? &tr->drum_clips[tr->active_clip]->lanes[0].clip : &tr->clips[tr->active_clip];
+    int got = -1;
+    for (int i = 0; i < cl->note_count; i++) if (cl->notes[i].active) { got = (int)cl->notes[i].tick; break; }
+    hx_destroy(h);
+    return got;
 }
 
 static hx_t *rig(void) {
@@ -260,6 +305,22 @@ int main(void) {
         snprintf(m, sizeof m, "the click came %d frames later with the lead, not %d", on - off, LEAD_FRAMES);
         HX_ASSERT(on - off == LEAD_FRAMES, m);
         printf("  ok   — the click: %d frames later with the lead\n", LEAD_FRAMES);
+    }
+
+    /* ---- recording: where it was heard ---- */
+    {
+        hx_t *h = hx_create(NULL);
+        uint32_t L = lead_ticks((seq8_instance_t *)h->inst);
+        hx_destroy(h);
+        HX_ASSERT(L > 0, "control: the lead is some ticks at 120 BPM");
+        for (int drum = 0; drum < 2; drum++) {
+            int off = record_at(1, drum, 100), on = record_at(0, drum, 100);
+            snprintf(m, sizeof m, "%s: pressed at tick 100, recorded at %d without the lead, %d with", drum ? "drum" : "melodic", off, on);
+            HX_ASSERT(off == 100, m);
+            HX_ASSERT(on == 100 - (int)L, m);
+            printf("  ok   — recording (%s): a press at sequencer tick 100 lands at %d, where it was heard (%u ticks back)\n",
+                   drum ? "a drum lane" : "melodic", on, L);
+        }
     }
     { char cmd[300]; snprintf(cmd, sizeof cmd, "rm -rf %s", g_root); if (system(cmd)) {} }
 

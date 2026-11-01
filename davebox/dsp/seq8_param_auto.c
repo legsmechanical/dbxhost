@@ -2521,6 +2521,21 @@ static int pa_cap_commit(seq8_instance_t *inst, int track, int clip) {
  * Takes the writer lock with TRYLOCK: refused (the SPI thread is mid-edit),
  * the cell is simply tried again next tick — last_snap only advances on a
  * write. Nothing here allocates or blocks. */
+/* A recording hand's position `pos`, stepped back to where it was heard (the
+ * lead), inside the window it is in: [ws, ws+wl) if given, else lane `e`'s,
+ * else the clip's. */
+static uint32_t pa_rec_heard(const seq8_instance_t *inst, const seq8_track_t *tr, const pa_entry_t *e,
+                             int clip, uint32_t pos, uint32_t clip_ticks, uint32_t ws, uint32_t wl) {
+    if (!wl) {
+        uint32_t cs, cl_, ct_;
+        if (tr->pad_mode == PAD_MODE_DRUM) pa_drum_window(tr, clip, &cs, &cl_, &ct_);
+        else { const clip_t *c = &tr->clips[clip]; cs = (uint32_t)c->loop_start * c->ticks_per_step; }
+        if (e) pa_lane_window(tr, e, cs, clip_ticks, &ws, &wl);
+        else { ws = cs; wl = clip_ticks; }
+    }
+    return lead_back(inst, pos, ws, wl);
+}
+
 static void pa_record_tick(seq8_instance_t *inst, seq8_track_t *tr, int track, int clip,
                            uint32_t ct, uint32_t tps, uint32_t clip_ticks) {
     uint32_t cell = tps / 2; if (cell < 6) cell = 6;
@@ -2548,6 +2563,7 @@ static void pa_record_tick(seq8_instance_t *inst, seq8_track_t *tr, int track, i
                 if (ex && ex->loop_len) { co = ex->loop_off; cl = ex->loop_len; cs = ex->step_ticks; }
                 else if (tr->pad_mode == PAD_MODE_DRUM) { co = l->cyc_off; cl = l->cyc_len; cs = l->cyc_st; }
                 if (cl) pos = (uint32_t)co + pa_lane_abs(inst, tr) % cl;
+                pos = pa_rec_heard(inst, tr, NULL, clip, pos, clip_ticks, co, cl);   /* the lead */
             }
             uint32_t snap = (pos / cell) * cell;
             if (l->last_snap != snap) {
@@ -2570,8 +2586,8 @@ static void pa_record_tick(seq8_instance_t *inst, seq8_track_t *tr, int track, i
          * whole cycle (Josh, 2026-09-03 — recording along the sped-up lane
          * clock made page 2 of a sweep overwrite page 1). A drum lane's
          * "clip time" is its own cycle at x1. */
-        uint32_t snap = ((e ? pa_lane_rec_tick(inst, tr, e, ct) : ct) / cell) * cell;
-        (void)clip_ticks;
+        uint32_t snap = (pa_rec_heard(inst, tr, e, clip, e ? pa_lane_rec_tick(inst, tr, e, ct) : ct,
+                                      clip_ticks, 0, 0) / cell) * cell;     /* where it was heard (the lead) */
         if (e && l->last_snap == snap) { pa_write_end(inst); pa_unlock(inst); continue; }
         if (!e) inst->pa_store_full = PA_FULL_ENTRIES;
         else {

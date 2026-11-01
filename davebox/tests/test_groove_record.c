@@ -31,7 +31,7 @@ static note_t *find_note(clip_t *cl, uint8_t pitch) {
 }
 
 int main(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     HX_ASSERT(h, "create failed");
     I = (seq8_instance_t *)h->inst;
     seq8_track_t *tr = &I->tracks[1];

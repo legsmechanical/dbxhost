@@ -165,7 +165,7 @@ static void charz_seed_step(clip_t *cl, int step, int pitch, int vel, int len) {
 }
 
 int main(void) {
-    hx_t *h = hx_create(NULL);
+    hx_t *h = hx_create(NULL); HX_NO_LEAD(h);   /* the engine against its clock */
     HX_ASSERT(h, "create failed");
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
 

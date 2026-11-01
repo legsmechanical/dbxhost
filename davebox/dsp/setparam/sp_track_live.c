@@ -345,12 +345,15 @@ static int sp_track_live(sp_ctx_t *cx) {
              * cell is the recorder's (half a step). Poly AT keeps its lanes. */
             clip_t *_pacl = &tr->clips[tr->active_clip];
             uint32_t _tps = _pacl->ticks_per_step ? _pacl->ticks_per_step : 24;
-            uint32_t _rec = tr->current_clip_tick;
+            uint32_t _rec = lead_back(inst, tr->current_clip_tick, (uint32_t)_pacl->loop_start * _tps,
+                                      (uint32_t)_pacl->length * _tps);    /* where it was heard (the lead) */
             if (tr->pad_mode == PAD_MODE_DRUM) {
                 /* The drum automation clock's one owner — the same playhead
                  * playback and the recorder use. */
-                uint32_t _wl;
+                uint32_t _wl, _ws;
                 _rec = pa_drum_clip_tick(inst, tr, (int)tr->active_clip, &_tps, &_wl);
+                pa_drum_window(tr, (int)tr->active_clip, &_ws, &_wl, &_tps);
+                _rec = lead_back(inst, _rec, _ws, _wl);
             }
             uint32_t _cell = _tps / 2; if (_cell < 6) _cell = 6;
             int _pv = clamp_i(press, 0, 127);
@@ -369,6 +372,11 @@ static int sp_track_live(sp_ctx_t *cx) {
                                 + (uint32_t)inst->master_tick_in_step;
                 _at_rec = (uint32_t)_atacl->loop_start * _atacl->ticks_per_step
                         + (_atwl ? (_atabs % _atwl) : 0);
+            }
+            {   /* where it was heard (the lead) */
+                clip_t *_atcl = &tr->clips[tr->active_clip];
+                _at_rec = lead_back(inst, _at_rec, (uint32_t)_atcl->loop_start * _atcl->ticks_per_step,
+                                    (uint32_t)_atcl->length * _atcl->ticks_per_step);
             }
             uint32_t snap = (_at_rec / 12) * 12;
             int lane = at_auto_alloc_lane(&tr->clip_at_auto[tr->active_clip], key);

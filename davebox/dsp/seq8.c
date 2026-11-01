@@ -2694,6 +2694,10 @@ static uint32_t capture_loop_pos(seq8_track_t *tr, uint8_t pitch) {
  * armed input is recorded properly by the record path — and during a
  * count-in (that input belongs to the imminent take). Overflow drops the
  * oldest event. RT-safe: fixed-size array, no alloc/IO. */
+static int lead_now(const seq8_instance_t *inst);
+static uint32_t lead_ticks(const seq8_instance_t *inst);
+static uint32_t lead_back(const seq8_instance_t *inst, uint32_t t, uint32_t ws, uint32_t wl);
+
 static void capture_push(seq8_instance_t *inst, seq8_track_t *tr,
                          uint8_t type, uint8_t a, uint8_t b) {
     if (tr->recording || tr->record_armed) return;
@@ -2748,8 +2752,14 @@ static void capture_push(seq8_instance_t *inst, seq8_track_t *tr,
     cap_ev_t *ev = &inst->cap_ring[(inst->cap_head + inst->cap_count)
                                    % CAP_MAX_EVENTS];
     ev->frame    = inst->rui_frames;
-    ev->abs_tick = now_abs;
-    ev->ctick    = tr->current_clip_tick;
+    /* placed where it was heard, not at the sequencer's tick (the lead) */
+    {
+        const clip_t *ccl = &tr->clips[tr->active_clip];
+        uint32_t lt = lead_ticks(inst);
+        ev->abs_tick = now_abs > lt ? now_abs - lt : 0;
+        ev->ctick    = lead_back(inst, tr->current_clip_tick, (uint32_t)ccl->loop_start * ccl->ticks_per_step,
+                                 (uint32_t)ccl->length * ccl->ticks_per_step);
+    }
     ev->loop_pos = here_pos;
     ev->type     = type;
     ev->track    = (uint8_t)(tr - inst->tracks);
@@ -2876,7 +2886,11 @@ static void pfx_send(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
                 (st == 0x90 || st == 0x80) &&
                 g_inst->looper_event_count < LOOPER_MAX_EVENTS) {
             int ei = (int)g_inst->looper_event_count++;
-            g_inst->looper_events[ei].tick   = (uint16_t)g_inst->looper_pos;
+            uint32_t lpos = g_inst->looper_pos;
+            /* played live: where it was heard, the lead behind the sequencer */
+            if (!lead_now(g_inst) && g_inst->looper_capture_ticks)
+                lpos = lead_back(g_inst, lpos, 0, g_inst->looper_capture_ticks);
+            g_inst->looper_events[ei].tick   = (uint16_t)lpos;
             g_inst->looper_events[ei].status = status;
             g_inst->looper_events[ei].d1     = d1;
             g_inst->looper_events[ei].d2     = d2;
@@ -3002,6 +3016,25 @@ static void pfx_send(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
 static inline int lead_active(const seq8_instance_t *inst) {
     return !inst->lead_off && !inst->clock_follow_on && !inst->follow_solo;
 }
+/* RECORDING under the lead: a press is stamped with the sequencer's position,
+ * which is the lead ahead of what the player hears and plays along to. These
+ * step a stamp back to the heard moment, so a note played on the beat is
+ * recorded on it (and, held on playback, heard where it was played). */
+static uint32_t lead_ticks(const seq8_instance_t *inst) {
+    if (!lead_active(inst) || !inst->tick_threshold || !inst->tick_delta) return 0;
+    /* tick_accum gains tick_delta a block; a tick is tick_threshold of it */
+    double t = (double)LEAD_FRAMES * (double)inst->tick_delta
+             / ((double)inst->tick_threshold * (double)MOVE_FRAMES_PER_BLOCK);
+    return (uint32_t)(t + 0.5);
+}
+/* tick `t` stepped back by the lead, wrapping inside the window [ws, ws+wl) */
+static uint32_t lead_back(const seq8_instance_t *inst, uint32_t t, uint32_t ws, uint32_t wl) {
+    uint32_t b = lead_ticks(inst);
+    if (!b || !wl) return t;
+    uint32_t r = t >= ws ? (t - ws) % wl : 0;
+    return ws + (r + wl - b % wl) % wl;
+}
+
 /* Is what is being played now the sequencer's (led), not live playing? */
 static int lead_now(const seq8_instance_t *inst) {
     return inst && inst->lead_rendering && !inst->emit_bypass_swing && !inst->lead_draining
