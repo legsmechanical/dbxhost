@@ -263,9 +263,8 @@ int main(void) {
                 /* the loop's own tempo, no pitch: Bungee is bypassed and the
                  * sample comes out as it is (the drift trim may varispeed it
                  * by a hair) */
-                /* compared at its best alignment within a block: Warp lands on
-                 * the tick's own frame, Pitch on the block it falls in
-                 * (measured: Warp ~63 frames earlier) */
+                /* compared at its best alignment: the tone is periodic, so
+                 * this lag can lock a few cycles off (a lag is not a time) */
                 double best = 1e30, e = 0;
                 int k0 = (int)(1.1 * SR / 4), k, lag, bl = 0;
                 HX_ASSERT(X->trk[4]->byp, "Warp at the loop's own tempo did not bypass Bungee");
@@ -282,6 +281,21 @@ int main(void) {
                 }
                 printf("  bypass at 120: the sample as it is to %.2f %% (at %d frames)\n", 100.0 * sqrt(best / e), bl);
                 HX_ASSERT(sqrt(best / e) < 0.01, "the bypass did not hand the sample back as it is");
+                /* the time: each tone's first frame, in bars 2 and 3 (after the
+                 * loop came round), on the tick's own frame — where MIDI, a
+                 * Pitch loop and Vintage land. The recording starts at Play,
+                 * whose first tick plays one tick in (229.7 frames) */
+                {
+                    int bar, q;
+                    for (bar = 1; bar < 3; bar++)
+                        for (q = 0; q < 4; q += 2) {
+                            int gr = (bar * 4 + q) * (int)BEAT + 230, j;
+                            char m[120];
+                            for (j = gr - 2000; j < gr + 2000 && abs(g_rec[j]) < 100; j++) {}
+                            snprintf(m, sizeof m, "Warp bar %d beat %d began %d frames off the tick", bar + 1, q + 1, j - gr);
+                            HX_ASSERT(abs(j - gr) <= 2, m);
+                        }
+                }
             } else {
                 HX_ASSERT(!X->trk[4]->byp, "Warp off the loop's tempo bypassed Bungee");
             }
