@@ -606,6 +606,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
         /* Where in this block the tick fell, so an Audio slice it plays
          * starts on its frame rather than the block's (au_slice_on). */
         inst->au_tick_off = seq8_tick_frame(inst, frames);
+        inst->au_last_tick_off = inst->au_tick_off;
 
         /* Scene resample: start / end-of-pass decisions see the tick before
          * any track plays it. */

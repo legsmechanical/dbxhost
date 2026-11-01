@@ -105,7 +105,7 @@ int main(void) {
     seq8_instance_t *inst;
     char p[300];
     const int16_t *blk;
-    int i, n, k, bad;
+    int i, n, k, bad, t0 = 0;
     unsigned chunks, reads, under, under0;
     const uint32_t FR = 44100u * 60u;
 
@@ -149,7 +149,15 @@ int main(void) {
     hx_set_param(h, "transport", "play");
     for (i = 0; i < 20 && hx_stub_feed(4, NULL, NULL) == 0; i++) hx_render(h, 1);
     blk = hx_stub_feed_last(4);
-    HX_ASSERT(blk[0] == 0 && blk[2] == 1 && blk[254] == 127, "the streamed loop did not start at its first frame");
+    {
+        /* on the transport's first tick, on its frame (as the notes): the
+         * sample's frame 0 lands there, silence before it */
+        int ok;
+        t0 = ((seq8_instance_t *)h->inst)->au_last_tick_off; ok = t0 > 0 && t0 + 20 < 128;
+        for (int f = 0; ok && f < t0; f++) if (blk[f * 2]) ok = 0;
+        for (int k = 0; ok && k < 20; k++) if (blk[(t0 + k) * 2] != k) ok = 0;
+        HX_ASSERT(ok, "the streamed loop did not start at its first frame, on the first tick");
+    }
 
     /* ---- the streamer keeping up: exactly the whole file's samples ---- */
     stats(h, NULL, NULL, NULL, &under0);
@@ -159,7 +167,7 @@ int main(void) {
         hx_render(h, 1);
         blk = hx_stub_feed_last(4);
         for (k = 0; k < 128; k++)
-            if (blk[k * 2] != ramp_at((double)n * 128 + k) || blk[k * 2 + 1] != blk[k * 2]) bad++;
+            if (blk[k * 2] != ramp_at((double)n * 128 + k - t0) || blk[k * 2 + 1] != blk[k * 2]) bad++;
     }
     stats(h, NULL, NULL, &reads, &under);
     HX_ASSERT(bad == 0, "a streamed loop did not render the file's samples exactly");
@@ -175,11 +183,13 @@ int main(void) {
     hx_stub_feed_reset();
     hx_set_param(h, "transport", "play");
     for (i = 0; i < 20 && hx_stub_feed(4, NULL, NULL) == 0; i++) hx_render(h, 1);
-    /* the start's pins run out at chunk 2 + ext (5 chunks = 40960 frames = block 320) */
+    t0 = ((seq8_instance_t *)h->inst)->au_last_tick_off;   /* it starts on the first tick's frame */
+    /* the start's pins run out at chunk 2 + ext (5 chunks = 40960 frames),
+     * which plays t0 into block 320 */
     stats(h, NULL, NULL, NULL, &under0);
-    for (n = 1; n < 320; n++) hx_render(h, 1);
-    blk = hx_stub_feed_last(4);                      /* block 319: frames 40832..40959, the last pinned */
-    HX_ASSERT(blk[0] == ramp_at(319.0 * 128) && abs(blk[254]) < 200,
+    for (n = 1; n < 321; n++) hx_render(h, 1);
+    blk = hx_stub_feed_last(4);                      /* block 320: the sample's 40960-t0.., the last pinned first */
+    HX_ASSERT(t0 > 0 && blk[0] == ramp_at(320.0 * 128 - t0) && abs(blk[(t0 - 1) * 2]) < 200,
               "the voice did not fade out before the chunk it was missing");
     for (; n < 400; n++) hx_render(h, 1);
     blk = hx_stub_feed_last(4);
@@ -189,11 +199,11 @@ int main(void) {
     for (i = 0; i < 4; i++) au_stream_service(inst);
     hx_render(h, 1);                                 /* block 400: fading back in */
     blk = hx_stub_feed_last(4);
-    HX_ASSERT(abs(blk[0]) < ramp_at(400.0 * 128) / 16 && blk[254] == ramp_at(400.0 * 128 + 127),
+    HX_ASSERT(abs(blk[0]) < ramp_at(400.0 * 128 - t0) / 16 && blk[254] == ramp_at(400.0 * 128 + 127 - t0),
               "the voice did not fade back in after the gap");
     hx_render(h, 1);                                 /* block 401: in */
     blk = hx_stub_feed_last(4);
-    HX_ASSERT(blk[0] == ramp_at(401.0 * 128) && blk[254] == ramp_at(401.0 * 128 + 127),
+    HX_ASSERT(blk[0] == ramp_at(401.0 * 128 - t0) && blk[254] == ramp_at(401.0 * 128 + 127 - t0),
               "after the gap the loop did not come back at the frame it would have reached");
     hx_set_param(h, "transport", "stop");
     hx_render(h, 4);
@@ -227,7 +237,8 @@ int main(void) {
         hx_set_param(h, "transport", "play");
         for (i = 0; i < 20 && hx_stub_feed(4, NULL, NULL) == 0; i++) hx_render(h, 1);
         blk = hx_stub_feed_last(4);
-        HX_ASSERT(abs(blk[0] - ramp_at(k ? FR - 1 - 22050 : 22050)) <= 1, "Nudge -500 ms did not start half a second in");
+        t0 = inst->au_last_tick_off;                 /* on the first tick's frame */
+        HX_ASSERT(t0 < 128 && abs(blk[t0 * 2] - ramp_at(k ? FR - 1 - 22050 : 22050)) <= 1, "Nudge -500 ms did not start half a second in");
         hx_render(h, 60);
         stats(h, NULL, NULL, NULL, &under);
         HX_ASSERT(under == under0, k ? "a Revrs loop nudged -500 ms waited for a chunk"

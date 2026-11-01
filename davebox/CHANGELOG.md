@@ -101,6 +101,10 @@ the section into a versioned heading at release time.
   Clips of the same length still hand over in step with each other.
 
 ### Fixed
+- **A Sync Pitch loop plays in time with the other tracks.** It started a few
+  milliseconds ahead of the notes at Play, crept earlier at each pass, and with Shift
+  set it restarted twice a bar. It now starts on the beat with everything else, once
+  per pass.
 - **A knob turned while playing sets where its automation rests.** Turned with nothing
   recording or automating it, it is the value Stop brings back, as a turn while stopped
   is — it used to keep whatever the first turn found, so Stop could undo a later one.

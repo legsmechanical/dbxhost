@@ -67,13 +67,13 @@ static int16_t *read_wav(const char *path, uint32_t *frames, uint32_t *rate, int
  * the slot feed captured block by block) and its render agree. ---- */
 static int16_t g_live[44100 * 7];
 /* How many frames of the render differ by more than 8 from the live take's
- * second bar, at the best alignment within +-16 frames. Pitch's voice runs
- * 8 frames apart from the live one (its start against the block). What the
- * sequencer's ticks start live — a Vintage piece, a Slice chop — lands ONE
- * TICK after its grid frame in this harness (measured 2026-10-31: the take
- * agrees exactly a tick on); the render keeps the grid, as Live will, so
- * those are compared a tick later. A Vintage clip whose pieces carry on (AU_JOIN) differs bar
+ * second bar, at the best alignment within +-16 frames. Everything the
+ * transport starts live — a Pitch loop, a Vintage piece, a Slice chop —
+ * lands ONE TICK after its grid frame in this harness, as a MIDI track's
+ * notes do (its first tick is due a tick after Play); the render keeps the
+ * grid, as Live will, so the take is compared a tick later. A Vintage clip whose pieces carry on (AU_JOIN) differs bar
  * to bar live as well, so only one that cuts every piece is compared. */
+#define PITCH_SEAM (3 * 64)     /* three of the voice's 64-frame releases */
 static int vs_live(int sync, int bpm10, int nudge, int rot) {
     hx_t *h = hx_create(NULL);
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
@@ -108,7 +108,7 @@ static int vs_live(int sync, int bpm10, int nudge, int rot) {
     }
     hx_set_param(h, "transport", "stop");
     hx_render(h, 20);
-    int lag = sync != 2 ? (int)(44100.0 * 60.0 / (120.0 * 96.0) + 0.5) : 0;
+    int lag = (int)(44100.0 * 60.0 / (120.0 * 96.0) + 0.5);
     for (o = -16; o <= 16; o++) {
         int bad = 0;
         for (uint32_t i = 0; i < frames; i++) if (abs(g_live[(int)frames + lag + o + (int)i] - w[i]) > 8) bad++;
@@ -117,6 +117,50 @@ static int vs_live(int sync, int bpm10, int nudge, int rot) {
     free(w);
     hx_destroy(h);
     return best;
+}
+
+/* ---- 7. a Pitch loop starts on its tick's own frame, as the notes do: on
+ * the transport's first tick (a tick after Play), at each pass, and with a
+ * Shift only at the Shift — measured 2026-11-01, it ran a tick ahead, crept
+ * 8 frames a bar onto block boundaries, and with a Shift restarted at the
+ * loop's top as well. Read off the voice: the frame its sample's first
+ * frame plays. Returns the starts off the grid by more than a frame, or
+ * -1; *n gets how many starts there were. ---- */
+static int vs_grid(int rot, int *n) {
+    hx_t *h = hx_create(NULL);
+    seq8_instance_t *inst = (seq8_instance_t *)h->inst;
+    char p[300], b[64];
+    int off = 0, k;
+    void *lastv = NULL;
+    double lastpos = -1.0, tick = 44100.0 * 60.0 / (120.0 * 96.0), bar = 384.0 * tick, g = tick + rot * tick;
+    snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
+    hx_set_param(h, "t4_convert_to_audio", "");
+    snprintf(p, sizeof p, "0|%s/src/ramp.wav", g_root); hx_set_param(h, "t4_au_pick", p);
+    if (wait_loaded(h, 4, 0) != 2) return -1;
+    hx_set_param(h, "t4_au_set_bpm", "0 2400");     /* its 1 s is one bar at 240: Pitch fills the bar */
+    hx_set_param(h, "t4_au_set_sync", "0 2");
+    if (rot) { snprintf(b, sizeof b, "0 %d", rot); hx_set_param(h, "t4_au_set_rot", b); }
+    hx_set_param(h, "t4_launch_clip", "0");
+    hx_set_param(h, "transport", "play");
+    *n = 0;
+    for (k = 0; k < (int)(3.5 * bar / 128.0); k++) {
+        hx_render(h, 1);
+        au_track_t *at = &inst->au_trk[4];
+        for (int i = 0; i < AU_VOICES; i++) {
+            au_voice_t *v = &at->v[i];
+            if (!v->active || !v->mode_loop || v->rel_len) continue;
+            if ((void *)v != lastv || v->pos < lastpos) {
+                double fr = (double)(k + 1) * 128.0 - (v->pos - v->lo) / v->step - v->wait;
+                double m = (fr - g) / bar, d = fr - (g + bar * floor(m + 0.5));
+                if (d > 1.0 || d < -1.0) { printf("  Shift %d: a start %.1f frames off the grid (frame %.0f)\n", rot, d, fr); off++; }
+                (*n)++;
+            }
+            lastv = v; lastpos = v->pos;
+        }
+    }
+    hx_set_param(h, "transport", "stop");
+    hx_destroy(h);
+    return off;
 }
 
 int main(void) {
@@ -362,12 +406,16 @@ int main(void) {
          * Shift ticks:
          * a Nudge puts Vintage's pieces between ticks, where live rounds a
          * piece's frame its own way — one frame, which inside a crossfade
-         * over the ramp's jump back to 1 is one crossfade of difference */
-        static const int cases[][5] = { { 2, 2400, 0, 16 }, { 2, 1500, 0, 16 }, { 2, 900, 0, 16 }, { 2, 2400, 37, 16 },
+         * over the ramp's jump back to 1 is one crossfade of difference.
+         * Pitch: a frame or two apart at its restart, the two crossfade the
+         * last pass into the next a little differently — the render lets
+         * the sample's last frame fade over the loop's top where live has
+         * just ended it (PITCH_SEAM) */
+        static const int cases[][5] = { { 2, 2400, 0, PITCH_SEAM }, { 2, 1500, 0, PITCH_SEAM }, { 2, 900, 0, PITCH_SEAM }, { 2, 2400, 37, PITCH_SEAM },
                                         { 1, 300, 0, 0 }, { 1, 1200, 0, 0 }, { 1, 300, 37, AU_VINTAGE_XF }, { 1, 300, -61, AU_VINTAGE_XF },
                                         { -1, 2400, 0, 16 }, { -1, 900, 0, 16 },
-                                        { 1, 300, 0, 0, 50 } };
-        for (k = 0; k < 11; k++) {
+                                        { 1, 300, 0, 0, 50 }, { 2, 2400, 0, PITCH_SEAM, 96 }, { 2, 900, 0, PITCH_SEAM, 40 } };
+        for (k = 0; k < 13; k++) {
             int bad = vs_live(cases[k][0], cases[k][1], cases[k][2], cases[k][4]);
             if (bad < 0 || bad > cases[k][3])
                 printf("FAIL: Sync %d at %d, Nudge %d: %d frames differ from the engine\n", cases[k][0], cases[k][1], cases[k][2], bad);
@@ -375,6 +423,18 @@ int main(void) {
         }
     }
     printf("  ok   — Pitch, Vintage and Slice renders match the engine playing the clip\n");
+    {
+        /* Shift ticks, then the starts in 3.5 bars: Play's, then one at
+         * each Shift point (with a Shift, Play's is the wrapped end, and
+         * the fourth bar's Shift falls inside the 3.5) */
+        static const int g[][2] = { { 0, 4 }, { 96, 5 }, { 40, 5 } };
+        for (k = 0; k < 3; k++) {
+            int n, off = vs_grid(g[k][0], &n);
+            if (off != 0 || n != g[k][1]) printf("FAIL: Shift %d: %d starts, %d off the grid\n", g[k][0], n, off);
+            HX_ASSERT(off == 0 && n == g[k][1], "a Pitch loop does not start on its tick's frame, once a pass");
+        }
+    }
+    printf("  ok   — a Pitch loop starts on its tick's frame, once a pass, a Shift included\n");
 
     snprintf(b, sizeof b, "rm -rf '%s'", g_root);
     if (system(b)) {}

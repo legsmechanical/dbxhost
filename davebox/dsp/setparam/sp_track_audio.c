@@ -805,13 +805,10 @@ static void au_render(seq8_instance_t *inst, int frames) {
                 }
                 /* When this block PLAYED a tick, the clip counters have
                  * already moved past it (render_block advances them after
-                 * each tick): the clip is at tick - 1, at this block's first
-                 * frame. Read as-is, a loop launched on a tick began one tick
-                 * into the sample and cut its first hit (measured on the
-                 * device: 230 frames at 120 bpm). A block with no tick yet
-                 * (the transport's first) is at `tick`. */
+                 * each tick). Read as-is, a loop launched on a tick began one
+                 * tick into the sample and cut its first hit (measured on the
+                 * device: 230 frames at 120 bpm). */
                 int ticked = (uint64_t)inst->arp_master_tick != inst->au_tick0;
-                double played = (ticked && tick > 0) ? (double)(tick - 1) : (double)tick;
                 if (tick < 0) tick = 0;
                 if (!warp) au_warp_off(inst, t);
                 if (warp) {
@@ -849,18 +846,29 @@ static void au_render(seq8_instance_t *inst, int frames) {
                      * there, as at the loop's top */
                     double Lp = (double)lc->length * tps;
                     double rot = Lp > 0 ? au_wrap((double)cl->rot, Lp) : 0.0;
-                    int at_rot = rot > 0 && at->last_tick >= 0 && (double)at->last_tick < rot && (double)tick >= rot;
-                    if (!lv || at->loop_clip != c || tick < at->last_tick || at_rot) {
-                        /* Nudge: the sample starts that much later (+) or earlier
-                         * (-) against the bar. */
-                        /* the Shift's point is a loop top of its own: the voice
-                         * starts at the block the tick falls in, as at the
-                         * wrap (where `played` is 0); anywhere else, the
-                         * rotated time */
-                        double pr = at_rot ? (double)tick - rot : rot > 0 ? au_wrap(played - rot, Lp) : played;
-                        double off = fill > 0 ? (pr * fpt - (double)cl->nudge_ms * 44.1) * fill
-                                              : pr * fpt * ratio - (double)cl->nudge_ms * (double)cl->smp->rate / 1000.0;
-                        au_loop_start(inst, t, c, off, fill);
+                    /* The voice starts only on a block that played a tick,
+                     * on that tick's own frame, as a sequenced chop does: the
+                     * transport's first block is before its first tick, and a
+                     * start at the block's top ran a tick ahead of the notes
+                     * and crept 8 frames a bar onto block boundaries
+                     * (measured 2026-11-01). After a tick the counter is one
+                     * past it, so the tick played is tick - 1 (the loop's
+                     * last tick when the counter has wrapped to 0); `s` is
+                     * where that tick is in the sample, which starts at the
+                     * Shift — so with a Shift the loop's top is not a restart. */
+                    if (ticked && Lp > 0) {
+                        double s  = au_wrap(au_wrap((double)tick - 1.0, Lp) - rot, Lp);
+                        double s0 = at->last_tick >= 0 ? au_wrap(au_wrap((double)at->last_tick - 1.0, Lp) - rot, Lp) : s;
+                        if (!lv || at->loop_clip != c || s < s0) {
+                            /* where the sample is at this block's first frame,
+                             * before the tick (negative: it starts after it).
+                             * Nudge: the sample starts that much later (+) or
+                             * earlier (-) against the bar. */
+                            double pr = s - (double)inst->au_last_tick_off / fpt;
+                            double off = fill > 0 ? (pr * fpt - (double)cl->nudge_ms * 44.1) * fill
+                                                  : pr * fpt * ratio - (double)cl->nudge_ms * (double)cl->smp->rate / 1000.0;
+                            au_loop_start(inst, t, c, off, fill);
+                        }
                     }
                 }
                 at->last_tick = tick;

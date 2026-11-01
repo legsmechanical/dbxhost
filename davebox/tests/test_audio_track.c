@@ -705,7 +705,14 @@ int main(void) {
     for (i = 0; i < 20 && hx_stub_feed(4, NULL, NULL) == 0; i++) hx_render(h, 1);
     blk = hx_stub_feed_last(4);
     HX_ASSERT(hx_stub_feed(4, NULL, NULL) == 1, "the Loop clip did not start");
-    HX_ASSERT(blk[0] == 0 && blk[2] == 1 && blk[254] == 127, "the Loop clip did not start at the sample's first frame");
+    {
+        /* on the transport's first tick, on its frame (as the notes): the
+         * sample's frame 0 lands there, silence before it */
+        int t0 = ((seq8_instance_t *)h->inst)->au_last_tick_off, ok = t0 > 0 && t0 + 20 < 128;
+        for (int f = 0; ok && f < t0; f++) if (blk[f * 2]) ok = 0;
+        for (int k = 0; ok && k < 20; k++) if (blk[(t0 + k) * 2] != k) ok = 0;
+        HX_ASSERT(ok, "the Loop clip did not start at the sample's first frame, on the first tick");
+    }
     hx_set_param(h, "transport", "stop");
     hx_render(h, 4);
     hx_set_param(h, "launch_quant", "5");
@@ -719,7 +726,8 @@ int main(void) {
         if (blk[255] == blk[254] && blk[254] != -4096) break;
     }
     HX_ASSERT(i < 2000, "the launched Loop clip never played");
-    HX_ASSERT(blk[254] == 127, "a Loop clip launched on the bar began past its first frame");
+    /* it starts on the bar's tick, on that tick's frame in the block */
+    HX_ASSERT(blk[254] == 127 - ((seq8_instance_t *)h->inst)->au_last_tick_off, "a Loop clip launched on the bar began past its first frame");
     hx_set_param(h, "transport", "stop");
     hx_set_param(h, "launch_quant", "0");
     hx_render(h, 4);
@@ -755,10 +763,16 @@ int main(void) {
     hx_set_param(h, "t4_launch_clip", "6");
     hx_set_param(h, "transport", "play");
     for (i = 0; i < 20 && hx_stub_feed(4, NULL, NULL) == 0; i++) hx_render(h, 1);
-    for (n = 1; n <= 688; n++) hx_render(h, 1);         /* block 688 (from 0) holds frames 88064..88191 */
-    blk = hx_stub_feed_last(4);
-    HX_ASSERT(blk[0] == 88064 % 30000 && blk[254] == 88191 % 30000,
-              "the loop restarted before its bar ended");
+    {
+        /* it started on the first tick's frame t0 of the first block, so
+         * block 688 (from 0) holds the sample's frames 88064-t0..88191-t0:
+         * still the bar's, which ends at 88200 */
+        int t0 = ((seq8_instance_t *)h->inst)->au_last_tick_off;
+        for (n = 1; n <= 688; n++) hx_render(h, 1);
+        blk = hx_stub_feed_last(4);
+        HX_ASSERT(blk[0] == (88064 - t0) % 30000 && blk[254] == (88191 - t0) % 30000,
+                  "the loop restarted before its bar ended");
+    }
     hx_set_param(h, "transport", "stop");
     hx_render(h, 4);
     hx_set_param(h, "t4_launch_clip", "5");
@@ -781,7 +795,11 @@ int main(void) {
     hx_set_param(h, "transport", "play");
     for (i = 0; i < 20 && hx_stub_feed(4, NULL, NULL) == 0; i++) hx_render(h, 1);
     blk = hx_stub_feed_last(4);
-    HX_ASSERT(blk[0] == 44099 % 30000 && blk[2] == 44098 % 30000, "Revrs did not play the sample backwards from its end");
+    {
+        int t0 = inst->au_last_tick_off;               /* on the first tick's frame */
+        HX_ASSERT(t0 < 127 && blk[t0 * 2] == 44099 % 30000 && blk[(t0 + 1) * 2] == 44098 % 30000,
+                  "Revrs did not play the sample backwards from its end");
+    }
     hx_set_param(h, "transport", "stop");
     hx_set_param(h, "t4_au_set_revrs", "5 0");
     hx_render(h, 4);
@@ -790,14 +808,19 @@ int main(void) {
     hx_set_param(h, "t4_au_set_nudge", "5 10");
     hx_stub_feed_reset();
     hx_set_param(h, "transport", "play");
-    for (i = 0; i < 20 && hx_stub_feed(4, NULL, NULL) == 0; i++) hx_render(h, 1);
-    blk = hx_stub_feed_last(4);
-    HX_ASSERT(blk[0] == 0 && blk[254] == 0, "Nudge +10 ms did not hold the sample back");
-    hx_render(h, 3);
-    blk = hx_stub_feed_last(4);
-    /* block 4 holds frames 384..511: frame 441 is the sample's first */
-    HX_ASSERT(blk[(441 - 384) * 2] == 0 && blk[(442 - 384) * 2] == 1 && blk[(511 - 384) * 2] == 70,
-              "Nudge +10 ms did not start the sample 441 frames late");
+    {
+        /* the sample's first frame 441 frames after the first tick's frame
+         * (its frame 1, value 1, one after) */
+        int at = -1, f = 0, t0 = -1;
+        for (i = 0; i < 12 && at < 0; i++) {
+            hx_render(h, 1);
+            if (t0 < 0 && inst->arp_master_tick != inst->au_tick0) t0 = f + inst->au_last_tick_off;
+            blk = hx_stub_feed_last(4);
+            for (int k = 1; k < 128 && at < 0; k++) if (blk[(k - 1) * 2] == 0 && blk[k * 2] == 1) at = f + k - 1;
+            f += 128;
+        }
+        HX_ASSERT(t0 >= 0 && at == t0 + 441, "Nudge +10 ms did not start the sample 441 frames late");
+    }
     hx_set_param(h, "transport", "stop");
     hx_set_param(h, "t4_au_set_nudge", "5 0");
     hx_render(h, 4);
@@ -848,9 +871,9 @@ int main(void) {
                 }
                 want = (int)(f0 + at0 + 0.5);
                 got = found;
-                /* Vintage's pieces sit on the clock, to the frame; Pitch starts
-                 * on the block the tick falls in, as at the loop's top */
-                HX_ASSERT(got >= 0 && got >= want - (mode ? 8 : 160) && got <= want + (mode ? 8 : 160),
+                /* both sit on the clock, to the frame: Vintage's pieces, and
+                 * Pitch's start on the tick's own frame */
+                HX_ASSERT(got >= 0 && got >= want - 8 && got <= want + 8,
                           mode ? "Vintage: Shift 300 did not put the sample's start at tick 300"
                                : "Pitch: Shift 300 did not put the sample's start at tick 300");
             }
@@ -994,6 +1017,7 @@ int main(void) {
     hx_stub_feed_reset();
     hx_set_param(h, "transport", "play");
     for (i = 0; i < 20 && hx_stub_feed(4, NULL, NULL) == 0; i++) hx_render(h, 1);
+    n = inst->au_last_tick_off;                         /* it started on the first tick's frame */
     hx_render(h, 9);                                    /* 10 blocks: frames 0..1279 */
     hx_set_param(h, "t4_mute", "1");
     hx_render(h, 2);
@@ -1003,8 +1027,8 @@ int main(void) {
     hx_set_param(h, "t4_mute", "0");
     hx_render(h, 1);                                    /* block 30: frames 3840..3967, fading in */
     blk = hx_stub_feed_last(4);
-    HX_ASSERT(blk[254] == 3967, "unmuting restarted the loop instead of carrying on in place");
-    HX_ASSERT(blk[0] < 3840 / 8, "unmuting did not fade in");
+    HX_ASSERT(blk[254] == 3967 - n, "unmuting restarted the loop instead of carrying on in place");
+    HX_ASSERT(blk[0] < (3840 - n) / 8, "unmuting did not fade in");
     hx_set_param(h, "transport", "stop");
     hx_render(h, 4);
 
