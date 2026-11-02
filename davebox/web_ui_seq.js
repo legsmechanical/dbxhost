@@ -176,6 +176,14 @@ function renderInspector(){
     html+=secEl("lane","Lane",laneSum(),`<div id="drumpanel"></div><div id="laneUtil"></div>`,true);
     if(laneSel) html+=secEl("fx","FX",fxSum(),`<div id="fxpanel"></div><div id="fxUtil"></div>`,true);
     html+=secEl("clip","Drum clip","",`<div id="clipops"></div>`,false);
+  } else if(isAudio()){
+    /* An Audio track: its clip settings are real here; its sample, its chops
+     * and its NOTE FX (the drum form, no HARMONY / DELAY / SEQ ARP) are edited
+     * on the device. A Loop clip has no sequence, so nothing to transform. */
+    html+=secEl("clip","Clip",clipSum(),`<div id="clipinfo"></div>`+
+      (isAudioLoop()?`<div class="hint">A <b>Loop</b> clip plays its sample straight through: stretch, shift and nudge it on the device.</div>`
+                    :`<div id="clipUtil"></div>`)+`<div id="clipops"></div>`,true);
+    html+=secEl("fx","FX","",`<div class="hint">The sample, its chops and this clip's NOTE FX are edited on the device.</div>`,true);
   } else {
     html+=secEl("clip","Clip",clipSum(),`<div id="clipinfo"></div><div id="clipUtil"></div><div id="clipops"></div>`,true);
     html+=secEl("fx","FX",fxSum(),`<div id="fxpanel"></div><div id="fxUtil"></div>`,true);
@@ -189,6 +197,8 @@ function renderInspector(){
     renderDrumPanel(); renderLaneUtil();
     if(laneSel){ renderFX(); renderFXUtil(); }
     renderClipOps();
+  } else if(isAudio()){
+    renderSide(); renderClipUtil(); renderClipOps();
   } else {
     renderSide(); renderClipUtil(); renderClipOps(); renderFX(); renderFXUtil();
   }
@@ -308,21 +318,22 @@ function ebNum(lbl,id,val,min,max){
  * never step props (iteration/probability/ratchet stay per-step). */
 function renderMultiEdit(el){ const notes=selectedNotes(), n=notes.length;
   if(!n){ el.innerHTML=`<span class="eb-empty">Drag a box to select notes</span>`; return; }
+  const au=isAudio();   /* chops: no velocity, and an octave is not a chop */
   el.innerHTML=
-    `<span class="et">▦ ${n} note${n===1?"":"s"}</span>`+
-    `<label>Vel <button class="sm" id="meVD" title="velocity −5 (relative, keeps balance)">−</button>`+
-      `<button class="sm" id="meVU" title="velocity +5 (relative)">+</button></label>`+
+    `<span class="et">▦ ${n} ${au?"chop":"note"}${n===1?"":"s"}</span>`+
+    (au?"":`<label>Vel <button class="sm" id="meVD" title="velocity −5 (relative, keeps balance)">−</button>`+
+      `<button class="sm" id="meVU" title="velocity +5 (relative)">+</button></label>`)+
     `<label>Len <input type="number" id="meLen" min="1" placeholder="—" style="width:54px"></label>`+
     `<button class="sm" id="meNL" title="nudge −1 tick">◀</button>`+
     `<button class="sm" id="meNR" title="nudge +1 tick">▶</button>`+
-    `<button class="sm" id="meOD" title="octave down">8vb</button>`+
-    `<button class="sm" id="meOU" title="octave up">8va</button>`+
+    (au?"":`<button class="sm" id="meOD" title="octave down">8vb</button>`+
+      `<button class="sm" id="meOU" title="octave up">8va</button>`)+
     `<button class="sm danger" id="meDel">Delete</button>`;
   /* velocity is RELATIVE across the selection — preserves each note's balance */
   function shiftVel(d){ const ops=[]; selectedNotes().forEach(nt=>{ const nv=Math.max(1,Math.min(127,nt.vel+d));
     if(nv!==nt.vel){ nt.vel=nv; ops.push(["v",`${nt.tick} ${nt.pitch} ${nv}`]); } }); emitBatch(ops); draw(); }
-  el.querySelector("#meVD").onclick=()=>shiftVel(-5);
-  el.querySelector("#meVU").onclick=()=>shiftVel(5);
+  if(!au){ el.querySelector("#meVD").onclick=()=>shiftVel(-5);
+    el.querySelector("#meVU").onclick=()=>shiftVel(5); }
   el.querySelector("#meLen").onchange=e=>{ const v=Math.max(1,+e.target.value|0); if(!v) return;
     const ops=[]; selectedNotes().forEach(nt=>{ nt.gate=v; ops.push(["r",`${nt.tick} ${nt.pitch} ${v}`]); }); emitBatch(ops); draw(); };
   function moveAll(dt,dp){ const ns=selectedNotes(), ops=[];
@@ -332,8 +343,8 @@ function renderMultiEdit(el){ const notes=selectedNotes(), n=notes.length;
     emitBatch(ops); selSet.clear(); ns.forEach(nt=>selSet.add(nKey(nt))); draw(); renderNoteEdit(); }
   el.querySelector("#meNL").onclick=()=>moveAll(-1,0);
   el.querySelector("#meNR").onclick=()=>moveAll(1,0);
-  el.querySelector("#meOD").onclick=()=>moveAll(0,-12);
-  el.querySelector("#meOU").onclick=()=>moveAll(0,12);
+  if(!au){ el.querySelector("#meOD").onclick=()=>moveAll(0,-12);
+    el.querySelector("#meOU").onclick=()=>moveAll(0,12); }
   el.querySelector("#meDel").onclick=()=>{ const ops=[]; selectedNotes().forEach(nt=>{ const k=M.notes.indexOf(nt); if(k>=0) M.notes.splice(k,1);
     ops.push(["d",`${nt.tick} ${nt.pitch}`]); }); emitBatch(ops); selSet.clear(); draw(); renderNoteEdit(); };
 }
@@ -343,12 +354,12 @@ function renderNoteEdit(){
   if(selSet.size>=1){ renderMultiEdit(el); return; }
   const i=findSelNote();
   if(i<0){ el.innerHTML=`<span class="eb-empty">Click a note to edit it (Shift-drag / Snap=Off for off-grid)</span>`; return; }
-  const nt=M.notes[i];
+  const nt=M.notes[i], au=isAudio();
   el.innerHTML=
-    `<span class="et">♪ ${noteName(nt.pitch)}</span>`+
+    `<span class="et">♪ ${au?chopName(nt.pitch):noteName(nt.pitch)}</span>`+
     ebNum("Pos","nePos",nt.tick,0,maxTick()-1)+
-    ebNum("Pitch","nePitch",nt.pitch,0,127)+
-    ebNum("Vel","neVel",nt.vel,1,127)+
+    (au?ebNum("Chop","nePitch",nt.pitch+1,1,128)   /* a chop plays at one velocity */
+       :ebNum("Pitch","nePitch",nt.pitch,0,127)+ebNum("Vel","neVel",nt.vel,1,127))+
     ebNum("Len","neLen",nt.gate,1,maxTick())+
     `<button class="sm" id="neNL" title="nudge −1 tick">◀</button>`+
     `<button class="sm" id="neNR" title="nudge +1 tick">▶</button>`+
@@ -361,8 +372,8 @@ function renderNoteEdit(){
     n.tick=tick; n.pitch=pitch; selNote={tick,pitch}; draw();
     emit("note_move",`${o.tick} ${o.pitch} ${tick} ${pitch}`); renderNoteEdit(); }
   el.querySelector("#nePos").onchange=e=>moveTo(+e.target.value, cur()?cur().pitch:0);
-  el.querySelector("#nePitch").onchange=e=>moveTo(cur()?cur().tick:0, +e.target.value);
-  el.querySelector("#neVel").onchange=e=>{ const n=cur(); if(!n) return; n.vel=Math.max(1,Math.min(127,+e.target.value|0));
+  el.querySelector("#nePitch").onchange=e=>moveTo(cur()?cur().tick:0, +e.target.value-(au?1:0));
+  if(!au) el.querySelector("#neVel").onchange=e=>{ const n=cur(); if(!n) return; n.vel=Math.max(1,Math.min(127,+e.target.value|0));
     draw(); emit("note_vel",`${n.tick} ${n.pitch} ${n.vel}`); };
   el.querySelector("#neLen").onchange=e=>{ const n=cur(); if(!n) return; n.gate=Math.max(1,+e.target.value|0);
     draw(); emit("note_resize",`${n.tick} ${n.pitch} ${n.gate}`); };
@@ -543,6 +554,8 @@ function renderFX(){
 function renderSide(){
   const ridx=RES_TPS.indexOf(M.clip.tps);
   const el=document.getElementById("clipinfo");
+  if(isAudioLoop()){   /* its length is its sample's: set on the device */
+    el.innerHTML=`<div class="kv"><span>Length</span><span>${M.clip.len} steps</span></div>`; return; }
   el.innerHTML=
     sliderRow("clLs","Loop start",M.clip.ls,0,255)+
     sliderRow("clLen","Length",M.clip.len,1,256)+
@@ -552,7 +565,7 @@ function renderSide(){
     `<div class="kv"><span>Resolution</span><span><select id="resSel">`+
       RES_LAB.map((n,i)=>`<option value="${i}"${i===ridx?" selected":""}>${n}</option>`).join("")+
       `</select></span></div>`+
-    `<div class="kv"><span>Notes</span><span>${isDrum()?"—":M.notes.length}</span></div>`;
+    `<div class="kv"><span>${isAudio()?"Chops placed":"Notes"}</span><span>${isDrum()?"—":M.notes.length}</span></div>`;
   bindSlider(el,"clLen",1,256,v=>{ if(v===M.clip.len)return; M.clip.len=v; emit("length",String(v)); layout(); draw(); });
   el.querySelector("#dirSel").onchange=e=>{ M.clip.dir=+e.target.value; emit("dir",e.target.value); };
   el.querySelector("#resSel").onchange=e=>{ emit("resolution",e.target.value); pullSoon(); };
@@ -671,12 +684,13 @@ function renderSession(){
      * "1 - Move 3", "3 - MIDI Ch.3"; falls back to mode+index without route
      * data. Never the retired position letters. */
     const instShort=trk.pm===2?"Conductor"   /* its instrument row is inert — say what it IS */
+      :trk.pm===PM_AUDIO?"Audio"             /* plays its clips' samples, no instrument */
       :trk.route===0?(mixKV["chain:"+t+":synth_name"]||mixKV["chain:"+t+":synth_module"]||"Synth")
       :trk.route===1?("Move "+moveBusForChannel(trk.chan))
       :trk.route===2?("MIDI Ch."+trk.chan):null;
     /* instShort can be a MODULE's own name and goes into innerHTML and a
      * title="" attribute: escape it (escMix, web_ui_mix.js). */
-    const lbl=(instShort!=null)?`${t+1} - ${escMix(instShort)}`:(trk.pm===1?"D":trk.pm===2?"C":"M")+(t+1);
+    const lbl=(instShort!=null)?`${t+1} - ${escMix(instShort)}`:(trk.pm===1?"D":trk.pm===2?"C":trk.pm===PM_AUDIO?"A":"M")+(t+1);
     const ttl=(instShort!=null)?`Track ${t+1} → ${escMix(instShort)}`:`track ${t+1}`;
     /* conductor / responder indicator (rui_cond): "C" on the conductor track,
      * a dot on every non-drum responder track */
@@ -893,6 +907,9 @@ const MIN_PX=0.03, MAX_PX=8, MIN_ROWH=6, MAX_ROWH=42;
  * drum = one row per lane. rowList[r] = pitch (melodic), descending. */
 let rowList=[], rowMap={};
 function buildRows(){ rowList=[]; rowMap={}; if(!M||isDrum()) return;
+  if(isAudio()){   /* a Slice clip: one row per chop, Chop 1 at the bottom, never scale-folded */
+    let n=Math.max(1,M.clip.auChops|0); (M.notes||[]).forEach(x=>{ if(x.pitch+1>n) n=x.pitch+1; });
+    for(let p=Math.min(127,n-1);p>=0;p--){ rowMap[p]=rowList.length; rowList.push(p); } return; }
   const fold=!!(M.glob&&M.glob.scaleAware&&M.scaleMask);
   for(let p=127;p>=0;p--){ if(fold && !M.scaleMask[((p%12)+12)%12]) continue; rowMap[p]=rowList.length; rowList.push(p); }
   if(!rowList.length) for(let p=127;p>=0;p--){ rowMap[p]=rowList.length; rowList.push(p); } }
@@ -940,7 +957,7 @@ const pitchAt=y=>{ const r=Math.max(0,Math.min(rowList.length-1,rowOfY(y))); ret
 /* drum lanes are drawn first-at-BOTTOM: lane l ↔ row (nLanes-1-l) */
 function rowOfLane(l){ const n=(M&&M.dlanes)?M.dlanes.length:1; return n-1-l; }
 function laneOfY(y){ const n=(M&&M.dlanes)?M.dlanes.length:1; return n-1-rowOfY(y); }
-function snapPitch(pi){ if(!(M&&M.glob&&M.glob.scaleAware)||!M.scaleMask) return pi;
+function snapPitch(pi){ if(!(M&&M.glob&&M.glob.scaleAware)||!M.scaleMask||isAudio()) return pi;
   for(let d=0;d<12;d++){ const up=pi+d,dn=pi-d;
     if(up<=127&&M.scaleMask[((up%12)+12)%12])return up; if(dn>=0&&M.scaleMask[((dn%12)+12)%12])return dn; } return pi; }
 /* Snap select (ticks) — 0 = Off (free at integer ticks); Shift forces free. */
@@ -1005,15 +1022,18 @@ function draw(){
   const drum=isDrum(), hasDrumData = drum && M.dlanes && M.dlanes.length;
   document.getElementById("drumph").style.display=(drum && !hasDrumData)?"flex":"none";
   cv.style.display=(drum && !hasDrumData)?"none":"block";
-  if(drum && !hasDrumData){ drawVel(); return; }
+  const auLoop=isAudioLoop();
+  document.getElementById("audioph").style.display=auLoop?"flex":"none";
+  if(auLoop) cv.style.display="none";
+  if((drum && !hasDrumData) || auLoop){ drawVel(); return; }
   ctx.clearRect(0,0,VW,VH); ctx.fillStyle="#15171c"; ctx.fillRect(0,0,VW,VH);
   ctx.textBaseline="middle";
   /* note-area content is clipped so it never paints over the frozen ruler/gutter/step band */
   ctx.save(); ctx.beginPath(); ctx.rect(GUTTER,RULER,VW-GUTTER,noteAreaH()); ctx.clip();
-    if(drum) drawLaneBodies(); else drawPitchBodies();
+    if(drum) drawLaneBodies(); else if(isAudio()) drawChopBodies(); else drawPitchBodies();
     drawGrid(); if(drum) drawDrumHits(); else drawNotes(); drawLoopShade(); drawMarquee();
   ctx.restore();
-  drawStepBand(); drawRuler(); drawLoopBrace(); if(drum) drawGutterDrum(); else drawGutterMelodic();
+  drawStepBand(); drawRuler(); drawLoopBrace(); if(drum) drawGutterDrum(); else if(isAudio()) drawGutterChops(); else drawGutterMelodic();
   ctx.fillStyle="#13161b"; ctx.fillRect(0,0,GUTTER,RULER);                  /* corner */
   ctx.strokeStyle="#000"; ctx.lineWidth=1;
   ctx.beginPath(); ctx.moveTo(GUTTER+0.5,0); ctx.lineTo(GUTTER+0.5,VH);
@@ -1026,6 +1046,10 @@ function drawPitchBodies(){ const [r0,r1]=visRows(), sk=(M.glob?M.glob.key:0)%12
     ctx.fillStyle = root?(blk?"#243a39":"#2b4544"):inScale?(blk?"#1c2630":"#222c38"):(blk?"#141619":"#181b21");
     ctx.fillRect(GUTTER,y,VW-GUTTER,ROWH-1);
     if(s===0){ ctx.strokeStyle="#2c333f"; ctx.beginPath(); ctx.moveTo(GUTTER,y+0.5); ctx.lineTo(VW,y+0.5); ctx.stroke(); } }
+}
+function drawChopBodies(){ const [r0,r1]=visRows();
+  for(let r=r0;r<=r1;r++){ const p=rowList[r], y=yOfRow(r);
+    ctx.fillStyle=(p%2)?"#1c2630":"#222c38"; ctx.fillRect(GUTTER,y,VW-GUTTER,ROWH-1); }
 }
 function drawLaneBodies(){ const [r0,r1]=visRows(), n=M.dlanes.length;
   for(let r=r0;r<=r1;r++){ const l=n-1-r; if(l<0||l>=n) continue; const y=yOfRow(r), selL=(l===M.sel.lane), ln=M.dlanes[l];
@@ -1146,6 +1170,11 @@ function drawGutterMelodic(){ ctx.fillStyle="#171a20"; ctx.fillRect(0,RULER,GUTT
     if(ROWH>=11 || s===0){ ctx.fillStyle=(s===0)?"#9aa1ae":(s===sk?"#39d0c8":"#5a606c"); ctx.fillText(noteName(p),ZB+3,y+ROWH/2); } }
   /* (step-band gutter + STEP label are painted by drawStepBand) */
 }
+function drawGutterChops(){ ctx.fillStyle="#171a20"; ctx.fillRect(0,RULER,GUTTER,VH-RULER-STEPBAND);
+  const [r0,r1]=visRows(); ctx.font="9px ui-monospace,monospace";
+  for(let r=r0;r<=r1;r++){ const p=rowList[r], y=yOfRow(r);
+    if(ROWH>=9 || p%4===0){ ctx.fillStyle=p>=(M.clip.auChops|0)?"#5a606c":"#9aa1ae"; ctx.fillText(chopName(p),ZB+3,y+ROWH/2); } }
+}
 function drawGutterDrum(){ ctx.fillStyle="#171a20"; ctx.fillRect(0,RULER,GUTTER,VH-RULER-STEPBAND);
   const [r0,r1]=visRows(), n=M.dlanes.length; ctx.font="9px ui-monospace,monospace";
   for(let r=r0;r<=r1;r++){ const l=n-1-r; if(l<0||l>=n) continue; const ln=M.dlanes[l], selL=(l===M.sel.lane), y=yOfRow(r);
@@ -1156,6 +1185,8 @@ function drawGutterDrum(){ ctx.fillStyle="#171a20"; ctx.fillRect(0,RULER,GUTTER,
   /* (step-band gutter + STEP label are painted by drawStepBand) */
 }
 function drawVel(){ if(!velOpen) return; vctx.clearRect(0,0,VVW,VVH); vctx.fillStyle="#0e1014"; vctx.fillRect(0,0,VVW,VVH);
+  if(isAudio()){ vctx.fillStyle="#5a606c"; vctx.font="11px ui-monospace,monospace"; vctx.textBaseline="middle";
+    vctx.fillText("Audio clips play every chop at one level: no velocity",GUTTER+8,VVH/2); return; }
   /* faint value reference lines at 127 / 64 / 1 */
   [127,64,1].forEach(v=>{ const y=VVH-3-(v/127)*(VVH-10);
     vctx.strokeStyle="rgba(74,85,110,0.35)"; vctx.beginPath(); vctx.moveTo(GUTTER,y); vctx.lineTo(VVW,y); vctx.stroke(); });
@@ -1201,7 +1232,18 @@ function regionAt(x,y){ if(x<GUTTER&&y<RULER) return "corner";
   if(y<RULER) return "ruler"; if(x<GUTTER) return "gutter"; if(y>=VH-STEPBAND) return "stepband"; return "notes"; }
 
 /* ---------- emit (per-track-prefixed, ≤255B) ---------- */
-function emit(op,val){ R.setParam(P+`t${M.sel.t}_c${M.sel.c}_${op}`, val); afterEdit(); }
+function emit(op,val){ R.setParam(P+`t${M.sel.t}_c${M.sel.c}_${op}`, val); afterEdit();
+  if(op==="note_add") auKeepOne("a",val); else if(op==="note_move") auKeepOne("m",val); }
+/* An Audio step holds one slice: the engine drops the others in the step an
+ * add or move lands in (clip_note_keep_one); mirror it so the roll agrees now. */
+function auKeepOne(op,args){ if(!isAudio()||!M.notes) return;
+  const a=String(args).trim().split(/\s+/).map(Number), ti=op==="m"?2:0;
+  const tick=a[ti], pitch=a[ti+1]; if(!Number.isFinite(tick)||!Number.isFinite(pitch)) return;
+  if(!M.notes.some(n=>n.tick===tick&&n.pitch===pitch)) return;   /* already replaced */
+  const tps=M.clip.tps||24, st=x=>Math.floor((x+tps/2)/tps), s=st(tick); let gone=0;
+  for(let k=M.notes.length-1;k>=0;k--){ const n=M.notes[k];
+    if(!(n.tick===tick&&n.pitch===pitch) && st(n.tick)===s){ M.notes.splice(k,1); gone=1; } }
+  if(gone) draw(); }
 /* Batch several melodic note ops into ONE atomic tN_cC_notes_op set_param.
  * Rationale (NOT per-buffer coalescing — remote overtake_dsp: set_params ride
  * the slow shadow_param ring as serialized synchronous round-trips in the host
@@ -1213,7 +1255,8 @@ function emit(op,val){ R.setParam(P+`t${M.sel.t}_c${M.sel.c}_${op}`, val); after
  * finalizes once (bumps the rev). ops = [[opChar,argStr],...]; opChar in a/d/m/r/v. */
 function emitBatch(ops){ if(!ops||!ops.length) return;
   R.setParam(P+`t${M.sel.t}_c${M.sel.c}_notes_op`, ops.map(o=>`${o[0]} ${o[1]}`).join(";"));
-  afterEdit(); }
+  /* last op first, as the engine: the last chop placed in a step wins */
+  afterEdit(); ops.slice().reverse().forEach(o=>{ if(o[0]==="a"||o[0]==="m") auKeepOne(o[0],o[1]); }); }
 function selectLane(lane){ if(lane<0||lane>=M.dlanes.length) return;
   M.sel.lane=lane; selStep=-1; selDrum=null;   /* lane change → drop step + hit selection (per-lane) */
   R.setParam(P+`t${M.sel.t}_c${M.sel.c}_ruisel`, String(lane));
@@ -1393,7 +1436,7 @@ cv.addEventListener("wheel",e=>{ if(!M) return; e.preventDefault(); const [x,y]=
 /* ---------- velocity strip (mouse + touch) ---------- */
 let vdrag=false;
 function localXYv(e){ const r=vc.getBoundingClientRect(); return [e.clientX-r.left,e.clientY-r.top]; }
-vc.addEventListener("pointerdown",e=>{ if(!M) return; try{vc.setPointerCapture(e.pointerId);}catch(_){}
+vc.addEventListener("pointerdown",e=>{ if(!M||isAudio()) return; try{vc.setPointerCapture(e.pointerId);}catch(_){}
   vdrag=true; dragging=true; const xy=localXYv(e); vAdjust(xy[0],xy[1]); });
 vc.addEventListener("pointermove",e=>{ if(!vdrag) return; const xy=localXYv(e); vAdjust(xy[0],xy[1]); });
 function endVel(e){ if(vdrag){ vdrag=false; dragging=false; try{vc.releasePointerCapture(e.pointerId);}catch(_){}} }
@@ -1499,7 +1542,8 @@ function applyParams(params){
   const selKey=M.sel.t+":"+M.sel.c;
   /* re-fold the roll whenever scale-aware / scale / key changes — even if it came
    * from the device (which may not bump rev), so an on melodic track ALWAYS folds. */
-  const foldSig=(M.glob&&M.glob.scaleAware?1:0)+":"+(M.scaleMask?M.scaleMask.map(b=>b?1:0).join(""):"");
+  const foldSig=(M.glob&&M.glob.scaleAware?1:0)+":"+(M.scaleMask?M.scaleMask.map(b=>b?1:0).join(""):"")
+    +":"+(M.tracks[M.sel.t]?M.tracks[M.sel.t].pm:0)+":"+M.clip.auMode+":"+M.clip.auChops;
   renderChrome(); renderSession();
   bandsApply();
   if(M.rev!==prevRev || selKey!==prevSel || foldSig!==lastFoldSig){ lastRev=M.rev; lastSelKey=selKey; lastFoldSig=foldSig;

@@ -6383,6 +6383,33 @@ static int clip_note_apply_op(clip_t *cl, char op, const char *args) {
     return 0;
 }
 
+/* An Audio clip's step holds one slice, the newest (as a step tap does,
+ * `_toggle`). After a piano-roll add or move lands a note, drop every other
+ * note in its step. Same parse and clamps as clip_note_apply_op. */
+static void clip_note_keep_one(clip_t *cl, char op, const char *args) {
+    uint32_t maxtick = (uint32_t)cl->length * cl->ticks_per_step;
+    if (maxtick == 0) maxtick = 1;
+    long a[4] = {0,0,0,0}; int na = 0; const char *p = args;
+    while (na < 4) {
+        while (*p == ' ') p++;
+        if (!*p || *p == ';') break;
+        a[na++] = my_atoi(p);
+        while (*p && *p != ' ' && *p != ';') p++;
+    }
+    int ti = (op == 'm') ? 2 : 0;
+    if (na < ti + 2) return;
+    uint32_t tick = (uint32_t)clamp_i((int)a[ti], 0, (int)maxtick - 1);
+    uint8_t pitch = (uint8_t)clamp_i((int)a[ti + 1], 0, 127);
+    int keep = clip_find_note(cl, tick, pitch);
+    if (keep < 0) return;
+    uint16_t tps = cl->ticks_per_step ? cl->ticks_per_step : TICKS_PER_STEP;
+    uint16_t s = note_step(tick, cl->length, tps);
+    for (int i = 0; i < (int)cl->note_count; i++) {
+        if (i == keep || !cl->notes[i].active) continue;
+        if (note_step(cl->notes[i].tick, cl->length, tps) == s) { cl->notes[i].active = 0; cl->occ_dirty = 1; }
+    }
+}
+
 /* Commit note edits: reclaim tombstones, re-derive the step/LED view, mark dirty.
  * (t,c) = the clip being finalized so the on-device JS re-syncs just it (drum
  * callers pass the active drum-clip index). */
@@ -8692,9 +8719,20 @@ static int seq8_remote_snapshot(seq8_instance_t *inst, char *out, int out_len) {
         APP(",\"rui_play\":\"0:%u:%d\"",
             (unsigned)rui_playhead_tick(inst), (int)bpm);
     APP(",\"rui_sel\":\"%d:%d:%d\"", t, c, (int)inst->rui_sel_lane);
-    APP(",\"rui_clip\":\"%d:%d:%d:%d\"",
-        (int)gcl->length, (int)gcl->ticks_per_step, (int)gcl->loop_start,
-        (int)gcl->playback_dir);
+    /* ...:au_mode:au_chops — an Audio track's clip: its Mode (AU_MODE_*) and
+     * how many chops it plays (the Even count, else the hand set); -1:0 on any
+     * other track. Always written: the browser's per-key cache is sticky. */
+    {
+        int aum = -1, aun = 0;
+        if (tr->pad_mode == PAD_MODE_AUDIO) {
+            const au_clip_t *ac = &inst->au_clip[t][c];
+            aum = ac->mode;
+            aun = ac->even ? ac->even : ac->nslices;
+        }
+        APP(",\"rui_clip\":\"%d:%d:%d:%d:%d:%d\"",
+            (int)gcl->length, (int)gcl->ticks_per_step, (int)gcl->loop_start,
+            (int)gcl->playback_dir, aum, aun);
+    }
     /* global params: key:scale:swing_amt:swing_res:launch_quant:scale_aware:
      * groove_kind:groove_amt (bpm in rui_play). New fields are appended. */
     APP(",\"rui_glob\":\"%d:%d:%d:%d:%d:%d:%d:%d\"",

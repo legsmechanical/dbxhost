@@ -42,7 +42,11 @@ if (!window.schwungRemote) {
   /* T7 (index 6) previews the CONDUCTOR coherently (pm=2 AND rui_cond points at
    * it) — it was T2, which is also the melodic preview and Move-routed, so the
    * sample data showed one track as conductor and instrument at once. */
-  const tracks=Array.from({length:8},(_,t)=>({pm:t===0?1:(t===6?2:0), ac:0, pl:0, qc:-1, mute:0, solo:0, route:t<4?1:0, chan:t+1}));
+  /* T5 (index 4) previews an AUDIO track: clip A a Slice clip of 8 chops, clip B a Loop clip */
+  const tracks=Array.from({length:8},(_,t)=>({pm:t===0?1:(t===6?2:(t===4?3:0)), ac:0, pl:0, qc:-1, mute:0, solo:0, route:t<4?1:0, chan:t+1}));
+  const auNotes=[[0,0],[48,2],[96,1],[144,3],[192,0],[240,5],[288,7],[336,6]]
+          .map(([tick,pitch])=>({tick,pitch,vel:100,gate:24}));
+  const store=()=>tracks[sel.t].pm===3?auNotes:mel;
   // per-clip FX (melodic), 29 values matching the DSP rui_pfx order
   const PFXKEYS=["noteFX_octave","noteFX_offset","noteFX_gate","noteFX_velocity","quantize",
     "noteFX_random","noteFX_random_mode","noteFX_length_mode","harm_octaver","harm_interval1",
@@ -61,7 +65,7 @@ if (!window.schwungRemote) {
     KV["overtake_dsp:rui_sel"]=sel.t+":"+sel.c+":"+sel.lane;
     const isDrum=tracks[sel.t].pm===1;
     KV["overtake_dsp:rui_index"]=tracks.map((tk,t)=>{
-      const has=Array.from({length:16},(_,c)=> (c===0 && ((t===0&&drum.some(l=>l.hits.length))||(t===1&&mel.length)))?1:0).join("");
+      const has=Array.from({length:16},(_,c)=> ((c===0 && ((t===0&&drum.some(l=>l.hits.length))||(t===1&&mel.length)))||(t===4&&c<2))?1:0).join("");
       /* mock seeds route/chan on the track (0-3 Move, 4-7 Schwung; ch=track#) and
        * carries mute/solo so the header state + gear dropdown preview in a browser */
       return tk.pm+":"+tk.ac+":"+(tk.qc!=null?tk.qc:-1)+":"+(tk.pl?1:0)+":"+has+":"+tk.route+":"+tk.chan+":"+(tk.mute?1:0)+":"+(tk.solo?1:0)+":"+(tk.slot||0);
@@ -73,19 +77,23 @@ if (!window.schwungRemote) {
                                  .filter(Boolean).join(";");
       KV["overtake_dsp:rui_notes"]="";
     } else {
-      KV["overtake_dsp:rui_clip"]=clipLen+":24:"+clipLs+":"+clipDir;
-      KV["overtake_dsp:rui_notes"]=mel.map(n=>n.tick+":"+n.pitch+":"+n.vel+":"+n.gate+";").join("");
+      KV["overtake_dsp:rui_clip"]=clipLen+":24:"+clipLs+":"+clipDir+
+        (tracks[sel.t].pm===3?(":"+(sel.c===1?0:1)+":8"):":-1:0");
+      KV["overtake_dsp:rui_notes"]=(tracks[sel.t].pm===3&&sel.c===1?[]:store()).map(n=>n.tick+":"+n.pitch+":"+n.vel+":"+n.gate+";").join("");
       KV["overtake_dsp:rui_pfx"]=pfx.join(":");
       delete KV["overtake_dsp:rui_dlanes"]; delete KV["overtake_dsp:rui_dnotes"];
     }
     KV["overtake_dsp:rui_cond"]=cond.trk+":"+cond.clip+":"+cond.lock+
       cond.resp.map(r=>";"+r.resp+","+r.oct+","+r.when).join("");
   }
-  const findM=(tk,pi)=>mel.findIndex(n=>n.tick===tk&&n.pitch===pi);
-  function melOp(op,a){
-    if(op==='a'){ const [tk,pi,ve=100,ga=24]=a; if(findM(tk,pi)<0) mel.push({tick:tk,pitch:pi,vel:ve,gate:ga}); }
+  const findM=(tk,pi)=>store().findIndex(n=>n.tick===tk&&n.pitch===pi);
+  /* as the engine: an Audio step keeps the one slice an add or move lands */
+  const keepOne=(tk,pi)=>{ if(tracks[sel.t].pm!==3) return; const st=x=>Math.floor((x+12)/24), m=store();
+    for(let i=m.length-1;i>=0;i--) if(!(m[i].tick===tk&&m[i].pitch===pi)&&st(m[i].tick)===st(tk)) m.splice(i,1); };
+  function melOp(op,a){ const mel=store();
+    if(op==='a'){ const [tk,pi,ve=100,ga=24]=a; if(findM(tk,pi)<0) mel.push({tick:tk,pitch:pi,vel:ve,gate:ga}); keepOne(tk,pi); }
     else if(op==='d'){ const i=findM(a[0],a[1]); if(i>=0) mel.splice(i,1); }
-    else if(op==='m'){ const i=findM(a[0],a[1]); if(i>=0){ mel[i].tick=a[2]; mel[i].pitch=a[3]; } }
+    else if(op==='m'){ const i=findM(a[0],a[1]); if(i>=0){ mel[i].tick=a[2]; mel[i].pitch=a[3]; keepOne(a[2],a[3]); } }
     else if(op==='r'){ const i=findM(a[0],a[1]); if(i>=0) mel[i].gate=a[2]; }
     else if(op==='v'){ const i=findM(a[0],a[1]); if(i>=0) mel[i].vel=a[2]; }
   }
@@ -254,7 +262,9 @@ function parseModel(){
    * time-base corrections on the DEVICE clock so delivery latency is harmless. */
   const pdev = Number.isFinite(pv[3])&&pv[3]>0 ? pv[3] : 0;
   const [st,sc,sl]       = (get("rui_sel")||"0:0:-1").split(":").map(Number);
-  const [cl,ct,cls,cd]   = (get("rui_clip")||"16:24:0:0").split(":").map(Number);
+  /* len:tps:loop_start:dir[:au_mode:au_chops] — the last two on an Audio track
+   * (-1:0 elsewhere; absent from an older device) */
+  const [cl,ct,cls,cd,cam,can] = (get("rui_clip")||"16:24:0:0").split(":").map(Number);
   const tracks = (get("rui_index")||"").split(";").map(seg=>{
     /* pm:ac:qc:pl:<16 bits>[:route:chan:mute:solo[:slot]]; tolerate old pm:ac:<bits> and
      * the pre-routing pm:ac:qc:pl:<bits> form (route/chan/mute/solo/slot all optional). */
@@ -308,11 +318,18 @@ function parseModel(){
    * (dense clip) — drives a non-blocking "some notes hidden" badge. Absent/0 = clean. */
   const trunc = (+(get("rui_trunc")||0))?1:0;
   return {rev:+(get("rui_rev")||0), play:{on:pon,tick:ptick,bpm:pbpm,dev:pdev},
-          sel:{t:st,c:sc,lane:sl}, clip:{len:cl,tps:ct,ls:cls,dir:cd}, tracks, notes,
+          sel:{t:st,c:sc,lane:sl}, clip:{len:cl,tps:ct,ls:cls,dir:cd,
+            auMode:Number.isFinite(cam)?cam:-1, auChops:Number.isFinite(can)?can:0}, tracks, notes,
           dlanes, dnotes, pfx, glob, scaleMask, laneInfo, stepTrig, trunc,
           cond: parseCond(get("rui_cond")||"")};
 }
 const isDrum = ()=> M && M.tracks[M.sel.t] && M.tracks[M.sel.t].pm===1;
+/* An Audio track (pad mode 3): melodic storage, but a note is a chop (chop k =
+ * note k). A Slice clip's roll is its chops; a Loop clip has no steps at all. */
+const PM_AUDIO = 3;
+const isAudio = ()=> M && M.tracks[M.sel.t] && M.tracks[M.sel.t].pm===PM_AUDIO;
+const isAudioLoop = ()=> isAudio() && M.clip.auMode===0;
+const chopName = p=>"Chop "+(p+1);
 
 /* Schedule a reconcile ~130ms after an edit. Do NOT zero the suppress window
  * here: a poll that was already in flight BEFORE the edit can land in the

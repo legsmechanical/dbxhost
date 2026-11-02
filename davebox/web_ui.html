@@ -174,9 +174,9 @@
     border:1px solid var(--ctl-br)}
   #velcanvas{display:block;position:absolute;left:0;top:0;cursor:ns-resize;touch-action:none}
   #vellabel{position:absolute;left:6px;top:3px;font:10px ui-monospace,monospace;color:var(--faint);pointer-events:none}
-  #drumph{position:absolute;inset:0;display:none;flex-direction:column;gap:6px;
+  #drumph,#audioph{position:absolute;inset:0;display:none;flex-direction:column;gap:6px;
     align-items:center;justify-content:center;color:var(--dim);text-align:center;padding:20px;font-size:14px}
-  #drumph b{color:var(--ink)}
+  #drumph b,#audioph b{color:var(--ink)}
   /* ---------- stacked band headers (velocity / automation) ---------- */
   .bandhdr{flex:0 0 auto;display:flex;align-items:center;gap:7px;padding:0 10px;height:21px;
     background:var(--panel);border-top:1px solid #000;cursor:pointer;font-size:10.5px;
@@ -500,6 +500,10 @@ body[data-view="mix"] .seqonly,body[data-view="sound"] .seqonly{display:none}
         <div id="drumph">
           <div>This track is in <b>Drum</b> mode but has no drum clip yet.</div>
           <div>Add a hit on the device, or pick a melodic track.</div>
+        </div>
+        <div id="audioph">
+          <div>This is an <b>Audio</b> track's <b>Loop</b> clip: it plays its sample straight through, so it has no steps to edit.</div>
+          <div>Edit the sample on the device.</div>
         </div>
         <div id="playhead"></div>
         <div id="rollzoom">

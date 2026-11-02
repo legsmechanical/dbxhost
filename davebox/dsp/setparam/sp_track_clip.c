@@ -56,9 +56,11 @@ static int sp_track_clip(sp_ctx_t *cx) {
 
         /* Remote-UI piano-roll note edits (melodic clip). Each writes notes[]
          * directly then re-derives steps[] via clip_note_finalize. */
-        if (!strcmp(p, "_note_add"))    { if (clip_note_apply_op(cl, 'a', val)) clip_note_finalize(inst, cl, tidx, cidx); return 1; }
+        /* An Audio step holds one slice: an add or move keeps only the note it lands. */
+        const int au = (tr->pad_mode == PAD_MODE_AUDIO);
+        if (!strcmp(p, "_note_add"))    { if (clip_note_apply_op(cl, 'a', val)) { if (au) clip_note_keep_one(cl, 'a', val); clip_note_finalize(inst, cl, tidx, cidx); } return 1; }
         if (!strcmp(p, "_note_del"))    { if (clip_note_apply_op(cl, 'd', val)) clip_note_finalize(inst, cl, tidx, cidx); return 1; }
-        if (!strcmp(p, "_note_move"))   { if (clip_note_apply_op(cl, 'm', val)) clip_note_finalize(inst, cl, tidx, cidx); return 1; }
+        if (!strcmp(p, "_note_move"))   { if (clip_note_apply_op(cl, 'm', val)) { if (au) clip_note_keep_one(cl, 'm', val); clip_note_finalize(inst, cl, tidx, cidx); } return 1; }
         if (!strcmp(p, "_note_resize")) { if (clip_note_apply_op(cl, 'r', val)) clip_note_finalize(inst, cl, tidx, cidx); return 1; }
         if (!strcmp(p, "_note_vel"))    { if (clip_note_apply_op(cl, 'v', val)) clip_note_finalize(inst, cl, tidx, cidx); return 1; }
         if (!strcmp(p, "_notes_op")) {
@@ -71,6 +73,24 @@ static int sp_track_clip(sp_ctx_t *cx) {
                 while (*s == ' ') s++;
                 changed |= clip_note_apply_op(cl, op, s);
                 while (*s && *s != ';') s++;   /* advance to next ';' */
+            }
+            /* Audio: one slice per step, once the whole batch has landed (a
+             * nudge of several notes must not drop one that is moving too),
+             * walked LAST op first so the last slice placed in a step wins. */
+            if (changed && au) {
+                const char *end = val + strlen(val);
+                while (end > val) {
+                    const char *b = end;
+                    while (b > val && b[-1] != ';') b--;
+                    const char *q = b;
+                    while (q < end && *q == ' ') q++;
+                    if (q < end) {
+                        char op = *q++;
+                        while (q < end && *q == ' ') q++;
+                        if (op == 'a' || op == 'm') clip_note_keep_one(cl, op, q);
+                    }
+                    end = (b > val) ? b - 1 : val;
+                }
             }
             if (changed) clip_note_finalize(inst, cl, tidx, cidx);
             return 1;

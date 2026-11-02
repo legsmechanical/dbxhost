@@ -107,11 +107,11 @@ static void test_clip_params(void) {
     hx_set_param(h, "t1_c0_length", "8");
     hx_set_param(h, "t1_c0_dir", "2");
     char buf[8192]; hx_get_param(h, "state", buf, (int)sizeof(buf));
-    /* rui_clip = "len:tps:ls:dir" */
+    /* rui_clip = "len:tps:ls:dir:au_mode:au_chops" (-1:0 off an Audio track) */
     HX_ASSERT(strstr(buf, "\"rui_clip\":\"8:") != NULL, "length 8 not in snapshot");
     const char *k = strstr(buf, "\"rui_clip\":\""); HX_ASSERT(k != NULL, "no rui_clip");
-    /* 4th field is dir; cheaply check ":2\"" tail of the clip field */
-    HX_ASSERT(strstr(k, ":2\"") != NULL, "direction 2 not in snapshot");
+    /* 4th field is dir: the clip field's tail is ":2:-1:0\"" */
+    HX_ASSERT(strstr(k, ":2:-1:0\"") != NULL, "direction 2 not in snapshot");
     hx_destroy(h);
 }
 

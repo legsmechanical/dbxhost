@@ -9,6 +9,10 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Added
+- **The browser editor knows Audio tracks**: a Slice clip's roll shows its chops
+  (Chop 1, Chop 2…), one to a step as on the device, and a Loop clip shows no roll.
+  The mixer, grid and Sound view say **Audio**, and the sample, chops and NOTE FX
+  are edited on the device.
 - **Export to Ableton carries Audio tracks** as Live audio tracks: every Audio clip is
   recorded as it sounds (its effects, level, pan and automation, and the Conductor if
   you apply it), exactly as long as it loops. Your project isn't changed.

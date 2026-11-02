@@ -3209,6 +3209,11 @@ dAVEBOx editor.
   Click a step in the **step band** to set its Iter, Prob, Ratchet, Nudge, Velocity
   and Gate, or clear it; the **Velocity** lane below edits note velocities. Drag the
   loop handles on the ruler to set the loop. Automation is edited on the device.
+- **Audio tracks:** a **Slice** clip's roll has a row per chop (**Chop 1** at the
+  bottom), and a step holds one chop, as on the device: adding one replaces what
+  was there. A **Loop** clip has no steps, so it shows no roll. The sample, its
+  chops and the clip's NOTE FX are edited on the device; the **Sound** view shows
+  the track's effects and level.
 
 <img src="img/web-step-edit.png" alt="Editing a step from the step band, with the velocity lane below">
 

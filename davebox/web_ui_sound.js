@@ -6,6 +6,7 @@
  *   plays a Schwung instrument  →  MIDI FX · INSTRUMENT · FX 1..4 · AUDIO
  *   plays a Move instrument     →  "Move N — edit on device" · FX 1..4 · AUDIO
  *   sends MIDI out              →  nothing to edit here
+ *   is an Audio track           →  "plays its clips' samples — edit on device" · FX 1..4 · AUDIO
  *
  * The instrument card is the module's OWN web panel when it ships one (an
  * iframe running its own connection, exactly as the manager pops it out);
@@ -150,7 +151,7 @@ function renderSound() {
   if (!wrap) return;
   const t = sndSel();
   const trk = (M && M.tracks && M.tracks[t]) || {};
-  const sig = [t, sndRoute(t), trk.chan, mixKV["chain:" + t + ":synth_module"] || ""].join("|");
+  const sig = [t, sndRoute(t), trk.chan, trk.pm, mixKV["chain:" + t + ":synth_module"] || ""].join("|");
   if (sig === soundSig && wrap.childNodes.length) { sndTick(); return; }
   soundSig = sig;
   sndTeardown();
@@ -208,6 +209,12 @@ function renderSound() {
        * position 0 — the same keys the on-device editor builds */
       chain.appendChild(sndCard(0, "move_fx:" + bus + ":" + SND_MOVE_FX[i], "FX " + (i + 1)));
     }
+  } else if (trk.pm === PM_AUDIO) {
+    /* its sound is its clips' samples, played into the effects; no MIDI reaches
+     * a MIDI FX or an instrument there */
+    chain.appendChild(sndStaticCard("SAMPLE", "plays each clip's own sample — edit the samples and chops on the device"));
+    for (const spec of SND_CHAIN_COMPONENTS)
+      if (spec.comp !== "synth" && spec.comp !== "midi_fx1") chain.appendChild(sndCard(t, spec.comp, spec.role));
   } else {
     for (const spec of SND_CHAIN_COMPONENTS) chain.appendChild(sndCard(t, spec.comp, spec.role));
   }
