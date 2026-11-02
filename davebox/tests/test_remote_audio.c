@@ -75,6 +75,10 @@ int main(void) {
 
     hx_set_param(h, "t4_c0_notes_op", "a 72 1 100 24; a 72 9 100 24");
     HX_ASSERT(notes_at(inst, 4, 0, 72, &pitch) == 1 && pitch == 9, "⭐ the batch left two slices on step 3");
+    /* every op of a batch, not only its last: the first lands on a taken step */
+    hx_set_param(h, "t4_c0_note_add", "240 4 100 24");
+    hx_set_param(h, "t4_c0_notes_op", "a 240 6 100 24; a 264 1 100 24");
+    HX_ASSERT(notes_at(inst, 4, 0, 240, &pitch) == 1 && pitch == 6, "⭐ a batch's first add left two slices on its step");
     /* a nudge of two neighbours a step later: each lands where the other was */
     hx_set_param(h, "t4_c0_notes_op", "a 120 1 100 24; a 144 2 100 24");
     hx_set_param(h, "t4_c0_notes_op", "m 120 1 144 1; m 144 2 168 2");
