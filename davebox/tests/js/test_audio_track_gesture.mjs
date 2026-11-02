@@ -1180,6 +1180,54 @@ step('⭐⭐ SAMPLE\'s menu: Trim and Normalize ask Overwrite or New (New first)
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
 });
 
+step('⭐⭐ SAMPLE\'s menu on a Loop clip: Fit to clip sets the sample\'s Tempo once, so Start to its end fills the clip (Josh, 2026-11-02: "fit to clip" · "(once)"); one undo step; past the Tempo\'s range it says so', () => {
+    /* a Loop clip, 2 s of 48 kHz at 84 BPM; the clip 1 bar from step 0 */
+    GET['t4_au_info_0'] = INFO24(0, 4, 0, 4, 50, 0); A.auMarkStale(4, 0); ticks(2);
+    const len0 = S.clipLength[4][0], tps0 = S.clipTPS[4][0], ls0 = S.clipLoopStart[4][0];
+    S.clipLength[4][0] = 16; S.clipTPS[4][0] = 24; S.clipLoopStart[4][0] = 0;
+    mapPad(2, 3);
+    const ed = S.auEditor;
+    const fit = () => {
+        click(); ticks(1);
+        const rows = E.auPickRows(ed);
+        const k = rows.findIndex((r) => r.id === 'fit');
+        assert(k >= 0 && rows[k].label === 'Fit to clip', 'no Fit to clip on a Loop clip\'s menu: ' + rows.map((r) => r.label));
+        for (let i = 0; i < k; i++) jog(1);
+        click(); ticks(1);
+    };
+    reset(); S.undoAvailable = false;
+    fit();
+    /* 1 bar in 2 s = 120 BPM */
+    assert(sent('t4_au_set_bpm').join() === '0 1200', 'the Tempo: ' + JSON.stringify(sent('t4_au_set_bpm')));
+    assert(sent('t4_au_undo').join() === '0' && S.undoAvailable, 'not an undo step: ' + JSON.stringify(sent('t4_au_undo')));
+    const ord = sets.map((x) => x[0]).concat(S.pendingDefaultSetParams.map((e) => e.key));
+    assert(ord.indexOf('t4_au_undo') < ord.indexOf('t4_au_set_bpm'), 'the Tempo went before the undo step: ' + ord.join());
+    assert((S.actionPopupLines || []).join(' ') === 'FIT TO CLIP 120 BPM', 'notice: ' + JSON.stringify(S.actionPopupLines));
+    assert(!ed.pick && S.auEditor === ed, 'the menu stayed open');
+    assert(S.clipLength[4][0] === 16 && !sent('t4_c0_length').length, 'the clip\'s length moved');
+    /* the loop's end lands on the sample's end: steps 4..19 of a 2-bar reach → 240 BPM... */
+    GET['t4_au_info_0'] = INFO24(0, 4, 0, 4, 50, 0); A.auMarkStale(4, 0); ticks(2);
+    S.clipLoopStart[4][0] = 16;
+    reset();
+    fit();
+    assert(sent('t4_au_set_bpm').join() === '0 2400', 'a loop starting at bar 2: ' + JSON.stringify(sent('t4_au_set_bpm')));
+    S.clipLoopStart[4][0] = 0;
+    /* a Start a few frames from the end: past 999.9 BPM, nothing set */
+    GET['t4_au_info_0'] = INFO24(0, 4, 0, 4, 50, 0).replace(' 16 0 96000 ', ' 16 95990 96000 '); A.auMarkStale(4, 0); ticks(2);
+    reset(); S.undoAvailable = false;
+    fit();
+    assert(!sent('t4_au_set_bpm').length && !sent('t4_au_undo').length && !S.undoAvailable, 'out of range set something');
+    assert((S.actionPopupLines || []).join(' ') === 'FIT TO CLIP Out of range', 'notice: ' + JSON.stringify(S.actionPopupLines));
+    /* a Slice clip has none */
+    GET['t4_au_info_0'] = INFO(1, 8); A.auMarkStale(4, 0); ticks(2);
+    click(); ticks(1);
+    assert(!E.auPickRows(ed).some((r) => r.id === 'fit'), 'a Slice clip offers Fit');
+    back(); back(); ticks(2);
+    S.actionPopupEndTick = 0;
+    S.clipLength[4][0] = len0; S.clipTPS[4][0] = tps0; S.clipLoopStart[4][0] = ls0;
+    GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; A.auMarkStale(4, 0); ticks(20);
+});
+
 step('⭐⭐ Load sample: the chooser opens over WAVE, auditions, a click picks and lands back on WAVE', () => {
     mapPad(2, 3);
     reset(); PREVIEWS.length = 0;
@@ -1259,7 +1307,7 @@ step('⭐⭐ WAVE in Loop mode: K1 Start · K2 Zoom · K3 End · K4 Gain · K5 P
     S.auEditor.pick = { level: 1, sel: 0 };
     /* a Loop clip's menu offers Chop sample (Josh, 2026-10-30), which makes it
      * a Slice clip — its own step below */
-    assert(E.auPickRows(S.auEditor).map((r) => r.id).join() === 'load,trim,norm,chop', 'Loop\'s menu: ' + E.auPickRows(S.auEditor).map((r) => r.id));
+    assert(E.auPickRows(S.auEditor).map((r) => r.id).join() === 'load,trim,norm,chop,fit', 'Loop\'s menu: ' + E.auPickRows(S.auEditor).map((r) => r.id));
     S.auEditor.pick = null;
     cc(HC.MoveDelete, 127); note(C.TRACK_PAD_BASE + 3, 100); note(C.TRACK_PAD_BASE + 3, 0); cc(HC.MoveDelete, 0);
     assert(!sent('t4_au_mark_del').length, 'Delete + pad in Loop removed a chop: ' + JSON.stringify(sent('t4_au_mark_del')));
@@ -1276,7 +1324,7 @@ step('⭐⭐ a Loop clip\'s SAMPLE menu: Chop sample › Even makes it a Slice c
     reset();
     click();
     let rows = E.auPickRows(ed);
-    assert(ed.pick && ed.pick.level === 1 && rows.map((r) => r.id).join() === 'load,trim,norm,chop' && rows[3].chevron,
+    assert(ed.pick && ed.pick.level === 1 && rows.map((r) => r.id).join() === 'load,trim,norm,chop,fit' && rows[3].chevron,
            'the menu: ' + JSON.stringify(rows));
     assert(inked(shown()), 'the menu draws nothing');
     jog(1); jog(1); jog(1); click();

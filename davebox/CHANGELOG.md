@@ -9,6 +9,9 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Added
+- **Fit to clip.** On a Loop clip, SAMPLE's menu has **Fit to clip**: the sample's
+  Tempo is set so it fills the clip from Start to its end, and Sync stretches it to
+  match. One Undo puts it back.
 - **Live merge records Audio tracks' sound.** In a Live merge, each Audio track records
   what it plays, before its effects, into its own sample, and the clip you place it in
   plays that sample. Other tracks still record their notes. A merge with an Audio

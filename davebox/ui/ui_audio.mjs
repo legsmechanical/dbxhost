@@ -1153,6 +1153,31 @@ export function auOrig(t, c) {
     S.auStartsRev = (S.auStartsRev | 0) + 1;
     return true;
 }
+/* Fit to clip (Josh, 2026-11-02: Fit stretches the sample to fill the clip's
+ * length whatever its tempo — "once"): the sample's Tempo set so Start to the
+ * sample's end lasts as long as the clip up to its loop's end (the loop's
+ * window lies over the sample from Start, so its end lands on the sample's).
+ * Sync then plays it there. One undo step; the clip's length is not touched,
+ * and changing it later does not fit again. Returns the Tempo x10, 0 if
+ * nothing changed, -1 if the fit is past the Tempo's range. */
+export function auFit(t, c) {
+    const i = auInfo(t, c);
+    if (i.state !== 2 || !auIsLoop(i)) return 0;
+    const ticks = ((S.clipLoopStart[t][c] | 0) + (S.clipLength[t][c] | 0 || 16)) * (S.clipTPS[t][c] || 24);
+    const frames = (i.nframes | 0) - (i.rstart | 0);
+    if (frames <= 0 || ticks <= 0) return 0;
+    const v = Math.round(600 * (i.rate || 44100) * ticks / (frames * 96));
+    if (v < AU_BPM10_MIN || v > AU_BPM10_MAX) return -1;
+    if (v === (i.bpm10 | 0)) return v;
+    noteUndoUnit();
+    auUndoClips(t, [c]);
+    auSet(t, c, 'bpm', v);
+    const loc = Object.assign({}, i, { bpm10: v });
+    loc.rend = auPlayedEnd(t, c, loc);
+    S.auInfo[t][c] = loc;
+    S.auStartsRev = (S.auStartsRev | 0) + 1;
+    return v;
+}
 /* Nudge (SAMPLE's K8): the sample against the bar, 5 ms a detent (Shift 1) */
 export function auNudgeStep(t, c, steps) {
     const i = auInfo(t, c);

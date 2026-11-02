@@ -1284,6 +1284,11 @@ A **click** on SAMPLE opens its menu (**Shift + click** does the same):
 - **Chop sample** (a Loop clip's) — **Even**, **Transient**, **Lazy** or **Manual**:
   the clip becomes a Slice clip and that chop editor opens on SLICES (see Chops,
   below), where Back then leaves you.
+- **Fit to clip** (a Loop clip's) — sets the sample's **Tempo** so that Start to the end
+  of the sample lasts exactly as long as the clip, and Sync stretches it to fit. It
+  fits once: change the clip's length afterwards and the sample isn't refitted (use
+  Fit to clip again). One Undo puts the Tempo back. If the fit would need a Tempo
+  outside 0.1–999.9 BPM, the screen says *Out of range* and nothing changes.
 
 Trim and Normalize ask **New** (the default: a new sample for this clip, named
 *… trim* or *… norm*, the original kept in the project) or **Overwrite** (the
