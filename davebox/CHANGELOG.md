@@ -81,7 +81,7 @@ the section into a versioned heading at release time.
   Session View tap the clip's pad, in Track View it takes the current clip. Choose
   **Wet** (as you hear it, with sends and Master FX) or **Dry** (just the track's own
   instrument and effects). An Audio clip can be resampled **In place**: the recording
-  replaces it. After any resample, Play carries on with the clips you had armed.
+  replaces it, recorded before the track's effects so they apply once. After any resample, Play carries on with the clips you had armed.
 - **Flatten track.** TRACK CONFIG › **Flatten track** records every clip and turns the
   track into an Audio track, each clip playing its recording. **Pre** records the
   instrument before the track's effects and leaves them on; **Post** records through
