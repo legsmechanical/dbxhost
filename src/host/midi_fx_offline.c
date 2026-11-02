@@ -13,7 +13,7 @@
 
 #include "midi_fx_offline.h"
 #include "midi_fx_offline_render.h"
-#include "module_dlopen.h"
+#include "module_clone.h"
 #include "schwung_paths.h"
 #include "shim_thread.h"
 #include "unified_log.h"
@@ -70,79 +70,29 @@ static void vhost_build(void) {
     g_vhost.mod_host_ctx = NULL;
 }
 
-/* ---- the copies' code, one per (path, mtime, size), for the session ---- */
+/* ---- the copies' code, one per (path, mtime, size), for the session
+ * (module_clone.h); the API each copy's init answered, kept by handle ---- */
 #define MFO_CACHE_SLOTS 16
-static struct {
-    char src[512];
-    long long mtime, size;
-    midi_fx_api_v1_t *api;
-} C[MFO_CACHE_SLOTS];
+static struct { void *h; midi_fx_api_v1_t *api; } C[MFO_CACHE_SLOTS];
 static int C_n;
 
-static int copy_file(const char *from, const char *to) {
-    char tmp[600], buf[65536];
-    int in, out, ok = 1;
-    ssize_t n;
-    snprintf(tmp, sizeof tmp, "%s.tmp.%d", to, (int)getpid());
-    in = open(from, O_RDONLY);
-    if (in < 0) return 0;
-    out = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (out < 0) { close(in); return 0; }
-    while ((n = read(in, buf, sizeof buf)) > 0)
-        if (write(out, buf, (size_t)n) != n) { ok = 0; break; }
-    if (n < 0) ok = 0;
-    if (fsync(out) != 0) ok = 0;
-    close(in);
-    if (close(out) != 0) ok = 0;
-    if (ok && rename(tmp, to) != 0) ok = 0;
-    if (!ok) unlink(tmp);
-    return ok;
-}
-
-static const char *base_of_dir(const char *so_path, char *out, size_t cap) {
-    /* .../midi_fx/<id>/dsp.so -> <id> */
-    const char *end = strrchr(so_path, '/'), *beg;
-    size_t n;
-    if (!end) { snprintf(out, cap, "fx"); return out; }
-    beg = end;
-    while (beg > so_path && beg[-1] != '/') beg--;
-    n = (size_t)(end - beg);
-    if (n >= cap) n = cap - 1;
-    memcpy(out, beg, n); out[n] = '\0';
-    return out;
-}
+static void mfo_log_error(const char *m) { unified_log("mfo", LOG_LEVEL_ERROR, "%s", m); }
 
 static midi_fx_api_v1_t *clone_load(const char *so_path) {
-    struct stat sb;
-    char id[128], dst[700];
-    void *h;
+    void *h = module_clone_open(so_path, MFO_CACHE_DIR, mfo_log_error, NULL);
     midi_fx_init_fn init;
     midi_fx_api_v1_t *api;
     int i;
-    if (stat(so_path, &sb) != 0) return NULL;
-    for (i = 0; i < C_n; i++)
-        if (C[i].mtime == (long long)sb.st_mtime && C[i].size == (long long)sb.st_size && !strcmp(C[i].src, so_path))
-            return C[i].api;
+    if (!h) return NULL;
+    for (i = 0; i < C_n; i++) if (C[i].h == h) return C[i].api;
     if (C_n >= MFO_CACHE_SLOTS) return NULL;
-    mkdir(SCHWUNG_INSTALL_DIR "/cache", 0755);
-    mkdir(MFO_CACHE_DIR, 0755);
-    snprintf(dst, sizeof dst, MFO_CACHE_DIR "/%s-%lld-%lld.so", base_of_dir(so_path, id, sizeof id),
-             (long long)sb.st_mtime, (long long)sb.st_size);
-    if (access(dst, R_OK) != 0 && !copy_file(so_path, dst)) {
-        unified_log("mfo", LOG_LEVEL_ERROR, "could not copy %s -> %s (errno %d)", so_path, dst, errno);
-        return NULL;
-    }
-    h = dlopen(dst, MODULE_DLOPEN_FLAGS);
-    if (!h) { unified_log("mfo", LOG_LEVEL_ERROR, "dlopen %s: %s", dst, dlerror()); return NULL; }
     init = (midi_fx_init_fn)dlsym(h, MIDI_FX_INIT_SYMBOL);
     api = init ? init(&g_vhost) : NULL;
     if (!api || api->api_version != MIDI_FX_API_VERSION || !api->create_instance) {
-        unified_log("mfo", LOG_LEVEL_ERROR, "%s: no MIDI FX API", dst);
+        unified_log("mfo", LOG_LEVEL_ERROR, "%s: no MIDI FX API", so_path);
         return NULL;                       /* NODELETE: the mapping stays, unused */
     }
-    snprintf(C[C_n].src, sizeof C[C_n].src, "%s", so_path);
-    C[C_n].mtime = (long long)sb.st_mtime;
-    C[C_n].size = (long long)sb.st_size;
+    C[C_n].h = h;
     C[C_n].api = api;
     C_n++;
     unified_log("mfo", LOG_LEVEL_INFO, "loaded a private copy of %s", so_path);

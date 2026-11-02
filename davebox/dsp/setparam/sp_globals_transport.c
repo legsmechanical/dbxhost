@@ -56,6 +56,8 @@ static int sp_globals_transport(sp_ctx_t *cx) {
                 ext_transport_start(inst);
             }
         } else if (!strcmp(val, "stop")) {
+            /* an offline take runs with the transport stopped: Stop cancels it */
+            if (inst->resample_offline) resample_on_transport_stop(inst);
             if (inst->clock_follow_on) {
                 follow_request_stop(inst);
             } else if (inst->playing) {

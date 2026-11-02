@@ -67,6 +67,7 @@ int (*shadow_chain_take_midi_tick_wake)(void *instance) = NULL;
  * ⚠ NULL-CHECK IT for the same reason as the wake above: this host can be
  * running against STOCK's chain DSP, which does not export it. */
 chain_midi_fx_clone_source_fn shadow_chain_midi_fx_clone_source = NULL;
+chain_slot_clone_source_fn shadow_chain_slot_clone_source = NULL;
 int (*shadow_chain_midi_fx_apply)(void *instance, const uint8_t *msg, int len,
                                   uint8_t out_msgs[][3], int *out_lens,
                                   int max_out) = NULL;
@@ -1617,6 +1618,9 @@ int shadow_inprocess_load_chain(void) {
     /* Offline MIDI FX (midi_fx_offline.c): a slot's active MIDI FX, for copies. */
     shadow_chain_midi_fx_clone_source = (chain_midi_fx_clone_source_fn)
         dlsym(shadow_dsp_handle, "chain_midi_fx_clone_source");
+    /* Offline takes (offline_take.c): a slot's instrument + FX, for copies. */
+    shadow_chain_slot_clone_source = (chain_slot_clone_source_fn)
+        dlsym(shadow_dsp_handle, "chain_slot_clone_source");
     /* Generated MIDI FX output (midi_fx_to_host): give the chain our sink.
      * ⚠ NULL-CHECK IT, like the exports above: stock's chain DSP does not
      * export it, and then nothing is ever queued. */

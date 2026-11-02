@@ -190,6 +190,7 @@ _Static_assert(sizeof(host_api_v1_t) == 184,
 #define MOVE_PLUGIN_HOST_EXT_V1_SYMBOL "move_plugin_host_ext_v1"
 
 struct move_midi_fx_offline_ev;   /* below: one event of an offline MIDI FX job */
+struct move_offline_take;         /* below: an offline take (offline_take_*) */
 
 typedef struct move_host_ext_v1 {
     uint32_t size;
@@ -332,7 +333,64 @@ typedef struct move_host_ext_v1 {
     void (*stems_limit)(uint32_t frames);
     void (*stems_stop)(void);
     int  (*stems_state)(uint16_t *peaks, int cap);
+
+    /* AN OFFLINE TAKE: one chain slot's instrument recorded FASTER THAN REAL
+     * TIME, on a host thread, by a private copy of the CALLER and copies of
+     * the slot's modules. The copy of the caller (its own code, loaded again
+     * with globals of its own) is created with config "{\"offline\":1}",
+     * loads the caller's state (take->state, which the host writes to a file
+     * of its own, off the audio thread) through set_param "offline_load"
+     * <that file>, is given each line of take->setup ("key value") and then
+     * set_param(take->key, take->val): the same command a real-time take
+     * would get. Then the host renders it block by
+     * block in the live order -- the slot's copy, then the caller's copy, whose
+     * sends reach the slot's copy (heard the next block) -- and when the copy
+     * calls capture_start_src(path, frames, kind, take->slot) the host writes
+     * the slot copy's output at `kind` (MOVE_CAPTURE_SLOT_PRE / _FX) to `path`
+     * from that block, `frames` long. The copy's sends to other slots, to Move
+     * or out go nowhere; its tempo and move_info stay its own.
+     *
+     * offline_take_begin: the caller's set_param or render_block (it reads the
+     * slot's settings there). take->state and take->setup are READ BY THE TAKE:
+     * the caller keeps them unchanged until the state leaves RUNNING. Returns
+     * 1 started, or a negative MOVE_OFFLINE_*
+     * reason the slot cannot be copied (record it in real time instead).
+     * offline_take_state: any thread. MOVE_OFFLINE_*; `done` / `total` (may be
+     * NULL) the frames written and the take's length (0 until it starts). The
+     * file is complete at DONE; FAILED removes it.
+     * offline_take_cancel: any thread; the take ends, its file is removed, the
+     * state returns to IDLE. A DONE / FAILED outcome is cleared by it too. */
+    int  (*offline_take_begin)(const struct move_offline_take *take);
+    int  (*offline_take_state)(uint32_t *done, uint32_t *total);
+    void (*offline_take_cancel)(void);
 } move_host_ext_v1_t;
+
+typedef struct move_offline_take {
+    const char *state;        /* the caller's state, for its copy's offline_load */
+    uint32_t    state_len;
+    const char *setup;        /* "key value" lines for the copy after the load, or NULL */
+    char  key[32];            /* the command its copy is given */
+    char  val[512];
+    int   slot;               /* the chain slot whose instrument is recorded */
+    int   kind;               /* MOVE_CAPTURE_SLOT_PRE or MOVE_CAPTURE_SLOT_FX */
+    float bpm;                /* the copy's tempo until it declares its own */
+} move_offline_take_t;
+
+#define MOVE_OFFLINE_IDLE      0
+#define MOVE_OFFLINE_RUNNING   1
+#define MOVE_OFFLINE_DONE      2
+#define MOVE_OFFLINE_FAILED    3
+/* offline_take_begin's refusals: the slot's own (the chain's SLC_ERR_*), then the host's */
+#define MOVE_OFFLINE_ERR_NO_SYNTH  -1
+#define MOVE_OFFLINE_ERR_MOD       -2
+#define MOVE_OFFLINE_ERR_SPLIT     -3
+#define MOVE_OFFLINE_ERR_MIDI_FX   -4
+#define MOVE_OFFLINE_ERR_FX_MIDI   -5
+#define MOVE_OFFLINE_ERR_LINE_IN   -6
+#define MOVE_OFFLINE_ERR_TOO_BIG   -7
+#define MOVE_OFFLINE_ERR_BUSY      -20  /* a take is running, or its outcome not yet cleared */
+#define MOVE_OFFLINE_ERR_ARGS      -21
+#define MOVE_OFFLINE_ERR_NO_HOST   -22  /* no chain on the slot, or no export to read it */
 
 #define MOVE_STEMS_MAX        8
 #define MOVE_STEMS_IDLE       0

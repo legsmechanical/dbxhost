@@ -600,6 +600,8 @@ typedef struct chain_instance {
     plugin_api_v2_t *synth_plugin_v2;
     void *synth_instance;
     char current_synth_module[MAX_NAME_LEN];
+    char synth_dir[MAX_PATH_LEN];       /* its module directory, as loaded (a pack's parent) */
+    char synth_config[1024];            /* the config it was created with: a pack's, or "" */
     int synth_default_forward_channel;  /* -1 = no default, 0-15 = channel */
     int synth_consumes_line_input;      /* 1 = pulls line-in/mic (feedback risk on boot) */
 
@@ -1274,6 +1276,7 @@ CHAIN_INTERNAL int chain_mod_refresh_target_param_cache(chain_instance_t *inst, 
 CHAIN_INTERNAL int chain_mod_state_swap_in(chain_instance_t *inst, const char *target);
 CHAIN_INTERNAL void chain_mod_state_swap_out(chain_instance_t *inst, const char *target);
 CHAIN_INTERNAL int chain_mod_state_read_begin(void *ctx, const char *key, char *target);
+CHAIN_INTERNAL int chain_mod_any_active(const chain_instance_t *inst);
 CHAIN_INTERNAL void chain_mod_after_set_param(void *ctx, const char *key);
 CHAIN_INTERNAL void chain_mod_update_base_from_set_param(chain_instance_t *inst, const char *target, const char *param, const char *val);
 

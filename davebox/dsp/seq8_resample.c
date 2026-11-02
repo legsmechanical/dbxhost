@@ -151,6 +151,13 @@ static uint32_t rs_ticks_to_frames(const seq8_instance_t *inst, uint32_t ticks) 
  * cancelled. */
 static void resample_on_transport_stop(seq8_instance_t *inst) {
     if (!rs_active(inst)) return;
+    if (inst->resample_offline) {
+        /* the host's take ends and removes its file; nothing here was launched */
+        inst->resample_offline = 0;
+        if (g_ext && g_ext->offline_take_cancel) g_ext->offline_take_cancel();
+        inst->resample_state = RS_CANCELLED;
+        return;
+    }
     if (inst->resample_state == RS_RECORDING && g_ext && g_ext->capture_stop)
         g_ext->capture_stop();
     inst->resample_state = RS_CANCELLED;
@@ -185,9 +192,120 @@ static void rs_remember_armed(seq8_instance_t *inst) {
     inst->resample_restore = 1;
 }
 
+/* ---- OFFLINE takes (move_host_ext_v1_t.offline_take_*) ----
+ *
+ * A clip take of a Schwung instrument before the track's effects (Pre) or
+ * after them at unity (FX) hears nothing but the track: the host can record
+ * it faster than real time, with a private copy of THIS engine playing this
+ * same command against this project's state, into copies of the slot's
+ * instrument and effects. The engine decides; the UI sees the states a
+ * real-time take goes through (RECORDING with its frames, then DONE /
+ * CANCELLED / FAILED), with no transport started.
+ *
+ * Real time instead whenever the copy could not sound the same: automation
+ * the UI plays rather than the engine (bus levels, macros, a chain parameter
+ * not yet resolved), or that writes anything of the slot's but its instrument
+ * and effects; and every refusal of the host's (modulation, a MIDI FX, voices
+ * on buses ...). A take the host then fails is recorded again in real time. */
+static char rs_off_state[1u << 20];
+static char rs_off_setup[PA_MAX_TARGETS * 192];
+/* what the real-time take needs if the offline one fails */
+static char rs_off_val[512];
+
+static int rs_offline_automation_ok(const seq8_instance_t *inst, int slot) {
+    int i;
+    for (i = 0; i < PA_MAX_TARGETS; i++) {
+        const char *n = inst->pa_targets[i];
+        const pa_res_t *r = &inst->pa_res[i];
+        if (!n[0] || pa_target_is_midi(n, NULL) || pa_target_is_seq(n, NULL, NULL)) continue;
+        if (n[0] < '0' || n[0] > '9') return 0;                 /* bus:, mac:, ... the UI plays them */
+        if (my_atoi(n) != slot) continue;                        /* another slot's */
+        if (!r->valid || strcmp(r->name, n)) return 0;           /* the UI would write it */
+        if (strncmp(r->key, "synth:", 6) &&
+                !(r->key[0] == 'f' && r->key[1] == 'x' && r->key[2] >= '1' && r->key[2] <= '4' && r->key[3] == ':'))
+            return 0;                                            /* the slot's level, pan, sends ... */
+    }
+    return 1;
+}
+
+/* 1 = the host took it. `val` is resample_clip's. */
+static int rs_offline_try(seq8_instance_t *inst, int bars, int tail, int src, int slot,
+                          const char *val, const char *path) {
+    move_offline_take_t ot;
+    FILE *fp;
+    long pos;
+    int r, i, n = 0;
+    if (inst->offline || !g_ext || !g_ext->offline_take_begin || !g_ext->offline_take_state) return 0;
+    if (src != RS_SRC_PRE && src != RS_SRC_FX) return 0;
+    if (strlen(val) >= sizeof ot.val || !rs_offline_automation_ok(inst, slot)) return 0;
+    fp = fmemopen(rs_off_state, sizeof rs_off_state - 1, "w");
+    if (!fp) return 0;
+    seq8_do_serialize(inst, fp);
+    pos = ftell(fp);
+    fclose(fp);
+    if (pos <= 0 || pos >= (long)sizeof rs_off_state - 1) return 0;
+    rs_off_state[pos] = '\0';
+    rs_off_setup[0] = '\0';
+    for (i = 0; i < PA_MAX_TARGETS; i++) {
+        const pa_res_t *rr = &inst->pa_res[i];
+        int w;
+        if (!rr->valid || !inst->pa_targets[i][0]) continue;
+        w = snprintf(rs_off_setup + n, sizeof rs_off_setup - (size_t)n, "pa_resolve %s %d %s %d %.17g %.17g %.17g\n",
+                     rr->name, (int)rr->slot, rr->key, (int)rr->kind, rr->min, rr->max, rr->step);
+        if (w < 0 || (size_t)(n + w) >= sizeof rs_off_setup) return 0;
+        n += w;
+    }
+    memset(&ot, 0, sizeof ot);
+    ot.state = rs_off_state;
+    ot.state_len = (uint32_t)pos;
+    ot.setup = rs_off_setup;
+    snprintf(ot.key, sizeof ot.key, "resample_clip");
+    snprintf(ot.val, sizeof ot.val, "%s", val);
+    ot.slot = slot;
+    ot.kind = src == RS_SRC_PRE ? MOVE_CAPTURE_SLOT_PRE : MOVE_CAPTURE_SLOT_FX;
+    ot.bpm = (float)inst->tracks[0].pfx.cached_bpm;
+    r = g_ext->offline_take_begin(&ot);
+    if (r != 1) return 0;
+    snprintf(rs_off_val, sizeof rs_off_val, "%s", val);
+    snprintf(inst->resample_path, sizeof(inst->resample_path), "%s", path + 1);
+    inst->resample_src        = (uint8_t)src;
+    inst->resample_move       = 0;
+    inst->resample_slot       = (uint8_t)slot;
+    inst->resample_frames     = rs_ticks_to_frames(inst, (uint32_t)(bars + tail) * RS_BAR_TICKS);
+    inst->resample_bar_frames = rs_ticks_to_frames(inst, RS_BAR_TICKS);
+    inst->resample_done       = 0;
+    inst->resample_offline    = 1;
+    inst->resample_state      = RS_RECORDING;
+    return 1;
+}
+
+static void resample_clip_launch(seq8_instance_t *inst, const char *val, int offline_ok);
+
+/* render_block: the host's take, as this take's progress and outcome. */
+static void rs_offline_poll(seq8_instance_t *inst) {
+    uint32_t done = 0, total = 0;
+    int st;
+    if (inst->resample_state != RS_RECORDING) return;
+    st = g_ext->offline_take_state(&done, &total);
+    if (total) inst->resample_frames = total;
+    if (st == MOVE_OFFLINE_RUNNING) { inst->resample_done = done; return; }
+    inst->resample_offline = 0;
+    if (st == MOVE_OFFLINE_DONE) {
+        inst->resample_done  = inst->resample_frames;
+        inst->resample_state = RS_DONE;
+        g_ext->offline_take_cancel();                 /* the outcome is read: the host is free */
+        return;
+    }
+    /* FAILED (or gone): record it in real time, as if offline had not been tried */
+    g_ext->offline_take_cancel();
+    inst->resample_state = RS_IDLE;
+    resample_clip_launch(inst, rs_off_val, 0);
+}
+
 /* render_block, before the tick loop: arm the take a render after its first
  * tick, and count what the host has captured. */
 static void resample_render_start(seq8_instance_t *inst, int frames) {
+    if (inst->resample_offline) { rs_offline_poll(inst); return; }
     if (inst->resample_state == RS_RECORDING) {
         inst->resample_done += (uint32_t)frames;
         if (inst->resample_done >= inst->resample_frames) {
@@ -292,7 +410,7 @@ static void resample_scene_start(seq8_instance_t *inst, const char *val) {
  * C ALONE (no other track plays), Wet (the mix) or one point on the track (Dry,
  * Pre, FX — its chain slot, or a Move instrument's Move FX bus). A MIDI track
  * that follows another records that track's instrument. */
-static void resample_clip_start(seq8_instance_t *inst, const char *val) {
+static void resample_clip_launch(seq8_instance_t *inst, const char *val, int offline_ok) {
     int tr_i = -1, c = -1, bars = 0, warm = 0, tail = 0, src = 0, t;
     const char *path = strchr(val, '|');
     midi_dest_t dst;
@@ -312,6 +430,11 @@ static void resample_clip_start(seq8_instance_t *inst, const char *val) {
     else if (effective_mute(inst, tr_i))
         inst->resample_err = RS_ERR_MUTED;
     if (inst->resample_err) { inst->resample_state = RS_FAILED; return; }
+    /* faster than real time when the host can (rs_offline_try) */
+    /* An Audio track's sample engine keeps to the clock (its streamer and
+     * stretcher threads): its takes stay real time until a copy can wait for them. */
+    if (offline_ok && dst.route == ROUTE_SCHWUNG && inst->tracks[tr_i].pad_mode != PAD_MODE_AUDIO &&
+            rs_offline_try(inst, bars, tail, src, dst.slot, val, path)) return;
     rs_remember_armed(inst);
     inst->resample_src  = (uint8_t)src;
     inst->resample_move = dst.route == ROUTE_MOVE;
@@ -329,6 +452,9 @@ static void resample_clip_start(seq8_instance_t *inst, const char *val) {
     }
     inst->tracks[tr_i].queued_clip = (int8_t)c;
     rs_launch(inst, bars, warm, tail, path);
+}
+static void resample_clip_start(seq8_instance_t *inst, const char *val) {
+    resample_clip_launch(inst, val, 1);
 }
 
 /* ---- The Ableton export's take (Josh, 2026-11-02: "let's simply flatten

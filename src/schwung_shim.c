@@ -43,6 +43,8 @@
 #include "host/move_info_store.h"
 #include "host/shim_power_gate.h"   /* the POWER button: pass to Move, or hand to a claiming module */
 #include "host/midi_fx_offline.h"
+#include "host/offline_take.h"
+#include "host/forward_channel.h"
 #include "host/audio_fx_api_v2.h"
 #include "host/shadow_constants.h"
 #include "host/display_pull.h"
@@ -1747,7 +1749,23 @@ static const move_host_ext_v1_t overtake_host_ext = {
     .stems_limit = stem_take_limit,
     .stems_stop = stem_take_stop,
     .stems_state = stem_take_state,
+    .offline_take_begin = offline_take_begin,
+    .offline_take_state = offline_take_state,
+    .offline_take_cancel = offline_take_cancel,
 };
+
+/* An offline take reads the slot as the host sends to it (offline_take.h). */
+static int ot_slot_info(int slot, offline_slot_info_t *out) {
+    int ch;
+    if (slot < 0 || slot >= SHADOW_CHAIN_INSTANCES || !out) return 0;
+    out->synth_level = shadow_chain_slots[slot].synth_volume;
+    out->transpose = shadow_chain_slots[slot].transpose;
+    ch = forward_channel_resolve(shadow_chain_slots[slot].forward_channel,
+                                 shadow_chain_slots[slot].default_forward_channel,
+                                 shadow_chain_slots[slot].channel);
+    out->fwd_ch = ch == SHADOW_FORWARD_THRU ? -1 : ch;
+    return 1;
+}
 
 /* Offline MIDI FX jobs read a slot's chain instance by index. */
 static void *mfo_slot_instance(int slot) {
@@ -1943,6 +1961,7 @@ static void shadow_overtake_dsp_load(const char *path) {
         shadow_log("Overtake DSP: unloading previous before loading new");
         move_info_store_put(&g_move_info, NULL, 0);   /* the next module publishes its own */
         midi_fx_offline_cancel();                     /* its offline job, if any, ends unread */
+        offline_take_set_engine("", "");              /* and its offline take: no copy of it now */
         /* Stop new off-RT snapshot reads and drain any in flight before freeing. */
         g_snap_rt_safe = 0;
         int snap_idle = snap_wait_idle();
@@ -2050,6 +2069,8 @@ static void shadow_overtake_dsp_load(const char *path) {
                         dlsym(overtake_dsp_handle, MOVE_PLUGIN_HOST_EXT_V1_SYMBOL);
                     if (ext_fn) ext_fn(&overtake_host_ext);
                 }
+                /* an offline take plays a private copy of this module */
+                offline_take_set_engine(path, module_dir);
                 /* Slot MIDI: where a slot's generated MIDI FX output goes, if
                  * the module exports the entry. */
                 overtake_slot_midi_fn = (move_plugin_slot_midi_v1_fn)
@@ -11059,6 +11080,19 @@ static void shim_spi_init(void)
     /* Offline MIDI FX jobs (move_host_ext_v1_t.midi_fx_offline_*): their own
      * thread, so a slow or hung module copy holds up nothing else. */
     midi_fx_offline_start(&shadow_host_api, mfo_slot_instance, &shadow_chain_midi_fx_clone_source);
+    /* Offline takes (move_host_ext_v1_t.offline_take_*): the same, for a slot's
+     * instrument played by a private copy of the overtake DSP. */
+    {
+        const offline_take_host_t ot_host = {
+            .host = &shadow_host_api,
+            .slot_instance = mfo_slot_instance,
+            .clone_source = &shadow_chain_slot_clone_source,
+            .slot_info = ot_slot_info,
+            .run_command = shim_run_command,
+            .log = shadow_log,
+        };
+        offline_take_start(&ot_host);
+    }
     snap_worker_start();   /* off-RT remote-snapshot servicer (idle until a browser pulls) */
 
     /* Start LED capture logger thread (gated by flag file) */

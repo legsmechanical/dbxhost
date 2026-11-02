@@ -104,6 +104,14 @@ static int chain_mod_has_active_sources(const mod_target_state_t *entry) {
     return 0;
 }
 
+/* 1 if a modulation source moves any parameter of this slot now. */
+int chain_mod_any_active(const chain_instance_t *inst) {
+    if (!inst) return 0;
+    for (int i = 0; i < inst->mod_target_count && i < MAX_MOD_TARGETS; i++)
+        if (inst->mod_targets[i].active && chain_mod_has_active_sources(&inst->mod_targets[i])) return 1;
+    return 0;
+}
+
 static float chain_mod_sum_contributions(const mod_target_state_t *entry) {
     float sum = 0.0f;
     if (!entry) return sum;

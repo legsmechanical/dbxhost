@@ -87,6 +87,13 @@ void hx_stub_stems_finish(int failed);
 int  hx_stub_stems(int *n, int *block, uint32_t *limit, int *stops);
 int  hx_stub_stems_slot(int i);
 const char *hx_stub_stems_path(int i);
+/* offline_take_*: refused until enabled (then begins record, the state is the test's) */
+void hx_stub_ot_enable(int on);
+void hx_stub_ot_refuse(int err);
+void hx_stub_ot_set(int state, uint32_t done, uint32_t total);
+int  hx_stub_ot_begins(void);
+int  hx_stub_ot_cancels(void);
+const move_offline_take_t *hx_stub_ot_take(const char **state, const char **setup);
 /* slot_audio_feed: per slot, calls since the reset; the first block (the
  * hx_midi_event.block clock) that carried sound; the summed |sample|; the last
  * block handed over (256 interleaved samples). */

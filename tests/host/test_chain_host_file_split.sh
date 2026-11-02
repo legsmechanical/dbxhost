@@ -110,6 +110,8 @@ done
 #    ⭑ chain_midi_fx_clone_source (2026-10-15): read once on the audio thread by
 #    the host's offline MIDI FX jobs (midi_fx_offline_begin), which copy a slot's
 #    live MIDI FX parameters and state into a private clone of the module.
+#    ⭑ chain_slot_clone_source (2026-11-02): the same for a slot's instrument and
+#    audio FX, read by the host's offline takes (offline_take_begin).
 so="build/modules/chain/dsp.so"
 if [ -f "$so" ] && command -v nm >/dev/null 2>&1; then
   got=$(nm -D --defined-only "$so" 2>/dev/null | awk '{print $NF}' | sort)
@@ -117,7 +119,7 @@ if [ -f "$so" ] && command -v nm >/dev/null 2>&1; then
     chain_drain_sends chain_fx_requires_continuous chain_process_fx \
     chain_set_external_fx_mode chain_set_inject_audio \
     chain_take_midi_tick_wake chain_midi_fx_apply chain_set_midi_fx_sink \
-    chain_midi_fx_clone_source move_plugin_init_v2 \
+    chain_midi_fx_clone_source chain_slot_clone_source move_plugin_init_v2 \
     chain_synth_requires_continuous \
     unified_log unified_log_crash unified_log_enabled unified_log_important \
     unified_log_init unified_log_shutdown unified_log_v | sort)

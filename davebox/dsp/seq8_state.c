@@ -914,6 +914,8 @@ static void seq8_save_state(seq8_instance_t *inst) {
      * load has happened. (The JS deferred-save path is gated separately, on the
      * same flag read back via get_param, so it never even fetches state_full.) */
     if (inst->awaiting_select) return;
+    /* An offline copy plays a snapshot: it never writes a project. */
+    if (inst->offline) return;
 
     char dest[sizeof(inst->state_path)];
     /* NO DESTINATION AT ALL — no identity and no explicitly named path. There

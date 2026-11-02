@@ -230,6 +230,41 @@ int  hx_stub_stems(int *n, int *block, uint32_t *limit, int *stops) {
 int         hx_stub_stems_slot(int i) { return (i >= 0 && i < g_st_n) ? g_st_slots[i] : -1; }
 const char *hx_stub_stems_path(int i) { return (i >= 0 && i < g_st_n) ? g_st_paths[i] : ""; }
 
+/* offline_take_* — the host's offline take. REFUSES (no engine) until a test
+ * turns it on, so every other test keeps the real-time take. A begin records
+ * what it was given; the state is what the test sets. */
+static int      g_ot_on, g_ot_refuse, g_ot_begins, g_ot_cancels, g_ot_state;
+static uint32_t g_ot_done, g_ot_total;
+static move_offline_take_t g_ot_take;
+static char     g_ot_state_copy[1u << 20], g_ot_setup_copy[16384];
+static int stub_ot_begin(const move_offline_take_t *t) {
+    uint32_t n;
+    if (!g_ot_on) return MOVE_OFFLINE_ERR_NO_HOST;
+    if (g_ot_refuse) return g_ot_refuse;
+    if (g_ot_state != MOVE_OFFLINE_IDLE) return MOVE_OFFLINE_ERR_BUSY;
+    g_ot_begins++;
+    g_ot_take = *t;
+    n = t->state_len < sizeof g_ot_state_copy - 1 ? t->state_len : (uint32_t)sizeof g_ot_state_copy - 1;
+    memcpy(g_ot_state_copy, t->state, n); g_ot_state_copy[n] = '\0';
+    snprintf(g_ot_setup_copy, sizeof g_ot_setup_copy, "%s", t->setup ? t->setup : "");
+    g_ot_state = MOVE_OFFLINE_RUNNING; g_ot_done = g_ot_total = 0;
+    return 1;
+}
+static int stub_ot_state(uint32_t *done, uint32_t *total) {
+    if (done) *done = g_ot_done; if (total) *total = g_ot_total;
+    return g_ot_state;
+}
+static void stub_ot_cancel(void) { g_ot_cancels++; g_ot_state = MOVE_OFFLINE_IDLE; }
+void hx_stub_ot_enable(int on)  { g_ot_on = on; g_ot_refuse = 0; g_ot_begins = g_ot_cancels = 0; g_ot_state = MOVE_OFFLINE_IDLE; }
+void hx_stub_ot_refuse(int err) { g_ot_refuse = err; }
+void hx_stub_ot_set(int state, uint32_t done, uint32_t total) { g_ot_state = state; g_ot_done = done; g_ot_total = total; }
+int  hx_stub_ot_begins(void)    { return g_ot_begins; }
+int  hx_stub_ot_cancels(void)   { return g_ot_cancels; }
+const move_offline_take_t *hx_stub_ot_take(const char **state, const char **setup) {
+    if (state) *state = g_ot_state_copy; if (setup) *setup = g_ot_setup_copy;
+    return &g_ot_take;
+}
+
 const move_host_ext_v1_t *hx_stub_ext(void) {
     static const move_host_ext_v1_t ext = {
         .size = sizeof(move_host_ext_v1_t),
@@ -248,6 +283,9 @@ const move_host_ext_v1_t *hx_stub_ext(void) {
         .stems_limit = stub_stems_limit,
         .stems_stop = stub_stems_stop,
         .stems_state = stub_stems_state,
+        .offline_take_begin = stub_ot_begin,
+        .offline_take_state = stub_ot_state,
+        .offline_take_cancel = stub_ot_cancel,
     };
     return &ext;
 }

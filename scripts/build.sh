@@ -315,6 +315,7 @@ if needs_rebuild build/schwung-shim.so \
     src/host/shadow_led_queue.c src/host/shadow_state.c \
     src/host/shadow_midi.c src/host/shadow_midi_filter.c src/host/unified_log.c src/host/shim_worker.c src/host/stem_take.c src/host/stem_take.h \
     src/host/midi_fx_offline.c src/host/midi_fx_offline.h src/host/midi_fx_offline_render.h src/host/midi_fx_clone.h \
+    src/host/offline_take.c src/host/offline_take.h src/host/slot_clone.h src/host/module_clone.h \
     src/host/shadow_shm_util.c src/host/schwung_trace.c src/host/shadow_test_stream.c src/host/shadow_test_stream.h \
     src/host/sa_master_volume.c src/host/sa_master_volume.h \
     src/host/spawn_command.c src/host/spawn_command.h \
@@ -352,6 +353,7 @@ if needs_rebuild build/schwung-shim.so \
         src/host/shim_worker.c \
         src/host/stem_take.c \
         src/host/midi_fx_offline.c \
+        src/host/offline_take.c \
         src/host/shadow_shm_util.c \
         src/host/schwung_trace.c \
         src/host/shadow_test_stream.c \
@@ -572,12 +574,13 @@ if needs_rebuild build/modules/chain/dsp.so \
     src/modules/chain/dsp/chain_params.c src/modules/chain/dsp/chain_mod.c \
     src/modules/chain/dsp/chain_midi.c src/modules/chain/dsp/chain_patch.c \
     src/modules/chain/dsp/chain_bus.c src/modules/chain/dsp/chain_reorder.c \
+    src/modules/chain/dsp/chain_clone.c \
     src/modules/chain/dsp/chain_internal.h src/host/chain_permute.h src/host/unified_log.c \
     src/host/unified_log.h src/host/plugin_api_v1.h src/host/audio_fx_api_v1.h \
     src/host/audio_fx_api_v2.h src/host/midi_fx_api_v1.h src/host/lfo_common.h \
     src/host/bus_mix.h src/host/bus_route.h src/host/bus_voice_apply.h \
     src/host/voice_send_source.h src/host/split_voices_parse.h \
-    src/host/shim_thread.h; then
+    src/host/shim_thread.h src/host/slot_clone.h; then
     echo "Building chain DSP..."
     "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 -shared -fPIC \
         src/modules/chain/dsp/chain_host.c \
@@ -588,6 +591,7 @@ if needs_rebuild build/modules/chain/dsp.so \
         src/modules/chain/dsp/chain_patch.c \
         src/modules/chain/dsp/chain_bus.c \
         src/modules/chain/dsp/chain_reorder.c \
+        src/modules/chain/dsp/chain_clone.c \
         src/host/unified_log.c \
         -o build/modules/chain/dsp.so \
         -Isrc \

@@ -1515,6 +1515,7 @@ typedef struct {
     uint8_t  resample_restore;    /* put the armed clips back at the next transport stop */
     uint8_t  resample_lead_wait;  /* renders STARTING waits before capturing (LEAD_BLOCKS) */
     uint8_t  resample_hear;       /* track + 1 an export take plays muted or not (0 = none) */
+    uint8_t  resample_offline;    /* this take is the host's offline take (offline_take_*) */
     uint8_t  resample_prev_clip[NUM_TRACKS], resample_prev_relaunch[NUM_TRACKS];
     uint8_t  merge_solo_track;   /* 0xFF = capture all 8 tracks (scene mode); else only this
                                   * track's output is captured (Track-View single-clip merge).
@@ -1632,6 +1633,12 @@ typedef struct {
      * via get_param("awaiting_select") and keeps its own surfaces in step; the DSP
      * is the single source of truth for "is anything loaded". */
     uint8_t awaiting_select;
+    /* A PRIVATE COPY of the engine that the host runs to record an offline
+     * take (move_host_ext_v1_t.offline_take_*, created with config
+     * {"offline":1}): it plays a snapshot of the live project and must never
+     * write it, nor anything of the live session's — no save (destroy's
+     * included), no log. */
+    uint8_t offline;
 
     /* Mute/solo per track: 0=off, 1=on */
     uint8_t mute[NUM_TRACKS];
@@ -7232,13 +7239,16 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
 
     inst->sample_rate    = (g_host && g_host->sample_rate > 0)
                            ? (float)g_host->sample_rate : 44100.0f;
-    {   /* Capped, like the host's debug.log: past 1 MB this log becomes
-         * <name>.log.1 (one previous kept) before it is opened again. */
-        struct stat st;
-        if (stat(SEQ8_LOG_PATH, &st) == 0 && st.st_size > 1048576)
-            rename(SEQ8_LOG_PATH, SEQ8_LOG_PATH ".1");
+    inst->offline = json_defaults && strstr(json_defaults, "\"offline\"") != NULL;
+    if (!inst->offline) {
+        {   /* Capped, like the host's debug.log: past 1 MB this log becomes
+             * <name>.log.1 (one previous kept) before it is opened again. */
+            struct stat st;
+            if (stat(SEQ8_LOG_PATH, &st) == 0 && st.st_size > 1048576)
+                rename(SEQ8_LOG_PATH, SEQ8_LOG_PATH ".1");
+        }
+        inst->log_fp         = fopen(SEQ8_LOG_PATH, "a");
     }
-    inst->log_fp         = fopen(SEQ8_LOG_PATH, "a");
 
     inst->rui_sel_lane  = -1;  /* remote-UI: melodic by default (calloc zeros the rest) */
 
@@ -9434,6 +9444,9 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
     /* OFFLINE print: why the last one did not run or failed (0 = it ran). */
     if (!strcmp(key, "resample_err"))
         return snprintf(out, out_len, "%d", (int)inst->resample_err);
+    /* RS_*: the host's offline take reads its copy's (offline_take.c) */
+    if (!strcmp(key, "resample_state"))
+        return snprintf(out, out_len, "%d", (int)inst->resample_state);
     if (!strncmp(key, "resample_bars_t", 15)) {        /* resample_bars_tT_cC: one clip */
         const char *cp = strstr(key + 15, "_c");
         if (!cp) return -1;

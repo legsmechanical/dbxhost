@@ -539,6 +539,8 @@ int v2_load_synth(chain_instance_t *inst, const char *module_name) {
     inst->synth_instance = synth_inst;
     strncpy(inst->current_synth_module, module_name, MAX_NAME_LEN - 1);
     inst->synth_render_split = render_split_fn;
+    snprintf(inst->synth_dir, sizeof(inst->synth_dir), "%s", synth_path);   /* for a copy: chain_clone.c */
+    snprintf(inst->synth_config, sizeof(inst->synth_config), "%s", pack_config ? pack_config : "");
 
     /* Parse chain_params from module.json for type info */
     if (parse_chain_params(synth_path, inst->synth_params, &inst->synth_param_count) < 0) {

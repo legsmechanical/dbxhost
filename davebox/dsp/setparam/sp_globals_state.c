@@ -147,7 +147,13 @@ static int sp_globals_state(sp_ctx_t *cx) {
         return 1;
     }
 
-    if (!strcmp(key, "state_load")) {
+    /* offline_load "<path>": an OFFLINE COPY (inst->offline) loads the live
+     * engine's state, which the host wrote for it (rs_offline_begin) — a
+     * path, no identity: the copy never saves. The rest is state_load's. */
+    const int offline_load = !strcmp(key, "offline_load");
+    if (offline_load && (!inst->offline || !val || val[0] != '/' || strlen(val) >= sizeof(inst->state_path)))
+        return 1;
+    if (!strcmp(key, "state_load") || offline_load) {
         /* ⛔ AN EMPTY IDENTITY IS REFUSED. This used to point the instance at an
          * install-wide fallback file and clear state_uuid — i.e. "no project"
          * was a loadable destination, and a caller that had not worked out who
@@ -159,11 +165,16 @@ static int sp_globals_state(sp_ctx_t *cx) {
             seq8_ilog(inst, "state_load REFUSED: empty identity is not a project");
             return 1;
         }
+        if (offline_load) {
+            snprintf(inst->state_path, sizeof(inst->state_path), "%s", val);
+            inst->state_uuid[0] = '\0';
+        } else {
         /* val is the UUID from JS (36 chars); construct the path from it.
          * state_uuid tracks every assignment — it is what get_param "state_uuid"
          * serves. */
         seq8_set_state_path(inst->state_path, sizeof(inst->state_path), val, 0);
         snprintf(inst->state_uuid, sizeof(inst->state_uuid), "%s", val);
+        }
         seq8_ilog(inst, inst->state_path);
         /* Release what is genuinely sounding BEFORE the bookkeeping that says
          * so is thrown away — targeted note-offs, not the forbidden panic.

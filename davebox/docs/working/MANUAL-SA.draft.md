@@ -2889,6 +2889,15 @@ levels as they were (switched back on if **Post** bypassed them). **Shift + Undo
 **Instmt/Dest** comes back the same way. As with any Undo, only the last change can be
 undone.
 
+**Faster than real time.** A Flatten, or a Resample clip **In place**, of a track that
+plays a Schwung instrument records without playing: the clips aren't heard, and each
+one takes a fraction of its length. It records in real time instead, as before, when
+the instrument's sound depends on more than the notes: a modulation source (an LFO)
+on it, a MIDI effect, an effect that listens to MIDI, voices sent to buses, the line
+input, a knob mapped to a controller the clip sends, or automation of the track's
+levels, buses or macros. Move instruments and Wet or Dry takes always record in real
+time.
+
 After any resample, the clips you had armed are armed again, so Play carries on
 from where you were.
 

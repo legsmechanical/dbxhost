@@ -31,10 +31,10 @@ echo "module take wiring:"
 # The struct grows only at its end (a module reads a member only inside `size`).
 ext_tail() {
     awk '/typedef struct move_host_ext_v1 \{/,/\} move_host_ext_v1_t;/' "$API" \
-        | grep -E '^\s+[a-z].*\(\*' | tail -8 | tr -d ' \n' \
-        | grep -q 'int(\*capture_start)(constchar\*path,uint32_tframes);void(\*capture_stop)(void);int(\*capture_start_src)(constchar\*path,uint32_tframes,intkind,intindex);int(\*slot_audio_feed)(intslot,constint16_t\*lr,uint32_tframes);int(\*stems_start)(intn,constint\*slots,constchar\*const\*paths,uint32_tframes);void(\*stems_limit)(uint32_tframes);void(\*stems_stop)(void);int(\*stems_state)(uint16_t\*peaks,intcap);'
+        | grep -E '^\s+[a-z].*\(\*' | tail -11 | tr -d ' \n' \
+        | grep -q 'int(\*capture_start)(constchar\*path,uint32_tframes);void(\*capture_stop)(void);int(\*capture_start_src)(constchar\*path,uint32_tframes,intkind,intindex);int(\*slot_audio_feed)(intslot,constint16_t\*lr,uint32_tframes);int(\*stems_start)(intn,constint\*slots,constchar\*const\*paths,uint32_tframes);void(\*stems_limit)(uint32_tframes);void(\*stems_stop)(void);int(\*stems_state)(uint16_t\*peaks,intcap);int(\*offline_take_begin)(conststructmove_offline_take\*take);int(\*offline_take_state)(uint32_t\*done,uint32_t\*total);void(\*offline_take_cancel)(void);'
 }
-check "capture_start / capture_stop / capture_start_src, slot_audio_feed, then the stems_* end the extension" ext_tail
+check "capture_start / capture_stop / capture_start_src, slot_audio_feed, the stems_*, then the offline_take_* end the extension" ext_tail
 
 # THE STEM TAKE (stem_take.c): several slots' instruments at once. Its arithmetic
 # and files are run in test_stem_take.c; these pin the shim around it.

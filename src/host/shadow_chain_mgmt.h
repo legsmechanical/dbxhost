@@ -188,6 +188,9 @@ extern int (*shadow_chain_take_midi_tick_wake)(void *instance);
 #include "midi_fx_clone.h"
 /* The chain's slot MIDI FX settings for an offline copy (midi_fx_clone.h). */
 extern chain_midi_fx_clone_source_fn shadow_chain_midi_fx_clone_source;
+#include "slot_clone.h"
+/* The chain slot's instrument + FX settings for an offline take (slot_clone.h). */
+extern chain_slot_clone_source_fn shadow_chain_slot_clone_source;
 extern int (*shadow_chain_midi_fx_apply)(void *instance, const uint8_t *msg, int len,
                                          uint8_t out_msgs[][3], int *out_lens,
                                          int max_out);
