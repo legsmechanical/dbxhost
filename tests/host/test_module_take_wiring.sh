@@ -47,12 +47,26 @@ check "the shim fills all three members" filled
 # A muted or soloed-out slot's take keeps the slot as set (sampler_take_tap.h),
 # at every site too.
 taps() {
-    [ "$(code "$SHIM" | grep -c 'if (tap) shadow_take_tap\[i\] = sampler_take_tap_sample(!tap_silenced ? contrib')" = 3 ] &&
+    [ "$(code "$SHIM" | grep -c 'if (tap) shadow_take_tap\[i\] = sampler_take_tap_sample($')" = 3 ] &&
+    [ "$(code "$SHIM" | grep -c 'tap_unity ? (int32_t)lroundf((float)fx_buf\[i\] \* shadow_chain_slots\[s\].fade.gain)')" = 3 ] &&
+    [ "$(code "$SHIM" | grep -c ': !tap_silenced ? contrib$')" = 3 ] &&
+    [ "$(code "$SHIM" | grep -c 'const int tap_unity = tap && sampler_take_tap_unity(sampler_take_src_kind);')" = 3 ] &&
     [ "$(code "$SHIM" | grep -c 'const int tap_silenced = tap && sampler_take_tap_silenced(')" = 3 ] &&
     [ "$(code "$SHIM" | grep -c 'sampler_take_tap_as_set(shadow_chain_slots\[s\].volume, tap_pl, tap_pr, i)')" = 3 ] &&
     [ "$(code "$SHIM" | grep -c 'me_unity\[i\] += contrib;')" = 3 ]
 }
 check "all three slot mix loops keep the tapped slot's contribution" taps
+
+# A Move track's take (MOVE_CAPTURE_MOVE*) is kept by its bus's block: before the
+# inserts (PRE), after them at unity (FX) or at its fader (MOVE, as set when muted).
+move_tap() {
+    code "$SHIM" | grep -q 'const int mtap = sampler_take_tap_wants_move(' &&
+    code "$SHIM" | grep -q 'memcpy(shadow_take_tap, move_track, sizeof(shadow_take_tap));' &&
+    code "$SHIM" | grep -q 'mtap_unity ? (int32_t)msrc\[i\]' &&
+    code "$SHIM" | grep -q 'sampler_take_tap_as_set(mtap_set_vol, mtap_pl, mtap_pr, i)' &&
+    code "$SHIM" | grep -q 'if (mtap_post) shadow_take_tap_valid = 1;'
+}
+check "a Move bus keeps its track's take, before or after its inserts" move_tap
 
 tail_src() { code "$SHIM" | grep -q 'take_src = shadow_take_tap_valid ? shadow_take_tap : take_silence;' &&
              [ "$(code "$SHIM" | grep -c 'sampler_capture_audio_from_buffer(take_src);')" = 2 ] &&

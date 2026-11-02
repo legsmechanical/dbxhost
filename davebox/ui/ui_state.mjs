@@ -793,7 +793,7 @@ export const S = {
     /* Deferred track-type conversion request: {t, toDrum} or null. Drained in
      * tick() so syncClipsFromDsp's get_param round-trips run in tick context. */
     pendingTrackConvert: null,
-    flatUndoState: null,     /* an Undo's instrument state, waiting for its slot (ui_flatten_undo) */
+    flatPending: [],         /* blocks Flatten / its Undo loaded, waiting for their slot to set state + bypass (ui_flatten_undo) */
     /* Deferred Keys/Drums->Conductor convert request: track index or null.
      * Drained in tick() so convertTrackToConduct's get_param runs in context. */
     pendingConductConvert: null,

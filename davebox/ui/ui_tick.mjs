@@ -93,7 +93,7 @@ import { applyInstrChoice, readConductorClip } from './ui_dsp_bridge.mjs';
 import { INSTR_NONE, PAD_MODE_AUDIO } from './ui_constants.mjs';
 import { bankListForMode } from './ui_pure.mjs';
 import { soundTrackTypeChanged } from './ui_sound.mjs';
-import { flatUndoCapture, flatUndoArm, flatUndoTick } from './ui_flatten_undo.mjs';
+import { flatUndoCapture, flatUndoArm, flatUndoTick, flatCopySourceFx } from './ui_flatten_undo.mjs';
 
 const BANK_DISPLAY_MS = 1000;
 const KNOB_TURN_HIGHLIGHT_MS = 600;               /* highlight after turn without touch */
@@ -200,7 +200,9 @@ function audioScreensClose(t) {
  * takes) its own Schwung slot with no instrument, its FX kept — an Audio track
  * on a Move track takes a Schwung slot (v1 default, Josh 2026-10-27). `takes`:
  * the clips' recordings (ui_audio_convert), loaded one per tick; `bypassFx`
- * (Flatten Post) bypasses the insert FX the recordings already hold. */
+ * (Flatten Post) bypasses the insert FX the recordings already hold. A track
+ * whose instrument is not its own slot (a Move instrument, a follower) gets
+ * that source's insert FX and levels on its slot (flatCopySourceFx). */
 function convertTrackToAudio(t, takes, bypassFx) {
     stepRecExit();
     /* one Undo brings it back: the engine keeps the clips and the type ("u"),
@@ -209,6 +211,7 @@ function convertTrackToAudio(t, takes, bypassFx) {
     host_module_set_param('t' + t + '_convert_to_audio', 'u');
     flatUndoArm(undo);
     applyInstrChoice(t, INSTR_NONE);
+    if (flatCopySourceFx(undo, bypassFx)) bypassFx = false;    /* copied bypassed already */
     S.trackPadMode[t] = PAD_MODE_AUDIO;
     if (S.conductorTrack === t) S.conductorTrack = -1;
     /* the barrier: the convert lands before the reads and the padmap */

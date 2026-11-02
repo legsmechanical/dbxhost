@@ -614,9 +614,11 @@ velocity) and **resets the sequencer effects** (NOTE FX, HARMONY, DELAY, SEQ ARP
 - **Choosing Audio on a track that plays an instrument and has clips** first asks
   *Resample the clips?* **Yes** records each clip with notes, one after another
   and each alone, then converts: every clip becomes a **Loop** clip playing its own
-  recording. A Schwung instrument is recorded before its effects, which stay on the
-  track, so it sounds the same; a Move instrument is recorded as you hear it (Move's
-  own track effects don't carry over). The recordings go straight into the project.
+  recording. The instrument is recorded before its effects, which stay on the
+  track, so it sounds the same. For a Move instrument (or a track that plays another
+  track's instrument) those are the effects on its Move track's FX 1–4: they're copied
+  onto the Audio track with its volume, pan and sends, and the original stays where it
+  was. The recordings go straight into the project.
   **Back** while it records cancels the whole change. **No** converts without
   recording (the notes are cleared). **Back** on the question changes nothing.
   [Flatten track](#166-recording-audio) does the same from TRACK CONFIG, and lets you
@@ -2828,9 +2830,9 @@ transport first — like the Ableton export, it won't run while playing.
 **Resample a clip** the same way: **Sample → Resample clip**. Only that track plays
 while it records. Its options add **Source**: **Wet** is the track as you hear it,
 with its send effects and Master FX; **Dry** is just the track's own instrument and
-effects at its level. Dry needs a Schwung instrument — on a Move-instrument track it
-shows `-`, and Warm-up starts on, because a Move instrument sounds a few
-milliseconds late. The file is named like an exported clip (`mngk 3B 2bar 120bpm.wav`).
+effects at its level — for a Move instrument, its Move track through its FX 1–4.
+Warm-up starts on for a Move instrument, because it sounds a few milliseconds
+late. The file is named like an exported clip (`mngk 3B 2bar 120bpm.wav`).
 A muted track, or one that plays MIDI out, has nothing to record.
 
 Audio tracks resample like any other. A Loop clip plays its sample with no steps, so
@@ -2849,8 +2851,11 @@ start:
 - **Effects**: **Pre** (the default) records the instrument before the track's effects,
   which stay on the Audio track and keep sounding — you can still change them. **Post**
   records through the effects, then bypasses them so they don't apply twice. They stay
-  in place, so you can switch them back on. A Move instrument is recorded as you hear
-  it, so it has no Effects row.
+  in place, so you can switch them back on. Either way the recording leaves out the
+  track's volume and pan (the Audio track still has them) and its sends. A Move
+  instrument's effects are the ones on its FX 1–4: they're copied onto the Audio
+  track, with the Move track's volume, pan and sends, and the originals stay where
+  they were. The same goes for a track that plays another track's instrument.
 - **Warm-up** plays each clip once before recording it, so delay and reverb tails carry
   into the start of the loop. It starts on for a Move instrument (which sounds a few
   milliseconds late), off otherwise.
@@ -2863,8 +2868,8 @@ recording, at default settings, as [In place](#166-recording-audio) does for one
 MIDI out, has no instrument, is muted or has no notes (or samples) has nothing to flatten.
 
 **Undo** right after a flatten brings the track back as it was: its notes (or drum
-clips), its type, its instrument with its own sound, its routing, and the effects that
-**Post** bypassed. **Shift + Undo** flattens it again. Choosing **Audio** in
+clips), its type, its instrument with its own sound, its routing, and its effects and
+levels as they were (switched back on if **Post** bypassed them). **Shift + Undo** flattens it again. Choosing **Audio** in
 **Instmt/Dest** comes back the same way. As with any Undo, only the last change can be
 undone.
 

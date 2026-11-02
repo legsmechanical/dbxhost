@@ -1700,10 +1700,10 @@ static int overtake_capture_start(const char *path, uint32_t frames) {
 /* ...from one slot's own output (move_host_ext_v1_t.capture_start_src). */
 static int overtake_capture_start_src(const char *path, uint32_t frames, int kind, int index) {
     if (kind == MOVE_CAPTURE_MIX) return overtake_capture_start(path, frames);
-    if ((kind != MOVE_CAPTURE_SLOT && kind != MOVE_CAPTURE_SLOT_PRE) || index < 0 || index >= SHADOW_CHAIN_INSTANCES) return 0;
-    return sampler_request_start_module(path, frames,
-                                        kind == MOVE_CAPTURE_SLOT_PRE ? SAMPLER_TAKE_SRC_PRE : SAMPLER_TAKE_SRC_SLOT,
-                                        index) == 0;
+    if (kind < MOVE_CAPTURE_SLOT || kind > MOVE_CAPTURE_MOVE_FX || index < 0) return 0;
+    if (index >= (kind >= MOVE_CAPTURE_MOVE ? MOVE_FX_SLOTS : SHADOW_CHAIN_INSTANCES)) return 0;
+    /* the MOVE_CAPTURE_* kinds are the SAMPLER_TAKE_SRC_* numbers (sampler_take_tap.h) */
+    return sampler_request_start_module(path, frames, kind, index) == 0;
 }
 
 /* Host extension (move_host_ext_v1_t.slot_audio_feed): one block of audio for
@@ -3039,6 +3039,17 @@ static void shadow_inprocess_mix_from_buffer(void) {
                  * track then mixes straight from la_cache (read-only). */
                 const int16_t *msrc = move_track;
                 int16_t mbuf[FRAMES_PER_BLOCK * 2];
+                /* A take of this Move track (MOVE_CAPTURE_MOVE*): before the
+                 * inserts it is the track as Move plays it. */
+                const int mtap = sampler_take_tap_wants_move(sampler_module_take, sampler_take_src_kind,
+                                                             sampler_take_src_index, s);
+                /* a muted / soloed-out bus's take keeps it as set (its own
+                 * fader, read here: the mix below must only ever gate it) */
+                const float mtap_set_vol = mtap ? shadow_move_fx_strip[s].volume : 0.0f;
+                if (mtap && sampler_take_src_kind == SAMPLER_TAKE_SRC_MOVE_PRE) {
+                    memcpy(shadow_take_tap, move_track, sizeof(shadow_take_tap));
+                    shadow_take_tap_valid = 1;
+                }
                 if (shadow_move_fx_has_fx(s)) {
                     memcpy(mbuf, move_track, sizeof(mbuf));
                     for (int b = 0; b < MOVE_FX_BLOCKS; b++) {
@@ -3074,11 +3085,25 @@ static void shadow_inprocess_mix_from_buffer(void) {
                 link_audio_pub_slot_t *bus_ps = publish_bus
                     ? &shadow_pub_audio_shm->slots[s] : NULL;
                 uint32_t bus_wp = bus_ps ? bus_ps->write_pos : 0;
+                /* ...after them: at unity (MOVE_FX), or at its fader and pan
+                 * (MOVE) — a muted or soloed-out bus as set, as a slot's stem */
+                const int mtap_post = mtap && sampler_take_src_kind != SAMPLER_TAKE_SRC_MOVE_PRE;
+                const int mtap_unity = mtap_post && sampler_take_src_kind == SAMPLER_TAKE_SRC_MOVE_FX;
+                const int mtap_silenced = mtap_post && !mtap_unity &&
+                    sampler_take_tap_silenced(shadow_move_fx_strip[s].muted, shadow_solo_count,
+                                              shadow_move_fx_strip[s].soloed);
+                const float mtap_pl = shadow_pan_gain_l(shadow_move_fx_strip[s].pan),
+                            mtap_pr = shadow_pan_gain_r(shadow_move_fx_strip[s].pan);
                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
                     int32_t scaled = (int32_t)lroundf((float)msrc[i] * mix_glide_gain(bg, i));
                     la_acc[i] += scaled;
                     me_full[i]  += scaled;
                     me_unity[i] += scaled;
+                    if (mtap_post) shadow_take_tap[i] = sampler_take_tap_sample(
+                        mtap_unity ? (int32_t)msrc[i]
+                        : !mtap_silenced ? scaled
+                        : (int32_t)lroundf((float)msrc[i] *
+                              sampler_take_tap_as_set(mtap_set_vol, mtap_pl, mtap_pr, i)));
                     if (bus_ps) {
                         int32_t c = scaled;
                         if (c > 32767) c = 32767;
@@ -3092,6 +3117,7 @@ static void shadow_inprocess_mix_from_buffer(void) {
                     __sync_synchronize();
                     bus_ps->write_pos = bus_wp;
                 }
+                if (mtap_post) shadow_take_tap_valid = 1;
                 accumulate_sends_ex(msrc, mvol, shadow_move_fx_strip[s].send_a,
                                     shadow_move_fx_strip[s].send_b, send_accum);
 
@@ -3296,6 +3322,7 @@ static void shadow_inprocess_mix_from_buffer(void) {
                 mix_glide_t *mg = shadow_mix_targets(s);   /* the loop glides toward these */
                 const int tap = sampler_take_tap_wants(sampler_module_take, sampler_take_src_kind,
                                                        sampler_take_src_index, s);
+                const int tap_unity = tap && sampler_take_tap_unity(sampler_take_src_kind);
                 /* a take of a muted / soloed-out slot keeps the slot as set */
                 const int tap_silenced = tap && sampler_take_tap_silenced(shadow_chain_slots[s].muted,
                                                                           shadow_solo_count,
@@ -3308,7 +3335,9 @@ static void shadow_inprocess_mix_from_buffer(void) {
                     la_acc[i] += contrib;
                     me_full[i] += contrib;
                     me_unity[i] += contrib;
-                    if (tap) shadow_take_tap[i] = sampler_take_tap_sample(!tap_silenced ? contrib
+                    if (tap) shadow_take_tap[i] = sampler_take_tap_sample(
+                        tap_unity ? (int32_t)lroundf((float)fx_buf[i] * shadow_chain_slots[s].fade.gain)
+                        : !tap_silenced ? contrib
                         : (int32_t)lroundf((float)fx_buf[i] * shadow_chain_slots[s].fade.gain *
                               sampler_take_tap_as_set(shadow_chain_slots[s].volume, tap_pl, tap_pr, i)));
                     if (i & 1) { shadow_fade_advance(s); mix_glide_advance(mg); }
@@ -3356,6 +3385,7 @@ skip_la_rebuild:
                 mix_glide_t *mg = shadow_mix_targets(s);   /* the loop glides toward these */
                 const int tap = sampler_take_tap_wants(sampler_module_take, sampler_take_src_kind,
                                                        sampler_take_src_index, s);
+                const int tap_unity = tap && sampler_take_tap_unity(sampler_take_src_kind);
                 /* a take of a muted / soloed-out slot keeps the slot as set */
                 const int tap_silenced = tap && sampler_take_tap_silenced(shadow_chain_slots[s].muted,
                                                                           shadow_solo_count,
@@ -3367,7 +3397,9 @@ skip_la_rebuild:
                     int32_t contrib = (int32_t)lroundf((float)fx_buf[i] * vol);
                     me_full[i] += contrib;
                     me_unity[i] += contrib;
-                    if (tap) shadow_take_tap[i] = sampler_take_tap_sample(!tap_silenced ? contrib
+                    if (tap) shadow_take_tap[i] = sampler_take_tap_sample(
+                        tap_unity ? (int32_t)lroundf((float)fx_buf[i] * shadow_chain_slots[s].fade.gain)
+                        : !tap_silenced ? contrib
                         : (int32_t)lroundf((float)fx_buf[i] * shadow_chain_slots[s].fade.gain *
                               sampler_take_tap_as_set(shadow_chain_slots[s].volume, tap_pl, tap_pr, i)));
                     if (i & 1) { shadow_fade_advance(s); mix_glide_advance(mg); }
@@ -3415,6 +3447,7 @@ skip_la_rebuild:
                 mix_glide_t *mg = shadow_mix_targets(s);   /* the loop glides toward these */
                 const int tap = sampler_take_tap_wants(sampler_module_take, sampler_take_src_kind,
                                                        sampler_take_src_index, s);
+                const int tap_unity = tap && sampler_take_tap_unity(sampler_take_src_kind);
                 /* a take of a muted / soloed-out slot keeps the slot as set */
                 const int tap_silenced = tap && sampler_take_tap_silenced(shadow_chain_slots[s].muted,
                                                                           shadow_solo_count,
@@ -3426,7 +3459,9 @@ skip_la_rebuild:
                     int32_t contrib = (int32_t)lroundf((float)fx_buf[i] * vol);
                     me_full[i] += contrib;
                     me_unity[i] += contrib;
-                    if (tap) shadow_take_tap[i] = sampler_take_tap_sample(!tap_silenced ? contrib
+                    if (tap) shadow_take_tap[i] = sampler_take_tap_sample(
+                        tap_unity ? (int32_t)lroundf((float)fx_buf[i] * shadow_chain_slots[s].fade.gain)
+                        : !tap_silenced ? contrib
                         : (int32_t)lroundf((float)fx_buf[i] * shadow_chain_slots[s].fade.gain *
                               sampler_take_tap_as_set(shadow_chain_slots[s].volume, tap_pl, tap_pr, i)));
                     if (i & 1) { shadow_fade_advance(s); mix_glide_advance(mg); }

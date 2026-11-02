@@ -317,6 +317,17 @@ typedef struct move_host_ext_v1 {
  * and keep its effects live). A block the instrument does not render is
  * silence. On a slot rendering without separate FX it is the slot's output. */
 #define MOVE_CAPTURE_SLOT_PRE 2
+/* chain slot n after its own FX, at unity: no fader, pan, mute or sends (a
+ * bounce that goes on playing through the same slot's fader keeps its level). */
+#define MOVE_CAPTURE_SLOT_FX  3
+/* MOVE TRACK n (0-based; its Move FX bus) — the same three points for Move's
+ * own instruments: after the bus's insert FX at its fader and pan (MOVE, the
+ * bus's "dry" stem: no send returns, no Master FX), before the inserts (PRE:
+ * the track as Move plays it), after the inserts at unity (FX). A block the
+ * bus does not render (no Move audio, asleep) is silence. */
+#define MOVE_CAPTURE_MOVE     4
+#define MOVE_CAPTURE_MOVE_PRE 5
+#define MOVE_CAPTURE_MOVE_FX  6
 
 /* One event of an offline MIDI FX job (midi_fx_offline_*). */
 typedef struct move_midi_fx_offline_ev {

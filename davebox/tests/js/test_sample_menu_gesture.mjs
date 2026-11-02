@@ -316,14 +316,14 @@ step('⭐⭐ Dry: Source flips to Dry; Start sends ONE resample_clip with src 1 
     S.resampleTake = null; S.sessionView = true;
 });
 
-step('⭐ a Move instrument: Source is "-" and stays Wet; Warm-up starts on', () => {
+step('⭐ a Move instrument: Source Wet / Dry (its Move FX bus, Josh 2026-11-02: "move instruments feed track buses with schwung effects"); Warm-up starts on', () => {
     clipRig(1);
     S.sessionView = false;
     tap(C.MoveSample); jog(1); click();
     const r = S.confirmResample;
-    assert(r && !r.dryOk && r.warm, 'options: ' + JSON.stringify(r));
+    assert(r && r.dryOk && r.src === 0 && r.warm, 'options: ' + JSON.stringify(r));
     jog(-1); jog(-1); jog(-1); click();
-    assert(r.src === 0, 'Dry was chosen on a Move instrument');
+    assert(r.src === 1, 'Dry could not be chosen on a Move instrument');
     back(); back();
     S.sessionView = true;
 });

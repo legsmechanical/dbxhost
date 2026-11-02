@@ -6,6 +6,7 @@
  * kept after it. */
 #include "../../src/host/sampler_take.h"
 #include "../../src/host/sampler_take_tap.h"
+#include "../../src/host/plugin_api_v1.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -85,6 +86,26 @@ int main(void) {
     expect(sampler_take_from_tap(1, SAMPLER_TAKE_SRC_PRE) && sampler_take_from_tap(1, SAMPLER_TAKE_SRC_SLOT)
            && !sampler_take_from_tap(1, SAMPLER_TAKE_SRC_MIX) && !sampler_take_from_tap(0, SAMPLER_TAKE_SRC_PRE),
            "the take reads the tap for SLOT and PRE only");
+    printf("the unity and Move-track sources:\n");
+    expect(sampler_take_tap_wants(1, SAMPLER_TAKE_SRC_FX, 2, 2) && !sampler_take_tap_wants(1, SAMPLER_TAKE_SRC_FX, 2, 1),
+           "FX (after FX, at unity): its own slot's mix loop taps");
+    expect(sampler_take_tap_wants_move(1, SAMPLER_TAKE_SRC_MOVE, 1, 1) && sampler_take_tap_wants_move(1, SAMPLER_TAKE_SRC_MOVE_PRE, 1, 1)
+           && sampler_take_tap_wants_move(1, SAMPLER_TAKE_SRC_MOVE_FX, 1, 1), "MOVE / MOVE_PRE / MOVE_FX: its own bus taps");
+    expect(!sampler_take_tap_wants_move(1, SAMPLER_TAKE_SRC_MOVE, 1, 2), "...and no other bus");
+    expect(!sampler_take_tap_wants_move(1, SAMPLER_TAKE_SRC_SLOT, 1, 1) && !sampler_take_tap_wants(1, SAMPLER_TAKE_SRC_MOVE, 1, 1),
+           "a slot take taps no bus, a bus take no slot (same index)");
+    expect(!sampler_take_tap_wants_move(0, SAMPLER_TAKE_SRC_MOVE, 1, 1), "no take running: no bus is kept");
+    expect(sampler_take_tap_unity(SAMPLER_TAKE_SRC_FX) && sampler_take_tap_unity(SAMPLER_TAKE_SRC_MOVE_PRE)
+           && sampler_take_tap_unity(SAMPLER_TAKE_SRC_MOVE_FX), "FX, MOVE_PRE, MOVE_FX are at unity");
+    expect(!sampler_take_tap_unity(SAMPLER_TAKE_SRC_SLOT) && !sampler_take_tap_unity(SAMPLER_TAKE_SRC_MOVE)
+           && !sampler_take_tap_unity(SAMPLER_TAKE_SRC_PRE), "SLOT and MOVE carry the fader; PRE its synth level");
+    expect(sampler_take_from_tap(1, SAMPLER_TAKE_SRC_FX) && sampler_take_from_tap(1, SAMPLER_TAKE_SRC_MOVE)
+           && sampler_take_from_tap(1, SAMPLER_TAKE_SRC_MOVE_PRE) && sampler_take_from_tap(1, SAMPLER_TAKE_SRC_MOVE_FX)
+           && !sampler_take_from_tap(1, 7), "the take reads the tap for every one-source kind, none past them");
+    expect(SAMPLER_TAKE_SRC_FX == MOVE_CAPTURE_SLOT_FX && SAMPLER_TAKE_SRC_MOVE == MOVE_CAPTURE_MOVE
+           && SAMPLER_TAKE_SRC_MOVE_PRE == MOVE_CAPTURE_MOVE_PRE && SAMPLER_TAKE_SRC_MOVE_FX == MOVE_CAPTURE_MOVE_FX
+           && SAMPLER_TAKE_SRC_SLOT == MOVE_CAPTURE_SLOT && SAMPLER_TAKE_SRC_PRE == MOVE_CAPTURE_SLOT_PRE,
+           "the host's kinds ARE the take's sources (capture_start_src passes them through)");
     printf("a stem ignores mute and solo:\n");
     expect(!sampler_take_tap_silenced(0, 0, 0), "plain: the mix's own gain");
     expect(sampler_take_tap_silenced(1, 0, 0), "muted: silenced in the mix");

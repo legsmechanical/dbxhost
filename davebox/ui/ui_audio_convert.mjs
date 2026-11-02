@@ -7,10 +7,11 @@
  *
  * Audio picked in Instmt/Dest on a track that plays an instrument and has
  * clips asks RESAMPLE THE CLIPS? Yes records every clip with notes, one after another, in
- * real time, each ALONE (the clip-resample engine, resample_clip): a Schwung
- * instrument before its FX (src 2, the slot's instrument output — its FX stay
- * live on the Audio track, so it sounds the same), a Move instrument as heard
- * (src 0; Move's track effects do not carry over). Each take is written
+ * real time, each ALONE (the clip-resample engine, resample_clip): the
+ * instrument before its FX (src 2 — a Schwung slot's instrument output, a
+ * Move instrument's track before its Move FX bus), and the FX stay live on
+ * the Audio track, so it sounds the same (a Move bus's or a followed track's
+ * FX and levels are copied onto it: ui_flatten_undo). Each take is written
  * straight into the project's samples/ folder. When every take is in, the
  * track converts (Audio, its notes cleared, the instrument removed, FX kept)
  * and each clip loads its take as a Loop clip. No answers the plain
@@ -39,7 +40,8 @@ const RS_IDLE = 0, RS_ARMED = 1, RS_STARTING = 2, RS_RECORDING = 3,
       RS_DONE = 4, RS_CANCELLED = 5, RS_FAILED = 6;
 export const AU_SRC_WET = 0;      /* the mix: a Move instrument as heard */
 export const AU_SRC_DRY = 1;      /* one slot's own output, through its FX */
-export const AU_SRC_PRE = 2;      /* the slot's instrument, before its FX */
+export const AU_SRC_PRE = 2;      /* the instrument, before its FX */
+export const AU_SRC_FX  = 3;      /* after its FX at unity (the track's fader is still ahead) */
 
 /* A clip that sounds: one with notes, or an Audio clip with a sample (a Loop
  * clip has no steps and still plays). */
@@ -49,15 +51,16 @@ function clipHasNotes(t, c) {
 }
 
 /* What a take of track t records (resample_clip's src), or -1 when it plays
- * nothing that can be recorded. A Schwung instrument: before its FX (`post`
- * false — they stay on the Audio track and go on sounding) or through them
- * (Dry). A MIDI track that follows another: that track's instrument, the same
- * two ways. A Move instrument: as heard, either way (Move's own effects do
- * not carry over). External MIDI: -1. `hasSynth` is the caller's read of t's
- * own slot. */
+ * nothing that can be recorded. The instrument before its FX (`post` false —
+ * they stay on the Audio track and go on sounding) or through them, at unity
+ * (`post`: the Audio track's own fader is still ahead, so the take must not
+ * carry it too). A Schwung instrument's FX are its slot's; a Move
+ * instrument's, its Move FX bus's (the engine taps the bus). A MIDI track that
+ * follows another: that track's instrument, the same two ways. External MIDI:
+ * -1. `hasSynth` is the caller's read of t's own slot. */
 export function auConvertSource(t, hasSynth, post) {
     /* an Audio track: its clips' samples, fed to its own slot */
-    if (S.trackPadMode[t] === PAD_MODE_AUDIO) return post ? AU_SRC_DRY : AU_SRC_PRE;
+    if (S.trackPadMode[t] === PAD_MODE_AUDIO) return post ? AU_SRC_FX : AU_SRC_PRE;
     let r = S.trackRoute[t] | 0;
     if (r === 0 && !hasSynth) return -1;
     if (r === 2) {
@@ -66,8 +69,14 @@ export function auConvertSource(t, hasSynth, post) {
         r = S.trackRoute[to - 1] | 0;
         if (r === 2) return -1;
     }
-    if (r === 1) return AU_SRC_WET;
-    return post ? AU_SRC_DRY : AU_SRC_PRE;
+    return post ? AU_SRC_FX : AU_SRC_PRE;
+}
+
+/* Does track t play a Move instrument (its own, or the track it follows)? */
+function playsMove(t) {
+    let r = S.trackRoute[t] | 0;
+    if (r === 2) { const to = S.trackMidiTo[t] | 0; r = to > 0 ? S.trackRoute[to - 1] | 0 : -1; }
+    return r === 1;
 }
 
 export function auConvertHasNotes(t) {
@@ -88,9 +97,10 @@ export function auConvertOffered(t, hasSynth) {
  * after" · "freeze track lives on track config" · "Freeze track needs warm up
  * option"): the same conversion, asked for on its own. The refusals come
  * first; then its options, on the Resample options screen (ui_resample,
- * `flatten`): Effects Pre / Post (Pre first; a Move instrument records as
- * heard, so it has none), Warm-up (on for a Move instrument, as Resample
- * clip's), and Flatten. Back cancels. */
+ * `flatten`): Effects Pre / Post (Pre first — a Move instrument's are its
+ * Move FX bus's, Josh 2026-11-02: "move instruments feed track buses with
+ * schwung effects"), Warm-up (on for a Move instrument, as Resample clip's),
+ * and Flatten. Back cancels. */
 export function freezeTrackRequest(t, hasSynth) {
     const name = 'Track ' + (t + 1);
     if (S.playing) { showActionPopupFor(2500, 'STOP TO FLATTEN', 'It plays from the top'); return; }
@@ -106,16 +116,15 @@ export function freezeTrackRequest(t, hasSynth) {
         showActionPopupFor(2500, 'NOTHING TO FLATTEN', name + (S.trackPadMode[t] === PAD_MODE_AUDIO ? ' has no samples' : ' has no notes'));
         return;
     }
-    const choice = pre !== AU_SRC_WET;
-    S.confirmResample = { flatten: true, track: t, clip: -1, choice, hasSynth, post: false,
-                          warm: !choice && S.trackPadMode[t] !== PAD_MODE_AUDIO, sel: choice ? 2 : 1, editing: false };
+    S.confirmResample = { flatten: true, track: t, clip: -1, hasSynth, post: false,
+                          warm: playsMove(t) && S.trackPadMode[t] !== PAD_MODE_AUDIO, sel: 2, editing: false };
     S.screenDirty = true;
 }
 
 /* Its options' Flatten (input context): the takes start from the tick. */
 export function flattenStart(r) {
-    S.auConvertSrc = auConvertSource(r.track, r.hasSynth, r.choice && r.post);
-    S.auConvertBypass = !!(r.choice && r.post);
+    S.auConvertSrc = auConvertSource(r.track, r.hasSynth, r.post);
+    S.auConvertBypass = !!r.post;
     S.auConvertWarm = !!r.warm;
     S.pendingAuConvertStart = r.track;
 }

@@ -12,6 +12,11 @@ the section into a versioned heading at release time.
 - **Undo a Flatten.** Undo right after **Flatten track** (or after choosing **Audio** in
   Instmt/Dest) brings the MIDI or drum track back: its notes, type, instrument and its
   sound, routing, and the effects Post bypassed. Shift + Undo flattens it again.
+- **Flatten and Resample on Move instruments use their effects.** Flatten track has
+  Effects Pre / Post for a Move instrument too, recording it before or after the
+  effects on its Move track's FX 1–4, which are copied onto the Audio track with the
+  Move track's volume, pan and sends. Resample clip's **Dry** works on a Move
+  instrument. A recording no longer picks up the send effects or Master FX.
 - **The browser editor knows Audio tracks**: a Slice clip's roll shows its chops
   (Chop 1, Chop 2…), one to a step as on the device, and a Loop clip shows no roll.
   The mixer, grid and Sound view say **Audio**, and the sample, chops and NOTE FX

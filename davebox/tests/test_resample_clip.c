@@ -9,9 +9,11 @@
  *     note (the slots render before this module);
  *   - Wet = the mix (capture_start); Dry = the track's chain slot
  *     (capture_start_src, MOVE_CAPTURE_SLOT, its slot) — a MIDI track that
- *     follows another records THAT track's slot;
- *   - refusals: Dry on a Move instrument, a track that plays out MIDI only, a
- *     muted track, playing;
+ *     follows another records THAT track's slot; src 3 = after its FX at
+ *     unity (MOVE_CAPTURE_SLOT_FX);
+ *   - a Move instrument has the same three points on its Move FX bus
+ *     (MOVE_CAPTURE_MOVE / _PRE / _FX), the bus its channel names;
+ *   - refusals: a track that plays out MIDI only, a muted track, playing;
  *   - after the take, the transport stop puts back what was armed. */
 #include "harness.h"
 
@@ -126,16 +128,65 @@ int main(void) {
               "src 2 did not take track 2's instrument before its FX");
     hx_set_param(h, "transport", "stop");
     hx_set_param(h, "resample_clear", "1");
-    hx_set_param(h, "t1_route", "move");
-    hx_set_param(h, "resample_clip", "1 0 1 0 0 2 |/x/pre.wav");
-    HX_ASSERT(!inst->playing && geti(h, "resample_err") == RS_ERR_ROUTE, "src 2 on a Move instrument was taken");
+    hx_set_param(h, "resample_clip", "1 0 1 0 0 3 |/x/fx.wav");
+    for (i = 0; i < 40 && inst->resample_state != RS_RECORDING; i++) hx_render(h, 1);
+    hx_stub_capture_src(&kind, &index);
+    HX_ASSERT(inst->resample_state == RS_RECORDING && kind == MOVE_CAPTURE_SLOT_FX && index == 1,
+              "src 3 did not take track 2's slot after its FX at unity");
+    hx_set_param(h, "transport", "stop");
+    hx_set_param(h, "resample_clear", "1");
     hx_destroy(h);
+
+    /* ---- a Move instrument: the same points on its Move FX bus ---- */
+    {
+        static const struct { int src; int kind; const char *what; } mv[] = {
+            { 1, MOVE_CAPTURE_MOVE,     "Dry on a Move instrument is not its bus at its fader" },
+            { 2, MOVE_CAPTURE_MOVE_PRE, "Pre on a Move instrument is not its track before the bus FX" },
+            { 3, MOVE_CAPTURE_MOVE_FX,  "FX on a Move instrument is not its bus after the inserts" },
+        };
+        int k;
+        for (k = 0; k < 3; k++) {
+            char v[48];
+            h = rig(); inst = (seq8_instance_t *)h->inst;
+            hx_set_param(h, "t1_route", "move");
+            inst->tracks[1].channel = 2;                 /* Move track 3 */
+            hx_stub_capture_reset();
+            snprintf(v, sizeof v, "1 0 1 0 0 %d |/x/m.wav", mv[k].src);
+            hx_set_param(h, "resample_clip", v);
+            for (i = 0; i < 40 && inst->resample_state != RS_RECORDING; i++) hx_render(h, 1);
+            hx_stub_capture_src(&kind, &index);
+            HX_ASSERT(inst->resample_state == RS_RECORDING && kind == mv[k].kind && index == 2, mv[k].what);
+            hx_set_param(h, "transport", "stop");
+            hx_set_param(h, "resample_clear", "1");
+            hx_destroy(h);
+        }
+        /* a channel past Move's four tracks is its last bus, as the mixer has it */
+        h = rig(); inst = (seq8_instance_t *)h->inst;
+        hx_set_param(h, "t1_route", "move");
+        inst->tracks[1].channel = 9;
+        hx_set_param(h, "resample_clip", "1 0 1 0 0 2 |/x/m.wav");
+        for (i = 0; i < 40 && inst->resample_state != RS_RECORDING; i++) hx_render(h, 1);
+        hx_stub_capture_src(&kind, &index);
+        HX_ASSERT(kind == MOVE_CAPTURE_MOVE_PRE && index == 3, "channel 10 is not Move bus 4");
+        hx_set_param(h, "transport", "stop");
+        hx_set_param(h, "resample_clear", "1");
+        hx_destroy(h);
+        /* CONTROL: a Schwung track at the same index is still its slot */
+        h = rig(); inst = (seq8_instance_t *)h->inst;
+        inst->tracks[1].channel = 2;
+        hx_stub_capture_reset();
+        hx_set_param(h, "resample_clip", "1 0 1 0 0 2 |/x/c.wav");
+        for (i = 0; i < 40 && inst->resample_state != RS_RECORDING; i++) hx_render(h, 1);
+        hx_stub_capture_src(&kind, &index);
+        HX_ASSERT(kind == MOVE_CAPTURE_SLOT_PRE && index == 1, "CONTROL: a chain track's Pre left its slot");
+        hx_set_param(h, "transport", "stop");
+        hx_set_param(h, "resample_clear", "1");
+        hx_destroy(h);
+    }
 
     /* ---- refusals: nothing launches ---- */
     h = rig(); inst = (seq8_instance_t *)h->inst;
     hx_set_param(h, "t1_route", "move");
-    hx_set_param(h, "resample_clip", "1 0 1 0 0 1 |/x/r.wav");
-    HX_ASSERT(!inst->playing && geti(h, "resample_err") == RS_ERR_ROUTE, "Dry on a Move instrument was taken");
     hx_set_param(h, "resample_clip", "1 0 1 0 0 0 |/x/r.wav");
     HX_ASSERT(inst->playing && inst->resample_state == RS_ARMED, "Wet on a Move instrument was refused");
     hx_set_param(h, "transport", "stop");

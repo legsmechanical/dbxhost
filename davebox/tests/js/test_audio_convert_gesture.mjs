@@ -199,8 +199,9 @@ function freezeRow(t) {
     assert(found, 'no Flatten track row on track ' + (t + 1) + "'s TRACK CONFIG");
     assert(sndCC(3, 127), 'the click was not the menu\'s'); sndCC(3, 0);
 }
-/* Flatten's options open on Flatten: Effects · Warm-up · Flatten (no Effects
- * for a Move instrument). `post`: Effects to Post first. */
+/* Flatten's options open on Flatten: Effects · Warm-up · Flatten, for every
+ * instrument (a Move instrument's effects are its Move FX bus's). `post`:
+ * Effects to Post first. */
 const RS = await import('../../ui/ui_resample.mjs');
 const await_au = await import('../../ui/ui_audio.mjs');
 const answer = (post) => { if (post) { jog(-1); jog(-1); click(); jog(1); jog(1); } click(); };
@@ -217,7 +218,7 @@ step('⭐⭐ TRACK CONFIG › Flatten track opens its options — Effects Pre, W
     reset();
     freezeRow(4);
     const r = S.confirmResample;
-    assert(r && r.flatten && r.track === 4 && r.choice && !r.post && !r.warm && r.sel === 2, 'no Flatten options: ' + JSON.stringify(r));
+    assert(r && r.flatten && r.track === 4 && !r.post && !r.warm && r.sel === 2, 'no Flatten options: ' + JSON.stringify(r));
     const f = frame(() => render.drawUI());
     const own = frame(() => RS.drawResampleOptions());
     assert(inked(own) && f.every((v, i) => v === own[i]), 'the options are not what the screen shows');
@@ -253,7 +254,7 @@ step('⭐⭐ Post: every clip through its FX (Dry); once converted, the loaded i
     freezeRow(4);
     answer(true);
     ticks(2);
-    assert(sent('resample_clip').join() === '4 0 1 0 0 1 |' + P0, 'Post take: ' + sent('resample_clip'));
+    assert(sent('resample_clip').join() === '4 0 1 0 0 3 |' + P0, 'Post take (after its FX, at unity): ' + sent('resample_clip'));
     globalThis.__stubStat = { [P0]: { mode: 0o100644, size: 9 }, [P2]: { mode: 0o100644, size: 9 } };
     S.resampleState = 3; ticks(1); S.resampleState = 4; ticks(2);
     S.resampleState = 0; ticks(1); S.resampleState = 3; ticks(1); S.resampleState = 4; ticks(2);
@@ -281,11 +282,11 @@ step('⭐⭐ an Audio track freezes IN PLACE (Josh, 2026-10-30: "audio tracks ou
     S.auInfo[4][2] = Object.assign({}, S.auInfo[4][2] || {}, { state: 2, name: 'loop c.wav' });
     reset();
     freezeRow(4);
-    assert(S.confirmResample && S.confirmResample.flatten && S.confirmResample.choice, 'an Audio track has no Pre / Post');
+    assert(S.confirmResample && S.confirmResample.flatten && S.confirmResample.sel === 2, 'an Audio track has no Pre / Post');
     answer(true);
     ticks(2);
     assert(S.auConvert && S.auConvert.inPlace && S.auConvert.list.length === 2, 'takes: ' + JSON.stringify(S.auConvert));
-    assert(sent('resample_clip').join() === '4 0 1 0 0 1 |' + P0, 'Post take: ' + sent('resample_clip'));
+    assert(sent('resample_clip').join() === '4 0 1 0 0 3 |' + P0, 'Post take (after its FX, at unity): ' + sent('resample_clip'));
     S.resampleState = 3; S.resampleFrames = 88200; S.resampleDone = 100; ticks(2);
     assert(S.actionPopupLines[0] === 'FLATTEN 1/2', 'notice: ' + JSON.stringify(S.actionPopupLines));
     globalThis.__stubStat = { [P0]: { mode: 0o100644, size: 9 }, [P2]: { mode: 0o100644, size: 9 } };
@@ -332,25 +333,37 @@ step('⭐⭐ a MIDI track that follows another freezes THAT instrument (Pre: bef
     cancelTakes();
 });
 
-step('⭐ a Move instrument has no Effects row (as heard); Warm-up starts On, as Resample clip\'s; Back changes nothing', () => {
+step('⭐⭐ a Move instrument has Effects too (Josh, 2026-11-02: "move instruments feed track buses with schwung effects"): Pre = its track before the Move FX bus, Post = after it at unity; Warm-up starts On', () => {
     S.trackRoute[5] = 1; S.trackMidiTo[5] = 0;
+    S.actionPopupLines = []; S.actionPopupEndTick = 0;    /* the last step's notice, not this screen's */
     reset();
     freezeRow(5);
     const r = S.confirmResample;
-    assert(r && r.flatten && !r.choice && r.warm && r.sel === 1, 'a Move track\'s options: ' + JSON.stringify(r));
-    cc(HC.MoveBack, 127); cc(HC.MoveBack, 0);
+    assert(r && r.flatten && r.warm && r.sel === 2 && !r.post, 'a Move track\'s options: ' + JSON.stringify(r));
+    const f = frame(() => render.drawUI());
+    const own = frame(() => RS.drawResampleOptions());
+    assert(inked(own) && f.every((v, i) => v === own[i]), 'the options are not what the screen shows');
+    answer(false);
     ticks(2);
-    assert(!S.confirmResample && !S.auConvert && sent('resample_clip').length === 0, 'Back recorded');
+    assert(sent('resample_clip').join() === '5 0 1 1 0 2 |' + DIR + '/My Song 6A 1bar 120bpm.wav',
+           'Pre take: ' + sent('resample_clip'));
+    cancelTakes();
+    freezeRow(5);
+    answer(true);
+    ticks(2);
+    assert(sent('resample_clip').join() === '5 0 1 1 0 3 |' + DIR + '/My Song 6A 1bar 120bpm.wav',
+           'Post take: ' + sent('resample_clip'));
+    cancelTakes();
 });
 
-step('⭐ ...and so does a MIDI track that follows a Move instrument: Flatten records it as heard (Wet), warmed up', () => {
+step('⭐ ...and so does a MIDI track that follows a Move instrument (that instrument, warmed up)', () => {
     S.trackRoute[6] = 1; S.trackRoute[5] = 2; S.trackMidiTo[5] = 7;
     reset();
     freezeRow(5);
-    assert(S.confirmResample && S.confirmResample.flatten && !S.confirmResample.choice, 'a follower of a Move track was offered Pre / Post');
+    assert(S.confirmResample && S.confirmResample.flatten && S.confirmResample.warm, 'a follower of a Move track: ' + JSON.stringify(S.confirmResample));
     click();
     ticks(2);
-    assert(sent('resample_clip').join() === '5 0 1 1 0 0 |' + DIR + '/My Song 6A 1bar 120bpm.wav',
+    assert(sent('resample_clip').join() === '5 0 1 1 0 2 |' + DIR + '/My Song 6A 1bar 120bpm.wav',
            'take: ' + sent('resample_clip'));
     cancelTakes();
     S.trackRoute[6] = 0;

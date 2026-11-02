@@ -46,12 +46,22 @@
 #define RS_ERR_BUSY      4   /* a merge, print, count-in or take is under way */
 #define RS_ERR_ARGS      5   /* bad scene / bars / path */
 #define RS_ERR_SAMPLER   6   /* the host's sampler was busy when the take began */
-#define RS_ERR_ROUTE     7   /* the track plays no instrument (external MIDI / none), or Dry off a chain */
+#define RS_ERR_ROUTE     7   /* the track plays no instrument (external MIDI / none), or a one-source take without the host for it */
 #define RS_ERR_MUTED     8   /* the track is muted, or soloed out */
 
 #define RS_SRC_WET  0        /* the mix (capture_start) */
 #define RS_SRC_DRY  1        /* one chain slot's own output (capture_start_src) */
 #define RS_SRC_PRE  2        /* the slot's instrument, before its FX (an Audio-track bounce) */
+#define RS_SRC_FX   3        /* after its FX at unity: a bounce that goes on through the same fader */
+/* DRY / PRE / FX name a point on the TRACK, so a Move instrument has them too:
+ * its Move FX bus after the inserts at its fader, before them, after them at
+ * unity (resample_move; MOVE_CAPTURE_MOVE*). */
+static int rs_capture_kind(const seq8_instance_t *inst) {
+    const int s = inst->resample_src;
+    if (inst->resample_move)
+        return s == RS_SRC_PRE ? MOVE_CAPTURE_MOVE_PRE : s == RS_SRC_FX ? MOVE_CAPTURE_MOVE_FX : MOVE_CAPTURE_MOVE;
+    return s == RS_SRC_PRE ? MOVE_CAPTURE_SLOT_PRE : s == RS_SRC_FX ? MOVE_CAPTURE_SLOT_FX : MOVE_CAPTURE_SLOT;
+}
 
 #define RS_BAR_TICKS     (16 * TICKS_PER_STEP)
 #define RS_CAP_BARS      32
@@ -189,11 +199,10 @@ static void resample_render_start(seq8_instance_t *inst, int frames) {
         /* What the take's tracks play is heard LEAD_BLOCKS blocks after the
          * tick that plays it (see LEAD_BLOCKS): the take starts as late. */
         if (inst->resample_lead_wait > 0) { inst->resample_lead_wait--; return; }
-        if (inst->resample_src == RS_SRC_DRY || inst->resample_src == RS_SRC_PRE)
+        if (inst->resample_src != RS_SRC_WET)
             ok = g_ext && g_ext->capture_start_src &&
                  g_ext->capture_start_src(inst->resample_path, inst->resample_frames,
-                                          inst->resample_src == RS_SRC_PRE ? MOVE_CAPTURE_SLOT_PRE : MOVE_CAPTURE_SLOT,
-                                          inst->resample_slot);
+                                          rs_capture_kind(inst), inst->resample_slot);
         else
             ok = g_ext && g_ext->capture_start &&
                  g_ext->capture_start(inst->resample_path, inst->resample_frames);
@@ -270,6 +279,7 @@ static void resample_scene_start(seq8_instance_t *inst, const char *val) {
     if (rs_refuse(inst, c, bars, tail, path)) return;
     rs_remember_armed(inst);
     inst->resample_src = RS_SRC_WET;
+    inst->resample_move = 0;
     for (t = 0; t < NUM_TRACKS; t++) {
         inst->tracks[t].queued_clip       = (int8_t)c;
         inst->tracks[t].will_relaunch     = 0;
@@ -279,8 +289,9 @@ static void resample_scene_start(seq8_instance_t *inst, const char *val) {
 }
 
 /* set_param "resample_clip" = "T C bars warmup tail src |path": track T's clip
- * C ALONE (no other track plays), Wet (the mix) or Dry (T's chain slot). A
- * MIDI track that follows another records that track's instrument. */
+ * C ALONE (no other track plays), Wet (the mix) or one point on the track (Dry,
+ * Pre, FX — its chain slot, or a Move instrument's Move FX bus). A MIDI track
+ * that follows another records that track's instrument. */
 static void resample_clip_start(seq8_instance_t *inst, const char *val) {
     int tr_i = -1, c = -1, bars = 0, warm = 0, tail = 0, src = 0, t;
     const char *path = strchr(val, '|');
@@ -294,16 +305,23 @@ static void resample_clip_start(seq8_instance_t *inst, const char *val) {
         const play_fx_t *fx = &inst->tracks[tr_i].pfx;
         dst = midi_dest_resolve(fx->route, fx->slot, fx->midi_to);
     }
+    if (src < RS_SRC_WET || src > RS_SRC_FX) src = RS_SRC_WET;
     if (!dst.emit || (dst.route != ROUTE_SCHWUNG && dst.route != ROUTE_MOVE)
-            || ((src == RS_SRC_DRY || src == RS_SRC_PRE) && (dst.route != ROUTE_SCHWUNG
-                                      || !g_ext->capture_start_src)))
+            || (src != RS_SRC_WET && !g_ext->capture_start_src))
         inst->resample_err = RS_ERR_ROUTE;
     else if (effective_mute(inst, tr_i))
         inst->resample_err = RS_ERR_MUTED;
     if (inst->resample_err) { inst->resample_state = RS_FAILED; return; }
     rs_remember_armed(inst);
-    inst->resample_src  = (uint8_t)(src == RS_SRC_DRY ? RS_SRC_DRY : src == RS_SRC_PRE ? RS_SRC_PRE : RS_SRC_WET);
-    inst->resample_slot = dst.slot;
+    inst->resample_src  = (uint8_t)src;
+    inst->resample_move = dst.route == ROUTE_MOVE;
+    if (inst->resample_move) {
+        /* the Move track it plays: its channel (a follower's, the followed track's) */
+        const int ch = dst.channel != MIDI_DEST_KEEP_CH ? dst.channel : (inst->tracks[tr_i].channel & 0x0F);
+        inst->resample_slot = (uint8_t)(ch > 3 ? 3 : ch);
+    } else {
+        inst->resample_slot = dst.slot;
+    }
     for (t = 0; t < NUM_TRACKS; t++) {
         inst->tracks[t].queued_clip       = -1;
         inst->tracks[t].will_relaunch     = 0;
@@ -380,6 +398,7 @@ static void export_take_start(seq8_instance_t *inst, const char *val) {
     }
     rs_remember_armed(inst);
     inst->resample_src  = RS_SRC_DRY;
+    inst->resample_move = 0;
     inst->resample_slot = dst.slot;
     for (t = 0; t < NUM_TRACKS; t++) {
         inst->tracks[t].queued_clip       = -1;

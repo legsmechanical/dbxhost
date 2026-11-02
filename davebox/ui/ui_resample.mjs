@@ -131,7 +131,7 @@ export function drawSampleMenu() {
  * Dry) after Length, and an Audio clip's In place after that. `rows(r)` names
  * them in order. */
 function rows(r) {
-    if (r.flatten) return r.choice ? ['fx', 'warm', 'start'] : ['warm', 'start'];   /* Flatten track's (ui_audio_convert) */
+    if (r.flatten) return ['fx', 'warm', 'start'];   /* Flatten track's (ui_audio_convert) */
     if (r.track < 0) return ['bars', 'warm', 'tail', 'start'];
     return r.audio ? ['bars', 'src', 'place', 'warm', 'tail', 'start'] : ['bars', 'src', 'warm', 'tail', 'start'];
 }
@@ -190,7 +190,7 @@ export function openClipResampleOptions(t, c, from) {
      * the current clip with the new sample at default settings"). */
     const audio = S.trackPadMode[t] === PAD_MODE_AUDIO;
     S.confirmResample = { track: t, clip: c, bars, warm: inst === 'move', tail: 0, src: 0,
-                          dryOk: inst === 'schwung', from: from || 'menu', audio, inPlace: false,
+                          dryOk: inst !== null, from: from || 'menu', audio, inPlace: false,
                           sel: audio ? 5 : 4, editing: false };
     S.screenDirty = true;
 }
@@ -248,8 +248,10 @@ export function drawResampleOptions() {
     const editing = (name) => r.editing && rowAt(r) === name;
     const all = {
         bars:  { label: 'Length',  value: barsLabel(r.bars), editing: editing('bars') },
-        /* Dry needs a Schwung chain: on a Move instrument the value is '-'
-         * (UI_LANGUAGE §6: unavailable is said in the value). */
+        /* Dry: the track's own output — a Schwung chain's slot, a Move
+         * instrument's Move FX bus — after its effects, at its fader, without
+         * the sends and Master FX. Always available on a clip (the '-' is a
+         * scene's: UI_LANGUAGE §6, unavailable is said in the value). */
         src:   { label: 'Source',  value: r.dryOk ? (r.src ? 'Dry' : 'Wet') : '-' },
         place: { label: 'In place', value: r.inPlace ? 'On' : 'Off' },
         fx:    { label: 'Effects', value: r.post ? 'Post' : 'Pre' },

@@ -1510,7 +1510,8 @@ typedef struct {
     uint32_t resample_done;       /* frames captured so far */
     char     resample_path[256];
     uint8_t  resample_src;        /* RS_SRC_WET (the mix) / RS_SRC_DRY (resample_slot's stem) */
-    uint8_t  resample_slot;
+    uint8_t  resample_slot;       /* the source's index: a chain slot, or (resample_move) a Move track */
+    uint8_t  resample_move;       /* 1: a Move track's bus (MOVE_CAPTURE_MOVE*), not a chain slot */
     uint8_t  resample_restore;    /* put the armed clips back at the next transport stop */
     uint8_t  resample_lead_wait;  /* renders STARTING waits before capturing (LEAD_BLOCKS) */
     uint8_t  resample_hear;       /* track + 1 an export take plays muted or not (0 = none) */

@@ -48,9 +48,27 @@ const lagged = [];
  * waits (OB-Xd: 243 ms against a 100 ms timeout), so the slot's reads right
  * after a load come back null — here until the next tick. */
 let readsDead = false;
-globalThis.shadow_get_param = (slot, key) => (readsDead ? null : (slot === 4 && SLOT[key] !== undefined ? SLOT[key] : ''));
+/* slot 2 (track 3's): its own FX and levels; slot 0 carries Move bus 3's */
+const SLOT2 = {}, BUS = {};
+const SLOT2_OWN = { 'fx1:module': 'tapedelay', 'fx1:state': '{"own":1}', 'fx1:bypassed': '0',
+                    'slot:volume': '1.000', 'slot:pan': '0.500', 'slot:send_a': '0.000', 'slot:send_b': '0.000' };
+const BUS3 = { 'move_fx:3:fx1:module': '/data/UserData/daveboxSA/modules/audio_fx/cloudseed/cloudseed.so', 'move_fx:3:fx1:state': '{"bus":1}',
+               'move_fx:3:fx1:bypassed': '0', 'move_fx:3:fx2:module': 'freeverb', 'move_fx:3:fx2:state': '{"bus":2}',
+               'move_fx:3:fx2:bypassed': '1', 'move_fx:3:volume': '0.700', 'move_fx:3:pan': '0.300',
+               'move_fx:3:send_a': '0.250', 'move_fx:3:send_b': '0.000' };
+const SLOT5 = {};
+const SLOTS = { 4: SLOT, 2: SLOT2, 0: BUS, 5: SLOT5 };
+const otherSets = [];      /* [slot, key, val] for slots 0 and 2 */
+globalThis.shadow_get_param = (slot, key) => (readsDead ? null
+    : (SLOTS[slot] && SLOTS[slot][key] !== undefined ? SLOTS[slot][key] : ''));
 globalThis.shadow_set_param = (slot, key, val) => {
-    if (slot !== 4) return 1;
+    if (slot !== 4) {
+        if (!SLOTS[slot]) return 1;
+        otherSets.push([slot, key, String(val)]);
+        SLOTS[slot][key] = String(val);
+        if (/:module$/.test(key) && val) readsDead = true;
+        return 1;
+    }
     slotSets.push([key, String(val)]);
     if (/:module$/.test(key) && val) readsDead = true;
     if (/:module$/.test(key) && slotLags) lagged.push({ key, val: String(val), at: slotLags });
@@ -150,6 +168,60 @@ step('⭐ a Move-instrument track gets its route and channel back', () => {
     assert(S.trackRoute[2] === 1 && S.trackChannel[2] === 3, 'route ' + S.trackRoute[2] + ' ch ' + S.trackChannel[2]);
     assert(sent('t2_route').pop() === 'move', 'route write ' + JSON.stringify(sent('t2_route')));
     ticks(2);
+});
+
+step('⭐⭐ a Move instrument (Josh, 2026-11-02: "move instruments feed track buses with schwung effects"): its Move FX bus effects and levels are COPIED onto the Audio track (Post: bypassed); the bus keeps its own; Undo puts the slot\'s own back; Redo the copy', () => {
+    const fill = (m, src) => { for (const k of Object.keys(m)) delete m[k]; Object.assign(m, src); };
+    fill(SLOT2, SLOT2_OWN); fill(BUS, BUS3); otherSets.length = 0;
+    S.trackRoute[2] = 1; S.trackChannel[2] = 3; S.trackPadMode[2] = 0; S.trackMidiTo[2] = 0;
+    S.pendingTrackConvert = { t: 2, toAudio: true, bypassFx: true, takes: [] };
+    ticks(4);
+    const copied = () => SLOT2['fx1:module'] === 'cloudseed' && SLOT2['fx1:state'] === '{"bus":1}' && SLOT2['fx2:module'] === 'freeverb'
+        && SLOT2['fx2:state'] === '{"bus":2}' && SLOT2['fx3:module'] === '' && SLOT2['fx4:module'] === ''
+        && SLOT2['slot:volume'] === '0.700' && SLOT2['slot:pan'] === '0.300' && SLOT2['slot:send_a'] === '0.250';
+    assert(S.trackRoute[2] === 0 && copied(), '⭐ the bus was not copied onto the slot: ' + JSON.stringify(SLOT2));
+    assert(SLOT2['fx1:bypassed'] === '1' && SLOT2['fx2:bypassed'] === '1', 'Post did not bypass the copies: ' + JSON.stringify(SLOT2));
+    assert(!otherSets.some((x) => x[0] === 0 && /^move_fx:/.test(x[1])), 'the Move bus was changed: '
+           + JSON.stringify(otherSets.filter((x) => x[0] === 0)));
+    undo();
+    ticks(4);
+    assert(S.trackRoute[2] === 1 && S.trackChannel[2] === 3, 'route ' + S.trackRoute[2]);
+    assert(SLOT2['fx1:module'] === 'tapedelay' && SLOT2['fx1:state'] === '{"own":1}' && SLOT2['fx1:bypassed'] === '0'
+           && SLOT2['fx2:module'] === '' && SLOT2['slot:volume'] === '1.000' && SLOT2['slot:send_a'] === '0.000',
+           '⭐ Undo did not put the slot\'s own back: ' + JSON.stringify(SLOT2));
+    redo();
+    ticks(4);
+    assert(S.trackRoute[2] === 0 && copied() && SLOT2['fx1:bypassed'] === '1', '⭐ Redo did not copy again: ' + JSON.stringify(SLOT2));
+    undo(); ticks(4);
+    /* Pre: the copies keep each block's own bypass */
+    S.pendingTrackConvert = { t: 2, toAudio: true, takes: [] };
+    ticks(4);
+    assert(copied() && SLOT2['fx1:bypassed'] === '0' && SLOT2['fx2:bypassed'] === '1', 'Pre: ' + JSON.stringify(SLOT2));
+    undo(); ticks(4);
+    assert(SLOT2['fx1:module'] === 'tapedelay', 'the last Undo');
+});
+
+step('⭐ a MIDI track that follows another\'s instrument gets THAT slot\'s effects and levels', () => {
+    for (const k of Object.keys(SLOT5)) delete SLOT5[k];
+    SLOT['slot:volume'] = '0.800';
+    S.trackRoute[5] = 2; S.trackMidiTo[5] = 5; S.trackPadMode[5] = 0;      /* follows track 5 (slot 4) */
+    S.pendingTrackConvert = { t: 5, toAudio: true, takes: [] };
+    ticks(4);
+    assert(SLOT5['fx1:module'] === SLOT['fx1:module'] && SLOT5['fx2:module'] === SLOT['fx2:module']
+           && SLOT5['fx2:bypassed'] === SLOT['fx2:bypassed'] && SLOT5['slot:volume'] === '0.800',
+           'the followed slot was not copied: ' + JSON.stringify(SLOT5));
+    undo(); ticks(4);
+    assert(S.trackRoute[5] === 2 && S.trackMidiTo[5] === 5 && SLOT5['fx1:module'] === '', 'Undo: ' + JSON.stringify(SLOT5));
+    S.trackRoute[5] = 0; S.trackMidiTo[5] = 0;
+});
+
+step('CONTROL: a Schwung track keeps its own FX and levels (nothing copied)', () => {
+    otherSets.length = 0;
+    S.trackRoute[2] = 0; S.trackPadMode[2] = 0;
+    S.pendingTrackConvert = { t: 2, toAudio: true, takes: [] };
+    ticks(4);
+    assert(!otherSets.some((x) => /^fx\d:module$|^slot:/.test(x[1])), 'a Schwung track\'s rack was rewritten: ' + JSON.stringify(otherSets));
+    undo(); ticks(2);
 });
 
 step('a slot that never takes the module: the Undo says so', () => {
