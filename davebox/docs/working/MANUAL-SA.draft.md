@@ -2654,14 +2654,14 @@ with the tempo and root note (not the scale — the set opens in Major).
 - **Schwung, MIDI and Conductor tracks get a placeholder** (so does a Move track
   with no matching Move instrument), **switched off**: the notes are there, but
   nothing plays until you drop in your own instrument.
-- **Audio tracks are flattened first, then become Live audio tracks.** Before it
-  writes the bundle, export runs [Flatten track](#166-recording-audio) on every Audio
-  track: each clip is recorded as it plays (before the track's effects, which stay
-  on it here but don't go to Live) and starts over as a Loop clip playing its
-  recording, which Live gets as that sample. This takes a moment per clip, and the
-  project keeps the flattened clips: **Undo** brings back the last track's only
-  (Undo is one step deep). **Back** while it records cancels the export. A muted Audio track isn't flattened.
-  It exports as it is.
+- **Audio tracks become Live audio tracks, each clip recorded as it sounds.** Before
+  it writes the bundle, export plays every Audio clip once to warm up, then records
+  it: through the track's effects, at its level and pan, with its automation, and
+  with the Conductor when you answer **Yes** to **Apply Conductor?**. A muted or
+  soloed-out track is recorded too. Each recording is exactly as long as the clip
+  loops, so it loops in Live as it does here. This takes as long as the clips play.
+  **Back** while it records cancels the export. Your project isn't changed. Sends
+  come across as for any track, but the recordings don't include the Master FX.
 - **Schwung tracks are named for what they played** — `SCH-nusaw`, or
   `SCH-nusaw - Big Lead` when the module reports a patch name (most modules don't).
 - **Send levels come across**, along with two empty return tracks to send to.
@@ -2699,8 +2699,8 @@ drops straight back to its start. Points left outside a lane's loop
   drove aren't exported either.
 - **Pitch bend on Schwung tracks** — the bend range is set by the synth, and a
   Schwung track exports as a placeholder.
-- **Audio automation lanes** — export flattens Audio tracks first, so their lanes
-  are already in the recording.
+- **Audio tracks' automation**, as lanes: it is in each clip's recording, and only
+  the sends come across as automation.
 - **Automation inside a Schwung module**, and dAVEBOx's own bank parameters —
   neither exists in Live.
 - **The part of a lane that runs past its clip.** A lane can be longer than its

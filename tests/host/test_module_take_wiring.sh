@@ -44,8 +44,12 @@ check "the shim fills all three members" filled
 # The dry stem: every slot mix loop keeps the tapped slot's contribution. A site
 # without it records SILENCE for that path (rebuild / deferred / inline), and the
 # path a session takes depends on Link Audio and the chain's FX mode.
+# A muted or soloed-out slot's take keeps the slot as set (sampler_take_tap.h),
+# at every site too.
 taps() {
-    [ "$(code "$SHIM" | grep -c 'if (tap) shadow_take_tap\[i\] = sampler_take_tap_sample(contrib);')" = 3 ] &&
+    [ "$(code "$SHIM" | grep -c 'if (tap) shadow_take_tap\[i\] = sampler_take_tap_sample(!tap_silenced ? contrib')" = 3 ] &&
+    [ "$(code "$SHIM" | grep -c 'const int tap_silenced = tap && sampler_take_tap_silenced(')" = 3 ] &&
+    [ "$(code "$SHIM" | grep -c 'sampler_take_tap_as_set(shadow_chain_slots\[s\].volume, tap_pl, tap_pr, i)')" = 3 ] &&
     [ "$(code "$SHIM" | grep -c 'me_unity\[i\] += contrib;')" = 3 ]
 }
 check "all three slot mix loops keep the tapped slot's contribution" taps

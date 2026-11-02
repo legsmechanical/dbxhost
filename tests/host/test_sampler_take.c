@@ -85,5 +85,12 @@ int main(void) {
     expect(sampler_take_from_tap(1, SAMPLER_TAKE_SRC_PRE) && sampler_take_from_tap(1, SAMPLER_TAKE_SRC_SLOT)
            && !sampler_take_from_tap(1, SAMPLER_TAKE_SRC_MIX) && !sampler_take_from_tap(0, SAMPLER_TAKE_SRC_PRE),
            "the take reads the tap for SLOT and PRE only");
+    printf("a stem ignores mute and solo:\n");
+    expect(!sampler_take_tap_silenced(0, 0, 0), "plain: the mix's own gain");
+    expect(sampler_take_tap_silenced(1, 0, 0), "muted: silenced in the mix");
+    expect(sampler_take_tap_silenced(0, 1, 0), "another slot soloed: silenced");
+    expect(!sampler_take_tap_silenced(0, 1, 1), "itself soloed: the mix's own gain");
+    expect(sampler_take_tap_as_set(0.5f, 0.8f, 0.6f, 0) == 0.5f * 0.8f
+           && sampler_take_tap_as_set(0.5f, 0.8f, 0.6f, 1) == 0.5f * 0.6f, "as set: its volume and pan, left then right");
     return fails;
 }

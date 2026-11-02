@@ -9,9 +9,9 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Added
-- **Export to Ableton carries Audio tracks** as Live audio tracks: it flattens each
-  Audio track first (every clip recorded as it plays), so Live gets each clip as
-  its recording.
+- **Export to Ableton carries Audio tracks** as Live audio tracks: every Audio clip is
+  recorded as it sounds (its effects, level, pan and automation, and the Conductor if
+  you apply it), exactly as long as it loops. Your project isn't changed.
 - **Audio tracks.** Choose **Audio** in a track's **Instmt/Dest** picker and each clip
   plays its own sample — picked from your library (WAV or AIFF, auditioned as you
   browse) and copied into the project. A track that plays an instrument first offers to

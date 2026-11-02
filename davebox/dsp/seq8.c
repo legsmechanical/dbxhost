@@ -1492,6 +1492,7 @@ typedef struct {
     uint8_t  resample_slot;
     uint8_t  resample_restore;    /* put the armed clips back at the next transport stop */
     uint8_t  resample_lead_wait;  /* renders STARTING waits before capturing (LEAD_BLOCKS) */
+    uint8_t  resample_hear;       /* track + 1 an export take plays muted or not (0 = none) */
     uint8_t  resample_prev_clip[NUM_TRACKS], resample_prev_relaunch[NUM_TRACKS];
     uint8_t  merge_solo_track;   /* 0xFF = capture all 8 tracks (scene mode); else only this
                                   * track's output is captured (Track-View single-clip merge).
@@ -2098,6 +2099,10 @@ static void drum_clips_reset(seq8_track_t *tr) {
 
 static int effective_mute(seq8_instance_t *inst, int t) {
     int i, any_solo = 0;
+    /* an export take (export_take_start) plays its track as it is set, muted
+     * or soloed out: the export carries every track. States RS_ARMED ..
+     * RS_RECORDING (seq8_resample.c). */
+    if (inst->resample_hear == t + 1 && inst->resample_state >= 1 && inst->resample_state <= 3) return 0;
     for (i = 0; i < NUM_TRACKS; i++)
         if (inst->solo[i]) { any_solo = 1; break; }
     return inst->mute[t] || (any_solo && !inst->solo[t]);
@@ -9330,6 +9335,11 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         const char *cp = strstr(key + 15, "_c");
         if (!cp) return -1;
         return snprintf(out, out_len, "%d", resample_clip_bars(inst, my_atoi(key + 15), my_atoi(cp + 2)));
+    }
+    if (!strncmp(key, "export_take_ticks_t", 19)) {  /* export_take_ticks_tT_cC_kK */
+        const char *cp = strstr(key + 19, "_c"), *kp = cp ? strstr(cp + 2, "_k") : NULL;
+        if (!cp || !kp) return -1;
+        return snprintf(out, out_len, "%ld", export_take_ticks(inst, my_atoi(key + 19), my_atoi(cp + 2), my_atoi(kp + 2)));
     }
     if (!strncmp(key, "resample_bars_", 14))
         return snprintf(out, out_len, "%d", resample_scene_bars(inst, my_atoi(key + 14)));

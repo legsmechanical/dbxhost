@@ -346,6 +346,12 @@ static int sp_globals_misc(sp_ctx_t *cx) {
         resample_clip_start(inst, val);
         return 1;
     }
+    if (!strcmp(key, "export_take")) {
+        /* val = "T C ticks cond |path" — the Ableton export's take of an
+         * Audio track's clip (seq8_resample.c export_take_start). */
+        export_take_start(inst, val);
+        return 1;
+    }
     if (!strcmp(key, "resample_clear")) {
         /* The UI has read a finished take's outcome. */
         if (!rs_active(inst)) inst->resample_state = RS_IDLE;

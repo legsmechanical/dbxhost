@@ -244,19 +244,21 @@ static int rs_refuse(seq8_instance_t *inst, int c, int bars, int tail, const cha
     return inst->resample_err;
 }
 
-/* The pass, its frames, and the start — after the take's tracks are queued. */
-static void rs_launch(seq8_instance_t *inst, int bars, int warm, int tail, const char *path) {
+/* The pass (`pass` master ticks), its frames, and the start — after the
+ * take's tracks are queued. */
+static void rs_launch_ticks(seq8_instance_t *inst, uint32_t pass, int warm, int tail, const char *path) {
     snprintf(inst->resample_path, sizeof(inst->resample_path), "%s", path + 1);
-    {
-        uint32_t pass = (uint32_t)bars * RS_BAR_TICKS;
-        inst->resample_start_tick = warm ? pass : 0;
-        inst->resample_end_tick   = inst->resample_start_tick + pass;
-        inst->resample_frames     = rs_ticks_to_frames(inst, pass + (uint32_t)tail * RS_BAR_TICKS);
-        inst->resample_bar_frames = rs_ticks_to_frames(inst, RS_BAR_TICKS);
-    }
+    inst->resample_start_tick = warm ? pass : 0;
+    inst->resample_end_tick   = inst->resample_start_tick + pass;
+    inst->resample_frames     = rs_ticks_to_frames(inst, pass + (uint32_t)tail * RS_BAR_TICKS);
+    inst->resample_bar_frames = rs_ticks_to_frames(inst, RS_BAR_TICKS);
     inst->resample_done = 0;
     inst->resample_state = RS_ARMED;
     ext_transport_start(inst);
+}
+static void rs_launch(seq8_instance_t *inst, int bars, int warm, int tail, const char *path) {
+    inst->resample_hear = 0;
+    rs_launch_ticks(inst, (uint32_t)bars * RS_BAR_TICKS, warm, tail, path);
 }
 
 /* set_param "resample_scene" = "C bars warmup tail |path". Refusals leave the
@@ -309,4 +311,84 @@ static void resample_clip_start(seq8_instance_t *inst, const char *val) {
     }
     inst->tracks[tr_i].queued_clip = (int8_t)c;
     rs_launch(inst, bars, warm, tail, path);
+}
+
+/* ---- The Ableton export's take (Josh, 2026-11-02: "let's simply flatten
+ * audio tracks before exporting" · "export flattens") ----
+ *
+ * One Audio track's clip, recorded for Live as it sounds and as it loops:
+ *   - its chain slot's own output (Dry: its effects, at its fader and pan; no
+ *     sends, no Master FX — the export brings neither);
+ *   - muted or soloed out, it still plays (resample_hear): Live gets every
+ *     track;
+ *   - `cond`: the Conductor's clip in the same row plays with it, so a
+ *     responding track is moved as it is here (the export's Apply Conductor);
+ *   - exactly as long as it loops — the clip's own span, or where it and the
+ *     Conductor's clip are back at their start together — in TICKS, not whole
+ *     bars: Live loops the take at its own length;
+ *   - after one warm-up pass, so what rings over the loop point is at the
+ *     take's start, as it is when the clip comes round.
+ * Nothing in the project changes: the clips armed before are put back
+ * (rs_remember_armed). */
+#define RS_EXPORT_CAP_BARS 64
+
+/* One clip's span in master ticks if it sounds, else 0. */
+static uint32_t rs_clip_span(const seq8_instance_t *inst, int t, int c) {
+    uint32_t lcm = 1, longest = 0;
+    int over = 0;
+    rs_fold_track(inst, t, c, &lcm, &longest, &over);
+    return longest;
+}
+
+/* The take's length in ticks: 0 = nothing sounds; -1 = the clip and the
+ * Conductor's do not line up within RS_EXPORT_CAP_BARS. */
+static long export_take_ticks(const seq8_instance_t *inst, int t, int c, int cond) {
+    if (t < 0 || t >= NUM_TRACKS || c < 0 || c >= NUM_CLIPS) return 0;
+    uint32_t a = rs_clip_span(inst, t, c);
+    if (!a) return 0;
+    int ct = inst->conductor_track;
+    if (cond && ct >= 0 && ct != t) {
+        uint32_t b = rs_clip_span(inst, ct, c);
+        if (b) {
+            uint64_t l = (uint64_t)a / rs_gcd(a, b) * b;
+            if (l > (uint64_t)RS_EXPORT_CAP_BARS * RS_BAR_TICKS) return -1;
+            a = (uint32_t)l;
+        }
+    }
+    return a > (uint32_t)RS_EXPORT_CAP_BARS * RS_BAR_TICKS ? -1 : (long)a;
+}
+
+/* set_param "export_take" = "T C ticks cond |path". Refusals as resample_clip's
+ * (resample_err); `ticks` must be export_take_ticks's answer. */
+static void export_take_start(seq8_instance_t *inst, const char *val) {
+    int tr_i = -1, c = -1, cond = 0, t;
+    unsigned ticks = 0;
+    const char *path = strchr(val, '|');
+    midi_dest_t dst;
+    sscanf(val, "%d %d %u %d", &tr_i, &c, &ticks, &cond);
+    if (tr_i < 0 || tr_i >= NUM_TRACKS || !ticks || ticks > (unsigned)RS_EXPORT_CAP_BARS * RS_BAR_TICKS) {
+        inst->resample_err = RS_ERR_ARGS; inst->resample_state = RS_FAILED; return;
+    }
+    if (rs_refuse(inst, c, 1, 0, path)) return;
+    {
+        const play_fx_t *fx = &inst->tracks[tr_i].pfx;
+        dst = midi_dest_resolve(fx->route, fx->slot, fx->midi_to);
+    }
+    if (inst->tracks[tr_i].pad_mode != PAD_MODE_AUDIO || !dst.emit || dst.route != ROUTE_SCHWUNG
+            || !g_ext->capture_start_src) {
+        inst->resample_err = RS_ERR_ROUTE; inst->resample_state = RS_FAILED; return;
+    }
+    rs_remember_armed(inst);
+    inst->resample_src  = RS_SRC_DRY;
+    inst->resample_slot = dst.slot;
+    for (t = 0; t < NUM_TRACKS; t++) {
+        inst->tracks[t].queued_clip       = -1;
+        inst->tracks[t].will_relaunch     = 0;
+        inst->tracks[t].pending_page_stop = 0;
+    }
+    inst->tracks[tr_i].queued_clip = (int8_t)c;
+    if (cond && inst->conductor_track >= 0 && inst->conductor_track != tr_i)
+        inst->tracks[inst->conductor_track].queued_clip = (int8_t)c;
+    inst->resample_hear = (uint8_t)(tr_i + 1);
+    rs_launch_ticks(inst, ticks, 1, 0, path);
 }

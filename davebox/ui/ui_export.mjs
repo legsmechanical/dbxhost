@@ -20,13 +20,12 @@
 import { S, conductorTrackIdx } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { slotIndex, DAVEBOX_HOST_DIR, SLOT_LEVEL_MAX, engineGet, engineGetSlotParam } from './ui_engine.mjs';
-import { showActionPopup } from './ui_persistence.mjs';
+import { showActionPopup, showActionPopupFor } from './ui_persistence.mjs';
 import { midiFxLeftOut } from './ui_print.mjs';
-import { NUM_TRACKS, NUM_CLIPS, ACTION_POPUP_MS, PAD_MODE_CONDUCT, PAD_MODE_AUDIO } from './ui_constants.mjs';
-/* a cycle (ui_audio_convert imports sanitizeName from here): used only inside
+import { NUM_TRACKS, NUM_CLIPS, ACTION_POPUP_MS, PAD_MODE_CONDUCT, PAD_MODE_AUDIO, SCENE_LETTERS } from './ui_constants.mjs';
+/* a cycle (ui_resample imports sanitizeName from here): used only inside
  * function bodies */
-import { auConvertSource, auConvertHasNotes } from './ui_audio_convert.mjs';
-import { auParseInfo, dspAnswer } from './ui_audio.mjs';
+import { RS_ERR_TEXT } from './ui_resample.mjs';
 
 /* Our own module directory — where build.sh/build_sound.sh put pack.py and the
  * JSON templates. It MUST follow the build's module id: SA ships as
@@ -830,6 +829,9 @@ function paPrepareTrack(t, r, ctx) {
         if (lane.track !== t) continue;
         const what = classifyPaTarget(lane.target);
         if (!what || what.kind !== 'mixer') continue;
+        /* an Audio track's take holds its fader and pan as they moved: only
+         * its sends come across (buildAudioClip) */
+        if (S.trackPadMode[t] === PAD_MODE_AUDIO && (what.field === 'volume' || what.field === 'pan')) continue;
         if (!ctx.paMixerIds[t][what.field]) ctx.paMixerIds[t][what.field] = ctx.nextPaId++;
     }
 }
@@ -903,86 +905,37 @@ function withSendLevels(mixer, t) {
  * the sample's own tempo (Move read 120 off the file; setting 240 on the Move
  * wrote 240, the region unchanged).
  *
- * (Josh, 2026-10-31: "the mix") What Live can play itself goes as the
- * sample; what it cannot is rendered by the DSP (`_au_export`):
- *   Loop clip, Warp → the sample itself, warped at the clip's Tempo: the
- *                window from Start for the clip's length, Pitch / Detune /
- *                Gain as the clip's transpose / detune / gain, Shift as the
- *                start marker inside the loop, Nudge as the window moved
- *                (a Nudge later than Start's frame 0 cannot lead with
- *                silence: it starts at 0). On Revrs the DSP writes the sample
- *                reversed and the clip warps that.
- *   Loop clip, Sync Pitch / Vintage (Live has neither) → rendered, one cycle.
- *   Slice clip → rendered, one cycle.
- * A render is warped at the tempo it was rendered at.
- * Not carried: the Audio lanes (only the mixer's come across, as for any
- * track), the Conductor. */
+ * Each clip is its export take (pollExportFlatten): the clip recorded as it
+ * plays, through its track's effects at its fader and pan, exactly as long as
+ * it loops. It is warped at the tempo it was recorded at — its ticks over its
+ * frames, exact, not the rounded `bpm` read. Its automation (the Audio lanes,
+ * volume and pan) is IN the recording, so none of it is written again; only
+ * the sends, which the take does not hold, come across on the mixer. */
 function auClipName(t, c) { return 'T' + (t + 1) + ' ' + String.fromCharCode(65 + c); }
-
-export function parseAuExport(line) {
-    if (!line) return null;
-    const bar = line.indexOf('|');
-    if (bar < 0) return null;
-    const f = line.slice(0, bar).trim().split(/\s+/);
-    const path = line.slice(bar + 1);
-    const n = (i) => parseInt(f[i], 10);
-    if (f[0] === 'L' && f.length >= 13) {
-        return { kind: 'loop', rate: n(1), frames: n(2), rs: n(3), bpm10: n(4), pitch: n(5),
-                 detune: n(6), gain: n(7), revrs: n(8), sync: n(9), rot: n(10), nudge: n(11),
-                 loopTicks: n(12), path: path };
-    }
-    if ((f[0] === 'S' || f[0] === 'R') && f.length >= 3)
-        return { kind: f[0] === 'S' ? 'slice' : 'render', frames: n(1), span: n(2), path: path };
-    return null;
-}
 
 function round6(x) { return Math.round(x * 1e6) / 1e6; }
 
-/* One Audio clip as a Live audio clip, or null (no sample, nothing to render). */
+/* One Audio clip as a Live audio clip: its take, or null (it is silent). */
 function buildAudioClip(t, c, ctx) {
-    const a = parseAuExport(host_module_get_param('t' + t + '_c' + c + '_au_export'));
-    if (!a) return null;
-    let sampleUri, tempo, start, len, play, gain = 0, transpose = 0, detune = 0, span;
-    if (a.kind === 'loop') {
-        if (!(a.rate > 0) || !(a.bpm10 > 0) || !(a.loopTicks > 0)) return null;
-        /* on Revrs the path is the DSP's reversed copy: named for its clip */
-        const name = a.revrs ? auClipName(t, c) + ' reversed.wav' : undefined;
-        sampleUri = 'Samples/' + encodeURIComponent(assignSampleDest(ctx, a.path, name));
-        tempo = a.bpm10 / 10;
-        /* Nudge: the sample that much later (+) or earlier (-) against the bar */
-        start = round6(Math.max(0, a.rs / a.rate - (a.nudge || 0) / 1000) * tempo / 60);
-        len = a.loopTicks / 96;
-        /* Shift: the audio rotated later, so the clip starts that far before
-         * the end of its loop */
-        const rot = ((a.rot % a.loopTicks) + a.loopTicks) % a.loopTicks;
-        play = rot ? round6(start + (a.loopTicks - rot) / 96) : start;
-        gain = a.gain; transpose = a.pitch; detune = a.detune;
-        span = a.loopTicks;
-    } else {
-        if (!(a.frames > 0) || !(a.span > 0)) return null;
-        sampleUri = 'Samples/' + encodeURIComponent(assignSampleDest(ctx, a.path,
-            auClipName(t, c) + (a.kind === 'slice' ? ' slices.wav' : ' loop.wav')));
-        /* the render's own tempo, off its length: the DSP rendered at the
-         * engine's exact tempo, and the `bpm` read here is rounded */
-        tempo = round6(a.span / 96 * 60 * 44100 / a.frames);
-        start = 0; play = 0;
-        len = a.span / 96;
-        span = a.span;
-    }
-    paDecorateClip(t, c, [], ctx, span);
+    const k = ctx.auTakes && ctx.auTakes[t + '_' + c];
+    if (!k || !(k.nframes > 0) || !(k.ticks > 0)) return null;
+    const sampleUri = 'Samples/' + encodeURIComponent(assignSampleDest(ctx, k.path, auClipName(t, c) + '.wav'));
+    const tempo = round6(k.ticks / 96 * 60 * 44100 / k.nframes);
+    const len = round6(k.ticks / 96);
+    paDecorateClip(t, c, [], ctx, k.ticks);
     return {
         isPlaying: false,
         name: '',
         color: null,
         isEnabled: true,
         timeSignature: { upper: 4, lower: 4 },
-        region: { start: play, end: round6(start + len), loop: { start: start, end: round6(start + len), isEnabled: true } },
+        region: { start: 0, end: len, loop: { start: 0, end: len, isEnabled: true } },
         stepEditorScrollPosition: 0.0,
         sampleUri: sampleUri,
         warping: { markers: [], tempoAfterLastMarker: tempo },
-        gain: gain,
-        transpose: transpose,
-        detune: detune,
+        gain: 0,
+        transpose: 0,
+        detune: 0,
         envelopes: []
     };
 }
@@ -1152,94 +1105,121 @@ function armExport() {
     S.exportMidiFxLeftOut    = midiFxLeftOut();
     S.confirmExportCondPhase = false;
     S.globalMenuOpen         = false;
-    const list = exportFlattenList();
-    if (list.length) {
-        if (S.clockFollowOn) { showActionPopup('NOT EXPORTED', 'Clock Follow is on'); return; }
-        S.exportFlatten = { list, i: 0, phase: 'start', takes: null, at: 0 };
+    if (S.trackPadMode.some((m) => m === PAD_MODE_AUDIO)) {
+        /* the takes are read in the tick (get_param), then recorded */
+        S.exportFlatten = { phase: 'list' };
+        showActionPopup('EXPORTING', 'Audio tracks');
         return;
     }
     S.pendingExport = true;
     showActionPopup('EXPORTING', '...');
 }
 
-/* ── AUDIO TRACKS ARE FLATTENED FIRST ─────────────────────────────────────
+/* ── AUDIO TRACKS ARE RECORDED FIRST ──────────────────────────────────────
  * (Josh, 2026-11-02: "let's simply flatten audio tracks before exporting.
- * the juice isn't worth the squeeze" · "export flattens") Every Audio track
- * that sounds is flattened as Flatten track does it (ui_audio_convert, its
- * defaults: before the track's effects, no warm-up), one track after
- * another, before the set is written. Each clip is then a plain Loop clip
- * playing its recording, which goes to Live as that sample (buildAudioClip).
- * The project keeps the flattened clips; Undo (one step deep) brings back
- * the last track's. A
- * muted track is not flattened (it would record silence) and exports as it
- * is. Back while one records cancels the export; tracks flattened before it
- * stay flattened. */
-function exportFlattenList() {
-    const out = [];
-    const anySolo = S.trackSoloed.some((v) => v);
-    for (let t = 0; t < NUM_TRACKS; t++) {
-        if (S.trackPadMode[t] !== PAD_MODE_AUDIO || !auConvertHasNotes(t)) continue;
-        if (S.trackMuted[t] || (anySolo && !S.trackSoloed[t])) continue;
-        out.push(t);
-    }
-    return out;
+ * the juice isn't worth the squeeze" · "export flattens"; then, on what that
+ * must mean: Live sounds like the project, and the project is untouched.)
+ * Before the set is written, every Audio clip that sounds is recorded as it
+ * plays, one after another (the engine's export_take): its track's chain slot
+ * with its effects, at its fader and pan; muted or soloed out all the same;
+ * with the Conductor's clip in its row when Apply Conductor is Yes; exactly as
+ * long as it loops; after a warm-up pass so what rings over the loop point is
+ * at its start. Each take goes to Live as that clip's audio
+ * (buildAudioClip). Nothing in the project changes — no clip is replaced, and
+ * the takes are deleted once the bundle is packed. Back while one records
+ * cancels the export. */
+const EXPORT_TAKES_DIR = EXPORT_OUT_DIR + '/takes';
+const RS_IDLE = 0, RS_ARMED = 1, RS_STARTING = 2, RS_RECORDING = 3,
+      RS_DONE = 4, RS_CANCELLED = 5, RS_FAILED = 6;
+
+function sampling() {
+    try { return !!host_sampler_is_recording(); } catch (e) { return false; }
 }
 
-const EXPORT_LOAD_MS = 15000;     /* the flattened clips' recordings load */
-
-function exportFlattenFail(line2) {
+function exportTakesFail(...lines) {
+    const f = S.exportFlatten;
+    if (f && f.sent && (S.resampleState | 0) !== RS_IDLE)
+        S.pendingDefaultSetParams.push({ key: 'resample_clear', val: '1' });
     S.exportFlatten = null;
-    showActionPopup('NOT EXPORTED', line2);
+    S.exportTakes = null;
+    if (S.resampleTake && S.resampleTake.exportTakes) S.resampleTake = null;
+    host_system_cmd("rm -rf '" + EXPORT_TAKES_DIR + "'");
+    showActionPopupFor(4000, 'NOT EXPORTED', ...lines);
     S.pendingMenuAt = 'Export to Ableton';
 }
 
-/* Every tick while S.exportFlatten is set: start the next track's flatten,
- * follow it, and once the last one's recordings are loaded, arm the export. */
+function takeName(k) { return (k.t + 1) + SCENE_LETTERS[k.c]; }
+
+/* Every tick while S.exportFlatten is set (tick context: get_param works). */
 function pollExportFlatten() {
     const f = S.exportFlatten;
     if (!f) return;
-    if (f.phase === 'start') {
-        /* the previous flatten is wholly done and the transport has stopped */
-        if (S.auConvert || S.auApply || S.pendingAuConvertStart >= 0 || S.resampleTake || S.playing) return;
-        if (f.i >= f.list.length) { f.phase = 'load'; f.at = nowMs(); return; }
-        const t = f.list[f.i];
-        S.auConvertSrc = auConvertSource(t, true, false);
-        S.auConvertBypass = false;
-        S.auConvertWarm = false;
-        S.pendingAuConvertStart = t;
-        f.phase = 'run'; f.takes = null;
+    if (f.phase === 'list') {
+        const cond = S.exportApplyConductor ? 1 : 0;
+        const list = [];
+        for (let t = 0; t < NUM_TRACKS; t++) {
+            if (S.trackPadMode[t] !== PAD_MODE_AUDIO) continue;
+            for (let c = 0; c < NUM_CLIPS; c++) {
+                const ticks = parseInt(host_module_get_param('export_take_ticks_t' + t + '_c' + c + '_k' + cond), 10);
+                if (ticks === -1) {
+                    exportTakesFail((t + 1) + SCENE_LETTERS[c] + ' and its', 'Conductor clip', 'meet past 64 bars');
+                    return;
+                }
+                if (!(ticks > 0)) continue;
+                list.push({ t, c, ticks, cond, path: EXPORT_TAKES_DIR + '/t' + t + '_c' + c + '.wav', nframes: 0 });
+            }
+        }
+        if (!list.length) { S.exportFlatten = null; S.exportTakes = {}; S.pendingExport = true; return; }
+        if (S.clockFollowOn) { exportTakesFail('Clock Follow is on'); return; }
+        host_system_cmd("rm -rf '" + EXPORT_TAKES_DIR + "'");
+        host_ensure_dir(EXPORT_OUT_DIR);
+        host_ensure_dir(EXPORT_TAKES_DIR);
+        Object.assign(f, { phase: 'send', list, i: 0, sent: false });
+        /* the surface is held as for any take: Back cancels (ui_resample) */
+        S.resampleTake = { convert: true, exportTakes: true };
         return;
     }
-    if (f.phase === 'run') {
-        if (S.pendingAuConvertStart >= 0 || S.auConvert) return;
-        if (S.auApply) {                      /* every take is in: the clips load them */
-            if (!f.takes) f.takes = S.auApply.takes.map((k) => ({ t: S.auApply.t, c: k.c, path: k.path }));
-            return;
+    const k = f.list[f.i];
+    const st = S.resampleState | 0;
+    if (f.phase === 'send') {
+        if (st !== RS_IDLE || sampling() || S.playing) return;
+        S.pendingDefaultSetParams.push({ key: 'export_take',
+            val: k.t + ' ' + k.c + ' ' + k.ticks + ' ' + k.cond + ' |' + k.path });
+        Object.assign(f, { phase: 'run', sent: true, seen: false, stopSent: false, at: nowMs() });
+        showActionPopupFor(60000, 'EXPORTING', 'Audio ' + takeName(k) + ', ' + (f.i + 1) + '/' + f.list.length, 'Back cancels');
+        return;
+    }
+    if (st === RS_IDLE) {
+        if (!f.seen && nowMs() - f.at > 3000) exportTakesFail('Audio ' + takeName(k), 'No response');
+        return;
+    }
+    f.seen = true;
+    if (st === RS_ARMED || st === RS_STARTING || st === RS_RECORDING) return;
+    if (st === RS_DONE) {
+        if (!f.stopSent) {
+            f.stopSent = true;
+            k.nframes = S.resampleFrames >>> 0;
+            S.pendingDefaultSetParams.push({ key: 'transport', val: 'stop' });
         }
-        /* neither recording nor applying: done, or it stopped (Back, a failed take) */
-        if (!f.takes) { exportFlattenFail('Flatten stopped'); return; }
-        f.done = (f.done || []).concat(f.takes);
+        if (sampling()) return;                     /* the file is still being written */
+        if (!k.nframes || !host_file_exists(k.path)) { exportTakesFail('Audio ' + takeName(k), 'Not recorded'); return; }
+        S.pendingDefaultSetParams.push({ key: 'resample_clear', val: '1' });
         f.i++;
-        f.phase = 'start';
+        f.phase = 'send';
+        if (f.i < f.list.length) return;
+        /* every take is in */
+        S.exportTakes = {};
+        for (const x of f.list) S.exportTakes[x.t + '_' + x.c] = x;
+        S.exportFlatten = null;
+        S.resampleTake = null;
+        S.pendingExport = true;
         return;
     }
-    if (f.phase === 'load') {
-        /* each clip plays its own recording, loaded */
-        if (S.pendingDefaultSetParams.length) return;
-        if ((S.tickCount | 0) % 10) return;
-        let ready = true;
-        for (const k of (f.done || [])) {
-            const i = auParseInfo(dspAnswer('t' + k.t + '_au_info_' + k.c));
-            const base = k.path.slice(k.path.lastIndexOf('/') + 1);
-            if (!i || i.state !== 2 || i.name !== base) { ready = false; break; }
-        }
-        if (ready) {
-            S.exportFlatten = null;
-            S.pendingExport = true;
-            showActionPopup('EXPORTING', '...');
-            return;
-        }
-        if (nowMs() - f.at > EXPORT_LOAD_MS) exportFlattenFail('A take did not load');
+    if (st === RS_CANCELLED) { if (!sampling()) exportTakesFail('Cancelled'); return; }
+    if (st === RS_FAILED) {
+        const err = parseInt(host_module_get_param('resample_err'), 10) | 0;
+        if (S.playing) S.pendingDefaultSetParams.push({ key: 'transport', val: 'stop' });
+        exportTakesFail('Audio ' + takeName(k), RS_ERR_TEXT[err] || 'Could not start');
     }
 }
 
@@ -1276,6 +1256,15 @@ function pollPendingExport() {
     }
     if (!S.pendingExportRun) return;
     S.pendingExportRun = false;
+    /* the Audio clips' takes: packed into the bundle, then deleted, whatever
+     * becomes of this export */
+    const auTakes = S.exportTakes || {};
+    S.exportTakes = null;
+    try { exportRun(auTakes); }
+    finally { if (Object.keys(auTakes).length) host_system_cmd("rm -rf '" + EXPORT_TAKES_DIR + "'"); }
+}
+
+function exportRun(auTakes) {
     /* Push the EXPORTING frame to the screen before we block on the packager. */
     host_flush_display();
 
@@ -1300,7 +1289,8 @@ function pollPendingExport() {
         chainCfg: loadChainConfig(),
         samples: [],          /* {src,dest} manifest → pack.py copies into Samples/ */
         sampleBySrc: {},      /* src → dest (dedupe shared samples) */
-        usedDest: {}          /* dest names taken (avoid basename collisions) */
+        usedDest: {},         /* dest names taken (avoid basename collisions) */
+        auTakes: auTakes      /* "t_c" → an Audio clip's take (pollExportFlatten) */
     };
 
     /* Fresh staging dir FIRST — buildSong's render writes EXPORT_RENDER_PATH

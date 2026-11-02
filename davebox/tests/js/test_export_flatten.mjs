@@ -1,17 +1,17 @@
 import './_bulk_get_stub.mjs';
-/* tests/js/test_export_flatten.mjs — Export to Ableton flattens the Audio
- * tracks first (Josh, 2026-11-02: "let's simply flatten audio tracks before
- * exporting" · "export flattens").
+/* tests/js/test_export_flatten.mjs — Export to Ableton records every Audio
+ * clip first (Josh, 2026-11-02: "export flattens"): Live sounds like the
+ * project, and the project is untouched.
  *
- * Driven through the real entry (confirmExportStart → armExport) and the real
- * flatten (auConvertStart / auConvertTick / the in-place apply), the tick's
- * order kept: pollPendingExport, then the conversion. A small fake engine
- * plays the DSP's part: a resample_clip take runs ARMED → RECORDING → DONE and
- * writes its file; a pick loads a few ticks later.
- *   - each sounding Audio track is flattened, one after another, before the
- *     write is armed; a muted one is not;
- *   - the write waits for every recording to be LOADED in its clip;
- *   - Back during a take stops the export;
+ * Driven through the real entry (confirmExportStart → armExport) and the
+ * real tick poll (pollPendingExport). A small fake engine plays the DSP's
+ * part: export_take_ticks answers each clip's length; an export_take runs
+ * ARMED → RECORDING → DONE and writes its file.
+ *   - every sounding Audio clip is taken, one after another, muted tracks too,
+ *     before the write is armed; with Apply Conductor the takes ask for it;
+ *   - nothing in the project is touched: no pick, reset or Audio setting;
+ *   - Back during a take stops the export; a take past the cap refuses it;
+ *   - the takes are deleted after the write, whatever becomes of it;
  *   - CONTROL: with no Audio track the write is armed at once. */
 let failed = 0;
 function ok(label) { console.log(`  ok   — ${label}`); }
@@ -19,163 +19,165 @@ function bad(label, e) { console.error(`  FAIL — ${label}: ${e && e.stack ? e.
 function step(label, fn) { try { fn(); ok(label); } catch (e) { bad(label, e); } }
 function assert(c, m) { if (!c) throw new Error(m); }
 
-for (const fn of ['host_system_cmd','host_file_exists','host_write_file','host_flush_display',
-                  'host_ensure_dir','host_remove_dir','shadow_get_param','shadow_set_param',
-                  'host_vol_block','host_edit_cc_block','clear_screen','print','fill_rect',
-                  'stipple_rect','set_pixel','text_width','move_midi_internal_send','set_led',
-                  'host_ext_midi_remap_clear','host_ext_midi_remap_set','host_ext_midi_remap_enable'])
+for (const fn of ['host_write_file','host_flush_display','host_ensure_dir','host_remove_dir',
+                  'shadow_get_param','shadow_set_param','host_vol_block','host_edit_cc_block',
+                  'clear_screen','print','fill_rect','stipple_rect','set_pixel','text_width',
+                  'move_midi_internal_send','set_led','host_ext_midi_remap_clear',
+                  'host_ext_midi_remap_set','host_ext_midi_remap_enable'])
     globalThis[fn] = () => (fn.indexOf('get') >= 0 || fn.indexOf('width') >= 0 ? '' : 0);
 globalThis.host_sampler_is_recording = () => 0;
 globalThis.host_read_file = () => '';
 
-const DIR = '/data/UserData/daveboxSA/projects/p1/dAVEBOx/samples';
 /* the fake engine */
-const E = { takes: [], picks: [], info: {}, loadIn: {}, cancelAt: -1, tick: 0 };
-globalThis.__stubStat = {};
+const E = { ticks: {}, queried: [], takes: [], files: {}, sets: [], cmds: [], cancelAt: -1, tick: 0 };
+globalThis.host_file_exists = (p) => !!E.files[p];
+globalThis.host_system_cmd = (c) => { E.cmds.push(c); return 0; };
 globalThis.host_module_get_param = (k) => {
-    let m;
-    if (/^t\d_au_dir$/.test(k)) return DIR;
-    if ((m = /^resample_bars_t(\d)_c(\d+)$/.exec(k))) return '1';
-    if (k === 'bpm') return '120';
-    if ((m = /^t(\d)_au_info_(\d+)$/.exec(k))) {
-        const i = E.info[m[1] + '_' + m[2]];
-        if (!i) return '';
-        /* the info line: 17+ numbers, then |name (state first) */
-        return i.state + ' 0 0 16 1 16 0 0 0 0 88200 44100 2 0 0 0 1 0 0 -1 1200|' + i.name;
-    }
+    const m = /^export_take_ticks_t(\d)_c(\d+)_k(\d)$/.exec(k);
+    if (m) { E.queried.push(k); const v = E.ticks[m[1] + '_' + m[2]]; return v === undefined ? '0' : String(v); }
+    if (k === 'resample_err') return '7';
     return '';
 };
-globalThis.host_module_set_param = (k, v) => {
-    const m = /^t(\d)_au_pick(_join)?$/.exec(k);
-    if (m) {
-        const bar = String(v).indexOf('|');
-        const c = parseInt(String(v).slice(0, bar), 10), path = String(v).slice(bar + 1);
-        E.picks.push({ t: +m[1], c, path });
-        E.info[m[1] + '_' + c] = { state: 1, name: '' };
-        E.loadIn[m[1] + '_' + c] = { at: E.tick + 6, name: path.slice(path.lastIndexOf('/') + 1) };
-    }
-};
+globalThis.host_module_set_param = (k, v) => { E.sets.push(k); };
 
 async function main() {
 const xp = await import('../../ui/ui_export.mjs');
-const cv = await import('../../ui/ui_audio_convert.mjs');
 const { S } = await import('../../ui/ui_state.mjs');
-const { PAD_MODE_AUDIO } = await import('../../ui/ui_constants.mjs');
+const { PAD_MODE_AUDIO, PAD_MODE_CONDUCT } = await import('../../ui/ui_constants.mjs');
+const { resampleModalCC } = await import('../../ui/ui_resample.mjs');
 
 function setup(audio, muted) {
-    for (let t = 0; t < 8; t++) {
-        S.trackPadMode[t] = 0; S.trackRoute[t] = 0; S.trackMuted[t] = false; S.trackSoloed[t] = false;
-        for (let c = 0; c < 16; c++) { S.auInfo[t][c] = null; S.clipNonEmpty[t][c] = false; }
-    }
-    for (const [t, cs] of audio) {
-        S.trackPadMode[t] = PAD_MODE_AUDIO;
-        for (const c of cs) S.auInfo[t][c] = { state: 2, name: 'old ' + t + c + '.wav', mode: 0 };
-    }
+    for (let t = 0; t < 8; t++) { S.trackPadMode[t] = 0; S.trackMuted[t] = false; S.trackSoloed[t] = false; }
+    E.ticks = {};
+    for (const [t, cs] of audio) { S.trackPadMode[t] = PAD_MODE_AUDIO; for (const [c, n] of cs) E.ticks[t + '_' + c] = n; }
     for (const t of muted) S.trackMuted[t] = true;
     S.playing = false; S.clockFollowOn = false;
-    S.resampleState = 0; S.resampleTake = null; S.auConvert = null; S.auApply = null;
-    S.pendingAuConvertStart = -1; S.pendingDefaultSetParams.length = 0; S.clearDrainHold = 0;
-    S.exportFlatten = null; S.pendingExport = false; S.pendingExportRun = false;
-    S.currentSetName = 'P';
-    /* a clip reset puts the active clip's bank knobs back (the device has them) */
-    if (!S.bankParams) S.bankParams = Array.from({ length: 8 }, () => Array.from({ length: 16 }, () => new Array(8).fill(0)));
-    E.takes = []; E.picks = []; E.info = {}; E.loadIn = {}; E.cancelAt = -1;
+    S.resampleState = 0; S.resampleFrames = 0; S.resampleTake = null;
+    S.pendingDefaultSetParams.length = 0;
+    S.exportFlatten = null; S.exportTakes = null; S.pendingExport = false; S.pendingExportRun = false;
+    S.exportApplyConductor = false;
+    E.queried = []; E.takes = []; E.files = {}; E.sets = []; E.cmds = []; E.cancelAt = -1;
 }
 
-/* One tick, in ui_tick's order: the export's poll, then the conversion; then
- * the engine answers what was queued. */
-let rs = null;      /* the take running: { path, left } */
-function tick() {
+/* One tick: the export's poll, then the engine answers what was queued. */
+let rs = null;
+function tick(stopAtWrite) {
     E.tick++;
-    S.tickCount = E.tick;
-    if (S.pendingExport && !S.pendingExportRun) { S.pendingExportRun = true; S.pendingExport = false; }
-    else if (!S.pendingExportRun) xp.pollPendingExport();
-    if (S.pendingAuConvertStart >= 0) {
-        const t = S.pendingAuConvertStart;
-        S.pendingAuConvertStart = -1;
-        if (!S.playing) cv.auConvertStart(t);
-    }
-    cv.auConvertTick();
-    /* the engine */
+    if (stopAtWrite && armed()) return;
+    xp.pollPendingExport();
     const q = S.pendingDefaultSetParams.splice(0);
-    S.clearDrainHold = 0;
     for (const e of q) {
-        if (e.key === 'resample_clip') {
-            const path = e.val.slice(e.val.indexOf('|') + 1);
-            E.takes.push({ val: e.val, path });
-            rs = { path, left: 5 };
+        if (e.key === 'export_take') {
+            const f = e.val.split(' ');
+            rs = { path: e.val.slice(e.val.indexOf('|') + 1), left: 4, ticks: +f[2] };
+            E.takes.push(e.val);
             S.resampleState = 1; S.playing = true;
         } else if (e.key === 'resample_clear') S.resampleState = 0;
-        else if (e.key === 'transport' && e.val === 'stop') S.playing = false;
+        else if (e.key === 'transport' && e.val === 'stop') { S.playing = false; if (rs && S.resampleState !== 4) { S.resampleState = 5; rs = null; } }
+        else E.sets.push(e.key);
     }
     if (rs) {
-        if (E.cancelAt === E.takes.length && S.resampleState === 3) { S.resampleState = 5; S.playing = false; rs = null; }
+        /* Back, through the surface the take holds (ui_resample) */
+        if (E.cancelAt === E.takes.length && S.resampleState === 3) {
+            assert(resampleModalCC(51, 127) === true, 'Back was not taken while the take ran');
+        }
         else if (S.resampleState === 1) S.resampleState = 3;
         else if (S.resampleState === 3 && --rs.left <= 0) {
-            globalThis.__stubStat[rs.path] = { size: 1000, mode: 0o100644 };
-            S.resampleState = 4; rs = null;
+            E.files[rs.path] = 1; S.resampleFrames = rs.ticks * 229.6875; S.resampleState = 4; rs = null;
         }
     }
-    for (const k in E.loadIn) if (E.loadIn[k].at === E.tick) { E.info[k] = { state: 2, name: E.loadIn[k].name }; }
 }
-function run(max) { for (let i = 0; i < max && !S.pendingExportRun && (S.exportFlatten || S.pendingExport); i++) tick(); }
+/* the write is armed (its first phase may have run in the same poll) */
+const armed = () => S.pendingExport || S.pendingExportRun;
+function runToWrite(max) { for (let i = 0; i < max && !armed() && S.exportFlatten; i++) tick(true); }
 
 step('CONTROL: with no Audio track, the write is armed at once', () => {
     setup([], []);
     xp.confirmExportStart();
-    assert(S.pendingExport && !S.exportFlatten, 'pendingExport ' + S.pendingExport + ' flatten ' + JSON.stringify(S.exportFlatten));
+    assert(armed() && !S.exportFlatten, 'pendingExport ' + S.pendingExport + ' flatten ' + JSON.stringify(S.exportFlatten));
 });
 
-step('⭐ each sounding Audio track is flattened first, one after another; a muted one is not', () => {
-    setup([[2, [0, 1]], [5, [3]], [6, [0]]], [6]);
+step('⭐ every sounding Audio clip is taken, one after another, muted tracks too', () => {
+    setup([[2, [[0, 384], [1, 576]]], [5, [[3, 384]]]], [5]);
     xp.confirmExportStart();
-    assert(!S.pendingExport && S.exportFlatten, 'the write was armed before any flatten');
-    run(400);
-    const who = E.takes.map((x) => x.val.split(' ').slice(0, 2).join(' '));
-    assert(JSON.stringify(who) === JSON.stringify(['2 0', '2 1', '5 3']), 'takes ' + JSON.stringify(who));
-    /* before its effects (src 2), no warm-up: Flatten track's defaults */
-    assert(E.takes.every((x) => x.val.split(' ')[3] === '0' && x.val.split(' ')[5] === '2'), 'takes ' + JSON.stringify(E.takes.map((x) => x.val)));
-    assert(S.pendingExportRun, 'the write never came');
-    const picked = E.picks.map((p) => p.t + ':' + p.c);
-    assert(JSON.stringify(picked) === JSON.stringify(['2:0', '2:1', '5:3']), 'picks ' + JSON.stringify(picked));
-    assert(E.picks.every((p, i) => p.path === E.takes[i].path), 'a clip picked something other than its take');
+    assert(!armed() && S.exportFlatten, 'the write was armed before any take');
+    runToWrite(400);
+    const who = E.takes.map((v) => v.split(' ').slice(0, 4).join(' '));
+    assert(JSON.stringify(who) === JSON.stringify(['2 0 384 0', '2 1 576 0', '5 3 384 0']), 'takes ' + JSON.stringify(who));
+    assert(armed(), 'the write never came');
+    const k = S.exportTakes && S.exportTakes['2_1'];
+    assert(k && k.ticks === 576 && k.nframes === 576 * 229.6875 && /t2_c1\.wav$/.test(k.path), 'take ' + JSON.stringify(k));
+    assert(S.resampleTake === null, 'the surface is still held');
 });
 
-step('⭐ the write waits until every recording is loaded in its clip', () => {
-    setup([[2, [0]]], []);
-    xp.confirmExportStart();
-    let pickedAt = -1;
-    for (let i = 0; i < 400 && !S.pendingExportRun; i++) {
-        tick();
-        if (pickedAt < 0 && E.picks.length) pickedAt = E.tick;
-        if (pickedAt >= 0 && E.info['2_0'].state !== 2)
-            assert(!S.pendingExport && !S.pendingExportRun, 'armed while the take was still loading');
-    }
-    assert(pickedAt >= 0 && S.pendingExportRun, 'never armed');
-    assert(E.info['2_0'].state === 2, 'armed before the load');
+step('⭐ nothing in the project is touched: no pick, reset or Audio setting', () => {
+    const touched = E.sets.filter((k) => /_au_|_hard_reset|_clear$|_pa_clear/.test(k));
+    assert(!touched.length, 'touched ' + JSON.stringify(touched));
 });
 
-step('⭐ Back during a take stops the export', () => {
-    setup([[2, [0, 1]]], []);
-    E.cancelAt = 2;                           /* the second take is cancelled */
+step('⭐ with Apply Conductor the takes ask for it, and their lengths', () => {
+    setup([[2, [[0, 1152]]]], []);
+    S.exportApplyConductor = true;
+    S.trackPadMode[6] = PAD_MODE_CONDUCT;
+    S.confirmExportCondPhase = true;
+    S.confirmExportCondSel = 0;
+    xp.confirmExportCondClick();
+    runToWrite(400);
+    assert(E.queried.every((k) => /_k1$/.test(k)) && E.queried.length === 16, 'queried ' + JSON.stringify(E.queried.slice(0, 3)));
+    assert(E.takes.length === 1 && E.takes[0].split(' ')[3] === '1', 'take ' + JSON.stringify(E.takes));
+    S.trackPadMode[6] = 0;
+});
+
+step('⭐ Back during a take stops the export, and its takes go', () => {
+    setup([[2, [[0, 384], [1, 384]]]], []);
+    E.cancelAt = 2;
     xp.confirmExportStart();
-    for (let i = 0; i < 400 && S.exportFlatten; i++) tick();
-    for (let i = 0; i < 20; i++) tick();
-    assert(!S.exportFlatten && !S.pendingExport && !S.pendingExportRun, 'the export went on');
-    assert(S.actionPopupLines[0] === 'NOT EXPORTED', 'popup ' + JSON.stringify(S.actionPopupLines));
-    assert(E.picks.length === 0, 'a cancelled flatten still replaced clips');
+    for (let i = 0; i < 400 && S.exportFlatten; i++) tick(true);
+    assert(!S.exportFlatten && !armed() && !S.exportTakes, 'the export went on');
+    assert(S.actionPopupLines[0] === 'NOT EXPORTED' && S.actionPopupLines[1] === 'Cancelled', 'popup ' + JSON.stringify(S.actionPopupLines));
+    assert(E.cmds.some((c) => /rm -rf '.*\/davebox-exports\/takes'/.test(c)), 'the takes were left');
+    assert(S.resampleTake === null, 'the surface is still held');
+});
+
+step('a clip that meets the Conductor past the cap refuses the export, recording nothing', () => {
+    setup([[2, [[0, 384], [1, -1]]]], []);
+    xp.confirmExportStart();
+    for (let i = 0; i < 10 && S.exportFlatten; i++) tick(true);
+    assert(!armed() && !E.takes.length, 'it recorded');
+    assert(S.actionPopupLines[0] === 'NOT EXPORTED' && S.actionPopupLines[1] === '3B and its', 'popup ' + JSON.stringify(S.actionPopupLines));
+});
+
+step('a take the engine refuses stops the export, saying why', () => {
+    setup([[2, [[0, 384]]]], []);
+    xp.confirmExportStart();
+    tick(true); tick(true);                      /* list, then the send */
+    S.pendingDefaultSetParams.length = 0; S.resampleState = 6; rs = null;
+    tick(true);
+    assert(!S.exportFlatten && !armed(), 'went on');
+    assert(S.actionPopupLines[0] === 'NOT EXPORTED' && S.actionPopupLines[2] === 'The track plays no instrument', 'popup ' + JSON.stringify(S.actionPopupLines));
+});
+
+step('⭐ the takes are deleted after the write, whatever becomes of it', () => {
+    setup([[2, [[0, 384]]]], []);
+    xp.confirmExportStart();
+    runToWrite(400);
+    assert(armed(), 'no write');
+    E.cmds = [];
+    tick(false); tick(false);                    /* EXPORTING, then the write (it stops at NO TEMPLATE here) */
+    assert(S.exportTakes === null, 'the takes are still pending');
+    assert(E.cmds.some((c) => /rm -rf '.*\/davebox-exports\/takes'/.test(c)), 'the takes were left: ' + JSON.stringify(E.cmds));
 });
 
 step('Clock Follow on: nothing is recorded, the export says why', () => {
-    setup([[2, [0]]], []);
+    setup([[2, [[0, 384]]]], []);
     S.clockFollowOn = true;
     xp.confirmExportStart();
-    assert(!S.exportFlatten && !S.pendingExport, 'started');
-    assert(S.actionPopupLines[0] === 'NOT EXPORTED', 'popup ' + JSON.stringify(S.actionPopupLines));
-    S.clockFollowOn = false;
+    for (let i = 0; i < 10 && S.exportFlatten; i++) tick(true);
+    assert(!armed() && !E.takes.length, 'started');
+    assert(S.actionPopupLines[0] === 'NOT EXPORTED' && S.actionPopupLines[1] === 'Clock Follow is on', 'popup ' + JSON.stringify(S.actionPopupLines));
 });
 
-if (failed) { console.error('FAIL: Export flattens Audio tracks first'); process.exit(1); }
-console.log('PASS: Export flattens Audio tracks first');
+if (failed) { console.error('FAIL: Export records Audio clips first'); process.exit(1); }
+console.log('PASS: Export records Audio clips first');
 }
 main().catch((e) => { console.error(e); process.exit(1); });

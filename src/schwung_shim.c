@@ -3296,13 +3296,21 @@ static void shadow_inprocess_mix_from_buffer(void) {
                 mix_glide_t *mg = shadow_mix_targets(s);   /* the loop glides toward these */
                 const int tap = sampler_take_tap_wants(sampler_module_take, sampler_take_src_kind,
                                                        sampler_take_src_index, s);
+                /* a take of a muted / soloed-out slot keeps the slot as set */
+                const int tap_silenced = tap && sampler_take_tap_silenced(shadow_chain_slots[s].muted,
+                                                                          shadow_solo_count,
+                                                                          shadow_chain_slots[s].soloed);
+                const float tap_pl = shadow_pan_gain_l(shadow_chain_slots[s].pan),
+                            tap_pr = shadow_pan_gain_r(shadow_chain_slots[s].pan);
                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
                     float vol = mix_glide_gain(mg, i) * shadow_chain_slots[s].fade.gain;
                     int32_t contrib = (int32_t)lroundf((float)fx_buf[i] * vol);
                     la_acc[i] += contrib;
                     me_full[i] += contrib;
                     me_unity[i] += contrib;
-                    if (tap) shadow_take_tap[i] = sampler_take_tap_sample(contrib);
+                    if (tap) shadow_take_tap[i] = sampler_take_tap_sample(!tap_silenced ? contrib
+                        : (int32_t)lroundf((float)fx_buf[i] * shadow_chain_slots[s].fade.gain *
+                              sampler_take_tap_as_set(shadow_chain_slots[s].volume, tap_pl, tap_pr, i)));
                     if (i & 1) { shadow_fade_advance(s); mix_glide_advance(mg); }
                 }
                 if (tap) shadow_take_tap_valid = 1;
@@ -3348,12 +3356,20 @@ skip_la_rebuild:
                 mix_glide_t *mg = shadow_mix_targets(s);   /* the loop glides toward these */
                 const int tap = sampler_take_tap_wants(sampler_module_take, sampler_take_src_kind,
                                                        sampler_take_src_index, s);
+                /* a take of a muted / soloed-out slot keeps the slot as set */
+                const int tap_silenced = tap && sampler_take_tap_silenced(shadow_chain_slots[s].muted,
+                                                                          shadow_solo_count,
+                                                                          shadow_chain_slots[s].soloed);
+                const float tap_pl = shadow_pan_gain_l(shadow_chain_slots[s].pan),
+                            tap_pr = shadow_pan_gain_r(shadow_chain_slots[s].pan);
                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
                     float vol = mix_glide_gain(mg, i) * shadow_chain_slots[s].fade.gain;
                     int32_t contrib = (int32_t)lroundf((float)fx_buf[i] * vol);
                     me_full[i] += contrib;
                     me_unity[i] += contrib;
-                    if (tap) shadow_take_tap[i] = sampler_take_tap_sample(contrib);
+                    if (tap) shadow_take_tap[i] = sampler_take_tap_sample(!tap_silenced ? contrib
+                        : (int32_t)lroundf((float)fx_buf[i] * shadow_chain_slots[s].fade.gain *
+                              sampler_take_tap_as_set(shadow_chain_slots[s].volume, tap_pl, tap_pr, i)));
                     if (i & 1) { shadow_fade_advance(s); mix_glide_advance(mg); }
                 }
                 if (tap) shadow_take_tap_valid = 1;
@@ -3399,12 +3415,20 @@ skip_la_rebuild:
                 mix_glide_t *mg = shadow_mix_targets(s);   /* the loop glides toward these */
                 const int tap = sampler_take_tap_wants(sampler_module_take, sampler_take_src_kind,
                                                        sampler_take_src_index, s);
+                /* a take of a muted / soloed-out slot keeps the slot as set */
+                const int tap_silenced = tap && sampler_take_tap_silenced(shadow_chain_slots[s].muted,
+                                                                          shadow_solo_count,
+                                                                          shadow_chain_slots[s].soloed);
+                const float tap_pl = shadow_pan_gain_l(shadow_chain_slots[s].pan),
+                            tap_pr = shadow_pan_gain_r(shadow_chain_slots[s].pan);
                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
                     float vol = mix_glide_gain(mg, i) * shadow_chain_slots[s].fade.gain;
                     int32_t contrib = (int32_t)lroundf((float)fx_buf[i] * vol);
                     me_full[i] += contrib;
                     me_unity[i] += contrib;
-                    if (tap) shadow_take_tap[i] = sampler_take_tap_sample(contrib);
+                    if (tap) shadow_take_tap[i] = sampler_take_tap_sample(!tap_silenced ? contrib
+                        : (int32_t)lroundf((float)fx_buf[i] * shadow_chain_slots[s].fade.gain *
+                              sampler_take_tap_as_set(shadow_chain_slots[s].volume, tap_pl, tap_pr, i)));
                     if (i & 1) { shadow_fade_advance(s); mix_glide_advance(mg); }
                 }
                 if (tap) shadow_take_tap_valid = 1;

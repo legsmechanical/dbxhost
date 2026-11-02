@@ -28,6 +28,19 @@ static inline int sampler_take_from_tap(int take, int kind) {
     return take && (kind == SAMPLER_TAKE_SRC_SLOT || kind == SAMPLER_TAKE_SRC_PRE);
 }
 
+/* Is the slot silenced in the mix — muted, or soloed out? A one-slot take is
+ * that slot's stem, and a stem ignores mute and solo (an export takes every
+ * track, muted or not): a silenced slot's take keeps the slot AS SET
+ * (sampler_take_tap_as_set) instead of the mix's zero. */
+static inline int sampler_take_tap_silenced(int muted, int solo_count, int soloed) {
+    return muted || (solo_count > 0 && !soloed);
+}
+
+/* The slot as set, for sample i (even = left): its volume and pan. */
+static inline float sampler_take_tap_as_set(float volume, float pan_l, float pan_r, int i) {
+    return volume * ((i & 1) ? pan_r : pan_l);
+}
+
 /* A contribution as the file keeps it: the mix's own rounding, clamped. */
 static inline int16_t sampler_take_tap_sample(int32_t contrib) {
     if (contrib > 32767) return 32767;

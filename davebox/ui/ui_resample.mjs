@@ -39,7 +39,7 @@ const RS_IDLE = 0, RS_ARMED = 1, RS_STARTING = 2, RS_RECORDING = 3,
       RS_DONE = 4, RS_CANCELLED = 5, RS_FAILED = 6;
 
 /* Why a take did not run (resample_err), as RESAMPLE FAILED's second line. */
-const RS_ERR_TEXT = {
+export const RS_ERR_TEXT = {
     1: 'Stop playback first',
     2: 'Clock Follow is on',
     4: 'A merge or bake is running',
@@ -353,8 +353,9 @@ export function resampleTick() {
         S.screenDirty = true;
     }
     const t = S.resampleTake;
-    /* a conversion's takes are auConvertTick's (ui_audio_convert): this one
-     * would put "undefined, bar NaN" on its notice and end it early */
+    /* a conversion's takes are auConvertTick's (ui_audio_convert), the
+     * export's are pollExportFlatten's (ui_export): this one would put
+     * "undefined, bar NaN" on its notice and end it early */
     if (!t || t.convert) return;
     const st = S.resampleState | 0;
     if (st === RS_IDLE) {
