@@ -1122,7 +1122,8 @@ static int au_stream_read(au_streamer_t *S, au_sample_t *s, uint32_t k) {
 }
 
 /* An offline copy's chunk k, not in when it was reached: read now (on the
- * copy's one thread, the streamer's mutex free), kept as one wanted this pass. */
+ * copy's one thread, the streamer's mutex free). It is let go of as any is:
+ * what a voice or the stretcher reads, the streamer wants. */
 static const int16_t *au_stream_fetch(const au_sample_t *cs, uint32_t k) {
     au_streamer_t *S = cs->st ? (au_streamer_t *)cs->st->sync : NULL;
     au_sample_t *s;
@@ -1131,10 +1132,7 @@ static const int16_t *au_stream_fetch(const au_sample_t *cs, uint32_t k) {
     pthread_mutex_lock(&S->mu);
     si = au_stream_find(S, cs);
     s = si >= 0 ? S->smp[si] : NULL;
-    if (s && k < s->nchunks) {
-        if (!s->chunk[k]) au_stream_read(S, s, k);
-        s->st->keep[k] = S->pass;
-    }
+    if (s && k < s->nchunks && !s->chunk[k]) au_stream_read(S, s, k);
     pthread_mutex_unlock(&S->mu);
     return __atomic_load_n(&cs->chunk[k], __ATOMIC_ACQUIRE);
 }

@@ -11,6 +11,8 @@
  *   - its sample is in for the take's first tick, though no thread loaded it;
  *   - it plays the file sample for sample, far past what the load pinned and
  *     with only one streamer pass a block: no gap, no fade;
+ *   - what it has played is let go of (the streamer's pass runs: a long take
+ *     does not hold the whole file);
  *   - a chunk nobody read is read when reached (a live engine finds none);
  *   - a Warp clip (stretched) plays with its ring never empty;
  *   - it writes nothing: no waveform summary for a file that had none. */
@@ -36,6 +38,8 @@ static void write_ramp(const char *path, double secs) {
     fclose(f);
 }
 static int ramp_at(double x) { return (int)((uint32_t)x % 30000); }
+
+static void count_pin(void *arg, uint32_t k) { if (k < 4096) ((uint8_t *)arg)[k] = 1; }
 
 static int exists(const char *p) { struct stat sb; return stat(p, &sb) == 0; }
 
@@ -153,6 +157,18 @@ int main(void) {
     HX_ASSERT(inst->resample_state == RS_RECORDING || inst->resample_state == RS_DONE, "the copy did not take it");
     HX_ASSERT(bad == 0, "the copy's streamed sample had a gap or a fade (it waited on the clock)");
     HX_ASSERT(inst->au_underruns == 0, "the copy counted an underrun");
+    {   /* played, ~2 s behind the voice and not one the load keeps: let go of */
+        static uint8_t pin[4096];
+        au_sample_t *s = inst->au_clip[4][0].smp;
+        uint32_t kk, played = (uint32_t)((1370.0 * 128 - t0) / AU_CHUNK), let = 0;
+        memset(pin, 0, sizeof pin);
+        au_pins(s->nchunks, s->frames, s->rate, 0, FR, count_pin, pin);
+        for (kk = 0; kk + 12 < played; kk++) {
+            HX_ASSERT(pin[kk] || !s->chunk[kk], "the copy kept a chunk it had played (no streamer pass)");
+            if (!pin[kk]) let++;
+        }
+        HX_ASSERT(let > 0, "rig: every chunk played was a pinned one");
+    }
 
     /* a chunk nobody read is read when reached */
     {
