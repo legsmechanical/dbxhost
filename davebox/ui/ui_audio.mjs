@@ -32,7 +32,7 @@ import { showActionPopupFor } from './ui_persistence.mjs';
 import { dspGet } from './ui_dsp_get.mjs';
 /* a cycle (ui_audio_editor imports this module): used only inside a function body */
 import { lazyFinish } from './ui_audio_editor.mjs';
-import { PAD_MODE_AUDIO, NUM_CLIPS, BANK_STEP, knobAltFor, auAutoKey, auSlicesAutoKey, SEQ_AUTO_TARGETS, AU_AUTO_BANK, auAutoBank } from './ui_constants.mjs';
+import { PAD_MODE_AUDIO, NUM_CLIPS, BANK_STEP, TPS_VALUES, knobAltFor, auAutoKey, auSlicesAutoKey, SEQ_AUTO_TARGETS, AU_AUTO_BANK, auAutoBank } from './ui_constants.mjs';
 import { automationParamEdit, automationParamTouch } from './ui_automation.mjs';
 import { bankListForMode, AU_MODE_LOOP, AU_MODE_SLICE, auIsSlice, auIsLoop } from './ui_pure.mjs';
 
@@ -184,7 +184,13 @@ export function auRead(t, c) {
     /* dspGet: inside a bulk read (a project load) the track's digest carries it */
     const i = auParseInfo(dspGet('t' + t + '_au_info_' + c));
     if (!i) return null;                          /* no answer (a timed-out read): still stale, read again */
+    const prev = S.auInfo[t][c];
     S.auInfo[t][c] = i;
+    /* a sample that has just landed: a Loop clip takes its Bars there
+     * (au_clip_set_bars), behind the screen's back — Flatten's reset had left
+     * it at 1 bar, and the loop length and waveform showed the first bar of a
+     * clip that played all of them */
+    if (prev && prev.state === 1 && i.state !== 1) auReadClipLength(t, c);
     /* A clip with a sample has content (Session View, launching). */
     if (i.name && S.clipNonEmpty && S.clipNonEmpty[t]) S.clipNonEmpty[t][c] = true;
     _stale.delete(t + '_' + c);
@@ -197,6 +203,14 @@ export function auRead(t, c) {
         if (i.err) showActionPopupFor(2500, 'NOT ' + (ew === 'TRIM' ? 'TRIMMED' : 'NORMALIZED'), AU_ERR_TEXT[i.err] || 'Failed');
     }
     return i;
+}
+
+function auReadClipLength(t, c) {
+    const len = parseInt(dspGet('t' + t + '_c' + c + '_length'), 10);
+    const tps = parseInt(dspGet('t' + t + '_c' + c + '_tps'), 10);
+    if (len > 0) S.clipLength[t][c] = len;
+    if (TPS_VALUES.indexOf(tps) >= 0) S.clipTPS[t][c] = tps;
+    S.screenDirty = true;
 }
 
 export function auMarkStale(t, c) {

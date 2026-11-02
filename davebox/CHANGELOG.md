@@ -124,6 +124,9 @@ the section into a versioned heading at release time.
   Clips of the same length still hand over in step with each other.
 
 ### Fixed
+- **A flattened clip longer than a bar shows its full length.** After Flatten, a clip
+  of several bars played all of them but its loop length and waveform showed only
+  the first bar until the length was changed by hand.
 - **Tracks playing Move's own instruments are in time with everything else.** Move
   plays a note it is sent about 9 ms after a Schwung instrument or an Audio track
   would, so a Move drum track always trailed the rest. dAVEBOx now plays its sequence

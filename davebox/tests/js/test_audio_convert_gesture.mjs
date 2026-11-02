@@ -310,11 +310,21 @@ step('⭐⭐ an Audio track freezes IN PLACE (Josh, 2026-10-30: "audio tracks ou
     const INFO_TAKE = (n) => '2 0 0 16 1 16 0 88200 0 0 88200 44100 2 0 0 0 16 0 0 88200 1200 4 50 0 0 0|' + n;
     GET['t4_au_info_0'] = INFO_TAKE('My Song 5A 1bar 120bpm.wav');
     GET['t4_au_info_2'] = INFO_TAKE('My Song 5C 2bar 120bpm.wav');
+    /* the engine sets a landed Loop clip to the take's bars (au_clip_set_bars):
+     * the reset left the screen at 1 bar, so the length is read back (Josh,
+     * 2026-11-02: "holding loop indicates that it's only one bar and the wave
+     * indicator on track overview only shows first bar") */
+    assert(S.clipLength[4][2] === 16, 'rig: the reset did not leave clip C at 1 bar: ' + S.clipLength[4][2]);
+    GET['t4_c0_length'] = '16'; GET['t4_c0_tps'] = '24';
+    GET['t4_c2_length'] = '32'; GET['t4_c2_tps'] = '24';
     ticks(40);
     const AU = await_au;
     assert(AU.auInfo(4, 2).state === 2 && AU.auInfo(4, 2).name === 'My Song 5C 2bar 120bpm.wav' && S.clipNonEmpty[4][2],
            'the non-current clip still reads as loading / empty: ' + JSON.stringify(AU.auInfo(4, 2)));
+    assert(S.clipLength[4][2] === 32 && S.clipLength[4][0] === 16,
+           'a landed take\'s length was not read back: C ' + S.clipLength[4][2] + ', A ' + S.clipLength[4][0]);
     delete GET['t4_au_info_0']; delete GET['t4_au_info_2'];
+    delete GET['t4_c0_length']; delete GET['t4_c0_tps']; delete GET['t4_c2_length']; delete GET['t4_c2_tps'];
     assert(sent('t4_convert_to_audio').length === 0, 'an Audio track was converted');
     assert(shadowSets.some((x) => x[0] === 4 && x[1] === 'fx1:bypassed' && x[2] === '1'), 'Post did not bypass');
     S.trackPadMode[4] = 0; GET['t4_pad_mode'] = '0'; NOSYNTH = false;
