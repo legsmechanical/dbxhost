@@ -47,8 +47,8 @@ static int clone_source(void *inst, slc_src_t *out, int with_fx) {
     out->nparams = 1;
     snprintf(out->params[0].key, sizeof out->params[0].key, "gain");
     snprintf(out->params[0].val, sizeof out->params[0].val, "5");
-    snprintf(out->state, sizeof out->state, "G=1");     /* the state wins over the param, as a load */
-    out->state_len = 3;
+    snprintf(out->state, sizeof out->state, "G=1 B=30");   /* the state wins over the param, as a load */
+    out->state_len = (int)strlen(out->state);
     out->knob_ccs = 1u << 1;                            /* CC 72 is a knob mapping */
     if (with_fx) {
         out->nfx = 1;
@@ -140,8 +140,9 @@ int main(void) {
     if (w && n == 300) {
         /* block 1 (the take's first): note 60 sent in block 0, +2 = 62, remapped
          * to channel 3; vel 100 x gain 2 (set by the copy) + 1000 (one Start)
-         * + 10 x 133 (the tempo the engine copy declared); x 0.5 */
-        CHECK(w[0] == half(6203) && w[1] == half(200 + 1000 + 1330), "frame 0: %d %d", w[0], w[1]);
+         * + 10 x 133 (the tempo the engine copy declared) + 30 (the state's
+         * base); x 0.5. Another slot's note, sent after it, is not heard. */
+        CHECK(w[0] == half(6203) && w[1] == half(200 + 1000 + 1330 + 30), "frame 0: %d %d", w[0], w[1]);
         CHECK(w[2 * 127] == half(6203), "frame 127: %d", w[2 * 127]);
         /* block 2: note 62 sent in block 1 (the start's) is heard now: 64 */
         CHECK(w[2 * 128] == half(6403), "frame 128: %d (the next block's note)", w[2 * 128]);

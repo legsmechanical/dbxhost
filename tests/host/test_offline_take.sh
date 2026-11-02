@@ -71,8 +71,8 @@ static void e_render(void *ip, int16_t *out, int frames) {
         g_ext->set_tempo(133.0f);
         g_ext->set_slot_param(e->slot, "synth:gain", "2");
         g_ext->set_slot_param(e->slot + 1, "synth:gain", "9");   /* another slot's */
-        slot_send(e->slot + 1, 0x90, 50, 127);             /* another slot's */
         slot_send(e->slot, 0x90, 60, 100);
+        slot_send(e->slot + 1, 0x90, 50, 127);             /* another slot's, after: it would win */
         if (e->mode == 1) slot_send(e->slot, 0xB0, 72, 64);   /* a knob-mapped CC */
     } else if (e->block == 1) {
         if (g_ext->capture_start_src(e->path, e->frames, e->kind, e->slot)) e->rs = 3;
@@ -90,7 +90,8 @@ plugin_api_v2_t *move_plugin_init_v2(const host_api_v1_t *h) { g_host = h; retur
 EOF
 
 # The instrument: L = note * 100 + channel, R = vel * gain + 1000 * Starts
-# heard + 10 * the tempo its host reported once it had heard one.
+# heard + 10 * the tempo its host reported once it had heard one + the base
+# its state set.
 cat > "$work/fixture_synth.c" <<'EOF'
 #include <stdint.h>
 #include <stdio.h>
@@ -99,7 +100,7 @@ cat > "$work/fixture_synth.c" <<'EOF'
 #include "host/plugin_api_v1.h"
 
 static const host_api_v1_t *g_host;
-typedef struct { int note, ch, vel, starts, bpm; float gain; } syn_t;
+typedef struct { int note, ch, vel, starts, bpm, base; float gain; } syn_t;
 static void *s_create(const char *d, const char *c) { (void)d; (void)c; syn_t *s = calloc(1, sizeof *s); s->gain = 1; return s; }
 static void s_destroy(void *i) { free(i); }
 static void s_midi(void *ip, const uint8_t *m, int len, int src) {
@@ -110,7 +111,11 @@ static void s_midi(void *ip, const uint8_t *m, int len, int src) {
 static void s_set(void *ip, const char *k, const char *v) {
     syn_t *s = ip;
     if (!strcmp(k, "gain")) s->gain = (float)atof(v);
-    else if (!strcmp(k, "state") && !strncmp(v, "G=", 2)) s->gain = (float)atof(v + 2);
+    else if (!strcmp(k, "state") && !strncmp(v, "G=", 2)) {
+        const char *b = strstr(v, " B=");
+        s->gain = (float)atof(v + 2);
+        if (b) s->base = atoi(b + 3);
+    }
 }
 static int s_get(void *ip, const char *k, char *b, int n) { (void)ip; (void)k; (void)b; (void)n; return -1; }
 static void s_render(void *ip, int16_t *out, int frames) {
@@ -119,7 +124,7 @@ static void s_render(void *ip, int16_t *out, int frames) {
     if (s->starts && !s->bpm && g_host && g_host->get_bpm) s->bpm = (int)(g_host->get_bpm() + 0.5f);
     for (i = 0; i < frames; i++) {
         out[2 * i]     = (int16_t)(s->note * 100 + s->ch);
-        out[2 * i + 1] = (int16_t)(s->vel * s->gain + 1000 * s->starts + 10 * s->bpm);
+        out[2 * i + 1] = (int16_t)(s->vel * s->gain + 1000 * s->starts + 10 * s->bpm + s->base);
     }
 }
 static plugin_api_v2_t api = { MOVE_PLUGIN_API_VERSION_2, s_create, s_destroy, s_midi, s_set, s_get, NULL, s_render };

@@ -15,6 +15,8 @@
  *   - the engine's private copy ({"offline":1}) loads that state with
  *     offline_load, plays it, and never writes: no save (not even destroy's),
  *     no log. */
+/* a log the test can open, so "the copy opens no log" can be seen failing */
+#define SEQ8_LOG_PATH "/tmp/davebox-tests/resample-offline.log"
 #include "harness.h"
 
 static void note_at(hx_t *h, int t, int c, int step, int pitch) {
@@ -66,6 +68,7 @@ int main(void) {
 
     /* ---- Pre: to the host ---- */
     h = rig(); inst = (seq8_instance_t *)h->inst;
+    HX_ASSERT(inst->log_fp != NULL, "rig: a live instance did not open its log (the copy's check would see nothing)");
     hx_clear_capture(h);
     hx_set_param(h, "resample_clip", "1 0 1 0 0 2 |/x/pre.wav");
     HX_ASSERT(went_offline(inst, 0), "a Pre take of a Schwung instrument did not go offline");
