@@ -1075,26 +1075,27 @@ export function auAltBit(t, bank, k) {
 }
 
 /* ---- SAMPLE's second page: what needs no waveform (Josh, 2026-10-29) —
- * K1 Sync (a Loop clip's), K2 Revrs, K8 Orig (touch + click: the Tempo =
- * the project's, so the sample plays as recorded; "orig") ---- */
+ * K1 Sync (a Loop clip's), K2 Pitch, K3 Detune, K4 Gain, K5 Tempo, K6 Revrs
+ * (Josh, 2026-11-02: "move knob order: 1: sync, 2 pitch, 3 detune, 4 gain,
+ * 5 tempo, 6 reverse" · "page 2 only"). Orig left its knob for Tempo's menu
+ * (touch Tempo + click: Fit to clip · Original tempo). ---- */
+/* page 2's knob k → the page-1 knob it turns (sampleKnob's), Sync -1 */
+export const AU_P2_KNOB = [-1, 4, 5, 3, 6, 7, null, null];
 export function auSampleP2Cells(t, c) {
     const i = auInfo(t, c);
     const loop = auIsLoop(i);
     const sync = { kind: 'enumsq', label: 'Sync', name: 'Sync: Vintage · Pitch · Warp',
                    text: AU_SYNC_NAMES[auSyncIdx(i)], sq: AU_SYNC_SQ[auSyncIdx(i)], options: AU_SYNC_NAMES, sel: auSyncIdx(i) };
-    const orig = { kind: 'action', oneWay: true, label: 'Orig', name: 'Orig: Tempo = project\'s', text: '->', opens: true };   /* corners: a click gesture (Josh) */
     const live = (x) => (i.state === 2 ? x : dash(x));
-    /* page 1's knobs as a grid, where they keep their places (Josh, 2026-10-30:
-     * "the sample waveform knob params ... duplicated on p 2 of sample";
-     * "start and length don't need to be in sample p2"); Orig on its own knob
-     * ("tempo and touch orig shouldn't share a knob") */
+    /* page 1's knobs as a grid (Josh, 2026-10-30: "the sample waveform knob
+     * params ... duplicated on p 2 of sample"), in their own order */
     const bpm = auBpm(i);
     const tempo = { kind: 'valsq', label: 'Tempo', name: 'Tempo (the sample\'s own)',
                     text: bpm ? String(Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) : '--',
                     norm: ((i.bpm10 || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN) };
     const gain = { kind: 'arc', label: 'Gain', name: 'Gain', text: fmtDb(i.gain), norm: (i.gain + 40) / 52 };
-    return [live(orig), loop ? live(sync) : BLANK, BLANK, live(gain), live(pitchCell('Pitch', i.pitch)),
-            live(detuneCell('Detune', i.detune)), live(tempo), live(revrsCell(i))];
+    return [loop ? live(sync) : BLANK, live(pitchCell('Pitch', i.pitch)), live(detuneCell('Detune', i.detune)),
+            live(gain), live(tempo), live(revrsCell(i)), BLANK, BLANK];
 }
 /* A turn on SAMPLE's second page. Returns true when something changed. */
 export function auSampleP2Knob(t, c, k, steps) {

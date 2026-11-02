@@ -67,7 +67,7 @@ import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLaz
          auSelSlice, auSetSelSlice, isAudioTrack, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
          auMarkAdd, auMarkDel, auManual, auEvenBake, auTrans, auTransBake, auRangeStep, auSet, auEnd, auPanelRingCells, auPanelReset,
          auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_LAZY_ENDED, AU_EVEN_MAX, AU_BPM10_MIN, AU_BPM10_MAX, auLenTicks,
-         auSampleP2Cells, auSampleP2Knob, auSampleReset, auEdit, auTrimCuts, auOrig, auFit, auNudgeStep, auFpt, auPlayedEnd, auTooLongToChop, auAutoEdit, auAutoTouch, auSlicesAutoTouch, SLICE_GRID } from './ui_audio.mjs';
+         auSampleP2Cells, auSampleP2Knob, AU_P2_KNOB, auSampleReset, auEdit, auTrimCuts, auOrig, auFit, auNudgeStep, auFpt, auPlayedEnd, auTooLongToChop, auAutoEdit, auAutoTouch, auSlicesAutoTouch, SLICE_GRID } from './ui_audio.mjs';
 import { registerScreenRingCells } from './ui_knob_leds.mjs';
 import { auModeValue } from './ui_pure.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -552,15 +552,23 @@ function sampleKnob(ed, k, d2) {
 const SAMPLE_AUTO_FIELD = { 3: 'gain', 4: 'pitch', 5: 'detune', 6: 'bpm10', 7: 'revrs' };
 function sampleAutoField(k, plain, p2, sl, slEdit) {
     if ((p2 && sl) || (slEdit && k > 2)) return null;
+    if (p2) k = AU_P2_KNOB[k];                              /* page 2's own order */
     if (k === 7 && !plain && !p2) return null;
     return SAMPLE_AUTO_FIELD[k] || null;
 }
+
+/* A Tempo x10 as shown: 120, 224.1 */
+function bpmText(v) { return v % 10 ? (v / 10).toFixed(1) : String(v / 10); }
 
 /* The picker's rows at its level. */
 export function auPickRows(ed) {
     const p = ed.pick;
     if (!p) return [];
     const i = auInfo(ed.t, ed.c);
+    /* touch Tempo + click (Josh, 2026-11-02: "both on a small pop-up menu
+     * that shows when you touch click tempo" · "menu should be "Fit to clip"
+     * "Original tempo""); Fit is a Loop clip's */
+    if (p.tempo) return (auIsLoop(i) ? [{ id: 'fit', label: 'Fit to clip' }] : []).concat([{ id: 'orig', label: 'Original tempo' }]);
     /* SAMPLE's menu (Josh, 2026-10-30: "it should load a menu for consistency.
      * AND i want to add trim and normalize options there"); chopping is
      * SLICES' alone */
@@ -609,6 +617,19 @@ function pickInput(ed, status, d1, d2) {
             ed.ask = { kind: 'edit', op: row.id, sel: 0 };   /* opens on New (Josh: "new copy is default") */
             return true;
         }
+        if (row.id === 'fit' || row.id === 'orig') {
+            ed.pick = null;
+            if (row.id === 'orig') {
+                if (auOrig(ed.t, ed.c)) showActionPopup('ORIGINAL TEMPO', bpmText(auInfo(ed.t, ed.c).bpm10 | 0) + ' BPM');
+                return true;
+            }
+            /* the sample's Tempo set once so Start to its end fills the clip
+             * (Josh, 2026-11-02: "fit to clip" · "(once)") */
+            const v = auFit(ed.t, ed.c);
+            if (v < 0) showActionPopup('FIT TO CLIP', 'Out of range');
+            else if (v) showActionPopup('FIT TO CLIP', bpmText(v) + ' BPM');
+            return true;
+        }
         if (row.id === 'kit') { ed.pick = null; S.pendingAuKit = { t: ed.t, c: ed.c }; return true; }   /* reads + a copy: the tick's */
         if (row.id === 'chop') { ed.pick = { level: 2, sel: 0, from: p.sel }; return true; }
         ed.pick = null;
@@ -621,7 +642,7 @@ function pickInput(ed, status, d1, d2) {
     if (d1 === MoveBack) {
         if (d2 >= 64) { S.backPressTick = nowMs(); S.backHoldFired = false; return true; }
         S.backPressTick = -1; S.backHoldFired = false;
-        if (p.level === 2 && !p.only2) ed.pick = { level: 1, sel: p.from != null ? p.from : 1 };
+        if (p.level === 2 && !p.only2 && !p.tempo) ed.pick = { level: 1, sel: p.from != null ? p.from : 1 };
         else ed.pick = null;                                  /* SLICES opens straight onto the chop types */
         S.screenDirty = true;
         return true;
@@ -783,13 +804,13 @@ export function audioEditorInput(status, d1, d2) {
             return true;
         }
         if (p2) {
-            /* SAMPLE page 2: page 1's knobs in their places — K2 Sync where Zoom
-             * is, no Start / Length; K1 Orig fires on touch + click */
+            /* SAMPLE page 2 (AU_P2_KNOB): K1 Sync, then page 1's Pitch,
+             * Detune, Gain, Tempo, Revrs; no Start / Length */
             S.knobTouched = k; S.knobTurnedTick[k] = S.clockMs;
-            if (k === 1) {
+            if (k === 0) {
                 const st = knobStep(k, d2, KNOB_PICK);
-                if (st) auSampleP2Knob(ed.t, ed.c, k, st);
-            } else if (k > 2) sampleKnob(ed, k, d2);
+                if (st) auSampleP2Knob(ed.t, ed.c, 1, st);
+            } else if (AU_P2_KNOB[k] != null) sampleKnob(ed, AU_P2_KNOB[k], d2);
             S.screenDirty = true;
             return true;
         }
@@ -871,22 +892,16 @@ export function audioEditorInput(status, d1, d2) {
             return true;
         }
         if (sl && p2) return true;
-        /* touch Tempo (K7) + click, on either page of a Loop clip's SAMPLE:
-         * Fit — the sample's Tempo set once so Start to its end fills the
-         * clip (Josh, 2026-11-02: "fit to clip" · "(once)" · "why not take it
-         * out of the menu and make it a touch click action on tempo?") */
-        if (S.knobTouched === 6 && (sub === 'loop' || p2) && !sl && auIsLoop(auInfo(ed.t, ed.c))) {
-            const v = auFit(ed.t, ed.c);
-            if (v < 0) showActionPopup('FIT', 'Out of range');
-            else if (v) showActionPopup('FIT', (v % 10 ? (v / 10).toFixed(1) : String(v / 10)) + ' BPM');
+        /* touch Tempo + click, on either page of SAMPLE: Tempo's menu — Fit
+         * to clip (a Loop clip's) · Original tempo (Josh, 2026-11-02: "both
+         * on a small pop-up menu that shows when you touch click tempo") */
+        if (!sl && plain && S.knobTouched === (p2 ? 4 : 6)) {
+            auAutoTouch(ed.t, ed.c, 'bpm10', false);           /* the menu takes the knob's release */
+            ed.pick = { level: 1, sel: 0, tempo: true };
             return true;
         }
         if (slEdit) { ed.pick = { level: 2, sel: 0, only2: true }; return true; }   /* the chop types */
-        if (p2) {
-            /* touch K1 + click: Orig */
-            if (S.knobTouched === 0) auOrig(ed.t, ed.c);
-            return true;
-        }
+        if (p2) return true;
         if (!hand) {
             /* SAMPLE: a click opens its menu — Load sample · Trim · Normalize
              * (Josh, 2026-10-30: "it should load a menu for consistency");
@@ -994,9 +1009,10 @@ export function waveRingCells(ed) {
     const sampleRings = () => [at(((i.gain | 0) + 40) / 52), at(((i.pitch | 0) + 24) / 48), at(((i.detune | 0) + 50) / 100),
                                at(((i.bpm10 || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN)), at(i.revrs ? 1 : 0)];
     if (!kind && ed.page === 1) {
-        /* page 2: Orig, Sync, then page 1's K4-K8 — lit where a knob works */
-        const cells = auSampleP2Cells(ed.t, ed.c);
-        return [at(1), cells[1] && cells[1].kind !== 'blank' ? at((cells[1].sel | 0) / 2) : null, null].concat(sampleRings());
+        /* page 2 (AU_P2_KNOB): Sync, Pitch, Detune, Gain, Tempo, Revrs — lit
+         * where a knob works */
+        const cells = auSampleP2Cells(ed.t, ed.c), sr = sampleRings();
+        return [cells[0] && cells[0].kind !== 'blank' ? at((cells[0].sel | 0) / 2) : null, sr[1], sr[2], sr[0], sr[3], sr[4], null, null];
     }
     let a = i.rstart, b = auEnd(i);
     if (kind === 'manual' || slp) {

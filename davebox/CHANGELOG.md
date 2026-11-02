@@ -9,9 +9,10 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Added
-- **Fit.** On a Loop clip's SAMPLE, touch **Tempo** and click: the sample's Tempo is
-  set so it fills the clip from Start to its end, and Sync stretches it to match.
-  One Undo puts it back.
+- **Fit to clip.** On SAMPLE, touch **Tempo** and click for a menu: **Fit to clip** (a
+  Loop clip's) sets the sample's Tempo so it fills the clip from Start to its end,
+  and Sync stretches it to match; **Original tempo** (was Orig) plays it as recorded.
+  SAMPLE's page 2 now reads Sync · Pitch · Detune · Gain · Tempo · Revrs.
 - **Live merge records Audio tracks' sound.** In a Live merge, each Audio track records
   what it plays, before its effects, into its own sample, and the clip you place it in
   plays that sample. Other tracks still record their notes. A merge with an Audio

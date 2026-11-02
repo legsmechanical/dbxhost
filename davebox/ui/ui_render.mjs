@@ -258,7 +258,7 @@ function drawAudioWaveEditor() {
     }
     clear_screen();
     if (ed.pick) {
-        drawBankHeading(ed.pick.level === 1 ? 'SAMPLE' : 'CHOP SAMPLE', false);
+        drawBankHeading(ed.pick.tempo ? 'TEMPO' : ed.pick.level === 1 ? 'SAMPLE' : 'CHOP SAMPLE', false);
         drawKitList(auPickRows(ed), ed.pick.sel, { h: MV_FOOTER_Y - 11 });
         /* both menus close onto their editor: the chop types have no level
          * above them since chopping left SAMPLE */
@@ -315,7 +315,7 @@ function drawAudioWaveEditor() {
         drawKitHintRow(MV_FOOTER_Y, [['clk', 'load'], ['back', 'exit']]);
         return;
     }
-    /* SAMPLE's second page: Sync, Revrs, Orig (Josh, 2026-10-29: "the
+    /* SAMPLE's second page: Sync, Pitch, Detune, Gain, Tempo, Revrs (Josh, 2026-10-29: "the
      * waveform on page 1 and the params on page 2") */
     const plain = (sub === 'loop' || sub === 'chop') && !(ed.mode === 'chop' && ed.chop);
     const sl = ed.ed === 'slices' && sub === 'chop';
@@ -330,8 +330,7 @@ function drawAudioWaveEditor() {
     }
     if (plain && ed.page === 1) {
         drawKitPage(auSampleName(t, c), auSampleP2Cells(t, c), false,
-                    S.knobTouched === 0 ? [['clk', 'orig']]
-                    : S.knobTouched === 6 && auIsLoop(i) ? [['clk', 'fit']] : [['jog', 'page']]);
+                    S.knobTouched === 4 ? [['clk', 'tempo']] : [['jog', 'page']]);
         if (S.knobTouched < 0) drawBankHeading(auSampleName(t, c), false, false, '2/2');
         return;
     }
@@ -344,8 +343,8 @@ function drawAudioWaveEditor() {
         /* no cursor and no chops: they are Slice's (Josh, 2026-10-29: "chops
          * should just be completely invisible in loop mode") */
         drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, gain: i.gain | 0, noMarks: true, clipTime: true, beats: { origin: i.rstart, fpb: 96 * auFpt(i) } });
-        /* touch Tempo: a click fits the sample to the clip */
-        drawKitHintRow(MV_FOOTER_Y, S.knobTouched === 6 ? [['clk', 'fit'], ['jog', 'page']] : [['clk', 'menu'], ['jog', 'page']]);
+        /* touch Tempo: a click opens its menu (Fit to clip · Original tempo) */
+        drawKitHintRow(MV_FOOTER_Y, S.knobTouched === 6 ? [['clk', 'tempo'], ['jog', 'page']] : [['clk', 'menu'], ['jog', 'page']]);
         return;
     }
     const mk = auMarks(t, c);

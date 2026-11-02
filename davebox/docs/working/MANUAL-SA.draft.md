@@ -1268,17 +1268,19 @@ Tempo, empty where the Length runs past the end of the sample — with a tick un
 for each beat and a taller one for each bar. **K2** zooms in from there.
 
 SAMPLE has two pages: **turn the jog** for the second (the header reads **1/2** or
-**2/2**). Page 2 shows page 1's knobs as a grid, every name and value at once, each on
-the same knob — **Gain** · **Pitch** · **Detune** · **Tempo** · **Revrs** on K4–K8 — plus what
-needs no waveform: **Orig** (touch K1 and click: the sample's Tempo becomes the
-project's, so it plays exactly as recorded) and **Sync** (K2, a Loop clip's:
-**Vintage**, **Pitch** or **Warp**). Start and Length are page 1's alone.
+**2/2**). Page 2 shows every name and value at once and needs no waveform: **Sync** (a
+Loop clip's: **Vintage**, **Pitch** or **Warp**) · **Pitch** · **Detune** · **Gain** ·
+**Tempo** · **Revrs** on K1–K6. Start and Length are page 1's alone.
 
-**Fit** (a Loop clip's, on either page): **touch Tempo and click**. The sample's Tempo
-is set so that Start to the end of the sample lasts exactly as long as the clip, and
-Sync stretches it to fit. It fits once: change the clip's length afterwards and the
-sample isn't refitted (fit again). One Undo puts the Tempo back. If the fit would need
-a Tempo outside 0.1–999.9 BPM, the screen says *Out of range* and nothing changes.
+**Touch Tempo and click** (either page) for Tempo's menu:
+
+- **Fit to clip** (a Loop clip's) — the sample's Tempo is set so that Start to the end
+  of the sample lasts exactly as long as the clip, and Sync stretches it to fit. It
+  fits once: change the clip's length afterwards and the sample isn't refitted (fit
+  again). One Undo puts the Tempo back. If the fit would need a Tempo outside
+  0.1–999.9 BPM, the screen says *Out of range* and nothing changes.
+- **Original tempo** — the sample's Tempo becomes the project's, so it plays exactly
+  as recorded.
 
 A **click** on SAMPLE opens its menu (**Shift + click** does the same):
 
