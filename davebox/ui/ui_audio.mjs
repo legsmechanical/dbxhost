@@ -1090,9 +1090,11 @@ export function auSampleP2Cells(t, c) {
     /* page 1's knobs as a grid (Josh, 2026-10-30: "the sample waveform knob
      * params ... duplicated on p 2 of sample"), in their own order */
     const bpm = auBpm(i);
+    /* the corner brackets: touch + click opens Tempo's menu (Josh, 2026-11-02:
+     * "tempo needs the corner indicators to show it's touch click") */
     const tempo = { kind: 'valsq', label: 'Tempo', name: 'Tempo (the sample\'s own)',
                     text: bpm ? String(Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) : '--',
-                    norm: ((i.bpm10 || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN) };
+                    norm: ((i.bpm10 || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN), opens: true };
     const gain = { kind: 'arc', label: 'Gain', name: 'Gain', text: fmtDb(i.gain), norm: (i.gain + 40) / 52 };
     return [loop ? live(sync) : BLANK, live(pitchCell('Pitch', i.pitch)), live(detuneCell('Detune', i.detune)),
             live(gain), live(tempo), live(revrsCell(i)), BLANK, BLANK];

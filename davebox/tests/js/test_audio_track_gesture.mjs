@@ -1799,6 +1799,8 @@ step('⭐⭐ Loop mode: no sequence — pad taps and steps do nothing, no STEP /
     assert(ed.page === 1, 'the jog did not turn SAMPLE to page 2');
     /* page 2 in its own order (Josh, 2026-11-02: "1: sync, 2 pitch, 3 detune, 4 gain, 5 tempo, 6 reverse" · "page 2 only") */
     assert(A.auSampleP2Cells(4, 0).map((c) => c.label).join() === 'Sync,Pitch,Detune,Gain,Tempo,Revrs,,', 'page 2: ' + A.auSampleP2Cells(4, 0).map((c) => c.label));
+    assert(A.auSampleP2Cells(4, 0)[4].opens === true && A.auSampleP2Cells(4, 0).filter((c) => c.opens).length === 1,
+           'Tempo does not wear the corner brackets, alone (Josh: "tempo needs the corner indicators to show it\'s touch click")');
     assert(A.auSampleP2Cells(4, 0)[0].text === 'Warp', 'a new clip is not on Warp: ' + A.auSampleP2Cells(4, 0)[0].text);
     for (let i = 0; i < 40; i++) cc(71, 127);
     reset();
