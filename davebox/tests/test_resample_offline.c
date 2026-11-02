@@ -236,6 +236,8 @@ int main(void) {
         h = hx_create(NULL); inst = (seq8_instance_t *)h->inst;
         hx_set_param(h, "offline_load", snap);
         HX_ASSERT(inst->tracks[1].clips[0].note_count == 0, "a live engine loaded a snapshot by path");
+        hx_set_param(h, "offline_samples", "/tmp/davebox-tests");
+        HX_ASSERT(inst->au_offline_dir[0] == '\0', "a live engine took the copy's samples folder");
         hx_destroy(h);
     }
 
