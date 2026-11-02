@@ -2890,7 +2890,7 @@ levels as they were (switched back on if **Post** bypassed them). **Shift + Undo
 undone.
 
 **Faster than real time.** A Flatten, or a Resample clip **In place**, of a track that
-plays a Schwung instrument records without playing: the clips aren't heard, and each
+plays a Schwung instrument, or of an Audio track, records without playing: the clips aren't heard, and each
 one takes a fraction of its length. It records in real time instead, as before, when
 the instrument's sound depends on more than the notes: a modulation source (an LFO)
 on it, a MIDI effect, an effect that listens to MIDI, voices sent to buses, the line

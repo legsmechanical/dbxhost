@@ -7,6 +7,7 @@
  *     its automated instrument parameters are written; no transport starts;
  *     the take reads RECORDING with the host's frames, then DONE (the outcome
  *     read off the host);
+ *   - an Audio track's too (its samples are fed to the slot);
  *   - real time instead: Wet; a Move instrument; the host refusing; automation
  *     the UI plays (a bus level) or that writes something of the slot's other
  *     than its instrument / effects; a chain parameter not yet resolved;
@@ -178,18 +179,16 @@ int main(void) {
     inst->pa_targets[5][0] = '\0'; inst->pa_res[5].valid = 0;
     inst->pa_targets[6][0] = '\0'; inst->pa_res[6].valid = 0;
 
-    /* ---- real time: an Audio track (its sample engine keeps to the clock) ---- */
+    /* ---- an Audio track too (its copy waits for its samples:
+     * test_resample_offline_audio.c) ---- */
     hx_set_param(h, "t1_convert_to_audio", "");
     note_at(h, 1, 0, 0, 0);                               /* chop 1 on the first step */
     b = hx_stub_ot_begins();
-    if (inst->tracks[1].pad_mode == PAD_MODE_AUDIO) {
-        hx_set_param(h, "resample_clip", "1 0 1 0 0 2 |/x/audio.wav");
-        HX_ASSERT(hx_stub_ot_begins() == b, "an Audio track went offline");
-        hx_set_param(h, "transport", "stop");
-        hx_set_param(h, "resample_clear", "1");
-    } else {
-        HX_ASSERT(0, "rig: t1_convert_to_audio did not make an Audio track");
-    }
+    HX_ASSERT(inst->tracks[1].pad_mode == PAD_MODE_AUDIO, "rig: t1_convert_to_audio did not make an Audio track");
+    hx_set_param(h, "resample_clip", "1 0 1 0 0 2 |/x/audio.wav");
+    HX_ASSERT(went_offline(inst, b), "an Audio track's Pre take did not go offline");
+    hx_set_param(h, "transport", "stop");
+    hx_set_param(h, "resample_clear", "1");
 
     /* ---- real time: a Move instrument ---- */
     hx_set_param(h, "t0_route", "move");

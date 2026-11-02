@@ -10,6 +10,8 @@
 
 /* Exported (slot_clone.h): this slot's instrument and, with `with_fx`, its
  * playing audio FX, for a copy that records a take faster than real time.
+ * No instrument (or a bypassed one) is an empty so_path: the slot sounds only
+ * what is fed to it (an Audio track's samples).
  * A slot whose sound depends on more than its notes and parameters -- a
  * modulation source, voices sent to buses, a MIDI FX, an audio FX that hears
  * MIDI (it would hear other tracks'), the line input -- is refused, and the
@@ -31,38 +33,45 @@ static int slc_read_params(void *mod, int (*get)(void *, const char *, char *, i
     return k;
 }
 
-int chain_slot_clone_source(void *instance, slc_src_t *out, int with_fx) {
-    chain_instance_t *inst = (chain_instance_t *)instance;
-    plugin_api_v2_t *api;
-    int i, len;
-    if (!inst || !out) return SLC_ERR_NO_SYNTH;
-    api = inst->synth_plugin_v2;
-    if (!api || !inst->synth_instance || inst->synth_bypassed || !inst->synth_dir[0])
-        return SLC_ERR_NO_SYNTH;
-    for (i = 0; i < LFO_COUNT; i++)
-        if (inst->lfos[i].enabled && inst->lfos[i].active) return SLC_ERR_MOD;
-    if (chain_mod_any_active(inst)) return SLC_ERR_MOD;
-    if (inst->synth_render_split && inst->synth_split_voice_count > 0) return SLC_ERR_SPLIT;
-    for (i = 0; i < inst->midi_fx_count && i < MAX_MIDI_FX; i++)
-        if (inst->midi_fx_instances[i] && !inst->midi_fx_bypassed[i]) return SLC_ERR_MIDI_FX;
-    if (inst->synth_consumes_line_input) return SLC_ERR_LINE_IN;
-
+/* The instrument: its code, pack config, preset, parameters and state. -1 =
+ * a state that does not fit. */
+static int slc_read_synth(chain_instance_t *inst, plugin_api_v2_t *api, slc_src_t *out) {
+    int len;
     snprintf(out->so_path, sizeof out->so_path, "%s/dsp.so", inst->synth_dir);
     snprintf(out->dir, sizeof out->dir, "%s", inst->synth_dir);
     snprintf(out->config, sizeof out->config, "%s", inst->synth_config);
-    out->preset[0] = '\0';
     if (api->get_param) {
         len = api->get_param(inst->synth_instance, "preset", out->preset, (int)sizeof out->preset);
         out->preset[len > 0 && len < (int)sizeof out->preset ? len : 0] = '\0';
     }
     out->nparams = slc_read_params(inst->synth_instance, api->get_param,
                                    inst->synth_params, inst->synth_param_count, out->params);
-    out->state_len = 0;
     if (api->get_param) {
         len = api->get_param(inst->synth_instance, "state", out->state, SLC_SYNTH_STATE_MAX);
-        if (len >= SLC_SYNTH_STATE_MAX) return SLC_ERR_TOO_BIG;
+        if (len >= SLC_SYNTH_STATE_MAX) return -1;
         if (len > 0) { out->state[len] = '\0'; out->state_len = len; }
     }
+    return 0;
+}
+
+int chain_slot_clone_source(void *instance, slc_src_t *out, int with_fx) {
+    chain_instance_t *inst = (chain_instance_t *)instance;
+    plugin_api_v2_t *api;
+    int i, len;
+    if (!inst || !out) return SLC_ERR_NO_SYNTH;
+    api = inst->synth_plugin_v2;
+    if (!api || !inst->synth_instance || inst->synth_bypassed || !inst->synth_dir[0]) api = NULL;
+    for (i = 0; i < LFO_COUNT; i++)
+        if (inst->lfos[i].enabled && inst->lfos[i].active) return SLC_ERR_MOD;
+    if (chain_mod_any_active(inst)) return SLC_ERR_MOD;
+    if (api && inst->synth_render_split && inst->synth_split_voice_count > 0) return SLC_ERR_SPLIT;
+    for (i = 0; i < inst->midi_fx_count && i < MAX_MIDI_FX; i++)
+        if (inst->midi_fx_instances[i] && !inst->midi_fx_bypassed[i]) return SLC_ERR_MIDI_FX;
+    if (api && inst->synth_consumes_line_input) return SLC_ERR_LINE_IN;
+
+    out->so_path[0] = out->dir[0] = out->config[0] = out->preset[0] = '\0';
+    out->nparams = out->state_len = 0;
+    if (api && slc_read_synth(inst, api, out) < 0) return SLC_ERR_TOO_BIG;
 
     out->knob_ccs = 0;
     for (i = 0; i < inst->knob_mapping_count && i < MAX_KNOB_MAPPINGS; i++) {

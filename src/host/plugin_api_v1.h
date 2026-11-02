@@ -347,8 +347,11 @@ typedef struct move_host_ext_v1 {
      * sends reach the slot's copy (heard the next block) -- and when the copy
      * calls capture_start_src(path, frames, kind, take->slot) the host writes
      * the slot copy's output at `kind` (MOVE_CAPTURE_SLOT_PRE / _FX) to `path`
-     * from that block, `frames` long. The copy's sends to other slots, to Move
-     * or out go nowhere; its tempo and move_info stay its own.
+     * from that block, `frames` long. What the copy feeds the slot
+     * (slot_audio_feed) is mixed into the slot copy's next block, as live; a
+     * slot with no instrument (or a bypassed one) is silence plus that feed.
+     * The copy's sends to other slots, to Move or out go nowhere; its tempo
+     * and move_info stay its own.
      *
      * offline_take_begin: the caller's set_param or render_block (it reads the
      * slot's settings there). take->state and take->setup are READ BY THE TAKE:
@@ -371,7 +374,7 @@ typedef struct move_offline_take {
     const char *setup;        /* "key value" lines for the copy after the load, or NULL */
     char  key[32];            /* the command its copy is given */
     char  val[512];
-    int   slot;               /* the chain slot whose instrument is recorded */
+    int   slot;               /* the chain slot recorded (its instrument and feed) */
     int   kind;               /* MOVE_CAPTURE_SLOT_PRE or MOVE_CAPTURE_SLOT_FX */
     float bpm;                /* the copy's tempo until it declares its own */
 } move_offline_take_t;
@@ -381,7 +384,7 @@ typedef struct move_offline_take {
 #define MOVE_OFFLINE_DONE      2
 #define MOVE_OFFLINE_FAILED    3
 /* offline_take_begin's refusals: the slot's own (the chain's SLC_ERR_*), then the host's */
-#define MOVE_OFFLINE_ERR_NO_SYNTH  -1
+#define MOVE_OFFLINE_ERR_NO_SYNTH  -1  /* the chain could not be read */
 #define MOVE_OFFLINE_ERR_MOD       -2
 #define MOVE_OFFLINE_ERR_SPLIT     -3
 #define MOVE_OFFLINE_ERR_MIDI_FX   -4

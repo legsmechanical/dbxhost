@@ -147,6 +147,19 @@ static int sp_globals_state(sp_ctx_t *cx) {
         return 1;
     }
 
+    /* offline_samples "<dir>": an OFFLINE COPY's Audio clips read their samples
+     * from the live project's samples/ (its state file is the host's snapshot,
+     * elsewhere): sent after offline_load, so the loads are asked for now. */
+    if (!strcmp(key, "offline_samples")) {
+        int t2, c2;
+        if (!inst->offline || !val || val[0] != '/' || strlen(val) >= sizeof inst->au_offline_dir) return 1;
+        snprintf(inst->au_offline_dir, sizeof inst->au_offline_dir, "%s", val);
+        for (t2 = 0; t2 < NUM_TRACKS; t2++)
+            if (inst->tracks[t2].pad_mode == PAD_MODE_AUDIO)
+                for (c2 = 0; c2 < NUM_CLIPS; c2++) au_request_load(inst, t2, c2);
+        return 1;
+    }
+
     /* offline_load "<path>": an OFFLINE COPY (inst->offline) loads the live
      * engine's state, which the host wrote for it (rs_offline_begin) — a
      * path, no identity: the copy never saves. The rest is state_load's. */

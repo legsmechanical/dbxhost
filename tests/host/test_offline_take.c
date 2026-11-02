@@ -15,7 +15,12 @@
  *     file and gets the setup lines before the command;
  *   - copies are private: the live load of the engine code made no instance
  *     and was handed no extension;
- *   - a knob-mapped CC fails the take and removes its file; a cancel too;
+ *   - audio the engine copy feeds the slot (slot_audio_feed) is mixed into
+ *     its NEXT block before the level, the instrument's output and all; a
+ *     slot with no instrument (an Audio track's) is that feed alone; another
+ *     slot's feed is not heard;
+ *   - a knob-mapped CC fails the take and removes its file (with or without
+ *     an instrument: the chain takes it); a cancel too;
  *     refusals (the slot's, busy, bad args). */
 #include <dlfcn.h>
 #include <math.h>
@@ -34,6 +39,7 @@ static int failures;
     fprintf(stderr, __VA_ARGS__); fputc('\n', stderr); } } while (0)
 
 static int g_slot_err;           /* what the chain's export answers */
+static int g_no_synth;           /* ...for a slot with no instrument */
 static int g_with_fx_asked;
 
 static void *slot_instance(int slot) { static int dummy; return slot >= 0 && slot < 8 ? &dummy : NULL; }
@@ -42,14 +48,16 @@ static int clone_source(void *inst, slc_src_t *out, int with_fx) {
     g_with_fx_asked = with_fx;
     if (g_slot_err) return g_slot_err;
     memset(out, 0, sizeof *out);
-    snprintf(out->so_path, sizeof out->so_path, FIXTURE_DIR "/synth/dsp.so");
-    snprintf(out->dir, sizeof out->dir, FIXTURE_DIR "/synth");
-    out->nparams = 1;
-    snprintf(out->params[0].key, sizeof out->params[0].key, "gain");
-    snprintf(out->params[0].val, sizeof out->params[0].val, "5");
-    snprintf(out->state, sizeof out->state, "G=1 B=30");   /* the state wins over the param, as a load */
-    out->state_len = (int)strlen(out->state);
     out->knob_ccs = 1u << 1;                            /* CC 72 is a knob mapping */
+    if (!g_no_synth) {
+        snprintf(out->so_path, sizeof out->so_path, FIXTURE_DIR "/synth/dsp.so");
+        snprintf(out->dir, sizeof out->dir, FIXTURE_DIR "/synth");
+        out->nparams = 1;
+        snprintf(out->params[0].key, sizeof out->params[0].key, "gain");
+        snprintf(out->params[0].val, sizeof out->params[0].val, "5");
+        snprintf(out->state, sizeof out->state, "G=1 B=30");   /* the state wins over the param, as a load */
+        out->state_len = (int)strlen(out->state);
+    }
     if (with_fx) {
         out->nfx = 1;
         snprintf(out->fx[0].so_path, sizeof out->fx[0].so_path, FIXTURE_DIR "/fx/fx.so");
@@ -175,6 +183,47 @@ int main(void) {
         CHECK(w && n == 256 && w[2 * 128] == half(7003), "DIRECT: %d", w ? w[2 * 128] : -1);
         free(w);
         offline_take_cancel();
+    }
+
+    /* ---- audio fed to the slot: next block, before the level ---- */
+    {
+        const char *ap = FIXTURE_DIR "/takes/feed.wav";
+        t = take(3, 256, MOVE_CAPTURE_SLOT_PRE, ap);
+        offline_take_begin(&t);
+        offline_take_run_pending();
+        w = read_wav(ap, &n);
+        /* block 1: the instrument's 6203 + block 0's feed 1000; R: 1330 ... - 500 */
+        CHECK(w && n == 256 && w[0] == half(7203) && w[1] == half(200 + 1000 + 1330 + 30 - 500),
+              "feed + instrument: %d %d", w ? w[0] : -1, w ? w[1] : -1);
+        CHECK(w && n == 256 && w[2 * 128] == half(6403 + 1001), "the next block's feed: %d", w ? w[2 * 128] : -1);
+        free(w);
+        offline_take_cancel();
+
+        g_no_synth = 1;
+        t = take(3, 256, MOVE_CAPTURE_SLOT_PRE, ap);
+        CHECK(offline_take_begin(&t) == 1, "no instrument: begin");
+        offline_take_run_pending();
+        CHECK(offline_take_state(NULL, NULL) == MOVE_OFFLINE_DONE, "no instrument: DONE");
+        w = read_wav(ap, &n);
+        CHECK(w && n == 256 && w[0] == half(1000) && w[1] == half(-500) && w[2 * 128] == half(1001),
+              "no instrument: the feed alone: %d %d %d", w ? w[0] : -1, w ? w[1] : -1, w ? w[2 * 128] : -1);
+        free(w);
+        offline_take_cancel();
+
+        t = take(3, 128, MOVE_CAPTURE_SLOT_FX, ap);
+        offline_take_begin(&t);
+        offline_take_run_pending();
+        w = read_wav(ap, &n);
+        CHECK(w && n == 128 && w[0] == half(1000) + 7, "no instrument, FX: %d", w ? w[0] : -1);
+        free(w);
+        offline_take_cancel();
+
+        t = take(1, 256, MOVE_CAPTURE_SLOT_PRE, ap);
+        offline_take_begin(&t);
+        offline_take_run_pending();
+        CHECK(offline_take_state(NULL, NULL) == MOVE_OFFLINE_FAILED, "no instrument: a knob-mapped CC still fails it");
+        offline_take_cancel();
+        g_no_synth = 0;
     }
 
     /* ---- a knob-mapped CC: the chain would take it, the copy cannot ---- */

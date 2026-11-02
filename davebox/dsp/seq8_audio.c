@@ -344,9 +344,13 @@ static int16_t au_conv(const uint8_t *p, const au_fmt_t *fm) {
     return (int16_t)v;
 }
 
+static const int16_t *au_stream_fetch(const au_sample_t *s, uint32_t k);   /* STREAMING */
+
 /* Frame i of s, or NULL when s streams and that chunk is not in. SPI thread
  * only (render and get_param): a chunk it sees stays until two more blocks
- * have rendered, so the pointer is good for the rest of this call. */
+ * have rendered, so the pointer is good for the rest of this call. In an
+ * offline copy a chunk not in is read now (au_stream_fetch): it never plays
+ * a gap. */
 static inline const int16_t *au_at(const au_sample_t *s, uint32_t i) {
     const int16_t *c;
     uint32_t k;
@@ -354,6 +358,7 @@ static inline const int16_t *au_at(const au_sample_t *s, uint32_t i) {
     k = i >> AU_CHUNK_SHIFT;
     if (k >= s->nchunks) return NULL;
     c = __atomic_load_n(&s->chunk[k], __ATOMIC_ACQUIRE);
+    if (!c) c = au_stream_fetch(s, k);
     return c ? c + (size_t)(i & (AU_CHUNK - 1)) * s->ch : NULL;
 }
 
@@ -557,6 +562,7 @@ typedef struct au_stream {
     au_fmt_t  fm;
     int       fd;          /* streamer: open once it first reads; -1 = not yet */
     uint32_t *keep;        /* streamer: per chunk, the pass that last wanted it */
+    void     *sync;        /* an offline copy's streamer: a chunk not in is read on demand */
 } au_stream_t;
 
 /* A Loop over rs..re must never wait for these chunks: around each of the
@@ -711,7 +717,9 @@ static int au_read_pinned(FILE *f, const au_fmt_t *fm, au_sample_t *s, const uin
     return 1;
 }
 
-static au_sample_t *au_read_file(const char *path, int may_stream, int *err) {
+/* `keep_mip`: a streamed file read without its summary saves one (an offline
+ * copy does not: it writes nothing). */
+static au_sample_t *au_read_file_ex(const char *path, int may_stream, int keep_mip, int *err) {
     FILE *f = fopen(path, "rb");
     au_fmt_t fm;
     au_sample_t *s = NULL;
@@ -806,7 +814,7 @@ static au_sample_t *au_read_file(const char *path, int may_stream, int *err) {
             s->nmip = (done + AU_MIP - 1) / AU_MIP;
         }
     }
-    if (streamed) { au_peaks_from_mip(s); au_mip_save(path, s); }
+    if (streamed) { au_peaks_from_mip(s); if (keep_mip) au_mip_save(path, s); }
     else au_make_peaks(s);
     au_find_hits(s);
     *err = AU_ERR_NONE;
@@ -820,6 +828,9 @@ out:
     free(pins);
     fclose(f);
     return s;
+}
+static au_sample_t *au_read_file(const char *path, int may_stream, int *err) {
+    return au_read_file_ex(path, may_stream, 1, err);
 }
 
 /* mkdir -p, giving each directory it makes the owner of the first one that
@@ -1110,6 +1121,24 @@ static int au_stream_read(au_streamer_t *S, au_sample_t *s, uint32_t k) {
     return 1;
 }
 
+/* An offline copy's chunk k, not in when it was reached: read now (on the
+ * copy's one thread, the streamer's mutex free), kept as one wanted this pass. */
+static const int16_t *au_stream_fetch(const au_sample_t *cs, uint32_t k) {
+    au_streamer_t *S = cs->st ? (au_streamer_t *)cs->st->sync : NULL;
+    au_sample_t *s;
+    int si;
+    if (!S) return NULL;
+    pthread_mutex_lock(&S->mu);
+    si = au_stream_find(S, cs);
+    s = si >= 0 ? S->smp[si] : NULL;
+    if (s && k < s->nchunks) {
+        if (!s->chunk[k]) au_stream_read(S, s, k);
+        s->st->keep[k] = S->pass;
+    }
+    pthread_mutex_unlock(&S->mu);
+    return __atomic_load_n(&cs->chunk[k], __ATOMIC_ACQUIRE);
+}
+
 static void au_stream_bury(au_streamer_t *S, void *p) {
     if (S->ngrave == S->cgrave) {
         uint32_t nc = S->cgrave ? S->cgrave * 2 : 64;
@@ -1216,6 +1245,7 @@ static void au_streamer_init(seq8_instance_t *inst) {
     S->inst = inst;
     pthread_mutex_init(&S->mu, NULL);
     S->run = 1;
+    if (inst->offline) return;          /* au_offline_pump runs it */
 #ifdef SEQ8_TESTING
     if (au_stream_manual) return;
 #endif
@@ -1795,6 +1825,7 @@ static void au_warper_init(seq8_instance_t *inst) {
      * writes them, so a project with no Audio pays nothing for them (review). */
     for (t = 0; t < NUM_TRACKS; t++) X->trk[t] = (au_warp_t *)calloc(1, sizeof(au_warp_t));
     X->run = 1;
+    if (inst->offline) return;          /* au_offline_pump runs it */
 #ifdef SEQ8_TESTING
     if (au_warp_manual) return;
 #endif
@@ -1832,9 +1863,10 @@ static au_sample_t *au_pool_get(au_loader_t *L, const char *path, int *err) {
         if (!L->pool[i].smp && free_i < 0) free_i = i;
     }
     if (free_i < 0) { *err = AU_ERR_MEM; return NULL; }
-    au_sample_t *s = au_read_file(path, 1, err);
+    au_sample_t *s = au_read_file_ex(path, 1, !L->inst->offline, err);
     if (!s) return NULL;
     if (s->st && !au_stream_add(L->inst, s)) { au_sample_free(s); *err = AU_ERR_MEM; return NULL; }
+    if (s->st && L->inst->offline) s->st->sync = L->inst->au_streamer;
     s->refs = 1;
     snprintf(L->pool[free_i].path, sizeof L->pool[free_i].path, "%s", path);
     L->pool[free_i].smp = s;
@@ -2202,7 +2234,28 @@ static void au_init(seq8_instance_t *inst) {
     if (!L) return;
     L->inst = inst;
     L->run = 1;
+    if (inst->offline) return;          /* au_offline_pump runs it */
     if (pthread_create(&L->th, NULL, au_loader_main, L) == 0) L->started = 1;
+}
+
+/* An OFFLINE COPY (inst->offline) renders as fast as it can, so nothing may
+ * wait on the clock: before each block its loader answers every request
+ * (the samples are in before the block that needs them), its streamer makes
+ * one pass (reads ahead, lets go of what is behind: a chunk it has not read
+ * yet is read when reached, au_stream_fetch) and its stretcher fills each
+ * Warp ring. The take then sounds as a live one does when every thread keeps
+ * up. */
+static void au_offline_pump(seq8_instance_t *inst) {
+    au_loader_t *L = (au_loader_t *)inst->au_loader;
+    while (L) {
+        uint32_t t = inst->au_req_tail, h = __atomic_load_n(&inst->au_req_head, __ATOMIC_ACQUIRE);
+        if (t == h) break;
+        au_req_t q = inst->au_req[t & (AU_RING - 1)];
+        __atomic_store_n(&inst->au_req_tail, t + 1, __ATOMIC_RELEASE);
+        au_loader_do(L, &q);
+    }
+    au_stream_service(inst);
+    au_warp_service(inst);
 }
 
 static void au_shutdown(seq8_instance_t *inst) {
@@ -2223,6 +2276,7 @@ static void au_shutdown(seq8_instance_t *inst) {
 /* The project's samples/ directory: beside its state file. "" = no project. */
 static void au_samples_dir(const seq8_instance_t *inst, char *out, size_t sz) {
     const char *sl = strrchr(inst->state_path, '/');
+    if (inst->offline) { snprintf(out, sz, "%s", inst->au_offline_dir); return; }   /* the live project's */
     if (!inst->state_path[0] || !sl) { out[0] = '\0'; return; }
     snprintf(out, sz, "%.*s/samples", (int)(sl - inst->state_path), inst->state_path);
 }

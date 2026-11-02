@@ -31,7 +31,9 @@ typedef struct {
 } slc_fx_src_t;
 
 typedef struct {
-    char so_path[512];                  /* .../sound_generators/<id>/dsp.so */
+    char so_path[512];                  /* .../sound_generators/<id>/dsp.so; "" = no instrument
+                                         * (none loaded, or bypassed): the slot sounds silence
+                                         * plus what is fed to it */
     char dir[512];                      /* its module directory (create_instance) */
     char config[1024];                  /* a pack's config JSON, "" for none */
     char preset[16];                    /* "" = the module answers none */
@@ -48,7 +50,7 @@ typedef struct {
 /* Why a slot cannot be copied (chain_slot_clone_source's negative answers):
  * the take is then recorded in real time. */
 #define SLC_ERR_NONE        0
-#define SLC_ERR_NO_SYNTH   -1   /* no instrument, or it is bypassed */
+#define SLC_ERR_NO_SYNTH   -1   /* no chain on the slot */
 #define SLC_ERR_MOD        -2   /* modulation / an LFO moves a parameter */
 #define SLC_ERR_SPLIT      -3   /* the instrument's voices go to buses */
 #define SLC_ERR_MIDI_FX    -4   /* a MIDI FX plays */

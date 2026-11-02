@@ -13,6 +13,7 @@ trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/eng" "$work/synth" "$work/fx" "$work/takes"
 
 # The engine: plays a scripted take. val = "<mode> <frames> <kind> <slot> |<path>".
+# Modes: 0 notes, 1 + a knob-mapped CC, 2 a DIRECT note, 3 notes + audio fed to the slot.
 cat > "$work/fixture_eng.c" <<'EOF'
 #include <stdint.h>
 #include <stdio.h>
@@ -82,6 +83,13 @@ static void e_render(void *ip, int16_t *out, int frames) {
         } else {
             slot_send(e->slot, 0x90, 62, 100);
         }
+    }
+    if (e->mode == 3) {                                    /* audio for the slot: L 1000 + block, R -500 */
+        int16_t a[128 * 2], o[128 * 2];
+        int i;
+        for (i = 0; i < 128; i++) { a[2 * i] = (int16_t)(1000 + e->block); a[2 * i + 1] = -500; o[2 * i] = o[2 * i + 1] = 5000; }
+        g_ext->slot_audio_feed(e->slot, a, 128);
+        g_ext->slot_audio_feed(e->slot + 1, o, 128);         /* another slot's: not heard */
     }
     e->block++;
 }

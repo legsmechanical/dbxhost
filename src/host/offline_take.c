@@ -77,12 +77,12 @@ static void t_fail(const char *why) {
  * chain's, not the instrument's — it moves a parameter by the time between
  * turns, which a copy cannot replay; the take is refused. */
 static void t_to_synth(const uint8_t *m, int len, int source) {
-    if (!T.sapi || !T.sinst || !T.sapi->on_midi) return;
     if (source != MOVE_MIDI_SOURCE_DIRECT && len >= 3 && (m[0] & 0xF0) == 0xB0 &&
             m[1] >= 71 && m[1] <= 78 && (J.src.knob_ccs & (1u << (m[1] - 71)))) {
         t_fail("a knob-mapped CC reached the slot");
         return;
     }
+    if (!T.sapi || !T.sinst || !T.sapi->on_midi) return;    /* no instrument: nothing hears it */
     T.sapi->on_midi(T.sinst, m, len, source == MOVE_MIDI_SOURCE_DIRECT ? MOVE_MIDI_SOURCE_EXTERNAL : source);
 }
 
@@ -400,20 +400,22 @@ static void run_job(void) {
     hosts_build();
 
     eng = (plugin_api_v2_t *)api_of(J.engine_so, MOVE_PLUGIN_INIT_V2_SYMBOL, &g_eng_host);
-    T.sapi = (plugin_api_v2_t *)api_of(J.src.so_path, MOVE_PLUGIN_INIT_V2_SYMBOL, &g_mod_host);
     if (!eng || !eng->create_instance || !eng->render_block || !eng->set_param) { t_fail("no copy of the sequencer"); goto done; }
-    if (!T.sapi || !T.sapi->create_instance || !T.sapi->render_block) { t_fail("no copy of the instrument"); goto done; }
-
-    T.sinst = T.sapi->create_instance(J.src.dir, J.src.config[0] ? J.src.config : NULL);
-    if (!T.sinst) { t_fail("the instrument copy was not made"); goto done; }
-    /* as a patch load: preset, the mod wheel down, then the settings */
-    if (J.src.preset[0] && T.sapi->set_param) T.sapi->set_param(T.sinst, "preset", J.src.preset);
-    if (T.sapi->on_midi)
-        for (i = 0; i < 16; i++) {
-            const uint8_t mw[3] = { (uint8_t)(0xB0 | i), 1, 0 };
-            T.sapi->on_midi(T.sinst, mw, 3, MOVE_MIDI_SOURCE_HOST);
-        }
-    apply_params(T.sapi->set_param, T.sinst, J.src.params, J.src.nparams, J.src.state, J.src.state_len);
+    /* no instrument (an Audio track's slot): the slot is silence plus the feed */
+    if (J.src.so_path[0]) {
+        T.sapi = (plugin_api_v2_t *)api_of(J.src.so_path, MOVE_PLUGIN_INIT_V2_SYMBOL, &g_mod_host);
+        if (!T.sapi || !T.sapi->create_instance || !T.sapi->render_block) { t_fail("no copy of the instrument"); goto done; }
+        T.sinst = T.sapi->create_instance(J.src.dir, J.src.config[0] ? J.src.config : NULL);
+        if (!T.sinst) { t_fail("the instrument copy was not made"); goto done; }
+        /* as a patch load: preset, the mod wheel down, then the settings */
+        if (J.src.preset[0] && T.sapi->set_param) T.sapi->set_param(T.sinst, "preset", J.src.preset);
+        if (T.sapi->on_midi)
+            for (i = 0; i < 16; i++) {
+                const uint8_t mw[3] = { (uint8_t)(0xB0 | i), 1, 0 };
+                T.sapi->on_midi(T.sinst, mw, 3, MOVE_MIDI_SOURCE_HOST);
+            }
+        apply_params(T.sapi->set_param, T.sinst, J.src.params, J.src.nparams, J.src.state, J.src.state_len);
+    }
 
     if (J.take.kind == MOVE_CAPTURE_SLOT_FX)
         for (i = 0; i < J.src.nfx; i++) {
@@ -437,7 +439,8 @@ static void run_job(void) {
     for (;;) {
         if (__atomic_load_n(&J.cancel, __ATOMIC_ACQUIRE)) { cancelled = 1; break; }
         /* the slot renders what earlier blocks sent it */
-        T.sapi->render_block(T.sinst, sbuf, OT_BLOCK);
+        if (T.sinst) T.sapi->render_block(T.sinst, sbuf, OT_BLOCK);
+        else memset(sbuf, 0, sizeof sbuf);
         if (T.fed) {
             for (i = 0; i < OT_BLOCK * 2; i++) {
                 int32_t v = sbuf[i] + T.feed[i];

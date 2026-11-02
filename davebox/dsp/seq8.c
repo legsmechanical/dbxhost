@@ -1637,8 +1637,12 @@ typedef struct {
      * take (move_host_ext_v1_t.offline_take_*, created with config
      * {"offline":1}): it plays a snapshot of the live project and must never
      * write it, nor anything of the live session's — no save (destroy's
-     * included), no log. */
+     * included), no log. Its sample threads do not run: each block runs them
+     * by hand first (au_offline_pump), so the copy waits for its audio. */
     uint8_t offline;
+    /* ...and the live project's samples/ (offline_samples): its own state file
+     * is the host's snapshot, nowhere near them. */
+    char    au_offline_dir[256];
 
     /* Mute/solo per track: 0=off, 1=on */
     uint8_t mute[NUM_TRACKS];
@@ -7235,11 +7239,11 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
     seq8_instance_t *inst = (seq8_instance_t *)calloc(1, sizeof(seq8_instance_t));
     if (!inst) return NULL;
     g_inst = inst;
+    inst->offline = json_defaults && strstr(json_defaults, "\"offline\"") != NULL;
     au_init(inst);                 /* audio clips' defaults + the sample loader thread */
 
     inst->sample_rate    = (g_host && g_host->sample_rate > 0)
                            ? (float)g_host->sample_rate : 44100.0f;
-    inst->offline = json_defaults && strstr(json_defaults, "\"offline\"") != NULL;
     if (!inst->offline) {
         {   /* Capped, like the host's debug.log: past 1 MB this log becomes
              * <name>.log.1 (one previous kept) before it is opened again. */
@@ -11092,6 +11096,7 @@ static int groove_pass_claims(seq8_instance_t *inst, seq8_track_t *tr,
 static void render_block_audio(void *instance, int16_t *out_lr, int frames) {
     if (instance) ((seq8_instance_t *)instance)->au_tick0 = (uint64_t)((seq8_instance_t *)instance)->arp_master_tick;
     if (instance) ((seq8_instance_t *)instance)->lead_rendering = 1;
+    if (instance && ((seq8_instance_t *)instance)->offline) au_offline_pump((seq8_instance_t *)instance);
     render_block(instance, out_lr, frames);
     if (instance) au_render((seq8_instance_t *)instance, frames);
     if (instance) ((seq8_instance_t *)instance)->lead_rendering = 0;

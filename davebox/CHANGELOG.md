@@ -10,7 +10,7 @@ the section into a versioned heading at release time.
 
 ### Added
 - **Faster Flatten.** Flatten track, and Resample clip In place, record a Schwung
-  instrument's clips faster than real time, without playing them. A sound that
+  instrument's clips, and an Audio track's, faster than real time, without playing them. A sound that
   depends on more than the notes (an LFO, a MIDI effect, automation of levels or
   macros) still records in real time.
 - **Fit to clip.** On SAMPLE, touch **Tempo** and click for a menu: **Fit to clip** (a

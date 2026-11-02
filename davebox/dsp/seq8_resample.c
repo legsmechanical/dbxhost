@@ -194,11 +194,12 @@ static void rs_remember_armed(seq8_instance_t *inst) {
 
 /* ---- OFFLINE takes (move_host_ext_v1_t.offline_take_*) ----
  *
- * A clip take of a Schwung instrument before the track's effects (Pre) or
- * after them at unity (FX) hears nothing but the track: the host can record
- * it faster than real time, with a private copy of THIS engine playing this
- * same command against this project's state, into copies of the slot's
- * instrument and effects. The engine decides; the UI sees the states a
+ * A clip take of a Schwung instrument, or of an Audio track's samples, before
+ * the track's effects (Pre) or after them at unity (FX) hears nothing but the
+ * track: the host can record it faster than real time, with a private copy of
+ * THIS engine playing this same command against this project's state, into
+ * copies of the slot's instrument (none on an Audio track: the copy's samples
+ * are fed to it, au_offline_pump) and effects. The engine decides; the UI sees the states a
  * real-time take goes through (RECORDING with its frames, then DONE /
  * CANCELLED / FAILED), with no transport started.
  *
@@ -246,6 +247,15 @@ static int rs_offline_try(seq8_instance_t *inst, int bars, int tail, int src, in
     if (pos <= 0 || pos >= (long)sizeof rs_off_state - 1) return 0;
     rs_off_state[pos] = '\0';
     rs_off_setup[0] = '\0';
+    {   /* where the copy's Audio clips find their samples (first: the loads
+         * are asked for as it arrives) */
+        char dir[256];
+        au_samples_dir(inst, dir, sizeof dir);
+        if (dir[0]) {
+            n = snprintf(rs_off_setup, sizeof rs_off_setup, "offline_samples %s\n", dir);
+            if (n < 0 || (size_t)n >= sizeof rs_off_setup) return 0;
+        }
+    }
     for (i = 0; i < PA_MAX_TARGETS; i++) {
         const pa_res_t *rr = &inst->pa_res[i];
         int w;
@@ -431,10 +441,7 @@ static void resample_clip_launch(seq8_instance_t *inst, const char *val, int off
         inst->resample_err = RS_ERR_MUTED;
     if (inst->resample_err) { inst->resample_state = RS_FAILED; return; }
     /* faster than real time when the host can (rs_offline_try) */
-    /* An Audio track's sample engine keeps to the clock (its streamer and
-     * stretcher threads): its takes stay real time until a copy can wait for them. */
-    if (offline_ok && dst.route == ROUTE_SCHWUNG && inst->tracks[tr_i].pad_mode != PAD_MODE_AUDIO &&
-            rs_offline_try(inst, bars, tail, src, dst.slot, val, path)) return;
+    if (offline_ok && dst.route == ROUTE_SCHWUNG && rs_offline_try(inst, bars, tail, src, dst.slot, val, path)) return;
     rs_remember_armed(inst);
     inst->resample_src  = (uint8_t)src;
     inst->resample_move = dst.route == ROUTE_MOVE;
