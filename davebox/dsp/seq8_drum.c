@@ -22,7 +22,7 @@ static void drum_pfx_emit(drum_pfx_t *px, uint8_t status, uint8_t d1, uint8_t d2
             g_inst->tracks[px->track_idx].pad_mode == PAD_MODE_CONDUCT)
         return;
     if (g_inst && px->track_idx < NUM_TRACKS &&
-            lead_hold(px->route, px->slot, px->midi_to, px->track_idx, 1,
+            lead_hold(px->route, px->slot, px->midi_to, px->track_idx, LEAD_DRUM,
                       (int)(px - g_inst->tracks[px->track_idx].drum_lane_pfx), status, d1, d2))
         return;
     drum_pfx_emit_now(px, status, d1, d2);

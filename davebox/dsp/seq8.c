@@ -192,9 +192,10 @@ static void seq8_set_state_path(char *out, size_t sz, const char *uuid, int crea
 #define LEAD_DRUM    1
 #define LEAD_PARAM   2             /* a set_slot_param: its words in lead_pa[aux] */
 #define LEAD_CLOCK   3             /* a realtime byte (st): track 0 = to the slots, 1 = to USB-A */
+#define LEAD_POST    4             /* a note INTO a track's POST module (post_raw_send) */
 typedef struct {
     uint32_t due;                  /* block_count it goes out in */
-    uint8_t  kind;                 /* LEAD_MELODIC / LEAD_DRUM / LEAD_PARAM */
+    uint8_t  kind;                 /* LEAD_MELODIC / LEAD_DRUM / LEAD_PARAM / LEAD_CLOCK / LEAD_POST */
     uint8_t  track, lane;          /* whose play-effects send it (drum: the lane's) */
     uint8_t  st, d1, d2;
     uint16_t aux;                  /* LEAD_PARAM: its lead_pa slot */
@@ -2287,12 +2288,22 @@ static inline int post_takes(const seq8_instance_t *inst, const seq8_track_t *tr
         && tr->pad_mode != PAD_MODE_CONDUCT;
 }
 
-static void post_raw_send(seq8_track_t *tr, uint8_t type, uint8_t d1, uint8_t d2) {
+static int lead_hold(uint8_t route, uint8_t slot, uint8_t midi_to,
+                     int track, int kind, int lane, uint8_t st, uint8_t d1, uint8_t d2);
+
+static void post_raw_send_now(seq8_track_t *tr, uint8_t st, uint8_t d1, uint8_t d2) {
     if (!g_host || !g_host->midi_send_internal_slot) return;
-    if (type == 0x90 && d2 > 0) tr->post.n_sent++;
-    const uint8_t st = (uint8_t)(type | (tr->channel & 0x0F));
+    if ((st & 0xF0) == 0x90 && d2 > 0) tr->post.n_sent++;
     const uint8_t msg[4] = { (uint8_t)(st >> 4), st, d1, d2 };
     g_host->midi_send_internal_slot((int)tr->pfx.slot, msg, 4);
+}
+/* What the module hands back plays at once (post_handback runs after the
+ * render, never held), so the LEAD is taken here, going in: held like the
+ * track's own notes when they end up anywhere but Move. */
+static void post_raw_send(seq8_track_t *tr, uint8_t type, uint8_t d1, uint8_t d2) {
+    const uint8_t st = (uint8_t)(type | (tr->channel & 0x0F));
+    if (lead_hold(tr->pfx.route, tr->pfx.slot, tr->pfx.midi_to, tr->pfx.track_idx, LEAD_POST, 0, st, d1, d2)) return;
+    post_raw_send_now(tr, st, d1, d2);
 }
 
 /* A note-on into the module, now or -- swung, or held by a groove -- when the
@@ -3041,7 +3052,7 @@ static int lead_now(const seq8_instance_t *inst) {
         && lead_active(inst);
 }
 static int lead_hold(uint8_t route, uint8_t slot, uint8_t midi_to,
-                     int track, int drum, int lane, uint8_t st, uint8_t d1, uint8_t d2) {
+                     int track, int kind, int lane, uint8_t st, uint8_t d1, uint8_t d2) {
     seq8_instance_t *inst = g_inst;
     if (!lead_now(inst)) return 0;
     midi_dest_t dst = midi_dest_resolve(route, slot, midi_to);
@@ -3049,7 +3060,7 @@ static int lead_hold(uint8_t route, uint8_t slot, uint8_t midi_to,
     if (inst->lead_head - inst->lead_tail >= LEAD_RING) { inst->lead_full++; return 0; }
     lead_ev_t *e = &inst->lead_q[inst->lead_head & (LEAD_RING - 1)];
     e->due   = inst->block_count + LEAD_BLOCKS;
-    e->kind  = (uint8_t)(drum ? LEAD_DRUM : LEAD_MELODIC);
+    e->kind  = (uint8_t)kind;
     e->track = (uint8_t)track;
     e->lane  = (uint8_t)lane;
     e->st = st; e->d1 = d1; e->d2 = d2;
@@ -3124,7 +3135,7 @@ static void pfx_emit(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
             au_note_event((int)fx->track_idx, (int)d1 - AU_NOTE_BASE, status, d2, g_inst->au_echo);
         return;
     }
-    if (lead_hold(fx->route, fx->slot, fx->midi_to, fx->track_idx, 0, 0, status, d1, d2)) return;
+    if (lead_hold(fx->route, fx->slot, fx->midi_to, fx->track_idx, LEAD_MELODIC, 0, status, d1, d2)) return;
     pfx_emit_now(fx, status, d1, d2);
 }
 
@@ -4328,7 +4339,9 @@ static void lead_drain(seq8_instance_t *inst, int all, int drop_ons) {
         }
         if (drop_ons && (e->st & 0xF0) == 0x90 && e->d2 > 0) continue;
         if (e->track >= NUM_TRACKS) continue;
-        if (e->kind == LEAD_DRUM) {
+        if (e->kind == LEAD_POST) {
+            post_raw_send_now(&inst->tracks[e->track], e->st, e->d1, e->d2);
+        } else if (e->kind == LEAD_DRUM) {
             if (e->lane < DRUM_LANES)
                 drum_pfx_emit_now(&inst->tracks[e->track].drum_lane_pfx[e->lane], e->st, e->d1, e->d2);
         } else {

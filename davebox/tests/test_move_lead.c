@@ -176,8 +176,56 @@ static hx_t *rig(void) {
     return h;
 }
 
+/* POST modules on tracks 1 (Move) and 4 (Schwung), each a stand-in that hands
+ * every note back unchanged, as the host's drain does: after the render. The
+ * block of the first note-on reaching each destination. */
+static void post_times(int *mv_on, int *sw_on, int *sw_in) {
+    hx_t *h = rig();
+    hx_set_param(h, "t1_fxpost", "1");
+    hx_set_param(h, "t4_fxpost", "1");
+    const int mv_slot = ((seq8_instance_t *)h->inst)->tracks[1].pfx.slot;
+    *mv_on = *sw_on = *sw_in = -1;
+    hx_set_param(h, "transport", "play");
+    for (int b = 0; b < 60; b++) {
+        uint8_t q[64][3]; int qs[64], n = 0;
+        hx_clear_capture(h);
+        hx_render(h, 1);
+        for (int i = 0; i < hx_stub_event_count(); i++) {
+            const hx_midi_event *e = hx_stub_event(i);
+            const uint8_t ty = e->bytes[1] & 0xF0;
+            const int on = ty == 0x90 && e->bytes[3] > 0;
+            if (e->kind == HX_MIDI_INJECT && on && *mv_on < 0) *mv_on = e->block;
+            if (e->kind == HX_MIDI_DIRECT && e->slot == SW_SLOT && on && *sw_on < 0) *sw_on = e->block;
+            if (e->kind == HX_MIDI_INTERNAL && e->slot == SW_SLOT && on && *sw_in < 0) *sw_in = e->block;
+            if (e->kind == HX_MIDI_INTERNAL && (e->slot == SW_SLOT || e->slot == mv_slot)
+                    && (ty == 0x90 || ty == 0x80) && n < 64) {
+                q[n][0] = e->bytes[1]; q[n][1] = e->bytes[2]; q[n][2] = e->bytes[3]; qs[n++] = e->slot;
+            }
+        }
+        for (int i = 0; i < n; i++) move_plugin_slot_midi_v1(h->inst, qs[i], q[i], 3);
+        /* what the hand-back sent goes out with the next render's capture: count it here */
+        for (int i = 0; i < hx_stub_event_count(); i++) {
+            const hx_midi_event *e = hx_stub_event(i);
+            const int on = (e->bytes[1] & 0xF0) == 0x90 && e->bytes[3] > 0;
+            if (e->kind == HX_MIDI_INJECT && on && *mv_on < 0) *mv_on = b + 1;
+            if (e->kind == HX_MIDI_DIRECT && e->slot == SW_SLOT && on && *sw_on < 0) *sw_on = b + 1;
+        }
+    }
+    hx_destroy(h);
+}
+
 int main(void) {
     char m[160];
+
+    /* ---- a POST module: what it hands back keeps the lead ---- */
+    {
+        int mv_on, sw_on, sw_in;
+        post_times(&mv_on, &sw_on, &sw_in);
+        HX_ASSERT(mv_on > 0 && sw_on > 0 && sw_in > 0, "control: both POST modules answered and both destinations played");
+        snprintf(m, sizeof m, "a POST module's note reached the Schwung instrument %d blocks after Move's, not %d",
+                 sw_on - mv_on, LEAD_BLOCKS);
+        HX_ASSERT(sw_on - mv_on == LEAD_BLOCKS, m);
+    }
 
     /* ---- the same tick: Move at once, Schwung LEAD_BLOCKS later ---- */
     {
