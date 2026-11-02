@@ -34,8 +34,6 @@
  *                  SLICES' (its click), and SAMPLE's menu offers Chop sample
  *                  only on a Loop clip, which a chop turns into a Slice clip
  *                  (toSlice) with the editor moving to SLICES
- *   Fit to clip    a Loop clip's: the sample's Tempo set once so Start to its
- *                  end fills the clip (auFit)
  * THE CHOP EDITOR (ed.mode 'chop', ed.chop.kind):
  *   Even       the jog sets the count, live on the pads
  *   Transient  the jog sets Sens (Shift: 5 a detent); the chops are Start and
@@ -68,7 +66,7 @@ import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLaz
          auPanelPages, auPanelPageName, auPanelKnob, auPanelKnobClass, auChop, auPadToSlice,
          auSelSlice, auSetSelSlice, isAudioTrack, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
          auMarkAdd, auMarkDel, auManual, auEvenBake, auTrans, auTransBake, auRangeStep, auSet, auEnd, auPanelRingCells, auPanelReset,
-         auIsSlice, AU_LAZY_ARMED, AU_LAZY_RUN, AU_LAZY_ENDED, AU_EVEN_MAX, AU_BPM10_MIN, AU_BPM10_MAX, auLenTicks,
+         auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_LAZY_ENDED, AU_EVEN_MAX, AU_BPM10_MIN, AU_BPM10_MAX, auLenTicks,
          auSampleP2Cells, auSampleP2Knob, auSampleReset, auEdit, auTrimCuts, auOrig, auFit, auNudgeStep, auFpt, auPlayedEnd, auTooLongToChop, auAutoEdit, auAutoTouch, auSlicesAutoTouch, SLICE_GRID } from './ui_audio.mjs';
 import { registerScreenRingCells } from './ui_knob_leds.mjs';
 import { auModeValue } from './ui_pure.mjs';
@@ -571,7 +569,7 @@ export function auPickRows(ed) {
      * there, which switch the clip into slice mode?") */
     if (p.level === 1) return i.state === 2
         ? [{ id: 'load', label: 'Load sample', chevron: true }, { id: 'trim', label: 'Trim' }, { id: 'norm', label: 'Normalize' }]
-            .concat(auIsSlice(i) ? [] : [{ id: 'chop', label: 'Chop sample', chevron: true }, { id: 'fit', label: 'Fit to clip' }])
+            .concat(auIsSlice(i) ? [] : [{ id: 'chop', label: 'Chop sample', chevron: true }])
         : [{ id: 'load', label: 'Load sample', chevron: true }];
     /* Convert to kit (Josh, 2026-10-30: "slice menu option: convert to kit"):
      * the chops as a Move drum kit (ui_audio_kit) — a Slice clip's: a Loop
@@ -609,15 +607,6 @@ function pickInput(ed, status, d1, d2) {
             /* nothing to cut: say so rather than ask */
             if (row.id === 'trim' && !auTrimCuts(ed.t, ed.c)) { showActionPopup('TRIM', 'Nothing to cut'); return true; }
             ed.ask = { kind: 'edit', op: row.id, sel: 0 };   /* opens on New (Josh: "new copy is default") */
-            return true;
-        }
-        if (row.id === 'fit') {
-            /* the sample's Tempo set so Start to its end fills the clip, once
-             * (Josh, 2026-11-02: "fit to clip" · "(once)") */
-            ed.pick = null;
-            const v = auFit(ed.t, ed.c);
-            if (v < 0) showActionPopup('FIT TO CLIP', 'Out of range');
-            else if (v) showActionPopup('FIT TO CLIP', (v % 10 ? (v / 10).toFixed(1) : String(v / 10)) + ' BPM');
             return true;
         }
         if (row.id === 'kit') { ed.pick = null; S.pendingAuKit = { t: ed.t, c: ed.c }; return true; }   /* reads + a copy: the tick's */
@@ -882,6 +871,16 @@ export function audioEditorInput(status, d1, d2) {
             return true;
         }
         if (sl && p2) return true;
+        /* touch Tempo (K7) + click, on either page of a Loop clip's SAMPLE:
+         * Fit — the sample's Tempo set once so Start to its end fills the
+         * clip (Josh, 2026-11-02: "fit to clip" · "(once)" · "why not take it
+         * out of the menu and make it a touch click action on tempo?") */
+        if (S.knobTouched === 6 && (sub === 'loop' || p2) && !sl && auIsLoop(auInfo(ed.t, ed.c))) {
+            const v = auFit(ed.t, ed.c);
+            if (v < 0) showActionPopup('FIT', 'Out of range');
+            else if (v) showActionPopup('FIT', (v % 10 ? (v / 10).toFixed(1) : String(v / 10)) + ' BPM');
+            return true;
+        }
         if (slEdit) { ed.pick = { level: 2, sel: 0, only2: true }; return true; }   /* the chop types */
         if (p2) {
             /* touch K1 + click: Orig */

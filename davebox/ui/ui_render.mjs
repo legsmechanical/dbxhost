@@ -330,7 +330,8 @@ function drawAudioWaveEditor() {
     }
     if (plain && ed.page === 1) {
         drawKitPage(auSampleName(t, c), auSampleP2Cells(t, c), false,
-                    S.knobTouched === 0 ? [['clk', 'orig']] : [['jog', 'page']]);
+                    S.knobTouched === 0 ? [['clk', 'orig']]
+                    : S.knobTouched === 6 && auIsLoop(i) ? [['clk', 'fit']] : [['jog', 'page']]);
         if (S.knobTouched < 0) drawBankHeading(auSampleName(t, c), false, false, '2/2');
         return;
     }
@@ -343,7 +344,8 @@ function drawAudioWaveEditor() {
         /* no cursor and no chops: they are Slice's (Josh, 2026-10-29: "chops
          * should just be completely invisible in loop mode") */
         drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, gain: i.gain | 0, noMarks: true, clipTime: true, beats: { origin: i.rstart, fpb: 96 * auFpt(i) } });
-        drawKitHintRow(MV_FOOTER_Y, [['clk', 'menu'], ['jog', 'page']]);
+        /* touch Tempo: a click fits the sample to the clip */
+        drawKitHintRow(MV_FOOTER_Y, S.knobTouched === 6 ? [['clk', 'fit'], ['jog', 'page']] : [['clk', 'menu'], ['jog', 'page']]);
         return;
     }
     const mk = auMarks(t, c);
