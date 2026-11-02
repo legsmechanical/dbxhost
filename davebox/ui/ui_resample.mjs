@@ -279,6 +279,80 @@ function freePath(base, dir) {
     return null;
 }
 
+/* Clip c of Audio track t starts over (its sample, steps and every setting
+ * go, as Shift + Delete takes them), then picks `path`: one undo. */
+function takeIntoClip(t, c, path) {
+    auUndoClips(t, [c]);
+    hardResetClip(t, c, true);
+    S.auPicks.push({ t, c, path });
+}
+
+/* ---- Live merge on Audio tracks (Josh, 2026-11-02: "live merge for audio
+ * tracks should be audio, not sequences (so live recording the track), pre
+ * fx.") ----
+ *
+ * Each Audio track the merge takes in records its sound before its effects to
+ * a file of its own in the project's samples folder (the engine's
+ * merge_stem / merge_audio). Placement loads each into the clip picked; a
+ * track that made no sound keeps its clip, and its file goes. */
+
+/* Before merge_arm: a file for each Audio track in the merge (`solo` = the
+ * one track of a Track View merge, -1 = all). */
+export function mergeStemsArm(solo) {
+    S.mergeStems = [];
+    const bpm = (S.bpmMirror > 0 && isFinite(S.bpmMirror)) ? S.bpmMirror : 120;
+    for (let t = 0; t < 8; t++) {
+        if ((solo >= 0 && t !== solo) || S.trackPadMode[t] !== PAD_MODE_AUDIO) continue;
+        const dir = dspAnswer('t' + t + '_au_dir') || '';
+        if (!dir) continue;
+        /* the tempo in the name: the clip plays it at the tempo it was made at */
+        const path = freePath(sanitizeName(S.currentSetName) + ' T' + (t + 1) + ' merge ' + Math.round(bpm) + 'bpm', dir);
+        if (!path) continue;
+        S.mergeStems.push({ t, path });
+        S.pendingDefaultSetParams.push({ key: 'merge_stem', val: t + ' |' + path });
+    }
+}
+
+/* The merge is over (placed, cancelled, or thrown away by a project load):
+ * its files are loaded or removed once the take is written. */
+export function mergeStemsSettle() {
+    if (!S.mergeStems.length) return;
+    S.mergeStemsSettle = { stems: S.mergeStems, at: nowMs() };
+    S.mergeStems = [];
+}
+
+/* Is the engine holding the transport for the take's last frames? */
+export function mergeStemsWriting() {
+    const ph = parseInt((dspAnswer('merge_audio') || '0').split(' ')[0], 10) | 0;
+    return ph === MS_RECORDING || ph === MS_ENDING;
+}
+
+const MS_RECORDING = 3, MS_ENDING = 4, MS_DONE = 5, MS_FAILED = 6;
+
+function removeFile(p) { try { os.remove(p); } catch (e) { /* never written */ } }
+
+function mergeStemsTick() {
+    const st = S.mergeStemsSettle;
+    if (!st) return;
+    const a = (dspAnswer('merge_audio') || '').split(' ').map((v) => parseInt(v, 10) | 0);
+    const ph = a[0], mask = a[2], row = a[3];
+    /* the file is still being written: wait (a stuck take, not forever) */
+    if ((ph === MS_RECORDING || ph === MS_ENDING) && nowMs() - st.at < 10000) return;
+    S.mergeStemsSettle = null;
+    let placed = 0;
+    for (const s of st.stems) {
+        const [f] = os.stat(s.path);
+        if (ph === MS_DONE && (mask & (1 << s.t)) && row >= 0 && f) {
+            takeIntoClip(s.t, row, s.path);
+            placed++;
+        } else {
+            removeFile(s.path);
+        }
+    }
+    if (ph === MS_FAILED) showActionPopupFor(2500, 'LIVE MERGE', 'Audio not recorded');
+    else if (placed) showActionPopupFor(2500, 'LIVE MERGE', placed > 1 ? 'Audio recorded to clips' : 'Audio recorded to clip');
+}
+
 function startResample() {
     const r = S.confirmResample;
     if (!notPlayingForResample()) { closeSampleFlow(); return false; }
@@ -352,15 +426,17 @@ function sampling() {
 
 /* Every tick while a take is up. */
 export function resampleTick() {
-    /* In place: the pick goes straight to the engine, the reset through the
-     * queue, so the pick waits until the reset has gone */
-    const ip = S.resampleInPlace;
-    if (ip && !S.clearDrainHold &&
-            !S.pendingDefaultSetParams.some((e) => e.key === 't' + ip.t + '_c' + ip.c + '_hard_reset')) {
-        S.resampleInPlace = null;
+    /* A take for a clip: the pick goes straight to the engine, the reset
+     * through the queue, so the pick waits until the reset has gone */
+    for (let i = 0; i < S.auPicks.length; i++) {
+        const ip = S.auPicks[i];
+        if (S.clearDrainHold ||
+                S.pendingDefaultSetParams.some((e) => e.key === 't' + ip.t + '_c' + ip.c + '_hard_reset')) continue;
+        S.auPicks.splice(i--, 1);
         auPick(ip.t, ip.c, ip.path, true);
         S.screenDirty = true;
     }
+    mergeStemsTick();
     const t = S.resampleTake;
     /* a conversion's takes are auConvertTick's (ui_audio_convert), the
      * export's are pollExportFlatten's (ui_export): this one would put
@@ -392,9 +468,7 @@ export function resampleTick() {
         if (s && t.inPlace) {
             /* In place: the clip starts over (its sample, steps and every
              * setting go, as Shift + Delete takes them), then picks the take */
-            auUndoClips(t.inPlace.t, [t.inPlace.c]);   /* the reset and the pick: one undo */
-            hardResetClip(t.inPlace.t, t.inPlace.c, true);
-            S.resampleInPlace = { t: t.inPlace.t, c: t.inPlace.c, path: t.path };
+            takeIntoClip(t.inPlace.t, t.inPlace.c, t.path);
             finish(2500, 'RESAMPLED', t.what + ', ' + barsLabel(t.loopBars), 'In place');
         }
         else if (s) finish(2500, 'RESAMPLED', t.what + ', ' + barsLabel(t.loopBars), 'In Samples/dAVEBOx');

@@ -76,6 +76,17 @@ void hx_stub_capture_refuse(int on);
 int  hx_stub_capture(int *stops, int *block, uint32_t *frames, const char **path);
 /* capture_start_src: the last take's source (MOVE_CAPTURE_MIX for capture_start). */
 int  hx_stub_capture_src(int *kind, int *index);
+/* stems_*: the stem take. hx_stub_stems: starts so far, and the last one's
+ * stem count, the block it started in, the limit it was given (0 = none) and
+ * the stops; each stem's slot and path. finish ends the take on disk (failed:
+ * MOVE_STEMS_FAILED); peak sets what stems_state reports for stem i. */
+void hx_stub_stems_reset(void);
+void hx_stub_stems_refuse(int on);
+void hx_stub_stems_peak(int i, uint16_t p);
+void hx_stub_stems_finish(int failed);
+int  hx_stub_stems(int *n, int *block, uint32_t *limit, int *stops);
+int  hx_stub_stems_slot(int i);
+const char *hx_stub_stems_path(int i);
 /* slot_audio_feed: per slot, calls since the reset; the first block (the
  * hx_midi_event.block clock) that carried sound; the summed |sample|; the last
  * block handed over (256 interleaved samples). */

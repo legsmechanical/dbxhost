@@ -188,6 +188,48 @@ int hx_stub_feed(int slot, int *first_block, uint64_t *energy) {
 }
 const int16_t *hx_stub_feed_last(int slot) { return (slot >= 0 && slot < HX_FEED_SLOTS) ? g_feed_last[slot] : NULL; }
 
+/* stems_* — the host's stem take (a Live Merge's Audio tracks). A start
+ * records what it was given; a limit or stop ends it; the state answers
+ * RECORDING until hx_stub_stems_finish, then IDLE (or FAILED). */
+static int      g_st_starts, g_st_stops, g_st_n, g_st_block = -1, g_st_state, g_st_refuse;
+static int      g_st_slots[MOVE_STEMS_MAX];
+static char     g_st_paths[MOVE_STEMS_MAX][256];
+static uint32_t g_st_frames, g_st_limit;
+static uint16_t g_st_peaks[MOVE_STEMS_MAX];
+static int stub_stems_start(int n, const int *slots, const char *const *paths, uint32_t frames) {
+    int i;
+    if (g_st_refuse || g_st_state == MOVE_STEMS_RECORDING || n < 1 || n > MOVE_STEMS_MAX) return 0;
+    g_st_starts++; g_st_n = n; g_st_block = g_block; g_st_frames = frames; g_st_limit = 0;
+    for (i = 0; i < n; i++) {
+        g_st_slots[i] = slots[i];
+        snprintf(g_st_paths[i], sizeof g_st_paths[i], "%s", paths[i]);
+    }
+    g_st_state = MOVE_STEMS_RECORDING;
+    return 1;
+}
+static void stub_stems_limit(uint32_t frames) { if (g_st_state == MOVE_STEMS_RECORDING) g_st_limit = frames; }
+static void stub_stems_stop(void) { if (g_st_state == MOVE_STEMS_RECORDING) { g_st_stops++; g_st_state = MOVE_STEMS_IDLE; } }
+static int stub_stems_state(uint16_t *peaks, int cap) {
+    int i;
+    if (peaks) for (i = 0; i < cap && i < MOVE_STEMS_MAX; i++) peaks[i] = g_st_peaks[i];
+    return g_st_state;
+}
+void hx_stub_stems_reset(void) {
+    g_st_starts = g_st_stops = g_st_n = g_st_state = g_st_refuse = 0; g_st_block = -1;
+    g_st_frames = g_st_limit = 0;
+    memset(g_st_peaks, 0, sizeof g_st_peaks);
+}
+void hx_stub_stems_refuse(int on) { g_st_refuse = on; }
+void hx_stub_stems_peak(int i, uint16_t p) { if (i >= 0 && i < MOVE_STEMS_MAX) g_st_peaks[i] = p; }
+void hx_stub_stems_finish(int failed) { g_st_state = failed ? MOVE_STEMS_FAILED : MOVE_STEMS_IDLE; }
+int  hx_stub_stems(int *n, int *block, uint32_t *limit, int *stops) {
+    if (n) *n = g_st_n; if (block) *block = g_st_block;
+    if (limit) *limit = g_st_limit; if (stops) *stops = g_st_stops;
+    return g_st_starts;
+}
+int         hx_stub_stems_slot(int i) { return (i >= 0 && i < g_st_n) ? g_st_slots[i] : -1; }
+const char *hx_stub_stems_path(int i) { return (i >= 0 && i < g_st_n) ? g_st_paths[i] : ""; }
+
 const move_host_ext_v1_t *hx_stub_ext(void) {
     static const move_host_ext_v1_t ext = {
         .size = sizeof(move_host_ext_v1_t),
@@ -202,6 +244,10 @@ const move_host_ext_v1_t *hx_stub_ext(void) {
         .capture_stop = stub_capture_stop,
         .capture_start_src = stub_capture_start_src,
         .slot_audio_feed = stub_slot_audio_feed,
+        .stems_start = stub_stems_start,
+        .stems_limit = stub_stems_limit,
+        .stems_stop = stub_stems_stop,
+        .stems_state = stub_stems_state,
     };
     return &ext;
 }

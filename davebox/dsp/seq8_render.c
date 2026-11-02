@@ -320,6 +320,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
     inst->pa_host_writes = 0;          /* this block's direct parameter writes (pa_emit_chain) */
     if (frames > 0) inst->rui_frames += (uint64_t)frames;  /* device clock (remote UI) */
     resample_render_start(inst, frames);   /* arms / counts a scene resample's take */
+    merge_stems_render_start(inst);        /* a merge's Audio tracks (seq8_merge_audio.c) */
     /* Stopped: there is no beat to wait for. */
     if (inst->aud.pending && !inst->playing) aud_apply(inst);
 
@@ -645,6 +646,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
             inst->merge_start_abs = inst->global_tick * TICKS_PER_STEP;
             for (_mt = 0; _mt < NUM_TRACKS; _mt++) inst->merge_pending_count[_mt] = 0;
             if (inst->print_state == 1) inst->print_state = 2;
+            merge_stems_first_tick(inst);
         }
         /* PRINT: the take ends itself after its laps, to the tick. */
         if (inst->print_state == 2 && inst->merge_state == MERGE_STATE_CAPTURING) {

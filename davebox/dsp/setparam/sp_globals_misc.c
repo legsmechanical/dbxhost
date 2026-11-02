@@ -121,6 +121,7 @@ static int sp_globals_misc(sp_ctx_t *cx) {
             ? (uint8_t)clamp_i(my_atoi(val + 1), 0, NUM_TRACKS - 1)
             : 0xFF;
         inst->merge_tps = (uint32_t)TICKS_PER_STEP;
+        merge_stems_arm(inst);
         /* Live Merge is a STOPPED-transport operation (JS gates arm on !playing).
          * Run a 1-bar count-in (reusing the record count-in machinery, but with
          * count_in_merge=1). The count-in completion (seq8_render.c) resets all
@@ -143,6 +144,10 @@ static int sp_globals_misc(sp_ctx_t *cx) {
         if (inst->clock_follow_on) follow_request_start(inst, 2);
         return 1;
     }
+    if (!strcmp(key, "merge_stem")) {
+        merge_stem_path_set(inst, val);
+        return 1;
+    }
     if (!strcmp(key, "merge_stop")) {
         if (inst->count_in_merge) {
             /* Stop pressed during the count-in: abort the merge, stay stopped
@@ -156,9 +161,12 @@ static int sp_globals_misc(sp_ctx_t *cx) {
             }
             inst->merge_state      = MERGE_STATE_IDLE;
             inst->merge_solo_track = 0xFF;
+            merge_stems_reset(inst);
             return 1;
         }
-        if (inst->merge_solo_track != 0xFF) {
+        /* A merge recording an Audio track's sound ends on the bar line, so
+         * it loops: the scene path below, solo or not. */
+        if (inst->merge_solo_track != 0xFF && !merge_stems_wait_bar(inst)) {
             /* Single-track (Track-View) merge: finalize immediately in set_param
              * context (→ CAPTURED, no render-thread page-boundary wait, so no
              * STOPPING race), stop playback (ending a merge always halts the
@@ -266,6 +274,7 @@ static int sp_globals_misc(sp_ctx_t *cx) {
         }
         inst->merge_state      = MERGE_STATE_IDLE;
         inst->merge_solo_track = 0xFF;
+        merge_stems_abandon(inst);
         return 1;
     }
     if (!strcmp(key, "bake")) {

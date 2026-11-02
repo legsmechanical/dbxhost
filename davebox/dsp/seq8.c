@@ -1532,6 +1532,18 @@ typedef struct {
      * their output (bit t): the UI bypasses those modules, so the merged
      * clip does not play through them twice. A print bypasses its own. */
     uint8_t  merge_post_mask;
+    /* LIVE MERGE on Audio tracks records their sound (seq8_merge_audio.c):
+     * the paths the UI sent, the take's phase (MS_*), its tracks in stem
+     * order, and after placement the tracks whose take has sound and the
+     * clip they go to. */
+    char     merge_stem_path[NUM_TRACKS][256];
+    uint8_t  merge_stem_phase;
+    uint8_t  merge_stem_lead;
+    uint8_t  merge_stem_n;
+    uint8_t  merge_stem_track[NUM_TRACKS];
+    uint8_t  merge_stem_mask;
+    uint8_t  merge_audio_mask;
+    int8_t   merge_audio_row;
 
     /* Live pad input: global key/scale stored for state persistence */
     uint8_t  pad_key;               /* root key 0-11, default 9 (A) */
@@ -2538,6 +2550,9 @@ static void clip_build_steps_from_notes(clip_t *cl);
  * once the user picks a scene row via merge_place_row. Safe to call from
  * ARMED, CAPTURING, or STOPPING; no-op when IDLE/CAPTURED. */
 static void merge_finalize(seq8_instance_t *inst);
+static void merge_stems_finalize(seq8_instance_t *inst);   /* seq8_merge_audio.c */
+static void merge_stems_place(seq8_instance_t *inst, int row);
+static void merge_stems_abandon(seq8_instance_t *inst);
 /* Live Merge's capture of one message on track `tri` (melodic and drum-lane
  * output alike). Capture continues during STOPPING (the user tapped stop but
  * the bar has not landed) so trailing notes in the final page still make it
@@ -2549,6 +2564,9 @@ static void merge_capture(uint8_t tri, uint8_t status, uint8_t d1, uint8_t d2) {
     uint8_t st = status & 0xF0;
     if (g_inst->merge_solo_track != 0xFF && tri != g_inst->merge_solo_track) return;
     if (tri >= NUM_TRACKS || (st != 0x90 && st != 0x80)) return;
+    /* An Audio track's merge records its sound, not the chops it plays
+     * (seq8_merge_audio.c). */
+    if (g_inst->tracks[tri].pad_mode == PAD_MODE_AUDIO) return;
     /* + groove_ahead: a note played ahead of its tick is captured at the tick
      * it belongs to, not the one it was fired on */
     uint32_t abs_now = (uint32_t)g_inst->groove_ahead + g_inst->global_tick * TICKS_PER_STEP
@@ -2588,6 +2606,7 @@ static void merge_finalize(seq8_instance_t *inst) {
         int t;
         for (t = 0; t < NUM_TRACKS; t++) inst->merge_pending_count[t] = 0;
         inst->merge_state = MERGE_STATE_IDLE;
+        merge_stems_abandon(inst);
         return;
     }
     /* CAPTURING / STOPPING: close any still-open pending notes at current pos. */
@@ -2607,6 +2626,7 @@ static void merge_finalize(seq8_instance_t *inst) {
         }
     }
     inst->merge_state = MERGE_STATE_CAPTURED;
+    merge_stems_finalize(inst);
     /* state_dirty deferred until merge_place actually writes — there's
      * nothing on disk to update until then. */
 }
@@ -2681,6 +2701,7 @@ static void merge_place(seq8_instance_t *inst, int row) {
         }
         inst->merge_pending_count[t] = 0;
     }
+    merge_stems_place(inst, row);
     inst->state_dirty = 1;
     inst->merge_state      = MERGE_STATE_IDLE;
     inst->merge_solo_track = 0xFF;
@@ -8506,6 +8527,7 @@ static void clip_send_program(seq8_track_t *tr, const clip_t *cl) {
 #include "seq8_convert.c"
 #include "seq8_param_auto.c"
 #include "seq8_resample.c"
+#include "seq8_merge_audio.c"
 static void reset_all_loop_cycles(seq8_instance_t *inst);
 
 #include "seq8_set_param.c"
@@ -9429,6 +9451,11 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
     /* Live Merge: the tracks whose POST module the last placement took in. */
     if (!strcmp(key, "merge_post_mask"))
         return snprintf(out, out_len, "%d", (int)inst->merge_post_mask);
+    /* Live Merge's audio: "phase stem_mask audio_mask row" (seq8_merge_audio.c). */
+    if (!strcmp(key, "merge_audio"))
+        return snprintf(out, out_len, "%d %d %d %d", (int)inst->merge_stem_phase,
+                        (int)inst->merge_stem_mask, (int)inst->merge_audio_mask,
+                        (int)inst->merge_audio_row);
     if (!strcmp(key, "print_state"))
         return snprintf(out, out_len, "%d", (int)inst->print_state);
     if (!strcmp(key, "playing"))

@@ -85,6 +85,7 @@ TARGETS = $(BUILD_DIR)/test_project_path \
           $(BUILD_DIR)/test_json_compact \
           $(BUILD_DIR)/test_sampler_wav_trim \
           $(BUILD_DIR)/test_sampler_take \
+          $(BUILD_DIR)/test_stem_take \
           $(BUILD_DIR)/test_slot_feed \
           $(BUILD_DIR)/test_fx_midi_filter \
           $(BUILD_DIR)/test_overtake_native_led_repaint \
@@ -164,6 +165,9 @@ $(BUILD_DIR)/%: %.c | $(BUILD_DIR)
 # implementation passes forever after the real one changes.
 $(BUILD_DIR)/test_sa_master_volume: test_sa_master_volume.c ../../src/host/sa_master_volume.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $(filter %.c,$^) -o $@ $(LDFLAGS) -lm
+
+$(BUILD_DIR)/test_stem_take: test_stem_take.c ../../src/host/stem_take.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) -I../../src $(filter %.c,$^) -o $@ $(LDFLAGS)
 
 $(BUILD_DIR)/test_spawn_command: test_spawn_command.c ../../src/host/spawn_command.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $(filter %.c,$^) -o $@ $(LDFLAGS)

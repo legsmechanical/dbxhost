@@ -848,7 +848,9 @@ export const S = {
     sampleMenu: null,              /* { items, sel } while the menu is up */
     sampleFlow: false,             /* the picker / bake dialog up came from the menu: Back steps back to it */
     scenePickFor: 'bake',          /* what the scene picker (pendingSceneBakePicker) picks for */
-    resampleInPlace: null,         /* { t, c, path }: an in-place take, picked once the clip's reset has gone */
+    auPicks: [],                   /* [{ t, c, path }]: takes for clips (In place, a Live merge's Audio tracks), each picked once its clip's reset has gone */
+    mergeStems: [],                /* [{ t, path }]: the Audio tracks the running Live merge records, and their files */
+    mergeStemsSettle: null,        /* { stems, at }: a merge's files to load or remove once the take is written */
     confirmResample: null,         /* { clip, bars, warm, tail, sel, editing } — the options */
     resampleTake: null,            /* { path, file, scene, bars, ... } while a take is up */
     resampleState: 0,              /* state_snapshot [65..67]: the engine's RS_*, frames done, take frames */

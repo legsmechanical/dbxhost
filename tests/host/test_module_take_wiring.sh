@@ -31,10 +31,41 @@ echo "module take wiring:"
 # The struct grows only at its end (a module reads a member only inside `size`).
 ext_tail() {
     awk '/typedef struct move_host_ext_v1 \{/,/\} move_host_ext_v1_t;/' "$API" \
-        | grep -E '^\s+[a-z].*\(\*' | tail -4 | tr -d ' \n' \
-        | grep -q 'int(\*capture_start)(constchar\*path,uint32_tframes);void(\*capture_stop)(void);int(\*capture_start_src)(constchar\*path,uint32_tframes,intkind,intindex);int(\*slot_audio_feed)(intslot,constint16_t\*lr,uint32_tframes);'
+        | grep -E '^\s+[a-z].*\(\*' | tail -8 | tr -d ' \n' \
+        | grep -q 'int(\*capture_start)(constchar\*path,uint32_tframes);void(\*capture_stop)(void);int(\*capture_start_src)(constchar\*path,uint32_tframes,intkind,intindex);int(\*slot_audio_feed)(intslot,constint16_t\*lr,uint32_tframes);int(\*stems_start)(intn,constint\*slots,constchar\*const\*paths,uint32_tframes);void(\*stems_limit)(uint32_tframes);void(\*stems_stop)(void);int(\*stems_state)(uint16_t\*peaks,intcap);'
 }
-check "capture_start / capture_stop / capture_start_src, then slot_audio_feed, end the extension" ext_tail
+check "capture_start / capture_stop / capture_start_src, slot_audio_feed, then the stems_* end the extension" ext_tail
+
+# THE STEM TAKE (stem_take.c): several slots' instruments at once. Its arithmetic
+# and files are run in test_stem_take.c; these pin the shim around it.
+stems_filled() { code "$SHIM" | grep -q '\.stems_start = overtake_stems_start' &&
+                 code "$SHIM" | grep -q '\.stems_limit = stem_take_limit' &&
+                 code "$SHIM" | grep -q '\.stems_stop = stem_take_stop' &&
+                 code "$SHIM" | grep -q '\.stems_state = stem_take_state'; }
+check "the shim fills the four stems_* members" stems_filled
+# Each stem is read where the PRE take is: the frame's pre-FX buffer at its
+# synth level (a tap in the render task misses the first block), else the
+# fallback render, else silence -- and the block is counted after all of them.
+stems_read() {
+    local blk; blk=$(code "$SHIM" | awk '/if \(stem_take_slot\(0\) >= 0\) \{/,/stem_take_block_end\(\);/')
+    [ -n "$blk" ] &&
+    printf '%s\n' "$blk" | grep -q 'memcpy(stem_buf, shadow_slot_deferred\[ps\], sizeof(stem_buf));' &&
+    printf '%s\n' "$blk" | grep -q 'shadow_apply_synth_level(ps, stem_buf);' &&
+    printf '%s\n' "$blk" | grep -q 'stem_take_capture(si, shadow_slot_fallback\[ps\]);' &&
+    printf '%s\n' "$blk" | grep -q 'stem_take_capture(si, NULL);' &&
+    printf '%s\n' "$blk" | tail -1 | grep -q 'stem_take_block_end();' &&
+    code "$SHIM" | awk '/if \(stem_take_slot\(0\) >= 0\) \{/{a=NR} /const int16_t \*take_src = unity_view;/{b=NR} END{exit !(a && b && a < b)}'
+}
+check "the shim reads each stem's slot before its FX, at the PRE take's point" stems_read
+stems_worker() { code "$SHIM" | grep -q '\.stems_prepare          = stem_take_worker_prepare' &&
+                 code "$SHIM" | grep -q '\.stems_finalize         = stem_take_worker_finalize' &&
+                 code "$SHIM" | grep -q 'stem_take_init(&stem_host);' &&
+                 code src/host/shim_worker.c | grep -q 'worker_hooks.stems_prepare()' &&
+                 code src/host/shim_worker.c | grep -q 'worker_hooks.stems_finalize()'; }
+check "the stem take's file work runs on the worker, and its rings are made at init" stems_worker
+stems_built() { grep -q 'src/host/stem_take.c \\' scripts/build.sh &&
+                grep -q 'src/host/shim_worker.c src/host/stem_take.c' scripts/build.sh; }
+check "the shim build compiles stem_take.c (and rebuilds on it)" stems_built
 
 filled() { code "$SHIM" | grep -q '\.capture_start = overtake_capture_start' &&
            code "$SHIM" | grep -q '\.capture_stop = sampler_request_stop_module' &&

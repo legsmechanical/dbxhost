@@ -115,7 +115,7 @@ import { seqFollowOn, setSeqFollowOn } from './ui_prefs.mjs';
 import { openSampleMenu, closeSampleFlow, sampleFlowUp, sampleMenuRotate, sampleMenuPick,
          reopenSampleMenu, menuIndexOf, openResampleOptions, resampleOptionsRotate,
          resampleOptionsClick, resampleOptionsBack, resampleRunning, cancelResample,
-         resampleModalCC, notPlayingForResample, openClipResampleOptions } from './ui_resample.mjs';
+         resampleModalCC, notPlayingForResample, openClipResampleOptions, mergeStemsArm } from './ui_resample.mjs';
 
 /* View lock: double-tap Loop keeps Perf Mode alive after Loop is released.
  * Single tap while locked → unlock + stop loop. */
@@ -3507,6 +3507,7 @@ function _onCC_transport(d1, d2) {
         S.countInBeatStartMs = nowMs();
         S.countInQuarterMs = 60000 / _bpm;          /* a quarter note, in ms (the name is historical) */
         const _solo = S.mergeNoticeSingleTrack;
+        mergeStemsArm(_solo);   /* its Audio tracks record their sound (before merge_arm) */
         if (_solo < 0) {
             S.mergeSingleTrack = -1;
             S.pendingDefaultSetParams.push({ key: 'merge_arm', val: '1' });

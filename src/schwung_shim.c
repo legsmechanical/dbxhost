@@ -70,6 +70,7 @@
 #include "host/link_audio.h"
 #include "host/shadow_sampler.h"
 #include "host/sampler_take_tap.h"
+#include "host/stem_take.h"
 #include "host/slot_feed.h"
 #include "host/shadow_transport.h"
 #include "host/shadow_set_pages.h"
@@ -1714,6 +1715,21 @@ static int overtake_slot_audio_feed(int slot, const int16_t *lr, uint32_t frames
     return 1;
 }
 
+/* stem_take's worker events (RT-safe to post). */
+static void shim_stems_post(int finalize) {
+    shim_worker_post(finalize ? SHIM_EVT_STEMS_FINALIZE : SHIM_EVT_STEMS_PREP);
+}
+
+/* Host extension (move_host_ext_v1_t.stems_*): several slots' instruments at
+ * once, each to its own WAV (stem_take.c). Its numbers are MOVE_STEMS_*. */
+static int overtake_stems_start(int n, const int *slots, const char *const *paths, uint32_t frames) {
+    int i;
+    if (!slots) return 0;
+    for (i = 0; i < n; i++)
+        if (slots[i] < 0 || slots[i] >= SHADOW_CHAIN_INSTANCES) return 0;
+    return stem_take_start(n, slots, paths, frames);
+}
+
 static const move_host_ext_v1_t overtake_host_ext = {
     .size = sizeof(move_host_ext_v1_t),
     .set_slot_param = overtake_set_slot_param,
@@ -1727,6 +1743,10 @@ static const move_host_ext_v1_t overtake_host_ext = {
     .capture_stop = sampler_request_stop_module,
     .capture_start_src = overtake_capture_start_src,
     .slot_audio_feed = overtake_slot_audio_feed,
+    .stems_start = overtake_stems_start,
+    .stems_limit = stem_take_limit,
+    .stems_stop = stem_take_stop,
+    .stems_state = stem_take_state,
 };
 
 /* Offline MIDI FX jobs read a slot's chain instance by index. */
@@ -3817,6 +3837,25 @@ skip_la_rebuild:
             memcpy(shadow_take_tap, shadow_slot_fallback[ps], sizeof(shadow_take_tap));
             shadow_take_tap_valid = 1;
         }
+    }
+    /* A stem take (stem_take.c) reads each of its slots' instruments here,
+     * for the same reason and at the same point as the PRE take above. */
+    if (stem_take_slot(0) >= 0) {
+        static int16_t stem_buf[FRAMES_PER_BLOCK * 2];
+        for (int si = 0; si < STEM_TAKE_MAX; si++) {
+            const int ps = stem_take_slot(si);
+            if (ps < 0) break;
+            if (shadow_slot_deferred_valid[ps]) {
+                memcpy(stem_buf, shadow_slot_deferred[ps], sizeof(stem_buf));
+                shadow_apply_synth_level(ps, stem_buf);
+                stem_take_capture(si, stem_buf);
+            } else if (shadow_slot_fallback_rendered[ps]) {
+                stem_take_capture(si, shadow_slot_fallback[ps]);
+            } else {
+                stem_take_capture(si, NULL);
+            }
+        }
+        stem_take_block_end();
     }
     const int16_t *take_src = unity_view;
     if (sampler_take_from_tap(sampler_module_take, sampler_take_src_kind))
@@ -5962,6 +6001,14 @@ static void shim_init_subsystems(void)
             .hardware_mmap_addr = &hardware_mmap_addr,
         };
         sampler_init(&sampler_host, &sampler_set_tempo);
+        {
+            const stem_take_host_t stem_host = {
+                .log = shadow_log,
+                .run_command = shim_run_command,
+                .post = shim_stems_post,
+            };
+            stem_take_init(&stem_host);
+        }
         /* Allocate the skipback rolling buffer HERE, on the startup thread —
          * never on the SPI callback, where it used to happen the first time
          * Resample capture engaged. 5.3 MB at the 30 s default against ~4 GB of
@@ -11003,6 +11050,8 @@ static void shim_spi_init(void)
             .skipback_resize        = shim_hook_skipback_resize,
             .preview_play_pending   = shim_hook_preview_play,
             .corun_exit_log         = corun_exit_log_worker,
+            .stems_prepare          = stem_take_worker_prepare,
+            .stems_finalize         = stem_take_worker_finalize,
         };
         shim_worker_set_hooks(&hooks);
     }

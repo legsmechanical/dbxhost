@@ -79,6 +79,8 @@ extern volatile int shim_jack_persist;
 #define SHIM_EVT_PREVIEW_PLAY       8  /* read preview cmd path, open + mmap */
 #define SHIM_EVT_SELECT_EXIT_STOCK  9  /* Shift+Back in the set-select gate: leave the standalone session */
 #define SHIM_EVT_CORUN_EXIT_LOG    10  /* log the framework co-run exit the RT path just made */
+#define SHIM_EVT_STEMS_PREP        11  /* stem take: mkdir/fopen/headers/writer */
+#define SHIM_EVT_STEMS_FINALIZE    12  /* stem take: join writer, headers, close (or unlink a voided take) */
 
 void shim_worker_post(uint8_t evt);
 
@@ -93,6 +95,8 @@ typedef struct {
     void (*skipback_resize)(void);
     void (*preview_play_pending)(void);
     void (*corun_exit_log)(void);
+    void (*stems_prepare)(void);
+    void (*stems_finalize)(void);
 } shim_worker_hooks_t;
 
 void shim_worker_set_hooks(const shim_worker_hooks_t *hooks);

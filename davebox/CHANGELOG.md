@@ -9,6 +9,10 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Added
+- **Live merge records Audio tracks' sound.** In a Live merge, each Audio track records
+  what it plays, before its effects, into its own sample, and the clip you place it in
+  plays that sample. Other tracks still record their notes. A merge with an Audio
+  track stops at the end of the bar, so the recording loops.
 - **Undo a Flatten.** Undo right after **Flatten track** (or after choosing **Audio** in
   Instmt/Dest) brings the MIDI or drum track back: its notes, type, instrument and its
   sound, routing, and the effects Post bypassed. Shift + Undo flattens it again.

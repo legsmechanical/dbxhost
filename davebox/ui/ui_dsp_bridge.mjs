@@ -45,6 +45,7 @@ import {
     INSTR_CONDUCT, PAD_MODE_CONDUCT, PAD_MODE_MELODIC_SCALE, DEFAULT_TRACK_OCTAVE,
     INSTR_AUDIO, PAD_MODE_AUDIO, SEQ_AUTO_TARGETS, auAutoBank } from './ui_constants.mjs';
 import { auReadTrack, auForgetTrack, isAudioTrack, auRead } from './ui_audio.mjs';
+import { mergeStemsSettle, mergeStemsWriting } from './ui_resample.mjs';
 import { Red } from '/data/UserData/schwung/shared/constants.mjs';
 
 import { S, conductorTrackIdx } from './ui_state.mjs';
@@ -790,7 +791,9 @@ export function pollDSP() {
         /* Ending a merge always stops playback. Solo already stopped DSP-side on
          * merge_stop; this catches the scene path (finalizes at a page boundary)
          * and is a no-op when the transport is already stopped. */
-        if (S.playing)
+        /* ...unless an Audio track's take is still getting its last frames:
+         * the engine stops once they are in (seq8_merge_audio.c). */
+        if (S.playing && !(S.mergeStems.length && mergeStemsWriting()))
             S.pendingDefaultSetParams.push({ key: 'transport', val: 'stop' });
         if (_soloTrack >= 0) {
             S.mergeSoloPlacement = _soloTrack;
@@ -828,6 +831,10 @@ export function pollDSP() {
          * merge_cancel) — writes nothing, so skip the ~1,540-get_param full
          * re-read that otherwise froze the UI for seconds on cancel. */
         const _wrote      = S.mergePlacing || _prevMergeState === 2;
+        /* An Audio track's take: loaded into the picked clip, or removed
+         * (ui_resample), and that says what happened to it. */
+        const _audio      = S.mergeStems.length > 0;
+        mergeStemsSettle();
         S.mergeSingleTrack   = -1;
         S.mergeSoloPlacement = -1;
         S.mergePlacing       = false;   /* clear the "Placing…" indicator */
@@ -846,7 +853,7 @@ export function pollDSP() {
             if (_byp) engineSaveState();
             if (_prevMergeState === 2)  showActionPopup('MAX LENGTH', 'REACHED');
             else if (_byp)              showActionPopup('LIVE MERGE', 'MIDI FX bypassed');
-            else if (_wasSolo)          showActionPopup('LIVE MERGE', 'Printed to clip');
+            else if (_wasSolo && !_audio) showActionPopup('LIVE MERGE', 'Printed to clip');
             syncClipsFromDsp();
         }
         S.screenDirty = true;

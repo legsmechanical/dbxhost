@@ -2642,6 +2642,12 @@ and all — into plain clips.
     with that track's empty clips blinking. Tap one to keep the take.
 - Press **Record** again to stop (or it stops at the 256-step limit), then tap a
   destination to place the take.
+- **Audio tracks record their sound**, not the slices they trigger: everything
+  the track plays, pads included, before its effects. Each Audio track gets its own
+  recording, and it goes into that track's clip at the destination as a Loop sample,
+  so it still plays through the track's effects. An Audio track that made no sound
+  keeps its clip. With an Audio track in the merge, **Record** stops at the end of
+  the bar, so the recording loops.
 
 ## 16.3 Export to Live
 

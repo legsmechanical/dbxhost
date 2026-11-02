@@ -308,7 +308,37 @@ typedef struct move_host_ext_v1 {
      * what it is fed, and is kept awake while it is fed and while its FX ring
      * out. Returns 1 taken, 0 refused (outside render_block, a bad slot). */
     int  (*slot_audio_feed)(int slot, const int16_t *lr, uint32_t frames);
+
+    /* SEVERAL CHAIN SLOTS AT ONCE, each to its own WAV: stem i records slot
+     * slots[i]'s INSTRUMENT before its FX (what MOVE_CAPTURE_SLOT_PRE takes)
+     * to paths[i] (absolute; its directory is created), 16-bit stereo
+     * 44.1 kHz, every stem the same length. For a sequencer's live take of
+     * several tracks. Separate from capture_start: the two run side by side.
+     *
+     * stems_start: the caller's render_block or set_param, with capture_start's
+     * timing (started in render k, the take's first frame is that render's).
+     * n is 1..MOVE_STEMS_MAX. `frames` > 0 ends the take after exactly that
+     * many frames; 0 runs until stems_limit or stems_stop. Returns 1 armed, 0
+     * refused (a stem take still running or being written, bad arguments).
+     * stems_limit: the same contexts; the take ends after `frames` frames in
+     * all, counted from its first -- or now, if it has passed that already.
+     * stems_stop: ends it at this block.
+     * stems_state: any thread. MOVE_STEMS_*; `peaks` (may be NULL) gets each
+     * stem's largest sample magnitude so far, up to `cap` -- 0 is a stem that
+     * recorded silence. The files are complete when it leaves WRITING. A take
+     * the disk fell behind on, or whose file would not open, is VOIDED as a
+     * whole: every file removed, MOVE_STEMS_FAILED until the next start. */
+    int  (*stems_start)(int n, const int *slots, const char *const *paths, uint32_t frames);
+    void (*stems_limit)(uint32_t frames);
+    void (*stems_stop)(void);
+    int  (*stems_state)(uint16_t *peaks, int cap);
 } move_host_ext_v1_t;
+
+#define MOVE_STEMS_MAX        8
+#define MOVE_STEMS_IDLE       0
+#define MOVE_STEMS_RECORDING  1
+#define MOVE_STEMS_WRITING    2
+#define MOVE_STEMS_FAILED    -1
 
 #define MOVE_CAPTURE_MIX   0
 #define MOVE_CAPTURE_SLOT  1

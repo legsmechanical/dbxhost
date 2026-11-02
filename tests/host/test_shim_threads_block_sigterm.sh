@@ -63,6 +63,7 @@ shim_units=(
   src/host/shim_worker.c
   src/host/shadow_dbus.c
   src/host/shadow_sampler.c
+  src/host/stem_take.c
   src/host/tts_engine_flite.c
   src/host/tts_engine_espeak.c
   src/modules/chain/dsp/chain_bus.c   # dlopened INTO the shim process
