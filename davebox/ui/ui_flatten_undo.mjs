@@ -14,7 +14,16 @@
  *   - the insert FX's bypass (Flatten Post bypasses them; Undo puts back what
  *     they were, Redo what Flatten made them).
  * The screen's copy of the clips and the type is re-read from the engine
- * (its restore names the track, "f t", which re-reads everything). */
+ * (its restore names the track, "f t", which re-reads everything).
+ *
+ * ⚠ Loading the instrument blocks the engine longer than a read waits (OB-Xd:
+ * 243 ms against a 100 ms timeout), so a read of the slot just after the load
+ * comes back null — and engineLoadedModule's "" for it reads as "no module".
+ * So nothing here reads the slot after a load in the same tick: the bypass is
+ * written before the instrument, unguarded (the capture's null marks an empty
+ * block), and the Parallel pin waits for the tick that sees the module. Writes
+ * are queued in order and are not lost. (Found on the device: Undo left a
+ * Post-bypassed FX bypassed.) */
 
 import { S, noteUndoUnit, markJsUndoPatch } from './ui_state.mjs';
 import { PAD_MODE_AUDIO, INSTR_NONE } from './ui_constants.mjs';
@@ -40,8 +49,7 @@ function fxBypass(slot) {
 }
 function setFxBypass(slot, vals) {
     FX_BLOCKS.forEach((b, i) => {
-        if (vals[i] !== null && vals[i] !== undefined && engineLoadedModule(slot, b))
-            engineSet(slot, b, 'bypassed', String(vals[i]));
+        if (vals[i] !== null && vals[i] !== undefined) engineSet(slot, b, 'bypassed', String(vals[i]));
     });
 }
 
@@ -83,19 +91,18 @@ function flatUndo(rec) {
     if (S.auChooser && S.auChooser.t === t) closeAudioChooser();
     auForgetTrack(t);
     rec.fxAfter = fxBypass(rec.slot);
+    setFxBypass(rec.slot, rec.fx);
     if (rec.route === 0) {
         if (S.trackRoute[t] !== 0) applyTrackConfig(t, 'route', 0);
         if (rec.synth) {
             engineLoadModule(rec.slot, 'synth', rec.synth);
-            reconcileParallelSlot(rec.slot);
-            if (rec.state !== null) S.flatUndoState = { slot: rec.slot, id: rec.synth, blob: rec.state, ticks: 0 };
+            S.flatUndoState = { slot: rec.slot, id: rec.synth, blob: rec.state, ticks: 0 };
         }
     } else {
         applyTrackConfig(t, 'midi_to', rec.route === 2 ? rec.midiTo : 0);
         applyTrackConfig(t, 'channel', rec.channel);
         applyTrackConfig(t, 'route', rec.route);
     }
-    setFxBypass(rec.slot, rec.fx);
     if (rec.conductor) S.conductorTrack = t;
     trackChanged(t, rec.padMode);
 }
@@ -103,19 +110,21 @@ function flatUndo(rec) {
 function flatRedo(rec) {
     const t = rec.t;
     S.flatUndoState = null;
-    applyInstrChoice(t, INSTR_NONE);
     if (rec.fxAfter) setFxBypass(rec.slot, rec.fxAfter);
+    applyInstrChoice(t, INSTR_NONE);
     if (S.conductorTrack === t) S.conductorTrack = -1;
     trackChanged(t, PAD_MODE_AUDIO);
 }
 
-/* Every tick: the instrument's state, once its slot has the module. */
+/* Every tick: the instrument's state and its Parallel pin, once its slot has
+ * the module. */
 export function flatUndoTick() {
     const p = S.flatUndoState;
     if (!p) return;
     if (engineLoadedModule(p.slot, 'synth') === p.id) {
         S.flatUndoState = null;
-        engineSetState(p.slot, 'synth', p.blob);
+        if (p.blob !== null) engineSetState(p.slot, 'synth', p.blob);
+        reconcileParallelSlot(p.slot);
         return;
     }
     if (++p.ticks > STATE_WAIT_TICKS) {

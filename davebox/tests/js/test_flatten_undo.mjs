@@ -23,8 +23,11 @@ function assert(c, m) { if (!c) throw new Error(m); }
 const sets = [];
 const GET = { 't4_pad_mode': '3' };
 globalThis.host_preview_play = () => {}; globalThis.host_preview_stop = () => {};
-globalThis.host_system_cmd = () => 0; globalThis.host_read_file = () => '';
-globalThis.host_file_exists = () => false;
+globalThis.host_system_cmd = () => 0;
+/* the device's Parallel prefs: braids pinned off, so its pin (0) differs from
+ * an empty slot's (1) */
+globalThis.host_read_file = (p) => (/parallel/i.test(String(p)) ? 'braids 0\n' : '');
+globalThis.host_file_exists = (p) => /parallel/i.test(String(p));
 globalThis.host_ensure_dir = () => true; globalThis.host_remove_dir = () => true;
 let swallowed = null;
 globalThis.host_write_file = (path, body) => {
@@ -41,10 +44,15 @@ const SLOT = { 'synth:module': 'braids', 'synth:state': '{"patch":7}', 'fx1:modu
 const slotSets = [];
 let slotLags = 0;          /* ticks before a module write is seen loaded */
 const lagged = [];
-globalThis.shadow_get_param = (slot, key) => (slot === 4 && SLOT[key] !== undefined ? SLOT[key] : '');
+/* As on the device: loading a module blocks the engine longer than a read
+ * waits (OB-Xd: 243 ms against a 100 ms timeout), so the slot's reads right
+ * after a load come back null — here until the next tick. */
+let readsDead = false;
+globalThis.shadow_get_param = (slot, key) => (readsDead ? null : (slot === 4 && SLOT[key] !== undefined ? SLOT[key] : ''));
 globalThis.shadow_set_param = (slot, key, val) => {
     if (slot !== 4) return 1;
     slotSets.push([key, String(val)]);
+    if (/:module$/.test(key) && val) readsDead = true;
     if (/:module$/.test(key) && slotLags) lagged.push({ key, val: String(val), at: slotLags });
     else SLOT[key] = String(val);
     if (key === 'synth:module' && !slotLags) SLOT['synth:state'] = '';
@@ -83,7 +91,7 @@ S.clipNonEmpty[4][0] = true;
 const cc    = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
 const ticks = (n) => {
     for (let i = 0; i < n; i++) {
-        S.tickCount++;
+        S.tickCount++; readsDead = false;
         for (const l of lagged.slice()) if (--l.at <= 0) { SLOT[l.key] = l.val; lagged.splice(lagged.indexOf(l), 1); }
         globalThis.tick();
     }
@@ -108,6 +116,7 @@ step('⭐ the conversion takes an undo step', () => {
 step('⭐ Undo: the engine restores, the instrument comes back with its own sound, the FX as they were', () => {
     sets.length = 0; slotSets.length = 0; slotLags = 3;
     undo();
+    readsDead = false;
     assert(sent('undo_restore').length === 1, 'undo_restore not sent');
     assert(S.trackPadMode[4] === 0, 'still Audio on screen');
     assert(JSON.stringify(slotSent('synth:module')) === '["braids"]', 'module ' + JSON.stringify(slotSent('synth:module')));
@@ -115,6 +124,8 @@ step('⭐ Undo: the engine restores, the instrument comes back with its own soun
     ticks(6);
     assert(JSON.stringify(slotSent('synth:state')) === '["{\\"patch\\":7}"]', 'state ' + JSON.stringify(slotSent('synth:state')));
     assert(SLOT['fx1:bypassed'] === '0' && SLOT['fx2:bypassed'] === '1', 'FX bypass ' + SLOT['fx1:bypassed'] + SLOT['fx2:bypassed']);
+    assert(JSON.stringify(slotSent('slot:parallel')) === '["0"]',
+           'the Parallel pin is not the module\'s: ' + JSON.stringify(slotSent('slot:parallel')));
     assert(S.redoAvailable, 'no Redo');
 });
 
