@@ -88,7 +88,6 @@ int stem_take_start(int n, const int *slots, const char *const *paths, uint32_t 
     st_done = 0;
     st_dropped = 0;
     st_failed = 0;
-    st_last_failed = 0;
     st_limited = frames > 0;
     st_frames_left = frames;
     st_state = STEM_TAKE_RECORDING;

@@ -182,11 +182,12 @@ int main(void) {
     hx_set_param(h, "merge_stem", "4 |" PATH);
     hx_set_param(h, "merge_arm", "1");
     RENDER_UNTIL(h, phase(inst) == MS_RECORDING, 3000);
-    hx_render(h, 300);                                   /* about half a bar */
+    hx_render(h, 1000);                                  /* about a bar and a half */
     hx_set_param(h, "transport", "stop");
     HX_ASSERT(inst->merge_state == MERGE_STATE_CAPTURED, "rig: the stop did not end the merge");
+    HX_ASSERT(inst->merge_end_abs > RS_BAR_TICKS && inst->merge_end_abs < 2 * RS_BAR_TICKS, "rig: not stopped in bar 2");
     hx_stub_stems(NULL, NULL, &limit, NULL);
-    HX_ASSERT(limit == 88200u, "a half-bar take is not rounded up to one bar");
+    HX_ASSERT(limit == 2 * 88200u, "a take stopped in bar 2 is not rounded up to 2 bars");
     /* ...and a cancel at the placement prompt ends the take now */
     hx_set_param(h, "merge_cancel", "1");
     hx_stub_stems(NULL, NULL, NULL, &stops);
