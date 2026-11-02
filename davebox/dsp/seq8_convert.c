@@ -377,3 +377,100 @@ static void convert_track_from_audio(seq8_instance_t *inst, int t) {
     pfx_sync_from_clip(tr);
     inst->state_dirty = 1;
 }
+
+/* ---- FLATTEN'S UNDO (Josh, 2026-11-02: "undo") ----
+ * A track made Audio loses its notes, its type and (in the UI) its
+ * instrument. Its 16 clips go into the ordinary undo slots; the rest of what
+ * it was is kept in inst->flat, and Undo SWAPS it with the track's own — so
+ * Redo is the same swap back. The UI brings the instrument back itself. */
+
+#define FLAT_SWAP(a, b) do { unsigned char _ft[sizeof(a)];                     \
+        memcpy(_ft, &(a), sizeof(a)); memcpy(&(a), &(b), sizeof(a));           \
+        memcpy(&(b), _ft, sizeof(a)); } while (0)
+#define FLAT_COPY(a, b) memcpy(&(b), &(a), sizeof(a))
+
+/* Track t's fields <-> k: swapped, or (swap 0) copied into k. */
+static void flat_xfer(seq8_track_t *tr, flat_keep_t *k, int swap) {
+    int l;
+#define F(f) do { if (swap) FLAT_SWAP(tr->f, k->f); else FLAT_COPY(tr->f, k->f); } while (0)
+    F(pad_mode); F(transpose); F(fx_pre); F(fx_post);
+    F(tarp); F(tarp_on); F(tarp_latch); F(tarp_sync);
+    F(drum_lane_mute); F(drum_lane_solo); F(active_drum_lane); F(drum_perform_mode);
+    F(drum_repeat_gate); F(drum_repeat_gate_len); F(drum_repeat2_rate_idx);
+    F(drum_repeat_vel_scale); F(drum_repeat_nudge);
+#undef F
+    if (swap) FLAT_SWAP(tr->pfx.route, k->route); else k->route = tr->pfx.route;
+    for (l = 0; l < DRUM_LANES; l++) {
+        if (swap) FLAT_SWAP(tr->drum_lane_pfx[l].route, k->lane_route[l]);
+        else k->lane_route[l] = tr->drum_lane_pfx[l].route;
+    }
+}
+
+/* Before track t converts to Audio, with its clips' undo step just taken. A
+ * drum track hands its clips over and takes a fresh set. */
+static void flat_begin(seq8_instance_t *inst, int t) {
+    seq8_track_t *tr = &inst->tracks[t];
+    int c;
+    if (!inst->undo_valid) return;            /* no step was taken (undo_locked) */
+    flat_xfer(tr, &inst->flat, 0);
+    inst->flat_has_drum = 0;
+    if (tr->pad_mode == PAD_MODE_DRUM) {
+        for (c = 0; c < NUM_CLIPS; c++) {
+            if (!inst->flat_drum[c]) inst->flat_drum[c] = (drum_clip_t *)calloc(1, sizeof(drum_clip_t));
+            if (!inst->flat_drum[c] || !tr->drum_clips[c]) {
+                /* notes back on an Audio track would be worse than no Undo */
+                seq8_ilog(inst, "flatten undo: no drum clips - not undoable");
+                inst->undo_valid = 0;
+                return;
+            }
+        }
+        silence_track_notes_v2(inst, tr);
+        for (c = 0; c < NUM_CLIPS; c++) {
+            drum_clip_t *keep = tr->drum_clips[c];
+            drum_lanes_init(inst->flat_drum[c]);
+            tr->drum_clips[c] = inst->flat_drum[c];
+            inst->flat_drum[c] = keep;
+        }
+        inst->flat_has_drum = 1;
+    }
+    inst->flat_track = (uint8_t)t;
+    inst->flat_mode  = PAD_MODE_AUDIO;
+    inst->flat_state = 1;
+}
+
+/* May Undo (or Redo) swap now? Only while the track is still what the step
+ * left it, and the Conductor role it would take back is free. */
+static int flat_ok(seq8_instance_t *inst) {
+    int t = inst->flat_track;
+    if (inst->tracks[t].pad_mode != inst->flat_mode) return 0;
+    if (inst->flat.pad_mode == PAD_MODE_CONDUCT && inst->conductor_track >= 0 && inst->conductor_track != t)
+        return 0;
+    return 1;
+}
+
+/* The swap. Called before the clips are restored (an Audio clip's sample
+ * side restores only onto an Audio track). */
+static void flat_swap(seq8_instance_t *inst) {
+    int t = inst->flat_track, c;
+    seq8_track_t *tr = &inst->tracks[t];
+    tr->recording = 0;
+    tr->record_armed = 0;
+    tr->recording_pending_page = 0;
+    silence_track_notes_v2(inst, tr);
+    tarp_silence(inst, tr);
+    if (tr->pad_mode == PAD_MODE_AUDIO) au_track_release(inst, t);
+    if (tr->pfx.route != inst->flat.route) post_release_all(inst, tr);
+    flat_xfer(tr, &inst->flat, 1);
+    if (inst->flat_has_drum)
+        for (c = 0; c < NUM_CLIPS; c++) {
+            drum_clip_t *d = tr->drum_clips[c];
+            tr->drum_clips[c] = inst->flat_drum[c];
+            inst->flat_drum[c] = d;
+        }
+    inst->flat_mode = tr->pad_mode;
+    if (tr->pad_mode == PAD_MODE_CONDUCT) inst->conductor_track = (int8_t)t;
+    else if (inst->conductor_track == t) inst->conductor_track = -1;
+    memset(tr->at_last_sent, 0xFF, AT_MAX_LANES);
+    tr->at_last_clip = 0xFF;
+    inst->state_dirty = 1;
+}

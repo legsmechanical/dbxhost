@@ -2862,6 +2862,12 @@ flattens in place: every clip with a sample is recorded and starts over with its
 recording, at default settings, as [In place](#166-recording-audio) does for one clip. A track that plays
 MIDI out, has no instrument, is muted or has no notes (or samples) has nothing to flatten.
 
+**Undo** right after a flatten brings the track back as it was: its notes (or drum
+clips), its type, its instrument with its own sound, its routing, and the effects that
+**Post** bypassed. **Shift + Undo** flattens it again. Choosing **Audio** in
+**Instmt/Dest** comes back the same way. As with any Undo, only the last change can be
+undone.
+
 After any resample, the clips you had armed are armed again, so Play carries on
 from where you were.
 

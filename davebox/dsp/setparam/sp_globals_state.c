@@ -336,6 +336,7 @@ static int sp_globals_state(sp_ctx_t *cx) {
         inst->drum_redo_valid     = 0;
         inst->drum_row_undo_valid = 0;
         inst->drum_row_redo_valid = 0;
+        inst->flat_state          = 0;
         {
             /* Same derivation as create_instance: prefer the host's live tempo,
              * fall back to the compiled default. */

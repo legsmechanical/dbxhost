@@ -595,6 +595,12 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             return 1;
         }
         if (!inst->undo_valid) return 1;
+        /* Flatten's: the track was converted again since — no half restore */
+        if (inst->flat_state == 1 && !flat_ok(inst)) {
+            inst->undo_valid = 0; inst->flat_state = 0;
+            snprintf(inst->last_restore_info, sizeof(inst->last_restore_info), "none");
+            return 1;
+        }
         inst->redo_clip_count = inst->undo_clip_count;
         memcpy(inst->redo_clip_tracks,  inst->undo_clip_tracks,  inst->undo_clip_count);
         memcpy(inst->redo_clip_indices, inst->undo_clip_indices, inst->undo_clip_count);
@@ -607,6 +613,8 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             au_undo_snap(inst, &inst->redo_au[i], &inst->redo_au_on[i], t, c);
         }
         inst->redo_valid = 1;
+        int _flat = inst->flat_state == 1;
+        if (_flat) { flat_swap(inst); inst->flat_state = 2; }
         apply_clip_restore(inst, inst->undo_clips,
                            inst->undo_clip_tracks, inst->undo_clip_indices,
                            inst->undo_clip_count);
@@ -652,6 +660,11 @@ static int sp_globals_edit(sp_ctx_t *cx) {
                     _off += snprintf(inst->last_restore_info + _off, sizeof(inst->last_restore_info) - (size_t)_off,
                                      " DR %d", (int)inst->drum_row_redo_clips[_s]);
             }
+        }
+        /* Flatten's: the track changed type — the UI re-reads everything */
+        if (_flat) {
+            pfx_sync_from_clip(&inst->tracks[inst->flat_track]);
+            snprintf(inst->last_restore_info, sizeof(inst->last_restore_info), "f %d", (int)inst->flat_track);
         }
         rui_touch(inst);
         return 1;
@@ -732,6 +745,11 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             return 1;
         }
         if (!inst->redo_valid) return 1;
+        if (inst->flat_state == 2 && !flat_ok(inst)) {
+            inst->redo_valid = 0; inst->flat_state = 0;
+            snprintf(inst->last_restore_info, sizeof(inst->last_restore_info), "none");
+            return 1;
+        }
         inst->undo_clip_count = inst->redo_clip_count;
         memcpy(inst->undo_clip_tracks,  inst->redo_clip_tracks,  inst->redo_clip_count);
         memcpy(inst->undo_clip_indices, inst->redo_clip_indices, inst->redo_clip_count);
@@ -744,6 +762,8 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             au_undo_snap(inst, &inst->undo_au[i], &inst->undo_au_on[i], t, c);
         }
         inst->undo_valid = 1;
+        int _flat = inst->flat_state == 2;
+        if (_flat) { flat_swap(inst); inst->flat_state = 1; }
         apply_clip_restore(inst, inst->redo_clips,
                            inst->redo_clip_tracks, inst->redo_clip_indices,
                            inst->redo_clip_count);
@@ -786,6 +806,11 @@ static int sp_globals_edit(sp_ctx_t *cx) {
                     _off += snprintf(inst->last_restore_info + _off, sizeof(inst->last_restore_info) - (size_t)_off,
                                      " DR %d", (int)inst->drum_row_undo_clips[_s]);
             }
+        }
+        /* Flatten's: the track changed type — the UI re-reads everything */
+        if (_flat) {
+            pfx_sync_from_clip(&inst->tracks[inst->flat_track]);
+            snprintf(inst->last_restore_info, sizeof(inst->last_restore_info), "f %d", (int)inst->flat_track);
         }
         rui_touch(inst);
         return 1;

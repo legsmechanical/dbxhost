@@ -1237,6 +1237,27 @@ typedef struct {
      * Saved with the project (t%d_fp). */
     uint8_t   fx_pre;
 } seq8_track_t;
+
+/* What makes a track the MIDI / drum / Conductor track it was before it
+ * became an Audio track (FLATTEN'S UNDO, seq8_convert.c flat_begin): its
+ * clips ride the ordinary undo slots; these are the rest the conversion
+ * resets. The field names are the track's own. */
+typedef struct {
+    uint8_t      pad_mode;
+    int8_t       transpose;
+    uint8_t      fx_pre, fx_post;
+    uint8_t      route;
+    uint8_t      lane_route[DRUM_LANES];
+    arp_engine_t tarp;
+    uint8_t      tarp_on, tarp_latch, tarp_sync;
+    uint32_t     drum_lane_mute, drum_lane_solo;
+    uint8_t      active_drum_lane, drum_perform_mode;
+    uint8_t      drum_repeat_gate[DRUM_LANES];
+    uint8_t      drum_repeat_gate_len[DRUM_LANES];
+    uint8_t      drum_repeat2_rate_idx[DRUM_LANES];
+    uint8_t      drum_repeat_vel_scale[DRUM_LANES][8];
+    int8_t       drum_repeat_nudge[DRUM_LANES][8];
+} flat_keep_t;
 #define LRS_SET(tr, s)  ((tr)->live_recorded_steps[(s)>>3] |=  (uint8_t)(1u<<((s)&7)))
 #define LRS_TEST(tr, s) ((tr)->live_recorded_steps[(s)>>3] &   (1u<<((s)&7)))
 
@@ -1648,6 +1669,20 @@ typedef struct {
     uint8_t   undo_au_on[UNDO_MAX_CLIPS];
     au_clip_t redo_au[UNDO_MAX_CLIPS];
     uint8_t   redo_au_on[UNDO_MAX_CLIPS];
+    /* FLATTEN'S UNDO: a track made Audio (Flatten, or Audio picked in
+     * Instmt/Dest) takes all 16 of its clips into the slots above and keeps
+     * the rest here — swapped with the track's own on Undo, and again on
+     * Redo. flat_state: 0 none, 1 Undo holds it, 2 Redo does; every other
+     * undo step clears it. A drum track's clips are SWAPPED, never copied
+     * (flat_drum: allocated on the first drum Flatten, kept, as drum clips
+     * are — see drum_clips_free). flat_mode: the pad mode the track has
+     * while the step is held; anything else means it was converted since. */
+    uint8_t      flat_state;
+    uint8_t      flat_track;
+    uint8_t      flat_mode;
+    uint8_t      flat_has_drum;
+    flat_keep_t  flat;
+    drum_clip_t *flat_drum[NUM_CLIPS];
 
     /* Drum-clip recording undo/redo — mutually exclusive with melodic undo_valid. */
     uint8_t  drum_undo_valid;
@@ -8078,6 +8113,7 @@ static void undo_begin_single(seq8_instance_t *inst, int t, int c) {
     memcpy(&inst->undo_auto_at[0], &inst->tracks[t].clip_at_auto[c], sizeof(at_auto_t));
     au_undo_snap(inst, &inst->undo_au[0], &inst->undo_au_on[0], t, c);
     inst->undo_valid = 1;
+    inst->flat_state = 0;            /* a new step: Flatten's goes */
     inst->redo_valid = 0;
     inst->drum_undo_valid = 0;
 }
@@ -8184,6 +8220,7 @@ static void undo_begin_row(seq8_instance_t *inst, int row_c) {
         au_undo_snap(inst, &inst->undo_au[t], &inst->undo_au_on[t], t, row_c);
     }
     inst->undo_valid = 1;
+    inst->flat_state = 0;            /* a new step: Flatten's goes */
     inst->redo_valid = 0;
     inst->drum_undo_valid = 0;
     drum_row_snap(inst, row_c, inst->drum_row_undo_lanes[0]);
@@ -8210,6 +8247,7 @@ static void undo_begin_clip_pair(seq8_instance_t *inst, int srcT, int srcC, int 
     memcpy(&inst->undo_auto_at[1], &inst->tracks[dstT].clip_at_auto[dstC], sizeof(at_auto_t));
     au_undo_snap(inst, &inst->undo_au[1], &inst->undo_au_on[1], dstT, dstC);
     inst->undo_valid = 1;
+    inst->flat_state = 0;            /* a new step: Flatten's goes */
     inst->redo_valid = 0;
     inst->drum_undo_valid = 0;
 }
@@ -8232,6 +8270,7 @@ static void undo_begin_track_clips(seq8_instance_t *inst, int t, const uint8_t *
         au_undo_snap(inst, &inst->undo_au[i], &inst->undo_au_on[i], t, c);
     }
     inst->undo_valid = 1;
+    inst->flat_state = 0;            /* a new step: Flatten's goes */
     inst->redo_valid = 0;
     inst->drum_undo_valid = 0;
     inst->drum_row_undo_valid = 0;
@@ -8259,6 +8298,7 @@ static void undo_begin_row_pair(seq8_instance_t *inst, int srcRow, int dstRow) {
         au_undo_snap(inst, &inst->undo_au[t + NUM_TRACKS], &inst->undo_au_on[t + NUM_TRACKS], t, dstRow);
     }
     inst->undo_valid = 1;
+    inst->flat_state = 0;            /* a new step: Flatten's goes */
     inst->redo_valid = 0;
     inst->drum_undo_valid = 0;
     drum_row_snap(inst, dstRow, inst->drum_row_undo_lanes[0]);
@@ -8287,6 +8327,7 @@ static void undo_begin_scene_bake(seq8_instance_t *inst, int clip) {
     }
     inst->undo_clip_count    = (uint8_t)mc;
     inst->undo_valid         = 1;
+    inst->flat_state = 0;            /* a new step: Flatten's goes */
     inst->redo_valid         = 0;
     inst->drum_undo_valid    = 0;
     drum_row_snap(inst, clip, inst->drum_row_undo_lanes[0]);
@@ -8324,6 +8365,7 @@ static void undo_begin_drum_clip(seq8_instance_t *inst, int t, int c) {
     pa_undo_capture(inst, inst->drum_undo_pa, &inst->drum_undo_pa_count,
                     &inst->drum_undo_pa_partial, t, c);
     inst->drum_undo_valid = 1;
+    inst->flat_state = 0;            /* a new step: Flatten's goes */
     inst->drum_undo_track = (uint8_t)t;
     inst->drum_undo_clip  = (uint8_t)c;
     inst->drum_redo_valid = 0;

@@ -93,6 +93,7 @@ import { applyInstrChoice, readConductorClip } from './ui_dsp_bridge.mjs';
 import { INSTR_NONE, PAD_MODE_AUDIO } from './ui_constants.mjs';
 import { bankListForMode } from './ui_pure.mjs';
 import { soundTrackTypeChanged } from './ui_sound.mjs';
+import { flatUndoCapture, flatUndoArm, flatUndoTick } from './ui_flatten_undo.mjs';
 
 const BANK_DISPLAY_MS = 1000;
 const KNOB_TURN_HIGHLIGHT_MS = 600;               /* highlight after turn without touch */
@@ -202,7 +203,11 @@ function audioScreensClose(t) {
  * (Flatten Post) bypasses the insert FX the recordings already hold. */
 function convertTrackToAudio(t, takes, bypassFx) {
     stepRecExit();
-    host_module_set_param('t' + t + '_convert_to_audio', '1');
+    /* one Undo brings it back: the engine keeps the clips and the type ("u"),
+     * this the instrument, route and FX (ui_flatten_undo) */
+    const undo = flatUndoCapture(t);
+    host_module_set_param('t' + t + '_convert_to_audio', 'u');
+    flatUndoArm(undo);
     applyInstrChoice(t, INSTR_NONE);
     S.trackPadMode[t] = PAD_MODE_AUDIO;
     if (S.conductorTrack === t) S.conductorTrack = -1;
@@ -567,6 +572,7 @@ export function _tickImpl() {
     /* Track-type conversion runs here (tick context) so the get_param
      * round-trips inside convertTrackType -> syncClipsFromDsp work — they
      * return null on the on_midi path where the triggers fire. */
+    flatUndoTick();
     if (S.pendingTrackConvert) {
         const _pc = S.pendingTrackConvert;
         S.pendingTrackConvert = null;

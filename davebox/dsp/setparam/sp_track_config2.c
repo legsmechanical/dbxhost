@@ -174,6 +174,14 @@ static int sp_track_config2(sp_ctx_t *cx) {
     /* -> Audio: Instmt/Dest "Audio" (the UI confirms when notes would go). */
     if (!strcmp(sub, "convert_to_audio")) {
         if (tr->pad_mode == PAD_MODE_AUDIO) return 1;   /* idempotent */
+        /* "u": one undo step brings the track back (flat_begin) */
+        if (val[0] == 'u') {
+            uint8_t cs[NUM_CLIPS];
+            int c;
+            for (c = 0; c < NUM_CLIPS; c++) cs[c] = (uint8_t)c;
+            undo_begin_track_clips(inst, tidx, cs, NUM_CLIPS);
+            flat_begin(inst, tidx);
+        }
         convert_track_to_audio(inst, tidx);
         if (inst->conductor_track == tidx) inst->conductor_track = -1;
         rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);
