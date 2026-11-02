@@ -23,6 +23,10 @@ import { slotIndex, DAVEBOX_HOST_DIR, SLOT_LEVEL_MAX, engineGet, engineGetSlotPa
 import { showActionPopup } from './ui_persistence.mjs';
 import { midiFxLeftOut } from './ui_print.mjs';
 import { NUM_TRACKS, NUM_CLIPS, ACTION_POPUP_MS, PAD_MODE_CONDUCT, PAD_MODE_AUDIO } from './ui_constants.mjs';
+/* a cycle (ui_audio_convert imports sanitizeName from here): used only inside
+ * function bodies */
+import { auConvertSource, auConvertHasNotes } from './ui_audio_convert.mjs';
+import { auParseInfo, dspAnswer } from './ui_audio.mjs';
 
 /* Our own module directory — where build.sh/build_sound.sh put pack.py and the
  * JSON templates. It MUST follow the build's module id: SA ships as
@@ -1146,10 +1150,97 @@ function armExport() {
     /* Export is OFFLINE: a track's MIDI FX module is not in it (the done
      * dialog says which). */
     S.exportMidiFxLeftOut    = midiFxLeftOut();
-    S.pendingExport          = true;
     S.confirmExportCondPhase = false;
     S.globalMenuOpen         = false;
+    const list = exportFlattenList();
+    if (list.length) {
+        if (S.clockFollowOn) { showActionPopup('NOT EXPORTED', 'Clock Follow is on'); return; }
+        S.exportFlatten = { list, i: 0, phase: 'start', takes: null, at: 0 };
+        return;
+    }
+    S.pendingExport = true;
     showActionPopup('EXPORTING', '...');
+}
+
+/* ── AUDIO TRACKS ARE FLATTENED FIRST ─────────────────────────────────────
+ * (Josh, 2026-11-02: "let's simply flatten audio tracks before exporting.
+ * the juice isn't worth the squeeze" · "export flattens") Every Audio track
+ * that sounds is flattened as Flatten track does it (ui_audio_convert, its
+ * defaults: before the track's effects, no warm-up), one track after
+ * another, before the set is written. Each clip is then a plain Loop clip
+ * playing its recording, which goes to Live as that sample (buildAudioClip).
+ * The project keeps the flattened clips; Undo (one step deep) brings back
+ * the last track's. A
+ * muted track is not flattened (it would record silence) and exports as it
+ * is. Back while one records cancels the export; tracks flattened before it
+ * stay flattened. */
+function exportFlattenList() {
+    const out = [];
+    const anySolo = S.trackSoloed.some((v) => v);
+    for (let t = 0; t < NUM_TRACKS; t++) {
+        if (S.trackPadMode[t] !== PAD_MODE_AUDIO || !auConvertHasNotes(t)) continue;
+        if (S.trackMuted[t] || (anySolo && !S.trackSoloed[t])) continue;
+        out.push(t);
+    }
+    return out;
+}
+
+const EXPORT_LOAD_MS = 15000;     /* the flattened clips' recordings load */
+
+function exportFlattenFail(line2) {
+    S.exportFlatten = null;
+    showActionPopup('NOT EXPORTED', line2);
+    S.pendingMenuAt = 'Export to Ableton';
+}
+
+/* Every tick while S.exportFlatten is set: start the next track's flatten,
+ * follow it, and once the last one's recordings are loaded, arm the export. */
+function pollExportFlatten() {
+    const f = S.exportFlatten;
+    if (!f) return;
+    if (f.phase === 'start') {
+        /* the previous flatten is wholly done and the transport has stopped */
+        if (S.auConvert || S.auApply || S.pendingAuConvertStart >= 0 || S.resampleTake || S.playing) return;
+        if (f.i >= f.list.length) { f.phase = 'load'; f.at = nowMs(); return; }
+        const t = f.list[f.i];
+        S.auConvertSrc = auConvertSource(t, true, false);
+        S.auConvertBypass = false;
+        S.auConvertWarm = false;
+        S.pendingAuConvertStart = t;
+        f.phase = 'run'; f.takes = null;
+        return;
+    }
+    if (f.phase === 'run') {
+        if (S.pendingAuConvertStart >= 0 || S.auConvert) return;
+        if (S.auApply) {                      /* every take is in: the clips load them */
+            if (!f.takes) f.takes = S.auApply.takes.map((k) => ({ t: S.auApply.t, c: k.c, path: k.path }));
+            return;
+        }
+        /* neither recording nor applying: done, or it stopped (Back, a failed take) */
+        if (!f.takes) { exportFlattenFail('Flatten stopped'); return; }
+        f.done = (f.done || []).concat(f.takes);
+        f.i++;
+        f.phase = 'start';
+        return;
+    }
+    if (f.phase === 'load') {
+        /* each clip plays its own recording, loaded */
+        if (S.pendingDefaultSetParams.length) return;
+        if ((S.tickCount | 0) % 10) return;
+        let ready = true;
+        for (const k of (f.done || [])) {
+            const i = auParseInfo(dspAnswer('t' + k.t + '_au_info_' + k.c));
+            const base = k.path.slice(k.path.lastIndexOf('/') + 1);
+            if (!i || i.state !== 2 || i.name !== base) { ready = false; break; }
+        }
+        if (ready) {
+            S.exportFlatten = null;
+            S.pendingExport = true;
+            showActionPopup('EXPORTING', '...');
+            return;
+        }
+        if (nowMs() - f.at > EXPORT_LOAD_MS) exportFlattenFail('A take did not load');
+    }
 }
 
 /* "Apply Conductor?" stage commit (jog click). sel: 0=YES, 1=NO, 2=CANCEL.
@@ -1175,6 +1266,7 @@ export function confirmExportCondClick() {
  * the popup and arms phase 2 for the next tick; the render between ticks paints
  * EXPORTING; phase 2 does the (blocking) build + pack + report. */
 function pollPendingExport() {
+    pollExportFlatten();
     if (S.pendingExport) {
         S.pendingExport    = false;
         S.pendingExportRun = true;

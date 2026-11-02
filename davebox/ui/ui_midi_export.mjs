@@ -35,7 +35,7 @@ const MAX_SUFFIX = 99;
 /* The click (MIDI-handler context): arm, or say why not. */
 export function requestClipMidiExport(t) {
     if (S.playing) { showStopTransportNotice(); return; }
-    if (S.pendingExport || S.pendingExportRun || S.pendingMidiExport) return;   /* one export at a time */
+    if (S.exportFlatten || S.pendingExport || S.pendingExportRun || S.pendingMidiExport) return;   /* one export at a time */
     S.pendingMidiExport = { t, c: effectiveClip(t), run: false };
     showActionPopup('EXPORTING', '...');
     S.screenDirty = true;

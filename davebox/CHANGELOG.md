@@ -9,10 +9,9 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Added
-- **Export to Ableton carries Audio tracks** as Live audio tracks: a Warp Loop clip
-  brings its sample, warped at its Tempo with its Start, length, Shift, Nudge, Revrs,
-  Pitch, Detune and Gain; a Loop clip on Pitch or Vintage sync, and a Slice clip, is
-  rendered to audio, one loop of what it plays.
+- **Export to Ableton carries Audio tracks** as Live audio tracks: it flattens each
+  Audio track first (every clip recorded as it plays), so Live gets each clip as
+  its recording.
 - **Audio tracks.** Choose **Audio** in a track's **Instmt/Dest** picker and each clip
   plays its own sample — picked from your library (WAV or AIFF, auditioned as you
   browse) and copied into the project. A track that plays an instrument first offers to
