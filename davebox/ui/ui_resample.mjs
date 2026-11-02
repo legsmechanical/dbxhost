@@ -214,8 +214,9 @@ export function resampleOptionsClick() {
     if (!r) return false;
     const row = rowAt(r);
     if (row === 'warm') { r.warm = !r.warm; S.screenDirty = true; return false; }
-    /* Source flips like a toggle; on a Move instrument it is not available. */
-    if (row === 'src') { if (r.dryOk) r.src = r.src ? 0 : 1; S.screenDirty = true; return false; }
+    /* Source flips like a toggle; In place has none (it records the clip
+     * before the track's effects — see startResample). */
+    if (row === 'src') { if (r.dryOk && !r.inPlace) r.src = r.src ? 0 : 1; S.screenDirty = true; return false; }
     if (row === 'place') { r.inPlace = !r.inPlace; S.screenDirty = true; return false; }
     if (row === 'fx') { r.post = !r.post; S.screenDirty = true; return false; }
     if (r.flatten) { S.confirmResample = null; flattenStart(r); S.screenDirty = true; return true; }
@@ -252,7 +253,7 @@ export function drawResampleOptions() {
          * instrument's Move FX bus — after its effects, at its fader, without
          * the sends and Master FX. Always available on a clip (the '-' is a
          * scene's: UI_LANGUAGE §6, unavailable is said in the value). */
-        src:   { label: 'Source',  value: r.dryOk ? (r.src ? 'Dry' : 'Wet') : '-' },
+        src:   { label: 'Source',  value: r.dryOk && !r.inPlace ? (r.src ? 'Dry' : 'Wet') : '-' },
         place: { label: 'In place', value: r.inPlace ? 'On' : 'Off' },
         fx:    { label: 'Effects', value: r.post ? 'Post' : 'Pre' },
         warm:  { label: 'Warm-up', value: r.warm ? 'On' : 'Off' },
@@ -295,9 +296,15 @@ function startResample() {
     const path = freePath(base, dir);
     if (!path) { closeSampleFlow(); showActionPopupFor(2500, 'RESAMPLE FAILED', 'No free file name'); return false; }
     const common = r.bars + ' ' + (r.warm ? 1 : 0) + ' ' + r.tail;
+    /* IN PLACE records the clip BEFORE the track's effects (resample_clip src
+     * 2), as Flatten's Pre does: the clip goes on playing through those same
+     * effects and the track's fader, so a take that held them would hear them
+     * twice (Josh, 2026-11-02: "yes" — In place records without the track's
+     * effects, so they apply once). Wet and Dry are for a take kept apart. */
+    const src = inPlace ? 2 : (r.dryOk && r.src ? 1 : 0);
     if (clip)
         S.pendingDefaultSetParams.push({ key: 'resample_clip',
-            val: r.track + ' ' + r.clip + ' ' + common + ' ' + (r.dryOk && r.src ? 1 : 0) + ' |' + path });
+            val: r.track + ' ' + r.clip + ' ' + common + ' ' + src + ' |' + path });
     else
         S.pendingDefaultSetParams.push({ key: 'resample_scene', val: r.clip + ' ' + common + ' |' + path });
     S.resampleTake = { path, file: path.slice(RESAMPLE_DIR.length + 1),

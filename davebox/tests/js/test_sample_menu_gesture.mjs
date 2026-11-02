@@ -362,12 +362,22 @@ step('⭐⭐ an Audio clip offers In place (Josh, 2026-10-30: "resample in place
     assert(r && r.audio && !r.inPlace, 'options: ' + JSON.stringify(r));
     assert(S.confirmResample.sel === 5, 'the cursor does not start on Start');
     onScreen(R.drawResampleOptions, 'the Audio clip options');
-    jog(-1); jog(-1); jog(-1);                     /* Start → Tail → Warm-up → In place */
+    jog(-1); jog(-1); jog(-1); jog(-1);            /* Start → Tail → Warm-up → In place → Source */
     click();
+    assert(r.src === 1, 'Dry did not turn on');
+    jog(1); click();                               /* In place */
     assert(r.inPlace, 'In place did not turn on');
-    jog(1); jog(1); jog(1); click();
+    jog(-1); click();
+    assert(r.src === 1, 'Source flipped under In place');
+    /* Source has no say under In place: Dry and Wet draw the same screen */
+    const asDry = frame(() => R.drawResampleOptions());
+    r.src = 0; const asWet = frame(() => R.drawResampleOptions()); r.src = 1;
+    assert(same(asDry, asWet), 'Source still shows Dry / Wet under In place');
+    jog(1); jog(1); jog(1); jog(1); click();
     const path = GET['t2_au_dir'] + '/My Song 3A 2bar 120bpm.wav';
-    assert(queued('resample_clip').join() === '2 0 2 0 0 0 |' + path, 'value: ' + queued('resample_clip'));
+    /* Josh, 2026-11-02: "yes" — In place records the clip BEFORE the track's
+     * effects (src 2), whatever Source said: the clip plays through them again */
+    assert(queued('resample_clip').join() === '2 0 2 0 0 2 |' + path, 'value: ' + queued('resample_clip'));
     sets.length = 0; S.pendingDefaultSetParams.length = 0;
     S.resampleState = 3; S.resampleFrames = 2 * 88200; S.resampleDone = 100; ticks(2);
     S.resampleState = 4; globalThis.__stubStat = { [path]: { size: 100, mode: 0o100644 } };

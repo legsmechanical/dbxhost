@@ -2839,7 +2839,9 @@ Audio tracks resample like any other. A Loop clip plays its sample with no steps
 its length is the clip's own; a Slice clip's is its sequence's. An Audio clip's
 options add **In place**: turned on, the recording goes into the project instead of
 the library and replaces the clip. The clip starts over with the recording as its
-sample, at default settings (a Loop clip; its steps, chops and settings go).
+sample, at default settings (a Loop clip; its steps, chops and settings go). It's
+recorded before the track's effects and volume, which go on playing on it, so
+they apply once; Source shows `-`.
 
 **Flatten a track** to turn it into audio: open its **TRACK CONFIG** menu, turn to
 **Flatten track** and click. With the transport stopped (and Clock Follow off), every clip with notes is
