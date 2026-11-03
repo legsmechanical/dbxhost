@@ -379,6 +379,29 @@ int main(void) {
                   "file: an unknown Audio Sync is not Warp");
         HX_ASSERT(wait_loaded(h, 4, AU_SLC) == 2 && AUS(4)->nslices == 2, "file: the Slicer's sample did not load (or the load re-chopped it)");
         hx_destroy(h);
+        /* an Audio clip has no steps (the sample is the clip): notes a file
+         * carries on an Audio track are dropped, so the clip is not a ghost on
+         * the grid; a Slicer's steps stay */
+        h = hx_create(NULL); HX_NO_LEAD(h); inst = (seq8_instance_t *)h->inst;
+        snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
+        wf = fopen(inst->state_path, "w");
+        fprintf(wf, "{\"v\":37,\"t3_pm\":3,\"t3c2_n\":\"0:0:100:24;24:1:100:24;\","
+                    "\"t3c1_n\":\"0:36:100:24;\",\"t3c1_aud\":\"g=-5|ramp2.wav\","
+                    "\"t4_pm\":4,\"t4c0_n\":\"0:36:100:24;\"}");
+        fclose(wf);
+        seq8_load_state(inst);
+        {
+            int c, i, left = 0;
+            for (c = 0; c < NUM_CLIPS; c++) {
+                const clip_t *cl = &inst->tracks[3].clips[c];
+                left += cl->note_count;
+                for (i = 0; i < SEQ_STEPS; i++) left += cl->steps[i] != 0;
+            }
+            HX_ASSERT(left == 0, "file: an Audio track's clips kept steps from the file");
+        }
+        HX_ASSERT(!strcmp(AUA(3, 1)->name, "ramp2.wav"), "file: dropping an Audio clip's steps lost its sample");
+        HX_ASSERT(inst->tracks[4].clips[0].note_count == 1, "file: a Slicer clip lost its steps");
+        hx_destroy(h);
         /* a kind this build does not know: refused as a newer build's, untouched */
         h = hx_create(NULL); HX_NO_LEAD(h); inst = (seq8_instance_t *)h->inst;
         snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);

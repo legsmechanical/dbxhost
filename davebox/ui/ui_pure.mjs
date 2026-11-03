@@ -421,9 +421,9 @@ export function _clipIsEmpty(t, c) {
 }
 
 export function clipHasContent(t, c) {
-    /* An Audio clip with a sample has content, steps or not (a Loop clip has
-     * none and still plays). */
-    if (S.trackPadMode[t] === PAD_MODE_AUDIO && S.auInfo[t] && S.auInfo[t][c] && S.auInfo[t][c].name) return true;
+    /* An Audio clip IS its sample: it has no steps, so a clip without one is
+     * empty whatever its step array says. */
+    if (S.trackPadMode[t] === PAD_MODE_AUDIO) return !!(S.auInfo[t] && S.auInfo[t][c] && S.auInfo[t][c].name);
     const s = S.clipSteps[t][c];
     for (let i = 0; i < NUM_STEPS; i++) if (s[i]) return true;
     return false;

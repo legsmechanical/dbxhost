@@ -14,7 +14,7 @@ import { S } from '../../ui/ui_state.mjs';
 import { drumPadToLane, drumPadToVelZone, drumVelZoneToVelocity,
          _clipIsEmpty, clipHasContent,
          bankCyclePos, scaleNudgeNote } from '../../ui/ui_pure.mjs';
-import { PAD_MODE_DRUM, PAD_MODE_CONDUCT,
+import { PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_AUDIO,
          BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION } from '../../ui/ui_constants.mjs';
 
 let failed = 0;
@@ -83,6 +83,17 @@ S.clipSteps[0][0][5] = 1;
 eq(clipHasContent(0, 0), true, 'clipHasContent mid step');
 S.clipSteps[2][3][255] = 1;
 eq(clipHasContent(2, 3), true, 'clipHasContent last step');
+/* An Audio clip IS its sample: steps without one are not content, a sample
+ * with no steps is. */
+S.trackPadMode[2] = PAD_MODE_AUDIO;
+S.auInfo[2] = S.auInfo[2] || [];
+S.auInfo[2][3] = null;
+eq(clipHasContent(2, 3), false, 'clipHasContent Audio steps, no sample');
+S.auInfo[2][3] = { name: 'loop.wav' };
+S.clipSteps[2][3][255] = 0;
+eq(clipHasContent(2, 3), true, 'clipHasContent Audio sample, no steps');
+S.trackPadMode[2] = 0;
+S.auInfo[2][3] = null;
 
 /* -- _clipIsEmpty(t,c) (ui.js:1453-1457): melodic track -> !S.clipNonEmpty[t][c];
  *    drum track (trackPadMode==PAD_MODE_DRUM) -> !S.drumClipNonEmpty[t][c]. --

@@ -1329,6 +1329,13 @@ static void seq8_load_state(seq8_instance_t *inst) {
         inst->tracks[t].pad_mode = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, PAD_MODE_MAX);
         if (inst->tracks[t].pad_mode == PAD_MODE_DRUM)
             drum_clips_alloc(inst, &inst->tracks[t]);
+        /* An Audio clip has no steps (the sample is the clip): becoming Audio
+         * wipes them, so a file's are left over from another format and would
+         * show a clip with no sample on the grid. */
+        if (inst->tracks[t].pad_mode == PAD_MODE_AUDIO) {
+            int c;
+            for (c = 0; c < NUM_CLIPS; c++) clip_wipe_notes(&inst->tracks[t].clips[c]);
+        }
     }
     /* Audio and Slicer (after pad_mode): asks the loader for every sample. */
     au_load_state(inst, buf);

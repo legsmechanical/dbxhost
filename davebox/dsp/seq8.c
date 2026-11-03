@@ -2127,6 +2127,7 @@ static void seq8_ilog(seq8_instance_t *inst, const char *msg);
 static void ext_transport_start(seq8_instance_t *inst);
 static void ext_transport_stop(seq8_instance_t *inst);
 static void clip_init(clip_t *cl);
+static void clip_wipe_notes(clip_t *cl);
 static void drum_pfx_params_init(drum_pfx_params_t *p);
 static inline void rui_mark(seq8_instance_t *inst, int t, int c);
 static inline void rui_content(seq8_instance_t *inst);
