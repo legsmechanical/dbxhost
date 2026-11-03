@@ -787,7 +787,7 @@ const AU_SLICES_KEYS = [
     { key: 'au_s_pitch',  k: 4, min: -24, max: 24,   label: 'Pitch',  field: 'pitch' },
     { key: 'au_s_detune', k: 5, min: -50, max: 50,   label: 'Detune', field: 'detune' },
     { key: 'au_s_rev',    k: 6, min: 0,   max: 1,    label: 'Rev',    field: 'rev', stepped: true },
-    { key: 'au_s_play',   k: 7, min: 0,   max: 2,    label: 'Play',   field: 'play', stepped: true },
+    { key: 'au_s_play',   k: 7, min: 0,   max: 1,    label: 'Play',   field: 'play', stepped: true },
 ];
 export const BANK_SHORT = { 0: 'Clip', 1: 'NFX', 2: 'Harm', 3: 'Dly', 4: 'SArp', 5: 'LArp', 7: 'Lanes',
                             [AU_AUTO_BANK]: 'Smp', [AU_SLICES_BANK]: 'Slcs' };

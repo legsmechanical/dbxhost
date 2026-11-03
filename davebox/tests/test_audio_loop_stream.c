@@ -131,7 +131,7 @@ int main(void) {
     snprintf(p, sizeof p, "0|%s/src/ramp60.wav", g_root);
     hx_set_param(h, "t4_au_pick", p);
     HX_ASSERT(wait_loaded(h, 4, 0) == 2, "the 60 s ramp did not load");
-    HX_ASSERT(inst->au_clip[4][0].smp && !inst->au_clip[4][0].smp->pcm, "the long file was read whole, not streamed");
+    HX_ASSERT((*au_cl(inst, 4, 0)).smp && !(*au_cl(inst, 4, 0)).smp->pcm, "the long file was read whole, not streamed");
     stats(h, &n, &chunks, &reads, &under);
     HX_ASSERT(n == 1, "the streamer does not hold the streamed sample");
     HX_ASSERT(chunks == pins_for(FR, 0, FR), "the load kept more (or less) than the pins");
@@ -213,7 +213,7 @@ int main(void) {
      * frames that are in, forwards and in Revrs ---- */
     for (i = 0; i < AU_STREAM_GRACE + 5; i++) { hx_render(h, 1); au_stream_service(inst); }
     {
-        au_sample_t *s = inst->au_clip[4][0].smp;
+        au_sample_t *s = (*au_cl(inst, 4, 0)).smp;
         bad = 0;
         for (k = 0; k <= 32; k++) {
             uint32_t at = (uint32_t)((uint64_t)FR * k / 32), c = at >> AU_CHUNK_SHIFT;
@@ -257,11 +257,11 @@ int main(void) {
         char v[40];
         snprintf(v, sizeof v, "0 %u", (unsigned)rs);
         hx_set_param(h, "t4_au_set_start", v);
-        HX_ASSERT(inst->au_clip[4][0].rstart == rs, "Start did not move");
+        HX_ASSERT((*au_cl(inst, 4, 0)).rstart == rs, "Start did not move");
         hx_render(h, 1);
         for (i = 0; i < 60; i++) au_stream_service(inst);
         c = (rs + (FR - rs) / 2) >> AU_CHUNK_SHIFT;  /* point 16 of the new range */
-        HX_ASSERT(inst->au_clip[4][0].smp->chunk[c] != NULL, "a point of the new range is not pinned");
+        HX_ASSERT((*au_cl(inst, 4, 0)).smp->chunk[c] != NULL, "a point of the new range is not pinned");
         for (i = 0; i < AU_STREAM_GRACE + 5; i++) { hx_render(h, 1); au_stream_service(inst); }
         stats(h, NULL, &chunks, NULL, NULL);
         HX_ASSERT(chunks == pins_for(FR, rs, FR), "the old range's pins were not let go");
@@ -282,27 +282,33 @@ int main(void) {
         HX_ASSERT(S->ngrave == 0, "let-go chunks were not freed after two blocks");
     }
 
-    /* ---- Slice streams too: every slice starts (and, Rev, ends) pinned ---- */
+    /* ---- a Slicer streams too: every chop starts (and, Rev, ends) pinned.
+     * t5, the same file (the pool holds it once) ---- */
     hx_set_param(h, "transport", "stop");
     hx_render(h, 4);
-    hx_set_param(h, "t4_au_set_mode", "0 1");
-    hx_set_param(h, "t4_au_set_even", "0 7");     /* 7: no slice start is a Loop point */
-    HX_ASSERT(!inst->au_clip[4][0].smp->pcm, "Slice mode reloaded the file whole");
+    hx_set_param(h, "t5_convert_to_slicer", "");
+    snprintf(p, sizeof p, "%d|%s/src/ramp60.wav", AU_SLC, g_root);
+    hx_set_param(h, "t5_au_pick", p);
+    HX_ASSERT(wait_loaded(h, 5, 0) == 2, "the Slicer's 60 s ramp did not load");
+    hx_set_param(h, "t5_au_set_even", "16 7");    /* 7: no chop start is a Loop point */
+    HX_ASSERT(!(*au_cl(inst, 5, 0)).smp->pcm, "the Slicer read the file whole");
     for (i = 0; i < AU_STREAM_GRACE + 5; i++) { hx_render(h, 1); au_stream_service(inst); }
+    {
+    int s5 = inst->tracks[5].pfx.slot;
     for (k = 0; k < 2; k++) {
         int l;
         char v[16];
-        snprintf(v, sizeof v, "0 %d", k);
-        hx_set_param(h, "t4_au_all_rev", v);
+        snprintf(v, sizeof v, "16 %d", k);
+        hx_set_param(h, "t5_au_all_rev", v);
         hx_render(h, 1);
         stats(h, NULL, NULL, NULL, &under0);
         bad = 0;
         for (l = 0; l < 7; l++) {
             double a0 = (double)(uint32_t)((uint64_t)FR * l / 7), b0 = (double)(uint32_t)((uint64_t)FR * (l + 1) / 7);
             hx_stub_feed_reset();
-            au_note_event(4, l, 0x90, 100, 0);
+            au_note_event(5, l, 0x90, 100, 0);
             hx_render(h, 1);
-            blk = hx_stub_feed_last(4);
+            blk = hx_stub_feed_last(s5);
             /* past the 64-frame fade of the slice it cut */
             if (k ? abs(blk[200] - ramp_at(b0 - 1 - 100)) > 1 || abs(blk[254] - ramp_at(b0 - 1 - 127)) > 1
                   : abs(blk[200] - ramp_at(a0 + 100)) > 1 || abs(blk[254] - ramp_at(a0 + 127)) > 1) bad++;
@@ -312,16 +318,17 @@ int main(void) {
         HX_ASSERT(bad == 0, k ? "a Rev slice did not start at its end" : "a slice did not start at its start");
         HX_ASSERT(under == under0, k ? "a Rev slice waited for a chunk" : "a slice waited for a chunk");
     }
-    hx_set_param(h, "t4_au_all_rev", "0 0");
-    hx_set_param(h, "t4_au_set_mode", "0 0");
+    }
+    hx_set_param(h, "t5_au_all_rev", "16 0");
+    hx_set_param(h, "t5_convert_to_melodic", "");
     hx_render(h, 4);
     /* a Loop clip on Vintage moves through the sample as Free does (the
      * voices' read-ahead): its chops play no part, so none is pinned */
     /* (these keys were set_tempo / set_bars, which no longer exist and did
      * nothing: the block ran on Sync Pitch — found 2026-10-31) */
-    int was_sync = inst->au_clip[4][0].sync;
+    int was_sync = (*au_cl(inst, 4, 0)).sync;
     hx_set_param(h, "t4_au_set_sync", "0 1");                   /* Vintage */
-    HX_ASSERT(inst->au_clip[4][0].sync == AU_SYNC_VINTAGE, "setup: the loop is not on Vintage");
+    HX_ASSERT((*au_cl(inst, 4, 0)).sync == AU_SYNC_VINTAGE, "setup: the loop is not on Vintage");
     hx_render(h, 1);
     HX_ASSERT(inst->au_clipw[4][0].mode != AU_MODE_SLICE, "a Vintage Loop clip pins its chops");
     /* ...and the read-ahead alone keeps up with it: at a tempo well away
@@ -373,13 +380,13 @@ int main(void) {
     snprintf(p, sizeof p, "1|%s/src/ramp60.wav", g_root);
     hx_set_param(h, "t4_au_pick", p);
     HX_ASSERT(wait_loaded(h, 4, 1) == 2, "the second clip did not load");
-    HX_ASSERT(inst->au_clip[4][1].smp == inst->au_clip[4][0].smp, "two clips on one file hold two copies");
+    HX_ASSERT((*au_cl(inst, 4, 1)).smp == (*au_cl(inst, 4, 0)).smp, "two clips on one file hold two copies");
     stats(h, &n, NULL, NULL, NULL);
     HX_ASSERT(n == 1, "two clips on one file are two streamed samples");
     snprintf(p, sizeof p, "0|%s/src/ramp2.wav", g_root);
     hx_set_param(h, "t4_au_pick", p);
     HX_ASSERT(wait_loaded(h, 4, 0) == 2, "the short file did not load");
-    HX_ASSERT(inst->au_clip[4][0].smp->pcm != NULL, "a half-second file streamed");
+    HX_ASSERT((*au_cl(inst, 4, 0)).smp->pcm != NULL, "a half-second file streamed");
     snprintf(p, sizeof p, "1|%s/src/ramp2.wav", g_root);
     hx_set_param(h, "t4_au_pick", p);
     HX_ASSERT(wait_loaded(h, 4, 1) == 2, "the short file did not load into clip 1");

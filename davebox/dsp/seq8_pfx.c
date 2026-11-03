@@ -127,7 +127,7 @@ static int pfx_build_gen_notes(seq8_instance_t *inst, int scale_aware,
                                play_fx_t *fx, int orig_note, int transpose,
                                uint8_t *out) {
     /* Audio: the pitch is a slice — nothing moves it, nothing doubles it. */
-    if (fx->track_idx < NUM_TRACKS && inst->tracks[fx->track_idx].pad_mode == PAD_MODE_AUDIO) {
+    if (fx->track_idx < NUM_TRACKS && pad_mode_sampled(inst->tracks[fx->track_idx].pad_mode)) {
         out[0] = (uint8_t)clamp_i(orig_note, 0, 127);
         return 1;
     }
@@ -198,7 +198,7 @@ static void pfx_sched_delay_ons(seq8_instance_t *inst, int scale_aware,
                 else             cumul_pitch += fx->fb_note;
             }
         }
-        if (fx->track_idx < NUM_TRACKS && inst->tracks[fx->track_idx].pad_mode == PAD_MODE_AUDIO) {
+        if (fx->track_idx < NUM_TRACKS && pad_mode_sampled(inst->tracks[fx->track_idx].pad_mode)) {
             an->reps[i].pitch_offset = 0;      /* an echo replays its slice */
         } else {
             int pitch = (scale_aware && an->gen_count > 0)

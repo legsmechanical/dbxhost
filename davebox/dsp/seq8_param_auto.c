@@ -247,7 +247,7 @@ static const pa_seq_def_t pa_seq_defs[] = {
     { "au_s_pitch",              -24,   24, PA_SEQ_AUDIO },
     { "au_s_detune",             -50,   50, PA_SEQ_AUDIO },
     { "au_s_rev",                  0,    1, PA_SEQ_AUDIO, 1 },
-    { "au_s_play",                 0,    2, PA_SEQ_AUDIO, 1 },
+    { "au_s_play",                 0,    1, PA_SEQ_AUDIO, 1 },      /* One / Gate (Loop left: Josh, 2026-11-02) */
     { "all_lanes_playback_dir",    0,    3, PA_SEQ_DRUM, 1 },
 };
 _Static_assert(AU_BPM10_MIN == 1 && AU_BPM10_MAX == 9999, "au_bpm's row is AU_BPM10_MIN..MAX");
@@ -281,7 +281,9 @@ static int pa_target_is_seq(const char *t, int *track, int *idx) {
 /* Is this key's bank on the track's pad mode? */
 static int pa_seq_on_mode(const seq8_track_t *tr, int idx) {
     if (tr->pad_mode == PAD_MODE_CONDUCT) return 0;
-    if (pa_seq_defs[idx].mode == PA_SEQ_AUDIO) return tr->pad_mode == PAD_MODE_AUDIO;
+    /* the sample's lanes on either; ALL SLICES' (chops) on a Slicer only */
+    if (pa_seq_defs[idx].mode == PA_SEQ_AUDIO)
+        return idx >= PA_SEQ_IDX_AUS ? tr->pad_mode == PAD_MODE_SLICER : pad_mode_sampled(tr->pad_mode);
     return (tr->pad_mode == PAD_MODE_DRUM) == (pa_seq_defs[idx].mode == PA_SEQ_DRUM);
 }
 
@@ -289,7 +291,7 @@ static int pa_seq_on_mode(const seq8_track_t *tr, int idx) {
 static int pa_seq_read(const seq8_instance_t *inst, const seq8_track_t *tr, int clip, int idx) {
     const play_fx_t *fx = &tr->pfx;
     if (PA_SEQ_IS_AU(idx)) {
-        const au_clip_t *cl = &inst->au_clip[tr - inst->tracks][clip];
+        const au_clip_t *cl = au_cl((seq8_instance_t *)inst, (int)(tr - inst->tracks), clip);
         if (idx >= PA_SEQ_IDX_AUS) {             /* the first chop's, as it plays */
             au_slice_t se;
             au_sl_eff(cl, 0, &se);
@@ -350,7 +352,7 @@ static int pa_seq_read(const seq8_instance_t *inst, const seq8_track_t *tr, int 
  * value does, and the live value goes. Revrs turning over restarts the loop
  * from its new end, as the knob does. AUDIO THREAD. */
 static void pa_au_apply(seq8_instance_t *inst, int track, int clip, int f, int v, int is_rest, int live) {
-    au_clip_t *cl = &inst->au_clip[track][clip];
+    au_clip_t *cl = au_cl(inst, track, clip);
     if (f >= PA_SEQ_IDX_AUS - PA_SEQ_IDX_AU) {
         /* ALL SLICES: rest lets go and writes nothing — the chops' own
          * settings may differ, and one value would flatten them */
@@ -374,6 +376,14 @@ static void pa_au_apply(seq8_instance_t *inst, int track, int clip, int f, int v
     static const uint8_t bit[5] = { AU_OV_PITCH, AU_OV_DETUNE, AU_OV_GAIN, AU_OV_REVRS, AU_OV_BPM };
     int was_rev = au_revrs(cl);
     unsigned was_bpm = au_bpm10(cl);
+    /* A Slicer's slot is every clip's: one clip's lane giving its value back
+     * must not rewrite what the others play — it lets go, and writes nothing
+     * (an Audio clip's own setting takes the lane's value, as a knob's does) */
+    if (is_rest && track >= 0 && track < NUM_TRACKS && inst->tracks[track].pad_mode == PAD_MODE_SLICER) {
+        cl->ov &= (uint8_t)~bit[f];
+        if (au_bpm10(cl) != was_bpm) cl->tr_due = 1;
+        return;
+    }
     if (is_rest) {
         int moved = 0;
         switch (f) {

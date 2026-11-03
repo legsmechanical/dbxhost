@@ -217,13 +217,13 @@ int main(void) {
     {
         hx_set_param(h, "t4_launch_clip", "0");     /* armed before (stopped: queued) */
         int before = inst->tracks[4].active_clip, rel = inst->tracks[4].will_relaunch;
-        uint32_t rs = inst->au_clip[4][0].rstart;
+        uint32_t rs = inst->au_store[4][0].rstart;
         snprintf(p, sizeof p, "4 0 576 0 |%s/e.wav", g_root);
         take(h, p, &ok);
         finish(h);
         HX_ASSERT(ok && inst->tracks[4].active_clip == before && inst->tracks[4].will_relaunch == rel,
                   "the armed clips did not come back");
-        HX_ASSERT(inst->au_clip[4][0].rstart == rs && !strcmp(inst->au_clip[4][0].name, "tone.wav"),
+        HX_ASSERT(inst->au_store[4][0].rstart == rs && !strcmp(inst->au_store[4][0].name, "tone.wav"),
                   "the take changed the clip");
     }
     printf("  ok   — the project is left as it was\n");

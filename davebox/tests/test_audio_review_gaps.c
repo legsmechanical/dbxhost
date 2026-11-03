@@ -1,7 +1,7 @@
 /* tests/test_audio_review_gaps.c — Audio-track paths a code review listed as
  * untested (2026-10-31). Each block names the gap it pins:
- *   1. state round trip: a sample name holding `"` and `\`; a hand-set
- *      slice's every field (`t%dc%ds%d_au2`); Shift (`rot`);
+ *   1. state round trip: a sample name holding `"` and `\`; a Slicer
+ *      chop's every field (`t%ds%d_slc`); an Audio clip's Shift (`sh`);
  *   2. loader failures: a non-audio file (AU_ERR_FORMAT); a file gone from
  *      samples/ on reload (AU_ERR_OPEN, the name kept for "Missing: name");
  *      no project (AU_ERR_COPY); a failed Normalize keeps the old sample;
@@ -175,50 +175,50 @@ int main(void) {
     {
         au_clip_t *ac;
         h = rig(); inst = (seq8_instance_t *)h->inst;
-        pick(h, 4, 0, WEIRD);
-        HX_ASSERT(wait_loaded(h, 4, 0) == 2, "round trip: the sample named q\"b\\s.wav did not load");
-        ac = &inst->au_clip[4][0];
+        hx_set_param(h, "t5_convert_to_slicer", "");
+        pick(h, 5, AU_SLC, WEIRD);
+        HX_ASSERT(wait_loaded(h, 5, AU_SLC) == 2, "round trip: the sample named q\"b\\s.wav did not load");
+        ac = au_cl(inst, 5, AU_SLC);
         HX_ASSERT(!strcmp(ac->name, WEIRD), "round trip: the pick did not keep the name q\"b\\s.wav");
-        /* a hand set of 3 (Even Off), slice 1 set by hand in every field */
-        hx_set_param(h, "t4_au_set_mode", "0 1");
-        hx_set_param(h, "t4_au_set_even", "0 0");
-        hx_set_param(h, "t4_au_mark_add", "0 7000");
-        hx_set_param(h, "t4_au_mark_add", "0 15000");
+        /* 3 chops by hand, chop 2 set in every field */
+        hx_set_param(h, "t5_au_manual", "16");
+        hx_set_param(h, "t5_au_mark_add", "16 7000");
+        hx_set_param(h, "t5_au_mark_add", "16 15000");
         HX_ASSERT(ac->even == 0 && ac->nslices == 3 && ac->sl[1].start == 7000 && ac->sl[2].start == 15000,
                   "round trip setup: the hand set is not 3 slices at 0 / 7000 / 15000");
-        hx_set_param(h, "t4_au_slice_end", "0 1 12345");
-        hx_set_param(h, "t4_au_slice_pitch", "0 1 -7");
-        hx_set_param(h, "t4_au_slice_gain", "0 1 -13");
-        hx_set_param(h, "t4_au_slice_rev", "0 1 1");
-        hx_set_param(h, "t4_au_slice_play", "0 1 2");
-        hx_set_param(h, "t4_au_slice_atk", "0 1 37");
-        hx_set_param(h, "t4_au_slice_dec", "0 1 1234");
-        hx_set_param(h, "t4_au_slice_detune", "0 1 -23");
-        hx_set_param(h, "t4_au_set_rot", "0 77");
+        hx_set_param(h, "t5_au_slice_end", "16 1 12345");
+        hx_set_param(h, "t5_au_slice_pitch", "16 1 -7");
+        hx_set_param(h, "t5_au_slice_gain", "16 1 -13");
+        hx_set_param(h, "t5_au_slice_rev", "16 1 1");
+        hx_set_param(h, "t5_au_slice_play", "16 1 2");             /* past Gate (Loop left): Gate */
+        hx_set_param(h, "t5_au_slice_atk", "16 1 37");
+        hx_set_param(h, "t5_au_slice_dec", "16 1 1234");
+        hx_set_param(h, "t5_au_slice_detune", "16 1 -23");
+        hx_set_param(h, "t4_au_set_rot", "0 77");                  /* an Audio clip's Shift */
         {
             au_slice_t *s = &ac->sl[1];
             HX_ASSERT(s->start == 7000 && s->end == 12345 && s->pitch == -7 && s->gain_db == -13 && s->rev == 1 &&
-                      s->play == 2 && s->attack_ms == 37 && s->decay_ms == 1234 && s->detune == -23 && ac->rot == 77,
-                      "round trip setup: the slice keys did not set slice 2's fields");
+                      s->play == AU_PLAY_GATE && s->attack_ms == 37 && s->decay_ms == 1234 && s->detune == -23 &&
+                      au_cl(inst, 4, 0)->rot == 77, "round trip setup: the slice keys did not set slice 2's fields");
         }
         /* clip 1: a file that will be gone from samples/ when the project loads */
         pick(h, 4, 1, "gone.wav");
         HX_ASSERT(wait_loaded(h, 4, 1) == 2, "missing: gone.wav did not load");
         h = save_and_reload(h); inst = (seq8_instance_t *)h->inst;
-        HX_ASSERT(strstr(g_blob, "\"t4c0s1_au2\":\"7000 12345 -7 -13 1 2 37 1234 -23\""),
-                  "round trip: the saved slice line is not \"7000 12345 -7 -13 1 2 37 1234 -23\"");
-        ac = &inst->au_clip[4][0];
+        HX_ASSERT(strstr(g_blob, "\"t5s1_slc\":\"st=7000 en=12345 p=-7 dt=-23 g=-13 rv=1 pl=1 at=37 dc=1234\""),
+                  "round trip: the saved chop line is not \"st=7000 en=12345 p=-7 dt=-23 g=-13 rv=1 pl=1 at=37 dc=1234\"");
+        ac = au_cl(inst, 5, AU_SLC);
         HX_ASSERT(!strcmp(ac->name, WEIRD), "round trip: a sample name holding \" and \\ did not survive the reload");
         {
             au_slice_t *s = &ac->sl[1];
             HX_ASSERT(ac->nslices == 3 && ac->even == 0 && ac->sl[2].start == 15000,
                       "round trip: the hand set's count / Even / slice 3 changed over a reload");
             HX_ASSERT(s->start == 7000 && s->end == 12345 && s->pitch == -7 && s->gain_db == -13 && s->rev == 1 &&
-                      s->play == 2 && s->attack_ms == 37 && s->decay_ms == 1234 && s->detune == -23,
+                      s->play == AU_PLAY_GATE && s->attack_ms == 37 && s->decay_ms == 1234 && s->detune == -23,
                       "round trip: a hand-set slice's fields did not survive a reload exactly");
         }
-        HX_ASSERT(ac->rot == 77, "round trip: Shift (rot) did not survive a reload");
-        HX_ASSERT(wait_loaded(h, 4, 0) == 2 && ac->smp, "round trip: the q\"b\\s.wav sample did not load again from samples/");
+        HX_ASSERT(au_cl(inst, 4, 0)->rot == 77, "round trip: Shift (rot) did not survive a reload");
+        HX_ASSERT(wait_loaded(h, 5, AU_SLC) == 2 && ac->smp, "round trip: the q\"b\\s.wav sample did not load again from samples/");
         hx_destroy(h);
 
         /* gone.wav deleted from samples/, then the project reloaded */
@@ -230,12 +230,12 @@ int main(void) {
         HX_ASSERT(wait_loaded(h, 4, 1) == 3, "missing: a sample deleted from samples/ did not fail its load (state 3)");
         info_state(h, 4, 1, &err, name);
         HX_ASSERT(err == AU_ERR_OPEN, "missing: a deleted sample's load is not AU_ERR_OPEN");
-        HX_ASSERT(!strcmp(name, "gone.wav") && !inst->au_clip[4][1].smp,
+        HX_ASSERT(!strcmp(name, "gone.wav") && !(*au_cl(inst, 4, 1)).smp,
                   "missing: the failed clip lost its name (the UI cannot say \"Missing: gone.wav\")");
         /* au_request_load directly (as an undo does) fails the same way */
         au_request_load(inst, 4, 1);
-        HX_ASSERT(wait_loaded(h, 4, 1) == 3 && inst->au_clip[4][1].err == AU_ERR_OPEN &&
-                  !strcmp(inst->au_clip[4][1].name, "gone.wav"), "missing: au_request_load of a deleted file");
+        HX_ASSERT(wait_loaded(h, 4, 1) == 3 && (*au_cl(inst, 4, 1)).err == AU_ERR_OPEN &&
+                  !strcmp((*au_cl(inst, 4, 1)).name, "gone.wav"), "missing: au_request_load of a deleted file");
         hx_destroy(h);
     }
 
@@ -249,11 +249,11 @@ int main(void) {
         HX_ASSERT(wait_loaded(h, 4, 2) == 3, "garbage: a non-audio file did not fail (state 3)");
         info_state(h, 4, 2, &err, NULL);
         HX_ASSERT(err == AU_ERR_FORMAT, "garbage: a non-audio file's error is not AU_ERR_FORMAT");
-        HX_ASSERT(!inst->au_clip[4][2].smp, "garbage: a non-audio file left a sample on the clip");
+        HX_ASSERT(!(*au_cl(inst, 4, 2)).smp, "garbage: a non-audio file left a sample on the clip");
         /* a Normalize that fails (a silent file) keeps the sample it had */
         pick(h, 4, 3, "silent.wav");
         HX_ASSERT(wait_loaded(h, 4, 3) == 2, "silent: the silent file did not load");
-        ac = &inst->au_clip[4][3];
+        ac = au_cl(inst, 4, 3);
         was = ac->smp;
         hx_set_param(h, "t4_au_edit", "3 1 0");                   /* Normalize, a new sample */
         HX_ASSERT(wait_loaded(h, 4, 3) == 2, "silent: a failed Normalize did not leave the clip ready (state 2)");
@@ -271,7 +271,7 @@ int main(void) {
         HX_ASSERT(info_state(h, 4, 0, &err, NULL) == 3 && err == AU_ERR_COPY,
                   "no project: a pick with no state path is not state 3 / AU_ERR_COPY");
         hx_render(h, 4);
-        HX_ASSERT(inst->au_clip[4][0].state == 3 && !inst->au_clip[4][0].smp, "no project: a pick loaded anyway");
+        HX_ASSERT((*au_cl(inst, 4, 0)).state == 3 && !(*au_cl(inst, 4, 0)).smp, "no project: a pick loaded anyway");
         hx_destroy(h);
     }
 
@@ -280,7 +280,7 @@ int main(void) {
         au_clip_t *ac;
         char nt[160];
         h = rig(); inst = (seq8_instance_t *)h->inst;
-        ac = &inst->au_clip[4][5];
+        ac = au_cl(inst, 4, 5);
         /* a snapshot whose file was purged */
         pick(h, 4, 5, "purged.wav");
         HX_ASSERT(wait_loaded(h, 4, 5) == 2, "purged: setup pick");
@@ -299,10 +299,9 @@ int main(void) {
                   "purged: redo did not bring the second pick back");
 
         /* redo after a Trim-New undo puts the trimmed sample back */
-        ac = &inst->au_clip[4][6];
+        ac = au_cl(inst, 4, 6);
         pick(h, 4, 6, "trimme.wav");
         HX_ASSERT(wait_loaded(h, 4, 6) == 2, "trim redo: setup pick");
-        hx_set_param(h, "t4_au_set_mode", "6 1");
         hx_set_param(h, "t4_au_set_start", "6 4000");
         hx_set_param(h, "t4_au_edit", "6 0 0");                   /* Trim, a new sample */
         HX_ASSERT(wait_loaded(h, 4, 6) == 2 && strcmp(ac->name, "trimme.wav") && ac->rstart == 0,
@@ -324,7 +323,7 @@ int main(void) {
     {
         au_clip_t *a7, *a8, *a9;
         h = rig(); inst = (seq8_instance_t *)h->inst;
-        a7 = &inst->au_clip[4][7]; a8 = &inst->au_clip[4][8]; a9 = &inst->au_clip[4][9];
+        a7 = au_cl(inst, 4, 7); a8 = au_cl(inst, 4, 8); a9 = au_cl(inst, 4, 9);
         pick(h, 4, 7, "ramp.wav");
         HX_ASSERT(wait_loaded(h, 4, 7) == 2, "row: setup pick");
         hx_set_param(h, "t4_au_set_gain", "7 -5");
@@ -342,7 +341,7 @@ int main(void) {
 
         /* clip_cut between two clips that both hold a sample; undo restores both */
         {
-            au_clip_t *a10 = &inst->au_clip[4][10], *a11 = &inst->au_clip[4][11];
+            au_clip_t *a10 = au_cl(inst, 4, 10), *a11 = au_cl(inst, 4, 11);
             pick(h, 4, 10, "ramp.wav");
             HX_ASSERT(wait_loaded(h, 4, 10) == 2, "cut undo: setup pick 10");
             pick(h, 4, 11, "rampb.wav");
@@ -367,7 +366,7 @@ int main(void) {
         h = rig(); inst = (seq8_instance_t *)h->inst;
         hx_set_param(h, "t5_convert_to_audio", "");
         HX_ASSERT(inst->tracks[5].pad_mode == PAD_MODE_AUDIO, "overwrite: t5 is not Audio");
-        b4 = &inst->au_clip[4][0]; b5 = &inst->au_clip[5][0];
+        b4 = au_cl(inst, 4, 0); b5 = au_cl(inst, 5, 0);
         pick(h, 4, 0, "shared.wav");
         HX_ASSERT(wait_loaded(h, 4, 0) == 2, "overwrite: t4 pick");
         pick(h, 5, 0, "shared.wav");
@@ -507,11 +506,11 @@ int main(void) {
         h = rig(); inst = (seq8_instance_t *)h->inst;
         pick(h, 4, 0, "long10.wav");
         HX_ASSERT(wait_loaded(h, 4, 0) == 2, "stream: the 10 s ramp did not load");
-        HX_ASSERT(inst->au_clip[4][0].smp && !inst->au_clip[4][0].smp->pcm, "stream setup: the 10 s ramp is not streamed");
+        HX_ASSERT((*au_cl(inst, 4, 0)).smp && !(*au_cl(inst, 4, 0)).smp->pcm, "stream setup: the 10 s ramp is not streamed");
         /* Vintage at the project's tempo, across several chunk boundaries */
         hx_set_param(h, "t4_au_set_sync", "0 1");
         hx_set_param(h, "t4_au_set_orig", "0 0");
-        HX_ASSERT(inst->au_clip[4][0].sync == AU_SYNC_VINTAGE, "stream setup: the clip is not Vintage");
+        HX_ASSERT((*au_cl(inst, 4, 0)).sync == AU_SYNC_VINTAGE, "stream setup: the clip is not Vintage");
         for (i = 0; i < AU_STREAM_GRACE + 5; i++) { hx_render(h, 1); au_stream_service(inst); }
         hx_get_param(h, "t4_au_stream", b, sizeof b); sscanf(b, "%d %u %u %u", &a, &xx, &xx, &u0);
         hx_stub_feed_reset();
@@ -535,23 +534,23 @@ int main(void) {
 
         /* Slice with more than AU_PIN_FULL hand-set slices */
         h = rig(); inst = (seq8_instance_t *)h->inst;
-        pick(h, 4, 0, "long10.wav");
-        HX_ASSERT(wait_loaded(h, 4, 0) == 2 && !inst->au_clip[4][0].smp->pcm, "stream slice: the streamed load");
-        hx_set_param(h, "t4_au_set_mode", "0 1");
-        hx_set_param(h, "t4_au_set_even", "0 0");
+        hx_set_param(h, "t4_convert_to_slicer", "");
+        pick(h, 4, AU_SLC, "long10.wav");
+        HX_ASSERT(wait_loaded(h, 4, 0) == 2 && !(*au_cl(inst, 4, 0)).smp->pcm, "stream slice: the streamed load");
+        hx_set_param(h, "t4_au_manual", "0");
         for (k = 1; k < 40; k++) {
             char v[32];
             snprintf(v, sizeof v, "0 %d", k * 10007 + 123);       /* every start off the 30000 ramp wrap */
             hx_set_param(h, "t4_au_mark_add", v);
         }
-        HX_ASSERT(inst->au_clip[4][0].nslices == 40 && inst->au_clip[4][0].even == 0,
+        HX_ASSERT((*au_cl(inst, 4, 0)).nslices == 40 && (*au_cl(inst, 4, 0)).even == 0,
                   "stream slice setup: the hand set is not 40 slices");
         for (i = 0; i < AU_STREAM_GRACE + 5; i++) { hx_render(h, 1); au_stream_service(inst); }
         {
-            au_sample_t *s = inst->au_clip[4][0].smp;
+            au_sample_t *s = (*au_cl(inst, 4, 0)).smp;
             int missing = 0, bad = 0, edge_bad = 0, l;
             for (l = AU_PIN_FULL; l < 40; l++) {
-                uint32_t st = inst->au_clip[4][0].sl[l].start;
+                uint32_t st = (*au_cl(inst, 4, 0)).sl[l].start;
                 if (!s->chunk[st >> AU_CHUNK_SHIFT]) missing++;
             }
             HX_ASSERT(missing == 0, "stream slice: a slice past AU_PIN_FULL has no chunk pinned at its start");
@@ -562,7 +561,7 @@ int main(void) {
              * 360448). au_stream_pin_slice now pins the next chunk for such a start.
              * Every slice past 32, edge or not, must play its own frames at once. */
             for (l = AU_PIN_FULL; l < 40; l++) {
-                uint32_t st = inst->au_clip[4][0].sl[l].start;
+                uint32_t st = (*au_cl(inst, 4, 0)).sl[l].start;
                 int edge = (st & (AU_CHUNK - 1)) + 2 * 128 > AU_CHUNK, wrong;
                 unsigned ua = 0, ub = 0;
                 hx_get_param(h, "t4_au_stream", b, sizeof b); sscanf(b, "%d %u %u %u", &a, &xx, &xx, &ua);

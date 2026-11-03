@@ -157,6 +157,8 @@ static int sp_globals_state(sp_ctx_t *cx) {
         for (t2 = 0; t2 < NUM_TRACKS; t2++)
             if (inst->tracks[t2].pad_mode == PAD_MODE_AUDIO)
                 for (c2 = 0; c2 < NUM_CLIPS; c2++) au_request_load(inst, t2, c2);
+            else if (inst->tracks[t2].pad_mode == PAD_MODE_SLICER)
+                au_request_load(inst, t2, AU_SLC);
         return 1;
     }
 

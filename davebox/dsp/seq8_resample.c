@@ -106,8 +106,8 @@ static void rs_fold_track(const seq8_instance_t *inst, int t, int c, uint32_t *l
         for (l = 0; l < DRUM_LANES; l++)
             rs_fold(&tr->drum_clips[c]->lanes[l].clip, 0, lcm, longest, over);
     } else {
-        const au_clip_t *ac = &inst->au_clip[t][c];
-        int loop = tr->pad_mode == PAD_MODE_AUDIO && ac->mode == AU_MODE_LOOP && ac->name[0];
+        const au_clip_t *ac = &inst->au_store[t][c];
+        int loop = tr->pad_mode == PAD_MODE_AUDIO && ac->name[0];
         rs_fold(&tr->clips[c], loop, lcm, longest, over);
     }
 }
@@ -525,7 +525,7 @@ static void export_take_start(seq8_instance_t *inst, const char *val) {
         const play_fx_t *fx = &inst->tracks[tr_i].pfx;
         dst = midi_dest_resolve(fx->route, fx->slot, fx->midi_to);
     }
-    if (inst->tracks[tr_i].pad_mode != PAD_MODE_AUDIO || !dst.emit || dst.route != ROUTE_SCHWUNG
+    if (!pad_mode_sampled(inst->tracks[tr_i].pad_mode) || !dst.emit || dst.route != ROUTE_SCHWUNG
             || !g_ext->capture_start_src) {
         inst->resample_err = RS_ERR_ROUTE; inst->resample_state = RS_FAILED; return;
     }

@@ -46,8 +46,8 @@ int main(void) {
               "the conversion did not happen");
     HX_ASSERT(tr->pfx.route == ROUTE_SCHWUNG, "an Audio track is not on its slot");
     /* the clip takes its recording (a pick, here only its name) */
-    snprintf(inst->au_clip[2][0].name, sizeof inst->au_clip[2][0].name, "%s", "T3 A.wav");
-    inst->au_clip[2][0].state = 1;
+    snprintf(inst->au_store[2][0].name, sizeof inst->au_store[2][0].name, "%s", "T3 A.wav");
+    inst->au_store[2][0].state = 1;
 
     hx_set_param(h, "undo_restore", "1");
     HX_ASSERT(tr->pad_mode == PAD_MODE_MELODIC_SCALE, "⭐ Undo did not make the track MIDI again");
@@ -60,7 +60,7 @@ int main(void) {
     hx_set_param(h, "redo_restore", "1");
     HX_ASSERT(tr->pad_mode == PAD_MODE_AUDIO && notes(inst, 2, 0) == 0 && tr->transpose == 0,
               "⭐ Redo did not make the track Audio again");
-    HX_ASSERT(!strcmp(inst->au_clip[2][0].name, "T3 A.wav"), "⭐ Redo lost the clip's sample");
+    HX_ASSERT(!strcmp(inst->au_store[2][0].name, "T3 A.wav"), "⭐ Redo lost the clip's sample");
     HX_ASSERT(!strcmp(info(h), "f 2"), "the redo does not name the flattened track");
     hx_set_param(h, "undo_restore", "1");
     HX_ASSERT(tr->pad_mode == PAD_MODE_MELODIC_SCALE && notes(inst, 2, 0) == 2,

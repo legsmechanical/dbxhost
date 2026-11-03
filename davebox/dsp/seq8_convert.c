@@ -317,18 +317,22 @@ static void convert_wipe_all_notes(seq8_instance_t *inst, int t) {
     }
 }
 
-/* -> AUDIO (Instmt/Dest "Audio", like the Conductor: no track type). The
- * notes go — they were pitches, and on Audio a pitch is a slice (Josh,
+/* -> AUDIO or SLICER (Instmt/Dest, like the Conductor: no track type). The
+ * notes go — they were pitches, and on either a pitch would be a chop (Josh,
  * 2026-10-27, Q2: "clear them"; the UI confirms first). Effects, automation
- * and TARP back to a fresh track's; every clip a fresh Audio clip (Loop, no
- * sample). A drum track is made melodic first. */
-static void convert_track_to_audio(seq8_instance_t *inst, int t) {
+ * and TARP back to a fresh track's; every clip a fresh one (an Audio clip
+ * with no sample; a Slicer with none). A drum track is made melodic first;
+ * one sampled kind leaves its samples before it becomes the other. */
+static void convert_track_from_audio(seq8_instance_t *inst, int t);
+static void convert_track_to_sampled(seq8_instance_t *inst, int t, uint8_t pm) {
     seq8_track_t *tr = &inst->tracks[t];
     int c;
     tr->recording = 0;
     tr->record_armed = 0;
     tr->recording_pending_page = 0;
     silence_track_notes_v2(inst, tr);
+    if (pad_mode_sampled(tr->pad_mode))
+        convert_track_from_audio(inst, t);
     if (tr->pad_mode == PAD_MODE_DRUM)
         convert_track_drum_to_melodic(inst, t);
     for (c = 0; c < NUM_CLIPS; c++) {
@@ -352,16 +356,18 @@ static void convert_track_to_audio(seq8_instance_t *inst, int t) {
         tr->pfx.route = ROUTE_SCHWUNG;
         for (_l = 0; _l < DRUM_LANES; _l++) tr->drum_lane_pfx[_l].route = ROUTE_SCHWUNG;
     }
-    tr->pad_mode = PAD_MODE_AUDIO;
+    tr->pad_mode = pm;
     au_track_release(inst, t);
     pfx_sync_from_clip(tr);
     inst->state_dirty = 1;
 }
 
-/* Leaving AUDIO for an instrument (or the Conductor): every clip's slice
- * steps go (Josh, 2026-10-27, Q3: "clear them"; the UI confirms first) and
- * the samples are let go (the files stay in the project until a Purge). The
- * track is left melodic; the caller converts on from there. */
+/* Leaving AUDIO or a SLICER for an instrument (or the Conductor, or the
+ * other sampled kind): every clip's steps go (Josh, 2026-10-27, Q3: "clear
+ * them"; the UI confirms first) and the samples are let go (the files stay
+ * in the project until a Purge). The track is left melodic; the caller
+ * converts on from there. Undoable when the caller took the step first
+ * (sampled_leave_begin). */
 static void convert_track_from_audio(seq8_instance_t *inst, int t) {
     seq8_track_t *tr = &inst->tracks[t];
     tr->recording = 0;
@@ -399,6 +405,7 @@ static void flat_xfer(seq8_track_t *tr, flat_keep_t *k, int swap) {
     F(drum_repeat_gate); F(drum_repeat_gate_len); F(drum_repeat2_rate_idx);
     F(drum_repeat_vel_scale); F(drum_repeat_nudge);
 #undef F
+    /* (a Slicer's own two, kept beside the track: flat_au_xfer) */
     if (swap) FLAT_SWAP(tr->pfx.route, k->route); else k->route = tr->pfx.route;
     for (l = 0; l < DRUM_LANES; l++) {
         if (swap) FLAT_SWAP(tr->drum_lane_pfx[l].route, k->lane_route[l]);
@@ -406,13 +413,23 @@ static void flat_xfer(seq8_track_t *tr, flat_keep_t *k, int swap) {
     }
 }
 
-/* Before track t converts to Audio, with its clips' undo step just taken. A
- * drum track hands its clips over and takes a fresh set. */
+/* A Slicer's PAD MODE Layout and Conductor switch live beside the track
+ * (au_track_t): into / out of k as flat_xfer does the track's. */
+static void flat_au_xfer(seq8_instance_t *inst, int t, flat_keep_t *k, int swap) {
+    au_track_t *at = &inst->au_trk[t];
+    if (swap) { FLAT_SWAP(at->layout, k->au_layout); FLAT_SWAP(at->cond_on, k->au_cond); }
+    else { k->au_layout = at->layout; k->au_cond = at->cond_on; }
+}
+
+/* Before track t converts (to Audio or a Slicer, or out of either), with its
+ * clips' undo step just taken. A drum track hands its clips over and takes a
+ * fresh set. The caller says what it became (flat_mode) once it has. */
 static void flat_begin(seq8_instance_t *inst, int t) {
     seq8_track_t *tr = &inst->tracks[t];
     int c;
     if (!inst->undo_valid) return;            /* no step was taken (undo_locked) */
     flat_xfer(tr, &inst->flat, 0);
+    flat_au_xfer(inst, t, &inst->flat, 0);
     inst->flat_has_drum = 0;
     if (tr->pad_mode == PAD_MODE_DRUM) {
         for (c = 0; c < NUM_CLIPS; c++) {
@@ -438,6 +455,30 @@ static void flat_begin(seq8_instance_t *inst, int t) {
     inst->flat_state = 1;
 }
 
+/* Leaving Audio or a Slicer, undoably (Josh, 2026-11-02, R7: "Yes"): every
+ * clip — with its sample side, or the Slicer's slot — into one undo step,
+ * and the rest of the track kept, as Flatten's is. The caller converts, then
+ * flat_end. A track that is neither takes nothing. 1 = the step was taken. */
+static int sampled_leave_begin(seq8_instance_t *inst, int t) {
+    uint8_t pm = inst->tracks[t].pad_mode;
+    if (!pad_mode_sampled(pm)) return 0;
+    if (pm == PAD_MODE_SLICER) undo_begin_slicer(inst, t);
+    else {
+        uint8_t cs[NUM_CLIPS];
+        int c;
+        for (c = 0; c < NUM_CLIPS; c++) cs[c] = (uint8_t)c;
+        undo_begin_track_clips(inst, t, cs, NUM_CLIPS);
+    }
+    flat_begin(inst, t);
+    return inst->flat_state == 1 && inst->flat_track == (uint8_t)t;
+}
+/* ...and what the step left it: Undo swaps only while it still is. Only
+ * after a step this conversion took (`took`): an older one keeps the mode
+ * it left, so a later conversion makes it refuse (flat_ok). */
+static void flat_end(seq8_instance_t *inst, int t, int took) {
+    if (took && inst->flat_state == 1 && inst->flat_track == (uint8_t)t) inst->flat_mode = inst->tracks[t].pad_mode;
+}
+
 /* May Undo (or Redo) swap now? Only while the track is still what the step
  * left it, and the Conductor role it would take back is free. */
 static int flat_ok(seq8_instance_t *inst) {
@@ -458,9 +499,10 @@ static void flat_swap(seq8_instance_t *inst) {
     tr->recording_pending_page = 0;
     silence_track_notes_v2(inst, tr);
     tarp_silence(inst, tr);
-    if (tr->pad_mode == PAD_MODE_AUDIO) au_track_release(inst, t);
+    if (pad_mode_sampled(tr->pad_mode)) au_track_release(inst, t);
     if (tr->pfx.route != inst->flat.route) post_release_all(inst, tr);
     flat_xfer(tr, &inst->flat, 1);
+    flat_au_xfer(inst, t, &inst->flat, 1);
     if (inst->flat_has_drum)
         for (c = 0; c < NUM_CLIPS; c++) {
             drum_clip_t *d = tr->drum_clips[c];

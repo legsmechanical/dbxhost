@@ -597,7 +597,7 @@ static void looper_tick(seq8_instance_t *inst) {
                 /* Phantom: ghost note at pitch-12, vel/4, gate=cap/8.
                  * raw_pitch=0xFF in queue is sentinel (not in emitted table). */
                 if ((inst->perf_mods_active & PERF_MOD_PHANTOM) &&
-                        inst->tracks[tr_idx].pad_mode != PAD_MODE_AUDIO &&
+                        !pad_mode_sampled(inst->tracks[tr_idx].pad_mode) &&
                         inst->perf_staccato_count < 32) {
                     int gp = (int)d1 - 12;
                     if (gp >= 0) {

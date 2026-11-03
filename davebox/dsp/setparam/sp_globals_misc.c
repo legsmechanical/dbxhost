@@ -308,16 +308,21 @@ static int sp_globals_misc(sp_ctx_t *cx) {
                     inst->tracks[inst->conductor_track].clips[sc].cond_resp[t] &&
                     !au_bake_cond(inst, t, sc, &au_fold[t]))
                     au_kept |= (uint8_t)(1u << t);
+                /* a Slicer's pitch is every clip's: one scene's shift cannot be
+                 * folded into it — it keeps following */
+                if (sa && inst->tracks[t].pad_mode == PAD_MODE_SLICER && inst->au_trk[t].cond_on &&
+                    inst->conductor_track >= 0 && inst->tracks[inst->conductor_track].clips[sc].cond_resp[t])
+                    au_kept |= (uint8_t)(1u << t);
             }
             inst->undo_locked = 1;
             for (t = 0; t < NUM_TRACKS; t++) {
                 if (inst->tracks[t].pad_mode == PAD_MODE_DRUM)
                     bake_drum_clip(inst, t, sc, sn, sw);
-                else if (inst->tracks[t].pad_mode == PAD_MODE_AUDIO) {
+                else if (pad_mode_sampled(inst->tracks[t].pad_mode)) {
                     /* its notes are chops: never transposed (au_bake_cond) */
                     bake_clip(inst, t, sc, sn, sw, 0);
-                    if (sa && au_fold[t]) {
-                        au_clip_t *ac = &inst->au_clip[t][sc];
+                    if (sa && au_fold[t] && inst->tracks[t].pad_mode == PAD_MODE_AUDIO) {
+                        au_clip_t *ac = au_slot(inst, t, sc);
                         ac->pitch = (int8_t)(ac->pitch + au_fold[t]);
                         rui_mark(inst, t, sc);
                     }

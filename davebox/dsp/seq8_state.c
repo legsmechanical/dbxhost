@@ -1095,6 +1095,26 @@ static void seq8_load_state(seq8_instance_t *inst) {
             return;
         }
     }
+    /* A kind of track this build does not know (a pad mode past
+     * PAD_MODE_MAX) can only come from a newer build: refused as one, before
+     * anything is applied — clamped, it would load as another kind of track
+     * and the next save would lose what it was. */
+    {
+        int _t;
+        char _k[16];
+        for (_t = 0; _t < NUM_TRACKS; _t++) {
+            int pm;
+            snprintf(_k, sizeof _k, "t%d_pm", _t);
+            pm = json_get_int(buf, _k, 0);
+            if (pm < 0 || pm > PAD_MODE_MAX) {
+                seq8_load_buf_free(buf);
+                pa_reset_all(inst);
+                inst->state_version_mismatch = 2;
+                seq8_ilog(inst, "SEQ8 state: a track kind this build does not know, not loaded");
+                return;
+            }
+        }
+    }
     inst->state_version_mismatch = 0;
 
     /* AT automation: clear all lanes before the sparse parse below (frees lanes
@@ -1303,14 +1323,14 @@ static void seq8_load_state(seq8_instance_t *inst) {
     /* Per-track: pad_mode (route/channel already loaded above) */
     for (t = 0; t < NUM_TRACKS; t++) {
         snprintf(key, sizeof(key), "t%d_pm", t);
-        /* clamp 0..3 so PAD_MODE_CONDUCT (2) and PAD_MODE_AUDIO (3) survive a
-         * reload; clamping to 0..1 silently turned a saved Conductor into a
-         * Drum track. */
-        inst->tracks[t].pad_mode = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 3);
+        /* every kind up to PAD_MODE_MAX survives a reload (one past it was
+         * refused at the gate); clamping to 0..1 once silently turned a saved
+         * Conductor into a Drum track. */
+        inst->tracks[t].pad_mode = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, PAD_MODE_MAX);
         if (inst->tracks[t].pad_mode == PAD_MODE_DRUM)
             drum_clips_alloc(inst, &inst->tracks[t]);
     }
-    /* Audio (after pad_mode): asks the loader for every Audio clip's sample. */
+    /* Audio and Slicer (after pad_mode): asks the loader for every sample. */
     au_load_state(inst, buf);
     /* Per-track: drum lane mute/solo bitmasks */
     for (t = 0; t < NUM_TRACKS; t++) {
@@ -1369,7 +1389,7 @@ static void seq8_load_state(seq8_instance_t *inst) {
         {
             /* Audio's Step reaches 15 (a chop per repeat); a pitched track's
              * octaves stop at 4 (t%d_pm is read above) */
-            int lim = tr2->pad_mode == PAD_MODE_AUDIO ? 15 : 4;
+            int lim = pad_mode_sampled(tr2->pad_mode) ? 15 : 4;
             tr2->tarp.octaves = (int8_t)clamp_i(json_get_int(buf, key, 0), -lim, lim);
         }
         snprintf(key, sizeof(key), "t%d_tagt", t);

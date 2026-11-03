@@ -1091,7 +1091,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                          * re-fire; held notes ring at their old pitch until they
                          * naturally re-trigger. When preview is off emit_pitch == raw,
                          * so normal playback is unchanged. */
-                        uint8_t emit_pitch = (inst->xpose_preview_active && tr->pad_mode != PAD_MODE_AUDIO)
+                        uint8_t emit_pitch = (inst->xpose_preview_active && !pad_mode_sampled(tr->pad_mode))
                                              ? inst->xpose_lut[n->pitch] : n->pitch;
                         { int pp; for (pp = 0; pp < (int)tr->play_pending_count; pp++) {
                             if (tr->play_pending[pp].src_pitch == n->pitch) {

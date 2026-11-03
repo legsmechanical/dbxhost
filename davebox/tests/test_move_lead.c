@@ -70,20 +70,20 @@ static void write_tone(const char *path) {                 /* 2 s, 440 Hz, from 
     for (i = 0; i < n; i++) put_le16(f, (int)(12000 * sin(2 * M_PI * 440 * i / 44100)));
     fclose(f);
 }
-/* track 4 an Audio track holding the tone: slice 0 = a Pitch loop, 1 = Slice */
+/* track 4 holding the tone: slice 0 = an Audio clip on Pitch, 1 = a Slicer, its chops on the steps */
 static hx_t *audio_rig(int lead_off, int slice) {
     hx_t *h = hx_create(NULL);
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
     char p[300];
     if (lead_off) HX_NO_LEAD(h);
     snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
-    hx_set_param(h, "t4_convert_to_audio", "");
-    snprintf(p, sizeof p, "0|%s/tone.wav", g_root);
+    hx_set_param(h, slice ? "t4_convert_to_slicer" : "t4_convert_to_audio", "");
+    snprintf(p, sizeof p, "%d|%s/tone.wav", slice ? AU_SLC : 0, g_root);
     hx_set_param(h, "t4_au_pick", p);
-    for (int i = 0; i < 2000 && inst->au_clip[4][0].state == 1; i++) { hx_render(h, 1); usleep(1000); }
-    HX_ASSERT(inst->au_clip[4][0].state == 2, "the tone did not load");
+    for (int i = 0; i < 2000 && au_cl(inst, 4, 0)->state == 1; i++) { hx_render(h, 1); usleep(1000); }
+    HX_ASSERT(au_cl(inst, 4, 0)->state == 2, "the tone did not load");
     hx_set_param(h, "t4_au_set_bpm", "0 1200");
-    if (slice) hx_set_param(h, "t4_au_set_mode", "0 1");      /* Even 16 on the 16 steps */
+    if (slice) hx_set_param(h, "t4_au_chop", "0");            /* the 16 even chops on the 16 steps */
     else       hx_set_param(h, "t4_au_set_sync", "0 2");      /* Pitch */
     hx_set_param(h, "t4_launch_clip", "0");
     return h;

@@ -1,21 +1,19 @@
-/* seq8_audio.h — AUDIO: the types. Audio is picked in Instmt/Dest, like the
- * Conductor (pad_mode PAD_MODE_AUDIO, melodic clip storage): the track's
- * clips play SLICES of their own sample instead of sending MIDI, mixed into
- * the track's own chain slot through the host's slot_audio_feed (so the
- * slot's FX, fader, sends and a Dry resample all apply). A note's pitch is a
- * slice: AU_NOTE_BASE + slice, up to 128 of them (Josh, 2026-10-28: "might
- * as well do 128"; external MIDI still reaches chop 1 at note 36, in the UI). Each clip holds its own sample, copied into
- * the project (<state dir>/samples/), one set of slices (CHOPS) over its
- * Start..End, and a Mode that says how the sequencer plays them (Josh,
- * 2026-10-28: "loop vs slice mode should be a clip bank setting. it basically
- * tells the sequencer how to handle the slices"):
- *   LOOP  — the clip plays the sample straight through, restarting with the
- *           clip; set and forget: steps are ignored and the pads only show
- *           where it is.
- *   SLICE — the chops on the steps: one sequence per clip (a step holds at
- *           most one slice), always monophonic (a new slice cuts the last,
- *           unless it carries straight on from it: au_slice_on). Velocity is
- *           ignored.
+/* seq8_audio.h — AUDIO and SLICER: the types. Each is picked in Instmt/Dest
+ * like the Conductor, and is its own kind of track (Josh, 2026-11-02: "two
+ * instruments "audio" and "slicer""); both mix into the track's own chain
+ * slot through the host's slot_audio_feed (so the slot's FX, fader, sends and
+ * a Dry resample all apply).
+ *   AUDIO  (PAD_MODE_AUDIO)  — each clip holds its own sample, copied into the
+ *          project (<state dir>/samples/), and plays it locked to the clip's
+ *          playhead: Sync Warp / Vintage / Pitch at the sample's own Tempo.
+ *          Steps are ignored; the pads only show where it is.
+ *   SLICER (PAD_MODE_SLICER) — ONE sample and its chops for the whole track
+ *          (au_store[t][AU_SLC]); its clips are step sequences of chop numbers
+ *          (a note's pitch is a chop: AU_NOTE_BASE + chop, up to 128). Always
+ *          monophonic (a new chop cuts the last unless it carries straight on
+ *          from it: au_range_on), velocity ignored. Chops are markers: Even,
+ *          Transient, Lazy and Manual are tools that write them. Sync Off (own
+ *          speed) or Pitch (varispeed to the project tempo).
  * Engine: seq8_audio.c. Keys: setparam/sp_track_audio.c. Included in seq8.c's
  * single translation unit before the track struct. */
 #ifndef SEQ8_AUDIO_H
@@ -24,6 +22,7 @@
 #include <stdint.h>
 
 #define AU_MAX_SLICES      128
+#define AU_SLC             NUM_CLIPS    /* au_store's extra column: a Slicer track's sample + chops */
 #define AU_NOTE_BASE       0            /* chop k is note k */
 #define AU_PIN_FULL        32           /* a streamed clip's first 32 chops pin two chunks each end, the rest
                                          * one: 128 chops x 2 x 2 chunks of a long file is too much memory
@@ -31,8 +30,8 @@
                                          * hit needs at once (the streamer fetches the rest ahead) */
 #define AU_PATH_MAX        160          /* a sample's file name inside samples/ */
 #define AU_PEAKS           128          /* waveform columns kept for the screen */
-#define AU_SLICE_MAX_SEC   240          /* Slice mode: 4 minutes (Josh) */
-#define AU_LOOP_MAX_SEC    1800         /* Loop mode: 30 minutes (longer than Slice's, it streams) */
+#define AU_SLICE_MAX_SEC   240          /* a Slicer's sample: 4 minutes (Josh) */
+#define AU_LOOP_MAX_SEC    1800         /* an Audio clip's: 30 minutes (longer than a Slicer's, it streams) */
 
 #define AU_MODE_LOOP       0
 #define AU_MODE_SLICE      1
@@ -44,6 +43,11 @@
 #define AU_SYNC_VINTAGE    1            /* cut every tick, each piece on its place at the sample's Tempo (au_sync_block) */
 #define AU_SYNC_PITCH      2            /* the sample retuned (varispeed) to the tempo */
 #define AU_SYNC_MAX        AU_SYNC_PITCH
+/* A Slicer's Sync: its chops at their own speed, or retuned (varispeed) by
+ * the project's tempo against the sample's own. 2 is kept for Snap (parked);
+ * any value it does not know reads as Off. */
+#define AU_SLC_SYNC_OFF    0
+#define AU_SLC_SYNC_PITCH  1
 #define AU_BPM10_MIN       1            /* a sample's own Tempo, x10: 0.1 .. */
 #define AU_BPM10_MAX       9999         /* .. 999.9 BPM (Josh, 2026-10-30: "999.9 max and .1 minimum" —
                                          * it was the project's 20..300, which refused Strch x2 on a loop
@@ -276,7 +280,8 @@ typedef struct {
     uint8_t    loop_clip;    /* Loop: the clip the loop voice belongs to */
     uint8_t    sync_on;      /* Tempo Vintage: its pieces are playing */
     uint8_t    sync_live;    /* ...and the transport's first tick has played (a window before it means nothing) */
-    uint8_t    layout;       /* PAD MODE Layout: 0 4 Rows, 1 16 Pads (the UI's; saved as t%d_aul) */
+    uint8_t    layout;       /* Slicer's PAD MODE Layout: 0 4 Rows, 1 16 Pads (the UI's; saved in t%d_slc) */
+    uint8_t    cond_on;      /* Slicer: it follows the Conductor (off by default; saved in t%d_slc) */
     uint8_t    mgain;        /* mute as a bus: 0..64, the output's level, ramping one step a frame */
     int8_t     cond;         /* Loop: the Conductor's semitones in force (Next: taken at the wrap) */
     /* THE LEAD: what the sequencer plays here is heard LEAD_FRAMES later, with
@@ -303,6 +308,7 @@ typedef struct {
     char         dir[256];   /* the project's samples/ directory */
     uint8_t      op, ow;     /* AU_REQ_EDIT: AU_EDIT_*; 1 = overwrite the file, 0 = a new sample */
     uint32_t     a, b;       /* AU_REQ_EDIT, Trim: the frames kept */
+    uint8_t      rechop;     /* a Slicer's Trim: 16 even chops over the result */
 } au_req_t;
 
 typedef struct {
@@ -312,6 +318,7 @@ typedef struct {
     au_sample_t *smp;
     char         name[AU_PATH_MAX];
     uint8_t      edit, ow;   /* an AU_REQ_EDIT's answer: the clip keeps its settings; ow = the file was overwritten */
+    uint8_t      rechop;     /* ...a Slicer's Trim: its chops start again, 16 even */
     uint32_t     cut;        /* ...frames the edit took off the front (Trim): every position moves back by it */
 } au_res_t;
 

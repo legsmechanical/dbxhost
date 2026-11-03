@@ -112,8 +112,8 @@ static int sp_track_config2(sp_ctx_t *cx) {
     }
     if (!strcmp(sub, "pad_mode")) {
         uint8_t new_mode = (uint8_t)clamp_i(my_atoi(val), 0, 1);
-        /* Leaving Audio goes the convert's way: the samples let go. */
-        if (tr->pad_mode == PAD_MODE_AUDIO) convert_track_from_audio(inst, tidx);
+        /* Leaving Audio or a Slicer goes the convert's way: the samples let go. */
+        if (pad_mode_sampled(tr->pad_mode)) convert_track_from_audio(inst, tidx);
         if (new_mode == PAD_MODE_DRUM && tr->pad_mode != PAD_MODE_DRUM)
             drum_clips_alloc(inst, tr);
         else if (new_mode != PAD_MODE_DRUM && tr->pad_mode == PAD_MODE_DRUM)
@@ -126,12 +126,19 @@ static int sp_track_config2(sp_ctx_t *cx) {
     /* Track-type conversion: translate note content AND flip pad_mode
      * atomically (single set_param, no coalescing drop). Idempotent guards
      * make a redundant push a no-op. */
+    /* "u" on each: leaving Audio or a Slicer is one undo step
+     * (sampled_leave_begin; Josh, 2026-11-02, R7) */
     if (!strcmp(sub, "convert_to_drum")) {
-        if (tr->pad_mode == PAD_MODE_AUDIO) convert_track_from_audio(inst, tidx);
+        int took = 0;
+        if (pad_mode_sampled(tr->pad_mode)) {
+            if (val[0] == 'u') took = sampled_leave_begin(inst, tidx);
+            convert_track_from_audio(inst, tidx);
+        }
         if (tr->pad_mode != PAD_MODE_DRUM) {
             convert_track_melodic_to_drum(inst, tidx);
             rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);   /* content translated */
         }
+        flat_end(inst, tidx, took);
         /* Leaving the Conductor role: clear the one-Conductor latch. */
         if (inst->conductor_track == tidx) {
             inst->conductor_track = -1;
@@ -146,8 +153,10 @@ static int sp_track_config2(sp_ctx_t *cx) {
         } else if (tr->pad_mode == PAD_MODE_CONDUCT) {
             tr->pad_mode = PAD_MODE_MELODIC_SCALE;  /* note data already melodic */
             rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);
-        } else if (tr->pad_mode == PAD_MODE_AUDIO) {
+        } else if (pad_mode_sampled(tr->pad_mode)) {
+            int took = val[0] == 'u' ? sampled_leave_begin(inst, tidx) : 0;
             convert_track_from_audio(inst, tidx);
+            flat_end(inst, tidx, took);
             rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);
         }
         /* Leaving the Conductor role: clear the one-Conductor latch. */
@@ -163,26 +172,38 @@ static int sp_track_config2(sp_ctx_t *cx) {
         }
         if (tr->pad_mode == PAD_MODE_CONDUCT)
             return 1; /* idempotent: already the Conductor, redundant push is a no-op */
-        if (tr->pad_mode == PAD_MODE_AUDIO) convert_track_from_audio(inst, tidx);
+        int took = 0;
+        if (pad_mode_sampled(tr->pad_mode)) {
+            if (val[0] == 'u') took = sampled_leave_begin(inst, tidx);
+            convert_track_from_audio(inst, tidx);
+        }
         convert_track_to_conduct(inst, tidx);
+        flat_end(inst, tidx, took);
         inst->conductor_track = (int8_t)tidx;
         inst->state_dirty = 1;
         rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);   /* rui_cond + content */
         return 1;
     }
 
-    /* -> Audio: Instmt/Dest "Audio" (the UI confirms when notes would go). */
-    if (!strcmp(sub, "convert_to_audio")) {
-        if (tr->pad_mode == PAD_MODE_AUDIO) return 1;   /* idempotent */
+    /* -> Audio / Slicer: Instmt/Dest (the UI confirms when notes would go). */
+    if (!strcmp(sub, "convert_to_audio") || !strcmp(sub, "convert_to_slicer")) {
+        uint8_t pm = sub[11] == 'a' ? PAD_MODE_AUDIO : PAD_MODE_SLICER;
+        if (tr->pad_mode == pm) return 1;   /* idempotent */
         /* "u": one undo step brings the track back (flat_begin) */
+        int took = 0;
         if (val[0] == 'u') {
-            uint8_t cs[NUM_CLIPS];
-            int c;
-            for (c = 0; c < NUM_CLIPS; c++) cs[c] = (uint8_t)c;
-            undo_begin_track_clips(inst, tidx, cs, NUM_CLIPS);
-            flat_begin(inst, tidx);
+            if (pad_mode_sampled(tr->pad_mode)) took = sampled_leave_begin(inst, tidx);
+            else {
+                uint8_t cs[NUM_CLIPS];
+                int c;
+                for (c = 0; c < NUM_CLIPS; c++) cs[c] = (uint8_t)c;
+                undo_begin_track_clips(inst, tidx, cs, NUM_CLIPS);
+                flat_begin(inst, tidx);
+                took = inst->flat_state == 1 && inst->flat_track == (uint8_t)tidx;
+            }
         }
-        convert_track_to_audio(inst, tidx);
+        convert_track_to_sampled(inst, tidx, pm);
+        flat_end(inst, tidx, took);
         if (inst->conductor_track == tidx) inst->conductor_track = -1;
         rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);
         return 1;
@@ -215,7 +236,7 @@ static int sp_track_config2(sp_ctx_t *cx) {
         return 1;
     }
     if (!strcmp(sub, "tarp_octaves")) {
-        int _lim = tr->pad_mode == PAD_MODE_AUDIO ? 15 : 4;    /* Audio: Step, a chop per repeat */
+        int _lim = pad_mode_sampled(tr->pad_mode) ? 15 : 4;    /* Audio: Step, a chop per repeat */
         int _v = clamp_i(my_atoi(val), -_lim, _lim);
         tr->tarp.octaves = (int8_t)_v;
         inst->state_dirty = 1;

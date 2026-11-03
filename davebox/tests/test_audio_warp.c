@@ -155,8 +155,8 @@ static int fresh_take(int nocache, int16_t *out, int blocks) {
     int i, g;
     snprintf(p, sizeof p, "0|%s/tone.wav", g_root);
     hx_set_param(h, "t4_au_pick", p);
-    for (i = 0; i < 2000 && inst->au_clip[4][0].state != 2; i++) { hx_render(h, 1); usleep(1000); }
-    HX_ASSERT(inst->au_clip[4][0].state == 2, "the tone did not load (fresh take)");
+    for (i = 0; i < 2000 && (*au_cl(inst, 4, 0)).state != 2; i++) { hx_render(h, 1); usleep(1000); }
+    HX_ASSERT((*au_cl(inst, 4, 0)).state == 2, "the tone did not load (fresh take)");
     hx_set_param(h, "t4_au_set_bpm", "0 1200");     /* the file is at 120 */
     hx_set_param(h, "t4_au_set_sync", "0 0");
     hx_set_param(h, "t4_launch_clip", "0");
@@ -186,8 +186,8 @@ static int fresh_stream_take(int nocache, int16_t *out, unsigned *missed) {
     inst = (seq8_instance_t *)h->inst;
     snprintf(p, sizeof p, "0|%s/tone30.wav", g_root);
     hx_set_param(h, "t4_au_pick", p);
-    for (i = 0; i < 2000 && inst->au_clip[4][0].state != 2; i++) { hx_render(h, 1); usleep(1000); }
-    HX_ASSERT(inst->au_clip[4][0].state == 2 && !inst->au_clip[4][0].smp->pcm, "the minute did not load streamed");
+    for (i = 0; i < 2000 && (*au_cl(inst, 4, 0)).state != 2; i++) { hx_render(h, 1); usleep(1000); }
+    HX_ASSERT((*au_cl(inst, 4, 0)).state == 2 && !(*au_cl(inst, 4, 0)).smp->pcm, "the minute did not load streamed");
     hx_set_param(h, "t4_au_set_bpm", "0 1200");     /* the file is at 120 */
     hx_set_param(h, "t4_au_set_sync", "0 0");
     hx_set_param(h, "t4_launch_clip", "0");
@@ -240,11 +240,11 @@ int main(void) {
     HX_ASSERT(X && !X->started, "the stretcher started a thread in manual mode");
     snprintf(p, sizeof p, "0|%s/tone.wav", g_root);
     hx_set_param(h, "t4_au_pick", p);
-    for (i = 0; i < 2000 && inst->au_clip[4][0].state == 1; i++) { hx_render(h, 1); usleep(1000); }
-    HX_ASSERT(inst->au_clip[4][0].state == 2, "the tone did not load");
+    for (i = 0; i < 2000 && (*au_cl(inst, 4, 0)).state == 1; i++) { hx_render(h, 1); usleep(1000); }
+    HX_ASSERT((*au_cl(inst, 4, 0)).state == 2, "the tone did not load");
     hx_set_param(h, "t4_au_set_bpm", "0 1200");     /* the file is at 120 */
     hx_set_param(h, "t4_au_set_sync", "0 0");
-    HX_ASSERT(inst->au_clip[4][0].sync == AU_SYNC_WARP, "Tempo did not go to Warp");
+    HX_ASSERT((*au_cl(inst, 4, 0)).sync == AU_SYNC_WARP, "Tempo did not go to Warp");
     hx_set_param(h, "t4_launch_clip", "0");
 
     /* ---- the tempo moves the tone, never its pitch ---- */
@@ -348,12 +348,12 @@ int main(void) {
         hx_set_param(h, "t4_au_set_pitch", "0 0");
         snprintf(p, sizeof p, "1|%s/s660.wav", g_root);
         hx_set_param(h, "t4_au_pick", p);
-        for (i = 0; i < 2000 && inst->au_clip[4][1].state != 2; i++) { hx_render(h, 1); usleep(1000); }
-        HX_ASSERT(inst->au_clip[4][1].state == 2, "the 660 Hz sine did not load");
+        for (i = 0; i < 2000 && (*au_cl(inst, 4, 1)).state != 2; i++) { hx_render(h, 1); usleep(1000); }
+        HX_ASSERT((*au_cl(inst, 4, 1)).state == 2, "the 660 Hz sine did not load");
         hx_set_param(h, "t4_au_set_bpm", "1 1200");     /* the file is at 120 */
         hx_set_param(h, "t4_au_set_sync", "1 0");
         hx_set_param(h, "t4_au_set_sync", "0 0");          /* the Warp -> Pitch case above left clip A on Pitch */
-        HX_ASSERT(inst->au_clip[4][0].sync == AU_SYNC_WARP && inst->au_clip[4][1].sync == AU_SYNC_WARP,
+        HX_ASSERT((*au_cl(inst, 4, 0)).sync == AU_SYNC_WARP && (*au_cl(inst, 4, 1)).sync == AU_SYNC_WARP,
                   "both clips are not on Warp");
         hx_set_param(h, "bpm", "100");
         for (k = 0; k < 8; k++) step(h);
@@ -553,8 +553,8 @@ int main(void) {
     }
     snprintf(p, sizeof p, "0|%s/tone.wav", g_root);
     hx_set_param(h, "t4_au_pick", p);
-    for (i = 0; i < 2000 && inst->au_clip[4][0].state == 1; i++) { hx_render(h, 1); usleep(1000); }
-    HX_ASSERT(inst->au_clip[4][0].state == 2, "the tone did not load (thread)");
+    for (i = 0; i < 2000 && (*au_cl(inst, 4, 0)).state == 1; i++) { hx_render(h, 1); usleep(1000); }
+    HX_ASSERT((*au_cl(inst, 4, 0)).state == 2, "the tone did not load (thread)");
     hx_set_param(h, "t4_au_set_bpm", "0 1200");     /* the file is at 120 */
     hx_set_param(h, "t4_au_set_sync", "0 0");
     hx_set_param(h, "t4_launch_clip", "0");
@@ -621,8 +621,8 @@ int main(void) {
     X = (au_warper_t *)inst->au_warper;
     snprintf(p, sizeof p, "0|%s/tone30.wav", g_root);
     hx_set_param(h, "t4_au_pick", p);
-    for (i = 0; i < 2000 && inst->au_clip[4][0].state == 1; i++) { hx_render(h, 1); usleep(1000); }
-    HX_ASSERT(inst->au_clip[4][0].state == 2 && !inst->au_clip[4][0].smp->pcm, "the tone did not load streamed");
+    for (i = 0; i < 2000 && (*au_cl(inst, 4, 0)).state == 1; i++) { hx_render(h, 1); usleep(1000); }
+    HX_ASSERT((*au_cl(inst, 4, 0)).state == 2 && !(*au_cl(inst, 4, 0)).smp->pcm, "the tone did not load streamed");
     hx_set_param(h, "t4_au_set_bpm", "0 1200");     /* the file is at 120 */
     hx_set_param(h, "t4_au_set_sync", "0 0");
     hx_set_param(h, "t4_launch_clip", "0");

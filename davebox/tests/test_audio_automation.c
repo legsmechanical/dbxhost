@@ -14,7 +14,8 @@
  *      (au_voice_follow); a Tempo Pitch loop's speed does not;
  *   6. off-mode: an au_ key on a track that is not Audio does nothing;
  *   7. a live value never travels with a copy or an undo snapshot;
- *   8. ALL SLICES' seven: every chop held live, rest only lets go. */
+ *   8. ALL SLICES' seven (a Slicer's): every chop held live, rest only lets
+ *      go; on an Audio track they do nothing. */
 #include "harness.h"
 #include <math.h>
 #include <sys/stat.h>
@@ -41,10 +42,10 @@ static int wait_loaded(hx_t *h, int t, int c) {
     int i;
     for (i = 0; i < 3000; i++) {
         hx_render(h, 1);
-        if (inst->au_clip[t][c].state != 1) return inst->au_clip[t][c].state;
+        if ((*au_cl(inst, t, c)).state != 1) return (*au_cl(inst, t, c)).state;
         usleep(1000);
     }
-    return inst->au_clip[t][c].state;
+    return (*au_cl(inst, t, c)).state;
 }
 
 /* the 14-bit store's value for v on lo..hi (as JS normalises it) */
@@ -65,6 +66,20 @@ static hx_t *rig(int sync) {
     snprintf(p, sizeof p, "0 %d", sync);
     hx_set_param(h, "t4_au_set_sync", p);
     hx_set_param(h, "t4_au_set_bpm", "0 1200");
+    return h;
+}
+/* t4 a Slicer, the ramp its sample (16 chops) */
+static hx_t *rig_slicer(void) {
+    char p[400];
+    hx_t *h = hx_create(NULL);
+    seq8_instance_t *inst;
+    HX_ASSERT(h, "create failed");
+    inst = (seq8_instance_t *)h->inst;
+    snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
+    hx_set_param(h, "t4_convert_to_slicer", "");
+    snprintf(p, sizeof p, "%d|%s/src/ramp.wav", AU_SLC, g_root);
+    hx_set_param(h, "t4_au_pick", p);
+    HX_ASSERT(wait_loaded(h, 4, 0) == 2, "rig: the Slicer's sample did not load");
     return h;
 }
 /* a lane on t4 clip 0: `v` held from step `from` to the clip's end; rests at `rest` */
@@ -121,7 +136,7 @@ int main(void) {
 
     /* ==== 1. Gain: live over the clip's own, given back at Stop ==== */
     {
-        h = rig(AU_SYNC_PITCH); inst = (seq8_instance_t *)h->inst; cl = &inst->au_clip[4][0];
+        h = rig(AU_SYNC_PITCH); inst = (seq8_instance_t *)h->inst; cl = au_cl(inst, 4, 0);
         lane(h, "au_gain", -40, 12, 0, 4, -20);
         play(h);
         uint32_t rev0 = inst->rui_rev;
@@ -146,7 +161,7 @@ int main(void) {
 
     /* ==== 2. Revrs: the loop turns round at its step ==== */
     {
-        h = rig(AU_SYNC_PITCH); inst = (seq8_instance_t *)h->inst; cl = &inst->au_clip[4][0];
+        h = rig(AU_SYNC_PITCH); inst = (seq8_instance_t *)h->inst; cl = au_cl(inst, 4, 0);
         lane(h, "au_revrs", 0, 1, 0, 4, 1);
         play(h);
         to_step(h, 2);
@@ -162,7 +177,7 @@ int main(void) {
 
     /* ==== 3. Tempo: Sync follows the lane's tempo ==== */
     {
-        h = rig(AU_SYNC_PITCH); inst = (seq8_instance_t *)h->inst; cl = &inst->au_clip[4][0];
+        h = rig(AU_SYNC_PITCH); inst = (seq8_instance_t *)h->inst; cl = au_cl(inst, 4, 0);
         lane(h, "au_bpm", AU_BPM10_MIN, AU_BPM10_MAX, 1200, 4, 2400);
         play(h);
         to_step(h, 2);
@@ -181,7 +196,7 @@ int main(void) {
 
     /* ==== 4. a hand wins; a clip switch drops the live value ==== */
     {
-        h = rig(AU_SYNC_PITCH); inst = (seq8_instance_t *)h->inst; cl = &inst->au_clip[4][0];
+        h = rig(AU_SYNC_PITCH); inst = (seq8_instance_t *)h->inst; cl = au_cl(inst, 4, 0);
         lane(h, "au_gain", -40, 12, 0, 0, -20);
         play(h);
         to_step(h, 1);
@@ -200,8 +215,7 @@ int main(void) {
 
     /* ==== 5. a sounding voice follows; a Tempo Pitch loop's speed does not ==== */
     {
-        h = rig(AU_SYNC_PITCH); inst = (seq8_instance_t *)h->inst; cl = &inst->au_clip[4][0];
-        hx_set_param(h, "t4_au_set_mode", "0 1");
+        h = rig(AU_SYNC_PITCH); inst = (seq8_instance_t *)h->inst; cl = au_cl(inst, 4, 0);
         au_voice_t *v = au_range_on(inst, 4, 0, 0, 0, 44100, 0.5f, 0, 0);
         HX_ASSERT(v, "follow: rig — no chop voice");
         double s0 = v->step;
@@ -219,7 +233,6 @@ int main(void) {
         au_voice_follow(inst, 4);
         HX_ASSERT(fabs(v->step / s0 - 1.0) < 1e-6 && fabsf(v->gain - g0) < 1e-6f, "follow: the chop did not come back");
         /* Tempo Pitch's loop: its speed is the tempo's */
-        hx_set_param(h, "t4_au_set_mode", "0 0");
         au_loop_start(inst, 4, 0, 0, 1.25);
         const au_voice_t *lv = loop_voice(&inst->au_trk[4]);
         HX_ASSERT(lv && !lv->fpitch, "follow: a Tempo Pitch loop is marked to follow Pitch");
@@ -251,7 +264,7 @@ int main(void) {
             }
             pa_seq_apply(inst, 4, i, 16383, tr->active_clip);
         }
-        cl = &inst->au_clip[4][tr->active_clip];
+        cl = au_cl(inst, 4, tr->active_clip);
         HX_ASSERT(cl->ov == 0 && cl->pitch == 24 && cl->detune == 50 && cl->gain_db == 12 && cl->revrs == 1 && cl->bpm10 == 9999,
                   "a rest did not write each field and drop its live value");
         hx_destroy(h);
@@ -262,10 +275,10 @@ int main(void) {
     {
         au_clip_t snap;
         uint8_t on;
-        h = rig(AU_SYNC_PITCH); inst = (seq8_instance_t *)h->inst; cl = &inst->au_clip[4][0];
+        h = rig(AU_SYNC_PITCH); inst = (seq8_instance_t *)h->inst; cl = au_cl(inst, 4, 0);
         cl->ov = AU_OV_GAIN; cl->ov_gain = -30;
         au_copy_clip(inst, 4, 0, 4, 2, 0);
-        HX_ASSERT(inst->au_clip[4][2].ov == 0, "copy: the live value went with the copy");
+        HX_ASSERT((*au_cl(inst, 4, 2)).ov == 0, "copy: the live value went with the copy");
         au_undo_snap(inst, &snap, &on, 4, 0);
         HX_ASSERT(on && snap.ov == 0, "undo: the snapshot keeps a live value");
         cl->gain_db = 7;                                        /* changed since, still held live */
@@ -278,9 +291,14 @@ int main(void) {
 
     /* ==== 8. ALL SLICES: every chop held live over its own; rest only lets go ==== */
     {
-        h = rig(AU_SYNC_PITCH); inst = (seq8_instance_t *)h->inst; cl = &inst->au_clip[4][0];
+        /* on an Audio track the chop lanes are off */
+        h = rig(AU_SYNC_PITCH); inst = (seq8_instance_t *)h->inst;
+        HX_ASSERT(!pa_seq_on_mode(&inst->tracks[4], PA_SEQ_IDX_AUS) && pa_seq_on_mode(&inst->tracks[4], PA_SEQ_IDX_AU),
+                  "all slices: a chop lane is on an Audio track (or the sample's is off)");
+        hx_destroy(h);
+        h = rig_slicer(); inst = (seq8_instance_t *)h->inst; cl = au_cl(inst, 4, 0);
         seq8_track_t *tr = &inst->tracks[4];
-        hx_set_param(h, "t4_au_set_mode", "0 1");
+        HX_ASSERT(cl == &inst->au_store[4][AU_SLC], "all slices: a Slicer's clip does not play its slot");
         hx_set_param(h, "t4_au_slice_gain", "0 1 -6");            /* the chops differ */
         /* each key: both ends read back live, then rest writes NOTHING */
         for (int i = PA_SEQ_IDX_AUS; i < PA_SEQ_IDX_AUS + 7; i++) {
@@ -316,11 +334,20 @@ int main(void) {
         HX_ASSERT(!strncmp(b, "12 3 ", 5), "all slices: the ALL SLICES read does not show what plays");
         hx_set_param(h, "t4_au_all_gain", "0 -2");
         HX_ASSERT(!(cl->ovs & AU_OVS_GAIN) && (cl->ovs & AU_OVS_PITCH), "all slices: a hand's setting did not take over its own field only");
+        /* the slot is every clip's: a clip switch leaves what plays (the lane's
+         * own rest is what lets go) */
         hx_set_param(h, "t4_launch_clip", "1");
         for (int i = 0; i < 4000 && inst->tracks[4].active_clip != 1; i++) hx_render(h, 1);
         hx_render(h, 2);
         HX_ASSERT(inst->tracks[4].active_clip == 1, "all slices: rig — clip 1 did not take over");
-        HX_ASSERT(cl->ovs == 0, "all slices: a clip switch left the live values on the clip that stopped");
+        HX_ASSERT(cl->ovs & AU_OVS_PITCH, "all slices: a clip switch dropped the Slicer's live value");
+        pa_seq_apply(inst, 4, PA_SEQ_IDX_AUS + 3, 0, 0);
+        HX_ASSERT(!(cl->ovs & AU_OVS_PITCH) && cl->sl[0].pitch == 0, "all slices: the lane's rest did not let go (or wrote)");
+        /* the sample's lanes too: at rest on a Slicer they let go and write
+         * nothing — one clip's rest must not rewrite every clip's sound */
+        cl->ov = AU_OV_GAIN; cl->ov_gain = -20; cl->gain_db = 0;
+        pa_seq_apply(inst, 4, PA_SEQ_IDX_AU + 2, 16383, 0);
+        HX_ASSERT(!(cl->ov & AU_OV_GAIN) && cl->gain_db == 0, "a Slicer's sample lane at rest wrote the setting");
         hx_destroy(h);
         printf("  ok   — ALL SLICES: every chop held live, sounding ones follow; rest only lets go; a hand wins\n");
     }

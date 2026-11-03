@@ -91,7 +91,7 @@ static int bake_stage_midi_dly(seq8_instance_t *inst, int scale_aware,
                 else             cumul_pitch += fx->fb_note;
             }
             int echo_pitch;
-            if (fx->track_idx < NUM_TRACKS && inst->tracks[fx->track_idx].pad_mode == PAD_MODE_AUDIO) {
+            if (fx->track_idx < NUM_TRACKS && pad_mode_sampled(inst->tracks[fx->track_idx].pad_mode)) {
                 cumul_pitch = 0; cumul_deg = 0;            /* Audio: an echo replays its slice */
             }
             if (scale_aware) {
@@ -944,7 +944,7 @@ static void bake_drum_lane(seq8_instance_t *inst, int t, int c, int lane, int lo
 static int au_bake_cond(seq8_instance_t *inst, int t, int c, int *semis) {
     clip_t *cl = &inst->tracks[t].clips[c];
     clip_t *cc;
-    au_clip_t *ac = &inst->au_clip[t][c];
+    au_clip_t *ac = au_slot(inst, t, c);      /* an Audio clip's own (the caller checked) */
     play_fx_t cfx;
     uint32_t rng = 0xC04D1234u;
     int have = 0, v0 = 0, k, ni, oct;

@@ -57,7 +57,7 @@ static int sp_track_clip(sp_ctx_t *cx) {
         /* Remote-UI piano-roll note edits (melodic clip). Each writes notes[]
          * directly then re-derives steps[] via clip_note_finalize. */
         /* An Audio step holds one slice: an add or move keeps only the note it lands. */
-        const int au = (tr->pad_mode == PAD_MODE_AUDIO);
+        const int au = pad_mode_sampled(tr->pad_mode);
         if (!strcmp(p, "_note_add"))    { if (clip_note_apply_op(cl, 'a', val)) { if (au) clip_note_keep_one(cl, 'a', val); clip_note_finalize(inst, cl, tidx, cidx); } return 1; }
         if (!strcmp(p, "_note_del"))    { if (clip_note_apply_op(cl, 'd', val)) clip_note_finalize(inst, cl, tidx, cidx); return 1; }
         if (!strcmp(p, "_note_move"))   { if (clip_note_apply_op(cl, 'm', val)) { if (au) clip_note_keep_one(cl, 'm', val); clip_note_finalize(inst, cl, tidx, cidx); } return 1; }
@@ -281,7 +281,7 @@ static int sp_track_clip(sp_ctx_t *cx) {
                     }
                 } else if (cl->step_note_count[sidx] < 8) {
                     /* Audio: a step holds one slice — the new one replaces it. */
-                    if (tr->pad_mode == PAD_MODE_AUDIO) cl->step_note_count[sidx] = 0;
+                    if (pad_mode_sampled(tr->pad_mode)) cl->step_note_count[sidx] = 0;
                     int was_empty = (cl->step_note_count[sidx] == 0);
                     int ni2 = (int)cl->step_note_count[sidx];
                     cl->step_notes[sidx][ni2] = (uint8_t)note;

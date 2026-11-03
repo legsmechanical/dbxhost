@@ -32,10 +32,19 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             clip_t *src = &inst->tracks[srcT].clips[srcC];
             clip_t *dst = &inst->tracks[dstT].clips[dstC];
             if (srcT == dstT && srcC == dstC) return 1;
-            /* An Audio clip pastes onto an Audio track only, and only an
-             * Audio clip does (its notes are slices, not pitches). */
-            if ((inst->tracks[srcT].pad_mode == PAD_MODE_AUDIO) != (inst->tracks[dstT].pad_mode == PAD_MODE_AUDIO))
-                return 1;
+            /* Audio and Slicer clips paste onto their own kind (an Audio
+             * clip with its sample, a Slicer's as steps playing the
+             * destination's chops); between the two the sample crosses
+             * (au_paste_to_slicer / _to_audio); nothing else crosses into or
+             * out of either (their notes are chops, not pitches). */
+            {
+                int sk = au_kind(inst->tracks[srcT].pad_mode), dk = au_kind(inst->tracks[dstT].pad_mode);
+                if (sk != dk) {
+                    if (sk == 1 && dk == 2) au_paste_to_slicer(inst, srcT, srcC, dstT, dstC);
+                    else if (sk == 2 && dk == 1) au_paste_to_audio(inst, srcT, dstT, dstC);
+                    return 1;
+                }
+            }
             undo_begin_single(inst, dstT, dstC);
             dst->length        = src->length;
             dst->loop_start    = src->loop_start;
@@ -184,7 +193,7 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             seq8_track_t *dstTr = &inst->tracks[dstT];
             clip_t *src = &srcTr->clips[srcC];
             clip_t *dst = &dstTr->clips[dstC];
-            if ((srcTr->pad_mode == PAD_MODE_AUDIO) != (dstTr->pad_mode == PAD_MODE_AUDIO)) return 1;
+            if (au_kind(srcTr->pad_mode) != au_kind(dstTr->pad_mode)) return 1;   /* a cut stays in its kind */
             undo_begin_clip_pair(inst, srcT, srcC, dstT, dstC);
             dst->length         = src->length;
             dst->loop_start     = src->loop_start;
@@ -612,6 +621,8 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             memcpy(&inst->redo_auto_at[i], &inst->tracks[t].clip_at_auto[c], sizeof(at_auto_t));
             au_undo_snap(inst, &inst->redo_au[i], &inst->redo_au_on[i], t, c);
         }
+        inst->redo_slc_t = -1;
+        if (inst->undo_slc_t >= 0) au_slc_snap(inst, &inst->redo_slc, &inst->redo_slc_t, inst->undo_slc_t);
         inst->redo_valid = 1;
         int _flat = inst->flat_state == 1;
         if (_flat) { flat_swap(inst); inst->flat_state = 2; }
@@ -632,6 +643,7 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             if ((int)inst->tracks[t].active_clip == c)
                 memset(inst->tracks[t].at_last_sent, 0xFF, AT_MAX_LANES);
         }
+        if (inst->undo_slc_t >= 0) au_undo_restore(inst, &inst->undo_slc, 1, inst->undo_slc_t, AU_SLC);
         inst->undo_valid = 0;
         /* Also restore drum rows if snapshotted alongside melodic row undo */
         if (inst->drum_row_undo_valid) {
@@ -761,6 +773,8 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             memcpy(&inst->undo_auto_at[i], &inst->tracks[t].clip_at_auto[c], sizeof(at_auto_t));
             au_undo_snap(inst, &inst->undo_au[i], &inst->undo_au_on[i], t, c);
         }
+        inst->undo_slc_t = -1;
+        if (inst->redo_slc_t >= 0) au_slc_snap(inst, &inst->undo_slc, &inst->undo_slc_t, inst->redo_slc_t);
         inst->undo_valid = 1;
         int _flat = inst->flat_state == 2;
         if (_flat) { flat_swap(inst); inst->flat_state = 1; }
@@ -778,6 +792,7 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             if ((int)inst->tracks[t].active_clip == c)
                 memset(inst->tracks[t].at_last_sent, 0xFF, AT_MAX_LANES);
         }
+        if (inst->redo_slc_t >= 0) au_undo_restore(inst, &inst->redo_slc, 1, inst->redo_slc_t, AU_SLC);
         inst->redo_valid = 0;
         /* Also restore drum rows if snapshotted alongside melodic row redo */
         if (inst->drum_row_redo_valid) {

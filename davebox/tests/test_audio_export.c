@@ -81,12 +81,12 @@ static int vs_live(int sync, int bpm10, int nudge, int rot) {
     uint32_t frames, rate;
     int ch, n, fed, best = 1 << 30, o;
     snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
-    hx_set_param(h, "t4_convert_to_audio", "");
-    snprintf(p, sizeof p, "0|%s/src/ramp.wav", g_root); hx_set_param(h, "t4_au_pick", p);
+    /* sync -1: a Slicer, its 16 even chops laid on clip A's steps */
+    hx_set_param(h, sync < 0 ? "t4_convert_to_slicer" : "t4_convert_to_audio", "");
+    snprintf(p, sizeof p, "%d|%s/src/ramp.wav", sync < 0 ? AU_SLC : 0, g_root); hx_set_param(h, "t4_au_pick", p);
     if (wait_loaded(h, 4, 0) != 2) return -1;
     snprintf(b, sizeof b, "0 %d", bpm10); hx_set_param(h, "t4_au_set_bpm", b);
-    /* sync -1: a Slice clip, Even 16 laid on its steps */
-    if (sync < 0) hx_set_param(h, "t4_au_set_mode", "0 1");
+    if (sync < 0) hx_set_param(h, "t4_au_chop", "0");
     else { snprintf(b, sizeof b, "0 %d", sync); hx_set_param(h, "t4_au_set_sync", b); }
     if (nudge) { snprintf(b, sizeof b, "0 %d", nudge); hx_set_param(h, "t4_au_set_nudge", b); }
     if (rot) { snprintf(b, sizeof b, "0 %d", rot); hx_set_param(h, "t4_au_set_rot", b); }
@@ -319,8 +319,12 @@ int main(void) {
         printf("  ok   — a Warp clip on Revrs goes as its sample reversed\n");
     }
 
-    /* ---- 2. a Slice clip renders: chop k on step k, its own frames ---- */
-    hx_set_param(h, "t4_au_set_mode", "0 1");         /* Even 16, laid on the 16 steps in order */
+    /* ---- 2. a Slicer's clip renders: chop k on step k, its own frames ---- */
+    hx_set_param(h, "t4_convert_to_slicer", "");
+    snprintf(p, sizeof p, "%d|%s/src/ramp.wav", AU_SLC, g_root); hx_set_param(h, "t4_au_pick", p);
+    HX_ASSERT(wait_loaded(h, 4, 0) == 2, "the Slicer's ramp did not load");
+    hx_set_param(h, "t4_au_set_bpm", "0 2400");       /* its 1 s as one bar */
+    hx_set_param(h, "t4_au_chop", "0");               /* the 16 even chops, laid on the 16 steps in order */
     hx_set_param(h, "t4_au_slice_pitch", "0 5 12");   /* chop 5 an octave up: its own sound */
     HX_ASSERT(hx_get_param(h, "t4_c0_au_export", b, sizeof b) > 0 && b[0] == 'S', "a Slice clip exported no render");
     {
@@ -370,7 +374,8 @@ int main(void) {
         hx_set_param(h, "t4_c0_step_15_toggle", "0");
         HX_ASSERT(cl->note_count == 1, "the one step did not land");
         cl->notes[0].gate = 24 * 3;
-        hx_set_param(h, "t4_au_all_play", "0 2");    /* AU_PLAY_LOOP: it sounds for its gate */
+        hx_set_param(h, "t4_au_manual", "0");        /* one chop, the whole second: longer than 3 steps */
+        hx_set_param(h, "t4_au_all_play", "0 1");    /* Gate: it sounds for its gate */
         HX_ASSERT(hx_get_param(h, "t4_c0_au_export", b, sizeof b) > 0 && b[0] == 'S', "no render of one step");
         snprintf(p, sizeof p, "%s/au_4_0.wav", stage);
         int16_t *w = read_wav(p, &frames, &rate, &ch);

@@ -218,9 +218,18 @@ typedef struct {
 #define PAD_MODE_MELODIC_SCALE  0   /* isomorphic 4ths diatonic layout */
 #define PAD_MODE_DRUM           1   /* 32-lane drum sequencer */
 #define PAD_MODE_CONDUCT        2   /* Conductor: drives transposition, emits no MIDI */
-#define PAD_MODE_AUDIO          3   /* Audio: the clip plays a sample; a note's pitch
-                                     * is a SLICE (AU_NOTE_BASE + slice), never a
-                                     * pitch to transform — see pad_mode_pitched() */
+#define PAD_MODE_AUDIO          3   /* Audio: each clip plays its own sample, locked
+                                     * to the clip's playhead (seq8_audio.c) */
+#define PAD_MODE_SLICER         4   /* Slicer: ONE sample and its chops for the whole
+                                     * track (au_store[t][AU_SLC]); a note's pitch is a
+                                     * CHOP (AU_NOTE_BASE + chop), never a pitch to
+                                     * transform — see pad_mode_pitched() */
+#define PAD_MODE_MAX            PAD_MODE_SLICER
+/* A track whose clips play samples (Audio or Slicer): no MIDI, its sound goes
+ * to its own chain slot. */
+static inline int pad_mode_sampled(uint8_t pm) {
+    return pm == PAD_MODE_AUDIO || pm == PAD_MODE_SLICER;
+}
 /* Does this mode's pitch mean a pitch? Every transform that moves a note
  * (transpose, NOTE FX octave/offset/random, HARMONY, DELAY pitch, Key/Scale
  * commit, perf pitch mods) asks this, not `!= PAD_MODE_DRUM`: on an Audio
@@ -1264,6 +1273,7 @@ typedef struct {
     uint8_t      drum_repeat2_rate_idx[DRUM_LANES];
     uint8_t      drum_repeat_vel_scale[DRUM_LANES][8];
     int8_t       drum_repeat_nudge[DRUM_LANES][8];
+    uint8_t      au_layout, au_cond;     /* a Slicer's (au_track_t): its slot rides undo_slc */
 } flat_keep_t;
 #define LRS_SET(tr, s)  ((tr)->live_recorded_steps[(s)>>3] |=  (uint8_t)(1u<<((s)&7)))
 #define LRS_TEST(tr, s) ((tr)->live_recorded_steps[(s)>>3] &   (1u<<((s)&7)))
@@ -1700,6 +1710,10 @@ typedef struct {
     uint8_t   undo_au_on[UNDO_MAX_CLIPS];
     au_clip_t redo_au[UNDO_MAX_CLIPS];
     uint8_t   redo_au_on[UNDO_MAX_CLIPS];
+    /* A Slicer's slot (its sample and chops), when the step holds one
+     * (undo_begin_slicer: with every clip of the track); -1 = none. */
+    au_clip_t undo_slc, redo_slc;
+    int8_t    undo_slc_t, redo_slc_t;
     /* FLATTEN'S UNDO: a track made Audio (Flatten, or Audio picked in
      * Instmt/Dest) takes all 16 of its clips into the slots above and keeps
      * the rest here — swapped with the track's own on Undo, and again on
@@ -2042,10 +2056,14 @@ typedef struct {
                                     * loop pushes trailing notes off the last bar
                                     * (dropped); smaller packs the take to the front. */
 
-    /* AUDIO (seq8_audio.h / seq8_audio.c). au_clip is per track per clip; the
-     * voices and rings are the audio thread's; the loader thread owns its
-     * pool and is the only one that reads files or frees samples. */
-    au_clip_t   au_clip[NUM_TRACKS][NUM_CLIPS];
+    /* AUDIO (seq8_audio.h / seq8_audio.c). au_store is per track per clip
+     * (an Audio track's clips), plus one more column, AU_SLC: a Slicer
+     * track's sample and chops, shared by every clip of it. Reached through
+     * au_cl() (what a clip of the track plays) or au_slot() (the storage
+     * itself) — never indexed bare. The voices and rings are the audio
+     * thread's; the loader thread owns its pool and is the only one that
+     * reads files or frees samples. */
+    au_clip_t   au_store[NUM_TRACKS][NUM_CLIPS + 1];
     au_track_t  au_trk[NUM_TRACKS];
     au_req_t    au_req[AU_RING];
     uint32_t    au_req_head, au_req_tail;     /* head: audio thread writes; tail: loader */
@@ -2068,7 +2086,7 @@ typedef struct {
     /* STREAMING (seq8_audio.c): the audio thread's side */
     void       *au_streamer;                  /* the streamer thread's own state */
     au_watch_t  au_watch[NUM_TRACKS][AU_VOICES + 1];
-    au_clipw_t  au_clipw[NUM_TRACKS][NUM_CLIPS];
+    au_clipw_t  au_clipw[NUM_TRACKS][NUM_CLIPS + 1];
     uint32_t    au_block;                     /* blocks rendered: a freed chunk waits two */
     uint32_t    au_underruns;                 /* frames a streamed voice found no chunk for */
     void       *au_warper;                    /* WARP: the stretcher thread's state (seq8_audio.c) */
@@ -2950,7 +2968,7 @@ static void pfx_send(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
         uint8_t bit = (uint8_t)(1u << (d1 & 7));
         /* No SEQ ARP on Audio: its octaves and intervals would move slices. */
         if (fx->arp.style != 0 && !(g_inst && fx->track_idx < NUM_TRACKS &&
-                                    g_inst->tracks[fx->track_idx].pad_mode == PAD_MODE_AUDIO)) {
+                                    pad_mode_sampled(g_inst->tracks[fx->track_idx].pad_mode))) {
             if (is_on) {
                 arp_add_note(&fx->arp, d1, d2);
                 return;
@@ -3002,7 +3020,7 @@ static void pfx_send(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
                     looper_mark_active(g_inst, fx->track_idx, raw_d1, d1);
                     /* Phantom: ghost note at pitch-12, vel/4, gate=cap/8. */
                     if ((g_inst->perf_mods_active & PERF_MOD_PHANTOM) &&
-                            g_inst->tracks[fx->track_idx].pad_mode != PAD_MODE_AUDIO &&
+                            !pad_mode_sampled(g_inst->tracks[fx->track_idx].pad_mode) &&
                             g_inst->perf_staccato_count < 32) {
                         int gp = (int)d1 - 12;
                         if (gp >= 0) {
@@ -3209,7 +3227,7 @@ static void pfx_emit(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
      * DELAY left Audio tracks (Josh, 2026-10-28: "let's get rid of delay"), so
      * an older project's DELAY settings stay quiet. */
     if (g_inst && fx->track_idx < NUM_TRACKS &&
-            g_inst->tracks[fx->track_idx].pad_mode == PAD_MODE_AUDIO) {
+            pad_mode_sampled(g_inst->tracks[fx->track_idx].pad_mode)) {
         uint8_t st = status & 0xF0;
         if ((st == 0x90 || st == 0x80) && !g_inst->au_echo)
             au_note_event((int)fx->track_idx, (int)d1 - AU_NOTE_BASE, status, d2, g_inst->au_echo);
@@ -5011,7 +5029,7 @@ static void live_note_on(seq8_instance_t *inst, seq8_track_t *tr,
     /* LIVE ARP on Audio steps a chop per repeat, not an octave (Josh,
      * 2026-10-28: "change octave to "step" which sets the number of notes
      * (slices) to jump in single note intervals instead of octaves"). */
-    tr->tarp.oct_step = tr->pad_mode == PAD_MODE_AUDIO ? 1 : 0;
+    tr->tarp.oct_step = pad_mode_sampled(tr->pad_mode) ? 1 : 0;
     if (!tr->tarp_on) {
         capture_push(inst, tr, CAP_EV_NOTE_ON, pitch, vel);
         inst->emit_bypass_swing = 1;
@@ -5456,7 +5474,7 @@ static void tarp_tick(seq8_instance_t *inst, seq8_track_t *tr) {
     arp_engine_t *a = &tr->tarp;
     if (!tr->tarp_on || a->style == 0) return;
     if (tr->pad_mode == PAD_MODE_DRUM) return;
-    a->oct_step = tr->pad_mode == PAD_MODE_AUDIO ? 1 : 0;
+    a->oct_step = pad_mode_sampled(tr->pad_mode) ? 1 : 0;
 
     if (a->pending_retrigger) {
         a->pending_retrigger = 0;
@@ -7248,6 +7266,7 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
     g_inst = inst;
     inst->offline = json_defaults && strstr(json_defaults, "\"offline\"") != NULL;
     au_init(inst);                 /* audio clips' defaults + the sample loader thread */
+    inst->undo_slc_t = inst->redo_slc_t = -1;
 
     inst->sample_rate    = (g_host && g_host->sample_rate > 0)
                            ? (float)g_host->sample_rate : 44100.0f;
@@ -8082,9 +8101,11 @@ static void on_midi(void *instance, const uint8_t *msg, int len, int source) {
  * every setting, not the loaded audio — a restore loads the file again by
  * name (samples/ keeps it until a Purge). */
 static void au_undo_snap(seq8_instance_t *inst, au_clip_t *dst, uint8_t *on, int t, int c) {
-    *on = inst->tracks[t].pad_mode == PAD_MODE_AUDIO;
+    /* only an Audio clip has a sample side of its own: a Slicer's is the
+     * slot's (undo_begin_slicer takes it) */
+    *on = inst->tracks[t].pad_mode == PAD_MODE_AUDIO && c < NUM_CLIPS;
     if (!*on) return;
-    *dst = inst->au_clip[t][c];
+    *dst = *au_slot(inst, t, c);
     dst->smp = NULL;
     dst->gen = 0;
     dst->state = dst->err = 0;
@@ -8096,9 +8117,10 @@ static void au_undo_snap(seq8_instance_t *inst, au_clip_t *dst, uint8_t *on, int
  * its settings kept (a load under the clip's own name is not a pick:
  * au_apply_results). Called after apply_clip_restore. */
 static void au_undo_restore(seq8_instance_t *inst, const au_clip_t *src, uint8_t on, int t, int c) {
-    au_clip_t *cl = &inst->au_clip[t][c];
+    au_clip_t *cl = au_slot(inst, t, c);
     uint32_t gen;
-    if (!on || inst->tracks[t].pad_mode != PAD_MODE_AUDIO) return;
+    if (!on) return;
+    if (c == AU_SLC ? inst->tracks[t].pad_mode != PAD_MODE_SLICER : inst->tracks[t].pad_mode != PAD_MODE_AUDIO) return;
     /* a lane playing now keeps holding what it holds: the restore takes the
      * settings, not the moment */
     uint8_t ov = cl->ov, ov_rv = cl->ov_revrs, ovs = cl->ovs, ovs_rv = cl->ovs_rev, ovs_pl = cl->ovs_play;
@@ -8124,8 +8146,19 @@ static void au_undo_restore(seq8_instance_t *inst, const au_clip_t *src, uint8_t
     cl->ov_revrs = ov_rv; cl->ov_bpm10 = ov_b;
     cl->ovs = ovs; cl->ovs_pitch = ovs_p; cl->ovs_detune = ovs_d; cl->ovs_gain = ovs_g;
     cl->ovs_rev = ovs_rv; cl->ovs_play = ovs_pl; cl->ovs_atk = ovs_a; cl->ovs_dec = ovs_dc;
-    rui_mark(inst, t, c);
+    rui_mark(inst, t, c == AU_SLC ? (int)inst->tracks[t].active_clip : c);
     inst->state_dirty = 1;
+}
+
+/* A Slicer's slot into an undo / redo snapshot, as au_undo_snap takes an
+ * Audio clip's. */
+static void au_slc_snap(seq8_instance_t *inst, au_clip_t *dst, int8_t *slot_t, int t) {
+    *dst = *au_slot(inst, t, AU_SLC);
+    dst->smp = NULL;
+    dst->gen = 0;
+    dst->state = dst->err = 0;
+    dst->ov = dst->ovs = 0;
+    *slot_t = (int8_t)t;
 }
 
 /* A sample file about to be overwritten: an undo or redo step holding a
@@ -8143,6 +8176,8 @@ static void au_undo_forget(seq8_instance_t *inst, const char *name) {
             inst->redo_valid = 0;
             inst->drum_row_redo_valid = 0;
         }
+    if (inst->undo_slc_t >= 0 && !strcmp(inst->undo_slc.name, name)) inst->undo_valid = 0;
+    if (inst->redo_slc_t >= 0 && !strcmp(inst->redo_slc.name, name)) inst->redo_valid = 0;
 }
 
 static void undo_begin_single(seq8_instance_t *inst, int t, int c) {
@@ -8157,6 +8192,7 @@ static void undo_begin_single(seq8_instance_t *inst, int t, int c) {
     au_undo_snap(inst, &inst->undo_au[0], &inst->undo_au_on[0], t, c);
     inst->undo_valid = 1;
     inst->flat_state = 0;            /* a new step: Flatten's goes */
+    inst->undo_slc_t = -1;           /* ...and a Slicer's slot, unless this step takes it */
     inst->redo_valid = 0;
     inst->drum_undo_valid = 0;
 }
@@ -8264,6 +8300,7 @@ static void undo_begin_row(seq8_instance_t *inst, int row_c) {
     }
     inst->undo_valid = 1;
     inst->flat_state = 0;            /* a new step: Flatten's goes */
+    inst->undo_slc_t = -1;           /* ...and a Slicer's slot, unless this step takes it */
     inst->redo_valid = 0;
     inst->drum_undo_valid = 0;
     drum_row_snap(inst, row_c, inst->drum_row_undo_lanes[0]);
@@ -8291,6 +8328,7 @@ static void undo_begin_clip_pair(seq8_instance_t *inst, int srcT, int srcC, int 
     au_undo_snap(inst, &inst->undo_au[1], &inst->undo_au_on[1], dstT, dstC);
     inst->undo_valid = 1;
     inst->flat_state = 0;            /* a new step: Flatten's goes */
+    inst->undo_slc_t = -1;           /* ...and a Slicer's slot, unless this step takes it */
     inst->redo_valid = 0;
     inst->drum_undo_valid = 0;
 }
@@ -8314,10 +8352,23 @@ static void undo_begin_track_clips(seq8_instance_t *inst, int t, const uint8_t *
     }
     inst->undo_valid = 1;
     inst->flat_state = 0;            /* a new step: Flatten's goes */
+    inst->undo_slc_t = -1;           /* ...and a Slicer's slot, unless this step takes it */
     inst->redo_valid = 0;
     inst->drum_undo_valid = 0;
     inst->drum_row_undo_valid = 0;
     inst->drum_row_redo_valid = 0;
+}
+
+/* A Slicer's step: every clip of track t (their steps play its chops, which
+ * an edit renumbers) and its slot, as one undo step — a chop-editor visit,
+ * a sample picked / removed / trimmed, leaving the Slicer. */
+static void undo_begin_slicer(seq8_instance_t *inst, int t) {
+    uint8_t cs[NUM_CLIPS];
+    int c;
+    if (inst->undo_locked) return;
+    for (c = 0; c < NUM_CLIPS; c++) cs[c] = (uint8_t)c;
+    undo_begin_track_clips(inst, t, cs, NUM_CLIPS);
+    au_slc_snap(inst, &inst->undo_slc, &inst->undo_slc_t, t);
 }
 
 /* Snapshot two full rows (src + dst, 16 clips) for row cut operations. */
@@ -8342,6 +8393,7 @@ static void undo_begin_row_pair(seq8_instance_t *inst, int srcRow, int dstRow) {
     }
     inst->undo_valid = 1;
     inst->flat_state = 0;            /* a new step: Flatten's goes */
+    inst->undo_slc_t = -1;           /* ...and a Slicer's slot, unless this step takes it */
     inst->redo_valid = 0;
     inst->drum_undo_valid = 0;
     drum_row_snap(inst, dstRow, inst->drum_row_undo_lanes[0]);
@@ -8371,6 +8423,7 @@ static void undo_begin_scene_bake(seq8_instance_t *inst, int clip) {
     inst->undo_clip_count    = (uint8_t)mc;
     inst->undo_valid         = 1;
     inst->flat_state = 0;            /* a new step: Flatten's goes */
+    inst->undo_slc_t = -1;           /* ...and a Slicer's slot, unless this step takes it */
     inst->redo_valid         = 0;
     inst->drum_undo_valid    = 0;
     drum_row_snap(inst, clip, inst->drum_row_undo_lanes[0]);
@@ -8409,6 +8462,7 @@ static void undo_begin_drum_clip(seq8_instance_t *inst, int t, int c) {
                     &inst->drum_undo_pa_partial, t, c);
     inst->drum_undo_valid = 1;
     inst->flat_state = 0;            /* a new step: Flatten's goes */
+    inst->undo_slc_t = -1;           /* ...and a Slicer's slot, unless this step takes it */
     inst->drum_undo_track = (uint8_t)t;
     inst->drum_undo_clip  = (uint8_t)c;
     inst->drum_redo_valid = 0;
@@ -8810,8 +8864,8 @@ static int seq8_remote_snapshot(seq8_instance_t *inst, char *out, int out_len) {
      * other track. Always written: the browser's per-key cache is sticky. */
     {
         int aum = -1, aun = 0;
-        if (tr->pad_mode == PAD_MODE_AUDIO) {
-            const au_clip_t *ac = &inst->au_clip[t][c];
+        if (pad_mode_sampled(tr->pad_mode)) {
+            const au_clip_t *ac = au_cl(inst, t, c);   /* a Slicer's: the slot */
             aum = ac->mode;
             aun = ac->even ? ac->even : ac->nslices;
         }
@@ -9138,8 +9192,8 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         int t, c, n = 0;
         out[0] = '\0';
         for (t = 0; t < NUM_TRACKS; t++)
-            for (c = 0; c < NUM_CLIPS; c++) {
-                const char *nm = inst->au_clip[t][c].name;
+            for (c = 0; c <= AU_SLC; c++) {
+                const char *nm = au_slot(inst, t, c)->name;
                 if (!nm[0] || n + (int)strlen(nm) + 2 >= out_len) continue;
                 n += snprintf(out + n, (size_t)(out_len - n), "%s\n", nm);
             }
@@ -9957,10 +10011,13 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                     pos += snprintf(out + pos, (size_t)(out_len - pos), "%s=%s\n", fkey, val);
                 }
             }
-            /* an Audio track: every clip's sample info and the pad Layout (17
-             * requests before — review, 2026-10-31) */
-            if (tr->pad_mode == PAD_MODE_AUDIO) {
-                for (c = -1; c < NUM_CLIPS; c++) {
+            /* an Audio track: every clip's sample info; a Slicer: its slot's
+             * and the pad Layout (17 requests before — review, 2026-10-31) */
+            if (pad_mode_sampled(tr->pad_mode)) {
+                int c0 = tr->pad_mode == PAD_MODE_SLICER ? AU_SLC : 0;
+                for (c = -1; c <= AU_SLC; c++) {
+                    if (c >= 0 && c < c0) continue;
+                    if (c == AU_SLC && !c0) break;
                     if (c < 0) snprintf(fkey, sizeof(fkey), "t%d_au_layout", tidx);
                     else snprintf(fkey, sizeof(fkey), "t%d_au_info_%d", tidx, c);
                     int n = get_param(instance, fkey, val, (int)sizeof(val));
@@ -10544,9 +10601,10 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                  *          staging (au_export_slice), one cycle at the project tempo
                  *   ""     no sample, not loaded, or nothing to render. */
                 int t_idx = (int)(tr - inst->tracks);
-                au_clip_t *ac = &inst->au_clip[t_idx][cidx];
+                if (!pad_mode_sampled(tr->pad_mode)) return 0;
+                au_clip_t *ac = au_cl(inst, t_idx, cidx);
                 const au_sample_t *as = ac->smp;
-                if (tr->pad_mode != PAD_MODE_AUDIO || !as || !ac->name[0]) return 0;
+                if (!as || !ac->name[0]) return 0;
                 double bpm = inst->tracks[0].pfx.cached_bpm > 0 ? inst->tracks[0].pfx.cached_bpm : (double)BPM_DEFAULT;
                 char wav[256];
                 if (ac->mode == AU_MODE_LOOP) {

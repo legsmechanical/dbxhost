@@ -95,8 +95,8 @@ int main(void) {
     HX_ASSERT(inst->tracks[4].pad_mode == PAD_MODE_AUDIO, "rig: T5 is not an Audio track");
     snprintf(p, sizeof p, "0|%s/src/ramp60.wav", g_root);
     hx_set_param(h, "t4_au_pick", p);
-    for (i = 0; i < 4000 && inst->au_clip[4][0].state != 2; i++) { hx_render(h, 1); usleep(1000); }
-    HX_ASSERT(inst->au_clip[4][0].state == 2 && inst->au_clip[4][0].smp && !inst->au_clip[4][0].smp->pcm,
+    for (i = 0; i < 4000 && (*au_cl(inst, 4, 0)).state != 2; i++) { hx_render(h, 1); usleep(1000); }
+    HX_ASSERT((*au_cl(inst, 4, 0)).state == 2 && (*au_cl(inst, 4, 0)).smp && !(*au_cl(inst, 4, 0)).smp->pcm,
               "rig: the 60 s ramp did not load streamed");
     hx_set_param(h, "t4_au_set_sync", "0 2");        /* Pitch at the project's Tempo: sample for sample */
     hx_set_param(h, "t4_au_set_orig", "0 0");
@@ -134,7 +134,7 @@ int main(void) {
     fed = -1;
     for (i = 0; i < 400 && fed < 0; i++) { hx_render(h, 1); hx_stub_feed(slot, &fed, NULL); }
     HX_ASSERT(fed >= 0, "the copy's Audio clip never sounded");
-    HX_ASSERT(inst->au_clip[4][0].state == 2 && !inst->au_clip[4][0].smp->pcm,
+    HX_ASSERT((*au_cl(inst, 4, 0)).state == 2 && !(*au_cl(inst, 4, 0)).smp->pcm,
               "the copy's sample is not in (streamed)");
     {
         const int16_t *blk = hx_stub_feed_last(slot);
@@ -159,7 +159,7 @@ int main(void) {
     HX_ASSERT(inst->au_underruns == 0, "the copy counted an underrun");
     {   /* played, ~2 s behind the voice and not one the load keeps: let go of */
         static uint8_t pin[4096];
-        au_sample_t *s = inst->au_clip[4][0].smp;
+        au_sample_t *s = (*au_cl(inst, 4, 0)).smp;
         uint32_t kk, played = (uint32_t)((1370.0 * 128 - t0) / AU_CHUNK), let = 0;
         memset(pin, 0, sizeof pin);
         au_pins(s->nchunks, s->frames, s->rate, 0, FR, count_pin, pin);
@@ -172,7 +172,7 @@ int main(void) {
 
     /* a chunk nobody read is read when reached */
     {
-        au_sample_t *s = inst->au_clip[4][0].smp;
+        au_sample_t *s = (*au_cl(inst, 4, 0)).smp;
         uint32_t kk = s->nchunks / 2;
         const int16_t *fr;
         while (kk < s->nchunks && s->chunk[kk]) kk++;
@@ -192,10 +192,10 @@ int main(void) {
     hx_set_param(h, "t4_convert_to_audio", "");
     snprintf(p, sizeof p, "0|%s/src/ramp60.wav", g_root);
     hx_set_param(h, "t4_au_pick", p);
-    for (i = 0; i < 4000 && inst->au_clip[4][0].state != 2; i++) { hx_render(h, 1); usleep(1000); }
-    HX_ASSERT(inst->au_clip[4][0].state == 2, "rig: the live reload did not load");
+    for (i = 0; i < 4000 && (*au_cl(inst, 4, 0)).state != 2; i++) { hx_render(h, 1); usleep(1000); }
+    HX_ASSERT((*au_cl(inst, 4, 0)).state == 2, "rig: the live reload did not load");
     {
-        au_sample_t *s = inst->au_clip[4][0].smp;
+        au_sample_t *s = (*au_cl(inst, 4, 0)).smp;
         uint32_t kk = s->nchunks / 2;
         while (kk < s->nchunks && s->chunk[kk]) kk++;
         HX_ASSERT(kk < s->nchunks && !au_at(s, kk * AU_CHUNK + 5), "a live engine read a chunk on the audio thread");

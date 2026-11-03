@@ -47,7 +47,7 @@ int main(void) {
     HX_ASSERT(!strcmp(tail2(rui_clip(h)), "-1:0"), "CONTROL: a melodic track's rui_clip is not -1:0");
     hx_set_param(h, "t4_convert_to_audio", "");
     HX_ASSERT(inst->tracks[4].pad_mode == PAD_MODE_AUDIO, "t4 did not become Audio");
-    au_clip_t *ac = &inst->au_clip[4][0];
+    au_clip_t *ac = au_cl(inst, 4, 0);
     ac->mode = AU_MODE_SLICE; ac->even = 0; ac->nslices = 5;
     hx_set_param(h, "t4_c0_ruisel", "");
     HX_ASSERT(!strcmp(tail2(rui_clip(h)), "1:5"), "⭐ a Slice clip with 5 chops is not 1:5");
