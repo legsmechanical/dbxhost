@@ -9187,16 +9187,23 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
     seq8_instance_t *inst = (seq8_instance_t *)instance;
     if (!key || !out || out_len <= 0) return -1;
 
-    /* au_used: every sample a clip holds, one name per line (Purge). */
+    /* au_used: every sample a clip or a Slicer holds — and every one an undo
+     * or redo step would bring back — one name per line (Purge). */
     if (!strcmp(key, "au_used")) {
-        int t, c, n = 0;
+        int t, c, i, n = 0;
+        const char *nm;
         out[0] = '\0';
+#define AU_USED_ADD(x) do { nm = (x); if (nm[0] && n + (int)strlen(nm) + 2 < out_len) \
+                                n += snprintf(out + n, (size_t)(out_len - n), "%s\n", nm); } while (0)
         for (t = 0; t < NUM_TRACKS; t++)
-            for (c = 0; c <= AU_SLC; c++) {
-                const char *nm = au_slot(inst, t, c)->name;
-                if (!nm[0] || n + (int)strlen(nm) + 2 >= out_len) continue;
-                n += snprintf(out + n, (size_t)(out_len - n), "%s\n", nm);
-            }
+            for (c = 0; c <= AU_SLC; c++) AU_USED_ADD(au_slot(inst, t, c)->name);
+        if (inst->undo_valid)
+            for (i = 0; i < (int)inst->undo_clip_count; i++) if (inst->undo_au_on[i]) AU_USED_ADD(inst->undo_au[i].name);
+        if (inst->redo_valid)
+            for (i = 0; i < (int)inst->redo_clip_count; i++) if (inst->redo_au_on[i]) AU_USED_ADD(inst->redo_au[i].name);
+        if (inst->undo_valid && inst->undo_slc_t >= 0) AU_USED_ADD(inst->undo_slc.name);
+        if (inst->redo_valid && inst->redo_slc_t >= 0) AU_USED_ADD(inst->redo_slc.name);
+#undef AU_USED_ADD
         return n;
     }
     /* tN_au_*: Audio (setparam/sp_track_audio.c). */

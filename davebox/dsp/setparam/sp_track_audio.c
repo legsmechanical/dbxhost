@@ -1320,7 +1320,7 @@ static int sp_track_audio(sp_ctx_t *cx) {
             au_gen_bake(cl);
             au_track_kill(inst, tidx, NULL);
         } else if (slot && (!strcmp(w, "start") || !strcmp(w, "slen") || !strcmp(w, "nudge") ||
-                            !strcmp(w, "rot") || !strcmp(w, "orig"))) {
+                            !strcmp(w, "rot"))) {
             return 1;
         } else if (!slot && !strcmp(w, "sens")) {
             return 1;

@@ -25,7 +25,7 @@
 
 import * as os from 'os';
 import { S } from './ui_state.mjs';
-import { NUM_CLIPS, SCENE_LETTERS, PAD_MODE_DRUM, PAD_MODE_AUDIO } from './ui_constants.mjs';
+import { NUM_CLIPS, SCENE_LETTERS, PAD_MODE_DRUM, PAD_MODE_AUDIO, PAD_MODE_SLICER, padSampled } from './ui_constants.mjs';
 import { clipHasContent } from './ui_pure.mjs';
 import { hardResetClip } from './ui_editops.mjs';
 import { auPick, auUndoClips, dspAnswer } from './ui_audio.mjs';
@@ -46,7 +46,7 @@ export const AU_SRC_FX  = 3;      /* after its FX at unity (the track's fader is
 /* A clip that sounds: one with notes, or an Audio clip with a sample (a Loop
  * clip has no steps and still plays). */
 function clipHasNotes(t, c) {
-    if (S.trackPadMode[t] === PAD_MODE_AUDIO) return clipHasContent(t, c);
+    if (padSampled(S.trackPadMode[t])) return clipHasContent(t, c);
     return S.trackPadMode[t] === PAD_MODE_DRUM ? !!S.drumClipNonEmpty[t][c] : !!S.clipNonEmpty[t][c];
 }
 
@@ -60,7 +60,7 @@ function clipHasNotes(t, c) {
  * -1. `hasSynth` is the caller's read of t's own slot. */
 export function auConvertSource(t, hasSynth, post) {
     /* an Audio track: its clips' samples, fed to its own slot */
-    if (S.trackPadMode[t] === PAD_MODE_AUDIO) return post ? AU_SRC_FX : AU_SRC_PRE;
+    if (padSampled(S.trackPadMode[t])) return post ? AU_SRC_FX : AU_SRC_PRE;
     let r = S.trackRoute[t] | 0;
     if (r === 0 && !hasSynth) return -1;
     if (r === 2) {
@@ -113,11 +113,12 @@ export function freezeTrackRequest(t, hasSynth) {
     const anySolo = S.trackSoloed.some((v) => v);
     if (S.trackMuted[t] || (anySolo && !S.trackSoloed[t])) { showActionPopupFor(2500, 'NOTHING TO FLATTEN', name + ' is muted'); return; }
     if (!auConvertHasNotes(t)) {
-        showActionPopupFor(2500, 'NOTHING TO FLATTEN', name + (S.trackPadMode[t] === PAD_MODE_AUDIO ? ' has no samples' : ' has no notes'));
+        showActionPopupFor(2500, 'NOTHING TO FLATTEN', name + (S.trackPadMode[t] === PAD_MODE_AUDIO ? ' has no samples'
+                                                             : S.trackPadMode[t] === PAD_MODE_SLICER ? ' has no steps' : ' has no notes'));
         return;
     }
     S.confirmResample = { flatten: true, track: t, clip: -1, hasSynth, post: false,
-                          warm: playsMove(t) && S.trackPadMode[t] !== PAD_MODE_AUDIO, sel: 2, editing: false };
+                          warm: playsMove(t) && !padSampled(S.trackPadMode[t]), sel: 2, editing: false };
     S.screenDirty = true;
 }
 

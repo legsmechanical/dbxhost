@@ -13,8 +13,8 @@ the section into a versioned heading at release time.
   instrument's clips, and an Audio track's, faster than real time, without playing them. A sound that
   depends on more than the notes (an LFO, a MIDI effect, automation of levels or
   macros) still records in real time.
-- **Fit to clip.** On SAMPLE, touch **Tempo** and click for a menu: **Fit to clip** (a
-  Loop clip's) sets the sample's Tempo so it fills the clip from Start to its end,
+- **Fit to clip.** On SAMPLE, touch **Tempo** and click for a menu: **Fit to clip** (an
+  Audio clip's) sets the sample's Tempo so it fills the clip from Start to its end,
   and Sync stretches it to match; **Original tempo** (was Orig) plays it as recorded.
   SAMPLE's page 2 now reads Sync · Pitch · Detune · Gain · Tempo · Revrs.
 - **Live merge records Audio tracks' sound.** In a Live merge, each Audio track records
@@ -29,60 +29,70 @@ the section into a versioned heading at release time.
   effects on its Move track's FX 1–4, which are copied onto the Audio track with the
   Move track's volume, pan and sends. Resample clip's **Dry** works on a Move
   instrument. A recording no longer picks up the send effects or Master FX.
-- **The browser editor knows Audio tracks**: a Slice clip's roll shows its chops
-  (Chop 1, Chop 2…), one to a step as on the device, and a Loop clip shows no roll.
-  The mixer, grid and Sound view say **Audio**, and the sample, chops and NOTE FX
-  are edited on the device.
-- **Export to Ableton carries Audio tracks** as Live audio tracks: every Audio clip is
-  recorded as it sounds (its effects, level, pan and automation, and the Conductor if
+- **The browser editor knows Audio and Slicer tracks**: a Slicer's roll shows its
+  chops (Chop 1, Chop 2…), one to a step as on the device, and an Audio clip shows no
+  roll. The mixer, grid and Sound view say **Audio** or **Slicer**, and the samples,
+  chops and NOTE FX are edited on the device.
+- **Export to Ableton carries Audio and Slicer tracks** as Live audio tracks: every clip
+  is recorded as it sounds (its effects, level, pan and automation, and the Conductor if
   you apply it), exactly as long as it loops. Your project isn't changed.
-- **Audio tracks.** Choose **Audio** in a track's **Instmt/Dest** picker and each clip
-  plays its own sample — picked from your library (WAV or AIFF, auditioned as you
-  browse) and copied into the project. A track that plays an instrument first offers to
-  **resample its clips**, so each comes back as its own audio.
-  - **Two modes** (the CLIP bank's **Mode**). **Loop** is set and forget: the sample
-    plays with the clip, from **Start** each time it comes round. Each sample has its own
-    **Tempo** (guessed from its name or its beats when you pick it), and **Sync** says how
-    it meets the project's: **Warp** (the default) time-stretches it and keeps its pitch —
-    processor-intensive, so warp only a few tracks at once; **Vintage** cuts it into tiny
-    crossfaded pieces on the clock, an old sampler's sound; **Pitch** retunes it. A Loop
-    clip's CLIP bank is **Mode · Strch · Shift** (alt **Nudge**); Loop + steps picks the
-    part of the sample it plays, and its pads show the clip in 32 sections. **Slice** puts
-    the sample's chops on the steps: up to 128 chops, 32 to a pad page, laid out as
-    **4 Rows** or **16 Pads** (PAD MODE; two banks in the partner track's colours).
-  - **SAMPLE** (the instrument pad on the bank map) is the clip's sample: the waveform,
-    zoomable, with Start · Zoom · Length · Gain · Pitch · Detune · Tempo · Revrs, and a
-    second page with Orig and Sync. A click opens **Load sample · Trim · Normalize** (and
-    **Chop sample** on a Loop clip); Trim and Normalize make a **New** sample or
-    **Overwrite** the file.
-  - **SLICES** (a Slice clip's editor) makes the chops: **Even**, **Transient** (cut at
-    the hits; the jog sets Sens), **Lazy** (tap them in as it plays) or **Manual**, each
-    live on the pads; a click or Back keeps them. Each chop has its own Pitch, Detune,
-    Gain, Revrs, Attack, Decay and Play, or set them all at once. **>Seq** lays the chops
-    on the steps; **Convert to kit** makes a native Move drum rack preset of them (a pad
-    each, up to 32, in Track Presets › dBx-slice).
-  - **Undo** brings a clip's sample back with its settings (a pick, None, Shift + Delete,
-    In place, Flatten, a New Trim or Normalize); an Overwrite can't be undone.
-  - **The Conductor** repitches a responding Audio track, its chops unchanged; a scene
-    bake's **Apply Conductor** folds a steady shift into the clip's Pitch.
+- **Audio and Slicer tracks** — two instruments in a track's **Instmt/Dest** picker that
+  play samples (WAV or AIFF, auditioned as you browse, copied into the project).
+  - **Audio**: each clip holds its own sample and plays it with the clip, set and forget.
+    Each sample has its own **Tempo** (guessed from its name or its beats when you pick
+    it), and **Sync** says how it meets the project's: **Warp** (the default)
+    time-stretches it and keeps its pitch — processor-intensive, so warp only a few tracks
+    at once; **Vintage** cuts it into tiny crossfaded pieces on the clock, an old
+    sampler's sound; **Pitch** retunes it. Its CLIP bank is **Strch · Shift** (alt
+    **Nudge**); Loop + steps picks the part of the sample it plays, and its pads show the
+    clip in 32 sections. A track that plays an instrument first offers to **resample its
+    clips**, so each comes back as its own audio.
+  - **Slicer**: one sample for the whole track, cut into up to 128 **chops** you play and
+    sequence from the pads (32 to a pad page, **4 Rows** or **16 Pads**). Every clip plays
+    the same chops: a clip is a sequence of chops, with a MIDI clip's CLIP bank and
+    **>Seq**, which lays the chops on the steps. One chop at a time, one level (velocity is
+    ignored). Its own **Tempo** and **Sync**: **Off** plays the chops as cut, **Pitch**
+    retunes them to the project's tempo. It follows the Conductor only if you switch it on.
+    A loaded sample starts as 16 even chops; the steps you have play the new ones.
+  - **SAMPLE** (the instrument pad on the bank map) is the sample: the waveform, zoomable,
+    with Gain · Pitch · Detune · Tempo · Revrs (an Audio clip's Start and Length too), and
+    a second page as a grid with Sync. A click opens **Load sample · Trim · Normalize**;
+    Trim and Normalize make a **New** sample or **Overwrite** the file. A Slicer's Trim is
+    a step before chopping, on its own screen with a start and an end handle.
+  - **SLICES** (a Slicer's editor) makes the chops: **Even**, **Transient** (cut at the
+    hits; the jog sets Sens), **Lazy** (tap them in as it plays) or **Manual**, each live
+    on the pads, the chops kept however you leave. Each chop has its own Pitch, Detune,
+    Gain, Revrs, Attack, Decay and Play (One or Gate), or set them all at once. Adding or
+    removing a chop renumbers every clip's steps. **Convert to kit** makes a native Move
+    drum rack preset of the chops (a pad each, up to 32, in Track Presets › dBx-slice).
+  - **Copy and paste between them**: an Audio clip pasted onto a Slicer with no sample
+    becomes its sample, the loop cut into 16 chops laid on the steps in order; a Slicer's
+    clip pasted onto an Audio clip gives it the sample.
+  - **Undo** brings a sample back with its settings (a pick, None, Shift + Delete, In
+    place, Flatten, a New Trim or Normalize, a paste), a whole visit to a chop editor, and
+    a track that left Audio or Slicer for another instrument; an Overwrite can't be undone.
+  - **The Conductor** repitches a responding Audio track (and a Slicer switched to follow),
+    its chops unchanged; a scene bake's **Apply Conductor** folds a steady shift into an
+    Audio clip's Pitch.
   - **Automation**: SAMPLE's **Gain**, **Pitch**, **Detune**, **Tempo** and **Revrs**, and
-    SLICES' **ALL SLICES** settings, record and lock like any knob. A playing lane moves
+    a Slicer's **ALL SLICES** settings, record and lock like any knob. A playing lane moves
     the sound live, chops already sounding included, and each setting comes back on Stop.
-    **+ Add lane** and the macro picker offer them too (**Sample**, **All Slices**), and
-    no longer offer HARMONY, DELAY, SEQ ARP or LIVE ARP on an Audio track.
-  - A macro with a range on a dAVEBOx bank knob or an Audio setting steps across that
+    **+ Add lane** and the macro picker offer them too (**Sample**, **All Slices**).
+  - A macro with a range on a dAVEBOx bank knob or a sample setting steps across that
     range, not the whole one (Tempo held to 120–140 BPM: 0.1 BPM a detent, not 5).
     Its **Lo** and **Hi** are set and shown in the setting's own units (BPM, dB…), not %.
     A Tempo macro starts bounded at 400 BPM (change it in the menu), and a ranged macro's
     dial runs from Lo to Hi.
   - **LIVE ARP** plays chops (**Step** in place of Oct); NOTE FX keeps what doesn't move
-    a pitch; there is no DELAY. Muting an Audio track silences it like a bus, so its loop
-    keeps time. **Delete + clip** clears the sequence only; **Shift + Delete** resets the
+    a pitch; there is no DELAY. Muting either silences it like a bus, so a loop keeps
+    time. **Delete + clip** clears the sequence only; **Shift + Delete** resets an Audio
     clip, sample and all.
-  - **Long samples**: Loop clips take up to **30 minutes** (a pick sets up to 256 bars),
-    Slice clips up to 4; anything over a minute plays from the card as it goes, and opens
+  - **Long samples**: Audio clips take up to **30 minutes** (a pick sets up to 256 bars), a
+    Slicer up to 4; anything over a minute plays from the card as it goes, and opens
     quickly after the first time. **Project Settings → Purge samples** clears out the
-    ones no clip uses.
+    ones nothing uses.
+  - **Templates** keep a Slicer whole — its sample (copied into each new project), chops,
+    Tempo and Sync; Audio tracks arrive empty.
 - **Resample a scene.** Record what a scene sounds like into a sample, cut to loop
   exactly: **Sample → Resample scene**, pick the row, then the length (it starts where
   all the clips line up), an optional warm-up pass so tails carry into the loop, and
@@ -108,12 +118,16 @@ the section into a versioned heading at release time.
   again every 5 minutes until the Move is plugged in.
 
 ### Changed
+- **A project saved by this version is a new format.** Earlier versions (1.1.3 and
+  before) don't read it — they ask to erase it; answer **No**. This version opens
+  everything 1.1.3 saved. A project saved by a NEWER dAVEBOx is never erased: it says
+  **PROJECT TOO NEW** and leaves it as it is.
 - **Sample opens a menu.** Tap **Sample** and choose: **Bake scene**, **Resample
   scene** or **Live merge** in Session View; **Bake clip** or **Live merge track** in
   Track View. **Back** steps back a level. **Shift + Sample** no longer starts a Live
   Merge — it's in the menu.
 - **Drum tracks: DRUM LANE and ALL LANES are one box on the bank map**, as SLICES and
-  SAMPLE are on an Audio Slice clip.
+  SAMPLE are on a Slicer.
 - **The version is easy to find.** The loading screen shows dAVEBOx's version under
   the wordmark, with the Schwung base version below it, and the web manager's System
   page lists dAVEBOx's version (it used to show the Schwung base version there).

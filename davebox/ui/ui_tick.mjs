@@ -84,16 +84,16 @@ import { cardHoldExpired } from './ui_prefs.mjs';
 import { heldIndicatorChanged } from './ui_chord.mjs';
 import { printTick } from './ui_print.mjs';
 import { resampleTick } from './ui_resample.mjs';
-import { auTick, auReadTrack, auForgetTrack, isAudioTrack, auRead } from './ui_audio.mjs';
+import { auTick, auReadTrack, auForgetTrack, isSampledTrack, isAudioTrack, auRead } from './ui_audio.mjs';
 import { auConvertStart, auConvertTick, auConvertApply } from './ui_audio_convert.mjs';
 import { auConvertToKit } from './ui_audio_kit.mjs';
 import { openAudioChooser, closeAudioChooser, audioChooserTick } from './ui_audio_chooser.mjs';
 import { closeAudioEditor, closeAudioPanel, auEditorFollowClip } from './ui_audio_editor.mjs';
 import { applyInstrChoice, readConductorClip } from './ui_dsp_bridge.mjs';
-import { INSTR_NONE, PAD_MODE_AUDIO } from './ui_constants.mjs';
+import { INSTR_NONE, PAD_MODE_AUDIO, PAD_MODE_SLICER, padSampled } from './ui_constants.mjs';
 import { bankListForMode } from './ui_pure.mjs';
 import { soundTrackTypeChanged } from './ui_sound.mjs';
-import { flatUndoCapture, flatUndoArm, flatUndoTick, flatCopySourceFx } from './ui_flatten_undo.mjs';
+import { flatUndoCapture, flatUndoArm, leaveUndoArm, flatUndoTick, flatCopySourceFx } from './ui_flatten_undo.mjs';
 
 const BANK_DISPLAY_MS = 1000;
 const KNOB_TURN_HIGHLIGHT_MS = 600;               /* highlight after turn without touch */
@@ -156,10 +156,15 @@ function convertTrackType(t, toDrum) {
      * the conduct path left stepRecActive true on a track the eligibility
      * gate forbids, and pad writes kept landing). */
     stepRecExit();
-    /* Leaving Audio: the engine clears the steps and lets the samples go
-     * (the same convert key); the UI forgets them. */
-    if (S.trackPadMode[t] === PAD_MODE_AUDIO) { audioScreensClose(t); auForgetTrack(t); }
-    host_module_set_param('t' + t + (toDrum ? '_convert_to_drum' : '_convert_to_melodic'), '1');
+    /* Leaving Audio or a Slicer: the engine clears the steps and lets the
+     * samples go (the same convert key), as ONE undo step ("u", Josh,
+     * 2026-11-02: leaving is undoable) — the instrument picked after rides it
+     * (leaveUndoArm); the UI forgets them. */
+    const leaving = padSampled(S.trackPadMode[t]);
+    const undo = leaving ? flatUndoCapture(t) : null;
+    if (leaving) { audioScreensClose(t); auForgetTrack(t); }
+    host_module_set_param('t' + t + (toDrum ? '_convert_to_drum' : '_convert_to_melodic'), leaving ? 'u' : '1');
+    if (undo) leaveUndoArm(undo, toDrum ? PAD_MODE_DRUM : PAD_MODE_MELODIC_SCALE);
     S.trackPadMode[t] = toDrum ? PAD_MODE_DRUM : PAD_MODE_MELODIC_SCALE;
     /* Resync inline (this runs in tick(), so get_param works): the first get
      * in syncClipsFromDsp flushes the queued convert, then reads post-convert
@@ -203,16 +208,17 @@ function audioScreensClose(t) {
  * (Flatten Post) bypasses the insert FX the recordings already hold. A track
  * whose instrument is not its own slot (a Move instrument, a follower) gets
  * that source's insert FX and levels on its slot (flatCopySourceFx). */
-function convertTrackToAudio(t, takes, bypassFx) {
+function convertTrackToAudio(t, takes, bypassFx, mode = PAD_MODE_AUDIO) {
     stepRecExit();
     /* one Undo brings it back: the engine keeps the clips and the type ("u"),
      * this the instrument, route and FX (ui_flatten_undo) */
     const undo = flatUndoCapture(t);
-    host_module_set_param('t' + t + '_convert_to_audio', 'u');
-    flatUndoArm(undo);
+    if (padSampled(S.trackPadMode[t])) { audioScreensClose(t); auForgetTrack(t); }   /* Audio <-> Slicer */
+    host_module_set_param('t' + t + (mode === PAD_MODE_SLICER ? '_convert_to_slicer' : '_convert_to_audio'), 'u');
+    flatUndoArm(undo, mode);
     applyInstrChoice(t, INSTR_NONE);
     if (flatCopySourceFx(undo, bypassFx)) bypassFx = false;    /* copied bypassed already */
-    S.trackPadMode[t] = PAD_MODE_AUDIO;
+    S.trackPadMode[t] = mode;
     if (S.conductorTrack === t) S.conductorTrack = -1;
     /* the barrier: the convert lands before the reads and the padmap */
     if (trackHasAnyData(t)) syncClipsFromDsp();
@@ -220,9 +226,9 @@ function convertTrackToAudio(t, takes, bypassFx) {
     auReadTrack(t);
     if (takes) auConvertApply(t, takes, bypassFx);
     soundTrackTypeChanged(t);               /* an open menu loses MIDI FX, Mode, Transpose */
-    /* a bank the Audio walk does not have goes back to CLIP */
-    if (bankListForMode(PAD_MODE_AUDIO, t).indexOf(S.trackActiveBank[t]) < 0) S.trackActiveBank[t] = 0;
-    if (t === S.activeTrack && bankListForMode(PAD_MODE_AUDIO, t).indexOf(S.activeBank) < 0) S.activeBank = 0;
+    /* a bank the Audio / Slicer walk does not have goes back to CLIP */
+    if (bankListForMode(mode, t).indexOf(S.trackActiveBank[t]) < 0) S.trackActiveBank[t] = 0;
+    if (t === S.activeTrack && bankListForMode(mode, t).indexOf(S.activeBank) < 0) S.activeBank = 0;
     computePadNoteMap();
     invalidateLEDCache();
     forceRedraw();
@@ -234,9 +240,12 @@ function convertTrackToAudio(t, takes, bypassFx) {
  * pendingConductReadback to detect (and revert) a refusal. */
 function convertTrackToConduct(t) {
     stepRecExit();   /* same rule as convertTrackType — see its note */
-    if (S.trackPadMode[t] === PAD_MODE_AUDIO) { audioScreensClose(t); auForgetTrack(t); }
+    const leaving = padSampled(S.trackPadMode[t]);
+    const undo = leaving ? flatUndoCapture(t) : null;
+    if (leaving) { audioScreensClose(t); auForgetTrack(t); }
     const prevMode = S.trackPadMode[t];
-    host_module_set_param('t' + t + '_convert_to_conduct', '1');
+    host_module_set_param('t' + t + '_convert_to_conduct', leaving ? 'u' : '1');
+    if (undo) leaveUndoArm(undo, PAD_MODE_CONDUCT);
     S.trackPadMode[t] = PAD_MODE_CONDUCT;
     /* A Conductor transposes from the key's root at MIDI 60 (DSP
      * conductor_set_offset_from_note). It starts on the melodic default octave
@@ -580,6 +589,7 @@ export function _tickImpl() {
         const _pc = S.pendingTrackConvert;
         S.pendingTrackConvert = null;
         if (_pc.toAudio) convertTrackToAudio(_pc.t, _pc.takes, _pc.bypassFx);
+        else if (_pc.toSlicer) convertTrackToAudio(_pc.t, null, false, PAD_MODE_SLICER);
         else convertTrackType(_pc.t, _pc.toDrum);
     }
 
@@ -1038,7 +1048,7 @@ export function _tickImpl() {
                 const _rt = [];
                 for (let _t = 0; _t < NUM_TRACKS; _t++)
                     /* the Conductor ignores Audio (v1 default, 2026-10-27) */
-                    if (S.trackPadMode[_t] !== PAD_MODE_CONDUCT && S.trackPadMode[_t] !== PAD_MODE_AUDIO) _rt.push(_t);
+                    if (S.trackPadMode[_t] !== PAD_MODE_CONDUCT && !padSampled(S.trackPadMode[_t])) _rt.push(_t);
                 refreshPerClipBankParamsFor(_rt);       /* one round trip for all of them */
             }
             computePadNoteMap();
@@ -1312,7 +1322,7 @@ export function _tickImpl() {
                         S.clipTPS[_t][sc] = TPS_VALUES.indexOf(_tv) >= 0 ? _tv : 24;
                     }
                     if (sc === S.trackActiveClip[_t]) refreshPerClipBankParams(_t);
-                    if (isAudioTrack(_t)) auRead(_t, sc);   /* Apply Conductor may have moved its Pitch */
+                    if (isAudioTrack(_t)) auRead(_t, sc);     /* Apply Conductor may have moved its Pitch */
                 }
             }
             /* Apply Conductor on Audio tracks: one shift was folded into the
@@ -1323,7 +1333,7 @@ export function _tickImpl() {
                 const kept = parseInt(_bk[1], 10) | 0;
                 const mask = S.condResp[sc | 0], ct = conductorTrackIdx(), names = [];
                 for (let _t = 0; _t < NUM_TRACKS; _t++) {
-                    if (_t === ct || !isAudioTrack(_t) || !mask || !mask[_t]) continue;
+                    if (_t === ct || !isSampledTrack(_t) || !mask || !mask[_t]) continue;
                     if (kept & (1 << _t)) names.push(_t + 1);
                     else mask[_t] = 0;
                 }
@@ -2334,7 +2344,7 @@ export function _tickImpl() {
             if (_ac.t === S.activeTrack && !S.sessionView) openAudioChooser(_ac.t, _ac.c);
         }
         if (S.auChooser && (S.auChooser.t !== S.activeTrack || S.sessionView)) closeAudioChooser();
-        if (S.auPanel && (S.auPanel.t !== S.activeTrack || S.sessionView || !isAudioTrack(S.auPanel.t))) closeAudioPanel();
+        if (S.auPanel && (S.auPanel.t !== S.activeTrack || S.sessionView || !isSampledTrack(S.auPanel.t))) closeAudioPanel();
         if (S.auEditor && !S.auPanel) closeAudioEditor();
         auEditorFollowClip();
         audioChooserTick();

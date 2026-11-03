@@ -7,7 +7,7 @@
  */
 
 import { S } from './ui_state.mjs';
-import { PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_AUDIO, DRUM_LANES, DRUM_BASE_NOTE, NUM_CLIPS } from './ui_constants.mjs';
+import { PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_AUDIO, padSampled, DRUM_LANES, DRUM_BASE_NOTE, NUM_CLIPS } from './ui_constants.mjs';
 import { auInfo, auClipOf, auPadToSlice, auLazyOpen, auIsSlice, AU_NOTE_BASE } from './ui_audio.mjs';
 import { SCALE_INTERVALS } from './ui_pure.mjs';
 import { dspGet } from './ui_dsp_get.mjs';
@@ -75,8 +75,8 @@ export function pianoLayoutOn(t) {
 export function computePadNoteMap() {
     const t = S.activeTrack;
     for (let i = 0; i < 32; i++) S.padChordMap[i] = null;
-    if (S.trackPadMode[t] === PAD_MODE_AUDIO) {
-        /* AUDIO (ui_audio): Slice mode — every pad is a chop of the pad page
+    if (padSampled(S.trackPadMode[t])) {
+        /* AUDIO / SLICER (ui_audio): a Slicer — every pad is a chop of the pad page
          * showing (in the track's PAD MODE Layout), its note AU_NOTE_BASE +
          * chop, never a chord; pads past the chop count are silent. Loop mode,
          * and while a Lazy chop cuts, no pad plays (they show / cut). */
@@ -197,7 +197,7 @@ export function computePadNoteMap() {
              * An Audio track's note is a SLICE (36 + slice): no octave — a
              * track octave left on it sent every pad past the slices, and
              * the pads went silent (found by Josh on the device). */
-            const octShift = (isDrum || S.trackPadMode[t] === PAD_MODE_AUDIO) ? 0 : padOctShift(t, i);
+            const octShift = (isDrum || padSampled(S.trackPadMode[t])) ? 0 : padOctShift(t, i);
             let out;
             if (padDispatchMuted && S.sessionView) {
                 out = 0xFF;

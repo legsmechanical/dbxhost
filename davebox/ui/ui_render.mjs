@@ -25,7 +25,7 @@ import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
 import {
     BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_CONFIG,
-    INSTR_SCHWUNG, INSTR_MOVE_MAX, INSTR_MIDI_CH, INSTR_TRACK, INSTR_CONDUCT, INSTR_AUDIO,
+    INSTR_SCHWUNG, INSTR_MOVE_MAX, INSTR_MIDI_CH, INSTR_TRACK, INSTR_CONDUCT, INSTR_AUDIO, INSTR_SLICER,
     NOTE_KEYS, NUM_CLIPS, NUM_STEPS, NUM_TRACKS, PAD_MODE_CONDUCT, PAD_MODE_DRUM,
     SCALE_DISPLAY, SCENE_LETTERS, TPS_VALUES, STEP_ITER_LIST,
     col4, col5,
@@ -71,8 +71,8 @@ import { seqAutoTargetForKnob, fmtInstr } from './ui_constants.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
-import { isAudioTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
-         auPos, auLazyState, auSelSlice, auSampleP2Cells, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells, auModeCell, knobAltOnTrack, auAltBit,
+import { isSampledTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
+         auPos, auLazyState, auSelSlice, auSampleP2Cells, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells, knobAltOnTrack, auAltBit,
          auPadModeCells, AU_NOTE_BASE,
          auFmtTime, auEnd, auBpm, auFpt, auFmtLen, auLenTicks, auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
 import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
@@ -142,8 +142,8 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
         const hh = Math.max(0, Math.min(Math.floor((h - 1) / 2), Math.round(cols[k] * g * (h - 1) / 2)));
         fill_rect(x + k, mid - hh, 1, hh * 2 + 1, 1);
     }
-    /* outside Start..End: hatched off */
-    const rs = i.rstart, re = auEnd(i);
+    /* outside Start..End (a Slicer's Trim screen: its two handles): hatched off */
+    const rs = o.trim ? o.trim[0] : i.rstart, re = o.trim ? o.trim[1] : auEnd(i);
     for (let k = 0; k < w; k++) {
         const v = A + (B - A) * (k + 0.5) / w, f = by > 0 ? rot(v) : v;
         if (f < rs || f > re) for (let j = y; j < y + h; j++) if (((k + j) & 1) === 0) set_pixel(x + k, j, 0);
@@ -177,6 +177,12 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
                 fill_rect(pb - 2, y, 3, 1, 1); fill_rect(pb - 2, y + h - 1, 3, 1, 1);
             }
         }
+    }
+    if (o.trim) {
+        /* the Trim handles: a bracket each, opening inward */
+        const pa = fx(o.trim[0]), pb = Math.min(x + w - 1, fx(o.trim[1]));
+        if (inView(pa)) { fill_rect(pa - 1, y, 3, h, 0); fill_rect(pa, y, 1, h, 1); fill_rect(pa, y, 3, 1, 1); fill_rect(pa, y + h - 1, 3, 1, 1); }
+        if (inView(pb)) { fill_rect(pb - 1, y, 3, h, 0); fill_rect(pb, y, 1, h, 1); fill_rect(pb - 2, y, 3, 1, 1); fill_rect(pb - 2, y + h - 1, 3, 1, 1); }
     }
     if (o.cur != null) {
         const px = fx(o.cur);
@@ -250,8 +256,12 @@ function drawAudioWaveEditor() {
     const ed = S.auEditor, t = ed.t, c = ed.c, i = auInfo(t, c);
     if (ed.ask) {
         if (ed.ask.kind === 'edit') {
+            /* a Slicer's Trim cuts to its handles and starts the chops again */
+            const slcTrim = ed.ask.op === 'trim' && ed.mode === 'trim';
             drawAudioAsk(ed.ask.op === 'norm' ? 'NORMALIZE' : 'TRIM',
-                         ed.ask.op === 'norm' ? ['Raise the peak', 'to full scale.'] : ['Cut the file to', 'what the clip plays.'],
+                         ed.ask.op === 'norm' ? ['Raise the peak', 'to full scale.']
+                         : slcTrim ? (ed.ask.chopped ? ['Cut to the handles.', 'Chops: 16 even again.'] : ['Cut the file to', 'the handles.'])
+                         : ['Cut the file to', 'what the clip plays.'],
                          ed.ask.sel, ['Overwrite', 'New']);
         } else drawAudioAsk('MANUAL', ['Clear all chops?', 'One slice, Start to End.'], ed.ask.sel);
         return;
@@ -305,6 +315,16 @@ function drawAudioWaveEditor() {
         return;
     }
     const sub = auWaveSub(ed);
+    if (ed.mode === 'trim' && ed.trim && sub !== 'empty') {
+        /* a Slicer's Trim (Josh, 2026-11-02: before chopping): K1 / K3 the
+         * handles, K2 Zoom; a click cuts (New / Overwrite), Back leaves it */
+        drawBankHeading('TRIM', false);
+        ends('S ' + auFmtTime(ed.trim[0], rt), 'E ' + auFmtTime(ed.trim[1], rt));
+        if (S.knobTouched === 1) mid(zoomTxt);
+        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, noMarks: true, trim: ed.trim, gain: i.gain | 0 });
+        drawKitHintRow(MV_FOOTER_Y, [['clk', 'cut'], ['back', 'cancel']]);
+        return;
+    }
     if (sub === 'empty') {
         /* the click corners round the empty waveform (Josh: "the waveform
          * view should show the "click" corners and say click to load sample") */
@@ -358,7 +378,7 @@ function drawAudioWaveEditor() {
         drawBankHeading(kind === 'even' ? 'EVEN' : 'TRANSIENT', false, false,
                         (capped ? AU_EVEN_MAX + '+' : i.n) + ' CHOPS');
         if (zoomTxt) mid(zoomTxt);
-        else if (jogLit) mid(kind === 'even' ? 'COUNT ' + (i.even | 0) : 'SENS ' + (i.sens | 0));
+        else if (jogLit) mid(kind === 'even' ? 'COUNT ' + (i.n | 0) : 'SENS ' + (i.sens | 0));
         drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel: -1, gain: i.gain | 0 });
         drawKitHintRow(MV_FOOTER_Y, [['jog', kind === 'even' ? 'count' : 'sens'], ['clk', 'done']]);   /* two fit; a click or Back keeps the chops */
         return;
@@ -392,8 +412,11 @@ function drawAudioWaveEditor() {
         drawKitHintRow(MV_FOOTER_Y, [['clk', 'chop'], ['jog', 'page']]);
         return;
     }
-    /* SAMPLE on a Slice clip: the clip's Start / Length, its chops faint, no cursor */
-    ends('S ' + auFmtTime(i.rstart, rt), 'LEN ' + auFmtLen(auLenTicks(t, c, i)));
+    /* SAMPLE on a Slicer: the whole sample, its chops faint, no cursor — no
+     * Start or Length (what plays is its chops): its length and how many,
+     * never lit — K1 and K3 do nothing here */
+    lit(4, 'LEN ' + auFmtTime(i.nframes | 0, rt), false);
+    { const e = i.n + ' CHOP' + (i.n === 1 ? '' : 'S'); lit(124 - ovwWidth(e), e, false); }
     if (zoomTxt) mid(zoomTxt);
     drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, faint: true, gain: i.gain | 0, beats: { origin: i.rstart, fpb: 96 * auFpt(i) } });
     drawKitHintRow(MV_FOOTER_Y, [['clk', 'menu'], ['jog', 'page']]);
@@ -407,14 +430,15 @@ function drawAudioWaveEditor() {
  * its drum form. `cells` are the melodic bank's. */
 function audioBankCells(bank, cells) {
     const t = S.activeTrack;
-    if (!isAudioTrack(t)) return cells;
+    if (!isSampledTrack(t)) return cells;
     const B = { kind: 'blank', label: '' };
     if (bank === 0) {
         if (!audioSliceMode(t)) return auLoopBankCells(t);
+        /* a Slicer's clip is a sequence like a MIDI clip's: its CLIP bank,
+         * Legato left out (a step holds one chop), >Seq where Import was */
         const seq = { kind: 'action', oneWay: true, label: '>Seq', name: 'Slices to Sequence', text: '->', opens: true,
                       btnPhase: triggerPhase('seq', S.knobTouched === 7) };
-        /* Mode on K1 (Josh, 2026-10-30), Res where Mode was */
-        return [auModeCell(t), cells[1], cells[2], cells[0], cells[5], cells[4], cells[6], seq];
+        return [cells[0], cells[1], cells[2], B, cells[4], cells[5], cells[6], seq];
     }
     if (bank === 1) return cells.map((c, k) => ((k === 0 || k === 1 || k === 7) ? B : c));
     /* LIVE ARP: Oct is Step, a chop per repeat (Josh, 2026-10-28) */
@@ -498,6 +522,7 @@ export function refreshInstrAbbrev() {
      * plays nothing. */
     else if (v === INSTR_CONDUCT)                            a = 'CNDT';
     else if (v === INSTR_AUDIO)                              a = 'AUD';
+    else if (v === INSTR_SLICER)                             a = 'SLCR';
     S.instrAbbrev = String(a || '--').toUpperCase();
     S.instrAbbrevAt = S.clockMs + 1000;
 }
@@ -705,9 +730,10 @@ function stepBankIdleCells(drum) {
                 { kind: 'blank', label: '' }, dash('Iter', 'Iteration'), dash('Prob', 'Probability', 'arc'),
                 dash('Ratch', 'Ratchet'), { kind: 'blank', label: '' }];
     }
-    return [{ kind: 'blank', label: 'Note', name: 'Note', bigText: '--', ringBound: true },
-            { kind: 'blank', label: 'Oct',  name: 'Note', bigText: '--', ringBound: true },
-            dash('Leng', 'Length'), dash('Vel', 'Velocity', 'arc'), dash('Nudg', 'Nudge', 'arcbip'),
+    const smp = isSampledTrack(S.activeTrack);
+    return [{ kind: 'blank', label: smp ? 'Slice' : 'Note', name: smp ? 'Slice' : 'Note', bigText: '--', ringBound: true },
+            smp ? { kind: 'blank', label: '' } : { kind: 'blank', label: 'Oct',  name: 'Note', bigText: '--', ringBound: true },
+            dash('Leng', 'Length'), smp ? { kind: 'blank', label: '' } : dash('Vel', 'Velocity', 'arc'), dash('Nudg', 'Nudge', 'arcbip'),
             dash('Iter', 'Iteration'), dash('Prob', 'Probability', 'arc'), dash('Ratch', 'Ratchet')];
 }
 
@@ -1007,12 +1033,13 @@ function mapClickHints(bank) {
     return [['HLD', 'BANKS']];
 }
 export function bankPageHints(bank) {
-    /* A touched TRIGGER knob says how to fire it, as stock's footer does. An
-     * Audio track's CLIP bank has its own: Crop on K5 and >Seq on K8 in Slice
-     * mode, no Legato or Import (found on the device: it read CLK LEGATO). */
-    const au = isAudioTrack(S.activeTrack);
+    /* A touched TRIGGER knob says how to fire it, as stock's footer does. A
+     * Slicer's CLIP bank is a MIDI clip's with >Seq on K8, no Legato or
+     * Import (found on the device: it read CLK LEGATO); an Audio clip's has
+     * no triggers. */
+    const au = isSampledTrack(S.activeTrack);
     if (au && bank === 0 && !S.sessionView) {
-        if (audioSliceMode(S.activeTrack) && S.knobTouched === 4) return [['CLK', 'CROP']];
+        if (audioSliceMode(S.activeTrack) && S.knobTouched === CROP_KNOB) return [['CLK', 'CROP']];
         if (audioSliceMode(S.activeTrack) && S.knobTouched === 7) return [['CLK', '>SEQ']];
     }
     if (!au && bank === 0 && S.knobTouched === LGTO_KNOB && !S.sessionView) return [['CLK', 'LEGATO']];
@@ -2135,16 +2162,19 @@ export function heldStepCells() {
          * rule that, because it used to infer "dead" from the shape and leave two
          * working pitch controls dark. */
         /* AUDIO: K1 is the step's slice (Q6, Josh 2026-10-27: "agreed"); no octave. */
-        isAudioTrack(t)
+        isSampledTrack(t)
             ? { kind: 'blank', label: 'Slice', name: 'Slice', bigText: 'Slice ' + (root - AU_NOTE_BASE + 1), ringBound: true }
             : { kind: 'blank', label: 'Note', name: 'Note', bigText: noteLabel, ringBound: true },
-        isAudioTrack(t)
+        isSampledTrack(t)
             ? { kind: 'blank', label: '' }
             : { kind: 'blank', label: 'Oct',  name: 'Note', bigText: noteLabel, ringBound: true },
         { kind: 'valsq', label: 'Leng', name: 'Length',
           text: fmtStepLen(_gateSteps) },
-        { kind: 'arc', label: 'Vel', name: 'Velocity', text: String(S.stepEditVel),
-          norm: Math.max(0, Math.min(1, S.stepEditVel / 127)) },
+        /* a Slicer plays every chop at one level (Josh, 2026-11-02: "no
+         * velocity modulation"): no Vel to set */
+        isSampledTrack(t) ? { kind: 'blank', label: '' }
+            : { kind: 'arc', label: 'Vel', name: 'Velocity', text: String(S.stepEditVel),
+                norm: Math.max(0, Math.min(1, S.stepEditVel / 127)) },
         { kind: 'arcbip', label: 'Nudg', name: 'Nudge',
           text: (S.stepEditNudge >= 0 ? '+' : '') + S.stepEditNudge,
           signed: Math.max(-1, Math.min(1, S.stepEditNudge / Math.max(1, tps - 1))) },
@@ -2207,7 +2237,7 @@ export function drawHeldStepPage() {
         /* an Audio track's step holds a chop: its number in the merged box, over
          * SLICE (the note name, D-2 for chop 3, read as a pitch: found on the
          * device, 2026-10-30) */
-        const boxName = isAudioTrack(S.activeTrack) ? String(root - AU_NOTE_BASE + 1) : noteName;
+        const boxName = isSampledTrack(S.activeTrack) ? String(root - AU_NOTE_BASE + 1) : noteName;
         drawStepEditKitPage(_stepTitle, cells, { name: boxName, sub: noteSub }, _footer);
         return true;
     } else if (S.stepWasEmpty) {
@@ -2521,8 +2551,8 @@ function drawUIBody() {
     if (bank === BANK_CHORD && inTimeout) {
         /* an Audio track's PAD MODE: the Layout of its chops on the pads */
         drawKitPage(bankHeaderName(S.activeTrack, BANK_CHORD),
-                    isAudioTrack(S.activeTrack) ? auPadModeCells(S.activeTrack) : padModeBankCells(S.activeTrack), false,
-                    isAudioTrack(S.activeTrack) ? null : bankPageHints(BANK_CHORD));
+                    isSampledTrack(S.activeTrack) ? auPadModeCells(S.activeTrack) : padModeBankCells(S.activeTrack), false,
+                    isSampledTrack(S.activeTrack) ? null : bankPageHints(BANK_CHORD));
         return;
     }
 
@@ -3039,7 +3069,7 @@ function drawUIBody() {
         drawKitPage(bankHeaderName(S.activeTrack, bank), audioBankCells(bank, markKnobAlts(cells, bank)), false, bankPageHints(bank), _focusIdx);
         }
 
-    } else if (isAudioTrack(S.activeTrack)) {
+    } else if (isSampledTrack(S.activeTrack)) {
         drawAudioTrackRest(S.activeTrack);
     } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
         /* Drum Track View — idle state */

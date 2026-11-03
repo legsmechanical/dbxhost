@@ -341,6 +341,23 @@ int main(void) {
         n = hx_get_param(h, "state_full", blob, (int)sizeof blob);
         HX_ASSERT(n > 0 && strstr(blob, "\"t6_pm\":4") && strstr(blob, "\"t6_slc\":\"p=0 dt=0 g=0 rv=0 bpm=0 sy=0 sens=50 cond=0 lay=1 n=1|\""),
                   "file: a Slicer with no sample did not save its line");
+        /* a chop's sound belongs to its number: past the count it is kept
+         * (an Even of more chops later brings it back) */
+        hx_set_param(h, "t4_au_set_even", "16 4");
+        hx_set_param(h, "t4_au_slice_gain", "16 9 -5");
+        hx_set_param(h, "bpm", "122");
+        n = hx_get_param(h, "state_full", blob, (int)sizeof blob);
+        HX_ASSERT(n > 0 && strstr(blob, "\"t4s9_slc\":\"st=0 en=0 p=0 dt=0 g=-5 ") && !strstr(blob, "\"t4s8_slc\""),
+                  "file: a chop's sound past the count was not kept (or a default one was written)");
+        /* a Slicer's load shows its progress on any clip's key */
+        {
+            au_ld_key = 4 * (NUM_CLIPS + 1) + AU_SLC; au_ld_done = 5; au_ld_total = 10;
+            hx_get_param(h, "t4_au_progress_3", b, sizeof b);
+            HX_ASSERT(!strcmp(b, "5 10"), "a Slicer's load progress does not read on its clip's key");
+            hx_get_param(h, "t2_au_progress_3", b, sizeof b);
+            HX_ASSERT(!strcmp(b, "0 0"), "another track reads the Slicer's progress");
+            au_ld_key = -1; au_ld_done = au_ld_total = 0;
+        }
         hx_destroy(h);
         /* unknown Sync / Play read as Off / One; an unknown key is skipped */
         h = hx_create(NULL); HX_NO_LEAD(h); inst = (seq8_instance_t *)h->inst;
@@ -348,6 +365,7 @@ int main(void) {
         wf = fopen(inst->state_path, "w");
         fprintf(wf, "{\"v\":37,\"t4_pm\":4,\"t4_slc\":\"p=3 zz=9 sy=2 n=2 lay=1|ramp.wav\","
                     "\"t4s0_slc\":\"st=0 pl=7 qq=1 g=-2\",\"t4s1_slc\":\"st=22050 pl=1\","
+                    "\"t4s2_slc\":\"st=0 g=-4\","
                     "\"t3_pm\":3,\"t3c1_aud\":\"sy=9 g=-5|ramp2.wav\"}");
         fclose(wf);
         seq8_load_state(inst);
@@ -355,6 +373,8 @@ int main(void) {
                   AUS(4)->nslices == 2 && inst->au_trk[4].layout == 1, "file: the Slicer line did not read (or Snap's 2 is not Off)");
         HX_ASSERT(AUS(4)->sl[0].play == AU_PLAY_ONE && AUS(4)->sl[0].gain_db == -2 && AUS(4)->sl[1].play == AU_PLAY_GATE &&
                   AUS(4)->sl[1].start == 22050, "file: an unknown Play is not One, or a chop line did not read");
+        HX_ASSERT(AUS(4)->sl[2].play == AU_PLAY_ONE && AUS(4)->sl[2].gain_db == -4,
+                  "file: a chop line with no Play is not One (or a chop past the count lost its sound)");
         HX_ASSERT(AUA(3, 1)->sync == AU_SYNC_WARP && AUA(3, 1)->gain_db == -5 && !strcmp(AUA(3, 1)->name, "ramp2.wav"),
                   "file: an unknown Audio Sync is not Warp");
         HX_ASSERT(wait_loaded(h, 4, AU_SLC) == 2 && AUS(4)->nslices == 2, "file: the Slicer's sample did not load (or the load re-chopped it)");

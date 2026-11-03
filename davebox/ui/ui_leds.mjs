@@ -27,7 +27,7 @@ import { chordLayoutOn, chordPadColor } from './ui_chord_pads.mjs';
 import { pianoLayoutOn } from './ui_drummodel.mjs';
 import { customLayoutOn, customPadColor } from './ui_custom_chords.mjs';
 import { setLED, setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
-import { isAudioTrack, auInfo, auClipOf, auPos, auPlayheadChop, auPadToSlice, auLayoutOn, auLoopMarks, AU_LOOP_SECTIONS, auEnd, auSelSlice, auLazyOpen, auLazyState,
+import { isSampledTrack, auInfo, auClipOf, auPos, auPlayheadChop, auPadToSlice, auLayoutOn, auLoopMarks, AU_LOOP_SECTIONS, auEnd, auSelSlice, auLazyOpen, auLazyState,
          auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN } from './ui_audio.mjs';
 
 const lastSentNoteLED   = new Array(128).fill(-1);
@@ -380,7 +380,7 @@ export function updateStepLEDs() {
     /* AUDIO, a Loop clip: no sequence, so the step buttons show the loop —
      * the page of its steps showing dim (a clip longer than 16 steps pages,
      * as a sequence does), the playhead white. */
-    if (isAudioTrack(S.activeTrack) && auIsLoop(auInfo(S.activeTrack, auClipOf(S.activeTrack)))) {
+    if (isSampledTrack(S.activeTrack) && auIsLoop(auInfo(S.activeTrack, auClipOf(S.activeTrack)))) {
         const t = S.activeTrack, ac = effectiveClip(t);
         /* playing, the row follows the playhead page by page, as a sequence
          * does (Josh, 2026-10-28: "should follow the sequence playhead like
@@ -667,7 +667,7 @@ function paintBankMapPads() {
         /* ...and an Audio screen is where you are too (Josh, 2026-10-28: "pad
          * map should show when you're in audio/wave"): WAVE's pad, or AUDIO's. */
         const au = S.auPanel && S.auEditor ? (S.auEditor.ed === 'slices' ? 'slices' : 'wave') : null;
-        const sliceClip = isAudioTrack(t) && auIsSlice(auInfo(t, auClipOf(t)));
+        const sliceClip = isSampledTrack(t) && auIsSlice(auInfo(t, auClipOf(t)));
         bankPadMapForMode(S.trackPadMode[t], t).forEach((c, ci) => c.cells.forEach((cell, r) => {
             if (!cell) return;
             /* the track's own pads in its colour — WAVE too, as AUDIO (Josh, 2026-10-28) */
@@ -950,7 +950,7 @@ export function updateTrackLEDs() {
          * signifier that the inverted pads provided"). Co-run pads wear the
          * same colours as anywhere else. */
         const isDrum = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM;
-        if (isAudioTrack(S.activeTrack)) {
+        if (isSampledTrack(S.activeTrack)) {
             /* AUDIO (ui_audio). The pads are the chops of the pad page
              * showing, in the track's PAD MODE Layout; past the chop count dark. Slice mode: the
              * sounding one white, the selected one the track colour, the rest
@@ -1329,7 +1329,7 @@ export function updateTrackLEDs() {
              * and davebox owns the surface for its whole lifetime. */
             let pm = BANKS[S.activeBank].knobs[k];
             /* LIVE ARP's Oct is Step on an Audio track, ±15 (ui_render) */
-            if (S.activeBank === 5 && k === 2 && isAudioTrack(S.activeTrack)) pm = Object.assign({}, pm, { min: -15, max: 15 });
+            if (S.activeBank === 5 && k === 2 && isSampledTrack(S.activeTrack)) pm = Object.assign({}, pm, { min: -15, max: 15 });
             ledVal = knobRingColor(
                 k, knobRingNorm(pm, S.bankParams[S.activeTrack][S.activeBank][k]));
             /* A knob on the seq: list with automation in this clip: under Mute

@@ -2,9 +2,11 @@
  * of + Add lane and of a macro (the follow-up to automating it from the
  * SAMPLE editor, Josh 2026-10-31).
  *
- *   - + Add lane on an Audio track offers Sample (a Loop clip) and also
- *     All Slices (a Slice clip); picking Sample > Pitch adds the empty lane
- *     seq:<t>:au_pitch — the one the editor's knob records to;
+ *   - + Add lane on an Audio track offers Sample; on a SLICER also All
+ *     Slices (Josh, 2026-11-02: "two instruments "audio" and "slicer"" — the
+ *     chops are a Slicer's, its sample the engine's slot 16); picking
+ *     Sample > Pitch adds the empty lane seq:<t>:au_pitch — the one the
+ *     editor's knob records to;
  *   - a macro on Sample > Gain: the touch + click picker offers it, a turn
  *     writes the clip's Gain and is heard as seq:<t>:au_gain; the page cell
  *     shows the clip's value; the mapping survives the sidecar's reader;
@@ -21,8 +23,8 @@ const PEAKS = Array.from({ length: 128 }, (_, i) => ((i * 7) % 100).toString(16)
 /* "state err mode even hand jump rstart rend pitch gain frames rate ch revrs nudge jmpq n detune sync reach bpm10|name" */
 const INFO = (mode) => '2 0 ' + mode + ' 0 1 16 0 96000 0 0 96000 48000 2 0 0 0 1 0 0 96000 1200|Break 84.wav';
 const GET = { 't4_au_dir': '/data/UserData/UserLibrary/Sets/x/dAVEBOx/samples',
-              't4_au_info_0': INFO(0), 't4_pad_mode': '3',
-              't4_au_peaks_0': PEAKS, 't4_au_pos': '1 24000 2', 't4_au_lazy': '0 0 0',
+              't4_au_info_0': INFO(0), 't4_au_info_16': INFO(1),
+              't4_au_peaks_0': PEAKS, 't4_au_peaks_16': PEAKS, 't4_au_marks_16': '0 96000', 't4_au_all_16': '0 x 0 0 0 0', 't4_au_pos': '1 24000 2', 't4_au_lazy': '0 0 0',
               't4_au_marks_0': '0 96000', 't4_au_all_0': '0 x 0 0 0 0', 'pa_list': '' };
 globalThis.host_preview_play = () => {}; globalThis.host_preview_stop = () => {};
 globalThis.host_system_cmd = () => 0;
@@ -38,7 +40,9 @@ globalThis.host_module_set_param = (k, v) => { sets.push([String(k), String(v)])
 /* the bulk write's blob: "<n>\n" then "<len>\n<item>" n times, key / value pairs */
 function dec(blob) { const out = []; if (!blob) return out; const nl = blob.indexOf('\n'); const n = parseInt(blob.slice(0, nl), 10) || 0; let p = nl + 1; for (let i = 0; i < n; i++) { const e = blob.indexOf('\n', p); const len = parseInt(blob.slice(p, e), 10) || 0; p = e + 1; out.push(blob.slice(p, p + len)); p += len; } return out; }
 globalThis.host_module_set_params = (blob) => { const it = dec(blob); for (let i = 0; i + 1 < it.length; i += 2) sets.push([it[i], it[i + 1]]); return true; };
-globalThis.host_module_get_param = (k) => (GET[k] !== undefined ? GET[k] : '');
+/* the track's pad mode: the engine's answer follows the conversion (the screen's copy) */
+let PADMODE = () => '0';
+globalThis.host_module_get_param = (k) => (k === 't4_pad_mode' ? PADMODE() : GET[k] !== undefined ? GET[k] : '');
 globalThis.host_module_get_params = () => '';
 globalThis.host_sampler_is_recording = () => false;
 globalThis.shadow_get_param = () => '';
@@ -88,6 +92,7 @@ const turn = (k, dir, n) => { for (let i = 0; i < 40 && n > 0; i++) { const b = 
 const norm = (v, lo, hi) => Math.round((v - lo) * 16383 / (hi - lo));
 
 
+PADMODE = () => String(S.trackPadMode[4]);
 snd.requestInstrChange(4, C.INSTR_AUDIO);
 if (S.confirmConvertToDrum) { jog(-1); click(); }
 ticks(3);
@@ -107,13 +112,13 @@ const pickParam = (key) => {
 };
 const leave = () => { for (let i = 0; i < 6 && snd.soundOpen(); i++) { cc(51, 127); cc(51, 0); ticks(2); } };
 
-step('⭐⭐ + Add lane on a Loop clip: Sample (no All Slices); Sample > Pitch adds the empty lane seq:4:au_pitch', () => {
+step('⭐⭐ + Add lane on an Audio track: Sample (no All Slices); Sample > Pitch adds the empty lane seq:4:au_pitch', () => {
     sets.length = 0;
     assert(snd.soundAutoAddLane(4, 0, 0), 'the picker did not open');
     ticks(3);
     const rows = snd.soundKnobPickRowsForTest();
     assert(rows.indexOf('au:au') >= 0, 'no Sample row: ' + JSON.stringify(rows));
-    assert(rows.indexOf('au:aus') < 0, 'All Slices offered for a Loop clip\'s lane: ' + JSON.stringify(rows));
+    assert(rows.indexOf('au:aus') < 0, 'All Slices offered for an Audio clip\'s lane: ' + JSON.stringify(rows));
     const banks = rows.filter(id => id.indexOf('bank:') === 0).join(',');
     assert(banks === 'bank:0,bank:1', 'an Audio track offers banks ' + banks + ' (CLIP and NOTE FX only)');
     pickRow('au:au');
@@ -126,17 +131,46 @@ step('⭐⭐ + Add lane on a Loop clip: Sample (no All Slices); Sample > Pitch a
     leave();
 });
 
-step('⭐ + Add lane on a Slice clip offers All Slices too, its seven keys', () => {
-    GET['t4_au_info_0'] = INFO(1); A.auMarkStale(4, 0); ticks(2);
-    assert(snd.soundAutoAddLane(4, 0, 0), 'the picker did not open'); ticks(3);
-    pickRow('au:aus');
-    const keys = snd.soundKnobParamsForTest().map(p => p.key).join(',');
-    assert(keys === 'au_s_atk,au_s_dec,au_s_gain,au_s_pitch,au_s_detune,au_s_rev,au_s_play', 'All Slices lists ' + keys);
+step('a Slicer: Instmt/Dest › Slicer converts the Audio track (the engine\'s undoable "u") and reads its slot', () => {
     sets.length = 0;
-    pickParam('au_s_dec');
-    assert(sent('t4_pa_add').includes('0 seq:4:au_s_dec'), 'pa_add: ' + JSON.stringify(sets.filter(x => /pa_add/.test(x[0]))));
-    leave();
-    GET['t4_au_info_0'] = INFO(0); A.auMarkStale(4, 0); ticks(2);
+    snd.requestInstrChange(4, C.INSTR_SLICER);       /* from Audio: converts at once */
+    ticks(3);
+    assert(A.isSlicerTrack(4) && sent('t4_convert_to_slicer').join() === 'u' && A.auInfo(4, 16).state === 2,
+           'setup: t4 did not become a Slicer: ' + S.trackPadMode[4]);
+});
+
+step('⭐ a Slicer: + Add lane offers All Slices too, its seven keys (Josh, 2026-11-02: "two instruments \"audio\" and \"slicer\"")', () => {
+    try {
+        assert(snd.soundAutoAddLane(4, 0, 0), 'the picker did not open'); ticks(3);
+        pickRow('au:aus');
+        const keys = snd.soundKnobParamsForTest().map(p => p.key).join(',');
+        assert(keys === 'au_s_atk,au_s_dec,au_s_gain,au_s_pitch,au_s_detune,au_s_rev,au_s_play', 'All Slices lists ' + keys);
+        sets.length = 0;
+        pickParam('au_s_dec');
+        assert(sent('t4_pa_add').includes('0 seq:4:au_s_dec'), 'pa_add: ' + JSON.stringify(sets.filter(x => /pa_add/.test(x[0]))));
+    } finally { S.knobPickFor = null; leave(); }
+});
+
+step('⭐ a Slicer: a macro\'s touch + click picker offers Sample and All Slices', () => {
+    try {
+        snd.soundEnter(4, ENG.slotIndex(4)); ticks(2);
+        snd.soundSetBank(C.BANK_MACROS); ticks(2);
+        note(0, 127); click(); note(0, 0); ticks(2);
+        const names = snd.soundKnobTargetsForTest().map(t => t.name);
+        assert(names.indexOf('Sample') >= 0 && names.indexOf('All Slices') >= 0, 'a Slicer\'s macro targets: ' + JSON.stringify(names));
+    } finally {
+        leave();
+        if (S.trackMacros[4]) for (let k = 0; k < 8; k++) S.trackMacros[4][k] = null;
+    }
+});
+
+step('back to Audio (Instmt/Dest › Audio from a Slicer: at once, undoable)', () => {
+    sets.length = 0;
+    snd.requestInstrChange(4, C.INSTR_AUDIO);
+    ticks(3);
+    assert(A.isAudioTrack(4) && sent('t4_convert_to_audio').join() === 'u', 'setup: t4 did not become Audio again: ' + S.trackPadMode[4]);
+    A.auMarkStale(4, 0); ticks(2);
+    assert(A.auInfo(4, 0).state === 2, 'the Audio clip was not read');
 });
 
 step('⭐⭐ a macro on Sample > Gain: touch + click picks it, a turn writes the clip\'s Gain and records seq:4:au_gain', () => {
@@ -146,7 +180,8 @@ step('⭐⭐ a macro on Sample > Gain: touch + click picks it, a turn writes the
     const tn = (k, on) => note(k, on ? 127 : 0);
     tn(0, true); click(); tn(0, false); ticks(2);
     const names = snd.soundKnobTargetsForTest().map(t => t.name);
-    assert(names.indexOf('Sample') >= 0 && names.indexOf('All Slices') >= 0, 'targets: ' + JSON.stringify(names));
+    /* an Audio clip has no chops: Sample, no All Slices (a Slicer's) */
+    assert(names.indexOf('Sample') >= 0 && names.indexOf('All Slices') < 0, 'targets: ' + JSON.stringify(names));
     pickRow('au:au');
     pickParam('au_gain');
     const mp = S.trackMacros[4] && S.trackMacros[4][0];

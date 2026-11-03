@@ -32,7 +32,7 @@ import { showActionPopupFor } from './ui_persistence.mjs';
 import { dspGet } from './ui_dsp_get.mjs';
 /* a cycle (ui_audio_editor imports this module): used only inside a function body */
 import { lazyFinish } from './ui_audio_editor.mjs';
-import { PAD_MODE_AUDIO, NUM_CLIPS, BANK_STEP, TPS_VALUES, knobAltFor, auAutoKey, auSlicesAutoKey, SEQ_AUTO_TARGETS, AU_AUTO_BANK, auAutoBank } from './ui_constants.mjs';
+import { PAD_MODE_AUDIO, PAD_MODE_SLICER, padSampled, NUM_CLIPS, BANK_STEP, TPS_VALUES, knobAltFor, auAutoKey, auSlicesAutoKey, SEQ_AUTO_TARGETS, AU_AUTO_BANK, auAutoBank } from './ui_constants.mjs';
 import { automationParamEdit, automationParamTouch } from './ui_automation.mjs';
 import { bankListForMode, AU_MODE_LOOP, AU_MODE_SLICE, auIsSlice, auIsLoop } from './ui_pure.mjs';
 
@@ -49,6 +49,21 @@ const AU_SYNC_VALS = [1, 2, 0];
  * on the device: "Vintage" broke into VIN / TAG) */
 const AU_SYNC_SQ = ['Vint', 'Ptch', 'Warp'];
 export function auSyncIdx(i) { const k = AU_SYNC_VALS.indexOf(i.sync | 0); return k < 0 ? 2 : k; }
+/* A Slicer's Sync (Josh, 2026-11-02): Off — its chops at their own speed —
+ * or Pitch, retuned by the project's tempo over the sample's own. The
+ * engine's values are the indexes. (Snap is parked.) */
+export const AU_SLC_SYNC_NAMES = ['Off', 'Pitch'];
+const AU_SLC_SYNC_SQ = ['Off', 'Ptch'];
+/* The Sync cell for clip c of track t: the Slicer's two, Audio's three. */
+function syncCell(t, i) {
+    if (isSlicerTrack(t)) {
+        const k = (i.sync | 0) === 1 ? 1 : 0;
+        return { kind: 'enumsq', label: 'Sync', name: 'Sync: Off · Pitch', text: AU_SLC_SYNC_NAMES[k], sq: AU_SLC_SYNC_SQ[k],
+                 options: AU_SLC_SYNC_NAMES, sel: k };
+    }
+    return { kind: 'enumsq', label: 'Sync', name: 'Sync: Vintage · Pitch · Warp',
+             text: AU_SYNC_NAMES[auSyncIdx(i)], sq: AU_SYNC_SQ[auSyncIdx(i)], options: AU_SYNC_NAMES, sel: auSyncIdx(i) };
+}
 /* The sample's own Tempo, BPM (0 until it is known), and its bounds x10 */
 export const AU_BPM10_MIN = 1, AU_BPM10_MAX = 9999;   /* 0.1 .. 999.9 BPM, as the engine's */
 export function auBpm(i) { return (i.bpm10 | 0) / 10; }
@@ -89,20 +104,39 @@ export function auTooLongToChop(t, c) {
     return true;
 }
 
+/* The two instruments (Josh, 2026-11-02: "two instruments "audio" and
+ * "slicer""): AUDIO — a sample per clip, played with the clip (the engine's
+ * Loop mode); SLICER — one sample and its chops for the track, its clips
+ * sequences of chops (Slice mode), held in the engine's slot AU_SLC. The UI
+ * reads either through auClipOf: an Audio clip's own info, or the Slicer's
+ * slot whichever clip is current. */
+export const AU_SLC = 16;
+export function isSampledTrack(t) {
+    return t >= 0 && t < 8 && padSampled(S.trackPadMode[t]);
+}
 export function isAudioTrack(t) {
     return t >= 0 && t < 8 && S.trackPadMode[t] === PAD_MODE_AUDIO;
 }
+export function isSlicerTrack(t) {
+    return t >= 0 && t < 8 && S.trackPadMode[t] === PAD_MODE_SLICER;
+}
 
-/* The clip the AUDIO editor edits: the track's current clip (a queued one
- * while stopped, as everywhere in Track View). */
-export function auClipOf(t) {
+/* The sequencer clip that is current on track t: a queued one while stopped,
+ * as everywhere in Track View. Its steps, length, resolution. */
+export function auSeqClipOf(t) {
     const qc = S.trackQueuedClip[t];
     return (!S.playing && qc >= 0) ? qc : (S.trackActiveClip[t] | 0);
 }
+/* The sample the AUDIO editor edits: the current clip's (Audio), or the
+ * Slicer's slot (every clip plays it). */
+export function auClipOf(t) {
+    return isSlicerTrack(t) ? AU_SLC : auSeqClipOf(t);
+}
 
-/* Slice mode on the track's current clip (the pads are slices). */
+/* A Slicer (the pads are chops). Kept by its old name: every caller asked
+ * "are the pads slices?", which is now the track's kind. */
 export function audioSliceMode(t) {
-    return isAudioTrack(t) && auIsSlice(auInfo(t, auClipOf(t)));
+    return isSlicerTrack(t);
 }
 
 /* The slice the SLICE n page edits: the last pad tapped while the editor is
@@ -190,9 +224,10 @@ export function auRead(t, c) {
      * (au_clip_set_bars), behind the screen's back — Flatten's reset had left
      * it at 1 bar, and the loop length and waveform showed the first bar of a
      * clip that played all of them */
-    if (prev && prev.state === 1 && i.state !== 1) auReadClipLength(t, c);
-    /* A clip with a sample has content (Session View, launching). */
-    if (i.name && S.clipNonEmpty && S.clipNonEmpty[t]) S.clipNonEmpty[t][c] = true;
+    if (prev && prev.state === 1 && i.state !== 1 && c < NUM_CLIPS) auReadClipLength(t, c);
+    /* An Audio clip with a sample has content (Session View, launching); a
+     * Slicer's clips have their steps */
+    if (i.name && c < NUM_CLIPS && isAudioTrack(t) && S.clipNonEmpty && S.clipNonEmpty[t]) S.clipNonEmpty[t][c] = true;
     _stale.delete(t + '_' + c);
     if (i.state === 1) _loading.add(t + '_' + c); else _loading.delete(t + '_' + c);
     /* a Trim / Normalize answered: one that failed keeps the old sample (state
@@ -319,7 +354,7 @@ export function auPos() { return _pos; }
 export function auTick() {
     auTickOthers();
     const t = S.activeTrack;
-    if (!isAudioTrack(t)) { _pos.on = 0; return; }
+    if (!isSampledTrack(t)) { _pos.on = 0; return; }
     const c = auClipOf(t);
     const key = t + '_' + c;
     const i = S.auInfo[t][c];
@@ -364,7 +399,7 @@ export function auTick() {
     /* A bank the track no longer has — STEP and NOTE FX when the clip turns
      * Loop, DELAY that left Audio tracks (a project's remembered bank: found
      * on the device) — goes back to CLIP. */
-    if (bankListForMode(PAD_MODE_AUDIO, t).indexOf(S.activeBank) < 0) {
+    if (bankListForMode(S.trackPadMode[t], t).indexOf(S.activeBank) < 0) {
         S.activeBank = 0;
         S.trackActiveBank[t] = 0;
         S.screenDirty = true;
@@ -426,7 +461,7 @@ function auTickOthers() {
     const pick = (set) => {
         for (const k of set) {
             if (k === cur) continue;
-            if (isAudioTrack(parseInt(k, 10))) return k;
+            if (isSampledTrack(parseInt(k, 10))) return k;
             set.delete(k);
         }
         return null;
@@ -445,20 +480,42 @@ export function auLazyOpen() { return !!(S.auEditor && S.auEditor.mode === 'lazy
 /* Every clip of track t, re-read (a project load, a conversion), and its
  * PAD MODE Layout. */
 export function auReadTrack(t) {
-    for (let c = 0; c < NUM_CLIPS; c++) auRead(t, c);
-    const lay = dspGet('t' + t + '_au_layout');
-    if (lay !== null && lay !== undefined && lay !== '') S.auLayout[t] = parseInt(lay, 10) ? 1 : 0;   /* no answer: keep it */
+    /* an Audio track's clips each; a Slicer's slot alone (a clip index on a
+     * Slicer reads the slot too — read as a clip's, every clip would seem to
+     * hold the sample) */
+    if (isSlicerTrack(t)) {
+        auRead(t, AU_SLC);
+        const lay = dspGet('t' + t + '_au_layout');
+        if (lay !== null && lay !== undefined && lay !== '') S.auLayout[t] = parseInt(lay, 10) ? 1 : 0;   /* no answer: keep it */
+        const cnd = dspGet('t' + t + '_au_cond');
+        if (cnd !== null && cnd !== undefined && cnd !== '') S.auCond[t] = parseInt(cnd, 10) ? 1 : 0;
+    } else {
+        for (let c = 0; c < NUM_CLIPS; c++) auRead(t, c);
+        S.auLayout[t] = 0;
+        S.auCond[t] = 0;
+    }
     S.auPage[t] = 0;
 }
-/* A track that is no longer Audio forgets its clips. */
+/* A track that is no longer Audio / a Slicer forgets its clips and its slot. */
 export function auForgetTrack(t) {
-    for (let c = 0; c < NUM_CLIPS; c++) { S.auInfo[t][c] = null; auMarkStale(t, c); }
+    for (let c = 0; c <= AU_SLC; c++) { S.auInfo[t][c] = null; auMarkStale(t, c); }
 }
 
-/* Session View / clip content: a clip with a sample has content. */
+/* Session View / clip content: an Audio clip with a sample has content (a
+ * Slicer's clips have their steps; the sample is the track's). */
 export function auClipHasSample(t, c) {
+    if (!isAudioTrack(t)) return false;
     const i = S.auInfo[t] && S.auInfo[t][c];
     return !!(i && i.name);
+}
+/* A Slicer follows the Conductor: on / off (off by default; kept by the engine). */
+export function auSetCond(t, v) {
+    v = v ? 1 : 0;
+    if (v === (S.auCond[t] | 0)) return false;
+    S.auCond[t] = v;
+    setKey(t, 'cond', v);
+    S.screenDirty = true;
+    return true;
 }
 
 /* ---- writes (any context) ---- */
@@ -500,29 +557,32 @@ export function auSet(t, c, field, v) {
  * knob's turn is: Record takes it, a held step locks it, a plain turn is a
  * plain turn. The engine holds a playing lane's value live over the clip's
  * setting and the hand's write takes over from it (sp_track_audio set_). */
+/* A lane lives on a sequencer clip: a Slicer's slot is heard through the
+ * clip that is current. */
+const laneClip = (t, c) => (c === AU_SLC ? auSeqClipOf(t) : c);
 export function auAutoEdit(t, c, field, nv, cur) {
     const key = auAutoKey(field);
-    if (key) automationParamEdit(t, c, 'seq', t + ':' + key, String(nv), String(cur));
+    if (key) automationParamEdit(t, laneClip(t, c), 'seq', t + ':' + key, String(nv), String(cur));
 }
 export function auAutoTouch(t, c, field, down) {
     const key = auAutoKey(field);
-    if (key) automationParamTouch(t, c, 'seq', t + ':' + key, down);
+    if (key) automationParamTouch(t, laneClip(t, c), 'seq', t + ':' + key, down);
 }
 /* ALL SLICES' (SLICES with Shift): `field` atk, dec, gain, pitch, detune, rev,
  * play. Decay's lane value for Full (0) is 5001, the dial's top. */
 const auDecWire = (f, v) => (f === 'dec' && (v | 0) === 0 ? 5001 : v | 0);
 export function auSlicesAutoEdit(t, c, field, nv, cur) {
     const key = auSlicesAutoKey(field);
-    if (key) automationParamEdit(t, c, 'seq', t + ':' + key, String(auDecWire(field, nv)), String(auDecWire(field, cur)));
+    if (key) automationParamEdit(t, laneClip(t, c), 'seq', t + ':' + key, String(auDecWire(field, nv)), String(auDecWire(field, cur)));
 }
 export function auSlicesAutoTouch(t, c, field, down) {
     const key = auSlicesAutoKey(field);
-    if (key) automationParamTouch(t, c, 'seq', t + ':' + key, down);
+    if (key) automationParamTouch(t, laneClip(t, c), 'seq', t + ':' + key, down);
 }
 /* THE SCREEN'S COPY of a playing ALL SLICES lane: every chop's cached record
  * and the ALL SLICES row take the value the engine holds them at. */
 export function auSlicesAutoMirror(t, field, val) {
-    const c = S.trackActiveClip[t] | 0;
+    const c = isSlicerTrack(t) ? AU_SLC : (S.trackActiveClip[t] | 0);
     const v = field === 'dec' && val >= 5001 ? 0 : val;
     const fi = ALL_FIELDS.indexOf(field);
     if (fi < 0) return false;
@@ -539,7 +599,7 @@ export function auSlicesAutoMirror(t, field, val) {
  * value the engine holds track t's playing clip at, into the info the SAMPLE
  * editor draws from. Writes nothing to the engine. */
 export function auAutoMirror(t, field, val) {
-    const c = S.trackActiveClip[t] | 0;
+    const c = isSlicerTrack(t) ? AU_SLC : (S.trackActiveClip[t] | 0);
     const i = S.auInfo[t] && S.auInfo[t][c];
     if (!i || i.state !== 2) return false;
     if ((i[field] | 0) === val) return true;
@@ -557,7 +617,7 @@ export function auAutoMirror(t, field, val) {
  * ALL SLICES row not yet read is read now. */
 export function auMacroValue(t, key, read) {
     const st = SEQ_AUTO_TARGETS[key];
-    if (!st || !auAutoBank(st.bank) || !isAudioTrack(t)) return null;
+    if (!st || !auAutoBank(st.bank) || !isSampledTrack(t)) return null;
     const c = auClipOf(t), i = auInfo(t, c);
     if (i.state !== 2) return null;
     if (st.bank === AU_AUTO_BANK) return st.field === 'bpm10' ? (i.bpm10 || 1200) : (i[st.field] | 0);
@@ -612,8 +672,9 @@ function auSetAll(t, c, field, v) {
  * sample's Bars; a set length stays, the chops past it out of bounds (Josh,
  * 2026-10-28). The steps, length and resolution are read back after. */
 export function auChop(t, c) {
+    if (c === AU_SLC) c = auSeqClipOf(t);                      /* the steps are a clip's */
     setKey(t, 'chop', c + ' ' + (S.clipLengthManuallySet[t] && S.clipLengthManuallySet[t][c] ? 0 : 1));
-    auMarkStale(t, c);
+    auMarkStale(t, AU_SLC);
     S.pendingStepsReread = 2; S.pendingStepsRereadTrack = t; S.pendingStepsRereadClip = c;
 }
 export function auLazyStart(t, c) { setKey(t, 'lazy', c + ' 1'); _lazy = { state: AU_LAZY_ARMED, n: 0, frame: 0 }; }
@@ -716,13 +777,6 @@ export function auPanelTitle(ed) {
 const dash = (x) => Object.assign({}, x, { text: '--' });
 const BLANK = { kind: 'blank', label: '' };
 
-/* Mode: how the sequencer plays the chops — the CLIP bank's K4 in both modes
- * (Josh, 2026-10-28: "loop vs slice mode should be a clip bank setting"). */
-export function auModeCell(t) {
-    const i = auInfo(t, auClipOf(t));
-    return { kind: 'enumsq', label: 'Mode', name: 'Mode', text: auIsSlice(i) ? 'Slice' : 'Loop',
-             sq: auIsSlice(i) ? 'Slce' : 'Loop', options: ['Loop', 'Slice'], sel: i.mode };
-}
 const revrsCell = (i) => ({ kind: 'enumsq', label: 'Revrs', name: 'Reverse', text: i.revrs ? 'On' : 'Off', options: ['Off', 'On'], sel: i.revrs });
 const nudgeCell = (i) => ({ kind: 'arcbip', label: 'Nudge', name: 'Nudge (start vs the bar)', text: fmtMs(i.nudge), signed: i.nudge / 500 });
 
@@ -766,13 +820,14 @@ export function auPanelCells(ed) {
         {
             const fr = i.nframes || 1;
             const start = { kind: 'arc', label: 'Start', name: 'Start', text: auFmtTime(i.rstart, i.rate), norm: i.rstart / fr };
-            const sync = { kind: 'enumsq', label: 'Sync', name: 'Sync: Vintage · Pitch · Warp',
-                           text: AU_SYNC_NAMES[auSyncIdx(i)], sq: AU_SYNC_SQ[auSyncIdx(i)], options: AU_SYNC_NAMES, sel: auSyncIdx(i) };
+            const sync = syncCell(t, i);
             const bpm = auBpm(i);
             const tempo = { kind: 'valsq', label: 'Tempo', name: 'Tempo (the sample\'s own)',
                             text: bpm ? String(Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) : '--',
                             norm: ((i.bpm10 || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN) };
-            return [start, pitch, detune, gain, revrsCell(i), nudgeCell(i), auIsLoop(i) ? sync : BLANK, tempo].map(live);
+            /* a Slicer has no Start or Nudge: what plays is its chops */
+            const slc = isSlicerTrack(t);
+            return [slc ? BLANK : start, pitch, detune, gain, revrsCell(i), slc ? BLANK : nudgeCell(i), sync, tempo].map(live);
         }
     }
     if (page === 'CLIP') {
@@ -845,23 +900,14 @@ function stepSliceField(f, v, steps) {
     return v;
 }
 
-/* The CLIP bank's own Audio knob: Mode (K1, both modes — Josh, 2026-10-30:
- * "mode needs to move to k1 on clip") — what kind of clip
- * it is (Josh, 2026-10-29: "mode has to live in clip b/c it describes the type
- * of clip it is"); everything about the sound is SAMPLE's.
- * Returns true when something changed. */
+/* An Audio clip's CLIP bank knobs (K2 Strch, K3 Shift / Nudge): the clip's
+ * own transforms in audio; everything about the sound is SAMPLE's. Mode left
+ * the bank when Audio and the Slicer became two instruments (Josh,
+ * 2026-11-02). Returns true when something changed. */
 export function auClipBankKnob(t, k, steps) {
     const c = auClipOf(t), i = auInfo(t, c);
     const loc = Object.assign({}, i);
-    if (k === 0) {
-        const m = Math.max(0, Math.min(1, i.mode + (steps > 0 ? 1 : -1)));
-        if (m === i.mode) return false;
-        if (auIsSlice({ mode: m }) && auTooLongToChop(t, c)) return false;
-        loc.mode = m; auSet(t, c, 'mode', m);
-        if (S.auPanel) S.auPanel.page = 0;
-        S.pendingPadNoteMapRecompute = true;
-        S.ledsDirtyAudio = true;
-    } else if (!auIsLoop(i) || i.state !== 2) {
+    if (!auIsLoop(i) || i.state !== 2) {
         return false;
     } else if (k === 1) {
         /* Strch (Josh, 2026-10-30: "an audio-based analog of what they do with
@@ -1057,7 +1103,7 @@ export function auPanelKnob(ed, k, steps) {
  * on a Loop clip's CLIP bank: its knobs are Nudge and Mode, not the melodic
  * clip's Res / Shift / Dir. */
 export function knobAltOnTrack(t, padMode, bank, k) {
-    if (bank === 0 && isAudioTrack(t) && auIsLoop(auInfo(t, auClipOf(t)))) return k === 2 ? ['Shift', 'Nudge'] : null;
+    if (bank === 0 && isSampledTrack(t) && auIsLoop(auInfo(t, auClipOf(t)))) return k === 2 ? ['Shift', 'Nudge'] : null;
     return knobAltFor(padMode, bank, k);
 }
 
@@ -1074,7 +1120,7 @@ export function auLoopBankCells(t) {
                     text: (S.auStrchDir && S.auStrchDir.t === t && S.knobTouched === 1) ? (S.auStrchDir.dir > 0 ? 'x2' : '/2') : '1x' };
     const shift = (S.knobAlt & 4) ? nudgeCell(i)
         : { kind: 'valsq', label: 'Shift', name: 'Shift', text: '+' + auShiftSteps(t, c, i) };
-    return [auModeCell(t), live(strch), live(shift), BLANK, BLANK, BLANK, BLANK, BLANK];
+    return [BLANK, live(strch), live(shift), BLANK, BLANK, BLANK, BLANK, BLANK];
 }
 /* Loop's Shift in the clip's steps, 0 .. its length - 1 */
 function auShiftSteps(t, c, i) {
@@ -1085,7 +1131,7 @@ function auShiftSteps(t, c, i) {
  * (and its Zoom) sits on K4, Mode having taken K1; it keeps Res's own bit 0,
  * which the CLIP cells and the knob it turns read. Every other knob: its own. */
 export function auAltBit(t, bank, k) {
-    return (bank === 0 && k === 3 && isAudioTrack(t) && auIsSlice(auInfo(t, auClipOf(t)))) ? 0 : k;
+    return k;            /* (Res sat on K4 while a Slice clip's Mode had K1; it is K1 again) */
 }
 
 /* ---- SAMPLE's second page: what needs no waveform (Josh, 2026-10-29) —
@@ -1097,9 +1143,7 @@ export function auAltBit(t, bank, k) {
 export const AU_P2_KNOB = [-1, 4, 5, 3, 6, 7, null, null];
 export function auSampleP2Cells(t, c) {
     const i = auInfo(t, c);
-    const loop = auIsLoop(i);
-    const sync = { kind: 'enumsq', label: 'Sync', name: 'Sync: Vintage · Pitch · Warp',
-                   text: AU_SYNC_NAMES[auSyncIdx(i)], sq: AU_SYNC_SQ[auSyncIdx(i)], options: AU_SYNC_NAMES, sel: auSyncIdx(i) };
+    const sync = syncCell(t, i);
     const live = (x) => (i.state === 2 ? x : dash(x));
     /* page 1's knobs as a grid (Josh, 2026-10-30: "the sample waveform knob
      * params ... duplicated on p 2 of sample"), in their own order */
@@ -1110,18 +1154,29 @@ export function auSampleP2Cells(t, c) {
                     text: bpm ? String(Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) : '--',
                     norm: ((i.bpm10 || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN), opens: true };
     const gain = { kind: 'arc', label: 'Gain', name: 'Gain', text: fmtDb(i.gain), norm: (i.gain + 40) / 52 };
-    return [loop ? live(sync) : BLANK, live(pitchCell('Pitch', i.pitch)), live(detuneCell('Detune', i.detune)),
-            live(gain), live(tempo), live(revrsCell(i)), BLANK, BLANK];
+    /* a Slicer's K7: whether it follows the Conductor (off by default — a
+     * break is not something to repitch by key) */
+    const cnd = isSlicerTrack(t)
+        ? { kind: 'enumsq', label: 'Cndct', name: 'Follows the Conductor', text: S.auCond[t] ? 'On' : 'Off', options: ['Off', 'On'], sel: S.auCond[t] | 0 }
+        : BLANK;
+    return [live(sync), live(pitchCell('Pitch', i.pitch)), live(detuneCell('Detune', i.detune)),
+            live(gain), live(tempo), live(revrsCell(i)), cnd, BLANK];
 }
 /* A turn on SAMPLE's second page. Returns true when something changed. */
 export function auSampleP2Knob(t, c, k, steps) {
     const i = auInfo(t, c);
     if (i.state !== 2 || !steps) return false;
     const loc = Object.assign({}, i);
-    if (k === 1 && auIsLoop(i)) {
+    if (k === 1 && isSlicerTrack(t)) {
+        const v = steps > 0 ? 1 : 0;
+        if (v === ((i.sync | 0) === 1 ? 1 : 0)) return false;
+        loc.sync = v; auSet(t, c, 'sync', v);
+    } else if (k === 1) {
         const ti = Math.max(0, Math.min(AU_SYNC_NAMES.length - 1, auSyncIdx(i) + (steps > 0 ? 1 : -1)));
         if (AU_SYNC_VALS[ti] === (i.sync | 0)) return false;
         loc.sync = AU_SYNC_VALS[ti]; auSet(t, c, 'sync', loc.sync);
+    } else if (k === 8) {
+        return isSlicerTrack(t) && auSetCond(t, steps > 0 ? 1 : 0);
     } else if (k === 7) {
         const v = steps > 0 ? 1 : 0;
         if (v === (i.revrs | 0)) return false;
@@ -1142,6 +1197,20 @@ export function auEdit(t, c, op, ow) {
     setKey(t, 'edit', c + ' ' + (op ? 1 : 0) + ' ' + (ow ? 1 : 0));
     S.auInfo[t][c] = Object.assign({}, i, { state: 1 });
     auMarkStale(t, c);
+    return true;
+}
+/* A Slicer's Trim (Josh, 2026-11-02: "Trim is a destructive operation so it
+ * has to be something you do pre chop"): frames a..b of its sample into a new
+ * one (or `ow` over the project's copy), chopped 16 even after (the engine);
+ * the steps stay. */
+export function auEditTrim(t, a, b, ow) {
+    const i = auInfo(t, AU_SLC);
+    if (i.state !== 2 || !(b > a) || (a <= 0 && b >= i.nframes)) return false;
+    if (!ow) noteUndoUnit();
+    _editWatch.set(t + '_' + AU_SLC, 'TRIM');
+    setKey(t, 'edit', AU_SLC + ' 0 ' + (ow ? 1 : 0) + ' ' + Math.round(a) + ' ' + Math.round(b));
+    S.auInfo[t][AU_SLC] = Object.assign({}, i, { state: 1 });
+    auMarkStale(t, AU_SLC);
     return true;
 }
 /* Whether Trim would cut anything: the clip plays less than the whole file */

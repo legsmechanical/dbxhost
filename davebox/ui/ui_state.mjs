@@ -494,11 +494,12 @@ export const S = {
     moveCoRunDrumHeld: new Set(),             /* d1 notes of drum lane pads currently held in co-run — per-pad Set so a 2nd simultaneous hold doesn't clobber the 1st's tracking (js-input-1). Plain pad note-off (no Shift injection) sent per held pad on physical release / co-run exit */
     trackPadMode: new Array(8).fill(0),
     /* AUDIO (ui_audio.mjs): per track per clip, the DSP's tN_au_info_C parsed. */
-    auInfo: Array.from({ length: 8 }, () => new Array(16).fill(null)),
+    auInfo: Array.from({ length: 8 }, () => new Array(17).fill(null)),   /* [16]: a Slicer's slot (AU_SLC) */
     auSelSlice: new Array(8).fill(0),  /* the slice SLICE n edits: the last pad tapped */
     auSrc: new Array(8).fill('sample'),  /* the editor entered last: 'sample' | 'slices' (SLICES' pages read it) */
     auStrchDir: null,                    /* a Loop clip's Strch turned: { t, dir } — the cell reads x2 / /2 while K2 is in hand */
     auPage: new Array(8).fill(0),      /* the pad page of chops showing: 0..3, 32 chops a page */
+    auCond: new Array(8).fill(0),      /* a Slicer follows the Conductor (off by default) */
     auLayout: new Array(8).fill(0),    /* PAD MODE Layout: 0 4 Rows (8 a row), 1 16 Pads (left 4x4, right 4x4) */
     auStartsRev: 0,          /* bumped when slice starts may have moved */
     auPanel: null,           /* the AUDIO editor: { t, page } (ui_audio_editor.mjs) */

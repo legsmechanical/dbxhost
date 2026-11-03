@@ -4,7 +4,12 @@
  * which that row sets) for the refusals the menu cannot reach:
  *   - more than 32 chops writes 32 pads (KIT_PADS), and the notice says 32;
  *   - no sample / no chops: NO KIT, nothing copied, nothing written;
- *   - no sample / a Loop clip: the menu offers no Convert to kit at all.
+ *   - no sample / an Audio track: the menu offers no Convert to kit at all.
+ *
+ * THE TWO INSTRUMENTS (Josh, 2026-11-02: "two instruments "audio" and
+ * "slicer""): the chops are a SLICER's — one sample for the track, held in
+ * the engine's slot 16 (t4_au_info_16, t4_au_marks_16, ...); an Audio track's
+ * clips each hold a sample and have no chops, so no kit.
  */
 let failed = 0;
 function ok(label) { console.log(`  ok   — ${label}`); }
@@ -19,13 +24,14 @@ const INFO = (mode, n, even, state) => (state === undefined ? 2 : state) + ' 0 '
     (even === 0 ? n : 1) + ' 16 0 96000 0 0 96000 48000 2 0 0 0 ' + n + '|Break Phenom 84 bpm.wav';
 const MARKS = (n) => Array.from({ length: n }, (_, k) => (k * 2000) + ' ' + ((k + 1) * 2000)).join(' ');
 const GET = { 't4_au_dir': '/data/UserData/UserLibrary/Sets/x/dAVEBOx/samples',
-              't4_au_info_0': INFO(1, 8), 't4_pad_mode': '3',
-              't4_au_peaks_0': PEAKS, 't4_au_pos': '1 24000 2', 't4_au_lazy': '0 0 0',
-              't4_au_marks_0': MARKS(8), 't4_au_all_0': '0 x 0 0 0 0' };
+              't4_au_info_16': INFO(1, 8), 't4_au_info_0': INFO(0, 8),
+              't4_au_peaks_16': PEAKS, 't4_au_peaks_0': PEAKS, 't4_au_pos': '1 24000 2', 't4_au_lazy': '0 0 0',
+              't4_au_marks_16': MARKS(8), 't4_au_all_16': '0 x 0 0 0 0' };
 globalThis.host_preview_play = () => {}; globalThis.host_preview_stop = () => {};
 let CMDS = [];
-const SAMP = '/data/UserData/UserLibrary/Samples/dAVEBOx/Exported kits/My Song 5A.wav';
-globalThis.host_system_cmd = (c) => { CMDS.push(String(c)); globalThis.__stubStat = { [SAMP]: { mode: 0o100644, size: 9 } }; return 0; };
+const SAMP = '/data/UserData/UserLibrary/Samples/dAVEBOx/Exported kits/My Song 5.wav';
+/* the copy lands where it was sent */
+globalThis.host_system_cmd = (c) => { CMDS.push(String(c)); const m = /'([^']*)'$/.exec(String(c)); globalThis.__stubStat = { [m ? m[1] : SAMP]: { mode: 0o100644, size: 9 } }; return 0; };
 globalThis.host_read_file = () => '';
 globalThis.host_file_exists = () => false;
 globalThis.host_ensure_dir = () => true; globalThis.host_remove_dir = () => true;
@@ -37,7 +43,9 @@ globalThis.host_write_file = (path, body) => {
     return true;
 };
 globalThis.host_module_set_param = (k, v) => { sets.push([String(k), String(v)]); };
-globalThis.host_module_get_param = (k) => (GET[k] !== undefined ? GET[k] : '');
+/* the track's pad mode is the screen's (the engine's answer follows the conversion) */
+let PADMODE = () => '0';
+globalThis.host_module_get_param = (k) => (k === 't4_pad_mode' ? PADMODE() : GET[k] !== undefined ? GET[k] : '');
 globalThis.host_module_get_params = () => '';
 globalThis.host_sampler_is_recording = () => false;
 globalThis.shadow_get_param = () => '';
@@ -88,26 +96,30 @@ const click = () => { cc(3, 127); cc(3, 0); };
 const back  = () => { cc(HC.MoveBack, 127); cc(HC.MoveBack, 0); };
 const mapPad = (c, r) => { cc(3, 127); note(P.bankMapPadForCell(c, r), 100); note(P.bankMapPadForCell(c, r), 0); cc(3, 0); ticks(3); };
 const leave = () => { for (let n = 0; S.auEditor && n < 6; n++) { back(); ticks(1); } };
-const clip = (info, marks) => { GET['t4_au_info_0'] = info; GET['t4_au_marks_0'] = marks; A.auMarkStale(4, 0); ticks(2); };
+/* the Slicer's sample: its slot, 16 */
+const slicer = (info, marks) => { GET['t4_au_info_16'] = info; GET['t4_au_marks_16'] = marks; A.auMarkStale(4, 16); ticks(2); };
 const fresh = () => { CMDS = []; FILES = {}; globalThis.__stubStat = null; S.actionPopupLines = []; S.actionPopupEndTick = 0; };
 const kitsWritten = () => Object.keys(FILES).filter((p) => /\.ablpreset$/.test(p));
 
-/* the track becomes Audio by the real gesture (Instmt/Dest -> Audio, Yes) */
-snd.requestInstrChange(4, C.INSTR_AUDIO);
+PADMODE = () => String(S.trackPadMode[4]);
+/* the track becomes a Slicer by the real gesture (Instmt/Dest -> Slicer, Yes) */
+snd.requestInstrChange(4, C.INSTR_SLICER);
 if (S.confirmConvertToDrum) { jog(-1); click(); }
 ticks(3);
-if (!(S.trackPadMode[4] === C.PAD_MODE_AUDIO && A.isAudioTrack(4))) { console.error('FAIL: setup: t4 did not become Audio'); process.exit(1); }
+if (!(S.trackPadMode[4] === C.PAD_MODE_SLICER && A.isSlicerTrack(4) && sent('t4_convert_to_slicer').join() === 'u')) {
+    console.error('FAIL: setup: t4 did not become a Slicer: ' + S.trackPadMode[4]); process.exit(1);
+}
 
 /* SLICES › click › the chop types' rows */
 const openKitMenu = () => { mapPad(2, 2); const ed = S.auEditor; assert(ed && ed.ed === 'slices', 'SLICES did not open'); click(); return ed; };
 
 step('⭐⭐ more than 32 chops: Convert to kit writes 32 pads (36..67), the notice says 32', () => {
-    clip(INFO(1, 40, 0), MARKS(40));
+    slicer(INFO(1, 40, 0), MARKS(40));
     fresh();
     const ed = openKitMenu();
     const rows = E.auPickRows(ed);
     const ki = rows.findIndex((r) => r.id === 'kit');
-    assert(ki >= 0, 'no Convert to kit row on a 40-chop Slice clip: ' + JSON.stringify(rows));
+    assert(ki >= 0, 'no Convert to kit row on a Slicer of 40 chops: ' + JSON.stringify(rows));
     for (let k = 0; k < ki; k++) jog(1);
     click();
     assert(S.pendingAuKit, 'the row did not ask for the kit');
@@ -129,14 +141,14 @@ step('⭐⭐ more than 32 chops: Convert to kit writes 32 pads (36..67), the not
 });
 
 step('⭐⭐ no sample: the SLICES menu offers no Convert to kit; the tick path says NO KIT / No sample and writes nothing', () => {
-    clip(INFO(1, 8, 0, 0).replace('|Break Phenom 84 bpm.wav', '|'), MARKS(8));
+    slicer(INFO(1, 8, 0, 0).replace('|Break Phenom 84 bpm.wav', '|'), MARKS(8));
     fresh();
     const ed = openKitMenu();
     /* (a click there opens no chop menu at all: nothing to chop) */
-    assert(!(ed.pick && E.auPickRows(ed).some((r) => r.id === 'kit')), 'a clip with no sample offers Convert to kit: ' + JSON.stringify(ed.pick));
+    assert(!(ed.pick && E.auPickRows(ed).some((r) => r.id === 'kit')), 'a Slicer with no sample offers Convert to kit: ' + JSON.stringify(ed.pick));
     leave();
-    assert(kitsWritten().length === 0 && CMDS.length === 0, 'the SLICES gesture on a clip with no sample wrote a kit');
-    S.pendingAuKit = { t: 4, c: 0 };
+    assert(kitsWritten().length === 0 && CMDS.length === 0, 'the SLICES gesture on a Slicer with no sample wrote a kit');
+    S.pendingAuKit = { t: 4, c: 16 };               /* what SLICES' row asks: the slot */
     ticks(2);
     const L = S.actionPopupLines || [];
     assert(L[0] === 'NO KIT' && L[1] === 'No sample', 'notice: ' + JSON.stringify(L));
@@ -144,9 +156,9 @@ step('⭐⭐ no sample: the SLICES menu offers no Convert to kit; the tick path 
 });
 
 step('⭐⭐ a failed load (state 3, the name kept) is "no sample" too: NO KIT, nothing written', () => {
-    clip(INFO(1, 8, 0, 3), MARKS(8));
+    slicer(INFO(1, 8, 0, 3), MARKS(8));
     fresh();
-    S.pendingAuKit = { t: 4, c: 0 };
+    S.pendingAuKit = { t: 4, c: 16 };
     ticks(2);
     const L = S.actionPopupLines || [];
     assert(L[0] === 'NO KIT' && L[1] === 'No sample', 'notice: ' + JSON.stringify(L));
@@ -154,37 +166,49 @@ step('⭐⭐ a failed load (state 3, the name kept) is "no sample" too: NO KIT, 
 });
 
 step('⭐⭐ no chops: NO KIT / No chops, nothing copied or written', () => {
-    clip(INFO(1, 8, 0), '');
+    slicer(INFO(1, 8, 0), '');
     fresh();
-    S.pendingAuKit = { t: 4, c: 0 };
+    S.pendingAuKit = { t: 4, c: 16 };
     ticks(2);
     const L = S.actionPopupLines || [];
     assert(L[0] === 'NO KIT' && L[1] === 'No chops', 'notice: ' + JSON.stringify(L));
     assert(kitsWritten().length === 0 && CMDS.length === 0, 'a kit with no chops was written / copied');
 });
 
-step('⭐ a Loop clip: SLICES offers no Convert to kit (the only way in)', () => {
-    clip(INFO(0, 8), MARKS(8));
+step('⭐ an Audio track: no SLICES door, so no Convert to kit (the only way in) — its clips have no chops (Josh, 2026-11-02: "two instruments \"audio\" and \"slicer\"")', () => {
+    /* the track becomes Audio (Instmt/Dest -> Audio: from a Slicer, no question here) */
+    sets.length = 0;
+    snd.requestInstrChange(4, C.INSTR_AUDIO);
+    if (S.confirmConvertToDrum) { jog(-1); click(); }
+    ticks(3);
+    assert(A.isAudioTrack(4) && sent('t4_convert_to_audio').join() === 'u', 'setup: t4 did not become Audio: ' + S.trackPadMode[4]);
+    A.auMarkStale(4, 0); ticks(2);
+    assert(A.auInfo(4, 0).name, 'setup: the Audio clip has no sample');
     fresh();
+    assert(!P.bankPadMapForMode(C.PAD_MODE_AUDIO, 4)[2].cells[2], 'an Audio track\'s map has a SLICES pad');
     mapPad(2, 2);
     const ed = S.auEditor;
-    if (ed && ed.ed === 'slices') {
-        click();
-        assert(!E.auPickRows(ed).some((r) => r.id === 'kit'), 'a Loop clip\'s SLICES offers Convert to kit');
-        back();
-    }
+    assert(!ed || ed.ed !== 'slices', 'the SLICES pad opened SLICES on an Audio track');
     leave();
-    assert(kitsWritten().length === 0 && CMDS.length === 0, 'opening a Loop clip\'s SLICES wrote a kit');
+    /* ...and SAMPLE's menu has no chopping, so no kit there either */
+    mapPad(2, 3);
+    const sed = S.auEditor;
+    assert(sed && sed.ed === 'sample', 'SAMPLE did not open');
+    click();
+    assert(sed.pick && !E.auPickRows(sed).some((r) => r.id === 'kit' || r.id === 'chop'), 'SAMPLE\'s menu offers a kit or chops: ' + JSON.stringify(E.auPickRows(sed)));
+    back();
+    leave();
+    assert(kitsWritten().length === 0 && CMDS.length === 0, 'opening an Audio track\'s editors wrote a kit');
 });
 
-step('auConvertToKit itself refuses a Loop clip (defence in depth: the menu keeps it out too)', () => {
-    clip(INFO(0, 8), MARKS(8));
+step('auConvertToKit itself refuses an Audio clip (defence in depth: the menu keeps it out too)', () => {
+    assert(A.isAudioTrack(4), 'setup: not an Audio track');
     fresh();
     S.pendingAuKit = { t: 4, c: 0 };
     ticks(2);
     const L = S.actionPopupLines || [];
-    assert(L[0] === 'NO KIT' && /Slice/.test(L[1] || ''), 'a Loop clip was kitted: ' + JSON.stringify(L));
-    assert(kitsWritten().length === 0 && CMDS.length === 0, 'a refused Loop kit still wrote or copied');
+    assert(L[0] === 'NO KIT' && /Slice/.test(L[1] || ''), 'an Audio clip was kitted: ' + JSON.stringify(L));
+    assert(kitsWritten().length === 0 && CMDS.length === 0, 'a refused Audio kit still wrote or copied');
 });
 
 if (failed) { console.error('FAIL: test_audio_review_gaps'); process.exit(1); }

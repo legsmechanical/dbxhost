@@ -12,7 +12,7 @@
  */
 
 import { S } from './ui_state.mjs';
-import { PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_AUDIO, NUM_STEPS, BANKS,
+import { PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_AUDIO, PAD_MODE_SLICER, padSampled, NUM_STEPS, BANKS,
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION,
     BANK_CHORD, BANK_CONFIG, isSoundBank } from './ui_constants.mjs';
 
@@ -151,11 +151,9 @@ export function soundBankOnTrack(padMode, bank, t) {
  * moved. */
 /* An Audio track's current clip is a Slice clip (ui_audio's auClipOf and
  * auInfo, read straight from S: this module imports nothing but ui_state). */
+/* A Slicer's track (its pads are chops; Audio's show where the loop is). */
 function audioClipIsSlice(t) {
-    const qc = S.trackQueuedClip ? S.trackQueuedClip[t] : -1;
-    const c = (!S.playing && qc >= 0) ? qc : (S.trackActiveClip ? S.trackActiveClip[t] | 0 : 0);
-    const i = S.auInfo && S.auInfo[t] && S.auInfo[t][c];
-    return auIsSlice(i);
+    return !!(S.trackPadMode && S.trackPadMode[t] === PAD_MODE_SLICER);
 }
 
 export function bankCategoriesForMode(padMode, t) {
@@ -167,8 +165,8 @@ export function bankCategoriesForMode(padMode, t) {
      * The clip's audio is the AUDIO editor, at the instrument door. A Loop
      * clip has no sequence, so no STEP and no NOTE FX (2026-10-28: "we don't
      * need to show notes at all in loop mode"). */
-    if (padMode === PAD_MODE_AUDIO) {
-        const slice = audioClipIsSlice(t === undefined ? S.activeTrack : t);
+    if (padSampled(padMode)) {
+        const slice = padMode === PAD_MODE_SLICER;
         return [
             { label: null,   banks: [BANK_CONFIG] },
             /* IN (2026-10-28: "pad mode bank on IN column" · "let's add an
@@ -267,7 +265,7 @@ const BANK_MAP_SHORT = { [BANK_AUTOMATION]: 'AUTO' };
 
 function bankMapFamily(padMode) {
     return padMode === PAD_MODE_CONDUCT ? 'conduct' : padMode === PAD_MODE_DRUM ? 'drum'
-         : padMode === PAD_MODE_AUDIO ? 'audio' : 'melodic';
+         : padSampled(padMode) ? 'audio' : 'melodic';
 }
 
 /* The map for one track: 4 columns of { label, cells: [{ bank, name } | null x4] };
@@ -374,8 +372,8 @@ export function bankMapModuleAt(route, padMode, col, row, t) {
      * as on the left (Josh, 2026-10-30: "both slice and sample should also be
      * available in the right 4x4 shortcuts" · "slices above sample"); dark on
      * a Loop clip. */
-    if (padMode === PAD_MODE_AUDIO) {
-        if (p.comp === 'midi_fx1') return t != null && audioClipIsSlice(t) ? Object.assign({}, p, { comp: 'slices', label: 'SLICES' }) : null;
+    if (padSampled(padMode)) {
+        if (p.comp === 'midi_fx1') return padMode === PAD_MODE_SLICER ? Object.assign({}, p, { comp: 'slices', label: 'SLICES' }) : null;
         if (p.comp === 'synth') return Object.assign({}, p, { label: 'SAMPLE' });
         return p;
     }

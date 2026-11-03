@@ -4,7 +4,7 @@ import { S, conductorTrackIdx } from './ui_state.mjs';
 import { keyRootName } from './ui_chord.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { STATE_VERSIONS_READ, SCALE_DISPLAY,
-         NUM_CLIPS, PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_AUDIO } from './ui_constants.mjs';
+         NUM_CLIPS, PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_AUDIO, PAD_MODE_SLICER, padSampled } from './ui_constants.mjs';
 import { auConvertOffered } from './ui_audio_convert.mjs';
 import { engineLoadedModule, slotIndex } from './ui_engine.mjs';
 /* ⭑ drawMenuList and menuLayoutDefaults are GONE from this file as of the
@@ -147,9 +147,13 @@ export function drawConvertToDrumConfirm() {
     } else if (S.confirmConvertAudio === 'audio') {
         dlgHeader('TO AUDIO');
         dlgLines(['Warning:', 'Existing notes will be lost.', 'Proceed?']);
+    } else if (S.confirmConvertAudio === 'slicer') {
+        dlgHeader('TO SLICER');
+        dlgLines(['Warning:', 'Existing notes will be lost.', 'Proceed?']);
     } else if (S.confirmConvertAudio === 'leave') {
-        dlgHeader('LEAVE AUDIO');
-        dlgLines(['Warning:', 'Steps and samples will', 'be cleared. Proceed?']);
+        const slc = S.confirmConvertTrack >= 0 && S.trackPadMode[S.confirmConvertTrack] === PAD_MODE_SLICER;
+        dlgHeader(slc ? 'LEAVE SLICER' : 'LEAVE AUDIO');
+        dlgLines(['Warning:', slc ? 'Steps and the sample will' : 'Steps and samples will', 'be cleared. Proceed?']);
     } else {
         dlgHeader('CONVERT');
         dlgLines(['Warning:', 'Existing notes may be lost.', 'Proceed?']);
@@ -2353,6 +2357,25 @@ export function requestTrackModeChange(t, target) {
      * back as its audio (Josh, 2026-10-26). Otherwise notes are cleared after
      * a confirm (Q2, Josh 2026-10-27: "clear them"); an empty track converts
      * at once. */
+    /* -> SLICER: one sample for the track, so nothing to resample into it;
+     * the notes (or another Audio track's samples) go after a confirm. From
+     * Audio, the instrument picker has asked already (LEAVE AUDIO). */
+    if (target === PAD_MODE_SLICER) {
+        let hasData = false;
+        for (let c = 0; c < NUM_CLIPS; c++)
+            if (S.clipNonEmpty[t][c] || S.drumClipNonEmpty[t][c]) { hasData = true; break; }
+        if (hasData && !padSampled(cur)) {
+            S.confirmConvertToDrum = true; S.confirmConvertToDrumSel = 1;
+            S.confirmConvertTrack = t; S.confirmConvertAudio = 'slicer';
+        } else {
+            S.pendingTrackConvert = { t: t, toSlicer: true };
+        }
+        return;
+    }
+    if (target === PAD_MODE_AUDIO && cur === PAD_MODE_SLICER) {
+        S.pendingTrackConvert = { t: t, toAudio: true };          /* asked as LEAVE SLICER */
+        return;
+    }
     if (target === PAD_MODE_AUDIO) {
         const hasSynth = S.trackRoute[t] === 1 || (S.trackRoute[t] === 0 && !!engineLoadedModule(slotIndex(t), 'synth'));
         if (auConvertOffered(t, hasSynth)) {

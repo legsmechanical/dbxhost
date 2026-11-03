@@ -48,7 +48,7 @@ import { daveBoxRotate } from './ui_daves.mjs';
 import { miActive, miOnKnob, miOnJog, miOnClick, miOnBack, miClose, miJogTouch, miPadTap, miPadRelease } from './ui_midi_import.mjs';
 import { audioChooserOpen, audioChooserRotate, audioChooserClick, audioChooserBack, closeAudioChooser } from './ui_audio_chooser.mjs';
 import { audioPanelInput, shortcutLeaves } from './ui_audio_editor.mjs';
-import { isAudioTrack, AU_EXT_BASE, AU_NOTE_BASE } from './ui_audio.mjs';
+import { isSampledTrack, AU_EXT_BASE, AU_NOTE_BASE } from './ui_audio.mjs';
 import {
     projectPickerTextEntryMidi, templateTextEntryMidi,
     projectPadPickerTap, projectPadPickerRotate, projectPadPickerClick
@@ -1220,7 +1220,7 @@ function _onMidiExternalImpl(data) {
     /* Audio: chop k is note k inside, but a keyboard's drum pads start at 36,
      * so external note 36 is chop 1 (Josh, 2026-10-28: 128 chops). Notes
      * below it reach nothing. */
-    if (isAudioTrack(t) && (msgType === 0x90 || msgType === 0x80)) {
+    if (isSampledTrack(t) && (msgType === 0x90 || msgType === 0x80)) {
         d1 = d1 - AU_EXT_BASE + AU_NOTE_BASE;
         if (d1 < 0 || d1 > 127) return;
     }

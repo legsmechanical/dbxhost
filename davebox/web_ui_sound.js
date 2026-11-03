@@ -209,10 +209,12 @@ function renderSound() {
        * position 0 — the same keys the on-device editor builds */
       chain.appendChild(sndCard(0, "move_fx:" + bus + ":" + SND_MOVE_FX[i], "FX " + (i + 1)));
     }
-  } else if (trk.pm === PM_AUDIO) {
-    /* its sound is its clips' samples, played into the effects; no MIDI reaches
-     * a MIDI FX or an instrument there */
-    chain.appendChild(sndStaticCard("SAMPLE", "plays each clip's own sample — edit the samples and chops on the device"));
+  } else if (trk.pm === PM_AUDIO || trk.pm === PM_SLICER) {
+    /* its sound is its samples, played into the effects; no MIDI reaches a
+     * MIDI FX or an instrument there */
+    chain.appendChild(sndStaticCard("SAMPLE", trk.pm === PM_SLICER
+      ? "plays its sample's chops — edit the sample and chops on the device"
+      : "plays each clip's own sample — edit the samples on the device"));
     for (const spec of SND_CHAIN_COMPONENTS)
       if (spec.comp !== "synth" && spec.comp !== "midi_fx1") chain.appendChild(sndCard(t, spec.comp, spec.role));
   } else {

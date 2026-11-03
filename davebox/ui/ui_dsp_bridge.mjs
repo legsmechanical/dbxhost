@@ -43,8 +43,8 @@ import {
     INSTR_MOVE_MAX, INSTR_SCHWUNG, INSTR_MIDI_CH, INSTR_TRACK, moveInstrOwner, moveInstrDuplicates,
     MoveRec, LED_OFF, parseActionRaw, INSTR_NONE, ROUTE_NONE,
     INSTR_CONDUCT, PAD_MODE_CONDUCT, PAD_MODE_MELODIC_SCALE, DEFAULT_TRACK_OCTAVE,
-    INSTR_AUDIO, PAD_MODE_AUDIO, SEQ_AUTO_TARGETS, auAutoBank } from './ui_constants.mjs';
-import { auReadTrack, auForgetTrack, isAudioTrack, auRead } from './ui_audio.mjs';
+    INSTR_AUDIO, INSTR_SLICER, PAD_MODE_AUDIO, PAD_MODE_SLICER, padSampled, SEQ_AUTO_TARGETS, auAutoBank } from './ui_constants.mjs';
+import { auReadTrack, auForgetTrack, isSampledTrack, isAudioTrack, isSlicerTrack, AU_SLC, auRead } from './ui_audio.mjs';
 import { mergeStemsSettle, mergeStemsWriting } from './ui_resample.mjs';
 import { Red } from '/data/UserData/schwung/shared/constants.mjs';
 
@@ -1305,8 +1305,8 @@ function readTrackConfig(t) {
     /* Bulk read (project load): re-derive after the last track, below. */
     const pm = dspGet('t' + t + '_pad_mode');
     if (pm !== null && pm !== undefined) S.trackPadMode[t] = parseInt(pm, 10) | 0;
-    /* An Audio track: every clip's sample (ui_audio). */
-    if (S.trackPadMode[t] === PAD_MODE_AUDIO) auReadTrack(t);
+    /* An Audio track: every clip's sample; a Slicer: its slot (ui_audio). */
+    if (padSampled(S.trackPadMode[t])) auReadTrack(t);
     else if (S.auInfo[t].some((x) => x)) auForgetTrack(t);
     const tvo = dspGet('t' + t + '_track_vel_override');
     if (tvo !== null && tvo !== undefined) S.trackVelOverride[t] = parseInt(tvo, 10) | 0;
@@ -1346,6 +1346,7 @@ export function instrValueFor(t) {
      * the parked destination and the picker would open on the wrong row. */
     if (S.trackPadMode[t] === PAD_MODE_CONDUCT) return INSTR_CONDUCT;
     if (S.trackPadMode[t] === PAD_MODE_AUDIO) return INSTR_AUDIO;
+    if (S.trackPadMode[t] === PAD_MODE_SLICER) return INSTR_SLICER;
     if (S.trackRoute[t] === 2) {
         const mt = S.trackMidiTo[t] | 0;
         if (mt > 0) return INSTR_TRACK + (mt - 1);
@@ -1366,7 +1367,7 @@ export function applyInstrChoice(t, v) {
      * Arriving here means a caller skipped that — refuse rather than write a
      * route for it, which would move the track's destination as a side effect
      * of choosing a type. */
-    if (v === INSTR_CONDUCT || v === INSTR_AUDIO) return false;
+    if (v === INSTR_CONDUCT || v === INSTR_AUDIO || v === INSTR_SLICER) return false;
     if (v === INSTR_SCHWUNG) { applyTrackConfig(t, 'route', 0); return; }
     /* None: a Schwung track with nothing loaded (the UI's gated path is
      * commitInstrPick; this is the bare setter). */
@@ -2335,8 +2336,10 @@ export function syncClipsTargeted(infoStr) {
             if (c === S.trackActiveClip[t]) refreshPerClipBankParams(t);
         }
         /* an Audio clip's sample side came back with it (a reload reads as
-         * loading, polled until it lands) */
+         * loading, polled until it lands); a Slicer's slot rides every step
+         * of its track (a chop edit, a pick, leaving it) — read it again */
         if (isAudioTrack(t)) auRead(t, c);
+        else if (isSlicerTrack(t)) auRead(t, AU_SLC);
         /* the Conductor's clip: its responder flags came back too (an Apply
          * Conductor bake had turned them off) */
         if (t === conductorTrackIdx()) readConductorClip(t, c);

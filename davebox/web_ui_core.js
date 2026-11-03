@@ -46,7 +46,7 @@ if (!window.schwungRemote) {
   const tracks=Array.from({length:8},(_,t)=>({pm:t===0?1:(t===6?2:(t===4?3:0)), ac:0, pl:0, qc:-1, mute:0, solo:0, route:t<4?1:0, chan:t+1}));
   const auNotes=[[0,0],[48,2],[96,1],[144,3],[192,0],[240,5],[288,7],[336,6]]
           .map(([tick,pitch])=>({tick,pitch,vel:100,gate:24}));
-  const store=()=>tracks[sel.t].pm===3?auNotes:mel;
+  const store=()=>(tracks[sel.t].pm===3||tracks[sel.t].pm===4)?auNotes:mel;
   // per-clip FX (melodic), 29 values matching the DSP rui_pfx order
   const PFXKEYS=["noteFX_octave","noteFX_offset","noteFX_gate","noteFX_velocity","quantize",
     "noteFX_random","noteFX_random_mode","noteFX_length_mode","harm_octaver","harm_interval1",
@@ -78,8 +78,8 @@ if (!window.schwungRemote) {
       KV["overtake_dsp:rui_notes"]="";
     } else {
       KV["overtake_dsp:rui_clip"]=clipLen+":24:"+clipLs+":"+clipDir+
-        (tracks[sel.t].pm===3?(":"+(sel.c===1?0:1)+":8"):":-1:0");
-      KV["overtake_dsp:rui_notes"]=(tracks[sel.t].pm===3&&sel.c===1?[]:store()).map(n=>n.tick+":"+n.pitch+":"+n.vel+":"+n.gate+";").join("");
+        (tracks[sel.t].pm===3?":0:1":tracks[sel.t].pm===4?":1:8":":-1:0");
+      KV["overtake_dsp:rui_notes"]=(tracks[sel.t].pm===3?[]:store()).map(n=>n.tick+":"+n.pitch+":"+n.vel+":"+n.gate+";").join("");
       KV["overtake_dsp:rui_pfx"]=pfx.join(":");
       delete KV["overtake_dsp:rui_dlanes"]; delete KV["overtake_dsp:rui_dnotes"];
     }
@@ -324,11 +324,12 @@ function parseModel(){
           cond: parseCond(get("rui_cond")||"")};
 }
 const isDrum = ()=> M && M.tracks[M.sel.t] && M.tracks[M.sel.t].pm===1;
-/* An Audio track (pad mode 3): melodic storage, but a note is a chop (chop k =
- * note k). A Slice clip's roll is its chops; a Loop clip has no steps at all. */
-const PM_AUDIO = 3;
-const isAudio = ()=> M && M.tracks[M.sel.t] && M.tracks[M.sel.t].pm===PM_AUDIO;
-const isAudioLoop = ()=> isAudio() && M.clip.auMode===0;
+/* An Audio track (pad mode 3: a sample per clip, no steps at all) or a
+ * Slicer (pad mode 4: melodic storage, but a note is a chop — chop k = note
+ * k; its roll is its chops). isAudio says "either". */
+const PM_AUDIO = 3, PM_SLICER = 4;
+const isAudio = ()=> M && M.tracks[M.sel.t] && (M.tracks[M.sel.t].pm===PM_AUDIO || M.tracks[M.sel.t].pm===PM_SLICER);
+const isAudioLoop = ()=> M && M.tracks[M.sel.t] && M.tracks[M.sel.t].pm===PM_AUDIO;
 const chopName = p=>"Chop "+(p+1);
 
 /* Schedule a reconcile ~130ms after an edit. Do NOT zero the suppress window

@@ -7,7 +7,10 @@
  *     then the live value); the touch's release ends the gesture;
  *   - K7 Tempo and K8 Revrs name their own keys;
  *   - Delete + touch clears that knob's lane, Mute + touch switches it off;
- *   - SLICES' K4-K8 are a slice's own sound: not automation targets;
+ *   - a SLICER (Josh, 2026-11-02: "two instruments "audio" and "slicer""):
+ *     its sample is the engine's slot 16; SLICES' K4-K8 are a slice's own
+ *     sound, not automation targets; ALL SLICES (Shift) is, as au_s_*, a
+ *     Slicer's alone — Play is One / Gate (0..1: Loop left with the Mode);
  *   - the lane's value, as the engine reports it, reaches the editor's info
  *     (the screen shows what plays); the lane is called "Smp>Gain".
  */
@@ -22,8 +25,8 @@ const PEAKS = Array.from({ length: 128 }, (_, i) => ((i * 7) % 100).toString(16)
 /* "state err mode even hand jump rstart rend pitch gain frames rate ch revrs nudge jmpq n detune sync reach bpm10|name" */
 const INFO = (mode) => '2 0 ' + mode + ' 0 1 16 0 96000 0 0 96000 48000 2 0 0 0 1 0 0 96000 1200|Break 84.wav';
 const GET = { 't4_au_dir': '/data/UserData/UserLibrary/Sets/x/dAVEBOx/samples',
-              't4_au_info_0': INFO(0), 't4_pad_mode': '3',
-              't4_au_peaks_0': PEAKS, 't4_au_pos': '1 24000 2', 't4_au_lazy': '0 0 0',
+              't4_au_info_0': INFO(0), 't4_au_info_16': INFO(1),
+              't4_au_peaks_0': PEAKS, 't4_au_peaks_16': PEAKS, 't4_au_marks_16': '0 96000', 't4_au_all_16': '0 x 0 0 0 0', 't4_au_pos': '1 24000 2', 't4_au_lazy': '0 0 0',
               't4_au_marks_0': '0 96000', 't4_au_all_0': '0 x 0 0 0 0', 'pa_list': '' };
 globalThis.host_preview_play = () => {}; globalThis.host_preview_stop = () => {};
 globalThis.host_system_cmd = () => 0;
@@ -39,7 +42,9 @@ globalThis.host_module_set_param = (k, v) => { sets.push([String(k), String(v)])
 /* the bulk write's blob: "<n>\n" then "<len>\n<item>" n times, key / value pairs */
 function dec(blob) { const out = []; if (!blob) return out; const nl = blob.indexOf('\n'); const n = parseInt(blob.slice(0, nl), 10) || 0; let p = nl + 1; for (let i = 0; i < n; i++) { const e = blob.indexOf('\n', p); const len = parseInt(blob.slice(p, e), 10) || 0; p = e + 1; out.push(blob.slice(p, p + len)); p += len; } return out; }
 globalThis.host_module_set_params = (blob) => { const it = dec(blob); for (let i = 0; i + 1 < it.length; i += 2) sets.push([it[i], it[i + 1]]); return true; };
-globalThis.host_module_get_param = (k) => (GET[k] !== undefined ? GET[k] : '');
+/* the track's pad mode: the engine's answer follows the conversion (the screen's copy) */
+let PADMODE = () => '0';
+globalThis.host_module_get_param = (k) => (k === 't4_pad_mode' ? PADMODE() : GET[k] !== undefined ? GET[k] : '');
 globalThis.host_module_get_params = () => '';
 globalThis.host_sampler_is_recording = () => false;
 globalThis.shadow_get_param = () => '';
@@ -85,6 +90,7 @@ const click = () => { cc(3, 127); cc(3, 0); };
 const turn = (k, dir, n) => { for (let i = 0; i < 40 && n > 0; i++) { const b = sets.length; cc(71 + k, dir > 0 ? 1 : 127); if (sets.slice(b).some((x) => /_au_set_/.test(x[0]))) n--; } };
 const norm = (v, lo, hi) => Math.round((v - lo) * 16383 / (hi - lo));
 
+PADMODE = () => String(S.trackPadMode[4]);
 snd.requestInstrChange(4, C.INSTR_AUDIO);
 if (S.confirmConvertToDrum) { jog(-1); click(); }
 ticks(3);
@@ -131,8 +137,17 @@ step('⭐ Delete + touch clears the knob\'s lane; Mute + touch switches it off',
     assert(sent('t4_pa_clear_key').includes('0 seq:4:au_pitch'), 'Delete + touch K5 did not clear the Pitch lane: ' + JSON.stringify(sets));
 });
 
+step('a Slicer: Instmt/Dest › Slicer converts the track (undoable) and reads its slot', () => {
+    while (S.auEditor) { cc(51, 127); cc(51, 0); ticks(1); }
+    S.playing = false;
+    sets.length = 0;
+    snd.requestInstrChange(4, C.INSTR_SLICER);
+    ticks(3);
+    assert(A.isSlicerTrack(4) && sent('t4_convert_to_slicer').join() === 'u' && A.auInfo(4, 16).state === 2,
+           'setup: t4 did not become a Slicer: ' + S.trackPadMode[4]);
+});
+
 step('SLICES\' K4-K8 are the slice\'s own sound: no automation', () => {
-    GET['t4_au_info_0'] = INFO(1); A.auMarkStale(4, 0); ticks(2);
     while (S.auEditor) { cc(51, 127); cc(51, 0); ticks(1); }
     E.openWave(4, 'slices'); ticks(2);
     assert(S.auEditor && S.auEditor.ed === 'slices', 'SLICES did not open');
@@ -144,7 +159,7 @@ step('SLICES\' K4-K8 are the slice\'s own sound: no automation', () => {
 });
 
 step('⭐⭐ ALL SLICES (SLICES with Shift): K4 Gain written to every chop AND heard as seq:4:au_s_gain', () => {
-    GET['t4_au_info_0'] = INFO(1); A.auMarkStale(4, 0); ticks(2);
+    A.auMarkStale(4, 16); ticks(2);
     if (!(S.auEditor && S.auEditor.ed === 'slices')) { E.openWave(4, 'slices'); ticks(2); }
     assert(S.auEditor && S.auEditor.ed === 'slices', 'SLICES did not open');
     S.playing = true;
@@ -155,20 +170,35 @@ step('⭐⭐ ALL SLICES (SLICES with Shift): K4 Gain written to every chop AND h
     ticks(1);
     S.shiftHeld = false;
     note(3, 0); ticks(1);                 /* Shift let go first: the release still ends it */
-    assert(sent('t4_au_all_gain').length >= 1, 'ALL SLICES\' Gain was not written: ' + JSON.stringify(sets));
+    assert(sent('t4_au_all_gain').length >= 1 && sent('t4_au_all_gain').every((v) => /^16 /.test(v)),
+           'ALL SLICES\' Gain was not written to the Slicer\'s slot: ' + JSON.stringify(sets));
     assert(sent('t4_pa_live').some((v) => v.indexOf('seq:4:au_s_gain ') === 0), 'not heard as seq:4:au_s_gain: ' + JSON.stringify(sent('t4_pa_live')));
     assert(sent('t4_pa_live_end').includes('seq:4:au_s_gain'), 'the release did not end the gesture');
     S.playing = false;
     assert(snd.soundSeqMirror(4, 'au_s_dec', 5001) === true, 'the ALL SLICES mirror refused');
-    assert(A.auAll(4, 0)[A.ALL_FIELDS.indexOf('dec')] === 0, 'Decay\'s 5001 did not show as Full (0) on ALL SLICES');
+    assert(A.auAll(4, 16)[A.ALL_FIELDS.indexOf('dec')] === 0, 'Decay\'s 5001 did not show as Full (0) on ALL SLICES');
     snd.soundSeqMirror(4, 'au_s_pitch', 7);
-    assert(A.auAll(4, 0)[A.ALL_FIELDS.indexOf('pitch')] === 7, 'ALL SLICES does not show the lane\'s Pitch');
+    assert(A.auAll(4, 16)[A.ALL_FIELDS.indexOf('pitch')] === 7, 'ALL SLICES does not show the lane\'s Pitch');
     assert(AU.automationTargetLabel('seq:4:au_s_play') === 'Slcs>Play' && AU.automationTargetStepped('seq:4:au_s_play'),
            'label / stepping: ' + AU.automationTargetLabel('seq:4:au_s_play'));
+    /* Play is One / Gate: 0..1 (Loop play left with the Mode) */
+    const pl = C.SEQ_AUTO_TARGETS['au_s_play'];
+    assert(pl && pl.min === 0 && pl.max === 1, 'au_s_play range: ' + JSON.stringify(pl));
+    snd.soundSeqMirror(4, 'au_s_play', 2);
+    assert(A.auAll(4, 16)[A.ALL_FIELDS.indexOf('play')] === 1, 'a lane value past Gate showed as ' + A.auAll(4, 16)[A.ALL_FIELDS.indexOf('play')]);
+    while (S.auEditor) { cc(51, 127); cc(51, 0); ticks(1); }
+});
+
+step('⭐ ALL SLICES lanes are a Slicer\'s alone: on an Audio track an au_s_ value is not mirrored', () => {
+    sets.length = 0;
+    snd.requestInstrChange(4, C.INSTR_AUDIO);
+    ticks(3);
+    assert(A.isAudioTrack(4) && sent('t4_convert_to_audio').join() === 'u', 'setup: t4 did not become Audio again: ' + S.trackPadMode[4]);
+    assert(snd.soundSeqMirror(4, 'au_s_gain', 3) === false, 'an au_s_ value was mirrored onto an Audio track');
 });
 
 step('⭐ the lane\'s value reaches the editor\'s info; the lane is called "Smp>Gain"', () => {
-    GET['t4_au_info_0'] = INFO(0); A.auMarkStale(4, 0); ticks(2);
+    A.auMarkStale(4, 0); ticks(2);
     assert(snd.soundSeqMirror(4, 'au_gain', -12) === true, 'the mirror refused an Audio lane');
     assert(A.auInfo(4, 0).gain === -12, 'the editor does not show the lane\'s -12 dB: ' + A.auInfo(4, 0).gain);
     snd.soundSeqMirror(4, 'au_bpm', 2400);

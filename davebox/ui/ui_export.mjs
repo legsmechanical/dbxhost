@@ -22,7 +22,7 @@ import { nowMs } from './ui_clock.mjs';
 import { slotIndex, DAVEBOX_HOST_DIR, SLOT_LEVEL_MAX, engineGet, engineGetSlotParam } from './ui_engine.mjs';
 import { showActionPopup, showActionPopupFor } from './ui_persistence.mjs';
 import { midiFxLeftOut } from './ui_print.mjs';
-import { NUM_TRACKS, NUM_CLIPS, ACTION_POPUP_MS, PAD_MODE_CONDUCT, PAD_MODE_AUDIO, SCENE_LETTERS } from './ui_constants.mjs';
+import { NUM_TRACKS, NUM_CLIPS, ACTION_POPUP_MS, PAD_MODE_CONDUCT, PAD_MODE_AUDIO, PAD_MODE_SLICER, padSampled, SCENE_LETTERS } from './ui_constants.mjs';
 /* a cycle (ui_resample imports sanitizeName from here): used only inside
  * function bodies */
 import { RS_ERR_TEXT } from './ui_resample.mjs';
@@ -271,8 +271,8 @@ function resolveTrack(t, ctx) {
     }
     /* Audio track: a Live audio track (buildAudioTrack), audio effects only —
      * none, as nothing of the slot's chain comes across. */
-    if (S.trackPadMode && S.trackPadMode[t] === PAD_MODE_AUDIO) {
-        return { devices: [], name: 'Audio ' + (t + 1), color: defaultColor, mixer: null };
+    if (S.trackPadMode && padSampled(S.trackPadMode[t])) {
+        return { devices: [], name: (S.trackPadMode[t] === PAD_MODE_SLICER ? 'Slicer ' : 'Audio ') + (t + 1), color: defaultColor, mixer: null };
     }
 
     if (route === ROUTE_MOVE) {
@@ -831,7 +831,7 @@ function paPrepareTrack(t, r, ctx) {
         if (!what || what.kind !== 'mixer') continue;
         /* an Audio track's take holds its fader and pan as they moved: only
          * its sends come across (buildAudioClip) */
-        if (S.trackPadMode[t] === PAD_MODE_AUDIO && (what.field === 'volume' || what.field === 'pan')) continue;
+        if (padSampled(S.trackPadMode[t]) && (what.field === 'volume' || what.field === 'pan')) continue;
         if (!ctx.paMixerIds[t][what.field]) ctx.paMixerIds[t][what.field] = ctx.nextPaId++;
     }
 }
@@ -964,7 +964,7 @@ function buildTrack(t, ctx) {
     const r = resolveTrack(t, ctx);
     /* Ids must exist on the mixer before any clip can point at one. */
     paPrepareTrack(t, r, ctx);
-    if (S.trackPadMode && S.trackPadMode[t] === PAD_MODE_AUDIO) return buildAudioTrack(t, r, ctx);
+    if (S.trackPadMode && padSampled(S.trackPadMode[t])) return buildAudioTrack(t, r, ctx);
     /* Melodic tracks bake clip notes via _export; drum tracks flatten their
      * polymetric lanes via _export_drum. DSP is authoritative — empty clips
      * return count 0 → empty slot. The Conductor track emits no MIDI of its
@@ -1105,7 +1105,7 @@ function armExport() {
     S.exportMidiFxLeftOut    = midiFxLeftOut();
     S.confirmExportCondPhase = false;
     S.globalMenuOpen         = false;
-    if (S.trackPadMode.some((m) => m === PAD_MODE_AUDIO)) {
+    if (S.trackPadMode.some((m) => padSampled(m))) {
         /* the takes are read in the tick (get_param), then recorded */
         S.exportFlatten = { phase: 'list' };
         showActionPopup('EXPORTING', 'Audio tracks');
@@ -1158,7 +1158,7 @@ function pollExportFlatten() {
         const cond = S.exportApplyConductor ? 1 : 0;
         const list = [];
         for (let t = 0; t < NUM_TRACKS; t++) {
-            if (S.trackPadMode[t] !== PAD_MODE_AUDIO) continue;
+            if (!padSampled(S.trackPadMode[t])) continue;
             for (let c = 0; c < NUM_CLIPS; c++) {
                 const ticks = parseInt(host_module_get_param('export_take_ticks_t' + t + '_c' + c + '_k' + cond), 10);
                 if (ticks === -1) {

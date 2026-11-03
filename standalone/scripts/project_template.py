@@ -35,6 +35,8 @@ STATE_V = 37
 # the state formats this build reads (seq8_state.c's gate): 37 added Audio + Slicer
 STATE_V_READS = (36, 37)
 SIDECAR_V = 9
+SLICER_PM = 4           # PAD_MODE_SLICER: one sample + chops for the track
+SAMPLES_LEAF = "samples"
 
 HOST_LEAF = "host"
 NUM_TRACKS = 8
@@ -116,7 +118,41 @@ def filter_state(state):
             for l, mn in _lane_notes(state, t).items():
                 for c in range(NUM_CLIPS):
                     out["t%dc%dl%d_mn" % (t, c, l)] = mn
+        # A Slicer comes with its sample, chops, Tempo and Sync (Josh,
+        # 2026-11-02: "Yes"); its sample file rides along (slicer_samples).
+        # An Audio track arrives empty: its samples are its clips'.
+        if state.get("t%d_pm" % t) == SLICER_PM:
+            for k, v in state.items():
+                if k == "t%d_slc" % t or re.match(r"^t%ds\d+_slc$" % t, k):
+                    out[k] = v
     return out
+
+
+def slicer_samples(state):
+    """The sample file each Slicer of a (filtered) state names: [name]."""
+    out = []
+    if not isinstance(state, dict):
+        return out
+    for t in range(NUM_TRACKS):
+        v = state.get("t%d_slc" % t)
+        if state.get("t%d_pm" % t) == SLICER_PM and isinstance(v, str) and "|" in v:
+            name = v.split("|", 1)[1]
+            if name and "/" not in name and name not in (".", "..") and name not in out:
+                out.append(name)
+    return out
+
+
+def _copy_samples(src_dir, dst_dir, names):
+    """Copy the named files from src_dir into dst_dir (made if needed); a file
+    that is not there is skipped (the project then shows it Missing)."""
+    for n in names:
+        sp = os.path.join(src_dir, n)
+        if not os.path.isfile(sp):
+            continue
+        os.makedirs(dst_dir, exist_ok=True)
+        dp = os.path.join(dst_dir, n)
+        if not os.path.exists(dp):
+            shutil.copy2(sp, dp)
 
 
 # ---- Move's song ------------------------------------------------------------
@@ -262,6 +298,8 @@ def set_template(templates_dir, tid, project_dir, ui_path, prefix, source_name="
         fs = filter_state(state)
         if fs is not None:
             _write_json(os.path.join(tmp, "state.json"), fs)
+            _copy_samples(os.path.join(project_dir, sub, SAMPLES_LEAF), os.path.join(tmp, SAMPLES_LEAF),
+                          slicer_samples(fs))
         _write_json(os.path.join(tmp, "ui.json"), ui)
         host_src = os.path.join(project_dir, sub, HOST_LEAF) if sub else None
         host_dst = os.path.join(tmp, HOST_LEAF)
@@ -343,6 +381,8 @@ def apply_template(templates_dir, tid, project_dir, prefix, have=None):
     state = _read_json(os.path.join(src, "state.json"))
     if isinstance(state, dict) and state.get("v") in STATE_V_READS:
         _write_json(os.path.join(dst, prefix + "-state.json"), state)
+        # its Slicers' samples, copied into the new project (a project owns its samples)
+        _copy_samples(os.path.join(src, SAMPLES_LEAF), os.path.join(dst, SAMPLES_LEAF), slicer_samples(state))
     ui = _read_json(os.path.join(src, "ui.json"))
     if isinstance(ui, dict) and ui.get("v") == SIDECAR_V:
         _write_json(os.path.join(dst, prefix + "-ui-state.json"), ui)

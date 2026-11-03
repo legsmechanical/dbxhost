@@ -100,14 +100,14 @@ parser is tolerant of missing/short forms.
 | `rui_rev` | `<uint>` | **`rui_content_rev`** (browser-facing content counter — NOT the device-JS `rui_rev`; see §2 split-counters note); drives the rev-gated poll. |
 | `rui_play` | `on:tick:bpm[:devms]` | `on` 0/1; `tick` = playhead via `rui_playhead_tick()` (melodic: `current_clip_tick`; drum: the DISPLAYED lane's own clock — `rui_sel_lane`, else lane 0 — audible-mapped; u32, wraps in the **loop window**); `bpm` int; `devms` (PLAYING only) = device-clock ms (`rui_frames*1000/44100`, free-running, resets only on re-instantiation) — the browser time-bases playhead corrections on it so delivery latency cancels. |
 | `rui_sel` | `track:clip:lane` | Selection. `lane` = −1 melodic, else drum lane index. |
-| `rui_clip` | `len:tps:loop_start:dir` | Grid-reference clip (drum → active drum clip lane 0; melodic → selected clip). Steps + ticks/step. |
+| `rui_clip` | `len:tps:loop_start:dir:au_mode:au_chops` | Grid-reference clip (drum → active drum clip lane 0; melodic → selected clip). Steps + ticks/step. `au_mode:au_chops`: on an Audio track `0` and 1 (its clip plays its own sample, no roll); on a Slicer `1` and the slot's chop count (one chop per step, Chop 1 = note 0); `-1:0` on any other track. Always written (the browser's per-key cache is sticky). |
 | `rui_glob` | `key:scale:swing_amt:swing_res:launch_quant:scale_aware:groove_kind:groove_amt` | Globals, all ints. `swing_amt`/`swing_res` are the groove seen as a swing (0 when the groove is not one). New fields are only ever appended. |
 | `rui_scale` | 12 chars `010…` | Pitch-class membership (key applied); shades roll rows / folds. |
 | `rui_pfx` | 29 colon-sep ints, or `""` | Per-clip FX (Note FX + delay + seq-arp). Order defined at the emit site. Drum → selected lane's pfx. |
 | `rui_lane` | `len:tps:loop_start:dir`, or `""` | Selected **drum lane** geometry. |
 | `rui_steps` | sparse `s:iter:rand:ratch:nudge;`, or `""` | Non-default melodic step trig conditions. |
 | `rui_dsteps` | same, selected drum lane | |
-| `rui_index` | 8 records `;`, each `pm:ac:qc:pl:<16 has-bits>:route:chan:mute:solo` | Per-track session state. `pm` 0 melodic / 1 drum / 2 conductor; 16 has-bits (drum scans `drum_clips[]`); `route` 0 Schwung / 1 Move / 2 External; `chan` 1-based; `mute`/`solo` 0/1. |
+| `rui_index` | 8 records `;`, each `pm:ac:qc:pl:<16 has-bits>:route:chan:mute:solo` | Per-track session state. `pm` 0 melodic / 1 drum / 2 conductor / 3 Audio / 4 Slicer; 16 has-bits (drum scans `drum_clips[]`); `route` 0 Schwung / 1 Move / 2 External; `chan` 1-based; `mute`/`solo` 0/1. |
 | `rui_cond` | `condTrk:condClip:lock;resp,oct,when;…×8`, or `-1:-1:0` | Conductor + per-track responder map, from the conductor track's active clip. |
 | `rui_dlanes` | 32 records `;`, each `note,has,mute,solo,length,loop_start,tps` | Drum mode only. |
 | `rui_dnotes` | `L\|tick:vel:gate,…;L2\|…` | Drum hits per non-empty lane. |

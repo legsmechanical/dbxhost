@@ -177,11 +177,12 @@ function renderInspector(){
     if(laneSel) html+=secEl("fx","FX",fxSum(),`<div id="fxpanel"></div><div id="fxUtil"></div>`,true);
     html+=secEl("clip","Drum clip","",`<div id="clipops"></div>`,false);
   } else if(isAudio()){
-    /* An Audio track: its clip settings are real here; its sample, its chops
-     * and its NOTE FX (the drum form, no HARMONY / DELAY / SEQ ARP) are edited
-     * on the device. A Loop clip has no sequence, so nothing to transform. */
+    /* An Audio track or a Slicer: its clip settings are real here; the
+     * sample, the chops and the NOTE FX (the drum form, no HARMONY / DELAY /
+     * SEQ ARP) are edited on the device. An Audio clip has no sequence, so
+     * nothing to transform. */
     html+=secEl("clip","Clip",clipSum(),`<div id="clipinfo"></div>`+
-      (isAudioLoop()?`<div class="hint">A <b>Loop</b> clip plays its sample straight through: stretch, shift and nudge it on the device.</div>`
+      (isAudioLoop()?`<div class="hint">An <b>Audio</b> clip plays its sample straight through: stretch, shift and nudge it on the device.</div>`
                     :`<div id="clipUtil"></div>`)+`<div id="clipops"></div>`,true);
     html+=secEl("fx","FX","",`<div class="hint">The sample, its chops and this clip's NOTE FX are edited on the device.</div>`,true);
   } else {
@@ -685,12 +686,13 @@ function renderSession(){
      * data. Never the retired position letters. */
     const instShort=trk.pm===2?"Conductor"   /* its instrument row is inert — say what it IS */
       :trk.pm===PM_AUDIO?"Audio"             /* plays its clips' samples, no instrument */
+      :trk.pm===PM_SLICER?"Slicer"           /* plays its one sample's chops */
       :trk.route===0?(mixKV["chain:"+t+":synth_name"]||mixKV["chain:"+t+":synth_module"]||"Synth")
       :trk.route===1?("Move "+moveBusForChannel(trk.chan))
       :trk.route===2?("MIDI Ch."+trk.chan):null;
     /* instShort can be a MODULE's own name and goes into innerHTML and a
      * title="" attribute: escape it (escMix, web_ui_mix.js). */
-    const lbl=(instShort!=null)?`${t+1} - ${escMix(instShort)}`:(trk.pm===1?"D":trk.pm===2?"C":trk.pm===PM_AUDIO?"A":"M")+(t+1);
+    const lbl=(instShort!=null)?`${t+1} - ${escMix(instShort)}`:(trk.pm===1?"D":trk.pm===2?"C":trk.pm===PM_AUDIO?"A":trk.pm===PM_SLICER?"S":"M")+(t+1);
     const ttl=(instShort!=null)?`Track ${t+1} → ${escMix(instShort)}`:`track ${t+1}`;
     /* conductor / responder indicator (rui_cond): "C" on the conductor track,
      * a dot on every non-drum responder track */

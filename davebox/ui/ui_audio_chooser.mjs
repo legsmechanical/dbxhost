@@ -10,7 +10,9 @@ import { S } from './ui_state.mjs';
 import { buildFilepathBrowserState, refreshFilepathBrowser, moveFilepathBrowserSelection,
          activateFilepathBrowserItem, FILEPATH_PREVIEW_DEBOUNCE_MS } from '/data/UserData/schwung/shared/filepath_browser.mjs';
 import { drawKitHeader, drawKitList, drawKitHintRow, MV_FOOTER_Y } from './ui_movy.mjs';
-import { auPick, auClear, auInfo } from './ui_audio.mjs';
+import { auPick, auClear, auInfo, isSlicerTrack, AU_SLC } from './ui_audio.mjs';
+/* a cycle (ui_dialogs reaches this module): used only inside function bodies */
+import { drawAudioAsk } from './ui_dialogs.mjs';
 
 const FS = {
     readdir(path) {
@@ -67,6 +69,7 @@ export function audioChooserRotate(delta) {
     const ch = S.auChooser;
     if (!ch) return;
     const d = delta > 0 ? 1 : -1;
+    if (ch.askNone) { ch.askNone.sel = d > 0 ? 0 : 1; S.screenDirty = true; return; }
     if (!ch.B) ch.sel = Math.max(0, Math.min(ch.places.length - 1, ch.sel + d));
     else moveFilepathBrowserSelection(ch.B, d);
     ch.restAt = S.clockMs + FILEPATH_PREVIEW_DEBOUNCE_MS;
@@ -76,8 +79,18 @@ export function audioChooserRotate(delta) {
 export function audioChooserClick() {
     const ch = S.auChooser;
     if (!ch) return;
+    if (ch.askNone) {
+        const yes = ch.askNone.sel === 0;
+        ch.askNone = null;
+        if (yes) { auClear(ch.t, ch.c); closeAudioChooser(); }
+        S.screenDirty = true;
+        return;
+    }
     if (!ch.B) {
         const p = ch.places[ch.sel];
+        /* a Slicer's sample goes with its chops (its steps stay): asked first
+         * (Josh, 2026-11-02: "Sure"); one Undo brings it back */
+        if (p.none && isSlicerTrack(ch.t) && auInfo(ch.t, ch.c).name) { ch.askNone = { sel: 1 }; S.screenDirty = true; return; }
         if (p.none) { auClear(ch.t, ch.c); closeAudioChooser(); return; }
         ch.B = buildFilepathBrowserState({ name: p.label, root: p.path, filter: FILTER }, '');
         ch.placeLabel = p.label;
@@ -98,6 +111,7 @@ export function audioChooserClick() {
 export function audioChooserBack() {
     const ch = S.auChooser;
     if (!ch) return;
+    if (ch.askNone) { ch.askNone = null; S.screenDirty = true; return; }
     stopPreview();
     if (!ch.B) { closeAudioChooser(); return; }
     if (ch.B.currentDir !== ch.B.root) {
@@ -122,8 +136,13 @@ export function audioChooserTick() {
 
 export function drawAudioChooser() {
     const ch = S.auChooser;
+    if (ch.askNone) {
+        drawAudioAsk('REMOVE SAMPLE', ['The sample and its chops', 'go. The steps stay.'], ch.askNone.sel);
+        return;
+    }
     clear_screen();
-    drawKitHeader('SAMPLE  CLIP ' + CLIP_LETTERS[ch.c] + '  T' + (ch.t + 1), false);
+    /* named as everywhere else: 1A, or the Slicer's track (its sample is the track's) */
+    drawKitHeader('SAMPLE  ' + (ch.c === AU_SLC ? 'T' + (ch.t + 1) + ' SLICER' : (ch.t + 1) + CLIP_LETTERS[ch.c]), false);
     if (!ch.B) {
         const cur = auInfo(ch.t, ch.c).name;
         drawKitList(ch.places.map((p) => ({ label: p.none ? (cur ? 'None (clear)' : 'None') : p.label, chevron: !p.none })), ch.sel,
@@ -149,9 +168,16 @@ export function auPurgeScan() {
     const dir = String(host_module_get_param('t0_au_dir') || '');
     const out = { dir, files: [], bytes: 0 };
     if (!dir) return out;
-    const used = new Set(String(host_module_get_param('au_used') || '').split('\n').filter((x) => x));
+    /* no answer is not "nothing in use": a timed-out read would purge every
+     * sample the project holds (found by review) — nothing is offered */
+    const usedRaw = host_module_get_param('au_used');
+    if (usedRaw === null || usedRaw === undefined) return out;
+    const used = new Set(String(usedRaw).split('\n').filter((x) => x));
     const stateDir = dir.replace(/\/samples$/, '');
-    const re = /"t\d+c\d+_au2?":"[^|"]*\|((?:[^"\\]|\\.)*)"/g;
+    /* format 37: an Audio clip's `t%dc%d_aud`, a Slicer's `t%d_slc` (the
+     * name after `|`) — and the engine's au_used carries the undo / redo
+     * steps' too */
+    const re = /"t\d+(?:c\d+_aud|_slc)":"[^|"]*\|((?:[^"\\]|\\.)*)"/g;
     for (const f of FS.readdir(stateDir)) {
         if (!/\.json$/.test(f)) continue;
         const body = String(host_read_file(stateDir + '/' + f) || '');

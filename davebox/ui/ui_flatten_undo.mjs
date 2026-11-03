@@ -34,7 +34,7 @@
  * from the tick that sees it loaded (S.flatPending, flatUndoTick). */
 
 import { S, noteUndoUnit, markJsUndoPatch } from './ui_state.mjs';
-import { PAD_MODE_AUDIO, INSTR_NONE } from './ui_constants.mjs';
+import { PAD_MODE_AUDIO, PAD_MODE_CONDUCT, INSTR_NONE, padSampled } from './ui_constants.mjs';
 import { engineLoadedModule, engineLoadModule, engineGetState, engineSetState, engineGet, engineSet,
          engineGetMany, engineSetSlotParam, moveBusForChannel, moveBusComp, slotIndex } from './ui_engine.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
@@ -120,7 +120,7 @@ export function flatUndoCapture(t) {
     const synth = S.trackRoute[t] === 0 ? (engineLoadedModule(slot, 'synth') || '') : '';
     let state = null;
     if (synth) state = str(engineGetState(slot, 'synth'));
-    const src = S.trackPadMode[t] === PAD_MODE_AUDIO ? null : foreignSource(t);
+    const src = padSampled(S.trackPadMode[t]) ? null : foreignSource(t);
     return { t, slot, padMode: S.trackPadMode[t], conductor: S.conductorTrack === t,
              route: S.trackRoute[t], channel: S.trackChannel[t], midiTo: S.trackMidiTo[t] | 0,
              synth, state, fx: fxBypass(slot), fxAfter: null,
@@ -140,10 +140,26 @@ export function flatCopySourceFx(rec, post) {
     return true;
 }
 
-/* The step itself: the engine's (the conversion's "u") and this patch. */
-export function flatUndoArm(rec) {
+/* The step itself: the engine's (the conversion's "u") and this patch.
+ * `mode`: what the track became (Audio, or a Slicer). */
+export function flatUndoArm(rec, mode = PAD_MODE_AUDIO) {
+    rec.toMode = mode;
     noteUndoUnit();
     markJsUndoPatch('flatten', () => flatUndo(rec), () => flatRedo(rec));
+}
+
+/* LEAVING Audio or a Slicer (Josh, 2026-11-02: "Yes" — undoable): the
+ * engine's step ("u") brings the clips, samples and type back; this patch
+ * takes away the instrument picked after the conversion (kept for Redo) and
+ * makes the screen's copy the sampled track again. `toMode`: what it became. */
+export function leaveUndoArm(rec, toMode) {
+    rec.toMode = toMode;
+    rec.leave = true;
+    /* a sampled track plays through its own slot with no instrument: what
+     * the capture may have seen loaded is the one being picked */
+    rec.route = 0; rec.synth = ''; rec.state = null; rec.conductor = false;
+    noteUndoUnit();
+    markJsUndoPatch('leave', () => flatUndo(rec), () => flatRedo(rec));
 }
 
 function trackChanged(t, mode) {
@@ -158,6 +174,14 @@ function trackChanged(t, mode) {
 
 function flatUndo(rec) {
     const t = rec.t;
+    /* leaving: what was picked since — kept for Redo, then let go */
+    if (rec.leave) {
+        const synth = S.trackRoute[t] === 0 ? (engineLoadedModule(rec.slot, 'synth') || '') : '';
+        rec.afterInstr = { route: S.trackRoute[t], channel: S.trackChannel[t], midiTo: S.trackMidiTo[t] | 0,
+                           synth, state: synth ? str(engineGetState(rec.slot, 'synth')) : null };
+        if (S.conductorTrack === t) S.conductorTrack = -1;
+        applyInstrChoice(t, INSTR_NONE);
+    }
     /* recordings still loading into the clips stop: the clips are MIDI again */
     if (S.auApply && S.auApply.t === t) S.auApply = null;
     if (S.auPanel && S.auPanel.t === t) closeAudioPanel();     /* and its WAVE editor */
@@ -192,10 +216,32 @@ function flatRedo(rec) {
     const t = rec.t;
     S.flatPending = S.flatPending.filter((p) => p.slot !== rec.slot);
     if (rec.fxAfter) setFxBypass(rec.slot, rec.fxAfter);
-    applyInstrChoice(t, INSTR_NONE);
     if (rec.after) { putBlocks(rec.slot, rec.after.blocks, false, 'REDO'); putLevels(rec.slot, rec.after.levels); }
+    if (rec.leave) {
+        /* leaving again: the instrument it had been given comes back */
+        if (S.auPanel && S.auPanel.t === t) closeAudioPanel();
+        if (S.auChooser && S.auChooser.t === t) closeAudioChooser();
+        auForgetTrack(t);
+        const a = rec.afterInstr;
+        if (a && a.route === 0) {
+            if (S.trackRoute[t] !== 0) applyTrackConfig(t, 'route', 0);
+            if (a.synth) {
+                engineLoadModule(rec.slot, 'synth', a.synth);
+                S.flatPending.push({ slot: rec.slot, comp: 'synth', id: a.synth, blob: a.state,
+                                     bypass: null, ticks: 0, what: 'REDO' });
+            }
+        } else if (a) {
+            applyTrackConfig(t, 'midi_to', a.route === 2 ? a.midiTo : 0);
+            applyTrackConfig(t, 'channel', a.channel);
+            applyTrackConfig(t, 'route', a.route);
+        }
+        if (rec.toMode === PAD_MODE_CONDUCT) S.conductorTrack = t;
+        trackChanged(t, rec.toMode);
+        return;
+    }
+    applyInstrChoice(t, INSTR_NONE);
     if (S.conductorTrack === t) S.conductorTrack = -1;
-    trackChanged(t, PAD_MODE_AUDIO);
+    trackChanged(t, rec.toMode || PAD_MODE_AUDIO);
 }
 
 /* Every tick: each loaded block's state and bypass (and an instrument's

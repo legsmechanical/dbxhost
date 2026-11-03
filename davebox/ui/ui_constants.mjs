@@ -193,6 +193,10 @@ export const INSTR_CONDUCT    = 50;
  * (requestTrackModeChange), never a route write: the track keeps its own
  * Schwung slot, which plays the clips' samples through its FX. */
 export const INSTR_AUDIO      = 60;
+/* SLICER (Josh, 2026-11-02: "two instruments "audio" and "slicer""): one
+ * sample and its chops for the whole track (PAD_MODE_SLICER), reached the
+ * same way. */
+export const INSTR_SLICER     = 61;
 /* The label on the row that opens the picker. A CONSTANT because it is not just
  * a caption: four places test the string to recognise this picker, and a rename
  * that missed one left a silently dead branch. */
@@ -211,6 +215,7 @@ export function fmtInstr(v) {
      * range test and format as '?'. */
     if (v === INSTR_CONDUCT) return 'Conductor';
     if (v === INSTR_AUDIO)   return 'Audio';
+    if (v === INSTR_SLICER)  return 'Slicer';
     /* Each band is bounded at BOTH ends. An open-ended `>=` would format a
      * stray value as a plausible destination that does not exist ("MIDI Ch 17"),
      * which is worse than showing it is wrong. */
@@ -297,6 +302,7 @@ export function instrPickerRows(routes, self, gens, channels) {
     rows.push({ divider: true });
     rows.push({ v: INSTR_CONDUCT, label: fmtInstr(INSTR_CONDUCT) });
     rows.push({ v: INSTR_AUDIO, label: fmtInstr(INSTR_AUDIO) });
+    rows.push({ v: INSTR_SLICER, label: fmtInstr(INSTR_SLICER) });
     rows.push({ divider: true });
     for (const g of (gens || [])) rows.push({ gen: g, label: String(g.name || g.id) });
     if (gens && gens.length) rows.push({ divider: true });
@@ -905,7 +911,11 @@ export function seqAutoAutomatable(key) {
 export const PAD_MODE_DRUM = 1;
 export const PAD_MODE_MELODIC_SCALE = 0;
 export const PAD_MODE_CONDUCT = 2;
-export const PAD_MODE_AUDIO = 3;      /* Audio: notes are slices (36 + slice) — ui_audio.mjs */
+export const PAD_MODE_AUDIO = 3;      /* Audio: a sample per clip, played with the clip — ui_audio.mjs */
+export const PAD_MODE_SLICER = 4;     /* Slicer: one sample + chops for the track; notes are chops — ui_audio.mjs */
+/* A track whose clips play samples (Audio or a Slicer): no MIDI, its sound in
+ * its own Schwung slot. */
+export function padSampled(pm) { return pm === PAD_MODE_AUDIO || pm === PAD_MODE_SLICER; }
 
 /* ⭑ SINGLE-KNOB ALTS (Josh, 2026-10-03: "switch those params through
  * knob-touch+click and have them display like other knob touch click
@@ -925,13 +935,11 @@ export const KNOB_ALTS = {
         1: { 7: ['Rand', 'Algo'] },                                              /* NOTE FX */
         3: { 0: ['Rate', 'ClkFb'], 7: ['Rand', 'Algo'] },                        /* MIDI DLY */
     },
-    /* AUDIO: the CLIP bank's (Slice mode) at the same knobs; no pitch Random,
-     * no DELAY. A Loop clip's CLIP bank has none (ui_audio knobAltOnTrack). */
-    /* Mode is K1 there (Josh, 2026-10-30: "mode needs to move to k1 on clip"),
-     * so Res and its Zoom sit on K4; ui_audio auAltBit keeps Res's alt on its
-     * own bit wherever its knob is. */
+    /* AUDIO and SLICER: a Slicer's CLIP bank is a MIDI clip's (Res and its
+     * Zoom on K1 again, Mode gone); an Audio clip's has Shift / Nudge alone
+     * (ui_audio knobAltOnTrack). */
     audio: {
-        0: { 3: ['Res', 'Zoom'], 2: ['Shift', 'Nudge'], 6: ['Dir', 'Revrs'] },
+        0: { 0: ['Res', 'Zoom'], 2: ['Shift', 'Nudge'], 6: ['Dir', 'Revrs'] },
     },
 };
 /* Arp Steps opens from the Steps knob (K5 on SEQ ARP and LIVE ARP) touched +

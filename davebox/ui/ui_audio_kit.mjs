@@ -203,9 +203,9 @@ function freeName(base, ext) {
 export function auConvertToKit(t, c) {
     const info = auInfo(t, c);
     if (info.state !== 2 || !info.name) { showActionPopupFor(2500, 'NO KIT', 'No sample'); return null; }
-    /* a Slice clip's chops only (the menu offers it nowhere else; this says so
-     * too, rather than kit a Loop clip's unseen Even chops — found by test) */
-    if (!auIsSlice(info)) { showActionPopupFor(2500, 'NO KIT', 'Not a Slice clip'); return null; }
+    /* a Slicer's chops only (the menu offers it nowhere else; this says so
+     * too, rather than kit an Audio clip's unseen Even chops — found by test) */
+    if (!auIsSlice(info)) { showActionPopupFor(2500, 'NO KIT', 'Not a Slicer'); return null; }
     const all = auMarks(t, c), chops = all.slice(0, KIT_PADS);
     if (!chops.length) { showActionPopupFor(2500, 'NO KIT', 'No chops'); return null; }
     const dir = String(host_module_get_param('t' + t + '_au_dir') || '');
@@ -213,7 +213,7 @@ export function auConvertToKit(t, c) {
     const src = dir + '/' + info.name;
     const dot = info.name.lastIndexOf('.');
     const ext = dot > 0 ? info.name.slice(dot) : '.wav';
-    const name = freeName(sanitizeName(S.currentSetName || 'Project') + ' ' + (t + 1) + SCENE_LETTERS[c], ext);
+    const name = freeName(sanitizeName(S.currentSetName || 'Project') + ' ' + (t + 1) + (SCENE_LETTERS[c] || ''), ext);   /* a Slicer's slot has no letter: the track's */
     if (!name) { showActionPopupFor(2500, 'NO KIT', 'No free name'); return null; }
     host_ensure_dir(KIT_PRESETS);
     host_ensure_dir(KIT_SAMPLES);

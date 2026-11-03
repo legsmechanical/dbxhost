@@ -5,7 +5,7 @@
  * Extracted from ui.js (Phase 5b prep, increment 3 of the modularity refactor).
  */
 
-import { NUM_TRACKS, NUM_CLIPS, PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_AUDIO } from './ui_constants.mjs';
+import { NUM_TRACKS, NUM_CLIPS, PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_AUDIO, PAD_MODE_SLICER } from './ui_constants.mjs';
 import { S, conductorTrackIdx } from './ui_state.mjs';
 import { noteUndoUnit } from './ui_editops.mjs';
 import { showActionPopup, showActionPopupFor } from './ui_persistence.mjs';
@@ -28,7 +28,9 @@ export function sceneBakeHasConductor(clipIdx) {
     let t;
     for (t = 0; t < 8; t++) {
         if (t === ct) continue;
-        if (S.trackPadMode[t] !== PAD_MODE_MELODIC_SCALE && S.trackPadMode[t] !== PAD_MODE_AUDIO) continue;
+        /* a Slicer responds only with its Conductor switch on (off by default) */
+        if (S.trackPadMode[t] !== PAD_MODE_MELODIC_SCALE && S.trackPadMode[t] !== PAD_MODE_AUDIO &&
+            !(S.trackPadMode[t] === PAD_MODE_SLICER && S.auCond[t])) continue;
         if (mask[t]) return true;
     }
     return false;

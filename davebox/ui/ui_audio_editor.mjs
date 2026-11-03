@@ -57,19 +57,18 @@
  * picker a level at a time, the chop editor for WAVE, and WAVE. Steps are
  * swallowed; Note/Session closes and falls through. */
 
-import { S, loopViewActive } from './ui_state.mjs';
+import { S, loopViewActive, noteUndoUnit } from './ui_state.mjs';
 import { MoveBack } from '/data/UserData/schwung/shared/constants.mjs';
 import { MoveMainKnob, MoveMainButton, MoveMainTouch, MoveNoteSession, TRACK_PAD_BASE } from './ui_constants.mjs';
 import { decodeDelta } from '/data/UserData/schwung/shared/input_filter.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLazyState, auMarkStale,
          auPanelPages, auPanelPageName, auPanelKnob, auPanelKnobClass, auChop, auPadToSlice,
-         auSelSlice, auSetSelSlice, isAudioTrack, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
+         auSelSlice, auSetSelSlice, isSampledTrack, isSlicerTrack, auSeqClipOf, auEditTrim, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
          auMarkAdd, auMarkDel, auManual, auEvenBake, auTrans, auTransBake, auRangeStep, auSet, auEnd, auPanelRingCells, auPanelReset,
          auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_LAZY_ENDED, AU_EVEN_MAX, AU_BPM10_MIN, AU_BPM10_MAX, auLenTicks,
          auSampleP2Cells, auSampleP2Knob, AU_P2_KNOB, auSampleReset, auEdit, auTrimCuts, auOrig, auFit, auNudgeStep, auFpt, auPlayedEnd, auTooLongToChop, auAutoEdit, auAutoTouch, auSlicesAutoTouch, SLICE_GRID } from './ui_audio.mjs';
 import { registerScreenRingCells } from './ui_knob_leds.mjs';
-import { auModeValue } from './ui_pure.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { ccKnobDelta, knobPick, KNOB_PICK, KNOB_DELIB } from './ui_input_cc.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
@@ -148,7 +147,7 @@ export function audioPanelInput(status, d1, d2) {
 /* A pad tap on an Audio track in Slice mode: that slice is the one SLICE n
  * edits (the pad still plays it). */
 export function auPadTapped(t, padIdx) {
-    if (!isAudioTrack(t)) return;
+    if (!isSampledTrack(t)) return;
     const i = auInfo(t, auClipOf(t));
     if (!auIsSlice(i)) return;
     const k = auPadToSlice(padIdx, t);
@@ -165,7 +164,7 @@ const END_HOLD = 4;                       /* detents an End sticks at NEXT */
  * over an AUDIO editor (so the screens and input routes are the AUDIO
  * editor's). SLICES is a Slice clip's. */
 export function openWave(t, which = 'sample') {
-    if (!isAudioTrack(t)) return false;
+    if (!isSampledTrack(t)) return false;
     if (which === 'slices' && !auIsSlice(auInfo(t, auClipOf(t)))) return false;
     S.auSrc[t] = which;
     S.auPanel = { t, page: 0, wave: true };
@@ -217,6 +216,7 @@ export function auWaveView(ed) {
  * after it when zoomed fully out"). Anything else: the whole sample. */
 export function auViewBounds(ed) {
     const i = auInfo(ed.t, ed.c), fr = i.nframes | 0;
+    if (ed.mode === 'trim') return [0, Math.max(MIN_SPAN, fr)];      /* a Slicer's Trim: the whole file */
     const sampleView = ed.ed !== 'slices' && !(ed.mode === 'chop' && ed.chop) && ed.mode !== 'lazy';
     if (sampleView && fr && i.state === 2) {
         const lo = i.rstart | 0;
@@ -240,7 +240,16 @@ export function auViewBounds(ed) {
 /* A chop method leaves the Mode alone: the chops serve both (Josh,
  * 2026-10-28: one set of chops; Mode "tells the sequencer how to handle the
  * slices"). */
+/* A Slicer's chop editor opens: ONE undo step for the visit — its chops and
+ * every clip's steps, which a chop edit renumbers (Josh, 2026-11-02: one
+ * undo per chop-editor visit). The sound knobs take none. */
+function chopVisitUndo(ed) {
+    if (!isSlicerTrack(ed.t)) return;
+    noteUndoUnit();
+    host_module_set_param('t' + ed.t + '_au_undo_slc', '1');
+}
 function startLazy(ed) {
+    chopVisitUndo(ed);
     ed.mode = 'lazy';
     ed.lazyAt = S.clockMs | 0;
     auLazyStart(ed.t, ed.c);
@@ -280,12 +289,14 @@ function clearChops(ed) {
     S.pendingPadNoteMapRecompute = true;
 }
 
+/* Even WRITES v equal chops (the engine: a tool, not a setting that stays). */
 function setEven(ed, v) {
     const t = ed.t, c = ed.c;
     const i = auInfo(t, c);
+    if (v < 2) return;
     auSet(t, c, 'even', v);
-    S.auInfo[t][c] = Object.assign({}, i, { even: v, trans: 0, n: v || i.hand });
-    chopsMoved(t, v || i.hand);
+    S.auInfo[t][c] = Object.assign({}, i, { even: 0, trans: 0, hand: v, n: v });
+    chopsMoved(t, v);
 }
 /* The chops changed under the pads: re-read them, keep the pick in range. */
 function chopsMoved(t, n) {
@@ -297,40 +308,29 @@ function chopsMoved(t, n) {
 /* Transient's count as the engine has it: Start and the kept hits, the first
  * AU_EVEN_MAX. */
 export function auTransCount(i) { return Math.max(1, Math.min(AU_EVEN_MAX, i.hits | 0)); }
+/* Transient's Sens: the chops written again at it as it turns */
 function setSens(ed, v) {
     const t = ed.t, c = ed.c, i = auInfo(t, c);
     auSet(t, c, 'sens', v);
+    auTrans(t, c, 1);
     S.auInfo[t][c] = Object.assign({}, i, { sens: v });
+    auMarkStale(t, c);
     chopsMoved(t, i.n);
-}
-
-/* A chop picked on a Loop clip (SAMPLE › Chop sample): the clip becomes a
- * Slice clip, as Mode does on the CLIP bank (the engine puts its chops on the
- * steps when it has none), and the editor becomes SLICES — the chop editor
- * opens there and its Back lands there. */
-function toSlice(ed) {
-    const t = ed.t, c = ed.c, i = auInfo(t, c);
-    if (auIsSlice(i)) return;
-    auSet(t, c, 'mode', auModeValue(true));
-    S.auInfo[t][c] = Object.assign({}, i, { mode: auModeValue(true) });
-    S.auSrc[t] = 'slices';
-    ed.ed = 'slices';
-    S.auStartsRev = (S.auStartsRev | 0) + 1;
-    S.pendingPadNoteMapRecompute = true;
-    S.ledsDirtyAudio = true;
 }
 
 /* The CHOP editor on `kind`, from the picker. */
 function openChop(ed, kind) {
     const t = ed.t, c = ed.c, i = auInfo(t, c);
+    chopVisitUndo(ed);
     ed.chop = { kind, orig: { even: i.even | 0 } };
     ed.mode = 'chop';
     ed.chopAt = S.clockMs | 0;
-    if (kind === 'even') setEven(ed, i.even || 16);
+    if (kind === 'even') setEven(ed, (i.n | 0) >= 2 ? i.n : 16);
     else if (kind === 'transient') {
         auTrans(t, c, 1);
         const n = auTransCount(i);
-        S.auInfo[t][c] = Object.assign({}, i, { even: 0, trans: 1, n });
+        S.auInfo[t][c] = Object.assign({}, i, { even: 0, trans: 0, hand: n, n });
+        auMarkStale(t, c);
         chopsMoved(t, n);
     } else {
         const m = auMarks(t, c)[auSelSlice(t)];
@@ -338,23 +338,15 @@ function openChop(ed, kind) {
         ed.last = 'jog';
     }
 }
-/* Out of the chop editor, back to WAVE: Even / Transient's chops kept (the
- * clip's own now) or put back as they were. */
+/* Out of the chop editor, back to WAVE: what Even / Transient wrote stays —
+ * on every way out (Josh, 2026-11-02, R6: "Yes"); the visit's one Undo takes
+ * it back. (`keep` is the caller's word for the same.) */
 function closeChop(ed, keep) {
     const t = ed.t, c = ed.c, i = auInfo(t, c), kind = ed.chop && ed.chop.kind;
+    void keep;
     if (kind === 'even' || kind === 'transient') {
-        if (keep) {
-            if (kind === 'even') auEvenBake(t, c); else auTransBake(t, c);
-            S.auInfo[t][c] = Object.assign({}, i, { even: 0, trans: 0, hand: i.n });
-            chopsMoved(t, i.n);
-        } else if (kind === 'even') {
-            setEven(ed, ed.chop.orig.even);
-        } else {
-            auTrans(t, c, 0);
-            S.auInfo[t][c] = Object.assign({}, i, { trans: 0, n: i.hand });
-            if (ed.chop.orig.even) setEven(ed, ed.chop.orig.even);
-            else chopsMoved(t, i.hand);
-        }
+        S.auInfo[t][c] = Object.assign({}, i, { even: 0, trans: 0, hand: i.n });
+        chopsMoved(t, i.n);
     }
     ed.mode = 'wave';
     ed.chop = null;
@@ -367,11 +359,15 @@ export function closeAudioEditor() {
     const ed = S.auEditor;
     if (!ed) return;
     if (ed.mode === 'lazy') {
-        /* closed under a running chop (Note/Session, a track change): the old
-         * chops back */
+        /* closed under a running chop (Note/Session, a track change): what it
+         * chopped stays, as on every way out (Josh, 2026-11-02, R6: "Yes");
+         * armed, nothing had changed */
         const st = auLazyState().state;
-        if (st === AU_LAZY_ARMED || st === AU_LAZY_RUN) auLazyStop(ed.t, ed.c);
-        auLazyKeep(ed.t, ed.c, 0);
+        if (st === AU_LAZY_ARMED) { auLazyStop(ed.t, ed.c); auLazyKeep(ed.t, ed.c, 0); }
+        else {
+            if (st === AU_LAZY_RUN) auLazyStop(ed.t, ed.c);
+            auLazyKeep(ed.t, ed.c, 1);
+        }
     }
     /* Even / Transient left some other way: the chops as they were */
     if (ed.mode === 'chop') closeChop(ed, false);
@@ -389,7 +385,7 @@ export function closeAudioEditor() {
  * empty clip: click to load). SAMPLE keeps its page. Once a tick. */
 export function auEditorFollowClip() {
     const ed = S.auEditor;
-    if (!ed || !S.auPanel || !isAudioTrack(ed.t)) return;
+    if (!ed || !S.auPanel || !isSampledTrack(ed.t)) return;
     const c = auClipOf(ed.t);
     if (c === ed.c) return;
     const t = ed.t, page = ed.page | 0;
@@ -420,6 +416,7 @@ function centre(ed, f) {
     ed.A = A; ed.B = A + span;
 }
 function focus(ed) {
+    if (ed.mode === 'trim' && ed.trim) return ed.trim[ed.last === 'end' ? 1 : 0];
     return ed.last === 'start' ? edStart(ed) : ed.last === 'end' ? edEnd(ed) : ed.cur;
 }
 
@@ -575,9 +572,10 @@ export function auPickRows(ed) {
     /* ...and on a Loop clip, Chop sample (Josh, 2026-10-30: "when mode is loop
      * and the sample menu is opened, can we add chopping options to the menu
      * there, which switch the clip into slice mode?") */
+    /* (Chop sample left: an Audio clip reaches a Slicer by copy and paste —
+     * Josh, 2026-11-02) */
     if (p.level === 1) return i.state === 2
         ? [{ id: 'load', label: 'Load sample', chevron: true }, { id: 'trim', label: 'Trim' }, { id: 'norm', label: 'Normalize' }]
-            .concat(auIsSlice(i) ? [] : [{ id: 'chop', label: 'Chop sample', chevron: true }])
         : [{ id: 'load', label: 'Load sample', chevron: true }];
     /* Convert to kit (Josh, 2026-10-30: "slice menu option: convert to kit"):
      * the chops as a Move drum kit (ui_audio_kit) — a Slice clip's: a Loop
@@ -610,6 +608,15 @@ function pickInput(ed, status, d1, d2) {
         S.screenDirty = true;
         if (!row) return true;
         if (row.id === 'load') { ed.pick = null; S.pendingAudioChooser = { t: ed.t, c: ed.c }; return true; }
+        if (row.id === 'trim' && isSlicerTrack(ed.t)) {
+            /* a Slicer's Trim: its own screen, the handles at the file's ends */
+            ed.pick = null;
+            const i = auInfo(ed.t, ed.c);
+            ed.mode = 'trim';
+            ed.trim = [0, i.nframes | 0];
+            ed.full = true; ed.last = 'start';
+            return true;
+        }
         if (row.id === 'trim' || row.id === 'norm') {
             ed.pick = null;
             /* nothing to cut: say so rather than ask */
@@ -631,10 +638,8 @@ function pickInput(ed, status, d1, d2) {
             return true;
         }
         if (row.id === 'kit') { ed.pick = null; S.pendingAuKit = { t: ed.t, c: ed.c }; return true; }   /* reads + a copy: the tick's */
-        if (row.id === 'chop') { ed.pick = { level: 2, sel: 0, from: p.sel }; return true; }
         ed.pick = null;
-        if (auTooLongToChop(ed.t, ed.c)) return true;        /* over 4 minutes: no chops (and no Slice) */
-        toSlice(ed);                                         /* a Loop clip's chop: it becomes a Slice clip */
+        if (!isSlicerTrack(ed.t) || auTooLongToChop(ed.t, ed.c)) return true;   /* chops are a Slicer's */
         if (row.id === 'lazy') startLazy(ed);
         else openChop(ed, row.id);
         return true;
@@ -667,13 +672,15 @@ export function audioEditorInput(status, d1, d2) {
     if (ed.ask) return askInput(ed, status, d1, d2);
     if (ed.pick) return pickInput(ed, status, d1, d2);
     auWaveView(ed);
+    if (ed.mode === 'trim') return trimInput(ed, status, d1, d2);
     const sub = ed.mode === 'lazy' ? 'lazy' : auWaveSub(ed);
     const kind = chopKind(ed);
     /* Manual: the slice the pads pick, a cursor, markers */
     const hand = kind === 'manual' && sub === 'chop';
-    /* K1 / K3: the clip's Start / End on WAVE, the slice's in Manual; Even
-     * and Transient leave them be */
-    const ends = sub === 'loop' || (sub === 'chop' && (!kind || hand));
+    /* K1 / K3: an Audio clip's Start / End on WAVE, the picked chop's on
+     * SLICES and in Manual; Even and Transient leave them be, and so does a
+     * Slicer's SAMPLE (no Start or Length: what plays is its chops) */
+    const ends = sub === 'loop' || (sub === 'chop' && (hand || (!kind && ed.ed === 'slices')));
     /* SAMPLE's two pages, turned by the jog (Josh, 2026-10-29: "the waveform
      * on page 1 and the params on page 2"); a chop editor keeps the jog */
     const plain = (sub === 'loop' || sub === 'chop') && !kind;
@@ -810,6 +817,9 @@ export function audioEditorInput(status, d1, d2) {
             if (k === 0) {
                 const st = knobStep(k, d2, KNOB_PICK);
                 if (st) auSampleP2Knob(ed.t, ed.c, 1, st);
+            } else if (k === 6 && isSlicerTrack(ed.t)) {
+                const st = knobStep(k, d2, KNOB_DELIB);          /* K7: follows the Conductor */
+                if (st) auSampleP2Knob(ed.t, ed.c, 8, st);
             } else if (AU_P2_KNOB[k] != null) sampleKnob(ed, AU_P2_KNOB[k], d2);
             S.screenDirty = true;
             return true;
@@ -853,8 +863,8 @@ export function audioEditorInput(status, d1, d2) {
             /* the count, live on the pads (Josh, 2026-10-28: "can we have even
              * samples populate dynamically on the pads as we increase/decrease
              * the number?") */
-            const v = Math.max(2, Math.min(AU_EVEN_MAX, (i.even | 0) + (dd > 0 ? 1 : -1)));
-            if (v !== (i.even | 0)) setEven(ed, v);
+            const v = Math.max(2, Math.min(AU_EVEN_MAX, (i.n | 0) + (dd > 0 ? 1 : -1)));
+            if (v !== (i.n | 0)) setEven(ed, v);
         } else if (kind === 'transient') {
             const v = Math.max(0, Math.min(100, (i.sens | 0) + dd * (S.shiftHeld ? 5 : 1)));   /* a fast turn goes further */
             if (v !== (i.sens | 0)) setSens(ed, v);
@@ -948,6 +958,68 @@ export function audioEditorInput(status, d1, d2) {
     return false;
 }
 
+/* A Slicer's Trim screen (Josh, 2026-11-02: "Trim is a destructive operation
+ * so it has to be something you do pre chop" · "Yeah" to its own screen): K1
+ * / K3 the start / end handles (a pixel a detent at the zoom, a frame with
+ * Shift), K2 Zoom; a click asks New / Overwrite — the chops start again, 16
+ * even, the steps stay; Back leaves it. */
+function trimInput(ed, status, d1, d2) {
+    const hi = status & 0xF0;
+    const i = auInfo(ed.t, ed.c), fr = i.nframes | 0;
+    if (i.state !== 2 || !fr) { ed.mode = 'wave'; ed.trim = null; return true; }
+    if (hi === 0x90 || hi === 0x80) {
+        if (d1 >= 0 && d1 <= 7) {
+            const on = hi === 0x90 && d2 >= 64;
+            if (on) {
+                S.knobTouched = d1; S.knobPhysIdx = d1;
+                if (d1 === 0 || d1 === 2) { ed.last = d1 === 0 ? 'start' : 'end'; centre(ed, ed.trim[d1 === 0 ? 0 : 1]); }
+            } else {
+                if (S.knobTouched === d1) S.knobTouched = -1;
+                if (S.knobPhysIdx === d1) S.knobPhysIdx = -1;
+            }
+            S.screenDirty = true;
+            return true;
+        }
+        return true;                                         /* pads and steps wait */
+    }
+    if (status !== 0xB0) return false;
+    if (d1 >= 71 && d1 <= 73) {
+        const k = d1 - 71, dd = decodeDelta(d2);
+        if (!dd) return true;
+        S.knobTouched = k; S.knobTurnedTick[k] = S.clockMs;
+        if (k === 1) { ed.zoomDir = dd > 0 ? 1 : -1; zoom(ed, ed.zoomDir); }
+        else {
+            const step = S.shiftHeld ? 1 : auEdPixel(ed), j = k === 0 ? 0 : 1;
+            const lo = j === 0 ? 0 : ed.trim[0] + MIN_SPAN, hi2 = j === 0 ? ed.trim[1] - MIN_SPAN : fr;
+            ed.trim[j] = Math.max(lo, Math.min(hi2, ed.trim[j] + dd * step));
+            ed.last = j === 0 ? 'start' : 'end';
+            centre(ed, ed.trim[j]);
+        }
+        S.screenDirty = true;
+        return true;
+    }
+    if (d1 >= 74 && d1 <= 78) return true;
+    if (d1 === MoveMainKnob) return true;
+    if (d1 === MoveMainButton) {
+        if (d2 !== 127) return true;
+        if (ed.trim[0] <= 0 && ed.trim[1] >= fr) { showActionPopup('TRIM', 'Nothing to cut'); return true; }
+        /* a hand-made set of chops is worth a line in the question */
+        const even16 = (i.n | 0) === 16 && auMarks(ed.t, ed.c).every((m, k) => Math.abs(m[0] - Math.floor(fr * k / 16)) <= 1);
+        ed.ask = { kind: 'edit', op: 'trim', sel: 0, chopped: !even16 };
+        S.screenDirty = true;
+        return true;
+    }
+    if (d1 === MoveBack) {
+        if (d2 >= 64) { S.backPressTick = nowMs(); S.backHoldFired = false; return true; }
+        S.backPressTick = -1; S.backHoldFired = false;
+        ed.mode = 'wave'; ed.trim = null; ed.full = true;
+        S.screenDirty = true;
+        return true;
+    }
+    if (d1 === MoveNoteSession) { closeAudioPanel(); return false; }
+    return false;
+}
+
 /* Manual's "Clear all chops?" and SAMPLE's Trim / Normalize — the jog picks
  * (clockwise toward Yes, on the right), a click answers, Back is No. */
 function askInput(ed, status, d1, d2) {
@@ -975,7 +1047,14 @@ function askInput(ed, status, d1, d2) {
         const op = ed.ask.op, ow = ed.ask.sel === 1;
         ed.ask = null;
         S.backPressTick = -1; S.backHoldFired = false;
-        if (d1 === MoveMainButton) auEdit(ed.t, ed.c, op === 'norm' ? 1 : 0, ow);
+        if (ed.mode === 'trim') {
+            /* a Slicer's Trim: its handles; the screen closes on an answer
+             * (Back keeps the handles for another try) */
+            if (d1 === MoveMainButton) {
+                auEditTrim(ed.t, ed.trim[0], ed.trim[1], ow);
+                ed.mode = 'wave'; ed.trim = null; ed.full = true;
+            }
+        } else if (d1 === MoveMainButton) auEdit(ed.t, ed.c, op === 'norm' ? 1 : 0, ow);
         S.screenDirty = true;
         return true;
     }
@@ -1001,9 +1080,14 @@ export function waveRingCells(ed) {
     const i = auInfo(ed.t, ed.c), fr = i.nframes | 0;
     const sub = auWaveSub(ed);
     if (sub !== 'chop' && sub !== 'loop' || !fr) return [null, null, null, null, null, null, null, null];
+    const at = (n) => ({ kind: 'arc', norm: Math.max(0, Math.min(1, n)) });
+    if (ed.mode === 'trim' && ed.trim) {
+        const span = Math.max(MIN_SPAN, (ed.B | 0) - (ed.A | 0));
+        const zm = fr > MIN_SPAN ? 1 - Math.log(span / MIN_SPAN) / Math.log(fr / MIN_SPAN) : 0;
+        return [at(ed.trim[0] / fr), at(zm), at(ed.trim[1] / fr), null, null, null, null, null];
+    }
     const kind = chopKind(ed);
     const slp = ed.ed === 'slices' && sub === 'chop' && !kind;
-    const at = (n) => ({ kind: 'arc', norm: Math.max(0, Math.min(1, n)) });
     const slRings = () => auPanelRingCells({ t: ed.t, page: S.shiftHeld ? 0 : 1 });
     if (slp && ed.page === 1) return slRings();
     const sampleRings = () => [at(((i.gain | 0) + 40) / 52), at(((i.pitch | 0) + 24) / 48), at(((i.detune | 0) + 50) / 100),
@@ -1012,7 +1096,9 @@ export function waveRingCells(ed) {
         /* page 2 (AU_P2_KNOB): Sync, Pitch, Detune, Gain, Tempo, Revrs — lit
          * where a knob works */
         const cells = auSampleP2Cells(ed.t, ed.c), sr = sampleRings();
-        return [cells[0] && cells[0].kind !== 'blank' ? at((cells[0].sel | 0) / 2) : null, sr[1], sr[2], sr[0], sr[3], sr[4], null, null];
+        const slc = isSlicerTrack(ed.t);
+        return [cells[0] && cells[0].kind !== 'blank' ? at((cells[0].sel | 0) / (slc ? 1 : 2)) : null, sr[1], sr[2], sr[0], sr[3], sr[4],
+                slc ? at(S.auCond[ed.t] ? 1 : 0) : null, null];
     }
     let a = i.rstart, b = auEnd(i);
     if (kind === 'manual' || slp) {
@@ -1026,7 +1112,8 @@ export function waveRingCells(ed) {
     }
     const span = Math.max(MIN_SPAN, (ed.B | 0) - (ed.A | 0));
     const zoom = fr > MIN_SPAN ? 1 - Math.log(span / MIN_SPAN) / Math.log(fr / MIN_SPAN) : 0;
-    const ends = kind !== 'even' && kind !== 'transient';
+    /* (a Slicer's SAMPLE has no Start or End to turn) */
+    const ends = kind !== 'even' && kind !== 'transient' && !(isSlicerTrack(ed.t) && !kind && ed.ed !== 'slices');
     const sr = sampleRings();
     return [ends ? at(a / fr) : null, at(zoom), ends ? at(b / fr) : null, sr[0], sr[1], sr[2], sr[3], kind ? null : sr[4]];
 }

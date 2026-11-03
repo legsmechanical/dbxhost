@@ -13,7 +13,7 @@ import {
     NO_NOTE_FLASH_MS, BANK_PADMODE
 } from './ui_constants.mjs';
 import { S, loopViewActive, markJsUndo } from './ui_state.mjs';
-import { isAudioTrack, audioSliceMode, auMarkStale } from './ui_audio.mjs';
+import { isSampledTrack, audioSliceMode, auMarkStale } from './ui_audio.mjs';
 import { auPadTapped } from './ui_audio_editor.mjs';
 import { autoHoldJumpBegin, autoHoldJumpEnd } from './ui_automation_bank.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -368,10 +368,10 @@ function _onPadPressTrackView(status, d1, d2) {
         /* AUDIO, Loop mode: the pads only show where the loop is (Josh,
          * 2026-10-28: "show where the loop is"; the jumps went: "no reason
          * to preserve jump") — a tap does nothing. Modifier gestures go on. */
-        if (isAudioTrack(S.activeTrack) && !audioSliceMode(S.activeTrack) &&
+        if (isSampledTrack(S.activeTrack) && !audioSliceMode(S.activeTrack) &&
                 !S.shiftHeld && !S.deleteHeld && !S.copyHeld && !S.muteHeld) return;
         /* AUDIO, Slice mode: a tap picks the slice SLICE n edits (and plays). */
-        if (isAudioTrack(S.activeTrack)) auPadTapped(S.activeTrack, padIdx);
+        if (isSampledTrack(S.activeTrack)) auPadTapped(S.activeTrack, padIdx);
 
 
         /* Drum lane RESET: Shift+Delete+lane pad — full factory reset (length,
@@ -800,7 +800,7 @@ function _onPadPressTrackView(status, d1, d2) {
             if (S.padNoteMap[padIdx] === 0xFF) return; /* OOB pad — no note to toggle */
             const ac    = effectiveClip(S.activeTrack);
             /* (an Audio track's note is a slice: no octave) */
-            const _pitchRaw = S.padNoteMap[padIdx] + (isAudioTrack(S.activeTrack) ? 0 : S.trackOctave[S.activeTrack] * 12);
+            const _pitchRaw = S.padNoteMap[padIdx] + (isSampledTrack(S.activeTrack) ? 0 : S.trackOctave[S.activeTrack] * 12);
             if (_pitchRaw < 0 || _pitchRaw > 127) return; /* OOB after track-octave shift */
             const pitch = _pitchRaw;
             stepHoldCheckpoint(S.activeTrack);
@@ -855,7 +855,7 @@ function _onPadPressTrackView(status, d1, d2) {
              * pitches land outside [0,127]. */
             const basePitch = S.padNoteMap[padIdx];
             if (basePitch === 0xFF) return; /* OOB base */
-            const _pitchRaw = basePitch + (isAudioTrack(S.activeTrack) ? 0 : S.trackOctave[S.activeTrack] * 12);
+            const _pitchRaw = basePitch + (isSampledTrack(S.activeTrack) ? 0 : S.trackOctave[S.activeTrack] * 12);
             if (_pitchRaw < 0 || _pitchRaw > 127) return; /* OOB after track-octave shift */
             const pitch = _pitchRaw;
             padPitch[padIdx] = pitch;
@@ -1309,7 +1309,7 @@ function _fireLoopWindowSet(track, ctx, startStep, lenSteps) {
         else if (S.trackCurrentPage[track] > lastPage) S.trackCurrentPage[track] = lastPage;
         host_module_set_param('t' + track + '_c' + ac + '_loop_set', String(packed));
         /* an Audio Loop clip: the DSP moves Start..End with the window */
-        if (isAudioTrack(track) && !audioSliceMode(track)) auMarkStale(track, ac);
+        if (isSampledTrack(track) && !audioSliceMode(track)) auMarkStale(track, ac);
     } else if (ctx === 1) {
         /* Drum lane (active lane on this track) */
         const lane = S.activeDrumLane[track];
@@ -1558,7 +1558,7 @@ export function _onStepButtons(d1, d2) {
     /* AUDIO, a Loop clip: the step buttons only show where the loop is
      * (Q7, Josh 2026-10-27: "just show playback") — holding or tapping one
      * does nothing. Shift and the other modifiers keep their shortcuts. */
-    if (!S.sessionView && isAudioTrack(S.activeTrack) && !audioSliceMode(S.activeTrack) &&
+    if (!S.sessionView && isSampledTrack(S.activeTrack) && !audioSliceMode(S.activeTrack) &&
             !S.shiftHeld && !S.deleteHeld && !S.copyHeld && !S.loopHeld && !S.muteHeld) return;
     /* Delete+step in session view: clear perf preset or mute snapshot slot immediately. */
     if (S.sessionView && S.deleteHeld) {

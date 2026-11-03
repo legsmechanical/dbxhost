@@ -56,7 +56,7 @@ import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
 import { instrOptions, instrPickerRows, moveInstrOwner, fmtInstr, INSTR_SCHWUNG, INSTR_NONE, INSTR_MIDI_CH, INSTR_CONDUCT, INSTR_ROW_LABEL, NUM_CLIPS, fmtVelOverride, BANK_SOUND, BANK_MACROS, BANK_AUTOMATION, BANK_CONFIG, isSoundBank, BANKS, fmtPlayDir, fmtSign,
          BANK_MACRO_ALLOW, BANK_SHORT, seqAutoKeyFor, SEQ_AUTO_TARGETS, AU_AUTO_BANK, AU_SLICES_BANK, auAutoBank,
          midiTargetIsMidi, midiTargetCC, midiTargetName, midiTargetShort, midiTargetMax, midiTargetDefault, midiTargetTo14, PB_CENTRE,
-         PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD, PAD_MODE_AUDIO as PMA, INSTR_AUDIO, TRACK_PAD_BASE } from './ui_constants.mjs';
+         PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD, PAD_MODE_AUDIO as PMA, PAD_MODE_SLICER as PMS, padSampled, INSTR_AUDIO, INSTR_SLICER, TRACK_PAD_BASE } from './ui_constants.mjs';
 import { openWave } from './ui_audio_editor.mjs';
 import { auAutoMirror, auSlicesAutoMirror, auMacroValue, auMacroWrite, auInfo } from './ui_audio.mjs';
 import { applyTrackConfig, applyBankParam, readBankParams, syncTrackMidiFx, midiFxResyncAfterPatch } from './ui_dsp_bridge.mjs';
@@ -107,7 +107,7 @@ import {
     drawKitStackedList, drawKitBackdropDim, drawKitCrumbs, kitStackBox, drawBrackets,
     MV_BAR_Y,
     hdrPrint, mvPrint, mvWidth, shapeSample, plotLine, hudCard, drawLevelCard, MV_ROW1_Y } from './ui_movy.mjs';
-import { bankCyclePos, bankCycleForMode, auIsSlice } from './ui_pure.mjs';
+import { bankCyclePos, bankCycleForMode } from './ui_pure.mjs';
 /* ⭐⭐ THE MODULE EDITOR IS THE HOST'S, AND NOW LITERALLY THE SAME FILE.
  *
  * `createParamPagesBinding` is the editor the shadow UI runs; davebox creates
@@ -523,7 +523,7 @@ function configRows(t) {
      * is previewed and applied when the edit closes. The rules (and the
      * confirms) are requestTrackModeChange's; this row only chooses a target. */
     /* ...and on Audio, which has no track type either (Josh, 2026-10-27). */
-    if (GS.trackPadMode[t] !== PMC && GS.trackPadMode[t] !== PMA) {
+    if (GS.trackPadMode[t] !== PMC && !padSampled(GS.trackPadMode[t])) {
         rows.push({ key: 'mode', label: 'Mode', commitOnClick: true,
             opts: [0, 1],
             fmt: (v) => (v ? 'Drums' : 'Melodic'),   /* Josh, 2026-10-01: "key track mode should be melodic" */
@@ -534,7 +534,7 @@ function configRows(t) {
      * — the Layout row was removed (Josh, 2026-10-22). */
     /* Conduct emits nothing, so it has nothing to transpose. */
     /* ...nor Audio: its pitches are slices. */
-    if (GS.trackPadMode[t] !== PMC && GS.trackPadMode[t] !== PMA) {
+    if (GS.trackPadMode[t] !== PMC && !padSampled(GS.trackPadMode[t])) {
         rows.push({ key: 'transpose', label: 'Transpose',
             min: -24, max: 24, step: 1, int: true,
             fmt: (v) => (v === 0 ? '0 st' : (v > 0 ? '+' : '') + v + ' st'),
@@ -601,7 +601,7 @@ function configRows(t) {
      * screen, as it plays, to a .mid file (ui_midi_export.mjs). A one-shot
      * `action` row — the click runs it, the jog never edits it. Not on a
      * Conductor: it holds transpositions, not notes. */
-    if (GS.trackPadMode[t] !== PMC && GS.trackPadMode[t] !== PMA) {
+    if (GS.trackPadMode[t] !== PMC && !padSampled(GS.trackPadMode[t])) {
         rows.push({ key: 'midi_export', label: 'Export to MIDI',
             action: () => requestClipMidiExport(t),
             get: () => 0, fmt: () => '...' });
@@ -3665,7 +3665,7 @@ function buildPickRows() {
         for (const i of S.blockRows) {
             if (BLOCKS[i].comp === 'synth') continue;
             /* Audio: nothing on the track receives MIDI (Q4). */
-            if (GS.trackPadMode[S.track] === PMA && /^midi_fx/.test(BLOCKS[i].comp)) continue;
+            if (padSampled(GS.trackPadMode[S.track]) && /^midi_fx/.test(BLOCKS[i].comp)) continue;
             rows.push({ kind: 'block', comp: BLOCKS[i].comp, label: BLOCKS[i].label, blockIdx: i });
         }
         /* The slot's LEVELS, inline and immediately after the chain — the same
@@ -4235,8 +4235,9 @@ function auMacroFromAsn(target, param) {
 function auMacroMeta(m, track) {
     const t = (track == null) ? S.track : track;
     const st = SEQ_AUTO_TARGETS[m.key];
-    if (t < 0 || !st || !auAutoBank(st.bank) || GS.trackPadMode[t] !== PMA) return null;
+    if (t < 0 || !st || !auAutoBank(st.bank) || !padSampled(GS.trackPadMode[t])) return null;
     const sl = st.bank === AU_SLICES_BANK;
+    if (sl && GS.trackPadMode[t] !== PMS) return null;           /* chops: a Slicer's */
     return { abbrev: st.label, full: (sl ? 'All Slices ' : 'Sample ') + st.label, min: st.min, max: st.max,
              fmt: v => auMacroText(st.field, v), sens: st.stepped ? 16 : 0 };
 }
@@ -4454,9 +4455,9 @@ function knobTargetList() {
         }
     }
     /* An Audio track's clip sound: the SAMPLE editor's, and ALL SLICES'. */
-    if (S.track >= 0 && GS.trackPadMode[S.track] === PMA) {
+    if (S.track >= 0 && padSampled(GS.trackPadMode[S.track])) {
         rows.push({ id: AU_TARGET + AU_AUTO_BANK, name: 'Sample' });
-        rows.push({ id: AU_TARGET + AU_SLICES_BANK, name: 'All Slices' });
+        if (GS.trackPadMode[S.track] === PMS) rows.push({ id: AU_TARGET + AU_SLICES_BANK, name: 'All Slices' });   /* chops: a Slicer's */
     }
     if (!midiTrack) rows.push({ id: LEVEL_TARGET, name: 'Levels' });   /* a MIDI track has no chain */
     /* SNAPMORPH (18b): a track's macro can morph its sound between its TRACK
@@ -4499,8 +4500,9 @@ function openKnobTargets() {
      * position, not a parameter), and only banks with something automatable. */
     if (S.knobPickFor) S.knobTargets = S.knobTargets.filter(t => t.id && t.id !== MORPH_TARGET &&
         (t.id.indexOf('bank:') !== 0 || knobParamList(t.id).length) &&
-        /* a lane is one clip's: ALL SLICES is a Slice clip's only */
-        (t.id !== AU_TARGET + AU_SLICES_BANK || auIsSlice(auInfo(S.knobPickFor.track, S.knobPickFor.clip))));
+        /* ALL SLICES is a Slicer's only (its chops are the track's, so the
+         * sequencer clip's own info says nothing) */
+        (t.id !== AU_TARGET + AU_SLICES_BANK || GS.trackPadMode[S.knobPickFor.track] === PMS));
     /* Seed the cursor on the current assignment's target. ⚠ On the LEG list
      * that is the leg BEING RE-POINTED, not leg 0 — seeding from S.knobAsn
      * (which is always leg 0) opened leg 3's picker on leg 1's component, and
@@ -5061,7 +5063,7 @@ function commitInstrPick(r) {
      * 2026-10-27, Q3: "clear them") — asked first, while there is anything to
      * lose; Yes comes back here through instrPickResume. Refused while
      * playing, as the Conductor is. */
-    if (GS.trackPadMode[S.track] === PMA && r.v !== INSTR_AUDIO) {
+    if (padSampled(GS.trackPadMode[S.track]) && r.v !== (GS.trackPadMode[S.track] === PMS ? INSTR_SLICER : INSTR_AUDIO)) {
         if (GS.playing) { showMenuInfo('Stop playback', 'to change the', 'track type.'); return; }
         if (!S.audioLeaveOk) {
             let any = false;
@@ -5087,7 +5089,7 @@ function commitInstrPick(r) {
         /* ⚠ `&& !wasConduct`: a Conductor with a parked Schwung route would take
          * this fast path and load a generator while STAYING a Conductor. It has
          * to go the long way round so applyInstrChangeNow converts it to Keys. */
-        if (GS.trackRoute[S.track] === 0 && GS.trackPadMode[S.track] !== PMC && GS.trackPadMode[S.track] !== PMA) {
+        if (GS.trackRoute[S.track] === 0 && GS.trackPadMode[S.track] !== PMC && !padSampled(GS.trackPadMode[S.track])) {
             /* Already a Schwung track: the one you have re-selected just opens
              * (a reload would throw its state away); another one loads. */
             if (moduleIdOf(engineLoadedModule(S.slot, 'synth')) === r.gen.id) {
@@ -5116,7 +5118,7 @@ function commitInstrPick(r) {
          * go); from anywhere else the track becomes Schwung first and the
          * slot's generator is then cleared, the generator path's long way. */
         const none = { id: '', name: '[ none ]' };
-        if (GS.trackRoute[S.track] === 0 && GS.trackPadMode[S.track] !== PMC && GS.trackPadMode[S.track] !== PMA) {
+        if (GS.trackRoute[S.track] === 0 && GS.trackPadMode[S.track] !== PMC && !padSampled(GS.trackPadMode[S.track])) {
             if (engineLoadedModule(S.slot, 'synth')) { S.comp = 'synth'; requestModulePick(none); }
         } else {
             S.genAfterReflavour = none;
@@ -5611,6 +5613,7 @@ export function requestInstrChange(track, v) {
     /* AUDIO likewise: a conversion (it confirms, refuses while playing, and
      * offers to resample a track's clips first). */
     if ((v | 0) === INSTR_AUDIO) { requestTrackModeChange(track, PMA); return false; }
+    if ((v | 0) === INSTR_SLICER) { requestTrackModeChange(track, PMS); return false; }
     const newRoute = routeForInstr(v);
     /* ONE TRACK PER MOVE INSTRUMENT: refuse BEFORE the type-change confirm —
      * otherwise Yes would clear the incompatible macros and lanes and THEN the
@@ -5641,7 +5644,7 @@ function applyInstrChangeNow(track, v) {
      * ⚠ Placed here rather than in requestInstrChange so it runs on BOTH paths:
      * the immediate one and the type-change confirm's Yes. A No therefore leaves
      * the Conductor intact, which is what No has to mean. */
-    if (GS.trackPadMode[track] === PMC || GS.trackPadMode[track] === PMA) requestTrackModeChange(track, 0);
+    if (GS.trackPadMode[track] === PMC || padSampled(GS.trackPadMode[track])) requestTrackModeChange(track, 0);
     applyInstrChoice(track, v);
     /* The screen must FOLLOW the new destination immediately — a track just
      * switched to MIDI has no chain to show, and a switch between Schwung
@@ -6430,7 +6433,7 @@ function bankMacroOnMode(bank, padMode) {
     if (padMode === PMC) return false;
     /* An Audio track: no HARMONY, DELAY, SEQ ARP or LIVE ARP target (Josh,
      * 2026-10-31: "nope") — CLIP and NOTE FX stay. */
-    if (padMode === PMA && bank >= 2 && bank <= 5) return false;
+    if (padSampled(padMode) && bank >= 2 && bank <= 5) return false;
     if (bank === 7) return padMode === PMD;
     if (bank === 5) return true;
     return padMode !== PMD;
@@ -6495,8 +6498,8 @@ export function soundSeqMirror(track, key, val) {
     if (!st || track < 0 || track > 7 || !isFinite(val)) return false;
     const nv = Math.max(st.min, Math.min(st.max, val | 0));
     /* an Audio clip's sound: the SAMPLE editor's copy */
-    if (st.bank === AU_AUTO_BANK) return GS.trackPadMode[track] === PMA && auAutoMirror(track, st.field, nv);
-    if (st.bank === AU_SLICES_BANK) return GS.trackPadMode[track] === PMA && auSlicesAutoMirror(track, st.field, nv);
+    if (st.bank === AU_AUTO_BANK) return padSampled(GS.trackPadMode[track]) && auAutoMirror(track, st.field, nv);
+    if (st.bank === AU_SLICES_BANK) return GS.trackPadMode[track] === PMS && auSlicesAutoMirror(track, st.field, nv);
     const m = { kind: 'bank', bank: st.bank, k: st.k };
     if (st.alt) m.alt = st.alt;
     if (!bankMacroOnMode(m.bank, GS.trackPadMode[track])) return false;   /* off-mode: nothing to show */
@@ -10531,7 +10534,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
                 }
                 /* AUDIO: the click enters WAVE, the sample's editor (as a
                  * click enters an instrument's); Shift+click picks something else. */
-                else if (GS.trackPadMode[S.track] === PMA) {
+                else if (padSampled(GS.trackPadMode[S.track])) {
                     if (GS.shiftHeld || S.shiftHeld) { S.pickFromMenu = true; openInstrPicker(); }
                     else { const _at = S.track; soundExit(); openWave(_at); }
                     S.dirty = true;
@@ -11863,7 +11866,7 @@ function pickRowCell(r, idx) {
          * and fmtInstr answers 'Conductor' — via instrValueFor, which tests
          * pad mode first. */
         let txt = GS.trackPadMode[S.track] === PMC ? fmtInstr(INSTR_CONDUCT)
-                : GS.trackPadMode[S.track] === PMA ? fmtInstr(INSTR_AUDIO) + ' >'
+                : padSampled(GS.trackPadMode[S.track]) ? fmtInstr(GS.trackPadMode[S.track] === PMS ? INSTR_SLICER : INSTR_AUDIO) + ' >'
                 /* No generator yet reads as NOTHING, not "Schwung": the
                  * route is bookkeeping the user never chose (Josh,
                  * 2026-09-04) — what they have is no instrument. */
@@ -12016,7 +12019,7 @@ function menuRowHints(r) {
         /* A Conductor has nothing to ENTER, but Shift+click changes what it is —
          * and that is the only way out of Conductor, so it has to be advertised. */
         if (GS.trackPadMode[S.track] === PMC) return [['SHFT', 'CHANGE']];
-        if (GS.trackPadMode[S.track] === PMA) return [['CLK', 'EDIT'], ['SHFT', 'CHANGE']];
+        if (padSampled(GS.trackPadMode[S.track])) return [['CLK', 'EDIT'], ['SHFT', 'CHANGE']];
         const route = GS.trackRoute[S.track];
         if (route === 2) return [['SHFT', 'CHANGE']];            /* nothing to enter */
         if (route === 0 && !r.gen) return [['CLK', 'CHOOSE']];  /* no generator yet */

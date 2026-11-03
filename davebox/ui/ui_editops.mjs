@@ -13,22 +13,49 @@ import {
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_MACROS, BANK_STEP, BANK_PADMODE, isSoundBank
 } from './ui_constants.mjs';
 import { S, noteUndoUnit, markJsUndo } from './ui_state.mjs';
-import { isAudioTrack, auMarkStale } from './ui_audio.mjs';
+import { isSampledTrack, isAudioTrack, isSlicerTrack, auMarkStale, auInfo, AU_SLC, AU_SLICE_MAX_SEC } from './ui_audio.mjs';
 
-/* An Audio clip pastes onto an Audio track only, and only an Audio clip does
- * (its notes are slices) — v1 default, Josh 2026-10-27. The engine refuses
- * too; this says so instead of mirroring a paste that did not happen. */
-function audioPasteRefused(srcT, dstT) {
-    if (isAudioTrack(srcT) === isAudioTrack(dstT)) return false;
-    showActionPopup("CAN'T PASTE", isAudioTrack(srcT) ? 'Audio clips go on' : 'Notes cannot go on', 'Audio tracks only');
-    return true;
+/* Which kind a track is for pasting: 'audio', 'slicer' or '' (anything else). */
+function pasteKind(t) { return isAudioTrack(t) ? 'audio' : isSlicerTrack(t) ? 'slicer' : ''; }
+
+/* PASTE between the kinds (Josh, 2026-11-02): Audio and Slicer clips paste
+ * onto their own kind; an Audio clip onto a Slicer with NO sample becomes its
+ * sample, cut in 16 chops laid on the steps ("Don't allow an audio clip to
+ * pasted into a slucercgrack that already has a sample loaded."); a Slicer's
+ * clip onto an Audio clip gives it the sample; nothing crosses with a MIDI
+ * track, and a cut stays in its kind. The engine refuses the same; this says
+ * why instead of mirroring a paste that did not happen. */
+function audioPasteRefused(srcT, srcC, dstT, cut) {
+    const sk = pasteKind(srcT), dk = pasteKind(dstT);
+    if (sk === dk) return false;
+    const no = (a, b) => { showActionPopup("CAN'T PASTE", a, b); return true; };
+    if (!sk || !dk) return no(sk ? 'Audio clips go on' : 'Notes cannot go on', 'Audio or Slicer tracks only');
+    if (cut) return no('A cut stays on', sk === 'audio' ? 'Audio tracks' : 'Slicer tracks');
+    if (sk === 'audio') {
+        const i = auInfo(srcT, srcC), slc = auInfo(dstT, AU_SLC);
+        if (slc.name) return no('The Slicer has', 'a sample already');
+        if (i.state !== 2) return no('The clip has', i.name ? 'no sample loaded' : 'no sample');
+        if (i.rate > 0 && i.nframes > i.rate * AU_SLICE_MAX_SEC) return no('TOO LONG TO CHOP', 'Slicer: 4 minutes');
+        return false;
+    }
+    if (auInfo(srcT, AU_SLC).state !== 2) return no('The Slicer has', 'no sample');
+    return false;
 }
-/* The Audio mirror follows a copy (the engine copied the sample). */
+/* The Audio mirror follows a copy (the engine copied the sample, or moved it
+ * between the kinds — the destination's steps then come back from it). */
 function audioCopyMirror(srcT, srcC, dstT, dstC, move) {
-    if (!isAudioTrack(dstT)) return;
-    S.auInfo[dstT][dstC] = S.auInfo[srcT][srcC] ? Object.assign({}, S.auInfo[srcT][srcC]) : null;
-    auMarkStale(dstT, dstC);
-    if (move) { S.auInfo[srcT][srcC] = null; auMarkStale(srcT, srcC); }
+    const sk = pasteKind(srcT), dk = pasteKind(dstT);
+    if (dk === 'audio' && sk === 'audio') {
+        S.auInfo[dstT][dstC] = S.auInfo[srcT][srcC] ? Object.assign({}, S.auInfo[srcT][srcC]) : null;
+        auMarkStale(dstT, dstC);
+        if (move) { S.auInfo[srcT][srcC] = null; auMarkStale(srcT, srcC); }
+        return;
+    }
+    if (sk === dk) return;                    /* Slicer to Slicer: steps only */
+    if (dk === 'slicer') auMarkStale(dstT, AU_SLC);
+    else if (dk === 'audio') auMarkStale(dstT, dstC);
+    else return;
+    S.pendingStepsReread = 2; S.pendingStepsRereadTrack = dstT; S.pendingStepsRereadClip = dstC;
 }
 import { nowMs } from './ui_clock.mjs';
 import { soundActive, soundOpen, soundExit, soundIsGlobal, soundInEditor, soundFollowTrack, soundOnCard } from './ui_sound.mjs';
@@ -190,7 +217,8 @@ export function clearClip(t, ac, keepPlaying) {
         ? 't' + t + '_c' + ac + '_clear_keep'
         : 't' + t + '_c' + ac + '_clear';
     /* An Audio clip keeps its sample, settings and length: only the sequence
-     * goes (Josh, 2026-10-28; Shift + Delete is the full reset). */
+     * goes (Josh, 2026-10-28; Shift + Delete is the full reset). A Slicer's
+     * clip is a sequence like any (its sample is the track's). */
     const _au = isAudioTrack(t);
     S.pendingDefaultSetParams.unshift({ key: cmd, val: '1', _local: true });
     /* Defer drain 1 tick to keep _clear out of the same audio buffer as any
@@ -240,7 +268,7 @@ export function clearClip(t, ac, keepPlaying) {
 /* Full factory reset: clip_init on DSP + JS mirror cleared. Track View only. */
 export function hardResetClip(t, ac, join) {
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
-    if (isAudioTrack(t)) { S.auInfo[t][ac] = null; auMarkStale(t, ac); }   /* its sample goes too */
+    if (isAudioTrack(t)) { S.auInfo[t][ac] = null; auMarkStale(t, ac); }   /* its sample goes too (a Slicer's stays: the track's) */
     if (S.trackPadMode[t] === PAD_MODE_DRUM) {
         /* Drum clip reset: clip_init all 32 lanes; midi_note preserved */
         S.pendingDefaultSetParams.unshift({ key: 't' + t + '_c' + ac + '_drum_reset', val: '1', _local: true });
@@ -288,7 +316,7 @@ export function hardResetClip(t, ac, join) {
 /* Copy clip src→dst (single atomic DSP write, JS mirror update). */
 export function copyClip(srcT, srcC, dstT, dstC) {
     if (srcT === dstT && srcC === dstC) return;
-    if (audioPasteRefused(srcT, dstT)) return false;
+    if (audioPasteRefused(srcT, srcC, dstT, false)) return false;
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'clip_copy', val: `${srcT} ${srcC} ${dstT} ${dstC}`, _local: true });
     /* The DSP moved LANES (pa_copy_clip); this module's mirror is fed only
@@ -314,7 +342,7 @@ export function copyClip(srcT, srcC, dstT, dstC) {
 /* Cut clip: copy src→dst then hard-reset src (single atomic DSP write, JS mirror update). */
 export function cutClip(srcT, srcC, dstT, dstC) {
     if (srcT === dstT && srcC === dstC) return;
-    if (audioPasteRefused(srcT, dstT)) return false;
+    if (audioPasteRefused(srcT, srcC, dstT, true)) return false;
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'clip_cut', val: `${srcT} ${srcC} ${dstT} ${dstC}`, _local: true });
     /* The DSP moved LANES (pa_copy_clip); this module's mirror is fed only
