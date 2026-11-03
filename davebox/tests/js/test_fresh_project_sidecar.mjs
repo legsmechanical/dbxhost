@@ -188,6 +188,28 @@ step('control: a NEW project (no sidecar) still pushes the new-project defaults'
     assert(pushed.indexOf('t0_pad_mode') >= 0, 'a new project did not push t0_pad_mode: ' + J(pushed));
 });
 
+/* A project with content whose sidecar is missing (never written, or a
+ * template's of another version) keeps its track 1: the drum default would
+ * switch an Audio or Slicer track 1 and lose its samples and steps, or wipe a
+ * melodic one's notes. */
+step('⭐ no sidecar, but track 1 is a Slicer / Audio / melodic with notes: track 1 is left alone', () => {
+    for (const [pm, notes, label] of [[4, false, 'Slicer'], [3, false, 'Audio'], [0, true, 'melodic with notes']]) {
+        dirty();
+        S.pendingDefaultSetParams.length = 0;
+        S.trackPadMode[0] = pm;
+        for (let c = 0; c < S.clipNonEmpty[0].length; c++) S.clipNonEmpty[0][c] = false;
+        S.clipNonEmpty[0][2] = notes;
+        delete FILES[uiPath()];
+        B.restoreUiSidecar(true);
+        const pushed = S.pendingDefaultSetParams.map(p => p.key);
+        assert(pushed.indexOf('t0_pad_mode') < 0, label + ': pushed t0_pad_mode: ' + J(pushed));
+        assert(S.trackPadMode[0] === pm, label + ': track 1 became ' + S.trackPadMode[0]);
+        assert(pushed.indexOf('metro_vol') >= 0, label + ': the other new-project defaults went too');
+    }
+    S.clipNonEmpty[0][2] = false;
+    S.trackPadMode[0] = 0;
+});
+
 if (failed) { console.log('FAIL: test_fresh_project_sidecar'); process.exit(1); }
 console.log('PASS: test_fresh_project_sidecar');
 }

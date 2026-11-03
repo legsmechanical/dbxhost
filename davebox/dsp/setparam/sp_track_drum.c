@@ -34,6 +34,10 @@ static int sp_track_drum(sp_ctx_t *cx) {
          * writes. tN_lL_* keys are drum-only by construction (JS never
          * sends them for melodic tracks), so allocate here on first
          * lane write as the reliable drum-mode entry point. */
+        /* ...but never an Audio or Slicer track: that is an instrument
+         * switch (confirm, release, undo), not a side effect of a stale
+         * lane write (a browser editor still showing the old kind). */
+        if (pad_mode_sampled(tr->pad_mode)) return 1;
         if (tr->pad_mode != PAD_MODE_DRUM) {
             tr->pad_mode = PAD_MODE_DRUM;
             drum_clips_alloc(inst, tr);

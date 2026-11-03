@@ -1167,7 +1167,8 @@ function drawRow2Labels() {
     }
     /* Velocity input, right-aligned (track view only). The Fixed/Adaptive
      * word that sat here is gone (Josh, 2026-09-23). */
-    if (!S.sessionView) {
+    /* (not on Audio or Slicer: neither has velocity) */
+    if (!S.sessionView && !isSampledTrack(S.activeTrack)) {
         const _vel = 'Vel:' + fmtVelOverride(S.trackVelOverride[S.activeTrack]);
         const _vx = 128 - 4 - ovwWidth(_vel);
         ovwPrint(_vx, 17, _vel, 1);

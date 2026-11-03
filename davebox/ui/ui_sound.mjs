@@ -541,10 +541,13 @@ function configRows(t) {
             get: () => GS.trackTranspose[t] | 0,
             set: (v) => applyTrackConfig(t, 'transpose', v) });
     }
-    rows.push({ key: 'velin', label: 'VelIn',
-        min: 0, max: 127, step: 1, int: true, fmt: fmtVelOverride,
-        get: () => GS.trackVelOverride[t] | 0,
-        set: (v) => applyTrackConfig(t, 'track_vel_override', v) });
+    /* ...nor velocity: neither has any. */
+    if (!padSampled(GS.trackPadMode[t])) {
+        rows.push({ key: 'velin', label: 'VelIn',
+            min: 0, max: 127, step: 1, int: true, fmt: fmtVelOverride,
+            get: () => GS.trackVelOverride[t] | 0,
+            set: (v) => applyTrackConfig(t, 'track_vel_override', v) });
+    }
     /* Every row here is a property of the NOTE STREAM, the looper included:
      * it is a MIDI looper (seq8_looper.c), so a MIDI-routed track's notes loop
      * out the cable exactly as a Schwung track's loop into its chain. Josh,

@@ -1184,6 +1184,9 @@ static int sp_track_audio(sp_ctx_t *cx) {
         au_req_t r;
         c = au_arg_clip(&p);
         if (c < 0 || *p != '|' || !p[1]) return 1;
+        /* only a track that plays samples takes one (a queued take whose
+         * track changed kind meanwhile must not resize a melodic clip) */
+        if (!pad_mode_sampled(inst->tracks[tidx].pad_mode)) return 1;
         au_clip_t *cl = au_key_cl(inst, tidx, c);
         if (!cl) return 1;
         c = au_key_c(inst, tidx, c);

@@ -1332,7 +1332,7 @@ static void seq8_load_state(seq8_instance_t *inst) {
         /* An Audio clip has no steps (the sample is the clip): becoming Audio
          * wipes them, so a file's are left over from another format and would
          * show a clip with no sample on the grid. */
-        if (inst->tracks[t].pad_mode == PAD_MODE_AUDIO) {
+        if (inst->tracks[t].pad_mode == PAD_MODE_AUDIO && json_get_int(buf, "cndt", -1) != t) {
             int c;
             for (c = 0; c < NUM_CLIPS; c++) clip_wipe_notes(&inst->tracks[t].clips[c]);
         }
@@ -1722,6 +1722,9 @@ static void seq8_load_state(seq8_instance_t *inst) {
             /* Clear-and-keep, NOT free (snapshot may read concurrently —
              * monotonic allocation, see drum_clips_free in seq8.c). */
             if (_ctr->pad_mode == PAD_MODE_DRUM) drum_clips_reset(_ctr);
+            /* a file that called it Audio or Slicer asked the loader for
+             * samples a Conductor never plays or saves */
+            if (pad_mode_sampled(_ctr->pad_mode)) au_track_release(inst, inst->conductor_track);
             _ctr->pad_mode = PAD_MODE_CONDUCT;
         }
         /* Conductor per-clip control banks (sparse; absent keys keep clip_init

@@ -50,7 +50,7 @@ import * as os from 'os';
 import * as std from 'std';
 import { S as GS, noteUndoUnit } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
-import { TPS_VALUES, SCENE_LETTERS, PAD_MODE_DRUM, PAD_MODE_CONDUCT, DRUM_LANES, LED_OFF, fmtRes } from './ui_constants.mjs';
+import { TPS_VALUES, SCENE_LETTERS, PAD_MODE_DRUM, PAD_MODE_CONDUCT, DRUM_LANES, LED_OFF, fmtRes, padSampled } from './ui_constants.mjs';
 import { White, VividYellow, Cyan, NeonPink, BrightOrange, NeonGreen, ElectricViolet, BrightRed, Lime } from '/data/UserData/schwung/shared/constants.mjs';
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 import { syncClipsTargeted } from './ui_dsp_bridge.mjs';
@@ -101,8 +101,10 @@ export function miActive() { return !!MI; }
 export function miStateForTest() { return MI; }
 export function miMarqueeForTest() { return MQ; }
 export function miResetForTest() { MI = null; loadSync = null; CACHE.clear(); META.clear(); MEM.fill(null); }
-/* Offered on every track that plays notes: a Conductor emits none. */
-export function miOffered(track) { return GS.trackPadMode[track] !== PAD_MODE_CONDUCT && GS.trackPadMode[track] !== 3 /* Audio */; }
+/* Offered on every track that plays notes: a Conductor emits none, an Audio
+ * clip is a sample, and a Slicer's notes are chop numbers (a file's pitches
+ * would mostly name chops it does not have). */
+export function miOffered(track) { return GS.trackPadMode[track] !== PAD_MODE_CONDUCT && !padSampled(GS.trackPadMode[track]); }
 
 /* ---- files ---- */
 

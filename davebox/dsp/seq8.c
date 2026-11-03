@@ -2128,6 +2128,8 @@ static void ext_transport_start(seq8_instance_t *inst);
 static void ext_transport_stop(seq8_instance_t *inst);
 static void clip_init(clip_t *cl);
 static void clip_wipe_notes(clip_t *cl);
+static void au_step_take(clip_t *cl, uint16_t sidx, uint32_t tps);
+static void au_track_release(seq8_instance_t *inst, int t);
 static void drum_pfx_params_init(drum_pfx_params_t *p);
 static inline void rui_mark(seq8_instance_t *inst, int t, int c);
 static inline void rui_content(seq8_instance_t *inst);
@@ -2725,6 +2727,10 @@ static void merge_place(seq8_instance_t *inst, int row) {
             dc->ticks_per_step = (uint16_t)inst->merge_tps;
             int pi;
             for (pi = 0; pi < inst->merge_pending_count[t]; pi++) {
+                /* a Slicer's step holds one chop: the later one takes it */
+                if (tr->pad_mode == PAD_MODE_SLICER)
+                    au_step_take(dc, note_step(inst->merge_pending[t][pi].tick_at_on, dc->length,
+                                               dc->ticks_per_step), dc->ticks_per_step);
                 clip_insert_note(dc,
                     inst->merge_pending[t][pi].tick_at_on,
                     inst->merge_pending[t][pi].gate,
@@ -4096,6 +4102,10 @@ static void pfx_reset(play_fx_t *fx) {
  * and the arp re-emits the picked note via pfx_send with arp_emitting=1. */
 static void pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
                         uint8_t orig_note, uint8_t vel) {
+    /* A Slicer has no velocity (Josh, 2026-11-02: "no velocity modulation"):
+     * every chop, played, sequenced or merged, enters at one level, so a DELAY
+     * echo's level never follows how hard a pad was hit. */
+    if (tr->pad_mode == PAD_MODE_SLICER) vel = SEQ_VEL;
     /* POST: the module first; what it makes comes back here (post_handback). */
     if (post_takes(inst, tr)) { post_raw_on(inst, tr, orig_note, vel); return; }
     play_fx_t   *fx  = &tr->pfx;

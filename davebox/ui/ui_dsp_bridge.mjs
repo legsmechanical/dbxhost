@@ -2002,10 +2002,17 @@ export function restoreUiSidecar(applyDefaultsNow) {
             }
         }
     }
+    /* Track 1 starts as drums only when the ENGINE's track 1 is untouched too:
+     * a project with content and no sidecar (one never written, or a
+     * template's of another version) keeps its track 1 — an Audio or Slicer
+     * one would otherwise lose its samples and steps to the switch, a
+     * melodic one its notes. (Already drums: the push changes nothing.) */
+    const _t0Untouched = fresh && !damaged && (S.trackPadMode[0] === PAD_MODE_DRUM ||
+        ((S.trackPadMode[0] | 0) === 0 && !(S.clipNonEmpty[0] || []).some(Boolean)));
     if (fresh && !damaged) {
         S.scaleAware   = 1;
         S.metronomeVol = 100;
-        S.trackPadMode[0] = PAD_MODE_DRUM;
+        if (_t0Untouched) S.trackPadMode[0] = PAD_MODE_DRUM;
         /* A fresh project starts on the Scale layout with default chords —
          * never with the last project's. */
         for (let _t = 0; _t < NUM_TRACKS; _t++) { S.padLayoutChord[_t] = false; S.padLayoutPiano[_t] = false; S.chordLast[_t] = null; }
@@ -2020,7 +2027,7 @@ export function restoreUiSidecar(applyDefaultsNow) {
          * which was MELODIC at the time (doClearSession reset it). Without
          * this catch-up, S.drumClipNonEmpty[0] + drum lane meta retain pre-
          * Clear values and t1's session/drum pad LEDs render stale. */
-        if (applyDefaultsNow) {
+        if (applyDefaultsNow && S.trackPadMode[0] === PAD_MODE_DRUM) {
             syncDrumClipContent(0);
             syncDrumLanesMeta(0);
             syncDrumLaneSteps(0, S.activeDrumLane[0] | 0);
@@ -2030,9 +2037,9 @@ export function restoreUiSidecar(applyDefaultsNow) {
              * already queued this init (audit js-tick-4). */
             S.pendingDefaultSetParams.push(
                 { key: 'scale_aware', val: '1' },
-                { key: 'metro_vol',   val: '100' },
-                { key: 't0_pad_mode', val: String(PAD_MODE_DRUM) }
+                { key: 'metro_vol',   val: '100' }
             );
+            if (_t0Untouched) S.pendingDefaultSetParams.push({ key: 't0_pad_mode', val: String(PAD_MODE_DRUM) });
         }
     }
     /* Cold initial load (fresh runtime, not a resume-from-suspend) always opens
