@@ -2484,8 +2484,8 @@ int main(void) {
             char fbuf[4096]; size_t fn = rf ? fread(fbuf, 1, sizeof(fbuf) - 1, rf) : 0;
             if (rf) fclose(rf);
             fbuf[fn] = '\0';
-            HX_ASSERT(fn > 0 && strstr(fbuf, "\"v\":36"),
-                      "save: serialized v36 blob written to file");
+            HX_ASSERT(fn > 0 && strstr(fbuf, "\"v\":37"),
+                      "save: serialized v37 blob written to file");
         }
         /* version-mismatch guard: skips the write but still clears preview. */
         remove(SAVE_TMP);

@@ -465,7 +465,7 @@ static void drum_lane_set_geom(clip_t *dlc, int len, int ls, int tps) {
 
 static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
     int t, c;
-    fprintf(fp, "{\"v\":36,\"playing\":%d", inst->playing);
+    fprintf(fp, "{\"v\":%d,\"playing\":%d", SEQ8_STATE_V, inst->playing);
     for (t = 0; t < NUM_TRACKS; t++)
         fprintf(fp, ",\"t%d_ac\":%d", t, inst->tracks[t].active_clip);
     for (t = 0; t < NUM_TRACKS; t++)
@@ -1057,9 +1057,14 @@ static void seq8_load_state(seq8_instance_t *inst) {
     /* One pass, so the ~15k getter lookups below stop rescanning the file. */
     jidx_build(buf);
 
-    /* Version gate: only v=36 accepted. Clear Session sentinel (v=0) is silently
-     * wiped. Genuine old-format files (v>0 && v!=36) defer deletion behind a JS
-     * confirm dialog — flag is set on first encounter, consumed on re-entry.
+    /* Version gate: v=36 and v=37 (SEQ8_STATE_V: Audio and Slicer tracks)
+     * load. A file from a NEWER build is refused and never deleted: the flag
+     * reads 2 and the UI says so (an older build would have read it wrong).
+     * Clear Session sentinel (v=0) is silently wiped. Genuine old-format files
+     * (0 < v < 36) defer deletion behind a JS confirm dialog — flag 1 is set
+     * on first encounter, consumed on re-entry (only flag 1: a newer file's
+     * flag 2 left over must not turn the next old file's question into a
+     * silent delete).
      *
      * ⚠ Every exit from here is a load that did NOT happen, so the automation
      * the instance is holding belongs to whatever was loaded BEFORE. Clearing
@@ -1068,10 +1073,17 @@ static void seq8_load_state(seq8_instance_t *inst) {
      * back into the cleared file. */
     {
         int sv = json_get_int(buf, "v", -1);
-        if (sv != 36) {
+        if (sv > SEQ8_STATE_V) {
             seq8_load_buf_free(buf);
             pa_reset_all(inst);
-            if (sv > 0 && !inst->state_version_mismatch) {
+            inst->state_version_mismatch = 2;
+            seq8_ilog(inst, "SEQ8 state: made by a newer dAVEBOx, not loaded");
+            return;
+        }
+        if (sv != 36 && sv != SEQ8_STATE_V) {
+            seq8_load_buf_free(buf);
+            pa_reset_all(inst);
+            if (sv > 0 && inst->state_version_mismatch != 1) {
                 inst->state_version_mismatch = 1;
                 seq8_ilog(inst, "SEQ8 state: version mismatch, awaiting JS confirm");
                 return;

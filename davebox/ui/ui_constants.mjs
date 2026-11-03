@@ -59,10 +59,12 @@ export const DRUM_LANES          = 32;
  * either one would be a second declaration waiting to drift. */
 export const STEP_SAVE_FLASH_MS  = 425;
 export const DRUM_BASE_NOTE      = 36;
-/* DSP state-format version — mirrors `v=36` in dsp/seq8.c. Bump BOTH together.
+/* DSP state-format version — mirrors `SEQ8_STATE_V` in dsp/seq8.c. Bump BOTH together.
  * Snapshots store the version they were saved at; a mismatch marks them
  * incompatible (offered for wipe when the Load list opens). */
-export const STATE_VERSION       = 36;
+export const STATE_VERSION       = 37;
+/* the formats this build reads (seq8_state.c's gate): 37 added Audio + Slicer */
+export const STATE_VERSIONS_READ = [36, 37];
 
 /* shim ui_flags bits that must be masked while SEQ8 owns the display. */
 export const FLAG_JUMP_TO_OVERTAKE = 0x04;

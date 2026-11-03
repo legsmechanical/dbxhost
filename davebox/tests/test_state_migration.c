@@ -98,7 +98,47 @@ int main(void) {
     HX_ASSERT(inst->tracks[1].clips[0].steps[0] == step0_before,
               "t1 c0 step 0 must survive a rejected v1 load");
 
+    /* --- (c) a NEWER format: refused, never deleted, flag 2 --- */
+    {
+        const char *src = "tests/fixtures/state_v38_newer.json";
+        const char *cp = "/tmp/hx_state_v38_copy.json";
+        FILE *in = fopen(src, "r"); HX_ASSERT(in, "v38 fixture missing");
+        char blob[256]; size_t n = fread(blob, 1, sizeof(blob), in); fclose(in);
+        FILE *out = fopen(cp, "w"); HX_ASSERT(out, "scratch copy"); fwrite(blob, 1, n, out); fclose(out);
+        inst->state_version_mismatch = 0;
+        load_fixture(inst, cp);
+        HX_ASSERT(inst->state_version_mismatch == 2,
+                  "a v38 blob must raise flag 2 (made by a newer build)");
+        HX_ASSERT(hx_get_param(h, "bpm", bpmbuf, (int)sizeof(bpmbuf)) > 0
+                  && atoi(bpmbuf) == 137, "a newer file's bpm must not load");
+        HX_ASSERT(inst->tracks[1].clips[0].steps[0] == step0_before,
+                  "pattern data must survive a refused newer load");
+        { FILE *chk = fopen(cp, "r");
+          HX_ASSERT(chk, "a newer file must NEVER be deleted"); if (chk) fclose(chk); }
+        /* a second open of the newer file: still refused, still there */
+        load_fixture(inst, cp);
+        HX_ASSERT(inst->state_version_mismatch == 2, "second open: still flag 2");
+        { FILE *chk = fopen(cp, "r");
+          HX_ASSERT(chk, "second open must not delete it either"); if (chk) fclose(chk); }
+        /* flag 2 left over must not turn an OLD file's question into a delete */
+        const char *old_cp = "/tmp/hx_state_v1_copy.json";
+        out = fopen(old_cp, "w"); HX_ASSERT(out, "scratch copy"); fputs("{\"v\":1}", out); fclose(out);
+        load_fixture(inst, old_cp);
+        HX_ASSERT(inst->state_version_mismatch == 1,
+                  "an old file after a newer one still asks (flag 1)");
+        { FILE *chk = fopen(old_cp, "r");
+          HX_ASSERT(chk, "the old file must wait for the answer"); if (chk) fclose(chk); }
+        remove(cp); remove(old_cp);
+    }
+
+    /* --- (d) this build's own format loads --- */
+    inst->state_version_mismatch = 0;
+    load_fixture(inst, "tests/fixtures/state_v37_minimal.json");
+    HX_ASSERT(!inst->state_version_mismatch, "v37 must load");
+    HX_ASSERT(hx_get_param(h, "bpm", bpmbuf, (int)sizeof(bpmbuf)) > 0
+              && atoi(bpmbuf) == 111, "the v37 file's bpm loaded");
+
     hx_destroy(h);
-    printf("PASS: state migration — v36 minimal defaults + v1 version gate\n");
+    printf("PASS: state migration — v36/v37 load, v1 asks, v38 refused and kept\n");
     return 0;
 }

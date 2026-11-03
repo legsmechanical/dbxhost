@@ -237,8 +237,16 @@ export function resolveSetLoadDecision() {
     const _svMismatch = host_module_get_param('state_version_mismatch');
     const dspUuid = (host_module_get_param('state_uuid') || '');
 
-    if (_svMismatch && parseInt(_svMismatch, 10) === 1) {
+    if (_svMismatch && parseInt(_svMismatch, 10) === 2) {
+        /* Saved by a newer dAVEBOx: never loaded, never erased — the notice's
+         * click leaves, as No does on the wipe question. */
+        S.confirmStateWipe = true;
+        S.stateTooNew = true;
+        S.pendingSetLoad = false;
+        S.screenDirty = true;
+    } else if (_svMismatch && parseInt(_svMismatch, 10) === 1) {
         /* Confirm dialog owns it; its "Yes" handler triggers the state_load. */
+        S.stateTooNew = false;
         S.confirmStateWipe = true;
         S.confirmStateWipeSel = 1;
         S.pendingSetLoad = false;

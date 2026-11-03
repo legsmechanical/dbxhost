@@ -181,7 +181,8 @@ JS modules live under `ui/` — `ui.js` plus the `ui_*.mjs` modules — bundled 
 
 ## State persistence
 
-DSP state **v=36**. On a mismatch (`v>0 && v≠36`) a confirm dialog asks before erasing; "No" exits
+DSP state **v=37** (`SEQ8_STATE_V`; v=36 — what 1.1.3 writes — still loads). A NEWER file is refused and never
+deleted ("PROJECT TOO NEW", the click leaves). On an older mismatch (`0 < v < 36`) a confirm dialog asks before erasing; "No" exits
 the module with the file preserved. **Backward compatibility matters** — prefer migrating old
 fields in `seq8_load_state` over bumping. See `dsp/CLAUDE.md` for the key list.
 

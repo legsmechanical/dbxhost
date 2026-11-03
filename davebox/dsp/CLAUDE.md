@@ -172,8 +172,10 @@ frame byte 3 = slot tag, 0 = legacy channel match).
 
 ## State format
 
-**v=36 only.** `v≠36` → a user confirm dialog ("Incompatible State") before erase; "No" exits the
-module with the file preserved. The Clear Session sentinel (`{"v":0}`) is silently wiped, no dialog.
+**v=37** (`SEQ8_STATE_V` in `seq8.c`, outside the `SEQ8_STATE_PREFIX` guard); v=36 also loads,
+because the public 1.1.3 writes it. A NEWER `v` is refused and never deleted (`state_version_mismatch`
+= 2, the UI says PROJECT TOO NEW). `0 < v < 36` → a user confirm dialog ("Incompatible State") before
+erase (flag 1); "No" exits the module with the file preserved. The Clear Session sentinel (`{"v":0}`) is silently wiped, no dialog.
 **Backward compatibility is a concern** — prefer migrating old fields in `seq8_load_state` over
 bumping.
 

@@ -46,6 +46,13 @@
 #define SEQ8_STATE_PREFIX "seq8"
 #endif
 
+/* The state file's format: 37 = Audio and Slicer tracks. 36 still loads. Its
+ * own guard: SEQ8_STATE_PREFIX is passed in by build_sound.sh, which would
+ * otherwise skip this define. */
+#ifndef SEQ8_STATE_V
+#define SEQ8_STATE_V 37
+#endif
+
 /* This build's module id — the directory name it installs under, which the
  * schwung-manager also uses to locate web_ui.html for the remote UI (see the
  * "module_id" probe in get_param). SA is `davebox-sound`, Legacy `davebox`, a

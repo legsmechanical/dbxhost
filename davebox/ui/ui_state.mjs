@@ -780,6 +780,7 @@ export const S = {
     confirmModuleChange: null,
     confirmModuleChangeSel: 1,
     confirmStateWipeSel: 1,   /* 0=Yes, 1=No (default) */
+    stateTooNew: false,       /* the wipe dialog as a notice: a newer dAVEBOx saved it */
     /* Keys->Drums track conversion confirm dialog (transient, not persisted). */
     confirmConvertToDrum: false,
     confirmConvertToDrumSel: 1,   /* 0=Yes, 1=No (default) */

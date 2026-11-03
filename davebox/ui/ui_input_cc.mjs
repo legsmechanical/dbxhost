@@ -435,7 +435,7 @@ function _onCC_jog(d1, d2) {
     /* State version mismatch dialog: Yes = wipe + clean start; No = exit module. */
     if (d1 === 3 && d2 === 127 && S.confirmStateWipe) {
         S.confirmStateWipe = false;
-        if (S.confirmStateWipeSel === 0) {
+        if (S.confirmStateWipeSel === 0 && !S.stateTooNew) {
             S.pendingSetLoad = true;
         } else {
             removeFlagsWrap();

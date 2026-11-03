@@ -285,8 +285,8 @@ def import_archive(archive, projects_dir, staging_root, templates_dir=None):
                 result["skipped"].append({"name": label, "why": "no Move song in it"})
                 continue
             v = _state_v(src)
-            if v is not None and v != pt.STATE_V:
-                # The DSP would ask to ERASE a state of another version.
+            if v is not None and v not in pt.STATE_V_READS:
+                # The DSP would refuse a newer state, or ask to ERASE an older one.
                 result["skipped"].append({"name": label, "why": "saved by another dAVEBOx version (state v%s, this one reads v%d)" % (v, pt.STATE_V)})
                 continue
             if not free:

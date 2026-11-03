@@ -109,7 +109,7 @@ check "template-set: the source project is untouched (hash)" \
 py "the DSP state is the whitelist exactly (+ clip A's program and kit map on every clip)" "$TD/state.json" <<'PY'
 import json, sys
 st = json.load(open(sys.argv[1]))
-want = {"v": 36, "key": 4, "scale": 2, "lq": 1, "bpm": 97.5, "saw": 0, "mic": 1, "metro_on": 1,
+want = {"v": 37, "key": 4, "scale": 2, "lq": 1, "bpm": 97.5, "saw": 0, "mic": 1, "metro_on": 1,
         "metro_vol": 60, "_swa": 30, "_swr": 1, "_cf": 1, "_cs": 1, "cndt": 7,
         "t0_ch": 9, "t0_rt": 0, "t0_pm": 1, "t0_tr": -3, "t0_tvo": 90, "t0_lp": 0,
         "t4_ch": 2, "t4_rt": 2, "t4_mt": 1}
@@ -177,10 +177,10 @@ check "a broken template: the project is born blank (the random-key seed is ther
 cp "$T/song.bak" "$TD/Song.abl"
 
 # ---- another format: that half is skipped -----------------------------------
-python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); d['v']=37; json.dump(d,open(p,'w'))" "$TD/state.json"
+python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); d['v']=38; json.dump(d,open(p,'w'))" "$TD/state.json"
 DBX_TEMPLATE=default DBX_STATE_PREFIX=seq8sa sh "$CMD" new-at 6 >/dev/null
 NV="$(newest "$T/seen")"
-check "a template state of another version is not written (the DSP would ask to delete it)" \
+check "a template state of a newer version is not written (the DSP would refuse it)" \
     test -z "$(find "$PROJECTS_DIR/$NV" -name 'seq8sa-state.json')"
 check "…while the chains still come along" test -n "$(find "$PROJECTS_DIR/$NV" -path '*host/slot_0.json')"
 
@@ -244,8 +244,14 @@ import re, sys
 sys.path.insert(0, "standalone/scripts")
 import project_template as pt
 dsp = open("davebox/dsp/seq8_state.c").read()
-m = re.search(r'fprintf\(fp, "\{\\"v\\":(\d+),', dsp)
+assert 'fprintf(fp, "{\\"v\\":%d,\\"playing\\":%d", SEQ8_STATE_V,' in dsp
+m = re.search(r'#define SEQ8_STATE_V (\d+)', open("davebox/dsp/seq8.c").read())
 assert m and int(m.group(1)) == pt.STATE_V, (m and m.group(1), pt.STATE_V)
+gate = re.search(r'if \(sv != (\d+) && sv != SEQ8_STATE_V\)', dsp)
+assert gate and tuple(sorted({int(gate.group(1)), pt.STATE_V})) == tuple(pt.STATE_V_READS), (gate and gate.group(1), pt.STATE_V_READS)
+ui = open("davebox/ui/ui_constants.mjs").read()
+assert re.search(r'STATE_VERSION\s*=\s*%d;' % pt.STATE_V, ui)
+assert 'STATE_VERSIONS_READ = [%s];' % ', '.join(map(str, pt.STATE_V_READS)) in ui
 js = open("davebox/ui/ui_persistence.mjs").read()
 m = re.search(r"return \{\s*v: (\d+), at:", js)
 assert m and int(m.group(1)) == pt.SIDECAR_V, (m and m.group(1), pt.SIDECAR_V)

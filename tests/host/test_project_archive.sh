@@ -54,7 +54,7 @@ z = zipfile.ZipFile(sys.argv[1]); u = sys.argv[2]
 names = z.namelist()
 m = json.loads(z.read("manifest.json"))
 assert m["kind"] == "dAVEBOx project archive" and m["format"] == 1, m
-assert m["davebox_version"] == "9.9.9-test" and m["state_v"] == 36, m
+assert m["davebox_version"] == "9.9.9-test" and m["state_v"] == 37, m
 assert [p["uuid"] for p in m["projects"]] == [u] and m["projects"][0]["name"] == "Golf Buddy", m
 assert m["templates"] == [], "a single-project export carried the templates"
 assert all(n == "manifest.json" or n.startswith("projects/" + u + "/") for n in names), names

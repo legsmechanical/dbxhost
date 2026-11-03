@@ -31,7 +31,9 @@ import state_subdir as ss  # noqa: E402
 # blank there) rather than handing the module a file it would refuse — the DSP
 # asks to DELETE a state of another version (seq8_state.c).
 # Pinned against seq8_state.c's version and writeSidecar's `v` by the tests.
-STATE_V = 36
+STATE_V = 37
+# the state formats this build reads (seq8_state.c's gate): 37 added Audio + Slicer
+STATE_V_READS = (36, 37)
 SIDECAR_V = 9
 
 HOST_LEAF = "host"
@@ -94,7 +96,7 @@ def filter_state(state):
     """The template's DSP state: the whitelist, plus clip A's Program / Bank and
     drum lane notes on every clip. None when the state is not the running
     format (the new project then starts with a blank state)."""
-    if not isinstance(state, dict) or state.get("v") != STATE_V:
+    if not isinstance(state, dict) or state.get("v") not in STATE_V_READS:
         return None
     out = {"v": STATE_V}
     for k in PROJECT_KEYS + GLOBAL_TRACK_KEYS:
@@ -339,7 +341,7 @@ def apply_template(templates_dir, tid, project_dir, prefix, have=None):
     sub = ss.ensure_state_subdir(project_dir)
     dst = os.path.join(project_dir, sub)
     state = _read_json(os.path.join(src, "state.json"))
-    if isinstance(state, dict) and state.get("v") == STATE_V:
+    if isinstance(state, dict) and state.get("v") in STATE_V_READS:
         _write_json(os.path.join(dst, prefix + "-state.json"), state)
     ui = _read_json(os.path.join(src, "ui.json"))
     if isinstance(ui, dict) and ui.get("v") == SIDECAR_V:

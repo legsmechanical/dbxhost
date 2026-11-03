@@ -1087,7 +1087,7 @@ export function _tickImpl() {
              * be: the mismatch is PRODUCED by the load, so nothing before the
              * load can see it. init() used to read it after create_instance
              * loaded; now that the load happens on selection, this is the only
-             * point where the answer exists. Without it a v≠36 project opens
+             * point where the answer exists. Without it a project of another format opens
              * blank and silently refuses every save for the session. */
             const _aw = host_module_get_param('awaiting_select');
             const _awUnknown = (_aw === null || _aw === undefined || _aw === '');
@@ -1104,8 +1104,10 @@ export function _tickImpl() {
              * back to being the watchdog's to repair. */
             S.selectHandoffUntil = 0;
             const _svm = host_module_get_param('state_version_mismatch');
-            if (_svm && parseInt(_svm, 10) === 1 && !S.confirmStateWipe) {
+            const _svmN = _svm ? parseInt(_svm, 10) : 0;
+            if ((_svmN === 1 || _svmN === 2) && !S.confirmStateWipe) {
                 S.confirmStateWipe = true;
+                S.stateTooNew = (_svmN === 2);
                 S.confirmStateWipeSel = 1;
                 S.screenDirty = true;
             }

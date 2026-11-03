@@ -3,7 +3,7 @@ import { createProject, anyTemplates, templatesKnown, templateNameTaken, cleanTe
 import { S, conductorTrackIdx } from './ui_state.mjs';
 import { keyRootName } from './ui_chord.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
-import { STATE_VERSION, SCALE_DISPLAY,
+import { STATE_VERSIONS_READ, SCALE_DISPLAY,
          NUM_CLIPS, PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_AUDIO } from './ui_constants.mjs';
 import { auConvertOffered } from './ui_audio_convert.mjs';
 import { engineLoadedModule, slotIndex } from './ui_engine.mjs';
@@ -382,6 +382,12 @@ export function drawModuleSwapConfirm() {
 
 export function drawStateWipeConfirm() {
     clear_screen();
+    if (S.stateTooNew) {
+        dlgHeader('PROJECT TOO NEW');
+        dlgLines(['Saved by a newer dAVEBOx.', 'Left unchanged. OK exits.']);
+        drawOkButton(46);
+        return;
+    }
     dlgHeader('STATE MISMATCH');
     dlgLines(['This session is from a', 'different version. Erase it?']);
     drawYesNoRow(S.confirmStateWipeSel);
@@ -722,7 +728,9 @@ export function drawSnapshotPicker() {
     drawKitHeader(p.mode === 'overwrite' ? 'OVERWRITE WHICH?' : 'LOAD STATE', false);
     drawKitList(p.snaps.map(function(s) {
         return { label: (s.label || '') +
-                 ((p.mode === 'load' && s.sv !== STATE_VERSION) ? ' (old)' : '') };
+                 ((p.mode === 'load' && !STATE_VERSIONS_READ.includes(s.sv))
+                    ? (s.sv > STATE_VERSIONS_READ[STATE_VERSIONS_READ.length - 1] ? ' (new)' : ' (old)')
+                    : '') };
     }), p.sel, { emptyMsg: 'No states', hostLabels: false });
 }
 
@@ -805,7 +813,8 @@ export function openLoadSnapshot() {
     }
     const stale = [];
     for (let i = 0; i < snaps.length; i++)
-        if (snaps[i].sv !== STATE_VERSION) stale.push(snaps[i].id);
+        /* older formats only: a newer dAVEBOx's state is never offered for erasing */
+        if (snaps[i].sv < STATE_VERSIONS_READ[0]) stale.push(snaps[i].id);
     S.snapshotPicker = { mode: 'load', snaps: snaps, sel: 0, confirm: null };
     if (stale.length > 0)
         S.snapshotPicker.confirm = { kind: 'wipe', sel: 1, wipeIds: stale };
@@ -871,7 +880,7 @@ export function snapshotPickerClick() {
     const snap = p.snaps[p.sel];
     if (!snap) return;
     if (p.mode === 'load') {
-        if (snap.sv !== STATE_VERSION) return;   /* incompatible: ignore press */
+        if (!STATE_VERSIONS_READ.includes(snap.sv)) return;   /* incompatible: ignore press */
         p.confirm = { kind: 'load', sel: 1, targetId: snap.id };
     } else {
         p.confirm = { kind: 'overwrite', sel: 1, targetId: snap.id };

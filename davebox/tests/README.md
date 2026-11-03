@@ -47,8 +47,8 @@ every structural move:
   instance: the on-device `state_load` handler resets state before
   `seq8_load_state`; an in-place reload double-appends note lanes by design.
 - `test_state_migration.c` + `tests/fixtures/` — v36-minimal defaults (with an
-  explicit fixture-read guard) and the v≠36 gate (`state_version_mismatch`,
-  nothing applied).
+  explicit fixture-read guard) the old-format gate (`state_version_mismatch` 1,
+  nothing applied) and the newer-format refusal (flag 2, file kept).
 - `test_setparam_domains.c` — one key per set_param domain, pinned via
   serialized-state substrings (gates the Phase 4 `set_param` split). Note its
   scope limit: it does NOT verify each handler sets `state_dirty` itself.
