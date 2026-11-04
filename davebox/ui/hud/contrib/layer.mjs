@@ -82,6 +82,8 @@ export const DESCRIBE = {
     Tracks:           (d, p) => { d.tracks = p.rows; },
     Picture:          (d, p) => { d.picture = { kind: p.kind || 'image', caption: p.caption || undefined, sub: p.sub || undefined }; },
     NoteBox:          (d, p) => { d.noteBox = { name: String(p.name || ''), sub: p.sub == null ? '' : String(p.sub), hi: !!p.hi }; },
+    Mods:             (d, p) => { d.mods = { names: (p.names || []).map(String), popup: p.popup ? String(p.popup) : undefined }; },
+    StepStrip:        (d, p) => { d.stepStrip = { len: p.len | 0, on: (p.on || []).join('') }; },
     Message:          (d, p) => { d.message = { big: p.big || '', lines: (p.lines || []).map(String), wordmark: p.wordmark || undefined }; },
     Bars:             (d, p) => { d.bars = { values: p.values, len: p.len, touched: p.touched, mode: p.mode, min: p.min, max: p.max }; },
     Position:         (d, p) => { d.position = { pages: p.pages, view: p.view, play: p.play, step: p.step, len: p.len, left: p.left || undefined, right: p.right || undefined }; },
@@ -90,6 +92,14 @@ export const DESCRIBE = {
 /* A layer's recorded calls → its description, or null when nothing of it was
  * described. A kind with no describer is counted, so a primitive added to the
  * kit without one shows up instead of vanishing. */
+/* Which part of a screen is its MAIN content when it drew more than one (a
+ * MIDI import list over a bank page it also drew): the one drawn LAST, as on
+ * the OLED, where the later drawing is the one on top. */
+const FAMILY = {
+    KitCells: 'knobs', KitBankPage: 'knobs', KitList: 'list', KitStackedList: 'list', KitSectionPicker: 'list',
+    KitPrompt: 'prompt', PromptLines: 'prompt', Buttons: 'prompt', Tracks: 'tracks', Bars: 'bars',
+    Mods: 'mods', Message: 'message', Picture: 'picture', KitBigValue: 'big', LevelCard: 'big', HudCard: 'card',
+};
 export function describeLayer(calls) {
     if (!calls || !calls.length) return null;
     const d = {};
@@ -97,6 +107,7 @@ export function describeLayer(calls) {
         const fn = DESCRIBE[kind];
         if (fn) fn(d, p || {});
         else (d.undescribed = d.undescribed || []).push(kind);
+        if (FAMILY[kind]) d.primary = FAMILY[kind];
     }
     return Object.keys(d).length ? d : null;
 }

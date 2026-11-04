@@ -67,6 +67,18 @@
       (p.caption ? '<div class="cap">' + esc(p.caption) + '</div>' : '') + (p.sub ? '<div class="sub">' + esc(p.sub) + '</div>' : '') + '</div>';
   });
 
+  /* perf — performance mode: the engaged mods as big pills (a just-tapped one
+   * alone, large), the Hold / Sync / Latch chips and the rate under them */
+  H.layout('perf', (d) => !!(d.body && d.body.mods), (doc, b) => {
+    const m = b.mods;
+    let html = '<div class="hud-perf">';
+    if (m.popup) html += '<div class="pop">' + esc(m.popup) + '</div>';
+    else if (!m.names.length) html += '<div class="none">No mods engaged<br><span>Tap a pad to engage one</span></div>';
+    else html += '<div class="mods">' + m.names.map((n, i) => '<span class="mod" style="--c:' + H.knobColor(i) + '">' + esc(n) + '</span>').join('') + '</div>';
+    if (b.chips) html += chips(b.chips);
+    return html + '</div>';
+  });
+
   /* message — loading, exiting: a big line and a small one */
   H.layout('message', (d) => !!(d.body && d.body.message), (doc, b) => {
     const m = b.message;
@@ -138,10 +150,20 @@
   /* big — a single value the device shows large (tempo, a level card) */
   H.layout('big', (d) => !!(d.body && d.body.big), (doc, b) => {
     const g = b.big;
-    return '<div class="hud-bigv"><div class="n">' + esc(g.text) + '</div>' + (g.unit ? '<div class="u">' + esc(g.unit) + '</div>' : '') +
-      (typeof g.frac === 'number' ? '<div class="bar"><i style="width:' + Math.round(g.frac * 100) + '%"></i></div>' : '') + '</div>';
+    const side = (t, cls) => t ? '<span class="' + cls + '">' + esc(t) + '</span>' : '';
+    return '<div class="hud-bigv"><div class="row">' + side(g.prev, 'pv') + '<span class="n">' + esc(g.text) + '</span>' + side(g.next, 'nx') + '</div>' +
+      (g.unit ? '<div class="u">' + esc(g.unit) + '</div>' : '') +
+      (typeof g.frac === 'number' ? '<div class="bar"><i style="width:' + Math.round(g.frac * 100) + '%"></i></div>' : '') +
+      (b.stepStrip ? stepStrip(b.stepStrip) : '') + '</div>';
   });
-
+  /* a clip's steps as a strip, bars numbered (the captured take behind a tempo choice) */
+  function stepStrip(st) {
+    const len = Math.max(1, st.len), bars = Math.max(1, Math.round(len / 16));
+    let cells = '';
+    for (let s = 0; s < len; s++) cells += '<i class="' + (st.on.charAt(s) === '1' ? 'on' : '') + (s % 16 === 0 ? ' sb' : s % 4 === 0 ? ' sq' : '') + '"></i>';
+    let nums = ''; for (let b = 0; b < bars; b++) nums += '<span>' + (b + 1) + '</span>';
+    return '<div class="hud-strip" style="--n:' + len + '">' + cells + '</div><div class="hud-stripn">' + nums + '</div>';
+  }
   /* card — a popup card's title + value (hudCard) */
   H.layout('card', (d) => !!(d.body && d.body.card), (doc, b) =>
     '<div class="hud-bigv"><div class="u">' + esc(b.card.title) + '</div><div class="n" style="font-size:64px">' + esc(b.card.value) + '</div></div>');

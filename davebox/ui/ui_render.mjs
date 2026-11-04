@@ -1467,6 +1467,7 @@ const DEVSNAP_BLINK_MS = 440;   /* Josh, device 2026-09-06: "a bit slower" — t
 function drawInfoRow2() {
     if (devSnapOpen()) {
         const _sn = devSnapTitle();
+        kitHudTap('Info', { left: _sn });
         const _top = S.sessionView ? MARK_BAR_H : MV_BAR_Y;
         const _h = OVW_TRACK_ROW_Y - _top - 1;      /* 1px clear of the track row */
         const _on = Math.floor(S.clockMs / DEVSNAP_BLINK_MS) % 2 === 0;
@@ -1741,6 +1742,7 @@ function drawPerfModeOled() {
     const BODY_TOP = 9, BODY_BOT = MV_FOOTER_Y - 2;
     if (S.perfModPopupEndTick >= 0 && S.clockMs <= S.perfModPopupEndTick && S.perfModPopupName) {
         const n = _modAscii(S.perfModPopupName).toUpperCase();
+        kitHudTap('Mods', { popup: S.perfModPopupName, names: [] });
         const w = bigWidth(n);
         if (w <= 124) bigPrint(Math.floor((128 - w) / 2), 22, n, 1);
         else { const t = fit4x5(n, 124); fontPrint4x5(Math.floor((128 - fontWidth4x5(t)) / 2), 25, t, 1); }
@@ -1749,6 +1751,7 @@ function drawPerfModeOled() {
         const names = [];
         for (let i = 0; i < PERF_MOD_NAMES.length; i++)
             if ((activeMods >> i) & 1) names.push(_modAscii(PERF_MOD_NAMES[i]).toUpperCase());
+        kitHudTap('Mods', { names: PERF_MOD_NAMES.filter((_, i) => (activeMods >> i) & 1) });
         const put = (lines) => {
             const pitch = 9, h = lines.length * pitch - 4;
             const top = BODY_TOP + Math.floor((BODY_BOT - BODY_TOP - h) / 2);
@@ -1830,6 +1833,7 @@ function drawTempoSelect() {
         }
     }
     const steps = isDrum ? S.drumLaneSteps[t][S.activeDrumLane[t]] : S.clipSteps[t][c];
+    kitHudTap('StepStrip', { len, on: steps ? Array.from({ length: Math.min(len, 256) }, (_, s) => (steps[s] && steps[s] !== '0') ? 1 : 0) : [] });
     if (steps) {
         for (let s = 0; s < len && s < steps.length; s++) {
             if (!steps[s] || steps[s] === '0') continue;

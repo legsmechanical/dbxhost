@@ -45,6 +45,7 @@ export const params = {
         if (Array.isArray(vm.viz) && vm.viz.length)
             body.viz = vm.viz.map((g) => ({ kind: g.kind, roles: g.roles || {}, slotStart: g.slotStart | 0, slotSpan: g.slotSpan | 0 }));
         if (vm.unresolved) body.unresolved = true;
+        body.primary = 'knobs';
         return body;
     },
 };

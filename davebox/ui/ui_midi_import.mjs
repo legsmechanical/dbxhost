@@ -1089,6 +1089,9 @@ function drawList() {
     draw_rect(PICK_X, PICK_Y, PICK_W, h, 1);
     const rows = listRows(), n = rows.length;
     const x = PICK_X + 1, w = PICK_W - 2, topY = PICK_Y + 1;
+    if (n) kitHudTap('KitList', { rows: rows.map((r) => ({ label: String(r.label), value: r.value != null ? String(r.value) : undefined })),
+                                  sel: Math.max(0, Math.min(n - 1, MI.idx)) });
+    else kitHudTap('Message', { big: '', lines: ['No MIDI files'] });
     if (!n) {
         MQ.over = 0;
         mvPrint(x + ((w - mvWidth('NO MIDI FILES')) >> 1), topY + ((h - 5) >> 1), 'NO MIDI FILES', 1);

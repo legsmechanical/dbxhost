@@ -67,7 +67,13 @@
   };
   HUD.setAlive = function (alive) { HUD.alive = !!alive; HUD.paint(); };
 
+  /* The device says which part of a screen is its main content (`primary`:
+   * what it drew last); that family's layout is tried first. */
+  const PRIMARY = { knobs: 'kit', tracks: 'overview', list: 'list', prompt: 'prompt', bars: 'bars', message: 'message',
+                    picture: 'picture', big: 'big', card: 'card', mods: 'perf' };
   function layoutFor(doc) {
+    const want = doc.body && PRIMARY[doc.body.primary];
+    if (want) for (const l of HUD.layouts) { if (l.name === want) { try { if (l.match(doc)) return l; } catch (e) { /* skip */ } } }
     for (const l of HUD.layouts) { try { if (l.match(doc)) return l; } catch (e) { /* a bad matcher never wins */ } }
     return null;
   }

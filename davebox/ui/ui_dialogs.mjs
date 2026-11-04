@@ -2120,6 +2120,7 @@ function _drawProjectPickerHeader() {
      * font (Josh, 2026-09-15: "project picker header shouldn't use the mixed
      * font. use all caps."). Same bar, same y, still centred. */
     const t = 'SELECT PROJECT';
+    kitHudTap('KitHeader', { text: t });
     fill_rect(0, 0, 128, MV_BRAND_HDR_H, 1);
     fontPrint4x5(Math.max(2, Math.round((128 - fontWidth4x5(t)) / 2)), 1, t, 0);
 }
