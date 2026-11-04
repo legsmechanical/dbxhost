@@ -85,6 +85,7 @@ export const DESCRIBE = {
     Mods:             (d, p) => { d.mods = { names: (p.names || []).map(String), popup: p.popup ? String(p.popup) : undefined }; },
     StepStrip:        (d, p) => { d.stepStrip = { len: p.len | 0, on: (p.on || []).join('') }; },
     Wave:             (d, p) => { d.wave = p; },
+    Curve:            (d, p) => { d.curve = p; },
     Keyboard:         (d, p) => { if (p) d.keyboard = p; },
     Lfo:              (d, p) => { d.lfo = { shape: String(p.shape), bipolar: !!p.bipolar, phase: +p.phase || 0, retrigger: !!p.retrigger, cycles: p.cycles | 0 }; },
     Readout:          (d, p) => { (d.readouts = d.readouts || []).push({ text: String(p.text), on: p.on || undefined, pos: p.pos || 'left' }); },

@@ -243,6 +243,26 @@
     });
   };
 
+  /* An automation lane's shape (the AUTOMATION bank's graph, the lane-focus
+   * page): values 0..1 per column or per step (-1 = no point), the play
+   * position and the held step, as fractions. */
+  H.curveSvg = function (cv, h) {
+    const W = 900, col = H.cfg.palette[2], vals = cv.values || [], n = Math.max(1, vals.length), pts = [];
+    let d = '';
+    for (let i = 0; i < n; i++) {
+      const v = vals[i]; if (!(v >= 0)) { d += ' '; continue; }
+      const x = cv.stepped ? i / n * W : (i + 0.5) / n * W, y = h - 6 - v * (h - 12);
+      d += (d.endsWith(' ') || !d ? 'M' : 'L') + x.toFixed(1) + ' ' + y.toFixed(1) + (cv.stepped ? ' L' + ((i + 1) / n * W).toFixed(1) + ' ' + y.toFixed(1) : '') + ' ';
+      pts.push([x, y]);
+    }
+    let svg = '<svg class="hud-wave" viewBox="0 0 ' + W + ' ' + h + '" preserveAspectRatio="none">';
+    for (let b = 0; b <= 4; b++) svg += '<line x1="' + (b / 4 * W) + '" y1="0" x2="' + (b / 4 * W) + '" y2="' + h + '" stroke="#fff" stroke-opacity=".07"/>';
+    if (cv.held >= 0) svg += '<rect x="' + (cv.held * W).toFixed(1) + '" y="0" width="' + (W / 16).toFixed(1) + '" height="' + h + '" fill="#fff" opacity=".08"/>';
+    svg += '<path d="' + d.trim().replace(/\s+M/g, ' M') + '" stroke="' + col + '" stroke-width="3" fill="none" stroke-linejoin="round"/>';
+    if (cv.play >= 0) svg += '<line x1="' + (cv.play * W).toFixed(1) + '" y1="0" x2="' + (cv.play * W).toFixed(1) + '" y2="' + h + '" stroke="' + (H.cfg.palette[6]) + '" stroke-width="2"/>';
+    return svg + '</svg>';
+  };
+
   const NAMES = { env: 'ENVELOPE', filt: 'FILTER', eq: 'EQ', samp: 'SAMPLE' };
   /* The picture row for a page's spans: each spans its knobs' columns. */
   H.vizRow = function (doc) {

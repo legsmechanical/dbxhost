@@ -147,7 +147,8 @@
   /* list — menus, pickers, browsers: more rows than the OLED, the selection,
    * a scroll position */
   H.layout('list', (d) => !!(d.body && d.body.list), (doc, b) => {
-    const L = b.list, rows = L.rows || [], n = H.cfg.listRows;
+    /* a picture under the list (an LFO, a lane's curve) takes rows from it */
+    const L = b.list, rows = L.rows || [], n = (b.lfo || b.curve) ? Math.min(5, H.cfg.listRows) : H.cfg.listRows;
     const selIn = Math.max(0, (L.sel | 0) - (L.first | 0));
     let start = Math.max(0, Math.min(rows.length - n, selIn - Math.floor(n / 2)));
     let html = '<div class="hud-list">';
@@ -161,6 +162,7 @@
         (r.value != null ? '<span class="val">' + esc(r.value) + '</span>' : r.chevron ? '<span class="val">›</span>' : '') + '</div>';
     }
     if (b.lfo) html += '<div class="hud-wavebox sm" style="height:110px;margin-top:10px">' + H.lfoSvg(b.lfo) + '</div>';
+    if (b.curve) html += '<div class="hud-wavebox sm" style="height:110px;margin-top:10px">' + H.curveSvg(b.curve, 110) + '</div>';
     const total = L.total || rows.length;
     if (total > n) {
       const top = ((L.first | 0) + start) / total, h = Math.min(1, n / total);
@@ -189,6 +191,11 @@
   /* card — a popup card's title + value (hudCard) */
   H.layout('card', (d) => !!(d.body && d.body.card), (doc, b) =>
     '<div class="hud-bigv"><div class="u">' + esc(b.card.title) + '</div><div class="n" style="font-size:64px">' + esc(b.card.value) + '</div></div>');
+
+  /* curve — a lane's shape alone (the lane-focus page drawn over a bank page) */
+  H.layout('curve', (d) => !!(d.body && d.body.curve), (doc, b) =>
+    (b.curve.name ? '<div class="hud-ro"><span class="l"><span class="ro on">' + esc(b.curve.name) + '</span></span></div>' : '') +
+    '<div class="hud-wavebox big" style="height:200px">' + H.curveSvg(b.curve, 200) + '</div>');
 
   /* chips — a row of on/off chips (when a screen draws only those) */
   H.layout('chips', (d) => !!(d.body && d.body.chips), (doc, b) => chips(b.chips));

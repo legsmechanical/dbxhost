@@ -43,7 +43,8 @@ import { automationEntriesFor, automationTargetLabel, automationClearKey, automa
          automationTargetStepped } from './ui_automation.mjs';
 import { drawKitList, drawKitStackedList, drawKitBackdropDim, drawKitHintRow,
          drawBrackets, kitUseLayout, kitLaneFocusRow, rectOutline, MV_FOOTER_Y,
-         MV_ROW0_Y, MV_ROW1_Y, MV_LBL1_Y, MV_LBL_H } from './ui_movy.mjs';
+         MV_ROW0_Y, MV_ROW1_Y, MV_LBL1_Y, MV_LBL_H, kitHudTap } from './ui_movy.mjs';
+import { hudFrameOpen } from './hud/hud_frame.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
 import { moveBusForChannel } from './ui_engine.mjs';
@@ -664,6 +665,8 @@ export function drawAutomationOpsGraph(cy) {
     const v = laneShape;
     if (v) plotColumns(GRAPH_X, GRAPH_W, iy, ih, 254, (c) => v[c]);
     const p = autoLanePlayPos(cy);
+    if (hudFrameOpen()) kitHudTap('Curve', { values: v ? Array.from({ length: GRAPH_W }, (_, c) => v[c] >= 0 ? Math.round(v[c] / 254 * 1000) / 1000 : -1) : [],
+                                             play: p >= 0 ? Math.round((p - cy.off) / Math.max(1, cy.len) * 1000) / 1000 : -1 });
     if (p >= 0) {
         const px = GRAPH_X + Math.floor((p - cy.off) * GRAPH_W / Math.max(1, cy.len));
         fill_rect(px, GRAPH_RULE_Y + 1, 1, GRAPH_BAR_Y - GRAPH_RULE_Y - 1, 1);
@@ -741,6 +744,14 @@ export function drawLaneFocusOverlay() {
     }
     for (let b = 0; b <= PAGE_STEPS; b += 4) set_pixel(PAGE_X + b * STEP_PX - (b === PAGE_STEPS ? 1 : 0), y + h - 3, 1);
     const held = f.step >= 0 ? f.step - base : -1;
+    if (hudFrameOpen()) {
+        const vals2 = pageShape ? Array.from({ length: PAGE_W }, (_, c) => pageShape[c] >= 0 ? Math.round(pageShape[c] / 254 * 1000) / 1000 : -1)
+                    : v14 ? Array.from({ length: PAGE_STEPS }, (_, s) => v14[s] >= 0 ? Math.round(v14[s] / 16383 * 1000) / 1000 : -1) : [];
+        const lt = S.autoLanePos[cy.t], t0 = base * cy.tps;
+        kitHudTap('Curve', { values: vals2, stepped: !pageShape && automationTargetStepped(f.target), name: automationTargetLabel(f.target),
+                             held: held >= 0 && held < PAGE_STEPS ? held / PAGE_STEPS : -1, pages: np, page: cy.page | 0,
+                             play: S.playing && cy.tps && lt >= t0 && lt < t0 + PAGE_STEPS * cy.tps ? (lt - t0) / (PAGE_STEPS * cy.tps) : -1 });
+    }
     if (held >= 0 && held < PAGE_STEPS) {
         const hx = PAGE_X + held * STEP_PX;
         for (let yy = iy; yy < iy + ih; yy += 2) { set_pixel(hx, yy, 1); set_pixel(hx + STEP_PX, yy, 1); }
