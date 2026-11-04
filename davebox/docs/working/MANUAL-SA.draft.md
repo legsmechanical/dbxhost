@@ -3303,6 +3303,14 @@ dAVEBOx editor.
   **down**. `Ctrl+wheel` does the same, `Ctrl+Shift+wheel` for vertical. **Fit**
   sits at the roll's bottom-right corner beside **Snap**; double-clicking either
   strip fits too.
+- **On a tablet or a phone held sideways:** the editor works by touch. Tap to add
+  a note, drag to move it, drag its right edge to resize, press and hold to delete;
+  drag empty space to scroll and pinch to zoom. On a narrow screen the clip settings
+  and effects open as a drawer from the toolbar's **sliders** button; on a short one
+  the site links move into **⚙** and the session grid shows fewer rows (the grid
+  button hides it). A clip's **≡ menu** adds **Edit without launching**, and the
+  **Select** tool shows **Select all**, for what Alt-click and ⌘A do with a keyboard.
+  Add the page to your home screen to run it full screen.
 
 The header's view switcher adds **Mixer** and **Sound** beside the sequencer, all
 three following one selected track. Click an instrument name in the Mixer, or a

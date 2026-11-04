@@ -9,6 +9,10 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Added
+- **The browser editor works on a tablet or a phone held sideways.** Bigger touch
+  targets, clip settings in a drawer on narrow screens, a compact header on short
+  ones, **Edit without launching** in a clip's ≡ menu and **Select all** on the
+  Select tool. It can be added to the home screen to run full screen.
 - **Faster Flatten.** Flatten track, and Resample clip In place, record a Schwung
   instrument's clips, and an Audio track's, faster than real time, without playing them. A sound that
   depends on more than the notes (an LFO, a MIDI effect, automation of levels or
@@ -138,6 +142,10 @@ the section into a versioned heading at release time.
   Clips of the same length still hand over in step with each other.
 
 ### Fixed
+- **Browser editor:** a clip's ≡ menu no longer closes by itself while the
+  transport runs, and a click on the session grid is no longer occasionally lost.
+- **Browser editor:** on a narrow window, Fit and Snap no longer cover the step band's
+  right-hand cells.
 - **A flattened clip longer than a bar shows its full length.** After Flatten, a clip
   of several bars played all of them but its loop length and waveform showed only
   the first bar until the length was changed by hand.

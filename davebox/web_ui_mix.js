@@ -238,7 +238,6 @@ function updateStrips(host) {
     ms.querySelector(".solo").classList.toggle("on", mixNum(prefix + "soloed", 0) >= 1);
   });
 }
-function escMix(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 function cssq(s) { return s.replace(/["\\]/g, "\\$&"); }
 function round4(v) { return Math.round(v * 10000) / 10000; }
 

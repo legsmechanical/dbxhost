@@ -5,14 +5,14 @@
 # from the module and went into innerHTML and a title="" attribute unescaped: a
 # name with `<` or `"` broke the grid or ran as markup. This runs the REAL
 # header expressions from web_ui_seq.js with the REAL escMix from
-# web_ui_mix.js against a hostile name.
+# web_ui_core.js against a hostile name.
 set -u
 cd "$(dirname "$0")/.." || exit 2
 command -v node >/dev/null 2>&1 || { echo "FAIL: node not found (test_web_grid_escapes_names)" >&2; exit 1; }
 out="$(node - <<'JS'
 const fs = require('fs');
 const seq = fs.readFileSync('web_ui_seq.js', 'utf8');
-const mix = fs.readFileSync('web_ui_mix.js', 'utf8');
+const mix = fs.readFileSync('web_ui_core.js', 'utf8');
 const esc = mix.match(/^function escMix\(s\) \{.*\}$/m);
 const lbl = seq.match(/^\s*const lbl=\(instShort!=null\).*$/m);
 const ttl = seq.match(/^\s*const ttl=\(instShort!=null\).*$/m);

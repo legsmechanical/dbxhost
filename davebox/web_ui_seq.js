@@ -318,7 +318,9 @@ function ebNum(lbl,id,val,min,max){
 /* multi-note editor (Select tool): NOTE props only (vel/len/move/octave/delete) —
  * never step props (iteration/probability/ratchet stay per-step). */
 function renderMultiEdit(el){ const notes=selectedNotes(), n=notes.length;
-  if(!n){ el.innerHTML=`<span class="eb-empty">Drag a box to select notes</span>`; return; }
+  if(!n){ el.innerHTML=`<span class="eb-empty">Drag a box to select notes</span>`+
+    `<button class="sm" id="meAll" title="select every note (⌘A)">Select all</button>`;
+    el.querySelector("#meAll").onclick=selectAllNotes; return; }
   const au=isAudio();   /* chops: no velocity, and an octave is not a chop */
   el.innerHTML=
     `<span class="et">▦ ${n} ${au?"chop":"note"}${n===1?"":"s"}</span>`+
@@ -329,7 +331,9 @@ function renderMultiEdit(el){ const notes=selectedNotes(), n=notes.length;
     `<button class="sm" id="meNR" title="nudge +1 tick">▶</button>`+
     (au?"":`<button class="sm" id="meOD" title="octave down">8vb</button>`+
       `<button class="sm" id="meOU" title="octave up">8va</button>`)+
+    `<button class="sm" id="meAll" title="select every note (⌘A)">All</button>`+
     `<button class="sm danger" id="meDel">Delete</button>`;
+  el.querySelector("#meAll").onclick=selectAllNotes;
   /* velocity is RELATIVE across the selection — preserves each note's balance */
   function shiftVel(d){ const ops=[]; selectedNotes().forEach(nt=>{ const nv=Math.max(1,Math.min(127,nt.vel+d));
     if(nv!==nt.vel){ nt.vel=nv; ops.push(["v",`${nt.tick} ${nt.pitch} ${nv}`]); } }); emitBatch(ops); draw(); }
@@ -354,7 +358,12 @@ function renderNoteEdit(){
   if(isDrum()){ renderDrumNoteEdit(el); return; }
   if(selSet.size>=1){ renderMultiEdit(el); return; }
   const i=findSelNote();
-  if(i<0){ el.innerHTML=`<span class="eb-empty">Click a note to edit it (Shift-drag / Snap=Off for off-grid)</span>`; return; }
+  if(i<0){
+    /* the Select tool's empty state offers ⌘A as a button — the only route on touch */
+    if(tool==="select"&&M.notes.length){ el.innerHTML=`<span class="eb-empty">Drag a box to select notes</span>`+
+      `<button class="sm" id="meAll" title="select every note (⌘A)">Select all</button>`;
+      el.querySelector("#meAll").onclick=selectAllNotes; return; }
+    el.innerHTML=`<span class="eb-empty">Click a note to edit it (Shift-drag / Snap=Off for off-grid)</span>`; return; }
   const nt=M.notes[i], au=isAudio();
   el.innerHTML=
     `<span class="et">♪ ${au?chopName(nt.pitch):noteName(nt.pitch)}</span>`+
@@ -672,8 +681,8 @@ function renderGlobals(){
  * device track colors. Click a clip = select it for editing; double-click =
  * launch it; ▶ in the left column = launch the whole scene row. */
 let clipDrag=null;   /* {t,c} source while dragging a clip in the session grid */
+let sessionHtml="";  /* the grid's last markup: an unchanged grid is not rebuilt */
 function renderSession(){
-  closeClipMenu();   /* a rebuild destroys the menu's anchor — never leave it orphaned */
   const grid=document.getElementById("grid");
   const NT=M.tracks.length||8, NC=16;
   grid.style.gridTemplateColumns=`30px repeat(${NT},minmax(20px,1fr))`;
@@ -691,7 +700,7 @@ function renderSession(){
       :trk.route===1?("Move "+moveBusForChannel(trk.chan))
       :trk.route===2?("MIDI Ch."+trk.chan):null;
     /* instShort can be a MODULE's own name and goes into innerHTML and a
-     * title="" attribute: escape it (escMix, web_ui_mix.js). */
+     * title="" attribute: escape it (escMix, web_ui_core.js). */
     const lbl=(instShort!=null)?`${t+1} - ${escMix(instShort)}`:(trk.pm===1?"D":trk.pm===2?"C":trk.pm===PM_AUDIO?"A":trk.pm===PM_SLICER?"S":"M")+(t+1);
     const ttl=(instShort!=null)?`Track ${t+1} → ${escMix(instShort)}`:`track ${t+1}`;
     /* conductor / responder indicator (rui_cond): "C" on the conductor track,
@@ -725,6 +734,13 @@ function renderSession(){
             `<span class="sclip-menu" data-t="${t}" data-c="${c}" title="clip menu">≡</span></div>`;
     });
   }
+  /* ⚠ applyParams calls this on EVERY accepted push, and while playing that is every
+   * playhead update. Rebuilding then replaced the cells under a finger mid-tap (the
+   * tap was lost: pointerdown and pointerup landed on different elements) and closed
+   * an open clip menu within a fraction of a second. Same markup = same grid. */
+  if(html===sessionHtml && grid.firstChild) return;
+  sessionHtml=html;
+  closeClipMenu();   /* a rebuild destroys the menu's anchor — never leave it orphaned */
   grid.innerHTML=html;
   /* track header: click = jump to this track's Sound view (double-click too —
    * same door). Mute/solo LEFT the header 2026-08-19: a click meant as a jump
@@ -790,6 +806,7 @@ function openClipMenu(t,c,anchor){
   const el=document.createElement("div"); el.className="clipmenu"; el.dataset.tc=t+":"+c;
   const item=(id,label,dis,title)=>`<button id="${id}"${dis?" disabled":""}${title?` title="${title}"`:""}>${label}</button>`;
   el.innerHTML=
+    item("cmView","Edit without launching",false,"open this clip in the editor; it keeps playing what it was (Alt/Shift-click)")+
     item("cmDup",`Duplicate${dupC>=0?" → "+SCENE_LETTERS[dupC]:""}`,!has||dupC<0,dupC<0?"no empty slot in this track":"copy into the next empty slot")+
     item("cmCopy","Copy",!has)+
     item("cmCut","Cut",!has,"marks the clip; pasting moves it")+
@@ -797,6 +814,7 @@ function openClipMenu(t,c,anchor){
     item("cmDel","Delete",!has);
   document.body.appendChild(el);
   const done=()=>{ closeClipMenu(); afterEdit(); renderSession(); pullSoon(); };
+  el.querySelector("#cmView").onclick=()=>{ closeClipMenu(); selectClip(t,c); };
   el.querySelector("#cmDup").onclick=()=>{ clipCopyOp({t,c},{t,c:dupC}); M.tracks[t].has[dupC]=true; done(); };
   el.querySelector("#cmCopy").onclick=()=>{ clipClipboard={t,c,pm:M.tracks[t].pm,cut:false}; closeClipMenu(); renderSession(); };
   el.querySelector("#cmCut").onclick=()=>{ clipClipboard={t,c,pm:M.tracks[t].pm,cut:true}; closeClipMenu(); renderSession(); };
@@ -807,8 +825,9 @@ function openClipMenu(t,c,anchor){
   el.querySelector("#cmDel").onclick=()=>{ clipClearOp(t,c); M.tracks[t].has[c]=false;
     if(cb&&cb.t===t&&cb.c===c) clipClipboard=null; done(); };
   const r=anchor.getBoundingClientRect();
-  el.style.left=Math.max(6,Math.min(window.innerWidth-140,r.left))+"px";
-  el.style.top=Math.min(window.innerHeight-190,r.bottom+4)+"px";
+  /* measured, not assumed: touch-sized items make the menu twice as tall */
+  el.style.left=Math.max(6,Math.min(window.innerWidth-el.offsetWidth-6,r.left))+"px";
+  el.style.top=Math.max(6,Math.min(window.innerHeight-el.offsetHeight-6,r.bottom+4))+"px";
   clipMenuEl=el;
   setTimeout(()=>document.addEventListener("pointerdown",clipMenuOutside,true),0);
 }
@@ -988,7 +1007,9 @@ let centerKey="";
 function layout(){
   buildRows();
   const view=document.getElementById("rollview"), dpr=window.devicePixelRatio||1;
-  VW=Math.max(300,view.clientWidth||880); VH=Math.max(150,view.clientHeight||400);
+  /* VH floor = ruler + step band + a few rows: a phone in landscape can give the roll
+   ~120px, and a taller canvas than the box clips the step band off the bottom */
+  VW=Math.max(300,view.clientWidth||880); VH=Math.max(RULER+STEPBAND+40,view.clientHeight||400);
   cv.style.width=VW+"px"; cv.style.height=VH+"px"; cv.width=Math.round(VW*dpr); cv.height=Math.round(VH*dpr);
   ctx.setTransform(dpr,0,0,dpr,0,0);
   const vw=document.getElementById("velwrap");
@@ -1593,7 +1614,11 @@ document.getElementById("snap").onchange=()=>draw();   /* grid's fine tier follo
 (function(){
   const gear=document.getElementById("gear"), pop=document.getElementById("globalpop"), scrim=document.getElementById("scrim");
   function close(){ pop.classList.remove("open"); scrim.classList.remove("open"); gear.classList.remove("on"); }
+  /* the bar's height varies (it wraps on a narrow, tall screen): hang the popover
+   * and the drawer under wherever it ends right now */
+  const underTop=()=>Math.round(document.getElementById("top").getBoundingClientRect().bottom);
   gear.onclick=()=>{ const o=!pop.classList.contains("open");
+    if(o) pop.style.top=(underTop()+2)+"px";
     pop.classList.toggle("open",o); scrim.classList.toggle("open",o); gear.classList.toggle("on",o);
     if(o && M) renderGlobals(); };
   scrim.onclick=close;
@@ -1601,6 +1626,19 @@ document.getElementById("snap").onchange=()=>draw();   /* grid's fine tier follo
   const sess=document.getElementById("session"), st=document.getElementById("sessToggle");
   st.classList.add("on");
   st.onclick=()=>{ sess.classList.toggle("collapsed"); st.classList.toggle("on",!sess.classList.contains("collapsed")); };
+  /* narrow screens (CSS max-width:960px): the inspector is a drawer over the roll.
+   * The scrim eats the closing tap so it never lands on the roll as a new note. */
+  const sideT=document.getElementById("sideToggle"), sideS=document.getElementById("sidescrim");
+  const sideOpen=o=>{ if(o) document.documentElement.style.setProperty("--chrome-h",underTop()+"px");
+    document.body.classList.toggle("side-open",o); sideT.classList.toggle("on",o); };
+  sideT.onclick=()=>sideOpen(!document.body.classList.contains("side-open"));
+  sideS.onclick=()=>sideOpen(false);
+  window.addEventListener("resize",()=>{ if(document.body.classList.contains("side-open")) sideOpen(true); });   /* rotation */
+  document.addEventListener("keydown",e=>{ if(e.key==="Escape") sideOpen(false); });
+  /* short screens (CSS max-height:520px) hide the site ribbon; its links live on
+   * in the ⚙ popover. A clone, so the ribbon stays the one copy the sync test reads. */
+  const links=document.querySelector("#site .sitelinks");
+  if(links){ const ps=links.cloneNode(true); ps.className="popsite"; pop.insertBefore(ps,pop.firstChild); }
 })();
 /* collapsible velocity band header */
 document.getElementById("velhdr").onclick=()=>{ velOpen=!velOpen; saveBands(); bandsApply(); if(M){ layout(); draw(); } };
@@ -1661,6 +1699,8 @@ document.getElementById("hRedo").onclick=doRedo;
 document.getElementById("xport").onclick=()=>{ if(!M) return;
   R.setParam(P+"transport", M.play.on ? "stop" : "play"); afterEdit(); pullSoon(); };
 /* ---------- keyboard shortcuts ---------- */
+function selectAllNotes(){ if(!M||isDrum()) return; setTool("select");
+  selSet.clear(); M.notes.forEach(n=>selSet.add(nKey(n))); selNote=null; renderNoteEdit(); draw(); }
 function deleteSelection(){ if(isDrum()){ if(selDrum) drumDelete(selDrum.lane,selDrum.tick); return; }
   const ns=selectedNotes(); if(!ns.length) return; const ops=[];
   ns.forEach(nt=>{ const k=M.notes.indexOf(nt); if(k>=0) M.notes.splice(k,1); ops.push(["d",`${nt.tick} ${nt.pitch}`]); });
@@ -1690,8 +1730,7 @@ document.addEventListener("keydown",e=>{ const ae=document.activeElement;
   if(k==="Escape"){ if(selSet.size||marquee||selNote||selDrum||selStep>=0){ selSet.clear(); marquee=null; selNote=null; selDrum=null; selStep=-1; renderNoteEdit(); renderStepEdit(); draw(); } return; }
   if((e.metaKey||e.ctrlKey)&&(k==="z"||k==="Z")){ e.preventDefault(); if(e.shiftKey) doRedo(); else doUndo(); return; }
   if((e.metaKey||e.ctrlKey)&&(k==="y"||k==="Y")){ e.preventDefault(); doRedo(); return; }
-  if((e.metaKey||e.ctrlKey)&&(k==="a"||k==="A")){ if(!isDrum()){ e.preventDefault(); setTool("select");
-    selSet.clear(); M.notes.forEach(n=>selSet.add(nKey(n))); selNote=null; renderNoteEdit(); draw(); } return; }
+  if((e.metaKey||e.ctrlKey)&&(k==="a"||k==="A")){ if(!isDrum()){ e.preventDefault(); selectAllNotes(); } return; }
   if(k==="Delete"||k==="Backspace"){ e.preventDefault(); deleteSelection(); return; }
   if(k.indexOf("Arrow")===0){ e.preventDefault(); nudgeSelection(k,e.shiftKey); return; }
 });

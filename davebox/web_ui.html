@@ -1,12 +1,16 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <title>dAVEBOx — Clip Editor</title>
 <style>
   :root{--bg:#101216;--panel:#171a20;--panel2:#1c2027;--ink:#e9ebf0;--dim:#878d9a;--faint:#5a606c;
         --accent:#39d0c8;--accent-dim:#1f5e5a;--grid:#2a2e37;--bar:#39414f;--row:#21252e;
         --rowblk:#191c22;--play:#ffcf4d;--has:#36506b;--line:#252a33;--ctl:#22262f;--ctl-br:#333a45;
-        --rad:7px;--rad-sm:5px;}
+        --rad:7px;--rad-sm:5px;--clip-h:17px;--srows:6;--shead:22px;
+        --chrome-h:80px;}     /* #site 34 + #top 46: where the narrow-screen drawer starts */
   *{box-sizing:border-box} html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
     font:13px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden;
     -webkit-user-select:none;user-select:none}
@@ -67,10 +71,10 @@
    * the piano roll got what was left. There are 16 scenes; the rest scroll. */
   #session{flex:0 0 auto;overflow:auto;background:var(--panel);
            border-bottom:1px solid #000;padding:7px 10px;
-           max-height:calc(22px + 6 * (17px + 3px) + 14px)}
+           max-height:calc(var(--shead) + var(--srows) * (var(--clip-h) + 3px) + 14px)}
   #session.collapsed{display:none}
   /* fixed row geometry — #session's max-height is computed from these */
-  #grid{display:grid;gap:3px;align-items:stretch;grid-template-rows:22px;grid-auto-rows:17px}
+  #grid{display:grid;gap:3px;align-items:stretch;grid-template-rows:var(--shead);grid-auto-rows:var(--clip-h)}
   .strk{position:relative;font:11px ui-monospace,monospace;font-weight:700;color:#0b0d11;text-align:center;
         padding:0 17px 0 4px;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
         cursor:pointer;display:flex;align-items:center;justify-content:center;box-sizing:border-box}
@@ -94,7 +98,7 @@
   .slaunch{font:10px ui-monospace,monospace;color:var(--dim);background:#0b0d11;border:1px solid #262c36;
            border-radius:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:3px;padding:2px}
   .slaunch:hover{color:var(--ink);border-color:var(--accent)}
-  .sclip{height:17px;border-radius:3px;cursor:pointer;position:relative;background:var(--row);
+  .sclip{height:var(--clip-h);border-radius:3px;cursor:pointer;position:relative;background:var(--row);
          border:1px solid transparent}
   .sclip.sel{outline:2px solid var(--ink);outline-offset:-1px;z-index:2}
   .sclip.playing{box-shadow:inset 0 0 0 2px var(--play)}
@@ -146,7 +150,7 @@
   #rollview:hover #rollzoom,#rollzoom:hover,#rollzoom:focus-within{opacity:1}
   #rollzoom label{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--faint)}
   #rollzoom select{font-size:10px;padding:1px 3px}
-  @media (max-width:700px){ #rollzoom{right:6px;bottom:6px;opacity:1} }
+  @media (max-width:700px){ #rollzoom{right:6px;bottom:34px;opacity:1} }   /* 28 + 6: still clears the step band */
   .zoomstrip{position:absolute;z-index:7;touch-action:none;user-select:none;
     display:flex;align-items:center;justify-content:center;gap:5px;
     background-color:rgba(57,208,200,.16);box-shadow:inset 0 0 0 1px rgba(57,208,200,.34);
@@ -446,6 +450,107 @@ body[data-view="mix"] .seqonly,body[data-view="sound"] .seqonly{display:none}
   border:1px solid #2a3140;border-radius:8px;padding:8px 10px;font:11px/1.5 ui-monospace,monospace;
   color:#9fb4d0;min-width:230px;white-space:pre;display:none}
 #diag b{color:#dfe8f5}
+
+/* ================= touch + small screens (tablet, phone in LANDSCAPE) =================
+ * Three independent conditions, so each device gets only what it needs:
+ *   pointer:coarse  — a finger: bigger targets, nothing that only shows on hover
+ *   max-width:960px — tablet portrait / phone landscape: the inspector becomes a
+ *                     drawer over the roll instead of a fixed 296px column
+ *   max-height:520px — phone landscape: the vertical chrome shrinks so the roll
+ *                     keeps its height (at 844x390 it used to get none at all)
+ * Phone PORTRAIT is not a target (Josh, 2026-11-03: tablet + phone landscape). */
+#sideToggle{display:none}
+#sidescrim{display:none}
+#app{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)}
+@media (pointer:coarse){
+  body{touch-action:manipulation}       /* no double-tap zoom delaying taps */
+  :root{--clip-h:26px}
+  button,select{min-height:34px}
+  .seg button{min-width:40px}
+  button.ghost{min-width:40px}
+  button.sm{min-height:30px}
+  .ebgrp button.sm{min-height:36px;min-width:40px}
+  .ebgrp input[type=number]{padding:8px 9px}
+  /* the clip menu showed on hover only: always visible, and the whole right
+     third of the cell is its target */
+  .sclip-menu{opacity:.7;top:0;bottom:0;transform:none;display:flex;align-items:center;
+    justify-content:center;width:34%;min-width:22px;padding:0;font-size:13px}
+  .strk-gear{padding:6px 7px;font-size:16px;opacity:.8}
+  /* block, not flex: an ellipsis only clips text in a block box — as a flex row the
+     name ran on under the bigger gear */
+  .strk{padding-right:28px;display:block;line-height:var(--shead);text-align:left}
+  :root{--shead:30px}
+  .slaunch{font-size:11px}
+  #rollzoom{opacity:1}
+  #rollzoom select{font-size:13px;padding:4px 6px;min-height:30px}
+  .lane-rs{height:16px}
+  .bandhdr{height:30px;font-size:11px}
+  .sec-h{padding:12px 12px;min-height:42px}
+  .sub-h{padding:10px 2px}
+  .kv{min-height:38px}
+  .clipmenu button{padding:11px 12px;font-size:14px}
+  .trkgear .tgrow{margin:12px 0}
+  .ribms button{font-size:10px;padding:0 7px;line-height:22px}
+  .ribbar{height:16px}
+  .strip .ms button{padding:8px 0;font-size:12px}
+  .strip .fader input::-webkit-slider-thumb{width:26px;height:14px}
+  .strip .fader input{width:28px}
+  .sndchip{width:32px;height:32px;font-size:12px}
+  .sndbypass,.snduibtn{padding:6px 10px;font-size:11px}
+  .cpk-bankhead{padding:10px 10px;font-size:12px}
+  .cpk-presetnav,.cpk-toggle{padding:7px 12px;font-size:12px}
+  .slwrap .nudge{padding:6px 12px}
+  #site .sitelinks a{padding:8px 10px}
+}
+@media (max-width:960px){
+  #sideToggle{display:inline-flex}
+  body[data-view="mix"] #sideToggle,body[data-view="sound"] #sideToggle{display:none}
+  /* the inspector slides over the roll from the right; the roll keeps the width */
+  /* fixed under the toolbar, so on a phone it gets the session grid's height too */
+  #side{position:fixed;top:var(--chrome-h);right:0;bottom:0;width:min(340px,86vw);z-index:25;
+    padding-right:env(safe-area-inset-right);
+    transform:translateX(100%);transition:transform .18s ease-out;box-shadow:none}
+  body.side-open #side{transform:none;box-shadow:-12px 0 32px rgba(0,0,0,.55)}
+  body.side-open #sidescrim{display:block;position:fixed;inset:var(--chrome-h) 0 0 0;z-index:24;background:rgba(0,0,0,.35)}
+  /* the top bar never pushes the page sideways: it scrolls on its own */
+  #top{overflow-x:auto;overflow-y:hidden;scrollbar-width:none;gap:8px;padding:0 8px}
+  #top::-webkit-scrollbar{display:none}
+  #transport{display:none}             /* the ▶/■ button already shows the state */
+  #site .sitelinks a{padding:4px 6px}
+}
+/* narrow but TALL (tablet portrait): there is height to spare, so the bar wraps to two
+   rows instead of hiding its right end off-screen */
+@media (max-width:960px) and (min-height:521px){
+  #top{height:auto;min-height:46px;flex-wrap:wrap;padding:6px 8px;row-gap:6px;overflow:visible}
+}
+@media (max-height:520px){
+  /* the site ribbon moves into the ⚙ popover (web_ui_seq.js clones its links) */
+  #site{display:none}
+  #globalpop{top:42px;max-height:calc(100vh - 50px);overflow:auto}
+  #top{height:42px;gap:4px;padding:0 4px}
+  #sync,#auto{display:none}            /* refresh plumbing; Auto stays on, as it boots */
+  #globals label{font-size:0;gap:0}    /* the BPM field without its word */
+  #connpill{padding:3px 7px}
+  :root{--srows:3;--chrome-h:42px}
+  :root{--shead:24px}
+  .bandhdr{height:24px}
+  #velwrap{flex-basis:44px}
+  #session{padding:5px 8px}
+  #miniribbon{display:none}            /* the Mixer view carries the same controls */
+  #editbar{padding:6px 10px;min-height:0;row-gap:6px}
+  /* the empty-state hint costs a whole row: hide the bar until something is selected */
+  #editbar:has(#noteedit > .eb-empty:only-child):has(#stepedit:empty){display:none}
+  #mixer,#sound{padding:8px}
+  #rollzoom label{font-size:0;gap:0}    /* "Snap" word dropped; the select says 1/16 */
+  #rollzoom{padding:2px 4px}
+  .strip .fader{height:80px}
+}
+@media (max-height:520px) and (pointer:coarse){ :root{--srows:2} }
+#globalpop .popsite{display:none;flex-wrap:wrap;gap:4px;margin:0 0 10px;padding:0 0 10px;
+  border-bottom:1px solid var(--line)}
+#globalpop .popsite a{color:#a9afbb;font-size:13px;text-decoration:none;padding:7px 10px;
+  border-radius:4px;background:var(--ctl)}
+@media (max-height:520px){ #globalpop .popsite{display:flex} }   /* after the base rule it overrides */
 </style></head>
 <body><div id="app">
   <!-- The SITE ribbon: identity + where else you can go. Deliberately the same
@@ -486,6 +591,7 @@ body[data-view="mix"] .seqonly,body[data-view="sound"] .seqonly{display:none}
     <span class="seg seqonly" title="Undo / Redo (global · ⌘Z / ⌘⇧Z)">
       <button id="hUndo" title="Undo (⌘Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7L5 11l4 4"/><path d="M5 11h9a5 5 0 0 1 0 10h-3"/></svg></button>
       <button id="hRedo" title="Redo (⌘⇧Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 7l4 4-4 4"/><path d="M19 11h-9a5 5 0 0 0 0 10h3"/></svg></button></span>
+    <button class="ghost seqonly" id="sideToggle" title="Clip settings and FX"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></button>
     <button class="ghost seqonly" id="sessToggle" title="Show / hide the session grid"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="1.5"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg></button>
     <button class="ghost" id="gear" title="Global settings (key, scale, swing, launch)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V15z"/></svg></button>
     <button class="ghost" id="sync" title="Re-pull from device"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3.5v6h-6"/></svg></button>
@@ -523,6 +629,7 @@ body[data-view="mix"] .seqonly,body[data-view="sound"] .seqonly{display:none}
         <div id="stepedit" class="ebgrp"></div>
       </div>
     </div>
+    <div id="sidescrim"></div>
     <div id="side"><div id="inspector"></div></div>
   </div>
   <div id="scrim"></div>
