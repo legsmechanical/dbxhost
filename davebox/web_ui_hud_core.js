@@ -92,6 +92,7 @@
     stage.innerHTML = '<div class="hud-screen' + (fade ? ' hud-fade' : '') + (HUD.alive ? '' : ' hud-stale') + '" data-screen="' + HUD.esc(sid) + '" style="--fade:' + HUD.cfg.motion.screenFadeMs + 'ms">' +
       regions + ov + (HUD.alive ? '' : '<div class="hud-stalemsg">dAVEBOx is not running</div>') + '</div>';
     drawOled();
+    if (HUD.drawCustomWidgets) HUD.safe('customWidgets', HUD.drawCustomWidgets, stage, doc);
   }
   HUD.render = render;   /* tests */
 
@@ -110,6 +111,7 @@
     stage.querySelectorAll('canvas[data-oled]').forEach((cv) => {
       const g = cv.getContext && cv.getContext('2d'); if (!g || !g.createImageData) return;
       const img = g.createImageData(128, 64), acc = [77, 163, 255];
+      if (!img || !img.data) return;
       for (let y = 0; y < 64; y++) for (let x = 0; x < 128; x++) {
         const on = oledPixel(HUD.oled, x, y), i = (y * 128 + x) * 4;
         img.data[i] = on ? acc[0] : 8; img.data[i + 1] = on ? acc[1] : 9; img.data[i + 2] = on ? acc[2] : 11; img.data[i + 3] = 255;
@@ -118,6 +120,15 @@
     });
   }
   HUD.drawOled = drawOled;
+  /* one region of the OLED frame into a canvas, crisp, in the accent colour */
+  HUD.drawOledCrop = function (cv, x0, y0, w, h) {
+    if (!HUD.oled) return;
+    const g = cv.getContext && cv.getContext('2d'); if (!g) return;
+    const sx = cv.width / w, sy = cv.height / h;
+    g.fillStyle = '#0f1114'; g.fillRect(0, 0, cv.width, cv.height); g.fillStyle = HUD.cfg.palette[0];
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++)
+      if (oledPixel(HUD.oled, x0 + x, y0 + y)) g.fillRect(Math.floor(x * sx), Math.floor(y * sy), Math.ceil(sx), Math.ceil(sy));
+  };
 
   /* Run what the other files queued before this one loaded, then run each
    * later registration as it arrives. Settings (web_ui_hud_config.js) first,

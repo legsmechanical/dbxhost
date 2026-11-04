@@ -167,6 +167,82 @@
     return svg;
   };
 
+  /* ── a module's OWN widgets (viz.kind "custom:<name>", its canvas.js) ──
+   * The drawer is written to "size against ctx.width / ctx.height" — the same
+   * widget is handed many frame sizes — so the browser runs the module's own
+   * canvas.js against a frame three times the device cell's size and draws its
+   * ink in the knob's colour. Fetched once per module from the manager
+   * (/api/remote-ui/module-assets/<id>/canvas.js); evaluated with a stand-in
+   * globalThis so its assignment of canvas_overlay lands there. A drawer that
+   * cannot be fetched or throws falls back to that cell's OLED pixels. */
+  const CW = {};
+  function loadCustom(id) {
+    if (!id) return { state: 'fail', kinds: {} };
+    if (CW[id]) return CW[id];
+    const e = CW[id] = { state: 'loading', kinds: {} };
+    if (typeof fetch !== 'function') { e.state = 'fail'; return e; }
+    fetch('/api/remote-ui/module-assets/' + encodeURIComponent(id) + '/canvas.js')
+      .then((r) => r.ok ? r.text() : Promise.reject(new Error(r.status)))
+      .then((src) => {
+        const g = {};
+        new Function('globalThis', src)(g);
+        const o = g.canvas_overlay || {};
+        if (o.widgetKinds) for (const k in o.widgetKinds) {
+          const w = o.widgetKinds[k]; if (w && typeof w.draw === 'function') e.kinds[k] = (ctx, p) => w.draw(ctx, p);
+        }
+        const names = Array.isArray(o.widgetKind) ? o.widgetKind : o.widgetKind ? [o.widgetKind] : [];
+        if (typeof o.drawCell === 'function') names.forEach((k) => { e.kinds[k] = (ctx, p) => o.drawCell(ctx, p); });
+        e.state = 'ok'; H.paint();
+      })
+      .catch(() => { e.state = 'fail'; H.paint(); });
+    return e;
+  }
+  H.customWidgetState = (id) => (CW[id] ? CW[id].state : null);   /* smokes */
+  const CELL_W = 32, CELL_H = 22, SCALE = 3;
+  /* the device's frame ctx (frame_ctx.mjs), at SCALE, drawing in `col` */
+  function frameCtx(g2, w, h, col) {
+    g2.fillStyle = col; g2.strokeStyle = col; g2.lineWidth = 1;
+    const fill = (x, y, rw, rh, c) => { if (!rw || !rh) return; g2.fillStyle = c ? col : '#0f1114'; g2.fillRect(Math.round(x), Math.round(y), Math.round(rw), Math.round(rh)); };
+    const self = {
+      width: w, height: h,
+      fillRect: fill,
+      setPixel: (x, y, c) => fill(x, y, 1, 1, c),
+      line(x0, y0, x1, y1, c) { g2.strokeStyle = c ? col : '#0f1114'; g2.lineWidth = SCALE * 0.8; g2.beginPath(); g2.moveTo(x0 + 0.5, y0 + 0.5); g2.lineTo(x1 + 0.5, y1 + 0.5); g2.stroke(); },
+      fillCircle(cx, cy, r, c) { g2.fillStyle = c ? col : '#0f1114'; g2.beginPath(); g2.arc(cx, cy, Math.max(0.5, r), 0, Math.PI * 2); g2.fill(); },
+      drawCircle(cx, cy, r, c) { self.drawArc(cx, cy, r, 0, 360, c); },
+      drawArc(cx, cy, r, start, sweep, c) { g2.strokeStyle = c ? col : '#0f1114'; g2.lineWidth = SCALE * 0.8; g2.beginPath();
+        const a0 = (start - 90) * Math.PI / 180; g2.arc(cx, cy, Math.max(0.5, r), a0, a0 + sweep * Math.PI / 180); g2.stroke(); },
+      print(x, y, text, c) { g2.fillStyle = c ? col : '#0f1114'; g2.font = (7 * SCALE) + 'px ui-monospace,monospace'; g2.textBaseline = 'top'; g2.fillText(String(text), x, y); },
+      textWidth: (t) => String(t).length * 6 * SCALE,
+    };
+    return self;
+  }
+  /* After a paint: draw every custom widget the screen holds. */
+  H.drawCustomWidgets = function (stage, doc) {
+    const b = doc && doc.body; if (!b || !Array.isArray(b.viz)) return;
+    const cvs = stage.querySelectorAll('canvas.hud-cw'); if (!cvs.length) return;
+    const e = loadCustom(b.module);
+    const values = {}, metas = {};
+    (b.knobs || []).forEach((c) => { if (c && c.key) { values[c.key] = c.raw !== undefined ? c.raw : (typeof c.norm === 'number' ? c.norm : null); metas[c.key] = c.meta || {}; } });
+    const metaIndex = { getOrGuess: (k) => Object.assign({ key: k, kind: 'number', min: 0, max: 1 }, metas[k] || {}), get: (k) => metas[k] || null };
+    cvs.forEach((cv) => {
+      const kind = cv.dataset.kind, start = +cv.dataset.start, span = +cv.dataset.span;
+      const group = b.viz.find((g) => g.kind === kind && (g.slotStart | 0) === start);
+      const w = CELL_W * span * SCALE, h = CELL_H * SCALE;
+      cv.width = w; cv.height = h;
+      const g2 = cv.getContext && cv.getContext('2d'); if (!g2) return;
+      g2.fillStyle = '#0f1114'; g2.fillRect(0, 0, w, h);
+      const draw = e.state === 'ok' && e.kinds[kind];
+      if (draw && group) {
+        g2.save(); g2.scale(SCALE, SCALE);
+        try { draw(frameCtx(g2, CELL_W * span, CELL_H, H.knobColor(start)), { group, values, metaIndex, nowMs: Date.now() }); g2.restore(); return; }
+        catch (err) { g2.restore(); e.kinds[kind] = null; console.warn('screen view: ' + kind + ' drawer threw', err); }
+      }
+      if (e.state === 'loading') return;
+      H.drawOledCrop(cv, (start % 4) * CELL_W, start < 4 ? 9 : 33, CELL_W * span, CELL_H);   /* the device's own pixels */
+    });
+  };
+
   const NAMES = { env: 'ENVELOPE', filt: 'FILTER', eq: 'EQ', samp: 'SAMPLE' };
   /* The picture row for a page's spans: each spans its knobs' columns. */
   H.vizRow = function (doc) {
@@ -174,12 +250,12 @@
     if (Array.isArray(b.viz) && b.viz.length && b.knobs) {
       let html = '<div class="hud-vrow">';
       for (const g of b.viz) {
-        const fn = MOD[g.kind] || (/^custom:/.test(g.kind) ? null : null);
+        const fn = MOD[g.kind] || null;
         const cnt = Math.max(1, g.slotSpan | 0), W = cnt * 110;
         const tag = MODNAMES[g.kind] !== undefined ? MODNAMES[g.kind] : String(g.kind).replace(/^custom:/, '').toUpperCase();
         html += '<div class="hud-viz" style="grid-column:' + ((g.slotStart | 0) + 1) + ' / span ' + cnt + '"><span class="tag">' + H.esc(tag) + '</span>' +
           (fn ? '<svg viewBox="0 0 ' + W + ' 118" preserveAspectRatio="none">' + H.safe('viz:' + g.kind, fn, b.knobs, g, g.slotStart | 0, W) + '</svg>'
-              : '<canvas class="hud-oled" data-oled="1" data-crop="' + (g.slotStart | 0) + ',' + cnt + '" width="128" height="64" style="width:100%;height:100%"></canvas>') + '</div>';
+              : '<canvas class="hud-cw" data-kind="' + H.esc(g.kind) + '" data-start="' + (g.slotStart | 0) + '" data-span="' + cnt + '" style="width:100%;height:100%"></canvas>') + '</div>';
       }
       return html + '</div>';
     }

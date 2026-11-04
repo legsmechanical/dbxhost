@@ -180,6 +180,9 @@ const { enterParamPages, exitParamPages, tickParamPages, drawParamPages,
         paramPagesDescribe } = PP;
 /* The module editor's page as data, for the Screen view (hud/contrib/params.mjs). */
 export function soundParamPageModel() { return paramPagesDescribe({ title: PP.headerTitle() }); }
+/* The module whose editor that is — the Screen view fetches its canvas.js to
+ * draw the module's own widgets at full size. */
+export function soundEditorModuleId() { return S.moduleId || ''; }
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 import { hudScreen } from './hud/hud_frame.mjs';
 /* ⚠⚠ THE CANONICAL SPECIFIER, AND IT IS LOAD-BEARING. The registry is the

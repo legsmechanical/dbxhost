@@ -15,7 +15,9 @@ const ROOT = new URL('../../', import.meta.url);
 const fromDisk = requestInterceptor((request) => {
   const u = new URL(request.url);
   if (u.host !== 'localhost:8199') return undefined;
-  const f = new URL('.' + u.pathname, ROOT);
+  /* the manager's module-assets route, from the test fixtures (as preview_server.py does) */
+  const p = u.pathname.startsWith('/api/remote-ui/module-assets/') ? '/tests/fixtures/' + u.pathname.slice('/api/remote-ui/module-assets/'.length) : u.pathname;
+  const f = new URL('.' + p, ROOT);
   if (!existsSync(f)) return new Response('', { status: 404 });
   const type = u.pathname.endsWith('.json') ? 'application/json' : 'application/javascript';
   return new Response(readFileSync(f), { headers: { 'Content-Type': type } });
@@ -31,6 +33,15 @@ const dom = new JSDOM(html, {
   resources: { interceptors: [fromDisk] }, pretendToBeVisual: true, beforeParse(w) {
     installCanvasStub(w);
     w.EventSource = class { addEventListener() {} close() {} };   /* the live stream is not under test */
+    /* jsdom has no fetch: the page's own requests go to the same disk mapping */
+    w.fetch = async (url) => {
+      const u = new URL(url, 'http://localhost:8199/web_ui.html');
+      const p = u.pathname.startsWith('/api/remote-ui/module-assets/') ? '/tests/fixtures/' + u.pathname.slice('/api/remote-ui/module-assets/'.length) : u.pathname;
+      const f = new URL('.' + p, ROOT);
+      if (!existsSync(f)) return { ok: false, status: 404, text: async () => '', json: async () => null };
+      const body = readFileSync(f, 'utf8');
+      return { ok: true, status: 200, text: async () => body, json: async () => JSON.parse(body) };
+    };
     const cw = w.console.warn.bind(w.console);
     w.console.warn = (...a) => { warns.push(a.map(String).join(' ')); cw(...a); };
   }
@@ -76,6 +87,23 @@ el = render('menu-project-settings');
 ok('a menu: rows, the selection, a scroll position', el.querySelectorAll('.hud-row').length >= 5 && !!el.querySelector('.hud-row.sel') && !!el.querySelector('.hud-scroll'));
 el = render('session-mixer-pan');
 ok('the session mixer: eight bipolar dials', el.querySelectorAll('.hud-knobs .hud-w-svg').length === 8);
+
+/* a module's own widgets: its canvas.js is fetched and its drawers run, none throws */
+{
+  const k = (key, name, kind, extra) => Object.assign({ kind, key, label: name, name, text: '' }, extra);
+  H.doc = null;
+  H.setDoc({ v: 1, seq: 99999, where: { screen: 'sound.params', track: 0, clip: 0, bank: 0 }, body: { primary: 'knobs', module: 'widget-test',
+    header: { text: 'WIDGET TEST' }, touched: -1,
+    knobs: [k('mode', 'Mode', 'enumsq', { raw: 1, options: ['Low', 'Mid', 'High'], sel: 1 }), k('level', 'Level', 'arc', { raw: 0.6, norm: 0.6 }), null, null, null, null, null, null],
+    viz: [{ kind: 'custom:wtmode', roles: { value: 'mode' }, keys: ['mode'], slotStart: 0, slotSpan: 1 },
+          { kind: 'custom:wtmeter', roles: { value: 'level' }, keys: ['level'], slotStart: 1, slotSpan: 1 }] } });
+  H.render();
+  for (let i = 0; i < 40 && H.customWidgetState('widget-test') === 'loading'; i++) await new Promise((r) => setTimeout(r, 50));
+  H.render();
+  ok('a module\'s canvas.js loads and its widgets draw', H.customWidgetState('widget-test') === 'ok' &&
+     d.querySelectorAll('#hudfit canvas.hud-cw').length === 2, H.customWidgetState('widget-test'));
+  ok('...without a drawer throwing', !warns.some((w) => /drawer threw/.test(w)), warns.filter((w) => /threw/.test(w)).join(' | '));
+}
 
 console.log(JSON.stringify(out, null, 1));
 console.log(fails.length ? "FAILED: " + fails.join(", ") : "ALL PASS");
