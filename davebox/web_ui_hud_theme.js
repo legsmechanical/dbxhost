@@ -132,6 +132,9 @@ body[data-view="screen"] .seqonly{display:none}
 .hud-pic{display:flex;flex-direction:column;align-items:center;gap:8px}
 .hud-oled{width:512px;height:256px;image-rendering:pixelated;border-radius:8px}
 .hud-pic .cap{font-size:22px;font-weight:700}.hud-pic .sub{font-size:14px;color:var(--h-dim)}
+.hud-note{display:flex;align-items:center;justify-content:center;gap:14px}
+.hud-note .nm{font-size:44px;font-weight:800}.hud-note .sb{font-size:18px;color:var(--h-dim)}
+.hud-note.hi{box-shadow:inset 0 0 0 2px var(--h-acc)}
 /* layout: list */
 .hud-list{display:flex;flex-direction:column;gap:3px;position:relative;padding-right:14px}
 .hud-row{display:flex;align-items:center;height:36px;padding:0 16px;border-radius:9px;font-size:19px;white-space:nowrap}

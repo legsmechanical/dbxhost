@@ -695,6 +695,7 @@ function enumOverlayIdx(t) {
  * label font, the pair centred as a group. Inverts while either knob is
  * held. Falls back to an all-small line if the group overruns the box. */
 function drawNoteBox(name, sub, invert) {
+    kitHudTap('NoteBox', { name, sub, hi: !!invert });
     const BX = 6, BW = 52, BY = MV_ROW0_Y, BH = MV_KH;
     if (invert) fill_rect(BX, BY, BW, BH, 1);
     else        rectOutline(BX, BY, BW, BH, 1);
@@ -764,6 +765,7 @@ function drawStepEditKitPage(title, cells, noteBox, footer, noStepHeld) {
              * the footer hint row stays (it still says how to get here). */
             const _txt = 'Hold step to edit';
             print(Math.max(0, Math.floor((128 - _txt.length * 6) / 2)), 30, _txt, 1);
+            kitHudTap('Message', { big: '', lines: [_txt] });
             if (footer) drawKitHintRow(MV_FOOTER_Y, footer);
             return;
         }

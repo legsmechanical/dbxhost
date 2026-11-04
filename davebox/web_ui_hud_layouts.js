@@ -70,7 +70,7 @@
   /* message — loading, exiting: a big line and a small one */
   H.layout('message', (d) => !!(d.body && d.body.message), (doc, b) => {
     const m = b.message;
-    return '<div class="hud-bigv"><div class="n" style="font-size:' + (m.big.length > 12 ? 48 : 72) + 'px">' + esc(m.wordmark ? m.big : sentence(m.big)) + '</div>' +
+    return '<div class="hud-bigv">' + (m.big ? '<div class="n" style="font-size:' + (m.big.length > 12 ? 48 : 72) + 'px">' + esc(m.wordmark ? m.big : sentence(m.big)) + '</div>' : '') +
       m.lines.map((l) => '<div class="u">' + esc(sentence(l)) + '</div>').join('') + '</div>';
   });
 
@@ -95,13 +95,21 @@
   /* kit — a page of knobs: one row of 8, with any span pictures above (the
    * knobs then shrink to sit under them) */
   H.layout('kit', (d) => !!(d.body && d.body.knobs), (doc, b) => {
-    const viz = H.vizRow(doc), under = !!viz;
+    const viz = H.vizRow(doc) + noteBoxRow(b), under = !!viz;
     let html = viz + '<div class="hud-knobs">';
     for (let k = 0; k < 8; k++) html += H.cell(b.knobs[k], k, doc, { under });
     html += '</div>';
     if (b.chips) html += chips(b.chips);
     return html;
   });
+
+  /* a held step's note (or a drum lane's pad), over knobs 1–2 as on the OLED */
+  function noteBoxRow(b) {
+    if (!b.noteBox) return '';
+    const n = b.noteBox;
+    return '<div class="hud-vrow"><div class="hud-viz hud-note' + (n.hi ? ' hi' : '') + '" style="grid-column:1 / span 2">' +
+      '<span class="nm">' + esc(n.name) + '</span>' + (n.sub ? '<span class="sb">' + esc(n.sub) + '</span>' : '') + '</div></div>';
+  }
 
   /* list — menus, pickers, browsers: more rows than the OLED, the selection,
    * a scroll position */
