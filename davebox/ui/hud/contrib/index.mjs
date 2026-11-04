@@ -8,4 +8,5 @@ import { touch } from './touch.mjs';
 import { held } from './held.mjs';
 import { knobmeta } from './knobmeta.mjs';
 import { params } from './params.mjs';
-export const CONTRIBUTORS = [where, body, params, overlay, touch, held, knobmeta];
+import { context } from './context.mjs';
+export const CONTRIBUTORS = [where, body, params, overlay, touch, held, knobmeta, context];

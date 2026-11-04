@@ -5,10 +5,16 @@
  * Take a name out of a list to hide that element; reorder to move it. */
 (window.HUDQ = window.HUDQ || []).push((H) => { H.cfg = {
   /* The screen, top to bottom. 'body' is the per-screen layout. */
-  regions: ['status', 'header', 'body', 'hints'],
+  regions: ['status', 'header', 'context', 'body', 'hints'],
 
   /* The status strip, left to right ('spacer' pushes the rest right). */
   statusItems: ['track', 'clip', 'spacer', 'pips', 'transport'],
+
+  /* The context band under the header: per-mode pieces, in this order. Each
+   * draws only where its data is (Track View sends banks and steps). */
+  contextBands: ['banks', 'steps'],
+  /* the bank band's column names (IN / CTRL / SEQ / FX) — off keeps it on one line */
+  bankGroupLabels: false,
 
   /* Extras drawn ON a knob cell, in this order under its name. */
   adornments: ['setDot', 'auto', 'stepLock', 'enumNeighbours', 'rangeBar'],
@@ -19,8 +25,10 @@
   /* The stage: a 2:1 screen (the OLED's own aspect), scaled to fit. */
   stage: { w: 960, h: 480 },
 
-  /* Lists show this many rows (the OLED shows ~5). */
+  /* Lists fill the screen: this many rows a column, and a long list flows
+   * into a second column (the OLED shows ~5). */
   listRows: 9,
+  listColumns: 2,
 
   /* The device's hint keys, spelled out (anything not listed: capitalised). */
   hintWords: { HLD: 'Hold', TCH: 'Touch', SHFT: 'Shift', CLK: 'Click', JOG: 'Jog', KNB: 'Knob', STEP: 'Step',

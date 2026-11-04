@@ -148,11 +148,30 @@
    * a scroll position */
   H.layout('list', (d) => !!(d.body && d.body.list), (doc, b) => {
     /* a picture under the list (an LFO, a lane's curve) takes rows from it */
-    const L = b.list, rows = L.rows || [], n = (b.lfo || b.curve) ? Math.min(5, H.cfg.listRows) : H.cfg.listRows;
+    const L = b.list, rows = L.rows || [];
+    const graph = !!(b.lfo || b.curve);
+    /* not the OLED's five rows: a column fills the screen, and a long list
+     * flows into a second column, so most menus are seen whole */
+    const cols = graph ? 1 : Math.max(1, H.cfg.listColumns | 0);
+    const per = graph ? Math.min(5, H.cfg.listRows) : H.cfg.listRows;
+    /* a gap row (a blank separator) costs a third of a row, so a column
+     * holds more of a grouped menu */
+    const isGap = (r) => !r || (!r.label && r.value == null);
+    const cost = (i) => isGap(rows[i]) ? 1 / 3 : 1;
+    let all = 0; for (let i = 0; i < rows.length; i++) all += cost(i);
+    const useCols = all > per ? Math.min(cols, Math.ceil(all / per)) : 1;
+    const budget = per * useCols;
     const selIn = Math.max(0, (L.sel | 0) - (L.first | 0));
-    let start = Math.max(0, Math.min(rows.length - n, selIn - Math.floor(n / 2)));
-    let html = '<div class="hud-list">';
-    for (let i = start; i < Math.min(rows.length, start + n); i++) {
+    /* the window: grow around the selection until the budget is spent */
+    let start = Math.min(selIn, rows.length - 1), end = start + 1, used = rows.length ? cost(start) : 0;
+    while (true) {
+      const canDown = end < rows.length && used + cost(end) <= budget, canUp = start > 0 && used + cost(start - 1) <= budget;
+      if (!canDown && !canUp) break;
+      if (canDown && (end - selIn <= selIn - start || !canUp)) used += cost(end++); else used += cost(--start);
+    }
+    const n = end - start;
+    let html = '<div class="hud-list' + (useCols > 1 ? ' cols' : '') + '" style="--per:' + per + '">';
+    for (let i = start; i < end; i++) {
       const r = rows[i] || {};
       if (!r.label && r.value == null) { html += '<div class="hud-row gap"></div>'; continue; }
       const sel = i === selIn && L.sel >= 0;
@@ -164,7 +183,7 @@
     if (b.lfo) html += '<div class="hud-wavebox sm" style="height:110px;margin-top:10px">' + H.lfoSvg(b.lfo) + '</div>';
     if (b.curve) html += '<div class="hud-wavebox sm" style="height:110px;margin-top:10px">' + H.curveSvg(b.curve, 110) + '</div>';
     const total = L.total || rows.length;
-    if (total > n) {
+    if (total > n && useCols === 1) {
       const top = ((L.first | 0) + start) / total, h = Math.min(1, n / total);
       html += '<div class="hud-scroll"><i style="top:' + (top * 100).toFixed(1) + '%;height:' + (h * 100).toFixed(1) + '%"></i></div>';
     }
@@ -191,6 +210,15 @@
   /* card — a popup card's title + value (hudCard) */
   H.layout('card', (d) => !!(d.body && d.body.card), (doc, b) =>
     '<div class="hud-bigv"><div class="u">' + esc(b.card.title) + '</div><div class="n" style="font-size:64px">' + esc(b.card.value) + '</div></div>');
+
+  /* bank map — the pads' map of banks (held jog): four columns of four, as
+   * on the pads, the current one lit, each column under its label */
+  H.layout('bankmap', (d) => !!(d.body && d.body.bankMap), (doc, b) => {
+    const m = b.bankMap, cur = m.cur || {};
+    return '<div class="hud-bmap">' + (m.cols || []).map((c, ci) => !c ? '<div class="col"></div>' :
+      '<div class="col"><div class="cl">' + esc(c.label || '') + '</div>' + (c.cells || []).map((name, r) =>
+        '<div class="pad' + (name ? '' : ' none') + (cur.c === ci && cur.r === r ? ' cur' : '') + '">' + esc(name ? sentence(name) : '') + '</div>').join('') + '</div>').join('') + '</div>';
+  });
 
   /* curve — a lane's shape alone (the lane-focus page drawn over a bank page) */
   H.layout('curve', (d) => !!(d.body && d.body.curve), (doc, b) =>

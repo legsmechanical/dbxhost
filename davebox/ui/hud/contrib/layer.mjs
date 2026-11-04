@@ -102,7 +102,7 @@ export const DESCRIBE = {
  * the OLED, where the later drawing is the one on top. */
 const FAMILY = {
     KitCells: 'knobs', KitBankPage: 'knobs', KitList: 'list', KitStackedList: 'list', KitSectionPicker: 'list',
-    KitPrompt: 'prompt', PromptLines: 'prompt', Buttons: 'prompt', Tracks: 'tracks', Bars: 'bars',
+    KitPrompt: 'prompt', PromptLines: 'prompt', Buttons: 'prompt', Tracks: 'tracks', Bars: 'bars', KitBankMap: 'bankmap',
     Mods: 'mods', Wave: 'wave', Keyboard: 'keyboard', Message: 'message', Picture: 'picture', KitBigValue: 'big', LevelCard: 'big', HudCard: 'card',
 };
 export function describeLayer(calls) {

@@ -36,6 +36,8 @@
     alive: true,          /* the device UI is publishing */
     cfg: null,            /* web_ui_hud_config.js */
     region(name, fn) { this.regions.set(name, fn); },
+    bands: new Map(),
+    band(name, fn) { this.bands.set(name, fn); },
     layout(name, match, fn) { this.layouts.push({ name, match, fn }); },
     widget(kind, fn) { this.widgets.set(kind, fn); },
     adorn(name, fn) { this.adorns.set(name, fn); },
@@ -70,7 +72,7 @@
   /* The device says which part of a screen is its main content (`primary`:
    * what it drew last); that family's layout is tried first. */
   const PRIMARY = { knobs: 'kit', tracks: 'overview', list: 'list', prompt: 'prompt', bars: 'bars', message: 'message',
-                    picture: 'picture', big: 'big', card: 'card', mods: 'perf', wave: 'wave', keyboard: 'keyboard' };
+                    picture: 'picture', big: 'big', card: 'card', mods: 'perf', wave: 'wave', keyboard: 'keyboard', bankmap: 'bankmap' };
   function layoutFor(doc) {
     const want = doc.body && PRIMARY[doc.body.primary];
     if (want) for (const l of HUD.layouts) { if (l.name === want) { try { if (l.match(doc)) return l; } catch (e) { /* skip */ } } }
