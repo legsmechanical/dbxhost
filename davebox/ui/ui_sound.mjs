@@ -83,7 +83,7 @@ import { requestTrackModeChange, showMenuInfo } from './ui_dialogs.mjs';
 import { requestClipMidiExport } from './ui_midi_export.mjs';
 import { freezeTrackRequest } from './ui_audio_convert.mjs';
 import {
-    openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
+    openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry, getTextEntryView,
     closeTextEntry,
 } from '/data/UserData/schwung/shared/text_entry.mjs';
 import {
@@ -7681,6 +7681,7 @@ function renderLfo() {
         plotLine(px, py, x0 + i, y, 1);
         px = x0 + i; py = y;
     }
+    kitHudTap('Lfo', { shape, bipolar, phase, retrigger: S.lfoVals.retrigger === '1', cycles: WAVE_CYCLES });
     if (S.lfoVals.retrigger === '1') {
         fill_rect(x0, Math.max(topY, Math.min(botY - 2, yAt(0) - 1)), 3, 3, 1);
     }
@@ -11839,6 +11840,7 @@ function renderNoEditor() {
     clear_screen();
     kitUseLayout('bank');
     drawKitBankHeader(TRACK_MENU_TITLE, null, bankHeaderRight(false));
+    kitHudTap('Message', { big: '', lines: ['No instrument editor', 'for ' + noEditorWords(S.track)] });
     centreText(MV_ROW1_Y - 8, 'NO INSTRUMENT EDITOR');
     centreText(MV_ROW1_Y + 2, 'FOR ' + noEditorWords(S.track).toUpperCase());
     fill_rect(0, MV_FOOTER_Y - 3, 128, 64 - (MV_FOOTER_Y - 3), 0);
@@ -13581,8 +13583,9 @@ function closeCanvasScreen() {
  * the way out. */
 function renderChainScreen() {
     if (!chainUiActive()) return;
-    if (!chainUiDead()) { chainUiTick(); if (!chainUiDead()) return; }
+    if (!chainUiDead()) { kitHudTap('Picture', { kind: 'module', caption: String(engineModuleAbbrev(S.moduleId) || '') }); chainUiTick(); if (!chainUiDead()) return; }
     clear_screen();
+    kitHudTap('Message', { big: String(engineModuleAbbrev(S.moduleId) || 'Module'), lines: [String(chainUiError() || 'module screen stopped')], wordmark: true });
     print(3, 12, String(engineModuleAbbrev(S.moduleId) || 'Module').slice(0, 24), 1);
     print(3, 30, String(chainUiError() || 'module screen stopped').slice(0, 24), 1);
     drawKitHintRow(MV_FOOTER_Y, [['back', 'exit']]);
@@ -14155,7 +14158,7 @@ const SOUND_VIEW_NAMES = {
 };
 export function soundRender() {
     if (!S.active) return false;
-    if (isTextEntryActive()) { hudScreen('text-entry'); drawTextEntry(); return true; }
+    if (isTextEntryActive()) { hudScreen('text-entry'); kitHudTap('Keyboard', getTextEntryView()); drawTextEntry(); return true; }
     /* At the TOP LEVEL the screen keeps the clip banks' display law (Josh,
      * 2026-08-23): it shows while the jog is touched or the bank-display
      * window is open — the SAME flags the banks read — and otherwise stands

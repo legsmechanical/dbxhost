@@ -85,6 +85,8 @@ export const DESCRIBE = {
     Mods:             (d, p) => { d.mods = { names: (p.names || []).map(String), popup: p.popup ? String(p.popup) : undefined }; },
     StepStrip:        (d, p) => { d.stepStrip = { len: p.len | 0, on: (p.on || []).join('') }; },
     Wave:             (d, p) => { d.wave = p; },
+    Keyboard:         (d, p) => { if (p) d.keyboard = p; },
+    Lfo:              (d, p) => { d.lfo = { shape: String(p.shape), bipolar: !!p.bipolar, phase: +p.phase || 0, retrigger: !!p.retrigger, cycles: p.cycles | 0 }; },
     Readout:          (d, p) => { (d.readouts = d.readouts || []).push({ text: String(p.text), on: p.on || undefined, pos: p.pos || 'left' }); },
     Message:          (d, p) => { d.message = { big: p.big || '', lines: (p.lines || []).map(String), wordmark: p.wordmark || undefined }; },
     Bars:             (d, p) => { d.bars = { values: p.values, len: p.len, touched: p.touched, mode: p.mode, min: p.min, max: p.max }; },
@@ -100,7 +102,7 @@ export const DESCRIBE = {
 const FAMILY = {
     KitCells: 'knobs', KitBankPage: 'knobs', KitList: 'list', KitStackedList: 'list', KitSectionPicker: 'list',
     KitPrompt: 'prompt', PromptLines: 'prompt', Buttons: 'prompt', Tracks: 'tracks', Bars: 'bars',
-    Mods: 'mods', Wave: 'wave', Message: 'message', Picture: 'picture', KitBigValue: 'big', LevelCard: 'big', HudCard: 'card',
+    Mods: 'mods', Wave: 'wave', Keyboard: 'keyboard', Message: 'message', Picture: 'picture', KitBigValue: 'big', LevelCard: 'big', HudCard: 'card',
 };
 export function describeLayer(calls) {
     if (!calls || !calls.length) return null;

@@ -30,8 +30,9 @@ import {
 } from './ui_persistence.mjs';
 import { invalidateLEDCache, clearAllLEDs } from './ui_leds.mjs';
 import { dealDave } from './ui_daves.mjs';
+import { hudScreen } from './hud/hud_frame.mjs';
 import {
-    openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
+    openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry, getTextEntryView,
     closeTextEntry,
 } from '/data/UserData/schwung/shared/text_entry.mjs';
 import {
@@ -1046,7 +1047,7 @@ export function templateTextEntryUp() {
  * snapshot picker is: template names come from the user. */
 export function drawTemplateManager() {
     clear_screen();
-    if (templateTextEntryUp()) { drawTextEntry(); return; }
+    if (templateTextEntryUp()) { hudScreen('text-entry'); kitHudTap('Keyboard', getTextEntryView()); drawTextEntry(); return; }
     const m = S.templateManager;
     if (!m) return;
     const t = _tmCurrent();
@@ -2133,7 +2134,7 @@ function _drawProjectPadPicker_impl() {
     if (!p) { clear_screen(); return; }
 
     /* Rename keyboard is fully modal and draws itself. */
-    if (p.renameActive && isTextEntryActive()) { drawTextEntry(); return; }
+    if (p.renameActive && isTextEntryActive()) { hudScreen('text-entry'); kitHudTap('Keyboard', getTextEntryView()); drawTextEntry(); return; }
 
     /* ⭑⭑ RE-DERIVE the resting state here, in ONE place, rather than bookkeeping
      * it at every mutator — the same rule the edit-CC claim follows, and for the

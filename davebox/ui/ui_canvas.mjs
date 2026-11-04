@@ -35,7 +35,7 @@
  * createCanvasRuntimeContext offers.
  */
 
-import { drawKitHintRow, MV_FOOTER_Y } from './ui_movy.mjs';
+import { drawKitHintRow, MV_FOOTER_Y, kitHudTap } from './ui_movy.mjs';
 
 /* The one open canvas, or null. */
 let C = null;
@@ -254,8 +254,9 @@ export function renderCanvasEdit() {
     if (!C) return false;
     clear_screen();
     const drew = !!(C.overlay && typeof C.overlay.draw === 'function' && !C.dead);
-    if (drew) invoke('draw', {});
+    if (drew) { kitHudTap('Picture', { kind: 'module', caption: canvasEditCrumb() }); invoke('draw', {}); }
     if (!drew) {
+        kitHudTap('Message', { big: String(canvasEditCrumb() || ''), lines: [String(C.error || 'No module canvas overlay')], wordmark: true });
         print(3, 12, fit(canvasEditCrumb(), 24), 1);
         print(3, 30, fit(C.error || 'No module canvas overlay', 24), 1);
     }

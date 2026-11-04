@@ -108,6 +108,24 @@
     sample: (cells, g, k0, W) => H.viz.get('samp')(roleCells(cells, g, ['start', 'length']), { start: 0 }, k0, W),
   };
   /* the shape a waveform / LFO cell names: its option text */
+  /* an LFO's own picture (sound mode's LFO page): its shape over a few cycles,
+   * centred when bipolar, the retrigger dot at the start */
+  H.lfoSvg = function (l) {
+    const W = 900, h = 120, col = H.cfg.palette[6], pts = [];
+    const name = String(l.shape || 'sine').toLowerCase(), cyc = Math.max(1, l.cycles || 3);
+    for (let x = 6; x <= W - 6; x += 3) {
+      const ph = (((x - 6) / (W - 12)) * cyc + (l.phase || 0)) % 1;
+      let y = /saw/.test(name) ? 1 - 2 * ph : /squ|pulse/.test(name) ? (ph < 0.5 ? 1 : -1)
+            : /tri/.test(name) ? 1 - 4 * Math.abs(ph - 0.5) : /rand|s&?h|noise/.test(name) ? Math.sin(Math.floor(ph * 8 + x / 50) * 12.9898)
+            : Math.sin(ph * Math.PI * 2);
+      if (!l.bipolar) y = (y + 1) / 2;
+      pts.push([x, l.bipolar ? h / 2 - y * (h / 2 - 8) : h - 8 - y * (h - 16)]);
+    }
+    return '<svg class="hud-wave" viewBox="0 0 ' + W + ' ' + h + '" preserveAspectRatio="none">' +
+      '<line x1="0" y1="' + (l.bipolar ? h / 2 : h - 8) + '" x2="' + W + '" y2="' + (l.bipolar ? h / 2 : h - 8) + '" stroke="#fff" stroke-opacity=".12" stroke-dasharray="4 4"/>' +
+      '<path d="' + path(pts) + '" stroke="' + col + '" stroke-width="3" fill="none"/>' +
+      (l.retrigger ? '<circle cx="' + pts[0][0] + '" cy="' + pts[0][1] + '" r="6" fill="' + col + '"/>' : '') + '</svg>';
+  };
   function shapeName(c) { return String((c && (c.text || '')) || 'sine').toLowerCase(); }
   function wavePts(name, cycles, amp, W) {
     const pts = [], mid = 59;
@@ -140,7 +158,13 @@
     if (w.sel) svg += '<rect x="' + (w.sel[0] * W).toFixed(1) + '" y="0" width="' + Math.max(2, (w.sel[1] - w.sel[0]) * W).toFixed(1) + '" height="' + h + '" fill="#fff" opacity=".10"/>' +
       [w.sel[0], w.sel[1]].map((m) => '<rect x="' + (m * W - 1.5).toFixed(1) + '" y="0" width="3" height="' + h + '" fill="#fff"/>').join('');
     if (w.trim) svg += [w.trim[0], w.trim[1]].map((m) => '<rect x="' + (m * W - 2).toFixed(1) + '" y="0" width="4" height="' + h + '" fill="' + H.cfg.palette[2] + '"/>').join('');
-    return svg + '</svg>';
+    if (typeof w.cursor === 'number') svg += '<rect x="' + (w.cursor * W - 2).toFixed(1) + '" y="0" width="4" height="' + h + '" fill="' + H.cfg.palette[3] + '"/>';
+    svg += '</svg>';
+    /* marker names (a WAV position editor's members) under the picture */
+    if (Array.isArray(w.labels) && w.labels.length)
+      svg += '<div class="hud-wavelab">' + w.labels.map((l) => '<span style="left:' + (l.pos * 100).toFixed(1) + '%' +
+        (l.active ? ';color:' + H.cfg.palette[3] : '') + '">' + H.esc(l.text) + '</span>').join('') + '</div>';
+    return svg;
   };
 
   const NAMES = { env: 'ENVELOPE', filt: 'FILTER', eq: 'EQ', samp: 'SAMPLE' };

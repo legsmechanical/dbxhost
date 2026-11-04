@@ -2533,6 +2533,7 @@ function drawUIBody() {
         if (S.actionPopupEndTick >= 0 && !S.actionPopupCard && S.actionPopupGauge >= 0) {
             hudScreen('session.gauge');
             const _n = S.actionPopupLines.length;
+            kitHudTap('LevelCard', { text: S.actionPopupLines.slice(0, 2).join(' · '), frac: S.actionPopupGauge });
             {
                 /* Gauge popup: text sits high so the bar owns the lower half.
                  * Same geometry as sound mode's level read-out, so the two

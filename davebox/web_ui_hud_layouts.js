@@ -77,6 +77,17 @@
       '<div class="hud-wavebox big">' + H.waveSvg(b.wave, 230) + '</div>';
   });
 
+  /* keyboard — text entry: the text so far, large, with a cursor; the key grid
+   * and the special keys, the selected one lit */
+  H.layout('keyboard', (d) => !!(d.body && d.body.keyboard), (doc, b) => {
+    const k = b.keyboard, n = (k.chars || []).length;
+    const key = (t, i, wide) => '<span class="key' + (i === k.selected ? ' sel' : '') + (wide ? ' w' : '') + '">' + esc(t) + '</span>';
+    return '<div class="hud-kbd">' + (k.title ? '<div class="t">' + esc(k.title) + '</div>' : '') +
+      '<div class="buf">' + esc(k.buffer) + '<i></i></div>' +
+      '<div class="keys">' + (k.chars || []).map((c, i) => key(c, i)).join('') + '</div>' +
+      '<div class="spec">' + (k.specials || []).map((t, j) => key(t, n + j, true)).join('') + '</div></div>';
+  });
+
   /* perf — performance mode: the engaged mods as big pills (a just-tapped one
    * alone, large), the Hold / Sync / Latch chips and the rate under them */
   H.layout('perf', (d) => !!(d.body && d.body.mods), (doc, b) => {
@@ -149,6 +160,7 @@
         '<span class="lab">' + esc(r.label) + '</span>' + (r.qual ? '<span class="q">' + esc(r.qual) + '</span>' : '') +
         (r.value != null ? '<span class="val">' + esc(r.value) + '</span>' : r.chevron ? '<span class="val">›</span>' : '') + '</div>';
     }
+    if (b.lfo) html += '<div class="hud-wavebox sm" style="height:110px;margin-top:10px">' + H.lfoSvg(b.lfo) + '</div>';
     const total = L.total || rows.length;
     if (total > n) {
       const top = ((L.first | 0) + start) / total, h = Math.min(1, n / total);
