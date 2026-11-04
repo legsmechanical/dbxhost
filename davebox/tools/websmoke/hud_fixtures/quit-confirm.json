@@ -1,0 +1,1 @@
+{"seq":337,"v":1,"where":{"screen":"exit-confirm","view":"track","track":0,"clip":0,"bank":0,"bankName":"CLIP","padMode":"melodic"},"body":{"header":{"text":"QUIT dAVEBOx?"},"prompt":{"lines":["Save and leave the session?","The device returns to Move."],"buttons":["No","Yes"],"sel":0}},"touch":{"knob":-1,"phys":-1,"jog":false}}

@@ -1,0 +1,1 @@
+{"seq":120,"v":1,"where":{"screen":"tempo-select","view":"track","track":3,"clip":0,"bank":0,"bankName":"CLIP","padMode":"melodic"},"body":{"header":{"text":"Fit to bars","right":"T4"},"big":{"text":"2","unit":"BARS","prev":"1","next":"4"},"hints":[["jog","bars"],["shft","fine"],["clk","set"]]},"touch":{"knob":-1,"phys":-1,"jog":false}}

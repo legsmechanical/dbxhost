@@ -1,0 +1,1 @@
+{"seq":132,"v":1,"where":{"screen":"prompt.merge-placement","view":"session","track":0,"clip":0,"bank":0,"bankName":"CLIP","padMode":"melodic"},"body":{"prompt":{"title":"Place merged take","lines":["Tap a row or scene","step for the clips"]},"hints":[["back","exit"]],"header":{"text":"Place merged take"}},"touch":{"knob":-1,"phys":-1,"jog":false}}

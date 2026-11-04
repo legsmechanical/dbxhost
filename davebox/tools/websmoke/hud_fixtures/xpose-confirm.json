@@ -1,0 +1,1 @@
+{"seq":188,"v":1,"where":{"screen":"xpose-confirm","view":"track","track":0,"clip":0,"bank":0,"bankName":"CLIP","padMode":"melodic"},"body":{"header":{"text":"TRANSPOSE CLIPS?"},"prompt":{"lines":["To B Minor","All melodic clips"],"buttons":["No","Yes"],"sel":1}},"touch":{"knob":-1,"phys":-1,"jog":false}}

@@ -18,6 +18,11 @@
 window.CHAIN_SLOTS = 8;
 window.slotLetter = (i) => String.fromCharCode(65 + Math.max(0, Math.min(window.CHAIN_SLOTS - 1, i | 0)));
 
+/* HTML-escape for innerHTML / attribute text. Lives here, in the FIRST script, because
+   web_ui_seq.js renders the session grid with it during its own load — when it lived in
+   web_ui_mix.js (loaded later) the first render threw and the poll loop never started. */
+function escMix(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
 /* ---- fallback shim: standalone local preview without a device. Speaks the same
        "overtake_dsp:"-prefixed flat fields the manager seeds, and APPLIES note ops to its
        mock store so the preview is a faithful edit loop. ---- */

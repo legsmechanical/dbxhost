@@ -1,0 +1,1 @@
+{"seq":60,"v":1,"where":{"screen":"record-blocked-dialog","view":"track","track":0,"clip":0,"bank":0,"bankName":"CLIP","padMode":"melodic"},"body":{"header":{"text":"REC UNAVAILABLE"},"prompt":{"lines":["Set clip Dir to Fwd,","or bake it first."]}},"touch":{"knob":-1,"phys":-1,"jog":false}}

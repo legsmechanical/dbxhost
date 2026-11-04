@@ -1,0 +1,1 @@
+{"seq":136,"v":1,"where":{"screen":"bake-confirm","view":"track","track":0,"clip":0,"bank":0,"bankName":"CLIP","padMode":"melodic"},"body":{"header":{"text":"BAKE FX?"},"prompt":{"lines":["Bake the FX chain to the","clip - how many loops?"]}},"touch":{"knob":-1,"phys":-1,"jog":false}}

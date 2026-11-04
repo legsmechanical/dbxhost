@@ -1,0 +1,1 @@
+{"seq":146,"v":1,"where":{"screen":"bake-scene-confirm","view":"session","track":0,"clip":0,"bank":0,"bankName":"CLIP","padMode":"melodic"},"body":{"header":{"text":"BAKE SCENE?"},"prompt":{"lines":["Loop count:"]}},"touch":{"knob":-1,"phys":-1,"jog":false}}

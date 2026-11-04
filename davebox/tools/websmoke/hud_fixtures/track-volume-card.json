@@ -1,0 +1,1 @@
+{"seq":564,"v":1,"where":{"screen":"track.overview","view":"track","track":0,"clip":0,"bank":0,"bankName":"CLIP","padMode":"melodic"},"body":{"header":{"text":"CLIP","glyph":"clip","right":"[MV1]"},"hints":[["JOG","TRACK"]]},"overlayLayer":{"big":{"text":"Tr 1  LEVEL  -0.5","frac":0.785}},"touch":{"knob":-1,"phys":-1,"jog":false},"held":{"shift":true}}

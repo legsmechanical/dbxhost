@@ -1,0 +1,1 @@
+{"seq":142,"v":1,"where":{"screen":"prompt.scene-pick","view":"session","track":0,"clip":0,"bank":0,"bankName":"CLIP","padMode":"melodic"},"body":{"prompt":{"title":"Bake scene","lines":["Tap a row or scene","step to pick it"]},"hints":[["back","menu"]],"header":{"text":"Bake scene"}},"touch":{"knob":-1,"phys":-1,"jog":false}}

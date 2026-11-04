@@ -1,0 +1,1 @@
+{"seq":6,"v":1,"where":{"screen":"track.drum-overview","view":"track","track":1,"clip":0,"bank":0,"bankName":"CLIP","padMode":"drum"},"body":{"header":{"text":"DRUM LANE","glyph":"drum","right":"[MV2]"},"hints":[["HLD","BANKS"],["TCH","EDIT"],["SHFT","TRK"]]},"touch":{"knob":-1,"phys":-1,"jog":false}}

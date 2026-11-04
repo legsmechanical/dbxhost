@@ -1,0 +1,1 @@
+{"seq":212,"v":1,"where":{"screen":"global-menu","view":"track","track":0,"clip":0,"bank":0,"bankName":"CLIP","padMode":"melodic"},"body":{"header":{"text":"Tap tempo"},"big":{"text":"120","unit":"BPM"},"hints":[["jog","tempo"],["clk","set"]]},"touch":{"knob":-1,"phys":-1,"jog":false}}

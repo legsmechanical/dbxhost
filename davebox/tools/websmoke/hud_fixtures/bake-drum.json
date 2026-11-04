@@ -1,0 +1,1 @@
+{"seq":139,"v":1,"where":{"screen":"bake-confirm","view":"track","track":1,"clip":0,"bank":0,"bankName":"CLIP","padMode":"drum"},"body":{"header":{"text":"BAKE DRUMS?"},"prompt":{"lines":["Bake FX to clip","(all lanes) or lane?"]}},"touch":{"knob":-1,"phys":-1,"jog":false}}

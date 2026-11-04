@@ -238,7 +238,6 @@ function updateStrips(host) {
     ms.querySelector(".solo").classList.toggle("on", mixNum(prefix + "soloed", 0) >= 1);
   });
 }
-function escMix(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 function cssq(s) { return s.replace(/["\\]/g, "\\$&"); }
 function round4(v) { return Math.round(v * 10000) / 10000; }
 
@@ -267,8 +266,8 @@ function jumpTo(view, t) {
 }
 
 function setView(view, fromHash) {
-  if (view !== "mix" && view !== "sound") view = "seq";
-  const seqOn = view === "seq", soundOn = view === "sound";
+  if (view !== "mix" && view !== "sound" && view !== "screen") view = "seq";
+  const seqOn = view === "seq", soundOn = view === "sound", screenOn = view === "screen";
   const changed = view !== curView;
   curView = view;
   mixVisible = view === "mix";
@@ -282,6 +281,8 @@ function setView(view, fromHash) {
   document.getElementById("viewSeq").classList.toggle("on", seqOn);
   document.getElementById("viewMix").classList.toggle("on", mixVisible);
   document.getElementById("viewSound").classList.toggle("on", soundOn);
+  document.getElementById("viewScreen").classList.toggle("on", screenOn);
+  hudShow(screenOn);                           /* web_ui_hud_source.js, parsed before any event fires */
   /* both non-sequencer views read the mixer wire namespace (the sound view for
    * the track's strip and its instrument's name); the sequencer's mini-mixer
    * ribbon subscribes through the same gate when it is on screen */
@@ -296,7 +297,7 @@ function setView(view, fromHash) {
   /* brief crossfade on the pane(s) coming in — only on a real change, so the
    * hashchange echo of our own hash write never replays it */
   if (changed) {
-    const panes = seqOn ? ["session", "main"] : [mixVisible ? "mixer" : "sound"];
+    const panes = seqOn ? ["session", "main"] : [mixVisible ? "mixer" : screenOn ? "screenview" : "sound"];
     for (const id of panes) {
       const el = document.getElementById(id);
       el.classList.remove("viewfade"); void el.offsetWidth; el.classList.add("viewfade");
@@ -311,10 +312,11 @@ function setView(view, fromHash) {
 }
 window.addEventListener("hashchange", () => {
   const v = (location.hash || "").slice(1);
-  if (v === "seq" || v === "mix" || v === "sound") setView(v, true);
+  if (v === "seq" || v === "mix" || v === "sound" || v === "screen") setView(v, true);
 });
 document.getElementById("viewSeq").onclick = () => setView("seq");
 document.getElementById("viewMix").onclick = () => setView("mix");
+document.getElementById("viewScreen").onclick = () => setView("screen");
 
 /* strips follow the model (selection, routing, instrument) at snapshot cadence;
  * a light interval covers M changes without hooking applyParams */

@@ -1,0 +1,1 @@
+{"seq":134,"v":1,"where":{"screen":"prompt.merge-solo","view":"session","track":0,"clip":0,"bank":0,"bankName":"CLIP","padMode":"melodic"},"body":{"prompt":{"title":"Merged take","lines":["Tap a blinking clip","on track 1 to keep it"]},"hints":[["back","exit"]],"header":{"text":"Merged take"}},"touch":{"knob":-1,"phys":-1,"jog":false}}

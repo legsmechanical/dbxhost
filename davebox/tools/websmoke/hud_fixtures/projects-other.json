@@ -1,0 +1,1 @@
+{"seq":389,"v":1,"where":{"screen":"project-pad-picker","view":"track","track":0,"clip":0,"bank":0,"bankName":"CLIP","padMode":"melodic"},"body":{"list":{"kind":"list","total":4,"sel":1,"rows":[{"label":"SKETCHBOOK","hdr":true},{"label":"Load"},{"label":"Rename","chevron":true},{"label":"Color","chevron":true}],"first":0}},"touch":{"knob":-1,"phys":-1,"jog":false}}

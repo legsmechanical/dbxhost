@@ -1,0 +1,1 @@
+{"seq":116,"v":1,"where":{"screen":"perf-mode-oled","view":"session","track":0,"clip":0,"bank":0,"bankName":"CLIP","padMode":"melodic"},"body":{"header":{"text":"Float"},"chips":[{"label":"Hold","on":false},{"label":"Sync","on":true},{"label":"Latch","on":true}]},"touch":{"knob":-1,"phys":-1,"jog":false},"held":{"loop":true}}

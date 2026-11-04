@@ -1,0 +1,1 @@
+{"seq":125,"v":1,"where":{"screen":"sample-menu","view":"track","track":0,"clip":0,"bank":0,"bankName":"CLIP","padMode":"melodic"},"body":{"header":{"text":"SAMPLE"},"list":{"kind":"list","total":3,"sel":0,"rows":[{"label":"Bake clip"},{"label":"Resample clip","chevron":true},{"label":"Live merge track"}],"first":0}},"touch":{"knob":-1,"phys":-1,"jog":false}}

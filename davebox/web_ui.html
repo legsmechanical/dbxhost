@@ -473,7 +473,8 @@ body[data-view="mix"] .seqonly,body[data-view="sound"] .seqonly{display:none}
     <span class="seg views" id="viewseg" title="Views — the selected track is shared across them">
       <button id="viewSeq" class="on">Sequencer</button>
       <button id="viewMix">Mixer</button>
-      <button id="viewSound">Sound</button></span>
+      <button id="viewSound">Sound</button>
+      <button id="viewScreen" title="dAVEBOx's screen, redrawn in colour — follows the device">Screen</button></span>
     <button class="ghost" id="xport" title="Start / stop transport">▶</button>
     <span class="badge play" id="transport">—</span>
     <span id="globals"></span>
@@ -529,6 +530,7 @@ body[data-view="mix"] .seqonly,body[data-view="sound"] .seqonly{display:none}
   <div id="globalpop"><h4>Global settings</h4><div id="globalpanel"></div></div>
   <div id="mixer"><div id="clipribbon"></div><div class="strips" id="mixstrips"></div></div>
   <div id="sound"><div id="soundwrap"></div></div>
+  <div id="screenview"><div class="hud-fit" id="hudfit"></div></div>
 </div>
 <div id="diag"></div>
 
@@ -538,5 +540,16 @@ body[data-view="mix"] .seqonly,body[data-view="sound"] .seqonly{display:none}
 <script src="web_ui_mix.js"></script>
 <script src="web_ui_params.js"></script>
 <script src="web_ui_ribbon.js"></script>
+<!-- the Screen view (web_ui_hud_core.js explains the split) -->
+<script src="web_ui_hud_core.js"></script>
+<script src="web_ui_hud_config.js"></script>
+<script src="web_ui_hud_theme.js"></script>
+<script src="web_ui_hud_regions.js"></script>
+<script src="web_ui_hud_layouts.js"></script>
+<script src="web_ui_hud_widgets.js"></script>
+<script src="web_ui_hud_adorn.js"></script>
+<script src="web_ui_hud_items.js"></script>
+<script src="web_ui_hud_viz.js"></script>
+<script src="web_ui_hud_source.js"></script>
 <script src="web_ui_sound.js"></script>
 </body></html>

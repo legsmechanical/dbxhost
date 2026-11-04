@@ -1,0 +1,1 @@
+{"seq":397,"v":1,"where":{"screen":"project-pad-picker","view":"track","track":0,"clip":0,"bank":0,"bankName":"CLIP","padMode":"melodic"},"body":{"header":{"text":"New project"},"prompt":{"lines":["Create a new project","on this pad?"],"buttons":["No","Yes"],"sel":1}},"touch":{"knob":-1,"phys":-1,"jog":false}}

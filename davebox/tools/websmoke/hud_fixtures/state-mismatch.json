@@ -1,0 +1,1 @@
+{"seq":592,"v":1,"where":{"screen":"state-wipe-confirm","view":"session","track":0,"clip":0,"bank":0,"bankName":"CLIP","padMode":"melodic"},"body":{"header":{"text":"STATE MISMATCH"},"prompt":{"lines":["This session is from a","different version. Erase it?"],"buttons":["No","Yes"],"sel":0}},"touch":{"knob":-1,"phys":-1,"jog":false}}

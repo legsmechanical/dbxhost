@@ -1,0 +1,1 @@
+{"seq":118,"v":1,"where":{"screen":"tempo-select","view":"track","track":0,"clip":0,"bank":0,"bankName":"CLIP","padMode":"melodic"},"body":{"header":{"text":"Capture tempo","right":"T1"},"big":{"text":"112","unit":"BPM","prev":"56","next":"224"},"hints":[["jog","tempo"],["clk","set"]]},"touch":{"knob":-1,"phys":-1,"jog":false}}

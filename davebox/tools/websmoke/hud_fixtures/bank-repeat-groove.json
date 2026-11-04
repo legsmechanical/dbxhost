@@ -1,0 +1,1 @@
+{"seq":77,"v":1,"where":{"screen":"track.drum-velocity","view":"track","track":1,"clip":0,"bank":5,"bankName":"LIVE ARP","padMode":"drum"},"body":{"header":{"text":"RPT GROOVE","glyph":"seq","right":"T2[MV2]"},"hints":[["KNB+CLK","NUDGE"],["HLD","BANKS"],["BACK","OUT"]]},"touch":{"knob":-1,"phys":-1,"jog":false}}

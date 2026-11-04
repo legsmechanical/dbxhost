@@ -1,0 +1,1 @@
+{"seq":130,"v":1,"where":{"screen":"prompt.merge-notice","view":"track","track":0,"clip":0,"bank":0,"bankName":"CLIP","padMode":"melodic"},"body":{"prompt":{"title":"Live merge","lines":["Captures this track","Press Rec to start"]},"hints":[["back","exit"]],"header":{"text":"Live merge"}},"touch":{"knob":-1,"phys":-1,"jog":false}}
