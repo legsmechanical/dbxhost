@@ -176,7 +176,10 @@ const { enterParamPages, exitParamPages, tickParamPages, drawParamPages,
         paramPagesPickerOpen, paramPagesMenuEntered,
         paramPagesRefreshTrailing, paramPagesFullKeyAt, paramPagesRepaintKnobs,
         paramPagesCachedValue, paramPagesLevelNameOf, paramPagesOverlayShown,
-        paramPagesPageLabel, paramPagesSetDecorations, paramPagesDecorations } = PP;
+        paramPagesPageLabel, paramPagesSetDecorations, paramPagesDecorations,
+        paramPagesDescribe } = PP;
+/* The module editor's page as data, for the Screen view (hud/contrib/params.mjs). */
+export function soundParamPageModel() { return paramPagesDescribe({ title: PP.headerTitle() }); }
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 import { hudScreen } from './hud/hud_frame.mjs';
 /* ⚠⚠ THE CANONICAL SPECIFIER, AND IT IS LOAD-BEARING. The registry is the

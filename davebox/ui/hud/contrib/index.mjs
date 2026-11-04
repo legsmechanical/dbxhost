@@ -7,4 +7,5 @@ import { overlay } from './overlay.mjs';
 import { touch } from './touch.mjs';
 import { held } from './held.mjs';
 import { knobmeta } from './knobmeta.mjs';
-export const CONTRIBUTORS = [where, body, overlay, touch, held, knobmeta];
+import { params } from './params.mjs';
+export const CONTRIBUTORS = [where, body, params, overlay, touch, held, knobmeta];

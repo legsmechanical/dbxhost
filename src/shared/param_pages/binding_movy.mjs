@@ -1554,6 +1554,13 @@ function paramPagesPickerOpen() {
  * this module's own exit cannot know. Without a way to ask, such a host has to
  * choose between losing its retrace and acting twice on one press. Mirrors
  * paramPagesPickerOpen for the other layer. */
+/** The page as data (controller.describePage): for a host that redraws the
+ *  editor elsewhere in its own style — a remote screen — from the same view
+ *  model the library publishes. null while no controller exists. */
+function paramPagesDescribe(o) {
+    return (controller && typeof controller.describePage === 'function') ? controller.describePage(o || {}) : null;
+}
+
 function paramPagesMenuEntered() {
     return !!(controller && typeof controller.menuEntered === 'function'
               && controller.menuEntered());
@@ -1585,6 +1592,7 @@ function paramPagesMenuEntered() {
         paramPagesFullKeyAt,
         paramPagesSetDecorations,
         paramPagesDecorations,
+        paramPagesDescribe,
         paramPagesRepaintKnobs,
         paramPagesGoTo,
         paramPagesJumpIndex,

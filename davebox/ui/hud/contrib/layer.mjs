@@ -25,6 +25,7 @@ export function cellOut(c) {
     if (c.sq) o.sq = c.sq;
     if (c.ghost != null) o.ghost = c.ghost;
     if (c.meta) o.meta = c.meta;
+    if (c.key) o.key = c.key;
     return o;
 }
 const span = (s) => s ? { start: s.start | 0, count: s.count == null ? null : s.count | 0 } : undefined;
