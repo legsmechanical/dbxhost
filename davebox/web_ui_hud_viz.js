@@ -122,6 +122,27 @@
   }
   const MODNAMES = { envelope: 'ENVELOPE', filter: 'FILTER', eq: 'EQ', lfo: 'LFO', waveform: 'WAVE', fader: 'LEVEL', switch: '', sample: 'SAMPLE' };
 
+  /* A sample's waveform: the device's amplitude columns, the region outside
+   * Start..End dimmed, chop marks, the selected chop and trim handles. */
+  H.waveSvg = function (w, h, accent) {
+    const W = 900, mid = h / 2, col = accent || H.cfg.palette[0];
+    if (!w || !w.amp) return '<div class="hud-wavemsg">' + H.esc((w && w.msg) || '') + '</div>';
+    const n = w.amp.length, bw = W / n;
+    const lo = (w.region || [0, 1])[0] * W, hi = (w.region || [0, 1])[1] * W;
+    let svg = '<svg class="hud-wave" viewBox="0 0 ' + W + ' ' + h + '" preserveAspectRatio="none">';
+    for (let k = 0; k < n; k++) {
+      const a = w.amp[k]; if (a < 0) continue;
+      const x = k * bw, hh = Math.max(1, a * (h / 2 - 2)), inside = x >= lo && x <= hi;
+      svg += '<rect x="' + x.toFixed(1) + '" y="' + (mid - hh).toFixed(1) + '" width="' + Math.max(1, bw - 0.6).toFixed(1) + '" height="' + (2 * hh).toFixed(1) +
+        '" fill="' + (inside ? col : '#2a2f37') + '"/>';
+    }
+    (w.marks || []).forEach((m) => { svg += '<line x1="' + (m * W).toFixed(1) + '" y1="0" x2="' + (m * W).toFixed(1) + '" y2="' + h + '" stroke="#fff" stroke-opacity=".28" stroke-dasharray="3 3"/>'; });
+    if (w.sel) svg += '<rect x="' + (w.sel[0] * W).toFixed(1) + '" y="0" width="' + Math.max(2, (w.sel[1] - w.sel[0]) * W).toFixed(1) + '" height="' + h + '" fill="#fff" opacity=".10"/>' +
+      [w.sel[0], w.sel[1]].map((m) => '<rect x="' + (m * W - 1.5).toFixed(1) + '" y="0" width="3" height="' + h + '" fill="#fff"/>').join('');
+    if (w.trim) svg += [w.trim[0], w.trim[1]].map((m) => '<rect x="' + (m * W - 2).toFixed(1) + '" y="0" width="4" height="' + h + '" fill="' + H.cfg.palette[2] + '"/>').join('');
+    return svg + '</svg>';
+  };
+
   const NAMES = { env: 'ENVELOPE', filt: 'FILTER', eq: 'EQ', samp: 'SAMPLE' };
   /* The picture row for a page's spans: each spans its knobs' columns. */
   H.vizRow = function (doc) {

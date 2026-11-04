@@ -45,7 +45,8 @@
         '<span class="n">' + (t + 1) + '</span><span class="c">' + esc(r.clip) + '</span>' +
         (r.soloed ? '<span class="b s">S</span>' : r.muted ? '<span class="b m">M</span>' : '') + '</div>';
     }).join('') + '</div>';
-    if (b.position) html += positionBar(b.position);
+    if (b.wave) html += '<div class="hud-wavebox sm">' + H.waveSvg(b.wave, 60) + '</div>';
+    else if (b.position) html += positionBar(b.position);
     return html + '</div>';
   });
   function positionBar(p) {
@@ -65,6 +66,15 @@
     const p = b.picture;
     return '<div class="hud-pic"><canvas class="hud-oled" width="128" height="64" data-oled="1"></canvas>' +
       (p.caption ? '<div class="cap">' + esc(p.caption) + '</div>' : '') + (p.sub ? '<div class="sub">' + esc(p.sub) + '</div>' : '') + '</div>';
+  });
+
+  /* wave — a sample editor: the readouts (Start · what the knob in hand does ·
+   * End, lit while touched) over the waveform, full width */
+  H.layout('wave', (d) => !!(d.body && d.body.wave && !d.body.knobs), (doc, b) => {
+    const ro = (pos) => (b.readouts || []).filter((r) => r.pos === pos).map((r) =>
+      '<span class="ro' + (r.on ? ' on' : '') + '">' + esc(sentence(r.text)) + '</span>').join('');
+    return '<div class="hud-ro"><span class="l">' + ro('left') + '</span><span class="m">' + ro('mid') + '</span><span class="r">' + ro('right') + '</span></div>' +
+      '<div class="hud-wavebox big">' + H.waveSvg(b.wave, 230) + '</div>';
   });
 
   /* perf — performance mode: the engaged mods as big pills (a just-tapped one
@@ -107,7 +117,7 @@
   /* kit — a page of knobs: one row of 8, with any span pictures above (the
    * knobs then shrink to sit under them) */
   H.layout('kit', (d) => !!(d.body && d.body.knobs), (doc, b) => {
-    const viz = H.vizRow(doc) + noteBoxRow(b), under = !!viz;
+    const viz = (b.wave ? '<div class="hud-wavebox">' + H.waveSvg(b.wave, 150) + '</div>' : '') + H.vizRow(doc) + noteBoxRow(b), under = !!viz;
     let html = viz + '<div class="hud-knobs">';
     for (let k = 0; k < 8; k++) html += H.cell(b.knobs[k], k, doc, { under });
     html += '</div>';

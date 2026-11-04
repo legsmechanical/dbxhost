@@ -84,6 +84,8 @@ export const DESCRIBE = {
     NoteBox:          (d, p) => { d.noteBox = { name: String(p.name || ''), sub: p.sub == null ? '' : String(p.sub), hi: !!p.hi }; },
     Mods:             (d, p) => { d.mods = { names: (p.names || []).map(String), popup: p.popup ? String(p.popup) : undefined }; },
     StepStrip:        (d, p) => { d.stepStrip = { len: p.len | 0, on: (p.on || []).join('') }; },
+    Wave:             (d, p) => { d.wave = p; },
+    Readout:          (d, p) => { (d.readouts = d.readouts || []).push({ text: String(p.text), on: p.on || undefined, pos: p.pos || 'left' }); },
     Message:          (d, p) => { d.message = { big: p.big || '', lines: (p.lines || []).map(String), wordmark: p.wordmark || undefined }; },
     Bars:             (d, p) => { d.bars = { values: p.values, len: p.len, touched: p.touched, mode: p.mode, min: p.min, max: p.max }; },
     Position:         (d, p) => { d.position = { pages: p.pages, view: p.view, play: p.play, step: p.step, len: p.len, left: p.left || undefined, right: p.right || undefined }; },
@@ -98,7 +100,7 @@ export const DESCRIBE = {
 const FAMILY = {
     KitCells: 'knobs', KitBankPage: 'knobs', KitList: 'list', KitStackedList: 'list', KitSectionPicker: 'list',
     KitPrompt: 'prompt', PromptLines: 'prompt', Buttons: 'prompt', Tracks: 'tracks', Bars: 'bars',
-    Mods: 'mods', Message: 'message', Picture: 'picture', KitBigValue: 'big', LevelCard: 'big', HudCard: 'card',
+    Mods: 'mods', Wave: 'wave', Message: 'message', Picture: 'picture', KitBigValue: 'big', LevelCard: 'big', HudCard: 'card',
 };
 export function describeLayer(calls) {
     if (!calls || !calls.length) return null;

@@ -50,5 +50,8 @@ export function hudFrameStart() {
 }
 export function hudFrameFinish() {
     setKitHudSink(null);
-    hudPublishFrame(hudFrameEnd());
+    /* ⚠ runs in drawUI's finally: describing the screen must never be able to
+     * break the screen itself, so a failure costs this frame's document only */
+    try { hudPublishFrame(hudFrameEnd()); }
+    catch (e) { if (typeof console !== 'undefined') console.log('hud: publish failed: ' + (e && e.message)); }
 }

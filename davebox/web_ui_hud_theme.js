@@ -149,6 +149,15 @@ body[data-view="screen"] .seqonly{display:none}
 .hud-strip i{background:#15181d;border-radius:2px}.hud-strip i.sq{background:#1b1f26}.hud-strip i.sb{background:#252a33}
 .hud-strip i.on{background:var(--h-acc)}
 .hud-stripn{display:flex;justify-content:space-around;width:820px;color:var(--h-faint);font-size:12px}
+.hud-wavebox{height:150px;border-radius:12px;background:#0f1114;margin-bottom:10px;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.hud-wavebox.sm{height:60px;margin:0}
+.hud-wave{width:100%;height:100%}
+.hud-wavemsg{color:var(--h-dim);font-size:16px}
+.hud-wavebox.big{height:230px}
+.hud-ro{display:flex;align-items:center;height:36px;margin-bottom:12px;font-variant-numeric:tabular-nums}
+.hud-ro .l,.hud-ro .m,.hud-ro .r{flex:1;display:flex;gap:10px}.hud-ro .m{justify-content:center}.hud-ro .r{justify-content:flex-end}
+.hud-ro .ro{font-size:18px;font-weight:600;color:var(--h-dim);padding:4px 10px;border-radius:8px}
+.hud-ro .ro.on{background:var(--h-acc);color:#0b0c0e}
 /* layout: list */
 .hud-list{display:flex;flex-direction:column;gap:3px;position:relative;padding-right:14px}
 .hud-row{display:flex;align-items:center;height:36px;padding:0 16px;border-radius:9px;font-size:19px;white-space:nowrap}

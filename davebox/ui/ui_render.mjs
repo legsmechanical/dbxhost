@@ -79,7 +79,7 @@ import { isSampledTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveC
 import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
 import { drawAudioAsk } from './ui_dialogs.mjs';
 import { drawAudioChooser } from './ui_audio_chooser.mjs';
-import { hudScreen, hudLayer } from './hud/hud_frame.mjs';
+import { hudScreen, hudLayer, hudFrameOpen } from './hud/hud_frame.mjs';
 import { hudFrameStart, hudFrameFinish } from './hud/hud_publish.mjs';
 
 /* ---- AUDIO: the waveform (ui_audio) ----
@@ -129,6 +129,8 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
         cols = wIn > 0 ? auWaveColumns(t, c, wIn, A, Math.min(B, fr)) : [];
     }
     if (cols) wIn = Math.min(w, cols.length);
+    /* the Screen view's copy never breaks the OLED's drawing */
+    if (hudFrameOpen()) { try { kitHudTap('Wave', hudWaveOf(t, c, i, A, B, by, cols, o)); } catch (e) { /* skip this frame's wave */ } }
     const mid = y + Math.floor(h / 2);
     const fx = (f) => x + Math.floor((f - A) / (B - A) * w);
     const inView = (px) => px >= x && px < x + w;
@@ -223,6 +225,27 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
 
 /* Track View at rest on an Audio track: the clip's sample — its waveform,
  * slice marks and playhead (v1 default, Josh 2026-10-27). */
+/* The waveform as the Screen view needs it: the amplitude columns (at 480
+ * when the file is not rotated, the OLED's own otherwise), and every mark as a
+ * fraction of the view — region, chops, the selected chop, trim handles.
+ * Built only while a frame is being recorded (it costs a peaks walk). */
+function hudWaveOf(t, c, i, A, B, by, cols, o) {
+    const fr = i.nframes | 0, span = Math.max(1, B - A), at = (f) => Math.round((f - A) / span * 10000) / 10000;
+    let amp = cols;
+    if (fr && !(by > 0) && B <= fr) { const hi = auWaveColumns(t, c, 480, A, B); if (hi) amp = hi; }
+    const rs = o.trim ? o.trim[0] : i.rstart, re = o.trim ? o.trim[1] : auEnd(i);
+    const out = {
+        amp: amp ? amp.map((v) => v == null ? -1 : Math.round(Math.min(1, v * (o.gain ? Math.pow(10, o.gain / 20) : 1)) * 1000) / 1000) : null,
+        region: [at(rs), at(re)],
+        msg: amp ? undefined : (i.state === 1 ? 'Loading' : i.name ? '' : 'No sample'),
+    };
+    if (!o.noMarks) {
+        out.marks = auMarks(t, c).map((m) => at(m[0]));
+        if (o.sel != null && o.sel >= 0) { const m = auMarks(t, c)[o.sel]; if (m) out.sel = [at(m[0]), at(m[1])]; }
+    }
+    if (o.trim) out.trim = [at(o.trim[0]), at(o.trim[1])];
+    return out;
+}
 function drawAudioTrackRest(t) {
     const c = auClipOf(t), i = auInfo(t, c);
     (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankHeaderName(t, S.activeBank), false, true);
@@ -231,6 +254,7 @@ function drawAudioTrackRest(t) {
     const head = auIsSlice(i) ? 'Slice ' + (auSelSlice(t) + 1) + '/' + i.n + '  '
         : 'Loop ' + (bpm ? (Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) + '  ' : ' ');
     ovwPrint(4, 9, head + auSampleName(t, c), 1);
+    kitHudTap('Info', { left: head.trim() + ' · ' + auSampleName(t, c) });
     drawInfoRow2();
     drawOverviewTracks(overviewHints());
     /* the sample where a drum track has its position bar, under the tracks
@@ -281,10 +305,11 @@ function drawAudioWaveEditor() {
     auWaveView(ed);
     const sel = auSelSlice(t);
     const rt = i.rate;
-    const right = (txt) => ovwPrint(124 - ovwWidth(txt), 10, txt, 1);
+    const right = (txt) => { kitHudTap('Readout', { text: txt, pos: 'right' }); ovwPrint(124 - ovwWidth(txt), 10, txt, 1); };
     /* The Start / End readouts light while K1 / K3 is touched or turning; K2
      * shows ZOOM + / - (plain ZOOM on a touch) between them (Josh, 2026-10-28). */
-    const lit = (x, txt, on) => {
+    const lit = (x, txt, on, pos) => {
+        kitHudTap('Readout', { text: txt, on: !!on, pos: pos || (x <= 8 ? 'left' : 'right') });
         if (on) fill_rect(x - 2, 9, ovwWidth(txt) + 3, 7, 1);
         ovwPrint(x, 10, txt, on ? 0 : 1);
     };
@@ -306,12 +331,13 @@ function drawAudioWaveEditor() {
     const mid = (txt) => {
         const x = 64 - Math.floor(ovwWidth(txt) / 2);
         fill_rect(x - 3, 8, ovwWidth(txt) + 5, 9, 0);
-        lit(x, txt, true);
+        lit(x, txt, true, 'mid');
     };
     if (ed.mode === 'lazy') {
         const lz = auLazyState();
         drawBankHeading('LAZY CHOP', false);
         ovwPrint(4, 10, lz.state === AU_LAZY_RUN ? 'TAP THE WHITE PAD' : 'TAP PAD 1 TO START', 1);
+        kitHudTap('Readout', { text: lz.state === AU_LAZY_RUN ? 'Tap the white pad' : 'Tap pad 1 to start', pos: 'left' });
         if (lz.state === AU_LAZY_RUN) right(lz.n + ' CHOP' + (lz.n === 1 ? '' : 'S'));
         drawAudioWave(t, c, 0, 20, 128, 30, { A: 0, B: i.nframes, sel: -1 });
         drawKitHintRow(MV_FOOTER_Y, [['pad', lz.state === AU_LAZY_ARMED ? 'play' : 'chop'], ['clk', 'done']]);   /* two fit; a click or Back ends it, keeping the chops */
@@ -335,6 +361,7 @@ function drawAudioWaveEditor() {
         drawBrackets(6, 18, 116, 34);
         const msg = i.state === 1 ? 'LOADING' : 'CLICK TO LOAD SAMPLE';
         ovwPrint(64 - Math.floor(ovwWidth(msg) / 2), 33, msg, 1);
+        kitHudTap('Message', { big: '', lines: [i.state === 1 ? 'Loading' : 'Click to load a sample'] });
         drawKitHintRow(MV_FOOTER_Y, [['clk', 'load'], ['back', 'exit']]);
         return;
     }
