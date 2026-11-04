@@ -18,6 +18,7 @@ const MODULES = {
 };
 os.__setReaddir({ [GEN_DIR]: Object.keys(MODULES) });
 let scans = 0;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = (p) => {
     const m = String(p).match(/sound_generators\/([^/]+)\/module\.json$/);
     if (!m || !MODULES[m[1]]) return '';

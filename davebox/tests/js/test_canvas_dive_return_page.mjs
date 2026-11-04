@@ -75,6 +75,7 @@ globalThis.__pageCalls = [];
 /* What the screen reader is told (shared/screen_reader.mjs -> the host). */
 const spoken = [];
 globalThis.host_send_screenreader = (t) => { spoken.push(String(t)); };
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 
 /* ---- host surface --------------------------------------------------------- */
 globalThis.host_system_cmd = () => 0;

@@ -42,6 +42,7 @@ const writes = [];                /* [key, value] in order */
 globalThis.shadow_get_param = (slot, k) => (k in answers ? answers[k] : '');
 globalThis.shadow_set_param = (slot, k, v) => { writes.push([k, String(v)]); };
 globalThis.host_module_get_param = () => '';
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_module_set_param = () => {};
 globalThis.print = () => {}; globalThis.clear_screen = () => {};
 globalThis.text_width = (t) => String(t).length * 6;

@@ -62,6 +62,7 @@ const GET = { 't4_au_dir': '/data/UserData/UserLibrary/Sets/x/dAVEBOx/samples',
               't4_au_all_0': '0 x 0 0 0 0' };
 const PREVIEWS = [];
 globalThis.host_preview_play = (p) => { PREVIEWS.push(String(p)); };
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_preview_stop = () => { PREVIEWS.push('stop'); };
 globalThis.host_system_cmd = () => 0; globalThis.host_read_file = () => '';
 globalThis.host_file_exists = () => false;

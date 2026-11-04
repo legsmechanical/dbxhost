@@ -39,6 +39,7 @@ globalThis.shadow_set_param = (slot, k, v) => {
 const FX_DIR = '/data/UserData/schwung/modules/audio_fx';
 const CATALOGUE = { chorus: 'Chorus', delay: 'Delay', reverb: 'Reverb' };
 os.__setReaddir({ [FX_DIR]: Object.keys(CATALOGUE) });
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = (p) => {
     const m = String(p).match(/audio_fx\/([^/]+)\/module\.json$/);
     return m && CATALOGUE[m[1]]

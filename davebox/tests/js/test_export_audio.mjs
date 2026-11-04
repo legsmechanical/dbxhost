@@ -24,6 +24,7 @@ for (const fn of ['host_system_cmd','host_file_exists','host_write_file',
                   'host_ext_midi_remap_set','host_ext_midi_remap_enable'])
     globalThis[fn] = () => (fn.indexOf('get') >= 0 || fn.indexOf('width') >= 0 ? '' : 0);
 globalThis.host_module_get_param = (k) => (/_export/.test(k) ? '0 0 0' : '');
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = () => '';
 const TAKES = '/data/UserData/daveboxSA/davebox-exports/takes';
 

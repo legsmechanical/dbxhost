@@ -35,6 +35,7 @@ globalThis.shadow_set_param = (slot, key, v) => { if (/voices/.test(key)) writes
 globalThis.shadow_get_params = () => ''; globalThis.shadow_set_params = () => true;
 globalThis.shadow_send_midi_to_dsp = (m) => { const a = Array.from(m); if ((a[0] & 0xF0) === 0x90 && a[2] > 0) played.push(a[1]); };
 globalThis.host_system_cmd = () => 0; globalThis.host_read_file = () => '';
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_file_exists = () => false; globalThis.host_write_file = () => true;
 globalThis.host_ensure_dir = () => true; globalThis.host_remove_dir = () => true;
 globalThis.host_module_set_param = () => {}; globalThis.host_module_get_param = () => '';

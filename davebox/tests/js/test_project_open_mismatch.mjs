@@ -45,6 +45,7 @@ const writes = [];                       /* every path any save aimed at */
  * that refuses saves closed, which is the entire content of ruling ② (Josh, 2026-09-20). */
 const events = [];
 globalThis.host_read_file = (p) => (files.has(String(p)) ? files.get(String(p)) : '');
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_file_exists = (p) => files.has(String(p));        /* stat(): empty exists */
 globalThis.host_write_file = (p, body) => { writes.push(String(p)); events.push('write ' + p); files.set(String(p), String(body)); return true; };
 globalThis.host_ensure_dir = (p) => { writes.push(String(p)); return true; };

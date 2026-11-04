@@ -164,6 +164,7 @@ function enterTrack(t) {
 const modSets = [];
 function dec(blob) { const out = []; if (!blob) return out; let nl = blob.indexOf('\n'); const n = parseInt(blob.slice(0, nl), 10) || 0; let p = nl + 1; for (let i = 0; i < n; i++) { const e = blob.indexOf('\n', p); const len = parseInt(blob.slice(p, e), 10) || 0; p = e + 1; out.push(blob.slice(p, p + len)); p += len; } return out; }
 globalThis.host_module_set_params = (blob) => { const it = dec(blob); for (let i = 0; i + 1 < it.length; i += 2) modSets.push(it[i] + '=' + it[i + 1]); return true; };
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.shadow_set_params = () => true; globalThis.shadow_get_params = () => '';
 globalThis.host_autosave_hold = () => {};
 const leds = [];

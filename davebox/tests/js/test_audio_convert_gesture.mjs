@@ -25,6 +25,7 @@ const DIR = '/data/UserData/daveboxSA/projects/x/dAVEBOx/samples';
 const GET = { 't4_au_dir': DIR, 'resample_bars_t4_c0': '1', 'resample_bars_t4_c2': '2', 't4_pad_mode': '3', 'resample_err': '0' };
 let SAMPLING = false;
 globalThis.host_preview_play = () => {}; globalThis.host_preview_stop = () => {};
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_system_cmd = () => 0; globalThis.host_read_file = () => '';
 globalThis.host_file_exists = () => false;
 globalThis.host_ensure_dir = () => true; globalThis.host_remove_dir = () => true;

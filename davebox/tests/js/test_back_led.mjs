@@ -27,6 +27,7 @@ globalThis.print = () => {};
 globalThis.text_width = (t) => Math.max(0, String(t).length * 6 - 1);
 
 globalThis.host_write_file = () => true;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_system_cmd = () => 0; globalThis.host_read_file = () => '';
 globalThis.host_file_exists = () => false;
 globalThis.host_ensure_dir = () => true; globalThis.host_remove_dir = () => true;

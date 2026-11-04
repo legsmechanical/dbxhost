@@ -22,6 +22,7 @@ import { readFileSync } from 'node:fs';
 let LIST = '';
 let SEQVALS = '';
 const asked = [];
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_module_get_param = (k) => {
     asked.push(k);
     if (k === 'pa_list') return LIST;

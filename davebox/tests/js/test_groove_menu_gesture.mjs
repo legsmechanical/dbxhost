@@ -33,6 +33,7 @@ const FILES = {};
 const DIRS = [];
 let swallowed = null;
 globalThis.host_read_file = (p) => FILES[p] ?? '';
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_file_exists = (p) => p in FILES;
 globalThis.host_ensure_dir = (p) => { DIRS.push(String(p)); return true; };
 globalThis.host_write_file = (p, body) => {

@@ -38,6 +38,7 @@ function eq(label, got, want) { (got === want) ? ok(label) : bad(label, got, wan
 const ledState = {}, ledChan = {};
 globalThis.move_midi_internal_send = (pkt) => { ledState[pkt[2]] = pkt[3]; ledChan[pkt[2]] = pkt[1] & 0x0F; return true; };
 globalThis.host_module_set_param = () => {};
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_module_get_param = () => '';
 globalThis.host_system_cmd = () => 0;
 globalThis.host_read_file = () => '';

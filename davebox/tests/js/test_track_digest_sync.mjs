@@ -99,6 +99,7 @@ function digestFor(t) {
 let reads = [];
 function installHost() {
     reads = [];
+    globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
     globalThis.host_module_get_param = (key) => {
         reads.push(key);
         const m = /^t(\d)_digest$/.exec(key);

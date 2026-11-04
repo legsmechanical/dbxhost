@@ -51,6 +51,7 @@ const CHAIN = {
 /* An FX 1 loaded too, so the map's FX 1 pad opens an editor. */
 CHAIN['fx1:module'] = 'nusaw'; CHAIN['fx1:ui_hierarchy'] = HIER; CHAIN['fx1:chain_params'] = CHAIN['synth:chain_params'];
 globalThis.host_system_cmd = () => 0; globalThis.host_read_file = () => '';
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_file_exists = () => false;
 let swallowed = null;
 globalThis.host_write_file = (path, body) => {

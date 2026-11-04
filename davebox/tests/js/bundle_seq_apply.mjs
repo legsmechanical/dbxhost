@@ -71,6 +71,7 @@ let LIST = '';
 let SEQVALS = '';
 let autoRef = null;
 globalThis.host_module_set_param = (k, v) => { modSets.push(k + '=' + v); };
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_module_set_params = (b) => true;
 globalThis.host_module_get_param = (k) => {
     if (k === 'pa_pending') { const r = staged; staged = ''; return r; }

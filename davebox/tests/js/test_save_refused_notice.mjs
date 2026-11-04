@@ -39,6 +39,7 @@ for (const fn of ['host_system_cmd', 'host_ensure_dir', 'host_remove_dir',
     'move_midi_external_send'])
     globalThis[fn] = () => 0;
 globalThis.host_write_file = (p, c) => { if (!writeOk) return false; written.push({ p, c }); return true; };
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = () => '';
 globalThis.host_file_exists = () => false;
 globalThis.shadow_get_param = () => '';

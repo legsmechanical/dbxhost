@@ -20,7 +20,7 @@ import { formatItemValue, isDivider } from '/data/UserData/schwung/shared/menu_i
  * renders on the kit; the host chassis is for dialogs. */
 import { drawKitHeader, drawKitList, fitHdr, hdrWidth, hdrPrint,
          MV_BRAND_HDR_H, drawKitStackedList, drawKitBackdropDim, drawKitCrumbs,
-         drawKitBigValue, drawKitHintRow, drawKitMarkHeader, MV_FOOTER_Y } from './ui_movy.mjs';
+         drawKitBigValue, drawKitHintRow, drawKitMarkHeader, MV_FOOTER_Y, kitHudTap } from './ui_movy.mjs';
 import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import { drawHeaderBattery, headerBatteryWidth } from './ui_battery.mjs';
 import {
@@ -73,6 +73,7 @@ const drawDlgBtn = drawDialogButton;
  * header and whatever the caller puts at `bottom` (its first button row). */
 function dlgHeader(title) { drawKitMarkHeader(title); }
 function dlgLines(lines, bottom) {
+    kitHudTap('PromptLines', { lines });
     /* WRAP BY MEASURED WIDTH, never by a guessed line break: the 4x5 face is
      * proportional, and a hand-broken line that fits one string overflows the
      * next one the same code draws (CHANGE TO DRUMS? lost "...ED." that way). */
@@ -97,6 +98,7 @@ function dlgLines(lines, bottom) {
 }
 
 function drawYesNoRow(sel, labels) {
+    kitHudTap('Buttons', { labels: labels ? [labels[0], labels[1]] : ['No', 'Yes'], sel: sel === 0 ? 1 : 0 });
     /* labels of their own (Overwrite / New): buttons sized to them — the fixed
      * 46px box clipped "Overwrite" at both ends (found on the device) */
     if (labels) drawDialogButtonRow(46, 13, [{ label: labels[0], sel: sel === 1 }, { label: labels[1], sel: sel === 0 }]);
@@ -105,7 +107,7 @@ function drawYesNoRow(sel, labels) {
 
 /* Single filled OK button (info dialogs), centered horizontally at a caller-set
  * baseline y. Consistent 30×12 geometry everywhere. */
-const drawOkButton = drawDialogOkButton;
+function drawOkButton(...a) { kitHudTap('Buttons', { labels: ['OK'], sel: 0 }); return drawDialogOkButton(...a); }
 
 /* Clamp a variable-length label to fit one OLED line at the 6px print font. */
 function truncLabel(label, maxChars) {

@@ -25,6 +25,7 @@ globalThis.shadow_set_param = (slot, k, v) => { ENGINE[k] = String(v); return 1;
 globalThis.shadow_send_midi_to_dsp = () => {};
 const SENT = [];
 globalThis.host_module_set_param = (k, v) => { SENT.push(k + '=' + v); };
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_module_set_params = () => true;
 globalThis.host_module_get_param = () => '';
 for (const fn of ['host_system_cmd', 'host_read_file', 'host_file_exists', 'host_write_file',

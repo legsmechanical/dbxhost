@@ -27,6 +27,7 @@ for (const fn of ['host_system_cmd', 'host_ensure_dir', 'host_remove_dir', 'shad
 globalThis.text_width = (t) => String(t).length * 6;
 /* the module's folder is found by its module.json id */
 globalThis.host_read_file = (p) => (/\/meterfx\/module\.json$/.test(String(p)) ? '{"id":"meterfx"}' : '');
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_file_exists = () => true;
 globalThis.host_write_file = () => true;
 const reads = [];

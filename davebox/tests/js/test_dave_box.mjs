@@ -21,6 +21,7 @@ const sets = [];
 let seenFileContent = null;      /* null = file absent */
 let prefFileContent = null;      /* the Daves switch file; null = absent = OFF */
 globalThis.host_system_cmd = () => 0;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = (p) => (p.indexOf('daves-seen') >= 0 && seenFileContent !== null) ? seenFileContent
                                  : (p.indexOf('daves-window') >= 0 && prefFileContent !== null) ? prefFileContent : '';
 globalThis.host_file_exists = (p) => (p.indexOf('daves-seen') >= 0 && seenFileContent !== null)

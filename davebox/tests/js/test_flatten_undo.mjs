@@ -23,6 +23,7 @@ function assert(c, m) { if (!c) throw new Error(m); }
 const sets = [];
 const GET = { 't4_pad_mode': '3' };
 globalThis.host_preview_play = () => {}; globalThis.host_preview_stop = () => {};
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_system_cmd = () => 0;
 /* the device's Parallel prefs: braids pinned off, so its pin (0) differs from
  * an empty slot's (1) */

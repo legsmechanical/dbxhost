@@ -55,6 +55,7 @@ function readDev(p) {
 
 /* ---- host surface --------------------------------------------------------- */
 globalThis.host_system_cmd = () => 0;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = (p) => readDev(p);                 /* null = fopen failed */
 globalThis.host_file_exists = (p) => readDev(p) !== null;
 /* ⚠⚠ TRIPWIRE: the entry-point wrappers swallow exceptions into seq8-jserr.log,

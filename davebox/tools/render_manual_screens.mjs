@@ -94,6 +94,11 @@ globalThis.draw_arc = (cx, cy, r, startDeg, sweepDeg, v) => {
 globalThis.draw_circle = (cx, cy, r, v) => globalThis.draw_arc(cx, cy, r, 0, 360, v);
 globalThis.flush_display = () => {};
 globalThis.host_flush_display = () => {};
+/* The Screen view (HUD_OUT=<dir>): play a connected viewer and keep each
+ * screen's published description beside its PNG — the browser's fixtures. */
+const HUD_OUT = process.env.HUD_OUT || '';
+let hudLast = null;
+globalThis.host_ui_publish = (json) => { if (json) hudLast = json; return !!HUD_OUT; };
 
 /* ── the engine, as a fixture ───────────────────────────────────────────────
  * ENGINE answers host_module_get_param (the dAVEBOx DSP); SLOT[n] answers
@@ -536,7 +541,7 @@ function screen(slug, section, title, caption, setup, opts = {}) {
         resetFb(); globalThis.clear_screen();
         R.refreshInstrAbbrev();
         R.drawUI();
-        shots.push({ slug, section, title, caption, fb: currentFb().slice() });
+        shots.push({ slug, section, title, caption, fb: currentFb().slice(), hud: HUD_OUT && hudLast ? JSON.parse(hudLast) : null });
         letGo();
     } catch (e) {
         try { letGo(); } catch (e2) { /* the screen already failed */ }
@@ -1307,6 +1312,18 @@ for (const s of ordered) {
     console.log(`${String(ink).padStart(5)} px  ${s.section.padEnd(40).slice(0, 40)}  ${s.slug}`);
 }
 writeFileSync(out + '/screens.json', JSON.stringify(json, null, 1));
+if (HUD_OUT) {
+    mkdirSync(HUD_OUT, { recursive: true });
+    const idx = [];
+    for (const s of ordered) {
+        if (!s.hud) { problems.push(s.slug + ': no Screen-view document was published'); continue; }
+        if (s.hud.where && s.hud.where.screen === 'unknown') problems.push(s.slug + ': screen id unknown (a dispatcher branch without hudScreen)');
+        writeFileSync(HUD_OUT + '/' + s.slug + '.json', JSON.stringify(s.hud));
+        idx.push({ slug: s.slug, title: s.title, screen: s.hud.where && s.hud.where.screen });
+    }
+    writeFileSync(HUD_OUT + '/index.json', JSON.stringify(idx, null, 1));
+    console.log('Screen-view documents: ' + idx.length + ' -> ' + HUD_OUT);
+}
 /* ⚠ A skipped screen is NAMED, and it makes the run fail: a count of what was
  * written says nothing about what was meant to be. */
 for (const f of failures) console.log('SKIPPED ' + f.slug + ': ' + f.error);

@@ -50,6 +50,7 @@ globalThis.shadow_get_param = () => '';
 globalThis.shadow_set_param = () => {};
 globalThis.shadow_send_midi_to_dsp = () => {};
 globalThis.host_write_file = () => true;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = () => '';
 globalThis.host_file_exists = () => false;
 globalThis.host_ensure_dir = () => true;

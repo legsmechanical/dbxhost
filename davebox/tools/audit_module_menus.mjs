@@ -31,6 +31,7 @@ globalThis.shadow_set_param = () => 0;
 globalThis.shadow_get_slots = () => [];
 globalThis.shadow_get_ui_slot = () => 0;
 globalThis.host_read_file = () => null;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.os = { readdir: () => [[], 0] };
 
 const HERE = dirname(fileURLToPath(import.meta.url));

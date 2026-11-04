@@ -26,6 +26,7 @@ for (const fn of ['host_write_file','host_flush_display','host_ensure_dir','host
                   'host_ext_midi_remap_set','host_ext_midi_remap_enable'])
     globalThis[fn] = () => (fn.indexOf('get') >= 0 || fn.indexOf('width') >= 0 ? '' : 0);
 globalThis.host_sampler_is_recording = () => 0;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = () => '';
 
 /* the fake engine */

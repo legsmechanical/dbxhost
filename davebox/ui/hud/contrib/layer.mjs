@@ -1,0 +1,92 @@
+/* layer.mjs — turn one recorded layer (the primitive calls of a frame's body,
+ * or of its overlay) into its description: header, knobs, list, prompt, …
+ *
+ * One DESCRIBER per primitive kind, each a tiny function that folds its call
+ * into the layer's description. Adding a primitive = adding one entry here;
+ * nothing else changes. The LAST call of a kind wins where a screen draws a
+ * thing twice (a bank page drawing its cells, then an overlay of them). */
+
+const MAX_OPTIONS = 64;
+const MAX_ROWS = 48;
+const r3 = (x) => Math.round(x * 1000) / 1000;   /* a fill needs no more, and the document stays small */
+
+/* A knob cell as the browser needs it — the descriptor's data fields only
+ * (ui_movy.mjs's cell descriptor), never its callbacks or animation state. */
+export function cellOut(c) {
+    if (!c) return null;
+    const o = { kind: c.kind || 'blank', label: c.label || '', text: c.text == null ? '' : String(c.text) };
+    if (c.name) o.name = c.name;
+    if (typeof c.norm === 'number') o.norm = r3(c.norm);
+    if (typeof c.signed === 'number') o.signed = r3(c.signed);
+    if (Array.isArray(c.options) && c.options.length <= MAX_OPTIONS) { o.options = c.options.map(String); o.sel = c.sel == null ? -1 : c.sel; }
+    if (c.auto) o.auto = c.auto;
+    if (c.lock) o.lock = true;
+    if (c.opens) o.opens = true;
+    if (c.sq) o.sq = c.sq;
+    if (c.ghost != null) o.ghost = c.ghost;
+    if (c.meta) o.meta = c.meta;
+    return o;
+}
+const span = (s) => s ? { start: s.start | 0, count: s.count == null ? null : s.count | 0 } : undefined;
+const rowOut = (r) => typeof r === 'string' ? { label: r } : r ? {
+    label: r.label == null ? '' : String(r.label),
+    value: r.value == null ? undefined : String(r.value),
+    qual: r.qual || undefined, mark: r.mark || undefined,
+    chevron: r.chevron ? true : undefined, editing: r.editing ? true : undefined, hdr: r.hdr ? true : undefined,
+} : { label: '' };
+const listOut = (rows, sel, kind) => ({
+    kind, total: rows ? rows.length : 0, sel: sel == null ? -1 : sel,
+    rows: (rows || []).slice(Math.max(0, (sel | 0) - MAX_ROWS / 2), Math.max(0, (sel | 0) - MAX_ROWS / 2) + MAX_ROWS).map(rowOut),
+    first: Math.max(0, (sel | 0) - MAX_ROWS / 2),
+});
+
+export const DESCRIBE = {
+    KitHeader:        (d, p) => { d.header = Object.assign(d.header || {}, { text: p.text, invert: p.invert || undefined }); },
+    KitMarkHeader:    (d, p) => { d.header = Object.assign(d.header || {}, { text: p.text }); },
+    KitBankHeader:    (d, p) => { d.header = Object.assign(d.header || {}, { text: p.name, glyph: p.glyph || undefined, right: p.right || undefined }); },
+    KitTouchedHeader: (d, p) => { d.header = Object.assign(d.header || {}, { touchedName: p.name }); },
+    KitHeaderParamPages: (d, p) => { d.header = Object.assign(d.header || {}, { text: p.left, right: p.right || undefined }); },
+    KitPageBar:       (d, p) => { d.page = { idx: p.idx, count: p.count, groups: p.groups || undefined }; },
+    KitCrumbs:        (d, p) => { d.crumbs = (p.parts || []).map(String); },
+    KitCells:         (d, p) => {
+        d.knobs = (p.cells || []).slice(0, 8).map(cellOut);
+        while (d.knobs.length < 8) d.knobs.push(null);
+        d.touched = p.touched == null ? -1 : p.touched;
+        const sp = {};
+        if (p.env) sp.env = span(p.env);
+        if (p.filt) sp.filt = span(p.filt);
+        if (p.eq) sp.eq = span(p.eq);
+        if (p.samp) sp.samp = span(p.samp);
+        if (Object.keys(sp).length) d.spans = sp;
+    },
+    KitBankPage:      (d, p) => { if (!d.knobs) DESCRIBE.KitCells(d, { cells: p.cells, touched: p.opts && p.opts.touched }); },
+    KitEnumOverlay:   (d, p) => { const c = p.cells && p.cells[p.touched]; if (c) d.overlay = { kind: 'enum', knob: p.touched, options: (c.options || []).map(String), sel: c.sel }; },
+    KitValueOverlay:  (d, p) => { const c = p.cells && p.cells[p.idx]; if (c) d.overlay = { kind: 'value', knob: p.idx, cell: cellOut(c) }; },
+    KitListOverlay:   (d, p) => { d.overlay = Object.assign({ kind: 'list' }, listOut((p.options || []).map(String), p.sel, 'list')); },
+    KitList:          (d, p) => { d.list = listOut(p.rows, p.sel, 'list'); },
+    KitStackedList:   (d, p) => { d.list = Object.assign(listOut(p.rows, p.sel, 'stacked'), { depth: p.depth }); },
+    KitSectionPicker: (d, p) => { d.list = listOut((p.sections || []).map((x) => typeof x === 'string' ? x : (x && (x.label || x.name)) || ''), p.active, 'sections'); },
+    KitBankMap:       (d, p) => { d.bankMap = { cols: p.cols, cur: p.cur, joins: p.joins || undefined }; },
+    KitPrompt:        (d, p) => { d.prompt = Object.assign(d.prompt || {}, { title: p.title, lines: (p.lines || []).map(String) }); if (p.hints) d.hints = p.hints.filter(Boolean); },
+    PromptLines:      (d, p) => { d.prompt = Object.assign(d.prompt || {}, { lines: (p.lines || []).filter((l) => l != null && l !== '').map(String) }); },
+    Buttons:          (d, p) => { d.prompt = Object.assign(d.prompt || {}, { buttons: p.labels.map(String), sel: p.sel }); },
+    KitHintRow:       (d, p) => { d.hints = (p.hints || []).filter(Boolean).map((h) => [String(h[0]), String(h[1] == null ? '' : h[1])]); },
+    KitBigValue:      (d, p) => { d.big = { text: String(p.num), unit: p.unit || undefined, prev: p.prev || undefined, next: p.next || undefined }; },
+    LevelCard:        (d, p) => { d.big = { text: String(p.text), frac: typeof p.frac === 'number' ? r3(p.frac) : undefined }; },
+    HudCard:          (d, p) => { d.card = { title: p.title, value: p.value == null ? '' : String(p.value) }; },
+    KitChip:          (d, p) => { (d.chips = d.chips || []).push({ label: String(p.label), on: !!p.on }); },
+};
+
+/* A layer's recorded calls → its description, or null when nothing of it was
+ * described. A kind with no describer is counted, so a primitive added to the
+ * kit without one shows up instead of vanishing. */
+export function describeLayer(calls) {
+    if (!calls || !calls.length) return null;
+    const d = {};
+    for (const [kind, p] of calls) {
+        const fn = DESCRIBE[kind];
+        if (fn) fn(d, p || {});
+        else (d.undescribed = d.undescribed || []).push(kind);
+    }
+    return Object.keys(d).length ? d : null;
+}

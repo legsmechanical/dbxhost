@@ -106,7 +106,7 @@ import {
     kitUseLayout,
     drawKitStackedList, drawKitBackdropDim, drawKitCrumbs, kitStackBox, drawBrackets,
     MV_BAR_Y,
-    hdrPrint, mvPrint, mvWidth, shapeSample, plotLine, hudCard, drawLevelCard, MV_ROW1_Y } from './ui_movy.mjs';
+    hdrPrint, mvPrint, mvWidth, shapeSample, plotLine, hudCard, drawLevelCard, MV_ROW1_Y, kitHudTap } from './ui_movy.mjs';
 import { bankCyclePos, bankCycleForMode } from './ui_pure.mjs';
 /* ⭐⭐ THE MODULE EDITOR IS THE HOST'S, AND NOW LITERALLY THE SAME FILE.
  *
@@ -178,6 +178,7 @@ const { enterParamPages, exitParamPages, tickParamPages, drawParamPages,
         paramPagesCachedValue, paramPagesLevelNameOf, paramPagesOverlayShown,
         paramPagesPageLabel, paramPagesSetDecorations, paramPagesDecorations } = PP;
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
+import { hudScreen } from './hud/hud_frame.mjs';
 /* ⚠⚠ THE CANONICAL SPECIFIER, AND IT IS LOAD-BEARING. The registry is the
  * one the grid reads only because both names normalise to the same module:
  * the binding reaches it from inside this same
@@ -13927,6 +13928,7 @@ function renderChainPatches() {
     if (S.patchConfirm) {
         drawKitHeader(S.patchConfirm.t === 'delete' ? 'DELETE?' : 'OVERWRITE?', false);
         centreText(24, String(S.patchConfirm.name || '').toUpperCase());
+        kitHudTap('Buttons', { labels: ['No', 'Yes'], sel: (S.patchConfirmIdx === 1) ? 1 : 0 });
         drawDialogYesNoRow(S.patchConfirmIdx === 1);
         return;
     }
@@ -13951,6 +13953,7 @@ function renderPresetList() {
         const p = S.userPresets[S.userIdx - 1];
         drawKitHeader('DELETE?', false);
         centreText(24, String(p ? p.name : '').toUpperCase());
+        kitHudTap('Buttons', { labels: ['No', 'Yes'], sel: (S.confirmIdx === 1) ? 1 : 0 });
         drawDialogYesNoRow(S.confirmIdx === 1);
         return;
     }
@@ -14003,6 +14006,7 @@ function renderMenu() {
          * the thing you need to check before saying yes. */
         drawKitHeader('OVERWRITE?', false);
         centreText(24, String(S.confirmItem.label || '').toUpperCase());
+        kitHudTap('Buttons', { labels: ['No', 'Yes'], sel: (S.confirmIdx === 1) ? 1 : 0 });
         drawDialogYesNoRow(S.confirmIdx === 1);
         return;
     }
@@ -14112,9 +14116,43 @@ function drawVolReadout() {
     drawLevelCard(trackLevelCardText(S.track, S.volLevel), faderGainToTravel(S.volLevel));
 }
 
+/* Stable names for the Screen view's screen ids (hud/hud_frame.mjs), one per view
+ * soundRender dispatches; a view missing here publishes as 'sound.view-<n>'. */
+const SOUND_VIEW_NAMES = {
+    [VIEW_PROMPT]: 'prompt',
+    [VIEW_CFGCARD]: 'config-card',
+    [VIEW_NOEDITOR]: 'no-editor',
+    [VIEW_MACROS]: 'macros',
+    [VIEW_BLOCKS]: 'blocks',
+    [VIEW_BROWSE]: 'browse',
+    [VIEW_PRESET_SRC]: 'preset-src',
+    [VIEW_PRESET_LIST]: 'preset-list',
+    [VIEW_PRESET_BAKED]: 'preset-baked',
+    [VIEW_MENU]: 'menu',
+    [VIEW_HELP]: 'help',
+    [VIEW_FILE]: 'file',
+    [VIEW_MODBUS]: 'mod-bus',
+    [VIEW_MODBUS_GROUP]: 'mod-bus-group',
+    [VIEW_MODBUS_VOICES]: 'mod-bus-voices',
+    [VIEW_MODBUS_CHAIN]: 'mod-bus-chain',
+    [VIEW_SLOTCFG]: 'slot-cfg',
+    [VIEW_KNOBS]: 'knobs',
+    [VIEW_KNOBLEGS]: 'knob-legs',
+    [VIEW_KNOB_TARGET]: 'knob-target',
+    [VIEW_KNOB_PARAM]: 'knob-param',
+    [VIEW_LFO]: 'lfo',
+    [VIEW_LFO_TARGET]: 'lfo-target',
+    [VIEW_LFO_PARAM]: 'lfo-param',
+    [VIEW_WAV]: 'wav-edit',
+    [VIEW_CANVAS]: 'canvas-edit',
+    [VIEW_CHAIN]: 'chain-screen',
+    [VIEW_ENUM]: 'enum-pick',
+    [VIEW_PATCHES]: 'chain-patches',
+    [VIEW_BUSES]: 'buses',
+};
 export function soundRender() {
     if (!S.active) return false;
-    if (isTextEntryActive()) { drawTextEntry(); return true; }
+    if (isTextEntryActive()) { hudScreen('text-entry'); drawTextEntry(); return true; }
     /* At the TOP LEVEL the screen keeps the clip banks' display law (Josh,
      * 2026-08-23): it shows while the jog is touched or the bank-display
      * window is open — the SAME flags the banks read — and otherwise stands
@@ -14151,6 +14189,7 @@ export function soundRender() {
             !(S.volShownUntil >= 0 && GS.clockMs <= S.volShownUntil) &&
             !bankCardShown())       /* + the jog-touch reveal (a render gate) */
         return false;
+    hudScreen('sound.' + (SOUND_VIEW_NAMES[S.view] || 'view-' + S.view));
     if (S.view === VIEW_PROMPT) renderPrompt();
     else if (S.view === VIEW_CFGCARD) renderConfigCard();
     else if (S.view === VIEW_NOEDITOR) renderNoEditor();
@@ -14189,6 +14228,7 @@ export function soundRender() {
      * to say so, inheriting the same false claim as PP_EDITOR's own note. The
      * grid is shipped; renderEdit catches what it will not draw. */
     else if (ppOn && drawParamPages()) {
+        hudScreen('sound.params');
         if (ppLaneLocked()) ppLaneFooter();
         else if (soundPageBarShown()) ppPageBarFooter();
     }

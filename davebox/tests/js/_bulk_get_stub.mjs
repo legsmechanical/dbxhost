@@ -9,6 +9,7 @@ function dec(blob) {
     for (let i = 0; i < n; i++) { const e = blob.indexOf('\n', p); const len = parseInt(blob.slice(p, e), 10) || 0; p = e + 1; out.push(blob.slice(p, p + len)); p += len; }
     return out;
 }
+globalThis.host_ui_publish = globalThis.host_ui_publish || (() => false);   /* the Screen view: nobody watching (unless the importer plays a viewer) */
 globalThis.host_module_get_params = (blob) => enc(dec(blob).map((k) => {
     const g = globalThis.host_module_get_param;
     const v = (typeof g === 'function') ? g(k) : null;

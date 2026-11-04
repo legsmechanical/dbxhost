@@ -24,6 +24,7 @@ let failStepsRead = false;
 const leds = {};                     /* note -> colour, NoteOn only */
 let jsErrors = '';
 globalThis.host_system_cmd = () => 0; globalThis.host_read_file = () => '';
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_file_exists = () => false;
 globalThis.host_write_file = (path, body) => { if (/jserr/.test(String(path))) jsErrors = String(body); return true; };
 globalThis.host_ensure_dir = () => true; globalThis.host_remove_dir = () => true;

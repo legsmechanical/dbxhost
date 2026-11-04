@@ -24,6 +24,7 @@ globalThis.shadow_get_param = (slot, k) => (typeof k === 'string' && k.indexOf('
 globalThis.shadow_set_param = () => 1;
 globalThis.shadow_send_midi_to_dsp = () => {};
 globalThis.host_module_set_param = () => {};
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_module_set_params = () => true;
 /* The engine: the render headers a test sets, and the note file it "wrote". */
 let HDR = {}, RENDER = '', ASKED = [];

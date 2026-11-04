@@ -31,6 +31,7 @@ function step(label, fn) {
 }
 
 globalThis.host_register_primary = () => true;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_open_service = () => true;
 globalThis.host_close_service = () => true;
 globalThis.move_midi_inject_to_move = () => {};

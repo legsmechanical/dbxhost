@@ -19,6 +19,7 @@ const T = 4;
 const dsp = { playing: '0', step: 0 };
 let px = [];
 globalThis.host_system_cmd = () => 0;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = (p) => files[p] ?? '';
 globalThis.host_file_exists = (p) => p in files;
 globalThis.host_write_file = (p, body) => { files[p] = String(body); return true; };

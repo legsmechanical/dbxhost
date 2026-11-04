@@ -19,6 +19,7 @@ const loaded = {};                       /* `${slot}:${comp}` -> module id */
 const files = {};                        /* path -> content */
 const slotWrites = [];                   /* {slot, key, val} for slot:* writes */
 globalThis.host_system_cmd = () => 0;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = (p) => (p in files ? files[p] : '');
 globalThis.host_file_exists = (p) => (p in files);
 globalThis.host_write_file = (p, c) => { files[p] = c; return true; };

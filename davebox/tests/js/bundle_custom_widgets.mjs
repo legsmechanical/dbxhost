@@ -91,6 +91,7 @@ const draws = [];
 let swallowed = null;
 Object.assign(globalThis, {
     host_system_cmd: () => 0,
+    host_ui_publish: () => false,   /* the Screen view: nobody watching */
     host_read_file: (p) => readDev(p),
     host_file_exists: (p) => readDev(p) !== null,
     host_write_file: (p, b) => { if (String(p).indexOf('jserr') >= 0 && swallowed === null) swallowed = String(b).slice(0, 900); return true; },

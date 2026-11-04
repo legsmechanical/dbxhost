@@ -39,6 +39,7 @@ for (const fn of ['host_write_file','host_read_file','host_file_exists','host_en
   'host_ext_midi_remap_enable','host_register_primary','flush_display','host_exit_module'])
   globalThis[fn] = () => 0;
 globalThis.host_module_get_param = () => '';
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = () => '';
 
 const { S } = await import('../ui/ui_state.mjs');

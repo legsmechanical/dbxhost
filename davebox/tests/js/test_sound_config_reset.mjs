@@ -46,6 +46,7 @@ for (const fn of ['host_write_file', 'host_read_file', 'host_file_exists', 'host
 /* The DSP-bound writes, where undo checkpoints live (queueSet -> moduleWrites). */
 let modWrites = [];
 globalThis.host_module_set_param = (key, val) => { modWrites.push(key + '=' + val); return 1; };
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 /* ⚠ The BULK setter is how automation's queued writes actually leave (queueSet ->
  * moduleWrites -> host_module_set_params). Leaving it undefined threw inside the
  * drain, and the symptom was "0 lane clears" — a missing stub reading as a

@@ -63,6 +63,7 @@ globalThis.__chain = []; globalThis.__backStays = 0; globalThis.__throwTick = fa
 
 /* ---- host surface --------------------------------------------------------- */
 globalThis.host_system_cmd = () => 0;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = (p) => (disk[String(p)] !== undefined ? disk[String(p)] : null);
 globalThis.host_file_exists = (p) => disk[String(p)] !== undefined;
 globalThis.host_write_file = () => true;

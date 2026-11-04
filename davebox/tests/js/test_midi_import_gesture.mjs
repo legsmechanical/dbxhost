@@ -32,6 +32,7 @@ for (const fn of ['host_system_cmd', 'host_ensure_dir', 'host_remove_dir', 'shad
 /* The device-wide prefs (ui_prefs): kept, so a reopen reads what a close wrote. */
 const PREFS = {};
 globalThis.host_read_file = (p) => PREFS[p] ?? '';
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_file_exists = (p) => p in PREFS;
 globalThis.host_write_file = (p, body) => { PREFS[p] = String(body); return true; };
 globalThis.shadow_get_param = () => '';

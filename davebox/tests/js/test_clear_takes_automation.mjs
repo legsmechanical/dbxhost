@@ -35,6 +35,7 @@ function assert(c, m) { if (!c) throw new Error(m); }
 
 let LIST = '';
 globalThis.host_system_cmd = () => 0; globalThis.host_read_file = () => '';
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_file_exists = () => false;
 let swallowed = null;
 globalThis.host_write_file = (path, body) => {
