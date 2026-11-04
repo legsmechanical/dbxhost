@@ -934,6 +934,9 @@ function drawSessionFaderRow(cells, mode) {
      * with no touch — injected MIDI, a knob not reporting capacitance — simply
      * shows no value; the page and its header still update, so nothing is lost. */
     const valueLive = lk >= 0 && S.knobTouched === lk;
+    kitHudTap('KitCells', { cells: cells.map((c, i) => !c || c.kind === 'blank' ? null
+        : c.kind === 'xbox' ? { kind: 'opaque', label: String(i + 1), name: 'Track ' + (i + 1), text: 'routed' }
+        : Object.assign({}, c, { kind: 'vbar', label: String(i + 1) })), touched: valueLive ? lk : -1 });
 
     for (let i = 0; i < cells.length && i < 8; i++) {
         const c = cells[i];
@@ -1164,6 +1167,7 @@ function drawRow2Labels() {
          * the jog scrolls, the rule matches the key/scale rule in track view.
          * The full label, not the short one — there is room beside the metro. */
         const lab = '< ' + ml + ' >';
+        kitHudTap('Info2', { right: ml, arrows: true });
         const lw = ovwWidth(lab), lx = 128 - 4 - lw;
         ovwPrint(lx, 17, lab, 1);
         fill_rect(lx, 23, lw, 1, 1);
@@ -1173,6 +1177,7 @@ function drawRow2Labels() {
     /* (not on Audio or Slicer: neither has velocity) */
     if (!S.sessionView && !isSampledTrack(S.activeTrack)) {
         const _vel = 'Vel:' + fmtVelOverride(S.trackVelOverride[S.activeTrack]);
+        kitHudTap('Info2', { right: 'Vel ' + fmtVelOverride(S.trackVelOverride[S.activeTrack]), follow: !!seqFollowOn() });
         const _vx = 128 - 4 - ovwWidth(_vel);
         ovwPrint(_vx, 17, _vel, 1);
         drawFollowGlyph(_vx - 5 - FOLLOW_GLYPH_W, 18);
@@ -1479,6 +1484,7 @@ function drawInfoRow2() {
 }
 
 function drawWordmark(mark) {
+    kitHudTap('KitHeader', { text: mark, wordmark: true });
     hdrPrint(Math.round((128 - hdrWidth(mark)) / 2), 3, mark, 0);
 }
 
@@ -1588,6 +1594,7 @@ export const OVW_TRACK_ROW_Y = 29, OVW_SCENE_Y = 41;
 function ovwPrint(x, y, str, color) { fontPrint4x5(x, y, String(str).toUpperCase(), color); }
 function ovwWidth(str) { return fontWidth4x5(String(str).toUpperCase()); }
 function drawOverviewTracks(hints) {
+    kitHudTap('Tracks', { rows: overviewTrackRows() });
     drawTrackRow(OVW_TRACK_ROW_Y);
     for (let t = 0; t < NUM_TRACKS; t++) {
         const cx = t * 16 + 5;
@@ -1617,6 +1624,19 @@ function drawOverviewTracks(hints) {
  *                 keeps the map shut; no SHFT pair — Josh)
  *   Shift held    JOG TRACK, in both views (Shift + pad's track pick was
  *                 retired 2026-10-08: the bank map's track pads do it). */
+/* The eight tracks as the overview's row shows them — for the Screen view's
+ * description (the OLED draws the same facts as digits, boxes and letters). */
+function overviewTrackRows() {
+    const rows = [];
+    for (let t = 0; t < NUM_TRACKS; t++) {
+        const ac = S.trackActiveClip[t];
+        const hasData = S.trackPadMode[t] === PAD_MODE_DRUM ? S.drumClipNonEmpty[t][ac] : S.clipNonEmpty[t][ac];
+        rows.push({ clip: SCENE_LETTERS[ac], has: !!hasData, active: t === S.activeTrack,
+                    playing: !!(S.trackClipPlaying[t] && hasData), queued: !!((S.trackWillRelaunch[t] || S.trackQueuedClip[t] >= 0) && hasData),
+                    muted: !!S.trackMuted[t], soloed: !!S.trackSoloed[t] });
+    }
+    return rows;
+}
 export function overviewHints() {
     if (devSnapOpen()) return devSnapHints();   /* the snapshot layer (item 18), either view */
     if (S.shiftHeld) return [['JOG', 'TRACK']];
@@ -1684,6 +1704,7 @@ export function drawLoadingScreen(name, stage) {
     }
     clear_screen();
     drawKitHeader('Loading');
+    kitHudTap('Message', { big: String(name || ''), lines: stage ? [String(stage)] : [] });
     const n = String(name || '').toUpperCase();
     if (n) {
         const w = bigWidth(n), wc = bigWidth(n, true);
@@ -1860,6 +1881,8 @@ export function drawPositionBarGeom(o) {
     const cs = o.playStep;
     const playing = cs >= lsBase && cs < lsBase + len;
     const playPage = playing ? Math.floor((cs - lsBase) / 16) : -1;
+    kitHudTap('Position', { pages: winPages, view: viewPage, play: playPage, step: playing ? cs - lsBase : -1,
+                            len, left: !!o.hasLeft, right: !!o.hasRight });
     const barY = o.barY != null ? o.barY : 50, barH = 4, segGap = 1;   /* 2026-09-05: the hint footer owns row 57 */
     /* `spanX`/`spanW`: the bar's pixel span (default x 4, 120 px). The
      * AUTOMATION ops graph puts it under a 126-px curve as the graph's bottom
@@ -2279,6 +2302,7 @@ function drawUIBody() {
         const _xn = 'dAVEBOx';
         hdrPrint(Math.max(0, Math.round((128 - hdrWidth(_xn)) / 2)), 26, _xn, 1);
         const _xl = S.exitKind === 'poweroff' ? 'Powering off...' : 'Exiting...';
+        kitHudTap('Message', { big: _xn, lines: [_xl], wordmark: true });
         mvPrint(Math.max(0, Math.round((128 - mvWidth(_xl)) / 2)), 40, _xl, 1);
         return;
     }
@@ -2596,6 +2620,7 @@ function drawUIBody() {
         const _pageSrc  = !!(S.copySrc && (S.copySrc.kind === 'page' || S.copySrc.kind === 'cut_page'));
         const _pageCut  = _pageSrc ? S.copySrc.kind === 'cut_page' : S.shiftHeld;
         function _drawLoopSteps(steps) {
+            kitHudTap('KitBigValue', { num: steps, unit: 'of 256 steps' });
             const _l4  = 'Steps: ' + steps + '/256';
             const _l4x = Math.floor((128 - _l4.length * 6) / 2);
             const _nvX = _l4x + 7 * 6;
@@ -2609,6 +2634,7 @@ function drawUIBody() {
         }
         function _drawLoopTitle(title) {
             if (_pageCopy) title = _pageCut ? 'Cut page' : 'Copy page';
+            kitHudTap('KitHeader', { text: title });
             print(Math.floor((128 - title.length * 6) / 2), 4, title, 1);
         }
         if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
@@ -2619,6 +2645,7 @@ function drawUIBody() {
                 const _l1 = (_pageCopy ? (_pageCut ? 'Cut page' : 'Copy page') : 'Clip length')
                     + '-' + (_allBlink ? 'ALL' : '   ') + ' lanes';
                 print(Math.floor((128 - _l1.length * 6) / 2), 4, _l1, 1);
+                kitHudTap('KitHeader', { text: (_pageCopy ? (_pageCut ? 'Cut page' : 'Copy page') : 'Clip length') + ' — all lanes' });
             } else {
                 _drawLoopTitle('Lane length');
             }
@@ -2666,6 +2693,8 @@ function drawUIBody() {
          * the rest of the screen accordingly"). The bars and step numbers sit
          * above it. */
         drawKitHintRow(MV_FOOTER_Y, _velPage ? [['BACK', 'OUT']] : [['SHFT', 'VELOCITY'], ['BACK', 'OUT']]);
+        kitHudTap('Bars', { values: Array.from(arr).slice(0, 8).map((v) => v | 0), len: _ll, touched: _tk,
+                            mode: _velPage ? 'vel' : 'pitch', min: _velPage ? 0 : -24, max: _velPage ? 128 : 24 });
         const _colW = 16, _barW = 10, _top = 14, _bot = 45, _numY = 48;
         const _cy = Math.floor((_top + _bot) / 2);
         if (_velPage) fill_rect(0, _bot + 1, 128, 1, 1);   /* velocity baseline */
@@ -2937,6 +2966,8 @@ function drawUIBody() {
         /* Bars end at 45 and the numbers sit at 48 (the Arp Steps page's
          * geometry), leaving the footer row free for the KNB+CLK hint. */
         const _colW = 16, _barW = 10, _top = 14, _bot = 45, _numY = 48;
+        kitHudTap('Bars', { values: Array.from({ length: 8 }, (_, k) => S.altMode ? (S.drumRepeatNudge[t][lane][k] | 0) : (S.drumRepeatVelScale[t][lane][k] | 0)),
+                            len: _gLen, touched: _tk, mode: S.altMode ? 'nudge' : 'vel', min: S.altMode ? -50 : 0, max: S.altMode ? 50 : 128 });
         if (S.altMode) {
             /* dotted center baseline for the bipolar nudge page */
             const _cy = Math.floor((_top + _bot) / 2);
@@ -3128,6 +3159,8 @@ function drawUIBody() {
         (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankName, false, true);
         /* info row at y=9, in the STOCK face (2026-09-05) — 2px clear of the header */
         ovwPrint(4, 9, bankGroup + '  Pad:' + name + oct + ' (' + note + ')', 1);
+        kitHudTap('Info', { left: bankGroup.replace(':', ' ') + ' · Pad ' + name + oct + ' (' + note + ')',
+                            tag: (S.drumLaneSolo[t] & (1 << lane)) ? 'SOLOED' : (S.drumLaneMute[t] & (1 << lane)) ? 'MUTED' : '' });
         /* The lane's mute/solo tag sits LEFT on the second info row: the
          * right end of that row is the velocity input (drawRow2Labels), and
          * a right-aligned tag drew straight over it. The left end has been
@@ -3167,6 +3200,7 @@ function drawUIBody() {
          * lowercase i and v for exactly this. */
         const _heldTxt = _held ? '[' + fitHeldLabel(_held, _heldR - _heldL - fontWidth4x5('[]') - 1, fontWidth4x5, noteNames(_heldPs, _flats)) + ']' : '';
         if (_heldTxt) fontPrint4x5(_heldR - fontWidth4x5(_heldTxt), 9, _heldTxt, 1);
+        kitHudTap('Info', { left: keyScl, underline: !!S.scaleAware, held: _held || '' });
         drawInfoRow2();
         drawOverviewTracks(overviewHints());
         drawPositionBar(S.activeTrack);

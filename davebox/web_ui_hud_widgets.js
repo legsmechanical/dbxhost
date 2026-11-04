@@ -45,6 +45,13 @@
   H.widget('opaque', (c) => '<div class="hud-w-opaque">' + esc(c.text || '—') + '</div>');
   H.widget('blank',  () => '');
 
+  /* The name under a cell: the full name when it fits a column, else the
+   * device's short label; an all-caps name reads as a sentence. */
+  function cellName(c) {
+    const n = c.name && c.name.length <= 13 ? c.name : (c.label || c.name || '');
+    return H.sentence ? H.sentence(n) : n;
+  }
+
   /* One knob cell: widget + value + name + adornments. */
   H.cell = function (c, k, doc, opt) {
     const b = doc.body || {}, touched = b.touched;
@@ -58,7 +65,7 @@
     return '<div class="hud-kn' + (isT ? ' tch' : '') + (dim ? ' dim' : '') + (c.lock ? ' lock' : '') + (ctx.under ? ' under' : '') + '">' +
       '<div class="w">' + H.safe('widget:' + kind, H.widgets.get(kind), c, k, ctx) + '</div>' +
       (showVal ? '<div class="v"' + (isT ? ' style="color:' + H.knobColor(k) + '"' : '') + '>' + esc(c.text) + '</div>' : '') +
-      '<div class="l">' + dot + esc(c.name && c.name.length <= 16 ? c.name : (c.label || c.name || '')) + '</div>' +
+      '<div class="l">' + dot + esc(cellName(c)) + '</div>' +
       '<div class="sub">' + adorn.join('') + '</div></div>';
   };
 });

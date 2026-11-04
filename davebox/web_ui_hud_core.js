@@ -85,8 +85,33 @@
     const fade = sid !== lastScreen; lastScreen = sid;
     stage.innerHTML = '<div class="hud-screen' + (fade ? ' hud-fade' : '') + (HUD.alive ? '' : ' hud-stale') + '" data-screen="' + HUD.esc(sid) + '" style="--fade:' + HUD.cfg.motion.screenFadeMs + 'ms">' +
       regions + ov + (HUD.alive ? '' : '<div class="hud-stalemsg">dAVEBOx is not running</div>') + '</div>';
+    drawOled();
   }
   HUD.render = render;   /* tests */
+
+  /* The OLED's own frame, for layouts that draw the device's pixels (a
+   * picture screen, a module's own widget). `frame` = 1024 bytes in either the
+   * stream's page format (SSD1306: byte = 8 vertical pixels) or 'rows'
+   * (row-major, MSB = leftmost) as the offline fixtures carry it. */
+  HUD.oled = null;
+  HUD.setOled = function (bytes, fmt) { HUD.oled = { bytes, fmt: fmt || 'pages' }; drawOled(); };
+  function oledPixel(o, x, y) {
+    return o.fmt === 'rows' ? (o.bytes[(y * 128 + x) >> 3] >> (7 - (x & 7))) & 1
+                            : (o.bytes[(y >> 3) * 128 + x] >> (y & 7)) & 1;
+  }
+  function drawOled() {
+    if (!stage || !HUD.oled) return;
+    stage.querySelectorAll('canvas[data-oled]').forEach((cv) => {
+      const g = cv.getContext && cv.getContext('2d'); if (!g || !g.createImageData) return;
+      const img = g.createImageData(128, 64), acc = [77, 163, 255];
+      for (let y = 0; y < 64; y++) for (let x = 0; x < 128; x++) {
+        const on = oledPixel(HUD.oled, x, y), i = (y * 128 + x) * 4;
+        img.data[i] = on ? acc[0] : 8; img.data[i + 1] = on ? acc[1] : 9; img.data[i + 2] = on ? acc[2] : 11; img.data[i + 3] = 255;
+      }
+      g.putImageData(img, 0, 0);
+    });
+  }
+  HUD.drawOled = drawOled;
 
   /* Run what the other files queued before this one loaded, then run each
    * later registration as it arrives. Settings (web_ui_hud_config.js) first,

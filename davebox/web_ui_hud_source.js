@@ -33,6 +33,10 @@
     es = new EventSource('/stream-auto?v=2');
     es.addEventListener('ui', (e) => { try { H.setDoc(JSON.parse(e.data)); } catch (err) { /* a bad document is skipped */ } });
     es.addEventListener('uistate', (e) => { try { H.setAlive(!!JSON.parse(e.data).alive); } catch (err) { /* skip */ } });
+    /* the OLED frame (the stream's default event): kept for picture screens */
+    es.onmessage = (e) => { try { const f = JSON.parse(e.data);
+      if (f && f.data && f.width === 128) { const bin = atob(f.data), b = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i); H.setOled(b, 'pages'); } } catch (err) { /* skip */ } };
   }
   function stopLive() { if (es) { es.close(); es = null; } }
 
@@ -63,7 +67,10 @@
   }
   function showFixture(i) {
     fxIdx = i; if (picker) picker.value = String(i);
-    H.doc = null; H.setDoc(fixtures[i].doc); H.setAlive(true);
+    const d = fixtures[i].doc;
+    if (d.oled && d.oled.data) { const bin = atob(d.oled.data), b = new Uint8Array(bin.length);
+      for (let k = 0; k < bin.length; k++) b[k] = bin.charCodeAt(k); H.oled = { bytes: b, fmt: d.oled.fmt }; }
+    H.doc = null; H.setDoc(d); H.setAlive(true);
   }
   H.showFixture = (i) => showFixture(i);   /* smokes */
 

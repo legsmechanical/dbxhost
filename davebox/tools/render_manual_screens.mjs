@@ -541,7 +541,9 @@ function screen(slug, section, title, caption, setup, opts = {}) {
         resetFb(); globalThis.clear_screen();
         R.refreshInstrAbbrev();
         R.drawUI();
-        shots.push({ slug, section, title, caption, fb: currentFb().slice(), hud: HUD_OUT && hudLast ? JSON.parse(hudLast) : null });
+        const _hud = HUD_OUT && hudLast ? JSON.parse(hudLast) : null;
+        if (_hud) _hud.oled = { fmt: 'rows', data: pack(currentFb()) };   /* the preview's stand-in for the live frame */
+        shots.push({ slug, section, title, caption, fb: currentFb().slice(), hud: _hud });
         letGo();
     } catch (e) {
         try { letGo(); } catch (e2) { /* the screen already failed */ }

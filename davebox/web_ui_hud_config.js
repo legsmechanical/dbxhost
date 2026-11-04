@@ -22,6 +22,11 @@
   /* Lists show this many rows (the OLED shows ~5). */
   listRows: 9,
 
+  /* The device's hint keys, spelled out (anything not listed: capitalised). */
+  hintWords: { HLD: 'Hold', TCH: 'Touch', SHFT: 'Shift', CLK: 'Click', JOG: 'Jog', KNB: 'Knob', STEP: 'Step',
+               BACK: 'Back', REC: 'Rec', DEL: 'Delete', SEL: 'Select', PAD: 'Pad', PADS: 'Pads', LOOP: 'Loop',
+               COPY: 'Copy', MUTE: 'Mute', TRK: 'Track', BNK: 'Bank', PG: 'Page', TURN: 'Turn' },
+
   /* Option words either side of the current one, under a touched enum knob. */
   enumNeighbours: 1,
 

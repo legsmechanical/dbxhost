@@ -41,7 +41,7 @@ const listOut = (rows, sel, kind) => ({
 });
 
 export const DESCRIBE = {
-    KitHeader:        (d, p) => { d.header = Object.assign(d.header || {}, { text: p.text, invert: p.invert || undefined }); },
+    KitHeader:        (d, p) => { d.header = Object.assign(d.header || {}, { text: p.text, invert: p.invert || undefined, wordmark: p.wordmark || undefined }); },
     KitMarkHeader:    (d, p) => { d.header = Object.assign(d.header || {}, { text: p.text }); },
     KitBankHeader:    (d, p) => { d.header = Object.assign(d.header || {}, { text: p.name, glyph: p.glyph || undefined, right: p.right || undefined }); },
     KitTouchedHeader: (d, p) => { d.header = Object.assign(d.header || {}, { touchedName: p.name }); },
@@ -75,6 +75,14 @@ export const DESCRIBE = {
     LevelCard:        (d, p) => { d.big = { text: String(p.text), frac: typeof p.frac === 'number' ? r3(p.frac) : undefined }; },
     HudCard:          (d, p) => { d.card = { title: p.title, value: p.value == null ? '' : String(p.value) }; },
     KitChip:          (d, p) => { (d.chips = d.chips || []).push({ label: String(p.label), on: !!p.on }); },
+    /* the overview family's hand-drawn parts (ui_render.mjs) */
+    Info:             (d, p) => { d.info = Object.assign(d.info || {}, { left: p.left || '', underline: p.underline || undefined, held: p.held || undefined, tag: p.tag || undefined }); },
+    Info2:            (d, p) => { d.info = Object.assign(d.info || {}, { right: p.right || '', arrows: p.arrows || undefined, follow: p.follow || undefined }); },
+    Tracks:           (d, p) => { d.tracks = p.rows; },
+    Picture:          (d, p) => { d.picture = { kind: p.kind || 'image', caption: p.caption || undefined, sub: p.sub || undefined }; },
+    Message:          (d, p) => { d.message = { big: p.big || '', lines: (p.lines || []).map(String), wordmark: p.wordmark || undefined }; },
+    Bars:             (d, p) => { d.bars = { values: p.values, len: p.len, touched: p.touched, mode: p.mode, min: p.min, max: p.max }; },
+    Position:         (d, p) => { d.position = { pages: p.pages, view: p.view, play: p.play, step: p.step, len: p.len, left: p.left || undefined, right: p.right || undefined }; },
 };
 
 /* A layer's recorded calls → its description, or null when nothing of it was

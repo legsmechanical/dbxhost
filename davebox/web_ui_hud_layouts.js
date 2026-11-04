@@ -28,6 +28,70 @@
   }
   H.sentence = sentence;
 
+  /* overview — the Track / Session home screen: the info row (key and scale,
+   * a held chord, the right-hand label), the eight tracks as tiles in their
+   * colours with their clip and state, and the clip's position bar */
+  H.layout('overview', (d) => !!(d.body && d.body.tracks), (doc, b) => {
+    const inf = b.info || {};
+    let html = '<div class="hud-ovw">';
+    html += '<div class="hud-ovw-info"><span class="k' + (inf.underline ? ' u' : '') + '">' + esc(inf.left || '') + '</span>' +
+      (inf.held ? '<span class="held">' + esc(inf.held) + '</span>' : '') +
+      (inf.tag ? '<span class="tag">' + esc(inf.tag) + '</span>' : '') +
+      (inf.right ? '<span class="r">' + (inf.follow ? '<span class="fol">▶|</span>' : '') + (inf.arrows ? '‹ ' : '') + esc(inf.right) + (inf.arrows ? ' ›' : '') + '</span>' : '') + '</div>';
+    html += '<div class="hud-ovw-tracks">' + b.tracks.map((r, t) => {
+      const col = trackColor(t);
+      const st = r.muted ? ' mute' : r.playing ? ' play' : r.queued ? ' q' : r.has ? '' : ' empty';
+      return '<div class="hud-tile' + st + (r.active ? ' cur' : '') + '" style="--c:' + col + '">' +
+        '<span class="n">' + (t + 1) + '</span><span class="c">' + esc(r.clip) + '</span>' +
+        (r.soloed ? '<span class="b s">S</span>' : r.muted ? '<span class="b m">M</span>' : '') + '</div>';
+    }).join('') + '</div>';
+    if (b.position) html += positionBar(b.position);
+    return html + '</div>';
+  });
+  function positionBar(p) {
+    let segs = '';
+    for (let i = 0; i < p.pages; i++)
+      segs += '<span class="seg' + (i === p.view ? ' view' : '') + (i === p.play ? ' play' : '') + '">' +
+        (i === p.play && p.step >= 0 ? '<i style="left:' + (((p.step % 16) + 0.5) / 16 * 100).toFixed(1) + '%"></i>' : '') + '</span>';
+    return '<div class="hud-pos">' + (p.left ? '<span class="more">‹</span>' : '') + '<div class="segs">' + segs + '</div>' +
+      (p.right ? '<span class="more">›</span>' : '') + '<span class="len">' + p.len + ' steps</span></div>';
+  }
+
+  /* picture — a screen whose content IS a picture (the Daves): the device's
+   * own frame, drawn crisp at full size in the accent colour, with its caption.
+   * The frame is the live OLED one from the same stream (or, offline, the one
+   * recorded with the fixture). */
+  H.layout('picture', (d) => !!(d.body && d.body.picture), (doc, b) => {
+    const p = b.picture;
+    return '<div class="hud-pic"><canvas class="hud-oled" width="128" height="64" data-oled="1"></canvas>' +
+      (p.caption ? '<div class="cap">' + esc(p.caption) + '</div>' : '') + (p.sub ? '<div class="sub">' + esc(p.sub) + '</div>' : '') + '</div>';
+  });
+
+  /* message — loading, exiting: a big line and a small one */
+  H.layout('message', (d) => !!(d.body && d.body.message), (doc, b) => {
+    const m = b.message;
+    return '<div class="hud-bigv"><div class="n" style="font-size:' + (m.big.length > 12 ? 48 : 72) + 'px">' + esc(m.wordmark ? m.big : sentence(m.big)) + '</div>' +
+      m.lines.map((l) => '<div class="u">' + esc(sentence(l)) + '</div>').join('') + '</div>';
+  });
+
+  /* bars — the per-step graphs (arp step pitch / velocity, repeat velocity /
+   * nudge): eight columns over the eight knobs, the touched one lit */
+  H.layout('bars', (d) => !!(d.body && d.body.bars), (doc, b) => {
+    const g = b.bars, span = (g.max - g.min) || 1, bip = g.min < 0;
+    let html = '<div class="hud-bars' + (bip ? ' bip' : '') + '">';
+    for (let k = 0; k < 8; k++) {
+      const v = g.values[k] | 0, off = k >= g.len, col = H.knobColor(k);
+      const frac = Math.max(0, Math.min(1, (v - (bip ? 0 : g.min)) / (bip ? span / 2 : span)));
+      const thru = g.mode === 'vel' && v > 127;
+      const label = off ? '' : g.mode === 'vel' ? (v === 0 ? 'Off' : thru ? 'Thru' : String(v)) : (v > 0 ? '+' : '') + v;
+      const h = Math.round(Math.abs(bip ? v / (span / 2) : frac) * 100);
+      html += '<div class="col' + (k === g.touched ? ' tch' : '') + (off ? ' off' : '') + '">' +
+        '<div class="well">' + (off ? '' : '<i class="' + (bip ? (v >= 0 ? 'up' : 'dn') : '') + (thru ? ' thru' : '') + '" style="' + (thru ? '' : 'height:' + Math.max(v === 0 ? 0 : 3, bip ? h / 2 : h) + '%;') + 'background:' + col + '"></i>') + '</div>' +
+        '<div class="v"' + (k === g.touched ? ' style="color:' + col + '"' : '') + '>' + esc(label) + '</div><div class="l">' + (k + 1) + '</div></div>';
+    }
+    return html + '</div>';
+  });
+
   /* kit — a page of knobs: one row of 8, with any span pictures above (the
    * knobs then shrink to sit under them) */
   H.layout('kit', (d) => !!(d.body && d.body.knobs), (doc, b) => {

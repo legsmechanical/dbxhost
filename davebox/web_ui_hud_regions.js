@@ -46,7 +46,8 @@
     const fact = H.safe('fact', factFor, doc);
     return '<div class="hud-hints">' + words + (fact ? '<span class="ctx">' + esc(fact) + '</span>' : '') + '</div>';
   });
-  const cap = (s) => { s = String(s || ''); return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase(); };
+  const cap = (s) => { s = String(s || ''); const w = H.cfg.hintWords && H.cfg.hintWords[s.toUpperCase()];
+    return w || s.charAt(0).toUpperCase() + s.slice(1).toLowerCase(); };
   /* One fact for the hint line's right side: the touched knob's scope, else how
    * many knobs on this page are set. */
   function factFor(doc) {

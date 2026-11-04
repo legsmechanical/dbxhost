@@ -18,7 +18,7 @@
 
 import { S } from './ui_state.mjs';
 import { SPLASH_FRAMES, SPLASH_COUNT, DAVES, pickSplashIdx } from './ui_splash.mjs';
-import { hdrPrint, hdrWidth, mvPrint, mvWidth } from './ui_movy.mjs';
+import { hdrPrint, hdrWidth, mvPrint, mvWidth, kitHudTap } from './ui_movy.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 import { forceRedraw } from './ui_leds.mjs';
 
@@ -291,6 +291,7 @@ export function loadDaveTick() {
  * It is the frame the host keeps on screen while Move loads the set, so it is
  * drawn still, the whole frame from the top. */
 export function drawDaveLoading(idx) {
+    kitHudTap('Picture', { kind: 'dave' });
     clear_screen();
     blitFrameRows(idx, 0, 0, 64);
 }
@@ -305,6 +306,7 @@ export function drawDaveBox() {
     /* The footer (mock variant D): cleared 18px band, name in the 6x6 header
      * caps, meta line in the small movy face beneath. */
     const name = daveBoxName(), meta = daveBoxMeta();
+    kitHudTap('Picture', { kind: 'dave', caption: name, sub: meta });
     fill_rect(0, 64 - DAVE_FOOTER_H, 128, DAVE_FOOTER_H, 0);
     hdrPrint(Math.max(0, Math.floor((128 - hdrWidth(name)) / 2)), 48, name, 1);
     mvPrint(Math.max(0, Math.floor((128 - mvWidth(meta)) / 2)), 57, meta, 1);
