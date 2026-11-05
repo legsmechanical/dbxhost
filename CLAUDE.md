@@ -244,6 +244,19 @@ the surface" before reaching for it** — it carries the launch/teardown command
 **OTLP span tracing** (off by default): `touch /data/UserData/schwung/otlp_trace_on`; see
 `docs/tracing.md`.
 
+### ⭑ Verify on the real surface, not a shortcut
+
+A feature is not done until it has run on the device through the REAL UI. The green-suite warning
+above is the same lesson from the other side.
+
+- **Drive the real UI through the testd harness.** Never ad-hoc shared-memory scripts or testd-set
+  values that bypass page drawing or UI dirty-marking — they pass while the screen never updates.
+- **The mirror provides audio and pad-LED state.** Use it to verify sound and LEDs; never claim the
+  harness cannot hear audio or read LEDs.
+- **Before chasing a `Loading...` delay or a stale behaviour, confirm no old or scaffold build is
+  still running on the device** — the deploy may have looked like a no-op (see Build / Deploy).
+- **Use the current host alias for the Move, never a cached or stale one.**
+
 ## 🔁 Mutation testing: `tools/mutate.sh`, never a bare revert
 
 ```sh
@@ -340,7 +353,16 @@ usage and the pruning rules: [`RATIONALE.md`](RATIONALE.md).
    and the manual for new/changed behaviour
 5. Update `help.json` in modified tool modules
 6. `git tag v0.X.0 && git push --tags`
-7. `gh release edit` with concise bullets
+7. `gh release edit` with concise bullets — release notes live on the GitHub release page, **not** the
+   README
+8. Clean **catalog** install of the new version on the Move, AND test the **update path from the
+   previous version** (e.g. 1.0.0 → 1.1.0) on the device — not just a fresh install
+
+Guardrails:
+- The changelog must not mention unreleased modules (e.g. Hatchet/Plank until they ship).
+- The manual links only to canonical tutorials; version-specific videos go in release notes or
+  announcements, never the manual.
+- Do not open PRs (upstream or catalog) until the user confirms.
 
 ## Dependencies
 
