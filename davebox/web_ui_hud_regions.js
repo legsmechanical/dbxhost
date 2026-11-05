@@ -39,14 +39,6 @@
     return fmt(meta.min) + ' – ' + fmt(meta.max) + (cell && /%$/.test(cell.text || '') ? ' %' : '');
   }
 
-  /* context — the per-mode band (HUD.cfg.contextBands): nothing when the
-   * screen sends no context */
-  H.region('context', (doc) => {
-    if (!doc.context) return '';
-    const parts = H.cfg.contextBands.map((n) => H.safe('band:' + n, H.bands.get(n), doc.context, doc)).filter(Boolean);
-    return parts.length ? '<div class="hud-context">' + parts.join('') + '</div>' : '';
-  });
-
   /* hints — the device's footer pairs as key chips; the right side carries one fact */
   H.region('hints', (doc) => {
     const b = doc.body || {}, hints = (b.prompt ? null : b.hints) || [];
@@ -78,26 +70,5 @@
     const title = o.header && (o.header.text || o.header.touchedName);
     return '<div class="hud-ovl"><div class="card">' + (title ? '<div class="t">' + esc(title) + '</div>' : '') +
       (lay ? H.safe('overlay:' + lay.name, lay.fn, sub, o) : '') + '</div></div>';
-  });
-
-  /* band: banks — the track's banks as its bank map groups them, the current one lit */
-  H.band('banks', (ctx) => {
-    if (!ctx.banks || !ctx.banks.length) return '';
-    return '<div class="hud-banks">' + ctx.banks.map((g) => '<span class="grp">' + (H.cfg.bankGroupLabels ? '<span class="gl">' + esc(g.label || '') + '</span>' : '') +
-      g.items.map((it) => '<span class="bk' + (it.cur ? ' cur' : '') + '">' + esc(H.sentence ? H.sentence(it.name) : it.name) + '</span>').join('') + '</span>').join('') + '</div>';
-  });
-
-  /* band: steps — the visible page of the clip: steps with notes, the playing
-   * one, the held one, beats marked; the page out of how many */
-  H.band('steps', (ctx) => {
-    const st = ctx.steps; if (!st) return '';
-    let cells = '';
-    for (let i = 0; i < 16; i++) {
-      const c = st.on.charAt(i);
-      cells += '<i class="' + (c === '1' ? 'on' : c === '-' ? 'out' : '') + (i % 4 === 0 ? ' bt' : '') + (i === st.play ? ' pl' : '') + (i === st.held ? ' hd' : '') + '"></i>';
-    }
-    let dots = '';
-    if (st.pages > 1) for (let p = 0; p < st.pages; p++) dots += '<b class="' + (p === st.page ? 'on' : '') + '"></b>';
-    return '<div class="hud-steps"><div class="cells">' + cells + '</div>' + (dots ? '<div class="pg">' + dots + '</div>' : '') + '</div>';
   });
 });

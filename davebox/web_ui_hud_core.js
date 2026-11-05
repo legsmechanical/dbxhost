@@ -36,8 +36,6 @@
     alive: true,          /* the device UI is publishing */
     cfg: null,            /* web_ui_hud_config.js */
     region(name, fn) { this.regions.set(name, fn); },
-    bands: new Map(),
-    band(name, fn) { this.bands.set(name, fn); },
     layout(name, match, fn) { this.layouts.push({ name, match, fn }); },
     widget(kind, fn) { this.widgets.set(kind, fn); },
     adorn(name, fn) { this.adorns.set(name, fn); },
