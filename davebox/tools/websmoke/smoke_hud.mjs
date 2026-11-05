@@ -84,8 +84,10 @@ el = render('quit-confirm');
 ok('a confirm: the question as a sentence, two buttons, one selected', /Quit dAVEBOx\?/.test(el.querySelector('.hud-prompt .q').textContent) &&
    el.querySelectorAll('.hud-btn').length === 2 && el.querySelectorAll('.hud-btn.sel').length === 1, el.querySelector('.hud-prompt') && el.querySelector('.hud-prompt').textContent);
 el = render('menu-project-settings');
-ok('a menu: one column, twice the OLED\'s rows, the selection lit, a scroll position', el.querySelectorAll('.hud-row:not(.gap)').length >= 8 &&
+ok('a menu: one column, more than the OLED\'s rows, the selection lit, a scroll position', el.querySelectorAll('.hud-row:not(.gap)').length >= 7 &&
    !el.querySelector('.hud-list.cols') && !!el.querySelector('.hud-row.sel') && !!el.querySelector('.hud-scroll'), el.querySelectorAll('.hud-row:not(.gap)').length);
+ok('...its dividers drawn as rules, never at the window\'s edge', el.querySelectorAll('.hud-row.div').length >= 2 &&
+   !el.querySelector('.hud-list > .hud-row:first-child.div') && !el.querySelector('.hud-list > .hud-row.div + .hud-scroll'));
 el = render('session-mixer-pan');
 ok('the session mixer: eight bipolar dials', el.querySelectorAll('.hud-knobs .hud-w-svg').length === 8);
 

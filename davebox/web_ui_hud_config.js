@@ -19,9 +19,9 @@
   /* The stage: a 2:1 screen (the OLED's own aspect), scaled to fit. */
   stage: { w: 960, h: 480 },
 
-  /* Lists fill the screen in one column (the OLED shows ~5); a blank
-   * separator row costs a third of a row. */
-  listRows: 11,
+  /* Lists fill the screen in one column (the OLED shows ~5): 9 rows of 34 px fit the 324 px body; a blank
+   * separator or divider costs about half a row. */
+  listRows: 9,
   listColumns: 1,
 
   /* The device's hint keys, spelled out (anything not listed: capitalised). */

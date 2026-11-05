@@ -51,6 +51,7 @@ body[data-view="screen"] .seqonly{display:none}
 .hud-hints .ctx{margin-left:auto;color:var(--h-ink);font-weight:600}
 /* body */
 .hud-body{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center}
+.hud-body.hud-l-list{justify-content:flex-start;overflow:hidden;padding-top:4px}
 /* layout: kit — one row of 8 */
 .hud-knobs{display:grid;grid-template-columns:repeat(8,1fr);gap:10px;align-items:center}
 .hud-kn{display:flex;flex-direction:column;align-items:center;gap:6px;position:relative;min-width:0}
@@ -181,6 +182,8 @@ body[data-view="screen"] .seqonly{display:none}
 .hud-row.sel::before{content:"";width:5px;height:22px;border-radius:3px;background:var(--h-acc);margin:0 12px 0 -8px;flex:0 0 auto}
 .hud-row.edit .val{color:#0b0c0e;background:var(--h-acc);border-radius:6px;padding:2px 10px}
 .hud-row.gap{height:10px}
+.hud-row.div{height:13px;position:relative}
+.hud-row.div::after{content:"";position:absolute;left:16px;right:16px;top:6px;height:1px;background:#2e333c}
 .hud-scroll{position:absolute;right:0;top:4px;bottom:4px;width:4px;border-radius:2px;background:#1a1d22}
 .hud-scroll i{position:absolute;left:0;right:0;border-radius:2px;background:#3a3f48}
 /* layout: prompt */

@@ -34,6 +34,7 @@ const rowOut = (r) => typeof r === 'string' ? { label: r } : r ? {
     value: r.value == null ? undefined : String(r.value),
     qual: r.qual || undefined, mark: r.mark || undefined,
     chevron: r.chevron ? true : undefined, editing: r.editing ? true : undefined, hdr: r.hdr ? true : undefined,
+    divider: r.divider ? true : undefined,
 } : { label: '' };
 const listOut = (rows, sel, kind) => ({
     kind, total: rows ? rows.length : 0, sel: sel == null ? -1 : sel,

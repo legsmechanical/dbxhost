@@ -154,10 +154,10 @@
      * flows into a second column, so most menus are seen whole */
     const cols = graph ? 1 : Math.max(1, H.cfg.listColumns | 0);
     const per = graph ? Math.min(5, H.cfg.listRows) : H.cfg.listRows;
-    /* a gap row (a blank separator) costs a third of a row, so a column
+    /* a gap row (a blank separator, or a divider rule) costs what it is drawn at — 13+3 px of a row's 31+3 (the column's gap) — so a column
      * holds more of a grouped menu */
-    const isGap = (r) => !r || (!r.label && r.value == null);
-    const cost = (i) => isGap(rows[i]) ? 1 / 3 : 1;
+    const isGap = (r) => !r || r.divider || (!r.label && r.value == null);
+    const cost = (i) => isGap(rows[i]) ? 16 / 34 : 1;
     let all = 0; for (let i = 0; i < rows.length; i++) all += cost(i);
     const useCols = all > per ? Math.min(cols, Math.ceil(all / per)) : 1;
     const budget = per * useCols;
@@ -169,11 +169,14 @@
       if (!canDown && !canUp) break;
       if (canDown && (end - selIn <= selIn - start || !canUp)) used += cost(end++); else used += cost(--start);
     }
+    /* a window never opens or closes on a rule */
+    while (end - start > 1 && isGap(rows[end - 1])) end--;
+    while (end - start > 1 && isGap(rows[start])) start++;
     const n = end - start;
     let html = '<div class="hud-list' + (useCols > 1 ? ' cols' : '') + '" style="--per:' + per + '">';
     for (let i = start; i < end; i++) {
       const r = rows[i] || {};
-      if (!r.label && r.value == null) { html += '<div class="hud-row gap"></div>'; continue; }
+      if (isGap(r)) { html += '<div class="hud-row gap' + (r.divider ? ' div' : '') + '"></div>'; continue; }
       const sel = i === selIn && L.sel >= 0;
       html += '<div class="hud-row' + (sel ? ' sel' : '') + (r.hdr ? ' hdr' : '') + (r.editing ? ' edit' : '') + '">' +
         (r.mark ? '<span class="q" style="margin:0 8px 0 0">' + esc(r.mark) + '</span>' : '') +
