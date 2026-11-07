@@ -102,7 +102,10 @@ ok('...its dividers drawn as rules, never at the window\'s edge', el.querySelect
      pads.filter((p) => p.classList.contains('cur')).length === 1 && !!em.querySelector('.hud-pads .pad.mod .ps') &&
      window.getComputedStyle(em.querySelector('.hud-pads')).display === 'grid', pads.length + ' pads, ' + lit.length + ' lit');
   const dm = render('bank-overview-drum');
-  ok('...a pad that is one thing with the one below it is one tall pad', !!dm && [...dm.querySelectorAll('.hud-pads .pad')].some((p) => /span 2/.test(p.getAttribute('style') || '')));
+  const jt = dm && dm.querySelector('.hud-pads .pad.jt'), jb = dm && dm.querySelector('.hud-pads .pad.jb');
+  ok('...two pads that belong together touch as one box, each keeping its own name (Drum lane over All lanes)',
+     !!jt && !!jb && dm.querySelectorAll('.hud-pads .pad').length === 32 && /drum lane/i.test(jt.textContent) && /all lanes/i.test(jb.textContent),
+     (jt ? jt.textContent : '-') + ' / ' + (jb ? jb.textContent : '-'));
   /* the palette is the device's: every entry of constants.mjs's table */
   const tbl = readFileSync(new URL('../../../src/shared/constants.mjs', import.meta.url), 'utf8');
   const blk = tbl.slice(tbl.indexOf('RGB COLOR PALETTE'), tbl.indexOf('*/', tbl.indexOf('RGB COLOR PALETTE')));

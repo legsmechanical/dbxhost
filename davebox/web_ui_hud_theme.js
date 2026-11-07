@@ -213,6 +213,8 @@ body[data-view="screen"] .seqonly{display:none}
 .hud-pads .pad .pl{font-size:15px;font-weight:600;line-height:1.15;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .hud-pads .pad .ps{font-size:13px;color:#aab2bf;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hud-pads .pad.cur .ps{color:#3a4250}
+.hud-pads .pad.jt{border-bottom-left-radius:0;border-bottom-right-radius:0;margin-bottom:-4px}
+.hud-pads .pad.jb{border-top-left-radius:0;border-top-right-radius:0;margin-top:-4px}
 `;
   const el = document.createElement('style');
   el.id = 'hud-theme';

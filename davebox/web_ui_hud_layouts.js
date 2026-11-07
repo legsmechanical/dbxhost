@@ -222,8 +222,10 @@
   /* bank map — THE PADS while the jog is held: all 32 in the colours they are
    * lit (doc.pads, from the device's own painter), bottom row last as on the
    * Move; the left 4x4's banks under their column heads, the right 4x4's
-   * module slots with the module loaded in each. A pad that is one thing with
-   * the one below it (joins) is one tall pad. Without doc.pads (an older
+   * module slots with the module loaded in each. Two pads that belong
+   * together (joins: a drum track's DRUM LANE over ALL LANES) touch, square
+   * where they meet — one box with two halves, as the OLED draws them — each
+   * keeping its own name and colour. Without doc.pads (an older
    * document), the left 4x4 from the bank map alone. */
   H.layout('bankmap', (d) => !!(d.body && d.body.bankMap), (doc, b) => {
     const m = b.bankMap, P = doc.pads;
@@ -231,19 +233,18 @@
     const colors = P ? P.colors : new Array(32).fill(0);
     if (!P) (m.cols || []).forEach((c, ci) => c && (c.cells || []).forEach((name, r) => { if (name) { cells[(3 - r) * 8 + ci] = { label: name }; colors[(3 - r) * 8 + ci] = (m.cur && m.cur.c === ci && m.cur.r === r) ? 120 : 118; } }));
     const joins = (P ? P.joins : m.joins) || [];
-    const skip = new Set(), span = {};
-    joins.forEach((j) => { span[(3 - j.r0) * 8 + j.c] = j.r1 - j.r0 + 1; for (let r = j.r0 + 1; r <= j.r1; r++) skip.add((3 - r) * 8 + j.c); });
+    const jcls = {};
+    joins.forEach((j) => { for (let r = j.r0; r <= j.r1; r++) jcls[(3 - r) * 8 + j.c] = (r > j.r0 ? ' jb' : '') + (r < j.r1 ? ' jt' : ''); });
     const heads = (P && P.heads) || (m.cols || []).map((c) => (c && c.label) || '');
     let html = '<div class="hud-pads">';
     for (let ci = 0; ci < 8; ci++) html += '<div class="ph" style="grid-column:' + (ci + 1) + '">' + esc(ci < 4 ? (heads[ci] || '') : ci === 6 && (!P || P.kind !== 'session') ? 'Modules' : '') + '</div>';
     for (let r = 0; r < 4; r++) for (let ci = 0; ci < 8; ci++) {
       const i = (3 - r) * 8 + ci;
-      if (skip.has(i)) continue;
       const c = cells[i], v = colors[i] | 0, lit = v !== 0, white = v === 120 || v === 122;
       const hex = ledHex(v);
-      const st = 'grid-column:' + (ci + 1) + ';grid-row:' + (r + 2) + (span[i] ? ' / span ' + span[i] : '') + ';' +
+      const st = 'grid-column:' + (ci + 1) + ';grid-row:' + (r + 2) + ';' +
         (lit ? (white ? 'background:#f4f6f8;border-color:#fff;color:#0b0d10' : 'background:' + hex + '38;border-color:' + hex + ';box-shadow:inset 0 0 0 1px ' + hex + '55') : '');
-      html += '<div class="pad' + (lit ? ' lit' : '') + (white ? ' cur' : '') + (c && c.module ? ' mod' : '') + '" style="' + st + '">' +
+      html += '<div class="pad' + (lit ? ' lit' : '') + (white ? ' cur' : '') + (c && c.module ? ' mod' : '') + (jcls[i] || '') + '" style="' + st + '">' +
         (c ? '<span class="pl">' + esc(sentence(c.label)) + '</span>' + (c.sub ? '<span class="ps">' + esc(c.sub) + '</span>' : '') : '') + '</div>';
     }
     return html + '</div>';
