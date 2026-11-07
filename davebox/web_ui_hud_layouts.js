@@ -214,13 +214,39 @@
   H.layout('card', (d) => !!(d.body && d.body.card), (doc, b) =>
     '<div class="hud-bigv"><div class="u">' + esc(b.card.title) + '</div><div class="n" style="font-size:64px">' + esc(b.card.value) + '</div></div>');
 
-  /* bank map — the pads' map of banks (held jog): four columns of four, as
-   * on the pads, the current one lit, each column under its label */
+  /* The pads' LED palette (index -> RGB), from src/shared/constants.mjs's
+   * table — device truth, not a tweak (smoke_hud pins it to that table). */
+  H.ledPalette = ['000000','ff4032','800400','c93c00','ac1f00','8c5018','491804','fadc3b','ffc516','b6ff0e','79ff18','34c216','4f8a04','62ff55','297d53','269e72','31adff','3663fc','1a34ff','1c0ce6','153999','3937ff','5722ff','972bff','852178','ff1032','ff2bd4','a63421','995628','876700','90821f','4a8700','007f12','1853b2','624bad','733a67','f8bcaf','ff9b76','ffbf5f','d9af71','fff480','bfba69','bccc88','aeff99','7cdd9f','89b47d','80f3ff','7acefc','68a1d3','858fc2','bbaaf2','cdbbe4','ef8bb0','859d8c','6b756e','84909b','6a7075','88859d','6c6a75','9d859c','746a74','9c9d85','74756a','9d8484','756a6a','661914','210806','460300','280000','5d1700','200d00','470c00','1c0800','3b2b14','1c130a','250e05','0d0602','645817','201c07','664e08','211902','486605','172101','306609','0f2103','144d08','061902','1f3701','0a1100','276622','0c210b','143e29','081910','004d36','00180e','134566','061621','152764','070c20','0a1466','030621','0b045c','03011d','0a1c4c','040b1e','161666','070721','220d66','0b0421','3c1166','130521','350d30','11040f','660614','210206','661154','21051b','000000','595959','1a1a1a','ffffff','595959','cccccc','404040','141414','0000ff','00ff00','ff0000'];
+  const ledHex = (i) => '#' + (H.ledPalette[i | 0] || '000000');
+
+  /* bank map — THE PADS while the jog is held: all 32 in the colours they are
+   * lit (doc.pads, from the device's own painter), bottom row last as on the
+   * Move; the left 4x4's banks under their column heads, the right 4x4's
+   * module slots with the module loaded in each. A pad that is one thing with
+   * the one below it (joins) is one tall pad. Without doc.pads (an older
+   * document), the left 4x4 from the bank map alone. */
   H.layout('bankmap', (d) => !!(d.body && d.body.bankMap), (doc, b) => {
-    const m = b.bankMap, cur = m.cur || {};
-    return '<div class="hud-bmap">' + (m.cols || []).map((c, ci) => !c ? '<div class="col"></div>' :
-      '<div class="col"><div class="cl">' + esc(c.label || '') + '</div>' + (c.cells || []).map((name, r) =>
-        '<div class="pad' + (name ? '' : ' none') + (cur.c === ci && cur.r === r ? ' cur' : '') + '">' + esc(name ? sentence(name) : '') + '</div>').join('') + '</div>').join('') + '</div>';
+    const m = b.bankMap, P = doc.pads;
+    const cells = P ? P.cells : new Array(32).fill(null);
+    const colors = P ? P.colors : new Array(32).fill(0);
+    if (!P) (m.cols || []).forEach((c, ci) => c && (c.cells || []).forEach((name, r) => { if (name) { cells[(3 - r) * 8 + ci] = { label: name }; colors[(3 - r) * 8 + ci] = (m.cur && m.cur.c === ci && m.cur.r === r) ? 120 : 118; } }));
+    const joins = (P ? P.joins : m.joins) || [];
+    const skip = new Set(), span = {};
+    joins.forEach((j) => { span[(3 - j.r0) * 8 + j.c] = j.r1 - j.r0 + 1; for (let r = j.r0 + 1; r <= j.r1; r++) skip.add((3 - r) * 8 + j.c); });
+    const heads = (P && P.heads) || (m.cols || []).map((c) => (c && c.label) || '');
+    let html = '<div class="hud-pads">';
+    for (let ci = 0; ci < 8; ci++) html += '<div class="ph" style="grid-column:' + (ci + 1) + '">' + esc(ci < 4 ? (heads[ci] || '') : ci === 6 && (!P || P.kind !== 'session') ? 'Modules' : '') + '</div>';
+    for (let r = 0; r < 4; r++) for (let ci = 0; ci < 8; ci++) {
+      const i = (3 - r) * 8 + ci;
+      if (skip.has(i)) continue;
+      const c = cells[i], v = colors[i] | 0, lit = v !== 0, white = v === 120 || v === 122;
+      const hex = ledHex(v);
+      const st = 'grid-column:' + (ci + 1) + ';grid-row:' + (r + 2) + (span[i] ? ' / span ' + span[i] : '') + ';' +
+        (lit ? (white ? 'background:#f4f6f8;border-color:#fff;color:#0b0d10' : 'background:' + hex + '38;border-color:' + hex + ';box-shadow:inset 0 0 0 1px ' + hex + '55') : '');
+      html += '<div class="pad' + (lit ? ' lit' : '') + (white ? ' cur' : '') + (c && c.module ? ' mod' : '') + '" style="' + st + '">' +
+        (c ? '<span class="pl">' + esc(sentence(c.label)) + '</span>' + (c.sub ? '<span class="ps">' + esc(c.sub) + '</span>' : '') : '') + '</div>';
+    }
+    return html + '</div>';
   });
 
   /* curve — a lane's shape alone (the lane-focus page drawn over a bank page) */

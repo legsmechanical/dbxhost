@@ -206,6 +206,13 @@ body[data-view="screen"] .seqonly{display:none}
 .hud-ovl{position:absolute;inset:0;background:rgba(5,6,8,.62);display:flex;align-items:center;justify-content:center;padding:40px}
 .hud-ovl .card{min-width:420px;max-width:760px;background:#12151b;border:1px solid #262b33;border-radius:16px;padding:20px 26px;box-shadow:0 20px 50px rgba(0,0,0,.6)}
 .hud-ovl .card .t{font-size:20px;font-weight:700;margin-bottom:10px}
+.hud-ovl .card.wide{max-width:none;width:100%;min-width:0}
+.hud-pads{display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:auto repeat(4,64px);gap:8px;column-gap:8px}
+.hud-pads .ph{font-size:14px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#8a93a3;padding:0 2px 2px}
+.hud-pads .pad{border:1px solid #23272e;border-radius:10px;background:#101318;display:flex;flex-direction:column;justify-content:center;padding:4px 7px;min-width:0;color:#e9edf2}
+.hud-pads .pad .pl{font-size:15px;font-weight:600;line-height:1.15;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.hud-pads .pad .ps{font-size:13px;color:#aab2bf;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hud-pads .pad.cur .ps{color:#3a4250}
 `;
   const el = document.createElement('style');
   el.id = 'hud-theme';

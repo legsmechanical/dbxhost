@@ -68,7 +68,7 @@
     let lay = null;
     for (const l of H.layouts) { try { if (l.match(sub)) { lay = l; break; } } catch (e) { /* skip */ } }
     const title = o.header && (o.header.text || o.header.touchedName);
-    return '<div class="hud-ovl"><div class="card">' + (title ? '<div class="t">' + esc(title) + '</div>' : '') +
+    return '<div class="hud-ovl"><div class="card' + (lay && lay.name === 'bankmap' ? ' wide' : '') + '">' + (title ? '<div class="t">' + esc(title) + '</div>' : '') +
       (lay ? H.safe('overlay:' + lay.name, lay.fn, sub, o) : '') + '</div></div>';
   });
 });

@@ -88,6 +88,30 @@ ok('a menu: one column, more than the OLED\'s rows, the selection lit, a scroll 
    !el.querySelector('.hud-list.cols') && !!el.querySelector('.hud-row.sel') && !!el.querySelector('.hud-scroll'), el.querySelectorAll('.hud-row:not(.gap)').length);
 ok('...its dividers drawn as rules, never at the window\'s edge', el.querySelectorAll('.hud-row.div').length >= 2 &&
    !el.querySelector('.hud-list > .hud-row:first-child.div') && !el.querySelector('.hud-list > .hud-row.div + .hud-scroll'));
+/* the bank pad map: the PADS, in the colours the device lights them (doc.pads, its own painter) */
+{
+  const doc = JSON.parse(readFileSync(new URL('./hud_fixtures/bank-overview-walk.json', import.meta.url), 'utf8'));
+  const P = doc.pads || {};
+  ok('the bank map document carries all 32 pads, colours and names', Array.isArray(P.colors) && P.colors.length === 32 && Array.isArray(P.cells) && P.cells.length === 32 &&
+     P.cells.some((c) => c && c.module && c.sub) && P.colors.includes(120), JSON.stringify(P).slice(0, 120));
+  const em = render('bank-overview-walk');
+  const pads = em ? [...em.querySelectorAll('.hud-pads .pad')] : [];
+  const lit = pads.filter((p) => p.classList.contains('lit'));
+  ok('...drawn as a grid of 32 pads, lit in their LED colours, the current one White, module pads with their module',
+     pads.length === 32 && lit.length === P.colors.filter((v) => v).length && lit.every((p) => /background/.test(p.getAttribute('style') || '')) &&
+     pads.filter((p) => p.classList.contains('cur')).length === 1 && !!em.querySelector('.hud-pads .pad.mod .ps') &&
+     window.getComputedStyle(em.querySelector('.hud-pads')).display === 'grid', pads.length + ' pads, ' + lit.length + ' lit');
+  const dm = render('bank-overview-drum');
+  ok('...a pad that is one thing with the one below it is one tall pad', !!dm && [...dm.querySelectorAll('.hud-pads .pad')].some((p) => /span 2/.test(p.getAttribute('style') || '')));
+  /* the palette is the device's: every entry of constants.mjs's table */
+  const tbl = readFileSync(new URL('../../../src/shared/constants.mjs', import.meta.url), 'utf8');
+  const blk = tbl.slice(tbl.indexOf('RGB COLOR PALETTE'), tbl.indexOf('*/', tbl.indexOf('RGB COLOR PALETTE')));
+  const want = {};
+  for (const m of blk.matchAll(/(\d+)\s*:\s*#([0-9A-Fa-f]{6})/g)) want[+m[1]] = m[2].toLowerCase();
+  for (const m of blk.matchAll(/(?:dim|dark)\s+(\d+)\s+#([0-9A-Fa-f]{6})/g)) want[+m[1]] = m[2].toLowerCase();
+  const bad = Object.keys(want).filter((i) => H.ledPalette[i] !== want[i]);
+  ok('the pad palette is constants.mjs\'s, all 128', Object.keys(want).length === 128 && H.ledPalette.length === 128 && !bad.length, bad.slice(0, 5).join(','));
+}
 el = render('session-mixer-pan');
 ok('the session mixer: eight bipolar dials', el.querySelectorAll('.hud-knobs .hud-w-svg').length === 8);
 

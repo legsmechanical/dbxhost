@@ -647,7 +647,10 @@ const BANK_MAP_COL_COLORS = [Cyan, Violet, VividYellow, BrightOrange];
 const SESS_MAP_COLORS = [VividYellow, Cyan, Violet, Violet];   /* VOLUME, PAN, SEND A, SEND B */
 /* The active track's pad on the bank map: 300 ms on, 150 ms off. */
 export function bankMapTrackBlinkOn(ms) { return (ms % 450) < 300; }
-function paintBankMapPads() {
+/* The 32 pads' colours while the map is up (index = note - 68), as palette
+ * indices: the painter below lights them, and the browser's Screen view draws
+ * the same array, so the picture cannot drift from the pads. */
+export function bankMapPadColors() {
     const col = new Array(32).fill(LED_OFF);
     const at = (c, r) => bankMapPadForCell(c, r) - TRACK_PAD_BASE;
     /* A menu pad waiting for the jog's release is the one White pad. */
@@ -696,6 +699,10 @@ function paintBankMapPads() {
                 : (m.comp === 'synth' || m.comp === 'slices') ? trackColor(t) : m.comp === 'midi_fx1' ? Cyan : BrightOrange;
         }
     }
+    return col;
+}
+function paintBankMapPads() {
+    const col = bankMapPadColors();
     for (let i = 0; i < 32; i++) cachedSetLED(TRACK_PAD_BASE + i, col[i]);
 }
 /* THE BANK MAP's step buttons (track map only): Steps 1-8 are the tracks,

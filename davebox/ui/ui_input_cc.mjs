@@ -3047,7 +3047,7 @@ function shortcutPopup(head, body) {
 /* What a module pad's popup names: the instrument as the track pick names it
  * (the generator's own name, Move n, MIDI Ch n...), else the module loaded in
  * that block on the track's slot — or on its Move bus — else Empty. */
-function bankMapModuleName(t, comp) {
+export function bankMapModuleName(t, comp) {
     if (comp === 'synth') return trackInstrName(t);
     if (S.trackRoute[t] === 1 && comp !== 'midi_fx1') {
         const id = moduleIdOf(engineLoadedModule(0, moveBusPrefix(moveBusForChannel(S.trackChannel[t])) + comp));

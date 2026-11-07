@@ -63,6 +63,9 @@
         });
       }
     }
+    /* ?fx=<slug> opens that recorded screen (a screenshot, a link to one) */
+    try { const want = new URLSearchParams(location.search).get('fx');
+      const k = want ? fixtures.findIndex((f) => f.slug === want) : -1; if (k >= 0) fxIdx = k; } catch (e) { /* ignore */ }
     if (fixtures.length) showFixture(fxIdx);
   }
   function showFixture(i) {
