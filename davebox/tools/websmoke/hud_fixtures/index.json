@@ -32,22 +32,22 @@
  {
   "slug": "bank-knob-touched",
   "title": "Touching a knob",
-  "screen": "track.bank"
+  "screen": "track.overview"
  },
  {
   "slug": "bank-value-popup",
   "title": "Turning a list parameter",
-  "screen": "track.bank"
+  "screen": "track.overview"
  },
  {
   "slug": "session-mixer-pan",
   "title": "Session mixer — Pan",
-  "screen": "session.mixer"
+  "screen": "session.overview"
  },
  {
   "slug": "session-mixer-senda",
   "title": "Session mixer — Send A",
-  "screen": "session.mixer"
+  "screen": "session.overview"
  },
  {
   "slug": "menu-project-settings",
@@ -182,52 +182,52 @@
  {
   "slug": "bank-clip",
   "title": "CLIP bank",
-  "screen": "track.bank"
+  "screen": "track.overview"
  },
  {
   "slug": "bank-clip-alt",
   "title": "CLIP bank — alternate parameters",
-  "screen": "track.bank"
+  "screen": "track.overview"
  },
  {
   "slug": "bank-drumlane",
   "title": "DRUM LANE bank",
-  "screen": "track.bank"
+  "screen": "track.drum-overview"
  },
  {
   "slug": "bank-allanes",
   "title": "ALL LANES bank",
-  "screen": "track.bank"
+  "screen": "track.drum-overview"
  },
  {
   "slug": "bank-notefx",
   "title": "NOTE FX bank",
-  "screen": "track.bank"
+  "screen": "track.overview"
  },
  {
   "slug": "bank-drum-notefx",
   "title": "NOTE FX on a drum track",
-  "screen": "track.bank"
+  "screen": "track.drum-overview"
  },
  {
   "slug": "bank-harmony",
   "title": "HARMONY bank",
-  "screen": "track.bank"
+  "screen": "track.overview"
  },
  {
   "slug": "bank-delay",
   "title": "DELAY bank",
-  "screen": "track.bank"
+  "screen": "track.overview"
  },
  {
   "slug": "bank-drum-delay",
   "title": "DELAY on a drum track",
-  "screen": "track.bank"
+  "screen": "track.drum-overview"
  },
  {
   "slug": "bank-seqarp",
   "title": "SEQ ARP bank",
-  "screen": "track.bank"
+  "screen": "track.overview"
  },
  {
   "slug": "bank-seqarp-steps",
@@ -242,7 +242,7 @@
  {
   "slug": "bank-livearp",
   "title": "LIVE ARP bank",
-  "screen": "track.bank"
+  "screen": "track.overview"
  },
  {
   "slug": "bank-repeat-groove",
@@ -287,12 +287,12 @@
  {
   "slug": "session-mixer-volume",
   "title": "Session mixer — Volume",
-  "screen": "session.mixer"
+  "screen": "session.overview"
  },
  {
   "slug": "session-mixer-touched",
   "title": "Session mixer — turning a fader",
-  "screen": "session.mixer"
+  "screen": "session.overview"
  },
  {
   "slug": "track-volume-card",
@@ -312,27 +312,27 @@
  {
   "slug": "bank-cond-conduct",
   "title": "CLIP bank",
-  "screen": "track.bank"
+  "screen": "track.overview"
  },
  {
   "slug": "bank-cond-notefx",
   "title": "NOTE FX bank",
-  "screen": "track.bank"
+  "screen": "track.overview"
  },
  {
   "slug": "bank-cond-responder",
   "title": "ON/OFF bank",
-  "screen": "track.conduct"
+  "screen": "track.overview"
  },
  {
   "slug": "bank-cond-octave",
   "title": "OCTAVE bank",
-  "screen": "track.conduct"
+  "screen": "track.overview"
  },
  {
   "slug": "bank-cond-when",
   "title": "TIMING bank",
-  "screen": "track.conduct"
+  "screen": "track.overview"
  },
  {
   "slug": "perf-mode",

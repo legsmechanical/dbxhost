@@ -57,13 +57,16 @@
   H.cell = function (c, k, doc, opt) {
     const b = doc.body || {}, touched = b.touched;
     if (!c || c.kind === 'blank') return '<div class="hud-kn blank"><div class="w">' + dial(k, 0) + '</div><div class="v">&nbsp;</div><div class="l"></div><div class="sub"></div></div>';
-    const isT = touched === k, dim = touched >= 0 && !isT;
+    /* the touched knob is LIT (its colour, a raised card); the others stay as
+     * they are — Josh, 2026-11-08: "better to highlight active knobs than dim
+     * inactive ones" */
+    const isT = touched === k;
     const ctx = { touched: isT, under: !!(opt && opt.under) };
     const kind = H.widgets.get(c.kind) ? c.kind : 'valsq';
     const showVal = !(kind === 'valsq' || kind === 'enumsq');
     const adorn = H.cfg.adornments.map((a) => H.safe('adorn:' + a, H.adorns.get(a), c, k, doc)).filter(Boolean);
     const dot = adorn.length && adorn[0].indexOf('hud-a-dot') >= 0 ? adorn.shift() : '';
-    return '<div class="hud-kn' + (isT ? ' tch' : '') + (dim ? ' dim' : '') + (c.lock ? ' lock' : '') + (ctx.under ? ' under' : '') + '">' +
+    return '<div class="hud-kn' + (isT ? ' tch' : '') + (c.lock ? ' lock' : '') + (ctx.under ? ' under' : '') + '"' + (isT ? ' style="--kc:' + H.knobColor(k) + '"' : '') + '>' +
       '<div class="w">' + H.safe('widget:' + kind, H.widgets.get(kind), c, k, ctx) + '</div>' +
       (showVal ? '<div class="v"' + (isT ? ' style="color:' + H.knobColor(k) + '"' : '') + '>' + esc(c.text) + '</div>' : '') +
       '<div class="l">' + dot + esc(cellName(c)) + '</div>' +

@@ -79,7 +79,9 @@ body[data-view="screen"] .seqonly{display:none}
 .hud-kn .v{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .hud-kn .l{font-size:13px;color:var(--h-dim);text-align:center;height:17px;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .hud-kn .sub{min-height:22px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
-.hud-kn.blank{opacity:.16}.hud-kn.dim{opacity:.35}.hud-kn.tch .l{color:var(--h-ink)}
+.hud-kn{border-radius:14px;border:2px solid transparent}
+.hud-kn.blank{opacity:.16}.hud-kn.tch .l{color:var(--h-ink);font-weight:700}
+.hud-kn.tch{background:color-mix(in srgb,var(--kc) 16%,#0d0f13);border-color:var(--kc);box-shadow:0 0 18px color-mix(in srgb,var(--kc) 45%,transparent)}
 .hud-kn.lock .l{color:var(--h-amber)}
 .hud-kn.under .w{height:60px}.hud-kn.under .v{font-size:17px}
 /* widgets */
@@ -263,6 +265,26 @@ html.hud-review,body.hud-review{background:#050607;overflow:auto!important;heigh
 .hud-o-info .tab.on{color:#0b0c0e;background:var(--h-acc)}
 .hud-o-main{flex:1;min-height:0;display:flex;gap:14px}
 .hud-o-rollbox{flex:1;min-width:0;border-radius:10px;background:#0e1014;overflow:hidden;position:relative}
+.hud-o-keys{position:absolute;left:0;top:0;bottom:0;pointer-events:none}
+.hud-o-keys span{position:absolute;right:6px;transform:translateY(-50%);font:700 11px ui-sans-serif,system-ui,sans-serif;color:#4a4f59;white-space:nowrap}
+.hud-o-keys span.hi{color:#f2f3f5}
+/* the knob strip under the roll (Track view): the roll gives up the height */
+.hud-o-track.knobs{gap:6px}
+.hud-o-knobs{flex:0 0 auto;border-top:1px solid #23272f;padding-top:6px}
+.hud-o-kh{display:flex;align-items:baseline;gap:14px;height:22px;overflow:hidden;margin:0 0 4px 2px;font-size:13px;font-weight:800;letter-spacing:.06em;color:var(--h-dim);text-transform:uppercase;white-space:nowrap}
+.hud-o-kh b{color:var(--h-ink);letter-spacing:.02em;text-transform:none;font-size:15px}
+.hud-o-kh .opts{display:flex;gap:10px;letter-spacing:0;text-transform:none;font-weight:700;color:#5c626d}
+.hud-o-kh .opts .on{color:var(--h-ink);background:#2a2f37;border-radius:5px;padding:1px 6px}
+.hud-o-kh .val{letter-spacing:0;text-transform:none;color:var(--h-ink)}
+.hud-o-kh .rng{letter-spacing:0;text-transform:none;font-weight:700;color:#5c626d}
+.hud-o-knobs .hud-knobs{margin:0}
+.hud-o-knobs .hud-kn{gap:3px;padding:6px 0 8px}
+.hud-o-knobs .hud-kn .w{height:78px}
+.hud-o-knobs .hud-kn .hud-w-svg{width:78px;height:78px}
+.hud-o-knobs .hud-kn .v{font-size:20px}
+.hud-o-knobs .hud-kn .l{font-size:14px;height:18px}
+.hud-o-knobs .hud-kn .sub{display:none}
+.hud-o-knobs .hud-kn .hud-w-big{font-size:40px}
 .hud-o-roll{width:100%;height:100%;display:block}
 .hud-o-roll text{font-family:ui-sans-serif,system-ui,sans-serif}
 .hud-o-wait{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--h-faint);font-size:16px}
@@ -305,6 +327,10 @@ html.hud-review,body.hud-review{background:#050607;overflow:auto!important;heigh
 .hud-o-mix .mx .w{width:36px;height:36px;flex:0 0 auto}
 .hud-o-mix .mx .w svg{width:100%;height:100%}
 .hud-o-mix .mx span{font-size:13px;font-weight:700;color:var(--h-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hud-o-mix .mx{border-radius:10px;border:2px solid transparent;padding:0 6px 0 2px}
+.hud-o-mix .mx.tch{background:color-mix(in srgb,var(--kc) 16%,#0d0f13);border-color:var(--kc);box-shadow:0 0 14px color-mix(in srgb,var(--kc) 40%,transparent)}
+.hud-o-mix .mx.tch span{color:var(--h-ink)}
+.hud-o-info .kt{color:var(--h-ink);font-size:17px}
 .hud-pads .pad.jt{border-bottom-left-radius:0;border-bottom-right-radius:0;margin-bottom:-4px}
 .hud-pads .pad.jb{border-top-left-radius:0;border-top-right-radius:0;margin-top:-4px}
 `;

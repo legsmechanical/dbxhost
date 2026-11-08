@@ -8,23 +8,28 @@
  * Also marks whether a knob sits at its default — the Screen view's "set" dot. */
 import { S } from '../../ui_state.mjs';
 import { BANKS } from '../../ui_constants.mjs';
+/* the annotation for a Track View bank page's eight cells, or null */
+export function knobMetaFor(knobs, where) {
+    if (!knobs || !where) return null;
+    const bank = BANKS[where.bank];
+    if (!bank || !bank.knobs) return null;
+    const t = where.track, vals = (S.bankParams[t] && S.bankParams[t][where.bank]) || [];
+    let any = false;
+    const out = knobs.map((cell, k) => {
+        const e = bank.knobs[k];
+        if (!cell || !e || !e.abbrev || e.scope === 'stub' || e.scope === 'action' || cell.label !== e.abbrev) return null;
+        any = true;
+        const v = vals[k];
+        return { full: e.full, min: e.min, max: e.max, def: e.def, scope: e.scope,
+                 isDefault: typeof v === 'number' ? v === e.def : undefined };
+    });
+    return any ? out : null;
+}
 export const knobmeta = {
     key: 'knobMeta',
     collect: (frame, doc) => {
         const b = doc && doc.body;
         if (!b || !b.knobs || !doc.where || doc.where.screen !== 'track.bank') return null;
-        const bank = BANKS[doc.where.bank];
-        if (!bank || !bank.knobs) return null;
-        const t = doc.where.track, vals = (S.bankParams[t] && S.bankParams[t][doc.where.bank]) || [];
-        let any = false;
-        const out = b.knobs.map((cell, k) => {
-            const e = bank.knobs[k];
-            if (!cell || !e || !e.abbrev || e.scope === 'stub' || e.scope === 'action' || cell.label !== e.abbrev) return null;
-            any = true;
-            const v = vals[k];
-            return { full: e.full, min: e.min, max: e.max, def: e.def, scope: e.scope,
-                     isDefault: typeof v === 'number' ? v === e.def : undefined };
-        });
-        return any ? out : null;
+        return knobMetaFor(b.knobs, doc.where);
     },
 };

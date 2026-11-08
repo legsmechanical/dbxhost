@@ -79,7 +79,8 @@ import { isSampledTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveC
 import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
 import { drawAudioAsk } from './ui_dialogs.mjs';
 import { drawAudioChooser } from './ui_audio_chooser.mjs';
-import { hudScreen, hudLayer, hudFrameOpen } from './hud/hud_frame.mjs';
+import { hudScreen, hudLayer, hudFrameOpen, hudFrameScreen, hudBodyToKnobs, hudKnobsToBody, hudFrameKnobs } from './hud/hud_frame.mjs';
+import { describeLayer } from './hud/contrib/layer.mjs';
 import { hudFrameStart, hudFrameFinish } from './hud/hud_publish.mjs';
 
 /* ---- AUDIO: the waveform (ui_audio) ----
@@ -1992,11 +1993,16 @@ function jogTouchReveals() {
     return !!S.jogTouched && !S.shiftHeld;
 }
 export function bankCardShown() {
+    if (hudGate) return hudGate === 'card';
     return bankCardVisible() || (!S.sessionView && (jogTouchReveals() || cardHoldShows()));
 }
 export function sessMixerShown() {
+    if (hudGate) return hudGate === 'card';
     return sessMixerVisible() || (!!S.sessionView && (jogTouchReveals() || cardHoldShows()));
 }
+/* Set only for the length of hudDescribeKnobs' muted pass: 'card' draws the
+ * knob page, 'rest' the overview, whatever the touch / latch / hold say. */
+let hudGate = null;
 
 export function bankCardVisible() {
     /* ...plus ONE peek (Josh: "knob touches are the ONLY other thing that
@@ -2175,7 +2181,63 @@ export function drawUI() {
         else if (actionCardShowing()) drawNoticeCard(S.actionPopupLines, S.actionPopupHighlight);
         /* LOW BATTERY over all of it, the notices included: it waits for a click. */
         if (lowBatteryUp()) drawNoticeCard(lowBatteryLines());
-    } finally { if (hudRec) hudFrameFinish(); }
+    } finally {
+        if (hudRec) {
+            try { hudDescribeKnobs(); } catch (e) { if (typeof console !== 'undefined') console.log('hud: knobs failed: ' + (e && e.message)); }
+            hudFrameFinish();
+        }
+    }
+}
+
+/* THE KNOBS, ALWAYS, ON THE BIG SCREEN (Josh, 2026-11-08: "if knobs do
+ * something in the current view mode we should always see them" · "there's no
+ * reason to switch away from session/track view just b/c a knob is touched" ·
+ * "it can all happen on the same screen").
+ *
+ * The OLED shows Track view's knob page (the active bank's card) and Session
+ * view's mixer page only while a knob is touched, the card is latched, the
+ * jog is touched or the card hold runs — bankCardShown() / sessMixerShown().
+ * The Screen view keeps the overview up instead and shows the knob page under
+ * it, so this describes, while a browser watches, the one of the two the OLED
+ * is NOT showing, with the display muted:
+ *   - the OLED shows a Track overview → the bank's card into the knobs layer;
+ *   - it shows the knob page itself (a fold screen) → that page moves to the
+ *     knobs layer, and the overview is described into the body.
+ * Session view's overview already carries its knob values (contrib/ovw.mjs),
+ * so only its mixer page folds. An open automation menu, a held step, sound
+ * mode — screens in use rather than peeks — are left as they are. */
+const HUD_OVERVIEWS = new Set(['track.overview', 'track.drum-overview', 'track.audio-overview', 'session.overview']);
+const HUD_FOLDS = new Set(['track.bank', 'track.conduct', 'track.macros-card', 'track.drum-velocity',
+                           'track.sound-card', 'track.config-card', 'track.step', 'session.mixer']);
+const HUD_MUTE = ['clear_screen', 'fill_rect', 'draw_rect', 'set_pixel', 'print', 'draw_line', 'draw_arc',
+                  'draw_circle', 'fill_circle', 'draw_image', 'stipple_rect'];
+function hudMutedPass(gate, layer) {
+    const g = globalThis, saved = {};
+    for (const n of HUD_MUTE) { saved[n] = g[n]; g[n] = () => {}; }
+    hudGate = gate;
+    hudLayer(layer);
+    try { drawUIBody(); }
+    finally {
+        hudGate = null;
+        hudLayer('overlay');
+        for (const n of HUD_MUTE) g[n] = saved[n];
+    }
+}
+function hudDescribeKnobs() {
+    const scr = hudFrameScreen();
+    if (scr === 'session.overview') return;
+    if (HUD_OVERVIEWS.has(scr)) {
+        hudMutedPass('card', 'knobs');
+        return;
+    }
+    if (!HUD_FOLDS.has(scr)) return;
+    hudBodyToKnobs();
+    /* only a page of KNOBS folds: one that draws something else (a grid of
+     * toggles, a prompt) would lose what it shows — it stays as drawn */
+    const page = describeLayer(hudFrameKnobs());
+    if (!page.knobs || !page.knobs.some((c) => c && c.kind !== 'blank')) { hudKnobsToBody(); return; }
+    hudMutedPass('rest', 'body');
+    if (!HUD_OVERVIEWS.has(hudFrameScreen())) hudKnobsToBody();   /* no overview to keep: as drawn */
 }
 
 /* The held step's page: the STEP bank's layout with THAT step's values. Drawn

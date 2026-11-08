@@ -75,11 +75,19 @@ for (const f of idx) {
 ok('every recorded screen renders a screen with a status strip', !empty.length, empty.slice(0, 8).join(' '));
 ok('no renderer threw on any of them', !warns.some((w) => /screen view: .* failed/.test(w)), warns.filter((w) => /failed/.test(w)).slice(0, 3).join(' | '));
 
-let el = render('bank-knob-touched');
+/* a kit page with a knob touched (editor views draw these; on Track view the
+ * touch now stays on the overview, below) — built from the recorded touch */
+const kt = JSON.parse(readFileSync(new URL('./hud_fixtures/bank-knob-touched.json', import.meta.url), 'utf8'));
+const kitDoc = { v: 1, where: Object.assign({}, kt.where, { screen: 'track.bank' }), touch: kt.touch,
+                 body: { header: Object.assign({ text: 'NOTE FX' }, kt.knobs.header), knobs: kt.knobs.knobs, touched: kt.knobs.touched }, knobMeta: kt.knobs.meta };
+H.doc = null; H.setDoc(kitDoc); H.render();
+let el = d.querySelector('#hudfit .hud-screen');
 ok('a bank page: one row of eight cells', el.querySelectorAll('.hud-knobs .hud-kn').length === 8);
 ok('...the touched knob names the header', /Octave Shift/.test(el.querySelector('.hud-header').textContent));
 ok('...its range on the right', /−?-?4\s*–\s*\+4/.test(el.querySelector('.hud-header .r') ? el.querySelector('.hud-header .r').textContent : ''), el.querySelector('.hud-header').textContent);
 ok('...its neighbouring options under it', !!el.querySelector('.hud-kn.tch .hud-a-opts'));
+ok('...the touched knob LIT in its colour, the others not dimmed (Josh: "better to highlight active knobs than dim inactive ones")',
+   !!el.querySelector('.hud-kn.tch[style*="--kc"]') && !el.querySelector('.hud-kn.dim') && el.querySelectorAll('.hud-kn.tch').length === 1);
 el = render('quit-confirm');
 ok('a confirm: the question as a sentence, two buttons, one selected', /Quit dAVEBOx\?/.test(el.querySelector('.hud-prompt .q').textContent) &&
    el.querySelectorAll('.hud-btn').length === 2 && el.querySelectorAll('.hud-btn.sel').length === 1, el.querySelector('.hud-prompt') && el.querySelector('.hud-prompt').textContent);
@@ -137,9 +145,28 @@ ok('...its dividers drawn as rules, never at the window\'s edge', el.querySelect
          notes: [{ tick: 0, pitch: 57, vel: 100, gate: 24 }, { tick: 96, pitch: 60, vel: 80, gate: 48 }, { tick: 400, pitch: 64, vel: 127, gate: 24 }], tracks: tr, dnotes: {}, dlanes: [] });
   let e = draw(mel);
   const notes = e ? e.querySelectorAll('.hud-o-roll rect[rx="3"]').length : 0;
-  ok('track overview: the clip as a piano roll — its notes, the viewed page outlined, the playhead, the eight tracks', notes === 3 &&
-     !!e.querySelector('.hud-o-roll rect[stroke="#4da3ff"]') && !!e.querySelector('.hud-o-roll line[stroke="#ffcf4d"]') && e.querySelectorAll('.hud-o-tl .row').length === 8 &&
+  ok('track overview: the clip as a piano roll — its notes, the viewed page outlined, the playhead', notes === 3 &&
+     !!e.querySelector('.hud-o-roll rect[stroke="#4da3ff"]') && !!e.querySelector('.hud-o-roll line[stroke="#ffcf4d"]') &&
      !!e.querySelector('.hud-o-info .k.u'), notes + ' notes');
+  /* THE KNOBS, ALWAYS (Josh, 2026-11-08): the bank's eight knobs as a strip
+   * under the roll, which gives up the track list (the status pips have it) */
+  ok('...the bank\'s eight knobs under it, always, in place of the track list', e.querySelectorAll('.hud-o-knobs .hud-kn').length === 8 &&
+     /CLIP/i.test(e.querySelector('.hud-o-kh').textContent) && !e.querySelector('.hud-o-tl') && !e.querySelector('.hud-o-knobs .hud-kn.tch'),
+     e.querySelectorAll('.hud-o-knobs .hud-kn').length + ' cells');
+  ok('...the row names an HTML column (readable, not squashed with the roll)', !!e.querySelector('.hud-o-rollbox .hud-o-keys span') && !e.querySelector('.hud-o-roll text'));
+  /* a knob touched on Track view: the screen stays the overview, the knob lit */
+  {
+    const touchedDoc = fx('bank-knob-touched');
+    const e2 = draw(Object.assign({}, touchedDoc, { where: Object.assign({}, touchedDoc.where, { track: mel.where.track, clip: mel.where.clip }) }));
+    const lit = e2.querySelectorAll('.hud-o-knobs .hud-kn.tch');
+    ok('a knob touched on Track view keeps the overview: the roll stays, the touched knob lit, named with its range, none dimmed',
+       touchedDoc.where.screen === 'track.overview' && !!e2.querySelector('.hud-o-roll') && lit.length === 1 && lit[0] === e2.querySelectorAll('.hud-o-knobs .hud-kn')[touchedDoc.knobs.touched] &&
+       /Octave Shift/.test(e2.querySelector('.hud-o-kh').textContent) && /-4\s*–\s*\+4/.test(e2.querySelector('.hud-o-kh').textContent) && !e2.querySelector('.hud-kn.dim'),
+       touchedDoc.where.screen + ' / ' + (e2.querySelector('.hud-o-kh') || {}).textContent);
+    /* no strip (a bank whose knobs do nothing here): the track list stays */
+    const bare = JSON.parse(JSON.stringify(mel)); delete bare.knobs;
+    ok('...and with no knob page, the eight tracks as before', draw(bare).querySelectorAll('.hud-o-tl .row').length === 8);
+  }
   /* the playhead GLIDES between the device's reports (a few a second): from
    * the editor's clock, not step by step (Josh, 2026-11-08: "playhead in
    * screen mode on clip overview is really choppy") */
@@ -166,7 +193,7 @@ ok('...its dividers drawn as rules, never at the window\'s edge', el.querySelect
          dnotes: { 0: [{ tick: 0, vel: 100 }, { tick: 96, vel: 100 }], 3: [{ tick: 48, vel: 90 }] }, dlanes: Array.from({ length: 32 }, (_, i) => ({ note: 36 + i, tps: 24, ls: 0, len: 16 })) });
   e = draw(drm);
   ok('...on a drum track, its lanes as rows, hits in them, the device\'s lane marked', !!e && e.querySelectorAll('.hud-o-roll rect[rx="3"]').length === 3 &&
-     /C1/.test(e.querySelector('.hud-o-roll').textContent) && /D#1/.test(e.querySelector('.hud-o-roll').textContent));
+     !!e.querySelector('.hud-o-keys span.hi') && /C1|D#1/.test(e.querySelector('.hud-o-keys').textContent), (e && e.querySelector('.hud-o-keys') || {}).textContent);
   setM({ sel: { t: (mel.where.track + 1) % 8, c: 0, lane: -1 }, clip: { len: 16, tps: 24, ls: 0 }, notes: [], tracks: tr, dnotes: {}, dlanes: [] });
   e = draw(mel);
   ok('...and says it is reading the clip while the editor is on another one, never drawing the wrong clip', !!e && !!e.querySelector('.hud-o-wait') && !e.querySelector('.hud-o-roll'));
@@ -194,6 +221,17 @@ ok('...its dividers drawn as rules, never at the window\'s edge', el.querySelect
      rowA.map((c) => c.className).join('|'));
   e = draw(fx('session-muted'));
   ok('...a muted track as the device says', !!e && !!e.querySelector('.hud-o-grid .th.mute'));
+  /* a knob touched on Session view: the overview stays (the OLED switches to
+   * its mixer page), the touched track's dial lit and named */
+  {
+    const st = fx('session-mixer-touched'), k = st.knobs.touched;
+    e = draw(st);
+    const mx = e.querySelectorAll('.hud-o-mix .mx');
+    ok('a knob touched on Session view keeps the overview: its dial lit, named in words, none dimmed',
+       st.where.screen === 'session.overview' && !!e.querySelector('.hud-o-grid') && mx.length === 8 && mx[k].matches('.tch') &&
+       e.querySelectorAll('.hud-o-mix .mx.tch').length === 1 && !!e.querySelector('.hud-o-info .kt'),
+       st.where.screen + ' k=' + k + ' ' + ((e.querySelector('.hud-o-info .r') || {}).textContent || ''));
+  }
   setM(saveM);
 }
 /* the editor's Screen view pops out into a window of its own (web_ui_hud_app.js) */
@@ -231,7 +269,7 @@ ok('...its dividers drawn as rules, never at the window\'s edge', el.querySelect
   ok('a prompt keeps its hints in the footer (Captured take: Back exit)', !!e && /exit/i.test((e.querySelector('.hud-hints') || {}).textContent || ''));
 }
 el = render('session-mixer-pan');
-ok('the session mixer: eight bipolar dials', el.querySelectorAll('.hud-knobs .hud-w-svg').length === 8);
+ok('the session mixer (a turn, nothing touched): the session overview with its eight dials', !!el.querySelector('.hud-o-grid') && el.querySelectorAll('.hud-o-mix .mx').length === 8);
 
 /* a module's own widgets: its canvas.js is fetched and its drawers run, none throws */
 {

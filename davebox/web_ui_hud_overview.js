@@ -13,6 +13,17 @@
  *     the pads bright, the rest dim — each with its pattern in brief, and the
  *     current knob mode's eight values along the bottom.
  *
+ * THE KNOBS, ALWAYS (Josh, 2026-11-08: "if knobs do something in the current
+ * view mode we should always see them" · "it can all happen on the same
+ * screen"): the device describes the knob page the OLED is not showing
+ * (doc.knobs, ui_render.mjs hudDescribeKnobs), and a knob touch keeps the
+ * overview up. TRACK: the bank's eight knobs as a strip under the roll (the
+ * roll gives up the height; the eight tracks are the status strip's pips
+ * then), the touched one LIT — its colour, a raised card — and named above
+ * the strip with its options; nothing is dimmed ("better to highlight active
+ * knobs than dim inactive ones"). SESSION: its eight dials, the touched one
+ * lit and named in words.
+ *
  * The notes come from the editor's own model (M, the rui snapshot): while a
  * track overview is up, the Screen view points the editor at the device's
  * track / clip / lane (follow, in web_ui_hud_source.js), so the roll costs the
@@ -62,6 +73,29 @@
   }
 
   const W = 640, HH = 300;   /* the roll's drawing box (svg units) */
+  /* The roll is drawn stretched to its box, so text inside it would squash
+   * with it: the row names are an HTML column over its left edge instead, at
+   * a readable size. Short rows (the knob strip takes the height) keep only
+   * the names that fit — the key's root first, then the C's — spaced so none
+   * overlap. The box's height is read from the last paint (repaints follow
+   * every report and the status strip's 250 ms, so a resize settles at once). */
+  let rollBoxH = 200;
+  function noteRollBoxH() {
+    const box = typeof document !== 'undefined' && document.querySelector('#screenview .hud-o-rollbox');
+    if (box && box.clientHeight > 0) rollBoxH = box.clientHeight;
+  }
+  const LABEL_PX = 14;
+  function sparseRows(rows, prio) {
+    const rowPx = rollBoxH / Math.max(1, rows);
+    if (rowPx >= LABEL_PX) return null;                 /* every row fits */
+    const gap = Math.ceil(LABEL_PX / rowPx), keep = [];
+    for (const r of prio) if (keep.every((k) => Math.abs(k - r) >= gap)) keep.push(r);
+    return new Set(keep);
+  }
+  function rowLabels(labels, rows, labelW) {
+    return '<div class="hud-o-keys" style="width:' + (labelW / W * 100).toFixed(2) + '%">' + labels.map((l) =>
+      '<span class="' + (l.hi ? 'hi' : '') + '" style="top:' + ((l.r + 0.5) / rows * 100).toFixed(2) + '%">' + esc(l.text) + '</span>').join('') + '</div>';
+  }
   function frame(win, rows, rowH, labelW) {
     const sx = (W - labelW) / win.len;
     let g = '';
@@ -131,12 +165,21 @@
     if (hi - lo < 11) { const mid = Math.round((lo + hi) / 2); lo = mid - 6; hi = mid + 6; }
     lo -= 1; hi += 1;
     const rows = hi - lo + 1, rowH = HH / rows, labelW = 34, key = m.glob ? m.glob.key | 0 : 0;
-    const showAll = rows <= 16;
     let g = '';
+    const roots = [], cs = [], rest = [];
     for (let p = hi, r = 0; p >= lo; p--, r++) {
       const pc = ((p % 12) + 12) % 12, inScale = !m.scaleMask || m.scaleMask[pc], root = pc === key;
       g += '<rect x="' + labelW + '" y="' + (r * rowH).toFixed(1) + '" width="' + (W - labelW) + '" height="' + rowH.toFixed(1) + '" fill="' + (root ? '#17202b' : inScale ? '#111419' : '#0b0d10') + '"/>';
-      if (showAll || root || pc === 0) g += '<text x="' + (labelW - 6) + '" y="' + (r * rowH + rowH / 2 + 4).toFixed(1) + '" text-anchor="end" font-size="' + Math.min(12, rowH + 2).toFixed(0) + '" font-weight="700" fill="' + (root ? '#f2f3f5' : '#4a4f59') + '">' + nn(p) + '</text>';
+      (root ? roots : pc === 0 ? cs : rest).push(r);
+    }
+    /* every row's name when the rows are tall enough (as before, up to 16
+     * rows); else the root and the C's that fit */
+    const fit = sparseRows(rows, roots.concat(cs));
+    const labels = [];
+    for (let p = hi, r = 0; p >= lo; p--, r++) {
+      const pc = ((p % 12) + 12) % 12, root = pc === key;
+      const show = fit ? fit.has(r) : (rows <= 16 || root || pc === 0);
+      if (show) labels.push({ r, text: nn(p), hi: root });
     }
     const f = frame(win, rows, rowH, labelW);
     g += f.g;
@@ -146,7 +189,7 @@
       g += '<rect x="' + (x + 1).toFixed(1) + '" y="' + (r * rowH + 1.5).toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + Math.max(2, rowH - 3).toFixed(1) + '" rx="3" fill="' + col + '" opacity="' + (0.45 + 0.55 * Math.min(1, (n.vel || 100) / 127)).toFixed(2) + '"/>';
     }
     g += playhead(win, f.sx, labelW);
-    return '<svg class="hud-o-roll" viewBox="0 0 ' + W + ' ' + HH + '" preserveAspectRatio="none">' + g + '</svg>';
+    return '<svg class="hud-o-roll" viewBox="0 0 ' + W + ' ' + HH + '" preserveAspectRatio="none">' + g + '</svg>' + rowLabels(labels, rows, labelW);
   }
 
   function drumRoll(doc, b, m, win) {
@@ -158,11 +201,13 @@
     const rows = Math.max(4, list.length), rowH = HH / rows, labelW = 46;
     const f = frame(win, rows, rowH, labelW);
     let g = '';
+    const fit = sparseRows(rows, [list.indexOf(act)].concat(list.map((_, r) => r)));
+    const labels = [];
     list.forEach((L, r) => {
       const dl = (m.dlanes && m.dlanes[L]) || {}, on = L === act;
       g += '<rect x="' + labelW + '" y="' + (r * rowH).toFixed(1) + '" width="' + (W - labelW) + '" height="' + rowH.toFixed(1) + '" fill="' + (on ? '#17202b' : r % 2 ? '#0e1014' : '#111318') + '"' + (dl.mute ? ' opacity=".4"' : '') + '/>';
       if (on) g += '<rect x="' + (labelW - 4) + '" y="' + (r * rowH + 2).toFixed(1) + '" width="3" height="' + (rowH - 4).toFixed(1) + '" fill="' + col + '"/>';
-      g += '<text x="' + (labelW - 9) + '" y="' + (r * rowH + rowH / 2 + 4).toFixed(1) + '" text-anchor="end" font-size="' + Math.min(12, rowH).toFixed(0) + '" font-weight="700" fill="' + (on ? '#f2f3f5' : '#6a707b') + '">' + (dl.note != null ? nn(dl.note) : 'L' + (L + 1)) + (dl.solo ? ' S' : '') + '</text>';
+      if (!fit || fit.has(r)) labels.push({ r, text: (dl.note != null ? nn(dl.note) : 'L' + (L + 1)) + (dl.solo ? ' S' : ''), hi: on });
       const tpsL = dl.tps || (m.laneInfo && m.laneInfo.tps) || 24, lsL = dl.ls != null ? dl.ls : win.ls;
       for (const hit of (m.dnotes[L] || [])) {
         const s = hit.tick / tpsL - lsL;
@@ -170,10 +215,37 @@
         g += '<rect x="' + (labelW + s * f.sx + 1).toFixed(1) + '" y="' + (r * rowH + 2).toFixed(1) + '" width="' + Math.max(3, f.sx - 2).toFixed(1) + '" height="' + Math.max(2, rowH - 4).toFixed(1) + '" rx="3" fill="' + col + '" opacity="' + ((dl.mute ? 0.3 : 0.45 + 0.55 * Math.min(1, (hit.vel || 100) / 127))).toFixed(2) + '"/>';
       }
     });
-    return '<svg class="hud-o-roll" viewBox="0 0 ' + W + ' ' + HH + '" preserveAspectRatio="none">' + f.g + g + playhead(win, f.sx, labelW) + '</svg>';
+    return '<svg class="hud-o-roll" viewBox="0 0 ' + W + ' ' + HH + '" preserveAspectRatio="none">' + f.g + g + playhead(win, f.sx, labelW) + '</svg>' + rowLabels(labels, rows, labelW);
+  }
+
+  /* the knob strip: the bank's eight knobs under the roll, the touched one
+   * lit and named above them with its options (or its value) */
+  function knobStrip(doc) {
+    const kn = doc.knobs;
+    if (!kn || !kn.knobs) return '';
+    const t = kn.touched >= 0 && kn.touched < 8 ? kn.touched : -1, c = t >= 0 ? kn.knobs[t] : null;
+    const bank = (kn.header && kn.header.text) || '';
+    let head = '<div class="hud-o-kh"><span class="bk">' + esc(bank) + (bank ? ' bank' : 'knobs') + '</span>';
+    const meta = kn.meta && t >= 0 ? kn.meta[t] : null;
+    if (c) {
+      head += '<b>' + esc((meta && meta.full) || c.name || c.label || '') + '</b>';
+      if (meta && typeof meta.min === 'number' && typeof meta.max === 'number')
+        head += '<span class="rng">' + esc((meta.min > 0 ? '+' : '') + meta.min + ' – ' + (meta.max > 0 ? '+' : '') + meta.max) + '</span>';
+      if (c.options && c.options.length > 1)
+        head += '<span class="opts">' + c.options.map((o, i) => '<span' + (i === c.sel ? ' class="on"' : '') + '>' + esc(o) + '</span>').join('') + '</span>';
+      else if (c.text) head += '<span class="val">' + esc(c.text) + '</span>';
+    }
+    head += '</div>';
+    /* the cells read their adornments (the "set" dot) from the bank table's
+     * annotation, as on a drawn bank page */
+    const kdoc = { where: doc.where, body: { touched: t, knobs: kn.knobs }, knobMeta: kn.meta || null };
+    let cells = '';
+    for (let k = 0; k < 8; k++) cells += H.cell(kn.knobs[k], k, kdoc, {});
+    return '<div class="hud-o-knobs">' + head + '<div class="hud-knobs">' + cells + '</div></div>';
   }
 
   H.ovwTrack = function (doc, b) {
+    noteRollBoxH();
     const m = model(), w = doc.where || {};
     const drum = w.screen === 'track.drum-overview', audio = w.screen === 'track.audio-overview';
     const synced = m && m.sel && m.tracks && (H.reviewAnyModel || (m.sel.t === (w.track | 0) && m.sel.c === (w.clip | 0) && m.tracks[w.track | 0]));
@@ -185,8 +257,9 @@
     /* the line glides only on the one live roll (the review sheet draws many) */
     armGlide(synced && !(audio && b.wave) && !H.reviewAnyModel);
     const steps = '<span class="st">' + win.len + ' steps</span>';
-    return '<div class="hud-o-track">' + infoLine(b, (audio ? '' : pageLabel(win)) + steps) +
-      '<div class="hud-o-main"><div class="hud-o-rollbox">' + main + '</div>' + trackList(doc, b, m) + '</div></div>';
+    const strip = knobStrip(doc);
+    return '<div class="hud-o-track' + (strip ? ' knobs' : '') + '">' + infoLine(b, (audio ? '' : pageLabel(win)) + steps) +
+      '<div class="hud-o-main"><div class="hud-o-rollbox">' + main + '</div>' + (strip ? '' : trackList(doc, b, m)) + '</div>' + strip + '</div>';
   };
 
   /* ---------- SESSION ---------- */
@@ -198,9 +271,13 @@
     const dt = (t) => (b.tracks && b.tracks[t]) || {};
     const rTo = Math.min(16, Math.max(rowOff + 4, 6)), rFrom = Math.max(0, Math.min(rowOff, rTo - 6));
     const modes = o.modes || [], mi = o.modeIdx | 0;
+    const kn = doc.knobs, touched = kn && kn.screen === 'session.mixer' && kn.touched >= 0 ? kn.touched : -1;
+    const tc = touched >= 0 && o.cells ? o.cells[touched] : null;
+    const right = tc ? '<b class="kt" style="--kc:' + trackColor(touched) + '">' + esc(trackName(m, touched)) + ' · ' + esc(H.sentence ? H.sentence(o.mode || '') : (o.mode || '')) + ' ' + esc(tc.text || '') + '</b>'
+      : 'pads: rows ' + LETTERS[rowOff] + '–' + LETTERS[Math.min(15, rowOff + 3)];
     let h = '<div class="hud-o-sess">';
     h += '<div class="hud-o-info"><span class="tabs">' + modes.map((n, i) => '<span class="tab' + (i === mi ? ' on' : '') + '">' + esc(H.sentence ? H.sentence(n) : n) + '</span>').join('') + '</span>' +
-      '<span class="r">pads: rows ' + LETTERS[rowOff] + '–' + LETTERS[Math.min(15, rowOff + 3)] + '</span></div>';
+      '<span class="r">' + right + '</span></div>';
     h += '<div class="hud-o-grid" style="grid-template-rows:auto repeat(' + (rTo - rFrom) + ',minmax(0,1fr))"><span></span>';
     for (let t = 0; t < 8; t++) h += '<div class="th' + (dt(t).muted ? ' mute' : '') + '" style="--c:' + trackColor(t) + '"><i>' + (t + 1) + '</i><span>' + esc(trackName(m, t)) + '</span>' + (dt(t).soloed ? '<b class="s">S</b>' : dt(t).muted ? '<b class="m">M</b>' : '') + '</div>';
     for (let r = rFrom; r < rTo; r++) {
@@ -225,12 +302,13 @@
     h += '</div>';
     if (o.cells && o.cells.length) {
       /* the mode is named by the lit tab above; the first column only keeps the
-       * dials under their tracks' cards */
+       * dials under their tracks' cards. A touched knob's dial is LIT, and the
+       * tabs line names it (the OLED switches to its mixer page; this stays). */
       h += '<div class="hud-o-mix"><span class="ml"></span>';
       o.cells.forEach((c, t) => {
         const val = c && c.kind !== 'blank' ? c.text : '';
         const n = c && typeof c.norm === 'number' ? c.norm : c && typeof c.signed === 'number' ? (c.signed + 1) / 2 : null;
-        h += '<div class="mx"><div class="w">' + (n == null ? '' : H.dial(t, n, c.kind === 'arcbip', false, null, trackColor(t))) + '</div><span>' + esc(val) + '</span></div>';
+        h += '<div class="mx' + (t === touched ? ' tch' : '') + '" style="--kc:' + trackColor(t) + '"><div class="w">' + (n == null ? '' : H.dial(t, n, c.kind === 'arcbip', false, null, trackColor(t))) + '</div><span>' + esc(val) + '</span></div>';
       });
       h += '</div>';
     }
