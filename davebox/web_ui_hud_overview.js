@@ -166,8 +166,10 @@
          * the editor's snapshot only as a fallback */
         const dc = o.clips && o.clips[t], trk = tracks[t] || {};
         const has = dc ? !!((dc.has >> r) & 1) : trk.has && trk.has[r];
-        const pl = dc ? !!(dc.pl && dc.ac === r) : !!(trk.pl && trk.ac === r);
-        const q = !pl && (dc ? dc.q === r || !!(dc.rl && dc.ac === r) : trk.qc === r);
+        /* an empty clip neither plays nor waits, whatever the track's flags say:
+         * its pad stays dark (ui_leds.mjs), and so does its card */
+        const pl = !!has && (dc ? !!(dc.pl && dc.ac === r) : !!(trk.pl && trk.ac === r));
+        const q = !!has && !pl && (dc ? dc.q === r || !!(dc.rl && dc.ac === r) : trk.qc === r);
         const bits = o.thumbs && o.thumbs[t] ? o.thumbs[t][r] | 0 : -1;
         let thumb = '';
         if (has && bits >= 0) { thumb = '<span class="th16">'; for (let i = 0; i < 16; i++) thumb += '<i' + ((bits >> i) & 1 ? ' class="on"' : '') + '></i>'; thumb += '</span>'; }

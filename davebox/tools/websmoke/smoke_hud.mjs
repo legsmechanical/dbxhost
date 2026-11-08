@@ -165,11 +165,11 @@ ok('...its dividers drawn as rules, never at the window\'s edge', el.querySelect
   /* the grid's clip states come from the device (what the pads light), not the
    * editor's snapshot: a clip queued while stopped, an Audio clip */
   const sesQ = JSON.parse(JSON.stringify(ses)); sesQ.ovw.rowOff = 0;
-  sesQ.ovw.clips = Array.from({ length: 8 }, (_, t) => ({ has: t === 3 || t === 4 ? 1 : 0, ac: 0, pl: t === 4 ? 1 : 0, q: t === 3 ? 0 : -1, rl: 0 }));
+  sesQ.ovw.clips = Array.from({ length: 8 }, (_, t) => ({ has: t === 3 || t === 4 ? 1 : 0, ac: 0, pl: t === 4 ? 1 : 0, q: t === 3 ? 0 : -1, rl: t === 0 ? 1 : 0 }));
   e = draw(sesQ);
   const rowA = e ? [...e.querySelectorAll('.hud-o-grid .cc')].slice(0, 8) : [];
-  ok('...its clips as the device lights them: one queued while stopped, one playing, none the device lacks', rowA.length === 8 &&
-     rowA[3].matches('.has.q') && rowA[4].matches('.has.pl') && !rowA[0].matches('.has') && e.querySelectorAll('.hud-o-grid .cc.has').length === 2,
+  ok('...its clips as the device lights them: one queued while stopped, one playing, none the device lacks, an empty one never waiting', rowA.length === 8 &&
+     rowA[3].matches('.has.q') && rowA[4].matches('.has.pl') && !rowA[0].matches('.has, .q, .pl') && e.querySelectorAll('.hud-o-grid .cc.has').length === 2,
      rowA.map((c) => c.className).join('|'));
   e = draw(fx('session-muted'));
   ok('...a muted track as the device says', !!e && !!e.querySelector('.hud-o-grid .th.mute'));
