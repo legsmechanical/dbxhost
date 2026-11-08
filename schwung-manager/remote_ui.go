@@ -984,7 +984,13 @@ func (ru *RemoteUI) handleSubscribeMixer(ctx context.Context, c *ruClient) {
 				}
 			}
 		}
-		ru.writeJSONTry(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
+		// QUEUED, never dropped: this is the only time the page gets every
+		// position's values and instrument name — writeJSONTry would discard it
+		// whenever another write to this client is in flight (the Sound view
+		// asks for every card's metadata at the same moment), and the page
+		// then shows "no instrument" until a reload wins the race. Already off
+		// the read loop, so waiting for the write lock costs nothing.
+		ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
 	}()
 }
 
