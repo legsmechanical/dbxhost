@@ -115,6 +115,14 @@ ok('...its dividers drawn as rules, never at the window\'s edge', el.querySelect
   const bad = Object.keys(want).filter((i) => H.ledPalette[i] !== want[i]);
   ok('the pad palette is constants.mjs\'s, all 128', Object.keys(want).length === 128 && H.ledPalette.length === 128 && !bad.length, bad.slice(0, 5).join(','));
 }
+/* the hints: a footer bar, its words at full size — the editor page's own .hint
+ * (11px, faint) once shrank them, unseen, by sharing the class name */
+{
+  const em = render('bank-clip'), bar = em && em.querySelector('.hud-hints'), w = bar && bar.querySelector('.hud-hint');
+  const cs = w ? window.getComputedStyle(w) : null;
+  ok('the hints are a footer bar, words at full size', !!bar && !!w && !em.querySelector('.hud-hints .hint') && cs.fontSize === '16px' &&
+     window.getComputedStyle(bar).borderTopStyle === 'solid', cs ? cs.fontSize : 'no hint');
+}
 el = render('session-mixer-pan');
 ok('the session mixer: eight bipolar dials', el.querySelectorAll('.hud-knobs .hud-w-svg').length === 8);
 

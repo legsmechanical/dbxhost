@@ -42,7 +42,7 @@
   /* hints — the device's footer pairs as key chips; the right side carries one fact */
   H.region('hints', (doc) => {
     const b = doc.body || {}, hints = (b.prompt ? null : b.hints) || [];
-    const words = hints.map((p) => '<span class="hint"><kbd>' + esc(cap(p[0])) + '</kbd>' + esc(String(p[1] || '').toLowerCase()) + '</span>').join('');
+    const words = hints.map((p) => '<span class="hud-hint"><kbd>' + esc(cap(p[0])) + '</kbd>' + esc(String(p[1] || '').toLowerCase()) + '</span>').join('');
     const fact = H.safe('fact', factFor, doc);
     return '<div class="hud-hints">' + words + (fact ? '<span class="ctx">' + esc(fact) + '</span>' : '') + '</div>';
   });
