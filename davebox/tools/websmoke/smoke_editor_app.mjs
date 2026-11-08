@@ -68,6 +68,21 @@ const me = JSON.parse(readFileSync(new URL('./web_ui_editor.json', ROOT), 'utf8'
 ok('...a separate app from the screen\'s (own id and start), opening straight into the editor, its icons on disk',
    me.start_url === '/?app=1' && me.id !== ms.id && me.start_url !== ms.start_url && me.display === 'standalone' &&
    me.icons.every((i) => existsSync(new URL('./' + i.src, ROOT))) && existsSync(new URL('./web_ui_editor-180.png', ROOT)));
+/* a phone on its side: the page clears the cutout only on its side (the touch
+ * layout pads both by the same inset) */
+{
+  const realGCS = window.getComputedStyle;
+  window.getComputedStyle = (el, ps) => (el && el.dataset && el.dataset.hudSafeArea)
+    ? { paddingTop: '0px', paddingRight: '59px', paddingBottom: '21px', paddingLeft: '59px' } : realGCS.call(window, el, ps);
+  const orient = (angle) => Object.defineProperty(window.screen, 'orientation', { value: { angle, addEventListener() {} }, configurable: true });
+  const v = (n) => d.documentElement.style.getPropertyValue(n);
+  orient(90); window.dispatchEvent(new window.Event('resize'));
+  const a = [v('--app-safe-l'), v('--app-safe-r')];
+  orient(270); window.dispatchEvent(new window.Event('resize'));
+  const b = [v('--app-safe-l'), v('--app-safe-r')];
+  window.getComputedStyle = realGCS;
+  ok('an iPhone on its side: the editor clears the cutout on its side only, both ways round', a.join() === '59px,16px' && b.join() === '16px,59px', a + ' / ' + b);
+}
 /* it is the editor: its keys still work (the screen window blocks them; this must not) */
 window.setView('seq');
 const sel = d.getElementById('toolSel'), draw = d.getElementById('toolDraw');
