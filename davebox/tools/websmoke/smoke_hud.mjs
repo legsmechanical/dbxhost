@@ -140,6 +140,27 @@ ok('...its dividers drawn as rules, never at the window\'s edge', el.querySelect
   ok('track overview: the clip as a piano roll — its notes, the viewed page outlined, the playhead, the eight tracks', notes === 3 &&
      !!e.querySelector('.hud-o-roll rect[stroke="#4da3ff"]') && !!e.querySelector('.hud-o-roll line[stroke="#ffcf4d"]') && e.querySelectorAll('.hud-o-tl .row').length === 8 &&
      !!e.querySelector('.hud-o-info .k.u'), notes + ' notes');
+  /* the playhead GLIDES between the device's reports (a few a second): from
+   * the editor's clock, not step by step (Josh, 2026-11-08: "playhead in
+   * screen mode on clip overview is really choppy") */
+  {
+    const line = e.querySelector('.hud-o-roll line.hud-o-ph');
+    window.eval('phPlaying = true; phBpm = 120; phTgtDev = 0; phTgtTick = 200; phTgtT = now(); phEst = 200; phEstT = now();');
+    const gx = H.glideX(line), x0 = +line.getAttribute('data-x0'), sx = +line.getAttribute('data-sx');
+    const want = x0 + (window.eval('phTickNow()') / 24) * sx;
+    ok('...its playhead glides from the editor\'s clock: between steps, not on one', gx != null && Math.abs(gx - want) < sx * 0.2 && Math.abs(((gx - x0) / sx) % 1 - 0.5) > 0.05,
+       gx + ' vs ' + want);
+    /* a frame later the line has moved on by itself (time passing, simulated:
+     * the clock's anchors pushed 100 ms into the past), the roll not redrawn */
+    e = draw(mel);
+    const ln = e.querySelector('.hud-o-roll line.hud-o-ph'), a1 = +ln.getAttribute('x1');
+    window.eval('phTgtT -= 100; phEstT -= 100;');
+    const moved = H.glideOnce(), a2 = +ln.getAttribute('x1');
+    ok('...and moves by itself between reports, the roll not redrawn', moved && a2 > a1 && e.querySelector('.hud-o-roll line.hud-o-ph') === ln, a1 + ' → ' + a2);
+    ok('...a repaint draws it where it is now, not back on the step', Math.abs(a1 - (x0 + (200 / 24) * sx)) < sx * 0.3, a1);
+    window.eval('phPlaying = false;');
+    ok('...stopped, it stays where the device says', H.glideX(line) === null);
+  }
   const drm = fx('track-drum');
   setM({ sel: { t: drm.where.track, c: drm.where.clip, lane: drm.where.lane }, clip: { len: 16, tps: 24, ls: 0 }, laneInfo: { len: 16, tps: 24, ls: 0 }, glob: { key: 0 }, scaleMask: null, notes: [], tracks: tr,
          dnotes: { 0: [{ tick: 0, vel: 100 }, { tick: 96, vel: 100 }], 3: [{ tick: 48, vel: 90 }] }, dlanes: Array.from({ length: 32 }, (_, i) => ({ note: 36 + i, tps: 24, ls: 0, len: 16 })) });

@@ -71,10 +71,53 @@
     g += '<rect x="' + (labelW + win.view * 16 * sx + 1).toFixed(1) + '" y="1" width="' + (Math.min(16, win.len - win.view * 16) * sx - 2).toFixed(1) + '" height="' + (HH - 2) + '" rx="6" fill="#4da3ff" fill-opacity=".05" stroke="#4da3ff" stroke-width="2"/>';
     return { g, sx };
   }
+  /* The playhead. Drawn first where the device's step says (it reports a
+   * few times a second, so on its own the line jumps a step or more at a
+   * time); then, while the transport runs, glideRoll moves just this line
+   * every frame from the editor's own glided clock (phTickNow, web_ui_core.js
+   * — the sequencer grid's line), which knows the tempo and corrects to each
+   * report. The roll itself is never redrawn for it. */
   function playhead(win, sx, labelW) {
-    if (!(win.step >= 0)) return '';
-    const x = labelW + (win.step + 0.5) * sx;
-    return '<line x1="' + x.toFixed(1) + '" y1="0" x2="' + x.toFixed(1) + '" y2="' + HH + '" stroke="#ffcf4d" stroke-width="2.5"/>';
+    /* a repaint (every report, and the status strip's 250 ms) draws the line
+     * where it is NOW, so the glide never flicks back to the last step */
+    const gx = H.reviewAnyModel ? null : glidedX(labelW, sx, win.ls, win.len);
+    const x = gx != null ? gx : win.step >= 0 ? labelW + (win.step + 0.5) * sx : -10;
+    return '<line class="hud-o-ph" data-x0="' + labelW + '" data-sx="' + sx.toFixed(4) + '" data-ls="' + win.ls + '" data-len="' + win.len + '"' +
+      ' x1="' + x.toFixed(1) + '" y1="0" x2="' + x.toFixed(1) + '" y2="' + HH + '" stroke="#ffcf4d" stroke-width="2.5"' + (gx != null || win.step >= 0 ? '' : ' visibility="hidden"') + '/>';
+  }
+  function glidedX(x0, sx, ls, len) {
+    if (typeof phTickNow !== 'function' || typeof gridTps !== 'function') return null;
+    const tick = phTickNow();
+    if (!Number.isFinite(tick)) return null;
+    const tps = gridTps();
+    if (!(tps > 0)) return null;
+    const step = tick / tps - ls;
+    return step >= 0 && step < len ? x0 + step * sx : null;
+  }
+  /* the glided position of a roll's line, in its svg units; null = keep the
+   * device's step (stopped, no clock yet, or the editor follows another clip) */
+  H.glideX = (line) => glidedX(+line.getAttribute('data-x0') || 0, +line.getAttribute('data-sx') || 0,
+                               +line.getAttribute('data-ls') || 0, +line.getAttribute('data-len') || 0);
+  /* one frame's move of the live roll's line; false = no roll to move */
+  H.glideOnce = function () {
+    const line = glideSynced && document.querySelector('#screenview svg.hud-o-roll line.hud-o-ph');
+    if (!line || !line.isConnected) return false;
+    const x = H.glideX(line);
+    if (x != null) {
+      line.setAttribute('x1', x.toFixed(1)); line.setAttribute('x2', x.toFixed(1));
+      line.removeAttribute('visibility');
+    }
+    return true;
+  };
+  let glideRAF = 0, glideSynced = false;
+  function glideRoll() {
+    glideRAF = 0;
+    if (H.glideOnce()) glideRAF = requestAnimationFrame(glideRoll);
+  }
+  /* (re)armed on every draw of a synced roll; stops by itself when the roll goes */
+  function armGlide(synced) {
+    glideSynced = !!synced;
+    if (glideSynced && !glideRAF && typeof requestAnimationFrame === 'function') glideRAF = requestAnimationFrame(glideRoll);
   }
   function pageLabel(win) {
     return '<span class="pg">page ' + (win.view + 1) + ' / ' + win.pages + (win.play >= 0 && win.play !== win.view ? ' · playing ' + (win.play + 1) : '') + '</span>';
@@ -139,6 +182,8 @@
     if (audio && b.wave) main = '<div class="hud-o-wave">' + H.waveSvg(b.wave, 260) + '</div>';
     else if (!synced) main = '<div class="hud-o-wait">Reading the clip…</div>';
     else main = drum ? drumRoll(doc, b, m, win) : melodicRoll(doc, b, m, win);
+    /* the line glides only on the one live roll (the review sheet draws many) */
+    armGlide(synced && !(audio && b.wave) && !H.reviewAnyModel);
     const steps = '<span class="st">' + win.len + ' steps</span>';
     return '<div class="hud-o-track">' + infoLine(b, (audio ? '' : pageLabel(win)) + steps) +
       '<div class="hud-o-main"><div class="hud-o-rollbox">' + main + '</div>' + trackList(doc, b, m) + '</div></div>';

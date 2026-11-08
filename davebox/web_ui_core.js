@@ -375,6 +375,18 @@ function phStep(){
   const ph=document.getElementById("playhead");
   if(!ph){ phRAF=0; return; }
   if(!phPlaying || !M || cv.style.display==="none"){ ph.style.display="none"; phRAF=0; return; }
+  const est=phTickNow();
+  const x=xOfTick(est);
+  if(!Number.isFinite(x)||x<GUTTER||x>VW){ ph.style.display="none"; }
+  else { ph.style.display="block"; ph.style.transform="translateX("+x+"px)"; }
+  phRAF=requestAnimationFrame(phStep);
+}
+/** The playhead's tick NOW, glided between the device's reports (NaN when
+ * stopped or before the first report). Shared: the sequencer grid's line
+ * (phStep) and the Screen view's overview roll both draw from it, so a
+ * caller in the same frame as another costs nothing and moves nothing. */
+function phTickNow(){
+  if(!phPlaying || !M || !M.clip) return NaN;
   /* Free-running local clock + slewed phase correction. The device clock rate
    * is known (BPM), so between pushes the line advances smoothly on its own;
    * each push only CORRECTS phase, eased over a few frames (wrap-aware, within
@@ -402,10 +414,7 @@ function phStep(){
     }
   } else est=tgt;
   phEst=est; phEstT=t;
-  const x=xOfTick(est);
-  if(!Number.isFinite(x)||x<GUTTER||x>VW){ ph.style.display="none"; }
-  else { ph.style.display="block"; ph.style.transform="translateX("+x+"px)"; }
-  phRAF=requestAnimationFrame(phStep);
+  return est;
 }
 function startPlayhead(){ if(!phRAF) phRAF=requestAnimationFrame(phStep); }
 function stopPlayhead(){ if(phRAF){ cancelAnimationFrame(phRAF); phRAF=0; }
