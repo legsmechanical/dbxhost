@@ -770,6 +770,9 @@ screen('session-mixer-volume', '11.5 Volume', 'Session mixer — Volume',
 screen('session-mixer-touched', '11.5 Volume', 'Session mixer — turning a fader',
     'Turning a knob on the mixer page: the header names the track and its level, and the value replaces its number.',
     () => { toSession(); toMixer(0); noteOff(9); knobTouch(2); knobTurn(2, -3); ticks(2); });
+screen('session-mixer-touch-only', '11.5 Volume', 'Session mixer — touching a fader',
+    'Touching a knob on the mixer page: the header names the track and its level, and its strip is marked.',
+    () => { toSession(); toMixer(0); noteOff(9); knobTouch(4); ticks(2); });
 screen('session-mixer-pan', '3.6 Parameter banks', 'Session mixer — Pan',
     'The Pan page (the Session map\'s second mixer pad): a bipolar dial per track.',
     () => { toSession(); toMixer(1); if (S.sessKnobMode !== 1) throw new Error('not on Pan: ' + S.sessKnobMode); });

@@ -63,7 +63,10 @@ const x = doc('session-mixer-pan');
 ok('the session mixer page: the big screen keeps the session overview, the eight pan knobs under it', x.where.screen === 'session.overview' && x.ovw && x.knobs &&
    x.knobs.screen === 'session.mixer' && x.knobs.knobs.every((c) => c && c.kind === 'arcbip'), x.where.screen + ' ' + JSON.stringify(x.knobs && x.knobs.knobs[0]));
 const xt = doc('session-mixer-touched');
-ok('...a knob touched there names which', xt.knobs && xt.knobs.touched >= 0 && xt.where.screen === 'session.overview', JSON.stringify(xt.knobs && xt.knobs.touched));
+ok('...a knob touched and turned there names which', xt.knobs && xt.knobs.touched === 2 && xt.where.screen === 'session.overview', JSON.stringify(xt.knobs && xt.knobs.touched));
+const xo = doc('session-mixer-touch-only');
+ok('...and a touch alone, on the fader page, names which (as the OLED marks its strip)', xo.knobs && xo.knobs.touched === 4 && xo.where.screen === 'session.overview' &&
+   xo.knobs.knobs[4] && xo.knobs.knobs[4].kind === 'vbar', JSON.stringify(xo.knobs && { t: xo.knobs.touched, k: xo.knobs.knobs[4] }));
 const rb = doc('record-blocked');
 ok('a dialog drawn with its own button row reports the buttons (Rec unavailable)', rb.body.prompt && (rb.body.prompt.buttons || []).join() === 'OK,Bake Now', JSON.stringify(rb.body.prompt));
 const nu = doc('notice-undo');

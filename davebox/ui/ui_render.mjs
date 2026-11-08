@@ -966,7 +966,10 @@ function drawSessionFaderRow(cells, mode) {
     const valueLive = lk >= 0 && S.knobTouched === lk;
     kitHudTap('KitCells', { cells: cells.map((c, i) => !c || c.kind === 'blank' ? null
         : c.kind === 'xbox' ? { kind: 'opaque', label: String(i + 1), name: 'Track ' + (i + 1), text: 'routed' }
-        : Object.assign({}, c, { kind: 'vbar', label: String(i + 1) })), touched: valueLive ? lk : -1 });
+        : Object.assign({}, c, { kind: 'vbar', label: String(i + 1) })),
+        /* the strip a finger is on, as the OLED marks it (its number inverted)
+         * — a touch alone counts; the turn only adds the live value */
+        touched: t >= 0 && cells[t] ? t : -1 });
 
     for (let i = 0; i < cells.length && i < 8; i++) {
         const c = cells[i];

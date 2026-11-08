@@ -295,6 +295,11 @@
   "screen": "session.overview"
  },
  {
+  "slug": "session-mixer-touch-only",
+  "title": "Session mixer — touching a fader",
+  "screen": "session.overview"
+ },
+ {
   "slug": "track-volume-card",
   "title": "Shift + Volume",
   "screen": "track.overview"
