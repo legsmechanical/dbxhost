@@ -123,6 +123,59 @@ ok('...its dividers drawn as rules, never at the window\'s edge', el.querySelect
   ok('the hints are a footer bar, words at full size and capitalised', !!bar && !!w && !em.querySelector('.hud-hints .hint') && cs.fontSize === '20px' && /^[A-Z]/.test(w.querySelector('.w').textContent) &&
      window.getComputedStyle(bar).borderTopStyle === 'solid', cs ? cs.fontSize : 'no hint');
 }
+/* the OVERVIEWS (web_ui_hud_overview.js): a track's clip as a roll from the
+ * editor's model once it follows the device; the session as a clip grid with
+ * the device's knob values */
+{
+  const saveM = window.eval('M');
+  const fx = (slug) => JSON.parse(readFileSync(new URL('./hud_fixtures/' + slug + '.json', import.meta.url), 'utf8'));
+  const tr = Array.from({ length: 8 }, (_, t) => ({ pm: t === 1 ? 1 : 0, ac: 0, qc: -1, pl: 1, has: Array.from({ length: 16 }, (_, c) => c < 3), mute: 0, solo: 0 }));
+  const setM = (m) => { window.__M = m; window.eval('M = window.__M'); };
+  const draw = (doc) => { H.doc = null; H.setDoc(doc); H.render(); return d.querySelector('#hudfit .hud-screen'); };
+  const mel = fx('track-melodic-playing');
+  setM({ sel: { t: mel.where.track, c: mel.where.clip, lane: -1 }, clip: { len: 32, tps: 24, ls: 0 }, glob: { key: 9, scaleAware: true }, scaleMask: [1,0,1,1,0,1,0,1,1,0,1,0].map(Boolean),
+         notes: [{ tick: 0, pitch: 57, vel: 100, gate: 24 }, { tick: 96, pitch: 60, vel: 80, gate: 48 }, { tick: 400, pitch: 64, vel: 127, gate: 24 }], tracks: tr, dnotes: {}, dlanes: [] });
+  let e = draw(mel);
+  const notes = e ? e.querySelectorAll('.hud-o-roll rect[rx="3"]').length : 0;
+  ok('track overview: the clip as a piano roll — its notes, the viewed page outlined, the playhead, the eight tracks', notes === 3 &&
+     !!e.querySelector('.hud-o-roll rect[stroke="#4da3ff"]') && !!e.querySelector('.hud-o-roll line[stroke="#ffcf4d"]') && e.querySelectorAll('.hud-o-tl .row').length === 8 &&
+     !!e.querySelector('.hud-o-info .k.u'), notes + ' notes');
+  const drm = fx('track-drum');
+  setM({ sel: { t: drm.where.track, c: drm.where.clip, lane: drm.where.lane }, clip: { len: 16, tps: 24, ls: 0 }, laneInfo: { len: 16, tps: 24, ls: 0 }, glob: { key: 0 }, scaleMask: null, notes: [], tracks: tr,
+         dnotes: { 0: [{ tick: 0, vel: 100 }, { tick: 96, vel: 100 }], 3: [{ tick: 48, vel: 90 }] }, dlanes: Array.from({ length: 32 }, (_, i) => ({ note: 36 + i, tps: 24, ls: 0, len: 16 })) });
+  e = draw(drm);
+  ok('...on a drum track, its lanes as rows, hits in them, the device\'s lane marked', !!e && e.querySelectorAll('.hud-o-roll rect[rx="3"]').length === 3 &&
+     /C1/.test(e.querySelector('.hud-o-roll').textContent) && /D#1/.test(e.querySelector('.hud-o-roll').textContent));
+  setM({ sel: { t: (mel.where.track + 1) % 8, c: 0, lane: -1 }, clip: { len: 16, tps: 24, ls: 0 }, notes: [], tracks: tr, dnotes: {}, dlanes: [] });
+  e = draw(mel);
+  ok('...and says it is reading the clip while the editor is on another one, never drawing the wrong clip', !!e && !!e.querySelector('.hud-o-wait') && !e.querySelector('.hud-o-roll'));
+  /* follow: the Screen view points the editor at the device's track / clip */
+  const calls = []; const saveSel = window.eval('selectClip');
+  window.__spy = (t, c) => calls.push(t + ':' + c); window.eval('selectClip = window.__spy');
+  window.hudShow(true); H.follow(mel); window.hudShow(false);
+  window.__restore = saveSel; window.eval('selectClip = window.__restore');
+  ok('...the Screen view makes the editor follow the device\'s track and clip', calls.length === 1 && calls[0] === mel.where.track + ':' + mel.where.clip, calls.join(','));
+  setM({ sel: { t: 0, c: 0, lane: -1 }, clip: { len: 16, tps: 24, ls: 0 }, notes: [], tracks: tr, dnotes: {}, dlanes: [] });
+  const ses = fx('session-overview');
+  e = draw(ses);
+  const cards = e ? e.querySelectorAll('.hud-o-grid .cc').length : 0;
+  ok('session overview: the clip grid (the pads\' rows lit), clip thumbnails, the knob mode\'s eight values', cards >= 32 && cards % 8 === 0 &&
+     e.querySelectorAll('.hud-o-grid .rl.on').length === 4 && e.querySelectorAll('.hud-o-grid .cc.has').length > 0 && !!e.querySelector('.hud-o-grid .th16') &&
+     e.querySelectorAll('.hud-o-mix .mx').length === 8 && !!e.querySelector('.hud-o-info .tab.on'), cards + ' cards');
+  e = draw(fx('session-muted'));
+  ok('...a muted track as the device says', !!e && !!e.querySelector('.hud-o-grid .th.mute'));
+  setM(saveM);
+}
+/* notices and dialog buttons: drawn straight to the OLED once, now described */
+{
+  const fx = (slug) => JSON.parse(readFileSync(new URL('./hud_fixtures/' + slug + '.json', import.meta.url), 'utf8'));
+  let e = render('notice-undo');
+  ok('a notice card is drawn over the screen (Undo)', !!e && !!e.querySelector('.hud-ovl .hud-notice') && /undo/i.test(e.querySelector('.hud-notice').textContent));
+  e = render('record-blocked');
+  ok('a dialog\'s own buttons (Rec unavailable: OK / Bake now)', !!e && e.querySelectorAll('.hud-btn').length === 2 && /bake/i.test(e.textContent));
+  e = render('capture-place');
+  ok('a prompt keeps its hints in the footer (Captured take: Back exit)', !!e && /exit/i.test((e.querySelector('.hud-hints') || {}).textContent || ''));
+}
 el = render('session-mixer-pan');
 ok('the session mixer: eight bipolar dials', el.querySelectorAll('.hud-knobs .hud-w-svg').length === 8);
 

@@ -9,4 +9,5 @@ import { held } from './held.mjs';
 import { knobmeta } from './knobmeta.mjs';
 import { params } from './params.mjs';
 import { pads } from './pads.mjs';
-export const CONTRIBUTORS = [where, body, params, overlay, touch, held, knobmeta, pads];
+import { ovw } from './ovw.mjs';
+export const CONTRIBUTORS = [where, body, params, overlay, touch, held, knobmeta, pads, ovw];

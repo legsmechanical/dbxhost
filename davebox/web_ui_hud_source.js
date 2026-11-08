@@ -31,7 +31,7 @@
   function startLive() {
     if (es) return;
     es = new EventSource('/stream-auto?v=2');
-    es.addEventListener('ui', (e) => { try { H.setDoc(JSON.parse(e.data)); } catch (err) { /* a bad document is skipped */ } });
+    es.addEventListener('ui', (e) => { try { const d = JSON.parse(e.data); H.setDoc(d); follow(d); } catch (err) { /* a bad document is skipped */ } });
     es.addEventListener('uistate', (e) => { try { H.setAlive(!!JSON.parse(e.data).alive); } catch (err) { /* skip */ } });
     /* the OLED frame (the stream's default event): kept for picture screens */
     es.onmessage = (e) => { try { const f = JSON.parse(e.data);
@@ -39,6 +39,22 @@
         for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i); H.setOled(b, 'pages'); } } catch (err) { /* skip */ } };
   }
   function stopLive() { if (es) { es.close(); es = null; } }
+
+  /* FOLLOW: while a track overview is on screen, point the editor's selection
+   * (which clip the rui snapshot carries) at the device's track / clip / drum
+   * lane, so the overview's piano roll draws the clip the device is on from
+   * data the editor already receives. Only while the Screen view is shown —
+   * it changes what the Sequencer view has selected — and at most every
+   * 400 ms, since a selection takes a snapshot round trip to land. */
+  let followAt = 0;
+  function follow(d) {
+    if (!shown || !d || !d.where || !H.isTrackOverview || !H.isTrackOverview(d)) return;
+    const m = typeof M !== 'undefined' ? M : null, w = d.where, now = Date.now();
+    if (now - followAt < 400 || typeof selectClip !== 'function') return;
+    if (!m || !m.sel || m.sel.t !== (w.track | 0) || m.sel.c !== (w.clip | 0)) { followAt = now; selectClip(w.track | 0, w.clip | 0); return; }
+    if ((w.lane | 0) >= 0 && m.sel.lane !== (w.lane | 0) && typeof selectLane === 'function' && m.dlanes && m.dlanes.length) { followAt = now; selectLane(w.lane | 0); }
+  }
+  H.follow = follow;   /* smokes, and the offline preview */
 
   /* the offline preview's fixture player */
   async function startFixtures() {
@@ -73,9 +89,55 @@
     const d = fixtures[i].doc;
     if (d.oled && d.oled.data) { const bin = atob(d.oled.data), b = new Uint8Array(bin.length);
       for (let k = 0; k < bin.length; k++) b[k] = bin.charCodeAt(k); H.oled = { bytes: b, fmt: d.oled.fmt }; }
-    H.doc = null; H.setDoc(d); H.setAlive(true);
+    H.doc = null; H.setDoc(d); H.setAlive(true); follow(d);
   }
   H.showFixture = (i) => showFixture(i);   /* smokes */
+
+  /* REVIEW SHEET (?review=1, offline preview): every recorded screen drawn as
+   * the Screen view draws it, beside the OLED frame it came from, on one page —
+   * so a screen that is wired but looks wrong, or that has drifted from the
+   * OLED, shows at a glance (the smokes check structure, not looks). Each
+   * screen is rendered into a scratch stage and kept as a copy; canvases are
+   * kept as images. The overviews' roll draws the preview's pretend clip. */
+  async function review() {
+    await startFixtures();
+    if (!fixtures || !fixtures.length) return;
+    H.reviewAnyModel = true;
+    document.body.classList.add('hud-review'); document.documentElement.classList.add('hud-review');
+    const page = document.createElement('div'); page.id = 'hudreview';
+    page.innerHTML = '<h1>Screen view — review sheet</h1><p>' + fixtures.length + ' recorded screens (tools/websmoke/hud_fixtures), each as the Screen view draws it, beside its OLED frame. Overviews draw the preview’s pretend clip, not the recorded one.</p>';
+    const grid = document.createElement('div'); grid.className = 'rv-grid'; page.appendChild(grid);
+    const scratch = document.createElement('div'); scratch.className = 'rv-scratch'; page.appendChild(scratch);
+    document.body.appendChild(page);
+    H.mount(scratch);
+    const PER = 30, pg = Math.max(0, (+new URLSearchParams(location.search).get('page') || 1) - 1), pages = Math.ceil(fixtures.length / PER);
+    page.querySelector('p').textContent += ' Page ' + (pg + 1) + ' of ' + pages + ' (&page=N).';
+    fixtures.slice(pg * PER, pg * PER + PER).forEach((f) => {
+      const d = f.doc;
+      H.oled = null;
+      if (d.oled && d.oled.data) { const bin = atob(d.oled.data), b = new Uint8Array(bin.length);
+        for (let k = 0; k < bin.length; k++) b[k] = bin.charCodeAt(k); H.oled = { bytes: b, fmt: d.oled.fmt }; }
+      H.doc = null; H.setDoc(d); H.setAlive(true); H.render();
+      const src = scratch.firstElementChild; if (!src) return;
+      const copy = src.cloneNode(true);
+      copy.classList.remove('hud-fade');
+      const sc = src.querySelectorAll('canvas'), cc = copy.querySelectorAll('canvas');
+      cc.forEach((cv, i) => { try { const img = document.createElement('img'); img.src = sc[i].toDataURL(); img.style.cssText = cv.getAttribute('style') || ''; img.className = cv.className; img.width = sc[i].width; img.height = sc[i].height; cv.replaceWith(img); } catch (e) { /* keep the canvas */ } });
+      const card = document.createElement('div'); card.className = 'rv-card';
+      const ol = document.createElement('canvas'); ol.width = 384; ol.height = 192; ol.className = 'rv-oled';
+      if (H.oled) H.drawOledCrop(ol, 0, 0, 128, 64);
+      const shot = document.createElement('div'); shot.className = 'rv-shot'; shot.appendChild(copy);
+      card.innerHTML = '<div class="rv-t"><b>' + H.esc(f.title) + '</b><span>' + H.esc(f.slug) + ' · ' + H.esc((d.where && d.where.screen) || '') + '</span></div>';
+      const row = document.createElement('div'); row.className = 'rv-row'; row.appendChild(shot); row.appendChild(ol);
+      card.appendChild(row); grid.appendChild(card);
+    });
+    scratch.remove();
+    document.title = 'Screen view review';
+    document.body.dataset.review = 'done';
+  }
+  /* waits for the offline preview's mock connection (the review is offline only) */
+  try { if (new URLSearchParams(location.search).has('review')) { let n = 0; const go = () => {
+    if (typeof R !== 'undefined' && R && R._mock && typeof M !== 'undefined' && M) review(); else if (++n < 100) setTimeout(go, 200); }; setTimeout(go, 200); } } catch (e) { /* ignore */ }
 
   /* setView (web_ui_mix.js) calls this when the Screen view opens or closes */
   window.hudShow = function (on) {

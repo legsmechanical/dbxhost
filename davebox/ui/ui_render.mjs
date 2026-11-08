@@ -853,7 +853,7 @@ function drawSessionMixerPage() {
 /* The session mixer's eight cells for one mode: what drawSessionMixerPage
  * draws, and what the click asks (sessMixerCellOpens), so the gate and the
  * screen cannot disagree. */
-function sessMixerCells(mode) {
+export function sessMixerCells(mode) {
     const cells = [];
     for (let t = 0; t < NUM_TRACKS; t++) {
         const label = 'Tr' + (t + 1);
@@ -1531,6 +1531,7 @@ const CARD_TEXT_DY = 1;
 export function drawNoticeCard(lines, highlight = -1) {
     const n = Math.min(5, lines.length);
     if (!n) return;
+    kitHudTap('NoticeCard', { lines: lines.slice(0, n).map(String), highlight });
     const h = n * CARD_LINE_H + CARD_PAD * 2 - 1;
     const y = Math.max(0, Math.floor((64 - h) / 2));
     /* Over a DIMMED screen, like every picker (Josh, 2026-09-26): the card is

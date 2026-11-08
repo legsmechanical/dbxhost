@@ -37,6 +37,14 @@ const m = doc('menu-project-settings');
 ok('a menu: its rows with values and the selection', m.body.list && m.body.list.rows[0].label === 'BPM' && m.body.list.rows[0].value === '120', JSON.stringify(m.body.list && m.body.list.rows[0]));
 const x = doc('session-mixer-pan');
 ok('the session mixer: eight pan knobs', x.where.screen === 'session.mixer' && x.body.knobs.every((c) => c && c.kind === 'arcbip'), JSON.stringify(x.body.knobs[0]));
+const rb = doc('record-blocked');
+ok('a dialog drawn with its own button row reports the buttons (Rec unavailable)', rb.body.prompt && (rb.body.prompt.buttons || []).join() === 'OK,Bake Now', JSON.stringify(rb.body.prompt));
+const nu = doc('notice-undo');
+ok('a notice card is described, over the screen it interrupts (Undo)', nu.overlayLayer && nu.overlayLayer.notice && nu.overlayLayer.notice.lines[0] === 'UNDO' && nu.body.tracks, JSON.stringify(nu.overlayLayer));
+const so = doc('session-overview');
+ok('the session overview carries the knob mode, its eight values and the clips in brief', so.ovw && so.ovw.cells.length === 8 && so.ovw.thumbs.length === 8 && typeof so.ovw.rowOff === 'number' && so.ovw.mode, JSON.stringify(so.ovw).slice(0, 200));
+const td = doc('track-drum');
+ok('a drum track says which lane it is on', td.where.padMode === 'drum' && td.where.lane >= 0, JSON.stringify(td.where));
 console.log(bad ? 'FAIL: test_hud_screen_docs' : 'PASS: test_hud_screen_docs');
 process.exit(bad);
 JS

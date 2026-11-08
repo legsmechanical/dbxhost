@@ -70,7 +70,7 @@
   /* The device says which part of a screen is its main content (`primary`:
    * what it drew last); that family's layout is tried first. */
   const PRIMARY = { knobs: 'kit', tracks: 'overview', list: 'list', prompt: 'prompt', bars: 'bars', message: 'message',
-                    picture: 'picture', big: 'big', card: 'card', mods: 'perf', wave: 'wave', keyboard: 'keyboard', bankmap: 'bankmap' };
+                    picture: 'picture', big: 'big', card: 'card', mods: 'perf', wave: 'wave', keyboard: 'keyboard', bankmap: 'bankmap', notice: 'notice' };
   function layoutFor(doc) {
     const want = doc.body && PRIMARY[doc.body.primary];
     if (want) for (const l of HUD.layouts) { if (l.name === want) { try { if (l.match(doc)) return l; } catch (e) { /* skip */ } } }

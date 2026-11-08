@@ -12,7 +12,7 @@ import { engineLoadedModule, slotIndex } from './ui_engine.mjs';
  * The header and the button family stay: those are the dialog chassis, which
  * is still the right home for a confirm. */
 import {
-    drawDialogButton, drawDialogYesNoRow, drawDialogOkButton, drawDialogButtonRow
+    drawDialogButton, drawDialogYesNoRow, drawDialogOkButton, drawDialogButtonRow as drawDialogButtonRowRaw
 } from '/data/UserData/schwung/shared/menu_layout.mjs';
 import { formatItemValue, isDivider } from '/data/UserData/schwung/shared/menu_items.mjs';
 /* The KIT chassis. ui_movy is pure — no imports, no state — so pulling it in
@@ -109,6 +109,13 @@ function drawYesNoRow(sel, labels) {
 /* Single filled OK button (info dialogs), centered horizontally at a caller-set
  * baseline y. Consistent 30×12 geometry everywhere. */
 function drawOkButton(...a) { kitHudTap('Buttons', { labels: ['OK'], sel: 0 }); return drawDialogOkButton(...a); }
+/* Any row of labelled buttons: reported to the Screen view's recorder as it is
+ * drawn (Rec unavailable's OK / Bake Now, Clear macros' OK / Cancel… were
+ * drawn straight to the OLED and arrived on the big screen without them). */
+function drawDialogButtonRow(y, h, buttons, opts) {
+    kitHudTap('Buttons', { labels: buttons.map((b) => String(b.label)), sel: buttons.findIndex((b) => b.sel) });
+    return drawDialogButtonRowRaw(y, h, buttons, opts);
+}
 
 /* Clamp a variable-length label to fit one OLED line at the 6px print font. */
 function truncLabel(label, maxChars) {

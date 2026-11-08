@@ -8,9 +8,10 @@
 
   /* the dial: an arc from 7:30 to 4:30, filled to the value (or from the
    * centre, bipolar), a dot at the value. `ghost` = a faint second arc (a held
-   * step's lock over the track's value). */
-  function dial(k, norm, bipolar, big, ghost) {
-    const a0 = 135, sw = 270, r = 38, c = 46, w = big ? 9 : 7, col = H.knobColor(k);
+   * step's lock over the track's value); `color` overrides the knob's colour
+   * (the session overview's dials wear their TRACK's). */
+  function dial(k, norm, bipolar, big, ghost, color) {
+    const a0 = 135, sw = 270, r = 38, c = 46, w = big ? 9 : 7, col = color || H.knobColor(k);
     const P = (a) => [c + r * Math.cos(a * Math.PI / 180), c + r * Math.sin(a * Math.PI / 180)];
     const arc = (s, e, stroke, op) => {
       if (e - s < 0.5) return '';

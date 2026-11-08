@@ -76,6 +76,7 @@ export const DESCRIBE = {
     KitBigValue:      (d, p) => { d.big = { text: String(p.num), unit: p.unit || undefined, prev: p.prev || undefined, next: p.next || undefined }; },
     LevelCard:        (d, p) => { d.big = { text: String(p.text), frac: typeof p.frac === 'number' ? r3(p.frac) : undefined }; },
     HudCard:          (d, p) => { d.card = { title: p.title, value: p.value == null ? '' : String(p.value) }; },
+    NoticeCard:       (d, p) => { d.notice = { lines: (p.lines || []).map(String), highlight: p.highlight == null ? -1 : p.highlight | 0 }; },
     KitChip:          (d, p) => { (d.chips = d.chips || []).push({ label: String(p.label), on: !!p.on }); },
     /* the overview family's hand-drawn parts (ui_render.mjs) */
     Info:             (d, p) => { d.info = Object.assign(d.info || {}, { left: p.left || '', underline: p.underline || undefined, held: p.held || undefined, tag: p.tag || undefined }); },
@@ -104,7 +105,7 @@ export const DESCRIBE = {
 const FAMILY = {
     KitCells: 'knobs', KitBankPage: 'knobs', KitList: 'list', KitStackedList: 'list', KitSectionPicker: 'list',
     KitPrompt: 'prompt', PromptLines: 'prompt', Buttons: 'prompt', Tracks: 'tracks', Bars: 'bars', KitBankMap: 'bankmap',
-    Mods: 'mods', Wave: 'wave', Keyboard: 'keyboard', Message: 'message', Picture: 'picture', KitBigValue: 'big', LevelCard: 'big', HudCard: 'card',
+    Mods: 'mods', Wave: 'wave', Keyboard: 'keyboard', Message: 'message', Picture: 'picture', KitBigValue: 'big', LevelCard: 'big', HudCard: 'card', NoticeCard: 'notice',
 };
 export function describeLayer(calls) {
     if (!calls || !calls.length) return null;

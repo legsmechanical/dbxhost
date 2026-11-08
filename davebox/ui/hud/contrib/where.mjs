@@ -15,6 +15,7 @@ export const where = {
             bank,
             bankName: BANKS[bank] ? BANKS[bank].name : '',
             padMode: PAD_MODES[S.trackPadMode[t] | 0] || 'melodic',
+            lane: S.trackPadMode[t] === 1 ? (S.activeDrumLane[t] | 0) : -1,   /* a drum track's lane */
         };
     },
 };

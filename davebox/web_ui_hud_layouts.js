@@ -32,6 +32,11 @@
    * a held chord, the right-hand label), the eight tracks as tiles in their
    * colours with their clip and state, and the clip's position bar */
   H.layout('overview', (d) => !!(d.body && d.body.tracks), (doc, b) => {
+    /* the track and session overviews have their own big-screen designs
+     * (web_ui_hud_overview.js); what is left here is the OLED's own layout,
+     * for any other screen that draws the track tiles */
+    if (H.ovwTrack && H.isTrackOverview(doc)) return H.ovwTrack(doc, b);
+    if (H.ovwSession && H.isSessionOverview(doc)) return H.ovwSession(doc, b);
     const inf = b.info || {};
     let html = '<div class="hud-ovw">';
     html += '<div class="hud-ovw-info"><span class="k' + (inf.underline ? ' u' : '') + '">' + esc(inf.left || '') + '</span>' +
@@ -248,6 +253,15 @@
         (c ? '<span class="pl">' + esc(sentence(c.label)) + '</span>' + (c.sub ? '<span class="ps">' + esc(c.sub) + '</span>' : '') : '') + '</div>';
     }
     return html + '</div>';
+  });
+
+  /* notice — the OLED's notice card (saved, undone, a refusal, low battery):
+   * its lines centred, the first as the title, a highlighted line in the
+   * accent — drawn over the screen, which stays visible behind it */
+  H.layout('notice', (d) => !!(d.body && d.body.notice), (doc, b) => {
+    const n = b.notice, lines = n.lines || [];
+    return '<div class="hud-notice">' + lines.map((l, i) => '<div class="' + (i === 0 ? 't' : 'l') + (i === n.highlight ? ' hi' : '') + '">' +
+      esc(i === 0 ? l : sentence(l)) + '</div>').join('') + '</div>';
   });
 
   /* curve — a lane's shape alone (the lane-focus page drawn over a bank page) */
