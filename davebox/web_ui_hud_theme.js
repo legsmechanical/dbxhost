@@ -13,7 +13,9 @@ body.screen-only .hud-screen{border-radius:0;box-shadow:none}
  * page by the safe area); the stage keeps its CONTENT clear instead (rescale) */
 body.screen-only #app{padding-left:0;padding-right:0}
 /* the window controls (web_ui_hud_app.js): page pixels, not stage units */
-.hud-appbar{position:absolute;top:10px;right:12px;z-index:5;display:flex;gap:8px;transition:opacity .35s}
+/* bottom right: the footer's right end, which the hints (left-aligned) never
+ * reach, so the controls cover nothing — the header's top right is the tempo */
+.hud-appbar{position:absolute;bottom:calc(12px + env(safe-area-inset-bottom,0px));right:16px;z-index:5;display:flex;gap:8px;transition:opacity .35s}
 .hud-appbtn{font:600 12px/1 ui-sans-serif,system-ui,-apple-system,sans-serif;color:#d6d9df;background:rgba(28,31,38,.86);
   border:1px solid #2c313b;border-radius:7px;padding:7px 11px;cursor:pointer;opacity:.6;transition:opacity .15s,background .15s}
 .hud-appbtn:hover{opacity:1;background:rgba(40,45,55,.95)}
