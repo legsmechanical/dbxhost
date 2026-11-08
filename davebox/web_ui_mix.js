@@ -75,7 +75,16 @@ function mixInstLabel(t) {
   if (route === 1) return "Move " + moveBusForChannel(trk.chan);
   if (route === 2) return "MIDI";
   const name = mixKV["chain:" + t + ":synth_name"] || mixKV["chain:" + t + ":synth_module"];
-  return name || "no instrument";
+  if (name) return name;
+  /* The mixer seed trails the Sound view's cards by many seconds on a busy
+   * param channel (each is a queue of one-by-one reads): take the instrument
+   * card's name (the manager sends the manifest name with its metadata), and
+   * say nothing rather than a false "no instrument" until one or the other
+   * has spoken. */
+  const card = typeof sndComps === "object" ? sndComps[t + "|synth"] : null;
+  if (card && card.moduleName) return card.moduleName;
+  if ((card && card.knownEmpty) || mixSeeded("chain:" + t + ":")) return "no instrument";
+  return "…";
 }
 /* a strip is UNSYNCED until any of its keys has arrived (seed or push) —
  * rendering the defaults before that would show plausible but FALSE values

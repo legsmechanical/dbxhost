@@ -92,7 +92,10 @@ ok("panelIs60vh", /\.sndpanel\s*\{[^}]*height:\s*60vh/.test(chainCss));
  * T2, which is Move-routed, and a Move-routed track has no instrument card at
  * all (its editing happens on the device). Asserting on the default selection
  * finds no synth card and reads as a broken header. */
-const schwungTrack = window.eval('M.tracks.findIndex(function(t){return (t.route||0)===0;})');
+/* ...and plays an INSTRUMENT: the mock gained Audio / Slicer / Conductor
+ * tracks, which are Schwung-routed too but carry no instrument card (route 0
+ * alone picked an Audio track, and synthCardExists failed from then on). */
+const schwungTrack = window.eval('M.tracks.findIndex(function(t){return (t.route||0)===0 && (t.pm===0||t.pm===1);})');
 ok("mockHasSchwungTrack", schwungTrack >= 0, schwungTrack);
 if (schwungTrack >= 0) {
   d.querySelectorAll('.sndchip')[schwungTrack].dispatchEvent(new window.Event('click', { bubbles: true }));
@@ -157,6 +160,22 @@ if (fxKey) {
  * the manager sends with the metadata (effects have no other source) */
 ok("fxCardNamedFromManifest", window.eval('sndModuleName({ comp: "fx1", hierarchy: { levels: { root: { params: [] } } }, moduleName: "Tape Echo 2" })') === "Tape Echo 2");
 ok("hierarchyLabelStillWins", window.eval('sndModuleName({ comp: "fx2", hierarchy: { levels: { root: { label: "Own" } } }, moduleName: "Manifest" })') === "Own");
+/* the track label does not wait for the mixer seed: before it lands, the
+ * instrument card's manifest name; with neither, "…" — never a false
+ * "no instrument" */
+{
+  const t = schwungTrack >= 0 ? schwungTrack : 0;
+  const lab = window.eval(`(function(){
+    var keep = {}; Object.keys(mixKV).forEach(function(k){ if (k.indexOf("chain:${t}:") === 0) { keep[k] = mixKV[k]; delete mixKV[k]; } });
+    var had = sndComps["${t}|synth"]; sndComps["${t}|synth"] = { moduleName: "Osirus" };
+    var a = mixInstLabel(${t});
+    sndComps["${t}|synth"] = {}; var b = mixInstLabel(${t});
+    sndComps["${t}|synth"] = { knownEmpty: true }; var c = mixInstLabel(${t});
+    if (had) sndComps["${t}|synth"] = had; else delete sndComps["${t}|synth"];
+    Object.keys(keep).forEach(function(k){ mixKV[k] = keep[k]; });
+    return [a, b, c].join("|"); })()`);
+  ok("trackLabelFromCardBeforeSeed", lab === "Osirus|…|no instrument", lab);
+}
 /* the instrument's panel URL stays as it was: no component (a synth panel defaults to synth:) */
 ok("synthPanelUrlUnchanged", window.eval('sndPanelUrl({ panelUrl: "/x/web_ui.html", slot: 3, comp: "synth" })') === "/x/web_ui.html?schwungStandalone=1&slot=3");
 
