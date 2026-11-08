@@ -150,6 +150,7 @@ type wsHierarchy struct {
 	Component string          `json:"component"`
 	Data      json.RawMessage `json:"data"`
 	Module    string          `json:"module,omitempty"` // the module loaded there, when known
+	Name      string          `json:"name,omitempty"`   // its module.json "name", for a card header
 	Empty     bool            `json:"empty,omitempty"`
 	Failed    bool            `json:"failed,omitempty"`
 }
@@ -1639,7 +1640,11 @@ func (ru *RemoteUI) sendHierarchy(ctx context.Context, c *ruClient, slot uint8, 
 	if raw != "" && json.Unmarshal([]byte(raw), &probe) == nil {
 		js = json.RawMessage(raw)
 	}
-	ru.writeJSON(ctx, c, wsHierarchy{Type: "hierarchy", Slot: slot, Component: component, Data: js, Module: module, Failed: !ok})
+	name := ""
+	if module != "" {
+		name = ru.moduleDisplayName(module)
+	}
+	ru.writeJSON(ctx, c, wsHierarchy{Type: "hierarchy", Slot: slot, Component: component, Data: js, Module: module, Name: name, Failed: !ok})
 }
 
 func (ru *RemoteUI) sendChainParams(ctx context.Context, c *ruClient, slot uint8, component string) {

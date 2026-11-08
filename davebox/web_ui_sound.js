@@ -90,6 +90,7 @@ if (R && typeof R.onComponentData === "function") {
     /* the manager names what is loaded there: the panel decision below needs
      * no wait on the mixer namespace, which can lag an instrument change */
     if (msg.module) c.moduleId = msg.module;
+    if (msg.name) c.moduleName = msg.name;       /* its module.json name: an effect has no other */
     if (msg.type === "hierarchy") { c.hierarchy = msg.data || null; c.gotHierarchy = true; }
     else { c.chainParams = msg.data || []; c.gotParams = true; }
     sndCardBody(c);
@@ -126,8 +127,9 @@ function sndRoute(t) {
   return trk.route === undefined ? 0 : trk.route;
 }
 /** What the header of a component card calls the thing loaded there. The
- * module's own hierarchy names itself (root label); the instrument also has
- * the mixer's display name. Empty positions say so. */
+ * instrument has the mixer's display name; a module's own hierarchy may name
+ * itself (root label); otherwise the manifest name the manager sends with the
+ * card's metadata. Empty positions say so. */
 function sndModuleName(c) {
   if (c.comp === "synth") {
     const n = mixKV["chain:" + c.slot + ":synth_name"] || mixKV["chain:" + c.slot + ":synth_module"];
@@ -136,7 +138,9 @@ function sndModuleName(c) {
   const h = c.hierarchy;
   if (h && h.levels && h.levels.root && h.levels.root.label) return h.levels.root.label;
   if (h && h.label) return h.label;
-  return "";
+  /* the manager names the module by its manifest (most hierarchies leave the
+   * root unlabelled, and only the instrument has a mixer name) */
+  return c.moduleName || "";
 }
 function sndIsEmpty(c) {
   if (c.knownEmpty) return true;            /* the manager says nothing is loaded here */

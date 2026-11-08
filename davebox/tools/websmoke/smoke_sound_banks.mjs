@@ -153,6 +153,10 @@ if (fxKey) {
   ok("fxPanelEmbedded", !!fr && /tape-echo2\/web_ui\.html\?schwungStandalone=1&slot=\d+&component=fx1$/.test(src), src);
   ok("fxPanelHasSwitch", !!(card && card.querySelector('.sndcard-h .snduigroup')) && /component=fx1/.test((card.querySelector('.sndcard-h .sndopen') || {}).href || ""));
 }
+/* a card is named even when its module's hierarchy is not: the manifest name
+ * the manager sends with the metadata (effects have no other source) */
+ok("fxCardNamedFromManifest", window.eval('sndModuleName({ comp: "fx1", hierarchy: { levels: { root: { params: [] } } }, moduleName: "Tape Echo 2" })') === "Tape Echo 2");
+ok("hierarchyLabelStillWins", window.eval('sndModuleName({ comp: "fx2", hierarchy: { levels: { root: { label: "Own" } } }, moduleName: "Manifest" })') === "Own");
 /* the instrument's panel URL stays as it was: no component (a synth panel defaults to synth:) */
 ok("synthPanelUrlUnchanged", window.eval('sndPanelUrl({ panelUrl: "/x/web_ui.html", slot: 3, comp: "synth" })') === "/x/web_ui.html?schwungStandalone=1&slot=3");
 
