@@ -211,6 +211,24 @@ ok("synthPanelUrlNamesSynth", window.eval('sndPanelUrl({ panelUrl: "/x/web_ui.ht
   window.eval('mixKV["chain:' + A + ':synth_module"] = "somethingelse"; renderSound();');
   await new Promise(r => setTimeout(r, 120));
   ok("newInstrumentRebuilds", !panel.isConnected, 'old panel still in the page');
+  /* the instrument becoming KNOWN (the mixer's first answers landing after
+   * the page was built) is not a new instrument: the page and its panel stay
+   * — a rebuild reloaded every panel and re-read all its values (device,
+   * 2026-11-08: each panel loaded twice on first open) */
+  window.eval('delete mixKV["chain:' + A + ':synth_module"]; [...sndPages.keys()].forEach(sndDropPage); soundSig = ""; renderSound();');
+  await new Promise(r => setTimeout(r, 120));
+  window.eval('(function(){var c = sndComps["' + A + '|synth"]; c.moduleId = "obxd"; c.panelUrl = "/api/remote-ui/module-assets/obxd/web_ui.html"; sndMountPanel(c, c.panelUrl); window.__panel2 = c.body.querySelector("iframe");})()');
+  window.eval('mixKV["chain:' + A + ':synth_module"] = "obxd"; renderSound();');
+  await new Promise(r => setTimeout(r, 120));
+  ok("knownInstrumentKeepsPage", !!window.__panel2 && window.__panel2.isConnected &&
+     window.eval('sndComps["' + A + '|synth"].body.querySelector("iframe")') === window.__panel2, 'panel rebuilt when the instrument became known');
+  /* ...but a different one than the card reported is a new page */
+  window.eval('mixKV["chain:' + A + ':synth_module"] = ""; [...sndPages.keys()].forEach(sndDropPage); soundSig = ""; renderSound();');
+  await new Promise(r => setTimeout(r, 120));
+  window.eval('(function(){var c = sndComps["' + A + '|synth"]; c.moduleId = "obxd"; c.panelUrl = "/api/remote-ui/module-assets/obxd/web_ui.html"; sndMountPanel(c, c.panelUrl); window.__panel3 = c.body.querySelector("iframe");})()');
+  window.eval('mixKV["chain:' + A + ':synth_module"] = "osirus"; renderSound();');
+  await new Promise(r => setTimeout(r, 120));
+  ok("otherInstrumentThanCardRebuilds", !window.__panel3.isConnected, 'kept a page for a different instrument');
   /* at most SND_KEEP pages; the oldest goes, never the one on screen */
   for (const t of others.slice(0, 5)) await go(t);
   ok("keepsAtMostFour", window.eval('sndPages.size') <= window.eval('SND_KEEP') && d.querySelectorAll('#soundwrap .sndcards').length === window.eval('sndPages.size'),

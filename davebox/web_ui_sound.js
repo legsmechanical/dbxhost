@@ -204,6 +204,23 @@ function renderSound() {
   bar.appendChild(head);
   wrap.insertBefore(bar, wrap.firstChild);
 
+  /* The instrument reads "" until the mixer's first answers land — on a busy
+   * device several seconds after this page was built, panels and all. Its
+   * becoming known is not a new instrument: the page's own card was told by
+   * the manager what is there, so when that agrees (or has not said yet), the
+   * page carries on under the new identity instead of rebuilding — a rebuild
+   * reloads every panel, and each panel reads all its values again. */
+  const inst = mixKV["chain:" + t + ":synth_module"] || "";
+  if (inst && !sndPages.has(sig)) {
+    const unknownSig = [t, sndRoute(t), trk.chan, trk.pm, ""].join("|");
+    const pg = sndPages.get(unknownSig);
+    const syn = sndComps[t + "|synth"];
+    if (pg && (!syn || (!syn.knownEmpty && (!syn.moduleId || syn.moduleId === inst)))) {
+      sndPages.delete(unknownSig);
+      sndPages.set(sig, pg);
+    }
+  }
+
   /* this track's page as it was left: panels loaded, editors in place */
   const kept = sndPages.get(sig);
   if (kept) {
