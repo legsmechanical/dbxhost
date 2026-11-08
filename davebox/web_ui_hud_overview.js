@@ -162,7 +162,12 @@
       const onPads = r >= rowOff && r < rowOff + 4;
       h += '<span class="rl' + (onPads ? ' on' : '') + '">' + LETTERS[r] + '</span>';
       for (let t = 0; t < 8; t++) {
-        const trk = tracks[t] || {}, has = trk.has && trk.has[r], pl = trk.pl && trk.ac === r, q = trk.qc === r && !(trk.pl && trk.ac === r);
+        /* the device's own clip states when it sent them (what the pads show);
+         * the editor's snapshot only as a fallback */
+        const dc = o.clips && o.clips[t], trk = tracks[t] || {};
+        const has = dc ? !!((dc.has >> r) & 1) : trk.has && trk.has[r];
+        const pl = dc ? !!(dc.pl && dc.ac === r) : !!(trk.pl && trk.ac === r);
+        const q = !pl && (dc ? dc.q === r || !!(dc.rl && dc.ac === r) : trk.qc === r);
         const bits = o.thumbs && o.thumbs[t] ? o.thumbs[t][r] | 0 : -1;
         let thumb = '';
         if (has && bits >= 0) { thumb = '<span class="th16">'; for (let i = 0; i < 16; i++) thumb += '<i' + ((bits >> i) & 1 ? ' class="on"' : '') + '></i>'; thumb += '</span>'; }
@@ -172,7 +177,9 @@
     }
     h += '</div>';
     if (o.cells && o.cells.length) {
-      h += '<div class="hud-o-mix"><span class="ml">' + esc(H.sentence ? H.sentence(o.mode || '') : (o.mode || '')) + '</span>';
+      /* the mode is named by the lit tab above; the first column only keeps the
+       * dials under their tracks' cards */
+      h += '<div class="hud-o-mix"><span class="ml"></span>';
       o.cells.forEach((c, t) => {
         const val = c && c.kind !== 'blank' ? c.text : '';
         const n = c && typeof c.norm === 'number' ? c.norm : c && typeof c.signed === 'number' ? (c.signed + 1) / 2 : null;

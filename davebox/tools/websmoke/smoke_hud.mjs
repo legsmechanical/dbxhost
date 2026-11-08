@@ -162,6 +162,15 @@ ok('...its dividers drawn as rules, never at the window\'s edge', el.querySelect
   ok('session overview: the clip grid (the pads\' rows lit), clip thumbnails, the knob mode\'s eight values', cards >= 32 && cards % 8 === 0 &&
      e.querySelectorAll('.hud-o-grid .rl.on').length === 4 && e.querySelectorAll('.hud-o-grid .cc.has').length > 0 && !!e.querySelector('.hud-o-grid .th16') &&
      e.querySelectorAll('.hud-o-mix .mx').length === 8 && !!e.querySelector('.hud-o-info .tab.on'), cards + ' cards');
+  /* the grid's clip states come from the device (what the pads light), not the
+   * editor's snapshot: a clip queued while stopped, an Audio clip */
+  const sesQ = JSON.parse(JSON.stringify(ses)); sesQ.ovw.rowOff = 0;
+  sesQ.ovw.clips = Array.from({ length: 8 }, (_, t) => ({ has: t === 3 || t === 4 ? 1 : 0, ac: 0, pl: t === 4 ? 1 : 0, q: t === 3 ? 0 : -1, rl: 0 }));
+  e = draw(sesQ);
+  const rowA = e ? [...e.querySelectorAll('.hud-o-grid .cc')].slice(0, 8) : [];
+  ok('...its clips as the device lights them: one queued while stopped, one playing, none the device lacks', rowA.length === 8 &&
+     rowA[3].matches('.has.q') && rowA[4].matches('.has.pl') && !rowA[0].matches('.has') && e.querySelectorAll('.hud-o-grid .cc.has').length === 2,
+     rowA.map((c) => c.className).join('|'));
   e = draw(fx('session-muted'));
   ok('...a muted track as the device says', !!e && !!e.querySelector('.hud-o-grid .th.mute'));
   setM(saveM);

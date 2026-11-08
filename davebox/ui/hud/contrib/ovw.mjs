@@ -20,7 +20,7 @@ function thumbs() {
     thumbAt = now;
     const out = [];
     for (let t = 0; t < 8; t++) {
-        if (S.trackPadMode[t] === 1) { out.push(null); continue; }
+        if (S.trackPadMode[t] === 1 || S.trackPadMode[t] === 3) { out.push(null); continue; }   /* drum: steps per lane; Audio: a sample, no steps */
         const row = [];
         for (let c = 0; c < 16; c++) {
             const st = S.clipSteps[t] && S.clipSteps[t][c];
@@ -36,12 +36,29 @@ function thumbs() {
     return out;
 }
 
+/* Every clip's state in the terms the session pads light it (ui_leds.mjs,
+ * the session grid): which clips hold anything, which one plays, which one is
+ * queued. The editor's snapshot cannot stand in for this — a clip launched
+ * while the transport is stopped is queued only here, and an Audio clip's
+ * content is its sample, which the snapshot does not carry. */
+function clips() {
+    const out = [];
+    for (let t = 0; t < 8; t++) {
+        const drum = S.trackPadMode[t] === 1;
+        let has = 0;
+        for (let c = 0; c < 16; c++) if (drum ? S.drumClipNonEmpty[t][c] : S.clipNonEmpty[t][c]) has |= 1 << c;
+        out.push({ has, ac: S.trackActiveClip[t] | 0, pl: S.trackClipPlaying[t] ? 1 : 0,
+                   q: S.trackQueuedClip[t] >= 0 ? S.trackQueuedClip[t] | 0 : -1, rl: S.trackWillRelaunch[t] ? 1 : 0 });
+    }
+    return out;
+}
+
 export const ovw = {
     key: 'ovw',
     collect: (frame) => {
         if (frame.screen !== 'session.overview') return null;
         const mode = SESS_KNOB_MODES[S.sessKnobMode] || SESS_KNOB_MODES[0];
         return { mode: mode.label, modes: SESS_KNOB_MODES.slice(0, 4).map((m) => m.label),
-                 modeIdx: S.sessKnobMode | 0, rowOff: S.sceneRow | 0, cells: sessMixerCells(mode).map(cellOut), thumbs: thumbs() };
+                 modeIdx: S.sessKnobMode | 0, rowOff: S.sceneRow | 0, cells: sessMixerCells(mode).map(cellOut), thumbs: thumbs(), clips: clips() };
     },
 };

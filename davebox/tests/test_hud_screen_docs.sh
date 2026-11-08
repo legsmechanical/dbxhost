@@ -43,6 +43,12 @@ const nu = doc('notice-undo');
 ok('a notice card is described, over the screen it interrupts (Undo)', nu.overlayLayer && nu.overlayLayer.notice && nu.overlayLayer.notice.lines[0] === 'UNDO' && nu.body.tracks, JSON.stringify(nu.overlayLayer));
 const so = doc('session-overview');
 ok('the session overview carries the knob mode, its eight values and the clips in brief', so.ovw && so.ovw.cells.length === 8 && so.ovw.thumbs.length === 8 && typeof so.ovw.rowOff === 'number' && so.ovw.mode, JSON.stringify(so.ovw).slice(0, 200));
+/* the grid's clip states: the same facts the overview's track row reports, from the same state */
+const cl = so.ovw.clips || [], tr = so.body.tracks || [];
+ok('...and every clip\'s state as the pads light it, agreeing with the track row', cl.length === 8 && tr.length === 8 &&
+   cl.every((c, t) => typeof c.has === 'number' && !!((c.has >> c.ac) & 1) === tr[t].has && !!(c.pl && ((c.has >> c.ac) & 1)) === tr[t].playing &&
+     !!((c.q >= 0 || c.rl) && ((c.has >> c.ac) & 1)) === tr[t].queued) &&
+   cl.some((c) => c.has), JSON.stringify(cl) + ' vs ' + JSON.stringify(tr.map((r) => [r.clip, r.has, r.playing])));
 const td = doc('track-drum');
 ok('a drum track says which lane it is on', td.where.padMode === 'drum' && td.where.lane >= 0, JSON.stringify(td.where));
 console.log(bad ? 'FAIL: test_hud_screen_docs' : 'PASS: test_hud_screen_docs');
