@@ -58,6 +58,17 @@ document.getElementById("sound").addEventListener("scroll", () => {
   }
 }, { passive: true });
 const sndComps = {};            /* "<slot>|<component>" -> card state */
+/* KEPT PAGES: each track's cards stay in the page once built, hidden while
+ * another track (or another view) is up, so a module's own panel — an iframe
+ * that, on the device's param channel, takes seconds to read its values —
+ * is still loaded, live and where you left it when you come back. Moving an
+ * iframe in the DOM reloads it, so pages are shown and hidden, never moved.
+ * Keyed by the same identity as soundSig (track, route, channel, kind,
+ * instrument): a change there rebuilds that track's page. The oldest beyond
+ * SND_KEEP is let go (each panel holds its own connection). */
+const SND_KEEP = 4;
+const sndPages = new Map();     /* sig -> { t, row, keys: [sndComps keys], used } */
+let sndPageClock = 0;
 /* live device→browser sync: while the view shows a position, listen to its
  * notify-ring fan-out (listen-only — no seed; the cards request their own
  * metadata). A hardware knob turn then streams into the generated editors
@@ -158,8 +169,10 @@ function renderSound() {
   const sig = [t, sndRoute(t), trk.chan, trk.pm, mixKV["chain:" + t + ":synth_module"] || ""].join("|");
   if (sig === soundSig && wrap.childNodes.length) { sndTick(); return; }
   soundSig = sig;
-  sndTeardown();
-  wrap.innerHTML = "";
+  /* the header bar is rebuilt; the pages below it are kept (see sndPages) */
+  const oldBar = wrap.querySelector(".sndheadbar");
+  if (oldBar) oldBar.remove();
+  for (const pg of sndPages.values()) pg.row.style.display = "none";
 
   sndScrollTrack = t;
   /* which position to stream: the track's own for a hosted instrument, 0 for
@@ -189,13 +202,37 @@ function renderSound() {
   bar.className = "sndheadbar";
   bar.appendChild(chips);
   bar.appendChild(head);
-  wrap.appendChild(bar);
+  wrap.insertBefore(bar, wrap.firstChild);
+
+  /* this track's page as it was left: panels loaded, editors in place */
+  const kept = sndPages.get(sig);
+  if (kept) {
+    kept.used = ++sndPageClock;
+    kept.row.style.display = "";
+    /* the generated editors re-read their values (a knob turned on the device
+     * while this page was hidden); a module's own panel keeps its own live
+     * connection and needs nothing */
+    for (const k of kept.keys) {
+      const c = sndComps[k];
+      if (c && c.asked && c.rendered === "editor") R.requestComponent(c.slot, c.comp);
+    }
+    sndAskAll();
+    document.getElementById("sound").scrollTop = sndScroll[t] || 0;
+    sndTick();
+    return;
+  }
+  /* a page this track had with another instrument or kind is stale */
+  for (const [k, pg] of sndPages) if (pg.t === t) sndDropPage(k);
 
   /* two panes: the signal path as a VERTICAL stack (top → bottom = signal
    * order), the track's audio strip as a sticky sidebar on the right */
   const row = document.createElement("div");
   row.className = "sndcards";
   wrap.appendChild(row);
+  const keysBefore = new Set(Object.keys(sndComps));
+  const page = { t, row, keys: [], used: ++sndPageClock };
+  sndPages.set(sig, page);
+  const notePage = () => { page.keys = Object.keys(sndComps).filter(k => !keysBefore.has(k)); sndTrimPages(sig); };
   const chain = document.createElement("div");
   chain.className = "sndchain";
   row.appendChild(chain);
@@ -203,6 +240,7 @@ function renderSound() {
   const route = sndRoute(t);
   if (route === 2) {
     chain.appendChild(sndStaticCard("MIDI", "sends MIDI out — nothing to edit here"));
+    notePage();
     return;
   }
   if (route === 1) {
@@ -224,6 +262,7 @@ function renderSound() {
   } else {
     for (const spec of SND_CHAIN_COMPONENTS) chain.appendChild(sndCard(t, spec.comp, spec.role));
   }
+  notePage();
   sndAskAll();
   row.appendChild(sndMixCard(t));
   /* restore where this track's stack was scrolled to last time */
@@ -586,14 +625,36 @@ function sndTick() {
   }
 }
 
-function sndTeardown() {
-  for (const k in sndComps) {
-    const c = sndComps[k];
-    if (c.timer) clearTimeout(c.timer);
-    if (c.retryTimer) clearTimeout(c.retryTimer);
-    if (c.editor) c.editor.destroy();
-    delete sndComps[k];
+function sndDropComp(k) {
+  const c = sndComps[k];
+  if (!c) return;
+  if (c.timer) clearTimeout(c.timer);
+  if (c.retryTimer) clearTimeout(c.retryTimer);
+  if (c.editor) c.editor.destroy();
+  delete sndComps[k];
+}
+/** Let a kept page go: its cards, its editors, its panels (and their
+ * connections, with the iframes). */
+function sndDropPage(sig) {
+  const pg = sndPages.get(sig);
+  if (!pg) return;
+  for (const k of pg.keys) sndDropComp(k);
+  pg.row.remove();
+  sndPages.delete(sig);
+}
+/** Keep at most SND_KEEP pages: the least recently shown goes, never the one
+ * on screen. */
+function sndTrimPages(current) {
+  while (sndPages.size > SND_KEEP) {
+    let oldest = null, at = Infinity;
+    for (const [k, pg] of sndPages) if (k !== current && pg.used < at) { oldest = k; at = pg.used; }
+    if (oldest === null) break;
+    sndDropPage(oldest);
   }
+}
+function sndTeardown() {
+  for (const k of [...sndPages.keys()]) sndDropPage(k);
+  for (const k in sndComps) sndDropComp(k);
 }
 
 /* follow the selection / routing at snapshot cadence, like the mixer does */

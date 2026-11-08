@@ -9,6 +9,9 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Added
+- **Instrument and effect editors stay loaded.** On the browser's Sound view, coming back
+  to a track (or back from the Mixer) shows its editors as you left them, instantly,
+  instead of loading them again; the last four tracks you visited are kept.
 - **Effects' own editors in the browser.** On the browser's Sound view, an effect that
   ships its own editor page (Tape Echo 2, 4K EQ) now opens as that editor, as an
   instrument's does, with the same Custom UI / Generic switch.

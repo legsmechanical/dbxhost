@@ -179,6 +179,44 @@ ok("hierarchyLabelStillWins", window.eval('sndModuleName({ comp: "fx2", hierarch
 /* the instrument's panel URL stays as it was: no component (a synth panel defaults to synth:) */
 ok("synthPanelUrlUnchanged", window.eval('sndPanelUrl({ panelUrl: "/x/web_ui.html", slot: 3, comp: "synth" })') === "/x/web_ui.html?schwungStandalone=1&slot=3");
 
+/* ---- 3c. KEPT PAGES: a module's own panel survives leaving its track ----
+ * (moving or rebuilding an iframe reloads it, and on the device a panel takes
+ * seconds to read its values) */
+{
+  const A = schwungTrack >= 0 ? schwungTrack : 0;
+  const others = window.eval('M.tracks.map(function(t,i){return i;})').filter(i => i !== A);
+  const go = async (t) => { window.eval('M.sel.t = ' + t + '; renderSound();'); await new Promise(r => setTimeout(r, 120)); };
+  await go(A);
+  window.eval('(function(){var c = sndComps["' + A + '|synth"]; c.panelUrl = "/api/remote-ui/module-assets/obxd/web_ui.html"; sndMountPanel(c, c.panelUrl); window.__panel = c.body.querySelector("iframe");})()');
+  const panel = window.__panel;
+  ok("keptPanelMounted", !!panel && panel.isConnected);
+  await go(others[0]);
+  ok("keptPanelHiddenNotGone", panel.isConnected && panel.closest('.sndcards').style.display === "none");
+  window.setView('mix'); await new Promise(r => setTimeout(r, 100));
+  window.setView('sound'); await new Promise(r => setTimeout(r, 120));
+  await go(A);
+  ok("keptPanelSameFrameOnReturn", window.eval('sndComps["' + A + '|synth"].body.querySelector("iframe")') === panel && panel.isConnected &&
+     panel.closest('.sndcards').style.display === "");
+  ok("onePageOnScreen", [...d.querySelectorAll('#soundwrap .sndcards')].filter(e => e.style.display !== "none").length === 1);
+  /* a generated editor re-reads its values when its page comes back */
+  const asked = []; const realReq = window.eval('R.requestComponent');
+  window.__asked = asked; window.eval('R.requestComponent = function(s, c){ window.__asked.push(s + "|" + c); }');
+  window.eval('(function(){var c = sndComps["' + A + '|fx1"]; if (c) { c.asked = true; c.rendered = "editor"; }})()');
+  await go(others[0]); await go(A);
+  window.__realReq = realReq; window.eval('R.requestComponent = window.__realReq');
+  ok("keptEditorsReRead", asked.includes(A + '|fx1') && !asked.includes(A + '|synth'), JSON.stringify(asked));
+  /* a different instrument on the track is a different page */
+  window.eval('mixKV["chain:' + A + ':synth_module"] = "somethingelse"; renderSound();');
+  await new Promise(r => setTimeout(r, 120));
+  ok("newInstrumentRebuilds", !panel.isConnected, 'old panel still in the page');
+  /* at most SND_KEEP pages; the oldest goes, never the one on screen */
+  for (const t of others.slice(0, 5)) await go(t);
+  ok("keepsAtMostFour", window.eval('sndPages.size') <= window.eval('SND_KEEP') && d.querySelectorAll('#soundwrap .sndcards').length === window.eval('sndPages.size'),
+     window.eval('sndPages.size'));
+  ok("currentPageKept", window.eval('[...sndPages.values()].some(function(p){return p.t === ' + others[4] + ' && p.row.style.display === "";})'));
+  window.eval('delete mixKV["chain:' + A + ':synth_module"]');
+}
+
 /* ---- 5. collapsible banks, no breadcrumb ---- */
 /* mount an editor directly: the mock has no module with a deep hierarchy, so
  * drive window.chainParams with a synthetic one — this is the unit under test */
