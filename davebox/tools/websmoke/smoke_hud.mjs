@@ -120,7 +120,7 @@ ok('...its dividers drawn as rules, never at the window\'s edge', el.querySelect
 {
   const em = render('bank-clip'), bar = em && em.querySelector('.hud-hints'), w = bar && bar.querySelector('.hud-hint');
   const cs = w ? window.getComputedStyle(w) : null;
-  ok('the hints are a footer bar, words at full size', !!bar && !!w && !em.querySelector('.hud-hints .hint') && cs.fontSize === '16px' &&
+  ok('the hints are a footer bar, words at full size and capitalised', !!bar && !!w && !em.querySelector('.hud-hints .hint') && cs.fontSize === '20px' && /^[A-Z]/.test(w.querySelector('.w').textContent) &&
      window.getComputedStyle(bar).borderTopStyle === 'solid', cs ? cs.fontSize : 'no hint');
 }
 el = render('session-mixer-pan');

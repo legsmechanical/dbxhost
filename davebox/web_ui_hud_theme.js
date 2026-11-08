@@ -48,10 +48,10 @@ body[data-view="screen"] .seqonly{display:none}
  * "they should be a footer bar that makes it clear that they're ui
  * instructions"): edge to edge under a rule, its own ground, always there so
  * the screen above never shifts when a screen has no hints. */
-.hud-hints{display:flex;gap:26px;color:#a3aab6;font-size:16px;height:46px;align-items:center;flex:0 0 auto;
+.hud-hints{display:flex;gap:30px;color:#b4bac4;font-size:20px;height:56px;align-items:center;flex:0 0 auto;
   margin:8px -26px -14px;padding:0 26px;background:#101318;border-top:1px solid #222730}
-.hud-hints .hud-hint{display:flex;align-items:center;gap:8px;font-size:16px;color:#a3aab6;margin:0;line-height:1}
-.hud-hints kbd{font:700 14px ui-sans-serif,system-ui,sans-serif;padding:3px 9px;border-radius:7px;background:#232833;color:var(--h-ink);box-shadow:inset 0 -2px 0 #0b0c0e}
+.hud-hints .hud-hint{display:flex;align-items:center;gap:10px;font-size:20px;color:#b4bac4;margin:0;line-height:1;font-weight:500}
+.hud-hints kbd{font:700 18px ui-sans-serif,system-ui,sans-serif;padding:5px 11px;border-radius:8px;background:#262c37;color:var(--h-ink);box-shadow:inset 0 -2px 0 #0b0c0e}
 .hud-hints .ctx{margin-left:auto;color:var(--h-ink);font-weight:600}
 /* body */
 .hud-body{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center}
