@@ -437,8 +437,9 @@ Include the bundled helper to get a Promise-based wrapper:
 | `onParamChange(cb)` | device → iframe | Subscribes the iframe to all `param_update` messages for the active slot. Includes hardware knob changes and updates from other browser clients. |
 | `getParam(key)` | local cache | Returns the **last value the iframe has seen** for `key`, not a fresh device read. If you need a value before any update has arrived, call `onParamChange` first and seed from the initial burst. |
 | `setParam(key, value)` | iframe → device | Goes through the WebSocket `set_param` path. Value is coerced to a string. |
-| `getHierarchy()` | local cache | Returns the parsed `ui_hierarchy` object for the synth component (or `null` if the module didn't expose one). |
-| `getChainParams()` | local cache | Returns the parsed `chain_params` array (or `null`). |
+| `getHierarchy()` | local cache | Returns the parsed `ui_hierarchy` object for the page's component (or `null` if the module didn't expose one). |
+| `getChainParams()` | local cache | Returns the parsed `chain_params` array for the page's component (or `null`). |
+| `component` | property | The chain component the page edits — `"synth"`, or the position an audio/MIDI effect sits in (`"fx1"`…). A popped-out page reads it from its `?component=` query (beside `slot=`), so prefix your keys with it: the same effect can sit in any position. |
 
 **Param keys are component-prefixed.** Use `"synth:cutoff"`, not
 `"cutoff"`. Slot-level keys like `slot:volume` and `knob_1_value`

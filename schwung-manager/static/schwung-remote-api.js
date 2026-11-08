@@ -157,6 +157,13 @@
     var wsUrl = (window.location.protocol === "https:" ? "wss://" : "ws://") +
         window.location.host + "/ws/remote-ui" + (deflate === "0" ? "?deflate=0" : "");
 
+    // Which chain component this page edits. An effect's page is opened with
+    // ?component=fx1..fx4 (or midi_fx1) beside slot=N — the same module can sit
+    // in any position — and its structure (hierarchy, chain_params) is THAT
+    // component's. Without it, an effect panel was handed the instrument's
+    // chain_params, found none of its own keys and treated every knob as 0..1.
+    var component = query.get("component") || "synth";
+
     var cache = {};               // key -> last known value (mirrors parent cache)
     var listeners = [];           // onParamChange callbacks
     var hierarchyData = null, hierarchyWaiters = [];
@@ -223,15 +230,15 @@
                 }
                 break;
             case "hierarchy":
-                // Only the synth component drives the custom UI.
-                if (msg.component === "synth") {
+                // Only the page's own component drives the custom UI.
+                if (msg.component === component) {
                     hierarchyData = msg.data;
                     resolveWaiters(hierarchyWaiters, hierarchyData);
                 }
                 emitComponent(msg);
                 break;
             case "chain_params":
-                if (msg.component === "synth") {
+                if (msg.component === component) {
                     chainParamsData = msg.data;
                     resolveWaiters(chainParamsWaiters, chainParamsData);
                 }
@@ -288,6 +295,9 @@
     connect();
 
     window.schwungRemote = {
+        // the component this page edits (its key prefix: component + ":")
+        component: component,
+
         getParam: function (key) {
             // Resolve from the local cache. Values stream in via param_update
             // shortly after subscribe, so early reads may be undefined — the
