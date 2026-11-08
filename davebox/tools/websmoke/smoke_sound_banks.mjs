@@ -176,8 +176,10 @@ ok("hierarchyLabelStillWins", window.eval('sndModuleName({ comp: "fx2", hierarch
     return [a, b, c].join("|"); })()`);
   ok("trackLabelFromCardBeforeSeed", lab === "Osirus|…|no instrument", lab);
 }
-/* the instrument's panel URL stays as it was: no component (a synth panel defaults to synth:) */
-ok("synthPanelUrlUnchanged", window.eval('sndPanelUrl({ panelUrl: "/x/web_ui.html", slot: 3, comp: "synth" })') === "/x/web_ui.html?schwungStandalone=1&slot=3");
+/* the instrument's panel names its component too: the page then subscribes to
+ * the instrument alone, not every module on the track (many kept panels each
+ * reading the whole slot one value at a time starved the editor, 2026-11-08) */
+ok("synthPanelUrlNamesSynth", window.eval('sndPanelUrl({ panelUrl: "/x/web_ui.html", slot: 3, comp: "synth" })') === "/x/web_ui.html?schwungStandalone=1&slot=3&component=synth");
 
 /* ---- 3c. KEPT PAGES: a module's own panel survives leaving its track ----
  * (moving or rebuilding an iframe reloads it, and on the device a panel takes

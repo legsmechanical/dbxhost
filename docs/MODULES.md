@@ -439,7 +439,7 @@ Include the bundled helper to get a Promise-based wrapper:
 | `setParam(key, value)` | iframe → device | Goes through the WebSocket `set_param` path. Value is coerced to a string. |
 | `getHierarchy()` | local cache | Returns the parsed `ui_hierarchy` object for the page's component (or `null` if the module didn't expose one). |
 | `getChainParams()` | local cache | Returns the parsed `chain_params` array for the page's component (or `null`). |
-| `component` | property | The chain component the page edits — `"synth"`, or the position an audio/MIDI effect sits in (`"fx1"`…). A popped-out page reads it from its `?component=` query (beside `slot=`), so prefix your keys with it: the same effect can sit in any position. |
+| `component` | property | The chain component the page edits — `"synth"`, or the position an audio/MIDI effect sits in (`"fx1"`…). A popped-out page reads it from its `?component=` query (beside `slot=`), so prefix your keys with it: the same effect can sit in any position. A page opened with `?component=` receives that component's values only (plus the slot-level keys when it is `synth`); without it, the whole slot's. |
 
 **Param keys are component-prefixed.** Use `"synth:cutoff"`, not
 `"cutoff"`. Slot-level keys like `slot:volume` and `knob_1_value`

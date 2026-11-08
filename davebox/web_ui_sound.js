@@ -480,8 +480,11 @@ function sndPanelHeader(c, id) {
  * same module can sit in any of them. */
 function sndPanelUrl(c) {
   const url = c.panelUrl || "";
+  /* always names its component: the page then subscribes to that one alone,
+   * so an instrument's panel no longer reads its effects' values (and an
+   * effect's, the instrument's) every time it connects */
   return url + (url.indexOf("?") >= 0 ? "&" : "?") + "schwungStandalone=1&slot=" + c.slot +
-    (c.comp === "synth" ? "" : "&component=" + encodeURIComponent(c.comp));
+    "&component=" + encodeURIComponent(c.comp);
 }
 
 /** The module's own panel, in its own connection. Sized by CSS (full column

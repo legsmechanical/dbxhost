@@ -144,6 +144,10 @@ the section into a versioned heading at release time.
   Clips of the same length still hand over in step with each other.
 
 ### Fixed
+- **The browser editor no longer slows to a crawl with module editors open.** Several
+  instrument and effect editors kept loaded (in one tab or a few) could hold up Play, Stop
+  and switching views for seconds; each editor now reads only its own values, and stops
+  reading when it closes.
 - **A flattened clip longer than a bar shows its full length.** After Flatten, a clip
   of several bars played all of them but its loop length and waveform showed only
   the first bar until the length was changed by hand.

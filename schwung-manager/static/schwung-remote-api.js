@@ -163,6 +163,12 @@
     // component's. Without it, an effect panel was handed the instrument's
     // chain_params, found none of its own keys and treated every knob as 0..1.
     var component = query.get("component") || "synth";
+    // A page opened FOR one component (?component=) subscribes to that one
+    // only: the server then reads just its values, not every module on the
+    // slot. Without the query it is the whole slot, as before.
+    var subscribeMsg = query.get("component")
+        ? { type: "subscribe", slot: slot, component: component }
+        : { type: "subscribe", slot: slot };
 
     var cache = {};               // key -> last known value (mirrors parent cache)
     var listeners = [];           // onParamChange callbacks
@@ -262,7 +268,7 @@
             if (isTool) {
                 ws.send(JSON.stringify({ type: "subscribe_tool" }));
             } else {
-                ws.send(JSON.stringify({ type: "subscribe", slot: slot }));
+                ws.send(JSON.stringify(subscribeMsg));
             }
             if (wantMixer) {
                 ws.send(JSON.stringify({ type: "subscribe_mixer" }));
@@ -339,7 +345,7 @@
             // params-only refetch (a full subscribe would re-send custom_ui).
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify(isTool ? { type: "refetch_tool" }
-                                              : { type: "subscribe", slot: slot }));
+                                              : subscribeMsg));
             }
         },
 

@@ -84,6 +84,14 @@ type ruClient struct {
 
 	// when the connection was accepted — the close log says how long it held
 	opened time.Time
+	// gone ends when the connection does — read failure, handler exit, or a
+	// failed write (which closes the socket). Long reads made FOR this client
+	// (a subscribe's one-by-one param fetch) stop on it: a page that dropped
+	// and reconnected otherwise left its old fetch running beside the new
+	// one, and a few kept pages reconnecting stacked enough one-by-one reads
+	// to starve the shared param channel (the editor stopped responding).
+	gone     context.Context
+	markGone context.CancelFunc
 
 	// slots this client is subscribed to (slot index -> true)
 	subs map[uint8]bool
@@ -135,7 +143,7 @@ type wsMessage struct {
 	Slot      *uint8 `json:"slot,omitempty"`
 	Key       string `json:"key,omitempty"`
 	Value     string `json:"value,omitempty"`
-	Component string `json:"component,omitempty"` // get_hierarchy: serve ONE component
+	Component string `json:"component,omitempty"` // get_hierarchy / subscribe: serve ONE component
 }
 
 // --- Outbound message types (server -> browser) ---
@@ -449,10 +457,13 @@ func (ru *RemoteUI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ru.logger.Info("ws open", "deflate", ext, "ua", r.UserAgent())
 
+	gone, markGone := context.WithCancel(r.Context())
 	client := &ruClient{
-		conn:   conn,
-		subs:   make(map[uint8]bool),
-		opened: time.Now(),
+		conn:     conn,
+		subs:     make(map[uint8]bool),
+		opened:   time.Now(),
+		gone:     gone,
+		markGone: markGone,
 	}
 
 	ru.mu.Lock()
@@ -463,10 +474,11 @@ func (ru *RemoteUI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ru.mu.Lock()
 		delete(ru.clients, client)
 		ru.mu.Unlock()
+		markGone()
 		conn.Close(websocket.StatusNormalClosure, "bye")
 	}()
 
-	ru.readLoop(r.Context(), client)
+	ru.readLoop(gone, client)
 }
 
 // requireShm tries to connect shared memory and sends an error if unavailable.
@@ -542,9 +554,30 @@ func (ru *RemoteUI) handleSubscribe(ctx context.Context, c *ruClient, msg wsMess
 	c.subs[slot] = true
 	c.mu.Unlock()
 
-	ru.logger.Info("ws subscribe", "slot", slot)
+	ru.logger.Info("ws subscribe", "slot", slot, "component", msg.Component)
 
 	if !ru.requireShm(ctx, c) {
+		return
+	}
+
+	// A page that edits ONE component (a module's own editor embedded for
+	// that position) asks for just that one: its metadata and values, plus
+	// the slot settings when it is the instrument. Served as the whole slot,
+	// an effect's page read the instrument's values too — Osirus's 150, one
+	// by one — every time it connected.
+	if msg.Component != "" && isChainComponent(msg.Component) {
+		comp := msg.Component
+		ru.sendSlotInfo(ctx, c, slot)
+		mod, ok := ru.readParam(slot, comp+"_module", 2)
+		if ok && mod == "" {
+			return
+		}
+		ru.sendHierarchy(ctx, c, slot, comp, mod)
+		ru.sendChainParams(ctx, c, slot, comp)
+		if comp == "synth" {
+			ru.sendSlotSettings(ctx, c, slot)
+		}
+		ru.sendInitialParamValues(ctx, c, slot, comp)
 		return
 	}
 
@@ -573,6 +606,9 @@ func (ru *RemoteUI) handleSubscribe(ctx context.Context, c *ruClient, msg wsMess
 	// Send hierarchy and chain_params for the remaining components, plus initial
 	// param values for every component (synth metadata already sent above).
 	for _, comp := range componentPrefixes {
+		if ctx.Err() != nil {
+			return
+		}
 		moduleKey := comp + "_module"
 		modID, err := ru.shm.GetParam(slot, moduleKey)
 		if err != nil || modID == "" {
@@ -604,6 +640,9 @@ func (ru *RemoteUI) sendSlotSettings(ctx context.Context, c *ruClient, slot uint
 	// during subscribe doesn't leave dropdowns (recv/fwd channel etc.) stuck
 	// defaulted to their first option instead of the real device value.
 	for _, key := range slotSettingKeys {
+		if ctx.Err() != nil {
+			return
+		}
 		val := ru.getParamWithRetry(slot, key, 3)
 		if val != "" {
 			params[key] = val
@@ -677,6 +716,10 @@ func (ru *RemoteUI) sendInitialParamValues(ctx context.Context, c *ruClient, slo
 	fetched := 0
 
 	for i, p := range params {
+		if ctx.Err() != nil {
+			ru.logger.Info("initial params: abandoned (client gone)", "slot", slot, "comp", comp, "fetched", fetched, "of", len(params))
+			return
+		}
 		if p.Key == "" {
 			continue
 		}
@@ -1730,8 +1773,20 @@ func (ru *RemoteUI) writeJSON(ctx context.Context, c *ruClient, v any) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if err := wsjson.Write(ctx, c.conn, v); err != nil {
-		ru.logger.Debug("ws write failed", "err", err)
+		ru.writeFailed(c, err)
 	}
+}
+
+// writeFailed: a failed write has closed the socket (the websocket library
+// closes on a write error or timeout). Logged once per client at Info — the
+// close that follows reads only "use of closed network connection".
+func (ru *RemoteUI) writeFailed(c *ruClient, err error) {
+	if c.gone != nil && c.gone.Err() == nil {
+		ru.logger.Info("ws write failed", "err", err, "after", time.Since(c.opened).Round(time.Millisecond))
+		c.markGone()
+		return
+	}
+	ru.logger.Debug("ws write failed", "err", err)
 }
 
 // writeJSONTry dispatches the write in its own goroutine if no write to this
@@ -1750,7 +1805,7 @@ func (ru *RemoteUI) writeJSONTry(ctx context.Context, c *ruClient, v any) bool {
 		wctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 		if err := wsjson.Write(wctx, c.conn, v); err != nil {
-			ru.logger.Debug("ws write failed", "err", err)
+			ru.writeFailed(c, err)
 		}
 	}()
 	return true
