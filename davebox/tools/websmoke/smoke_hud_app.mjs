@@ -68,6 +68,8 @@ ok('...scaled to fill, with no margin', /scale\(1\.5000\)/.test((size(1440, 900)
 const mani = d.querySelector('link[rel="manifest"]');
 ok('it names itself an app: manifest, Apple tags, its title', !!mani && mani.getAttribute('href') === 'web_ui_app.json' &&
    !!d.querySelector('meta[name="apple-mobile-web-app-capable"][content="yes"]') && !!d.querySelector('link[rel="apple-touch-icon"]') && d.title === 'dAVEBOx');
+ok('...one of each, never a second copy of a tag the page already has', ['apple-mobile-web-app-capable', 'mobile-web-app-capable', 'apple-mobile-web-app-status-bar-style', 'theme-color']
+   .every((n) => d.querySelectorAll('meta[name="' + n + '"]').length <= 1) && d.querySelectorAll('link[rel="manifest"]').length === 1);
 const m = JSON.parse(readFileSync(new URL('./web_ui_app.json', ROOT), 'utf8'));
 ok('...the manifest opens straight into the screen, standalone, with its icons on disk', m.start_url === '/?screen=1' && m.display === 'standalone' &&
    m.icons.length >= 2 && m.icons.every((i) => existsSync(new URL('./' + i.src, ROOT))) && existsSync(new URL('./web_ui_icon-180.png', ROOT)));

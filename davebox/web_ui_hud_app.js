@@ -61,7 +61,14 @@
   /* ---- the window ---- */
   document.title = 'dAVEBOx';
   const head = document.head;
-  const tag = (name, attrs) => { const e = document.createElement(name); for (const k in attrs) e.setAttribute(k, attrs[k]); head.appendChild(e); };
+  /* added only where the page has none: a page that already declares itself
+   * (the touch layout's own Apple tags) keeps its values, never a second,
+   * conflicting copy */
+  const tag = (name, attrs) => {
+    const key = attrs.name ? '[name="' + attrs.name + '"]' : '[rel="' + attrs.rel + '"]';
+    if (head.querySelector(name + key)) return;
+    const e = document.createElement(name); for (const k in attrs) e.setAttribute(k, attrs[k]); head.appendChild(e);
+  };
   tag('link', { rel: 'manifest', href: 'web_ui_app.json' });
   tag('meta', { name: 'theme-color', content: '#08090b' });
   tag('meta', { name: 'apple-mobile-web-app-capable', content: 'yes' });
