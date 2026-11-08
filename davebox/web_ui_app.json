@@ -1,0 +1,16 @@
+{
+  "name": "dAVEBOx Screen",
+  "short_name": "dAVEBOx",
+  "description": "The dAVEBOx Screen view, in a window of its own.",
+  "id": "/?screen=1",
+  "start_url": "/?screen=1",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#08090b",
+  "theme_color": "#08090b",
+  "icons": [
+    { "src": "web_ui_icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "web_ui_icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

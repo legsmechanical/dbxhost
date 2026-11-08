@@ -17,7 +17,9 @@
   palette: ['#4da3ff', '#3fd28b', '#ffb340', '#ff6b6b', '#b38cff', '#38d4e0', '#ffd84d', '#ff8fc7'],
 
   /* The stage: a 2:1 screen (the OLED's own aspect), scaled to fit. */
-  stage: { w: 960, h: 480 },
+  /* As an app window the stage takes the window's shape between these heights
+   * (960 wide): 21:9 at the short end, 4:3 (an iPad on its side) at the tall. */
+  stage: { w: 960, h: 480, minH: 410, maxH: 720 },
 
   /* Lists fill the screen in one column (the OLED shows ~5): 9 rows of 34 px fit the 324 px body; a blank
    * separator or divider costs about half a row. */

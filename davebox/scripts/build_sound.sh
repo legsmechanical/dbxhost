@@ -133,6 +133,8 @@ cp web_ui.html       "dist/${MODULE_ID}/"
 # any future sibling). Globbed so a new one ships without touching this line —
 # a missing half is silent on device: the page loads and does nothing.
 cp web_ui_*.js       "dist/${MODULE_ID}/"
+# The Screen view as an app window: its manifest and icons (web_ui_hud_app.js).
+cp web_ui_app.json web_ui_icon-*.png "dist/${MODULE_ID}/"
 
 # Export packager + templates, same as the stable build (read on-device at
 # export time). Cheap to ship and their absence is a confusing runtime failure.

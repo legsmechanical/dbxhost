@@ -17,14 +17,22 @@
   let es = null, shown = false, fixtures = null, fxIdx = 0, picker = null;
   H.mount(fit);
 
-  /* scale the 960×480 stage to the space, whole, centred */
+  /* scale the 960-wide stage to the space, whole, centred. Inside the editor it
+   * is the 2:1 card. As an app window (?screen=1) it FILLS the window instead:
+   * the stage keeps its width and takes the window's shape (within
+   * cfg.stage.minH..maxH, letterboxed only beyond those), so no band of page
+   * shows around it — the screen is the window. */
   function rescale() {
     if (!shown) return;
-    const w = view.clientWidth, h = view.clientHeight;
-    const s = Math.max(0.1, Math.min(w / H.cfg.stage.w, h / H.cfg.stage.h) * 0.98);
+    const w = view.clientWidth, h = view.clientHeight, sw = H.cfg.stage.w;
+    let sh = H.cfg.stage.h;
+    if (H.appWindow && w > 0 && h > 0) sh = Math.round(Math.max(H.cfg.stage.minH, Math.min(H.cfg.stage.maxH, sw * h / w)));
+    fit.style.setProperty('--stage-h', sh + 'px');
+    const s = Math.max(0.1, Math.min(w / sw, h / sh) * (H.appWindow ? 1 : 0.98));
     fit.style.transform = 'translate(-50%,-50%) scale(' + s.toFixed(4) + ')';
     fit.style.transformOrigin = '50% 50%';
   }
+  H.rescale = rescale;
   if (typeof ResizeObserver === 'function') new ResizeObserver(rescale).observe(view);
   window.addEventListener('resize', rescale);
 
@@ -151,8 +159,8 @@
   /* the editor's model changes (track states, transport) repaint the status strip */
   setInterval(() => { if (shown) H.paint(); }, 250);
 
-  /* standalone: ?screen=1 — the screen alone */
+  /* standalone: ?screen=1 — the screen alone, as its own window (web_ui_hud_app.js) */
   try {
-    if (new URLSearchParams(location.search).has('screen')) document.body.classList.add('screen-only');
+    if (new URLSearchParams(location.search).has('screen')) { document.body.classList.add('screen-only'); H.appWindow = true; }
   } catch (e) { /* ignore */ }
 });

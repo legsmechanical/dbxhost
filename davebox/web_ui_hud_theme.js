@@ -5,13 +5,24 @@
   const css = `
 #screenview{display:none;flex:1;min-height:0;align-items:center;justify-content:center;background:#050607;overflow:hidden;position:relative}
 #screenview.on{display:flex}
-#screenview .hud-fit{position:absolute;left:50%;top:50%;width:960px;height:480px}
+#screenview .hud-fit{position:absolute;left:50%;top:50%;width:960px;height:var(--stage-h,480px)}
+/* as an app window the screen is the window: edge to edge, no card */
+body.screen-only #screenview{background:#08090b}
+body.screen-only .hud-screen{border-radius:0;box-shadow:none}
+/* the window controls (web_ui_hud_app.js): page pixels, not stage units */
+.hud-appbar{position:absolute;top:10px;right:12px;z-index:5;display:flex;gap:8px;transition:opacity .35s}
+.hud-appbtn{font:600 12px/1 ui-sans-serif,system-ui,-apple-system,sans-serif;color:#d6d9df;background:rgba(28,31,38,.86);
+  border:1px solid #2c313b;border-radius:7px;padding:7px 11px;cursor:pointer;opacity:.6;transition:opacity .15s,background .15s}
+.hud-appbtn:hover{opacity:1;background:rgba(40,45,55,.95)}
+body.screen-only .hud-appbtn{opacity:.85}
+body.screen-only.hud-idle .hud-appbar{opacity:0;pointer-events:none}
+body.screen-only.hud-idle,body.screen-only.hud-idle *{cursor:none !important}
 body.screen-only #site,body.screen-only #top{display:none}
 body[data-view="screen"] .seqonly{display:none}
 /* tokens */
 .hud-screen{--h-bg:#08090b;--h-ink:#f2f3f5;--h-dim:#8a8f99;--h-faint:#4a4f59;--h-line:#16181d;--h-amber:#ffb340;
   --h-sel:#1c2733;--h-acc:#4da3ff;--h-play:#ffcf4d;
-  position:relative;width:960px;height:480px;background:var(--h-bg);border-radius:18px;overflow:hidden;
+  position:relative;width:960px;height:var(--stage-h,480px);background:var(--h-bg);border-radius:18px;overflow:hidden;
   box-shadow:0 0 0 1px #1d2026,0 20px 50px rgba(0,0,0,.5);
   display:flex;flex-direction:column;padding:16px 26px 14px;color:var(--h-ink);
   font:14px/1.3 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;box-sizing:border-box}
