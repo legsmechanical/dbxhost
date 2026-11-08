@@ -129,3 +129,73 @@ func TestAReadStopsWhenItsPageGoes(t *testing.T) {
 		})
 	}
 }
+
+// collect reads param_updates until every synth value has arrived.
+func collectSynth(ctx context.Context, conn *websocket.Conn) (int, error) {
+	got := map[string]bool{}
+	for len(got) < manyParams {
+		var m struct {
+			Type   string
+			Params map[string]string
+		}
+		if err := wsjson.Read(ctx, conn, &m); err != nil {
+			return len(got), err
+		}
+		if m.Type == "param_update" {
+			for k := range m.Params {
+				if strings.HasPrefix(k, "synth:p") {
+					got[k] = true
+				}
+			}
+		}
+	}
+	return len(got), nil
+}
+
+// Two pages asking for one component's values share one read: each value is
+// read once, both pages get all of them — the second one joined mid-read, and
+// the first one leaves before the end without stopping it for the second.
+func TestPagesAskingForOneComponentShareOneRead(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	host := bigSynthHost()
+	shm := &ShmParams{data: make([]byte, shmParamSize)}
+	go host.serve(ctx, shm)
+	ru := NewRemoteUI(shm, nil, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := httptest.NewServer(ru)
+	defer srv.Close()
+	dial := func() *websocket.Conn {
+		conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http"), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		conn.SetReadLimit(1 << 20)
+		return conn
+	}
+	first, second := dial(), dial()
+	defer second.Close(websocket.StatusNormalClosure, "")
+	req := map[string]any{"type": "subscribe", "slot": 0, "component": "synth"}
+	if err := wsjson.Write(ctx, first, req); err != nil {
+		t.Fatal(err)
+	}
+	for synthReads(host) < 40 {
+		if ctx.Err() != nil {
+			t.Fatal("the read never started")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if err := wsjson.Write(ctx, second, req); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond)
+	first.CloseNow()
+	n, err := collectSynth(ctx, second)
+	if err != nil {
+		t.Fatalf("the page that joined got %d of %d values: %v", n, manyParams, err)
+	}
+	for i := 0; i < manyParams; i++ {
+		if c := host.count(fmt.Sprintf("synth:p%d", i)); c != 1 {
+			t.Fatalf("synth:p%d read %d times; want once for both pages", i, c)
+		}
+	}
+}

@@ -38,6 +38,15 @@ type RemoteUI struct {
 	mu      sync.Mutex
 	clients map[*ruClient]struct{}
 
+	// fetches: the one-by-one value reads in flight, by "slot|comp". A second
+	// page asking for the same component JOINS the read already running
+	// rather than starting its own: two reads of one module's values at once
+	// each lost a fifth of them to the busy channel (seen on the device,
+	// Osirus 122 and 132 of 152, for its panel and its Sound card). Guarded
+	// by fetchMu.
+	fetchMu sync.Mutex
+	fetches map[string]*paramFetch
+
 	// toolPresent latches whether an overtake tool was active on the previous
 	// tool-tick, so a transition to "no tool" fires exactly one tool_info(gone)
 	// signal to Tool-tab clients. Guarded by mu.
@@ -239,6 +248,7 @@ func NewRemoteUI(shm *ShmParams, setRing *ShmWebParamSetRing, basePath string, l
 		basePath: basePath,
 		logger:   logger,
 		clients:  make(map[*ruClient]struct{}),
+		fetches:  make(map[string]*paramFetch),
 		toolKick: make(chan string, 1),
 	}
 }
@@ -706,18 +716,39 @@ func (ru *RemoteUI) sendInitialParamValues(ctx context.Context, c *ruClient, slo
 		return
 	}
 
+	// One read per component at a time: join the read in flight, if any.
+	key := fmt.Sprintf("%d|%s", slot, comp)
+	ru.fetchMu.Lock()
+	if f := ru.fetches[key]; f != nil {
+		ru.fetchMu.Unlock()
+		if sofar := f.join(c, ctx); len(sofar) > 0 {
+			ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: slot, Params: sofar})
+		}
+		ru.logger.Info("initial params: joined the read in flight", "slot", slot, "comp", comp)
+		return
+	}
+	f := &paramFetch{vals: map[string]string{}}
+	f.members = append(f.members, fetchMember{c, ctx})
+	ru.fetches[key] = f
+	ru.fetchMu.Unlock()
+	defer func() {
+		ru.fetchMu.Lock()
+		delete(ru.fetches, key)
+		ru.fetchMu.Unlock()
+	}()
+
 	ru.logger.Info("initial params: fetching", "slot", slot, "comp", comp, "count", len(params))
 
 	// Fetch in batches of 8, yielding between batches so shadow_ui.js
 	// gets time on the shared param channel. Send each batch immediately
-	// so the browser populates progressively.
+	// so the browser populates progressively — to every page that asked.
 	const batchSize = 8
 	batch := make(map[string]string, batchSize)
 	fetched := 0
 
 	for i, p := range params {
-		if ctx.Err() != nil {
-			ru.logger.Info("initial params: abandoned (client gone)", "slot", slot, "comp", comp, "fetched", fetched, "of", len(params))
+		if !f.anyoneLeft() {
+			ru.logger.Info("initial params: abandoned (pages gone)", "slot", slot, "comp", comp, "fetched", fetched, "of", len(params))
 			return
 		}
 		if p.Key == "" {
@@ -734,7 +765,9 @@ func (ru *RemoteUI) sendInitialParamValues(ctx context.Context, c *ruClient, slo
 		// Send batch and yield
 		if len(batch) >= batchSize || i == len(params)-1 {
 			if len(batch) > 0 {
-				ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: slot, Params: batch})
+				for _, m := range f.publish(batch) {
+					ru.writeJSON(m.ctx, m.c, wsParamUpdate{Type: "param_update", Slot: slot, Params: batch})
+				}
 				batch = make(map[string]string, batchSize)
 			}
 			// Yield to let shadow_ui.js use the param channel
@@ -743,6 +776,62 @@ func (ru *RemoteUI) sendInitialParamValues(ctx context.Context, c *ruClient, slo
 	}
 
 	ru.logger.Info("initial params: done", "slot", slot, "comp", comp, "fetched", fetched)
+}
+
+// paramFetch is one component's one-by-one value read, shared by every page
+// that asked for it while it ran.
+type paramFetch struct {
+	mu      sync.Mutex
+	vals    map[string]string // every value read so far
+	members []fetchMember
+}
+
+type fetchMember struct {
+	c   *ruClient
+	ctx context.Context // ends when that page's connection does
+}
+
+// join adds a page and returns what was read before it came. Under one lock
+// with publish, so no batch is missed or sent twice: a batch published before
+// the join is in the copy, one published after reaches the new member.
+func (f *paramFetch) join(c *ruClient, ctx context.Context) map[string]string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.members = append(f.members, fetchMember{c, ctx})
+	sofar := make(map[string]string, len(f.vals))
+	for k, v := range f.vals {
+		sofar[k] = v
+	}
+	return sofar
+}
+
+// publish records a batch and returns the pages to send it to.
+func (f *paramFetch) publish(batch map[string]string) []fetchMember {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for k, v := range batch {
+		f.vals[k] = v
+	}
+	live := f.members[:0:0]
+	for _, m := range f.members {
+		if m.ctx.Err() == nil {
+			live = append(live, m)
+		}
+	}
+	f.members = live
+	return append([]fetchMember(nil), live...)
+}
+
+// anyoneLeft: the read goes on while one page that asked is still there.
+func (f *paramFetch) anyoneLeft() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, m := range f.members {
+		if m.ctx.Err() == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // fetchAllParams reads the plugin's "state" key (a JSON object of every param
