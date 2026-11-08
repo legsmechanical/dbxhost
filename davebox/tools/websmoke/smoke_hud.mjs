@@ -229,7 +229,7 @@ ok('...its dividers drawn as rules, never at the window\'s edge', el.querySelect
     const mx = e.querySelectorAll('.hud-o-mix .mx');
     ok('a knob touched on Session view keeps the overview: its dial lit, named in words, none dimmed',
        st.where.screen === 'session.overview' && !!e.querySelector('.hud-o-grid') && mx.length === 8 && mx[k].matches('.tch') &&
-       e.querySelectorAll('.hud-o-mix .mx.tch').length === 1 && !!e.querySelector('.hud-o-info .kt'),
+       e.querySelectorAll('.hud-o-mix .mx.tch').length === 1 && new RegExp('^T' + (k + 1) + ' ').test((e.querySelector('.hud-o-info .kt') || {}).textContent || ''),
        st.where.screen + ' k=' + k + ' ' + ((e.querySelector('.hud-o-info .r') || {}).textContent || ''));
   }
   setM(saveM);

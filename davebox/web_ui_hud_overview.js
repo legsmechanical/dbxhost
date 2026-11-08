@@ -273,7 +273,8 @@
     const modes = o.modes || [], mi = o.modeIdx | 0;
     const kn = doc.knobs, touched = kn && kn.screen === 'session.mixer' && kn.touched >= 0 ? kn.touched : -1;
     const tc = touched >= 0 && o.cells ? o.cells[touched] : null;
-    const right = tc ? '<b class="kt" style="--kc:' + trackColor(touched) + '">' + esc(trackName(m, touched)) + ' · ' + esc(H.sentence ? H.sentence(o.mode || '') : (o.mode || '')) + ' ' + esc(tc.text || '') + '</b>'
+    /* the track's NUMBER first: several tracks can share an instrument name */
+    const right = tc ? '<b class="kt" style="--kc:' + trackColor(touched) + '">T' + (touched + 1) + ' ' + esc(trackName(m, touched)) + ' · ' + esc(H.sentence ? H.sentence(o.mode || '') : (o.mode || '')) + ' ' + esc(tc.text || '') + '</b>'
       : 'pads: rows ' + LETTERS[rowOff] + '–' + LETTERS[Math.min(15, rowOff + 3)];
     let h = '<div class="hud-o-sess">';
     h += '<div class="hud-o-info"><span class="tabs">' + modes.map((n, i) => '<span class="tab' + (i === mi ? ' on' : '') + '">' + esc(H.sentence ? H.sentence(n) : n) + '</span>').join('') + '</span>' +
