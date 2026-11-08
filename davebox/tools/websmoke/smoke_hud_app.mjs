@@ -64,6 +64,27 @@ ok('the stage takes the window\'s shape: 16:10 → 600 tall', size(1440, 900) ==
 ok('...4:3 (an iPad) → 720', size(1024, 768) === 720, size(1024, 768));
 ok('...and stops at its limits (21:9 → 410), letterboxed beyond', size(2560, 1080) === 410 && size(800, 1200) === 720);
 ok('...scaled to fill, with no margin', /scale\(1\.5000\)/.test((size(1440, 900), fit.style.transform)), fit.style.transform);
+/* a phone on its side: iOS reports the same inset on both sides, but the cutout
+ * is on one; that side keeps it, the other clears only the corner */
+{
+  const realGCS = window.getComputedStyle;
+  window.getComputedStyle = (el, ps) => (el && el.dataset && el.dataset.hudSafeArea)
+    ? { paddingTop: '0px', paddingRight: '59px', paddingBottom: '21px', paddingLeft: '59px' } : realGCS.call(window, el, ps);
+  const orient = (angle) => Object.defineProperty(window.screen, 'orientation', { value: { angle, addEventListener() {} }, configurable: true });
+  const px = (n) => parseFloat(fit.style.getPropertyValue(n));
+  orient(90); size(852, 393);
+  const sc = parseFloat(/scale\(([\d.]+)\)/.exec(fit.style.transform)[1]);
+  const l90 = px('--safe-l') * sc, r90 = px('--safe-r') * sc;
+  orient(270); size(852, 393);
+  const l270 = px('--safe-l') * sc, r270 = px('--safe-r') * sc;
+  ok('an iPhone on its side: the cutout side keeps its inset, the other only the corner (both ways round)',
+     Math.abs(l90 - 59) < 1 && Math.abs(r90 - 16) < 1 && Math.abs(l270 - 16) < 1 && Math.abs(r270 - 59) < 1, [l90, r90, l270, r270].map((v) => v.toFixed(1)).join(','));
+  ok('...the stage covers the whole display (no page inset), 852×393 → 443 tall', size(852, 393) === 443 && (parseFloat(realGCS.call(window, d.getElementById('app')).paddingLeft) || 0) === 0);
+  ok('...and the footer keeps clear of the home bar', Math.abs(px('--safe-b') * sc - 21) < 1);
+  window.getComputedStyle = realGCS;
+}
+const sbm = d.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+ok('the screen runs under the status bar (translucent), even where the page says black', !!sbm && sbm.getAttribute('content') === 'black-translucent');
 /* installable: the app tags, only in this mode */
 const mani = d.querySelector('link[rel="manifest"]');
 ok('it names itself an app: manifest, Apple tags, its title', !!mani && mani.getAttribute('href') === 'web_ui_app.json' &&

@@ -22,6 +22,34 @@
    * the stage keeps its width and takes the window's shape (within
    * cfg.stage.minH..maxH, letterboxed only beyond those), so no band of page
    * shows around it — the screen is the window. */
+  /* The display's safe area (a phone's camera cutout, home bar, corners), read
+   * from env() through a probe. */
+  let probe = null;
+  function safeArea() {
+    if (!probe) {
+      probe = document.createElement('div');
+      probe.dataset.hudSafeArea = '1';
+      probe.style.cssText = 'position:fixed;left:0;top:0;visibility:hidden;pointer-events:none;' +
+        'padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)';
+      document.body.appendChild(probe);
+    }
+    const c = getComputedStyle(probe), px = (v) => parseFloat(v) || 0;
+    return { t: px(c.paddingTop), r: px(c.paddingRight), b: px(c.paddingBottom), l: px(c.paddingLeft) };
+  }
+  /* A phone on its side reports the SAME inset on both sides, but the cutout is
+   * on one: the top of the phone, which is on the left when it is turned
+   * counter-clockwise (angle 90) and on the right at 270. That side keeps the
+   * whole inset; the other only clears the rounded corner. Unknown → both. */
+  const CORNER = 16;
+  function sides(a) {
+    const ang = screen.orientation && typeof screen.orientation.angle === 'number' ? screen.orientation.angle
+      : typeof window.orientation === 'number' ? (window.orientation + 360) % 360 : -1;
+    if (a.l > 0 && a.r > 0 && Math.abs(a.l - a.r) < 1) {
+      if (ang === 90) return { l: a.l, r: Math.min(a.r, CORNER) };
+      if (ang === 270) return { l: Math.min(a.l, CORNER), r: a.r };
+    }
+    return { l: a.l, r: a.r };
+  }
   function rescale() {
     if (!shown) return;
     const w = view.clientWidth, h = view.clientHeight, sw = H.cfg.stage.w;
@@ -31,7 +59,17 @@
     const s = Math.max(0.1, Math.min(w / sw, h / sh) * (H.appWindow ? 1 : 0.98));
     fit.style.transform = 'translate(-50%,-50%) scale(' + s.toFixed(4) + ')';
     fit.style.transformOrigin = '50% 50%';
+    /* the stage covers the display edge to edge; its content stays clear of the
+     * safe area, in stage units */
+    if (H.appWindow) {
+      const a = safeArea(), sd = sides(a);
+      fit.style.setProperty('--safe-l', (sd.l / s).toFixed(1) + 'px');
+      fit.style.setProperty('--safe-r', (sd.r / s).toFixed(1) + 'px');
+      fit.style.setProperty('--safe-b', (a.b / s).toFixed(1) + 'px');
+    }
   }
+  if (screen.orientation && screen.orientation.addEventListener) screen.orientation.addEventListener('change', () => setTimeout(rescale, 50));
+  window.addEventListener('orientationchange', () => setTimeout(rescale, 50));
   H.rescale = rescale;
   if (typeof ResizeObserver === 'function') new ResizeObserver(rescale).observe(view);
   window.addEventListener('resize', rescale);

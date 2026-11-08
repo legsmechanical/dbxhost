@@ -9,6 +9,9 @@
 /* as an app window the screen is the window: edge to edge, no card */
 body.screen-only #screenview{background:#08090b}
 body.screen-only .hud-screen{border-radius:0;box-shadow:none}
+/* the window owns the whole display: no page inset (the touch layout pads the
+ * page by the safe area); the stage keeps its CONTENT clear instead (rescale) */
+body.screen-only #app{padding-left:0;padding-right:0}
 /* the window controls (web_ui_hud_app.js): page pixels, not stage units */
 .hud-appbar{position:absolute;top:10px;right:12px;z-index:5;display:flex;gap:8px;transition:opacity .35s}
 .hud-appbtn{font:600 12px/1 ui-sans-serif,system-ui,-apple-system,sans-serif;color:#d6d9df;background:rgba(28,31,38,.86);
@@ -24,7 +27,7 @@ body[data-view="screen"] .seqonly{display:none}
   --h-sel:#1c2733;--h-acc:#4da3ff;--h-play:#ffcf4d;
   position:relative;width:960px;height:var(--stage-h,480px);background:var(--h-bg);border-radius:18px;overflow:hidden;
   box-shadow:0 0 0 1px #1d2026,0 20px 50px rgba(0,0,0,.5);
-  display:flex;flex-direction:column;padding:16px 26px 14px;color:var(--h-ink);
+  display:flex;flex-direction:column;--pad-l:max(26px,var(--safe-l,0px));--pad-r:max(26px,var(--safe-r,0px));padding:16px var(--pad-r) 14px var(--pad-l);color:var(--h-ink);
   font:14px/1.3 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;box-sizing:border-box}
 .hud-screen.hud-fade{animation:hudfade var(--fade,110ms) ease-out}
 @keyframes hudfade{from{opacity:.55}to{opacity:1}}
@@ -60,7 +63,7 @@ body[data-view="screen"] .seqonly{display:none}
  * instructions"): edge to edge under a rule, its own ground, always there so
  * the screen above never shifts when a screen has no hints. */
 .hud-hints{display:flex;gap:30px;color:#b4bac4;font-size:20px;height:56px;align-items:center;flex:0 0 auto;
-  margin:8px -26px -14px;padding:0 26px;background:#101318;border-top:1px solid #222730}
+  margin:8px calc(0px - var(--pad-r)) -14px calc(0px - var(--pad-l));padding:0 var(--pad-r) var(--safe-b,0px) var(--pad-l);background:#101318;border-top:1px solid #222730}
 .hud-hints .hud-hint{display:flex;align-items:center;gap:10px;font-size:20px;color:#b4bac4;margin:0;line-height:1;font-weight:500}
 .hud-hints kbd{font:700 18px ui-sans-serif,system-ui,sans-serif;padding:5px 11px;border-radius:8px;background:#262c37;color:var(--h-ink);box-shadow:inset 0 -2px 0 #0b0c0e}
 .hud-hints .ctx{margin-left:auto;color:var(--h-ink);font-weight:600}

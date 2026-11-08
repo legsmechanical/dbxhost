@@ -73,7 +73,11 @@
   tag('meta', { name: 'theme-color', content: '#08090b' });
   tag('meta', { name: 'apple-mobile-web-app-capable', content: 'yes' });
   tag('meta', { name: 'mobile-web-app-capable', content: 'yes' });
-  tag('meta', { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' });
+  /* the screen runs under the status bar (it is dark too) rather than below a
+   * reserved black band — so this one is SET even where the page declares it */
+  const sb = head.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+  if (sb) sb.setAttribute('content', 'black-translucent');
+  else tag('meta', { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' });
   tag('meta', { name: 'apple-mobile-web-app-title', content: 'dAVEBOx' });
   tag('link', { rel: 'apple-touch-icon', href: 'web_ui_icon-180.png' });
   tag('link', { rel: 'icon', type: 'image/png', href: 'web_ui_icon-192.png' });
