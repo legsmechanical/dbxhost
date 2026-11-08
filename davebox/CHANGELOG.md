@@ -9,6 +9,9 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Added
+- **Effects' own editors in the browser.** On the browser's Sound view, an effect that
+  ships its own editor page (Tape Echo 2, 4K EQ) now opens as that editor, as an
+  instrument's does, with the same Custom UI / Generic switch.
 - **Faster Flatten.** Flatten track, and Resample clip In place, record a Schwung
   instrument's clips, and an Audio track's, faster than real time, without playing them. A sound that
   depends on more than the notes (an LFO, a MIDI effect, automation of levels or

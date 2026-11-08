@@ -5,13 +5,29 @@
  *   4. open-in-tab lives in the card HEADER
  *   5. levels are COLLAPSIBLE BANKS — siblings stay visible, no breadcrumb
  * Run with the preview server up (see README). */
-import { JSDOM } from 'jsdom';
+import jsdomPkg from 'jsdom';
+const { JSDOM, requestInterceptor } = jsdomPkg;
+import { existsSync, readFileSync } from 'node:fs';
 import { installCanvasStub } from './ctxstub.mjs';
 
-const html = await (await fetch('http://localhost:8199/web_ui.html')).text();
+/* Scripts come off the DISK, not over HTTP: jsdom over local HTTP drops a
+ * whole <script> on many runs (README: "retry on the DROP" — web_ui_ribbon.js
+ * failed six runs in a row on 2026-11-08). Same files the preview server sends;
+ * /static/schwung-remote-api.js stays absent (404), so the page runs on its
+ * mock shim exactly as in the preview. */
+const ROOT = new URL('../../', import.meta.url);
+const fromDisk = requestInterceptor((request) => {
+  const u = new URL(request.url);
+  if (u.host !== 'localhost:8199') return undefined;
+  const f = new URL('.' + u.pathname, ROOT);
+  if (!existsSync(f)) return new Response('', { status: 404 });
+  const type = u.pathname.endsWith('.json') ? 'application/json' : 'application/javascript';
+  return new Response(readFileSync(f), { headers: { 'Content-Type': type } });
+});
+const html = readFileSync(new URL('./web_ui.html', ROOT), 'utf8');
 const dom = new JSDOM(html, {
   url: 'http://localhost:8199/web_ui.html', runScripts: 'dangerously',
-  resources: 'usable', pretendToBeVisual: true, beforeParse(w) { installCanvasStub(w); }
+  resources: { interceptors: [fromDisk] }, pretendToBeVisual: true, beforeParse(w) { installCanvasStub(w); }
 });
 const { window } = dom;
 for (let i = 0; i < 100 && typeof window.chainParams !== "object"; i++) await new Promise(r => setTimeout(r, 100));
@@ -112,6 +128,33 @@ if (synthKey) {
     ok("switchLeavesLinkInHeader", !!(hdr2 && hdr2.querySelector('.sndopen')));
   }
 }
+
+/* ---- 3b. an EFFECT's own panel, embedded like an instrument's ----
+ * The mock serves no module panels, so the manager's answer is stubbed: the
+ * card asks /api/module-panel/<id> for the module the manager named, and embeds
+ * it with the chain position it drives (component=fxN) — a panel reads that to
+ * address fxN: instead of synth:. */
+const fxKey = window.eval('Object.keys(sndComps).find(function(k){return /\\|fx1$/.test(k);}) || ""');
+ok("fxCardExists", !!fxKey, fxKey);
+if (fxKey) {
+  const asked = [];
+  window.__realFetch = window.fetch;
+  window.fetch = (u) => { asked.push(String(u)); return Promise.resolve({ json: () => Promise.resolve({ url: "/api/remote-ui/module-assets/tape-echo2/web_ui.html" }) }); };
+  window.eval('(function(){var c = sndComps[' + JSON.stringify(fxKey) + '];' +
+    'if (c.editor) { c.editor.destroy(); c.editor = null; }' +
+    'c.knownEmpty = false; c.moduleId = "tape-echo2"; c.gotHierarchy = true;' +
+    'c.hierarchy = { levels: { root: { label: "Tape Echo 2", params: ["time"] } } }; c.rendered = undefined; sndCardBody(c);})()');
+  await new Promise(r => setTimeout(r, 150));
+  window.fetch = window.__realFetch;
+  const card = d.querySelector('#sound .sndcard[data-comp="fx1"]');
+  const fr = card && card.querySelector('iframe.sndpanel');
+  const src = fr ? fr.getAttribute('src') : "";
+  ok("fxPanelAsked", asked.some(u => /\/api\/module-panel\/tape-echo2$/.test(u)), JSON.stringify(asked));
+  ok("fxPanelEmbedded", !!fr && /tape-echo2\/web_ui\.html\?schwungStandalone=1&slot=\d+&component=fx1$/.test(src), src);
+  ok("fxPanelHasSwitch", !!(card && card.querySelector('.sndcard-h .snduigroup')) && /component=fx1/.test((card.querySelector('.sndcard-h .sndopen') || {}).href || ""));
+}
+/* the instrument's panel URL stays as it was: no component (a synth panel defaults to synth:) */
+ok("synthPanelUrlUnchanged", window.eval('sndPanelUrl({ panelUrl: "/x/web_ui.html", slot: 3, comp: "synth" })') === "/x/web_ui.html?schwungStandalone=1&slot=3");
 
 /* ---- 5. collapsible banks, no breadcrumb ---- */
 /* mount an editor directly: the mock has no module with a deep hierarchy, so

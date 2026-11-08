@@ -322,16 +322,18 @@ function sndCardBody(c) {
   }
   if (c.timer) { clearTimeout(c.timer); c.timer = 0; }
 
-  /* The instrument may ship its own web panel; ask once the identity is
-   * KNOWN, then either embed it or fall back to the generated editor. */
-  if (c.comp === "synth" && c.rendered === undefined) {
+  /* The module may ship its own web panel — an instrument, or an effect in
+   * any chain position (a panel reads which one from its address, see
+   * sndPanelUrl). Ask once the identity is KNOWN, then either embed it or fall
+   * back to the generated editor. */
+  if (c.rendered === undefined) {
     c.rendered = "pending-panel";
-    const id = c.moduleId || mixKV["chain:" + c.slot + ":synth_module"] || "";
+    const id = c.moduleId || (c.comp === "synth" ? mixKV["chain:" + c.slot + ":synth_module"] : "") || "";
     const done = d => {
       if (c.rendered !== "pending-panel") return;
       c.rendered = undefined;
       c.panelUrl = (d && d.url) || null;
-      /* per-instrument preference: a user who switched to controls stays
+      /* per-module preference: a user who switched to controls stays
        * there (sndPanelPref, localStorage) */
       if (c.panelUrl && sndPanelPref(id) !== "controls") sndMountPanel(c, c.panelUrl);
       else sndMountEditor(c);
@@ -363,7 +365,7 @@ function sndCardBody(c) {
   sndMountEditor(c);
 }
 
-/** Which editor this instrument was last read with. Sticks per instrument, so
+/** Which editor this module was last read with. Sticks per module, so
  * a player who prefers the generated controls for one synth keeps them there
  * without changing anything for the others. */
 function sndPanelPref(id, set) {
@@ -374,7 +376,7 @@ function sndPanelPref(id, set) {
   } catch (e) { return "panel"; }
 }
 
-/** Header controls for an instrument that ships its own editor: a segmented
+/** Header controls for a module that ships its own editor: a segmented
  * Custom UI / Generic switch and the open-in-tab link.
  *
  * Both live in the card HEADER, matching the stock Remote UI's slot header
@@ -405,8 +407,8 @@ function sndPanelHeader(c, id) {
     b.textContent = label;
     b.setAttribute("aria-pressed", (mode === "panel") === showingPanel ? "true" : "false");
     b.title = mode === "panel"
-      ? "This instrument's own editor"
-      : "Controls generated from the instrument's parameters";
+      ? "This module's own editor"
+      : "Controls generated from the module's parameters";
     b.onclick = () => {
       if ((mode === "panel") === showingPanel) return;
       sndPanelPref(id, mode);
@@ -430,10 +432,13 @@ function sndPanelHeader(c, id) {
 }
 
 /** The panel URL with the position appended — the module reads it from the
- * query string, exactly as the manager's pop-out does. */
+ * query string, exactly as the manager's pop-out does. An effect's panel also
+ * reads which chain position it drives (component=fx1..fx4 / midi_fx1): the
+ * same module can sit in any of them. */
 function sndPanelUrl(c) {
   const url = c.panelUrl || "";
-  return url + (url.indexOf("?") >= 0 ? "&" : "?") + "schwungStandalone=1&slot=" + c.slot;
+  return url + (url.indexOf("?") >= 0 ? "&" : "?") + "schwungStandalone=1&slot=" + c.slot +
+    (c.comp === "synth" ? "" : "&component=" + encodeURIComponent(c.comp));
 }
 
 /** The module's own panel, in its own connection. Sized by CSS (full column
@@ -445,7 +450,7 @@ function sndMountPanel(c, url) {
   const frame = document.createElement("iframe");
   frame.className = "sndpanel";
   frame.src = sndPanelUrl(c);
-  frame.setAttribute("title", "Instrument editor");
+  frame.setAttribute("title", c.comp === "synth" ? "Instrument editor" : "Effect editor");
   c.body.appendChild(frame);
 }
 

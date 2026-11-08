@@ -3329,10 +3329,10 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 - **Sound:** the selected track's instrument and effects top-to-bottom in signal
   order, each a card of editable controls with preset browsing.
   - A row of **track chips** at the top switches which track you're editing.
-  - An instrument that ships its own editor page opens as that editor, full width.
-    The card header's **Custom UI / Generic** switch falls back to the generated
-    controls (remembered per instrument), and **open in tab** gives the editor a
-    whole window.
+  - An instrument or effect that ships its own editor page opens as that editor,
+    full width. The card header's **Custom UI / Generic** switch falls back to the
+    generated controls (remembered per module), and **open in tab** gives the editor
+    a whole window.
   - A Move-played track shows its effects here; its instrument is edited on the
     device.
   - Each effect card has a **Bypass** button. The track's audio strip rides the
