@@ -24,7 +24,10 @@
    * shows around it — the screen is the window. */
   function rescale() {
     if (!shown) return;
-    const w = view.clientWidth, h = view.clientHeight, sw = H.cfg.stage.w;
+    /* the Move's buttons sit under the stage (web_ui_hud_input.js) */
+    const ch = H.ctlHeight ? H.ctlHeight() : 0;
+    view.style.setProperty('--ctl-h', ch + 'px');
+    const w = view.clientWidth, h = Math.max(1, view.clientHeight - ch), sw = H.cfg.stage.w;
     let sh = H.cfg.stage.h;
     if (H.appWindow && w > 0 && h > 0) sh = Math.round(Math.max(H.cfg.stage.minH, Math.min(H.cfg.stage.maxH, sw * h / w)));
     fit.style.setProperty('--stage-h', sh + 'px');
@@ -44,6 +47,7 @@
   if (screen.orientation && screen.orientation.addEventListener) screen.orientation.addEventListener('change', () => setTimeout(rescale, 50));
   window.addEventListener('orientationchange', () => setTimeout(rescale, 50));
   H.rescale = rescale;
+  H.shown = () => shown;
   if (typeof ResizeObserver === 'function') new ResizeObserver(rescale).observe(view);
   window.addEventListener('resize', rescale);
 
@@ -162,7 +166,7 @@
   window.hudShow = function (on) {
     shown = !!on;
     view.classList.toggle('on', shown);
-    if (!shown) { stopLive(); return; }
+    if (!shown) { stopLive(); if (H.surfaceReleaseAll) H.surfaceReleaseAll(); return; }
     rescale();
     if (typeof R !== 'undefined' && R && R._mock) startFixtures(); else startLive();
     /* the tracks' instrument NAMES (OB-Xd, not "Synth") come with the mixer

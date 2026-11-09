@@ -82,7 +82,10 @@
     const dot = adorn.length && adorn[0].indexOf('hud-a-dot') >= 0 ? adorn.shift() : '';
     /* `opens`: touch + click does something here — the OLED's corner
      * brackets, drawn as the browser's own corners (.hud-kn.opens) */
-    return '<div class="hud-kn' + (isT ? ' tch' : '') + (c.lock ? ' lock' : '') + (ctx.under ? ' under' : '') + (c.opens ? ' opens' : '') + '"' + (isT ? ' style="--kc:' + H.knobColor(k) + '"' : '') + '>' +
+    /* the knob itself: a drag turns it, a press touches it, and a click on
+     * one that opens (or a button knob) is touch + jog click (web_ui_hud_input.js) */
+    const hand = ' data-in="knob" data-k="' + k + '"' + (c.opens || c.kind === 'action' ? ' data-click="1"' : '');
+    return '<div class="hud-kn' + (isT ? ' tch' : '') + (c.lock ? ' lock' : '') + (ctx.under ? ' under' : '') + (c.opens ? ' opens' : '') + '"' + hand + (isT ? ' style="--kc:' + H.knobColor(k) + '"' : '') + '>' +
       '<div class="w">' + H.safe('widget:' + kind, H.widgets.get(kind), c, k, ctx) + '</div>' +
       (showVal ? '<div class="v"' + (isT ? ' style="color:' + H.knobColor(k) + '"' : '') + '>' + esc(c.text) + '</div>' : '') +
       '<div class="l">' + dot + esc(cellName(c)) + '</div>' +

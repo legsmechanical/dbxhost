@@ -9,11 +9,16 @@
   H.layout('prompt', (d) => !!(d.body && d.body.prompt), (doc, b) => {
     const p = b.prompt, title = p.title || (b.header && b.header.text) || '';
     const lines = (p.lines || []).map((l) => sentence(l));
-    const btns = (p.buttons || []).map((t, i) => '<div class="hud-btn' + (i === p.sel ? ' sel' : '') + '">' + esc(t) + '</div>').join('');
+    const btns = (p.buttons || []).map((t, i) => '<div class="hud-btn' + (i === p.sel ? ' sel' : '') + '"' + (p.sel >= 0 ? rowIn(doc, 'prompt.sel', i) : '') + '>' + esc(t) + '</div>').join('');
     return '<div class="hud-prompt"><div class="q">' + esc(sentence(title)) + '</div>' +
       (lines.length ? '<div class="s">' + lines.map(esc).join('<br>') + '</div>' : '') +
       (btns ? '<div class="hud-btns">' + btns + '</div>' : '') + '</div>';
   });
+  /* a row, a button, a key: the jog turned onto it and clicked
+   * (web_ui_hud_input.js). `selBase` says where this body sits in the
+   * document — a pop-up card's list is the pop-up's (web_ui_hud_regions.js). */
+  const rowIn = (doc, rest, i) => ' data-in="row" data-path="' + (doc.selBase || 'body') + '.' + rest + '" data-row="' + i + '"';
+  H.rowIn = rowIn;
   /* The OLED's 4x5 face has no lowercase, so dialogs arrive in CAPS. Shown
    * as sentences; a word that was mixed-case (dAVEBOx) is kept. */
   const ACRONYMS = /^(MIDI|BPM|FX|USB|LFO|EQ|ADSR|CC|OK|DSP|UI|WAV|AIFF|ARP|DLY|NFX)\d*$/;
@@ -46,7 +51,7 @@
     html += '<div class="hud-ovw-tracks">' + b.tracks.map((r, t) => {
       const col = trackColor(t);
       const st = r.muted ? ' mute' : r.playing ? ' play' : r.queued ? ' q' : r.has ? '' : ' empty';
-      return '<div class="hud-tile' + st + (r.active ? ' cur' : '') + '" style="--c:' + col + '">' +
+      return '<div class="hud-tile' + st + (r.active ? ' cur' : '') + '" data-in="track" data-t="' + t + '" style="--c:' + col + '">' +
         '<span class="n">' + (t + 1) + '</span><span class="c">' + esc(r.clip) + '</span>' +
         (r.soloed ? '<span class="b s">S</span>' : r.muted ? '<span class="b m">M</span>' : '') + '</div>';
     }).join('') + '</div>';
@@ -94,7 +99,7 @@
    * and the special keys, the selected one lit */
   H.layout('keyboard', (d) => !!(d.body && d.body.keyboard), (doc, b) => {
     const k = b.keyboard, n = (k.chars || []).length;
-    const key = (t, i, wide) => '<span class="key' + (i === k.selected ? ' sel' : '') + (wide ? ' w' : '') + '">' + esc(t) + '</span>';
+    const key = (t, i, wide) => '<span class="key' + (i === k.selected ? ' sel' : '') + (wide ? ' w' : '') + '"' + rowIn(doc, 'keyboard.selected', i) + '>' + esc(t) + '</span>';
     return '<div class="hud-kbd">' + (k.title ? '<div class="t">' + esc(k.title) + '</div>' : '') +
       '<div class="buf">' + esc(k.buffer) + '<i></i></div>' +
       '<div class="keys">' + (k.chars || []).map((c, i) => key(c, i)).join('') + '</div>' +
@@ -131,7 +136,7 @@
       const thru = g.mode === 'vel' && v > 127;
       const label = off ? '' : g.mode === 'vel' ? (v === 0 ? 'Off' : thru ? 'Thru' : String(v)) : (v > 0 ? '+' : '') + v;
       const h = Math.round(Math.abs(bip ? v / (span / 2) : frac) * 100);
-      html += '<div class="col' + (k === g.touched ? ' tch' : '') + (off ? ' off' : '') + '">' +
+      html += '<div class="col' + (k === g.touched ? ' tch' : '') + (off ? ' off' : '') + '" data-in="knob" data-k="' + k + '">' +
         '<div class="well">' + (off ? '' : '<i class="' + (bip ? (v >= 0 ? 'up' : 'dn') : '') + (thru ? ' thru' : '') + '" style="' + (thru ? '' : 'height:' + Math.max(v === 0 ? 0 : 3, bip ? h / 2 : h) + '%;') + 'background:' + col + '"></i>') + '</div>' +
         '<div class="v"' + (k === g.touched ? ' style="color:' + col + '"' : '') + '>' + esc(label) + '</div><div class="l">' + (k + 1) + '</div></div>';
     }
@@ -193,7 +198,7 @@
       if (isGap(r)) { html += '<div class="hud-row gap' + (r.divider ? ' div' : '') + '"></div>'; continue; }
       const sel = i === selIn && L.sel >= 0;
       if (r.note != null) { html += '<div class="hud-row note">' + esc(r.note) + '</div>'; continue; }
-      html += '<div class="hud-row' + (sel ? ' sel' : '') + (r.hdr ? ' hdr' : '') + (r.editing ? ' edit' : '') + '">' +
+      html += '<div class="hud-row' + (sel ? ' sel' : '') + (r.hdr ? ' hdr' : '') + (r.editing ? ' edit' : '') + '"' + (L.sel >= 0 ? rowIn(doc, 'list.sel', (L.first | 0) + i) : '') + '>' +
         (r.mark ? '<span class="q" style="margin:0 8px 0 0">' + esc(r.mark) + '</span>' : '') +
         '<span class="lab">' + esc(r.label) + '</span>' + (r.qual ? '<span class="q">' + esc(r.qual) + '</span>' : '') +
         (r.value != null ? '<span class="val">' + esc(r.value) + '</span>' : r.chevron ? '<span class="val">›</span>' : '') + '</div>';
@@ -259,7 +264,7 @@
       const hex = ledHex(v);
       const st = 'grid-column:' + (ci + 1) + ';grid-row:' + (r + 2) + ';' +
         (lit ? (white ? 'background:#f4f6f8;border-color:#fff;color:#0b0d10' : 'background:' + hex + '38;border-color:' + hex + ';box-shadow:inset 0 0 0 1px ' + hex + '55') : '');
-      html += '<div class="pad' + (lit ? ' lit' : '') + (white ? ' cur' : '') + (c && c.module ? ' mod' : '') + (jcls[i] || '') + '" style="' + st + '">' +
+      html += '<div class="pad' + (lit ? ' lit' : '') + (white ? ' cur' : '') + (c && c.module ? ' mod' : '') + (jcls[i] || '') + '" data-in="pad" data-note="' + (68 + i) + '" style="' + st + '">' +
         (c ? '<span class="pl">' + esc(sentence(c.label)) + '</span>' + (c.sub ? '<span class="ps">' + esc(c.sub) + '</span>' : '') : '') + '</div>';
     }
     return html + '</div>';

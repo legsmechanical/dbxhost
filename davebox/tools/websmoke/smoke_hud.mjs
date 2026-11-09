@@ -386,6 +386,161 @@ ok('the session mixer (a turn, nothing touched): the session overview with its e
   ok('...without a drawer throwing', !warns.some((w) => /drawer threw/.test(w)), warns.filter((w) => /threw/.test(w)).join(' | '));
 }
 
+/* THE HANDS (web_ui_hud_input.js): a click sends the Move's own gesture —
+ * exactly these packets, in this order — through the transport's surface()
+ * (recorded by the mock shim). */
+{
+  const log = window.schwungRemote.surfaceLog;
+  const fit = d.getElementById('hudfit');
+  const ptr = (el, type, x, y, id, ptype) => {
+    const e = new window.MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y });
+    Object.defineProperty(e, 'pointerId', { value: id || 1 }); Object.defineProperty(e, 'pointerType', { value: ptype || 'mouse' });
+    el.dispatchEvent(e);
+  };
+  const tap = (el, id) => { ptr(el, 'pointerdown', 10, 10, id); ptr(el, 'pointerup', 10, 10, id); };
+  const hex = (a) => a.map((p) => p.map((x) => x.toString(16).padStart(2, '0')).join(' ')).join(' | ');
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const live = (sel) => fit.querySelector(sel);
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  ok('the transport can carry gestures (mock surface())', typeof window.schwungRemote.surface === 'function');
+  ok('...and the Move\'s buttons sit under the screen', !!d.querySelector('#screenview .hud-ctl .hud-cb[data-key="shift"]'));
+
+  /* a knob: touched, turned by the drag (up = right, 5 px a detent), let go */
+  render('bank-clip');
+  let k = live('[data-in="knob"][data-k="2"]');
+  ok('a knob page\'s knobs are live', fit.querySelectorAll('[data-in="knob"]').length >= 6);
+  log.length = 0;
+  ptr(k, 'pointerdown', 100, 100); ptr(fit, 'pointermove', 100, 80); ptr(fit, 'pointerup', 100, 80);
+  ok('a knob dragged up 20 px: touch, four detents right, release', same(log, [[0x90, 2, 127], [0xB0, 73, 4], [0x80, 2, 0]]), hex(log));
+  log.length = 0;
+  ptr(live('[data-in="knob"][data-k="0"]'), 'pointerdown', 100, 100); ptr(fit, 'pointermove', 100, 110); ptr(fit, 'pointerup', 100, 110);
+  ok('...dragged down 10 px: two detents left (126)', same(log, [[0x90, 0, 127], [0xB0, 71, 126], [0x80, 0, 0]]), hex(log));
+  log.length = 0;
+  ptr(live('[data-in="knob"][data-k="5"]'), 'pointerdown', 100, 100);
+  render('bank-clip');   /* a frame arrives mid-drag: the stage is redrawn */
+  ptr(fit, 'pointermove', 125, 100); ptr(fit, 'pointerup', 125, 100);
+  ok('...a drag survives the screen redrawing under it (right 25 px = 5 detents)', same(log, [[0x90, 5, 127], [0xB0, 76, 5], [0x80, 5, 0]]), hex(log));
+  /* a button knob: a click is touch + jog click */
+  render('bank-crop-touched');
+  const ck = live('[data-in="knob"][data-click="1"]');
+  ok('a knob that opens / acts is marked for a click', !!ck);
+  if (ck) {
+    log.length = 0; const kk = +ck.dataset.k; tap(ck);
+    ok('...a click on it: touch, jog click, release', same(log, [[0x90, kk, 127], [0xB0, 3, 127], [0xB0, 3, 0], [0x80, kk, 0]]), hex(log));
+  }
+  log.length = 0;
+  tap(live('[data-in="knob"]:not([data-click])'));
+  ok('...a plain knob clicked is only touched and let go', log.length === 2 && log[0][0] === 0x90 && log[1][0] === 0x80 && !log.some((p) => p[1] === 3), hex(log));
+
+  /* the bank map's pads are pads */
+  render('bank-overview-walk');
+  const pads = fit.querySelectorAll('.hud-pads [data-in="pad"]');
+  ok('the bank map\'s 32 pads are live', pads.length === 32, pads.length);
+  const bl = [...pads].find((p) => p.style.gridRow === '5' && p.style.gridColumn === '1'), tr = [...pads].find((p) => p.style.gridRow === '2' && p.style.gridColumn === '8');
+  ok('...bottom-left is note 68, top-right 99', bl && tr && bl.dataset.note === '68' && tr.dataset.note === '99', bl && bl.dataset.note + ' ' + (tr && tr.dataset.note));
+  log.length = 0; ptr(bl, 'pointerdown', 0, 0, 7, 'touch'); ptr(fit, 'pointerup', 0, 0, 7, 'touch');
+  ok('...a pad pressed and let go: its note on (100) and off', same(log, [[0x90, 68, 100], [0x80, 68, 0]]), hex(log));
+  log.length = 0;
+  ptr(pads[3], 'pointerdown', 0, 0, 11, 'touch'); ptr(pads[12], 'pointerdown', 0, 0, 12, 'touch');
+  ptr(fit, 'pointerup', 0, 0, 12, 'touch'); ptr(fit, 'pointerup', 0, 0, 11, 'touch');
+  ok('...two fingers, two pads, each released by its own finger',
+     same(log, [[0x90, +pads[3].dataset.note, 100], [0x90, +pads[12].dataset.note, 100], [0x80, +pads[12].dataset.note, 0], [0x80, +pads[3].dataset.note, 0]]), hex(log));
+
+  /* a track is Shift + the jog turned by the distance to it */
+  render('bank-overview-walk');
+  const cur = H.doc.where.track | 0, to = (cur + 3) % 8, dist = to - cur;
+  log.length = 0; tap(live('.hud-pip[data-in="track"][data-t="' + to + '"]'));
+  ok('a track pip: Shift, the jog by the distance, Shift up', same(log, [[0xB0, 49, 127], [0xB0, 14, dist > 0 ? dist : 128 + dist], [0xB0, 49, 0]]), hex(log));
+  log.length = 0; tap(live('.hud-pip[data-in="track"][data-t="' + cur + '"]'));
+  ok('...the active track sends nothing', log.length === 0, hex(log));
+  render('track-melodic-playing');
+  ok('...a track overview\'s track rows are tracks too', fit.querySelectorAll('.hud-o-tl [data-in="track"]').length === 8 || !fit.querySelector('.hud-o-tl'),
+     fit.querySelectorAll('.hud-o-tl [data-in="track"]').length);
+
+  /* Session view: a clip cell on the pads is its pad; a header is its track */
+  render('session-overview');
+  const ro = (H.doc.ovw && H.doc.ovw.rowOff) | 0;
+  const cells = [...fit.querySelectorAll('.hud-o-grid .cc')];
+  const live4 = cells.filter((c) => c.dataset.in === 'pad');
+  ok('Session: the four rows on the pads are pads, the rest are not', live4.length === 32, live4.length);
+  ok('...its top row is 92.., its fourth 68..', live4[0].dataset.note === '92' && live4[31].dataset.note === '75', live4[0].dataset.note + '..' + live4[31].dataset.note + ' rowOff ' + ro);
+  ok('...the track headers and mixer dials are live', fit.querySelectorAll('.hud-o-grid .th[data-in="track"]').length === 8);
+
+  /* a list row: the jog turned onto it, clicked once the device says it is there */
+  render('menu-clock');
+  const L = H.doc.body.list, rowsLive = [...fit.querySelectorAll('.hud-list [data-in="row"]')];
+  const target = rowsLive.map((r) => +r.dataset.row).find((i) => i !== L.sel && Math.abs(i - L.sel) >= 2);
+  ok('a list\'s rows are live, addressed by the document\'s selection', rowsLive.length > 3 && rowsLive[0].dataset.path === 'body.list.sel', rowsLive.length);
+  log.length = 0; tap(rowsLive.find((r) => +r.dataset.row === target));
+  const d0 = target - L.sel;
+  ok('...a tap turns the jog one detent at a time toward it', log.length === Math.abs(d0) && log.every((p) => p[0] === 0xB0 && p[1] === 14 && p[2] === (d0 > 0 ? 1 : 127)), hex(log));
+  ok('...and does not click before the device has arrived', !log.some((p) => p[1] === 3));
+  const moved = JSON.parse(JSON.stringify(H.doc)); moved.seq = (H.doc.seq | 0) + 1; moved.body.list.sel = target;
+  log.length = 0; H.setDoc(moved); await wait(120);
+  ok('...then clicks once the selection is there', same(log, [[0xB0, 3, 127], [0xB0, 3, 0]]), hex(log));
+  /* a list that does not follow the jog: no click, and no runaway turning */
+  render('menu-clock');
+  log.length = 0; tap(fit.querySelectorAll('.hud-list [data-in="row"]')[0].dataset.row == L.sel ? fit.querySelectorAll('.hud-list [data-in="row"]')[1] : fit.querySelectorAll('.hud-list [data-in="row"]')[0]);
+  const n0 = log.length; await wait(800);
+  ok('...a selection that never moves: it stops, and never clicks', log.length === n0 && !log.some((p) => p[1] === 3), log.length + ' vs ' + n0);
+  /* a pop-up's rows find the selection in the pop-up */
+  render('bank-value-popup');
+  const pr = fit.querySelector('.hud-ovl [data-in="row"]');
+  const pv = pr && pr.dataset.path.split('.').reduce((o, k2) => o == null ? o : o[k2], H.doc);
+  ok('a pop-up card\'s rows address the pop-up\'s selection', !!pr && typeof pv === 'number', pr && pr.dataset.path);
+  /* a prompt's buttons */
+  render('record-blocked');
+  ok('a dialog\'s buttons are live', fit.querySelectorAll('.hud-btn[data-in="row"]').length === 2);
+  /* the lane menu's rows, the lane's steps */
+  render('automation-menu');
+  ok('the lane menu\'s rows are live', fit.querySelectorAll('.hud-lane[data-in="row"]').length >= 2);
+  render('automation-lane-detail');
+  const st = fit.querySelectorAll('.hud-lane-steps [data-in="step"]');
+  ok('the lane\'s 16 step buttons are steps 16..31', st.length === 16 && st[0].dataset.note === '16' && st[15].dataset.note === '31', st.length);
+
+  /* the bar: Shift latches; a held button stays held; the transport is Play */
+  const bar = (key) => d.querySelector('.hud-ctl .hud-cb[data-key="' + key + '"]');
+  const press = (el, id) => { ptr(el, 'pointerdown', 0, 0, id || 21); };
+  const lift = (el, id) => { ptr(el, 'pointerup', 0, 0, id || 21); };
+  render('bank-overview-walk');
+  log.length = 0; press(bar('shift')); lift(bar('shift'));
+  ok('Shift on the bar latches', same(log, [[0xB0, 49, 127]]) && bar('shift').classList.contains('on'), hex(log));
+  log.length = 0; tap(live('.hud-pip[data-in="track"][data-t="' + to + '"]'));
+  ok('...a track picked with Shift latched leaves Shift alone', same(log, [[0xB0, 14, dist > 0 ? dist : 128 + dist]]), hex(log));
+  log.length = 0; press(bar('shift')); lift(bar('shift'));
+  ok('...and a second tap lets it go', same(log, [[0xB0, 49, 0]]) && !bar('shift').classList.contains('on'), hex(log));
+  log.length = 0; press(bar('back')); lift(bar('back'));
+  ok('a bar button is a press and a release (Back)', same(log, [[0xB0, 51, 127], [0xB0, 51, 0]]), hex(log));
+  log.length = 0; press(bar('del')); await wait(560); lift(bar('del'));
+  ok('...held half a second it stays held (Delete)', same(log, [[0xB0, 119, 127]]) && bar('del').classList.contains('lock'), hex(log));
+  log.length = 0; press(bar('del')); lift(bar('del'));
+  ok('...until it is tapped again', same(log, [[0xB0, 119, 0]]) && !bar('del').classList.contains('lock'), hex(log));
+  log.length = 0; press(bar('jr')); lift(bar('jr'));
+  ok('the bar\'s jog arrows turn the jog', same(log, [[0xB0, 14, 1]]), hex(log));
+  log.length = 0; tap(live('[data-in="btn"][data-cc="85"]') || fit);
+  ok('the status strip\'s transport is Play', !live('[data-in="btn"][data-cc="85"]') || same(log, [[0xB0, 85, 127], [0xB0, 85, 0]]), hex(log));
+
+  /* nothing is left held: focus lost mid-press lets go */
+  render('bank-overview-walk');
+  log.length = 0;
+  ptr(fit.querySelector('.hud-pads [data-in="pad"]'), 'pointerdown', 0, 0, 31, 'touch');
+  press(bar('copy'), 32);
+  window.dispatchEvent(new window.Event('blur'));
+  const notes = log.filter((p) => p[0] === 0x80).length, ccs = log.filter((p) => p[0] === 0xB0 && p[1] === 60 && p[2] === 0).length;
+  ok('focus lost mid-press: the pad and the button are let go', notes === 1 && ccs === 1, hex(log));
+  /* the wheel over a knob turns it (touched while it turns); elsewhere it is the jog */
+  render('bank-clip');
+  log.length = 0;
+  const wh = (el, dy) => el.dispatchEvent(new window.WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: dy, deltaMode: 0 }));
+  wh(live('[data-in="knob"][data-k="1"]'), -56);
+  await wait(30);
+  ok('the wheel over a knob: touched, turned', log[0] && same(log[0], [0x90, 1, 127]) && log.some((p) => p[0] === 0xB0 && p[1] === 72 && p[2] === 2), hex(log));
+  await wait(500);
+  ok('...and let go when the wheel stops', same(log[log.length - 1], [0x80, 1, 0]), hex(log));
+  log.length = 0; wh(fit.querySelector('.hud-status') || fit, 28);
+  ok('the wheel elsewhere is the jog (scrolling down walks a list down: one detent right)', same(log, [[0xB0, 14, 1]]), hex(log));
+}
+
 console.log(JSON.stringify(out, null, 1));
 console.log(fails.length ? "FAILED: " + fails.join(", ") : "ALL PASS");
 process.exit(fails.length ? 1 : 0);

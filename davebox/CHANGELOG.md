@@ -9,6 +9,12 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Added
+- **The Screen view works the Move.** In the browser's Screen view, drag or scroll a
+  knob to turn it, press the bank map's pads or the Session clips on the pads, click
+  a track to select it, and tap a menu row, a dialog's button or a key to choose it.
+  The Move's buttons sit under the screen (Shift, Back, Menu, the jog, the arrows,
+  Play, Rec, Loop, Copy, Delete, Undo, Mute), and the arrow keys, Enter, Esc and
+  Space work too. Each does exactly what the same gesture does on the Move.
 - **The browser editor works on a tablet or a phone held sideways.** Bigger touch
   targets, clip settings in a drawer on narrow screens, a compact header on short
   ones, **Edit without launching** in a clip's ≡ menu and **Select all** on the

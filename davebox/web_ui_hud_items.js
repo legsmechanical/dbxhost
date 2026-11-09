@@ -42,7 +42,7 @@
     for (let t = 0; t < 8; t++) {
       const trk = tracks[t] || {};
       const st = trk.mute ? 'mute' : trk.qc >= 0 && trk.qc !== undefined && trk.qc !== trk.ac ? 'q' : trk.pl ? '' : 'off';
-      html += '<span class="hud-pip ' + st + (t === cur ? ' cur' : '') + '" style="--c:' + trackColor(t) + ';background:' + trackColor(t) + '">' + (t + 1) + '</span>';
+      html += '<span class="hud-pip ' + st + (t === cur ? ' cur' : '') + '" data-in="track" data-t="' + t + '" style="--c:' + trackColor(t) + ';background:' + trackColor(t) + '">' + (t + 1) + '</span>';
     }
     return html + '</span>';
   });
@@ -57,6 +57,6 @@
       const beats = Math.floor(m.play.tick / 96);
       pos = ' ' + (Math.floor(beats / 4) + 1) + '.' + ((beats % 4) + 1);
     }
-    return '<span class="hud-it-transport"><b>' + (on ? '▶' : '■') + '</b>' + esc(pos) + ' · ' + bpm + '</span>';
+    return '<span class="hud-it-transport" data-in="btn" data-cc="85"><b>' + (on ? '▶' : '■') + '</b>' + esc(pos) + ' · ' + bpm + '</span>';
   });
 });

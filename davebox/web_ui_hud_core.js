@@ -21,6 +21,7 @@
  *   web_ui_hud_items.js    the status strip's items (track, clip, pips, transport)
  *   web_ui_hud_viz.js      pictures spanning cells (envelope, filter, …)
  *   web_ui_hud_lanes.js    automation: the AUTOMATION screen, the lane strip
+ *   web_ui_hud_input.js    the hands: a click is the Move's gesture, sent to the device
  *
  * A renderer is a pure function writing HTML for its own piece. One that throws
  * is replaced by an empty box for that frame and logged once — one bad element
@@ -101,13 +102,13 @@
      * the curve the OLED puts under the pop-up */
     if (b.popup && b.lanes) {
       const o = Object.assign({}, b.popup); delete o.curve; delete o.position;
-      return { o, title: b.lanes.lane ? (b.lanes.laneGroup ? b.lanes.laneGroup + ' · ' : '') + b.lanes.lane : null, cls: 'left' };
+      return { o, title: b.lanes.lane ? (b.lanes.laneGroup ? b.lanes.laneGroup + ' · ' : '') + b.lanes.lane : null, cls: 'left', base: 'body.popup' };
     }
-    if (b.popup) return { o: b.popup, title: b.header && b.header.touchedName };
+    if (b.popup) return { o: b.popup, title: b.header && b.header.touchedName, base: 'body.popup' };
     const k = doc.knobs;
     if (lay && lay.name === 'overview' && k && k.popup) {
       const c = k.knobs && k.touched >= 0 ? k.knobs[k.touched] : null;
-      return { o: k.popup, title: (k.header && k.header.touchedName) || (c && (c.name || c.label)) };
+      return { o: k.popup, title: (k.header && k.header.touchedName) || (c && (c.name || c.label)), base: 'knobs.popup' };
     }
     return null;
   }
@@ -134,7 +135,7 @@
     /* a hold or a jump draws the lane's page over half the OLED: here it is a
      * strip above the parameter's page, which stays the screen */
     const focus = laneFocusOf(doc);
-    const pp = pg && !(doc.overlayLayer && !focus) ? HUD.safe('popup', HUD.popCard, doc, pg.o, pg.title, pg.cls) : '';
+    const pp = pg && !(doc.overlayLayer && !focus) ? HUD.safe('popup', HUD.popCard, doc, pg.o, pg.title, pg.cls, pg.base) : '';
     /* the cross-fade plays on a SCREEN change only — never on a value change */
     const sid = (doc.where && doc.where.screen) || '';
     const fade = sid !== lastScreen; lastScreen = sid;
