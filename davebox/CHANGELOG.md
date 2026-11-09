@@ -9,6 +9,10 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Added
+- **The browser editor works on a tablet or a phone held sideways.** Bigger touch
+  targets, clip settings in a drawer on narrow screens, a compact header on short
+  ones, **Edit without launching** in a clip's ≡ menu and **Select all** on the
+  Select tool. It can be added to the home screen to run full screen.
 - **Instrument and effect editors stay loaded.** On the browser's Sound view, coming back
   to a track (or back from the Mixer) shows its editors as you left them, instantly,
   instead of loading them again; the last four tracks you visited are kept.
@@ -148,6 +152,10 @@ the section into a versioned heading at release time.
   instrument and effect editors kept loaded (in one tab or a few) could hold up Play, Stop
   and switching views for seconds; each editor now reads only its own values, once (it
   was often loaded twice when a track was first opened), and stops reading when it closes.
+- **Browser editor:** a clip's ≡ menu no longer closes by itself while the
+  transport runs, and a click on the session grid is no longer occasionally lost.
+- **Browser editor:** on a narrow window, Fit and Snap no longer cover the step band's
+  right-hand cells.
 - **A flattened clip longer than a bar shows its full length.** After Flatten, a clip
   of several bars played all of them but its loop length and waveform showed only
   the first bar until the length was changed by hand.

@@ -63,7 +63,10 @@ ok("snapOverlayExists", !!d.getElementById("rollzoom"));
  * swallowing clicks on its right-hand cells. Read the constant from the running
  * code so the CSS cannot drift away from it. */
 const STEPBAND = window.eval("STEPBAND");
-const zoomBottom = parseFloat((rules.match(/#rollzoom[^}]*bottom:\s*(\d+(?:\.\d+)?)px/) || [])[1]);
+/* EVERY #rollzoom bottom, media rules included: a narrow-screen rule once put it at
+ * 6px — right on the step band — while the base rule passed this check */
+const zoomBottoms = [...rules.matchAll(/#rollzoom\s*\{[^}]*bottom:\s*(\d+(?:\.\d+)?)px/g)].map(m => parseFloat(m[1]));
+const zoomBottom = zoomBottoms.length ? Math.min(...zoomBottoms) : NaN;
 ok("stepBandConstantReadable", Number.isFinite(STEPBAND) && STEPBAND > 0, STEPBAND);
 ok("overlayClearsStepBand", zoomBottom >= STEPBAND,
   "bottom:" + zoomBottom + "px vs STEPBAND " + STEPBAND + "px");
@@ -90,9 +93,9 @@ ok("siteLinksInert", !!sl && sl.classList.contains("inert"));
 const anchors = sl ? [...sl.querySelectorAll("a")] : [];
 /* the SET and ORDER must match the manager's base.html nav — that is the whole
  * point of the ribbon; a drift here is the inconsistency it exists to remove */
-ok("siteLinkLabels", anchors.map(a => a.textContent.trim()).join("|") === "Mirror|Files|Help|Config|System",
+ok("siteLinkLabels", anchors.map(a => a.textContent.trim()).join("|") === "Mirror|Projects|Files|Help|Config|System",
   JSON.stringify(anchors.map(a => a.textContent.trim())));
-ok("inertLinksCannotNavigate", anchors.length === 5 && anchors.every(a => !a.getAttribute("href")));
+ok("inertLinksCannotNavigate", anchors.length === 6 && anchors.every(a => !a.getAttribute("href")));
 
 /* ---- the clip badge is gone, and nothing still writes to it ---- */
 ok("clipBadgeGone", !d.getElementById("clipname"));
@@ -118,16 +121,18 @@ ok("sessionScrolls", gridCss.overflow === "auto" || gridCss.overflowY === "auto"
 ok("sessionNotViewportFraction", !/vh/.test(sess.style.maxHeight || "") &&
   !/30vh/.test([...d.styleSheets[0].cssRules].map(r => r.cssText).join("")), "30vh still present");
 
-/* ⚠ jsdom FOLDS calc() — the source says calc(22px + 6 * (17px + 3px) + 14px)
- * and the rule reads back as calc(156px). Assert the ARITHMETIC, which is the
- * thing that matters (header + six whole rows + padding) and is also a stronger
- * check than matching the source text. */
-const HEADER = 22, ROW = 17, GAP = 3, PAD = 14, ROWS = 6;
-const want = HEADER + ROWS * (ROW + GAP) + PAD;
-const got = (rules.match(/#session[^}]*max-height:\s*calc\((\d+(?:\.\d+)?)px\)/) || [])[1];
-ok("sixRowHeightIsDerived", Number(got) === want, got + "px, want " + want + "px");
-ok("gridRowsFixed", /#grid[^}]*grid-auto-rows:\s*17px/.test(rules) &&
-  /#grid[^}]*grid-template-rows:\s*22px/.test(rules));
+/* The geometry is CSS variables now (2026-11-03), so touch and short screens can
+ * change the row height and count without breaking the whole-row rule: the grid
+ * rows and #session's max-height must read the SAME variables, and the desktop
+ * defaults must still be 22px header, 17px rows, six of them. */
+ok("sixRowHeightIsDerived",
+  /#session[^}]*max-height:\s*calc\(\s*var\(--shead\)\s*\+\s*var\(--srows\)\s*\*\s*\(\s*var\(--clip-h\)\s*\+\s*3px\s*\)\s*\+\s*14px\s*\)/.test(rules),
+  (rules.match(/#session[^}]*max-height:[^;]*/) || ["none"])[0]);
+ok("gridRowsFixed", /#grid[^}]*grid-auto-rows:\s*var\(--clip-h\)/.test(rules) &&
+  /#grid[^}]*grid-template-rows:\s*var\(--shead\)/.test(rules));
+const rootVars = (rules.match(/:root\s*\{[^}]*\}/) || [""])[0];
+ok("desktopGridDefaults", /--clip-h:\s*17px/.test(rootVars) && /--srows:\s*6/.test(rootVars) &&
+  /--shead:\s*22px/.test(rootVars), rootVars.slice(0, 200));
 
 /* ---- both zoom strips zoom on a DOWN drag ----
  * The vertical strip is an 18px-wide column; reading horizontal movement there
