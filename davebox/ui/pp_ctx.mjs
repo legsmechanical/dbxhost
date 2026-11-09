@@ -183,6 +183,11 @@ export function installPpCtx(members) {
 export const PP_CTX_MEMBERS = [
     'getSlotParam', 'getSlotParams', 'setSlotParam', 'isMuteHeld', 'requestRedraw',
     'setView', 'VIEWS', 'getModuleAbbrev',
+    /* Answered on purpose, unlike stock (Josh, 2026-11-09: "anywhere we use
+     * module names, we should use the full module name (shortened to fit
+     * whatever space there is for it if necessary)") — the editor's header
+     * names the module, not its two-letter mark. */
+    'getModuleDisplayName',
     'evaluateVisibilityCondition', 'isParamModulated', 'openParamEditor',
     'headerPresetName',
     /* A parameter's module-supplied card drawer. Answered, not absent: the host
@@ -201,6 +206,9 @@ export const PP_CTX_MEMBERS = [
  *    absent; each has a documented fallback in that module (the abbreviation,
  *    the module's own patch name, an inert menu row, and the list editor
  *    respectively)."
+ *
+ * ⭑ EXCEPT getModuleDisplayName, which davebox now answers (see the member
+ * list): Josh's rule that a module is named in full outranks matching stock.
  *
  * ⚠ Supplying any of these would make davebox's editor differ from stock's on
  * this build — in the nicer direction, which is still a difference and still a
@@ -228,7 +236,6 @@ export const PP_CTX_MEMBERS = [
 export const PP_CTX_DEFERRED = ['wavPeaksIo'];
 
 export const PP_CTX_ABSENT = [
-    'getModuleDisplayName',
     'userPresetHeaderMark',
     'runSlotAction',
     'openEnumPicker',

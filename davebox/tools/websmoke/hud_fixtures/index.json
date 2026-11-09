@@ -87,7 +87,7 @@
  {
   "slug": "bank-chord",
   "title": "Pad Mode bank — the Chord layout",
-  "screen": "track.padmode"
+  "screen": "track.overview"
  },
  {
   "slug": "bank-chord-slot",
@@ -362,12 +362,12 @@
  {
   "slug": "sound-card",
   "title": "The MIX card",
-  "screen": "sound.prompt"
+  "screen": "track.overview"
  },
  {
   "slug": "midi-track-card",
   "title": "MIX on a MIDI track",
-  "screen": "sound.prompt"
+  "screen": "track.overview"
  },
  {
   "slug": "track-config",
@@ -407,7 +407,7 @@
  {
   "slug": "macros-card",
   "title": "The MACROS bank",
-  "screen": "sound.macros"
+  "screen": "track.overview"
  },
  {
   "slug": "macros-targets",

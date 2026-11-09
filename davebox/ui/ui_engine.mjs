@@ -805,6 +805,22 @@ export function engineModuleName(moduleId, comp) {
     if (!MODULE_NAME[lower] && spec && !_namesScanned[spec.scanDir]) { _namesScanned[spec.scanDir] = true; engineListModules(comp); }
     return MODULE_NAME[lower] || String(moduleId);
 }
+/* A module's NAME wherever the UI names one (Josh, 2026-11-09: "anywhere we
+ * use module names, we should use the full module name (shortened to fit
+ * whatever space there is for it if necessary)") — the declared name from its
+ * module.json, whatever component it is; the id until a scan has seen it.
+ * The fitting is the drawer's: it knows the room. */
+export function engineModuleDisplayName(moduleId) {
+    if (!moduleId) return '';
+    const lower = String(moduleId).toLowerCase();
+    if (!MODULE_NAME[lower] && !_genNamesScanned) { _genNamesScanned = true; engineListModules('synth'); }
+    for (const comp in COMPONENTS) {
+        if (MODULE_NAME[lower]) break;
+        const spec = COMPONENTS[comp];
+        if (spec && !_namesScanned[spec.scanDir]) { _namesScanned[spec.scanDir] = true; engineListModules(comp); }
+    }
+    return MODULE_NAME[lower] || String(moduleId);
+}
 export function engineModuleAbbrev(moduleId) {
     if (!moduleId) return '--';
     const lower = String(moduleId).toLowerCase();

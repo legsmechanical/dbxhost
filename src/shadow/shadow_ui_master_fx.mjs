@@ -75,7 +75,7 @@ export function drawMasterFx() {
             selectingMasterFxModule, selectedMasterFxComponent,
             masterFxConfig, MASTER_FX_CHAIN_COMPONENTS, MASTER_FX_OPTIONS,
             currentMasterPresetName, getMasterFxParam, activeFxBus,
-            getModuleAbbrev, isTextEntryActive, drawTextEntry,
+            getModuleDisplayName, fitModuleName, isTextEntryActive, drawTextEntry,
             drawHelpDetail, drawHelpList } = ctx;
 
     clear_screen();
@@ -150,7 +150,7 @@ export function drawMasterFx() {
             abbrev = "*";
         } else {
             const moduleData = masterFxConfig[comp.key];
-            abbrev = moduleData ? getModuleAbbrev(moduleData.module) : "--";
+            abbrev = moduleData ? fitModuleName(getModuleDisplayName(moduleData.module), Math.floor(BOX_W / 5)) : "--";
         }
 
         const fillBox = presetSelected || isSelected;

@@ -165,6 +165,9 @@
     if (!shown) { stopLive(); return; }
     rescale();
     if (typeof R !== 'undefined' && R && R._mock) startFixtures(); else startLive();
+    /* the tracks' instrument NAMES (OB-Xd, not "Synth") come with the mixer
+     * seed, which only the Mixer view asked for (web_ui_mix.js) */
+    if (typeof ensureMixSub === 'function') ensureMixSub();
     H.paint();
   };
   /* the editor's model changes (track states, transport) repaint the status strip */

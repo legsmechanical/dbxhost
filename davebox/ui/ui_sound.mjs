@@ -26,7 +26,7 @@ import {
     engineLoadModule, engineLoadedModule, engineGetState, engineSetState,
     engineListUserPresets, engineReadUserPreset,
     engineGetSlotParam, engineSetSlotParam, engineSaveState,
-    engineGetChainParam, engineGetChainParams, engineSetChainParam, engineModuleAbbrev, engineModuleCaps,
+    engineGetChainParam, engineGetChainParams, engineSetChainParam, engineModuleAbbrev, engineModuleDisplayName, engineModuleCaps,
     engineLoadCardScript, engineCanvasOverlayShared, engineCanvasPageDrawer, engineCanvasPageHook,
     engineCanvasNewVisit, engineCanvasForget,
     SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX,
@@ -49,7 +49,7 @@ import { nowMs } from './ui_clock.mjs';
  * safe because both sides only call the binding inside function bodies, never
  * at module-init time — the same contract the ui_record ↔ ui_dsp_bridge cycle
  * documents. bankCardVisible is the ONE owner of card visibility. */
-import { bankCardShown, sessMixerShown, bankHeaderRight, drawTrackPageBar, trackPageBarSig } from './ui_render.mjs';
+import { bankCardShown, hudRestPass, sessMixerShown, bankHeaderRight, drawTrackPageBar, trackPageBarSig } from './ui_render.mjs';
 /* Destination read/write and the option list. ui_dsp_bridge does not import
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
@@ -2466,7 +2466,7 @@ function openBlock(comp) {
     ppDeclinedDraw = false;
     const err = componentError(comp);
     if (err) {
-        showActionPopupFor(4000, (engineModuleAbbrev(id) || 'MODULE') + ' FAILED', err);
+        showActionPopupFor(4000, (engineModuleDisplayName(id) || 'Module') + ' failed', err);
         return;
     }
     S.view = VIEW_EDIT;
@@ -4052,8 +4052,26 @@ function renderModBus() {
     renderInChain(rows.map((r) => (r.kind === 'new'
         ? { label: ModBus.modBusRowLabel(r), hdr: true, chevron: true }
         : { label: ModBus.modBusRowLabel(r), hdr: true,
-            value: ModBus.modBusRowValue(r), chevron: true })),
+            value: modBusRowValueNamed(r), chevron: true })),
         S.modBusIdx);
+}
+
+/* A bus row's value with its inserts NAMED (Josh, 2026-11-09: "anywhere we
+ * use module names, we should use the full module name (shortened to fit
+ * whatever space there is for it if necessary)"): the column is ~11
+ * characters and carries both send levels, so each name gets an equal share of
+ * what the levels leave — one insert keeps more of its name than two; past two
+ * the count, as bus_model's summary says (the names are one click away). */
+const MODBUS_VALUE_CHARS = 11;
+function modBusRowValueNamed(r) {
+    const b = (S.modBus && S.modBus.config && S.modBus.config.buses || []).find((x) => x && x.index === r.index);
+    const fx = ((b && b.fx) || []).filter((e) => e && e.module);
+    const [a, bb] = r.sends || [0, 0];
+    const lv = ' ' + a + '/' + bb;
+    if (fx.length === 0 || fx.length > 2) return ModBus.modBusRowValue(r);
+    const each = Math.max(2, Math.floor((MODBUS_VALUE_CHARS - lv.length - (fx.length - 1)) / fx.length));
+    const cut = (n) => n.length <= each ? n : (n.slice(0, each).replace(/[^A-Za-z0-9]+$/, '') || n.slice(0, 1));
+    return fx.map((e) => cut(engineModuleDisplayName(e.module))).join('>') + lv;
 }
 
 /* ---- one bus's actions --------------------------------------------------
@@ -4136,7 +4154,7 @@ const MOD_BUS_INSERT_DOOR_MARK = ' >';
 export function modBusInsertDisplayValue(insertName, moduleRaw) {
     if (!moduleRaw) return '--';
     const markW = mvWidth(MOD_BUS_INSERT_DOOR_MARK);
-    let t = String(insertName || moduleIdOf(moduleRaw) || moduleRaw).toUpperCase();
+    let t = String(insertName || engineModuleDisplayName(moduleIdOf(moduleRaw)) || moduleRaw).toUpperCase();
     while (t.length > 1 && mvWidth(t) + markW > MOD_BUS_INSERT_VALUE_MAX_W) t = t.slice(0, -1);
     return t + MOD_BUS_INSERT_DOOR_MARK;
 }
@@ -4972,7 +4990,7 @@ const VIEW_TREE = {
                           crumb: () => canvasEditCrumb() || 'Canvas' },
     /* ⚠ Back is the module's first, like the canvas; and it owns all 64 rows. */
     [VIEW_CHAIN]:       { parent: VIEW_BLOCKS,     float: false,
-                          crumb: () => engineModuleAbbrev(S.moduleId) || 'Module' },
+                          crumb: () => engineModuleDisplayName(S.moduleId) || 'Module' },
 };
 
 /* Applying an Instrument choice. Extracted so the PICKER and the old
@@ -11882,7 +11900,7 @@ function pickRowCell(r, idx) {
                 /* No generator yet reads as NOTHING, not "Schwung": the
                  * route is bookkeeping the user never chose (Josh,
                  * 2026-09-04) — what they have is no instrument. */
-                : (route === 0 && !S.instrEditing) ? (r.gen ? r.gen + ' >' : '--')
+                : (route === 0 && !S.instrEditing) ? (r.gen ? fitRowModuleName(engineModuleDisplayName(r.gen), ' >') + ' >' : '--')
                 : (route === 1 && !S.instrEditing) ? fmtInstr(v) + ' >'
                 : fmtInstr(v);
         return { label: r.label, hdr: true,
@@ -11915,8 +11933,20 @@ function pickRowCell(r, idx) {
     if (r.kind !== 'block') return { label: r.label, hdr: true };
     /* A bypassed block still says what it holds — you need to know WHAT is
      * switched out — so the state rides as a prefix. Matches the host's 'B'. */
+    const pre = r.bypassed ? 'B ' : '';
     return { label: r.label, hdr: true,
-             value: (r.bypassed ? 'B ' : '') + String(r.name || '-').toUpperCase() };
+             value: pre + (r.name ? fitRowModuleName(engineModuleDisplayName(r.name), pre) : '-') };
+}
+/* A module's NAME as a list row's value (Josh, 2026-11-09: full names,
+ * "shortened to fit whatever space there is"): drawKitList gives the value
+ * the width it asks for and shrinks the LABEL, so the name self-limits to the
+ * same cap the bus inserts use, `extra` (a mark beside it) included. */
+function fitRowModuleName(name, extra) {
+    const room = MOD_BUS_INSERT_VALUE_MAX_W - (extra ? mvWidth(String(extra)) : 0);
+    let t = String(name || '').toUpperCase();
+    if (mvWidth(t) <= room) return t;
+    while (t.length > 1 && mvWidth(t) > room) t = t.slice(0, -1);
+    return t.replace(/[^A-Z0-9]+$/, '') || t;
 }
 
 /* ⭑ THE CONFIG BANK's CARD (Josh, 2026-09-26: "it literally shows the menu
@@ -13325,17 +13355,19 @@ installPpCtx({
     VIEWS: { PARAM_PAGES: VIEW_EDIT, CHAIN_EDIT: VIEW_BLOCKS },
     setView: (v) => { if (v !== S.view) { S.view = v; S.dirty = true; } },
 
-    /* ⚠ ABBREV ONLY, and that is deliberate. This host supplies getModuleAbbrev
-     * and NOT getModuleDisplayName (shadow_ui.js: "the four upstream entries
-     * with no fork equivalent ... are deliberately absent"), so the binding
-     * falls back from one to the other. Answering both would put a different
-     * string in davebox's header than in the host's.
-     * ⭑ AND THE STRING ITSELF MUST MATCH, not just the member. This was
+    /* The abbreviation stays answered for anything that still asks for it;
+     * the header asks for the NAME first (getModuleDisplayName below).
+     * ⭑ The mark itself follows the host's rule. This was
      * `String(ref).toUpperCase()` — a placeholder that renders a header stock
      * never renders, in the one place the integration claims there is no
      * difference. engineModuleAbbrev is the host's own rule: the module's
      * declared `abbrev`, else its first two characters uppercased. */
     getModuleAbbrev: (ref) => engineModuleAbbrev(ref),
+    /* ⭑ AND THE NAME (Josh, 2026-11-09: "anywhere we use module names, we
+     * should use the full module name (shortened to fit whatever space there
+     * is for it if necessary)"). The binding prefers it, and its header fits
+     * what it is given. This now differs from stock's header on purpose. */
+    getModuleDisplayName: (ref) => engineModuleDisplayName(ref),
 
     /* `visible_if`. Ported, because the host's evaluator and all four of its
      * helpers live in shadow_ui.js rather than shared/ — see pp_visible.mjs.
@@ -13586,10 +13618,10 @@ function closeCanvasScreen() {
  * the way out. */
 function renderChainScreen() {
     if (!chainUiActive()) return;
-    if (!chainUiDead()) { kitHudTap('Picture', { kind: 'module', caption: String(engineModuleAbbrev(S.moduleId) || '') }); chainUiTick(); if (!chainUiDead()) return; }
+    if (!chainUiDead()) { kitHudTap('Picture', { kind: 'module', caption: String(engineModuleDisplayName(S.moduleId) || '') }); chainUiTick(); if (!chainUiDead()) return; }
     clear_screen();
-    kitHudTap('Message', { big: String(engineModuleAbbrev(S.moduleId) || 'Module'), lines: [String(chainUiError() || 'module screen stopped')], wordmark: true });
-    print(3, 12, String(engineModuleAbbrev(S.moduleId) || 'Module').slice(0, 24), 1);
+    kitHudTap('Message', { big: String(engineModuleDisplayName(S.moduleId) || 'Module'), lines: [String(chainUiError() || 'module screen stopped')], wordmark: true });
+    print(3, 12, String(engineModuleDisplayName(S.moduleId) || 'Module').slice(0, 24), 1);
     print(3, 30, String(chainUiError() || 'module screen stopped').slice(0, 24), 1);
     drawKitHintRow(MV_FOOTER_Y, [['back', 'exit']]);
 }
@@ -14194,9 +14226,10 @@ export function soundRender() {
     if (isCardView(S.view) &&
             !soundIsGlobal() && !S.enterSession &&
             !S.instrEditing && !S.busLevelEditing &&
-            S.touchedIdx < 0 && !S.volTouched &&
-            !(S.volShownUntil >= 0 && GS.clockMs <= S.volShownUntil) &&
-            !bankCardShown())       /* + the jog-touch reveal (a render gate) */
+            (hudRestPass() ||         /* the Screen view's overview pass (ui_render hudDescribeKnobs) */
+             (S.touchedIdx < 0 && !S.volTouched &&
+              !(S.volShownUntil >= 0 && GS.clockMs <= S.volShownUntil) &&
+              !bankCardShown())))     /* + the jog-touch reveal (a render gate) */
         return false;
     hudScreen('sound.' + (SOUND_VIEW_NAMES[S.view] || 'view-' + S.view));
     if (S.view === VIEW_PROMPT) renderPrompt();

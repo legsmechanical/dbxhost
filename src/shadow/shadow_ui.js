@@ -3559,11 +3559,38 @@ function refreshSlotModuleSignature(slotIndex, knownSignature) {
     return false;
 }
 
-/* Cache a module's abbreviation from its module.json */
+/* Cache a module's abbreviation — and its NAME — from its module.json */
+const moduleNameCache = {};
 function cacheModuleAbbrev(json) {
     if (json && json.id && json.abbrev) {
         moduleAbbrevCache[json.id.toLowerCase()] = json.abbrev;
     }
+    if (json && json.id && json.name) {
+        moduleNameCache[json.id.toLowerCase()] = String(json.name);
+    }
+}
+
+/* A module's NAME wherever a screen names one (Josh, 2026-11-09: "anywhere we
+ * use module names, we should use the full module name (shortened to fit
+ * whatever space there is for it if necessary)"): the declared name, else the
+ * id until a scan has read its module.json. */
+function getModuleDisplayName(moduleId) {
+    if (!moduleId) return "--";
+    return moduleNameCache[String(moduleId).toLowerCase()] || String(moduleId);
+}
+/* The name cut to `chars` characters, never ending on a dash or a space
+ * ("OB-Xd" in three is "OB", not "OB-"). */
+function fitModuleName(name, chars) {
+    const s = String(name || "");
+    if (s.length <= chars) return s;
+    return s.slice(0, Math.max(1, chars)).replace(/[^A-Za-z0-9]+$/, "") || s.slice(0, 1);
+}
+/* "<before><module name><after>" in `max` characters: the module name gives
+ * way first (down to `minName`), then the line is cut as before. */
+function fitModuleLine(before, name, after, max, minName) {
+    const room = max - before.length - after.length;
+    const n = room >= name.length ? name : fitModuleName(name, Math.max(minName || 6, room));
+    return truncateText(before + n + after, max);
 }
 
 /* Get abbreviation for a module */
@@ -13596,7 +13623,7 @@ function drawHierarchyEditor() {
     const prefix = getComponentParamPrefix(hierEditorComponent);
     const cfg = chainConfigs[hierEditorSlot] || createEmptyChainConfig();
     const moduleData = cfg && cfg[hierEditorComponent];
-    const abbrev = moduleData ? getModuleAbbrev(moduleData.module) : hierEditorComponent.toUpperCase();
+    const abbrev = moduleData ? getModuleDisplayName(moduleData.module) : hierEditorComponent.toUpperCase();
 
     /* Get bank or preset name for header depending on view */
     let headerName;
@@ -13624,17 +13651,18 @@ function drawHierarchyEditor() {
     /* Build header: S#: Module: Bank (preset browser) or Preset (edit view) */
     const dirtyMark = slotDirtyCache[hierEditorSlot] ? "*" : "";
     let headerText;
+    const hdrBefore = `S${hierEditorSlot + 1}${dirtyMark}: `;
     if (hierEditorIsPresetLevel && !hierEditorPresetEditMode) {
         /* In preset browser, always show bank name */
-        headerText = `S${hierEditorSlot + 1}${dirtyMark}: ${abbrev}: ${headerName}${modeIndicator}`;
+        headerText = fitModuleLine(hdrBefore, abbrev, `: ${headerName}${modeIndicator}`, 24);
     } else if (hierEditorPath.length > 0) {
         /* If navigated into sub-levels, append path */
-        headerText = `S${hierEditorSlot + 1}${dirtyMark}: ${abbrev} > ${hierEditorPath[hierEditorPath.length - 1]}`;
+        headerText = fitModuleLine(hdrBefore, abbrev, ` > ${hierEditorPath[hierEditorPath.length - 1]}`, 24);
     } else {
-        headerText = `S${hierEditorSlot + 1}${dirtyMark}: ${abbrev}: ${headerName}${modeIndicator}`;
+        headerText = fitModuleLine(hdrBefore, abbrev, `: ${headerName}${modeIndicator}`, 24);
     }
 
-    drawHeader(truncateText(headerText, 24));
+    drawHeader(headerText);
 
     /* Check if this is a preset browser level (and not in edit mode) */
     if (hierEditorIsPresetLevel && !hierEditorPresetEditMode) {
@@ -16044,7 +16072,7 @@ function drawChainEdit() {
             abbrev = "*";
         } else {
             const moduleData = cfg[comp.key];
-            abbrev = moduleData ? getModuleAbbrev(moduleData.module) : "--";
+            abbrev = moduleData ? fitModuleName(getModuleDisplayName(moduleData.module), Math.floor(BOX_W / 5)) : "--";
         }
 
         /* Draw box:
@@ -16780,9 +16808,9 @@ function drawComponentEdit() {
     const displayName = getSlotParam(selectedSlot, `${prefix}:name`) || moduleName;
 
     /* Build header: S#: Module: Bank (preset selection shows bank/soundfont) */
-    const abbrev = moduleData ? getModuleAbbrev(moduleData.module) : moduleName;
+    const abbrev = moduleData ? getModuleDisplayName(moduleData.module) : moduleName;
     const bankName = getSlotParam(selectedSlot, `${prefix}:bank_name`) || displayName;
-    const headerText = truncateText(`S${selectedSlot + 1}: ${abbrev}: ${bankName}`, 24);
+    const headerText = fitModuleLine(`S${selectedSlot + 1}: `, abbrev, `: ${bankName}`, 24);
     drawHeader(headerText);
 
     const centerY = 32;
@@ -17170,13 +17198,16 @@ function drawHelpDetail() {
     _ctx.getMasterFxSlotModule = (...args) => getMasterFxSlotModule(...args);
     _ctx.getMasterFxParam = (...args) => getMasterFxParam(...args);
     _ctx.getModuleAbbrev = (...args) => getModuleAbbrev(...args);
+    _ctx.getModuleDisplayName = (...args) => getModuleDisplayName(...args);
+    _ctx.fitModuleName = (...args) => fitModuleName(...args);
     /* ---- the knob grid (shadow_ui_param_pages.mjs) ----
-     * Everything it needs from this file, and nothing it does not. The four
-     * upstream entries with no fork equivalent -- getModuleDisplayName,
-     * userPresetHeaderMark, runSlotAction, openEnumPicker -- are deliberately
-     * absent; each has a documented fallback in that module (the abbreviation,
-     * the module's own patch name, an inert menu row, and the list editor
-     * respectively). See docs/PARAM_PAGES.md. */
+     * Everything it needs from this file, and nothing it does not. Three
+     * upstream entries with no fork equivalent -- userPresetHeaderMark,
+     * runSlotAction, openEnumPicker -- are deliberately absent; each has a
+     * documented fallback in that module (the module's own patch name, an
+     * inert menu row, and the list editor respectively). See
+     * docs/PARAM_PAGES.md. getModuleDisplayName is answered (above): a module
+     * is named in full wherever it is named. */
     _ctx.evaluateVisibilityCondition = (...args) => evaluateVisibilityCondition(...args);
     /* The header keeps the PATCH name here — the chain editor you came through
      * already named the module. davebox answers false (its entry paths never

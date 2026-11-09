@@ -12,7 +12,7 @@ import { seqFollowOn, cardHoldShows } from './ui_prefs.mjs';
 import { drawDaveBox, drawBannerDave, BANNER_H, drawDaveLoading } from './ui_daves.mjs';
 import { devSnapOpen, devSnapHints, devSnapTitle } from './ui_devsnap.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
-import { SESS_KNOB_MODES, engineLoadedModule, engineModuleAbbrev, engineGeneratorName, faderGainToTravel} from './ui_engine.mjs';
+import { SESS_KNOB_MODES, engineLoadedModule, engineGeneratorName, faderGainToTravel} from './ui_engine.mjs';
 import { instrValueFor } from './ui_dsp_bridge.mjs';
 import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import { chordLabel, noteNames, noteLabel, heldInputNotes, keyUsesFlats, keyRootName, fitHeldLabel } from './ui_chord.mjs';
@@ -532,9 +532,11 @@ export function bankHeaderRight(bare) {
         return '<AUTO S' + (autoHoldJumpStep() - (cy ? cy.off : 0) + 1);
     }
     const instr = '[' + (S.instrAbbrev || '--') + ']';
-    return bare ? instr : 'T' + (S.activeTrack + 1) + instr;   /* T3[OBXD] — no space (Josh) */
+    return bare ? instr : 'T' + (S.activeTrack + 1) + instr;   /* T3[OB-Xd] — no space (Josh) */
 }
-/* The instrument abbreviation for the active track — a CACHE, refreshed by the
+/* The instrument mark for the active track — a Schwung track's module by its
+ * full NAME (drawKitBankHeader shortens it to the room the bank name leaves),
+ * else the route's mark (MV3, CH5, TR2, CNDT…) — a CACHE, refreshed by the
  * tick once a second and forced (`S.instrAbbrevAt = 0`) on a track switch or
  * an instrument change. The header draws every frame; the module id is a
  * shadow_get_param round-trip (~2.9 ms), which must never sit on a draw path. */
@@ -544,7 +546,7 @@ export function refreshInstrAbbrev() {
     let a = '--';
     if (v === INSTR_SCHWUNG) {
         const ref = engineLoadedModule(schSlotForTrack(t), 'synth');
-        a = ref ? engineModuleAbbrev(moduleIdOf(ref)) : '--';
+        a = ref ? engineGeneratorName(moduleIdOf(ref)) : '--';
     } else if (v >= 0 && v <= INSTR_MOVE_MAX)                a = 'MV' + (v + 1);
     else if (v >= INSTR_MIDI_CH && v <= INSTR_MIDI_CH + 15)  a = 'CH' + (v - INSTR_MIDI_CH + 1);
     else if (v >= INSTR_TRACK && v <= INSTR_TRACK + 7)       a = 'TR' + (v - INSTR_TRACK + 1);
@@ -554,7 +556,7 @@ export function refreshInstrAbbrev() {
     else if (v === INSTR_CONDUCT)                            a = 'CNDT';
     else if (v === INSTR_AUDIO)                              a = 'AUD';
     else if (v === INSTR_SLICER)                             a = 'SLCR';
-    S.instrAbbrev = String(a || '--').toUpperCase();
+    S.instrAbbrev = String(a || '--');   /* as declared: the OLED's font uppercases, the Screen view does not */
     S.instrAbbrevAt = S.clockMs + 1000;
 }
 
@@ -2006,6 +2008,10 @@ export function sessMixerShown() {
 /* Set only for the length of hudDescribeKnobs' muted pass: 'card' draws the
  * knob page, 'rest' the overview, whatever the touch / latch / hold say. */
 let hudGate = null;
+/* True only inside the 'rest' muted pass: a knob page that peeks on a touch
+ * (Sound view's card, ui_sound soundRender) stands down for it as the clip
+ * banks' card does through bankCardShown(). */
+export function hudRestPass() { return hudGate === 'rest'; }
 
 export function bankCardVisible() {
     /* ...plus ONE peek (Josh: "knob touches are the ONLY other thing that
@@ -2211,7 +2217,13 @@ export function drawUI() {
  * mode — screens in use rather than peeks — are left as they are. */
 const HUD_OVERVIEWS = new Set(['track.overview', 'track.drum-overview', 'track.audio-overview', 'session.overview']);
 const HUD_FOLDS = new Set(['track.bank', 'track.conduct', 'track.macros-card', 'track.drum-velocity',
-                           'track.sound-card', 'track.config-card', 'track.step', 'session.mixer']);
+                           'track.sound-card', 'track.config-card', 'track.step', 'track.padmode', 'session.mixer',
+                           /* Sound view's cards peek on a knob touch over the overview
+                            * exactly as a clip bank's card does (the MIX bank's
+                            * page is sound.prompt) — Josh, 2026-11-09: "there's no
+                            * reason to have the knobs shift to a different layout
+                            * when touched/turned when they're already there" */
+                           'sound.prompt', 'sound.config-card', 'sound.macros']);
 const HUD_MUTE = ['clear_screen', 'fill_rect', 'draw_rect', 'set_pixel', 'print', 'draw_line', 'draw_arc',
                   'draw_circle', 'fill_circle', 'draw_image', 'stipple_rect'];
 function hudMutedPass(gate, layer) {

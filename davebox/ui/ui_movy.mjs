@@ -1619,11 +1619,23 @@ export function drawKitBankHeader(name, glyph, right) {
     let x = 2;
     const gw = kitBankGlyphWidth(glyph);
     if (gw) { drawKitBankGlyph(glyph, x, 1, 0); x += gw + 3; }
-    const r = String(right == null ? '' : right).toUpperCase();
+    const n = String(name).toUpperCase();
+    const r = fitHeaderRight(String(right == null ? '' : right).toUpperCase(), SCREEN_W - 2 - x - fontWidth4x5(n) - 4);
     const rw = r ? fontWidth4x5(r) : 0;
     if (r) fontPrint4x5(SCREEN_W - 2 - rw, 1, r, 0);
     const budget = SCREEN_W - 2 - x - (r ? rw + 4 : 0);
-    fontPrint4x5(x, 1, fit4x5(String(name).toUpperCase(), budget), 0);
+    fontPrint4x5(x, 1, fit4x5(n, budget), 0);
+}
+/* The right label's [module name] is shortened to the room the bank name
+ * leaves — the name is the heading, the module a note beside it — keeping at
+ * least two letters (then the name gives way, as before). Exported for the
+ * test. */
+export function fitHeaderRight(r, room) {
+    if (!r || fontWidth4x5(r) <= room) return r;
+    const m = /^(.*\[)([^\]]+)(\].*)$/.exec(r);
+    if (!m) return r;
+    const inner = fit4x5(m[2], room - fontWidth4x5(m[1] + m[3])).replace(/[^A-Z0-9]+$/, '');
+    return m[1] + (inner.length >= 2 ? inner : m[2].slice(0, 2)) + m[3];
 }
 
 /* Touched header: the bar drops out and the param NAME renders centered in

@@ -136,6 +136,9 @@ the section into a versioned heading at release time.
   scene** or **Live merge** in Session View; **Bake clip** or **Live merge track** in
   Track View. **Back** steps back a level. **Shift + Sample** no longer starts a Live
   Merge — it's in the menu.
+- **Modules are named in full.** Headers, the Track Config menu, the module editor and
+  the effect boxes show a module's name (NuSaw, Freeverb) instead of its two-letter
+  mark, shortened only where the space runs out.
 - **Drum tracks: DRUM LANE and ALL LANES are one box on the bank map**, as SLICES and
   SAMPLE are on a Slicer.
 - **The version is easy to find.** The loading screen shows dAVEBOx's version under
@@ -148,6 +151,10 @@ the section into a versioned heading at release time.
   Clips of the same length still hand over in step with each other.
 
 ### Fixed
+- **The browser's Screen view stays on the overview when you touch a knob on the MIX,
+  MACROS or Pad Mode bank**, as it already did on the other banks: the touched knob
+  lights in the strip under the clip, and the strip keeps the bank's name. The
+  Screen view also names each track's instrument (OB-Xd) rather than "Synth".
 - **Module editors open in a fraction of a second the first time.** The browser read an
   editor's values one at a time — a large instrument took 10–27 s, and some values never
   arrived; they are now read many at once (about 0.3 s for the same instrument). A read the

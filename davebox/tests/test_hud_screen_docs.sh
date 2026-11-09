@@ -47,6 +47,16 @@ ok('...and carries the bank page the OLED shows: eight cells, full names, the to
    k.knobs.knobs[0].name === 'Octave Shift' && k.knobs.touched === 0, JSON.stringify(k.knobs && { s: k.knobs.screen, t: k.knobs.touched, c0: k.knobs.knobs[0] }));
 ok('...the touched knob named as on the OLED', k.knobs.header && k.knobs.header.touchedName === 'Octave Shift', JSON.stringify(k.knobs.header));
 ok('...and the bank table adds the range', k.knobs.meta && k.knobs.meta[0] && k.knobs.meta[0].min === -4 && k.knobs.meta[0].max === 4, JSON.stringify(k.knobs.meta && k.knobs.meta[0]));
+/* every knob page that peeks over the overview folds under it, Sound view's
+ * cards (the MIX bank, MACROS) and the Pad Mode bank as much as a clip bank */
+const fold = (slug, scr, touched) => { const f = doc(slug);
+  ok('a touch on ' + slug + ' keeps the overview: the ' + scr + ' page goes under it', f.where.screen === 'track.overview' && !!f.body.tracks && f.knobs &&
+     f.knobs.screen === scr && f.knobs.knobs.length === 8 && (touched == null || f.knobs.touched === touched), f.where.screen + ' ' + JSON.stringify(f.knobs && { s: f.knobs.screen, t: f.knobs.touched })); };
+fold('sound-card', 'sound.prompt', 0);
+fold('midi-track-card', 'sound.prompt', 0);
+fold('macros-card', 'sound.macros');
+fold('bank-chord', 'track.padmode');
+ok('...and names its bank as the heading does, for the strip to keep on a touch', doc('sound-card').where.bankName === 'MIX' && doc('bank-drumlane').where.bankName === 'DRUM LANE', doc('sound-card').where.bankName + ' / ' + doc('bank-drumlane').where.bankName);
 const ov = doc('track-melodic-playing');
 ok('a Track overview carries its bank\'s knobs with nothing touched (the OLED hides them)', ov.where.screen === 'track.overview' && ov.knobs && ov.knobs.knobs.length === 8 &&
    ov.knobs.touched === -1 && ov.knobs.knobs.filter(Boolean).length === 8, JSON.stringify(ov.knobs && ov.knobs.knobs.map((c) => c && c.label)));

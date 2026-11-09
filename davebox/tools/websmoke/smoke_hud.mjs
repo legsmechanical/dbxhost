@@ -163,6 +163,15 @@ ok('...its dividers drawn as rules, never at the window\'s edge', el.querySelect
        touchedDoc.where.screen === 'track.overview' && !!e2.querySelector('.hud-o-roll') && lit.length === 1 && lit[0] === e2.querySelectorAll('.hud-o-knobs .hud-kn')[touchedDoc.knobs.touched] &&
        /Octave Shift/.test(e2.querySelector('.hud-o-kh').textContent) && /-4\s*–\s*\+4/.test(e2.querySelector('.hud-o-kh').textContent) && !e2.querySelector('.hud-kn.dim'),
        touchedDoc.where.screen + ' / ' + (e2.querySelector('.hud-o-kh') || {}).textContent);
+    ok('...and the strip keeps its bank\'s name over the touched knob\'s', /NOTE FX bank/i.test(e2.querySelector('.hud-o-kh .bk').textContent),
+       (e2.querySelector('.hud-o-kh .bk') || {}).textContent);
+    /* the MIX bank's page is Sound view's card: a touch there stays put too */
+    const mixDoc = fx('sound-card');
+    const e3 = draw(Object.assign({}, mixDoc, { where: Object.assign({}, mixDoc.where, { track: mel.where.track, clip: mel.where.clip }) }));
+    ok('a touch on the MIX bank keeps the overview the same way: MIX named, Volume lit',
+       mixDoc.where.screen === 'track.overview' && !!e3.querySelector('.hud-o-roll') && /MIX bank/i.test(e3.querySelector('.hud-o-kh .bk').textContent) &&
+       /Volume/.test(e3.querySelector('.hud-o-kh b').textContent) && e3.querySelectorAll('.hud-o-knobs .hud-kn.tch').length === 1,
+       mixDoc.where.screen + ' / ' + (e3.querySelector('.hud-o-kh') || {}).textContent);
     /* no strip (a bank whose knobs do nothing here): the track list stays */
     const bare = JSON.parse(JSON.stringify(mel)); delete bare.knobs;
     ok('...and with no knob page, the eight tracks as before', draw(bare).querySelectorAll('.hud-o-tl .row').length === 8);

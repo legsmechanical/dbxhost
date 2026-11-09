@@ -224,7 +224,9 @@
     const kn = doc.knobs;
     if (!kn || !kn.knobs) return '';
     const t = kn.touched >= 0 && kn.touched < 8 ? kn.touched : -1, c = t >= 0 ? kn.knobs[t] : null;
-    const bank = (kn.header && kn.header.text) || '';
+    /* a touch names its knob in the header's place; the strip keeps the bank's
+     * name (where.bankName) so nothing above the knobs changes on a touch */
+    const bank = (kn.header && kn.header.text) || (doc.where && doc.where.bankName) || '';
     let head = '<div class="hud-o-kh"><span class="bk">' + esc(bank) + (bank ? ' bank' : 'knobs') + '</span>';
     const meta = kn.meta && t >= 0 ? kn.meta[t] : null;
     if (c) {
