@@ -343,6 +343,45 @@ html.hud-review,body.hud-review{background:#050607;overflow:auto!important;heigh
 .hud-o-info .kt{color:var(--h-ink);font-size:17px}
 .hud-pads .pad.jt{border-bottom-left-radius:0;border-bottom-right-radius:0;margin-bottom:-4px}
 .hud-pads .pad.jb{border-top-left-radius:0;border-top-right-radius:0;margin-top:-4px}
+/* layout: lanes (web_ui_hud_lanes.js) — the AUTOMATION screen, and the lane strip over a parameter's page */
+.hud-lanesv{display:grid;grid-template-columns:330px minmax(0,1fr);gap:18px;height:100%;min-height:0;align-items:start}
+.hud-lanesv.solo{grid-template-columns:minmax(0,1fr)}
+.hud-lanes{position:relative;display:flex;flex-direction:column;gap:2px;min-width:0;padding-right:10px}
+.hud-lane-g{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--h-faint);padding:6px 10px 1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hud-lane{display:grid;grid-template-columns:110px minmax(0,1fr) 66px;align-items:center;gap:10px;height:30px;padding:0 10px;border-radius:8px;font-size:16px}
+.hud-lanes.wide .hud-lane{grid-template-columns:200px minmax(0,1fr) 90px;height:40px;font-size:18px}
+.hud-lane .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hud-lane .v{text-align:right;color:var(--h-dim);font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.hud-lane-sp{width:100%;height:24px;display:block}
+.hud-lanes.wide .hud-lane-sp{height:34px}
+.hud-lane.sel{background:var(--h-sel);box-shadow:inset 3px 0 0 var(--lc)}
+.hud-lane.sel .nm{color:var(--lc);font-weight:600}
+.hud-lane.off .nm,.hud-lane.off .v{color:var(--h-faint)}
+.hud-lane.act{grid-template-columns:1fr;color:var(--h-dim);font-size:15px}
+.hud-lane-empty{color:var(--h-faint);font-size:18px;padding:20px 10px}
+.hud-lane-detail{display:flex;flex-direction:column;gap:8px;min-width:0;background:#0d0f13;border:1px solid #1d2128;border-radius:14px;padding:12px 14px}
+.hud-lane-detail .t,.hud-lane-strip .t{display:flex;align-items:baseline;gap:10px;white-space:nowrap;min-width:0}
+.hud-lane-detail .g,.hud-lane-strip .g{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--h-dim);overflow:hidden;text-overflow:ellipsis}
+.hud-lane-detail .p{font-size:20px;font-weight:700;color:var(--lc)}
+.hud-lane-detail .mute{font-size:12px;font-weight:700;color:#0b0c0e;background:var(--h-dim);border-radius:5px;padding:1px 7px}
+.hud-lane-detail .now,.hud-lane-strip .now{margin-left:auto;font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.hud-lane-detail .graph{position:relative;display:grid;grid-template-columns:62px minmax(0,1fr);gap:8px}
+.hud-lane-detail .ax{display:flex;flex-direction:column;justify-content:space-between;text-align:right;font-size:12px;color:var(--h-dim);padding:2px 0;white-space:nowrap;overflow:hidden}
+.hud-lane-big{width:100%;height:170px;display:block;background:#090a0d;border-radius:8px}
+.hud-lane-steps{display:grid;grid-template-columns:repeat(16,1fr);gap:3px;margin-left:70px}
+.hud-lane-steps i{height:12px;border-radius:3px;background:#1a1d23}
+.hud-lane-steps i.none{background:#121419}
+.hud-lane-steps i.held{outline:2px solid #fff;outline-offset:1px}
+.hud-lane-detail .foot{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-left:70px}
+.hud-lane-detail .pg{font-size:13px;color:var(--h-dim);margin-right:6px}
+.hud-lane-detail .hud-chip{font-weight:600}.hud-lane-detail .hud-chip b{color:var(--h-ink);font-weight:700}
+.hud-lane-strip{display:flex;flex-direction:column;gap:4px;margin:0 0 8px;padding:8px 12px;background:#0d0f13;border:1px solid #1d2128;border-radius:12px;flex:0 0 auto}
+.hud-lane-strip .p{font-size:16px;font-weight:700;color:var(--lc)}
+.hud-lane-strip .st{font-size:13px;color:var(--h-dim)}
+.hud-lane-strip .pgs{display:flex;gap:3px;margin-left:8px}.hud-lane-strip .pgs i{width:14px;height:4px;border-radius:2px;background:#2a2f37}.hud-lane-strip .pgs i.on{background:var(--lc)}
+.hud-lane-strip-g{width:100%;height:74px;display:block}
+.hud-ovl.left{justify-content:flex-start;background:rgba(5,6,8,.35)}
+.hud-ovl.left .card{min-width:0;width:330px}
 `;
   const el = document.createElement('style');
   el.id = 'hud-theme';

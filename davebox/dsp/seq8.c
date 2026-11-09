@@ -1199,6 +1199,10 @@ typedef struct {
      * lane at /2 plays over two). See pa_entry_tick. */
     uint32_t  pa_cycle;
     uint32_t  pa_last_ct;
+    /* ...and the clip length that tick wrapped in, so a read off the audio
+     * thread (tN_cC_pa_pos) can place every lane where playback last did. */
+    uint32_t  pa_last_clip_ticks;
+    uint32_t  pa_last_abs;      /* pa_lane_abs at that tick (cycled lanes) */
     /* Where every CYCLED lane (a lane with its own Loop) on this track counts
      * from, on the master clock: 0 = the song (Play), or the master tick of a
      * launch at Launch 1-bar — which restarts EVERYTHING from its beginning
@@ -10452,6 +10456,36 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
              * spread across lane ticks t0..t0+len-1 instead of the window —
              * ONE step page at pixel resolution, for the page graph a hold or
              * a pin draws ("ff" outside the window). */
+            /* tN_cC_pa_pos: where EVERY lane of this clip is right now, for the
+             * Screen view's lane playheads — the viewed lane's tick
+             * (tN_pa_view, state_snapshot) for all of them. One line per lane:
+             * "<target> <lane tick> <window start> <window length>\n", in the
+             * lane's own ticks, from the same pa_lane_tick playback evaluates
+             * at and the same window the shape is drawn over (so the fraction
+             * (tick - start) / length places it on the shape). Empty while the
+             * transport is stopped, the clip is not the one playing, or the
+             * track is not playing. Display only: the clock is read as the
+             * audio thread last left it. */
+            if (!strcmp(p, "_pa_pos")) {
+                int n = 0;
+                if (out_len > 0) out[0] = '\0';
+                if (!inst->playing || !tr->clip_playing || (int)tr->active_clip != cidx) return 0;
+                const uint32_t ct = tr->pa_last_ct, cl = tr->pa_last_clip_ticks, cyc = tr->pa_cycle;
+                pa_lock(inst);
+                for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+                    const pa_entry_t *e = &inst->pa_entries[i];
+                    if (!e->used || e->track != tidx || e->clip != cidx) continue;
+                    uint32_t ws = 0, wl = 0, st = TICKS_PER_STEP;
+                    if (!pa_export_window(tr, e, &ws, &wl, &st) || !wl) continue;
+                    const uint32_t lt = pa_lane_tick_at(tr, e, ct, cl, cyc, tr->pa_last_abs);
+                    int w = snprintf(out + n, (size_t)(out_len - n), "%s %u %u %u\n",
+                                     inst->pa_targets[e->target], (unsigned)lt, (unsigned)ws, (unsigned)wl);
+                    if (w < 0 || n + w >= out_len) { out[n] = '\0'; break; }   /* see pa_list */
+                    n += w;
+                }
+                pa_unlock(inst);
+                return n;
+            }
             if (!strncmp(p, "_pa_shape_", 10)) {
                 static const char hexd[] = "0123456789abcdef";
                 const char *q = p + 10;

@@ -20,6 +20,7 @@
  *   web_ui_hud_adorn.js    the small extras ON a cell (default dot, range bar, …)
  *   web_ui_hud_items.js    the status strip's items (track, clip, pips, transport)
  *   web_ui_hud_viz.js      pictures spanning cells (envelope, filter, …)
+ *   web_ui_hud_lanes.js    automation: the AUTOMATION screen, the lane strip
  *
  * A renderer is a pure function writing HTML for its own piece. One that throws
  * is replaced by an empty box for that frame and logged once — one bad element
@@ -78,7 +79,8 @@
   /* The device says which part of a screen is its main content (`primary`:
    * what it drew last); that family's layout is tried first. */
   const PRIMARY = { knobs: 'kit', tracks: 'overview', list: 'list', prompt: 'prompt', bars: 'bars', message: 'message',
-                    picture: 'picture', big: 'big', card: 'card', mods: 'perf', wave: 'wave', keyboard: 'keyboard', bankmap: 'bankmap', notice: 'notice' };
+                    picture: 'picture', big: 'big', card: 'card', mods: 'perf', wave: 'wave', keyboard: 'keyboard', bankmap: 'bankmap', notice: 'notice',
+                    lanes: 'lanes' };
   function layoutFor(doc) {
     /* an overview is the overview whatever it drew last (an Audio track's
      * draws its waveform last, which read as the sample editor's layout) */
@@ -94,6 +96,13 @@
    * titled by the knob it belongs to, as the OLED's header names it */
   function popupOf(doc, lay) {
     const b = doc.body || {};
+    /* a lane's ops: titled by the lane, beside the lane list so its curve
+     * stays in view while Loop, Rate or Scale is turned; the lane view draws
+     * the curve the OLED puts under the pop-up */
+    if (b.popup && b.lanes) {
+      const o = Object.assign({}, b.popup); delete o.curve; delete o.position;
+      return { o, title: b.lanes.lane ? (b.lanes.laneGroup ? b.lanes.laneGroup + ' · ' : '') + b.lanes.lane : null, cls: 'left' };
+    }
     if (b.popup) return { o: b.popup, title: b.header && b.header.touchedName };
     const k = doc.knobs;
     if (lay && lay.name === 'overview' && k && k.popup) {
@@ -103,19 +112,29 @@
     return null;
   }
   HUD.popupOf = popupOf;   /* tests */
+  /* the lane page a hold / a jump draws (its Curve, alone in the overlay) */
+  function laneFocusOf(doc) {
+    const o = doc.overlayLayer;
+    return o && o.curve && o.curve.focus ? o.curve : null;
+  }
+  HUD.laneFocusOf = laneFocusOf;
   function render() {
     if (!stage || !HUD.cfg) return;
     const doc = HUD.doc;
     if (!doc) { stage.innerHTML = '<div class="hud-screen hud-wait"><div class="hud-waitmsg">Waiting for dAVEBOx…</div></div>'; return; }
     const lay = layoutFor(doc);
     const regions = HUD.cfg.regions.map((r) => r === 'body'
-      ? '<div class="hud-body hud-l-' + (lay ? lay.name : 'none') + '">' + (lay ? HUD.safe('layout:' + lay.name, lay.fn, doc, doc.body || {}) : '') + '</div>'
+      ? '<div class="hud-body hud-l-' + (lay ? lay.name : 'none') + '">' + (laneFocusOf(doc) && HUD.laneStrip ? HUD.safe('laneStrip', HUD.laneStrip, doc, laneFocusOf(doc)) : '') +
+        (lay ? HUD.safe('layout:' + lay.name, lay.fn, doc, doc.body || {}) : '') + '</div>'
       : HUD.safe('region:' + r, HUD.regions.get(r), doc)).join('');
-    const ov = doc.overlayLayer ? HUD.safe('overlay', HUD.regions.get('overlay'), doc) : '';
+    const ov = doc.overlayLayer && !laneFocusOf(doc) ? HUD.safe('overlay', HUD.regions.get('overlay'), doc) : '';
     /* a pop-up the page drew over itself — or, under an overview, over the
      * knob page the overview stands in for — as a card over the page */
     const pg = popupOf(doc, lay);
-    const pp = pg && !doc.overlayLayer ? HUD.safe('popup', HUD.popCard, doc, pg.o, pg.title) : '';
+    /* a hold or a jump draws the lane's page over half the OLED: here it is a
+     * strip above the parameter's page, which stays the screen */
+    const focus = laneFocusOf(doc);
+    const pp = pg && !(doc.overlayLayer && !focus) ? HUD.safe('popup', HUD.popCard, doc, pg.o, pg.title, pg.cls) : '';
     /* the cross-fade plays on a SCREEN change only — never on a value change */
     const sid = (doc.where && doc.where.screen) || '';
     const fade = sid !== lastScreen; lastScreen = sid;

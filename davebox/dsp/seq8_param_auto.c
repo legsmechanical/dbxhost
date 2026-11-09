@@ -1845,16 +1845,22 @@ static void pa_cycle_adopt_active(const seq8_track_t *tr, int clip, pa_entry_t *
 
 /* Where lane `e` is now, in its own ticks. `ct`/`clip_ticks`/`cycle`: the
  * clip clock, for everything that is not a drum cycle. */
-static uint32_t pa_lane_tick(const seq8_instance_t *inst, const seq8_track_t *tr,
-                             const pa_entry_t *e, uint32_t ct, uint32_t clip_ticks, uint32_t cycle) {
+/* ...with the cycled lanes' clock given (`abs`, pa_lane_abs at the moment
+ * wanted): a read off the audio thread places a lane where playback last
+ * did, not one master tick on. */
+static uint32_t pa_lane_tick_at(const seq8_track_t *tr, const pa_entry_t *e, uint32_t ct,
+                                uint32_t clip_ticks, uint32_t cycle, uint64_t abs) {
     if (!pa_lane_cycled(tr, e)) return pa_entry_tick(e, ct, clip_ticks, cycle);
-    uint64_t abs = pa_lane_abs(inst, tr);
     if (e->resolution) {
         uint32_t mul, div;
         pa_rate(e->resolution, &mul, &div);
         abs = abs * mul / div;
     }
     return (uint32_t)e->loop_off + (uint32_t)(abs % e->loop_len);
+}
+static uint32_t pa_lane_tick(const seq8_instance_t *inst, const seq8_track_t *tr,
+                             const pa_entry_t *e, uint32_t ct, uint32_t clip_ticks, uint32_t cycle) {
+    return pa_lane_tick_at(tr, e, ct, clip_ticks, cycle, pa_lane_abs(inst, tr));
 }
 
 /* Where a RECORDING hand writes on lane `e`: its own cycle at x1 (Rate is a
@@ -2667,6 +2673,8 @@ static void pa_playback_scan_lead(seq8_instance_t *inst, seq8_track_t *tr, int t
     /* The lane clock's cycle count: the clip tick wrapped since last tick. */
     if (ct < tr->pa_last_ct) tr->pa_cycle++;
     tr->pa_last_ct = ct;
+    tr->pa_last_clip_ticks = clip_ticks;
+    tr->pa_last_abs = pa_lane_abs(inst, tr);
     /* The AUTOMATION bank's selected lane: where it is right now, in its OWN
      * lane ticks — the same pa_entry_tick the evaluation below uses, so the
      * playhead can never disagree with what plays. Before the scan (which may

@@ -12,7 +12,8 @@
 
   /* auto — the parameter is automated in this clip (the device's AUTO mark) */
   H.adorn('auto', (c) => c.auto === 'auto' ? '<span class="hud-a-auto">AUTO</span>'
-                       : c.auto === 'auto-off' ? '<span class="hud-a-auto" style="opacity:.5">AUTO OFF</span>' : '');
+                       : c.auto === 'auto-off' ? '<span class="hud-a-auto" style="opacity:.5">AUTO OFF</span>'
+                       : c.auto === 'mod' ? '<span class="hud-a-auto" style="opacity:.75">MOD</span>' : '');
 
   /* stepLock — a held step locks this knob */
   H.adorn('stepLock', (c) => c.stepLock ? '<span class="hud-a-lock">STEP LOCK</span>' : '');

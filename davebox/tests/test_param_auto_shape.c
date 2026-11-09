@@ -251,6 +251,64 @@ int main(void) {
     }
     OK("⭐ a ranged read: one page at pixel resolution, the same values the window read has");
 
+    /* ---- tN_cC_pa_pos: every lane's position, for the Screen view's lane
+     * playheads. Each lane is viewed in turn (tN_pa_view, the playhead the
+     * OLED draws) and its line must report the SAME lane tick the snapshot
+     * does, after the same block — across x1, x2, /2 and a lane with its own
+     * loop, so four clocks that disagree with each other. */
+    {
+        static const char *L[4] = { "1:synth:p1", "1:synth:p2", "1:synth:p3", "1:synth:p4" };
+        hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_c0_step_0_toggle", "60 100");
+        for (int i = 0; i < 4; i++) { pa_set(h, L[i], 0, 0); pa_set(h, L[i], 200, 16383); }
+        hx_set_param(h, "t0_pa_loop", "0 1:synth:p2 0 0 6");      /* follow the clip, x2 */
+        hx_set_param(h, "t0_pa_loop", "0 1:synth:p3 120 48 5");   /* its own loop: 120 ticks from 48 */
+        hx_set_param(h, "t0_pa_loop", "0 1:synth:p4 0 0 4");      /* follow the clip, /2 */
+        HX_ASSERT(hx_get_param(h, "t0_c0_pa_pos", g_ans, sizeof g_ans) == 0 && g_ans[0] == '\0', "stopped: no positions");
+        hx_set_param(h, "transport", "play_focus:0:0");
+        int checks = 0, differ = 0, wrapped_slow = 0;
+        long prev4 = -1;
+        for (int round = 0; round < 60; round++) {
+            hx_render(h, 37);
+            long lts[4];
+            for (int i = 0; i < 4; i++) {
+                char v[96];
+                snprintf(v, sizeof v, "0 %s", L[i]);
+                hx_set_param(h, "t0_pa_view", v);
+                /* a block is shorter than a tick: four, so a scan has run since
+                 * the view moved (the snapshot answers for the lane it last saw) */
+                hx_render(h, 4);
+                const long want = snap_field(h, 57);
+                HX_ASSERT(hx_get_param(h, "t0_c0_pa_pos", g_ans, sizeof g_ans) > 0, "playing: the read answers");
+                char key[64];
+                snprintf(key, sizeof key, "%s ", L[i]);
+                const char *q = strstr(g_ans, key);
+                HX_ASSERT(q, "every lane has a line");
+                unsigned lt = 0, ws = 0, wl = 0;
+                HX_ASSERT(sscanf(q + strlen(key), "%u %u %u", &lt, &ws, &wl) == 3, "a line is target, tick, start, length");
+                if (want < 0) continue;
+                if ((long)lt != want) {
+                    fprintf(stderr, "FAIL: %s reports lane tick %u, the snapshot %ld (round %d)\n", L[i], lt, want, round);
+                    exit(1);
+                }
+                HX_ASSERT(lt >= ws && lt < ws + wl, "the tick is inside the window the shape is drawn over");
+                lts[i] = lt;
+                checks++;
+            }
+            if (lts[0] != lts[1] && lts[0] != lts[2] && lts[0] != lts[3]) differ++;
+            if (prev4 >= 0 && lts[3] < prev4) wrapped_slow++;
+            prev4 = lts[3];
+        }
+        HX_ASSERT(checks >= 200, "compared through the run");
+        HX_ASSERT(differ > 20, "setup: the four lanes really ran on different clocks");
+        HX_ASSERT(hx_get_param(h, "t0_c1_pa_pos", g_ans, sizeof g_ans) == 0, "a clip that is not playing: no positions");
+        hx_set_param(h, "transport", "stop");
+        hx_render(h, 4);
+        HX_ASSERT(hx_get_param(h, "t0_c0_pa_pos", g_ans, sizeof g_ans) == 0, "stopped again: none");
+        hx_destroy(h);
+    }
+    OK("⭐ every lane's position is the tick playback evaluates it at (x1, x2, /2, its own loop)");
+
     printf("test_param_auto_shape: %d ok\n", ok_count);
     return 0;
 }

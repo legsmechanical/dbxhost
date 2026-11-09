@@ -170,6 +170,15 @@ the section into a versioned heading at release time.
   level card — is a card over that page in the browser, instead of replacing it. An
   enum knob's choices showed nowhere before; the bank picker showed an empty card; and
   the instrument picker now lists the Move instruments other tracks are playing.
+- **Automation on the Screen view.** The AUTOMATION screen shows every lane with its curve
+  and its own playhead, in the Move's list order, headed by where each lane lives in full
+  (NuSaw, Freeverb · FX 1, Levels). The selected lane is drawn large: its whole curve,
+  its range and current value in the parameter's units, its points, the page the step
+  buttons show, the step buttons as lit, and its settings. A lane's operations open
+  beside it, named for the lane. Holding a lane's step (or Shift + click) keeps the
+  parameter's page and shows the lane's page above it, with that step's value. A module
+  editor's knobs now show AUTO / AUTO OFF for lanes in the clip, and MOD for the
+  module's own modulation.
 - **Module editors open in a fraction of a second the first time.** The browser read an
   editor's values one at a time — a large instrument took 10–27 s, and some values never
   arrived; they are now read many at once (about 0.3 s for the same instrument). A read the

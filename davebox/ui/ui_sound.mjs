@@ -180,6 +180,18 @@ const { enterParamPages, exitParamPages, tickParamPages, drawParamPages,
         paramPagesDescribe } = PP;
 /* The module editor's page as data, for the Screen view (hud/contrib/params.mjs). */
 export function soundParamPageModel() { return paramPagesDescribe({ title: PP.headerTitle() }); }
+/* Each knob slot's automation mark in this clip — 'auto', 'auto-off' (a muted
+ * lane) or null — as the OLED's circle reads it (isModulated below). The page
+ * model reports only a yes/no, which lost the muted state on the Screen view. */
+export function soundParamAutoMarks() {
+    const t = S.track, c = effectiveClip(t), out = [];
+    for (let k = 0; k < 8; k++) {
+        const fk = paramPagesFullKeyAt(k);
+        const st = fk ? automationStateFor(t, c, S.slot + ':' + fk) : null;
+        out.push(st ? (st.active ? 'auto' : 'auto-off') : null);
+    }
+    return out;
+}
 /* The module whose editor that is — the Screen view fetches its canvas.js to
  * draw the module's own widgets at full size. */
 export function soundEditorModuleId() { return S.moduleId || ''; }
@@ -2016,6 +2028,12 @@ const LEVEL_KNOB_SPECS = [
     { key: 'synth_volume', label: 'ModL', name: 'Module Level', widget: 'vbar',   def: 1.0, max: SLOT_LEVEL_MAX, units: 200, fmt: GAIN_FMT, slotOnly: true, macroOnly: true },
 ];
 for (const m of LEVEL_KNOB_SPECS) m.step = m.max / m.units;
+/* A level's value as its knob prints it (dB, L/R, %), for a lane drawn
+ * elsewhere (the Screen view's AUTOMATION lanes); null for any other key. */
+export function soundLevelValueText(key, v) {
+    const m = LEVEL_KNOB_SPECS.find((x) => x.key === key);
+    return m && isFinite(v) ? String(m.fmt(v)) : null;
+}
 
 /* Where the levels live for the current context: a chain slot addresses
  * `slot:<key>`, a Move bus `move_fx:N:<key>` (no Module Level there). */

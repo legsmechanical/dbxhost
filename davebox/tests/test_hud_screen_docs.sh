@@ -121,6 +121,40 @@ ok('...the bank picker as a list over the overview', bp.body.tracks && bp.overla
 const mt = doc('macros-targets');
 ok('...the screen\'s chrome stays the page\'s, though drawn after the picker (the path T5 > Macros > K7)', (mt.body.crumbs || []).join('>') === 'T5>Macros>K7' &&
    mt.body.popup && !mt.body.popup.crumbs && !mt.body.popup.header, JSON.stringify({ c: mt.body.crumbs, p: mt.body.popup && Object.keys(mt.body.popup) }));
+/* AUTOMATION on the Screen view (Josh, 2026-11-09): the OLED's list, in its
+ * order, with every lane's place, curve and position; the selected lane in
+ * detail; a hold's lane page over the parameter's page */
+const al = doc('automation-lanes'), AL = al.body.lanes;
+const oledLabels = (al.body.list.rows || []).map((r) => r.label);
+ok('the lanes are the OLED\'s rows, in its order (the jog\'s order)', AL && AL.rows.map((r) => r.label).join('|') === oledLabels.slice(0, AL.rows.length).join('|') &&
+   al.body.primary === 'lanes', JSON.stringify({ lanes: AL && AL.rows.map((r) => r.label), oled: oledLabels }));
+ok('...each lane says where it lives in full and what it is (NuSaw · Cutoff, Freeverb · FX 1 · Mix, Levels · Volume)',
+   AL.rows.some((r) => r.group === 'NuSaw' && r.param === 'Cutoff' && r.key === 'Syn') && AL.rows.some((r) => r.group === 'Freeverb · FX 1' && r.param === 'Mix') &&
+   AL.rows.some((r) => r.group === 'Levels' && r.param === 'Volume'), JSON.stringify(AL.rows.map((r) => [r.key, r.group, r.param])));
+ok('...a run from one place is a run in the list (no place appears twice apart)', (() => { const seen = new Set(); let last = null;
+   for (const r of AL.rows) { if (r.key !== last) { if (seen.has(r.key)) return false; seen.add(r.key); last = r.key; } } return true; })());
+ok('...the OLED\'s value column carried (OFF, CLIP, 2 ST, PADS)', AL.rows.map((r) => r.value).join() === 'OFF,CLIP,CLIP,2 ST,PADS', AL.rows.map((r) => r.value).join());
+const cut = AL.rows.find((r) => r.param === 'Cutoff'), res = AL.rows.find((r) => r.param === 'Resonance');
+ok('...every lane\'s curve over its window, and its place while playing', cut.shape && cut.shape.length === 126 && cut.shape.every((x) => x >= 0 && x <= 1) &&
+   Math.abs(cut.pos - 150 / 384) < 0.002 && Math.abs(res.pos - 30 / 48) < 0.002, JSON.stringify({ c: cut.pos, r: res.pos }));
+ok('...moving at its own speed: a 2-step loop eight times the 16-step clip\'s (120 bpm)', Math.abs(cut.spd - 0.5) < 0.001 && Math.abs(res.spd - 4) < 0.001,
+   JSON.stringify({ c: cut.spd, r: res.spd }));
+ok('...a muted lane says so', AL.rows.find((r) => r.param === 'Mix').active === false);
+const ad = doc('automation-lane-detail'), AD = ad.body.lanes && ad.body.lanes.detail;
+ok('the selected lane in detail: its index, page, points, the step buttons\' values, its settings', AD && AD.idx === 2 && ad.body.lanes.sel === 2 &&
+   AD.points.join() === '0,0.25,0.5,0.75' && AD.vals && AD.vals.length === 16 && AD.from === 0 && AD.to === 1 &&
+   AD.settings.map((x) => x.join(' ')).join(', ') === 'Wrap Carry, Link On, Loop CLIP, Rate x1, Scale 100%', JSON.stringify(AD));
+ok('...its range and its value now, in the parameter\'s units', AD.min === '0%' && AD.max === '100%' && /^\d+%$/.test(AD.now || ''), JSON.stringify([AD.min, AD.max, AD.now]));
+const ao = doc('automation-lane-ops');
+ok('a lane\'s ops: the list is a pop-up over the lanes, which know the lane it is for', ao.body.primary === 'lanes' && ao.body.popup && ao.body.popup.list &&
+   ao.body.popup.list.rows[0].label === 'Mute' && ao.body.lanes.lane === 'Cutoff' && ao.body.lanes.laneGroup === 'NuSaw', JSON.stringify({ l: ao.body.lanes.lane, g: ao.body.lanes.laneGroup }));
+const hj = doc('automation-hold-jump'), hc = hj.overlayLayer && hj.overlayLayer.curve;
+ok('holding a lane\'s step: the parameter\'s page is the screen, the lane\'s page beside it', hj.where.screen === 'track.overview' && hj.knobs && hc && hc.focus &&
+   hc.group === 'Levels' && hc.param === 'Volume' && hc.step === 1 && hc.held === 0 && hc.write === 'Punch', JSON.stringify(hc && Object.assign({}, hc, { values: undefined })));
+ok('...the held step\'s value as the knob prints it (a level in dB)', hc.heldText === '+10.1' && /10\.1/.test(JSON.stringify(hj.knobs.knobs[0])), hc.heldText);
+const be2 = doc('block-editor-automated');
+ok('a module editor\'s knobs carry their lanes: automated, and muted (hollow)', be2.body.knobs[0].key === 'cutoff' && be2.body.knobs[0].auto === 'auto' &&
+   be2.body.knobs[1].auto === 'auto-off' && !be2.body.knobs[2].auto, JSON.stringify(be2.body.knobs.slice(0, 3).map((k) => k && [k.key, k.auto])));
 const tc = doc('track-config');
 ok('...and a screen with no pop-up has none', !tc.body.popup && tc.body.primary === 'list', JSON.stringify(tc.body.popup));
 const so = doc('session-overview');

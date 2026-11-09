@@ -32,7 +32,7 @@
 import { S, noteUndoUnit, armBankDisplay } from './ui_state.mjs';
 import { BANK_AUTOMATION, BANK_SOUND, BANK_MACROS, PAD_MODE_DRUM, midiTargetIsMidi, SEQ_AUTO_TARGETS, AU_AUTO_BANK, auAutoBank } from './ui_constants.mjs';
 import { openWave, closeAudioPanel } from './ui_audio_editor.mjs';
-import { soundOpen, soundExit, soundJumpToParam, soundEditorComp, soundAutoAddLane, soundLaneFocusRow } from './ui_sound.mjs';
+import { soundOpen, soundExit, soundJumpToParam, soundEditorComp, soundAutoAddLane, soundLaneFocusRow, soundLevelValueText } from './ui_sound.mjs';
 import { readBankParams } from './ui_dsp_bridge.mjs';
 import { effectiveClip } from './ui_leds.mjs';
 import { automationEntriesFor, automationTargetLabel, automationClearKey, automationClearPoints,
@@ -40,11 +40,12 @@ import { automationEntriesFor, automationTargetLabel, automationClearKey, automa
          automationSetLoop, automationSetRate, automationRateText, automationSetScale,
          automationClearClip, automationListGen, automationStepTicks, rowCycle,
          cycleText, automationMatchPad, padCycle, automationStateFor, automationWireValue,
-         automationTargetStepped } from './ui_automation.mjs';
+         automationTargetStepped, automationTargetSource, automationValueText } from './ui_automation.mjs';
 import { drawKitList, drawKitStackedList, drawKitBackdropDim, drawKitHintRow,
          drawBrackets, kitUseLayout, kitLaneFocusRow, rectOutline, MV_FOOTER_Y,
          MV_ROW0_Y, MV_ROW1_Y, MV_LBL1_Y, MV_LBL_H, kitHudTap } from './ui_movy.mjs';
 import { hudFrameOpen } from './hud/hud_frame.mjs';
+import { hudViewer } from './hud/hud_publish.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
 import { moveBusForChannel } from './ui_engine.mjs';
@@ -217,6 +218,7 @@ export function drawAutomationBankBody() {
     const listOpts = { emptyMsg: 'NO AUTOMATION', h: MV_FOOTER_Y - LIST_TOP };
     if (barShown) listOpts.visible = 4;
     drawKitList(listRows, a.menu ? a.sel : -1, listOpts);
+    if (hudFrameOpen()) hudLanesTap(t, c, rows, a);
     /* The editor's bracketed corners on the resting card: "press jog to
      * interact" — the one mark the OLED language uses for that. */
     if (!a.menu) drawBrackets(0, LIST_TOP - 1, 128, MV_FOOTER_Y - LIST_TOP);
@@ -640,6 +642,107 @@ function pageShapeTick(t, c, target) {
     pageShape = (pageShapeCache.key === key && pageShapeCache.map) ? (pageShapeCache.map.get(target) || null) : null;
 }
 
+/* ⭐ THE SCREEN VIEW'S LANES (Josh, 2026-11-09: "for automation, i want you
+ * to think hard about how automation works, what the screen shows in each
+ * mode/view and how organization and context could be added while retaining
+ * the info on the oled"). While a browser watches the AUTOMATION screen, every
+ * lane's curve and position is read for it — never for the OLED, which keeps
+ * its list:
+ *   - the shapes: the same ONE read the ops graph makes (every lane of the
+ *     clip), on the same slow cadence and on any lane's change;
+ *   - the positions: tN_cC_pa_pos, every lane's own tick as playback last
+ *     placed it — a lane at its own Rate or Loop runs on a clock the browser
+ *     cannot rebuild — a few times a second while playing; the browser glides
+ *     between reads at each lane's speed.
+ * Recorded as one `Lanes` tap beside the list (hudLanesTap), in the list's
+ * ORDER: the browser heads each run from one place, and the jog's order is
+ * the OLED's (Josh: "doesn't lane grouping break scrolling on the oled?"). */
+const HUD_POS_MS = 150;
+let hudShapes = { key: null, map: null, raw: null, at: -1e9 };
+let hudPos = { map: null, at: -1e9 };
+function hudLanesTick(t, c) {
+    if (!hudViewer()) { hudPos.map = null; return; }
+    const rows = autoBankRows(t, c);
+    const sig = rows.map((r) => r.kind === 'entry'
+        ? [r.target, r.active ? 1 : 0, r.wrapReset ? 1 : 0, r.loop, r.lo, r.st, r.res, r.scale, r.count].join(',') : 'at').join(';');
+    const key = t + ' ' + c + ' ' + automationListGen() + ' ' + sig;
+    if (hudShapes.key !== key || S.clockMs - hudShapes.at >= VALS_REFRESH_MS) {
+        const raw = readShape(t, c);
+        hudShapes.at = S.clockMs;
+        if (raw !== null) {
+            if (raw !== hudShapes.raw || hudShapes.key !== key) S.screenDirty = true;
+            hudShapes = { key, map: parseShape(raw), raw, at: S.clockMs };
+        } else if (hudShapes.key !== key) hudShapes = { key, map: null, raw: null, at: S.clockMs };
+    }
+    if (!S.playing || !S.trackClipPlaying[t]) { if (hudPos.map) S.screenDirty = true; hudPos.map = null; return; }
+    if (S.clockMs >= hudPos.at && S.clockMs - hudPos.at < HUD_POS_MS) return;
+    hudPos.at = S.clockMs;
+    const raw = host_module_get_param('t' + t + '_c' + c + '_pa_pos');
+    if (raw === null || raw === undefined) return;
+    const map = new Map();
+    for (const line of String(raw).split('\n')) {
+        const f = line.split(' ');
+        if (f.length < 4) continue;
+        const wl = parseInt(f[f.length - 1], 10), ws = parseInt(f[f.length - 2], 10), lt = parseInt(f[f.length - 3], 10);
+        if (wl > 0 && lt >= ws) map.set(f.slice(0, f.length - 3).join(' '), { lt, ws, wl });
+    }
+    hudPos.map = map;
+    S.screenDirty = true;
+}
+/* A lane's value as the knob it drives prints it: a level as the MIX card
+ * does (dB, L/R, %), anything else in its parameter's own units. */
+function laneValueText(target, norm) {
+    const m = /^[^:]+:(slot|move_fx:\d+):(volume|pan|send_a|send_b|synth_volume)$/.exec(String(target));
+    if (m) { const w = parseFloat(automationWireValue(target, norm)); const s = soundLevelValueText(m[2], w); if (s != null) return s; }
+    return automationValueText(target, norm);
+}
+const r3a = (x) => Math.round(x * 1000) / 1000;
+/* A lane's Rate as a multiplier of the clip clock (code 0 = unset = x1). */
+function rateMul(res) { const c = (res >= 1 && res <= 9) ? res : 5; return Math.pow(2, c - 5); }
+function hudLanesTap(t, c, rows, a) {
+    const shapes = hudShapes.key && hudShapes.key.indexOf(t + ' ' + c + ' ') === 0 ? hudShapes.map : null;
+    const pos = hudPos.map;
+    const tickSec = Math.max(20, S.bpm || 120) / 60 * 96;
+    const shapeOf = (tg) => { const v = shapes && shapes.get(tg); return v ? v.map((x) => x >= 0 ? r3a(x / 254) : -1) : null; };
+    const out = rows.map((r) => {
+        if (r.kind === 'at') return { kind: 'at', label: r.label, value: 'PADS', key: 'Pads', group: 'Pads', param: 'Aftertouch' };
+        const src = automationTargetSource(r.target), p = pos && pos.get(r.target);
+        return { kind: 'entry', label: r.label, value: rowValue(r, t, c), key: src.key, group: src.name, param: src.param,
+                 active: !!r.active, count: r.count | 0, stepped: !!automationTargetStepped(r.target),
+                 shape: shapeOf(r.target),
+                 pos: p ? r3a((p.lt - p.ws) / p.wl) : -1,
+                 spd: p ? Math.round(tickSec * rateMul(r.res) / p.wl * 10000) / 10000 : 0 };
+    });
+    let detail = null;
+    const cy = S.autoCycle, r = a.menu ? rows[a.sel] : null;
+    if (r && r.kind === 'entry' && cy && cy.target === r.target && cy.len > 0) {
+        /* the page the step row shows, as a span of the lane's window */
+        const base = ((cy.off >> 4) + cy.page) * 16;
+        const from = (base - cy.off) / cy.len, to = Math.min(1, (base + 16 - cy.off) / cy.len);
+        /* points: the step row's map is in the clip's steps, from tick 0 */
+        const lit = S.autoBankLit || '', mtps = automationStepTicks(t, c), ws = cy.off * cy.tps, wl = cy.len * cy.tps;
+        const points = [];
+        for (let s = 0; s < lit.length && points.length < 256; s++) {
+            if (lit.charAt(s) !== '1') continue;
+            const f = (s * mtps - ws) / wl;
+            if (f >= 0 && f < 1) points.push(r3a(f));
+        }
+        const v14 = S.autoLaneVals && S.autoLaneVals.v14;
+        const row = out[a.sel], sh = row.shape;
+        let now = null;
+        if (sh && row.pos >= 0) { const v = sh[Math.min(sh.length - 1, Math.floor(row.pos * sh.length))]; if (v >= 0) now = laneValueText(r.target, Math.round(v * 16383)); }
+        detail = { idx: a.sel, steps: cy.len, pages: cy.pages | 0, page: cy.page | 0, from: r3a(from), to: r3a(to), points,
+                   vals: v14 ? Array.from(v14, (v) => v >= 0 ? r3a(v / 16383) : -1) : null,
+                   held: S.heldStep >= 0 && S.heldStep >= base && S.heldStep < base + 16 ? S.heldStep - base : -1,
+                   min: laneValueText(r.target, 0), max: laneValueText(r.target, 16383), now,
+                   settings: [['Wrap', wrapText(r.wrapReset)], ['Link', linkText(r.linked)], ['Loop', loopValue(t, c, r, rowLoopSteps(t, c, r))],
+                              ['Rate', automationRateText(r.res)], ['Scale', scaleText(r.scale)]] };
+    }
+    kitHudTap('Lanes', { rows: out, sel: a.menu ? a.sel : -1, menu: !!a.menu, detail,
+                         lane: a.ops && a.ops.row ? (a.ops.row.kind === 'at' ? 'Aftertouch' : automationTargetSource(a.ops.row.target).param) : undefined,
+                         laneGroup: a.ops && a.ops.row && a.ops.row.kind !== 'at' ? automationTargetSource(a.ops.row.target).name : undefined });
+}
+
 /* True while the ops pop-up of a lane is open on the AUTOMATION screen. */
 export function autoOpsOpen() { return !!(S.autoBank && S.autoBank.ops) && autoMenuUp(); }
 
@@ -748,7 +851,13 @@ export function drawLaneFocusOverlay() {
         const vals2 = pageShape ? Array.from({ length: PAGE_W }, (_, c) => pageShape[c] >= 0 ? Math.round(pageShape[c] / 254 * 1000) / 1000 : -1)
                     : v14 ? Array.from({ length: PAGE_STEPS }, (_, s) => v14[s] >= 0 ? Math.round(v14[s] / 16383 * 1000) / 1000 : -1) : [];
         const lt = S.autoLanePos[cy.t], t0 = base * cy.tps;
+        /* the Screen view keeps the parameter's page and draws this above
+         * its knobs: where the lane lives in full, and the held step's value
+         * in the parameter's units */
+        const src = automationTargetSource(f.target), hv = held >= 0 ? autoHeldValue(f.target) : null;
         kitHudTap('Curve', { values: vals2, stepped: !pageShape && automationTargetStepped(f.target), name: automationTargetLabel(f.target),
+                             focus: true, group: src.name, param: src.param, step: f.step >= 0 ? f.step + 1 : 0,
+                             heldText: hv ? laneValueText(f.target, hv.norm) : undefined, write: held >= 0 ? ((S.heldWrite && S.heldWrite.type === 0) ? 'Point' : 'Punch') : undefined,
                              held: held >= 0 && held < PAGE_STEPS ? held / PAGE_STEPS : -1, pages: np, page: cy.page | 0,
                              play: S.playing && cy.tps && lt >= t0 && lt < t0 + PAGE_STEPS * cy.tps ? (lt - t0) / (PAGE_STEPS * cy.tps) : -1 });
     }
@@ -1071,6 +1180,7 @@ function autoBankTickLane() {
     const t = S.activeTrack, c = effectiveClip(t);
     const target = selectedTarget(t, c);
     syncPaView(t, c, target);
+    hudLanesTick(t, c);
     /* No row selected: forget the lane's page, so the next time a row is
      * picked it opens where the clip is being viewed, not where it was left.
      * (Closing the menu forgets it too — Back and a click can land between

@@ -16,11 +16,12 @@
  */
 
 import { S, noteUndoUnit } from './ui_state.mjs';
-import { POLL_INTERVAL, SEQ_AUTO_TARGETS, seqAutoAutomatable, BANK_SHORT, PAD_MODE_DRUM, midiTargetIsMidi, midiTargetName, midiTargetTo14 } from './ui_constants.mjs';
+import { POLL_INTERVAL, SEQ_AUTO_TARGETS, seqAutoAutomatable, BANK_SHORT, BANKS, PAD_MODE_DRUM, midiTargetIsMidi, midiTargetName, midiTargetTo14 } from './ui_constants.mjs';
 /* The move_fx: prefix has exactly one builder, and a source invariant pins
  * that (tests/test_move_fx_prefix_owner.sh). Build it here and the suite fails
  * — correctly: two builders are two things to keep in step. */
-import { moveBusComp, engineLoadedModuleOrNull } from './ui_engine.mjs';
+import { moveBusComp, engineLoadedModuleOrNull, engineModuleDisplayName } from './ui_engine.mjs';
+import { formatValue } from './ui_cells.mjs';
 /* The tick's prefetch (a cycle with ui_dsp_bridge, used only inside functions). */
 import { dget, tickWants } from './ui_dsp_bridge.mjs';
 /* The record notice (a cycle with ui_persistence, used only inside functions). */
@@ -481,6 +482,100 @@ export function automationTargetLabel(target) {
         name = p && (p.name || p.label);
     }
     return short + '>' + (name || key);
+}
+
+/* ⭐ WHERE A LANE LIVES, IN FULL — for the Screen view's lane list, which
+ * puts a heading over each run of lanes from one place (Josh, 2026-11-09).
+ * `key` is the label's own prefix (Syn, FX1, Lvl, a bank's short name,
+ * SnapMorph, MIDI), so a run on the OLED's sorted list is a run here and
+ * the order is never changed; `name` names that place in full (the module's
+ * declared name, "Levels", the bank's name); `param` is the parameter's own
+ * name. A module's name costs a read, so answers are kept for the list
+ * generation (a lane added or removed) and a few seconds (a module swapped). */
+const COMP_LONG = { fx1: 'FX 1', fx2: 'FX 2', fx3: 'FX 3', fx4: 'FX 4', midi_fx1: 'MIDI FX 1', midi_fx2: 'MIDI FX 2' };
+const sourceCache = new Map();
+let sourceCacheGen = -1, sourceCacheAt = -1e9;
+const SOURCE_TTL_MS = 3000;
+function titleWord(s) { s = String(s || ''); return s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s; }
+export function automationTargetSource(target) {
+    const t = String(target || '');
+    if (sourceCacheGen !== listGen || S.clockMs - sourceCacheAt > SOURCE_TTL_MS) {
+        sourceCache.clear(); sourceCacheGen = listGen; sourceCacheAt = S.clockMs;
+    }
+    let r = sourceCache.get(t);
+    if (r) return r;
+    const label = automationTargetLabel(t);
+    const gt = label.indexOf('>');
+    const param = gt >= 0 ? label.slice(gt + 1) : label;
+    if (midiTargetIsMidi(t)) r = { key: 'MIDI', name: 'MIDI', param: label };
+    else if (t.indexOf('seq:') === 0) {
+        const st = SEQ_AUTO_TARGETS[t.split(':')[2]];
+        const bank = st && BANKS[st.bank];
+        r = { key: gt >= 0 ? label.slice(0, gt) : label, name: bank && bank.name ? titleWord(bank.name) : (gt >= 0 ? label.slice(0, gt) : label),
+              param: (st && st.label) || param };
+    } else if (t.indexOf('mac:') === 0) r = { key: MAC_LANE_LABEL, name: MAC_LANE_LABEL, param: label.slice(MAC_LANE_LABEL.length).trim() || label };
+    else {
+        const i = t.indexOf(':');
+        const key = gt >= 0 ? label.slice(0, gt) : label;
+        let name = key;
+        if (i > 0) {
+            const slot = parseInt(t.slice(0, i), 10);
+            const [comp] = splitFullKey(t.slice(i + 1));
+            let bare = comp.replace(/^move_fx:\d+:?/, '');
+            if (bare === '' || isLevelComponent(comp)) name = 'Levels';
+            else {
+                let id = '';
+                try { id = moduleIdOfRaw(engineLoadedModuleOrNull(/^move_fx:/.test(comp) ? 0 : slot, comp)); } catch (e) { id = ''; }
+                const mod = id ? engineModuleDisplayName(id) : '';
+                const where = COMP_LONG[bare] || '';
+                name = mod ? (where ? mod + ' · ' + where : mod) : (where || key);
+            }
+        }
+        r = { key, name, param };
+    }
+    sourceCache.set(t, r);
+    return r;
+}
+/* A chain slot reports a module id; a bus, the path it was loaded from. */
+function moduleIdOfRaw(raw) {
+    if (!raw) return '';
+    if (raw.indexOf('/') < 0) return raw;
+    const parts = raw.split('/').filter(Boolean);
+    return parts.length >= 2 ? parts[parts.length - 2] : parts[parts.length - 1];
+}
+/* A 14-bit value of `target` as the parameter shows it — an enum's option, a
+ * number in its own units (a knob cell's formatting), a percentage where no
+ * units are known — or null. */
+export function automationValueText(target, norm) {
+    const tg = String(target || '');
+    if (!(norm >= 0)) return null;
+    const pct = () => Math.round(Math.max(0, Math.min(16383, norm)) / 16383 * 100) + '%';
+    if (midiTargetIsMidi(tg)) return automationWireValue(tg, norm);
+    if (tg.indexOf('mac:') === 0) return pct();
+    let p;
+    if (tg.indexOf('seq:') === 0) {
+        const st = SEQ_AUTO_TARGETS[tg.split(':')[2]];
+        const w = automationWireValue(tg, norm);
+        if (!st || w == null) return pct();
+        const pm = BANKS[st.bank] && BANKS[st.bank].knobs && BANKS[st.bank].knobs[st.k];
+        if (pm && typeof pm.fmt === 'function' && !st.alt) { try { const s = pm.fmt(Number(w)); if (s != null && s !== '') return String(s); } catch (e) { /* plain number */ } }
+        return formatValue({ min: st.min, max: st.max, type: 'int' }, Number(w));
+    }
+    const i = tg.indexOf(':');
+    if (i < 0) return pct();
+    const slot = parseInt(tg.slice(0, i), 10);
+    const [comp, key] = splitFullKey(tg.slice(i + 1));
+    if (!isFinite(slot)) return pct();
+    p = paramMeta(slot, comp, key);
+    const w = automationWireValue(tg, norm);
+    if (!p || w == null) return pct();
+    const opts = Array.isArray(p.options) ? p.options : null;
+    if (opts && opts.length) { const k = Math.round(Number(w)); return opts[k] != null ? String(opts[k]) : String(w); }
+    const min = typeof p.min === 'number' ? p.min : 0, max = typeof p.max === 'number' ? p.max : 1;
+    /* a plain 0..1 amount with no unit reads as a percentage, not "0.62" */
+    if (!p.unit && p.type !== 'int' && max - min <= 1 && max > min) return Math.round((Number(w) - min) / (max - min) * 100) + '%';
+    const s = formatValue({ min, max, type: p.type }, Number(w));
+    return p.unit ? s + ' ' + p.unit : s;
 }
 
 /* A write the DSP answers with a staged value (a rest on deactivate/clear):

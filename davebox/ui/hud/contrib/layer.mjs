@@ -91,6 +91,8 @@ export const DESCRIBE = {
     StepStrip:        (d, p) => { d.stepStrip = { len: p.len | 0, on: (p.on || []).join('') }; },
     Wave:             (d, p) => { d.wave = p; },
     Curve:            (d, p) => { d.curve = p; },
+    /* the AUTOMATION screen's lanes, for the Screen view (ui_automation_bank hudLanesTap) */
+    Lanes:            (d, p) => { d.lanes = p; },
     Keyboard:         (d, p) => { if (p) d.keyboard = p; },
     Lfo:              (d, p) => { d.lfo = { shape: String(p.shape), bipolar: !!p.bipolar, phase: +p.phase || 0, retrigger: !!p.retrigger, cycles: p.cycles | 0 }; },
     Readout:          (d, p) => { (d.readouts = d.readouts || []).push({ text: String(p.text), on: p.on || undefined, pos: p.pos || 'left' }); },
@@ -108,7 +110,7 @@ export const DESCRIBE = {
 const FAMILY = {
     KitCells: 'knobs', KitBankPage: 'knobs', KitList: 'list', KitStackedList: 'list', KitSectionPicker: 'list',
     KitPrompt: 'prompt', PromptLines: 'prompt', Buttons: 'prompt', Tracks: 'tracks', Bars: 'bars', KitBankMap: 'bankmap',
-    KitListOverlay: 'list',
+    KitListOverlay: 'list', Lanes: 'lanes',
     Mods: 'mods', Wave: 'wave', Keyboard: 'keyboard', Message: 'message', Picture: 'picture', KitBigValue: 'big', LevelCard: 'big', HudCard: 'card', NoticeCard: 'notice',
 };
 /* A POP-UP is drawn over a page the OLED keeps visible behind it (Josh,

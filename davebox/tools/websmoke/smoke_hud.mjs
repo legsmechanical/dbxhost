@@ -229,6 +229,38 @@ ok('...its dividers drawn as rules, never at the window\'s edge', el.querySelect
     const lcd = draw(fx('sound-level-card'));
     ok('...a level card over the menu', !!lcd.querySelector('.hud-body.hud-l-list') && /LEVEL/.test((lcd.querySelector('.hud-ovl .card.c-big') || {}).textContent || ''),
        (lcd.querySelector('.hud-body') || {}).className);
+    /* AUTOMATION (Josh, 2026-11-09) */
+    const la = draw(fx('automation-lanes'));
+    const laRows = [...la.querySelectorAll('.hud-lanes .hud-lane')].map((r) => (r.querySelector('.nm') || {}).textContent);
+    const laHeads = [...la.querySelectorAll('.hud-lanes .hud-lane-g')].map((g) => g.textContent);
+    ok('AUTOMATION: every lane in the OLED\'s order, headed by where it lives', laRows.join() === 'Mix,Volume,Cutoff,Resonance,Aftertouch' &&
+       laHeads.join('|') === 'Freeverb · FX 1|Levels|NuSaw|Pads', laRows.join() + ' / ' + laHeads.join('|'));
+    ok('...each with its curve and the OLED\'s value, a muted one dimmed and dashed', la.querySelectorAll('.hud-lane svg path').length === 4 &&
+       la.querySelector('.hud-lane.off path[stroke-dasharray]') && /OFF/.test(la.querySelector('.hud-lane.off .v').textContent));
+    const laPh = [...la.querySelectorAll('line.hud-lane-ph')];
+    ok('...and a playhead on every playing lane, each at its own speed', laPh.length === 3 && laPh.map((l) => +l.getAttribute('data-spd')).sort().join() === '0.5,0.5,4',
+       laPh.map((l) => l.getAttribute('data-spd')).join());
+    ok('...which glides from where it was reported (wrapping at the loop end)', Math.abs(H.laneGlideX(0.9, 4, 0.05) - 0.1 * 900) < 0.5 && Math.abs(H.laneGlideX(0.25, 0.5, 0.5) - 0.5 * 900) < 0.5);
+    const ld = draw(fx('automation-lane-detail'));
+    ok('a lane selected: the list beside it, the lane large — its points, the step buttons, its settings, its value now',
+       !!ld.querySelector('.hud-lane.sel') && /Cutoff/.test(ld.querySelector('.hud-lane.sel').textContent) &&
+       !!ld.querySelector('.hud-lane-detail svg.hud-lane-big path') && ld.querySelectorAll('.hud-lane-detail .hud-lane-pt').length === 4 &&
+       ld.querySelectorAll('.hud-lane-steps i').length === 16 && ld.querySelectorAll('.hud-lane-detail .hud-chip').length === 5 &&
+       /\d+%/.test((ld.querySelector('.hud-lane-detail .now') || {}).textContent || '') && /100%/.test((ld.querySelector('.hud-lane-detail .ax') || {}).textContent || ''),
+       (ld.querySelector('.hud-body') || {}).className);
+    ok('...+ Add lane and Clear all kept, as on the OLED', /Add lane/.test(ld.textContent) && /Clear all/.test(ld.textContent));
+    const lo = draw(fx('automation-lane-ops'));
+    ok('a lane\'s ops: a card beside the lanes, named for its lane, the lane still drawn', !!lo.querySelector('.hud-ovl.left .card') &&
+       /NuSaw · Cutoff/.test((lo.querySelector('.hud-ovl .card .t') || {}).textContent || '') && !!lo.querySelector('.hud-body .hud-lane-detail') &&
+       !lo.querySelector('.hud-ovl .hud-wavebox'), (lo.querySelector('.hud-ovl .card .t') || {}).textContent);
+    const lh = draw(at(fx('automation-hold-jump')));
+    ok('holding a lane\'s step: the parameter\'s page stays, the lane\'s page above it, the held value in its units — no card',
+       !!lh.querySelector('.hud-body .hud-lane-strip') && !lh.querySelector('.hud-ovl') && !!lh.querySelector('.hud-o-track') &&
+       /Volume/.test(lh.querySelector('.hud-lane-strip').textContent) && /\+10\.1/.test(lh.querySelector('.hud-lane-strip .now').textContent),
+       (lh.querySelector('.hud-lane-strip') || {}).textContent);
+    const bea = draw(fx('block-editor-automated'));
+    const autoMarks = [...bea.querySelectorAll('.hud-a-auto')].map((x) => x.textContent);
+    ok('a module editor\'s automated knobs are marked: AUTO, and AUTO OFF for a muted lane', autoMarks.indexOf('AUTO') >= 0 && autoMarks.indexOf('AUTO OFF') >= 0, autoMarks.join());
     /* no strip (a bank whose knobs do nothing here): the track list stays */
     const bare = JSON.parse(JSON.stringify(mel)); delete bare.knobs;
     ok('...and with no knob page, the eight tracks as before', draw(bare).querySelectorAll('.hud-o-tl .row').length === 8);

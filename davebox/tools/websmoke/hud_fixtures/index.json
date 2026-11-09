@@ -300,6 +300,31 @@
   "screen": "track.automation"
  },
  {
+  "slug": "automation-lanes",
+  "title": "AUTOMATION — the lanes, playing",
+  "screen": "track.automation"
+ },
+ {
+  "slug": "automation-lane-detail",
+  "title": "AUTOMATION — a lane selected",
+  "screen": "track.automation"
+ },
+ {
+  "slug": "automation-lane-ops",
+  "title": "AUTOMATION — a lane's operations, playing",
+  "screen": "track.automation"
+ },
+ {
+  "slug": "automation-hold-jump",
+  "title": "Holding a lane's step",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "block-editor-automated",
+  "title": "An automated parameter in its editor",
+  "screen": "sound.params"
+ },
+ {
   "slug": "session-overview",
   "title": "Session View",
   "screen": "session.overview"

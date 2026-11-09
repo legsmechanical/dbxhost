@@ -6,7 +6,7 @@
  * It fills the same keys the kit describers do — header, knobs, touched, page —
  * plus `viz`: the widget groups the library resolved (envelope, filter, LFO,
  * EQ, sample, …), each with the knob slots its roles sit on. */
-import { soundParamPageModel, soundEditorModuleId } from '../../ui_sound.mjs';
+import { soundParamPageModel, soundEditorModuleId, soundParamAutoMarks } from '../../ui_sound.mjs';
 
 const WIDGET_KIND = { enum: 'enumsq', bignum: 'valsq', opaque: 'opaque', button: 'pill' };
 
@@ -22,7 +22,7 @@ function cellOf(c) {
     }
     if (Array.isArray(c.options) && c.options.length <= 64) { o.options = c.options.map(String); o.sel = c.enumIndex; }
     if (c.locked) o.lock = true;
-    if (c.modulated) o.auto = 'mod';
+    if (c.modulated) o.auto = 'mod';   /* the module's own modulation; this clip's lanes overwrite it below */
     o.meta = { min: c.min, max: c.max, def: c.default, unit: c.unit || undefined };
     return o;
 }
@@ -36,6 +36,10 @@ export const params = {
         const body = Object.assign({}, doc.body || {});
         const cells = (vm.cells || []).slice(0, 8).map(cellOf);
         while (cells.length < 8) cells.push(null);
+        /* a lane in this clip: AUTO, or AUTO OFF when muted, as the OLED's circle */
+        let marks = null;
+        try { marks = soundParamAutoMarks(); } catch (e) { marks = null; }
+        if (marks) cells.forEach((c, k) => { if (c && marks[k]) c.auto = marks[k]; });
         body.knobs = cells;
         const t = (vm.cells || []).findIndex((c) => c && c.touched);
         body.touched = t;

@@ -1257,6 +1257,48 @@ screen('automation-ops', '10.2 The AUTOMATION screen', 'AUTOMATION — a paramet
     'A row\'s operations: Delete, Mute, Mode, Smooth, Wrap, Link, Loop and Rate.',
     () => { selectTrack(4); withAutomation(); ticks(8); toBank(C.BANK_AUTOMATION); ticks(8); click(); ticks(4); jog(1); ticks(2); click(); ticks(4); });
 
+/* The lanes with curves and positions, as the engine answers them (the
+ * Screen view's AUTOMATION screen): every lane's shape over its window, every
+ * lane's place while playing, the points on the steps and the page's values. */
+function withAutomationCurves() {
+    withAutomation();
+    const hx2 = (v) => Math.max(0, Math.min(254, Math.round(v * 254))).toString(16).padStart(2, '0');
+    const shape = (f) => Array.from({ length: 126 }, (_, c) => hx2(f(c / 126))).join('');
+    ENGINE.t4_c0_pa_shape_126 = [
+        '4:synth:cutoff ' + shape((x) => 0.5 + 0.42 * Math.sin(x * Math.PI * 2 - 1.2)),
+        '4:synth:reso ' + shape((x) => [0.2, 0.75, 0.45, 0.9][Math.floor(x * 4)]),
+        '4:slot:volume ' + shape((x) => x < 0.6 ? 0.8 : 0.8 - (x - 0.6) * 1.5),
+        '4:fx1:mix ' + shape((x) => 0.3 + 0.4 * x), ''].join('\n');
+    ENGINE.t4_c0_pa_pos = ['4:synth:cutoff 150 0 384', '4:synth:reso 30 0 48', '4:slot:volume 150 0 384', '4:fx1:mix 150 0 384', ''].join('\n');
+    ENGINE.t4_c0_pa_steps = ['4:synth:cutoff 1000100010001', '4:synth:reso 11', '4:slot:volume 1000000000100001', ''].join('\n');
+    const v14 = (f) => Array.from({ length: 16 }, (_, s) => Math.round(f(s / 16) * 16383).toString(16).padStart(4, '0')).join('');
+    ENGINE.t4_c0_pa_vals_0_24 = ['4:synth:cutoff ' + v14((x) => 0.5 + 0.42 * Math.sin(x * Math.PI * 2 - 1.2)),
+                                 '4:slot:volume ' + v14((x) => x < 0.6 ? 0.8 : 0.8 - (x - 0.6) * 1.5), ''].join('\n');
+    S.playing = true; S.bpm = 120; S.trackClipPlaying[4] = true;
+}
+screen('automation-lanes', '10.2 The AUTOMATION screen', 'AUTOMATION — the lanes, playing',
+    'Every lane of the clip with its cycle; while the transport runs, each moves at its own rate.',
+    () => { selectTrack(4); withAutomationCurves(); ticks(8); toBank(C.BANK_AUTOMATION); ticks(8); });
+screen('automation-lane-detail', '10.2 The AUTOMATION screen', 'AUTOMATION — a lane selected',
+    'With the cursor on a lane, the step buttons show its current page as brightness, its points blinking.',
+    () => { selectTrack(4); withAutomationCurves(); ticks(8); toBank(C.BANK_AUTOMATION); ticks(8); click(); ticks(4); jog(2); ticks(4);
+            if (!S.autoCycle || S.autoCycle.target !== '4:synth:cutoff') throw new Error('the cursor is not on Syn>Cutoff'); });
+screen('automation-lane-ops', '10.2 The AUTOMATION screen', 'AUTOMATION — a lane\'s operations, playing',
+    'A lane\'s operations, over the list; below, the lane itself, its playhead running.',
+    () => { selectTrack(4); withAutomationCurves(); ticks(8); toBank(C.BANK_AUTOMATION); ticks(8); click(); ticks(4); jog(2); ticks(4); click(); ticks(4); });
+
+screen('automation-hold-jump', '10.2 The AUTOMATION screen', 'Holding a lane\'s step',
+    'Hold a step with a point on the selected lane: its parameter\'s page, the lane\'s page over the other half, the knob showing that step\'s value.',
+    () => { selectTrack(4); withAutomationCurves(); ticks(8); toBank(C.BANK_AUTOMATION); ticks(8); click(); ticks(4); jog(1); ticks(4);
+            noteOn(STEP(0), 127); ticks(40); });
+
+screen('block-editor-automated', '10.2 The AUTOMATION screen', 'An automated parameter in its editor',
+    'In a module\'s editor, a parameter with a lane in this clip wears the automation mark; a muted lane\'s is hollow.',
+    () => { stopTransport(); selectTrack(4); withAutomation();
+            /* Resonance's lane muted: its mark is the hollow one */
+            ENGINE.pa_list = ENGINE.pa_list.replace('4 0 3 12 4:synth:reso', '4 0 0 12 4:synth:reso'); AUTO.automationNoteListChangedElsewhere();
+            ticks(8); openTrackConfig(); soundRowToLabel('Instmt/Dest'); click(); ticks(8); });
+
 /* 16.3 / SnapMorph — the snapshot layer (hold Capture) */
 screen('snapshot-layer-track', '14.7 Sound snapshots & SnapMorph', 'The track snapshot layer',
     'Holding Capture in Track View opens the track\'s snapshot layer: the band names it, and the step buttons are its slots.',
