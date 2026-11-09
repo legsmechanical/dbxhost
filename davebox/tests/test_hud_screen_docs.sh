@@ -118,6 +118,9 @@ ok('...a level card over the menu (Shift + Volume in TRACK CONFIG)', lc.body.lis
 const bp = doc('bank-picker');
 ok('...the bank picker as a list over the overview', bp.body.tracks && bp.overlayLayer && bp.overlayLayer.list && bp.overlayLayer.list.rows[2].label === 'LIVE ARP' &&
    bp.overlayLayer.list.sel === 2, JSON.stringify(bp.overlayLayer && bp.overlayLayer.list && bp.overlayLayer.list.rows.slice(0, 3)));
+const mt = doc('macros-targets');
+ok('...the screen\'s chrome stays the page\'s, though drawn after the picker (the path T5 > Macros > K7)', (mt.body.crumbs || []).join('>') === 'T5>Macros>K7' &&
+   mt.body.popup && !mt.body.popup.crumbs && !mt.body.popup.header, JSON.stringify({ c: mt.body.crumbs, p: mt.body.popup && Object.keys(mt.body.popup) }));
 const tc = doc('track-config');
 ok('...and a screen with no pop-up has none', !tc.body.popup && tc.body.primary === 'list', JSON.stringify(tc.body.popup));
 const so = doc('session-overview');
