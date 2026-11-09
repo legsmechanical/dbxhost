@@ -238,7 +238,7 @@ ok('...its dividers drawn as rules, never at the window\'s edge', el.querySelect
     ok('...each with its curve and the OLED\'s value, a muted one dimmed and dashed', la.querySelectorAll('.hud-lane svg path').length === 4 &&
        la.querySelector('.hud-lane.off path[stroke-dasharray]') && /OFF/.test(la.querySelector('.hud-lane.off .v').textContent));
     const laPh = [...la.querySelectorAll('line.hud-lane-ph')];
-    ok('...and a playhead on every playing lane, each at its own speed', laPh.length === 3 && laPh.map((l) => +l.getAttribute('data-spd')).sort().join() === '0.5,0.5,4',
+    ok('...and a playhead on every playing lane, each at its own speed', laPh.length === 3 && laPh.map((l) => +l.getAttribute('data-spd')).sort((x, y) => x - y).join() === '0.5,1,4',
        laPh.map((l) => l.getAttribute('data-spd')).join());
     ok('...which glides from where it was reported (wrapping at the loop end)', Math.abs(H.laneGlideX(0.9, 4, 0.05) - 0.1 * 900) < 0.5 && Math.abs(H.laneGlideX(0.25, 0.5, 0.5) - 0.5 * 900) < 0.5);
     const ld = draw(fx('automation-lane-detail'));
