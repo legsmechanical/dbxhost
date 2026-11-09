@@ -128,6 +128,23 @@ port, `Move:External MIDI`, and keeps it subscribed to every client `bluetoothd`
 BLE-MIDI timing follows the connection interval (several milliseconds of jitter): fine for notes
 and controllers, poor as a clock source.
 
+## Surface input from the browser (`remote-surface`)
+
+The remote editor's Screen view sends the HARDWARE gesture a click stands for — knob detents
+with the knob's touch held, a pad's note, Shift + a jog turn — over the `/ws/remote-ui` socket as
+`{"type":"surface","pkts":[[status,d1,d2],…]}`. The manager (`schwung-manager/shmsurface.go`) pushes
+them as cable-0 packets on the `remote-surface` ring, and the shim replays them in the overtake scan
+by the same function as the test bus's `test-inject-ui` ring (`replay_surface_ring`): published to
+the shadow UI, note events handed to the overtake DSP, an injected Shift mirrored into
+`shift_held`. So the module runs its own input handlers and nothing is re-implemented in the page.
+
+- **Overtake only**, and **never Move's inject ring**: that one carries dAVEBOx's own note output.
+- **Validated twice** (`src/host/remote_surface.h`, mirrored in Go), because the producer faces the
+  network: cable 0, channel 1, note on/off for the touch sensors (0–9), steps (16–31) and pads
+  (68–99), CCs for the encoders, the jog and the buttons — never the master knob (79) or plug detect.
+- **Nothing is left held.** The manager records what each page holds down and releases it when the
+  page's socket closes; the page releases on pointer up / cancel and when it loses focus.
+
 
 ## SPI Protocol
 

@@ -398,6 +398,16 @@
         // setParamAt(slot, key, value): a write addressed to a specific chain
         // position — the tool page is pinned to slot 0, but the Sound view
         // edits the SELECTED track's components.
+        // surface(pkts): the Screen view's gestures, as the Move's own
+        // controls send them — [[status, d1, d2], ...] in order. The manager
+        // puts them on the remote-surface ring; the shim replays them on the
+        // route a hardware press takes (src/host/remote_surface.h).
+        surface: function (pkts) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "surface", pkts: pkts }));
+            }
+        },
+
         setParamAt: function (compSlot, key, value) {
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: "set_param", slot: compSlot, key: key, value: String(value) }));

@@ -3,6 +3,7 @@
 - davebox/dsp/seq8.c|#ifndef SEQ8_SETS_DIR
 - davebox/dsp/seq8.c|#ifndef SEQ8_SET_STATE_ROOT
 B davebox/dsp/seq8.c|dbx_project_dir(SEQ8_SET_STATE_ROOT, uuid, uuid_dir, sizeof(uuid_dir));
+- davebox/tools/render_manual_screens.mjs|Object.assign(ENGINE, { t4_pad_mode: String(pm), t4_au_dir: '/data/UserData/UserLibrary/Sets/x/dAVEBOx/samples',
 - davebox/ui/ui_export.mjs|const EXPORT_SETS_BASE_DIR    = '/data/UserData/UserLibrary/Sets';
 R davebox/ui/ui_export.mjs|const path = EXPORT_SETS_BASE_DIR + '/' + S.currentSetUuid + '/' + S.currentSetFolder + '/Song.abl';
 - davebox/ui/ui_persistence.mjs|const SETS_DIR    = '/data/UserData/UserLibrary/Sets';
