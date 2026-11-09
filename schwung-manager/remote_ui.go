@@ -643,31 +643,66 @@ var slotSettingKeys = []string{
 	"lfo2:sync", "lfo2:depth", "lfo2:polarity", "lfo2:target", "lfo2:target_param",
 }
 
-func (ru *RemoteUI) sendSlotSettings(ctx context.Context, c *ruClient, slot uint8) {
-	params := make(map[string]string)
-
-	// Slot settings — use getParamWithRetry so a transient busy shm channel
-	// during subscribe doesn't leave dropdowns (recv/fwd channel etc.) stuck
-	// defaulted to their first option instead of the real device value.
-	for _, key := range slotSettingKeys {
-		if ctx.Err() != nil {
-			return
-		}
-		val := ru.getParamWithRetry(slot, key, 3)
-		if val != "" {
-			params[key] = val
+// readMany reads keys of one slot: in ONE bulk request when bulk is true and
+// they fit, one by one otherwise — and one by one for any key the bulk read
+// did not resolve (its "?") or a request it refused whole, so the bulk path
+// can never change WHICH values arrive. retries applies to the single reads:
+// a failed channel is retried, a host answer never is. A key the host
+// refuses, or that never answered, is left out.
+func (ru *RemoteUI) readMany(slot uint8, keys []string, bulk bool, retries int) (map[string]string, int) {
+	out := make(map[string]string, len(keys))
+	single := keys
+	if bulk && len(keys) <= bulkMaxItems {
+		if vals, err := ru.shm.GetParamsBulk(slot, keys); err != nil {
+			ru.logger.Info("bulk read refused, reading one by one", "slot", slot, "keys", len(keys), "err", err)
+		} else {
+			single = nil
+			for i, v := range vals {
+				if v.Err != nil {
+					single = append(single, keys[i])
+				} else {
+					out[keys[i]] = v.Value
+				}
+			}
 		}
 	}
-
-	// Knob mappings (knob_1_name..knob_8_name, knob_1_value..knob_8_value)
-	for i := 1; i <= 8; i++ {
-		nameKey := fmt.Sprintf("knob_%d_name", i)
-		valKey := fmt.Sprintf("knob_%d_value", i)
-		if name := ru.getParamWithRetry(slot, nameKey, 2); name != "" {
-			params[nameKey] = name
+	for _, k := range single {
+		for try := 0; try < retries; try++ {
+			val, err := ru.shm.GetParam(slot, k)
+			if err == nil {
+				out[k] = val
+				break
+			}
+			if errors.Is(err, errParamRefused) {
+				break // the host's "no such key" is an answer: left out, not retried
+			}
+			if try < retries-1 {
+				time.Sleep(100 * time.Millisecond)
+			}
 		}
-		if val := ru.getParamWithRetry(slot, valKey, 2); val != "" {
-			params[valKey] = val
+	}
+	return out, len(single)
+}
+
+func (ru *RemoteUI) sendSlotSettings(ctx context.Context, c *ruClient, slot uint8) {
+	// Slot settings + knob mappings (knob_N_name/_value), in one bulk read.
+	// The single reads behind it retry a busy channel, so a transient busy
+	// during subscribe doesn't leave dropdowns (recv/fwd channel etc.) stuck
+	// defaulted to their first option instead of the real device value. One
+	// by one these were 43 round trips — ~3.5 s of an instrument panel's
+	// first open on the device (2026-11-09), before any of its values.
+	if ctx.Err() != nil {
+		return
+	}
+	keys := append([]string{}, slotSettingKeys...)
+	for i := 1; i <= 8; i++ {
+		keys = append(keys, fmt.Sprintf("knob_%d_name", i), fmt.Sprintf("knob_%d_value", i))
+	}
+	got, _ := ru.readMany(slot, keys, true, 3)
+	params := make(map[string]string, len(got))
+	for k, v := range got {
+		if v != "" {
+			params[k] = v
 		}
 	}
 
@@ -680,6 +715,12 @@ func (ru *RemoteUI) sendSlotSettings(ctx context.Context, c *ruClient, slot uint
 // Prefers the module's "all" key (single shm call returning a JSON object of
 // every value) for speed; falls back to fetching each chain_params entry
 // individually when "all" isn't supported.
+// initialBulkChunk: keys per bulk request on a panel's first read. Each
+// chunk is answered inside ONE audio frame, every key's get_param in turn, so
+// this bounds what a first read adds to a frame; the host's own cap is
+// bulkMaxItems.
+const initialBulkChunk = 32
+
 func (ru *RemoteUI) sendInitialParamValues(ctx context.Context, c *ruClient, slot uint8, comp string) {
 	// Fetch hierarchy-level params first so the preset browser (count/name)
 	// populates BEFORE the slower value fetch — otherwise the user sees
@@ -739,40 +780,41 @@ func (ru *RemoteUI) sendInitialParamValues(ctx context.Context, c *ruClient, slo
 
 	ru.logger.Info("initial params: fetching", "slot", slot, "comp", comp, "count", len(params))
 
-	// Fetch in batches of 8, yielding between batches so shadow_ui.js
-	// gets time on the shared param channel. Send each batch immediately
-	// so the browser populates progressively — to every page that asked.
-	const batchSize = 8
-	batch := make(map[string]string, batchSize)
+	// Read in chunks, yielding between them so shadow_ui.js gets time on the
+	// shared param channel, and send each chunk at once so the browser fills
+	// in progressively — to every page that asked.
+	//
+	// A chain component reads each chunk in ONE request (the host's `chain:`
+	// bulk GET): one audio frame per chunk instead of one per value — a
+	// 150-value instrument went from ~150 round trips to 3. A key the bulk
+	// path does not resolve, or a chunk it refuses, is read one by one, so
+	// switching paths can never change WHICH values arrive. master_fx: keys
+	// resolve only on the single path, so they stay one by one.
+	chunk := 8
+	bulk := isChainComponent(comp)
+	if bulk {
+		chunk = initialBulkChunk
+	}
 	fetched := 0
-
-	for i, p := range params {
+	for lo := 0; lo < len(params); lo += chunk {
 		if !f.anyoneLeft() {
 			ru.logger.Info("initial params: abandoned (pages gone)", "slot", slot, "comp", comp, "fetched", fetched, "of", len(params))
 			return
 		}
-		if p.Key == "" {
-			continue
+		hi := min(lo+chunk, len(params))
+		keys := make([]string, 0, hi-lo)
+		for _, p := range params[lo:hi] {
+			keys = append(keys, comp+":"+p.Key)
 		}
-		fullKey := comp + ":" + p.Key
-		val, err := ru.shm.GetParam(slot, fullKey)
-		if err != nil {
-			continue
-		}
-		batch[fullKey] = val
-		fetched++
-
-		// Send batch and yield
-		if len(batch) >= batchSize || i == len(params)-1 {
-			if len(batch) > 0 {
-				for _, m := range f.publish(batch) {
-					ru.writeJSON(m.ctx, m.c, wsParamUpdate{Type: "param_update", Slot: slot, Params: batch})
-				}
-				batch = make(map[string]string, batchSize)
+		batch, _ := ru.readMany(slot, keys, bulk, 1)
+		fetched += len(batch)
+		if len(batch) > 0 {
+			for _, m := range f.publish(batch) {
+				ru.writeJSON(m.ctx, m.c, wsParamUpdate{Type: "param_update", Slot: slot, Params: batch})
 			}
-			// Yield to let shadow_ui.js use the param channel
-			time.Sleep(20 * time.Millisecond)
 		}
+		// Yield to let shadow_ui.js use the param channel
+		time.Sleep(20 * time.Millisecond)
 	}
 
 	ru.logger.Info("initial params: done", "slot", slot, "comp", comp, "fetched", fetched)

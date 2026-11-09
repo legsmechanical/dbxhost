@@ -148,6 +148,10 @@ the section into a versioned heading at release time.
   Clips of the same length still hand over in step with each other.
 
 ### Fixed
+- **Module editors open in a fraction of a second the first time.** The browser read an
+  editor's values one at a time — a large instrument took 10–27 s, and some values never
+  arrived; they are now read many at once (about 0.3 s for the same instrument). A read the
+  browser made could also cancel one of dAVEBOx's own, and no longer does.
 - **The browser editor no longer slows to a crawl with module editors open.** Several
   instrument and effect editors kept loaded (in one tab or a few) could hold up Play, Stop
   and switching views for seconds; each editor now reads only its own values, once (it

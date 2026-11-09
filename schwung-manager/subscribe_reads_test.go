@@ -107,12 +107,13 @@ func TestAReadStopsWhenItsPageGoes(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			host := bigSynthHost()
+			host.frame = 30 * time.Millisecond // a chunk a frame: slow enough to leave mid-read
 			conn, done := dialRU(t, ctx, host)
 			defer done()
 			if err := wsjson.Write(ctx, conn, req); err != nil {
 				t.Fatal(err)
 			}
-			// wait until the one-by-one read is under way, then leave
+			// wait until the read is under way, then leave
 			for synthReads(host) < 8 {
 				if ctx.Err() != nil {
 					t.Fatal("the read never started")
@@ -159,6 +160,7 @@ func TestPagesAskingForOneComponentShareOneRead(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	host := bigSynthHost()
+	host.frame = 30 * time.Millisecond // a chunk a frame: the second page joins mid-read
 	shm := &ShmParams{data: make([]byte, shmParamSize)}
 	go host.serve(ctx, shm)
 	ru := NewRemoteUI(shm, nil, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -187,15 +189,202 @@ func TestPagesAskingForOneComponentShareOneRead(t *testing.T) {
 	if err := wsjson.Write(ctx, second, req); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(50 * time.Millisecond)
-	first.CloseNow()
-	n, err := collectSynth(ctx, second)
-	if err != nil {
-		t.Fatalf("the page that joined got %d of %d values: %v", n, manyParams, err)
+	// The second page has joined once it holds some values; the first leaves
+	// then, mid-read.
+	got := map[string]bool{}
+	left := false
+	for len(got) < manyParams {
+		var m struct {
+			Type   string
+			Params map[string]string
+		}
+		if err := wsjson.Read(ctx, second, &m); err != nil {
+			t.Fatalf("the page that joined got %d of %d values: %v", len(got), manyParams, err)
+		}
+		if m.Type != "param_update" {
+			continue
+		}
+		for k := range m.Params {
+			if strings.HasPrefix(k, "synth:p") {
+				got[k] = true
+			}
+		}
+		if !left && len(got) > 0 {
+			if len(got) >= manyParams {
+				t.Fatal("the read ended before the first page could leave mid-read")
+			}
+			first.CloseNow()
+			left = true
+		}
 	}
 	for i := 0; i < manyParams; i++ {
 		if c := host.count(fmt.Sprintf("synth:p%d", i)); c != 1 {
 			t.Fatalf("synth:p%d read %d times; want once for both pages", i, c)
 		}
+	}
+}
+
+// A panel's first read of a chain component costs one request per chunk, not
+// one per value: Josh, 2026-11-08 — the first open of a module's editor was
+// slow because its values were read one at a time.
+func TestFirstReadIsOneRequestPerChunk(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	host := bigSynthHost()
+	conn, done := dialRU(t, ctx, host)
+	defer done()
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "subscribe", "slot": 0, "component": "synth"}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := collectSynth(ctx, conn); err != nil {
+		t.Fatalf("got %d of %d values: %v", n, manyParams, err)
+	}
+	// the values' chunks, plus one for the instrument's slot settings
+	want := (manyParams+initialBulkChunk-1)/initialBulkChunk + 1
+	if got := host.bulkCount(); got != want {
+		t.Fatalf("%d bulk requests for %d values; want %d", got, manyParams, want)
+	}
+	if n := synthReads(host); n != manyParams {
+		t.Fatalf("%d reads of %d values; want each read once", n, manyParams)
+	}
+}
+
+// A key the bulk path cannot resolve is read on its own — the bulk reply's
+// "?" never becomes an empty value.
+func TestUnresolvedBulkKeysAreReadOneByOne(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	host := bigSynthHost()
+	host.answers["synth:p7"] = "0.77"
+	host.answers["synth:p150"] = "0.15"
+	host.singleOnly = map[string]bool{"synth:p7": true, "synth:p150": true}
+	conn, done := dialRU(t, ctx, host)
+	defer done()
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "subscribe", "slot": 0, "component": "synth"}); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for len(got) < manyParams {
+		var m struct {
+			Type   string
+			Params map[string]string
+		}
+		if err := wsjson.Read(ctx, conn, &m); err != nil {
+			t.Fatalf("got %d of %d values: %v", len(got), manyParams, err)
+		}
+		if m.Type != "param_update" {
+			continue
+		}
+		for k, v := range m.Params {
+			if strings.HasPrefix(k, "synth:p") {
+				got[k] = v
+			}
+		}
+	}
+	if got["synth:p7"] != "0.77" || got["synth:p150"] != "0.15" {
+		t.Fatalf("unresolved keys arrived as %q / %q; want 0.77 / 0.15", got["synth:p7"], got["synth:p150"])
+	}
+	if host.count("synth:p7") != 2 || host.count("synth:p150") != 2 {
+		t.Fatalf("unresolved keys read %d / %d times; want bulk + one single", host.count("synth:p7"), host.count("synth:p150"))
+	}
+}
+
+// A chunk the host refuses whole is read one by one: every value still arrives.
+func TestARefusedBulkChunkFallsBackToSingleReads(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	host := bigSynthHost()
+	host.refuseBulk = true
+	conn, done := dialRU(t, ctx, host)
+	defer done()
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "subscribe", "slot": 0, "component": "synth"}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := collectSynth(ctx, conn); err != nil {
+		t.Fatalf("got %d of %d values: %v", n, manyParams, err)
+	}
+}
+
+// An instrument panel's slot settings and knob names are one request, not 43:
+// one by one they held the first values back ~3.5 s on the device.
+func TestSlotSettingsAreOneBulkRead(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	host := bigSynthHost()
+	keys := append([]string{}, slotSettingKeys...)
+	for i := 1; i <= 8; i++ {
+		keys = append(keys, fmt.Sprintf("knob_%d_name", i), fmt.Sprintf("knob_%d_value", i))
+	}
+	for _, k := range keys {
+		host.answers[k] = "1"
+	}
+	host.answers["slot:volume"] = "0.8"
+	conn, done := dialRU(t, ctx, host)
+	defer done()
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "subscribe", "slot": 0, "component": "synth"}); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		var m struct {
+			Type   string
+			Params map[string]string
+		}
+		if err := wsjson.Read(ctx, conn, &m); err != nil {
+			t.Fatalf("slot settings never arrived: %v", err)
+		}
+		if m.Type == "param_update" && m.Params["slot:volume"] != "" {
+			if m.Params["slot:volume"] != "0.8" || m.Params["knob_8_value"] != "1" {
+				t.Fatalf("slot settings arrived as %v", m.Params)
+			}
+			break
+		}
+	}
+	host.mu.Lock()
+	defer host.mu.Unlock()
+	for _, k := range keys {
+		if host.singles[k] != 0 || host.asked[k] != 1 {
+			t.Fatalf("%s: %d single reads of %d; want one bulk read", k, host.singles[k], host.asked[k])
+		}
+	}
+}
+
+// A key neither path can read — bulk says "?", the single read is refused —
+// never reaches the page as an empty value: "" would set its control to zero.
+func TestAKeyNoPathCanReadIsLeftOut(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	host := &fakeHost{asked: map[string]int{}, answers: map[string]string{
+		"synth_module":       "small-synth",
+		"synth:ui_hierarchy": `{"levels":{"root":{"params":["cut"]}}}`,
+		"synth:chain_params": `[{"key":"cut","name":"Cut"},{"key":"gone","name":"Gone"},{"key":"res","name":"Res"}]`,
+		"synth:cut":          "0.3",
+		"synth:res":          "0.6",
+	}}
+	conn, done := dialRU(t, ctx, host)
+	defer done()
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "subscribe", "slot": 0, "component": "synth"}); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]string{}
+	for seen["synth:cut"] == "" || seen["synth:res"] == "" {
+		var m struct {
+			Type   string
+			Params map[string]string
+		}
+		if err := wsjson.Read(ctx, conn, &m); err != nil {
+			t.Fatalf("values never arrived: %v (have %v)", err, seen)
+		}
+		if m.Type != "param_update" {
+			continue
+		}
+		for k, v := range m.Params {
+			seen[k] = v
+		}
+	}
+	if v, ok := seen["synth:gone"]; ok {
+		t.Fatalf("an unreadable key reached the page as %q", v)
+	}
+	if host.count("synth:gone") != 2 {
+		t.Fatalf("synth:gone asked %d times; want the bulk read and one single", host.count("synth:gone"))
 	}
 }

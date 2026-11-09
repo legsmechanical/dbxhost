@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http/httptest"
@@ -35,14 +36,27 @@ type fakeHost struct {
 	mu      sync.Mutex
 	answers map[string]string
 	asked   map[string]int
+	// bulk: requests of the `chain:` bulk GET answered (each also counts its
+	// keys in asked). noBulk makes the host ignore them, as a host without
+	// the bulk arm would; frame is a delay per bulk request, so a test can
+	// act while a chunked read is still under way.
+	bulk       int
+	noBulk     bool
+	refuseBulk bool            // answer every bulk request with the error flag
+	singleOnly map[string]bool // keys the bulk resolver cannot resolve ("?")
+	frame      time.Duration
+	singles    map[string]int // single (type 2) reads only, by key
 }
+
+func (h *fakeHost) bulkCount() int { h.mu.Lock(); defer h.mu.Unlock(); return h.bulk }
 
 func (h *fakeHost) count(key string) int { h.mu.Lock(); defer h.mu.Unlock(); return h.asked[key] }
 
 func (h *fakeHost) serve(ctx context.Context, s *ShmParams) {
 	var last uint32
 	for ctx.Err() == nil {
-		if s.data[paramOffRequestType] != 2 {
+		rt := s.data[paramOffRequestType]
+		if rt != 2 && (rt != 3 || h.noBulk) {
 			time.Sleep(100 * time.Microsecond)
 			continue
 		}
@@ -52,13 +66,23 @@ func (h *fakeHost) serve(ctx context.Context, s *ShmParams) {
 			continue
 		}
 		last = req
+		if rt == 3 {
+			time.Sleep(h.frame)
+			h.serveBulk(s, req)
+			continue
+		}
 		raw := s.data[paramOffKey : paramOffKey+paramKeyLen]
 		key := string(raw[:strings.IndexByte(string(raw), 0)])
 		h.mu.Lock()
 		h.asked[key]++
+		if h.singles == nil {
+			h.singles = map[string]int{}
+		}
+		h.singles[key]++
 		ans, ok := h.answers[key]
 		h.mu.Unlock()
 		if ans == hostSilent {
+			s.data[paramOffRequestType] = 0 // taken, never answered
 			continue
 		}
 		if !ok || ans == hostRefuse {
@@ -70,7 +94,50 @@ func (h *fakeHost) serve(ctx context.Context, s *ShmParams) {
 		}
 		binary.LittleEndian.PutUint32(s.data[paramOffResponseID:], req)
 		s.data[paramOffResponseReady] = 1
+		s.data[paramOffRequestType] = 0 // the host clears it as it answers
 	}
+}
+
+// serveBulk answers a `chain:` bulk GET the way shim_handle_param_bulk_chain_get
+// does: "<n>\n" then a "<len>\n<bytes>" record per key, "?\n" for a key the
+// module does not know.
+func (h *fakeHost) serveBulk(s *ShmParams, req uint32) {
+	raw := s.data[paramOffValue:]
+	payload := string(raw[:strings.IndexByte(string(raw[:paramValueLen]), 0)])
+	var n int
+	fmt.Sscanf(payload, "%d\n", &n)
+	rest := payload[strings.IndexByte(payload, '\n')+1:]
+	out := fmt.Sprintf("%d\n", n)
+	h.mu.Lock()
+	h.bulk++
+	if h.refuseBulk {
+		h.mu.Unlock()
+		s.data[paramOffError] = 22
+		binary.LittleEndian.PutUint32(s.data[paramOffResultLen:], uint32(0xffffffff))
+		binary.LittleEndian.PutUint32(s.data[paramOffResponseID:], req)
+		s.data[paramOffResponseReady] = 1
+		s.data[paramOffRequestType] = 0
+		return
+	}
+	for i := 0; i < n; i++ {
+		nl := strings.IndexByte(rest, '\n')
+		var l int
+		fmt.Sscanf(rest[:nl], "%d", &l)
+		key := rest[nl+1 : nl+1+l]
+		rest = rest[nl+1+l:]
+		h.asked[key]++
+		if ans, ok := h.answers[key]; ok && ans != hostRefuse && ans != hostSilent && !h.singleOnly[key] {
+			out += fmt.Sprintf("%d\n%s", len(ans), ans)
+		} else {
+			out += "?\n"
+		}
+	}
+	h.mu.Unlock()
+	copy(s.data[paramOffValue:], out)
+	binary.LittleEndian.PutUint32(s.data[paramOffResultLen:], uint32(len(out)))
+	binary.LittleEndian.PutUint32(s.data[paramOffResponseID:], req)
+	s.data[paramOffResponseReady] = 1
+	s.data[paramOffRequestType] = 0
 }
 
 func TestComponentReads(t *testing.T) {
