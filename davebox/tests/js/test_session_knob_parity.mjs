@@ -29,6 +29,7 @@ let setCalls = [], volBlockCalls = [], saveCalls = 0;
 globalThis.shadow_get_param = (slot, key) => (ENGINE[slot + '|' + key] != null ? ENGINE[slot + '|' + key] : '');
 globalThis.shadow_set_param = (slot, key, val) => { setCalls.push([slot, key, val]); ENGINE[slot + '|' + key] = String(val); return 1; };
 globalThis.host_vol_block = (on) => { volBlockCalls.push(on); };
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.shadow_save_state_now = () => { saveCalls++; return 1; };
 let extSends = [];
 globalThis.move_midi_external_send = (pkt) => { extSends.push(pkt.slice ? pkt.slice() : pkt); };

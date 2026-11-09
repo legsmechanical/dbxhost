@@ -42,6 +42,7 @@ globalThis.shadow_send_midi_to_dsp = () => {};
  * sent. Declared here because the blanket stub loop would swallow it. */
 let dspWrites = [];
 globalThis.host_module_set_param = (key, val) => { dspWrites.push(key + '=' + val); return 1; };
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.fill_rect = () => {}; globalThis.draw_rect = () => {};
 globalThis.stipple_rect = () => {}; globalThis.set_pixel = () => {};
 globalThis.clear_screen = () => {}; globalThis.print = () => {};

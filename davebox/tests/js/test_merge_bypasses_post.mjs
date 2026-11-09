@@ -28,6 +28,7 @@ globalThis.shadow_save_state_now = () => { saves++; return 1; };
 const sets = [];
 globalThis.shadow_set_param = (slot, key, val) => { sets.push([slot, String(key), String(val)]); return 1; };
 globalThis.host_read_file = () => '';
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_file_exists = () => false;
 globalThis.shadow_get_param = () => '';
 globalThis.shadow_get_ui_flags = () => 0;

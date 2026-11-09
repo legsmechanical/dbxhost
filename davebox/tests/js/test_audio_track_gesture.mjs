@@ -62,6 +62,7 @@ const GET = { 't4_au_dir': '/data/UserData/UserLibrary/Sets/x/dAVEBOx/samples',
               't4_au_all_0': '0 x 0 0 0 0' };
 const PREVIEWS = [];
 globalThis.host_preview_play = (p) => { PREVIEWS.push(String(p)); };
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_preview_stop = () => { PREVIEWS.push('stop'); };
 globalThis.host_system_cmd = () => 0; globalThis.host_read_file = () => '';
 globalThis.host_file_exists = () => false;
@@ -128,6 +129,7 @@ const P = await import('../../ui/ui_pure.mjs');
 const D = await import('../../ui/ui_dialogs.mjs');
 const DM = await import('../../ui/ui_drummodel.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
+const HP = await import('../../ui/hud/hud_publish.mjs');
 const render = await import('../../ui/ui_render.mjs');
 globalThis.__ED = await import('../../ui/ui_editops.mjs');
 globalThis.__kc = (await import('../../ui/ui_movy.mjs')).kitCellsForTest;
@@ -729,9 +731,27 @@ step('⭐⭐ SAMPLE: the sample\'s name up top; Start / End light while touched 
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; kindSync(); ticks(20);
 });
 
-step('⭐⭐ WAVE K4 Gain · K5 Pitch · K6 Detune (the clip\'s), read out in the middle; the waveform follows the gain (Josh)', () => {
+step('⭐⭐ WAVE K4 Gain · K5 Pitch · K6 Detune (the clip\'s), read out in the middle; the waveform follows the gain (Josh) — and the Screen view gets the waveform', () => {
     GET['t4_au_info_0'] = INFO(1, 8, 0); kindSync(); ticks(2);
     mapPad(2, 3); ticks(2);
+    /* ⭐ the Screen view (a browser watching): WAVE publishes its screen with
+     * the waveform — amplitude columns, region, knobs; nobody watching, nothing */
+    {
+        let last = null;
+        globalThis.host_ui_publish = (j) => { if (j) last = j; return true; };
+        HP.hudTick(8e15);       /* the viewer probe, now (past the real clock) */
+        shown();
+        assert(last, 'Screen view: nothing was published with a viewer connected');
+        const d = JSON.parse(last);
+        assert(d.where.screen === 'audio-wave-editor', 'Screen view: screen id ' + d.where.screen);
+        assert(d.body && d.body.wave && Array.isArray(d.body.wave.amp) && d.body.wave.amp.length >= 100,
+               'Screen view: no waveform: ' + JSON.stringify(d.body && d.body.wave).slice(0, 200));
+        assert(d.body.wave.region && d.body.wave.region.length === 2, 'Screen view: no region');
+        if (process.env.HUD_DUMP) require('fs').writeFileSync(process.env.HUD_DUMP, last);
+        globalThis.host_ui_publish = (j) => { if (j) throw new Error('published with nobody watching'); return false; };
+        HP.hudTick(9e15); shown();
+        globalThis.host_ui_publish = () => false;
+    }
     const waveInk = () => { const f = shown(); let n = 0; for (let y = 20; y < 50; y++) for (let x = 0; x < 128; x++) n += f[y * 128 + x]; return n; };
     const quiet = waveInk();
     reset();

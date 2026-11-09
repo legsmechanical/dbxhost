@@ -33,6 +33,7 @@ let missingAnswer = '';
  * word is not an allowed verb is REFUSED with -1. "From Template" led with its
  * variables and was refused on the device while this stub ran it. */
 const ALLOWED = ['tar ', 'cp ', 'mv ', 'mkdir ', 'rm ', 'ls ', 'test ', 'chmod ', 'sh '];
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_system_cmd = (c) => {
     c = String(c);
     if (!ALLOWED.some(v => c.startsWith(v))) { LOG.push('REFUSED ' + c); return -1; }

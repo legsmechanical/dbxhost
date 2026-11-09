@@ -25,6 +25,7 @@ function bad(label, e) { console.error(`  FAIL — ${label}: ${e && e.stack ? e.
 
 const reads = [];          /* every param round-trip, in order */
 globalThis.host_system_cmd = () => 0;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = () => '';
 globalThis.host_file_exists = () => false;
 globalThis.host_write_file = () => true;

@@ -29,6 +29,7 @@ const GET = { 't4_au_dir': '/data/UserData/UserLibrary/Sets/x/dAVEBOx/samples',
               't4_au_peaks_0': PEAKS, 't4_au_peaks_16': PEAKS, 't4_au_marks_16': '0 96000', 't4_au_all_16': '0 x 0 0 0 0', 't4_au_pos': '1 24000 2', 't4_au_lazy': '0 0 0',
               't4_au_marks_0': '0 96000', 't4_au_all_0': '0 x 0 0 0 0', 'pa_list': '' };
 globalThis.host_preview_play = () => {}; globalThis.host_preview_stop = () => {};
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_system_cmd = () => 0;
 globalThis.host_read_file = () => '';
 globalThis.host_file_exists = () => false;

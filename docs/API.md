@@ -9,9 +9,9 @@ This document describes the JavaScript API this host gives Schwung modules.
 >
 > **`[FORK-ONLY]`** marks a binding that exists **only in this fork** and is
 > used only by dAVEBOx's own UI. **Do not call one from a module.** There are
-> six: `host_vol_block`, `host_edit_cc_block` (a JS global in `shadow_ui.js`
+> seven: `host_vol_block`, `host_edit_cc_block` (a JS global in `shadow_ui.js`
 > since the #425 claims bitmap, not a C binding), `host_canvas_input`,
-> `host_state_subdir`, `host_power_claim`, and the host's own
+> `host_state_subdir`, `host_power_claim`, `host_ui_publish`, and the host's own
 > `shadow_get_power_button`. (`host_build_info` was deleted in P3 of the
 > re-architecture — one repo ships host and module together, so there is no
 > version skew left to report.) Derive that list from the `JS_SetPropertyStr`
@@ -337,6 +337,11 @@ host_power_claim(bool)        // [FORK-ONLY] The overtake module answers the POW
                               // drops it when the module stops owning the screen.
                               // While claimed, each battery report also reaches
                               // globalThis.onPowerReport(flags, percent) if exported.
+host_ui_publish(json|null)    // [FORK-ONLY] Publish a JSON description of what the
+                              // module's UI shows, for remote viewers (ui_publish_shm.h;
+                              // display_server streams it as `event: ui` on
+                              // /stream-auto?v=2). null publishes nothing. -> true while a
+                              // viewer is connected, so the module can skip the work.
 host_vol_block(bool)          // [FORK-ONLY] Claim the master volume knob: suppress
                               // CC 79 + its touch note (8) from reaching Move, so a
                               // tool can repurpose the knob without Move also moving

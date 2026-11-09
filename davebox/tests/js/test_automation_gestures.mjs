@@ -11,6 +11,7 @@ function dec(blob) {
 let list = '';
 let listReads = 0;
 globalThis.host_module_get_param = (k) => { if (k === 'pa_list') { listReads++; return list; } return '0'; };
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_module_get_params = (blob) => enc(dec(blob).map(() => ''));
 globalThis.host_module_set_params = (blob) => { const it = dec(blob); for (let i = 0; i + 1 < it.length; i += 2) sets.push(it[i] + '=' + it[i + 1]); return true; };
 globalThis.shadow_get_param = () => '';

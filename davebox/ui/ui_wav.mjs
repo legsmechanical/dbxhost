@@ -24,7 +24,7 @@
  * `fill_rect`, `text_width`), implemented in C and installed on globalThis —
  * they are not importable, and ui_movy says so at the top of its own file. */
 import {
-    drawKitSampleSpan, drawKitHeaderParamPages, drawKitHintRow, MV_FOOTER_Y,
+    drawKitSampleSpan, drawKitHeaderParamPages, drawKitHintRow, MV_FOOTER_Y, kitHudTap,
 } from './ui_movy.mjs';
 import {
     isWavPosition, wavPositionMeta, wavPositionText, wavPositionRatio, wavRatioKnown,
@@ -446,6 +446,10 @@ export function renderWavEdit() {
         /* ⚠ Inside the plot, not under it: PLOT_Y + PLOT_H is already at the
      * footer band, and this used to print straight over the hints. */
     if (!known) centre('no duration', PLOT_Y + PLOT_H - 9);
+    kitHudTap('Wave', { amp: cols.map((v) => v == null ? -1 : Math.round(Math.min(1, v) * 1000) / 1000), region: [0, 1],
+                        marks: marks.filter((m) => !m.active).map((m) => m.pos),
+                        cursor: (marks.find((m) => m.active) || {}).pos,
+                        labels: W.members.map((m, i) => ({ pos: marks[i] ? marks[i].pos : 0, text: labelOf(m), active: !!(marks[i] && marks[i].active) })) });
 
     footer();
     lastFrame = { path, reason: null, markers: marks, zoom, window: win };
@@ -453,6 +457,7 @@ export function renderWavEdit() {
 }
 
 function centre(text, y) {
+    kitHudTap('PromptLines', { lines: [text] });
     const t = String(text);
     print(Math.max(0, Math.floor((128 - text_width(t)) / 2)), y, t, 1);
 }

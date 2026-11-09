@@ -20,6 +20,7 @@ function dec(blob) {
 }
 let staged = '';
 let presenceReads = 0;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_module_get_params = (blob) => enc(dec(blob).map(k => {
     if (k === 'pa_pending') { const r = staged; staged = ''; return r; }
     return '0';

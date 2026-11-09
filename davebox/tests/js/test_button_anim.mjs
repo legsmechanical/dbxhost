@@ -19,6 +19,7 @@ for (const fn of ['set_pixel', 'fill_rect', 'draw_rect', 'stipple_rect', 'clear_
     globalThis[fn] = () => {};
 globalThis.text_width = (t) => Math.max(0, String(t).length * 6 - 1);
 let swallowed = null;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_write_file = (path, body) => {
     if (String(path).indexOf('jserr') >= 0 && swallowed === null) swallowed = String(body).slice(0, 600);
     return true;

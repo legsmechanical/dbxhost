@@ -12,7 +12,7 @@ import { engineLoadedModule, slotIndex } from './ui_engine.mjs';
  * The header and the button family stay: those are the dialog chassis, which
  * is still the right home for a confirm. */
 import {
-    drawDialogButton, drawDialogYesNoRow, drawDialogOkButton, drawDialogButtonRow
+    drawDialogButton, drawDialogYesNoRow, drawDialogOkButton, drawDialogButtonRow as drawDialogButtonRowRaw
 } from '/data/UserData/schwung/shared/menu_layout.mjs';
 import { formatItemValue, isDivider } from '/data/UserData/schwung/shared/menu_items.mjs';
 /* The KIT chassis. ui_movy is pure — no imports, no state — so pulling it in
@@ -20,7 +20,7 @@ import { formatItemValue, isDivider } from '/data/UserData/schwung/shared/menu_i
  * renders on the kit; the host chassis is for dialogs. */
 import { drawKitHeader, drawKitList, fitHdr, hdrWidth, hdrPrint,
          MV_BRAND_HDR_H, drawKitStackedList, drawKitBackdropDim, drawKitCrumbs,
-         drawKitBigValue, drawKitHintRow, drawKitMarkHeader, MV_FOOTER_Y } from './ui_movy.mjs';
+         drawKitBigValue, drawKitHintRow, drawKitMarkHeader, MV_FOOTER_Y, kitHudTap } from './ui_movy.mjs';
 import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import { drawHeaderBattery, headerBatteryWidth } from './ui_battery.mjs';
 import {
@@ -30,8 +30,9 @@ import {
 } from './ui_persistence.mjs';
 import { invalidateLEDCache, clearAllLEDs } from './ui_leds.mjs';
 import { dealDave } from './ui_daves.mjs';
+import { hudScreen } from './hud/hud_frame.mjs';
 import {
-    openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
+    openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry, getTextEntryView,
     closeTextEntry,
 } from '/data/UserData/schwung/shared/text_entry.mjs';
 import {
@@ -73,6 +74,7 @@ const drawDlgBtn = drawDialogButton;
  * header and whatever the caller puts at `bottom` (its first button row). */
 function dlgHeader(title) { drawKitMarkHeader(title); }
 function dlgLines(lines, bottom) {
+    kitHudTap('PromptLines', { lines });
     /* WRAP BY MEASURED WIDTH, never by a guessed line break: the 4x5 face is
      * proportional, and a hand-broken line that fits one string overflows the
      * next one the same code draws (CHANGE TO DRUMS? lost "...ED." that way). */
@@ -97,6 +99,7 @@ function dlgLines(lines, bottom) {
 }
 
 function drawYesNoRow(sel, labels) {
+    kitHudTap('Buttons', { labels: labels ? [labels[0], labels[1]] : ['No', 'Yes'], sel: sel === 0 ? 1 : 0 });
     /* labels of their own (Overwrite / New): buttons sized to them — the fixed
      * 46px box clipped "Overwrite" at both ends (found on the device) */
     if (labels) drawDialogButtonRow(46, 13, [{ label: labels[0], sel: sel === 1 }, { label: labels[1], sel: sel === 0 }]);
@@ -105,7 +108,14 @@ function drawYesNoRow(sel, labels) {
 
 /* Single filled OK button (info dialogs), centered horizontally at a caller-set
  * baseline y. Consistent 30×12 geometry everywhere. */
-const drawOkButton = drawDialogOkButton;
+function drawOkButton(...a) { kitHudTap('Buttons', { labels: ['OK'], sel: 0 }); return drawDialogOkButton(...a); }
+/* Any row of labelled buttons: reported to the Screen view's recorder as it is
+ * drawn (Rec unavailable's OK / Bake Now, Clear macros' OK / Cancel… were
+ * drawn straight to the OLED and arrived on the big screen without them). */
+function drawDialogButtonRow(y, h, buttons, opts) {
+    kitHudTap('Buttons', { labels: buttons.map((b) => String(b.label)), sel: buttons.findIndex((b) => b.sel) });
+    return drawDialogButtonRowRaw(y, h, buttons, opts);
+}
 
 /* Clamp a variable-length label to fit one OLED line at the 6px print font. */
 function truncLabel(label, maxChars) {
@@ -1044,7 +1054,7 @@ export function templateTextEntryUp() {
  * snapshot picker is: template names come from the user. */
 export function drawTemplateManager() {
     clear_screen();
-    if (templateTextEntryUp()) { drawTextEntry(); return; }
+    if (templateTextEntryUp()) { hudScreen('text-entry'); kitHudTap('Keyboard', getTextEntryView()); drawTextEntry(); return; }
     const m = S.templateManager;
     if (!m) return;
     const t = _tmCurrent();
@@ -2118,6 +2128,7 @@ function _drawProjectPickerHeader() {
      * font (Josh, 2026-09-15: "project picker header shouldn't use the mixed
      * font. use all caps."). Same bar, same y, still centred. */
     const t = 'SELECT PROJECT';
+    kitHudTap('KitHeader', { text: t });
     fill_rect(0, 0, 128, MV_BRAND_HDR_H, 1);
     fontPrint4x5(Math.max(2, Math.round((128 - fontWidth4x5(t)) / 2)), 1, t, 0);
 }
@@ -2130,7 +2141,7 @@ function _drawProjectPadPicker_impl() {
     if (!p) { clear_screen(); return; }
 
     /* Rename keyboard is fully modal and draws itself. */
-    if (p.renameActive && isTextEntryActive()) { drawTextEntry(); return; }
+    if (p.renameActive && isTextEntryActive()) { hudScreen('text-entry'); kitHudTap('Keyboard', getTextEntryView()); drawTextEntry(); return; }
 
     /* ⭑⭑ RE-DERIVE the resting state here, in ONE place, rather than bookkeeping
      * it at every mutator — the same rule the edit-CC claim follows, and for the

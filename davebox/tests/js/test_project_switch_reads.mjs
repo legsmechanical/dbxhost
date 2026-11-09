@@ -34,6 +34,7 @@ for (const fn of ['host_system_cmd', 'host_ensure_dir', 'host_remove_dir', 'host
     'host_ext_midi_remap_enable', 'host_send_midi', 'pixel_print', 'move_midi_external_send'])
     globalThis[fn] = () => 0;
 globalThis.host_read_file = () => '';
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_file_exists = () => false;
 globalThis.shadow_get_param = () => '';
 globalThis.shadow_get_ui_flags = () => 0;

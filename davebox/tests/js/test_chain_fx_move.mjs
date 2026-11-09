@@ -19,6 +19,7 @@ let paList = '0 0 1 2 3:fx1:cutoff 0 0 100\n0 1 1 1 3:fx3:mix 0 0 100\n0 0 1 1 5
 globalThis.shadow_set_param = (slot, key, val) => { slotSets.push(slot + ' ' + key + '=' + val); return hostAccepts ? 1 : 0; };
 globalThis.shadow_get_param = () => '';
 globalThis.host_module_get_param = (k) => (k === 'pa_list' ? paList : '');
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_module_set_param = () => {};
 globalThis.host_module_set_params = (pairs) => { bulk.push(String(pairs)); return true; };
 globalThis.host_module_get_params = () => '';

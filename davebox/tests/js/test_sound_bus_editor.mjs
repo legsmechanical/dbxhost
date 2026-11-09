@@ -112,6 +112,7 @@ globalThis.text_width = (t) => String(t).length * 6;
  * exactly like a clean pass. Fail the run instead. */
 let swallowed = null;
 const filesWritten = [];
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_write_file = (path, body) => {
     if (String(path).indexOf('jserr') >= 0 && swallowed === null) swallowed = String(body).slice(0, 900);
     else filesWritten.push(String(path));

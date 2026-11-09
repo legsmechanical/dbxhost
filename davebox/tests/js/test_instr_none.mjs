@@ -34,6 +34,7 @@ globalThis.shadow_set_param = (slot, k, v) => {
 const writes = [];
 let ctxTag = 'init';
 globalThis.host_module_set_param = (k, v) => { writes.push([ctxTag, String(k), String(v)]); };
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_module_set_params = (blob) => {
     const str = String(blob); let p = 0;
     const nl0 = str.indexOf('\n'); const count = parseInt(str.slice(0, nl0), 10); p = nl0 + 1;

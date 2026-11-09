@@ -21,6 +21,7 @@ function bad(label, e) { console.error(`  FAIL — ${label}: ${e && e.stack ? e.
 /* Host globals must exist before any ui module body runs (same contract as
  * test_picker_boot.mjs). */
 globalThis.host_system_cmd = () => 0;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = () => '';
 globalThis.host_file_exists = () => false;
 globalThis.host_write_file = () => true;

@@ -23,6 +23,7 @@ let projectsOnDisk = { projects: [
     { uuid: 'b', name: 'B', index: 1, color: 0 },
 ] };
 
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_system_cmd = (c) => {
     cmds.push(c);
     /* Model the create actually happening, so the "then load" half is reachable.

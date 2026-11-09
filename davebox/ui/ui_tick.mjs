@@ -61,6 +61,7 @@ import { pollPendingExport } from './ui_export.mjs';
 import { pollPendingMidiExport } from './ui_midi_export.mjs';
 import { runTemplateSet } from './ui_template.mjs';
 import { drawUI, drawLoadingScreen, sessMixerVisible, refreshInstrAbbrev } from './ui_render.mjs';
+import { hudTick } from './hud/hud_publish.mjs';
 import { pollDSP,
     refreshPerClipBankParams, refreshPerClipBankParamsFor, refreshDrumLaneBankParams, refreshSeqNotesIfCurrent,
     syncClipsFromDsp, syncClipsTargeted, syncMuteSoloFromDsp, restoreUiSidecar,
@@ -537,6 +538,10 @@ export function _tickImpl() {
     {   /* THE CLOCK: one reading per tick; every UI duration is ms off it. */
         const _prevMs = S.clockMs;
         S.clockMs = nowMs();
+        /* The Screen view: learn whether a browser watches (one host call a
+         * second when nobody does); while one does, drawUI records and publishes.
+         * Here, before any stage can return early. */
+        hudTick(S.clockMs);
         const _dtMs = _prevMs > 0 ? Math.max(0, S.clockMs - _prevMs) : 0;
         if (S.bootSplashMs > 0) S.bootSplashMs = Math.max(0, S.bootSplashMs - _dtMs);
         /* PROBE (2026-09-25, Josh: the blinking automation steps "seem to hang

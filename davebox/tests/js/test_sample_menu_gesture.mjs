@@ -31,6 +31,7 @@ const GET = { resample_bars_0: '3', resample_bars_5: '0', resample_err: '0',
               resample_bars_t2_c0: '2', resample_bars_t2_c1: '0', resample_bars_t4_c0: '1' };
 let SAMPLING = false;
 globalThis.host_system_cmd = () => 0; globalThis.host_read_file = () => '';
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_file_exists = () => false;
 globalThis.host_ensure_dir = () => true; globalThis.host_remove_dir = () => true;
 let swallowed = null;

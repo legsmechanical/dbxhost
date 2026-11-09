@@ -31,6 +31,7 @@ for (const fn of ['host_system_cmd', 'host_ensure_dir', 'host_remove_dir', 'shad
     globalThis[fn] = () => 0;
 globalThis.text_width = (t) => String(t).length * 6;
 globalThis.host_read_file = () => '';
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_file_exists = () => false;
 globalThis.host_write_file = () => true;
 globalThis.shadow_get_param = () => '';

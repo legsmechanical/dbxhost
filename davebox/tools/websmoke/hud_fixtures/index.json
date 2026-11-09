@@ -1,0 +1,627 @@
+[
+ {
+  "slug": "projects-other",
+  "title": "Project picker — another project",
+  "screen": "project-pad-picker"
+ },
+ {
+  "slug": "projects-loading",
+  "title": "Loading a project",
+  "screen": "loading.switch"
+ },
+ {
+  "slug": "loading-sequencer",
+  "title": "Starting the sequencer",
+  "screen": "loading.start"
+ },
+ {
+  "slug": "track-melodic-playing",
+  "title": "Track View — melodic track playing",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "bank-overview-walk",
+  "title": "The bank pad map",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "bank-overview-drum",
+  "title": "The bank pad map on a drum track",
+  "screen": "track.drum-overview"
+ },
+ {
+  "slug": "bank-knob-touched",
+  "title": "Touching a knob",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "bank-value-popup",
+  "title": "Turning a list parameter",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "session-mixer-pan",
+  "title": "Session mixer — Pan",
+  "screen": "session.overview"
+ },
+ {
+  "slug": "session-mixer-senda",
+  "title": "Session mixer — Send A",
+  "screen": "session.overview"
+ },
+ {
+  "slug": "menu-project-settings",
+  "title": "Project Settings",
+  "screen": "global-menu"
+ },
+ {
+  "slug": "quit-confirm",
+  "title": "Quit",
+  "screen": "exit-confirm"
+ },
+ {
+  "slug": "suspend-confirm",
+  "title": "Suspend session",
+  "screen": "exit-confirm"
+ },
+ {
+  "slug": "exiting",
+  "title": "Exiting",
+  "screen": "exit-farewell"
+ },
+ {
+  "slug": "convert-drums",
+  "title": "Changing Keys to Drums",
+  "screen": "convert-to-drum-confirm"
+ },
+ {
+  "slug": "track-empty-clip",
+  "title": "Track View — an empty clip",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "track-melodic-chord-held",
+  "title": "Track View — naming a held chord",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "bank-chord",
+  "title": "Pad Mode bank — the Chord layout",
+  "screen": "track.padmode"
+ },
+ {
+  "slug": "bank-chord-slot",
+  "title": "Pad Mode bank — editing a chord",
+  "screen": "track.chord-slot"
+ },
+ {
+  "slug": "step-editor-chord",
+  "title": "A held step holding a chord",
+  "screen": "track.held-step"
+ },
+ {
+  "slug": "bank-step-idle",
+  "title": "STEP bank — no step held",
+  "screen": "track.step"
+ },
+ {
+  "slug": "step-editor-melodic",
+  "title": "Editing a held note",
+  "screen": "track.held-step"
+ },
+ {
+  "slug": "step-editor-reveal",
+  "title": "Revealing the held step from another bank",
+  "screen": "track.held-step"
+ },
+ {
+  "slug": "track-recording",
+  "title": "Recording",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "record-blocked",
+  "title": "Recording needs Forward",
+  "screen": "record-blocked-dialog"
+ },
+ {
+  "slug": "capture-nothing",
+  "title": "Capture with nothing buffered",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "capture-tempo",
+  "title": "Capture — the tempo chooser",
+  "screen": "tempo-select"
+ },
+ {
+  "slug": "capture-length",
+  "title": "Capture — fitting the take to bars",
+  "screen": "tempo-select"
+ },
+ {
+  "slug": "capture-place",
+  "title": "Capture — choosing where the take goes",
+  "screen": "prompt.capture-place"
+ },
+ {
+  "slug": "loop-view",
+  "title": "Loop view",
+  "screen": "track.loop-length"
+ },
+ {
+  "slug": "notice-undo",
+  "title": "Undo feedback",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "track-drum",
+  "title": "Track View — drum track",
+  "screen": "track.drum-overview"
+ },
+ {
+  "slug": "step-editor-drum",
+  "title": "Editing a held drum hit",
+  "screen": "track.held-step"
+ },
+ {
+  "slug": "note-repeat-modes",
+  "title": "Choosing the right-pad mode",
+  "screen": "track.drum-overview"
+ },
+ {
+  "slug": "drum-lane-muted",
+  "title": "A muted drum lane",
+  "screen": "track.drum-overview"
+ },
+ {
+  "slug": "macros-clear-confirm",
+  "title": "Clearing all macros",
+  "screen": "macro-clear-confirm"
+ },
+ {
+  "slug": "bank-clip",
+  "title": "CLIP bank",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "bank-clip-alt",
+  "title": "CLIP bank — alternate parameters",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "bank-drumlane",
+  "title": "DRUM LANE bank",
+  "screen": "track.drum-overview"
+ },
+ {
+  "slug": "bank-allanes",
+  "title": "ALL LANES bank",
+  "screen": "track.drum-overview"
+ },
+ {
+  "slug": "bank-notefx",
+  "title": "NOTE FX bank",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "bank-drum-notefx",
+  "title": "NOTE FX on a drum track",
+  "screen": "track.drum-overview"
+ },
+ {
+  "slug": "bank-harmony",
+  "title": "HARMONY bank",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "bank-delay",
+  "title": "DELAY bank",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "bank-drum-delay",
+  "title": "DELAY on a drum track",
+  "screen": "track.drum-overview"
+ },
+ {
+  "slug": "bank-seqarp",
+  "title": "SEQ ARP bank",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "bank-seqarp-steps",
+  "title": "SEQ ARP — per-step pitch editor",
+  "screen": "track.arp-steps"
+ },
+ {
+  "slug": "bank-seqarp-steps-vel",
+  "title": "SEQ ARP — per-step velocity",
+  "screen": "track.arp-steps"
+ },
+ {
+  "slug": "bank-livearp",
+  "title": "LIVE ARP bank",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "bank-repeat-groove",
+  "title": "RPT GROOVE bank",
+  "screen": "track.drum-velocity"
+ },
+ {
+  "slug": "bank-automation",
+  "title": "AUTOMATION bank",
+  "screen": "track.automation"
+ },
+ {
+  "slug": "automation-menu",
+  "title": "AUTOMATION — the menu",
+  "screen": "track.automation"
+ },
+ {
+  "slug": "automation-ops",
+  "title": "AUTOMATION — a parameter's operations",
+  "screen": "track.automation"
+ },
+ {
+  "slug": "session-overview",
+  "title": "Session View",
+  "screen": "session.overview"
+ },
+ {
+  "slug": "session-muted",
+  "title": "A muted track",
+  "screen": "session.overview"
+ },
+ {
+  "slug": "session-soloed",
+  "title": "A soloed track",
+  "screen": "session.overview"
+ },
+ {
+  "slug": "mute-snapshot-saved",
+  "title": "Saving a mute snapshot",
+  "screen": "session.overview"
+ },
+ {
+  "slug": "session-mixer-volume",
+  "title": "Session mixer — Volume",
+  "screen": "session.overview"
+ },
+ {
+  "slug": "session-mixer-touched",
+  "title": "Session mixer — turning a fader",
+  "screen": "session.overview"
+ },
+ {
+  "slug": "session-mixer-touch-only",
+  "title": "Session mixer — touching a fader",
+  "screen": "session.overview"
+ },
+ {
+  "slug": "track-volume-card",
+  "title": "Shift + Volume",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "track-conductor",
+  "title": "Track View — the Conductor",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "conductor-exists",
+  "title": "Only one Conductor",
+  "screen": "menu-info"
+ },
+ {
+  "slug": "bank-cond-conduct",
+  "title": "CLIP bank",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "bank-cond-notefx",
+  "title": "NOTE FX bank",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "bank-cond-responder",
+  "title": "ON/OFF bank",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "bank-cond-octave",
+  "title": "OCTAVE bank",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "bank-cond-when",
+  "title": "TIMING bank",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "perf-mode",
+  "title": "Performance Mode",
+  "screen": "perf-mode-oled"
+ },
+ {
+  "slug": "perf-mode-mods",
+  "title": "Performance Mode — mods engaged",
+  "screen": "perf-mode-oled"
+ },
+ {
+  "slug": "perf-mode-preset",
+  "title": "Performance Mode — a preset recalled",
+  "screen": "perf-mode-oled"
+ },
+ {
+  "slug": "config-card",
+  "title": "The CONFIG bank",
+  "screen": "sound.config-card"
+ },
+ {
+  "slug": "sound-card",
+  "title": "The MIX card",
+  "screen": "sound.prompt"
+ },
+ {
+  "slug": "midi-track-card",
+  "title": "MIX on a MIDI track",
+  "screen": "sound.prompt"
+ },
+ {
+  "slug": "track-config",
+  "title": "TRACK CONFIG — a Schwung track",
+  "screen": "sound.blocks"
+ },
+ {
+  "slug": "track-config-levels",
+  "title": "TRACK CONFIG — levels and presets",
+  "screen": "sound.blocks"
+ },
+ {
+  "slug": "track-config-move",
+  "title": "TRACK CONFIG — a Move track",
+  "screen": "sound.blocks"
+ },
+ {
+  "slug": "fx-browser",
+  "title": "Adding an effect",
+  "screen": "sound.browse"
+ },
+ {
+  "slug": "instrument-picker",
+  "title": "The Instmt/Dest picker",
+  "screen": "sound.enum-pick"
+ },
+ {
+  "slug": "block-editor",
+  "title": "Editing an instrument",
+  "screen": "sound.params"
+ },
+ {
+  "slug": "block-editor-playing",
+  "title": "The page bar in an editor",
+  "screen": "sound.params"
+ },
+ {
+  "slug": "macros-card",
+  "title": "The MACROS bank",
+  "screen": "sound.macros"
+ },
+ {
+  "slug": "macros-targets",
+  "title": "MACROS — choosing a target",
+  "screen": "sound.knob-target"
+ },
+ {
+  "slug": "macros-multi",
+  "title": "One knob, several targets",
+  "screen": "sound.knob-legs"
+ },
+ {
+  "slug": "snapmorph-slots",
+  "title": "SnapMorph — choosing snapshots",
+  "screen": "sound.knob-param"
+ },
+ {
+  "slug": "snapshot-layer-track",
+  "title": "The track snapshot layer",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "snapshot-layer-session",
+  "title": "The device snapshot layer",
+  "screen": "session.overview"
+ },
+ {
+  "slug": "session-bank-map",
+  "title": "The Session map",
+  "screen": "session.overview"
+ },
+ {
+  "slug": "fx-buses",
+  "title": "MASTER FX",
+  "screen": "sound.blocks"
+ },
+ {
+  "slug": "menu-clock",
+  "title": "Project Settings — Clock Follow and Clock Out",
+  "screen": "global-menu"
+ },
+ {
+  "slug": "sample-menu-session",
+  "title": "The Sample menu — Session View",
+  "screen": "sample-menu"
+ },
+ {
+  "slug": "sample-menu-track",
+  "title": "The Sample menu — Track View",
+  "screen": "sample-menu"
+ },
+ {
+  "slug": "bake-clip",
+  "title": "Bake a clip",
+  "screen": "bake-confirm"
+ },
+ {
+  "slug": "bake-drum",
+  "title": "Bake a drum clip",
+  "screen": "bake-confirm"
+ },
+ {
+  "slug": "bake-scene-pick",
+  "title": "Bake a scene — pick the row",
+  "screen": "prompt.scene-pick"
+ },
+ {
+  "slug": "bake-scene-confirm",
+  "title": "Bake a scene — loops",
+  "screen": "bake-scene-confirm"
+ },
+ {
+  "slug": "merge-notice-session",
+  "title": "Live Merge — armed from Session View",
+  "screen": "prompt.merge-notice"
+ },
+ {
+  "slug": "merge-notice-track",
+  "title": "Live Merge — armed from Track View",
+  "screen": "prompt.merge-notice"
+ },
+ {
+  "slug": "merge-place-scene",
+  "title": "Live Merge — placing the take",
+  "screen": "prompt.merge-placement"
+ },
+ {
+  "slug": "merge-place-track",
+  "title": "Live Merge — keeping a single-track take",
+  "screen": "prompt.merge-solo"
+ },
+ {
+  "slug": "export-confirm",
+  "title": "Export to Ableton",
+  "screen": "global-menu"
+ },
+ {
+  "slug": "export-conductor",
+  "title": "Export — Apply Conductor?",
+  "screen": "global-menu"
+ },
+ {
+  "slug": "import-files",
+  "title": "Import MIDI — the list",
+  "screen": "midi-import"
+ },
+ {
+  "slug": "import-parts",
+  "title": "Import MIDI — a file with several parts",
+  "screen": "midi-import"
+ },
+ {
+  "slug": "import-options",
+  "title": "Import MIDI — the knobs",
+  "screen": "midi-import"
+ },
+ {
+  "slug": "import-options-cut",
+  "title": "Import MIDI — notes that will be cut",
+  "screen": "midi-import"
+ },
+ {
+  "slug": "import-replace",
+  "title": "Import MIDI — replacing a clip",
+  "screen": "midi-import"
+ },
+ {
+  "slug": "import-confirm",
+  "title": "Import MIDI — loading asks first",
+  "screen": "midi-import"
+ },
+ {
+  "slug": "resample-clip-options",
+  "title": "Resample a clip",
+  "screen": "resample-options"
+ },
+ {
+  "slug": "resample-options",
+  "title": "Resample a scene",
+  "screen": "resample-options"
+ },
+ {
+  "slug": "menu-foot",
+  "title": "Project Settings — the foot of the list",
+  "screen": "global-menu"
+ },
+ {
+  "slug": "tap-tempo",
+  "title": "Tap Tempo",
+  "screen": "global-menu"
+ },
+ {
+  "slug": "clear-session-confirm",
+  "title": "Clear Session",
+  "screen": "global-menu"
+ },
+ {
+  "slug": "menu-key-scale",
+  "title": "Project Settings — Key and Scale",
+  "screen": "global-menu"
+ },
+ {
+  "slug": "menu-scale-picker",
+  "title": "Choosing a scale",
+  "screen": "global-menu"
+ },
+ {
+  "slug": "xpose-confirm",
+  "title": "Transpose clips?",
+  "screen": "xpose-confirm"
+ },
+ {
+  "slug": "save-state-confirm",
+  "title": "Save state",
+  "screen": "global-menu"
+ },
+ {
+  "slug": "snapshot-picker",
+  "title": "Load state",
+  "screen": "snapshot-picker"
+ },
+ {
+  "slug": "track-config-foot",
+  "title": "TRACK CONFIG — the track's own settings",
+  "screen": "sound.blocks"
+ },
+ {
+  "slug": "projects-current",
+  "title": "Project picker — the open project",
+  "screen": "project-pad-picker"
+ },
+ {
+  "slug": "projects-color",
+  "title": "Project picker — Color",
+  "screen": "project-pad-picker"
+ },
+ {
+  "slug": "projects-new",
+  "title": "Project picker — a new project",
+  "screen": "project-pad-picker"
+ },
+ {
+  "slug": "projects-delete",
+  "title": "Project picker — delete",
+  "screen": "project-pad-picker"
+ },
+ {
+  "slug": "projects-copy",
+  "title": "Project picker — copy",
+  "screen": "project-pad-picker"
+ },
+ {
+  "slug": "state-mismatch",
+  "title": "A set from another version",
+  "screen": "state-wipe-confirm"
+ }
+]

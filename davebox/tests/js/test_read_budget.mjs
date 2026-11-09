@@ -136,6 +136,7 @@ globalThis.text_width = (t) => String(t).length * 6;
  * that died on line one reads as a very cheap tick — which would PASS a budget
  * test. A dead tick must fail, not score well. */
 let swallowed = null;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_write_file = (path, body) => {
     if (String(path).indexOf('jserr') >= 0 && swallowed === null) swallowed = String(body).slice(0, 900);
     return true;

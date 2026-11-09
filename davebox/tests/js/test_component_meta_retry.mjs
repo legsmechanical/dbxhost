@@ -22,6 +22,7 @@ function step(label, fn) { try { fn(); ok(label); } catch (e) { bad(label, e); }
 const fb = new Uint8Array(128 * 64);
 const px = (x, y, c) => { if (x >= 0 && x < 128 && y >= 0 && y < 64) fb[y * 128 + x] = c ? 1 : 0; };
 globalThis.host_system_cmd = () => 0; globalThis.host_read_file = () => '';
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_file_exists = () => false; globalThis.host_write_file = () => true;
 globalThis.host_ensure_dir = () => true; globalThis.host_remove_dir = () => true;
 globalThis.host_module_set_param = () => {};

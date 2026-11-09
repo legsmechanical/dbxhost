@@ -636,6 +636,21 @@ export function tickTextEntry() {
 /**
  * Draw the text entry screen (call in your tick/draw function)
  */
+/**
+ * The keyboard as data — for a host that redraws it elsewhere (a remote
+ * screen): the title, the text so far, the current page's characters and the
+ * selected key (indexes past the characters are the special keys, in
+ * `specials` order). null while the keyboard is closed.
+ */
+export function getTextEntryView() {
+    if (!state.active) return null;
+    return {
+        title: state.title || '', buffer: state.buffer || '', page: state.page, pages: PAGES.length,
+        chars: getCurrentPageChars().slice(), selected: state.selectedIndex,
+        specials: ['...', 'Space', 'Delete', 'Clear', 'OK'], preview: !!state.showingPreview,
+    };
+}
+
 export function drawTextEntry() {
     if (!state.active) return;
 

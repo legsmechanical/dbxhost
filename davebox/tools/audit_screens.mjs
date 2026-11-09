@@ -98,6 +98,7 @@ for (const fn of ['host_write_file', 'host_read_file', 'host_file_exists', 'host
 /* Chain-patch store: a couple of entries, so the Slot Presets list renders with
  * content rather than as its empty state. */
 globalThis.host_patch_list = () => ['Fat Brass', 'Glass Pad', 'Sub Bass'];
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_patch_current = () => 'Fat Brass';
 globalThis.host_patch_load = () => 1;
 globalThis.host_patch_save = () => 1;

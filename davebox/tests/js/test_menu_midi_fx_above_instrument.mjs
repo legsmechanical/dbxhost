@@ -17,6 +17,7 @@ function ok(l) { console.log(`  ok   — ${l}`); }
 function bad(l, e) { console.error(`  FAIL — ${l}: ${e && e.stack ? e.stack : e}`); failed = 1; }
 
 globalThis.host_system_cmd = () => 0;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = () => '';
 globalThis.host_file_exists = () => false;
 globalThis.host_write_file = () => true;

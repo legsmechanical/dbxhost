@@ -28,6 +28,7 @@ function assert(cond, label) { if (cond) ok(label); else bad(label, 'assertion f
 const written = Object.create(null);          /* path -> last payload */
 let fsFiles = Object.create(null);            /* path -> contents for reads */
 globalThis.host_system_cmd = () => 0;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = (p) => (p in fsFiles ? fsFiles[p] : '');
 globalThis.host_file_exists = (p) => (p in fsFiles);
 globalThis.host_write_file = (p, c) => { written[p] = c; return true; };

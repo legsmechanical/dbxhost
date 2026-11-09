@@ -84,6 +84,7 @@ globalThis.__pageCalls = [];
 
 /* ---- host surface --------------------------------------------------------- */
 globalThis.host_system_cmd = () => 0;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = (p) => readDev(p);
 globalThis.host_file_exists = (p) => readDev(p) !== null;
 let swallowed = null;

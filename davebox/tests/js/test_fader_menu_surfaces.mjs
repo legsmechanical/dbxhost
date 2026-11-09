@@ -19,6 +19,7 @@ const step = (l, fn) => { try { fn(); ok(l); } catch (e) { bad(l, e); } };
 for (const k of ['host_system_cmd','host_write_file','host_ensure_dir','host_remove_dir'])
     globalThis[k] = () => 0;
 globalThis.host_read_file = () => ''; globalThis.host_file_exists = () => false;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_module_set_param = () => {}; globalThis.host_module_get_param = () => '';
 globalThis.shadow_get_param = () => ''; globalThis.shadow_set_param = () => 1;
 for (const k of ['clear_screen','print','fill_rect','draw_rect','set_pixel','stipple_rect',

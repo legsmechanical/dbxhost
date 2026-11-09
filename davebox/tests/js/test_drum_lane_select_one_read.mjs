@@ -32,6 +32,7 @@ const singles = [];      /* lane keys read one at a time */
 let bulks = 0;
 let counting = false;
 globalThis.host_system_cmd = () => 0; globalThis.host_read_file = () => '';
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_file_exists = () => false; globalThis.host_write_file = () => true;
 globalThis.host_ensure_dir = () => true; globalThis.host_remove_dir = () => true;
 globalThis.host_module_set_param = () => {};

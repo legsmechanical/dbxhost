@@ -26,6 +26,7 @@ const PROJECTS = JSON.stringify({ current: 5, projects: [
 /* Host + draw globals BEFORE the dynamic imports below — module bodies run at
  * import time and the picker calls these from its entry points. */
 globalThis.host_system_cmd = () => 0;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = (p) => (typeof p === 'string' && p.endsWith('projects.json')) ? PROJECTS : '';
 globalThis.host_file_exists = () => false;
 /* ⭑ "Current" means CONFIRMED OPEN since 2026-09-16 — the picker no longer

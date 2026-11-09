@@ -503,7 +503,7 @@ func (app *App) currentToolAppURL() string {
 // session is still coming up, a small waiting page polls /api/tool.
 func (app *App) handleHome(w http.ResponseWriter, r *http.Request) {
 	if url := app.currentToolAppURL(); url != "" {
-		http.Redirect(w, r, url, http.StatusFound)
+		http.Redirect(w, r, carryQuery(url, r.URL.RawQuery), http.StatusFound)
 		return
 	}
 	app.render(w, r, "waiting.html", map[string]any{
@@ -1171,7 +1171,20 @@ const (
 // handleRemoteUI survives as a redirect: the stock tab page it rendered is
 // gone — the integrated app at / is the remote UI now.
 func (app *App) handleRemoteUI(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/", http.StatusMovedPermanently)
+	http.Redirect(w, r, carryQuery("/", r.URL.RawQuery), http.StatusMovedPermanently)
+}
+
+// carryQuery appends the request's own query to a redirect target, so an
+// option given on the short address (?screen=1, the screen alone) reaches the
+// app it lands on.
+func carryQuery(target, rawQuery string) string {
+	if rawQuery == "" {
+		return target
+	}
+	if strings.Contains(target, "?") {
+		return target + "&" + rawQuery
+	}
+	return target + "?" + rawQuery
 }
 
 // handleModuleWebUIAsset serves static files from a module's install directory.

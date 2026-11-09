@@ -42,7 +42,8 @@ import { drawAutoMarkAt,
     pf3Print, pf3Width, drawArcKnobAt, hdrPrint, hdrWidth, bigPrint, bigWidth, bigFit,
     MV_ROW0_Y, MV_KH, MV_BIG_H, MV_ZOOM_X, MV_ZOOM_Y, MV_ZOOM_W, MV_ZOOM_H,
     drawKitHintRow, enumOverlayWouldDraw, MV_FOOTER_Y, MV_BAR_Y,
-    drawKitBigValue, drawKitPrompt, drawKitChip, kitChipWidth, drawBrackets, kitLaneFocusRowReset, drawKitList
+    drawKitBigValue, drawKitPrompt, drawKitChip, kitChipWidth, drawBrackets, kitLaneFocusRowReset, drawKitList,
+    kitHudTap,
 } from './ui_movy.mjs';
 import {
     drawGlobalMenu, drawStateWipeConfirm, drawExitConfirm, drawTypeChangeConfirm, drawModuleSwapConfirm, drawRecordBlockedDialog, drawBpmMoveInfo,
@@ -78,6 +79,9 @@ import { isSampledTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveC
 import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
 import { drawAudioAsk } from './ui_dialogs.mjs';
 import { drawAudioChooser } from './ui_audio_chooser.mjs';
+import { hudScreen, hudLayer, hudFrameOpen, hudFrameScreen, hudBodyToKnobs, hudKnobsToBody, hudFrameKnobs } from './hud/hud_frame.mjs';
+import { describeLayer } from './hud/contrib/layer.mjs';
+import { hudFrameStart, hudFrameFinish } from './hud/hud_publish.mjs';
 
 /* ---- AUDIO: the waveform (ui_audio) ----
  * The clip's sample in a rect: its body, every slice start a dotted tick,
@@ -126,6 +130,8 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
         cols = wIn > 0 ? auWaveColumns(t, c, wIn, A, Math.min(B, fr)) : [];
     }
     if (cols) wIn = Math.min(w, cols.length);
+    /* the Screen view's copy never breaks the OLED's drawing */
+    if (hudFrameOpen()) { try { kitHudTap('Wave', hudWaveOf(t, c, i, A, B, by, cols, o)); } catch (e) { /* skip this frame's wave */ } }
     const mid = y + Math.floor(h / 2);
     const fx = (f) => x + Math.floor((f - A) / (B - A) * w);
     const inView = (px) => px >= x && px < x + w;
@@ -220,6 +226,27 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
 
 /* Track View at rest on an Audio track: the clip's sample — its waveform,
  * slice marks and playhead (v1 default, Josh 2026-10-27). */
+/* The waveform as the Screen view needs it: the amplitude columns (at 480
+ * when the file is not rotated, the OLED's own otherwise), and every mark as a
+ * fraction of the view — region, chops, the selected chop, trim handles.
+ * Built only while a frame is being recorded (it costs a peaks walk). */
+function hudWaveOf(t, c, i, A, B, by, cols, o) {
+    const fr = i.nframes | 0, span = Math.max(1, B - A), at = (f) => Math.round((f - A) / span * 10000) / 10000;
+    let amp = cols;
+    if (fr && !(by > 0) && B <= fr) { const hi = auWaveColumns(t, c, 480, A, B); if (hi) amp = hi; }
+    const rs = o.trim ? o.trim[0] : i.rstart, re = o.trim ? o.trim[1] : auEnd(i);
+    const out = {
+        amp: amp ? amp.map((v) => v == null ? -1 : Math.round(Math.min(1, v * (o.gain ? Math.pow(10, o.gain / 20) : 1)) * 1000) / 1000) : null,
+        region: [at(rs), at(re)],
+        msg: amp ? undefined : (i.state === 1 ? 'Loading' : i.name ? '' : 'No sample'),
+    };
+    if (!o.noMarks) {
+        out.marks = auMarks(t, c).map((m) => at(m[0]));
+        if (o.sel != null && o.sel >= 0) { const m = auMarks(t, c)[o.sel]; if (m) out.sel = [at(m[0]), at(m[1])]; }
+    }
+    if (o.trim) out.trim = [at(o.trim[0]), at(o.trim[1])];
+    return out;
+}
 function drawAudioTrackRest(t) {
     const c = auClipOf(t), i = auInfo(t, c);
     (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankHeaderName(t, S.activeBank), false, true);
@@ -228,6 +255,7 @@ function drawAudioTrackRest(t) {
     const head = auIsSlice(i) ? 'Slice ' + (auSelSlice(t) + 1) + '/' + i.n + '  '
         : 'Loop ' + (bpm ? (Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) + '  ' : ' ');
     ovwPrint(4, 9, head + auSampleName(t, c), 1);
+    kitHudTap('Info', { left: head.trim() + ' · ' + auSampleName(t, c) });
     drawInfoRow2();
     drawOverviewTracks(overviewHints());
     /* the sample where a drum track has its position bar, under the tracks
@@ -278,10 +306,11 @@ function drawAudioWaveEditor() {
     auWaveView(ed);
     const sel = auSelSlice(t);
     const rt = i.rate;
-    const right = (txt) => ovwPrint(124 - ovwWidth(txt), 10, txt, 1);
+    const right = (txt) => { kitHudTap('Readout', { text: txt, pos: 'right' }); ovwPrint(124 - ovwWidth(txt), 10, txt, 1); };
     /* The Start / End readouts light while K1 / K3 is touched or turning; K2
      * shows ZOOM + / - (plain ZOOM on a touch) between them (Josh, 2026-10-28). */
-    const lit = (x, txt, on) => {
+    const lit = (x, txt, on, pos) => {
+        kitHudTap('Readout', { text: txt, on: !!on, pos: pos || (x <= 8 ? 'left' : 'right') });
         if (on) fill_rect(x - 2, 9, ovwWidth(txt) + 3, 7, 1);
         ovwPrint(x, 10, txt, on ? 0 : 1);
     };
@@ -303,12 +332,13 @@ function drawAudioWaveEditor() {
     const mid = (txt) => {
         const x = 64 - Math.floor(ovwWidth(txt) / 2);
         fill_rect(x - 3, 8, ovwWidth(txt) + 5, 9, 0);
-        lit(x, txt, true);
+        lit(x, txt, true, 'mid');
     };
     if (ed.mode === 'lazy') {
         const lz = auLazyState();
         drawBankHeading('LAZY CHOP', false);
         ovwPrint(4, 10, lz.state === AU_LAZY_RUN ? 'TAP THE WHITE PAD' : 'TAP PAD 1 TO START', 1);
+        kitHudTap('Readout', { text: lz.state === AU_LAZY_RUN ? 'Tap the white pad' : 'Tap pad 1 to start', pos: 'left' });
         if (lz.state === AU_LAZY_RUN) right(lz.n + ' CHOP' + (lz.n === 1 ? '' : 'S'));
         drawAudioWave(t, c, 0, 20, 128, 30, { A: 0, B: i.nframes, sel: -1 });
         drawKitHintRow(MV_FOOTER_Y, [['pad', lz.state === AU_LAZY_ARMED ? 'play' : 'chop'], ['clk', 'done']]);   /* two fit; a click or Back ends it, keeping the chops */
@@ -332,6 +362,7 @@ function drawAudioWaveEditor() {
         drawBrackets(6, 18, 116, 34);
         const msg = i.state === 1 ? 'LOADING' : 'CLICK TO LOAD SAMPLE';
         ovwPrint(64 - Math.floor(ovwWidth(msg) / 2), 33, msg, 1);
+        kitHudTap('Message', { big: '', lines: [i.state === 1 ? 'Loading' : 'Click to load a sample'] });
         drawKitHintRow(MV_FOOTER_Y, [['clk', 'load'], ['back', 'exit']]);
         return;
     }
@@ -692,6 +723,7 @@ function enumOverlayIdx(t) {
  * label font, the pair centred as a group. Inverts while either knob is
  * held. Falls back to an all-small line if the group overruns the box. */
 function drawNoteBox(name, sub, invert) {
+    kitHudTap('NoteBox', { name, sub, hi: !!invert });
     const BX = 6, BW = 52, BY = MV_ROW0_Y, BH = MV_KH;
     if (invert) fill_rect(BX, BY, BW, BH, 1);
     else        rectOutline(BX, BY, BW, BH, 1);
@@ -761,6 +793,7 @@ function drawStepEditKitPage(title, cells, noteBox, footer, noStepHeld) {
              * the footer hint row stays (it still says how to get here). */
             const _txt = 'Hold step to edit';
             print(Math.max(0, Math.floor((128 - _txt.length * 6) / 2)), 30, _txt, 1);
+            kitHudTap('Message', { big: '', lines: [_txt] });
             if (footer) drawKitHintRow(MV_FOOTER_Y, footer);
             return;
         }
@@ -821,7 +854,7 @@ function drawSessionMixerPage() {
 /* The session mixer's eight cells for one mode: what drawSessionMixerPage
  * draws, and what the click asks (sessMixerCellOpens), so the gate and the
  * screen cannot disagree. */
-function sessMixerCells(mode) {
+export function sessMixerCells(mode) {
     const cells = [];
     for (let t = 0; t < NUM_TRACKS; t++) {
         const label = 'Tr' + (t + 1);
@@ -931,6 +964,12 @@ function drawSessionFaderRow(cells, mode) {
      * with no touch — injected MIDI, a knob not reporting capacitance — simply
      * shows no value; the page and its header still update, so nothing is lost. */
     const valueLive = lk >= 0 && S.knobTouched === lk;
+    kitHudTap('KitCells', { cells: cells.map((c, i) => !c || c.kind === 'blank' ? null
+        : c.kind === 'xbox' ? { kind: 'opaque', label: String(i + 1), name: 'Track ' + (i + 1), text: 'routed' }
+        : Object.assign({}, c, { kind: 'vbar', label: String(i + 1) })),
+        /* the strip a finger is on, as the OLED marks it (its number inverted)
+         * — a touch alone counts; the turn only adds the live value */
+        touched: t >= 0 && cells[t] ? t : -1 });
 
     for (let i = 0; i < cells.length && i < 8; i++) {
         const c = cells[i];
@@ -1161,6 +1200,7 @@ function drawRow2Labels() {
          * the jog scrolls, the rule matches the key/scale rule in track view.
          * The full label, not the short one — there is room beside the metro. */
         const lab = '< ' + ml + ' >';
+        kitHudTap('Info2', { right: ml, arrows: true });
         const lw = ovwWidth(lab), lx = 128 - 4 - lw;
         ovwPrint(lx, 17, lab, 1);
         fill_rect(lx, 23, lw, 1, 1);
@@ -1170,6 +1210,7 @@ function drawRow2Labels() {
     /* (not on Audio or Slicer: neither has velocity) */
     if (!S.sessionView && !isSampledTrack(S.activeTrack)) {
         const _vel = 'Vel:' + fmtVelOverride(S.trackVelOverride[S.activeTrack]);
+        kitHudTap('Info2', { right: 'Vel ' + fmtVelOverride(S.trackVelOverride[S.activeTrack]), follow: !!seqFollowOn() });
         const _vx = 128 - 4 - ovwWidth(_vel);
         ovwPrint(_vx, 17, _vel, 1);
         drawFollowGlyph(_vx - 5 - FOLLOW_GLYPH_W, 18);
@@ -1457,6 +1498,7 @@ const DEVSNAP_BLINK_MS = 440;   /* Josh, device 2026-09-06: "a bit slower" — t
 function drawInfoRow2() {
     if (devSnapOpen()) {
         const _sn = devSnapTitle();
+        kitHudTap('Info', { left: _sn });
         const _top = S.sessionView ? MARK_BAR_H : MV_BAR_Y;
         const _h = OVW_TRACK_ROW_Y - _top - 1;      /* 1px clear of the track row */
         const _on = Math.floor(S.clockMs / DEVSNAP_BLINK_MS) % 2 === 0;
@@ -1476,6 +1518,7 @@ function drawInfoRow2() {
 }
 
 function drawWordmark(mark) {
+    kitHudTap('KitHeader', { text: mark, wordmark: true });
     hdrPrint(Math.round((128 - hdrWidth(mark)) / 2), 3, mark, 0);
 }
 
@@ -1492,6 +1535,7 @@ const CARD_TEXT_DY = 1;
 export function drawNoticeCard(lines, highlight = -1) {
     const n = Math.min(5, lines.length);
     if (!n) return;
+    kitHudTap('NoticeCard', { lines: lines.slice(0, n).map(String), highlight });
     const h = n * CARD_LINE_H + CARD_PAD * 2 - 1;
     const y = Math.max(0, Math.floor((64 - h) / 2));
     /* Over a DIMMED screen, like every picker (Josh, 2026-09-26): the card is
@@ -1585,6 +1629,7 @@ export const OVW_TRACK_ROW_Y = 29, OVW_SCENE_Y = 41;
 function ovwPrint(x, y, str, color) { fontPrint4x5(x, y, String(str).toUpperCase(), color); }
 function ovwWidth(str) { return fontWidth4x5(String(str).toUpperCase()); }
 function drawOverviewTracks(hints) {
+    kitHudTap('Tracks', { rows: overviewTrackRows() });
     drawTrackRow(OVW_TRACK_ROW_Y);
     for (let t = 0; t < NUM_TRACKS; t++) {
         const cx = t * 16 + 5;
@@ -1614,6 +1659,19 @@ function drawOverviewTracks(hints) {
  *                 keeps the map shut; no SHFT pair — Josh)
  *   Shift held    JOG TRACK, in both views (Shift + pad's track pick was
  *                 retired 2026-10-08: the bank map's track pads do it). */
+/* The eight tracks as the overview's row shows them — for the Screen view's
+ * description (the OLED draws the same facts as digits, boxes and letters). */
+function overviewTrackRows() {
+    const rows = [];
+    for (let t = 0; t < NUM_TRACKS; t++) {
+        const ac = S.trackActiveClip[t];
+        const hasData = S.trackPadMode[t] === PAD_MODE_DRUM ? S.drumClipNonEmpty[t][ac] : S.clipNonEmpty[t][ac];
+        rows.push({ clip: SCENE_LETTERS[ac], has: !!hasData, active: t === S.activeTrack,
+                    playing: !!(S.trackClipPlaying[t] && hasData), queued: !!((S.trackWillRelaunch[t] || S.trackQueuedClip[t] >= 0) && hasData),
+                    muted: !!S.trackMuted[t], soloed: !!S.trackSoloed[t] });
+    }
+    return rows;
+}
 export function overviewHints() {
     if (devSnapOpen()) return devSnapHints();   /* the snapshot layer (item 18), either view */
     if (S.shiftHeld) return [['JOG', 'TRACK']];
@@ -1681,6 +1739,7 @@ export function drawLoadingScreen(name, stage) {
     }
     clear_screen();
     drawKitHeader('Loading');
+    kitHudTap('Message', { big: String(name || ''), lines: stage ? [String(stage)] : [] });
     const n = String(name || '').toUpperCase();
     if (n) {
         const w = bigWidth(n), wc = bigWidth(n, true);
@@ -1715,6 +1774,7 @@ function drawPerfModeOled() {
     const BODY_TOP = 9, BODY_BOT = MV_FOOTER_Y - 2;
     if (S.perfModPopupEndTick >= 0 && S.clockMs <= S.perfModPopupEndTick && S.perfModPopupName) {
         const n = _modAscii(S.perfModPopupName).toUpperCase();
+        kitHudTap('Mods', { popup: S.perfModPopupName, names: [] });
         const w = bigWidth(n);
         if (w <= 124) bigPrint(Math.floor((128 - w) / 2), 22, n, 1);
         else { const t = fit4x5(n, 124); fontPrint4x5(Math.floor((128 - fontWidth4x5(t)) / 2), 25, t, 1); }
@@ -1723,6 +1783,7 @@ function drawPerfModeOled() {
         const names = [];
         for (let i = 0; i < PERF_MOD_NAMES.length; i++)
             if ((activeMods >> i) & 1) names.push(_modAscii(PERF_MOD_NAMES[i]).toUpperCase());
+        kitHudTap('Mods', { names: PERF_MOD_NAMES.filter((_, i) => (activeMods >> i) & 1) });
         const put = (lines) => {
             const pitch = 9, h = lines.length * pitch - 4;
             const top = BODY_TOP + Math.floor((BODY_BOT - BODY_TOP - h) / 2);
@@ -1804,6 +1865,7 @@ function drawTempoSelect() {
         }
     }
     const steps = isDrum ? S.drumLaneSteps[t][S.activeDrumLane[t]] : S.clipSteps[t][c];
+    kitHudTap('StepStrip', { len, on: steps ? Array.from({ length: Math.min(len, 256) }, (_, s) => (steps[s] && steps[s] !== '0') ? 1 : 0) : [] });
     if (steps) {
         for (let s = 0; s < len && s < steps.length; s++) {
             if (!steps[s] || steps[s] === '0') continue;
@@ -1857,6 +1919,8 @@ export function drawPositionBarGeom(o) {
     const cs = o.playStep;
     const playing = cs >= lsBase && cs < lsBase + len;
     const playPage = playing ? Math.floor((cs - lsBase) / 16) : -1;
+    kitHudTap('Position', { pages: winPages, view: viewPage, play: playPage, step: playing ? cs - lsBase : -1,
+                            len, left: !!o.hasLeft, right: !!o.hasRight });
     const barY = o.barY != null ? o.barY : 50, barH = 4, segGap = 1;   /* 2026-09-05: the hint footer owns row 57 */
     /* `spanX`/`spanW`: the bar's pixel span (default x 4, 120 px). The
      * AUTOMATION ops graph puts it under a 126-px curve as the graph's bottom
@@ -1932,11 +1996,16 @@ function jogTouchReveals() {
     return !!S.jogTouched && !S.shiftHeld;
 }
 export function bankCardShown() {
+    if (hudGate) return hudGate === 'card';
     return bankCardVisible() || (!S.sessionView && (jogTouchReveals() || cardHoldShows()));
 }
 export function sessMixerShown() {
+    if (hudGate) return hudGate === 'card';
     return sessMixerVisible() || (!!S.sessionView && (jogTouchReveals() || cardHoldShows()));
 }
+/* Set only for the length of hudDescribeKnobs' muted pass: 'card' draws the
+ * knob page, 'rest' the overview, whatever the touch / latch / hold say. */
+let hudGate = null;
 
 export function bankCardVisible() {
     /* ...plus ONE peek (Josh: "knob touches are the ONLY other thing that
@@ -2084,32 +2153,94 @@ function drawBankLatchBox() {
 }
 
 export function drawUI() {
-    /* PROJECT DID NOT OPEN blocks everything — no body, no overlay, no card. */
-    if (S.projectOpenFailed) { drawProjectOpenFailed(); return; }
-    /* NO PROJECT LIST blocks the same way, and sits ABOVE the LOADING screen
-     * below: while awaiting a selection with no picker, drawUIBody would print
-     * "Loading" forever over a session that is not loading anything. */
-    if (S.projectListFailed) { drawProjectListFailed(); return; }
-    kitLaneFocusRowReset();
-    drawUIBody();
-    /* A hold / Shift + click jump's lane page, over the half of the kit page
-     * its parameter is not in — only where a kit page marked that cell. */
-    drawLaneFocusOverlay();
-    drawBankLatchBox();
-    drawTrackVolCard();
-    drawBankPicker();
-    drawBankMap();
-    /* THE NOTICE CARD, above everything (Josh, 2026-09-05: "the confirmation
-     * overlays pop up wherever you are when you save/recall, same for session
-     * view"): a card notice is drawn here, last, whatever screen the body
-     * chose — a bank, an editor, the session mixer, a dialog. The two refusals
-     * below outrank it: each answers the press you just made. */
-    if (S.stretchBlockedEndTick >= 0) drawNoticeCard(['BEAT STRETCH', 'COMPRESS LIMIT']);
-    else if (S.noNoteFlashEndTick >= 0 && S.activeBank !== 6 && !S.sessionView)
-        drawNoticeCard(['NO NOTE', 'Play a pad first']);
-    else if (actionCardShowing()) drawNoticeCard(S.actionPopupLines, S.actionPopupHighlight);
-    /* LOW BATTERY over all of it, the notices included: it waits for a click. */
-    if (lowBatteryUp()) drawNoticeCard(lowBatteryLines());
+    /* The Screen view's recorder: only while a browser is watching
+     * (hud/hud_publish.mjs) is this frame recorded, described and published. */
+    const hudRec = hudFrameStart();
+    try {
+        /* PROJECT DID NOT OPEN blocks everything — no body, no overlay, no card. */
+        if (S.projectOpenFailed) { hudScreen('blocker.project-open-failed'); drawProjectOpenFailed(); return; }
+        /* NO PROJECT LIST blocks the same way, and sits ABOVE the LOADING screen
+         * below: while awaiting a selection with no picker, drawUIBody would print
+         * "Loading" forever over a session that is not loading anything. */
+        if (S.projectListFailed) { hudScreen('blocker.project-list-failed'); drawProjectListFailed(); return; }
+        kitLaneFocusRowReset();
+        drawUIBody();
+        hudLayer('overlay');
+        /* A hold / Shift + click jump's lane page, over the half of the kit page
+         * its parameter is not in — only where a kit page marked that cell. */
+        drawLaneFocusOverlay();
+        drawBankLatchBox();
+        drawTrackVolCard();
+        drawBankPicker();
+        drawBankMap();
+        /* THE NOTICE CARD, above everything (Josh, 2026-09-05: "the confirmation
+         * overlays pop up wherever you are when you save/recall, same for session
+         * view"): a card notice is drawn here, last, whatever screen the body
+         * chose — a bank, an editor, the session mixer, a dialog. The two refusals
+         * below outrank it: each answers the press you just made. */
+        if (S.stretchBlockedEndTick >= 0) drawNoticeCard(['BEAT STRETCH', 'COMPRESS LIMIT']);
+        else if (S.noNoteFlashEndTick >= 0 && S.activeBank !== 6 && !S.sessionView)
+            drawNoticeCard(['NO NOTE', 'Play a pad first']);
+        else if (actionCardShowing()) drawNoticeCard(S.actionPopupLines, S.actionPopupHighlight);
+        /* LOW BATTERY over all of it, the notices included: it waits for a click. */
+        if (lowBatteryUp()) drawNoticeCard(lowBatteryLines());
+    } finally {
+        if (hudRec) {
+            try { hudDescribeKnobs(); } catch (e) { if (typeof console !== 'undefined') console.log('hud: knobs failed: ' + (e && e.message)); }
+            hudFrameFinish();
+        }
+    }
+}
+
+/* THE KNOBS, ALWAYS, ON THE BIG SCREEN (Josh, 2026-11-08: "if knobs do
+ * something in the current view mode we should always see them" · "there's no
+ * reason to switch away from session/track view just b/c a knob is touched" ·
+ * "it can all happen on the same screen").
+ *
+ * The OLED shows Track view's knob page (the active bank's card) and Session
+ * view's mixer page only while a knob is touched, the card is latched, the
+ * jog is touched or the card hold runs — bankCardShown() / sessMixerShown().
+ * The Screen view keeps the overview up instead and shows the knob page under
+ * it, so this describes, while a browser watches, the one of the two the OLED
+ * is NOT showing, with the display muted:
+ *   - the OLED shows a Track overview → the bank's card into the knobs layer;
+ *   - it shows the knob page itself (a fold screen) → that page moves to the
+ *     knobs layer, and the overview is described into the body.
+ * Session view's overview already carries its knob values (contrib/ovw.mjs),
+ * so only its mixer page folds. An open automation menu, a held step, sound
+ * mode — screens in use rather than peeks — are left as they are. */
+const HUD_OVERVIEWS = new Set(['track.overview', 'track.drum-overview', 'track.audio-overview', 'session.overview']);
+const HUD_FOLDS = new Set(['track.bank', 'track.conduct', 'track.macros-card', 'track.drum-velocity',
+                           'track.sound-card', 'track.config-card', 'track.step', 'session.mixer']);
+const HUD_MUTE = ['clear_screen', 'fill_rect', 'draw_rect', 'set_pixel', 'print', 'draw_line', 'draw_arc',
+                  'draw_circle', 'fill_circle', 'draw_image', 'stipple_rect'];
+function hudMutedPass(gate, layer) {
+    const g = globalThis, saved = {};
+    for (const n of HUD_MUTE) { saved[n] = g[n]; g[n] = () => {}; }
+    hudGate = gate;
+    hudLayer(layer);
+    try { drawUIBody(); }
+    finally {
+        hudGate = null;
+        hudLayer('overlay');
+        for (const n of HUD_MUTE) g[n] = saved[n];
+    }
+}
+function hudDescribeKnobs() {
+    const scr = hudFrameScreen();
+    if (scr === 'session.overview') return;
+    if (HUD_OVERVIEWS.has(scr)) {
+        hudMutedPass('card', 'knobs');
+        return;
+    }
+    if (!HUD_FOLDS.has(scr)) return;
+    hudBodyToKnobs();
+    /* only a page of KNOBS folds: one that draws something else (a grid of
+     * toggles, a prompt) would lose what it shows — it stays as drawn */
+    const page = describeLayer(hudFrameKnobs());
+    if (!page.knobs || !page.knobs.some((c) => c && c.kind !== 'blank')) { hudKnobsToBody(); return; }
+    hudMutedPass('rest', 'body');
+    if (!HUD_OVERVIEWS.has(hudFrameScreen())) hudKnobsToBody();   /* no overview to keep: as drawn */
 }
 
 /* The held step's page: the STEP bank's layout with THAT step's values. Drawn
@@ -2201,6 +2332,7 @@ registerRingCells(BANK_STEP, () => heldStepCells() ||
 
 export function drawHeldStepPage() {
     if (S.heldStep < 0) return false;
+    hudScreen('track.held-step');
     /* The footer says what the jog does HERE: on the reveal it goes back; on
      * the STEP bank under a hold it does nothing (bankPageHints drops the pair). */
     const _footer = (S.stepReveal && S.activeBank !== BANK_STEP) ? [['JOG', 'BACK']] : bankPageHints(BANK_STEP);
@@ -2254,6 +2386,7 @@ function drawUIBody() {
      * retains it across the hand-back to stock, so it must win over every
      * other screen. Same grammar as the LOADING screen (verb, then subject). */
     if (S.exitFarewell !== 0) {
+        hudScreen('exit-farewell');
         /* Wordmark over the verb, in the app's own fonts (Josh, 2026-08-24) —
          * deliberately the SAME layout and the same two fonts as the boot text
          * screen, so the session opens and closes on one face instead of two.
@@ -2268,6 +2401,7 @@ function drawUIBody() {
         const _xn = 'dAVEBOx';
         hdrPrint(Math.max(0, Math.round((128 - hdrWidth(_xn)) / 2)), 26, _xn, 1);
         const _xl = S.exitKind === 'poweroff' ? 'Powering off...' : 'Exiting...';
+        kitHudTap('Message', { big: _xn, lines: [_xl], wordmark: true });
         mvPrint(Math.max(0, Math.round((128 - mvWidth(_xl)) / 2)), 40, _xl, 1);
         return;
     }
@@ -2280,6 +2414,7 @@ function drawUIBody() {
      * verified harmless in real use (nothing the user does during co-run
      * depends on live LED feedback). */
     if (S.moveCoRunTrack >= 0) {
+        hudScreen('co-run');
         /* Side clip buttons: the button paired to the Move track this dAVEBOx
          * track routes to blinks; the rest stay dark grey. Move's track numbering
          * is reversed (Track 1 = CC 43 = top .. Track 4 = CC 40 = bottom), so a
@@ -2305,24 +2440,25 @@ function drawUIBody() {
     }
     S._altPrevBank  = S.activeBank;
     S._altPrevTrack = S.activeTrack;
-    if (S.sessionOverlayHeld) { drawSessionOverview(); return; }
-    if (S.daveBox) { drawDaveBox(); return; }
-    if (miActive()) { drawMidiImport(); return; }
+    if (S.sessionOverlayHeld) { hudScreen('session-overview'); drawSessionOverview(); return; }
+    if (S.daveBox) { hudScreen('dave-box'); drawDaveBox(); return; }
+    if (miActive()) { hudScreen('midi-import'); drawMidiImport(); return; }
     /* AUDIO: the sample chooser, the AUDIO editor and its slice editor. */
-    if (S.auChooser) { drawAudioChooser(); return; }
+    if (S.auChooser) { hudScreen('audio-chooser'); drawAudioChooser(); return; }
     /* ...under a held step's page (hold + jog right), as sound mode is */
-    if (S.auPanel && !S.stepReveal && S.auEditor) { drawAudioWaveEditor(); return; }
-    if (S.snapshotPicker) { drawSnapshotPicker(); return; }
-    if (S.templateManager || (S.templateNameEntry && templateTextEntryUp())) { drawTemplateManager(); return; }
+    if (S.auPanel && !S.stepReveal && S.auEditor) { hudScreen('audio-wave-editor'); drawAudioWaveEditor(); return; }
+    if (S.snapshotPicker) { hudScreen('snapshot-picker'); drawSnapshotPicker(); return; }
+    if (S.templateManager || (S.templateNameEntry && templateTextEntryUp())) { hudScreen('template-manager'); drawTemplateManager(); return; }
     /* ⭑ The exit confirm outranks the picker (2026-09-16). Hold-Back already
      * raised it from here — checkBackHold() has no picker guard — but the
      * picker drew first and returned, so the dialog was LIVE AND INVISIBLE and
      * the picker ate the click that would answer it. The project manager was
      * the one screen with no way out. Input precedence matches, in
      * ui_input_cc.mjs (jog click and rotate). */
-    if (S.confirmExit)      { drawExitConfirm();      return; }
-    if (S.projectPadPicker) { drawProjectPadPicker(); return; }
+    if (S.confirmExit)      { hudScreen('exit-confirm'); drawExitConfirm(); return; }
+    if (S.projectPadPicker) { hudScreen('project-pad-picker'); drawProjectPadPicker(); return; }
     if (S.pendingSceneBakePicker) {
+        hudScreen('prompt.scene-pick');
         const _clipPick = S.scenePickFor === 'resample_clip';
         drawKitPrompt(_clipPick ? 'Resample clip' : S.scenePickFor === 'resample' ? 'Resample scene' : 'Bake scene',
                       _clipPick ? ['Tap a clip pad', 'to pick it'] : ['Tap a row or scene', 'step to pick it'],
@@ -2330,12 +2466,14 @@ function drawUIBody() {
         return;
     }
     if (S.mergePlacing) {
+        hudScreen('prompt.merge-placing');
         /* Destination picked — DSP is committing the take. Shown so the jump
          * back to the normal screen doesn't read as a freeze. */
         drawKitPrompt('Live merge', [S.mergePlacingScene ? 'Placing the clips...' : 'Placing the clip...'], null);
         return;
     }
     if (S.mergeNoticePending) {
+        hudScreen('prompt.merge-notice');
         /* The Sample menu's Live merge raised this notice; it does NOT start the merge. Plain
          * Rec begins the count-in, Back cancels. */
         drawKitPrompt('Live merge',
@@ -2345,46 +2483,49 @@ function drawUIBody() {
         return;
     }
     if (S.pendingMergePlacement) {
+        hudScreen('prompt.merge-placement');
         drawKitPrompt('Place merged take', ['Tap a row or scene', 'step for the clips'],
                           [['back', 'exit']]);
         return;
     }
-    if (S.tempoSelectActive) { drawTempoSelect(); return; }
+    if (S.tempoSelectActive) { hudScreen('tempo-select'); drawTempoSelect(); return; }
     if (S.mergeSoloPlacement >= 0) {
+        hudScreen('prompt.merge-solo');
         drawKitPrompt('Merged take',
                           ['Tap a blinking clip', 'on track ' + (S.mergeSoloPlacement + 1) + ' to keep it'],
                           [['back', 'exit']]);
         return;
     }
     if (S.capturePlaceTrack >= 0) {
+        hudScreen('prompt.capture-place');
         drawKitPrompt('Captured take',
                           ['Tap a blinking clip', 'on track ' + (S.capturePlaceTrack + 1) + ' to keep it'],
                           [['back', 'exit']]);   /* Rec still works; Back is the universal cancel */
         return;
     }
-    if (S.confirmStateWipe) { drawStateWipeConfirm(); return; }
-    if (S.confirmExit)      { drawExitConfirm();      return; }
-    if (S.confirmTypeChange) { drawTypeChangeConfirm(); return; }
-    if (S.confirmModuleChange) { drawModuleSwapConfirm(); return; }
-    if (S.bpmMoveInfo) { drawBpmMoveInfo(); return; }
-    if (S.recordBlockedDialog) { drawRecordBlockedDialog(); return; }
-    if (S.confirmMacroClear)   { drawMacroClearConfirm();   return; }
-    if (S.confirmXpose) { drawXposeConfirm(); return; }
-    if (S.sampleMenu)       { drawSampleMenu();       return; }
-    if (S.confirmResample)  { drawResampleOptions();  return; }
-    if (S.confirmBakeScene) { drawBakeSceneConfirm(); return; }
-    if (S.confirmBake) { drawBakeConfirm(); return; }
+    if (S.confirmStateWipe) { hudScreen('state-wipe-confirm'); drawStateWipeConfirm(); return; }
+    if (S.confirmExit)      { hudScreen('exit-confirm'); drawExitConfirm(); return; }
+    if (S.confirmTypeChange) { hudScreen('type-change-confirm'); drawTypeChangeConfirm(); return; }
+    if (S.confirmModuleChange) { hudScreen('module-swap-confirm'); drawModuleSwapConfirm(); return; }
+    if (S.bpmMoveInfo) { hudScreen('bpm-move-info'); drawBpmMoveInfo(); return; }
+    if (S.recordBlockedDialog) { hudScreen('record-blocked-dialog'); drawRecordBlockedDialog(); return; }
+    if (S.confirmMacroClear)   { hudScreen('macro-clear-confirm'); drawMacroClearConfirm(); return; }
+    if (S.confirmXpose) { hudScreen('xpose-confirm'); drawXposeConfirm(); return; }
+    if (S.sampleMenu)       { hudScreen('sample-menu'); drawSampleMenu(); return; }
+    if (S.confirmResample)  { hudScreen('resample-options'); drawResampleOptions(); return; }
+    if (S.confirmBakeScene) { hudScreen('bake-scene-confirm'); drawBakeSceneConfirm(); return; }
+    if (S.confirmBake) { hudScreen('bake-confirm'); drawBakeConfirm(); return; }
     /* Modal dialogs that either screen can raise. They belong ABOVE Track
      * Control, so they are drawn before soundRender() — which returns and would
      * otherwise swallow them — and they appear in soundModeCovered() so sound
      * mode stops steering while they are up. `Mode` moving to Config is what
      * made this reachable with the global menu shut. */
-    if (S.confirmConvertToDrum)    { drawConvertToDrumConfirm();    return; }
-    if (S.confirmConvertToConduct) { drawConvertToConductConfirm(); return; }
-    if (S.menuInfoLines.length > 0){ drawMenuInfo();                return; }
-    if (S.globalMenuOpen || S.tapTempoOpen) { ensureGlobalMenuFresh(); drawGlobalMenu(); return; }
+    if (S.confirmConvertToDrum)    { hudScreen('convert-to-drum-confirm'); drawConvertToDrumConfirm(); return; }
+    if (S.confirmConvertToConduct) { hudScreen('convert-to-conduct-confirm'); drawConvertToConductConfirm(); return; }
+    if (S.menuInfoLines.length > 0){ hudScreen('menu-info'); drawMenuInfo(); return; }
+    if (S.globalMenuOpen || S.tapTempoOpen) { hudScreen('global-menu'); ensureGlobalMenuFresh(); drawGlobalMenu(); return; }
     /* Perf Mode OLED takeover (Session View + Loop held or locked) */
-    if (S.sessionView && (S.loopHeld || S.perfViewLocked)) { drawPerfModeOled(); return; }
+    if (S.sessionView && (S.loopHeld || S.perfViewLocked)) { hudScreen('perf-mode-oled'); drawPerfModeOled(); return; }
 
     /* SOUND MODE draws the whole screen itself (block picker / bank pages /
      * module browser). It sits HERE, below every overlay above, so anything
@@ -2409,11 +2550,13 @@ function drawUIBody() {
      * that fails somewhere we did not foresee must not leave the session
      * behind a loading screen for good. The whole handover is ~4 s. */
     if (S.switchLoading && S.clockMs - S.switchLoading.at < SWITCH_LOADING_MAX_MS) {
+        hudScreen('loading.switch');
         drawLoadingScreen(S.switchLoading.name, S.switchLoading.stage);
         return;
     }
     if (S.stateLoading || S.bootSplashMs > 0 ||
             (S.awaitingProjectSelect && !S.projectPadPicker)) {
+                hudScreen('loading.start');
         /* Loading screen (v3): plain text, no artwork. The dAVEBOx splash
          * bitmap moved UP a level — it is the HOST session splash now
          * (dbxhost splash.hex contract) — so the module showing it again
@@ -2426,6 +2569,7 @@ function drawUIBody() {
     }
     /* A load's Dave outstays the load until its minimum (loadDaveTick). */
     if (S.loadDave !== null && S.loadDave !== undefined) {
+        hudScreen('loading.dave');
         drawDaveLoading(S.loadDave);
         return;
     }
@@ -2441,6 +2585,7 @@ function drawUIBody() {
          * (eight tracks vs one), so while a knob is held it should win. Other
          * popups still show once the finger lifts and the window closes. */
         if (sessMixerShown()) {
+            hudScreen('session.mixer');
             drawSessionMixerPage();
             return;
         }
@@ -2452,7 +2597,9 @@ function drawUIBody() {
          * card notices (snapshot save/recall) through here too, so they drew a
          * full-screen copy with an empty bar underneath their own card. */
         if (S.actionPopupEndTick >= 0 && !S.actionPopupCard && S.actionPopupGauge >= 0) {
+            hudScreen('session.gauge');
             const _n = S.actionPopupLines.length;
+            kitHudTap('LevelCard', { text: S.actionPopupLines.slice(0, 2).join(' · '), frac: S.actionPopupGauge });
             {
                 /* Gauge popup: text sits high so the bar owns the lower half.
                  * Same geometry as sound mode's level read-out, so the two
@@ -2485,6 +2632,7 @@ function drawUIBody() {
          * mark's own casing: the movy font scaled up is a caps design and reads
          * DAVEBOX, and the 6x6 bank-heading font is no bigger than the 5x7 the
          * bar used before. */
+        hudScreen('session.overview');
         if (S.playing && S.bannerDave >= 0) {
             drawBannerDave();
         } else {
@@ -2525,6 +2673,7 @@ function drawUIBody() {
     /* Only while the bank's page is up (latched, just chosen, or peeked by a
      * knob touch) — never over the resting track overview (Josh, 2026-09-23). */
     if (bank === BANK_CHORD && inTimeout && chordEditSlot() >= 0) {
+        hudScreen('track.chord-slot');
         const _cs = chordSlotCells(S.activeTrack, chordEditSlot());
         /* Touching K8 says how to fire it, as stock's trigger footer does. */
         drawKitPage(_cs.title, _cs.cells, false,
@@ -2541,6 +2690,7 @@ function drawUIBody() {
     }
     /* A held Custom chord: its assign card, titled with the chord it holds. */
     if (bank === BANK_CHORD && inTimeout && customCardSlot() >= 0) {
+        hudScreen('track.custom-slot');
         const _cc = customCardCells(S.activeTrack, customCardSlot());
         drawKitPage(_cc.title, _cc.cells, false, null);
         fill_rect(0, 0, 128, MV_BAR_Y, 0);
@@ -2550,6 +2700,7 @@ function drawUIBody() {
         return;
     }
     if (bank === BANK_CHORD && inTimeout) {
+        hudScreen('track.padmode');
         /* an Audio track's PAD MODE: the Layout of its chops on the pads */
         drawKitPage(bankHeaderName(S.activeTrack, BANK_CHORD),
                     isSampledTrack(S.activeTrack) ? auPadModeCells(S.activeTrack) : padModeBankCells(S.activeTrack), false,
@@ -2559,6 +2710,7 @@ function drawUIBody() {
 
     /* Loop view: own priority state so screen is fully cleared first. */
     if (loopViewActive()) {
+        hudScreen('track.loop-length');
         /* The gestures are FOOTER pills, as on every other screen (Josh,
          * 2026-09-26: "agree with all recommendations" — the footer audit):
          * step buttons change the length by a page, the jog by a step. The
@@ -2568,6 +2720,7 @@ function drawUIBody() {
         const _pageSrc  = !!(S.copySrc && (S.copySrc.kind === 'page' || S.copySrc.kind === 'cut_page'));
         const _pageCut  = _pageSrc ? S.copySrc.kind === 'cut_page' : S.shiftHeld;
         function _drawLoopSteps(steps) {
+            kitHudTap('KitBigValue', { num: steps, unit: 'of 256 steps' });
             const _l4  = 'Steps: ' + steps + '/256';
             const _l4x = Math.floor((128 - _l4.length * 6) / 2);
             const _nvX = _l4x + 7 * 6;
@@ -2581,6 +2734,7 @@ function drawUIBody() {
         }
         function _drawLoopTitle(title) {
             if (_pageCopy) title = _pageCut ? 'Cut page' : 'Copy page';
+            kitHudTap('KitHeader', { text: title });
             print(Math.floor((128 - title.length * 6) / 2), 4, title, 1);
         }
         if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
@@ -2591,6 +2745,7 @@ function drawUIBody() {
                 const _l1 = (_pageCopy ? (_pageCut ? 'Cut page' : 'Copy page') : 'Clip length')
                     + '-' + (_allBlink ? 'ALL' : '   ') + ' lanes';
                 print(Math.floor((128 - _l1.length * 6) / 2), 4, _l1, 1);
+                kitHudTap('KitHeader', { text: (_pageCopy ? (_pageCut ? 'Cut page' : 'Copy page') : 'Clip length') + ' — all lanes' });
             } else {
                 _drawLoopTitle('Lane length');
             }
@@ -2611,6 +2766,7 @@ function drawUIBody() {
      * offsets (±24); pad grid is the persistent step-vel level editor handled in
      * updateTrackLEDs. Renders REGARDLESS of knob-touch / inTimeout (persistent). */
     if (bank >= 0 && S.stepIntervalMode && !S.sessionView && (bank === 4 || bank === 5)) {
+        hudScreen('track.arp-steps');
         /* Repeat-groove-style single 8-column row: bipolar bars (±24
          * scale-degree offset) around a dotted centerline, step number under
          * each bar; touched step inverts its number, header = "Offset: +N". */
@@ -2637,6 +2793,8 @@ function drawUIBody() {
          * the rest of the screen accordingly"). The bars and step numbers sit
          * above it. */
         drawKitHintRow(MV_FOOTER_Y, _velPage ? [['BACK', 'OUT']] : [['SHFT', 'VELOCITY'], ['BACK', 'OUT']]);
+        kitHudTap('Bars', { values: Array.from(arr).slice(0, 8).map((v) => v | 0), len: _ll, touched: _tk,
+                            mode: _velPage ? 'vel' : 'pitch', min: _velPage ? 0 : -24, max: _velPage ? 128 : 24 });
         const _colW = 16, _barW = 10, _top = 14, _bot = 45, _numY = 48;
         const _cy = Math.floor((_top + _bot) / 2);
         if (_velPage) fill_rect(0, _bot + 1, 128, 1, 1);   /* velocity baseline */
@@ -2683,6 +2841,7 @@ function drawUIBody() {
     if (S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT &&
             (bank === BANK_RESPONDER || bank === BANK_OCTAVE || bank === BANK_WHEN) &&
             bankCardShown()) {
+        hudScreen('track.conduct');
         const _ch = bankHeaderName(S.activeTrack, bank);
         if (bank === BANK_RESPONDER) {
             const _cc = S.trackActiveClip[S.activeTrack] | 0;
@@ -2699,6 +2858,7 @@ function drawUIBody() {
     }
 
     if (bank >= 0 && bankCardShown()) {
+        hudScreen('track.bank');
         /* SOUND + CONFIG's card is the GATEWAY prompt. Reached here only while
          * sound mode is CLOSED — the knob-touch PEEK of a track remembered on
          * this bank at rest (the mode no longer holds the screen open there;
@@ -2707,22 +2867,26 @@ function drawUIBody() {
          * soundRender above. Without this, BANKS[11]'s stub knobs drew a blank
          * eight-cell kit page. */
         if (bank === BANK_SOUND) {
+            hudScreen('track.sound-card');
             renderTrackGatewayCard(S.activeTrack);
             return;
         }
         if (bank === BANK_CONFIG) {
+            hudScreen('track.config-card');
             renderConfigCardPeek(S.activeTrack);
             return;
         }
         /* MACROS at rest, same gap: the page from the store, values as last
          * seen (sound mode owns the reads; a peek pays for none). */
         if (bank === BANK_MACROS) {
+            hudScreen('track.macros-card');
             renderMacrosPeek(S.activeTrack);
             return;
         }
         /* AUTOMATION: the list of what is automated in this clip, its menu
          * and its ops (ui_automation_bank). The heading is a bank heading. */
         if (bank === BANK_AUTOMATION) {
+            hudScreen('track.automation');
             clear_screen();
             /* With a row selected, the header's right label is ITS cycle and the
              * page being viewed ("2 BAR PG 1/2"), and a multi-page cycle gets
@@ -2744,6 +2908,7 @@ function drawUIBody() {
             return;
         }
         if (bank === BANK_STEP) {
+            hudScreen('track.step');
             /* STEP with nothing held: no cells, just "Hold step to edit". A held
              * step is drawn by the step-edit block above, before the card gate —
              * a held step is the reason for being here. */
@@ -2869,6 +3034,7 @@ function drawUIBody() {
         }
 
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 5) {
+            hudScreen('track.drum-velocity');
         /* Drum RPT GROOVE bank overview — 8 steps, vel scale (unshifted) or nudge (Shift) */
         const t    = S.activeTrack;
         const lane = S.activeDrumLane[t];
@@ -2900,6 +3066,8 @@ function drawUIBody() {
         /* Bars end at 45 and the numbers sit at 48 (the Arp Steps page's
          * geometry), leaving the footer row free for the KNB+CLK hint. */
         const _colW = 16, _barW = 10, _top = 14, _bot = 45, _numY = 48;
+        kitHudTap('Bars', { values: Array.from({ length: 8 }, (_, k) => S.altMode ? (S.drumRepeatNudge[t][lane][k] | 0) : (S.drumRepeatVelScale[t][lane][k] | 0)),
+                            len: _gLen, touched: _tk, mode: S.altMode ? 'nudge' : 'vel', min: S.altMode ? -50 : 0, max: S.altMode ? 50 : 128 });
         if (S.altMode) {
             /* dotted center baseline for the bipolar nudge page */
             const _cy = Math.floor((_top + _bot) / 2);
@@ -3071,6 +3239,7 @@ function drawUIBody() {
         }
 
     } else if (isSampledTrack(S.activeTrack)) {
+        hudScreen('track.audio-overview');
         drawAudioTrackRest(S.activeTrack);
     } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
         /* Drum Track View — idle state */
@@ -3086,9 +3255,12 @@ function drawUIBody() {
          * stays local: it is this header's animation, not part of the name. */
         const _bnStatic = bankHeaderName(t, S.activeBank);
         const bankName  = _bnStatic;   /* ALL LANES blinks its icon, not its name */
+        hudScreen('track.drum-overview');
         (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankName, false, true);
         /* info row at y=9, in the STOCK face (2026-09-05) — 2px clear of the header */
         ovwPrint(4, 9, bankGroup + '  Pad:' + name + oct + ' (' + note + ')', 1);
+        kitHudTap('Info', { left: bankGroup.replace(':', ' ') + ' · Pad ' + name + oct + ' (' + note + ')',
+                            tag: (S.drumLaneSolo[t] & (1 << lane)) ? 'SOLOED' : (S.drumLaneMute[t] & (1 << lane)) ? 'MUTED' : '' });
         /* The lane's mute/solo tag sits LEFT on the second info row: the
          * right end of that row is the velocity input (drawRow2Labels), and
          * a right-aligned tag drew straight over it. The left end has been
@@ -3109,6 +3281,7 @@ function drawUIBody() {
             ? ' REC' : '';
         const keyScl  = keyRootName(S.padKey, S.padScale) + ' ' + (SCALE_DISPLAY[S.padScale] || '?');
         const keySclW = ovwWidth(keyScl);
+        hudScreen('track.overview');
         (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankHeaderName(S.activeTrack, S.activeBank) + recTag, false, true);
         /* info row at y=9 in the small header face (Josh, 2026-09-05) — 2px
          * clear of the header; the glyphs end at y=13 and the scale rule is 15.
@@ -3127,6 +3300,7 @@ function drawUIBody() {
          * lowercase i and v for exactly this. */
         const _heldTxt = _held ? '[' + fitHeldLabel(_held, _heldR - _heldL - fontWidth4x5('[]') - 1, fontWidth4x5, noteNames(_heldPs, _flats)) + ']' : '';
         if (_heldTxt) fontPrint4x5(_heldR - fontWidth4x5(_heldTxt), 9, _heldTxt, 1);
+        kitHudTap('Info', { left: keyScl, underline: !!S.scaleAware, held: _held || '' });
         drawInfoRow2();
         drawOverviewTracks(overviewHints());
         drawPositionBar(S.activeTrack);

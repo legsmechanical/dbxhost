@@ -101,6 +101,7 @@ globalThis.draw_arc = (cx, cy, r, startDeg, sweepDeg, v) => {
 globalThis.draw_circle = (cx, cy, r, v) => globalThis.draw_arc(cx, cy, r, 0, 360, v);
 globalThis.flush_display = () => {};
 globalThis.host_flush_display = () => {};
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 
 /* ── the engine, as a fixture ───────────────────────────────────────────────
  * ENGINE answers host_module_get_param (the dAVEBOx DSP); SLOT[n] answers

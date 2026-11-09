@@ -23,6 +23,7 @@ const step = (l, fn) => { try { fn(); ok(l); } catch (e) { bad(l, e); } };
 const sets = [];
 const files = {};
 globalThis.host_system_cmd = () => 0;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = (p) => (files[p] !== undefined ? files[p] : '');
 globalThis.host_file_exists = (p) => (files[p] !== undefined);
 globalThis.host_write_file = () => true; globalThis.host_ensure_dir = () => true;

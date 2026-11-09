@@ -16,6 +16,7 @@ const ENGINE = {
     'slot:muted': '0', 'slot:soloed': '0',
 };
 globalThis.host_ensure_dir = () => true; globalThis.host_remove_dir = () => true;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_module_set_param = () => {}; globalThis.host_module_get_param = () => '';
 globalThis.shadow_get_param = (slot, key) => (ENGINE[key] != null ? ENGINE[key] : '');
 globalThis.shadow_set_param = (slot, key, v) => { ENGINE[key] = String(v); return 1; };

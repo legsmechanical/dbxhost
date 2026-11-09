@@ -28,6 +28,7 @@ const projectsOnDisk = { projects: [
 ] };
 
 globalThis.host_system_cmd = (c) => { cmds.push(c); return 0; };
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = (path) =>
     String(path).indexOf('projects') >= 0 ? JSON.stringify(projectsOnDisk)
   : String(path).indexOf('slot_switch') >= 0 ? JSON.stringify(slotAnswer) : '';

@@ -28,6 +28,7 @@ const GET = { 't4_au_dir': '/data/UserData/UserLibrary/Sets/x/dAVEBOx/samples',
               't4_au_peaks_16': PEAKS, 't4_au_peaks_0': PEAKS, 't4_au_pos': '1 24000 2', 't4_au_lazy': '0 0 0',
               't4_au_marks_16': MARKS(8), 't4_au_all_16': '0 x 0 0 0 0' };
 globalThis.host_preview_play = () => {}; globalThis.host_preview_stop = () => {};
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 let CMDS = [];
 const SAMP = '/data/UserData/UserLibrary/Samples/dAVEBOx/Exported kits/My Song 5.wav';
 /* the copy lands where it was sent */

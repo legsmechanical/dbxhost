@@ -5626,6 +5626,12 @@ export function createController(io = {}) {
                  * `metaIndex`; the view model publishes the roomy reading. */
                 enumIndex: meta && meta.kind === KIND_ENUM ? enumIndexOf(meta, raw) : -1,
                 unit: (meta && meta.unit) || null,
+                /* The range and default, for a consumer with room to say them
+                 * (a header that reads "-24 – +24") or to tell a bipolar
+                 * control from a unipolar one. */
+                min: meta && typeof meta.min === "number" ? meta.min : null,
+                max: meta && typeof meta.max === "number" ? meta.max : null,
+                default: meta && meta.default !== undefined ? meta.default : null,
                 readOnly: !!(meta && meta.readOnly),
                 writeOnly: !!(meta && meta.writeOnly),
                 turnable: isTurnable(meta),

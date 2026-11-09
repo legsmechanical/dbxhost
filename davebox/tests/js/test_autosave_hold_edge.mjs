@@ -3,6 +3,7 @@
 import './_bulk_get_stub.mjs';
 const calls = [];
 globalThis.host_autosave_hold = (on) => calls.push(on);
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_module_get_param = () => '';
 globalThis.host_module_set_param = () => true;
 globalThis.host_module_set_params = () => true;

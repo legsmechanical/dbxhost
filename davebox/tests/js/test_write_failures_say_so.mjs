@@ -16,6 +16,7 @@ const assert = (c, m) => { if (!c) throw new Error(m); };
 const FILES = {};
 let diskWorks = true;
 globalThis.host_write_file = (p, c) => { if (!diskWorks) return false; FILES[p] = c; return true; };
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = (p) => (FILES[p] !== undefined ? FILES[p] : '');
 globalThis.host_file_exists = (p) => Object.prototype.hasOwnProperty.call(FILES, p);
 globalThis.host_ensure_dir = () => true;

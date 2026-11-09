@@ -28,6 +28,7 @@ const PROJECTS = JSON.stringify({ current: 0, projects: [
 let identity = 'pending';
 const sets = [];
 globalThis.host_system_cmd = () => 0;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = (p) => (typeof p === 'string' && p.endsWith('projects.json')) ? PROJECTS
     : (typeof p === 'string' && p.endsWith('fresh_session')) ? '1' : '';
 globalThis.host_file_exists = () => false;

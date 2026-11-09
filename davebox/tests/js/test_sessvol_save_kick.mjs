@@ -27,6 +27,7 @@ globalThis.shadow_send_midi_to_dsp = () => {};
 globalThis.shadow_save_state_now = () => { saveCalls++; return 1; };
 globalThis.move_midi_external_send = () => {};
 globalThis.host_vol_block = () => {};
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_autosave_kick = () => { kickCalls++; };
 globalThis.host_autosave_hold = (on) => { holdCalls.push(on); };
 globalThis.host_write_file = () => true;

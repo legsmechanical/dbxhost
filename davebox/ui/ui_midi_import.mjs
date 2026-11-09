@@ -64,6 +64,7 @@ import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import {
     drawKitBankPage, drawKitMarkHeader, kitUseLayout, enumOverlayWouldDraw,
     mvPrint, mvWidth, MV_FOOTER_Y,
+    kitHudTap,
 } from './ui_movy.mjs';
 import { buildFilepathBrowserState, refreshFilepathBrowser } from '/data/UserData/schwung/shared/filepath_browser.mjs';
 import { smfParse, SMF_MAX_BYTES, SMF_EXTENSIONS } from './ui_midifile.mjs';
@@ -1088,6 +1089,9 @@ function drawList() {
     draw_rect(PICK_X, PICK_Y, PICK_W, h, 1);
     const rows = listRows(), n = rows.length;
     const x = PICK_X + 1, w = PICK_W - 2, topY = PICK_Y + 1;
+    if (n) kitHudTap('KitList', { rows: rows.map((r) => ({ label: String(r.label), value: r.value != null ? String(r.value) : undefined })),
+                                  sel: Math.max(0, Math.min(n - 1, MI.idx)) });
+    else kitHudTap('Message', { big: '', lines: ['No MIDI files'] });
     if (!n) {
         MQ.over = 0;
         mvPrint(x + ((w - mvWidth('NO MIDI FILES')) >> 1), topY + ((h - 5) >> 1), 'NO MIDI FILES', 1);
@@ -1150,6 +1154,7 @@ function drawConfirm() {
     const pitch = 10, bot = 44;
     const top = 7 + Math.floor((bot - 7 - (lines.length * pitch - (pitch - 5))) / 2);
     lines.forEach((l, i) => { const s = fit4x5(l, 124); fontPrint4x5(Math.floor((128 - fontWidth4x5(s)) / 2), top + i * pitch, s, 1); });
+    kitHudTap('Buttons', { labels: ['No', 'Yes'], sel: (!!MI.confirm.yes) ? 1 : 0 });
     drawDialogYesNoRow(!!MI.confirm.yes);
 }
 

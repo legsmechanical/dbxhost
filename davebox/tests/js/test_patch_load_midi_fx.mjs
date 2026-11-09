@@ -40,6 +40,7 @@ globalThis.shadow_set_param = (slot, k, v) => {
 };
 let pendingApply = null;                 /* the host's late apply */
 globalThis.host_patch_list = () => ['PLANK'];
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_patch_current = () => '';
 globalThis.host_patch_load = (slot, index) => {
     pendingApply = { at: 3 };            /* applied three ticks later */

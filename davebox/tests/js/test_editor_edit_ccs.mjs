@@ -66,6 +66,7 @@ const writes = [];
 const claimCalls = [];
 
 globalThis.host_system_cmd = () => 0;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = (path) => {
     const m = /\/sound_generators\/([a-z]+)\/module\.json$/.exec(String(path));
     return (m && MODULES[m[1]]) ? JSON.stringify(MODULES[m[1]]) : '';

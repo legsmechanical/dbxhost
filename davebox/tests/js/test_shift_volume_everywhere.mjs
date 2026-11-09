@@ -44,6 +44,7 @@ globalThis.shadow_send_midi_to_dsp = () => {};
 globalThis.shadow_save_state_now = () => 1;
 globalThis.move_midi_external_send = () => {};
 globalThis.host_vol_block = () => {};
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 let swallowed = null;
 globalThis.host_write_file = (path, body) => {
     if (String(path).indexOf('jserr') >= 0 && swallowed === null) swallowed = String(body).slice(0, 600);

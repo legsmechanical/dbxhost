@@ -744,6 +744,7 @@ let levelCardLastText = null;
  * see (see [[led-and-render-observables-lie]]), so a test reads it here. */
 export function levelCardTextForTest() { return levelCardLastText; }
 export function drawLevelCard(valueText, frac) {
+    if (hudSink) hudSink('LevelCard', { text: valueText, frac });
     levelCardLastText = String(valueText);
     const w = 100, h = 22, x = (128 - w) >> 1, y = 21;
     fill_rect(x, y, w, h, 0);          /* punch a hole in whatever is under us */
@@ -1560,6 +1561,7 @@ export function drawBigNum(cellX, ky, text) {
  * filled white bar, black text, left-aligned, ALL CAPS. `invert` = the
  * secondary-bank variant (ARP IN / AUTO): white-on-black. */
 export function drawKitHeader(text, invert, maxW) {
+    if (hudSink) hudSink('KitHeader', { text, invert: !!invert });
     /* UPPERCASE for the same reason drawKitList does it: this font keeps true
      * lowercase `d` and `t` glyphs and maps every other lowercase letter to its
      * capital, so mixed-case titles come out with two odd letters. A no-op for
@@ -1612,6 +1614,7 @@ export function drawKitBankGlyph(kind, x, y, color) {
             if (g[j][i] === '#') set_pixel(x + i, y + j, color);
 }
 export function drawKitBankHeader(name, glyph, right) {
+    if (hudSink) hudSink('KitBankHeader', { name, glyph, right });
     fill_rect(0, 0, SCREEN_W, MV_HDR_H, 1);
     let x = 2;
     const gw = kitBankGlyphWidth(glyph);
@@ -1627,6 +1630,7 @@ export function drawKitBankHeader(name, glyph, right) {
  * white — the state flip is the touch feedback; the label strip below shows
  * the VALUE. No page bar in this state. */
 export function drawKitTouchedHeader(name) {
+    if (hudSink) hudSink('KitTouchedHeader', { name });
     const t = fit4x5(String(name).toUpperCase(), SCREEN_W - 4);
     fontPrint4x5(Math.max(2, Math.round((SCREEN_W - fontWidth4x5(t)) / 2)), 1, t, 1);
     fill_rect(0, MV_BAR_Y, SCREEN_W, 1, 1);   /* same rule as the resting header */
@@ -1700,6 +1704,7 @@ export function drawKitBrandHeader() {
  * card already says which bank you are on in words. Do not re-add it without him
  * asking. This function is sound mode's, and sound mode's only. */
 export function drawKitPageBar(idx, count, groups) {
+    if (hudSink) hudSink('KitPageBar', { idx, count, groups });
     if (count <= 1) return;
 
     if (count > SCREEN_W) {
@@ -2460,6 +2465,7 @@ export function isBackHint(h) {
 let kitHintsLast = null;
 export function kitHintsForTest() { return kitHintsLast; }
 export function drawKitHintRow(y, hints) {
+    if (hudSink) hudSink('KitHintRow', { hints });
     kitHintsLast = hints ? hints.filter(Boolean).map((h) => h.slice ? h.slice() : h) : null;
     if (!hints || !hints.length) return 0;
     const ty = (y == null ? MV_FOOTER_Y : y) + Math.floor((MV_FOOTER_H - FONT4_HEIGHT) / 2);
@@ -2568,6 +2574,7 @@ export const MV_HDR_GAP = 4;
 export const MV_HDR_MIN_LEFT = Math.floor(SCREEN_W * 0.55);
 
 export function drawKitHeaderParamPages(left, right, inverted) {
+    if (hudSink) hudSink('KitHeaderParamPages', { left, right, inverted: !!inverted });
     const l = String(left == null ? '' : left).toUpperCase();
     const rIn = String(right == null ? '' : right).toUpperCase();
     if (inverted) {
@@ -2768,6 +2775,19 @@ function drawCellLabel(col, lblY, cell, touched) {
  * individual widgets to one envelope graphic drawn across the span. Their
  * LABEL strips still render, so A/D/S/R stay named and touch-swap to their
  * values as usual. Omitted by davebox, which has no env banks. */
+/* ⭑ THE HUD SINK. The browser's Screen view redraws this screen from a
+ * description of it, and every primitive below reports what it was ASKED to
+ * draw — its arguments, untouched — to this one function when a recorder has
+ * installed it (davebox/ui/hud/hud_frame.mjs, only while a viewer is
+ * connected). Null otherwise, so the cost is one test per primitive call. This
+ * file stays pure: it reads nothing and keeps nothing; the sink is the
+ * caller's. Same pattern as setKitTextTrace. */
+let hudSink = null;
+export function setKitHudSink(fn) { hudSink = (typeof fn === 'function') ? fn : null; }
+/* For drawing that is not a primitive of this file (a dialog's buttons, a
+ * bespoke screen's readout): the same channel, so the recorder has ONE input. */
+export function kitHudTap(kind, payload) { if (hudSink) hudSink(kind, payload); }
+
 /* What drawKitCells last drew: each cell's label, text and lock mark, and the
  * highlighted index — the cells print through mvPrint, which a test cannot
  * see (same reason as levelCardTextForTest). */
@@ -2782,6 +2802,7 @@ let kitLockRow = -1;
 export function kitLaneFocusRowReset() { kitLockRow = -1; }
 export function kitLaneFocusRow() { return kitLockRow; }
 export function drawKitCells(cells, touchedIdx, env, filt, eq, samp, anim, nowMs) {
+    if (hudSink) hudSink('KitCells', { cells, touched: touchedIdx, env, filt, eq, samp });
     for (let k = 0; k < cells.length && k < 8; k++) if (cells[k] && cells[k].lock) { kitLockRow = k < 4 ? 0 : 1; break; }
     /* ⭑ THE LANE IN FOCUS IS HIGHLIGHTED (a jump or pin from the AUTOMATION
      * bank marks its parameter's cell `lock`): its label strip inverts like a
@@ -2838,6 +2859,7 @@ export function drawKitCells(cells, touchedIdx, env, filt, eq, samp, anim, nowMs
  * turned. Centered in the shared zoom box (same footprint as the value zoom),
  * standard system font, with a scrollbar whenever the options don't all fit. */
 export function drawKitEnumOverlay(cells, touchedIdx) {
+    if (hudSink) hudSink('KitEnumOverlay', { cells, touched: touchedIdx });
     const cell = touchedIdx >= 0 ? cells[touchedIdx] : null;
     /* Any cell carrying a discrete option list (named enum, direction, OR a
      * numeric value-box) uses the picker — they're the same thing, limited
@@ -2917,6 +2939,7 @@ export function kitStackBox(depth) {
 }
 
 export function drawKitStackedList(depth, rows, sel, opts) {
+    if (hudSink) hudSink('KitStackedList', { depth, rows, sel, opts });
     const o = opts || {};
     const d = Math.max(1, depth | 0);
     /* ⚠⚠ `bottomY` EXISTS BECAUSE THE BOX OTHERWISE RUNS UNDER A FOOTER.
@@ -3059,6 +3082,7 @@ function crumbRunW(pieces) {
     return w + Math.max(0, pieces.length - 1) * crumbSepW();
 }
 export function drawKitCrumbs(parts) {
+    if (hudSink) hudSink('KitCrumbs', { parts });
     const all = (parts || []).filter((p) => p != null && String(p) !== '');
     if (!all.length) return;
     const room = CRUMB_MAXW - 2 - CRUMB_PAD * 2;
@@ -3146,6 +3170,7 @@ export function bankMapCellRect(c, r) {
  * instrument'"): one box round them, its outer corners rounded as a pad's, a
  * dotted line on the row between; the current one fills its own half. */
 export function drawKitBankMap(cols, cur, joins) {
+    if (hudSink) hudSink('KitBankMap', { cols, cur, joins });
     if (!cols) return;
     fill_rect(0, 0, SCREEN_W, 64, 0);
     const js = joins || [];
@@ -3197,6 +3222,7 @@ export function drawKitBankMap(cols, cur, joins) {
 
 
 export function drawKitListOverlay(options, sel, opts) {
+    if (hudSink) hudSink('KitListOverlay', { options, sel, opts });
     /* ⭑ The box AUTO-SIZES to its longest label (Josh, 2026-08-25). It starts at
      * the kit's zoom footprint — so a short enum looks exactly as it always has,
      * sharing its outline with the value zoom — and grows only when the text
@@ -3303,6 +3329,7 @@ export function drawKitListOverlay(options, sel, opts) {
  * sound's row map, which is the same documentation-diverges-from-device trap
  * that has already bitten twice today. The CALLER selects. */
 export function drawKitBankPage(cells, opts) {
+    if (hudSink) hudSink('KitBankPage', { cells, opts });
     const t = opts.touchedIdx != null ? opts.touchedIdx : -1;
     const touched = t >= 0 && cells[t] && cells[t].name ? cells[t] : null;
     /* ⭑⭑ THE HEADER FOLLOWS THE LAYOUT, never an opt. See KIT_LAYOUTS: the row
@@ -3389,6 +3416,7 @@ export function enumOverlayWouldDraw(cells, idx) {
  * pickers (their scrolling list overlay already does this), on/off toggles,
  * one-shot actions, and blanks. */
 export function drawKitValueOverlay(cells, idx) {
+    if (hudSink) hudSink('KitValueOverlay', { cells, idx });
     if (idx < 0) return;
     const cell = cells[idx];
     if (!cell || !cell.name) return;
@@ -3444,6 +3472,7 @@ export function drawKitValueOverlay(cells, idx) {
  *
  * `sections`: [{ name }] — already ordered. `activeIdx`: highlighted row. */
 export function drawKitSectionPicker(sections, activeIdx) {
+    if (hudSink) hudSink('KitSectionPicker', { sections, active: activeIdx });
     if (!sections || !sections.length) return;
     const x = 4, y = 2, w = SCREEN_W - 8, h = 64 - 4;
     fill_rect(x, y, w, h, 0);          /* clear the page underneath */
@@ -3491,6 +3520,7 @@ export function drawKitSectionPicker(sections, activeIdx) {
  * new HUD work composes on this instead of hand-drawing a third bespoke box.
  * (drawKitValueOverlay keeps its own zoom-box lifecycle; it predates this.) */
 export function hudCard(title, valueText) {
+    if (hudSink) hudSink('HudCard', { title, value: valueText });
     const x = 6, y = 11, w = SCREEN_W - 12, h = 42;
     fill_rect(x, y, w, h, 0);
     rectOutline(x, y, w, h, 1);
@@ -3528,6 +3558,7 @@ export function hudCard(title, valueText) {
  * to look like a value. */
 const QUAL_GAP = 3;
 export function drawKitList(rows, sel, opts) {
+    if (hudSink) hudSink('KitList', { rows, sel, opts });
     const o = opts || {};
     /* ⭑ THE LIST'S HORIZONTAL BOUNDS. Defaults are the full screen, so every
      * existing caller is byte-identical; pass `x`/`w` to render the same list
@@ -3799,6 +3830,7 @@ export function drawKitArrow(x, y, dir) {
  * behind an arrow, so it reads as a wheel rather than a number you are told.
  * `arrows` false draws no edge furniture at all (a value that is not turned). */
 export function drawKitBigValue(y, num, unit, prev, next, arrows) {
+    if (hudSink) hudSink('KitBigValue', { num, unit, prev, next });
     const n = String(num);
     const big = bigNumCanDraw(n);
     const nw = big ? fontWidthBigNum(n) : fontWidth4x5(n);
@@ -3821,6 +3853,7 @@ export function drawKitBigValue(y, num, unit, prev, next, arrows) {
 /* A prompt screen: title in the header bar, lines of 4x5 caps centred in the
  * body, hints on the footer row (null for none). */
 export function drawKitPrompt(title, lines, hints) {
+    if (hudSink) hudSink('KitPrompt', { title, lines, hints });
     clear_screen();
     drawKitHeader(title);
     const pitch = 9;
@@ -3837,6 +3870,7 @@ export function drawKitPrompt(title, lines, hints) {
 /* A mode chip in the hint-pill shape: FILLED when on, OUTLINED when off.
  * Returns its width so a row of them can be laid out. */
 export function drawKitChip(x, y, label, on) {
+    if (hudSink) hudSink('KitChip', { label, on: !!on });
     const t = String(label).toUpperCase();
     const w = fontWidth4x5(t) + MV_HINT_PAD * 2, h = MV_FOOTER_H;
     if (on) {
@@ -3914,6 +3948,7 @@ export function kitChipWidth(label) {
  * draw zero ink), so uppercasing is the only safe thing to do with it, and a
  * title is the one place that costs something. */
 export function drawKitMarkHeader(text) {
+    if (hudSink) hudSink('KitMarkHeader', { text });
     /* An 8px bar, not the 7px one: this face is 6 rows tall and its ascenders
      * (b, d, k, l, t) then sit flush against the bar's top edge and read as
      * clipped. The brand header is 8 for the same reason. */

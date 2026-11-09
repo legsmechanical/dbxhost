@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>dAVEBOx — Clip Editor</title>
 <style>
   :root{--bg:#101216;--panel:#171a20;--panel2:#1c2027;--ink:#e9ebf0;--dim:#878d9a;--faint:#5a606c;
@@ -18,6 +18,9 @@
   #site .sitebrand{font-weight:700;letter-spacing:.5px;font-size:15px;color:var(--ink);
         text-decoration:none}
   #site .sitebrand .dot{color:var(--accent)}
+  /* the editor as its own window (web_ui_app.js): an app, not a page of the site */
+  body.app-window #site,body.app-window #popEditor{display:none}
+  body.app-window #app{padding-left:var(--app-safe-l,0px);padding-right:var(--app-safe-r,0px)}
   #site .sitelinks{margin-left:auto;display:flex;gap:2px}
   #site .sitelinks a{color:#a9afbb;font-size:13px;text-decoration:none;padding:4px 9px;
         border-radius:4px}
@@ -473,7 +476,8 @@ body[data-view="mix"] .seqonly,body[data-view="sound"] .seqonly{display:none}
     <span class="seg views" id="viewseg" title="Views — the selected track is shared across them">
       <button id="viewSeq" class="on">Sequencer</button>
       <button id="viewMix">Mixer</button>
-      <button id="viewSound">Sound</button></span>
+      <button id="viewSound">Sound</button>
+      <button id="viewScreen" title="dAVEBOx's screen, redrawn in colour — follows the device">Screen</button></span>
     <button class="ghost" id="xport" title="Start / stop transport">▶</button>
     <span class="badge play" id="transport">—</span>
     <span id="globals"></span>
@@ -489,6 +493,7 @@ body[data-view="mix"] .seqonly,body[data-view="sound"] .seqonly{display:none}
     <button class="ghost seqonly" id="sessToggle" title="Show / hide the session grid"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="1.5"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg></button>
     <button class="ghost" id="gear" title="Global settings (key, scale, swing, launch)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V15z"/></svg></button>
     <button class="ghost" id="sync" title="Re-pull from device"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3.5v6h-6"/></svg></button>
+    <button class="ghost" id="popEditor" title="Open the editor in its own window"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4l-8 8"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></button>
     <button id="auto" class="on sm" title="Auto-refresh from device">Auto</button>
   </div>
   <div id="session"><div id="grid" title="tracks × scenes — click a clip to launch it (editor follows, like the hardware); Alt/Shift-click to view without launching; ▶ launches a scene"></div></div>
@@ -529,6 +534,7 @@ body[data-view="mix"] .seqonly,body[data-view="sound"] .seqonly{display:none}
   <div id="globalpop"><h4>Global settings</h4><div id="globalpanel"></div></div>
   <div id="mixer"><div id="clipribbon"></div><div class="strips" id="mixstrips"></div></div>
   <div id="sound"><div id="soundwrap"></div></div>
+  <div id="screenview"><div class="hud-fit" id="hudfit"></div></div>
 </div>
 <div id="diag"></div>
 
@@ -538,5 +544,20 @@ body[data-view="mix"] .seqonly,body[data-view="sound"] .seqonly{display:none}
 <script src="web_ui_mix.js"></script>
 <script src="web_ui_params.js"></script>
 <script src="web_ui_ribbon.js"></script>
+<!-- the Screen view (web_ui_hud_core.js explains the split) -->
+<!-- the editor and the Screen view as windows / apps of their own -->
+<script src="web_ui_app.js"></script>
+<script src="web_ui_hud_core.js"></script>
+<script src="web_ui_hud_config.js"></script>
+<script src="web_ui_hud_theme.js"></script>
+<script src="web_ui_hud_regions.js"></script>
+<script src="web_ui_hud_layouts.js"></script>
+<script src="web_ui_hud_widgets.js"></script>
+<script src="web_ui_hud_adorn.js"></script>
+<script src="web_ui_hud_items.js"></script>
+<script src="web_ui_hud_viz.js"></script>
+<script src="web_ui_hud_overview.js"></script>
+<script src="web_ui_hud_source.js"></script>
+<script src="web_ui_hud_app.js"></script>
 <script src="web_ui_sound.js"></script>
 </body></html>

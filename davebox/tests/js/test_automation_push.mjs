@@ -25,6 +25,7 @@ function dec(blob) {
     return out;
 }
 let reads = 0;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_module_get_params = (blob) => {
     const keys = dec(blob);
     requests.push({ kind: 'get', keys });

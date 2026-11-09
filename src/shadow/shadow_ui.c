@@ -32,6 +32,7 @@
 #include "host/shadow_param_lane_policy.h"
 #include "host/shadow_dirty_policy.h"
 #include "host/shadow_shm_util.h"
+#include "host/ui_publish_shm.h"
 #include "host/js_host_common.h"
 #include "host/shadow_midi_inject_writer.h"
 #include "host/ui_midi_ring.h"
@@ -2967,6 +2968,69 @@ static JSValue js_host_sampler_set_external_stop(JSContext *ctx, JSValueConst th
  * model of the set this fork does not carry. The binding exists here so a
  * module written against it gets the documented "this Schwung does not provide
  * it" answer instead of a ReferenceError that retires its page hooks. */
+/*
+ * host_ui_publish(json) -- publish a JSON description of what this module's UI
+ * shows, for remote viewers (see ui_publish_shm.h; display_server streams it as
+ * `event: ui`). host_ui_publish(null) publishes nothing and only asks.
+ *
+ * Returns true while a viewer is connected, so a module can skip describing
+ * its screen when nobody is watching -- the normal case, which then costs one
+ * call per second. Every call also says the writer is alive (a still screen
+ * and a stopped module look alike otherwise). A document longer than UI_PUBLISH_MAX is refused (a
+ * truncated document is worse than the previous one).
+ *
+ * The segment is made on first call, and made again if its name has gone:
+ * something unlinks /dev/shm segments shortly after stack start, and a mapping
+ * whose name was unlinked can still be written but never opened by a reader.
+ */
+static ui_publish_shm_t *ui_publish_shm = NULL;
+static uint64_t ui_publish_checked_ms = 0;
+static uint64_t ui_publish_now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u;
+}
+static int ui_publish_attach(uint64_t now) {
+    if (ui_publish_shm && now - ui_publish_checked_ms < 1000) return 1;
+    ui_publish_checked_ms = now;
+    if (ui_publish_shm) {
+        struct stat st;
+        if (stat(UI_PUBLISH_SHM_PATH, &st) == 0) return 1;
+        munmap(ui_publish_shm, sizeof(ui_publish_shm_t));
+        ui_publish_shm = NULL;
+        unified_log("shadow_ui", LOG_LEVEL_INFO, "ui publish segment was unlinked; making it again");
+    }
+    ui_publish_shm = (ui_publish_shm_t *)shadow_shm_map(UI_PUBLISH_SHM_NAME,
+                                                        sizeof(ui_publish_shm_t), 1, 1);
+    if (!ui_publish_shm) return 0;
+    ui_publish_shm_init(ui_publish_shm);
+    return 1;
+}
+static JSValue js_host_ui_publish(JSContext *ctx, JSValueConst this_val,
+                                  int argc, JSValueConst *argv) {
+    (void)this_val;
+    uint64_t now = ui_publish_now_ms();
+    if (!ui_publish_attach(now)) return JS_FALSE;
+    ui_publish_shm_t *m = ui_publish_shm;
+    if (argc >= 1 && JS_IsString(argv[0])) {
+        size_t len = 0;
+        const char *json = JS_ToCStringLen(ctx, &len, argv[0]);
+        if (json && len <= UI_PUBLISH_MAX) {
+            __atomic_store_n(&m->seq, m->seq | 1u, __ATOMIC_RELEASE);   /* odd: writing */
+            __sync_synchronize();
+            memcpy(m->json, json, len);
+            m->len = (uint32_t)len;
+            m->last_update_ms = now;
+            __sync_synchronize();
+            __atomic_store_n(&m->seq, (m->seq | 1u) + 1u, __ATOMIC_RELEASE);  /* even: done */
+        }
+        if (json) JS_FreeCString(ctx, json);
+    }
+    m->last_update_ms = now;   /* alive, whether or not a document changed */
+    uint64_t seen = __atomic_load_n(&m->viewer_ms, __ATOMIC_RELAXED);
+    return JS_NewBool(ctx, seen != 0 && now - seen < UI_PUBLISH_VIEWER_MS);
+}
+
 static JSValue js_host_get_move_info(JSContext *ctx, JSValueConst this_val,
                                      int argc, JSValueConst *argv) {
     (void)ctx; (void)this_val; (void)argc; (void)argv;
@@ -3289,6 +3353,7 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
     JS_SetPropertyStr(ctx, global_obj, "host_sampler_is_paused", JS_NewCFunction(ctx, js_host_sampler_is_paused, "host_sampler_is_paused", 0));
     JS_SetPropertyStr(ctx, global_obj, "host_wake_all_slots", JS_NewCFunction(ctx, js_host_wake_all_slots, "host_wake_all_slots", 0));
     JS_SetPropertyStr(ctx, global_obj, "host_get_move_info", JS_NewCFunction(ctx, js_host_get_move_info, "host_get_move_info", 0));
+    JS_SetPropertyStr(ctx, global_obj, "host_ui_publish", JS_NewCFunction(ctx, js_host_ui_publish, "host_ui_publish", 1));
 
     JS_SetPropertyStr(ctx, global_obj, "exit", JS_NewCFunction(ctx, js_exit, "exit", 0));
 

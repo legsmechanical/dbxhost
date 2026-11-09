@@ -20,6 +20,7 @@ for (const fn of ['host_system_cmd', 'host_write_file', 'host_ensure_dir', 'host
     'host_ext_midi_remap_enable', 'host_send_midi'])
     globalThis[fn] = () => 0;
 globalThis.host_module_set_param = (k, v) => { sets.push([k, String(v)]); return 0; };
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = () => '';
 globalThis.host_file_exists = () => false;
 globalThis.host_module_get_param = () => '';

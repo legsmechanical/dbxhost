@@ -24,6 +24,7 @@ for (const fn of ['host_system_cmd', 'host_ensure_dir', 'host_remove_dir',
     'host_ext_midi_remap_enable', 'host_send_midi', 'host_module_set_param'])
     globalThis[fn] = () => 0;
 globalThis.host_write_file = (p, c) => { written[p] = c; return true; };
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = () => '';
 globalThis.host_file_exists = () => false;
 globalThis.shadow_get_param = () => '';

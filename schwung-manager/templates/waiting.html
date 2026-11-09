@@ -15,7 +15,12 @@ open the app automatically.</p>
         fetch('/api/tool', {cache: 'no-store'})
             .then(function (r) { return r.json(); })
             .then(function (t) {
-                if (t && t.url) { window.location.replace(t.url); return; }
+                if (t && t.url) {
+                    /* carry this page's own query (?screen=1) to the app */
+                    var q = window.location.search.slice(1);
+                    window.location.replace(q ? t.url + (t.url.indexOf('?') < 0 ? '?' : '&') + q : t.url);
+                    return;
+                }
                 document.getElementById('waiting-status').textContent =
                     'No session detected — checking again…';
                 setTimeout(poll, 2000);

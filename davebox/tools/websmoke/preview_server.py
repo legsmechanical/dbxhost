@@ -11,6 +11,13 @@ class H(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path in ("/", "/index.html"):
             self.send_response(302); self.send_header("Location", "/web_ui.html"); self.end_headers(); return
+        # the manager's module-assets route, answered from the test fixtures, so
+        # the Screen view's custom widgets (a module's canvas.js) draw offline
+        p = "/api/remote-ui/module-assets/"
+        if self.path.startswith(p):
+            rest = self.path[len(p):].split("?")[0]
+            if ".." not in rest:
+                self.path = "/tests/fixtures/" + rest
         super().do_GET()
     def log_message(self, *a): pass
 http.server.ThreadingHTTPServer(("", 8199), functools.partial(H, directory=DIR)).serve_forever()

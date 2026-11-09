@@ -671,6 +671,16 @@ function renderGlobals(){
 /* Session grid: tracks = columns, scenes = rows. Track headers + clips show the
  * device track colors. Click a clip = select it for editing; double-click =
  * launch it; ▶ in the left column = launch the whole scene row. */
+/* What a track plays, by name — the session grid's header and the Screen
+ * view's status strip both say it (null = no route data yet). */
+function trackInstName(trk,t){
+  return trk.pm===2?"Conductor"   /* its instrument row is inert — say what it IS */
+    :trk.pm===PM_AUDIO?"Audio"             /* plays its clips' samples, no instrument */
+    :trk.pm===PM_SLICER?"Slicer"           /* plays its one sample's chops */
+    :trk.route===0?(mixKV["chain:"+t+":synth_name"]||mixKV["chain:"+t+":synth_module"]||"Synth")
+    :trk.route===1?("Move "+moveBusForChannel(trk.chan))
+    :trk.route===2?("MIDI Ch."+trk.chan):null;
+}
 let clipDrag=null;   /* {t,c} source while dragging a clip in the session grid */
 function renderSession(){
   closeClipMenu();   /* a rebuild destroys the menu's anchor — never leave it orphaned */
@@ -684,14 +694,9 @@ function renderSession(){
      * name once known, "Synth" until the mixer namespace has been seeded),
      * "1 - Move 3", "3 - MIDI Ch.3"; falls back to mode+index without route
      * data. Never the retired position letters. */
-    const instShort=trk.pm===2?"Conductor"   /* its instrument row is inert — say what it IS */
-      :trk.pm===PM_AUDIO?"Audio"             /* plays its clips' samples, no instrument */
-      :trk.pm===PM_SLICER?"Slicer"           /* plays its one sample's chops */
-      :trk.route===0?(mixKV["chain:"+t+":synth_name"]||mixKV["chain:"+t+":synth_module"]||"Synth")
-      :trk.route===1?("Move "+moveBusForChannel(trk.chan))
-      :trk.route===2?("MIDI Ch."+trk.chan):null;
+    const instShort=trackInstName(trk,t);
     /* instShort can be a MODULE's own name and goes into innerHTML and a
-     * title="" attribute: escape it (escMix, web_ui_mix.js). */
+     * title="" attribute: escape it (escMix, web_ui_core.js). */
     const lbl=(instShort!=null)?`${t+1} - ${escMix(instShort)}`:(trk.pm===1?"D":trk.pm===2?"C":trk.pm===PM_AUDIO?"A":trk.pm===PM_SLICER?"S":"M")+(t+1);
     const ttl=(instShort!=null)?`Track ${t+1} → ${escMix(instShort)}`:`track ${t+1}`;
     /* conductor / responder indicator (rui_cond): "C" on the conductor track,

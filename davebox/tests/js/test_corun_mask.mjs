@@ -28,6 +28,7 @@ import { readFileSync } from 'fs';
 let opened = null;
 let onReturn = null;
 globalThis.host_register_primary = (o) => { onReturn = o.onServiceReturn; return true; };
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 /* The shim's PHYSICAL Shift (shadow_control->shift_held, read from the
  * hardware buffer before routing) — what dAVEBOx follows in co-run. */
 let physShift = 0;

@@ -18,6 +18,7 @@ function assert(c, m) { if (!c) throw new Error(m); }
 const FILES = {};
 const WRITES = [];
 globalThis.host_system_cmd = () => 0;
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = (p) => (FILES[p] !== undefined ? FILES[p] : '');
 globalThis.host_file_exists = (p) => FILES[p] !== undefined;
 globalThis.host_write_file = (p, b) => { FILES[p] = String(b); WRITES.push(p); return true; };

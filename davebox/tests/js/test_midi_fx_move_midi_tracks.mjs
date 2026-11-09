@@ -53,6 +53,7 @@ globalThis.shadow_set_param = (slot, key, val) => {
 };
 const dsp = {};
 globalThis.host_module_set_param = (k, v) => { dsp[k] = String(v); order.push('dsp:' + k + '=' + v); };
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_module_get_param = () => '';
 globalThis.shadow_save_state_now = () => 1;
 globalThis.shadow_send_midi_to_dsp = () => {};

@@ -688,6 +688,7 @@ document.getElementById("viewSound").onclick = () => setView("sound");
  * by the time setView runs. */
 try {
   const h = (location.hash || "").slice(1);
-  const v = (h === "seq" || h === "mix" || h === "sound") ? h : localStorage.getItem("dbx_view");
-  if (v === "mix" || v === "sound") setView(v);
+  const v = (h === "seq" || h === "mix" || h === "sound" || h === "screen") ? h : localStorage.getItem("dbx_view");
+  if (new URLSearchParams(location.search).has("screen")) setView("screen");   /* standalone */
+  else if (v === "mix" || v === "sound" || v === "screen") setView(v);
 } catch (e) { /* ignore */ }

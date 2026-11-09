@@ -83,7 +83,7 @@ import { requestTrackModeChange, showMenuInfo } from './ui_dialogs.mjs';
 import { requestClipMidiExport } from './ui_midi_export.mjs';
 import { freezeTrackRequest } from './ui_audio_convert.mjs';
 import {
-    openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
+    openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry, getTextEntryView,
     closeTextEntry,
 } from '/data/UserData/schwung/shared/text_entry.mjs';
 import {
@@ -106,7 +106,7 @@ import {
     kitUseLayout,
     drawKitStackedList, drawKitBackdropDim, drawKitCrumbs, kitStackBox, drawBrackets,
     MV_BAR_Y,
-    hdrPrint, mvPrint, mvWidth, shapeSample, plotLine, hudCard, drawLevelCard, MV_ROW1_Y } from './ui_movy.mjs';
+    hdrPrint, mvPrint, mvWidth, shapeSample, plotLine, hudCard, drawLevelCard, MV_ROW1_Y, kitHudTap } from './ui_movy.mjs';
 import { bankCyclePos, bankCycleForMode } from './ui_pure.mjs';
 /* ⭐⭐ THE MODULE EDITOR IS THE HOST'S, AND NOW LITERALLY THE SAME FILE.
  *
@@ -176,8 +176,15 @@ const { enterParamPages, exitParamPages, tickParamPages, drawParamPages,
         paramPagesPickerOpen, paramPagesMenuEntered,
         paramPagesRefreshTrailing, paramPagesFullKeyAt, paramPagesRepaintKnobs,
         paramPagesCachedValue, paramPagesLevelNameOf, paramPagesOverlayShown,
-        paramPagesPageLabel, paramPagesSetDecorations, paramPagesDecorations } = PP;
+        paramPagesPageLabel, paramPagesSetDecorations, paramPagesDecorations,
+        paramPagesDescribe } = PP;
+/* The module editor's page as data, for the Screen view (hud/contrib/params.mjs). */
+export function soundParamPageModel() { return paramPagesDescribe({ title: PP.headerTitle() }); }
+/* The module whose editor that is — the Screen view fetches its canvas.js to
+ * draw the module's own widgets at full size. */
+export function soundEditorModuleId() { return S.moduleId || ''; }
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
+import { hudScreen } from './hud/hud_frame.mjs';
 /* ⚠⚠ THE CANONICAL SPECIFIER, AND IT IS LOAD-BEARING. The registry is the
  * one the grid reads only because both names normalise to the same module:
  * the binding reaches it from inside this same
@@ -7677,6 +7684,7 @@ function renderLfo() {
         plotLine(px, py, x0 + i, y, 1);
         px = x0 + i; py = y;
     }
+    kitHudTap('Lfo', { shape, bipolar, phase, retrigger: S.lfoVals.retrigger === '1', cycles: WAVE_CYCLES });
     if (S.lfoVals.retrigger === '1') {
         fill_rect(x0, Math.max(topY, Math.min(botY - 2, yAt(0) - 1)), 3, 3, 1);
     }
@@ -11835,6 +11843,7 @@ function renderNoEditor() {
     clear_screen();
     kitUseLayout('bank');
     drawKitBankHeader(TRACK_MENU_TITLE, null, bankHeaderRight(false));
+    kitHudTap('Message', { big: '', lines: ['No instrument editor', 'for ' + noEditorWords(S.track)] });
     centreText(MV_ROW1_Y - 8, 'NO INSTRUMENT EDITOR');
     centreText(MV_ROW1_Y + 2, 'FOR ' + noEditorWords(S.track).toUpperCase());
     fill_rect(0, MV_FOOTER_Y - 3, 128, 64 - (MV_FOOTER_Y - 3), 0);
@@ -13577,8 +13586,9 @@ function closeCanvasScreen() {
  * the way out. */
 function renderChainScreen() {
     if (!chainUiActive()) return;
-    if (!chainUiDead()) { chainUiTick(); if (!chainUiDead()) return; }
+    if (!chainUiDead()) { kitHudTap('Picture', { kind: 'module', caption: String(engineModuleAbbrev(S.moduleId) || '') }); chainUiTick(); if (!chainUiDead()) return; }
     clear_screen();
+    kitHudTap('Message', { big: String(engineModuleAbbrev(S.moduleId) || 'Module'), lines: [String(chainUiError() || 'module screen stopped')], wordmark: true });
     print(3, 12, String(engineModuleAbbrev(S.moduleId) || 'Module').slice(0, 24), 1);
     print(3, 30, String(chainUiError() || 'module screen stopped').slice(0, 24), 1);
     drawKitHintRow(MV_FOOTER_Y, [['back', 'exit']]);
@@ -13927,6 +13937,7 @@ function renderChainPatches() {
     if (S.patchConfirm) {
         drawKitHeader(S.patchConfirm.t === 'delete' ? 'DELETE?' : 'OVERWRITE?', false);
         centreText(24, String(S.patchConfirm.name || '').toUpperCase());
+        kitHudTap('Buttons', { labels: ['No', 'Yes'], sel: (S.patchConfirmIdx === 1) ? 1 : 0 });
         drawDialogYesNoRow(S.patchConfirmIdx === 1);
         return;
     }
@@ -13951,6 +13962,7 @@ function renderPresetList() {
         const p = S.userPresets[S.userIdx - 1];
         drawKitHeader('DELETE?', false);
         centreText(24, String(p ? p.name : '').toUpperCase());
+        kitHudTap('Buttons', { labels: ['No', 'Yes'], sel: (S.confirmIdx === 1) ? 1 : 0 });
         drawDialogYesNoRow(S.confirmIdx === 1);
         return;
     }
@@ -14003,6 +14015,7 @@ function renderMenu() {
          * the thing you need to check before saying yes. */
         drawKitHeader('OVERWRITE?', false);
         centreText(24, String(S.confirmItem.label || '').toUpperCase());
+        kitHudTap('Buttons', { labels: ['No', 'Yes'], sel: (S.confirmIdx === 1) ? 1 : 0 });
         drawDialogYesNoRow(S.confirmIdx === 1);
         return;
     }
@@ -14112,9 +14125,43 @@ function drawVolReadout() {
     drawLevelCard(trackLevelCardText(S.track, S.volLevel), faderGainToTravel(S.volLevel));
 }
 
+/* Stable names for the Screen view's screen ids (hud/hud_frame.mjs), one per view
+ * soundRender dispatches; a view missing here publishes as 'sound.view-<n>'. */
+const SOUND_VIEW_NAMES = {
+    [VIEW_PROMPT]: 'prompt',
+    [VIEW_CFGCARD]: 'config-card',
+    [VIEW_NOEDITOR]: 'no-editor',
+    [VIEW_MACROS]: 'macros',
+    [VIEW_BLOCKS]: 'blocks',
+    [VIEW_BROWSE]: 'browse',
+    [VIEW_PRESET_SRC]: 'preset-src',
+    [VIEW_PRESET_LIST]: 'preset-list',
+    [VIEW_PRESET_BAKED]: 'preset-baked',
+    [VIEW_MENU]: 'menu',
+    [VIEW_HELP]: 'help',
+    [VIEW_FILE]: 'file',
+    [VIEW_MODBUS]: 'mod-bus',
+    [VIEW_MODBUS_GROUP]: 'mod-bus-group',
+    [VIEW_MODBUS_VOICES]: 'mod-bus-voices',
+    [VIEW_MODBUS_CHAIN]: 'mod-bus-chain',
+    [VIEW_SLOTCFG]: 'slot-cfg',
+    [VIEW_KNOBS]: 'knobs',
+    [VIEW_KNOBLEGS]: 'knob-legs',
+    [VIEW_KNOB_TARGET]: 'knob-target',
+    [VIEW_KNOB_PARAM]: 'knob-param',
+    [VIEW_LFO]: 'lfo',
+    [VIEW_LFO_TARGET]: 'lfo-target',
+    [VIEW_LFO_PARAM]: 'lfo-param',
+    [VIEW_WAV]: 'wav-edit',
+    [VIEW_CANVAS]: 'canvas-edit',
+    [VIEW_CHAIN]: 'chain-screen',
+    [VIEW_ENUM]: 'enum-pick',
+    [VIEW_PATCHES]: 'chain-patches',
+    [VIEW_BUSES]: 'buses',
+};
 export function soundRender() {
     if (!S.active) return false;
-    if (isTextEntryActive()) { drawTextEntry(); return true; }
+    if (isTextEntryActive()) { hudScreen('text-entry'); kitHudTap('Keyboard', getTextEntryView()); drawTextEntry(); return true; }
     /* At the TOP LEVEL the screen keeps the clip banks' display law (Josh,
      * 2026-08-23): it shows while the jog is touched or the bank-display
      * window is open — the SAME flags the banks read — and otherwise stands
@@ -14151,6 +14198,7 @@ export function soundRender() {
             !(S.volShownUntil >= 0 && GS.clockMs <= S.volShownUntil) &&
             !bankCardShown())       /* + the jog-touch reveal (a render gate) */
         return false;
+    hudScreen('sound.' + (SOUND_VIEW_NAMES[S.view] || 'view-' + S.view));
     if (S.view === VIEW_PROMPT) renderPrompt();
     else if (S.view === VIEW_CFGCARD) renderConfigCard();
     else if (S.view === VIEW_NOEDITOR) renderNoEditor();
@@ -14189,6 +14237,7 @@ export function soundRender() {
      * to say so, inheriting the same false claim as PP_EDITOR's own note. The
      * grid is shipped; renderEdit catches what it will not draw. */
     else if (ppOn && drawParamPages()) {
+        hudScreen('sound.params');
         if (ppLaneLocked()) ppLaneFooter();
         else if (soundPageBarShown()) ppPageBarFooter();
     }

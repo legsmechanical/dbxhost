@@ -25,6 +25,7 @@ for (const fn of ['host_system_cmd','host_file_exists','host_write_file',
     globalThis[fn] = () => (fn.indexOf('get') >= 0 || fn.indexOf('width') >= 0 ? '' : 0);
 /* The engine's render of a clip: "<span> <count> <cycle>", notes in a file. */
 globalThis.host_module_get_param = (k) => (/^t\d+_c0_export$/.test(k) ? '384 2 384' : /_export/.test(k) ? '0 0 0' : '');
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_read_file = () => '0:60:100:24;96:64:90:24;';
 
 async function main() {

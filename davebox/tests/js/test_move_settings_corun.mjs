@@ -26,6 +26,7 @@ const assert = (c, m) => { if (!c) throw new Error(m); };
 
 let opened = [], closes = 0, onReturn = null, injected = [], uiMode = 0, shiftHeld = 0;
 globalThis.host_register_primary = (o) => { onReturn = o.onServiceReturn; return true; };
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_open_service = (id, opts) => { opened.push({ id, opts }); return true; };
 globalThis.host_close_service = () => { closes++; return true; };
 globalThis.shadow_get_move_ui_mode = () => uiMode;

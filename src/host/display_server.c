@@ -52,6 +52,7 @@
 #include "norns_display_shm.h"
 #include "e16_mirror_shm.h"
 #include "surface_live_shm.h"
+#include "ui_publish_shm.h"
 #include "schwung_paths.h"
 #include "audio_live_shm.h"
 #include "unified_log.h"
@@ -69,7 +70,10 @@
 #endif
 #define MAX_CLIENTS        16
 #define POLL_INTERVAL_MS   33    /* ~30 Hz */
+#define UI_POLL_MS         8     /* the UI description: as soon as it changes, while a v=2 page watches */
+#ifndef SHM_RETRY_MS              /* tests shorten it */
 #define SHM_RETRY_MS       2000
+#endif
 #define CLIENT_BUF_SIZE    4096
 #define SSE_BUF_SIZE       7000
 #define HEARTBEAT_MS       2000   /* `event: hb` to every stream; the page's watchdog keys on it */
@@ -87,6 +91,30 @@
 #endif
 
 #define DISPLAY_LOG_SOURCE "display_server"
+
+/* A module's UI description (ui_publish_shm.h): copy the document if a new
+ * one is complete -- a new EVEN sequence, the same before and after the copy.
+ * Returns 1 when `doc` holds a new document. One with a raw newline would split
+ * the SSE event, so it is skipped (JSON.stringify never makes one). */
+static int ui_read(const ui_publish_shm_t *m, uint32_t *last_seq, char *doc, int *doc_len) {
+    if (!m || memcmp(m->magic, UI_PUBLISH_MAGIC, 6) != 0 || m->version != UI_PUBLISH_VERSION)
+        return 0;
+    for (int tries = 0; tries < 4; tries++) {
+        uint32_t s1 = __atomic_load_n(&m->seq, __ATOMIC_ACQUIRE);
+        if (s1 & 1u) continue;
+        if (s1 == *last_seq) return 0;
+        uint32_t len = m->len;
+        if (len == 0 || len > UI_PUBLISH_MAX) return 0;
+        memcpy(doc, (const void *)m->json, len);
+        __atomic_thread_fence(__ATOMIC_ACQUIRE);
+        if (__atomic_load_n(&m->seq, __ATOMIC_RELAXED) != s1) continue;
+        *last_seq = s1;
+        if (memchr(doc, '\n', len) || memchr(doc, '\r', len)) return 0;
+        *doc_len = (int)len;
+        return 1;
+    }
+    return 0;
+}
 
 /* Base64 encoding */
 static const char b64_table[] =
@@ -587,6 +615,19 @@ int main(int argc, char *argv[]) {
     long long hb_at = 0;
     const surface_live_shm_t *surface_ptr = NULL;
     long long last_surface_shm_attempt = 0;
+    /* A module's UI description (ui_publish_shm.h). Mapped READ-WRITE: the
+     * one field we write is viewer_ms. The writer makes the segment again if
+     * its name was unlinked, so the inode is re-checked and a stale mapping
+     * dropped. */
+    ui_publish_shm_t *ui_ptr = NULL;
+    ino_t ui_ino = 0;
+    long long last_ui_shm_attempt = 0;
+    uint32_t ui_last_seq = 0;
+    static char ui_doc[UI_PUBLISH_MAX + 1];
+    int ui_doc_len = 0;
+    static char ui_evt[UI_PUBLISH_MAX + 32];
+    int ui_alive_last = -1;        /* -1 = never told anyone */
+    static char uistate_evt[64];
     static surface_live_shm_t surface_snap, surface_last;
     int surface_have = 0;
     const audio_live_shm_t *audio_ptr = NULL;
@@ -715,6 +756,37 @@ int main(int argc, char *argv[]) {
             }
         }
 
+        /* The UI description, made by shadow_ui once a module publishes. */
+        {
+            long long now = now_ms();
+            if (now - last_ui_shm_attempt >= SHM_RETRY_MS) {
+                last_ui_shm_attempt = now;
+                struct stat st;
+                int gone = stat(UI_PUBLISH_SHM_PATH, &st) != 0;
+                if (ui_ptr && (gone || st.st_ino != ui_ino)) {
+                    munmap(ui_ptr, sizeof(ui_publish_shm_t));
+                    ui_ptr = NULL;
+                    ui_last_seq = 0;
+                    LOG_INFO(DISPLAY_LOG_SOURCE, "%s replaced; reopening", UI_PUBLISH_SHM_PATH);
+                }
+                if (!ui_ptr && !gone) {
+                    int fd = open(UI_PUBLISH_SHM_PATH, O_RDWR);
+                    if (fd >= 0) {
+                        if (fstat(fd, &st) == 0 && st.st_size >= (off_t)sizeof(ui_publish_shm_t)) {
+                            void *p = mmap(NULL, sizeof(ui_publish_shm_t), PROT_READ | PROT_WRITE,
+                                           MAP_SHARED, fd, 0);
+                            if (p != MAP_FAILED) {
+                                ui_ptr = (ui_publish_shm_t *)p;
+                                ui_ino = st.st_ino;
+                                LOG_INFO(DISPLAY_LOG_SOURCE, "opened %s", UI_PUBLISH_SHM_PATH);
+                            }
+                        }
+                        close(fd);
+                    }
+                }
+            }
+        }
+
         /* The mirror's audio ring (audio_live_shm.h), made by the shim. */
         if (!audio_ptr) {
             long long now = now_ms();
@@ -753,6 +825,15 @@ int main(int argc, char *argv[]) {
         struct timeval tv;
         tv.tv_sec = 0;
         tv.tv_usec = POLL_INTERVAL_MS * 1000;
+        /* A page watching the UI description gets it within UI_POLL_MS, not
+         * at the next 33 ms frame: a turned knob should feel immediate. The
+         * extra passes cost a sequence-number read each. */
+        int ui_watched = 0;
+        if (ui_ptr)
+            for (int i = 0; i < MAX_CLIENTS; i++)
+                if (clients[i].fd >= 0 && clients[i].stream_mode == STREAM_MODE_AUTO && clients[i].extras)
+                    { ui_watched = 1; break; }
+        if (ui_watched) tv.tv_usec = UI_POLL_MS * 1000;
         int nready = select(maxfd + 1, &rfds, &wfds, NULL, &tv);
         long long now = now_ms();
 
@@ -818,6 +899,18 @@ int main(int argc, char *argv[]) {
             }
         }
 
+        /* Fast path: a new UI description goes out now, between frames. */
+        if (ui_watched && ui_read(ui_ptr, &ui_last_seq, ui_doc, &ui_doc_len)) {
+            int n = snprintf(ui_evt, sizeof ui_evt, "event: ui\ndata: %.*s\n\n", ui_doc_len, ui_doc);
+            if (n > 0 && n < (int)sizeof ui_evt)
+                for (int i = 0; i < MAX_CLIENTS; i++) {
+                    client_t *c = &clients[i];
+                    if (c->fd >= 0 && c->stream_mode == STREAM_MODE_AUTO && c->extras &&
+                        !c->needs_initial_frame)
+                        (void)client_send(i, ui_evt, n, now);
+                }
+        }
+
         if (now - last_push < POLL_INTERVAL_MS) continue;
         last_push = now;
 
@@ -858,6 +951,11 @@ int main(int argc, char *argv[]) {
                 break;
             }
         }
+
+        /* The UI description: a new even sequence is a new document. One
+         * holding a raw newline would split the SSE event, so it is skipped
+         * (JSON from JSON.stringify never has one). */
+        int ui_changed = ui_read(ui_ptr, &ui_last_seq, ui_doc, &ui_doc_len);
 
         /* Move's OLED (legacy stream) */
         int legacy_changed = 0;
@@ -934,6 +1032,23 @@ int main(int argc, char *argv[]) {
             e16_len = snprintf(e16_evt, sizeof e16_evt, "data: %.*s\n\n", blen, body);
             e16n_len = snprintf(e16n_evt, sizeof e16n_evt, "event: e16\ndata: %.*s\n\n", blen, body);
         }
+        /* Someone is watching: say so, so the module describes its screen.
+         * A stale document (the writer stopped) is not re-sent. */
+        int ui_len = 0, uistate_len = 0, uistate_changed = 0;
+        {
+            int alive = ui_ptr && ui_ptr->last_update_ms &&
+                        (uint64_t)now - ui_ptr->last_update_ms < UI_PUBLISH_STALE_MS;
+            if (alive != ui_alive_last) { ui_alive_last = alive; uistate_changed = 1; }
+            if (want_extras)
+                uistate_len = snprintf(uistate_evt, sizeof uistate_evt,
+                                       "event: uistate\ndata: {\"alive\":%d}\n\n", alive);
+        }
+        if (want_extras && ui_ptr) {
+            __atomic_store_n(&ui_ptr->viewer_ms, (uint64_t)now, __ATOMIC_RELAXED);
+            if (ui_doc_len > 0)
+                ui_len = snprintf(ui_evt, sizeof ui_evt, "event: ui\ndata: %.*s\n\n", ui_doc_len, ui_doc);
+            if (ui_len >= (int)sizeof ui_evt) ui_len = 0;
+        }
         if (want_extras && surface_have) {
             (void)base64_encode((const uint8_t *)&surface_last, (int)sizeof surface_last, b64_buf);
             surf_len = snprintf(surf_evt, sizeof surf_evt,
@@ -1007,6 +1122,10 @@ int main(int argc, char *argv[]) {
                     rc = client_send(i, surf_evt, surf_len, now);
                 if (rc == 0 && c->extras && (full || e16_changed) && e16n_len)
                     rc = client_send(i, e16n_evt, e16n_len, now);
+                if (rc == 0 && c->extras && (full || uistate_changed) && uistate_len)
+                    rc = client_send(i, uistate_evt, uistate_len, now);
+                if (rc == 0 && c->extras && (full || ui_changed) && ui_len)
+                    rc = client_send(i, ui_evt, ui_len, now);
                 if (rc == 0 && c->audio && pcm_len)
                     rc = client_send(i, pcm_evt, pcm_len, now);
                 break;
@@ -1030,6 +1149,7 @@ int main(int argc, char *argv[]) {
     if (norns_shm_ptr) munmap(norns_shm_ptr, sizeof(norns_display_shm_t));
     if (e16_shm_ptr) munmap(e16_shm_ptr, sizeof(e16_mirror_shm_t));
     if (surface_ptr) munmap((void *)surface_ptr, sizeof(surface_live_shm_t));
+    if (ui_ptr) munmap(ui_ptr, sizeof(ui_publish_shm_t));
     if (audio_ptr) munmap((void *)audio_ptr, sizeof(audio_live_shm_t));
     if (norns_shm_fd >= 0) close(norns_shm_fd);
     unified_log_shutdown();

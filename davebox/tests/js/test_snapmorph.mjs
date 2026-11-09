@@ -65,6 +65,7 @@ globalThis.shadow_get_params = () => '';
 globalThis.shadow_send_midi_to_dsp = () => {};
 const modSets = [];
 globalThis.host_module_set_params = (blob) => { const it = dec(blob); for (let i = 0; i + 1 < it.length; i += 2) modSets.push(it[i] + '=' + it[i + 1]); return true; };
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_module_set_param = (k, v) => { modSets.push(k + '=' + v); return 1; };
 globalThis.host_module_get_param = () => '';
 /* Files: the two track snapshots (slots 1 and 2 of track 3 = t2/0, t2/1),

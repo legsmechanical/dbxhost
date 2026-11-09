@@ -20,6 +20,7 @@ let FOOTER_Y = 64;
 const bodyHash = () => { let h = 0; for (let i = 0; i < FOOTER_Y * 128; i++) h = (h * 31 + fb[i]) >>> 0; return h; };
 const footHash = () => { let h = 0; for (let i = FOOTER_Y * 128; i < fb.length; i++) h = (h * 31 + fb[i]) >>> 0; return h; };
 globalThis.host_system_cmd = () => 0; globalThis.host_read_file = () => '';
+globalThis.host_ui_publish = () => false;   /* the Screen view: nobody watching */
 globalThis.host_file_exists = () => false; globalThis.host_write_file = () => true;
 globalThis.host_ensure_dir = () => true; globalThis.host_remove_dir = () => true;
 globalThis.host_module_set_param = (k, v) => { sets.push(k + '=' + v); };
