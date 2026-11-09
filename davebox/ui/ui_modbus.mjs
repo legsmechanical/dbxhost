@@ -396,3 +396,21 @@ export function modBusSendValue(st, groupIndex, which) {
     if (!b || !b.sends) return 0;
     return b.sends[which === 2 ? 1 : 0] || 0;
 }
+
+/* A bus row's value with its inserts NAMED (Josh, 2026-11-09: "anywhere we
+ * use module names, we should use the full module name (shortened to fit
+ * whatever space there is for it if necessary)"): the column is `chars`
+ * characters and carries both send levels, so each name gets an equal share of
+ * what the levels leave — one insert keeps more of its name than two — never
+ * ending on a dash or space. No inserts reads "--", more than two the count, as
+ * bus_model's summary does (the names are one click away). */
+export function namedBusValue(names, sends, chars = 11) {
+    const [a, b] = sends || [0, 0];
+    const lv = ' ' + a + '/' + b;
+    const n = (names || []).filter(Boolean);
+    if (!n.length) return '--' + lv;
+    if (n.length > 2) return n.length + ' FX' + lv;
+    const each = Math.max(2, Math.floor((chars - lv.length - (n.length - 1)) / n.length));
+    const cut = (x) => x.length <= each ? x : (x.slice(0, each).replace(/[^A-Za-z0-9]+$/, '') || x.slice(0, 1));
+    return n.map((x) => cut(String(x))).join('>') + lv;
+}

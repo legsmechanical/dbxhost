@@ -39,6 +39,11 @@ ok('...a name that fits is left whole', fitHeaderRight('T5[NUSAW]', 200) === 'T5
 ok('...a cut never ends on a dash', fitHeaderRight('T5[OB-XD]', fontWidth4x5('T5[OB-]')) === 'T5[OB]', fitHeaderRight('T5[OB-XD]', fontWidth4x5('T5[OB-]')));
 ok('...two letters at least, however little room', fitHeaderRight('T5[NUSAW]', 0) === 'T5[NU]', fitHeaderRight('T5[NUSAW]', 0));
 ok('...and a route mark without a name is left alone', fitHeaderRight('MV1', 3) === 'MV1');
+const { namedBusValue } = await import('./ui/ui_modbus.mjs');
+ok('a bus row names its one insert, fitted beside the levels', namedBusValue(['Freeverb'], [20, 15]) === 'Freev 20/15', namedBusValue(['Freeverb'], [20, 15]));
+ok('...two share the room, never ending on a dash', namedBusValue(['OB-Xd', 'Chorus'], [0, 0]) === 'OB>Cho 0/0', namedBusValue(['OB-Xd', 'Chorus'], [0, 0]));
+ok('...a short name whole', namedBusValue(['Tap'], [5, 5]) === 'Tap 5/5', namedBusValue(['Tap'], [5, 5]));
+ok('...more than two, the count; none, a dash', namedBusValue(['A', 'B', 'C'], [1, 2]) === '3 FX 1/2' && namedBusValue([], [1, 2]) === '-- 1/2');
 console.log(bad ? 'FAIL: test_module_names_in_full' : 'PASS: test_module_names_in_full');
 process.exit(bad);
 JS

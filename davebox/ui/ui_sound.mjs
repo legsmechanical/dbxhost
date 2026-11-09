@@ -4056,22 +4056,12 @@ function renderModBus() {
         S.modBusIdx);
 }
 
-/* A bus row's value with its inserts NAMED (Josh, 2026-11-09: "anywhere we
- * use module names, we should use the full module name (shortened to fit
- * whatever space there is for it if necessary)"): the column is ~11
- * characters and carries both send levels, so each name gets an equal share of
- * what the levels leave — one insert keeps more of its name than two; past two
- * the count, as bus_model's summary says (the names are one click away). */
-const MODBUS_VALUE_CHARS = 11;
+/* A bus row's value with its inserts named in full, fitted to the column
+ * (ModBus.namedBusValue). */
 function modBusRowValueNamed(r) {
     const b = (S.modBus && S.modBus.config && S.modBus.config.buses || []).find((x) => x && x.index === r.index);
-    const fx = ((b && b.fx) || []).filter((e) => e && e.module);
-    const [a, bb] = r.sends || [0, 0];
-    const lv = ' ' + a + '/' + bb;
-    if (fx.length === 0 || fx.length > 2) return ModBus.modBusRowValue(r);
-    const each = Math.max(2, Math.floor((MODBUS_VALUE_CHARS - lv.length - (fx.length - 1)) / fx.length));
-    const cut = (n) => n.length <= each ? n : (n.slice(0, each).replace(/[^A-Za-z0-9]+$/, '') || n.slice(0, 1));
-    return fx.map((e) => cut(engineModuleDisplayName(e.module))).join('>') + lv;
+    const names = ((b && b.fx) || []).filter((e) => e && e.module).map((e) => engineModuleDisplayName(e.module));
+    return ModBus.namedBusValue(names, r.sends);
 }
 
 /* ---- one bus's actions --------------------------------------------------
