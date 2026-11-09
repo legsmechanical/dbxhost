@@ -75,11 +75,19 @@
 
   /* wave — a sample editor: the readouts (Start · what the knob in hand does ·
    * End, lit while touched) over the waveform, full width */
-  H.layout('wave', (d) => !!(d.body && d.body.wave && !d.body.knobs), (doc, b) => {
+  /* ...and every knob the page answers under it (SAMPLE / SLICES: what the
+   * OLED shows only while one is touched — Josh, 2026-11-09) */
+  H.layout('wave', (d) => !!(d.body && d.body.wave && (!d.body.knobs || (d.where && d.where.screen === 'audio-wave-editor'))), (doc, b) => {
     const ro = (pos) => (b.readouts || []).filter((r) => r.pos === pos).map((r) =>
       '<span class="ro' + (r.on ? ' on' : '') + '">' + esc(sentence(r.text)) + '</span>').join('');
+    let knobs = '';
+    if (b.knobs && b.knobs.some((c) => c && c.kind !== 'blank')) {
+      const kdoc = { where: doc.where, body: { touched: b.touched, knobs: b.knobs }, knobMeta: null };
+      for (let k = 0; k < 8; k++) knobs += H.cell(b.knobs[k], k, kdoc, {});
+      knobs = '<div class="hud-knobs hud-wknobs">' + knobs + '</div>';
+    }
     return '<div class="hud-ro"><span class="l">' + ro('left') + '</span><span class="m">' + ro('mid') + '</span><span class="r">' + ro('right') + '</span></div>' +
-      '<div class="hud-wavebox big">' + H.waveSvg(b.wave, 230) + '</div>';
+      '<div class="hud-wavebox ' + (knobs ? 'mid' : 'big') + '">' + H.waveSvg(b.wave, knobs ? 170 : 230) + '</div>' + knobs;
   });
 
   /* keyboard — text entry: the text so far, large, with a cursor; the key grid

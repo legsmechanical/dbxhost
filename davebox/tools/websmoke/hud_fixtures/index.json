@@ -185,6 +185,26 @@
   "screen": "track.audio-overview"
  },
  {
+  "slug": "track-audio-playing",
+  "title": "Track View — an Audio track playing",
+  "screen": "track.audio-overview"
+ },
+ {
+  "slug": "sample-loop",
+  "title": "SAMPLE — an Audio clip",
+  "screen": "audio-wave-editor"
+ },
+ {
+  "slug": "sample-loop-p2",
+  "title": "SAMPLE — page 2",
+  "screen": "audio-wave-editor"
+ },
+ {
+  "slug": "slices-slicer",
+  "title": "SLICES — a Slicer track",
+  "screen": "audio-wave-editor"
+ },
+ {
   "slug": "macros-clear-confirm",
   "title": "Clearing all macros",
   "screen": "macro-clear-confirm"

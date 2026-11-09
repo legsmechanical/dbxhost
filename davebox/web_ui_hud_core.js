@@ -83,7 +83,9 @@
     /* an overview is the overview whatever it drew last (an Audio track's
      * draws its waveform last, which read as the sample editor's layout) */
     const ovw = doc.body && doc.body.tracks && ((HUD.isTrackOverview && HUD.isTrackOverview(doc)) || (HUD.isSessionOverview && HUD.isSessionOverview(doc)));
-    const want = ovw ? 'overview' : doc.body && PRIMARY[doc.body.primary];
+    /* SAMPLE / SLICES: the waveform with every knob under it, on both pages */
+    const smp = doc.where && doc.where.screen === 'audio-wave-editor' && doc.body && doc.body.wave;
+    const want = ovw ? 'overview' : smp ? 'wave' : doc.body && PRIMARY[doc.body.primary];
     if (want) for (const l of HUD.layouts) { if (l.name === want) { try { if (l.match(doc)) return l; } catch (e) { /* skip */ } } }
     for (const l of HUD.layouts) { try { if (l.match(doc)) return l; } catch (e) { /* a bad matcher never wins */ } }
     return null;

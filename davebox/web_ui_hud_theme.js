@@ -182,6 +182,8 @@ body[data-view="screen"] .seqonly{display:none}
 .hud-wave{width:100%;height:100%}
 .hud-wavemsg{color:var(--h-dim);font-size:16px}
 .hud-wavebox.big{height:230px}
+.hud-wavebox.mid{height:170px}
+.hud-wknobs{margin-top:6px}
 .hud-ro{display:flex;align-items:center;height:36px;margin-bottom:12px;font-variant-numeric:tabular-nums}
 .hud-ro .l,.hud-ro .m,.hud-ro .r{flex:1;display:flex;gap:10px}.hud-ro .m{justify-content:center}.hud-ro .r{justify-content:flex-end}
 .hud-ro .ro{font-size:18px;font-weight:600;color:var(--h-dim);padding:4px 10px;border-radius:8px}

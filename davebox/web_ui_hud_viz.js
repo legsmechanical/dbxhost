@@ -159,6 +159,9 @@
       [w.sel[0], w.sel[1]].map((m) => '<rect x="' + (m * W - 1.5).toFixed(1) + '" y="0" width="3" height="' + h + '" fill="#fff"/>').join('');
     if (w.trim) svg += [w.trim[0], w.trim[1]].map((m) => '<rect x="' + (m * W - 2).toFixed(1) + '" y="0" width="4" height="' + h + '" fill="' + H.cfg.palette[2] + '"/>').join('');
     if (typeof w.cursor === 'number') svg += '<rect x="' + (w.cursor * W - 2).toFixed(1) + '" y="0" width="4" height="' + h + '" fill="' + H.cfg.palette[3] + '"/>';
+    /* the playhead, as the clip roll's (the device's position; the overview
+     * glides it between reports — web_ui_hud_overview.js) */
+    if (typeof w.play === 'number') svg += '<line class="hud-w-ph" data-dev="' + w.play + '" x1="' + (w.play * W).toFixed(1) + '" y1="0" x2="' + (w.play * W).toFixed(1) + '" y2="' + h + '" stroke="#ffcf4d" stroke-width="4"/>';
     svg += '</svg>';
     /* marker names (a WAV position editor's members) under the picture */
     if (Array.isArray(w.labels) && w.labels.length)

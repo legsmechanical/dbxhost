@@ -133,8 +133,31 @@
   H.glideX = (line) => glidedX(+line.getAttribute('data-x0') || 0, +line.getAttribute('data-sx') || 0,
                                +line.getAttribute('data-ls') || 0, +line.getAttribute('data-len') || 0);
   /* one frame's move of the live roll's line; false = no roll to move */
+  /* An Audio track's waveform spans its clip exactly (Loop: Start to the
+   * clip's length), so its playhead is the clip's position: the editor's
+   * clock, as the roll's — kept only while it agrees with the device's own
+   * (data-dev), else the device's stands */
+  function waveGlideFrac(dev) {
+    if (typeof phTickNow !== 'function' || typeof loopTicks !== 'function') return null;
+    const tick = phTickNow();
+    if (!Number.isFinite(tick)) return null;
+    const [a, b] = loopTicks();
+    if (!(b > a)) return null;
+    const f = (tick - a) / (b - a);
+    if (!(f >= 0 && f < 1)) return null;
+    if (Number.isFinite(dev)) { const d = Math.abs(f - dev); if (Math.min(d, 1 - d) > 0.15) return null; }
+    return f;
+  }
+  H.waveGlideFrac = waveGlideFrac;
   H.glideOnce = function () {
-    const line = glideSynced && document.querySelector('#screenview svg.hud-o-roll line.hud-o-ph');
+    if (!glideSynced) return false;
+    const wl = document.querySelector('#screenview .hud-o-wave line.hud-w-ph');
+    if (wl && wl.isConnected) {
+      const f = waveGlideFrac(parseFloat(wl.getAttribute('data-dev')));
+      if (f != null) { const x = (f * 900).toFixed(1); wl.setAttribute('x1', x); wl.setAttribute('x2', x); }
+      return true;
+    }
+    const line = document.querySelector('#screenview svg.hud-o-roll line.hud-o-ph');
     if (!line || !line.isConnected) return false;
     const x = H.glideX(line);
     if (x != null) {
@@ -255,7 +278,7 @@
     else if (!synced) main = '<div class="hud-o-wait">Reading the clip…</div>';
     else main = drum ? drumRoll(doc, b, m, win) : melodicRoll(doc, b, m, win);
     /* the line glides only on the one live roll (the review sheet draws many) */
-    armGlide(synced && !(audio && b.wave) && !H.reviewAnyModel);
+    armGlide(synced && !H.reviewAnyModel);
     const steps = '<span class="st">' + win.len + ' steps</span>';
     const strip = knobStrip(doc);
     return '<div class="hud-o-track' + (strip ? ' knobs' : '') + '">' + infoLine(b, (audio ? '' : pageLabel(win)) + steps) +

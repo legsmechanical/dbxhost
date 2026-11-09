@@ -198,6 +198,23 @@ ok('...its dividers drawn as rules, never at the window\'s edge', el.querySelect
     const au = draw(at(fx('track-audio')));
     ok('an Audio track keeps the overview, its bank\'s knobs under it', !!au.querySelector('.hud-o-track') && au.querySelectorAll('.hud-o-knobs .hud-kn').length === 8,
        (au.querySelector('.hud-body') || {}).className);
+    /* Audio / Slicer waveforms (Josh, 2026-11-09) */
+    const ap = draw(at(fx('track-audio-playing')));
+    const aph = ap.querySelector('.hud-o-wave line.hud-w-ph');
+    ok('an Audio track\'s overview waveform carries the playhead', !!aph && Math.abs(+aph.getAttribute('data-dev') - 0.175) < 0.01, aph ? aph.outerHTML.slice(0, 120) : 'none');
+    const sp = draw(fx('sample-loop'));
+    const spCells = [...sp.querySelectorAll('.hud-wknobs .hud-kn')].map((c) => (c.querySelector('.l') || {}).textContent || '');
+    ok('SAMPLE shows every knob under its waveform: Start, Zoom, Length, Gain, Pitch, Detune, Tempo, Reverse',
+       !!sp.querySelector('.hud-wavebox svg.hud-wave') && spCells.length === 8 && /start/i.test(spCells[0]) && /zoom/i.test(spCells[1]) && /length/i.test(spCells[2]) && /rev/i.test(spCells[7]),
+       spCells.join(','));
+    ok('...and the playhead on it', !!sp.querySelector('.hud-wavebox line.hud-w-ph'));
+    const sp2 = draw(fx('sample-loop-p2'));
+    ok('SAMPLE page 2 keeps the waveform over its knobs', !!sp2.querySelector('.hud-wavebox svg.hud-wave rect') && /sync/i.test((sp2.querySelector('.hud-wknobs .hud-kn .l') || {}).textContent || ''),
+       (sp2.querySelector('.hud-body') || {}).className);
+    const sl = draw(fx('slices-slicer'));
+    const slCells = [...sl.querySelectorAll('.hud-wknobs .hud-kn')].map((c) => (c.querySelector('.l') || {}).textContent || '');
+    ok('SLICES shows the slice\'s Start and End and its own sound under the waveform', slCells.length === 8 && /start/i.test(slCells[0]) && /end/i.test(slCells[2]) && !!sl.querySelector('.hud-wavebox svg.hud-wave'),
+       slCells.join(','));
     /* no strip (a bank whose knobs do nothing here): the track list stays */
     const bare = JSON.parse(JSON.stringify(mel)); delete bare.knobs;
     ok('...and with no knob page, the eight tracks as before', draw(bare).querySelectorAll('.hud-o-tl .row').length === 8);

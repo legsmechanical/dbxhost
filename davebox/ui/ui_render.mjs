@@ -131,7 +131,15 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
     }
     if (cols) wIn = Math.min(w, cols.length);
     /* the Screen view's copy never breaks the OLED's drawing */
-    if (hudFrameOpen()) { try { kitHudTap('Wave', hudWaveOf(t, c, i, A, B, by, cols, o)); } catch (e) { /* skip this frame's wave */ } }
+    if (hudFrameOpen()) {
+        try {
+            /* the playhead too, where the OLED draws it below (Josh, 2026-11-09:
+             * "waveforms in audio track overview should have playhead") */
+            const pp = auPos();
+            const ho = (pp.t === t && pp.on) ? Object.assign({}, o, { playAt: by > 0 ? unrot(pp.frame) : pp.frame }) : o;
+            kitHudTap('Wave', hudWaveOf(t, c, i, A, B, by, cols, ho));
+        } catch (e) { /* skip this frame's wave */ }
+    }
     const mid = y + Math.floor(h / 2);
     const fx = (f) => x + Math.floor((f - A) / (B - A) * w);
     const inView = (px) => px >= x && px < x + w;
@@ -245,7 +253,54 @@ function hudWaveOf(t, c, i, A, B, by, cols, o) {
         if (o.sel != null && o.sel >= 0) { const m = auMarks(t, c)[o.sel]; if (m) out.sel = [at(m[0]), at(m[1])]; }
     }
     if (o.trim) out.trim = [at(o.trim[0]), at(o.trim[1])];
+    if (o.playAt != null) { const f = at(o.playAt); if (f >= 0 && f <= 1) out.play = f; }
     return out;
+}
+/* SAMPLE / SLICES for the Screen view, which has room the OLED has not
+ * (Josh, 2026-11-09: "we should be able to expose all knobs in sample view
+ * for slicer/audio tracks. we didn't on the olded just b/c there wasn't space,
+ * but we have space on the virtual display"): every knob the page answers, as
+ * cells under the waveform — what the OLED shows only while one is touched.
+ * Recorded only, never drawn. Mirrors the knob dispatch in ui_audio_editor.mjs
+ * (auWaveInput): K1 / K3 Start and Length or End where `ends` holds, K2 Zoom,
+ * K4-K8 the clip's Gain, Pitch, Detune, Tempo, Revrs (K8 on a plain page) —
+ * or, on SLICES, the slice's own (auPanelCells). */
+function hudSampleKnobs(ed, i, sub, kind, sl) {
+    if (!hudFrameOpen()) return;
+    const t = ed.t, c = ed.c, rt = i.rate, B = { kind: 'blank', label: '' };
+    const val = (label, name, text) => ({ kind: 'valsq', label, name, text: String(text) });
+    const fr = i.nframes | 0, span = Math.max(1, (ed.B | 0) - (ed.A | 0));
+    const z = fr ? fr / span : 1;
+    const zoomCell = val('Zoom', 'Zoom', (z < 1.05 ? 1 : z < 10 ? Math.round(z * 10) / 10 : Math.round(z)) + 'x');
+    const hand = kind === 'manual' && sub === 'chop';
+    const plain = (sub === 'loop' || sub === 'chop') && !kind;
+    let k1 = B, k3 = B;
+    if (ed.mode === 'trim' && ed.trim) {
+        k1 = val('Start', 'Start', auFmtTime(ed.trim[0], rt)); k3 = val('End', 'End', auFmtTime(ed.trim[1], rt));
+    } else if (sub === 'loop') {
+        k1 = val('Start', 'Start', auFmtTime(i.rstart, rt)); k3 = val('Len', 'Length', auFmtLen(auLenTicks(t, c, i)));
+    } else if (hand || (sl && !kind)) {
+        const sel = auSelSlice(t), m = auMarks(t, c)[sel];
+        if (m) { k1 = val('Start', 'Start', auFmtTime(m[0], rt)); k3 = val('End', 'End', m[1] === auEdHome(ed, sel) ? 'Next' : auFmtTime(m[1], rt)); }
+    }
+    let rest;
+    if (ed.mode === 'trim') rest = [B, B, B, B, B];
+    else if (sl && !kind) { const pc = auPanelCells({ t, page: S.shiftHeld ? 0 : 1 }); rest = [pc[3], pc[4], pc[5], pc[6], pc[7]].map((x) => x || B); }
+    else { const p2 = auSampleP2Cells(t, c); rest = [p2[3], p2[1], p2[2], p2[4], plain ? p2[5] : B]; }
+    kitHudTap('KitCells', { cells: [k1, zoomCell, k3].concat(rest), touched: S.knobTouched });
+}
+/* SAMPLE's page 2 is a knob page on the OLED; the Screen view keeps the
+ * waveform over it, as page 1 has it */
+function hudSampleWave(ed, i, opts) {
+    if (!hudFrameOpen()) return;
+    try {
+        const pp = auPos(), o = Object.assign({ gain: i.gain | 0 }, opts || {});
+        if (pp.t === ed.t && pp.on) o.playAt = pp.frame;
+        /* the OLED's own 128 columns while the finer read is not in yet */
+        const fr = i.nframes | 0, A = ed.A | 0, B = ed.B | 0;
+        const cols = fr && B > A ? auWaveColumns(ed.t, ed.c, 128, A, Math.min(B, fr)) : null;
+        kitHudTap('Wave', hudWaveOf(ed.t, ed.c, i, A, B, 0, cols, o));
+    } catch (e) { /* the picture is a nicety */ }
 }
 function drawAudioTrackRest(t) {
     const c = auClipOf(t), i = auInfo(t, c);
@@ -352,6 +407,7 @@ function drawAudioWaveEditor() {
         ends('S ' + auFmtTime(ed.trim[0], rt), 'E ' + auFmtTime(ed.trim[1], rt));
         if (S.knobTouched === 1) mid(zoomTxt);
         drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, noMarks: true, trim: ed.trim, gain: i.gain | 0 });
+        hudSampleKnobs(ed, i, sub, null, false);
         drawKitHintRow(MV_FOOTER_Y, [['clk', 'cut'], ['back', 'cancel']]);
         return;
     }
@@ -374,12 +430,14 @@ function drawAudioWaveEditor() {
         /* SLICES page 2: slice n's sound, every slice's with Shift held (Josh,
          * 2026-10-29: "a shift+turn with an appropriate hint on page 2") */
         const ped = { t, page: S.shiftHeld ? 0 : 1 };
+        hudSampleWave(ed, i, { sel: auSelSlice(t) });
         drawKitPage(auPanelTitle(ped), auPanelCells(ped), false,
                     S.shiftHeld ? [['jog', 'page']] : [['sh', 'all slices'], ['jog', 'page']]);
         if (S.knobTouched < 0) drawBankHeading(auPanelTitle(ped), false, false, '2/2');
         return;
     }
     if (plain && ed.page === 1) {
+        hudSampleWave(ed, i, sub === 'loop' ? { noMarks: true } : { faint: true });
         drawKitPage(auSampleName(t, c), auSampleP2Cells(t, c), false,
                     S.knobTouched === 4 ? [['clk', 'tempo']] : [['jog', 'page']]);
         if (S.knobTouched < 0) drawBankHeading(auSampleName(t, c), false, false, '2/2');
@@ -394,6 +452,7 @@ function drawAudioWaveEditor() {
         /* no cursor and no chops: they are Slice's (Josh, 2026-10-29: "chops
          * should just be completely invisible in loop mode") */
         drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, gain: i.gain | 0, noMarks: true, clipTime: true, beats: { origin: i.rstart, fpb: 96 * auFpt(i) } });
+        hudSampleKnobs(ed, i, sub, null, false);
         /* touch Tempo: a click opens its menu (Fit to clip · Original tempo) */
         drawKitHintRow(MV_FOOTER_Y, S.knobTouched === 6 ? [['clk', 'tempo'], ['jog', 'page']] : [['clk', 'menu'], ['jog', 'page']]);
         return;
@@ -411,6 +470,7 @@ function drawAudioWaveEditor() {
         if (zoomTxt) mid(zoomTxt);
         else if (jogLit) mid(kind === 'even' ? 'COUNT ' + (i.n | 0) : 'SENS ' + (i.sens | 0));
         drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel: -1, gain: i.gain | 0 });
+        hudSampleKnobs(ed, i, sub, kind, sl);
         drawKitHintRow(MV_FOOTER_Y, [['jog', kind === 'even' ? 'count' : 'sens'], ['clk', 'done']]);   /* two fit; a click or Back keeps the chops */
         return;
     }
@@ -425,6 +485,7 @@ function drawAudioWaveEditor() {
         }
         if (zoomTxt) mid(zoomTxt);
         drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel, cur: ed.cur, gain: i.gain | 0 });
+        hudSampleKnobs(ed, i, sub, kind, sl);
         /* two hints fit (found on the device: a third was cut off); Clear
          * all is the one nobody would guess (Josh, 2026-10-28) */
         drawKitHintRow(MV_FOOTER_Y, [['clk', 'add'], ['del+clk', 'clear']]);
@@ -440,6 +501,7 @@ function drawAudioWaveEditor() {
             if (cell && cell.label) mid((S.shiftHeld ? 'ALL ' : '') + (cell.label + ' ' + cell.text).toUpperCase());
         } else if (zoomTxt) mid(zoomTxt);
         drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, sel, gain: i.gain | 0, beats: { origin: i.rstart, fpb: 96 * auFpt(i) } });
+        hudSampleKnobs(ed, i, sub, kind, sl);
         drawKitHintRow(MV_FOOTER_Y, [['clk', 'chop'], ['jog', 'page']]);
         return;
     }
@@ -450,6 +512,7 @@ function drawAudioWaveEditor() {
     { const e = i.n + ' CHOP' + (i.n === 1 ? '' : 'S'); lit(124 - ovwWidth(e), e, false); }
     if (zoomTxt) mid(zoomTxt);
     drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, faint: true, gain: i.gain | 0, beats: { origin: i.rstart, fpb: 96 * auFpt(i) } });
+    hudSampleKnobs(ed, i, sub, kind, sl);
     drawKitHintRow(MV_FOOTER_Y, [['clk', 'menu'], ['jog', 'page']]);
 }
 

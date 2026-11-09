@@ -161,6 +161,10 @@ the section into a versioned heading at release time.
   looks like one, a knob a click does something on wears corner marks, and touching
   one says what the click does (**Click Crop**, **Click Assign**). The bank map's
   **Inst** pad names the instrument. The range readout is gone.
+- **The Screen view's waveforms have a playhead**, on an Audio track's overview and on
+  SAMPLE / SLICES. **SAMPLE and SLICES show every knob** under the waveform — Start,
+  Zoom, Length or End, and the sound knobs — instead of only the one you touch, and
+  SAMPLE's second page keeps the waveform above its knobs.
 - **Module editors open in a fraction of a second the first time.** The browser read an
   editor's values one at a time — a large instrument took 10–27 s, and some values never
   arrived; they are now read many at once (about 0.3 s for the same instrument). A read the

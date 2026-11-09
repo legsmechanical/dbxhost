@@ -240,6 +240,8 @@ const { computePadNoteMap } = await import('../ui/ui_drummodel.mjs');
 const PURE = await import('../ui/ui_pure.mjs');
 const MI = await import('../ui/ui_midi_import.mjs');
 const AUTO = await import('../ui/ui_automation.mjs');
+const AUD = await import('../ui/ui_audio.mjs');
+const AED = await import('../ui/ui_audio_editor.mjs');
 const { MoveShift, MoveBack, MoveMute, MoveDelete, MoveLoop, MoveCapture, MoveUndo, MoveCopy, MovePlay, MoveRec }
     = await import('/data/UserData/schwung/shared/constants.mjs');
 const { MoveNoteSession } = C;
@@ -563,6 +565,33 @@ screen('track-audio', '7.5 Audio', 'Track View — an Audio track',
         selectTrack(4); ticks(2);
         if (S.activeTrack !== 4 || S.trackPadMode[4] !== C.PAD_MODE_AUDIO) throw new Error('T5 is not the active Audio track');
     });
+/* An Audio (mode 0, Loop) or Slicer (mode 1) T5 with a sample loaded and
+ * playing at frame 24000 — the engine's answers, as the audio tests give them */
+function sampledTrack(slicer) {
+    const PEAKS = Array.from({ length: 128 }, (_, i) => ((i * 7) % 100).toString(16).padStart(2, '0').repeat(2)).join('');
+    const info = '2 0 ' + (slicer ? 1 : 0) + ' 8 1 16 0 96000 0 0 96000 48000 2 0 0 0 8 0 0 96000 840 8 50 0 0|Break Phenom 84 bpm.wav';
+    const marks = Array.from({ length: 8 }, (_, k) => (k * 12000) + ' ' + ((k + 1) * 12000)).join(' ');
+    const pm = slicer ? C.PAD_MODE_SLICER : C.PAD_MODE_AUDIO;
+    S.trackPadMode[4] = pm;
+    Object.assign(ENGINE, { t4_pad_mode: String(pm), t4_au_dir: '/data/UserData/UserLibrary/Sets/x/dAVEBOx/samples',
+        t4_au_info_0: info, t4_au_info_16: info, t4_au_peaks_0: PEAKS, t4_au_peaks_16: PEAKS,
+        t4_au_marks_0: marks, t4_au_marks_16: marks, t4_au_pos: '1 24000 2', t4_au_lazy: '0 0 0',
+        t4_au_all_0: '0 x 0 0 0 0', t4_au_all_16: '0 x 0 0 0 0' });
+    selectTrack(4); AUD.auMarkStale(4, slicer ? 16 : 0); AUD.auMarkStale(4, 0);
+    S.playing = true; ticks(12);
+}
+screen('track-audio-playing', '7.5 Audio', 'Track View — an Audio track playing',
+    'An Audio track\'s overview while it plays: the clip\'s waveform with the playhead on it.',
+    () => { sampledTrack(false); if (!AUD.auPos().on) throw new Error('no playhead read'); });
+screen('sample-loop', '7.5 Audio', 'SAMPLE — an Audio clip',
+    'SAMPLE on an Audio clip: the waveform, Start and Length, the knobs under it.',
+    () => { sampledTrack(false); AED.openWave(4, 'sample'); ticks(4); if (!S.auEditor) throw new Error('SAMPLE did not open'); });
+screen('sample-loop-p2', '7.5 Audio', 'SAMPLE — page 2',
+    'SAMPLE\'s second page: Sync, Pitch, Detune, Gain, Tempo, Revrs.',
+    () => { sampledTrack(false); AED.openWave(4, 'sample'); ticks(4); if (!S.auEditor) throw new Error('SAMPLE did not open'); S.auEditor.page = 1; ticks(2); });
+screen('slices-slicer', '7.5 Audio', 'SLICES — a Slicer track',
+    'SLICES on a Slicer: the picked slice\'s Start and End, its own sound on K4-K8.',
+    () => { sampledTrack(true); AED.openWave(4, 'slices'); ticks(4); if (!S.auEditor) throw new Error('SLICES did not open'); });
 screen('track-melodic-chord-held', '6.1 Playing and placing notes', 'Track View — naming a held chord',
     'Holding three pads: the chord you are playing is named in brackets at the right of the key/scale row.',
     () => {
