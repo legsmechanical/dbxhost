@@ -215,6 +215,20 @@ ok('...its dividers drawn as rules, never at the window\'s edge', el.querySelect
     const slCells = [...sl.querySelectorAll('.hud-wknobs .hud-kn')].map((c) => (c.querySelector('.l') || {}).textContent || '');
     ok('SLICES shows the slice\'s Start and End and its own sound under the waveform', slCells.length === 8 && /start/i.test(slCells[0]) && /end/i.test(slCells[2]) && !!sl.querySelector('.hud-wavebox svg.hud-wave'),
        slCells.join(','));
+    /* pop-ups stay pop-ups (Josh, 2026-11-09): a card over the page, the page still drawn */
+    const vp = draw(at(fx('bank-value-popup')));
+    const vpRows = [...vp.querySelectorAll('.hud-ovl .card.c-list .hud-row')].map((r) => r.textContent);
+    ok('an enum knob\'s picker is a card over the overview, titled by its knob', !!vp.querySelector('.hud-o-track') && vpRows.slice(0, 3).join() === 'Off,Up,Down' &&
+       /style/i.test((vp.querySelector('.hud-ovl .card .t') || {}).textContent || '') && /Down/.test((vp.querySelector('.hud-ovl .hud-row.sel') || {}).textContent || ''),
+       vpRows.join(',') + ' / ' + ((vp.querySelector('.hud-ovl .card .t') || {}).textContent));
+    const ipk = draw(fx('instrument-picker'));
+    ok('...a Sound menu picker over the menu, one column', !!ipk.querySelector('.hud-body.hud-l-list .hud-row') && !!ipk.querySelector('.hud-ovl .card.c-list') &&
+       !ipk.querySelector('.hud-ovl .hud-list.cols') && /Instmt/.test((ipk.querySelector('.hud-body') || {}).textContent || ''),
+       (ipk.querySelector('.hud-body') || {}).className);
+    ok('...its note rows drawn as notes, not gaps', [...ipk.querySelectorAll('.hud-ovl .hud-row.note')].some((r) => /^Move 1 - T\d$/.test(r.textContent)));
+    const lcd = draw(fx('sound-level-card'));
+    ok('...a level card over the menu', !!lcd.querySelector('.hud-body.hud-l-list') && /LEVEL/.test((lcd.querySelector('.hud-ovl .card.c-big') || {}).textContent || ''),
+       (lcd.querySelector('.hud-body') || {}).className);
     /* no strip (a bank whose knobs do nothing here): the track list stays */
     const bare = JSON.parse(JSON.stringify(mel)); delete bare.knobs;
     ok('...and with no knob page, the eight tracks as before', draw(bare).querySelectorAll('.hud-o-tl .row').length === 8);

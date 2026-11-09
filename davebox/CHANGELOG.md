@@ -165,6 +165,11 @@ the section into a versioned heading at release time.
   SAMPLE / SLICES. **SAMPLE and SLICES show every knob** under the waveform — Start,
   Zoom, Length or End, and the sound knobs — instead of only the one you touch, and
   SAMPLE's second page keeps the waveform above its knobs.
+- **Pop-ups stay pop-ups on the Screen view.** What the Move's screen shows in a box over
+  the page — an enum knob's choices, the Sound menu's pickers, the scale picker, the
+  level card — is a card over that page in the browser, instead of replacing it. An
+  enum knob's choices showed nowhere before; the bank picker showed an empty card; and
+  the instrument picker now lists the Move instruments other tracks are playing.
 - **Module editors open in a fraction of a second the first time.** The browser read an
   editor's values one at a time — a large instrument took 10–27 s, and some values never
   arrived; they are now read many at once (about 0.3 s for the same instrument). A read the

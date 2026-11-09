@@ -17,6 +17,8 @@ export const knobs = {
          * does (CLK CROP, CLK ASSIGN) — the overview's own hints cannot */
         return { screen: frame.knobsScreen || undefined, header: d.header || undefined, knobs: d.knobs,
                  touched: typeof d.touched === 'number' ? d.touched : -1, meta: meta || undefined,
-                 hints: d.hints && d.hints.length ? d.hints : undefined };
+                 hints: d.hints && d.hints.length ? d.hints : undefined,
+                 /* a picker the page opened (an enum's choices): over the overview, as over the page */
+                 popup: d.popup || undefined };
     },
 };

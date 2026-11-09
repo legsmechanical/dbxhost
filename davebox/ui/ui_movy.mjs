@@ -3062,6 +3062,8 @@ function drawStackRows4x5(x, top, w, h, rows, sel, rowH) {
  * ⚠ Call it AFTER the backdrop is drawn and BEFORE the overlay: it operates on
  * whatever ink is already down, and anything drawn afterwards is untouched. */
 export function drawKitBackdropDim(x, y, w, h) {
+    /* the Screen view's cue: what is drawn after this is a pop-up over the page */
+    if (hudSink) hudSink('Backdrop', {});
     stipple_rect(x != null ? x : 0, y != null ? y : 0,
                  w != null ? w : SCREEN_W, h != null ? h : SCREEN_H_LATCH, 0, 0);
 }

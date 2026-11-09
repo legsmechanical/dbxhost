@@ -67,13 +67,19 @@
 
   /* overlay — what the device drew over the screen (bank picker, volume card,
    * notices): the same layouts, inside a card. */
-  H.region('overlay', (doc) => {
-    const o = doc.overlayLayer || {};
-    const sub = Object.assign({}, doc, { body: o, knobMeta: null });
+  H.region('overlay', (doc) => H.popCard(doc, doc.overlayLayer || {}));
+  /* One card over the screen, holding a description `o` drawn by the layout
+   * its family picks — the overlay layer's, or a POP-UP the page drew (a
+   * picker over its dimmed page, a level card): ui/hud/contrib/layer.mjs. */
+  H.popCard = function (doc, o, title) {
+    const sub = Object.assign({}, doc, { body: o, knobMeta: null, inPopup: true });
+    const PRI = { list: 'list', big: 'big', card: 'card', notice: 'notice', bankmap: 'bankmap', prompt: 'prompt' };
     let lay = null;
-    for (const l of H.layouts) { try { if (l.match(sub)) { lay = l; break; } } catch (e) { /* skip */ } }
-    const title = o.header && (o.header.text || o.header.touchedName);
-    return '<div class="hud-ovl"><div class="card' + (lay && lay.name === 'bankmap' ? ' wide' : '') + '">' + (title ? '<div class="t">' + esc(title) + '</div>' : '') +
+    const want = PRI[o.primary];
+    if (want) lay = H.layouts.find((l) => { try { return l.name === want && l.match(sub); } catch (e) { return false; } }) || null;
+    if (!lay) for (const l of H.layouts) { try { if (l.match(sub)) { lay = l; break; } } catch (e) { /* skip */ } }
+    const t = title || (o.header && (o.header.text || o.header.touchedName));
+    return '<div class="hud-ovl"><div class="card' + (lay && lay.name === 'bankmap' ? ' wide' : '') + (lay ? ' c-' + lay.name : '') + '">' + (t ? '<div class="t">' + esc(t) + '</div>' : '') +
       (lay ? H.safe('overlay:' + lay.name, lay.fn, sub, o) : '') + '</div></div>';
-  });
+  };
 });

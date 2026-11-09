@@ -55,6 +55,11 @@
   "screen": "session.overview"
  },
  {
+  "slug": "bank-picker",
+  "title": "The bank picker",
+  "screen": "track.overview"
+ },
+ {
   "slug": "menu-project-settings",
   "title": "Project Settings",
   "screen": "global-menu"
@@ -418,6 +423,11 @@
   "slug": "fx-browser",
   "title": "Adding an effect",
   "screen": "sound.browse"
+ },
+ {
+  "slug": "sound-level-card",
+  "title": "The level card in TRACK CONFIG",
+  "screen": "sound.blocks"
  },
  {
   "slug": "instrument-picker",

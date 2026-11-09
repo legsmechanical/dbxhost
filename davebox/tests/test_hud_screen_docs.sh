@@ -101,6 +101,25 @@ const rb = doc('record-blocked');
 ok('a dialog drawn with its own button row reports the buttons (Rec unavailable)', rb.body.prompt && (rb.body.prompt.buttons || []).join() === 'OK,Bake Now', JSON.stringify(rb.body.prompt));
 const nu = doc('notice-undo');
 ok('a notice card is described, over the screen it interrupts (Undo)', nu.overlayLayer && nu.overlayLayer.notice && nu.overlayLayer.notice.lines[0] === 'UNDO' && nu.body.tracks, JSON.stringify(nu.overlayLayer));
+/* POP-UPS stay pop-ups (Josh, 2026-11-09: "if something presents as a pop-up or
+ * overlay on the oled, it should generally present as such on the virtual
+ * screen"): the page under them is still the screen, the pop-up is described apart */
+const vp = doc('bank-value-popup'), vpp = vp.knobs && vp.knobs.popup;
+ok('an enum knob\'s picker is described over the page it opened from (SEQ ARP Style)', vp.body.tracks && vpp && vpp.list &&
+   vpp.list.rows.slice(0, 3).map((r) => r.label).join() === 'Off,Up,Down' && vpp.list.sel === 2, JSON.stringify(vpp));
+const ip = doc('instrument-picker');
+ok('...a Sound menu picker over the menu it floats on, not in its place', ip.body.list && ip.body.list.rows.some((r) => r.label === 'Instmt/Dest') &&
+   ip.body.popup && ip.body.popup.list && ip.body.popup.list.rows[0].label === 'List: All', JSON.stringify(ip.body.popup && ip.body.popup.list.rows.slice(0, 2)));
+ok('...and its NOTE rows keep their text (a Move instrument another track plays)', (ip.body.popup.list.rows || []).some((r) => /^Move 1 - T\d$/.test(r.note || '')),
+   JSON.stringify(ip.body.popup.list.rows.slice(2, 5)));
+const lc = doc('sound-level-card');
+ok('...a level card over the menu (Shift + Volume in TRACK CONFIG)', lc.body.list && lc.body.primary === 'list' && lc.body.popup && lc.body.popup.big &&
+   /LEVEL/.test(lc.body.popup.big.text), JSON.stringify(lc.body.popup));
+const bp = doc('bank-picker');
+ok('...the bank picker as a list over the overview', bp.body.tracks && bp.overlayLayer && bp.overlayLayer.list && bp.overlayLayer.list.rows[2].label === 'LIVE ARP' &&
+   bp.overlayLayer.list.sel === 2, JSON.stringify(bp.overlayLayer && bp.overlayLayer.list && bp.overlayLayer.list.rows.slice(0, 3)));
+const tc = doc('track-config');
+ok('...and a screen with no pop-up has none', !tc.body.popup && tc.body.primary === 'list', JSON.stringify(tc.body.popup));
 const so = doc('session-overview');
 ok('the session overview carries the knob mode, its eight values and the clips in brief', so.ovw && so.ovw.cells.length === 8 && so.ovw.thumbs.length === 8 && typeof so.ovw.rowOff === 'number' && so.ovw.mode, JSON.stringify(so.ovw).slice(0, 200));
 /* the grid's clip states: the same facts the overview's track row reports, from the same state */

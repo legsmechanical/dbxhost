@@ -90,6 +90,19 @@
     for (const l of HUD.layouts) { try { if (l.match(doc)) return l; } catch (e) { /* a bad matcher never wins */ } }
     return null;
   }
+  /* the pop-up to draw over this screen, and its title: an enum's picker is
+   * titled by the knob it belongs to, as the OLED's header names it */
+  function popupOf(doc, lay) {
+    const b = doc.body || {};
+    if (b.popup) return { o: b.popup, title: b.header && b.header.touchedName };
+    const k = doc.knobs;
+    if (lay && lay.name === 'overview' && k && k.popup) {
+      const c = k.knobs && k.touched >= 0 ? k.knobs[k.touched] : null;
+      return { o: k.popup, title: (k.header && k.header.touchedName) || (c && (c.name || c.label)) };
+    }
+    return null;
+  }
+  HUD.popupOf = popupOf;   /* tests */
   function render() {
     if (!stage || !HUD.cfg) return;
     const doc = HUD.doc;
@@ -99,11 +112,15 @@
       ? '<div class="hud-body hud-l-' + (lay ? lay.name : 'none') + '">' + (lay ? HUD.safe('layout:' + lay.name, lay.fn, doc, doc.body || {}) : '') + '</div>'
       : HUD.safe('region:' + r, HUD.regions.get(r), doc)).join('');
     const ov = doc.overlayLayer ? HUD.safe('overlay', HUD.regions.get('overlay'), doc) : '';
+    /* a pop-up the page drew over itself — or, under an overview, over the
+     * knob page the overview stands in for — as a card over the page */
+    const pg = popupOf(doc, lay);
+    const pp = pg && !doc.overlayLayer ? HUD.safe('popup', HUD.popCard, doc, pg.o, pg.title) : '';
     /* the cross-fade plays on a SCREEN change only — never on a value change */
     const sid = (doc.where && doc.where.screen) || '';
     const fade = sid !== lastScreen; lastScreen = sid;
     stage.innerHTML = '<div class="hud-screen' + (fade ? ' hud-fade' : '') + (HUD.alive ? '' : ' hud-stale') + '" data-screen="' + HUD.esc(sid) + '" style="--fade:' + HUD.cfg.motion.screenFadeMs + 'ms">' +
-      regions + ov + (HUD.alive ? '' : '<div class="hud-stalemsg">dAVEBOx is not running</div>') + '</div>';
+      regions + pp + ov + (HUD.alive ? '' : '<div class="hud-stalemsg">dAVEBOx is not running</div>') + '</div>';
     drawOled();
     if (HUD.drawCustomWidgets) HUD.safe('customWidgets', HUD.drawCustomWidgets, stage, doc);
   }

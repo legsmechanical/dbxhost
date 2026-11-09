@@ -165,11 +165,12 @@
     const graph = !!(b.lfo || b.curve);
     /* not the OLED's five rows: a column fills the screen, and a long list
      * flows into a second column, so most menus are seen whole */
-    const cols = graph ? 1 : Math.max(1, H.cfg.listColumns | 0);
-    const per = graph ? Math.min(5, H.cfg.listRows) : H.cfg.listRows;
+    /* in a pop-up card: one column, a card's height */
+    const cols = graph || doc.inPopup ? 1 : Math.max(1, H.cfg.listColumns | 0);
+    const per = graph ? Math.min(5, H.cfg.listRows) : doc.inPopup ? Math.min(8, H.cfg.listRows) : H.cfg.listRows;
     /* a gap row (a blank separator, or a divider rule) costs what it is drawn at — 13+3 px of a row's 31+3 (the column's gap) — so a column
      * holds more of a grouped menu */
-    const isGap = (r) => !r || r.divider || (!r.label && r.value == null);
+    const isGap = (r) => !r || r.divider || (!r.label && r.value == null && r.note == null);
     const cost = (i) => isGap(rows[i]) ? 16 / 34 : 1;
     let all = 0; for (let i = 0; i < rows.length; i++) all += cost(i);
     const useCols = all > per ? Math.min(cols, Math.ceil(all / per)) : 1;
@@ -191,6 +192,7 @@
       const r = rows[i] || {};
       if (isGap(r)) { html += '<div class="hud-row gap' + (r.divider ? ' div' : '') + '"></div>'; continue; }
       const sel = i === selIn && L.sel >= 0;
+      if (r.note != null) { html += '<div class="hud-row note">' + esc(r.note) + '</div>'; continue; }
       html += '<div class="hud-row' + (sel ? ' sel' : '') + (r.hdr ? ' hdr' : '') + (r.editing ? ' edit' : '') + '">' +
         (r.mark ? '<span class="q" style="margin:0 8px 0 0">' + esc(r.mark) + '</span>' : '') +
         '<span class="lab">' + esc(r.label) + '</span>' + (r.qual ? '<span class="q">' + esc(r.qual) + '</span>' : '') +

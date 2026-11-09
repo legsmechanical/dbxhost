@@ -35,6 +35,8 @@ const rowOut = (r) => typeof r === 'string' ? { label: r } : r ? {
     qual: r.qual || undefined, mark: r.mark || undefined,
     chevron: r.chevron ? true : undefined, editing: r.editing ? true : undefined, hdr: r.hdr ? true : undefined,
     divider: r.divider ? true : undefined,
+    /* a NOTE row: centred, not a choice (a Move instrument another track plays) */
+    note: r.note != null ? String(r.note) : undefined,
 } : { label: '' };
 const listOut = (rows, sel, kind) => ({
     kind, total: rows ? rows.length : 0, sel: sel == null ? -1 : sel,
@@ -64,7 +66,8 @@ export const DESCRIBE = {
     KitBankPage:      (d, p) => { if (!d.knobs) DESCRIBE.KitCells(d, { cells: p.cells, touched: p.opts && p.opts.touched }); },
     KitEnumOverlay:   (d, p) => { const c = p.cells && p.cells[p.touched]; if (c) d.overlay = { kind: 'enum', knob: p.touched, options: (c.options || []).map(String), sel: c.sel }; },
     KitValueOverlay:  (d, p) => { const c = p.cells && p.cells[p.idx]; if (c) d.overlay = { kind: 'value', knob: p.idx, cell: cellOut(c) }; },
-    KitListOverlay:   (d, p) => { d.overlay = Object.assign({ kind: 'list' }, listOut((p.options || []).map(String), p.sel, 'list')); },
+    /* an enum's choices, the bank picker: a list, in the card it pops up in */
+    KitListOverlay:   (d, p) => { d.list = listOut((p.options || []).map(String), p.sel, 'list'); },
     KitList:          (d, p) => { d.list = listOut(p.rows, p.sel, 'list'); },
     KitStackedList:   (d, p) => { d.list = Object.assign(listOut(p.rows, p.sel, 'stacked'), { depth: p.depth }); },
     KitSectionPicker: (d, p) => { d.list = listOut((p.sections || []).map((x) => typeof x === 'string' ? x : (x && (x.label || x.name)) || ''), p.active, 'sections'); },
@@ -105,16 +108,33 @@ export const DESCRIBE = {
 const FAMILY = {
     KitCells: 'knobs', KitBankPage: 'knobs', KitList: 'list', KitStackedList: 'list', KitSectionPicker: 'list',
     KitPrompt: 'prompt', PromptLines: 'prompt', Buttons: 'prompt', Tracks: 'tracks', Bars: 'bars', KitBankMap: 'bankmap',
+    KitListOverlay: 'list',
     Mods: 'mods', Wave: 'wave', Keyboard: 'keyboard', Message: 'message', Picture: 'picture', KitBigValue: 'big', LevelCard: 'big', HudCard: 'card', NoticeCard: 'notice',
 };
+/* A POP-UP is drawn over a page the OLED keeps visible behind it (Josh,
+ * 2026-11-09: "if something presents as a pop-up or overlay on the oled, it
+ * should generally present as such on the virtual screen"): a picker over its
+ * dimmed page, a level card punched into whatever is up. Once a page has been
+ * drawn, a pop-up kind — or a `Backdrop`, the dimming a picker draws first —
+ * starts the layer's `popup`: what follows is described into it, and the page
+ * stays the screen. The screen's chrome (header, crumbs, footer) stays the
+ * page's wherever it was drawn: it frames the screen, not the box. */
+const POPUP = new Set(['Backdrop', 'KitListOverlay', 'LevelCard', 'HudCard', 'NoticeCard']);
+const CHROME = new Set(['KitHeader', 'KitMarkHeader', 'KitBankHeader', 'KitTouchedHeader', 'KitHeaderParamPages',
+                        'KitCrumbs', 'KitHintRow', 'KitPageBar']);
 export function describeLayer(calls) {
     if (!calls || !calls.length) return null;
     const d = {};
+    let pop = null;
     for (const [kind, p] of calls) {
+        if (!pop && POPUP.has(kind) && d.primary) pop = {};
+        if (kind === 'Backdrop') continue;
+        const t = pop && !CHROME.has(kind) ? pop : d;
         const fn = DESCRIBE[kind];
-        if (fn) fn(d, p || {});
-        else (d.undescribed = d.undescribed || []).push(kind);
-        if (FAMILY[kind]) d.primary = FAMILY[kind];
+        if (fn) fn(t, p || {});
+        else (t.undescribed = t.undescribed || []).push(kind);
+        if (FAMILY[kind]) t.primary = FAMILY[kind];
     }
+    if (pop && Object.keys(pop).length) d.popup = pop;
     return Object.keys(d).length ? d : null;
 }

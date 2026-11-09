@@ -1270,6 +1270,14 @@ screen('track-volume-card', '11.5 Volume', 'Shift + Volume',
     'Shift + Volume adjusts the active track\'s level from anywhere; a card shows it over the current screen.',
     () => { press(MoveShift); cc(79, 127); cc(79, 127); ticks(2); }, { align: false });
 
+/* Pop-ups over their page (the Screen view draws each as a card over it) */
+screen('sound-level-card', '14.2 The menu', 'The level card in TRACK CONFIG',
+    'Shift + Volume in TRACK CONFIG: the track\'s level, in a card over the menu.',
+    () => { selectTrack(4); openTrackConfig(); press(MoveShift); cc(79, 1); cc(79, 1); ticks(2); }, { align: false });
+screen('bank-picker', '3.6 Parameter banks', 'The bank picker',
+    'Shift + jog in Track View: the banks, in a list over the screen you are on.',
+    () => { S.bankPickerSel = 2; ticks(1); }, { align: false });
+
 /* 7.4 — a muted drum lane */
 screen('drum-lane-muted', '7.4 Copying, clearing & muting lanes', 'A muted drum lane',
     'Mute + a lane pad mutes that lane: the drum overview says MUTED beside the selected lane.',
