@@ -137,8 +137,9 @@ ok('...the OLED\'s value column carried (OFF, CLIP, 2 ST, PADS)', AL.rows.map((r
 const cut = AL.rows.find((r) => r.param === 'Cutoff'), res = AL.rows.find((r) => r.param === 'Resonance');
 ok('...every lane\'s curve over its window, and its place while playing', cut.shape && cut.shape.length === 126 && cut.shape.every((x) => x >= 0 && x <= 1) &&
    Math.abs(cut.pos - 150 / 384) < 0.002 && Math.abs(res.pos - 30 / 48) < 0.002, JSON.stringify({ c: cut.pos, r: res.pos }));
-ok('...moving at its own speed: a 2-step loop eight times the 16-step clip\'s (120 bpm)', Math.abs(cut.spd - 0.5) < 0.001 && Math.abs(res.spd - 4) < 0.001,
-   JSON.stringify({ c: cut.spd, r: res.spd }));
+const vol = AL.rows.find((r) => r.param === 'Volume');
+ok('...moving at its own speed: a 2-step loop eight times the 16-step clip\'s, a lane at x2 twice (120 bpm)', Math.abs(cut.spd - 0.5) < 0.001 && Math.abs(res.spd - 4) < 0.001 &&
+   Math.abs(vol.spd - 1) < 0.001, JSON.stringify({ c: cut.spd, r: res.spd, v: vol.spd }));
 ok('...a muted lane says so', AL.rows.find((r) => r.param === 'Mix').active === false);
 const ad = doc('automation-lane-detail'), AD = ad.body.lanes && ad.body.lanes.detail;
 ok('the selected lane in detail: its index, page, points, the step buttons\' values, its settings', AD && AD.idx === 2 && ad.body.lanes.sel === 2 &&

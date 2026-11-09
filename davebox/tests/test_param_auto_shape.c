@@ -257,10 +257,21 @@ int main(void) {
      * does, after the same block — across x1, x2, /2 and a lane with its own
      * loop, so four clocks that disagree with each other. */
     {
-        static const char *L[4] = { "1:synth:p1", "1:synth:p2", "1:synth:p3", "1:synth:p4" };
+        static const char *L[5] = { "1:synth:p1", "1:synth:p2", "1:synth:p3", "1:synth:p4", "1:synth:p5" };
         hx_t *h = hx_create(NULL);
         hx_set_param(h, "t0_c0_step_0_toggle", "60 100");
-        for (int i = 0; i < 4; i++) { pa_set(h, L[i], 0, 0); pa_set(h, L[i], 200, 16383); }
+        for (int i = 0; i < 5; i++) { pa_set(h, L[i], 0, 0); pa_set(h, L[i], 200, 16383); }
+        /* p5: a lane on the CLIP's clock (no window of its own, as every lane
+         * of a v1 file is) at x2 — the clip length and cycle count place it */
+        hx_set_param(h, "t0_pa_loop", "0 1:synth:p5 0 0 6");
+        {
+            seq8_instance_t *in = (seq8_instance_t *)h->inst;
+            pa_entry_t *e5 = pa_find(in, 0, 0, pa_target_lookup(in, "1:synth:p5"));
+            HX_ASSERT(e5, "setup: p5 exists");
+            e5->loop_len = 0; e5->loop_off = 0;
+        }
+        /* and a lane in a clip that is NOT playing: never reported */
+        hx_set_param(h, "t0_pa_set", "1 1:synth:p1 0 0");
         hx_set_param(h, "t0_pa_loop", "0 1:synth:p2 0 0 6");      /* follow the clip, x2 */
         hx_set_param(h, "t0_pa_loop", "0 1:synth:p3 120 48 5");   /* its own loop: 120 ticks from 48 */
         hx_set_param(h, "t0_pa_loop", "0 1:synth:p4 0 0 4");      /* follow the clip, /2 */
@@ -270,8 +281,8 @@ int main(void) {
         long prev4 = -1;
         for (int round = 0; round < 60; round++) {
             hx_render(h, 37);
-            long lts[4];
-            for (int i = 0; i < 4; i++) {
+            long lts[5];
+            for (int i = 0; i < 5; i++) {
                 char v[96];
                 snprintf(v, sizeof v, "0 %s", L[i]);
                 hx_set_param(h, "t0_pa_view", v);
@@ -301,13 +312,13 @@ int main(void) {
         }
         HX_ASSERT(checks >= 200, "compared through the run");
         HX_ASSERT(differ > 20, "setup: the four lanes really ran on different clocks");
-        HX_ASSERT(hx_get_param(h, "t0_c1_pa_pos", g_ans, sizeof g_ans) == 0, "a clip that is not playing: no positions");
+        HX_ASSERT(hx_get_param(h, "t0_c1_pa_pos", g_ans, sizeof g_ans) == 0 && g_ans[0] == '\0', "a clip that is not playing (with a lane): no positions");
         hx_set_param(h, "transport", "stop");
         hx_render(h, 4);
         HX_ASSERT(hx_get_param(h, "t0_c0_pa_pos", g_ans, sizeof g_ans) == 0, "stopped again: none");
         hx_destroy(h);
     }
-    OK("⭐ every lane's position is the tick playback evaluates it at (x1, x2, /2, its own loop)");
+    OK("⭐ every lane's position is the tick playback evaluates it at (x1, x2, /2, its own loop, the clip's clock)");
 
     printf("test_param_auto_shape: %d ok\n", ok_count);
     return 0;

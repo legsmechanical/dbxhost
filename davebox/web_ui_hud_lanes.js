@@ -183,7 +183,7 @@
     lines.forEach((ln) => {
       const p = +ln.getAttribute('data-pos'), s = +ln.getAttribute('data-spd');
       if (!(p >= 0) || !(s > 0)) return;
-      const f = (p + s * dt) % 1, x = (f * W).toFixed(1);
+      const x = H.laneGlideX(p, s, dt).toFixed(1);
       ln.setAttribute('x1', x); ln.setAttribute('x2', x);
       moving = true;
     });
@@ -193,6 +193,9 @@
     docTime();
     if (!raf && typeof requestAnimationFrame === 'function') raf = requestAnimationFrame(glide);
   }
-  H.laneGlideX = function (pos, spd, dtSec) { return ((pos + spd * Math.min(1, dtSec)) % 1) * W; };   /* tests */
+  /* where a playhead reported at `pos` (0..1 of its window), moving `spd`
+   * windows a second, is `dtSec` later — wrapping at its loop's end; the
+   * glide's one formula, and what the tests drive */
+  H.laneGlideX = function (pos, spd, dtSec) { return ((pos + spd * Math.min(1, dtSec)) % 1) * W; };
 
 });

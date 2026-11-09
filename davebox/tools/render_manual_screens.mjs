@@ -1262,6 +1262,8 @@ screen('automation-ops', '10.2 The AUTOMATION screen', 'AUTOMATION — a paramet
  * lane's place while playing, the points on the steps and the page's values. */
 function withAutomationCurves() {
     withAutomation();
+    /* Volume at Rate x2 (code 6): its playhead runs twice the clip's speed */
+    ENGINE.pa_list = ENGINE.pa_list.replace('4 0 1 4 4:slot:volume 0', '4 0 1 4 4:slot:volume 0 6'); AUTO.automationNoteListChangedElsewhere();
     const hx2 = (v) => Math.max(0, Math.min(254, Math.round(v * 254))).toString(16).padStart(2, '0');
     const shape = (f) => Array.from({ length: 126 }, (_, c) => hx2(f(c / 126))).join('');
     ENGINE.t4_c0_pa_shape_126 = [
