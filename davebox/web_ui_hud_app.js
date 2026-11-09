@@ -10,10 +10,11 @@
  *                  controls show while the pointer moves and fade after a
  *                  moment, and the pointer hides with them, so nothing but the
  *                  screen is left on it.
- *   Installed      the page names itself an app (web_ui_app.json, the Apple
- *                  tags): Chrome's "Install page as app", Safari's "Add to
- *                  Dock", or an iPad's "Add to Home Screen" open it straight
- *                  into the screen in a window with no browser around it.
+ *   Installed      the page names itself an app (web_ui_screen.json, the Apple
+ *                  tags, through web_ui_app.js): Chrome's "Install page as
+ *                  app", Safari's "Add to Dock", or an iPad's "Add to Home
+ *                  Screen" open it straight into the screen in a window with
+ *                  no browser around it.
  *
  * Only the window mode adds the app tags, so installing from the editor is not
  * offered as the screen. */
@@ -29,17 +30,10 @@
     const p = (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
     if (p && p.catch) p.catch(() => { /* refused (no gesture) — nothing to undo */ });
   }
-  /* the window's address: this page, screen only (the manager's carried query
-   * keeps the tool selection) */
-  function windowUrl() {
-    const q = new URLSearchParams(location.search); q.set('screen', '1');
-    return location.pathname + '?' + q.toString();
-  }
+  /* the screen alone in a window sized to the screen (web_ui_app.js) */
   function popOut() {
-    const r = view.getBoundingClientRect();
-    const w = Math.round(Math.max(800, r.width)), h = Math.round(w / 2) + 28;
-    const win = window.open(windowUrl(), 'davebox-screen', 'popup=yes,width=' + w + ',height=' + h);
-    if (win) { try { win.focus(); } catch (e) { /* ignore */ } }
+    const w = Math.max(800, view.getBoundingClientRect().width);
+    window.dbxApp.popOut('screen', 'davebox-screen', w, w / 2 + 28);
   }
 
   const bar = document.createElement('div');
@@ -59,28 +53,11 @@
   }
 
   /* ---- the window ---- */
-  document.title = 'dAVEBOx';
-  const head = document.head;
-  /* added only where the page has none: a page that already declares itself
-   * (the touch layout's own Apple tags) keeps its values, never a second,
-   * conflicting copy */
-  const tag = (name, attrs) => {
-    const key = attrs.name ? '[name="' + attrs.name + '"]' : '[rel="' + attrs.rel + '"]';
-    if (head.querySelector(name + key)) return;
-    const e = document.createElement(name); for (const k in attrs) e.setAttribute(k, attrs[k]); head.appendChild(e);
-  };
-  tag('link', { rel: 'manifest', href: 'web_ui_app.json' });
-  tag('meta', { name: 'theme-color', content: '#08090b' });
-  tag('meta', { name: 'apple-mobile-web-app-capable', content: 'yes' });
-  tag('meta', { name: 'mobile-web-app-capable', content: 'yes' });
-  /* the screen runs under the status bar (it is dark too) rather than below a
-   * reserved black band — so this one is SET even where the page declares it */
-  const sb = head.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
-  if (sb) sb.setAttribute('content', 'black-translucent');
-  else tag('meta', { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' });
-  tag('meta', { name: 'apple-mobile-web-app-title', content: 'dAVEBOx' });
-  tag('link', { rel: 'apple-touch-icon', href: 'web_ui_icon-180.png' });
-  tag('link', { rel: 'icon', type: 'image/png', href: 'web_ui_icon-192.png' });
+  /* the app tags (web_ui_app.js). The screen runs under the status bar (it is
+   * dark too) rather than below a reserved black band, so that one is SET even
+   * where the page declares it; its content keeps clear of it (rescale). */
+  window.dbxApp.declareApp({ title: 'dAVEBOx Screen', short: 'dAVEBOx Screen', manifest: 'web_ui_screen.json', icon: 'web_ui_screen',
+                             theme: '#08090b', statusBar: 'black-translucent', forceStatusBar: true });
 
   const fsBtn = fsOk() ? button('Full screen', 'Full screen (F)', toggleFull) : null;
   function syncFs() { if (fsBtn) fsBtn.textContent = fsEl() ? 'Exit full screen' : 'Full screen'; document.body.classList.toggle('hud-full', !!fsEl()); H.rescale && H.rescale(); }

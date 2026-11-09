@@ -87,13 +87,13 @@ const sbm = d.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]'
 ok('the screen runs under the status bar (translucent), even where the page says black', !!sbm && sbm.getAttribute('content') === 'black-translucent');
 /* installable: the app tags, only in this mode */
 const mani = d.querySelector('link[rel="manifest"]');
-ok('it names itself an app: manifest, Apple tags, its title', !!mani && mani.getAttribute('href') === 'web_ui_app.json' &&
-   !!d.querySelector('meta[name="apple-mobile-web-app-capable"][content="yes"]') && !!d.querySelector('link[rel="apple-touch-icon"]') && d.title === 'dAVEBOx');
+ok('it names itself an app: manifest, Apple tags, its title', !!mani && mani.getAttribute('href') === 'web_ui_screen.json' &&
+   !!d.querySelector('meta[name="apple-mobile-web-app-capable"][content="yes"]') && !!d.querySelector('link[rel="apple-touch-icon"]') && d.title === 'dAVEBOx Screen');
 ok('...one of each, never a second copy of a tag the page already has', ['apple-mobile-web-app-capable', 'mobile-web-app-capable', 'apple-mobile-web-app-status-bar-style', 'theme-color']
    .every((n) => d.querySelectorAll('meta[name="' + n + '"]').length <= 1) && d.querySelectorAll('link[rel="manifest"]').length === 1);
-const m = JSON.parse(readFileSync(new URL('./web_ui_app.json', ROOT), 'utf8'));
+const m = JSON.parse(readFileSync(new URL('./web_ui_screen.json', ROOT), 'utf8'));
 ok('...the manifest opens straight into the screen, standalone, with its icons on disk', m.start_url === '/?screen=1' && m.display === 'standalone' &&
-   m.icons.length >= 2 && m.icons.every((i) => existsSync(new URL('./' + i.src, ROOT))) && existsSync(new URL('./web_ui_icon-180.png', ROOT)));
+   m.icons.length >= 2 && m.icons.every((i) => existsSync(new URL('./' + i.src, ROOT))) && existsSync(new URL('./web_ui_screen-180.png', ROOT)));
 /* full screen: F, the button, a double-click */
 const key = (k, extra) => { const e = new window.KeyboardEvent('keydown', Object.assign({ key: k, bubbles: true, cancelable: true }, extra || {})); d.body.dispatchEvent(e); return e; };
 key('f');

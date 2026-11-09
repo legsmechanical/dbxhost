@@ -29,7 +29,7 @@ body[data-view="screen"] .seqonly{display:none}
   --h-sel:#1c2733;--h-acc:#4da3ff;--h-play:#ffcf4d;
   position:relative;width:960px;height:var(--stage-h,480px);background:var(--h-bg);border-radius:18px;overflow:hidden;
   box-shadow:0 0 0 1px #1d2026,0 20px 50px rgba(0,0,0,.5);
-  display:flex;flex-direction:column;--pad-l:max(26px,var(--safe-l,0px));--pad-r:max(26px,var(--safe-r,0px));padding:16px var(--pad-r) 14px var(--pad-l);color:var(--h-ink);
+  display:flex;flex-direction:column;--pad-l:max(26px,var(--safe-l,0px));--pad-r:max(26px,var(--safe-r,0px));padding:max(16px,var(--safe-t,0px)) var(--pad-r) 14px var(--pad-l);color:var(--h-ink);
   font:14px/1.3 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;box-sizing:border-box}
 .hud-screen.hud-fade{animation:hudfade var(--fade,110ms) ease-out}
 @keyframes hudfade{from{opacity:.55}to{opacity:1}}

@@ -187,6 +187,18 @@ ok('...its dividers drawn as rules, never at the window\'s edge', el.querySelect
      opened[0][1] === 'davebox-screen' && /popup/.test(opened[0][2]), JSON.stringify(opened));
   ok('...and the editor itself does not offer to install as the screen', !d.querySelector('link[rel="manifest"]'));
 }
+/* the editor pops out into a window of its own (web_ui_app.js) */
+{
+  const opened = []; const saveOpen = window.open;
+  window.open = (url, name, feat) => { opened.push([url, name, feat]); return null; };
+  const shownEl = (id) => window.getComputedStyle(d.getElementById(id)).display !== 'none';
+  d.getElementById('popEditor').click();
+  window.open = saveOpen;
+  const u = opened[0] ? new URL(opened[0][0], 'http://localhost:8199/') : null;
+  ok('the editor has Pop out: the editor alone (?app=1, its view kept) in a window of its own', opened.length === 1 && u.searchParams.get('app') === '1' &&
+     !u.searchParams.has('screen') && u.hash === window.location.hash && opened[0][1] === 'davebox-editor' && /popup/.test(opened[0][2]), JSON.stringify(opened));
+  ok('...and the page in the browser keeps its site ribbon and the button', shownEl('site') && shownEl('popEditor') && !d.body.classList.contains('app-window'));
+}
 /* notices and dialog buttons: drawn straight to the OLED once, now described */
 {
   const fx = (slug) => JSON.parse(readFileSync(new URL('./hud_fixtures/' + slug + '.json', import.meta.url), 'utf8'));

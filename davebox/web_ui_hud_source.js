@@ -66,6 +66,7 @@
       fit.style.setProperty('--safe-l', (sd.l / s).toFixed(1) + 'px');
       fit.style.setProperty('--safe-r', (sd.r / s).toFixed(1) + 'px');
       fit.style.setProperty('--safe-b', (a.b / s).toFixed(1) + 'px');
+      fit.style.setProperty('--safe-t', (a.t / s).toFixed(1) + 'px');   /* an iPad keeps its status bar on its side */
     }
   }
   if (screen.orientation && screen.orientation.addEventListener) screen.orientation.addEventListener('change', () => setTimeout(rescale, 50));
