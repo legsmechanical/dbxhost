@@ -35,6 +35,11 @@
   "screen": "track.overview"
  },
  {
+  "slug": "bank-crop-touched",
+  "title": "Touching a button knob",
+  "screen": "track.overview"
+ },
+ {
   "slug": "bank-value-popup",
   "title": "Turning a list parameter",
   "screen": "track.overview"
@@ -173,6 +178,11 @@
   "slug": "drum-lane-muted",
   "title": "A muted drum lane",
   "screen": "track.drum-overview"
+ },
+ {
+  "slug": "track-audio",
+  "title": "Track View — an Audio track",
+  "screen": "track.audio-overview"
  },
  {
   "slug": "macros-clear-confirm",
@@ -407,6 +417,11 @@
  {
   "slug": "macros-card",
   "title": "The MACROS bank",
+  "screen": "track.overview"
+ },
+ {
+  "slug": "macros-unassigned-touched",
+  "title": "Touching an unassigned macro",
   "screen": "track.overview"
  },
  {

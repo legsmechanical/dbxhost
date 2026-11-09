@@ -231,11 +231,9 @@
     const meta = kn.meta && t >= 0 ? kn.meta[t] : null;
     if (c) {
       head += '<b>' + esc((meta && meta.full) || c.name || c.label || '') + '</b>';
-      if (meta && typeof meta.min === 'number' && typeof meta.max === 'number')
-        head += '<span class="rng">' + esc((meta.min > 0 ? '+' : '') + meta.min + ' – ' + (meta.max > 0 ? '+' : '') + meta.max) + '</span>';
       if (c.options && c.options.length > 1)
         head += '<span class="opts">' + c.options.map((o, i) => '<span' + (i === c.sel ? ' class="on"' : '') + '>' + esc(o) + '</span>').join('') + '</span>';
-      else if (c.text) head += '<span class="val">' + esc(c.text) + '</span>';
+      else if (c.text && c.kind !== 'action') head += '<span class="val">' + esc(c.text) + '</span>';   /* a button has no value: the OLED's "->" says nothing here */
     }
     head += '</div>';
     /* the cells read their adornments (the "set" dot) from the bank table's

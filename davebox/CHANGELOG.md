@@ -155,6 +155,12 @@ the section into a versioned heading at release time.
   MACROS or Pad Mode bank**, as it already did on the other banks: the touched knob
   lights in the strip under the clip, and the strip keeps the bank's name. The
   Screen view also names each track's instrument (OB-Xd) rather than "Synth".
+- **The Screen view's knobs, clearer.** An Audio track shows its knobs too. A knob's
+  dial turns to its setting (Resolution's sat at zero). The knobs wear their track's
+  colour, one colour, instead of eight. A knob that is a button (Crop, Apply Legato)
+  looks like one, a knob a click does something on wears corner marks, and touching
+  one says what the click does (**Click Crop**, **Click Assign**). The bank map's
+  **Inst** pad names the instrument. The range readout is gone.
 - **Module editors open in a fraction of a second the first time.** The browser read an
   editor's values one at a time — a large instrument took 10–27 s, and some values never
   arrived; they are now read many at once (about 0.3 s for the same instrument). A read the

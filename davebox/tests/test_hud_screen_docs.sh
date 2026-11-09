@@ -57,6 +57,17 @@ fold('midi-track-card', 'sound.prompt', 0);
 fold('macros-card', 'sound.macros');
 fold('bank-chord', 'track.padmode');
 ok('...and names its bank as the heading does, for the strip to keep on a touch', doc('sound-card').where.bankName === 'MIX' && doc('bank-drumlane').where.bankName === 'DRUM LANE', doc('sound-card').where.bankName + ' / ' + doc('bank-drumlane').where.bankName);
+/* the knob strip's second pass (Josh, 2026-11-09) */
+const cr = doc('bank-crop-touched');
+ok('a touched button knob carries its page\'s click hint (CLK CROP)', cr.knobs && cr.knobs.touched === 5 && (cr.knobs.hints || []).some((h) => h[0] === 'CLK' && h[1] === 'CROP'), JSON.stringify(cr.knobs && cr.knobs.hints));
+const mu = doc('macros-unassigned-touched');
+ok('...an unassigned macro\'s too (CLK ASSIGN)', mu.knobs && (mu.knobs.hints || []).some((h) => h[0] === 'CLK' && h[1] === 'ASSIGN'), JSON.stringify(mu.knobs && mu.knobs.hints));
+const ta = doc('track-audio');
+ok('an Audio track\'s overview carries its bank\'s knobs', ta.where.screen === 'track.audio-overview' && ta.knobs && ta.knobs.knobs.length === 8, ta.where.screen);
+const bw = doc('bank-overview-walk');
+const instCell = (bw.pads && bw.pads.cells || []).find((c) => c && !c.module && /^inst$/i.test(c.label));
+const instSlot = (bw.pads && bw.pads.cells || []).find((c) => c && c.module && /^instrument$/i.test(c.label));
+ok('the bank map\'s INST pad names the instrument, as its Instrument slot does', !!instCell && !!instCell.sub && !!instSlot && instCell.sub === instSlot.sub, JSON.stringify(instCell) + ' / ' + JSON.stringify(instSlot));
 const ov = doc('track-melodic-playing');
 ok('a Track overview carries its bank\'s knobs with nothing touched (the OLED hides them)', ov.where.screen === 'track.overview' && ov.knobs && ov.knobs.knobs.length === 8 &&
    ov.knobs.touched === -1 && ov.knobs.knobs.filter(Boolean).length === 8, JSON.stringify(ov.knobs && ov.knobs.knobs.map((c) => c && c.label)));

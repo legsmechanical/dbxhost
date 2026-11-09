@@ -25,15 +25,4 @@
       out.push(i === c.sel ? '<b>' + esc(c.options[i]) + '</b>' : esc(c.options[i]));
     return '<span class="hud-a-opts">' + out.join(' · ') + '</span>';
   });
-
-  /* rangeBar — under a touched number knob, a bar with the default marked */
-  H.adorn('rangeBar', (c, k, doc) => {
-    const m = meta(doc, k);
-    if (!touched(doc, k) || !m || typeof m.min !== 'number' || m.max === m.min || Array.isArray(c.options)) return '';
-    const frac = typeof c.norm === 'number' ? c.norm : typeof c.signed === 'number' ? (c.signed + 1) / 2 : null;
-    if (frac == null) return '';
-    const def = typeof m.def === 'number' ? (m.def - m.min) / (m.max - m.min) : null;
-    return '<span class="hud-a-range"><i style="width:' + Math.round(frac * 100) + '%;background:' + H.knobColor(k) + '"></i>' +
-      (def != null && def >= 0 && def <= 1 ? '<u style="left:' + (def * 100).toFixed(1) + '%"></u>' : '') + '</span>';
-  });
 });

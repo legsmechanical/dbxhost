@@ -83,6 +83,13 @@ body[data-view="screen"] .seqonly{display:none}
 .hud-kn.blank{opacity:.16}.hud-kn.tch .l{color:var(--h-ink);font-weight:700}
 .hud-kn.tch{background:color-mix(in srgb,var(--kc) 16%,#0d0f13);border-color:var(--kc);box-shadow:0 0 18px color-mix(in srgb,var(--kc) 45%,transparent)}
 .hud-kn.lock .l{color:var(--h-amber)}
+/* touch + click does something on this knob: the OLED's corner brackets */
+.hud-kn.opens::after{content:'';position:absolute;inset:3px;pointer-events:none;--oc:#4a505a;
+  background:linear-gradient(var(--oc),var(--oc)) top left/12px 2px no-repeat,linear-gradient(var(--oc),var(--oc)) top left/2px 12px no-repeat,
+  linear-gradient(var(--oc),var(--oc)) top right/12px 2px no-repeat,linear-gradient(var(--oc),var(--oc)) top right/2px 12px no-repeat,
+  linear-gradient(var(--oc),var(--oc)) bottom left/12px 2px no-repeat,linear-gradient(var(--oc),var(--oc)) bottom left/2px 12px no-repeat,
+  linear-gradient(var(--oc),var(--oc)) bottom right/12px 2px no-repeat,linear-gradient(var(--oc),var(--oc)) bottom right/2px 12px no-repeat}
+.hud-kn.opens.tch::after{--oc:var(--kc)}
 .hud-kn.under .w{height:60px}.hud-kn.under .v{font-size:17px}
 /* widgets */
 .hud-w-svg{width:92px;height:92px}
@@ -102,9 +109,6 @@ body[data-view="screen"] .seqonly{display:none}
 .hud-a-auto{font-size:10px;font-weight:700;letter-spacing:.6px;color:var(--h-amber)}
 .hud-a-lock{font-size:10px;font-weight:700;letter-spacing:.6px;color:var(--h-amber)}
 .hud-a-opts{display:flex;gap:6px;font-size:12px;color:var(--h-faint);white-space:nowrap}.hud-a-opts b{color:var(--h-ink)}
-.hud-a-range{width:84px;height:5px;border-radius:3px;background:#1d2026;position:relative}
-.hud-a-range i{position:absolute;left:0;top:0;bottom:0;border-radius:3px}
-.hud-a-range u{position:absolute;top:-3px;bottom:-3px;width:2px;background:#5a606c}
 /* viz */
 .hud-vrow{display:grid;grid-template-columns:repeat(8,1fr);gap:10px;height:118px;margin-bottom:10px}
 .hud-viz{border-radius:12px;background:#0f1114;position:relative;overflow:hidden}
@@ -276,7 +280,6 @@ html.hud-review,body.hud-review{background:#050607;overflow:auto!important;heigh
 .hud-o-kh .opts{display:flex;gap:10px;letter-spacing:0;text-transform:none;font-weight:700;color:#5c626d}
 .hud-o-kh .opts .on{color:var(--h-ink);background:#2a2f37;border-radius:5px;padding:1px 6px}
 .hud-o-kh .val{letter-spacing:0;text-transform:none;color:var(--h-ink)}
-.hud-o-kh .rng{letter-spacing:0;text-transform:none;font-weight:700;color:#5c626d}
 .hud-o-knobs .hud-knobs{margin:0}
 .hud-o-knobs .hud-kn{gap:3px;padding:6px 0 8px}
 .hud-o-knobs .hud-kn .w{height:78px}

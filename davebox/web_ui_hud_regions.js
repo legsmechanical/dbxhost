@@ -41,7 +41,12 @@
 
   /* hints — the device's footer pairs as key chips; the right side carries one fact */
   H.region('hints', (doc) => {
-    const b = doc.body || {}, hints = b.hints || [];
+    const b = doc.body || {}, kn = doc.knobs;
+    /* a knob touched under an overview: what a click does there, from the
+     * knob page's footer (CLK CROP, CLK ASSIGN), ahead of the overview's own
+     * pairs (Josh, 2026-11-09: "touch+click hints aren't updating") */
+    const clicks = (kn && kn.touched >= 0 && kn.hints) ? kn.hints.filter((p) => /CLK/i.test(p[0])) : [];
+    const hints = clicks.concat(b.hints || []);
     const words = hints.map((p) => '<span class="hud-hint"><kbd>' + esc(cap(p[0])) + '</kbd>' + '<span class="w">' + esc(cap(p[1])) + '</span></span>').join('');
     const fact = H.safe('fact', factFor, doc);
     return '<div class="hud-hints">' + words + (fact ? '<span class="ctx">' + esc(fact) + '</span>' : '') + '</div>';

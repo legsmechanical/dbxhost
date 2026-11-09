@@ -51,7 +51,15 @@
   };
   HUD.esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   /* The colour of knob position k (0..7) — stable on every page. */
-  HUD.knobColor = (k) => (HUD.cfg.palette[k % HUD.cfg.palette.length]);
+  /* A Track view knob page acts on ONE track, so every knob wears that
+   * track's colour (Josh, 2026-11-09: "having a different color per knob is
+   * confusing"); the touched one is told apart by its lit card. Only where the
+   * eight knobs ARE eight tracks (Session view) does each keep its own. */
+  HUD.knobColor = (k) => {
+    const w = HUD.doc && HUD.doc.where;
+    if (w && w.view !== 'session' && typeof trackColor === 'function') return trackColor(w.track | 0);
+    return HUD.cfg.palette[k % HUD.cfg.palette.length];
+  };
 
   /* ── the render loop: one paint per animation frame, only when something changed ── */
   let pending = false, stage = null, lastScreen = null;
@@ -72,7 +80,10 @@
   const PRIMARY = { knobs: 'kit', tracks: 'overview', list: 'list', prompt: 'prompt', bars: 'bars', message: 'message',
                     picture: 'picture', big: 'big', card: 'card', mods: 'perf', wave: 'wave', keyboard: 'keyboard', bankmap: 'bankmap', notice: 'notice' };
   function layoutFor(doc) {
-    const want = doc.body && PRIMARY[doc.body.primary];
+    /* an overview is the overview whatever it drew last (an Audio track's
+     * draws its waveform last, which read as the sample editor's layout) */
+    const ovw = doc.body && doc.body.tracks && ((HUD.isTrackOverview && HUD.isTrackOverview(doc)) || (HUD.isSessionOverview && HUD.isSessionOverview(doc)));
+    const want = ovw ? 'overview' : doc.body && PRIMARY[doc.body.primary];
     if (want) for (const l of HUD.layouts) { if (l.name === want) { try { if (l.match(doc)) return l; } catch (e) { /* skip */ } } }
     for (const l of HUD.layouts) { try { if (l.match(doc)) return l; } catch (e) { /* a bad matcher never wins */ } }
     return null;

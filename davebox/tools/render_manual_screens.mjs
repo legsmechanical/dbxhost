@@ -555,6 +555,14 @@ function screen(slug, section, title, caption, setup, opts = {}) {
 screen('track-melodic-playing', '3.4 Reading the screen', 'Track View — melodic track playing',
     'The Track View overview: the bank and the instrument, the key, each track\'s clip, the page bar and what the controls do.',
     () => {});
+screen('track-audio', '7.5 Audio', 'Track View — an Audio track',
+    'An Audio track\'s overview: its clip\'s sample, and the knobs of the bank it is on.',
+    () => {
+        /* as the project fixture sets the others: the engine and the mirror */
+        S.trackPadMode[4] = C.PAD_MODE_AUDIO; ENGINE.t4_pad_mode = String(C.PAD_MODE_AUDIO);
+        selectTrack(4); ticks(2);
+        if (S.activeTrack !== 4 || S.trackPadMode[4] !== C.PAD_MODE_AUDIO) throw new Error('T5 is not the active Audio track');
+    });
 screen('track-melodic-chord-held', '6.1 Playing and placing notes', 'Track View — naming a held chord',
     'Holding three pads: the chord you are playing is named in brackets at the right of the key/scale row.',
     () => {
@@ -608,6 +616,9 @@ screen('bank-clip-alt', '8.1 CLIP bank', 'CLIP bank — alternate parameters',
 screen('bank-knob-touched', '3.6 Parameter banks', 'Touching a knob',
     'Touching knob 1 on NOTE FX: the header spells out the parameter it controls.',
     () => { toBank(1); knobTouch(0); ticks(2); });
+screen('bank-crop-touched', '3.6 Parameter banks', 'Touching a button knob',
+    'Touching CLIP\'s Crop knob: the footer says what a click does.',
+    () => { toBank(0); knobTouch(5); ticks(2); });
 screen('bank-value-popup', '3.6 Parameter banks', 'Turning a list parameter',
     'Turning SEQ ARP\'s Style knob opens its list over the page; the highlight follows the knob (here moved from Off to Down).',
     () => { toBank(4); knobTouch(0); knobTurn(0, 20); ticks(2); });
@@ -1134,6 +1145,9 @@ screen('sound-card', '14.1 Opening TRACK CONFIG', 'The MIX card',
 screen('macros-card', '14.6 The MACROS bank', 'The MACROS bank',
     'Each knob shows its target; a knob driving several (MAC1) shows its own position.',
     () => { selectTrack(4); toBank(C.BANK_MACROS); ticks(8); });
+screen('macros-unassigned-touched', '14.6 The MACROS bank', 'Touching an unassigned macro',
+    'Touching K7, which drives nothing yet: the footer says a click assigns it.',
+    () => { selectTrack(4); toBank(C.BANK_MACROS); ticks(8); knobTouch(6); ticks(2); });
 /* A macro's editor: touch its knob on the MACROS card and click the jog. */
 const openMacro = (k) => {
     selectTrack(4); toBank(C.BANK_MACROS); ticks(8);

@@ -13,7 +13,10 @@ export const knobs = {
         if (!d.knobs || !d.knobs.some((c) => c && c.kind !== 'blank')) return null;
         /* a bank page's range / default / scope, as knobmeta gives a drawn one */
         const meta = frame.knobsScreen === 'track.bank' ? knobMetaFor(d.knobs, doc && doc.where) : null;
+        /* the page's hint row too: a touched knob's footer says what a click
+         * does (CLK CROP, CLK ASSIGN) — the overview's own hints cannot */
         return { screen: frame.knobsScreen || undefined, header: d.header || undefined, knobs: d.knobs,
-                 touched: typeof d.touched === 'number' ? d.touched : -1, meta: meta || undefined };
+                 touched: typeof d.touched === 'number' ? d.touched : -1, meta: meta || undefined,
+                 hints: d.hints && d.hints.length ? d.hints : undefined };
     },
 };

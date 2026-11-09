@@ -28,9 +28,15 @@
   }
   H.dial = dial;
 
-  H.widget('arc',    (c, k, x) => dial(k, c.norm, false, x.touched, c.ghost));
+  /* Where the knob sits: its fill, else — a list of options with no fill of
+   * its own (Resolution, Input Quantize) — the chosen option's place in the
+   * list, so the dial turns as the value does. */
+  const normOf = (c) => typeof c.norm === 'number' ? c.norm
+    : (Array.isArray(c.options) && c.options.length > 1 && c.sel >= 0) ? c.sel / (c.options.length - 1) : 0;
+  H.normOf = normOf;
+  H.widget('arc',    (c, k, x) => dial(k, normOf(c), false, x.touched, c.ghost));
   H.widget('arcbip', (c, k, x) => dial(k, typeof c.signed === 'number' ? (c.signed + 1) / 2 : 0.5, true, x.touched, c.ghost));
-  H.widget('frac',   (c, k, x) => dial(k, c.norm, false, x.touched, c.ghost));
+  H.widget('frac',   (c, k, x) => dial(k, normOf(c), false, x.touched, c.ghost));
   /* a named enum: its word, framed, in the knob's colour when touched */
   H.widget('enumsq', (c, k, x) => '<div class="hud-w-sq" style="' + (x.touched ? 'border-color:' + H.knobColor(k) + ';color:' + H.knobColor(k) : '') + '">' + esc(c.sq || c.text) + '</div>');
   /* a number / note read-out: big, frameless */
@@ -45,6 +51,14 @@
   /* a value you cannot turn (a file, a path): a broken box with its head */
   H.widget('opaque', (c) => '<div class="hud-w-opaque">' + esc(c.text || '—') + '</div>');
   H.widget('blank',  () => '');
+  /* a knob that is a BUTTON (touch + click does it: Apply Legato, Crop, Import
+   * MIDI): a push button, drawn — not the OLED's "->", which reads as a value */
+  H.widget('action', (c, k, x) => {
+    const col = H.knobColor(k);
+    return '<svg class="hud-w-svg hud-w-btn" viewBox="0 0 92 92"><circle cx="46" cy="46" r="34" fill="none" stroke="' + (x.touched ? col : '#2a2f37') + '" stroke-width="5"/>' +
+      '<circle cx="46" cy="46" r="21" fill="' + col + '" opacity="' + (x.touched ? 1 : 0.75) + '"/>' +
+      '<circle cx="46" cy="46" r="21" fill="none" stroke="#0b0d10" stroke-opacity=".35" stroke-width="3"/></svg>';
+  });
 
   /* The name under a cell: the full name when it fits a column, else the
    * device's short label; an all-caps name reads as a sentence. */
@@ -63,10 +77,12 @@
     const isT = touched === k;
     const ctx = { touched: isT, under: !!(opt && opt.under) };
     const kind = H.widgets.get(c.kind) ? c.kind : 'valsq';
-    const showVal = !(kind === 'valsq' || kind === 'enumsq');
+    const showVal = !(kind === 'valsq' || kind === 'enumsq' || kind === 'action');
     const adorn = H.cfg.adornments.map((a) => H.safe('adorn:' + a, H.adorns.get(a), c, k, doc)).filter(Boolean);
     const dot = adorn.length && adorn[0].indexOf('hud-a-dot') >= 0 ? adorn.shift() : '';
-    return '<div class="hud-kn' + (isT ? ' tch' : '') + (c.lock ? ' lock' : '') + (ctx.under ? ' under' : '') + '"' + (isT ? ' style="--kc:' + H.knobColor(k) + '"' : '') + '>' +
+    /* `opens`: touch + click does something here — the OLED's corner
+     * brackets, drawn as the browser's own corners (.hud-kn.opens) */
+    return '<div class="hud-kn' + (isT ? ' tch' : '') + (c.lock ? ' lock' : '') + (ctx.under ? ' under' : '') + (c.opens ? ' opens' : '') + '"' + (isT ? ' style="--kc:' + H.knobColor(k) + '"' : '') + '>' +
       '<div class="w">' + H.safe('widget:' + kind, H.widgets.get(kind), c, k, ctx) + '</div>' +
       (showVal ? '<div class="v"' + (isT ? ' style="color:' + H.knobColor(k) + '"' : '') + '>' + esc(c.text) + '</div>' : '') +
       '<div class="l">' + dot + esc(cellName(c)) + '</div>' +

@@ -109,6 +109,9 @@ ok('...its dividers drawn as rules, never at the window\'s edge', el.querySelect
      pads.length === 32 && lit.length === P.colors.filter((v) => v).length && lit.every((p) => /background/.test(p.getAttribute('style') || '')) &&
      pads.filter((p) => p.classList.contains('cur')).length === 1 && !!em.querySelector('.hud-pads .pad.mod .ps') &&
      window.getComputedStyle(em.querySelector('.hud-pads')).display === 'grid', pads.length + ' pads, ' + lit.length + ' lit');
+  const instPad = pads.find((p) => !p.classList.contains('mod') && /^inst$/i.test(((p.querySelector('.pl') || {}).textContent || '').trim()));
+  ok('...the left 4x4\'s Inst pad names the instrument too, as the Instrument slot does', !!instPad && /\S/.test((instPad.querySelector('.ps') || {}).textContent || ''),
+     instPad ? instPad.textContent : 'no Inst pad');
   const dm = render('bank-overview-drum');
   const jt = dm && dm.querySelector('.hud-pads .pad.jt'), jb = dm && dm.querySelector('.hud-pads .pad.jb');
   ok('...two pads that belong together touch as one box, each keeping its own name (Drum lane over All lanes)',
@@ -159,9 +162,9 @@ ok('...its dividers drawn as rules, never at the window\'s edge', el.querySelect
     const touchedDoc = fx('bank-knob-touched');
     const e2 = draw(Object.assign({}, touchedDoc, { where: Object.assign({}, touchedDoc.where, { track: mel.where.track, clip: mel.where.clip }) }));
     const lit = e2.querySelectorAll('.hud-o-knobs .hud-kn.tch');
-    ok('a knob touched on Track view keeps the overview: the roll stays, the touched knob lit, named with its range, none dimmed',
+    ok('a knob touched on Track view keeps the overview: the roll stays, the touched knob lit, named, no range readout, none dimmed',
        touchedDoc.where.screen === 'track.overview' && !!e2.querySelector('.hud-o-roll') && lit.length === 1 && lit[0] === e2.querySelectorAll('.hud-o-knobs .hud-kn')[touchedDoc.knobs.touched] &&
-       /Octave Shift/.test(e2.querySelector('.hud-o-kh').textContent) && /-4\s*–\s*\+4/.test(e2.querySelector('.hud-o-kh').textContent) && !e2.querySelector('.hud-kn.dim'),
+       /Octave Shift/.test(e2.querySelector('.hud-o-kh').textContent) && !/–/.test(e2.querySelector('.hud-o-kh').textContent) && !e2.querySelector('.hud-a-range') && !e2.querySelector('.hud-kn.dim'),
        touchedDoc.where.screen + ' / ' + (e2.querySelector('.hud-o-kh') || {}).textContent);
     ok('...and the strip keeps its bank\'s name over the touched knob\'s', /NOTE FX bank/i.test(e2.querySelector('.hud-o-kh .bk').textContent),
        (e2.querySelector('.hud-o-kh .bk') || {}).textContent);
@@ -172,6 +175,29 @@ ok('...its dividers drawn as rules, never at the window\'s edge', el.querySelect
        mixDoc.where.screen === 'track.overview' && !!e3.querySelector('.hud-o-roll') && /MIX bank/i.test(e3.querySelector('.hud-o-kh .bk').textContent) &&
        /Volume/.test(e3.querySelector('.hud-o-kh b').textContent) && e3.querySelectorAll('.hud-o-knobs .hud-kn.tch').length === 1,
        mixDoc.where.screen + ' / ' + (e3.querySelector('.hud-o-kh') || {}).textContent);
+    /* Josh, 2026-11-09 — the knob strip's second pass */
+    const at = (doc) => Object.assign({}, doc, { where: Object.assign({}, doc.where, { track: mel.where.track, clip: mel.where.clip }) });
+    const cropDoc = fx('bank-crop-touched'), e4 = draw(at(cropDoc));
+    const hint0 = e4.querySelector('.hud-hints .hud-hint');
+    ok('a touched button knob: the footer says what a click does first (Click Crop)', !!hint0 && /click/i.test(hint0.textContent) && /crop/i.test(hint0.textContent),
+       (e4.querySelector('.hud-hints') || {}).textContent);
+    const cells4 = e4.querySelectorAll('.hud-o-knobs .hud-kn');
+    ok('...a button knob is drawn as a button, not as "->"', !!cells4[5].querySelector('.hud-w-btn') && !/->/.test(e4.querySelector('.hud-o-knobs').textContent),
+       e4.querySelector('.hud-o-knobs').textContent);
+    ok('...and a knob a click does something on wears corner marks', cells4[5].classList.contains('opens') && !cells4[1].classList.contains('opens'),
+       [...cells4].map((c) => c.className).join(' | '));
+    const kc = new Set([0, 3, 7].map((k) => H.knobColor(k)));
+    ok('every knob of a Track view page wears its track\'s colour, one colour', kc.size === 1 && [...kc][0] === window.eval('trackColor(' + (mel.where.track | 0) + ')'), [...kc].join());
+    const ses = draw(fx('session-mixer-pan'));
+    ok('...while Session view\'s eight (eight tracks) keep their own', new Set([0, 3, 7].map((k) => H.knobColor(k))).size === 3);
+    ok('a list knob with no fill turns to its option (1/16 of six: a fifth of the way)', Math.abs(H.normOf({ options: ['a', 'b', 'c', 'd', 'e', 'f'], sel: 1 }) - 0.2) < 1e-9 &&
+       H.normOf({ norm: 0.7, options: ['a', 'b'], sel: 0 }) === 0.7);
+    const mu = draw(at(fx('macros-unassigned-touched')));
+    ok('an unassigned macro touched: the footer says a click assigns it', /assign/i.test((mu.querySelector('.hud-hints .hud-hint') || {}).textContent || ''),
+       (mu.querySelector('.hud-hints') || {}).textContent);
+    const au = draw(at(fx('track-audio')));
+    ok('an Audio track keeps the overview, its bank\'s knobs under it', !!au.querySelector('.hud-o-track') && au.querySelectorAll('.hud-o-knobs .hud-kn').length === 8,
+       (au.querySelector('.hud-body') || {}).className);
     /* no strip (a bank whose knobs do nothing here): the track list stays */
     const bare = JSON.parse(JSON.stringify(mel)); delete bare.knobs;
     ok('...and with no knob page, the eight tracks as before', draw(bare).querySelectorAll('.hud-o-tl .row').length === 8);

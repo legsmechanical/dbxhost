@@ -11,7 +11,7 @@
   statusItems: ['track', 'clip', 'spacer', 'pips', 'transport'],
 
   /* Extras drawn ON a knob cell, in this order under its name. */
-  adornments: ['setDot', 'auto', 'stepLock', 'enumNeighbours', 'rangeBar'],
+  adornments: ['setDot', 'auto', 'stepLock', 'enumNeighbours'],   /* no range bar: the dial says where it sits (Josh, 2026-11-09: "we don't need the param range thing") */
 
   /* One colour per knob POSITION (K1..K8), the same on every page. */
   palette: ['#4da3ff', '#3fd28b', '#ffb340', '#ff6b6b', '#b38cff', '#38d4e0', '#ffd84d', '#ff8fc7'],
