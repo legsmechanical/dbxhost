@@ -261,3 +261,94 @@ func TestSurfaceHeldPageThatStopsAnsweringIsClosed(t *testing.T) {
 		t.Fatal("a page holding nothing was pinged and closed")
 	}
 }
+
+// The manager spaces a gesture's presses and releases itself: the network can
+// hand the page's paced packets over in one burst, and a module reads a press
+// and release inside one of its frames as nothing.
+func TestSurfaceSinkPacesWhatTheNetworkBunched(t *testing.T) {
+	_, p := newSurfaceFile(t)
+	clock := time.Unix(1000, 0)
+	var at []time.Duration
+	s := &surfaceSink{path: p, now: func() time.Time { return clock }, sleep: func(d time.Duration) { clock = clock.Add(d) }}
+	start := clock
+	mark := func(pk [][4]byte) {
+		if err := s.push(pk); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// pushes record their time through lastAt; push one packet at a time to read it
+	rec := func(pk [4]byte) { mark([][4]byte{pk}); at = append(at, s.lastAt.Sub(start)) }
+
+	// Shift, the jog, Shift up — arriving together
+	rec([4]byte{0x0B, 0xB0, 49, 127})
+	rec([4]byte{0x0B, 0xB0, 14, 3})
+	rec([4]byte{0x0B, 0xB0, 49, 0})
+	for i := 1; i < len(at); i++ {
+		if at[i]-at[i-1] < surfacePace {
+			t.Fatalf("Shift/jog/Shift up %v apart, want >= %v: %v", at[i]-at[i-1], surfacePace, at)
+		}
+	}
+	// a run of knob detents after a touch: the first waits for the touch, the rest go together
+	at = nil
+	clock = clock.Add(time.Second)
+	start = clock
+	rec([4]byte{0x09, 0x90, 2, 127})
+	rec([4]byte{0x0B, 0xB0, 73, 1})
+	rec([4]byte{0x0B, 0xB0, 73, 1})
+	rec([4]byte{0x0B, 0xB0, 73, 1})
+	if at[1]-at[0] < surfacePace {
+		t.Fatalf("the first detent came %v after the touch", at[1]-at[0])
+	}
+	if at[2] != at[1] || at[3] != at[1] {
+		t.Fatalf("a run of detents was spread out: %v", at)
+	}
+	// already spaced by the page: nothing added
+	clock = clock.Add(time.Second)
+	before := clock
+	mark([][4]byte{{0x09, 0x90, 68, 100}})
+	if clock != before {
+		t.Fatalf("a press that came late enough was held back %v", clock.Sub(before))
+	}
+	// one message with a whole gesture is paced inside itself too
+	clock = clock.Add(time.Second)
+	before = clock
+	mark([][4]byte{{0x08, 0x80, 68, 0}, {0x0B, 0xB0, 49, 127}, {0x0B, 0xB0, 49, 0}})
+	if clock.Sub(before) < 2*surfacePace {
+		t.Fatalf("three holds in one message took %v, want >= %v", clock.Sub(before), 2*surfacePace)
+	}
+}
+
+// Only the manager's own pages press the Move: a website open in a browser on
+// the same WiFi can open a socket to move.local, and must not drive it.
+func TestSurfaceOriginIsTheManagersOwnPage(t *testing.T) {
+	req := func(host, origin string) *http.Request {
+		r := httptest.NewRequest("GET", "http://"+host+"/ws/remote-ui", nil)
+		r.Host = host
+		if origin != "" {
+			r.Header.Set("Origin", origin)
+		}
+		return r
+	}
+	for _, c := range []struct {
+		host, origin string
+		ok           bool
+	}{
+		{"move.local:7700", "http://move.local:7700", true},
+		{"move.local:7700", "http://MOVE.local:7700", true},
+		{"192.168.1.40:7700", "http://192.168.1.40:7700", true},
+		{"[fe80::1]:7700", "http://[fe80::1]:7700", true},
+		{"localhost:7700", "http://localhost:7700", true}, // an ssh tunnel
+		{"move:7700", "http://move:7700", true},
+		{"move.lan:7700", "http://move.lan:7700", true}, // a router's own DNS
+		{"move.home.arpa:7700", "http://move.home.arpa:7700", true},
+		{"move.local:7700", "", true}, // not a browser
+		{"move.local:7700", "https://evil.example", false},
+		{"move.local:7700", "http://move.local:8080", false},
+		{"move.local:7700", "null", false},                       // a sandboxed frame or a file
+		{"evil.example:7700", "http://evil.example:7700", false}, // DNS rebinding
+	} {
+		if got := surfaceOriginOK(req(c.host, c.origin)); got != c.ok {
+			t.Errorf("Host %q Origin %q: %v, want %v", c.host, c.origin, got, c.ok)
+		}
+	}
+}

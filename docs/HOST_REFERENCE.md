@@ -139,6 +139,14 @@ the shadow UI, note events handed to the overtake DSP, an injected Shift mirrore
 `shift_held`. So the module runs its own input handlers and nothing is re-implemented in the page.
 
 - **Overtake only**, and **never Move's inject ring**: that one carries dAVEBOx's own note output.
+  Outside overtake the ring is emptied, not kept (`remote_surface_drop`): a press made while Move's
+  own UI is up goes nowhere, as a hand's would go to Move, instead of firing later in a burst.
+- **Paced in the manager.** A press or a release is kept 30 ms from the packets either side of it
+  (a run of encoder or jog detents goes together); a module reads a press and release inside one of
+  its frames as nothing. The page paces too, but the network can bunch what it sent.
+- **The manager's own pages only.** A connection whose `Origin` is not the address it reached the
+  manager by, on a local name or address, may not send surface packets (`surfaceOriginOK`) — any
+  website open on the same WiFi could otherwise press the Move. No `Origin` (a script) is allowed.
 - **Validated twice** (`src/host/remote_surface.h`, mirrored in Go), because the producer faces the
   network: cable 0, channel 1, note on/off for the touch sensors (0–9), steps (16–31) and pads
   (68–99), CCs for the encoders, the jog and the buttons — never the master knob (79) or plug detect.

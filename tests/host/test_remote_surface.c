@@ -69,6 +69,32 @@ int main(void)
     CHECK(!ok(0x0F, 0xF8, 0, 0));
     CHECK(!ok(0, 0, 0, 0));
 
+    /* Off screen, the ring is emptied, not kept for a burst later. */
+    {
+        static shadow_midi_inject_t ring;
+        shadow_midi_inject_init(&ring);
+        const uint8_t sd[4] = { 0x0B, 0xB0, 49, 127 }, jg[4] = { 0x0B, 0xB0, 14, 3 },
+                      su[4] = { 0x0B, 0xB0, 49, 0 }, pad[4] = { 0x09, 0x90, 68, 100 };
+        CHECK(shadow_midi_inject_push(&ring, sd) == 0);
+        CHECK(shadow_midi_inject_push(&ring, jg) == 0);
+        CHECK(shadow_midi_inject_push(&ring, pad) == 0);
+        uint8_t got[4];
+        CHECK(remote_surface_drop(&ring, 16) == 0);           /* no Shift release among them */
+        CHECK(!shadow_midi_inject_peek(&ring, got));          /* nothing left to replay */
+        CHECK(shadow_midi_inject_push(&ring, su) == 0);
+        CHECK(remote_surface_drop(&ring, 16) == 1);           /* a Shift release, reported */
+        /* bounded: a full ring takes several frames, never one long loop */
+        for (int i = 0; i < 40; i++) CHECK(shadow_midi_inject_push(&ring, pad) == 0);
+        remote_surface_drop(&ring, 16);
+        CHECK(shadow_midi_inject_peek(&ring, got));
+        remote_surface_drop(&ring, 16); remote_surface_drop(&ring, 16);
+        CHECK(!shadow_midi_inject_peek(&ring, got));
+        /* an invalid packet is not a Shift release */
+        const uint8_t bad[4] = { 0x1B, 0xB0, 49, 0 };
+        CHECK(shadow_midi_inject_push(&ring, bad) == 0);
+        CHECK(remote_surface_drop(&ring, 16) == 0);
+    }
+
     if (failures) { printf("FAIL: test_remote_surface (%d)\n", failures); return 1; }
     printf("PASS: test_remote_surface\n");
     return 0;

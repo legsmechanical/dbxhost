@@ -38,7 +38,11 @@ const rowOut = (r) => typeof r === 'string' ? { label: r } : r ? {
     /* a NOTE row: centred, not a choice (a Move instrument another track plays) */
     note: r.note != null ? String(r.note) : undefined,
 } : { label: '' };
-const listOut = (rows, sel, kind) => ({
+/* A list as the browser needs it: a WINDOW of rows around the selection
+ * (`first` is the window's offset, `total` the whole length; the page scrolls
+ * by them). Never the whole list — a document over the host's 16 KB is
+ * refused, and the Screen view would stay on the last screen it got. */
+export const listOut = (rows, sel, kind) => ({
     kind, total: rows ? rows.length : 0, sel: sel == null ? -1 : sel,
     rows: (rows || []).slice(Math.max(0, (sel | 0) - MAX_ROWS / 2), Math.max(0, (sel | 0) - MAX_ROWS / 2) + MAX_ROWS).map(rowOut),
     first: Math.max(0, (sel | 0) - MAX_ROWS / 2),

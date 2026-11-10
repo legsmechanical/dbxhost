@@ -107,6 +107,8 @@ type ruClient struct {
 	subs map[uint8]bool
 	// what this page holds down on the surface, let go when it leaves
 	held surfaceHeld
+	// whether this page may drive the surface at all (surfaceOriginOK)
+	surfaceOK bool
 	// whether this client is subscribed to master FX
 	masterFxSub bool
 	// whether this client is subscribed to the mixer surface (the 8 unified
@@ -474,11 +476,12 @@ func (ru *RemoteUI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	gone, markGone := context.WithCancel(r.Context())
 	client := &ruClient{
-		conn:     conn,
-		subs:     make(map[uint8]bool),
-		opened:   time.Now(),
-		gone:     gone,
-		markGone: markGone,
+		conn:      conn,
+		subs:      make(map[uint8]bool),
+		opened:    time.Now(),
+		gone:      gone,
+		markGone:  markGone,
+		surfaceOK: surfaceOriginOK(r),
 	}
 
 	ru.mu.Lock()
@@ -2509,6 +2512,10 @@ func (ru *RemoteUI) subscribedToolClients() []*ruClient {
 // surface can make; a message carrying any other is refused whole, so a
 // half-applied gesture (the jog held, the step never pressed) cannot happen.
 func (ru *RemoteUI) handleSurface(ctx context.Context, c *ruClient, msg wsMessage) {
+	if !c.surfaceOK {
+		ru.sendError(ctx, c, "surface: only the manager's own pages may press the Move")
+		return
+	}
 	if len(msg.Pkts) == 0 || len(msg.Pkts) > 64 {
 		ru.sendError(ctx, c, "surface: 1-64 packets")
 		return

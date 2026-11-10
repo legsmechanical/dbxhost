@@ -27,6 +27,8 @@
 
 #include <stdint.h>
 
+#include "shadow_midi_inject_writer.h"
+
 /* Notes the surface sends: knob and jog touch (0-9), steps (16-31), pads (68-99). */
 static inline int
 remote_surface_note_ok(uint8_t n)
@@ -69,6 +71,27 @@ remote_surface_valid(const uint8_t pkt[4])
     if (type == 0x90 || type == 0x80) return remote_surface_note_ok(pkt[2]);
     if (type == 0xB0) return remote_surface_cc_ok(pkt[2]);
     return 0;
+}
+
+/* While no module is on screen the ring is EMPTIED, not kept. It is replayed
+ * only during overtake, so a press sent while Move's own UI was up (co-run, a
+ * menu) used to wait in the ring and fire, with everything after it, the
+ * moment a module came back: a stale Shift + jog moved the track, a stale pad
+ * sounded. A hand's press at that moment goes to Move, not the module, so the
+ * browser's is dropped. Bounded (the SPI callback). Returns whether a valid
+ * Shift release was among what was dropped — the shim's own Shift view may be
+ * holding a Shift this page pressed, and only its release can let go of it. */
+static inline int
+remote_surface_drop(shadow_midi_inject_t *ring, int budget)
+{
+    uint8_t pkt[4];
+    int shift_up = 0;
+    while (budget-- > 0 && shadow_midi_inject_peek(ring, pkt)) {
+        shadow_midi_inject_pop(ring);
+        if (remote_surface_valid(pkt) && (pkt[1] & 0xF0) == 0xB0 && pkt[2] == 49 && pkt[3] == 0)
+            shift_up = 1;
+    }
+    return shift_up;
 }
 
 #endif /* REMOTE_SURFACE_H */

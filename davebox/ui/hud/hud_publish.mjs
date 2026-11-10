@@ -17,6 +17,8 @@ const PROBE_MS = 1000;
 let viewer = false;
 let lastProbe = -PROBE_MS;
 let lastBody = '';
+const PUBLISH_MAX = 16352;   /* src/host/ui_publish_shm.h UI_PUBLISH_MAX */
+let tooBigAt = null;
 
 export function hudViewer() { return viewer; }
 
@@ -36,6 +38,13 @@ export function hudPublishFrame(frame) {
     const body = JSON.stringify(doc);
     if (body === lastBody) return;
     lastBody = body;
+    /* the host refuses a document over its page (UI_PUBLISH_MAX) and keeps the
+     * last one, so the Screen view would freeze without a word: say so, once
+     * per screen that does it */
+    if (body.length > PUBLISH_MAX && doc.where && doc.where.screen !== tooBigAt) {
+        tooBigAt = doc.where.screen;
+        if (typeof console !== 'undefined') console.log('hud: ' + tooBigAt + ' document is ' + body.length + ' bytes, over the host\'s ' + PUBLISH_MAX + '; not shown');
+    }
     /* seq goes in front without a second stringify */
     viewer = !!host_ui_publish('{"seq":' + nextSeq() + ',' + body.slice(1));
 }

@@ -8343,6 +8343,7 @@ static inline int claim_cc_set(uint8_t cc) {
  * TEST-BUS INPUT block in the overtake scan, which calls this). `validate`
  * drops anything the Move's own surface could not have sent — set for the
  * browser's ring, whose producer faces the network (remote_surface.h). */
+static int remote_shift_held = 0;   /* the browser's Shift is the one the shim's view holds */
 static void replay_surface_ring(shadow_midi_inject_t *ring, int validate)
 {
     uint8_t pkt[4];
@@ -8369,6 +8370,7 @@ static void replay_surface_ring(shadow_midi_inject_t *ring, int validate)
         if (type == 0xB0 && d1 == 0x31) {
             shadow_shift_held = (d2 > 0) ? 1 : 0;
             if (shadow_control) shadow_control->shift_held = (uint8_t)shadow_shift_held;
+            if (validate) remote_shift_held = shadow_shift_held;
         }
 
         if (type == 0x90 || type == 0x80) {
@@ -8396,6 +8398,20 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
     if (surface_live_shm && hw)
         surface_live_scan_in(surface_live_shm, &surface_live_writer,
                              hw + MIDI_IN_OFFSET, SHADOW_MIDI_IN_BYTES);
+
+    /* The browser's presses while no module is on screen are dropped, not
+     * kept for later (remote_surface_drop). The condition is the one the
+     * replay below runs under, negated. A Shift the page pressed and lets go
+     * of now is let go of in the shim's view too — it would read as held
+     * until a hardware Shift otherwise. */
+    if (remote_surface_shm &&
+        !(shadow_display_mode && shadow_control && hardware_mmap_addr && shadow_control->overtake_mode)) {
+        if (remote_surface_drop(remote_surface_shm, 16) && remote_shift_held) {
+            remote_shift_held = 0;
+            shadow_shift_held = 0;
+            if (shadow_control) shadow_control->shift_held = 0;
+        }
+    }
 
     /* Timing: reuse statics from pre-transfer (same translation unit) */
     /* spi_post_start is at file scope */

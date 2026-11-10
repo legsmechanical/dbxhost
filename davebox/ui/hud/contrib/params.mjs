@@ -7,6 +7,7 @@
  * plus `viz`: the widget groups the library resolved (envelope, filter, LFO,
  * EQ, sample, …), each with the knob slots its roles sit on. */
 import { soundParamPageModel, soundEditorModuleId, soundParamAutoMarks } from '../../ui_sound.mjs';
+import { listOut } from './layer.mjs';
 
 const WIDGET_KIND = { enum: 'enumsq', bignum: 'valsq', opaque: 'opaque', button: 'pill' };
 
@@ -41,7 +42,9 @@ export const params = {
         if (vm.list) {
             const L = vm.list;
             const rows = (L.rows || []).map((r, i) => ({ label: r.label || '', value: r.value != null ? r.value : (L.current === i ? '*' : undefined) }));
-            body.list = { rows, sel: L.sel };
+            /* windowed like every kit list: a module's preset list can run to
+             * hundreds of names, and the whole of it went into every frame */
+            body.list = listOut(rows, L.sel, 'list');
             delete body.knobs; delete body.viz;
             body.header = Object.assign({}, body.header || {}, { text: vm.header ? vm.header.left : '', right: vm.header ? vm.header.right : undefined });
             if (vm.bank && vm.bank.count > 1) body.page = { idx: vm.bank.index, count: vm.bank.count };

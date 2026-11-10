@@ -2,7 +2,11 @@ package main
 
 import (
 	"errors"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -199,6 +203,31 @@ type surfaceSink struct {
 	path     string
 	ring     *ShmSurfaceRing
 	lastOpen time.Time
+
+	// pacing (see push). pace serialises pushes from every page, so two
+	// pages' gestures are paced against each other too. Guarded by pace.
+	pace     sync.Mutex
+	lastAt   time.Time
+	lastHold bool
+	// the clock, replaceable in tests
+	now   func() time.Time
+	sleep func(time.Duration)
+}
+
+// surfacePace: a press or a release is kept this far from the packet before
+// it and the one after it. The module reads a gesture that presses and lets
+// go inside one of its frames as nothing (Shift + jog as one burst left the
+// track where it was; measured on the device 2026-11-09). The page spaces its
+// packets this far already, but the network can deliver them together — WiFi
+// holds and then flushes — so the spacing is made again here, last before the
+// ring, where nothing can undo it. A run of detents (a knob, the jog) still
+// goes out together, as a spun knob's does.
+const surfacePace = 30 * time.Millisecond
+
+// surfaceTurn: an encoder or the jog turning — relative, held by nothing, and
+// paced as a run rather than one by one.
+func surfaceTurn(p [4]byte) bool {
+	return p[1] == 0xB0 && (p[2] == 14 || (p[2] >= 71 && p[2] <= 78))
 }
 
 func (s *surfaceSink) get() *ShmSurfaceRing {
@@ -211,14 +240,30 @@ func (s *surfaceSink) get() *ShmSurfaceRing {
 	return s.ring
 }
 
-// push sends packets in order. A full ring (the shim drains 16 a frame, every
-// ~3 ms) is waited out briefly rather than dropping a release.
+// push sends packets in order, paced (surfacePace). A full ring (the shim
+// drains 16 a frame, every ~3 ms) is waited out briefly rather than dropping a
+// release.
 func (s *surfaceSink) push(pkts [][4]byte) error {
 	r := s.get()
 	if r == nil {
 		return errors.New("surface ring not available")
 	}
+	now, sleep := s.now, s.sleep
+	if now == nil {
+		now = time.Now
+	}
+	if sleep == nil {
+		sleep = time.Sleep
+	}
+	s.pace.Lock()
+	defer s.pace.Unlock()
 	for _, p := range pkts {
+		hold := !surfaceTurn(p)
+		if hold || s.lastHold {
+			if wait := surfacePace - now().Sub(s.lastAt); wait > 0 {
+				sleep(wait)
+			}
+		}
 		var err error
 		for try := 0; try < 20; try++ {
 			if err = r.Push(p); err == nil {
@@ -229,6 +274,42 @@ func (s *surfaceSink) push(pkts [][4]byte) error {
 		if err != nil {
 			return err
 		}
+		s.lastAt, s.lastHold = now(), hold
 	}
 	return nil
+}
+
+// surfaceOriginOK: whether a connection may drive the surface. The socket
+// accepts any origin (a module's page, a script, the tests), so without this
+// ANY website open in a browser on the same WiFi could press the Move's pads —
+// a page can open a socket to move.local. The Screen view connects from the
+// page the manager served, so its Origin is the address it reached the
+// manager by: the request's own Host, and a name or address on the local
+// network (a site that re-points its own name at the Move — DNS rebinding —
+// has a matching Host, but not a local one). No Origin at all is not a
+// browser: a script on the LAN, which can reach the device anyway.
+func surfaceOriginOK(r *http.Request) bool {
+	o := r.Header.Get("Origin")
+	if o == "" {
+		return true
+	}
+	u, err := url.Parse(o)
+	if err != nil || u.Host == "" || !strings.EqualFold(u.Host, r.Host) {
+		return false
+	}
+	h := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+	if net.ParseIP(h) != nil {
+		return true
+	}
+	if !strings.Contains(h, ".") {
+		return true // "move", "localhost"
+	}
+	// the names a home network gives a device: mDNS, and the suffixes routers'
+	// own DNS hands out
+	for _, suf := range []string{".local", ".localhost", ".lan", ".home", ".home.arpa", ".internal", ".localdomain"} {
+		if strings.HasSuffix(h, suf) {
+			return true
+		}
+	}
+	return false
 }
