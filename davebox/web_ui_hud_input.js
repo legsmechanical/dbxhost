@@ -42,12 +42,40 @@
   const rel = (n) => (n > 0 ? Math.min(63, n) : 128 - Math.min(63, -n));
   H.surfaceRel = rel;   /* tests */
 
-  function send(pkts) {
-    if (!pkts || !pkts.length) return;
+  /* ⚠ PACED. A hand never presses and lets go inside one frame, and the
+   * module reads a gesture that does as nothing: on the device, Shift + jog
+   * sent as one burst left the track where it was, and a jog press + release
+   * in one burst opened nothing — each worked with 10 ms between packets
+   * (measured 2026-11-09). So a press or a release is kept PACE_MS from the
+   * packet before it and the one after it; a run of detents (encoders, the
+   * jog) still goes out together, as a spun knob's do. */
+  const PACE_MS = 30;
+  const isTurn = (p) => p[0] === 0xB0 && (p[1] === CC.jog || (p[1] >= KNOB_CC && p[1] < KNOB_CC + 8));
+  const queue = [];
+  let lastAt = -1e9, lastHold = false, pumpT = 0;
+  function raw(pkts) {
     const R0 = window.schwungRemote;
     if (R0 && typeof R0.surface === 'function') R0.surface(pkts);
   }
+  function pump() {
+    pumpT = 0;
+    while (queue.length) {
+      const hold = !isTurn(queue[0]), since = Date.now() - lastAt;
+      if ((hold || lastHold) && since < PACE_MS) { pumpT = setTimeout(pump, PACE_MS - since); return; }
+      const run = [queue.shift()];
+      if (!hold) while (queue.length && isTurn(queue[0])) run.push(queue.shift());
+      raw(run);
+      lastAt = Date.now(); lastHold = hold;
+    }
+  }
+  function send(pkts) {
+    if (!pkts || !pkts.length) return;
+    queue.push(...pkts);
+    if (!pumpT) pump();
+  }
   H.surfaceSend = send;
+  H.surfacePaceMs = PACE_MS;   /* tests */
+  H.surfaceIdle = () => !pumpT && !queue.length;   /* tests */
 
   /* ── Shift: a latch on the bar (and the keyboard's Shift while held) ── */
   let shift = false;
