@@ -55,9 +55,6 @@
   }
 
   /* the list, in the OLED's order: a heading where the place changes */
-  /* in the lane menu a row is the jog turned onto it and clicked
-   * (web_ui_hud_input.js); out of it the jog does not walk the lanes */
-  const rowIn = (L, i) => (L.menu && L.sel >= 0 ? ' data-in="row" data-path="body.lanes.sel" data-row="' + i + '"' : '');
   function laneList(doc, L, listRows, wide) {
     const rows = L.rows || [], color = col(doc), sel = L.menu ? L.sel : -1;
     /* the OLED's list rows past the lanes: + Add lane, Clear all (menu only) */
@@ -71,13 +68,13 @@
     for (let i = a; i < b; i++) {
       const r = all[i];
       if (r.kind === 'action') {
-        html += '<div class="hud-lane act' + (i === sel ? ' sel' : '') + '"' + (i === sel ? ' style="--lc:' + color + '"' : '') + rowIn(L, i) + '><span class="nm">' + esc(r.label) + '</span></div>';
+        html += '<div class="hud-lane act' + (i === sel ? ' sel' : '') + '"' + (i === sel ? ' style="--lc:' + color + '"' : '') + '><span class="nm">' + esc(r.label) + '</span></div>';
         lastKey = null; continue;
       }
       if (r.key !== lastKey || i === a) html += '<div class="hud-lane-g">' + esc(r.group || r.key || '') + '</div>';
       lastKey = r.key;
       const off = r.kind === 'entry' && !r.active;
-      html += '<div class="hud-lane' + (i === sel ? ' sel' : '') + (off ? ' off' : '') + '"' + (i === sel ? ' style="--lc:' + color + '"' : '') + rowIn(L, i) + '>' +
+      html += '<div class="hud-lane' + (i === sel ? ' sel' : '') + (off ? ' off' : '') + '"' + (i === sel ? ' style="--lc:' + color + '"' : '') + '>' +
         '<span class="nm" title="' + esc(r.label) + '">' + esc(r.param || r.label) + '</span>' + sparkline(r, color, wide ? 34 : 24) +
         '<span class="v">' + esc(r.value || '') + '</span></div>';
     }
@@ -128,7 +125,7 @@
       strip = '<div class="hud-lane-steps">';
       for (let s = 0; s < 16; s++) {
         const v = D.vals[s];
-        strip += '<i data-in="step" data-note="' + (16 + s) + '" class="' + (s === D.held ? 'held' : '') + (v >= 0 ? '' : ' none') + '" style="' + (v >= 0 ? 'background:' + color + ';opacity:' + (0.18 + 0.82 * v).toFixed(2) : '') + '"></i>';
+        strip += '<i class="' + (s === D.held ? 'held' : '') + (v >= 0 ? '' : ' none') + '" style="' + (v >= 0 ? 'background:' + color + ';opacity:' + (0.18 + 0.82 * v).toFixed(2) : '') + '"></i>';
       }
       strip += '</div>';
     }

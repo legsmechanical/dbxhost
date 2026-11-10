@@ -1,32 +1,29 @@
-/* dAVEBOx remote UI — the Screen view's HANDS: a click does what a hand on the
- * Move does (Josh, 2026-11-09: "can we make the screen view interactive to the
- * extent possible? mainly thinking about turning knobs, pressing pads on pad
- * map screen - switch tracks by clikcing indicators, etc.").
+/* dAVEBOx remote UI — the Screen view's HANDS (Josh, 2026-11-09: "can we
+ * make the screen view interactive to the extent possible? mainly thinking
+ * about turning knobs, pressing pads on pad map screen - switch tracks by
+ * clikcing indicators, etc."; narrowed 2026-11-10: "touch controls were really
+ * just about switching tracks and turning knobs").
  *
  * ⭑ THE PAGE SENDS THE HARDWARE GESTURE, never an edit. A knob drag is the
- * encoder's detents with its touch held; a pad is its note; a track tile is
- * Shift + the jog turned by the distance to it; a list row is the jog turned
- * onto it and clicked. The manager puts the packets on the remote-surface ring
- * and the shim replays them on the route a hardware press takes
- * (src/host/remote_surface.h), so the module's own input handlers run and the
- * click does exactly what the gesture does on the device — nothing here
- * re-implements a screen, and nothing can drift from it.
+ * encoder's detents with its touch held; a pad is its note; a track is Shift +
+ * the jog turned by the distance to it. The manager puts the packets on the
+ * remote-surface ring and the shim replays them on the route a hardware press
+ * takes (src/host/remote_surface.h), so the module's own input handlers run —
+ * nothing here re-implements a screen.
  *
  * What is live is marked in the layouts' markup, not decided here:
- *   data-in="knob"  data-k=0..7 [data-click: touch + jog click opens it]
- *   data-in="pad"   data-note=68..99      (bank map pads, Session clip cells)
- *   data-in="step"  data-note=16..31
+ *   data-in="knob"  data-k=0..7           (knob cells, bars columns, mixer dials)
  *   data-in="track" data-t=0..7           (track rows, tiles, pips, headers)
- *   data-in="row"   data-path=<doc path of the selection> data-row=<index>
- *   data-in="btn"   data-cc=<button CC>   (a press and a release)
+ *   data-in="pad"   data-note=68..99      (the bank map's pads)
+ * Nothing else is: list rows, dialog buttons, keys and the transport are
+ * pictures (Josh, 2026-11-10: "just get rid of tapping rows").
  * Releases are owed: every press is released on pointer up, on a cancelled
  * pointer, when the window loses focus, and — by the manager — when the page's
  * socket closes. */
 (window.HUDQ = window.HUDQ || []).push((H) => {
   const view = document.getElementById('screenview'), fit = document.getElementById('hudfit');
   if (!view || !fit) return;
-  const CC = { jog: 14, click: 3, shift: 49, menu: 50, back: 51, capture: 52, down: 54, up: 55, undo: 56,
-               loop: 58, copy: 60, left: 62, right: 63, play: 85, rec: 86, mute: 88, del: 119 };
+  const CC = { jog: 14, shift: 49 };
   const KNOB_CC = 71, DETENT_PX = { mouse: 5, pen: 6, touch: 7 }, WHEEL_PX = 28, KNOB_IDLE_MS = 400;
   const PAD_VEL = 100;
 
@@ -72,75 +69,13 @@
   H.surfacePaceMs = PACE_MS;   /* tests */
   H.surfaceIdle = () => !pumpT && !queue.length;   /* tests */
 
-  /* ── Shift: the keyboard's Shift, while it is held ── */
-  let shift = false;
-  function setShift(v) {
-    v = !!v;
-    if (v === shift) return;
-    shift = v;
-    send([cc(CC.shift, v ? 127 : 0)]);
-  }
-  H.surfaceShift = () => shift;
-
-  /* ── a selection driven to a target: the jog turned onto it, then clicked ──
-   * The distance comes from the document; whether it ARRIVED comes from the
-   * next ones, since a list may skip a heading row or clamp. Clicked only once
-   * the device's own selection is the target; stopped when a turn moves
-   * nothing (the jog does something else here), and after four rounds. */
-  const getPath = (doc, path) => { let o = doc; for (const p of String(path).split('.')) o = o == null ? o : o[p]; return typeof o === 'number' ? o : null; };
-  let driving = 0;
-  /* opts.enter: the list is inert (nothing selected, the jog would page
-   * away), so it is clicked into first and driven once it has a selection.
-   * opts.jump: a row IS an index the jog walks by its distance (a preset
-   * list), so the whole distance is one turn — each detent there loads a
-   * preset, and one turn loads one. */
-  function driveTo(path, target, after, opts) {
-    const id = ++driving, o = opts || {};
-    let rounds = 0;
-    const CLICK = [cc(CC.click, 127), cc(CC.click, 0)];
-    const round = () => {
-      if (id !== driving) return;
-      const s = getPath(H.doc, path);
-      if (s == null || s < 0) return;
-      if (s === target) { send(after || CLICK); return; }
-      if (++rounds > 4) return;
-      const d = target - s, n = Math.min(32, Math.abs(d)), pk = [];
-      if (o.jump) pk.push(cc(CC.jog, rel(Math.max(-63, Math.min(63, d)))));
-      else for (let i = 0; i < n; i++) pk.push(cc(CC.jog, d > 0 ? 1 : 127));
-      send(pk);
-      const seq0 = H.doc && H.doc.seq, t0 = Date.now();
-      const wait = () => {
-        if (id !== driving) return;
-        const now = getPath(H.doc, path);
-        const fresh = H.doc && H.doc.seq !== seq0;
-        if (fresh && now !== s) { round(); return; }
-        if (Date.now() - t0 > 600) { if (now !== s) round(); return; }   /* moved nothing: stop */
-        setTimeout(wait, 25);
-      };
-      setTimeout(wait, 25);
-    };
-    if (o.enter && !(getPath(H.doc, path) >= 0)) {
-      send(CLICK);
-      const t0 = Date.now();
-      const entered = () => {
-        if (id !== driving) return;
-        if (getPath(H.doc, path) >= 0) { round(); return; }
-        if (Date.now() - t0 < 900) setTimeout(entered, 25);
-      };
-      setTimeout(entered, 25);
-      return;
-    }
-    round();
-  }
-  H.surfaceDriveTo = driveTo;
-
   function selectTrack(t) {
     const cur = H.doc && H.doc.where ? H.doc.where.track | 0 : -1;
     if (cur < 0 || t === cur) return;
     /* Shift + jog moves the active track by the jog's distance, clamped at 1
      * and 8 (ui_input_cc.mjs) — one turn of the whole distance */
     const turn = [cc(CC.jog, rel(t - cur))];
-    send(shift ? turn : [cc(CC.shift, 127)].concat(turn, [cc(CC.shift, 0)]));
+    send([cc(CC.shift, 127)].concat(turn, [cc(CC.shift, 0)]));
   }
   H.surfaceSelectTrack = selectTrack;
 
@@ -167,16 +102,13 @@
     const ds = el.dataset, g = { kind: ds.in, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, acc: 0, moved: false,
                                  px: DETENT_PX[e.pointerType] || DETENT_PX.mouse };
     if (g.kind === 'knob') {
-      g.k = +ds.k | 0; g.click = ds.click === '1';
+      g.k = +ds.k | 0;
       knobHold(g.k, true);
-    } else if (g.kind === 'pad' || g.kind === 'step') {
+    } else if (g.kind === 'pad') {
       g.note = +ds.note | 0;
-      send([on(g.note, g.kind === 'pad' ? PAD_VEL : 127)]);
-    } else if (g.kind === 'btn') {
-      g.cc = +ds.cc | 0;
-      send([cc(g.cc, 127)]);
+      send([on(g.note, PAD_VEL)]);
     } else if (g.kind === 'track') g.t = +ds.t | 0;
-    else if (g.kind === 'row') { g.path = ds.path; g.row = +ds.row | 0; g.enter = ds.enter === '1'; g.jump = ds.jump === '1'; }
+    else return;
     live.set(e.pointerId, g);
   }
   function move(e) {
@@ -196,13 +128,10 @@
     live.delete(e.pointerId);
     if (g.kind === 'knob') {
       flush();
-      if (!cancelled && !g.moved && g.click) send([cc(CC.click, 127), cc(CC.click, 0)]);
       knobHold(g.k, false);
-    } else if (g.kind === 'pad' || g.kind === 'step') send([off(g.note)]);
-    else if (g.kind === 'btn') send([cc(g.cc, 0)]);
+    } else if (g.kind === 'pad') send([off(g.note)]);
     else if (cancelled || g.moved) return;
     else if (g.kind === 'track') selectTrack(g.t);
-    else if (g.kind === 'row') driveTo(g.path, g.row, null, { enter: g.enter, jump: g.jump });
   }
   fit.addEventListener('pointerdown', begin);
   fit.addEventListener('pointermove', move);
@@ -221,28 +150,22 @@
   }
 
   /* ── the wheel: over a knob it turns that knob (touched while it turns);
-   * anywhere else on the screen it is the jog ── */
-  const wheel = { k: -1, acc: 0, t: 0, jog: 0 };
+   * anywhere else it scrolls nothing and sends nothing ── */
+  const wheel = { k: -1, acc: 0, t: 0 };
   function wheelRelease() { if (wheel.k >= 0) { flush(); knobHold(wheel.k, false); wheel.k = -1; } }
   fit.addEventListener('wheel', (e) => {
     if (!H.doc) return;
+    const el = e.target.closest ? e.target.closest('[data-in="knob"]') : null;
+    if (!el || !fit.contains(el)) { wheelRelease(); return; }
     e.preventDefault();
     const px = e.deltaMode === 1 ? e.deltaY * WHEEL_PX : e.deltaMode === 2 ? e.deltaY * WHEEL_PX * 8 : e.deltaY;
-    const el = e.target.closest ? e.target.closest('[data-in="knob"]') : null;
-    if (el && fit.contains(el)) {
-      const k = +el.dataset.k | 0;
-      if (wheel.k !== k) { wheelRelease(); wheel.k = k; wheel.acc = 0; knobHold(k, true); }
-      wheel.acc -= px;
-      const n = (wheel.acc / WHEEL_PX) | 0;
-      if (n) { wheel.acc -= n * WHEEL_PX; queueTurn(k, n); }
-      clearTimeout(wheel.t);
-      wheel.t = setTimeout(wheelRelease, KNOB_IDLE_MS);
-      return;
-    }
-    wheelRelease();
-    wheel.jog += px;
-    const n = (wheel.jog / WHEEL_PX) | 0;
-    if (n) { wheel.jog -= n * WHEEL_PX; send([cc(CC.jog, rel(Math.max(-63, Math.min(63, n))))]); }
+    const k = +el.dataset.k | 0;
+    if (wheel.k !== k) { wheelRelease(); wheel.k = k; wheel.acc = 0; knobHold(k, true); }
+    wheel.acc -= px;
+    const n = (wheel.acc / WHEEL_PX) | 0;
+    if (n) { wheel.acc -= n * WHEEL_PX; queueTurn(k, n); }
+    clearTimeout(wheel.t);
+    wheel.t = setTimeout(wheelRelease, KNOB_IDLE_MS);
   }, { passive: false });
 
   /* ── letting go of everything (focus lost, the view closed) ── */
@@ -250,36 +173,9 @@
     flush();
     live.forEach((g, id) => end({ pointerId: id }, true));
     wheelRelease();
-    if (keyShift) { keyShift = false; setShift(false); }
   }
   H.surfaceReleaseAll = releaseAll;
   window.addEventListener('blur', releaseAll);
   document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAll(); });
-
-  /* ── the keyboard, while the Screen view is shown and live: the arrows are
-   * the jog, Enter clicks it, Backspace / Esc are Back, Space is Play, and
-   * Shift is Shift while it is held ── */
-  let keyShift = false;
-  const isLive = () => H.shown && H.shown() && !(typeof R !== 'undefined' && R && R._mock);
-  window.addEventListener('keydown', (e) => {
-    if (!isLive() || e.metaKey || e.ctrlKey || e.altKey) return;
-    const t = e.target, tag = t && t.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
-    let pk = null;
-    switch (e.key) {
-      case 'ArrowRight': case 'ArrowDown': pk = [cc(CC.jog, 1)]; break;
-      case 'ArrowLeft': case 'ArrowUp': pk = [cc(CC.jog, 127)]; break;
-      case 'Enter': if (!e.repeat) pk = [cc(CC.click, 127), cc(CC.click, 0)]; break;
-      case 'Backspace': case 'Escape': if (!e.repeat) pk = [cc(CC.back, 127), cc(CC.back, 0)]; break;
-      case ' ': if (!e.repeat) pk = [cc(CC.play, 127), cc(CC.play, 0)]; break;
-      case 'Shift': if (!keyShift) { keyShift = true; setShift(true); } e.stopPropagation(); return;
-      default: return;
-    }
-    e.preventDefault(); e.stopPropagation();
-    send(pk);
-  }, true);
-  window.addEventListener('keyup', (e) => {
-    if (e.key === 'Shift' && keyShift) { keyShift = false; setShift(false); }
-  }, true);
 
 });

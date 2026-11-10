@@ -159,7 +159,7 @@ ok('a module editor\'s knobs carry their lanes: automated, and muted (hollow)', 
 const mp = doc('block-editor-my-presets'), ml = mp.body.list || {};
 ok('a module\'s list page (My Presets) is a list, not eight empty knobs', mp.where.screen === 'sound.params' && mp.body.primary === 'list' && !mp.body.knobs &&
    (ml.rows || []).map((r) => r.label).join(',') === 'Preset,Save As' && mp.body.header.right === 'My Presets', JSON.stringify(mp.body).slice(0, 300));
-ok('...inert: nothing selected, a tap goes in first', ml.sel === -1 && ml.enter === true && !ml.entered, JSON.stringify(ml));
+ok('...inert: nothing selected', ml.sel === -1, JSON.stringify(ml));
 const tc = doc('track-config');
 ok('...and a screen with no pop-up has none', !tc.body.popup && tc.body.primary === 'list', JSON.stringify(tc.body.popup));
 const so = doc('session-overview');

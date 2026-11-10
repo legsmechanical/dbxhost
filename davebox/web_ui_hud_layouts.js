@@ -9,16 +9,11 @@
   H.layout('prompt', (d) => !!(d.body && d.body.prompt), (doc, b) => {
     const p = b.prompt, title = p.title || (b.header && b.header.text) || '';
     const lines = (p.lines || []).map((l) => sentence(l));
-    const btns = (p.buttons || []).map((t, i) => '<div class="hud-btn' + (i === p.sel ? ' sel' : '') + '"' + (p.sel >= 0 ? rowIn(doc, 'prompt.sel', i) : '') + '>' + esc(t) + '</div>').join('');
+    const btns = (p.buttons || []).map((t, i) => '<div class="hud-btn' + (i === p.sel ? ' sel' : '') + '">' + esc(t) + '</div>').join('');
     return '<div class="hud-prompt"><div class="q">' + esc(sentence(title)) + '</div>' +
       (lines.length ? '<div class="s">' + lines.map(esc).join('<br>') + '</div>' : '') +
       (btns ? '<div class="hud-btns">' + btns + '</div>' : '') + '</div>';
   });
-  /* a row, a button, a key: the jog turned onto it and clicked
-   * (web_ui_hud_input.js). `selBase` says where this body sits in the
-   * document — a pop-up card's list is the pop-up's (web_ui_hud_regions.js). */
-  const rowIn = (doc, rest, i, extra) => ' data-in="row" data-path="' + (doc.selBase || 'body') + '.' + rest + '" data-row="' + i + '"' + (extra || '');
-  H.rowIn = rowIn;
   /* The OLED's 4x5 face has no lowercase, so dialogs arrive in CAPS. Shown
    * as sentences; a word that was mixed-case (dAVEBOx) is kept. */
   const ACRONYMS = /^(MIDI|BPM|FX|USB|LFO|EQ|ADSR|CC|OK|DSP|UI|WAV|AIFF|ARP|DLY|NFX)\d*$/;
@@ -99,7 +94,7 @@
    * and the special keys, the selected one lit */
   H.layout('keyboard', (d) => !!(d.body && d.body.keyboard), (doc, b) => {
     const k = b.keyboard, n = (k.chars || []).length;
-    const key = (t, i, wide) => '<span class="key' + (i === k.selected ? ' sel' : '') + (wide ? ' w' : '') + '"' + rowIn(doc, 'keyboard.selected', i) + '>' + esc(t) + '</span>';
+    const key = (t, i, wide) => '<span class="key' + (i === k.selected ? ' sel' : '') + (wide ? ' w' : '') + '">' + esc(t) + '</span>';
     return '<div class="hud-kbd">' + (k.title ? '<div class="t">' + esc(k.title) + '</div>' : '') +
       '<div class="buf">' + esc(k.buffer) + '<i></i></div>' +
       '<div class="keys">' + (k.chars || []).map((c, i) => key(c, i)).join('') + '</div>' +
@@ -198,11 +193,7 @@
       if (isGap(r)) { html += '<div class="hud-row gap' + (r.divider ? ' div' : '') + '"></div>'; continue; }
       const sel = i === selIn && L.sel >= 0;
       if (r.note != null) { html += '<div class="hud-row note">' + esc(r.note) + '</div>'; continue; }
-      /* a module page's list: inert, a tap goes in first; a preset row is one
-       * jog turn; the single unnamed preset is a click */
-      const live = L.single ? ' data-in="btn" data-cc="3"'
-        : L.sel >= 0 || L.enter ? rowIn(doc, 'list.sel', (L.first | 0) + i, (L.sel < 0 ? ' data-enter="1"' : '') + (L.jump ? ' data-jump="1"' : '')) : '';
-      html += '<div class="hud-row' + (sel ? ' sel' : '') + (r.hdr ? ' hdr' : '') + (r.editing ? ' edit' : '') + '"' + live + '>' +
+      html += '<div class="hud-row' + (sel ? ' sel' : '') + (r.hdr ? ' hdr' : '') + (r.editing ? ' edit' : '') + '">' +
         (r.mark ? '<span class="q" style="margin:0 8px 0 0">' + esc(r.mark) + '</span>' : '') +
         '<span class="lab">' + esc(r.label) + '</span>' + (r.qual ? '<span class="q">' + esc(r.qual) + '</span>' : '') +
         (r.value != null ? '<span class="val">' + esc(r.value) + '</span>' : r.chevron ? '<span class="val">›</span>' : '') + '</div>';

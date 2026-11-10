@@ -9,11 +9,9 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Added
-- **The Screen view works the Move.** In the browser's Screen view, drag or scroll a
-  knob to turn it, press the bank map's pads or the Session clips on the pads, click
-  a track to select it, and tap a menu row, a dialog's button or a key to choose it.
-  Scrolling turns the jog, and the arrow keys, Enter, Esc, Space and Shift work too.
-  Each does exactly what the same gesture does on the Move.
+- **The Screen view turns knobs and switches tracks.** In the browser's Screen view,
+  drag or scroll a knob to turn it, click a track to select it, and press the bank
+  map's pads. Each does exactly what the same gesture does on the Move.
 - **The browser editor works on a tablet or a phone held sideways.** Bigger touch
   targets, clip settings in a drawer on narrow screens, a compact header on short
   ones, **Edit without launching** in a clip's ≡ menu and **Select all** on the
@@ -176,8 +174,7 @@ the section into a versioned heading at release time.
   enum knob's choices showed nowhere before; the bank picker showed an empty card; and
   the instrument picker now lists the Move instruments other tracks are playing.
 - **A module's list pages on the Screen view.** Presets, My Presets, Module, a module's
-  own menus and the section list showed as eight empty knobs; they are lists now, and a
-  tap on a row goes in and picks it.
+  own menus and the section list showed as eight empty knobs; they are lists now.
 - **Automation on the Screen view.** The AUTOMATION screen shows every lane with its curve
   and its own playhead, in the Move's list order, headed by where each lane lives in full
   (NuSaw, Freeverb · FX 1, Levels). The selected lane is drawn large: its whole curve,

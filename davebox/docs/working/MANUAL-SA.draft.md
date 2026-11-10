@@ -3351,18 +3351,13 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 - **Screen:** dAVEBOx's own screen, redrawn large and in colour as you play — the
   same page, menu or pop-up the Move shows, with room for more (every knob, every
   lane's curve). **Pop out** opens it alone in a window, for a tablet beside the
-  Move. It works the Move too, exactly as your hands would:
-  - **Drag a knob** up or down, or scroll over it, to turn it. Clicking a knob with
-    corner marks, or a button knob (Crop), is touch + click.
-  - **Press a pad** on the bank map, or a clip in the Session rows that are on the
-    pads.
+  Move. Some of it works the Move too, exactly as your hands would:
+  - **Drag a knob** up or down, or scroll over it, to turn it.
   - **Click a track** — a number along the top, a track row, a Session column — to
     select it.
-  - **Tap a menu row**, a dialog's button or a key to go to it and click. Scrolling
-    elsewhere on the screen turns the jog. Click the transport in the top bar to play
-    or stop.
-  - Keys: the arrows turn the jog, **Enter** clicks it, **Esc** or **Backspace** is
-    Back, **Space** is Play and **Shift** is Shift.
+  - **Press a pad** on the bank map.
+
+  Everything else on it — menus, lists, dialogs — is for looking at; use the Move.
 
 ---
 

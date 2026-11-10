@@ -57,6 +57,6 @@
       const beats = Math.floor(m.play.tick / 96);
       pos = ' ' + (Math.floor(beats / 4) + 1) + '.' + ((beats % 4) + 1);
     }
-    return '<span class="hud-it-transport" data-in="btn" data-cc="85"><b>' + (on ? '▶' : '■') + '</b>' + esc(pos) + ' · ' + bpm + '</span>';
+    return '<span class="hud-it-transport"><b>' + (on ? '▶' : '■') + '</b>' + esc(pos) + ' · ' + bpm + '</span>';
   });
 });

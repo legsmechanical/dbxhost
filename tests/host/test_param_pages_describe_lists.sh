@@ -78,7 +78,7 @@ import("./src/shared/param_pages/page_controller.mjs").then((C) => {
   vm = ctl.describePage({ title: "T" });
   if (!vm.list || vm.list.kind !== "preset" || vm.list.rows.length !== 3 || vm.list.rows[0].label !== "Fish")
     fail("a named preset page is not its names: " + JSON.stringify(vm.list));
-  if (vm.list.sel !== -1 || vm.list.current !== 1 || !vm.list.jump) fail("inert preset list: sel -1, current 1, jump: " + JSON.stringify(vm.list));
+  if (vm.list.sel !== -1 || vm.list.current !== 1) fail("inert preset list: sel -1, current 1: " + JSON.stringify(vm.list));
   ctl.onClick(-1);
   vm = ctl.describePage({ title: "T" });
   if (vm.list.sel !== 1 || !vm.list.entered) fail("entered preset list should select index 1: " + JSON.stringify(vm.list));
@@ -86,7 +86,7 @@ import("./src/shared/param_pages/page_controller.mjs").then((C) => {
   /* without names: one row, the name and where it is */
   withNames = false;
   vm = ctl.describePage({ title: "T" });
-  if (!vm.list.single || vm.list.rows.length !== 1 || vm.list.rows[0].label !== "Bass" || vm.list.rows[0].value !== "2 of 3")
+  if (vm.list.rows.length !== 1 || vm.list.rows[0].label !== "Bass" || vm.list.rows[0].value !== "2 of 3")
     fail("an unnamed preset page should be one row \"Bass · 2 of 3\": " + JSON.stringify(vm.list));
 
   /* a module-drawn browser: the names hook is never asked (it may load each preset) */

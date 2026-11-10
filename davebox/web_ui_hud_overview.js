@@ -319,9 +319,7 @@
         const bits = o.thumbs && o.thumbs[t] ? o.thumbs[t][r] | 0 : -1;
         let thumb = '';
         if (has && bits >= 0) { thumb = '<span class="th16">'; for (let i = 0; i < 16; i++) thumb += '<i' + ((bits >> i) & 1 ? ' class="on"' : '') + '></i>'; thumb += '</span>'; }
-        /* a clip on the pads IS its pad: top row 92.., one row down 8 less (ui_leds.mjs) */
-        const padIn = onPads ? ' data-in="pad" data-note="' + (92 - (r - rowOff) * 8 + t) + '"' : '';
-        h += '<div class="cc' + (onPads ? '' : ' off') + (has ? ' has' : '') + (pl ? ' pl' : '') + (q ? ' q' : '') + (dt(t).muted ? ' mute' : '') + '"' + padIn + ' style="--c:' + trackColor(t) + '">' +
+        h += '<div class="cc' + (onPads ? '' : ' off') + (has ? ' has' : '') + (pl ? ' pl' : '') + (q ? ' q' : '') + (dt(t).muted ? ' mute' : '') + '" style="--c:' + trackColor(t) + '">' +
           (has ? '<span class="l">' + (pl ? '▶ ' : q ? '◇ ' : '') + LETTERS[r] + '</span>' + thumb : '') + '</div>';
       }
     }

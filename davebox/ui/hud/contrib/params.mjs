@@ -36,13 +36,12 @@ export const params = {
         const body = Object.assign({}, doc.body || {});
         /* a LIST page (Presets, My Presets, Module, a module's own menu, the
          * section picker) is a list here too, not eight empty knobs (Josh,
-         * 2026-11-09). Inert (sel -1) a tap goes in first (`enter`); a named
-         * preset row is one jog turn away (`jump`); a single unnamed preset is
-         * a click (web_ui_hud_input.js) */
+         * 2026-11-09). Inert, nothing is selected (sel -1). A picture only:
+         * the Screen view's rows are not live (Josh, 2026-11-10) */
         if (vm.list) {
             const L = vm.list;
             const rows = (L.rows || []).map((r, i) => ({ label: r.label || '', value: r.value != null ? r.value : (L.current === i ? '*' : undefined) }));
-            body.list = { rows, sel: L.sel, enter: !L.entered && !L.single, jump: !!L.jump, single: !!L.single, entered: !!L.entered };
+            body.list = { rows, sel: L.sel };
             delete body.knobs; delete body.viz;
             body.header = Object.assign({}, body.header || {}, { text: vm.header ? vm.header.left : '', right: vm.header ? vm.header.right : undefined });
             if (vm.bank && vm.bank.count > 1) body.page = { idx: vm.bank.index, count: vm.bank.count };
