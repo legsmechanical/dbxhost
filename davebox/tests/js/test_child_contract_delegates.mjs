@@ -36,13 +36,12 @@ function step(label, fn) {
 }
 const assert = (c, m) => { if (!c) throw new Error(m); };
 
-/* mrdrums' own child level, out of the 100-module capture. */
+/* mrdrums' own child level, as upstream captured it (2026-08-29). The fleet
+ * capture is the Move's since 2026-11-10, and the MrDrums installed there
+ * (0.0.4) declares no child keys, so its upstream entry is kept on its own. */
 function mrdrumsChildLevel() {
-    const cap = JSON.parse(readFileSync('../tests/fixtures/module-contracts.json', 'utf8'));
-    const mods = cap.modules;
-    const list = Array.isArray(mods) ? mods : Object.values(mods);
-    const m = list.find((x) => (x.id || x.name) === 'mrdrums');
-    assert(m, 'mrdrums is not in the fleet capture — the fixture cannot be built');
+    const m = JSON.parse(readFileSync('../tests/fixtures/mrdrums-child-keys.json', 'utf8')).module;
+    assert(m && m.id === 'mrdrums', 'the mrdrums child-keys fixture is missing — the fixture cannot be built');
     let found = null;
     (function walk(o) {
         if (found) return;
