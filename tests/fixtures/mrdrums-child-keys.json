@@ -1,0 +1,2304 @@
+{
+ "_source": "MrDrums as upstream Schwung captured it (with per-pad child keys), imported 2026-08-29 in 6d496c453. The MrDrums installed on the Move (0.0.4, captured 2026-11-10) declares no child keys; this copy keeps the host feature under test.",
+ "module": {
+  "id": "mrdrums",
+  "category": "sound_generator",
+  "component_key": "synth",
+  "status": "ok",
+  "name": "MrDrums",
+  "version": "0.0.4",
+  "ui_hierarchy": {
+   "levels": {
+    "root": {
+     "name": "MrDrums",
+     "child_count": 16,
+     "child_label": "Pad",
+     "child_key_template": "p{index}_{key}",
+     "child_index_base": 1,
+     "child_index_digits": 2,
+     "child_index_param": "ui_current_pad",
+     "child_key_overrides": {
+      "ui_preset_path": "ui_preset_path"
+     },
+     "params": [
+      {
+       "label": "Pad Settings",
+       "level": "pad_settings"
+      },
+      {
+       "label": "Global",
+       "level": "global"
+      },
+      "ui_preset_path"
+     ],
+     "knobs": [
+      "vol",
+      "pan",
+      "tune",
+      "start",
+      "attack_ms",
+      "decay_ms",
+      "choke_group",
+      "mode"
+     ]
+    },
+    "global": {
+     "name": "Global",
+     "params": [
+      "ui_auto_select_pad",
+      "g_master_vol",
+      "g_polyphony",
+      "g_vel_curve",
+      "g_humanize_ms",
+      "g_rand_seed",
+      "g_rand_loop_steps"
+     ],
+     "knobs": [
+      "ui_auto_select_pad",
+      "g_master_vol",
+      "g_polyphony",
+      "g_vel_curve",
+      "g_humanize_ms",
+      "g_rand_seed",
+      "g_rand_loop_steps"
+     ]
+    },
+    "pad_settings": {
+     "name": "Pad Settings",
+     "child_count": 16,
+     "child_label": "Pad",
+     "child_key_template": "p{index}_{key}",
+     "child_index_base": 1,
+     "child_index_digits": 2,
+     "child_index_param": "ui_current_pad",
+     "child_key_overrides": {
+      "ui_current_pad": "ui_current_pad"
+     },
+     "params": [
+      "ui_current_pad",
+      "sample_path",
+      "vol",
+      "pan",
+      "tune",
+      "start",
+      "attack_ms",
+      "decay_ms",
+      "choke_group",
+      "mode",
+      "rand_pan_amt",
+      "rand_vol_amt",
+      "rand_decay_amt",
+      "chance_pct"
+     ],
+     "knobs": [
+      "sample_path",
+      "rand_pan_amt",
+      "rand_vol_amt",
+      "rand_decay_amt",
+      "chance_pct"
+     ]
+    }
+   }
+  },
+  "chain_params": [
+   {
+    "key": "g_master_vol",
+    "name": "Master Vol",
+    "type": "float",
+    "min": 0,
+    "max": 2,
+    "step": 0.01
+   },
+   {
+    "key": "g_polyphony",
+    "name": "Polyphony",
+    "type": "int",
+    "min": 1,
+    "max": 64,
+    "step": 1
+   },
+   {
+    "key": "g_vel_curve",
+    "name": "Velocity Curve",
+    "type": "enum",
+    "options": [
+     "linear",
+     "soft",
+     "hard"
+    ],
+    "default": "linear"
+   },
+   {
+    "key": "g_humanize_ms",
+    "name": "Humanize",
+    "type": "float",
+    "min": 0,
+    "max": 50,
+    "step": 0.1
+   },
+   {
+    "key": "g_rand_seed",
+    "name": "Random Seed",
+    "type": "int",
+    "min": 0,
+    "max": 2147480000,
+    "step": 1
+   },
+   {
+    "key": "g_rand_loop_steps",
+    "name": "Rand Loop Steps",
+    "type": "int",
+    "min": 1,
+    "max": 128,
+    "step": 1
+   },
+   {
+    "key": "ui_auto_select_pad",
+    "name": "Auto Select",
+    "type": "enum",
+    "options": [
+     "off",
+     "on"
+    ],
+    "default": "on"
+   },
+   {
+    "key": "ui_current_pad",
+    "name": "Current Pad",
+    "type": "int",
+    "min": 1,
+    "max": 16,
+    "step": 1
+   },
+   {
+    "key": "ui_pad_page",
+    "name": "Pad Page",
+    "type": "enum",
+    "options": [
+     "main",
+     "random"
+    ],
+    "default": "main"
+   },
+   {
+    "key": "ui_preset_path",
+    "name": "Load Preset",
+    "type": "filepath",
+    "root": "/data",
+    "start_path": "/data/UserData/UserLibrary/Track Presets",
+    "filter": [
+     ".ablpreset",
+     ".json"
+    ]
+   },
+   {
+    "key": "pad_sample_path",
+    "name": "Sample",
+    "type": "filepath",
+    "root": "/data",
+    "start_path": "/data/UserData/UserLibrary/Samples",
+    "filter": [
+     ".wav",
+     ".aif",
+     ".aiff"
+    ],
+    "live_preview": true,
+    "browser_hooks": {
+     "on_open": [
+      {
+       "key": "ui_auto_select_pad",
+       "value": "off",
+       "restore": true
+      }
+     ]
+    }
+   },
+   {
+    "key": "pad_vol",
+    "name": "Vol",
+    "type": "float",
+    "min": 0,
+    "max": 2,
+    "step": 0.01
+   },
+   {
+    "key": "pad_pan",
+    "name": "Pan",
+    "type": "float",
+    "min": -1,
+    "max": 1,
+    "step": 0.1
+   },
+   {
+    "key": "pad_tune",
+    "name": "Tune",
+    "type": "float",
+    "min": -24,
+    "max": 24,
+    "step": 1
+   },
+   {
+    "key": "pad_start",
+    "name": "Start",
+    "type": "wav_position",
+    "mode": "start",
+    "filepath_param": "pad_sample_path",
+    "min": 0,
+    "max": 1,
+    "step": 0.01,
+    "shift_increment_multiplier": 0.25
+   },
+   {
+    "key": "pad_attack_ms",
+    "name": "Attack",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 1
+   },
+   {
+    "key": "pad_decay_ms",
+    "name": "Decay",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 5
+   },
+   {
+    "key": "pad_choke_group",
+    "name": "Choke",
+    "type": "int",
+    "min": 0,
+    "max": 16,
+    "step": 1
+   },
+   {
+    "key": "pad_mode",
+    "name": "Mode",
+    "type": "enum",
+    "options": [
+     "gate",
+     "oneshot"
+    ],
+    "default": "oneshot"
+   },
+   {
+    "key": "pad_rand_pan_amt",
+    "name": "Rand Pan",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "pad_rand_vol_amt",
+    "name": "Rand Vol",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "pad_rand_decay_amt",
+    "name": "Rand Decay",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "pad_chance_pct",
+    "name": "Chance",
+    "type": "float",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   {
+    "key": "p01_sample_path",
+    "name": "P01 Sample",
+    "type": "filepath",
+    "root": "/data",
+    "start_path": "/data/UserData/UserLibrary/Samples",
+    "filter": [
+     ".wav",
+     ".aif",
+     ".aiff"
+    ],
+    "live_preview": true,
+    "browser_hooks": {
+     "on_open": [
+      {
+       "key": "ui_auto_select_pad",
+       "value": "off",
+       "restore": true
+      }
+     ]
+    }
+   },
+   {
+    "key": "p01_vol",
+    "name": "P01 Vol",
+    "type": "float",
+    "min": 0,
+    "max": 2,
+    "step": 0.01
+   },
+   {
+    "key": "p01_pan",
+    "name": "P01 Pan",
+    "type": "float",
+    "min": -1,
+    "max": 1,
+    "step": 0.1
+   },
+   {
+    "key": "p01_tune",
+    "name": "P01 Tune",
+    "type": "float",
+    "min": -24,
+    "max": 24,
+    "step": 1
+   },
+   {
+    "key": "p01_start",
+    "name": "P01 Start",
+    "type": "float",
+    "ui_type": "wav_position",
+    "mode": "start",
+    "filepath_param": "p01_sample_path",
+    "min": 0,
+    "max": 1,
+    "step": 0.01,
+    "shift_increment_multiplier": 0.25
+   },
+   {
+    "key": "p01_attack_ms",
+    "name": "P01 Attack",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 1
+   },
+   {
+    "key": "p01_decay_ms",
+    "name": "P01 Decay",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 5
+   },
+   {
+    "key": "p01_choke_group",
+    "name": "P01 Choke",
+    "type": "int",
+    "min": 0,
+    "max": 16,
+    "step": 1
+   },
+   {
+    "key": "p01_mode",
+    "name": "P01 Mode",
+    "type": "enum",
+    "options": [
+     "gate",
+     "oneshot"
+    ],
+    "default": "oneshot"
+   },
+   {
+    "key": "p01_rand_pan_amt",
+    "name": "P01 Rand Pan",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p01_rand_vol_amt",
+    "name": "P01 Rand Vol",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p01_rand_decay_amt",
+    "name": "P01 Rand Decay",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p01_chance_pct",
+    "name": "P01 Chance",
+    "type": "float",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   {
+    "key": "p02_sample_path",
+    "name": "P02 Sample",
+    "type": "filepath",
+    "root": "/data",
+    "start_path": "/data/UserData/UserLibrary/Samples",
+    "filter": [
+     ".wav",
+     ".aif",
+     ".aiff"
+    ],
+    "live_preview": true,
+    "browser_hooks": {
+     "on_open": [
+      {
+       "key": "ui_auto_select_pad",
+       "value": "off",
+       "restore": true
+      }
+     ]
+    }
+   },
+   {
+    "key": "p02_vol",
+    "name": "P02 Vol",
+    "type": "float",
+    "min": 0,
+    "max": 2,
+    "step": 0.01
+   },
+   {
+    "key": "p02_pan",
+    "name": "P02 Pan",
+    "type": "float",
+    "min": -1,
+    "max": 1,
+    "step": 0.1
+   },
+   {
+    "key": "p02_tune",
+    "name": "P02 Tune",
+    "type": "float",
+    "min": -24,
+    "max": 24,
+    "step": 1
+   },
+   {
+    "key": "p02_start",
+    "name": "P02 Start",
+    "type": "float",
+    "ui_type": "wav_position",
+    "mode": "start",
+    "filepath_param": "p02_sample_path",
+    "min": 0,
+    "max": 1,
+    "step": 0.01,
+    "shift_increment_multiplier": 0.25
+   },
+   {
+    "key": "p02_attack_ms",
+    "name": "P02 Attack",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 1
+   },
+   {
+    "key": "p02_decay_ms",
+    "name": "P02 Decay",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 5
+   },
+   {
+    "key": "p02_choke_group",
+    "name": "P02 Choke",
+    "type": "int",
+    "min": 0,
+    "max": 16,
+    "step": 1
+   },
+   {
+    "key": "p02_mode",
+    "name": "P02 Mode",
+    "type": "enum",
+    "options": [
+     "gate",
+     "oneshot"
+    ],
+    "default": "oneshot"
+   },
+   {
+    "key": "p02_rand_pan_amt",
+    "name": "P02 Rand Pan",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p02_rand_vol_amt",
+    "name": "P02 Rand Vol",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p02_rand_decay_amt",
+    "name": "P02 Rand Decay",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p02_chance_pct",
+    "name": "P02 Chance",
+    "type": "float",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   {
+    "key": "p03_sample_path",
+    "name": "P03 Sample",
+    "type": "filepath",
+    "root": "/data",
+    "start_path": "/data/UserData/UserLibrary/Samples",
+    "filter": [
+     ".wav",
+     ".aif",
+     ".aiff"
+    ],
+    "live_preview": true,
+    "browser_hooks": {
+     "on_open": [
+      {
+       "key": "ui_auto_select_pad",
+       "value": "off",
+       "restore": true
+      }
+     ]
+    }
+   },
+   {
+    "key": "p03_vol",
+    "name": "P03 Vol",
+    "type": "float",
+    "min": 0,
+    "max": 2,
+    "step": 0.01
+   },
+   {
+    "key": "p03_pan",
+    "name": "P03 Pan",
+    "type": "float",
+    "min": -1,
+    "max": 1,
+    "step": 0.1
+   },
+   {
+    "key": "p03_tune",
+    "name": "P03 Tune",
+    "type": "float",
+    "min": -24,
+    "max": 24,
+    "step": 1
+   },
+   {
+    "key": "p03_start",
+    "name": "P03 Start",
+    "type": "float",
+    "ui_type": "wav_position",
+    "mode": "start",
+    "filepath_param": "p03_sample_path",
+    "min": 0,
+    "max": 1,
+    "step": 0.01,
+    "shift_increment_multiplier": 0.25
+   },
+   {
+    "key": "p03_attack_ms",
+    "name": "P03 Attack",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 1
+   },
+   {
+    "key": "p03_decay_ms",
+    "name": "P03 Decay",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 5
+   },
+   {
+    "key": "p03_choke_group",
+    "name": "P03 Choke",
+    "type": "int",
+    "min": 0,
+    "max": 16,
+    "step": 1
+   },
+   {
+    "key": "p03_mode",
+    "name": "P03 Mode",
+    "type": "enum",
+    "options": [
+     "gate",
+     "oneshot"
+    ],
+    "default": "oneshot"
+   },
+   {
+    "key": "p03_rand_pan_amt",
+    "name": "P03 Rand Pan",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p03_rand_vol_amt",
+    "name": "P03 Rand Vol",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p03_rand_decay_amt",
+    "name": "P03 Rand Decay",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p03_chance_pct",
+    "name": "P03 Chance",
+    "type": "float",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   {
+    "key": "p04_sample_path",
+    "name": "P04 Sample",
+    "type": "filepath",
+    "root": "/data",
+    "start_path": "/data/UserData/UserLibrary/Samples",
+    "filter": [
+     ".wav",
+     ".aif",
+     ".aiff"
+    ],
+    "live_preview": true,
+    "browser_hooks": {
+     "on_open": [
+      {
+       "key": "ui_auto_select_pad",
+       "value": "off",
+       "restore": true
+      }
+     ]
+    }
+   },
+   {
+    "key": "p04_vol",
+    "name": "P04 Vol",
+    "type": "float",
+    "min": 0,
+    "max": 2,
+    "step": 0.01
+   },
+   {
+    "key": "p04_pan",
+    "name": "P04 Pan",
+    "type": "float",
+    "min": -1,
+    "max": 1,
+    "step": 0.1
+   },
+   {
+    "key": "p04_tune",
+    "name": "P04 Tune",
+    "type": "float",
+    "min": -24,
+    "max": 24,
+    "step": 1
+   },
+   {
+    "key": "p04_start",
+    "name": "P04 Start",
+    "type": "float",
+    "ui_type": "wav_position",
+    "mode": "start",
+    "filepath_param": "p04_sample_path",
+    "min": 0,
+    "max": 1,
+    "step": 0.01,
+    "shift_increment_multiplier": 0.25
+   },
+   {
+    "key": "p04_attack_ms",
+    "name": "P04 Attack",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 1
+   },
+   {
+    "key": "p04_decay_ms",
+    "name": "P04 Decay",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 5
+   },
+   {
+    "key": "p04_choke_group",
+    "name": "P04 Choke",
+    "type": "int",
+    "min": 0,
+    "max": 16,
+    "step": 1
+   },
+   {
+    "key": "p04_mode",
+    "name": "P04 Mode",
+    "type": "enum",
+    "options": [
+     "gate",
+     "oneshot"
+    ],
+    "default": "oneshot"
+   },
+   {
+    "key": "p04_rand_pan_amt",
+    "name": "P04 Rand Pan",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p04_rand_vol_amt",
+    "name": "P04 Rand Vol",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p04_rand_decay_amt",
+    "name": "P04 Rand Decay",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p04_chance_pct",
+    "name": "P04 Chance",
+    "type": "float",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   {
+    "key": "p05_sample_path",
+    "name": "P05 Sample",
+    "type": "filepath",
+    "root": "/data",
+    "start_path": "/data/UserData/UserLibrary/Samples",
+    "filter": [
+     ".wav",
+     ".aif",
+     ".aiff"
+    ],
+    "live_preview": true,
+    "browser_hooks": {
+     "on_open": [
+      {
+       "key": "ui_auto_select_pad",
+       "value": "off",
+       "restore": true
+      }
+     ]
+    }
+   },
+   {
+    "key": "p05_vol",
+    "name": "P05 Vol",
+    "type": "float",
+    "min": 0,
+    "max": 2,
+    "step": 0.01
+   },
+   {
+    "key": "p05_pan",
+    "name": "P05 Pan",
+    "type": "float",
+    "min": -1,
+    "max": 1,
+    "step": 0.1
+   },
+   {
+    "key": "p05_tune",
+    "name": "P05 Tune",
+    "type": "float",
+    "min": -24,
+    "max": 24,
+    "step": 1
+   },
+   {
+    "key": "p05_start",
+    "name": "P05 Start",
+    "type": "float",
+    "ui_type": "wav_position",
+    "mode": "start",
+    "filepath_param": "p05_sample_path",
+    "min": 0,
+    "max": 1,
+    "step": 0.01,
+    "shift_increment_multiplier": 0.25
+   },
+   {
+    "key": "p05_attack_ms",
+    "name": "P05 Attack",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 1
+   },
+   {
+    "key": "p05_decay_ms",
+    "name": "P05 Decay",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 5
+   },
+   {
+    "key": "p05_choke_group",
+    "name": "P05 Choke",
+    "type": "int",
+    "min": 0,
+    "max": 16,
+    "step": 1
+   },
+   {
+    "key": "p05_mode",
+    "name": "P05 Mode",
+    "type": "enum",
+    "options": [
+     "gate",
+     "oneshot"
+    ],
+    "default": "oneshot"
+   },
+   {
+    "key": "p05_rand_pan_amt",
+    "name": "P05 Rand Pan",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p05_rand_vol_amt",
+    "name": "P05 Rand Vol",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p05_rand_decay_amt",
+    "name": "P05 Rand Decay",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p05_chance_pct",
+    "name": "P05 Chance",
+    "type": "float",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   {
+    "key": "p06_sample_path",
+    "name": "P06 Sample",
+    "type": "filepath",
+    "root": "/data",
+    "start_path": "/data/UserData/UserLibrary/Samples",
+    "filter": [
+     ".wav",
+     ".aif",
+     ".aiff"
+    ],
+    "live_preview": true,
+    "browser_hooks": {
+     "on_open": [
+      {
+       "key": "ui_auto_select_pad",
+       "value": "off",
+       "restore": true
+      }
+     ]
+    }
+   },
+   {
+    "key": "p06_vol",
+    "name": "P06 Vol",
+    "type": "float",
+    "min": 0,
+    "max": 2,
+    "step": 0.01
+   },
+   {
+    "key": "p06_pan",
+    "name": "P06 Pan",
+    "type": "float",
+    "min": -1,
+    "max": 1,
+    "step": 0.1
+   },
+   {
+    "key": "p06_tune",
+    "name": "P06 Tune",
+    "type": "float",
+    "min": -24,
+    "max": 24,
+    "step": 1
+   },
+   {
+    "key": "p06_start",
+    "name": "P06 Start",
+    "type": "float",
+    "ui_type": "wav_position",
+    "mode": "start",
+    "filepath_param": "p06_sample_path",
+    "min": 0,
+    "max": 1,
+    "step": 0.01,
+    "shift_increment_multiplier": 0.25
+   },
+   {
+    "key": "p06_attack_ms",
+    "name": "P06 Attack",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 1
+   },
+   {
+    "key": "p06_decay_ms",
+    "name": "P06 Decay",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 5
+   },
+   {
+    "key": "p06_choke_group",
+    "name": "P06 Choke",
+    "type": "int",
+    "min": 0,
+    "max": 16,
+    "step": 1
+   },
+   {
+    "key": "p06_mode",
+    "name": "P06 Mode",
+    "type": "enum",
+    "options": [
+     "gate",
+     "oneshot"
+    ],
+    "default": "oneshot"
+   },
+   {
+    "key": "p06_rand_pan_amt",
+    "name": "P06 Rand Pan",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p06_rand_vol_amt",
+    "name": "P06 Rand Vol",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p06_rand_decay_amt",
+    "name": "P06 Rand Decay",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p06_chance_pct",
+    "name": "P06 Chance",
+    "type": "float",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   {
+    "key": "p07_sample_path",
+    "name": "P07 Sample",
+    "type": "filepath",
+    "root": "/data",
+    "start_path": "/data/UserData/UserLibrary/Samples",
+    "filter": [
+     ".wav",
+     ".aif",
+     ".aiff"
+    ],
+    "live_preview": true,
+    "browser_hooks": {
+     "on_open": [
+      {
+       "key": "ui_auto_select_pad",
+       "value": "off",
+       "restore": true
+      }
+     ]
+    }
+   },
+   {
+    "key": "p07_vol",
+    "name": "P07 Vol",
+    "type": "float",
+    "min": 0,
+    "max": 2,
+    "step": 0.01
+   },
+   {
+    "key": "p07_pan",
+    "name": "P07 Pan",
+    "type": "float",
+    "min": -1,
+    "max": 1,
+    "step": 0.1
+   },
+   {
+    "key": "p07_tune",
+    "name": "P07 Tune",
+    "type": "float",
+    "min": -24,
+    "max": 24,
+    "step": 1
+   },
+   {
+    "key": "p07_start",
+    "name": "P07 Start",
+    "type": "float",
+    "ui_type": "wav_position",
+    "mode": "start",
+    "filepath_param": "p07_sample_path",
+    "min": 0,
+    "max": 1,
+    "step": 0.01,
+    "shift_increment_multiplier": 0.25
+   },
+   {
+    "key": "p07_attack_ms",
+    "name": "P07 Attack",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 1
+   },
+   {
+    "key": "p07_decay_ms",
+    "name": "P07 Decay",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 5
+   },
+   {
+    "key": "p07_choke_group",
+    "name": "P07 Choke",
+    "type": "int",
+    "min": 0,
+    "max": 16,
+    "step": 1
+   },
+   {
+    "key": "p07_mode",
+    "name": "P07 Mode",
+    "type": "enum",
+    "options": [
+     "gate",
+     "oneshot"
+    ],
+    "default": "oneshot"
+   },
+   {
+    "key": "p07_rand_pan_amt",
+    "name": "P07 Rand Pan",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p07_rand_vol_amt",
+    "name": "P07 Rand Vol",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p07_rand_decay_amt",
+    "name": "P07 Rand Decay",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p07_chance_pct",
+    "name": "P07 Chance",
+    "type": "float",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   {
+    "key": "p08_sample_path",
+    "name": "P08 Sample",
+    "type": "filepath",
+    "root": "/data",
+    "start_path": "/data/UserData/UserLibrary/Samples",
+    "filter": [
+     ".wav",
+     ".aif",
+     ".aiff"
+    ],
+    "live_preview": true,
+    "browser_hooks": {
+     "on_open": [
+      {
+       "key": "ui_auto_select_pad",
+       "value": "off",
+       "restore": true
+      }
+     ]
+    }
+   },
+   {
+    "key": "p08_vol",
+    "name": "P08 Vol",
+    "type": "float",
+    "min": 0,
+    "max": 2,
+    "step": 0.01
+   },
+   {
+    "key": "p08_pan",
+    "name": "P08 Pan",
+    "type": "float",
+    "min": -1,
+    "max": 1,
+    "step": 0.1
+   },
+   {
+    "key": "p08_tune",
+    "name": "P08 Tune",
+    "type": "float",
+    "min": -24,
+    "max": 24,
+    "step": 1
+   },
+   {
+    "key": "p08_start",
+    "name": "P08 Start",
+    "type": "float",
+    "ui_type": "wav_position",
+    "mode": "start",
+    "filepath_param": "p08_sample_path",
+    "min": 0,
+    "max": 1,
+    "step": 0.01,
+    "shift_increment_multiplier": 0.25
+   },
+   {
+    "key": "p08_attack_ms",
+    "name": "P08 Attack",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 1
+   },
+   {
+    "key": "p08_decay_ms",
+    "name": "P08 Decay",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 5
+   },
+   {
+    "key": "p08_choke_group",
+    "name": "P08 Choke",
+    "type": "int",
+    "min": 0,
+    "max": 16,
+    "step": 1
+   },
+   {
+    "key": "p08_mode",
+    "name": "P08 Mode",
+    "type": "enum",
+    "options": [
+     "gate",
+     "oneshot"
+    ],
+    "default": "oneshot"
+   },
+   {
+    "key": "p08_rand_pan_amt",
+    "name": "P08 Rand Pan",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p08_rand_vol_amt",
+    "name": "P08 Rand Vol",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p08_rand_decay_amt",
+    "name": "P08 Rand Decay",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p08_chance_pct",
+    "name": "P08 Chance",
+    "type": "float",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   {
+    "key": "p09_sample_path",
+    "name": "P09 Sample",
+    "type": "filepath",
+    "root": "/data",
+    "start_path": "/data/UserData/UserLibrary/Samples",
+    "filter": [
+     ".wav",
+     ".aif",
+     ".aiff"
+    ],
+    "live_preview": true,
+    "browser_hooks": {
+     "on_open": [
+      {
+       "key": "ui_auto_select_pad",
+       "value": "off",
+       "restore": true
+      }
+     ]
+    }
+   },
+   {
+    "key": "p09_vol",
+    "name": "P09 Vol",
+    "type": "float",
+    "min": 0,
+    "max": 2,
+    "step": 0.01
+   },
+   {
+    "key": "p09_pan",
+    "name": "P09 Pan",
+    "type": "float",
+    "min": -1,
+    "max": 1,
+    "step": 0.1
+   },
+   {
+    "key": "p09_tune",
+    "name": "P09 Tune",
+    "type": "float",
+    "min": -24,
+    "max": 24,
+    "step": 1
+   },
+   {
+    "key": "p09_start",
+    "name": "P09 Start",
+    "type": "float",
+    "ui_type": "wav_position",
+    "mode": "start",
+    "filepath_param": "p09_sample_path",
+    "min": 0,
+    "max": 1,
+    "step": 0.01,
+    "shift_increment_multiplier": 0.25
+   },
+   {
+    "key": "p09_attack_ms",
+    "name": "P09 Attack",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 1
+   },
+   {
+    "key": "p09_decay_ms",
+    "name": "P09 Decay",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 5
+   },
+   {
+    "key": "p09_choke_group",
+    "name": "P09 Choke",
+    "type": "int",
+    "min": 0,
+    "max": 16,
+    "step": 1
+   },
+   {
+    "key": "p09_mode",
+    "name": "P09 Mode",
+    "type": "enum",
+    "options": [
+     "gate",
+     "oneshot"
+    ],
+    "default": "oneshot"
+   },
+   {
+    "key": "p09_rand_pan_amt",
+    "name": "P09 Rand Pan",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p09_rand_vol_amt",
+    "name": "P09 Rand Vol",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p09_rand_decay_amt",
+    "name": "P09 Rand Decay",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p09_chance_pct",
+    "name": "P09 Chance",
+    "type": "float",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   {
+    "key": "p10_sample_path",
+    "name": "P10 Sample",
+    "type": "filepath",
+    "root": "/data",
+    "start_path": "/data/UserData/UserLibrary/Samples",
+    "filter": [
+     ".wav",
+     ".aif",
+     ".aiff"
+    ],
+    "live_preview": true,
+    "browser_hooks": {
+     "on_open": [
+      {
+       "key": "ui_auto_select_pad",
+       "value": "off",
+       "restore": true
+      }
+     ]
+    }
+   },
+   {
+    "key": "p10_vol",
+    "name": "P10 Vol",
+    "type": "float",
+    "min": 0,
+    "max": 2,
+    "step": 0.01
+   },
+   {
+    "key": "p10_pan",
+    "name": "P10 Pan",
+    "type": "float",
+    "min": -1,
+    "max": 1,
+    "step": 0.1
+   },
+   {
+    "key": "p10_tune",
+    "name": "P10 Tune",
+    "type": "float",
+    "min": -24,
+    "max": 24,
+    "step": 1
+   },
+   {
+    "key": "p10_start",
+    "name": "P10 Start",
+    "type": "float",
+    "ui_type": "wav_position",
+    "mode": "start",
+    "filepath_param": "p10_sample_path",
+    "min": 0,
+    "max": 1,
+    "step": 0.01,
+    "shift_increment_multiplier": 0.25
+   },
+   {
+    "key": "p10_attack_ms",
+    "name": "P10 Attack",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 1
+   },
+   {
+    "key": "p10_decay_ms",
+    "name": "P10 Decay",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 5
+   },
+   {
+    "key": "p10_choke_group",
+    "name": "P10 Choke",
+    "type": "int",
+    "min": 0,
+    "max": 16,
+    "step": 1
+   },
+   {
+    "key": "p10_mode",
+    "name": "P10 Mode",
+    "type": "enum",
+    "options": [
+     "gate",
+     "oneshot"
+    ],
+    "default": "oneshot"
+   },
+   {
+    "key": "p10_rand_pan_amt",
+    "name": "P10 Rand Pan",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p10_rand_vol_amt",
+    "name": "P10 Rand Vol",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p10_rand_decay_amt",
+    "name": "P10 Rand Decay",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p10_chance_pct",
+    "name": "P10 Chance",
+    "type": "float",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   {
+    "key": "p11_sample_path",
+    "name": "P11 Sample",
+    "type": "filepath",
+    "root": "/data",
+    "start_path": "/data/UserData/UserLibrary/Samples",
+    "filter": [
+     ".wav",
+     ".aif",
+     ".aiff"
+    ],
+    "live_preview": true,
+    "browser_hooks": {
+     "on_open": [
+      {
+       "key": "ui_auto_select_pad",
+       "value": "off",
+       "restore": true
+      }
+     ]
+    }
+   },
+   {
+    "key": "p11_vol",
+    "name": "P11 Vol",
+    "type": "float",
+    "min": 0,
+    "max": 2,
+    "step": 0.01
+   },
+   {
+    "key": "p11_pan",
+    "name": "P11 Pan",
+    "type": "float",
+    "min": -1,
+    "max": 1,
+    "step": 0.1
+   },
+   {
+    "key": "p11_tune",
+    "name": "P11 Tune",
+    "type": "float",
+    "min": -24,
+    "max": 24,
+    "step": 1
+   },
+   {
+    "key": "p11_start",
+    "name": "P11 Start",
+    "type": "float",
+    "ui_type": "wav_position",
+    "mode": "start",
+    "filepath_param": "p11_sample_path",
+    "min": 0,
+    "max": 1,
+    "step": 0.01,
+    "shift_increment_multiplier": 0.25
+   },
+   {
+    "key": "p11_attack_ms",
+    "name": "P11 Attack",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 1
+   },
+   {
+    "key": "p11_decay_ms",
+    "name": "P11 Decay",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 5
+   },
+   {
+    "key": "p11_choke_group",
+    "name": "P11 Choke",
+    "type": "int",
+    "min": 0,
+    "max": 16,
+    "step": 1
+   },
+   {
+    "key": "p11_mode",
+    "name": "P11 Mode",
+    "type": "enum",
+    "options": [
+     "gate",
+     "oneshot"
+    ],
+    "default": "oneshot"
+   },
+   {
+    "key": "p11_rand_pan_amt",
+    "name": "P11 Rand Pan",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p11_rand_vol_amt",
+    "name": "P11 Rand Vol",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p11_rand_decay_amt",
+    "name": "P11 Rand Decay",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p11_chance_pct",
+    "name": "P11 Chance",
+    "type": "float",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   {
+    "key": "p12_sample_path",
+    "name": "P12 Sample",
+    "type": "filepath",
+    "root": "/data",
+    "start_path": "/data/UserData/UserLibrary/Samples",
+    "filter": [
+     ".wav",
+     ".aif",
+     ".aiff"
+    ],
+    "live_preview": true,
+    "browser_hooks": {
+     "on_open": [
+      {
+       "key": "ui_auto_select_pad",
+       "value": "off",
+       "restore": true
+      }
+     ]
+    }
+   },
+   {
+    "key": "p12_vol",
+    "name": "P12 Vol",
+    "type": "float",
+    "min": 0,
+    "max": 2,
+    "step": 0.01
+   },
+   {
+    "key": "p12_pan",
+    "name": "P12 Pan",
+    "type": "float",
+    "min": -1,
+    "max": 1,
+    "step": 0.1
+   },
+   {
+    "key": "p12_tune",
+    "name": "P12 Tune",
+    "type": "float",
+    "min": -24,
+    "max": 24,
+    "step": 1
+   },
+   {
+    "key": "p12_start",
+    "name": "P12 Start",
+    "type": "float",
+    "ui_type": "wav_position",
+    "mode": "start",
+    "filepath_param": "p12_sample_path",
+    "min": 0,
+    "max": 1,
+    "step": 0.01,
+    "shift_increment_multiplier": 0.25
+   },
+   {
+    "key": "p12_attack_ms",
+    "name": "P12 Attack",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 1
+   },
+   {
+    "key": "p12_decay_ms",
+    "name": "P12 Decay",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 5
+   },
+   {
+    "key": "p12_choke_group",
+    "name": "P12 Choke",
+    "type": "int",
+    "min": 0,
+    "max": 16,
+    "step": 1
+   },
+   {
+    "key": "p12_mode",
+    "name": "P12 Mode",
+    "type": "enum",
+    "options": [
+     "gate",
+     "oneshot"
+    ],
+    "default": "oneshot"
+   },
+   {
+    "key": "p12_rand_pan_amt",
+    "name": "P12 Rand Pan",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p12_rand_vol_amt",
+    "name": "P12 Rand Vol",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p12_rand_decay_amt",
+    "name": "P12 Rand Decay",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p12_chance_pct",
+    "name": "P12 Chance",
+    "type": "float",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   {
+    "key": "p13_sample_path",
+    "name": "P13 Sample",
+    "type": "filepath",
+    "root": "/data",
+    "start_path": "/data/UserData/UserLibrary/Samples",
+    "filter": [
+     ".wav",
+     ".aif",
+     ".aiff"
+    ],
+    "live_preview": true,
+    "browser_hooks": {
+     "on_open": [
+      {
+       "key": "ui_auto_select_pad",
+       "value": "off",
+       "restore": true
+      }
+     ]
+    }
+   },
+   {
+    "key": "p13_vol",
+    "name": "P13 Vol",
+    "type": "float",
+    "min": 0,
+    "max": 2,
+    "step": 0.01
+   },
+   {
+    "key": "p13_pan",
+    "name": "P13 Pan",
+    "type": "float",
+    "min": -1,
+    "max": 1,
+    "step": 0.1
+   },
+   {
+    "key": "p13_tune",
+    "name": "P13 Tune",
+    "type": "float",
+    "min": -24,
+    "max": 24,
+    "step": 1
+   },
+   {
+    "key": "p13_start",
+    "name": "P13 Start",
+    "type": "float",
+    "ui_type": "wav_position",
+    "mode": "start",
+    "filepath_param": "p13_sample_path",
+    "min": 0,
+    "max": 1,
+    "step": 0.01,
+    "shift_increment_multiplier": 0.25
+   },
+   {
+    "key": "p13_attack_ms",
+    "name": "P13 Attack",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 1
+   },
+   {
+    "key": "p13_decay_ms",
+    "name": "P13 Decay",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 5
+   },
+   {
+    "key": "p13_choke_group",
+    "name": "P13 Choke",
+    "type": "int",
+    "min": 0,
+    "max": 16,
+    "step": 1
+   },
+   {
+    "key": "p13_mode",
+    "name": "P13 Mode",
+    "type": "enum",
+    "options": [
+     "gate",
+     "oneshot"
+    ],
+    "default": "oneshot"
+   },
+   {
+    "key": "p13_rand_pan_amt",
+    "name": "P13 Rand Pan",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p13_rand_vol_amt",
+    "name": "P13 Rand Vol",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p13_rand_decay_amt",
+    "name": "P13 Rand Decay",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p13_chance_pct",
+    "name": "P13 Chance",
+    "type": "float",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   {
+    "key": "p14_sample_path",
+    "name": "P14 Sample",
+    "type": "filepath",
+    "root": "/data",
+    "start_path": "/data/UserData/UserLibrary/Samples",
+    "filter": [
+     ".wav",
+     ".aif",
+     ".aiff"
+    ],
+    "live_preview": true,
+    "browser_hooks": {
+     "on_open": [
+      {
+       "key": "ui_auto_select_pad",
+       "value": "off",
+       "restore": true
+      }
+     ]
+    }
+   },
+   {
+    "key": "p14_vol",
+    "name": "P14 Vol",
+    "type": "float",
+    "min": 0,
+    "max": 2,
+    "step": 0.01
+   },
+   {
+    "key": "p14_pan",
+    "name": "P14 Pan",
+    "type": "float",
+    "min": -1,
+    "max": 1,
+    "step": 0.1
+   },
+   {
+    "key": "p14_tune",
+    "name": "P14 Tune",
+    "type": "float",
+    "min": -24,
+    "max": 24,
+    "step": 1
+   },
+   {
+    "key": "p14_start",
+    "name": "P14 Start",
+    "type": "float",
+    "ui_type": "wav_position",
+    "mode": "start",
+    "filepath_param": "p14_sample_path",
+    "min": 0,
+    "max": 1,
+    "step": 0.01,
+    "shift_increment_multiplier": 0.25
+   },
+   {
+    "key": "p14_attack_ms",
+    "name": "P14 Attack",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 1
+   },
+   {
+    "key": "p14_decay_ms",
+    "name": "P14 Decay",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 5
+   },
+   {
+    "key": "p14_choke_group",
+    "name": "P14 Choke",
+    "type": "int",
+    "min": 0,
+    "max": 16,
+    "step": 1
+   },
+   {
+    "key": "p14_mode",
+    "name": "P14 Mode",
+    "type": "enum",
+    "options": [
+     "gate",
+     "oneshot"
+    ],
+    "default": "oneshot"
+   },
+   {
+    "key": "p14_rand_pan_amt",
+    "name": "P14 Rand Pan",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p14_rand_vol_amt",
+    "name": "P14 Rand Vol",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p14_rand_decay_amt",
+    "name": "P14 Rand Decay",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p14_chance_pct",
+    "name": "P14 Chance",
+    "type": "float",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   {
+    "key": "p15_sample_path",
+    "name": "P15 Sample",
+    "type": "filepath",
+    "root": "/data",
+    "start_path": "/data/UserData/UserLibrary/Samples",
+    "filter": [
+     ".wav",
+     ".aif",
+     ".aiff"
+    ],
+    "live_preview": true,
+    "browser_hooks": {
+     "on_open": [
+      {
+       "key": "ui_auto_select_pad",
+       "value": "off",
+       "restore": true
+      }
+     ]
+    }
+   },
+   {
+    "key": "p15_vol",
+    "name": "P15 Vol",
+    "type": "float",
+    "min": 0,
+    "max": 2,
+    "step": 0.01
+   },
+   {
+    "key": "p15_pan",
+    "name": "P15 Pan",
+    "type": "float",
+    "min": -1,
+    "max": 1,
+    "step": 0.1
+   },
+   {
+    "key": "p15_tune",
+    "name": "P15 Tune",
+    "type": "float",
+    "min": -24,
+    "max": 24,
+    "step": 1
+   },
+   {
+    "key": "p15_start",
+    "name": "P15 Start",
+    "type": "float",
+    "ui_type": "wav_position",
+    "mode": "start",
+    "filepath_param": "p15_sample_path",
+    "min": 0,
+    "max": 1,
+    "step": 0.01,
+    "shift_increment_multiplier": 0.25
+   },
+   {
+    "key": "p15_attack_ms",
+    "name": "P15 Attack",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 1
+   },
+   {
+    "key": "p15_decay_ms",
+    "name": "P15 Decay",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 5
+   },
+   {
+    "key": "p15_choke_group",
+    "name": "P15 Choke",
+    "type": "int",
+    "min": 0,
+    "max": 16,
+    "step": 1
+   },
+   {
+    "key": "p15_mode",
+    "name": "P15 Mode",
+    "type": "enum",
+    "options": [
+     "gate",
+     "oneshot"
+    ],
+    "default": "oneshot"
+   },
+   {
+    "key": "p15_rand_pan_amt",
+    "name": "P15 Rand Pan",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p15_rand_vol_amt",
+    "name": "P15 Rand Vol",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p15_rand_decay_amt",
+    "name": "P15 Rand Decay",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p15_chance_pct",
+    "name": "P15 Chance",
+    "type": "float",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   {
+    "key": "p16_sample_path",
+    "name": "P16 Sample",
+    "type": "filepath",
+    "root": "/data",
+    "start_path": "/data/UserData/UserLibrary/Samples",
+    "filter": [
+     ".wav",
+     ".aif",
+     ".aiff"
+    ],
+    "live_preview": true,
+    "browser_hooks": {
+     "on_open": [
+      {
+       "key": "ui_auto_select_pad",
+       "value": "off",
+       "restore": true
+      }
+     ]
+    }
+   },
+   {
+    "key": "p16_vol",
+    "name": "P16 Vol",
+    "type": "float",
+    "min": 0,
+    "max": 2,
+    "step": 0.01
+   },
+   {
+    "key": "p16_pan",
+    "name": "P16 Pan",
+    "type": "float",
+    "min": -1,
+    "max": 1,
+    "step": 0.1
+   },
+   {
+    "key": "p16_tune",
+    "name": "P16 Tune",
+    "type": "float",
+    "min": -24,
+    "max": 24,
+    "step": 1
+   },
+   {
+    "key": "p16_start",
+    "name": "P16 Start",
+    "type": "float",
+    "ui_type": "wav_position",
+    "mode": "start",
+    "filepath_param": "p16_sample_path",
+    "min": 0,
+    "max": 1,
+    "step": 0.01,
+    "shift_increment_multiplier": 0.25
+   },
+   {
+    "key": "p16_attack_ms",
+    "name": "P16 Attack",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 1
+   },
+   {
+    "key": "p16_decay_ms",
+    "name": "P16 Decay",
+    "type": "float",
+    "min": 0,
+    "max": 5000,
+    "step": 5
+   },
+   {
+    "key": "p16_choke_group",
+    "name": "P16 Choke",
+    "type": "int",
+    "min": 0,
+    "max": 16,
+    "step": 1
+   },
+   {
+    "key": "p16_mode",
+    "name": "P16 Mode",
+    "type": "enum",
+    "options": [
+     "gate",
+     "oneshot"
+    ],
+    "default": "oneshot"
+   },
+   {
+    "key": "p16_rand_pan_amt",
+    "name": "P16 Rand Pan",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p16_rand_vol_amt",
+    "name": "P16 Rand Vol",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p16_rand_decay_amt",
+    "name": "P16 Rand Decay",
+    "type": "float",
+    "min": 0,
+    "max": 1,
+    "step": 0.01
+   },
+   {
+    "key": "p16_chance_pct",
+    "name": "P16 Chance",
+    "type": "float",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   }
+  ],
+  "presets": null
+ }
+}

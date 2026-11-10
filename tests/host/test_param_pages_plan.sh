@@ -48,6 +48,8 @@ import("./src/shared/param_pages/page_plan.mjs").then(async (m) => {
       for (const k of (p.keys || [])) s.add(k);
       if (p.listParam) s.add(p.listParam);
       if (p.selectParam) s.add(p.selectParam);
+      /* a param the module draws as a PAGE (type canvas, as_page) is reached as that page */
+      if (p.canvas && p.canvas.key) s.add(p.canvas.key);
     }
     return s;
   };

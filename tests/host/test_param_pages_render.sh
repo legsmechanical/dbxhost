@@ -180,10 +180,22 @@ Promise.all([
     for (const m2 of fx.modules) {
       const pp = P.planPages({ hierarchy: m2.ui_hierarchy, chainParams: m2.chain_params }).pages;
       const ix = M.buildMetaIndex({ hierarchy: m2.ui_hierarchy, chainParams: m2.chain_params });
+      /* Keys behind a per-param visible_if are ALTERNATIVES: the planner
+       * here runs fail-open (everything visible), but on the device only the
+       * one whose condition holds is on the page (monomodule-one: seven
+       * Destination cells, one per Target Page). So two gated cells are never
+       * compared with each other -- each is compared with the cells that are
+       * always there. */
+      const gated = new Set();
+      for (const lv of Object.values((m2.ui_hierarchy && m2.ui_hierarchy.levels) || {}))
+        for (const q of ((lv && lv.params) || [])) if (q && typeof q === "object" && q.visible_if) gated.add(q.key);
       for (const pg of pp) {
         if (pg.kind !== P.PAGE_KNOBS) continue;
-        const L = R.pageCellLabels(ctx, pg.keys, ix, 30).filter(Boolean);
-        if (L.length !== new Set(L).size) bad.push(m2.id + "/" + pg.name + ": " + L.join(","));
+        const L = R.pageCellLabels(ctx, pg.keys, ix, 30);
+        const always = L.filter((l, i) => l && !gated.has(pg.keys[i]));
+        const clash = always.length !== new Set(always).size ||
+          L.some((l, i) => l && gated.has(pg.keys[i]) && always.indexOf(l) >= 0);
+        if (clash) bad.push(m2.id + "/" + pg.name + ": " + L.join(","));
       }
     }
     if (bad.length) fail(bad.length + " pages have duplicate cell labels, e.g. " + bad[0]);

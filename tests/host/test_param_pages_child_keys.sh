@@ -148,7 +148,9 @@ Promise.all([
      * ships next, and it keeps working when some other module becomes the
      * interesting one.
      */
-    const shipped = JSON.parse(JSON.stringify(fx.modules.find((m) => m.id === "mrdrums")));
+    /* MrDrums as upstream captured it, which declares per-pad child keys: the installed one
+     * (0.0.4) does not, so the copy in the fleet fixture cannot exercise this */
+    const shipped = JSON.parse(fs.readFileSync("tests/fixtures/mrdrums-child-keys.json", "utf8")).module;
     const unreachable = (mod) => {
       const f = V.validateContract({
         id: "mrdrums", hierarchy: mod.ui_hierarchy, chainParams: mod.chain_params,
