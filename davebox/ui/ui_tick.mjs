@@ -2348,7 +2348,10 @@ export function _tickImpl() {
             S.pendingAudioChooser = null;
             if (_ac.t === S.activeTrack && !S.sessionView) openAudioChooser(_ac.t, _ac.c);
         }
-        if (S.auChooser && (S.auChooser.t !== S.activeTrack || S.sessionView)) closeAudioChooser();
+        /* ...except the REMOVE SAMPLE question Delete + clip asks (askClearAudioClip):
+         * it is asked FROM Session View, about any track's clip, and closes itself */
+        if (S.auChooser && !(S.auChooser.askNone && S.auChooser.askNone.only) &&
+            (S.auChooser.t !== S.activeTrack || S.sessionView)) closeAudioChooser();
         if (S.auPanel && (S.auPanel.t !== S.activeTrack || S.sessionView || !isSampledTrack(S.auPanel.t))) closeAudioPanel();
         if (S.auEditor && !S.auPanel) closeAudioEditor();
         auEditorFollowClip();

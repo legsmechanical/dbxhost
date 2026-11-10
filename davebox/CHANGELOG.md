@@ -134,6 +134,8 @@ the section into a versioned heading at release time.
   again every 5 minutes until the Move is plugged in.
 
 ### Changed
+- **Delete + clip on an Audio clip asks to remove its sample.** It used to say "Sequence
+  cleared" and leave the clip as it was; now Yes clears the sample (Undo brings it back).
 - **A project saved by this version is a new format.** Earlier versions (1.1.3 and
   before) don't read it — they ask to erase it; answer **No**. This version opens
   everything 1.1.3 saved. A project saved by a NEWER dAVEBOx is never erased: it says

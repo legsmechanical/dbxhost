@@ -52,6 +52,16 @@ function stopPreview() {
     if (ch && ch.playing) { host_preview_stop(); ch.playing = ''; }
 }
 
+/* Delete + clip on an Audio clip (Josh, 2026-11-10: "clear the sample, but
+ * ask for confirmation first"): the chooser's own REMOVE SAMPLE question,
+ * asked alone — any answer closes it, Yes clears the sample (one Undo brings
+ * it back). An Audio clip IS its sample, so this is its clear. */
+export function askClearAudioClip(t, c) {
+    openAudioChooser(t, c);
+    S.auChooser.askNone = { sel: 1, only: true };
+    S.screenDirty = true;
+}
+
 export function closeAudioChooser() {
     stopPreview();
     S.auChooser = null;
@@ -80,9 +90,10 @@ export function audioChooserClick() {
     const ch = S.auChooser;
     if (!ch) return;
     if (ch.askNone) {
-        const yes = ch.askNone.sel === 0;
+        const yes = ch.askNone.sel === 0, only = ch.askNone.only;
         ch.askNone = null;
         if (yes) { auClear(ch.t, ch.c); closeAudioChooser(); }
+        else if (only) closeAudioChooser();
         S.screenDirty = true;
         return;
     }
@@ -111,7 +122,7 @@ export function audioChooserClick() {
 export function audioChooserBack() {
     const ch = S.auChooser;
     if (!ch) return;
-    if (ch.askNone) { ch.askNone = null; S.screenDirty = true; return; }
+    if (ch.askNone) { if (ch.askNone.only) closeAudioChooser(); else { ch.askNone = null; S.screenDirty = true; } return; }
     stopPreview();
     if (!ch.B) { closeAudioChooser(); return; }
     if (ch.B.currentDir !== ch.B.root) {
@@ -137,7 +148,8 @@ export function audioChooserTick() {
 export function drawAudioChooser() {
     const ch = S.auChooser;
     if (ch.askNone) {
-        drawAudioAsk('REMOVE SAMPLE', ['The sample and its chops', 'go. The steps stay.'], ch.askNone.sel);
+        drawAudioAsk('REMOVE SAMPLE', ch.c === AU_SLC ? ['The sample and its chops', 'go. The steps stay.']
+                                                       : ['The sample in ' + (ch.t + 1) + CLIP_LETTERS[ch.c] + ' goes.', 'Undo brings it back.'], ch.askNone.sel);
         return;
     }
     clear_screen();

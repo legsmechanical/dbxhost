@@ -1444,8 +1444,9 @@ first knob reads **Slice n** and picks the step's chop.
 - Nothing crosses between these and a MIDI or drum track, and a **cut** stays on its own
   kind.
 
-**Delete + clip** clears its sequence only: an Audio clip keeps its sample, settings and
-length. **Shift + Delete + clip** resets it completely — on an Audio track, sample and all;
+**Delete + clip** on an **Audio** clip asks **Remove sample?** first (No is selected); Yes
+clears the sample, and Undo brings it back. On a Slicer it clears the steps; the sample is
+the track's and stays. **Shift + Delete + clip** resets it completely — on an Audio track, sample and all;
 on a Slicer the sample is the track's and stays. **Undo** covers the sample too: loading
 one, **None**, **Shift + Delete**, Resample **In place**, **Flatten track** (one Undo for every
 clip), a Trim or Normalize to a **New** sample, a visit to a chop editor, and pasting an

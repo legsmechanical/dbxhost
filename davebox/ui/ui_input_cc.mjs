@@ -21,7 +21,7 @@ import {
     MoveCapture, MoveSample, MoveMainKnob, MoveMainTouch, MoveMainButton,
     LED_OFF, NUM_TRACKS, NUM_CLIPS,
     TRACK_PAD_BASE, TPS_VALUES,
-    BANKS, PAD_MODE_DRUM, PAD_MODE_CONDUCT,
+    BANKS, PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_AUDIO,
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_CONFIG, LGTO_KNOB,
     CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, ARP_STEPS_KNOB, arpStepsBank, LOOP_NOT_AT_1_MS, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
     TICK_HZ, STEP_ITER_LIST, JOG_HOLD_MAP_MS,
@@ -39,7 +39,7 @@ import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
          SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock, faderStep, faderWire,
          PAGE_KNOB, pageFloatStep, pageIntDetents } from './ui_engine.mjs';
 import { scaleNudgeNote, stepEntryVelocity,
-         bankCycleForMode, bankListForMode, bankIsDoor, bankPadMapCellAt, bankPadMapActionAt, bankMapCellForPad, bankMapTrackForStep, bankMapModuleAt, SESS_PAD_MAP, bankDisplayName } from './ui_pure.mjs';
+         bankCycleForMode, bankListForMode, bankIsDoor, bankPadMapCellAt, bankPadMapActionAt, bankMapCellForPad, bankMapTrackForStep, bankMapModuleAt, SESS_PAD_MAP, bankDisplayName, clipHasContent } from './ui_pure.mjs';
 import { saveState, writeSidecar, doClearSession, showActionPopup,
          showActionPopupFor, showActionPopupGauge } from './ui_persistence.mjs';
 import {
@@ -68,7 +68,7 @@ import { moduleIdOf } from './ui_discover.mjs';
 import { BANK_MAP_TRACK_POPUP_MS, SEQ_PAGE_POPUP_MS, seqAutoTargetForKnob, SEQ_AUTO_TARGETS, AU_AUTO_BANK, auAutoBank, midiTargetIsMidi, DEFAULT_TRACK_OCTAVE } from './ui_constants.mjs';
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam, soundOpenModule, instrPickResume } from './ui_sound.mjs';
-import { auPurgeRun, closeAudioChooser } from './ui_audio_chooser.mjs';
+import { auPurgeRun, closeAudioChooser, askClearAudioClip } from './ui_audio_chooser.mjs';
 import { isSampledTrack, isAudioTrack, audioSliceMode, auClipOf, auClipBankKnob, auAltBit, knobAltOnTrack, auSetLayout, auSetPage, AU_NOTE_BASE, AU_EVEN_MAX, auInfo } from './ui_audio.mjs';
 
 /* AUDIO's CLIP bank (Slice mode) mirrors ALL LANES over the melodic clip's
@@ -4016,9 +4016,16 @@ function _onCC_side(d1, d2) {
                 showActionPopup('SEQUENCES', 'CLEARED');
             } else {
                 /* Delete + track button (Track View): clear the clip; keep S.playing if it's currently active */
-                clearClip(S.activeTrack, clipIdx, true);
-                forceRedraw();
-                showActionPopup('SEQUENCE', 'CLEARED');
+                if (S.trackPadMode[S.activeTrack] === PAD_MODE_AUDIO) {
+                    /* an Audio clip IS its sample: asked first (Josh, 2026-11-10) */
+                    if (clipHasContent(S.activeTrack, clipIdx)) askClearAudioClip(S.activeTrack, clipIdx);
+                    else showActionPopup('NO', 'SAMPLE');
+                    forceRedraw();
+                } else {
+                    clearClip(S.activeTrack, clipIdx, true);
+                    forceRedraw();
+                    showActionPopup('SEQUENCE', 'CLEARED');
+                }
             }
         } else if (S.captureHeld) {
             /* Capture + scene row: copy each track's currently *playing* or

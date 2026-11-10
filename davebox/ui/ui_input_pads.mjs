@@ -7,9 +7,10 @@
  * Extracted from ui.js (Phase 5b, increment 6 of the modularity refactor).
  */
 
+import { askClearAudioClip } from './ui_audio_chooser.mjs';
 import {
     NUM_TRACKS, TRACK_PAD_BASE, DRUM_LANES, STEP_SAVE_FLASH_MS,
-    PAD_MODE_DRUM, PAD_MODE_CONDUCT, BANKS,
+    PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_AUDIO, BANKS,
     NO_NOTE_FLASH_MS, BANK_PADMODE
 } from './ui_constants.mjs';
 import { S, loopViewActive, markJsUndo } from './ui_state.mjs';
@@ -1158,6 +1159,14 @@ export function _onPadPress(status, d1, d2) {
                     } else if (S.deleteHeld) {
                         /* Delete + clip pad (Session View): clear that clip, keep transport */
                         const clipIdx = S.sceneRow + row;
+                        /* an Audio clip IS its sample: asked first, then the sample
+                         * goes (Josh, 2026-11-10); an empty one has nothing to clear */
+                        if (S.trackPadMode[t] === PAD_MODE_AUDIO) {
+                            if (clipHasContent(t, clipIdx)) askClearAudioClip(t, clipIdx);
+                            else showActionPopup('NO', 'SAMPLE');
+                            forceRedraw();
+                            break;
+                        }
                         clearClip(t, clipIdx, true);
                         forceRedraw();
                         showActionPopup('SEQUENCE', 'CLEARED');
