@@ -392,8 +392,8 @@ ok('the session mixer (a turn, nothing touched): the session overview with its e
 {
   const log = window.schwungRemote.surfaceLog;
   const fit = d.getElementById('hudfit');
-  const ptr = (el, type, x, y, id, ptype) => {
-    const e = new window.MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y });
+  const ptr = (el, type, x, y, id, ptype, button) => {
+    const e = new window.MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: button || 0 });
     Object.defineProperty(e, 'pointerId', { value: id || 1 }); Object.defineProperty(e, 'pointerType', { value: ptype || 'mouse' });
     el.dispatchEvent(e);
   };
@@ -444,6 +444,10 @@ ok('the session mixer (a turn, nothing touched): the session overview with its e
   await settle();
   ok('...a pad pressed and let go: its note on (100) and off', same(log, [[0x90, 68, 100], [0x80, 68, 0]]), hex(log));
   log.length = 0;
+  for (const b of [2, 1]) { const pz = fit.querySelectorAll('.hud-pads [data-in="pad"]')[5]; ptr(pz, 'pointerdown', 0, 0, 20 + b, 'mouse', b); ptr(fit, 'pointerup', 0, 0, 20 + b, 'mouse', b); }
+  await settle();
+  ok('...a right or middle click presses no pad', log.length === 0, hex(log));
+  log.length = 0;
   /* fresh: the stage redraws while a test waits, and an old node is no longer on it */
   const pads2 = fit.querySelectorAll('.hud-pads [data-in="pad"]'), p3 = +pads2[3].dataset.note, p12 = +pads2[12].dataset.note;
   ptr(pads2[3], 'pointerdown', 0, 0, 11, 'touch'); ptr(pads2[12], 'pointerdown', 0, 0, 12, 'touch');
@@ -458,6 +462,13 @@ ok('the session mixer (a turn, nothing touched): the session overview with its e
   log.length = 0; tap(live('.hud-pip[data-in="track"][data-t="' + to + '"]'));
   await settle();
   ok('a track pip: Shift, the jog by the distance, Shift up', same(log, [[0xB0, 49, 127], [0xB0, 14, dist > 0 ? dist : 128 + dist], [0xB0, 49, 0]]), hex(log));
+  log.length = 0; tap(live('.hud-pip[data-in="track"][data-t="' + to + '"]'));
+  await settle();
+  ok('...clicked again before the screen shows it (a double click): nothing more — it does not go past', log.length === 0, hex(log));
+  log.length = 0; tap(live('.hud-pip[data-in="track"][data-t="' + cur + '"]'));
+  await settle();
+  ok('...and the old track, still before the screen moves: back by the same distance, not from where the screen says',
+     same(log, [[0xB0, 49, 127], [0xB0, 14, -dist > 0 ? -dist : 128 - dist], [0xB0, 49, 0]]), hex(log));
   log.length = 0; tap(live('.hud-pip[data-in="track"][data-t="' + cur + '"]'));
   await settle();
   ok('...the active track sends nothing', log.length === 0, hex(log));

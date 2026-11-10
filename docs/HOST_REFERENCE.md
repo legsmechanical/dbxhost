@@ -143,7 +143,9 @@ the shadow UI, note events handed to the overtake DSP, an injected Shift mirrore
   network: cable 0, channel 1, note on/off for the touch sensors (0–9), steps (16–31) and pads
   (68–99), CCs for the encoders, the jog and the buttons — never the master knob (79) or plug detect.
 - **Nothing is left held.** The manager records what each page holds down and releases it when the
-  page's socket closes; the page releases on pointer up / cancel and when it loses focus.
+  page's socket closes, and while a page holds anything it pings it — one that stops answering (a
+  phone off the WiFi sends no close) is closed within ~12 s and released. The page releases on
+  pointer up / cancel and when it loses focus.
 
 
 ## SPI Protocol

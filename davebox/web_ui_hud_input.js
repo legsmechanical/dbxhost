@@ -69,13 +69,23 @@
   H.surfacePaceMs = PACE_MS;   /* tests */
   H.surfaceIdle = () => !pumpT && !queue.length;   /* tests */
 
+  /* the track last asked for, until the screen shows it: the document that
+   * says where the device is arrives a frame or more after the turn, so a
+   * second click measured from it counted the first move again (a double
+   * click on a pip went past it) */
+  const AIM_MS = 1500;
+  let aim = null;
   function selectTrack(t) {
-    const cur = H.doc && H.doc.where ? H.doc.where.track | 0 : -1;
-    if (cur < 0 || t === cur) return;
+    const shown = H.doc && H.doc.where ? H.doc.where.track | 0 : -1;
+    if (shown < 0) return;
+    if (aim && (shown === aim.t || Date.now() - aim.at > AIM_MS)) aim = null;
+    const cur = aim ? aim.t : shown;
+    if (t === cur) return;
     /* Shift + jog moves the active track by the jog's distance, clamped at 1
      * and 8 (ui_input_cc.mjs) — one turn of the whole distance */
     const turn = [cc(CC.jog, rel(t - cur))];
     send([cc(CC.shift, 127)].concat(turn, [cc(CC.shift, 0)]));
+    aim = { t, at: Date.now() };
   }
   H.surfaceSelectTrack = selectTrack;
 
@@ -95,6 +105,9 @@
   }
 
   function begin(e) {
+    /* the main button only: a right click is the browser's menu, a middle
+     * click its scroll — neither presses a pad (a touch and a pen tip are 0) */
+    if (e.button) return;
     const el = e.target && e.target.closest ? e.target.closest('[data-in]') : null;
     if (!el || !fit.contains(el)) return;
     e.preventDefault();

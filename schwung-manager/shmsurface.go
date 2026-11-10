@@ -170,6 +170,13 @@ func (h *surfaceHeld) note(p [4]byte) {
 	}
 }
 
+// any reports whether the page is holding anything down.
+func (h *surfaceHeld) any() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.notes) > 0 || len(h.ccs) > 0
+}
+
 // releases returns the packets that let go of everything held, and forgets it.
 func (h *surfaceHeld) releases() [][4]byte {
 	h.mu.Lock()

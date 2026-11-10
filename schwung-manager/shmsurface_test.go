@@ -1,11 +1,20 @@
 package main
 
 import (
+	"context"
 	"encoding/binary"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
+	"time"
+
+	"nhooyr.io/websocket"
 )
 
 // newSurfaceFile makes a ring the way the shim does (shadow_midi_inject_init:
@@ -180,5 +189,75 @@ func TestSurfaceSinkPushesThroughTheRing(t *testing.T) {
 	none := &surfaceSink{path: filepath.Join(t.TempDir(), "absent")}
 	if err := none.push([][4]byte{{0x09, 0x90, 68, 100}}); err == nil {
 		t.Fatal("pushed into a ring that does not exist")
+	}
+}
+
+// A page that holds a pad and then stops answering (a phone off the WiFi:
+// no close, the socket just goes quiet) is closed by the manager, so the
+// deferred release lets go of the pad. A page that answers is left alone, and
+// one holding nothing is never pinged.
+func TestSurfaceHeldPageThatStopsAnsweringIsClosed(t *testing.T) {
+	oldPing, oldTimeout := surfaceHoldPing, surfaceHoldTimeout
+	surfaceHoldPing, surfaceHoldTimeout = 20*time.Millisecond, 100*time.Millisecond
+	defer func() { surfaceHoldPing, surfaceHoldTimeout = oldPing, oldTimeout }()
+
+	ru := &RemoteUI{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	run := func(t *testing.T, hold, clientReads bool) (closed bool) {
+		done := make(chan bool, 1)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			conn, err := websocket.Accept(w, r, nil)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			gone, markGone := context.WithCancel(context.Background())
+			defer markGone()
+			c := &ruClient{conn: conn, gone: gone, markGone: markGone}
+			if hold {
+				p, _ := surfacePacket([]int{0x90, 68, 100})
+				c.held.note(p)
+			}
+			// readLoop's part: read until the socket ends (it reads the pongs)
+			go func() {
+				for {
+					if _, _, err := conn.Read(gone); err != nil {
+						markGone()
+						return
+					}
+				}
+			}()
+			w2 := make(chan struct{})
+			go func() { ru.watchHeld(gone, c); close(w2) }()
+			select {
+			case <-gone.Done():
+				done <- true
+			case <-time.After(600 * time.Millisecond):
+				done <- false
+			}
+			markGone()
+			<-w2
+			conn.CloseNow()
+		}))
+		defer srv.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		cl, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http"), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer cl.CloseNow()
+		if clientReads {
+			cl.CloseRead(ctx) // reads in the background, answering pings
+		}
+		return <-done
+	}
+	if !run(t, true, false) {
+		t.Fatal("a page holding a pad that stopped answering was left open")
+	}
+	if run(t, true, true) {
+		t.Fatal("a page holding a pad that answers was closed")
+	}
+	if run(t, false, false) {
+		t.Fatal("a page holding nothing was pinged and closed")
 	}
 }

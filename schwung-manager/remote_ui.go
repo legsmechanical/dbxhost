@@ -500,7 +500,43 @@ func (ru *RemoteUI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	go ru.watchHeld(gone, client)
 	ru.readLoop(gone, client)
+}
+
+// A page holding something on the surface (a pad down, a knob touched) must
+// keep answering, or its connection is closed and the release above lets go
+// for it. A phone that drops off the WiFi sends no close: TCP keeps the dead
+// socket open for minutes, and the pad stays down that long. Only a page that
+// holds something is pinged. The pong is read by readLoop, so a reply waits
+// out a slow handler there (a subscribe takes seconds) — hence a timeout well
+// past that, not a tight one.
+var (
+	surfaceHoldPing    = 2 * time.Second
+	surfaceHoldTimeout = 10 * time.Second
+)
+
+func (ru *RemoteUI) watchHeld(gone context.Context, c *ruClient) {
+	t := time.NewTicker(surfaceHoldPing)
+	defer t.Stop()
+	for {
+		select {
+		case <-gone.Done():
+			return
+		case <-t.C:
+		}
+		if !c.held.any() {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(gone, surfaceHoldTimeout)
+		err := c.conn.Ping(ctx)
+		cancel()
+		if err != nil && gone.Err() == nil {
+			ru.logger.Info("ws: a page holding the surface stopped answering, closing it", "err", err)
+			c.conn.CloseNow()
+			return
+		}
+	}
 }
 
 // requireShm tries to connect shared memory and sends an error if unavailable.
