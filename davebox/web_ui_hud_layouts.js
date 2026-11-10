@@ -73,6 +73,20 @@
    * browser press cannot reach Move) is drawn for consistency and takes none.
    * Move's screen is drawn in its track's colour (Josh, 2026-11-10: "can we
    * make the co-run mirror screens match track color?"). */
+  /* Each Dave a random colour as you scroll through them (Josh, 2026-11-10:
+   * "can we make each dave have a random accent color when you scroll
+   * through them?"): a new one for each Dave landed on, never the last one's
+   * hue, and kept while that Dave stays up so a redraw does not flicker. */
+  let daveKey = null, daveHex = null, daveHue = -1;
+  const hslHex = (h, s, l) => { const f = (n) => { const k = (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
+    return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))).toString(16).padStart(2, '0'); }; return '#' + f(0) + f(8) + f(4); };
+  H.daveColour = function (key) {
+    if (key !== daveKey) {
+      let h; do { h = Math.floor(Math.random() * 360); } while (daveHue >= 0 && Math.min(Math.abs(h - daveHue), 360 - Math.abs(h - daveHue)) < 50);
+      daveKey = key; daveHue = h; daveHex = hslHex(h, 0.9, 0.6);
+    }
+    return daveHex;
+  };
   H.layout('picture', (d) => !!(d.body && d.body.picture), (doc, b) => {
     const p = b.picture;
     let knobs = '';
@@ -86,7 +100,8 @@
     /* the colour of the track whose Move instrument it is (p.track), not of
      * the track in focus — they can differ */
     const pt = typeof p.track === 'number' ? p.track : (doc.where ? doc.where.track | 0 : 0);
-    const col = (p.kind === 'move' || p.kind === 'module') && typeof trackColor === 'function' ? ' data-col="' + esc(trackColor(pt)) + '"' : '';
+    const col = (p.kind === 'move' || p.kind === 'module') && typeof trackColor === 'function' ? ' data-col="' + esc(trackColor(pt)) + '"'
+      : p.kind === 'dave' ? ' data-col="' + H.daveColour((doc.where && doc.where.screen || '') + '|' + (p.caption || '') + '|' + (p.sub || '')) + '"' : '';
     return '<div class="hud-pic' + (knobs ? ' kn' : '') + '"><canvas class="hud-oled" width="128" height="64" data-oled="1"' + col + '></canvas>' +
       (p.caption ? '<div class="cap">' + esc(p.caption) + '</div>' : '') + (p.sub ? '<div class="sub">' + esc(p.sub) + '</div>' : '') + '</div>' + knobs;
   });

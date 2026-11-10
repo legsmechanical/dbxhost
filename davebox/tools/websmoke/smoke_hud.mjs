@@ -495,11 +495,22 @@ ok('the session mixer (a turn, nothing touched): the session overview with its e
   H.render();
   ok('...a list page that carries a band is drawn as the band', !!fit.querySelector('canvas.hud-band[data-band]') && !/1 of 12/.test(fit.textContent), fit.innerHTML.slice(0, 160));
   ok('...and no list or knobs in its place', !fit.querySelector('.hud-list, .hud-rows, [data-in="knob"]') && !/Monk/.test(fit.querySelector('.hud-screen') ? fit.querySelector('.hud-screen').textContent.replace(/MONKSYNTH/, '') : ''), fit.innerHTML.slice(0, 160));
-  /* a Dave: the picture alone, as before */
-  pic({ picture: { kind: 'dave', caption: 'Dave' } }, 'dave-box', 2);
-  ok('a picture without knobs is unchanged: no knob row, accent colour', !fit.querySelector('.hud-knobs') && !fit.querySelector('canvas.hud-oled').dataset.col);
+  /* the Daves: the picture alone, each in its own random colour as you
+   * scroll through them (Josh: "each dave have a random accent color") */
+  pic({ picture: { kind: 'dave', caption: 'Dave', sub: '1 of 9' } }, 'dave-box', 2);
+  ok('a Dave: the picture alone, no knob row', !fit.querySelector('.hud-knobs'));
+  const dc1 = fit.querySelector('canvas.hud-oled').dataset.col;
+  ok('...in a colour of its own (not the track\'s)', /^#[0-9a-f]{6}$/.test(dc1 || '') && dc1 !== window.eval('trackColor(2)'), dc1);
   const davePx = paint(fit.querySelector('canvas.hud-oled'));
-  ok('...drawn in the accent, as before', davePx && davePx.slice(0, 3).join() === '77,163,255', davePx && davePx.join());
+  ok('...painted in it', davePx && davePx.slice(0, 3).join() === [1, 3, 5].map((i) => parseInt(dc1.slice(i, i + 2), 16)).join(), davePx && davePx.join() + ' vs ' + dc1);
+  pic({ picture: { kind: 'dave', caption: 'Dave', sub: '1 of 9' } }, 'dave-box', 2);
+  ok('...the same Dave redrawn keeps its colour (no flicker)', fit.querySelector('canvas.hud-oled').dataset.col === dc1, fit.querySelector('canvas.hud-oled').dataset.col + ' vs ' + dc1);
+  const seen = new Set([dc1]); let prev = dc1, apart = true;
+  for (let i = 2; i <= 12; i++) {
+    pic({ picture: { kind: 'dave', caption: 'Dave ' + i, sub: i + ' of 12' } }, 'dave-box', 2);
+    const c = fit.querySelector('canvas.hud-oled').dataset.col; if (c === prev) apart = false; seen.add(c); prev = c;
+  }
+  ok('...scrolling: each next Dave a new colour, never the last one\'s', apart && seen.size >= 10, seen.size + ' colours over 12 Daves');
   /* a knob that opens on the device (corner brackets): a click here is only a
    * touch — opening it is the Move's job, not the browser's */
   render('bank-crop-touched');
