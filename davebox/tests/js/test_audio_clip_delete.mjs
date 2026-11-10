@@ -134,6 +134,14 @@ async function main() {
                'Track view did not ask: ' + JSON.stringify(S.auChooser && { c: S.auChooser.c, ask: S.auChooser.askNone }) + ' popup "' + popup() + '"');
         cc(51, 127); cc(51, 0); ticks(2);
         assert(!S.auChooser && !cleared().length, 'Back did not close it cleanly');
+        /* No in Track view: nothing else closes the chooser here (Session view's
+         * tick would), so this is the answer itself closing it */
+        S.auInfo[T][0] = { state: 2, name: 'Break Phenom 84 bpm.wav' };
+        cc(DEL, 127); cc(43, 127); cc(43, 0); cc(DEL, 0); ticks(2);
+        assert(S.auChooser && S.auChooser.askNone, 'Track view did not ask the second time');
+        cc(3, 127); cc(3, 0); ticks(2);
+        assert(!S.auChooser, 'No left the chooser up in Track view (on its places list?)');
+        assert(!cleared().length, 'No cleared the sample in Track view');
     });
 
     step('a melodic clip is cleared as before: SEQUENCE CLEARED, no question', () => {
