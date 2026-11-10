@@ -8989,6 +8989,12 @@ static int seq8_remote_snapshot(seq8_instance_t *inst, char *out, int out_len) {
                             if (lc->notes[k].active) { has = 1; break; }
                     }
                 }
+            } else if (trk->pad_mode == PAD_MODE_AUDIO) {
+                /* an Audio clip IS its sample: no steps, so content is a sample
+                 * name, as the device grid reads it (ui_pure clipHasContent) —
+                 * counting notes showed every Audio clip empty in the browser */
+                const au_clip_t *ac = au_cl(inst, ti, ci);
+                has = ac && ac->name[0] ? 1 : 0;
             } else {
                 clip_t *cc = &trk->clips[ci];
                 for (uint16_t k = 0; k < cc->note_count; k++)

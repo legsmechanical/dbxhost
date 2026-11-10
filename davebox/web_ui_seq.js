@@ -184,7 +184,7 @@ function renderInspector(){
     html+=secEl("clip","Clip",clipSum(),`<div id="clipinfo"></div>`+
       (isAudioLoop()?`<div class="hint">An <b>Audio</b> clip plays its sample straight through: stretch, shift and nudge it on the device.</div>`
                     :`<div id="clipUtil"></div>`)+`<div id="clipops"></div>`,true);
-    html+=secEl("fx","FX","",`<div class="hint">The sample, its chops and this clip's NOTE FX are edited on the device.</div>`,true);
+    html+=secEl("fx","FX","",`<div class="hint">${isAudioLoop() ? "The sample and this clip's NOTE FX are" : "The sample, its chops and this clip's NOTE FX are"} edited on the device.</div>`,true);
   } else {
     html+=secEl("clip","Clip",clipSum(),`<div id="clipinfo"></div><div id="clipUtil"></div><div id="clipops"></div>`,true);
     html+=secEl("fx","FX",fxSum(),`<div id="fxpanel"></div><div id="fxUtil"></div>`,true);
@@ -1214,7 +1214,7 @@ function drawGutterDrum(){ ctx.fillStyle="#171a20"; ctx.fillRect(0,RULER,GUTTER,
 }
 function drawVel(){ if(!velOpen) return; vctx.clearRect(0,0,VVW,VVH); vctx.fillStyle="#0e1014"; vctx.fillRect(0,0,VVW,VVH);
   if(isAudio()){ vctx.fillStyle="#5a606c"; vctx.font="11px ui-monospace,monospace"; vctx.textBaseline="middle";
-    vctx.fillText("Audio clips play every chop at one level: no velocity",GUTTER+8,VVH/2); return; }
+    vctx.fillText(isAudioLoop() ? "An Audio clip plays its sample: no velocity" : "A Slicer plays every chop at one level: no velocity",GUTTER+8,VVH/2); return; }
   /* faint value reference lines at 127 / 64 / 1 */
   [127,64,1].forEach(v=>{ const y=VVH-3-(v/127)*(VVH-10);
     vctx.strokeStyle="rgba(74,85,110,0.35)"; vctx.beginPath(); vctx.moveTo(GUTTER,y); vctx.lineTo(VVW,y); vctx.stroke(); });

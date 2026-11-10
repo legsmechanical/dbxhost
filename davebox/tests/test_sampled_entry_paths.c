@@ -140,6 +140,30 @@ int main(void) {
               "a Conductor holds an Audio clip's sample");
     hx_destroy(h);
 
+    /* ==== 6. the remote snapshot: an Audio clip with a sample HAS content ====
+     * The browser grid reads rui_index's has-bits. Counting notes showed every
+     * Audio clip empty there (found on the device 2026-11-10) while the device
+     * grid, which reads the sample, showed it full. */
+    h = rig(); inst = (seq8_instance_t *)h->inst;
+    hx_set_param(h, "t2_convert_to_audio", "");
+    snprintf(p, sizeof p, "1|%s/src/ramp.wav", g_root);
+    hx_set_param(h, "t2_au_pick", p);
+    HX_ASSERT(wait_loaded(h, 2, 1) == 2, "rig: the Audio clip's sample did not load");
+    HX_ASSERT(inst->tracks[2].pad_mode == PAD_MODE_AUDIO, "rig: track 2 is not an Audio track");
+    {
+        static char st[65536];
+        int len = hx_get_param(h, "state", st, (int)sizeof st);
+        const char *ix = len > 0 ? strstr(st, "\"rui_index\":\"") : NULL;
+        HX_ASSERT(ix != NULL, "no rui_index in the snapshot");
+        ix += strlen("\"rui_index\":\"");
+        int seg = 0; while (seg < 2 && *ix && *ix != '"') { if (*ix == ';') seg++; ix++; }   /* track 2's segment */
+        int colons = 0; while (colons < 4 && *ix && *ix != '"') { if (*ix == ':') colons++; ix++; } /* pm:ac:qc:pl: */
+        HX_ASSERT(colons == 4, "track 2's index segment is malformed");
+        HX_ASSERT(ix[0] == '0' && ix[1] == '1' && ix[2] == '0',
+                  "an Audio track's has-bits do not follow its samples (clip B has one, A and C none)");
+    }
+    hx_destroy(h);
+
     snprintf(p, sizeof p, "rm -rf '%s'", g_root);
     if (system(p)) {}
     printf("PASS: test_sampled_entry_paths\n");
