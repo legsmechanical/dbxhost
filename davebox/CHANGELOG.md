@@ -13,7 +13,8 @@ the section into a versioned heading at release time.
   drag or scroll a knob to turn it, click a track to select it, and press the bank
   map's pads. Each does exactly what the same gesture does on the Move.
 - **The Screen view shows Move's own screen** while you edit a Move instrument, in
-  the track's colour, and a module's own full-screen page with knobs you can turn.
+  the track's colour. A page a module draws itself (Bouba-Kiki's Shape, MonkSynth's
+  Face) shows the module's own picture above its knobs.
 - **The browser editor works on a tablet or a phone held sideways.** Bigger touch
   targets, clip settings in a drawer on narrow screens, a compact header on short
   ones, **Edit without launching** in a clip's ≡ menu and **Select all** on the

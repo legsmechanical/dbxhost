@@ -169,6 +169,11 @@
       }
       g.putImageData(img, 0, 0);
     });
+    /* a band a module draws itself, over its page's knobs (data-band="x,y,w,h") */
+    stage.querySelectorAll('canvas[data-band]').forEach((cv) => {
+      const r = String(cv.dataset.band).split(',').map(Number);
+      if (r.length === 4) HUD.drawOledCrop(cv, r[0], r[1], r[2], r[3]);
+    });
   }
   HUD.drawOled = drawOled;
   /* one region of the OLED frame into a canvas, crisp, in the accent colour */

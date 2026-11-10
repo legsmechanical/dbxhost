@@ -13242,7 +13242,11 @@ function ppIo() {
             if (S.slot < 0 || !S.comp || !S.moduleId) return;
             const fn = engineCanvasPageDrawer(S.slot + ':' + S.comp, specKeyFor(S.comp),
                                               S.moduleId, canvas);
-            if (fn) fn(drawCtx, band, payload);
+            /* the Screen view shows this band of the live OLED over the page's
+             * knobs: the module draws it, so nothing but its pixels says what
+             * it shows (Josh, 2026-11-10: "maybe we just show the mirrored
+             * move oled in the frame?") */
+            if (fn) { kitHudTap('CanvasBand', band); fn(drawCtx, band, payload); }
         },
         /*
          * An ENTERABLE module-owned page (`enterable: true` — DR32's Resample):

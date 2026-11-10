@@ -158,8 +158,15 @@
 
   /* kit — a page of knobs: one row of 8, with any span pictures above (the
    * knobs then shrink to sit under them) */
+  /* ...or, on a page a module draws itself (its `canvasBand`), that band of the
+   * live OLED, crisp — the module's own picture, which nothing else describes —
+   * in place of the pictures the page's parameters would get */
+  const bandRow = (cb) => { const s = Math.min(4, 168 / cb.h);
+    return '<div class="hud-bandbox"><canvas class="hud-band" data-band="' + [cb.x, cb.y, cb.w, cb.h].join(',') + '" width="' + cb.w * 4 + '" height="' + cb.h * 4 +
+      '" style="width:' + Math.round(cb.w * s) + 'px;height:' + Math.round(cb.h * s) + 'px"></canvas></div>'; };
   H.layout('kit', (d) => !!(d.body && d.body.knobs), (doc, b) => {
-    const viz = (b.wave ? '<div class="hud-wavebox">' + H.waveSvg(b.wave, 150) + '</div>' : '') + H.vizRow(doc) + noteBoxRow(b), under = !!viz;
+    const viz = b.canvasBand ? bandRow(b.canvasBand)
+      : (b.wave ? '<div class="hud-wavebox">' + H.waveSvg(b.wave, 150) + '</div>' : '') + H.vizRow(doc) + noteBoxRow(b), under = !!viz;
     let html = viz + '<div class="hud-knobs">';
     for (let k = 0; k < 8; k++) html += H.cell(b.knobs[k], k, doc, { under });
     html += '</div>';

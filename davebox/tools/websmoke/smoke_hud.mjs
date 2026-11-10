@@ -464,6 +464,22 @@ ok('the session mixer (a turn, nothing touched): the session overview with its e
   ptr(live('[data-in="knob"][data-k="3"]'), 'pointerdown', 100, 100); ptr(fit, 'pointermove', 100, 90); ptr(fit, 'pointerup', 100, 90);
   await settle();
   ok('...a canvas knob turns: touch, two detents right, release', same(log, [[0x90, 3, 127], [0xB0, 74, 2], [0x80, 3, 0]]), hex(log));
+  /* a page a module draws itself (Bouba-Kiki's Shape: type canvas, as_page):
+   * its band of the live OLED over the page's knobs, which keep their names */
+  const kn = (l) => ({ kind: 'arc', label: l, name: l, text: '0', norm: 0 });
+  H.doc = null; H.setDoc({ v: 1, seq: 99980, where: { screen: 'sound.params', view: 'track', track: 1, clip: 0, bank: 0 }, touch: { knob: -1 },
+    body: { primary: 'knobs', module: 'bouba-kiki', header: { text: 'BOUBA-KIKI', right: 'Shape' }, canvasBand: { x: 0, y: 12, w: 128, h: 40 },
+            knobs: ['Morph', 'Bulge', 'Pinch', 'Spikes', 'Tilt', 'Wobble', 'Attack', 'Release'].map(kn),
+            spans: { env: { start: 6, span: 2 } }, viz: [{ kind: 'envelope', roles: { attack: 'attack', release: 'release' }, keys: ['attack', 'release'], slotStart: 6, slotSpan: 2 }] } });
+  H.render();
+  const band = fit.querySelector('canvas.hud-band[data-band]');
+  ok('a module-drawn page: its band of the OLED over the knobs', !!band && band.dataset.band === '0,12,128,40', band && band.dataset.band);
+  ok('...the knobs keep their names and stay live', fit.querySelectorAll('[data-in="knob"]').length === 8 && /Morph/.test(fit.textContent) && /Release/.test(fit.textContent));
+  ok('...and the band stands in for the parameters\' pictures (no envelope)', !fit.querySelector('.hud-viz, .hud-vizrow, [data-kind="envelope"]') && !/ENVELOPE/i.test(fit.textContent), fit.innerHTML.slice(0, 120));
+  { const calls = []; band.__ctx = { set fillStyle(v) {}, fillRect: (x, y, w, h) => calls.push([x, y]) };
+    const fr = new Uint8Array(1024); fr[(20 >> 3) * 128 + 64] |= 1 << (20 & 7);   /* pixel (64,20): inside the band, at band row 8 */
+    H.setOled(fr, 'pages');
+    ok('...drawn from the live frame: the lit pixel lands at its place in the band', calls.length === 2 && calls[1][0] === 64 * 4 && calls[1][1] === 8 * 4, JSON.stringify(calls)); }
   /* a Dave: the picture alone, as before */
   pic({ picture: { kind: 'dave', caption: 'Dave' } }, 'dave-box', 2);
   ok('a picture without knobs is unchanged: no knob row, accent colour', !fit.querySelector('.hud-knobs') && !fit.querySelector('canvas.hud-oled').dataset.col);

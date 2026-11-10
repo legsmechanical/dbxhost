@@ -89,6 +89,10 @@ export const DESCRIBE = {
     Info:             (d, p) => { d.info = Object.assign(d.info || {}, { left: p.left || '', underline: p.underline || undefined, held: p.held || undefined, tag: p.tag || undefined }); },
     Info2:            (d, p) => { d.info = Object.assign(d.info || {}, { right: p.right || '', arrows: p.arrows || undefined, follow: p.follow || undefined }); },
     Tracks:           (d, p) => { d.tracks = p.rows; },
+    /* a band of the OLED a module draws itself (a `type: "canvas"`, `as_page`
+     * page): the Screen view shows those pixels over the page's knobs */
+    CanvasBand:       (d, p) => { const n = (v) => Math.max(0, Math.round(+v || 0));
+                                  if (n(p.w) > 0 && n(p.h) > 0) d.canvasBand = { x: n(p.x), y: n(p.y), w: Math.min(128, n(p.w)), h: Math.min(64, n(p.h)) }; },
     Picture:          (d, p) => { d.picture = { kind: p.kind || 'image', caption: p.caption || undefined, sub: p.sub || undefined, knobs: p.knobs === 'live' || p.knobs === 'shown' ? p.knobs : undefined, track: typeof p.track === 'number' && p.track >= 0 ? p.track : undefined }; },
     NoteBox:          (d, p) => { d.noteBox = { name: String(p.name || ''), sub: p.sub == null ? '' : String(p.sub), hi: !!p.hi }; },
     Mods:             (d, p) => { d.mods = { names: (p.names || []).map(String), popup: p.popup ? String(p.popup) : undefined }; },
