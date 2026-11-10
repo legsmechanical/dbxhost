@@ -160,7 +160,8 @@
     if (!stage || !HUD.oled) return;
     stage.querySelectorAll('canvas[data-oled]').forEach((cv) => {
       const g = cv.getContext && cv.getContext('2d'); if (!g || !g.createImageData) return;
-      const img = g.createImageData(128, 64), acc = [77, 163, 255];
+      const hx = /^#([0-9a-f]{6})$/i.exec((cv.dataset && cv.dataset.col) || '');
+      const img = g.createImageData(128, 64), acc = hx ? [0, 2, 4].map((i) => parseInt(hx[1].slice(i, i + 2), 16)) : [77, 163, 255];
       if (!img || !img.data) return;
       for (let y = 0; y < 64; y++) for (let x = 0; x < 128; x++) {
         const on = oledPixel(HUD.oled, x, y), i = (y * 128 + x) * 4;

@@ -63,14 +63,29 @@
       (p.right ? '<span class="more">›</span>' : '') + '<span class="len">' + p.len + ' steps</span></div>';
   }
 
-  /* picture — a screen whose content IS a picture (the Daves): the device's
-   * own frame, drawn crisp at full size in the accent colour, with its caption.
-   * The frame is the live OLED one from the same stream (or, offline, the one
-   * recorded with the fixture). */
+  /* picture — a screen whose content IS a picture (the Daves, a module's own
+   * canvas, Move's own screen in co-run): the device's frame, drawn crisp in
+   * the accent colour, with its caption. The frame is the live OLED one from
+   * the same stream (or, offline, the one recorded with the fixture).
+   * `knobs`: eight plain knobs under a smaller picture, unlabeled — the
+   * screen names none of them. 'live' (a module's canvas takes every knob
+   * message) turns and touches like any knob; 'shown' (Move's own screen: a
+   * browser press cannot reach Move) is drawn for consistency and takes none.
+   * Move's screen is drawn in its track's colour (Josh, 2026-11-10: "can we
+   * make the co-run mirror screens match track color?"). */
   H.layout('picture', (d) => !!(d.body && d.body.picture), (doc, b) => {
     const p = b.picture;
-    return '<div class="hud-pic"><canvas class="hud-oled" width="128" height="64" data-oled="1"></canvas>' +
-      (p.caption ? '<div class="cap">' + esc(p.caption) + '</div>' : '') + (p.sub ? '<div class="sub">' + esc(p.sub) + '</div>' : '') + '</div>';
+    let knobs = '';
+    if (p.knobs) {
+      const touched = doc.touch && typeof doc.touch.knob === 'number' ? doc.touch.knob : -1;
+      const kdoc = { where: doc.where, body: { touched }, knobMeta: null };
+      for (let k = 0; k < 8; k++) knobs += H.cell({ kind: 'plain', label: '', text: '' }, k, kdoc, {});
+      if (p.knobs !== 'live') knobs = knobs.replace(/ data-in="knob" data-k="\d+"/g, '');
+      knobs = '<div class="hud-knobs hud-wknobs' + (p.knobs !== 'live' ? ' inert' : '') + '">' + knobs + '</div>';
+    }
+    const col = p.kind === 'move' && typeof trackColor === 'function' && doc.where ? ' data-col="' + esc(trackColor(doc.where.track | 0)) + '"' : '';
+    return '<div class="hud-pic' + (knobs ? ' kn' : '') + '"><canvas class="hud-oled" width="128" height="64" data-oled="1"' + col + '></canvas>' +
+      (p.caption ? '<div class="cap">' + esc(p.caption) + '</div>' : '') + (p.sub ? '<div class="sub">' + esc(p.sub) + '</div>' : '') + '</div>' + knobs;
   });
 
   /* wave — a sample editor: the readouts (Start · what the knob in hand does ·

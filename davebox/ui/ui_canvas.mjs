@@ -254,7 +254,9 @@ export function renderCanvasEdit() {
     if (!C) return false;
     clear_screen();
     const drew = !!(C.overlay && typeof C.overlay.draw === 'function' && !C.dead);
-    if (drew) { kitHudTap('Picture', { kind: 'module', caption: canvasEditCrumb() }); invoke('draw', {}); }
+    /* knobs 'live': the canvas takes every knob message (canvasEditOnMidi), so
+     * the Screen view puts eight turnable knobs under the module's own picture */
+    if (drew) { kitHudTap('Picture', { kind: 'module', caption: canvasEditCrumb(), knobs: 'live' }); invoke('draw', {}); }
     if (!drew) {
         kitHudTap('Message', { big: String(canvasEditCrumb() || ''), lines: [String(C.error || 'No module canvas overlay')], wordmark: true });
         print(3, 12, fit(canvasEditCrumb(), 24), 1);

@@ -2490,6 +2490,16 @@ function drawUIBody() {
      * depends on live LED feedback). */
     if (S.moveCoRunTrack >= 0) {
         hudScreen('co-run');
+        /* The Screen view shows Move's own screen: the live mirror carries
+         * Move's frame during co-run (the shim rebuilds it from the panel's
+         * slices). Nothing else of Move's is readable — its knob values and
+         * pages stay inside the firmware (Josh, 2026-11-10: "maybe we just
+         * show the mirrored move oled in the frame?"). The knobs are drawn
+         * for consistency, unlabeled ("we should still show the knobs, just
+         * not labeled or anything"), but 'shown', not live: a browser press
+         * replays to this UI and the module only, never to Move, so a live
+         * knob here would turn something of ours the user cannot see. */
+        kitHudTap('Picture', { kind: 'move', knobs: 'shown' });
         /* Side clip buttons: the button paired to the Move track this dAVEBOx
          * track routes to blinks; the rest stay dark grey. Move's track numbering
          * is reversed (Track 1 = CC 43 = top .. Track 4 = CC 40 = bottom), so a

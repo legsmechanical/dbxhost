@@ -27,6 +27,10 @@
       arc(s, e, col) + '<circle cx="' + dx.toFixed(1) + '" cy="' + dy.toFixed(1) + '" r="' + (big ? 6 : 4.5) + '" fill="' + col + '"/></svg>';
   }
   H.dial = dial;
+  /* plain — a knob that says nothing about its value (a module canvas, Move's
+   * own screen): the bare ring, lit in the knob's colour while touched */
+  H.widget('plain', (c, k, x) => '<svg class="hud-w-svg" viewBox="0 0 92 92"><path d="M19.1 72.9 A38 38 0 1 1 72.9 72.9" stroke="' +
+    (x.touched ? H.knobColor(k) : '#1d2026') + '" stroke-width="7" fill="none" stroke-linecap="round"/></svg>');
 
   /* Where the knob sits: its fill, else — a list of options with no fill of
    * its own (Resolution, Input Quantize) — the chosen option's place in the

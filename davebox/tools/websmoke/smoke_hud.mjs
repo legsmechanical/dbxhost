@@ -425,6 +425,35 @@ ok('the session mixer (a turn, nothing touched): the session overview with its e
   ptr(fit, 'pointermove', 125, 100); ptr(fit, 'pointerup', 125, 100);
   await settle();
   ok('...a drag survives the screen redrawing under it (right 25 px = 5 detents)', same(log, [[0x90, 5, 127], [0xB0, 76, 5], [0x80, 5, 0]]), hex(log));
+  /* Move's own screen in co-run (Josh, 2026-11-10: "maybe we just show the
+   * mirrored move oled in the frame?" · "can we make the co-run mirror screens
+   * match track color? and we should still show the knobs, just not labeled"):
+   * the live frame in the track's colour, eight unlabeled knobs that take no
+   * press — a browser press reaches this UI and the module, never Move */
+  const pic = (body, screen, t) => { H.doc = null; H.setDoc({ v: 1, seq: 99990 + (t | 0), where: { screen, view: 'track', track: t | 0, clip: 0, bank: 0 }, body, touch: { knob: -1 } }); H.render(); };
+  pic({ picture: { kind: 'move', knobs: 'shown' } }, 'co-run', 2);
+  const mirror = fit.querySelector('canvas.hud-oled[data-oled]');
+  ok('co-run: the Screen view draws the mirrored OLED', !!mirror, fit.innerHTML.slice(0, 160));
+  ok('...in the track\'s colour (track 3 = ' + window.eval('trackColor(2)') + ')', mirror && mirror.dataset.col === window.eval('trackColor(2)'), mirror && mirror.dataset.col);
+  ok('...over eight unlabeled knobs', fit.querySelectorAll('.hud-knobs .hud-kn').length === 8 &&
+     [...fit.querySelectorAll('.hud-knobs .hud-kn .l')].every((e) => !e.textContent.trim()) && !/\d/.test(fit.querySelector('.hud-knobs').textContent), fit.querySelector('.hud-knobs') && fit.querySelector('.hud-knobs').textContent);
+  ok('...that take no press (Move cannot be reached from here)', fit.querySelectorAll('.hud-knobs [data-in], .hud-pic [data-in]').length === 0 &&
+     ![...fit.querySelectorAll('[data-in]')].some((e) => e.dataset.in === 'knob'), [...fit.querySelectorAll('[data-in]')].map((e) => e.dataset.in).join(','));
+  log.length = 0; ptr(fit.querySelector('.hud-knobs .hud-kn'), 'pointerdown', 100, 100); ptr(fit, 'pointermove', 100, 80); ptr(fit, 'pointerup', 100, 80); await settle();
+  ok('...a drag on one sends nothing', log.length === 0, hex(log));
+  /* a module's own canvas: its picture in the accent, and the same knobs, live */
+  pic({ picture: { kind: 'module', caption: 'BeatBank', knobs: 'live' } }, 'sound.canvas-edit', 2);
+  ok('a module canvas: its picture and caption, in the accent (no track colour)', !!fit.querySelector('canvas.hud-oled[data-oled]') &&
+     !fit.querySelector('canvas.hud-oled').dataset.col && /BeatBank/.test(fit.textContent));
+  ok('...with eight live knobs under it', fit.querySelectorAll('[data-in="knob"]').length === 8 &&
+     [...fit.querySelectorAll('[data-in="knob"]')].every((e, i) => +e.dataset.k === i), fit.querySelectorAll('[data-in="knob"]').length);
+  log.length = 0;
+  ptr(live('[data-in="knob"][data-k="3"]'), 'pointerdown', 100, 100); ptr(fit, 'pointermove', 100, 90); ptr(fit, 'pointerup', 100, 90);
+  await settle();
+  ok('...a canvas knob turns: touch, two detents right, release', same(log, [[0x90, 3, 127], [0xB0, 74, 2], [0x80, 3, 0]]), hex(log));
+  /* a Dave: the picture alone, as before */
+  pic({ picture: { kind: 'dave', caption: 'Dave' } }, 'dave-box', 2);
+  ok('a picture without knobs is unchanged: no knob row, accent colour', !fit.querySelector('.hud-knobs') && !fit.querySelector('canvas.hud-oled').dataset.col);
   /* a knob that opens on the device (corner brackets): a click here is only a
    * touch — opening it is the Move's job, not the browser's */
   render('bank-crop-touched');
