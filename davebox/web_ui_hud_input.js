@@ -89,17 +89,24 @@
    * nothing (the jog does something else here), and after four rounds. */
   const getPath = (doc, path) => { let o = doc; for (const p of String(path).split('.')) o = o == null ? o : o[p]; return typeof o === 'number' ? o : null; };
   let driving = 0;
-  function driveTo(path, target, after) {
-    const id = ++driving;
+  /* opts.enter: the list is inert (nothing selected, the jog would page
+   * away), so it is clicked into first and driven once it has a selection.
+   * opts.jump: a row IS an index the jog walks by its distance (a preset
+   * list), so the whole distance is one turn — each detent there loads a
+   * preset, and one turn loads one. */
+  function driveTo(path, target, after, opts) {
+    const id = ++driving, o = opts || {};
     let rounds = 0;
+    const CLICK = [cc(CC.click, 127), cc(CC.click, 0)];
     const round = () => {
       if (id !== driving) return;
       const s = getPath(H.doc, path);
-      if (s == null) return;
-      if (s === target) { send(after || [cc(CC.click, 127), cc(CC.click, 0)]); return; }
+      if (s == null || s < 0) return;
+      if (s === target) { send(after || CLICK); return; }
       if (++rounds > 4) return;
       const d = target - s, n = Math.min(32, Math.abs(d)), pk = [];
-      for (let i = 0; i < n; i++) pk.push(cc(CC.jog, d > 0 ? 1 : 127));
+      if (o.jump) pk.push(cc(CC.jog, rel(Math.max(-63, Math.min(63, d)))));
+      else for (let i = 0; i < n; i++) pk.push(cc(CC.jog, d > 0 ? 1 : 127));
       send(pk);
       const seq0 = H.doc && H.doc.seq, t0 = Date.now();
       const wait = () => {
@@ -112,6 +119,17 @@
       };
       setTimeout(wait, 25);
     };
+    if (o.enter && !(getPath(H.doc, path) >= 0)) {
+      send(CLICK);
+      const t0 = Date.now();
+      const entered = () => {
+        if (id !== driving) return;
+        if (getPath(H.doc, path) >= 0) { round(); return; }
+        if (Date.now() - t0 < 900) setTimeout(entered, 25);
+      };
+      setTimeout(entered, 25);
+      return;
+    }
     round();
   }
   H.surfaceDriveTo = driveTo;
@@ -158,7 +176,7 @@
       g.cc = +ds.cc | 0;
       send([cc(g.cc, 127)]);
     } else if (g.kind === 'track') g.t = +ds.t | 0;
-    else if (g.kind === 'row') { g.path = ds.path; g.row = +ds.row | 0; }
+    else if (g.kind === 'row') { g.path = ds.path; g.row = +ds.row | 0; g.enter = ds.enter === '1'; g.jump = ds.jump === '1'; }
     live.set(e.pointerId, g);
   }
   function move(e) {
@@ -184,7 +202,7 @@
     else if (g.kind === 'btn') send([cc(g.cc, 0)]);
     else if (cancelled || g.moved) return;
     else if (g.kind === 'track') selectTrack(g.t);
-    else if (g.kind === 'row') driveTo(g.path, g.row);
+    else if (g.kind === 'row') driveTo(g.path, g.row, null, { enter: g.enter, jump: g.jump });
   }
   fit.addEventListener('pointerdown', begin);
   fit.addEventListener('pointermove', move);

@@ -156,6 +156,10 @@ ok('...the held step\'s value as the knob prints it (a level in dB)', hc.heldTex
 const be2 = doc('block-editor-automated');
 ok('a module editor\'s knobs carry their lanes: automated, and muted (hollow)', be2.body.knobs[0].key === 'cutoff' && be2.body.knobs[0].auto === 'auto' &&
    be2.body.knobs[1].auto === 'auto-off' && !be2.body.knobs[2].auto, JSON.stringify(be2.body.knobs.slice(0, 3).map((k) => k && [k.key, k.auto])));
+const mp = doc('block-editor-my-presets'), ml = mp.body.list || {};
+ok('a module\'s list page (My Presets) is a list, not eight empty knobs', mp.where.screen === 'sound.params' && mp.body.primary === 'list' && !mp.body.knobs &&
+   (ml.rows || []).map((r) => r.label).join(',') === 'Preset,Save As' && mp.body.header.right === 'My Presets', JSON.stringify(mp.body).slice(0, 300));
+ok('...inert: nothing selected, a tap goes in first', ml.sel === -1 && ml.enter === true && !ml.entered, JSON.stringify(ml));
 const tc = doc('track-config');
 ok('...and a screen with no pop-up has none', !tc.body.popup && tc.body.primary === 'list', JSON.stringify(tc.body.popup));
 const so = doc('session-overview');

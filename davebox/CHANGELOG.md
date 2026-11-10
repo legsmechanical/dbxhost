@@ -175,6 +175,9 @@ the section into a versioned heading at release time.
   level card — is a card over that page in the browser, instead of replacing it. An
   enum knob's choices showed nowhere before; the bank picker showed an empty card; and
   the instrument picker now lists the Move instruments other tracks are playing.
+- **A module's list pages on the Screen view.** Presets, My Presets, Module, a module's
+  own menus and the section list showed as eight empty knobs; they are lists now, and a
+  tap on a row goes in and picks it.
 - **Automation on the Screen view.** The AUTOMATION screen shows every lane with its curve
   and its own playhead, in the Move's list order, headed by where each lane lives in full
   (NuSaw, Freeverb · FX 1, Levels). The selected lane is drawn large: its whole curve,

@@ -17,7 +17,7 @@
   /* a row, a button, a key: the jog turned onto it and clicked
    * (web_ui_hud_input.js). `selBase` says where this body sits in the
    * document — a pop-up card's list is the pop-up's (web_ui_hud_regions.js). */
-  const rowIn = (doc, rest, i) => ' data-in="row" data-path="' + (doc.selBase || 'body') + '.' + rest + '" data-row="' + i + '"';
+  const rowIn = (doc, rest, i, extra) => ' data-in="row" data-path="' + (doc.selBase || 'body') + '.' + rest + '" data-row="' + i + '"' + (extra || '');
   H.rowIn = rowIn;
   /* The OLED's 4x5 face has no lowercase, so dialogs arrive in CAPS. Shown
    * as sentences; a word that was mixed-case (dAVEBOx) is kept. */
@@ -198,7 +198,11 @@
       if (isGap(r)) { html += '<div class="hud-row gap' + (r.divider ? ' div' : '') + '"></div>'; continue; }
       const sel = i === selIn && L.sel >= 0;
       if (r.note != null) { html += '<div class="hud-row note">' + esc(r.note) + '</div>'; continue; }
-      html += '<div class="hud-row' + (sel ? ' sel' : '') + (r.hdr ? ' hdr' : '') + (r.editing ? ' edit' : '') + '"' + (L.sel >= 0 ? rowIn(doc, 'list.sel', (L.first | 0) + i) : '') + '>' +
+      /* a module page's list: inert, a tap goes in first; a preset row is one
+       * jog turn; the single unnamed preset is a click */
+      const live = L.single ? ' data-in="btn" data-cc="3"'
+        : L.sel >= 0 || L.enter ? rowIn(doc, 'list.sel', (L.first | 0) + i, (L.sel < 0 ? ' data-enter="1"' : '') + (L.jump ? ' data-jump="1"' : '')) : '';
+      html += '<div class="hud-row' + (sel ? ' sel' : '') + (r.hdr ? ' hdr' : '') + (r.editing ? ' edit' : '') + '"' + live + '>' +
         (r.mark ? '<span class="q" style="margin:0 8px 0 0">' + esc(r.mark) + '</span>' : '') +
         '<span class="lab">' + esc(r.label) + '</span>' + (r.qual ? '<span class="q">' + esc(r.qual) + '</span>' : '') +
         (r.value != null ? '<span class="val">' + esc(r.value) + '</span>' : r.chevron ? '<span class="val">›</span>' : '') + '</div>';

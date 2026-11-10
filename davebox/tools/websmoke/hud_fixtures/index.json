@@ -465,6 +465,11 @@
   "screen": "sound.params"
  },
  {
+  "slug": "block-editor-my-presets",
+  "title": "A module's My Presets page",
+  "screen": "sound.params"
+ },
+ {
   "slug": "block-editor-playing",
   "title": "The page bar in an editor",
   "screen": "sound.params"

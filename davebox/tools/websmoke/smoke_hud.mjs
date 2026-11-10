@@ -502,6 +502,32 @@ ok('the session mixer (a turn, nothing touched): the session overview with its e
   const n0 = log.length; await wait(800);
   await settle();
   ok('...a selection that never moves: it stops, and never clicks', log.length === n0 && !log.some((p) => p[1] === 3), log.length + ' vs ' + n0);
+  /* a module page that is a LIST (My Presets, Module, a preset browser): drawn
+   * as a list; inert, a tap clicks in first, then drives; a preset row is one turn */
+  {
+    const modDoc = (list) => ({ v: 1, seq: 50000 + Math.floor(Math.random() * 1000), where: { screen: 'sound.params', view: 'track', track: 4, clip: 0, bank: 0 },
+      body: { primary: 'list', header: { text: 'NUSAW', right: 'My Presets' }, list } });
+    H.doc = null; H.setDoc(modDoc({ rows: [{ label: 'Preset', value: 'Fish *' }, { label: 'Save As' }, { label: 'Delete' }], sel: -1, enter: true })); H.render();
+    const mr = [...fit.querySelectorAll('.hud-list [data-in="row"]')];
+    ok('a module\'s menu page draws as a list with live rows', mr.length === 3 && mr[2].dataset.enter === '1', mr.length);
+    log.length = 0; tap(mr[2]); await settle();
+    ok('...inert, a tap clicks into it first and turns nothing', same(log, [[0xB0, 3, 127], [0xB0, 3, 0]]), hex(log));
+    let dd = JSON.parse(JSON.stringify(H.doc)); dd.seq++; dd.body.list.sel = 0; dd.body.list.enter = false;
+    log.length = 0; H.setDoc(dd); await wait(120); await settle();
+    ok('...entered, it turns onto the row', same(log, [[0xB0, 14, 1], [0xB0, 14, 1]]), hex(log));
+    dd = JSON.parse(JSON.stringify(dd)); dd.seq++; dd.body.list.sel = 2;
+    log.length = 0; H.setDoc(dd); await wait(120); await settle();
+    ok('...and clicks it once there', same(log, [[0xB0, 3, 127], [0xB0, 3, 0]]), hex(log));
+    /* a named preset list: one turn of the whole distance */
+    H.doc = null; H.setDoc(modDoc({ rows: [{ label: 'Fish' }, { label: 'Bass', value: '*' }, { label: 'Pad' }, { label: 'Lead' }], sel: 1, enter: false, jump: true, entered: true })); H.render();
+    log.length = 0; tap([...fit.querySelectorAll('.hud-list [data-in="row"]')].find((r) => r.dataset.row === '3')); await settle();
+    ok('a preset row: one jog turn of the whole distance (+2), not two detents', same(log, [[0xB0, 14, 2]]), hex(log));
+    /* a single unnamed preset: a click */
+    H.doc = null; H.setDoc(modDoc({ rows: [{ label: 'Bass', value: '2 of 3' }], sel: -1, single: true })); H.render();
+    const one = fit.querySelector('.hud-list .hud-row');
+    log.length = 0; tap(one); await settle();
+    ok('...a single unnamed preset row is a jog click', !!one && one.dataset.in === 'btn' && same(log, [[0xB0, 3, 127], [0xB0, 3, 0]]), hex(log));
+  }
   /* a pop-up's rows find the selection in the pop-up */
   render('bank-value-popup');
   const pr = fit.querySelector('.hud-ovl [data-in="row"]');
