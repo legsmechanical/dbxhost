@@ -39,7 +39,8 @@ for f in "$shim" "$cmds"; do
 done
 
 # 1. The drain exists, and reads the TEST ring.
-command grep -q 'shadow_midi_inject_peek(test_inject_ui_shm' "$shim" ||
+command grep -q 'replay_surface_ring(test_inject_ui_shm, 0)' "$shim" &&
+  command grep -q 'while (budget-- > 0 && shadow_midi_inject_peek(ring, pkt))' "$shim" ||
   fail "the shim no longer drains the test bus's own surface ring — injected \
 gestures would go back to being invisible to the module on screen"
 
@@ -51,7 +52,8 @@ would never see the gesture"
 # 3. 🔴 The drain must NOT consume Move's shared inject ring. Anchored on the
 #    peek, because that is what consuming looks like; a mere mention of the
 #    pointer elsewhere in the file is fine and expected.
-if command grep -q 'shadow_midi_inject_peek(shadow_midi_inject_shm' "$shim"; then
+if command grep -q 'shadow_midi_inject_peek(shadow_midi_inject_shm' "$shim" ||
+   command grep -q 'replay_surface_ring(shadow_midi_inject_shm' "$shim"; then
   fail "the shim drains MOVE'S inject ring on the surface path — that ring \
 carries dAVEBOx's sequencer output, so the module would hear its own notes as \
 input (upstream shipped this bug and needed two commits to unpick it)"
@@ -80,5 +82,14 @@ Move once auto-routing is in place"
 command grep -q 'if (shadow_control) shadow_control->shift_held = (uint8_t)shadow_shift_held;' "$shim" ||
   fail "the test-bus drain no longer mirrors an injected Shift into the shim's \
 shift_held — Shift+Step / Shift+pad gestures from the bus would lose their Shift"
+
+# 8. The browser's Screen view drives the surface by the SAME replay, on its
+#    OWN ring (never the test bus's, never Move's), and VALIDATED: its producer
+#    is the manager, which faces the network (remote_surface.h).
+command grep -q 'replay_surface_ring(remote_surface_shm, 1)' "$shim" ||
+  fail "the browser's surface ring is no longer drained with validation — a \
+network-facing producer could put anything on the module's input route"
+command grep -q 'if (validate && !remote_surface_valid(pkt)) continue;' "$shim" ||
+  fail "the surface replay no longer validates when asked to"
 
 echo "PASS: test-bus input routes to the surface, not through Move's ring"

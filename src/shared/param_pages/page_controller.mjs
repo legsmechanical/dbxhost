@@ -5574,6 +5574,54 @@ export function createController(io = {}) {
             /* A failed contract read is not a statement about the module. */
             unresolved: s.contractUnresolved,
         };
+        /*
+         * A LIST page is described as a list: its rows as render draws them,
+         * the row the jog is on (-1 while the page is inert — something you
+         * can go INTO, not something you are in) and whether it is entered.
+         * Without this a consumer saw a list page as a knob page with no
+         * knobs: the browser's Screen view drew Presets, My Presets, Module
+         * and a module's own menus as eight empty dials (Josh, 2026-11-09:
+         * "a number of pages in modules aren't showing up like presets, my
+         * presets, module, etc."). Same precedence as render: the section
+         * picker over any page, then the page's own kind.
+         */
+        const listOf = (kind, rows, sel, entered) => ({ kind, rows, sel: entered ? sel : -1, entered: !!entered });
+        const str = (v) => (v === undefined || v === null || v === "" ? undefined : String(v));
+        if (s.pickerOpen) {
+            vm.list = listOf("sections", (s.pickerEntries || []).map((e) => ({
+                label: e && e.name != null ? String(e.name) : "",
+                value: e && e.pages > 1 ? String(e.pages) : undefined,
+            })), s.pickerIndex | 0, true);
+            return vm;
+        }
+        if (p && p.kind === PAGE_MENU) {
+            vm.list = listOf("menu", (p.entries || []).map((e) => ({ label: String(e.label || ""), value: str(e.value) })),
+                             menuIndex(p), menuEntered());
+            return vm;
+        }
+        if (p && p.kind === PAGE_ITEMS) {
+            const ist = itemsState(p) || { list: [], cursor: 0, current: -1 };
+            vm.list = listOf("items", ist.list.map((it) => ({ label: String(it.label || ""), value: it.index === ist.current ? "*" : undefined })),
+                             ist.cursor | 0, menuEntered());
+            return vm;
+        }
+        if (p && p.kind === PAGE_PRESET) {
+            const pst = presetState(p) || {};
+            const entered = menuEntered(), index = pst.index | 0, count = pst.count | 0;
+            /* ⚠ presetNames only where render asks it (no module-drawn browser):
+             * the host's answer may be a walk that loads each preset */
+            const names = !p.canvas && presetNames ? presetNames(p, { entered, index, count }) : null;
+            if (Array.isArray(names) && names.length) {
+                /* a named list: a row IS a preset index; `current` marks the
+                 * loaded one while the page is inert */
+                vm.list = listOf("preset", names.map((n, i) => ({ label: n || `Preset ${i + 1}` })), index, entered);
+                if (!entered) vm.list.current = index;
+            } else {
+                vm.list = listOf("preset", [{ label: pst.name ? String(pst.name) : "", value: count ? `${index + 1} of ${count}` : undefined }],
+                                 0, entered);
+            }
+            return vm;
+        }
         if (!p || p.kind !== PAGE_KNOBS || !Array.isArray(p.keys)) return vm;
 
         /* Which cells a graphic spans. A property of the PAGE, not of any

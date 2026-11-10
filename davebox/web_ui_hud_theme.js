@@ -6,6 +6,10 @@
 #screenview{display:none;flex:1;min-height:0;align-items:center;justify-content:center;background:#050607;overflow:hidden;position:relative}
 #screenview.on{display:flex}
 #screenview .hud-fit{position:absolute;left:50%;top:50%;width:960px;height:var(--stage-h,480px)}
+/* live controls on the stage: a hand cursor, and no browser gesture (scroll,
+ * zoom, selection) on what a finger turns or presses */
+.hud-screen [data-in]{cursor:pointer;touch-action:none;user-select:none;-webkit-user-select:none}
+.hud-screen [data-in="knob"]{cursor:ns-resize}
 /* as an app window the screen is the window: edge to edge, no card */
 body.screen-only #screenview{background:#08090b}
 body.screen-only .hud-screen{border-radius:0;box-shadow:none}

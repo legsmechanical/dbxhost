@@ -42,7 +42,7 @@
     for (let t = 0; t < 8; t++) {
       const trk = tracks[t] || {};
       const st = trk.mute ? 'mute' : trk.qc >= 0 && trk.qc !== undefined && trk.qc !== trk.ac ? 'q' : trk.pl ? '' : 'off';
-      html += '<span class="hud-pip ' + st + (t === cur ? ' cur' : '') + '" style="--c:' + trackColor(t) + ';background:' + trackColor(t) + '">' + (t + 1) + '</span>';
+      html += '<span class="hud-pip ' + st + (t === cur ? ' cur' : '') + '" data-in="track" data-t="' + t + '" style="--c:' + trackColor(t) + ';background:' + trackColor(t) + '">' + (t + 1) + '</span>';
     }
     return html + '</span>';
   });

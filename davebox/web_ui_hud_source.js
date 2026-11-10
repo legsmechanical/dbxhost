@@ -44,6 +44,7 @@
   if (screen.orientation && screen.orientation.addEventListener) screen.orientation.addEventListener('change', () => setTimeout(rescale, 50));
   window.addEventListener('orientationchange', () => setTimeout(rescale, 50));
   H.rescale = rescale;
+  H.shown = () => shown;
   if (typeof ResizeObserver === 'function') new ResizeObserver(rescale).observe(view);
   window.addEventListener('resize', rescale);
 
@@ -162,7 +163,7 @@
   window.hudShow = function (on) {
     shown = !!on;
     view.classList.toggle('on', shown);
-    if (!shown) { stopLive(); return; }
+    if (!shown) { stopLive(); if (H.surfaceReleaseAll) H.surfaceReleaseAll(); return; }
     rescale();
     if (typeof R !== 'undefined' && R && R._mock) startFixtures(); else startLive();
     /* the tracks' instrument NAMES (OB-Xd, not "Synth") come with the mixer

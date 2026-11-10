@@ -21,6 +21,7 @@
  *   web_ui_hud_items.js    the status strip's items (track, clip, pips, transport)
  *   web_ui_hud_viz.js      pictures spanning cells (envelope, filter, …)
  *   web_ui_hud_lanes.js    automation: the AUTOMATION screen, the lane strip
+ *   web_ui_hud_input.js    the hands: knobs, tracks and the bank map's pads, sent to the device
  *
  * A renderer is a pure function writing HTML for its own piece. One that throws
  * is replaced by an empty box for that frame and logged once — one bad element

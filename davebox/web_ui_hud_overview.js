@@ -56,7 +56,7 @@
     let h = '<div class="hud-o-tl">';
     (b.tracks || []).forEach((r, t) => {
       const st = r.playing ? '<i class="dot pl"></i>' : r.queued ? '<i class="dot q"></i>' : '<i class="dot"></i>';
-      h += '<div class="row' + (r.active ? ' cur' : '') + (r.muted ? ' mute' : '') + '" style="--c:' + trackColor(t) + '">' +
+      h += '<div class="row' + (r.active ? ' cur' : '') + (r.muted ? ' mute' : '') + '" data-in="track" data-t="' + t + '" style="--c:' + trackColor(t) + '">' +
         '<span class="n">' + (t + 1) + '</span><span class="nm">' + esc(trackName(m, t)) + '</span>' +
         (r.soloed ? '<span class="b s">S</span>' : r.muted ? '<span class="b m">M</span>' : '') +
         '<span class="cl' + (r.has ? '' : ' empty') + '">' + esc(r.clip) + '</span>' + st + '</div>';
@@ -303,7 +303,7 @@
     h += '<div class="hud-o-info"><span class="tabs">' + modes.map((n, i) => '<span class="tab' + (i === mi ? ' on' : '') + '">' + esc(H.sentence ? H.sentence(n) : n) + '</span>').join('') + '</span>' +
       '<span class="r">' + right + '</span></div>';
     h += '<div class="hud-o-grid" style="grid-template-rows:auto repeat(' + (rTo - rFrom) + ',minmax(0,1fr))"><span></span>';
-    for (let t = 0; t < 8; t++) h += '<div class="th' + (dt(t).muted ? ' mute' : '') + '" style="--c:' + trackColor(t) + '"><i>' + (t + 1) + '</i><span>' + esc(trackName(m, t)) + '</span>' + (dt(t).soloed ? '<b class="s">S</b>' : dt(t).muted ? '<b class="m">M</b>' : '') + '</div>';
+    for (let t = 0; t < 8; t++) h += '<div class="th' + (dt(t).muted ? ' mute' : '') + '" data-in="track" data-t="' + t + '" style="--c:' + trackColor(t) + '"><i>' + (t + 1) + '</i><span>' + esc(trackName(m, t)) + '</span>' + (dt(t).soloed ? '<b class="s">S</b>' : dt(t).muted ? '<b class="m">M</b>' : '') + '</div>';
     for (let r = rFrom; r < rTo; r++) {
       const onPads = r >= rowOff && r < rowOff + 4;
       h += '<span class="rl' + (onPads ? ' on' : '') + '">' + LETTERS[r] + '</span>';
@@ -332,7 +332,7 @@
       o.cells.forEach((c, t) => {
         const val = c && c.kind !== 'blank' ? c.text : '';
         const n = c && typeof c.norm === 'number' ? c.norm : c && typeof c.signed === 'number' ? (c.signed + 1) / 2 : null;
-        h += '<div class="mx' + (t === touched ? ' tch' : '') + '" style="--kc:' + trackColor(t) + '"><div class="w">' + (n == null ? '' : H.dial(t, n, c.kind === 'arcbip', false, null, trackColor(t))) + '</div><span>' + esc(val) + '</span></div>';
+        h += '<div class="mx' + (t === touched ? ' tch' : '') + '" data-in="knob" data-k="' + t + '" style="--kc:' + trackColor(t) + '"><div class="w">' + (n == null ? '' : H.dial(t, n, c.kind === 'arcbip', false, null, trackColor(t))) + '</div><span>' + esc(val) + '</span></div>';
       });
       h += '</div>';
     }

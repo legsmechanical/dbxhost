@@ -61,6 +61,7 @@
 #include "host/shadow_param_lane_policy.h"   /* spl_key_eligible: what a module may set from render */
 #include "host/shadow_test_stream.h"
 #include "host/ext_midi_in.h"
+#include "host/remote_surface.h"
 #include "host/shadow_chain_types.h"
 #include "host/unified_log.h"
 #include "host/shim_thread.h"
@@ -3936,6 +3937,7 @@ static shadow_midi_inject_t *shadow_midi_inject_shm = NULL;  /* MIDI inject into
  * only below — so with no daemon running it costs one atomic load per frame and
  * changes nothing. */
 static shadow_midi_inject_t *test_inject_ui_shm = NULL;
+static shadow_midi_inject_t *remote_surface_shm = NULL;   /* remote_surface.h */
 static shadow_midi_inject_t *ext_midi_in_shm = NULL;   /* ext_midi_in.h */
 static schwung_ext_midi_remap_t *ext_midi_remap_shm = NULL;  /* Cable-2 channel remap table */
 
@@ -4454,6 +4456,14 @@ static void init_shadow_shm(void)
                                                                 sizeof(shadow_midi_inject_t), 1, 1);
     if (test_inject_ui_shm) {
         shadow_midi_inject_init(test_inject_ui_shm);
+    }
+
+    /* And the browser's (remote_surface.h): the same ring type, init and
+     * replay, its own segment, and a validating drain. */
+    remote_surface_shm = (shadow_midi_inject_t *)shadow_shm_map(SHM_REMOTE_SURFACE,
+                                                                sizeof(shadow_midi_inject_t), 1, 1);
+    if (remote_surface_shm) {
+        shadow_midi_inject_init(remote_surface_shm);
     }
 
     /* Create/open the external MIDI input ring (sidecar → shim). Same ring
@@ -8329,6 +8339,50 @@ static inline int claim_cc_set(uint8_t cc) {
     return shadow_control && ((shadow_control->claim_cc_bits[cc >> 3] >> (cc & 7)) & 1);
 }
 
+/* Replay one surface-input ring onto the route a hardware press takes (see the
+ * TEST-BUS INPUT block in the overtake scan, which calls this). `validate`
+ * drops anything the Move's own surface could not have sent — set for the
+ * browser's ring, whose producer faces the network (remote_surface.h). */
+static void replay_surface_ring(shadow_midi_inject_t *ring, int validate)
+{
+    uint8_t pkt[4];
+    int budget = 16;            /* bounded: never stall the callback */
+    while (budget-- > 0 && shadow_midi_inject_peek(ring, pkt)) {
+        shadow_midi_inject_pop(ring);
+        if (validate && !remote_surface_valid(pkt)) continue;
+
+        const uint8_t hdr    = pkt[0];
+        const uint8_t status = pkt[1];
+        const uint8_t d1     = pkt[2];
+        const uint8_t d2     = pkt[3];
+        const uint8_t type   = status & 0xF0;
+
+        if (shadow_ui_midi_shm)
+            shadow_ui_midi_publish(hdr, status, d1, d2);
+
+        /* An injected Shift must read as held to everything that asks
+         * the shim (shadow_get_shift_held), as a hardware one does.
+         * Without this the press reached the module, but its stuck-
+         * Shift heal compared it with the hardware view, found Shift
+         * up, and released it on the next tick — so no Shift+Step or
+         * Shift+pad gesture could be driven by the test bus. */
+        if (type == 0xB0 && d1 == 0x31) {
+            shadow_shift_held = (d2 > 0) ? 1 : 0;
+            if (shadow_control) shadow_control->shift_held = (uint8_t)shadow_shift_held;
+        }
+
+        if (type == 0x90 || type == 0x80) {
+            uint8_t msg[3] = { status, d1, d2 };
+            if (overtake_dsp_gen && overtake_dsp_gen_inst && overtake_dsp_gen->on_midi)
+                overtake_dsp_gen->on_midi(overtake_dsp_gen_inst, msg, 3,
+                                          MOVE_MIDI_SOURCE_INTERNAL);
+            else if (overtake_dsp_fx && overtake_dsp_fx_inst && overtake_dsp_fx->on_midi)
+                overtake_dsp_fx->on_midi(overtake_dsp_fx_inst, msg, 3,
+                                         MOVE_MIDI_SOURCE_INTERNAL);
+        }
+    }
+}
+
 static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, int size)
 {
     (void)ctx;
@@ -10143,43 +10197,11 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
          * case — no daemon, no packets), peek/pop are lock-free over a
          * preallocated ring, and the loop is BOUNDED, so this adds no
          * allocation and no unbounded work to the SPI callback. */
-        if (overtake_mode && test_inject_ui_shm) {
-            uint8_t pkt[4];
-            int budget = 16;            /* bounded: never stall the callback */
-            while (budget-- > 0 && shadow_midi_inject_peek(test_inject_ui_shm, pkt)) {
-                shadow_midi_inject_pop(test_inject_ui_shm);
-
-                const uint8_t hdr    = pkt[0];
-                const uint8_t status = pkt[1];
-                const uint8_t d1     = pkt[2];
-                const uint8_t d2     = pkt[3];
-                const uint8_t type   = status & 0xF0;
-
-                if (shadow_ui_midi_shm)
-                    shadow_ui_midi_publish(hdr, status, d1, d2);
-
-                /* An injected Shift must read as held to everything that asks
-                 * the shim (shadow_get_shift_held), as a hardware one does.
-                 * Without this the press reached the module, but its stuck-
-                 * Shift heal compared it with the hardware view, found Shift
-                 * up, and released it on the next tick — so no Shift+Step or
-                 * Shift+pad gesture could be driven by the test bus. */
-                if (type == 0xB0 && d1 == 0x31) {
-                    shadow_shift_held = (d2 > 0) ? 1 : 0;
-                    if (shadow_control) shadow_control->shift_held = (uint8_t)shadow_shift_held;
-                }
-
-                if (type == 0x90 || type == 0x80) {
-                    uint8_t msg[3] = { status, d1, d2 };
-                    if (overtake_dsp_gen && overtake_dsp_gen_inst && overtake_dsp_gen->on_midi)
-                        overtake_dsp_gen->on_midi(overtake_dsp_gen_inst, msg, 3,
-                                                  MOVE_MIDI_SOURCE_INTERNAL);
-                    else if (overtake_dsp_fx && overtake_dsp_fx_inst && overtake_dsp_fx->on_midi)
-                        overtake_dsp_fx->on_midi(overtake_dsp_fx_inst, msg, 3,
-                                                 MOVE_MIDI_SOURCE_INTERNAL);
-                }
-            }
-        }
+        if (overtake_mode && test_inject_ui_shm)
+            replay_surface_ring(test_inject_ui_shm, 0);
+        /* The browser's Screen view: the same replay, validated. */
+        if (overtake_mode && remote_surface_shm)
+            replay_surface_ring(remote_surface_shm, 1);
 
         /* === EXTERNAL MIDI FROM A SIDECAR (ext_midi_in.h) ===
          *

@@ -34,6 +34,7 @@ type RemoteUI struct {
 	notifyRing *ShmWebParamNotifyRing // push-based param change notifications from shim
 	basePath   string                 // e.g. /data/UserData/schwung — for locating module web_ui.html
 	logger     *slog.Logger
+	surface    *surfaceSink // the Screen view's gestures (shmsurface.go)
 
 	mu      sync.Mutex
 	clients map[*ruClient]struct{}
@@ -104,6 +105,8 @@ type ruClient struct {
 
 	// slots this client is subscribed to (slot index -> true)
 	subs map[uint8]bool
+	// what this page holds down on the surface, let go when it leaves
+	held surfaceHeld
 	// whether this client is subscribed to master FX
 	masterFxSub bool
 	// whether this client is subscribed to the mixer surface (the 8 unified
@@ -148,11 +151,12 @@ type slotCache struct {
 // --- Inbound message types (browser -> server) ---
 
 type wsMessage struct {
-	Type      string `json:"type"`
-	Slot      *uint8 `json:"slot,omitempty"`
-	Key       string `json:"key,omitempty"`
-	Value     string `json:"value,omitempty"`
-	Component string `json:"component,omitempty"` // get_hierarchy / subscribe: serve ONE component
+	Type      string  `json:"type"`
+	Slot      *uint8  `json:"slot,omitempty"`
+	Key       string  `json:"key,omitempty"`
+	Value     string  `json:"value,omitempty"`
+	Component string  `json:"component,omitempty"` // get_hierarchy / subscribe: serve ONE component
+	Pkts      [][]int `json:"pkts,omitempty"`      // surface: [status, d1, d2] gestures, in order
 }
 
 // --- Outbound message types (server -> browser) ---
@@ -248,6 +252,7 @@ func NewRemoteUI(shm *ShmParams, setRing *ShmWebParamSetRing, basePath string, l
 		basePath: basePath,
 		logger:   logger,
 		clients:  make(map[*ruClient]struct{}),
+		surface:  &surfaceSink{path: shmRemoteSurfacePath},
 		fetches:  make(map[string]*paramFetch),
 		toolKick: make(chan string, 1),
 	}
@@ -486,9 +491,52 @@ func (ru *RemoteUI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ru.mu.Unlock()
 		markGone()
 		conn.Close(websocket.StatusNormalClosure, "bye")
+		// a page that leaves mid-press must not leave a pad sounding or Shift
+		// held on the device
+		if rel := client.held.releases(); len(rel) > 0 {
+			if err := ru.surface.push(rel); err != nil {
+				ru.logger.Info("surface release failed", "err", err)
+			}
+		}
 	}()
 
+	go ru.watchHeld(gone, client)
 	ru.readLoop(gone, client)
+}
+
+// A page holding something on the surface (a pad down, a knob touched) must
+// keep answering, or its connection is closed and the release above lets go
+// for it. A phone that drops off the WiFi sends no close: TCP keeps the dead
+// socket open for minutes, and the pad stays down that long. Only a page that
+// holds something is pinged. The pong is read by readLoop, so a reply waits
+// out a slow handler there (a subscribe takes seconds) — hence a timeout well
+// past that, not a tight one.
+var (
+	surfaceHoldPing    = 2 * time.Second
+	surfaceHoldTimeout = 10 * time.Second
+)
+
+func (ru *RemoteUI) watchHeld(gone context.Context, c *ruClient) {
+	t := time.NewTicker(surfaceHoldPing)
+	defer t.Stop()
+	for {
+		select {
+		case <-gone.Done():
+			return
+		case <-t.C:
+		}
+		if !c.held.any() {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(gone, surfaceHoldTimeout)
+		err := c.conn.Ping(ctx)
+		cancel()
+		if err != nil && gone.Err() == nil {
+			ru.logger.Info("ws: a page holding the surface stopped answering, closing it", "err", err)
+			c.conn.CloseNow()
+			return
+		}
+	}
 }
 
 // requireShm tries to connect shared memory and sends an error if unavailable.
@@ -551,6 +599,8 @@ func (ru *RemoteUI) readLoop(ctx context.Context, c *ruClient) {
 			ru.handleRefetchTool(ctx, c)
 		case "set_master_fx_param":
 			ru.handleSetMasterFxParam(ctx, c, msg)
+		case "surface":
+			ru.handleSurface(ctx, c, msg)
 		default:
 			ru.sendError(ctx, c, "unknown message type: "+msg.Type)
 		}
@@ -2452,4 +2502,30 @@ func (ru *RemoteUI) subscribedToolClients() []*ruClient {
 		}
 	}
 	return out
+}
+
+// handleSurface: the Screen view's gestures, as the Move's own controls would
+// send them (shmsurface.go). Each [status, d1, d2] must be a gesture the
+// surface can make; a message carrying any other is refused whole, so a
+// half-applied gesture (the jog held, the step never pressed) cannot happen.
+func (ru *RemoteUI) handleSurface(ctx context.Context, c *ruClient, msg wsMessage) {
+	if len(msg.Pkts) == 0 || len(msg.Pkts) > 64 {
+		ru.sendError(ctx, c, "surface: 1-64 packets")
+		return
+	}
+	pkts := make([][4]byte, 0, len(msg.Pkts))
+	for _, m := range msg.Pkts {
+		p, ok := surfacePacket(m)
+		if !ok {
+			ru.sendError(ctx, c, "surface: not a gesture the Move's surface makes")
+			return
+		}
+		pkts = append(pkts, p)
+	}
+	for _, p := range pkts {
+		c.held.note(p)
+	}
+	if err := ru.surface.push(pkts); err != nil {
+		ru.sendError(ctx, c, "surface: "+err.Error())
+	}
 }

@@ -71,6 +71,7 @@ TARGETS = $(BUILD_DIR)/test_project_path \
           $(BUILD_DIR)/test_midi_inject_writer \
           $(BUILD_DIR)/test_seq_midi_bridge \
           $(BUILD_DIR)/test_ext_midi_in \
+          $(BUILD_DIR)/test_remote_surface \
           $(BUILD_DIR)/test_sa_master_volume \
           $(BUILD_DIR)/test_spawn_command \
           $(BUILD_DIR)/test_stipple \
@@ -237,6 +238,9 @@ $(BUILD_DIR)/test_move_settings_text: test_move_settings_text.c ../../src/host/m
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
 
 $(BUILD_DIR)/test_ext_midi_in: test_ext_midi_in.c ../../src/host/ext_midi_in.h ../../src/host/shadow_constants.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
+
+$(BUILD_DIR)/test_remote_surface: test_remote_surface.c ../../src/host/remote_surface.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
 
 $(BUILD_DIR)/test_seq_midi_bridge: test_seq_midi_bridge.c ../../src/host/seq_midi_bridge.h ../../src/host/shadow_constants.h | $(BUILD_DIR)

@@ -41,6 +41,10 @@
 /* Sidecar → shim external MIDI input (ext_midi_in.h). Cable-2 packets that
  * did not arrive on USB-A, e.g. from a Bluetooth LE MIDI device. */
 #define SHM_EXT_MIDI_IN SCHWUNG_SHM_PREFIX "ext-midi-in"
+/* Manager → shim SURFACE input from the browser's Screen view (remote_surface.h):
+ * the hardware gesture a click stands for, replayed as the test bus's ring is,
+ * but validated at the drain because its producer faces the network. */
+#define SHM_REMOTE_SURFACE SCHWUNG_SHM_PREFIX "remote-surface"
 #define SHM_DISPLAY_LIVE SCHWUNG_SHM_PREFIX "display-live"    /* Live display for remote viewer */
 #define SHM_SHADOW_PARAM_LANE SCHWUNG_SHM_PREFIX "param-lane"  /* shadow_ui → shim fire-and-forget SET lane (shadow_param_lane.h) */
 #define SHM_WEB_PARAM_SET SCHWUNG_SHM_PREFIX "web-param-set"   /* Web UI → shim param set ring */

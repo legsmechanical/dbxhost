@@ -110,6 +110,9 @@ if (!window.schwungRemote) {
   window.schwungRemote={
     _mock:true,
     getParam:k=>Promise.resolve(KV[k]!=null?KV[k]:""),
+    /* the Screen view's gestures (web_ui_hud_input.js): recorded, for the smokes */
+    surfaceLog:[], surfaceAt:[],
+    surface:p=>{ const r=window.schwungRemote, t=Date.now(); r.surfaceLog.push(...p.map(x=>x.slice())); p.forEach(()=>r.surfaceAt.push(t)); },
     setParam:(k,v)=>{
       let m;
       /* mixer wire keys (phase D) — plain KV store in the preview */

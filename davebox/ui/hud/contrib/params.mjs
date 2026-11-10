@@ -34,6 +34,21 @@ export const params = {
         const vm = soundParamPageModel();
         if (!vm) return doc.body || null;
         const body = Object.assign({}, doc.body || {});
+        /* a LIST page (Presets, My Presets, Module, a module's own menu, the
+         * section picker) is a list here too, not eight empty knobs (Josh,
+         * 2026-11-09). Inert, nothing is selected (sel -1). A picture only:
+         * the Screen view's rows are not live (Josh, 2026-11-10) */
+        if (vm.list) {
+            const L = vm.list;
+            const rows = (L.rows || []).map((r, i) => ({ label: r.label || '', value: r.value != null ? r.value : (L.current === i ? '*' : undefined) }));
+            body.list = { rows, sel: L.sel };
+            delete body.knobs; delete body.viz;
+            body.header = Object.assign({}, body.header || {}, { text: vm.header ? vm.header.left : '', right: vm.header ? vm.header.right : undefined });
+            if (vm.bank && vm.bank.count > 1) body.page = { idx: vm.bank.index, count: vm.bank.count };
+            body.module = soundEditorModuleId();
+            body.primary = 'list';
+            return body;
+        }
         const cells = (vm.cells || []).slice(0, 8).map(cellOf);
         while (cells.length < 8) cells.push(null);
         /* a lane in this clip: AUTO, or AUTO OFF when muted, as the OLED's circle */

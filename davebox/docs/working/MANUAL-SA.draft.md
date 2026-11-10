@@ -3312,8 +3312,8 @@ dAVEBOx editor.
   **Select** tool shows **Select all**, for what Alt-click and ⌘A do with a keyboard.
   Add the page to your home screen to run it full screen.
 
-The header's view switcher adds **Mixer** and **Sound** beside the sequencer, all
-three following one selected track. Click an instrument name in the Mixer, or a
+The header's view switcher adds **Mixer**, **Sound** and **Screen** beside the
+sequencer, the first three following one selected track. Click an instrument name in the Mixer, or a
 track header in the sequencer, to edit it in Sound; click the Sound page's title to
 return to the sequencer. The browser's back button steps between views (`#seq` /
 `#mix` / `#sound` in the address bar can be bookmarked).
@@ -3348,6 +3348,16 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 - **Generic controls:** where an instrument groups its parameters, each group is a
   section with a ▶/▼ header. Open as many as you like — they stack down the card,
   and the first starts open.
+- **Screen:** dAVEBOx's own screen, redrawn large and in colour as you play — the
+  same page, menu or pop-up the Move shows, with room for more (every knob, every
+  lane's curve). **Pop out** opens it alone in a window, for a tablet beside the
+  Move. Some of it works the Move too, exactly as your hands would:
+  - **Drag a knob** up or down, or scroll over it, to turn it.
+  - **Click a track** — a number along the top, a track row, a Session column — to
+    select it.
+  - **Press a pad** on the bank map.
+
+  Everything else on it — menus, lists, dialogs — is for looking at; use the Move.
 
 ---
 

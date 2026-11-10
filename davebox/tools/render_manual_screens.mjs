@@ -1147,6 +1147,20 @@ screen('instrument-picker', '14.3 Choosing an instrument', 'The Instmt/Dest pick
 screen('block-editor', '14.4 Editing a module', 'Editing an instrument',
     'The knobs edit its parameters; the jog turns the pages.',
     () => { stopTransport(); selectTrack(4); openTrackConfig(); click(); ticks(8); });
+/* A module's list page (Josh, 2026-11-09: the Screen view drew these as empty
+ * knobs): the editor jogged to its trailing My Presets page. */
+screen('block-editor-my-presets', '14.4 Editing a module', 'A module\'s My Presets page',
+    'After the parameter pages, My Presets saves and loads the module\'s own presets; click to go in, the jog picks a row.',
+    () => {
+        stopTransport(); selectTrack(4); openTrackConfig(); click(); ticks(8);
+        for (let i = 0; i < 40; i++) {
+            const vm = SND.soundParamPageModel();
+            if (vm && vm.page && vm.page.name === 'My Presets') break;
+            jog(1); ticks(2);
+        }
+        const vm = SND.soundParamPageModel();
+        if (!vm || !vm.page || vm.page.name !== 'My Presets') throw new Error('never reached My Presets: ' + (vm && vm.page && vm.page.name));
+    });
 /* The same editor with the transport running: the footer is the track's page
  * bar. A 4-bar clip, viewing page 2 while page 3 plays, so every part of the
  * bar shows (solid, outlined, underlined, the playhead). */

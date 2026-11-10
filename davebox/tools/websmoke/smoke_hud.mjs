@@ -386,6 +386,157 @@ ok('the session mixer (a turn, nothing touched): the session overview with its e
   ok('...without a drawer throwing', !warns.some((w) => /drawer threw/.test(w)), warns.filter((w) => /threw/.test(w)).join(' | '));
 }
 
+/* THE HANDS (web_ui_hud_input.js): a click sends the Move's own gesture —
+ * exactly these packets, in this order — through the transport's surface()
+ * (recorded by the mock shim). */
+{
+  const log = window.schwungRemote.surfaceLog;
+  const fit = d.getElementById('hudfit');
+  const ptr = (el, type, x, y, id, ptype, button) => {
+    const e = new window.MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: button || 0 });
+    Object.defineProperty(e, 'pointerId', { value: id || 1 }); Object.defineProperty(e, 'pointerType', { value: ptype || 'mouse' });
+    el.dispatchEvent(e);
+  };
+  const tap = (el, id) => { ptr(el, 'pointerdown', 10, 10, id); ptr(el, 'pointerup', 10, 10, id); };
+  const hex = (a) => a.map((p) => p.map((x) => x.toString(16).padStart(2, '0')).join(' ')).join(' | ');
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const live = (sel) => fit.querySelector(sel);
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  /* gestures are PACED (a press and its release never share a frame): let the queue drain */
+  const settle = async () => { for (let i = 0; i < 200 && !H.surfaceIdle(); i++) await wait(5); };
+  ok('the transport can carry gestures (mock surface())', typeof window.schwungRemote.surface === 'function');
+  ok('...and no button bar under the screen (Josh: "we don\'t need the buttons")', !d.querySelector('#screenview .hud-ctl'));
+
+  /* a knob: touched, turned by the drag (up = right, 5 px a detent), let go */
+  render('bank-clip');
+  let k = live('[data-in="knob"][data-k="2"]');
+  ok('a knob page\'s knobs are live', fit.querySelectorAll('[data-in="knob"]').length >= 6);
+  log.length = 0;
+  ptr(k, 'pointerdown', 100, 100); ptr(fit, 'pointermove', 100, 80); ptr(fit, 'pointerup', 100, 80);
+  await settle();
+  ok('a knob dragged up 20 px: touch, four detents right, release', same(log, [[0x90, 2, 127], [0xB0, 73, 4], [0x80, 2, 0]]), hex(log));
+  log.length = 0;
+  ptr(live('[data-in="knob"][data-k="0"]'), 'pointerdown', 100, 100); ptr(fit, 'pointermove', 100, 110); ptr(fit, 'pointerup', 100, 110);
+  await settle();
+  ok('...dragged down 10 px: two detents left (126)', same(log, [[0x90, 0, 127], [0xB0, 71, 126], [0x80, 0, 0]]), hex(log));
+  log.length = 0;
+  ptr(live('[data-in="knob"][data-k="5"]'), 'pointerdown', 100, 100);
+  render('bank-clip');   /* a frame arrives mid-drag: the stage is redrawn */
+  ptr(fit, 'pointermove', 125, 100); ptr(fit, 'pointerup', 125, 100);
+  await settle();
+  ok('...a drag survives the screen redrawing under it (right 25 px = 5 detents)', same(log, [[0x90, 5, 127], [0xB0, 76, 5], [0x80, 5, 0]]), hex(log));
+  /* a knob that opens on the device (corner brackets): a click here is only a
+   * touch — opening it is the Move's job, not the browser's */
+  render('bank-crop-touched');
+  const ck = [...fit.querySelectorAll('[data-in="knob"]')].find((e) => e.classList.contains('opens')) || live('[data-in="knob"]');
+  log.length = 0; const kk = +ck.dataset.k; tap(ck);
+  await settle();
+  ok('a knob clicked is only touched and let go — never a jog click', same(log, [[0x90, kk, 127], [0x80, kk, 0]]), hex(log));
+  ok('...no knob is marked for a click', !fit.querySelector('[data-click]'));
+
+  /* the bank map's pads are pads */
+  render('bank-overview-walk');
+  const pads = fit.querySelectorAll('.hud-pads [data-in="pad"]');
+  ok('the bank map\'s 32 pads are live', pads.length === 32, pads.length);
+  const bl = [...pads].find((p) => p.style.gridRow === '5' && p.style.gridColumn === '1'), tr = [...pads].find((p) => p.style.gridRow === '2' && p.style.gridColumn === '8');
+  ok('...bottom-left is note 68, top-right 99', bl && tr && bl.dataset.note === '68' && tr.dataset.note === '99', bl && bl.dataset.note + ' ' + (tr && tr.dataset.note));
+  log.length = 0; ptr(bl, 'pointerdown', 0, 0, 7, 'touch'); ptr(fit, 'pointerup', 0, 0, 7, 'touch');
+  await settle();
+  ok('...a pad pressed and let go: its note on (100) and off', same(log, [[0x90, 68, 100], [0x80, 68, 0]]), hex(log));
+  log.length = 0;
+  for (const b of [2, 1]) { const pz = fit.querySelectorAll('.hud-pads [data-in="pad"]')[5]; ptr(pz, 'pointerdown', 0, 0, 20 + b, 'mouse', b); ptr(fit, 'pointerup', 0, 0, 20 + b, 'mouse', b); }
+  await settle();
+  ok('...a right or middle click presses no pad', log.length === 0, hex(log));
+  log.length = 0;
+  /* fresh: the stage redraws while a test waits, and an old node is no longer on it */
+  const pads2 = fit.querySelectorAll('.hud-pads [data-in="pad"]'), p3 = +pads2[3].dataset.note, p12 = +pads2[12].dataset.note;
+  ptr(pads2[3], 'pointerdown', 0, 0, 11, 'touch'); ptr(pads2[12], 'pointerdown', 0, 0, 12, 'touch');
+  ptr(fit, 'pointerup', 0, 0, 12, 'touch'); ptr(fit, 'pointerup', 0, 0, 11, 'touch');
+  await settle();
+  ok('...two fingers, two pads, each released by its own finger',
+     same(log, [[0x90, p3, 100], [0x90, p12, 100], [0x80, p12, 0], [0x80, p3, 0]]), hex(log));
+
+  /* a track is Shift + the jog turned by the distance to it */
+  render('bank-overview-walk');
+  const cur = H.doc.where.track | 0, to = (cur + 3) % 8, dist = to - cur;
+  log.length = 0; tap(live('.hud-pip[data-in="track"][data-t="' + to + '"]'));
+  await settle();
+  ok('a track pip: Shift, the jog by the distance, Shift up', same(log, [[0xB0, 49, 127], [0xB0, 14, dist > 0 ? dist : 128 + dist], [0xB0, 49, 0]]), hex(log));
+  log.length = 0; tap(live('.hud-pip[data-in="track"][data-t="' + to + '"]'));
+  await settle();
+  ok('...clicked again before the screen shows it (a double click): nothing more — it does not go past', log.length === 0, hex(log));
+  log.length = 0; tap(live('.hud-pip[data-in="track"][data-t="' + cur + '"]'));
+  await settle();
+  ok('...and the old track, still before the screen moves: back by the same distance, not from where the screen says',
+     same(log, [[0xB0, 49, 127], [0xB0, 14, -dist > 0 ? -dist : 128 - dist], [0xB0, 49, 0]]), hex(log));
+  log.length = 0; tap(live('.hud-pip[data-in="track"][data-t="' + cur + '"]'));
+  await settle();
+  ok('...the active track sends nothing', log.length === 0, hex(log));
+  render('track-melodic-playing');
+  ok('...a track overview\'s track rows are tracks too', fit.querySelectorAll('.hud-o-tl [data-in="track"]').length === 8 || !fit.querySelector('.hud-o-tl'),
+     fit.querySelectorAll('.hud-o-tl [data-in="track"]').length);
+
+  /* ...paced: each press and release a frame apart */
+  {
+    render('bank-overview-walk');
+    const c2 = H.doc.where.track | 0;
+    tap(live('.hud-pip[data-in="track"][data-t="' + ((c2 + 1) % 8) + '"]'));
+    await settle();
+    const at = window.schwungRemote.surfaceAt.slice(-3), gaps = at.slice(1).map((x, i) => x - at[i]);
+    ok('...Shift, the turn and Shift up a frame apart (paced, >= ' + H.surfacePaceMs + ' ms)', gaps.length === 2 && gaps.every((g) => g >= H.surfacePaceMs - 2), gaps.join(','));
+  }
+
+  /* Session view: a header is its track, a mixer dial a knob; the clip cells
+   * are a picture */
+  render('session-overview');
+  ok('Session: the track headers are tracks', fit.querySelectorAll('.hud-o-grid .th[data-in="track"]').length === 8);
+  ok('...the clip cells are not live', !fit.querySelector('.hud-o-grid .cc[data-in]'));
+
+  /* everything else is a picture (Josh, 2026-11-10: "just get rid of tapping
+   * rows" — "touch controls were really just about switching tracks and
+   * turning knobs"): nothing in it is live, and a click on it sends nothing */
+  const inert = async (name, sel, what) => {
+    render(name);
+    const els = [...fit.querySelectorAll(sel)];
+    const liveIn = els.filter((e) => e.closest('[data-in]'));
+    log.length = 0; if (els[0]) tap(els[els.length > 1 ? 1 : 0]);
+    await settle();
+    ok(what + ': drawn, not live, and a click sends nothing', els.length > 0 && !liveIn.length && log.length === 0, els.length + ' drawn, ' + liveIn.length + ' live, sent ' + hex(log));
+  };
+  await inert('menu-clock', '.hud-list .hud-row', 'a list\'s rows');
+  await inert('block-editor-my-presets', '.hud-list .hud-row', 'a module\'s list page (My Presets)');
+  await inert('bank-value-popup', '.hud-ovl .hud-row', 'a pop-up card\'s rows');
+  await inert('record-blocked', '.hud-btn', 'a dialog\'s buttons');
+  await inert('automation-menu', '.hud-lane', 'the lane menu\'s rows');
+  await inert('automation-lane-detail', '.hud-lane-steps i', 'the lane\'s step strip');
+  await inert('bank-overview-walk', '.hud-it-transport', 'the status strip\'s transport');
+
+  /* nothing is left held: focus lost mid-press lets go */
+  render('bank-overview-walk');
+  log.length = 0;
+  ptr(fit.querySelector('.hud-pads [data-in="pad"]'), 'pointerdown', 0, 0, 31, 'touch');
+  render('bank-clip');
+  ptr(live('[data-in="knob"][data-k="4"]'), 'pointerdown', 0, 0, 32, 'mouse');
+  window.dispatchEvent(new window.Event('blur'));
+  await settle();
+  const offs = log.filter((p) => p[0] === 0x80).map((p) => p[1]).sort((a, b) => a - b).join(',');
+  ok('focus lost mid-press: the pad and the knob\'s touch are let go', /^4,\d+$/.test(offs) && +offs.split(',')[1] >= 68, hex(log));
+  /* the wheel over a knob turns it (touched while it turns); elsewhere it sends nothing */
+  render('bank-clip');
+  log.length = 0;
+  const wh = (el, dy) => el.dispatchEvent(new window.WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: dy, deltaMode: 0 }));
+  wh(live('[data-in="knob"][data-k="1"]'), -56);
+  await wait(30);
+  await settle();
+  ok('the wheel over a knob: touched, turned', log[0] && same(log[0], [0x90, 1, 127]) && log.some((p) => p[0] === 0xB0 && p[1] === 72 && p[2] === 2), hex(log));
+  await wait(500);
+  await settle();
+  ok('...and let go when the wheel stops', same(log[log.length - 1], [0x80, 1, 0]), hex(log));
+  log.length = 0; wh(fit.querySelector('.hud-status') || fit, 28);
+  await settle();
+  ok('the wheel elsewhere sends nothing', log.length === 0, hex(log));
+}
+
 console.log(JSON.stringify(out, null, 1));
 console.log(fails.length ? "FAILED: " + fails.join(", ") : "ALL PASS");
 process.exit(fails.length ? 1 : 0);
