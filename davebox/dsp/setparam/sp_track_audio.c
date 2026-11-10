@@ -1351,6 +1351,10 @@ static int sp_track_audio(sp_ctx_t *cx) {
         } else if (!strcmp(w, "gain")) {
             cl->gain_db = (int8_t)clamp_i(v, -40, 12);
             cl->ov &= (uint8_t)~AU_OV_GAIN;
+        } else if (slot && !strcmp(w, "shot")) {
+            return 1;                                            /* an Audio clip's: a Slicer's clips are sequences */
+        } else if (!strcmp(w, "shot")) {
+            cl->shot = (uint8_t)(v ? 1 : 0);
         } else if (!strcmp(w, "revrs")) {
             cl->revrs = (uint8_t)(v ? 1 : 0);
             cl->ov &= (uint8_t)~AU_OV_REVRS;
@@ -1780,7 +1784,7 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
     }
     if (!strncmp(k, "info_", 5)) {
         /* "state err mode even nslices jump rstart rend pitch gain frames rate ch
-         *  revrs nudge jmpq count detune sync reach bpm10 hits sens trans slen|name"
+         *  revrs nudge jmpq count detune sync reach bpm10 hits sens trans slen rot shot|name"
          *  -- rstart / rend: what the clip plays of the sample, in frames, once
          *  loaded (Start + Length at the sample's Tempo — a Loop clip's Length
          *  its own; rend stops at the file); reach: how much of that sounds before the clip comes round
@@ -1816,12 +1820,12 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
             double w = (double)rs + (double)lc->length * tps * au_fpt_s(cl, s);
             ve = w >= (double)re ? re : (uint32_t)(w + 0.5);
         }
-        return snprintf(out, out_len, "%d %d %d %d %d %d %u %u %d %d %u %u %d %d %d %d %d %d %d %u %d %u %d %d %u %u|%s",
+        return snprintf(out, out_len, "%d %d %d %d %d %d %u %u %d %d %u %u %d %d %d %d %d %d %d %u %d %u %d %d %u %u %d|%s",
                         cl->state, cl->err, cl->mode, cl->even, cl->nslices, cl->jump,
                         (unsigned)rs, (unsigned)ve, au_pitch(cl), au_gain(cl),
                         s ? (unsigned)s->frames : 0u, s ? (unsigned)s->rate : 0u, s ? s->ch : 0,
                         au_revrs(cl), cl->nudge_ms, cl->jmpq, au_count(cl), au_detune(cl), cl->sync, (unsigned)reach, au_bpm10(cl),
-                        (unsigned)au_hit_count_cached(cl, rs, re), cl->sens, cl->trans, (unsigned)cl->slen, (unsigned)cl->rot, cl->name);
+                        (unsigned)au_hit_count_cached(cl, rs, re), cl->sens, cl->trans, (unsigned)cl->slen, (unsigned)cl->rot, (int)cl->shot, cl->name);
     }
     if (!strncmp(k, "sl_", 3)) {                  /* sl_C_L: "a b pinned pitch gain rev play atk dec detune" */
         const char *q = k + 3;

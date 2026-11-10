@@ -80,7 +80,12 @@ static int sp_track_config(sp_ctx_t *cx) {
                 const clip_t *_ocl = &tr->clips[tr->active_clip];
                 uint32_t ntps = _ncl->ticks_per_step ? _ncl->ticks_per_step : TICKS_PER_STEP;
                 uint32_t otps = _ocl->ticks_per_step ? _ocl->ticks_per_step : TICKS_PER_STEP;
-                if (tr->clip_playing && _ncl->playback_dir == 0 && _ocl->playback_dir == 0 &&
+                if (au_shot(inst, tidx, new_cidx)) {
+                    /* a one-shot clip always plays from its top (Josh, 2026-11-10) */
+                    tr->current_step = initial_clip_step(_nls, newlen, _ncl->playback_dir);
+                    _ncl->pp_dir_state = initial_pp_dir(_ncl->playback_dir);
+                    tr->tick_in_step = 0;
+                } else if (tr->clip_playing && _ncl->playback_dir == 0 && _ocl->playback_dir == 0 &&
                     otps == ntps && _ocl->length == newlen)
                     tr->current_step = (uint16_t)(_nls + tr->current_step % newlen);
                 else

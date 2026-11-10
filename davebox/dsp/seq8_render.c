@@ -850,7 +850,8 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                         pfx_sync_from_clip(tr);
                         cl = &tr->clips[tr->active_clip];
                         clip_clear_suppress(cl);
-                        if (inst->launch_quant < 5) {
+                        /* a one-shot clip always plays from its top */
+                        if (inst->launch_quant < 5 && !au_shot(inst, t, tr->active_clip)) {
                             melodic_anchor_playhead(inst, tr, cl);
                         } else {
                             tr->current_step = initial_clip_step(cl->loop_start, cl->length, cl->playback_dir);
@@ -929,7 +930,8 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                             pfx_sync_from_clip(tr);
                             cl = &tr->clips[tr->active_clip];
                             clip_clear_suppress(cl);
-                            if (inst->launch_quant < 5) {
+                            /* a one-shot clip always plays from its top */
+                            if (inst->launch_quant < 5 && !au_shot(inst, t, tr->active_clip)) {
                                 melodic_anchor_playhead(inst, tr, cl);
                             } else {
                                 tr->current_step = initial_clip_step(cl->loop_start, cl->length, cl->playback_dir);
@@ -1264,6 +1266,12 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                             if (tr->pfx.arp.style != 0 && tr->pfx.arp.retrigger)
                                 tr->pfx.arp.pending_retrigger = 1;
                             cl->loop_cycle++;   /* v=34 Iter counter */
+                            /* One-shot (an Audio clip's): its length once per
+                             * launch, then the clip stops (Josh, 2026-11-10) */
+                            if (au_shot(inst, t, tr->active_clip)) {
+                                tr->clip_playing = 0;
+                                silence_track_notes_v2(inst, tr);
+                            }
                         }
                         tr->current_step = ns2;
                     }

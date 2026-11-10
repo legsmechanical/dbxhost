@@ -5130,7 +5130,12 @@ function _onCC_knobs(d1, d2) {
             if (bank === 0 && !audioSliceMode(_t)) {
                 /* an Audio clip's K2 Strch (x2 · /2) and K3 Shift (a step a
                  * detent) or, alt, Nudge (5 ms, Shift 1) */
-                if (knobIdx >= 1 && knobIdx <= 2) {
+                /* K1 Mode: Loop · Shot (one-shot, Josh, 2026-11-10: "it should
+                 * be a clip bank setting"), a toggle: the deliberate feel */
+                if (knobIdx === 0) {
+                    const _st = knobStep(knobIdx, d2, KNOB_DELIB);
+                    if (_st && auClipBankKnob(_t, knobIdx, _st)) S.screenDirty = true;
+                } else if (knobIdx >= 1 && knobIdx <= 2) {
                     const _nudge = knobIdx === 2 && (S.knobAlt & 4);
                     const _st = _nudge ? ccKnobDelta(d2, knobIdx) : knobStep(knobIdx, d2, knobIdx === 2 ? KNOB_PICK : KNOB_DELIB);
                     if (_st && auClipBankKnob(_t, knobIdx, _st)) S.screenDirty = true;

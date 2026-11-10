@@ -9,6 +9,8 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Added
+- **One-shot Audio clips.** On an Audio track's CLIP bank, knob 1 is **Mode**: **Loop** or
+  **Shot**. A Shot clip plays its length once from its top each time it's launched, then stops.
 - **The Screen view turns knobs and switches tracks.** In the browser's Screen view,
   drag or scroll a knob to turn it, click a track to select it, and press the bank
   map's pads. Each does exactly what the same gesture does on the Move.

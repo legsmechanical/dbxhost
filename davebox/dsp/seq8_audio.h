@@ -140,6 +140,8 @@ typedef struct {
     int8_t       detune;             /* -50..+50 cents, on top of pitch */
     int8_t       gain_db;            /* -40..+12 dB */
     uint8_t      revrs;              /* Loop: the sample plays backwards */
+    uint8_t      shot;               /* Audio: One-shot — the clip plays its length once per launch, then stops
+                                      * (Josh, 2026-11-10: "it should be a clip bank setting") */
     int16_t      nudge_ms;           /* Loop: the sample's start against the bar, -500..+500 ms */
     uint32_t     rot;                /* Loop: Shift — the clip's audio rotated this many ticks later inside
                                       * the loop, wrapping (taken mod the clip's length where it plays) */

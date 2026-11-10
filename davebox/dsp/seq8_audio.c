@@ -40,6 +40,11 @@ static void clip_compact_notes(clip_t *cl);   /* seq8.c, further down the TU */
 static inline au_clip_t *au_slot(seq8_instance_t *inst, int t, int c) {
     return &inst->au_store[t][c];
 }
+/* An Audio clip set to Shot (one-shot): it plays its length once per launch,
+ * from its top, then stops (Josh, 2026-11-10). Never a Slicer's. */
+static inline int au_shot(seq8_instance_t *inst, int t, int c) {
+    return inst->tracks[t].pad_mode == PAD_MODE_AUDIO && c >= 0 && c < NUM_CLIPS && inst->au_store[t][c].shot;
+}
 static inline au_clip_t *au_cl(seq8_instance_t *inst, int t, int c) {
     if (inst->tracks[t].pad_mode == PAD_MODE_SLICER || c == AU_SLC) return &inst->au_store[t][AU_SLC];
     return &inst->au_store[t][c];
@@ -2931,7 +2936,7 @@ static int au_slice_default(const au_slice_t *sl) {
 
 static int au_clip_default(const au_clip_t *cl) {
     return !cl->name[0] && !cl->rstart && !cl->pitch && !cl->detune && !cl->gain_db && !cl->revrs &&
-           !cl->nudge_ms && !cl->sync && !cl->bpm10 && !cl->rot;
+           !cl->nudge_ms && !cl->sync && !cl->bpm10 && !cl->rot && !cl->shot;
 }
 
 static void au_put_name(FILE *fp, const char *name) {
@@ -2955,6 +2960,7 @@ static void au_save_state(void *vinst, FILE *fp) {
                 fprintf(fp, ",\"t%dc%d_aud\":\"rs=%u p=%d dt=%d g=%d rv=%d nu=%d sh=%u sy=%d bpm=%u", t, c,
                         (unsigned)cl->rstart, cl->pitch, cl->detune, cl->gain_db, cl->revrs, cl->nudge_ms,
                         (unsigned)cl->rot, cl->sync, (unsigned)cl->bpm10);
+                if (cl->shot) fputs(" os=1", fp);   /* One-shot (an older build ignores the key) */
                 au_put_name(fp, cl->name);
                 fputc('"', fp);
             }
@@ -3094,6 +3100,7 @@ static void au_load_state(void *vinst, const char *buf) {
                 cl->revrs = (uint8_t)(au_kv(kv, n, "rv", 0) ? 1 : 0);
                 cl->nudge_ms = (int16_t)clamp_i((int)au_kv(kv, n, "nu", 0), -500, 500);
                 cl->rot = (uint32_t)clamp_i((int)au_kv(kv, n, "sh", 0), 0, INT32_MAX);
+                cl->shot = (uint8_t)(au_kv(kv, n, "os", 0) ? 1 : 0);
                 sy = au_kv(kv, n, "sy", AU_SYNC_WARP);
                 cl->sync = (uint8_t)(sy >= 0 && sy <= AU_SYNC_MAX ? sy : AU_SYNC_WARP);
                 l = (int)au_kv(kv, n, "bpm", 0);

@@ -1908,7 +1908,7 @@ step('⭐ the step editor\'s K1 reads "Slice n"; K2 and K4 (Vel) are blank', () 
     S.heldStep = -1; S.heldStepNotes = []; S.activeBank = 0;
 });
 
-step('⭐⭐ an Audio track: no sequence — pad taps and steps do nothing, no STEP / NOTE FX; the CLIP bank is Strch and Shift, no Mode (Josh, 2026-11-02: "two instruments \"audio\" and \"slicer\""), the sound on SAMPLE', () => {
+step('⭐⭐ an Audio track: no sequence — pad taps and steps do nothing, no STEP / NOTE FX; the CLIP bank is Mode (Loop · Shot), Strch and Shift — the old Loop/Slice Mode left with the split (Josh, 2026-11-02: "two instruments \"audio\" and \"slicer\""); one-shot came back as Mode (2026-11-10: "it should be a clip bank setting"); the sound on SAMPLE', () => {
     S.activeBank = 1;                                  /* on NOTE FX when the track becomes Audio */
     GET['t4_au_info_0'] = INFO(0, 8);
     kindSync(); ticks(4);
@@ -1929,19 +1929,21 @@ step('⭐⭐ an Audio track: no sequence — pad taps and steps do nothing, no S
     ticks(2);
     assert(sentLike(/_step_/).length === 0, 'a step press edited an Audio clip: ' + JSON.stringify(sentLike(/_step_/)));
     const cells = A.auLoopBankCells(4);
-    assert(cells.map((c) => c.label).join() === ',Strch,Shift,,,,,' && cells[0].kind === 'blank', 'Audio CLIP bank: ' + cells.map((c) => c.label));
+    assert(cells.map((c) => c.label).join() === 'Mode,Strch,Shift,,,,,' && cells[0].kind === 'enumsq' && cells[0].text === 'Loop',
+           'Audio CLIP bank: ' + cells.map((c) => c.label) + ' / K1 ' + JSON.stringify(cells[0]));
     /* the header reads the name while the knob is in hand: it must fit (a long
      * one ran off the screen on the device) */
     assert(cells.every((c) => !c.name || c.name.length <= 16) && cells[1].name === 'Stretch' && cells[2].name === 'Shift',
            'names too long for the header: ' + cells.map((c) => c.name));
-    /* Strch · Shift (alt Nudge): the clip's transforms in audio (Josh,
-     * 2026-10-30: "an audio-based analog of what they do with midi. thinking
-     * of stretch and shift mainly"); K1 is blank (Mode left with the two
-     * instruments), the rest do nothing, the sound is SAMPLE's */
+    /* Mode · Strch · Shift (alt Nudge): K1 Mode (Loop · Shot — one-shot,
+     * Josh 2026-11-10; test_audio_shot_knob.mjs), then the clip's transforms
+     * in audio (Josh, 2026-10-30: "an audio-based analog of what they do with
+     * midi. thinking of stretch and shift mainly"); K4–K8 do nothing, the
+     * sound is SAMPLE's */
     S.bankCardLatched = true;
     reset();
-    for (const k of [71, 74, 75, 76, 77, 78]) { S.knobAccelLast[k - 71] = 0; for (let i = 0; i < 30; i++) cc(k, 1); }
-    assert(!sentLike(/_au_|_loop_set|resolution|quantize/).length, 'an Audio CLIP knob other than K2 / K3 acts: ' + JSON.stringify(sentLike(/_au_|_loop_set|resolution|quantize/)));
+    for (const k of [74, 75, 76, 77, 78]) { S.knobAccelLast[k - 71] = 0; for (let i = 0; i < 30; i++) cc(k, 1); }
+    assert(!sentLike(/_au_|_loop_set|resolution|quantize/).length, 'an Audio CLIP knob other than K1–K3 acts: ' + JSON.stringify(sentLike(/_au_|_loop_set|resolution|quantize/)));
     {
         const ac = S.trackActiveClip[4] | 0, len0 = S.clipLength[4][ac] | 0 || 16, tps = S.clipTPS[4][ac] || 24;
         const bpm0 = A.auInfo(4, ac).bpm10 || 1200;

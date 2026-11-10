@@ -188,12 +188,14 @@ export function auParseInfo(raw) {
         slen: head.length > 24 ? head[24] : 0,
         /* Loop's Shift: the audio rotated this many ticks later inside the clip */
         rot: head.length > 25 ? head[25] : 0,
+        /* One-shot: the clip plays its length once per launch, then stops */
+        shot: head.length > 26 ? head[26] : 0,
         name: bar >= 0 ? String(raw).slice(bar + 1) : '',
     };
 }
 
 const DEFAULT_INFO = { state: 0, err: 0, mode: 0, even: 16, hand: 1, n: 16, rstart: 0, rend: 0,
-                       pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, revrs: 0, nudge: 0, sync: 0, reach: -1, bpm10: 0, hits: 0, sens: 50, trans: 0, slen: 0, name: '' };
+                       pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, revrs: 0, nudge: 0, sync: 0, reach: -1, bpm10: 0, hits: 0, sens: 50, trans: 0, slen: 0, shot: 0, name: '' };
 const DEFAULT_SLICE = { a: 0, b: 0, pinned: 0, pitch: 0, detune: 0, gain: 0, rev: 0, play: 0, atk: 0, dec: 0 };
 
 export function auInfo(t, c) {
@@ -900,7 +902,7 @@ function stepSliceField(f, v, steps) {
     return v;
 }
 
-/* An Audio clip's CLIP bank knobs (K2 Strch, K3 Shift / Nudge): the clip's
+/* An Audio clip's CLIP bank knobs (K1 Mode, K2 Strch, K3 Shift / Nudge): the clip's
  * own transforms in audio; everything about the sound is SAMPLE's. Mode left
  * the bank when Audio and the Slicer became two instruments (Josh,
  * 2026-11-02). Returns true when something changed. */
@@ -909,6 +911,15 @@ export function auClipBankKnob(t, k, steps) {
     const loc = Object.assign({}, i);
     if (!auIsLoop(i) || i.state !== 2) {
         return false;
+    } else if (k === 0) {
+        /* Mode: Loop · Shot — Shot plays the clip's length once per launch, then
+         * the clip stops (Josh, 2026-10-29: "a one-shot mode ... fired off and stop
+         * at their end"; 2026-11-10: "it should be a clip bank setting"). Every
+         * other setting stays what it was ("settings should persist across loop
+         * and one-shot"). */
+        const v = steps > 0 ? 1 : 0;
+        if (v === (i.shot | 0)) return false;
+        loc.shot = v; auSet(t, c, 'shot', v);
     } else if (k === 1) {
         /* Strch (Josh, 2026-10-30: "an audio-based analog of what they do with
          * midi"): x2 doubles the Length AND the sample's Tempo — the Tempo says
@@ -1120,7 +1131,10 @@ export function auLoopBankCells(t) {
                     text: (S.auStrchDir && S.auStrchDir.t === t && S.knobTouched === 1) ? (S.auStrchDir.dir > 0 ? 'x2' : '/2') : '1x' };
     const shift = (S.knobAlt & 4) ? nudgeCell(i)
         : { kind: 'valsq', label: 'Shift', name: 'Shift', text: '+' + auShiftSteps(t, c, i) };
-    return [BLANK, live(strch), live(shift), BLANK, BLANK, BLANK, BLANK, BLANK];
+    /* K1 Mode: Loop · Shot (one-shot: the clip's length once per launch) */
+    const mode = { kind: 'enumsq', label: 'Mode', name: 'Mode', text: i.shot ? 'Shot' : 'Loop',
+                   options: ['Loop', 'Shot'], sel: i.shot ? 1 : 0 };
+    return [live(mode), live(strch), live(shift), BLANK, BLANK, BLANK, BLANK, BLANK];
 }
 /* Loop's Shift in the clip's steps, 0 .. its length - 1 */
 function auShiftSteps(t, c, i) {
