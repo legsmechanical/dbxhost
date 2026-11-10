@@ -81,7 +81,7 @@
       const kdoc = { where: doc.where, body: { touched }, knobMeta: null };
       for (let k = 0; k < 8; k++) knobs += H.cell({ kind: 'plain', label: '', text: '' }, k, kdoc, {});
       if (p.knobs !== 'live') knobs = knobs.replace(/ data-in="knob" data-k="\d+"/g, '');
-      knobs = '<div class="hud-knobs hud-wknobs' + (p.knobs !== 'live' ? ' inert' : '') + '">' + knobs + '</div>';
+      knobs = '<div class="hud-knobs hud-wknobs hud-plainknobs' + (p.knobs !== 'live' ? ' inert' : '') + '">' + knobs + '</div>';
     }
     const col = p.kind === 'move' && typeof trackColor === 'function' && doc.where ? ' data-col="' + esc(trackColor(doc.where.track | 0)) + '"' : '';
     return '<div class="hud-pic' + (knobs ? ' kn' : '') + '"><canvas class="hud-oled" width="128" height="64" data-oled="1"' + col + '></canvas>' +
