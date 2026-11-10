@@ -3359,11 +3359,8 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
   - **Click a track** — a number along the top, a track row, a Session column — to
     select it.
   - **Tap a menu row**, a dialog's button or a key to go to it and click. Scrolling
-    elsewhere on the screen turns the jog.
-  - The **Move's buttons** sit under the screen: Shift (a tap keeps it held), Back,
-    Menu, the jog, the arrows, Play, Rec, Loop, Copy, Delete, Undo and Mute. Hold one
-    for half a second and it stays held until you tap it again — for a two-handed
-    gesture like Delete + pad.
+    elsewhere on the screen turns the jog. Click the transport in the top bar to play
+    or stop.
   - Keys: the arrows turn the jog, **Enter** clicks it, **Esc** or **Backspace** is
     Back, **Space** is Play and **Shift** is Shift.
 

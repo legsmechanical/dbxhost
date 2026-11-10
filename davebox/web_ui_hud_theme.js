@@ -5,18 +5,7 @@
   const css = `
 #screenview{display:none;flex:1;min-height:0;align-items:center;justify-content:center;background:#050607;overflow:hidden;position:relative}
 #screenview.on{display:flex}
-#screenview .hud-fit{position:absolute;left:50%;top:calc((100% - var(--ctl-h,0px)) / 2);width:960px;height:var(--stage-h,480px)}
-/* the Move's buttons under the screen (web_ui_hud_input.js): page pixels */
-.hud-ctl{position:absolute;left:0;right:0;bottom:0;z-index:4;display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:5px;
-  padding:6px max(10px,env(safe-area-inset-left,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(10px,env(safe-area-inset-right,0px));
-  background:#0a0b0e;border-top:1px solid #16181d;touch-action:none;user-select:none;-webkit-user-select:none}
-.hud-ctl .gap{width:8px}
-.hud-cb{font:600 12px/1 ui-sans-serif,system-ui,-apple-system,sans-serif;color:#c9cdd4;background:#171a20;border:1px solid #2a2f38;border-radius:7px;
-  min-width:38px;padding:8px 9px;cursor:pointer;touch-action:none}
-.hud-cb:hover{background:#20242c}
-.hud-cb.on{background:#4da3ff;border-color:#7dbbff;color:#06121f}
-.hud-cb.lock{box-shadow:0 0 0 2px #ffb340}
-@media (pointer:coarse){.hud-cb{min-width:44px;padding:11px 10px;font-size:13px}}
+#screenview .hud-fit{position:absolute;left:50%;top:50%;width:960px;height:var(--stage-h,480px)}
 /* live controls on the stage: a hand cursor, and no browser gesture (scroll,
  * zoom, selection) on what a finger turns or presses */
 .hud-screen [data-in]{cursor:pointer;touch-action:none;user-select:none;-webkit-user-select:none}
@@ -30,7 +19,7 @@ body.screen-only #app{padding-left:0;padding-right:0}
 /* the window controls (web_ui_hud_app.js): page pixels, not stage units */
 /* bottom right: the footer's right end, which the hints (left-aligned) never
  * reach, so the controls cover nothing — the header's top right is the tempo */
-.hud-appbar{position:absolute;bottom:calc(12px + var(--ctl-h,0px) + env(safe-area-inset-bottom,0px));right:16px;z-index:5;display:flex;gap:8px;transition:opacity .35s}
+.hud-appbar{position:absolute;bottom:calc(12px + env(safe-area-inset-bottom,0px));right:16px;z-index:5;display:flex;gap:8px;transition:opacity .35s}
 .hud-appbtn{font:600 12px/1 ui-sans-serif,system-ui,-apple-system,sans-serif;color:#d6d9df;background:rgba(28,31,38,.86);
   border:1px solid #2c313b;border-radius:7px;padding:7px 11px;cursor:pointer;opacity:.6;transition:opacity .15s,background .15s}
 .hud-appbtn:hover{opacity:1;background:rgba(40,45,55,.95)}

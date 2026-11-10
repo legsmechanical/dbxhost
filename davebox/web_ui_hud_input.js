@@ -19,11 +19,6 @@
  *   data-in="track" data-t=0..7           (track rows, tiles, pips, headers)
  *   data-in="row"   data-path=<doc path of the selection> data-row=<index>
  *   data-in="btn"   data-cc=<button CC>   (a press and a release)
- * The control bar under the screen holds the buttons the screen has no picture
- * of: Shift (a tap latches it), Back, Menu, the jog, the arrows, transport,
- * Copy / Delete / Undo / Mute. A button held half a second stays held until
- * it is tapped again, so a mouse can make a two-handed gesture.
- *
  * Releases are owed: every press is released on pointer up, on a cancelled
  * pointer, when the window loses focus, and — by the manager — when the page's
  * socket closes. */
@@ -32,7 +27,7 @@
   if (!view || !fit) return;
   const CC = { jog: 14, click: 3, shift: 49, menu: 50, back: 51, capture: 52, down: 54, up: 55, undo: 56,
                loop: 58, copy: 60, left: 62, right: 63, play: 85, rec: 86, mute: 88, del: 119 };
-  const KNOB_CC = 71, DETENT_PX = { mouse: 5, pen: 6, touch: 7 }, WHEEL_PX = 28, KNOB_IDLE_MS = 400, LOCK_MS = 500;
+  const KNOB_CC = 71, DETENT_PX = { mouse: 5, pen: 6, touch: 7 }, WHEEL_PX = 28, KNOB_IDLE_MS = 400;
   const PAD_VEL = 100;
 
   const cc = (n, v) => [0xB0, n, v];
@@ -77,14 +72,13 @@
   H.surfacePaceMs = PACE_MS;   /* tests */
   H.surfaceIdle = () => !pumpT && !queue.length;   /* tests */
 
-  /* ── Shift: a latch on the bar (and the keyboard's Shift while held) ── */
+  /* ── Shift: the keyboard's Shift, while it is held ── */
   let shift = false;
   function setShift(v) {
     v = !!v;
     if (v === shift) return;
     shift = v;
     send([cc(CC.shift, v ? 127 : 0)]);
-    syncBar();
   }
   H.surfaceShift = () => shift;
 
@@ -238,76 +232,11 @@
     flush();
     live.forEach((g, id) => end({ pointerId: id }, true));
     wheelRelease();
-    held.forEach((b) => releaseBtn(b));
-    if (keyShift) { keyShift = false; if (!barShift) setShift(false); }
+    if (keyShift) { keyShift = false; setShift(false); }
   }
   H.surfaceReleaseAll = releaseAll;
   window.addEventListener('blur', releaseAll);
   document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAll(); });
-
-  /* ── the control bar ── */
-  const BAR = [
-    ['shift', 'Shift', CC.shift], null,
-    ['back', 'Back', CC.back], ['menu', 'Menu', CC.menu], null,
-    ['jl', '◀', 'jog-'], ['jc', 'Jog', 'jog'], ['jr', '▶', 'jog+'], null,
-    ['left', '‹', CC.left], ['right', '›', CC.right], ['up', '▲', CC.up], ['down', '▼', CC.down], null,
-    ['play', 'Play', CC.play], ['rec', 'Rec', CC.rec], ['loop', 'Loop', CC.loop], null,
-    ['copy', 'Copy', CC.copy], ['del', 'Delete', CC.del], ['undo', 'Undo', CC.undo], ['mute', 'Mute', CC.mute],
-  ];
-  const bar = document.createElement('div');
-  bar.className = 'hud-ctl';
-  bar.setAttribute('role', 'toolbar');
-  bar.setAttribute('aria-label', 'Move buttons');
-  const btns = {};
-  BAR.forEach((b) => {
-    if (!b) { const s = document.createElement('span'); s.className = 'gap'; bar.appendChild(s); return; }
-    const el = document.createElement('button');
-    el.type = 'button'; el.className = 'hud-cb'; el.textContent = b[1]; el.dataset.key = b[0];
-    el.title = b[0] === 'shift' ? 'Shift (tap to latch)' : b[1] + ' (hold half a second to keep it held)';
-    btns[b[0]] = { el, code: b[2], key: b[0], down: false, locked: false, t: 0 };
-    bar.appendChild(el);
-  });
-  view.appendChild(bar);
-  const held = new Set();
-  function pressBtn(b) {
-    if (b.code === 'jog-' || b.code === 'jog+') { send([cc(CC.jog, b.code === 'jog+' ? 1 : 127)]); return; }
-    const n = b.code === 'jog' ? CC.click : b.code;
-    b.down = true; held.add(b); send([cc(n, 127)]); syncBar();
-  }
-  function releaseBtn(b) {
-    if (!b.down) return;
-    const n = b.code === 'jog' ? CC.click : b.code;
-    b.down = false; b.locked = false; held.delete(b); send([cc(n, 0)]); syncBar();
-  }
-  let barShift = false;
-  bar.addEventListener('pointerdown', (e) => {
-    const el = e.target.closest('.hud-cb'); if (!el) return;
-    e.preventDefault();
-    const b = btns[el.dataset.key];
-    if (b.key === 'shift') { barShift = !barShift; setShift(barShift || keyShift); return; }
-    if (b.locked) { releaseBtn(b); b.skipUp = true; return; }
-    b.t = Date.now(); b.skipUp = false;
-    try { el.setPointerCapture(e.pointerId); } catch (err) { /* synthetic */ }
-    pressBtn(b);
-  });
-  const barUp = (e, cancelled) => {
-    const el = e.target.closest && e.target.closest('.hud-cb'); if (!el) return;
-    const b = btns[el.dataset.key];
-    if (!b || b.key === 'shift' || b.skipUp || !b.down) return;
-    if (!cancelled && Date.now() - b.t >= LOCK_MS) { b.locked = true; syncBar(); return; }
-    releaseBtn(b);
-  };
-  bar.addEventListener('pointerup', (e) => barUp(e, false));
-  bar.addEventListener('pointercancel', (e) => barUp(e, true));
-  bar.addEventListener('contextmenu', (e) => e.preventDefault());
-  function syncBar() {
-    Object.values(btns).forEach((b) => {
-      const lit = b.key === 'shift' ? shift : b.down;
-      b.el.classList.toggle('on', !!lit);
-      b.el.classList.toggle('lock', !!b.locked);
-    });
-  }
-  H.surfaceBar = bar;   /* tests */
 
   /* ── the keyboard, while the Screen view is shown and live: the arrows are
    * the jog, Enter clicks it, Backspace / Esc are Back, Space is Play, and
@@ -332,9 +261,7 @@
     send(pk);
   }, true);
   window.addEventListener('keyup', (e) => {
-    if (e.key === 'Shift' && keyShift) { keyShift = false; setShift(barShift); }
+    if (e.key === 'Shift' && keyShift) { keyShift = false; setShift(false); }
   }, true);
 
-  /* the bar's height is taken from the stage's room (web_ui_hud_source.js) */
-  H.ctlHeight = () => (bar.offsetParent ? bar.offsetHeight : 0);
 });

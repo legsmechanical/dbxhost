@@ -72,7 +72,7 @@
   }
   ['mousemove', 'mousedown', 'touchstart', 'keydown'].forEach((ev) => window.addEventListener(ev, wake, { passive: true, capture: true }));
   wake();
-  view.addEventListener('dblclick', (e) => { if (fsOk() && !e.target.closest('.hud-appbar, .hud-ctl, [data-in]')) toggleFull(); });
+  view.addEventListener('dblclick', (e) => { if (fsOk() && !e.target.closest('.hud-appbar, [data-in]')) toggleFull(); });
   /* The window is a display: the editor behind it is hidden but still listens
    * (Delete, undo, arrows act on its clip), so no key reaches it from here.
    * Captured on the window, ahead of the editor's own document listeners. F is

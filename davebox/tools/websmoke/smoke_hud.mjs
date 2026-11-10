@@ -405,7 +405,7 @@ ok('the session mixer (a turn, nothing touched): the session overview with its e
   /* gestures are PACED (a press and its release never share a frame): let the queue drain */
   const settle = async () => { for (let i = 0; i < 200 && !H.surfaceIdle(); i++) await wait(5); };
   ok('the transport can carry gestures (mock surface())', typeof window.schwungRemote.surface === 'function');
-  ok('...and the Move\'s buttons sit under the screen', !!d.querySelector('#screenview .hud-ctl .hud-cb[data-key="shift"]'));
+  ok('...and no button bar under the screen (Josh: "we don\'t need the buttons")', !d.querySelector('#screenview .hud-ctl'));
 
   /* a knob: touched, turned by the drag (up = right, 5 px a detent), let go */
   render('bank-clip');
@@ -518,32 +518,8 @@ ok('the session mixer (a turn, nothing touched): the session overview with its e
   const st = fit.querySelectorAll('.hud-lane-steps [data-in="step"]');
   ok('the lane\'s 16 step buttons are steps 16..31', st.length === 16 && st[0].dataset.note === '16' && st[15].dataset.note === '31', st.length);
 
-  /* the bar: Shift latches; a held button stays held; the transport is Play */
-  const bar = (key) => d.querySelector('.hud-ctl .hud-cb[data-key="' + key + '"]');
-  const press = (el, id) => { ptr(el, 'pointerdown', 0, 0, id || 21); };
-  const lift = (el, id) => { ptr(el, 'pointerup', 0, 0, id || 21); };
+  /* the status strip's transport is Play */
   render('bank-overview-walk');
-  log.length = 0; press(bar('shift')); lift(bar('shift'));
-  await settle();
-  ok('Shift on the bar latches', same(log, [[0xB0, 49, 127]]) && bar('shift').classList.contains('on'), hex(log));
-  log.length = 0; tap(live('.hud-pip[data-in="track"][data-t="' + to + '"]'));
-  await settle();
-  ok('...a track picked with Shift latched leaves Shift alone', same(log, [[0xB0, 14, dist > 0 ? dist : 128 + dist]]), hex(log));
-  log.length = 0; press(bar('shift')); lift(bar('shift'));
-  await settle();
-  ok('...and a second tap lets it go', same(log, [[0xB0, 49, 0]]) && !bar('shift').classList.contains('on'), hex(log));
-  log.length = 0; press(bar('back')); lift(bar('back'));
-  await settle();
-  ok('a bar button is a press and a release (Back)', same(log, [[0xB0, 51, 127], [0xB0, 51, 0]]), hex(log));
-  log.length = 0; press(bar('del')); await wait(560); lift(bar('del'));
-  await settle();
-  ok('...held half a second it stays held (Delete)', same(log, [[0xB0, 119, 127]]) && bar('del').classList.contains('lock'), hex(log));
-  log.length = 0; press(bar('del')); lift(bar('del'));
-  await settle();
-  ok('...until it is tapped again', same(log, [[0xB0, 119, 0]]) && !bar('del').classList.contains('lock'), hex(log));
-  log.length = 0; press(bar('jr')); lift(bar('jr'));
-  await settle();
-  ok('the bar\'s jog arrows turn the jog', same(log, [[0xB0, 14, 1]]), hex(log));
   log.length = 0; tap(live('[data-in="btn"][data-cc="85"]') || fit);
   await settle();
   ok('the status strip\'s transport is Play', !live('[data-in="btn"][data-cc="85"]') || same(log, [[0xB0, 85, 127], [0xB0, 85, 0]]), hex(log));
@@ -552,12 +528,12 @@ ok('the session mixer (a turn, nothing touched): the session overview with its e
   render('bank-overview-walk');
   log.length = 0;
   ptr(fit.querySelector('.hud-pads [data-in="pad"]'), 'pointerdown', 0, 0, 31, 'touch');
-  press(bar('copy'), 32);
+  render('bank-clip');
+  ptr(live('[data-in="knob"][data-k="4"]'), 'pointerdown', 0, 0, 32, 'mouse');
   window.dispatchEvent(new window.Event('blur'));
   await settle();
-  const notes = log.filter((p) => p[0] === 0x80).length, ccs = log.filter((p) => p[0] === 0xB0 && p[1] === 60 && p[2] === 0).length;
-  await settle();
-  ok('focus lost mid-press: the pad and the button are let go', notes === 1 && ccs === 1, hex(log));
+  const offs = log.filter((p) => p[0] === 0x80).map((p) => p[1]).sort((a, b) => a - b).join(',');
+  ok('focus lost mid-press: the pad and the knob\'s touch are let go', /^4,\d+$/.test(offs) && +offs.split(',')[1] >= 68, hex(log));
   /* the wheel over a knob turns it (touched while it turns); elsewhere it is the jog */
   render('bank-clip');
   log.length = 0;

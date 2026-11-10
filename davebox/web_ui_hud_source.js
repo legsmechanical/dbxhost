@@ -24,10 +24,7 @@
    * shows around it — the screen is the window. */
   function rescale() {
     if (!shown) return;
-    /* the Move's buttons sit under the stage (web_ui_hud_input.js) */
-    const ch = H.ctlHeight ? H.ctlHeight() : 0;
-    view.style.setProperty('--ctl-h', ch + 'px');
-    const w = view.clientWidth, h = Math.max(1, view.clientHeight - ch), sw = H.cfg.stage.w;
+    const w = view.clientWidth, h = view.clientHeight, sw = H.cfg.stage.w;
     let sh = H.cfg.stage.h;
     if (H.appWindow && w > 0 && h > 0) sh = Math.round(Math.max(H.cfg.stage.minH, Math.min(H.cfg.stage.maxH, sw * h / w)));
     fit.style.setProperty('--stage-h', sh + 'px');
