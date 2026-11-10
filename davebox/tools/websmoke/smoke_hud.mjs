@@ -480,6 +480,19 @@ ok('the session mixer (a turn, nothing touched): the session overview with its e
     const fr = new Uint8Array(1024); fr[(20 >> 3) * 128 + 64] |= 1 << (20 & 7);   /* pixel (64,20): inside the band, at band row 8 */
     H.setOled(fr, 'pages');
     ok('...drawn from the live frame: the lit pixel lands at its place in the band', calls.length === 2 && calls[1][0] === 64 * 4 && calls[1][1] === 8 * 4, JSON.stringify(calls)); }
+  /* a list page the module draws itself (MonkSynth's Face, its preset browser):
+   * the band, large, and not the one-row list the controller holds behind it */
+  H.doc = null; H.setDoc({ v: 1, seq: 99970, where: { screen: 'sound.params', view: 'track', track: 1, clip: 0, bank: 0 }, touch: { knob: -1 },
+    body: { primary: 'band', module: 'monksynth', header: { text: 'MONKSYNTH', right: 'Face' }, page: { idx: 0, count: 6 }, canvasBand: { x: 4, y: 9, w: 120, h: 45 } } });
+  H.render();
+  const fb = fit.querySelector('canvas.hud-band[data-band]');
+  ok('a module-drawn preset browser (Face): its band, large', !!fb && fb.dataset.band === '4,9,120,45' && parseInt(fb.style.width, 10) >= 600, fb && (fb.dataset.band + ' ' + fb.style.width));
+  /* ...even described the old way (a list as its main content, with the band) */
+  H.doc = null; H.setDoc({ v: 1, seq: 99971, where: { screen: 'sound.params', view: 'track', track: 1, clip: 0, bank: 0 }, touch: { knob: -1 },
+    body: { primary: 'list', list: { kind: 'list', total: 1, sel: -1, first: 0, rows: [{ label: 'Monk', value: '1 of 12' }] }, header: { text: 'MONKSYNTH', right: 'Face' }, canvasBand: { x: 4, y: 9, w: 120, h: 45 } } });
+  H.render();
+  ok('...a list page that carries a band is drawn as the band', !!fit.querySelector('canvas.hud-band[data-band]') && !/1 of 12/.test(fit.textContent), fit.innerHTML.slice(0, 160));
+  ok('...and no list or knobs in its place', !fit.querySelector('.hud-list, .hud-rows, [data-in="knob"]') && !/Monk/.test(fit.querySelector('.hud-screen') ? fit.querySelector('.hud-screen').textContent.replace(/MONKSYNTH/, '') : ''), fit.innerHTML.slice(0, 160));
   /* a Dave: the picture alone, as before */
   pic({ picture: { kind: 'dave', caption: 'Dave' } }, 'dave-box', 2);
   ok('a picture without knobs is unchanged: no knob row, accent colour', !fit.querySelector('.hud-knobs') && !fit.querySelector('canvas.hud-oled').dataset.col);

@@ -39,6 +39,18 @@ export const params = {
          * section picker) is a list here too, not eight empty knobs (Josh,
          * 2026-11-09). Inert, nothing is selected (sel -1). A picture only:
          * the Screen view's rows are not live (Josh, 2026-11-10) */
+        /* a list page the module DRAWS ITSELF (MonkSynth's Face: its preset
+         * browser as a canvas page) is its picture, not the list behind it —
+         * as on the OLED, where the canvas outranks the controller's list
+         * (Josh, 2026-11-10: "what about monk synth face page?") */
+        if (vm.list && body.canvasBand) {
+            delete body.knobs; delete body.viz; delete body.list;
+            body.header = Object.assign({}, body.header || {}, { text: vm.header ? vm.header.left : '', right: vm.header ? vm.header.right : undefined });
+            if (vm.bank && vm.bank.count > 1) body.page = { idx: vm.bank.index, count: vm.bank.count };
+            body.module = soundEditorModuleId();
+            body.primary = 'band';
+            return body;
+        }
         if (vm.list) {
             const L = vm.list;
             const rows = (L.rows || []).map((r, i) => ({ label: r.label || '', value: r.value != null ? r.value : (L.current === i ? '*' : undefined) }));

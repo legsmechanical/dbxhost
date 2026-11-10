@@ -165,7 +165,7 @@ body[data-view="screen"] .seqonly{display:none}
 .hud-oled{width:512px;height:256px;image-rendering:pixelated;border-radius:8px}
 .hud-pic .cap{font-size:22px;font-weight:700}.hud-pic .sub{font-size:14px;color:var(--h-dim)}
 .hud-pic.kn{gap:4px}.hud-pic.kn .hud-oled{width:352px;height:176px}.hud-pic.kn .cap{font-size:18px}
-.hud-bandbox{display:flex;justify-content:center;margin-bottom:6px}.hud-band{image-rendering:pixelated;border-radius:6px}
+.hud-bandbox{display:flex;justify-content:center;margin-bottom:6px}.hud-bandbox.big{margin-top:10px}.hud-band{image-rendering:pixelated;border-radius:6px}
 .hud-plainknobs .hud-kn .v,.hud-plainknobs .hud-kn .l,.hud-plainknobs .hud-kn .sub{display:none}
 .hud-note{display:flex;align-items:center;justify-content:center;gap:14px}
 .hud-note .nm{font-size:44px;font-weight:800}.hud-note .sb{font-size:18px;color:var(--h-dim)}

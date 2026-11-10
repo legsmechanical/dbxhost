@@ -81,14 +81,17 @@
    * what it drew last); that family's layout is tried first. */
   const PRIMARY = { knobs: 'kit', tracks: 'overview', list: 'list', prompt: 'prompt', bars: 'bars', message: 'message',
                     picture: 'picture', big: 'big', card: 'card', mods: 'perf', wave: 'wave', keyboard: 'keyboard', bankmap: 'bankmap', notice: 'notice',
-                    lanes: 'lanes' };
+                    lanes: 'lanes', band: 'band' };
   function layoutFor(doc) {
     /* an overview is the overview whatever it drew last (an Audio track's
      * draws its waveform last, which read as the sample editor's layout) */
     const ovw = doc.body && doc.body.tracks && ((HUD.isTrackOverview && HUD.isTrackOverview(doc)) || (HUD.isSessionOverview && HUD.isSessionOverview(doc)));
     /* SAMPLE / SLICES: the waveform with every knob under it, on both pages */
     const smp = doc.where && doc.where.screen === 'audio-wave-editor' && doc.body && doc.body.wave;
-    const want = ovw ? 'overview' : smp ? 'wave' : doc.body && PRIMARY[doc.body.primary];
+    /* a page the module draws itself with no knobs (MonkSynth's Face, its own
+     * preset browser): its picture, whatever the controller holds behind it */
+    const band = doc.body && doc.body.canvasBand && !doc.body.knobs;
+    const want = ovw ? 'overview' : smp ? 'wave' : band ? 'band' : doc.body && PRIMARY[doc.body.primary];
     if (want) for (const l of HUD.layouts) { if (l.name === want) { try { if (l.match(doc)) return l; } catch (e) { /* skip */ } } }
     for (const l of HUD.layouts) { try { if (l.match(doc)) return l; } catch (e) { /* a bad matcher never wins */ } }
     return null;

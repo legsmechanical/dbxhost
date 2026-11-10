@@ -164,6 +164,13 @@
   const bandRow = (cb) => { const s = Math.min(4, 168 / cb.h);
     return '<div class="hud-bandbox"><canvas class="hud-band" data-band="' + [cb.x, cb.y, cb.w, cb.h].join(',') + '" width="' + cb.w * 4 + '" height="' + cb.h * 4 +
       '" style="width:' + Math.round(cb.w * s) + 'px;height:' + Math.round(cb.h * s) + 'px"></canvas></div>'; };
+  /* band — a page the module draws itself with no knobs under it (MonkSynth's
+   * Face: its own preset browser): that band of the live OLED, large */
+  H.layout('band', (d) => !!(d.body && d.body.canvasBand && !d.body.knobs), (doc, b) => {
+    const cb = b.canvasBand, s = Math.min(6, 330 / cb.h, 1100 / cb.w);
+    return '<div class="hud-bandbox big"><canvas class="hud-band" data-band="' + [cb.x, cb.y, cb.w, cb.h].join(',') + '" width="' + cb.w * 6 + '" height="' + cb.h * 6 +
+      '" style="width:' + Math.round(cb.w * s) + 'px;height:' + Math.round(cb.h * s) + 'px"></canvas></div>';
+  });
   H.layout('kit', (d) => !!(d.body && d.body.knobs), (doc, b) => {
     const viz = b.canvasBand ? bandRow(b.canvasBand)
       : (b.wave ? '<div class="hud-wavebox">' + H.waveSvg(b.wave, 150) + '</div>' : '') + H.vizRow(doc) + noteBoxRow(b), under = !!viz;

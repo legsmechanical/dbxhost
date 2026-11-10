@@ -23,6 +23,11 @@ ok('a band never exceeds the OLED', f && f.canvasBand.w === 128 && f.canvasBand.
 const src = fs.readFileSync('./ui/ui_sound.mjs', 'utf8');
 const m = src.match(/drawCanvasPage: \(drawCtx, band, canvas, payload\) => \{[\s\S]*?\n        \},/);
 ok('ui_sound\'s drawCanvasPage records its band when the module draws', !!m && /if \(fn\) \{ kitHudTap\('CanvasBand', band\); fn\(drawCtx, band, payload\); \}/.test(m[0]), m ? m[0].slice(-200) : 'drawCanvasPage not found');
+/* a list page the module draws (MonkSynth's Face is its preset browser): the
+ * band outranks the list, as the canvas outranks the controller's list on the OLED */
+const pm = fs.readFileSync('./ui/hud/contrib/params.mjs', 'utf8');
+const iBand = pm.indexOf('if (vm.list && body.canvasBand)'), iList = pm.indexOf('if (vm.list) {');
+ok('params: a module-drawn list page is its band, decided before the list', iBand > 0 && iList > iBand && /body\.primary = 'band'/.test(pm.slice(iBand, iList)), iBand + ' / ' + iList);
 process.exit(bad);
 JS
 echo "PASS: a module-drawn page reaches the Screen view as its band"
