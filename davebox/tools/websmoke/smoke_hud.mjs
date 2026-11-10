@@ -435,6 +435,11 @@ ok('the session mixer (a turn, nothing touched): the session overview with its e
   const mirror = fit.querySelector('canvas.hud-oled[data-oled]');
   ok('co-run: the Screen view draws the mirrored OLED', !!mirror, fit.innerHTML.slice(0, 160));
   ok('...in the track\'s colour (track 3 = ' + window.eval('trackColor(2)') + ')', mirror && mirror.dataset.col === window.eval('trackColor(2)'), mirror && mirror.dataset.col);
+  /* ...and the drawer paints it in that colour (a recording context: the stub draws nothing) */
+  const paint = (cv) => { cv.__ctx = { createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }), putImageData(img) { cv.__img = img; } };
+    const fr = new Uint8Array(1024); fr[0] = 1; H.setOled(fr, 'pages'); const px = cv.__img && cv.__img.data; return px ? [px[0], px[1], px[2], px[4], px[5], px[6]] : null; };
+  const lit = paint(mirror);
+  ok('...the mirror\'s lit pixels are drawn in it (#FFE000), the rest dark', lit && lit.slice(0, 3).join() === '255,224,0' && lit.slice(3).join() === '8,9,11', lit && lit.join());
   ok('...over eight unlabeled knobs', fit.querySelectorAll('.hud-knobs .hud-kn').length === 8 &&
      [...fit.querySelectorAll('.hud-knobs .hud-kn .l')].every((e) => !e.textContent.trim()) && !/\d/.test(fit.querySelector('.hud-knobs').textContent), fit.querySelector('.hud-knobs') && fit.querySelector('.hud-knobs').textContent);
   ok('...that take no press (Move cannot be reached from here)', fit.querySelectorAll('.hud-knobs [data-in], .hud-pic [data-in]').length === 0 &&
@@ -454,6 +459,8 @@ ok('the session mixer (a turn, nothing touched): the session overview with its e
   /* a Dave: the picture alone, as before */
   pic({ picture: { kind: 'dave', caption: 'Dave' } }, 'dave-box', 2);
   ok('a picture without knobs is unchanged: no knob row, accent colour', !fit.querySelector('.hud-knobs') && !fit.querySelector('canvas.hud-oled').dataset.col);
+  const davePx = paint(fit.querySelector('canvas.hud-oled'));
+  ok('...drawn in the accent, as before', davePx && davePx.slice(0, 3).join() === '77,163,255', davePx && davePx.join());
   /* a knob that opens on the device (corner brackets): a click here is only a
    * touch — opening it is the Move's job, not the browser's */
   render('bank-crop-touched');
