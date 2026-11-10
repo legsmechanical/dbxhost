@@ -93,7 +93,20 @@ import("./src/shared/param_pages/page_controller.mjs").then((C) => {
   ctl.page.canvas = { path: "x" }; const asked = nameAsks; withNames = true;
   ctl.describePage({ title: "T" });
   if (nameAsks !== asked) fail("presetNames was asked behind a module-drawn browser");
+  /* ...and its knobs, when it carries keys (the MonkSynth Face page: the jog walks
+   * presets, the knobs edit the sound): described as cells beside the list */
+  if (ctl.describePage({ title: "T" }).cells.length) fail("a module-drawn browser with no keys grew cells");
+  ctl.page.keys = ["cutoff"];
+  vm = ctl.describePage({ title: "T" });
+  if (!vm.list || vm.list.kind !== "preset") fail("a module-drawn browser with keys lost its list: " + JSON.stringify(vm.list));
+  if (vm.cells.length !== 1 || vm.cells[0].key !== "cutoff" || vm.cells[0].name !== "Cutoff")
+    fail("a module-drawn browser with keys should describe its knobs: " + JSON.stringify(vm.cells));
+  delete ctl.page.keys;
   delete ctl.page.canvas;
+  /* a plain browser with keys (no canvas) stays a list only, as before */
+  ctl.page.keys = ["cutoff"];
+  if (ctl.describePage({ title: "T" }).cells.length) fail("a plain preset browser grew cells");
+  delete ctl.page.keys;
 
   /* the section picker, over any page */
   ctl.exitMenu();

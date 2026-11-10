@@ -27,6 +27,8 @@ ok('ui_sound\'s drawCanvasPage records its band when the module draws', !!m && /
  * band outranks the list, as the canvas outranks the controller's list on the OLED */
 const pm = fs.readFileSync('./ui/hud/contrib/params.mjs', 'utf8');
 const iBand = pm.indexOf('if (vm.list && body.canvasBand)'), iList = pm.indexOf('if (vm.list) {');
+ok('params: a module-drawn list page that has knobs keeps them, named (Face: "when knobs do something, they should always be shown and labeled")',
+   /const kc = \(vm\.cells \|\| \[\]\)\.slice\(0, 8\)\.map\(cellOf\)/.test(pm.slice(iBand, iList)) && /body\.knobs = kc;\s*body\.primary = 'knobs';/.test(pm.slice(iBand, iList)), pm.slice(iBand, iBand + 200));
 ok('params: a module-drawn list page is its band, decided before the list', iBand > 0 && iList > iBand && /body\.primary = 'band'/.test(pm.slice(iBand, iList)), iBand + ' / ' + iList);
 process.exit(bad);
 JS

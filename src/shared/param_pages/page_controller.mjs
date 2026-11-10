@@ -5620,9 +5620,14 @@ export function createController(io = {}) {
                 vm.list = listOf("preset", [{ label: pst.name ? String(pst.name) : "", value: count ? `${index + 1} of ${count}` : undefined }],
                                  0, entered);
             }
-            return vm;
+            /* A module-drawn browser that CARRIES KEYS (MonkSynth's Face: the
+             * jog walks presets, the knobs edit the sound — pageHasKnobs) is
+             * described with its cells as well as its list: knobs that do
+             * something are shown and named (Josh, 2026-11-10: "when knobs do
+             * something, they should always be shown and labeled"). */
+            if (!pageHasKnobs(p)) return vm;
         }
-        if (!p || p.kind !== PAGE_KNOBS || !Array.isArray(p.keys)) return vm;
+        if (!p || !Array.isArray(p.keys) || !(p.kind === PAGE_KNOBS || pageHasKnobs(p))) return vm;
 
         /* Which cells a graphic spans. A property of the PAGE, not of any
          * param, which is why it is not part of widgetKindFor — a consumer that

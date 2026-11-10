@@ -48,7 +48,19 @@ export const params = {
             body.header = Object.assign({}, body.header || {}, { text: vm.header ? vm.header.left : '', right: vm.header ? vm.header.right : undefined });
             if (vm.bank && vm.bank.count > 1) body.page = { idx: vm.bank.index, count: vm.bank.count };
             body.module = soundEditorModuleId();
-            body.primary = 'band';
+            /* ...with its knobs under it, named, when they do something (Face:
+             * the jog walks presets, the knobs edit the sound — Josh,
+             * 2026-11-10: "when knobs do something, they should always be shown
+             * and labeled") */
+            const kc = (vm.cells || []).slice(0, 8).map(cellOf);
+            if (kc.some(Boolean)) {
+                while (kc.length < 8) kc.push(null);
+                let mk = null;
+                try { mk = soundParamAutoMarks(); } catch (e) { mk = null; }
+                if (mk) kc.forEach((c, k) => { if (c && mk[k]) c.auto = mk[k]; });
+                body.knobs = kc;
+                body.primary = 'knobs';
+            } else body.primary = 'band';
             return body;
         }
         if (vm.list) {
