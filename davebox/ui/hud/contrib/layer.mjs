@@ -89,7 +89,7 @@ export const DESCRIBE = {
     Info:             (d, p) => { d.info = Object.assign(d.info || {}, { left: p.left || '', underline: p.underline || undefined, held: p.held || undefined, tag: p.tag || undefined }); },
     Info2:            (d, p) => { d.info = Object.assign(d.info || {}, { right: p.right || '', arrows: p.arrows || undefined, follow: p.follow || undefined }); },
     Tracks:           (d, p) => { d.tracks = p.rows; },
-    Picture:          (d, p) => { d.picture = { kind: p.kind || 'image', caption: p.caption || undefined, sub: p.sub || undefined, knobs: p.knobs === 'live' || p.knobs === 'shown' ? p.knobs : undefined }; },
+    Picture:          (d, p) => { d.picture = { kind: p.kind || 'image', caption: p.caption || undefined, sub: p.sub || undefined, knobs: p.knobs === 'live' || p.knobs === 'shown' ? p.knobs : undefined, track: typeof p.track === 'number' && p.track >= 0 ? p.track : undefined }; },
     NoteBox:          (d, p) => { d.noteBox = { name: String(p.name || ''), sub: p.sub == null ? '' : String(p.sub), hi: !!p.hi }; },
     Mods:             (d, p) => { d.mods = { names: (p.names || []).map(String), popup: p.popup ? String(p.popup) : undefined }; },
     StepStrip:        (d, p) => { d.stepStrip = { len: p.len | 0, on: (p.on || []).join('') }; },

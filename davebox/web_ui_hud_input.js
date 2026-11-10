@@ -76,6 +76,11 @@
   const AIM_MS = 1500;
   let aim = null;
   function selectTrack(t) {
+    /* co-run: Move owns Shift and the jog, so on the hardware Shift + jog goes
+     * to Move and our track stays put. A browser press reaches only us, so it
+     * would switch our track behind Move's screen — nothing a hand can do.
+     * The track buttons stand down there (device, 2026-11-10). */
+    if (H.doc && H.doc.where && H.doc.where.screen === 'co-run') return;
     const shown = H.doc && H.doc.where ? H.doc.where.track | 0 : -1;
     if (shown < 0) return;
     if (aim && (shown === aim.t || Date.now() - aim.at > AIM_MS)) aim = null;

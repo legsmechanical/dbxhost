@@ -2499,7 +2499,7 @@ function drawUIBody() {
          * not labeled or anything"), but 'shown', not live: a browser press
          * replays to this UI and the module only, never to Move, so a live
          * knob here would turn something of ours the user cannot see. */
-        kitHudTap('Picture', { kind: 'move', knobs: 'shown' });
+        kitHudTap('Picture', { kind: 'move', knobs: 'shown', track: S.moveCoRunTrack });
         /* Side clip buttons: the button paired to the Move track this dAVEBOx
          * track routes to blinks; the rest stay dark grey. Move's track numbering
          * is reversed (Track 1 = CC 43 = top .. Track 4 = CC 40 = bottom), so a

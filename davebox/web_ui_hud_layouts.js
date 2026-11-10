@@ -83,7 +83,10 @@
       if (p.knobs !== 'live') knobs = knobs.replace(/ data-in="knob" data-k="\d+"/g, '');
       knobs = '<div class="hud-knobs hud-wknobs hud-plainknobs' + (p.knobs !== 'live' ? ' inert' : '') + '">' + knobs + '</div>';
     }
-    const col = p.kind === 'move' && typeof trackColor === 'function' && doc.where ? ' data-col="' + esc(trackColor(doc.where.track | 0)) + '"' : '';
+    /* the colour of the track whose Move instrument it is (p.track), not of
+     * the track in focus — they can differ */
+    const pt = typeof p.track === 'number' ? p.track : (doc.where ? doc.where.track | 0 : 0);
+    const col = p.kind === 'move' && typeof trackColor === 'function' ? ' data-col="' + esc(trackColor(pt)) + '"' : '';
     return '<div class="hud-pic' + (knobs ? ' kn' : '') + '"><canvas class="hud-oled" width="128" height="64" data-oled="1"' + col + '></canvas>' +
       (p.caption ? '<div class="cap">' + esc(p.caption) + '</div>' : '') + (p.sub ? '<div class="sub">' + esc(p.sub) + '</div>' : '') + '</div>' + knobs;
   });

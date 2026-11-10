@@ -80,6 +80,7 @@ async function main() {
         assert(d.body && d.body.picture, 'no picture: ' + JSON.stringify(d.body));
         assert(d.body.picture.kind === 'move', 'kind ' + d.body.picture.kind);
         assert(d.body.picture.knobs === 'shown', 'knobs ' + d.body.picture.knobs);
+        assert(d.body.picture.track === 4, 'the co-run track is not named: ' + d.body.picture.track);
         assert(!d.body.knobs, 'co-run published knob cells it cannot know: ' + JSON.stringify(d.body.knobs));
     });
 

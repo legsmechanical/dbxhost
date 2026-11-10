@@ -446,6 +446,14 @@ ok('the session mixer (a turn, nothing touched): the session overview with its e
      ![...fit.querySelectorAll('[data-in]')].some((e) => e.dataset.in === 'knob'), [...fit.querySelectorAll('[data-in]')].map((e) => e.dataset.in).join(','));
   log.length = 0; ptr(fit.querySelector('.hud-knobs .hud-kn'), 'pointerdown', 100, 100); ptr(fit, 'pointermove', 100, 80); ptr(fit, 'pointerup', 100, 80); await settle();
   ok('...a drag on one sends nothing', log.length === 0, hex(log));
+  /* the track buttons too: on the hardware Shift + jog goes to Move in co-run,
+   * so a click here would switch our track behind Move's screen (device) */
+  log.length = 0; const coPip = fit.querySelector('[data-in="track"][data-t="5"]');
+  if (coPip) { ptr(coPip, 'pointerdown', 10, 10); ptr(coPip, 'pointerup', 10, 10); } await settle();
+  ok('...and a track button sends nothing', !!coPip && log.length === 0, coPip ? hex(log) : 'no track button on the page');
+  /* the colour is the co-run track's, not the focused one's */
+  pic({ picture: { kind: 'move', knobs: 'shown', track: 0 } }, 'co-run', 2);
+  ok('...coloured by the co-run track (1, red) when the focus is elsewhere (3)', fit.querySelector('canvas.hud-oled').dataset.col === window.eval('trackColor(0)'), fit.querySelector('canvas.hud-oled').dataset.col);
   /* a module's own canvas: its picture in the accent, and the same knobs, live */
   pic({ picture: { kind: 'module', caption: 'BeatBank', knobs: 'live' } }, 'sound.canvas-edit', 2);
   ok('a module canvas: its picture and caption, in the accent (no track colour)', !!fit.querySelector('canvas.hud-oled[data-oled]') &&
