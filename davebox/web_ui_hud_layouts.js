@@ -86,7 +86,7 @@
     /* the colour of the track whose Move instrument it is (p.track), not of
      * the track in focus — they can differ */
     const pt = typeof p.track === 'number' ? p.track : (doc.where ? doc.where.track | 0 : 0);
-    const col = p.kind === 'move' && typeof trackColor === 'function' ? ' data-col="' + esc(trackColor(pt)) + '"' : '';
+    const col = (p.kind === 'move' || p.kind === 'module') && typeof trackColor === 'function' ? ' data-col="' + esc(trackColor(pt)) + '"' : '';
     return '<div class="hud-pic' + (knobs ? ' kn' : '') + '"><canvas class="hud-oled" width="128" height="64" data-oled="1"' + col + '></canvas>' +
       (p.caption ? '<div class="cap">' + esc(p.caption) + '</div>' : '') + (p.sub ? '<div class="sub">' + esc(p.sub) + '</div>' : '') + '</div>' + knobs;
   });
@@ -161,18 +161,21 @@
   /* ...or, on a page a module draws itself (its `canvasBand`), that band of the
    * live OLED, crisp — the module's own picture, which nothing else describes —
    * in place of the pictures the page's parameters would get */
-  const bandRow = (cb) => { const s = Math.min(4, 168 / cb.h);
-    return '<div class="hud-bandbox"><canvas class="hud-band" data-band="' + [cb.x, cb.y, cb.w, cb.h].join(',') + '" width="' + cb.w * 4 + '" height="' + cb.h * 4 +
+  /* every mirror of the device's screen wears the track's colour (Josh,
+   * 2026-11-10, of MonkSynth's Face: "it's not track color") */
+  const mirrorCol = (doc) => typeof trackColor === 'function' && doc && doc.where ? ' data-col="' + esc(trackColor(doc.where.track | 0)) + '"' : '';
+  const bandRow = (cb, doc) => { const s = Math.min(4, 168 / cb.h);
+    return '<div class="hud-bandbox"><canvas class="hud-band"' + mirrorCol(doc) + ' data-band="' + [cb.x, cb.y, cb.w, cb.h].join(',') + '" width="' + cb.w * 4 + '" height="' + cb.h * 4 +
       '" style="width:' + Math.round(cb.w * s) + 'px;height:' + Math.round(cb.h * s) + 'px"></canvas></div>'; };
   /* band — a page the module draws itself with no knobs under it (MonkSynth's
    * Face: its own preset browser): that band of the live OLED, large */
   H.layout('band', (d) => !!(d.body && d.body.canvasBand && !d.body.knobs), (doc, b) => {
     const cb = b.canvasBand, s = Math.min(6, 330 / cb.h, 1100 / cb.w);
-    return '<div class="hud-bandbox big"><canvas class="hud-band" data-band="' + [cb.x, cb.y, cb.w, cb.h].join(',') + '" width="' + cb.w * 6 + '" height="' + cb.h * 6 +
+    return '<div class="hud-bandbox big"><canvas class="hud-band"' + mirrorCol(doc) + ' data-band="' + [cb.x, cb.y, cb.w, cb.h].join(',') + '" width="' + cb.w * 6 + '" height="' + cb.h * 6 +
       '" style="width:' + Math.round(cb.w * s) + 'px;height:' + Math.round(cb.h * s) + 'px"></canvas></div>';
   });
   H.layout('kit', (d) => !!(d.body && d.body.knobs), (doc, b) => {
-    const viz = b.canvasBand ? bandRow(b.canvasBand)
+    const viz = b.canvasBand ? bandRow(b.canvasBand, doc)
       : (b.wave ? '<div class="hud-wavebox">' + H.waveSvg(b.wave, 150) + '</div>' : '') + H.vizRow(doc) + noteBoxRow(b), under = !!viz;
     let html = viz + '<div class="hud-knobs">';
     for (let k = 0; k < 8; k++) html += H.cell(b.knobs[k], k, doc, { under });

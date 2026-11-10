@@ -179,12 +179,14 @@
     });
   }
   HUD.drawOled = drawOled;
-  /* one region of the OLED frame into a canvas, crisp, in the accent colour */
+  /* one region of the OLED frame into a canvas, crisp, in the canvas's own
+   * colour (data-col, #rrggbb: a track's) or the accent */
   HUD.drawOledCrop = function (cv, x0, y0, w, h) {
     if (!HUD.oled) return;
     const g = cv.getContext && cv.getContext('2d'); if (!g) return;
     const sx = cv.width / w, sy = cv.height / h;
-    g.fillStyle = '#0f1114'; g.fillRect(0, 0, cv.width, cv.height); g.fillStyle = HUD.cfg.palette[0];
+    const col = cv.dataset && /^#[0-9a-f]{6}$/i.test(cv.dataset.col || '') ? cv.dataset.col : HUD.cfg.palette[0];
+    g.fillStyle = '#0f1114'; g.fillRect(0, 0, cv.width, cv.height); g.fillStyle = col;
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++)
       if (oledPixel(HUD.oled, x0 + x, y0 + y)) g.fillRect(Math.floor(x * sx), Math.floor(y * sy), Math.ceil(sx), Math.ceil(sy));
   };
