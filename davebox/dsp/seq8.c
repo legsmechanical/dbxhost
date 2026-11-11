@@ -10904,6 +10904,40 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
             return -1;
         }
 
+        /* tN_remix_map: the active clip's REMIX as a picture of one bar — the
+         * Loop phrase (a note on each 1/16) through its Type, preset and dials:
+         * per 1/16, "src.flags.pitch" — src the slot heard (-1 none), flags 1
+         * reversed, 2 rolled, 4 cut short, 8 silent, 16 a piece starts here;
+         * pitch in semitones. Read while a REMIX knob is in hand. */
+        if (!strcmp(sub, "remix_map")) {
+            const clip_pfx_params_t *pp = &tr->clips[tr->active_clip].pfx_params;
+            static rmx_ev_t rin[16], rout[RMX_MAX];
+            rmx_dials_t d;
+            int k, i, n, len = 0, st[16], ln[16], np;
+            d.shuffle = pp->rmx_shuf; d.reverse = pp->rmx_rev; d.roll = pp->rmx_roll;
+            d.brk = pp->rmx_brk; d.pitch = pp->rmx_pit; d.rate = pp->rmx_rate; d.vel = pp->rmx_rvel;
+            memset(rin, 0, sizeof rin);
+            for (k = 0; k < 16; k++) { rin[k].tick = k * 24; rin[k].gate = 24; rin[k].vel = 100; rin[k].key = (uint8_t)k; }
+            n = rmx_bar_ex(&inst->rmx_w, pp->rmx_type, pp->rmx_var, &d, 384, rin, 16, rout, RMX_MAX);
+            np = rmx_pieces(pp->rmx_type, st, ln);
+            for (k = 0; k < 16 && len < out_len - 16; k++) {
+                int src = -1, fl = 0, pit = 0, cnt = 0;
+                for (i = 0; i < n; i++) {
+                    const rmx_ev_t *e = &rout[i];
+                    if ((e->tick + 2) / 24 != k) continue;
+                    if (src < 0) { src = e->key; pit = e->pitch; }
+                    if (e->rev) fl |= 1;
+                    if (e->vel != 100) fl |= 2;
+                    if (e->gate < (e->rev ? 48 : 24)) fl |= 4;
+                    cnt++;
+                }
+                if (cnt > 1) fl |= 2;
+                if (!cnt) fl |= 8;
+                for (i = 0; i < np; i++) if (st[i] == k) fl |= 16;
+                len += snprintf(out + len, (size_t)(out_len - len), "%s%d.%d.%d", k ? " " : "", src, fl, pit);
+            }
+            return len;
+        }
         if (!strcmp(sub, "all_lanes_stretch_result")) {
             return snprintf(out, out_len, "%d", inst->all_lanes_stretch_result);
         }

@@ -85,7 +85,7 @@ import { cardHoldExpired } from './ui_prefs.mjs';
 import { heldIndicatorChanged } from './ui_chord.mjs';
 import { printTick } from './ui_print.mjs';
 import { resampleTick } from './ui_resample.mjs';
-import { auTick, auReadTrack, auForgetTrack, isSampledTrack, isAudioTrack, auRead } from './ui_audio.mjs';
+import { auTick, auReadTrack, auForgetTrack, isSampledTrack, isAudioTrack, auRead, rmxMapPoll } from './ui_audio.mjs';
 import { auConvertStart, auConvertTick, auConvertApply } from './ui_audio_convert.mjs';
 import { auConvertToKit } from './ui_audio_kit.mjs';
 import { openAudioChooser, closeAudioChooser, audioChooserTick } from './ui_audio_chooser.mjs';
@@ -659,6 +659,13 @@ export function _tickImpl() {
      * caught by explicit hooks (dialogs, ARP-step-edit, knob-touch state).
      * Cheap check — boolean compare. Tick is ~10.6 ms, more than fast
      * enough for non-button-CC modal transitions (dialog open / knob touch). */
+    /* REMIX's bar picture: read while one of its knobs is in hand */
+    if (!S.sessionView && S.activeBank === BANK_REMIX && S.knobTouched >= 0 && isSampledTrack(S.activeTrack)) {
+        const _wasMap = S.rmxMap;
+        rmxMapPoll(S.activeTrack);
+        if (S.rmxMap !== _wasMap) S.screenDirty = true;
+        if (S.rmxViewUntil && S.clockMs >= S.rmxViewUntil) { S.rmxViewUntil = 0; S.screenDirty = true; }
+    } else { S.rmxMapDirty = true; S.rmxViewUntil = 0; }
     if (S.dspInboundEnabled) {
         const _muted = _padDispatchMutedNow();
         if (_muted !== S.lastPushedMuted) computePadNoteMap();

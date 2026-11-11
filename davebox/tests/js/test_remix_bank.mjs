@@ -262,6 +262,35 @@ step('⭐ K6: touch + click cycles Roll -> Rate -> Vel -> Roll; Rate and Vel rea
     });
 }
 
+step('⭐ a REMIX knob in hand shows the bar: the engine\'s map read, its columns drawn (Josh, 2026-11-11: "you don\'t really know what you\'re going to get")', () => {
+    S.trackActiveClip[4] = 0; S.activeBank = C.BANK_REMIX;
+    S.rmxSet[4] = [1, 0, 24, 1, 100, 50, 0, 0, 0, 0];
+    GET['t4_remix_map'] = '4.16.0 5.0.0 6.0.0 7.0.0 8.1.0 9.1.0 10.1.0 11.1.0 12.0.0 13.0.0 14.16.0 15.0.0 0.1.0 1.1.0 2.1.0 3.1.0';
+    S.rmxMapDirty = true;
+    note(4, 127); ticks(2);
+    /* a touch alone: the knob page (every value) */
+    assert(texts(() => render.drawUI()).join('|').indexOf('SHUFL') >= 0, 'a touch alone did not show the knob page');
+    /* a turn: the bar */
+    S.knobAccum[4] = 0; for (let i = 0; i < 16; i++) { S.knobAccelLast[4] = 0; cc(75, 1); } ticks(3);
+    assert(S.rmxMap && S.rmxMap.length === 16 && S.rmxMap[4].src === 8 && (S.rmxMap[4].fl & 1), 'the map was not read: ' + JSON.stringify(S.rmxMap));
+    const tx = texts(() => render.drawUI()).join('|');
+    const f = FB.slice();
+    note(4, 0); ticks(2);
+    assert(tx.indexOf('REVERSE') >= 0 && tx.indexOf('%') >= 0, 'the header does not name the knob and its value: ' + tx);
+    assert(tx.indexOf('REV 9') >= 0, 'the footer does not name the preset: ' + tx);
+    /* column 15 (slot 3, filled? reversed: hollow) is taller than column 12 (slot 0) */
+    const colInk = (c) => { let n = 0; for (let y = 10; y < 52; y++) for (let x = c * 8 + 1; x < c * 8 + 7; x++) n += f[y * 128 + x] ? 1 : 0; return n; };
+    assert(colInk(1) > colInk(0) && colInk(11) > colInk(10), 'the columns do not rise with the slot heard: ' + [colInk(0), colInk(1), colInk(10), colInk(11)]);
+    ticks(160);                                     /* 1.5 s on, the knob page again */
+    S.rmxMapDirty = false;
+    if (process.env.RMX_DUMP) {
+        const fs = require('fs');
+        let o = 'P1\n128 64\n';
+        for (let y = 0; y < 64; y++) { for (let x = 0; x < 128; x++) o += f[y * 128 + x] ? '1 ' : '0 '; o += '\n'; }
+        fs.writeFileSync(process.env.RMX_DUMP, o);
+    }
+});
+
 step('⭐ on a Slicer the same pad opens REMIX, and NOTE FX keeps its own pad', () => {
     S.trackPadMode[4] = C.PAD_MODE_SLICER; S.pendingPadNoteMapRecompute = true; S.trackActiveClip[4] = 0; S.activeBank = 0;
     ticks(2);
