@@ -67,9 +67,12 @@ static void pfx_set(seq8_instance_t *inst, seq8_track_t *tr,
         cp->rmx_var = (uint8_t)clamp_i(my_atoi(val), 0, RMX_SETTINGS - 1);
         rmx_dials_of(cp->rmx_var, &d);
         cp->rmx_shuf = d.shuffle; cp->rmx_rev = d.reverse; cp->rmx_roll = d.roll;
-        cp->rmx_brk = d.brk; cp->rmx_pit = d.pitch; cp->rmx_rate = d.rate;
+        cp->rmx_brk = d.brk; cp->rmx_pit = d.pitch; cp->rmx_rate = d.rate; cp->rmx_bdep = d.bdepth;
         return;
     }
+    /* Order: the arrangement only — the dials stay the user's */
+    if (!strcmp(key, "remix_ord"))  { cp->rmx_var  = (uint8_t)clamp_i(my_atoi(val), 0, RMX_SETTINGS - 1); return; }
+    if (!strcmp(key, "remix_bdep")) { cp->rmx_bdep = (uint8_t)clamp_i(my_atoi(val), 0, 100); return; }
     if (!strcmp(key, "remix_rvel")) { cp->rmx_rvel = (uint8_t)clamp_i(my_atoi(val), 0, 1); return; }
     if (!strcmp(key, "remix_shuf")) { cp->rmx_shuf = (uint8_t)clamp_i(my_atoi(val), 0, 100); return; }
     if (!strcmp(key, "remix_rev"))  { cp->rmx_rev  = (uint8_t)clamp_i(my_atoi(val), 0, 100); return; }

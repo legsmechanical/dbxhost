@@ -631,7 +631,7 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
 /* A clip's REMIX dials */
 static void au_rmx_dials(const clip_pfx_params_t *pp, rmx_dials_t *d) {
     d->shuffle = pp->rmx_shuf; d->reverse = pp->rmx_rev; d->roll = pp->rmx_roll;
-    d->brk = pp->rmx_brk; d->pitch = pp->rmx_pit; d->rate = pp->rmx_rate; d->vel = pp->rmx_rvel;
+    d->brk = pp->rmx_brk; d->bdepth = pp->rmx_bdep; d->pitch = pp->rmx_pit; d->rate = pp->rmx_rate; d->vel = pp->rmx_rvel;
 }
 
 /* The setting in force for clip c, taken now (at a bar line, or as it

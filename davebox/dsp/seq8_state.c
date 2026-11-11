@@ -644,6 +644,7 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
                 if (p2->rmx_brk)  fprintf(fp, ",\"t%dc%d_rxbr\":%d", t, c, (int)p2->rmx_brk);
                 if (p2->rmx_pit)  fprintf(fp, ",\"t%dc%d_rxpi\":%d", t, c, (int)p2->rmx_pit);
                 if (p2->rmx_rate) fprintf(fp, ",\"t%dc%d_rxra\":%d", t, c, (int)p2->rmx_rate);
+                if (p2->rmx_bdep != 100) fprintf(fp, ",\"t%dc%d_rxbd\":%d", t, c, (int)p2->rmx_bdep);
             }
             /* note list: "tick:pitch:vel:gate;" for each active note */
             if (cl->note_count > 0) {
@@ -1583,6 +1584,7 @@ static void seq8_load_state(seq8_instance_t *inst) {
             snprintf(key, sizeof(key), "t%dc%d_rxbr", t, c); p2->rmx_brk  = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 100);
             snprintf(key, sizeof(key), "t%dc%d_rxpi", t, c); p2->rmx_pit  = (int8_t)clamp_i(json_get_int(buf, key, 0), -24, 24);
             snprintf(key, sizeof(key), "t%dc%d_rxra", t, c); p2->rmx_rate = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 2);
+            snprintf(key, sizeof(key), "t%dc%d_rxbd", t, c); p2->rmx_bdep = (uint8_t)clamp_i(json_get_int(buf, key, 100), 0, 100);
             /* v=34 per-step trig conditions (iter/random/ratchet hex blobs) */
             {
                 clip_t *_cl = &inst->tracks[t].clips[c];

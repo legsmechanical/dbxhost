@@ -807,6 +807,7 @@ typedef struct {
     /* REMIX's dials (seq8_remix.h rmx_dials_t), set by the preset (rmx_var), then the user's */
     uint8_t rmx_shuf, rmx_rev, rmx_roll, rmx_brk, rmx_rate;
     int8_t  rmx_pit;                 /* -24..24: negative mirrors the pitch shape */
+    uint8_t rmx_bdep;                /* Gaps' Depth 0..100 (100: a gap silent) */
 } clip_pfx_params_t;
 
 /* ------------------------------------------------------------------ */
@@ -5622,7 +5623,7 @@ static void clip_pfx_params_init(clip_pfx_params_t *p) {
     p->seq_arp_step_loop_len = 8;
     p->note_length_mode = 0;  /* `--` passthrough */
     p->rmx_on = 0; p->rmx_type = 0; p->rmx_var = 0; p->rmx_rvel = 1;
-    p->rmx_shuf = 100; p->rmx_rev = 0; p->rmx_roll = 0; p->rmx_brk = 0; p->rmx_pit = 0; p->rmx_rate = 0;
+    p->rmx_shuf = 100; p->rmx_rev = 0; p->rmx_roll = 0; p->rmx_brk = 0; p->rmx_pit = 0; p->rmx_rate = 0; p->rmx_bdep = 100;
 }
 
 static void drum_pfx_params_init(drum_pfx_params_t *p) {
@@ -10954,9 +10955,23 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                     (int)cp->seq_arp_step_loop_len,
                     (int)cp->note_length_mode,
                     (int)cp->rmx_on, (int)cp->rmx_type, (int)cp->rmx_var, (int)cp->rmx_rvel,
-                    (int)cp->rmx_shuf, (int)cp->rmx_rev, (int)cp->rmx_roll, (int)cp->rmx_brk, (int)cp->rmx_pit, (int)cp->rmx_rate);
+                    (int)cp->rmx_shuf, (int)cp->rmx_rev, (int)cp->rmx_roll, (int)cp->rmx_brk, (int)cp->rmx_pit, (int)cp->rmx_rate, (int)cp->rmx_bdep);
             }
             return -1;
+        }
+
+        /* tN_remix_orders: the Order list for the active clip's Chop —
+         * "cur n s.moved.rev ..." (cur: where the clip's arrangement sits in
+         * it, -1 = the bar as written), subtle -> wild. Read when the REMIX
+         * bank shows and after a Chop change. */
+        if (!strcmp(sub, "remix_orders")) {
+            const clip_pfx_params_t *pp = &tr->clips[tr->active_clip].pfx_params;
+            static rmx_order_t ol[RMX_SETTINGS];
+            int on = rmx_orders(pp->rmx_type, ol), k, len;
+            len = snprintf(out, out_len, "%d %d", rmx_order_of(pp->rmx_type, pp->rmx_var, ol, on), on);
+            for (k = 0; k < on && len < out_len - 16; k++)
+                len += snprintf(out + len, out_len - len, " %d.%d.%d", ol[k].setting, ol[k].moved, ol[k].rev);
+            return len;
         }
 
         /* tN_remix_map: the active clip's REMIX as a picture of one bar — the
@@ -10970,7 +10985,7 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
             rmx_dials_t d;
             int k, i, n, len = 0, st[16], ln[16], np;
             d.shuffle = pp->rmx_shuf; d.reverse = pp->rmx_rev; d.roll = pp->rmx_roll;
-            d.brk = pp->rmx_brk; d.pitch = pp->rmx_pit; d.rate = pp->rmx_rate; d.vel = pp->rmx_rvel;
+            d.brk = pp->rmx_brk; d.bdepth = pp->rmx_bdep; d.pitch = pp->rmx_pit; d.rate = pp->rmx_rate; d.vel = pp->rmx_rvel;
             memset(rin, 0, sizeof rin);
             for (k = 0; k < 16; k++) { rin[k].tick = k * 24; rin[k].gate = 24; rin[k].vel = 100; rin[k].key = (uint8_t)k; }
             n = rmx_bar_ex(&inst->rmx_w, pp->rmx_type, pp->rmx_var, &d, 384, rin, 16, rout, RMX_MAX);

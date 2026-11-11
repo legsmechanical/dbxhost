@@ -183,13 +183,54 @@ int main(void) {
         n = rmx_bar_ex(&W, 15, RMX_ROLL * RMX_VARS + 0, &d, L, in, loop_phrase(), out, RMX_MAX);
         HX_ASSERT(n == 16, "Roll 0 on ROLL 1: not the 16 plain pieces");
         for (i = 0; i < 16; i++) HX_ASSERT(out[i].vel == 100, "Roll 0 still rolled");
-        /* Break 50 % on BREAK 1: no step silent, the cut steps' gates between */
-        rmx_dials_of(RMX_BREAK * RMX_VARS + 0, &d); d.brk = 50;
+        /* Depth 50 on BREAK 1 (Gaps 100): no step silent, the cut steps' gates half way */
+        rmx_dials_of(RMX_BREAK * RMX_VARS + 0, &d); d.bdepth = 50;
         n = rmx_bar_ex(&W, 15, RMX_BREAK * RMX_VARS + 0, &d, L, in, loop_phrase(), out, RMX_MAX);
-        HX_ASSERT(n == 16, "Break 50 % silenced a step");
+        HX_ASSERT(n == 16, "Depth 50 silenced a step");
         for (i = 0; i < n; i++) {
             int pct = rmx_break_pct[0][(out[i].tick + 2) / 6], want = 24 * (100 - (100 - pct) / 2) / 100;
-            HX_ASSERT(out[i].gate == (want < 1 ? 1 : want), "Break 50 %: a gate not half way to the shape");
+            HX_ASSERT(out[i].gate == (want < 1 ? 1 : want), "Depth 50: a gate not half way to the shape");
+        }
+        /* Gaps counts gaps (Josh, 2026-11-11 — a % is how much of the bar it
+         * touches): on every BREAK variation each turn up cuts one more note,
+         * 0 cuts none, 100 is the preset's bar */
+        {
+            int v2, tested = 0;
+            for (v2 = 0; v2 < 16; v2++) {
+                int g, prev = -1, full;
+                rmx_dials_of(RMX_BREAK * RMX_VARS + v2, &d);
+                n = rmx_bar_ex(&W, 15, RMX_BREAK * RMX_VARS + v2, &d, L, in, loop_phrase(), out, RMX_MAX);
+                full = 0; for (i = 0; i < n; i++) full += out[i].gate < 24; full += 16 - n;
+                for (g = 0; g <= 16; g++) {
+                    int cut = 0;
+                    d.brk = (uint8_t)(g * 100 / 16);
+                    n = rmx_bar_ex(&W, 15, RMX_BREAK * RMX_VARS + v2, &d, L, in, loop_phrase(), out, RMX_MAX);
+                    for (i = 0; i < n; i++) cut += out[i].gate < 24;
+                    cut += 16 - n;
+                    if (g == 0) HX_ASSERT(cut == 0, "Gaps 0 cut a note");
+                    HX_ASSERT(cut >= prev, "Gaps: turning up cut less");
+                    HX_ASSERT(cut <= full, "Gaps: cut more than the preset's bar");
+                    prev = cut;
+                }
+                HX_ASSERT(prev == full, "Gaps 100 is not the preset's bar");
+                if (full >= 3) tested++;
+            }
+            HX_ASSERT(tested > 0, "no BREAK variation with several cuts to test");
+        }
+        /* ...and on the user's Order list: Gaps between 0 and 100 lands between (a part of the gaps) */
+        {
+            int v2, partial = 0;
+            for (v2 = 0; v2 < 16 && !partial; v2++) {
+                int c50 = 0, c100 = 0;
+                rmx_dials_of(RMX_BREAK * RMX_VARS + v2, &d);
+                n = rmx_bar_ex(&W, 15, RMX_BREAK * RMX_VARS + v2, &d, L, in, loop_phrase(), out, RMX_MAX);
+                c100 = 16 - n; for (i = 0; i < n; i++) c100 += out[i].gate < 24;
+                d.brk = 50;
+                n = rmx_bar_ex(&W, 15, RMX_BREAK * RMX_VARS + v2, &d, L, in, loop_phrase(), out, RMX_MAX);
+                c50 = 16 - n; for (i = 0; i < n; i++) c50 += out[i].gate < 24;
+                partial = c50 > 0 && c50 < c100;
+            }
+            HX_ASSERT(partial, "Gaps 50: no BREAK variation cuts part of its gaps");
         }
         /* Pitch on a PITCH preset: the range scales its shape (1 st -> 12) */
         rmx_dials_of(RMX_PITCH * RMX_VARS + 0, &d); d.pitch = 12;
@@ -245,6 +286,37 @@ int main(void) {
             n = rmx_bar_ex(&W, 0, setting(RMX_NORMAL, 1), &d, L, in, loop_phrase(), out, RMX_MAX);
             for (i = 0; i < n; i++) if (out[i].pitch) { HX_ASSERT(out[i].pitch == -5, "NORM 1 Pitch -5: not mirrored"); np_dn++; }
             HX_ASSERT(np_dn > 0, "NORM 1 Pitch -5: nothing heard");
+        }
+    }
+
+    /* ==== 6c. ORDER: the distinct arrangements per Chop, subtle -> wild ==== */
+    {
+        static rmx_order_t ol[RMX_SETTINGS];
+        int on15 = rmx_orders(15, ol), on0, rv = 0, s2;
+        HX_ASSERT(on15 == 51, "16ths: not the 51 distinct orders");
+        for (k = 0; k < on15; k++) {
+            HX_ASSERT(ol[k].moved > 0, "an Order is the bar as written");
+            if (k) HX_ASSERT(ol[k].moved >= ol[k - 1].moved, "Orders not sorted subtle -> wild");
+            for (i = 0; i < k; i++) HX_ASSERT(memcmp(ol[i].m, ol[k].m, 16), "two Orders play the same bar");
+            if (ol[k].rev) { rv++; for (i = 0; i < 16; i++) HX_ASSERT(ol[k].m[i] == 15 - i, "Rev is not the bar backwards"); }
+        }
+        HX_ASSERT(rv == 1, "16ths: not the one full-bar reversal");
+        on0 = rmx_orders(0, ol);
+        HX_ASSERT(on0 == 19, "10+6: not its 19 distinct orders");
+        /* every setting lands on its Order (or the bar as written) */
+        for (s2 = 0; s2 < RMX_SETTINGS; s2++) {
+            int o = rmx_order_of(0, s2, ol, on0);
+            uint8_t m[16]; rmx_realize(0, s2, m);
+            if (o < 0) { for (i = 0; i < 16; i++) HX_ASSERT(m[i] == i, "a setting has no Order but moves"); }
+            else HX_ASSERT(!memcmp(m, ol[o].m, 16), "a setting found the wrong Order");
+        }
+        /* an Order's setting realises that Order through rmx_bar_ex at Shuffle 100 */
+        {
+            rmx_dials_t d;
+            int o = on0 / 2;
+            rmx_dials_of(ol[o].setting, &d); d.reverse = 0; d.roll = 0; d.brk = 0; d.pitch = 0;
+            n = rmx_bar_ex(&W, 0, ol[o].setting, &d, L, in, loop_phrase(), out, RMX_MAX);
+            for (i = 0; i < n; i++) HX_ASSERT(out[i].src == ol[o].m[(out[i].tick + 2) / 24], "the Order's bar is not what plays");
         }
     }
 

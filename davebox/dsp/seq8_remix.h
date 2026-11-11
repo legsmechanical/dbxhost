@@ -95,7 +95,8 @@ typedef struct {
     uint8_t shuffle;    /* 0..100: % of the pieces that take the preset's source (the rest: their own slot) */
     uint8_t reverse;    /* 0..100: % of the 16 source slots reversed (gate x2) */
     uint8_t roll;       /* 0..100: % of the variation's roll runs played */
-    uint8_t brk;        /* 0..100: depth of the variation's break shape */
+    uint8_t brk;        /* 0..100: % of the break shape's gaps that cut (Gaps), in a fixed order */
+    uint8_t bdepth;     /* 0..100: how hard a gap cuts (Depth; 100 = the shape's own) */
     int8_t  pitch;      /* -24..24: semitone range of the variation's pitch shape;
                          * negative mirrors it (what went up goes down) */
     uint8_t rate;       /* roll repeats: 0 the table's runs, 1 1/32, 2 1/64 */
@@ -116,12 +117,13 @@ static void rmx_dials_of(int setting, rmx_dials_t *d) {
     d->reverse = (uint8_t)(fam == RMX_REVERSE ? (rmx_rev_count(var) * 100 + 8) / 16 : 0);
     d->roll    = (uint8_t)(fam == RMX_ROLL ? 100 : 0);
     d->brk     = (uint8_t)(fam == RMX_BREAK ? 100 : 0);
+    d->bdepth  = 100;
     d->pitch   = (int8_t)(fam == RMX_PITCH ? rmx_pitch_max(var) : 0);
     d->rate    = 0;
     d->vel     = 1;
 }
 static int rmx_dials_same(const rmx_dials_t *a, const rmx_dials_t *b) {
-    return a->shuffle == b->shuffle && a->reverse == b->reverse && a->roll == b->roll && a->brk == b->brk
+    return a->shuffle == b->shuffle && a->reverse == b->reverse && a->roll == b->roll && a->brk == b->brk && a->bdepth == b->bdepth
         && a->pitch == b->pitch && a->rate == b->rate && a->vel == b->vel;
 }
 
@@ -244,6 +246,55 @@ static void rmx_blocks(rmx_work_t *w, int type, int fam, int var, const uint8_t 
     }
 }
 
+/* ---- ORDER: the arrangements as the user sees them (Josh, 2026-11-11) ----
+ * For a Chop (TYPE), each preset's arrangement at Shuffle 100 % realised as
+ * the slot each 1/16 plays; the Order list is every DISTINCT one (the bar as
+ * written left out), sorted subtle -> wild: positions moved, then runs, then
+ * distance, then setting. Each entry is the first setting that makes it. */
+static void rmx_realize(int type, int setting, uint8_t m[16]) {
+    int st[16], ln[16], np = rmx_pieces(type, st, ln), p, i, k = 0;
+    int fam = setting / RMX_VARS, var = setting % RMX_VARS;
+    for (p = 0; p < np; p++) for (i = 0; i < ln[p] && k < 16; i++) m[k++] = (uint8_t)((rmx_source[fam][var][p] + i) & 15);
+    while (k < 16) { m[k] = (uint8_t)k; k++; }
+}
+typedef struct { uint8_t setting, moved, rev; uint8_t m[16]; int runs, dist; } rmx_order_t;
+static int rmx_order_less(const rmx_order_t *a, const rmx_order_t *b) {
+    if (a->moved != b->moved) return a->moved < b->moved;
+    if (a->runs != b->runs) return a->runs < b->runs;
+    if (a->dist != b->dist) return a->dist < b->dist;
+    return a->setting < b->setting;
+}
+/* fills o[] (RMX_SETTINGS max), returns the count */
+static int rmx_orders(int type, rmx_order_t *o) {
+    int n = 0, s, k, i, j;
+    for (s = 0; s < RMX_SETTINGS; s++) {
+        rmx_order_t e;
+        int same = 0, mv = 0, rv = 1, runs = 1, dist = 0;
+        rmx_realize(type, s, e.m);
+        for (k = 0; k < 16; k++) {
+            if (e.m[k] != k) mv++;
+            if (e.m[k] != 15 - k) rv = 0;
+            if (k && e.m[k] != e.m[k - 1] + 1) runs++;
+            dist += e.m[k] > k ? e.m[k] - k : k - e.m[k];
+        }
+        if (!mv) continue;
+        for (i = 0; i < n && !same; i++) same = !memcmp(o[i].m, e.m, 16);
+        if (same) continue;
+        e.setting = (uint8_t)s; e.moved = (uint8_t)mv; e.rev = (uint8_t)rv; e.runs = runs; e.dist = dist;
+        for (i = n; i > 0 && rmx_order_less(&e, &o[i - 1]); i--) o[i] = o[i - 1];
+        o[i] = e; n++;
+        (void)j;
+    }
+    return n;
+}
+/* the index in o[] of the bar `setting` makes at this Chop, -1 none (as written) */
+static int rmx_order_of(int type, int setting, const rmx_order_t *o, int n) {
+    uint8_t m[16]; int i;
+    rmx_realize(type, setting, m);
+    for (i = 0; i < n; i++) if (!memcmp(o[i].m, m, 16)) return i;
+    return -1;
+}
+
 /* One bar through the preset `setting` and the dials: `in` (ticks 0..L-1) ->
  * `out`, sorted by tick. Returns the count. */
 static int rmx_bar_ex(rmx_work_t *w, int type, int setting, const rmx_dials_t *dl, int32_t L,
@@ -338,12 +389,32 @@ static int rmx_bar_ex(rmx_work_t *w, int type, int setting, const rmx_dials_t *d
     /* rearrange (B: slot by slot) */
     rmx_slots(&w->B, &w->S, type, fam, var, take, &xf, s, off);
     res = &w->B;
-    /* BREAK: each step's gate by the shape's depth */
+    /* GAPS: the break shape's gaps (runs of 1/64 steps under 100 %), Gaps % of
+     * them in a fixed order (i*7 + var), each cut by Depth — every turn up
+     * adds a gap you hear (Josh, 2026-11-11: a % is how much of the bar it
+     * touches). Gaps 100 / Depth 100 = the shape, the RS7000's BREAK. */
     if (dl->brk) {
+        uint8_t cut[64];
+        int gs[64], ng = 0, want, g;
+        memset(cut, 0, sizeof cut);
+        /* a gap counts only where a note starts in it: one that cuts nothing
+         * is not a turn you hear (at Gaps 100 they all apply, as before) */
+        for (j = 0; j < 64; j++) if (rmx_break_pct[var][j] < 100 && (j == 0 || rmx_break_pct[var][j - 1] >= 100)) {
+            int je = j, hit = 0;
+            while (je < 64 && rmx_break_pct[var][je] < 100) je++;
+            for (i = 0; i < res->n && !hit; i++) hit = res->ev[i].tick >= j * q && res->ev[i].tick < je * q;
+            if (hit) gs[ng++] = j;
+        }
+        want = ((int)dl->brk * ng + 50) / 100;
+        for (k = 0; k < 64 && want > 0; k++)
+            for (g = 0; g < ng; g++) if (((g * 7 + var) & 63) == k) {
+                for (j = gs[g]; j < 64 && rmx_break_pct[var][j] < 100; j++) cut[j] = 1;
+                want--; break;
+            }
         rmx_t_init(&w->R);
         for (j = 0; j < 64; j++) {
-            int pct = rmx_break_pct[var][j];
-            rmx_xf_t xg = { NULL, NULL, -1, 100 - (100 - pct) * (int)dl->brk / 100 };
+            int pct = cut[j] ? rmx_break_pct[var][j] : 100;
+            rmx_xf_t xg = { NULL, NULL, -1, 100 - (100 - pct) * (int)dl->bdepth / 100 };
             rmx_copy(&w->R, res, j * q, q, 0, &xg);
             rmx_fix(&w->R, (j + 1) * q);
         }
