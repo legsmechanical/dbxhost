@@ -19,6 +19,7 @@ the section into a versioned heading at release time.
 - **Bake keeps a remix.** On an Audio clip, **Bake clip** records what you hear into a new
   sample in its place; on a Slicer it writes the remixed steps, reversals and pitches into
   the clip.
+- **Export to Live plays REMIX** and a Slicer step's own sound, rendered as you hear them.
 - **One-shot Audio clips.** On an Audio track's CLIP bank, knob 1 is **Mode**: **Loop** or
   **Shot**. A Shot clip plays its length once from its top each time it's launched, then stops.
 - **The Screen view turns knobs and switches tracks.** In the browser's Screen view,

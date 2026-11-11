@@ -2774,6 +2774,10 @@ with the tempo and root note (not the scale — the set opens in Major).
 - **Notes are baked** — each clip exports what you hear: effects rendered, delay
   tails wrapped, drum polymeters flattened, and randomized clips written as several
   loops of variation.
+- **A remix exports as you hear it**: an Audio or Slicer clip with [REMIX](#remix) on is
+  rendered with it (Live has no remix of its own), and a Slicer's steps play their own
+  Pitch, Length, Start and Reverse. On a **Warp** clip each remixed piece is cut at the
+  sample's own speed, as Live's *Beats* warping does.
 - An **Apply Conductor?** step works as it does for [bake](#161-bake), and never
   changes your live set.
 - **Automation comes too** — see below.
