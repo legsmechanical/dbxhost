@@ -1256,9 +1256,16 @@ A Slicer holds **one sample and its chops**, the same for every clip. Its clips 
 sequences: each step holds one chop, placed and recorded as on any track — **hold a step
 + tap a pad** places that chop. One chop plays at a time: a new chop cuts the last —
 unless it's the next piece of the sample, reached right where the last one has got to,
-which simply plays on. Every chop plays at one level (velocity is ignored, and the step
-editor has no Vel); for more voices or velocity, **Convert to kit** (below) and play it on
-a drum track.
+which simply plays on. Every chop plays at one level (velocity is ignored); for more voices
+or velocity, **Convert to kit** (below) and play it on a drum track.
+
+**Each step has its own sound.** Hold a step: **K2 Pitch** (±24 semitones), **K3 Length**
+— how much of its chop the step plays, 100 % being all of it — with **Start** behind it
+(touch K3 + click), where in the chop it begins, and **K4 Reverse**. So one chop can play
+whole on one step, just its tail reversed on the next, and an octave up on a third. A step
+left at 100 % / 0 % / Off plays the chop as it is. These stay with the step through every
+edit, copy and Undo, a ratchet repeats them, and a pad played by hand always plays the chop
+as it is.
 
 **Loading a sample** on a Slicer cuts it into **16** even chops over the whole file. The
 steps you already have stay — they play the new chops. A Slicer takes samples up to
@@ -1422,10 +1429,42 @@ chop with Shift, or SAMPLE's Gain, Pitch, Detune and Revrs.
 | **CLIP**, Audio | **Mode** · **Strch** · **Shift** (alt **Nudge**). **Mode** is **Loop** (the clip plays round and round) or **Shot**: a one-shot — launched, the clip plays its length once from its top, then stops, so it can be fired off like a sample; launch it again to replay it. Every other setting stays as it is when you switch. **Strch** and **Shift** work as a sequence's do, in audio. **Strch** x2 doubles the clip's Length and the sample's Tempo — the loop plays at half speed across twice the bars; /2 the reverse. Past 256 steps or the Tempo's range it says *BEAT STRETCH / EXPAND LIMIT* (or *COMPRESS LIMIT*). **Shift** moves the audio a step later or earlier inside the clip, wrapping round — the waveform and the pads turn with it, the beats staying where they are. **Nudge** moves the sample against the bar, 5 ms a detent (**Shift**: 1). The sound is SAMPLE's |
 | **PAD MODE** (Slicer) | **Layout**: **4 Rows** or **16 Pads**, how the chops sit on the pads |
 | **LIVE ARP** | As on a melodic track, but **Step** replaces Oct: each repeat moves one chop up (or down), up to 15 |
+| **REMIX** (both) | Rearranges the loop as it plays — see [REMIX](#remix) below |
 | **NOTE FX** (Slicer) | As on a drum track — nothing that changes a pitch. **Quant** lives here only |
 
 There's no RPT GROOVE, HARMONY, SEQ ARP, DELAY or MIDI FX on either kind. The step editor's
-first knob reads **Slice n** and picks the step's chop.
+first knob reads **Slice n** and picks the step's chop; on a Slicer, **K2–K4** are the
+step's Pitch, Length / Start and Reverse (above).
+
+### REMIX
+
+**REMIX** chops the bar up and plays it back rearranged — reversed bits, stutters, breaks
+and pitch jumps — without changing your clip. It's in the bank map's **FX** column, third
+pad, on Audio and Slicer tracks alike, and each clip has its own.
+
+| Knob | Does |
+|---|---|
+| **K1 Remix** | **Off** / **On** (turn deliberately) |
+| **K2 Type** | **1–16**: how the bar is cut into pieces, from two big halves to sixteen 16ths |
+| **K3 Preset** | A starting point: **Norm**, **Rev**, **Roll**, **Brk** or **Pitch**, **1–16** each — the remixes of the Yamaha RS7000. Picking one sets K4–K8 to its values; a `*` after its name means you've changed them since |
+| **K4 Shufl** | How many pieces move: **0 %** plays the bar in order, **100 %** is the preset's full rearrangement |
+| **K5 Revrs** | The share of the bar's 1/16s played backwards |
+| **K6 Roll** | How many stutters (rolls) play. **Touch K6 + click** turns it to **Rate** — **Orig**, **1/32**, **1/64**, how fast they repeat — then to **Vel**: **On**, the rolls ramp in level as the RS7000's do; **Off**, every repeat at full level |
+| **K7 Break** | How hard the preset's breaks cut: from **0 %** (none) to **100 %** (its gaps silent) |
+| **K8 Pitch** | How far the pitched pieces move, **0–24** semitones |
+
+The effects combine — start from a Reverse preset and turn up Roll. A change lands at the
+next bar line. **Turning** any REMIX knob shows the bar it makes, over the page: a column
+per 1/16, as tall as the part of the loop it plays (in order, they rise like a stair),
+**hollow** when reversed, **dotted** when rolled, **narrow** when cut short, **empty** when
+silent, with a **caret** when pitched and a tick under each piece's start. It goes when you
+let go. On an Audio clip the pads follow: the 1/16 you're hearing pulses, the rest dim.
+
+**On a Slicer**, REMIX rearranges your steps bar by bar — a remixed step plays its chop
+reversed or pitched as the remix says, on top of its own sound. **To keep a remix**, bake
+it ([§16.1](#161-bake)): on an Audio clip that records it into a new sample, on a Slicer it
+writes the remixed steps, reversals and pitches into the clip. Either way REMIX turns off,
+so it isn't applied twice.
 
 ### Copying, clearing and undo
 
@@ -2647,6 +2686,14 @@ pad. In Track View it takes the track's current clip.
 **Bake** renders a clip's sequencer effects — NOTE FX,
 HARMONY, DELAY, SEQ ARP — into plain notes, then resets those effects. The clip sounds the
 same, with a clean effects chain to build on.
+
+- **An Audio clip** has no notes to bake: **Bake clip** records what the clip plays — its
+  [REMIX](#remix) and all — into a new sample in its place (**BAKE CLIP**: a resample
+  **In place**, [§16.6](#166-recording-audio)), and the clip starts over with it.
+- **A Slicer clip** bakes its [REMIX](#remix) first: the remixed steps — their reversals
+  and pitches written onto each step's own sound — become the clip's, then NOTE FX bakes
+  over them. The chops themselves are never changed, so the Slicer's other clips sound the
+  same.
 
 - **A melodic clip** (Track View): **Sample → Bake clip**, then choose the loop count (1× /
   2× / 4×) and whether to wrap the delay tails for a seamless loop.
