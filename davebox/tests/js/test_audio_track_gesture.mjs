@@ -2123,6 +2123,14 @@ step('⭐⭐ Audio pads: a progress bar over 32 even sections, not the chops —
     assert([0, 5, 9].every((i) => pad(i) === tc), 'the played sections are not bright: ' + [0, 5, 9].map(pad) + ' vs ' + tc);
     assert(pad(10) === HC.LightGrey, 'the playhead section does not pulse to dim white: ' + pad(10));
     assert(pad(11) && pad(11) !== tc && pad(31) === pad(11), 'the sections to come are not dim (or the chops show): ' + [pad(11), pad(31)]);
+    /* REMIX on: the playhead jumps about the sample — no "played so far"
+     * fill; every section dim, the one heard pulsing */
+    S.rmxSet[4] = [1, 0, 0, 1, 100, 0, 0, 0, 0, 0];
+    for (let i = 0; i < 6; i++) ticks(1);
+    assert([0, 5, 9].every((i) => pad(i) !== tc && pad(i) === pad(31)), 'Remix on: the played sections still fill: ' + [0, 5, 9].map(pad));
+    assert(pad(10) === HC.LightGrey, 'Remix on: the section heard does not pulse: ' + pad(10));
+    S.rmxSet[4] = [0, 0, 0, 1, 100, 0, 0, 0, 0, 0];
+    for (let i = 0; i < 6; i++) ticks(1);
     /* Revrs: it plays from the end back, so the sections after the playhead have played */
     GET['t4_au_info_0'] = INFO(0, 8).replace(' 96000 48000 2 0 0 0 ', ' 96000 48000 2 1 0 0 ');
     kindSync(); for (let i = 0; i < 6; i++) ticks(1);

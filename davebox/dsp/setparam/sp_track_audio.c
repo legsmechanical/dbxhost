@@ -2178,7 +2178,9 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
         const au_track_t *at = &inst->au_trk[t];
         for (l = 0; l < AU_VOICES; l++) {
             const au_voice_t *v = &at->v[l];
-            if (!v->active || v->rel_len || !v->smp) continue;
+            /* (a REMIX piece carries its gate's release from the start: it
+             * sounds until that release begins) */
+            if (!v->active || !v->smp || (v->rel_len && !(v->rel == v->rel_len && v->rel_wait > 0))) continue;
             return snprintf(out, out_len, "1 %u %d", (unsigned)(v->pos < 0 ? 0 : v->pos), v->mode_loop ? -1 : v->slice);
         }
         if (at->w.on && at->w.live) {
@@ -2196,7 +2198,11 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
                 double L = 0;
                 if (X && X->trk[t]) { fpt = X->trk[t]->cmd.fpt; L = X->trk[t]->cmd.L; }
                 if (P > 0 && fpt > 0 && re > rs) {
-                    double wt = L > 0 ? au_wrap(at->w.tick - au_wrap((double)cl->rot, L), L) : at->w.tick;
+                    /* through the REMIX when one plays: the slot heard */
+                    double g = 1.0, ct = at->w.tick;
+                    if (X && X->trk[t] && L > 0) ct = au_warp_src(X->trk[t], au_wrap(at->w.tick, L), &g);
+                    if (ct < 0) return snprintf(out, out_len, "0 0 -1");
+                    double wt = L > 0 ? au_wrap(ct - au_wrap((double)cl->rot, L), L) : ct;
                     double x = (wt - (double)cl->nudge_ms * 44.1 / fpt) * (double)(re - rs) / P;
                     if (x >= 0 && x < (double)(re - rs))
                         return snprintf(out, out_len, "1 %u -1", au_revrs(cl) ? re - 1 - (uint32_t)x : rs + (uint32_t)x);

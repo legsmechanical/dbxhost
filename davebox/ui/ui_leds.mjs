@@ -1015,7 +1015,12 @@ export function updateTrackLEDs() {
                      * the file, following the sequence */
                     if (k === ph) { cachedSetLEDAnim(TRACK_PAD_BASE + i, tc, LightGrey, LED_PULSE_4TH); continue; }
                     if (pastReach(k)) { cachedSetLED(TRACK_PAD_BASE + i, DarkGrey); continue; }
-                    color = ph >= 0 && (ai.revrs ? k > ph : k < ph) ? tc : td;
+                    /* REMIX on: the playhead jumps about the sample, so no
+                     * "played so far" fill — every section dim, the one
+                     * heard pulsing (the chops plan's display: "Remix on:
+                     * the remix grid, all dim, playing chop pulsing") */
+                    const rmxOn = S.rmxSet[t] && S.rmxSet[t][0];
+                    color = !rmxOn && ph >= 0 && (ai.revrs ? k > ph : k < ph) ? tc : td;
                 }
                 cachedSetLED(TRACK_PAD_BASE + i, color);
             }

@@ -140,6 +140,19 @@ int main(void) {
             HX_ASSERT(which(m[k].mid, unit) == want, msg);
         }
 
+        /* ==== the position read (the pads' playhead) reports the slot HEARD:
+         * at 1/16 #12 of T1 NORMAL 1, slot 2 of the sample ==== */
+        {
+            seq8_instance_t *inst = (seq8_instance_t *)h->inst;
+            char b[64]; int i, on = 0; unsigned fr = 0; int sl = 0;
+            for (i = 0; i < 4000 && inst->tracks[2].current_step != 12; i++) r1(h);
+            rn(h, 8);
+            hx_get_param(h, "t2_au_pos", b, sizeof b);
+            sscanf(b, "%d %u %d", &on, &fr, &sl);
+            snprintf(msg, sizeof msg, "sync %d: the position read at 1/16 #12 of NORMAL 1 is \"%s\", not inside slot 2", sync, b);
+            HX_ASSERT(on == 1 && fr / (BAR / 16) == 2, msg);
+        }
+
         /* ==== T1 REVERSE 9: sources, and the flagged slots ramp down ==== */
         hx_set_param(h, "t2_remix_var", "24");
         measure_bar(h, m);
