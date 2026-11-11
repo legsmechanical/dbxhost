@@ -1144,16 +1144,41 @@ export function auLoopBankCells(t) {
     return [live(mode), live(strch), live(shift), BLANK, BLANK, BLANK, BLANK, BLANK];
 }
 /* ---- REMIX (Josh, 2026-11-10: "replacing midi effects banks on audio tracks
- * with loop remix effects like those on the yamaha rs7000"; 2026-11-11: "rs7k
- * presets as a starting point and our own direct controls to dial things in"
- * · "at its heart it should be a tool for fun experimentation") — per clip, on
- * Audio and Slicer alike: K1 Remix, K2 Type, K3 Preset (sets K4-K8), K4
- * Shuffle, K5 Reverse, K6 Roll (touch + click: Rate, then Vel), K7 Break, K8
- * Pitch. The engine takes a change at the next bar line. ---- */
-export const RMX_TABLES_FOR_TEST = () => ({ rev: RMX_REV_COUNT, pmax: RMX_PITCH_MAX });
+ * with loop remix effects like those on the yamaha rs7000"; 2026-11-11: "i
+ * don't want to be slavish to the rs7k necessarily. is there a better way to
+ * present the params to users that's more intuitive?") — per clip, on Audio
+ * and Slicer alike: K1 Remix, K2 Chop (how the bar is cut, coarse -> fine),
+ * K3 Order (where the pieces go, subtle -> wild; touch + click: Presets…,
+ * the RS7000's 80 remixes), K4 Shuffle, K5 Reverse, K6 Stutter (touch +
+ * click: Rate, then Vel), K7 Gaps (touch + click: Depth), K8 Pitch ±24. Every
+ * % is how much of the bar it touches. The engine takes a change at the next
+ * bar line. ---- */
+export const RMX_TABLES_FOR_TEST = () => ({ rev: RMX_REV_COUNT, pmax: RMX_PITCH_MAX, chops: RMX_CHOPS });
 export const RMX_FAMILIES = ['Normal', 'Reverse', 'Roll', 'Break', 'Pitch'];
 const RMX_FAM_SHORT = ['Norm', 'Rev', 'Roll', 'Brk', 'Pitch'];
 const RMX_RATES = ['Orig', '1/32', '1/64'];
+/* the Chops, coarse -> fine: the engine's TYPE, its pieces in 1/16s (name
+ * when short), and in full (test_remix_bank checks both against
+ * dsp/seq8_remix_data.h's rmx_type_start) */
+export const RMX_CHOPS = [
+    { type: 0,  name: '10+6',    full: '10+6' },
+    { type: 2,  name: '6+6+4',   full: '6+6+4' },
+    { type: 1,  name: '2+6+2+6', full: '2+6+2+6' },
+    { type: 6,  name: '5+5+5+1', full: '5+5+5+1' },
+    { type: 3,  name: '5 pcs A', full: '2+4+4+4+2' },
+    { type: 4,  name: '5 pcs B', full: '6+2+3+3+2' },
+    { type: 5,  name: '5 pcs C', full: '2+6+2+3+3' },
+    { type: 9,  name: '6 pcs A', full: '4+2+4+2+2+2' },
+    { type: 10, name: '6 pcs B', full: '2+2+4+2+4+2' },
+    { type: 8,  name: '8ths',    full: '8ths' },
+    { type: 11, name: '8 pcs',   full: '4+4+2+2+1+1+1+1' },
+    { type: 7,  name: '9 pcs',   full: '1+1+4+1+1+4+1+1+2' },
+    { type: 13, name: '11 pcs',  full: '1+1+1+1+2+2+2+1+1+2+2' },
+    { type: 12, name: '12 pcs',  full: '2+2+2+2+1+1+1+1+1+1+1+1' },
+    { type: 14, name: '14 pcs',  full: '2+1+1+1+1+2+1+1+1+1+1+1+1+1' },
+    { type: 15, name: '16ths',   full: '16ths' },
+];
+export function rmxChopIndex(type) { const i = RMX_CHOPS.findIndex((c) => c.type === (type | 0)); return i < 0 ? 0 : i; }
 /* a preset's own dials (seq8_remix.h rmx_dials_of): shuffle reverse roll break pitch */
 export function rmxPresetDials(set) {
     const fam = (set / 16) | 0, v = set % 16;
@@ -1164,22 +1189,54 @@ export function rmxPresetDials(set) {
  * test_remix_bank checks them against dsp/seq8_remix_data.h) */
 const RMX_REV_COUNT = [4, 4, 4, 4, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 11, 16];
 const RMX_PITCH_MAX = [1, 2, 4, 5, 7, 5, 3, 6, 3, 7, 12, 24, 24, 19, 24, 24];
-export function rmxEdited(t) {
-    const r = S.rmxSet[t] || [0, 0, 0, 1, 100, 0, 0, 0, 0, 0], d = rmxPresetDials(r[2]);
-    return r[4] !== d[0] || r[5] !== d[1] || r[6] !== d[2] || r[7] !== d[3] || r[8] !== d[4] || (r[9] | 0) !== 0;
-}
 export function rmxPresetName(set) { return RMX_FAM_SHORT[(set / 16) | 0] + ' ' + ((set % 16) + 1); }
+export function rmxPresetLongName(set) { return RMX_FAMILIES[(set / 16) | 0] + ' ' + ((set % 16) + 1); }
+const RMX_DEF = [0, 0, 0, 1, 100, 0, 0, 0, 0, 0, 100];
+function rmxGet(t) { const r = S.rmxSet[t]; return r ? (r.length >= 11 ? r : r.concat(RMX_DEF.slice(r.length))) : RMX_DEF.slice(); }
+/* The Order list for the clip's Chop (the engine's tN_remix_orders): every
+ * distinct bar the arrangements make, subtle -> wild, each { s: the setting,
+ * mv: 1/16s moved, rev: the bar backwards }; cur where the clip's sits (-1 =
+ * the bar as written). Re-read when the track, Chop or arrangement changes. */
+export function rmxOrdersPoll(t) {
+    const r = rmxGet(t), key = t + ':' + r[1] + ':' + r[2];
+    if (S.rmxOrders && S.rmxOrders.key === key) return;
+    const raw = dspGet('t' + t + '_remix_orders');
+    if (raw == null) return;                          /* a mailbox miss: next tick */
+    const p = String(raw).trim().split(' ');
+    const list = p.slice(2).filter((x) => x.indexOf('.') > 0).map((x) => { const q = x.split('.'); return { s: q[0] | 0, mv: q[1] | 0, rev: (q[2] | 0) === 1 }; });
+    const cur = p[0] | 0;                              /* a short or garbled reply: as written */
+    S.rmxOrders = { key, cur: (cur >= 0 && cur < list.length) ? cur : -1, list };
+}
+function rmxOrdersFor(t) {
+    const r = rmxGet(t);
+    return (S.rmxOrders && S.rmxOrders.key === t + ':' + r[1] + ':' + r[2]) ? S.rmxOrders : null;
+}
+export function rmxOrderText(t) {
+    const o = rmxOrdersFor(t);
+    if (!o) return '..';
+    if (o.cur < 0) return '--';
+    return o.list[o.cur].rev ? 'Rev' : String(o.cur + 1);
+}
+/* how much of the bar the Order moves, for the pop-up: "6/16 MOVED" */
+export function rmxOrderMoved(t) {
+    const o = rmxOrdersFor(t);
+    return (o && o.cur >= 0) ? o.list[o.cur].mv : 0;
+}
 export function rmxBankCells(t) {
-    const r = S.rmxSet[t] || [0, 0, 0, 1, 100, 0, 0, 0, 0, 0];
+    const r = rmxGet(t), o = rmxOrdersFor(t);
     const pct = (label, name, v) => ({ kind: 'valsq', label, name, text: (v | 0) + '%' });
     const on = { kind: 'enumsq', label: 'Remix', name: 'Remix', text: r[0] ? 'On' : 'Off', options: ['Off', 'On'], sel: r[0] ? 1 : 0 };
-    const type = { kind: 'valsq', label: 'Type', name: 'Remix Type', text: String(r[1] + 1) };
-    const preset = { kind: 'valsq', label: 'Prset', name: 'Preset', text: rmxPresetName(r[2]) + (rmxEdited(t) ? '*' : '') };
+    const ch = RMX_CHOPS[rmxChopIndex(r[1])];
+    const chop = { kind: 'valsq', label: 'Chop', name: 'Chop', text: ch.name, cardText: ch.full };
+    const ot = rmxOrderText(t);
+    const order = { kind: 'valsq', label: 'Order', name: 'Order', text: ot,
+                    cardText: (o && o.cur >= 0 && !o.list[o.cur].rev) ? ot + '/' + o.list.length : ot };
     let k6;
-    if (S.rmxK6 === 1) k6 = { kind: 'enumsq', label: 'Rate', name: 'Roll Rate', text: RMX_RATES[r[9] | 0], options: RMX_RATES, sel: r[9] | 0 };
-    else if (S.rmxK6 === 2) k6 = { kind: 'enumsq', label: 'Vel', name: 'Roll Velocity', text: r[3] === 0 ? 'Off' : 'On', options: ['Off', 'On'], sel: r[3] === 0 ? 0 : 1 };
-    else k6 = pct('Roll', 'Roll', r[6]);
-    return [on, type, preset, pct('Shufl', 'Shuffle', r[4]), pct('Revrs', 'Reverse', r[5]), k6, pct('Break', 'Break', r[7]),
+    if (S.rmxK6 === 1) k6 = { kind: 'enumsq', label: 'Rate', name: 'Stutter Rate', text: RMX_RATES[r[9] | 0], options: RMX_RATES, sel: r[9] | 0 };
+    else if (S.rmxK6 === 2) k6 = { kind: 'enumsq', label: 'Vel', name: 'Stutter Vel', text: r[3] === 0 ? 'Off' : 'On', options: ['Off', 'On'], sel: r[3] === 0 ? 0 : 1 };
+    else k6 = pct('Stutr', 'Stutter', r[6]);
+    const k7 = S.rmxK7 ? pct('Depth', 'Gap Depth', r[10]) : pct('Gaps', 'Gaps', r[7]);
+    return [on, chop, order, pct('Shufl', 'Shuffle', r[4]), pct('Revrs', 'Reverse', r[5]), k6, k7,
             { kind: 'valsq', label: 'Pitch', name: 'Pitch', text: ((r[8] | 0) > 0 ? '+' : '') + (r[8] | 0) + 'st' }];
 }
 /* The bar's picture (the engine's tN_remix_map): per 1/16 { src, fl, pit } —
@@ -1194,27 +1251,42 @@ export function rmxMapPoll(t) {
     S.rmxMapT = t;
     S.rmxMapDirty = false;
 }
-/* a REMIX knob moved by `steps`: detents for the pick knobs (Type, Preset,
- * Rate) and the toggles, a value delta for the dials (K4-K8: 1 % or 1 st a
- * unit, the input side paces them like any continuous knob). Returns true
- * when it changed. */
+/* a preset (Presets…): the arrangement and its own dials, as the engine's remix_var */
+export function rmxApplyPreset(t, set) {
+    const r = rmxGet(t).slice(), d = rmxPresetDials(set);
+    r[2] = set; r[4] = d[0]; r[5] = d[1]; r[6] = d[2]; r[7] = d[3]; r[8] = d[4]; r[9] = 0; r[10] = 100;
+    S.rmxSet[t] = r;
+    host_module_set_param('t' + t + '_remix_var', String(set));
+    S.rmxMapDirty = true;
+}
+/* a REMIX knob moved by `steps`: detents for the pick knobs (Chop, Order,
+ * Rate) and the toggles, a value delta for the amounts (1 % a unit; the
+ * input side paces them like any continuous knob). Returns true when it
+ * changed. */
 export function rmxBankKnob(t, k, steps) {
-    const r = (S.rmxSet[t] || [0, 0, 0, 1, 100, 0, 0, 0, 0, 0]).slice();
+    const r = rmxGet(t).slice();
     const send = (key, v) => host_module_set_param('t' + t + '_' + key, String(v));
+    const done = () => { S.rmxSet[t] = r; S.rmxMapDirty = true; S.rmxCard = true; return true; };
     const dial = (i, key, max, per, min) => {
         const v = Math.max(min | 0, Math.min(max, (r[i] | 0) + steps * per));
         if (v === (r[i] | 0)) return false;
-        r[i] = v; S.rmxSet[t] = r; send(key, v); S.rmxMapDirty = true; S.rmxCard = true; return true;
+        r[i] = v; send(key, v); return done();
     };
-    if (k === 0) { const v = steps > 0 ? 1 : 0; if (v === r[0]) return false; r[0] = v; S.rmxSet[t] = r; send('remix_on', v); S.rmxMapDirty = true; S.rmxCard = true; return true; }
-    if (k === 1) return dial(1, 'remix_type', 15, 1);
+    if (k === 0) { const v = steps > 0 ? 1 : 0; if (v === r[0]) return false; r[0] = v; send('remix_on', v); return done(); }
+    if (k === 1) {
+        const i = Math.max(0, Math.min(RMX_CHOPS.length - 1, rmxChopIndex(r[1]) + steps));
+        if (RMX_CHOPS[i].type === r[1]) return false;
+        r[1] = RMX_CHOPS[i].type; send('remix_type', r[1]); return done();
+    }
     if (k === 2) {
-        const v = Math.max(0, Math.min(79, r[2] + steps));
-        if (v === r[2]) return false;
-        /* a preset sets the dials to its own (the engine does the same) */
-        const d = rmxPresetDials(v);
-        r[2] = v; r[4] = d[0]; r[5] = d[1]; r[6] = d[2]; r[7] = d[3]; r[8] = d[4]; r[9] = 0;
-        S.rmxSet[t] = r; send('remix_var', v); S.rmxMapDirty = true; S.rmxCard = true; return true;
+        const o = rmxOrdersFor(t);
+        if (!o || !o.list.length) return false;
+        const from = o.cur >= 0 ? o.cur : (steps > 0 ? -1 : o.list.length);
+        const i = Math.max(0, Math.min(o.list.length - 1, from + steps));
+        if (i === o.cur) return false;
+        r[2] = o.list[i].s; send('remix_ord', r[2]);
+        S.rmxOrders = { key: t + ':' + r[1] + ':' + r[2], cur: i, list: o.list };
+        return done();
     }
     if (k === 3) return dial(4, 'remix_shuf', 100, 1);
     if (k === 4) return dial(5, 'remix_rev', 100, 1);
@@ -1222,11 +1294,11 @@ export function rmxBankKnob(t, k, steps) {
         if (S.rmxK6 === 1) return dial(9, 'remix_rate', 2, 1);
         if (S.rmxK6 === 2) {
             const v = steps > 0 ? 1 : 0; if (v === (r[3] === 0 ? 0 : 1)) return false;
-            r[3] = v; S.rmxSet[t] = r; send('remix_rvel', v); S.rmxMapDirty = true; S.rmxCard = true; return true;
+            r[3] = v; send('remix_rvel', v); return done();
         }
         return dial(6, 'remix_roll', 100, 1);
     }
-    if (k === 6) return dial(7, 'remix_brk', 100, 1);
+    if (k === 6) return S.rmxK7 ? dial(10, 'remix_bdep', 100, 1) : dial(7, 'remix_brk', 100, 1);
     if (k === 7) return dial(8, 'remix_pit', 24, 1, -24);     /* bipolar: negative mirrors the shape */
     return false;
 }

@@ -467,9 +467,11 @@ export const S = {
      * plays that track's instead. Mirrors the DSP's tN_midi_to. */
     trackMidiTo: Array.from({ length: NUM_TRACKS }, () => 0),
     /* REMIX of each track's active clip: [on, TYPE 0..15, setting 0..79, ROLL velocity 0/1] (the clip pfx snapshot) */
-    rmxSet: Array.from({ length: NUM_TRACKS }, () => [0, 0, 0, 1, 100, 0, 0, 0, 0, 0]),
-    /* REMIX K6: 0 Roll %, 1 Rate, 2 Vel (touch + click cycles) */
-    rmxK6: 0,
+    rmxSet: Array.from({ length: NUM_TRACKS }, () => [0, 0, 0, 1, 100, 0, 0, 0, 0, 0, 100]),
+    /* REMIX K6: 0 Stutter %, 1 Rate, 2 Vel (touch + click cycles); K7: 0 Gaps, 1 Depth */
+    rmxK6: 0, rmxK7: 0,
+    /* REMIX's Order list for the shown clip (ui_audio rmxOrdersPoll), and Presets… open: { t, sel } */
+    rmxOrders: null, rmxPresets: null,
     /* REMIX's bar picture (ui_audio rmxMapPoll): its track, and whether to read it again */
     rmxMap: null, rmxMapT: -1, rmxMapDirty: true,
     /* ...its card up: a turn reveals it, the release takes it down ("touch

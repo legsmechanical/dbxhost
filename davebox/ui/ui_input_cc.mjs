@@ -69,7 +69,7 @@ import { BANK_MAP_TRACK_POPUP_MS, SEQ_PAGE_POPUP_MS, seqAutoTargetForKnob, SEQ_A
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam, soundOpenModule, instrPickResume } from './ui_sound.mjs';
 import { auPurgeRun, closeAudioChooser, askClearAudioClip } from './ui_audio_chooser.mjs';
-import { isSampledTrack, isAudioTrack, audioSliceMode, auClipOf, auClipBankKnob, auAltBit, knobAltOnTrack, auSetLayout, auSetPage, AU_NOTE_BASE, AU_EVEN_MAX, auInfo, rmxBankKnob } from './ui_audio.mjs';
+import { isSampledTrack, isAudioTrack, audioSliceMode, auClipOf, auClipBankKnob, auAltBit, knobAltOnTrack, auSetLayout, auSetPage, AU_NOTE_BASE, AU_EVEN_MAX, auInfo, rmxBankKnob, rmxApplyPreset } from './ui_audio.mjs';
 
 /* AUDIO's CLIP bank (Slice mode) mirrors ALL LANES over the melodic clip's
  * knobs (Josh, 2026-10-27: "it seems like clip bank should mirror all lanes
@@ -381,10 +381,18 @@ function _onCC_jog(d1, d2) {
      * click switches to. After the triggers above (no index overlaps), and
      * before the plain-click page alt below, which no longer covers these
      * banks. */
-    /* REMIX K6: touch + click cycles Roll -> Rate -> Vel */
+    /* REMIX touch + click: K6 cycles Stutter -> Rate -> Vel, K7 Gaps <-> Depth,
+     * K3 opens Presets… (the RS7000's 80 remixes) */
     if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld &&
-            !S.copyHeld && !S.muteHeld && S.knobTouched === 5 && S.activeBank === BANK_REMIX && !S.stepReveal && isSampledTrack(S.activeTrack)) {
-        S.rmxK6 = ((S.rmxK6 | 0) + 1) % 3;
+            !S.copyHeld && !S.muteHeld && S.activeBank === BANK_REMIX && !S.stepReveal && !S.rmxPresets && isSampledTrack(S.activeTrack) &&
+            (S.knobTouched === 5 || S.knobTouched === 6 || S.knobTouched === 2)) {
+        if (S.knobTouched === 5) S.rmxK6 = ((S.rmxK6 | 0) + 1) % 3;
+        else if (S.knobTouched === 6) S.rmxK7 = S.rmxK7 ? 0 : 1;
+        else {
+            const _r = S.rmxSet[S.activeTrack] || [];
+            S.rmxPresets = { t: S.activeTrack, sel: Math.max(0, Math.min(79, _r[2] | 0)) };
+            S.rmxCard = false;
+        }
         S.screenDirty = true;
         forceRedraw();
         return;
@@ -524,6 +532,16 @@ function _onCC_jog(d1, d2) {
         forceRedraw();
         return;
     }
+
+    /* REMIX › Presets…: a click loads the one under the cursor */
+    if (d1 === 3 && d2 === 127 && S.rmxPresets) {
+        rmxApplyPreset(S.rmxPresets.t, S.rmxPresets.sel);
+        S.rmxPresets = null;
+        S.screenDirty = true;
+        forceRedraw();
+        return;
+    }
+    if (d1 === 3 && S.rmxPresets) return;               /* its release */
 
     /* Bake confirm: jog click confirms/cancels when dialog is open */
     if (d1 === 3 && d2 === 127 && S.confirmBake) {
@@ -1191,6 +1209,11 @@ function modalDialogUp() {
                 S.confirmBakeDrumLoopSel = (S.confirmBakeDrumLoopSel + (delta > 0 ? 1 : 3)) % 4;
                 S.screenDirty = true;
             }
+            return;
+        }
+        if (S.rmxPresets) {
+            const delta = decodeDelta(d2);
+            if (delta !== 0) { S.rmxPresets.sel = Math.max(0, Math.min(79, S.rmxPresets.sel + delta)); S.screenDirty = true; }
             return;
         }
         if (S.confirmBake) {
@@ -2933,6 +2956,7 @@ function _backTap() {
         S.confirmBake = false; reopenSampleMenu(menuIndexOf('bake')); forceRedraw(); return;
     }
     if (S.confirmBake)             { S.confirmBake = false; S.confirmBakeWrapPhase = false; forceRedraw(); return; }
+    if (S.rmxPresets)              { S.rmxPresets = null; forceRedraw(); return; }
     if (S.recordBlockedDialog)     { S.recordBlockedDialog = false; forceRedraw(); return; }
     if (S.bpmMoveInfo)             { S.bpmMoveInfo = false; forceRedraw(); return; }
     if (S.tapTempoOpen)            { closeTapTempo(); forceRedraw(); return; }

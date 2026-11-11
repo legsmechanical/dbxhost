@@ -1445,22 +1445,24 @@ pad, on Audio and Slicer tracks alike, and each clip has its own.
 | Knob | Does |
 |---|---|
 | **K1 Remix** | **Off** / **On** (turn deliberately) |
-| **K2 Type** | **1–16**: how the bar is cut into pieces, from two big halves to sixteen 16ths |
-| **K3 Preset** | A starting point: **Norm**, **Rev**, **Roll**, **Brk** or **Pitch**, **1–16** each — the remixes of the Yamaha RS7000. Picking one sets K4–K8 to its values; a `*` after its name means you've changed them since |
-| **K4 Shufl** | How many pieces move: **0 %** plays the bar in order, **100 %** is the preset's full rearrangement |
-| **K5 Revrs** | How much of what plays runs backwards — every turn up reverses something you hear (a Rev preset's own reversed slices come first) |
-| **K6 Roll** | How many stutters (rolls) play. **Touch K6 + click** turns it to **Rate** — **Orig**, **1/32**, **1/64**, how fast they repeat — then to **Vel**: **On**, the rolls ramp in level as the RS7000's do; **Off**, every repeat at full level |
-| **K7 Break** | How hard the preset's breaks cut: from **0 %** (none) to **100 %** (its gaps silent) |
-| **K8 Pitch** | How far the pitched pieces move, **−24 to +24** semitones: below 0 they go the other way — what went up goes down. It works on what plays, on any preset |
+| **K2 Chop** | How the bar is cut into pieces, from big to small: **10+6** (two pieces, 10 and 6 sixteenths long), **6+6+4**, … **8ths**, … **16ths** |
+| **K3 Order** | Where the pieces go — numbered from the gentlest (a phrase repeated) to the wildest (pieces from all over); **Rev** plays the whole bar backwards. How many there are depends on the Chop. **Touch K3 + click** opens **Presets…**: the 80 remixes of the Yamaha RS7000 (**Normal**, **Reverse**, **Roll**, **Break**, **Pitch**, 1–16 each) — the jog picks, a click loads one (its Order and all its amounts), **Back** leaves things as they were |
+| **K4 Shufl** | How many pieces follow the Order: **0 %** plays the bar as written, **100 %** the whole Order |
+| **K5 Revrs** | How much of what plays runs backwards |
+| **K6 Stutr** | How many stutters (quick repeats) play. **Touch K6 + click** turns it to **Rate** — **Orig**, **1/32**, **1/64**, how fast they repeat — then to **Vel**: **On**, the repeats ramp in level as the RS7000's do; **Off**, every repeat at full level |
+| **K7 Gaps** | How many gaps cut into the bar. **Touch K7 + click** turns it to **Depth**: how hard a gap cuts, from **100 %** (silent) down to a slight shortening |
+| **K8 Pitch** | How far the pitched pieces move, **−24 to +24** semitones: below 0 they go the other way — what went up goes down |
 
-The effects combine — start from a Reverse preset and turn up Roll. A change lands at the
-next bar line. **Turning** any REMIX knob shows a pop-up over the page: the knob's name and
-value across the top, then the bar it makes — a column
-per 1/16, as tall as the part of the loop it plays (in order, they rise like a stair),
-**hollow** when reversed, **dotted** when rolled, **narrow** when cut short, **empty** when
-silent, with a **caret** when pitched and a tick under each piece's start. It goes when you
-let go. The line under the bar says which preset (and Type) you're on, and **OFF** while
-REMIX is off. On an Audio clip the pads follow: the 1/16 you're hearing pulses, the rest dim.
+Every amount works on what you hear: each turn up changes something that plays, on any
+Order, and the same settings always give the same bar. The effects combine — reverse a few
+pieces of an Order, then add a stutter. A change lands at the next bar line. **Turning** any
+REMIX knob shows a pop-up over the page: the knob's name and value across the top, then
+the bar it makes — a column per 1/16, as tall as the part of the loop it plays (in order,
+they rise like a stair), **hollow** when reversed, **dotted** when stuttered, **narrow**
+when cut short, **empty** when silent, with a **caret** when pitched and a tick under each
+piece's start. The line under it names the Chop and how much of the bar the Order moves
+(**6/16 MOVED**), or **OFF** while REMIX is off. It goes when you let go. On an Audio clip
+the pads follow: the 1/16 you're hearing pulses, the rest dim.
 
 **On a Slicer**, REMIX rearranges your steps bar by bar — a remixed step plays its chop
 reversed or pitched as the remix says, on top of its own sound. **To keep a remix**, bake

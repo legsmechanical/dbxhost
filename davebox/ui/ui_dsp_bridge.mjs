@@ -225,7 +225,7 @@ function refreshPerClipBankParamsOne(t) {
     /* ...the dials at v[48..53]: shuffle reverse roll break pitch rate */
     if (v.length >= 47) {
         const n = (i, d) => (v.length > i ? (parseInt(v[i], 10) | 0) : d);
-        S.rmxSet[t] = [n(44, 0), n(45, 0), n(46, 0), n(47, 1), n(48, 100), n(49, 0), n(50, 0), n(51, 0), n(52, 0), n(53, 0)];
+        S.rmxSet[t] = [n(44, 0), n(45, 0), n(46, 0), n(47, 1), n(48, 100), n(49, 0), n(50, 0), n(51, 0), n(52, 0), n(53, 0), n(54, 100)];
     }
     /* K5 = Len mode at v[43] (appended after seq_arp_step_loop_len at v[42]) */
     S.bankParams[t][1][4] = v.length >= 44 ? (parseInt(v[43], 10) | 0) : 0;

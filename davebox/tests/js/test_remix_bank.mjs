@@ -123,10 +123,13 @@ globalThis.move_midi_inject_to_move = () => {};
  * in a slot that neither track uses"). Through the real gestures:
  *   - the bank map's FX row-3 pad opens REMIX on an Audio track and on a
  *     Slicer; a Slicer's NOTE FX pad still opens NOTE FX;
- *   - the screen draws the REMIX bank: Remix · Type · Famly · Var;
- *   - K1 turns it on (deliberately), K2 the Type, K3 the Family, K4 the
- *     Variation: each sent to the engine as the active clip's setting;
- *   - the clip's snapshot (v[44..46]) is what the cells read. */
+ *   - the screen draws the REMIX bank: Remix · Chop · Order · Shufl · Revrs
+ *     · Stutr · Gaps · Pitch (Josh, 2026-11-11: "is there a better way to
+ *     present the params to users that's more intuitive?");
+ *   - K1 turns it on (deliberately), K2 steps the Chop coarse -> fine, K3
+ *     walks the engine's Order list for that Chop (the dials kept); touch K3
+ *     + click opens Presets…; K6 / K7 alts (Rate, Vel / Depth);
+ *   - the clip's snapshot (v[44..54]) is what the cells read. */
 async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
@@ -159,7 +162,7 @@ const reset = () => { sets.length = 0; S.knobAccelLast.fill(0); };
 const mapPad = (c, r) => { cc(3, 127); note(P.bankMapPadForCell(c, r), 100); note(P.bankMapPadForCell(c, r), 0); cc(3, 0); ticks(3); };
 const turn = (k, dir, n) => { S.knobAccum[k] = 0; note(k, 127); for (let i = 0; i < n; i++) { S.knobAccelLast[k] = 0; cc(71 + k, dir > 0 ? 1 : 127); } note(k, 0); };
 /* the engine's snapshot of the active clip, REMIX at v[44..46] */
-const SNAP = (on, type, v, rv, dl) => Array.from({ length: 44 }, () => '0').concat([on, type, v, rv === undefined ? 1 : rv].concat(dl || [100, 0, 0, 0, 0, 0]).map(String)).join(' ');
+const SNAP = (on, type, v, rv, dl) => Array.from({ length: 44 }, () => '0').concat([on, type, v, rv === undefined ? 1 : rv].concat(dl || [100, 0, 0, 0, 0, 0, 100]).map(String)).join(' ');
 
 step('setup: track 5 an Audio track, Track view', () => {
     S.trackPadMode[4] = C.PAD_MODE_AUDIO; S.pendingPadNoteMapRecompute = true; S.ledsDirtyAudio = true;
@@ -178,7 +181,7 @@ step('⭐ the FX row-3 pad opens REMIX on an Audio track; the screen draws its e
     note(0, 0); ticks(2);
     assert(tx.indexOf('REMIX') >= 0, 'the header does not say REMIX: ' + tx);
     /* (the kit font draws capitals; a long value splits over two lines) */
-    for (const l of ['TYPE', 'PRSET', 'SHUFL', 'REVRS', 'ROLL', 'BREAK', 'PITCH'])
+    for (const l of ['CHOP', 'ORDER', 'SHUFL', 'REVRS', 'STUTR', 'GAPS', 'PITCH'])
         assert(tx.indexOf(l) >= 0, 'the bank does not show ' + l + ': ' + tx);
     assert(tx.indexOf('OFF') >= 0 && tx.indexOf('100%') >= 0, 'not Off / Shuffle 100% at rest: ' + tx);
 });
@@ -192,34 +195,70 @@ step('a brush on K1 does not turn it on; a deliberate turn does — as the activ
     assert(A.rmxBankCells(4)[0].text === 'On', 'the cell does not read On');
 });
 
-step('⭐ K3 Preset: a step to Norm 2, then on to Rev 9 sets the dials to the preset\'s (Reverse 50 %)', () => {
+step('⭐ K2 Chop steps coarse -> fine by name; K3 Order walks the engine\'s list for that Chop and keeps the dials (Josh, 2026-11-11: "is there a better way to present the params")', () => {
+    S.rmxSet[4] = [1, 0, 0, 1, 100, 30, 0, 0, 0, 0, 100];
+    /* the Order list for TYPE 2 (the engine's tN_remix_orders): as written now, three orders */
+    GET['t4_remix_orders'] = '-1 3 5.4.0 20.8.0 63.16.1';
     reset();
-    turn(2, 1, 16); ticks(1);
-    const pv = sent('t4_remix_var');
-    assert(pv.length >= 1, 'the preset was not sent: ' + JSON.stringify(sets));
-    S.rmxSet[4][2] = 23;                            /* one short of Rev 9 */
+    turn(1, 1, 12); ticks(1);                      /* one pick: 10+6 -> 6+6+4 (TYPE 2) */
+    assert(sent('t4_remix_type').join() === '2' && A.rmxBankCells(4)[1].text === '6+6+4',
+           'K2 did not step to the next Chop: ' + JSON.stringify([sets, A.rmxBankCells(4)[1]]));
+    ticks(2);
+    assert(A.rmxBankCells(4)[2].text === '--', 'Order does not read -- for the bar as written: ' + A.rmxBankCells(4)[2].text);
     reset();
-    turn(2, 1, 16); ticks(1);
-    const c = A.rmxBankCells(4);
-    assert(sent('t4_remix_var').slice(-1)[0] === '24' && c[2].text === 'Rev 9', 'not Rev 9: ' + JSON.stringify([sets, c[2]]));
-    assert(c[3].text === '100%' && c[4].text === '50%' && c[5].text === '0%' && c[6].text === '0%' && c[7].text === '0st',
-           'Rev 9 did not set Shuffle 100 / Reverse 50 / 0 / 0 / 0: ' + JSON.stringify(c.slice(3).map((x) => x.text)));
+    turn(2, 1, 12); ticks(1);
+    assert(sent('t4_remix_ord').join() === '5' && A.rmxBankCells(4)[2].text === '1' && A.rmxBankCells(4)[2].cardText === '1/3',
+           'K3 did not pick Order 1: ' + JSON.stringify([sets, A.rmxBankCells(4)[2]]));
+    turn(2, 1, 12); turn(2, 1, 12); turn(2, 1, 12); ticks(1);
+    assert(sent('t4_remix_ord').join() === '5,20,63' && A.rmxBankCells(4)[2].text === 'Rev', 'K3 did not walk to the end (Rev): ' + JSON.stringify(sets));
+    assert(!sent('t4_remix_var').length && A.rmxBankCells(4)[4].text === '30%', 'an Order reset the dials: ' + JSON.stringify(sets));
 });
 
-step('⭐ the dials reach the engine, and an edited preset reads *', () => {
+step('⭐ touch K3 + click opens Presets…: the jog picks, a click loads it (its own dials), Back leaves everything as it was', () => {
+    const click = () => { cc(3, 127); cc(3, 0); };
+    S.rmxSet[4] = [1, 0, 23, 1, 100, 0, 0, 0, 0, 0, 40];
+    note(2, 127); click(); note(2, 0); ticks(1);
+    assert(S.rmxPresets && S.rmxPresets.sel === 23, 'Presets did not open on the clip\'s own: ' + JSON.stringify(S.rmxPresets));
+    const tx = texts(() => render.drawUI()).join('|');
+    assert(tx.indexOf('PRESETS') >= 0, 'the list is not on screen: ' + tx);
+    reset();
+    cc(14, 1); ticks(1);                          /* -> Reverse 9 (24) */
+    click(); ticks(1);
+    const c = A.rmxBankCells(4);
+    assert(!S.rmxPresets && sent('t4_remix_var').join() === '24', 'the click did not load Reverse 9: ' + JSON.stringify(sets));
+    assert(c[3].text === '100%' && c[4].text === '50%' && c[5].text === '0%' && c[6].text === '0%' && c[7].text === '0st' && S.rmxSet[4][10] === 100,
+           'Reverse 9 did not set its dials (Shuffle 100 / Reverse 50, Depth 100): ' + JSON.stringify(c.slice(3).map((x) => x.text)));
+    /* Back abandons */
+    note(2, 127); click(); note(2, 0); ticks(1);
+    reset(); cc(14, 1); cc(14, 1); cc(51, 127); cc(51, 0); ticks(1);
+    assert(!S.rmxPresets && !sent('t4_remix_var').length, 'Back loaded a preset: ' + JSON.stringify(sets));
+});
+
+step('⭐ the amounts reach the engine', () => {
     reset();
     turn(4, -1, 16); ticks(1);                      /* Reverse down */
     const rv = sent('t4_remix_rev');
     assert(rv.length >= 1 && (rv[rv.length - 1] | 0) < 50, 'Reverse not sent down: ' + JSON.stringify(sets));
-    assert(A.rmxBankCells(4)[2].text === 'Rev 9*', 'the edited preset does not read *: ' + A.rmxBankCells(4)[2].text);
     reset();
     turn(5, 1, 16); turn(6, 1, 16); turn(7, 1, 16); turn(3, -1, 16); ticks(1);
     assert(sent('t4_remix_roll').length && sent('t4_remix_brk').length && sent('t4_remix_pit').length && sent('t4_remix_shuf').length,
-           'Roll / Break / Pitch / Shuffle not all sent: ' + JSON.stringify(sets));
+           'Stutter / Gaps / Pitch / Shuffle not all sent: ' + JSON.stringify(sets));
+});
+
+step('⭐ K7: touch + click turns Gaps to Depth and back; Depth reaches the engine', () => {
+    const click = () => { cc(3, 127); cc(3, 0); };
+    note(6, 127); click(); ticks(1);
+    assert(A.rmxBankCells(4)[6].label === 'Depth' && A.rmxBankCells(4)[6].text === '100%', 'K7 did not turn to Depth 100%: ' + JSON.stringify(A.rmxBankCells(4)[6]));
+    note(6, 0);
+    reset(); turn(6, -1, 10); ticks(1);
+    const dv = sent('t4_remix_bdep');
+    assert(dv.length && (dv[dv.length - 1] | 0) < 100 && !sent('t4_remix_brk').length, 'Depth not sent (or Gaps moved): ' + JSON.stringify(sets));
+    note(6, 127); click(); ticks(1); note(6, 0);
+    assert(A.rmxBankCells(4)[6].label === 'Gaps', 'K7 did not come back to Gaps');
 });
 
 step('⭐ the dials turn like every continuous bank knob: one slow detent = 1 %, a quick spin sweeps the range; Pitch a pick (device pass 2026-11-11: 80 detents moved Reverse only 35 %)', () => {
-    S.rmxSet[4] = [1, 0, 0, 1, 100, 0, 0, 0, 0, 0];
+    S.rmxSet[4] = [1, 0, 0, 1, 100, 0, 0, 0, 0, 0, 100];
     reset(); turn(4, 1, 1); ticks(1);
     assert(sent('t4_remix_rev').join() === '1', 'one cold detent did not move Reverse by exactly 1: ' + JSON.stringify(sets));
     reset();
@@ -253,7 +292,7 @@ step('⭐ K8 Pitch is bipolar: below 0 it mirrors the shape (Josh, 2026-11-11: "
     S.rmxSet[4] = [1, 0, 0, 1, 100, 0, 0, 0, 0, 0];
 });
 
-step('⭐ K6: touch + click cycles Roll -> Rate -> Vel -> Roll; Rate and Vel reach the engine', () => {
+step('⭐ K6: touch + click cycles Stutter -> Rate -> Vel -> Stutter; Rate and Vel reach the engine', () => {
     const click = () => { cc(3, 127); cc(3, 0); };
     note(5, 127); click(); ticks(1);
     assert(A.rmxBankCells(4)[5].label === 'Rate', 'K6 did not turn to Rate: ' + JSON.stringify(A.rmxBankCells(4)[5]));
@@ -265,17 +304,17 @@ step('⭐ K6: touch + click cycles Roll -> Rate -> Vel -> Roll; Rate and Vel rea
     reset(); turn(5, -1, 30); ticks(1);
     assert(sent('t4_remix_rvel').join() === '0', 'Vel Off not sent once: ' + JSON.stringify(sets));
     note(5, 127); click(); ticks(1); note(5, 0);
-    assert(A.rmxBankCells(4)[5].label === 'Roll', 'K6 did not come back to Roll');
+    assert(A.rmxBankCells(4)[5].label === 'Stutr', 'K6 did not come back to Stutter');
 });
 
 {
     const BR = await import('../../ui/ui_dsp_bridge.mjs');
     step('the cells read the clip\'s snapshot from the engine (v[44..53]): another clip, its own remix', () => {
         S.trackActiveClip[4] = 1;
-        GET['t4_c1_pfx_snapshot'] = SNAP(1, 6, 3 * 16 + 9, 1, [80, 25, 0, 100, 3, 0]);
+        GET['t4_c1_pfx_snapshot'] = SNAP(1, 7, 3 * 16 + 9, 1, [80, 25, 0, 100, 3, 0, 40]);
         BR.refreshPerClipBankParams(4);
         const c = A.rmxBankCells(4);
-        assert(c[0].text === 'On' && c[1].text === '7' && c[2].text === 'Brk 10*' && c[3].text === '80%' && c[4].text === '25%' && c[7].text === '+3st',
+        assert(c[0].text === 'On' && c[1].text === '9 pcs' && c[3].text === '80%' && c[4].text === '25%' && c[7].text === '+3st' && S.rmxSet[4][10] === 40,
                'the cells do not read the snapshot: ' + JSON.stringify(c.map((x) => x.text)));
         S.trackActiveClip[4] = 0;
         BR.refreshPerClipBankParams(4);
@@ -295,12 +334,26 @@ step('⭐ K6: touch + click cycles Roll -> Rate -> Vel -> Roll; Rate and Vel rea
         const T = A.RMX_TABLES_FOR_TEST();
         assert(JSON.stringify(T.rev) === JSON.stringify(rev), 'reverse counts: UI ' + T.rev + ' engine ' + rev);
         assert(JSON.stringify(T.pmax) === JSON.stringify(pmax), 'pitch maxima: UI ' + T.pmax + ' engine ' + pmax);
+        /* the Chops: every TYPE once, coarse -> fine, each named by its pieces */
+        const ts = rows('rmx_type_start').map((r) => r.filter((x) => x !== 255));
+        const seen = new Set();
+        let prevN = 0;
+        for (const ch of T.chops) {
+            const st = ts[ch.type], lens = st.map((x, i) => (i + 1 < st.length ? st[i + 1] : 16) - x);
+            const full = lens.every((l) => l === 1) ? '16ths' : lens.every((l) => l === 2) ? '8ths' : lens.join('+');
+            assert(ch.full === full, 'Chop ' + ch.type + ' is ' + full + ', the UI says ' + ch.full);
+            assert(ch.name === full || ch.name.indexOf(String(lens.length)) === 0, 'Chop ' + ch.type + ' short name ' + ch.name + ' does not say its ' + lens.length + ' pieces');
+            assert(lens.length >= prevN, 'the Chops are not coarse -> fine at ' + ch.name);
+            prevN = lens.length; seen.add(ch.type);
+        }
+        assert(seen.size === 16, 'not every TYPE is a Chop');
     });
 }
 
 step('⭐ a REMIX knob in hand shows the bar: the engine\'s map read, its columns drawn (Josh, 2026-11-11: "you don\'t really know what you\'re going to get")', () => {
     S.trackActiveClip[4] = 0; S.activeBank = C.BANK_REMIX;
-    S.rmxSet[4] = [1, 0, 24, 1, 100, 50, 0, 0, 0, 0];
+    S.rmxSet[4] = [1, 0, 24, 1, 100, 50, 0, 0, 0, 0, 100];
+    GET['t4_remix_orders'] = '0 2 24.6.0 40.9.0';
     GET['t4_remix_map'] = '4.16.0 5.0.0 6.0.0 7.0.0 8.1.0 9.1.0 10.1.0 11.1.0 12.0.0 13.0.0 14.16.0 15.0.0 0.1.0 1.1.0 2.1.0 3.1.0';
     S.rmxMapDirty = true;
     note(4, 127); ticks(2);
@@ -325,7 +378,7 @@ step('⭐ a REMIX knob in hand shows the bar: the engine\'s map read, its column
     note(4, 0); ticks(2);
     assert(!S.rmxCard, '...and the release did not take it down');
     assert(tx.indexOf('REVERSE') >= 0 && tx.indexOf('%') >= 0, 'the header / card do not name the knob and its value: ' + tx);
-    assert(tx.indexOf('REV 9') >= 0, 'the card does not name the preset: ' + tx);
+    assert(tx.indexOf('10+6') >= 0 && tx.indexOf('6/16 MOVED') >= 0, 'the card does not say the Chop and how much moves: ' + tx);
     /* column 15 (slot 3, filled? reversed: hollow) is taller than column 12 (slot 0) */
     const B = MV.kitStackBox(1);
     const colInk = (c) => { let n = 0; const x0 = B.x + Math.floor((B.w - 96) / 2) + c * 6; for (let y = B.y + 12; y < B.y + B.h - 10; y++) for (let x = x0 + 1; x < x0 + 5; x++) n += f[y * 128 + x] ? 1 : 0; return n; };

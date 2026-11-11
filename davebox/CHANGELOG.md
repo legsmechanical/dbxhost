@@ -10,9 +10,10 @@ the section into a versioned heading at release time.
 
 ### Added
 - **REMIX, a loop remixer for Audio and Slicer tracks.** The FX column's third pad on both.
-  Pick a **Type** (how the bar is cut) and a **Preset** (the Yamaha RS7000's remixes), then
-  dial it in: **Shuffle**, **Reverse**, **Roll** (with its rate and velocity), **Break** and
-  **Pitch** (up or down), mixed as you like. Each clip keeps its own, and a change lands on the next bar.
+  Pick a **Chop** (how the bar is cut) and an **Order** (where the pieces go, gentle to
+  wild — or start from one of the Yamaha RS7000's 80 remixes in **Presets…**), then dial it
+  in: **Shuffle**, **Reverse**, **Stutter** (with its rate and velocity), **Gaps** (with
+  their depth) and **Pitch** (up or down), mixed as you like — each works on what you hear. Each clip keeps its own, and a change lands on the next bar.
   Turning a knob shows its value and the bar it makes; on an Audio clip the pads follow the remix.
 - **A Slicer step has its own sound.** Hold a step: **Pitch** (±24 semitones), **Length**
   (how much of its chop it plays) with **Start** behind it, and **Reverse**.

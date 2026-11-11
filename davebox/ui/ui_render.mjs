@@ -35,7 +35,7 @@ import {
 } from './ui_constants.mjs';
 import { drawAutoMarkAt,
     drawKitHeader, drawKitTouchedHeader, drawKitPageBar, drawKitBankHeader, kitBankGlyphWidth,
-    kitUseLayout, kitStackBox,
+    kitUseLayout, kitStackBox, drawKitStackedList, drawKitCrumbs,
     drawKitCells, drawKitEnumOverlay, drawKitValueOverlay, drawKitListOverlay,
     drawVFader, mvPrint, mvWidth, rectOutline, plotLine,
     drawLevelCard, drawKitBackdropDim, drawKitBankMap,
@@ -73,7 +73,7 @@ import { sessStripTargets } from './ui_engine.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
 import { isSampledTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
-         auPos, auLazyState, auSelSlice, auSampleP2Cells, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells, rmxBankCells, rmxPresetName, rmxEdited, knobAltOnTrack, auAltBit,
+         auPos, auLazyState, auSelSlice, auSampleP2Cells, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells, rmxBankCells, rmxPresetLongName, rmxOrderMoved, RMX_CHOPS, rmxChopIndex, knobAltOnTrack, auAltBit,
          auPadModeCells, AU_NOTE_BASE,
          auFmtTime, auEnd, auBpm, auFpt, auFmtLen, auLenTicks, auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
 import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
@@ -543,7 +543,7 @@ function drawRemixCard(cells) {
      * like the screen's own header */
     fill_rect(B.x + 1, B.y + 1, B.w - 2, 8, 1);
     if (c) {
-        const name = String(c.name || c.label || '').toUpperCase(), val = String(c.text == null ? '' : c.text).toUpperCase();
+        const name = String(c.name || c.label || '').toUpperCase(), val = String(c.cardText != null ? c.cardText : (c.text == null ? '' : c.text)).toUpperCase();
         const vw = fontWidth4x5(val);
         fontPrint4x5(B.x + 4, B.y + 3, fit4x5(name, B.w - vw - 14), 0);
         fontPrint4x5(B.x + B.w - 4 - vw, B.y + 3, val, 0);
@@ -566,10 +566,21 @@ function drawRemixCard(cells) {
             else { set_pixel(cx - 1, cy, 1); set_pixel(cx + 1, cy, 1); set_pixel(cx, cy + 1, 1); }
         }
     }
-    /* the context: on or off, the preset (* edited), the Type */
+    /* the context: on or off, the Chop, and how much of the bar the Order moves */
     const r = S.rmxSet[t] || [0, 0, 0];
-    const line = fit4x5((r[0] ? '' : 'OFF  ') + rmxPresetName(r[2]).toUpperCase() + (rmxEdited(t) ? '*' : '') + '  TYPE ' + (r[1] + 1), B.w - 6);
+    const mv = rmxOrderMoved(t);
+    const line = fit4x5((r[0] ? '' : 'OFF  ') + RMX_CHOPS[rmxChopIndex(r[1])].full.toUpperCase() + '  ' + (mv ? mv + '/16 MOVED' : 'AS WRITTEN'), B.w - 6);
     fontPrint4x5(Math.round(B.x + (B.w - fontWidth4x5(line)) / 2), base + 4, line, 1);
+}
+
+/* REMIX › Presets…: the RS7000's 80 remixes, a list over the bank (touch K3
+ * + click opens it; the jog picks, a click loads, Back leaves it as it was) */
+function drawRemixPresets() {
+    const rows = [];
+    for (let i = 0; i < 80; i++) rows.push(rmxPresetLongName(i));
+    drawKitBackdropDim();
+    drawKitStackedList(1, rows, S.rmxPresets.sel, {});
+    drawKitCrumbs(['Remix', 'Presets']);
 }
 
 function audioBankCells(bank, cells) {
@@ -1205,6 +1216,12 @@ export function bankPageHints(bank) {
     /* A touched Steps knob on SEQ ARP / LIVE ARP opens Arp Steps. */
     if (!S.sessionView && S.knobTouched === ARP_STEPS_KNOB &&
             arpStepsBank(S.trackPadMode[S.activeTrack], bank)) return [['CLK', 'STEPS']];
+    /* REMIX: K3 opens Presets…, K6 / K7 say what a click turns them to */
+    if (!S.sessionView && bank === BANK_REMIX && isSampledTrack(S.activeTrack)) {
+        if (S.knobTouched === 2) return [['CLK', 'PRESETS']];
+        if (S.knobTouched === 5) return [['CLK', ['RATE', 'VEL', 'STUTR'][S.rmxK6 | 0]]];
+        if (S.knobTouched === 6) return [['CLK', S.rmxK7 ? 'GAPS' : 'DEPTH']];
+    }
     /* ...and a touched SINGLE-ALT knob says what a click switches it to. */
     if (!S.sessionView && S.knobTouched >= 0) {
         const a = knobAltOnTrack(S.activeTrack, S.trackPadMode[S.activeTrack], bank, S.knobTouched);
@@ -2158,7 +2175,7 @@ export function coveredByMoreThanMenu() {
         S.tempoSelectActive || S.mergeSoloPlacement >= 0 || S.capturePlaceTrack >= 0 ||
         S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.confirmModuleChange || S.bpmMoveInfo || S.recordBlockedDialog ||
         S.confirmConvertToDrum || S.confirmConvertToConduct ||
-        S.confirmBakeScene || S.confirmBake || S.sampleMenu || S.confirmResample || S.confirmMacroClear || S.tapTempoOpen ||
+        S.confirmBakeScene || S.confirmBake || S.rmxPresets || S.sampleMenu || S.confirmResample || S.confirmMacroClear || S.tapTempoOpen ||
         S.auChooser || S.auPanel || S.auEditor ||
         (S.sessionView && (S.loopHeld || S.perfViewLocked)));
 }
@@ -2171,7 +2188,7 @@ export function soundModeCovered() {
         S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.confirmModuleChange || S.bpmMoveInfo || S.recordBlockedDialog ||
         S.confirmConvertToDrum || S.confirmConvertToConduct ||
         (S.menuInfoLines && S.menuInfoLines.length > 0) ||
-        S.confirmXpose || S.confirmBakeScene || S.confirmBake || S.sampleMenu || S.confirmResample ||
+        S.confirmXpose || S.confirmBakeScene || S.confirmBake || S.rmxPresets || S.sampleMenu || S.confirmResample ||
         S.confirmMacroClear ||   /* MACROS bank clear — opened FROM sound mode, so it must cover it */
         S.globalMenuOpen || S.tapTempoOpen ||
         S.auChooser || S.auPanel || S.auEditor ||   /* the Audio chooser, the AUDIO editor, its slice editor */
@@ -2661,6 +2678,7 @@ function drawUIBody() {
     if (S.confirmResample)  { hudScreen('resample-options'); drawResampleOptions(); return; }
     if (S.confirmBakeScene) { hudScreen('bake-scene-confirm'); drawBakeSceneConfirm(); return; }
     if (S.confirmBake) { hudScreen('bake-confirm'); drawBakeConfirm(); return; }
+    if (S.rmxPresets)  { hudScreen('remix-presets'); drawRemixPresets(); return; }
     /* Modal dialogs that either screen can raise. They belong ABOVE Track
      * Control, so they are drawn before soundRender() — which returns and would
      * otherwise swallow them — and they appear in soundModeCovered() so sound
