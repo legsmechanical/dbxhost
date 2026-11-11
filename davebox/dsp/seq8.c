@@ -878,6 +878,12 @@ typedef struct {
     uint8_t  step_iter[SEQ_STEPS];
     uint8_t  step_random[SEQ_STEPS];
     uint8_t  step_ratchet[SEQ_STEPS];
+    /* A Slicer step's own sound (Josh, 2026-11-11: per-step reverse and pitch,
+     * "that's the way"): its chop played reversed (1), and transposed by
+     * step_xsemi semitones (int8 bits, -24..+24). 0 = as the chop is. Kept
+     * with the step like its conditions, so every step edit carries them. */
+    uint8_t  step_xrev[SEQ_STEPS];
+    uint8_t  step_xsemi[SEQ_STEPS];
     /* Conductor per-clip control banks (meaningful only on the Conductor
      * track's clips; storage exists on every clip). One entry per dAVEBOx
      * track. Phase 3 reads these; stored + persisted here in Phase 2. */
@@ -1092,6 +1098,9 @@ typedef struct {
         uint8_t  lane_idx;
         uint8_t  has_park;   /* table groove: sub-hits wait as long as the step's first hit did */
         uint64_t park;
+        uint8_t  xon, xrev;  /* a Slicer step's own sound, for each sub-hit (au_track_t.nm_*) */
+        int8_t   xsemi;
+        uint8_t  xvg;        /* ...its level, % (a ROLL repeat's) */
     } ratchet_pending[24];
     uint8_t  ratchet_pending_count;
     /* Per-track tick position within current step; wraps at cl->ticks_per_step */
@@ -2079,6 +2088,8 @@ typedef struct {
     rmx_work_t  rmx_w;          /* REMIX scratch (audio thread only) */
     note_t      rmx_sn[NUM_TRACKS][AU_RMX_SN];   /* REMIX: a Slicer clip's remixed notes (au_track_t.rmx_sn_n) */
     uint8_t     rmx_sv[NUM_TRACKS][AU_RMX_SN];   /* ...each one's ROLL velocity (0: none, the Slicer's one level) */
+    uint8_t     rmx_sr[NUM_TRACKS][AU_RMX_SN];   /* ...reversed by the remix */
+    int8_t      rmx_ss[NUM_TRACKS][AU_RMX_SN];   /* ...its semitones */
     au_req_t    au_req[AU_RING];
     uint32_t    au_req_head, au_req_tail;     /* head: audio thread writes; tail: loader */
     au_res_t    au_res[AU_RING];
@@ -5899,6 +5910,8 @@ static void clip_init(clip_t *cl) {
         cl->step_iter[s]       = 0;
         cl->step_random[s]     = 0;
         cl->step_ratchet[s]    = 0;
+        cl->step_xrev[s]    = 0;
+        cl->step_xsemi[s]    = 0;
     }
     {
         int ti;
@@ -7078,6 +7091,8 @@ static void clip_crop_window(clip_t *cl) {
         memmove(&cl->step_iter[0],           &cl->step_iter[ls],           k);
         memmove(&cl->step_random[0],         &cl->step_random[ls],         k);
         memmove(&cl->step_ratchet[0],        &cl->step_ratchet[ls],        k);
+        memmove(&cl->step_xrev[0],        &cl->step_xrev[ls],        k);
+        memmove(&cl->step_xsemi[0],        &cl->step_xsemi[ls],        k);
     }
     for (s = len; s < SEQ_STEPS; s++) {
         cl->steps[s]           = 0;
@@ -7089,6 +7104,8 @@ static void clip_crop_window(clip_t *cl) {
         cl->step_iter[s]       = 0;
         cl->step_random[s]     = 0;
         cl->step_ratchet[s]    = 0;
+        cl->step_xrev[s]    = 0;
+        cl->step_xsemi[s]    = 0;
     }
     /* An early note on the new first step would sit before tick 0, which the
      * note list wraps to the clip's END: it lands on step 1 instead. */
@@ -7152,6 +7169,8 @@ static void clip_step_wipe(clip_t *cl, int s) {
     cl->step_iter[s]       = 0;
     cl->step_random[s]     = 0;
     cl->step_ratchet[s]    = 0;
+    cl->step_xrev[s]    = 0;
+    cl->step_xsemi[s]    = 0;
 }
 
 static void clip_page_copy(clip_t *cl, int src, int dst, int cut) {
@@ -7169,6 +7188,8 @@ static void clip_page_copy(clip_t *cl, int src, int dst, int cut) {
         cl->step_iter[d]       = cl->step_iter[s];
         cl->step_random[d]     = cl->step_random[s];
         cl->step_ratchet[d]    = cl->step_ratchet[s];
+        cl->step_xrev[d]    = cl->step_xrev[s];
+        cl->step_xsemi[d]    = cl->step_xsemi[s];
     }
     if (cut)
         for (i = 0; i < 16; i++) {
@@ -10335,6 +10356,10 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                     return snprintf(out, out_len, "%d", (int)cl->step_random[sidx]);
                 if (!strcmp(q, "_ratch"))
                     return snprintf(out, out_len, "%d", (int)cl->step_ratchet[sidx]);
+                if (!strcmp(q, "_xrev"))
+                    return snprintf(out, out_len, "%d", (int)cl->step_xrev[sidx]);
+                if (!strcmp(q, "_xsemi"))
+                    return snprintf(out, out_len, "%d", (int)(int8_t)cl->step_xsemi[sidx]);
                 return -1;
             }
             if (!strncmp(p, "_steps", 6) && p[6] == '\0') {

@@ -784,6 +784,14 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                         if (_rp_lane != 0xFF)
                             drum_pfx_note_on(inst, tr, &tr->drum_lane_pfx[_rp_lane], _rp_pitch, _rp_vel);
                         else {
+                            /* a Slicer step's sub-hit: its sound again */
+                            if (tr->ratchet_pending[rp].xon && _rp_pitch >= AU_NOTE_BASE && _rp_pitch - AU_NOTE_BASE < AU_MAX_SLICES) {
+                                au_track_t *_at = &inst->au_trk[t];
+                                int _sl = _rp_pitch - AU_NOTE_BASE;
+                                _at->nm_on[_sl] = 1; _at->nm_rev[_sl] = tr->ratchet_pending[rp].xrev;
+                                _at->nm_semi[_sl] = tr->ratchet_pending[rp].xsemi;
+                                _at->nm_vg[_sl] = (float)tr->ratchet_pending[rp].xvg / 100.0f;
+                            }
                             pfx_note_on(inst, tr, _rp_pitch, _rp_vel);
                             pfx_set_gate_override(inst, tr, _rp_pitch,
                                 pfx_ticks_to_smp(inst, tr, (uint32_t)_rp_gate));
@@ -1150,11 +1158,27 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                             tr->play_pending_count++;
                             tr->note_active = 1;
                         }
-                        /* a remixed ROLL repeat's level reaches the chop (the
-                         * Slicer's own notes enter at one level) */
-                        if (_rmx && emit_pitch >= AU_NOTE_BASE && emit_pitch - AU_NOTE_BASE < AU_MAX_SLICES) {
-                            uint8_t _sv = inst->rmx_sv[t][ni2];
-                            inst->au_trk[t].rmx_vg[emit_pitch - AU_NOTE_BASE] = _sv ? (float)_sv / 100.0f : 1.0f;
+                        /* A Slicer's hit carries its step's own reverse / pitch,
+                         * a remix's on top, and a remixed ROLL repeat's level —
+                         * to the chop's next hit (au_track_t.nm_*) */
+                        uint8_t _xon = 0, _xrev = 0, _xvg = 100;
+                        int8_t  _xsemi = 0;
+                        if (tr->pad_mode == PAD_MODE_SLICER && emit_pitch >= AU_NOTE_BASE && emit_pitch - AU_NOTE_BASE < AU_MAX_SLICES) {
+                            int _xs = (int)(int8_t)cl->step_xsemi[_sidx];
+                            _xrev = cl->step_xrev[_sidx] ? 1 : 0;
+                            if (_rmx) {
+                                _xrev ^= inst->rmx_sr[t][ni2];
+                                _xs += inst->rmx_ss[t][ni2];
+                                if (inst->rmx_sv[t][ni2]) _xvg = inst->rmx_sv[t][ni2];
+                            }
+                            _xsemi = (int8_t)(_xs < -48 ? -48 : _xs > 48 ? 48 : _xs);
+                            _xon = 1;
+                            {
+                                au_track_t *_at = &inst->au_trk[t];
+                                int _sl = emit_pitch - AU_NOTE_BASE;
+                                _at->nm_on[_sl] = 1; _at->nm_rev[_sl] = _xrev; _at->nm_semi[_sl] = _xsemi;
+                                _at->nm_vg[_sl] = (float)_xvg / 100.0f;
+                            }
                         }
                         pfx_note_on(inst, tr, emit_pitch, _gvel);
                         pfx_set_gate_override(inst, tr, emit_pitch,
@@ -1166,6 +1190,10 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                                 int _ri = (int)tr->ratchet_pending_count++;
                                 tr->ratchet_pending[_ri].pitch            = emit_pitch;
                                 tr->ratchet_pending[_ri].vel              = _gvel;
+                                tr->ratchet_pending[_ri].xon   = _xon;
+                                tr->ratchet_pending[_ri].xrev  = _xrev;
+                                tr->ratchet_pending[_ri].xsemi = _xsemi;
+                                tr->ratchet_pending[_ri].xvg   = _xvg;
                                 tr->ratchet_pending[_ri].ticks_until_fire = (uint16_t)(_k * _sub_gate);
                                 tr->ratchet_pending[_ri].gate             = _sub_gate;
                                 tr->ratchet_pending[_ri].lane_idx         = 0xFF;

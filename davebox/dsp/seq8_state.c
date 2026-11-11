@@ -676,6 +676,10 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
                 write_step_hex_arr(fp, k, cl->step_random,  cl->length);
                 snprintf(k, sizeof(k), "t%dc%d_sx", t, c);
                 write_step_hex_arr(fp, k, cl->step_ratchet, cl->length);
+                snprintf(k, sizeof(k), "t%dc%d_sxr", t, c);
+                write_step_hex_arr(fp, k, cl->step_xrev,  cl->length);
+                snprintf(k, sizeof(k), "t%dc%d_sxs", t, c);
+                write_step_hex_arr(fp, k, cl->step_xsemi, cl->length);
             }
         }
     }
@@ -1586,6 +1590,10 @@ static void seq8_load_state(seq8_instance_t *inst) {
                 parse_step_hex_arr(buf, k, _cl->step_random,  _cl->length, 100);
                 snprintf(k, sizeof(k), "t%dc%d_sx", t, c);
                 parse_step_hex_arr(buf, k, _cl->step_ratchet, _cl->length, 4);
+                snprintf(k, sizeof(k), "t%dc%d_sxr", t, c);
+                parse_step_hex_arr(buf, k, _cl->step_xrev,  _cl->length, 1);
+                snprintf(k, sizeof(k), "t%dc%d_sxs", t, c);
+                parse_step_hex_arr(buf, k, _cl->step_xsemi, _cl->length, 255);   /* int8 bits */
             }
         }
     }

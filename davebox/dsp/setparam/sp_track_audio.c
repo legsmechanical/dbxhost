@@ -665,10 +665,9 @@ static void au_rmx_latch(seq8_instance_t *inst, int t, int c) {
 /* REMIX on a Slicer, at a bar line of clip time (or as the clip starts):
  * the setting taken now, and the clip's loop window remixed bar by bar into
  * the track's remixed notes (inst->rmx_sn), which the sequencer then plays
- * instead of the clip's own. Each chop a REVERSE / PITCH source slot plays is
- * set to play reversed / repitched while the remix plays (the RS7000 edits the
- * sample key; here it lasts while Remix is on). A ROLL repeat keeps its
- * velocity (rmx_sv) unless K5 Vel is off. */
+ * instead of the clip's own. Each remixed note carries the remix's reverse /
+ * pitch for its source slot (rmx_sr / rmx_ss — on top of its step's own, at
+ * play), and a ROLL repeat its velocity (rmx_sv) unless Vel is off. */
 static void au_rmx_slicer_build(seq8_instance_t *inst, int t, int c) {
     au_track_t *at = &inst->au_trk[t];
     const clip_t *cl = &inst->tracks[t].clips[c];
@@ -684,9 +683,6 @@ static void au_rmx_slicer_build(seq8_instance_t *inst, int t, int c) {
     at->rmx_sclip = (uint8_t)c;
     at->rmx_slive = 0;
     at->rmx_sn_n = 0;
-    memset(at->rk_rev, 0, sizeof at->rk_rev);
-    memset(at->rk_pitch, 0, sizeof at->rk_pitch);
-    for (k = 0; k < AU_MAX_SLICES; k++) at->rmx_vg[k] = 1.0f;
     if (!pp->rmx_on) return;
     {
         uint32_t tps = cl->ticks_per_step ? cl->ticks_per_step : TICKS_PER_STEP;
@@ -723,11 +719,8 @@ static void au_rmx_slicer_build(seq8_instance_t *inst, int t, int c) {
                 d->pad[0] = (uint8_t)(e->id & 0xFF); d->pad[1] = (uint8_t)(e->id >> 8);
                 /* a ROLL run's repeat: the level the run sets (the others keep the one level) */
                 sv[n] = (roll && pp->rmx_rvel && e->id < cl->note_count && e->vel != cl->notes[e->id].vel) ? e->vel : 0;
-                if (e->key >= AU_NOTE_BASE && e->key - AU_NOTE_BASE < AU_MAX_SLICES) {
-                    int sl = e->key - AU_NOTE_BASE;
-                    if (e->rev) at->rk_rev[sl] = 1;
-                    if (e->pitch) at->rk_pitch[sl] = e->pitch;
-                }
+                inst->rmx_sr[t][n] = e->rev ? 1 : 0;
+                inst->rmx_ss[t][n] = e->pitch;
                 n++;
             }
         }
@@ -936,7 +929,7 @@ static void au_voice_follow(seq8_instance_t *inst, int t) {
         const au_clip_t *cl = au_cl(inst, t, v->clip);
         au_slice_t sl;
         int g, ps, pc;
-        if (v->usl && v->slice < AU_MAX_SLICES) { au_sl_eff(cl, v->slice, &sl); au_sl_rmx(at, v->slice, &sl); }
+        if (v->usl && v->slice < AU_MAX_SLICES) au_sl_eff(cl, v->slice, &sl);
         else memset(&sl, 0, sizeof sl);
         g = au_gain(cl) + sl.gain_db;
         if (g != v->gdb) { v->gain = au_db(g) * v->vg; v->gdb = (int8_t)g; }
@@ -974,6 +967,8 @@ static void au_render(seq8_instance_t *inst, int frames) {
          * not run while stopped) */
         if (tr->pad_mode == PAD_MODE_SLICER && (!inst->playing || !tr->clip_playing) && at->rmx_sclip != 0xFF) {
             at->rmx_sclip = 0xFF; at->rmx_slive = 0;
+            /* ...and no sequenced hit left waiting: a pad played now plays the chop as it is */
+            memset(at->nm_on, 0, sizeof at->nm_on);
         }
         /* a lane's live value is the PLAYING clip's: one left behind by a
          * clip switch is gone (its lane gives the value back at the switch).

@@ -219,20 +219,17 @@ int main(void) {
         HX_ASSERT(m[15].mid > m[ref].mid * 0.65, msg);
     }
 
-    /* ==== stopped: the chops are the track's own again (a pad played now
-     * must not come out reversed / repitched by a remix no longer playing) ==== */
+    /* ==== stopped: no sequenced hit left waiting — a pad played now plays
+     * the chop as it is, never reversed / repitched by a remix gone quiet ==== */
     hx_set_param(h, "t5_remix_type", "0");
-    hx_set_param(h, "t5_remix_var", "24");                /* REVERSE 9: chops 0-3, 8-11 flagged */
+    hx_set_param(h, "t5_remix_var", "24");                /* REVERSE 9 */
     measure_bar(h, m);
-    HX_ASSERT(inst->au_trk[5].rmx_slive && inst->au_trk[5].rk_rev[8], "rig: REVERSE 9 did not flag chop 8 while playing");
     hx_set_param(h, "transport", "stop");
     hx_render(h, 4);
     {
-        au_slice_t e;
-        au_sl_eff(au_cl(inst, 5, AU_SLC), 8, &e);
-        uint8_t r0 = e.rev;
-        au_sl_rmx(&inst->au_trk[5], 8, &e);
-        HX_ASSERT(e.rev == r0, "stopped, chop 8 still plays reversed by the remix");
+        int i, any = 0;
+        for (i = 0; i < AU_MAX_SLICES; i++) any |= inst->au_trk[5].nm_on[i];
+        HX_ASSERT(!any && !inst->au_trk[5].rmx_slive, "stopped, a sequenced hit is still waiting for a chop");
     }
     hx_set_param(h, "transport", "play");
 
@@ -245,6 +242,51 @@ int main(void) {
     }
     HX_ASSERT(inst->tracks[5].clips[0].note_count == own_n && !memcmp(own, inst->tracks[5].clips[0].notes, sizeof own),
               "the remix changed the clip's own notes");
+    /* ==== A STEP'S OWN SOUND (Josh, 2026-11-11: per-step reverse and pitch on
+     * Slicer steps, "that's the way"), Remix off: step 4 reversed, step 7 an
+     * octave up; the rest as they were; saved and reloaded ==== */
+    hx_set_param(h, "t5_remix_on", "0");
+    measure_bar(h, m);
+    hx_set_param(h, "t5_c0_step_3_xrev", "1");
+    hx_set_param(h, "t5_c0_step_6_xsemi", "12");
+    HX_ASSERT(inst->tracks[5].clips[0].step_xrev[3] == 1 && (int8_t)inst->tracks[5].clips[0].step_xsemi[6] == 12, "the step keys did not land");
+    measure_bar(h, m);
+    measure_bar(h, m);
+    HX_ASSERT(which(m[3].mid, unit) == 3 && m[3].early > m[3].late, "step 4 does not play its chop reversed");
+    HX_ASSERT(m[2].early < m[2].late && m[4].early < m[4].late, "a neighbouring step played reversed");
+    snprintf(msg, sizeof msg, "step 7 not an octave up: crossings %.1f vs step 6's %.1f", m[6].xr, m[5].xr);
+    HX_ASSERT(m[6].xr > m[5].xr * 1.6, msg);
+    {
+        char b[32];
+        hx_get_param(h, "t5_c0_step_6_xsemi", b, sizeof b);
+        HX_ASSERT(atoi(b) == 12, "the step's pitch does not read back");
+    }
+    /* ...a ratchet repeats the step's sound */
+    hx_set_param(h, "t5_c0_step_3_ratch", "2");
+    measure_bar(h, m);
+    measure_bar(h, m);
+    HX_ASSERT(m[3].late > 100 && m[3].early > m[3].late * 0.9, "a ratcheted reversed step's repeat did not play reversed");
+    hx_set_param(h, "t5_c0_step_3_ratch", "0");
+    /* ...saved and reloaded */
+    seq8_save_state(inst);
+    {
+        /* (a second instance would take over the harness's one handle: read the file) */
+        FILE *f = fopen(inst->state_path, "r");
+        static char sb[1 << 20]; size_t sn;
+        HX_ASSERT(f, "no state file");
+        sn = fread(sb, 1, sizeof sb - 1, f); sb[sn] = 0; fclose(f);
+        HX_ASSERT(strstr(sb, "\"t5c0_sxr\":\"00000001") && strstr(sb, "\"t5c0_sxs\":\"0000000000000c"),
+                  "the step's sound was not saved (t5c0_sxr / t5c0_sxs)");
+        /* ...and read back by the loader */
+        inst->tracks[5].clips[0].step_xrev[3] = 0; inst->tracks[5].clips[0].step_xsemi[6] = 0;
+        parse_step_hex_arr(sb, "t5c0_sxr", inst->tracks[5].clips[0].step_xrev,  inst->tracks[5].clips[0].length, 1);
+        parse_step_hex_arr(sb, "t5c0_sxs", inst->tracks[5].clips[0].step_xsemi, inst->tracks[5].clips[0].length, 255);
+        HX_ASSERT(inst->tracks[5].clips[0].step_xrev[3] == 1 && (int8_t)inst->tracks[5].clips[0].step_xsemi[6] == 12,
+                  "the saved step sound does not parse back");
+    }
+    hx_set_param(h, "t5_c0_step_3_xrev", "0");
+    hx_set_param(h, "t5_c0_step_6_xsemi", "0");
+
     /* ==== BAKE (Josh, 2026-11-11: "bake is flatten what you hear in the
      * context of the track type"): the remixed steps become the clip's, REMIX
      * turns off, and the clip plays as the remix did ==== */

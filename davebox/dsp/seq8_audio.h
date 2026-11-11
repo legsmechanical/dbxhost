@@ -305,13 +305,16 @@ typedef struct {
     rmx_ev_t   rmx_e[AU_RMX_EV];
     /* REMIX on a Slicer: the clip's notes remixed bar by bar (rebuilt at each
      * bar line, as the RS7000 rebuilds its phrase), played instead of the
-     * clip's own; and, as the RS7000 edits its sample keys, each chop's
-     * reverse / pitch while it plays; a ROLL repeat's level (rmx_vg) */
+     * clip's own */
     uint8_t    rmx_slive, rmx_sclip;   /* the notes: seq8_instance_t.rmx_sn */
     uint16_t   rmx_sn_n;
-    uint8_t    rk_rev[AU_MAX_SLICES];
-    int8_t     rk_pitch[AU_MAX_SLICES];
-    float      rmx_vg[AU_MAX_SLICES];
+    /* A Slicer's next hit of each chop, as the sequencer plays it: the step's
+     * own reverse / pitch (and a remix's on top), a ROLL repeat's level — set
+     * just before the note goes out, taken by that hit (au_note_event). A pad
+     * played by hand finds none and plays the chop as it is. */
+    uint8_t    nm_on[AU_MAX_SLICES], nm_rev[AU_MAX_SLICES];
+    int8_t     nm_semi[AU_MAX_SLICES];
+    float      nm_vg[AU_MAX_SLICES];
 } au_track_t;
 
 /* Loader mailbox (set_param / render -> loader thread). */
