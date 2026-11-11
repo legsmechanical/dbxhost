@@ -69,21 +69,20 @@ int main(void) {
         HX_ASSERT(rmx_break_pct[0][step], "BREAK 1: a note in a silent step");
     }
     HX_ASSERT(n > 0 && n < 16, "BREAK 1: nothing (or nothing) silenced");
-    /* a gate percentage: BREAK's table value scales the gate */
-    for (k = 0; k < RMX_VARS; k++) {
-        int step, pct = 0;
-        for (step = 0; step < 64; step += 4) if (rmx_break_pct[k][step] > 0 && rmx_break_pct[k][step] < 100) { pct = rmx_break_pct[k][step]; break; }
-        if (!pct) continue;
-        memset(in, 0, sizeof in);
-        in[0].tick = step * 6; in[0].gate = 100; in[0].vel = 100; in[0].key = 1;
-        /* TYPE 16 + this variation's first source: find where slot step/4 lands */
-        n = rmx_bar(&W, 15, setting(RMX_BREAK, k + 1), L, in, 1, out, RMX_MAX);
-        for (i = 0; i < n; i++) {
-            int st = (out[i].tick + 2) / 6;
-            int want = rmx_break_pct[k][st];
-            HX_ASSERT(out[i].gate == (100 * want / 100 < 1 ? 1 : 100 * want / 100), "BREAK: gate not scaled by the step's percentage");
+    /* a gate percentage: every BREAK variation, on the Loop phrase — each
+     * note's gate is its step's percentage of 24 */
+    {
+        int scaled = 0;
+        for (k = 0; k < RMX_VARS; k++) {
+            n = rmx_bar(&W, 15, setting(RMX_BREAK, k + 1), L, in, loop_phrase(), out, RMX_MAX);
+            for (i = 0; i < n; i++) {
+                int pct = rmx_break_pct[k][(out[i].tick + 2) / 6];
+                int want = 24 * pct / 100 < 1 ? 1 : 24 * pct / 100;
+                HX_ASSERT(out[i].gate == want, "BREAK: gate not scaled by the step's percentage");
+                scaled += pct > 0 && pct < 100;
+            }
         }
-        break;
+        HX_ASSERT(scaled > 0, "BREAK: no note landed on a partial step — the check pinned nothing");
     }
 
     /* ==== 5. ROLL 1: the last 16 steps are 32nd runs of slot 12, at the table's velocities ==== */
