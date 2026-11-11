@@ -283,6 +283,23 @@ function clipRig(route) {
     S.trackSoloed.fill(false); S.trackActiveClip[T] = 0; S.activeTrack = T;
 }
 
+step('⭐⭐ Track View, an Audio clip: Bake clip IS a resample in place (Josh, 2026-11-11: "bake is flatten what you hear in the context of the track type")', () => {
+    clipRig(0);
+    S.trackPadMode[T] = C.PAD_MODE_AUDIO;
+    S.sessionView = false;
+    tap(C.MoveSample);
+    assert(S.sampleMenu.items[S.sampleMenu.sel].id === 'bake', 'the menu does not start on Bake clip');
+    click();
+    const r = S.confirmResample;
+    assert(!S.confirmBake, 'an Audio clip got the sequence bake');
+    assert(r && r.track === T && r.clip === 0 && r.audio && r.inPlace && r.bake, 'not an in-place resample: ' + JSON.stringify(r));
+    onScreen(R.drawResampleOptions, 'the Audio clip\'s bake');
+    back();
+    back();
+    S.trackPadMode[T] = 0;
+    S.sessionView = true;
+});
+
 step('⭐⭐ Track View: Resample clip → the clip\'s options, on screen — Length from the engine, Source Wet, Start', () => {
     clipRig(0);
     S.sessionView = false;

@@ -261,7 +261,7 @@ export function drawResampleOptions() {
         start: { label: r.flatten ? 'Flatten' : 'Start', hdr: true },
     };
     drawKitHeader(r.flatten ? 'FLATTEN TRACK ' + (r.track + 1)
-                : r.track >= 0 ? 'RESAMPLE CLIP ' + clipName(r.track, r.clip)
+                : r.track >= 0 ? (r.bake ? 'BAKE CLIP ' : 'RESAMPLE CLIP ') + clipName(r.track, r.clip)
                 : 'RESAMPLE SCENE ' + SCENE_LETTERS[r.clip], false);
     drawKitList(rows(r).map((n) => all[n]), r.sel);
 }

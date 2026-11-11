@@ -3871,6 +3871,16 @@ function _sampleMenuPick() {
 /* Track View's bake: the confirm for the active track's clip. */
 function _openClipBake() {
     const _bt = S.activeTrack, _bc = S.trackActiveClip[_bt];
+    /* An Audio clip has no sequence to bake: Bake flattens what you hear in
+     * the track's own terms (Josh, 2026-11-11: "the idea behind bake is
+     * flatten what you hear in the context of the track type") — for an
+     * Audio clip a resample IN PLACE, its REMIX and the rest of the clip's
+     * settings going with the old sample (the take resets the clip). */
+    if (S.trackPadMode[_bt] === PAD_MODE_AUDIO) {
+        openClipResampleOptions(_bt, _bc, 'menu');
+        if (S.confirmResample) { S.confirmResample.inPlace = true; S.confirmResample.bake = true; }
+        return;
+    }
     const _isDrum = S.trackPadMode[_bt] === PAD_MODE_DRUM;
     S.confirmBake             = true;
     S.confirmBakeIsDrum       = _isDrum;
