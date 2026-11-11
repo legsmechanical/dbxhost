@@ -215,7 +215,7 @@ step('⭐⭐ the walk: an Audio track is LIVE ARP, MACROS, CLIP, MIX — no sequ
     /* (an Audio clip plays its sample with the clip: what was a Loop clip —
      * Josh, 2026-10-28: "we don't need to show notes at all in loop mode") */
     const walk = P.bankCycleForMode(C.PAD_MODE_AUDIO, 4);
-    assert(JSON.stringify(walk) === JSON.stringify([5, C.BANK_MACROS, 0, C.BANK_SOUND]), 'walk: ' + walk.join());
+    assert(JSON.stringify(walk) === JSON.stringify([5, C.BANK_MACROS, 0, C.BANK_REMIX, C.BANK_SOUND]), 'walk: ' + walk.join());
     const all = P.bankListForMode(C.PAD_MODE_AUDIO, 4);
     assert(all.indexOf(C.BANK_CONFIG) >= 0 && all.indexOf(C.BANK_AUTOMATION) >= 0, 'doors: ' + all.join());
     assert(P.bankMapModuleAt(0, C.PAD_MODE_AUDIO, 6, 0, 4) === null, 'the MIDI FX pad is lit (Q4)');
@@ -227,8 +227,10 @@ step('⭐⭐ the walk: an Audio track is LIVE ARP, MACROS, CLIP, MIX — no sequ
     assert(!map[2].cells[2], 'an Audio track has a SLICES door: ' + JSON.stringify(map[2].cells[2]));
     assert(map[2].cells[3] && map[2].cells[3].action === 'wave' && map[2].cells[3].name === 'SAMPLE', 'no SAMPLE door');
     assert(!map.some((c) => c.cells.some((x) => x && x.bank === C.BANK_AUDIO)), 'a pad opens the old sound bank');
-    /* DELAY left Audio tracks (Josh, 2026-10-28: "let's get rid of delay") */
-    assert(!map[3].cells[2], 'the DELAY pad is lit: ' + JSON.stringify(map[3].cells[2]));
+    /* DELAY left Audio tracks (Josh, 2026-10-28: "let's get rid of delay");
+     * its pad is REMIX's (Josh, 2026-11-10) */
+    assert(map[3].cells[2] && map[3].cells[2].bank === C.BANK_REMIX, 'the FX row-3 pad is not REMIX: ' + JSON.stringify(map[3].cells[2]));
+    assert(!map[3].cells[0], 'an Audio track has a NOTE FX pad: ' + JSON.stringify(map[3].cells[0]));
 });
 
 step('⭐⭐ Slicer is the row after Audio; picked on an Audio track it converts at once (LEAVE AUDIO is the picker\'s question), the engine\'s convert undoable, the slot read as the track\'s sample (Josh, 2026-11-02: "two instruments \"audio\" and \"slicer\"")', () => {
@@ -249,14 +251,17 @@ step('⭐⭐ Slicer is the row after Audio; picked on an Audio track it converts
 
 step('⭐⭐ the walk: a Slicer is PAD MODE, LIVE ARP, MACROS, STEP, CLIP, NOTE FX, MIX; SLICES above SAMPLE on the map', () => {
     const walk = P.bankCycleForMode(C.PAD_MODE_SLICER, 4);
-    assert(JSON.stringify(walk) === JSON.stringify([C.BANK_CHORD, 5, C.BANK_MACROS, C.BANK_STEP, 0, 1, C.BANK_SOUND]), 'walk: ' + walk.join());
+    assert(JSON.stringify(walk) === JSON.stringify([C.BANK_CHORD, 5, C.BANK_MACROS, C.BANK_STEP, 0, C.BANK_REMIX, 1, C.BANK_SOUND]), 'walk: ' + walk.join());
     const all = P.bankListForMode(C.PAD_MODE_SLICER, 4);
     assert(all.indexOf(C.BANK_CONFIG) >= 0 && all.indexOf(C.BANK_AUTOMATION) >= 0, 'doors: ' + all.join());
     const map = P.bankPadMapForMode(C.PAD_MODE_SLICER, 4);
     assert(map[2].cells[2] && map[2].cells[2].action === 'slices' && map[2].cells[2].name === 'SLICES',
            'the SLICES door is not under CLIP: ' + JSON.stringify(map[2].cells[2]));
     assert(map[2].cells[3] && map[2].cells[3].action === 'wave' && map[2].cells[3].name === 'SAMPLE', 'no SAMPLE door');
-    assert(!map[3].cells[2], 'the DELAY pad is lit: ' + JSON.stringify(map[3].cells[2]));
+    /* REMIX in the same pad as on an Audio track; NOTE FX kept (Josh,
+     * 2026-11-10: "keep notefx for slicer. put it in a slot that neither track uses") */
+    assert(map[3].cells[2] && map[3].cells[2].bank === C.BANK_REMIX, 'the FX row-3 pad is not REMIX: ' + JSON.stringify(map[3].cells[2]));
+    assert(map[3].cells[0] && map[3].cells[0].bank === 1, 'a Slicer lost its NOTE FX pad: ' + JSON.stringify(map[3].cells[0]));
 });
 
 const mapPad = (c, r) => { cc(3, 127); note(P.bankMapPadForCell(c, r), 100); note(P.bankMapPadForCell(c, r), 0); cc(3, 0); ticks(3); };
@@ -1916,7 +1921,7 @@ step('⭐⭐ an Audio track: no sequence — pad taps and steps do nothing, no S
     /* Josh, 2026-10-28: "we don't need to show notes at all in loop mode" */
     const walk = P.bankCycleForMode(C.PAD_MODE_AUDIO, 4);
     /* no PAD MODE on an Audio track (Josh, 2026-10-30: "loop mode should always be 4 rows and has no need for the pad bank") */
-    assert(JSON.stringify(walk) === JSON.stringify([5, C.BANK_MACROS, 0, C.BANK_SOUND]), 'Loop walk: ' + walk.join());
+    assert(JSON.stringify(walk) === JSON.stringify([5, C.BANK_MACROS, 0, C.BANK_REMIX, C.BANK_SOUND]), 'Loop walk: ' + walk.join());
     const map = P.bankPadMapForMode(C.PAD_MODE_AUDIO, 4);
     assert(!map[2].cells[0] && !map[3].cells[0] && map[2].cells[1], 'the Loop map still has STEP / NOTE FX');
     DM.computePadNoteMap();

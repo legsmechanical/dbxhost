@@ -1136,6 +1136,38 @@ export function auLoopBankCells(t) {
                    options: ['Loop', 'Shot'], sel: i.shot ? 1 : 0 };
     return [live(mode), live(strch), live(shift), BLANK, BLANK, BLANK, BLANK, BLANK];
 }
+/* ---- REMIX (Josh, 2026-11-10: "replacing midi effects banks on audio tracks
+ * with loop remix effects like those on the yamaha rs7000") — per clip, on
+ * Audio and Slicer alike: K1 Remix Off/On, K2 Type 1-16, K3 Family, K4
+ * Variation 1-16. The engine takes a change at the next bar line. ---- */
+export const RMX_FAMILIES = ['Normal', 'Reverse', 'Roll', 'Break', 'Pitch'];
+export function rmxBankCells(t) {
+    const r = S.rmxSet[t] || [0, 0, 0], fam = (r[2] / 16) | 0, num = r[2] % 16;
+    const on = { kind: 'enumsq', label: 'Remix', name: 'Remix', text: r[0] ? 'On' : 'Off', options: ['Off', 'On'], sel: r[0] ? 1 : 0 };
+    const type = { kind: 'valsq', label: 'Type', name: 'Remix Type', text: String(r[1] + 1) };
+    const family = { kind: 'enumsq', label: 'Famly', name: 'Family', text: RMX_FAMILIES[fam] || 'Normal', options: RMX_FAMILIES, sel: fam };
+    const vari = { kind: 'valsq', label: 'Var', name: 'Variation', text: String(num + 1) };
+    return [on, type, family, vari, BLANK, BLANK, BLANK, BLANK];
+}
+/* K1..K4 of the REMIX bank, `steps` detents. Returns true when it changed. */
+export function rmxBankKnob(t, k, steps) {
+    const r = (S.rmxSet[t] || [0, 0, 0]).slice();
+    let key, v;
+    if (k === 0)      { v = steps > 0 ? 1 : 0; if (v === r[0]) return false; r[0] = v; key = 'remix_on'; }
+    else if (k === 1) { v = Math.max(0, Math.min(15, r[1] + steps)); if (v === r[1]) return false; r[1] = v; key = 'remix_type'; }
+    else if (k === 2 || k === 3) {
+        const fam = (r[2] / 16) | 0, num = r[2] % 16;
+        const nf = k === 2 ? Math.max(0, Math.min(4, fam + steps)) : fam;
+        const nn = k === 3 ? Math.max(0, Math.min(15, num + steps)) : num;
+        v = nf * 16 + nn;
+        if (v === r[2]) return false;
+        r[2] = v; key = 'remix_var';
+    } else return false;
+    S.rmxSet[t] = r;
+    host_module_set_param('t' + t + '_' + key, String(v));
+    return true;
+}
+
 /* Loop's Shift in the clip's steps, 0 .. its length - 1 */
 function auShiftSteps(t, c, i) {
     const tps = S.clipTPS[t][c] || 24, L = (S.clipLength[t][c] | 0 || 16) * tps;

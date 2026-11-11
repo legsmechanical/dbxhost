@@ -68,12 +68,12 @@ import { soundRender, renderTrackGatewayCard, renderConfigCardPeek, renderMacros
 import { drawAutomationBankBody, autoBankMenuOpen, autoMenuUp, autoHoldJumpActive, autoHoldJumpStep, autoLaneFocus, autoHeldValue, autoMapEditorComp, autoMapMarkedBank,
          autoOpsOpen, drawAutomationOpsGraph, drawLaneFocusOverlay } from './ui_automation_bank.mjs';
 import { automationStateFor, autoShiftHint } from './ui_automation.mjs';
-import { seqAutoTargetForKnob, fmtInstr } from './ui_constants.mjs';
+import { seqAutoTargetForKnob, fmtInstr, BANK_REMIX } from './ui_constants.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
 import { isSampledTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
-         auPos, auLazyState, auSelSlice, auSampleP2Cells, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells, knobAltOnTrack, auAltBit,
+         auPos, auLazyState, auSelSlice, auSampleP2Cells, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells, rmxBankCells, knobAltOnTrack, auAltBit,
          auPadModeCells, AU_NOTE_BASE,
          auFmtTime, auEnd, auBpm, auFpt, auFmtLen, auLenTicks, auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
 import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
@@ -526,6 +526,7 @@ function audioBankCells(bank, cells) {
     const t = S.activeTrack;
     if (!isSampledTrack(t)) return cells;
     const B = { kind: 'blank', label: '' };
+    if (bank === BANK_REMIX) return rmxBankCells(t);
     if (bank === 0) {
         if (!audioSliceMode(t)) return auLoopBankCells(t);
         /* a Slicer's clip is a sequence like a MIDI clip's: its CLIP bank,

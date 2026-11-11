@@ -10863,13 +10863,14 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                  *   31..33 NOTE FX random + modes (filled in for JS parser)
                  *   34..41 SEQ ARP step_int[0..7] (Arp Steps interval mode)
                  *   42     SEQ ARP step_loop_len (1..8)
-                 *   43     NOTE FX note_length_mode (Len knob 0..8) */
+                 *   43     NOTE FX note_length_mode (Len knob 0..8)
+                 *   44..46 REMIX on, TYPE, setting */
                 return snprintf(out, out_len,
                     "%d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d "
                     "%d %d %d %d %d %d %d %d "
                     "%d %d %d "
                     "%d %d %d %d %d %d %d %d "
-                    "%d %d",
+                    "%d %d %d %d %d",
                     cp->octave_shift, cp->note_offset, cp->gate_time,
                     cp->velocity_offset, cp->quantize,
                     cp->octaver, cp->harmonize_1, cp->harmonize_2, cp->harmonize_3,
@@ -10889,7 +10890,8 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                     (int)cp->seq_arp_step_int[4], (int)cp->seq_arp_step_int[5],
                     (int)cp->seq_arp_step_int[6], (int)cp->seq_arp_step_int[7],
                     (int)cp->seq_arp_step_loop_len,
-                    (int)cp->note_length_mode);
+                    (int)cp->note_length_mode,
+                    (int)cp->rmx_on, (int)cp->rmx_type, (int)cp->rmx_var);
             }
             return -1;
         }

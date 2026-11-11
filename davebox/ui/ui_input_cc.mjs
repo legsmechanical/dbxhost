@@ -65,11 +65,11 @@ import { automationParamEdit, automationCaptureCommit, automationCaptureCommitAf
 import { sessStripTargets, engineLoadedModule, engineModuleName, slotIndex,
          moveBusForChannel, moveBusPrefix } from './ui_engine.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
-import { BANK_MAP_TRACK_POPUP_MS, SEQ_PAGE_POPUP_MS, seqAutoTargetForKnob, SEQ_AUTO_TARGETS, AU_AUTO_BANK, auAutoBank, midiTargetIsMidi, DEFAULT_TRACK_OCTAVE } from './ui_constants.mjs';
+import { BANK_MAP_TRACK_POPUP_MS, SEQ_PAGE_POPUP_MS, seqAutoTargetForKnob, SEQ_AUTO_TARGETS, AU_AUTO_BANK, auAutoBank, midiTargetIsMidi, DEFAULT_TRACK_OCTAVE, BANK_REMIX } from './ui_constants.mjs';
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam, soundOpenModule, instrPickResume } from './ui_sound.mjs';
 import { auPurgeRun, closeAudioChooser, askClearAudioClip } from './ui_audio_chooser.mjs';
-import { isSampledTrack, isAudioTrack, audioSliceMode, auClipOf, auClipBankKnob, auAltBit, knobAltOnTrack, auSetLayout, auSetPage, AU_NOTE_BASE, AU_EVEN_MAX, auInfo } from './ui_audio.mjs';
+import { isSampledTrack, isAudioTrack, audioSliceMode, auClipOf, auClipBankKnob, auAltBit, knobAltOnTrack, auSetLayout, auSetPage, AU_NOTE_BASE, AU_EVEN_MAX, auInfo, rmxBankKnob } from './ui_audio.mjs';
 
 /* AUDIO's CLIP bank (Slice mode) mirrors ALL LANES over the melodic clip's
  * knobs (Josh, 2026-10-27: "it seems like clip bank should mirror all lanes
@@ -5127,6 +5127,15 @@ function _onCC_knobs(d1, d2) {
          * knobs (its drum form). */
         if (isSampledTrack(S.activeTrack)) {
             const _t = S.activeTrack;
+            /* REMIX: K1 Remix and K3 Family deliberate (a toggle, five
+             * families), K2 Type and K4 Variation a step a detent */
+            if (bank === BANK_REMIX) {
+                if (knobIdx <= 3) {
+                    const _st = knobStep(knobIdx, d2, (knobIdx === 0 || knobIdx === 2) ? KNOB_DELIB : KNOB_PICK);
+                    if (_st && rmxBankKnob(_t, knobIdx, _st)) S.screenDirty = true;
+                }
+                return;
+            }
             if (bank === 0 && !audioSliceMode(_t)) {
                 /* an Audio clip's K2 Strch (x2 · /2) and K3 Shift (a step a
                  * detent) or, alt, Nudge (5 ms, Shift 1) */

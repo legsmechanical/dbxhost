@@ -639,6 +639,10 @@ export const BANKS = [
      * SLICE n in Slice mode; a plain jog turn flips them. ui_audio owns the
      * cells and the knobs (the old AUDIO editor's). */
     { name: 'SLICE', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
+    /* 18 — REMIX (BANK_REMIX): an Audio or Slicer clip's Loop Remix, after the
+     * RS7000's — Remix · Type · Family · Variation, per clip. ui_audio owns
+     * the cells and the knobs. */
+    { name: 'REMIX', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
 ];
 
 /* Conductor bank indices. Bank 0 (CLIP) is reused as the "Conduct" bank. */
@@ -668,6 +672,7 @@ export const BANK_CHORD = BANK_PADMODE;
 export const BANK_CONFIG = 16;
 /* The AUDIO bank (see BANKS[17]): an Audio track's only, a bank with pages. */
 export const BANK_AUDIO = 17;
+export const BANK_REMIX = 18;
 export function isSoundBank(b) { return b === BANK_SOUND || b === BANK_MACROS || b === BANK_CONFIG; }
 
 /* The track's DEFAULT bank — CLIP on a melodic track, DRUM LANE on a drum one,
@@ -795,7 +800,7 @@ const AU_SLICES_KEYS = [
     { key: 'au_s_rev',    k: 6, min: 0,   max: 1,    label: 'Rev',    field: 'rev', stepped: true },
     { key: 'au_s_play',   k: 7, min: 0,   max: 1,    label: 'Play',   field: 'play', stepped: true },
 ];
-export const BANK_SHORT = { 0: 'Clip', 1: 'NFX', 2: 'Harm', 3: 'Dly', 4: 'SArp', 5: 'LArp', 7: 'Lanes',
+export const BANK_SHORT = { 0: 'Clip', 1: 'NFX', 2: 'Harm', 3: 'Dly', 4: 'SArp', 5: 'LArp', 7: 'Lanes', 18: 'Rmx',
                             [AU_AUTO_BANK]: 'Smp', [AU_SLICES_BANK]: 'Slcs' };
 /* A `seq:` key of an Audio clip's: its clip settings' or ALL SLICES'. */
 export function auAutoBank(bank) { return bank === AU_AUTO_BANK || bank === AU_SLICES_BANK; }
