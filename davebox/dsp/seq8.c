@@ -10933,7 +10933,7 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                     "%d %d %d %d %d %d %d %d "
                     "%d %d %d "
                     "%d %d %d %d %d %d %d %d "
-                    "%d %d %d %d %d %d %d %d %d %d %d %d",
+                    "%d %d %d %d %d %d %d %d %d %d %d %d %d",
                     cp->octave_shift, cp->note_offset, cp->gate_time,
                     cp->velocity_offset, cp->quantize,
                     cp->octaver, cp->harmonize_1, cp->harmonize_2, cp->harmonize_3,

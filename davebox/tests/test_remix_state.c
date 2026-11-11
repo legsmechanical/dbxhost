@@ -62,6 +62,14 @@ int main(void) {
     HX_ASSERT(inst->tracks[5].clips[2].pfx_params.rmx_var == 5 && inst->tracks[5].clips[2].pfx_params.rmx_bdep == 40,
               "remix_ord / remix_bdep did not land");
     HX_ASSERT(inst->tracks[5].clips[2].pfx_params.rmx_roll == 100, "remix_ord reset the dials (ROLL 16's Roll 100 gone)");
+    /* the UI reads Depth from the clip's snapshot, field 54 (found on the device: the
+     * format string had no slot for it, so the UI only ever saw the default) */
+    {
+        char sb[1024]; int f = 0, last = -1; char *p, *save = NULL;
+        HX_ASSERT(hx_get_param(h, "t5_c2_pfx_snapshot", sb, sizeof sb) > 0, "no snapshot");
+        for (p = strtok_r(sb, " ", &save); p; p = strtok_r(NULL, " ", &save)) { if (f == 54) last = atoi(p); f++; }
+        HX_ASSERT(f == 55 && last == 40, "the snapshot does not carry Depth as field 54");
+    }
     hx_set_param(h, "t5_c2_pfx_set", "remix_ord 47");
     HX_ASSERT(inst->tracks[5].clips[2].pfx_params.rmx_pit == -24, "a negative Pitch did not land clamped to -24");
     HX_ASSERT(inst->tracks[5].clips[2].pfx_params.rmx_on && inst->tracks[5].clips[2].pfx_params.rmx_type == 3
