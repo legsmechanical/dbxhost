@@ -617,6 +617,103 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
     }
 }
 
+/* ---------------- REMIX on a Loop clip ---------------- */
+
+#define AU_RMX_BAR 384      /* a bar of clip ticks: 16 x 1/16 at PPQN 96 */
+
+/* The setting in force for clip c, taken now (at a bar line, or as it
+ * starts): one bar's events for the Loop phrase — a note on each 1/16, key =
+ * its slot — remixed. Every bar of the clip remixes alike. */
+static void au_rmx_latch(seq8_instance_t *inst, int t, int c) {
+    au_track_t *at = &inst->au_trk[t];
+    const clip_pfx_params_t *pp = &inst->tracks[t].clips[c].pfx_params;
+    static rmx_ev_t in[16], out[RMX_MAX];
+    int k, n;
+    if (at->rmx_on == pp->rmx_on && at->rmx_type == pp->rmx_type && at->rmx_var == pp->rmx_var
+        && at->rmx_clip == (uint8_t)c && (at->rmx_n || !pp->rmx_on)) return;
+    at->rmx_on = pp->rmx_on; at->rmx_type = pp->rmx_type; at->rmx_var = pp->rmx_var;
+    at->rmx_clip = (uint8_t)c;
+    at->rmx_n = 0;
+    if (!at->rmx_on) return;
+    memset(in, 0, sizeof in);
+    for (k = 0; k < 16; k++) {
+        in[k].tick = k * (AU_RMX_BAR / 16); in[k].gate = AU_RMX_BAR / 16; in[k].vel = 100; in[k].key = (uint8_t)k;
+    }
+    n = rmx_bar(&inst->rmx_w, at->rmx_type, at->rmx_var, AU_RMX_BAR, in, 16, out, RMX_MAX);
+    if (n > AU_RMX_EV) n = AU_RMX_EV;
+    memcpy(at->rmx_e, out, (size_t)n * sizeof out[0]);
+    at->rmx_n = (int16_t)n;
+}
+
+/* Clip c's REMIX this block (Sync Vintage or Pitch): each event of each bar
+ * whose clip tick falls in the block starts a piece — its source slot of the
+ * SAME bar of Start..End, reversed / repitched as the event says, at its
+ * velocity, released when its gate ends. The remix maps the clip's time
+ * first; Shift and Nudge then apply as they do without it. */
+static void au_rmx_block(seq8_instance_t *inst, int t, int c, int32_t tick, uint32_t len_ticks, double fpt, int frames) {
+    au_track_t *at = &inst->au_trk[t];
+    au_clip_t *cl = au_cl(inst, t, c);
+    const au_sample_t *s = cl->smp;
+    uint32_t rs, re;
+    if (!s || !len_ticks || fpt <= 0 || !at->rmx_n) return;
+    au_range(cl, s, &rs, &re);
+    if (re <= rs) return;
+    double L = (double)len_ticks, span, start, fscale;
+    double P = au_span_ticks(cl, s, rs, re), R = (double)(re - rs);
+    if (P <= 0) return;
+    if (!au_clock_window(inst, tick, L, fpt, frames, &start, &span, &fscale)) return;
+    double nud = (double)cl->nudge_ms * 44.1 / fpt;
+    double rot = au_wrap((double)cl->rot, L);
+    int cs = (int)at->cond;
+    /* Pitch: the voice runs at the speed that fills the clip; Vintage: as recorded */
+    double vk = 1.0;
+    if (cl->sync == AU_SYNC_PITCH) {
+        double base = au_tune(au_pitch(cl) + cs, au_detune(cl)) * (double)s->rate / 44100.0;
+        if (base > 0) vk = (R / (P * fpt)) / base;
+    }
+    int nbars = (int)((len_ticks + AU_RMX_BAR - 1) / AU_RMX_BAR), b, i, m = 0;
+    int pe[AU_VINTAGE_PER_BLOCK], pb[AU_VINTAGE_PER_BLOCK];
+    double pd[AU_VINTAGE_PER_BLOCK];
+    for (b = 0; b < nbars; b++) {
+        for (i = 0; i < at->rmx_n && m < AU_VINTAGE_PER_BLOCK; i++) {
+            double Td = (double)(b * AU_RMX_BAR + at->rmx_e[i].tick);
+            if (Td >= L) continue;
+            double d = au_wrap(Td - start, L);
+            if (d >= span) continue;
+            int k;
+            for (k = m; k > 0 && pd[k - 1] > d; k--) { pd[k] = pd[k - 1]; pe[k] = pe[k - 1]; pb[k] = pb[k - 1]; }
+            pd[k] = d; pe[k] = i; pb[k] = b; m++;
+        }
+    }
+    for (i = 0; i < m; i++) {
+        const rmx_ev_t *e = &at->rmx_e[pe[i]];
+        double Us = (double)(pb[i] * AU_RMX_BAR + e->key * (AU_RMX_BAR / 16));
+        if (Us >= L) continue;                           /* its source is past the clip's end */
+        double j = au_wrap(Us - rot, L) - nud;
+        if (j < 0 || j >= P) continue;
+        /* the piece is its source slot (a slice, as on the RS7000: a longer
+         * gate holds it, never plays on into the next slot); repitched, it
+         * plays that slot faster or slower. It runs a few frames past its
+         * end, on the side it plays toward, into its fade (as Vintage's). */
+        double x0 = R * j / P, sl = R * (double)(AU_RMX_BAR / 16) / P, over = AU_VINTAGE_OVER + AU_VINTAGE_XF;
+        double lo = au_revrs(cl) ? (double)re - x0 - sl : (double)rs + x0, hi = lo + sl;
+        if ((au_revrs(cl) ? 1 : 0) ^ (e->rev ? 1 : 0)) lo -= over; else hi += over;
+        if (lo < (double)rs) lo = (double)rs;
+        if (hi > (double)re) hi = (double)re;
+        if (hi <= lo) continue;
+        uint32_t a = (uint32_t)lo, bb = (uint32_t)hi;
+        uint32_t off = (uint32_t)(pd[i] * fscale);
+        if (off >= (uint32_t)frames) off = (uint32_t)frames - 1;
+        au_rmx_rev = e->rev; au_rmx_semi = e->pitch;
+        au_voice_t *v = au_range_on_in(at, s, cs, cl, c, AU_SLICE_NONE, a, bb, (float)e->vel / 100.0f, off, 1, vk);
+        au_rmx_rev = 0; au_rmx_semi = 0;
+        if (v) {
+            v->wlo = rs; v->whi = re;
+            au_voice_release_at(v, 64, off + (uint32_t)((double)e->gate * fpt));
+        }
+    }
+}
+
 /* ---------------- Export: a Loop clip rendered offline ---------------- */
 
 /* Clip (t,c), a Loop clip on Sync Pitch or Vintage, as audio for the Ableton
@@ -845,8 +942,23 @@ static void au_render(seq8_instance_t *inst, int frames) {
                  * device: 230 frames at 120 bpm). */
                 int ticked = (uint64_t)inst->arp_master_tick != inst->au_tick0;
                 if (tick < 0) tick = 0;
+                /* REMIX: the clip's setting taken at each bar line (and as
+                 * the clip starts), so a change lands on the next bar */
+                if (at->rmx_bar < 0 || at->rmx_clip != c || tick / AU_RMX_BAR != at->rmx_bar
+                    || (at->last_tick >= 0 && tick < at->last_tick)) {     /* the loop came round */
+                    au_rmx_latch(inst, t, c);
+                    at->rmx_bar = tick / AU_RMX_BAR;
+                }
+                int rmx = at->rmx_on && at->rmx_n && !warp;
                 if (!warp) au_warp_off(inst, t);
-                if (warp) {
+                if (rmx) {
+                    /* the remix's pieces stand in for the loop voice and
+                     * Vintage's pieces (au_rmx_block) */
+                    if (lv) au_voice_release(lv, 64);
+                    if (!at->sync_on || at->loop_clip != c) { at->sync_on = 1; at->sync_live = 0; at->loop_clip = (uint8_t)c; }
+                    if (ticked) at->sync_live = 1;
+                    if (at->sync_live) au_rmx_block(inst, t, c, tick, (uint32_t)lc->length * tps, fpt, frames);
+                } else if (warp) {
                     /* Warp: the stretcher's ring, read against the clock */
                     double L = (double)lc->length * tps, start, span, fscale;
                     if (lv) au_voice_release(lv, 64);
@@ -911,6 +1023,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
                 if (lv) au_voice_release(lv, 64);
                 if (at->sync_on) { au_release_chops(at); at->sync_on = 0; }
                 at->last_tick = -1;
+                at->rmx_bar = -1;                       /* the next start takes the setting afresh */
                 at->cond = (int8_t)au_cond_now(inst, t);
                 /* stopped on a Warp clip: its downbeat is rendered ahead */
                 if (!inst->playing && cl->mode == AU_MODE_LOOP && cl->sync == AU_SYNC_WARP && cl->smp) {

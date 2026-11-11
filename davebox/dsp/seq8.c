@@ -557,8 +557,8 @@ static const uint16_t DRUM_REPEAT_RATE_TICKS[8] = { 12, 24, 48, 96, 8, 16, 32, 6
 static const uint8_t DRUM_INQ_TICKS[9] = { 0, 6, 12, 24, 16, 48, 32, 96, 64 };
 
 #include "seq8_param_auto.h"
-#include "seq8_audio.h"
 #include "seq8_remix.h"
+#include "seq8_audio.h"
 
 /* Per-clip pad-pressure (aftertouch) automation. Interpolated breakpoints like
  * per-clip breakpoints, keyed by pitch (poly) rather than by fixed knob:
@@ -2073,6 +2073,7 @@ typedef struct {
      * reads files or frees samples. */
     au_clip_t   au_store[NUM_TRACKS][NUM_CLIPS + 1];
     au_track_t  au_trk[NUM_TRACKS];
+    rmx_work_t  rmx_w;          /* REMIX scratch (audio thread only) */
     au_req_t    au_req[AU_RING];
     uint32_t    au_req_head, au_req_tail;     /* head: audio thread writes; tail: loader */
     au_res_t    au_res[AU_RING];

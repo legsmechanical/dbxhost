@@ -2246,6 +2246,7 @@ static void au_init(seq8_instance_t *inst) {
         memset(&inst->au_trk[t], 0, sizeof inst->au_trk[t]);
         inst->au_trk[t].last_tick = -1;
         inst->au_trk[t].mgain = 64;
+        inst->au_trk[t].rmx_bar = -1;
     }
     inst->au_lazy_track = inst->au_lazy_clip = -1;
     au_streamer_init(inst);
@@ -2487,6 +2488,10 @@ static void au_chop_on(seq8_instance_t *inst, int t, int c, int slice, float vga
 /* 1 while a pad's slice is being started (au_slice_on): its voice is marked
  * live. The audio thread only. */
 static int au_live_mark = 0;
+/* REMIX: the piece about to start plays reversed (on top of the clip's Revrs)
+ * and this many semitones up — set around one au_range_on call, as
+ * au_live_mark is (au_rmx_block). */
+static int au_rmx_rev = 0, au_rmx_semi = 0;
 
 /* Frames a..b of clip (t,c)'s sample as chop `slice` (AU_SLICE_NONE: Loop
  * mode's hidden chop at Start), `off` frames into the block. */
@@ -2528,8 +2533,9 @@ static au_voice_t *au_range_on_in(au_track_t *at, const au_sample_t *s, int cs, 
     au_slice_t eff;
     const au_slice_t *sl = &plain;
     if (!sync && slice >= 0 && slice < AU_MAX_SLICES) { au_sl_eff(cl, slice, &eff); sl = &eff; }
-    uint8_t play = sl->play, rev = sync ? (uint8_t)au_revrs(cl) : sl->rev;
+    uint8_t play = sl->play, rev = (uint8_t)((sync ? au_revrs(cl) : sl->rev) ^ (au_rmx_rev ? 1 : 0));
     double ratio = au_tune(au_pitch(cl) + sl->pitch + cs, au_detune(cl) + sl->detune) * (double)s->rate / 44100.0 * vk;
+    if (au_rmx_semi) ratio *= au_semi(au_rmx_semi);
     float gain = au_db(au_gain(cl) + sl->gain_db) * vgain;
     au_voice_t *v;
     /* A slice that carries straight on from the one sounding — the next chop
@@ -2999,6 +3005,7 @@ static void au_track_release(seq8_instance_t *inst, int t) {
     au_track_kill(inst, t, NULL);
     inst->au_trk[t].last_tick = -1;
     inst->au_trk[t].layout = 0;
+    inst->au_trk[t].rmx_bar = -1; inst->au_trk[t].rmx_n = 0; inst->au_trk[t].rmx_on = 0;
     inst->au_trk[t].cond_on = 0;
     if (inst->au_lazy_track == t) { inst->au_lazy_track = inst->au_lazy_clip = -1; inst->au_lazy_state = AU_LAZY_NONE; }
     for (c = 0; c <= AU_SLC; c++) {

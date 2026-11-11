@@ -65,6 +65,7 @@
  * crossfaded, the tone is 12 dB above it. A piece at the sample's own speed
  * still carries straight on (au_range_on), no fade. */
 #define AU_VINTAGE_XF        128    /* frames */
+#define AU_RMX_EV          160          /* REMIX events in one Loop bar (16 notes; ROLL adds runs) */
 #define AU_SLICE_NONE      (-1)         /* au_range_on: Loop mode's hidden chop at Start */
 #define AU_JOIN            256          /* frames: a slice this near where the sounding one has reached carries it on */
 #define AU_MIP             256          /* frames per waveform summary entry */
@@ -291,6 +292,13 @@ typedef struct {
     int32_t    dl[LEAD_FRAMES * 2];
     uint16_t   dl_pos;       /* dl: the next frame out (and in) */
     uint16_t   dl_tail;      /* frames of sound still in dl (0: nothing to play out) */
+    /* REMIX (a Loop clip): the setting in force, latched at the bar line, and
+     * one bar's events for it (every bar of a Loop clip remixes alike: its
+     * phrase is a note on each 1/16). rmx_bar: the bar it was latched in. */
+    uint8_t    rmx_on, rmx_type, rmx_var, rmx_clip;
+    int32_t    rmx_bar;
+    int16_t    rmx_n;
+    rmx_ev_t   rmx_e[AU_RMX_EV];
 } au_track_t;
 
 /* Loader mailbox (set_param / render -> loader thread). */
