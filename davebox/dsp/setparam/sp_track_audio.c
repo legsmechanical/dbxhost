@@ -637,8 +637,8 @@ static void au_rmx_latch(seq8_instance_t *inst, int t, int c) {
     static rmx_ev_t in[16], out[RMX_MAX];
     int k, n;
     if (at->rmx_on == pp->rmx_on && at->rmx_type == pp->rmx_type && at->rmx_var == pp->rmx_var
-        && at->rmx_clip == (uint8_t)c && (at->rmx_n || !pp->rmx_on)) return;
-    at->rmx_on = pp->rmx_on; at->rmx_type = pp->rmx_type; at->rmx_var = pp->rmx_var;
+        && at->rmx_rvel == pp->rmx_rvel && at->rmx_clip == (uint8_t)c && (at->rmx_n || !pp->rmx_on)) return;
+    at->rmx_on = pp->rmx_on; at->rmx_type = pp->rmx_type; at->rmx_var = pp->rmx_var; at->rmx_rvel = pp->rmx_rvel;
     at->rmx_clip = (uint8_t)c;
     at->rmx_n = 0;
     if (!at->rmx_on) return;
@@ -648,6 +648,8 @@ static void au_rmx_latch(seq8_instance_t *inst, int t, int c) {
     }
     n = rmx_bar(&inst->rmx_w, at->rmx_type, at->rmx_var, AU_RMX_BAR, in, 16, out, RMX_MAX);
     if (n > AU_RMX_EV) n = AU_RMX_EV;
+    /* ROLL's velocity off: its repeats at the level everything else plays at */
+    if (!at->rmx_rvel) for (k = 0; k < n; k++) out[k].vel = 100;
     memcpy(at->rmx_e, out, (size_t)n * sizeof out[0]);
     at->rmx_n = (int16_t)n;
     if (++at->rmx_gen == 0) at->rmx_gen = 1;

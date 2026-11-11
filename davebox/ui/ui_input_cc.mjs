@@ -5130,8 +5130,8 @@ function _onCC_knobs(d1, d2) {
             /* REMIX: K1 Remix and K3 Family deliberate (a toggle, five
              * families), K2 Type and K4 Variation a step a detent */
             if (bank === BANK_REMIX) {
-                if (knobIdx <= 3) {
-                    const _st = knobStep(knobIdx, d2, (knobIdx === 0 || knobIdx === 2) ? KNOB_DELIB : KNOB_PICK);
+                if (knobIdx <= 4) {
+                    const _st = knobStep(knobIdx, d2, (knobIdx === 0 || knobIdx === 2 || knobIdx === 4) ? KNOB_DELIB : KNOB_PICK);
                     if (_st && rmxBankKnob(_t, knobIdx, _st)) S.screenDirty = true;
                 }
                 return;

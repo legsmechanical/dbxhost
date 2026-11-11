@@ -466,8 +466,8 @@ export const S = {
     /* `MIDI to Track N`: 0 = this track plays its own instrument, 1..8 = it
      * plays that track's instead. Mirrors the DSP's tN_midi_to. */
     trackMidiTo: Array.from({ length: NUM_TRACKS }, () => 0),
-    /* REMIX of each track's active clip: [on, TYPE 0..15, setting 0..79] (the clip pfx snapshot) */
-    rmxSet: Array.from({ length: NUM_TRACKS }, () => [0, 0, 0]),
+    /* REMIX of each track's active clip: [on, TYPE 0..15, setting 0..79, ROLL velocity 0/1] (the clip pfx snapshot) */
+    rmxSet: Array.from({ length: NUM_TRACKS }, () => [0, 0, 0, 1]),
     trackRoute: new Array(8).fill(0),
     /* 1 = the track's notes go through its own slot's MIDI FX module (one is
      * loaded, Pre or Post: the engine's tN_fxpost / tN_fxpre). Mirrored here

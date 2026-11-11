@@ -24,6 +24,7 @@ int main(void) {
     /* fresh clips: off, TYPE 1, NORMAL 1 */
     HX_ASSERT(!inst->tracks[2].clips[0].pfx_params.rmx_on && !inst->tracks[2].clips[0].pfx_params.rmx_type
               && !inst->tracks[2].clips[0].pfx_params.rmx_var, "a fresh clip is not off / 0 / 0");
+    HX_ASSERT(inst->tracks[2].clips[0].pfx_params.rmx_rvel == 1, "a fresh clip's ROLL velocity is not On");
 
     /* the bank keys: the active clip (A) */
     hx_set_param(h, "t2_remix_on", "1");
@@ -39,6 +40,8 @@ int main(void) {
     HX_ASSERT(inst->tracks[2].clips[0].pfx_params.rmx_var == 79, "setting not clamped to 79");
     hx_set_param(h, "t2_remix_var", "24");
     hx_set_param(h, "t2_remix_type", "9");
+    hx_set_param(h, "t2_remix_rvel", "0");
+    HX_ASSERT(inst->tracks[2].clips[0].pfx_params.rmx_rvel == 0, "remix_rvel did not land");
 
     /* a Slicer: clip C set by address, clip A untouched */
     hx_set_param(h, "t5_c2_pfx_set", "remix_on 1");
@@ -57,6 +60,7 @@ int main(void) {
         HX_ASSERT(f, "no state file");
         n = fread(buf, 1, sizeof buf - 1, f); buf[n] = 0; fclose(f);
         HX_ASSERT(strstr(buf, "\"t2c0_rxo\":1") && strstr(buf, "\"t2c0_rxt\":9") && strstr(buf, "\"t2c0_rxv\":24"), "clip A's remix not saved");
+        HX_ASSERT(strstr(buf, "\"t2c0_rxr\":0"), "clip A's ROLL velocity Off not saved");
         HX_ASSERT(!strstr(buf, "\"t2c1_rx"), "a default clip wrote remix keys (not sparse)");
     }
     hx_destroy(h);
@@ -69,6 +73,8 @@ int main(void) {
     HX_ASSERT(inst->tracks[5].clips[2].pfx_params.rmx_on && inst->tracks[5].clips[2].pfx_params.rmx_type == 3
               && inst->tracks[5].clips[2].pfx_params.rmx_var == 47, "reloaded: Slicer clip C's remix lost");
     HX_ASSERT(!inst->tracks[5].clips[0].pfx_params.rmx_on, "reloaded: Slicer clip A turned on");
+    HX_ASSERT(inst->tracks[2].clips[0].pfx_params.rmx_rvel == 0, "reloaded: clip A's ROLL velocity came back On");
+    HX_ASSERT(inst->tracks[2].clips[1].pfx_params.rmx_rvel == 1, "reloaded: a default clip's ROLL velocity is not On");
     hx_destroy(h);
 
     snprintf(p, sizeof p, "rm -rf '%s'", g_root);

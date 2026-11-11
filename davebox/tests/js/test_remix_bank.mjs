@@ -158,7 +158,7 @@ const reset = () => { sets.length = 0; S.knobAccelLast.fill(0); };
 const mapPad = (c, r) => { cc(3, 127); note(P.bankMapPadForCell(c, r), 100); note(P.bankMapPadForCell(c, r), 0); cc(3, 0); ticks(3); };
 const turn = (k, dir, n) => { S.knobAccum[k] = 0; note(k, 127); for (let i = 0; i < n; i++) { S.knobAccelLast[k] = 0; cc(71 + k, dir > 0 ? 1 : 127); } note(k, 0); };
 /* the engine's snapshot of the active clip, REMIX at v[44..46] */
-const SNAP = (on, type, v) => Array.from({ length: 44 }, () => '0').concat([String(on), String(type), String(v)]).join(' ');
+const SNAP = (on, type, v, rv) => Array.from({ length: 44 }, () => '0').concat([String(on), String(type), String(v), String(rv === undefined ? 1 : rv)]).join(' ');
 
 step('setup: track 5 an Audio track, Track view', () => {
     S.trackPadMode[4] = C.PAD_MODE_AUDIO; S.pendingPadNoteMapRecompute = true; S.ledsDirtyAudio = true;
@@ -224,6 +224,21 @@ step('⭐ K2 Type, K3 Family, K4 Variation reach the engine', () => {
         BR.refreshPerClipBankParams(4);
     });
 }
+
+step('⭐ K5 Vel is ROLL\'s alone: blank on another family; on Roll, turned left it is Off — sent as the clip\'s', () => {
+    S.rmxSet[4] = [1, 0, 16, 1];                     /* Reverse */
+    assert(A.rmxBankCells(4)[4].kind === 'blank', 'K5 shows on Reverse: ' + JSON.stringify(A.rmxBankCells(4)[4]));
+    reset();
+    turn(4, -1, 30); ticks(1);
+    assert(!sent('t4_remix_rvel').length, 'K5 sent on Reverse: ' + JSON.stringify(sets));
+    S.rmxSet[4] = [1, 0, 32, 1];                     /* Roll */
+    const c = A.rmxBankCells(4)[4];
+    assert(c.label === 'Vel' && c.text === 'On', 'K5 is not Vel On on Roll: ' + JSON.stringify(c));
+    reset();
+    turn(4, -1, 30); ticks(1);
+    assert(sent('t4_remix_rvel').join() === '0', 'Vel Off not sent once: ' + JSON.stringify(sets));
+    assert(A.rmxBankCells(4)[4].text === 'Off', 'the cell does not read Off');
+});
 
 step('⭐ on a Slicer the same pad opens REMIX, and NOTE FX keeps its own pad', () => {
     S.trackPadMode[4] = C.PAD_MODE_SLICER; S.pendingPadNoteMapRecompute = true; S.trackActiveClip[4] = 0; S.activeBank = 0;

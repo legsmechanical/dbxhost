@@ -1142,18 +1142,28 @@ export function auLoopBankCells(t) {
  * Variation 1-16. The engine takes a change at the next bar line. ---- */
 export const RMX_FAMILIES = ['Normal', 'Reverse', 'Roll', 'Break', 'Pitch'];
 export function rmxBankCells(t) {
-    const r = S.rmxSet[t] || [0, 0, 0], fam = (r[2] / 16) | 0, num = r[2] % 16;
+    const r = S.rmxSet[t] || [0, 0, 0, 1], fam = (r[2] / 16) | 0, num = r[2] % 16;
     const on = { kind: 'enumsq', label: 'Remix', name: 'Remix', text: r[0] ? 'On' : 'Off', options: ['Off', 'On'], sel: r[0] ? 1 : 0 };
     const type = { kind: 'valsq', label: 'Type', name: 'Remix Type', text: String(r[1] + 1) };
     const family = { kind: 'enumsq', label: 'Famly', name: 'Family', text: RMX_FAMILIES[fam] || 'Normal', options: RMX_FAMILIES, sel: fam };
     const vari = { kind: 'valsq', label: 'Var', name: 'Variation', text: String(num + 1) };
-    return [on, type, family, vari, BLANK, BLANK, BLANK, BLANK];
+    /* K5 Vel, ROLL's alone (Josh, 2026-11-10: "can we have a param for
+     * velocity on off in roll?"): its repeats at their velocity ramp, or all
+     * at full level */
+    const vel = fam === 2
+        ? { kind: 'enumsq', label: 'Vel', name: 'Roll Velocity', text: r[3] === 0 ? 'Off' : 'On', options: ['Off', 'On'], sel: r[3] === 0 ? 0 : 1 }
+        : BLANK;
+    return [on, type, family, vari, vel, BLANK, BLANK, BLANK];
 }
 /* K1..K4 of the REMIX bank, `steps` detents. Returns true when it changed. */
 export function rmxBankKnob(t, k, steps) {
-    const r = (S.rmxSet[t] || [0, 0, 0]).slice();
+    const r = (S.rmxSet[t] || [0, 0, 0, 1]).slice();
     let key, v;
     if (k === 0)      { v = steps > 0 ? 1 : 0; if (v === r[0]) return false; r[0] = v; key = 'remix_on'; }
+    else if (k === 4) {
+        if (((r[2] / 16) | 0) !== 2) return false;          /* ROLL's alone */
+        v = steps > 0 ? 1 : 0; if (v === (r[3] === 0 ? 0 : 1)) return false; r[3] = v; key = 'remix_rvel';
+    }
     else if (k === 1) { v = Math.max(0, Math.min(15, r[1] + steps)); if (v === r[1]) return false; r[1] = v; key = 'remix_type'; }
     else if (k === 2 || k === 3) {
         const fam = (r[2] / 16) | 0, num = r[2] % 16;

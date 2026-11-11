@@ -205,6 +205,12 @@ int main(void) {
             snprintf(msg, sizeof msg, "sync %d, ROLL 1: the last 1/16 at %.2f of the same source at velocity 100 (want ~0.3-0.5)",
                      sync, m[15].mid / m[ref].mid);
             HX_ASSERT(m[15].mid > m[ref].mid * 0.25 && m[15].mid < m[ref].mid * 0.55, msg);
+            /* Vel Off: the repeats at full level (Josh, 2026-11-10: "a param for velocity on off in roll") */
+            hx_set_param(h, "t2_remix_rvel", "0");
+            measure_bar(h, m);
+            snprintf(msg, sizeof msg, "sync %d, ROLL 1 Vel Off: the last 1/16 at %.2f of the same source (want ~0.8)", sync, m[15].mid / m[ref].mid);
+            HX_ASSERT(m[15].mid > m[ref].mid * 0.65, msg);
+            hx_set_param(h, "t2_remix_rvel", "1");
         }
 
         /* ==== PITCH (TYPE 16): a +12 slot is an octave up ==== */
