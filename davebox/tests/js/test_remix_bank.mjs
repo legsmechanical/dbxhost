@@ -158,7 +158,7 @@ const reset = () => { sets.length = 0; S.knobAccelLast.fill(0); };
 const mapPad = (c, r) => { cc(3, 127); note(P.bankMapPadForCell(c, r), 100); note(P.bankMapPadForCell(c, r), 0); cc(3, 0); ticks(3); };
 const turn = (k, dir, n) => { S.knobAccum[k] = 0; note(k, 127); for (let i = 0; i < n; i++) { S.knobAccelLast[k] = 0; cc(71 + k, dir > 0 ? 1 : 127); } note(k, 0); };
 /* the engine's snapshot of the active clip, REMIX at v[44..46] */
-const SNAP = (on, type, v, rv) => Array.from({ length: 44 }, () => '0').concat([String(on), String(type), String(v), String(rv === undefined ? 1 : rv)]).join(' ');
+const SNAP = (on, type, v, rv, dl) => Array.from({ length: 44 }, () => '0').concat([on, type, v, rv === undefined ? 1 : rv].concat(dl || [100, 0, 0, 0, 0, 0]).map(String)).join(' ');
 
 step('setup: track 5 an Audio track, Track view', () => {
     S.trackPadMode[4] = C.PAD_MODE_AUDIO; S.pendingPadNoteMapRecompute = true; S.ledsDirtyAudio = true;
@@ -168,7 +168,7 @@ step('setup: track 5 an Audio track, Track view', () => {
     ticks(3);
 });
 
-step('⭐ the FX row-3 pad opens REMIX on an Audio track; the screen draws its bank', () => {
+step('⭐ the FX row-3 pad opens REMIX on an Audio track; the screen draws its eight knobs', () => {
     mapPad(3, 2);
     assert(S.activeBank === C.BANK_REMIX, 'the pad did not open REMIX: bank ' + S.activeBank);
     ticks(90);                                      /* past the bank's name card */
@@ -177,9 +177,9 @@ step('⭐ the FX row-3 pad opens REMIX on an Audio track; the screen draws its b
     note(0, 0); ticks(2);
     assert(tx.indexOf('REMIX') >= 0, 'the header does not say REMIX: ' + tx);
     /* (the kit font draws capitals; a long value splits over two lines) */
-    for (const l of ['TYPE', 'FAMLY', 'VAR'])
+    for (const l of ['TYPE', 'PRSET', 'SHUFL', 'REVRS', 'ROLL', 'BREAK', 'PITCH'])
         assert(tx.indexOf(l) >= 0, 'the bank does not show ' + l + ': ' + tx);
-    assert(tx.indexOf('OFF') >= 0 && tx.indexOf('NOR') >= 0, 'not Off / Normal at rest: ' + tx);
+    assert(tx.indexOf('OFF') >= 0 && tx.indexOf('100%') >= 0, 'not Off / Shuffle 100% at rest: ' + tx);
 });
 
 step('a brush on K1 does not turn it on; a deliberate turn does — as the active clip\'s', () => {
@@ -191,54 +191,76 @@ step('a brush on K1 does not turn it on; a deliberate turn does — as the activ
     assert(A.rmxBankCells(4)[0].text === 'On', 'the cell does not read On');
 });
 
-step('⭐ K2 Type, K3 Family, K4 Variation reach the engine', () => {
+step('⭐ K3 Preset: a step to Norm 2, then on to Rev 9 sets the dials to the preset\'s (Reverse 50 %)', () => {
     reset();
-    turn(1, 1, 16); ticks(1);
-    const ty = sent('t4_remix_type');
-    assert(ty.length >= 1 && (ty[ty.length - 1] | 0) >= 1, 'Type not sent up: ' + JSON.stringify(sets));
+    turn(2, 1, 16); ticks(1);
+    const pv = sent('t4_remix_var');
+    assert(pv.length >= 1, 'the preset was not sent: ' + JSON.stringify(sets));
+    S.rmxSet[4][2] = 23;                            /* one short of Rev 9 */
     reset();
-    turn(2, 1, 30); ticks(1);
-    const fv = sent('t4_remix_var');
-    assert(fv.length >= 1 && ((fv[fv.length - 1] | 0) / 16 | 0) === 1, 'Family did not step to Reverse (setting 16..31): ' + JSON.stringify(sets));
+    turn(2, 1, 16); ticks(1);
+    const c = A.rmxBankCells(4);
+    assert(sent('t4_remix_var').slice(-1)[0] === '24' && c[2].text === 'Rev 9', 'not Rev 9: ' + JSON.stringify([sets, c[2]]));
+    assert(c[3].text === '100%' && c[4].text === '50%' && c[5].text === '0%' && c[6].text === '0%' && c[7].text === '0st',
+           'Rev 9 did not set Shuffle 100 / Reverse 50 / 0 / 0 / 0: ' + JSON.stringify(c.slice(3).map((x) => x.text)));
+});
+
+step('⭐ the dials reach the engine, and an edited preset reads *', () => {
     reset();
-    turn(3, 1, 16); ticks(1);
-    const vv = sent('t4_remix_var');
-    assert(vv.length >= 1 && ((vv[vv.length - 1] | 0) / 16 | 0) === 1 && (vv[vv.length - 1] | 0) % 16 >= 1,
-           'Variation did not step within Reverse: ' + JSON.stringify(sets));
-    note(2, 127); ticks(2);
-    const tx = texts(() => render.drawUI()).join('|');
-    note(2, 0); ticks(2);
-    assert(tx.indexOf('REV') >= 0 && tx.indexOf('ON') >= 0, 'the Family cell does not read Reverse (Remix On): ' + tx);
+    turn(4, -1, 16); ticks(1);                      /* Reverse down */
+    const rv = sent('t4_remix_rev');
+    assert(rv.length >= 1 && (rv[rv.length - 1] | 0) < 50, 'Reverse not sent down: ' + JSON.stringify(sets));
+    assert(A.rmxBankCells(4)[2].text === 'Rev 9*', 'the edited preset does not read *: ' + A.rmxBankCells(4)[2].text);
+    reset();
+    turn(5, 1, 16); turn(6, 1, 16); turn(7, 1, 16); turn(3, -1, 16); ticks(1);
+    assert(sent('t4_remix_roll').length && sent('t4_remix_brk').length && sent('t4_remix_pit').length && sent('t4_remix_shuf').length,
+           'Roll / Break / Pitch / Shuffle not all sent: ' + JSON.stringify(sets));
+});
+
+step('⭐ K6: touch + click cycles Roll -> Rate -> Vel -> Roll; Rate and Vel reach the engine', () => {
+    const click = () => { cc(3, 127); cc(3, 0); };
+    note(5, 127); click(); ticks(1);
+    assert(A.rmxBankCells(4)[5].label === 'Rate', 'K6 did not turn to Rate: ' + JSON.stringify(A.rmxBankCells(4)[5]));
+    note(5, 0);
+    reset(); turn(5, 1, 16); ticks(1);
+    assert(sent('t4_remix_rate').slice(-1)[0] === '1', 'Rate 1/32 not sent: ' + JSON.stringify(sets));
+    note(5, 127); click(); ticks(1); note(5, 0);
+    assert(A.rmxBankCells(4)[5].label === 'Vel' && A.rmxBankCells(4)[5].text === 'On', 'K6 did not turn to Vel On');
+    reset(); turn(5, -1, 30); ticks(1);
+    assert(sent('t4_remix_rvel').join() === '0', 'Vel Off not sent once: ' + JSON.stringify(sets));
+    note(5, 127); click(); ticks(1); note(5, 0);
+    assert(A.rmxBankCells(4)[5].label === 'Roll', 'K6 did not come back to Roll');
 });
 
 {
     const BR = await import('../../ui/ui_dsp_bridge.mjs');
-    step('...clip B: TYPE 7, BREAK 10, on', () => {
+    step('the cells read the clip\'s snapshot from the engine (v[44..53]): another clip, its own remix', () => {
         S.trackActiveClip[4] = 1;
-        GET['t4_c1_pfx_snapshot'] = SNAP(1, 6, 3 * 16 + 9);
+        GET['t4_c1_pfx_snapshot'] = SNAP(1, 6, 3 * 16 + 9, 1, [80, 25, 0, 100, 3, 0]);
         BR.refreshPerClipBankParams(4);
         const c = A.rmxBankCells(4);
-        assert(c[0].text === 'On' && c[1].text === '7' && c[2].text === 'Break' && c[3].text === '10',
-               'the cells do not read the snapshot: ' + JSON.stringify(c.slice(0, 4).map((x) => x.text)));
+        assert(c[0].text === 'On' && c[1].text === '7' && c[2].text === 'Brk 10*' && c[3].text === '80%' && c[4].text === '25%' && c[7].text === '3st',
+               'the cells do not read the snapshot: ' + JSON.stringify(c.map((x) => x.text)));
         S.trackActiveClip[4] = 0;
         BR.refreshPerClipBankParams(4);
     });
 }
 
-step('⭐ K5 Vel is ROLL\'s alone: blank on another family; on Roll, turned left it is Off — sent as the clip\'s', () => {
-    S.rmxSet[4] = [1, 0, 16, 1];                     /* Reverse */
-    assert(A.rmxBankCells(4)[4].kind === 'blank', 'K5 shows on Reverse: ' + JSON.stringify(A.rmxBankCells(4)[4]));
-    reset();
-    turn(4, -1, 30); ticks(1);
-    assert(!sent('t4_remix_rvel').length, 'K5 sent on Reverse: ' + JSON.stringify(sets));
-    S.rmxSet[4] = [1, 0, 32, 1];                     /* Roll */
-    const c = A.rmxBankCells(4)[4];
-    assert(c.label === 'Vel' && c.text === 'On', 'K5 is not Vel On on Roll: ' + JSON.stringify(c));
-    reset();
-    turn(4, -1, 30); ticks(1);
-    assert(sent('t4_remix_rvel').join() === '0', 'Vel Off not sent once: ' + JSON.stringify(sets));
-    assert(A.rmxBankCells(4)[4].text === 'Off', 'the cell does not read Off');
-});
+{
+    const fs = await import('fs');
+    step('...reverse counts and pitch maxima', () => {
+        const src = fs.readFileSync(process.cwd() + '/dsp/seq8_remix_data.h', 'utf8')   /* (the runner runs from davebox/) */;
+        const rows = (name) => {
+            const m = src.match(new RegExp(name + '\\[[^=]*=\\s*\\{([\\s\\S]*?)\\n\\};'));
+            return m[1].match(/\{([^{}]*)\}/g).map((r) => r.match(/-?\d+/g).map(Number));
+        };
+        const rev = rows('rmx_rev_flag').map((r) => r.filter((x) => x).length);
+        const pmax = rows('rmx_pitch').map((r) => Math.max(...r.map(Math.abs)));
+        const T = A.RMX_TABLES_FOR_TEST();
+        assert(JSON.stringify(T.rev) === JSON.stringify(rev), 'reverse counts: UI ' + T.rev + ' engine ' + rev);
+        assert(JSON.stringify(T.pmax) === JSON.stringify(pmax), 'pitch maxima: UI ' + T.pmax + ' engine ' + pmax);
+    });
+}
 
 step('⭐ on a Slicer the same pad opens REMIX, and NOTE FX keeps its own pad', () => {
     S.trackPadMode[4] = C.PAD_MODE_SLICER; S.pendingPadNoteMapRecompute = true; S.trackActiveClip[4] = 0; S.activeBank = 0;

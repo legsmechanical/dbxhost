@@ -1137,45 +1137,76 @@ export function auLoopBankCells(t) {
     return [live(mode), live(strch), live(shift), BLANK, BLANK, BLANK, BLANK, BLANK];
 }
 /* ---- REMIX (Josh, 2026-11-10: "replacing midi effects banks on audio tracks
- * with loop remix effects like those on the yamaha rs7000") — per clip, on
- * Audio and Slicer alike: K1 Remix Off/On, K2 Type 1-16, K3 Family, K4
- * Variation 1-16. The engine takes a change at the next bar line. ---- */
+ * with loop remix effects like those on the yamaha rs7000"; 2026-11-11: "rs7k
+ * presets as a starting point and our own direct controls to dial things in"
+ * · "at its heart it should be a tool for fun experimentation") — per clip, on
+ * Audio and Slicer alike: K1 Remix, K2 Type, K3 Preset (sets K4-K8), K4
+ * Shuffle, K5 Reverse, K6 Roll (touch + click: Rate, then Vel), K7 Break, K8
+ * Pitch. The engine takes a change at the next bar line. ---- */
+export const RMX_TABLES_FOR_TEST = () => ({ rev: RMX_REV_COUNT, pmax: RMX_PITCH_MAX });
 export const RMX_FAMILIES = ['Normal', 'Reverse', 'Roll', 'Break', 'Pitch'];
+const RMX_FAM_SHORT = ['Norm', 'Rev', 'Roll', 'Brk', 'Pitch'];
+const RMX_RATES = ['Orig', '1/32', '1/64'];
+/* a preset's own dials (seq8_remix.h rmx_dials_of): shuffle reverse roll break pitch */
+export function rmxPresetDials(set) {
+    const fam = (set / 16) | 0, v = set % 16;
+    const revN = RMX_REV_COUNT[v] | 0, pmax = RMX_PITCH_MAX[v] | 0;
+    return [100, fam === 1 ? Math.floor((revN * 100 + 8) / 16) : 0, fam === 2 ? 100 : 0, fam === 3 ? 100 : 0, fam === 4 ? pmax : 0];
+}
+/* (per variation, from the engine's tables: reverse-flagged slots, the pitch shape's largest step —
+ * test_remix_bank checks them against dsp/seq8_remix_data.h) */
+const RMX_REV_COUNT = [4, 4, 4, 4, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 11, 16];
+const RMX_PITCH_MAX = [1, 2, 4, 5, 7, 5, 3, 6, 3, 7, 12, 24, 24, 19, 24, 24];
+export function rmxEdited(t) {
+    const r = S.rmxSet[t] || [0, 0, 0, 1, 100, 0, 0, 0, 0, 0], d = rmxPresetDials(r[2]);
+    return r[4] !== d[0] || r[5] !== d[1] || r[6] !== d[2] || r[7] !== d[3] || r[8] !== d[4] || (r[9] | 0) !== 0;
+}
+export function rmxPresetName(set) { return RMX_FAM_SHORT[(set / 16) | 0] + ' ' + ((set % 16) + 1); }
 export function rmxBankCells(t) {
-    const r = S.rmxSet[t] || [0, 0, 0, 1], fam = (r[2] / 16) | 0, num = r[2] % 16;
+    const r = S.rmxSet[t] || [0, 0, 0, 1, 100, 0, 0, 0, 0, 0];
+    const pct = (label, name, v) => ({ kind: 'valsq', label, name, text: (v | 0) + '%' });
     const on = { kind: 'enumsq', label: 'Remix', name: 'Remix', text: r[0] ? 'On' : 'Off', options: ['Off', 'On'], sel: r[0] ? 1 : 0 };
     const type = { kind: 'valsq', label: 'Type', name: 'Remix Type', text: String(r[1] + 1) };
-    const family = { kind: 'enumsq', label: 'Famly', name: 'Family', text: RMX_FAMILIES[fam] || 'Normal', options: RMX_FAMILIES, sel: fam };
-    const vari = { kind: 'valsq', label: 'Var', name: 'Variation', text: String(num + 1) };
-    /* K5 Vel, ROLL's alone (Josh, 2026-11-10: "can we have a param for
-     * velocity on off in roll?"): its repeats at their velocity ramp, or all
-     * at full level */
-    const vel = fam === 2
-        ? { kind: 'enumsq', label: 'Vel', name: 'Roll Velocity', text: r[3] === 0 ? 'Off' : 'On', options: ['Off', 'On'], sel: r[3] === 0 ? 0 : 1 }
-        : BLANK;
-    return [on, type, family, vari, vel, BLANK, BLANK, BLANK];
+    const preset = { kind: 'valsq', label: 'Prset', name: 'Preset', text: rmxPresetName(r[2]) + (rmxEdited(t) ? '*' : '') };
+    let k6;
+    if (S.rmxK6 === 1) k6 = { kind: 'enumsq', label: 'Rate', name: 'Roll Rate', text: RMX_RATES[r[9] | 0], options: RMX_RATES, sel: r[9] | 0 };
+    else if (S.rmxK6 === 2) k6 = { kind: 'enumsq', label: 'Vel', name: 'Roll Velocity', text: r[3] === 0 ? 'Off' : 'On', options: ['Off', 'On'], sel: r[3] === 0 ? 0 : 1 };
+    else k6 = pct('Roll', 'Roll', r[6]);
+    return [on, type, preset, pct('Shufl', 'Shuffle', r[4]), pct('Revrs', 'Reverse', r[5]), k6, pct('Break', 'Break', r[7]),
+            { kind: 'valsq', label: 'Pitch', name: 'Pitch Range', text: (r[8] | 0) + 'st' }];
 }
-/* K1..K4 of the REMIX bank, `steps` detents. Returns true when it changed. */
+/* a REMIX knob, `steps` detents. Returns true when it changed. */
 export function rmxBankKnob(t, k, steps) {
-    const r = (S.rmxSet[t] || [0, 0, 0, 1]).slice();
-    let key, v;
-    if (k === 0)      { v = steps > 0 ? 1 : 0; if (v === r[0]) return false; r[0] = v; key = 'remix_on'; }
-    else if (k === 4) {
-        if (((r[2] / 16) | 0) !== 2) return false;          /* ROLL's alone */
-        v = steps > 0 ? 1 : 0; if (v === (r[3] === 0 ? 0 : 1)) return false; r[3] = v; key = 'remix_rvel';
-    }
-    else if (k === 1) { v = Math.max(0, Math.min(15, r[1] + steps)); if (v === r[1]) return false; r[1] = v; key = 'remix_type'; }
-    else if (k === 2 || k === 3) {
-        const fam = (r[2] / 16) | 0, num = r[2] % 16;
-        const nf = k === 2 ? Math.max(0, Math.min(4, fam + steps)) : fam;
-        const nn = k === 3 ? Math.max(0, Math.min(15, num + steps)) : num;
-        v = nf * 16 + nn;
+    const r = (S.rmxSet[t] || [0, 0, 0, 1, 100, 0, 0, 0, 0, 0]).slice();
+    const send = (key, v) => host_module_set_param('t' + t + '_' + key, String(v));
+    const dial = (i, key, max, per) => {
+        const v = Math.max(0, Math.min(max, (r[i] | 0) + steps * per));
+        if (v === (r[i] | 0)) return false;
+        r[i] = v; S.rmxSet[t] = r; send(key, v); return true;
+    };
+    if (k === 0) { const v = steps > 0 ? 1 : 0; if (v === r[0]) return false; r[0] = v; S.rmxSet[t] = r; send('remix_on', v); return true; }
+    if (k === 1) return dial(1, 'remix_type', 15, 1);
+    if (k === 2) {
+        const v = Math.max(0, Math.min(79, r[2] + steps));
         if (v === r[2]) return false;
-        r[2] = v; key = 'remix_var';
-    } else return false;
-    S.rmxSet[t] = r;
-    host_module_set_param('t' + t + '_' + key, String(v));
-    return true;
+        /* a preset sets the dials to its own (the engine does the same) */
+        const d = rmxPresetDials(v);
+        r[2] = v; r[4] = d[0]; r[5] = d[1]; r[6] = d[2]; r[7] = d[3]; r[8] = d[4]; r[9] = 0;
+        S.rmxSet[t] = r; send('remix_var', v); return true;
+    }
+    if (k === 3) return dial(4, 'remix_shuf', 100, 5);
+    if (k === 4) return dial(5, 'remix_rev', 100, 5);
+    if (k === 5) {
+        if (S.rmxK6 === 1) return dial(9, 'remix_rate', 2, 1);
+        if (S.rmxK6 === 2) {
+            const v = steps > 0 ? 1 : 0; if (v === (r[3] === 0 ? 0 : 1)) return false;
+            r[3] = v; S.rmxSet[t] = r; send('remix_rvel', v); return true;
+        }
+        return dial(6, 'remix_roll', 100, 5);
+    }
+    if (k === 6) return dial(7, 'remix_brk', 100, 5);
+    if (k === 7) return dial(8, 'remix_pit', 24, 1);
+    return false;
 }
 
 /* Loop's Shift in the clip's steps, 0 .. its length - 1 */

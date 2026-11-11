@@ -381,6 +381,14 @@ function _onCC_jog(d1, d2) {
      * click switches to. After the triggers above (no index overlaps), and
      * before the plain-click page alt below, which no longer covers these
      * banks. */
+    /* REMIX K6: touch + click cycles Roll -> Rate -> Vel */
+    if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld &&
+            !S.copyHeld && !S.muteHeld && S.knobTouched === 5 && S.activeBank === BANK_REMIX && isSampledTrack(S.activeTrack)) {
+        S.rmxK6 = ((S.rmxK6 | 0) + 1) % 3;
+        S.screenDirty = true;
+        forceRedraw();
+        return;
+    }
     if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld &&
             !S.copyHeld && !S.muteHeld && S.knobTouched >= 0 &&
             knobAltOnTrack(S.activeTrack, S.trackPadMode[S.activeTrack], S.activeBank, S.knobTouched)) {
@@ -5130,10 +5138,10 @@ function _onCC_knobs(d1, d2) {
             /* REMIX: K1 Remix and K3 Family deliberate (a toggle, five
              * families), K2 Type and K4 Variation a step a detent */
             if (bank === BANK_REMIX) {
-                if (knobIdx <= 4) {
-                    const _st = knobStep(knobIdx, d2, (knobIdx === 0 || knobIdx === 2 || knobIdx === 4) ? KNOB_DELIB : KNOB_PICK);
-                    if (_st && rmxBankKnob(_t, knobIdx, _st)) S.screenDirty = true;
-                }
+                /* K1 Remix and K6's Vel deliberate (toggles); the rest a step a detent */
+                const _delib = knobIdx === 0 || (knobIdx === 5 && S.rmxK6 === 2);
+                const _st = knobStep(knobIdx, d2, _delib ? KNOB_DELIB : KNOB_PICK);
+                if (_st && rmxBankKnob(_t, knobIdx, _st)) S.screenDirty = true;
                 return;
             }
             if (bank === 0 && !audioSliceMode(_t)) {

@@ -222,8 +222,11 @@ function refreshPerClipBankParamsOne(t) {
     S.bankParams[t][1][2] = parseInt(v[3], 10) | 0;  /* K3 = Vel */
     S.bankParams[t][1][3] = parseInt(v[4], 10) | 0;  /* K4 = Qnt */
     /* REMIX at v[44..46]: on, TYPE, setting (the active clip's) */
-    if (v.length >= 47) S.rmxSet[t] = [parseInt(v[44], 10) | 0, parseInt(v[45], 10) | 0, parseInt(v[46], 10) | 0,
-                                       v.length >= 48 ? (parseInt(v[47], 10) | 0) : 1];
+    /* ...the dials at v[48..53]: shuffle reverse roll break pitch rate */
+    if (v.length >= 47) {
+        const n = (i, d) => (v.length > i ? (parseInt(v[i], 10) | 0) : d);
+        S.rmxSet[t] = [n(44, 0), n(45, 0), n(46, 0), n(47, 1), n(48, 100), n(49, 0), n(50, 0), n(51, 0), n(52, 0), n(53, 0)];
+    }
     /* K5 = Len mode at v[43] (appended after seq_arp_step_loop_len at v[42]) */
     S.bankParams[t][1][4] = v.length >= 44 ? (parseInt(v[43], 10) | 0) : 0;
     S.bankParams[t][1][5] = parseInt(v[2], 10) | 0;  /* K6 = Gate */
