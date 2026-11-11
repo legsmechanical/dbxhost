@@ -685,6 +685,9 @@ export const S = {
     stepEditIter: 0,
     stepEditRand: 0,
     stepEditRatch: 0,
+    /* a Slicer step's own sound (step_xrev / _xsemi / _xstart / _xlen):
+     * reversed 0/1, semitones, Start % and Length % of its chop (100 = all) */
+    stepEditXrev: 0, stepEditXsemi: 0, stepEditXstart: 0, stepEditXlen: 100,
     stepBtnPressedTick: new Array(16).fill(-1),
     lastPlayedNote: -1,
     lastPadVelocity: 100,

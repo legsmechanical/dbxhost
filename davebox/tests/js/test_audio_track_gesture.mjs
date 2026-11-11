@@ -1893,8 +1893,9 @@ step('⭐ a held step\'s K1 stops at the clip\'s last chop (review: it ran on to
     S.heldStep = -1; S.heldStepNotes = []; S.heldStepBtn = -1; S.activeBank = 0;
 });
 
-step('⭐ the step editor\'s K1 reads "Slice n"; K2 and K4 (Vel) are blank', () => {
+step('⭐ the step editor\'s K1 reads "Slice n"; K2 Pitch, K3 Length (Start behind it), K4 Reverse — the step\'s own sound (Josh, 2026-11-11)', () => {
     S.heldStep = 0; S.heldStepNotes = [2]; S.activeBank = C.BANK_STEP;
+    S.stepEditXrev = 0; S.stepEditXsemi = 0; S.stepEditXstart = 0; S.stepEditXlen = 100; S.knobAlt = 0;
     const cells = render.heldStepCells();
     assert(cells[0].label === 'Slice' && cells[0].bigText === 'Slice 3', 'K1: ' + JSON.stringify(cells[0]));
     /* ...and the page as drawn: the merged box over K1 / K2 says the chop, not
@@ -1902,13 +1903,25 @@ step('⭐ the step editor\'s K1 reads "Slice n"; K2 and K4 (Vel) are blank', () 
     S.heldStepBtn = -1; S.stepWasEmpty = false;
     const tx = globalThis.__texts(() => frame(() => render.drawHeldStepPage()));
     assert(tx.indexOf('3') >= 0 && !tx.some((x) => /^D-?2/.test(x)), 'the step page names a note: ' + JSON.stringify(tx));
-    /* K2 blank (no octave), K4 blank: a Slicer plays every chop at one level
-     * (Josh, 2026-11-02: "no velocity modulation") */
-    assert(cells[1].kind === 'blank' && !cells[1].label && cells[3].kind === 'blank' && !cells[3].label,
-           'K2 / K4: ' + JSON.stringify([cells[1], cells[3]]));
+    assert(cells[1].label === 'Pitch' && cells[2].label === 'Leng' && cells[2].text === '100%' && cells[3].label === 'Revrs' && cells[3].text === 'Off',
+           'K2 / K3 / K4 are not Pitch / Length 100% / Reverse Off: ' + JSON.stringify([cells[1], cells[2], cells[3]]));
     S.heldStepBtn = 16; reset();
-    for (let i = 0; i < 20; i++) { cc(72, 1); cc(74, 1); }
-    assert(!sentLike(/_vel$|_step_0_vel|_set_notes$/).length, 'K2 / K4 wrote on a Slicer\'s step: ' + JSON.stringify(sets));
+    for (let i = 0; i < 20; i++) cc(72, 1);                 /* K2 Pitch up */
+    for (let i = 0; i < 30; i++) cc(74, 1);                 /* K4 Reverse on (deliberate) */
+    for (let i = 0; i < 10; i++) cc(73, 127);               /* K3 Length down */
+    const px = sent('t4_c0_step_0_xsemi'), rv = sent('t4_c0_step_0_xrev'), ln = sent('t4_c0_step_0_xlen');
+    assert(px.length && (px[px.length - 1] | 0) > 0, 'K2 did not send the step\'s Pitch up: ' + JSON.stringify(sets));
+    assert(rv.length === 1 && rv[0] === '1', 'K4 did not turn Reverse on once: ' + JSON.stringify(rv));
+    assert(ln.length && (ln[ln.length - 1] | 0) < 100, 'K3 did not send Length down: ' + JSON.stringify(ln));
+    assert(!sentLike(/_vel$|_step_0_vel|_set_notes$|_step_0_gate/).length, 'a Slicer step wrote velocity / notes / gate: ' + JSON.stringify(sets));
+    /* touch K3 + click: Start; turned, it sends the step's Start */
+    note(2, 127); cc(3, 127); cc(3, 0); note(2, 0);
+    assert(render.heldStepCells()[2].label === 'Start', 'touch + click did not turn K3 to Start: ' + JSON.stringify(render.heldStepCells()[2]));
+    reset();
+    for (let i = 0; i < 10; i++) cc(73, 1);
+    const st = sent('t4_c0_step_0_xstart');
+    assert(st.length && (st[st.length - 1] | 0) > 0, 'K3 (Start) did not send the step\'s Start: ' + JSON.stringify(sets));
+    S.knobAlt = 0;
     S.heldStepBtn = -1;
     S.heldStep = -1; S.heldStepNotes = []; S.activeBank = 0;
 });

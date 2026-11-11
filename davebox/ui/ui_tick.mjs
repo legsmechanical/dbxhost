@@ -2029,6 +2029,15 @@ export function _tickImpl() {
                 S.stepEditIter  = ri2 !== null ? parseInt(ri2, 10) : 0;
                 S.stepEditRand  = rr2 !== null ? parseInt(rr2, 10) : 0;
                 S.stepEditRatch = rx2 !== null ? parseInt(rx2, 10) : 0;
+                if (S.trackPadMode[S.activeTrack] === PAD_MODE_SLICER) {
+                    const _xp = 't' + S.activeTrack + '_c' + ac_h2 + '_step_' + S.heldStep;
+                    const _xr = host_module_get_param(_xp + '_xrev'), _xs = host_module_get_param(_xp + '_xsemi');
+                    const _xa = host_module_get_param(_xp + '_xstart'), _xl = host_module_get_param(_xp + '_xlen');
+                    S.stepEditXrev = _xr !== null ? (parseInt(_xr, 10) | 0) : 0;
+                    S.stepEditXsemi = _xs !== null ? (parseInt(_xs, 10) | 0) : 0;
+                    S.stepEditXstart = _xa !== null ? (parseInt(_xa, 10) | 0) : 0;
+                    S.stepEditXlen = _xl !== null ? (parseInt(_xl, 10) | 0) || 100 : 100;
+                }
                 S.screenDirty = true;
             } else if (S.stepWasEmpty && S.heldStepNotes.length === 0) {
                 /* ⭑ A HOLD NEVER CREATES (spec §2, Josh 2026-09-02): an empty

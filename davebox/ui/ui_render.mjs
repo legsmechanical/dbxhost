@@ -2413,14 +2413,24 @@ export function heldStepCells() {
         isSampledTrack(t)
             ? { kind: 'blank', label: 'Slice', name: 'Slice', bigText: 'Slice ' + (root - AU_NOTE_BASE + 1), ringBound: true }
             : { kind: 'blank', label: 'Note', name: 'Note', bigText: noteLabel, ringBound: true },
+        /* A Slicer step's own sound (Josh, 2026-11-11: per-step reverse and
+         * pitch — "that's the way"; "why not have start be the alt to length
+         * and have length set sample length for that step"): K2 Pitch, K3 the
+         * part of its chop (Length, Start behind it), K4 Reverse */
         isSampledTrack(t)
-            ? { kind: 'blank', label: '' }
+            ? { kind: 'arcbip', label: 'Pitch', name: 'Pitch', text: (S.stepEditXsemi > 0 ? '+' : '') + S.stepEditXsemi,
+                signed: Math.max(-1, Math.min(1, S.stepEditXsemi / 24)) }
             : { kind: 'blank', label: 'Oct',  name: 'Note', bigText: noteLabel, ringBound: true },
-        { kind: 'valsq', label: 'Leng', name: 'Length',
-          text: fmtStepLen(_gateSteps) },
+        isSampledTrack(t)
+            ? (knobAltOn(2)
+                ? { kind: 'arc', label: 'Start', name: 'Start', text: S.stepEditXstart + '%', norm: S.stepEditXstart / 100 }
+                : { kind: 'arc', label: 'Leng', name: 'Length', text: S.stepEditXlen + '%', norm: S.stepEditXlen / 100 })
+            : { kind: 'valsq', label: 'Leng', name: 'Length',
+                text: fmtStepLen(_gateSteps) },
         /* a Slicer plays every chop at one level (Josh, 2026-11-02: "no
-         * velocity modulation"): no Vel to set */
-        isSampledTrack(t) ? { kind: 'blank', label: '' }
+         * velocity modulation"): K4 is the step's Reverse there */
+        isSampledTrack(t) ? { kind: 'enumsq', label: 'Revrs', name: 'Reverse', text: S.stepEditXrev ? 'On' : 'Off',
+                              options: ['Off', 'On'], sel: S.stepEditXrev ? 1 : 0 }
             : { kind: 'arc', label: 'Vel', name: 'Velocity', text: String(S.stepEditVel),
                 norm: Math.max(0, Math.min(1, S.stepEditVel / 127)) },
         { kind: 'arcbip', label: 'Nudg', name: 'Nudge',

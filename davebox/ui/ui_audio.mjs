@@ -1115,6 +1115,9 @@ export function auPanelKnob(ed, k, steps) {
  * clip's Res / Shift / Dir. */
 export function knobAltOnTrack(t, padMode, bank, k) {
     if (bank === 0 && isSampledTrack(t) && auIsLoop(auInfo(t, auClipOf(t)))) return k === 2 ? ['Shift', 'Nudge'] : null;
+    /* a Slicer step: K3 Length, Start behind it (Josh, 2026-11-11: "why not
+     * have start be the alt to length") */
+    if (bank === BANK_STEP && padMode === PAD_MODE_SLICER) return k === 2 ? ['Length', 'Start'] : null;
     return knobAltFor(padMode, bank, k);
 }
 

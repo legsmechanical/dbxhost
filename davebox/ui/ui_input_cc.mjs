@@ -4826,7 +4826,14 @@ function _onCC_stepedit(d1, d2) {
                 host_module_set_param(pfx + '_set_notes', S.heldStepNotes.join(' '));
             }
         } else if (knobIdx === 1 && isSampledTrack(t)) {
-            return;                       /* no octave: a pitch is a slice */
+            /* a Slicer step's Pitch: a semitone a detent, ±24 */
+            S.knobAccum[knobIdx] = (dir === S.knobLastDir[knobIdx]) ? S.knobAccum[knobIdx] + 1 : 1;
+            S.knobLastDir[knobIdx] = dir;
+            if (S.knobAccum[knobIdx] >= KNOB_PICK) {
+                S.knobAccum[knobIdx] = 0;
+                const _v = Math.max(-24, Math.min(24, S.stepEditXsemi + dir));
+                if (_v !== S.stepEditXsemi) { S.stepEditXsemi = _v; host_module_set_param(pfx + '_xsemi', String(_v)); }
+            }
         } else if (knobIdx === 1) {
             /* K2 Oct: shift all notes ±12 semitones, sens=12 */
             S.knobAccum[knobIdx] = (dir === S.knobLastDir[knobIdx]) ? S.knobAccum[knobIdx] + 1 : 1;
@@ -4837,6 +4844,18 @@ function _onCC_stepedit(d1, d2) {
                     return Math.max(0, Math.min(127, n + dir * 12));
                 });
                 host_module_set_param(pfx + '_set_notes', S.heldStepNotes.join(' '));
+            }
+        } else if (knobIdx === 2 && isSampledTrack(t)) {
+            /* a Slicer step's part of its chop: Length %, or (touch + click)
+             * Start % — 1 % a detent, faster as it turns */
+            const _acc = ccKnobDelta(d2, knobIdx);
+            if (_acc === 0) return;
+            if (knobAltOn(2)) {
+                const _v = Math.max(0, Math.min(99, S.stepEditXstart + _acc));
+                if (_v !== S.stepEditXstart) { S.stepEditXstart = _v; host_module_set_param(pfx + '_xstart', String(_v)); }
+            } else {
+                const _v = Math.max(1, Math.min(100, S.stepEditXlen + _acc));
+                if (_v !== S.stepEditXlen) { S.stepEditXlen = _v; host_module_set_param(pfx + '_xlen', String(_v)); }
             }
         } else if (knobIdx === 2) {
             /* K3 Dur: accelerated with breakpoints at 16/64 steps */
@@ -4854,7 +4873,11 @@ function _onCC_stepedit(d1, d2) {
               S.stepEditGate = Math.max(1, Math.min(_gmaxD, _nv)); }
             host_module_set_param(pfx + '_gate', String(S.stepEditGate));
         } else if (knobIdx === 3 && isSampledTrack(t)) {
-            return;                       /* no velocity: a Slicer's chops play at one level */
+            /* a Slicer step's Reverse: a toggle, turned deliberately */
+            const _st = knobStep(knobIdx, d2, KNOB_DELIB);
+            if (!_st) return;
+            const _v = _st > 0 ? 1 : 0;
+            if (_v !== S.stepEditXrev) { S.stepEditXrev = _v; host_module_set_param(pfx + '_xrev', String(_v)); }
         } else if (knobIdx === 3) {
             /* K4 Vel: velocity 0-127, cont accel */
             const _sv = ccKnobDelta(d2, knobIdx);
