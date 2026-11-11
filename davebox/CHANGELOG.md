@@ -12,8 +12,8 @@ the section into a versioned heading at release time.
 - **REMIX, a loop remixer for Audio and Slicer tracks.** The FX column's third pad on both.
   Pick a **Type** (how the bar is cut) and a **Preset** (the Yamaha RS7000's remixes), then
   dial it in: **Shuffle**, **Reverse**, **Roll** (with its rate and velocity), **Break** and
-  **Pitch**, mixed as you like. Each clip keeps its own, and a change lands on the next bar.
-  Turning a knob shows the bar it makes; on an Audio clip the pads follow the remix.
+  **Pitch** (up or down), mixed as you like. Each clip keeps its own, and a change lands on the next bar.
+  Turning a knob shows its value and the bar it makes; on an Audio clip the pads follow the remix.
 - **A Slicer step has its own sound.** Hold a step: **Pitch** (±24 semitones), **Length**
   (how much of its chop it plays) with **Start** behind it, and **Reverse**.
 - **Bake keeps a remix.** On an Audio clip, **Bake clip** records what you hear into a new

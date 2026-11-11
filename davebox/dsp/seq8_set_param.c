@@ -75,7 +75,7 @@ static void pfx_set(seq8_instance_t *inst, seq8_track_t *tr,
     if (!strcmp(key, "remix_rev"))  { cp->rmx_rev  = (uint8_t)clamp_i(my_atoi(val), 0, 100); return; }
     if (!strcmp(key, "remix_roll")) { cp->rmx_roll = (uint8_t)clamp_i(my_atoi(val), 0, 100); return; }
     if (!strcmp(key, "remix_brk"))  { cp->rmx_brk  = (uint8_t)clamp_i(my_atoi(val), 0, 100); return; }
-    if (!strcmp(key, "remix_pit"))  { cp->rmx_pit  = (uint8_t)clamp_i(my_atoi(val), 0, 24); return; }
+    if (!strcmp(key, "remix_pit"))  { cp->rmx_pit  = (int8_t)clamp_i(my_atoi(val), -24, 24); return; }
     if (!strcmp(key, "remix_rate")) { cp->rmx_rate = (uint8_t)clamp_i(my_atoi(val), 0, 2); return; }
 
     if (!strcmp(key, "harm_octaver"))

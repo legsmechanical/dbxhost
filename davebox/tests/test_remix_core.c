@@ -195,6 +195,24 @@ int main(void) {
         rmx_dials_of(RMX_PITCH * RMX_VARS + 0, &d); d.pitch = 12;
         n = rmx_bar_ex(&W, 15, RMX_PITCH * RMX_VARS + 0, &d, L, in, loop_phrase(), out, RMX_MAX);
         for (i = 0; i < n; i++) HX_ASSERT(out[i].pitch == rmx_pitch[0][out[i].src] * 12, "Pitch 12 on PITCH 1: the shape not scaled");
+        /* ...and bipolar (Josh, 2026-11-11: "shouldn't pitch on remix be
+         * bipolar?"): a negative range mirrors the shape, slot for slot */
+        d.pitch = -12;
+        n = rmx_bar_ex(&W, 15, RMX_PITCH * RMX_VARS + 0, &d, L, in, loop_phrase(), out, RMX_MAX);
+        k = 0;
+        for (i = 0; i < n; i++) { HX_ASSERT(out[i].pitch == -rmx_pitch[0][out[i].src] * 12, "Pitch -12 on PITCH 1: not the shape mirrored"); k |= out[i].pitch != 0; }
+        HX_ASSERT(k, "Pitch -12 on PITCH 1: nothing pitched");
+        /* a scaled range rounds the same way either side of 0 (PITCH 12's shape) */
+        {
+            int up[RMX_MAX], nu, j;
+            rmx_dials_of(RMX_PITCH * RMX_VARS + 11, &d); d.pitch = 7;
+            nu = rmx_bar_ex(&W, 15, RMX_PITCH * RMX_VARS + 11, &d, L, in, loop_phrase(), out, RMX_MAX);
+            for (j = 0; j < nu; j++) up[j] = out[j].pitch;
+            d.pitch = -7;
+            n = rmx_bar_ex(&W, 15, RMX_PITCH * RMX_VARS + 11, &d, L, in, loop_phrase(), out, RMX_MAX);
+            HX_ASSERT(n == nu, "Pitch -7: a different bar from +7");
+            for (j = 0; j < n; j++) HX_ASSERT(out[j].pitch == -up[j], "Pitch -7 is not +7 mirrored note for note");
+        }
     }
 
     /* ==== 7. out of range settings play nothing, never crash ==== */

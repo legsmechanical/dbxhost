@@ -1451,14 +1451,16 @@ pad, on Audio and Slicer tracks alike, and each clip has its own.
 | **K5 Revrs** | The share of the bar's 1/16s played backwards |
 | **K6 Roll** | How many stutters (rolls) play. **Touch K6 + click** turns it to **Rate** — **Orig**, **1/32**, **1/64**, how fast they repeat — then to **Vel**: **On**, the rolls ramp in level as the RS7000's do; **Off**, every repeat at full level |
 | **K7 Break** | How hard the preset's breaks cut: from **0 %** (none) to **100 %** (its gaps silent) |
-| **K8 Pitch** | How far the pitched pieces move, **0–24** semitones |
+| **K8 Pitch** | How far the pitched pieces move, **−24 to +24** semitones: below 0 they go the other way — what went up goes down |
 
 The effects combine — start from a Reverse preset and turn up Roll. A change lands at the
-next bar line. **Turning** any REMIX knob shows the bar it makes, over the page: a column
+next bar line. **Turning** any REMIX knob shows a pop-up over the page: the knob's name and
+value across the top, then the bar it makes — a column
 per 1/16, as tall as the part of the loop it plays (in order, they rise like a stair),
 **hollow** when reversed, **dotted** when rolled, **narrow** when cut short, **empty** when
 silent, with a **caret** when pitched and a tick under each piece's start. It goes when you
-let go. On an Audio clip the pads follow: the 1/16 you're hearing pulses, the rest dim.
+let go. The line under the bar says which preset (and Type) you're on, and **OFF** while
+REMIX is off. On an Audio clip the pads follow: the 1/16 you're hearing pulses, the rest dim.
 
 **On a Slicer**, REMIX rearranges your steps bar by bar — a remixed step plays its chop
 reversed or pitched as the remix says, on top of its own sound. **To keep a remix**, bake

@@ -805,7 +805,8 @@ typedef struct {
     uint8_t rmx_on, rmx_type, rmx_var;
     uint8_t rmx_rvel;      /* ROLL's repeats at their velocity ramp (1, default) or all at full level (0) */
     /* REMIX's dials (seq8_remix.h rmx_dials_t), set by the preset (rmx_var), then the user's */
-    uint8_t rmx_shuf, rmx_rev, rmx_roll, rmx_brk, rmx_pit, rmx_rate;
+    uint8_t rmx_shuf, rmx_rev, rmx_roll, rmx_brk, rmx_rate;
+    int8_t  rmx_pit;                 /* -24..24: negative mirrors the pitch shape */
 } clip_pfx_params_t;
 
 /* ------------------------------------------------------------------ */

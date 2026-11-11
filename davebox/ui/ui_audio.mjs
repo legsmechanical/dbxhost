@@ -1180,7 +1180,7 @@ export function rmxBankCells(t) {
     else if (S.rmxK6 === 2) k6 = { kind: 'enumsq', label: 'Vel', name: 'Roll Velocity', text: r[3] === 0 ? 'Off' : 'On', options: ['Off', 'On'], sel: r[3] === 0 ? 0 : 1 };
     else k6 = pct('Roll', 'Roll', r[6]);
     return [on, type, preset, pct('Shufl', 'Shuffle', r[4]), pct('Revrs', 'Reverse', r[5]), k6, pct('Break', 'Break', r[7]),
-            { kind: 'valsq', label: 'Pitch', name: 'Pitch Range', text: (r[8] | 0) + 'st' }];
+            { kind: 'valsq', label: 'Pitch', name: 'Pitch', text: ((r[8] | 0) > 0 ? '+' : '') + (r[8] | 0) + 'st' }];
 }
 /* The bar's picture (the engine's tN_remix_map): per 1/16 { src, fl, pit } —
  * fl 1 reversed, 2 rolled, 4 cut short, 8 silent, 16 a piece starts. Read
@@ -1201,8 +1201,8 @@ export function rmxMapPoll(t) {
 export function rmxBankKnob(t, k, steps) {
     const r = (S.rmxSet[t] || [0, 0, 0, 1, 100, 0, 0, 0, 0, 0]).slice();
     const send = (key, v) => host_module_set_param('t' + t + '_' + key, String(v));
-    const dial = (i, key, max, per) => {
-        const v = Math.max(0, Math.min(max, (r[i] | 0) + steps * per));
+    const dial = (i, key, max, per, min) => {
+        const v = Math.max(min | 0, Math.min(max, (r[i] | 0) + steps * per));
         if (v === (r[i] | 0)) return false;
         r[i] = v; S.rmxSet[t] = r; send(key, v); S.rmxMapDirty = true; S.rmxCard = true; return true;
     };
@@ -1227,7 +1227,7 @@ export function rmxBankKnob(t, k, steps) {
         return dial(6, 'remix_roll', 100, 1);
     }
     if (k === 6) return dial(7, 'remix_brk', 100, 1);
-    if (k === 7) return dial(8, 'remix_pit', 24, 1);
+    if (k === 7) return dial(8, 'remix_pit', 24, 1, -24);     /* bipolar: negative mirrors the shape */
     return false;
 }
 

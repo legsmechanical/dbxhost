@@ -239,6 +239,20 @@ step('⭐ the dials turn like every continuous bank knob: one slow detent = 1 %,
     S.rmxSet[4] = [1, 0, 0, 1, 100, 0, 0, 0, 0, 0];
 });
 
+step('⭐ K8 Pitch is bipolar: below 0 it mirrors the shape (Josh, 2026-11-11: "shouldn\'t pitch on remix be bipolar?")', () => {
+    S.rmxSet[4] = [1, 0, 64, 1, 100, 0, 0, 0, 1, 0];
+    reset();
+    S.knobAccum[7] = 0; note(7, 127);
+    for (let i = 0; i < 3; i++) cc(71 + 7, 127 - 9);     /* three 10-count turns down */
+    note(7, 0); ticks(1);
+    const pv = sent('t4_remix_pit');
+    assert(pv.join() === '0,-1,-2', 'Pitch did not go below 0: ' + pv.join());
+    assert(A.rmxBankCells(4)[7].text === '-2st', 'the cell does not read -2st: ' + A.rmxBankCells(4)[7].text);
+    S.rmxSet[4][8] = 3;
+    assert(A.rmxBankCells(4)[7].text === '+3st', 'a positive range does not read +3st: ' + A.rmxBankCells(4)[7].text);
+    S.rmxSet[4] = [1, 0, 0, 1, 100, 0, 0, 0, 0, 0];
+});
+
 step('⭐ K6: touch + click cycles Roll -> Rate -> Vel -> Roll; Rate and Vel reach the engine', () => {
     const click = () => { cc(3, 127); cc(3, 0); };
     note(5, 127); click(); ticks(1);
@@ -261,7 +275,7 @@ step('⭐ K6: touch + click cycles Roll -> Rate -> Vel -> Roll; Rate and Vel rea
         GET['t4_c1_pfx_snapshot'] = SNAP(1, 6, 3 * 16 + 9, 1, [80, 25, 0, 100, 3, 0]);
         BR.refreshPerClipBankParams(4);
         const c = A.rmxBankCells(4);
-        assert(c[0].text === 'On' && c[1].text === '7' && c[2].text === 'Brk 10*' && c[3].text === '80%' && c[4].text === '25%' && c[7].text === '3st',
+        assert(c[0].text === 'On' && c[1].text === '7' && c[2].text === 'Brk 10*' && c[3].text === '80%' && c[4].text === '25%' && c[7].text === '+3st',
                'the cells do not read the snapshot: ' + JSON.stringify(c.map((x) => x.text)));
         S.trackActiveClip[4] = 0;
         BR.refreshPerClipBankParams(4);
@@ -295,8 +309,16 @@ step('⭐ a REMIX knob in hand shows the bar: the engine\'s map read, its column
     /* a turn: the bar */
     S.knobAccum[4] = 0; for (let i = 0; i < 16; i++) { S.knobAccelLast[4] = 0; cc(75, 1); } ticks(3);
     assert(S.rmxMap && S.rmxMap.length === 16 && S.rmxMap[4].src === 8 && (S.rmxMap[4].fl & 1), 'the map was not read: ' + JSON.stringify(S.rmxMap));
-    const tx = texts(() => render.drawUI()).join('|');
+    const txa = texts(() => render.drawUI()), tx = txa.join('|');
     const f = FB.slice();
+    /* the pop-up's title names the knob in hand and prints its value
+     * (Josh, 2026-11-11: "rework the overlay so that it shows the param
+     * we're changing") — the value its own text, not folded into the
+     * preset line */
+    const rv = A.rmxBankCells(4)[4].text;
+    assert(txa.indexOf(rv) >= 0 && txa.filter((x) => x === 'REVERSE').length >= 1, 'the card does not title the knob with its value (' + rv + '): ' + tx);
+    { const B0 = MV.kitStackBox(1); let ink = 0; for (let x = B0.x + 2; x < B0.x + B0.w - 2; x++) ink += f[(B0.y + 1) * 128 + x] ? 1 : 0;
+      assert(ink > B0.w - 8, 'the card has no title strip across its top'); }
     /* it stays up while the finger does (no timer: UI_LANGUAGE §8) ... */
     ticks(160);
     assert(S.rmxCard, 'the card came down while the knob was still held');
@@ -306,7 +328,7 @@ step('⭐ a REMIX knob in hand shows the bar: the engine\'s map read, its column
     assert(tx.indexOf('REV 9') >= 0, 'the card does not name the preset: ' + tx);
     /* column 15 (slot 3, filled? reversed: hollow) is taller than column 12 (slot 0) */
     const B = MV.kitStackBox(1);
-    const colInk = (c) => { let n = 0; const x0 = B.x + Math.floor((B.w - 96) / 2) + c * 6; for (let y = B.y + 2; y < B.y + B.h - 12; y++) for (let x = x0 + 1; x < x0 + 5; x++) n += f[y * 128 + x] ? 1 : 0; return n; };
+    const colInk = (c) => { let n = 0; const x0 = B.x + Math.floor((B.w - 96) / 2) + c * 6; for (let y = B.y + 12; y < B.y + B.h - 10; y++) for (let x = x0 + 1; x < x0 + 5; x++) n += f[y * 128 + x] ? 1 : 0; return n; };
     assert(colInk(1) > colInk(0) && colInk(11) > colInk(10), 'the columns do not rise with the slot heard: ' + [colInk(0), colInk(1), colInk(10), colInk(11)]);
     S.rmxMapDirty = false;
     if (process.env.RMX_DUMP) {

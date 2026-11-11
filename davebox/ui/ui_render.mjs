@@ -538,8 +538,18 @@ function drawRemixCard(cells) {
     drawKitBackdropDim();
     fill_rect(B.x, B.y, B.w, B.h, 0);
     rectOutline(B.x, B.y, B.w, B.h, 1);
+    /* the knob in hand, named, with its value (Josh, 2026-11-11: "rework the
+     * overlay so that it shows the param we're changing") — a title strip
+     * like the screen's own header */
+    fill_rect(B.x + 1, B.y + 1, B.w - 2, 8, 1);
+    if (c) {
+        const name = String(c.name || c.label || '').toUpperCase(), val = String(c.text == null ? '' : c.text).toUpperCase();
+        const vw = fontWidth4x5(val);
+        fontPrint4x5(B.x + 4, B.y + 3, fit4x5(name, B.w - vw - 14), 0);
+        fontPrint4x5(B.x + B.w - 4 - vw, B.y + 3, val, 0);
+    }
     const map = S.rmxMap && S.rmxMapT === t ? S.rmxMap : null;
-    const cw = 6, x0 = B.x + Math.floor((B.w - 16 * cw) / 2), base = B.y + B.h - 13, top = B.y + 6;
+    const cw = 6, x0 = B.x + Math.floor((B.w - 16 * cw) / 2), base = B.y + B.h - 11, top = B.y + 15;
     fill_rect(x0 - 1, base + 1, 16 * cw + 1, 1, 1);
     if (map) for (let i = 0; i < 16 && i < map.length; i++) {
         const m = map[i], x = x0 + i * cw;
@@ -556,10 +566,10 @@ function drawRemixCard(cells) {
             else { set_pixel(cx - 1, cy, 1); set_pixel(cx + 1, cy, 1); set_pixel(cx, cy + 1, 1); }
         }
     }
+    /* the context: on or off, the preset (* edited), the Type */
     const r = S.rmxSet[t] || [0, 0, 0];
-    const line = fit4x5((c && c.text ? c.text + '  ' : '') + (r[0] ? '' : 'OFF ') +
-                        rmxPresetName(r[2]).toUpperCase() + (rmxEdited(t) ? '*' : '') + ' T' + (r[1] + 1), B.w - 6);
-    fontPrint4x5(Math.round(B.x + (B.w - fontWidth4x5(line)) / 2), base + 5, line, 1);
+    const line = fit4x5((r[0] ? '' : 'OFF  ') + rmxPresetName(r[2]).toUpperCase() + (rmxEdited(t) ? '*' : '') + '  TYPE ' + (r[1] + 1), B.w - 6);
+    fontPrint4x5(Math.round(B.x + (B.w - fontWidth4x5(line)) / 2), base + 4, line, 1);
 }
 
 function audioBankCells(bank, cells) {

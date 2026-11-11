@@ -55,6 +55,8 @@ int main(void) {
     hx_set_param(h, "t5_c2_pfx_set", "remix_on 1");
     hx_set_param(h, "t5_c2_pfx_set", "remix_type 3");
     hx_set_param(h, "t5_c2_pfx_set", "remix_var 47");      /* ROLL 16 */
+    hx_set_param(h, "t5_c2_pfx_set", "remix_pit -30");     /* bipolar: clamped to -24 */
+    HX_ASSERT(inst->tracks[5].clips[2].pfx_params.rmx_pit == -24, "a negative Pitch did not land clamped to -24");
     HX_ASSERT(inst->tracks[5].clips[2].pfx_params.rmx_on && inst->tracks[5].clips[2].pfx_params.rmx_type == 3
               && inst->tracks[5].clips[2].pfx_params.rmx_var == 47, "Slicer clip C's remix did not land");
     HX_ASSERT(!inst->tracks[5].clips[0].pfx_params.rmx_on, "Slicer clip A took clip C's Remix");
@@ -72,6 +74,7 @@ int main(void) {
         HX_ASSERT(strstr(buf, "\"t2c0_rxre\":50") && strstr(buf, "\"t2c0_rxro\":60") && strstr(buf, "\"t2c0_rxpi\":24")
                   && strstr(buf, "\"t2c0_rxra\":2") && !strstr(buf, "\"t2c0_rxsh\""), "clip A's dials not saved sparse");
         HX_ASSERT(!strstr(buf, "\"t2c1_rx"), "a default clip wrote remix keys (not sparse)");
+        HX_ASSERT(strstr(buf, "\"t5c2_rxpi\":-24"), "a negative Pitch not saved");
     }
     hx_destroy(h);
 
@@ -83,6 +86,7 @@ int main(void) {
     HX_ASSERT(inst->tracks[5].clips[2].pfx_params.rmx_on && inst->tracks[5].clips[2].pfx_params.rmx_type == 3
               && inst->tracks[5].clips[2].pfx_params.rmx_var == 47, "reloaded: Slicer clip C's remix lost");
     HX_ASSERT(!inst->tracks[5].clips[0].pfx_params.rmx_on, "reloaded: Slicer clip A turned on");
+    HX_ASSERT(inst->tracks[5].clips[2].pfx_params.rmx_pit == -24, "reloaded: a negative Pitch lost");
     HX_ASSERT(inst->tracks[2].clips[0].pfx_params.rmx_rvel == 0, "reloaded: clip A's ROLL velocity came back On");
     HX_ASSERT(inst->tracks[2].clips[0].pfx_params.rmx_rev == 50 && inst->tracks[2].clips[0].pfx_params.rmx_roll == 60
               && inst->tracks[2].clips[0].pfx_params.rmx_pit == 24 && inst->tracks[2].clips[0].pfx_params.rmx_rate == 2

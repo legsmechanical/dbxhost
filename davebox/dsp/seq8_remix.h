@@ -96,7 +96,8 @@ typedef struct {
     uint8_t reverse;    /* 0..100: % of the 16 source slots reversed (gate x2) */
     uint8_t roll;       /* 0..100: % of the variation's roll runs played */
     uint8_t brk;        /* 0..100: depth of the variation's break shape */
-    uint8_t pitch;      /* 0..24: semitone range of the variation's pitch shape */
+    int8_t  pitch;      /* -24..24: semitone range of the variation's pitch shape;
+                         * negative mirrors it (what went up goes down) */
     uint8_t rate;       /* roll repeats: 0 the table's runs, 1 1/32, 2 1/64 */
     uint8_t vel;        /* roll repeats at the table's velocity (1) or as they were (0) */
 } rmx_dials_t;
@@ -115,7 +116,7 @@ static void rmx_dials_of(int setting, rmx_dials_t *d) {
     d->reverse = (uint8_t)(fam == RMX_REVERSE ? (rmx_rev_count(var) * 100 + 8) / 16 : 0);
     d->roll    = (uint8_t)(fam == RMX_ROLL ? 100 : 0);
     d->brk     = (uint8_t)(fam == RMX_BREAK ? 100 : 0);
-    d->pitch   = (uint8_t)(fam == RMX_PITCH ? rmx_pitch_max(var) : 0);
+    d->pitch   = (int8_t)(fam == RMX_PITCH ? rmx_pitch_max(var) : 0);
     d->rate    = 0;
     d->vel     = 1;
 }

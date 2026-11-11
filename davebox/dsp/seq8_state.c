@@ -1581,7 +1581,7 @@ static void seq8_load_state(seq8_instance_t *inst) {
             snprintf(key, sizeof(key), "t%dc%d_rxre", t, c); p2->rmx_rev  = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 100);
             snprintf(key, sizeof(key), "t%dc%d_rxro", t, c); p2->rmx_roll = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 100);
             snprintf(key, sizeof(key), "t%dc%d_rxbr", t, c); p2->rmx_brk  = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 100);
-            snprintf(key, sizeof(key), "t%dc%d_rxpi", t, c); p2->rmx_pit  = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 24);
+            snprintf(key, sizeof(key), "t%dc%d_rxpi", t, c); p2->rmx_pit  = (int8_t)clamp_i(json_get_int(buf, key, 0), -24, 24);
             snprintf(key, sizeof(key), "t%dc%d_rxra", t, c); p2->rmx_rate = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 2);
             /* v=34 per-step trig conditions (iter/random/ratchet hex blobs) */
             {
