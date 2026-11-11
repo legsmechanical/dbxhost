@@ -10727,8 +10727,9 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                     uint32_t rs, re;
                     uint32_t tps = cl->ticks_per_step ? cl->ticks_per_step : TICKS_PER_STEP;
                     uint32_t lt = (uint32_t)cl->length * tps;
-                    /* Sync Pitch / Vintage: Live has neither — rendered */
-                    if (ac->sync != AU_SYNC_WARP) {
+                    /* Sync Pitch / Vintage: Live has neither — rendered; a
+                     * REMIX on any sync is rendered too (Live cannot remix) */
+                    if (ac->sync != AU_SYNC_WARP || cl->pfx_params.rmx_on) {
                         snprintf(wav, sizeof wav, "%s/au_%d_%d.wav", au_export_dir, t_idx, cidx);
                         long fr = au_export_loop(inst, t_idx, cidx, lt, bpm, wav);
                         if (fr <= 0) return 0;
@@ -10761,8 +10762,14 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                 int loops     = hasRandom ? 8 : 1;
                 int wrap_from = hasDelay  ? 0 : loops;
                 uint32_t span = 0, cyc = 0;
+                /* a REMIX plays as it is heard: rendered from the remixed
+                 * steps (rmx_slicer_apply) on a copy, the clip put back */
+                static clip_t rmx_keep;
+                int rmx_was = tr->pad_mode == PAD_MODE_SLICER && cl->pfx_params.rmx_on;
+                if (rmx_was) { rmx_keep = *cl; rmx_slicer_apply(inst, t_idx, cidx); }
                 int n = render_melodic_clip(inst, t_idx, cidx, loops, wrap_from,
                                             rmc_au, BAKE_BUF * 8, &span, &cyc, 0);
+                if (rmx_was) { *cl = rmx_keep; inst->au_trk[t_idx].rmx_sclip = 0xFF; }
                 (void)cyc;
                 if (n <= 0 || !span) return 0;
                 int k, m = 0;
@@ -10771,6 +10778,8 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                     xn_au[m].tick = rmc_au[k].tick;
                     xn_au[m].gate = rmc_au[k].gate ? rmc_au[k].gate : 1;
                     xn_au[m].slice = (int16_t)(rmc_au[k].pitch - AU_NOTE_BASE);
+                    xn_au[m].xrev = rmc_au[k].xrev; xn_au[m].xsemi = rmc_au[k].xsemi;
+                    xn_au[m].xstart = rmc_au[k].xstart; xn_au[m].xlen = rmc_au[k].xlen;
                     m++;
                 }
                 snprintf(wav, sizeof wav, "%s/au_%d_%d.wav", au_export_dir, t_idx, cidx);

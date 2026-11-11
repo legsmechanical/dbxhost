@@ -2888,7 +2888,7 @@ static uint32_t au_voice_render(au_voice_t *v, int32_t *acc, int frames) {
 
 /* A note of the clip as it plays (the export's render): its tick, its gate in
  * ticks, and the chop it plays. */
-typedef struct { uint32_t tick, gate; int16_t slice; } au_xnote_t;
+typedef struct { uint32_t tick, gate; int16_t slice; uint8_t xrev, xsemi, xstart, xlen; } au_xnote_t;
 
 static int au_xnote_cmp(const void *x, const void *y) {
     const au_xnote_t *a = x, *b = y;
@@ -2977,8 +2977,13 @@ static long au_export_slice(seq8_instance_t *inst, int t, int c, au_xnote_t *xn,
         while (on < n && xn[on].tick < tick) on++;
         for (; on < n && xn[on].tick == tick; on++) {
             uint32_t a, b;
-            if (au_slice_range(cl, s, xn[on].slice, &a, &b))
+            if (au_slice_range(cl, s, xn[on].slice, &a, &b)) {
+                /* the step's own sound, as the live hit (au_note_event) */
+                au_rmx_rev = xn[on].xrev; au_rmx_semi = (int8_t)xn[on].xsemi;
+                au_win_start = xn[on].xstart; au_win_len = xn[on].xlen;
                 au_range_on_in(&trk, s, 0, cl, c, xn[on].slice, a, b, 1.0f, 0, 0, au_slc_speed(cl, bpm));
+                au_rmx_rev = 0; au_rmx_semi = 0; au_win_start = 0; au_win_len = 0;
+            }
         }
         au_xrender(&trk, f, &frame, (uint32_t)((double)(k + 1) * fpt + 0.5), f0);
     }

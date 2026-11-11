@@ -412,7 +412,9 @@ static int render_melodic_clip(seq8_instance_t *inst, int t, int c, int loops,
                     if (_sub_tick >= cycle_ticks) break;
                     for (gi = 0; gi < gc && a_count < BAKE_BUF; gi++)
                         rmc_a[a_count++] = (bake_note_t){ _sub_tick, _final_gate,
-                                                          gen[gi], (uint8_t)vel, gen[0] };
+                                                          gen[gi], (uint8_t)vel, gen[0],
+                                                          cl->step_xrev[_sidx], cl->step_xsemi[_sidx],
+                                                          cl->step_xstart[_sidx], cl->step_xlen[_sidx] };
                 }
             }
         }
@@ -443,6 +445,8 @@ static int render_melodic_clip(seq8_instance_t *inst, int t, int c, int loops,
             out[total_out].gate  = in_buf[ri].gate;
             out[total_out].pitch = in_buf[ri].pitch;
             out[total_out].vel   = in_buf[ri].vel;
+            out[total_out].xrev = in_buf[ri].xrev; out[total_out].xsemi = in_buf[ri].xsemi;
+            out[total_out].xstart = in_buf[ri].xstart; out[total_out].xlen = in_buf[ri].xlen;
             total_out++;
         }
     }
@@ -532,26 +536,13 @@ static uint32_t u32_gcd(uint32_t a, uint32_t b); /* fwd decl; defined below */
 
 static void au_rmx_slicer_build(seq8_instance_t *inst, int t, int c);   /* setparam/sp_track_audio.c */
 
-static void bake_clip(seq8_instance_t *inst, int t, int c, int loops, int wrap,
-                      int apply_conductor) {
-    seq8_track_t *tr = &inst->tracks[t];
-    clip_t *cl;
-    int ni, si, ri;
-    if (tr->pad_mode == PAD_MODE_DRUM) return;
-    if (tr->pad_mode == PAD_MODE_CONDUCT) return; /* Conductor has no bake output */
-    cl = &tr->clips[c];
-    if (cl->note_count == 0) return;
-    if (loops < 1) loops = 1;
-    if (loops > 4) loops = 4;
-
-    undo_begin_single(inst, t, c);
-
-    /* REMIX on a Slicer: it comes first in the signal (the remix makes the
-     * notes NOTE FX then plays with), so the bake takes the remixed steps —
-     * exactly what playback builds — as the clip's, and turns REMIX off; the
-     * stages below then bake NOTE FX over them (Josh, 2026-11-11: "the idea
-     * behind bake is flatten what you hear in the context of the track type") */
-    if (tr->pad_mode == PAD_MODE_SLICER && cl->pfx_params.rmx_on) {
+/* A Slicer clip's REMIX made its own: the remixed steps — what playback
+ * builds — become the clip's notes, each step's sound its source step's with
+ * the remix's reverse / pitch on top, and REMIX turns off. Bake and the
+ * Ableton export both start here. Returns the notes it left. */
+static int rmx_slicer_apply(seq8_instance_t *inst, int t, int c) {
+    clip_t *cl = &inst->tracks[t].clips[c];
+    {
         au_track_t *at = &inst->au_trk[t];
         static uint8_t xr[SEQ_STEPS], xs[SEQ_STEPS], xa[SEQ_STEPS], xl[SEQ_STEPS];
         uint16_t tps0 = cl->ticks_per_step ? cl->ticks_per_step : (uint16_t)TICKS_PER_STEP;
@@ -580,7 +571,31 @@ static void bake_clip(seq8_instance_t *inst, int t, int c, int loops, int wrap,
         memcpy(cl->step_xstart, xa, SEQ_STEPS); memcpy(cl->step_xlen, xl, SEQ_STEPS);
         cl->pfx_params.rmx_on = 0;
         at->rmx_sclip = 0xFF; at->rmx_slive = 0;           /* playback takes the clip as it is now */
-        if (!n) { clip_build_steps_from_notes(cl); inst->state_dirty = 1; return; }
+    }
+    return cl->note_count;
+}
+
+static void bake_clip(seq8_instance_t *inst, int t, int c, int loops, int wrap,
+                      int apply_conductor) {
+    seq8_track_t *tr = &inst->tracks[t];
+    clip_t *cl;
+    int ni, si, ri;
+    if (tr->pad_mode == PAD_MODE_DRUM) return;
+    if (tr->pad_mode == PAD_MODE_CONDUCT) return; /* Conductor has no bake output */
+    cl = &tr->clips[c];
+    if (cl->note_count == 0) return;
+    if (loops < 1) loops = 1;
+    if (loops > 4) loops = 4;
+
+    undo_begin_single(inst, t, c);
+
+    /* REMIX on a Slicer: it comes first in the signal (the remix makes the
+     * notes NOTE FX then plays with), so the bake takes the remixed steps —
+     * exactly what playback builds — as the clip's, and turns REMIX off; the
+     * stages below then bake NOTE FX over them (Josh, 2026-11-11: "the idea
+     * behind bake is flatten what you hear in the context of the track type") */
+    if (tr->pad_mode == PAD_MODE_SLICER && cl->pfx_params.rmx_on) {
+        if (!rmx_slicer_apply(inst, t, c)) { clip_build_steps_from_notes(cl); inst->state_dirty = 1; return; }
     }
 
     /* SCENE-bake "Apply Conductor?": fold the Conductor's transposition into

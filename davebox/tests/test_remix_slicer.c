@@ -111,6 +111,34 @@ static hx_t *rig(void) {
     return h;
 }
 
+
+/* the export's rendered file (44-byte header, 16-bit stereo): the mean level
+ * of the middle of 1/16 k of a one-bar render */
+static double wav_part_level(const char *line, int k, int part);
+static double wav_slot_level(const char *line, int k) { return wav_part_level(line, k, -1); }
+/* part 0: the first third of 1/16 k, 2: its last third, -1: its middle */
+static double wav_part_level(const char *line, int k, int part) {
+    const char *bar = strchr(line, '|');
+    FILE *f;
+    static int16_t buf[88200 * 2 + 64];
+    long n;
+    if (!bar) return -1;
+    f = fopen(bar + 1, "rb");
+    if (!f) return -1;
+    fseek(f, 44, SEEK_SET);
+    n = (long)fread(buf, sizeof(int16_t), sizeof buf / sizeof buf[0], f) / 2;
+    fclose(f);
+    {
+        long a = (long)(k * n / 16 + n / 64), b = (long)((k + 1) * n / 16 - n / 64), i;
+        if (part == 0) b = a + (b - a) / 3;
+        if (part == 2) a = b - (b - a) / 3;
+        double s = 0;
+        if (b <= a) return -1;
+        for (i = a; i < b; i++) s += abs(buf[i * 2]);
+        return s / (double)(b - a);
+    }
+}
+
 int main(void) {
     char p[400], msg[200];
     int k;
@@ -148,6 +176,21 @@ int main(void) {
         int want = k < 10 ? k : k - 10;
         snprintf(msg, sizeof msg, "T1 NORMAL 1: 1/16 %d plays %d, not %d", k, which(m[k].mid, unit), want);
         HX_ASSERT(which(m[k].mid, unit) == want, msg);
+    }
+
+    /* ==== Export to Live plays the remix (rendered from the remixed steps on
+     * a copy; the clip itself untouched) ==== */
+    {
+        char b[512];
+        static char stage[300];
+        snprintf(stage, sizeof stage, "%s/stage", g_root); mkdir(stage, 0775);
+        au_export_dir = stage;
+        int nb = inst->tracks[5].clips[0].note_count;
+        HX_ASSERT(hx_get_param(h, "t5_c0_au_export", b, sizeof b) > 0 && b[0] == 'S', "the Slicer clip did not export");
+        double l0 = wav_slot_level(b, 0), l10 = wav_slot_level(b, 10), l9 = wav_slot_level(b, 9);
+        snprintf(msg, sizeof msg, "the Slicer export does not play the remix (1/16 #11 %.0f vs #1 %.0f, #10 %.0f)", l10, l0, l9);
+        HX_ASSERT(l0 > 50 && l10 < l0 * 1.6 && l9 > l0 * 6, msg);
+        HX_ASSERT(inst->tracks[5].clips[0].pfx_params.rmx_on && inst->tracks[5].clips[0].note_count == nb, "the export changed the clip");
     }
 
     /* ==== T1 REVERSE 9: sources, and the flagged chops reversed ==== */
@@ -284,6 +327,17 @@ int main(void) {
     hx_set_param(h, "t5_c0_step_10_xstart", "0");
     HX_ASSERT(!inst->tracks[5].clips[0].step_xlen[8] && !inst->tracks[5].clips[0].step_xstart[10], "100 % / 0 % are not stored as 'as the chop is'");
 
+    /* ...and the Ableton export plays it: step 4 reversed in the file */
+    {
+        char b[512];
+        static char stage[300];
+        snprintf(stage, sizeof stage, "%s/stage", g_root); mkdir(stage, 0775);
+        au_export_dir = stage;
+        HX_ASSERT(hx_get_param(h, "t5_c0_au_export", b, sizeof b) > 0 && b[0] == 'S', "the Slicer clip did not export");
+        snprintf(msg, sizeof msg, "the export does not play step 4 reversed (first third %.0f, last %.0f)", wav_part_level(b, 3, 0), wav_part_level(b, 3, 2));
+        HX_ASSERT(wav_part_level(b, 3, 0) > wav_part_level(b, 3, 2), msg);
+        HX_ASSERT(wav_part_level(b, 2, 0) < wav_part_level(b, 2, 2), "the export reversed step 3 too");
+    }
     /* ...a ratchet repeats the step's sound */
     hx_set_param(h, "t5_c0_step_3_ratch", "2");
     measure_bar(h, m);

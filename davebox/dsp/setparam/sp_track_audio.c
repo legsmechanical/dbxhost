@@ -826,7 +826,8 @@ static long au_export_loop(seq8_instance_t *inst, int t, int c, uint32_t len, do
     static au_track_t trk;
     uint8_t h[44];
     uint32_t rs, re;
-    if (!cl->smp || cl->mode != AU_MODE_LOOP || cl->sync == AU_SYNC_WARP || !len || bpm <= 0) return -1;
+    const clip_pfx_params_t *rpp = &inst->tracks[t].clips[c].pfx_params;
+    if (!cl->smp || cl->mode != AU_MODE_LOOP || (cl->sync == AU_SYNC_WARP && !rpp->rmx_on) || !len || bpm <= 0) return -1;
     const au_sample_t *s = au_xsample(inst, cl, &own);
     if (!s) return -1;
     au_range(cl, s, &rs, &re);
@@ -841,7 +842,55 @@ static long au_export_loop(seq8_instance_t *inst, int t, int c, uint32_t len, do
     fwrite(h, 1, sizeof h, f);
     memset(&trk, 0, sizeof trk);
     uint32_t k, frame = 0;
-    if (cl->sync == AU_SYNC_PITCH) {
+    if (rpp->rmx_on) {
+        /* REMIX: the bar's pieces as the live scheduler plays them
+         * (au_rmx_block) — each its source 1/16 of the same bar, reversed /
+         * repitched, at its velocity, released at its gate; Pitch at the
+         * speed that fills the clip, Vintage and Warp at the sample's own
+         * (a Warp remix leaves as Live's Beats warping would cut it) */
+        static rmx_ev_t in[16], ev[RMX_MAX];
+        rmx_dials_t d;
+        int n, e;
+        au_rmx_dials(rpp, &d);
+        memset(in, 0, sizeof in);
+        for (e = 0; e < 16; e++) { in[e].tick = e * (AU_RMX_BAR / 16); in[e].gate = AU_RMX_BAR / 16; in[e].vel = 100; in[e].key = (uint8_t)e; }
+        n = rmx_bar_ex(&inst->rmx_w, rpp->rmx_type, rpp->rmx_var, &d, AU_RMX_BAR, in, 16, ev, RMX_MAX);
+        double nud = (double)cl->nudge_ms * 44.1 / fpt, vk = 1.0;
+        if (cl->sync == AU_SYNC_PITCH) {
+            double base = au_tune(au_pitch(cl), au_detune(cl)) * (double)s->rate / 44100.0;
+            if (base > 0) vk = (R / (P * fpt)) / base;
+        }
+        for (k = 0; k < 2 * len; k++) {
+            uint32_t tick = k % len, b0 = (uint32_t)((double)k * fpt + 0.5), bar = tick / AU_RMX_BAR;
+            for (e = 0; e < n; e++) {
+                const rmx_ev_t *x = &ev[e];
+                if (bar * AU_RMX_BAR + (uint32_t)x->tick != tick) continue;
+                double Us = (double)(bar * AU_RMX_BAR + x->key * (AU_RMX_BAR / 16));
+                if (Us >= L) continue;
+                double j = au_wrap(Us - rot, L) - nud;
+                if (j < 0 || j >= P) continue;
+                double x0 = R * j / P, sl = R * (double)(AU_RMX_BAR / 16) / P, over = AU_VINTAGE_OVER + AU_VINTAGE_XF;
+                double lo = au_revrs(cl) ? (double)re - x0 - sl : (double)rs + x0, hi = lo + sl;
+                if ((au_revrs(cl) ? 1 : 0) ^ (x->rev ? 1 : 0)) lo -= over; else hi += over;
+                if (lo < (double)rs) lo = (double)rs;
+                if (hi > (double)re) hi = (double)re;
+                if (hi <= lo) continue;
+                int vi;
+                for (vi = 0; vi < AU_VOICES; vi++) {             /* monophonic, as live */
+                    au_voice_t *ov = &trk.v[vi];
+                    if (ov->active && !ov->mode_loop && ov->rel_len && ov->rel == ov->rel_len && ov->rel_wait > 0)
+                        { ov->rel_wait = 0; ov->rel_len = ov->rel = AU_VINTAGE_XF; }
+                }
+                au_rmx_rev = x->rev; au_rmx_semi = x->pitch;
+                au_voice_t *v = au_range_on_in(&trk, s, 0, cl, c, AU_SLICE_NONE, (uint32_t)lo, (uint32_t)hi,
+                                               (float)x->vel / 100.0f, 0, 1, vk);
+                au_rmx_rev = 0; au_rmx_semi = 0;
+                if (v) au_voice_release_at(v, 64, (uint32_t)((double)x->gate * fpt));
+            }
+            (void)b0;
+            au_xrender(&trk, f, &frame, (uint32_t)((double)(k + 1) * fpt + 0.5), f0);
+        }
+    } else if (cl->sync == AU_SYNC_PITCH) {
         double fill = R / (P * fpt);
         for (k = 0; k < 2 * len; k++) {
             uint32_t tick = k % len;
