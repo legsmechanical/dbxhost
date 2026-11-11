@@ -245,6 +245,36 @@ int main(void) {
     }
     HX_ASSERT(inst->tracks[5].clips[0].note_count == own_n && !memcmp(own, inst->tracks[5].clips[0].notes, sizeof own),
               "the remix changed the clip's own notes");
+    /* ==== BAKE (Josh, 2026-11-11: "bake is flatten what you hear in the
+     * context of the track type"): the remixed steps become the clip's, REMIX
+     * turns off, and the clip plays as the remix did ==== */
+    hx_set_param(h, "t5_remix_type", "0");
+    hx_set_param(h, "t5_remix_var", "0");                 /* T1 NORMAL 1 */
+    hx_set_param(h, "t5_remix_on", "1");
+    measure_bar(h, m);
+    hx_set_param(h, "transport", "stop");
+    hx_render(h, 4);
+    hx_set_param(h, "bake", "5 0 0 1 0 0");
+    HX_ASSERT(!inst->tracks[5].clips[0].pfx_params.rmx_on, "bake left REMIX on");
+    {
+        int i, n = 0, at10 = -1;
+        for (i = 0; i < inst->tracks[5].clips[0].note_count; i++) {
+            const note_t *nt = &inst->tracks[5].clips[0].notes[i];
+            if (!nt->active) continue;
+            n++;
+            if (nt->tick == 10u * 24) at10 = nt->pitch - AU_NOTE_BASE;
+        }
+        HX_ASSERT(n == 16, "bake did not leave 16 steps");
+        HX_ASSERT(at10 == 0, "baked step 11 is not chop 1 (NORMAL 1's second piece starts over)");
+    }
+    hx_set_param(h, "transport", "play");
+    measure_bar(h, m);
+    measure_bar(h, m);
+    for (k = 0; k < 16; k++) {
+        int want = k < 10 ? k : k - 10;
+        snprintf(msg, sizeof msg, "baked: 1/16 %d plays %d, not %d", k, which(m[k].mid, unit), want);
+        HX_ASSERT(which(m[k].mid, unit) == want, msg);
+    }
     hx_destroy(h);
 
     snprintf(p, sizeof p, "rm -rf '%s'", g_root);

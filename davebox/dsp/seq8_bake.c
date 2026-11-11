@@ -529,6 +529,8 @@ static int conductor_bake_offset(seq8_instance_t *inst, clip_t *cc,
 
 static uint32_t u32_gcd(uint32_t a, uint32_t b); /* fwd decl; defined below */
 
+static void au_rmx_slicer_build(seq8_instance_t *inst, int t, int c);   /* setparam/sp_track_audio.c */
+
 static void bake_clip(seq8_instance_t *inst, int t, int c, int loops, int wrap,
                       int apply_conductor) {
     seq8_track_t *tr = &inst->tracks[t];
@@ -542,6 +544,27 @@ static void bake_clip(seq8_instance_t *inst, int t, int c, int loops, int wrap,
     if (loops > 4) loops = 4;
 
     undo_begin_single(inst, t, c);
+
+    /* REMIX on a Slicer: it comes first in the signal (the remix makes the
+     * notes NOTE FX then plays with), so the bake takes the remixed steps —
+     * exactly what playback builds — as the clip's, and turns REMIX off; the
+     * stages below then bake NOTE FX over them (Josh, 2026-11-11: "the idea
+     * behind bake is flatten what you hear in the context of the track type") */
+    if (tr->pad_mode == PAD_MODE_SLICER && cl->pfx_params.rmx_on) {
+        au_track_t *at = &inst->au_trk[t];
+        int k, n;
+        au_rmx_slicer_build(inst, t, c);
+        n = at->rmx_sn_n < MAX_NOTES_PER_CLIP ? at->rmx_sn_n : MAX_NOTES_PER_CLIP;
+        for (k = 0; k < n; k++) {
+            cl->notes[k] = inst->rmx_sn[t][k];
+            cl->notes[k].pad[0] = cl->notes[k].pad[1] = 0;
+            cl->notes[k].suppress_until_wrap = 0;
+        }
+        cl->note_count = (uint16_t)n;
+        cl->pfx_params.rmx_on = 0;
+        at->rmx_sclip = 0xFF; at->rmx_slive = 0;           /* playback takes the clip as it is now */
+        if (!n) { clip_build_steps_from_notes(cl); inst->state_dirty = 1; return; }
+    }
 
     /* SCENE-bake "Apply Conductor?": fold the Conductor's transposition into
      * this responder clip against the Conductor's clip at the same scene index.
