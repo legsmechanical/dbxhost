@@ -712,6 +712,17 @@ static void au_rmx_block(seq8_instance_t *inst, int t, int c, int32_t tick, uint
         uint32_t a = (uint32_t)lo, bb = (uint32_t)hi;
         uint32_t off = (uint32_t)(pd[i] * fscale);
         if (off >= (uint32_t)frames) off = (uint32_t)frames - 1;
+        /* monophonic, as a Loop clip's pieces always are: a piece still
+         * sounding is cut where this one starts, though its own gate's
+         * release is scheduled later (the voice's own cut skips those) */
+        {
+            int vi;
+            for (vi = 0; vi < AU_VOICES; vi++) {
+                au_voice_t *ov = &at->v[vi];
+                if (ov->active && !ov->mode_loop && ov->rel_len && ov->rel == ov->rel_len && ov->rel_wait > off)
+                    { ov->rel_wait = off; ov->rel_len = ov->rel = AU_VINTAGE_XF; }
+            }
+        }
         au_rmx_rev = e->rev; au_rmx_semi = e->pitch;
         au_voice_t *v = au_range_on_in(at, s, cs, cl, c, AU_SLICE_NONE, a, bb, (float)e->vel / 100.0f, off, 1, vk);
         au_rmx_rev = 0; au_rmx_semi = 0;
