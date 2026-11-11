@@ -56,6 +56,11 @@ static void pfx_set(seq8_instance_t *inst, seq8_track_t *tr,
         return;
     }
 
+    /* REMIX: per clip, read by the Audio engine at each bar line */
+    if (!strcmp(key, "remix_on"))   { cp->rmx_on   = (uint8_t)clamp_i(my_atoi(val), 0, 1); return; }
+    if (!strcmp(key, "remix_type")) { cp->rmx_type = (uint8_t)clamp_i(my_atoi(val), 0, RMX_TYPES - 1); return; }
+    if (!strcmp(key, "remix_var"))  { cp->rmx_var  = (uint8_t)clamp_i(my_atoi(val), 0, RMX_SETTINGS - 1); return; }
+
     if (!strcmp(key, "harm_octaver"))
         { PFX_SET_BOTH(octaver, octaver, -4, 4); return; }
     if (!strcmp(key, "harm_interval1"))

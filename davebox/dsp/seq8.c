@@ -800,6 +800,9 @@ typedef struct {
      * Destructive legato lives on CLIP K8 as a one-shot action — see the
      * lgto_apply handler. State v=36. */
     uint8_t note_length_mode;
+    /* REMIX (Audio / Slicer clips): Loop Remix on, its TYPE 0..15 and its
+     * setting 0..79 (family x 16 + variation; seq8_remix.h). Per clip. */
+    uint8_t rmx_on, rmx_type, rmx_var;
 } clip_pfx_params_t;
 
 /* ------------------------------------------------------------------ */
@@ -5594,6 +5597,7 @@ static void clip_pfx_params_init(clip_pfx_params_t *p) {
     for (i = 0; i < 8; i++) p->seq_arp_step_int[i] = 0;
     p->seq_arp_step_loop_len = 8;
     p->note_length_mode = 0;  /* `--` passthrough */
+    p->rmx_on = 0; p->rmx_type = 0; p->rmx_var = 0;
 }
 
 static void drum_pfx_params_init(drum_pfx_params_t *p) {

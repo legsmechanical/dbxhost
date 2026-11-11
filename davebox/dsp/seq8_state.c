@@ -632,6 +632,10 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
                     fprintf(fp, ",\"t%dc%d_arsll\":%d", t, c, (int)p2->seq_arp_step_loop_len);
                 if (p2->note_length_mode != 0)
                     fprintf(fp, ",\"t%dc%d_nlen\":%d", t, c, (int)p2->note_length_mode);
+                /* REMIX: sparse, all three default 0 */
+                if (p2->rmx_on)   fprintf(fp, ",\"t%dc%d_rxo\":%d", t, c, (int)p2->rmx_on);
+                if (p2->rmx_type) fprintf(fp, ",\"t%dc%d_rxt\":%d", t, c, (int)p2->rmx_type);
+                if (p2->rmx_var)  fprintf(fp, ",\"t%dc%d_rxv\":%d", t, c, (int)p2->rmx_var);
             }
             /* note list: "tick:pitch:vel:gate;" for each active note */
             if (cl->note_count > 0) {
@@ -1549,6 +1553,12 @@ static void seq8_load_state(seq8_instance_t *inst) {
             p2->seq_arp_step_loop_len = (uint8_t)clamp_i(json_get_int(buf, key, 8), 1, 8);
             snprintf(key, sizeof(key), "t%dc%d_nlen", t, c);
             p2->note_length_mode = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 8);
+            snprintf(key, sizeof(key), "t%dc%d_rxo", t, c);
+            p2->rmx_on   = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 1);
+            snprintf(key, sizeof(key), "t%dc%d_rxt", t, c);
+            p2->rmx_type = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, RMX_TYPES - 1);
+            snprintf(key, sizeof(key), "t%dc%d_rxv", t, c);
+            p2->rmx_var  = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, RMX_SETTINGS - 1);
             /* v=34 per-step trig conditions (iter/random/ratchet hex blobs) */
             {
                 clip_t *_cl = &inst->tracks[t].clips[c];
