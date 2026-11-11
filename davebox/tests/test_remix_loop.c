@@ -204,7 +204,7 @@ int main(void) {
             HX_ASSERT(ref >= 0, "data: ROLL 1 plays slot 12's source nowhere else in the bar");
             snprintf(msg, sizeof msg, "sync %d, ROLL 1: the last 1/16 at %.2f of the same source at velocity 100 (want ~0.3-0.5)",
                      sync, m[15].mid / m[ref].mid);
-            HX_ASSERT(m[15].mid > m[ref].mid * 0.15 && m[15].mid < m[ref].mid * 0.6, msg);
+            HX_ASSERT(m[15].mid > m[ref].mid * 0.25 && m[15].mid < m[ref].mid * 0.55, msg);
         }
 
         /* ==== PITCH (TYPE 16): a +12 slot is an octave up ==== */
