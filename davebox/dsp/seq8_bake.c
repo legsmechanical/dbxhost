@@ -18,6 +18,7 @@ typedef struct {
     uint8_t prim;   /* group-primary pitch: scale-aware delay feedback applies the
                        PRIMARY notes degree-delta to every harmony copy (live:
                        seq8_pfx.c pfx_sched_delay_ons) */
+    uint8_t xrev, xsemi, xstart, xlen;   /* a Slicer step's own sound, carried to the step it lands on */
 } bake_note_t;
 
 #define BAKE_BUF  MAX_NOTES_PER_CLIP
@@ -552,15 +553,31 @@ static void bake_clip(seq8_instance_t *inst, int t, int c, int loops, int wrap,
      * behind bake is flatten what you hear in the context of the track type") */
     if (tr->pad_mode == PAD_MODE_SLICER && cl->pfx_params.rmx_on) {
         au_track_t *at = &inst->au_trk[t];
+        static uint8_t xr[SEQ_STEPS], xs[SEQ_STEPS], xa[SEQ_STEPS], xl[SEQ_STEPS];
+        uint16_t tps0 = cl->ticks_per_step ? cl->ticks_per_step : (uint16_t)TICKS_PER_STEP;
         int k, n;
         au_rmx_slicer_build(inst, t, c);
         n = at->rmx_sn_n < MAX_NOTES_PER_CLIP ? at->rmx_sn_n : MAX_NOTES_PER_CLIP;
+        /* each remixed step's sound: its source step's own, the remix's on top */
+        memset(xr, 0, sizeof xr); memset(xs, 0, sizeof xs); memset(xa, 0, sizeof xa); memset(xl, 0, sizeof xl);
+        for (k = 0; k < n; k++) {
+            const note_t *rn = &inst->rmx_sn[t][k];
+            uint16_t id = (uint16_t)(rn->pad[0] | (rn->pad[1] << 8));
+            uint16_t ss = id < cl->note_count ? note_step(cl->notes[id].tick, cl->length, tps0) : 0;
+            uint16_t d = note_step(rn->tick, cl->length, tps0);
+            int semi = (int)(int8_t)cl->step_xsemi[ss] + inst->rmx_ss[t][k];
+            xr[d] = (uint8_t)((cl->step_xrev[ss] ? 1 : 0) ^ inst->rmx_sr[t][k]);
+            xs[d] = (uint8_t)(int8_t)(semi < -48 ? -48 : semi > 48 ? 48 : semi);
+            xa[d] = cl->step_xstart[ss]; xl[d] = cl->step_xlen[ss];
+        }
         for (k = 0; k < n; k++) {
             cl->notes[k] = inst->rmx_sn[t][k];
             cl->notes[k].pad[0] = cl->notes[k].pad[1] = 0;
             cl->notes[k].suppress_until_wrap = 0;
         }
         cl->note_count = (uint16_t)n;
+        memcpy(cl->step_xrev, xr, SEQ_STEPS); memcpy(cl->step_xsemi, xs, SEQ_STEPS);
+        memcpy(cl->step_xstart, xa, SEQ_STEPS); memcpy(cl->step_xlen, xl, SEQ_STEPS);
         cl->pfx_params.rmx_on = 0;
         at->rmx_sclip = 0xFF; at->rmx_slive = 0;           /* playback takes the clip as it is now */
         if (!n) { clip_build_steps_from_notes(cl); inst->state_dirty = 1; return; }
@@ -724,7 +741,9 @@ static void bake_clip(seq8_instance_t *inst, int t, int c, int loops, int wrap,
                     if (_sub_tick >= cycle_ticks) break;
                     for (gi = 0; gi < gc && a_count < BAKE_BUF; gi++)
                         bake_a[a_count++] = (bake_note_t){ _sub_tick, _final_gate,
-                                                           gen[gi], (uint8_t)vel, gen[0] };
+                                                           gen[gi], (uint8_t)vel, gen[0],
+                                                           cl->step_xrev[_sidx], cl->step_xsemi[_sidx],
+                                                           cl->step_xstart[_sidx], cl->step_xlen[_sidx] };
                 }
             }
         }
@@ -760,6 +779,8 @@ static void bake_clip(seq8_instance_t *inst, int t, int c, int loops, int wrap,
             bake_out[total_out].gate  = in_buf[ri].gate;
             bake_out[total_out].pitch = in_buf[ri].pitch;
             bake_out[total_out].vel   = in_buf[ri].vel;
+            bake_out[total_out].xrev = in_buf[ri].xrev; bake_out[total_out].xsemi = in_buf[ri].xsemi;
+            bake_out[total_out].xstart = in_buf[ri].xstart; bake_out[total_out].xlen = in_buf[ri].xlen;
             total_out++;
         }
     }
@@ -785,6 +806,15 @@ static void bake_clip(seq8_instance_t *inst, int t, int c, int loops, int wrap,
             clip_insert_note(cl, bn->tick, bn->gate, bn->pitch, bn->vel);
     }
     clip_build_steps_from_notes(cl);
+    /* a Slicer's steps keep their own sound: each on the step its note lands on */
+    if (tr->pad_mode == PAD_MODE_SLICER)
+        for (ri = 0; ri < total_out; ri++) {
+            bake_note_t *bn = &bake_out[ri];
+            if (bn->tick >= total_ticks) continue;
+            uint16_t d = note_step(bn->tick, new_length, tps);
+            cl->step_xrev[d] = bn->xrev; cl->step_xsemi[d] = bn->xsemi;
+            cl->step_xstart[d] = bn->xstart; cl->step_xlen[d] = bn->xlen;
+        }
     if (c == tr->active_clip)
         pfx_sync_from_clip(tr);
     inst->state_dirty = 1;

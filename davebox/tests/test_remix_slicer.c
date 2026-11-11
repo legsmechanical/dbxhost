@@ -340,6 +340,34 @@ int main(void) {
         snprintf(msg, sizeof msg, "baked: 1/16 %d plays %d, not %d", k, which(m[k].mid, unit), want);
         HX_ASSERT(which(m[k].mid, unit) == want, msg);
     }
+    /* ==== BAKE of REVERSE 9: the remix's flips land on the steps (their own
+     * reverse), so the baked clip still plays them backwards — no chop edited ==== */
+    hx_set_param(h, "t5_au_chop", "0");                   /* the 16 chops in order again */
+    hx_set_param(h, "t5_remix_type", "0");
+    hx_set_param(h, "t5_remix_var", "24");
+    hx_set_param(h, "t5_remix_on", "1");
+    measure_bar(h, m);
+    hx_set_param(h, "transport", "stop");
+    hx_render(h, 4);
+    hx_set_param(h, "bake", "5 0 0 1 0 0");
+    HX_ASSERT(!inst->tracks[5].clips[0].pfx_params.rmx_on, "bake left REMIX on");
+    hx_set_param(h, "transport", "play");
+    measure_bar(h, m);
+    measure_bar(h, m);
+    {
+        int nrev = 0;
+        for (k = 1; k < 16; k++) {
+            int want = k < 10 ? 4 + k : (14 + k - 10) & 15;
+            snprintf(msg, sizeof msg, "baked REVERSE 9: 1/16 %d plays %d, not %d", k, which(m[k].mid, unit), want);
+            HX_ASSERT(which(m[k].mid, unit) == want, msg);
+            if (rmx_rev_flag[8][want]) {
+                snprintf(msg, sizeof msg, "baked REVERSE 9: 1/16 %d (chop %d) no longer plays reversed", k, want);
+                HX_ASSERT(m[k].early > m[k].late && inst->tracks[5].clips[0].step_xrev[k], msg);
+                nrev++;
+            }
+        }
+        HX_ASSERT(nrev > 0, "baked REVERSE 9: no reversed step was checked");
+    }
     hx_destroy(h);
 
     snprintf(p, sizeof p, "rm -rf '%s'", g_root);
