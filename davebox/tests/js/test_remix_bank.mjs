@@ -218,7 +218,7 @@ step('⭐ the dials reach the engine, and an edited preset reads *', () => {
            'Roll / Break / Pitch / Shuffle not all sent: ' + JSON.stringify(sets));
 });
 
-step('⭐ the dials turn like every continuous bank knob: one slow detent = 1 %, a quick spin sweeps the range (device pass 2026-11-11: 80 detents moved Reverse only 35 %)', () => {
+step('⭐ the dials turn like every continuous bank knob: one slow detent = 1 %, a quick spin sweeps the range; Pitch a pick (device pass 2026-11-11: 80 detents moved Reverse only 35 %)', () => {
     S.rmxSet[4] = [1, 0, 0, 1, 100, 0, 0, 0, 0, 0];
     reset(); turn(4, 1, 1); ticks(1);
     assert(sent('t4_remix_rev').join() === '1', 'one cold detent did not move Reverse by exactly 1: ' + JSON.stringify(sets));
@@ -228,12 +228,14 @@ step('⭐ the dials turn like every continuous bank knob: one slow detent = 1 %,
     note(4, 0); ticks(1);
     const rv = sent('t4_remix_rev');
     assert((rv[rv.length - 1] | 0) === 100, 'a quick spin of 130 counts did not reach 100 %: ' + rv.slice(-3).join());
+    /* K8 Pitch is a pick, as the Sample editor's: a semitone a pick, and a
+     * batched turn's whole count is read (a 10-count message is a pick) */
     reset();
     S.knobAccum[7] = 0; note(7, 127);
-    for (let i = 0; i < 130; i++) cc(71 + 7, 1);
+    cc(71 + 7, 10); cc(71 + 7, 10);
     note(7, 0); ticks(1);
     const pv = sent('t4_remix_pit');
-    assert((pv[pv.length - 1] | 0) === 24, 'a quick spin did not take Pitch to 24 st: ' + pv.slice(-3).join());
+    assert(pv.join() === '1,2', 'two 10-count turns did not move Pitch a semitone each: ' + pv.join());
     S.rmxSet[4] = [1, 0, 0, 1, 100, 0, 0, 0, 0, 0];
 });
 

@@ -4826,14 +4826,12 @@ function _onCC_stepedit(d1, d2) {
                 host_module_set_param(pfx + '_set_notes', S.heldStepNotes.join(' '));
             }
         } else if (knobIdx === 1 && isSampledTrack(t)) {
-            /* a Slicer step's Pitch: a semitone a detent, ±24 */
-            S.knobAccum[knobIdx] = (dir === S.knobLastDir[knobIdx]) ? S.knobAccum[knobIdx] + 1 : 1;
-            S.knobLastDir[knobIdx] = dir;
-            if (S.knobAccum[knobIdx] >= KNOB_PICK) {
-                S.knobAccum[knobIdx] = 0;
-                const _v = Math.max(-24, Math.min(24, S.stepEditXsemi + dir));
-                if (_v !== S.stepEditXsemi) { S.stepEditXsemi = _v; host_module_set_param(pfx + '_xsemi', String(_v)); }
-            }
+            /* a Slicer step's Pitch, ±24 st: a semitone a pick, as the
+             * Sample editor's Pitch (knobStep reads the turn's whole count) */
+            const _acc = knobStep(knobIdx, d2, KNOB_PICK);
+            if (_acc === 0) return;
+            const _v = Math.max(-24, Math.min(24, S.stepEditXsemi + _acc));
+            if (_v !== S.stepEditXsemi) { S.stepEditXsemi = _v; host_module_set_param(pfx + '_xsemi', String(_v)); }
         } else if (knobIdx === 1) {
             /* K2 Oct: shift all notes ±12 semitones, sens=12 */
             S.knobAccum[knobIdx] = (dir === S.knobLastDir[knobIdx]) ? S.knobAccum[knobIdx] + 1 : 1;
@@ -5170,13 +5168,13 @@ function _onCC_knobs(d1, d2) {
             const _t = S.activeTrack;
             if (bank === BANK_REMIX) {
                 /* K1 Remix and K6's Vel deliberate (toggles); K2 Type, K3 Preset
-                 * and K6's Rate a pick a detent; the dials (K4-K8) continuous,
-                 * range-scaled like every bank knob (a sweep in a turn, one
-                 * unit a detent when slow) */
+                 * K6's Rate and K8 Pitch picks (Pitch as the Sample editor's:
+                 * a semitone a pick); the % dials (K4-K7) continuous,
+                 * range-scaled like every bank knob */
                 const _delib = knobIdx === 0 || (knobIdx === 5 && S.rmxK6 === 2);
-                const _pick = knobIdx === 1 || knobIdx === 2 || (knobIdx === 5 && S.rmxK6 === 1);
+                const _pick = knobIdx === 1 || knobIdx === 2 || knobIdx === 7 || (knobIdx === 5 && S.rmxK6 === 1);
                 const _st = (_delib || _pick) ? knobStep(knobIdx, d2, _delib ? KNOB_DELIB : KNOB_PICK)
-                                              : ccKnobDelta(d2, knobIdx, bankStep({ min: 0, max: knobIdx === 7 ? 24 : 100 }));
+                                              : ccKnobDelta(d2, knobIdx, bankStep({ min: 0, max: 100 }));
                 if (_st && rmxBankKnob(_t, knobIdx, _st)) S.screenDirty = true;
                 return;
             }

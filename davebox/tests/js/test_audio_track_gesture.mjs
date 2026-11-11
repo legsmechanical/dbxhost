@@ -1906,6 +1906,11 @@ step('⭐ the step editor\'s K1 reads "Slice n"; K2 Pitch, K3 Length (Start behi
     assert(cells[1].label === 'Pitch' && cells[2].label === 'Leng' && cells[2].text === '100%' && cells[3].label === 'Revrs' && cells[3].text === 'Off',
            'K2 / K3 / K4 are not Pitch / Length 100% / Reverse Off: ' + JSON.stringify([cells[1], cells[2], cells[3]]));
     S.heldStepBtn = 16; reset();
+    /* K2 Pitch is a pick, as the Sample editor's Pitch, and reads a batched
+     * turn's whole count (device pass 2026-11-11: it counted frames, so a
+     * fast turn moved no faster than a slow one) — a 10-count message is a pick */
+    S.knobAccum[1] = 0; cc(72, 10); cc(72, 10);
+    assert(sent('t4_c0_step_0_xsemi').join() === '1,2', 'two 10-count turns did not step the step\'s Pitch to 2 st: ' + JSON.stringify(sent('t4_c0_step_0_xsemi')));
     for (let i = 0; i < 20; i++) cc(72, 1);                 /* K2 Pitch up */
     for (let i = 0; i < 30; i++) cc(74, 1);                 /* K4 Reverse on (deliberate) */
     for (let i = 0; i < 10; i++) cc(73, 127);               /* K3 Length down */
