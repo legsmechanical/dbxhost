@@ -1114,6 +1114,10 @@ export function auPanelKnob(ed, k, steps) {
  * on a Loop clip's CLIP bank: its knobs are Nudge and Mode, not the melodic
  * clip's Res / Shift / Dir. */
 export function knobAltOnTrack(t, padMode, bank, k) {
+    /* a held step's page revealed over another bank (hold + jog right) is the
+     * STEP page whatever the bank under it (device pass 2026-11-11: a Slicer
+     * step's Start was unreachable from LIVE ARP) */
+    if (S.stepReveal && S.heldStep >= 0) bank = BANK_STEP;
     if (bank === 0 && isSampledTrack(t) && auIsLoop(auInfo(t, auClipOf(t)))) return k === 2 ? ['Shift', 'Nudge'] : null;
     /* a Slicer step: K3 Length, Start behind it (Josh, 2026-11-11: "why not
      * have start be the alt to length") */

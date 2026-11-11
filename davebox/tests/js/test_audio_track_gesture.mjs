@@ -1927,6 +1927,17 @@ step('⭐ the step editor\'s K1 reads "Slice n"; K2 Pitch, K3 Length (Start behi
     const st = sent('t4_c0_step_0_xstart');
     assert(st.length && (st[st.length - 1] | 0) > 0, 'K3 (Start) did not send the step\'s Start: ' + JSON.stringify(sets));
     S.knobAlt = 0;
+    /* ...and the same from ANOTHER bank, the step's page revealed by hold +
+     * jog right — the way a held step is edited from LIVE ARP (device pass
+     * 2026-11-11: there touch + click left K3 on Length) */
+    S.activeBank = 5; S.stepReveal = true;                  /* 5 = LIVE ARP */
+    note(2, 127); cc(3, 127); cc(3, 0); note(2, 0);
+    assert(render.heldStepCells()[2].label === 'Start', 'touch + click on a revealed step page did not turn K3 to Start: ' + JSON.stringify(render.heldStepCells()[2]));
+    reset();
+    for (let i = 0; i < 10; i++) cc(73, 1);
+    const st2 = sent('t4_c0_step_0_xstart');
+    assert(st2.length && (st2[st2.length - 1] | 0) > 0, 'K3 (Start) on a revealed page did not send the step\'s Start: ' + JSON.stringify(sets));
+    S.knobAlt = 0; S.stepReveal = false;
     S.heldStepBtn = -1;
     S.heldStep = -1; S.heldStepNotes = []; S.activeBank = 0;
 });

@@ -383,7 +383,7 @@ function _onCC_jog(d1, d2) {
      * banks. */
     /* REMIX K6: touch + click cycles Roll -> Rate -> Vel */
     if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld &&
-            !S.copyHeld && !S.muteHeld && S.knobTouched === 5 && S.activeBank === BANK_REMIX && isSampledTrack(S.activeTrack)) {
+            !S.copyHeld && !S.muteHeld && S.knobTouched === 5 && S.activeBank === BANK_REMIX && !S.stepReveal && isSampledTrack(S.activeTrack)) {
         S.rmxK6 = ((S.rmxK6 | 0) + 1) % 3;
         S.screenDirty = true;
         forceRedraw();
