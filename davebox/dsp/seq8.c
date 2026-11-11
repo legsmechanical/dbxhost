@@ -558,6 +558,7 @@ static const uint8_t DRUM_INQ_TICKS[9] = { 0, 6, 12, 24, 16, 48, 32, 96, 64 };
 
 #include "seq8_param_auto.h"
 #include "seq8_audio.h"
+#include "seq8_remix.h"
 
 /* Per-clip pad-pressure (aftertouch) automation. Interpolated breakpoints like
  * per-clip breakpoints, keyed by pitch (poly) rather than by fixed knob:
