@@ -1448,10 +1448,10 @@ pad, on Audio and Slicer tracks alike, and each clip has its own.
 | **K2 Type** | **1–16**: how the bar is cut into pieces, from two big halves to sixteen 16ths |
 | **K3 Preset** | A starting point: **Norm**, **Rev**, **Roll**, **Brk** or **Pitch**, **1–16** each — the remixes of the Yamaha RS7000. Picking one sets K4–K8 to its values; a `*` after its name means you've changed them since |
 | **K4 Shufl** | How many pieces move: **0 %** plays the bar in order, **100 %** is the preset's full rearrangement |
-| **K5 Revrs** | The share of the bar's 1/16s played backwards |
+| **K5 Revrs** | How much of what plays runs backwards — every turn up reverses something you hear (a Rev preset's own reversed slices come first) |
 | **K6 Roll** | How many stutters (rolls) play. **Touch K6 + click** turns it to **Rate** — **Orig**, **1/32**, **1/64**, how fast they repeat — then to **Vel**: **On**, the rolls ramp in level as the RS7000's do; **Off**, every repeat at full level |
 | **K7 Break** | How hard the preset's breaks cut: from **0 %** (none) to **100 %** (its gaps silent) |
-| **K8 Pitch** | How far the pitched pieces move, **−24 to +24** semitones: below 0 they go the other way — what went up goes down |
+| **K8 Pitch** | How far the pitched pieces move, **−24 to +24** semitones: below 0 they go the other way — what went up goes down. It works on what plays, on any preset |
 
 The effects combine — start from a Reverse preset and turn up Roll. A change lands at the
 next bar line. **Turning** any REMIX knob shows a pop-up over the page: the knob's name and

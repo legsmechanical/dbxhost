@@ -215,6 +215,39 @@ int main(void) {
         }
     }
 
+    /* ==== 6b. the dials work on what PLAYS (Josh, 2026-11-11: "work on what
+     * actually plays"): NORM 1 plays slots 0..9 only, while variation 1's
+     * reverse slots and pitch shape are 12..15 ==== */
+    {
+        rmx_dials_t d;
+        int step, last = 0;
+        /* Reverse: each 1/16 of the dial a slot more you hear, up to the ten that play */
+        for (step = 1; step <= 10; step++) {
+            int nrev = 0;
+            rmx_dials_of(setting(RMX_NORMAL, 1), &d);
+            d.reverse = (uint8_t)((step * 100 + 8) / 16);
+            n = rmx_bar_ex(&W, 0, setting(RMX_NORMAL, 1), &d, L, in, loop_phrase(), out, RMX_MAX);
+            uint8_t seen[16]; memset(seen, 0, sizeof seen);
+            for (i = 0; i < n; i++) if (out[i].rev && !seen[out[i].src & 15]) { seen[out[i].src & 15] = 1; nrev++; }
+            HX_ASSERT(nrev == step, "NORM 1 Reverse: a turn up did not reverse one more slot you hear");
+            HX_ASSERT(nrev > last, "NORM 1 Reverse: not rising");
+            last = nrev;
+        }
+        /* Pitch: heard on NORM 1 — its four shaped slots land on played ones, up and (bipolar) down */
+        {
+            int np_up = 0, np_dn = 0;
+            rmx_dials_of(setting(RMX_NORMAL, 1), &d); d.pitch = 5;
+            n = rmx_bar_ex(&W, 0, setting(RMX_NORMAL, 1), &d, L, in, loop_phrase(), out, RMX_MAX);
+            uint8_t ps[16]; memset(ps, 0, sizeof ps);
+            for (i = 0; i < n; i++) if (out[i].pitch) { HX_ASSERT(out[i].pitch == 5 && out[i].src <= 9, "NORM 1 Pitch 5: a wrong slot or amount"); if (!ps[out[i].src]) { ps[out[i].src] = 1; np_up++; } }
+            HX_ASSERT(np_up == 4, "NORM 1 Pitch 5: not the shape's four slots, moved onto played ones");
+            d.pitch = -5;
+            n = rmx_bar_ex(&W, 0, setting(RMX_NORMAL, 1), &d, L, in, loop_phrase(), out, RMX_MAX);
+            for (i = 0; i < n; i++) if (out[i].pitch) { HX_ASSERT(out[i].pitch == -5, "NORM 1 Pitch -5: not mirrored"); np_dn++; }
+            HX_ASSERT(np_dn > 0, "NORM 1 Pitch -5: nothing heard");
+        }
+    }
+
     /* ==== 7. out of range settings play nothing, never crash ==== */
     HX_ASSERT(rmx_bar(&W, 16, 0, L, in, 1, out, RMX_MAX) == 0, "TYPE 17 played");
     HX_ASSERT(rmx_bar(&W, 0, RMX_SETTINGS, L, in, 1, out, RMX_MAX) == 0, "setting 80 played");

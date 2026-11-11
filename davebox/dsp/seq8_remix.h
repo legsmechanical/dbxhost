@@ -264,27 +264,6 @@ static int rmx_bar_ex(rmx_work_t *w, int type, int setting, const rmx_dials_t *d
         for (k = 0; k < 16 && want > 0; k++)
             for (i = 0; i < np; i++) if (((i * 7 + var * 5) & 15) == k) { take[i] = 1; want--; break; }
     }
-    /* Reverse: the variation's REVERSE slots first, then the rest (k*5 + var*3 mod 16) */
-    {
-        int want = (dl->reverse * 16 + 50) / 100, ord[16], no = 0;
-        for (k = 0; k < 16; k++) if (rmx_rev_flag[var][k]) ord[no++] = k;
-        for (k = 0; k < 16; k++) { int sl = (k * 5 + var * 3) & 15; if (!rmx_rev_flag[var][sl]) ord[no++] = sl; }
-        memset(rev, 0, sizeof rev);
-        for (k = 0; k < want && k < 16; k++) rev[ord[k]] = 1;
-    }
-    /* Pitch: the variation's shape scaled to the range */
-    {
-        int m = rmx_pitch_max(var);
-        for (k = 0; k < 16; k++) {
-            int t2 = rmx_pitch[var][k] * (int)dl->pitch;
-            semi[k] = (int8_t)(m ? (t2 >= 0 ? (t2 * 2 + m) / (2 * m) : -((-t2 * 2 + m) / (2 * m))) : 0);
-        }
-    }
-    int any_rev = 0, any_semi = 0;
-    for (k = 0; k < 16; k++) { any_rev |= rev[k]; any_semi |= semi[k] != 0; }
-    /* REVERSE's gate rule applies whenever reversing is in play (as the
-     * RS7000's REVERSE does on every note it moves) */
-    rmx_xf_t xf = { (any_rev || fam == RMX_REVERSE) ? rev : NULL, any_semi || fam == RMX_PITCH ? semi : NULL, -1, -1 };
     /* the scratch bar: `off` of lead-in, then the bar, cut at L */
     rmx_t_init(&w->S);
     rmx_t_stop(&w->S, off);
@@ -298,6 +277,64 @@ static int rmx_bar_ex(rmx_work_t *w, int type, int setting, const rmx_dials_t *d
         rmx_t_put(&w->S, &e);
     }
     w->S.P = L;
+    /* the source slots the remix PLAYS: those the arrangement copies from that
+     * hold a note (Josh, 2026-11-11: "work on what actually plays") */
+    uint8_t played[16];
+    {
+        int pst[16], pln[16], pnp = rmx_pieces(type, pst, pln), p2;
+        uint8_t has[16];
+        memset(has, 0, sizeof has); memset(played, 0, sizeof played);
+        for (i = 0; i < w->S.n; i++) has[w->S.ev[i].src & 15] = 1;
+        for (p2 = 0; p2 < pnp; p2++) {
+            int b = rmx_src(take, fam, var, p2, pst[p2]);
+            for (i = 0; i < pln[p2]; i++) { int f = (b + i) & 15; if (has[f]) played[f] = 1; }
+        }
+    }
+    /* Reverse: a REVERSE preset's own slots first (so it is exact at its own
+     * value), then the slots that play (k*5 + var*3 mod 16), then the rest —
+     * every turn up reverses something you hear */
+    {
+        int want = (dl->reverse * 16 + 50) / 100, ord[16], no = 0, pass;
+        uint8_t used[16];
+        memset(used, 0, sizeof used);
+        if (fam == RMX_REVERSE)
+            for (k = 0; k < 16; k++) if (rmx_rev_flag[var][k]) { ord[no++] = k; used[k] = 1; }
+        for (pass = 0; pass < 2; pass++)
+            for (k = 0; k < 16; k++) { int sl = (k * 5 + var * 3) & 15; if (!used[sl] && (pass || played[sl])) { ord[no++] = sl; used[sl] = 1; } }
+        memset(rev, 0, sizeof rev);
+        for (k = 0; k < want && k < no; k++) rev[ord[k]] = 1;
+    }
+    /* Pitch: the variation's shape scaled to the range. A PITCH preset's own
+     * shape stays on its own slots (exact); on the other families a shaped
+     * slot that does not play hands its step to the nearest one below (else
+     * above) that plays and has none yet — so Pitch is heard on any preset */
+    {
+        int m = rmx_pitch_max(var), shp[16];
+        for (k = 0; k < 16; k++) shp[k] = rmx_pitch[var][k];
+        if (fam != RMX_PITCH) {
+            int moved[16];
+            for (k = 0; k < 16; k++) moved[k] = played[k] ? shp[k] : 0;
+            for (k = 15; k >= 0; k--) {
+                if (!shp[k] || played[k]) continue;
+                int to = -1, d2;
+                for (d2 = 1; d2 < 16 && to < 0; d2++) {
+                    if (k - d2 >= 0 && played[k - d2] && !moved[k - d2] && !shp[k - d2]) to = k - d2;
+                    else if (k + d2 < 16 && played[k + d2] && !moved[k + d2] && !shp[k + d2]) to = k + d2;
+                }
+                if (to >= 0) moved[to] = shp[k];
+            }
+            for (k = 0; k < 16; k++) shp[k] = moved[k];
+        }
+        for (k = 0; k < 16; k++) {
+            int t2 = shp[k] * (int)dl->pitch;
+            semi[k] = (int8_t)(m ? (t2 >= 0 ? (t2 * 2 + m) / (2 * m) : -((-t2 * 2 + m) / (2 * m))) : 0);
+        }
+    }
+    int any_rev = 0, any_semi = 0;
+    for (k = 0; k < 16; k++) { any_rev |= rev[k]; any_semi |= semi[k] != 0; }
+    /* REVERSE's gate rule applies whenever reversing is in play (as the
+     * RS7000's REVERSE does on every note it moves) */
+    rmx_xf_t xf = { (any_rev || fam == RMX_REVERSE) ? rev : NULL, any_semi || fam == RMX_PITCH ? semi : NULL, -1, -1 };
     /* rearrange (B: slot by slot) */
     rmx_slots(&w->B, &w->S, type, fam, var, take, &xf, s, off);
     res = &w->B;
