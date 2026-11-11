@@ -261,6 +261,29 @@ int main(void) {
         hx_get_param(h, "t5_c0_step_6_xsemi", b, sizeof b);
         HX_ASSERT(atoi(b) == 12, "the step's pitch does not read back");
     }
+    /* ...Start / Length: the part of the chop the step plays (Josh,
+     * 2026-11-11: "have length set sample length for that step" · "a slice
+     * start/end knob"). Step 9 Length 50 %: its first half, then quiet; step
+     * 11 Start 50 %: its second half (the louder end of its ramp), then quiet */
+    hx_set_param(h, "t5_c0_step_8_xlen", "50");
+    hx_set_param(h, "t5_c0_step_10_xstart", "50");
+    measure_bar(h, m);
+    measure_bar(h, m);
+    snprintf(msg, sizeof msg, "Length 50 %%: step 9 still sounds late (early %.0f late %.0f)", m[8].early, m[8].late);
+    HX_ASSERT(m[8].early > unit * 3 && m[8].late < m[8].early * 0.2, msg);
+    snprintf(msg, sizeof msg, "Start 50 %%: step 11 does not start in its chop's second half (early %.0f vs step 10's %.0f)", m[10].early, m[9].early);
+    HX_ASSERT(m[10].early / 11.0 > m[9].early / 10.0 * 1.15 && m[10].late < m[10].early * 0.2, msg);
+    {
+        char b[32];
+        hx_get_param(h, "t5_c0_step_8_xlen", b, sizeof b);
+        HX_ASSERT(atoi(b) == 50, "Length does not read back");
+        hx_get_param(h, "t5_c0_step_7_xlen", b, sizeof b);
+        HX_ASSERT(atoi(b) == 100, "an untouched step's Length does not read 100");
+    }
+    hx_set_param(h, "t5_c0_step_8_xlen", "100");
+    hx_set_param(h, "t5_c0_step_10_xstart", "0");
+    HX_ASSERT(!inst->tracks[5].clips[0].step_xlen[8] && !inst->tracks[5].clips[0].step_xstart[10], "100 % / 0 % are not stored as 'as the chop is'");
+
     /* ...a ratchet repeats the step's sound */
     hx_set_param(h, "t5_c0_step_3_ratch", "2");
     measure_bar(h, m);

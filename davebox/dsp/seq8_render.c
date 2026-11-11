@@ -790,6 +790,8 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                                 int _sl = _rp_pitch - AU_NOTE_BASE;
                                 _at->nm_on[_sl] = 1; _at->nm_rev[_sl] = tr->ratchet_pending[rp].xrev;
                                 _at->nm_semi[_sl] = tr->ratchet_pending[rp].xsemi;
+                                _at->nm_start[_sl] = tr->ratchet_pending[rp].xstart;
+                                _at->nm_len[_sl] = tr->ratchet_pending[rp].xlen;
                                 _at->nm_vg[_sl] = (float)tr->ratchet_pending[rp].xvg / 100.0f;
                             }
                             pfx_note_on(inst, tr, _rp_pitch, _rp_vel);
@@ -1161,11 +1163,12 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                         /* A Slicer's hit carries its step's own reverse / pitch,
                          * a remix's on top, and a remixed ROLL repeat's level —
                          * to the chop's next hit (au_track_t.nm_*) */
-                        uint8_t _xon = 0, _xrev = 0, _xvg = 100;
+                        uint8_t _xon = 0, _xrev = 0, _xvg = 100, _xst = 0, _xln = 0;
                         int8_t  _xsemi = 0;
                         if (tr->pad_mode == PAD_MODE_SLICER && emit_pitch >= AU_NOTE_BASE && emit_pitch - AU_NOTE_BASE < AU_MAX_SLICES) {
                             int _xs = (int)(int8_t)cl->step_xsemi[_sidx];
                             _xrev = cl->step_xrev[_sidx] ? 1 : 0;
+                            _xst = cl->step_xstart[_sidx]; _xln = cl->step_xlen[_sidx];
                             if (_rmx) {
                                 _xrev ^= inst->rmx_sr[t][ni2];
                                 _xs += inst->rmx_ss[t][ni2];
@@ -1177,6 +1180,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                                 au_track_t *_at = &inst->au_trk[t];
                                 int _sl = emit_pitch - AU_NOTE_BASE;
                                 _at->nm_on[_sl] = 1; _at->nm_rev[_sl] = _xrev; _at->nm_semi[_sl] = _xsemi;
+                                _at->nm_start[_sl] = _xst; _at->nm_len[_sl] = _xln;
                                 _at->nm_vg[_sl] = (float)_xvg / 100.0f;
                             }
                         }
@@ -1194,6 +1198,8 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                                 tr->ratchet_pending[_ri].xrev  = _xrev;
                                 tr->ratchet_pending[_ri].xsemi = _xsemi;
                                 tr->ratchet_pending[_ri].xvg   = _xvg;
+                                tr->ratchet_pending[_ri].xstart = _xst;
+                                tr->ratchet_pending[_ri].xlen   = _xln;
                                 tr->ratchet_pending[_ri].ticks_until_fire = (uint16_t)(_k * _sub_gate);
                                 tr->ratchet_pending[_ri].gate             = _sub_gate;
                                 tr->ratchet_pending[_ri].lane_idx         = 0xFF;

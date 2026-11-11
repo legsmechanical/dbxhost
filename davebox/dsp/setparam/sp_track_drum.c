@@ -496,6 +496,8 @@ static int sp_track_drum(sp_ctx_t *cx) {
                 memcpy(dst->clip.step_ratchet, dlc->step_ratchet, SEQ_STEPS);
                 memcpy(dst->clip.step_xrev, dlc->step_xrev, SEQ_STEPS);
                 memcpy(dst->clip.step_xsemi, dlc->step_xsemi, SEQ_STEPS);
+                memcpy(dst->clip.step_xstart, dlc->step_xstart, SEQ_STEPS);
+                memcpy(dst->clip.step_xlen, dlc->step_xlen, SEQ_STEPS);
                 dst->clip.length        = dlc->length;
                 dst->clip.loop_start    = dlc->loop_start;
                 dst->clip.ticks_per_step = dlc->ticks_per_step;
@@ -538,6 +540,8 @@ static int sp_track_drum(sp_ctx_t *cx) {
                 memcpy(dst->clip.step_ratchet, dlc->step_ratchet, SEQ_STEPS);
                 memcpy(dst->clip.step_xrev, dlc->step_xrev, SEQ_STEPS);
                 memcpy(dst->clip.step_xsemi, dlc->step_xsemi, SEQ_STEPS);
+                memcpy(dst->clip.step_xstart, dlc->step_xstart, SEQ_STEPS);
+                memcpy(dst->clip.step_xlen, dlc->step_xlen, SEQ_STEPS);
                 dst->clip.length        = dlc->length;
                 dst->clip.loop_start    = dlc->loop_start;
                 dst->clip.ticks_per_step = dlc->ticks_per_step;

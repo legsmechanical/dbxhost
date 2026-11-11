@@ -280,6 +280,8 @@ static int sp_track_clip(sp_ctx_t *cx) {
                         cl->step_ratchet[sidx] = 0;
                         cl->step_xrev[sidx] = 0;
                         cl->step_xsemi[sidx] = 0;
+                        cl->step_xstart[sidx] = 0;
+                        cl->step_xlen[sidx] = 0;
                     }
                 } else if (cl->step_note_count[sidx] < 8) {
                     /* Audio: a step holds one slice — the new one replaces it. */
@@ -368,6 +370,8 @@ static int sp_track_clip(sp_ctx_t *cx) {
                 cl->step_ratchet[sidx]    = 0;
                 cl->step_xrev[sidx]    = 0;
                 cl->step_xsemi[sidx]    = 0;
+                cl->step_xstart[sidx]    = 0;
+                cl->step_xlen[sidx]    = 0;
                 {
                     int i, any = 0;
                     for (i = 0; i < SEQ_STEPS; i++) if (cl->steps[i]) { any = 1; break; }
@@ -434,10 +438,12 @@ static int sp_track_clip(sp_ctx_t *cx) {
                 return 1;
             }
             /* a Slicer step's own reverse (0/1) and pitch (-24..+24 st) */
-            if (!strcmp(q, "_xrev") || !strcmp(q, "_xsemi")) {
+            if (!strcmp(q, "_xrev") || !strcmp(q, "_xsemi") || !strcmp(q, "_xstart") || !strcmp(q, "_xlen")) {
                 undo_begin_single(inst, tidx, cidx);
-                if (q[2] == 'r') cl->step_xrev[sidx] = (uint8_t)clamp_i(my_atoi(val), 0, 1);
-                else cl->step_xsemi[sidx] = (uint8_t)(int8_t)clamp_i(my_atoi(val), -24, 24);
+                if (!strcmp(q, "_xrev")) cl->step_xrev[sidx] = (uint8_t)clamp_i(my_atoi(val), 0, 1);
+                else if (!strcmp(q, "_xsemi")) cl->step_xsemi[sidx] = (uint8_t)(int8_t)clamp_i(my_atoi(val), -24, 24);
+                else if (!strcmp(q, "_xstart")) cl->step_xstart[sidx] = (uint8_t)clamp_i(my_atoi(val), 0, 99);
+                else { int v = clamp_i(my_atoi(val), 1, 100); cl->step_xlen[sidx] = (uint8_t)(v >= 100 ? 0 : v); }
                 rui_mark(inst, tidx, cidx);
                 if (!tr->recording) inst->state_dirty = 1;
                 return 1;
@@ -471,6 +477,8 @@ static int sp_track_clip(sp_ctx_t *cx) {
                         cl->step_ratchet[dstStep]    = cl->step_ratchet[sidx];
                         cl->step_xrev[dstStep]    = cl->step_xrev[sidx];
                         cl->step_xsemi[dstStep]    = cl->step_xsemi[sidx];
+                        cl->step_xstart[dstStep]    = cl->step_xstart[sidx];
+                        cl->step_xlen[dstStep]    = cl->step_xlen[sidx];
                         cl->steps[dstStep]           = cl->steps[sidx];
                     } else {
                         /* Occupied dst: merge; dst notes take precedence on pitch collision */
@@ -501,6 +509,8 @@ static int sp_track_clip(sp_ctx_t *cx) {
                     cl->step_ratchet[sidx]    = 0;
                     cl->step_xrev[sidx]    = 0;
                     cl->step_xsemi[sidx]    = 0;
+                    cl->step_xstart[sidx]    = 0;
+                    cl->step_xlen[sidx]    = 0;
                     cl->steps[sidx]           = 0;
                 }
                 {
@@ -529,6 +539,8 @@ static int sp_track_clip(sp_ctx_t *cx) {
                 cl->step_ratchet[dstStep]    = cl->step_ratchet[sidx];
                 cl->step_xrev[dstStep]    = cl->step_xrev[sidx];
                 cl->step_xsemi[dstStep]    = cl->step_xsemi[sidx];
+                cl->step_xstart[dstStep]    = cl->step_xstart[sidx];
+                cl->step_xlen[dstStep]    = cl->step_xlen[sidx];
                 cl->steps[dstStep]           = cl->steps[sidx];
                 {
                     int any = 0, k;

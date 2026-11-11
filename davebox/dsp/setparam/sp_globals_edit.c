@@ -64,6 +64,8 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             memcpy(dst->step_ratchet, src->step_ratchet, SEQ_STEPS);
             memcpy(dst->step_xrev, src->step_xrev, SEQ_STEPS);
             memcpy(dst->step_xsemi, src->step_xsemi, SEQ_STEPS);
+            memcpy(dst->step_xstart, src->step_xstart, SEQ_STEPS);
+            memcpy(dst->step_xlen, src->step_xlen, SEQ_STEPS);
             dst->active = src->active;
             clip_migrate_to_notes(dst);
             clip_copy_cond_fields(dst, src);
@@ -113,6 +115,8 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             memcpy(dst->step_ratchet, src->step_ratchet, SEQ_STEPS);
             memcpy(dst->step_xrev, src->step_xrev, SEQ_STEPS);
             memcpy(dst->step_xsemi, src->step_xsemi, SEQ_STEPS);
+            memcpy(dst->step_xstart, src->step_xstart, SEQ_STEPS);
+            memcpy(dst->step_xlen, src->step_xlen, SEQ_STEPS);
             dst->active = src->active;
             clip_migrate_to_notes(dst);
             clip_copy_cond_fields(dst, src);
@@ -164,6 +168,8 @@ static int sp_globals_edit(sp_ctx_t *cx) {
                 memcpy(dc->step_ratchet, sc->step_ratchet, SEQ_STEPS);
                 memcpy(dc->step_xrev, sc->step_xrev, SEQ_STEPS);
                 memcpy(dc->step_xsemi, sc->step_xsemi, SEQ_STEPS);
+                memcpy(dc->step_xstart, sc->step_xstart, SEQ_STEPS);
+                memcpy(dc->step_xlen, sc->step_xlen, SEQ_STEPS);
                 dc->length         = sc->length;
                 dc->loop_start     = sc->loop_start;
                 dc->ticks_per_step = sc->ticks_per_step;
@@ -219,6 +225,8 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             memcpy(dst->step_ratchet, src->step_ratchet, SEQ_STEPS);
             memcpy(dst->step_xrev, src->step_xrev, SEQ_STEPS);
             memcpy(dst->step_xsemi, src->step_xsemi, SEQ_STEPS);
+            memcpy(dst->step_xstart, src->step_xstart, SEQ_STEPS);
+            memcpy(dst->step_xlen, src->step_xlen, SEQ_STEPS);
             dst->active = src->active;
             clip_migrate_to_notes(dst);
             clip_copy_cond_fields(dst, src);
@@ -274,6 +282,8 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             memcpy(dst->step_ratchet, src->step_ratchet, SEQ_STEPS);
             memcpy(dst->step_xrev, src->step_xrev, SEQ_STEPS);
             memcpy(dst->step_xsemi, src->step_xsemi, SEQ_STEPS);
+            memcpy(dst->step_xstart, src->step_xstart, SEQ_STEPS);
+            memcpy(dst->step_xlen, src->step_xlen, SEQ_STEPS);
             dst->active = src->active;
             clip_migrate_to_notes(dst);
             clip_copy_cond_fields(dst, src);
@@ -330,6 +340,8 @@ static int sp_globals_edit(sp_ctx_t *cx) {
                 memcpy(dc->step_ratchet, sc->step_ratchet, SEQ_STEPS);
                 memcpy(dc->step_xrev, sc->step_xrev, SEQ_STEPS);
                 memcpy(dc->step_xsemi, sc->step_xsemi, SEQ_STEPS);
+                memcpy(dc->step_xstart, sc->step_xstart, SEQ_STEPS);
+                memcpy(dc->step_xlen, sc->step_xlen, SEQ_STEPS);
                 dc->length         = sc->length;
                 dc->loop_start     = sc->loop_start;
                 dc->ticks_per_step = sc->ticks_per_step;
@@ -384,6 +396,8 @@ static int sp_globals_edit(sp_ctx_t *cx) {
                 memcpy(dc->step_ratchet, sc->step_ratchet, SEQ_STEPS);
                 memcpy(dc->step_xrev, sc->step_xrev, SEQ_STEPS);
                 memcpy(dc->step_xsemi, sc->step_xsemi, SEQ_STEPS);
+                memcpy(dc->step_xstart, sc->step_xstart, SEQ_STEPS);
+                memcpy(dc->step_xlen, sc->step_xlen, SEQ_STEPS);
                 dc->length        = sc->length;
                 dc->loop_start    = sc->loop_start;
                 dc->ticks_per_step = sc->ticks_per_step;
@@ -448,6 +462,8 @@ static int sp_globals_edit(sp_ctx_t *cx) {
                 memcpy(dc->step_ratchet, sc->step_ratchet, SEQ_STEPS);
                 memcpy(dc->step_xrev, sc->step_xrev, SEQ_STEPS);
                 memcpy(dc->step_xsemi, sc->step_xsemi, SEQ_STEPS);
+                memcpy(dc->step_xstart, sc->step_xstart, SEQ_STEPS);
+                memcpy(dc->step_xlen, sc->step_xlen, SEQ_STEPS);
                 dc->length        = sc->length;
                 dc->loop_start    = sc->loop_start;
                 dc->ticks_per_step = sc->ticks_per_step;

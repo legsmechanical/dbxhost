@@ -314,6 +314,7 @@ typedef struct {
      * played by hand finds none and plays the chop as it is. */
     uint8_t    nm_on[AU_MAX_SLICES], nm_rev[AU_MAX_SLICES];
     int8_t     nm_semi[AU_MAX_SLICES];
+    uint8_t    nm_start[AU_MAX_SLICES], nm_len[AU_MAX_SLICES];   /* % of the chop: from, how much (0 = all) */
     float      nm_vg[AU_MAX_SLICES];
 } au_track_t;
 

@@ -2587,6 +2587,9 @@ static int au_live_mark = 0;
  * and this many semitones up — set around one au_range_on call, as
  * au_live_mark is (au_rmx_block). */
 static int au_rmx_rev = 0, au_rmx_semi = 0;
+/* A Slicer step's window of its chop: from au_win_start %, au_win_len % of it
+ * (0 = to its end) — set around one hit, as the two above are */
+static int au_win_start = 0, au_win_len = 0;
 
 /* Frames a..b of clip (t,c)'s sample as chop `slice` (AU_SLICE_NONE: Loop
  * mode's hidden chop at Start), `off` frames into the block. */
@@ -2628,6 +2631,12 @@ static au_voice_t *au_range_on_in(au_track_t *at, const au_sample_t *s, int cs, 
     au_slice_t eff;
     const au_slice_t *sl = &plain;
     if (!sync && slice >= 0 && slice < AU_MAX_SLICES) { au_sl_eff(cl, slice, &eff); sl = &eff; }
+    if (!sync && (au_win_start || au_win_len)) {
+        uint32_t span = b - a, a2 = a + (uint32_t)((uint64_t)span * (uint32_t)au_win_start / 100u);
+        uint32_t b2 = au_win_len ? a2 + (uint32_t)((uint64_t)span * (uint32_t)au_win_len / 100u) : b;
+        if (b2 > b) b2 = b;
+        if (b2 > a2 + 8) { a = a2; b = b2; }
+    }
     uint8_t play = sl->play, rev = (uint8_t)((sync ? au_revrs(cl) : sl->rev) ^ (au_rmx_rev ? 1 : 0));
     double ratio = au_tune(au_pitch(cl) + sl->pitch + cs, au_detune(cl) + sl->detune) * (double)s->rate / 44100.0 * vk;
     if (au_rmx_semi) ratio *= au_semi(au_rmx_semi);
@@ -2722,10 +2731,11 @@ static void au_note_event(int t, int slice, uint8_t status, uint8_t vel, int ech
         if (at->nm_on[slice]) {
             at->nm_on[slice] = 0;
             au_rmx_rev = at->nm_rev[slice]; au_rmx_semi = at->nm_semi[slice];
+            au_win_start = at->nm_start[slice]; au_win_len = at->nm_len[slice];
             if (!echo) vg = at->nm_vg[slice];
         }
         au_slice_on(inst, t, slice, vg);
-        au_rmx_rev = 0; au_rmx_semi = 0;
+        au_rmx_rev = 0; au_rmx_semi = 0; au_win_start = 0; au_win_len = 0;
     }
     else if ((status & 0xF0) == 0x80 || (status & 0xF0) == 0x90) au_slice_off(inst, t, slice);
 }

@@ -884,6 +884,11 @@ typedef struct {
      * with the step like its conditions, so every step edit carries them. */
     uint8_t  step_xrev[SEQ_STEPS];
     uint8_t  step_xsemi[SEQ_STEPS];
+    /* ...and the part of its chop it plays (Josh, 2026-11-11: "why not have
+     * start be the alt to length and have length set sample length for that
+     * step"): from step_xstart % of the chop, step_xlen % of it (0 = all, 100 %) */
+    uint8_t  step_xstart[SEQ_STEPS];
+    uint8_t  step_xlen[SEQ_STEPS];
     /* Conductor per-clip control banks (meaningful only on the Conductor
      * track's clips; storage exists on every clip). One entry per dAVEBOx
      * track. Phase 3 reads these; stored + persisted here in Phase 2. */
@@ -1100,6 +1105,7 @@ typedef struct {
         uint64_t park;
         uint8_t  xon, xrev;  /* a Slicer step's own sound, for each sub-hit (au_track_t.nm_*) */
         int8_t   xsemi;
+        uint8_t  xstart, xlen;
         uint8_t  xvg;        /* ...its level, % (a ROLL repeat's) */
     } ratchet_pending[24];
     uint8_t  ratchet_pending_count;
@@ -5912,6 +5918,8 @@ static void clip_init(clip_t *cl) {
         cl->step_ratchet[s]    = 0;
         cl->step_xrev[s]    = 0;
         cl->step_xsemi[s]    = 0;
+        cl->step_xstart[s]    = 0;
+        cl->step_xlen[s]    = 0;
     }
     {
         int ti;
@@ -7093,6 +7101,8 @@ static void clip_crop_window(clip_t *cl) {
         memmove(&cl->step_ratchet[0],        &cl->step_ratchet[ls],        k);
         memmove(&cl->step_xrev[0],        &cl->step_xrev[ls],        k);
         memmove(&cl->step_xsemi[0],        &cl->step_xsemi[ls],        k);
+        memmove(&cl->step_xstart[0],        &cl->step_xstart[ls],        k);
+        memmove(&cl->step_xlen[0],        &cl->step_xlen[ls],        k);
     }
     for (s = len; s < SEQ_STEPS; s++) {
         cl->steps[s]           = 0;
@@ -7106,6 +7116,8 @@ static void clip_crop_window(clip_t *cl) {
         cl->step_ratchet[s]    = 0;
         cl->step_xrev[s]    = 0;
         cl->step_xsemi[s]    = 0;
+        cl->step_xstart[s]    = 0;
+        cl->step_xlen[s]    = 0;
     }
     /* An early note on the new first step would sit before tick 0, which the
      * note list wraps to the clip's END: it lands on step 1 instead. */
@@ -7171,6 +7183,8 @@ static void clip_step_wipe(clip_t *cl, int s) {
     cl->step_ratchet[s]    = 0;
     cl->step_xrev[s]    = 0;
     cl->step_xsemi[s]    = 0;
+    cl->step_xstart[s]    = 0;
+    cl->step_xlen[s]    = 0;
 }
 
 static void clip_page_copy(clip_t *cl, int src, int dst, int cut) {
@@ -7190,6 +7204,8 @@ static void clip_page_copy(clip_t *cl, int src, int dst, int cut) {
         cl->step_ratchet[d]    = cl->step_ratchet[s];
         cl->step_xrev[d]    = cl->step_xrev[s];
         cl->step_xsemi[d]    = cl->step_xsemi[s];
+        cl->step_xstart[d]    = cl->step_xstart[s];
+        cl->step_xlen[d]    = cl->step_xlen[s];
     }
     if (cut)
         for (i = 0; i < 16; i++) {
@@ -10360,6 +10376,10 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                     return snprintf(out, out_len, "%d", (int)cl->step_xrev[sidx]);
                 if (!strcmp(q, "_xsemi"))
                     return snprintf(out, out_len, "%d", (int)(int8_t)cl->step_xsemi[sidx]);
+                if (!strcmp(q, "_xstart"))
+                    return snprintf(out, out_len, "%d", (int)cl->step_xstart[sidx]);
+                if (!strcmp(q, "_xlen"))
+                    return snprintf(out, out_len, "%d", cl->step_xlen[sidx] ? (int)cl->step_xlen[sidx] : 100);
                 return -1;
             }
             if (!strncmp(p, "_steps", 6) && p[6] == '\0') {
