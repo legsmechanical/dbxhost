@@ -43,20 +43,27 @@ static int wait_loaded(hx_t *h, int t, int c) {
     return au_cl(inst, t, c)->state;
 }
 
+/* one block, the stretcher serviced first as its thread would (Warp: by hand) */
+static void r1(hx_t *h) {
+    if (au_warp_manual) au_warp_service((seq8_instance_t *)h->inst);
+    hx_render(h, 1);
+}
+static void rn(hx_t *h, int n) { while (n-- > 0) r1(h); }
+
 /* per 1/16 of one bar: the level early in it, late in it, and its zero
- * crossings per block (pitch) */
+ * crossings per sounding block (pitch) */
 typedef struct { double early, late, mid; double xr; } sl_t;
 static void measure_bar(hx_t *h, sl_t *o) {
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
     int slot = inst->tracks[2].pfx.slot, i, k;
     double se[16] = {0}, sl[16] = {0}, sm[16] = {0}, sx[16] = {0};
-    int ne[16] = {0}, nl[16] = {0}, nm[16] = {0};
+    int ne[16] = {0}, nl[16] = {0}, nm[16] = {0}, nx[16] = {0};
     /* wait for the NEXT bar's top (a setting made now lands there) */
-    for (i = 0; i < 4000 && inst->tracks[2].current_step == 0; i++) hx_render(h, 1);
-    for (i = 0; i < 4000 && !(inst->tracks[2].current_step == 0 && inst->tracks[2].tick_in_step < 3); i++) hx_render(h, 1);
+    for (i = 0; i < 4000 && inst->tracks[2].current_step == 0; i++) r1(h);
+    for (i = 0; i < 4000 && !(inst->tracks[2].current_step == 0 && inst->tracks[2].tick_in_step < 3); i++) r1(h);
     for (i = 0; i < 4000; i++) {
         int st = inst->tracks[2].current_step, tis = inst->tracks[2].tick_in_step;
-        hx_render(h, 1);
+        r1(h);
         if (i > 20 && inst->tracks[2].current_step == 0 && st == 15) break;
         const int16_t *b = hx_stub_feed_last(slot);
         double lv = 0; int xc = 0;
@@ -65,11 +72,12 @@ static void measure_bar(hx_t *h, sl_t *o) {
         if (st < 0 || st > 15) continue;
         if (tis >= 3 && tis < 8)   { se[st] += lv; ne[st]++; }
         if (tis >= 16 && tis < 21) { sl[st] += lv; nl[st]++; }
-        if (tis >= 6 && tis < 18)  { sm[st] += lv; sx[st] += xc; nm[st]++; }
+        if (tis >= 6 && tis < 18)  { sm[st] += lv; nm[st]++; }
+        if (lv > 400)              { sx[st] += xc; nx[st]++; }   /* pitch: where it sounds (a repitched slot ends early) */
     }
     for (k = 0; k < 16; k++) {
         o[k].early = ne[k] ? se[k] / ne[k] : 0; o[k].late = nl[k] ? sl[k] / nl[k] : 0;
-        o[k].mid = nm[k] ? sm[k] / nm[k] : 0; o[k].xr = nm[k] ? sx[k] / nm[k] : 0;
+        o[k].mid = nm[k] ? sm[k] / nm[k] : 0; o[k].xr = nx[k] ? sx[k] / nx[k] : 0;
     }
 }
 /* the source slot a measured level is, against the unit (slot 0's level) */
@@ -102,7 +110,8 @@ int main(void) {
     snprintf(p, sizeof p, "%s/proj", g_root); mkdir(p, 0775);
     snprintf(p, sizeof p, "%s/src/bar.wav", g_root); write_bar(p);
 
-    for (sync = 1; sync <= 2; sync++) {                 /* Vintage, Pitch */
+    for (sync = 0; sync <= 2; sync++) {                 /* Warp, Vintage, Pitch */
+        au_warp_manual = sync == 0;                     /* Warp: the stretcher by hand */
         hx_t *h = rig(sync);
         sl_t m[16];
         double unit;
@@ -135,8 +144,12 @@ int main(void) {
             int nrev = 0;
             for (k = 0; k < 16; k++) {
                 int want = k < 10 ? 4 + k : (14 + k - 10) & 15;
-                snprintf(msg, sizeof msg, "sync %d, T1 REVERSE 9: 1/16 %d plays %d, not %d", sync, k, which(m[k].mid, unit), want);
-                HX_ASSERT(which(m[k].mid, unit) == want, msg);
+                /* the first 1/16 starts 2 ticks late (a gap): under Warp the
+                 * stretcher's few ticks of delay put that gap in the window
+                 * read, so read its later part there */
+                double lv = (sync == 0 && k == 0) ? m[k].late * 0.8 / 0.95 : m[k].mid;
+                snprintf(msg, sizeof msg, "sync %d, T1 REVERSE 9: 1/16 %d plays %d, not %d", sync, k, which(lv, unit), want);
+                HX_ASSERT(which(lv, unit) == want, msg);
                 if (k == 0) continue;                   /* the late first slot */
                 if (rmx_rev_flag[8][want]) {
                     snprintf(msg, sizeof msg, "sync %d, REVERSE 9: flagged 1/16 %d does not ramp down", sync, k);
@@ -184,14 +197,14 @@ int main(void) {
         {
             seq8_instance_t *inst = (seq8_instance_t *)h->inst;
             int i;
-            for (i = 0; i < 4000 && inst->tracks[2].current_step != 6; i++) hx_render(h, 1);
+            for (i = 0; i < 4000 && inst->tracks[2].current_step != 6; i++) r1(h);
             hx_set_param(h, "t2_remix_on", "0");        /* mid-bar */
-            hx_render(h, 6);
+            rn(h, 6);
             int st = inst->tracks[2].current_step;
-            hx_render(h, 30);
+            rn(h, 30);
             /* still NORMAL 1 in 1/16 11..: slot 1 (level 2), not slot 11 */
-            for (i = 0; i < 4000 && inst->tracks[2].current_step != 11; i++) hx_render(h, 1);
-            hx_render(h, 15);
+            for (i = 0; i < 4000 && inst->tracks[2].current_step != 11; i++) r1(h);
+            rn(h, 15);
             {
                 const int16_t *b = hx_stub_feed_last(inst->tracks[2].pfx.slot);
                 double lv = 0; for (k = 0; k < 128; k++) lv += abs(b[k * 2]);

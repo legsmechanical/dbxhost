@@ -66,6 +66,7 @@
  * still carries straight on (au_range_on), no fade. */
 #define AU_VINTAGE_XF        128    /* frames */
 #define AU_RMX_EV          160          /* REMIX events in one Loop bar (16 notes; ROLL adds runs) */
+#define AU_RMX_BAR         384          /* REMIX: a bar of clip ticks, 16 x 1/16 at PPQN 96 */
 #define AU_SLICE_NONE      (-1)         /* au_range_on: Loop mode's hidden chop at Start */
 #define AU_JOIN            256          /* frames: a slice this near where the sounding one has reached carries it on */
 #define AU_MIP             256          /* frames per waveform summary entry */
@@ -297,6 +298,7 @@ typedef struct {
      * phrase is a note on each 1/16). rmx_bar: the bar it was latched in. */
     uint8_t    rmx_on, rmx_type, rmx_var, rmx_clip;
     int32_t    rmx_bar;
+    uint32_t   rmx_gen;      /* bumped each time rmx_e is rebuilt (Warp's stretcher copies it by this) */
     int16_t    rmx_n;
     rmx_ev_t   rmx_e[AU_RMX_EV];
 } au_track_t;

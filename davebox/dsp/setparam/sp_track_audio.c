@@ -361,6 +361,14 @@ static void au_warp_block(seq8_instance_t *inst, int t, int c, double L, double 
     cmd.anchor_gen = w->gen;
     cmd.revrs = (uint8_t)au_revrs(cl);
     cmd.run = 1;
+    /* REMIX: the stretcher reads through it (au_warp_src) */
+    {
+        au_track_t *at = &inst->au_trk[t];
+        if (playing && at->rmx_on && at->rmx_n && at->rmx_clip == (uint8_t)c) {
+            if (X->trk[t]->rmx_pub.gen != at->rmx_gen) au_warp_rmx_publish(X->trk[t], at->rmx_gen, at->rmx_e, at->rmx_n);
+            cmd.rmx_gen = at->rmx_gen;
+        }
+    }
     au_warp_cmd_write(X->trk[t], &cmd);
 }
 
@@ -619,7 +627,6 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
 
 /* ---------------- REMIX on a Loop clip ---------------- */
 
-#define AU_RMX_BAR 384      /* a bar of clip ticks: 16 x 1/16 at PPQN 96 */
 
 /* The setting in force for clip c, taken now (at a bar line, or as it
  * starts): one bar's events for the Loop phrase — a note on each 1/16, key =
@@ -643,6 +650,7 @@ static void au_rmx_latch(seq8_instance_t *inst, int t, int c) {
     if (n > AU_RMX_EV) n = AU_RMX_EV;
     memcpy(at->rmx_e, out, (size_t)n * sizeof out[0]);
     at->rmx_n = (int16_t)n;
+    if (++at->rmx_gen == 0) at->rmx_gen = 1;
 }
 
 /* Clip c's REMIX this block (Sync Vintage or Pitch): each event of each bar

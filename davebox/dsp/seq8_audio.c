@@ -1377,6 +1377,7 @@ typedef struct {
     double             drift;         /* output frames the heard tag is ahead of the clock */
     double             anchor_tick;
     uint32_t           anchor_gen;
+    uint32_t           rmx_gen;       /* REMIX: the events it reads through (rmx_pub), 0 = none */
     uint8_t            revrs, run;
 } au_warp_cmd_t;
 
@@ -1414,6 +1415,14 @@ typedef struct {
     uint32_t      settle;                      /* the ring index from which they were: the drift read
                                                 * before it is played is of the old speed's frames */
     const void   *held;                        /* published: the sample it renders from (NULL: idle) */
+    /* REMIX: the events, published by the audio thread under their own
+     * seqlock (written only when a bar line latches a new setting), and the
+     * stretcher's copy with a tick -> event table for one bar */
+    struct { uint32_t seq, gen; int16_t n; rmx_ev_t e[AU_RMX_EV]; } rmx_pub;
+    uint32_t      rmx_have;                    /* the gen its copy holds (0: none) */
+    int16_t       rmx_n;
+    rmx_ev_t      rmx_e[AU_RMX_EV];
+    int16_t       rmx_tab[AU_RMX_BAR];         /* the event sounding at each tick of the bar (-1: none) */
 } au_warp_t;
 
 typedef struct {
@@ -1440,7 +1449,7 @@ static int au_warp_nocache = 0;                /* tests: fetch every grain's who
 #define AU_WCL(d, s, f) __atomic_load(&(s)->f, &(d)->f, __ATOMIC_RELAXED)
 #define AU_WARP_FIELDS(OP, d, s) \
     OP(d, s, smp); OP(d, s, rs); OP(d, s, re); OP(d, s, P); OP(d, s, L); OP(d, s, fpt); OP(d, s, nud); \
-    OP(d, s, rot); OP(d, s, pitch); OP(d, s, drift); OP(d, s, anchor_tick); OP(d, s, anchor_gen); OP(d, s, revrs); OP(d, s, run)
+    OP(d, s, rot); OP(d, s, pitch); OP(d, s, drift); OP(d, s, anchor_tick); OP(d, s, anchor_gen); OP(d, s, rmx_gen); OP(d, s, revrs); OP(d, s, run)
 static void au_warp_cmd_write(au_warp_t *W, const au_warp_cmd_t *c) {
     uint32_t q = W->cmd.seq;
     __atomic_store_n(&W->cmd.seq, q + 1, __ATOMIC_RELAXED);
@@ -1482,7 +1491,7 @@ static int au_warp_cmd_read(au_warp_t *W, au_warp_cmd_t *c) {
 /* the map: what the stretcher reads, and how fast */
 static int au_warp_map_same(const au_warp_cmd_t *a, const au_warp_cmd_t *b) {
     return a->smp == b->smp && a->rs == b->rs && a->re == b->re && a->P == b->P && a->L == b->L &&
-           a->nud == b->nud && a->rot == b->rot && a->revrs == b->revrs;
+           a->nud == b->nud && a->rot == b->rot && a->revrs == b->revrs && a->rmx_gen == b->rmx_gen;
 }
 static double au_warp_speed(const au_warp_t *W) {
     const au_warp_cmd_t *c = &W->cur;
@@ -1502,10 +1511,91 @@ static int au_warp_native(const au_warp_t *W) {
     return sp < 1e-4 && sp > -1e-4 && pd < 1e-9 && pd > -1e-9;
 }
 
+/* REMIX: the audio thread publishes a new bar of events (rare: a latch) */
+static void au_warp_rmx_publish(au_warp_t *W, uint32_t gen, const rmx_ev_t *e, int n) {
+    uint32_t q = W->rmx_pub.seq;
+    if (n > AU_RMX_EV) n = AU_RMX_EV;
+    __atomic_store_n(&W->rmx_pub.seq, q + 1, __ATOMIC_RELAXED);
+    __atomic_thread_fence(__ATOMIC_RELEASE);
+    __atomic_store_n(&W->rmx_pub.gen, gen, __ATOMIC_RELAXED);
+    __atomic_store_n(&W->rmx_pub.n, (int16_t)n, __ATOMIC_RELAXED);
+    {   /* byte by byte with relaxed atomics: a reader may overlap (it retries) */
+        const unsigned char *src = (const unsigned char *)e;
+        unsigned char *dst = (unsigned char *)W->rmx_pub.e;
+        size_t i, sz = (size_t)n * sizeof *e;
+        for (i = 0; i < sz; i++) __atomic_store_n(&dst[i], src[i], __ATOMIC_RELAXED);
+    }
+    __atomic_store_n(&W->rmx_pub.seq, q + 2, __ATOMIC_RELEASE);
+}
+/* ...and the stretcher takes a copy, building its tick table. 0: try later. */
+static int au_warp_rmx_fetch(au_warp_t *W, uint32_t gen) {
+    int tries;
+    for (tries = 0; tries < 4; tries++) {
+        uint32_t a = __atomic_load_n(&W->rmx_pub.seq, __ATOMIC_ACQUIRE);
+        if (a & 1) continue;
+        uint32_t g = __atomic_load_n(&W->rmx_pub.gen, __ATOMIC_RELAXED);
+        int16_t n = __atomic_load_n(&W->rmx_pub.n, __ATOMIC_RELAXED);
+        if (g != gen || n < 0 || n > AU_RMX_EV) return 0;
+        {
+            const unsigned char *src = (const unsigned char *)W->rmx_pub.e;
+            unsigned char *dst = (unsigned char *)W->rmx_e;
+            size_t i, sz = (size_t)n * sizeof W->rmx_e[0];
+            for (i = 0; i < sz; i++) dst[i] = __atomic_load_n(&src[i], __ATOMIC_RELAXED);
+        }
+        __atomic_thread_fence(__ATOMIC_ACQUIRE);
+        if (__atomic_load_n(&W->rmx_pub.seq, __ATOMIC_RELAXED) != a) continue;
+        {   /* the event sounding at each tick: the latest one started (events are in time order) */
+            int k, i = -1;
+            for (k = 0; k < AU_RMX_BAR; k++) {
+                while (i + 1 < n && W->rmx_e[i + 1].tick <= k) i++;
+                W->rmx_tab[k] = (int16_t)i;
+            }
+        }
+        W->rmx_n = n;
+        W->rmx_have = gen;
+        return 1;
+    }
+    return 0;
+}
+
+/* Clip tick ct (0..L) -> the clip tick the sample is read at, through the
+ * REMIX when one is on: the piece sounding at ct plays its source 1/16 of the
+ * same bar (backwards when reversed, faster or slower when repitched), at its
+ * velocity, silent past its gate or its slot's end; a short fade at each
+ * seam. Returns -1 for silence; *g the gain. */
+#define AU_WARP_RMX_FADE 64.0         /* input frames */
+static double au_warp_src(const au_warp_t *W, double ct, double *g) {
+    const au_warp_cmd_t *c = &W->cur;
+    *g = 1.0;
+    if (!c->rmx_gen || W->rmx_have != c->rmx_gen || W->rmx_n <= 0) return ct;
+    {
+        double bar = (double)(long)(ct / AU_RMX_BAR) * AU_RMX_BAR, w = ct - bar;
+        int k = (int)w, idx;
+        if (k < 0) k = 0;
+        if (k >= AU_RMX_BAR) k = AU_RMX_BAR - 1;
+        idx = W->rmx_tab[k];
+        if (idx < 0) return -1.0;
+        {
+            const rmx_ev_t *e = &W->rmx_e[idx];
+            double dt = w - (double)e->tick, semi = au_semi(e->pitch), slot = AU_RMX_BAR / 16;
+            double pos = dt * semi, end = (double)e->gate, left;
+            if (dt < 0 || dt >= end || pos >= slot) return -1.0;
+            left = (slot - pos) / semi;                    /* ticks till the slot's material ends */
+            if (end - dt < left) left = end - dt;          /* ...or the gate */
+            {
+                double fi = dt * W->rpt / AU_WARP_RMX_FADE, fo = left * W->rpt / AU_WARP_RMX_FADE;
+                *g = (double)e->vel / 100.0 * (fi < 1.0 ? fi : 1.0) * (fo < 1.0 ? fo : 1.0);
+            }
+            return bar + (double)e->key * slot + (e->rev ? slot - pos - 1e-6 : pos);
+        }
+    }
+}
+
 /* the sample frame virtual position v reads (the streamer's watch) */
 static void au_warp_watch_at(au_warp_t *W, double v) {
     const au_warp_cmd_t *c = &W->cur;
-    double x = (au_wrap(au_wrap(v / W->rpt, c->L) - c->rot, c->L) - c->nud) * W->rpt;
+    double g, ct = au_warp_src(W, au_wrap(v / W->rpt, c->L), &g);
+    double x = ct < 0 ? -1.0 : (au_wrap(ct - c->rot, c->L) - c->nud) * W->rpt;
     uint32_t f = 0;
     if (x >= 0 && x < (double)(c->re - c->rs)) f = c->revrs ? c->re - 1 - (uint32_t)x : c->rs + (uint32_t)x;
     __atomic_store_n(&W->read_pos, f, __ATOMIC_RELAXED);
@@ -1516,11 +1606,12 @@ static void au_warp_watch_at(au_warp_t *W, double v) {
 static void au_warp_frame(au_warper_t *X, const au_warp_t *W, double v, float *l, float *r) {
     const au_warp_cmd_t *c = &W->cur;
     const au_sample_t *s = c->smp;
-    double R = (double)(c->re - c->rs), x = (au_wrap(au_wrap(v / W->rpt, c->L) - c->rot, c->L) - c->nud) * W->rpt, fr;
+    double g, ct = au_warp_src(W, au_wrap(v / W->rpt, c->L), &g);
+    double R = (double)(c->re - c->rs), x = ct < 0 ? -1.0 : (au_wrap(ct - c->rot, c->L) - c->nud) * W->rpt, fr;
     uint32_t i;
     const int16_t *a, *b;
     *l = *r = 0.f;
-    if (!(x >= 0) || x >= R) return;
+    if (!(x >= 0) || x >= R || !(g > 0)) return;
     if (c->revrs) x = R - 1.0 - x;
     if (x < 0) x = 0;
     i = (uint32_t)x;
@@ -1530,8 +1621,8 @@ static void au_warp_frame(au_warper_t *X, const au_warp_t *W, double v, float *l
     if (!a || !b) { X->underruns++; return; }
     {
         float la = a[0], lb = b[0], ra = s->ch > 1 ? a[1] : la, rb = s->ch > 1 ? b[1] : lb;
-        *l = (float)((la + (lb - la) * fr) / 32768.0);
-        *r = (float)((ra + (rb - ra) * fr) / 32768.0);
+        *l = (float)((la + (lb - la) * fr) / 32768.0 * g);
+        *r = (float)((ra + (rb - ra) * fr) / 32768.0 * g);
     }
 }
 
@@ -1691,6 +1782,9 @@ static int au_warp_track(au_warper_t *X, au_warp_t *W) {
     au_warp_cmd_t c;
     int got = 0, fresh = 0;
     if (!au_warp_cmd_read(W, &c)) return 0;
+    /* REMIX: a new bar of events — copied before the map compares; not got
+     * yet (a write under way), the old map stands this pass */
+    if (c.rmx_gen && c.rmx_gen != W->rmx_have && !au_warp_rmx_fetch(W, c.rmx_gen)) c.rmx_gen = W->cur.rmx_gen;
     if (!c.run || !c.smp || c.re <= c.rs + 32 || !(c.P > 0) || !(c.L > 0) || !(c.fpt > 0) || !(c.pitch > 0)) {
         au_warp_idle(W);
         return 0;
