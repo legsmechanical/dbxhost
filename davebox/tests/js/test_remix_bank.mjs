@@ -218,6 +218,25 @@ step('⭐ the dials reach the engine, and an edited preset reads *', () => {
            'Roll / Break / Pitch / Shuffle not all sent: ' + JSON.stringify(sets));
 });
 
+step('⭐ the dials turn like every continuous bank knob: one slow detent = 1 %, a quick spin sweeps the range (device pass 2026-11-11: 80 detents moved Reverse only 35 %)', () => {
+    S.rmxSet[4] = [1, 0, 0, 1, 100, 0, 0, 0, 0, 0];
+    reset(); turn(4, 1, 1); ticks(1);
+    assert(sent('t4_remix_rev').join() === '1', 'one cold detent did not move Reverse by exactly 1: ' + JSON.stringify(sets));
+    reset();
+    S.knobAccum[4] = 0; note(4, 127);
+    for (let i = 0; i < 130; i++) cc(71 + 4, 1);   /* a quick spin: no pause between counts */
+    note(4, 0); ticks(1);
+    const rv = sent('t4_remix_rev');
+    assert((rv[rv.length - 1] | 0) === 100, 'a quick spin of 130 counts did not reach 100 %: ' + rv.slice(-3).join());
+    reset();
+    S.knobAccum[7] = 0; note(7, 127);
+    for (let i = 0; i < 130; i++) cc(71 + 7, 1);
+    note(7, 0); ticks(1);
+    const pv = sent('t4_remix_pit');
+    assert((pv[pv.length - 1] | 0) === 24, 'a quick spin did not take Pitch to 24 st: ' + pv.slice(-3).join());
+    S.rmxSet[4] = [1, 0, 0, 1, 100, 0, 0, 0, 0, 0];
+});
+
 step('⭐ K6: touch + click cycles Roll -> Rate -> Vel -> Roll; Rate and Vel reach the engine', () => {
     const click = () => { cc(3, 127); cc(3, 0); };
     note(5, 127); click(); ticks(1);

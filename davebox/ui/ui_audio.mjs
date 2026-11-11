@@ -1190,7 +1190,10 @@ export function rmxMapPoll(t) {
     S.rmxMapT = t;
     S.rmxMapDirty = false;
 }
-/* a REMIX knob, `steps` detents. Returns true when it changed. */
+/* a REMIX knob moved by `steps`: detents for the pick knobs (Type, Preset,
+ * Rate) and the toggles, a value delta for the dials (K4-K8: 1 % or 1 st a
+ * unit, the input side paces them like any continuous knob). Returns true
+ * when it changed. */
 export function rmxBankKnob(t, k, steps) {
     const r = (S.rmxSet[t] || [0, 0, 0, 1, 100, 0, 0, 0, 0, 0]).slice();
     const send = (key, v) => host_module_set_param('t' + t + '_' + key, String(v));
@@ -1209,17 +1212,17 @@ export function rmxBankKnob(t, k, steps) {
         r[2] = v; r[4] = d[0]; r[5] = d[1]; r[6] = d[2]; r[7] = d[3]; r[8] = d[4]; r[9] = 0;
         S.rmxSet[t] = r; send('remix_var', v); S.rmxMapDirty = true; S.rmxCard = true; return true;
     }
-    if (k === 3) return dial(4, 'remix_shuf', 100, 5);
-    if (k === 4) return dial(5, 'remix_rev', 100, 5);
+    if (k === 3) return dial(4, 'remix_shuf', 100, 1);
+    if (k === 4) return dial(5, 'remix_rev', 100, 1);
     if (k === 5) {
         if (S.rmxK6 === 1) return dial(9, 'remix_rate', 2, 1);
         if (S.rmxK6 === 2) {
             const v = steps > 0 ? 1 : 0; if (v === (r[3] === 0 ? 0 : 1)) return false;
             r[3] = v; S.rmxSet[t] = r; send('remix_rvel', v); S.rmxMapDirty = true; S.rmxCard = true; return true;
         }
-        return dial(6, 'remix_roll', 100, 5);
+        return dial(6, 'remix_roll', 100, 1);
     }
-    if (k === 6) return dial(7, 'remix_brk', 100, 5);
+    if (k === 6) return dial(7, 'remix_brk', 100, 1);
     if (k === 7) return dial(8, 'remix_pit', 24, 1);
     return false;
 }

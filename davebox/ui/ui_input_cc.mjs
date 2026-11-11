@@ -5168,12 +5168,15 @@ function _onCC_knobs(d1, d2) {
          * knobs (its drum form). */
         if (isSampledTrack(S.activeTrack)) {
             const _t = S.activeTrack;
-            /* REMIX: K1 Remix and K3 Family deliberate (a toggle, five
-             * families), K2 Type and K4 Variation a step a detent */
             if (bank === BANK_REMIX) {
-                /* K1 Remix and K6's Vel deliberate (toggles); the rest a step a detent */
+                /* K1 Remix and K6's Vel deliberate (toggles); K2 Type, K3 Preset
+                 * and K6's Rate a pick a detent; the dials (K4-K8) continuous,
+                 * range-scaled like every bank knob (a sweep in a turn, one
+                 * unit a detent when slow) */
                 const _delib = knobIdx === 0 || (knobIdx === 5 && S.rmxK6 === 2);
-                const _st = knobStep(knobIdx, d2, _delib ? KNOB_DELIB : KNOB_PICK);
+                const _pick = knobIdx === 1 || knobIdx === 2 || (knobIdx === 5 && S.rmxK6 === 1);
+                const _st = (_delib || _pick) ? knobStep(knobIdx, d2, _delib ? KNOB_DELIB : KNOB_PICK)
+                                              : ccKnobDelta(d2, knobIdx, bankStep({ min: 0, max: knobIdx === 7 ? 24 : 100 }));
                 if (_st && rmxBankKnob(_t, knobIdx, _st)) S.screenDirty = true;
                 return;
             }
