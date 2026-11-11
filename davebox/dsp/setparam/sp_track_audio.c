@@ -959,6 +959,12 @@ static void au_render(seq8_instance_t *inst, int frames) {
             au_warp_off(inst, t);
             continue;
         }
+        /* REMIX on a Slicer: its chops are the track's own again once its
+         * clip is not playing (the sequencer's tick, where it is rebuilt, does
+         * not run while stopped) */
+        if (tr->pad_mode == PAD_MODE_SLICER && (!inst->playing || !tr->clip_playing) && at->rmx_sclip != 0xFF) {
+            at->rmx_sclip = 0xFF; at->rmx_slive = 0;
+        }
         /* a lane's live value is the PLAYING clip's: one left behind by a
          * clip switch is gone (its lane gives the value back at the switch).
          * A Slicer's slot is every clip's, the playing one's included. */

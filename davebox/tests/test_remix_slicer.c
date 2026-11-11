@@ -219,6 +219,23 @@ int main(void) {
         HX_ASSERT(m[15].mid > m[ref].mid * 0.65, msg);
     }
 
+    /* ==== stopped: the chops are the track's own again (a pad played now
+     * must not come out reversed / repitched by a remix no longer playing) ==== */
+    hx_set_param(h, "t5_remix_type", "0");
+    hx_set_param(h, "t5_remix_var", "24");                /* REVERSE 9: chops 0-3, 8-11 flagged */
+    measure_bar(h, m);
+    HX_ASSERT(inst->au_trk[5].rmx_slive && inst->au_trk[5].rk_rev[8], "rig: REVERSE 9 did not flag chop 8 while playing");
+    hx_set_param(h, "transport", "stop");
+    hx_render(h, 4);
+    {
+        au_slice_t e;
+        au_sl_eff(au_cl(inst, 5, AU_SLC), 8, &e);
+        uint8_t r0 = e.rev;
+        au_sl_rmx(&inst->au_trk[5], 8, &e);
+        HX_ASSERT(e.rev == r0, "stopped, chop 8 still plays reversed by the remix");
+    }
+    hx_set_param(h, "transport", "play");
+
     /* ==== off again: the clip's own steps, the chops as they were ==== */
     hx_set_param(h, "t5_remix_on", "0");
     measure_bar(h, m);
