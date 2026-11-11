@@ -63,11 +63,14 @@ static void measure_bar(hx_t *h, sl_t *o) {
     for (i = 0; i < 4000 && !(inst->tracks[2].current_step == 0 && inst->tracks[2].tick_in_step < 3); i++) r1(h);
     for (i = 0; i < 4000; i++) {
         int st = inst->tracks[2].current_step, tis = inst->tracks[2].tick_in_step;
+        hx_stub_feed_reset();
         r1(h);
         if (i > 20 && inst->tracks[2].current_step == 0 && st == 15) break;
+        /* a silent track feeds its slot nothing at all: no feed is silence */
         const int16_t *b = hx_stub_feed_last(slot);
+        int fed = hx_stub_feed(slot, NULL, NULL) > 0;
         double lv = 0; int xc = 0;
-        for (k = 0; k < 128; k++) { lv += abs(b[k * 2]); if (k && ((b[k * 2] > 0) != (b[k * 2 - 2] > 0))) xc++; }
+        if (fed) for (k = 0; k < 128; k++) { lv += abs(b[k * 2]); if (k && ((b[k * 2] > 0) != (b[k * 2 - 2] > 0))) xc++; }
         lv /= 128.0;
         if (st < 0 || st > 15) continue;
         if (tis >= 3 && tis < 8)   { se[st] += lv; ne[st]++; }
@@ -170,6 +173,37 @@ int main(void) {
         HX_ASSERT(m[15].mid < unit * 0.05, "BREAK 1: the silent last 1/16 sounds");
         HX_ASSERT(m[13].mid > unit * 0.5, "BREAK 1: a 1/16 before the break went quiet");
 
+        /* ==== BREAK (TYPE 16): a 1/16 at a partial gate falls silent part way ==== */
+        {
+            int bv = -1, bk = -1, v;
+            for (v = 0; v < RMX_VARS && bv < 0; v++)
+                for (k = 1; k < 15 && bv < 0; k++) {
+                    int p0 = rmx_break_pct[v][k * 4];
+                    if (p0 > 0 && p0 <= 50 && rmx_break_pct[v][k * 4 + 1] == p0 && rmx_break_pct[v][k * 4 + 2] == p0
+                        && rmx_break_pct[v][k * 4 + 3] == p0 && rmx_break_pct[v][(k - 1) * 4] == 100) { bv = v; bk = k; }
+                }
+            HX_ASSERT(bv >= 0, "data: no BREAK variation has a whole 1/16 at <= 50 %");
+            snprintf(p, sizeof p, "%d", RMX_BREAK * RMX_VARS + bv);
+            hx_set_param(h, "t2_remix_var", p);
+            measure_bar(h, m);
+            snprintf(msg, sizeof msg, "sync %d, BREAK %d: 1/16 %d at %d %% still sounds late (early %.2f late %.2f units)",
+                     sync, bv + 1, bk, rmx_break_pct[bv][bk * 4], m[bk].early / unit, m[bk].late / unit);
+            HX_ASSERT(m[bk].early > unit * 0.5 && m[bk].late < m[bk].early * 0.2, msg);
+        }
+
+        /* ==== ROLL 1 (TYPE 16): the last 1/16's runs at velocity 40-50 ==== */
+        hx_set_param(h, "t2_remix_var", "32");
+        measure_bar(h, m);
+        {
+            /* its runs replay the start of the piece-moved remix's slot 12 —
+             * source slot rmx_source[ROLL][0][12] (TYPE 16: piece = slot) —
+             * at velocity 40 / 50; that slot's start is ~0.65 of its level */
+            int src = rmx_source[RMX_ROLL][0][12];
+            double full = (src + 1) * 0.65;
+            snprintf(msg, sizeof msg, "sync %d, ROLL 1: the last 1/16 at %.2f units, not about half of its source slot %d's %.2f", sync, m[15].mid / unit, src, full);
+            HX_ASSERT(m[15].mid > unit * full * 0.25 && m[15].mid < unit * full * 0.75, msg);
+        }
+
         /* ==== PITCH (TYPE 16): a +12 slot is an octave up ==== */
         {
             int pv = -1, up = -1, flat = -1, v;
@@ -200,16 +234,17 @@ int main(void) {
             for (i = 0; i < 4000 && inst->tracks[2].current_step != 6; i++) r1(h);
             hx_set_param(h, "t2_remix_on", "0");        /* mid-bar */
             rn(h, 6);
-            int st = inst->tracks[2].current_step;
             rn(h, 30);
             /* still NORMAL 1 in 1/16 11..: slot 1 (level 2), not slot 11 */
             for (i = 0; i < 4000 && inst->tracks[2].current_step != 11; i++) r1(h);
-            rn(h, 15);
+            rn(h, 14);
+            hx_stub_feed_reset();
+            r1(h);
             {
                 const int16_t *b = hx_stub_feed_last(inst->tracks[2].pfx.slot);
-                double lv = 0; for (k = 0; k < 128; k++) lv += abs(b[k * 2]);
+                double lv = 0;
+                if (hx_stub_feed(inst->tracks[2].pfx.slot, NULL, NULL) > 0) for (k = 0; k < 128; k++) lv += abs(b[k * 2]);
                 lv /= 128.0;
-                (void)st;
                 HX_ASSERT(which(lv, unit) == 1, "Remix off landed mid-bar (1/16 11 played slot 11, not NORMAL 1's slot 1)");
             }
             measure_bar(h, m);
