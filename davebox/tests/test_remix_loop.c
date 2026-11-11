@@ -197,11 +197,14 @@ int main(void) {
         {
             /* its runs replay the start of the piece-moved remix's slot 12 —
              * source slot rmx_source[ROLL][0][12] (TYPE 16: piece = slot) —
-             * at velocity 40 / 50; that slot's start is ~0.65 of its level */
-            int src = rmx_source[RMX_ROLL][0][12];
-            double full = (src + 1) * 0.65;
-            snprintf(msg, sizeof msg, "sync %d, ROLL 1: the last 1/16 at %.2f units, not about half of its source slot %d's %.2f", sync, m[15].mid / unit, src, full);
-            HX_ASSERT(m[15].mid > unit * full * 0.25 && m[15].mid < unit * full * 0.75, msg);
+             * at velocity 40 / 50. Against that same source at velocity 100
+             * earlier in the bar, the last 1/16 is well under it. */
+            int src = rmx_source[RMX_ROLL][0][12], j, ref = -1;
+            for (j = 1; j < 14; j++) if (rmx_source[RMX_ROLL][0][j] == src) { ref = j; break; }
+            HX_ASSERT(ref >= 0, "data: ROLL 1 plays slot 12's source nowhere else in the bar");
+            snprintf(msg, sizeof msg, "sync %d, ROLL 1: the last 1/16 at %.2f of the same source at velocity 100 (want ~0.3-0.5)",
+                     sync, m[15].mid / m[ref].mid);
+            HX_ASSERT(m[15].mid > m[ref].mid * 0.15 && m[15].mid < m[ref].mid * 0.6, msg);
         }
 
         /* ==== PITCH (TYPE 16): a +12 slot is an octave up ==== */
