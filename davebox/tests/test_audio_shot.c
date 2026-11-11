@@ -115,6 +115,14 @@ int main(void) {
          * not joining in step with the song as a looping clip does */
         moved = play_until_stop(h, 0, 4000);
         HX_ASSERT(moved >= len - 1 && moved <= len + 1, "a relaunched Shot clip did not play its length once again");
+        /* ...and through the QUANTIZED launch too (1/2 bar, which joins a
+         * looping clip in step with the song): a Shot clip still plays all of
+         * itself from its top. The Now launch above is a different path. */
+        hx_set_param(h, "launch_quant", "4");
+        hx_render(h, 37);                                  /* off the bar, mid-song */
+        moved = play_until_stop(h, 0, 4000);
+        HX_ASSERT(moved >= len - 1 && moved <= len + 1, "a Shot clip launched on the 1/2-bar quantum did not play its whole length");
+        hx_set_param(h, "launch_quant", "0");
         hx_set_param(h, "transport", "stop"); hx_render(h, 20);
     }
 

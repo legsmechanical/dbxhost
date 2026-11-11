@@ -50,7 +50,8 @@ async function main() {
     /* the clip's info is the engine's, refreshed each tick: hold it as the engine would report */
     let shot = 0;
     const info = () => { S.auInfo[T] = S.auInfo[T] || []; S.auInfo[T][0] = { state: 2, mode: 0, name: 'Break.wav', nframes: 44100, rate: 44100, ch: 1, bpm10: 1200, rot: 0, shot }; };
-    const turn = (dir, n) => { for (let i = 0; i < n; i++) { info(); S.knobAccelLast[0] = 0; cc(71, dir > 0 ? 1 : 127); } info(); };
+    /* each gesture starts from a clean accumulator, as a fresh touch would */
+    const turn = (dir, n) => { S.knobAccum[0] = 0; for (let i = 0; i < n; i++) { info(); S.knobAccelLast[0] = 0; cc(71, dir > 0 ? 1 : 127); } info(); };
 
     step('setup: track 5 an Audio track with a sample in clip A, Track view, the CLIP bank', () => {
         globalThis.init();
@@ -66,10 +67,10 @@ async function main() {
         assert(cells[1] && cells[1].name === 'Stretch' && cells[2] && cells[2].name === 'Shift', 'Stretch / Shift moved: ' + JSON.stringify(cells.slice(1, 3)));
     });
 
-    step('a brush (one detent) does not flip it: the deliberate feel', () => {
+    step('a brush (ten detents, half the deliberate feel) does not flip it', () => {
         sets.length = 0;
-        note(0, 127); turn(1, 1); note(0, 0);
-        assert(!shotSets().length, 'one detent flipped Mode: ' + JSON.stringify(shotSets()));
+        note(0, 127); turn(1, 10); note(0, 0);
+        assert(!shotSets().length, 'a brush flipped Mode: ' + JSON.stringify(shotSets()));
     });
 
     step('⭐ turned right: Shot — sent to the engine for clip A, the cell reads it', () => {
