@@ -804,6 +804,8 @@ typedef struct {
      * setting 0..79 (family x 16 + variation; seq8_remix.h). Per clip. */
     uint8_t rmx_on, rmx_type, rmx_var;
     uint8_t rmx_rvel;      /* ROLL's repeats at their velocity ramp (1, default) or all at full level (0) */
+    /* REMIX's dials (seq8_remix.h rmx_dials_t), set by the preset (rmx_var), then the user's */
+    uint8_t rmx_shuf, rmx_rev, rmx_roll, rmx_brk, rmx_pit, rmx_rate;
 } clip_pfx_params_t;
 
 /* ------------------------------------------------------------------ */
@@ -5602,6 +5604,7 @@ static void clip_pfx_params_init(clip_pfx_params_t *p) {
     p->seq_arp_step_loop_len = 8;
     p->note_length_mode = 0;  /* `--` passthrough */
     p->rmx_on = 0; p->rmx_type = 0; p->rmx_var = 0; p->rmx_rvel = 1;
+    p->rmx_shuf = 100; p->rmx_rev = 0; p->rmx_roll = 0; p->rmx_brk = 0; p->rmx_pit = 0; p->rmx_rate = 0;
 }
 
 static void drum_pfx_params_init(drum_pfx_params_t *p) {
@@ -10867,13 +10870,14 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                  *   34..41 SEQ ARP step_int[0..7] (Arp Steps interval mode)
                  *   42     SEQ ARP step_loop_len (1..8)
                  *   43     NOTE FX note_length_mode (Len knob 0..8)
-                 *   44..47 REMIX on, TYPE, setting, ROLL velocity */
+                 *   44..47 REMIX on, TYPE, setting, ROLL velocity
+                 *   48..53 REMIX dials: shuffle reverse roll break pitch rate */
                 return snprintf(out, out_len,
                     "%d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d "
                     "%d %d %d %d %d %d %d %d "
                     "%d %d %d "
                     "%d %d %d %d %d %d %d %d "
-                    "%d %d %d %d %d %d",
+                    "%d %d %d %d %d %d %d %d %d %d %d %d",
                     cp->octave_shift, cp->note_offset, cp->gate_time,
                     cp->velocity_offset, cp->quantize,
                     cp->octaver, cp->harmonize_1, cp->harmonize_2, cp->harmonize_3,
@@ -10894,7 +10898,8 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                     (int)cp->seq_arp_step_int[6], (int)cp->seq_arp_step_int[7],
                     (int)cp->seq_arp_step_loop_len,
                     (int)cp->note_length_mode,
-                    (int)cp->rmx_on, (int)cp->rmx_type, (int)cp->rmx_var, (int)cp->rmx_rvel);
+                    (int)cp->rmx_on, (int)cp->rmx_type, (int)cp->rmx_var, (int)cp->rmx_rvel,
+                    (int)cp->rmx_shuf, (int)cp->rmx_rev, (int)cp->rmx_roll, (int)cp->rmx_brk, (int)cp->rmx_pit, (int)cp->rmx_rate);
             }
             return -1;
         }

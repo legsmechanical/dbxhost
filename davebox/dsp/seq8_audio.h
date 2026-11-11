@@ -298,6 +298,7 @@ typedef struct {
      * one bar's events for it (every bar of a Loop clip remixes alike: its
      * phrase is a note on each 1/16). rmx_bar: the bar it was latched in. */
     uint8_t    rmx_on, rmx_type, rmx_var, rmx_clip, rmx_rvel;
+    rmx_dials_t rmx_dl;      /* the dials in force (latched with the rest) */
     int32_t    rmx_bar;
     uint32_t   rmx_gen;      /* bumped each time rmx_e is rebuilt (Warp's stretcher copies it by this) */
     int16_t    rmx_n;

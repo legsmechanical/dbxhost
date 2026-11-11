@@ -111,6 +111,92 @@ int main(void) {
     n = rmx_bar(&W, 0, setting(RMX_NORMAL, 1), L, in, 1, out, RMX_MAX);
     HX_ASSERT(n >= 1 && out[0].src == 1 && out[0].tick == 23, "a note 1 tick early left its slot");
 
+    /* ==== 8. THE DIALS (Josh, 2026-11-11: "rs7k presets as a starting point
+     * and our own direct controls to dial things in" · "I do still want to be
+     * able to do what the 7k does") ==== */
+    {
+        rmx_dials_t d, d0;
+        static rmx_ev_t o2[RMX_MAX];
+        int n2, set;
+        /* a preset's own dials ARE rmx_bar (the RS7000), every TYPE x preset */
+        for (set = 0; set < RMX_SETTINGS; set++) {
+            int ty;
+            rmx_dials_of(set, &d);
+            for (ty = 0; ty < RMX_TYPES; ty++) {
+                n = rmx_bar(&W, ty, set, L, in, loop_phrase(), out, RMX_MAX);
+                n2 = rmx_bar_ex(&W, ty, set, &d, L, in, loop_phrase(), o2, RMX_MAX);
+                HX_ASSERT(n == n2 && !memcmp(out, o2, sizeof out[0] * (size_t)n), "a preset's own dials differ from the RS7000 remix");
+            }
+        }
+        /* the preset's values */
+        rmx_dials_of(RMX_REVERSE * RMX_VARS + 8, &d0);
+        HX_ASSERT(d0.shuffle == 100 && d0.reverse == 50 && !d0.roll && !d0.brk && !d0.pitch, "REVERSE 9's dials are not 100/50/0/0/0");
+        rmx_dials_of(RMX_PITCH * RMX_VARS + 0, &d0);
+        HX_ASSERT(d0.pitch == 1, "PITCH 1's range is not its table's 1 st");
+
+        /* Shuffle 0: every piece its own slot (on a preset that moves them) */
+        rmx_dials_of(RMX_NORMAL * RMX_VARS + 0, &d); d.shuffle = 0;
+        n = rmx_bar_ex(&W, 0, RMX_NORMAL * RMX_VARS + 0, &d, L, in, loop_phrase(), out, RMX_MAX);
+        HX_ASSERT(n == 16, "Shuffle 0: not 16");
+        for (i = 0; i < 16; i++) HX_ASSERT(out[i].key == i && out[i].tick == i * 24, "Shuffle 0 moved a piece");
+        /* ...and turned up, one more piece takes the preset's source at a time (never fewer) */
+        {
+            int last = 0, sh;
+            for (sh = 0; sh <= 100; sh += 5) {
+                int moved = 0;
+                rmx_dials_of(RMX_NORMAL * RMX_VARS + 1, &d); d.shuffle = (uint8_t)sh;
+                n = rmx_bar_ex(&W, 15, RMX_NORMAL * RMX_VARS + 1, &d, L, in, loop_phrase(), out, RMX_MAX);
+                for (i = 0; i < n; i++) moved += out[i].key != (out[i].tick + 2) / 24;
+                HX_ASSERT(moved >= last, "Shuffle up moved fewer pieces");
+                last = moved;
+            }
+            HX_ASSERT(last > 0, "Shuffle 100 moved nothing (NORMAL 2 on TYPE 16)");
+        }
+        /* Reverse 0 on a Reverse preset: nothing reversed; 100: every slot */
+        rmx_dials_of(RMX_REVERSE * RMX_VARS + 8, &d); d.reverse = 0;
+        n = rmx_bar_ex(&W, 15, RMX_REVERSE * RMX_VARS + 8, &d, L, in, loop_phrase(), out, RMX_MAX);
+        for (i = 0; i < n; i++) HX_ASSERT(!out[i].rev && out[i].gate == 24, "Reverse 0 still reversed a slot");
+        d.reverse = 100;
+        n = rmx_bar_ex(&W, 15, RMX_REVERSE * RMX_VARS + 8, &d, L, in, loop_phrase(), out, RMX_MAX);
+        for (i = 0; i < n; i++) HX_ASSERT(out[i].rev && out[i].gate == 48, "Reverse 100 left a slot forwards");
+        /* ...and on a NORMAL preset (families combine): Reverse 25 % = 4 slots */
+        rmx_dials_of(RMX_NORMAL * RMX_VARS + 0, &d); d.reverse = 25; d.shuffle = 0;   /* every slot heard once */
+        n = rmx_bar_ex(&W, 15, RMX_NORMAL * RMX_VARS + 0, &d, L, in, loop_phrase(), out, RMX_MAX);
+        { int src[16] = {0}, nr = 0; for (i = 0; i < n; i++) if (out[i].rev) src[out[i].src] = 1; for (i = 0; i < 16; i++) nr += src[i];
+          HX_ASSERT(nr == 4, "Reverse 25 % on NORMAL is not 4 source slots"); }
+        /* Roll on a NORMAL preset: the variation's runs, at its velocities */
+        rmx_dials_of(RMX_NORMAL * RMX_VARS + 0, &d); d.roll = 100;
+        n = rmx_bar_ex(&W, 15, RMX_NORMAL * RMX_VARS + 0, &d, L, in, loop_phrase(), out, RMX_MAX);
+        { int runs = 0; for (i = 0; i < n; i++) if ((out[i].tick + 2) / 6 >= 56) { HX_ASSERT(out[i].vel == rmx_roll_vel[0][(out[i].tick + 2) / 6], "Roll on NORMAL: not the run's velocity"); runs++; }
+          HX_ASSERT(runs == 4, "Roll 100 % on NORMAL 1: not ROLL 1's four runs"); }
+        /* ...Rate 1/64: the 32nd runs re-split into 64ths (twice the repeats) */
+        d.rate = 2;
+        n = rmx_bar_ex(&W, 15, RMX_NORMAL * RMX_VARS + 0, &d, L, in, loop_phrase(), out, RMX_MAX);
+        { int runs = 0; for (i = 0; i < n; i++) if ((out[i].tick + 2) / 6 >= 56) runs++;
+          HX_ASSERT(runs == 8, "Rate 1/64: not eight repeats in ROLL 1's last slot"); }
+        /* ...Vel off: the repeats keep the note's own velocity */
+        d.rate = 0; d.vel = 0;
+        n = rmx_bar_ex(&W, 15, RMX_NORMAL * RMX_VARS + 0, &d, L, in, loop_phrase(), out, RMX_MAX);
+        for (i = 0; i < n; i++) HX_ASSERT(out[i].vel == 100, "Vel off: a repeat took the table's velocity");
+        /* ...Roll 0 on a ROLL preset: just its rearrangement */
+        rmx_dials_of(RMX_ROLL * RMX_VARS + 0, &d); d.roll = 0;
+        n = rmx_bar_ex(&W, 15, RMX_ROLL * RMX_VARS + 0, &d, L, in, loop_phrase(), out, RMX_MAX);
+        HX_ASSERT(n == 16, "Roll 0 on ROLL 1: not the 16 plain pieces");
+        for (i = 0; i < 16; i++) HX_ASSERT(out[i].vel == 100, "Roll 0 still rolled");
+        /* Break 50 % on BREAK 1: no step silent, the cut steps' gates between */
+        rmx_dials_of(RMX_BREAK * RMX_VARS + 0, &d); d.brk = 50;
+        n = rmx_bar_ex(&W, 15, RMX_BREAK * RMX_VARS + 0, &d, L, in, loop_phrase(), out, RMX_MAX);
+        HX_ASSERT(n == 16, "Break 50 % silenced a step");
+        for (i = 0; i < n; i++) {
+            int pct = rmx_break_pct[0][(out[i].tick + 2) / 6], want = 24 * (100 - (100 - pct) / 2) / 100;
+            HX_ASSERT(out[i].gate == (want < 1 ? 1 : want), "Break 50 %: a gate not half way to the shape");
+        }
+        /* Pitch on a PITCH preset: the range scales its shape (1 st -> 12) */
+        rmx_dials_of(RMX_PITCH * RMX_VARS + 0, &d); d.pitch = 12;
+        n = rmx_bar_ex(&W, 15, RMX_PITCH * RMX_VARS + 0, &d, L, in, loop_phrase(), out, RMX_MAX);
+        for (i = 0; i < n; i++) HX_ASSERT(out[i].pitch == rmx_pitch[0][out[i].src] * 12, "Pitch 12 on PITCH 1: the shape not scaled");
+    }
+
     /* ==== 7. out of range settings play nothing, never crash ==== */
     HX_ASSERT(rmx_bar(&W, 16, 0, L, in, 1, out, RMX_MAX) == 0, "TYPE 17 played");
     HX_ASSERT(rmx_bar(&W, 0, RMX_SETTINGS, L, in, 1, out, RMX_MAX) == 0, "setting 80 played");

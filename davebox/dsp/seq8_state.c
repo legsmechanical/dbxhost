@@ -637,6 +637,13 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
                 if (p2->rmx_type) fprintf(fp, ",\"t%dc%d_rxt\":%d", t, c, (int)p2->rmx_type);
                 if (p2->rmx_var)  fprintf(fp, ",\"t%dc%d_rxv\":%d", t, c, (int)p2->rmx_var);
                 if (!p2->rmx_rvel) fprintf(fp, ",\"t%dc%d_rxr\":0", t, c);
+                /* the dials: sparse against a fresh clip's (100 0 0 0 0 0) */
+                if (p2->rmx_shuf != 100) fprintf(fp, ",\"t%dc%d_rxsh\":%d", t, c, (int)p2->rmx_shuf);
+                if (p2->rmx_rev)  fprintf(fp, ",\"t%dc%d_rxre\":%d", t, c, (int)p2->rmx_rev);
+                if (p2->rmx_roll) fprintf(fp, ",\"t%dc%d_rxro\":%d", t, c, (int)p2->rmx_roll);
+                if (p2->rmx_brk)  fprintf(fp, ",\"t%dc%d_rxbr\":%d", t, c, (int)p2->rmx_brk);
+                if (p2->rmx_pit)  fprintf(fp, ",\"t%dc%d_rxpi\":%d", t, c, (int)p2->rmx_pit);
+                if (p2->rmx_rate) fprintf(fp, ",\"t%dc%d_rxra\":%d", t, c, (int)p2->rmx_rate);
             }
             /* note list: "tick:pitch:vel:gate;" for each active note */
             if (cl->note_count > 0) {
@@ -1562,6 +1569,12 @@ static void seq8_load_state(seq8_instance_t *inst) {
             p2->rmx_var  = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, RMX_SETTINGS - 1);
             snprintf(key, sizeof(key), "t%dc%d_rxr", t, c);
             p2->rmx_rvel = (uint8_t)clamp_i(json_get_int(buf, key, 1), 0, 1);
+            snprintf(key, sizeof(key), "t%dc%d_rxsh", t, c); p2->rmx_shuf = (uint8_t)clamp_i(json_get_int(buf, key, 100), 0, 100);
+            snprintf(key, sizeof(key), "t%dc%d_rxre", t, c); p2->rmx_rev  = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 100);
+            snprintf(key, sizeof(key), "t%dc%d_rxro", t, c); p2->rmx_roll = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 100);
+            snprintf(key, sizeof(key), "t%dc%d_rxbr", t, c); p2->rmx_brk  = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 100);
+            snprintf(key, sizeof(key), "t%dc%d_rxpi", t, c); p2->rmx_pit  = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 24);
+            snprintf(key, sizeof(key), "t%dc%d_rxra", t, c); p2->rmx_rate = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 2);
             /* v=34 per-step trig conditions (iter/random/ratchet hex blobs) */
             {
                 clip_t *_cl = &inst->tracks[t].clips[c];

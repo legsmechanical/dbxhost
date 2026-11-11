@@ -628,6 +628,12 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
 /* ---------------- REMIX on a Loop clip ---------------- */
 
 
+/* A clip's REMIX dials */
+static void au_rmx_dials(const clip_pfx_params_t *pp, rmx_dials_t *d) {
+    d->shuffle = pp->rmx_shuf; d->reverse = pp->rmx_rev; d->roll = pp->rmx_roll;
+    d->brk = pp->rmx_brk; d->pitch = pp->rmx_pit; d->rate = pp->rmx_rate; d->vel = pp->rmx_rvel;
+}
+
 /* The setting in force for clip c, taken now (at a bar line, or as it
  * starts): one bar's events for the Loop phrase — a note on each 1/16, key =
  * its slot — remixed. Every bar of the clip remixes alike. */
@@ -635,10 +641,13 @@ static void au_rmx_latch(seq8_instance_t *inst, int t, int c) {
     au_track_t *at = &inst->au_trk[t];
     const clip_pfx_params_t *pp = &inst->tracks[t].clips[c].pfx_params;
     static rmx_ev_t in[16], out[RMX_MAX];
+    rmx_dials_t d;
     int k, n;
+    au_rmx_dials(pp, &d);
     if (at->rmx_on == pp->rmx_on && at->rmx_type == pp->rmx_type && at->rmx_var == pp->rmx_var
-        && at->rmx_rvel == pp->rmx_rvel && at->rmx_clip == (uint8_t)c && (at->rmx_n || !pp->rmx_on)) return;
+        && rmx_dials_same(&at->rmx_dl, &d) && at->rmx_clip == (uint8_t)c && (at->rmx_n || !pp->rmx_on)) return;
     at->rmx_on = pp->rmx_on; at->rmx_type = pp->rmx_type; at->rmx_var = pp->rmx_var; at->rmx_rvel = pp->rmx_rvel;
+    at->rmx_dl = d;
     at->rmx_clip = (uint8_t)c;
     at->rmx_n = 0;
     if (!at->rmx_on) return;
@@ -646,10 +655,8 @@ static void au_rmx_latch(seq8_instance_t *inst, int t, int c) {
     for (k = 0; k < 16; k++) {
         in[k].tick = k * (AU_RMX_BAR / 16); in[k].gate = AU_RMX_BAR / 16; in[k].vel = 100; in[k].key = (uint8_t)k;
     }
-    n = rmx_bar(&inst->rmx_w, at->rmx_type, at->rmx_var, AU_RMX_BAR, in, 16, out, RMX_MAX);
+    n = rmx_bar_ex(&inst->rmx_w, at->rmx_type, at->rmx_var, &d, AU_RMX_BAR, in, 16, out, RMX_MAX);
     if (n > AU_RMX_EV) n = AU_RMX_EV;
-    /* ROLL's velocity off: its repeats at the level everything else plays at */
-    if (!at->rmx_rvel) for (k = 0; k < n; k++) out[k].vel = 100;
     memcpy(at->rmx_e, out, (size_t)n * sizeof out[0]);
     at->rmx_n = (int16_t)n;
     if (++at->rmx_gen == 0) at->rmx_gen = 1;
@@ -670,7 +677,10 @@ static void au_rmx_slicer_build(seq8_instance_t *inst, int t, int c) {
     note_t *sn = inst->rmx_sn[t];
     uint8_t *sv = inst->rmx_sv[t];
     int n = 0, b, i, k;
+    rmx_dials_t d;
+    au_rmx_dials(pp, &d);
     at->rmx_on = pp->rmx_on; at->rmx_type = pp->rmx_type; at->rmx_var = pp->rmx_var; at->rmx_rvel = pp->rmx_rvel;
+    at->rmx_dl = d;
     at->rmx_sclip = (uint8_t)c;
     at->rmx_slive = 0;
     at->rmx_sn_n = 0;
@@ -682,7 +692,7 @@ static void au_rmx_slicer_build(seq8_instance_t *inst, int t, int c) {
         uint32_t tps = cl->ticks_per_step ? cl->ticks_per_step : TICKS_PER_STEP;
         uint32_t w0 = (uint32_t)cl->loop_start * tps, len = (uint32_t)cl->length * tps;
         int nbars = (int)((len + AU_RMX_BAR - 1) / AU_RMX_BAR);
-        int roll = pp->rmx_var / RMX_VARS == RMX_ROLL;
+        int roll = d.roll > 0;
         for (b = 0; b < nbars; b++) {
             uint32_t b0 = w0 + (uint32_t)b * AU_RMX_BAR;
             int nin = 0, nout;
@@ -698,7 +708,7 @@ static void au_rmx_slicer_build(seq8_instance_t *inst, int t, int c) {
                 nin++;
             }
             if (!nin) continue;
-            nout = rmx_bar(&inst->rmx_w, pp->rmx_type, pp->rmx_var, AU_RMX_BAR, in, nin, out, RMX_MAX);
+            nout = rmx_bar_ex(&inst->rmx_w, pp->rmx_type, pp->rmx_var, &d, AU_RMX_BAR, in, nin, out, RMX_MAX);
             for (k = 0; k < nout && n < AU_RMX_SN; k++) {
                 const rmx_ev_t *e = &out[k];
                 uint32_t tk = b0 + (uint32_t)e->tick;

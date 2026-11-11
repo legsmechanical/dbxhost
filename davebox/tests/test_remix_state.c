@@ -42,6 +42,14 @@ int main(void) {
     hx_set_param(h, "t2_remix_type", "9");
     hx_set_param(h, "t2_remix_rvel", "0");
     HX_ASSERT(inst->tracks[2].clips[0].pfx_params.rmx_rvel == 0, "remix_rvel did not land");
+    /* a preset sets the dials (REVERSE 9: Shuffle 100, Reverse 50); the dials then the user's */
+    HX_ASSERT(inst->tracks[2].clips[0].pfx_params.rmx_shuf == 100 && inst->tracks[2].clips[0].pfx_params.rmx_rev == 50
+              && !inst->tracks[2].clips[0].pfx_params.rmx_roll, "REVERSE 9 did not set its dials");
+    hx_set_param(h, "t2_remix_roll", "60");
+    hx_set_param(h, "t2_remix_pit", "30");
+    hx_set_param(h, "t2_remix_rate", "2");
+    HX_ASSERT(inst->tracks[2].clips[0].pfx_params.rmx_roll == 60 && inst->tracks[2].clips[0].pfx_params.rmx_pit == 24
+              && inst->tracks[2].clips[0].pfx_params.rmx_rate == 2, "a dial did not land (or Pitch not clamped to 24)");
 
     /* a Slicer: clip C set by address, clip A untouched */
     hx_set_param(h, "t5_c2_pfx_set", "remix_on 1");
@@ -61,6 +69,8 @@ int main(void) {
         n = fread(buf, 1, sizeof buf - 1, f); buf[n] = 0; fclose(f);
         HX_ASSERT(strstr(buf, "\"t2c0_rxo\":1") && strstr(buf, "\"t2c0_rxt\":9") && strstr(buf, "\"t2c0_rxv\":24"), "clip A's remix not saved");
         HX_ASSERT(strstr(buf, "\"t2c0_rxr\":0"), "clip A's ROLL velocity Off not saved");
+        HX_ASSERT(strstr(buf, "\"t2c0_rxre\":50") && strstr(buf, "\"t2c0_rxro\":60") && strstr(buf, "\"t2c0_rxpi\":24")
+                  && strstr(buf, "\"t2c0_rxra\":2") && !strstr(buf, "\"t2c0_rxsh\""), "clip A's dials not saved sparse");
         HX_ASSERT(!strstr(buf, "\"t2c1_rx"), "a default clip wrote remix keys (not sparse)");
     }
     hx_destroy(h);
@@ -74,6 +84,9 @@ int main(void) {
               && inst->tracks[5].clips[2].pfx_params.rmx_var == 47, "reloaded: Slicer clip C's remix lost");
     HX_ASSERT(!inst->tracks[5].clips[0].pfx_params.rmx_on, "reloaded: Slicer clip A turned on");
     HX_ASSERT(inst->tracks[2].clips[0].pfx_params.rmx_rvel == 0, "reloaded: clip A's ROLL velocity came back On");
+    HX_ASSERT(inst->tracks[2].clips[0].pfx_params.rmx_rev == 50 && inst->tracks[2].clips[0].pfx_params.rmx_roll == 60
+              && inst->tracks[2].clips[0].pfx_params.rmx_pit == 24 && inst->tracks[2].clips[0].pfx_params.rmx_rate == 2
+              && inst->tracks[2].clips[0].pfx_params.rmx_shuf == 100, "reloaded: clip A's dials lost");
     HX_ASSERT(inst->tracks[2].clips[1].pfx_params.rmx_rvel == 1, "reloaded: a default clip's ROLL velocity is not On");
     hx_destroy(h);
 

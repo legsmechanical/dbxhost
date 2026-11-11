@@ -59,8 +59,24 @@ static void pfx_set(seq8_instance_t *inst, seq8_track_t *tr,
     /* REMIX: per clip, read by the Audio engine at each bar line */
     if (!strcmp(key, "remix_on"))   { cp->rmx_on   = (uint8_t)clamp_i(my_atoi(val), 0, 1); return; }
     if (!strcmp(key, "remix_type")) { cp->rmx_type = (uint8_t)clamp_i(my_atoi(val), 0, RMX_TYPES - 1); return; }
-    if (!strcmp(key, "remix_var"))  { cp->rmx_var  = (uint8_t)clamp_i(my_atoi(val), 0, RMX_SETTINGS - 1); return; }
+    if (!strcmp(key, "remix_var")) {
+        /* a preset sets the dials to its own values (Josh, 2026-11-11: "rs7k
+         * presets as a starting point and our own direct controls to dial
+         * things in"); Vel stays the user's */
+        rmx_dials_t d;
+        cp->rmx_var = (uint8_t)clamp_i(my_atoi(val), 0, RMX_SETTINGS - 1);
+        rmx_dials_of(cp->rmx_var, &d);
+        cp->rmx_shuf = d.shuffle; cp->rmx_rev = d.reverse; cp->rmx_roll = d.roll;
+        cp->rmx_brk = d.brk; cp->rmx_pit = d.pitch; cp->rmx_rate = d.rate;
+        return;
+    }
     if (!strcmp(key, "remix_rvel")) { cp->rmx_rvel = (uint8_t)clamp_i(my_atoi(val), 0, 1); return; }
+    if (!strcmp(key, "remix_shuf")) { cp->rmx_shuf = (uint8_t)clamp_i(my_atoi(val), 0, 100); return; }
+    if (!strcmp(key, "remix_rev"))  { cp->rmx_rev  = (uint8_t)clamp_i(my_atoi(val), 0, 100); return; }
+    if (!strcmp(key, "remix_roll")) { cp->rmx_roll = (uint8_t)clamp_i(my_atoi(val), 0, 100); return; }
+    if (!strcmp(key, "remix_brk"))  { cp->rmx_brk  = (uint8_t)clamp_i(my_atoi(val), 0, 100); return; }
+    if (!strcmp(key, "remix_pit"))  { cp->rmx_pit  = (uint8_t)clamp_i(my_atoi(val), 0, 24); return; }
+    if (!strcmp(key, "remix_rate")) { cp->rmx_rate = (uint8_t)clamp_i(my_atoi(val), 0, 2); return; }
 
     if (!strcmp(key, "harm_octaver"))
         { PFX_SET_BOTH(octaver, octaver, -4, 4); return; }
