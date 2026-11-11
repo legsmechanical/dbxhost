@@ -107,8 +107,19 @@ if ssh "${MOVE_USER}@${MOVE_HOST}" "test ! -d /data/UserData/daveboxSA && test -
 fi
 
 echo "Installing ${MODULE_ID} to ${INSTALL_DIR}..."
-ssh "${MOVE_USER}@${MOVE_HOST}" "mkdir -p ${INSTALL_DIR}"
-scp -r "dist/${MODULE_ID}"/* "${MOVE_USER}@${MOVE_HOST}:${INSTALL_DIR}/"
+# ⚠⚠ NEVER COPY OVER THE LIVE FILES. scp writes into the existing file (same
+# inode), and a running session has dsp.so MAPPED: the new bytes land under its
+# code and it dies with SIGSEGV a moment later (2026-11-11: two FORCE=1 deploys
+# over a live session each crashed it, the second one second after dsp.so's
+# mtime). Upload beside the tree, then RENAME each file into place: a rename
+# gives a new inode, so a live session keeps running its old copy and the new
+# build applies at the next launch — what FORCE=1 always promised.
+STAGE="${INSTALL_DIR}.incoming"
+ssh "${MOVE_USER}@${MOVE_HOST}" "rm -rf '${STAGE}' && mkdir -p '${STAGE}' '${INSTALL_DIR}'"
+scp -r "dist/${MODULE_ID}"/* "${MOVE_USER}@${MOVE_HOST}:${STAGE}/"
+ssh "${MOVE_USER}@${MOVE_HOST}" "cd '${STAGE}' && find . -type f | while IFS= read -r f; do \
+    mkdir -p \"${INSTALL_DIR}/\$(dirname \"\$f\")\" && mv -f \"\$f\" \"${INSTALL_DIR}/\$f\" || exit 1; done && cd / && rm -rf '${STAGE}'" \
+    || { echo "Error: moving the new files into place failed" >&2; exit 1; }
 echo "Installation complete: ${INSTALL_DIR}"
 
 # Re-record the owned-file manifest: we just replaced an owned file, and the
