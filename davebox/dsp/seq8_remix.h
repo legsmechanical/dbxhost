@@ -44,6 +44,7 @@ typedef struct {
     uint8_t src;        /* the source slot it came from (set by rmx_bar) */
     uint8_t rev;        /* REVERSE: play it backwards */
     int8_t  pitch;      /* PITCH: semitones */
+    uint16_t id;        /* the caller's (carried through: a Slicer's source note) */
 } rmx_ev_t;
 
 /* A track under construction, the way the remix builds one: notes appended at

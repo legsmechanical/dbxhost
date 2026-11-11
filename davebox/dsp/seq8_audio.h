@@ -67,6 +67,7 @@
 #define AU_VINTAGE_XF        128    /* frames */
 #define AU_RMX_EV          160          /* REMIX events in one Loop bar (16 notes; ROLL adds runs) */
 #define AU_RMX_BAR         384          /* REMIX: a bar of clip ticks, 16 x 1/16 at PPQN 96 */
+#define AU_RMX_SN          1024         /* REMIX: a Slicer clip's remixed notes (ROLL adds repeats) */
 #define AU_SLICE_NONE      (-1)         /* au_range_on: Loop mode's hidden chop at Start */
 #define AU_JOIN            256          /* frames: a slice this near where the sounding one has reached carries it on */
 #define AU_MIP             256          /* frames per waveform summary entry */
@@ -301,6 +302,15 @@ typedef struct {
     uint32_t   rmx_gen;      /* bumped each time rmx_e is rebuilt (Warp's stretcher copies it by this) */
     int16_t    rmx_n;
     rmx_ev_t   rmx_e[AU_RMX_EV];
+    /* REMIX on a Slicer: the clip's notes remixed bar by bar (rebuilt at each
+     * bar line, as the RS7000 rebuilds its phrase), played instead of the
+     * clip's own; and, as the RS7000 edits its sample keys, each chop's
+     * reverse / pitch while it plays; a ROLL repeat's level (rmx_vg) */
+    uint8_t    rmx_slive, rmx_sclip;   /* the notes: seq8_instance_t.rmx_sn */
+    uint16_t   rmx_sn_n;
+    uint8_t    rk_rev[AU_MAX_SLICES];
+    int8_t     rk_pitch[AU_MAX_SLICES];
+    float      rmx_vg[AU_MAX_SLICES];
 } au_track_t;
 
 /* Loader mailbox (set_param / render -> loader thread). */

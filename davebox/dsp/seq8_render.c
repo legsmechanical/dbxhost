@@ -1065,6 +1065,23 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                 }
             } else {
                 /* Melodic note-centric note-on: scan active clip's notes[]. */
+                /* REMIX on a Slicer: the clip's notes remixed, rebuilt at each
+                 * bar line of the loop window (au_rmx_slicer_build) */
+                const note_t *_notes = cl->notes;
+                uint16_t _nn = cl->note_count;
+                int _rmx = 0;
+                if (tr->pad_mode == PAD_MODE_SLICER) {
+                    au_track_t *_at = &inst->au_trk[t];
+                    if (!tr->clip_playing) {
+                        if (_at->rmx_sclip != 0xFF) { _at->rmx_sclip = 0xFF; _at->rmx_slive = 0; }
+                    } else {
+                        uint32_t _tps = cl->ticks_per_step ? cl->ticks_per_step : TICKS_PER_STEP;
+                        uint32_t _rel = (uint32_t)((int)tr->current_step - (int)cl->loop_start) * _tps + tr->tick_in_step;
+                        if (_at->rmx_sclip != tr->active_clip || _rel % AU_RMX_BAR == 0)
+                            au_rmx_slicer_build(inst, t, (int)tr->active_clip);
+                        if (_at->rmx_slive) { _notes = inst->rmx_sn[t]; _nn = _at->rmx_sn_n; _rmx = 1; }
+                    }
+                }
                 if (tr->clip_playing && !effective_mute(inst, t)) {
                     int _gp, _gn = groove_track_early_n(inst, tr);
                     for (_gp = 0; _gp <= _gn; _gp++) {
@@ -1072,13 +1089,19 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                     if (!groove_pass(inst, tr, cl, tr->current_step, tr->tick_in_step, _gp, &_g)) continue;
                     uint32_t cct = _g.cct;
                     uint16_t ni2;
-                    for (ni2 = 0; ni2 < cl->note_count; ni2++) {
-                        note_t *n = &cl->notes[ni2];
+                    for (ni2 = 0; ni2 < _nn; ni2++) {
+                        const note_t *n = &_notes[ni2];
                         if (!n->active || (n->suppress_until_wrap && !_g.crossed)) continue;
                         if (note_audio_reverse_cmp_tick(n, cl, tr->pfx.quantize) != cct) continue;
                         if (!groove_pass_claims(inst, tr, &_g, 0xFF, ni2)) continue;
-                        /* v=34 trig conditions (Iter + Random) — per-note */
-                        uint16_t _sidx = note_step(n->tick, cl->length, cl->ticks_per_step);
+                        /* v=34 trig conditions (Iter + Random) — per-note; a
+                         * remixed note answers to the step it came from */
+                        uint32_t _stk = n->tick;
+                        if (_rmx) {
+                            uint16_t _id = (uint16_t)(n->pad[0] | (n->pad[1] << 8));
+                            if (_id < cl->note_count) _stk = cl->notes[_id].tick;
+                        }
+                        uint16_t _sidx = note_step(_stk, cl->length, cl->ticks_per_step);
                         if (!step_trig_pass(cl, _sidx, _g.cycle, &tr->pfx.rng)) continue;
                         uint8_t _gvel = groove_note(inst, tr, &_g, n->vel, &inst->swing_step_delay);
                             inst->groove_ahead = _g.ahead; inst->park_explicit = 1;
@@ -1126,6 +1149,12 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                             tr->play_pending[pp_idx].lane_idx        = 0xFF;
                             tr->play_pending_count++;
                             tr->note_active = 1;
+                        }
+                        /* a remixed ROLL repeat's level reaches the chop (the
+                         * Slicer's own notes enter at one level) */
+                        if (_rmx && emit_pitch >= AU_NOTE_BASE && emit_pitch - AU_NOTE_BASE < AU_MAX_SLICES) {
+                            uint8_t _sv = inst->rmx_sv[t][ni2];
+                            inst->au_trk[t].rmx_vg[emit_pitch - AU_NOTE_BASE] = _sv ? (float)_sv / 100.0f : 1.0f;
                         }
                         pfx_note_on(inst, tr, emit_pitch, _gvel);
                         pfx_set_gate_override(inst, tr, emit_pitch,

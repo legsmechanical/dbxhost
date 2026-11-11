@@ -2341,6 +2341,7 @@ static void au_init(seq8_instance_t *inst) {
         inst->au_trk[t].last_tick = -1;
         inst->au_trk[t].mgain = 64;
         inst->au_trk[t].rmx_bar = -1;
+        inst->au_trk[t].rmx_sclip = 0xFF;
     }
     inst->au_lazy_track = inst->au_lazy_clip = -1;
     au_streamer_init(inst);
@@ -2581,6 +2582,13 @@ static void au_chop_on(seq8_instance_t *inst, int t, int c, int slice, float vga
 
 /* 1 while a pad's slice is being started (au_slice_on): its voice is marked
  * live. The audio thread only. */
+/* A Slicer's chop, as the remix plays it: reversed / repitched by its key */
+static inline void au_sl_rmx(const au_track_t *at, int slice, au_slice_t *eff) {
+    if (!at->rmx_slive || slice < 0 || slice >= AU_MAX_SLICES) return;
+    if (at->rk_rev[slice]) eff->rev ^= 1;
+    eff->pitch = (int8_t)(eff->pitch + at->rk_pitch[slice]);
+}
+
 static int au_live_mark = 0;
 /* REMIX: the piece about to start plays reversed (on top of the clip's Revrs)
  * and this many semitones up — set around one au_range_on call, as
@@ -2626,7 +2634,7 @@ static au_voice_t *au_range_on_in(au_track_t *at, const au_sample_t *s, int cs, 
     static const au_slice_t plain;
     au_slice_t eff;
     const au_slice_t *sl = &plain;
-    if (!sync && slice >= 0 && slice < AU_MAX_SLICES) { au_sl_eff(cl, slice, &eff); sl = &eff; }
+    if (!sync && slice >= 0 && slice < AU_MAX_SLICES) { au_sl_eff(cl, slice, &eff); au_sl_rmx(at, slice, &eff); sl = &eff; }
     uint8_t play = sl->play, rev = (uint8_t)((sync ? au_revrs(cl) : sl->rev) ^ (au_rmx_rev ? 1 : 0));
     double ratio = au_tune(au_pitch(cl) + sl->pitch + cs, au_detune(cl) + sl->detune) * (double)s->rate / 44100.0 * vk;
     if (au_rmx_semi) ratio *= au_semi(au_rmx_semi);
@@ -2714,7 +2722,9 @@ static void au_slice_off(seq8_instance_t *inst, int t, int slice) {
 static void au_note_event(int t, int slice, uint8_t status, uint8_t vel, int echo) {
     seq8_instance_t *inst = g_inst;
     if (!inst || t < 0 || t >= NUM_TRACKS || slice < 0 || slice >= AU_MAX_SLICES) return;
-    if ((status & 0xF0) == 0x90 && vel) au_slice_on(inst, t, slice, echo ? (float)vel / 127.0f : 1.0f);
+    /* (REMIX's ROLL repeats on a Slicer carry their level: rmx_vg) */
+    if ((status & 0xF0) == 0x90 && vel)
+        au_slice_on(inst, t, slice, echo ? (float)vel / 127.0f : inst->au_trk[t].rmx_slive ? inst->au_trk[t].rmx_vg[slice] : 1.0f);
     else if ((status & 0xF0) == 0x80 || (status & 0xF0) == 0x90) au_slice_off(inst, t, slice);
 }
 
@@ -3100,6 +3110,7 @@ static void au_track_release(seq8_instance_t *inst, int t) {
     inst->au_trk[t].last_tick = -1;
     inst->au_trk[t].layout = 0;
     inst->au_trk[t].rmx_bar = -1; inst->au_trk[t].rmx_n = 0; inst->au_trk[t].rmx_on = 0;
+    inst->au_trk[t].rmx_sclip = 0xFF; inst->au_trk[t].rmx_slive = 0; inst->au_trk[t].rmx_sn_n = 0;
     inst->au_trk[t].cond_on = 0;
     if (inst->au_lazy_track == t) { inst->au_lazy_track = inst->au_lazy_clip = -1; inst->au_lazy_state = AU_LAZY_NONE; }
     for (c = 0; c <= AU_SLC; c++) {

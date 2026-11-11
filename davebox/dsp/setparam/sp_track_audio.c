@@ -655,6 +655,77 @@ static void au_rmx_latch(seq8_instance_t *inst, int t, int c) {
     if (++at->rmx_gen == 0) at->rmx_gen = 1;
 }
 
+/* REMIX on a Slicer, at a bar line of clip time (or as the clip starts):
+ * the setting taken now, and the clip's loop window remixed bar by bar into
+ * the track's remixed notes (inst->rmx_sn), which the sequencer then plays
+ * instead of the clip's own. Each chop a REVERSE / PITCH source slot plays is
+ * set to play reversed / repitched while the remix plays (the RS7000 edits the
+ * sample key; here it lasts while Remix is on). A ROLL repeat keeps its
+ * velocity (rmx_sv) unless K5 Vel is off. */
+static void au_rmx_slicer_build(seq8_instance_t *inst, int t, int c) {
+    au_track_t *at = &inst->au_trk[t];
+    const clip_t *cl = &inst->tracks[t].clips[c];
+    const clip_pfx_params_t *pp = &cl->pfx_params;
+    static rmx_ev_t in[RMX_MAX], out[RMX_MAX];
+    note_t *sn = inst->rmx_sn[t];
+    uint8_t *sv = inst->rmx_sv[t];
+    int n = 0, b, i, k;
+    at->rmx_on = pp->rmx_on; at->rmx_type = pp->rmx_type; at->rmx_var = pp->rmx_var; at->rmx_rvel = pp->rmx_rvel;
+    at->rmx_sclip = (uint8_t)c;
+    at->rmx_slive = 0;
+    at->rmx_sn_n = 0;
+    memset(at->rk_rev, 0, sizeof at->rk_rev);
+    memset(at->rk_pitch, 0, sizeof at->rk_pitch);
+    for (k = 0; k < AU_MAX_SLICES; k++) at->rmx_vg[k] = 1.0f;
+    if (!pp->rmx_on) return;
+    {
+        uint32_t tps = cl->ticks_per_step ? cl->ticks_per_step : TICKS_PER_STEP;
+        uint32_t w0 = (uint32_t)cl->loop_start * tps, len = (uint32_t)cl->length * tps;
+        int nbars = (int)((len + AU_RMX_BAR - 1) / AU_RMX_BAR);
+        int roll = pp->rmx_var / RMX_VARS == RMX_ROLL;
+        for (b = 0; b < nbars; b++) {
+            uint32_t b0 = w0 + (uint32_t)b * AU_RMX_BAR;
+            int nin = 0, nout;
+            for (i = 0; i < (int)cl->note_count && nin < RMX_MAX; i++) {
+                const note_t *s0 = &cl->notes[i];
+                if (!s0->active || s0->tick < b0 || s0->tick >= b0 + AU_RMX_BAR || s0->tick >= w0 + len) continue;
+                memset(&in[nin], 0, sizeof in[0]);
+                in[nin].tick = (int32_t)(s0->tick - b0);
+                in[nin].gate = s0->gate ? s0->gate : 1;
+                in[nin].vel = s0->vel;
+                in[nin].key = s0->pitch;
+                in[nin].id = (uint16_t)i;
+                nin++;
+            }
+            if (!nin) continue;
+            nout = rmx_bar(&inst->rmx_w, pp->rmx_type, pp->rmx_var, AU_RMX_BAR, in, nin, out, RMX_MAX);
+            for (k = 0; k < nout && n < AU_RMX_SN; k++) {
+                const rmx_ev_t *e = &out[k];
+                uint32_t tk = b0 + (uint32_t)e->tick;
+                if (tk >= w0 + len) continue;                /* past the clip's end (a short last bar) */
+                note_t *d = &sn[n];
+                memset(d, 0, sizeof *d);
+                d->tick = tk;
+                d->gate = (uint16_t)(e->gate > 65535 ? 65535 : e->gate);
+                d->pitch = e->key;
+                d->vel = e->vel;
+                d->active = 1;
+                d->pad[0] = (uint8_t)(e->id & 0xFF); d->pad[1] = (uint8_t)(e->id >> 8);
+                /* a ROLL run's repeat: the level the run sets (the others keep the one level) */
+                sv[n] = (roll && pp->rmx_rvel && e->id < cl->note_count && e->vel != cl->notes[e->id].vel) ? e->vel : 0;
+                if (e->key >= AU_NOTE_BASE && e->key - AU_NOTE_BASE < AU_MAX_SLICES) {
+                    int sl = e->key - AU_NOTE_BASE;
+                    if (e->rev) at->rk_rev[sl] = 1;
+                    if (e->pitch) at->rk_pitch[sl] = e->pitch;
+                }
+                n++;
+            }
+        }
+    }
+    at->rmx_sn_n = (uint16_t)n;
+    at->rmx_slive = 1;
+}
+
 /* Clip c's REMIX this block (Sync Vintage or Pitch): each event of each bar
  * whose clip tick falls in the block starts a piece — its source slot of the
  * SAME bar of Start..End, reversed / repitched as the event says, at its
@@ -855,7 +926,7 @@ static void au_voice_follow(seq8_instance_t *inst, int t) {
         const au_clip_t *cl = au_cl(inst, t, v->clip);
         au_slice_t sl;
         int g, ps, pc;
-        if (v->usl && v->slice < AU_MAX_SLICES) au_sl_eff(cl, v->slice, &sl);
+        if (v->usl && v->slice < AU_MAX_SLICES) { au_sl_eff(cl, v->slice, &sl); au_sl_rmx(at, v->slice, &sl); }
         else memset(&sl, 0, sizeof sl);
         g = au_gain(cl) + sl.gain_db;
         if (g != v->gdb) { v->gain = au_db(g) * v->vg; v->gdb = (int8_t)g; }

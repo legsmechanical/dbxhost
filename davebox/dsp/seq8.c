@@ -2075,6 +2075,8 @@ typedef struct {
     au_clip_t   au_store[NUM_TRACKS][NUM_CLIPS + 1];
     au_track_t  au_trk[NUM_TRACKS];
     rmx_work_t  rmx_w;          /* REMIX scratch (audio thread only) */
+    note_t      rmx_sn[NUM_TRACKS][AU_RMX_SN];   /* REMIX: a Slicer clip's remixed notes (au_track_t.rmx_sn_n) */
+    uint8_t     rmx_sv[NUM_TRACKS][AU_RMX_SN];   /* ...each one's ROLL velocity (0: none, the Slicer's one level) */
     au_req_t    au_req[AU_RING];
     uint32_t    au_req_head, au_req_tail;     /* head: audio thread writes; tail: loader */
     au_res_t    au_res[AU_RING];
