@@ -135,6 +135,7 @@ const C = await import('../../ui/ui_constants.mjs');
 const A = await import('../../ui/ui_audio.mjs');
 const P = await import('../../ui/ui_pure.mjs');
 const render = await import('../../ui/ui_render.mjs');
+const MV = await import('../../ui/ui_movy.mjs');
 const _kitText = [];
 (await import('../../ui/ui_fonts_pp.mjs')).setKitTextTrace((x) => _kitText.push(String(x)));
 const texts = (fn) => { _kitText.length = 0; fn(); return _kitText.slice(); };
@@ -275,13 +276,17 @@ step('⭐ a REMIX knob in hand shows the bar: the engine\'s map read, its column
     assert(S.rmxMap && S.rmxMap.length === 16 && S.rmxMap[4].src === 8 && (S.rmxMap[4].fl & 1), 'the map was not read: ' + JSON.stringify(S.rmxMap));
     const tx = texts(() => render.drawUI()).join('|');
     const f = FB.slice();
+    /* it stays up while the finger does (no timer: UI_LANGUAGE §8) ... */
+    ticks(160);
+    assert(S.rmxCard, 'the card came down while the knob was still held');
     note(4, 0); ticks(2);
-    assert(tx.indexOf('REVERSE') >= 0 && tx.indexOf('%') >= 0, 'the header does not name the knob and its value: ' + tx);
-    assert(tx.indexOf('REV 9') >= 0, 'the footer does not name the preset: ' + tx);
+    assert(!S.rmxCard, '...and the release did not take it down');
+    assert(tx.indexOf('REVERSE') >= 0 && tx.indexOf('%') >= 0, 'the header / card do not name the knob and its value: ' + tx);
+    assert(tx.indexOf('REV 9') >= 0, 'the card does not name the preset: ' + tx);
     /* column 15 (slot 3, filled? reversed: hollow) is taller than column 12 (slot 0) */
-    const colInk = (c) => { let n = 0; for (let y = 10; y < 52; y++) for (let x = c * 8 + 1; x < c * 8 + 7; x++) n += f[y * 128 + x] ? 1 : 0; return n; };
+    const B = MV.kitStackBox(1);
+    const colInk = (c) => { let n = 0; const x0 = B.x + Math.floor((B.w - 96) / 2) + c * 6; for (let y = B.y + 2; y < B.y + B.h - 12; y++) for (let x = x0 + 1; x < x0 + 5; x++) n += f[y * 128 + x] ? 1 : 0; return n; };
     assert(colInk(1) > colInk(0) && colInk(11) > colInk(10), 'the columns do not rise with the slot heard: ' + [colInk(0), colInk(1), colInk(10), colInk(11)]);
-    ticks(160);                                     /* 1.5 s on, the knob page again */
     S.rmxMapDirty = false;
     if (process.env.RMX_DUMP) {
         const fs = require('fs');

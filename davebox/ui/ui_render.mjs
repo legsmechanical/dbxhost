@@ -35,7 +35,7 @@ import {
 } from './ui_constants.mjs';
 import { drawAutoMarkAt,
     drawKitHeader, drawKitTouchedHeader, drawKitPageBar, drawKitBankHeader, kitBankGlyphWidth,
-    kitUseLayout,
+    kitUseLayout, kitStackBox,
     drawKitCells, drawKitEnumOverlay, drawKitValueOverlay, drawKitListOverlay,
     drawVFader, mvPrint, mvWidth, rectOutline, plotLine,
     drawLevelCard, drawKitBackdropDim, drawKitBankMap,
@@ -522,38 +522,44 @@ function drawAudioWaveEditor() {
  * 2026-10-28: "loop vs slice mode should be a clip bank setting"); NOTE FX
  * loses what moves a pitch (a pitch is a slice):
  * its drum form. `cells` are the melodic bank's. */
-/* REMIX with a knob in hand (Josh, 2026-11-11: "make the params easier to
+/* REMIX after a knob turns (Josh, 2026-11-11: "make the params easier to
  * understand ... as it is now, you don't really know what you're going to
- * get"): the bar the setting makes, a column per 1/16 — its height the slot
- * heard (the original order is a rising stair), hollow when reversed, dotted
- * when rolled, narrow when cut short, empty when silent, a caret over it when
- * pitched; a tick under each piece's start. The header names the knob and its
- * value; the footer the preset and Type. */
-function drawRemixView(cells) {
-    const t = S.activeTrack, k = S.knobTouched, c = cells[k];
-    kitUseLayout('bank');
-    drawKitTouchedHeader(c && c.name ? c.name + '  ' + (c.text || '') : 'REMIX');
+ * get" · "maybe put it in a large pop-up overlay to avoid confusion"): a card
+ * over the knob page with the bar the setting makes, a column per 1/16 — its
+ * height the slot heard (the original order is a rising stair), hollow when
+ * reversed, dotted when rolled, narrow when cut short, empty when silent, a
+ * caret over it when pitched; a tick under each piece's start — and, under it,
+ * the knob's value, the preset and the Type. */
+function drawRemixCard(cells) {
+    const t = S.activeTrack, c = cells[S.knobTouched];
+    /* the pop-up convention: the screen dithered behind, the stack's box over
+     * it (as the LFO's waveform draws inside its own) */
+    const B = kitStackBox(1);
+    drawKitBackdropDim();
+    fill_rect(B.x, B.y, B.w, B.h, 0);
+    rectOutline(B.x, B.y, B.w, B.h, 1);
     const map = S.rmxMap && S.rmxMapT === t ? S.rmxMap : null;
-    const base = 50, top = 13;
-    fill_rect(0, base + 1, 128, 1, 1);
+    const cw = 6, x0 = B.x + Math.floor((B.w - 16 * cw) / 2), base = B.y + B.h - 13, top = B.y + 6;
+    fill_rect(x0 - 1, base + 1, 16 * cw + 1, 1, 1);
     if (map) for (let i = 0; i < 16 && i < map.length; i++) {
-        const m = map[i], x = i * 8;
-        if (m.fl & 16) fill_rect(x, base + 2, 1, 3, 1);
-        if (m.fl & 8 || m.src < 0) { fill_rect(x + 3, base - 1, 2, 1, 1); continue; }
-        const h = 4 + Math.round(m.src * (base - top - 6) / 15), y = base - h + 1;
-        const w = (m.fl & 4) ? 3 : 6, x0 = x + 1;
-        if (m.fl & 1) draw_rect(x0, y, w, h, 1);
-        else if (m.fl & 2) { for (let yy = y; yy <= base; yy += 2) fill_rect(x0, yy, w, 1, 1); }
-        else fill_rect(x0, y, w, h, 1);
+        const m = map[i], x = x0 + i * cw;
+        if (m.fl & 16) fill_rect(x, base + 2, 1, 2, 1);
+        if (m.fl & 8 || m.src < 0) { fill_rect(x + 2, base - 1, 2, 1, 1); continue; }
+        const h = 3 + Math.round(m.src * (base - top - 5) / 15), y = base - h + 1;
+        const w = (m.fl & 4) ? 2 : 4, xb = x + 1;
+        if (m.fl & 1) rectOutline(xb, y, w, h, 1);
+        else if (m.fl & 2) { for (let yy = y; yy <= base; yy += 2) fill_rect(xb, yy, w, 1, 1); }
+        else fill_rect(xb, y, w, h, 1);
         if (m.pit) {
-            const cy = y - 4, cx = x0 + Math.floor(w / 2);
+            const cy = y - 4, cx = xb + Math.floor(w / 2);
             if (m.pit > 0) { set_pixel(cx, cy, 1); set_pixel(cx - 1, cy + 1, 1); set_pixel(cx + 1, cy + 1, 1); }
             else { set_pixel(cx - 1, cy, 1); set_pixel(cx + 1, cy, 1); set_pixel(cx, cy + 1, 1); }
         }
     }
     const r = S.rmxSet[t] || [0, 0, 0];
-    const foot = (r[0] ? '' : 'OFF  ') + rmxPresetName(r[2]).toUpperCase() + (rmxEdited(t) ? '*' : '') + '  TYPE ' + (r[1] + 1);
-    fontPrint4x5(2, 58, fit4x5(foot, 124), 1);
+    const line = fit4x5((c && c.text ? c.text + '  ' : '') + (r[0] ? '' : 'OFF ') +
+                        rmxPresetName(r[2]).toUpperCase() + (rmxEdited(t) ? '*' : '') + ' T' + (r[1] + 1), B.w - 6);
+    fontPrint4x5(Math.round(B.x + (B.w - fontWidth4x5(line)) / 2), base + 5, line, 1);
 }
 
 function audioBankCells(bank, cells) {
@@ -3355,8 +3361,8 @@ function drawUIBody() {
             markSeqAuto(cell, bank, k, false, _focus);
             cells.push(cell);
         }
-        if (bank === BANK_REMIX && S.knobTouched >= 0 && S.rmxViewUntil && isSampledTrack(S.activeTrack)) drawRemixView(audioBankCells(bank, cells));
-        else drawKitPage(bankHeaderName(S.activeTrack, bank), audioBankCells(bank, markKnobAlts(cells, bank)), false, bankPageHints(bank), _focusIdx);
+        drawKitPage(bankHeaderName(S.activeTrack, bank), audioBankCells(bank, markKnobAlts(cells, bank)), false, bankPageHints(bank), _focusIdx);
+        if (bank === BANK_REMIX && S.knobTouched >= 0 && S.rmxCard && isSampledTrack(S.activeTrack)) drawRemixCard(audioBankCells(bank, cells));
         }
 
     } else if (isSampledTrack(S.activeTrack)) {

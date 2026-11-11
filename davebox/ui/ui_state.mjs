@@ -472,8 +472,9 @@ export const S = {
     rmxK6: 0,
     /* REMIX's bar picture (ui_audio rmxMapPoll): its track, and whether to read it again */
     rmxMap: null, rmxMapT: -1, rmxMapDirty: true,
-    /* ...shown in place of the knob page until this clockMs, after a REMIX knob turned */
-    rmxViewUntil: 0,
+    /* ...its card up: a turn reveals it, the release takes it down ("touch
+     * orients, turn reveals, release commits" — UI_LANGUAGE §8) */
+    rmxCard: false,
     trackRoute: new Array(8).fill(0),
     /* 1 = the track's notes go through its own slot's MIDI FX module (one is
      * loaded, Pre or Post: the engine's tN_fxpost / tN_fxpre). Mirrored here

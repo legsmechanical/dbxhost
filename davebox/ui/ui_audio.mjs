@@ -1194,9 +1194,9 @@ export function rmxBankKnob(t, k, steps) {
     const dial = (i, key, max, per) => {
         const v = Math.max(0, Math.min(max, (r[i] | 0) + steps * per));
         if (v === (r[i] | 0)) return false;
-        r[i] = v; S.rmxSet[t] = r; send(key, v); S.rmxMapDirty = true; S.rmxViewUntil = S.clockMs + 1500; return true;
+        r[i] = v; S.rmxSet[t] = r; send(key, v); S.rmxMapDirty = true; S.rmxCard = true; return true;
     };
-    if (k === 0) { const v = steps > 0 ? 1 : 0; if (v === r[0]) return false; r[0] = v; S.rmxSet[t] = r; send('remix_on', v); S.rmxMapDirty = true; S.rmxViewUntil = S.clockMs + 1500; return true; }
+    if (k === 0) { const v = steps > 0 ? 1 : 0; if (v === r[0]) return false; r[0] = v; S.rmxSet[t] = r; send('remix_on', v); S.rmxMapDirty = true; S.rmxCard = true; return true; }
     if (k === 1) return dial(1, 'remix_type', 15, 1);
     if (k === 2) {
         const v = Math.max(0, Math.min(79, r[2] + steps));
@@ -1204,7 +1204,7 @@ export function rmxBankKnob(t, k, steps) {
         /* a preset sets the dials to its own (the engine does the same) */
         const d = rmxPresetDials(v);
         r[2] = v; r[4] = d[0]; r[5] = d[1]; r[6] = d[2]; r[7] = d[3]; r[8] = d[4]; r[9] = 0;
-        S.rmxSet[t] = r; send('remix_var', v); S.rmxMapDirty = true; S.rmxViewUntil = S.clockMs + 1500; return true;
+        S.rmxSet[t] = r; send('remix_var', v); S.rmxMapDirty = true; S.rmxCard = true; return true;
     }
     if (k === 3) return dial(4, 'remix_shuf', 100, 5);
     if (k === 4) return dial(5, 'remix_rev', 100, 5);
@@ -1212,7 +1212,7 @@ export function rmxBankKnob(t, k, steps) {
         if (S.rmxK6 === 1) return dial(9, 'remix_rate', 2, 1);
         if (S.rmxK6 === 2) {
             const v = steps > 0 ? 1 : 0; if (v === (r[3] === 0 ? 0 : 1)) return false;
-            r[3] = v; S.rmxSet[t] = r; send('remix_rvel', v); S.rmxMapDirty = true; S.rmxViewUntil = S.clockMs + 1500; return true;
+            r[3] = v; S.rmxSet[t] = r; send('remix_rvel', v); S.rmxMapDirty = true; S.rmxCard = true; return true;
         }
         return dial(6, 'remix_roll', 100, 5);
     }

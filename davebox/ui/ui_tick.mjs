@@ -664,8 +664,10 @@ export function _tickImpl() {
         const _wasMap = S.rmxMap;
         rmxMapPoll(S.activeTrack);
         if (S.rmxMap !== _wasMap) S.screenDirty = true;
-        if (S.rmxViewUntil && S.clockMs >= S.rmxViewUntil) { S.rmxViewUntil = 0; S.screenDirty = true; }
-    } else { S.rmxMapDirty = true; S.rmxViewUntil = 0; }
+    } else {
+        S.rmxMapDirty = true;
+        if (S.rmxCard) { S.rmxCard = false; S.screenDirty = true; }   /* the release takes the card down */
+    }
     if (S.dspInboundEnabled) {
         const _muted = _padDispatchMutedNow();
         if (_muted !== S.lastPushedMuted) computePadNoteMap();
