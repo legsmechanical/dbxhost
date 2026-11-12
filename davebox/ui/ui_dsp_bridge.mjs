@@ -1003,8 +1003,9 @@ export function pollDSP() {
                 host_module_set_param('t' + _rT + '_launch_clip', String(_rAc));
                 S.trackQueuedClip[_rT] = _rAc;
             }
-            /* Adaptive mode for count-in path: enter if clip was empty with no manual length */
-            if (!S.clipAdaptiveMode[_rT][_rAc]) {
+            /* Adaptive mode for count-in path: enter if clip was empty with no manual length
+             * (not an Audio track's input take: the engine sizes it, ui_audio_rec) */
+            if (!S.clipAdaptiveMode[_rT][_rAc] && !S.auRec) {
                 const _isDrumAdapt = S.trackPadMode[_rT] === PAD_MODE_DRUM;
                 if (_isDrumAdapt ? (!S.drumClipNonEmpty[_rT][_rAc] && !S.drumLaneLengthManuallySet[_rT])
                                  : (!S.clipNonEmpty[_rT][_rAc] && !S.clipLengthManuallySet[_rT][_rAc]))

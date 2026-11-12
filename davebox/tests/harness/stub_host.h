@@ -53,6 +53,12 @@ int                   hx_stub_count_kind(hx_midi_kind k);
  * HX_PARAM_SET event; hx_stub_ext_refuse(1) makes it return 0 and record
  * nothing, as a host that refused the key would. */
 const move_host_ext_v1_t *hx_stub_ext(void);
+/* capture_feed (a FEED take): every frame handed over, in order. */
+void           hx_stub_cfeed_reset(void);
+void           hx_stub_cfeed_refuse(int on);
+const int16_t *hx_stub_cfeed(uint32_t *frames, int *calls);
+/* The input block the next render reads (host.mapped_memory + audio_in_offset). */
+int16_t       *hx_stub_input(void);
 /* set_tempo: the last tempo the module declared (-1 = never), and how often. */
 float hx_stub_ext_tempo(void);
 int   hx_stub_ext_tempo_calls(void);

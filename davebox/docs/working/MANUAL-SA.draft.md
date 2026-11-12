@@ -3015,6 +3015,29 @@ For anything else, use Schwung's two samplers — both work inside dAVEBOx:
 **project**. Anything belonging to one track is in that track's TRACK CONFIG menu —
 see [Track settings](#174-track-settings) below.
 
+
+### Recording into an Audio clip
+
+On an **Audio** track, **Rec** records the Move's audio input (the line-in jack, or
+the built-in mic when nothing is plugged in) into the active clip.
+
+- **An empty clip** records until you press **Rec** again, and stops at the end of
+  that bar (up to 64 bars). The clip becomes that many bars long.
+- **A clip that has a sample** records a new layer: one pass of the clip, with what
+  you play mixed over the clip as you hear it. Pitch, Start, Reverse and the rest are
+  baked into the new sample, which the clip then plays as it is. Press **Rec** during
+  the pass to stop adding to it: what you played stays, the rest of the pass keeps the
+  old sound.
+- **Stopped**, Rec gives MIDI's one-bar count-in, then records from the top. **Playing**,
+  the take waits for the clip's next loop (the next bar on an empty clip), and the
+  heading shows **WAIT**; while it records it shows **REC** and the bar.
+- You hear the input through the track's effects and fader while the take runs. The
+  take itself is recorded without them.
+- The take is saved as a new sample in the project, so **Undo** brings back the clip as
+  it was. Stopping the transport cancels a take; a take that heard nothing is dropped.
+- With the speakers on and nothing plugged into line-in, the Move asks first: the mic
+  would hear the speakers. On a **Slicer**, Rec still records chops from the pads.
+
 ## 17.1 Project settings
 
 | Setting | What it does | Values | Default |

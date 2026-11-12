@@ -2268,7 +2268,7 @@ static void au_loader_do(au_loader_t *L, const au_req_t *q) {
     int err = AU_ERR_NONE;
     if (q->kind == AU_REQ_DROP) { au_pool_release(L, q->smp); return; }
     memset(&r, 0, sizeof r);
-    r.track = q->track; r.clip = q->clip; r.gen = q->gen;
+    r.track = q->track; r.clip = q->clip; r.gen = q->gen; r.keep = q->keep;
     au_ld_done = au_ld_total = 0;
     au_ld_key = (int)q->track * (NUM_CLIPS + 1) + (int)q->clip;
     if (q->kind == AU_REQ_PICK) {
@@ -2296,7 +2296,7 @@ static void au_loader_do(au_loader_t *L, const au_req_t *q) {
             /* read off the audio thread's own field, unsynchronised: an
              * aligned double, and a torn read only skews one Tempo guess */
             double bpm = inst->tracks[q->track].pfx.cached_bpm;
-            r.bpm10 = (uint16_t)au_guess_bpm10(r.smp, r.name, bpm > 0 ? bpm : 120.0);
+            r.bpm10 = q->bpm10 ? q->bpm10 : (uint16_t)au_guess_bpm10(r.smp, r.name, bpm > 0 ? bpm : 120.0);
         }
     }
     r.err = (uint8_t)err;

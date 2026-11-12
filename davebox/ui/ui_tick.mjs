@@ -8,6 +8,7 @@
  * see docs/superpowers/plans/2026-07-10-refactor-phase6b-map.md).
  */
 
+import { auRecTick } from './ui_audio_rec.mjs';
 import { miOpen, miOpenGroove, miTick, miAnimating, miActive } from './ui_midi_import.mjs';
 import { chordPadsOn } from './ui_custom_chords.mjs';
 import { triggerFlashing } from './ui_trigger.mjs';
@@ -723,6 +724,7 @@ export function _tickImpl() {
     /* A PRINT in flight (ui_print): its progress and its finish. */
     printTick();
     resampleTick();
+    auRecTick();         /* an Audio track's input take (ui_audio_rec) */
 
     /* Reapply cable-2 channel remap if anything affecting it changed. */
     {

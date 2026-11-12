@@ -192,6 +192,7 @@ static void seq8_set_state_path(char *out, size_t sz, const char *uuid, int crea
  * because no MIDI send takes a frame offset. Live playing is never held, and
  * nothing is while following Move's clock (its ticks cannot be led). */
 #define LEAD_BLOCKS 3
+#define AR_RING 4096   /* frames the recorder holds the base back (seq8_audio_rec.c): > latency + a block */
 #define LEAD_FRAMES (LEAD_BLOCKS * MOVE_FRAMES_PER_BLOCK)   /* an Audio track's sequenced sound, delayed as much */
 #define LEAD_RING   1024           /* a power of two */
 #define LEAD_PA_RING 64            /* held chain-parameter writes (a power of two) */
@@ -1562,6 +1563,23 @@ typedef struct {
     uint8_t  resample_hear;       /* track + 1 an export take plays muted or not (0 = none) */
     uint8_t  resample_offline;    /* this take is the host's offline take (offline_take_*) */
     uint8_t  resample_prev_clip[NUM_TRACKS], resample_prev_relaunch[NUM_TRACKS];
+    /* AUDIO INPUT RECORDING (seq8_audio_rec.c): the Move's input into an
+     * Audio clip, as a FEED take (move_host_ext_v1_t.capture_feed). Positions
+     * are frames of the render stream (ar_pos: this block's first). */
+    uint8_t  ar_state, ar_err, ar_track, ar_clip;
+    uint8_t  ar_fixed;            /* 1: the clip had a sample — a layer the clip's length; 0: grows to the bar */
+    uint8_t  ar_stop_req;         /* Rec again: adaptive ends at the next bar, a layer punches out */
+    uint8_t  ar_in_gain, ar_mon_gain;   /* 0..64 ramps: the input into the take, the monitor */
+    uint16_t ar_peak;             /* the input's largest sample in the take */
+    uint32_t ar_lat;              /* frames from feeding the slot to reading it back at the input */
+    uint64_t ar_pos;              /* stream position of this block's first frame */
+    uint64_t ar_p0;               /* the take's first frame, where it is fed (feed side) */
+    uint64_t ar_total;            /* its length in frames, once its end tick has played (0 = not yet) */
+    uint64_t ar_done;             /* frames handed to the host */
+    uint32_t ar_start_abs, ar_ticks;    /* master tick of its start, its length in ticks */
+    char     ar_path[256];
+    int32_t  ar_blk[256];         /* this block's base: the track's sequenced sound (au_render) */
+    int32_t  ar_ring[AR_RING * 2];      /* the base by feed position, held back for the latency */
     uint8_t  merge_solo_track;   /* 0xFF = capture all 8 tracks (scene mode); else only this
                                   * track's output is captured (Track-View single-clip merge).
                                   * Set on every merge_arm; only read while a merge is active. */
@@ -8686,6 +8704,7 @@ static void clip_send_program(seq8_track_t *tr, const clip_t *cl) {
 #include "seq8_param_auto.c"
 #include "seq8_resample.c"
 #include "seq8_merge_audio.c"
+#include "seq8_audio_rec.c"
 static void reset_all_loop_cycles(seq8_instance_t *inst);
 
 #include "seq8_set_param.c"

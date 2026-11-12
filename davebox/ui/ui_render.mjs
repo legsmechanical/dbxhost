@@ -6,6 +6,7 @@
  * Extracted from ui.js (Phase 5 of the modularity refactor, module 5, final).
  */
 
+import { auRecTag, auRecDrawModal } from './ui_audio_rec.mjs';
 import { lowBatteryUp, lowBatteryLines } from './ui_battery.mjs';
 import { S, PERF_FACTORY_PRESETS, stepRevealAvailable, stepHoldEstablished, loopViewActive, knobAltOn } from './ui_state.mjs';
 import { seqFollowOn, cardHoldShows } from './ui_prefs.mjs';
@@ -304,7 +305,7 @@ function hudSampleWave(ed, i, opts) {
 }
 function drawAudioTrackRest(t) {
     const c = auClipOf(t), i = auInfo(t, c);
-    (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankHeaderName(t, S.activeBank), false, true);
+    (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankHeaderName(t, S.activeBank) + (auRecTag(t) || ''), false, true);
     /* a Loop clip says its sample's Tempo too (Josh, 2026-10-29: "LOOP 112") */
     const bpm = auBpm(i);
     const head = auIsSlice(i) ? 'Slice ' + (auSelSlice(t) + 1) + '/' + i.n + '  '
@@ -2349,6 +2350,8 @@ export function drawUI() {
         else if (actionCardShowing()) drawNoticeCard(S.actionPopupLines, S.actionPopupHighlight);
         /* LOW BATTERY over all of it, the notices included: it waits for a click. */
         if (lowBatteryUp()) drawNoticeCard(lowBatteryLines());
+        /* Record on an Audio track with the speakers on and no cable: the mic hears them */
+        auRecDrawModal();
     } finally {
         if (hudRec) {
             try { hudDescribeKnobs(); } catch (e) { if (typeof console !== 'undefined') console.log('hud: knobs failed: ' + (e && e.message)); }

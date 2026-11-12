@@ -350,8 +350,10 @@ static int sp_globals_transport(sp_ctx_t *cx) {
         int track = clamp_i(my_atoi(val), 0, NUM_TRACKS - 1);
         if (inst->tracks[track].pad_mode == PAD_MODE_DRUM)
             undo_begin_drum_clip(inst, track, (int)inst->tracks[track].active_clip);
-        else
+        else if (!(inst->tracks[track].pad_mode == PAD_MODE_AUDIO && inst->ar_state == AR_ARMED
+                   && inst->ar_track == track))
             undo_begin_single(inst, track, (int)inst->tracks[track].active_clip);
+        /* (an Audio track's input take is one undo step when it lands: ar_land) */
         inst->count_in_track = (uint8_t)track;
         inst->count_in_ticks = 4 * PPQN;  /* 1 bar; tick_delta already tracks actual BPM */
         inst->count_in_merge = 0;          /* this is a RECORDING count-in, not a merge */
@@ -378,6 +380,7 @@ static int sp_globals_transport(sp_ctx_t *cx) {
     }
     if (!strcmp(key, "record_count_in_cancel")) {
         inst->count_in_ticks = 0;
+        ar_cancel(inst);                   /* an Audio track's take waiting on it */
         inst->count_in_merge = 0;
         return 1;
     }

@@ -6,6 +6,7 @@
  * Extracted from ui.js (Phase 5b, increment 7 of the modularity refactor).
  */
 
+import { auRecPress } from './ui_audio_rec.mjs';
 import {
     MoveShift, MoveBack, MovePlay, MoveLeft, MoveRight, MoveUp, MoveDown,
     MoveMute, MoveDelete, Red
@@ -3600,6 +3601,9 @@ function _onCC_transport(d1, d2) {
         S.pendingDefaultSetParams.push({ key: 'merge_stop', val: '1' });
         return;
     }
+    /* An Audio track records its INPUT (ui_audio_rec): a take running, or Rec
+     * on an Audio track with no note take armed. A Slicer records its chops. */
+    if (d1 === MoveRec && d2 === 127 && !S.shiftHeld && (S.auRec || !S.recordArmed) && auRecPress()) return;
     if (d1 === MoveRec && d2 === 127) {
         if (S.recordArmed) {
             if (S.recordCountingIn) {

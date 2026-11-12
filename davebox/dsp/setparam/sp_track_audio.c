@@ -208,7 +208,8 @@ static void au_apply_results(seq8_instance_t *inst) {
             /* the sample's own Tempo: the loader's guess for a new sample, or
              * one a project never set */
             if ((was_pick || !cl->bpm10) && r.bpm10) cl->bpm10 = r.bpm10;
-            if (was_pick && r.clip != AU_SLC) {
+            if (was_pick && r.keep && r.bpm10) cl->bpm10 = r.bpm10;   /* a take: the tempo it was recorded at */
+            if (was_pick && r.clip != AU_SLC && !r.keep) {
                 /* a Loop clip as long as the sample, in whole bars at its Tempo */
                 double bars = (double)r.smp->frames / (double)r.smp->rate * (cl->bpm10 ? cl->bpm10 / 10.0 : 120.0) / 240.0;
                 int nb = (int)(bars + 0.5);
@@ -1218,6 +1219,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
                     if (++at->dl_pos >= LEAD_FRAMES) at->dl_pos = 0;
                     l = ol; r = or_;
                 }
+                ar_base_put(inst, t, f, l, r);   /* an input take's layer: the clip as heard */
                 l += accl[f * 2]; r += accl[f * 2 + 1];
                 if (at->mgain != mtarget) at->mgain = (uint8_t)(at->mgain + (mtarget > at->mgain ? 1 : -1));
                 if (at->mgain < 64) { l = l * at->mgain / 64; r = r * at->mgain / 64; }
@@ -1230,6 +1232,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
                 g_ext->slot_audio_feed((int)tr->pfx.slot, out, (uint32_t)frames);
         }
     }
+    ar_block(inst, frames);              /* an input take (seq8_audio_rec.c) */
     au_watch_publish(inst);
     /* Lazy chop: its voice ran to the end -> the chop is done. */
     if (inst->au_lazy_track >= 0 && inst->au_lazy_state == AU_LAZY_RUN) {
@@ -1441,6 +1444,12 @@ static int sp_track_audio(sp_ctx_t *cx) {
 
     if (strncmp(sub, "au_", 3)) return 0;
     sub += 3;
+
+    /* INPUT RECORDING (seq8_audio_rec.c) */
+    if (!strcmp(sub, "rec_arm"))    { ar_arm(inst, tidx, val); return 1; }
+    if (!strcmp(sub, "rec_stop"))   { if (inst->ar_track == tidx) ar_stop(inst); return 1; }
+    if (!strcmp(sub, "rec_cancel")) { if (inst->ar_track == tidx) ar_cancel(inst); return 1; }
+    if (!strcmp(sub, "rec_land"))   { ar_land(inst, tidx); return 1; }
 
     /* pick: one undo step; pick_join: part of the step already taken (In
      * place and Flatten: tN_au_undo, then the clip's reset, then this) */
@@ -2021,6 +2030,7 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
     for (c = 0; c <= AU_SLC; c++) au_trans_settle(au_slot(inst, t, c));   /* a read sees the knob's last turn */
     const char *k = key + 6;
     if (!strcmp(k, "on")) return snprintf(out, out_len, "%d", pad_mode_sampled(inst->tracks[t].pad_mode));
+    if (!strcmp(k, "rec")) return ar_status(inst, out, out_len);   /* the input take, whichever track */
     if (!strcmp(k, "dir")) {                      /* the project's samples/ (the chooser lists it) */
         char d[256];
         au_samples_dir(inst, d, sizeof d);

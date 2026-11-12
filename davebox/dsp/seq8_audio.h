@@ -340,6 +340,8 @@ typedef struct {
     uint8_t      op, ow;     /* AU_REQ_EDIT: AU_EDIT_*; 1 = overwrite the file, 0 = a new sample */
     uint32_t     a, b;       /* AU_REQ_EDIT, Trim: the frames kept */
     uint8_t      rechop;     /* a Slicer's Trim: 16 even chops over the result */
+    uint8_t      keep;       /* AU_REQ_PICK: the clip keeps its length (a recorded take, seq8_audio_rec.c) */
+    uint16_t     bpm10;      /* AU_REQ_PICK: the sample's Tempo x10 as known (a take: the project's), 0 = guess it */
 } au_req_t;
 
 typedef struct {
@@ -351,6 +353,7 @@ typedef struct {
     uint8_t      edit, ow;   /* an AU_REQ_EDIT's answer: the clip keeps its settings; ow = the file was overwritten */
     uint8_t      rechop;     /* ...a Slicer's Trim: its chops start again, 16 even */
     uint32_t     cut;        /* ...frames the edit took off the front (Trim): every position moves back by it */
+    uint8_t      keep;       /* the pick's keep: the clip's length stays as it is */
 } au_res_t;
 
 #define AU_RING 512

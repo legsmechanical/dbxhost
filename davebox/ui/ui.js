@@ -5,6 +5,7 @@
  * ALL other logic lives in the ui_*.mjs modules, which import each other
  * freely but NEVER this file. (Modularity refactor, Phases 5-6, 2026-07.) */
 
+import { auRecModalCC } from './ui_audio_rec.mjs';
 import {
     MoveUp,
     MoveDown,
@@ -582,6 +583,10 @@ function _onMidiInternalImpl(data) {
     /* LOW BATTERY is over everything: it takes every press until a jog click
      * dismisses it, and the click's release with it (ui_battery). */
     if (lowBatteryInput(status, d1, d2)) return;
+    /* RECORD's speaker-feedback question (an Audio track's input take,
+     * ui_audio_rec): jog click Yes, Back No, every other button held off —
+     * ahead of the jog's own press handling (the bank map takes a press). */
+    if (status === 0xB0 && auRecModalCC(d1, d2)) return;
 
     /* A SHIFT TAP (POINT / PUNCH while a step is held, applyShiftEdge) is Shift
      * pressed and released with nothing else done: a knob or jog turned while

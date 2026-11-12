@@ -210,6 +210,7 @@ static int sp_globals_state(sp_ctx_t *cx) {
              * by hand, not through ext_transport_stop), and the clips it would
              * put back belong to the project being left. */
             resample_on_transport_stop(inst);
+            ar_cancel(inst);
             inst->resample_restore = 0;
             inst->playing        = 0;
             inst->count_in_ticks = 0;

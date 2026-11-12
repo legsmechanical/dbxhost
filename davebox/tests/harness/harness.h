@@ -44,6 +44,7 @@ static inline hx_t *hx_create_raw(const char *json_defaults) {
     hx_stub_capture_reset();
     hx_stub_feed_reset();
     hx_stub_stems_reset();
+    hx_stub_cfeed_reset();
     if (h.inst) move_plugin_host_ext_v1(hx_stub_ext());
     return h.inst ? &h : NULL;
 }

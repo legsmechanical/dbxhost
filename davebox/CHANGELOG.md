@@ -9,6 +9,10 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Added
+- **Record into Audio clips.** On an Audio track, **Rec** records the Move's audio input
+  into the clip: an empty clip records until you press Rec again, to the bar; a clip with a
+  sample records a new layer over what it plays. You hear the input through the track while
+  it records, and Undo brings back the clip as it was.
 - **REMIX, a loop remixer for Audio and Slicer tracks.** The FX column's third pad on both.
   Pick a **Chop** (how the bar is cut) and an **Order** (where the pieces go, gentle to
   wild — or start from one of the Yamaha RS7000's 80 remixes in **Presets…**), then dial it

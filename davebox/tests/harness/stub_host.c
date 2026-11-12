@@ -188,6 +188,30 @@ int hx_stub_feed(int slot, int *first_block, uint64_t *energy) {
 }
 const int16_t *hx_stub_feed_last(int slot) { return (slot >= 0 && slot < HX_FEED_SLOTS) ? g_feed_last[slot] : NULL; }
 
+/* capture_feed — a FEED take's frames, kept in order (up to HX_FEED_MAX). */
+#define HX_FEED_MAX (44100 * 40)
+static int16_t  g_cf_buf[HX_FEED_MAX * 2];
+static uint32_t g_cf_n;
+static int      g_cf_calls, g_cf_refuse;
+static int stub_capture_feed(const int16_t *lr, uint32_t frames) {
+    if (g_cf_refuse || !lr || frames == 0 || frames > MOVE_CAPTURE_FEED_MAX) return 0;
+    g_cf_calls++;
+    if (g_cf_n + frames <= HX_FEED_MAX) memcpy(g_cf_buf + g_cf_n * 2, lr, (size_t)frames * 4);
+    g_cf_n += frames;
+    return 1;
+}
+void hx_stub_cfeed_reset(void) { g_cf_n = 0; g_cf_calls = 0; g_cf_refuse = 0; }
+void hx_stub_cfeed_refuse(int on) { g_cf_refuse = on; }
+const int16_t *hx_stub_cfeed(uint32_t *frames, int *calls) {
+    if (frames) *frames = g_cf_n; if (calls) *calls = g_cf_calls;
+    return g_cf_buf;
+}
+
+/* The hardware mailbox: the input block a render reads (audio_in_offset). */
+static uint8_t g_mailbox[4096];
+#define HX_AUDIO_IN_OFFSET 2048
+int16_t *hx_stub_input(void) { return (int16_t *)(g_mailbox + HX_AUDIO_IN_OFFSET); }
+
 /* stems_* — the host's stem take (a Live Merge's Audio tracks). A start
  * records what it was given; a limit or stop ends it; the state answers
  * RECORDING until hx_stub_stems_finish, then IDLE (or FAILED). */
@@ -286,6 +310,7 @@ const move_host_ext_v1_t *hx_stub_ext(void) {
         .offline_take_begin = stub_ot_begin,
         .offline_take_state = stub_ot_state,
         .offline_take_cancel = stub_ot_cancel,
+        .capture_feed = stub_capture_feed,
     };
     return &ext;
 }
@@ -298,6 +323,9 @@ host_api_v1_t *hx_stub_host(void) {
     host.sample_rate        = MOVE_SAMPLE_RATE;
     host.frames_per_block   = MOVE_FRAMES_PER_BLOCK;
     host.log                = stub_log;
+    host.mapped_memory      = g_mailbox;
+    host.audio_in_offset    = HX_AUDIO_IN_OFFSET;
+    memset(g_mailbox, 0, sizeof g_mailbox);
     host.midi_send_internal = stub_internal;
     host.midi_send_internal_slot = stub_internal_slot;
     host.midi_send_external = stub_external;

@@ -555,7 +555,11 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                      * (below, at master_tick_in_step==0) begins capture at bar 1. */
                     inst->count_in_merge = 0;
                 } else {
-                    inst->tracks[inst->count_in_track].recording   = 1;
+                    /* an Audio track's take records sound, not notes (seq8_audio_rec.c):
+                     * its clip starts, its take with it */
+                    if (!(inst->tracks[inst->count_in_track].pad_mode == PAD_MODE_AUDIO
+                          && inst->ar_state == AR_ARMED && inst->ar_track == inst->count_in_track))
+                        inst->tracks[inst->count_in_track].recording   = 1;
                     memset(inst->tracks[inst->count_in_track].drum_last_rec_step, 0xFF,
                            sizeof(inst->tracks[inst->count_in_track].drum_last_rec_step));
                     inst->tracks[inst->count_in_track].clip_playing = 1;
@@ -622,6 +626,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
         /* Scene resample: start / end-of-pass decisions see the tick before
          * any track plays it. */
         resample_tick(inst);
+        ar_tick(inst);   /* an input take starts / ends on this tick's frame (seq8_audio_rec.c) */
 
         /* Looper: tick state machine + emit captured events for current pos.
          * Runs before track logic so arp_emit captures land at the same
