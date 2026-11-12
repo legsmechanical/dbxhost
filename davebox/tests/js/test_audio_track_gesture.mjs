@@ -1968,11 +1968,11 @@ step('⭐⭐ an Audio track: no sequence — pad taps and steps do nothing, no S
     ticks(2);
     assert(sentLike(/_step_/).length === 0, 'a step press edited an Audio clip: ' + JSON.stringify(sentLike(/_step_/)));
     const cells = A.auLoopBankCells(4);
-    assert(cells.map((c) => c.label).join() === 'Mode,Strch,Shift,,,,,' && cells[0].kind === 'enumsq' && cells[0].text === 'Loop',
+    assert(cells.map((c) => c.label).join() === 'Mode,Strch,Offst,,,,,' && cells[0].kind === 'enumsq' && cells[0].text === 'Loop',
            'Audio CLIP bank: ' + cells.map((c) => c.label) + ' / K1 ' + JSON.stringify(cells[0]));
     /* the header reads the name while the knob is in hand: it must fit (a long
      * one ran off the screen on the device) */
-    assert(cells.every((c) => !c.name || c.name.length <= 16) && cells[1].name === 'Stretch' && cells[2].name === 'Shift',
+    assert(cells.every((c) => !c.name || c.name.length <= 16) && cells[1].name === 'Stretch' && cells[2].name === 'Offset',
            'names too long for the header: ' + cells.map((c) => c.name));
     /* Mode · Strch · Shift (alt Nudge): K1 Mode (Loop · Shot — one-shot,
      * Josh 2026-11-10; test_audio_shot_knob.mjs), then the clip's transforms
@@ -2016,15 +2016,31 @@ step('⭐⭐ an Audio track: no sequence — pad taps and steps do nothing, no S
         for (let i = 0; i < 40 && !sent('t4_c' + ac + '_loop_set').length; i++) cc(72, 127);
         assert(sent('t4_c' + ac + '_loop_set').join() === '11' && S.clipLength[4][ac] === 11, 'Strch /2 refused an odd Length: ' + JSON.stringify(sentLike(/_loop_set|_bpm/)));
         S.clipLength[4][ac] = len0;
-        /* K3 Shift: a step a detent run, wrapping round the clip */
+        /* K3 Offset: a step a detent run, wrapping round the clip, shown as
+         * a note value (Josh, 2026-11-12: "shift param should be labeled
+         * offset and work in 1/16ths ... it needs to display as such" · "if
+         * it's tied to track resolution that's fine") */
+        const c3 = A.auLoopBankCells(4)[2];
+        assert(c3.label === 'Offst' && c3.name === 'Offset' && c3.text === '0/16', 'K3 is not Offset 0/16: ' + JSON.stringify(c3));
         reset();
         for (let i = 0; i < 30 && !sent('t4_au_set_rot').length; i++) cc(73, 1);
-        assert(sent('t4_au_set_rot').join() === ac + ' ' + tps && A.auLoopBankCells(4)[2].text === '+1',
-               'Shift is not a step: ' + JSON.stringify(sent('t4_au_set_rot')) + ' ' + A.auLoopBankCells(4)[2].text);
+        assert(tps === 24 && sent('t4_au_set_rot').join() === ac + ' 24' && A.auLoopBankCells(4)[2].text === '1/16',
+               'Offset is not a 1/16: ' + JSON.stringify(sent('t4_au_set_rot')) + ' ' + A.auLoopBankCells(4)[2].text);
         reset();
         for (let i = 0; i < 30 && sent('t4_au_set_rot').length < 2; i++) cc(73, 127);
-        assert(sent('t4_au_set_rot').join() === ac + ' 0,' + ac + ' ' + (len0 * tps - tps), 'Shift does not wrap below 0: ' + JSON.stringify(sent('t4_au_set_rot')));
-        for (let i = 0; i < 30 && A.auInfo(4, ac).rot; i++) cc(73, 1);   /* back to 0 */
+        assert(sent('t4_au_set_rot').join() === ac + ' 0,' + ac + ' ' + (len0 * tps - tps), 'Offset does not wrap below 0: ' + JSON.stringify(sent('t4_au_set_rot')));
+        for (let i = 0; i < 40 && A.auInfo(4, ac).rot; i++) cc(73, 1);   /* back to 0 */
+        /* ...at 1/8 steps (48 ticks): a 1/8 a detent, shown in eighths */
+        {
+            const tps0 = S.clipTPS[4][ac];
+            S.clipTPS[4][ac] = 48;
+            reset();
+            for (let i = 0; i < 30 && !sent('t4_au_set_rot').length; i++) cc(73, 1);
+            assert(sent('t4_au_set_rot').join() === ac + ' 48' && A.auLoopBankCells(4)[2].text === '1/8',
+                   'at 1/8 resolution Offset is not a 1/8: ' + JSON.stringify(sent('t4_au_set_rot')) + ' ' + A.auLoopBankCells(4)[2].text);
+            for (let i = 0; i < 40 && A.auInfo(4, ac).rot; i++) cc(73, 127);
+            S.clipTPS[4][ac] = tps0;
+        }
         /* the pads follow it: a quarter-clip Shift puts the clip's first
          * quarter of audio on pads 9-16 */
         {

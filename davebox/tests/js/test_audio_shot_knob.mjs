@@ -61,10 +61,10 @@ async function main() {
         info(); ticks(2); info();
     });
 
-    step('⭐ the CLIP bank: K1 Mode (Loop), K2 Stretch, K3 Shift', () => {
+    step('⭐ the CLIP bank: K1 Mode (Loop), K2 Stretch, K3 Offset', () => {
         const cells = A.auLoopBankCells(T);
         assert(cells[0] && cells[0].label === 'Mode' && cells[0].text === 'Loop', 'K1 is not Mode Loop: ' + JSON.stringify(cells[0]));
-        assert(cells[1] && cells[1].name === 'Stretch' && cells[2] && cells[2].name === 'Shift', 'Stretch / Shift moved: ' + JSON.stringify(cells.slice(1, 3)));
+        assert(cells[1] && cells[1].name === 'Stretch' && cells[2] && cells[2].name === 'Offset', 'Stretch / Offset moved: ' + JSON.stringify(cells.slice(1, 3)));
     });
 
     step('a brush (ten detents, half the deliberate feel) does not flip it', () => {

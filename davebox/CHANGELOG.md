@@ -148,6 +148,8 @@ the section into a versioned heading at release time.
   again every 5 minutes until the Move is plugged in.
 
 ### Changed
+- **An Audio clip's Shift is now Offset**, and reads as a note value (*3/16*) in the clip's
+  resolution.
 - **Delete + clip on an Audio clip asks to remove its sample.** It used to say "Sequence
   cleared" and leave the clip as it was; now Yes clears the sample (Undo brings it back).
 - **A project saved by this version is a new format.** Earlier versions (1.1.3 and

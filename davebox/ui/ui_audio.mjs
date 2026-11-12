@@ -948,8 +948,8 @@ export function auClipBankKnob(t, k, steps) {
         S.auStrchDir = { t, dir: up ? 1 : -1 };
     } else if (k === 2) {
         if (S.knobAlt & 4) return auNudgeStep(t, c, steps);
-        /* Shift: the audio a step later (or earlier) inside the clip, wrapping
-         * round, as Shift moves a sequence's notes */
+        /* Offset: the audio a step later (or earlier) inside the clip,
+         * wrapping round, as Shift moves a sequence's notes */
         const tps = S.clipTPS[t][c] || 24, L = (S.clipLength[t][c] | 0 || 16) * tps;
         const v = (((i.rot | 0) % L + (steps > 0 ? tps : -tps)) % L + L) % L;
         loc.rot = v; auSet(t, c, 'rot', v);
@@ -1118,7 +1118,7 @@ export function knobAltOnTrack(t, padMode, bank, k) {
      * STEP page whatever the bank under it (device pass 2026-11-11: a Slicer
      * step's Start was unreachable from LIVE ARP) */
     if (S.stepReveal && S.heldStep >= 0) bank = BANK_STEP;
-    if (bank === 0 && isSampledTrack(t) && auIsLoop(auInfo(t, auClipOf(t)))) return k === 2 ? ['Shift', 'Nudge'] : null;
+    if (bank === 0 && isSampledTrack(t) && auIsLoop(auInfo(t, auClipOf(t)))) return k === 2 ? ['Offset', 'Nudge'] : null;
     /* a Slicer step: K3 Length, Start behind it (Josh, 2026-11-11: "why not
      * have start be the alt to length") */
     if (bank === BANK_STEP && padMode === PAD_MODE_SLICER) return k === 2 ? ['Length', 'Start'] : null;
@@ -1137,7 +1137,7 @@ export function auLoopBankCells(t) {
     const strch = { kind: 'valsq', label: 'Strch', name: 'Stretch',
                     text: (S.auStrchDir && S.auStrchDir.t === t && S.knobTouched === 1) ? (S.auStrchDir.dir > 0 ? 'x2' : '/2') : '1x' };
     const shift = (S.knobAlt & 4) ? nudgeCell(i)
-        : { kind: 'valsq', label: 'Shift', name: 'Shift', text: '+' + auShiftSteps(t, c, i) };
+        : { kind: 'valsq', label: 'Offst', name: 'Offset', text: auOffsetText(t, c, i) };
     /* K1 Mode: Loop · Shot (one-shot: the clip's length once per launch) */
     const mode = { kind: 'enumsq', label: 'Mode', name: 'Mode', text: i.shot ? 'Shot' : 'Loop',
                    options: ['Loop', 'Shot'], sel: i.shot ? 1 : 0 };
@@ -1307,6 +1307,14 @@ export function rmxBankKnob(t, k, steps) {
 function auShiftSteps(t, c, i) {
     const tps = S.clipTPS[t][c] || 24, L = (S.clipLength[t][c] | 0 || 16) * tps;
     return Math.round(((i.rot | 0) % L) / tps);
+}
+/* Offset as a note value: steps of the clip's resolution, so 3/16 at 1/16
+ * steps, 3/8 at 1/8 (Josh, 2026-11-12: "shift param should be labeled offset
+ * and work in 1/16ths ... it needs to display as such" · "if it's tied to
+ * track resolution that's fine") — a bar is 384 ticks */
+function auOffsetText(t, c, i) {
+    const tps = S.clipTPS[t][c] || 24, n = auShiftSteps(t, c, i);
+    return (384 % tps === 0) ? n + '/' + (384 / tps) : '+' + n;
 }
 /* The alt bit a physical knob flips and reads. On a Slice clip's CLIP bank Res
  * (and its Zoom) sits on K4, Mode having taken K1; it keeps Res's own bit 0,
