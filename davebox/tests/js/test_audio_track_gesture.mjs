@@ -415,6 +415,22 @@ step('⭐ Decay: shortest at the bottom of the dial, Full at the top (Josh: "it 
     assert(last() === '5' && !sent('t4_au_slice_dec').some((v) => / 0$/.test(v)),
            'all the way down is not the shortest decay: ' + last());
     assert(A.auPanelCells(ED())[1].text === '5ms' && A.auPanelCells(ED())[1].norm < 0.01, 'the bottom: ' + JSON.stringify(A.auPanelCells(ED())[1]));
+    /* fine at the short end: 1 ms a detent there, the dial log (Josh,
+     * 2026-11-12: "it's really hard to dial in decays near the minimum level,
+     * which is where subtle control is most important") */
+    reset();
+    for (let i = 0; i < 5; i++) { S.knobAccelLast[1] = 0; cc(72, 1); }
+    assert(sent('t4_au_slice_dec').map((v) => v.split(' ')[2]).join() === '6,7,8,9,10',
+           'the first detents up from 5 ms are not 1 ms each: ' + JSON.stringify(sent('t4_au_slice_dec')));
+    assert(A.auPanelCells(ED())[1].norm > 0.05, 'the arc does not move at 10 ms (a linear dial): ' + A.auPanelCells(ED())[1].norm);
+    reset();
+    for (let i = 0; i < 120; i++) { S.knobAccelLast[1] = 0; cc(72, 1); }
+    { const v = sent('t4_au_slice_dec').map((x) => +x.split(' ')[2]);
+      assert(v[v.length - 1] === 5000 || v[v.length - 1] === 0, '120 single detents do not reach the top: ' + v[v.length - 1]);
+      const at = (ms) => v.findIndex((x) => x >= ms);
+      assert(at(100) - at(50) > 5 && at(1000) - at(500) > 5 && Math.abs((at(100) - at(50)) - (at(1000) - at(500))) <= 2,
+             'not logarithmic — detents 50->100 ms ' + (at(100) - at(50)) + ', 500->1000 ms ' + (at(1000) - at(500))); }
+    for (let i = 0; i < 300; i++) cc(72, 127);       /* back to the bottom */
     for (let i = 0; i < 400; i++) cc(72, 1);         /* all the way up */
     assert(last() === '0' && A.auPanelCells(ED())[1].text === 'Full' && A.auPanelCells(ED())[1].norm === 1,
            'all the way up is not Full: ' + last());
@@ -1157,7 +1173,7 @@ step('⭐⭐ SLICES › Convert to kit (Josh, 2026-10-30: "convert to kit. creat
         assert(c0.Voice_PlaybackStart === 0 && c0.Voice_PlaybackLength === 0.125, 'chop 1 region: ' + c0.Voice_PlaybackStart + ' ' + c0.Voice_PlaybackLength);
         assert(c1.Voice_PlaybackStart === 0.125 && c1.Voice_Transpose === 2 && c1.Voice_Detune === 7 &&
                c1.Voice_Envelope_Mode === 'A-S-R' && c1.Voice_Envelope_Attack === 0.01 &&
-               c1.Voice_Envelope_Hold === 0 && Math.abs(c1.Voice_Envelope_Decay - 0.25 * 0.9 * 83.87 / 20) < 1e-9, 'chop 2: ' + JSON.stringify(c1));
+               c1.Voice_Envelope_Hold === 0 && Math.abs(c1.Voice_Envelope_Decay - 0.25) < 1e-9 /* the slice's ms as they are: both decay on the drum cell's curve */, 'chop 2: ' + JSON.stringify(c1));
         assert(Math.abs(c2.Voice_Gain - Math.pow(10, -3 / 20)) < 1e-9 && c2.Voice_Envelope_Hold === 60 &&
                c2.Voice_Envelope_Mode === 'A-H-D', 'chop 3: ' + JSON.stringify(c2));
         assert(c0.Voice_VelocityToVolume === 0, 'velocity reaches a slice\'s level');

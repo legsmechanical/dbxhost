@@ -791,7 +791,7 @@ const soundCell = {
     rev: (r) => ({ kind: 'enumsq', label: 'Revrs', name: 'Reverse', text: r.rev == null ? '--' : (r.rev ? 'On' : 'Off'), options: ['Off', 'On'], sel: r.rev | 0 }),
     atk: (r) => ({ kind: 'arc', label: 'Attk', name: 'Attack', text: r.atk == null ? '--' : r.atk + 'ms', norm: Math.min(1, (r.atk | 0) / 2000) }),
     dec: (r) => ({ kind: 'arc', label: 'Decay', name: 'Decay', text: r.dec == null ? '--' : (r.dec ? r.dec + 'ms' : 'Full'),
-                   norm: r.dec ? Math.min(1, r.dec / DEC_MAX) * 0.95 : 1 }),   /* Full: the top */
+                   norm: r.dec == null ? 0 : decayNorm(r.dec) }),   /* Full (0): the top */
     play: (r) => ({ kind: 'enumsq', label: 'Play', name: 'Play Mode', text: r.play == null ? '--' : AU_PLAY_NAMES[r.play], options: AU_PLAY_NAMES, sel: r.play | 0 }),
 };
 /* CLIP, Slice mode: knob k -> the ALL SLICES field it sets, into every slice's
@@ -881,12 +881,22 @@ export function auPanelKnobClass(ed, k) {
  * decay) one step past it at the top (Josh, 2026-10-28: it "snaps to full at
  * the max dial position ... when it's turned all the way down. it should be
  * max at max when it's turned all the way up"). */
-const DEC_MIN = 5, DEC_MAX = 5000;
+/* ...and along it LOGARITHMICALLY, ~7 % a detent and never less than 1 ms, so
+ * the short end — where a small change is heard most — is as fine as the knob
+ * allows (Josh, 2026-11-12: "it's really hard to dial in decays near the
+ * minimum level, which is where subtle control is most important"; it was 5 ms
+ * a detent there) */
+const DEC_MIN = 5, DEC_MAX = 5000, DEC_RATIO = 1.07;
 function stepDecay(v, steps) {
-    if (v === 0) return steps < 0 ? Math.max(DEC_MIN, DEC_MAX + (steps + 1) * 50) : 0;
-    const n = v + steps * (v < 200 ? 5 : 50);
+    if (v === 0) return steps < 0 ? (steps === -1 ? DEC_MAX : stepDecay(DEC_MAX, steps + 1)) : 0;
+    let n = Math.round(v * Math.pow(DEC_RATIO, steps));
+    if (n === v) n = v + (steps > 0 ? 1 : -1);
     if (n > DEC_MAX) return v === DEC_MAX ? 0 : DEC_MAX;
     return Math.max(DEC_MIN, n);
+}
+/* where a Decay sits along the dial (the arc): log, as the knob steps it */
+export function decayNorm(ms) {
+    return ms ? Math.max(0, Math.min(1, Math.log(ms / DEC_MIN) / Math.log(DEC_MAX / DEC_MIN))) * 0.95 : 1;
 }
 
 /* One field stepped: the next value, clamped. */

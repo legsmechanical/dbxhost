@@ -208,6 +208,8 @@ typedef struct {
     float    gain;
     uint32_t age;            /* output frames since it started */
     uint32_t atk, dec;       /* frames; dec 0 = none */
+    float    denv, dk;       /* Decay: the level it has fallen to, and its per-frame factor
+                              * (exponential, a Move drum cell's: -83.87 dB at dec) */
     uint32_t rel, rel_len;   /* release (choke / gate end): frames left of rel_len */
     uint32_t rel_wait;       /* output frames before that release begins (on its tick's frame) */
     uint32_t wait;           /* output frames of silence before it starts (Loop Nudge later; a slice's tick frame) */

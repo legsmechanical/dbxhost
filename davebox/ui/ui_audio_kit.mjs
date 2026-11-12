@@ -52,15 +52,13 @@ export const KIT_SAMPLES  = '/data/UserData/UserLibrary/Samples/dAVEBOx/Exported
 export const KIT_PADS = 32;
 const KIT_MIN = 16;
 const HOLD_INF = 60.0;                 /* a drum cell's "inf" hold */
-/* Decay: a slice fades LINEARLY to silence over its Decay (seq8_audio.c: the
- * envelope falls by 1/dec a frame); a drum cell decays EXPONENTIALLY, 83.87 dB
- * over its Decay (DR32's reconstruction of Move's, dr32_voice.h
- * DR32_DECAY_DB_PER_TIME). The same milliseconds sound much shorter on a pad
- * (Josh, 2026-10-30: "converted kit decays are shorter on the kits than on the
- * slices. even though they claim the same ms"). They meet at -20 dB, where a
- * tail stops being heard: the line is there at 0.9 of its time, the curve at
- * 20 / 83.87 of its — so a pad's Decay is the slice's x 0.9 x 83.87 / 20. */
-export const DECAY_SCALE = 0.9 * 83.87 / 20;
+/* Decay: a slice decays on a drum cell's own curve, 83.87 dB over its Decay
+ * (seq8_audio.c au_decay_k; DR32's reconstruction of Move's, dr32_voice.h
+ * DR32_DECAY_DB_PER_TIME), so a pad takes the slice's milliseconds as they are.
+ * (It used to fade in a straight line and a pad's Decay was scaled up 3.8x to
+ * sound as long — Josh, 2026-10-30: "converted kit decays are shorter on the
+ * kits than on the slices"; the slice went exponential on 2026-11-12.) */
+export const DECAY_SCALE = 1;
 const DECAY_MAX = 60.0;
 const ATTACK_MIN = 1e-4;
 

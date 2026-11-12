@@ -212,6 +212,15 @@ static double au_wrap(double x, double L) {
     return x;
 }
 
+/* Decay's per-frame factor: -83.87 dB over `frames`, a Move drum cell's curve
+ * (DR32's reconstruction, dr32_voice.h DR32_DECAY_DB_PER_TIME), so a chop and
+ * the pad Convert to kit makes of it sound as long at the same ms — e^x by its
+ * series, exact to ~1e-8 here (|x| < 0.044 for the 5 ms shortest); no libm, as
+ * au_semi / au_db */
+static float au_decay_k(uint32_t frames) {
+    double x = -9.655890587470532 / (double)(frames ? frames : 1);
+    return (float)(1.0 + x * (1.0 + x / 2.0 * (1.0 + x / 3.0 * (1.0 + x / 4.0 * (1.0 + x / 5.0)))));
+}
 static float au_db(int db) {
     double r = 1.0, b = db >= 0 ? 1.1220184543019633 : 0.8912509381337456;
     if (db < 0) db = -db;
@@ -2683,6 +2692,10 @@ static au_voice_t *au_range_on_in(au_track_t *at, const au_sample_t *s, int cs, 
      * silence (the downbeat at Play) it starts at once, its attack whole */
     v->atk = sync ? (cut ? AU_VINTAGE_XF : 0) : (uint32_t)sl->attack_ms * 441 / 10;
     v->dec = (uint32_t)sl->decay_ms * 441 / 10;
+    /* exponential, as a drum rack's (Josh, 2026-11-12: "should they be
+     * exponential like drum rack?"): its curve exactly (au_decay_k) */
+    v->denv = 1.0f;
+    v->dk = v->dec ? au_decay_k(v->dec) : 1.0f;
     v->loop = (play == AU_PLAY_LOOP);
     v->gated = (play != AU_PLAY_ONE);
     v->slice = (uint8_t)slice;
@@ -2843,7 +2856,8 @@ static uint32_t au_voice_render(au_voice_t *v, int32_t *acc, int frames) {
         if (v->dec) {
             uint32_t d = v->age > v->atk ? v->age - v->atk : 0;
             if (d >= v->dec) { v->active = 0; return missed; }
-            e *= 1.0f - (float)d / (float)v->dec;
+            e *= v->denv;
+            if (d) v->denv *= v->dk;
         }
         if (v->rel_len) {
             if (v->rel_wait) v->rel_wait--;

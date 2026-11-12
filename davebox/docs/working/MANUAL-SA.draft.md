@@ -1367,7 +1367,8 @@ bracketed: **K1** / **K3** move its start / end, **K2** zooms, and a **click** o
 chop tools (**Even** · **Transient** · **Lazy** · **Manual** · **Convert to kit**). **K4–K8**
 are the picked chop's **Gain** · **Pitch** · **Detune** · **Revrs** · **Play** (**One** to the
 chop's end, **Gate** as long as the step). **Turn the jog** for page 2, the same as a grid,
-with **Attk** and **Decay** on K1 / K2. On both pages, **hold Shift** and the chop knobs set
+with **Attk** and **Decay** on K1 / K2. **Decay** falls away as a drum pad's does — quickly,
+then a long tail — and its knob is finest at the short end, 1 ms a detent. On both pages, **hold Shift** and the chop knobs set
 **every chop** at once (`--` where they differ). SAMPLE's **Pitch**, **Detune** and **Gain**
 are the base every chop adds its own to. **ALL SLICES** (Shift held) automates too:
 **Attack**, **Decay**, **Gain**, **Pitch**, **Detune**, **Rev** and **Play** — while its lane
@@ -1409,9 +1410,7 @@ in order. The sample is copied once into **Samples → dAVEBOx → Exported kits
 plays its chop of it; the preset goes to **Track Presets → dBx-slice**, named after the
 project and track. Move's own drum tracks load it and play the first 16 pads (all 32 stay
 in the preset); an instrument that loads Move drum racks with more pads, such as DR32, gets
-them all. Each pad takes its chop's **Pitch**, **Detune**, **Gain**, **Attk** and **Decay** (a
-pad's decay curves where a chop's fades straight, so its Decay reads about 3.8 times the
-chop's to sound as long; with the Slicer's own Pitch, Detune and Gain under them) and
+them all. Each pad takes its chop's **Pitch**, **Detune**, **Gain**, **Attk** and **Decay** (with the Slicer's own Pitch, Detune and Gain under them) and
 **Play** (One plays the pad through; Gate holds it as long as you do). **Revrs** has no place
 in a drum pad and is left out. The pads cut each other off, as the chops do.
 

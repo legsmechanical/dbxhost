@@ -148,6 +148,8 @@ the section into a versioned heading at release time.
   again every 5 minutes until the Move is plugged in.
 
 ### Changed
+- **A chop's Decay curves like a drum pad's**, and its knob is fine at the short end (1 ms a
+  detent from 5 ms). Convert to kit now gives a pad the chop's Decay as it is.
 - **An Audio clip's Shift is now Offset**, and reads as a note value (*3/16*) in the clip's
   resolution.
 - **Delete + clip on an Audio clip asks to remove its sample.** It used to say "Sequence
