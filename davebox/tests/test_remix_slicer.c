@@ -167,6 +167,29 @@ int main(void) {
         HX_ASSERT(which(m[k].mid, unit) == k, msg);
     }
 
+    /* ==== the pads: the playhead read (tN_au_pos) names the chop the
+     * sequencer is playing, so its pad lights (Josh, 2026-11-11: "did the
+     * pads on slice not light up to indicate what the sequencer is sending
+     * to them?" · "i feel like it did, but it's not now") ==== */
+    {
+        int seen[16] = {0}, on = 0, reads = 0, i, nseen = 0;
+        char b[64];
+        for (i = 0; i < 4000 && inst->tracks[5].current_step != 0; i++) r1(h);
+        for (i = 0; i < 720; i++) {          /* a bar is ~690 blocks */
+            r1(h);
+            if (i % 3) continue;
+            reads++;
+            hx_get_param(h, "t5_au_pos", b, sizeof b);
+            int sn = 0, fr = 0, sl = -1;
+            sscanf(b, "%d %d %d", &sn, &fr, &sl);
+            if (sn) on++;
+            if (sn && sl >= 0 && sl < 16) seen[sl] = 1;
+        }
+        for (k = 0; k < 16; k++) nseen += seen[k];
+        snprintf(msg, sizeof msg, "the playhead read names %d of the 16 chops the sequencer played (sounding in %d of %d reads)", nseen, on, reads);
+        HX_ASSERT(nseen == 16 && on > reads * 3 / 4, msg);
+    }
+
     /* ==== T1 NORMAL 1 ==== */
     hx_set_param(h, "t5_remix_type", "0");
     hx_set_param(h, "t5_remix_var", "0");
