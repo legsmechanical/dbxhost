@@ -1,18 +1,25 @@
-/* AN AUDIO CLIP'S END (Josh, 2026-11-12: "i need it fine like start. and maybe
- * that should just BE knob 3 and we let the loop button gestures handle per
- * bar / per step"). K3 sets a Loop clip's End in frames, as fine as Start; the
- * clip's Length stays whole steps, the Loop gestures'. Pinned here:
- *   - au_range ends at End; 0 or the sample's end means none;
- *   - past End the clip is silent until it comes round (and plays without it);
+/* AN AUDIO CLIP'S END: Start..End IS THE LOOP (Josh, 2026-11-12: "i need it
+ * fine like start. and maybe that should just BE knob 3 and we let the loop
+ * button gestures handle per bar / per step" · "not every sample we load is
+ * going to be a perfect loop. and we need a way to say this is where the loop
+ * starts and ends" · fill the clip, the Tempo following: "yes"). K3 sets a
+ * Loop clip's End in frames, as fine as Start; the clip's Length stays whole
+ * steps, the Loop gestures'. Pinned here:
+ *   - au_range ends at End; 0 or past the sample's end means none, the
+ *     sample's end itself is an End;
+ *   - with an End, Start..End fills the clip exactly (the speed follows,
+ *     whatever the Tempo knob says); a new Length refits; the info's Tempo is
+ *     the fitted one; without, the Tempo knob's again;
  *   - End stays past Start by a slice, and Start short of End;
  *   - the info read reports End as its last field;
  *   - End is saved (en=) and loaded; a clip with none writes no en key;
- *   - a Trim (au_clip_shift) moves End with the audio, and End at the new
- *     file's end goes;
+ *   - a Trim (au_clip_shift) moves End with the audio and keeps it on the
+ *     new file's end;
  *   - a new sample clears it; a Slicer refuses it. */
 #include "harness.h"
 #include <sys/stat.h>
 #include <unistd.h>
+#include <math.h>
 
 static char g_root[256];
 static void put_le16(FILE *f, int v) { fputc(v & 255, f); fputc((v >> 8) & 255, f); }
@@ -104,12 +111,41 @@ int main(void) {
     snprintf(p, sizeof p, "0 %u", (unsigned)fr + 100);
     hx_set_param(h, "t2_au_set_end", p);
     HX_ASSERT(cl->rend == 0, "End past the file's end is not none");
+    snprintf(p, sizeof p, "0 %u", (unsigned)fr);
+    hx_set_param(h, "t2_au_set_end", p);
+    HX_ASSERT(cl->rend == fr, "the file's own end is not an End");
 
-    /* ==== 2. silent past End till the clip comes round; sounding without ==== */
-    HX_ASSERT(energy_after(h, 0, 100, 40) > 0, "the clip is silent without End (the check below would prove nothing)");
-    hx_set_param(h, "t2_au_set_end", "0 4410");      /* 0.1 s; blocks 100..140 are 0.29..0.41 s in */
-    HX_ASSERT(energy_after(h, 0, 100, 40) == 0, "the clip sounds past its End");
-    HX_ASSERT(energy_after(h, 0, 0, 20) > 0, "the clip does not sound before its End");
+    /* ==== 2. Start..End fills the clip, exactly, whatever the Tempo ==== */
+    {
+        clip_t *lc = &inst->tracks[2].clips[0];
+        double tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
+        double L = ((double)lc->loop_start + lc->length) * tps;
+        char buf[512];
+        hx_set_param(h, "t2_au_set_end", "0 30000");
+        hx_set_param(h, "t2_au_set_bpm", "0 900");   /* the knob's Tempo: ignored with an End */
+        au_range(cl, cl->smp, &rs, &re);
+        HX_ASSERT(re == 30000, "the range does not end at End");
+        HX_ASSERT(fabs(au_fpt_s(cl, cl->smp) * L - 30000.0) < 1e-6, "Start..End does not fill the clip exactly");
+        HX_ASSERT(fabs(au_span_ticks(cl, cl->smp, rs, re) - (double)lc->length * tps) < 1e-6, "the loop window is not the clip's length");
+        /* a new Length refits */
+        double f1 = au_fpt_s(cl, cl->smp);
+        lc->length /= 2;          /* half the length: twice the frames a tick (doubling here would pass 999.9 BPM) */
+        HX_ASSERT(fabs(au_fpt_s(cl, cl->smp) - 2 * f1) < 1e-9, "a new Length did not refit");
+        lc->length *= 2;
+        /* the info's Tempo is the fitted one */
+        double want = 44100.0 * 60.0 / (f1 * PPQN);
+        hx_get_param(h, "t2_au_info_0", buf, (int)sizeof buf);
+        {   int f = 0; char *q = buf; unsigned b10 = 0;
+            while (*q && f < 20) { if (*q == ' ') f++; q++; }
+            b10 = (unsigned)strtoul(q, NULL, 10);
+            HX_ASSERT(abs((int)b10 - (int)(want * 10 + 0.5)) <= 1, "the info does not report the fitted Tempo"); }
+        /* and it plays, end to end: sounding late in the clip */
+        HX_ASSERT(energy_after(h, 0, 100, 40) > 0, "a fitted clip is silent");
+        /* none: the knob's Tempo again */
+        hx_set_param(h, "t2_au_set_end", "0 0");
+        HX_ASSERT(fabs(au_fpt_s(cl, cl->smp) - 44100.0 * 60.0 / (90.0 * PPQN)) < 1e-9, "without End the knob's Tempo does not rule");
+        hx_set_param(h, "t2_au_set_end", "0 4410");
+    }
 
     /* ==== 3. End past Start by a slice; Start short of End ==== */
     hx_set_param(h, "t2_au_set_start", "0 4400");
@@ -137,13 +173,13 @@ int main(void) {
     HX_ASSERT(au_cl(inst, 2, 0)->rend == 4410, "reloaded: clip A lost its End");
     HX_ASSERT(au_cl(inst, 2, 1)->rend == 0, "reloaded: clip B has an End");
 
-    /* ==== 5. a Trim moves End with the audio; at the new end it goes ==== */
+    /* ==== 5. a Trim moves End with the audio; it stays on the new file's end ==== */
     cl = au_cl(inst, 2, 0);
     cl->rstart = 1000; cl->rend = 4410;
     au_clip_shift(cl, 1000, 100000);
     HX_ASSERT(cl->rstart == 0 && cl->rend == 3410, "a Trim did not move End with the audio");
-    au_clip_shift(cl, 0, 3410);
-    HX_ASSERT(cl->rend == 0, "End at the trimmed file's end stayed");
+    au_clip_shift(cl, 0, 3000);
+    HX_ASSERT(cl->rend == 3000, "End past the trimmed file's end did not stop on it (the loop's fit lost)");
     hx_destroy(h);
 
     /* ==== 6. a new sample clears End; a Slicer refuses it ==== */

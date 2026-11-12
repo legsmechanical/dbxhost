@@ -66,10 +66,23 @@ function syncCell(t, i) {
 }
 /* The sample's own Tempo, BPM (0 until it is known), and its bounds x10 */
 export const AU_BPM10_MIN = 1, AU_BPM10_MAX = 9999;   /* 0.1 .. 999.9 BPM, as the engine's */
-export function auBpm(i) { return (i.bpm10 | 0) / 10; }
+export function auBpm(i) { const f = auFitFpt(i); return f > 0 ? Math.round((i.rate || 44100) * 600 / (f * 96)) / 10 : (i.bpm10 | 0) / 10; }
+/* A Loop clip with an End: Start..End is its loop and the Tempo follows,
+ * exactly (the engine's au_fit_fpt; Josh, 2026-11-12: "we need a way to say
+ * this is where the loop starts and ends"). Frames a tick; 0: no End. The
+ * info carries its clip (_t, _c, set where it is read). */
+export function auFitFpt(i) {
+    if (!(i.cut > 0) || i._t == null || auIsSlice(i) || !i.nframes) return 0;
+    const t = i._t, c = i._c;
+    const L = ((S.clipLoopStart[t][c] | 0) + (S.clipLength[t][c] | 0 || 16)) * (S.clipTPS[t][c] || 24);
+    const e = Math.min(i.cut, i.nframes);
+    if (!(L > 0) || e <= (i.rstart | 0)) return 0;
+    const r = i.rate || 44100;
+    return Math.max(r * 600 / (AU_BPM10_MAX * 96), Math.min(r * 600 / (AU_BPM10_MIN * 96), (e - (i.rstart | 0)) / L));
+}
 /* Frames of the sample per tick at its Tempo (120 until known): the ticks,
  * steps and bars everything on screen is measured in */
-export function auFpt(i) { return (i.rate || 44100) * 60 / ((i.bpm10 ? i.bpm10 / 10 : 120) * 96); }
+export function auFpt(i) { const f = auFitFpt(i); return f > 0 ? f : (i.rate || 44100) * 60 / ((i.bpm10 ? i.bpm10 / 10 : 120) * 96); }
 /* A Loop clip's pads: the CLIP in even sections, one a pad (Josh,
  * 2026-10-29: "chops should just be completely invisible in loop mode") —
  * the clip's window, Start for its length at the sample's Tempo, as SAMPLE
@@ -223,6 +236,7 @@ export function auRead(t, c) {
     const i = auParseInfo(dspGet('t' + t + '_au_info_' + c));
     if (!i) return null;                          /* no answer (a timed-out read): still stale, read again */
     const prev = S.auInfo[t][c];
+    i._t = t; i._c = c;                           /* its clip: auFitFpt */
     S.auInfo[t][c] = i;
     /* a sample that has just landed: a Loop clip takes its Bars there
      * (au_clip_set_bars), behind the screen's back — Flatten's reset had left
@@ -816,7 +830,7 @@ export function auPanelCells(ed) {
             const bpm = auBpm(i);
             const tempo = { kind: 'valsq', label: 'Tempo', name: 'Tempo (the sample\'s own)',
                             text: bpm ? String(Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) : '--',
-                            norm: ((i.bpm10 || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN) };
+                            norm: ((Math.round(auBpm(i) * 10) || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN) };
             /* a Slicer has no Start or Nudge: what plays is its chops */
             const slc = isSlicerTrack(t);
             return [slc ? BLANK : start, pitch, detune, gain, revrsCell(i), slc ? BLANK : nudgeCell(i), sync, tempo].map(live);
@@ -976,6 +990,7 @@ export function auRangeStep(t, c, which, steps, per) {
         const v = Math.max(0, Math.min(hiS, i.rstart + steps * st));
         if (v === i.rstart) return false;
         loc.rstart = v; auSet(t, c, 'start', v);
+        loc._t = t; loc._c = c;
         loc.rend = auPlayedEnd(t, c, loc);
     } else if (which === 'end') {
         /* a Loop clip's End (Josh, 2026-11-12: "i need it fine like start.
@@ -984,13 +999,18 @@ export function auRangeStep(t, c, which, steps, per) {
          * the end that plays; at the clip's or the file's end it is none */
         if (auIsSlice(i)) return false;
         const st = per != null ? per : Math.max(1, Math.round(i.nframes / 500));
-        const top = auPlayedEnd(t, c, Object.assign({}, i, { cut: 0 }));
-        const cur = i.cut > 0 ? Math.min(i.cut, top) : top;
-        let v = Math.max(i.rstart + G, Math.min(top, cur + steps * st));
-        if (v === cur) return false;
-        const cut = v >= top ? 0 : v;
+        const fr = i.nframes | 0, on = i.cut > 0;
+        /* from none, it starts where the clip ends now; up to the file's own
+         * end (an End: the whole file looped), one detent past it none */
+        const cur = on ? Math.min(i.cut, fr) : auPlayedEnd(t, c, Object.assign({}, i, { cut: 0 }));
+        if (!on && steps > 0) return false;
+        let v = Math.max(i.rstart + G, cur + steps * st), cut;
+        if (v > fr) cut = cur >= fr ? 0 : fr;
+        else cut = v;
+        if (on ? cut === i.cut : cut === cur) return false;
         loc.cut = cut; auSet(t, c, 'end', cut);
-        loc.rend = auPlayedEnd(t, c, loc);
+        loc._t = t; loc._c = c;
+        loc.rend = cut > 0 ? Math.min(cut, fr) : auPlayedEnd(t, c, loc);
     } else if (auIsSlice(i)) {
         /* a bar a detent, a step with Shift (Josh, 2026-10-30: "we need to be
          * able to fine adjust with shift modifier tempo ... and length") */
@@ -1358,7 +1378,7 @@ export function auSampleP2Cells(t, c) {
      * "tempo needs the corner indicators to show it's touch click") */
     const tempo = { kind: 'valsq', label: 'Tempo', name: 'Tempo (the sample\'s own)',
                     text: bpm ? String(Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) : '--',
-                    norm: ((i.bpm10 || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN), opens: true };
+                    norm: ((Math.round(auBpm(i) * 10) || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN), opens: true };
     const gain = { kind: 'arc', label: 'Gain', name: 'Gain', text: fmtDb(i.gain), norm: (i.gain + 40) / 52 };
     /* (a Slicer's K7 was its own Follows-the-Conductor switch: it answers to
      * the Conductor's RESPONDER bank now, as every track does — Josh,
@@ -1452,6 +1472,7 @@ export function auOrig(t, c) {
 export function auFit(t, c) {
     const i = auInfo(t, c);
     if (i.state !== 2 || !auIsLoop(i)) return 0;
+    if (auFitFpt(i) > 0) return Math.round(auBpm(i) * 10);   /* with an End it always fits */
     const ticks = ((S.clipLoopStart[t][c] | 0) + (S.clipLength[t][c] | 0 || 16)) * (S.clipTPS[t][c] || 24);
     /* Start to End where one is set, else to the file's end */
     const frames = (i.cut > 0 ? Math.min(i.cut, i.nframes | 0) : (i.nframes | 0)) - (i.rstart | 0);

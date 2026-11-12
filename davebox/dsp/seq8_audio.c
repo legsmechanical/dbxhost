@@ -2434,9 +2434,35 @@ static au_voice_t *au_voice_alloc(au_track_t *at) {
     return &at->v[best];
 }
 
+static const clip_t *au_lclip(const au_clip_t *cl);
+/* A Loop clip with an End: Start..End IS its loop (Josh, 2026-11-12: "not
+ * every sample we load is going to be a perfect loop. and we need a way to say
+ * this is where the loop starts and ends" -> the Tempo follows, exactly): the
+ * frames a tick that make Start..End fill the clip, loop start and all. 0:
+ * no End, or nothing to fit. */
+static double au_fit_fpt(const au_clip_t *cl, const au_sample_t *s) {
+    const clip_t *lc;
+    double tps, L, e;
+    if (cl->mode != AU_MODE_LOOP || !cl->rend || !s) return 0;
+    lc = au_lclip(cl);
+    if (!lc || !lc->length) return 0;
+    tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
+    L = ((double)lc->loop_start + (double)lc->length) * tps;
+    e = cl->rend < s->frames ? (double)cl->rend : (double)s->frames;
+    if (!(L > 0) || e <= (double)cl->rstart) return 0;
+    {   /* inside the Tempo's range (AU_BPM10_*): past it the loop leaves a gap or is cut */
+        double f = (e - (double)cl->rstart) / L;
+        double lo = (double)s->rate * 600.0 / ((double)AU_BPM10_MAX * PPQN);   /* fastest */
+        double hi = (double)s->rate * 600.0 / ((double)AU_BPM10_MIN * PPQN);   /* slowest */
+        return f < lo ? lo : f > hi ? hi : f;
+    }
+}
 /* Frames of sample s per tick at the clip's own Tempo (Josh, 2026-10-29: a
- * Tempo knob "to set the original tempo"; 120 until it is known). */
+ * Tempo knob "to set the original tempo"; 120 until it is known) — or, with
+ * an End, the Tempo that fits Start..End to the clip (au_fit_fpt). */
 static double au_fpt_s(const au_clip_t *cl, const au_sample_t *s) {
+    double fit = au_fit_fpt(cl, s);
+    if (fit > 0) return fit;
     unsigned b10 = au_bpm10(cl);
     double bpm = b10 ? b10 / 10.0 : 120.0;
     return (double)s->rate * 60.0 / (bpm * PPQN);
@@ -2452,8 +2478,8 @@ static const clip_t *au_lclip(const au_clip_t *cl) {
 }
 
 /* What of sample s the clip reads from, in frames: Start + Length at the
- * sample's Tempo, and a Loop clip's End (rend) where one is set — K3, as fine
- * as Start, the Length left to the Loop gestures.
+ * sample's Tempo, or a Loop clip's Start..End where an End is set (K3, as fine
+ * as Start; the Tempo then fits it to the clip, au_fit_fpt).
  * Loop: the clip's own loop window laid over the sample from Start — rs is
  * where the window begins (so Loop + steps picks the part under it), and the
  * sample runs on to its end: the clip comes round at its length by itself,

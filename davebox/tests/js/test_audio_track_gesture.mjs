@@ -812,40 +812,56 @@ step('⭐⭐ WAVE K4 Gain · K5 Pitch · K6 Detune (the clip\'s), read out in th
     back();
     /* K3 End on an Audio clip, as fine as Start — a pixel a detent — the
      * Length left to the Loop gestures (Josh, 2026-11-12: "i need it fine
-     * like start. and maybe that should just BE knob 3") */
+     * like start. and maybe that should just BE knob 3"); Start..End is the
+     * loop and the Tempo follows it ("we need a way to say this is where the
+     * loop starts and ends" · fill the clip: "yes") */
     GET['t4_au_info_0'] = INFO24(0, 8, 0, 8, 50, 0);   /* 84 BPM */
     kindSync(); ticks(2);
     S.clipLength[4][0] = 2; S.clipTPS[4][0] = 24; S.clipLoopStart[4][0] = 0;
     mapPad(2, 3); ticks(2);
     const led = S.auEditor;
     const top = A.auPlayedEnd(4, 0, A.auInfo(4, 0)), px = Math.max(1, Math.round((led.B - led.A) / 128));
+    const k3txt = () => globalThis.__texts(() => { shown(); });
+    assert(k3txt().some((x) => /^LEN /.test(x)), 'no End: the screen does not read the Length: ' + JSON.stringify(k3txt()));
     reset();
-    S.knobAccelLast[2] = 0; cc(73, 1);               /* up from the clip's end: nothing past it */
-    assert(!sentLike(/t4_(au_set_end|c0_loop_set)/).length, 'K3 up at the end: ' + JSON.stringify(sentLike(/t4_/)));
+    S.knobAccelLast[2] = 0; cc(73, 1);               /* up with no End: nothing */
+    assert(!sentLike(/t4_(au_set_end|c0_loop_set)/).length, 'K3 up with no End: ' + JSON.stringify(sentLike(/t4_/)));
     S.knobAccelLast[2] = 0; cc(73, 127);
     assert(sent('t4_au_set_end').join() === '0 ' + (top - px) && !sent('t4_c0_loop_set').length,
            'K3: not End a pixel in: ' + JSON.stringify(sent('t4_au_set_end')) + ' top ' + top + ' px ' + px);
-    assert(A.auInfo(4, 0).cut === top - px && A.auPlayedEnd(4, 0, A.auInfo(4, 0)) === top - px, 'End is not what plays: ' + JSON.stringify(A.auInfo(4, 0)));
-    let tx3 = globalThis.__texts(() => { shown(); });
-    assert(tx3.some((x) => /^E \d/.test(x)), 'the screen does not read End: ' + JSON.stringify(tx3));
-    S.knobAccelLast[2] = 0; cc(73, 1);               /* back out to the clip's end: none */
-    assert(sent('t4_au_set_end').pop() === '0 0' && !(A.auInfo(4, 0).cut > 0), 'K3 back to the end did not clear End: ' + JSON.stringify(sent('t4_au_set_end')));
+    const iE = A.auInfo(4, 0);
+    assert(iE.cut === top - px && A.auPlayedEnd(4, 0, iE) === top - px, 'End is not where the clip ends: ' + JSON.stringify(iE));
+    /* the Tempo follows: Start..End fills the clip's 48 ticks */
+    assert(Math.abs(A.auFpt(iE) * 48 - (top - px)) < 1e-6, 'Start..End does not fill the clip: ' + A.auFpt(iE) * 48);
+    const fitBpm = Math.round(48000 * 600 / (((top - px) / 48) * 96)) / 10;
+    assert(A.auBpm(iE) === fitBpm && A.auBpm(iE) !== 84, 'the Tempo shown is not the fitted one: ' + A.auBpm(iE) + ' want ' + fitBpm);
+    assert(k3txt().some((x) => /^E \d/.test(x)), 'the screen does not read End: ' + JSON.stringify(k3txt()));
+    /* ...and still, once the engine's info is read again (End the last field) */
+    const infoWas = GET['t4_au_info_0'];
+    GET['t4_au_info_0'] = INFO24(0, 8, 0, 8, 50, 0).replace('|', ' 0 0 ' + (top - px) + '|');
+    A.auMarkStale(4, 0); ticks(3);
+    assert(A.auInfo(4, 0).cut === top - px && A.auBpm(A.auInfo(4, 0)) === fitBpm, 'a re-read lost the fit: ' + A.auBpm(A.auInfo(4, 0)) + ' cut ' + A.auInfo(4, 0).cut);
+    GET['t4_au_info_0'] = infoWas;
+    /* K7 Tempo is End's now: no turn reaches the engine */
+    S.knobAccelLast[6] = 0; cc(77, 1);
+    assert(!sent('t4_au_set_bpm').length, 'K7 turned the Tempo under an End: ' + JSON.stringify(sent('t4_au_set_bpm')));
+    /* out to the file's end (an End: the whole file), one past it none */
+    for (let k = 0; k < 400 && A.auInfo(4, 0).cut !== 96000; k++) { S.knobAccelLast[2] = 0; cc(73, 1); }
+    assert(A.auInfo(4, 0).cut === 96000 && sent('t4_au_set_end').pop() === '0 96000', 'End did not stop on the file\'s end: ' + A.auInfo(4, 0).cut);
+    S.knobAccelLast[2] = 0; cc(73, 1);
+    assert(sent('t4_au_set_end').pop() === '0 0' && !(A.auInfo(4, 0).cut > 0) && A.auBpm(A.auInfo(4, 0)) === 84,
+           'past the file\'s end End did not go (the Tempo the knob\'s): ' + JSON.stringify(sent('t4_au_set_end')) + ' ' + A.auBpm(A.auInfo(4, 0)));
     /* K1 Start stops short of End */
-    S.knobAccelLast[2] = 0; for (let k = 0; k < 120; k++) { S.knobAccelLast[2] = 0; cc(73, 127); }
+    for (let k = 0; k < 120; k++) { S.knobAccelLast[2] = 0; cc(73, 127); }
     const endAt = A.auInfo(4, 0).cut;
     for (let k = 0; k < 200; k++) { S.knobAccelLast[0] = 0; cc(71, 1); }
-    assert(A.auInfo(4, 0).rstart <= endAt - 16 && A.auInfo(4, 0).rstart > 0, 'Start passed End: ' + A.auInfo(4, 0).rstart + ' end ' + endAt);
-    /* past End the clip is silent, and the waveform is empty there */
-    const litRight = () => { shown(); let n = 0; for (let y = 21; y < 50; y++) for (let x = 64; x < 128; x++) n += FB[y * 128 + x]; return n; };
-    S.auInfo[4][0] = Object.assign({}, A.auInfo(4, 0), { rstart: 0 });
-    assert(litRight() === 0, 'the waveform runs on past End: ' + litRight() + ' end ' + A.auInfo(4, 0).cut + ' view ' + led.A + '..' + led.B);
+    assert(endAt > 0 && A.auInfo(4, 0).rstart <= endAt - 16 && A.auInfo(4, 0).rstart > 0, 'Start passed End: ' + A.auInfo(4, 0).rstart + ' end ' + endAt);
     S.auInfo[4][0] = Object.assign({}, A.auInfo(4, 0), { rstart: 0, cut: 0 });
-    assert(litRight() > 0, 'no waveform without End (the check above proves nothing): ' + litRight());
     /* End touched last: Tempo keeps the clip's end on screen (Josh,
      * 2026-10-30: "if i last touched length, wave view should stay focused on
      * the end of the clip while adjusting bpm") */
     S.clipLength[4][0] = 3; kindSync(); ticks(2);
-    S.knobAccelLast[2] = 0; cc(73, 1);               /* K3 last */
+    note(2, 127); note(2, 0);                        /* K3 last (touched: no End set) */
     for (let z = 0; z < 3; z++) cc(72, 1);           /* zoom in */
     const endNow = () => A.auPlayedEnd(4, 0, A.auInfo(4, 0));
     assert(!led.full && Math.abs(led.B - endNow()) <= 1, 'not on the end before the Tempo turn: ' + led.A + '..' + led.B + ' end ' + endNow());

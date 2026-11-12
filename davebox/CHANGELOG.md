@@ -9,10 +9,11 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Added
-- **An Audio clip's End, as fine as Start.** On SAMPLE, **K3** is now **End**: a screen
-  pixel a detent, a single sample zoomed all the way in. Past End the clip is silent until
-  it comes round. The clip's length is set with the Loop gestures, by the bar or the step.
-  **Fit to clip** fits Start to End.
+- **Loop points for Audio clips.** On SAMPLE, **K3** is now **End**, as fine as Start (a
+  single sample zoomed all the way in). Start and End mark the loop: the part between them
+  always fills the clip, the sample's Tempo following, so a sample that isn't a perfect
+  loop loops cleanly in time. The clip's length is set with the Loop gestures, by the bar
+  or the step. End **Off** (one detent past the sample's end) gives the Tempo back to K7.
 - **Record into Audio clips.** On an Audio track, **Rec** records the Move's audio input
   into the clip: an empty clip records until you press Rec again, to the bar; a clip with a
   sample records a new layer over what it plays. You hear the input through the track while

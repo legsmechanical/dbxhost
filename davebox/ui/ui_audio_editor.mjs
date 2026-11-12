@@ -67,7 +67,7 @@ import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLaz
          auSelSlice, auSetSelSlice, isSampledTrack, isSlicerTrack, auSeqClipOf, auEditTrim, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
          auMarkAdd, auMarkDel, auManual, auEvenBake, auTrans, auTransBake, auRangeStep, auSet, auEnd, auPanelRingCells, auPanelReset,
          auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_LAZY_ENDED, AU_EVEN_MAX, AU_BPM10_MIN, AU_BPM10_MAX, auLenTicks,
-         auSampleP2Cells, auSampleP2Knob, AU_P2_KNOB, auSampleReset, auEdit, auTrimCuts, auOrig, auFit, auNudgeStep, auFpt, auPlayedEnd, auTooLongToChop, auAutoEdit, auAutoTouch, auSlicesAutoTouch, SLICE_GRID } from './ui_audio.mjs';
+         auSampleP2Cells, auSampleP2Knob, AU_P2_KNOB, auFitFpt, auBpm, auSampleReset, auEdit, auTrimCuts, auOrig, auFit, auNudgeStep, auFpt, auPlayedEnd, auTooLongToChop, auAutoEdit, auAutoTouch, auSlicesAutoTouch, SLICE_GRID } from './ui_audio.mjs';
 import { registerScreenRingCells } from './ui_knob_leds.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { ccKnobDelta, knobPick, KNOB_PICK, KNOB_DELIB } from './ui_input_cc.mjs';
@@ -520,6 +520,8 @@ function clipStep(ed, field, dir) {
  * original tempo"). */
 function clipTempo(ed, dir) {
     const t = ed.t, c = ed.c, i = auInfo(t, c);
+    /* with an End, Start..End sets the Tempo (it fills the clip) */
+    if (auFitFpt(i) > 0) { showActionPopup('TEMPO', 'Set by End'); return false; }
     const cur = i.bpm10 || 1200;
     const v = Math.max(AU_BPM10_MIN, Math.min(AU_BPM10_MAX, cur + dir * (S.shiftHeld ? 1 : 10)));
     if (v === (i.bpm10 | 0)) return false;
@@ -631,6 +633,7 @@ function pickInput(ed, status, d1, d2) {
         }
         if (row.id === 'fit' || row.id === 'orig') {
             ed.pick = null;
+            if (row.id === 'orig' && auFitFpt(auInfo(ed.t, ed.c)) > 0) { showActionPopup('TEMPO', 'Set by End'); return true; }
             if (row.id === 'orig') {
                 if (auOrig(ed.t, ed.c)) showActionPopup('ORIGINAL TEMPO', bpmText(auInfo(ed.t, ed.c).bpm10 | 0) + ' BPM');
                 return true;
@@ -1094,7 +1097,7 @@ export function waveRingCells(ed) {
     const slRings = () => auPanelRingCells({ t: ed.t, page: S.shiftHeld ? 0 : 1 });
     if (slp && ed.page === 1) return slRings();
     const sampleRings = () => [at(((i.gain | 0) + 40) / 52), at(((i.pitch | 0) + 24) / 48), at(((i.detune | 0) + 50) / 100),
-                               at(((i.bpm10 || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN)), at(i.revrs ? 1 : 0)];
+                               at(((Math.round(auBpm(i) * 10) || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN)), at(i.revrs ? 1 : 0)];
     if (!kind && ed.page === 1) {
         /* page 2 (AU_P2_KNOB): Sync, Pitch, Detune, Gain, Tempo, Revrs — lit
          * where a knob works */

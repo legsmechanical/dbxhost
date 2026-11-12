@@ -1296,9 +1296,15 @@ the track's.
 
 - **No sample:** *Click to load sample* — a click opens the sample chooser.
 - **Audio:** the clip's waveform. **K1** Start · **K2** Zoom · **K3** End — both a screen
-  pixel a detent, a single sample when zoomed all the way in. Past End the clip is silent
-  until it comes round; turned back out to the clip's end, End is gone. The clip's Length
-  is set with the Loop gestures (see [Clip length & the loop](#66-clip-length--the-loop)), by the bar or the step.
+  pixel a detent, a single sample when zoomed all the way in. **Start and End mark the
+  loop**, for a sample that isn't a perfect loop: with an End set, the part between them
+  always fills the clip exactly, the sample's **Tempo** following as you turn either one
+  (or change the clip's length), so it loops cleanly in time. K7 then shows that Tempo and
+  doesn't turn. End reads **Off** until you turn it down; it goes as far as the end of the
+  sample (the whole sample looped), and one detent past that turns it Off again — the Tempo
+  is yours to set and Start slides along the sample, as before. The clip's Length is set
+  with the Loop gestures (see [Clip length & the loop](#66-clip-length--the-loop)), by the
+  bar or the step.
 - **Slicer:** the whole sample with its chops marked faintly, its length and chop count
   above it; **K2** zooms. A Slicer has no Start or Length — what plays is its chops.
 
@@ -1309,7 +1315,7 @@ at the gain it plays at. Zoomed in, the view stays on what you touched last.
 
 Zoomed all the way out, an Audio clip's SAMPLE screen **is the clip**: from Start for its
 Length, the audio drawn where it lands at the sample's Tempo — squeezed or stretched as you
-turn Tempo, empty past End or where the Length runs past the end of the sample — with a tick under it
+turn Tempo, empty where the Length runs past the end of the sample — with a tick under it
 for each beat and a taller one for each bar.
 
 SAMPLE has two pages: **turn the jog** for the second (the header reads **1/2** or

@@ -101,8 +101,11 @@ static void au_clip_shift(au_clip_t *cl, uint32_t cut, uint32_t frames) {
     int l;
     cl->rstart = cl->rstart > cut ? cl->rstart - cut : 0;
     if (frames && cl->rstart >= frames) cl->rstart = 0;
+    /* End moves with the audio; past the new file's end it stops there (a
+     * Trim to Start..End leaves it on the end: the loop and its fit kept) */
     cl->rend = cl->rend > cut ? cl->rend - cut : 0;
-    if (cl->rend && ((frames && cl->rend >= frames) || cl->rend <= cl->rstart)) cl->rend = 0;
+    if (frames && cl->rend > frames) cl->rend = frames;
+    if (cl->rend && cl->rend <= cl->rstart) cl->rend = 0;
     for (l = 0; l < AU_MAX_SLICES; l++) {
         au_slice_t *sl = &cl->sl[l];
         if (!sl->start && !sl->end) continue;
@@ -1626,12 +1629,14 @@ static int sp_track_audio(sp_ctx_t *cx) {
                 cl->rstart = cl->rend > AU_GAP ? cl->rend - AU_GAP : 0;
             cl->tr_due = 1;                                      /* au_trans_settle */
         } else if (!strcmp(w, "end")) {
-            /* Loop: End, frames (0 or the sample's end: none), past Start by a
-             * slice at least. Unloaded, taken as given. */
+            /* Loop: End, frames, past Start by a slice at least — the
+             * sample's end itself is an End (the whole file looped); 0 or
+             * past the file: none (the Tempo is the knob's again).
+             * Unloaded, taken as given. */
             uint32_t fr = cl->smp ? cl->smp->frames : 0;
-            if (v <= 0 || (fr && (uint32_t)v >= fr)) cl->rend = 0;
+            if (v <= 0 || (fr && (uint32_t)v > fr)) cl->rend = 0;
             else cl->rend = (uint32_t)(v < (int)(cl->rstart + AU_GAP) ? (int)(cl->rstart + AU_GAP) : v);
-            if (fr && cl->rend >= fr) cl->rend = 0;
+            if (fr && cl->rend > fr) cl->rend = 0;
             cl->tr_due = 1;                                      /* au_trans_settle */
         } else if (!strcmp(w, "slen")) {
             /* Slice: Length from Start, ticks at the sample's Tempo (0 = to
@@ -2048,6 +2053,14 @@ static int au_kind(uint8_t pm) {
 }
 
 /* tN_au_* reads. Returns -1 when the key is not one of ours. */
+/* The Tempo the info read reports: the clip's, or with an End the one that
+ * fits Start..End to the clip (x10, rounded; what plays is exact). */
+static unsigned au_bpm10_shown(const au_clip_t *cl, const au_sample_t *s) {
+    double f = au_fit_fpt(cl, s);
+    if (f > 0) return (unsigned)((double)s->rate * 60.0 / (f * PPQN) * 10.0 + 0.5);
+    return au_bpm10(cl);
+}
+
 static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int out_len) {
     int t, c, l;
     if (key[0] != 't' || key[1] < '0' || key[1] > '7' || strncmp(key + 2, "_au_", 4)) return -1;
@@ -2119,7 +2132,7 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
                         cl->state, cl->err, cl->mode, cl->even, cl->nslices, cl->jump,
                         (unsigned)rs, (unsigned)ve, au_pitch(cl), au_gain(cl),
                         s ? (unsigned)s->frames : 0u, s ? (unsigned)s->rate : 0u, s ? s->ch : 0,
-                        au_revrs(cl), cl->nudge_ms, cl->jmpq, au_count(cl), au_detune(cl), cl->sync, (unsigned)reach, au_bpm10(cl),
+                        au_revrs(cl), cl->nudge_ms, cl->jmpq, au_count(cl), au_detune(cl), cl->sync, (unsigned)reach, au_bpm10_shown(cl, s),
                         (unsigned)au_hit_count_cached(cl, rs, re), cl->sens, cl->trans, (unsigned)cl->slen, (unsigned)cl->rot, (int)cl->shot, (unsigned)cl->rend, cl->name);
     }
     if (!strncmp(k, "sl_", 3)) {                  /* sl_C_L: "a b pinned pitch gain rev play atk dec detune" */

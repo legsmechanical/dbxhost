@@ -282,7 +282,7 @@ function hudSampleKnobs(ed, i, sub, kind, sl) {
     if (ed.mode === 'trim' && ed.trim) {
         k1 = val('Start', 'Start', auFmtTime(ed.trim[0], rt)); k3 = val('End', 'End', auFmtTime(ed.trim[1], rt));
     } else if (sub === 'loop') {
-        k1 = val('Start', 'Start', auFmtTime(i.rstart, rt)); k3 = val('End', 'End', auFmtTime(auEnd(i), rt));
+        k1 = val('Start', 'Start', auFmtTime(i.rstart, rt)); k3 = val('End', 'End', i.cut > 0 ? auFmtTime(auEnd(i), rt) : 'Off');
     } else if (hand || (sl && !kind)) {
         const sel = auSelSlice(t), m = auMarks(t, c)[sel];
         if (m) { k1 = val('Start', 'Start', auFmtTime(m[0], rt)); k3 = val('End', 'End', m[1] === auEdHome(ed, sel) ? 'Next' : auFmtTime(m[1], rt)); }
@@ -456,7 +456,7 @@ function drawAudioWaveEditor() {
         /* the sample's name (Josh, 2026-10-28: "in loop mode, can we show the
          * sample name in the header of "sample" instead of "loop"") */
         drawBankHeading(auSampleName(t, c), false, false, '1/2');
-        ends('S ' + auFmtTime(i.rstart, rt), 'E ' + auFmtTime(auEnd(i), rt));
+        ends('S ' + auFmtTime(i.rstart, rt), i.cut > 0 ? 'E ' + auFmtTime(auEnd(i), rt) : 'LEN ' + auFmtLen(auLenTicks(t, c, i)));
         if (zoomTxt) mid(zoomTxt);
         /* no cursor and no chops: they are Slice's (Josh, 2026-10-29: "chops
          * should just be completely invisible in loop mode") */
