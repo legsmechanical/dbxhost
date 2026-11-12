@@ -129,6 +129,11 @@ export function audioPanelInput(status, d1, d2) {
      * and End with it (Josh, 2026-10-28: "it's not accessible at all in
      * sample view"); the screen stays */
     if ((status & 0xE0) === 0x80 && d1 >= 16 && d1 <= 31 && (loopViewActive() || S.loopGestureStart >= 0)) return false;
+    /* ...and Loop + jog changes the clip's length a step a detent, as on any
+     * clip (Josh, 2026-11-12: "holding loop allows me to press the step
+     * buttons to set length by bars as it should, but turning jog doesn't
+     * adjust it by steps ... it just scrolls to the second sample edit page") */
+    if (status === 0xB0 && d1 === MoveMainKnob && loopViewActive()) return false;
     /* The sequence works here as under any instrument's editor (Josh,
      * 2026-10-30: "note sequencing via step and record should work in sample
      * and slice just like any other mode ... as should step editing via jog

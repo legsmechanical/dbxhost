@@ -930,6 +930,19 @@ step('⭐⭐ the knob rings follow the Audio screens and the AUDIO bank: lit whe
     cc(74, 1);
     assert(globalThis.__ring()[3].norm > g0, 'the Gain ring did not follow the turn');
     S.knobTurnedTick[3] = S.clockMs - 1000; ticks(1);
+    /* Loop + jog on SAMPLE: the clip's length a step a detent, as on any clip,
+     * the screen staying on its page (Josh, 2026-11-12: "turning jog doesn't
+     * adjust it by steps ... it just scrolls to the second sample edit page") */
+    {
+        const ac = A.auClipOf(4), len0 = S.clipLength[4][ac], pg0 = S.auPanel && S.auPanel.page;
+        reset();
+        cc(HC.MoveLoop, 127); jog(1); cc(HC.MoveLoop, 0); ticks(2);
+        assert(S.clipLength[4][ac] === len0 + 1 && sent('t4_clip_length').join() === String(len0 + 1),
+               'Loop + jog on SAMPLE did not lengthen the clip: ' + len0 + ' -> ' + S.clipLength[4][ac] + ' ' + JSON.stringify(sent('t4_clip_length')));
+        assert(S.auPanel && S.auPanel.page === pg0, 'Loop + jog turned SAMPLE\'s page: ' + (S.auPanel && S.auPanel.page));
+        cc(HC.MoveLoop, 127); jog(-1); cc(HC.MoveLoop, 0); ticks(2);
+        assert(S.clipLength[4][ac] === len0, 'Loop + jog left did not shorten it back: ' + S.clipLength[4][ac]);
+    }
     jog(1); ticks(3);                                /* SAMPLE page 2 (Loop): Sync, Pitch, Detune, Gain, Tempo, Revrs, K7 / K8 blank */
     assert(sent8() === '11111100', 'SAMPLE page 2 rings: ' + sent8());
     back();
