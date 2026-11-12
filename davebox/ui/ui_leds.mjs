@@ -28,7 +28,7 @@ import { pianoLayoutOn } from './ui_drummodel.mjs';
 import { customLayoutOn, customPadColor } from './ui_custom_chords.mjs';
 import { setLED, setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
 import { isSampledTrack, auInfo, auClipOf, auPos, auPlayheadChop, auPadToSlice, auLayoutOn, auLoopMarks, AU_LOOP_SECTIONS, auEnd, auSelSlice, auLazyOpen, auLazyState,
-         auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN } from './ui_audio.mjs';
+         auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_NOTE_BASE } from './ui_audio.mjs';
 
 const lastSentNoteLED   = new Array(128).fill(-1);
 const lastSentButtonLED = new Array(128).fill(-1);
@@ -1005,7 +1005,11 @@ export function updateTrackLEDs() {
                     /* sounding, or held down: white (Josh, 2026-10-30: "played
                      * slice pads should be white" — a short slice could end
                      * before the position read saw it) */
-                    if (k < ai.n) color = ((ap.t === t && ap.on && ap.slice === k) || S.auPadDown[i]) ? White
+                    /* ...and a HELD step's slices, as a melodic track lights
+                     * a held step's notes (Josh, 2026-11-11: "the slice on the
+                     * step doesn't light up like it does for midi tracks") */
+                    const inHeld = S.heldStep >= 0 && S.heldStepNotes.indexOf(AU_NOTE_BASE + k) >= 0;
+                    if (k < ai.n) color = ((ap.t === t && ap.on && ap.slice === k) || S.auPadDown[i] || inHeld) ? White
                         : k === sel ? (right ? trackColor(pt) : tc) : (right ? trackDimColor(pt) : td);
                 } else if (k < AU_LOOP_SECTIONS) {
                     /* a Loop clip that wraps before the sample ends:

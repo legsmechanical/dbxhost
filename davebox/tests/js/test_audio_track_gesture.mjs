@@ -2299,6 +2299,17 @@ step('⭐⭐ PAD MODE (IN column, a Slicer\'s): Layout 4 Rows / 16 Pads — the 
         assert(pad(5) === HC.White, 'a held pad is not white: ' + pad(5));
         note(C.TRACK_PAD_BASE + 5, 0); ticks(2);
         assert(pad(5) === C.TRACK_COLORS[0], 'the released pad (now selected, right bank) is not the partner\'s colour: ' + pad(5));
+        /* a HELD step lights its slice white, as a melodic track lights a held
+         * step's notes (Josh, 2026-11-11: "the slice on the step doesn't light
+         * up like it does for midi tracks.  it should.") */
+        const hp = [9, 10, 11, 3].find((i) => pad(i) && pad(i) !== HC.White), other = hp === 9 ? 10 : 9;
+        const hk = A.auPadToSlice(hp, 4), beforeH = pad(hp), beforeO = pad(other);
+        assert(hp !== undefined && hk < 24, 'setup: no dim slice pad to hold: ' + [9, 10, 11, 3].map(pad));
+        S.heldStep = 0; S.heldStepNotes = [A.AU_NOTE_BASE + hk]; ticks(2);
+        assert(pad(hp) === HC.White, 'a held step\'s slice (' + (hk + 1) + ', pad ' + hp + ') is not white: ' + pad(hp));
+        assert(pad(other) === beforeO, 'a slice the step does not hold changed: ' + pad(other));
+        S.heldStep = -1; S.heldStepNotes = []; ticks(2);
+        assert(pad(hp) === beforeH, 'the slice stayed white after the step was let go: ' + pad(hp));
         A.auSetSelSlice(4, 0);
         GET['t4_au_info_0'] = INFO(1, 8); kindSync(); ticks(2);
         S.activeBank = C.BANK_CHORD; S.bankCardLatched = true;
