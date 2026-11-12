@@ -288,7 +288,9 @@ typedef struct {
     uint8_t    sync_on;      /* Tempo Vintage: its pieces are playing */
     uint8_t    sync_live;    /* ...and the transport's first tick has played (a window before it means nothing) */
     uint8_t    layout;       /* Slicer's PAD MODE Layout: 0 4 Rows, 1 16 Pads (the UI's; saved in t%d_slc) */
-    uint8_t    cond_on;      /* Slicer: it follows the Conductor (off by default; saved in t%d_slc) */
+    uint8_t    cond_on;      /* Slicer, LOAD ONLY: 0 = a file from before RESPONDER governed it said
+                              * "not following" (its own switch, gone) — seq8_load_state carries it
+                              * into the Conductor's RESPONDER bank, then sets it back to 1 */
     uint8_t    mgain;        /* mute as a bus: 0..64, the output's level, ramping one step a frame */
     int8_t     cond;         /* Loop: the Conductor's semitones in force (Next: taken at the wrap) */
     /* THE LEAD: what the sequencer plays here is heard LEAD_FRAMES later, with

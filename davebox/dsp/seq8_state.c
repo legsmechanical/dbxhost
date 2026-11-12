@@ -1805,6 +1805,14 @@ static void seq8_load_state(seq8_instance_t *inst) {
             }
         }
     }
+    /* A Slicer that a file from before RESPONDER governed it kept off the
+     * Conductor (its own switch, cond=0, the default then): off in RESPONDER,
+     * so it sounds as it did. Once — the switch is not saved any more. */
+    for (t = 0; t < NUM_TRACKS; t++) {
+        if (inst->tracks[t].pad_mode == PAD_MODE_SLICER && !inst->au_trk[t].cond_on)
+            cond_resp_off_track(inst, t);
+        inst->au_trk[t].cond_on = 1;
+    }
     inst->xpose_preview_active = 0;  /* transient — never persisted; clear on (re)load */
     inst->launch_quant = (uint8_t)clamp_i(json_get_int(buf, "lq",    0), 0,  5);
     {

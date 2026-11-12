@@ -489,12 +489,9 @@ export function auReadTrack(t) {
         auRead(t, AU_SLC);
         const lay = dspGet('t' + t + '_au_layout');
         if (lay !== null && lay !== undefined && lay !== '') S.auLayout[t] = parseInt(lay, 10) ? 1 : 0;   /* no answer: keep it */
-        const cnd = dspGet('t' + t + '_au_cond');
-        if (cnd !== null && cnd !== undefined && cnd !== '') S.auCond[t] = parseInt(cnd, 10) ? 1 : 0;
     } else {
         for (let c = 0; c < NUM_CLIPS; c++) auRead(t, c);
         S.auLayout[t] = 0;
-        S.auCond[t] = 0;
     }
     S.auPage[t] = 0;
 }
@@ -509,15 +506,6 @@ export function auClipHasSample(t, c) {
     if (!isAudioTrack(t)) return false;
     const i = S.auInfo[t] && S.auInfo[t][c];
     return !!(i && i.name);
-}
-/* A Slicer follows the Conductor: on / off (off by default; kept by the engine). */
-export function auSetCond(t, v) {
-    v = v ? 1 : 0;
-    if (v === (S.auCond[t] | 0)) return false;
-    S.auCond[t] = v;
-    setKey(t, 'cond', v);
-    S.screenDirty = true;
-    return true;
 }
 
 /* ---- writes (any context) ---- */
@@ -1353,11 +1341,10 @@ export function auSampleP2Cells(t, c) {
                     text: bpm ? String(Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) : '--',
                     norm: ((i.bpm10 || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN), opens: true };
     const gain = { kind: 'arc', label: 'Gain', name: 'Gain', text: fmtDb(i.gain), norm: (i.gain + 40) / 52 };
-    /* a Slicer's K7: whether it follows the Conductor (off by default — a
-     * break is not something to repitch by key) */
-    const cnd = isSlicerTrack(t)
-        ? { kind: 'enumsq', label: 'Cndct', name: 'Follows the Conductor', text: S.auCond[t] ? 'On' : 'Off', options: ['Off', 'On'], sel: S.auCond[t] | 0 }
-        : BLANK;
+    /* (a Slicer's K7 was its own Follows-the-Conductor switch: it answers to
+     * the Conductor's RESPONDER bank now, as every track does — Josh,
+     * 2026-11-12: "Can't that be handled the way other tracks handle it?") */
+    const cnd = BLANK;
     return [live(sync), live(pitchCell('Pitch', i.pitch)), live(detuneCell('Detune', i.detune)),
             live(gain), live(tempo), live(revrsCell(i)), cnd, BLANK];
 }
@@ -1374,8 +1361,6 @@ export function auSampleP2Knob(t, c, k, steps) {
         const ti = Math.max(0, Math.min(AU_SYNC_NAMES.length - 1, auSyncIdx(i) + (steps > 0 ? 1 : -1)));
         if (AU_SYNC_VALS[ti] === (i.sync | 0)) return false;
         loc.sync = AU_SYNC_VALS[ti]; auSet(t, c, 'sync', loc.sync);
-    } else if (k === 8) {
-        return isSlicerTrack(t) && auSetCond(t, steps > 0 ? 1 : 0);
     } else if (k === 7) {
         const v = steps > 0 ? 1 : 0;
         if (v === (i.revrs | 0)) return false;

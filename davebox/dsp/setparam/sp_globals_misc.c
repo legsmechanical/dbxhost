@@ -310,7 +310,7 @@ static int sp_globals_misc(sp_ctx_t *cx) {
                     au_kept |= (uint8_t)(1u << t);
                 /* a Slicer's pitch is every clip's: one scene's shift cannot be
                  * folded into it — it keeps following */
-                if (sa && inst->tracks[t].pad_mode == PAD_MODE_SLICER && inst->au_trk[t].cond_on &&
+                if (sa && inst->tracks[t].pad_mode == PAD_MODE_SLICER &&
                     inst->conductor_track >= 0 && inst->tracks[inst->conductor_track].clips[sc].cond_resp[t])
                     au_kept |= (uint8_t)(1u << t);
             }

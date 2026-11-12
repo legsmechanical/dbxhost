@@ -28,9 +28,8 @@ export function sceneBakeHasConductor(clipIdx) {
     let t;
     for (t = 0; t < 8; t++) {
         if (t === ct) continue;
-        /* a Slicer responds only with its Conductor switch on (off by default) */
-        if (S.trackPadMode[t] !== PAD_MODE_MELODIC_SCALE && S.trackPadMode[t] !== PAD_MODE_AUDIO &&
-            !(S.trackPadMode[t] === PAD_MODE_SLICER && S.auCond[t])) continue;
+        /* a Slicer answers to RESPONDER as the others do */
+        if (S.trackPadMode[t] !== PAD_MODE_MELODIC_SCALE && S.trackPadMode[t] !== PAD_MODE_AUDIO && S.trackPadMode[t] !== PAD_MODE_SLICER) continue;
         if (mask[t]) return true;
     }
     return false;

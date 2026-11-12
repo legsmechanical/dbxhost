@@ -2228,6 +2228,23 @@ static int effective_mute(seq8_instance_t *inst, int t) {
     return inst->mute[t] || (any_solo && !inst->solo[t]);
 }
 
+/* A Slicer does not follow the Conductor until asked: a break or a chop is not
+ * something to repitch by a key. It answers to the Conductor's RESPONDER bank
+ * like every track (Josh, 2026-11-12: "Can't that be handled the way other
+ * tracks handle it?"), so "off by default" is its RESPONDER turned off in
+ * every Conductor clip — when a track becomes a Slicer, and when a Conductor
+ * is made while Slicers are there. */
+static void cond_resp_off_track(seq8_instance_t *inst, int t) {
+    int c;
+    if (inst->conductor_track < 0 || t == inst->conductor_track) return;
+    for (c = 0; c < NUM_CLIPS; c++) inst->tracks[inst->conductor_track].clips[c].cond_resp[t] = 0;
+}
+static void cond_resp_off_slicers(seq8_instance_t *inst) {
+    int t;
+    for (t = 0; t < NUM_TRACKS; t++)
+        if (inst->tracks[t].pad_mode == PAD_MODE_SLICER) cond_resp_off_track(inst, t);
+}
+
 static int effective_drum_mute(seq8_track_t *tr, int l) {
     uint32_t bit = 1u << (uint32_t)l;
     if (tr->drum_lane_mute & bit) return 1;

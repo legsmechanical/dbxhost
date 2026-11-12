@@ -300,7 +300,6 @@ int main(void) {
     {
         h = rig(); inst = (seq8_instance_t *)h->inst;
         hx_set_param(h, "t4_au_layout", "1");
-        hx_set_param(h, "t4_au_cond", "1");
         hx_set_param(h, "t4_au_slice_pitch", "16 2 5");
         hx_set_param(h, "t4_c0_step_0_toggle", "2");
         hx_set_param(h, "t4_c9_step_4_toggle", "7");
@@ -310,7 +309,7 @@ int main(void) {
         HX_ASSERT(inst->tracks[4].pad_mode == PAD_MODE_SLICER, "leave: undo did not bring the Slicer back");
         HX_ASSERT(wait_loaded(h, 4, AU_SLC) == 2 && !strcmp(AUS(4)->name, "ramp.wav") && AUS(4)->sl[2].pitch == 5 &&
                   AUS(4)->nslices == 16, "leave: undo did not bring the sample and chops back");
-        HX_ASSERT(inst->au_trk[4].layout == 1 && inst->au_trk[4].cond_on == 1, "leave: undo lost the Layout or the Conductor switch");
+        HX_ASSERT(inst->au_trk[4].layout == 1, "leave: undo lost the Layout");
         HX_ASSERT(pitches(inst, 4, 0, pit, 64) == 1 && pit[0] == 2 && pitches(inst, 4, 9, pit, 64) == 1 && pit[0] == 7,
                   "leave: undo did not bring every clip's steps back");
         hx_set_param(h, "redo_restore", "1");
@@ -334,12 +333,12 @@ int main(void) {
     {
         FILE *wf;
         h = rig(); inst = (seq8_instance_t *)h->inst;
-        /* a Slicer with no sample still saves (its Layout, its switch) */
+        /* a Slicer with no sample still saves (its Layout) */
         hx_set_param(h, "t6_convert_to_slicer", "");
         hx_set_param(h, "t6_au_layout", "1");
         hx_set_param(h, "bpm", "121");
         n = hx_get_param(h, "state_full", blob, (int)sizeof blob);
-        HX_ASSERT(n > 0 && strstr(blob, "\"t6_pm\":4") && strstr(blob, "\"t6_slc\":\"p=0 dt=0 g=0 rv=0 bpm=0 sy=0 sens=50 cond=0 lay=1 n=1|\""),
+        HX_ASSERT(n > 0 && strstr(blob, "\"t6_pm\":4") && strstr(blob, "\"t6_slc\":\"p=0 dt=0 g=0 rv=0 bpm=0 sy=0 sens=50 lay=1 n=1|\""),
                   "file: a Slicer with no sample did not save its line");
         /* a chop's sound belongs to its number: past the count it is kept
          * (an Even of more chops later brings it back) */
@@ -426,6 +425,49 @@ int main(void) {
     hx_get_param(h, "au_used", b, sizeof b);
     HX_ASSERT(strstr(b, "ramp.wav\n") != NULL, "au_used does not list the Slicer's sample");
     hx_destroy(h);
+
+    /* ==== 11. the Conductor: a Slicer answers to RESPONDER as every track
+     * does (Josh, 2026-11-12: "Does slice bank need follow conductor param?
+     * Can't that be handled the way other tracks handle it?") — and a file
+     * from before, whose Slicer's own switch was off (cond=0, the default),
+     * loads with its RESPONDER off, so it sounds as it did; one with the
+     * switch on keeps RESPONDER on ==== */
+    {
+        static char blob2[262144];
+        int ci, k, off, on;
+        for (k = 0; k < 2; k++) {
+            h = rig(); inst = (seq8_instance_t *)h->inst;
+            hx_set_param(h, "t6_convert_to_conduct", "1");
+            for (ci = 0; ci < NUM_CLIPS; ci++) inst->tracks[6].clips[ci].cond_resp[4] = 1;   /* as an old file had it */
+            n = hx_get_param(h, "state_full", blob2, (int)sizeof blob2);
+            HX_ASSERT(n > 0, "cond: state_full");
+            /* the old line carried the switch */
+            char *lay = strstr(blob2, "\"t4_slc\":\"");
+            HX_ASSERT(lay && (lay = strstr(lay, " lay=")), "cond: no Slicer line");
+            {
+                static char out[262144 + 16];
+                char path[400];
+                size_t pre = (size_t)(lay - blob2);
+                snprintf(path, sizeof path, "%s", inst->state_path);
+                memcpy(out, blob2, pre);
+                snprintf(out + pre, sizeof out - pre, "%s%s", k ? " cond=1" : " cond=0", lay);
+                hx_destroy(h);               /* (it saves on the way out: write the old file after) */
+                FILE *wf = fopen(path, "w");
+                HX_ASSERT(wf, "cond: write state");
+                fputs(out, wf); fclose(wf);
+            }
+            h = hx_create(NULL); HX_NO_LEAD(h); inst = (seq8_instance_t *)h->inst;
+            snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
+            seq8_load_state(inst);
+            HX_ASSERT(inst->conductor_track == 6 && inst->tracks[4].pad_mode == PAD_MODE_SLICER, "cond: the reload lost the tracks");
+            off = 1; on = 1;
+            for (ci = 0; ci < NUM_CLIPS; ci++) { off &= !inst->tracks[6].clips[ci].cond_resp[4]; on &= inst->tracks[6].clips[ci].cond_resp[4]; }
+            if (!k) HX_ASSERT(off, "cond: an old file's Slicer with its switch off loaded with RESPONDER on");
+            else    HX_ASSERT(on, "cond: an old file's Slicer with its switch on loaded with RESPONDER off");
+            /* (the line saves without it: test_audio_track's state check) */
+            hx_destroy(h);
+        }
+    }
 
     snprintf(p, sizeof p, "rm -rf '%s'", g_root);
     if (system(p)) {}

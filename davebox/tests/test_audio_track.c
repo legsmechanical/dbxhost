@@ -1616,7 +1616,6 @@ int main(void) {
     hx_set_param(h, "t4_au_set_sync", "7 1");
     hx_set_param(h, "t4_au_set_bpm", "7 2400");
     hx_set_param(h, "t5_au_layout", "1");                     /* the Slicer's PAD MODE Layout */
-    hx_set_param(h, "t5_au_cond", "1");                       /* ...and its Conductor switch */
     hx_set_param(h, "t5_au_slice_gain", "16 1 -6");
     hx_set_param(h, "t5_au_slice_play", "16 1 1");
     hx_set_param(h, "t5_au_set_sync", "16 1");                /* Pitch */
@@ -1632,7 +1631,7 @@ int main(void) {
               "the state does not keep an Audio clip's Sync Vintage, Tempo and Shift (format 37)");
     HX_ASSERT(strstr(blob, "\"t4_pm\":3") && strstr(blob, "\"t4c0_aud\":\"rs=0 p=0 dt=-17 g=0 ") && strstr(blob, "|mono48.wav\""),
               "the state does not carry the Audio track and clip A");
-    HX_ASSERT(strstr(blob, "\"t5_pm\":4") && strstr(blob, "\"t5_slc\":\"p=0 dt=-17 g=0 rv=0 bpm=2400 sy=1 sens=50 cond=1 lay=1 n=16|ramp2.wav\""),
+    HX_ASSERT(strstr(blob, "\"t5_pm\":4") && strstr(blob, "\"t5_slc\":\"p=0 dt=-17 g=0 rv=0 bpm=2400 sy=1 sens=50 lay=1 n=16|ramp2.wav\""),
               "the state does not carry the Slicer");
     HX_ASSERT(strstr(blob, "\"t5s1_slc\":\"st=5512 en=0 p=0 dt=9 g=-6 rv=0 pl=1 at=0 dc=0\""),
               "the state does not carry chop 2");
@@ -1651,9 +1650,9 @@ int main(void) {
     HX_ASSERT(inst->tracks[4].pad_mode == PAD_MODE_AUDIO, "the reload lost the Audio track");
     HX_ASSERT(AUA(4, 7)->sync == AU_SYNC_VINTAGE && AUA(4, 7)->bpm10 == 2400 && AUA(4, 7)->rot == 12,
               "the reload lost Sync Vintage, the Tempo or the Shift");
-    HX_ASSERT(inst->tracks[5].pad_mode == PAD_MODE_SLICER && inst->au_trk[5].layout == 1 && inst->au_trk[5].cond_on == 1 &&
+    HX_ASSERT(inst->tracks[5].pad_mode == PAD_MODE_SLICER && inst->au_trk[5].layout == 1 &&
               AUS(5)->sync == AU_SLC_SYNC_PITCH && AUS(5)->nslices == 16 && AUS(5)->mode == AU_MODE_SLICE,
-              "the reload lost the Slicer, its Layout, Conductor switch, Sync or chops");
+              "the reload lost the Slicer, its Layout, Sync or chops");
     HX_ASSERT(inst->tracks[4].tarp.octaves == 15 && inst->tracks[6].tarp.octaves == 4,
               "the arp's octaves did not load by track type");
     HX_ASSERT(AUS(5)->sl[1].gain_db == -6 && AUS(5)->sl[1].play == AU_PLAY_GATE && AUS(5)->sl[1].start == 5512,
@@ -1687,7 +1686,7 @@ int main(void) {
     HX_ASSERT(!AUA(4, 0)->smp && !AUA(4, 0)->name[0], "leaving Audio kept clip A's sample");
     hx_set_param(h, "t5_convert_to_melodic", "");
     HX_ASSERT(inst->tracks[5].pad_mode == PAD_MODE_MELODIC_SCALE && !AUS(5)->smp && !AUS(5)->name[0] &&
-              inst->au_trk[5].layout == 0 && inst->au_trk[5].cond_on == 0, "leaving the Slicer kept its sample or settings");
+              inst->au_trk[5].layout == 0, "leaving the Slicer kept its sample or settings");
     HX_ASSERT(inst->tracks[5].clips[0].note_count == 0, "leaving the Slicer kept the chop steps");
     hx_destroy(h);
 
@@ -1793,15 +1792,17 @@ int main(void) {
         hx_set_param(h, "scale_aware", "0");
         HX_ASSERT(au_cond_now(inst, 4) == 0, "conductor: a silent Conductor moved the Slicer");
         conductor_set_offset_from_note(inst, eff_pad_key(inst) + 60 + 3);
-        /* a Slicer follows only when switched on (off by default) */
-        HX_ASSERT(inst->au_trk[4].cond_on == 0 && au_cond_now(inst, 4) == 0, "conductor: a Slicer followed with its switch off");
-        hx_set_param(h, "t4_au_cond", "1");
+        /* a Slicer answers to the Conductor's RESPONDER bank as every track
+         * does (Josh, 2026-11-12: "Can't that be handled the way other tracks
+         * handle it?"): off by default — the Conductor made while it was a
+         * Slicer turned its RESPONDER off in every clip — and on when asked */
         {
-            char b[8];
-            hx_get_param(h, "t4_au_cond", b, sizeof b);
-            HX_ASSERT(!strcmp(b, "1"), "conductor: the switch does not read back");
+            int ci, off = 1;
+            for (ci = 0; ci < NUM_CLIPS; ci++) off &= !inst->tracks[6].clips[ci].cond_resp[4];
+            HX_ASSERT(off && au_cond_now(inst, 4) == 0, "conductor: a Slicer's RESPONDER was on when the Conductor was made");
         }
-        HX_ASSERT(au_cond_now(inst, 4) == 3, "conductor: +3 semitones did not reach the Slicer");
+        cc->cond_resp[4] = 1;
+        HX_ASSERT(au_cond_now(inst, 4) == 3, "conductor: +3 semitones did not reach the Slicer with RESPONDER on");
         cc->cond_oct[4] = 1;
         HX_ASSERT(au_cond_now(inst, 4) == 15, "conductor: the track's octave is not added");
         cc->cond_oct[4] = 0;
@@ -1916,7 +1917,11 @@ int main(void) {
             hx_set_param(h, "t5_convert_to_slicer", "");
             snprintf(p, sizeof p, "%d|%s/src/mono48.wav", AU_SLC, g_root); hx_set_param(h, "t5_au_pick", p);
             HX_ASSERT(wait_loaded(h, 5, 0) == 2, "bake cond: the Slicer's pick");
-            hx_set_param(h, "t5_au_cond", "1");
+            {   /* a track becoming a Slicer with a Conductor there: RESPONDER off in every clip */
+                int ci, off = 1;
+                for (ci = 0; ci < NUM_CLIPS; ci++) off &= !inst->tracks[6].clips[ci].cond_resp[5];
+                HX_ASSERT(off, "bake cond: a new Slicer's RESPONDER is on");
+            }
             hx_set_param(h, "t5_au_chop", "0");
             nb = clip_pitches(inst, 5, 0, pit_before, 64);
             HX_ASSERT(nb > 1, "bake cond: no chops on the Slicer's steps");

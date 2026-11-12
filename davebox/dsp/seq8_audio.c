@@ -177,9 +177,6 @@ static double au_tune(int semis, int cents) { return au_semi(semis) * au_cents(c
  * respond, or the Conductor is silent. */
 static int au_cond_now(seq8_instance_t *inst, int t) {
     if (inst->conductor_track < 0 || !inst->conductor_sounding || t == inst->conductor_track) return 0;
-    /* a Slicer follows only when asked to (off by default: a break or a chop
-     * is not something to repitch by a key) */
-    if (inst->tracks[t].pad_mode == PAD_MODE_SLICER && !inst->au_trk[t].cond_on) return 0;
     seq8_track_t *cnd = &inst->tracks[inst->conductor_track];
     const clip_t *cc = &cnd->clips[cnd->active_clip];
     if (!cc->cond_resp[t]) return 0;
@@ -3108,9 +3105,9 @@ static void au_save_state(void *vinst, FILE *fp) {
         } else if (pm == PAD_MODE_SLICER) {
             const au_clip_t *cl = au_slot(inst, t, AU_SLC);
             const au_track_t *at = &inst->au_trk[t];
-            fprintf(fp, ",\"t%d_slc\":\"p=%d dt=%d g=%d rv=%d bpm=%u sy=%d sens=%d cond=%d lay=%d n=%d", t,
+            fprintf(fp, ",\"t%d_slc\":\"p=%d dt=%d g=%d rv=%d bpm=%u sy=%d sens=%d lay=%d n=%d", t,
                     cl->pitch, cl->detune, cl->gain_db, cl->revrs, (unsigned)cl->bpm10, cl->sync, cl->sens,
-                    at->cond_on, at->layout, cl->nslices);
+                    at->layout, cl->nslices);
             au_put_name(fp, cl->name);
             fputc('"', fp);
             for (l = 0; l < AU_MAX_SLICES; l++) {
@@ -3143,7 +3140,7 @@ static void au_track_release(seq8_instance_t *inst, int t) {
     inst->au_trk[t].rmx_bar = -1; inst->au_trk[t].rmx_n = 0; inst->au_trk[t].rmx_on = 0;
     inst->au_trk[t].rmx_sclip = 0xFF; inst->au_trk[t].rmx_slive = 0; inst->au_trk[t].rmx_sn_n = 0;
     memset(inst->au_trk[t].nm_on, 0, sizeof inst->au_trk[t].nm_on);
-    inst->au_trk[t].cond_on = 0;
+    inst->au_trk[t].cond_on = 1;      /* (only a pre-RESPONDER file's 0 means anything: seq8_load_state) */
     if (inst->au_lazy_track == t) { inst->au_lazy_track = inst->au_lazy_clip = -1; inst->au_lazy_state = AU_LAZY_NONE; }
     for (c = 0; c <= AU_SLC; c++) {
         au_clip_t *cl = au_slot(inst, t, c);
@@ -3270,7 +3267,10 @@ static void au_load_state(void *vinst, const char *buf) {
             sy = au_kv(kv, n, "sy", AU_SLC_SYNC_OFF);
             cl->sync = (uint8_t)(sy == AU_SLC_SYNC_PITCH ? AU_SLC_SYNC_PITCH : AU_SLC_SYNC_OFF);
             cl->sens = (uint8_t)clamp_i((int)au_kv(kv, n, "sens", AU_SENS_DEFAULT), 0, 100);
-            at->cond_on = (uint8_t)(au_kv(kv, n, "cond", 0) ? 1 : 0);
+            /* a file from before the Slicer followed the Conductor's RESPONDER
+             * bank: its own switch (cond=, off by default) — carried into
+             * RESPONDER once the Conductor's clips are read (seq8_load_state) */
+            at->cond_on = (uint8_t)(au_kv(kv, n, "cond", 1) ? 1 : 0);
             at->layout = (uint8_t)(au_kv(kv, n, "lay", 0) ? 1 : 0);
             cl->nslices = (uint8_t)clamp_i((int)au_kv(kv, n, "n", 1), 1, AU_MAX_SLICES);
             au_read_name(p, cl->name, sizeof cl->name);

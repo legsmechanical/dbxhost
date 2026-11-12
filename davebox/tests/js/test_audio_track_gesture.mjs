@@ -2149,17 +2149,16 @@ step('⭐⭐ an Audio track: no sequence — pad taps and steps do nothing, no S
     S.bankCardLatched = false;
 });
 
-step('⭐⭐ a Slicer\'s SAMPLE page 2: K1 Sync is Off / Pitch (the engine\'s 0 / 1), K7 Cndct — whether it follows the Conductor, off by default (Josh, 2026-11-02: "two instruments \"audio\" and \"slicer\"")', () => {
+step('⭐⭐ a Slicer\'s SAMPLE page 2: K1 Sync is Off / Pitch (the engine\'s 0 / 1); no Conductor switch — the Conductor\'s RESPONDER bank governs it, as every track (Josh, 2026-11-12: "Can\'t that be handled the way other tracks handle it?")', () => {
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; kindSync(); ticks(2);
-    S.auCond[4] = 0;
     mapPad(2, 3); ticks(2);
     jog(1); ticks(1);
     const ed = S.auEditor;
     assert(ed && ed.page === 1 && ed.c === 16, 'not on a Slicer\'s SAMPLE page 2');
     const cells = () => A.auSampleP2Cells(4, 16);
-    assert(cells().map((c) => c.label).join() === 'Sync,Pitch,Detune,Gain,Tempo,Revrs,Cndct,', 'page 2: ' + cells().map((c) => c.label));
-    assert(cells()[0].text === 'Off' && JSON.stringify(cells()[0].options) === '["Off","Pitch"]' && cells()[6].text === 'Off',
-           'Sync / Cndct at rest: ' + JSON.stringify([cells()[0], cells()[6]]));
+    assert(cells().map((c) => c.label).join() === 'Sync,Pitch,Detune,Gain,Tempo,Revrs,,', 'page 2: ' + cells().map((c) => c.label));
+    assert(cells()[0].text === 'Off' && JSON.stringify(cells()[0].options) === '["Off","Pitch"]' && cells()[6].kind === 'blank',
+           'Sync / K7 at rest: ' + JSON.stringify([cells()[0], cells()[6]]));
     reset();
     for (let i = 0; i < 40 && !sent('t4_au_set_sync').length; i++) cc(71, 1);
     assert(sent('t4_au_set_sync').join() === '16 1' && cells()[0].text === 'Pitch', 'K1 up is not Sync Pitch: ' + JSON.stringify(sentLike(/_au_/)));
@@ -2168,10 +2167,8 @@ step('⭐⭐ a Slicer\'s SAMPLE page 2: K1 Sync is Off / Pitch (the engine\'s 0 
     for (let i = 0; i < 40 && sent('t4_au_set_sync').length < 2; i++) cc(71, 127);
     assert(sent('t4_au_set_sync').join() === '16 1,16 0' && cells()[0].text === 'Off', 'K1 down is not Sync Off: ' + JSON.stringify(sent('t4_au_set_sync')));
     reset();
-    for (let i = 0; i < 40 && !sent('t4_au_cond').length; i++) cc(77, 1);
-    assert(sent('t4_au_cond').join() === '1' && S.auCond[4] === 1 && cells()[6].text === 'On', 'K7 is not Cndct On: ' + JSON.stringify(sentLike(/_au_/)));
-    for (let i = 0; i < 40 && sent('t4_au_cond').length < 2; i++) cc(77, 127);
-    assert(sent('t4_au_cond').join() === '1,0' && S.auCond[4] === 0, 'K7 did not turn Cndct Off: ' + JSON.stringify(sent('t4_au_cond')));
+    for (let i = 0; i < 40; i++) cc(77, 1);         /* K7: nothing there now */
+    assert(!sentLike(/_au_cond/).length, 'K7 still sends a Conductor switch: ' + JSON.stringify(sentLike(/_au_/)));
     leave(); ticks(2);
     S.activeBank = 0; S.bankCardLatched = false;
 });

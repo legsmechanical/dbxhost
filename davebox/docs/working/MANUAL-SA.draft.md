@@ -1282,8 +1282,9 @@ A Slicer has its own **Tempo** (guessed when the sample loads, as an Audio clip'
 **Sync**: **Off** (the default) plays the chops at their own speed, as cut; **Pitch**
 retunes them, faster or slower, by the project's tempo against the sample's Tempo — a
 break follows the project as a sped-up or slowed-down record would. A Slicer follows the
-**Conductor** only when you switch it on (**Cndct**, SAMPLE's page 2): a break isn't
-usually something to move with the key.
+**Conductor** as any track does, by the Conductor's **RESPONDER** bank — but it starts with
+its RESPONDER off (when it becomes a Slicer, or a Conductor is made): a break isn't usually
+something to move with the key.
 
 ### SAMPLE and SLICES
 
@@ -1313,7 +1314,7 @@ for each beat and a taller one for each bar.
 SAMPLE has two pages: **turn the jog** for the second (the header reads **1/2** or
 **2/2**). Page 2 shows every name and value at once: **Sync** (Audio: **Vintage**, **Pitch**
 or **Warp**; Slicer: **Off** or **Pitch**) · **Pitch** · **Detune** · **Gain** · **Tempo** ·
-**Revrs**, and on a Slicer **Cndct** (follows the Conductor: Off / On) on K7.
+**Revrs**.
 
 **Gain, Pitch, Detune, Tempo and Revrs can be automated** like any knob (see
 [Automation](#10-automation)): record them, or hold a step and turn. While a lane plays,

@@ -48,7 +48,6 @@
  *                                  undo) — the tests' and a remote's; the UI
  *                                  clears with tN_cC_clear
  *   tN_au_layout  "0|1"            a Slicer's PAD MODE Layout: 4 Rows / 16 Pads
- *   tN_au_cond    "0|1"            a Slicer follows the Conductor (off by default)
  *   tN_au_lazy    "C 1|0"          Lazy chop: 1 arms it (the chops put aside),
  *                                  0 stops it (Back)
  *   tN_au_lazy_tap ""              a tap: the first starts the sample at its start,
@@ -1833,12 +1832,6 @@ static int sp_track_audio(sp_ctx_t *cx) {
         return 1;
     }
 
-    if (!strcmp(sub, "cond")) {                   /* a Slicer follows the Conductor: 0|1 (off by default) */
-        inst->au_trk[tidx].cond_on = (uint8_t)(my_atoi(p) ? 1 : 0);
-        inst->state_dirty = 1;
-        rui_mark(inst, tidx, (int)tr->active_clip);
-        return 1;
-    }
 
     if (!strcmp(sub, "lazy")) {
         int on;
@@ -2261,7 +2254,6 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
                         (unsigned)inst->au_underruns);
     }
     if (!strcmp(k, "layout")) return snprintf(out, out_len, "%d", (int)inst->au_trk[t].layout);
-    if (!strcmp(k, "cond")) return snprintf(out, out_len, "%d", (int)inst->au_trk[t].cond_on);
     if (!strcmp(k, "lazy")) {                     /* "<state AU_LAZY_*> <slices> <frame>" */
         int on = inst->au_lazy_track == t;
         return snprintf(out, out_len, "%d %d %u", on ? inst->au_lazy_state : 0, on ? inst->au_lazy_n : 0,

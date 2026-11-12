@@ -180,6 +180,7 @@ static int sp_track_config2(sp_ctx_t *cx) {
         convert_track_to_conduct(inst, tidx);
         flat_end(inst, tidx, took);
         inst->conductor_track = (int8_t)tidx;
+        cond_resp_off_slicers(inst);          /* Slicers: not following until asked */
         inst->state_dirty = 1;
         rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);   /* rui_cond + content */
         return 1;
@@ -205,6 +206,7 @@ static int sp_track_config2(sp_ctx_t *cx) {
         convert_track_to_sampled(inst, tidx, pm);
         flat_end(inst, tidx, took);
         if (inst->conductor_track == tidx) inst->conductor_track = -1;
+        if (pm == PAD_MODE_SLICER) cond_resp_off_track(inst, tidx);   /* not following until asked */
         rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);
         return 1;
     }

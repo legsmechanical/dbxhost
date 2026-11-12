@@ -148,6 +148,9 @@ the section into a versioned heading at release time.
   again every 5 minutes until the Move is plugged in.
 
 ### Changed
+- **A Slicer follows the Conductor through RESPONDER, like every track.** Its own switch on
+  SAMPLE's page 2 is gone; a Slicer starts with its RESPONDER off, and an older project keeps
+  each Slicer as it was.
 - **A chop's Decay curves like a drum pad's**, and its knob is fine at the short end (1 ms a
   detent from 5 ms). Convert to kit now gives a pad the chop's Decay as it is.
 - **An Audio clip's Shift is now Offset**, and reads as a note value (*3/16*) in the clip's

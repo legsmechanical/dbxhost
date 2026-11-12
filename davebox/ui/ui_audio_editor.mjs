@@ -822,9 +822,6 @@ export function audioEditorInput(status, d1, d2) {
             if (k === 0) {
                 const st = knobStep(k, d2, KNOB_PICK);
                 if (st) auSampleP2Knob(ed.t, ed.c, 1, st);
-            } else if (k === 6 && isSlicerTrack(ed.t)) {
-                const st = knobStep(k, d2, KNOB_DELIB);          /* K7: follows the Conductor */
-                if (st) auSampleP2Knob(ed.t, ed.c, 8, st);
             } else if (AU_P2_KNOB[k] != null) sampleKnob(ed, AU_P2_KNOB[k], d2);
             S.screenDirty = true;
             return true;
@@ -1103,7 +1100,7 @@ export function waveRingCells(ed) {
         const cells = auSampleP2Cells(ed.t, ed.c), sr = sampleRings();
         const slc = isSlicerTrack(ed.t);
         return [cells[0] && cells[0].kind !== 'blank' ? at((cells[0].sel | 0) / (slc ? 1 : 2)) : null, sr[1], sr[2], sr[0], sr[3], sr[4],
-                slc ? at(S.auCond[ed.t] ? 1 : 0) : null, null];
+                null, null];
     }
     let a = i.rstart, b = auEnd(i);
     if (kind === 'manual' || slp) {
