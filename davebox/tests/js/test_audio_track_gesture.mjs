@@ -933,7 +933,12 @@ step('⭐⭐ the knob rings follow the Audio screens and the AUDIO bank: lit whe
     jog(1); ticks(3);                                /* SAMPLE page 2 (Loop): Sync, Pitch, Detune, Gain, Tempo, Revrs, K7 / K8 blank */
     assert(sent8() === '11111100', 'SAMPLE page 2 rings: ' + sent8());
     back();
+    /* a Slicer's CLIP bank: K4 (no Legato there) dark, the rest lit (Josh,
+     * 2026-11-12: "clip bank knob led rings are lit on empty knobs, which
+     * they shouldn't be per the general UI conventions") */
     GET['t4_au_info_0'] = INFO(1, 8); kindSync(); ticks(2);
+    S.activeBank = 0; S.bankCardLatched = false; shown(); ticks(3);
+    assert(sent8() === '11101111', 'Slicer CLIP bank rings: ' + sent8());
 });
 
 step('⭐⭐ SLICES (Josh, 2026-10-29): page 1 the chops — K1 / K3 the slice, a click the chop types; page 2 slice n, Shift every slice; an Audio track has none', () => {

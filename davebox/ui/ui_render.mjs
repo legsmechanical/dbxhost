@@ -70,7 +70,7 @@ import { drawAutomationBankBody, autoBankMenuOpen, autoMenuUp, autoHoldJumpActiv
 import { automationStateFor, autoShiftHint } from './ui_automation.mjs';
 import { seqAutoTargetForKnob, fmtInstr, BANK_REMIX } from './ui_constants.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
-import { registerRingCells } from './ui_knob_leds.mjs';
+import { registerRingCells, knobRingNorm } from './ui_knob_leds.mjs';
 import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
 import { isSampledTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
          auPos, auLazyState, auSelSlice, auSampleP2Cells, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells, rmxBankCells, rmxPresetLongName, rmxOrderMoved, RMX_CHOPS, rmxChopIndex, knobAltOnTrack, auAltBit,
@@ -583,7 +583,35 @@ function drawRemixPresets() {
     drawKitCrumbs(['Remix', 'Presets']);
 }
 
+/* An Audio / Slicer track's bank as drawn: a knob whose value is text is
+ * `ringBound` — its ring lit at the floor, as the kit pages' are. */
 function audioBankCells(bank, cells) {
+    const out = audioBankCellsRaw(bank, cells);
+    if (!isSampledTrack(S.activeTrack)) return out;
+    return out.map((c) => (c && c.kind !== 'blank') ? Object.assign({ ringBound: true }, c) : c);
+}
+/* ⭐ ...and the knob rings read the same cells, whatever screen is up (Josh,
+ * 2026-11-12: "clip bank knob led rings are lit on empty knobs, which they
+ * shouldn't be per the general UI conventions"). An Audio track's banks are
+ * not the MIDI bank table the param rings walk: the MIDI ring values go in as
+ * the cells, through the same per-bank mapping the page uses, so a knob the
+ * page leaves blank comes out dark. A MIDI track: null (the param rings). */
+function audioRingCells(bank) {
+    if (!isSampledTrack(S.activeTrack)) return null;
+    const t = S.activeTrack, b = BANKS[bank];
+    const base = [];
+    for (let k = 0; k < 8; k++) {
+        const pm = b && b.knobs ? b.knobs[k] : null;
+        const v = S.bankParams[t] && S.bankParams[t][bank] ? S.bankParams[t][bank][k] : 0;
+        const n = pm ? knobRingNorm(pm, v) : null;
+        const cell = n == null ? { kind: 'blank', label: '' } : { kind: 'valsq', label: '', text: '', ringNorm: n };
+        if (n != null) markSeqAuto(cell, bank, k, knobAltOn(k), null);     /* an active lane blinks it */
+        base.push(cell);
+    }
+    return audioBankCells(bank, base);
+}
+for (const _b of [0, 1, 2, 3, 4, 5, 7, BANK_REMIX]) registerRingCells(_b, () => audioRingCells(_b));
+function audioBankCellsRaw(bank, cells) {
     const t = S.activeTrack;
     if (!isSampledTrack(t)) return cells;
     const B = { kind: 'blank', label: '' };
@@ -607,7 +635,7 @@ function audioBankCells(bank, cells) {
         for (let i = -15; i <= 15; i++) opts.push(i === 0 ? '--' : (i > 0 ? '+' : '') + i);
         cells[2] = withTouchArc(Object.assign({}, cells[2], { label: 'Step', name: 'Step (chops per repeat)',
                                                  kind: 'valsq', text: v === 0 ? '--' : (v > 0 ? '+' : '') + v,
-                                                 options: opts, sel: v + 15 }), true);
+                                                 options: opts, sel: v + 15, ringNorm: (v + 15) / 30 }), true);
     }
     return cells;
 }

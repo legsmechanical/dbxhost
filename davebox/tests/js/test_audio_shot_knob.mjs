@@ -34,6 +34,8 @@ globalThis.host_module_set_params = () => true;
 const sets = [];
 globalThis.host_module_set_param = (k, v) => { sets.push([String(k), String(v)]); };
 globalThis.host_preview_stop = () => {}; globalThis.host_preview_play = () => {};
+const CCLEDS = new Map();
+globalThis.move_midi_internal_send = (m) => { if (m && (m[1] & 0xF0) === 0xB0) CCLEDS.set(m[2], m[3]); return true; };
 
 async function main() {
     const { stubParamPagesDevice } = await import('./stubs/param_pages_device.mjs');
@@ -42,6 +44,7 @@ async function main() {
     const { S } = await import('../../ui/ui_state.mjs');
     const A = await import('../../ui/ui_audio.mjs');
     const tickmod = await import('../../ui/ui_tick.mjs');
+    const render = await import('../../ui/ui_render.mjs');
     const ticks = (n) => { for (let i = 0; i < n; i++) { S.tickCount++; S.clockMs += 11; tickmod._tickImpl(); } };
     const cc = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
     const note = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([d2 ? 0x90 : 0x80, d1, d2]));
@@ -65,6 +68,13 @@ async function main() {
         const cells = A.auLoopBankCells(T);
         assert(cells[0] && cells[0].label === 'Mode' && cells[0].text === 'Loop', 'K1 is not Mode Loop: ' + JSON.stringify(cells[0]));
         assert(cells[1] && cells[1].name === 'Stretch' && cells[2] && cells[2].name === 'Offset', 'Stretch / Offset moved: ' + JSON.stringify(cells.slice(1, 3)));
+    });
+
+    step('⭐ its knob rings: Mode, Stretch and Offset lit, K4-K8 dark — nothing there (Josh, 2026-11-12: "clip bank knob led rings are lit on empty knobs, which they shouldn\'t be per the general UI conventions")', () => {
+        S.bankCardLatched = false;
+        for (let i = 0; i < 4; i++) { info(); render.drawUI(); ticks(1); }
+        const lit = [71, 72, 73, 74, 75, 76, 77, 78].map((c) => (CCLEDS.get(c) ? 1 : 0)).join('');
+        assert(lit === '11100000', 'the CLIP bank rings: ' + lit + ' ' + JSON.stringify([71, 72, 73, 74, 75, 76, 77, 78].map((c) => CCLEDS.get(c))));
     });
 
     step('a brush (ten detents, half the deliberate feel) does not flip it', () => {
