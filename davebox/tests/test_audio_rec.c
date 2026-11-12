@@ -236,6 +236,20 @@ int main(void) {
     k = RUN_UNTIL(h, inst->playing, 50);
     for (k = 0; k < 300; k++) render1(h);                 /* mid bar 1 */
     HX_ASSERT(arm(h, lat, "play.wav") == AR_ARMED, "playing: the take did not arm");
+    {   /* the monitor rides the track's mute: an input heard while armed, silent once muted */
+        int slot = inst->tracks[T_REC].pfx.slot, f2;
+        int16_t *in = hx_stub_input();
+        uint64_t e1 = 0, e2 = 0;
+        g_lb_on = 0;
+        for (k = 0; k < 8; k++) { for (f2 = 0; f2 < 256; f2++) in[f2] = 5000; hx_stub_feed_reset(); hx_render(h, 1); g_lb_pos += 128; }
+        hx_stub_feed(slot, NULL, &e1);
+        hx_set_param(h, "t4_mute", "1");
+        for (k = 0; k < 8; k++) { for (f2 = 0; f2 < 256; f2++) in[f2] = 5000; hx_stub_feed_reset(); hx_render(h, 1); g_lb_pos += 128; }
+        hx_stub_feed(slot, NULL, &e2);
+        HX_ASSERT(e1 > 1000000 && e2 == 0, "the monitor does not follow the track's mute");
+        hx_set_param(h, "t4_mute", "0");
+        g_lb_on = 1;
+    }
     render1(h);
     HX_ASSERT(inst->ar_state == AR_ARMED, "playing: the take started mid-bar");
     k = RUN_UNTIL(h, inst->ar_state == AR_RECORDING, 1000);

@@ -204,6 +204,9 @@ static void ar_block(seq8_instance_t *inst, int frames) {
     if (frames <= 0 || frames > 128) return;
     if (ar_busy(inst)) {
         uint64_t b = inst->ar_pos;
+        /* the monitor rides the track's mute and solo like its own sound
+         * (au_render applies those itself: the slot is not muted) */
+        int mtarget = effective_mute(inst, inst->ar_track) ? 0 : AR_RAMP;
         if (g_host && g_host->mapped_memory)
             in = (const int16_t *)(g_host->mapped_memory + g_host->audio_in_offset);
         for (f = 0; f < frames; f++) {
@@ -212,7 +215,7 @@ static void ar_block(seq8_instance_t *inst, int frames) {
             int32_t il = in ? in[f * 2] : 0, ir = in ? in[f * 2 + 1] : 0;
             rg[0] = inst->ar_blk[f * 2]; rg[1] = inst->ar_blk[f * 2 + 1];
             /* the monitor: the input through the track, ramped in and out */
-            if (inst->ar_mon_gain < AR_RAMP) inst->ar_mon_gain++;
+            if (inst->ar_mon_gain != mtarget) inst->ar_mon_gain = (uint8_t)(inst->ar_mon_gain + (mtarget > inst->ar_mon_gain ? 1 : -1));
             mon[f * 2]     = (int16_t)(il * inst->ar_mon_gain / AR_RAMP);
             mon[f * 2 + 1] = (int16_t)(ir * inst->ar_mon_gain / AR_RAMP);
             if (inst->ar_state == AR_RECORDING || inst->ar_state == AR_ENDING) {
