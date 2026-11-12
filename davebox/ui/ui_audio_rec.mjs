@@ -21,7 +21,6 @@ import { sanitizeName } from './ui_export.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { disarmRecord } from './ui_record.mjs';
 import { forceRedraw, invalidateLEDCache } from './ui_leds.mjs';
-import { recInput } from './ui_prefs.mjs';
 import { confirmLineInput, feedbackGateActive, feedbackGateDraw, feedbackGateInput }
     from '/data/UserData/schwung/shared/feedback_gate.mjs';
 
@@ -37,15 +36,6 @@ const AR_ERR_TRACK = 1, AR_ERR_BUSY = 2, AR_ERR_LOADING = 3, AR_ERR_SAMPLER = 4,
 export const AU_REC_LATENCY = 599;
 
 const POLL_MS = 60;
-
-function lineIn() { try { return !!host_line_in_connected(); } catch (e) { return false; } }
-/* The source's gain (line-in with a cable in the jack, else the mic), as the
- * engine takes it: x4096. */
-export function inputGainQ12() {
-    const r = recInput();
-    const db = lineIn() ? r.line : r.mic;
-    return Math.round(4096 * Math.pow(10, db / 20));
-}
 
 function clipName(t, c) { return (t + 1) + SCENE_LETTERS[c]; }
 
@@ -100,7 +90,7 @@ function armTake(t, c) {
     const bpm = (S.bpmMirror > 0 && isFinite(S.bpmMirror)) ? S.bpmMirror : 120;
     const path = freePath(sanitizeName(S.currentSetName) + ' ' + clipName(t, c) + ' rec ' + Math.round(bpm) + 'bpm', dir);
     if (!path) { showActionPopupFor(2500, 'RECORD', 'No free name'); return; }
-    host_module_set_param('t' + t + '_au_rec_arm', c + ' ' + AU_REC_LATENCY + ' ' + inputGainQ12() + ' ' + recInput().mono + ' |' + path);
+    host_module_set_param('t' + t + '_au_rec_arm', c + ' ' + AU_REC_LATENCY + ' |' + path);
     S.auRec = { t, c, path, phase: 'armed', layer: !!auInfo(t, c).name, at: nowMs(), polled: 0, stopAsked: false };
     if (!S.playing) {
         /* MIDI's count-in: its screen, its click; the engine starts the clip */

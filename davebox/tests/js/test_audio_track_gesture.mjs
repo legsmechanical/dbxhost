@@ -215,7 +215,7 @@ step('⭐⭐ the walk: an Audio track is LIVE ARP, MACROS, CLIP, MIX — no sequ
     /* (an Audio clip plays its sample with the clip: what was a Loop clip —
      * Josh, 2026-10-28: "we don't need to show notes at all in loop mode") */
     const walk = P.bankCycleForMode(C.PAD_MODE_AUDIO, 4);
-    assert(JSON.stringify(walk) === JSON.stringify([5, C.BANK_MACROS, 0, C.BANK_REMIX, C.BANK_SOUND]), 'walk: ' + walk.join());
+    assert(JSON.stringify(walk) === JSON.stringify([5, C.BANK_MACROS, 0, C.BANK_INPUT, C.BANK_REMIX, C.BANK_SOUND]), 'walk: ' + walk.join());
     const all = P.bankListForMode(C.PAD_MODE_AUDIO, 4);
     assert(all.indexOf(C.BANK_CONFIG) >= 0 && all.indexOf(C.BANK_AUTOMATION) >= 0, 'doors: ' + all.join());
     assert(P.bankMapModuleAt(0, C.PAD_MODE_AUDIO, 6, 0, 4) === null, 'the MIDI FX pad is lit (Q4)');
@@ -224,7 +224,8 @@ step('⭐⭐ the walk: an Audio track is LIVE ARP, MACROS, CLIP, MIX — no sequ
     /* SAMPLE is the sample's editor; there is no sound bank (Josh,
      * 2026-10-30: "putting the params on track overview is a mistake"); SLICES
      * is a Slicer's (below) */
-    assert(!map[2].cells[2], 'an Audio track has a SLICES door: ' + JSON.stringify(map[2].cells[2]));
+    assert(map[2].cells[2] && map[2].cells[2].bank === C.BANK_INPUT && !map[2].cells[2].action,
+           'an Audio track has a SLICES door, or no INPUT above SAMPLE: ' + JSON.stringify(map[2].cells[2]));
     assert(map[2].cells[3] && map[2].cells[3].action === 'wave' && map[2].cells[3].name === 'SAMPLE', 'no SAMPLE door');
     assert(!map.some((c) => c.cells.some((x) => x && x.bank === C.BANK_AUDIO)), 'a pad opens the old sound bank');
     /* DELAY left Audio tracks (Josh, 2026-10-28: "let's get rid of delay");
@@ -957,7 +958,8 @@ step('⭐⭐ the knob rings follow the Audio screens and the AUDIO bank: lit whe
 step('⭐⭐ SLICES (Josh, 2026-10-29): page 1 the chops — K1 / K3 the slice, a click the chop types; page 2 slice n, Shift every slice; an Audio track has none', () => {
     S.activeBank = 0; S.bankCardLatched = false;
     GET['t4_au_info_0'] = INFO(0, 8); kindSync(); ticks(2);
-    assert(!P.bankPadMapForMode(C.PAD_MODE_AUDIO, 4)[2].cells[2], 'an Audio track\'s map shows a SLICES pad (found on the device)');
+    { const c = P.bankPadMapForMode(C.PAD_MODE_AUDIO, 4)[2].cells[2];
+      assert(!c || (c.bank === C.BANK_INPUT && !c.action), 'an Audio track\'s map shows a SLICES pad (found on the device)'); }   /* INPUT sits there now */
     mapPad(2, 2);
     assert(!S.auEditor, 'the SLICES door opened on an Audio track');
     GET['t4_au_info_0'] = INFO(1, 8, 0); GET['t4_au_marks_0'] = MARKS8; kindSync(); ticks(2);
@@ -1989,7 +1991,7 @@ step('⭐⭐ an Audio track: no sequence — pad taps and steps do nothing, no S
     /* Josh, 2026-10-28: "we don't need to show notes at all in loop mode" */
     const walk = P.bankCycleForMode(C.PAD_MODE_AUDIO, 4);
     /* no PAD MODE on an Audio track (Josh, 2026-10-30: "loop mode should always be 4 rows and has no need for the pad bank") */
-    assert(JSON.stringify(walk) === JSON.stringify([5, C.BANK_MACROS, 0, C.BANK_REMIX, C.BANK_SOUND]), 'Loop walk: ' + walk.join());
+    assert(JSON.stringify(walk) === JSON.stringify([5, C.BANK_MACROS, 0, C.BANK_INPUT, C.BANK_REMIX, C.BANK_SOUND]), 'Loop walk: ' + walk.join());
     const map = P.bankPadMapForMode(C.PAD_MODE_AUDIO, 4);
     assert(!map[2].cells[0] && !map[3].cells[0] && map[2].cells[1], 'the Loop map still has STEP / NOTE FX');
     DM.computePadNoteMap();

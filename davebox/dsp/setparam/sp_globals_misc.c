@@ -349,6 +349,12 @@ static int sp_globals_misc(sp_ctx_t *cx) {
         }
         return 1;
     }
+    /* THE INPUT (device-wide; the UI keeps them and sends them at start):
+     * ain_mon 0 Rec / 1 Off / 2 On, ain_mode 0 Stereo / 1 Mono L / 2 Mono R,
+     * ain_gain -24..+24 dB (seq8_audio_rec.c). Not the project's: no save. */
+    if (!strcmp(key, "ain_mon"))  { inst->ain_mon  = (uint8_t)clamp_i(my_atoi(val), 0, 2); return 1; }
+    if (!strcmp(key, "ain_mode")) { inst->ain_mode = (uint8_t)clamp_i(my_atoi(val), 0, 2); return 1; }
+    if (!strcmp(key, "ain_gain")) { inst->ain_gain = (int8_t)clamp_i(my_atoi(val), -24, 24); return 1; }
     if (!strcmp(key, "resample_scene")) {
         /* val = "C bars warmup tail |path" — seq8_resample.c. From STOPPED
          * only: launches row C, starts the transport, records the take. */

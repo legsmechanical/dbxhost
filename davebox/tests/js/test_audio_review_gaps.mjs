@@ -186,7 +186,8 @@ step('⭐ an Audio track: no SLICES door, so no Convert to kit (the only way in)
     A.auMarkStale(4, 0); ticks(2);
     assert(A.auInfo(4, 0).name, 'setup: the Audio clip has no sample');
     fresh();
-    assert(!P.bankPadMapForMode(C.PAD_MODE_AUDIO, 4)[2].cells[2], 'an Audio track\'s map has a SLICES pad');
+    { const c = P.bankPadMapForMode(C.PAD_MODE_AUDIO, 4)[2].cells[2];
+      assert(!c || (c.bank === C.BANK_INPUT && !c.action), 'an Audio track\'s map has a SLICES pad'); }   /* INPUT sits there now */
     mapPad(2, 2);
     const ed = S.auEditor;
     assert(!ed || ed.ed !== 'slices', 'the SLICES pad opened SLICES on an Audio track');

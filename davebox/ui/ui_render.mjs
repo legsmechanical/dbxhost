@@ -6,6 +6,7 @@
  * Extracted from ui.js (Phase 5 of the modularity refactor, module 5, final).
  */
 
+import { inputBankCells, drawInputMeter } from './ui_audio_input.mjs';
 import { auRecTag, auRecDrawModal, auRecBarText } from './ui_audio_rec.mjs';
 import { lowBatteryUp, lowBatteryLines } from './ui_battery.mjs';
 import { S, PERF_FACTORY_PRESETS, stepRevealAvailable, stepHoldEstablished, loopViewActive, knobAltOn } from './ui_state.mjs';
@@ -69,7 +70,7 @@ import { soundRender, renderTrackGatewayCard, renderConfigCardPeek, renderMacros
 import { drawAutomationBankBody, autoBankMenuOpen, autoMenuUp, autoHoldJumpActive, autoHoldJumpStep, autoLaneFocus, autoHeldValue, autoMapEditorComp, autoMapMarkedBank,
          autoOpsOpen, drawAutomationOpsGraph, drawLaneFocusOverlay } from './ui_automation_bank.mjs';
 import { automationStateFor, autoShiftHint } from './ui_automation.mjs';
-import { seqAutoTargetForKnob, fmtInstr, BANK_REMIX } from './ui_constants.mjs';
+import { seqAutoTargetForKnob, fmtInstr, BANK_REMIX, BANK_INPUT, PAD_MODE_AUDIO } from './ui_constants.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
 import { registerRingCells, knobRingNorm } from './ui_knob_leds.mjs';
 import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
@@ -319,7 +320,10 @@ function drawAudioTrackRest(t) {
     /* the waveform in Loop mode only; slices are sequenced, so Slice mode
      * shows the page bar and playhead like any track (Josh, 2026-10-28) */
     if (auIsSlice(i)) drawPositionBar(t);
-    else {
+    else if (S.activeBank === BANK_INPUT) {
+        /* the INPUT bank: the input's level where the waveform sits */
+        drawInputMeter(4, 47, 120, 9, S.clockMs);
+    } else {
         /* the clip, as SAMPLE shows it zoomed out: its bars across, the audio
          * where it lands at the sample's Tempo, empty past the file, the beats
          * under it and the playhead (Josh, 2026-10-29: "yep") */
@@ -611,12 +615,13 @@ function audioRingCells(bank) {
     }
     return audioBankCells(bank, base);
 }
-for (const _b of [0, 1, 2, 3, 4, 5, 7, BANK_REMIX]) registerRingCells(_b, () => audioRingCells(_b));
+for (const _b of [0, 1, 2, 3, 4, 5, 7, BANK_REMIX, BANK_INPUT]) registerRingCells(_b, () => audioRingCells(_b));
 function audioBankCellsRaw(bank, cells) {
     const t = S.activeTrack;
     if (!isSampledTrack(t)) return cells;
     const B = { kind: 'blank', label: '' };
     if (bank === BANK_REMIX) return rmxBankCells(t);
+    if (bank === BANK_INPUT) return S.trackPadMode[t] === PAD_MODE_AUDIO ? inputBankCells(t) : cells.map(() => B);
     if (bank === 0) {
         if (!audioSliceMode(t)) return auLoopBankCells(t);
         /* a Slicer's clip is a sequence like a MIDI clip's: its CLIP bank,

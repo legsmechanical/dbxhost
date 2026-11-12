@@ -24,6 +24,7 @@
 #include "harness.h"
 #include <sys/stat.h>
 #include <unistd.h>
+#include <stdlib.h>
 
 #define T_REC   4
 #define T_CLICK 5
@@ -395,36 +396,125 @@ int main(void) {
     HX_ASSERT(wait_loaded(h, T_REC, 0) == 2 && !strcmp(inst->au_store[T_REC][0].name, "click.wav"), "Undo did not bring the last layer back");
     hx_destroy(h);
 
-    /* ---- the input as set: Mono takes the left channel, the gain scales it ---- */
-    h = rig(1, 0); inst = (seq8_instance_t *)h->inst;
-    lb_reset(0, inst->tracks[T_CLICK].pfx.slot); g_lb_on = 0;
-    snprintf(p, sizeof p, "0 128 8192 1 |%s/proj/dAVEBOx/samples/gain.wav", g_root);
-    hx_set_param(h, "t4_au_rec_arm", p);
-    HX_ASSERT(inst->ar_state == AR_ARMED && inst->ar_in_q12 == 8192 && inst->ar_in_mono == 1, "gain / mono not taken from the arm");
-    hx_set_param(h, "record_count_in", "4");
+    /* ---- the INPUT bank (per track) ---- */
     {
-        int16_t *in = hx_stub_input();
-        int f2, slot = inst->tracks[T_REC].pfx.slot;
-        for (k = 0; k < 4000 && inst->ar_state != AR_RECORDING; k++) {
-            for (f2 = 0; f2 < 128; f2++) { in[f2 * 2] = 1000; in[f2 * 2 + 1] = -3000; }
-            hx_stub_feed_reset(); hx_render(h, 1); g_lb_pos += 128;
-        }
-        for (k = 0; k < 20; k++) {
-            for (f2 = 0; f2 < 128; f2++) { in[f2 * 2] = 1000; in[f2 * 2 + 1] = -3000; }
-            hx_stub_feed_reset(); hx_render(h, 1); g_lb_pos += 128;
-        }
+        int16_t *in;
+        int f2, slot;
+        uint64_t e;
+        char v[128];
+        #define FILL(L, R) do { in = hx_stub_input(); for (f2 = 0; f2 < 128; f2++) { in[f2 * 2] = (L); in[f2 * 2 + 1] = (R); } } while (0)
+        #define BLOCK() do { hx_stub_feed_reset(); hx_render(h, 1); g_lb_pos += 128; } while (0)
+
+        /* Mono L x2 (+6 dB): the take and the monitor */
+        h = rig(1, 0); inst = (seq8_instance_t *)h->inst;
+        slot = inst->tracks[T_REC].pfx.slot;
+        lb_reset(0, inst->tracks[T_CLICK].pfx.slot); g_lb_on = 0;
+        hx_set_param(h, "ain_mode", "1"); hx_set_param(h, "ain_gain", "6");
+        HX_ASSERT(inst->ain_mode == 1 && inst->ain_gain == 6, "the input keys did not take");
+        snprintf(p, sizeof p, "0 128 |%s/proj/dAVEBOx/samples/gain.wav", g_root);
+        hx_set_param(h, "t4_au_rec_arm", p);
+        hx_set_param(h, "record_count_in", "4");
+        for (k = 0; k < 4000 && inst->ar_state != AR_RECORDING; k++) { FILL(1000, -3000); BLOCK(); }
+        for (k = 0; k < 80; k++) { FILL(1000, -3000); BLOCK(); }
         b = hx_stub_cfeed(&n, NULL);
-        HX_ASSERT(n > 200 && b[400] == 2000 && b[401] == 2000, "Mono x2: the take is not the left channel doubled on both sides");
-        HX_ASSERT(hx_stub_feed_last(slot)[2] == 2000 && hx_stub_feed_last(slot)[3] == 2000, "Mono x2: the monitor is not the input as set");
+        HX_ASSERT(n > 200 && b[400] >= 1990 && b[400] <= 2000 && b[401] == b[400], "Mono L +6 dB: the take is not the left channel doubled on both sides");
+        HX_ASSERT(hx_stub_feed_last(slot)[2] == b[400] && hx_stub_feed_last(slot)[3] == b[400], "Mono L +6 dB: the monitor is not the input as set");
+        /* Mono R */
+        hx_set_param(h, "ain_mode", "2"); hx_set_param(h, "ain_gain", "0");
+        FILL(1000, -3000); BLOCK(); FILL(1000, -3000); BLOCK();
+        HX_ASSERT(hx_stub_feed_last(slot)[0] == -3000 && hx_stub_feed_last(slot)[1] == -3000, "Mono R: not the right channel on both sides");
+        /* the meter: the input as it comes, largest since the last read, then cleared */
+        hx_get_param(h, "t0_au_in_meter", v, sizeof v);
+        HX_ASSERT(!strcmp(v, "1000 3000"), v);
+        hx_get_param(h, "t0_au_in_meter", v, sizeof v);
+        HX_ASSERT(!strcmp(v, "0 0"), "the meter did not clear on read");
+        /* saved and loaded */
+        hx_set_param(h, "ain_mon", "2"); hx_set_param(h, "t4_au_in_len", "3"); hx_set_param(h, "t4_au_in_ovr", "1");
+        hx_get_param(h, "t4_au_in", v, sizeof v);
+        HX_ASSERT(!strcmp(v, "2 2 0 3 1"), v);
+        hx_set_param(h, "t4_au_rec_cancel", "");
+        {
+            char *blob = malloc(1u << 20);
+            FILE *fp = fmemopen(blob, 1u << 20, "w");
+            au_save_state(inst, fp); fclose(fp);
+            HX_ASSERT(strstr(blob, "\"t4_ain\":\"len=3 ovr=1\""), "the INPUT bank's track part is not saved");
+            HX_ASSERT(!strstr(blob, "ain_mon"), "the device-wide input went into the project");
+            au_track_release(inst, T_REC);
+            HX_ASSERT(inst->au_trk[T_REC].in_len == 0 && inst->au_trk[T_REC].in_ovr == 0, "a released track kept its INPUT bank");
+            au_load_state(inst, blob);
+            HX_ASSERT(inst->au_trk[T_REC].in_len == 3 && inst->au_trk[T_REC].in_ovr == 1, "the INPUT bank did not load");
+            free(blob);
+        }
+        hx_destroy(h);
+
+        /* Monitor On with no take: straight to the output, not through a track;
+         * during a take: through the take's track, not the output. Rec: only
+         * while a take runs. Off: never. */
+        h = rig(1, 0); inst = (seq8_instance_t *)h->inst;
+        slot = inst->tracks[T_REC].pfx.slot;
+        hx_set_param(h, "ain_mon", "2");
+        for (k = 0; k < 4; k++) { FILL(4000, 4000); BLOCK(); }
+        HX_ASSERT(hx_last_audio()[0] == 4000 && hx_last_audio()[255] == 4000, "Monitor On: the input is not at the output with no take");
+        HX_ASSERT(hx_stub_feed(slot, NULL, NULL) == 0, "Monitor On, no take: the input went through a track");
+        lb_reset(0, inst->tracks[T_CLICK].pfx.slot); g_lb_on = 0;
+        snprintf(p, sizeof p, "0 128 |%s/proj/dAVEBOx/samples/on.wav", g_root);
+        hx_set_param(h, "t4_au_rec_arm", p);
+        for (k = 0; k < 4; k++) { FILL(4000, 4000); BLOCK(); }
+        HX_ASSERT(hx_last_audio()[0] == 0 && hx_stub_feed_last(slot)[0] == 4000, "Monitor On, a take armed: not moved to the take's track");
+        hx_set_param(h, "t4_au_rec_cancel", "");
+        for (k = 0; k < 4; k++) { FILL(4000, 4000); BLOCK(); }
+        HX_ASSERT(hx_last_audio()[0] == 4000, "Monitor On: not back at the output after the take");
+        hx_set_param(h, "ain_mon", "0");
+        for (k = 0; k < 4; k++) { FILL(4000, 4000); BLOCK(); }
+        HX_ASSERT(hx_last_audio()[0] == 0 && hx_stub_feed(slot, NULL, NULL) == 0, "Monitor Rec: heard with no take running");
+        hx_set_param(h, "ain_mon", "1");
+        snprintf(p, sizeof p, "0 128 |%s/proj/dAVEBOx/samples/off.wav", g_root);
+        hx_set_param(h, "t4_au_rec_arm", p);
+        hx_set_param(h, "record_count_in", "4");
+        for (k = 0; k < 4000 && inst->ar_state != AR_RECORDING; k++) { FILL(4000, 4000); BLOCK(); }
+        for (k = 0; k < 20; k++) { FILL(4000, 4000); BLOCK(); }
+        HX_ASSERT(hx_stub_feed(slot, NULL, NULL) == 0 && hx_last_audio()[0] == 0, "Monitor Off: the input was heard during the take");
+        b = hx_stub_cfeed(&n, NULL);
+        HX_ASSERT(n > 0 && b[(n - 1) * 2] == 4000, "Monitor Off: the take did not record the input");
+        hx_set_param(h, "t4_au_rec_cancel", "");
+        hx_destroy(h);
+
+        /* Length 2 bars: an empty clip's take ends itself after two bars */
+        h = rig(1, 0); inst = (seq8_instance_t *)h->inst;
+        lb_reset(0, inst->tracks[T_CLICK].pfx.slot); g_lb_on = 0;
+        hx_set_param(h, "t4_au_in_len", "2");
+        snprintf(p, sizeof p, "0 128 |%s/proj/dAVEBOx/samples/len.wav", g_root);
+        hx_set_param(h, "t4_au_rec_arm", p);
+        hx_set_param(h, "record_count_in", "4");
+        for (k = 0; k < 9000 && inst->ar_state != AR_DONE && inst->ar_state < AR_CANCELLED; k++) { FILL(2000, 2000); BLOCK(); }
+        b = hx_stub_cfeed(&n, NULL);
+        HX_ASSERT(inst->ar_state == AR_DONE && inst->ar_ticks == 2 * RS_BAR_TICKS && n == 2 * BAR, "Length 2: the take did not end itself after two bars");
+        hx_destroy(h);
     }
-    hx_set_param(h, "t4_au_rec_cancel", "");
-    hx_destroy(h);
-    /* an arm with no gain / mono (the old form): the input as it comes */
-    h = rig(1, 0); inst = (seq8_instance_t *)h->inst;
-    snprintf(p, sizeof p, "0 128 |%s/proj/dAVEBOx/samples/plain.wav", g_root);
-    hx_set_param(h, "t4_au_rec_arm", p);
-    HX_ASSERT(inst->ar_state == AR_ARMED && inst->ar_in_q12 == 4096 && inst->ar_in_mono == 0 && inst->ar_lat == 128,
-              "an arm without gain / mono did not take the input as it comes");
+    /* Replace: the clip's sound is out while the input is in, back after a punch-out */
+    h = rig(1, 1); inst = (seq8_instance_t *)h->inst;
+    snprintf(p, sizeof p, "0|%s/src/click.wav", g_root);
+    hx_set_param(h, "t4_au_pick", p);
+    HX_ASSERT(wait_loaded(h, T_REC, 0) == 2, "replace: the clip's sample did not load");
+    hx_set_param(h, "t4_au_set_sync", "0 2");
+    hx_set_param(h, "t4_au_set_orig", "0 0");
+    hx_set_param(h, "t4_au_in_ovr", "1");
+    lb_reset(300, inst->tracks[T_CLICK].pfx.slot); g_lb_on = 0;
+    {
+        int16_t *in2; int f3;
+        snprintf(p, sizeof p, "0 300 |%s/proj/dAVEBOx/samples/replace.wav", g_root);
+        hx_set_param(h, "t4_au_rec_arm", p);
+        HX_ASSERT(inst->ar_replace == 1, "replace: not armed as a replace");
+        hx_set_param(h, "record_count_in", "4");
+        for (k = 0; k < 6000 && inst->ar_state != AR_RECORDING; k++) { in2 = hx_stub_input(); for (f3 = 0; f3 < 256; f3++) in2[f3] = 100; hx_stub_feed_reset(); hx_render(h, 1); g_lb_pos += 128; }
+        for (k = 0; k < 6000 && inst->ar_done <= BAR / 4 + 2000; k++) { in2 = hx_stub_input(); for (f3 = 0; f3 < 256; f3++) in2[f3] = 100; hx_stub_feed_reset(); hx_render(h, 1); g_lb_pos += 128; }
+        hx_set_param(h, "t4_au_rec_stop", "");
+        for (k = 0; k < 6000 && inst->ar_state != AR_DONE && inst->ar_state < AR_CANCELLED; k++) { in2 = hx_stub_input(); for (f3 = 0; f3 < 256; f3++) in2[f3] = 100; hx_stub_feed_reset(); hx_render(h, 1); g_lb_pos += 128; }
+        b = hx_stub_cfeed(&n, NULL);
+        HX_ASSERT(inst->ar_state == AR_DONE && n == BAR, "replace: the take is not the clip's bar");
+        HX_ASSERT(b[0] == 100 && b[(BAR / 4) * 2] == 100, "replace: the clip's sound is in the take while the input is in");
+        HX_ASSERT(b[(BAR / 2) * 2] > CLICK / 2 - 200 && b[(BAR / 2) * 2] < CLICK / 2 + 200, "replace: after the punch-out the clip's sound did not come back");
+    }
     hx_destroy(h);
 
     printf("PASS: test_audio_rec\n");

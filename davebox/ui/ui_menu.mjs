@@ -25,7 +25,8 @@ import { S } from './ui_state.mjs';
 import { keyRootName } from './ui_chord.mjs';
 import { openDaveBox, daveWindowOn, setDaveWindowOn } from './ui_daves.mjs';
 import { bluetoothPresent, bluetoothOn, setBluetoothOn } from './ui_bluetooth.mjs';
-import { cardHoldMs, setCardHoldMs, CARD_HOLD_CHOICES, recInput, setRecInput, REC_GAIN_MIN, REC_GAIN_MAX } from './ui_prefs.mjs';
+import { cardHoldMs, setCardHoldMs, CARD_HOLD_CHOICES, inputPrefs, setInputPref, INPUT_GAIN_MIN, INPUT_GAIN_MAX } from './ui_prefs.mjs';
+import { IN_MON, IN_MODE, IN_MON_ORDER, setInputMonitor } from './ui_audio_input.mjs';
 import { saveState, loadSnapshotManifest, showActionPopup } from './ui_persistence.mjs';
 import { openLoadSnapshot, openProjectPadPicker, requestSaveTemplate, openTemplateManager, showMenuInfo } from './ui_dialogs.mjs';
 import { auPurgeScan } from './ui_audio_chooser.mjs';
@@ -251,25 +252,27 @@ function buildGlobalMenuItems() {
             format: function(v) { return v === 0 ? 'All' : String(v); }
         }),
         createDivider(),
-        /* The input an Audio track records (ui_audio_rec): the Move picks the
-         * source by the jack; these say what is done with it. Device-wide
-         * (ui_prefs). */
-        createEnum('Rec Input', {
-            get: function() { return recInput().mono; },
-            set: function(v) { setRecInput('mono', v); },
-            options: [0, 1],
-            format: function(v) { return v ? 'Mono' : 'Stereo'; }
+        /* THE INPUT (Josh, 2026-11-12): one set for the device, here so it can
+         * be set with no Audio track at all; an Audio track's INPUT bank sets
+         * the same values (ui_prefs inputPrefs, ui_audio_input). The Move picks
+         * the source by the jack. Monitor On with no take is heard straight at
+         * the output. */
+        createEnum('Monitor', {
+            get: function() { return inputPrefs().mon; },
+            set: function(v) { setInputMonitor(v); },
+            options: IN_MON_ORDER,
+            format: function(v) { return IN_MON[v] || 'Rec'; }
         }),
-        createValue('Line In Gain', {
-            get: function() { return recInput().line; },
-            set: function(v) { setRecInput('line', v); },
-            min: REC_GAIN_MIN, max: REC_GAIN_MAX, step: 1,
-            format: function(v) { return (v > 0 ? '+' : '') + (v | 0) + ' dB'; }
+        createEnum('Input', {
+            get: function() { return inputPrefs().mode; },
+            set: function(v) { setInputPref('mode', v); },
+            options: [0, 1, 2],
+            format: function(v) { return IN_MODE[v] || 'Stereo'; }
         }),
-        createValue('Mic Gain', {
-            get: function() { return recInput().mic; },
-            set: function(v) { setRecInput('mic', v); },
-            min: REC_GAIN_MIN, max: REC_GAIN_MAX, step: 1,
+        createValue('Input Gain', {
+            get: function() { return inputPrefs().gain; },
+            set: function(v) { setInputPref('gain', v); },
+            min: INPUT_GAIN_MIN, max: INPUT_GAIN_MAX, step: 1,
             format: function(v) { return (v > 0 ? '+' : '') + (v | 0) + ' dB'; }
         }),
         createDivider(),

@@ -64,7 +64,7 @@ globalThis.host_read_file = (p) => WRITTEN[p] !== undefined ? WRITTEN[p] : '';
 globalThis.host_module_set_param = (k, v) => { sets.push([String(k), String(v)]); };
 
 const UUID = 'audio-rec-uuid', DIR = '/p/Samples';
-let PLAYING = '0', REC = '0 0 0 0 0 0 0 0';
+let PLAYING = '0', REC = '0 0 0 0 0 0 0 0', INPUT = '0 0 0 0 0', METER = '0 0';
 const snapshot = () => { const v = new Array(64).fill('0'); v[0] = PLAYING; return v.join(' '); };
 globalThis.host_module_get_param = (k) => {
     k = String(k);
@@ -73,6 +73,8 @@ globalThis.host_module_get_param = (k) => {
     if (k === 'state_snapshot') return snapshot();
     if (/^t\d_au_dir$/.test(k)) return DIR;
     if (k === 't0_au_rec') return REC;
+    if (/^t\d_au_in$/.test(k)) return INPUT;
+    if (/^t\d_au_in_meter$/.test(k)) return METER;
     return '';
 };
 
@@ -85,6 +87,14 @@ const { BANKS, POLL_INTERVAL, PAD_MODE_AUDIO, PAD_MODE_SLICER } = await import('
 const HC = await import('/data/UserData/schwung/shared/constants.mjs');
 const { drawUI } = await import('../../ui/ui_render.mjs');
 const MENU = await import('../../ui/ui_menu.mjs');
+const PURE = await import('../../ui/ui_pure.mjs');
+const LEDS = await import('../../ui/ui_leds.mjs');
+const CONST = await import('../../ui/ui_constants.mjs');
+const { BANK_INPUT } = CONST;
+const PREFS = await import('../../ui/ui_prefs.mjs');
+const INP = await import('../../ui/ui_audio_input.mjs');
+const INFO_CELLS = () => INP.inputBankCells(2);
+const headingInkAt = (y0, y1) => { screen(); let n = 0; for (let y = y0; y < y1; y++) for (let x = 0; x < 128; x++) n += FB[y * 128 + x]; return n; };
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
 S.awaitingProjectSelect = false; S.pendingSetLoad = false; S.pendingDspSync = 0;
 S.bankParams = Array.from({ length: 8 }, () => Array.from({ length: BANKS.length }, () => new Array(8).fill(0)));
@@ -114,7 +124,7 @@ poll();
 step('⭐⭐ stopped: Rec arms the take (its file), then MIDI\'s count-in — no note take', () => {
     clear(); globalThis.__stubStdWritten = {};
     rec();
-    assert(sent('t2_au_rec_arm').join() === '1 599 4096 0 |' + PATH, 'arm: ' + JSON.stringify(sent('t2_au_rec_arm')));
+    assert(sent('t2_au_rec_arm').join() === '1 599 |' + PATH, 'arm: ' + JSON.stringify(sent('t2_au_rec_arm')));
     assert(sent('record_count_in').join() === '2', 'count-in: ' + sent('record_count_in'));
     const q = sets.map((x) => x[0]).concat(S.pendingDefaultSetParams.map((e) => e.key));
     assert(q.indexOf('t2_au_rec_arm') < q.indexOf('record_count_in'), 'the count-in went before the arm: ' + q.join(','));
@@ -198,29 +208,60 @@ step('⭐ speakers on, no cable: the feedback question first; Back arms nothing'
     REC = '0 2 1 0 0 0 0 0';
 });
 
-step('⭐ the global menu\'s Rec Input / Line In Gain / Mic Gain reach the take (the jack picks the gain) and are saved', () => {
-    const menu = MENU;
-    menu.openGlobalMenu(); const items = S.globalMenuItems; S.globalMenuOpen = false;
+step('⭐⭐ the INPUT bank (green, above SAMPLE): its knobs set the track\'s input; the screen shows a meter', () => {
+    S.trackPadMode[2] = PAD_MODE_AUDIO; S.auRec = null; S.sessionView = false; S.activeTrack = 2;
+    INPUT = '0 0 0 0 0'; S.auIn = null; S.inputPrefs = null;
+    /* the pad map: INPUT sits above SAMPLE, green */
+    const map = PURE.bankPadMapForMode(PAD_MODE_AUDIO, 2);
+    assert(map[2].cells[2] && map[2].cells[2].bank === BANK_INPUT, 'INPUT not above SAMPLE: ' + JSON.stringify(map[2].cells));
+    assert(map[2].cells[3] && map[2].cells[3].action === 'wave', 'SAMPLE moved');
+    assert(!PURE.bankPadMapForMode(PAD_MODE_SLICER, 2)[2].cells.some((c) => c && c.bank === BANK_INPUT), 'a Slicer has INPUT');
+    S.bankMapUp = true; S.bankMapKind = 'track';
+    const col = LEDS.bankMapPadColors();
+    S.bankMapUp = false;
+    assert(col[PURE.bankMapPadForCell(2, 2) - 68] === 126, 'INPUT pad not green: ' + col[PURE.bankMapPadForCell(2, 2) - 68]);
+    /* tap it on the map */
+    S.activeBank = BANK_INPUT; S.trackActiveBank[2] = BANK_INPUT;
+    const turn = (k, n) => { for (let i = 0; i < Math.abs(n); i++) { cc(71 + k, n > 0 ? 1 : 127); } };
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 2, 127]));       /* touch K3 */
+    clear(); turn(2, 30);                                                    /* Gain: a dB a pick */
+    assert(sent('ain_gain').length && +sent('ain_gain').slice(-1)[0] > 0, 'Gain: ' + JSON.stringify(sent('ain_gain')));
+    globalThis.onMidiMessageInternal(new Uint8Array([0x80, 2, 0]));
+    clear(); turn(1, 20);                                                    /* Input: one deliberate step */
+    assert(sent('ain_mode').join() === '1', 'Input: ' + JSON.stringify(sent('ain_mode')));
+    clear(); turn(3, 40);
+    assert(sent('t2_au_in_len').join() === '1,2', 'Length: ' + JSON.stringify(sent('t2_au_in_len')));
+    clear(); turn(4, 20);
+    assert(sent('t2_au_in_ovr').join() === '1', 'Overdub: ' + JSON.stringify(sent('t2_au_in_ovr')));
+    /* Monitor: Rec -> Off (left), then On (right, past Rec) with no feedback risk */
+    clear(); turn(0, -20);
+    assert(sent('ain_mon').join() === '1', 'Monitor Off: ' + JSON.stringify(sent('ain_mon')));
+    clear(); turn(0, 40);
+    assert(sent('ain_mon').join() === '0,2', 'Monitor Rec, On: ' + JSON.stringify(sent('ain_mon')));
+    /* speakers on, no cable: On asks first; Back keeps it as it was */
+    SPEAKER = true; LINE = false; PREFS.setInputPref('mon', 0);
+    clear(); turn(0, 20);
+    assert(!sent('ain_mon').length, 'Monitor On without the question');
+    cc(HC.MoveBack, 127); cc(HC.MoveBack, 0);
+    assert(!sent('ain_mon').length && PREFS.inputPrefs().mon === 0, 'Back set Monitor On');
+    /* the global menu shows the same values the bank set, and sets them too */
+    MENU.openGlobalMenu(); const items = S.globalMenuItems; S.globalMenuOpen = false;
     const it = (l) => items.find((x) => x && x.label === l);
-    assert(it('Rec Input') && it('Line In Gain') && it('Mic Gain'), 'rows missing');
-    assert(it('Rec Input').format(0) === 'Stereo' && it('Rec Input').format(1) === 'Mono' && it('Line In Gain').format(6) === '+6 dB',
-           'shown as ' + it('Rec Input').format(0) + ' / ' + it('Line In Gain').format(6));
-    it('Rec Input').set(1); it('Line In Gain').set(6); it('Mic Gain').set(-6);
-    assert(String(WRITTEN['/data/UserData/daveboxSA/rec-input.txt']).trim() === '1 6 -6', 'saved: ' + WRITTEN['/data/UserData/daveboxSA/rec-input.txt']);
-    S.recInput = null;                                   /* read back from the file, as after a relaunch */
-    assert(it('Line In Gain').get() === 6 && it('Rec Input').get() === 1, 'not read back');
-    S.trackPadMode[2] = PAD_MODE_AUDIO; S.auRec = null; S.playing = true; PLAYING = '1'; S.trackClipPlaying[2] = true;
-    LINE = true; clear(); globalThis.__stubStdWritten = {};
-    rec();
-    let a = sent('t2_au_rec_arm').join();
-    assert(/^\d+ 599 8173 1 \|/.test(a), 'line in +6 dB, Mono: ' + a);
-    REC = '5 2 1 0 0 0 0 0'; poll(); REC = '0 2 1 0 0 0 0 0';
-    LINE = false; clear(); globalThis.__stubStdWritten = {};
-    rec();
-    a = sent('t2_au_rec_arm').join();
-    assert(/^\d+ 599 2053 1 \|/.test(a), 'the mic, -6 dB: ' + a);
-    REC = '5 2 1 0 0 0 0 0'; poll(); REC = '0 2 1 0 0 0 0 0';
-    it('Rec Input').set(0); it('Line In Gain').set(0); it('Mic Gain').set(0);
+    assert(it('Monitor') && it('Input') && it('Input Gain'), 'the global menu has no input rows');
+    assert(it('Input').get() === 1 && it('Input Gain').get() === PREFS.inputPrefs().gain && it('Input').format(1) === 'Mono L',
+           'the menu does not show what the bank set: ' + it('Input').get() + ' / ' + it('Input Gain').get());
+    clear(); it('Input Gain').set(-3);
+    assert(sent('ain_gain').join() === '-3' && /^0 1 -3/.test(String(WRITTEN['/data/UserData/daveboxSA/input.txt'])), 'the menu did not set / save: ' + WRITTEN['/data/UserData/daveboxSA/input.txt']);
+    S.inputPrefs = null;
+    assert(PREFS.inputPrefs().gain === -3 && PREFS.inputPrefs().mode === 1, 'not read back from the device file');
+    assert(INFO_CELLS().slice(0, 3).map((c) => c.text).join() === 'Rec,Mono L,-3dB', 'the bank does not show the menu\'s values: ' + INFO_CELLS().slice(0, 3).map((c) => c.text).join());
+    PREFS.setInputPref('mode', 0); PREFS.setInputPref('gain', 0);
+    SPEAKER = false;
+    /* the screen: the meter where the waveform sits, moving with the input */
+    METER = '0 0'; S.auInMeter = null; ticks(8); const quiet = headingInkAt(46, 57);
+    METER = '30000 30000'; S.auInMeter = null; { const t0 = Date.now(); while (Date.now() - t0 < 60) {} } ticks(8); const loud = headingInkAt(46, 57);
+    assert(loud > quiet + 60, 'the meter does not move with the input: ' + quiet + ' -> ' + loud);
+    S.activeBank = 0; S.trackActiveBank[2] = 0;
 });
 
 step('CONTROL: a Slicer keeps Rec for its chops', () => {

@@ -3092,6 +3092,10 @@ static void au_save_state(void *vinst, FILE *fp) {
     for (t = 0; t < NUM_TRACKS; t++) {
         uint8_t pm = inst->tracks[t].pad_mode;
         if (pm == PAD_MODE_AUDIO) {
+            const au_track_t *ai = &inst->au_trk[t];
+            /* the INPUT bank, when it is not all defaults */
+            if (ai->in_len || ai->in_ovr)
+                fprintf(fp, ",\"t%d_ain\":\"len=%d ovr=%d\"", t, ai->in_len, ai->in_ovr);
             for (c = 0; c < NUM_CLIPS; c++) {
                 const au_clip_t *cl = au_slot(inst, t, c);
                 if (au_clip_default(cl)) continue;
@@ -3141,6 +3145,7 @@ static void au_track_release(seq8_instance_t *inst, int t) {
     inst->au_trk[t].rmx_sclip = 0xFF; inst->au_trk[t].rmx_slive = 0; inst->au_trk[t].rmx_sn_n = 0;
     memset(inst->au_trk[t].nm_on, 0, sizeof inst->au_trk[t].nm_on);
     inst->au_trk[t].cond_on = 1;      /* (only a pre-RESPONDER file's 0 means anything: seq8_load_state) */
+    inst->au_trk[t].in_len = inst->au_trk[t].in_ovr = 0;   /* the INPUT bank's defaults */
     if (inst->au_lazy_track == t) { inst->au_lazy_track = inst->au_lazy_clip = -1; inst->au_lazy_state = AU_LAZY_NONE; }
     for (c = 0; c <= AU_SLC; c++) {
         au_clip_t *cl = au_slot(inst, t, c);
@@ -3227,6 +3232,13 @@ static void au_load_state(void *vinst, const char *buf) {
         uint8_t pm = inst->tracks[t].pad_mode;
         const char *p;
         if (pm == PAD_MODE_AUDIO) {
+            snprintf(key, sizeof key, "t%d_ain", t);
+            if (json_str_value(buf, key, &p)) {
+                au_track_t *ai = &inst->au_trk[t];
+                n = au_read_kv(&p, kv);
+                ai->in_len  = (uint8_t)clamp_i((int)au_kv(kv, n, "len", 0), 0, 4);
+                ai->in_ovr  = (uint8_t)clamp_i((int)au_kv(kv, n, "ovr", 0), 0, 1);
+            }
             for (c = 0; c < NUM_CLIPS; c++) {
                 au_clip_t *cl = au_slot(inst, t, c);
                 long sy;

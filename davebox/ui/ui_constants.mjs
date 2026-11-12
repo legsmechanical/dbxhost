@@ -643,6 +643,10 @@ export const BANKS = [
      * RS7000's — Remix · Type · Family · Variation, per clip. ui_audio owns
      * the cells and the knobs. */
     { name: 'REMIX', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
+    /* 19 — INPUT (BANK_INPUT): an Audio track's input — Monitor, Input, Gain,
+     * Length, Overdub (Josh, 2026-11-12). ui_audio_input owns the cells and
+     * the knobs. */
+    { name: 'INPUT', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
 ];
 
 /* Conductor bank indices. Bank 0 (CLIP) is reused as the "Conduct" bank. */
@@ -673,6 +677,7 @@ export const BANK_CONFIG = 16;
 /* The AUDIO bank (see BANKS[17]): an Audio track's only, a bank with pages. */
 export const BANK_AUDIO = 17;
 export const BANK_REMIX = 18;
+export const BANK_INPUT = 19;
 export function isSoundBank(b) { return b === BANK_SOUND || b === BANK_MACROS || b === BANK_CONFIG; }
 
 /* The track's DEFAULT bank — CLIP on a melodic track, DRUM LANE on a drum one,

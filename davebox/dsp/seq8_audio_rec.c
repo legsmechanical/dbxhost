@@ -56,6 +56,13 @@
 #define AR_ERR_CAP      7   /* (not an error) a growing take stopped at AR_MAX_BARS */
 
 #define AR_MAX_BARS   64
+#define AR_MON_REC  0      /* heard while a take runs (the default) */
+#define AR_MON_OFF  1
+#define AR_MON_ON   2      /* always: a live input through the track */
+static const uint8_t AR_LEN_BARS[5] = { 0, 1, 2, 4, 8 };   /* in_len: Free, 1, 2, 4, 8 bars */
+/* dB -24..+24 -> x4096 (no libm here) */
+static const uint16_t AR_GAIN_Q12[49] = { 258, 290, 325, 365, 410, 460, 516, 579, 649, 728, 817, 917, 1029, 1154, 1295, 1453, 1631, 1830, 2053, 2303, 2584, 2900, 3254, 3651, 4096, 4596, 5157, 5786, 6492, 7284, 8173, 9170, 10289, 11544, 12953, 14533, 16306, 18296, 20529, 23034, 25844, 28997, 32536, 36506, 40960, 45958, 51566, 57858, 64917 };
+static uint32_t ar_gain_q12(int db) { return AR_GAIN_Q12[clamp_i(db, -24, 24) + 24]; }
 #define AR_SILENT_PEAK 4     /* an input under this never moved */
 #define AR_RAMP       64
 
@@ -94,10 +101,10 @@ static void ar_end(seq8_instance_t *inst, int state) {
     inst->ar_state = (uint8_t)state;
 }
 
-/* tN_au_rec_arm "C lat [gain mono] |/abs/path.wav": arm a take into clip C.
- * lat < 0 keeps the latency as it is. gain: the input's level x4096 (the UI's
- * Line In / Mic Gain, by the jack; absent = 4096), mono 1: the left channel on
- * both sides (the UI's Rec Input). Applied to the take and to the monitor. */
+/* tN_au_rec_arm "C lat |/abs/path.wav": arm a take into clip C. lat < 0
+ * keeps the latency as it is. What is done with the input (Mono, its gain), a
+ * growing take's Length and a layer's Replace are the track's INPUT bank
+ * (au_track_t in_*). */
 static void ar_arm(seq8_instance_t *inst, int t, const char *val) {
     const char *p = val, *path = val ? strchr(val, '|') : NULL;
     int c, lat;
@@ -108,21 +115,6 @@ static void ar_arm(seq8_instance_t *inst, int t, const char *val) {
     while (*p == ' ') p++;
     while (*p >= '0' && *p <= '9') p++;
     lat = my_atoi(p);
-    {
-        int g = 4096, mono = 0;
-        while (*p == ' ') p++;
-        if (*p == '-') p++;
-        while (*p >= '0' && *p <= '9') p++;
-        while (*p == ' ') p++;
-        if (*p >= '0' && *p <= '9') {
-            g = my_atoi(p);
-            while (*p >= '0' && *p <= '9') p++;
-            while (*p == ' ') p++;
-            if (*p >= '0' && *p <= '9') mono = my_atoi(p) ? 1 : 0;
-        }
-        inst->ar_in_q12 = (uint32_t)(g < 0 ? 0 : g > 65535 ? 65535 : g);
-        inst->ar_in_mono = (uint8_t)mono;
-    }
     if (c < 0 || c >= NUM_CLIPS) return;
     if (!path || path[1] != '/' || strlen(path + 1) >= sizeof inst->ar_path) { inst->ar_err = AR_ERR_PATH; return; }
     if (inst->offline || ar_slot(inst, t) < 0) { inst->ar_err = AR_ERR_TRACK; return; }
@@ -136,6 +128,8 @@ static void ar_arm(seq8_instance_t *inst, int t, const char *val) {
     inst->ar_track    = (uint8_t)t;
     inst->ar_clip     = (uint8_t)c;
     inst->ar_fixed    = cl->smp ? 1 : 0;
+    inst->ar_replace  = (uint8_t)(cl->smp && inst->au_trk[t].in_ovr ? 1 : 0);
+    inst->ar_len_bars = cl->smp ? 0 : AR_LEN_BARS[inst->au_trk[t].in_len % 5];
     inst->ar_stop_req = 0;
     inst->ar_peak     = 0;
     inst->ar_total    = 0;
@@ -197,6 +191,7 @@ static void ar_tick(seq8_instance_t *inst) {
         if (inst->ar_fixed) end = (pos == 0);
         else if (abs % RS_BAR_TICKS == 0) {
             if (inst->ar_stop_req) end = 1;
+            else if (inst->ar_len_bars && el >= (uint32_t)inst->ar_len_bars * RS_BAR_TICKS) end = 1;   /* its Length */
             else if (el >= (uint32_t)AR_MAX_BARS * RS_BAR_TICKS) { end = 1; inst->ar_err = AR_ERR_CAP; }
         }
         if (!end) return;
@@ -211,37 +206,44 @@ static inline void ar_base_put(seq8_instance_t *inst, int t, int f, int32_t l, i
     if (t == inst->ar_track && ar_busy(inst)) { inst->ar_blk[f * 2] = l; inst->ar_blk[f * 2 + 1] = r; }
 }
 
-/* au_render, after every track: the base into the ring, the input into the
- * take (and to the track, to be heard). */
+/* The input as set (ain_*): Mono L / R on both sides, then its gain. */
+static inline void ar_input(const seq8_instance_t *inst, int32_t *l, int32_t *r) {
+    uint32_t g;
+    if (inst->ain_mode == 1) *r = *l;
+    else if (inst->ain_mode == 2) *l = *r;
+    if (!inst->ain_gain) return;
+    g = ar_gain_q12(inst->ain_gain);
+    *l = (int32_t)(((int64_t)*l * g) >> 12);
+    *r = (int32_t)(((int64_t)*r * g) >> 12);
+    *l = *l > 32767 ? 32767 : *l < -32768 ? -32768 : *l;
+    *r = *r > 32767 ? 32767 : *r < -32768 ? -32768 : *r;
+}
+
+/* au_render, after every track: the input's meter; the take (the base into
+ * the ring, the input into the take); the monitor — through the take's track
+ * while a take runs (Monitor Rec or On), else straight to the output
+ * (Monitor On: Josh, 2026-11-12, "Straight to the output"). */
 static void ar_block(seq8_instance_t *inst, int frames) {
     int16_t out[256], mon[256];
     const int16_t *in = NULL;
-    int f, n = 0, slot;
+    int f, n = 0, t;
     if (frames <= 0 || frames > 128) return;
+    if (g_host && g_host->mapped_memory)
+        in = (const int16_t *)(g_host->mapped_memory + g_host->audio_in_offset);
+    /* the meter: the input as it comes, the largest since it was read */
+    if (in) for (f = 0; f < frames; f++) {
+        int32_t l = in[f * 2] < 0 ? -in[f * 2] : in[f * 2], r = in[f * 2 + 1] < 0 ? -in[f * 2 + 1] : in[f * 2 + 1];
+        if (l > inst->ar_mtr_l) inst->ar_mtr_l = (uint16_t)(l > 32767 ? 32767 : l);
+        if (r > inst->ar_mtr_r) inst->ar_mtr_r = (uint16_t)(r > 32767 ? 32767 : r);
+    }
     if (ar_busy(inst)) {
         uint64_t b = inst->ar_pos;
-        /* the monitor rides the track's mute and solo like its own sound
-         * (au_render applies those itself: the slot is not muted) */
-        int mtarget = effective_mute(inst, inst->ar_track) ? 0 : AR_RAMP;
-        if (g_host && g_host->mapped_memory)
-            in = (const int16_t *)(g_host->mapped_memory + g_host->audio_in_offset);
         for (f = 0; f < frames; f++) {
             uint64_t q = b + (uint64_t)f;              /* feed position == input position of this frame */
             int32_t *rg = &inst->ar_ring[(q % AR_RING) * 2];
             int32_t il = in ? in[f * 2] : 0, ir = in ? in[f * 2 + 1] : 0;
-            /* the input as set: Mono takes the left channel, then its gain */
-            if (inst->ar_in_mono) ir = il;
-            if (inst->ar_in_q12 != 4096) {
-                il = (int32_t)(((int64_t)il * inst->ar_in_q12) >> 12);
-                ir = (int32_t)(((int64_t)ir * inst->ar_in_q12) >> 12);
-                il = il > 32767 ? 32767 : il < -32768 ? -32768 : il;
-                ir = ir > 32767 ? 32767 : ir < -32768 ? -32768 : ir;
-            }
+            ar_input(inst, &il, &ir);
             rg[0] = inst->ar_blk[f * 2]; rg[1] = inst->ar_blk[f * 2 + 1];
-            /* the monitor: the input through the track, ramped in and out */
-            if (inst->ar_mon_gain != mtarget) inst->ar_mon_gain = (uint8_t)(inst->ar_mon_gain + (mtarget > inst->ar_mon_gain ? 1 : -1));
-            mon[f * 2]     = (int16_t)(il * inst->ar_mon_gain / AR_RAMP);
-            mon[f * 2 + 1] = (int16_t)(ir * inst->ar_mon_gain / AR_RAMP);
             if (inst->ar_state == AR_RECORDING || inst->ar_state == AR_ENDING) {
                 uint64_t s = inst->ar_p0 + inst->ar_lat;   /* where the take's frame 0 reaches the input */
                 if (q >= s) {
@@ -249,16 +251,19 @@ static void ar_block(seq8_instance_t *inst, int frames) {
                     if (inst->ar_total && k >= inst->ar_total) continue;
                     {
                         const int32_t *bs = &inst->ar_ring[((inst->ar_p0 + k) % AR_RING) * 2];
-                        int32_t al, ar_, l, r;
+                        int32_t al, ar_, l, r, bl = bs[0], br = bs[1];
                         /* punch out: the input fades, the clip's sound runs on */
                         if (inst->ar_stop_req && inst->ar_fixed && inst->ar_in_gain) inst->ar_in_gain--;
                         al = il * inst->ar_in_gain / AR_RAMP; ar_ = ir * inst->ar_in_gain / AR_RAMP;
+                        /* Replace: the old sound gives way to the input, and
+                         * comes back as it fades at a punch-out */
+                        if (inst->ar_replace) { bl = bl * (AR_RAMP - inst->ar_in_gain) / AR_RAMP; br = br * (AR_RAMP - inst->ar_in_gain) / AR_RAMP; }
                         {
                             int32_t m = al < 0 ? -al : al, m2 = ar_ < 0 ? -ar_ : ar_;
                             if (m2 > m) m = m2;
                             if (m > inst->ar_peak) inst->ar_peak = (uint16_t)(m > 65535 ? 65535 : m);
                         }
-                        l = al + bs[0]; r = ar_ + bs[1];
+                        l = al + bl; r = ar_ + br;
                         out[n * 2]     = (int16_t)(l > 32767 ? 32767 : l < -32768 ? -32768 : l);
                         out[n * 2 + 1] = (int16_t)(r > 32767 ? 32767 : r < -32768 ? -32768 : r);
                         n++;
@@ -275,11 +280,47 @@ static void ar_block(seq8_instance_t *inst, int frames) {
             inst->ar_state = inst->ar_peak < AR_SILENT_PEAK ? AR_CANCELLED : AR_DONE;
             if (inst->ar_peak < AR_SILENT_PEAK) inst->ar_err = AR_ERR_SILENT;
         }
-        slot = ar_slot(inst, inst->ar_track);
-        if (ar_busy(inst) && slot >= 0 && in && g_ext && g_ext->slot_audio_feed)
-            g_ext->slot_audio_feed(slot, mon, (uint32_t)frames);
         memset(inst->ar_blk, 0, sizeof inst->ar_blk);
-    } else inst->ar_mon_gain = 0;
+    }
+    /* through the take's track: Monitor Rec or On while its take runs, riding
+     * the track's mute and solo (au_render applies those itself: the slot is
+     * not muted), ramped in and out */
+    for (t = 0; t < NUM_TRACKS; t++) {
+        au_track_t *at = &inst->au_trk[t];
+        int slot = ar_slot(inst, t);
+        int open = in && slot >= 0 && !inst->offline && inst->ain_mon != AR_MON_OFF
+                && ar_busy(inst) && inst->ar_track == t;
+        int target = open && !effective_mute(inst, t) ? AR_RAMP : 0;
+        if (!at->mon_g && !target) continue;
+        if (slot < 0 || !in) { at->mon_g = 0; continue; }
+        for (f = 0; f < frames; f++) {
+            int32_t il = in[f * 2], ir = in[f * 2 + 1];
+            ar_input(inst, &il, &ir);
+            if (at->mon_g != target) at->mon_g = (uint8_t)(at->mon_g + (target > at->mon_g ? 1 : -1));
+            mon[f * 2]     = (int16_t)(il * at->mon_g / AR_RAMP);
+            mon[f * 2 + 1] = (int16_t)(ir * at->mon_g / AR_RAMP);
+        }
+        if (g_ext && g_ext->slot_audio_feed) g_ext->slot_audio_feed(slot, mon, (uint32_t)frames);
+    }
+    /* straight to the output: Monitor On with no take running (into the mix
+     * before Master FX, as the metronome; render_block_audio adds it) */
+    {
+        int target = in && !inst->offline && inst->ain_mon == AR_MON_ON && !ar_busy(inst) ? AR_RAMP : 0;
+        inst->ar_dir_on = 0;
+        if (inst->ar_dir_g || target) {
+            if (!in) inst->ar_dir_g = 0;
+            else {
+                for (f = 0; f < frames; f++) {
+                    int32_t il = in[f * 2], ir = in[f * 2 + 1];
+                    ar_input(inst, &il, &ir);
+                    if (inst->ar_dir_g != target) inst->ar_dir_g = (uint8_t)(inst->ar_dir_g + (target > inst->ar_dir_g ? 1 : -1));
+                    inst->ar_dir[f * 2]     = (int16_t)(il * inst->ar_dir_g / AR_RAMP);
+                    inst->ar_dir[f * 2 + 1] = (int16_t)(ir * inst->ar_dir_g / AR_RAMP);
+                }
+                inst->ar_dir_on = 1;
+            }
+        }
+    }
     inst->ar_pos += (uint64_t)frames;
 }
 
@@ -332,6 +373,19 @@ static void ar_land(seq8_instance_t *inst, int t) {
     au_req_push(inst, &r);
     au_mark(inst, t, c);
     (void)nm;
+}
+
+/* get "tN_au_in": the input "mon mode gain" and track N's "len ovr";
+ * "au_in_meter": the input's largest sample since the last read, "l r" (then
+ * cleared). */
+static int ar_in_status(seq8_instance_t *inst, int t, char *out, int out_len) {
+    const au_track_t *at = &inst->au_trk[t];
+    return snprintf(out, out_len, "%d %d %d %d %d", inst->ain_mon, inst->ain_mode, inst->ain_gain, at->in_len, at->in_ovr);
+}
+static int ar_meter(seq8_instance_t *inst, char *out, int out_len) {
+    int n = snprintf(out, out_len, "%u %u", (unsigned)inst->ar_mtr_l, (unsigned)inst->ar_mtr_r);
+    inst->ar_mtr_l = inst->ar_mtr_r = 0;
+    return n;
 }
 
 /* get "au_rec": "state track clip done total peak err ticks" */

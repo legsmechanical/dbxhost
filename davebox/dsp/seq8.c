@@ -1569,11 +1569,20 @@ typedef struct {
     uint8_t  ar_state, ar_err, ar_track, ar_clip;
     uint8_t  ar_fixed;            /* 1: the clip had a sample — a layer the clip's length; 0: grows to the bar */
     uint8_t  ar_stop_req;         /* Rec again: adaptive ends at the next bar, a layer punches out */
-    uint8_t  ar_in_gain, ar_mon_gain;   /* 0..64 ramps: the input into the take, the monitor */
+    uint8_t  ar_in_gain;          /* 0..64: the input into the take (a punch-out fades it) */
     uint16_t ar_peak;             /* the input's largest sample in the take */
     uint32_t ar_lat;              /* frames from feeding the slot to reading it back at the input */
-    uint32_t ar_in_q12;           /* the input's gain x4096 (4096 = as it comes) */
-    uint8_t  ar_in_mono;          /* 1: the left channel on both sides */
+    uint8_t  ar_replace;          /* a layer that replaces: the clip's sound out while the input is in */
+    uint8_t  ar_len_bars;         /* a growing take's Length (0 = until Rec) */
+    uint16_t ar_mtr_l, ar_mtr_r;  /* the input's meter: largest sample since the last read */
+    /* THE INPUT, device-wide (the UI's global menu and every Audio track's
+     * INPUT bank; the UI keeps and sends them, the project does not): ain_mon
+     * AR_MON_* (0 Rec, 1 Off, 2 On), ain_mode 0 Stereo / 1 Mono L / 2 Mono R,
+     * ain_gain dB. ar_dir_g: the direct monitor's ramp (Monitor On, no take). */
+    uint8_t  ain_mon, ain_mode, ar_dir_g;
+    int8_t   ain_gain;
+    int16_t  ar_dir[256];         /* this block's direct monitor, for the output (render_block_audio) */
+    uint8_t  ar_dir_on;
     uint64_t ar_pos;              /* stream position of this block's first frame */
     uint64_t ar_p0;               /* the take's first frame, where it is fed (feed side) */
     uint64_t ar_total;            /* its length in frames, once its end tick has played (0 = not yet) */
@@ -11380,6 +11389,15 @@ static void render_block_audio(void *instance, int16_t *out_lr, int frames) {
     if (instance && ((seq8_instance_t *)instance)->offline) au_offline_pump((seq8_instance_t *)instance);
     render_block(instance, out_lr, frames);
     if (instance) au_render((seq8_instance_t *)instance, frames);
+    /* the input heard straight (Monitor On, no take: seq8_audio_rec.c) */
+    if (instance && out_lr && frames > 0 && frames <= 128 && ((seq8_instance_t *)instance)->ar_dir_on) {
+        const int16_t *d = ((seq8_instance_t *)instance)->ar_dir;
+        int i;
+        for (i = 0; i < frames * 2; i++) {
+            int32_t v = (int32_t)out_lr[i] + d[i];
+            out_lr[i] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+        }
+    }
     if (instance) ((seq8_instance_t *)instance)->lead_rendering = 0;
 }
 

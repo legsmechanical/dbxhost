@@ -14,7 +14,7 @@
 import { S } from './ui_state.mjs';
 import { PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_AUDIO, PAD_MODE_SLICER, padSampled, NUM_STEPS, BANKS,
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION,
-    BANK_CHORD, BANK_CONFIG, BANK_REMIX, isSoundBank } from './ui_constants.mjs';
+    BANK_CHORD, BANK_CONFIG, BANK_REMIX, BANK_INPUT, isSoundBank } from './ui_constants.mjs';
 
 /* Live pad note input — isomorphic 4ths diatonic layout.
  * EXPORTED for ui.js's computePadNoteMap (impure, moves in Phase 5) — do not
@@ -173,7 +173,8 @@ export function bankCategoriesForMode(padMode, t) {
              * input arp to it too"): PAD MODE's Layout, and LIVE ARP */
             { label: 'IN',   banks: slice ? [BANK_CHORD, 5] : [5] },   /* PAD MODE: a Slice clip's (Josh, 2026-10-30) */
             { label: 'CTRL', banks: [BANK_MACROS, BANK_AUTOMATION] },
-            { label: 'SEQ',  banks: slice ? [BANK_STEP, 0] : [0] },
+            /* INPUT (an Audio track's, above SAMPLE: Josh, 2026-11-12) */
+            { label: 'SEQ',  banks: slice ? [BANK_STEP, 0] : [0, BANK_INPUT] },
             /* REMIX on both (Josh, 2026-11-10: "it should be in the same
              * place on both track types"), before NOTE FX in signal order —
              * the remix makes the notes NOTE FX then plays with; NOTE FX
@@ -241,7 +242,9 @@ const BANK_MAP_POS = {
                /* REMIX in the FX column's third pad: Delay's on the other
                 * tracks, free on both of these ("put it in a slot that
                 * neither track uses") */
-               1: [3, 0], [BANK_REMIX]: [3, 2] },
+               1: [3, 0], [BANK_REMIX]: [3, 2],
+               /* INPUT above SAMPLE, where a Slicer has SLICES (Josh, 2026-11-12) */
+               [BANK_INPUT]: [2, 2] },
 };
 const BANK_MAP_LABELS = {
     melodic: ['IN', 'CTRL', 'SEQ', 'FX'],

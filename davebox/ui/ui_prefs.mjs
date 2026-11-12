@@ -123,36 +123,47 @@ export function setMidiMap(v) {
     writePref(MIDI_MAP_PATH, S.midiMap + '\n', 'the MIDI drum map');
 }
 
-/* RECORDING INPUT (Josh, 2026-11-12: "is there a way we can set input source
- * through the davebox global menu?" -> "yeah" to Stereo / Mono and a gain for
- * line-in and for the mic). The Move picks the source itself — line-in with a
- * cable in the jack, else the built-in mic — so dAVEBOx sets what is done with
- * it: Stereo, or Mono (the left channel on both sides), and a gain for each
- * source, chosen by the jack. Applied to an Audio track's input take and to
- * what is heard of it while it runs (ui_audio_rec). Device-wide; absent file =
- * Stereo, 0 dB, 0 dB. File: "mono lineDb micDb". */
-export const REC_INPUT_PATH = '/data/UserData/daveboxSA/rec-input.txt';
-export const REC_GAIN_MIN = -24, REC_GAIN_MAX = 24;
 
-export function recInput() {
-    if (!S.recInput) {
+/* THE INPUT (Josh, 2026-11-12: "i still want the monitoring and input settings
+ * on the global menu so that you can adjust them if you don't have any audio
+ * tracks. the audio track bank would just set those directly"): Monitor (Off ·
+ * Rec · On), Input (Stereo · Mono L · Mono R) and Gain, ONE set for the device.
+ * The global menu and every Audio track's INPUT bank set the same values; the
+ * engine is sent them (ain_*) at start and on every change. Absent file = Rec,
+ * Stereo, 0 dB. File: "mon mode gain" (mon in the engine's order: 0 Rec, 1
+ * Off, 2 On). */
+export const INPUT_PATH = '/data/UserData/daveboxSA/input.txt';
+export const INPUT_GAIN_MIN = -24, INPUT_GAIN_MAX = 24;
+
+export function inputPrefs() {
+    if (!S.inputPrefs) {
         let v = [0, 0, 0];
         try {
-            if (host_file_exists(REC_INPUT_PATH))
-                v = String(host_read_file(REC_INPUT_PATH) || '').trim().split(/\s+/).map((x) => parseInt(x, 10));
+            if (host_file_exists(INPUT_PATH))
+                v = String(host_read_file(INPUT_PATH) || '').trim().split(/\s+/).map((x) => parseInt(x, 10));
         } catch (e) { v = [0, 0, 0]; }
-        const g = (x) => (isFinite(x) ? Math.max(REC_GAIN_MIN, Math.min(REC_GAIN_MAX, x | 0)) : 0);
-        S.recInput = { mono: v[0] === 1 ? 1 : 0, line: g(v[1]), mic: g(v[2]) };
+        const c = (x, lo, hi) => (isFinite(x) ? Math.max(lo, Math.min(hi, x | 0)) : 0);
+        S.inputPrefs = { mon: c(v[0], 0, 2), mode: c(v[1], 0, 2), gain: c(v[2], INPUT_GAIN_MIN, INPUT_GAIN_MAX) };
     }
-    return S.recInput;
+    return S.inputPrefs;
 }
 
-export function setRecInput(field, v) {
-    const r = Object.assign({}, recInput());
-    if (field === 'mono') r.mono = v ? 1 : 0;
-    else r[field] = Math.max(REC_GAIN_MIN, Math.min(REC_GAIN_MAX, v | 0));
-    S.recInput = r;
+/* Send the input to the engine at start: only what differs from its own
+ * defaults (Rec, Stereo, 0 dB), which a fresh instance already has. */
+export function inputPrefsPush() {
+    const r = inputPrefs();
+    if (r.mon)  host_module_set_param('ain_mon', String(r.mon));
+    if (r.mode) host_module_set_param('ain_mode', String(r.mode));
+    if (r.gain) host_module_set_param('ain_gain', String(r.gain));
+}
+
+export function setInputPref(field, v) {
+    const r = Object.assign({}, inputPrefs());
+    if (field === 'gain') r.gain = Math.max(INPUT_GAIN_MIN, Math.min(INPUT_GAIN_MAX, v | 0));
+    else r[field] = Math.max(0, Math.min(2, v | 0));
+    S.inputPrefs = r;
+    host_module_set_param('ain_' + field, String(r[field]));
     let wrote = false;
-    try { wrote = !!host_write_file(REC_INPUT_PATH, r.mono + ' ' + r.line + ' ' + r.mic + '\n'); } catch (e) { wrote = false; }
-    if (!wrote) console.log('[prefs] could not persist the recording input to ' + REC_INPUT_PATH);
+    try { wrote = !!host_write_file(INPUT_PATH, r.mon + ' ' + r.mode + ' ' + r.gain + '\n'); } catch (e) { wrote = false; }
+    if (!wrote) console.log('[prefs] could not persist the input to ' + INPUT_PATH);
 }

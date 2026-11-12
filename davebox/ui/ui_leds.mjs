@@ -17,7 +17,7 @@ import { knobRingColor, knobRingNorm, ringCellsFor, ringNormOfCell, screenRingCe
 import { automationStateFor } from './ui_automation.mjs';
 import { devSnapOpen, devSnapLedFor } from './ui_devsnap.mjs';
 import { sessStripTargets, SESS_KNOB_MODES } from './ui_engine.mjs';
-import { seqAutoTargetForKnob } from './ui_constants.mjs';
+import { seqAutoTargetForKnob, BANK_INPUT } from './ui_constants.mjs';
 import {
     White, Red, Green, Blue, DarkBlue, LightGrey, DarkGrey, Cyan, PurpleBlue,
     DeepRed, DeepGreen, DeepMagenta, Mustard, BrightPink,
@@ -683,7 +683,9 @@ export function bankMapPadColors() {
                 : ed !== null ? (cell.action === 'inst' && ed === 'synth')
                 : (cell.bank !== null && cell.bank === autoMapMarkedBank());
             col[at(ci, r)] = on ? White
-                : own ? trackColor(t) : BANK_MAP_COL_COLORS[ci];
+                : own ? trackColor(t)
+                : cell.bank === BANK_INPUT ? Green            /* INPUT green (Josh, 2026-11-12) */
+                : BANK_MAP_COL_COLORS[ci];
         }));
         /* The MODULE pads (right 4x4), one colour per kind (Josh,
          * 2026-10-15: "colors to distinguish between fx, midifx, and

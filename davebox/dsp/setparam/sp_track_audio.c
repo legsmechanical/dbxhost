@@ -1450,6 +1450,19 @@ static int sp_track_audio(sp_ctx_t *cx) {
     if (!strcmp(sub, "rec_stop"))   { if (inst->ar_track == tidx) ar_stop(inst); return 1; }
     if (!strcmp(sub, "rec_cancel")) { if (inst->ar_track == tidx) ar_cancel(inst); return 1; }
     if (!strcmp(sub, "rec_land"))   { ar_land(inst, tidx); return 1; }
+    /* the INPUT bank's per-track part: in_len 0 Free / 1 / 2 / 4 / 8 bars,
+     * in_ovr 0 Layer / 1 Replace (Monitor / Input / Gain: the global ain_*) */
+    if (!strncmp(sub, "in_", 3)) {
+        au_track_t *ai = &inst->au_trk[tidx];
+        int v = my_atoi(val);
+        if (inst->tracks[tidx].pad_mode != PAD_MODE_AUDIO) return 1;
+        if      (!strcmp(sub, "in_len"))  ai->in_len  = (uint8_t)clamp_i(v, 0, 4);
+        else if (!strcmp(sub, "in_ovr"))  ai->in_ovr  = (uint8_t)clamp_i(v, 0, 1);
+        else return 1;
+        rui_mark(inst, tidx, inst->tracks[tidx].active_clip);
+        inst->state_dirty = 1;
+        return 1;
+    }
 
     /* pick: one undo step; pick_join: part of the step already taken (In
      * place and Flatten: tN_au_undo, then the clip's reset, then this) */
@@ -2031,6 +2044,8 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
     const char *k = key + 6;
     if (!strcmp(k, "on")) return snprintf(out, out_len, "%d", pad_mode_sampled(inst->tracks[t].pad_mode));
     if (!strcmp(k, "rec")) return ar_status(inst, out, out_len);   /* the input take, whichever track */
+    if (!strcmp(k, "in")) return ar_in_status(inst, t, out, out_len);
+    if (!strcmp(k, "in_meter")) return ar_meter(inst, out, out_len);   /* the input, any N */
     if (!strcmp(k, "dir")) {                      /* the project's samples/ (the chooser lists it) */
         char d[256];
         au_samples_dir(inst, d, sizeof d);

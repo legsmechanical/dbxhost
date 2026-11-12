@@ -25,6 +25,7 @@
  * Extracted from ui.js (Phase 6a of the modularity refactor, increment 1).
  */
 
+import { auInStale } from './ui_audio_input.mjs';
 import { restoreChordSidecar, resetChordTransient, clearHeldChords } from './ui_chord_pads.mjs';
 import { chordPadsOn, restoreCustomSidecar } from './ui_custom_chords.mjs';
 import { restorePadModeSidecar } from './ui_pad_mode.mjs';
@@ -2136,6 +2137,7 @@ export function applyNewProjectSeed() {
 }
 
 export function syncClipsFromDsp() {
+    auInStale();                         /* the INPUT banks are the project's: read again */
     prefetchTrackDigests();
     try {
         _syncClipsFromDspInner();

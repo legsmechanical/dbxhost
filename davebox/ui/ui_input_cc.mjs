@@ -6,6 +6,7 @@
  * Extracted from ui.js (Phase 5b, increment 7 of the modularity refactor).
  */
 
+import { inputBankKnob } from './ui_audio_input.mjs';
 import { auRecPress } from './ui_audio_rec.mjs';
 import {
     MoveShift, MoveBack, MovePlay, MoveLeft, MoveRight, MoveUp, MoveDown,
@@ -66,7 +67,7 @@ import { automationParamEdit, automationCaptureCommit, automationCaptureCommitAf
 import { sessStripTargets, engineLoadedModule, engineModuleName, slotIndex,
          moveBusForChannel, moveBusPrefix } from './ui_engine.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
-import { BANK_MAP_TRACK_POPUP_MS, SEQ_PAGE_POPUP_MS, seqAutoTargetForKnob, SEQ_AUTO_TARGETS, AU_AUTO_BANK, auAutoBank, midiTargetIsMidi, DEFAULT_TRACK_OCTAVE, BANK_REMIX } from './ui_constants.mjs';
+import { BANK_MAP_TRACK_POPUP_MS, SEQ_PAGE_POPUP_MS, seqAutoTargetForKnob, SEQ_AUTO_TARGETS, AU_AUTO_BANK, auAutoBank, midiTargetIsMidi, DEFAULT_TRACK_OCTAVE, BANK_REMIX, BANK_INPUT } from './ui_constants.mjs';
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam, soundOpenModule, instrPickResume } from './ui_sound.mjs';
 import { auPurgeRun, closeAudioChooser, askClearAudioClip } from './ui_audio_chooser.mjs';
@@ -5194,6 +5195,13 @@ function _onCC_knobs(d1, d2) {
          * knobs (its drum form). */
         if (isSampledTrack(S.activeTrack)) {
             const _t = S.activeTrack;
+            if (bank === BANK_INPUT) {
+                /* INPUT: the choices deliberate (a detent each), Gain a dB a pick */
+                if (S.trackPadMode[_t] !== PAD_MODE_AUDIO) return;
+                const _st = knobStep(knobIdx, d2, knobIdx === 2 ? KNOB_PICK : KNOB_DELIB);
+                if (_st && inputBankKnob(_t, knobIdx, _st)) S.screenDirty = true;
+                return;
+            }
             if (bank === BANK_REMIX) {
                 /* K1 Remix and K6's Vel deliberate (toggles); K2 Type, K3 Preset
                  * K6's Rate and K8 Pitch picks (Pitch as the Sample editor's:

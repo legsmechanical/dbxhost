@@ -320,6 +320,12 @@ typedef struct {
     int8_t     nm_semi[AU_MAX_SLICES];
     uint8_t    nm_start[AU_MAX_SLICES], nm_len[AU_MAX_SLICES];   /* % of the chop: from, how much (0 = all) */
     float      nm_vg[AU_MAX_SLICES];
+    /* INPUT bank, this track's part (seq8_audio_rec.c): in_len an empty
+     * clip's take: 0 Free, else 1 / 2 / 4 / 8 bars (AR_LEN_BARS[in_len]);
+     * in_ovr a clip with a sample: 0 Layer, 1 Replace. Saved as t%d_ain.
+     * (Monitor / Input / Gain are the instance's: ain_*.) mon_g: the
+     * monitor's level ramp through this track (0..64). */
+    uint8_t    in_len, in_ovr, mon_g;
 } au_track_t;
 
 /* Loader mailbox (set_param / render -> loader thread). */

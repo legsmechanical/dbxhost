@@ -48,7 +48,7 @@ menu.openGlobalMenu();
 const got = (S.globalMenuItems || []).map((it) => it.type === 'divider' ? '---' : it.label);
 const want = ['BPM', '---', 'Metro', 'Metro Vol', '---',
     'Clock Follow', 'Clock Out', '---', 'Groove', 'Groove Amt', '---', 'Key', 'Scale', 'Scale Aware', '---',
-    'Launch', 'Beat Marks', 'Card Hold', '---', 'MIDI In', '---', 'Rec Input', 'Line In Gain', 'Mic Gain', '---', 'Projects...', 'Save as Template...', '---',
+    'Launch', 'Beat Marks', 'Card Hold', '---', 'MIDI In', '---', 'Monitor', 'Input', 'Input Gain', '---', 'Projects...', 'Save as Template...', '---',
     'Save state', 'Load state', 'Clear Sess', '---', 'Export to Ableton', 'Purge samples', '---',
     'Suspend session', 'Quit', '---', 'Host Settings...', 'Move Settings...', '---', 'Daves', 'Open Your Dave Box'];
 if (JSON.stringify(got) !== JSON.stringify(want)) {

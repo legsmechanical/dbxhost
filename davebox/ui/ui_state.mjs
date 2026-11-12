@@ -865,7 +865,10 @@ export const S = {
     scenePickFor: 'bake',          /* what the scene picker (pendingSceneBakePicker) picks for */
     auPicks: [],                   /* [{ t, c, path }]: takes for clips (In place, a Live merge's Audio tracks), each picked once its clip's reset has gone */
     auRec: null,
-    recInput: null,                /* the recording input's settings, read once (ui_prefs recInput) */                   /* an Audio track's input take (ui_audio_rec): { t, c, path, phase, ... } */
+    auIn: null,                    /* per track, the INPUT bank's Length / Overdub as the engine has them (ui_audio_input auIn) */
+    inputPrefs: null,              /* the device's input: Monitor / Input / Gain (ui_prefs inputPrefs) */
+    inputPushed: false,            /* sent to the engine this session */
+    auInMeter: null,               /* the INPUT bank's meter: { l, r, clipUntil, at } */                   /* an Audio track's input take (ui_audio_rec): { t, c, path, phase, ... } */
     mergeStems: [],                /* [{ t, path }]: the Audio tracks the running Live merge records, and their files */
     mergeStemsSettle: null,        /* { stems, at }: a merge's files to load or remove once the take is written */
     confirmResample: null,         /* { clip, bars, warm, tail, sel, editing } — the options */

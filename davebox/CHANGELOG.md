@@ -13,8 +13,10 @@ the section into a versioned heading at release time.
   into the clip: an empty clip records until you press Rec again, to the bar; a clip with a
   sample records a new layer over what it plays. You hear the input through the track while
   it records, and Undo brings back the clip as it was.
-  **Rec Input** (Stereo / Mono), **Line In Gain** and **Mic Gain** in Project Settings set
-  what it records.
+  **Monitor** (Off / Rec / On), **Input** (Stereo / Mono L / R) and **Input Gain** in
+  Project Settings, also on the new **INPUT** bank (green, above SAMPLE) with a level
+  meter, where each track also sets **Length** (Free or 1–8 bars) and **Overdub**
+  (Layer / Replace). Rec lights red while recording, as does the clip's pad.
 - **REMIX, a loop remixer for Audio and Slicer tracks.** The FX column's third pad on both.
   Pick a **Chop** (how the bar is cut) and an **Order** (where the pieces go, gentle to
   wild — or start from one of the Yamaha RS7000's 80 remixes in **Presets…**), then dial it
