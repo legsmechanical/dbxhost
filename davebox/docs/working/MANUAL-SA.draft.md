@@ -3053,9 +3053,8 @@ the built-in mic when nothing is plugged in) into the active clip.
   | K4 Length | How long a take into an empty clip is | **Free** (until Rec again) · 1 · 2 · 4 · 8 bars |
   | K5 Overdub | A take into a clip that has a sample | **Layer** (over what it plays) · Replace |
 
-  On a clip with no sample, the track's overview shows the input's level where the
-  waveform would be, and **CLIP** when it reaches full scale; a clip with a sample keeps
-  its waveform. The Move picks the source itself: line-in when a cable
+  While **INPUT** is up, the track's overview shows the input's level where the
+  waveform is, and **CLIP** when it reaches full scale. The Move picks the source itself: line-in when a cable
   is plugged in, else the built-in mic.
 - With **Replace**, the clip's sound is left out while you record and comes back
   after a punch-out (Rec during the pass).

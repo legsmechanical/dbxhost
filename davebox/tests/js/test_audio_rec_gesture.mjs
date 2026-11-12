@@ -287,16 +287,24 @@ step('⭐⭐ the INPUT bank (green, above SAMPLE): its knobs set the track\'s in
     METER = '0 0'; S.auInMeter = null; ticks(8); const quiet = headingInkAt(46, 57);
     METER = '30000 30000'; S.auInMeter = null; { const t0 = Date.now(); while (Date.now() - t0 < 60) {} } ticks(8); const loud = headingInkAt(46, 57);
     assert(loud > quiet + 60, 'the meter does not move with the input: ' + quiet + ' -> ' + loud);
-    /* a clip WITH a sample keeps its waveform and playhead: no meter
-     * (Josh, 2026-11-12: "maybe only when the clilp isn't currently holding anything?") */
+    /* the INPUT bank shows the meter on a clip WITH a sample too; every other
+     * bank keeps the waveform (Josh, 2026-11-12: "always there on input.
+     * sample bank (and any other bank) shows waveform/nosample") */
     {
         const c = await_au.auClipOf(2), keep = S.auInfo[2][c];
         S.auInfo[2][c] = Object.assign({}, keep, { state: 2, name: 'x.wav', nframes: 88200, rate: 44100, ch: 2 });
         METER = '30000 30000'; S.auInMeter = null; { const t0 = Date.now(); while (Date.now() - t0 < 60) {} } ticks(8);
-        assert(!S.auInMeter, 'the meter is still read on a clip with a sample');
+        assert(S.auInMeter && S.auInMeter.l > 0.5, 'the meter is not read on a clip with a sample');
         S.auInMeter = { l: 1, r: 1, clipUntil: 0, at: 0 };
-        const withS = headingInkAt(46, 57); S.auInMeter = { l: 0, r: 0, clipUntil: 0, at: 0 };
-        assert(Math.abs(withS - headingInkAt(46, 57)) < 10, 'the meter is drawn over a clip with a sample');
+        const full = headingInkAt(46, 57); S.auInMeter = { l: 0, r: 0, clipUntil: 0, at: 0 };
+        assert(full > headingInkAt(46, 57) + 60, 'the meter is not drawn over a clip with a sample');
+        /* CONTROL: another bank, no meter read or drawn */
+        S.activeBank = 0; S.trackActiveBank[2] = 0; S.auInMeter = null;
+        { const t0 = Date.now(); while (Date.now() - t0 < 60) {} } ticks(8);
+        assert(!S.auInMeter, 'the meter is read on the CLIP bank');
+        S.auInMeter = { l: 1, r: 1, clipUntil: 0, at: 0 };
+        const other = headingInkAt(46, 57); S.auInMeter = { l: 0, r: 0, clipUntil: 0, at: 0 };
+        assert(Math.abs(other - headingInkAt(46, 57)) < 10, 'the meter is drawn on the CLIP bank');
         S.auInfo[2][c] = keep;
     }
     S.activeBank = 0; S.trackActiveBank[2] = 0;

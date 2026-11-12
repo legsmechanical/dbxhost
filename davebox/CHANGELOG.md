@@ -15,7 +15,7 @@ the section into a versioned heading at release time.
   it records, and Undo brings back the clip as it was.
   **Monitor** (Off / Rec / On), **Input** (Stereo / Mono L / R) and **Input Gain** in
   Project Settings, also on the new **INPUT** bank (green, above SAMPLE) with a level
-  meter (on a clip with no sample), where each track also sets **Length** (Free or 1–8
+  meter, where each track also sets **Length** (Free or 1–8
   bars) and **Overdub** (Layer / Replace). Rec lights red while recording, and the clip's
   pad in Session View and the pads in Track View light white.
 - **REMIX, a loop remixer for Audio and Slicer tracks.** The FX column's third pad on both.
