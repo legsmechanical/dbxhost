@@ -351,19 +351,20 @@ int main(void) {
     HX_ASSERT(wait_loaded(h, T_REC, 0) == 2, "layer 2: the clip's sample did not load");
     hx_set_param(h, "t4_au_set_sync", "0 2");
     hx_set_param(h, "t4_au_set_orig", "0 0");
+    hx_set_param(h, "t4_c0_length", "12");               /* not a whole bar: the landing must keep it */
     lat = 300;
     lb_reset(lat, inst->tracks[T_CLICK].pfx.slot);
     arm(h, lat, "layer2.wav");
     hx_set_param(h, "record_count_in", "4");
     RUN_UNTIL(h, inst->ar_state == AR_RECORDING, 6000);
     /* Rec again in the third beat: the input fades, the clip runs on to the loop's end */
-    RUN_UNTIL(h, inst->ar_done > BAR / 2 + 2000, 2000);
+    RUN_UNTIL(h, inst->ar_done > BAR / 4 + 2000, 2000);
     hx_set_param(h, "t4_au_rec_stop", "");
     k = RUN_UNTIL(h, inst->ar_state == AR_DONE || inst->ar_state >= AR_CANCELLED, 3000);
     b = hx_stub_cfeed(&n, NULL);
-    HX_ASSERT(inst->ar_state == AR_DONE && n == BAR, "punch-out: the layer did not run on to the loop's end");
+    HX_ASSERT(inst->ar_state == AR_DONE && n == 66150, "punch-out: the layer did not run on to the loop's end (12 steps)");
     HX_ASSERT(b[0] == 32767 && b[(BAR / 4) * 2] >= CLICK * 9 / 10, "layer: the clip and the input are not both at their beats");
-    HX_ASSERT(b[(3 * BAR / 4) * 2] < CLICK * 6 / 10 && b[(3 * BAR / 4) * 2] > CLICK * 4 / 10,
+    HX_ASSERT(b[(BAR / 2) * 2] < CLICK * 6 / 10 && b[(BAR / 2) * 2] > CLICK * 4 / 10,
               "punch-out: after it, the input is still in the take (or the clip is not)");
     /* landing a layer: the length kept, what was baked set back */
     snprintf(p, sizeof p, "%s/proj/dAVEBOx/samples/layer2.wav", g_root);
@@ -373,7 +374,7 @@ int main(void) {
     k = inst->tracks[T_REC].clips[0].length;
     hx_set_param(h, "t4_au_rec_land", "0");
     HX_ASSERT(wait_loaded(h, T_REC, 0) == 2 && !strcmp(inst->au_store[T_REC][0].name, "layer2.wav"), "layer: the take did not land");
-    HX_ASSERT(inst->tracks[T_REC].clips[0].length == k, "layer: the landing changed the clip's length");
+    HX_ASSERT(k == 12 && inst->tracks[T_REC].clips[0].length == 12, "layer: the landing changed the clip's length (12 steps)");
     HX_ASSERT(inst->au_store[T_REC][0].pitch == 0 && inst->au_store[T_REC][0].rot == 0, "layer: the clip's settings were not set back (baked in)");
     hx_set_param(h, "undo_restore", "1");
     hx_render(h, 2);
