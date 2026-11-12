@@ -774,13 +774,14 @@ export function updateSessionLEDs() {
             } else {
                 color = trackDimColor(t);
             }
-            /* An Audio track's input take: its clip blinks red while it waits,
-             * pulses red while it records. */
+            /* An Audio track's input take: its clip blinks white while it
+             * waits, pulses dim/bright white while it records (not red: red is
+             * a track colour — Josh, 2026-11-12). */
             {
                 const _ar = auRecClip();
                 if (_ar && _ar[0] === t && _ar[1] === sceneIdx) {
-                    if (auRecLedState() === 'wait') { color = Red; from = LED_OFF; anim = LED_BLINK_8TH; }
-                    else if (auRecLedState() === 'rec') { color = Red; from = DeepRed; anim = LED_PULSE_4TH; }
+                    if (auRecLedState() === 'wait') { color = White; from = LED_OFF; anim = LED_BLINK_8TH; }
+                    else if (auRecLedState() === 'rec') { color = White; from = DarkGrey; anim = LED_PULSE_4TH; }
                 }
             }
             /* Copy source blink: JS-side timer (transport-independent) */
@@ -1008,10 +1009,11 @@ export function updateTrackLEDs() {
             const next = lz && lz.state === AU_LAZY_ARMED ? 0 : lz && lz.state === AU_LAZY_RUN ? lz.n : -1;
             const done = lz && lz.state !== AU_LAZY_ARMED ? lz.n : 0;
             /* A take into this clip (ui_audio_rec): an empty clip's pads count
-             * its bars in red; a clip with a sample shows its sections as
-             * always but red — recorded so far bright, the playhead pulsing,
-             * the rest deep red; waiting, they blink (Josh, 2026-11-12: "the
-             * indicators still aren't there on the pads while recording"). */
+             * its bars; a clip with a sample shows its sections as always —
+             * recorded so far bright white, the playhead pulsing, the rest dim
+             * white; waiting, they blink (Josh, 2026-11-12: "the indicators
+             * still aren't there on the pads while recording" · "red is a
+             * track color ... let's just go with white (dimmer/bright)"). */
             const _ar = auRecClip(), recSt = _ar && _ar[0] === t && _ar[1] === auClipOf(t) ? auRecLedState() : null;
             for (let i = 0; i < 32; i++) {
                 let color = LED_OFF;
@@ -1020,13 +1022,13 @@ export function updateTrackLEDs() {
                     const n = TRACK_PAD_BASE + i;
                     if (ai.state !== 2) {
                         const b = auRecBarPad(k);
-                        if (b === 'wait') cachedSetLEDAnim(n, LED_OFF, Red, LED_BLINK_8TH);
-                        else if (b === 'now') cachedSetLEDAnim(n, DeepRed, Red, LED_PULSE_4TH);
-                        else cachedSetLED(n, b === 'done' ? Red : b === 'todo' ? DeepRed : LED_OFF);
+                        if (b === 'wait') cachedSetLEDAnim(n, LED_OFF, White, LED_BLINK_8TH);
+                        else if (b === 'now') cachedSetLEDAnim(n, DarkGrey, White, LED_PULSE_4TH);
+                        else cachedSetLED(n, b === 'done' ? White : b === 'todo' ? DarkGrey : LED_OFF);
                     } else if (k >= AU_LOOP_SECTIONS || pastReach(k)) cachedSetLED(n, LED_OFF);
-                    else if (recSt === 'wait') cachedSetLEDAnim(n, LED_OFF, DeepRed, LED_BLINK_8TH);
-                    else if (k === ph) cachedSetLEDAnim(n, DeepRed, Red, LED_PULSE_4TH);
-                    else cachedSetLED(n, ph >= 0 && (ai.revrs ? k > ph : k < ph) ? Red : DeepRed);
+                    else if (recSt === 'wait') cachedSetLEDAnim(n, LED_OFF, White, LED_BLINK_8TH);
+                    else if (k === ph) cachedSetLEDAnim(n, DarkGrey, White, LED_PULSE_4TH);
+                    else cachedSetLED(n, ph >= 0 && (ai.revrs ? k > ph : k < ph) ? White : DarkGrey);
                     continue;
                 }
                 if (lz) color = k === next ? White : k < done ? tc : LED_OFF;

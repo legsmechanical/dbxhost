@@ -3030,11 +3030,12 @@ the built-in mic when nothing is plugged in) into the active clip.
   old sound.
 - **Stopped**, Rec gives MIDI's one-bar count-in, then records from the top. **Playing**,
   the take waits for the clip's next loop (the next bar on an empty clip), and the
-  heading shows **WAIT**; while it records it shows **REC** and the bar. **Rec** and the
-  clip's pad in Session View blink red while it waits and pulse red while it records. In
-  Track View the pads go red: recording into an empty clip, one pad a bar (the bars
-  recorded lit, the one recording pulsing, the rest of a set Length dim); a clip with a
-  sample keeps its sections, the part recorded so far lit and the playhead pulsing.
+  heading shows **WAIT**; while it records it shows **REC** and the bar. **Rec**
+  blinks red while it waits and is solid red while it records. The clip's pad in Session
+  View blinks white while it waits and pulses white while it records. In Track View the
+  pads go white: recording into an empty clip, one pad a bar (the bars recorded bright,
+  the one recording pulsing, the rest of a set Length dim); a clip with a sample keeps
+  its sections, the part recorded so far bright, the playhead pulsing, the rest dim.
 - You hear the input through the track's effects and fader while the take runs. The
   take itself is recorded without them.
 - The take is saved as a new sample in the project, so **Undo** brings back the clip as

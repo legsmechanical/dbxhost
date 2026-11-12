@@ -148,14 +148,14 @@ step('⭐⭐ after the count-in the heading says REC; Rec again asks the engine 
      * pulsing (half a bar in), the rest dark (Free) */
     {
         const AU = await_au;
-        const pulsing = () => Object.keys(PAD).filter((n) => n >= 68 && n < 100 && PAD[n].c === 127 && PAD[n].a > 0).map(Number);
+        const pulsing = () => Object.keys(PAD).filter((n) => n >= 68 && n < 100 && PAD[n].c === 120 && PAD[n].a > 0).map(Number);
         const k0 = [...Array(32).keys()].find((i) => AU.auPadToSlice(i, 2) === 0);
         S.trackActiveClip[2] = 1;                                     /* the take's clip (the stub snapshot reads 0) */
         LEDS.forceRedraw();
         assert(pulsing().join() === String(68 + k0), 'Track view: the recording bar\'s pad does not pulse red: ' + JSON.stringify(PAD));
         REC = "2 2 1 132300 0 900 0 0"; poll(); S.trackActiveClip[2] = 1; LEDS.forceRedraw();             /* 1.5 bars */
         const k1 = [...Array(32).keys()].find((i) => AU.auPadToSlice(i, 2) === 1);
-        assert(pulsing().join() === String(68 + k1) && PAD[68 + k0].c === 127 && PAD[68 + k0].a === 0,
+        assert(pulsing().join() === String(68 + k1) && PAD[68 + k0].c === 120 && PAD[68 + k0].a === 0,
                'Track view: bar 1 is not solid red with bar 2 pulsing: ' + JSON.stringify(PAD));
     }
     /* Session view: the clip's pad pulses red, the top bar names the take */
@@ -163,7 +163,7 @@ step('⭐⭐ after the count-in the heading says REC; Rec again asks the engine 
     const saveR = S.auRec; S.auRec = null; const barPlain = headingInk(); S.auRec = saveR;
     ticks(3);
     const pad = PAD[92 - 1 * 8 + 2];
-    assert(pad && pad.c === 127 && pad.a > 0, 'the recording clip\'s pad does not pulse red: ' + JSON.stringify(pad));
+    assert(pad && pad.c === 120 && pad.a > 0, 'the recording clip\'s pad does not pulse white: ' + JSON.stringify(pad));
     assert(Math.abs(headingInk() - barPlain) > 20, 'Session view\'s top bar does not show the take');
     S.sessionView = false;
     clear(); rec();
@@ -203,13 +203,13 @@ step('⭐ cancelled (silent): the file is removed, the card says why', () => {
     assert(S.auRec, 'rig: no take armed');
     write(S.auRec.path);
     REC = '2 2 ' + S.auRec.c + ' 132300 0 900 0 0'; poll(); S.trackActiveClip[2] = S.auRec.c; LEDS.forceRedraw();
-    const red = () => Object.keys(PAD).filter((n) => n >= 68 && n < 100 && PAD[n].c === 127).map(Number);
-    assert(red().length >= 2, 'rig: the take\'s pads are not red: ' + JSON.stringify(PAD));
+    const lit = () => Object.keys(PAD).filter((n) => n >= 68 && n < 100 && PAD[n].c === 120).map(Number);
+    assert(lit().length >= 2, 'rig: the take\'s pads are not red: ' + JSON.stringify(PAD));
     { const c0 = S.auRec.c; REC = '5 2 ' + c0 + ' 0 0 0 6 0'; poll(); S.trackActiveClip[2] = c0; ticks(3); }
     assert(!S.auRec && files().length === 0, 'left: ' + JSON.stringify(files()));
     assert(/No input heard/.test(card()), 'card: ' + card());
-    /* the pads leave the take's red (found on the device, 2026-11-12) */
-    assert(red().length === 0, 'the pads stay red after the take: ' + red());
+    /* the pads leave the take's white (found on the device, 2026-11-12) */
+    assert(lit().length === 0, 'the pads stay white after the take: ' + lit());
     REC = '0 2 1 0 0 0 0 0';
 });
 

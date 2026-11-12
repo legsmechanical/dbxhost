@@ -190,10 +190,10 @@ export function auRecLedState() {
 export function auRecClip() { return S.auRec ? [S.auRec.t, S.auRec.c] : null; }
 
 /* Track view's pads during a take into an empty clip, pad k (0..31): one pad
- * a BAR — the bars recorded red, the one recording pulsing, the rest of a set
- * Length deep red, past it dark; while it waits, pad 1 blinks. A clip with a
- * sample keeps its sections, in red (ui_leds). Returns [from, colour, anim]
- * as 'done' / 'now' / 'todo' / null. */
+ * a BAR — the bars recorded lit, the one recording pulsing, the rest of a set
+ * Length dim, past it dark; while it waits, pad 1 blinks. A clip with a
+ * sample keeps its sections (ui_leds). Returns 'wait' / 'done' / 'now' /
+ * 'todo' / null. */
 export function auRecBarPad(k) {
     const r = S.auRec;
     if (!r || r.phase === 'landing') return null;
