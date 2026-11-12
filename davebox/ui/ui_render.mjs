@@ -6,7 +6,7 @@
  * Extracted from ui.js (Phase 5 of the modularity refactor, module 5, final).
  */
 
-import { auRecTag, auRecDrawModal } from './ui_audio_rec.mjs';
+import { auRecTag, auRecDrawModal, auRecBarText } from './ui_audio_rec.mjs';
 import { lowBatteryUp, lowBatteryLines } from './ui_battery.mjs';
 import { S, PERF_FACTORY_PRESETS, stepRevealAvailable, stepHoldEstablished, loopViewActive, knobAltOn } from './ui_state.mjs';
 import { seqFollowOn, cardHoldShows } from './ui_prefs.mjs';
@@ -305,7 +305,7 @@ function hudSampleWave(ed, i, opts) {
 }
 function drawAudioTrackRest(t) {
     const c = auClipOf(t), i = auInfo(t, c);
-    (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankHeaderName(t, S.activeBank) + (auRecTag(t) || ''), false, true);
+    (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankHeaderName(t, S.activeBank), false, true);
     /* a Loop clip says its sample's Tempo too (Josh, 2026-10-29: "LOOP 112") */
     const bpm = auBpm(i);
     const head = auIsSlice(i) ? 'Slice ' + (auSelSlice(t) + 1) + '/' + i.n + '  '
@@ -770,7 +770,8 @@ function drawBankHeading(name, showTrack, bareHdr, rightOverride) {
  * overlay"), so this is the name as given; kept as the one seam the bank
  * header and the STEP page share. */
 function bankHeadingText(name) {
-    return name;
+    /* an Audio track's input take: REC / WAIT on every heading of its track */
+    return S.sessionView ? name : name + (auRecTag(S.activeTrack) || '');
 }
 
 /* Vestigial: secondary banks (LIVE ARP / AUTOMATION / REPEAT GROOVE) now use
@@ -2831,7 +2832,12 @@ function drawUIBody() {
          * DAVEBOX, and the 6x6 bank-heading font is no bigger than the 5x7 the
          * bar used before. */
         hudScreen('session.overview');
-        if (S.playing && S.bannerDave >= 0) {
+        const _arBar = auRecBarText();
+        if (_arBar) {
+            /* an Audio track's input take names itself where the wordmark sits */
+            fill_rect(0, 0, 128, MARK_BAR_H, 1);
+            drawWordmark(_arBar);
+        } else if (S.playing && S.bannerDave >= 0) {
             drawBannerDave();
         } else {
             fill_rect(0, 0, 128, MARK_BAR_H, 1);

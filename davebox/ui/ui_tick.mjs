@@ -8,7 +8,7 @@
  * see docs/superpowers/plans/2026-07-10-refactor-phase6b-map.md).
  */
 
-import { auRecTick } from './ui_audio_rec.mjs';
+import { auRecTick, auRecLedState } from './ui_audio_rec.mjs';
 import { miOpen, miOpenGroove, miTick, miAnimating, miActive } from './ui_midi_import.mjs';
 import { chordPadsOn } from './ui_custom_chords.mjs';
 import { triggerFlashing } from './ui_trigger.mjs';
@@ -2146,6 +2146,11 @@ export function _tickImpl() {
                  * (passes through under skip_led_clear). Force OFF every POLL_INTERVAL
                  * so our blanking re-asserts over that layer instead of being eaten. */
                 setButtonLED(MoveRec, LED_OFF, (S.tickCount % POLL_INTERVAL) === 0);
+            } else if (auRecLedState()) {
+                /* An Audio track's input take: blinking while it counts in or
+                 * waits for its loop, solid while it records (as a note take). */
+                if (auRecLedState() === 'wait') setButtonLEDAnim(MoveRec, LED_OFF, Red, LED_BLINK_8TH);
+                else setButtonLED(MoveRec, Red);
             } else if (S.stepRecActive) {
                 /* Step record: solid WHITE — red belongs to live recording, and
                  * the cursor's white blink on the step row matches it. */

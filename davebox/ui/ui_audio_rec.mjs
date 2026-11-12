@@ -20,7 +20,7 @@ import { isAudioTrack, auInfo, auMarkStale, dspAnswer } from './ui_audio.mjs';
 import { sanitizeName } from './ui_export.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { disarmRecord } from './ui_record.mjs';
-import { forceRedraw } from './ui_leds.mjs';
+import { forceRedraw, invalidateLEDCache } from './ui_leds.mjs';
 import { recInput } from './ui_prefs.mjs';
 import { confirmLineInput, feedbackGateActive, feedbackGateDraw, feedbackGateInput }
     from '/data/UserData/schwung/shared/feedback_gate.mjs';
@@ -135,6 +135,7 @@ export function auRecTick() {
     if (!a) return;
     const st = a[0], err = a[6];
     r.state = st; r.done = a[3]; r.total = a[4]; r.ticks = a[7];
+    if (r.ledSt !== st) { r.ledSt = st; invalidateLEDCache(); }
     if (st === AR_ARMED || st === AR_RECORDING || st === AR_ENDING) { r.phase = st === AR_ARMED ? 'armed' : 'recording'; S.screenDirty = true; return; }
     if (S.recordCountingIn && st !== AR_DONE) { S.screenDirty = true; return; }   /* not armed in the engine yet */
     if (st === AR_DONE) {
@@ -177,6 +178,23 @@ export function auRecTag(t) {
     }
     return null;
 }
+
+/* Session view's top bar during a take: "REC 2B · 3" / "WAIT 2B" — or null. */
+export function auRecBarText() {
+    const r = S.auRec;
+    if (!r || r.phase === 'landing') return null;
+    if (r.phase === 'armed' || S.recordCountingIn) return (Math.floor(S.clockMs / 440) % 2 === 0) ? 'WAIT ' + clipName(r.t, r.c) : ' ';
+    const bars = Math.floor((r.done || 0) / ((60 / ((S.bpmMirror > 0) ? S.bpmMirror : 120)) * 4 * 44100));
+    return 'REC ' + clipName(r.t, r.c) + ' BAR ' + (bars + 1);
+}
+
+/* For the LEDs: 'wait' (armed / counting in), 'rec', or null — and whose clip. */
+export function auRecLedState() {
+    const r = S.auRec;
+    if (!r || r.phase === 'landing') return null;
+    return (r.phase === 'armed' || S.recordCountingIn) ? 'wait' : 'rec';
+}
+export function auRecClip() { return S.auRec ? [S.auRec.t, S.auRec.c] : null; }
 
 /* The speaker-feedback gate's modal: its input, and drawing it. */
 export function auRecModalCC(d1, d2) { return feedbackGateActive() ? feedbackGateInput(d1, d2) : false; }

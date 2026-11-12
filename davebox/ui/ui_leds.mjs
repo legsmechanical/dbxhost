@@ -1,4 +1,5 @@
 import { miPadColors, miActive, miRingCells } from './ui_midi_import.mjs';
+import { auRecClip, auRecLedState } from './ui_audio_rec.mjs';
 import { padInZoneB } from './ui_pad_mode.mjs';
 import { S, loopViewActive, knobAltOn } from './ui_state.mjs';
 import {
@@ -770,6 +771,15 @@ export function updateSessionLEDs() {
                 color = trackColor(t);
             } else {
                 color = trackDimColor(t);
+            }
+            /* An Audio track's input take: its clip blinks red while it waits,
+             * pulses red while it records. */
+            {
+                const _ar = auRecClip();
+                if (_ar && _ar[0] === t && _ar[1] === sceneIdx) {
+                    if (auRecLedState() === 'wait') { color = Red; from = LED_OFF; anim = LED_BLINK_8TH; }
+                    else if (auRecLedState() === 'rec') { color = Red; from = DeepRed; anim = LED_PULSE_4TH; }
+                }
             }
             /* Copy source blink: JS-side timer (transport-independent) */
             if (S.copySrc) {

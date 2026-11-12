@@ -53,6 +53,9 @@ globalThis.host_sampler_is_recording = () => SAMPLING;
 globalThis.host_speaker_active = () => SPEAKER;
 globalThis.host_line_in_connected = () => LINE;
 const sets = [];
+/* the LEDs: the last write to each button (CC) and pad (note), with its animation channel */
+const BTN = {}, PAD = {};
+globalThis.move_midi_internal_send = (m) => { if ((m[1] & 0xF0) === 0xB0) BTN[m[2]] = { c: m[3], a: m[1] & 15 }; else if ((m[1] & 0xF0) === 0x90) PAD[m[2]] = { c: m[3], a: m[1] & 15 }; return true; };
 const WRITTEN = {};
 const _hwf0 = globalThis.host_write_file;
 globalThis.host_write_file = (p, b) => { WRITTEN[p] = String(b); globalThis.__stubStdWritten = globalThis.__stubStdWritten || {}; globalThis.__stubStdWritten[p] = String(b); return true; };
@@ -128,6 +131,16 @@ step('⭐⭐ after the count-in the heading says REC; Rec again asks the engine 
     assert(!S.recordArmed, 'the note take is still armed after the count-in');
     const inked = headingInk();
     assert(plain > 0 && Math.abs(inked - plain) > 20, 'the heading did not gain the REC tag: ' + plain + ' -> ' + inked);
+    ticks(3);
+    assert(BTN[HC.MoveRec] && BTN[HC.MoveRec].c === 127 && BTN[HC.MoveRec].a === 0, 'the Rec LED is not solid red while recording: ' + JSON.stringify(BTN[HC.MoveRec]));
+    /* Session view: the clip's pad pulses red, the top bar names the take */
+    S.sessionView = true; S.sceneRow = 0;
+    const saveR = S.auRec; S.auRec = null; const barPlain = headingInk(); S.auRec = saveR;
+    ticks(3);
+    const pad = PAD[92 - 1 * 8 + 2];
+    assert(pad && pad.c === 127 && pad.a > 0, 'the recording clip\'s pad does not pulse red: ' + JSON.stringify(pad));
+    assert(Math.abs(headingInk() - barPlain) > 20, 'Session view\'s top bar does not show the take');
+    S.sessionView = false;
     clear(); rec();
     assert(sent('t2_au_rec_stop').length === 1, 'Rec again did not ask the engine: ' + JSON.stringify(sets));
     assert(!sent('t2_recording').length && !sent('record_count_in_cancel').length, 'MIDI\'s disarm ran');
@@ -156,6 +169,8 @@ step('⭐ playing: Rec arms with no count-in; the heading blinks WAIT', () => {
     S.auRec = save;
     let most = 0, least = 1e9;
     for (const ms of [0, 440, 880, 1320]) { S.clockMs = ms; const n = headingInk(); most = Math.max(most, n); least = Math.min(least, n); }
+    ticks(3);
+    assert(BTN[HC.MoveRec] && BTN[HC.MoveRec].c === 127 && BTN[HC.MoveRec].a > 0, 'the Rec LED does not blink while waiting: ' + JSON.stringify(BTN[HC.MoveRec]));
     assert(Math.abs(most - least) > 20 && (Math.abs(most - plain) <= 2 || Math.abs(least - plain) <= 2), 'the heading does not blink a WAIT tag: plain ' + plain + ', ' + least + '..' + most);
 });
 
