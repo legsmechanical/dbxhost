@@ -1,5 +1,5 @@
 import { miPadColors, miActive, miRingCells } from './ui_midi_import.mjs';
-import { auRecClip, auRecLedState } from './ui_audio_rec.mjs';
+import { auRecClip, auRecLedState, auRecBarPad } from './ui_audio_rec.mjs';
 import { padInZoneB } from './ui_pad_mode.mjs';
 import { S, loopViewActive, knobAltOn } from './ui_state.mjs';
 import {
@@ -1007,9 +1007,28 @@ export function updateTrackLEDs() {
             const lz = auLazyOpen() ? auLazyState() : null;
             const next = lz && lz.state === AU_LAZY_ARMED ? 0 : lz && lz.state === AU_LAZY_RUN ? lz.n : -1;
             const done = lz && lz.state !== AU_LAZY_ARMED ? lz.n : 0;
+            /* A take into this clip (ui_audio_rec): an empty clip's pads count
+             * its bars in red; a clip with a sample shows its sections as
+             * always but red — recorded so far bright, the playhead pulsing,
+             * the rest deep red; waiting, they blink (Josh, 2026-11-12: "the
+             * indicators still aren't there on the pads while recording"). */
+            const _ar = auRecClip(), recSt = _ar && _ar[0] === t && _ar[1] === auClipOf(t) ? auRecLedState() : null;
             for (let i = 0; i < 32; i++) {
                 let color = LED_OFF;
                 const k = auPadToSlice(i, t);
+                if (recSt && !slice && !lz) {
+                    const n = TRACK_PAD_BASE + i;
+                    if (ai.state !== 2) {
+                        const b = auRecBarPad(k);
+                        if (b === 'wait') cachedSetLEDAnim(n, LED_OFF, Red, LED_BLINK_8TH);
+                        else if (b === 'now') cachedSetLEDAnim(n, DeepRed, Red, LED_PULSE_4TH);
+                        else cachedSetLED(n, b === 'done' ? Red : b === 'todo' ? DeepRed : LED_OFF);
+                    } else if (k >= AU_LOOP_SECTIONS || pastReach(k)) cachedSetLED(n, LED_OFF);
+                    else if (recSt === 'wait') cachedSetLEDAnim(n, LED_OFF, DeepRed, LED_BLINK_8TH);
+                    else if (k === ph) cachedSetLEDAnim(n, DeepRed, Red, LED_PULSE_4TH);
+                    else cachedSetLED(n, ph >= 0 && (ai.revrs ? k > ph : k < ph) ? Red : DeepRed);
+                    continue;
+                }
                 if (lz) color = k === next ? White : k < done ? tc : LED_OFF;
                 else if (ai.state !== 2) color = i === 0 ? td : LED_OFF;
                 else if (slice) {

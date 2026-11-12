@@ -21,6 +21,7 @@ import { sanitizeName } from './ui_export.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { disarmRecord } from './ui_record.mjs';
 import { forceRedraw, invalidateLEDCache } from './ui_leds.mjs';
+import { auIn } from './ui_audio_input.mjs';
 import { confirmLineInput, feedbackGateActive, feedbackGateDraw, feedbackGateInput }
     from '/data/UserData/schwung/shared/feedback_gate.mjs';
 
@@ -91,7 +92,9 @@ function armTake(t, c) {
     const path = freePath(sanitizeName(S.currentSetName) + ' ' + clipName(t, c) + ' rec ' + Math.round(bpm) + 'bpm', dir);
     if (!path) { showActionPopupFor(2500, 'RECORD', 'No free name'); return; }
     host_module_set_param('t' + t + '_au_rec_arm', c + ' ' + AU_REC_LATENCY + ' |' + path);
-    S.auRec = { t, c, path, phase: 'armed', layer: !!auInfo(t, c).name, at: nowMs(), polled: 0, stopAsked: false };
+    const layer = !!auInfo(t, c).name;
+    S.auRec = { t, c, path, phase: 'armed', layer, at: nowMs(), polled: 0, stopAsked: false,
+                lenBars: layer ? 0 : [0, 1, 2, 4, 8][auIn(t).len % 5] };
     if (!S.playing) {
         /* MIDI's count-in: its screen, its click; the engine starts the clip */
         S.recordArmed        = true;
@@ -185,6 +188,22 @@ export function auRecLedState() {
     return (r.phase === 'armed' || S.recordCountingIn) ? 'wait' : 'rec';
 }
 export function auRecClip() { return S.auRec ? [S.auRec.t, S.auRec.c] : null; }
+
+/* Track view's pads during a take into an empty clip, pad k (0..31): one pad
+ * a BAR — the bars recorded red, the one recording pulsing, the rest of a set
+ * Length deep red, past it dark; while it waits, pad 1 blinks. A clip with a
+ * sample keeps its sections, in red (ui_leds). Returns [from, colour, anim]
+ * as 'done' / 'now' / 'todo' / null. */
+export function auRecBarPad(k) {
+    const r = S.auRec;
+    if (!r || r.phase === 'landing') return null;
+    if (auRecLedState() === 'wait') return k === 0 ? 'wait' : null;
+    const bars = Math.floor((r.done || 0) / ((60 / ((S.bpmMirror > 0) ? S.bpmMirror : 120)) * 4 * 44100));
+    const cur = Math.min(31, bars);
+    if (k < cur) return 'done';
+    if (k === cur) return 'now';
+    return k < (r.lenBars | 0) ? 'todo' : null;
+}
 
 /* The speaker-feedback gate's modal: its input, and drawing it. */
 export function auRecModalCC(d1, d2) { return feedbackGateActive() ? feedbackGateInput(d1, d2) : false; }

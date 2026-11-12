@@ -3030,7 +3030,11 @@ the built-in mic when nothing is plugged in) into the active clip.
   old sound.
 - **Stopped**, Rec gives MIDI's one-bar count-in, then records from the top. **Playing**,
   the take waits for the clip's next loop (the next bar on an empty clip), and the
-  heading shows **WAIT**; while it records it shows **REC** and the bar.
+  heading shows **WAIT**; while it records it shows **REC** and the bar. **Rec** and the
+  clip's pad in Session View blink red while it waits and pulse red while it records. In
+  Track View the pads go red: recording into an empty clip, one pad a bar (the bars
+  recorded lit, the one recording pulsing, the rest of a set Length dim); a clip with a
+  sample keeps its sections, the part recorded so far lit and the playhead pulsing.
 - You hear the input through the track's effects and fader while the take runs. The
   take itself is recorded without them.
 - The take is saved as a new sample in the project, so **Undo** brings back the clip as
@@ -3048,8 +3052,9 @@ the built-in mic when nothing is plugged in) into the active clip.
   | K4 Length | How long a take into an empty clip is | **Free** (until Rec again) · 1 · 2 · 4 · 8 bars |
   | K5 Overdub | A take into a clip that has a sample | **Layer** (over what it plays) · Replace |
 
-  The track's overview shows the input's level where the waveform was, and **CLIP**
-  when it reaches full scale. The Move picks the source itself: line-in when a cable
+  On a clip with no sample, the track's overview shows the input's level where the
+  waveform would be, and **CLIP** when it reaches full scale; a clip with a sample keeps
+  its waveform. The Move picks the source itself: line-in when a cable
   is plugged in, else the built-in mic.
 - With **Replace**, the clip's sound is left out while you record and comes back
   after a punch-out (Rec during the pass).

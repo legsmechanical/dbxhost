@@ -93,6 +93,7 @@ const CONST = await import('../../ui/ui_constants.mjs');
 const { BANK_INPUT } = CONST;
 const PREFS = await import('../../ui/ui_prefs.mjs');
 const INP = await import('../../ui/ui_audio_input.mjs');
+const await_au = await import('../../ui/ui_audio.mjs');
 const INFO_CELLS = () => INP.inputBankCells(2);
 const headingInkAt = (y0, y1) => { screen(); let n = 0; for (let y = y0; y < y1; y++) for (let x = 0; x < 128; x++) n += FB[y * 128 + x]; return n; };
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
@@ -143,6 +144,20 @@ step('⭐⭐ after the count-in the heading says REC; Rec again asks the engine 
     assert(plain > 0 && Math.abs(inked - plain) > 20, 'the heading did not gain the REC tag: ' + plain + ' -> ' + inked);
     ticks(3);
     assert(BTN[HC.MoveRec] && BTN[HC.MoveRec].c === 127 && BTN[HC.MoveRec].a === 0, 'the Rec LED is not solid red while recording: ' + JSON.stringify(BTN[HC.MoveRec]));
+    /* Track view: the empty clip's pads count the bars in red — the first
+     * pulsing (half a bar in), the rest dark (Free) */
+    {
+        const AU = await_au;
+        const pulsing = () => Object.keys(PAD).filter((n) => n >= 68 && n < 100 && PAD[n].c === 127 && PAD[n].a > 0).map(Number);
+        const k0 = [...Array(32).keys()].find((i) => AU.auPadToSlice(i, 2) === 0);
+        S.trackActiveClip[2] = 1;                                     /* the take's clip (the stub snapshot reads 0) */
+        LEDS.forceRedraw();
+        assert(pulsing().join() === String(68 + k0), 'Track view: the recording bar\'s pad does not pulse red: ' + JSON.stringify(PAD));
+        REC = "2 2 1 132300 0 900 0 0"; poll(); S.trackActiveClip[2] = 1; LEDS.forceRedraw();             /* 1.5 bars */
+        const k1 = [...Array(32).keys()].find((i) => AU.auPadToSlice(i, 2) === 1);
+        assert(pulsing().join() === String(68 + k1) && PAD[68 + k0].c === 127 && PAD[68 + k0].a === 0,
+               'Track view: bar 1 is not solid red with bar 2 pulsing: ' + JSON.stringify(PAD));
+    }
     /* Session view: the clip's pad pulses red, the top bar names the take */
     S.sessionView = true; S.sceneRow = 0;
     const saveR = S.auRec; S.auRec = null; const barPlain = headingInk(); S.auRec = saveR;
@@ -267,6 +282,18 @@ step('⭐⭐ the INPUT bank (green, above SAMPLE): its knobs set the track\'s in
     METER = '0 0'; S.auInMeter = null; ticks(8); const quiet = headingInkAt(46, 57);
     METER = '30000 30000'; S.auInMeter = null; { const t0 = Date.now(); while (Date.now() - t0 < 60) {} } ticks(8); const loud = headingInkAt(46, 57);
     assert(loud > quiet + 60, 'the meter does not move with the input: ' + quiet + ' -> ' + loud);
+    /* a clip WITH a sample keeps its waveform and playhead: no meter
+     * (Josh, 2026-11-12: "maybe only when the clilp isn't currently holding anything?") */
+    {
+        const c = await_au.auClipOf(2), keep = S.auInfo[2][c];
+        S.auInfo[2][c] = Object.assign({}, keep, { state: 2, name: 'x.wav', nframes: 88200, rate: 44100, ch: 2 });
+        METER = '30000 30000'; S.auInMeter = null; { const t0 = Date.now(); while (Date.now() - t0 < 60) {} } ticks(8);
+        assert(!S.auInMeter, 'the meter is still read on a clip with a sample');
+        S.auInMeter = { l: 1, r: 1, clipUntil: 0, at: 0 };
+        const withS = headingInkAt(46, 57); S.auInMeter = { l: 0, r: 0, clipUntil: 0, at: 0 };
+        assert(Math.abs(withS - headingInkAt(46, 57)) < 10, 'the meter is drawn over a clip with a sample');
+        S.auInfo[2][c] = keep;
+    }
     S.activeBank = 0; S.trackActiveBank[2] = 0;
 });
 

@@ -88,7 +88,7 @@ import { cardHoldExpired } from './ui_prefs.mjs';
 import { heldIndicatorChanged } from './ui_chord.mjs';
 import { printTick } from './ui_print.mjs';
 import { resampleTick } from './ui_resample.mjs';
-import { auTick, auReadTrack, auForgetTrack, isSampledTrack, isAudioTrack, auRead, rmxMapPoll, rmxOrdersPoll } from './ui_audio.mjs';
+import { auTick, auReadTrack, auForgetTrack, isSampledTrack, isAudioTrack, auRead, rmxMapPoll, rmxOrdersPoll, auInfo, auClipOf } from './ui_audio.mjs';
 import { auConvertStart, auConvertTick, auConvertApply } from './ui_audio_convert.mjs';
 import { auConvertToKit } from './ui_audio_kit.mjs';
 import { openAudioChooser, closeAudioChooser, audioChooserTick } from './ui_audio_chooser.mjs';
@@ -729,8 +729,9 @@ export function _tickImpl() {
     auRecTick();         /* an Audio track's input take (ui_audio_rec) */
     /* the device's input settings, to the engine once it is up */
     if (!S.inputPushed && S.ledInitComplete && !S.stateLoading) { inputPrefsPush(); S.inputPushed = true; }
-    /* the INPUT bank's meter, while it is up */
-    if (!S.sessionView && S.activeBank === BANK_INPUT && S.trackPadMode[S.activeTrack] === PAD_MODE_AUDIO)
+    /* the INPUT bank's meter, while it is up (on a clip with no sample) */
+    if (!S.sessionView && S.activeBank === BANK_INPUT && S.trackPadMode[S.activeTrack] === PAD_MODE_AUDIO
+        && auInfo(S.activeTrack, auClipOf(S.activeTrack)).state !== 2)
         inputMeterPoll(S.activeTrack, S.clockMs);
 
     /* Reapply cable-2 channel remap if anything affecting it changed. */

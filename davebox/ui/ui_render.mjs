@@ -320,8 +320,11 @@ function drawAudioTrackRest(t) {
     /* the waveform in Loop mode only; slices are sequenced, so Slice mode
      * shows the page bar and playhead like any track (Josh, 2026-10-28) */
     if (auIsSlice(i)) drawPositionBar(t);
-    else if (S.activeBank === BANK_INPUT) {
-        /* the INPUT bank: the input's level where the waveform sits */
+    else if (S.activeBank === BANK_INPUT && i.state !== 2) {
+        /* the INPUT bank on a clip with no sample: the input's level where
+         * the waveform would sit; a clip with one keeps its waveform and
+         * playhead (Josh, 2026-11-12: "maybe only when the clilp isn't
+         * currently holding anything?") */
         drawInputMeter(4, 47, 120, 9, S.clockMs);
     } else {
         /* the clip, as SAMPLE shows it zoomed out: its bars across, the audio
