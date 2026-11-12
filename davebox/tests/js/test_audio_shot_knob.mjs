@@ -77,6 +77,19 @@ async function main() {
         assert(lit === '11100000', 'the CLIP bank rings: ' + lit + ' ' + JSON.stringify([71, 72, 73, 74, 75, 76, 77, 78].map((c) => CCLEDS.get(c))));
     });
 
+    step('⭐ Loop + jog changes an Audio clip\'s length a step a detent, as on any clip (Josh, 2026-11-12: "on audio clips, loop + jog gesture to change length by steps doesn\'t work")', () => {
+        S.clipLength[T][0] = 16;
+        sets.length = 0;
+        note(0, 0);
+        cc(58, 127);                                     /* Loop down */
+        info(); cc(14, 1); info(); ticks(1);
+        cc(58, 0);
+        const ls = sets.filter(([k]) => /clip_length|loop_set/.test(k));
+        assert(S.clipLength[T][0] === 17 && ls.length, 'Loop + jog right did not lengthen the clip: ' + S.clipLength[T][0] + ' ' + JSON.stringify(sets.slice(0, 12)));
+        cc(58, 127); info(); cc(14, 127); info(); ticks(1); cc(58, 0);
+        assert(S.clipLength[T][0] === 16, 'Loop + jog left did not shorten it back: ' + S.clipLength[T][0]);
+    });
+
     step('a brush (ten detents, half the deliberate feel) does not flip it', () => {
         sets.length = 0;
         note(0, 127); turn(1, 10); note(0, 0);
