@@ -28,9 +28,12 @@ import { confirmLineInput, feedbackGateActive, feedbackGateDraw, feedbackGateInp
 const AR_ARMED = 1, AR_RECORDING = 2, AR_ENDING = 3, AR_DONE = 4, AR_CANCELLED = 5, AR_FAILED = 6;
 const AR_ERR_TRACK = 1, AR_ERR_BUSY = 2, AR_ERR_LOADING = 3, AR_ERR_SAMPLER = 4, AR_ERR_SILENT = 6, AR_ERR_CAP = 7;
 
-/* Frames from feeding the slot to reading it back at the input (measured on the
- * device; the engine adds it to where the take reads the input). */
-export const AU_REC_LATENCY = 0;
+/* Frames from feeding the slot to reading it back at the input: the engine
+ * reads the take's input that much later. MEASURED on a Move, 2026-11-12, with
+ * a cable from the headphone out to the line in: a click fed at the take's top
+ * came back 599 frames later (13.6 ms) on every beat of 7 takes, at 120 and
+ * 90 bpm, to the frame; with 599 set, every click lands on its beat. */
+export const AU_REC_LATENCY = 599;
 
 const POLL_MS = 60;
 

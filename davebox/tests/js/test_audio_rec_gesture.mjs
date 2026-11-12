@@ -105,7 +105,7 @@ poll();
 step('⭐⭐ stopped: Rec arms the take (its file), then MIDI\'s count-in — no note take', () => {
     clear(); globalThis.__stubStdWritten = {};
     rec();
-    assert(sent('t2_au_rec_arm').join() === '1 0 |' + PATH, 'arm: ' + JSON.stringify(sent('t2_au_rec_arm')));
+    assert(sent('t2_au_rec_arm').join() === '1 599 |' + PATH, 'arm: ' + JSON.stringify(sent('t2_au_rec_arm')));
     assert(sent('record_count_in').join() === '2', 'count-in: ' + sent('record_count_in'));
     const q = sets.map((x) => x[0]).concat(S.pendingDefaultSetParams.map((e) => e.key));
     assert(q.indexOf('t2_au_rec_arm') < q.indexOf('record_count_in'), 'the count-in went before the arm: ' + q.join(','));

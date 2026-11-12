@@ -56,7 +56,6 @@
 #define AR_ERR_CAP      7   /* (not an error) a growing take stopped at AR_MAX_BARS */
 
 #define AR_MAX_BARS   64
-#define AR_LAT_DEFAULT 0     /* measured on the device: see the DBX plan, latency */
 #define AR_SILENT_PEAK 4     /* an input under this never moved */
 #define AR_RAMP       64
 
