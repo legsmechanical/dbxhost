@@ -136,7 +136,7 @@ export function auRecTick() {
         if (r.phase !== 'landing') { r.phase = 'landing'; r.at = now; }
         const [f] = os.stat(r.path);
         if ((samplerBusy() || !f) && now - r.at < 10000) return;
-        S.auRec = null;
+        S.auRec = null; invalidateLEDCache();      /* the pads leave the take's red */
         if (!f) { showActionPopupFor(2500, 'RECORD', 'Not recorded'); forceRedraw(); return; }
         noteUndoUnit();
         host_module_set_param('t' + r.t + '_au_rec_land', String(r.c));
@@ -148,7 +148,7 @@ export function auRecTick() {
     }
     /* CANCELLED / FAILED / IDLE: nothing lands; the file (if any) goes once written */
     if (samplerBusy() && now - r.at < 10000) return;
-    S.auRec = null;
+    S.auRec = null; invalidateLEDCache();          /* the pads leave the take's red */
     removeFile(r.path);
     const why = err === AR_ERR_SILENT ? 'No input heard'
         : err === AR_ERR_SAMPLER ? 'Sampler busy'

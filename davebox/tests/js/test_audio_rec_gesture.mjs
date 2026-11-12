@@ -202,9 +202,14 @@ step('⭐ playing: Rec arms with no count-in; the heading blinks WAIT', () => {
 step('⭐ cancelled (silent): the file is removed, the card says why', () => {
     assert(S.auRec, 'rig: no take armed');
     write(S.auRec.path);
-    REC = '5 2 1 0 0 0 6 0'; poll();
+    REC = '2 2 ' + S.auRec.c + ' 132300 0 900 0 0'; poll(); S.trackActiveClip[2] = S.auRec.c; LEDS.forceRedraw();
+    const red = () => Object.keys(PAD).filter((n) => n >= 68 && n < 100 && PAD[n].c === 127).map(Number);
+    assert(red().length >= 2, 'rig: the take\'s pads are not red: ' + JSON.stringify(PAD));
+    { const c0 = S.auRec.c; REC = '5 2 ' + c0 + ' 0 0 0 6 0'; poll(); S.trackActiveClip[2] = c0; ticks(3); }
     assert(!S.auRec && files().length === 0, 'left: ' + JSON.stringify(files()));
     assert(/No input heard/.test(card()), 'card: ' + card());
+    /* the pads leave the take's red (found on the device, 2026-11-12) */
+    assert(red().length === 0, 'the pads stay red after the take: ' + red());
     REC = '0 2 1 0 0 0 0 0';
 });
 
