@@ -31,10 +31,10 @@ echo "module take wiring:"
 # The struct grows only at its end (a module reads a member only inside `size`).
 ext_tail() {
     awk '/typedef struct move_host_ext_v1 \{/,/\} move_host_ext_v1_t;/' "$API" \
-        | grep -E '^\s+[a-z].*\(\*' | tail -11 | tr -d ' \n' \
-        | grep -q 'int(\*capture_start)(constchar\*path,uint32_tframes);void(\*capture_stop)(void);int(\*capture_start_src)(constchar\*path,uint32_tframes,intkind,intindex);int(\*slot_audio_feed)(intslot,constint16_t\*lr,uint32_tframes);int(\*stems_start)(intn,constint\*slots,constchar\*const\*paths,uint32_tframes);void(\*stems_limit)(uint32_tframes);void(\*stems_stop)(void);int(\*stems_state)(uint16_t\*peaks,intcap);int(\*offline_take_begin)(conststructmove_offline_take\*take);int(\*offline_take_state)(uint32_t\*done,uint32_t\*total);void(\*offline_take_cancel)(void);'
+        | grep -E '^\s+[a-z].*\(\*' | tail -12 | tr -d ' \n' \
+        | grep -q 'int(\*capture_start)(constchar\*path,uint32_tframes);void(\*capture_stop)(void);int(\*capture_start_src)(constchar\*path,uint32_tframes,intkind,intindex);int(\*slot_audio_feed)(intslot,constint16_t\*lr,uint32_tframes);int(\*stems_start)(intn,constint\*slots,constchar\*const\*paths,uint32_tframes);void(\*stems_limit)(uint32_tframes);void(\*stems_stop)(void);int(\*stems_state)(uint16_t\*peaks,intcap);int(\*offline_take_begin)(conststructmove_offline_take\*take);int(\*offline_take_state)(uint32_t\*done,uint32_t\*total);void(\*offline_take_cancel)(void);int(\*capture_feed)(constint16_t\*lr,uint32_tframes);'
 }
-check "capture_start / capture_stop / capture_start_src, slot_audio_feed, the stems_*, then the offline_take_* end the extension" ext_tail
+check "capture_start / capture_stop / capture_start_src, slot_audio_feed, the stems_*, the offline_take_*, then capture_feed end the extension" ext_tail
 
 # THE STEM TAKE (stem_take.c): several slots' instruments at once. Its arithmetic
 # and files are run in test_stem_take.c; these pin the shim around it.
@@ -71,6 +71,22 @@ filled() { code "$SHIM" | grep -q '\.capture_start = overtake_capture_start' &&
            code "$SHIM" | grep -q '\.capture_stop = sampler_request_stop_module' &&
            code "$SHIM" | grep -q '\.capture_start_src = overtake_capture_start_src'; }
 check "the shim fills all three members" filled
+
+# THE FEED TAKE (MOVE_CAPTURE_FEED): the file is what the module handed over and
+# nothing else. Each wrong turn is silent: the mix leaks into the take (Resample
+# path), silence pads a render that fed nothing, or a feed outside render lands
+# in the wrong block. The buffer arithmetic is run in test_sampler_take.c.
+feed_filled() { code "$SHIM" | grep -q '\.capture_feed = overtake_capture_feed' &&
+                code "$SHIM" | grep -A2 'static int overtake_capture_feed' | grep -q 'if (!overtake_in_render || !sampler_take_is_feed()) return 0;' &&
+                code "$SHIM" | grep -q 'return sampler_request_start_module(path, frames, SAMPLER_TAKE_SRC_FEED, 0) == 0;'; }
+check "the shim fills capture_feed (render only, a FEED take only) and starts a FEED take" feed_filled
+feed_tail() { code "$SHIM" | grep -q '} else if (sampler_module_take && !sampler_take_is_feed()) {' &&
+              code "$SHIM" | grep -q 'uint32_t nfed = take_feed_take(&shadow_take_feed, &fed);' &&
+              code "$SHIM" | grep -q 'if (nfed && sampler_take_is_feed()) sampler_capture_audio_frames(fed, nfed);'; }
+check "the mix tail writes the fed frames, and never the mix, into a FEED take" feed_tail
+feed_samp() { code "$SAMP" | awk '/^void sampler_capture_audio_from_buffer/,/^}/' | grep -q 'if (sampler_take_is_feed()) return;' &&
+              code "$SAMP" | awk '/^void sampler_capture_audio_frames/,/^}/' | grep -q 'sampler_capture_audio_n(lr, frames);'; }
+check "the sampler keeps the mix out of a FEED take and writes its frames as handed over" feed_samp
 
 # The dry stem: every slot mix loop keeps the tapped slot's contribution. A site
 # without it records SILENCE for that path (rebuild / deferred / inline), and the
@@ -123,7 +139,7 @@ dots_guarded() {
 check "every recording-dot site excludes a module take" dots_guarded
 
 unity_always() { code "$SHIM" | grep -q 'const int16_t \*take_src = unity_view;' &&
-                 code "$SHIM" | grep -A1 '} else if (sampler_module_take) {' \
+                 code "$SHIM" | grep -A1 '} else if (sampler_module_take && !sampler_take_is_feed()) {' \
                      | grep -q 'sampler_capture_audio_from_buffer(take_src)'; }
 check "a module take captures its source (unity_view by default) whatever the menu's source" unity_always
 

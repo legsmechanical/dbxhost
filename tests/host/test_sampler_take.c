@@ -6,6 +6,7 @@
  * kept after it. */
 #include "../../src/host/sampler_take.h"
 #include "../../src/host/sampler_take_tap.h"
+#include "../../src/host/take_feed.h"
 #include "../../src/host/plugin_api_v1.h"
 #include <stdio.h>
 #include <string.h>
@@ -113,5 +114,28 @@ int main(void) {
     expect(!sampler_take_tap_silenced(0, 1, 1), "itself soloed: the mix's own gain");
     expect(sampler_take_tap_as_set(0.5f, 0.8f, 0.6f, 0) == 0.5f * 0.8f
            && sampler_take_tap_as_set(0.5f, 0.8f, 0.6f, 1) == 0.5f * 0.6f, "as set: its volume and pan, left then right");
+    printf("a FEED take (capture_feed):\n");
+    {
+        static take_feed_t f;
+        int16_t a[300 * 2], b[40 * 2];
+        for (int i = 0; i < 600; i++) a[i] = (int16_t)(i + 1);
+        for (int i = 0; i < 80; i++) b[i] = (int16_t)(-1 - i);
+        const int16_t *out;
+        expect(take_feed_take(&f, &out) == 0, "nothing handed over: nothing to write (not a block of silence)");
+        expect(take_feed_put(&f, a, 37) == 1, "a partial block is taken");
+        expect(take_feed_put(&f, b, 40) == 1, "a second call in the same render appends");
+        uint32_t n = take_feed_take(&f, &out);
+        expect(n == 77 && out[0] == 1 && out[73] == 37 * 2 && out[74] == -1 && out[153] == -80,
+               "the mix gets every frame handed over, in order, and no more");
+        expect(take_feed_take(&f, &out) == 0, "...and the next mix gets nothing until more is handed over");
+        expect(take_feed_put(&f, a, 300) == 1 && take_feed_put(&f, a, 300) == 0 && f.frames == 300,
+               "more than MOVE_CAPTURE_FEED_MAX in one render: the extra call is refused whole");
+        take_feed_take(&f, &out);
+        expect(take_feed_put(&f, a, 0) == 0 && take_feed_put(&f, NULL, 4) == 0 && f.frames == 0,
+               "no frames / no audio: refused, nothing kept");
+        expect(TAKE_FEED_MAX_FRAMES == MOVE_CAPTURE_FEED_MAX && SAMPLER_TAKE_SRC_FEED == MOVE_CAPTURE_FEED,
+               "the host's FEED kind and limit are the feed's");
+        expect(!sampler_take_from_tap(1, SAMPLER_TAKE_SRC_FEED), "a FEED take reads no slot tap");
+    }
     return fails;
 }

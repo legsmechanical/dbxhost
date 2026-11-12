@@ -75,6 +75,7 @@
 #include "host/sampler_take_tap.h"
 #include "host/stem_take.h"
 #include "host/slot_feed.h"
+#include "host/take_feed.h"
 #include "host/shadow_transport.h"
 #include "host/shadow_set_pages.h"
 #include "host/shim_worker.h"
@@ -585,6 +586,9 @@ static int16_t shadow_slot_fx_deferred[SHADOW_CHAIN_INSTANCES][FRAMES_PER_BLOCK 
  * the mix tail. Untouched unless such a take is running. */
 static int16_t shadow_take_tap[FRAMES_PER_BLOCK * 2];
 static int shadow_take_tap_valid = 0;
+/* A FEED module take's frames (move_host_ext_v1_t.capture_feed): appended by
+ * the overtake render, written and emptied at the mix tail. */
+static take_feed_t shadow_take_feed;
 static int shadow_slot_fx_deferred_valid[SHADOW_CHAIN_INSTANCES];
 
 /* Apply a slot's sound-generator level to its dry synth block, in place.
@@ -1704,10 +1708,22 @@ static int overtake_capture_start(const char *path, uint32_t frames) {
 /* ...from one slot's own output (move_host_ext_v1_t.capture_start_src). */
 static int overtake_capture_start_src(const char *path, uint32_t frames, int kind, int index) {
     if (kind == MOVE_CAPTURE_MIX) return overtake_capture_start(path, frames);
+    if (kind == MOVE_CAPTURE_FEED) {
+        if (index != 0) return 0;
+        shadow_take_feed.frames = 0;
+        return sampler_request_start_module(path, frames, SAMPLER_TAKE_SRC_FEED, 0) == 0;
+    }
     if (kind < MOVE_CAPTURE_SLOT || kind > MOVE_CAPTURE_MOVE_FX || index < 0) return 0;
     if (index >= (kind >= MOVE_CAPTURE_MOVE ? MOVE_FX_SLOTS : SHADOW_CHAIN_INSTANCES)) return 0;
     /* the MOVE_CAPTURE_* kinds are the SAMPLER_TAKE_SRC_* numbers (sampler_take_tap.h) */
     return sampler_request_start_module(path, frames, kind, index) == 0;
+}
+
+/* Host extension (move_host_ext_v1_t.capture_feed): the FEED take's next frames,
+ * as the module composed them; the mix tail writes them (take_feed.h). */
+static int overtake_capture_feed(const int16_t *lr, uint32_t frames) {
+    if (!overtake_in_render || !sampler_take_is_feed()) return 0;
+    return take_feed_put(&shadow_take_feed, lr, frames);
 }
 
 /* Host extension (move_host_ext_v1_t.slot_audio_feed): one block of audio for
@@ -1753,6 +1769,7 @@ static const move_host_ext_v1_t overtake_host_ext = {
     .offline_take_begin = offline_take_begin,
     .offline_take_state = offline_take_state,
     .offline_take_cancel = offline_take_cancel,
+    .capture_feed = overtake_capture_feed,
 };
 
 /* An offline take reads the slot as the host sends to it (offline_take.h). */
@@ -3890,8 +3907,15 @@ skip_la_rebuild:
          * No init call here — the buffer is allocated at startup by
          * skipback_prepare(). Capture declines the block if it is not ready. */
         skipback_capture(unity_view);
-    } else if (sampler_module_take) {
+    } else if (sampler_module_take && !sampler_take_is_feed()) {
         sampler_capture_audio_from_buffer(take_src);
+    }
+    /* A FEED take writes what the module handed over since the last mix, and
+     * nothing for a render that handed over nothing. */
+    {
+        const int16_t *fed;
+        uint32_t nfed = take_feed_take(&shadow_take_feed, &fed);
+        if (nfed && sampler_take_is_feed()) sampler_capture_audio_frames(fed, nfed);
     }
 
     MIX_PHASE_END(MIX_PHASE_TAIL);

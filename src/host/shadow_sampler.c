@@ -11,6 +11,7 @@
 #include "shadow_sampler.h"
 #include "sampler_wav_trim.h"
 #include "sampler_take.h"
+#include "sampler_take_tap.h"
 #include "shadow_transport.h"
 #include "shim_worker.h"
 #include <semaphore.h>
@@ -931,14 +932,15 @@ void sampler_worker_finalize(void) {
     s_host.overlay_sync();
 }
 
-static void sampler_capture_audio_common(const int16_t *audio) {
+/* `frames` frames of `audio`: a block, or (a FEED take) what the module
+ * handed over since the last mix -- fewer than a block, or none. */
+static void sampler_capture_audio_n(const int16_t *audio, uint32_t frames) {
     if ((sampler_state != SAMPLER_RECORDING && sampler_state != SAMPLER_PREROLL) || !sampler_ring_buffer) return;
     if (!audio) return;
 
-    size_t frames_to_write = SAMPLER_FRAMES_PER_BLOCK;
+    size_t frames_to_write = frames;
     if (sampler_take_limited && sampler_state == SAMPLER_RECORDING)
-        frames_to_write = sampler_take_block_frames(&sampler_take_frames_left,
-                                                    SAMPLER_FRAMES_PER_BLOCK);
+        frames_to_write = sampler_take_block_frames(&sampler_take_frames_left, frames);
     size_t samples_to_write = frames_to_write * SAMPLER_NUM_CHANNELS;
     size_t buffer_samples = SAMPLER_RING_BUFFER_SAMPLES * SAMPLER_NUM_CHANNELS;
 
@@ -982,7 +984,7 @@ static void sampler_capture_audio_common(const int16_t *audio) {
 
         /* Track frames captured during preroll for later trimming */
         if (sampler_state == SAMPLER_PREROLL) {
-            sampler_preroll_frames_captured += SAMPLER_FRAMES_PER_BLOCK;
+            sampler_preroll_frames_captured += frames_to_write;
         }
     }
 
@@ -1012,6 +1014,21 @@ static void sampler_capture_audio_common(const int16_t *audio) {
     }
 }
 
+static void sampler_capture_audio_common(const int16_t *audio) {
+    sampler_capture_audio_n(audio, SAMPLER_FRAMES_PER_BLOCK);
+}
+
+void sampler_capture_audio_frames(const int16_t *lr, uint32_t frames) {
+    /* A FEED module take only: the module's own stream, as handed over. */
+    if (!sampler_module_take || sampler_take_src_kind != SAMPLER_TAKE_SRC_FEED) return;
+    if (frames == 0) return;
+    sampler_capture_audio_n(lr, frames);
+}
+
+int sampler_take_is_feed(void) {
+    return sampler_module_take && sampler_take_src_kind == SAMPLER_TAKE_SRC_FEED;
+}
+
 void sampler_capture_audio(void) {
     /* Select audio source from the SPI mailbox. Used by the MOVE_INPUT path
      * post-ioctl (fresh hardware input). The RESAMPLE path now goes through
@@ -1035,6 +1052,8 @@ void sampler_capture_audio_from_buffer(const int16_t *src) {
     /* Capture from caller-provided unity-level buffer (RESAMPLE path, or a
      * module take, which is always unity_view). */
     if (sampler_source != SAMPLER_SOURCE_RESAMPLE && !sampler_module_take) return;
+    /* A FEED take keeps only what its module hands over (sampler_capture_audio_frames). */
+    if (sampler_take_is_feed()) return;
     sampler_capture_audio_common(src);
 }
 

@@ -366,6 +366,19 @@ typedef struct move_host_ext_v1 {
     int  (*offline_take_begin)(const struct move_offline_take *take);
     int  (*offline_take_state)(uint32_t *done, uint32_t *total);
     void (*offline_take_cancel)(void);
+
+    /* AUDIO THE CALLER COMPOSES, RECORDED: for a take started with
+     * capture_start_src(path, frames, MOVE_CAPTURE_FEED, 0), hand the host the
+     * take's next `frames` frames of interleaved stereo int16. The file is
+     * exactly what was handed over, in order -- a render that feeds nothing
+     * adds nothing (not silence), and `frames` may be under a block, so the
+     * caller starts and ends the take on any frame it chooses (a sequencer
+     * that lines up what it records with what it plays). Several calls in one
+     * render append. render_block only. Returns 1 taken, 0 refused (no feed
+     * take running, outside render_block, more than MOVE_CAPTURE_FEED_MAX
+     * frames in one render). A refused feed is the caller's to handle: the
+     * host keeps nothing of it. */
+    int  (*capture_feed)(const int16_t *lr, uint32_t frames);
 } move_host_ext_v1_t;
 
 typedef struct move_offline_take {
@@ -419,6 +432,9 @@ typedef struct move_offline_take {
 #define MOVE_CAPTURE_MOVE     4
 #define MOVE_CAPTURE_MOVE_PRE 5
 #define MOVE_CAPTURE_MOVE_FX  6
+/* what the caller hands over with capture_feed, nothing else (`index` 0) */
+#define MOVE_CAPTURE_FEED     7
+#define MOVE_CAPTURE_FEED_MAX 512   /* frames capture_feed takes per render */
 
 /* One event of an offline MIDI FX job (midi_fx_offline_*). */
 typedef struct move_midi_fx_offline_ev {

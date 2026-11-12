@@ -16,6 +16,7 @@
 #define SAMPLER_TAKE_SRC_MOVE     4   /* = MOVE_CAPTURE_MOVE: a Move bus after its inserts, at its fader */
 #define SAMPLER_TAKE_SRC_MOVE_PRE 5   /* = MOVE_CAPTURE_MOVE_PRE: the Move track, before them */
 #define SAMPLER_TAKE_SRC_MOVE_FX  6   /* = MOVE_CAPTURE_MOVE_FX: after them, at unity */
+#define SAMPLER_TAKE_SRC_FEED     7   /* = MOVE_CAPTURE_FEED: what the module hands over (take_feed.h) */
 
 /* Does slot `slot`'s contribution belong to the take? (Its mix loop.) */
 static inline int sampler_take_tap_wants(int take, int kind, int index, int slot) {

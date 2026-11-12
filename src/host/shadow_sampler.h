@@ -214,6 +214,10 @@ void sampler_capture_audio(void);
  * Used by the RESAMPLE path so the sampler captures pre-master-volume audio
  * from the shim's unity_view[] instead of the SPI mailbox. */
 void sampler_capture_audio_from_buffer(const int16_t *src);
+/* A FEED module take (MOVE_CAPTURE_FEED): the frames the module handed over
+ * since the last mix, written as they are -- fewer than a block, or none. */
+void sampler_capture_audio_frames(const int16_t *lr, uint32_t frames);
+int  sampler_take_is_feed(void);   /* a FEED module take is running */
 
 /* Process MIDI clock/start/stop messages */
 void sampler_on_clock(uint8_t status);
