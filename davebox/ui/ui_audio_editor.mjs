@@ -842,9 +842,10 @@ export function audioEditorInput(status, d1, d2) {
             ed.last = k === 0 ? 'start' : 'end';
             if (hand || slEdit) moved = chopPoint(ed, ed.last, dd);
             else {
-                /* K1 Start (a pixel a detent), K3 Length (a bar a detent, Shift a step) */
-                moved = k === 0 ? auRangeStep(ed.t, ed.c, 'start', dd, auEdPixel(ed))
-                                : auRangeStep(ed.t, ed.c, 'length', dd > 0 ? 1 : -1);
+                /* K1 Start, K3 End: a pixel a detent, a frame zoomed all
+                 * the way in; the Length is the Loop gestures' (Josh,
+                 * 2026-11-12: "i need it fine like start") */
+                moved = auRangeStep(ed.t, ed.c, k === 0 ? 'start' : 'end', dd, auEdPixel(ed));
                 if (moved) centre(ed);
             }
         } else if (k < 7 || plain) moved = sampleKnob(ed, k, d2);

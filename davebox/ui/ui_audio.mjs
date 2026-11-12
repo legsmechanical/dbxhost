@@ -190,12 +190,14 @@ export function auParseInfo(raw) {
         rot: head.length > 25 ? head[25] : 0,
         /* One-shot: the clip plays its length once per launch, then stops */
         shot: head.length > 26 ? head[26] : 0,
+        /* a Loop clip's End as set (0 = none: the window's or the file's end) */
+        cut: head.length > 27 ? head[27] : 0,
         name: bar >= 0 ? String(raw).slice(bar + 1) : '',
     };
 }
 
 const DEFAULT_INFO = { state: 0, err: 0, mode: 0, even: 16, hand: 1, n: 16, rstart: 0, rend: 0,
-                       pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, revrs: 0, nudge: 0, sync: 0, reach: -1, bpm10: 0, hits: 0, sens: 50, trans: 0, slen: 0, shot: 0, name: '' };
+                       pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, revrs: 0, nudge: 0, sync: 0, reach: -1, bpm10: 0, hits: 0, sens: 50, trans: 0, slen: 0, shot: 0, cut: 0, name: '' };
 const DEFAULT_SLICE = { a: 0, b: 0, pinned: 0, pitch: 0, detune: 0, gain: 0, rev: 0, play: 0, atk: 0, dec: 0 };
 
 export function auInfo(t, c) {
@@ -970,9 +972,25 @@ export function auRangeStep(t, c, which, steps, per) {
     const G = 16;
     if (which === 'start') {
         const st = per != null ? per : Math.max(1, Math.round(i.nframes / (S.shiftHeld ? 5000 : 500)));
-        const v = Math.max(0, Math.min(i.nframes - G, i.rstart + steps * st));
+        const hiS = (!auIsSlice(i) && i.cut > 0 ? Math.min(i.cut, i.nframes) : i.nframes) - G;   /* short of End */
+        const v = Math.max(0, Math.min(hiS, i.rstart + steps * st));
         if (v === i.rstart) return false;
         loc.rstart = v; auSet(t, c, 'start', v);
+        loc.rend = auPlayedEnd(t, c, loc);
+    } else if (which === 'end') {
+        /* a Loop clip's End (Josh, 2026-11-12: "i need it fine like start.
+         * and maybe that should just BE knob 3 and we let the loop button
+         * gestures handle per bar / per step"): `per` frames a detent, from
+         * the end that plays; at the clip's or the file's end it is none */
+        if (auIsSlice(i)) return false;
+        const st = per != null ? per : Math.max(1, Math.round(i.nframes / 500));
+        const top = auPlayedEnd(t, c, Object.assign({}, i, { cut: 0 }));
+        const cur = i.cut > 0 ? Math.min(i.cut, top) : top;
+        let v = Math.max(i.rstart + G, Math.min(top, cur + steps * st));
+        if (v === cur) return false;
+        const cut = v >= top ? 0 : v;
+        loc.cut = cut; auSet(t, c, 'end', cut);
+        loc.rend = auPlayedEnd(t, c, loc);
     } else if (auIsSlice(i)) {
         /* a bar a detent, a step with Shift (Josh, 2026-10-30: "we need to be
          * able to fine adjust with shift modifier tempo ... and length") */
@@ -1011,7 +1029,8 @@ export function auFmtLen(ticks) {
  * the screen's until then). */
 export function auPlayedEnd(t, c, i) {
     if (auIsSlice(i) && !(i.slen > 0)) return i.nframes;
-    return Math.min(i.nframes, Math.round(i.rstart + auLenTicks(t, c, i) * auFpt(i)));
+    const e = Math.min(i.nframes, Math.round(i.rstart + auLenTicks(t, c, i) * auFpt(i)));
+    return !auIsSlice(i) && i.cut > 0 ? Math.min(e, i.cut) : e;
 }
 /* A clip's Length in ticks: a Loop clip's own, Slice's slen (0 = to the end) */
 export function auLenTicks(t, c, i) {
@@ -1434,7 +1453,8 @@ export function auFit(t, c) {
     const i = auInfo(t, c);
     if (i.state !== 2 || !auIsLoop(i)) return 0;
     const ticks = ((S.clipLoopStart[t][c] | 0) + (S.clipLength[t][c] | 0 || 16)) * (S.clipTPS[t][c] || 24);
-    const frames = (i.nframes | 0) - (i.rstart | 0);
+    /* Start to End where one is set, else to the file's end */
+    const frames = (i.cut > 0 ? Math.min(i.cut, i.nframes | 0) : (i.nframes | 0)) - (i.rstart | 0);
     if (frames <= 0 || ticks <= 0) return 0;
     const v = Math.round(600 * (i.rate || 44100) * ticks / (frames * 96));
     if (v < AU_BPM10_MIN || v > AU_BPM10_MAX) return -1;

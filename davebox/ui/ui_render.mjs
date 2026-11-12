@@ -109,10 +109,12 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
     const rot = (v) => org + (((v - org - by) % cLen) + cLen) % cLen;      /* clip frame -> sample frame */
     const unrot = (f) => org + (((f - org + by) % cLen) + cLen) % cLen;    /* sample frame -> clip frame */
     /* a view running past the file's end (SAMPLE's clip window when the Length
-     * outlasts the sample) is empty there: only the columns inside are read */
+     * outlasts the sample) is empty there: only the columns inside are read —
+     * and in the clip's time, past a Loop clip's End too (silent there) */
+    const fe = o.clipTime && auIsLoop(i) && i.cut > 0 ? Math.min(fr, i.cut) : fr;
     const colsFor = (n, a, b) => {
-        const nIn = b > fr ? Math.max(0, Math.min(n, Math.floor((fr - a) / (b - a) * n))) : n;
-        const cc = nIn > 0 ? auWaveColumns(t, c, nIn, a, Math.min(b, fr)) : [];
+        const nIn = b > fe ? Math.max(0, Math.min(n, Math.floor((fe - a) / (b - a) * n))) : n;
+        const cc = nIn > 0 ? auWaveColumns(t, c, nIn, a, Math.min(b, fe)) : [];
         return cc ? Array.from({ length: n }, (_, k) => (k < nIn ? cc[k] : null)) : null;   /* null: past the file, empty */
     };
     let wIn = w, cols = null;
@@ -128,8 +130,8 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
         const parts = (P > A && P < B) ? [seg(A, P), seg(P, B)] : [seg(A, B)];
         cols = parts.some((x) => x === null) ? null : [].concat(...parts);
     } else if (fr) {
-        wIn = B > fr ? Math.max(0, Math.min(w, Math.floor((fr - A) / (B - A) * w))) : w;
-        cols = wIn > 0 ? auWaveColumns(t, c, wIn, A, Math.min(B, fr)) : [];
+        wIn = B > fe ? Math.max(0, Math.min(w, Math.floor((fe - A) / (B - A) * w))) : w;
+        cols = wIn > 0 ? auWaveColumns(t, c, wIn, A, Math.min(B, fe)) : [];
     }
     if (cols) wIn = Math.min(w, cols.length);
     /* the Screen view's copy never breaks the OLED's drawing */
@@ -280,7 +282,7 @@ function hudSampleKnobs(ed, i, sub, kind, sl) {
     if (ed.mode === 'trim' && ed.trim) {
         k1 = val('Start', 'Start', auFmtTime(ed.trim[0], rt)); k3 = val('End', 'End', auFmtTime(ed.trim[1], rt));
     } else if (sub === 'loop') {
-        k1 = val('Start', 'Start', auFmtTime(i.rstart, rt)); k3 = val('Len', 'Length', auFmtLen(auLenTicks(t, c, i)));
+        k1 = val('Start', 'Start', auFmtTime(i.rstart, rt)); k3 = val('End', 'End', auFmtTime(auEnd(i), rt));
     } else if (hand || (sl && !kind)) {
         const sel = auSelSlice(t), m = auMarks(t, c)[sel];
         if (m) { k1 = val('Start', 'Start', auFmtTime(m[0], rt)); k3 = val('End', 'End', m[1] === auEdHome(ed, sel) ? 'Next' : auFmtTime(m[1], rt)); }
@@ -454,7 +456,7 @@ function drawAudioWaveEditor() {
         /* the sample's name (Josh, 2026-10-28: "in loop mode, can we show the
          * sample name in the header of "sample" instead of "loop"") */
         drawBankHeading(auSampleName(t, c), false, false, '1/2');
-        ends('S ' + auFmtTime(i.rstart, rt), 'LEN ' + auFmtLen(auLenTicks(t, c, i)));
+        ends('S ' + auFmtTime(i.rstart, rt), 'E ' + auFmtTime(auEnd(i), rt));
         if (zoomTxt) mid(zoomTxt);
         /* no cursor and no chops: they are Slice's (Josh, 2026-10-29: "chops
          * should just be completely invisible in loop mode") */

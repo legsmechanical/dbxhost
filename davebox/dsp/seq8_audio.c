@@ -2451,9 +2451,9 @@ static const clip_t *au_lclip(const au_clip_t *cl) {
     return &g_inst->tracks[k / (NUM_CLIPS + 1)].clips[k % (NUM_CLIPS + 1)];
 }
 
-/* What of sample s the clip reads from, in frames: no End anywhere (Josh,
- * 2026-10-29: "having end available in one mode but not the other feels like
- * it's going to be confusing"), Start + Length at the sample's Tempo.
+/* What of sample s the clip reads from, in frames: Start + Length at the
+ * sample's Tempo, and a Loop clip's End (rend) where one is set — K3, as fine
+ * as Start, the Length left to the Loop gestures.
  * Loop: the clip's own loop window laid over the sample from Start — rs is
  * where the window begins (so Loop + steps picks the part under it), and the
  * sample runs on to its end: the clip comes round at its length by itself,
@@ -2471,7 +2471,7 @@ static void au_range(const au_clip_t *cl, const au_sample_t *s, uint32_t *rs, ui
         const clip_t *lc = au_lclip(cl);
         double tps = lc && lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
         a += (lc ? (double)lc->loop_start * tps : 0) * fpt;
-        e = (double)s->frames;
+        e = cl->rend && cl->rend < s->frames ? (double)cl->rend : (double)s->frames;
     }
     if (a > (double)s->frames) a = (double)s->frames;
     if (e > (double)s->frames) e = (double)s->frames;
@@ -3074,7 +3074,7 @@ static int au_slice_default(const au_slice_t *sl) {
 
 static int au_clip_default(const au_clip_t *cl) {
     return !cl->name[0] && !cl->rstart && !cl->pitch && !cl->detune && !cl->gain_db && !cl->revrs &&
-           !cl->nudge_ms && !cl->sync && !cl->bpm10 && !cl->rot && !cl->shot;
+           !cl->nudge_ms && !cl->sync && !cl->bpm10 && !cl->rot && !cl->shot && !cl->rend;
 }
 
 static void au_put_name(FILE *fp, const char *name) {
@@ -3103,6 +3103,7 @@ static void au_save_state(void *vinst, FILE *fp) {
                         (unsigned)cl->rstart, cl->pitch, cl->detune, cl->gain_db, cl->revrs, cl->nudge_ms,
                         (unsigned)cl->rot, cl->sync, (unsigned)cl->bpm10);
                 if (cl->shot) fputs(" os=1", fp);   /* One-shot (an older build ignores the key) */
+                if (cl->rend) fprintf(fp, " en=%u", (unsigned)cl->rend);   /* End (likewise) */
                 au_put_name(fp, cl->name);
                 fputc('"', fp);
             }
@@ -3254,6 +3255,7 @@ static void au_load_state(void *vinst, const char *buf) {
                 cl->nudge_ms = (int16_t)clamp_i((int)au_kv(kv, n, "nu", 0), -500, 500);
                 cl->rot = (uint32_t)clamp_i((int)au_kv(kv, n, "sh", 0), 0, INT32_MAX);
                 cl->shot = (uint8_t)(au_kv(kv, n, "os", 0) ? 1 : 0);
+                cl->rend = (uint32_t)clamp_i((int)au_kv(kv, n, "en", 0), 0, INT32_MAX);
                 sy = au_kv(kv, n, "sy", AU_SYNC_WARP);
                 cl->sync = (uint8_t)(sy >= 0 && sy <= AU_SYNC_MAX ? sy : AU_SYNC_WARP);
                 l = (int)au_kv(kv, n, "bpm", 0);

@@ -810,22 +810,42 @@ step('⭐⭐ WAVE K4 Gain · K5 Pitch · K6 Detune (the clip\'s), read out in th
     assert(sent('t4_au_set_bpm').pop() === '16 851' && tx.indexOf('TEMPO 85.1 BPM') >= 0,
            'Shift + K7: ' + JSON.stringify(sent('t4_au_set_bpm')) + ' ' + JSON.stringify(tx));
     back();
-    /* K3 Length on an Audio clip: a bar a detent, a step with Shift */
+    /* K3 End on an Audio clip, as fine as Start — a pixel a detent — the
+     * Length left to the Loop gestures (Josh, 2026-11-12: "i need it fine
+     * like start. and maybe that should just BE knob 3") */
     GET['t4_au_info_0'] = INFO24(0, 8, 0, 8, 50, 0);   /* 84 BPM */
     kindSync(); ticks(2);
     S.clipLength[4][0] = 2; S.clipTPS[4][0] = 24; S.clipLoopStart[4][0] = 0;
     mapPad(2, 3); ticks(2);
     const led = S.auEditor;
+    const top = A.auPlayedEnd(4, 0, A.auInfo(4, 0)), px = Math.max(1, Math.round((led.B - led.A) / 128));
     reset();
-    S.knobAccelLast[2] = 0; cc(73, 1);
-    assert(sent('t4_c0_loop_set').join() === '18', 'K3: not a bar: ' + JSON.stringify(sent('t4_c0_loop_set')));
-    S.shiftHeld = true; S.knobAccelLast[2] = 0; cc(73, 127); S.shiftHeld = false;
-    assert(sent('t4_c0_loop_set').pop() === '17', 'Shift + K3: not a step: ' + JSON.stringify(sent('t4_c0_loop_set')));
-    /* Length touched last: Tempo keeps the clip's end on screen (Josh,
+    S.knobAccelLast[2] = 0; cc(73, 1);               /* up from the clip's end: nothing past it */
+    assert(!sentLike(/t4_(au_set_end|c0_loop_set)/).length, 'K3 up at the end: ' + JSON.stringify(sentLike(/t4_/)));
+    S.knobAccelLast[2] = 0; cc(73, 127);
+    assert(sent('t4_au_set_end').join() === '0 ' + (top - px) && !sent('t4_c0_loop_set').length,
+           'K3: not End a pixel in: ' + JSON.stringify(sent('t4_au_set_end')) + ' top ' + top + ' px ' + px);
+    assert(A.auInfo(4, 0).cut === top - px && A.auPlayedEnd(4, 0, A.auInfo(4, 0)) === top - px, 'End is not what plays: ' + JSON.stringify(A.auInfo(4, 0)));
+    let tx3 = globalThis.__texts(() => { shown(); });
+    assert(tx3.some((x) => /^E \d/.test(x)), 'the screen does not read End: ' + JSON.stringify(tx3));
+    S.knobAccelLast[2] = 0; cc(73, 1);               /* back out to the clip's end: none */
+    assert(sent('t4_au_set_end').pop() === '0 0' && !(A.auInfo(4, 0).cut > 0), 'K3 back to the end did not clear End: ' + JSON.stringify(sent('t4_au_set_end')));
+    /* K1 Start stops short of End */
+    S.knobAccelLast[2] = 0; for (let k = 0; k < 120; k++) { S.knobAccelLast[2] = 0; cc(73, 127); }
+    const endAt = A.auInfo(4, 0).cut;
+    for (let k = 0; k < 200; k++) { S.knobAccelLast[0] = 0; cc(71, 1); }
+    assert(A.auInfo(4, 0).rstart <= endAt - 16 && A.auInfo(4, 0).rstart > 0, 'Start passed End: ' + A.auInfo(4, 0).rstart + ' end ' + endAt);
+    /* past End the clip is silent, and the waveform is empty there */
+    const litRight = () => { shown(); let n = 0; for (let y = 21; y < 50; y++) for (let x = 64; x < 128; x++) n += FB[y * 128 + x]; return n; };
+    S.auInfo[4][0] = Object.assign({}, A.auInfo(4, 0), { rstart: 0 });
+    assert(litRight() === 0, 'the waveform runs on past End: ' + litRight() + ' end ' + A.auInfo(4, 0).cut + ' view ' + led.A + '..' + led.B);
+    S.auInfo[4][0] = Object.assign({}, A.auInfo(4, 0), { rstart: 0, cut: 0 });
+    assert(litRight() > 0, 'no waveform without End (the check above proves nothing): ' + litRight());
+    /* End touched last: Tempo keeps the clip's end on screen (Josh,
      * 2026-10-30: "if i last touched length, wave view should stay focused on
      * the end of the clip while adjusting bpm") */
     S.clipLength[4][0] = 3; kindSync(); ticks(2);
-    S.shiftHeld = true; S.knobAccelLast[2] = 0; cc(73, 127); S.shiftHeld = false;   /* 2 steps, inside the file; K3 last */
+    S.knobAccelLast[2] = 0; cc(73, 1);               /* K3 last */
     for (let z = 0; z < 3; z++) cc(72, 1);           /* zoom in */
     const endNow = () => A.auPlayedEnd(4, 0, A.auInfo(4, 0));
     assert(!led.full && Math.abs(led.B - endNow()) <= 1, 'not on the end before the Tempo turn: ' + led.A + '..' + led.B + ' end ' + endNow());

@@ -139,6 +139,8 @@ typedef struct {
     uint32_t     rstart;             /* Start, sample frames */
     uint32_t     slen;               /* Slice: Length from Start, in ticks at the sample's Tempo (0 = to the
                                       * sample's end). Loop: unused, its Length is the clip's (au_range) */
+    uint32_t     rend;               /* Loop: End, sample frames — the audio stops there, silent till the
+                                      * clip comes round (0 = none: it runs on to the sample's end) */
     int8_t       pitch;              /* -24..+24 st */
     int8_t       detune;             /* -50..+50 cents, on top of pitch */
     int8_t       gain_db;            /* -40..+12 dB */
