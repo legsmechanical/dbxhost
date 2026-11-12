@@ -324,7 +324,12 @@ export function bankMapJoins(padMode, t) {
 /* The action under a map pad ('inst'), or null. */
 export function bankPadMapActionAt(padMode, col, row) {
     const acts = BANK_MAP_ACTIONS[bankMapFamily(padMode)];
-    for (const a in acts) if (acts[a][0] === col && acts[a][1] === row) return a;
+    for (const a in acts) {
+        /* SLICES is a Slicer's: on an Audio track the INPUT bank has its pad
+         * (bankPadMapForMode puts a bank first) */
+        if (a === 'slices' && padMode !== PAD_MODE_SLICER) continue;
+        if (acts[a][0] === col && acts[a][1] === row) return a;
+    }
     return null;
 }
 

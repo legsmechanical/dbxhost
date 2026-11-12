@@ -220,8 +220,14 @@ step('⭐⭐ the INPUT bank (green, above SAMPLE): its knobs set the track\'s in
     const col = LEDS.bankMapPadColors();
     S.bankMapUp = false;
     assert(col[PURE.bankMapPadForCell(2, 2) - 68] === 126, 'INPUT pad not green: ' + col[PURE.bankMapPadForCell(2, 2) - 68]);
-    /* tap it on the map */
-    S.activeBank = BANK_INPUT; S.trackActiveBank[2] = BANK_INPUT;
+    /* the real gesture: hold the jog, tap the INPUT pad, let go */
+    S.activeBank = 0; S.trackActiveBank[2] = 0; ticks(2);
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 9, 127]));
+    cc(3, 127); ticks(3);
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, PURE.bankMapPadForCell(2, 2), 100])); ticks(1);
+    globalThis.onMidiMessageInternal(new Uint8Array([0x80, PURE.bankMapPadForCell(2, 2), 0])); ticks(1);
+    cc(3, 0); globalThis.onMidiMessageInternal(new Uint8Array([0x80, 9, 0])); ticks(3);
+    assert(S.activeBank === BANK_INPUT, 'the INPUT pad on the map did not open the bank: bank ' + S.activeBank);
     const turn = (k, n) => { for (let i = 0; i < Math.abs(n); i++) { cc(71 + k, n > 0 ? 1 : 127); } };
     globalThis.onMidiMessageInternal(new Uint8Array([0x90, 2, 127]));       /* touch K3 */
     clear(); turn(2, 30);                                                    /* Gain: a dB a pick */
