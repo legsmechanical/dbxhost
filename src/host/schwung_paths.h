@@ -39,6 +39,13 @@
 #define SCHWUNG_INSTALL_DIR "/data/UserData/schwung"
 #endif
 
+/* Stock Schwung's install tree: the one a fork's session is launched from, and
+ * whose host saw the hardware while that session was not running. The same as
+ * SCHWUNG_INSTALL_DIR in a stock build. */
+#ifndef SCHWUNG_STOCK_DIR
+#define SCHWUNG_STOCK_DIR "/data/UserData/schwung"
+#endif
+
 /* Leading '/' and trailing '-' included, so names compose the same way:
  * SCHWUNG_SHM_PREFIX "audio" -> "/schwung-audio". */
 #ifndef SCHWUNG_SHM_PREFIX

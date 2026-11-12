@@ -18,6 +18,8 @@
 #include "unified_log.h"
 
 #include "host/schwung_paths.h"
+#include "host/jack_state.h"
+#include <sys/stat.h>
 #include "host/shim_thread.h"   /* shim threads must never receive the host's SIGTERM */
 #include "move_clock_setting.h"
 volatile uint32_t shim_debug_flags = 0;
@@ -33,14 +35,28 @@ volatile int shim_jack_persist = -1;
  * (hollow audio). */
 #define JACK_STATE_PATH SCHWUNG_INSTALL_DIR "/jack_state"
 
-static int jack_state_read(void) {
-    FILE *f = fopen(JACK_STATE_PATH, "r");
-    if (!f) return -1;
+#define JACK_STATE_STOCK_PATH SCHWUNG_STOCK_DIR "/jack_state"
+
+/* One saved value and its time; -1 when missing or not 0 / 127. */
+static int jack_state_read_one(const char *path, long *mtime) {
+    struct stat st;
+    FILE *f = fopen(path, "r");
     int v = -1;
+    *mtime = 0;
+    if (!f) return -1;
     if (fscanf(f, "%d", &v) != 1) v = -1;
     fclose(f);
-    if (v != 0 && v != 127) return -1;
-    return v;
+    if (stat(path, &st) == 0) *mtime = (long)st.st_mtime;
+    return jack_state_valid(v);
+}
+
+/* What to believe at boot: this tree's saved state, or stock's when stock's
+ * host saw the jack more recently (jack_state.h). */
+static int jack_state_read(void) {
+    long own_t, stock_t;
+    int own = jack_state_read_one(JACK_STATE_PATH, &own_t);
+    if (!strcmp(JACK_STATE_PATH, JACK_STATE_STOCK_PATH)) return own;
+    return jack_state_pick(own, own_t, jack_state_read_one(JACK_STATE_STOCK_PATH, &stock_t), stock_t);
 }
 
 static void jack_state_write(int v) {

@@ -86,6 +86,7 @@ TARGETS = $(BUILD_DIR)/test_project_path \
           $(BUILD_DIR)/test_json_compact \
           $(BUILD_DIR)/test_sampler_wav_trim \
           $(BUILD_DIR)/test_sampler_take \
+          $(BUILD_DIR)/test_jack_state \
           $(BUILD_DIR)/test_stem_take \
           $(BUILD_DIR)/test_slot_feed \
           $(BUILD_DIR)/test_fx_midi_filter \

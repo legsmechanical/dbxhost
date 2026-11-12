@@ -8718,6 +8718,15 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
         uint8_t v = (uint8_t)shim_inject_boot_jack;
         shim_inject_boot_jack = -1;
         const uint8_t jack_cc[4] = { 0x0B, 0xB0, CC_LINE_OUT_DETECT, v };
+        /* ...and this host believes it too, until XMOS says otherwise: the
+         * speaker flag (host_speaker_active, the feedback gate) otherwise kept
+         * its boot guess of "speaker" with headphones in all along. */
+        if (!shadow_speaker_active_known) {
+            int sp = (v == 0) ? 1 : 0;
+            if (sp != shadow_speaker_active) memset(speaker_eq_state, 0, sizeof(speaker_eq_state));
+            shadow_speaker_active = sp;
+            if (shadow_control) shadow_control->speaker_active = (uint8_t)sp;
+        }
         if (shadow_midi_inject_push(shadow_midi_inject_shm, jack_cc) == 0)
             shadow_log("Boot jack re-assert: injected CC 115 to Move");
         else
