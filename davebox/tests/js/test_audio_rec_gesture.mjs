@@ -53,6 +53,11 @@ globalThis.host_sampler_is_recording = () => SAMPLING;
 globalThis.host_speaker_active = () => SPEAKER;
 globalThis.host_line_in_connected = () => LINE;
 const sets = [];
+const WRITTEN = {};
+const _hwf0 = globalThis.host_write_file;
+globalThis.host_write_file = (p, b) => { WRITTEN[p] = String(b); globalThis.__stubStdWritten = globalThis.__stubStdWritten || {}; globalThis.__stubStdWritten[p] = String(b); return true; };
+globalThis.host_file_exists = (p) => !!(globalThis.__stubStdWritten && globalThis.__stubStdWritten[p] !== undefined) || WRITTEN[p] !== undefined;
+globalThis.host_read_file = (p) => WRITTEN[p] !== undefined ? WRITTEN[p] : '';
 globalThis.host_module_set_param = (k, v) => { sets.push([String(k), String(v)]); };
 
 const UUID = 'audio-rec-uuid', DIR = '/p/Samples';
@@ -76,6 +81,7 @@ const { S } = await import('../../ui/ui_state.mjs');
 const { BANKS, POLL_INTERVAL, PAD_MODE_AUDIO, PAD_MODE_SLICER } = await import('../../ui/ui_constants.mjs');
 const HC = await import('/data/UserData/schwung/shared/constants.mjs');
 const { drawUI } = await import('../../ui/ui_render.mjs');
+const MENU = await import('../../ui/ui_menu.mjs');
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
 S.awaitingProjectSelect = false; S.pendingSetLoad = false; S.pendingDspSync = 0;
 S.bankParams = Array.from({ length: 8 }, () => Array.from({ length: BANKS.length }, () => new Array(8).fill(0)));
@@ -105,7 +111,7 @@ poll();
 step('⭐⭐ stopped: Rec arms the take (its file), then MIDI\'s count-in — no note take', () => {
     clear(); globalThis.__stubStdWritten = {};
     rec();
-    assert(sent('t2_au_rec_arm').join() === '1 599 |' + PATH, 'arm: ' + JSON.stringify(sent('t2_au_rec_arm')));
+    assert(sent('t2_au_rec_arm').join() === '1 599 4096 0 |' + PATH, 'arm: ' + JSON.stringify(sent('t2_au_rec_arm')));
     assert(sent('record_count_in').join() === '2', 'count-in: ' + sent('record_count_in'));
     const q = sets.map((x) => x[0]).concat(S.pendingDefaultSetParams.map((e) => e.key));
     assert(q.indexOf('t2_au_rec_arm') < q.indexOf('record_count_in'), 'the count-in went before the arm: ' + q.join(','));
@@ -175,6 +181,31 @@ step('⭐ speakers on, no cable: the feedback question first; Back arms nothing'
     SPEAKER = false;
     REC = '5 2 1 0 0 0 0 0'; poll();
     REC = '0 2 1 0 0 0 0 0';
+});
+
+step('⭐ the global menu\'s Rec Input / Line In Gain / Mic Gain reach the take (the jack picks the gain) and are saved', () => {
+    const menu = MENU;
+    menu.openGlobalMenu(); const items = S.globalMenuItems; S.globalMenuOpen = false;
+    const it = (l) => items.find((x) => x && x.label === l);
+    assert(it('Rec Input') && it('Line In Gain') && it('Mic Gain'), 'rows missing');
+    assert(it('Rec Input').format(0) === 'Stereo' && it('Rec Input').format(1) === 'Mono' && it('Line In Gain').format(6) === '+6 dB',
+           'shown as ' + it('Rec Input').format(0) + ' / ' + it('Line In Gain').format(6));
+    it('Rec Input').set(1); it('Line In Gain').set(6); it('Mic Gain').set(-6);
+    assert(String(WRITTEN['/data/UserData/daveboxSA/rec-input.txt']).trim() === '1 6 -6', 'saved: ' + WRITTEN['/data/UserData/daveboxSA/rec-input.txt']);
+    S.recInput = null;                                   /* read back from the file, as after a relaunch */
+    assert(it('Line In Gain').get() === 6 && it('Rec Input').get() === 1, 'not read back');
+    S.trackPadMode[2] = PAD_MODE_AUDIO; S.auRec = null; S.playing = true; PLAYING = '1'; S.trackClipPlaying[2] = true;
+    LINE = true; clear(); globalThis.__stubStdWritten = {};
+    rec();
+    let a = sent('t2_au_rec_arm').join();
+    assert(/^\d+ 599 8173 1 \|/.test(a), 'line in +6 dB, Mono: ' + a);
+    REC = '5 2 1 0 0 0 0 0'; poll(); REC = '0 2 1 0 0 0 0 0';
+    LINE = false; clear(); globalThis.__stubStdWritten = {};
+    rec();
+    a = sent('t2_au_rec_arm').join();
+    assert(/^\d+ 599 2053 1 \|/.test(a), 'the mic, -6 dB: ' + a);
+    REC = '5 2 1 0 0 0 0 0'; poll(); REC = '0 2 1 0 0 0 0 0';
+    it('Rec Input').set(0); it('Line In Gain').set(0); it('Mic Gain').set(0);
 });
 
 step('CONTROL: a Slicer keeps Rec for its chops', () => {

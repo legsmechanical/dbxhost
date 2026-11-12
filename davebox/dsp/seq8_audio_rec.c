@@ -94,8 +94,10 @@ static void ar_end(seq8_instance_t *inst, int state) {
     inst->ar_state = (uint8_t)state;
 }
 
-/* tN_au_rec_arm "C lat |/abs/path.wav": arm a take into clip C. lat < 0 keeps
- * the latency as it is. */
+/* tN_au_rec_arm "C lat [gain mono] |/abs/path.wav": arm a take into clip C.
+ * lat < 0 keeps the latency as it is. gain: the input's level x4096 (the UI's
+ * Line In / Mic Gain, by the jack; absent = 4096), mono 1: the left channel on
+ * both sides (the UI's Rec Input). Applied to the take and to the monitor. */
 static void ar_arm(seq8_instance_t *inst, int t, const char *val) {
     const char *p = val, *path = val ? strchr(val, '|') : NULL;
     int c, lat;
@@ -106,6 +108,21 @@ static void ar_arm(seq8_instance_t *inst, int t, const char *val) {
     while (*p == ' ') p++;
     while (*p >= '0' && *p <= '9') p++;
     lat = my_atoi(p);
+    {
+        int g = 4096, mono = 0;
+        while (*p == ' ') p++;
+        if (*p == '-') p++;
+        while (*p >= '0' && *p <= '9') p++;
+        while (*p == ' ') p++;
+        if (*p >= '0' && *p <= '9') {
+            g = my_atoi(p);
+            while (*p >= '0' && *p <= '9') p++;
+            while (*p == ' ') p++;
+            if (*p >= '0' && *p <= '9') mono = my_atoi(p) ? 1 : 0;
+        }
+        inst->ar_in_q12 = (uint32_t)(g < 0 ? 0 : g > 65535 ? 65535 : g);
+        inst->ar_in_mono = (uint8_t)mono;
+    }
     if (c < 0 || c >= NUM_CLIPS) return;
     if (!path || path[1] != '/' || strlen(path + 1) >= sizeof inst->ar_path) { inst->ar_err = AR_ERR_PATH; return; }
     if (inst->offline || ar_slot(inst, t) < 0) { inst->ar_err = AR_ERR_TRACK; return; }
@@ -212,6 +229,14 @@ static void ar_block(seq8_instance_t *inst, int frames) {
             uint64_t q = b + (uint64_t)f;              /* feed position == input position of this frame */
             int32_t *rg = &inst->ar_ring[(q % AR_RING) * 2];
             int32_t il = in ? in[f * 2] : 0, ir = in ? in[f * 2 + 1] : 0;
+            /* the input as set: Mono takes the left channel, then its gain */
+            if (inst->ar_in_mono) ir = il;
+            if (inst->ar_in_q12 != 4096) {
+                il = (int32_t)(((int64_t)il * inst->ar_in_q12) >> 12);
+                ir = (int32_t)(((int64_t)ir * inst->ar_in_q12) >> 12);
+                il = il > 32767 ? 32767 : il < -32768 ? -32768 : il;
+                ir = ir > 32767 ? 32767 : ir < -32768 ? -32768 : ir;
+            }
             rg[0] = inst->ar_blk[f * 2]; rg[1] = inst->ar_blk[f * 2 + 1];
             /* the monitor: the input through the track, ramped in and out */
             if (inst->ar_mon_gain != mtarget) inst->ar_mon_gain = (uint8_t)(inst->ar_mon_gain + (mtarget > inst->ar_mon_gain ? 1 : -1));

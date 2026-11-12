@@ -395,6 +395,38 @@ int main(void) {
     HX_ASSERT(wait_loaded(h, T_REC, 0) == 2 && !strcmp(inst->au_store[T_REC][0].name, "click.wav"), "Undo did not bring the last layer back");
     hx_destroy(h);
 
+    /* ---- the input as set: Mono takes the left channel, the gain scales it ---- */
+    h = rig(1, 0); inst = (seq8_instance_t *)h->inst;
+    lb_reset(0, inst->tracks[T_CLICK].pfx.slot); g_lb_on = 0;
+    snprintf(p, sizeof p, "0 128 8192 1 |%s/proj/dAVEBOx/samples/gain.wav", g_root);
+    hx_set_param(h, "t4_au_rec_arm", p);
+    HX_ASSERT(inst->ar_state == AR_ARMED && inst->ar_in_q12 == 8192 && inst->ar_in_mono == 1, "gain / mono not taken from the arm");
+    hx_set_param(h, "record_count_in", "4");
+    {
+        int16_t *in = hx_stub_input();
+        int f2, slot = inst->tracks[T_REC].pfx.slot;
+        for (k = 0; k < 4000 && inst->ar_state != AR_RECORDING; k++) {
+            for (f2 = 0; f2 < 128; f2++) { in[f2 * 2] = 1000; in[f2 * 2 + 1] = -3000; }
+            hx_stub_feed_reset(); hx_render(h, 1); g_lb_pos += 128;
+        }
+        for (k = 0; k < 20; k++) {
+            for (f2 = 0; f2 < 128; f2++) { in[f2 * 2] = 1000; in[f2 * 2 + 1] = -3000; }
+            hx_stub_feed_reset(); hx_render(h, 1); g_lb_pos += 128;
+        }
+        b = hx_stub_cfeed(&n, NULL);
+        HX_ASSERT(n > 200 && b[400] == 2000 && b[401] == 2000, "Mono x2: the take is not the left channel doubled on both sides");
+        HX_ASSERT(hx_stub_feed_last(slot)[2] == 2000 && hx_stub_feed_last(slot)[3] == 2000, "Mono x2: the monitor is not the input as set");
+    }
+    hx_set_param(h, "t4_au_rec_cancel", "");
+    hx_destroy(h);
+    /* an arm with no gain / mono (the old form): the input as it comes */
+    h = rig(1, 0); inst = (seq8_instance_t *)h->inst;
+    snprintf(p, sizeof p, "0 128 |%s/proj/dAVEBOx/samples/plain.wav", g_root);
+    hx_set_param(h, "t4_au_rec_arm", p);
+    HX_ASSERT(inst->ar_state == AR_ARMED && inst->ar_in_q12 == 4096 && inst->ar_in_mono == 0 && inst->ar_lat == 128,
+              "an arm without gain / mono did not take the input as it comes");
+    hx_destroy(h);
+
     printf("PASS: test_audio_rec\n");
     return 0;
 }

@@ -25,7 +25,7 @@ import { S } from './ui_state.mjs';
 import { keyRootName } from './ui_chord.mjs';
 import { openDaveBox, daveWindowOn, setDaveWindowOn } from './ui_daves.mjs';
 import { bluetoothPresent, bluetoothOn, setBluetoothOn } from './ui_bluetooth.mjs';
-import { cardHoldMs, setCardHoldMs, CARD_HOLD_CHOICES } from './ui_prefs.mjs';
+import { cardHoldMs, setCardHoldMs, CARD_HOLD_CHOICES, recInput, setRecInput, REC_GAIN_MIN, REC_GAIN_MAX } from './ui_prefs.mjs';
 import { saveState, loadSnapshotManifest, showActionPopup } from './ui_persistence.mjs';
 import { openLoadSnapshot, openProjectPadPicker, requestSaveTemplate, openTemplateManager, showMenuInfo } from './ui_dialogs.mjs';
 import { auPurgeScan } from './ui_audio_chooser.mjs';
@@ -249,6 +249,28 @@ function buildGlobalMenuItems() {
             },
             options: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16],
             format: function(v) { return v === 0 ? 'All' : String(v); }
+        }),
+        createDivider(),
+        /* The input an Audio track records (ui_audio_rec): the Move picks the
+         * source by the jack; these say what is done with it. Device-wide
+         * (ui_prefs). */
+        createEnum('Rec Input', {
+            get: function() { return recInput().mono; },
+            set: function(v) { setRecInput('mono', v); },
+            options: [0, 1],
+            format: function(v) { return v ? 'Mono' : 'Stereo'; }
+        }),
+        createValue('Line In Gain', {
+            get: function() { return recInput().line; },
+            set: function(v) { setRecInput('line', v); },
+            min: REC_GAIN_MIN, max: REC_GAIN_MAX, step: 1,
+            format: function(v) { return (v > 0 ? '+' : '') + (v | 0) + ' dB'; }
+        }),
+        createValue('Mic Gain', {
+            get: function() { return recInput().mic; },
+            set: function(v) { setRecInput('mic', v); },
+            min: REC_GAIN_MIN, max: REC_GAIN_MAX, step: 1,
+            format: function(v) { return (v > 0 ? '+' : '') + (v | 0) + ' dB'; }
         }),
         createDivider(),
         /* Projects: open dAVEBOx's own pad picker (v3) — 32 pads = project

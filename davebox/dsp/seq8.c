@@ -1572,6 +1572,8 @@ typedef struct {
     uint8_t  ar_in_gain, ar_mon_gain;   /* 0..64 ramps: the input into the take, the monitor */
     uint16_t ar_peak;             /* the input's largest sample in the take */
     uint32_t ar_lat;              /* frames from feeding the slot to reading it back at the input */
+    uint32_t ar_in_q12;           /* the input's gain x4096 (4096 = as it comes) */
+    uint8_t  ar_in_mono;          /* 1: the left channel on both sides */
     uint64_t ar_pos;              /* stream position of this block's first frame */
     uint64_t ar_p0;               /* the take's first frame, where it is fed (feed side) */
     uint64_t ar_total;            /* its length in frames, once its end tick has played (0 = not yet) */

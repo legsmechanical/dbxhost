@@ -864,7 +864,8 @@ export const S = {
     sampleFlow: false,             /* the picker / bake dialog up came from the menu: Back steps back to it */
     scenePickFor: 'bake',          /* what the scene picker (pendingSceneBakePicker) picks for */
     auPicks: [],                   /* [{ t, c, path }]: takes for clips (In place, a Live merge's Audio tracks), each picked once its clip's reset has gone */
-    auRec: null,                   /* an Audio track's input take (ui_audio_rec): { t, c, path, phase, ... } */
+    auRec: null,
+    recInput: null,                /* the recording input's settings, read once (ui_prefs recInput) */                   /* an Audio track's input take (ui_audio_rec): { t, c, path, phase, ... } */
     mergeStems: [],                /* [{ t, path }]: the Audio tracks the running Live merge records, and their files */
     mergeStemsSettle: null,        /* { stems, at }: a merge's files to load or remove once the take is written */
     confirmResample: null,         /* { clip, bars, warm, tail, sel, editing } — the options */

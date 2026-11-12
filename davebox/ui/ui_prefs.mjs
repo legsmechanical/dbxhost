@@ -122,3 +122,37 @@ export function setMidiMap(v) {
     S.midiMap = MIDI_MAPS.includes(v) ? v : 'gm';
     writePref(MIDI_MAP_PATH, S.midiMap + '\n', 'the MIDI drum map');
 }
+
+/* RECORDING INPUT (Josh, 2026-11-12: "is there a way we can set input source
+ * through the davebox global menu?" -> "yeah" to Stereo / Mono and a gain for
+ * line-in and for the mic). The Move picks the source itself — line-in with a
+ * cable in the jack, else the built-in mic — so dAVEBOx sets what is done with
+ * it: Stereo, or Mono (the left channel on both sides), and a gain for each
+ * source, chosen by the jack. Applied to an Audio track's input take and to
+ * what is heard of it while it runs (ui_audio_rec). Device-wide; absent file =
+ * Stereo, 0 dB, 0 dB. File: "mono lineDb micDb". */
+export const REC_INPUT_PATH = '/data/UserData/daveboxSA/rec-input.txt';
+export const REC_GAIN_MIN = -24, REC_GAIN_MAX = 24;
+
+export function recInput() {
+    if (!S.recInput) {
+        let v = [0, 0, 0];
+        try {
+            if (host_file_exists(REC_INPUT_PATH))
+                v = String(host_read_file(REC_INPUT_PATH) || '').trim().split(/\s+/).map((x) => parseInt(x, 10));
+        } catch (e) { v = [0, 0, 0]; }
+        const g = (x) => (isFinite(x) ? Math.max(REC_GAIN_MIN, Math.min(REC_GAIN_MAX, x | 0)) : 0);
+        S.recInput = { mono: v[0] === 1 ? 1 : 0, line: g(v[1]), mic: g(v[2]) };
+    }
+    return S.recInput;
+}
+
+export function setRecInput(field, v) {
+    const r = Object.assign({}, recInput());
+    if (field === 'mono') r.mono = v ? 1 : 0;
+    else r[field] = Math.max(REC_GAIN_MIN, Math.min(REC_GAIN_MAX, v | 0));
+    S.recInput = r;
+    let wrote = false;
+    try { wrote = !!host_write_file(REC_INPUT_PATH, r.mono + ' ' + r.line + ' ' + r.mic + '\n'); } catch (e) { wrote = false; }
+    if (!wrote) console.log('[prefs] could not persist the recording input to ' + REC_INPUT_PATH);
+}

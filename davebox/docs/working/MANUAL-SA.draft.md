@@ -483,7 +483,7 @@ map**:
 ## 3.7 Menus & Project Settings
 
 **Shift + Step 2** opens **Project Settings** — the settings saved with the project
-(except **Card Hold**, **Bluetooth**, **Host Settings...** and **Move Settings...**,
+(except **Card Hold**, **Rec Input**, **Line In Gain**, **Mic Gain**, **Bluetooth**, **Host Settings...** and **Move Settings...**,
 which apply to every project).
 The full list is in [Settings & Projects](#17-settings--projects); many settings have
 a **Shift + Step** shortcut (see the [Quick Reference](#19-quick-reference)).
@@ -3035,6 +3035,8 @@ the built-in mic when nothing is plugged in) into the active clip.
   take itself is recorded without them.
 - The take is saved as a new sample in the project, so **Undo** brings back the clip as
   it was. Stopping the transport cancels a take; a take that heard nothing is dropped.
+- **Rec Input**, **Line In Gain** and **Mic Gain** in Project Settings set what is
+  recorded: Stereo or Mono (the left channel), and a gain for each source.
 - With the speakers on and nothing plugged into line-in, the Move asks first: the mic
   would hear the speakers. On a **Slicer**, Rec still records chops from the pads.
 
@@ -3059,6 +3061,9 @@ the built-in mic when nothing is plugged in) into the active clip.
 | Beat Marks | Dim markers on the step buttons at 1, 5, 9, 13 | On, Off | On |
 | Card Hold | How long a knob's page stays on screen after you let go of the knob (the mixer page in Session View) — see [§3.6](#36-parameter-banks) | Off, 0.5 s, 1 s, 2 s | Off |
 | MIDI In | Channel filter for external input — All, or one channel | All, 1–16 | All |
+| Rec Input | What an Audio track records from the Move's input — both channels, or the left one on both sides. The Move picks the source itself: line-in when a cable is in, else the built-in mic | Stereo, Mono | Stereo |
+| Line In Gain | Gain on the line-in when an Audio track records it (and while you hear it) | −24 to +24 dB | 0 dB |
+| Mic Gain | The same for the built-in mic | −24 to +24 dB | 0 dB |
 | Projects... | The project picker — see [Projects](#175-projects) | action | — |
 | Save as Template... | Save this project, under a name you give it, as a starting point for new ones — see [Projects](#175-projects) | action | — |
 | Templates... | Shown while you have templates: rename, replace or delete them | action | — |
