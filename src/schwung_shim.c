@@ -8733,6 +8733,20 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
             shadow_log("Boot jack re-assert: inject ring full, dropped CC 115");
     }
 
+    /* ...and the line-in jack the same way (shim_worker.h): Move and this host
+     * both take the saved state until XMOS reports one. */
+    if (shim_inject_boot_line >= 0 && shadow_midi_inject_shm) {
+        uint8_t v = (uint8_t)shim_inject_boot_line;
+        shim_inject_boot_line = -1;
+        const uint8_t line_cc[4] = { 0x0B, 0xB0, CC_MIC_IN_DETECT, v };
+        if (!shadow_line_in_connected_known) {
+            shadow_line_in_connected = v ? 1 : 0;
+            if (shadow_control) shadow_control->line_in_connected = (uint8_t)(v ? 1 : 0);
+        }
+        if (shadow_midi_inject_push(shadow_midi_inject_shm, line_cc) == 0)
+            shadow_log("Boot line-in re-assert: injected CC 114 to Move");
+    }
+
     if (shadow_display_mode && shadow_control) {
         /* Move-native co-run knob coalescing: Move firmware spends ~900µs per
          * CC 71-78 it receives (synth-param write + OLED redraw). Multiple
@@ -9299,6 +9313,7 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
             } else if (d1 == CC_MIC_IN_DETECT) {
                 int new_line_in = (d2 == 0) ? 0 : 1;  /* d2=0 → no cable (internal mic); d2=127 → cable plugged */
                 shadow_line_in_connected_known = 1;
+                shim_line_persist = (int)d2;          /* the worker saves it (line_in_state) */
                 if (new_line_in != shadow_line_in_connected) {
                     shadow_line_in_connected = new_line_in;
                     if (shadow_control) shadow_control->line_in_connected = (uint8_t)new_line_in;
@@ -9347,6 +9362,8 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
 
                 if (d1 == CC_MIC_IN_DETECT) {
                     int new_line_in = (d2 == 0) ? 0 : 1;
+                    shadow_line_in_connected_known = 1;
+                    shim_line_persist = (int)d2;
                     if (new_line_in != shadow_line_in_connected) {
                         shadow_line_in_connected = new_line_in;
                         if (shadow_control) shadow_control->line_in_connected = (uint8_t)new_line_in;

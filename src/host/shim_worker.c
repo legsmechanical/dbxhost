@@ -28,6 +28,8 @@ int shim_clock_output_enabled_get(void) { return __atomic_load_n(&shim_clock_out
 volatile int shim_pending_sysex_inject = -1;
 volatile int shim_inject_boot_jack = -1;
 volatile int shim_jack_persist = -1;
+volatile int shim_line_persist = -1;
+volatile int shim_inject_boot_line = -1;
 
 /* Persisted jack state (last CC 115 value). Survives reboot so the worker can
  * re-assert it to Move at boot — XMOS doesn't report jack-in at boot, so an
@@ -36,6 +38,7 @@ volatile int shim_jack_persist = -1;
 #define JACK_STATE_PATH SCHWUNG_INSTALL_DIR "/jack_state"
 
 #define JACK_STATE_STOCK_PATH SCHWUNG_STOCK_DIR "/jack_state"
+#define LINE_STATE_PATH SCHWUNG_INSTALL_DIR "/line_in_state"   /* last CC 114 value (ours only: stock keeps none) */
 
 /* One saved value and its time; -1 when missing or not 0 / 127. */
 static int jack_state_read_one(const char *path, long *mtime) {
@@ -57,6 +60,13 @@ static int jack_state_read(void) {
     int own = jack_state_read_one(JACK_STATE_PATH, &own_t);
     if (!strcmp(JACK_STATE_PATH, JACK_STATE_STOCK_PATH)) return own;
     return jack_state_pick(own, own_t, jack_state_read_one(JACK_STATE_STOCK_PATH, &stock_t), stock_t);
+}
+
+static void line_state_write(int v) {
+    FILE *f = fopen(LINE_STATE_PATH, "w");
+    if (!f) return;
+    fprintf(f, "%d\n", v);
+    fclose(f);
 }
 
 static void jack_state_write(int v) {
@@ -299,6 +309,9 @@ static void *worker_main(void *arg) {
      * after — this only closes the boot-with-HP-plugged gap. */
     int boot_jack = jack_state_read();        /* -1 if never persisted */
     int last_persisted = boot_jack;
+    long line_t;
+    int boot_line = jack_state_read_one(LINE_STATE_PATH, &line_t);   /* 0 / 127, -1 never saved */
+    int last_line = boot_line;
     int boot_reasserted = 0;
 
     for (;;) {
@@ -311,6 +324,11 @@ static void *worker_main(void *arg) {
             last_persisted = jp;
             jack_state_write(jp);
         }
+        int lp = shim_line_persist;
+        if (lp >= 0 && lp != last_line) {
+            last_line = lp;
+            line_state_write(lp);
+        }
 
         /* Re-assert jack state to Move once, ~5 s after start (Move's firmware
          * is up by then). Prefer the value XMOS actually reported THIS boot
@@ -321,6 +339,7 @@ static void *worker_main(void *arg) {
             boot_reasserted = 1;
             int v = (shim_jack_persist >= 0) ? shim_jack_persist : boot_jack;
             if (v >= 0) shim_inject_boot_jack = v;
+            if (shim_line_persist < 0 && boot_line >= 0) shim_inject_boot_line = boot_line;
         }
 
         if (tick % 5 == 0) {

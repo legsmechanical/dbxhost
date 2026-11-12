@@ -22,4 +22,17 @@ flag() { code "$S" | awk '/if \(shim_inject_boot_jack >= 0 && shadow_midi_inject
          grep -q 'if (!shadow_speaker_active_known) {' /tmp/jsw.$$ &&
          grep -q 'if (shadow_control) shadow_control->speaker_active = (uint8_t)sp;' /tmp/jsw.$$; local r=$?; rm -f /tmp/jsw.$$; return $r; }
 check "the boot re-assert sets this host's speaker flag (unless XMOS spoke first)" flag
+# The line-in jack (CC 114) the same way: saved on every report, re-asserted at
+# boot when XMOS said nothing, and believed by this host -- the recording input's
+# gain (Line In / Mic) is chosen by it.
+line_saved() { code "$W" | grep -q '#define LINE_STATE_PATH SCHWUNG_INSTALL_DIR "/line_in_state"' &&
+               code "$W" | grep -q 'line_state_write(lp);' &&
+               code "$W" | grep -q 'if (shim_line_persist < 0 && boot_line >= 0) shim_inject_boot_line = boot_line;' &&
+               [ "$(code "$S" | grep -c 'shim_line_persist = (int)d2;')" = 2 ]; }
+check "line-in: every CC 114 is saved, and the saved one is re-asserted at boot" line_saved
+line_flag() { code "$S" | awk '/if \(shim_inject_boot_line >= 0 && shadow_midi_inject_shm\) \{/,/Boot line-in re-assert: injected/' > /tmp/jsl.$$;
+              grep -q 'if (!shadow_line_in_connected_known) {' /tmp/jsl.$$ &&
+              grep -q 'if (shadow_control) shadow_control->line_in_connected = (uint8_t)(v ? 1 : 0);' /tmp/jsl.$$ &&
+              grep -q 'CC_MIC_IN_DETECT, v' /tmp/jsl.$$; local r=$?; rm -f /tmp/jsl.$$; return $r; }
+check "line-in: the boot re-assert tells Move and sets this host's flag (unless XMOS spoke first)" line_flag
 [ $fails = 0 ] && echo PASS || { echo FAIL; exit 1; }

@@ -68,6 +68,15 @@ extern volatile int shim_inject_boot_jack;
  * boot via shim_inject_boot_jack. */
 extern volatile int shim_jack_persist;
 
+/* The same for the line-in jack (CC 114: 0 = no cable, the internal mic; 127 =
+ * a cable), which XMOS also reports only on a change and stock does not save:
+ * the RT path records each value here, the worker saves it to
+ * <install>/line_in_state, and ~5 s after start arms shim_inject_boot_line with
+ * the saved one (when XMOS has said nothing this boot) for the RT path to give
+ * Move and to believe itself. -1 = none. */
+extern volatile int shim_line_persist;
+extern volatile int shim_inject_boot_line;
+
 /* Deferred events (RT-safe to post; worker executes within ~200 ms). */
 #define SHIM_EVT_OVERTAKE_EXIT_HOOK 1
 #define SHIM_EVT_RESTART_MOVE       2
