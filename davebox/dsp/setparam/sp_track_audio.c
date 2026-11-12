@@ -2053,14 +2053,6 @@ static int au_kind(uint8_t pm) {
 }
 
 /* tN_au_* reads. Returns -1 when the key is not one of ours. */
-/* The Tempo the info read reports: the clip's, or with an End the one that
- * fits Start..End to the clip (x10, rounded; what plays is exact). */
-static unsigned au_bpm10_shown(const au_clip_t *cl, const au_sample_t *s) {
-    double f = au_fit_fpt(cl, s);
-    if (f > 0) return (unsigned)((double)s->rate * 60.0 / (f * PPQN) * 10.0 + 0.5);
-    return au_bpm10(cl);
-}
-
 static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int out_len) {
     int t, c, l;
     if (key[0] != 't' || key[1] < '0' || key[1] > '7' || strncmp(key + 2, "_au_", 4)) return -1;
@@ -2098,7 +2090,9 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
          *  its own; rend stops at the file); reach: how much of that sounds before the clip comes round
          *  (Nudge taken off); bpm10: the sample's own Tempo x10 (0 not known yet);
          *  hits: Transient's chops in it; slen: Slice's Length in ticks (0 = to
-         *  the end); end: a Loop clip's End as set (0 = none) */
+         *  the end); end: a Loop clip's End as set (0 = none). bpm10 is the
+         *  sample's OWN Tempo even with an End (what Pick bars measures by);
+         *  the fitted one is the screen's to work out (auFitFpt) */
         c = my_atoi(k + 5);
         if (c < 0 || c > AU_SLC) return -1;
         au_clip_t *cl = au_key_cl(inst, t, c);
@@ -2132,7 +2126,7 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
                         cl->state, cl->err, cl->mode, cl->even, cl->nslices, cl->jump,
                         (unsigned)rs, (unsigned)ve, au_pitch(cl), au_gain(cl),
                         s ? (unsigned)s->frames : 0u, s ? (unsigned)s->rate : 0u, s ? s->ch : 0,
-                        au_revrs(cl), cl->nudge_ms, cl->jmpq, au_count(cl), au_detune(cl), cl->sync, (unsigned)reach, au_bpm10_shown(cl, s),
+                        au_revrs(cl), cl->nudge_ms, cl->jmpq, au_count(cl), au_detune(cl), cl->sync, (unsigned)reach, au_bpm10(cl),
                         (unsigned)au_hit_count_cached(cl, rs, re), cl->sens, cl->trans, (unsigned)cl->slen, (unsigned)cl->rot, (int)cl->shot, (unsigned)cl->rend, cl->name);
     }
     if (!strncmp(k, "sl_", 3)) {                  /* sl_C_L: "a b pinned pitch gain rev play atk dec detune" */

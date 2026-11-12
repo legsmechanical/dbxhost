@@ -8,8 +8,8 @@
  *   - au_range ends at End; 0 or past the sample's end means none, the
  *     sample's end itself is an End;
  *   - with an End, Start..End fills the clip exactly (the speed follows,
- *     whatever the Tempo knob says); a new Length refits; the info's Tempo is
- *     the fitted one; without, the Tempo knob's again;
+ *     whatever the Tempo knob says); a new Length refits; the info's Tempo
+ *     stays the sample's own; without, the Tempo knob's again;
  *   - End stays past Start by a slice, and Start short of End;
  *   - the info read reports End as its last field;
  *   - End is saved (en=) and loaded; a clip with none writes no en key;
@@ -132,13 +132,14 @@ int main(void) {
         lc->length /= 2;          /* half the length: twice the frames a tick (doubling here would pass 999.9 BPM) */
         HX_ASSERT(fabs(au_fpt_s(cl, cl->smp) - 2 * f1) < 1e-9, "a new Length did not refit");
         lc->length *= 2;
-        /* the info's Tempo is the fitted one */
-        double want = 44100.0 * 60.0 / (f1 * PPQN);
+        /* the info's Tempo stays the sample's own (Pick bars measures by it;
+         * a fitted one there made Pick bars keep whatever length it had —
+         * found on the device) */
         hx_get_param(h, "t2_au_info_0", buf, (int)sizeof buf);
         {   int f = 0; char *q = buf; unsigned b10 = 0;
             while (*q && f < 20) { if (*q == ' ') f++; q++; }
             b10 = (unsigned)strtoul(q, NULL, 10);
-            HX_ASSERT(abs((int)b10 - (int)(want * 10 + 0.5)) <= 1, "the info does not report the fitted Tempo"); }
+            HX_ASSERT(b10 == 900, "the info does not report the sample's own Tempo under an End"); }
         /* and it plays, end to end: sounding late in the clip */
         HX_ASSERT(energy_after(h, 0, 100, 40) > 0, "a fitted clip is silent");
         /* none: the knob's Tempo again */
