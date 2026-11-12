@@ -1337,6 +1337,11 @@ clip's, so a lane only ever holds it while it plays — it never rewrites the se
   the Tempo back. A fit outside 0.1–999.9 BPM says *Out of range*.
 - **Original tempo** — the sample's Tempo becomes the project's, so it plays exactly as
   recorded.
+- **Pick bars** (in place of both, on an Audio clip with an End) — sets the clip to the
+  whole number of bars, odd numbers included, that puts Start to End nearest the sample's
+  own Tempo (the one guessed when it loaded, or the one you set before the End). Handy
+  for a sample that isn't neatly cut: mark Start and End, Pick bars, done. It happens only
+  when you choose it — nothing else changes the clip's length — and one Undo puts it back.
 
 A **click** on SAMPLE opens its menu (**Shift + click** does the same):
 

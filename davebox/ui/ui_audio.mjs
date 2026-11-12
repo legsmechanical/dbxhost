@@ -1489,6 +1489,34 @@ export function auFit(t, c) {
     S.auStartsRev = (S.auStartsRev | 0) + 1;
     return v;
 }
+/* PICK BARS (Tempo's menu with an End; Josh, 2026-11-12, on a sample that
+ * isn't neatly cut: "allow odd bar lengths" · "bar lengths set tempo" · "i
+ * don't want anything unexpected" · "intuitive but flexible"): ONCE, on the
+ * pick, the clip becomes the whole number of bars — odd ones too — that puts
+ * Start..End nearest the sample's own Tempo (the load's guess, or the Tempo
+ * set before the End); the fit then makes the Tempo exact. Nothing else ever
+ * changes the length behind the Loop gestures. Undoable (when it changed).
+ * Returns the bars, -1 when there is nothing to pick (no End). */
+export function auPickBars(t, c) {
+    const i = auInfo(t, c);
+    if (i.state !== 2 || !auIsLoop(i) || !(i.cut > 0)) return -1;
+    const len = S.clipLength[t][c] | 0 || 16, ls = S.clipLoopStart[t][c] | 0;
+    const tps = S.clipTPS[t][c] || 24, spb = Math.max(1, Math.round(384 / tps));
+    const secs = (Math.min(i.cut, i.nframes) - (i.rstart | 0)) / (i.rate || 44100);
+    const bpm = (i.bpm10 | 0) ? i.bpm10 / 10 : 120;
+    const bars = Math.max(1, Math.min(Math.floor(256 / spb), Math.round(secs * bpm / 240)));
+    const v = Math.max(1, Math.min(256 - ls, bars * spb - ls));
+    if (v === len) return bars;
+    noteUndoUnit();
+    auUndoClips(t, [c]);
+    S.clipLength[t][c] = v;
+    S.clipLengthManuallySet[t][c] = true;
+    host_module_set_param('t' + t + '_c' + c + '_loop_set', String((ls << 16) | v));
+    auMarkStale(t, c);
+    S.auStartsRev = (S.auStartsRev | 0) + 1;
+    S.ledsDirtyAudio = true;
+    return bars;
+}
 /* Nudge (SAMPLE's K8): the sample against the bar, 5 ms a detent (Shift 1) */
 export function auNudgeStep(t, c, steps) {
     const i = auInfo(t, c);

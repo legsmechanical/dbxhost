@@ -1539,6 +1539,27 @@ step('⭐⭐ Tempo\'s menu: touch Tempo + click on SAMPLE, either page, offers F
     touchClick(6); ticks(1); click(); ticks(1);
     assert(!sent('t4_au_set_bpm').length && !sent('t4_au_undo').length && !S.undoAvailable, 'out of range set something');
     assert((S.actionPopupLines || []).join(' ') === 'FIT TO CLIP Out of range', 'notice: ' + JSON.stringify(S.actionPopupLines));
+    /* WITH AN END, Pick bars alone (Josh, 2026-11-12: "allow odd bar lengths"
+     * · "i don't want anything unexpected"): once, the whole bars nearest the
+     * sample's own Tempo — 3.0 bars at 84 BPM in Start..End: 3, odd — one
+     * undo step; again, nothing moves */
+    const bar84 = 48000 * 240 / 84, endF = Math.round(3 * bar84);
+    GET['t4_au_info_0'] = INFO24(0, 4, 0, 4, 50, 0).replace(' 16 0 96000 0 0 96000 48000 ', ' 16 0 ' + endF + ' 0 0 900000 48000 ').replace('|', ' 0 0 ' + endF + '|');
+    S.clipLength[4][0] = 16; kindSync(); ticks(3);
+    assert(A.auInfo(4, 0).cut === endF, 'setup: no End read: ' + JSON.stringify(A.auInfo(4, 0)));
+    touchClick(6); ticks(1);
+    assert(ed.pick && ed.pick.tempo && E.auPickRows(ed).map((r) => r.label).join() === 'Pick bars', 'with an End, Tempo\'s menu: ' + E.auPickRows(ed).map((r) => r.label));
+    reset(); S.undoAvailable = false;
+    click(); ticks(1);
+    assert(sent('t4_c0_loop_set').join() === '48' && S.clipLength[4][0] === 48, 'Pick bars did not make 3 bars: ' + JSON.stringify(sent('t4_c0_loop_set')) + ' ' + S.clipLength[4][0]);
+    assert(sent('t4_au_undo').join() === '0' && S.undoAvailable, 'Pick bars is not an undo step: ' + JSON.stringify(sent('t4_au_undo')));
+    assert((S.actionPopupLines || []).join(' ') === 'PICK BARS 3 BARS' && !ed.pick, 'notice: ' + JSON.stringify(S.actionPopupLines));
+    assert(Math.abs(A.auBpm(A.auInfo(4, 0)) - 84) < 0.11, 'the Tempo did not follow the bars: ' + A.auBpm(A.auInfo(4, 0)));
+    reset();
+    touchClick(6); ticks(1); click(); ticks(1);
+    assert(!sent('t4_c0_loop_set').length && !sent('t4_au_undo').length && (S.actionPopupLines || []).join(' ') === 'PICK BARS 3 BARS',
+           'Pick bars again moved something: ' + JSON.stringify(sentLike(/t4_/)));
+    S.clipLength[4][0] = 16;
     /* a Slicer: Original tempo only (its clips are sequences: nothing to fit) */
     back(); ticks(2);
     GET['t4_au_info_0'] = INFO(1, 8); kindSync(); ticks(2);

@@ -67,7 +67,7 @@ import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLaz
          auSelSlice, auSetSelSlice, isSampledTrack, isSlicerTrack, auSeqClipOf, auEditTrim, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
          auMarkAdd, auMarkDel, auManual, auEvenBake, auTrans, auTransBake, auRangeStep, auSet, auEnd, auPanelRingCells, auPanelReset,
          auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_LAZY_ENDED, AU_EVEN_MAX, AU_BPM10_MIN, AU_BPM10_MAX, auLenTicks,
-         auSampleP2Cells, auSampleP2Knob, AU_P2_KNOB, auFitFpt, auBpm, auSampleReset, auEdit, auTrimCuts, auOrig, auFit, auNudgeStep, auFpt, auPlayedEnd, auTooLongToChop, auAutoEdit, auAutoTouch, auSlicesAutoTouch, SLICE_GRID } from './ui_audio.mjs';
+         auSampleP2Cells, auSampleP2Knob, AU_P2_KNOB, auFitFpt, auBpm, auPickBars, auSampleReset, auEdit, auTrimCuts, auOrig, auFit, auNudgeStep, auFpt, auPlayedEnd, auTooLongToChop, auAutoEdit, auAutoTouch, auSlicesAutoTouch, SLICE_GRID } from './ui_audio.mjs';
 import { registerScreenRingCells } from './ui_knob_leds.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { ccKnobDelta, knobPick, KNOB_PICK, KNOB_DELIB } from './ui_input_cc.mjs';
@@ -572,6 +572,9 @@ export function auPickRows(ed) {
     /* touch Tempo + click (Josh, 2026-11-02: "both on a small pop-up menu
      * that shows when you touch click tempo" · "menu should be "Fit to clip"
      * "Original tempo""); Fit is a Loop clip's */
+    /* ...with an End, Start..End sets the Tempo: Pick bars instead (the
+     * whole bars nearest the sample's own Tempo, once) */
+    if (p.tempo && auFitFpt(i) > 0) return [{ id: 'bars', label: 'Pick bars' }];
     if (p.tempo) return (auIsLoop(i) ? [{ id: 'fit', label: 'Fit to clip' }] : []).concat([{ id: 'orig', label: 'Original tempo' }]);
     /* SAMPLE's menu (Josh, 2026-10-30: "it should load a menu for consistency.
      * AND i want to add trim and normalize options there"); chopping is
@@ -629,6 +632,12 @@ function pickInput(ed, status, d1, d2) {
             /* nothing to cut: say so rather than ask */
             if (row.id === 'trim' && !auTrimCuts(ed.t, ed.c)) { showActionPopup('TRIM', 'Nothing to cut'); return true; }
             ed.ask = { kind: 'edit', op: row.id, sel: 0 };   /* opens on New (Josh: "new copy is default") */
+            return true;
+        }
+        if (row.id === 'bars') {
+            ed.pick = null;
+            const b = auPickBars(ed.t, ed.c);
+            if (b !== -1) showActionPopup('PICK BARS', b + (b === 1 ? ' BAR' : ' BARS'));
             return true;
         }
         if (row.id === 'fit' || row.id === 'orig') {
