@@ -1897,12 +1897,17 @@ step('⭐ the step editor\'s K1 reads "Slice n"; K2 Pitch, K3 Length (Start behi
     S.heldStep = 0; S.heldStepNotes = [2]; S.activeBank = C.BANK_STEP;
     S.stepEditXrev = 0; S.stepEditXsemi = 0; S.stepEditXstart = 0; S.stepEditXlen = 100; S.knobAlt = 0;
     const cells = render.heldStepCells();
-    assert(cells[0].label === 'Slice' && cells[0].bigText === 'Slice 3', 'K1: ' + JSON.stringify(cells[0]));
-    /* ...and the page as drawn: the merged box over K1 / K2 says the chop, not
-     * a note name (found on the device: "D-2" for chop 3) */
+    assert(cells[0].label === 'Slice' && cells[0].kind === 'valsq' && cells[0].text === '3', 'K1: ' + JSON.stringify(cells[0]));
+    /* ...and the page as drawn: the chop's number, not a note name (found on
+     * the device: "D-2" for chop 3), in K1's own cell — no merged Note box
+     * over K1 / K2 (Josh, 2026-11-11: "slice/pitch don't need to be grouped in a box") */
     S.heldStepBtn = -1; S.stepWasEmpty = false;
     const tx = globalThis.__texts(() => frame(() => render.drawHeldStepPage()));
     assert(tx.indexOf('3') >= 0 && !tx.some((x) => /^D-?2/.test(x)), 'the step page names a note: ' + JSON.stringify(tx));
+    { let run = 0, best = 0; for (let y = 10; y < 54; y++) { run = FB[y * 128 + 6] ? run + 1 : 0; best = Math.max(best, run); }
+      assert(best < 10, 'the merged Note box is still drawn round K1 / K2 (its left edge, x=6, runs ' + best + ' px)'); }
+    /* K3 answers touch + click (Length / Start): it wears the corner brackets */
+    assert(cells[2].opens === true, 'K3 Length has no touch + click corners: ' + JSON.stringify(cells[2]));
     assert(cells[1].label === 'Pitch' && cells[2].label === 'Leng' && cells[2].text === '100%' && cells[3].label === 'Revrs' && cells[3].text === 'Off',
            'K2 / K3 / K4 are not Pitch / Length 100% / Reverse Off: ' + JSON.stringify([cells[1], cells[2], cells[3]]));
     S.heldStepBtn = 16; reset();
@@ -1921,7 +1926,7 @@ step('⭐ the step editor\'s K1 reads "Slice n"; K2 Pitch, K3 Length (Start behi
     assert(!sentLike(/_vel$|_step_0_vel|_set_notes$|_step_0_gate/).length, 'a Slicer step wrote velocity / notes / gate: ' + JSON.stringify(sets));
     /* touch K3 + click: Start; turned, it sends the step's Start */
     note(2, 127); cc(3, 127); cc(3, 0); note(2, 0);
-    assert(render.heldStepCells()[2].label === 'Start', 'touch + click did not turn K3 to Start: ' + JSON.stringify(render.heldStepCells()[2]));
+    assert(render.heldStepCells()[2].label === 'Start' && render.heldStepCells()[2].opens === true, 'touch + click did not turn K3 to Start (corners kept): ' + JSON.stringify(render.heldStepCells()[2]));
     reset();
     for (let i = 0; i < 10; i++) cc(73, 1);
     const st = sent('t4_c0_step_0_xstart');

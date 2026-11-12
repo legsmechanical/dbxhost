@@ -2436,9 +2436,12 @@ export function heldStepCells() {
          * (ui_input_cc.mjs, the heldStep knob branch). `ringBound` tells the ring
          * rule that, because it used to infer "dead" from the shape and leave two
          * working pitch controls dark. */
-        /* AUDIO: K1 is the step's slice (Q6, Josh 2026-10-27: "agreed"); no octave. */
+        /* AUDIO: K1 is the step's slice (Q6, Josh 2026-10-27: "agreed"); no octave.
+         * Its own cell, the number centred over SLICE — not the melodic page's
+         * merged Note/Oct box: K2 is Pitch here, a knob of its own (Josh,
+         * 2026-11-11: "slice/pitch don't need to be grouped in a box") */
         isSampledTrack(t)
-            ? { kind: 'blank', label: 'Slice', name: 'Slice', bigText: 'Slice ' + (root - AU_NOTE_BASE + 1), ringBound: true }
+            ? { kind: 'valsq', label: 'Slice', name: 'Slice', text: String(root - AU_NOTE_BASE + 1), ringBound: true }
             : { kind: 'blank', label: 'Note', name: 'Note', bigText: noteLabel, ringBound: true },
         /* A Slicer step's own sound (Josh, 2026-11-11: per-step reverse and
          * pitch — "that's the way"; "why not have start be the alt to length
@@ -2448,10 +2451,12 @@ export function heldStepCells() {
             ? { kind: 'arcbip', label: 'Pitch', name: 'Pitch', text: (S.stepEditXsemi > 0 ? '+' : '') + S.stepEditXsemi,
                 signed: Math.max(-1, Math.min(1, S.stepEditXsemi / 24)) }
             : { kind: 'blank', label: 'Oct',  name: 'Note', bigText: noteLabel, ringBound: true },
+        /* `opens`: touch + click flips Length / Start, so the cell wears the
+         * corner brackets every alt knob wears (markKnobAlts) */
         isSampledTrack(t)
             ? (knobAltOn(2)
-                ? { kind: 'arc', label: 'Start', name: 'Start', text: S.stepEditXstart + '%', norm: S.stepEditXstart / 100 }
-                : { kind: 'arc', label: 'Leng', name: 'Length', text: S.stepEditXlen + '%', norm: S.stepEditXlen / 100 })
+                ? { kind: 'arc', label: 'Start', name: 'Start', text: S.stepEditXstart + '%', norm: S.stepEditXstart / 100, opens: true }
+                : { kind: 'arc', label: 'Leng', name: 'Length', text: S.stepEditXlen + '%', norm: S.stepEditXlen / 100, opens: true })
             : { kind: 'valsq', label: 'Leng', name: 'Length',
                 text: fmtStepLen(_gateSteps) },
         /* a Slicer plays every chop at one level (Josh, 2026-11-02: "no
@@ -2520,11 +2525,9 @@ export function drawHeldStepPage() {
         const tps = S.clipTPS[S.activeTrack][ac] || 24;
         const _gateSteps = S.stepEditGate / tps;
         const cells = heldStepCells();
-        /* an Audio track's step holds a chop: its number in the merged box, over
-         * SLICE (the note name, D-2 for chop 3, read as a pitch: found on the
-         * device, 2026-10-30) */
-        const boxName = isSampledTrack(S.activeTrack) ? String(root - AU_NOTE_BASE + 1) : noteName;
-        drawStepEditKitPage(_stepTitle, cells, { name: boxName, sub: noteSub }, _footer);
+        /* a Slicer step has no merged box: K1 Slice and K2 Pitch are cells of
+         * their own (heldStepCells) */
+        drawStepEditKitPage(_stepTitle, cells, isSampledTrack(S.activeTrack) ? null : { name: noteName, sub: noteSub }, _footer);
         return true;
     } else if (S.stepWasEmpty) {
         drawStepEditKitPage(_stepTitle, null, null, _footer);
