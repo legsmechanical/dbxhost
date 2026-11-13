@@ -338,6 +338,21 @@ int main(void) {
             HX_ASSERT(loud / 36000.0 > 300.0, "a Warp + End render is silent before its End");
             HX_ASSERT(quiet / 28000.0 < 1.0, "a Warp + End render sounds past its End");
         }
+        {
+            /* the stretcher's, not Vintage's (the same clip cut on the clock
+             * would also sound, then rest): the two renders differ */
+            int16_t *v;
+            uint32_t vf, i;
+            double diff = 0;
+            hx_set_param(h, "t4_au_set_sync", "0 1");
+            HX_ASSERT(hx_get_param(h, "t4_c0_au_export", b, sizeof b) > 0 && b[0] == 'R', "the Vintage control was not rendered");
+            v = read_wav(p, &vf, &rate, &ch);
+            HX_ASSERT(v && vf == frames, "the Vintage control's header");
+            for (i = 4000; i < 40000; i++) diff += fabs((double)w[i] - (double)v[i]);
+            HX_ASSERT(diff / 36000.0 > 1000.0, "a Warp + End render is Vintage's, not the stretcher's");
+            free(v);
+            hx_set_param(h, "t4_au_set_sync", "0 0");
+        }
         free(w);
         printf("  ok   — a Warp clip with an End renders, silent past End till the clip comes round\n");
 
@@ -345,6 +360,7 @@ int main(void) {
          * sample's speed, from the launch — never fitted to the clip */
         hx_set_param(h, "t4_au_set_sync", "0 2");
         hx_set_param(h, "t4_au_set_free", "0 1");
+        hx_set_param(h, "t4_c0_loop_set", "262160");          /* a loop window from step 4: Free's region ignores it */
         HX_ASSERT(hx_get_param(h, "t4_c0_au_export", b, sizeof b) > 0 && b[0] == 'R', "a Free Tape clip was not rendered");
         HX_ASSERT(sscanf(b, "R %ld %u", &fr, &lt) == 2 && fr == (long)(384 * fpt + 0.5), "a Free render is not the clip's length");
         w = read_wav(p, &frames, &rate, &ch);
@@ -372,6 +388,7 @@ int main(void) {
         free(w);
         hx_set_param(h, "t4_au_set_free", "0 0");
         hx_set_param(h, "t4_au_set_end", "0 0");
+        hx_set_param(h, "t4_c0_loop_set", "16");
         printf("  ok   — a Free clip renders its own loop from the launch, on Tape and on Warp\n");
     }
 
