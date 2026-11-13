@@ -845,8 +845,12 @@ step('⭐⭐ WAVE K4 Gain · K5 Pitch · K6 Detune (the clip\'s), read out in th
         const f = shown(), endPx = Math.floor((half - led.A) / (led.B - led.A) * 128);
         let ink = 0;
         for (let x = endPx + 3; x < Math.min(128, endPx + 30); x++) for (let y = 20; y < 50; y++) ink += f[y * 128 + x] ? 1 : 0;
+        /* End a solid line, edged in black */
+        let line = -1;
+        for (let x = endPx - 2; x <= endPx + 2 && line < 0; x++) { let n = 0; for (let y = 20; y < 50; y++) n += f[y * 128 + x] ? 1 : 0; if (n === 30) line = x; }
         S.auInfo[4][0] = iE;
         assert(ink > 0, 'nothing drawn past End: the file does not run on for reference');
+        assert(line >= 0 && !f[30 * 128 + line + 1], 'no line at End (around x ' + endPx + ')');
     }
     /* End is a cut: the Tempo stays the sample's (Josh, 2026-11-13: "loop
      * length then changes how much of that loop plays back just like a midi
