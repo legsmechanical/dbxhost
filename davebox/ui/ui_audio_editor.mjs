@@ -210,8 +210,9 @@ export function auWaveView(ed) {
     /* zoomed all the way out, the view IS the bounds — on SAMPLE the clip's
      * window, so turning Start slides the audio under it and Tempo / Length
      * squeeze or stretch it (Josh, 2026-10-29) */
+    const [slo, shi] = auScrollBounds(ed);
     if (ed.full || ed.B - ed.A > hi - lo) { ed.A = lo; ed.B = hi; ed.full = true; }
-    else if (ed.A < lo || ed.B > hi) { const sp = ed.B - ed.A; ed.A = Math.max(lo, Math.min(hi - sp, ed.A)); ed.B = ed.A + sp; }
+    else if (ed.A < slo || ed.B > shi) { const sp = ed.B - ed.A; ed.A = Math.max(slo, Math.min(shi - sp, ed.A)); ed.B = ed.A + sp; }
 }
 /* What the view spans zoomed all the way out. SAMPLE's plain view (no chop
  * editor up): the clip's window — Start for its Length at the sample's Tempo,
@@ -240,6 +241,18 @@ export function auViewBounds(ed) {
         if (hi - lo >= MIN_SPAN) return [lo, hi];
     }
     return [0, Math.max(MIN_SPAN, fr)];
+}
+
+/* How far a zoomed-in view may scroll: SAMPLE's plain view past its clip
+ * window, over the whole file (and the window's empty end), so what lies
+ * outside Start..End is there to see (Josh, 2026-11-13: "the waveform beyond
+ * start end disappears. that shouldn't happen. we need it for reverence");
+ * zoomed all the way out the view stays the clip's. Anything else: its
+ * bounds. */
+export function auScrollBounds(ed) {
+    const [lo, hi] = auViewBounds(ed), i = auInfo(ed.t, ed.c), fr = i.nframes | 0;
+    const sampleView = ed.mode !== 'trim' && ed.ed !== 'slices' && !(ed.mode === 'chop' && ed.chop) && ed.mode !== 'lazy';
+    return sampleView && fr && i.state === 2 && !auIsSlice(i) ? [0, Math.max(fr, hi)] : [lo, hi];
 }
 
 /* A chop method leaves the Mode alone: the chops serve both (Josh,
@@ -414,7 +427,7 @@ export function auEdPixel(ed) { return Math.max(1, Math.round((ed.B - ed.A) / 12
  * focus: what was touched last. The span is kept. */
 function centre(ed, f) {
     if (f == null) f = focus(ed);
-    const span = ed.B - ed.A, [lo, hi] = auViewBounds(ed);
+    const span = ed.B - ed.A, [lo, hi] = auScrollBounds(ed);
     if (ed.full) return;                              /* zoomed out: the bounds are the view */
     let A = Math.round(f - span / 2);
     A = Math.max(lo, Math.min(Math.max(lo, hi - span), A));
@@ -434,7 +447,8 @@ function edStart(ed) {
 }
 function edEnd(ed) {
     const i = auInfo(ed.t, ed.c);
-    if (chopKind(ed) !== 'manual') return auEnd(i);
+    /* a Loop clip: where it stops playing — End, or its Length's end */
+    if (chopKind(ed) !== 'manual') return auIsLoop(i) ? auPlayedEnd(ed.t, ed.c, i) : auEnd(i);
     const m = auMarks(ed.t, ed.c)[auSelSlice(ed.t)];
     return m ? m[1] : 0;
 }

@@ -77,7 +77,7 @@ import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
 import { isSampledTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
          auPos, auLazyState, auSelSlice, auSampleP2Cells, AU_P2_TEMPO, AU_P2_BARS, AU_P2_REVRS, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells, rmxBankCells, rmxPresetLongName, rmxOrderMoved, RMX_CHOPS, rmxChopIndex, knobAltOnTrack, auAltBit,
          auPadModeCells, AU_NOTE_BASE,
-         auFmtTime, auEnd, auBpm, auFpt, auFmtLen, auLenTicks, auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
+         auFmtTime, auEnd, auPlayedEnd, auBpm, auFpt, auLenTicks, auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
 import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
 import { drawAudioAsk } from './ui_dialogs.mjs';
 import { drawAudioChooser } from './ui_audio_chooser.mjs';
@@ -106,12 +106,17 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
     const org = i.rstart | 0, cLen = o.clipTime ? auLenTicks(t, c, i) * auFpt(i) : 0;
     const Lt = o.clipTime ? auLenTicks(t, c, i) : 0;
     const by = o.clipTime && auIsLoop(i) && i.rot && Lt > 0 ? ((i.rot | 0) % Lt) * auFpt(i) : 0;
-    const rot = (v) => org + (((v - org - by) % cLen) + cLen) % cLen;      /* clip frame -> sample frame */
-    const unrot = (f) => org + (((f - org + by) % cLen) + cLen) % cLen;    /* sample frame -> clip frame */
+    const inWin = (v) => v >= org && v < org + cLen;                       /* outside the clip's window nothing rotates */
+    const rot = (v) => inWin(v) ? org + (((v - org - by) % cLen) + cLen) % cLen : v;      /* clip frame -> sample frame */
+    const unrot = (f) => inWin(f) ? org + (((f - org + by) % cLen) + cLen) % cLen : f;    /* sample frame -> clip frame */
     /* a view running past the file's end (SAMPLE's clip window when the Length
      * outlasts the sample) is empty there: only the columns inside are read —
      * and in the clip's time, past a Loop clip's End too (silent there) */
-    const fe = o.clipTime && auIsLoop(i) && i.cut > 0 ? Math.min(fr, i.cut) : fr;
+    /* `edges` (SAMPLE's editor): the file runs on past End, dithered with
+     * the rest outside Start..End, for reference (Josh, 2026-11-13: "we need
+     * it for reverence. maybe dither it outside of start/end and add
+     * start/end vertical lines on the waveform") */
+    const fe = o.clipTime && auIsLoop(i) && i.cut > 0 && !o.edges ? Math.min(fr, i.cut) : fr;
     const colsFor = (n, a, b) => {
         const nIn = b > fe ? Math.max(0, Math.min(n, Math.floor((fe - a) / (b - a) * n))) : n;
         const cc = nIn > 0 ? auWaveColumns(t, c, nIn, a, Math.min(b, fe)) : [];
@@ -127,7 +132,10 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
             const a = rot(vA);
             return colsFor(p1 - p0, a, a + (vB - vA));
         };
-        const parts = (P > A && P < B) ? [seg(A, P), seg(P, B)] : [seg(A, B)];
+        /* split where the sample's start falls and at the window's edges */
+        const cuts = [A, P, org, org + cLen, B].filter((v, k) => k === 0 || k === 4 || (v > A && v < B)).sort((a, b) => a - b);
+        const parts = [];
+        for (let k = 0; k + 1 < cuts.length; k++) if (cuts[k + 1] > cuts[k]) parts.push(seg(cuts[k], cuts[k + 1]));
         cols = parts.some((x) => x === null) ? null : [].concat(...parts);
     } else if (fr) {
         wIn = B > fe ? Math.max(0, Math.min(w, Math.floor((fe - A) / (B - A) * w))) : w;
@@ -161,10 +169,20 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
         fill_rect(x + k, mid - hh, 1, hh * 2 + 1, 1);
     }
     /* outside Start..End (a Slicer's Trim screen: its two handles): hatched off */
-    const rs = o.trim ? o.trim[0] : i.rstart, re = o.trim ? o.trim[1] : auEnd(i);
+    const rs = o.trim ? o.trim[0] : i.rstart, re = o.trim ? o.trim[1] : o.edges && auIsLoop(i) ? auPlayedEnd(t, c, i) : auEnd(i);
     for (let k = 0; k < w; k++) {
         const v = A + (B - A) * (k + 0.5) / w, f = by > 0 ? rot(v) : v;
         if (f < rs || f > re) for (let j = y; j < y + h; j++) if (((k + j) & 1) === 0) set_pixel(x + k, j, 0);
+    }
+    if (o.edges) {
+        /* Start and End: a line each, edged in black to read over the audio */
+        const ln = (f) => {
+            if (by > 0) f = unrot(f);                /* where it falls in the turned clip */
+            const px = x + Math.floor((f - A) / (B - A) * w + 1e-6);
+            if (px >= x && px < x + w) { fill_rect(px - 1, y, 3, h, 0); fill_rect(px, y, 1, h, 1); }
+        };
+        ln(rs);
+        ln(Math.min(re, fr));                        /* End, or where the file runs out */
     }
     if (!o.noMarks && o.faint) {
         /* SAMPLE on a Slice clip: the chops are SLICES' to edit — shown, not
@@ -461,11 +479,13 @@ function drawAudioWaveEditor() {
         /* the sample's name (Josh, 2026-10-28: "in loop mode, can we show the
          * sample name in the header of "sample" instead of "loop"") */
         drawBankHeading(auSampleName(t, c), false, false, '1/2');
-        ends('S ' + auFmtTime(i.rstart, rt), i.cut > 0 ? 'E ' + auFmtTime(auEnd(i), rt) : 'LEN ' + auFmtLen(auLenTicks(t, c, i)));
+        /* End reads as End alone — a time, or OFF (Josh, 2026-11-13: "i still
+         * don't get end having a bars readout") */
+        ends('S ' + auFmtTime(i.rstart, rt), i.cut > 0 ? 'E ' + auFmtTime(auEnd(i), rt) : 'E OFF');
         if (zoomTxt) mid(zoomTxt);
         /* no cursor and no chops: they are Slice's (Josh, 2026-10-29: "chops
          * should just be completely invisible in loop mode") */
-        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, gain: i.gain | 0, noMarks: true, clipTime: true, beats: { origin: i.rstart, fpb: 96 * auFpt(i) } });
+        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, gain: i.gain | 0, noMarks: true, clipTime: true, edges: true, beats: { origin: i.rstart, fpb: 96 * auFpt(i) } });
         hudSampleKnobs(ed, i, sub, null, false);
         /* touch Tempo: a click opens its menu (Fit to clip · Original tempo) */
         drawKitHintRow(MV_FOOTER_Y, S.knobTouched === 6 ? [['clk', 'tempo'], ['jog', 'page']] : [['clk', 'menu'], ['jog', 'page']]);

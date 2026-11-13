@@ -16,7 +16,8 @@ the section into a versioned heading at release time.
   sample that isn't a perfect loop plays in time. Bars stay put when you move Start or End.
   The clip's length (the Loop gestures) works as a sequence's loop does: a 1-bar loop in a
   2-bar clip plays one bar and rests one. **Fit to clip** now sets Bars. Revrs moved to K7
-  on page 2.
+  on page 2. Start and End are drawn as lines, with the audio outside them dotted rather
+  than hidden.
 - **Record into Audio clips.** On an Audio track, **Rec** records the Move's audio input
   into the clip: an empty clip records until you press Rec again, to the bar; a clip with a
   sample records a new layer over what it plays. You hear the input through the track while

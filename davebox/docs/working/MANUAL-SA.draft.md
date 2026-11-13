@@ -1300,6 +1300,8 @@ the track's.
   loop**, for a sample that isn't a perfect loop: nothing past End sounds. End reads **Off**
   until you turn it down; it goes as far as the end of the sample, and one detent past that
   turns it Off again. Moving End never changes the speed — **Bars** (page 2) does that.
+  Start and End are lines on the waveform; the audio outside them stays on screen, dotted,
+  so you can see what you're cutting (zoom in to scroll before Start).
   The clip's Length is set with the Loop gestures (see
   [Clip length & the loop](#66-clip-length--the-loop)), by the bar or the step, and works as
   a sequence's loop does: it picks which part of the loop plays and for how long. A clip

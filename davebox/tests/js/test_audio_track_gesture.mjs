@@ -822,7 +822,9 @@ step('⭐⭐ WAVE K4 Gain · K5 Pitch · K6 Detune (the clip\'s), read out in th
     const led = S.auEditor;
     const top = A.auPlayedEnd(4, 0, A.auInfo(4, 0)), px = Math.max(1, Math.round((led.B - led.A) / 128));
     const k3txt = () => globalThis.__texts(() => { shown(); });
-    assert(k3txt().some((x) => /^LEN /.test(x)), 'no End: the screen does not read the Length: ' + JSON.stringify(k3txt()));
+    /* End reads as End alone: OFF, never the clip's bars (Josh, 2026-11-13:
+     * "i still don't get end having a bars readout") */
+    assert(k3txt().indexOf('E OFF') >= 0 && !k3txt().some((x) => /^LEN |BAR/.test(x)), 'no End: the screen does not read E OFF: ' + JSON.stringify(k3txt()));
     reset();
     S.knobAccelLast[2] = 0; cc(73, 1);               /* up with no End: nothing */
     assert(!sentLike(/t4_(au_set_end|c0_loop_set)/).length, 'K3 up with no End: ' + JSON.stringify(sentLike(/t4_/)));
@@ -831,6 +833,21 @@ step('⭐⭐ WAVE K4 Gain · K5 Pitch · K6 Detune (the clip\'s), read out in th
            'K3: not End a pixel in: ' + JSON.stringify(sent('t4_au_set_end')) + ' top ' + top + ' px ' + px);
     const iE = A.auInfo(4, 0);
     assert(iE.cut === top - px && A.auPlayedEnd(4, 0, iE) === top - px, 'End is not where the clip ends: ' + JSON.stringify(iE));
+    /* the file goes on past End, for reference (Josh, 2026-11-13: "the
+     * waveform beyond start end disappears. that shouldn't happen"): the
+     * columns past End are read, and a zoomed-in view scrolls before Start */
+    {
+        const [slo, shi] = E.auScrollBounds(led), [vlo] = E.auViewBounds(led);
+        assert(slo === 0 && shi >= 96000 && vlo === (iE.rstart | 0), 'SAMPLE does not scroll over the whole file: ' + JSON.stringify([slo, shi, vlo]));
+        /* End halfway: the columns past it still carry the audio (dithered) */
+        const half = Math.round(((led.A | 0) + (led.B | 0)) / 2);
+        S.auInfo[4][0] = Object.assign({}, iE, { cut: half, rend: half });
+        const f = shown(), endPx = Math.floor((half - led.A) / (led.B - led.A) * 128);
+        let ink = 0;
+        for (let x = endPx + 3; x < Math.min(128, endPx + 30); x++) for (let y = 20; y < 50; y++) ink += f[y * 128 + x] ? 1 : 0;
+        S.auInfo[4][0] = iE;
+        assert(ink > 0, 'nothing drawn past End: the file does not run on for reference');
+    }
     /* End is a cut: the Tempo stays the sample's (Josh, 2026-11-13: "loop
      * length then changes how much of that loop plays back just like a midi
      * clip") */
@@ -904,9 +921,11 @@ step('⭐⭐ WAVE K4 Gain · K5 Pitch · K6 Detune (the clip\'s), read out in th
     note(2, 127); note(2, 0);                        /* K3 last (touched: no End set) */
     for (let z = 0; z < 3; z++) cc(72, 1);           /* zoom in */
     const endNow = () => A.auPlayedEnd(4, 0, A.auInfo(4, 0));
-    assert(!led.full && Math.abs(led.B - endNow()) <= 1, 'not on the end before the Tempo turn: ' + led.A + '..' + led.B + ' end ' + endNow());
+    /* the end in the MIDDLE: the file runs on past it (Josh, 2026-11-13: "we need it for reverence") */
+    const onEnd = () => Math.abs((led.A + led.B) / 2 - endNow()) <= 1;
+    assert(!led.full && onEnd(), 'not on the end before the Tempo turn: ' + led.A + '..' + led.B + ' end ' + endNow());
     for (let k = 0; k < 4; k++) { S.knobAccelLast[6] = 0; cc(77, 127); }
-    assert(Math.abs(led.B - endNow()) <= 1 && sent('t4_au_set_bpm').length >= 4,
+    assert(onEnd() && sent('t4_au_set_bpm').length >= 4,
            'the view left the end while Tempo turned: ' + led.A + '..' + led.B + ' end ' + endNow());
     back();
     S.clipLength[4][0] = 16;
