@@ -831,22 +831,62 @@ step('⭐⭐ WAVE K4 Gain · K5 Pitch · K6 Detune (the clip\'s), read out in th
            'K3: not End a pixel in: ' + JSON.stringify(sent('t4_au_set_end')) + ' top ' + top + ' px ' + px);
     const iE = A.auInfo(4, 0);
     assert(iE.cut === top - px && A.auPlayedEnd(4, 0, iE) === top - px, 'End is not where the clip ends: ' + JSON.stringify(iE));
-    /* the Tempo follows: Start..End fills the clip's 48 ticks */
-    assert(Math.abs(A.auFpt(iE) * 48 - (top - px)) < 1e-6, 'Start..End does not fill the clip: ' + A.auFpt(iE) * 48);
-    const fitBpm = Math.round(48000 * 600 / (((top - px) / 48) * 96)) / 10;
-    assert(A.auBpm(iE) === fitBpm && A.auBpm(iE) !== 84, 'the Tempo shown is not the fitted one: ' + A.auBpm(iE) + ' want ' + fitBpm);
+    /* End is a cut: the Tempo stays the sample's (Josh, 2026-11-13: "loop
+     * length then changes how much of that loop plays back just like a midi
+     * clip") */
+    assert(A.auBpm(iE) === 84, 'an End moved the Tempo: ' + A.auBpm(iE));
     assert(k3txt().some((x) => /^E \d/.test(x)), 'the screen does not read End: ' + JSON.stringify(k3txt()));
-    /* ...and still, once the engine's info is read again (End the last field) */
+    /* ...and still, once the engine's info is read again (End, then Bars, the last fields) */
     const infoWas = GET['t4_au_info_0'];
-    GET['t4_au_info_0'] = INFO24(0, 8, 0, 8, 50, 0).replace('|', ' 0 0 ' + (top - px) + '|');
+    GET['t4_au_info_0'] = INFO24(0, 8, 0, 8, 50, 0).replace('|', ' 0 0 ' + (top - px) + ' 0|');
     A.auMarkStale(4, 0); ticks(3);
-    assert(A.auInfo(4, 0).cut === top - px && A.auBpm(A.auInfo(4, 0)) === fitBpm, 'a re-read lost the fit: ' + A.auBpm(A.auInfo(4, 0)) + ' cut ' + A.auInfo(4, 0).cut);
-    GET['t4_au_info_0'] = infoWas;
-    /* K7 Tempo is End's now: no turn reaches the engine */
+    assert(A.auInfo(4, 0).cut === top - px && A.auInfo(4, 0).span === 0 && A.auBpm(A.auInfo(4, 0)) === 84,
+           'a re-read lost End: ' + A.auBpm(A.auInfo(4, 0)) + ' cut ' + A.auInfo(4, 0).cut);
+    /* BARS on page 2, beside Tempo (Josh, 2026-11-13: "bars should describe
+     * how long the original clip is BETWEEN the start and end points" · "bars
+     * should be a knob in page 2 next to tempo" · "hold bars.") */
+    const cutE = top - px, secs = cutE / 48000, derived = secs * 84 / 240;
+    led.page = 1; ticks(1);
+    const barsCell = () => A.auSampleP2Cells(4, 0)[A.AU_P2_BARS];
+    assert(barsCell().label === 'Bars' && barsCell().text === A.auBarsText(derived),
+           'Bars at rest is not the Tempo\'s reading: ' + barsCell().text + ' want ' + A.auBarsText(derived));
+    /* from a part bar the first detent lands on the whole bar that way: 1.7 -> 2 up, 1 down */
+    {
+        const i0 = A.auInfo(4, 0), e17 = (i0.rstart | 0) + Math.round(1.7 * 48000);   /* 1.7 bars at 240 BPM */
+        S.auInfo[4][0] = Object.assign({}, i0, { cut: e17, span: 0, bpm10: 2400 });
+        reset(); A.auBarsTurn(4, 0, 1);
+        S.auInfo[4][0] = Object.assign({}, i0, { cut: e17, span: 0, bpm10: 2400 });
+        A.auBarsTurn(4, 0, -1);
+        assert(sent('t4_au_set_bars').join() === '0 768,0 384', 'from 1.7 bars: ' + JSON.stringify(sent('t4_au_set_bars')));
+        S.auInfo[4][0] = i0;
+    }
+    reset();
+    for (let k = 0; k < 20 && !sent('t4_au_set_bars').length; k++) cc(76, 1);
+    const want = Math.floor(derived + 1e-6) + 1;
+    assert(sent('t4_au_set_bars').join() === '0 ' + want * 384 && A.auInfo(4, 0).span === want * 384,
+           'K6 up is not the next whole bar: ' + JSON.stringify(sent('t4_au_set_bars')) + ' want ' + want);
+    const fitOf = (e) => Math.round(48000 * 600 / ((e / (want * 384)) * 96)) / 10;
+    assert(A.auBpm(A.auInfo(4, 0)) === fitOf(cutE) && barsCell().text === String(want),
+           'the Tempo does not follow the Bars: ' + A.auBpm(A.auInfo(4, 0)) + ' want ' + fitOf(cutE));
+    /* held when End moves: the Tempo follows (the engine's answer, as it
+     * will read: End a pixel in, the Bars kept) */
+    GET['t4_au_info_0'] = INFO24(0, 8, 0, 8, 50, 0).replace('|', ' 0 0 ' + cutE + ' ' + want * 384 + '|');
+    led.page = 0; ticks(1);
+    GET['t4_au_info_0'] = INFO24(0, 8, 0, 8, 50, 0).replace('|', ' 0 0 ' + (cutE - px) + ' ' + want * 384 + '|');
+    reset();
+    S.knobAccelLast[2] = 0; cc(73, 127);
+    const cut2 = A.auInfo(4, 0).cut;
+    assert(cut2 < cutE && !sent('t4_au_set_bars').length && A.auInfo(4, 0).span === want * 384 && A.auBpm(A.auInfo(4, 0)) === fitOf(cut2),
+           'moving End did not hold the Bars: ' + JSON.stringify(sentLike(/t4_/)) + ' ' + A.auBpm(A.auInfo(4, 0)));
+    /* a Tempo turn hands the say back: the Bars go, from the Tempo they made */
+    reset();
     S.knobAccelLast[6] = 0; cc(77, 1);
-    assert(!sent('t4_au_set_bpm').length, 'K7 turned the Tempo under an End: ' + JSON.stringify(sent('t4_au_set_bpm')));
+    assert(sent('t4_au_set_bpm').join() === '0 ' + (Math.round(fitOf(cut2) * 10) + 10) && A.auInfo(4, 0).span === 0,
+           'K7 under Bars: ' + JSON.stringify(sent('t4_au_set_bpm')) + ' span ' + A.auInfo(4, 0).span);
+    S.auInfo[4][0] = Object.assign({}, A.auInfo(4, 0), { bpm10: 840, cut: cutE });
+    GET['t4_au_info_0'] = infoWas;
     /* out to the file's end (an End: the whole file), one past it none */
-    for (let k = 0; k < 400 && A.auInfo(4, 0).cut !== 96000; k++) { S.knobAccelLast[2] = 0; cc(73, 1); }
+    for (let k = 0; k < 6000 && A.auInfo(4, 0).cut !== 96000; k++) { S.knobAccelLast[2] = 0; cc(73, 1); }
     assert(A.auInfo(4, 0).cut === 96000 && sent('t4_au_set_end').pop() === '0 96000', 'End did not stop on the file\'s end: ' + A.auInfo(4, 0).cut);
     S.knobAccelLast[2] = 0; cc(73, 1);
     assert(sent('t4_au_set_end').pop() === '0 0' && !(A.auInfo(4, 0).cut > 0) && A.auBpm(A.auInfo(4, 0)) === 84,
@@ -980,8 +1020,8 @@ step('⭐⭐ the knob rings follow the Audio screens and the AUDIO bank: lit whe
         cc(HC.MoveLoop, 127); jog(-1); cc(HC.MoveLoop, 0); ticks(2);
         assert(S.clipLength[4][ac] === len0, 'Loop + jog left did not shorten it back: ' + S.clipLength[4][ac]);
     }
-    jog(1); ticks(3);                                /* SAMPLE page 2 (Loop): Sync, Pitch, Detune, Gain, Tempo, Revrs, K7 / K8 blank */
-    assert(sent8() === '11111100', 'SAMPLE page 2 rings: ' + sent8());
+    jog(1); ticks(3);                                /* SAMPLE page 2 (Loop): Sync, Pitch, Detune, Gain, Tempo, Bars, Revrs, K8 blank */
+    assert(sent8() === '11111110', 'SAMPLE page 2 rings: ' + sent8());
     back();
     /* a Slicer's CLIP bank: K4 (no Legato there) dark, the rest lit (Josh,
      * 2026-11-12: "clip bank knob led rings are lit on empty knobs, which
@@ -1478,7 +1518,7 @@ step('⭐⭐ a Slicer\'s SAMPLE › Trim is its own screen, before chopping: K1 
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; kindSync(); ticks(20);
 });
 
-step('⭐⭐ Tempo\'s menu: touch Tempo + click on SAMPLE, either page, offers Fit to clip (an Audio clip\'s) and Original tempo (Josh, 2026-11-02: "fit to clip" · "(once)" · "both on a small pop-up menu that shows when you touch click tempo" · "menu should be "Fit to clip" "Original tempo""); Fit sets the sample\'s Tempo once so Start to its end fills the clip, one undo step, out of range said', () => {
+step('⭐⭐ Tempo\'s menu: touch Tempo + click on SAMPLE, either page, offers Fit to clip (an Audio clip\'s) and Original tempo (Josh, 2026-11-02: "fit to clip" · "(once)" · "both on a small pop-up menu that shows when you touch click tempo" · "menu should be "Fit to clip" "Original tempo""); Fit sets the Bars once so Start to its end fills the clip (Josh, 2026-11-13: Bars beside Tempo), one undo step, out of range said', () => {
     /* an Audio clip, 2 s of 48 kHz at 84 BPM; the clip 1 bar from step 0 */
     GET['t4_au_info_0'] = INFO24(0, 4, 0, 4, 50, 0); kindSync(); ticks(2);
     const len0 = S.clipLength[4][0], tps0 = S.clipTPS[4][0], ls0 = S.clipLoopStart[4][0];
@@ -1498,10 +1538,11 @@ step('⭐⭐ Tempo\'s menu: touch Tempo + click on SAMPLE, either page, offers F
     /* Fit to clip: 1 bar in 2 s = 120 BPM */
     reset(); S.undoAvailable = false;
     click(); ticks(1);
-    assert(sent('t4_au_set_bpm').join() === '0 1200', 'the Tempo: ' + JSON.stringify(sent('t4_au_set_bpm')));
+    assert(sent('t4_au_set_bars').join() === '0 384' && !sent('t4_au_set_bpm').length,
+           'Fit to clip did not set 1 bar: ' + JSON.stringify(sentLike(/_au_set_/)));
     assert(sent('t4_au_undo').join() === '0' && S.undoAvailable, 'not an undo step: ' + JSON.stringify(sent('t4_au_undo')));
     const ord = sets.map((x) => x[0]).concat(S.pendingDefaultSetParams.map((e) => e.key));
-    assert(ord.indexOf('t4_au_undo') < ord.indexOf('t4_au_set_bpm'), 'the Tempo went before the undo step: ' + ord.join());
+    assert(ord.indexOf('t4_au_undo') < ord.indexOf('t4_au_set_bars'), 'the Bars went before the undo step: ' + ord.join());
     assert((S.actionPopupLines || []).join(' ') === 'FIT TO CLIP 120 BPM', 'notice: ' + JSON.stringify(S.actionPopupLines));
     assert(!ed.pick && S.auEditor === ed, 'the menu stayed open');
     assert(S.clipLength[4][0] === 16 && !sent('t4_c0_length').length, 'the clip\'s length moved');
@@ -1526,7 +1567,8 @@ step('⭐⭐ Tempo\'s menu: touch Tempo + click on SAMPLE, either page, offers F
     GET['t4_au_info_0'] = INFO24(0, 4, 0, 4, 50, 0); kindSync(); ticks(2);
     reset();
     touchClick(4); ticks(1); click(); ticks(1);
-    assert(sent('t4_au_set_bpm').join() === '0 2400', 'page 2, a loop starting at bar 2: ' + JSON.stringify(sent('t4_au_set_bpm')));
+    assert(sent('t4_au_set_bars').join() === '0 768' && /240 BPM/.test((S.actionPopupLines || []).join(' ')),
+           'page 2, a loop starting at bar 2: ' + JSON.stringify(sent('t4_au_set_bars')) + ' ' + JSON.stringify(S.actionPopupLines));
     /* Back closes the menu, nothing set */
     reset();
     touchClick(4); ticks(1); back(); ticks(1);
@@ -1537,29 +1579,20 @@ step('⭐⭐ Tempo\'s menu: touch Tempo + click on SAMPLE, either page, offers F
     GET['t4_au_info_0'] = INFO24(0, 4, 0, 4, 50, 0).replace(' 16 0 96000 ', ' 16 95990 96000 '); kindSync(); ticks(2);
     reset(); S.undoAvailable = false;
     touchClick(6); ticks(1); click(); ticks(1);
-    assert(!sent('t4_au_set_bpm').length && !sent('t4_au_undo').length && !S.undoAvailable, 'out of range set something');
+    assert(!sent('t4_au_set_bpm').length && !sent('t4_au_set_bars').length && !sent('t4_au_undo').length && !S.undoAvailable, 'out of range set something');
     assert((S.actionPopupLines || []).join(' ') === 'FIT TO CLIP Out of range', 'notice: ' + JSON.stringify(S.actionPopupLines));
-    /* WITH AN END, Pick bars alone (Josh, 2026-11-12: "allow odd bar lengths"
-     * · "i don't want anything unexpected"): once, the whole bars nearest the
-     * sample's own Tempo — 3.0 bars at 84 BPM in Start..End: 3, odd — one
-     * undo step; again, nothing moves */
+    /* WITH AN END, the same menu: Fit to clip fits Start..End — 3 bars at
+     * 84 BPM into the 1-bar clip: 1 bar, the sample's Tempo 84 / 3 = 28 */
     const bar84 = 48000 * 240 / 84, endF = Math.round(3 * bar84);
-    GET['t4_au_info_0'] = INFO24(0, 4, 0, 4, 50, 0).replace(' 16 0 96000 0 0 96000 48000 ', ' 16 0 ' + endF + ' 0 0 900000 48000 ').replace('|', ' 0 0 ' + endF + '|');
+    GET['t4_au_info_0'] = INFO24(0, 4, 0, 4, 50, 0).replace(' 16 0 96000 0 0 96000 48000 ', ' 16 0 ' + endF + ' 0 0 900000 48000 ').replace('|', ' 0 0 ' + endF + ' 0|');
     S.clipLength[4][0] = 16; kindSync(); ticks(3);
     assert(A.auInfo(4, 0).cut === endF, 'setup: no End read: ' + JSON.stringify(A.auInfo(4, 0)));
     touchClick(6); ticks(1);
-    assert(ed.pick && ed.pick.tempo && E.auPickRows(ed).map((r) => r.label).join() === 'Pick bars', 'with an End, Tempo\'s menu: ' + E.auPickRows(ed).map((r) => r.label));
-    reset(); S.undoAvailable = false;
-    click(); ticks(1);
-    assert(sent('t4_c0_loop_set').join() === '48' && S.clipLength[4][0] === 48, 'Pick bars did not make 3 bars: ' + JSON.stringify(sent('t4_c0_loop_set')) + ' ' + S.clipLength[4][0]);
-    assert(sent('t4_au_undo').join() === '0' && S.undoAvailable, 'Pick bars is not an undo step: ' + JSON.stringify(sent('t4_au_undo')));
-    assert((S.actionPopupLines || []).join(' ') === 'PICK BARS 3 BARS' && !ed.pick, 'notice: ' + JSON.stringify(S.actionPopupLines));
-    assert(Math.abs(A.auBpm(A.auInfo(4, 0)) - 84) < 0.11, 'the Tempo did not follow the bars: ' + A.auBpm(A.auInfo(4, 0)));
+    assert(ed.pick && ed.pick.tempo && E.auPickRows(ed).map((r) => r.label).join() === 'Fit to clip,Original tempo', 'with an End, Tempo\'s menu: ' + E.auPickRows(ed).map((r) => r.label));
     reset();
-    touchClick(6); ticks(1); click(); ticks(1);
-    assert(!sent('t4_c0_loop_set').length && !sent('t4_au_undo').length && (S.actionPopupLines || []).join(' ') === 'PICK BARS 3 BARS',
-           'Pick bars again moved something: ' + JSON.stringify(sentLike(/t4_/)));
-    S.clipLength[4][0] = 16;
+    click(); ticks(1);
+    assert(sent('t4_au_set_bars').join() === '0 384' && (S.actionPopupLines || []).join(' ') === 'FIT TO CLIP 28 BPM' && S.clipLength[4][0] === 16,
+           'Fit to clip with an End: ' + JSON.stringify(sentLike(/t4_/)) + ' ' + JSON.stringify(S.actionPopupLines));
     /* a Slicer: Original tempo only (its clips are sequences: nothing to fit) */
     back(); ticks(2);
     GET['t4_au_info_0'] = INFO(1, 8); kindSync(); ticks(2);
@@ -2109,25 +2142,25 @@ step('⭐⭐ an Audio track: no sequence — pad taps and steps do nothing, no S
         for (let i = 0; i < 40 && !sent('t4_c' + ac + '_loop_set').length; i++) cc(72, 127);
         assert(sent('t4_c' + ac + '_loop_set').join() === '11' && S.clipLength[4][ac] === 11, 'Strch /2 refused an odd Length: ' + JSON.stringify(sentLike(/_loop_set|_bpm/)));
         S.clipLength[4][ac] = len0;
-        /* WITH AN END the Tempo that plays is the fit's, and Strch's limit is
-         * that one's (Josh, 2026-11-12: "does stretch in clip take account of
-         * this?"): a fit at 600 BPM won't double (it would stop filling the
-         * clip); a fit at 300 doubles though the sample's own (600) can't — the
-         * Length doubles, the fit follows, the sample's own is left */
+        /* WITH BARS SET they double instead of the Tempo, and the limit is
+         * the Tempo they make (Josh, 2026-11-12: "does stretch in clip take
+         * account of this?"; 2026-11-13: Bars beside Tempo): Bars making 600
+         * BPM won't double; making 300 they do — Length and Bars x2, the
+         * sample's own Tempo left */
         {
             const i0 = A.auInfo(4, ac), bar = 16;
             S.clipLength[4][ac] = bar; S.clipLoopStart[4][ac] = 0; S.clipTPS[4][ac] = 24;
-            S.auInfo[4][ac] = Object.assign({}, i0, { state: 2, rstart: 0, nframes: 96000, rate: 48000, cut: 19200, bpm10: 1200, _t: 4, _c: ac });
-            assert(Math.abs(A.auBpm(A.auInfo(4, ac)) - 600) < 0.11, 'setup: the fit is not 600: ' + A.auBpm(A.auInfo(4, ac)));
+            S.auInfo[4][ac] = Object.assign({}, i0, { state: 2, rstart: 0, nframes: 96000, rate: 48000, cut: 19200, span: 384, bpm10: 1200, _t: 4, _c: ac });
+            assert(Math.abs(A.auBpm(A.auInfo(4, ac)) - 600) < 0.11, 'setup: the Bars do not make 600: ' + A.auBpm(A.auInfo(4, ac)));
             reset();
             for (let i = 0; i < 40 && !sent('t4_c' + ac + '_loop_set').length; i++) cc(72, 1);
-            assert(!sent('t4_c' + ac + '_loop_set').length && S.clipLength[4][ac] === bar, 'Strch x2 took a 600 BPM fit past 999.9');
+            assert(!sent('t4_c' + ac + '_loop_set').length && S.clipLength[4][ac] === bar, 'Strch x2 took Bars past 999.9');
             S.auInfo[4][ac] = Object.assign({}, A.auInfo(4, ac), { cut: 38400, bpm10: 6000 });
             reset();
             for (let i = 0; i < 40 && !sent('t4_c' + ac + '_loop_set').length; i++) cc(72, 1);
-            assert(sent('t4_c' + ac + '_loop_set').join() === String(bar * 2) && !sent('t4_au_set_bpm').length,
-                   'Strch x2 on a 300 BPM fit: ' + JSON.stringify(sentLike(/_bpm|_loop_set/)));
-            assert(Math.abs(A.auBpm(A.auInfo(4, ac)) - 600) < 0.11, 'the fit did not follow the doubled Length: ' + A.auBpm(A.auInfo(4, ac)));
+            assert(sent('t4_c' + ac + '_loop_set').join() === String(bar * 2) && sent('t4_au_set_bars').join() === ac + ' 768' && !sent('t4_au_set_bpm').length,
+                   'Strch x2 under Bars: ' + JSON.stringify(sentLike(/_bpm|_bars|_loop_set/)));
+            assert(Math.abs(A.auBpm(A.auInfo(4, ac)) - 600) < 0.11, 'the Tempo did not follow the doubled Bars: ' + A.auBpm(A.auInfo(4, ac)));
             S.clipLength[4][ac] = len0; S.auInfo[4][ac] = i0;
         }
         /* K3 Offset: a step a detent run, wrapping round the clip, shown as
@@ -2190,7 +2223,8 @@ step('⭐⭐ an Audio track: no sequence — pad taps and steps do nothing, no S
     const ed = S.auEditor;
     assert(ed.page === 1, 'the jog did not turn SAMPLE to page 2');
     /* page 2 in its own order (Josh, 2026-11-02: "1: sync, 2 pitch, 3 detune, 4 gain, 5 tempo, 6 reverse" · "page 2 only") */
-    assert(A.auSampleP2Cells(4, 0).map((c) => c.label).join() === 'Sync,Pitch,Detune,Gain,Tempo,Revrs,,', 'page 2: ' + A.auSampleP2Cells(4, 0).map((c) => c.label));
+    /* ...Bars beside Tempo, Revrs one along (Josh, 2026-11-13: "bars should be a knob in page 2 next to tempo") */
+    assert(A.auSampleP2Cells(4, 0).map((c) => c.label).join() === 'Sync,Pitch,Detune,Gain,Tempo,Bars,Revrs,', 'page 2: ' + A.auSampleP2Cells(4, 0).map((c) => c.label));
     assert(A.auSampleP2Cells(4, 0)[4].opens === true && A.auSampleP2Cells(4, 0).filter((c) => c.opens).length === 1,
            'Tempo does not wear the corner brackets, alone (Josh: "tempo needs the corner indicators to show it\'s touch click")');
     assert(A.auSampleP2Cells(4, 0)[0].text === 'Warp', 'a new clip is not on Warp: ' + A.auSampleP2Cells(4, 0)[0].text);
@@ -2236,9 +2270,10 @@ step('⭐⭐ a Slicer\'s SAMPLE page 2: K1 Sync is Off / Pitch (the engine\'s 0 
     const ed = S.auEditor;
     assert(ed && ed.page === 1 && ed.c === 16, 'not on a Slicer\'s SAMPLE page 2');
     const cells = () => A.auSampleP2Cells(4, 16);
-    assert(cells().map((c) => c.label).join() === 'Sync,Pitch,Detune,Gain,Tempo,Revrs,,', 'page 2: ' + cells().map((c) => c.label));
-    assert(cells()[0].text === 'Off' && JSON.stringify(cells()[0].options) === '["Off","Pitch"]' && cells()[6].kind === 'blank',
-           'Sync / K7 at rest: ' + JSON.stringify([cells()[0], cells()[6]]));
+    /* no Bars on a Slicer (its clips are sequences); Revrs where an Audio clip's is */
+    assert(cells().map((c) => c.label).join() === 'Sync,Pitch,Detune,Gain,Tempo,,Revrs,', 'page 2: ' + cells().map((c) => c.label));
+    assert(cells()[0].text === 'Off' && JSON.stringify(cells()[0].options) === '["Off","Pitch"]' && cells()[5].kind === 'blank' && cells()[7].kind === 'blank',
+           'Sync / K6 / K8 at rest: ' + JSON.stringify([cells()[0], cells()[5], cells()[7]]));
     reset();
     for (let i = 0; i < 40 && !sent('t4_au_set_sync').length; i++) cc(71, 1);
     assert(sent('t4_au_set_sync').join() === '16 1' && cells()[0].text === 'Pitch', 'K1 up is not Sync Pitch: ' + JSON.stringify(sentLike(/_au_/)));

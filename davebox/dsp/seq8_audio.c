@@ -2435,23 +2435,20 @@ static au_voice_t *au_voice_alloc(au_track_t *at) {
 }
 
 static const clip_t *au_lclip(const au_clip_t *cl);
-/* A Loop clip with an End: Start..End IS its loop (Josh, 2026-11-12: "not
- * every sample we load is going to be a perfect loop. and we need a way to say
- * this is where the loop starts and ends" -> the Tempo follows, exactly): the
- * frames a tick that make Start..End fill the clip, loop start and all. 0:
- * no End, or nothing to fit. */
+/* A Loop clip's Bars (Josh, 2026-11-13: "bars should describe how long the
+ * original clip is BETWEEN the start and end points" · "loop length then
+ * changes how much of that loop plays back just like a midi clip" · "hold
+ * bars."): the frames a tick that make Start..End — or Start to the file's
+ * end — last rspan ticks. The clip's own loop window then plays what lies
+ * under it, silent past End till it comes round. 0: no Bars, or nothing to
+ * fit. */
 static double au_fit_fpt(const au_clip_t *cl, const au_sample_t *s) {
-    const clip_t *lc;
-    double tps, L, e;
-    if (cl->mode != AU_MODE_LOOP || !cl->rend || !s) return 0;
-    lc = au_lclip(cl);
-    if (!lc || !lc->length) return 0;
-    tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
-    L = ((double)lc->loop_start + (double)lc->length) * tps;
-    e = cl->rend < s->frames ? (double)cl->rend : (double)s->frames;
-    if (!(L > 0) || e <= (double)cl->rstart) return 0;
-    {   /* inside the Tempo's range (AU_BPM10_*): past it the loop leaves a gap or is cut */
-        double f = (e - (double)cl->rstart) / L;
+    double e;
+    if (cl->mode != AU_MODE_LOOP || !cl->rspan || !s) return 0;
+    e = cl->rend && cl->rend < s->frames ? (double)cl->rend : (double)s->frames;
+    if (e <= (double)cl->rstart) return 0;
+    {   /* inside the Tempo's range (AU_BPM10_*) */
+        double f = (e - (double)cl->rstart) / (double)cl->rspan;
         double lo = (double)s->rate * 600.0 / ((double)AU_BPM10_MAX * PPQN);   /* fastest */
         double hi = (double)s->rate * 600.0 / ((double)AU_BPM10_MIN * PPQN);   /* slowest */
         return f < lo ? lo : f > hi ? hi : f;
@@ -2459,13 +2456,23 @@ static double au_fit_fpt(const au_clip_t *cl, const au_sample_t *s) {
 }
 /* Frames of sample s per tick at the clip's own Tempo (Josh, 2026-10-29: a
  * Tempo knob "to set the original tempo"; 120 until it is known) — or, with
- * an End, the Tempo that fits Start..End to the clip (au_fit_fpt). */
+ * Bars set, the Tempo they make (au_fit_fpt). */
 static double au_fpt_s(const au_clip_t *cl, const au_sample_t *s) {
     double fit = au_fit_fpt(cl, s);
     if (fit > 0) return fit;
     unsigned b10 = au_bpm10(cl);
     double bpm = b10 ? b10 / 10.0 : 120.0;
     return (double)s->rate * 60.0 / (bpm * PPQN);
+}
+/* The Tempo x10 the clip plays sample s at: its own, or the one its Bars
+ * make — what a copy that has no Bars (a Slicer) must take. */
+static unsigned au_bpm10_played(const au_clip_t *cl, const au_sample_t *s) {
+    double f = s ? au_fit_fpt(cl, s) : 0;
+    if (!(f > 0)) return au_bpm10(cl);
+    {
+        int v = (int)((double)s->rate * 600.0 / (f * PPQN) + 0.5);
+        return (unsigned)clamp_i(v, AU_BPM10_MIN, AU_BPM10_MAX);
+    }
 }
 
 /* The sequencer clip an Audio clip belongs to (the same [t][c]); NULL for a
@@ -2479,7 +2486,7 @@ static const clip_t *au_lclip(const au_clip_t *cl) {
 
 /* What of sample s the clip reads from, in frames: Start + Length at the
  * sample's Tempo, or a Loop clip's Start..End where an End is set (K3, as fine
- * as Start; the Tempo then fits it to the clip, au_fit_fpt).
+ * as Start: a cut, nothing past it sounds; Bars set the speed, au_fit_fpt).
  * Loop: the clip's own loop window laid over the sample from Start — rs is
  * where the window begins (so Loop + steps picks the part under it), and the
  * sample runs on to its end: the clip comes round at its length by itself,
@@ -3100,7 +3107,7 @@ static int au_slice_default(const au_slice_t *sl) {
 
 static int au_clip_default(const au_clip_t *cl) {
     return !cl->name[0] && !cl->rstart && !cl->pitch && !cl->detune && !cl->gain_db && !cl->revrs &&
-           !cl->nudge_ms && !cl->sync && !cl->bpm10 && !cl->rot && !cl->shot && !cl->rend;
+           !cl->nudge_ms && !cl->sync && !cl->bpm10 && !cl->rot && !cl->shot && !cl->rend && !cl->rspan;
 }
 
 static void au_put_name(FILE *fp, const char *name) {
@@ -3130,6 +3137,7 @@ static void au_save_state(void *vinst, FILE *fp) {
                         (unsigned)cl->rot, cl->sync, (unsigned)cl->bpm10);
                 if (cl->shot) fputs(" os=1", fp);   /* One-shot (an older build ignores the key) */
                 if (cl->rend) fprintf(fp, " en=%u", (unsigned)cl->rend);   /* End (likewise) */
+                if (cl->rspan) fprintf(fp, " sp=%u", (unsigned)cl->rspan); /* Bars, ticks (likewise) */
                 au_put_name(fp, cl->name);
                 fputc('"', fp);
             }
@@ -3282,6 +3290,7 @@ static void au_load_state(void *vinst, const char *buf) {
                 cl->rot = (uint32_t)clamp_i((int)au_kv(kv, n, "sh", 0), 0, INT32_MAX);
                 cl->shot = (uint8_t)(au_kv(kv, n, "os", 0) ? 1 : 0);
                 cl->rend = (uint32_t)clamp_i((int)au_kv(kv, n, "en", 0), 0, INT32_MAX);
+                cl->rspan = (uint32_t)clamp_i((int)au_kv(kv, n, "sp", 0), 0, AU_SPAN_MAX);
                 sy = au_kv(kv, n, "sy", AU_SYNC_WARP);
                 cl->sync = (uint8_t)(sy >= 0 && sy <= AU_SYNC_MAX ? sy : AU_SYNC_WARP);
                 l = (int)au_kv(kv, n, "bpm", 0);

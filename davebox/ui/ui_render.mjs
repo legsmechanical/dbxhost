@@ -42,7 +42,7 @@ import { drawAutoMarkAt,
     drawVFader, mvPrint, mvWidth, rectOutline, plotLine,
     drawLevelCard, drawKitBackdropDim, drawKitBankMap,
     pf3Print, pf3Width, drawArcKnobAt, hdrPrint, hdrWidth, bigPrint, bigWidth, bigFit,
-    MV_ROW0_Y, MV_KH, MV_BIG_H, MV_ZOOM_X, MV_ZOOM_Y, MV_ZOOM_W, MV_ZOOM_H,
+    MV_ROW0_Y, MV_ROW1_Y, MV_LBL1_Y, MV_LBL_H, MV_CELL_W, MV_KH, MV_BIG_H, MV_ZOOM_X, MV_ZOOM_Y, MV_ZOOM_W, MV_ZOOM_H,
     drawKitHintRow, enumOverlayWouldDraw, MV_FOOTER_Y, MV_BAR_Y,
     drawKitBigValue, drawKitPrompt, drawKitChip, kitChipWidth, drawBrackets, kitLaneFocusRowReset, drawKitList,
     kitHudTap,
@@ -75,7 +75,7 @@ import { sessStripTargets } from './ui_engine.mjs';
 import { registerRingCells, knobRingNorm } from './ui_knob_leds.mjs';
 import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
 import { isSampledTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
-         auPos, auLazyState, auSelSlice, auSampleP2Cells, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells, rmxBankCells, rmxPresetLongName, rmxOrderMoved, RMX_CHOPS, rmxChopIndex, knobAltOnTrack, auAltBit,
+         auPos, auLazyState, auSelSlice, auSampleP2Cells, AU_P2_TEMPO, AU_P2_BARS, AU_P2_REVRS, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells, rmxBankCells, rmxPresetLongName, rmxOrderMoved, RMX_CHOPS, rmxChopIndex, knobAltOnTrack, auAltBit,
          auPadModeCells, AU_NOTE_BASE,
          auFmtTime, auEnd, auBpm, auFpt, auFmtLen, auLenTicks, auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
 import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
@@ -290,7 +290,7 @@ function hudSampleKnobs(ed, i, sub, kind, sl) {
     let rest;
     if (ed.mode === 'trim') rest = [B, B, B, B, B];
     else if (sl && !kind) { const pc = auPanelCells({ t, page: S.shiftHeld ? 0 : 1 }); rest = [pc[3], pc[4], pc[5], pc[6], pc[7]].map((x) => x || B); }
-    else { const p2 = auSampleP2Cells(t, c); rest = [p2[3], p2[1], p2[2], p2[4], plain ? p2[5] : B]; }
+    else { const p2 = auSampleP2Cells(t, c); rest = [p2[3], p2[1], p2[2], p2[4], plain ? p2[AU_P2_REVRS] : B]; }
     kitHudTap('KitCells', { cells: [k1, zoomCell, k3].concat(rest), touched: S.knobTouched });
 }
 /* SAMPLE's page 2 is a knob page on the OLED; the Screen view keeps the
@@ -447,8 +447,13 @@ function drawAudioWaveEditor() {
     }
     if (plain && ed.page === 1) {
         hudSampleWave(ed, i, sub === 'loop' ? { noMarks: true } : { faint: true });
-        drawKitPage(auSampleName(t, c), auSampleP2Cells(t, c), false,
-                    S.knobTouched === 4 ? [['clk', 'tempo']] : [['jog', 'page']]);
+        const p2 = auSampleP2Cells(t, c);
+        drawKitPage(auSampleName(t, c), p2, false,
+                    S.knobTouched === AU_P2_TEMPO ? [['clk', 'tempo']] : [['jog', 'page']]);
+        /* Tempo and Bars framed together: the sample's own (Josh, 2026-11-13:
+         * "they should both be in a shatter box or something that indicates
+         * this is the original samples bars/tempo") */
+        if (p2[AU_P2_BARS] && p2[AU_P2_BARS].kind !== 'blank') drawSampleOwnFrame(AU_P2_TEMPO, 2);
         if (S.knobTouched < 0) drawBankHeading(auSampleName(t, c), false, false, '2/2');
         return;
     }
@@ -1293,6 +1298,16 @@ function markKnobAlts(cells, bank) {
     /* ...and the Steps knob on SEQ ARP / LIVE ARP, the door to Arp Steps. */
     if (arpStepsBank(pm, bank) && cells[ARP_STEPS_KNOB]) cells[ARP_STEPS_KNOB].opens = true;
     return cells;
+}
+
+/* A frame round `n` cells of the bottom row from cell k: the params inside
+ * belong together (SAMPLE page 2's Tempo and Bars, the sample's own). It
+ * runs in the clear rows above the widgets and below the labels, so it
+ * touches neither the top row's labels nor the hint row. */
+function drawSampleOwnFrame(k, n) {
+    const x = (k % 4) * MV_CELL_W, w = n * MV_CELL_W;
+    const y = MV_ROW1_Y - 1, h = MV_LBL1_Y + MV_LBL_H + 2 - y;
+    rectOutline(x, y, w, h, 1);
 }
 
 function drawKitPage(name, cells, inverted, footer, focusIdx) {

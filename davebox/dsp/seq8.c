@@ -10778,8 +10778,9 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                     uint32_t lt = (uint32_t)cl->length * tps;
                     /* Sync Pitch / Vintage: Live has neither — rendered; a
                      * REMIX on any sync is rendered too (Live cannot remix),
-                     * and so is an End (Live's clip would run on) */
-                    if (ac->sync != AU_SYNC_WARP || cl->pfx_params.rmx_on || ac->rend) {
+                     * and so is an End (Live's clip would run on), and Bars
+                     * (a Tempo the file does not carry) */
+                    if (ac->sync != AU_SYNC_WARP || cl->pfx_params.rmx_on || ac->rend || ac->rspan) {
                         snprintf(wav, sizeof wav, "%s/au_%d_%d.wav", au_export_dir, t_idx, cidx);
                         long fr = au_export_loop(inst, t_idx, cidx, lt, bpm, wav);
                         if (fr <= 0) return 0;

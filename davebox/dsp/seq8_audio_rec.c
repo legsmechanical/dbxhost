@@ -343,7 +343,7 @@ static void ar_land(seq8_instance_t *inst, int t) {
     undo_begin_single(inst, t, c);
     if (inst->ar_fixed) {
         /* baked: the file is the clip as it played */
-        cl->rstart = cl->slen = cl->rend = 0;
+        cl->rstart = cl->slen = cl->rend = cl->rspan = 0;
         cl->pitch = 0; cl->detune = 0; cl->gain_db = 0;
         cl->revrs = 0; cl->nudge_ms = 0; cl->rot = 0;
     } else {
@@ -354,7 +354,7 @@ static void ar_land(seq8_instance_t *inst, int t) {
         /* the clip runs on the master clock (melodic_anchor_playhead): the
          * take's first frame is where the take began in it */
         cl->rot = lt ? inst->ar_start_abs % lt : 0;
-        cl->rstart = cl->slen = cl->rend = 0;
+        cl->rstart = cl->slen = cl->rend = cl->rspan = 0;
     }
     memset(&r, 0, sizeof r);
     r.kind = AU_REQ_PICK;

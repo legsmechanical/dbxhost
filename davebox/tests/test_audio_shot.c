@@ -6,7 +6,7 @@
  *   - the Shot clip's sample goes quiet with it (the track's clip_playing gates it);
  *   - relaunched, a Shot clip plays once again;
  *   - Shot is saved and loaded (os=1); a Loop clip writes no os key;
- *   - the info read reports it (the field after rot, before End);
+ *   - the info read reports it (the field after rot, before End and Bars);
  *   - a Slicer refuses it: its clips are sequences. */
 #include "harness.h"
 #include <sys/stat.h>
@@ -133,11 +133,13 @@ int main(void) {
         HX_ASSERT(n > 0, "no info read for clip A");
         char *bar = strchr(buf, '|'); HX_ASSERT(bar != NULL, "the info read has no name");
         *bar = 0;
-        char *last = strrchr(buf, ' ');                  /* End, then Shot before it */
+        char *last = strrchr(buf, ' ');                  /* Bars, End, then Shot before them */
         HX_ASSERT(last, "the info read has no fields"); *last = 0; last = strrchr(buf, ' ');
+        *last = 0; last = strrchr(buf, ' ');
         HX_ASSERT(last && atoi(last + 1) == 1, "the info read does not report Shot (the field before End)");
         n = hx_get_param(h, "t2_au_info_1", buf, (int)sizeof buf);
         bar = strchr(buf, '|'); *bar = 0; last = strrchr(buf, ' '); *last = 0; last = strrchr(buf, ' ');
+        *last = 0; last = strrchr(buf, ' ');
         HX_ASSERT(last && atoi(last + 1) == 0, "a Loop clip reports Shot");
     }
 

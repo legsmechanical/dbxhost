@@ -1,21 +1,23 @@
-/* AN AUDIO CLIP'S END: Start..End IS THE LOOP (Josh, 2026-11-12: "i need it
- * fine like start. and maybe that should just BE knob 3 and we let the loop
- * button gestures handle per bar / per step" · "not every sample we load is
- * going to be a perfect loop. and we need a way to say this is where the loop
- * starts and ends" · fill the clip, the Tempo following: "yes"). K3 sets a
- * Loop clip's End in frames, as fine as Start; the clip's Length stays whole
- * steps, the Loop gestures'. Pinned here:
+/* AN AUDIO CLIP'S END AND BARS (Josh, 2026-11-12: "i need it fine like
+ * start. and maybe that should just BE knob 3 and we let the loop button
+ * gestures handle per bar / per step"; 2026-11-13: "bars should describe how
+ * long the original clip is BETWEEN the start and end points" · "loop length
+ * then changes how much of that loop plays back just like a midi clip ...
+ * loop length that extends beyond the bar plays silence until it comes back
+ * around" · "hold bars."). Pinned here:
  *   - au_range ends at End; 0 or past the sample's end means none, the
  *     sample's end itself is an End;
- *   - with an End, Start..End fills the clip exactly (the speed follows,
- *     whatever the Tempo knob says); a new Length refits; the info's Tempo
- *     stays the sample's own; without, the Tempo knob's again;
+ *   - End is a cut: the speed is the Tempo's, and a clip longer than
+ *     Start..End is silent past it till it comes round;
+ *   - Bars: Start..End (or the file's end) lasts exactly that many ticks,
+ *     whatever the Tempo knob says; held when End moves (the speed follows);
+ *     the clip's Length does not touch it; a Tempo set clears it; the info's
+ *     Tempo stays the sample's own and Bars is its last field;
  *   - End stays past Start by a slice, and Start short of End;
- *   - the info read reports End as its last field;
- *   - End is saved (en=) and loaded; a clip with none writes no en key;
- *   - a Trim (au_clip_shift) moves End with the audio and keeps it on the
- *     new file's end;
- *   - a new sample clears it; a Slicer refuses it. */
+ *   - End and Bars are saved (en= sp=) and loaded; a clip with neither writes
+ *     neither key;
+ *   - a Trim (au_clip_shift) moves End with the audio and keeps Bars;
+ *   - a new sample clears both; a Slicer refuses both. */
 #include "harness.h"
 #include <sys/stat.h>
 #include <unistd.h>
@@ -75,11 +77,13 @@ static uint64_t energy_after(hx_t *h, int c, int skip, int n) {
     hx_set_param(h, "transport", "stop"); hx_render(h, 30);
     return e;
 }
-static unsigned info_last(hx_t *h, int c) {
+/* the info read's field n from the END (0 = the last, before the name) */
+static unsigned info_back(hx_t *h, int c, int n) {
     char buf[512], k[32];
     snprintf(k, sizeof k, "t2_au_info_%d", c);
     HX_ASSERT(hx_get_param(h, k, buf, (int)sizeof buf) > 0, "no info read");
     char *bar = strchr(buf, '|'); HX_ASSERT(bar, "the info read has no name"); *bar = 0;
+    while (n-- > 0) *strrchr(buf, ' ') = 0;
     return (unsigned)strtoul(strrchr(buf, ' ') + 1, NULL, 10);
 }
 
@@ -104,7 +108,7 @@ int main(void) {
     HX_ASSERT(cl->rend == 4410, "set_end did not reach the clip");
     au_range(cl, cl->smp, &rs, &re);
     HX_ASSERT(re == 4410, "au_range does not end at End");
-    HX_ASSERT(info_last(h, 0) == 4410, "the info read does not report End as its last field");
+    HX_ASSERT(info_back(h, 0, 1) == 4410, "the info read does not report End before Bars");
     hx_set_param(h, "t2_au_set_end", "0 0");
     au_range(cl, cl->smp, &rs, &re);
     HX_ASSERT(cl->rend == 0 && re == fr, "End 0 is not none");
@@ -115,36 +119,54 @@ int main(void) {
     hx_set_param(h, "t2_au_set_end", p);
     HX_ASSERT(cl->rend == fr, "the file's own end is not an End");
 
-    /* ==== 2. Start..End fills the clip, exactly, whatever the Tempo ==== */
+    /* ==== 2. End is a cut: the Tempo's speed, silence past End till it comes round ==== */
     {
         clip_t *lc = &inst->tracks[2].clips[0];
-        double tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
-        double L = ((double)lc->loop_start + lc->length) * tps;
-        char buf[512];
+        lc->ticks_per_step = TICKS_PER_STEP; lc->loop_start = 0; lc->length = 32;   /* 2 bars */
+        hx_set_param(h, "t2_au_set_bpm", "0 1200");
         hx_set_param(h, "t2_au_set_end", "0 30000");
-        hx_set_param(h, "t2_au_set_bpm", "0 900");   /* the knob's Tempo: ignored with an End */
+        HX_ASSERT(fabs(au_fpt_s(cl, cl->smp) - 44100.0 * 60.0 / (120.0 * PPQN)) < 1e-9, "an End changed the speed");
         au_range(cl, cl->smp, &rs, &re);
         HX_ASSERT(re == 30000, "the range does not end at End");
-        HX_ASSERT(fabs(au_fpt_s(cl, cl->smp) * L - 30000.0) < 1e-6, "Start..End does not fill the clip exactly");
-        HX_ASSERT(fabs(au_span_ticks(cl, cl->smp, rs, re) - (double)lc->length * tps) < 1e-6, "the loop window is not the clip's length");
-        /* a new Length refits */
-        double f1 = au_fpt_s(cl, cl->smp);
-        lc->length /= 2;          /* half the length: twice the frames a tick (doubling here would pass 999.9 BPM) */
-        HX_ASSERT(fabs(au_fpt_s(cl, cl->smp) - 2 * f1) < 1e-9, "a new Length did not refit");
-        lc->length *= 2;
-        /* the info's Tempo stays the sample's own (Pick bars measures by it;
-         * a fitted one there made Pick bars keep whatever length it had —
-         * found on the device) */
-        hx_get_param(h, "t2_au_info_0", buf, (int)sizeof buf);
-        {   int f = 0; char *q = buf; unsigned b10 = 0;
+        /* 30000 frames at 120 = 0.68 s: sounding early, silent in bar 2 */
+        HX_ASSERT(energy_after(h, 0, 20, 40) > 0, "a clip with an End is silent at its start");
+        HX_ASSERT(energy_after(h, 0, 800, 40) == 0, "the audio ran on past End");
+    }
+
+    /* ==== 2b. Bars: Start..End lasts them exactly, held, the Tempo following ==== */
+    {
+        clip_t *lc = &inst->tracks[2].clips[0];
+        HX_ASSERT(info_back(h, 0, 0) == 0, "a clip with no Bars reports some");
+        hx_set_param(h, "t2_au_set_bpm", "0 900");      /* the knob's Tempo: ignored under Bars */
+        hx_set_param(h, "t2_au_set_bars", "0 384");     /* 1 bar */
+        HX_ASSERT(cl->rspan == 384, "set_bars did not reach the clip");
+        HX_ASSERT(info_back(h, 0, 0) == 384, "the info read does not report Bars as its last field");
+        HX_ASSERT(fabs(au_fpt_s(cl, cl->smp) * 384.0 - 30000.0) < 1e-6, "Start..End does not last the Bars exactly");
+        {   char buf[512]; int f = 0; char *q = buf;
+            hx_get_param(h, "t2_au_info_0", buf, (int)sizeof buf);
             while (*q && f < 20) { if (*q == ' ') f++; q++; }
-            b10 = (unsigned)strtoul(q, NULL, 10);
-            HX_ASSERT(b10 == 900, "the info does not report the sample's own Tempo under an End"); }
-        /* and it plays, end to end: sounding late in the clip */
-        HX_ASSERT(energy_after(h, 0, 100, 40) > 0, "a fitted clip is silent");
-        /* none: the knob's Tempo again */
+            HX_ASSERT((unsigned)strtoul(q, NULL, 10) == 900, "the info does not report the sample's own Tempo under Bars"); }
+        /* the clip's Length does not touch it */
+        double f1 = au_fpt_s(cl, cl->smp);
+        lc->length = 16;
+        HX_ASSERT(fabs(au_fpt_s(cl, cl->smp) - f1) < 1e-12, "a new Length changed the Bars' speed");
+        lc->length = 32;
+        /* held when End moves: the speed follows */
+        hx_set_param(h, "t2_au_set_end", "0 15000");
+        HX_ASSERT(cl->rspan == 384, "moving End lost the Bars");
+        HX_ASSERT(fabs(au_fpt_s(cl, cl->smp) * 384.0 - 15000.0) < 1e-6, "the speed did not follow End under Bars");
+        /* a 1-bar loop in a 2-bar clip: bar 1 sounds late in it, bar 2 is silent */
+        HX_ASSERT(energy_after(h, 0, 600, 40) > 0, "the Bars' loop does not last its bar");
+        HX_ASSERT(energy_after(h, 0, 800, 40) == 0, "the second bar is not silent");
+        /* with no End: Start to the file's end */
         hx_set_param(h, "t2_au_set_end", "0 0");
-        HX_ASSERT(fabs(au_fpt_s(cl, cl->smp) - 44100.0 * 60.0 / (90.0 * PPQN)) < 1e-9, "without End the knob's Tempo does not rule");
+        HX_ASSERT(fabs(au_fpt_s(cl, cl->smp) * 384.0 - (double)(fr - cl->rstart)) < 1e-6, "Bars without End do not span to the file's end");
+        hx_set_param(h, "t2_au_set_end", "0 30000");
+        /* a Tempo set clears them */
+        hx_set_param(h, "t2_au_set_bpm", "0 900");
+        HX_ASSERT(cl->rspan == 0, "a Tempo set left the Bars");
+        HX_ASSERT(fabs(au_fpt_s(cl, cl->smp) - 44100.0 * 60.0 / (90.0 * PPQN)) < 1e-9, "without Bars the knob's Tempo does not rule");
+        hx_set_param(h, "t2_au_set_bars", "0 768");
         hx_set_param(h, "t2_au_set_end", "0 4410");
     }
 
@@ -156,7 +178,8 @@ int main(void) {
     HX_ASSERT(cl->rend == 1000 + AU_GAP, "End went before Start");
     hx_set_param(h, "t2_au_set_end", "0 4410");
 
-    /* ==== 4. saved and loaded: en= on clip A, none on clip B ==== */
+    /* ==== 4. saved and loaded: en= on clip A, none on clip B; Bars alone keep a clip saved ==== */
+    au_cl(inst, 2, 3)->rspan = 384;
     seq8_save_state(inst);
     {
         FILE *f = fopen(inst->state_path, "r");
@@ -165,14 +188,18 @@ int main(void) {
         HX_ASSERT(a && b, "the Audio clips were not saved");
         const char *ae = strchr(a + 12, '"'), *be = strchr(b + 12, '"');
         HX_ASSERT(memmem(a, (size_t)(ae - a), "en=4410", 7) != NULL, "End saved without en=");
+        HX_ASSERT(memmem(a, (size_t)(ae - a), "sp=768", 6) != NULL, "Bars saved without sp=");
         HX_ASSERT(memmem(b, (size_t)(be - b), "en=", 3) == NULL, "a clip with no End saved an en key");
+        HX_ASSERT(memmem(b, (size_t)(be - b), "sp=", 3) == NULL, "a clip with no Bars saved an sp key");
+        HX_ASSERT(strstr(st, "\"t2c3_aud\":\"") && strstr(strstr(st, "\"t2c3_aud\":\""), "sp=384"), "a clip with only Bars was not saved");
     }
     hx_destroy(h);
     h = hx_create(NULL); HX_NO_LEAD(h); inst = (seq8_instance_t *)h->inst;
     snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
     seq8_load_state(inst);
     HX_ASSERT(au_cl(inst, 2, 0)->rend == 4410, "reloaded: clip A lost its End");
-    HX_ASSERT(au_cl(inst, 2, 1)->rend == 0, "reloaded: clip B has an End");
+    HX_ASSERT(au_cl(inst, 2, 0)->rspan == 768, "reloaded: clip A lost its Bars");
+    HX_ASSERT(au_cl(inst, 2, 1)->rend == 0 && au_cl(inst, 2, 1)->rspan == 0, "reloaded: clip B has an End or Bars");
 
     /* ==== 5. a Trim moves End with the audio; it stays on the new file's end ==== */
     cl = au_cl(inst, 2, 0);
@@ -180,22 +207,27 @@ int main(void) {
     au_clip_shift(cl, 1000, 100000);
     HX_ASSERT(cl->rstart == 0 && cl->rend == 3410, "a Trim did not move End with the audio");
     au_clip_shift(cl, 0, 3000);
-    HX_ASSERT(cl->rend == 3000, "End past the trimmed file's end did not stop on it (the loop's fit lost)");
+    HX_ASSERT(cl->rend == 3000, "End past the trimmed file's end did not stop on it");
+    HX_ASSERT(cl->rspan == 768, "a Trim lost the Bars");
     hx_destroy(h);
 
     /* ==== 6. a new sample clears End; a Slicer refuses it ==== */
     h = rig(); inst = (seq8_instance_t *)h->inst;
     hx_set_param(h, "t2_au_set_end", "0 4410");
+    hx_set_param(h, "t2_au_set_bars", "0 384");
     snprintf(p, sizeof p, "%s/src/tone2.wav", g_root); write_tone(p, 2.0);
     snprintf(p, sizeof p, "0|%s/src/tone2.wav", g_root);
     hx_set_param(h, "t2_au_pick", p);
     HX_ASSERT(wait_loaded(h, 2, 0) == 2, "the new sample did not load");
     HX_ASSERT(au_cl(inst, 2, 0)->rend == 0, "a new sample kept the old End");
+    HX_ASSERT(au_cl(inst, 2, 0)->rspan == 0, "a new sample kept the old Bars");
     hx_destroy(h);
     h = hx_create(NULL); HX_NO_LEAD(h); inst = (seq8_instance_t *)h->inst;
     hx_set_param(h, "t4_convert_to_slicer", "");
     hx_set_param(h, "t4_au_set_end", "16 4410");
+    hx_set_param(h, "t4_au_set_bars", "16 384");
     HX_ASSERT(au_cl(inst, 4, AU_SLC)->rend == 0, "a Slicer took End");
+    HX_ASSERT(au_cl(inst, 4, AU_SLC)->rspan == 0, "a Slicer took Bars");
     hx_destroy(h);
 
     snprintf(p, sizeof p, "rm -rf '%s'", g_root);

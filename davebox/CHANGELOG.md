@@ -10,12 +10,13 @@ the section into a versioned heading at release time.
 
 ### Added
 - **Loop points for Audio clips.** On SAMPLE, **K3** is now **End**, as fine as Start (a
-  single sample zoomed all the way in). Start and End mark the loop: the part between them
-  always fills the clip, the sample's Tempo following, so a sample that isn't a perfect
-  loop loops cleanly in time. The clip's length is set with the Loop gestures, by the bar
-  or the step. End **Off** (one detent past the sample's end) gives the Tempo back to K7.
-  **Pick bars** (touch Tempo + click) sets the clip to the whole number of bars, odd ones
-  included, nearest the sample's own tempo.
+  single sample zoomed all the way in). Start and End mark the loop, and nothing past End
+  sounds. A new **Bars** knob on SAMPLE's page 2 sits beside **Tempo**, framed with it:
+  set how many bars Start to End lasts, odd numbers too, and the Tempo follows, so a
+  sample that isn't a perfect loop plays in time. Bars stay put when you move Start or End.
+  The clip's length (the Loop gestures) works as a sequence's loop does: a 1-bar loop in a
+  2-bar clip plays one bar and rests one. **Fit to clip** now sets Bars. Revrs moved to K7
+  on page 2.
 - **Record into Audio clips.** On an Audio track, **Rec** records the Move's audio input
   into the clip: an empty clip records until you press Rec again, to the bar; a clip with a
   sample records a new layer over what it plays. You hear the input through the track while

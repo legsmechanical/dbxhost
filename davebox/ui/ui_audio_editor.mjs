@@ -67,7 +67,7 @@ import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLaz
          auSelSlice, auSetSelSlice, isSampledTrack, isSlicerTrack, auSeqClipOf, auEditTrim, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
          auMarkAdd, auMarkDel, auManual, auEvenBake, auTrans, auTransBake, auRangeStep, auSet, auEnd, auPanelRingCells, auPanelReset,
          auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_LAZY_ENDED, AU_EVEN_MAX, AU_BPM10_MIN, AU_BPM10_MAX, auLenTicks,
-         auSampleP2Cells, auSampleP2Knob, AU_P2_KNOB, auFitFpt, auBpm, auPickBars, auSampleReset, auEdit, auTrimCuts, auOrig, auFit, auNudgeStep, auFpt, auPlayedEnd, auTooLongToChop, auAutoEdit, auAutoTouch, auSlicesAutoTouch, SLICE_GRID } from './ui_audio.mjs';
+         auSampleP2Cells, auSampleP2Knob, AU_P2_KNOB, AU_P2_BARS, auBarsTurn, auBpm, auSampleReset, auEdit, auTrimCuts, auOrig, auFit, auNudgeStep, auFpt, auPlayedEnd, auTooLongToChop, auAutoEdit, auAutoTouch, auSlicesAutoTouch, SLICE_GRID } from './ui_audio.mjs';
 import { registerScreenRingCells } from './ui_knob_leds.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { ccKnobDelta, knobPick, KNOB_PICK, KNOB_DELIB } from './ui_input_cc.mjs';
@@ -520,14 +520,14 @@ function clipStep(ed, field, dir) {
  * original tempo"). */
 function clipTempo(ed, dir) {
     const t = ed.t, c = ed.c, i = auInfo(t, c);
-    /* with an End, Start..End sets the Tempo (it fills the clip) */
-    if (auFitFpt(i) > 0) { showActionPopup('TEMPO', 'Set by End'); return false; }
-    const cur = i.bpm10 || 1200;
+    /* from the Tempo it plays at: with Bars set, the one they make — and a
+     * turn hands the Tempo back the say (Bars then read what it makes) */
+    const cur = Math.round(auBpm(i) * 10) || 1200;
     const v = Math.max(AU_BPM10_MIN, Math.min(AU_BPM10_MAX, cur + dir * (S.shiftHeld ? 1 : 10)));
-    if (v === (i.bpm10 | 0)) return false;
+    if (v === cur && !(i.span > 0)) return false;
     auSet(t, c, 'bpm', v);
     auAutoEdit(t, c, 'bpm10', v, cur);
-    const loc = Object.assign({}, i, { bpm10: v });
+    const loc = Object.assign({}, i, { bpm10: v, span: 0 });
     loc.rend = auPlayedEnd(t, c, loc);
     S.auInfo[t][c] = loc;
     S.auStartsRev = (S.auStartsRev | 0) + 1;
@@ -572,9 +572,6 @@ export function auPickRows(ed) {
     /* touch Tempo + click (Josh, 2026-11-02: "both on a small pop-up menu
      * that shows when you touch click tempo" · "menu should be "Fit to clip"
      * "Original tempo""); Fit is a Loop clip's */
-    /* ...with an End, Start..End sets the Tempo: Pick bars instead (the
-     * whole bars nearest the sample's own Tempo, once) */
-    if (p.tempo && auFitFpt(i) > 0) return [{ id: 'bars', label: 'Pick bars' }];
     if (p.tempo) return (auIsLoop(i) ? [{ id: 'fit', label: 'Fit to clip' }] : []).concat([{ id: 'orig', label: 'Original tempo' }]);
     /* SAMPLE's menu (Josh, 2026-10-30: "it should load a menu for consistency.
      * AND i want to add trim and normalize options there"); chopping is
@@ -634,21 +631,14 @@ function pickInput(ed, status, d1, d2) {
             ed.ask = { kind: 'edit', op: row.id, sel: 0 };   /* opens on New (Josh: "new copy is default") */
             return true;
         }
-        if (row.id === 'bars') {
-            ed.pick = null;
-            const b = auPickBars(ed.t, ed.c);
-            if (b !== -1) showActionPopup('PICK BARS', b + (b === 1 ? ' BAR' : ' BARS'));
-            return true;
-        }
         if (row.id === 'fit' || row.id === 'orig') {
             ed.pick = null;
-            if (row.id === 'orig' && auFitFpt(auInfo(ed.t, ed.c)) > 0) { showActionPopup('TEMPO', 'Set by End'); return true; }
             if (row.id === 'orig') {
                 if (auOrig(ed.t, ed.c)) showActionPopup('ORIGINAL TEMPO', bpmText(auInfo(ed.t, ed.c).bpm10 | 0) + ' BPM');
                 return true;
             }
-            /* the sample's Tempo set once so Start to its end fills the clip
-             * (Josh, 2026-11-02: "fit to clip" · "(once)") */
+            /* the Bars set once so Start..End fills the clip (Josh,
+             * 2026-11-02: "fit to clip" · "(once)") */
             const v = auFit(ed.t, ed.c);
             if (v < 0) showActionPopup('FIT TO CLIP', 'Out of range');
             else if (v) showActionPopup('FIT TO CLIP', bpmText(v) + ' BPM');
@@ -834,6 +824,10 @@ export function audioEditorInput(status, d1, d2) {
             if (k === 0) {
                 const st = knobStep(k, d2, KNOB_PICK);
                 if (st) auSampleP2Knob(ed.t, ed.c, 1, st);
+            } else if (k === AU_P2_BARS) {
+                /* Bars: whole bars a detent, deliberate as a choice is */
+                const st = knobStep(k, d2, KNOB_PICK);
+                if (st && auBarsTurn(ed.t, ed.c, st)) centre(ed);
             } else if (AU_P2_KNOB[k] != null) sampleKnob(ed, AU_P2_KNOB[k], d2);
             S.screenDirty = true;
             return true;
@@ -1108,12 +1102,12 @@ export function waveRingCells(ed) {
     const sampleRings = () => [at(((i.gain | 0) + 40) / 52), at(((i.pitch | 0) + 24) / 48), at(((i.detune | 0) + 50) / 100),
                                at(((Math.round(auBpm(i) * 10) || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN)), at(i.revrs ? 1 : 0)];
     if (!kind && ed.page === 1) {
-        /* page 2 (AU_P2_KNOB): Sync, Pitch, Detune, Gain, Tempo, Revrs — lit
-         * where a knob works */
+        /* page 2 (AU_P2_KNOB): Sync, Pitch, Detune, Gain, Tempo, Bars, Revrs
+         * — lit where a knob works */
         const cells = auSampleP2Cells(ed.t, ed.c), sr = sampleRings();
-        const slc = isSlicerTrack(ed.t);
-        return [cells[0] && cells[0].kind !== 'blank' ? at((cells[0].sel | 0) / (slc ? 1 : 2)) : null, sr[1], sr[2], sr[0], sr[3], sr[4],
-                null, null];
+        const slc = isSlicerTrack(ed.t), bc = cells[AU_P2_BARS];
+        return [cells[0] && cells[0].kind !== 'blank' ? at((cells[0].sel | 0) / (slc ? 1 : 2)) : null, sr[1], sr[2], sr[0], sr[3],
+                bc && bc.kind !== 'blank' ? at(bc.norm || 0) : null, sr[4], null];
     }
     let a = i.rstart, b = auEnd(i);
     if (kind === 'manual' || slp) {

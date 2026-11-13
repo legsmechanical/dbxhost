@@ -587,7 +587,7 @@ screen('sample-loop', '7.5 Audio', 'SAMPLE — an Audio clip',
     'SAMPLE on an Audio clip: the waveform, Start and Length, the knobs under it.',
     () => { sampledTrack(false); AED.openWave(4, 'sample'); ticks(4); if (!S.auEditor) throw new Error('SAMPLE did not open'); });
 screen('sample-loop-p2', '7.5 Audio', 'SAMPLE — page 2',
-    'SAMPLE\'s second page: Sync, Pitch, Detune, Gain, Tempo, Revrs.',
+    'SAMPLE\'s second page: Sync, Pitch, Detune, Gain, then the sample\'s own Tempo and Bars framed together, and Revrs.',
     () => { sampledTrack(false); AED.openWave(4, 'sample'); ticks(4); if (!S.auEditor) throw new Error('SAMPLE did not open'); S.auEditor.page = 1; ticks(2); });
 screen('slices-slicer', '7.5 Audio', 'SLICES — a Slicer track',
     'SLICES on a Slicer: the picked slice\'s Start and End, its own sound on K4-K8.',

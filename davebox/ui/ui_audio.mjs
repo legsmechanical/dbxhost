@@ -67,18 +67,55 @@ function syncCell(t, i) {
 /* The sample's own Tempo, BPM (0 until it is known), and its bounds x10 */
 export const AU_BPM10_MIN = 1, AU_BPM10_MAX = 9999;   /* 0.1 .. 999.9 BPM, as the engine's */
 export function auBpm(i) { const f = auFitFpt(i); return f > 0 ? Math.round((i.rate || 44100) * 600 / (f * 96)) / 10 : (i.bpm10 | 0) / 10; }
-/* A Loop clip with an End: Start..End is its loop and the Tempo follows,
- * exactly (the engine's au_fit_fpt; Josh, 2026-11-12: "we need a way to say
- * this is where the loop starts and ends"). Frames a tick; 0: no End. The
- * info carries its clip (_t, _c, set where it is read). */
+/* A Loop clip's Bars (Josh, 2026-11-13: "bars should describe how long the
+ * original clip is BETWEEN the start and end points" · "hold bars."):
+ * Start..End — or Start to the file's end — lasts `span` ticks, the Tempo
+ * following, exactly (the engine's au_fit_fpt). Frames a tick; 0: no Bars. */
 export function auFitFpt(i) {
-    if (!(i.cut > 0) || i._t == null || auIsSlice(i) || !i.nframes) return 0;
-    const t = i._t, c = i._c;
-    const L = ((S.clipLoopStart[t][c] | 0) + (S.clipLength[t][c] | 0 || 16)) * (S.clipTPS[t][c] || 24);
-    const e = Math.min(i.cut, i.nframes);
-    if (!(L > 0) || e <= (i.rstart | 0)) return 0;
+    if (!(i.span > 0) || auIsSlice(i) || !i.nframes) return 0;
+    const e = i.cut > 0 ? Math.min(i.cut, i.nframes) : i.nframes;
+    if (e <= (i.rstart | 0)) return 0;
     const r = i.rate || 44100;
-    return Math.max(r * 600 / (AU_BPM10_MAX * 96), Math.min(r * 600 / (AU_BPM10_MIN * 96), (e - (i.rstart | 0)) / L));
+    return Math.max(r * 600 / (AU_BPM10_MAX * 96), Math.min(r * 600 / (AU_BPM10_MIN * 96), (e - (i.rstart | 0)) / i.span));
+}
+/* BARS: a bar in ticks, and the most a clip holds */
+export const AU_BAR_TICKS = 384, AU_SPAN_MAX = 256 * AU_BAR_TICKS;
+/* How many bars Start..End (or to the file's end) spans at the Tempo it
+ * plays at: the Bars where set, else what the Tempo makes of it (1.7). */
+export function auBarsOf(i) {
+    if (i.span > 0) return i.span / AU_BAR_TICKS;
+    if (i.state !== 2 || !i.nframes) return 0;
+    const e = i.cut > 0 ? Math.min(i.cut, i.nframes) : i.nframes;
+    return Math.max(0, e - (i.rstart | 0)) / auFpt(i) / AU_BAR_TICKS;
+}
+/* Bars as shown: 2 · 1.5 · 1.75 (the Tempo's, or Fit to clip's, can be a part bar) */
+export function auBarsText(b) {
+    if (!(b > 0)) return '--';
+    const r = Math.round(b * 100) / 100;
+    if (Number.isInteger(r)) return String(r);
+    return b < 10 ? String(r) : r.toFixed(1);
+}
+/* The Bars knob (SAMPLE page 2, beside Tempo): whole bars a detent, odd ones
+ * too — from a part bar (the Tempo's, or Fit to clip's) the first detent
+ * lands on the whole bar that way. Start..End then lasts them, the Tempo
+ * following; held when End or Start moves. True when it moved. */
+export function auBarsTurn(t, c, steps) {
+    const i = auInfo(t, c);
+    if (i.state !== 2 || !auIsLoop(i) || !steps || !i.nframes) return false;
+    const cur = auBarsOf(i);
+    let b = steps > 0 ? Math.floor(cur + 1e-6) + steps : Math.ceil(cur - 1e-6) + steps;
+    b = Math.max(1, Math.min(AU_SPAN_MAX / AU_BAR_TICKS, b));
+    const v = b * AU_BAR_TICKS;
+    if (v === (i.span | 0)) return false;
+    const e = i.cut > 0 ? Math.min(i.cut, i.nframes) : i.nframes;
+    const bpm10 = Math.round(600 * (i.rate || 44100) * v / (Math.max(1, e - (i.rstart | 0)) * 96));
+    if (bpm10 < AU_BPM10_MIN || bpm10 > AU_BPM10_MAX) return false;   /* past the Tempo's range */
+    auSet(t, c, 'bars', v);
+    const loc = Object.assign({}, i, { span: v });
+    loc.rend = auPlayedEnd(t, c, loc);
+    S.auInfo[t][c] = loc;
+    S.auStartsRev = (S.auStartsRev | 0) + 1;
+    return true;
 }
 /* Frames of the sample per tick at its Tempo (120 until known): the ticks,
  * steps and bars everything on screen is measured in */
@@ -205,12 +242,15 @@ export function auParseInfo(raw) {
         shot: head.length > 26 ? head[26] : 0,
         /* a Loop clip's End as set (0 = none: the window's or the file's end) */
         cut: head.length > 27 ? head[27] : 0,
+        /* a Loop clip's Bars, ticks: Start..End (or the file's end) lasts
+         * this long, the Tempo following (0 = none: the Tempo rules) */
+        span: head.length > 28 ? head[28] : 0,
         name: bar >= 0 ? String(raw).slice(bar + 1) : '',
     };
 }
 
 const DEFAULT_INFO = { state: 0, err: 0, mode: 0, even: 16, hand: 1, n: 16, rstart: 0, rend: 0,
-                       pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, revrs: 0, nudge: 0, sync: 0, reach: -1, bpm10: 0, hits: 0, sens: 50, trans: 0, slen: 0, shot: 0, cut: 0, name: '' };
+                       pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, revrs: 0, nudge: 0, sync: 0, reach: -1, bpm10: 0, hits: 0, sens: 50, trans: 0, slen: 0, shot: 0, cut: 0, span: 0, name: '' };
 const DEFAULT_SLICE = { a: 0, b: 0, pinned: 0, pitch: 0, detune: 0, gain: 0, rev: 0, play: 0, atk: 0, dec: 0 };
 
 export function auInfo(t, c) {
@@ -236,7 +276,7 @@ export function auRead(t, c) {
     const i = auParseInfo(dspGet('t' + t + '_au_info_' + c));
     if (!i) return null;                          /* no answer (a timed-out read): still stale, read again */
     const prev = S.auInfo[t][c];
-    i._t = t; i._c = c;                           /* its clip: auFitFpt */
+    i._t = t; i._c = c;                           /* its clip */
     S.auInfo[t][c] = i;
     /* a sample that has just landed: a Loop clip takes its Bars there
      * (au_clip_set_bars), behind the screen's back — Flatten's reset had left
@@ -626,7 +666,7 @@ export function auMacroValue(t, key, read) {
     if (!st || !auAutoBank(st.bank) || !isSampledTrack(t)) return null;
     const c = auClipOf(t), i = auInfo(t, c);
     if (i.state !== 2) return null;
-    if (st.bank === AU_AUTO_BANK) return st.field === 'bpm10' ? (i.bpm10 || 1200) : (i[st.field] | 0);
+    if (st.bank === AU_AUTO_BANK) return st.field === 'bpm10' ? (Math.round(auBpm(i) * 10) || 1200) : (i[st.field] | 0);
     if (!auIsSlice(i)) return null;
     let a = auAll(t, c);
     if (!a && read) a = auReadAll(t, c);
@@ -645,6 +685,7 @@ export function auMacroWrite(t, key, nv) {
     const c = auClipOf(t), f = st.field;
     if (st.bank === AU_AUTO_BANK) {
         const loc = Object.assign({}, auInfo(t, c), { [f]: nv });
+        if (f === 'bpm10') loc.span = 0;                   /* a Tempo set: Bars give way */
         auSet(t, c, f === 'bpm10' ? 'bpm' : f, nv);
         auAutoEdit(t, c, f, nv, cur);
         if (f === 'bpm10') loc.rend = auPlayedEnd(t, c, loc);
@@ -949,12 +990,12 @@ export function auClipBankKnob(t, k, steps) {
          * here, and a Loop clip's Length is its sample's, often odd — Josh,
          * 2026-10-30: "doesn't want to /2 at all") */
         const nl = up ? len * 2 : Math.floor(len / 2), nb = up ? (i.bpm10 || 1200) * 2 : Math.round((i.bpm10 || 1200) / 2);
-        /* with an End, the Tempo that plays is the fit's: its limit is the
-         * one that counts (past it the loop would stop filling the clip); the
-         * sample's own follows where it can */
-        const fit = auFitFpt(i) > 0, fb = fit ? Math.round(auBpm(i) * 10) * nl / len : nb;
+        /* with Bars set they double (or halve) instead: the Tempo they make
+         * moves with them, and its limit is the one that counts */
+        const bars = i.span > 0, ns = bars ? (up ? i.span * 2 : Math.round(i.span / 2)) : 0;
+        const fb = bars ? Math.round(auBpm(i) * 10) * ns / i.span : nb;
         if (nl < 1 || ls + nl > 256 || fb < AU_BPM10_MIN || fb > AU_BPM10_MAX ||
-            (!fit && (nb < AU_BPM10_MIN || nb > AU_BPM10_MAX))) {
+            (bars && (ns < 1 || ns > AU_SPAN_MAX))) {
             /* at its limit: said, as a MIDI clip's Strch says it (it was silent: review) */
             showActionPopupFor(1500, 'BEAT STRETCH', up ? 'EXPAND LIMIT' : 'COMPRESS LIMIT');
             return false;
@@ -962,7 +1003,8 @@ export function auClipBankKnob(t, k, steps) {
         S.clipLength[t][c] = nl;
         S.clipLengthManuallySet[t][c] = true;
         host_module_set_param('t' + t + '_c' + c + '_loop_set', String((ls << 16) | nl));
-        if (nb >= AU_BPM10_MIN && nb <= AU_BPM10_MAX) { loc.bpm10 = nb; auSet(t, c, 'bpm', nb); }
+        if (bars) { loc.span = ns; auSet(t, c, 'bars', ns); }
+        else { loc.bpm10 = nb; auSet(t, c, 'bpm', nb); }
         if (i.rot) { loc.rot = up ? i.rot * 2 : Math.floor(i.rot / 2); auSet(t, c, 'rot', loc.rot); }
         S.auStrchDir = { t, dir: up ? 1 : -1 };
     } else if (k === 2) {
@@ -1111,9 +1153,11 @@ export function auPanelKnob(ed, k, steps) {
             else if (k === 5) return auNudgeStep(t, c, steps);
             else if (k === 6) return auIsLoop(i) && auSampleP2Knob(t, c, 1, steps);
             else if (k === 7) {
-                const v = Math.max(AU_BPM10_MIN, Math.min(AU_BPM10_MAX, (i.bpm10 || 1200) + steps * (S.shiftHeld ? 1 : 10)));
-                if (v === (i.bpm10 | 0)) return false;
-                loc.bpm10 = v; auSet(t, c, 'bpm', v); auAutoEdit(t, c, 'bpm10', v, i.bpm10 | 0);
+                /* from the Tempo it plays at: Bars, where set, give way to it */
+                const cur = Math.round(auBpm(i) * 10) || 1200;
+                const v = Math.max(AU_BPM10_MIN, Math.min(AU_BPM10_MAX, cur + steps * (S.shiftHeld ? 1 : 10)));
+                if (v === cur && !(i.span > 0)) return false;
+                loc.bpm10 = v; loc.span = 0; auSet(t, c, 'bpm', v); auAutoEdit(t, c, 'bpm10', v, cur);
             } else return false;
         } else {
             /* CLIP: a Slice clip's ALL SLICES (auPanelPages: the page is a Slice clip's alone) */
@@ -1371,7 +1415,13 @@ export function auAltBit(t, bank, k) {
  * 5 tempo, 6 reverse" · "page 2 only"). Orig left its knob for Tempo's menu
  * (touch Tempo + click: Fit to clip · Original tempo). ---- */
 /* page 2's knob k → the page-1 knob it turns (sampleKnob's), Sync -1 */
-export const AU_P2_KNOB = [-1, 4, 5, 3, 6, 7, null, null];
+/* page 2's knobs as page 1's (sampleKnob), K1 Sync and K6 Bars its own */
+export const AU_P2_KNOB = [-1, 4, 5, 3, 6, null, 7, null];
+/* Tempo and Bars: the sample's own, framed together on page 2 (Josh,
+ * 2026-11-13: "bars should be a knob in page 2 next to tempo - and they
+ * should both be in a shatter box or something that indicates this is the
+ * original samples bars/tempo") */
+export const AU_P2_TEMPO = 4, AU_P2_BARS = 5, AU_P2_REVRS = 6;
 export function auSampleP2Cells(t, c) {
     const i = auInfo(t, c);
     const sync = syncCell(t, i);
@@ -1388,9 +1438,13 @@ export function auSampleP2Cells(t, c) {
     /* (a Slicer's K7 was its own Follows-the-Conductor switch: it answers to
      * the Conductor's RESPONDER bank now, as every track does — Josh,
      * 2026-11-12: "Can't that be handled the way other tracks handle it?") */
-    const cnd = BLANK;
+    const b = auBarsOf(i);
+    const bars = auIsLoop(i)
+        ? { kind: 'valsq', label: 'Bars', name: 'Bars (the sample\'s own)', text: auBarsText(b),
+            norm: Math.min(1, b / 16) }
+        : BLANK;
     return [live(sync), live(pitchCell('Pitch', i.pitch)), live(detuneCell('Detune', i.detune)),
-            live(gain), live(tempo), live(revrsCell(i)), cnd, BLANK];
+            live(gain), live(tempo), live(bars), live(revrsCell(i)), BLANK];
 }
 /* A turn on SAMPLE's second page. Returns true when something changed. */
 export function auSampleP2Knob(t, c, k, steps) {
@@ -1463,64 +1517,35 @@ export function auOrig(t, c) {
     if (i.state !== 2) return false;
     auSet(t, c, 'orig', 0);
     const bpm = S.bpmMirror > 0 ? S.bpmMirror : 120;   /* the DSP sets the same from its own */
-    S.auInfo[t][c] = Object.assign({}, i, { bpm10: Math.round(bpm * 10) });
+    S.auInfo[t][c] = Object.assign({}, i, { bpm10: Math.round(bpm * 10), span: 0 });   /* a Tempo set: Bars give way */
     S.auStartsRev = (S.auStartsRev | 0) + 1;
     return true;
 }
 /* Fit to clip (Josh, 2026-11-02: Fit stretches the sample to fill the clip's
- * length whatever its tempo — "once"): the sample's Tempo set so Start to the
- * sample's end lasts as long as the clip up to its loop's end (the loop's
- * window lies over the sample from Start, so its end lands on the sample's).
- * Sync then plays it there. One undo step; the clip's length is not touched,
- * and changing it later does not fit again. Returns the Tempo x10, 0 if
- * nothing changed, -1 if the fit is past the Tempo's range. */
+ * length whatever its tempo — "once"): the Bars set to the clip's length up
+ * to its loop's end (the loop's window lies over the sample from Start), so
+ * Start..End — or Start to the file's end — fills it; the Tempo follows.
+ * Changing the clip's length later does not fit again (Josh, 2026-11-13: the
+ * loop length "changes how much of that loop plays back"). One undo step.
+ * Returns the Tempo x10 it makes, 0 if nothing changed, -1 past the Tempo's
+ * range. */
 export function auFit(t, c) {
     const i = auInfo(t, c);
-    if (i.state !== 2 || !auIsLoop(i)) return 0;
-    if (auFitFpt(i) > 0) return Math.round(auBpm(i) * 10);   /* with an End it always fits */
-    const ticks = ((S.clipLoopStart[t][c] | 0) + (S.clipLength[t][c] | 0 || 16)) * (S.clipTPS[t][c] || 24);
-    /* Start to End where one is set, else to the file's end */
+    if (i.state !== 2 || !auIsLoop(i) || !i.nframes) return 0;
+    const ticks = Math.min(AU_SPAN_MAX, Math.round(((S.clipLoopStart[t][c] | 0) + (S.clipLength[t][c] | 0 || 16)) * (S.clipTPS[t][c] || 24)));
     const frames = (i.cut > 0 ? Math.min(i.cut, i.nframes | 0) : (i.nframes | 0)) - (i.rstart | 0);
     if (frames <= 0 || ticks <= 0) return 0;
     const v = Math.round(600 * (i.rate || 44100) * ticks / (frames * 96));
     if (v < AU_BPM10_MIN || v > AU_BPM10_MAX) return -1;
-    if (v === (i.bpm10 | 0)) return v;
+    if (ticks === (i.span | 0)) return v;
     noteUndoUnit();
     auUndoClips(t, [c]);
-    auSet(t, c, 'bpm', v);
-    const loc = Object.assign({}, i, { bpm10: v });
+    auSet(t, c, 'bars', ticks);
+    const loc = Object.assign({}, i, { span: ticks });
     loc.rend = auPlayedEnd(t, c, loc);
     S.auInfo[t][c] = loc;
     S.auStartsRev = (S.auStartsRev | 0) + 1;
     return v;
-}
-/* PICK BARS (Tempo's menu with an End; Josh, 2026-11-12, on a sample that
- * isn't neatly cut: "allow odd bar lengths" · "bar lengths set tempo" · "i
- * don't want anything unexpected" · "intuitive but flexible"): ONCE, on the
- * pick, the clip becomes the whole number of bars — odd ones too — that puts
- * Start..End nearest the sample's own Tempo (the load's guess, or the Tempo
- * set before the End); the fit then makes the Tempo exact. Nothing else ever
- * changes the length behind the Loop gestures. Undoable (when it changed).
- * Returns the bars, -1 when there is nothing to pick (no End). */
-export function auPickBars(t, c) {
-    const i = auInfo(t, c);
-    if (i.state !== 2 || !auIsLoop(i) || !(i.cut > 0)) return -1;
-    const len = S.clipLength[t][c] | 0 || 16, ls = S.clipLoopStart[t][c] | 0;
-    const tps = S.clipTPS[t][c] || 24, spb = Math.max(1, Math.round(384 / tps));
-    const secs = (Math.min(i.cut, i.nframes) - (i.rstart | 0)) / (i.rate || 44100);
-    const bpm = (i.bpm10 | 0) ? i.bpm10 / 10 : 120;
-    const bars = Math.max(1, Math.min(Math.floor(256 / spb), Math.round(secs * bpm / 240)));
-    const v = Math.max(1, Math.min(256 - ls, bars * spb - ls));
-    if (v === len) return bars;
-    noteUndoUnit();
-    auUndoClips(t, [c]);
-    S.clipLength[t][c] = v;
-    S.clipLengthManuallySet[t][c] = true;
-    host_module_set_param('t' + t + '_c' + c + '_loop_set', String((ls << 16) | v));
-    auMarkStale(t, c);
-    S.auStartsRev = (S.auStartsRev | 0) + 1;
-    S.ledsDirtyAudio = true;
-    return bars;
 }
 /* Nudge (SAMPLE's K8): the sample against the bar, 5 ms a detent (Shift 1) */
 export function auNudgeStep(t, c, steps) {

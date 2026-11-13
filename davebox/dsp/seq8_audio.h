@@ -54,6 +54,8 @@
                                          * over 150 BPM; the Tempo says how many bars the audio spans) */
 #define AU_SENS_DEFAULT    50           /* Transient chops: hit sensitivity, 0..100 */
 #define AU_BARS_MAX        64           /* a sample's length in bars at its Tempo, for the guess: 1..64 */
+#define AU_BAR_TICKS       (4 * 96)     /* a bar, ticks (4/4 at PPQN) */
+#define AU_SPAN_MAX        (256 * AU_BAR_TICKS)   /* Bars: up to a clip's longest, 256 bars */
 #define AU_GAP             16           /* frames: the least a slice can be */
 #define AU_TAIL            128          /* frames: the fade back from a chop's end (~3 ms) */
 /* Vintage's pieces CROSSFADE: each fades in over this many output frames while
@@ -141,6 +143,9 @@ typedef struct {
                                       * sample's end). Loop: unused, its Length is the clip's (au_range) */
     uint32_t     rend;               /* Loop: End, sample frames — the audio stops there, silent till the
                                       * clip comes round (0 = none: it runs on to the sample's end) */
+    uint32_t     rspan;              /* Loop: Bars, in ticks — Start..End (or the file's end) lasts this
+                                      * long and the Tempo follows; held when End or Start moves
+                                      * (0 = none: the Tempo rules) */
     int8_t       pitch;              /* -24..+24 st */
     int8_t       detune;             /* -50..+50 cents, on top of pitch */
     int8_t       gain_db;            /* -40..+12 dB */
