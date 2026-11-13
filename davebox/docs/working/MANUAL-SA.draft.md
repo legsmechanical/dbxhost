@@ -1331,7 +1331,8 @@ whole bars a detent, odd numbers too. Set it and the Tempo follows, so the loop 
 time; move Start or End afterwards and Bars stays put, the Tempo adjusting. Until you set
 it, Bars reads what the Tempo makes of the sample (*1.7*), and the first detent lands on
 the whole bar that way. Turning **Tempo** hands the speed back to it, and Bars reads what
-the new Tempo makes.
+the new Tempo makes. A small arrow after **Tempo** or **Bars** marks the one in charge — the
+one that stays put when Start or End moves.
 
 For a sample that isn't neatly cut: set **Start** on the first beat, **End** where the loop
 repeats, then **Bars** to how long that is. The clip's length is separate — make it as long

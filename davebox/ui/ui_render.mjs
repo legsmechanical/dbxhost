@@ -471,7 +471,12 @@ function drawAudioWaveEditor() {
         /* Tempo and Bars framed together: the sample's own (Josh, 2026-11-13:
          * "they should both be in a shatter box or something that indicates
          * this is the original samples bars/tempo") */
-        if (p2[AU_P2_BARS] && p2[AU_P2_BARS].kind !== 'blank') drawSampleOwnFrame(AU_P2_TEMPO, 2);
+        if (p2[AU_P2_BARS] && p2[AU_P2_BARS].kind !== 'blank') {
+            const hold = i.span > 0 ? AU_P2_BARS : AU_P2_TEMPO;
+            /* the label as the kit draws it: a touched cell's shows its value */
+            const hc = p2[hold];
+            drawSampleOwnFrame(AU_P2_TEMPO, 2, hold, hc && (S.knobTouched === hold && hc.text != null ? hc.text : hc.label));
+        }
         if (S.knobTouched < 0) drawBankHeading(auSampleName(t, c), false, false, '2/2');
         return;
     }
@@ -1324,10 +1329,20 @@ function markKnobAlts(cells, bank) {
  * belong together (SAMPLE page 2's Tempo and Bars, the sample's own). It
  * runs in the clear rows above the widgets and below the labels, so it
  * touches neither the top row's labels nor the hint row. */
-function drawSampleOwnFrame(k, n) {
+function drawSampleOwnFrame(k, n, hold, label) {
     const x = (k % 4) * MV_CELL_W, w = n * MV_CELL_W;
     const y = MV_ROW1_Y - 1, h = MV_LBL1_Y + MV_LBL_H + 2 - y;
     rectOutline(x, y, w, h, 1);
+    /* the one that holds when Start or End moves — the other follows it — an
+     * arrow at its label, as the Octatrack marks its priority (Josh,
+     * 2026-11-13: "do 2", show which holds) */
+    if (hold >= 0 && label) {
+        const tw = fontWidth4x5(String(label).toUpperCase());
+        const tx = Math.round((hold % 4) * MV_CELL_W + MV_CELL_W / 2 - tw / 2);
+        const ty = MV_LBL1_Y + Math.floor((MV_LBL_H - 5) / 2);
+        const ax = tx + tw + 1;                     /* after the label, pointing at it */
+        set_pixel(ax, ty + 2, 1); fill_rect(ax + 1, ty + 1, 1, 3, 1); fill_rect(ax + 2, ty, 1, 5, 1);
+    }
 }
 
 function drawKitPage(name, cells, inverted, footer, focusIdx) {

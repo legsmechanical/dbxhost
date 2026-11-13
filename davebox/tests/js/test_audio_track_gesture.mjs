@@ -124,6 +124,8 @@ const C = await import('../../ui/ui_constants.mjs');
 const HC = await import('/data/UserData/schwung/shared/constants.mjs');
 const A = await import('../../ui/ui_audio.mjs');
 const E = await import('../../ui/ui_audio_editor.mjs');
+const FONTS = await import('../../ui/ui_fonts_pp.mjs');
+const MOVY = await import('../../ui/ui_movy.mjs');
 const CH = await import('../../ui/ui_audio_chooser.mjs');
 const P = await import('../../ui/ui_pure.mjs');
 const D = await import('../../ui/ui_dialogs.mjs');
@@ -886,6 +888,25 @@ step('⭐⭐ WAVE K4 Gain · K5 Pitch · K6 Detune (the clip\'s), read out in th
     const want = Math.floor(derived + 1e-6) + 1;
     assert(sent('t4_au_set_bars').join() === '0 ' + want * 384 && A.auInfo(4, 0).span === want * 384,
            'K6 up is not the next whole bar: ' + JSON.stringify(sent('t4_au_set_bars')) + ' want ' + want);
+    /* which one holds is marked: an arrow after its label (Josh, 2026-11-13:
+     * "do 2" — the Octatrack's priority arrow) */
+    {
+        const arrowAt = (k, f) => {
+            const lbl = A.auSampleP2Cells(4, 0)[k].label.toUpperCase();
+            const tw = FONTS.fontWidth4x5(lbl), tx = Math.round((k % 4) * MOVY.MV_CELL_W + MOVY.MV_CELL_W / 2 - tw / 2);
+            const ax = tx + tw + 1, ty = MOVY.MV_LBL1_Y + Math.floor((MOVY.MV_LBL_H - 5) / 2);
+            let n = 0; for (let y = ty; y < ty + 5; y++) n += f[y * 128 + ax + 2] ? 1 : 0;
+            return n === 5;
+        };
+        led.page = 1; S.knobTouched = -1;
+        const f = shown();
+        assert(arrowAt(A.AU_P2_BARS, f) && !arrowAt(A.AU_P2_TEMPO, f), 'Bars set: the arrow is not at Bars alone');
+        const i1 = A.auInfo(4, 0);
+        S.auInfo[4][0] = Object.assign({}, i1, { span: 0 });
+        const g = shown();
+        S.auInfo[4][0] = i1;
+        assert(arrowAt(A.AU_P2_TEMPO, g) && !arrowAt(A.AU_P2_BARS, g), 'no Bars: the arrow is not at Tempo alone');
+    }
     const fitOf = (e) => Math.round(48000 * 600 / ((e / (want * 384)) * 96)) / 10;
     assert(A.auBpm(A.auInfo(4, 0)) === fitOf(cutE) && barsCell().text === String(want),
            'the Tempo does not follow the Bars: ' + A.auBpm(A.auInfo(4, 0)) + ' want ' + fitOf(cutE));
