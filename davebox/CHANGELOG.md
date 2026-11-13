@@ -20,7 +20,7 @@ the section into a versioned heading at release time.
   than hidden. An arrow marks which of Tempo and Bars is in charge.
 - **Free mode for Audio clips.** The CLIP bank's **Mode** gains **Free** beside Loop and
   Shot: launched with the clip, the sample loops Start to End on its own, off the
-  sequencer's timing. **Speed** (25–400 %) sets how fast; **Warp** changes time alone,
+  sequencer's timing. **Speed** (1–400 %) sets how fast; **Warp** changes time alone,
   **Tape** time and pitch together, and Pitch and Detune still apply. Exports render it.
 - **Record into Audio clips.** On an Audio track, **Rec** records the Move's audio input
   into the clip: an empty clip records until you press Rec again, to the bar; a clip with a

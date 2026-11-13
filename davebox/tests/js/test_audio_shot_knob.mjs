@@ -151,7 +151,13 @@ async function main() {
         A.auSpeedTurn(T, 0, 1);
         S.shiftHeld = false;
         assert(speedSets().join() === '0 1001', 'Speed with Shift: 0.1 % a detent: ' + JSON.stringify(sets));
-        info();
+        /* down to 1 % (Josh, 2026-11-13: "can we make speed minimum lower?"), not past it */
+        speed = 30; info(); sets.length = 0;
+        A.auSpeedTurn(T, 0, -5);
+        assert(speedSets().join() === '0 10', 'Speed does not stop at 1 %: ' + JSON.stringify(sets));
+        speed = 10; info();
+        assert(A.auSampleP2Cells(T, 0)[4].text === '1%' && !A.auSpeedTurn(T, 0, -1), 'Speed at 1 %: ' + A.auSampleP2Cells(T, 0)[4].text);
+        speed = 1000; info();
         assert(!A.auBarsTurn(T, 0, 1), 'Bars turned on a Free clip');
         /* the Track View's SAMPLE page: Speed mode and Speed for Sync and Tempo, no Nudge */
         assert(A.auPanelPageName({ t: T, page: 0 }) === 'SAMPLE', 'the Track View page is not SAMPLE: ' + A.auPanelPageName({ t: T, page: 0 }));

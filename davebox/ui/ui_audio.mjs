@@ -264,7 +264,7 @@ const DEFAULT_SLICE = { a: 0, b: 0, pinned: 0, pitch: 0, detune: 0, gain: 0, rev
  * Warp (time alone). Tempo, Bars, the clip's length, Offset and Nudge do not
  * reach it. */
 export function auIsFree(i) { return !!i && auIsLoop(i) && (i.free | 0) === 1; }
-export const AU_SPEED_MIN = 250, AU_SPEED_MAX = 4000;   /* per mille, as the engine's */
+export const AU_SPEED_MIN = 10, AU_SPEED_MAX = 4000;    /* per mille, as the engine's: 1 % .. 400 % */
 export function auSpeedText(pm) {
     const v = (pm || 1000) / 10;
     return (Number.isInteger(v) ? String(v) : v.toFixed(1)) + '%';

@@ -186,8 +186,25 @@ int main(void) {
     HX_ASSERT(cl->speed_pm == 0 && info_at(h, 30) == 1000, "Speed 100 % is not the default");
     hx_set_param(h, "t2_au_set_speed", "0 99999");
     HX_ASSERT(cl->speed_pm == AU_SPEED_MAX, "Speed is not held to its range");
+    hx_set_param(h, "t2_au_set_speed", "0 10");
+    HX_ASSERT(cl->speed_pm == 10, "Speed 1 % refused (Josh, 2026-11-13: \"can we make speed minimum lower?\")");
+    hx_set_param(h, "t2_au_set_speed", "0 5");
+    HX_ASSERT(cl->speed_pm == AU_SPEED_MIN && AU_SPEED_MIN == 10, "Speed below 1 % is not held at 1 %");
+    {
+        /* Warp at 1 %: still sounding (the stretcher at its slowest) */
+        uint64_t e = 0;
+        int i;
+        hx_set_param(h, "t2_au_set_sync", "0 0");
+        start(h);
+        for (i = 0; i < 200; i++) step(h);
+        hx_stub_feed_reset();
+        for (i = 0; i < 200; i++) step(h);
+        hx_stub_feed(inst->tracks[2].pfx.slot, NULL, &e);
+        HX_ASSERT(e > 0, "Warp at 1 % is silent");
+        stop(h);
+    }
     hx_set_param(h, "t2_au_set_speed", "0 750");
-    printf("  ok   — the info read reports Free and Speed\n");
+    printf("  ok   — the info read reports Free and Speed; Speed goes down to 1 %%, and Warp sounds there\n");
 
     /* ==== 5. saved and loaded ==== */
     seq8_save_state(inst);

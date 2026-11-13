@@ -1351,7 +1351,7 @@ any length drifts against the beat as it likes. Page 2 trades **Sync** and **Tem
 
 - **Spd Md** — how Speed works: **Warp** changes the time alone, at the same pitch; **Tape**
   changes both together, as a tape does (faster is higher).
-- **Speed** — 25–400 % of the sample's own, 1 % a detent (**Shift**: 0.1 %). **K7** on page 1
+- **Speed** — 1–400 % of the sample's own, 1 % a detent (**Shift**: 0.1 %). **K7** on page 1
   turns it too.
 
 **Pitch** and **Detune** still tune it, so on **Warp**, time and pitch are fully apart.

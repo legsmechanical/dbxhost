@@ -57,7 +57,8 @@
 #define AU_BAR_TICKS       (4 * 96)     /* a bar, ticks (4/4 at PPQN) */
 #define AU_SPAN_MAX        (256 * AU_BAR_TICKS)   /* Bars: up to a clip's longest, 256 bars */
 #define AU_GAP             16           /* frames: the least a slice can be */
-#define AU_SPEED_MIN       250          /* Free's Speed, per mille: 25 % .. 400 % */
+#define AU_SPEED_MIN       10           /* Free's Speed, per mille: 1 % .. 400 % (Josh, 2026-11-13: "can we
+                                         * make speed minimum lower?" — the stretcher takes any speed) */
 #define AU_SPEED_MAX       4000
 #define AU_TAIL            128          /* frames: the fade back from a chop's end (~3 ms) */
 /* Vintage's pieces CROSSFADE: each fades in over this many output frames while
