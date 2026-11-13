@@ -2320,6 +2320,15 @@ step('⭐⭐ an Audio track: no sequence — pad taps and steps do nothing, no S
         assert(sent('t4_au_set_nudge').length === 1 && !sent('t4_au_set_rot').length, 'K4 is not Nudge: ' + JSON.stringify(sentLike(/_au_/)));
         S.knobAccelLast[3] = 0; cc(74, 127);
     }
+    /* Tempo and Bars (K6, K7) framed together, as on SAMPLE page 2: an
+     * outline down both sides of the pair, none round the rest of the row */
+    {
+        S.bankCardLatched = true; S.knobTouched = -1;
+        const f = shown();
+        const run = (x) => { let best = 0, n = 0; for (let y = 28; y < 57; y++) { n = f[y * 128 + x] ? n + 1 : 0; best = Math.max(best, n); } return best; };
+        assert(run(32) >= 8 && run(95) >= 8 && [29, 30, 31, 33, 34, 93, 94, 96, 97].every((x) => run(x) < 8),
+               'the CLIP bank\'s Tempo / Bars frame: ' + [29, 30, 31, 32, 33, 34, 93, 94, 95, 96, 97].map(run).join());
+    }
     S.knobTouched = 7;
     const lh = JSON.stringify(render.bankPageHints(0));
     S.knobTouched = -1;

@@ -148,6 +148,23 @@ step('⭐ Delete + touch clears the knob\'s lane; Mute + touch switches it off',
     assert(sent('t4_pa_clear_key').includes('0 seq:4:au_pitch'), 'Delete + touch K5 did not clear the Pitch lane: ' + JSON.stringify(sets));
 });
 
+step('⭐ the CLIP bank\'s knobs are the clip\'s own lanes: Delete + touch K6 clears the Tempo lane; K7 (Bars, a sequence\'s Playback Dir knob) touches no lane', () => {
+    while (S.auEditor) { cc(51, 127); cc(51, 0); ticks(1); }
+    S.playing = false; S.sessionView = false; S.activeTrack = 4; S.activeBank = 0;
+    const dir = C.seqAutoTargetForKnob(4, 0, 6, false);
+    assert(dir, 'setup: a sequence\'s K7 has no lane to be confused with');
+    GET['pa_list'] = '4 0 1 4 seq:4:au_bpm 0 0\n4 0 1 4 ' + dir + ' 0 0\n';
+    AU.automationRefreshPresence(); ticks(2);
+    assert(AU.automationStateFor(4, 0, dir) && AU.automationStateFor(4, 0, 'seq:4:au_bpm'), 'setup: the lanes are not listed');
+    sets.length = 0;
+    S.deleteHeld = true; note(6, 127); note(6, 0); S.deleteHeld = false; ticks(1);
+    S.muteHeld = true; note(6, 127); note(6, 0); S.muteHeld = false; ticks(1);
+    assert(!sets.some((x) => /_pa_(clear_key|active)$/.test(x[0])), 'Delete / Mute + touch K7 reached a lane: ' + JSON.stringify(sets));
+    S.deleteHeld = true; note(5, 127); note(5, 0); S.deleteHeld = false; ticks(1);
+    assert(sent('t4_pa_clear_key').includes('0 seq:4:au_bpm'), 'Delete + touch K6 did not clear the Tempo lane: ' + JSON.stringify(sets));
+    GET['pa_list'] = ''; AU.automationRefreshPresence(); ticks(2);
+});
+
 step('a Slicer: Instmt/Dest › Slicer converts the track (undoable) and reads its slot', () => {
     while (S.auEditor) { cc(51, 127); cc(51, 0); ticks(1); }
     S.playing = false;
