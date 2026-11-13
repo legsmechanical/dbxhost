@@ -22,6 +22,7 @@ the section into a versioned heading at release time.
   Shot: launched with the clip, the sample loops Start to End on its own, off the
   sequencer's timing. **Speed** (1–400 %) sets how fast; **Warp** changes time alone,
   **Tape** time and pitch together, and Pitch and Detune still apply. Exports render it.
+  Track View's header names the clip's Mode: Loop, Shot or Free.
 - **Record into Audio clips.** On an Audio track, **Rec** records the Move's audio input
   into the clip: an empty clip records until you press Rec again, to the bar; a clip with a
   sample records a new layer over what it plays. You hear the input through the track while

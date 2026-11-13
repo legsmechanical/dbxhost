@@ -331,7 +331,7 @@ function drawAudioTrackRest(t) {
     const bpm = auBpm(i);
     const head = auIsSlice(i) ? 'Slice ' + (auSelSlice(t) + 1) + '/' + i.n + '  '
         : auIsFree(i) ? 'Free ' + auSpeedText(i.speed) + '  '
-        : 'Loop ' + (bpm ? (Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) + '  ' : ' ');
+        : (i.shot ? 'Shot ' : 'Loop ') + (bpm ? (Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) + '  ' : ' ');   /* Shot says so (Josh, 2026-11-13) */
     ovwPrint(4, 9, head + auSampleName(t, c), 1);
     kitHudTap('Info', { left: head.trim() + ' · ' + auSampleName(t, c) });
     drawInfoRow2();

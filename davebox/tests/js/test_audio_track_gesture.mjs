@@ -1254,6 +1254,11 @@ step('⭐⭐ SAMPLE zoomed out is the clip: the audio where it lands at its Temp
     S.knobTouched = -1; S.bankCardLatched = false;
     const rtx = globalThis.__texts(() => shown());
     assert(rtx.some((x) => /^loop 84 /i.test(x)), 'the info row does not carry the Tempo: ' + JSON.stringify(rtx.slice(0, 4)));
+    /* ...and a Shot clip says Shot, not Loop (Josh, 2026-11-13: "make it say shot") */
+    S.auInfo[4][0] = Object.assign({}, A.auInfo(4, 0), { shot: 1 });
+    const stx = globalThis.__texts(() => shown());
+    assert(stx.some((x) => /^shot 84 /i.test(x)) && !stx.some((x) => /^loop 84 /i.test(x)),
+           'a Shot clip\'s info row does not say Shot: ' + JSON.stringify(stx.slice(0, 4)));
     GET['t4_au_info_0'] = INFO(1, 8); kindSync(); ticks(2);
 });
 
