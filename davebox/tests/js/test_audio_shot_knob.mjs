@@ -45,6 +45,9 @@ async function main() {
     const A = await import('../../ui/ui_audio.mjs');
     const tickmod = await import('../../ui/ui_tick.mjs');
     const render = await import('../../ui/ui_render.mjs');
+    const _kitText = [];
+    (await import('../../ui/ui_fonts_pp.mjs')).setKitTextTrace((x) => _kitText.push(String(x)));
+    const texts = (fn) => { _kitText.length = 0; fn(); return _kitText.slice(); };
     const ticks = (n) => { for (let i = 0; i < n; i++) { S.tickCount++; S.clockMs += 11; tickmod._tickImpl(); } };
     const cc = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
     const note = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([d2 ? 0x90 : 0x80, d1, d2]));
@@ -52,7 +55,8 @@ async function main() {
     const shotSets = () => sets.filter(([k]) => k === 't' + T + '_au_set_shot').map(([, v]) => v);
     /* the clip's info is the engine's, refreshed each tick: hold it as the engine would report */
     let shot = 0, free = 0, speed = 1000, sync = 0;
-    const info = () => { S.auInfo[T] = S.auInfo[T] || []; S.auInfo[T][0] = { state: 2, mode: 0, name: 'Break.wav', nframes: 44100, rate: 44100, ch: 1, bpm10: 1200, rot: 0, shot, free, speed, sync, rstart: 0, cut: 0, pitch: 0, detune: 0, gain: 0 }; };
+    let rot = 0;
+    const info = () => { S.auInfo[T] = S.auInfo[T] || []; S.auInfo[T][0] = { state: 2, mode: 0, name: 'Break.wav', nframes: 44100, rate: 44100, ch: 1, bpm10: 1200, rot, shot, free, speed, sync, rstart: 0, cut: 0, pitch: 0, detune: 0, gain: 0, nudge: 0, span: 0, revrs: 0 }; };
     const freeSets = () => sets.filter(([k]) => k === 't' + T + '_au_set_free').map(([, v]) => v);
     const speedSets = () => sets.filter(([k]) => k === 't' + T + '_au_set_speed').map(([, v]) => v);
     /* each gesture starts from a clean accumulator, as a fresh touch would */
@@ -66,17 +70,64 @@ async function main() {
         info(); ticks(2); info();
     });
 
-    step('⭐ the CLIP bank: K1 Mode (Loop), K2 Stretch, K3 Offset', () => {
+    step('⭐⭐ the CLIP bank is WHEN the clip plays its sample (Josh, 2026-11-13: the banks split by what you hear and when): K1 Mode (Loop), K2 Stretch, K3 Offset, K4 Nudge, K5 Sync, K6 Tempo, K7 Bars, K8 nothing', () => {
         const cells = A.auLoopBankCells(T);
         assert(cells[0] && cells[0].label === 'Mode' && cells[0].text === 'Loop', 'K1 is not Mode Loop: ' + JSON.stringify(cells[0]));
-        assert(cells[1] && cells[1].name === 'Stretch' && cells[2] && cells[2].name === 'Offset', 'Stretch / Offset moved: ' + JSON.stringify(cells.slice(1, 3)));
+        assert(cells.map((x) => x.label || '').join() === 'Mode,Strch,Offst,Nudge,Sync,Tempo,Bars,', 'the CLIP bank: ' + cells.map((x) => x.label).join());
+        assert(cells[5].text === '120' && cells[6].text === '0.5' && !cells[5].opens, 'Tempo / Bars read: ' + cells[5].text + ' / ' + cells[6].text);
+        /* no alternates any more: Offset and Nudge have a knob each */
+        assert(!A.knobAltOnTrack(T, 3, 0, 2), 'K3 still has an alternate');
     });
 
-    step('⭐ its knob rings: Mode, Stretch and Offset lit, K4-K8 dark — nothing there (Josh, 2026-11-12: "clip bank knob led rings are lit on empty knobs, which they shouldn\'t be per the general UI conventions")', () => {
+    step('⭐⭐ each CLIP knob turns its own setting through the real input path: K3 Offset a step, K4 Nudge, K5 Sync, K6 Tempo (and its lane), K7 Bars', () => {
+        const sent = (k) => sets.filter(([x]) => x === 't' + T + '_au_set_' + k).map(([, v]) => v);
+        /* a pick is KNOB_PICK (10) detents a step */
+        const knob = (k, dir, n) => { S.knobAccum[k] = 0; note(k, 127); for (let i = 0; i < n; i++) { info(); S.knobAccelLast[k] = 0; cc(71 + k, dir > 0 ? 1 : 127); } info(); note(k, 0); info(); };
+        sets.length = 0;
+        sets.length = 0;
+        knob(2, 1, 10);
+        assert(sent('rot').length >= 1 && sent('rot')[0] === '0 24', 'K3 is not Offset a step: ' + JSON.stringify(sets));
+        sets.length = 0; knob(3, 1, 1);
+        assert(sent('nudge').join() === '0 5', 'K4 is not Nudge 5 ms: ' + JSON.stringify(sets));
+        sets.length = 0; knob(4, -1, 10);          /* Warp (the default) is the last: left to Pitch */
+        assert(sent('sync').join() === '0 2', 'K5 is not Sync: ' + JSON.stringify(sets));
+        sets.length = 0; knob(5, 1, 1);
+        assert(sent('bpm').join() === '0 1210', 'K6 is not Tempo 1 BPM: ' + JSON.stringify(sets));
+        assert(A.bankAutoTarget(T, 0, 5, false) === 'seq:' + T + ':au_bpm' && A.bankAutoTarget(T, 0, 6, false) === null,
+               'the CLIP bank\'s lanes: K6 ' + A.bankAutoTarget(T, 0, 5, false) + ' K7 ' + A.bankAutoTarget(T, 0, 6, false));
+        sets.length = 0; knob(6, 1, 10);
+        assert(sent('bars').length >= 1, 'K7 is not Bars: ' + JSON.stringify(sets));
+        sets.length = 0; knob(7, 1, 10);
+        assert(!sets.some(([k]) => /_au_set_/.test(k)), 'K8 set something: ' + JSON.stringify(sets));
+    });
+
+    step('⭐⭐ a CLIP knob that moves the waveform shows it while touched (Josh, 2026-11-13: "i\'d like to be able to see what i\'m editing on the waveform"): Strch, Offset, Tempo, Bars — not Mode, Nudge or Sync; never on Free', () => {
+        assert([0, 1, 2, 3, 4, 5, 6, 7].map((k) => (A.auClipWaveKnob(T, k) ? 1 : 0)).join('') === '01100110',
+               'the knobs with a card: ' + [0, 1, 2, 3, 4, 5, 6, 7].map((k) => (A.auClipWaveKnob(T, k) ? 1 : 0)).join(''));
+        S.bankCardLatched = false;
+        const card = (x) => /^120 BPM   0\.5 BARS$/.test(x);   /* whole: not cut short */
+        info();
+        assert(!texts(() => render.drawUI()).some(card), 'the card is up with no knob touched');
+        note(2, 127); info();
+        const tx = texts(() => render.drawUI());
+        assert(tx.some(card) && tx.indexOf('OFFSET') >= 0, 'touching Offset does not show the card: ' + JSON.stringify(tx));
+        note(2, 0); info();
+        note(3, 127); info();
+        assert(!texts(() => render.drawUI()).some(card), 'touching Nudge shows the card');
+        note(3, 0); info();
+        note(5, 127); info();
+        assert(texts(() => render.drawUI()).some(card), 'touching Tempo does not show the card');
+        note(5, 0); info();
+        free = 1; info();
+        assert(!A.auClipWaveKnob(T, 2) && !A.auClipWaveKnob(T, 5), 'a Free clip shows the card');
+        free = 0; info();
+    });
+
+    step('⭐ its knob rings: K1-K7 lit, K8 dark — nothing there (Josh, 2026-11-12: "clip bank knob led rings are lit on empty knobs, which they shouldn\'t be per the general UI conventions")', () => {
         S.bankCardLatched = false;
         for (let i = 0; i < 4; i++) { info(); render.drawUI(); ticks(1); }
         const lit = [71, 72, 73, 74, 75, 76, 77, 78].map((c) => (CCLEDS.get(c) ? 1 : 0)).join('');
-        assert(lit === '11100000', 'the CLIP bank rings: ' + lit + ' ' + JSON.stringify([71, 72, 73, 74, 75, 76, 77, 78].map((c) => CCLEDS.get(c))));
+        assert(lit === '11111110', 'the CLIP bank rings: ' + lit + ' ' + JSON.stringify([71, 72, 73, 74, 75, 76, 77, 78].map((c) => CCLEDS.get(c))));
     });
 
     step('⭐ Loop + jog changes an Audio clip\'s length a step a detent, as on any clip (Josh, 2026-11-12: "on audio clips, loop + jog gesture to change length by steps doesn\'t work")', () => {
@@ -113,7 +164,7 @@ async function main() {
         shot = 0; free = 1; info();
         const cells = A.auLoopBankCells(T);
         assert(cells[0].text === 'Free' && cells[0].options.join() === 'Loop,Shot,Free', 'the cell does not read Free: ' + JSON.stringify(cells[0]));
-        assert(cells[2].kind === 'blank', 'a Free clip shows Offset: ' + JSON.stringify(cells[2]));
+        assert(cells.map((x) => x.label || '').join() === 'Mode,Strch,,,Spd Md,Speed,,', 'a Free clip\'s CLIP bank: ' + cells.map((x) => x.label).join());
         sets.length = 0;
         note(0, 127); turn(1, 30); note(0, 0);
         assert(!freeSets().length && !shotSets().length, 'past Free it sent more: ' + JSON.stringify(sets));
@@ -129,7 +180,13 @@ async function main() {
         A.auClipBankKnob(T, 1, -1);
         assert(speedSets().join() === '0 1000', '/2 on Free: ' + JSON.stringify(sets));
         speed = 1000; info();
-        assert(!A.auClipBankKnob(T, 2, 1), 'Offset turned on a Free clip');
+        assert(!A.auClipBankKnob(T, 2, 1) && !A.auClipBankKnob(T, 3, 1) && !A.auClipBankKnob(T, 6, 1), 'Offset, Nudge or Bars turned on a Free clip');
+        sets.length = 0;
+        assert(A.auClipBankKnob(T, 5, 3) && speedSets().join() === '0 1030', 'K6 on Free is not Speed: ' + JSON.stringify(sets));
+        sets.length = 0;
+        A.auClipBankKnob(T, 4, 1);
+        assert(sets.some(([k, v]) => k === 't' + T + '_au_set_sync' && v === '0 2'), 'K5 on Free is not Speed mode: ' + JSON.stringify(sets));
+        info();
         /* REMIX works on bars: on a Free clip its setting is kept, read as --, and its knobs rest */
         assert(A.rmxBankCells(T).every((x) => x.text === '--'), 'REMIX on a Free clip: ' + A.rmxBankCells(T).map((x) => x.text).join());
         sets.length = 0;

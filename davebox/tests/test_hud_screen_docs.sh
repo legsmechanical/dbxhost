@@ -72,7 +72,7 @@ ok('the bank map\'s INST pad names the instrument, as its Instrument slot does',
 const tap = doc('track-audio-playing');
 ok('an Audio track\'s overview waveform says where the playhead is', tap.body.wave && typeof tap.body.wave.play === 'number' && Math.abs(tap.body.wave.play - 0.175) < 0.01, JSON.stringify(tap.body.wave && tap.body.wave.play));
 const sl1 = doc('sample-loop'), lab = (d) => ((d.body.knobs || []).map((c) => c && c.label)).join(',');
-ok('SAMPLE page 1 describes every knob it answers (Start Zoom End Gain Pitch Detune Tempo Revrs)', sl1.where.screen === 'audio-wave-editor' && lab(sl1) === 'Start,Zoom,End,Gain,Pitch,Detune,Tempo,Revrs' && !!sl1.body.wave, lab(sl1));
+ok('SAMPLE page 1 describes every knob it answers (Start Zoom End Offset Pitch Detune Tempo Gain)', sl1.where.screen === 'audio-wave-editor' && lab(sl1) === 'Start,Zoom,End,Offst,Pitch,Detune,Tempo,Gain' && !!sl1.body.wave, lab(sl1));
 const sl2 = doc('sample-loop-p2');
 ok('...page 2 keeps the waveform for the Screen view', !!(sl2.body.wave && sl2.body.wave.amp) && /^Sync/.test(lab(sl2)), lab(sl2));
 const sc = doc('slices-slicer');

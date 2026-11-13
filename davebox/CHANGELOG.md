@@ -23,6 +23,12 @@ the section into a versioned heading at release time.
   sequencer's timing. **Speed** (1–400 %) sets how fast; **Warp** changes time alone,
   **Tape** time and pitch together, and Pitch and Detune still apply. Exports render it.
   Track View's header names the clip's Mode: Loop, Shot or Free.
+- **Audio clips: the CLIP bank is when the sample plays.** It now holds Mode, Strch,
+  Offset, **Nudge**, **Sync**, **Tempo** and **Bars**, one knob each (Nudge was behind
+  Offset). Touching Strch, Offset, Tempo or Bars brings up the clip's waveform while you
+  hold the knob. On the SAMPLE waveform, **K4 is Offset**, with an arrow on top where the
+  sample's Start lands, and **Gain moved to K8**; **Revrs** is on page 2 only, which also
+  gains Offset on K8.
 - **Record into Audio clips.** On an Audio track, **Rec** records the Move's audio input
   into the clip: an empty clip records until you press Rec again, to the bar; a clip with a
   sample records a new layer over what it plays. You hear the input through the track while

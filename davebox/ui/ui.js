@@ -49,7 +49,7 @@ import { daveBoxRotate } from './ui_daves.mjs';
 import { miActive, miOnKnob, miOnJog, miOnClick, miOnBack, miClose, miJogTouch, miPadTap, miPadRelease } from './ui_midi_import.mjs';
 import { audioChooserOpen, audioChooserRotate, audioChooserClick, audioChooserBack, closeAudioChooser } from './ui_audio_chooser.mjs';
 import { audioPanelInput, shortcutLeaves } from './ui_audio_editor.mjs';
-import { isSampledTrack, AU_EXT_BASE, AU_NOTE_BASE } from './ui_audio.mjs';
+import { isSampledTrack, AU_EXT_BASE, AU_NOTE_BASE, bankAutoTarget } from './ui_audio.mjs';
 import {
     projectPickerTextEntryMidi, templateTextEntryMidi,
     projectPadPickerTap, projectPadPickerRotate, projectPadPickerClick
@@ -1009,7 +1009,7 @@ function _dispatchBelowJogRouter(data, status, d1, d2) {
                      * (Josh, 2026-09-03: "show the actual destination param as
                      * automated for deleting, muting, the dot"). */
                     if (!S.sessionView) {
-                        const _tg = seqAutoTargetForKnob(S.activeTrack, S.activeBank, d1, knobAltOn(d1));
+                        const _tg = bankAutoTarget(S.activeTrack, S.activeBank, d1, knobAltOn(d1));
                         if (_tg) {
                             const _t = S.activeTrack, _c = effectiveClip(_t);
                             if (S.deleteHeld) {
@@ -1070,7 +1070,7 @@ function _dispatchBelowJogRouter(data, status, d1, d2) {
                                 automationParamTouch(d1, effectiveClip(d1), tg.slot, tg.fullKey, false);
                     }
                     if (!S.sessionView && S.activeBank >= 0) {
-                        const _tg = seqAutoTargetForKnob(S.activeTrack, S.activeBank, d1, knobAltOn(d1));
+                        const _tg = bankAutoTarget(S.activeTrack, S.activeBank, d1, knobAltOn(d1));
                         if (_tg) automationParamTouch(S.activeTrack, effectiveClip(S.activeTrack), 'seq', _tg.slice(4), false);
                     }
                     if (S.activeBank >= 0 && BANKS[S.activeBank].knobs[d1]) {

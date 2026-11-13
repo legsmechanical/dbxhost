@@ -5215,18 +5215,14 @@ function _onCC_knobs(d1, d2) {
                 return;
             }
             if (bank === 0 && !audioSliceMode(_t)) {
-                /* an Audio clip's K2 Strch (x2 · /2) and K3 Shift (a step a
-                 * detent) or, alt, Nudge (5 ms, Shift 1) */
-                /* K1 Mode: Loop · Shot (one-shot, Josh, 2026-11-10: "it should
-                 * be a clip bank setting"), a toggle: the deliberate feel */
-                if (knobIdx === 0) {
-                    const _st = knobStep(knobIdx, d2, KNOB_DELIB);
-                    if (_st && auClipBankKnob(_t, knobIdx, _st)) S.screenDirty = true;
-                } else if (knobIdx >= 1 && knobIdx <= 2) {
-                    const _nudge = knobIdx === 2 && (S.knobAlt & 4);
-                    const _st = _nudge ? ccKnobDelta(d2, knobIdx) : knobStep(knobIdx, d2, knobIdx === 2 ? KNOB_PICK : KNOB_DELIB);
-                    if (_st && auClipBankKnob(_t, knobIdx, _st)) S.screenDirty = true;
-                }
+                /* an Audio clip's CLIP bank: K1 Mode and K2 Strch deliberate
+                 * (a detent each); K3 Offset a step a pick; K4 Nudge (5 ms,
+                 * Shift 1) and K6 Tempo (1 BPM, Shift 0.1) continuous; K5 Sync
+                 * and K7 Bars picks. Free: K5 Speed mode, K6 Speed. */
+                const _cls = [KNOB_DELIB, KNOB_DELIB, KNOB_PICK, null, KNOB_PICK, null, KNOB_PICK, -1][knobIdx];
+                if (_cls === -1 || _cls === undefined) return;
+                const _st = _cls === null ? ccKnobDelta(d2, knobIdx) : knobStep(knobIdx, d2, _cls);
+                if (_st && auClipBankKnob(_t, knobIdx, _st)) S.screenDirty = true;
                 return;
             }
             if (bank === 0 && (knobIdx === 3 || knobIdx === 7)) return;   /* a Slicer's: no Legato; K8 >Seq (a trigger) */

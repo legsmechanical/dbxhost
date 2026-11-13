@@ -67,7 +67,7 @@ import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLaz
          auSelSlice, auSetSelSlice, isSampledTrack, isSlicerTrack, auSeqClipOf, auEditTrim, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
          auMarkAdd, auMarkDel, auManual, auEvenBake, auTrans, auTransBake, auRangeStep, auSet, auEnd, auPanelRingCells, auPanelReset,
          auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_LAZY_ENDED, AU_EVEN_MAX, AU_BPM10_MIN, AU_BPM10_MAX, auLenTicks,
-         auSampleP2Cells, auSampleP2Knob, AU_P2_KNOB, AU_P2_BARS, auBarsTurn, auIsFree, auSpeedTurn, AU_SPEED_MIN, AU_SPEED_MAX, auBpm, auSampleReset, auEdit, auTrimCuts, auOrig, auFit, auNudgeStep, auFpt, auPlayedEnd, auTooLongToChop, auAutoEdit, auAutoTouch, auSlicesAutoTouch, SLICE_GRID } from './ui_audio.mjs';
+         auSampleP2Cells, auSampleP2Knob, AU_P2_FIELDS, AU_P2_BARS, auOffsetStep, auTempoStep, auShiftNorm, auBarsTurn, auIsFree, auSpeedTurn, AU_SPEED_MIN, AU_SPEED_MAX, auBpm, auSampleReset, auEdit, auTrimCuts, auOrig, auFit, auNudgeStep, auFpt, auPlayedEnd, auTooLongToChop, auAutoEdit, auAutoTouch, auSlicesAutoTouch, SLICE_GRID } from './ui_audio.mjs';
 import { registerScreenRingCells } from './ui_knob_leds.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { ccKnobDelta, knobPick, KNOB_PICK, KNOB_DELIB } from './ui_input_cc.mjs';
@@ -530,51 +530,40 @@ function clipStep(ed, field, dir) {
     S.auInfo[t][c] = Object.assign({}, i, { [field]: v });
     return true;
 }
-/* K7: the sample's own Tempo, 1 BPM a detent (Shift 0.1) — what Sync and
+/* Tempo: the sample's own, 1 BPM a detent (Shift 0.1) — what Sync and
  * >Seq's step places follow (Josh, 2026-10-29: Move's "tempo knob to set the
- * original tempo"). */
+ * original tempo"); Free's is Speed. */
 function clipTempo(ed, dir) {
-    const t = ed.t, c = ed.c, i = auInfo(t, c);
-    if (auIsFree(i)) return auSpeedTurn(t, c, dir);          /* Free: the knob is Speed */
-    /* from the Tempo it plays at: with Bars set, the one they make — and a
-     * turn hands the Tempo back the say (Bars then read what it makes) */
-    const cur = Math.round(auBpm(i) * 10) || 1200;
-    const v = Math.max(AU_BPM10_MIN, Math.min(AU_BPM10_MAX, cur + dir * (S.shiftHeld ? 1 : 10)));
-    if (v === cur && !(i.span > 0)) return false;
-    auSet(t, c, 'bpm', v);
-    auAutoEdit(t, c, 'bpm10', v, cur);
-    const loc = Object.assign({}, i, { bpm10: v, span: 0 });
-    loc.rend = auPlayedEnd(t, c, loc);
-    S.auInfo[t][c] = loc;
-    S.auStartsRev = (S.auStartsRev | 0) + 1;
+    if (!auTempoStep(ed.t, ed.c, dir)) return false;
     /* the view stays on what was touched last: Length's end moves with the
      * Tempo (Josh, 2026-10-30: "if i last touched length, wave view should
      * stay focused on the end of the clip while adjusting bpm") */
-    centre(ed);
+    if (!auIsFree(auInfo(ed.t, ed.c))) centre(ed);
     return true;
 }
 
-/* SAMPLE's K4-K8, on both its pages: K4 Gain, K5 Pitch, K6 Detune — the
- * clip's, in either mode (Josh, 2026-10-28: "put gain on a knob in wave edit
- * mode ... same with pitch and detune on k5/6"; "The whole clip") — K7 the
- * sample's Tempo, K8 Revrs (Nudge left SAMPLE, Josh, 2026-10-30). */
-function sampleKnob(ed, k, d2) {
-    if (k === 3) { const st = ccKnobDelta(d2, k); return !!st && clipStep(ed, 'gain', st > 0 ? 1 : -1); }
-    if (k === 4) { const st = knobStep(k, d2, KNOB_PICK); return !!st && clipStep(ed, 'pitch', st); }
-    if (k === 5) { const st = ccKnobDelta(d2, k); return !!st && clipStep(ed, 'detune', st); }
-    if (k === 6) { const st = ccKnobDelta(d2, k); return !!st && clipTempo(ed, st > 0 ? 1 : -1); }
-    if (k === 7) { const st = knobStep(k, d2, KNOB_DELIB); return !!st && auSampleP2Knob(ed.t, ed.c, 7, st); }
+/* SAMPLE's knobs by what they set, on both its pages (Josh, 2026-11-13:
+ * page 1 "offset ... on knob 4 on the waveform view knobs, move gain to k8
+ * and knock reverse off the waveform knobs (keep it on page 2 though)"):
+ * page 1 K4 Offset, K5 Pitch, K6 Detune, K7 Tempo, K8 Gain; page 2
+ * AU_P2_FIELDS. `k` is the physical knob (its detent state). */
+export const AU_P1_FIELDS = [null, null, null, 'offset', 'pitch', 'detune', 'tempo', 'gain'];
+function sampleKnob(ed, f, k, d2) {
+    if (f === 'gain') { const st = ccKnobDelta(d2, k); return !!st && clipStep(ed, 'gain', st > 0 ? 1 : -1); }
+    if (f === 'pitch') { const st = knobStep(k, d2, KNOB_PICK); return !!st && clipStep(ed, 'pitch', st); }
+    if (f === 'detune') { const st = ccKnobDelta(d2, k); return !!st && clipStep(ed, 'detune', st); }
+    if (f === 'tempo') { const st = ccKnobDelta(d2, k); return !!st && clipTempo(ed, st > 0 ? 1 : -1); }
+    if (f === 'revrs') { const st = knobStep(k, d2, KNOB_DELIB); return !!st && auSampleP2Knob(ed.t, ed.c, 7, st); }
+    if (f === 'offset') { const st = knobStep(k, d2, KNOB_PICK); return !!st && auOffsetStep(ed.t, ed.c, st); }
     return false;
 }
 
 /* The automatable setting knob k turns on the screen as it is (sampleKnob's
- * K4-K8 on SAMPLE; SLICES' are the slice's own, not automatable), or null. */
-const SAMPLE_AUTO_FIELD = { 3: 'gain', 4: 'pitch', 5: 'detune', 6: 'bpm10', 7: 'revrs' };
+ * on SAMPLE; SLICES' are the slice's own, not automatable), or null. */
+const SAMPLE_AUTO_FIELD = { gain: 'gain', pitch: 'pitch', detune: 'detune', tempo: 'bpm10', revrs: 'revrs' };
 function sampleAutoField(k, plain, p2, sl, slEdit) {
     if ((p2 && sl) || (slEdit && k > 2)) return null;
-    if (p2) k = AU_P2_KNOB[k];                              /* page 2's own order */
-    if (k === 7 && !plain && !p2) return null;
-    return SAMPLE_AUTO_FIELD[k] || null;
+    return SAMPLE_AUTO_FIELD[(p2 ? AU_P2_FIELDS : AU_P1_FIELDS)[k]] || null;
 }
 
 /* A Tempo x10 as shown: 120, 224.1 */
@@ -845,7 +834,7 @@ export function audioEditorInput(status, d1, d2) {
                 /* Bars: whole bars a detent, deliberate as a choice is */
                 const st = knobStep(k, d2, KNOB_PICK);
                 if (st && auBarsTurn(ed.t, ed.c, st)) centre(ed);
-            } else if (AU_P2_KNOB[k] != null) sampleKnob(ed, AU_P2_KNOB[k], d2);
+            } else sampleKnob(ed, AU_P2_FIELDS[k], k, d2);
             S.screenDirty = true;
             return true;
         }
@@ -871,7 +860,7 @@ export function audioEditorInput(status, d1, d2) {
                 moved = auRangeStep(ed.t, ed.c, k === 0 ? 'start' : 'end', dd, auEdPixel(ed));
                 if (moved) centre(ed);
             }
-        } else if (k < 7 || plain) moved = sampleKnob(ed, k, d2);
+        } else moved = sampleKnob(ed, AU_P1_FIELDS[k], k, d2);
         if (moved) S.screenDirty = true;
         return true;
     }
@@ -1097,7 +1086,7 @@ function askInput(ed, status, d1, d2) {
     return true;
 }
 
-/* SAMPLE's knob rings: K1 Start, K2 Zoom, K3 End, K4 Gain, K5 Pitch, K6 Detune, K7 Tempo, K8 Revrs,
+/* SAMPLE's knob rings: K1 Start, K2 Zoom, K3 End, K4 Offset, K5 Pitch, K6 Detune, K7 Tempo, K8 Gain,
  * each where it sits — the clip's Start / End, the picked slice's in Manual,
  * none in Even / Transient; dark with no sample, in a Lazy chop, under the
  * picker or a question, and on K8. */
@@ -1117,16 +1106,18 @@ export function waveRingCells(ed) {
     const slRings = () => auPanelRingCells({ t: ed.t, page: S.shiftHeld ? 0 : 1 });
     if (slp && ed.page === 1) return slRings();
     const free = auIsFree(i);
+    /* Offset's ring: a Loop or Shot clip's, dark where the knob does nothing */
+    const offRing = sub === 'loop' && !free && !isSlicerTrack(ed.t) ? at(auShiftNorm(ed.t, ed.c, i)) : null;
     const sampleRings = () => [at(((i.gain | 0) + 40) / 52), at(((i.pitch | 0) + 24) / 48), at(((i.detune | 0) + 50) / 100),
                                free ? at(((i.speed || 1000) - AU_SPEED_MIN) / (AU_SPEED_MAX - AU_SPEED_MIN))
                                     : at(((Math.round(auBpm(i) * 10) || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN)), at(i.revrs ? 1 : 0)];
     if (!kind && ed.page === 1) {
-        /* page 2 (AU_P2_KNOB): Sync, Pitch, Detune, Gain, Tempo, Bars, Revrs
-         * — lit where a knob works */
+        /* page 2 (AU_P2_FIELDS): Sync, Pitch, Detune, Gain, Tempo, Bars,
+         * Revrs, Offset — lit where a knob works */
         const cells = auSampleP2Cells(ed.t, ed.c), sr = sampleRings();
         const slc = isSlicerTrack(ed.t), bc = cells[AU_P2_BARS];
         return [cells[0] && cells[0].kind !== 'blank' ? at((cells[0].sel | 0) / (slc || free ? 1 : 2)) : null, sr[1], sr[2], sr[0], sr[3],
-                bc && bc.kind !== 'blank' ? at(bc.norm || 0) : null, sr[4], null];
+                bc && bc.kind !== 'blank' ? at(bc.norm || 0) : null, sr[4], offRing];
     }
     let a = i.rstart, b = auEnd(i);
     if (kind === 'manual' || slp) {
@@ -1143,7 +1134,8 @@ export function waveRingCells(ed) {
     /* (a Slicer's SAMPLE has no Start or End to turn) */
     const ends = kind !== 'even' && kind !== 'transient' && !(isSlicerTrack(ed.t) && !kind && ed.ed !== 'slices');
     const sr = sampleRings();
-    return [ends ? at(a / fr) : null, at(zoom), ends ? at(b / fr) : null, sr[0], sr[1], sr[2], sr[3], kind ? null : sr[4]];
+    /* page 1: K4 Offset, K5 Pitch, K6 Detune, K7 Tempo, K8 Gain */
+    return [ends ? at(a / fr) : null, at(zoom), ends ? at(b / fr) : null, offRing, sr[1], sr[2], sr[3], sr[0]];
 }
 
 /* The rings while an Audio screen holds the knobs: WAVE's, the AUDIO

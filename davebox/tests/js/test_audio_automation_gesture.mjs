@@ -2,10 +2,12 @@
  * SOUND from the SAMPLE editor, through the real knobs (Josh, 2026-10-31:
  * Pitch, Detune, Gain, Revrs as a switch, and Tempo).
  *
- *   - K4 Gain turned while playing: the clip's setting is written AND the
+ *   - K8 Gain turned while playing (Josh, 2026-11-13: Gain moved to K8,
+ *     Offset to K4): the clip's setting is written AND the
  *     automation owner hears it as seq:<t>:au_gain (the rest named first,
  *     then the live value); the touch's release ends the gesture;
- *   - K7 Tempo and K8 Revrs name their own keys;
+ *   - K7 Tempo and page 2's K7 Revrs name their own keys; K4 Offset is
+ *     not automated;
  *   - Delete + touch clears that knob's lane, Mute + touch switches it off;
  *   - a SLICER (Josh, 2026-11-02: "two instruments "audio" and "slicer""):
  *     its sample is the engine's slot 16; SLICES' K4-K8 are a slice's own
@@ -98,13 +100,13 @@ ticks(3);
 if (!(S.trackPadMode[4] === C.PAD_MODE_AUDIO && A.isAudioTrack(4))) { console.error('FAIL: setup: t4 did not become Audio'); process.exit(1); }
 A.auMarkStale(4, 0); ticks(2);
 
-step('⭐⭐ K4 Gain turned while playing: written to the clip AND heard as seq:4:au_gain (rest first, then live)', () => {
+step('⭐⭐ K8 Gain turned while playing: written to the clip AND heard as seq:4:au_gain (rest first, then live)', () => {
     E.openWave(4, 'sample'); ticks(2);
     assert(S.auEditor && S.auEditor.ed !== 'slices', 'SAMPLE did not open');
     S.playing = true;
     sets.length = 0;
-    note(3, 127);
-    turn(3, 1, 2);
+    note(7, 127);
+    turn(7, 1, 2);
     assert(sent('t4_au_set_gain').length >= 1, 'the clip\'s Gain was not written: ' + JSON.stringify(sets));
     ticks(1);
     const rest = sent('t4_pa_rest'), live = sent('t4_pa_live');
@@ -112,18 +114,26 @@ step('⭐⭐ K4 Gain turned while playing: written to the clip AND heard as seq:
            'the resting value (0 dB) was not named once: ' + JSON.stringify(rest));
     assert(live.length >= 1 && live[live.length - 1] === 'seq:4:au_gain ' + norm(2, -40, 12),
            'the live value is not +2 dB on seq:4:au_gain: ' + JSON.stringify(live));
-    note(3, 0); ticks(1);
+    note(7, 0); ticks(1);
     assert(sent('t4_pa_live_end').includes('seq:4:au_gain'), 'the touch\'s release did not end the gesture');
+    /* K4 Offset: the clip's time, not a lane */
+    sets.length = 0;
+    note(3, 127); turn(3, 1, 1); ticks(1); note(3, 0); ticks(1);
+    assert(sent('t4_au_set_rot').length === 1 && !sets.some((x) => /_pa_(rest|live)/.test(x[0])),
+           'K4 Offset was not a plain write: ' + JSON.stringify(sets));
+    note(3, 127); turn(3, -1, 1); note(3, 0); ticks(1);
 });
 
-step('K7 Tempo and K8 Revrs automate as au_bpm and au_revrs', () => {
+step('K7 Tempo and page 2\'s Revrs automate as au_bpm and au_revrs', () => {
     sets.length = 0;
     note(6, 127); turn(6, 1, 1); ticks(1); note(6, 0); ticks(1);
     assert(sent('t4_pa_live').some((v) => v.indexOf('seq:4:au_bpm ') === 0), 'K7 is not seq:4:au_bpm: ' + JSON.stringify(sets));
     sets.length = 0;
-    note(7, 127); for (let i = 0; i < 20; i++) cc(78, 1);   /* KNOB_DELIB: 20 detents a switch */ ticks(1); note(7, 0); ticks(1);
-    assert(sent('t4_au_set_revrs').length === 1, 'K8 did not switch Revrs once: ' + JSON.stringify(sets) + ' ed=' + JSON.stringify({ page: S.auEditor && S.auEditor.page, mode: S.auEditor && S.auEditor.mode, ed: S.auEditor && S.auEditor.ed, info: A.auInfo(4, 0) }));
-    assert(sent('t4_pa_live').some((v) => v === 'seq:4:au_revrs 16383'), 'K8 is not seq:4:au_revrs at 1: ' + JSON.stringify(sent('t4_pa_live')));
+    cc(14, 1); ticks(1);                                    /* page 2: Revrs on K7 */
+    note(6, 127); for (let i = 0; i < 20; i++) cc(77, 1);   /* KNOB_DELIB: 20 detents a switch */ ticks(1); note(6, 0); ticks(1);
+    cc(14, 127); ticks(1);
+    assert(sent('t4_au_set_revrs').length === 1, 'page 2\'s K7 did not switch Revrs once: ' + JSON.stringify(sets) + ' ed=' + JSON.stringify({ page: S.auEditor && S.auEditor.page, mode: S.auEditor && S.auEditor.mode, ed: S.auEditor && S.auEditor.ed, info: A.auInfo(4, 0) }));
+    assert(sent('t4_pa_live').some((v) => v === 'seq:4:au_revrs 16383'), 'Revrs is not seq:4:au_revrs at 1: ' + JSON.stringify(sent('t4_pa_live')));
 });
 
 step('⭐ Delete + touch clears the knob\'s lane; Mute + touch switches it off', () => {
