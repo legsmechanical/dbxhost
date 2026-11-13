@@ -2109,6 +2109,27 @@ step('⭐⭐ an Audio track: no sequence — pad taps and steps do nothing, no S
         for (let i = 0; i < 40 && !sent('t4_c' + ac + '_loop_set').length; i++) cc(72, 127);
         assert(sent('t4_c' + ac + '_loop_set').join() === '11' && S.clipLength[4][ac] === 11, 'Strch /2 refused an odd Length: ' + JSON.stringify(sentLike(/_loop_set|_bpm/)));
         S.clipLength[4][ac] = len0;
+        /* WITH AN END the Tempo that plays is the fit's, and Strch's limit is
+         * that one's (Josh, 2026-11-12: "does stretch in clip take account of
+         * this?"): a fit at 600 BPM won't double (it would stop filling the
+         * clip); a fit at 300 doubles though the sample's own (600) can't — the
+         * Length doubles, the fit follows, the sample's own is left */
+        {
+            const i0 = A.auInfo(4, ac), bar = 16;
+            S.clipLength[4][ac] = bar; S.clipLoopStart[4][ac] = 0; S.clipTPS[4][ac] = 24;
+            S.auInfo[4][ac] = Object.assign({}, i0, { state: 2, rstart: 0, nframes: 96000, rate: 48000, cut: 19200, bpm10: 1200, _t: 4, _c: ac });
+            assert(Math.abs(A.auBpm(A.auInfo(4, ac)) - 600) < 0.11, 'setup: the fit is not 600: ' + A.auBpm(A.auInfo(4, ac)));
+            reset();
+            for (let i = 0; i < 40 && !sent('t4_c' + ac + '_loop_set').length; i++) cc(72, 1);
+            assert(!sent('t4_c' + ac + '_loop_set').length && S.clipLength[4][ac] === bar, 'Strch x2 took a 600 BPM fit past 999.9');
+            S.auInfo[4][ac] = Object.assign({}, A.auInfo(4, ac), { cut: 38400, bpm10: 6000 });
+            reset();
+            for (let i = 0; i < 40 && !sent('t4_c' + ac + '_loop_set').length; i++) cc(72, 1);
+            assert(sent('t4_c' + ac + '_loop_set').join() === String(bar * 2) && !sent('t4_au_set_bpm').length,
+                   'Strch x2 on a 300 BPM fit: ' + JSON.stringify(sentLike(/_bpm|_loop_set/)));
+            assert(Math.abs(A.auBpm(A.auInfo(4, ac)) - 600) < 0.11, 'the fit did not follow the doubled Length: ' + A.auBpm(A.auInfo(4, ac)));
+            S.clipLength[4][ac] = len0; S.auInfo[4][ac] = i0;
+        }
         /* K3 Offset: a step a detent run, wrapping round the clip, shown as
          * a note value (Josh, 2026-11-12: "shift param should be labeled
          * offset and work in 1/16ths ... it needs to display as such" · "if

@@ -949,7 +949,12 @@ export function auClipBankKnob(t, k, steps) {
          * here, and a Loop clip's Length is its sample's, often odd — Josh,
          * 2026-10-30: "doesn't want to /2 at all") */
         const nl = up ? len * 2 : Math.floor(len / 2), nb = up ? (i.bpm10 || 1200) * 2 : Math.round((i.bpm10 || 1200) / 2);
-        if (nl < 1 || ls + nl > 256 || nb < AU_BPM10_MIN || nb > AU_BPM10_MAX) {
+        /* with an End, the Tempo that plays is the fit's: its limit is the
+         * one that counts (past it the loop would stop filling the clip); the
+         * sample's own follows where it can */
+        const fit = auFitFpt(i) > 0, fb = fit ? Math.round(auBpm(i) * 10) * nl / len : nb;
+        if (nl < 1 || ls + nl > 256 || fb < AU_BPM10_MIN || fb > AU_BPM10_MAX ||
+            (!fit && (nb < AU_BPM10_MIN || nb > AU_BPM10_MAX))) {
             /* at its limit: said, as a MIDI clip's Strch says it (it was silent: review) */
             showActionPopupFor(1500, 'BEAT STRETCH', up ? 'EXPAND LIMIT' : 'COMPRESS LIMIT');
             return false;
@@ -957,7 +962,7 @@ export function auClipBankKnob(t, k, steps) {
         S.clipLength[t][c] = nl;
         S.clipLengthManuallySet[t][c] = true;
         host_module_set_param('t' + t + '_c' + c + '_loop_set', String((ls << 16) | nl));
-        loc.bpm10 = nb; auSet(t, c, 'bpm', nb);
+        if (nb >= AU_BPM10_MIN && nb <= AU_BPM10_MAX) { loc.bpm10 = nb; auSet(t, c, 'bpm', nb); }
         if (i.rot) { loc.rot = up ? i.rot * 2 : Math.floor(i.rot / 2); auSet(t, c, 'rot', loc.rot); }
         S.auStrchDir = { t, dir: up ? 1 : -1 };
     } else if (k === 2) {
