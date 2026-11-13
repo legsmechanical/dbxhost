@@ -33,6 +33,13 @@ globalThis.host_module_set_params = () => true;
  * Shot and the cell reads it; Stretch and Shift keep K2 and K3. */
 const sets = [];
 globalThis.host_module_set_param = (k, v) => { sets.push([String(k), String(v)]); };
+/* the bulk write's blob: "<n>\n" then "<len>\n<item>" n times, key / value pairs */
+globalThis.host_module_set_params = (blob) => {
+    const it = []; const nl = blob.indexOf('\n'); const n = parseInt(blob.slice(0, nl), 10) || 0; let p = nl + 1;
+    for (let i = 0; i < n; i++) { const e = blob.indexOf('\n', p); const len = parseInt(blob.slice(p, e), 10) || 0; p = e + 1; it.push(blob.slice(p, p + len)); p += len; }
+    for (let i = 0; i + 1 < it.length; i += 2) sets.push([it[i], it[i + 1]]);
+    return true;
+};
 globalThis.host_preview_stop = () => {}; globalThis.host_preview_play = () => {};
 const CCLEDS = new Map();
 globalThis.move_midi_internal_send = (m) => { if (m && (m[1] & 0xF0) === 0xB0) CCLEDS.set(m[2], m[3]); return true; };
@@ -95,6 +102,13 @@ async function main() {
         assert(sent('bpm').join() === '0 1210', 'K6 is not Tempo 1 BPM: ' + JSON.stringify(sets));
         assert(A.bankAutoTarget(T, 0, 5, false) === 'seq:' + T + ':au_bpm' && A.bankAutoTarget(T, 0, 6, false) === null,
                'the CLIP bank\'s lanes: K6 ' + A.bankAutoTarget(T, 0, 5, false) + ' K7 ' + A.bankAutoTarget(T, 0, 6, false));
+        /* ...and recorded as the sample's Tempo while playing: the touch and turn
+         * write seq:T:au_bpm; K7 Bars (a sequence's Playback Dir knob) writes no lane */
+        S.playing = true; sets.length = 0; knob(5, 1, 1); ticks(1);
+        const lanes = sets.filter(([k]) => /_pa_(rest|live)$/.test(k)).map(([, v]) => v);
+        assert(lanes.length && lanes.every((v) => v.indexOf('seq:' + T + ':au_bpm') >= 0), 'K6 Tempo\'s lane: ' + JSON.stringify(lanes));
+        sets.length = 0; knob(6, 1, 10); ticks(1); S.playing = false;
+        assert(!sets.some(([k]) => /_pa_/.test(k)), 'K7 Bars wrote a lane: ' + JSON.stringify(sets.filter(([k]) => /_pa_/.test(k))));
         sets.length = 0; knob(6, 1, 10);
         assert(sent('bars').length >= 1, 'K7 is not Bars: ' + JSON.stringify(sets));
         sets.length = 0; knob(7, 1, 10);
