@@ -859,7 +859,7 @@ static long au_export_loop(seq8_instance_t *inst, int t, int c, uint32_t len, do
     int bad = 0;
     if (cl->freerun) {
         if (cl->sync == AU_SYNC_PITCH) {
-            au_free_start(&trk, cl, s, c, au_free_step(cl, s, 0), 0);
+            au_free_start(&trk, cl, s, c, rs, re, au_free_step(cl, s, 0), 0);
             au_xrender(&trk, f, &frame, nout, 0);
         } else {
             double Pf = R * 44100.0 / (au_free_speed(cl) * (double)s->rate * fpt);
@@ -1110,7 +1110,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
                     if (ticked) {                       /* the launch tick: from here on its own */
                         at->free_on = 1;
                         at->loop_clip = (uint8_t)c;
-                        if (tape) au_free_start(at, cl, s, c, au_free_step(cl, s, at->cond), inst->au_last_tick_off);
+                        if (tape) au_free_start(at, cl, s, c, rs, re, au_free_step(cl, s, at->cond), inst->au_last_tick_off);
                         else {
                             /* the stretcher starts AU_WARP_LEAD ahead of its
                              * clock: the clock starts that far before the
@@ -1126,7 +1126,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
                     if (lv) {                           /* Speed, Pitch, Detune at once */
                         double st = au_free_step(cl, s, at->cond);
                         lv->step = lv->step < 0 ? -st : st;
-                    } else au_free_start(at, cl, s, c, au_free_step(cl, s, at->cond), 0);   /* lost to a kill: on again */
+                    } else au_free_start(at, cl, s, c, rs, re, au_free_step(cl, s, at->cond), 0);   /* lost to a kill: on again */
                 } else {
                     if (lv) au_voice_release(lv, 64);
                     at->w.tick = at->free_ph * P;

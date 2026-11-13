@@ -2862,14 +2862,12 @@ static void au_loop_start_in(au_track_t *at, au_clip_t *cl, const au_sample_t *s
     at->loop_clip = (uint8_t)c;
 }
 
-/* FREE on Tape: the voice that loops Start..End on its own (v->loop) at
- * `step`, `wait` frames from now (the launch tick's frame). */
-static void au_free_start(au_track_t *at, au_clip_t *cl, const au_sample_t *s, int c, double step, uint32_t wait) {
+/* FREE on Tape: the voice that loops rs..re (au_free_range: Start..End) on
+ * its own (v->loop) at `step`, `wait` frames from now (the launch tick's frame). */
+static void au_free_start(au_track_t *at, au_clip_t *cl, const au_sample_t *s, int c, uint32_t rs, uint32_t re,
+                          double step, uint32_t wait) {
     int i;
-    uint32_t rs, re;
-    if (!s) return;
-    au_free_range(cl, s, &rs, &re);
-    if (re <= rs + 32) return;
+    if (!s || re <= rs + 32) return;
     for (i = 0; i < AU_VOICES; i++) if (at->v[i].active) au_voice_release(&at->v[i], 64);
     au_voice_t *v = au_voice_alloc(at);
     memset(v, 0, sizeof *v);

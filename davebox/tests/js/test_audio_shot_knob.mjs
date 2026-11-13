@@ -130,6 +130,10 @@ async function main() {
         assert(speedSets().join() === '0 1000', '/2 on Free: ' + JSON.stringify(sets));
         speed = 1000; info();
         assert(!A.auClipBankKnob(T, 2, 1), 'Offset turned on a Free clip');
+        /* REMIX works on bars: on a Free clip its setting is kept, read as --, and its knobs rest */
+        assert(A.rmxBankCells(T).every((x) => x.text === '--'), 'REMIX on a Free clip: ' + A.rmxBankCells(T).map((x) => x.text).join());
+        sets.length = 0;
+        assert(!A.rmxBankKnob(T, 0, 1) && !sets.length, 'a REMIX knob turned on a Free clip: ' + JSON.stringify(sets));
     });
 
     step('⭐ Free: SAMPLE page 2 is Speed mode (Warp · Tape), Pitch, Detune, Gain, Speed, Revrs — no Bars (Josh: "why not keep sync? it\'d basically allow pitch and time to work independently")', () => {
