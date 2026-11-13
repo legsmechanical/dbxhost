@@ -2520,6 +2520,23 @@ static double au_span_ticks(const au_clip_t *cl, const au_sample_t *s, uint32_t 
     return (double)(re - rs) / au_fpt_s(cl, s);
 }
 
+/* FREE: Start..End (or the file's end) — the clip's loop window and its
+ * Length do not reach it — and its Speed as a ratio of the sample's own. */
+static void au_free_range(const au_clip_t *cl, const au_sample_t *s, uint32_t *rs, uint32_t *re) {
+    uint32_t a = cl->rstart, e = cl->rend && cl->rend < s->frames ? cl->rend : s->frames;
+    if (a + AU_GAP > s->frames) a = s->frames > AU_GAP ? s->frames - AU_GAP : 0;
+    if (e < a) e = a;
+    *rs = a; *re = e;
+}
+static double au_free_speed(const au_clip_t *cl) {
+    return (double)(cl->speed_pm ? cl->speed_pm : 1000) / 1000.0;
+}
+/* Free on Tape: sample frames per output frame — Speed, Pitch and Detune
+ * together, as a tape */
+static double au_free_step(const au_clip_t *cl, const au_sample_t *s, int cond) {
+    return au_free_speed(cl) * au_tune(au_pitch(cl) + cond, au_detune(cl)) * (double)s->rate / 44100.0;
+}
+
 static void au_trans_calc(au_clip_t *cl);
 
 /* Transient's chops (Josh, 2026-10-28: "keep the first 128. and only make
@@ -2845,6 +2862,34 @@ static void au_loop_start_in(au_track_t *at, au_clip_t *cl, const au_sample_t *s
     at->loop_clip = (uint8_t)c;
 }
 
+/* FREE on Tape: the voice that loops Start..End on its own (v->loop) at
+ * `step`, `wait` frames from now (the launch tick's frame). */
+static void au_free_start(au_track_t *at, au_clip_t *cl, const au_sample_t *s, int c, double step, uint32_t wait) {
+    int i;
+    uint32_t rs, re;
+    if (!s) return;
+    au_free_range(cl, s, &rs, &re);
+    if (re <= rs + 32) return;
+    for (i = 0; i < AU_VOICES; i++) if (at->v[i].active) au_voice_release(&at->v[i], 64);
+    au_voice_t *v = au_voice_alloc(at);
+    memset(v, 0, sizeof *v);
+    v->smp = s;
+    v->lo = rs; v->hi = re;
+    v->wait = wait;
+    if (au_revrs(cl)) { v->pos = (double)re - 1.0; v->step = -step; }
+    else { v->pos = (double)rs; v->step = step; }
+    v->gain = au_db(au_gain(cl));
+    v->clip = (uint8_t)c;
+    v->fpitch = 0;                                 /* its speed is set each block (au_render) */
+    v->ps = (int8_t)au_pitch(cl); v->pc = (int16_t)au_detune(cl);
+    v->gdb = (int8_t)au_gain(cl); v->vg = 1.0f;
+    v->mode_loop = 1;
+    v->loop = 1;
+    v->starve = 64;
+    v->active = 1;
+    at->loop_clip = (uint8_t)c;
+}
+
 static au_voice_t *au_loop_voice(au_track_t *at) {
     int i;
     for (i = 0; i < AU_VOICES; i++)
@@ -2956,6 +3001,67 @@ static void au_xrender(au_track_t *trk, FILE *f, uint32_t *frame, uint32_t next,
         }
         *frame += (uint32_t)len;
     }
+}
+
+/* Offline: what the stretcher plays for the clock's ticks [t0, t0 + n / fpt)
+ * on the live map (au_warp_frame: Start..End lasting P ticks inside a loop of
+ * L, after Shift and Nudge, Revrs) — the export's Warp renders: a Loop clip
+ * with an End or Bars, and a Free one (au_export_loop). n stereo frames at
+ * gain_db to f. It makes a stretcher, so it allocates: an export's, never the
+ * audio thread's live path. Returns 0, or -1. */
+static int au_xwarp(FILE *f, const au_sample_t *s, uint32_t rs, uint32_t re, int revrs, double P, double L,
+                    double rot, double nud, double fpt, double pitch, int gain_db, double t0, uint32_t n) {
+    static au_warp_t W;                       /* only its map (cur, rpt) is read */
+    static au_warper_t X;                     /* only its underrun count */
+    static int16_t pcm[2 * 4096];
+    au_st_t *st;
+    float *in;
+    int cap, np = 0;
+    long guard = 0;
+    uint32_t written = 0;
+    double sp, v0, g = (double)au_db(gain_db) * 32767.0;
+    if (!s || re <= rs || !(P > 0) || !(L > 0) || !(fpt > 0) || !(pitch > 0)) return -1;
+    memset(&W.cur, 0, sizeof W.cur);
+    W.cur.smp = s; W.cur.rs = rs; W.cur.re = re; W.cur.P = P; W.cur.L = L; W.cur.fpt = fpt;
+    W.cur.rot = rot; W.cur.nud = nud; W.cur.pitch = pitch; W.cur.revrs = (uint8_t)(revrs ? 1 : 0);
+    W.rpt = (double)(re - rs) / P;
+    sp = W.rpt * 44100.0 / ((double)s->rate * fpt);
+    st = au_st_create((int)s->rate, 44100, s->ch > 1 ? 2 : 1);
+    if (!st) return -1;
+    cap = au_st_max_input(st);
+    in = (float *)calloc((size_t)cap * 2, sizeof(float));
+    if (!in) { au_st_destroy(st); return -1; }
+    v0 = t0 * W.rpt;
+    au_st_reset(st, v0, sp, pitch);
+#define AU_XW_PUT(L_, R_) do { \
+        double l_ = (L_) * g, r_ = (R_) * g; \
+        pcm[np * 2]     = (int16_t)(l_ > 32767.0 ? 32767 : l_ < -32768.0 ? -32768 : (int)l_); \
+        pcm[np * 2 + 1] = (int16_t)(r_ > 32767.0 ? 32767 : r_ < -32768.0 ? -32768 : (int)r_); \
+        if (++np == 4096) { fwrite(pcm, sizeof(int16_t) * 2, (size_t)np, f); np = 0; } \
+        written++; } while (0)
+    while (written < n && guard++ < 4000000L) {
+        const float *ol, *or_;
+        double p0, p1;
+        int b, e, i, k;
+        au_st_want(st, sp, pitch, &b, &e);
+        if (e - b > cap) e = b + cap;
+        for (i = 0; i < e - b; i++) au_warp_frame(&X, &W, (double)(b + i), &in[i], &in[cap + i]);
+        k = au_st_grain(st, in, cap, &ol, &or_, &p0, &p1);
+        if (k <= 0 || p0 != p0 || p1 != p1 || p1 < p0) continue;   /* still filling after the reset */
+        for (i = 0; i < k && written < n; i++) {
+            double at = ((p0 + (p1 - p0) * i / k) - v0) / sp;      /* the output frame it belongs at */
+            if (at < (double)written - 0.5) continue;              /* the preroll, before t0 */
+            while ((double)written + 0.5 < at && written < n) AU_XW_PUT(0.0, 0.0);
+            if (written >= n) break;
+            AU_XW_PUT(ol[i], or_[i]);
+        }
+    }
+    while (written < n) AU_XW_PUT(0.0, 0.0);
+#undef AU_XW_PUT
+    if (np) fwrite(pcm, sizeof(int16_t) * 2, (size_t)np, f);
+    free(in);
+    au_st_destroy(st);
+    return 0;
 }
 
 /* The sample a render reads: the clip's own, or — streamed — the whole file,
@@ -3107,7 +3213,8 @@ static int au_slice_default(const au_slice_t *sl) {
 
 static int au_clip_default(const au_clip_t *cl) {
     return !cl->name[0] && !cl->rstart && !cl->pitch && !cl->detune && !cl->gain_db && !cl->revrs &&
-           !cl->nudge_ms && !cl->sync && !cl->bpm10 && !cl->rot && !cl->shot && !cl->rend && !cl->rspan;
+           !cl->nudge_ms && !cl->sync && !cl->bpm10 && !cl->rot && !cl->shot && !cl->rend && !cl->rspan &&
+           !cl->freerun && !cl->speed_pm;
 }
 
 static void au_put_name(FILE *fp, const char *name) {
@@ -3138,6 +3245,8 @@ static void au_save_state(void *vinst, FILE *fp) {
                 if (cl->shot) fputs(" os=1", fp);   /* One-shot (an older build ignores the key) */
                 if (cl->rend) fprintf(fp, " en=%u", (unsigned)cl->rend);   /* End (likewise) */
                 if (cl->rspan) fprintf(fp, " sp=%u", (unsigned)cl->rspan); /* Bars, ticks (likewise) */
+                if (cl->freerun) fputs(" fr=1", fp);                        /* Free (likewise) */
+                if (cl->speed_pm) fprintf(fp, " spd=%u", (unsigned)cl->speed_pm);   /* Free's Speed, per mille */
                 au_put_name(fp, cl->name);
                 fputc('"', fp);
             }
@@ -3291,6 +3400,9 @@ static void au_load_state(void *vinst, const char *buf) {
                 cl->shot = (uint8_t)(au_kv(kv, n, "os", 0) ? 1 : 0);
                 cl->rend = (uint32_t)clamp_i((int)au_kv(kv, n, "en", 0), 0, INT32_MAX);
                 cl->rspan = (uint32_t)clamp_i((int)au_kv(kv, n, "sp", 0), 0, AU_SPAN_MAX);
+                cl->freerun = (uint8_t)(au_kv(kv, n, "fr", 0) && !cl->shot ? 1 : 0);
+                l = (int)au_kv(kv, n, "spd", 0);
+                cl->speed_pm = (uint16_t)(l && l != 1000 ? clamp_i(l, AU_SPEED_MIN, AU_SPEED_MAX) : 0);
                 sy = au_kv(kv, n, "sy", AU_SYNC_WARP);
                 cl->sync = (uint8_t)(sy >= 0 && sy <= AU_SYNC_MAX ? sy : AU_SYNC_WARP);
                 l = (int)au_kv(kv, n, "bpm", 0);

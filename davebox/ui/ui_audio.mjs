@@ -101,7 +101,7 @@ export function auBarsText(b) {
  * following; held when End or Start moves. True when it moved. */
 export function auBarsTurn(t, c, steps) {
     const i = auInfo(t, c);
-    if (i.state !== 2 || !auIsLoop(i) || !steps || !i.nframes) return false;
+    if (i.state !== 2 || !auIsLoop(i) || auIsFree(i) || !steps || !i.nframes) return false;
     const cur = auBarsOf(i);
     let b = steps > 0 ? Math.floor(cur + 1e-6) + steps : Math.ceil(cur - 1e-6) + steps;
     b = Math.max(1, Math.min(AU_SPAN_MAX / AU_BAR_TICKS, b));
@@ -245,13 +245,57 @@ export function auParseInfo(raw) {
         /* a Loop clip's Bars, ticks: Start..End (or the file's end) lasts
          * this long, the Tempo following (0 = none: the Tempo rules) */
         span: head.length > 28 ? head[28] : 0,
+        /* FREE (a Mode, beside Loop and Shot): Start..End on its own loop,
+         * off the clip's timing, at Speed (per mille of the sample's own) */
+        free: head.length > 29 ? head[29] : 0,
+        speed: head.length > 30 ? head[30] : 1000,
         name: bar >= 0 ? String(raw).slice(bar + 1) : '',
     };
 }
 
 const DEFAULT_INFO = { state: 0, err: 0, mode: 0, even: 16, hand: 1, n: 16, rstart: 0, rend: 0,
-                       pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, revrs: 0, nudge: 0, sync: 0, reach: -1, bpm10: 0, hits: 0, sens: 50, trans: 0, slen: 0, shot: 0, cut: 0, span: 0, name: '' };
+                       pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, revrs: 0, nudge: 0, sync: 0, reach: -1, bpm10: 0, hits: 0, sens: 50, trans: 0, slen: 0, shot: 0, cut: 0, span: 0, free: 0, speed: 1000, name: '' };
 const DEFAULT_SLICE = { a: 0, b: 0, pinned: 0, pitch: 0, detune: 0, gain: 0, rev: 0, play: 0, atk: 0, dec: 0 };
+
+/* A Free clip (Josh, 2026-11-13: "a mode ... irrespective of the sequencer's
+ * timing" · "why not keep sync? it'd basically allow pitch and time to work
+ * independently" · "yep"): Start..End loops on its own from the launch at
+ * Speed; Sync's Pitch is Tape there (speed and pitch together), anything else
+ * Warp (time alone). Tempo, Bars, the clip's length, Offset and Nudge do not
+ * reach it. */
+export function auIsFree(i) { return !!i && auIsLoop(i) && (i.free | 0) === 1; }
+export const AU_SPEED_MIN = 250, AU_SPEED_MAX = 4000;   /* per mille, as the engine's */
+export function auSpeedText(pm) {
+    const v = (pm || 1000) / 10;
+    return (Number.isInteger(v) ? String(v) : v.toFixed(1)) + '%';
+}
+
+/* Free's Speed by `steps`: 1 % a detent, 0.1 % with Shift. True when it moved. */
+export function auSpeedTurn(t, c, steps) {
+    const i = auInfo(t, c);
+    if (i.state !== 2 || !auIsFree(i) || !steps) return false;
+    const cur = i.speed || 1000;
+    const v = Math.max(AU_SPEED_MIN, Math.min(AU_SPEED_MAX, cur + steps * (S.shiftHeld ? 1 : 10)));
+    if (v === cur) return false;
+    auSet(t, c, 'speed', v);
+    S.auInfo[t][c] = Object.assign({}, i, { speed: v });
+    S.auStartsRev = (S.auStartsRev | 0) + 1;
+    return true;
+}
+/* Free's K1 on SAMPLE page 2: Sync named for what it does there — Warp
+ * (time alone) or Tape (speed and pitch together, Sync Pitch); Vintage cuts
+ * on the clock, which a Free clip has none of, so it reads as Warp */
+export const AU_FREE_SYNC_NAMES = ['Warp', 'Tape'];
+function freeSyncCell(i) {
+    const k = (i.sync | 0) === 2 ? 1 : 0;
+    return { kind: 'enumsq', label: 'Spd Md', name: 'Speed mode: Warp · Tape', text: AU_FREE_SYNC_NAMES[k],
+             options: AU_FREE_SYNC_NAMES, sel: k };
+}
+function speedCell(i) {
+    const sp = i.speed || 1000;
+    return { kind: 'valsq', label: 'Speed', name: 'Speed (of the sample\'s own)', text: auSpeedText(sp),
+             norm: (sp - AU_SPEED_MIN) / (AU_SPEED_MAX - AU_SPEED_MIN) };
+}
 
 export function auInfo(t, c) {
     const i = S.auInfo[t] && S.auInfo[t][c];
@@ -874,6 +918,8 @@ export function auPanelCells(ed) {
                             norm: ((Math.round(auBpm(i) * 10) || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN) };
             /* a Slicer has no Start or Nudge: what plays is its chops */
             const slc = isSlicerTrack(t);
+            /* Free: Speed mode and Speed for Sync and Tempo, no Nudge */
+            if (auIsFree(i)) return [start, pitch, detune, gain, revrsCell(i), BLANK, freeSyncCell(i), speedCell(i)].map(live);
             return [slc ? BLANK : start, pitch, detune, gain, revrsCell(i), slc ? BLANK : nudgeCell(i), sync, tempo].map(live);
         }
     }
@@ -972,9 +1018,31 @@ export function auClipBankKnob(t, k, steps) {
          * at their end"; 2026-11-10: "it should be a clip bank setting"). Every
          * other setting stays what it was ("settings should persist across loop
          * and one-shot"). */
-        const v = steps > 0 ? 1 : 0;
-        if (v === (i.shot | 0)) return false;
-        loc.shot = v; auSet(t, c, 'shot', v);
+        /* ...and Free beside them (Josh, 2026-11-13): Loop · Shot · Free, a
+         * detent a step */
+        const cur = auIsFree(i) ? 2 : (i.shot ? 1 : 0);
+        const v = Math.max(0, Math.min(2, cur + (steps > 0 ? 1 : -1)));
+        if (v === cur) return false;
+        if (v === 2) { loc.free = 1; loc.shot = 0; auSet(t, c, 'free', 1); }
+        else if (v === 1) { loc.shot = 1; loc.free = 0; auSet(t, c, 'shot', 1); }
+        else {
+            if (i.shot) auSet(t, c, 'shot', 0);
+            if (auIsFree(i)) auSet(t, c, 'free', 0);
+            loc.shot = 0; loc.free = 0;
+        }
+        loc.rend = auPlayedEnd(t, c, loc);
+    } else if (k === 1 && auIsFree(i)) {
+        /* Strch on a Free clip: x2 plays it twice as long — half the Speed —
+         * /2 the reverse; the clip's length does not hold it */
+        const up = steps > 0, sp = i.speed || 1000, ns = up ? Math.round(sp / 2) : sp * 2;
+        if (ns < AU_SPEED_MIN || ns > AU_SPEED_MAX) {
+            showActionPopupFor(1500, 'BEAT STRETCH', up ? 'EXPAND LIMIT' : 'COMPRESS LIMIT');
+            return false;
+        }
+        loc.speed = ns; auSet(t, c, 'speed', ns);
+        S.auStrchDir = { t, dir: up ? 1 : -1 };
+    } else if (k === 2 && auIsFree(i)) {
+        return false;                              /* Offset and Nudge: no clip grid to move against */
     } else if (k === 1) {
         /* Strch (Josh, 2026-10-30: "an audio-based analog of what they do with
          * midi"): x2 doubles the Length AND the sample's Tempo — the Tempo says
@@ -1096,6 +1164,7 @@ export function auFmtLen(ticks) {
  * the screen's until then). */
 export function auPlayedEnd(t, c, i) {
     if (auIsSlice(i) && !(i.slen > 0)) return i.nframes;
+    if (auIsFree(i)) return i.cut > 0 ? Math.min(i.cut, i.nframes) : i.nframes;   /* all of Start..End */
     const e = Math.min(i.nframes, Math.round(i.rstart + auLenTicks(t, c, i) * auFpt(i)));
     return !auIsSlice(i) && i.cut > 0 ? Math.min(e, i.cut) : e;
 }
@@ -1150,8 +1219,9 @@ export function auPanelKnob(ed, k, steps) {
             else if (k === 2) { const v = Math.max(-50, Math.min(50, (i.detune | 0) + steps)); if (v === (i.detune | 0)) return false; loc.detune = v; auSet(t, c, 'detune', v); auAutoEdit(t, c, 'detune', v, i.detune | 0); }
             else if (k === 3) { const v = Math.max(-40, Math.min(12, i.gain + dir)); if (v === i.gain) return false; loc.gain = v; auSet(t, c, 'gain', v); auAutoEdit(t, c, 'gain', v, i.gain); }
             else if (k === 4) { const v = dir > 0 ? 1 : 0; if (v === i.revrs) return false; loc.revrs = v; auSet(t, c, 'revrs', v); auAutoEdit(t, c, 'revrs', v, i.revrs | 0); }
-            else if (k === 5) return auNudgeStep(t, c, steps);
+            else if (k === 5) return !auIsFree(i) && auNudgeStep(t, c, steps);
             else if (k === 6) return auIsLoop(i) && auSampleP2Knob(t, c, 1, steps);
+            else if (k === 7 && auIsFree(i)) return auSpeedTurn(t, c, steps);
             else if (k === 7) {
                 /* from the Tempo it plays at: Bars, where set, give way to it */
                 const cur = Math.round(auBpm(i) * 10) || 1200;
@@ -1215,6 +1285,7 @@ export function knobAltOnTrack(t, padMode, bank, k) {
  * clip's own transforms in audio (Josh, 2026-10-30: "an audio-based analog of
  * what they do with midi. thinking of stretch and shift mainly"); the sound is
  * SAMPLE's ---- */
+export const AU_MODE_NAMES = ['Loop', 'Shot', 'Free'];
 export function auLoopBankCells(t) {
     const c = auClipOf(t), i = auInfo(t, c), has = i.state === 2;
     const live = (x) => (has ? x : dash(x));
@@ -1224,10 +1295,12 @@ export function auLoopBankCells(t) {
                     text: (S.auStrchDir && S.auStrchDir.t === t && S.knobTouched === 1) ? (S.auStrchDir.dir > 0 ? 'x2' : '/2') : '1x' };
     const shift = (S.knobAlt & 4) ? nudgeCell(i)
         : { kind: 'valsq', label: 'Offst', name: 'Offset', text: auOffsetText(t, c, i) };
-    /* K1 Mode: Loop · Shot (one-shot: the clip's length once per launch) */
-    const mode = { kind: 'enumsq', label: 'Mode', name: 'Mode', text: i.shot ? 'Shot' : 'Loop',
-                   options: ['Loop', 'Shot'], sel: i.shot ? 1 : 0 };
-    return [live(mode), live(strch), live(shift), BLANK, BLANK, BLANK, BLANK, BLANK];
+    /* K1 Mode: Loop · Shot (one-shot: the clip's length once per launch) ·
+     * Free (its own loop, off the clip's timing); Free has no Offset or Nudge */
+    const free = auIsFree(i), msel = free ? 2 : i.shot ? 1 : 0;
+    const mode = { kind: 'enumsq', label: 'Mode', name: 'Mode', text: AU_MODE_NAMES[msel],
+                   options: AU_MODE_NAMES, sel: msel };
+    return [live(mode), live(strch), free ? BLANK : live(shift), BLANK, BLANK, BLANK, BLANK, BLANK];
 }
 /* ---- REMIX (Josh, 2026-11-10: "replacing midi effects banks on audio tracks
  * with loop remix effects like those on the yamaha rs7000"; 2026-11-11: "i
@@ -1322,9 +1395,12 @@ export function rmxBankCells(t) {
     else if (S.rmxK6 === 2) k6 = { kind: 'enumsq', label: 'Vel', name: 'Stutter Vel', text: r[3] === 0 ? 'Off' : 'On', options: ['Off', 'On'], sel: r[3] === 0 ? 0 : 1 };
     else k6 = pct('Stutr', 'Stutter', r[6]);
     const k7 = S.rmxK7 ? pct('Depth', 'Gap Depth', r[10]) : pct('Gaps', 'Gaps', r[7]);
-    return [on, chop, order, pct('Shufl', 'Shuffle', r[4]), pct('Revrs', 'Reverse', r[5]), k6, k7,
+    const cells = [on, chop, order, pct('Shufl', 'Shuffle', r[4]), pct('Revrs', 'Reverse', r[5]), k6, k7,
             { kind: 'valsq', label: 'Pitch', name: 'Pitch', text: ((r[8] | 0) > 0 ? '+' : '') + (r[8] | 0) + 'st' }];
+    /* a Free clip has no bars to remix: the setting is kept, unheard, dashed */
+    return rmxOffFree(t) ? cells.map(dash) : cells;
 }
+function rmxOffFree(t) { return !isSlicerTrack(t) && auIsFree(auInfo(t, auClipOf(t))); }
 /* The bar's picture (the engine's tN_remix_map): per 1/16 { src, fl, pit } —
  * fl 1 reversed, 2 rolled, 4 cut short, 8 silent, 16 a piece starts. Read
  * while a REMIX knob is in hand, again after each change (rmxMapPoll, from
@@ -1350,6 +1426,7 @@ export function rmxApplyPreset(t, set) {
  * input side paces them like any continuous knob). Returns true when it
  * changed. */
 export function rmxBankKnob(t, k, steps) {
+    if (rmxOffFree(t)) return false;
     const r = rmxGet(t).slice();
     const send = (key, v) => host_module_set_param('t' + t + '_' + key, String(v));
     const done = () => { S.rmxSet[t] = r; S.rmxMapDirty = true; S.rmxCard = true; return true; };
@@ -1443,6 +1520,10 @@ export function auSampleP2Cells(t, c) {
         ? { kind: 'valsq', label: 'Bars', name: 'Bars (the sample\'s own)', text: auBarsText(b),
             norm: Math.min(1, b / 16) }
         : BLANK;
+    /* FREE: Speed mode and Speed where Sync and Tempo were; no Bars (no grid) */
+    if (auIsFree(i))
+        return [live(freeSyncCell(i)), live(pitchCell('Pitch', i.pitch)), live(detuneCell('Detune', i.detune)),
+                live(gain), live(speedCell(i)), BLANK, live(revrsCell(i)), BLANK];
     return [live(sync), live(pitchCell('Pitch', i.pitch)), live(detuneCell('Detune', i.detune)),
             live(gain), live(tempo), live(bars), live(revrsCell(i)), BLANK];
 }
@@ -1454,6 +1535,11 @@ export function auSampleP2Knob(t, c, k, steps) {
     if (k === 1 && isSlicerTrack(t)) {
         const v = steps > 0 ? 1 : 0;
         if (v === ((i.sync | 0) === 1 ? 1 : 0)) return false;
+        loc.sync = v; auSet(t, c, 'sync', v);
+    } else if (k === 1 && auIsFree(i)) {
+        /* Free: Warp · Tape */
+        const v = steps > 0 ? 2 : 0;
+        if (v === ((i.sync | 0) === 2 ? 2 : 0)) return false;
         loc.sync = v; auSet(t, c, 'sync', v);
     } else if (k === 1) {
         const ti = Math.max(0, Math.min(AU_SYNC_NAMES.length - 1, auSyncIdx(i) + (steps > 0 ? 1 : -1)));

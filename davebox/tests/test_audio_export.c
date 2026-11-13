@@ -317,6 +317,62 @@ int main(void) {
         hx_set_param(h, "t4_au_set_revrs", "0 0");
         hx_set_param(h, "t4_au_set_start", "0 0");
         printf("  ok   — a Warp clip on Revrs goes as its sample reversed\n");
+
+        /* Warp with an End: rendered on the live stretcher's map (Live's clip
+         * would run on) — the 1 s ramp is a bar at 240, so at 120 its first
+         * half (End 22050) fills the clip's first second, silent after */
+        hx_set_param(h, "t4_au_set_end", "0 22050");
+        HX_ASSERT(hx_get_param(h, "t4_c0_au_export", b, sizeof b) > 0 && b[0] == 'R', "a Warp clip with an End was not rendered");
+        HX_ASSERT(sscanf(b, "R %ld %u", &fr, &lt) == 2 && lt == 384 && fr == (long)(2 * 384 * fpt + 0.5) - (long)(384 * fpt + 0.5),
+                  "the Warp + End render line");
+        snprintf(p, sizeof p, "%s/au_4_0.wav", stage);
+        w = read_wav(p, &frames, &rate, &ch);
+        HX_ASSERT(w && frames == (uint32_t)fr && rate == 44100 && ch == 2, "the Warp + End render's header");
+        {
+            double loud = 0, quiet = 0;
+            uint32_t i;
+            for (i = 4000; i < 40000; i++) loud += fabs((double)w[i]);
+            /* (a phase vocoder thins the ramp's near-DC; the next pass's
+             * attack smears a few units back before the wrap, as live) */
+            for (i = 50000; i < 78000; i++) quiet += fabs((double)w[i]);
+            HX_ASSERT(loud / 36000.0 > 300.0, "a Warp + End render is silent before its End");
+            HX_ASSERT(quiet / 28000.0 < 1.0, "a Warp + End render sounds past its End");
+        }
+        free(w);
+        printf("  ok   — a Warp clip with an End renders, silent past End till the clip comes round\n");
+
+        /* FREE on Tape: Start..End (22050 frames) looping on its own at the
+         * sample's speed, from the launch — never fitted to the clip */
+        hx_set_param(h, "t4_au_set_sync", "0 2");
+        hx_set_param(h, "t4_au_set_free", "0 1");
+        HX_ASSERT(hx_get_param(h, "t4_c0_au_export", b, sizeof b) > 0 && b[0] == 'R', "a Free Tape clip was not rendered");
+        HX_ASSERT(sscanf(b, "R %ld %u", &fr, &lt) == 2 && fr == (long)(384 * fpt + 0.5), "a Free render is not the clip's length");
+        w = read_wav(p, &frames, &rate, &ch);
+        HX_ASSERT(w && frames == (uint32_t)fr, "the Free Tape render's header");
+        bad = 0;
+        for (k = 0; k < 8; k++) {
+            uint32_t at = (uint32_t)(k * 11000 + 7);
+            if (at >= frames) break;
+            int want_v = 1 + (int)(at % 22050) % 30000;
+            if (abs(w[at] - want_v) > 1) bad++;
+        }
+        HX_ASSERT(bad == 0, "a Free Tape render does not loop Start..End at the sample's own speed");
+        free(w);
+        /* FREE on Warp: still sounding past where a fitted loop would stop */
+        hx_set_param(h, "t4_au_set_sync", "0 0");
+        HX_ASSERT(hx_get_param(h, "t4_c0_au_export", b, sizeof b) > 0 && b[0] == 'R', "a Free Warp clip was not rendered");
+        w = read_wav(p, &frames, &rate, &ch);
+        HX_ASSERT(w && frames == (uint32_t)(384 * fpt + 0.5), "the Free Warp render's header");
+        {
+            double late = 0;
+            uint32_t i;
+            for (i = 50000; i < frames; i++) late += fabs((double)w[i]);
+            HX_ASSERT(late / (double)(frames - 50000) > 300.0, "a Free Warp render does not loop on");
+        }
+        free(w);
+        hx_set_param(h, "t4_au_set_free", "0 0");
+        hx_set_param(h, "t4_au_set_end", "0 0");
+        printf("  ok   — a Free clip renders its own loop from the launch, on Tape and on Warp\n");
     }
 
     /* ---- 2. a Slicer's clip renders: chop k on step k, its own frames ---- */

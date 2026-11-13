@@ -133,14 +133,13 @@ int main(void) {
         HX_ASSERT(n > 0, "no info read for clip A");
         char *bar = strchr(buf, '|'); HX_ASSERT(bar != NULL, "the info read has no name");
         *bar = 0;
-        char *last = strrchr(buf, ' ');                  /* Bars, End, then Shot before them */
-        HX_ASSERT(last, "the info read has no fields"); *last = 0; last = strrchr(buf, ' ');
-        *last = 0; last = strrchr(buf, ' ');
-        HX_ASSERT(last && atoi(last + 1) == 1, "the info read does not report Shot (the field before End)");
+        char *last = buf;                                /* Shot: field 26 (the UI's auParseInfo) */
+        for (int k = 0; k < 26 && last; k++) { last = strchr(last, ' '); if (last) last++; }
+        HX_ASSERT(last && atoi(last) == 1, "the info read does not report Shot (field 26)");
         n = hx_get_param(h, "t2_au_info_1", buf, (int)sizeof buf);
-        bar = strchr(buf, '|'); *bar = 0; last = strrchr(buf, ' '); *last = 0; last = strrchr(buf, ' ');
-        *last = 0; last = strrchr(buf, ' ');
-        HX_ASSERT(last && atoi(last + 1) == 0, "a Loop clip reports Shot");
+        bar = strchr(buf, '|'); *bar = 0; last = buf;
+        for (int k = 0; k < 26 && last; k++) { last = strchr(last, ' '); if (last) last++; }
+        HX_ASSERT(last && atoi(last) == 0, "a Loop clip reports Shot");
     }
 
     /* ==== 3. saved and loaded: os=1 on the Shot clip, none on the Loop one ==== */

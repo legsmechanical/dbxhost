@@ -57,6 +57,8 @@
 #define AU_BAR_TICKS       (4 * 96)     /* a bar, ticks (4/4 at PPQN) */
 #define AU_SPAN_MAX        (256 * AU_BAR_TICKS)   /* Bars: up to a clip's longest, 256 bars */
 #define AU_GAP             16           /* frames: the least a slice can be */
+#define AU_SPEED_MIN       250          /* Free's Speed, per mille: 25 % .. 400 % */
+#define AU_SPEED_MAX       4000
 #define AU_TAIL            128          /* frames: the fade back from a chop's end (~3 ms) */
 /* Vintage's pieces CROSSFADE: each fades in over this many output frames while
  * the one it cuts fades out (Josh, 2026-10-30, by ear on the device: "vintage
@@ -152,6 +154,12 @@ typedef struct {
     uint8_t      revrs;              /* Loop: the sample plays backwards */
     uint8_t      shot;               /* Audio: One-shot — the clip plays its length once per launch, then stops
                                       * (Josh, 2026-11-10: "it should be a clip bank setting") */
+    uint8_t      freerun;            /* Audio: FREE — launched with the clip, then Start..End plays at the
+                                      * sample's own speed x Speed, looping on itself: not fitted to the
+                                      * tempo, not cut or restarted by the clip (Josh, 2026-11-13: "a mode
+                                      * ... irrespective of the sequencer's timing"). Sync Pitch = Tape
+                                      * (speed and pitch together), anything else = Warp (time alone). */
+    uint16_t     speed_pm;           /* Free: Speed, per mille of the sample's own (AU_SPEED_*); 0 = 1000 */
     int16_t      nudge_ms;           /* Loop: the sample's start against the bar, -500..+500 ms */
     uint32_t     rot;                /* Loop: Shift — the clip's audio rotated this many ticks later inside
                                       * the loop, wrapping (taken mod the clip's length where it plays) */
@@ -300,6 +308,8 @@ typedef struct {
                               * into the Conductor's RESPONDER bank, then sets it back to 1 */
     uint8_t    mgain;        /* mute as a bus: 0..64, the output's level, ramping one step a frame */
     int8_t     cond;         /* Loop: the Conductor's semitones in force (Next: taken at the wrap) */
+    uint8_t    free_on;      /* Free: the clip's run has started (its launch tick played) */
+    double     free_ph;      /* Free Warp: where it is in Start..End, 0..1 (the stretcher's clock) */
     /* THE LEAD: what the sequencer plays here is heard LEAD_FRAMES later, with
      * the MIDI the lead holds (LEAD_BLOCKS); a pad's voice is not delayed */
     int32_t    dl[LEAD_FRAMES * 2];

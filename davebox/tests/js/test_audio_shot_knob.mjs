@@ -51,8 +51,10 @@ async function main() {
     const T = 4;
     const shotSets = () => sets.filter(([k]) => k === 't' + T + '_au_set_shot').map(([, v]) => v);
     /* the clip's info is the engine's, refreshed each tick: hold it as the engine would report */
-    let shot = 0;
-    const info = () => { S.auInfo[T] = S.auInfo[T] || []; S.auInfo[T][0] = { state: 2, mode: 0, name: 'Break.wav', nframes: 44100, rate: 44100, ch: 1, bpm10: 1200, rot: 0, shot }; };
+    let shot = 0, free = 0, speed = 1000, sync = 0;
+    const info = () => { S.auInfo[T] = S.auInfo[T] || []; S.auInfo[T][0] = { state: 2, mode: 0, name: 'Break.wav', nframes: 44100, rate: 44100, ch: 1, bpm10: 1200, rot: 0, shot, free, speed, sync, rstart: 0, cut: 0, pitch: 0, detune: 0, gain: 0 }; };
+    const freeSets = () => sets.filter(([k]) => k === 't' + T + '_au_set_free').map(([, v]) => v);
+    const speedSets = () => sets.filter(([k]) => k === 't' + T + '_au_set_speed').map(([, v]) => v);
     /* each gesture starts from a clean accumulator, as a fresh touch would */
     const turn = (dir, n) => { S.knobAccum[0] = 0; for (let i = 0; i < n; i++) { info(); S.knobAccelLast[0] = 0; cc(71, dir > 0 ? 1 : 127); } info(); };
 
@@ -104,13 +106,65 @@ async function main() {
         assert(A.auLoopBankCells(T)[0].text === 'Shot', 'the cell does not read Shot');
     });
 
-    step('...turned on further: nothing more (already Shot)', () => {
+    step('⭐ turned on further: Free (Josh, 2026-11-13: "a mode ... irrespective of the sequencer\'s timing" · "yep") — the cell reads it, Offset leaves (no grid to move against)', () => {
         sets.length = 0;
         note(0, 127); turn(1, 30); note(0, 0);
-        assert(!shotSets().length, 'sent again: ' + JSON.stringify(shotSets()));
+        assert(freeSets().length === 1 && freeSets()[0] === '0 1' && !shotSets().length, 'Free not sent once: ' + JSON.stringify(sets));
+        shot = 0; free = 1; info();
+        const cells = A.auLoopBankCells(T);
+        assert(cells[0].text === 'Free' && cells[0].options.join() === 'Loop,Shot,Free', 'the cell does not read Free: ' + JSON.stringify(cells[0]));
+        assert(cells[2].kind === 'blank', 'a Free clip shows Offset: ' + JSON.stringify(cells[2]));
+        sets.length = 0;
+        note(0, 127); turn(1, 30); note(0, 0);
+        assert(!freeSets().length && !shotSets().length, 'past Free it sent more: ' + JSON.stringify(sets));
     });
 
-    step('⭐ turned left: Loop again', () => {
+    step('⭐ Free: Strch x2 halves the Speed (twice as long), /2 doubles it; the clip\'s Length is not touched', () => {
+        S.clipLength[T][0] = 16;
+        sets.length = 0;
+        A.auClipBankKnob(T, 1, 1);
+        assert(speedSets().join() === '0 500' && S.clipLength[T][0] === 16, 'x2 on Free: ' + JSON.stringify(sets));
+        speed = 500; info();
+        sets.length = 0;
+        A.auClipBankKnob(T, 1, -1);
+        assert(speedSets().join() === '0 1000', '/2 on Free: ' + JSON.stringify(sets));
+        speed = 1000; info();
+        assert(!A.auClipBankKnob(T, 2, 1), 'Offset turned on a Free clip');
+    });
+
+    step('⭐ Free: SAMPLE page 2 is Speed mode (Warp · Tape), Pitch, Detune, Gain, Speed, Revrs — no Bars (Josh: "why not keep sync? it\'d basically allow pitch and time to work independently")', () => {
+        const p2 = A.auSampleP2Cells(T, 0);
+        assert(p2.map((x) => x.label || '').join() === 'Spd Md,Pitch,Detune,Gain,Speed,,Revrs,', 'page 2 on Free: ' + p2.map((x) => x.label).join());
+        assert(p2[0].text === 'Warp' && p2[4].text === '100%', 'Free\'s readings: ' + p2[0].text + ' ' + p2[4].text);
+        sets.length = 0;
+        A.auSampleP2Knob(T, 0, 1, 1);
+        assert(sets.some(([k, v]) => k === 't' + T + '_au_set_sync' && v === '0 2'), 'Speed mode right is not Tape (Sync Pitch): ' + JSON.stringify(sets));
+        sync = 2; info();
+        assert(A.auSampleP2Cells(T, 0)[0].text === 'Tape', 'the cell does not read Tape');
+        sets.length = 0;
+        assert(A.auSpeedTurn(T, 0, 3) && speedSets().join() === '0 1030', 'Speed: 1 % a detent: ' + JSON.stringify(sets));
+        S.shiftHeld = true; sets.length = 0; info();
+        A.auSpeedTurn(T, 0, 1);
+        S.shiftHeld = false;
+        assert(speedSets().join() === '0 1001', 'Speed with Shift: 0.1 % a detent: ' + JSON.stringify(sets));
+        info();
+        assert(!A.auBarsTurn(T, 0, 1), 'Bars turned on a Free clip');
+        /* the Track View's SAMPLE page: Speed mode and Speed for Sync and Tempo, no Nudge */
+        assert(A.auPanelPageName({ t: T, page: 0 }) === 'SAMPLE', 'the Track View page is not SAMPLE: ' + A.auPanelPageName({ t: T, page: 0 }));
+        const pc = A.auPanelCells({ t: T, page: 0 });
+        assert(pc[7].label === 'Speed' && pc[6].label === 'Spd Md' && pc[5].kind === 'blank', 'the Track View page on Free: ' + pc.map((x) => x.label).join());
+        sets.length = 0; info();
+        A.auPanelKnob({ t: T, page: 0 }, 7, 1);
+        assert(speedSets().length === 1 && !sets.some(([k]) => /set_bpm/.test(k)), 'the Track View K8 on Free is not Speed: ' + JSON.stringify(sets));
+        info();
+        sync = 0; info();
+    });
+
+    step('⭐ turned left from Free: Shot, then Loop', () => {
+        sets.length = 0;
+        note(0, 127); turn(-1, 30); note(0, 0);
+        assert(shotSets().join() === '0 1', 'Shot not sent from Free: ' + JSON.stringify(sets));
+        shot = 1; free = 0; info();
         sets.length = 0;
         note(0, 127); turn(-1, 30); note(0, 0);
         assert(shotSets().length === 1 && shotSets()[0] === '0 0', 'Loop not sent: ' + JSON.stringify(shotSets()));

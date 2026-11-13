@@ -957,6 +957,41 @@ step('⭐⭐ WAVE K4 Gain · K5 Pitch · K6 Detune (the clip\'s), read out in th
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; kindSync(); ticks(20);
 });
 
+step('⭐⭐ a Free clip on SAMPLE (Josh, 2026-11-13: "a mode ... irrespective of the sequencer\'s timing" · "yep"): K7 is Speed and reads out, no Tempo menu or Tempo lane, the view is Start..End with no beats, the Track View strip too', () => {
+    const was = GET['t4_au_info_0'];
+    S.clipLength[4][0] = 2; S.clipTPS[4][0] = 24;     /* a short clip: a Free clip's view does not follow it */
+    GET['t4_au_info_0'] = INFO24(0, 8, 0, 8, 50, 0).replace('|', ' 0 0 0 0 1 1000|');
+    kindSync(); ticks(2);
+    assert(A.auIsFree(A.auInfo(4, 0)) && A.auInfo(4, 0).speed === 1000, 'the info read does not give Free: ' + JSON.stringify(A.auInfo(4, 0)));
+    mapPad(2, 3); ticks(2);
+    const ed = S.auEditor;
+    assert(ed && ed.full, 'SAMPLE did not open zoomed out');
+    const [lo, hi] = E.auViewBounds(ed);
+    assert(lo === 0 && hi === 96000, 'a Free clip\'s view is not Start..End: ' + lo + '..' + hi);
+    reset();
+    note(6, 127);
+    S.knobAccelLast[6] = 0; cc(77, 1);
+    const tx = globalThis.__texts(() => shown());
+    assert(sent('t4_au_set_speed').join() === '0 1010' && !sent('t4_au_set_bpm').length, 'K7 on Free: ' + JSON.stringify(sentLike(/t4_/)));
+    assert(tx.indexOf('SPEED 101%') >= 0, 'Speed does not read out: ' + JSON.stringify(tx));
+    click(); ticks(1);
+    assert(!(ed.pick && ed.pick.tempo), 'touch K7 + click opened the Tempo menu on a Free clip');
+    note(6, 0);
+    if (ed.pick) { back(); ticks(1); }               /* (it is SAMPLE's own menu: Load · Trim · Normalize) */
+    assert(!ed.pick, 'the menu did not close');
+    /* no beats under the waveform: the rows under it are empty */
+    const f = shown();
+    let under = 0;
+    for (let x = 0; x < 128; x++) for (let y = 51; y < 54; y++) under += f[y * 128 + x] ? 1 : 0;
+    assert(under === 0, 'beats drawn under a Free clip\'s waveform: ' + under + ' px');
+    back(); ticks(2);
+    /* the Track View says so: "Free 100%" where a Loop clip says its Tempo */
+    const ov = globalThis.__texts(() => shown());
+    assert(!S.auEditor && ov.some((x) => /^FREE 100%/.test(x)), 'the Track View does not say Free: ' + JSON.stringify(ov.slice(0, 6)));
+    GET['t4_au_info_0'] = was; S.clipLength[4][0] = 16;
+    kindSync(); ticks(2);
+});
+
 step('⭐⭐ Delete + click on a grid page resets that page only: SLICE n, ALL SLICES with Shift, SAMPLE page 2 (Josh: "for multi-page banks, we should have delete+jog only reset the active page")', () => {
     GET['t4_au_info_0'] = INFO(1, 8); kindSync(); ticks(2);
     A.auSetSelSlice(4, 2);

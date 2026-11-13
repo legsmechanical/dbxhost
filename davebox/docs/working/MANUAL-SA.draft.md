@@ -1344,6 +1344,23 @@ the knob shows the value it is playing at and a sounding chop follows it; the se
 comes back on Stop. A lane on Revrs flips the loop at its step. A Slicer's sample is every
 clip's, so a lane only ever holds it while it plays — it never rewrites the setting.
 
+**A Free clip** (CLIP bank **Mode**: **Free**) plays off the sequencer's timing. Launched
+with the clip, it plays from Start, then loops **Start to End on its own** at the sample's own
+speed: the project's tempo, the clip's length and its loop round don't touch it, so a loop of
+any length drifts against the beat as it likes. Page 2 trades **Sync** and **Tempo** for:
+
+- **Spd Md** — how Speed works: **Warp** changes the time alone, at the same pitch; **Tape**
+  changes both together, as a tape does (faster is higher).
+- **Speed** — 25–400 % of the sample's own, 1 % a detent (**Shift**: 0.1 %). **K7** on page 1
+  turns it too.
+
+**Pitch** and **Detune** still tune it, so on **Warp**, time and pitch are fully apart.
+**Bars** is blank (there's no grid), and the waveform shows Start to End with no beats. The
+Tempo, Bars and Sync you had are kept, so switching back to **Loop** puts them where they
+were. **REMIX** works on bars, so it has nothing to do on a Free clip: its settings are kept
+and read **--**. A Warp start is about 15 ms after the launch (the stretcher needs a head
+start); a Tape start is on the launch.
+
 **Touch Tempo and click** (either page) for Tempo's menu:
 
 - **Fit to clip** (an Audio clip's) — sets **Bars** to the clip's length, so Start to End (or
@@ -1448,7 +1465,7 @@ chop with Shift, or SAMPLE's Gain, Pitch, Detune and Revrs.
 | Bank | Knobs |
 |---|---|
 | **CLIP**, Slicer | As a melodic clip's (**Res**, **Strch**, **Shift**, **InQnt**, **Crop›**, **Dir**), with **>Seq›** on K8 (touch, click): one step per chop, each at its place at the sample's **Tempo**, so the clip plays the sample back as it was — now as chops you can rearrange. A clip whose length you never set grows to hold all of it (a coarser resolution past 256 steps); a length you set stays, and the chops past it wait beyond the loop's end. No Legato: a step holds one chop |
-| **CLIP**, Audio | **Mode** · **Strch** · **Offset** (alt **Nudge**). **Mode** is **Loop** (the clip plays round and round) or **Shot**: a one-shot — launched, the clip plays its length once from its top, then stops, so it can be fired off like a sample; launch it again to replay it. Every other setting stays as it is when you switch. **Strch** works as a sequence's does, in audio, and **Offset** as a sequence's Shift. **Strch** x2 doubles the clip's Length and the sample's Tempo — the loop plays at half speed across twice the bars; /2 the reverse. With **Bars** set, Bars double instead of the Tempo, with the same result. Past 256 steps or the Tempo's range it says *BEAT STRETCH / EXPAND LIMIT* (or *COMPRESS LIMIT*). **Offset** moves the audio a step (of the clip's resolution) later or earlier inside the clip, wrapping round, and reads as a note value — *3/16* is three 1/16 steps in — the waveform and the pads turn with it, the beats staying where they are. **Nudge** moves the sample against the bar, 5 ms a detent (**Shift**: 1). The sound is SAMPLE's |
+| **CLIP**, Audio | **Mode** · **Strch** · **Offset** (alt **Nudge**). **Mode** is **Loop** (the clip plays round and round), **Shot**: a one-shot — launched, the clip plays its length once from its top, then stops, so it can be fired off like a sample; launch it again to replay it — or **Free**: launched, the sample loops Start to End on its own, off the sequencer's timing, at its **Speed** (see [SAMPLE](#75-audio)). Every other setting stays as it is when you switch. On **Free**, **Strch** x2 halves the Speed (/2 doubles it), and **Offset** is blank. **Strch** works as a sequence's does, in audio, and **Offset** as a sequence's Shift. **Strch** x2 doubles the clip's Length and the sample's Tempo — the loop plays at half speed across twice the bars; /2 the reverse. With **Bars** set, Bars double instead of the Tempo, with the same result. Past 256 steps or the Tempo's range it says *BEAT STRETCH / EXPAND LIMIT* (or *COMPRESS LIMIT*). **Offset** moves the audio a step (of the clip's resolution) later or earlier inside the clip, wrapping round, and reads as a note value — *3/16* is three 1/16 steps in — the waveform and the pads turn with it, the beats staying where they are. **Nudge** moves the sample against the bar, 5 ms a detent (**Shift**: 1). The sound is SAMPLE's |
 | **PAD MODE** (Slicer) | **Layout**: **4 Rows** or **16 Pads**, how the chops sit on the pads |
 | **LIVE ARP** | As on a melodic track, but **Step** replaces Oct: each repeat moves one chop up (or down), up to 15 |
 | **REMIX** (both) | Rearranges the loop as it plays — see [REMIX](#remix) below |

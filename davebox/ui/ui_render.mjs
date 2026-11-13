@@ -77,7 +77,7 @@ import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
 import { isSampledTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
          auPos, auLazyState, auSelSlice, auSampleP2Cells, AU_P2_TEMPO, AU_P2_BARS, AU_P2_REVRS, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells, rmxBankCells, rmxPresetLongName, rmxOrderMoved, RMX_CHOPS, rmxChopIndex, knobAltOnTrack, auAltBit,
          auPadModeCells, AU_NOTE_BASE,
-         auFmtTime, auEnd, auPlayedEnd, auBpm, auFpt, auLenTicks, auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
+         auFmtTime, auEnd, auPlayedEnd, auBpm, auFpt, auLenTicks, auIsFree, auSpeedText, auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
 import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
 import { drawAudioAsk } from './ui_dialogs.mjs';
 import { drawAudioChooser } from './ui_audio_chooser.mjs';
@@ -330,6 +330,7 @@ function drawAudioTrackRest(t) {
     /* a Loop clip says its sample's Tempo too (Josh, 2026-10-29: "LOOP 112") */
     const bpm = auBpm(i);
     const head = auIsSlice(i) ? 'Slice ' + (auSelSlice(t) + 1) + '/' + i.n + '  '
+        : auIsFree(i) ? 'Free ' + auSpeedText(i.speed) + '  '
         : 'Loop ' + (bpm ? (Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) + '  ' : ' ');
     ovwPrint(4, 9, head + auSampleName(t, c), 1);
     kitHudTap('Info', { left: head.trim() + ' · ' + auSampleName(t, c) });
@@ -349,9 +350,11 @@ function drawAudioTrackRest(t) {
         /* the clip, as SAMPLE shows it zoomed out: its bars across, the audio
          * where it lands at the sample's Tempo, empty past the file, the beats
          * under it and the playhead (Josh, 2026-10-29: "yep") */
-        const lo = i.rstart | 0, hi = Math.round(lo + auLenTicks(t, c, i) * auFpt(i));
-        drawAudioWave(t, c, 4, 49, 120, 6, { noMarks: true, clipTime: true, A: lo, B: Math.max(lo + 1, hi),   /* Josh, 2026-10-28: "no need to show slice points on the track overview waveform preview" */
-                                             beats: { origin: lo, fpb: 96 * auFpt(i), compact: true } });
+        /* (Free: Start..End, no beats — its own loop) */
+        const free = auIsFree(i);
+        const lo = i.rstart | 0, hi = free ? auPlayedEnd(t, c, i) : Math.round(lo + auLenTicks(t, c, i) * auFpt(i));
+        drawAudioWave(t, c, 4, 49, 120, 6, { noMarks: true, clipTime: !free, A: lo, B: Math.max(lo + 1, hi),   /* Josh, 2026-10-28: "no need to show slice points on the track overview waveform preview" */
+                                             beats: free ? null : { origin: lo, fpb: 96 * auFpt(i), compact: true } });
     }
 }
 
@@ -405,6 +408,7 @@ function drawAudioWaveEditor() {
         : S.knobTouched === 3 ? 'GAIN ' + sgn(i.gain | 0) + 'DB'
         : S.knobTouched === 4 ? 'PITCH ' + sgn(i.pitch | 0)
         : S.knobTouched === 5 ? 'DETUNE ' + sgn(i.detune | 0)
+        : S.knobTouched === 6 && auIsFree(i) ? 'SPEED ' + auSpeedText(i.speed)
         : S.knobTouched === 6 ? 'TEMPO ' + (bpm ? (Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) + ' BPM' : '--')
         : S.knobTouched === 7 ? 'REVRS ' + (i.revrs ? 'ON' : 'OFF') : '';
     /* the middle readout, lit like Start / End (it is only there while its
@@ -467,7 +471,7 @@ function drawAudioWaveEditor() {
         hudSampleWave(ed, i, sub === 'loop' ? { noMarks: true } : { faint: true });
         const p2 = auSampleP2Cells(t, c);
         drawKitPage(auSampleName(t, c), p2, false,
-                    S.knobTouched === AU_P2_TEMPO ? [['clk', 'tempo']] : [['jog', 'page']]);
+                    S.knobTouched === AU_P2_TEMPO && !auIsFree(i) ? [['clk', 'tempo']] : [['jog', 'page']]);
         /* Tempo and Bars framed together: the sample's own (Josh, 2026-11-13:
          * "they should both be in a shatter box or something that indicates
          * this is the original samples bars/tempo") */
@@ -490,10 +494,13 @@ function drawAudioWaveEditor() {
         if (zoomTxt) mid(zoomTxt);
         /* no cursor and no chops: they are Slice's (Josh, 2026-10-29: "chops
          * should just be completely invisible in loop mode") */
-        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, gain: i.gain | 0, noMarks: true, clipTime: true, edges: true, beats: { origin: i.rstart, fpb: 96 * auFpt(i) } });
+        /* Free: Start..End alone, no beats — it keeps no clip's time */
+        const free = auIsFree(i);
+        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, gain: i.gain | 0, noMarks: true, clipTime: !free, edges: true,
+                                              beats: free ? null : { origin: i.rstart, fpb: 96 * auFpt(i) } });
         hudSampleKnobs(ed, i, sub, null, false);
         /* touch Tempo: a click opens its menu (Fit to clip · Original tempo) */
-        drawKitHintRow(MV_FOOTER_Y, S.knobTouched === 6 ? [['clk', 'tempo'], ['jog', 'page']] : [['clk', 'menu'], ['jog', 'page']]);
+        drawKitHintRow(MV_FOOTER_Y, S.knobTouched === 6 && !free ? [['clk', 'tempo'], ['jog', 'page']] : [['clk', 'menu'], ['jog', 'page']]);
         return;
     }
     const mk = auMarks(t, c);

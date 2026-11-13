@@ -78,14 +78,18 @@ static uint64_t energy_after(hx_t *h, int c, int skip, int n) {
     return e;
 }
 /* the info read's field n from the END (0 = the last, before the name) */
-static unsigned info_back(hx_t *h, int c, int n) {
-    char buf[512], k[32];
+/* field `i` of clip c's info read, counted from the first (End is 27,
+ * Bars 28 — the UI's auParseInfo) */
+static unsigned info_at(hx_t *h, int c, int i) {
+    char buf[512], k[32], *p = buf;
     snprintf(k, sizeof k, "t2_au_info_%d", c);
     HX_ASSERT(hx_get_param(h, k, buf, (int)sizeof buf) > 0, "no info read");
     char *bar = strchr(buf, '|'); HX_ASSERT(bar, "the info read has no name"); *bar = 0;
-    while (n-- > 0) *strrchr(buf, ' ') = 0;
-    return (unsigned)strtoul(strrchr(buf, ' ') + 1, NULL, 10);
+    while (i-- > 0) { p = strchr(p, ' '); HX_ASSERT(p, "the info read is short"); p++; }
+    return (unsigned)strtoul(p, NULL, 10);
 }
+#define INFO_END  27
+#define INFO_BARS 28
 
 int main(void) {
     hx_t *h;
@@ -108,7 +112,7 @@ int main(void) {
     HX_ASSERT(cl->rend == 4410, "set_end did not reach the clip");
     au_range(cl, cl->smp, &rs, &re);
     HX_ASSERT(re == 4410, "au_range does not end at End");
-    HX_ASSERT(info_back(h, 0, 1) == 4410, "the info read does not report End before Bars");
+    HX_ASSERT(info_at(h, 0, INFO_END) == 4410, "the info read does not report End");
     hx_set_param(h, "t2_au_set_end", "0 0");
     au_range(cl, cl->smp, &rs, &re);
     HX_ASSERT(cl->rend == 0 && re == fr, "End 0 is not none");
@@ -136,11 +140,11 @@ int main(void) {
     /* ==== 2b. Bars: Start..End lasts them exactly, held, the Tempo following ==== */
     {
         clip_t *lc = &inst->tracks[2].clips[0];
-        HX_ASSERT(info_back(h, 0, 0) == 0, "a clip with no Bars reports some");
+        HX_ASSERT(info_at(h, 0, INFO_BARS) == 0, "a clip with no Bars reports some");
         hx_set_param(h, "t2_au_set_bpm", "0 900");      /* the knob's Tempo: ignored under Bars */
         hx_set_param(h, "t2_au_set_bars", "0 384");     /* 1 bar */
         HX_ASSERT(cl->rspan == 384, "set_bars did not reach the clip");
-        HX_ASSERT(info_back(h, 0, 0) == 384, "the info read does not report Bars as its last field");
+        HX_ASSERT(info_at(h, 0, INFO_BARS) == 384, "the info read does not report Bars");
         HX_ASSERT(fabs(au_fpt_s(cl, cl->smp) * 384.0 - 30000.0) < 1e-6, "Start..End does not last the Bars exactly");
         {   char buf[512]; int f = 0; char *q = buf;
             hx_get_param(h, "t2_au_info_0", buf, (int)sizeof buf);

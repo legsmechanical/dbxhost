@@ -67,7 +67,7 @@ import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLaz
          auSelSlice, auSetSelSlice, isSampledTrack, isSlicerTrack, auSeqClipOf, auEditTrim, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
          auMarkAdd, auMarkDel, auManual, auEvenBake, auTrans, auTransBake, auRangeStep, auSet, auEnd, auPanelRingCells, auPanelReset,
          auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_LAZY_ENDED, AU_EVEN_MAX, AU_BPM10_MIN, AU_BPM10_MAX, auLenTicks,
-         auSampleP2Cells, auSampleP2Knob, AU_P2_KNOB, AU_P2_BARS, auBarsTurn, auBpm, auSampleReset, auEdit, auTrimCuts, auOrig, auFit, auNudgeStep, auFpt, auPlayedEnd, auTooLongToChop, auAutoEdit, auAutoTouch, auSlicesAutoTouch, SLICE_GRID } from './ui_audio.mjs';
+         auSampleP2Cells, auSampleP2Knob, AU_P2_KNOB, AU_P2_BARS, auBarsTurn, auIsFree, auSpeedTurn, AU_SPEED_MIN, AU_SPEED_MAX, auBpm, auSampleReset, auEdit, auTrimCuts, auOrig, auFit, auNudgeStep, auFpt, auPlayedEnd, auTooLongToChop, auAutoEdit, auAutoTouch, auSlicesAutoTouch, SLICE_GRID } from './ui_audio.mjs';
 import { registerScreenRingCells } from './ui_knob_leds.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { ccKnobDelta, knobPick, KNOB_PICK, KNOB_DELIB } from './ui_input_cc.mjs';
@@ -226,7 +226,8 @@ export function auViewBounds(ed) {
     const sampleView = ed.ed !== 'slices' && !(ed.mode === 'chop' && ed.chop) && ed.mode !== 'lazy';
     if (sampleView && fr && i.state === 2) {
         const lo = i.rstart | 0;
-        const hi = Math.round(lo + auLenTicks(ed.t, ed.c, i) * auFpt(i));
+        /* Free: Start..End, its own loop — no clip window to fill */
+        const hi = auIsFree(i) ? auPlayedEnd(ed.t, ed.c, i) : Math.round(lo + auLenTicks(ed.t, ed.c, i) * auFpt(i));
         if (hi - lo >= MIN_SPAN) return [lo, hi];
     }
     if (fr && i.state === 2 && auIsSlice(i)) {
@@ -534,6 +535,7 @@ function clipStep(ed, field, dir) {
  * original tempo"). */
 function clipTempo(ed, dir) {
     const t = ed.t, c = ed.c, i = auInfo(t, c);
+    if (auIsFree(i)) return auSpeedTurn(t, c, dir);          /* Free: the knob is Speed */
     /* from the Tempo it plays at: with Bars set, the one they make — and a
      * turn hands the Tempo back the say (Bars then read what it makes) */
     const cur = Math.round(auBpm(i) * 10) || 1200;
@@ -719,7 +721,8 @@ export function audioEditorInput(status, d1, d2) {
              * the lane off / on — as a bank knob's touch does */
             /* ...and SLICES' with Shift held: ALL SLICES' (a single chop's own
              * sound is not automated) */
-            const af = sampleAutoField(d1, plain, p2, sl, slEdit);
+            let af = sampleAutoField(d1, plain, p2, sl, slEdit);
+            if (af === 'bpm10' && auIsFree(auInfo(ed.t, ed.c))) af = null;   /* Free: that knob is Speed */
             const asf = !af && S.shiftHeld && ((p2 && sl) || (slEdit && d1 > 2)) ? SLICE_GRID[d1] : null;
             const akey = af ? auAutoKey(af) : asf ? auSlicesAutoKey(asf) : null;
             if (akey) {
@@ -928,7 +931,7 @@ export function audioEditorInput(status, d1, d2) {
         /* touch Tempo + click, on either page of SAMPLE: Tempo's menu — Fit
          * to clip (a Loop clip's) · Original tempo (Josh, 2026-11-02: "both
          * on a small pop-up menu that shows when you touch click tempo") */
-        if (!sl && plain && S.knobTouched === (p2 ? 4 : 6)) {
+        if (!sl && plain && S.knobTouched === (p2 ? 4 : 6) && !auIsFree(auInfo(ed.t, ed.c))) {
             auAutoTouch(ed.t, ed.c, 'bpm10', false);           /* the menu takes the knob's release */
             ed.pick = { level: 1, sel: 0, tempo: true };
             return true;
@@ -1113,14 +1116,16 @@ export function waveRingCells(ed) {
     const slp = ed.ed === 'slices' && sub === 'chop' && !kind;
     const slRings = () => auPanelRingCells({ t: ed.t, page: S.shiftHeld ? 0 : 1 });
     if (slp && ed.page === 1) return slRings();
+    const free = auIsFree(i);
     const sampleRings = () => [at(((i.gain | 0) + 40) / 52), at(((i.pitch | 0) + 24) / 48), at(((i.detune | 0) + 50) / 100),
-                               at(((Math.round(auBpm(i) * 10) || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN)), at(i.revrs ? 1 : 0)];
+                               free ? at(((i.speed || 1000) - AU_SPEED_MIN) / (AU_SPEED_MAX - AU_SPEED_MIN))
+                                    : at(((Math.round(auBpm(i) * 10) || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN)), at(i.revrs ? 1 : 0)];
     if (!kind && ed.page === 1) {
         /* page 2 (AU_P2_KNOB): Sync, Pitch, Detune, Gain, Tempo, Bars, Revrs
          * — lit where a knob works */
         const cells = auSampleP2Cells(ed.t, ed.c), sr = sampleRings();
         const slc = isSlicerTrack(ed.t), bc = cells[AU_P2_BARS];
-        return [cells[0] && cells[0].kind !== 'blank' ? at((cells[0].sel | 0) / (slc ? 1 : 2)) : null, sr[1], sr[2], sr[0], sr[3],
+        return [cells[0] && cells[0].kind !== 'blank' ? at((cells[0].sel | 0) / (slc || free ? 1 : 2)) : null, sr[1], sr[2], sr[0], sr[3],
                 bc && bc.kind !== 'blank' ? at(bc.norm || 0) : null, sr[4], null];
     }
     let a = i.rstart, b = auEnd(i);
