@@ -133,7 +133,18 @@ int main(void) {
             }
             hx_destroy(h);
         }
-        printf("  ok   — Tempo Pitch: Fwd, Bwd, PPf, PPb pass by pass; `pos` says which way\n");
+        /* with an Offset the sample's top is not the pass's: the voice still
+         * turns where the pass does */
+        h = rig(AU_SYNC_PITCH, AU_DIR_PPF);
+        inst = (seq8_instance_t *)h->inst;
+        hx_set_param(h, "t4_au_set_rot", "0 96");               /* a beat in */
+        play(h);
+        to_pass(h, 0);
+        HX_ASSERT(loop_way(h) == 1, "Tempo Pitch PPf + Offset: the first pass is not forwards");
+        to_pass(h, 1);
+        HX_ASSERT(loop_way(h) == -1, "Tempo Pitch PPf + Offset: the voice did not turn where the pass does");
+        hx_destroy(h);
+        printf("  ok   — Tempo Pitch: Fwd, Bwd, PPf, PPb pass by pass (with an Offset too); `pos` says which way\n");
     }
 
     /* ==== 2. Vintage: the second pass's pieces go backwards ==== */
@@ -212,6 +223,16 @@ int main(void) {
         HX_ASSERT(fabs(x - 30.0) < 1e-9 && rev == 0, "Warp map: the first half is not forwards");
         x = au_warp_pos(&W, 130.0, &g, &rev);
         HX_ASSERT(fabs(x - 30.0) < 1e-9 && rev == 1, "Warp map: the second half is not the first backwards");
+        /* through a REMIX, on a clip not a whole bar long: the second half's
+         * bar grid is the pass's own (one event: slot 0 for the bar) */
+        W.cur.L = 400; W.cur.Lp = 200; W.cur.re = 1200; W.cur.P = 200;
+        W.cur.rmx_gen = 1; W.rmx_have = 1; W.rmx_n = 1;
+        memset(&W.rmx_e[0], 0, sizeof W.rmx_e[0]);
+        W.rmx_e[0].gate = 100000; W.rmx_e[0].vel = 100;
+        for (int k = 0; k < AU_RMX_BAR; k++) W.rmx_tab[k] = 0;
+        x = au_warp_pos(&W, 210.0, &g, &rev);
+        HX_ASSERT(fabs(x - 10.0) < 1e-9 && rev == 1, "Warp map: the second pass's REMIX did not start its bar at the pass");
+        W.cur.rmx_gen = 0; W.cur.L = 200; W.cur.Lp = 100; W.cur.re = 1100; W.cur.P = 100;
         W.cur.dir = AU_DIR_PPB;
         au_warp_pos(&W, 30.0, &g, &rev);
         HX_ASSERT(rev == 1, "Warp map: PPb's first half is not backwards");
@@ -219,6 +240,25 @@ int main(void) {
         au_warp_pos(&W, 130.0, &g, &rev);
         HX_ASSERT(rev == 0, "Warp map: Fwd turned round");
         printf("  ok   — Warp PPf: the stretcher's loop is both passes, the second backwards\n");
+    }
+
+    /* ==== 3b. a streamed sample under Warp PPf: the streamer reads ahead
+     * the way the pass goes ==== */
+    {
+        int was = au_stream_sec;
+        au_stream_sec = 1;                       /* the 2 s ramp streams */
+        h = rig(AU_SYNC_WARP, AU_DIR_PPF);
+        inst = (seq8_instance_t *)h->inst;
+        HX_ASSERT(au_cl(inst, 4, 0)->smp && !au_cl(inst, 4, 0)->smp->pcm, "stream rig: the sample is not streamed");
+        play(h);
+        to_pass(h, 0);
+        int32_t sp0 = __atomic_load_n(&inst->au_watch[4][AU_VOICES].speed, __ATOMIC_RELAXED);
+        to_pass(h, 1);
+        int32_t sp1 = __atomic_load_n(&inst->au_watch[4][AU_VOICES].speed, __ATOMIC_RELAXED);
+        HX_ASSERT(sp0 > 0 && sp1 < 0, "Warp PPf streamed: the read-ahead does not follow the pass's way");
+        hx_destroy(h);
+        au_stream_sec = was;
+        printf("  ok   — a streamed Warp PPf reads ahead the way each pass goes\n");
     }
 
     /* ==== 4. Free Tape: a ping-pong turns at End ==== */
@@ -281,7 +321,11 @@ int main(void) {
         HX_ASSERT(au_cl(inst, 4, 0)->dir == AU_DIR_PPB, "reloaded: Dir lost");
         hx_destroy(h);
         h = hx_create(NULL); inst = (seq8_instance_t *)h->inst;
+        snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
         hx_set_param(h, "t4_convert_to_slicer", "");
+        snprintf(p, sizeof p, "%d|%s/src/ramp.wav", AU_SLC, g_root);
+        hx_set_param(h, "t4_au_pick", p);
+        HX_ASSERT(wait_loaded(h, 4, AU_SLC) == 2, "Slicer rig: the sample did not load");
         hx_set_param(h, "t4_au_set_dir", "16 1");
         HX_ASSERT(au_cl(inst, 4, AU_SLC)->dir == 0, "a Slicer's slot took a Dir");
         hx_destroy(h);
