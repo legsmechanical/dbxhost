@@ -152,7 +152,9 @@ typedef struct {
     int8_t       pitch;              /* -24..+24 st */
     int8_t       detune;             /* -50..+50 cents, on top of pitch */
     int8_t       gain_db;            /* -40..+12 dB */
-    uint8_t      revrs;              /* Loop: the sample plays backwards */
+    uint8_t      dir;                /* Loop: Dir, as a MIDI clip's (AU_DIR_*): Fwd, Bwd (the sample backwards),
+                                      * PPf / PPb (a pass each way in turn). Shot plays one pass: a ping-pong
+                                      * plays its first direction (au_dir) */
     uint8_t      shot;               /* Audio: One-shot — the clip plays its length once per launch, then stops
                                       * (Josh, 2026-11-10: "it should be a clip bank setting") */
     uint8_t      freerun;            /* Audio: FREE — launched with the clip, then Start..End plays at the
@@ -178,13 +180,13 @@ typedef struct {
     uint32_t     hc_gen, hc_rs, hc_re, hc_n;
     int16_t      hc_sens;
     /* AUTOMATION's live values: what a playing lane holds Pitch, Detune,
-     * Gain, Revrs and Tempo at (pa_seq_apply), over the clip's own settings,
+     * Gain, Dir and Tempo at (pa_seq_apply), over the clip's own settings,
      * which stay as they were. Bit AU_OV_* set = that one is held. Never
      * saved; the clip's own setting takes over again when its lane gives the
      * value back, a hand sets it, or the clip stops being the playing one. */
     uint8_t      ov;
     int8_t       ov_pitch, ov_detune, ov_gain;
-    uint8_t      ov_revrs;
+    uint8_t      ov_dir;
     uint16_t     ov_bpm10;
     /* ...and ALL SLICES' (Attack, Decay, Gain, Pitch, Detune, Rev, Play):
      * every chop of the clip plays at the lane's value over its own (AU_OVS_*) */
@@ -198,7 +200,7 @@ typedef struct {
 #define AU_OV_PITCH     0x01
 #define AU_OV_DETUNE    0x02
 #define AU_OV_GAIN      0x04
-#define AU_OV_REVRS     0x08
+#define AU_OV_DIR       0x08
 #define AU_OV_BPM       0x10
 #define AU_OVS_ATK      0x01
 #define AU_OVS_DEC      0x02
@@ -230,6 +232,7 @@ typedef struct {
     uint32_t rel_wait;       /* output frames before that release begins (on its tick's frame) */
     uint32_t wait;           /* output frames of silence before it starts (Loop Nudge later; a slice's tick frame) */
     uint8_t  active, loop, mode_loop, slice;
+    uint8_t  pp;             /* a Free Tape loop ping-pongs: it turns at Start and End instead of wrapping */
     uint8_t  tail;           /* in the fade back from its end */
     int8_t   cond;           /* the Conductor's semitones its step holds (au_cond_now) */
     uint8_t  gated;          /* GATE / LOOP: ends at note-off */
@@ -310,7 +313,11 @@ typedef struct {
     uint8_t    mgain;        /* mute as a bus: 0..64, the output's level, ramping one step a frame */
     int8_t     cond;         /* Loop: the Conductor's semitones in force (Next: taken at the wrap) */
     uint8_t    free_on;      /* Free: the clip's run has started (its launch tick played) */
-    double     free_ph;      /* Free Warp: where it is in Start..End, 0..1 (the stretcher's clock) */
+    double     free_ph;      /* Free Warp: where it is in Start..End, 0..1 (the stretcher's clock);
+                              * a ping-pong's 0..1 is both passes, there and back */
+    uint32_t   pass;         /* Loop: the passes of the clip since it started (a ping-pong's direction) */
+    uint8_t    pass_clip;    /* ...the clip they count for */
+    uint8_t    rnow;         /* Loop: it plays backwards now (the pass's direction; read by the UI) */
     double     free_left;    /* Free + Shot: how much of one pass of Start..End is still to play
                               * (1 at the launch); at 0 the clip stops */
     /* THE LEAD: what the sequencer plays here is heard LEAD_FRAMES later, with

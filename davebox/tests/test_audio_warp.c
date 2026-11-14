@@ -304,10 +304,10 @@ int main(void) {
 
     /* ---- Revrs: the sample backwards, so the tone on 2 and 4 ---- */
     hx_set_param(h, "bpm", "90");
-    hx_set_param(h, "t4_au_set_revrs", "0 1");
+    hx_set_param(h, "t4_au_set_dir", "0 1");
     g = record(h, (int)(2 * 4 * SR * 60.0 / 90 / 128) + 8);
     for (i = 0; i < 2; i++) check_bar(g, 90, i, 0xA, 440, "Warp Revrs");
-    hx_set_param(h, "t4_au_set_revrs", "0 0");
+    hx_set_param(h, "t4_au_set_dir", "0 0");
 
     /* ---- Pitch +12: an octave up, in the same place ---- */
     hx_set_param(h, "t4_au_set_pitch", "0 12");

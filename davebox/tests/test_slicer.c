@@ -338,7 +338,7 @@ int main(void) {
         hx_set_param(h, "t6_au_layout", "1");
         hx_set_param(h, "bpm", "121");
         n = hx_get_param(h, "state_full", blob, (int)sizeof blob);
-        HX_ASSERT(n > 0 && strstr(blob, "\"t6_pm\":4") && strstr(blob, "\"t6_slc\":\"p=0 dt=0 g=0 rv=0 bpm=0 sy=0 sens=50 lay=1 n=1|\""),
+        HX_ASSERT(n > 0 && strstr(blob, "\"t6_pm\":4") && strstr(blob, "\"t6_slc\":\"p=0 dt=0 g=0 bpm=0 sy=0 sens=50 lay=1 n=1|\""),
                   "file: a Slicer with no sample did not save its line");
         /* a chop's sound belongs to its number: past the count it is kept
          * (an Even of more chops later brings it back) */

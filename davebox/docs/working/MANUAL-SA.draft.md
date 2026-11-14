@@ -1245,8 +1245,8 @@ clip plays the part of the sample under those steps, laid over it from Start at 
 Tempo — on the SAMPLE screen too.
 
 **The pads** show where the loop is: the clip in 32 even sections, one a pad, dim in the
-track colour, the sections played this time round bright, the one playing pulsing. In
-**Revrs** they fill from the end. Stopped, all dim. Sections past the end of the sample
+track colour, the sections played this time round bright, the one playing pulsing. On a
+pass that plays backwards they fill from the end. Stopped, all dim. Sections past the end of the sample
 show grey — the clip never plays them. Tapping one does nothing. **The steps** show where
 the loop is too: dim, the playhead white, following it page by page while it plays. An
 Audio clip has no sequence, so no STEP, NOTE FX or PAD MODE bank.
@@ -1331,7 +1331,7 @@ of four, each setting on the same knob as on page 1 where page 1 has it:
 |---|---|---|---|---|
 | **TIME**, top row | **Sync** | **Warp** | **Nudge** | **Offset** |
 | **TIME**, bottom row | | | **Tempo** | **Bars** |
-| **SOUND**, bottom row | **Pitch** | **Detune** | **Revrs** | **Gain** |
+| **SOUND**, bottom row | **Pitch** | **Detune** | | **Gain** |
 
 (SOUND's top row is empty.)
 
@@ -1365,10 +1365,10 @@ For a sample that isn't neatly cut: set **Start** on the first beat, **End** whe
 repeats, then **Bars** to how long that is. The clip's length is separate — make it as long
 as you want the clip to run.
 
-**Gain, Pitch, Detune, Tempo and Revrs can be automated** like any knob (see
+**Gain, Pitch, Detune, Tempo and the CLIP bank's Dir can be automated** like any knob (see
 [Automation](#10-automation)): record them, or hold a step and turn. While a lane plays,
 the knob shows the value it is playing at and a sounding chop follows it; the setting
-comes back on Stop. A lane on Revrs flips the loop at its step. A Slicer's sample is every
+comes back on Stop. A lane on Dir turns the loop round at its step. A Slicer's sample is every
 clip's, so a lane only ever holds it while it plays — it never rewrites the setting.
 
 **A Free clip** (TIME page **Sync**: **Free**) plays off the sequencer's timing. Launched
@@ -1430,7 +1430,7 @@ when copied or when the library changes. **None** clears the clip — on a Slice
 first (*the sample and its chops go; the steps stay*). An Audio clip takes samples up to
 30 minutes; a Slicer up to 4. A sample longer than a minute plays from the card as it
 goes, so a long one costs little memory. Starting the transport partway through an Audio
-clip, turning Revrs on or moving Start or Length while it plays can leave a few
+clip, changing Dir or moving Start or Length while it plays can leave a few
 milliseconds of silence before it comes in, on time. A sample whose file has gone reads
 *Missing: name* and stays silent.
 
@@ -1493,8 +1493,8 @@ The sample's settings live in SAMPLE and SLICES, as an instrument's live in its 
 or hold steps, **Record**, and **hold a step + jog right** for its step page. On a grid page
 (any page after the first), **Delete + click** resets that page's knobs — the picked chop,
 every chop with Shift; SAMPLE's TIME back to Sync Grid, Warp Warp (a Slicer's Off), Nudge 0
-and Offset 0 (the Tempo and Bars are the sample's own and stay); or SOUND's Gain, Pitch,
-Detune and Revrs. A reset takes the automation lanes of what it reset with it (every
+and Offset 0 (the Tempo and Bars are the sample's own and stay); or SOUND's Gain, Pitch
+and Detune. A reset takes the automation lanes of what it reset with it (every
 chop's, on Shift's page), and one **Undo** brings it all back.
 
 ### The banks
@@ -1502,7 +1502,7 @@ chop's, on Shift's page), and one **Undo** brings it all back.
 | Bank | Knobs |
 |---|---|
 | **CLIP**, Slicer | As a melodic clip's (**Res**, **Strch**, **Shift**, **InQnt**, **Crop›**, **Dir**), with **>Seq›** on K8 (touch, click): one step per chop, each at its place at the sample's **Tempo**, so the clip plays the sample back as it was — now as chops you can rearrange. A clip whose length you never set grows to hold all of it (a coarser resolution past 256 steps); a length you set stays, and the chops past it wait beyond the loop's end. No Legato: a step holds one chop |
-| **CLIP**, Audio | **Mode** · **Strch**; everything else about the sample is on [SAMPLE](#75-audio)'s pages. **Mode** is **Loop** (the clip plays round and round) or **Shot**: a one-shot — launched, the clip plays its length once from its top, then stops, so it can be fired off like a sample; launch it again to replay it. Every other setting stays as it is when you switch. **Strch** works as a sequence's does, in audio: x2 doubles the clip's Length and the sample's Tempo — the loop plays at half speed across twice the bars; /2 the reverse. With **Bars** set, Bars double instead of the Tempo, with the same result. On a **Free** clip **Strch** x2 halves the Speed (/2 doubles it). Past 256 steps or the Tempo's range it says *BEAT STRETCH / EXPAND LIMIT* (or *COMPRESS LIMIT*). Touch **Strch** and the clip's waveform comes up over the bank while you hold it (not on a Free clip). **Delete + click** puts Mode back to Loop |
+| **CLIP**, Audio | **Mode** · **Strch** · **K7 Dir**; everything else about the sample is on [SAMPLE](#75-audio)'s pages. **Dir** is a MIDI clip's: **Fwd**, **Bwd** (the sample backwards), **PPf** and **PPb** (ping-pong: a pass forwards, the next backwards, in turn — PPb starts backwards). A Shot plays one pass, so it offers Fwd and Bwd alone; a ping-pong set before plays as its first way, and comes back when you switch to Loop. **Mode** is **Loop** (the clip plays round and round) or **Shot**: a one-shot — launched, the clip plays its length once from its top, then stops, so it can be fired off like a sample; launch it again to replay it. Every other setting stays as it is when you switch. **Strch** works as a sequence's does, in audio: x2 doubles the clip's Length and the sample's Tempo — the loop plays at half speed across twice the bars; /2 the reverse. With **Bars** set, Bars double instead of the Tempo, with the same result. On a **Free** clip **Strch** x2 halves the Speed (/2 doubles it). Past 256 steps or the Tempo's range it says *BEAT STRETCH / EXPAND LIMIT* (or *COMPRESS LIMIT*). Touch **Strch** and the clip's waveform comes up over the bank while you hold it (not on a Free clip). **Delete + click** puts Mode back to Loop and Dir to Fwd |
 | **PAD MODE** (Slicer) | **Layout**: **4 Rows** or **16 Pads**, how the chops sit on the pads |
 | **LIVE ARP** | As on a melodic track, but **Step** replaces Oct: each repeat moves one chop up (or down), up to 15 |
 | **REMIX** (both) | Rearranges the loop as it plays — see [REMIX](#remix) below |
@@ -1555,7 +1555,7 @@ so it isn't applied twice.
 - An **Audio** clip onto an Audio clip carries its sample and settings.
 - An **Audio** clip onto a **Slicer that has no sample** gives the Slicer that sample: the
   part the clip plays is cut into 16 even chops and laid on the clip's steps in order, so
-  it sounds just as the loop did — then move them around. Pitch, Detune, Gain, Revrs and
+  it sounds just as the loop did — then move them around. Pitch, Detune, Gain and
   Tempo come too; Warp Pitch stays Pitch, Warp and Vintage become Off. A Slicer that has a
   sample refuses it (*CAN'T PASTE*): clear it with **None** first.
 - A **Slicer's** clip onto another Slicer's carries its steps (and its automation) — they
@@ -1892,7 +1892,7 @@ lane does what its **Wrap** says (below).
 **MIX** and in the session mixer, the eight **MACROS**, and these
 dAVEBOx bank knobs — CLIP and ALL LANES direction, NOTE FX (all but `LEN>`),
 HARMONY, DELAY, and SEQ ARP (all but `STEPS`) — and an Audio clip's **Gain**, **Pitch**,
-**Detune**, **Tempo** and **Revrs** on SAMPLE (listed as **Smp>Gain** and so on) and its
+**Detune** and **Tempo** on SAMPLE and **Dir** on its CLIP bank (listed as **Smp>Gain** and so on) and its
 **ALL SLICES** settings on SLICES (**Slcs>Attack** …); holding one of their steps opens
 that editor. On a drum track, NOTE FX is set per
 lane and isn't automated. See [Parameter banks](#36-parameter-banks) and

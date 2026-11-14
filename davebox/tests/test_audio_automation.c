@@ -159,20 +159,20 @@ int main(void) {
         printf("  ok   — Gain plays live over the clip's own; nothing stored or dirtied; Stop gives it back\n");
     }
 
-    /* ==== 2. Revrs: the loop turns round at its step ==== */
+    /* ==== 2. Dir: the loop turns round at its step ==== */
     {
         h = rig(AU_SYNC_PITCH); inst = (seq8_instance_t *)h->inst; cl = au_cl(inst, 4, 0);
-        lane(h, "au_revrs", 0, 1, 0, 4, 1);
+        lane(h, "au_dir", 0, 3, 0, 4, 1);
         play(h);
         to_step(h, 2);
         const au_voice_t *lv = loop_voice(&inst->au_trk[4]);
-        HX_ASSERT(lv && lv->step > 0, "revrs: rig — the loop is not playing forwards before the lane's step");
+        HX_ASSERT(lv && lv->step > 0, "dir: rig — the loop is not playing forwards before the lane's step");
         to_step(h, 5);
         lv = loop_voice(&inst->au_trk[4]);
-        HX_ASSERT(cl->revrs == 0 && (cl->ov & AU_OV_REVRS) && cl->ov_revrs == 1, "revrs: not held live (or stored)");
-        HX_ASSERT(lv && lv->step < 0, "revrs: the loop did not turn round at the lane's step");
+        HX_ASSERT(cl->dir == 0 && (cl->ov & AU_OV_DIR) && cl->ov_dir == 1, "dir: Bwd not held live (or stored)");
+        HX_ASSERT(lv && lv->step < 0, "dir: the loop did not turn round at the lane's step");
         hx_destroy(h);
-        printf("  ok   — Revrs turns the loop round at its step; the clip's own stays forwards\n");
+        printf("  ok   — Dir Bwd turns the loop round at its step; the clip's own stays Fwd\n");
     }
 
     /* ==== 3. Tempo: Sync follows the lane's tempo ==== */
@@ -233,7 +233,7 @@ int main(void) {
         au_voice_follow(inst, 4);
         HX_ASSERT(fabs(v->step / s0 - 1.0) < 1e-6 && fabsf(v->gain - g0) < 1e-6f, "follow: the chop did not come back");
         /* Tempo Pitch's loop: its speed is the tempo's */
-        au_loop_start(inst, 4, 0, 0, 1.25);
+        au_loop_start(inst, 4, 0, 0, 1.25, 0);
         const au_voice_t *lv = loop_voice(&inst->au_trk[4]);
         HX_ASSERT(lv && !lv->fpitch, "follow: a Tempo Pitch loop is marked to follow Pitch");
         cl->ov |= AU_OV_PITCH; cl->ov_pitch = 12;
@@ -265,7 +265,7 @@ int main(void) {
             pa_seq_apply(inst, 4, i, 16383, tr->active_clip);
         }
         cl = au_cl(inst, 4, tr->active_clip);
-        HX_ASSERT(cl->ov == 0 && cl->pitch == 24 && cl->detune == 50 && cl->gain_db == 12 && cl->revrs == 1 && cl->bpm10 == 9999,
+        HX_ASSERT(cl->ov == 0 && cl->pitch == 24 && cl->detune == 50 && cl->gain_db == 12 && cl->dir == AU_DIR_PPB && cl->bpm10 == 9999,
                   "a rest did not write each field and drop its live value");
         hx_destroy(h);
         printf("  ok   — au_ keys apply on Audio tracks only; each reads back both ends; rest writes the clip\n");

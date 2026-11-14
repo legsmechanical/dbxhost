@@ -241,7 +241,24 @@ static float au_db(int db) {
 static inline int au_pitch(const au_clip_t *cl)  { return (cl->ov & AU_OV_PITCH)  ? cl->ov_pitch  : cl->pitch; }
 static inline int au_detune(const au_clip_t *cl) { return (cl->ov & AU_OV_DETUNE) ? cl->ov_detune : cl->detune; }
 static inline int au_gain(const au_clip_t *cl)   { return (cl->ov & AU_OV_GAIN)   ? cl->ov_gain   : cl->gain_db; }
-static inline int au_revrs(const au_clip_t *cl)  { return (cl->ov & AU_OV_REVRS)  ? cl->ov_revrs  : cl->revrs; }
+/* Dir (AU_DIR_*): a Shot plays one pass, so a ping-pong plays its first direction */
+#define AU_DIR_FWD  0
+#define AU_DIR_BWD  1
+#define AU_DIR_PPF  2
+#define AU_DIR_PPB  3
+static inline int au_dir(const au_clip_t *cl) {
+    int d = (cl->ov & AU_OV_DIR) ? cl->ov_dir : cl->dir;
+    return (cl->shot && d >= AU_DIR_PPF) ? d - AU_DIR_PPF : d;
+}
+static inline int au_pp(const au_clip_t *cl) { return au_dir(cl) >= AU_DIR_PPF; }
+/* backwards on pass `pass` (0 = the first after the launch) */
+static inline int au_rev_pass(int d, uint32_t pass) {
+    return d == AU_DIR_BWD || (d == AU_DIR_PPF && (pass & 1)) || (d == AU_DIR_PPB && !(pass & 1));
+}
+/* backwards on the first pass: what a start, a render or a stopped clip goes by */
+static inline int au_rev0(const au_clip_t *cl) { return au_rev_pass(au_dir(cl), 0); }
+/* a cycle of clip ticks in pass-length L: a ping-pong's is both passes */
+static inline int au_rev_cyc(int d, double T, double L) { return au_rev_pass(d, T >= L ? 1u : 0u); }
 static inline unsigned au_bpm10(const au_clip_t *cl) { return (cl->ov & AU_OV_BPM) ? cl->ov_bpm10 : cl->bpm10; }
 /* Chop k's sound as it plays: its own, with ALL SLICES' lanes over it (ovs). */
 static inline void au_sl_eff(const au_clip_t *cl, int k, au_slice_t *o) {
@@ -1384,7 +1401,9 @@ typedef struct {
     uint32_t           seq;           /* odd while the audio thread writes */
     const au_sample_t *smp;
     uint32_t           rs, re;
-    double             P, L;          /* the sample's own span and the clip's length, ticks */
+    double             P, L;          /* the sample's own span and the clip's cycle, ticks: its length, a
+                                       * ping-pong's twice that (both passes) */
+    double             Lp;            /* one pass: the clip's length */
     double             fpt;           /* output frames per tick (the tempo) */
     double             nud;           /* Nudge, ticks */
     double             rot;           /* Shift, ticks (0..L): the clip's time rotated, after Nudge */
@@ -1393,7 +1412,7 @@ typedef struct {
     double             anchor_tick;
     uint32_t           anchor_gen;
     uint32_t           rmx_gen;       /* REMIX: the events it reads through (rmx_pub), 0 = none */
-    uint8_t            revrs, run;
+    uint8_t            dir, run;      /* Dir (AU_DIR_*): each pass's direction */
 } au_warp_cmd_t;
 
 typedef struct {
@@ -1464,7 +1483,7 @@ static int au_warp_nocache = 0;                /* tests: fetch every grain's who
 #define AU_WCL(d, s, f) __atomic_load(&(s)->f, &(d)->f, __ATOMIC_RELAXED)
 #define AU_WARP_FIELDS(OP, d, s) \
     OP(d, s, smp); OP(d, s, rs); OP(d, s, re); OP(d, s, P); OP(d, s, L); OP(d, s, fpt); OP(d, s, nud); \
-    OP(d, s, rot); OP(d, s, pitch); OP(d, s, drift); OP(d, s, anchor_tick); OP(d, s, anchor_gen); OP(d, s, rmx_gen); OP(d, s, revrs); OP(d, s, run)
+    OP(d, s, rot); OP(d, s, pitch); OP(d, s, drift); OP(d, s, anchor_tick); OP(d, s, anchor_gen); OP(d, s, rmx_gen); OP(d, s, Lp); OP(d, s, dir); OP(d, s, run)
 static void au_warp_cmd_write(au_warp_t *W, const au_warp_cmd_t *c) {
     uint32_t q = W->cmd.seq;
     __atomic_store_n(&W->cmd.seq, q + 1, __ATOMIC_RELAXED);
@@ -1506,7 +1525,7 @@ static int au_warp_cmd_read(au_warp_t *W, au_warp_cmd_t *c) {
 /* the map: what the stretcher reads, and how fast */
 static int au_warp_map_same(const au_warp_cmd_t *a, const au_warp_cmd_t *b) {
     return a->smp == b->smp && a->rs == b->rs && a->re == b->re && a->P == b->P && a->L == b->L &&
-           a->nud == b->nud && a->rot == b->rot && a->revrs == b->revrs && a->rmx_gen == b->rmx_gen;
+           a->nud == b->nud && a->rot == b->rot && a->Lp == b->Lp && a->dir == b->dir && a->rmx_gen == b->rmx_gen;
 }
 static double au_warp_speed(const au_warp_t *W) {
     const au_warp_cmd_t *c = &W->cur;
@@ -1606,13 +1625,26 @@ static double au_warp_src(const au_warp_t *W, double ct, double *g) {
     }
 }
 
+/* virtual position v -> how far into Start..End it reads, forwards (-1:
+ * nowhere), and whether that pass plays it backwards: the cycle is one pass,
+ * or a ping-pong's two, each read as the clip's own length */
+static double au_warp_pos(const au_warp_t *W, double v, double *g, int *rev) {
+    const au_warp_cmd_t *c = &W->cur;
+    double Lp = c->Lp > 0 ? c->Lp : c->L, cy = au_wrap(v / W->rpt, c->L), ct;
+    *rev = au_rev_cyc(c->dir, cy, Lp);
+    if (cy >= Lp) cy -= Lp;
+    ct = au_warp_src(W, cy, g);
+    return ct < 0 ? -1.0 : (au_wrap(ct - c->rot, Lp) - c->nud) * W->rpt;
+}
+
 /* the sample frame virtual position v reads (the streamer's watch) */
 static void au_warp_watch_at(au_warp_t *W, double v) {
     const au_warp_cmd_t *c = &W->cur;
-    double g, ct = au_warp_src(W, au_wrap(v / W->rpt, c->L), &g);
-    double x = ct < 0 ? -1.0 : (au_wrap(ct - c->rot, c->L) - c->nud) * W->rpt;
+    double g;
+    int rev;
+    double x = au_warp_pos(W, v, &g, &rev);
     uint32_t f = 0;
-    if (x >= 0 && x < (double)(c->re - c->rs)) f = c->revrs ? c->re - 1 - (uint32_t)x : c->rs + (uint32_t)x;
+    if (x >= 0 && x < (double)(c->re - c->rs)) f = rev ? c->re - 1 - (uint32_t)x : c->rs + (uint32_t)x;
     __atomic_store_n(&W->read_pos, f, __ATOMIC_RELAXED);
 }
 
@@ -1621,13 +1653,14 @@ static void au_warp_watch_at(au_warp_t *W, double v) {
 static void au_warp_frame(au_warper_t *X, const au_warp_t *W, double v, float *l, float *r) {
     const au_warp_cmd_t *c = &W->cur;
     const au_sample_t *s = c->smp;
-    double g, ct = au_warp_src(W, au_wrap(v / W->rpt, c->L), &g);
-    double R = (double)(c->re - c->rs), x = ct < 0 ? -1.0 : (au_wrap(ct - c->rot, c->L) - c->nud) * W->rpt, fr;
+    double g;
+    int rev;
+    double R = (double)(c->re - c->rs), x = au_warp_pos(W, v, &g, &rev), fr;
     uint32_t i;
     const int16_t *a, *b;
     *l = *r = 0.f;
     if (!(x >= 0) || x >= R || !(g > 0)) return;
-    if (c->revrs) x = R - 1.0 - x;
+    if (rev) x = R - 1.0 - x;
     if (x < 0) x = 0;
     i = (uint32_t)x;
     fr = x - (double)i;
@@ -2664,6 +2697,9 @@ static int au_live_mark = 0;
  * and this many semitones up — set around one au_range_on call, as
  * au_live_mark is (au_rmx_block). */
 static int au_rmx_rev = 0, au_rmx_semi = 0;
+/* a Loop clip's piece (sync): its pass plays backwards — set by the caller
+ * around au_range_on, as the remix's are */
+static int au_loop_rev = 0;
 /* A Slicer step's window of its chop: from au_win_start %, au_win_len % of it
  * (0 = to its end) — set around one hit, as the two above are */
 static int au_win_start = 0, au_win_len = 0;
@@ -2714,7 +2750,7 @@ static au_voice_t *au_range_on_in(au_track_t *at, const au_sample_t *s, int cs, 
         if (b2 > b) b2 = b;
         if (b2 > a2 + 8) { a = a2; b = b2; }
     }
-    uint8_t play = sl->play, rev = (uint8_t)((sync ? au_revrs(cl) : sl->rev) ^ (au_rmx_rev ? 1 : 0));
+    uint8_t play = sl->play, rev = (uint8_t)((sync ? au_loop_rev : sl->rev) ^ (au_rmx_rev ? 1 : 0));
     double ratio = au_tune(au_pitch(cl) + sl->pitch + cs, au_detune(cl) + sl->detune) * (double)s->rate / 44100.0 * vk;
     if (au_rmx_semi) ratio *= au_semi(au_rmx_semi);
     float gain = au_db(au_gain(cl) + sl->gain_db) * vgain;
@@ -2843,15 +2879,16 @@ static void au_step_take(clip_t *cl, uint16_t sidx, uint32_t tps) {
  * Start..End. */
 /* `rate`: sample frames per output frame, 0 = the clip's own (pitch and the
  * sample's rate); Tempo Pitch passes the one that fills the clip. */
-static void au_loop_start_in(au_track_t *at, au_clip_t *cl, const au_sample_t *s, int c, double off, double rate);
-static void au_loop_start(seq8_instance_t *inst, int t, int c, double off, double rate) {
+/* `rev`: this pass plays the sample backwards (Dir) */
+static void au_loop_start_in(au_track_t *at, au_clip_t *cl, const au_sample_t *s, int c, double off, double rate, int rev);
+static void au_loop_start(seq8_instance_t *inst, int t, int c, double off, double rate, int rev) {
     au_clip_t *cl = au_cl(inst, t, c);
-    au_loop_start_in(&inst->au_trk[t], cl, cl->smp, c, off, rate);
+    au_loop_start_in(&inst->au_trk[t], cl, cl->smp, c, off, rate, rev);
 }
 
 /* The same, into any track's voices from any copy of the sample: the export
  * renders a Loop clip into a private track (au_export_loop). */
-static void au_loop_start_in(au_track_t *at, au_clip_t *cl, const au_sample_t *s, int c, double off, double rate) {
+static void au_loop_start_in(au_track_t *at, au_clip_t *cl, const au_sample_t *s, int c, double off, double rate, int rev) {
     int i;
     uint32_t rs, re;
     if (!s) return;
@@ -2869,7 +2906,7 @@ static void au_loop_start_in(au_track_t *at, au_clip_t *cl, const au_sample_t *s
         v->wait = (uint32_t)(-off / v->step + 0.5);
         off = 0;
     }
-    if (au_revrs(cl)) { v->pos = (double)re - 1.0 - off; v->step = -v->step; }
+    if (rev) { v->pos = (double)re - 1.0 - off; v->step = -v->step; }
     else v->pos = (double)rs + off;
     if (v->pos >= re || v->pos < rs) return;       /* past the sample's end: silence till the wrap */
     v->gain = au_db(au_gain(cl));
@@ -2897,9 +2934,10 @@ static void au_free_start(au_track_t *at, au_clip_t *cl, const au_sample_t *s, i
     v->wait = wait;
     {   /* ph0: how far into Start..End it starts (au_free_ph0) */
         double x = ph0 * ((double)re - (double)rs);
-        if (au_revrs(cl)) { v->pos = (double)re - 1.0 - x; v->step = -step; }
+        if (au_rev0(cl)) { v->pos = (double)re - 1.0 - x; v->step = -step; }
         else { v->pos = (double)rs + x; v->step = step; }
     }
+    v->pp = (uint8_t)au_pp(cl);                    /* a ping-pong turns at the region's ends */
     v->gain = au_db(au_gain(cl));
     v->clip = (uint8_t)c;
     v->fpitch = 0;                                 /* its speed is set each block (au_render) */
@@ -2932,6 +2970,15 @@ static uint32_t au_voice_render(au_voice_t *v, int32_t *acc, int frames) {
             if (v->loop) {
                 double span = v->hi - v->lo;
                 if (span < 1) { v->active = 0; return missed; }
+                if (v->pp) {
+                    /* a ping-pong turns round at the end it reached, mirrored
+                     * there, so the wave carries straight on */
+                    if (v->pos >= v->hi) v->pos = 2.0 * v->hi - v->pos - 1.0;
+                    else v->pos = 2.0 * v->lo - v->pos;
+                    v->step = -v->step;
+                    if (v->pos < v->lo) v->pos = v->lo;
+                    if (v->pos >= v->hi) v->pos = v->hi - 1.0;
+                }
                 while (v->pos >= v->hi) v->pos -= span;
                 while (v->pos < v->lo) v->pos += span;
             } else if (!v->tail) {
@@ -3045,7 +3092,7 @@ static int au_xwarp(FILE *f, const au_sample_t *s, uint32_t rs, uint32_t re, int
     if (!s || re <= rs || !(P > 0) || !(L > 0) || !(fpt > 0) || !(pitch > 0)) return -1;
     memset(&W.cur, 0, sizeof W.cur);
     W.cur.smp = s; W.cur.rs = rs; W.cur.re = re; W.cur.P = P; W.cur.L = L; W.cur.fpt = fpt;
-    W.cur.rot = rot; W.cur.nud = nud; W.cur.pitch = pitch; W.cur.revrs = (uint8_t)(revrs ? 1 : 0);
+    W.cur.rot = rot; W.cur.nud = nud; W.cur.pitch = pitch; W.cur.Lp = L; W.cur.dir = (uint8_t)(revrs ? AU_DIR_BWD : AU_DIR_FWD);
     W.rpt = (double)(re - rs) / P;
     sp = W.rpt * 44100.0 / ((double)s->rate * fpt);
     st = au_st_create((int)s->rate, 44100, s->ch > 1 ? 2 : 1);
@@ -3238,7 +3285,7 @@ static int au_slice_default(const au_slice_t *sl) {
 }
 
 static int au_clip_default(const au_clip_t *cl) {
-    return !cl->name[0] && !cl->rstart && !cl->pitch && !cl->detune && !cl->gain_db && !cl->revrs &&
+    return !cl->name[0] && !cl->rstart && !cl->pitch && !cl->detune && !cl->gain_db && !cl->dir &&
            !cl->nudge_ms && !cl->sync && !cl->bpm10 && !cl->rot && !cl->shot && !cl->rend && !cl->rspan &&
            !cl->freerun && !cl->speed_pm;
 }
@@ -3265,8 +3312,8 @@ static void au_save_state(void *vinst, FILE *fp) {
             for (c = 0; c < NUM_CLIPS; c++) {
                 const au_clip_t *cl = au_slot(inst, t, c);
                 if (au_clip_default(cl)) continue;
-                fprintf(fp, ",\"t%dc%d_aud\":\"rs=%u p=%d dt=%d g=%d rv=%d nu=%d sh=0 sy=%d bpm=%u", t, c,
-                        (unsigned)cl->rstart, cl->pitch, cl->detune, cl->gain_db, cl->revrs, cl->nudge_ms,
+                fprintf(fp, ",\"t%dc%d_aud\":\"rs=%u p=%d dt=%d g=%d dr=%d nu=%d sh=0 sy=%d bpm=%u", t, c,
+                        (unsigned)cl->rstart, cl->pitch, cl->detune, cl->gain_db, cl->dir, cl->nudge_ms,
                         cl->sync, (unsigned)cl->bpm10);
                 if (cl->rot) fprintf(fp, " of=%u", (unsigned)cl->rot);   /* Offset (sh, the old way round, is 0) */
                 if (cl->shot) fputs(" os=1", fp);   /* One-shot (an older build ignores the key) */
@@ -3280,8 +3327,8 @@ static void au_save_state(void *vinst, FILE *fp) {
         } else if (pm == PAD_MODE_SLICER) {
             const au_clip_t *cl = au_slot(inst, t, AU_SLC);
             const au_track_t *at = &inst->au_trk[t];
-            fprintf(fp, ",\"t%d_slc\":\"p=%d dt=%d g=%d rv=%d bpm=%u sy=%d sens=%d lay=%d n=%d", t,
-                    cl->pitch, cl->detune, cl->gain_db, cl->revrs, (unsigned)cl->bpm10, cl->sync, cl->sens,
+            fprintf(fp, ",\"t%d_slc\":\"p=%d dt=%d g=%d bpm=%u sy=%d sens=%d lay=%d n=%d", t,
+                    cl->pitch, cl->detune, cl->gain_db, (unsigned)cl->bpm10, cl->sync, cl->sens,
                     at->layout, cl->nslices);
             au_put_name(fp, cl->name);
             fputc('"', fp);
@@ -3423,7 +3470,7 @@ static void au_load_state(void *vinst, const char *buf) {
                 cl->pitch = (int8_t)clamp_i((int)au_kv(kv, n, "p", 0), -24, 24);
                 cl->detune = (int8_t)clamp_i((int)au_kv(kv, n, "dt", 0), -50, 50);
                 cl->gain_db = (int8_t)clamp_i((int)au_kv(kv, n, "g", 0), -40, 12);
-                cl->revrs = (uint8_t)(au_kv(kv, n, "rv", 0) ? 1 : 0);
+                cl->dir = (uint8_t)clamp_i((int)au_kv(kv, n, "dr", 0), 0, AU_DIR_PPB);
                 cl->nudge_ms = (int16_t)clamp_i((int)au_kv(kv, n, "nu", 0), -500, 500);
                 /* Offset: `of`, where in the sample the clip starts. An older
                  * file's `sh` was the other way round — where in the clip the
@@ -3460,7 +3507,6 @@ static void au_load_state(void *vinst, const char *buf) {
             cl->pitch = (int8_t)clamp_i((int)au_kv(kv, n, "p", 0), -24, 24);
             cl->detune = (int8_t)clamp_i((int)au_kv(kv, n, "dt", 0), -50, 50);
             cl->gain_db = (int8_t)clamp_i((int)au_kv(kv, n, "g", 0), -40, 12);
-            cl->revrs = (uint8_t)(au_kv(kv, n, "rv", 0) ? 1 : 0);
             l = (int)au_kv(kv, n, "bpm", 0);
             cl->bpm10 = (uint16_t)(l ? clamp_i(l, AU_BPM10_MIN, AU_BPM10_MAX) : 0);
             sy = au_kv(kv, n, "sy", AU_SLC_SYNC_OFF);

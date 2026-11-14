@@ -24,11 +24,11 @@
  *                                  frames a..b and chops the result 16 even
  *   tN_au_set_<field>   "C <v>"    Audio: start (frames) / pitch / detune / gain /
  *                                  bpm (the sample's own Tempo x10) / orig (Tempo =
- *                                  the project's) / revrs / nudge / rot (Offset:
+ *                                  the project's) / dir (Fwd Bwd PPf PPb) / nudge / rot (Offset:
  *                                  where in the audio the clip starts, ticks) /
  *                                  sync (Warp: 0 Warp, 1 Vintage, 2 Pitch) / end /
  *                                  bars / shot / free / speed.
- *                                  Slicer: pitch / detune / gain / revrs / bpm /
+ *                                  Slicer: pitch / detune / gain / bpm /
  *                                  sync (0 Off, 1 Pitch) / sens (Transient's) and
  *                                  two tools that WRITE the chops: even (N equal)
  *                                  and trans (1: one per hit at the Sens)
@@ -261,7 +261,7 @@ static void au_watch_publish(seq8_instance_t *inst) {
                     lo = W->cmd.rs;
                     hi = W->cmd.re;
                     step = (double)(W->cmd.re - W->cmd.rs) / W->cmd.P / W->cmd.fpt;
-                    if (W->cmd.revrs) step = -step;
+                    if (at->rnow) step = -step;
                     loop = 1;
                 }
             }
@@ -336,7 +336,9 @@ static void au_warp_anchor(au_warp_trk_t *w, double at_tick, int c, int hold) {
 
 /* `freerun`: a Free clip — its region alone, L the region's own length in
  * ticks of the clock its caller runs (au_render), no REMIX; Offset and Nudge
- * are in the phase it starts from (au_free_ph0) */
+ * are in the phase it starts from (au_free_ph0). L is the clip's CYCLE: a
+ * ping-pong's (Dir) is both passes, twice its length, w->tick running
+ * through both. */
 static void au_warp_block(seq8_instance_t *inst, int t, int c, double L, double fpt, int playing, int ticked, int freerun) {
     au_warper_t *X = (au_warper_t *)inst->au_warper;
     au_warp_trk_t *w = &inst->au_trk[t].w;
@@ -344,6 +346,7 @@ static void au_warp_block(seq8_instance_t *inst, int t, int c, double L, double 
     au_warp_cmd_t cmd;
     uint32_t rs, re;
     if (!X || !X->trk[t] || !cl->smp) return;
+    double Lp = au_pp(cl) ? L * 0.5 : L;             /* one pass */
     if (freerun) au_free_range(cl, cl->smp, &rs, &re);
     else au_range(cl, cl->smp, &rs, &re);
     if (!playing) {
@@ -361,16 +364,17 @@ static void au_warp_block(seq8_instance_t *inst, int t, int c, double L, double 
     cmd.smp = cl->smp;
     cmd.rs = rs;
     cmd.re = re;
-    cmd.P = freerun ? L : au_span_ticks(cl, cl->smp, rs, re);
+    cmd.P = freerun ? Lp : au_span_ticks(cl, cl->smp, rs, re);
     cmd.L = L;
+    cmd.Lp = Lp;
     cmd.fpt = fpt;
     cmd.nud = freerun ? 0.0 : (double)cl->nudge_ms * 44.1 / fpt;
-    cmd.rot = freerun ? 0.0 : au_rotw(cl->rot, L);
+    cmd.rot = freerun ? 0.0 : au_rotw(cl->rot, Lp);
     cmd.pitch = au_tune(au_pitch(cl) + inst->au_trk[t].cond, au_detune(cl));   /* the Conductor's, held till the wrap on Next */
     cmd.drift = w->drift;
     cmd.anchor_tick = w->cur_anchor;
     cmd.anchor_gen = w->gen;
-    cmd.revrs = (uint8_t)au_revrs(cl);
+    cmd.dir = (uint8_t)au_dir(cl);
     cmd.run = 1;
     /* REMIX: the stretcher reads through it (au_warp_src) */
     {
@@ -578,6 +582,8 @@ static int au_clock_window(seq8_instance_t *inst, int32_t tick, double L, double
     }
     return 1;
 }
+/* `tick`: where the clip is in its CYCLE (one pass, a ping-pong's two: Dir),
+ * `len_ticks` one pass. Each piece plays the way its own pass goes. */
 static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uint32_t len_ticks, double fpt, int frames) {
     au_clip_t *cl = au_cl(inst, t, c);
     const au_sample_t *s = cl->smp;
@@ -585,10 +591,13 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
     if (!s || !len_ticks || fpt <= 0) return;
     au_range(cl, s, &rs, &re);
     if (re <= rs) return;
-    double L = (double)len_ticks, span, start, fscale;
+    double L = (double)len_ticks, span, start, fscale, start_c;
+    int dir = au_dir(cl);
+    double Lc = dir >= AU_DIR_PPF ? 2.0 * L : L;
     double P = au_span_ticks(cl, s, rs, re), R = (double)(re - rs);
     if (P <= 0) return;
-    if (!au_clock_window(inst, tick, L, fpt, frames, &start, &span, &fscale)) return;
+    if (!au_clock_window(inst, tick, Lc, fpt, frames, &start_c, &span, &fscale)) return;
+    start = au_wrap(start_c, L);
     double nud = (double)cl->nudge_ms * 44.1 / fpt;
     /* Offset: the clip's time (after Nudge) turned so step 1 plays from it */
     double rot = au_rotw(cl->rot, L);
@@ -596,6 +605,7 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
     /* the pieces whose tick falls in this block, in the order they sound */
     long pj[AU_VINTAGE_PER_BLOCK];
     double pd[AU_VINTAGE_PER_BLOCK];
+    uint8_t pr[AU_VINTAGE_PER_BLOCK];
     int m = 0, q, i, k;
     for (q = -2; q <= 1; q++) {
         double lo = start - nud - rot + q * L;
@@ -611,8 +621,9 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
             double T = au_wrap(U + rot, L);
             double d = au_wrap(T - start, L);
             if (d >= span) continue;
-            for (k = m; k > 0 && pd[k - 1] > d; k--) { pd[k] = pd[k - 1]; pj[k] = pj[k - 1]; }
+            for (k = m; k > 0 && pd[k - 1] > d; k--) { pd[k] = pd[k - 1]; pj[k] = pj[k - 1]; pr[k] = pr[k - 1]; }
             pd[k] = d; pj[k] = j; m++;
+            pr[k] = (uint8_t)au_rev_cyc(dir, au_wrap(start_c + d + 1e-6, Lc), L);   /* its pass's way (a hair in: au_rmx_block) */
         }
     }
     for (i = 0; i < m; i++) {
@@ -621,17 +632,19 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
          * and played as 4 pieces the third cut the first two — a stutter
          * and a gap every pulse (found by the second review). */
         int e = i;
-        while (e + 1 < m && pj[e + 1] == pj[e] + 1 && (uint32_t)(pd[e + 1] * fscale) == (uint32_t)(pd[i] * fscale)) e++;
+        while (e + 1 < m && pj[e + 1] == pj[e] + 1 && pr[e + 1] == pr[i] && (uint32_t)(pd[e + 1] * fscale) == (uint32_t)(pd[i] * fscale)) e++;
         double x0 = R * (double)pj[i] / P, x1 = R * (double)(pj[e] + 1) / P;
         if (x1 > R) x1 = R;
         /* each piece runs a few frames into the next, so the rounding of
          * its start against the block never ends it a frame early */
         x1 += AU_VINTAGE_OVER + 4.0 * AU_VINTAGE_XF;   /* ...and on through its fade-out, up to 4x speed */
         if (x1 > R) x1 = R;
-        uint32_t a = au_revrs(cl) ? re - (uint32_t)x1 : rs + (uint32_t)x0;
-        uint32_t b = au_revrs(cl) ? re - (uint32_t)x0 : rs + (uint32_t)x1;
+        uint32_t a = pr[i] ? re - (uint32_t)x1 : rs + (uint32_t)x0;
+        uint32_t b = pr[i] ? re - (uint32_t)x0 : rs + (uint32_t)x1;
         uint32_t off = (uint32_t)(pd[i] * fscale);
+        au_loop_rev = pr[i];
         au_range_on(inst, t, c, AU_SLICE_NONE, a, b, 1.0f, off >= (uint32_t)frames ? (uint32_t)frames - 1 : off, 1);
+        au_loop_rev = 0;
         i = e;
     }
 }
@@ -745,6 +758,8 @@ static void au_rmx_slicer_build(seq8_instance_t *inst, int t, int c) {
  * SAME bar of Start..End, reversed / repitched as the event says, at its
  * velocity, released when its gate ends. The remix maps the clip's time
  * first; Shift and Nudge then apply as they do without it. */
+/* `tick` and `len_ticks` as au_sync_block's: the cycle, one pass. Each piece
+ * reads its source the way its own pass goes (Dir). */
 static void au_rmx_block(seq8_instance_t *inst, int t, int c, int32_t tick, uint32_t len_ticks, double fpt, int frames) {
     au_track_t *at = &inst->au_trk[t];
     au_clip_t *cl = au_cl(inst, t, c);
@@ -753,10 +768,13 @@ static void au_rmx_block(seq8_instance_t *inst, int t, int c, int32_t tick, uint
     if (!s || !len_ticks || fpt <= 0 || !at->rmx_n) return;
     au_range(cl, s, &rs, &re);
     if (re <= rs) return;
-    double L = (double)len_ticks, span, start, fscale;
+    double L = (double)len_ticks, span, start, fscale, start_c;
+    int dir = au_dir(cl);
+    double Lc = dir >= AU_DIR_PPF ? 2.0 * L : L;
     double P = au_span_ticks(cl, s, rs, re), R = (double)(re - rs);
     if (P <= 0) return;
-    if (!au_clock_window(inst, tick, L, fpt, frames, &start, &span, &fscale)) return;
+    if (!au_clock_window(inst, tick, Lc, fpt, frames, &start_c, &span, &fscale)) return;
+    start = au_wrap(start_c, L);
     double nud = (double)cl->nudge_ms * 44.1 / fpt;
     double rot = au_rotw(cl->rot, L);
     int cs = (int)at->cond;
@@ -818,8 +836,11 @@ static void au_rmx_block(seq8_instance_t *inst, int t, int c, int32_t tick, uint
          * plays that slot faster or slower. It runs a few frames past its
          * end, on the side it plays toward, into its fade (as Vintage's). */
         double x0 = R * j / P, sl = R * ((double)(AU_RMX_BAR / 16) - late) / P, over = AU_VINTAGE_OVER + AU_VINTAGE_XF;
-        double lo = au_revrs(cl) ? (double)re - x0 - sl : (double)rs + x0, hi = lo + sl;
-        if ((au_revrs(cl) ? 1 : 0) ^ (e->rev ? 1 : 0)) lo -= over; else hi += over;
+        /* its pass's way (a hair in: a piece on the cycle's top, its time
+         * rounding to just below 0, is the new cycle's) */
+        int prv = au_rev_cyc(dir, au_wrap(start_c + pd[i] + 1e-6, Lc), L);
+        double lo = prv ? (double)re - x0 - sl : (double)rs + x0, hi = lo + sl;
+        if (prv ^ (e->rev ? 1 : 0)) lo -= over; else hi += over;
         if (lo < (double)rs) lo = (double)rs;
         if (hi > (double)re) hi = (double)re;
         if (hi <= lo) continue;
@@ -839,9 +860,9 @@ static void au_rmx_block(seq8_instance_t *inst, int t, int c, int32_t tick, uint
                     { ov->rel_wait = off; ov->rel_len = ov->rel = AU_VINTAGE_XF; }
             }
         }
-        au_rmx_rev = e->rev; au_rmx_semi = e->pitch;
+        au_rmx_rev = e->rev; au_rmx_semi = e->pitch; au_loop_rev = prv;
         au_voice_t *v = au_range_on_in(at, s, cs, cl, c, AU_SLICE_NONE, a, bb, (float)e->vel / 100.0f, off, 1, vk);
-        au_rmx_rev = 0; au_rmx_semi = 0;
+        au_rmx_rev = 0; au_rmx_semi = 0; au_loop_rev = 0;
         if (v) {
             v->wlo = rs; v->whi = re;
             uint32_t rel = off0 + (uint32_t)((double)e->gate * fpt);
@@ -902,7 +923,7 @@ static long au_export_loop(seq8_instance_t *inst, int t, int c, uint32_t len, do
             double Pf = R * 44100.0 / (au_free_speed(cl) * (double)s->rate * fpt);
             double ph0 = au_free_ph0(cl, s, rs, re, len, au_free_speed(cl) * (double)s->rate);
             if (cl->shot && Pf * fpt < (double)heard) heard = (uint32_t)(Pf * fpt + 0.5);
-            bad = au_xwarp(f, s, rs, re, au_revrs(cl), Pf, Pf, au_wrap(-ph0 * Pf, Pf), 0.0, fpt,
+            bad = au_xwarp(f, s, rs, re, au_rev0(cl), Pf, Pf, au_wrap(-ph0 * Pf, Pf), 0.0, fpt,
                            au_tune(au_pitch(cl), au_detune(cl)), au_gain(cl), 0.0, heard) < 0;
         }
         {   static const int16_t z[2 * 256] = { 0 };
@@ -911,7 +932,7 @@ static long au_export_loop(seq8_instance_t *inst, int t, int c, uint32_t len, do
         }
     } else if (cl->sync == AU_SYNC_WARP && !rpp->rmx_on) {
         /* Warp with an End or Bars: the live stretcher's map, its second pass */
-        bad = au_xwarp(f, s, rs, re, au_revrs(cl), P, L, rot, (double)cl->nudge_ms * 44.1 / fpt, fpt,
+        bad = au_xwarp(f, s, rs, re, au_rev0(cl), P, L, rot, (double)cl->nudge_ms * 44.1 / fpt, fpt,
                        au_tune(au_pitch(cl), au_detune(cl)), au_gain(cl), L, nout) < 0;
     } else if (rpp->rmx_on) {
         /* REMIX: the bar's pieces as the live scheduler plays them
@@ -941,8 +962,8 @@ static long au_export_loop(seq8_instance_t *inst, int t, int c, uint32_t len, do
                 double j = au_wrap(Us - rot, L) - nud;
                 if (j < 0 || j >= P) continue;
                 double x0 = R * j / P, sl = R * (double)(AU_RMX_BAR / 16) / P, over = AU_VINTAGE_OVER + AU_VINTAGE_XF;
-                double lo = au_revrs(cl) ? (double)re - x0 - sl : (double)rs + x0, hi = lo + sl;
-                if ((au_revrs(cl) ? 1 : 0) ^ (x->rev ? 1 : 0)) lo -= over; else hi += over;
+                double lo = au_rev0(cl) ? (double)re - x0 - sl : (double)rs + x0, hi = lo + sl;
+                if ((au_rev0(cl) ? 1 : 0) ^ (x->rev ? 1 : 0)) lo -= over; else hi += over;
                 if (lo < (double)rs) lo = (double)rs;
                 if (hi > (double)re) hi = (double)re;
                 if (hi <= lo) continue;
@@ -952,10 +973,10 @@ static long au_export_loop(seq8_instance_t *inst, int t, int c, uint32_t len, do
                     if (ov->active && !ov->mode_loop && ov->rel_len && ov->rel == ov->rel_len && ov->rel_wait > 0)
                         { ov->rel_wait = 0; ov->rel_len = ov->rel = AU_VINTAGE_XF; }
                 }
-                au_rmx_rev = x->rev; au_rmx_semi = x->pitch;
+                au_rmx_rev = x->rev; au_rmx_semi = x->pitch; au_loop_rev = au_rev0(cl);
                 au_voice_t *v = au_range_on_in(&trk, s, 0, cl, c, AU_SLICE_NONE, (uint32_t)lo, (uint32_t)hi,
                                                (float)x->vel / 100.0f, 0, 1, vk);
-                au_rmx_rev = 0; au_rmx_semi = 0;
+                au_rmx_rev = 0; au_rmx_semi = 0; au_loop_rev = 0;
                 if (v) au_voice_release_at(v, 64, (uint32_t)((double)x->gate * fpt));
             }
             (void)b0;
@@ -970,7 +991,7 @@ static long au_export_loop(seq8_instance_t *inst, int t, int c, uint32_t len, do
             if (tick == 0 || (rot > 0 && (double)tick == rot)) {
                 double pr = (rot > 0 && (double)tick == rot) ? 0.0 : (rot > 0 ? au_wrap(-rot, L) : 0.0);
                 double off = (pr * fpt - (double)cl->nudge_ms * 44.1) * fill;
-                au_loop_start_in(&trk, cl, s, c, off, fill);
+                au_loop_start_in(&trk, cl, s, c, off, fill, au_rev0(cl));
             }
             au_xrender(&trk, f, &frame, (uint32_t)((double)(k + 1) * fpt + 0.5), f0);
         }
@@ -992,11 +1013,13 @@ static long au_export_loop(seq8_instance_t *inst, int t, int c, uint32_t len, do
                 if (x1 > R) x1 = R;
                 x1 += AU_VINTAGE_OVER + 4.0 * AU_VINTAGE_XF;
                 if (x1 > R) x1 = R;
-                uint32_t a = au_revrs(cl) ? re - (uint32_t)x1 : rs + (uint32_t)x0;
-                uint32_t b = au_revrs(cl) ? re - (uint32_t)x0 : rs + (uint32_t)x1;
+                uint32_t a = au_rev0(cl) ? re - (uint32_t)x1 : rs + (uint32_t)x0;
+                uint32_t b = au_rev0(cl) ? re - (uint32_t)x0 : rs + (uint32_t)x1;
                 double at = ((double)(k - k % len) + T) * fpt;
                 uint32_t off = at > (double)b0 ? (uint32_t)(at - (double)b0) : 0;
+                au_loop_rev = au_rev0(cl);
                 au_range_on_in(&trk, s, 0, cl, c, AU_SLICE_NONE, a, b, 1.0f, off, 1, 1.0);
+                au_loop_rev = 0;
             }
             au_xrender(&trk, f, &frame, (uint32_t)((double)(k + 1) * fpt + 0.5), f0);
         }
@@ -1147,6 +1170,9 @@ static void au_render(seq8_instance_t *inst, int frames) {
                 uint32_t ftps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
                 uint32_t fL = (uint32_t)lc->length * ftps;
                 double st = au_free_step(cl, s, at->cond);
+                /* the stretcher's clock runs through a ping-pong's two passes (Dir) */
+                double Pc = au_pp(cl) ? 2.0 * P : P;
+                double advc = Pc > 0 ? (double)frames / (fpt * Pc) : 0;
                 /* how much of one pass this block plays (Tape: its speed has the pitch in it) */
                 double adv = tape ? (R > 0 ? (double)frames * st / R : 0) : (P > 0 ? (double)frames / (fpt * P) : 0);
                 if (at->sync_on) { au_release_chops(at); at->sync_on = 0; }
@@ -1169,12 +1195,12 @@ static void au_render(seq8_instance_t *inst, int frames) {
                             /* the stretcher starts AU_WARP_LEAD ahead of its
                              * clock: the clock starts that far before the
                              * region, so its first frame is heard, that late */
-                            double ph0 = au_free_ph0(cl, s, rs, re, fL, sp * (double)s->rate);
-                            at->free_ph = au_wrap(ph0 - AU_WARP_LEAD / (fpt * P), 1.0);
+                            double ph0 = au_free_ph0(cl, s, rs, re, fL, sp * (double)s->rate) * (P / Pc);
+                            at->free_ph = au_wrap(ph0 - AU_WARP_LEAD / (fpt * Pc), 1.0);
                             at->free_left = 1.0 + AU_WARP_LEAD / (fpt * P) - adv;
-                            at->w.tick = at->free_ph * P;
-                            au_warp_block(inst, t, c, P, fpt, 1, 1, 1);
-                            at->free_ph = au_wrap(at->free_ph + adv, 1.0);
+                            at->w.tick = at->free_ph * Pc;
+                            au_warp_block(inst, t, c, Pc, fpt, 1, 1, 1);
+                            at->free_ph = au_wrap(at->free_ph + advc, 1.0);
                         }
                     }
                 } else if (tape) {
@@ -1186,11 +1212,14 @@ static void au_render(seq8_instance_t *inst, int frames) {
                     at->free_left -= adv;
                 } else {
                     if (lv) au_voice_release(lv, 64);
-                    at->w.tick = at->free_ph * P;
-                    au_warp_block(inst, t, c, P, fpt, 1, ticked, 1);
-                    at->free_ph = au_wrap(at->free_ph + adv, 1.0);
+                    at->w.tick = at->free_ph * Pc;
+                    au_warp_block(inst, t, c, Pc, fpt, 1, ticked, 1);
+                    at->free_ph = au_wrap(at->free_ph + advc, 1.0);
                     at->free_left -= adv;
                 }
+                /* which way it plays now (the UI's playhead and pads) */
+                if (tape) { au_voice_t *fv = au_loop_voice(at); at->rnow = (uint8_t)(fv ? fv->step < 0 : au_rev0(cl)); }
+                else at->rnow = (uint8_t)au_rev_cyc(au_dir(cl), at->free_ph * Pc, P);
                 /* Free + Shot: one pass of Start..End from the launch, then the
                  * clip stops, as a Shot on the grid does at its end (Josh,
                  * 2026-11-14: Free "should be available in both loop and one shot") */
@@ -1213,6 +1242,20 @@ static void au_render(seq8_instance_t *inst, int frames) {
                     uint32_t el = (uint32_t)inst->global_tick * (uint32_t)TICKS_PER_STEP + inst->master_tick_in_step;
                     tick = (int32_t)(el % lt);
                 }
+                /* Dir is the clip's own (au_dir), on its passes: one more each
+                 * time the loop comes round since it started. A ping-pong's
+                 * CYCLE is two passes — `ctick` runs through both, the second
+                 * from the clip's length on — so its engines see one loop,
+                 * twice as long, whose second half plays the other way. */
+                uint32_t Lt = (uint32_t)lc->length * tps;
+                int pdir = au_dir(cl);
+                if (at->last_tick < 0 || at->pass_clip != c) { at->pass = 0; at->pass_clip = (uint8_t)c; }
+                else if (tick < at->last_tick) at->pass++;
+                int32_t ctick = (pdir >= AU_DIR_PPF && (at->pass & 1)) ? (tick < 0 ? 0 : tick) + (int32_t)Lt : (tick < 0 ? 0 : tick);
+                double Lcy = pdir >= AU_DIR_PPF ? 2.0 * (double)Lt : (double)Lt;
+                /* the way the tick just played goes (the counter is one past it) */
+                int prev = Lt ? au_rev_cyc(pdir, au_wrap((double)ctick - 1.0, Lcy), (double)Lt) : au_rev0(cl);
+                at->rnow = (uint8_t)prev;
                 double bpm = tr->pfx.cached_bpm > 0 ? tr->pfx.cached_bpm : 120.0;
                 double fpt = 44100.0 * 60.0 / (bpm * PPQN);
                 /* the Conductor's semitones in force: at once on Now, else
@@ -1256,15 +1299,15 @@ static void au_render(seq8_instance_t *inst, int frames) {
                     if (lv) au_voice_release(lv, 64);
                     if (!at->sync_on || at->loop_clip != c) { at->sync_on = 1; at->sync_live = 0; at->loop_clip = (uint8_t)c; }
                     if (ticked) at->sync_live = 1;
-                    if (at->sync_live) au_rmx_block(inst, t, c, tick, (uint32_t)lc->length * tps, fpt, frames);
+                    if (at->sync_live) au_rmx_block(inst, t, c, ctick, Lt, fpt, frames);
                 } else if (warp) {
                     /* Warp: the stretcher's ring, read against the clock */
-                    double L = (double)lc->length * tps, start, span, fscale;
+                    double L = Lcy, start, span, fscale;     /* the cycle: a ping-pong's two passes */
                     if (lv) au_voice_release(lv, 64);
                     if (at->sync_on) { au_release_chops(at); at->sync_on = 0; }
                     if (L > 0) {
                         double est = au_wrap(at->w.tick + (double)frames / fpt, L);
-                        if (!au_clock_window(inst, tick, L, fpt, frames, &start, &span, &fscale)) {
+                        if (!au_clock_window(inst, ctick, L, fpt, frames, &start, &span, &fscale)) {
                             at->w.tick = est;               /* a followed clock between pulses */
                         } else if (fscale > 0) {
                             at->w.tick = au_wrap(start, L); /* our own clock: exact */
@@ -1282,11 +1325,11 @@ static void au_render(seq8_instance_t *inst, int frames) {
                     if (lv) au_voice_release(lv, 64);
                     if (!at->sync_on || at->loop_clip != c) { at->sync_on = 1; at->sync_live = 0; at->loop_clip = (uint8_t)c; }
                     if (ticked) at->sync_live = 1;          /* the transport's first tick has played */
-                    if (at->sync_live) au_sync_block(inst, t, c, tick, (uint32_t)lc->length * tps, fpt, frames);
+                    if (at->sync_live) au_sync_block(inst, t, c, ctick, Lt, fpt, frames);
                 } else {
                     if (at->sync_on) { au_release_chops(at); at->sync_on = 0; }
                     /* Pitch follows a tempo change at once, not at the wrap */
-                    if (lv && fill > 0) lv->step = au_revrs(cl) ? -fill : fill;
+                    if (lv && fill > 0) lv->step = lv->step < 0 ? -fill : fill;
                     /* Offset: step 1 plays from it, so the sample's start
                      * falls `rot` (au_rotw) ticks into the clip, its end
                      * wrapping round before it — the voice starts again
@@ -1306,7 +1349,8 @@ static void au_render(seq8_instance_t *inst, int frames) {
                     if (ticked && Lp > 0) {
                         double s  = au_wrap(au_wrap((double)tick - 1.0, Lp) - rot, Lp);
                         double s0 = at->last_tick >= 0 ? au_wrap(au_wrap((double)at->last_tick - 1.0, Lp) - rot, Lp) : s;
-                        if (!lv || at->loop_clip != c || s < s0) {
+                        /* ...and where its pass turns the other way (Dir) */
+                        if (!lv || at->loop_clip != c || s < s0 || (lv->step < 0) != (prev != 0)) {
                             /* where the sample is at this block's first frame,
                              * before the tick (negative: it starts after it).
                              * Nudge: the sample starts that much later (+) or
@@ -1314,7 +1358,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
                             double pr = s - (double)inst->au_last_tick_off / fpt;
                             double off = fill > 0 ? (pr * fpt - (double)cl->nudge_ms * 44.1) * fill
                                                   : pr * fpt * ratio - (double)cl->nudge_ms * (double)cl->smp->rate / 1000.0;
-                            au_loop_start(inst, t, c, off, fill);
+                            au_loop_start(inst, t, c, off, fill, prev);
                         }
                     }
                 }
@@ -1326,11 +1370,12 @@ static void au_render(seq8_instance_t *inst, int frames) {
                 at->free_on = 0;
                 at->rmx_bar = -1;                       /* the next start takes the setting afresh */
                 at->cond = (int8_t)au_cond_now(inst, t);
+                at->rnow = (uint8_t)au_rev0(cl);        /* it starts the way its first pass goes */
                 /* stopped on a Warp clip: its downbeat is rendered ahead */
                 if (!inst->playing && cl->mode == AU_MODE_LOOP && cl->sync == AU_SYNC_WARP && !cl->freerun && cl->smp) {
                     uint32_t tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
                     double bpm = tr->pfx.cached_bpm > 0 ? tr->pfx.cached_bpm : 120.0;
-                    double L = (double)lc->length * tps;
+                    double L = (double)lc->length * tps * (au_pp(cl) ? 2 : 1);   /* its cycle */
                     if (L > 0) au_warp_block(inst, t, c, L, 44100.0 * 60.0 / (bpm * PPQN), 0, 0, 0);
                 } else au_warp_off(inst, t);
             }
@@ -1822,9 +1867,11 @@ static int sp_track_audio(sp_ctx_t *cx) {
         } else if (!strcmp(w, "speed")) {
             v = clamp_i(v, AU_SPEED_MIN, AU_SPEED_MAX);
             cl->speed_pm = (uint16_t)(v == 1000 ? 0 : v);
-        } else if (!strcmp(w, "revrs")) {
-            cl->revrs = (uint8_t)(v ? 1 : 0);
-            cl->ov &= (uint8_t)~AU_OV_REVRS;
+        } else if (slot && !strcmp(w, "dir")) {
+            return 1;                                            /* an Audio clip's: a Slicer's Dir is its sequence's */
+        } else if (!strcmp(w, "dir")) {
+            cl->dir = (uint8_t)clamp_i(v, AU_DIR_FWD, AU_DIR_PPB);   /* Fwd Bwd PPf PPb, as a MIDI clip's */
+            cl->ov &= (uint8_t)~AU_OV_DIR;
             inst->au_trk[tidx].last_tick = -1;     /* the loop restarts from its new end */
             if (c == tr->active_clip) au_track_kill(inst, tidx, NULL);
         } else if (!strcmp(w, "sync")) {
@@ -2072,13 +2119,8 @@ static int sp_track_audio(sp_ctx_t *cx) {
             /* the first tap: slice 1 at Start, and the sample plays once,
              * forwards, Start..End */
             uint32_t rs, re;
-            uint8_t rv = cl->revrs, ov = cl->ov;
             au_range(cl, cl->smp, &rs, &re);
-            cl->revrs = 0;
-            cl->ov &= (uint8_t)~AU_OV_REVRS;
-            au_loop_start(inst, tidx, inst->au_lazy_clip, 0, 0);
-            cl->revrs = rv;
-            cl->ov = ov;
+            au_loop_start(inst, tidx, inst->au_lazy_clip, 0, 0, 0);
             au_voice_t *lv = au_loop_voice(at);
             if (!lv) return 1;
             lv->mode_loop = 0; lv->loop = 0;
@@ -2154,7 +2196,7 @@ static int au_paste_to_slicer(seq8_instance_t *inst, int st, int sc, int dt, int
     au_clip_reset(inst, dt, AU_SLC);
     snprintf(dst->name, sizeof dst->name, "%s", src->name);
     dst->pitch = src->pitch; dst->detune = src->detune; dst->gain_db = src->gain_db;
-    dst->revrs = src->revrs;
+    dst->dir = src->dir;
     dst->bpm10 = (uint16_t)au_bpm10_played(src, s);   /* Bars: the Tempo they make */
     dst->sync = src->sync == AU_SYNC_PITCH ? AU_SLC_SYNC_PITCH : AU_SLC_SYNC_OFF;
     for (k = 0; k < AU_MAX_SLICES; k++) dst->sl[k].start = dst->sl[k].end = 0;
@@ -2196,7 +2238,7 @@ static int au_paste_to_audio(seq8_instance_t *inst, int st, int dt, int dc) {
     dst = au_slot(inst, dt, dc);
     snprintf(dst->name, sizeof dst->name, "%s", src->name);
     dst->pitch = src->pitch; dst->detune = src->detune; dst->gain_db = src->gain_db;
-    dst->revrs = src->revrs;
+    dst->dir = src->dir;
     dst->bpm10 = src->bpm10;
     dst->sync = src->sync == AU_SLC_SYNC_PITCH ? AU_SYNC_PITCH : AU_SYNC_WARP;
     au_request_load(inst, dt, dc);
@@ -2249,7 +2291,7 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
     }
     if (!strncmp(k, "info_", 5)) {
         /* "state err mode even nslices jump rstart rend pitch gain frames rate ch
-         *  revrs nudge jmpq count detune sync reach bpm10 hits sens trans slen rot shot end bars|name"
+         *  dir nudge jmpq count detune sync reach bpm10 hits sens trans slen rot shot end bars|name"
          *  -- rstart / rend: what the clip plays of the sample, in frames, once
          *  loaded (Start + Length at the sample's Tempo — a Loop clip's Length
          *  its own; rend stops at the file); reach: how much of that sounds before the clip comes round
@@ -2291,7 +2333,7 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
                         cl->state, cl->err, cl->mode, cl->even, cl->nslices, cl->jump,
                         (unsigned)rs, (unsigned)ve, au_pitch(cl), au_gain(cl),
                         s ? (unsigned)s->frames : 0u, s ? (unsigned)s->rate : 0u, s ? s->ch : 0,
-                        au_revrs(cl), cl->nudge_ms, cl->jmpq, au_count(cl), au_detune(cl), cl->sync, (unsigned)reach, au_bpm10(cl),
+                        cl->dir, cl->nudge_ms, cl->jmpq, au_count(cl), au_detune(cl), cl->sync, (unsigned)reach, au_bpm10(cl),
                         (unsigned)au_hit_count_cached(cl, rs, re), cl->sens, cl->trans, (unsigned)cl->slen, (unsigned)cl->rot, (int)cl->shot, (unsigned)cl->rend, (unsigned)cl->rspan,
                         (int)cl->freerun, (unsigned)(cl->speed_pm ? cl->speed_pm : 1000), cl->name);
     }
@@ -2421,14 +2463,18 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
         return AU_PEAKS * 4;
     }
     if (!strcmp(k, "pos")) {
-        /* "<sounding 0|1> <frame> <slice | -1 loop>" */
+        /* "<sounding 0|1> <frame> <slice | -1 loop> <backwards now 0|1>" — the
+         * last a Loop clip's pass (Dir), for the pads' and the screen's way */
         const au_track_t *at = &inst->au_trk[t];
+        int pl = 0;
+        #define AU_POS_RET(...) do { pl = snprintf(out, out_len, __VA_ARGS__); \
+            return pl + snprintf(out + pl, pl < out_len ? out_len - pl : 0, " %d", (int)at->rnow); } while (0)
         for (l = 0; l < AU_VOICES; l++) {
             const au_voice_t *v = &at->v[l];
             /* (a REMIX piece carries its gate's release from the start: it
              * sounds until that release begins) */
             if (!v->active || !v->smp || (v->rel_len && !(v->rel == v->rel_len && v->rel_wait > 0))) continue;
-            return snprintf(out, out_len, "1 %u %d", (unsigned)(v->pos < 0 ? 0 : v->pos), v->mode_loop ? -1 : v->slice);
+            AU_POS_RET("1 %u %d", (unsigned)(v->pos < 0 ? 0 : v->pos), v->mode_loop ? -1 : v->slice);
         }
         if (at->w.on && at->w.live) {
             /* Warp has no voice: the frame under the clock, on the clip's map —
@@ -2441,30 +2487,36 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
             if (s && cl->freerun && at->free_on) {
                 /* Free: its own clock's place in Start..End (heard a lead behind) */
                 au_free_range(cl, s, &rs, &re);
-                double x = at->free_ph * (double)(re - rs);
+                double ph = at->free_ph;
+                if (au_pp(cl)) ph = ph >= 0.5 ? 2.0 * ph - 1.0 : 2.0 * ph;   /* a ping-pong's: its pass */
+                double x = ph * (double)(re - rs);
                 if (re > rs && x >= 0 && x < (double)(re - rs))
-                    return snprintf(out, out_len, "1 %u -1", au_revrs(cl) ? re - 1 - (uint32_t)x : rs + (uint32_t)x);
-                return snprintf(out, out_len, "0 0 -1");
+                    AU_POS_RET("1 %u -1", at->rnow ? re - 1 - (uint32_t)x : rs + (uint32_t)x);
+                AU_POS_RET("0 0 -1");
             }
             if (s) {
                 au_range(cl, s, &rs, &re);
                 double P = au_span_ticks(cl, s, rs, re), fpt = 0;
                 au_warper_t *X = (au_warper_t *)inst->au_warper;
-                double L = 0;
-                if (X && X->trk[t]) { fpt = X->trk[t]->cmd.fpt; L = X->trk[t]->cmd.L; }
+                double L = 0, Lc = 0;
+                if (X && X->trk[t]) { fpt = X->trk[t]->cmd.fpt; Lc = X->trk[t]->cmd.L; L = X->trk[t]->cmd.Lp; }
+                if (!(L > 0)) L = Lc;
                 if (P > 0 && fpt > 0 && re > rs) {
-                    /* through the REMIX when one plays: the slot heard */
-                    double g = 1.0, ct = at->w.tick;
-                    if (X && X->trk[t] && L > 0) ct = au_warp_src(X->trk[t], au_wrap(at->w.tick, L), &g);
-                    if (ct < 0) return snprintf(out, out_len, "0 0 -1");
+                    /* through the REMIX when one plays: the slot heard; a
+                     * ping-pong's tick is of its cycle, read as its pass */
+                    double g = 1.0, ct = Lc > 0 ? au_wrap(at->w.tick, Lc) : at->w.tick;
+                    if (L > 0 && ct >= L) ct -= L;
+                    if (X && X->trk[t] && L > 0) ct = au_warp_src(X->trk[t], ct, &g);
+                    if (ct < 0) AU_POS_RET("0 0 -1");
                     double wt = L > 0 ? au_wrap(ct - au_rotw(cl->rot, L), L) : ct;
                     double x = (wt - (double)cl->nudge_ms * 44.1 / fpt) * (double)(re - rs) / P;
                     if (x >= 0 && x < (double)(re - rs))
-                        return snprintf(out, out_len, "1 %u -1", au_revrs(cl) ? re - 1 - (uint32_t)x : rs + (uint32_t)x);
+                        AU_POS_RET("1 %u -1", at->rnow ? re - 1 - (uint32_t)x : rs + (uint32_t)x);
                 }
             }
         }
-        return snprintf(out, out_len, "0 0 -1");
+        AU_POS_RET("0 0 -1");
+        #undef AU_POS_RET
     }
     if (!strcmp(k, "warp")) {                     /* Warp, for the device check: "<anchors> <state> <last wait frames> <underruns>" */
         const au_warp_trk_t *w = &inst->au_trk[t].w;

@@ -1061,7 +1061,9 @@ export function autoHoldJumpBegin(absStep) {
      * edited"). The caller keeps the press inside the cycle. */
     if (!cy || cy.t !== S.activeTrack) return false;
     const tgt = String(cy.target);
-    const sat = tgt.indexOf('seq:') === 0 ? SEQ_AUTO_TARGETS[tgt.split(':')[2]] : null;
+    const sat0 = tgt.indexOf('seq:') === 0 ? SEQ_AUTO_TARGETS[tgt.split(':')[2]] : null;
+    /* an Audio clip's Dir is its CLIP bank's K7: that bank, as a sequence's knob */
+    const sat = (sat0 && sat0.bank === AU_AUTO_BANK && sat0.field === 'dir') ? Object.assign({}, sat0, { bank: 0 }) : sat0;
     const home = sat ? null : laneHome(tgt, cy.t);
     const sb = !home ? -1 : home.kind === 'macros' ? BANK_MACROS : home.kind === 'level' ? BANK_SOUND : -1;
     const mp = (home && (home.kind === 'module' || home.kind === 'busfx')) ? home : null;

@@ -237,17 +237,17 @@ step('CONTROL: walking off the destination bank spends the return — Back is th
     assert(S.autoReturn === null, 'the crumb survived the Back');
 });
 
-step('⭐ an Audio clip\'s Revrs lane -> SAMPLE on SOUND (page 3), where Revrs is; Pitch -> page 1', () => {
+step('⭐ an Audio clip\'s Dir lane -> its CLIP bank, where Dir is (K7); Pitch -> SAMPLE page 1', () => {
     const C = globalThis.__laneC;
     S.trackPadMode[T] = C.PAD_MODE_AUDIO;
     S.auInfo[T] = S.auInfo[T] || [];
     S.auInfo[T][0] = { state: 2, mode: 0, name: 'x.wav', nframes: 88200, rate: 44100, ch: 1, bpm10: 1200, rstart: 0, rend: 88200,
-                       pitch: 0, detune: 0, gain: 0, revrs: 0, nudge: 0, rot: 0, shot: 0, free: 0, speed: 1000, sync: 0, span: 0 };
-    LIST = T + ' 0 1 2 seq:' + T + ':au_revrs 0\n' + T + ' 0 1 2 seq:' + T + ':au_pitch 0\n';
+                       pitch: 0, detune: 0, gain: 0, dir: 0, nudge: 0, rot: 0, shot: 0, free: 0, speed: 1000, sync: 0, span: 0 };
+    LIST = T + ' 0 1 2 seq:' + T + ':au_dir 0\n' + T + ' 0 1 2 seq:' + T + ':au_pitch 0\n';
     auto.automationRefreshPresence();
-    openMenuOn('seq:' + T + ':au_revrs');
+    openMenuOn('seq:' + T + ':au_dir');
     shiftClick(); ticks(3);
-    assert(S.auEditor && (S.auEditor.page | 0) === 2, 'the Revrs lane opened page ' + (S.auEditor ? S.auEditor.page : 'none') + ', not SOUND');
+    assert(!S.auEditor && S.activeBank === 0, 'the Dir lane did not open the CLIP bank: editor ' + !!S.auEditor + ', bank ' + S.activeBank);
     back(); ticks(4);
     openMenuOn('seq:' + T + ':au_pitch');
     shiftClick(); ticks(3);

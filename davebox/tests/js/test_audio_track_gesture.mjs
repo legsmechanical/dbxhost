@@ -1026,14 +1026,14 @@ step('⭐⭐ Delete + click on a grid page resets that page only: SLICE n, ALL S
     reset();
     cc(HC.MoveDelete, 127); click(); cc(HC.MoveDelete, 0);
     const st = sentLike(/_au_/).map((x) => x[0] + '=' + x[1]).join(' ');
-    assert(sent('t4_au_set_sync').join() === '16 0' && !sentLike(/_au_set_(gain|pitch|detune|revrs|bpm|bars)/).length,
+    assert(sent('t4_au_set_sync').join() === '16 0' && !sentLike(/_au_set_(gain|pitch|detune|dir|bpm|bars)/).length,
            'TIME did not reset its own knobs only: ' + st);
-    /* page 3 SOUND: Gain, Pitch, Detune, Revrs — not Tempo, not Warp */
+    /* page 3 SOUND: Gain, Pitch, Detune — not Tempo, not Warp, not Dir (the CLIP bank's) */
     jog(1); ticks(1);
     reset();
     cc(HC.MoveDelete, 127); click(); cc(HC.MoveDelete, 0);
     const sa = sentLike(/_au_/).map((x) => x[0] + '=' + x[1]).join(' ');
-    assert(['gain', 'pitch', 'detune', 'revrs'].every((f) => sa.indexOf('t4_au_set_' + f + '=16 0') >= 0) && !sent('t4_au_set_bpm').length && !sent('t4_au_set_sync').length,
+    assert(['gain', 'pitch', 'detune'].every((f) => sa.indexOf('t4_au_set_' + f + '=16 0') >= 0) && !sent('t4_au_set_bpm').length && !sent('t4_au_set_sync').length && !sent('t4_au_set_dir').length,
            'SOUND did not reset its sound only: ' + sa);
     leave();
     S.actionPopupEndTick = 0;
@@ -1123,8 +1123,8 @@ step('⭐⭐ the knob rings follow the Audio screens and the AUDIO bank: lit whe
     }
     jog(1); ticks(3);                                /* SAMPLE page 2 TIME (Loop): Sync, Warp, Nudge, Offset / -, -, Tempo, Bars */
     assert(sent8() === '11110011', 'SAMPLE page 2 rings: ' + sent8());
-    jog(1); ticks(3);                                /* page 3 SOUND: -, -, -, - / Pitch, Detune, Revrs, Gain */
-    assert(sent8() === '00001111', 'SAMPLE page 3 rings: ' + sent8());
+    jog(1); ticks(3);                                /* page 3 SOUND: -, -, -, - / Pitch, Detune, -, Gain */
+    assert(sent8() === '00001101', 'SAMPLE page 3 rings: ' + sent8());
     back();
     /* a Slicer's CLIP bank: K4 (no Legato there) dark, the rest lit (Josh,
      * 2026-11-12: "clip bank knob led rings are lit on empty knobs, which
@@ -2221,18 +2221,18 @@ step('⭐⭐ an Audio track: no sequence — pad taps and steps do nothing, no S
     ticks(2);
     assert(sentLike(/_step_/).length === 0, 'a step press edited an Audio clip: ' + JSON.stringify(sentLike(/_step_/)));
     const cells = A.auLoopBankCells(4);
-    assert(cells.map((c) => c.label).join() === 'Mode,Strch,,,,,,' && cells[0].kind === 'enumsq' && cells[0].text === 'Loop',
+    assert(cells.map((c) => c.label).join() === 'Mode,Strch,,,,,Dir,' && cells[0].kind === 'enumsq' && cells[0].text === 'Loop',
            'Audio CLIP bank: ' + cells.map((c) => c.label) + ' / K1 ' + JSON.stringify(cells[0]));
     /* the header reads the name while the knob is in hand: it must fit (a long
      * one ran off the screen on the device) */
     assert(cells.every((c) => !c.name || c.name.length <= 16) && cells[1].name === 'Stretch',
            'names too long for the header: ' + cells.map((c) => c.name));
-    /* K1 Mode (Loop · Shot; test_audio_shot_knob.mjs), K2 Strch; the rest is
-     * SAMPLE's pages (Josh, 2026-11-14): K3-K8 do nothing here */
+    /* K1 Mode (Loop · Shot; test_audio_shot_knob.mjs), K2 Strch, K7 Dir; the
+     * rest is SAMPLE's pages (Josh, 2026-11-14): K3-K6 and K8 do nothing here */
     S.bankCardLatched = true;
     reset();
-    for (const k of [73, 74, 75, 76, 77, 78]) { S.knobAccelLast[k - 71] = 0; for (let i = 0; i < 30; i++) cc(k, 1); }
-    assert(!sentLike(/_au_|_loop_set|resolution|quantize/).length, 'an Audio CLIP K3-K8 acts: ' + JSON.stringify(sentLike(/_au_|_loop_set|resolution|quantize/)));
+    for (const k of [73, 74, 75, 76, 78]) { S.knobAccelLast[k - 71] = 0; for (let i = 0; i < 30; i++) cc(k, 1); }
+    assert(!sentLike(/_au_|_loop_set|resolution|quantize/).length, 'an Audio CLIP K3-K6 / K8 acts: ' + JSON.stringify(sentLike(/_au_|_loop_set|resolution|quantize/)));
     {
         const ac = S.trackActiveClip[4] | 0, len0 = S.clipLength[4][ac] | 0 || 16, tps = S.clipTPS[4][ac] || 24;
         const bpm0 = A.auInfo(4, ac).bpm10 || 1200;
@@ -2382,23 +2382,22 @@ step('⭐⭐ an Audio track: no sequence — pad taps and steps do nothing, no S
     /* no knob of its own for Orig any more: touch K1 + click does nothing */
     note(0, 127); click(); note(0, 0); ticks(1);
     assert(!sent('t4_au_set_orig').length && !ed.pick, 'touch K1 + click still does something: ' + JSON.stringify(sentLike(/_au_/)));
-    /* SOUND: - · - · - · - / Pitch · Detune · Revrs · Gain */
+    /* SOUND: - · - · - · - / Pitch · Detune · - · Gain (Dir is the CLIP bank's) */
     jog(1); ticks(1);
     assert(ed.page === 2, 'the jog did not turn SAMPLE to page 3');
     const p3 = () => A.auSampleP3Cells(4, 0);
-    assert(p3().map((c) => c.label).join() === ',,,,Pitch,Detune,Revrs,Gain', 'page 3: ' + p3().map((c) => c.label));
+    assert(p3().map((c) => c.label).join() === ',,,,Pitch,Detune,,Gain', 'page 3: ' + p3().map((c) => c.label));
     jog(1); ticks(1);
     assert(ed.page === 2, 'the jog went past page 3');
     reset();
     for (let i = 0; i < 20; i++) { cc(71, 1); cc(72, 1); cc(73, 1); cc(74, 1); }
     for (let i = 0; i < 20 && !sent('t4_au_set_pitch').length; i++) cc(75, 1);
     S.knobAccelLast[5] = 0; cc(76, 1);
-    for (let i = 0; i < 30 && !sent('t4_au_set_revrs').length; i++) cc(77, 1);
+    for (let i = 0; i < 30; i++) cc(77, 1);
     S.knobAccelLast[7] = 0; cc(78, 1);
-    assert(sent('t4_au_set_pitch').length === 1 && sent('t4_au_set_detune').length === 1 && sent('t4_au_set_revrs').join() === '0 1' &&
+    assert(sent('t4_au_set_pitch').length === 1 && sent('t4_au_set_detune').length === 1 && !sent('t4_au_set_dir').length &&
            sent('t4_au_set_gain').length === 1 && !sent('t4_au_set_sync').length && !sent('t4_au_set_rot').length && !sent('t4_au_set_free').length,
-           'page 3 is not nothing x4 / Pitch / Detune / Revrs / Gain: ' + JSON.stringify(sentLike(/_au_/)));
-    for (let i = 0; i < 30 && sent('t4_au_set_revrs').length < 2; i++) cc(77, 127);
+           'page 3 is not nothing x4 / Pitch / Detune / nothing / Gain: ' + JSON.stringify(sentLike(/_au_/)));
     jog(-1); jog(-1); back(); ticks(2);
     S.bankCardLatched = false;
 });
@@ -2469,10 +2468,11 @@ step('⭐⭐ Audio pads: a progress bar over 32 even sections, not the chops —
     assert(pad(10) === HC.LightGrey, 'Remix on: the section heard does not pulse: ' + pad(10));
     S.rmxSet[4] = [0, 0, 0, 1, 100, 0, 0, 0, 0, 0];
     for (let i = 0; i < 6; i++) ticks(1);
-    /* Revrs: it plays from the end back, so the sections after the playhead have played */
-    GET['t4_au_info_0'] = INFO(0, 8).replace(' 96000 48000 2 0 0 0 ', ' 96000 48000 2 1 0 0 ');
-    kindSync(); for (let i = 0; i < 6; i++) ticks(1);
-    assert(pad(31) === tc && pad(11) === tc && pad(9) !== tc && pad(9), 'Revrs did not fill from the end: ' + [pad(9), pad(11), pad(31)]);
+    /* a backwards pass (Dir Bwd, or a ping-pong's way back — the engine's
+     * `pos` says which): the sections after the playhead have played */
+    GET['t4_au_pos'] = '1 30000 -1 1';
+    for (let i = 0; i < 6; i++) ticks(1);
+    assert(pad(31) === tc && pad(11) === tc && pad(9) !== tc && pad(9), 'a backwards pass did not fill from the end: ' + [pad(9), pad(11), pad(31)]);
     /* stopped: the loop, all dim */
     GET['t4_au_pos'] = '0 0 -1';
     for (let i = 0; i < 6; i++) ticks(1);

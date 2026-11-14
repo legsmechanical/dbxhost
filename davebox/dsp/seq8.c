@@ -8237,7 +8237,7 @@ static void au_undo_restore(seq8_instance_t *inst, const au_clip_t *src, uint8_t
     if (c == AU_SLC ? inst->tracks[t].pad_mode != PAD_MODE_SLICER : inst->tracks[t].pad_mode != PAD_MODE_AUDIO) return;
     /* a lane playing now keeps holding what it holds: the restore takes the
      * settings, not the moment */
-    uint8_t ov = cl->ov, ov_rv = cl->ov_revrs, ovs = cl->ovs, ovs_rv = cl->ovs_rev, ovs_pl = cl->ovs_play;
+    uint8_t ov = cl->ov, ov_rv = cl->ov_dir, ovs = cl->ovs, ovs_rv = cl->ovs_rev, ovs_pl = cl->ovs_play;
     int8_t ovs_p = cl->ovs_pitch, ovs_d = cl->ovs_detune, ovs_g = cl->ovs_gain;
     uint16_t ovs_a = cl->ovs_atk, ovs_dc = cl->ovs_dec;
     int8_t ov_p = cl->ov_pitch, ov_d = cl->ov_detune, ov_g = cl->ov_gain;
@@ -8257,7 +8257,7 @@ static void au_undo_restore(seq8_instance_t *inst, const au_clip_t *src, uint8_t
         if (cl->name[0]) au_request_load(inst, t, c);
     }
     cl->ov = ov; cl->ov_pitch = ov_p; cl->ov_detune = ov_d; cl->ov_gain = ov_g;
-    cl->ov_revrs = ov_rv; cl->ov_bpm10 = ov_b;
+    cl->ov_dir = ov_rv; cl->ov_bpm10 = ov_b;
     cl->ovs = ovs; cl->ovs_pitch = ovs_p; cl->ovs_detune = ovs_d; cl->ovs_gain = ovs_g;
     cl->ovs_rev = ovs_rv; cl->ovs_play = ovs_pl; cl->ovs_atk = ovs_a; cl->ovs_dec = ovs_dc;
     rui_mark(inst, t, c == AU_SLC ? (int)inst->tracks[t].active_clip : c);
@@ -10794,7 +10794,7 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                     snprintf(file, sizeof file, "%s/%s", dir, ac->name);
                     /* Warp on Revrs: the sample backwards, warped forwards —
                      * its frame 0 is the sample's end, where Revrs starts */
-                    if (au_revrs(ac)) {
+                    if (au_rev0(ac)) {
                         snprintf(wav, sizeof wav, "%s/au_%d_%d_rev.wav", au_export_dir, t_idx, cidx);
                         if (au_export_reversed(inst, t_idx, cidx, wav) <= 0) return 0;
                         rs = as->frames - re;
@@ -10803,7 +10803,7 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                     return snprintf(out, out_len, "L %u %u %u %u %d %d %d %d %d %u %d %u|%s",
                                     (unsigned)as->rate, (unsigned)as->frames, (unsigned)rs,
                                     (unsigned)(ac->bpm10 ? ac->bpm10 : 1200), (int)ac->pitch,
-                                    (int)ac->detune, (int)ac->gain_db, (int)ac->revrs, (int)ac->sync,
+                                    (int)ac->detune, (int)ac->gain_db, au_rev0(ac), (int)ac->sync,
                                     (unsigned)ac->rot, (int)ac->nudge_ms, lt, file);
                 }
                 static bake_note_t rmc_au[BAKE_BUF * 8];

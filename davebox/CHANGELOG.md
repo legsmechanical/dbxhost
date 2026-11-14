@@ -18,15 +18,19 @@ the section into a versioned heading at release time.
   one bar and rests one. **Fit to clip** now sets Bars. Start and End are drawn as lines,
   with the audio outside them dotted rather than hidden. An arrow marks which of Tempo and
   Bars is in charge.
+- **Dir for Audio clips, as for MIDI clips.** Revrs is gone from SAMPLE; the CLIP bank's
+  **K7 Dir** plays a clip **Fwd**, **Bwd**, or ping-pong (**PPf** / **PPb**: a pass
+  forwards, the next backwards). A Shot offers Fwd and Bwd. It works with every Warp, Free
+  and REMIX, and automates like the rest.
 - **Free timing for Audio clips.** SAMPLE's new **Sync** knob is **Grid** or **Free**:
   launched with the clip, a Free sample plays Start to End on its own, off the sequencer's
   timing — looping with Mode Loop, once with Mode Shot (then the clip stops). **Speed**
   (1–400 %) sets how fast; **Warp** Pitch changes time and pitch together, Warp time
   alone, and Pitch, Detune, Offset and Nudge still apply. Exports render it. Track View's
   header names it: *Loop Free 100%*, *Shot Free 50%*.
-- **SAMPLE has three pages; the CLIP bank is Mode and Strch.** After the waveform come
+- **SAMPLE has three pages; the CLIP bank is Mode, Strch and Dir.** After the waveform come
   **TIME** (Sync · Warp · Nudge · Offset, then Tempo · Bars) and **SOUND** (Pitch · Detune ·
-  Revrs · Gain), laid out as the screen shows them, each setting on the knob page 1 gives
+  Gain), laid out as the screen shows them, each setting on the knob page 1 gives
   it. What was **Sync** (Vintage / Pitch / Warp) is now called **Warp**. Touching Offset,
   Tempo or Bars (or CLIP's Strch) brings up the clip's waveform while you hold the knob.
   On the waveform, **K4 is Offset**, with an arrow on top, and **Gain moved to K8**.
@@ -139,7 +143,7 @@ the section into a versioned heading at release time.
   - **The Conductor** repitches a responding Audio track (and a Slicer switched to follow),
     its chops unchanged; a scene bake's **Apply Conductor** folds a steady shift into an
     Audio clip's Pitch.
-  - **Automation**: SAMPLE's **Gain**, **Pitch**, **Detune**, **Tempo** and **Revrs**, and
+  - **Automation**: SAMPLE's **Gain**, **Pitch**, **Detune** and **Tempo**, the CLIP bank's **Dir**, and
     a Slicer's **ALL SLICES** settings, record and lock like any knob. A playing lane moves
     the sound live, chops already sounding included, and each setting comes back on Stop.
     **+ Add lane** and the macro picker offer them too (**Sample**, **All Slices**).

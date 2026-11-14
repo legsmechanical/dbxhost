@@ -797,7 +797,7 @@ int main(void) {
     hx_render(h, 4);
 
     /* ---- Loop Revrs: backwards from the end ---- */
-    hx_set_param(h, "t4_au_set_revrs", "5 1");
+    hx_set_param(h, "t4_au_set_dir", "5 1");
     hx_stub_feed_reset();
     hx_set_param(h, "transport", "play");
     for (i = 0; i < 20 && hx_stub_feed(4, NULL, NULL) == 0; i++) hx_render(h, 1);
@@ -808,7 +808,7 @@ int main(void) {
                   "Revrs did not play the sample backwards from its end");
     }
     hx_set_param(h, "transport", "stop");
-    hx_set_param(h, "t4_au_set_revrs", "5 0");
+    hx_set_param(h, "t4_au_set_dir", "5 0");
     hx_render(h, 4);
 
     /* ---- Loop Nudge: +10 ms = 441 frames of silence first ---- */
@@ -1234,7 +1234,7 @@ int main(void) {
             for (mode = 0; mode < 3; mode++) {                  /* Pitch, Vintage, Vintage Revrs */
                 int prev = -1, k2, rev = mode == 2;
                 hx_set_param(h, "t4_au_set_sync", mode ? "7 1" : "7 2");
-                hx_set_param(h, "t4_au_set_revrs", rev ? "7 1" : "7 0");
+                hx_set_param(h, "t4_au_set_dir", rev ? "7 1" : "7 0");
                 hx_set_param(h, "clock_follow_on", "1");
                 hx_stub_feed_reset();
                 hx_send_midi(h, &st, 1, MOVE_MIDI_SOURCE_INTERNAL);
@@ -1265,7 +1265,7 @@ int main(void) {
                 hx_set_param(h, "transport", "stop");
                 hx_render(h, 60);
             }
-            hx_set_param(h, "t4_au_set_revrs", "7 0");
+            hx_set_param(h, "t4_au_set_dir", "7 0");
             /* Pitch (Free's place since it left) sounds throughout; it retunes
              * to the clock, so its "breaks" are the resampling, not cuts */
             HX_ASSERT(silent[0] < 64, "the Pitch control went silent under a followed clock");
@@ -1627,11 +1627,11 @@ int main(void) {
     inst->tracks[6].tarp.octaves = 15;
     n = hx_get_param(h, "state_full", blob, (int)sizeof blob);
     HX_ASSERT(n > 0 && (size_t)n < sizeof blob - 1, "state_full failed");
-    HX_ASSERT(strstr(blob, "\"t4c7_aud\":\"rs=0 p=0 dt=0 g=0 rv=0 nu=0 sh=0 sy=1 bpm=2400 of=12|ramp2.wav\""),
+    HX_ASSERT(strstr(blob, "\"t4c7_aud\":\"rs=0 p=0 dt=0 g=0 dr=0 nu=0 sh=0 sy=1 bpm=2400 of=12|ramp2.wav\""),
               "the state does not keep an Audio clip's Sync Vintage, Tempo and Offset (format 37; of=, sh= left 0)");
     HX_ASSERT(strstr(blob, "\"t4_pm\":3") && strstr(blob, "\"t4c0_aud\":\"rs=0 p=0 dt=-17 g=0 ") && strstr(blob, "|mono48.wav\""),
               "the state does not carry the Audio track and clip A");
-    HX_ASSERT(strstr(blob, "\"t5_pm\":4") && strstr(blob, "\"t5_slc\":\"p=0 dt=-17 g=0 rv=0 bpm=2400 sy=1 sens=50 lay=1 n=16|ramp2.wav\""),
+    HX_ASSERT(strstr(blob, "\"t5_pm\":4") && strstr(blob, "\"t5_slc\":\"p=0 dt=-17 g=0 bpm=2400 sy=1 sens=50 lay=1 n=16|ramp2.wav\""),
               "the state does not carry the Slicer");
     HX_ASSERT(strstr(blob, "\"t5s1_slc\":\"st=5512 en=0 p=0 dt=9 g=-6 rv=0 pl=1 at=0 dc=0\""),
               "the state does not carry chop 2");

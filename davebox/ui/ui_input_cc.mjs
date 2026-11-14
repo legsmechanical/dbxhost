@@ -1943,13 +1943,15 @@ function autoLaneJump() {
     if (tgt.indexOf('seq:') === 0) {
         const st = SEQ_AUTO_TARGETS[tgt.split(':')[2]];
         if (!st) { showActionPopup('NO EDITOR'); return; }
-        if (auAutoBank(st.bank)) {
+        /* an Audio clip's Dir is its CLIP bank's K7: that bank, as a sequence's knob */
+        const jb = (st.bank === AU_AUTO_BANK && st.field === 'dir') ? 0 : st.bank;
+        if (auAutoBank(jb)) {
             /* an Audio clip's sound: SAMPLE (ALL SLICES': SLICES), over the
              * AUTOMATION bank — its Back comes back here */
             if (soundOpen()) soundExit();
             if (S.auPanel) closeAudioPanel();
             openWave(t, st.bank === AU_AUTO_BANK ? 'sample' : 'slices');
-            /* ...on the page its knob is on: Revrs is SOUND's (page 3), the rest page 1's */
+            /* ...on the page its knob is on */
             if (S.auEditor && st.bank === AU_AUTO_BANK) {
                 const pg = [0, 1, 2].find((p) => auPageFields(p).includes(st.field));
                 if (pg != null) S.auEditor.page = pg;
@@ -1959,12 +1961,12 @@ function autoLaneJump() {
         }
         /* A davebox bank is not sound mode: it gets its own one-shot crumb,
          * spent by the next track-view Back (see _handleBack). */
-        S.autoReturn = { track: t, bank: st.bank, sel: j.sel };
-        autoLanePinJump(tgt, 'auto', st.bank);   /* before the reset forgets the lane's page */
+        S.autoReturn = { track: t, bank: jb, sel: j.sel };
+        autoLanePinJump(tgt, 'auto', jb);   /* before the reset forgets the lane's page */
         autoBankReset();
-        S.activeBank = st.bank;
-        S.trackActiveBank[t] = st.bank;
-        readBankParams(t, st.bank);
+        S.activeBank = jb;
+        S.trackActiveBank[t] = jb;
+        readBankParams(t, jb);
         armBankDisplay();
         return;
     }
@@ -5239,9 +5241,9 @@ function _onCC_knobs(d1, d2) {
                 return;
             }
             if (bank === 0 && !audioSliceMode(_t)) {
-                /* an Audio clip's CLIP bank: K1 Mode and K2 Strch, deliberate
-                 * (a detent each); the rest is SAMPLE's (2026-11-14) */
-                if (knobIdx > 1) return;
+                /* an Audio clip's CLIP bank: K1 Mode, K2 Strch and K7 Dir,
+                 * deliberate (a detent each); the rest is SAMPLE's (2026-11-14) */
+                if (knobIdx > 1 && knobIdx !== 6) return;
                 const _st = knobStep(knobIdx, d2, KNOB_DELIB);
                 if (_st && auClipBankKnob(_t, knobIdx, _st)) S.screenDirty = true;
                 return;

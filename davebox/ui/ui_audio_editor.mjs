@@ -563,14 +563,13 @@ function sampleKnob(ed, f, k, d2) {
     if (f === 'pitch') { const st = knobStep(k, d2, KNOB_PICK); return !!st && clipStep(ed, 'pitch', st); }
     if (f === 'detune') { const st = ccKnobDelta(d2, k); return !!st && clipStep(ed, 'detune', st); }
     if (f === 'tempo') { const st = ccKnobDelta(d2, k); return !!st && clipTempo(ed, st > 0 ? 1 : -1); }
-    if (f === 'revrs') { const st = knobStep(k, d2, KNOB_DELIB); return !!st && auSampleP2Knob(ed.t, ed.c, 7, st); }
     if (f === 'offset') { const st = knobStep(k, d2, KNOB_PICK); return !!st && auOffsetStep(ed.t, ed.c, st); }
     return false;
 }
 
 /* The automatable setting knob k turns on the screen as it is (sampleKnob's
  * on SAMPLE; SLICES' are the slice's own, not automatable), or null. */
-const SAMPLE_AUTO_FIELD = { gain: 'gain', pitch: 'pitch', detune: 'detune', tempo: 'bpm10', revrs: 'revrs' };
+const SAMPLE_AUTO_FIELD = { gain: 'gain', pitch: 'pitch', detune: 'detune', tempo: 'bpm10' };
 function sampleAutoField(k, plain, page, sl, slEdit) {
     if ((page && sl) || (slEdit && k > 2)) return null;
     return SAMPLE_AUTO_FIELD[auPageFields(page)[k]] || null;
@@ -915,7 +914,7 @@ export function audioEditorInput(status, d1, d2) {
              * bank (Josh, 2026-10-28: "for multi-page banks, we should have
              * delete+jog only reset the active page") — slice n, every slice
              * with Shift; SAMPLE's TIME (Sync, Warp, Nudge, Offset) or SOUND
-             * (Gain, Pitch, Detune, Revrs) */
+             * (Gain, Pitch, Detune) */
             if (sl) {
                 if (auPanelReset({ t: ed.t, page: S.shiftHeld ? 0 : 1 })) showActionPopup(S.shiftHeld ? 'ALL SLICES' : 'SLICE', 'RESET');
             } else if ((ed.page | 0) === 1) { if (auTimeReset(ed.t, ed.c)) showActionPopup('TIME', 'RESET'); }
@@ -1117,7 +1116,7 @@ export function waveRingCells(ed) {
     const offRing = sub === 'loop' && !isSlicerTrack(ed.t) ? at(auShiftNorm(ed.t, ed.c, i)) : null;
     const sampleRings = () => [at(((i.gain | 0) + 40) / 52), at(((i.pitch | 0) + 24) / 48), at(((i.detune | 0) + 50) / 100),
                                free ? at(((i.speed || 1000) - AU_SPEED_MIN) / (AU_SPEED_MAX - AU_SPEED_MIN))
-                                    : at(((Math.round(auBpm(i) * 10) || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN)), at(i.revrs ? 1 : 0)];
+                                    : at(((Math.round(auBpm(i) * 10) || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN))];
     if (!kind && (ed.page | 0) >= 1) {
         /* pages 2 and 3: lit where a knob works, from the cells as drawn */
         return auSamplePageCells(ed.t, ed.c, ed.page | 0).map(auCellRing);

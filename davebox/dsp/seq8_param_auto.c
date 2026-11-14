@@ -236,7 +236,7 @@ static const pa_seq_def_t pa_seq_defs[] = {
     { "au_pitch",                -24,   24, PA_SEQ_AUDIO },
     { "au_detune",               -50,   50, PA_SEQ_AUDIO },
     { "au_gain",                 -40,   12, PA_SEQ_AUDIO },
-    { "au_revrs",                  0,    1, PA_SEQ_AUDIO, 1 },
+    { "au_dir",                    0,    3, PA_SEQ_AUDIO, 1 },      /* Dir: Fwd Bwd PPf PPb (AU_DIR_*) */
     { "au_bpm",                    1, 9999, PA_SEQ_AUDIO },      /* the sample's Tempo x10: AU_BPM10_MIN..MAX */
     /* ALL SLICES (SLICES with Shift): every chop held at the lane's value,
      * live, over its own; rest only lets go (the chops keep what differs).
@@ -309,7 +309,7 @@ static int pa_seq_read(const seq8_instance_t *inst, const seq8_track_t *tr, int 
         case 0:  return au_pitch(cl);
         case 1:  return au_detune(cl);
         case 2:  return au_gain(cl);
-        case 3:  return au_revrs(cl);
+        case 3:  return (cl->ov & AU_OV_DIR) ? cl->ov_dir : cl->dir;
         default: return (int)au_bpm10(cl);
         }
     }
@@ -346,10 +346,10 @@ static int pa_seq_read(const seq8_instance_t *inst, const seq8_track_t *tr, int 
     return 0;
 }
 
-/* An Audio clip's Pitch / Detune / Gain / Revrs / Tempo (f 0..4), at v.
+/* An Audio clip's Pitch / Detune / Gain / Dir / Tempo (f 0..4), at v.
  * PLAYBACK holds it live over the clip's own setting (au_clip_t ov), which
  * stays; REST gives the setting back — it becomes v, as a bank knob's stored
- * value does, and the live value goes. Revrs turning over restarts the loop
+ * value does, and the live value goes. Dir turning over restarts the loop
  * from its new end, as the knob does. AUDIO THREAD. */
 static void pa_au_apply(seq8_instance_t *inst, int track, int clip, int f, int v, int is_rest, int live) {
     au_clip_t *cl = au_cl(inst, track, clip);
@@ -373,8 +373,8 @@ static void pa_au_apply(seq8_instance_t *inst, int track, int clip, int f, int v
         cl->ovs |= sbit[g];
         return;
     }
-    static const uint8_t bit[5] = { AU_OV_PITCH, AU_OV_DETUNE, AU_OV_GAIN, AU_OV_REVRS, AU_OV_BPM };
-    int was_rev = au_revrs(cl);
+    static const uint8_t bit[5] = { AU_OV_PITCH, AU_OV_DETUNE, AU_OV_GAIN, AU_OV_DIR, AU_OV_BPM };
+    int was_dir = au_dir(cl);
     unsigned was_bpm = au_bpm10(cl);
     /* A Slicer's slot is every clip's: one clip's lane giving its value back
      * must not rewrite what the others play — it lets go, and writes nothing
@@ -390,7 +390,7 @@ static void pa_au_apply(seq8_instance_t *inst, int track, int clip, int f, int v
         case 0: moved = cl->pitch != v;   cl->pitch = (int8_t)v; break;
         case 1: moved = cl->detune != v;  cl->detune = (int8_t)v; break;
         case 2: moved = cl->gain_db != v; cl->gain_db = (int8_t)v; break;
-        case 3: moved = cl->revrs != (v ? 1 : 0); cl->revrs = (uint8_t)(v ? 1 : 0); break;
+        case 3: v = clamp_i(v, AU_DIR_FWD, AU_DIR_PPB); moved = cl->dir != v; cl->dir = (uint8_t)v; break;
         default: moved = cl->bpm10 != v; cl->bpm10 = (uint16_t)v; break;
         }
         cl->ov &= (uint8_t)~bit[f];
@@ -401,13 +401,13 @@ static void pa_au_apply(seq8_instance_t *inst, int track, int clip, int f, int v
         case 0: cl->ov_pitch = (int8_t)v; break;
         case 1: cl->ov_detune = (int8_t)v; break;
         case 2: cl->ov_gain = (int8_t)v; break;
-        case 3: cl->ov_revrs = (uint8_t)(v ? 1 : 0); break;
+        case 3: cl->ov_dir = (uint8_t)clamp_i(v, AU_DIR_FWD, AU_DIR_PPB); break;
         default: cl->ov_bpm10 = (uint16_t)v; break;
         }
         cl->ov |= bit[f];
     }
     if (au_bpm10(cl) != was_bpm) cl->tr_due = 1;               /* Transient's chops move with it */
-    if (live && au_revrs(cl) != was_rev) {
+    if (live && au_dir(cl) != was_dir) {
         inst->au_trk[track].last_tick = -1;
         au_track_kill(inst, track, NULL);
     }

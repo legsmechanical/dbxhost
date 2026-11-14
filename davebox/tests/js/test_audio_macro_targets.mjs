@@ -126,7 +126,7 @@ step('⭐⭐ + Add lane on an Audio track: Sample (no All Slices); Sample > Pitc
     const path = JSON.stringify(snd.soundViewPath());
     assert(path.indexOf('Sample') >= 0 && path.indexOf('au:') < 0, 'the crumb names the raw id: ' + path);
     const keys = snd.soundKnobParamsForTest().map(p => p.key).join(',');
-    assert(keys === 'au_gain,au_pitch,au_detune,au_bpm,au_revrs', 'Sample lists ' + keys);
+    assert(keys === 'au_gain,au_pitch,au_detune,au_bpm,au_dir', 'Sample lists ' + keys);
     pickParam('au_pitch');
     assert(sent('t4_pa_add').includes('0 seq:4:au_pitch'), 'pa_add: ' + JSON.stringify(sets.filter(x => /pa_add/.test(x[0]))));
     leave();

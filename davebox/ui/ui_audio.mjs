@@ -217,7 +217,7 @@ const _stale = new Set();      /* "t_c" whose info must be re-read */
 const _loading = new Set();    /* "t_c" read as loading: re-read until it lands */
 const _prog = new Map();       /* "t_c" -> percent read, while the loader reads that clip's file */
 const _editWatch = new Map();  /* "t_c" -> 'TRIM' / 'NORMALIZE': a Trim / Normalize waiting for its answer */
-let _pos = { t: -1, on: 0, frame: 0, slice: -1 };
+let _pos = { t: -1, on: 0, frame: 0, slice: -1, rev: 0 };
 let _lazy = { state: 0, n: 0, frame: 0 };
 let _padKey = '';
 let _marks = { key: '', t: -1, c: -1, v: [], at: -1 };   /* every slice as it plays: [[a, b], ...] frames */
@@ -239,7 +239,7 @@ export function auParseInfo(raw) {
         state: head[0], err: head[1], mode: head[2], even: head[3], hand: head[4],
         rstart: head[6], rend: head[7], pitch: head[8], gain: head[9],
         nframes: head[10], rate: head[11], ch: head[12],
-        revrs: head[13], nudge: head[14], n: head[16], detune: head[17] | 0, sync: head[18] | 0,
+        dir: head[13] | 0, nudge: head[14], n: head[16], detune: head[17] | 0, sync: head[18] | 0,
         /* how much of Start..End sounds before the clip comes round (-1 unknown) */
         reach: head.length > 19 ? head[19] : -1,
         /* the sample's own Tempo x10 (0 not known yet) */
@@ -268,7 +268,7 @@ export function auParseInfo(raw) {
 }
 
 const DEFAULT_INFO = { state: 0, err: 0, mode: 0, even: 16, hand: 1, n: 16, rstart: 0, rend: 0,
-                       pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, revrs: 0, nudge: 0, sync: 0, reach: -1, bpm10: 0, hits: 0, sens: 50, trans: 0, slen: 0, shot: 0, cut: 0, span: 0, free: 0, speed: 1000, name: '' };
+                       pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, dir: 0, nudge: 0, sync: 0, reach: -1, bpm10: 0, hits: 0, sens: 50, trans: 0, slen: 0, shot: 0, cut: 0, span: 0, free: 0, speed: 1000, name: '' };
 const DEFAULT_SLICE = { a: 0, b: 0, pinned: 0, pitch: 0, detune: 0, gain: 0, rev: 0, play: 0, atk: 0, dec: 0 };
 
 /* A Free clip (Josh, 2026-11-13: "a mode ... irrespective of the sequencer's
@@ -564,8 +564,8 @@ export function auTick() {
     const _sounding = S.playing || _pos.on || auLazyOpen() || !!S.auEditor || S.auPadDown.some((x) => x);
     if ((S.tickCount % 3) === 0 && _sounding) {
         const raw = String(host_module_get_param('t' + t + '_au_pos') || '').trim().split(/\s+/).map((x) => parseInt(x, 10));
-        const np = { t, on: raw[0] | 0, frame: raw[1] | 0, slice: isNaN(raw[2]) ? -1 : raw[2] };
-        if (np.on !== _pos.on || np.frame !== _pos.frame || np.slice !== _pos.slice) { S.screenDirty = true; S.ledsDirtyAudio = true; }
+        const np = { t, on: raw[0] | 0, frame: raw[1] | 0, slice: isNaN(raw[2]) ? -1 : raw[2], rev: raw[3] | 0 };
+        if (np.on !== _pos.on || np.frame !== _pos.frame || np.slice !== _pos.slice || np.rev !== _pos.rev) { S.screenDirty = true; S.ledsDirtyAudio = true; }
         _pos = np;
         const se = S.auEditor;
         if (auLazyOpen()) {
@@ -696,7 +696,7 @@ export function auSet(t, c, field, v) {
 }
 /* AUTOMATION (Josh, 2026-10-31: Pitch, Detune, Gain, Revrs as a switch, and
  * Tempo). A hand on one of them — `field` is the info's name: gain, pitch,
- * detune, bpm10, revrs — is heard as its `seq:<t>:au_*` target, as a bank
+ * detune, bpm10, dir — is heard as its `seq:<t>:au_*` target, as a bank
  * knob's turn is: Record takes it, a held step locks it, a plain turn is a
  * plain turn. The engine holds a playing lane's value live over the clip's
  * setting and the hand's write takes over from it (sp_track_audio set_). */
@@ -748,7 +748,7 @@ export function auAutoMirror(t, field, val) {
     if ((i[field] | 0) === val) return true;
     const loc = Object.assign({}, i, { [field]: val });
     if (field === 'bpm10') { loc.rend = auPlayedEnd(t, c, loc); S.auStartsRev = (S.auStartsRev | 0) + 1; }
-    if (field === 'revrs') S.auStartsRev = (S.auStartsRev | 0) + 1;
+    if (field === 'dir') S.auStartsRev = (S.auStartsRev | 0) + 1;
     S.auInfo[t][c] = loc;
     S.screenDirty = true;
     return true;
@@ -787,7 +787,7 @@ export function auMacroWrite(t, key, nv) {
         auSet(t, c, f === 'bpm10' ? 'bpm' : f, nv);
         auAutoEdit(t, c, f, nv, cur);
         if (f === 'bpm10') loc.rend = auPlayedEnd(t, c, loc);
-        if (f === 'bpm10' || f === 'revrs') S.auStartsRev = (S.auStartsRev | 0) + 1;
+        if (f === 'bpm10' || f === 'dir') S.auStartsRev = (S.auStartsRev | 0) + 1;
         S.auInfo[t][c] = loc;
     } else {
         const fv = f === 'dec' && nv >= 5001 ? 0 : nv;
@@ -923,7 +923,6 @@ export function auPanelTitle(ed) {
 const dash = (x) => Object.assign({}, x, { text: '--', na: true });
 const BLANK = { kind: 'blank', label: '' };
 
-const revrsCell = (i) => ({ kind: 'enumsq', label: 'Revrs', name: 'Reverse', text: i.revrs ? 'On' : 'Off', options: ['Off', 'On'], sel: i.revrs });
 const nudgeCell = (i) => ({ kind: 'arcbip', label: 'Nudge', name: 'Nudge (start vs the bar)', text: fmtMs(i.nudge), signed: i.nudge / 500 });
 
 /* The sound fields, as cells (SLICE n: one slice; CLIP in Slice mode: every
@@ -976,8 +975,8 @@ export function auPanelCells(ed) {
             /* a Slicer has no Start or Nudge: what plays is its chops */
             const slc = isSlicerTrack(t);
             /* Free: Speed mode and Speed for Sync and Tempo, no Nudge */
-            if (auIsFree(i)) return [start, pitch, detune, gain, revrsCell(i), BLANK, freeSyncCell(i), speedCell(i)].map(live);
-            return [slc ? BLANK : start, pitch, detune, gain, revrsCell(i), slc ? BLANK : nudgeCell(i), sync, tempo].map(live);
+            if (auIsFree(i)) return [start, pitch, detune, gain, BLANK, BLANK, freeSyncCell(i), speedCell(i)].map(live);
+            return [slc ? BLANK : start, pitch, detune, gain, BLANK, slc ? BLANK : nudgeCell(i), sync, tempo].map(live);
         }
     }
     if (page === 'CLIP') {
@@ -1019,7 +1018,7 @@ export function auPanelRingCells(ed) {
  * knob "is very touchy"); 'delib' for toggles and the rest that pick. */
 export function auPanelKnobClass(ed, k) {
     const page = auPanelPageName(ed);
-    if (page === 'SAMPLE') return (k === 4 || k === 6) ? 'delib' : (k === 1 ? 'pick' : '');   /* Revrs, Sync deliberate; Pitch picks */
+    if (page === 'SAMPLE') return k === 6 ? 'delib' : (k === 1 ? 'pick' : '');   /* Sync deliberate; Pitch picks */
     /* ALL SLICES / SLICE n: Pitch picks; Revrs and Play are deliberate */
     if (k === 4) return 'pick';
     return (k === 6 || k === 7) ? 'delib' : '';
@@ -1060,17 +1059,34 @@ function stepSliceField(f, v, steps) {
     return v;
 }
 
-/* Delete + click on an Audio clip's CLIP bank: Mode back to Loop. Strch is an
- * action with nothing stored, and the MIDI CLIP bank's settings (Res, InQ,
- * Dir) are not on this bank, so a reset leaves them alone. True when it changed. */
+/* Delete + click on an Audio clip's CLIP bank: Mode back to Loop, Dir back to
+ * Fwd. Strch is an action with nothing stored, and the MIDI CLIP bank's
+ * settings (Res, InQ) are not on this bank, so a reset leaves them alone.
+ * True when it changed. */
 export function auClipReset(t, c) {
     const i = auInfo(t, c);
-    if (i.state !== 2 || !i.shot) return false;
+    if (i.state !== 2 || (!i.shot && !(i.dir | 0))) return false;
     auResetUndo(t, c);
-    auSet(t, c, 'shot', 0);
-    S.auInfo[t][c] = Object.assign({}, i, { shot: 0 });
+    if (i.shot) auSet(t, c, 'shot', 0);
+    if (i.dir | 0) auSet(t, c, 'dir', 0);
+    auResetLanes(t, c, ['au_dir']);
+    S.auInfo[t][c] = Object.assign({}, i, { shot: 0, dir: 0 });
     S.auStartsRev = (S.auStartsRev | 0) + 1;
     return true;
+}
+/* Dir (Josh, 2026-11-14: "make reverse a clip param since it's essentially
+ * there for midi with sequence direction ... forward, reverse, pingpong,
+ * reverse pingpong"), the MIDI clip's names. A Shot plays one pass, so it
+ * offers Fwd and Bwd alone ("no sense in having those options when shot is
+ * selected"), and a ping-pong set before shows as its first way. */
+export const AU_DIR_NAMES = ['Fwd', 'Bwd', 'PPf', 'PPb'];
+export function auDirShown(i) { const d = i.dir | 0; return (i.shot && d >= 2) ? d - 2 : d; }
+/* the clip plays backwards now: the engine's word while it sounds (a
+ * ping-pong's pass), else its first pass's way */
+export function auPlayRev(t) {
+    if (_pos.t === t && _pos.on) return !!_pos.rev;
+    const d = auDirShown(auInfo(t, auClipOf(t)));
+    return d === 1 || d === 3;
 }
 /* An Audio clip's CLIP bank knobs: K1 Mode, K2 Strch — everything else is
  * SAMPLE's, on the pages after its waveform (Josh, 2026-11-14: "aside from
@@ -1081,6 +1097,12 @@ export function auClipBankKnob(t, k, steps) {
     const loc = Object.assign({}, i);
     if (!auIsLoop(i) || i.state !== 2) {
         return false;
+    } else if (k === 6) {
+        /* Dir: a detent a choice; a Shot's runs Fwd · Bwd */
+        const cur = auDirShown(i), hi = i.shot ? 1 : 3;
+        const v = Math.max(0, Math.min(hi, cur + (steps > 0 ? 1 : -1)));
+        if (v === cur) return false;
+        loc.dir = v; auSet(t, c, 'dir', v); auAutoEdit(t, c, 'dir', v, i.dir | 0);
     } else if (k === 0) {
         /* Mode: Loop · Shot — Shot plays the clip's length once per launch, then
          * the clip stops (Josh, 2026-10-29: "a one-shot mode ... fired off and stop
@@ -1172,11 +1194,12 @@ export function auTempoStep(t, c, steps) {
     return true;
 }
 /* The automation target a bank knob writes on track t, for the Track View's
- * touch gestures and its marks: an Audio clip's CLIP bank (Mode, Strch)
- * automates nothing — not a sequence's knobs either; every other bank, the
- * table's. (The sample's own lanes are SAMPLE's knobs'.) */
+ * touch gestures and its marks: an Audio clip's CLIP bank automates its Dir
+ * (K7, au_dir) and nothing else (Mode, Strch) — not a sequence's knobs
+ * either; every other bank, the table's. (The sample's own lanes are SAMPLE's
+ * knobs'.) */
 export function bankAutoTarget(t, bank, k, altMode) {
-    if (bank === 0 && isSampledTrack(t) && !isSlicerTrack(t)) return null;
+    if (bank === 0 && isSampledTrack(t) && !isSlicerTrack(t)) return k === 6 ? 'seq:' + t + ':au_dir' : null;
     return seqAutoTargetForKnob(t, bank, k, altMode);
 }
 
@@ -1269,7 +1292,7 @@ export function auLenTicks(t, c, i) {
 /* One knob step on the AUDIO editor. Returns true when something changed. */
 /* Delete + jog click (Josh, 2026-10-28: "can we have delete+click reset all
  * params on the page we're on in "audio"?"), as on every bank: CLIP — the
- * clip's Pitch, Detune and Gain, and Revrs in Loop or every slice's Revrs,
+ * clip's Pitch, Detune and Gain in Loop or every slice's Revrs,
  * Attk, Decay and Play in Slice; SLICE n — that slice's sound. Returns true
  * when it ran. */
 export function auPanelReset(ed) {
@@ -1285,9 +1308,9 @@ export function auPanelReset(ed) {
         return true;
     }
     if (pn === 'SAMPLE') {
-        const loc = Object.assign({}, i, { pitch: 0, detune: 0, gain: 0, revrs: 0, nudge: 0 });
+        const loc = Object.assign({}, i, { pitch: 0, detune: 0, gain: 0, nudge: 0 });
         auSet(t, c, 'pitch', 0); auSet(t, c, 'detune', 0); auSet(t, c, 'gain', 0);
-        auSet(t, c, 'revrs', 0); auSet(t, c, 'nudge', 0);
+        auSet(t, c, 'nudge', 0);
         S.auInfo[t][c] = loc;
         S.auStartsRev = (S.auStartsRev | 0) + 1;
         return true;
@@ -1308,12 +1331,11 @@ export function auPanelKnob(ed, k, steps) {
         if (i.state !== 2) {
             return false;
         } else if (page === 'SAMPLE') {
-            /* Start · Pitch · Detune · Gain · Revrs · Nudge · Sync · Tempo */
+            /* Start · Pitch · Detune · Gain · - · Nudge · Sync · Tempo (Dir is the CLIP bank's) */
             if (k === 0) return auRangeStep(t, c, 'start', steps);
             if (k === 1) { const v = Math.max(-24, Math.min(24, i.pitch + dir)); if (v === i.pitch) return false; loc.pitch = v; auSet(t, c, 'pitch', v); auAutoEdit(t, c, 'pitch', v, i.pitch); }
             else if (k === 2) { const v = Math.max(-50, Math.min(50, (i.detune | 0) + steps)); if (v === (i.detune | 0)) return false; loc.detune = v; auSet(t, c, 'detune', v); auAutoEdit(t, c, 'detune', v, i.detune | 0); }
             else if (k === 3) { const v = Math.max(-40, Math.min(12, i.gain + dir)); if (v === i.gain) return false; loc.gain = v; auSet(t, c, 'gain', v); auAutoEdit(t, c, 'gain', v, i.gain); }
-            else if (k === 4) { const v = dir > 0 ? 1 : 0; if (v === i.revrs) return false; loc.revrs = v; auSet(t, c, 'revrs', v); auAutoEdit(t, c, 'revrs', v, i.revrs | 0); }
             else if (k === 5) return !auIsFree(i) && auNudgeStep(t, c, steps);
             else if (k === 6) return auIsLoop(i) && auSampleP2Knob(t, c, 1, steps);
             else if (k === 7 && auIsFree(i)) return auSpeedTurn(t, c, steps);
@@ -1397,7 +1419,9 @@ export function auLoopBankCells(t) {
     const msel = i.shot ? 1 : 0;
     const mode = { kind: 'enumsq', label: 'Mode', name: 'Mode', text: AU_MODE_NAMES[msel],
                    options: AU_MODE_NAMES, sel: msel };
-    return [live(mode), live(strch), BLANK, BLANK, BLANK, BLANK, BLANK, BLANK];
+    const dsel = auDirShown(i), dopts = i.shot ? AU_DIR_NAMES.slice(0, 2) : AU_DIR_NAMES;
+    const dir = { kind: 'enumsq', label: 'Dir', name: 'Playback Dir', text: AU_DIR_NAMES[dsel], options: dopts, sel: dsel };
+    return [live(mode), live(strch), BLANK, BLANK, BLANK, BLANK, live(dir), BLANK];
 }
 /* ---- REMIX (Josh, 2026-11-10: "replacing midi effects banks on audio tracks
  * with loop remix effects like those on the yamaha rs7000"; 2026-11-11: "i
@@ -1634,11 +1658,11 @@ export function auAltBit(t, bank, k) {
  *   page 2 TIME   Sync  Warp  Nudge Offset      (Free: Speed on Tempo's knob,
  *                  -     -    Tempo Bars          no Bars)
  *   page 3 SOUND   -     -     -     -
- *                 Pitch Detune Revrs Gain
+ *                 Pitch Detune -     Gain
  * A knob that does nothing on this clip reads `--` (a Slicer: Sync, Nudge,
  * Offset; Free: Bars). */
 export const AU_P2_FIELDS = ['free', 'sync', 'nudge', 'offset', null, null, 'tempo', 'bars'];
-export const AU_P3_FIELDS = [null, null, null, null, 'pitch', 'detune', 'revrs', 'gain'];
+export const AU_P3_FIELDS = [null, null, null, null, 'pitch', 'detune', null, 'gain'];
 export const AU_P2_OFFSET = 3, AU_P2_TEMPO = 6, AU_P2_BARS = 7;
 export const AU_SAMPLE_PAGES = 3;
 /* The fields on SAMPLE page `page` (0 the waveform's, 1 TIME, 2 SOUND). */
@@ -1666,7 +1690,6 @@ export function auSampleFieldCell(t, c, f) {
     if (f === 'pitch') return live(pitchCell('Pitch', i.pitch));
     if (f === 'detune') return live(detuneCell('Detune', i.detune));
     if (f === 'gain') return live({ kind: 'arc', label: 'Gain', name: 'Gain', text: fmtDb(i.gain), norm: (i.gain + 40) / 52 });
-    if (f === 'revrs') return live(revrsCell(i));
     return BLANK;
 }
 /* Page 2 (TIME) and page 3 (SOUND) as cells. */
@@ -1710,10 +1733,6 @@ export function auSampleP2Knob(t, c, k, steps) {
         const ti = Math.max(0, Math.min(AU_SYNC_NAMES.length - 1, auSyncIdx(i) + (steps > 0 ? 1 : -1)));
         if (AU_SYNC_VALS[ti] === (i.sync | 0)) return false;
         loc.sync = AU_SYNC_VALS[ti]; auSet(t, c, 'sync', loc.sync);
-    } else if (k === 7) {
-        const v = steps > 0 ? 1 : 0;
-        if (v === (i.revrs | 0)) return false;
-        loc.revrs = v; auSet(t, c, 'revrs', v); auAutoEdit(t, c, 'revrs', v, i.revrs | 0);
     } else return false;
     S.auInfo[t][c] = loc;
     S.auStartsRev = (S.auStartsRev | 0) + 1;
@@ -1752,15 +1771,15 @@ export function auTrimCuts(t, c) {
     if (i.state !== 2 || !i.nframes) return false;
     return (i.rstart | 0) > 0 || auPlayedEnd(t, c, i) < i.nframes;
 }
-/* Delete + click on SAMPLE's page 2: Gain, Pitch, Detune and Revrs back to
+/* Delete + click on SAMPLE's page 2: Gain, Pitch and Detune back to
  * their defaults (Tempo and Sync are the sample's, not a sound to reset). */
 export function auSampleReset(t, c) {
     const i = auInfo(t, c);
     if (i.state !== 2) return false;
     auResetUndo(t, c);
-    for (const f of ['gain', 'pitch', 'detune', 'revrs']) auSet(t, c, f, 0);
-    auResetLanes(t, c, ['au_gain', 'au_pitch', 'au_detune', 'au_revrs']);
-    S.auInfo[t][c] = Object.assign({}, i, { gain: 0, pitch: 0, detune: 0, revrs: 0 });
+    for (const f of ['gain', 'pitch', 'detune']) auSet(t, c, f, 0);
+    auResetLanes(t, c, ['au_gain', 'au_pitch', 'au_detune']);
+    S.auInfo[t][c] = Object.assign({}, i, { gain: 0, pitch: 0, detune: 0 });
     S.auStartsRev = (S.auStartsRev | 0) + 1;
     return true;
 }
@@ -1904,7 +1923,7 @@ export function auPlayheadChop(t) {
     const cs = S.trackCurrentStep[t], len = S.clipLength[t][c] | 0, ls = S.clipLoopStart[t][c] | 0;
     if (cs < 0 || len <= 0) return -1;
     const ks = Math.max(0, Math.min(AU_LOOP_SECTIONS - 1, Math.floor((cs - ls) * AU_LOOP_SECTIONS / len)));
-    return i.revrs ? AU_LOOP_SECTIONS - 1 - ks : ks;
+    return auPlayRev(t) ? AU_LOOP_SECTIONS - 1 - ks : ks;
 }
 
 /* ---- the waveform ---- */

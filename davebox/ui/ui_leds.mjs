@@ -29,7 +29,7 @@ import { pianoLayoutOn } from './ui_drummodel.mjs';
 import { customLayoutOn, customPadColor } from './ui_custom_chords.mjs';
 import { setLED, setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
 import { isSampledTrack, auInfo, auClipOf, auPos, auPlayheadChop, auPadToSlice, auLayoutOn, auLoopMarks, AU_LOOP_SECTIONS, auEnd, auSelSlice, auLazyOpen, auLazyState,
-         auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_NOTE_BASE } from './ui_audio.mjs';
+         auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_NOTE_BASE, auPlayRev } from './ui_audio.mjs';
 
 const lastSentNoteLED   = new Array(128).fill(-1);
 const lastSentButtonLED = new Array(128).fill(-1);
@@ -977,7 +977,7 @@ export function updateTrackLEDs() {
              * dim. Loop mode, a progress bar (Josh, 2026-10-28: "full length
              * in dim track color, played section in bright track color and
              * playhead in pulsing dim white/track color"): the chops played
-             * since the wrap bright (from the end back in Revrs), the one
+             * since the wrap bright (from the end back on a backwards pass), the one
              * under the playhead pulsing on the beat, the rest dim; stopped,
              * all dim. No sample: dark but for a dim first pad. */
             const t = S.activeTrack, tc = trackColor(t), td = trackDimColor(t);
@@ -988,7 +988,7 @@ export function updateTrackLEDs() {
              * correspond to each other. we can just use the corresponding
              * tracks color") */
             const twoBanks = auLayoutOn(t), pt = (t + 4) % 8;
-            const ai = auInfo(t, auClipOf(t)), ap = auPos();
+            const ai = auInfo(t, auClipOf(t)), ap = auPos(), arev = auPlayRev(t);
             const slice = auIsSlice(ai);
             const ph = slice ? -1 : auPlayheadChop(t);
             const sel = auSelSlice(t);
@@ -999,7 +999,7 @@ export function updateTrackLEDs() {
              * that are out of start/end range on the sample aren't showing up
              * as dim white on the pads") */
             const pastReach = (k) => !!(mk && mk[k] && (mk[k][1] <= ai.rstart || mk[k][0] >= auEnd(ai)
-                || (reach && (ai.revrs ? auEnd(ai) - mk[k][1] : mk[k][0] - ai.rstart) >= ai.reach)));
+                || (reach && (arev ? auEnd(ai) - mk[k][1] : mk[k][0] - ai.rstart) >= ai.reach)));
             /* A Lazy chop: the next pad in order WHITE (pad 1 before the
              * first tap), the slices chopped so far in the track colour
              * (Josh, 2026-10-28: "pads should light to indicate populated as
@@ -1028,7 +1028,7 @@ export function updateTrackLEDs() {
                     } else if (k >= AU_LOOP_SECTIONS || pastReach(k)) cachedSetLED(n, LED_OFF);
                     else if (recSt === 'wait') cachedSetLEDAnim(n, LED_OFF, White, LED_BLINK_8TH);
                     else if (k === ph) cachedSetLEDAnim(n, DarkGrey, White, LED_PULSE_4TH);
-                    else cachedSetLED(n, ph >= 0 && (ai.revrs ? k > ph : k < ph) ? White : DarkGrey);
+                    else cachedSetLED(n, ph >= 0 && (arev ? k > ph : k < ph) ? White : DarkGrey);
                     continue;
                 }
                 if (lz) color = k === next ? White : k < done ? tc : LED_OFF;
@@ -1057,7 +1057,7 @@ export function updateTrackLEDs() {
                      * heard pulsing (the chops plan's display: "Remix on:
                      * the remix grid, all dim, playing chop pulsing") */
                     const rmxOn = S.rmxSet[t] && S.rmxSet[t][0];
-                    color = !rmxOn && ph >= 0 && (ai.revrs ? k > ph : k < ph) ? tc : td;
+                    color = !rmxOn && ph >= 0 && (arev ? k > ph : k < ph) ? tc : td;
                 }
                 cachedSetLED(TRACK_PAD_BASE + i, color);
             }

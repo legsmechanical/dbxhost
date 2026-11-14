@@ -4278,7 +4278,8 @@ function auMacroMeta(m, track) {
              fmt: v => auMacroText(st.field, v), sens: st.stepped ? 16 : 0 };
 }
 function auMacroText(f, v) {
-    if (f === 'revrs' || f === 'rev') return v ? 'On' : 'Off';
+    if (f === 'rev') return v ? 'On' : 'Off';
+    if (f === 'dir') return ['Fwd', 'Bwd', 'PPf', 'PPb'][v] || '--';
     if (f === 'play') return ['One', 'Gate', 'Loop'][v] || '--';
     if (f === 'bpm10') return (v / 10).toFixed(1);
     if (f === 'dec') return v >= 5001 ? 'Full' : v + 'ms';

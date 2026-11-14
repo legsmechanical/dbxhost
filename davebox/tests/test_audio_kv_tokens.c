@@ -9,7 +9,7 @@
 
 int main(void) {
     au_kv_t kv[AU_KV_MAX];
-    const char *line = "x1=1 x2=2 x3=3 x4=4 x5=5 x6=6 rs=10 p=1 dt=2 g=3 rv=1 nu=4 sh=0 sy=1 bpm=1200 "
+    const char *line = "x1=1 x2=2 x3=3 x4=4 x5=5 x6=6 rs=10 p=1 dt=2 g=3 dr=1 nu=4 sh=0 sy=1 bpm=1200 "
                        "of=12 os=1 en=900 sp=768 fr=1 spd=500|a.wav";
     const char *p = line;
     int n = au_read_kv(&p, kv);

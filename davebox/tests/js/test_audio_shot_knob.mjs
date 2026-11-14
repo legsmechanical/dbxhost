@@ -66,8 +66,8 @@ async function main() {
     const shotSets = () => sets.filter(([k]) => k === 't' + T + '_au_set_shot').map(([, v]) => v);
     /* the clip's info is the engine's, refreshed each tick: hold it as the engine would report */
     let shot = 0, free = 0, speed = 1000, sync = 0;
-    let rot = 0;
-    const info = () => { S.auInfo[T] = S.auInfo[T] || []; S.auInfo[T][0] = { state: 2, mode: 0, name: 'Break.wav', nframes: 44100, rate: 44100, ch: 1, bpm10: 1200, rot, shot, free, speed, sync, rstart: 0, cut: 0, pitch: 0, detune: 0, gain: 0, nudge: 0, span: 0, revrs: 0 }; };
+    let rot = 0, dir = 0;
+    const info = () => { S.auInfo[T] = S.auInfo[T] || []; S.auInfo[T][0] = { state: 2, mode: 0, name: 'Break.wav', nframes: 44100, rate: 44100, ch: 1, bpm10: 1200, rot, shot, free, speed, sync, rstart: 0, cut: 0, pitch: 0, detune: 0, gain: 0, nudge: 0, span: 0, dir }; };
     const freeSets = () => sets.filter(([k]) => k === 't' + T + '_au_set_free').map(([, v]) => v);
     const speedSets = () => sets.filter(([k]) => k === 't' + T + '_au_set_speed').map(([, v]) => v);
     /* each gesture starts from a clean accumulator, as a fresh touch would */
@@ -81,23 +81,48 @@ async function main() {
         info(); ticks(2); info();
     });
 
-    step('⭐⭐ the CLIP bank is K1 Mode (Loop · Shot) and K2 Strch, nothing else (Josh, 2026-11-14: "aside from clip bank mode and stretch, let\'s figure out a way to put everything on multiple audio editor pages")', () => {
+    step('⭐⭐ the CLIP bank is K1 Mode (Loop · Shot), K2 Strch and K7 Dir, nothing else (Josh, 2026-11-14: "aside from clip bank mode and stretch, let\'s figure out a way to put everything on multiple audio editor pages" · "make reverse a clip param")', () => {
         const cells = A.auLoopBankCells(T);
         assert(cells[0] && cells[0].label === 'Mode' && cells[0].text === 'Loop', 'K1 is not Mode Loop: ' + JSON.stringify(cells[0]));
         assert(cells[0].options.join() === 'Loop,Shot', 'Mode is not Loop · Shot (Free is SAMPLE\'s Sync now): ' + cells[0].options.join());
-        assert(cells.map((x) => x.label || '').join() === 'Mode,Strch,,,,,,', 'the CLIP bank: ' + cells.map((x) => x.label).join());
+        assert(cells.map((x) => x.label || '').join() === 'Mode,Strch,,,,,Dir,', 'the CLIP bank: ' + cells.map((x) => x.label).join());
+        assert(cells[6].options.join() === 'Fwd,Bwd,PPf,PPb' && cells[6].text === 'Fwd', 'K7 Dir is not a MIDI clip\'s four: ' + JSON.stringify(cells[6]));
         assert(!A.knobAltOnTrack(T, 3, 0, 2), 'K3 has an alternate');
     });
 
-    step('⭐⭐ K3-K8 on the CLIP bank set nothing and write no lane, through the real input path', () => {
+    step('⭐⭐ K3-K6 and K8 on the CLIP bank set nothing and write no lane, through the real input path', () => {
         const knob = (k, dir, n) => { S.knobAccum[k] = 0; note(k, 127); for (let i = 0; i < n; i++) { info(); S.knobAccelLast[k] = 0; cc(71 + k, dir > 0 ? 1 : 127); } info(); note(k, 0); info(); };
         S.playing = true;
         for (let k = 2; k < 8; k++) {
+            if (k === 6) continue;
             sets.length = 0; knob(k, 1, 30); ticks(1);
             assert(!sets.some(([x]) => /_au_set_|_pa_/.test(x)), 'K' + (k + 1) + ' set something: ' + JSON.stringify(sets));
         }
         S.playing = false;
-        assert([0, 1, 2, 3, 4, 5, 6, 7].every((k) => A.bankAutoTarget(T, 0, k, false) === null), 'a CLIP knob has a lane');
+        assert([0, 1, 2, 3, 4, 5, 7].every((k) => A.bankAutoTarget(T, 0, k, false) === null), 'a CLIP knob other than Dir has a lane');
+        assert(A.bankAutoTarget(T, 0, 6, false) === 'seq:' + T + ':au_dir', 'Dir has no lane: ' + A.bankAutoTarget(T, 0, 6, false));
+    });
+
+    step('⭐⭐ K7 Dir: a detent a choice, through the real input path, written as the clip\'s and heard by automation; a Shot offers Fwd · Bwd alone, a ping-pong set before showing as its first way (Josh, 2026-11-14: "no sense in having those options when shot is selected")', () => {
+        const knob = (k, d, n) => { S.knobAccum[k] = 0; note(k, 127); for (let i = 0; i < n; i++) { info(); S.knobAccelLast[k] = 0; cc(71 + k, d > 0 ? 1 : 127); } info(); note(k, 0); info(); };
+        S.playing = true;
+        sets.length = 0; knob(6, 1, 30); ticks(1);
+        const ds = sets.filter(([k]) => k === 't' + T + '_au_set_dir').map(([, v]) => v);
+        assert(ds.join() === '0 1', 'K7 right did not set Bwd once: ' + JSON.stringify(sets));
+        assert(sets.some(([k, v]) => k === 't' + T + '_pa_live' && v.indexOf('seq:' + T + ':au_dir ') === 0), 'Dir did not reach its lane: ' + JSON.stringify(sets));
+        S.playing = false;
+        dir = 2; shot = 1; info();
+        let c6 = A.auLoopBankCells(T)[6];
+        assert(c6.options.join() === 'Fwd,Bwd' && c6.text === 'Fwd', 'a Shot\'s Dir is not Fwd · Bwd, PPf shown as Fwd: ' + JSON.stringify(c6));
+        sets.length = 0; knob(6, 1, 30); ticks(1);
+        assert(sets.filter(([k]) => k === 't' + T + '_au_set_dir').map(([, v]) => v).join() === '0 1', 'a Shot\'s K7 right did not go to Bwd: ' + JSON.stringify(sets));
+        dir = 1; info();
+        sets.length = 0; knob(6, 1, 30); ticks(1);
+        assert(!sets.some(([k]) => k === 't' + T + '_au_set_dir'), 'a Shot\'s Dir went past Bwd: ' + JSON.stringify(sets));
+        dir = 3; shot = 0; info();
+        c6 = A.auLoopBankCells(T)[6];
+        assert(c6.text === 'PPb' && c6.options.length === 4, 'back on Loop the ping-pong did not come back: ' + JSON.stringify(c6));
+        dir = 0; info();
     });
 
     step('⭐⭐ Strch moves the waveform\'s grid, so touching it shows the waveform card; nothing else on CLIP does, and never on Free', () => {
@@ -139,11 +164,11 @@ async function main() {
         S.activeBank = 0; info();
     });
 
-    step('⭐ its knob rings: K1-K2 lit, the rest dark — nothing there (Josh, 2026-11-12: "clip bank knob led rings are lit on empty knobs, which they shouldn\'t be per the general UI conventions")', () => {
+    step('⭐ its knob rings: K1-K2 and K7 lit, the rest dark — nothing there (Josh, 2026-11-12: "clip bank knob led rings are lit on empty knobs, which they shouldn\'t be per the general UI conventions")', () => {
         S.bankCardLatched = false;
         for (let i = 0; i < 4; i++) { info(); render.drawUI(); ticks(1); }
         const lit = [71, 72, 73, 74, 75, 76, 77, 78].map((c) => (CCLEDS.get(c) ? 1 : 0)).join('');
-        assert(lit === '11000000', 'the CLIP bank rings: ' + lit + ' ' + JSON.stringify([71, 72, 73, 74, 75, 76, 77, 78].map((c) => CCLEDS.get(c))));
+        assert(lit === '11000010', 'the CLIP bank rings: ' + lit + ' ' + JSON.stringify([71, 72, 73, 74, 75, 76, 77, 78].map((c) => CCLEDS.get(c))));
     });
 
     step('⭐ Loop + jog changes an Audio clip\'s length a step a detent, as on any clip (Josh, 2026-11-12: "on audio clips, loop + jog gesture to change length by steps doesn\'t work")', () => {
@@ -281,8 +306,8 @@ async function main() {
         S.knobTouched = -1;
     });
 
-    step('⭐ Delete + click on the CLIP bank: Mode back to Loop, and nothing of the MIDI CLIP bank (Res / InQ / Dir) it does not show', () => {
-        shot = 1; free = 0; info();
+    step('⭐ Delete + click on the CLIP bank: Mode back to Loop, Dir to Fwd, and nothing of the MIDI CLIP bank (Res / InQ / its Dir) it does not show', () => {
+        shot = 1; free = 0; dir = 3; info();
         S.activeBank = 0; S.sessionView = false; S.knobTouched = -1;
         sets.length = 0;
         cc(119, 127); cc(3, 127); cc(3, 0); cc(119, 0);
@@ -290,7 +315,8 @@ async function main() {
         const midi = sets.filter(([k]) => /_clip_resolution|_diq|_clip_playback_dir|_clip_playback_audio_reverse/.test(k));
         assert(!midi.length, 'the reset wrote the MIDI CLIP bank\'s settings: ' + JSON.stringify(midi));
         assert(shotSets().join() === '0 0', 'Mode not reset to Loop: ' + JSON.stringify(sets));
-        shot = 0; info(); sets.length = 0;
+        assert(sets.filter(([k]) => k === 't' + T + '_au_set_dir').map(([, v]) => v).join() === '0 0', 'Dir not reset to Fwd: ' + JSON.stringify(sets));
+        shot = 0; dir = 0; info(); sets.length = 0;
         cc(119, 127); cc(3, 127); cc(3, 0); cc(119, 0);
         ticks(4);
         assert(!shotSets().length && !sets.some(([k]) => /_clip_resolution|_diq/.test(k)), 'a reset at Loop sent something: ' + JSON.stringify(sets));

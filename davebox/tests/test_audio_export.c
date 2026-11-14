@@ -306,7 +306,7 @@ int main(void) {
 
         /* Warp on Revrs: the reversed sample, its frame 0 the sample's end */
         hx_set_param(h, "t4_au_set_sync", "0 0");
-        hx_set_param(h, "t4_au_set_revrs", "0 1");
+        hx_set_param(h, "t4_au_set_dir", "0 1");
         hx_set_param(h, "t4_au_set_start", "0 1000");      /* forwards the window starts at 1000 */
         HX_ASSERT(hx_get_param(h, "t4_c0_au_export", b, sizeof b) > 0 && b[0] == 'L', "a Warp clip was rendered");
         snprintf(p, sizeof p, "|%s/au_4_0_rev.wav", stage);
@@ -319,7 +319,7 @@ int main(void) {
         w = read_wav(p, &frames, &rate, &ch);
         HX_ASSERT(w && frames == 44100 && ch == 1 && w[0] == 1 + 44099 % 30000 && w[44099] == 1, "the sample is not reversed");
         free(w);
-        hx_set_param(h, "t4_au_set_revrs", "0 0");
+        hx_set_param(h, "t4_au_set_dir", "0 0");
         hx_set_param(h, "t4_au_set_start", "0 0");
         printf("  ok   — a Warp clip on Revrs goes as its sample reversed\n");
 

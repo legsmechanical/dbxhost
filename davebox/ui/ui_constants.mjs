@@ -779,8 +779,9 @@ export const BANK_MACRO_ALLOW = [
  * ⚠ Do not empty this list without giving tarp per-clip storage first. */
 export const BANK_AUTOMATION_DENY = [5];
 /* An AUDIO clip's sound — the SAMPLE editor's K4 Gain, K5 Pitch, K6 Detune,
- * K7 Tempo, K8 Revrs — automated as `seq:<t>:au_*` lanes (Josh, 2026-10-31:
- * Pitch, Detune, Gain, Revrs as a switch, and Tempo). No bank card holds
+ * K7 Tempo — and its CLIP bank's K7 Dir, automated as `seq:<t>:au_*` lanes
+ * (Josh, 2026-10-31: Pitch, Detune, Gain, Revrs as a switch, and Tempo; Revrs
+ * became Dir, 2026-11-14). No bank card holds
  * them: their `bank` is AU_AUTO_BANK, which no BANKS index can equal, and
  * `field` is the clip info's own name for each (S.auInfo). The engine holds
  * a playing lane's value LIVE over the clip's setting (au_clip_t ov). */
@@ -790,7 +791,7 @@ const AU_AUTO_KEYS = [
     { key: 'au_pitch',  k: 4, min: -24, max: 24,   label: 'Pitch',  field: 'pitch' },
     { key: 'au_detune', k: 5, min: -50, max: 50,   label: 'Detune', field: 'detune' },
     { key: 'au_bpm',    k: 6, min: 1,   max: 9999, label: 'Tempo',  field: 'bpm10' },   /* AU_BPM10_MIN..MAX: x10 */
-    { key: 'au_revrs',  k: 7, min: 0,   max: 1,    label: 'Revrs',  field: 'revrs', stepped: true },
+    { key: 'au_dir',    k: 6, min: 0,   max: 3,    label: 'Dir',    field: 'dir', stepped: true },   /* the CLIP bank's K7 */
 ];
 /* ...and ALL SLICES' (SLICES with Shift): every chop held at the lane's value
  * over its own; `k` is the knob on SLICES. Decay's lane runs 5..5001, 5001
@@ -836,7 +837,7 @@ export const SEQ_AUTO_TARGETS = (() => {
     return out;
 })();
 /* The `seq:` key automating an Audio clip's info field (pitch, detune, gain,
- * revrs, bpm10), or null. */
+ * dir, bpm10), or null. */
 export function auAutoKey(field) {
     for (const a of AU_AUTO_KEYS) if (a.field === field) return a.key;
     return null;

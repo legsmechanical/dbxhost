@@ -367,7 +367,7 @@ static void ar_land(seq8_instance_t *inst, int t) {
         /* baked: the file is the clip as it played */
         cl->rstart = cl->slen = cl->rend = cl->rspan = 0;
         cl->pitch = 0; cl->detune = 0; cl->gain_db = 0;
-        cl->revrs = 0; cl->nudge_ms = 0; cl->rot = 0;
+        cl->dir = 0; cl->nudge_ms = 0; cl->rot = 0;
         /* ...and so are Speed and REMIX: played again, they would apply
          * twice. Free and Shot stay: at 100 % a Free clip plays the file
          * through once a pass, as it was heard (a Free + Shot take is its

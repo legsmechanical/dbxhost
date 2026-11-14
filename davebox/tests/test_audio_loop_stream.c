@@ -229,7 +229,7 @@ int main(void) {
         hx_set_param(h, "transport", "stop");
         hx_render(h, 4);
         for (i = 0; i < AU_STREAM_GRACE + 5; i++) { hx_render(h, 1); au_stream_service(inst); }
-        hx_set_param(h, "t4_au_set_revrs", k ? "0 1" : "0 0");
+        hx_set_param(h, "t4_au_set_dir", k ? "0 1" : "0 0");
         hx_set_param(h, "t4_au_set_nudge", "0 -500");
         hx_render(h, 1);
         stats(h, NULL, NULL, NULL, &under0);
@@ -245,7 +245,7 @@ int main(void) {
                                      : "a loop nudged -500 ms waited for a chunk");
     }
     hx_set_param(h, "t4_au_set_nudge", "0 0");
-    hx_set_param(h, "t4_au_set_revrs", "0 0");
+    hx_set_param(h, "t4_au_set_dir", "0 0");
     hx_render(h, 2);
 
     hx_set_param(h, "transport", "stop");
@@ -346,7 +346,7 @@ int main(void) {
             for (r = 0; r < 2; r++) {
                 hx_set_param(h, "transport", "stop");
                 hx_set_param(h, "bpm", bpms[b]);
-                hx_set_param(h, "t4_au_set_revrs", r ? "0 1" : "0 0");
+                hx_set_param(h, "t4_au_set_dir", r ? "0 1" : "0 0");
                 for (i = 0; i < AU_STREAM_GRACE + 5; i++) { hx_render(h, 1); au_stream_service(inst); }
                 stats(h, NULL, NULL, NULL, &under0);
                 hx_stub_feed_reset();
@@ -366,7 +366,7 @@ int main(void) {
             }
         hx_set_param(h, "transport", "stop");
         hx_set_param(h, "bpm", "120");
-        hx_set_param(h, "t4_au_set_revrs", "0 0");
+        hx_set_param(h, "t4_au_set_dir", "0 0");
         lc->length = was_len;
     }
     {

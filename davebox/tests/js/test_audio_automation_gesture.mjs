@@ -124,7 +124,7 @@ step('⭐⭐ K8 Gain turned while playing: written to the clip AND heard as seq:
     note(3, 127); turn(3, -1, 1); note(3, 0); ticks(1);
 });
 
-step('K7 Tempo (page 1 and TIME) and SOUND\'s Revrs automate as au_bpm and au_revrs', () => {
+step('K7 Tempo (page 1 and TIME) automates as au_bpm; SOUND\'s K7 is empty (Dir is the CLIP bank\'s)', () => {
     sets.length = 0;
     note(6, 127); turn(6, 1, 1); ticks(1); note(6, 0); ticks(1);
     assert(sent('t4_pa_live').some((v) => v.indexOf('seq:4:au_bpm ') === 0), 'K7 is not seq:4:au_bpm: ' + JSON.stringify(sets));
@@ -137,12 +137,11 @@ step('K7 Tempo (page 1 and TIME) and SOUND\'s Revrs automate as au_bpm and au_re
     assert(sent('t4_au_set_rot').length === 1 && !sets.some((x) => /_pa_(rest|live)/.test(x[0])), 'TIME\'s K4 Offset was not a plain write: ' + JSON.stringify(sets));
     note(3, 127); for (let i = 0; i < 30 && sent('t4_au_set_rot').length < 2; i++) cc(74, 127); note(3, 0); ticks(1);
     sets.length = 0;
-    cc(14, 1); ticks(1);                                    /* page 3 SOUND: Revrs on K7 */
+    cc(14, 1); ticks(1);                                    /* page 3 SOUND: K7 empty now */
     note(6, 127); for (let i = 0; i < 20; i++) cc(77, 1);   /* KNOB_DELIB: 20 detents a switch */ ticks(1); note(6, 0); ticks(1);
     cc(14, 127); ticks(1); cc(14, 127); ticks(1);
     assert(S.auEditor.page === 0, 'the jog did not come back to the waveform: page ' + S.auEditor.page);
-    assert(sent('t4_au_set_revrs').length === 1, 'SOUND\'s K7 did not switch Revrs once: ' + JSON.stringify(sets) + ' ed=' + JSON.stringify({ page: S.auEditor && S.auEditor.page, mode: S.auEditor && S.auEditor.mode, ed: S.auEditor && S.auEditor.ed, info: A.auInfo(4, 0) }));
-    assert(sent('t4_pa_live').some((v) => v === 'seq:4:au_revrs 16383'), 'Revrs is not seq:4:au_revrs at 1: ' + JSON.stringify(sent('t4_pa_live')));
+    assert(!sets.some((x) => /_au_set_|_pa_(rest|live)/.test(x[0])), 'SOUND\'s K7 still sets something: ' + JSON.stringify(sets));
 });
 
 step('⭐ Delete + touch clears the knob\'s lane; Mute + touch switches it off', () => {
@@ -247,8 +246,10 @@ step('⭐ the lane\'s value reaches the editor\'s info; the lane is called "Smp>
     snd.soundSeqMirror(4, 'au_bpm', 2400);
     assert(A.auInfo(4, 0).bpm10 === 2400, 'Tempo did not reach the info');
     assert(AU.automationTargetLabel('seq:4:au_gain') === 'Smp>Gain', 'label: ' + AU.automationTargetLabel('seq:4:au_gain'));
-    assert(AU.automationTargetStepped('seq:4:au_revrs') && !AU.automationTargetStepped('seq:4:au_pitch'),
-           'Revrs must step and Pitch glide');
+    assert(AU.automationTargetStepped('seq:4:au_dir') && !AU.automationTargetStepped('seq:4:au_pitch'),
+           'Dir must step and Pitch glide');
+    assert(snd.soundSeqMirror(4, 'au_dir', 2) === true && A.auInfo(4, 0).dir === 2, 'a Dir lane\'s value did not reach the info');
+    snd.soundSeqMirror(4, 'au_dir', 0);
     S.trackPadMode[4] = 0;
     assert(snd.soundSeqMirror(4, 'au_gain', -3) === false, 'an au_ value was mirrored onto a track that is not Audio');
     S.trackPadMode[4] = C.PAD_MODE_AUDIO;
