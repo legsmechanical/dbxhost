@@ -227,9 +227,6 @@ function refreshPerClipBankParamsOne(t) {
     if (v.length >= 47) {
         const n = (i, d) => (v.length > i ? (parseInt(v[i], 10) | 0) : d);
         S.rmxSet[t] = [n(44, 0), n(45, 0), n(46, 0), n(47, 1), n(48, 100), n(49, 0), n(50, 0), n(51, 0), n(52, 0), n(53, 0), n(54, 100)];
-        /* REPEAT at v[55..61], TAPE at v[62..65] */
-        S.rptSet[t] = [n(55, 0), n(56, 2), n(57, 12), n(58, 4), n(59, 100), n(60, 0), n(61, 0)];
-        S.tapeSet[t] = [n(62, 0), n(63, 0), n(64, 0), n(65, 2)];
     }
     /* K5 = Len mode at v[43] (appended after seq_arp_step_loop_len at v[42]) */
     S.bankParams[t][1][4] = v.length >= 44 ? (parseInt(v[43], 10) | 0) : 0;

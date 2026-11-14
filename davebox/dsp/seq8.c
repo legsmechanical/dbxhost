@@ -559,7 +559,6 @@ static const uint8_t DRUM_INQ_TICKS[9] = { 0, 6, 12, 24, 16, 48, 32, 96, 64 };
 
 #include "seq8_param_auto.h"
 #include "seq8_remix.h"
-#include "seq8_repeat.h"
 #include "seq8_audio.h"
 
 /* Per-clip pad-pressure (aftertouch) automation. Interpolated breakpoints like
@@ -810,13 +809,6 @@ typedef struct {
     uint8_t rmx_shuf, rmx_rev, rmx_roll, rmx_brk, rmx_rate;
     int8_t  rmx_pit;                 /* -24..24: negative mirrors the pitch shape */
     uint8_t rmx_bdep;                /* Gaps' Depth 0..100 (100: a gap silent) */
-    /* REPEAT (Audio / Slicer clips): a beat-repeat on each bar, after REMIX
-     * (seq8_repeat.h rpt_dials_t). Per clip. */
-    uint8_t rpt_on, rpt_grid, rpt_at, rpt_len, rpt_gate, rpt_fade;
-    int8_t  rpt_pit;
-    /* TAPE (Audio / Slicer clips): a stop / start / half / back on the
-     * track's output, on a bar cycle (au_tape_*). Per clip. */
-    uint8_t tape_on, tape_fx, tape_every, tape_len;
 } clip_pfx_params_t;
 
 /* ------------------------------------------------------------------ */
@@ -2130,7 +2122,6 @@ typedef struct {
      * reads files or frees samples. */
     au_clip_t   au_store[NUM_TRACKS][NUM_CLIPS + 1];
     au_track_t  au_trk[NUM_TRACKS];
-    int16_t     au_tape_ring[NUM_TRACKS][AU_TAPE_RING * 2];   /* TAPE: what each track played, 8 s */
     rmx_work_t  rmx_w;          /* REMIX scratch (audio thread only) */
     note_t      rmx_sn[NUM_TRACKS][AU_RMX_SN];   /* REMIX: a Slicer clip's remixed notes (au_track_t.rmx_sn_n) */
     uint8_t     rmx_sv[NUM_TRACKS][AU_RMX_SN];   /* ...each one's ROLL velocity (0: none, the Slicer's one level) */
@@ -5679,10 +5670,6 @@ static void clip_pfx_params_init(clip_pfx_params_t *p) {
     p->note_length_mode = 0;  /* `--` passthrough */
     p->rmx_on = 0; p->rmx_type = 0; p->rmx_var = 0; p->rmx_rvel = 1;
     p->rmx_shuf = 100; p->rmx_rev = 0; p->rmx_roll = 0; p->rmx_brk = 0; p->rmx_pit = 0; p->rmx_rate = 0; p->rmx_bdep = 100;
-    /* REPEAT: off; when on, the last beat repeats in 1/16s */
-    p->rpt_on = 0; p->rpt_grid = 2; p->rpt_at = 12; p->rpt_len = 4; p->rpt_gate = 100; p->rpt_fade = 0; p->rpt_pit = 0;
-    /* TAPE: off; when on, a stop over the last 1/4 of every bar */
-    p->tape_on = 0; p->tape_fx = 0; p->tape_every = 0; p->tape_len = 2;
 }
 
 static void drum_pfx_params_init(drum_pfx_params_t *p) {
@@ -10794,12 +10781,10 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                      * and so is an End (Live's clip would run on), Bars
                      * (a Tempo the file does not carry) and Free (a loop
                      * of its own, off the clip's) */
-                    if (ac->sync != AU_SYNC_WARP || au_fx_on(&cl->pfx_params) || cl->pfx_params.tape_on || ac->rend || ac->rspan || ac->freerun) {
+                    if (ac->sync != AU_SYNC_WARP || cl->pfx_params.rmx_on || ac->rend || ac->rspan || ac->freerun) {
                         snprintf(wav, sizeof wav, "%s/au_%d_%d.wav", au_export_dir, t_idx, cidx);
                         long fr = au_export_loop(inst, t_idx, cidx, lt, bpm, wav);
                         if (fr <= 0) return 0;
-                        /* TAPE: Live has none — the render played back through it */
-                        if (au_tape_file(wav, &cl->pfx_params, 44100.0 * 60.0 / (bpm * (double)PPQN)) < 0) return 0;
                         return snprintf(out, out_len, "R %ld %u|%s", fr, (unsigned)lt, wav);
                     }
                     au_range(ac, as, &rs, &re);
@@ -10832,7 +10817,7 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                 /* a REMIX plays as it is heard: rendered from the remixed
                  * steps (rmx_slicer_apply) on a copy, the clip put back */
                 static clip_t rmx_keep;
-                int rmx_was = tr->pad_mode == PAD_MODE_SLICER && au_fx_on(&cl->pfx_params);
+                int rmx_was = tr->pad_mode == PAD_MODE_SLICER && cl->pfx_params.rmx_on;
                 if (rmx_was) { rmx_keep = *cl; rmx_slicer_apply(inst, t_idx, cidx); }
                 int n = render_melodic_clip(inst, t_idx, cidx, loops, wrap_from,
                                             rmc_au, BAKE_BUF * 8, &span, &cyc, 0);
@@ -10852,7 +10837,6 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                 snprintf(wav, sizeof wav, "%s/au_%d_%d.wav", au_export_dir, t_idx, cidx);
                 long fr = au_export_slice(inst, t_idx, cidx, xn_au, m, span, bpm, wav);
                 if (fr <= 0) return 0;
-                if (au_tape_file(wav, &cl->pfx_params, 44100.0 * 60.0 / (bpm * (double)PPQN)) < 0) return 0;   /* TAPE */
                 return snprintf(out, out_len, "S %ld %u|%s", fr, (unsigned)span, wav);
             }
             if (!strcmp(p, "_export_cond")) {
@@ -10993,17 +10977,13 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                  *   42     SEQ ARP step_loop_len (1..8)
                  *   43     NOTE FX note_length_mode (Len knob 0..8)
                  *   44..47 REMIX on, TYPE, setting, ROLL velocity
-                 *   48..53 REMIX dials: shuffle reverse roll break pitch rate
-                 *   54     REMIX Gaps depth
-                 *   55..61 REPEAT on grid at len gate pitch fade
-                 *   62..65 TAPE on effect every length */
+                 *   48..53 REMIX dials: shuffle reverse roll break pitch rate */
                 return snprintf(out, out_len,
                     "%d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d "
                     "%d %d %d %d %d %d %d %d "
                     "%d %d %d "
                     "%d %d %d %d %d %d %d %d "
-                    "%d %d %d %d %d %d %d %d %d %d %d %d %d "
-                    "%d %d %d %d %d %d %d %d %d %d %d",
+                    "%d %d %d %d %d %d %d %d %d %d %d %d %d",
                     cp->octave_shift, cp->note_offset, cp->gate_time,
                     cp->velocity_offset, cp->quantize,
                     cp->octaver, cp->harmonize_1, cp->harmonize_2, cp->harmonize_3,
@@ -11025,9 +11005,7 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                     (int)cp->seq_arp_step_loop_len,
                     (int)cp->note_length_mode,
                     (int)cp->rmx_on, (int)cp->rmx_type, (int)cp->rmx_var, (int)cp->rmx_rvel,
-                    (int)cp->rmx_shuf, (int)cp->rmx_rev, (int)cp->rmx_roll, (int)cp->rmx_brk, (int)cp->rmx_pit, (int)cp->rmx_rate, (int)cp->rmx_bdep,
-                    (int)cp->rpt_on, (int)cp->rpt_grid, (int)cp->rpt_at, (int)cp->rpt_len, (int)cp->rpt_gate, (int)cp->rpt_pit, (int)cp->rpt_fade,
-                    (int)cp->tape_on, (int)cp->tape_fx, (int)cp->tape_every, (int)cp->tape_len);
+                    (int)cp->rmx_shuf, (int)cp->rmx_rev, (int)cp->rmx_roll, (int)cp->rmx_brk, (int)cp->rmx_pit, (int)cp->rmx_rate, (int)cp->rmx_bdep);
             }
             return -1;
         }

@@ -32,11 +32,6 @@ the section into a versioned heading at release time.
   On the waveform, **K4 is Offset**, with an arrow on top, and **Gain moved to K8**.
   **Delete + click** resets the page showing: TIME's Sync, Warp, Nudge and Offset, or
   SOUND's settings.
-- **REPEAT and TAPE, two more effects for Audio and Slicer tracks.** In the bank map's FX
-  column beside REMIX, per clip. **REPEAT** is a beat-repeat on each bar: Grid (1/4 to 1/64),
-  Start, Length, Gate, Pitch (per repeat) and Fade. **TAPE** plays the track back like a tape
-  machine on a bar cycle: Stop, Start (spin-up), Half or Back, every 1–8 bars, 1/16 to a bar
-  long. Each shows a picture while you turn it; both export and bake as you hear them.
 - **Offset is where the clip starts in its audio.** Step 1 plays from the Offset point (it
   used to move the audio later instead), and the waveform no longer turns round with it:
   stopped, the playhead rests at the Offset point and the beats count from there. Projects

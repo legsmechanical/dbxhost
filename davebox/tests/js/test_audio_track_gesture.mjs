@@ -217,7 +217,7 @@ step('⭐⭐ the walk: an Audio track is LIVE ARP, MACROS, CLIP, MIX — no sequ
     /* (an Audio clip plays its sample with the clip: what was a Loop clip —
      * Josh, 2026-10-28: "we don't need to show notes at all in loop mode") */
     const walk = P.bankCycleForMode(C.PAD_MODE_AUDIO, 4);
-    assert(JSON.stringify(walk) === JSON.stringify([5, C.BANK_MACROS, 0, C.BANK_INPUT, C.BANK_REMIX, C.BANK_REPEAT, C.BANK_TAPE, C.BANK_SOUND]), 'walk: ' + walk.join());
+    assert(JSON.stringify(walk) === JSON.stringify([5, C.BANK_MACROS, 0, C.BANK_INPUT, C.BANK_REMIX, C.BANK_SOUND]), 'walk: ' + walk.join());
     const all = P.bankListForMode(C.PAD_MODE_AUDIO, 4);
     assert(all.indexOf(C.BANK_CONFIG) >= 0 && all.indexOf(C.BANK_AUTOMATION) >= 0, 'doors: ' + all.join());
     assert(P.bankMapModuleAt(0, C.PAD_MODE_AUDIO, 6, 0, 4) === null, 'the MIDI FX pad is lit (Q4)');
@@ -254,7 +254,7 @@ step('⭐⭐ Slicer is the row after Audio; picked on an Audio track it converts
 
 step('⭐⭐ the walk: a Slicer is PAD MODE, LIVE ARP, MACROS, STEP, CLIP, NOTE FX, MIX; SLICES above SAMPLE on the map', () => {
     const walk = P.bankCycleForMode(C.PAD_MODE_SLICER, 4);
-    assert(JSON.stringify(walk) === JSON.stringify([C.BANK_CHORD, 5, C.BANK_MACROS, C.BANK_STEP, 0, C.BANK_REMIX, C.BANK_REPEAT, C.BANK_TAPE, 1, C.BANK_SOUND]), 'walk: ' + walk.join());
+    assert(JSON.stringify(walk) === JSON.stringify([C.BANK_CHORD, 5, C.BANK_MACROS, C.BANK_STEP, 0, C.BANK_REMIX, 1, C.BANK_SOUND]), 'walk: ' + walk.join());
     const all = P.bankListForMode(C.PAD_MODE_SLICER, 4);
     assert(all.indexOf(C.BANK_CONFIG) >= 0 && all.indexOf(C.BANK_AUTOMATION) >= 0, 'doors: ' + all.join());
     const map = P.bankPadMapForMode(C.PAD_MODE_SLICER, 4);
@@ -2208,7 +2208,7 @@ step('⭐⭐ an Audio track: no sequence — pad taps and steps do nothing, no S
     /* Josh, 2026-10-28: "we don't need to show notes at all in loop mode" */
     const walk = P.bankCycleForMode(C.PAD_MODE_AUDIO, 4);
     /* no PAD MODE on an Audio track (Josh, 2026-10-30: "loop mode should always be 4 rows and has no need for the pad bank") */
-    assert(JSON.stringify(walk) === JSON.stringify([5, C.BANK_MACROS, 0, C.BANK_INPUT, C.BANK_REMIX, C.BANK_REPEAT, C.BANK_TAPE, C.BANK_SOUND]), 'Loop walk: ' + walk.join());
+    assert(JSON.stringify(walk) === JSON.stringify([5, C.BANK_MACROS, 0, C.BANK_INPUT, C.BANK_REMIX, C.BANK_SOUND]), 'Loop walk: ' + walk.join());
     const map = P.bankPadMapForMode(C.PAD_MODE_AUDIO, 4);
     assert(!map[2].cells[0] && !map[3].cells[0] && map[2].cells[1], 'the Loop map still has STEP / NOTE FX');
     DM.computePadNoteMap();

@@ -70,25 +70,7 @@
  * crossfaded, the tone is 12 dB above it. A piece at the sample's own speed
  * still carries straight on (au_range_on), no fade. */
 #define AU_VINTAGE_XF        128    /* frames */
-#define AU_RMX_EV          256          /* REMIX / REPEAT events in one Loop bar (16 notes; ROLL and REPEAT add runs) */
-#define AU_TAPE_FX         4            /* TAPE's effects: Stop, Start, Half, Back */
-#define AU_TAPE_LENS       5            /* TAPE's windows: 1/16, 1/8, 1/4, 1/2, 1 bar */
-#define AU_TAPE_RING       352800       /* TAPE's memory of the track: 8 s of stereo frames (Back over a bar down to 60 BPM) */
-#define AU_TAPE_XF         256          /* TAPE: the crossfade back to the track as it plays */
-#define AU_TAPE_FADE       512          /* TAPE: a Stop's fade into silence, a Start's out of it */
-#define AU_TAPE_SLOW       0.2          /* TAPE: below this speed the level follows it down */
-enum { AU_TAPE_STOP, AU_TAPE_START, AU_TAPE_HALF, AU_TAPE_BACK };
-/* TAPE's playback head over the ring (au_tape_frame) */
-typedef struct {
-    uint8_t  st;        /* 0 straight through, 1 in a window, 2 crossfading back */
-    uint8_t  fx;        /* the effect, latched as the window opens */
-    int32_t  w;         /* the ring's next write */
-    uint32_t fill;      /* frames written (how far back the ring is good) */
-    double   r0;        /* the ring position the window opened on */
-    double   e, wf;     /* frames into the window, its length */
-    double   rd, spd;   /* the head: where it reads, how fast (frames a frame) */
-    int32_t  xf;        /* crossfade frames left */
-} au_tape_t;
+#define AU_RMX_EV          160          /* REMIX events in one Loop bar (16 notes; ROLL adds runs) */
 #define AU_RMX_BAR         384          /* REMIX: a bar of clip ticks, 16 x 1/16 at PPQN 96 */
 #define AU_RMX_SN          1024         /* REMIX: a Slicer clip's remixed notes (ROLL adds repeats) */
 #define AU_SLICE_NONE      (-1)         /* au_range_on: Loop mode's hidden chop at Start */
@@ -341,11 +323,6 @@ typedef struct {
      * phrase is a note on each 1/16). rmx_bar: the bar it was latched in. */
     uint8_t    rmx_on, rmx_type, rmx_var, rmx_clip, rmx_rvel;
     rmx_dials_t rmx_dl;      /* the dials in force (latched with the rest) */
-    /* rmx_on above: the bar plays as events (REMIX or REPEAT on); rmx_ron:
-     * REMIX itself on; rpt_on / rpt_dl: REPEAT, latched with it */
-    uint8_t    rmx_ron, rpt_on;
-    rpt_dials_t rpt_dl;
-    au_tape_t  tape;         /* TAPE's head (its ring: seq8_instance_t.au_tape_ring) */
     int32_t    rmx_bar;
     uint32_t   rmx_gen;      /* bumped each time rmx_e is rebuilt (Warp's stretcher copies it by this) */
     int16_t    rmx_n;

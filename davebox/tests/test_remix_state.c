@@ -68,7 +68,7 @@ int main(void) {
         char sb[1024]; int f = 0, last = -1; char *p, *save = NULL;
         HX_ASSERT(hx_get_param(h, "t5_c2_pfx_snapshot", sb, sizeof sb) > 0, "no snapshot");
         for (p = strtok_r(sb, " ", &save); p; p = strtok_r(NULL, " ", &save)) { if (f == 54) last = atoi(p); f++; }
-        HX_ASSERT(f == 66 && last == 40, "the snapshot does not carry Depth as field 54 (66 fields since REPEAT / TAPE)");
+        HX_ASSERT(f == 55 && last == 40, "the snapshot does not carry Depth as field 54");
     }
     hx_set_param(h, "t5_c2_pfx_set", "remix_ord 47");
     HX_ASSERT(inst->tracks[5].clips[2].pfx_params.rmx_pit == -24, "a negative Pitch did not land clamped to -24");

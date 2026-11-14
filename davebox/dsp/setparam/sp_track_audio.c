@@ -575,32 +575,6 @@ static int au_clock_window(seq8_instance_t *inst, int32_t tick, double L, double
     }
     return 1;
 }
-/* TAPE's clock for track t this block: frame f at clip time *tk0 + f * *dt
- * (ticks since the clip's first bar, its loops counted — the tick this block
- * played placed where it fell, as the Loop pieces are: au_clock_window), and
- * frames a tick; 0 when it is not playing (or a followed clock brought no
- * tick: the block has no clip time to stand on). */
-static int au_tape_clock(seq8_instance_t *inst, int t, int frames, double *tk0, double *dt, double *fpt) {
-    seq8_track_t *tr = &inst->tracks[t];
-    const clip_t *lc = &tr->clips[tr->active_clip];
-    uint32_t tps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
-    double bpm = tr->pfx.cached_bpm > 0 ? tr->pfx.cached_bpm : 120.0;
-    double L = (double)lc->length * tps, start, span, fscale;
-    int32_t tick = (int32_t)(((int)tr->current_step - (int)lc->loop_start) * (int)tps + (int)tr->tick_in_step);
-    *fpt = 44100.0 * 60.0 / (bpm * PPQN);
-    *tk0 = 0; *dt = 1.0 / *fpt;
-    if (!inst->playing || !tr->clip_playing || L <= 0) return 0;
-    if (!au_clock_window(inst, tick, L, *fpt, frames, &start, &span, &fscale)) return 0;
-    /* unwrapped: the window's start may sit just before the loop's top (the
-     * last cycle's end) — keep it there, a whole loop back */
-    {
-        double s = start, c = (double)lc->loop_cycle * L;
-        if (s > L * 0.5 && (double)tick < L * 0.5) c -= L;
-        *tk0 = c + s;
-    }
-    *dt = span / (double)frames;
-    return 1;
-}
 static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uint32_t len_ticks, double fpt, int frames) {
     au_clip_t *cl = au_cl(inst, t, c);
     const au_sample_t *s = cl->smp;
@@ -662,7 +636,11 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
 /* ---------------- REMIX on a Loop clip ---------------- */
 
 
-/* (a clip's REMIX dials, REPEAT's, and the bar through both: seq8_audio.c au_fx_bar) */
+/* A clip's REMIX dials */
+static void au_rmx_dials(const clip_pfx_params_t *pp, rmx_dials_t *d) {
+    d->shuffle = pp->rmx_shuf; d->reverse = pp->rmx_rev; d->roll = pp->rmx_roll;
+    d->brk = pp->rmx_brk; d->bdepth = pp->rmx_bdep; d->pitch = pp->rmx_pit; d->rate = pp->rmx_rate; d->vel = pp->rmx_rvel;
+}
 
 /* The setting in force for clip c, taken now (at a bar line, or as it
  * starts): one bar's events for the Loop phrase — a note on each 1/16, key =
@@ -672,16 +650,12 @@ static void au_rmx_latch(seq8_instance_t *inst, int t, int c) {
     const clip_pfx_params_t *pp = &inst->tracks[t].clips[c].pfx_params;
     static rmx_ev_t in[16], out[RMX_MAX];
     rmx_dials_t d;
-    rpt_dials_t rp;
-    int k, n, on = au_fx_on(pp);
+    int k, n;
     au_rmx_dials(pp, &d);
-    au_rpt_dials(pp, &rp);
-    if (at->rmx_on == on && at->rmx_ron == pp->rmx_on && at->rmx_type == pp->rmx_type && at->rmx_var == pp->rmx_var
-        && rmx_dials_same(&at->rmx_dl, &d) && au_rpt_same(pp, at->rpt_on, &at->rpt_dl)
-        && at->rmx_clip == (uint8_t)c && (at->rmx_n || !on)) return;
-    at->rmx_on = (uint8_t)on; at->rmx_ron = pp->rmx_on; at->rmx_type = pp->rmx_type; at->rmx_var = pp->rmx_var; at->rmx_rvel = pp->rmx_rvel;
+    if (at->rmx_on == pp->rmx_on && at->rmx_type == pp->rmx_type && at->rmx_var == pp->rmx_var
+        && rmx_dials_same(&at->rmx_dl, &d) && at->rmx_clip == (uint8_t)c && (at->rmx_n || !pp->rmx_on)) return;
+    at->rmx_on = pp->rmx_on; at->rmx_type = pp->rmx_type; at->rmx_var = pp->rmx_var; at->rmx_rvel = pp->rmx_rvel;
     at->rmx_dl = d;
-    at->rpt_on = pp->rpt_on; at->rpt_dl = rp;
     at->rmx_clip = (uint8_t)c;
     at->rmx_n = 0;
     if (!at->rmx_on) return;
@@ -689,7 +663,7 @@ static void au_rmx_latch(seq8_instance_t *inst, int t, int c) {
     for (k = 0; k < 16; k++) {
         in[k].tick = k * (AU_RMX_BAR / 16); in[k].gate = AU_RMX_BAR / 16; in[k].vel = 100; in[k].key = (uint8_t)k;
     }
-    n = au_fx_bar(inst, pp, AU_RMX_BAR, in, 16, out, RMX_MAX);
+    n = rmx_bar_ex(&inst->rmx_w, at->rmx_type, at->rmx_var, &d, AU_RMX_BAR, in, 16, out, RMX_MAX);
     if (n > AU_RMX_EV) n = AU_RMX_EV;
     memcpy(at->rmx_e, out, (size_t)n * sizeof out[0]);
     at->rmx_n = (int16_t)n;
@@ -712,19 +686,17 @@ static void au_rmx_slicer_build(seq8_instance_t *inst, int t, int c) {
     int n = 0, b, i, k;
     rmx_dials_t d;
     au_rmx_dials(pp, &d);
-    at->rmx_on = (uint8_t)au_fx_on(pp); at->rmx_ron = pp->rmx_on; at->rmx_type = pp->rmx_type; at->rmx_var = pp->rmx_var; at->rmx_rvel = pp->rmx_rvel;
+    at->rmx_on = pp->rmx_on; at->rmx_type = pp->rmx_type; at->rmx_var = pp->rmx_var; at->rmx_rvel = pp->rmx_rvel;
     at->rmx_dl = d;
-    at->rpt_on = pp->rpt_on; au_rpt_dials(pp, &at->rpt_dl);
     at->rmx_sclip = (uint8_t)c;
     at->rmx_slive = 0;
     at->rmx_sn_n = 0;
-    if (!au_fx_on(pp)) return;
+    if (!pp->rmx_on) return;
     {
         uint32_t tps = cl->ticks_per_step ? cl->ticks_per_step : TICKS_PER_STEP;
         uint32_t w0 = (uint32_t)cl->loop_start * tps, len = (uint32_t)cl->length * tps;
         int nbars = (int)((len + AU_RMX_BAR - 1) / AU_RMX_BAR);
-        /* a repeat's or a ROLL run's level is its own (the rest keep the one level) */
-        int velfx = (pp->rmx_on && d.roll > 0 && pp->rmx_rvel) || (pp->rpt_on && pp->rpt_fade > 0);
+        int roll = d.roll > 0;
         for (b = 0; b < nbars; b++) {
             uint32_t b0 = w0 + (uint32_t)b * AU_RMX_BAR;
             int nin = 0, nout;
@@ -740,7 +712,7 @@ static void au_rmx_slicer_build(seq8_instance_t *inst, int t, int c) {
                 nin++;
             }
             if (!nin) continue;
-            nout = au_fx_bar(inst, pp, AU_RMX_BAR, in, nin, out, RMX_MAX);
+            nout = rmx_bar_ex(&inst->rmx_w, pp->rmx_type, pp->rmx_var, &d, AU_RMX_BAR, in, nin, out, RMX_MAX);
             for (k = 0; k < nout && n < AU_RMX_SN; k++) {
                 const rmx_ev_t *e = &out[k];
                 uint32_t tk = b0 + (uint32_t)e->tick;
@@ -754,7 +726,7 @@ static void au_rmx_slicer_build(seq8_instance_t *inst, int t, int c) {
                 d->active = 1;
                 d->pad[0] = (uint8_t)(e->id & 0xFF); d->pad[1] = (uint8_t)(e->id >> 8);
                 /* a ROLL run's repeat: the level the run sets (the others keep the one level) */
-                sv[n] = (velfx && e->id < cl->note_count && e->vel != cl->notes[e->id].vel) ? e->vel : 0;
+                sv[n] = (roll && pp->rmx_rvel && e->id < cl->note_count && e->vel != cl->notes[e->id].vel) ? e->vel : 0;
                 inst->rmx_sr[t][n] = e->rev ? 1 : 0;
                 inst->rmx_ss[t][n] = e->pitch;
                 n++;
@@ -866,7 +838,7 @@ static long au_export_loop(seq8_instance_t *inst, int t, int c, uint32_t len, do
     /* a plain Warp clip goes as the sample (Live warps it); with an End,
      * Bars or Free it is rendered too */
     if (!cl->smp || cl->mode != AU_MODE_LOOP || !len || bpm <= 0) return -1;
-    if (cl->sync == AU_SYNC_WARP && !au_fx_on(rpp) && !cl->freerun && !cl->rend && !cl->rspan) return -1;
+    if (cl->sync == AU_SYNC_WARP && !rpp->rmx_on && !cl->freerun && !cl->rend && !cl->rspan) return -1;
     const au_sample_t *s = au_xsample(inst, cl, &own);
     if (!s) return -1;
     if (cl->freerun) au_free_range(cl, s, &rs, &re); else au_range(cl, s, &rs, &re);
@@ -904,11 +876,11 @@ static long au_export_loop(seq8_instance_t *inst, int t, int c, uint32_t len, do
             uint32_t left = nout - heard;
             while (left) { uint32_t m = left > 256 ? 256 : left; fwrite(z, sizeof(int16_t) * 2, m, f); left -= m; }
         }
-    } else if (cl->sync == AU_SYNC_WARP && !au_fx_on(rpp)) {
+    } else if (cl->sync == AU_SYNC_WARP && !rpp->rmx_on) {
         /* Warp with an End or Bars: the live stretcher's map, its second pass */
         bad = au_xwarp(f, s, rs, re, au_revrs(cl), P, L, rot, (double)cl->nudge_ms * 44.1 / fpt, fpt,
                        au_tune(au_pitch(cl), au_detune(cl)), au_gain(cl), L, nout) < 0;
-    } else if (au_fx_on(rpp)) {
+    } else if (rpp->rmx_on) {
         /* REMIX: the bar's pieces as the live scheduler plays them
          * (au_rmx_block) — each its source 1/16 of the same bar, reversed /
          * repitched, at its velocity, released at its gate; Pitch at the
@@ -920,7 +892,7 @@ static long au_export_loop(seq8_instance_t *inst, int t, int c, uint32_t len, do
         au_rmx_dials(rpp, &d);
         memset(in, 0, sizeof in);
         for (e = 0; e < 16; e++) { in[e].tick = e * (AU_RMX_BAR / 16); in[e].gate = AU_RMX_BAR / 16; in[e].vel = 100; in[e].key = (uint8_t)e; }
-        n = au_fx_bar(inst, rpp, AU_RMX_BAR, in, 16, ev, RMX_MAX);
+        n = rmx_bar_ex(&inst->rmx_w, rpp->rmx_type, rpp->rmx_var, &d, AU_RMX_BAR, in, 16, ev, RMX_MAX);
         double nud = (double)cl->nudge_ms * 44.1 / fpt, vk = 1.0;
         if (cl->sync == AU_SYNC_PITCH) {
             double base = au_tune(au_pitch(cl), au_detune(cl)) * (double)s->rate / 44100.0;
@@ -1331,8 +1303,6 @@ static void au_render(seq8_instance_t *inst, int frames) {
         for (i = 0; i < AU_VOICES; i++) if (at->v[i].active) { any = 1; break; }
         if (at->w.on || at->w.fadeout || at->w.hold) any = 1;
         if (at->dl_tail) any = 1;                 /* the lead's delay still playing out */
-        /* TAPE plays back what the track made, silence too: its ring keeps time */
-        if (at->tape.st || (tr->clips[tr->active_clip].pfx_params.tape_on && inst->playing && tr->clip_playing)) any = 1;
         if (!any) continue;
         {
             int32_t acc[256], accl[256];
@@ -1351,17 +1321,6 @@ static void au_render(seq8_instance_t *inst, int frames) {
             for (i = 0; i < AU_VOICES; i++) if (at->v[i].active)
                 inst->au_underruns += au_voice_render(&at->v[i], at->v[i].live ? accl : acc, frames);
             if (at->w.on || at->w.fadeout || at->w.hold) au_warp_mix(inst, t, acc, frames);
-            {   /* TAPE: the sequenced sound through the clip's (a pad's, live, is
-                 * not). With no lead the two are not told apart — every voice
-                 * is heard at once — so it takes both. */
-                double tk0, dt, fpt;
-                const clip_pfx_params_t *tpp = &tr->clips[tr->active_clip].pfx_params;
-                int run = au_tape_clock(inst, t, frames, &tk0, &dt, &fpt);
-                if (!led && (tpp->tape_on || at->tape.st)) {
-                    for (f = 0; f < frames * 2; f++) { acc[f] += accl[f]; accl[f] = 0; }
-                }
-                au_tape_run(&at->tape, inst->au_tape_ring[t], acc, frames, tpp, run, tk0, dt, fpt);
-            }
             if (!led && at->dl_tail) { memset(at->dl, 0, sizeof at->dl); at->dl_tail = 0; }
             for (f = 0; f < frames; f++) {
                 int32_t l = acc[f * 2], r = acc[f * 2 + 1];
