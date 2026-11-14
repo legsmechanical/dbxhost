@@ -276,6 +276,22 @@ int main(void) {
     hx_set_param(h, "undo_restore", "1");
     hx_render(h, 2);
     HX_ASSERT(inst->tracks[T_REC].clips[0].length == 7, "Undo did not give the clip its length back");
+    /* a 4-bar take begun on bar 2 of the master clock: its first frame is
+     * where the clip's bar 2 plays, so the clip starts three bars into it —
+     * Offset is where in the sample the clip starts (Josh, 2026-11-13) */
+    {
+        static int16_t four[2 * 4 * BAR];
+        snprintf(p, sizeof p, "%s/proj/dAVEBOx/samples/four.wav", g_root);
+        write_wav(p, four, 4 * BAR);
+        snprintf(inst->ar_path, sizeof inst->ar_path, "%s", p);
+        inst->ar_track = T_REC; inst->ar_clip = 0; inst->ar_fixed = 0;
+        inst->ar_ticks = 4 * RS_BAR_TICKS; inst->ar_start_abs = RS_BAR_TICKS;
+        inst->ar_state = AR_DONE;
+        hx_set_param(h, "t4_au_rec_land", "0");
+        HX_ASSERT(wait_loaded(h, T_REC, 0) == 2, "landing (4 bars): the take did not load");
+        HX_ASSERT(inst->au_store[T_REC][0].rot == 3 * RS_BAR_TICKS,
+                  "landing (4 bars from bar 2): the Offset is not three bars into the take");
+    }
     hx_destroy(h);
 
     /* ---- the transport stops mid-take: CANCELLED, the host told ---- */

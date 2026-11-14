@@ -132,7 +132,9 @@ static int vs_grid(int rot, int *n) {
     char p[300], b[64];
     int off = 0, k;
     void *lastv = NULL;
-    double lastpos = -1.0, tick = 44100.0 * 60.0 / (120.0 * 96.0), bar = 384.0 * tick, g = tick + rot * tick;
+    /* Offset `rot`: step 1 plays from it, so the sample's own start (the
+     * voice's restart) falls on the clip's tick 384 - rot */
+    double lastpos = -1.0, tick = 44100.0 * 60.0 / (120.0 * 96.0), bar = 384.0 * tick, g = tick + ((384 - rot) % 384) * tick;
     snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
     hx_set_param(h, "t4_convert_to_audio", "");
     snprintf(p, sizeof p, "0|%s/src/ramp.wav", g_root); hx_set_param(h, "t4_au_pick", p);
@@ -243,20 +245,23 @@ int main(void) {
         }
         HX_ASSERT(bad == 0, "Pitch did not retune the sample to fill the clip");
         free(w);
-        /* Shift a beat: the sample starts at the clip's tick 96, its last
-         * beat wrapped round before it. Checked against the grid, not the
-         * engine: live, a Pitch loop restarts at Shift on its block's
-         * boundary, and drifts 4 sample frames a bar (seen 2026-10-31) */
+        /* Offset a beat: step 1 plays from the sample's second beat (Josh,
+         * 2026-11-13: "start playback from there"), its first beat wrapped
+         * round to the clip's end. Checked against the grid, not the
+         * engine: live, a Pitch loop restarts on its block's boundary, and
+         * drifts 4 sample frames a bar (seen 2026-10-31) */
         hx_set_param(h, "t4_au_set_rot", "0 96");
-        HX_ASSERT(hx_get_param(h, "t4_c0_au_export", b, sizeof b) > 0 && b[0] == 'R', "a Shifted Pitch clip was not rendered");
+        HX_ASSERT(hx_get_param(h, "t4_c0_au_export", b, sizeof b) > 0 && b[0] == 'R', "an Offset Pitch clip was not rendered");
         w = read_wav(p, &frames, &rate, &ch);
-        HX_ASSERT(w, "no Shifted Pitch render");
+        HX_ASSERT(w, "no Offset Pitch render");
         {
-            double half = 44100.0 / (384.0 * fpt), sh = 96 * fpt;
-            int want_a = 1 + (int)((288 * fpt + 2000) * half + 0.5) % 30000;       /* before: the last beat */
-            int want_b = 1 + (int)((3 * 10000.0 - sh) * half + 0.5) % 30000;       /* after: from the top */
-            HX_ASSERT(abs(w[2000] - want_a) <= 2, "before its Shift a clip does not play its wrapped end");
-            HX_ASSERT(abs(w[30000] - want_b) <= 2, "a Shifted clip does not start its sample at the Shift");
+            double half = 44100.0 / (384.0 * fpt), sh = 96 * fpt, cl = 384 * fpt;
+            int want_a = 1 + (int)((sh + 2000) * half + 0.5) % 30000;              /* step 1: from the Offset */
+            int want_b = 1 + (int)((3 * 10000.0 + sh) * half + 0.5) % 30000;       /* on from it */
+            int want_c = 1 + (int)((cl - 2000 + sh - cl) * half + 0.5) % 30000;   /* the clip's last beat: the sample's first */
+            HX_ASSERT(abs(w[2000] - want_a) <= 2, "an Offset clip does not play from its Offset at step 1");
+            HX_ASSERT(abs(w[30000] - want_b) <= 2, "an Offset clip does not play on from its Offset");
+            HX_ASSERT(abs(w[(long)(cl - 2000)] - want_c) <= 2, "an Offset clip does not wrap to the sample's start for its last beat");
         }
         free(w);
         hx_set_param(h, "t4_au_set_rot", "0 0");
@@ -481,7 +486,8 @@ int main(void) {
 
     {
         /* sync, the sample's Tempo x10, Nudge ms, frames allowed to differ,
-         * Shift ticks:
+         * Offset ticks (334, 288, 344: the cases the old Shift 50, 96 and 40
+         * were, now that Offset runs the other way):
          * a Nudge puts Vintage's pieces between ticks, where live rounds a
          * piece's frame its own way — one frame, which inside a crossfade
          * over the ramp's jump back to 1 is one crossfade of difference.
@@ -492,7 +498,7 @@ int main(void) {
         static const int cases[][5] = { { 2, 2400, 0, PITCH_SEAM }, { 2, 1500, 0, PITCH_SEAM }, { 2, 900, 0, PITCH_SEAM }, { 2, 2400, 37, PITCH_SEAM },
                                         { 1, 300, 0, 0 }, { 1, 1200, 0, 0 }, { 1, 300, 37, AU_VINTAGE_XF }, { 1, 300, -61, AU_VINTAGE_XF },
                                         { -1, 2400, 0, 16 }, { -1, 900, 0, 16 },
-                                        { 1, 300, 0, 0, 50 }, { 2, 2400, 0, PITCH_SEAM, 96 }, { 2, 900, 0, PITCH_SEAM, 40 } };
+                                        { 1, 300, 0, 0, 334 }, { 2, 2400, 0, PITCH_SEAM, 288 }, { 2, 900, 0, PITCH_SEAM, 344 } };
         for (k = 0; k < 13; k++) {
             int bad = vs_live(cases[k][0], cases[k][1], cases[k][2], cases[k][4]);
             if (bad < 0 || bad > cases[k][3])
@@ -502,11 +508,11 @@ int main(void) {
     }
     printf("  ok   — Pitch, Vintage and Slice renders match the engine playing the clip\n");
     {
-        /* Shift ticks, then the starts in 3.5 bars: Play's, then one at
-         * each Shift point (with a Shift, Play's is the wrapped end, and
-         * the fourth bar's Shift falls inside the 3.5) */
-        static const int g[][2] = { { 0, 4 }, { 96, 5 }, { 40, 5 } };
-        for (k = 0; k < 3; k++) {
+        /* Offset ticks, then the starts in 3.5 bars: Play's, then one at
+         * each point the sample's start comes round (with an Offset, Play's
+         * is the Offset point, and the sample's start at 384 - Offset) */
+        static const int g[][2] = { { 0, 4 }, { 96, 4 }, { 40, 4 }, { 288, 5 } };
+        for (k = 0; k < 4; k++) {
             int n, off = vs_grid(g[k][0], &n);
             if (off != 0 || n != g[k][1]) printf("FAIL: Shift %d: %d starts, %d off the grid\n", g[k][0], n, off);
             HX_ASSERT(off == 0 && n == g[k][1], "a Pitch loop does not start on its tick's frame, once a pass");

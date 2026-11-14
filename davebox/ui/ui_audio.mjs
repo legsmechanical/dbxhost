@@ -132,9 +132,19 @@ export function auLoopMarks(i, t = -1, c = 0) {
     if (t >= 0 && i.state === 2) { a = i.rstart | 0; n = Math.max(AU_LOOP_SECTIONS, Math.round(auLenTicks(t, c, i) * auFpt(i))); }
     for (let k = 0; k < AU_LOOP_SECTIONS; k++)
         out.push([a + Math.floor(n * k / AU_LOOP_SECTIONS), a + Math.floor(n * (k + 1) / AU_LOOP_SECTIONS)]);
-    /* Shift: section k of the clip's time holds the audio rotated into it */
+    /* Offset: the pads are the clip's time, so section k holds the audio
+     * from the Offset point on — pad 1 plays from it */
     const L = t >= 0 ? auLenTicks(t, c, i) : 0, r = L > 0 ? Math.round(((i.rot | 0) % L) / L * AU_LOOP_SECTIONS) % AU_LOOP_SECTIONS : 0;
-    return r ? out.map((_, k) => out[(k - r + AU_LOOP_SECTIONS) % AU_LOOP_SECTIONS]) : out;
+    return r ? out.map((_, k) => out[(k + r) % AU_LOOP_SECTIONS]) : out;
+}
+/* Where a Loop or Shot clip's step 1 plays from in its sample: Start plus the
+ * Offset (Josh, 2026-11-13: "offset shouldn't reorder the wave ... it should
+ * have a playhead resting at offset point and start playback from there"); -1
+ * where there is none (Free, a Slicer, no sample). */
+export function auOffsetFrame(t, c, i) {
+    if (!i || i.state !== 2 || !auIsLoop(i) || auIsFree(i) || isSlicerTrack(t)) return -1;
+    const L = auLenTicks(t, c, i);
+    return (i.rstart | 0) + (L > 0 ? ((i.rot | 0) % L) : 0) * auFpt(i);
 }
 /* Chop k is note k (Josh, 2026-10-28: "might as well do 128"), 32 to a pad
  * page; external MIDI reaches chop 1 at note 36 (ui.js). */

@@ -362,7 +362,7 @@ static void au_warp_block(seq8_instance_t *inst, int t, int c, double L, double 
     cmd.L = L;
     cmd.fpt = fpt;
     cmd.nud = freerun ? 0.0 : (double)cl->nudge_ms * 44.1 / fpt;
-    cmd.rot = freerun ? 0.0 : L > 0 ? au_wrap((double)cl->rot, L) : 0.0;
+    cmd.rot = freerun ? 0.0 : au_rotw(cl->rot, L);
     cmd.pitch = au_tune(au_pitch(cl) + inst->au_trk[t].cond, au_detune(cl));   /* the Conductor's, held till the wrap on Next */
     cmd.drift = w->drift;
     cmd.anchor_tick = w->cur_anchor;
@@ -587,8 +587,8 @@ static void au_sync_block(seq8_instance_t *inst, int t, int c, int32_t tick, uin
     if (P <= 0) return;
     if (!au_clock_window(inst, tick, L, fpt, frames, &start, &span, &fscale)) return;
     double nud = (double)cl->nudge_ms * 44.1 / fpt;
-    /* Shift: the clip's time (after Nudge) rotated later, wrapping in the loop */
-    double rot = au_wrap((double)cl->rot, L);
+    /* Offset: the clip's time (after Nudge) turned so step 1 plays from it */
+    double rot = au_rotw(cl->rot, L);
     long G = au_ceil(P - 1e-9);
     /* the pieces whose tick falls in this block, in the order they sound */
     long pj[AU_VINTAGE_PER_BLOCK];
@@ -755,7 +755,7 @@ static void au_rmx_block(seq8_instance_t *inst, int t, int c, int32_t tick, uint
     if (P <= 0) return;
     if (!au_clock_window(inst, tick, L, fpt, frames, &start, &span, &fscale)) return;
     double nud = (double)cl->nudge_ms * 44.1 / fpt;
-    double rot = au_wrap((double)cl->rot, L);
+    double rot = au_rotw(cl->rot, L);
     int cs = (int)at->cond;
     /* Pitch: the voice runs at the speed that fills the clip; Vintage: as recorded */
     double vk = 1.0;
@@ -846,7 +846,7 @@ static long au_export_loop(seq8_instance_t *inst, int t, int c, uint32_t len, do
     double P = au_span_ticks(cl, s, rs, re), R = (double)(re - rs);
     if (re <= rs + 32 || P <= 0) { au_sample_free(own); return -1; }
     uint32_t f0 = (uint32_t)(L * fpt + 0.5), total = (uint32_t)(2 * L * fpt + 0.5);
-    double rot = au_wrap((double)cl->rot, L);
+    double rot = au_rotw(cl->rot, L);
     FILE *f = fopen(path, "wb");
     if (!f) { au_sample_free(own); return -1; }
     /* Free: the clip's length from its launch, as it first plays (its own
@@ -1222,11 +1222,12 @@ static void au_render(seq8_instance_t *inst, int frames) {
                     if (at->sync_on) { au_release_chops(at); at->sync_on = 0; }
                     /* Pitch follows a tempo change at once, not at the wrap */
                     if (lv && fill > 0) lv->step = au_revrs(cl) ? -fill : fill;
-                    /* Shift: the sample's start falls `rot` ticks into the clip,
-                     * its end wrapping round before it — the voice starts again
+                    /* Offset: step 1 plays from it, so the sample's start
+                     * falls `rot` (au_rotw) ticks into the clip, its end
+                     * wrapping round before it — the voice starts again
                      * there, as at the loop's top */
                     double Lp = (double)lc->length * tps;
-                    double rot = Lp > 0 ? au_wrap((double)cl->rot, Lp) : 0.0;
+                    double rot = au_rotw(cl->rot, Lp);
                     /* The voice starts only on a block that played a tick,
                      * on that tick's own frame, as a sequenced chop does: the
                      * transport's first block is before its first tick, and a
@@ -2393,7 +2394,7 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
                     double g = 1.0, ct = at->w.tick;
                     if (X && X->trk[t] && L > 0) ct = au_warp_src(X->trk[t], au_wrap(at->w.tick, L), &g);
                     if (ct < 0) return snprintf(out, out_len, "0 0 -1");
-                    double wt = L > 0 ? au_wrap(ct - au_wrap((double)cl->rot, L), L) : ct;
+                    double wt = L > 0 ? au_wrap(ct - au_rotw(cl->rot, L), L) : ct;
                     double x = (wt - (double)cl->nudge_ms * 44.1 / fpt) * (double)(re - rs) / P;
                     if (x >= 0 && x < (double)(re - rs))
                         return snprintf(out, out_len, "1 %u -1", au_revrs(cl) ? re - 1 - (uint32_t)x : rs + (uint32_t)x);

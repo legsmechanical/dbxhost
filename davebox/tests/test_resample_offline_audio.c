@@ -238,6 +238,57 @@ int main(void) {
     hx_set_param(h, "transport", "stop");
     hx_destroy(h);
 
-    printf("PASS: an Audio track's take recorded offline: its samples waited for, never the clock\n");
+    /* ---- an Offset (Josh, 2026-11-13: step 1 plays from it): the copy is
+     * made from the saved project, so the Offset must cross in the file and
+     * the take start at the Offset point — Pitch at the project's Tempo,
+     * sample for sample, Offset a beat: the ramp from 96 ticks in ---- */
+    h = hx_create(NULL);
+    inst = (seq8_instance_t *)h->inst;
+    snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
+    hx_set_param(h, "t4_convert_to_audio", "");
+    snprintf(p, sizeof p, "0|%s/src/ramp60.wav", g_root);
+    hx_set_param(h, "t4_au_pick", p);
+    for (i = 0; i < 4000 && (*au_cl(inst, 4, 0)).state != 2; i++) { hx_render(h, 1); usleep(1000); }
+    HX_ASSERT((*au_cl(inst, 4, 0)).state == 2, "rig: the Offset run did not load");
+    hx_set_param(h, "t4_au_set_sync", "0 2");
+    hx_set_param(h, "t4_au_set_orig", "0 0");
+    hx_set_param(h, "t4_au_set_rot", "0 96");
+    HX_ASSERT((*au_cl(inst, 4, 0)).rot == 96, "rig: the Offset was not set");
+    hx_stub_ot_enable(1);
+    i = hx_stub_ot_begins();
+    hx_set_param(h, "resample_clip", "4 0 2 0 0 2 |/x/offset.wav");
+    HX_ASSERT(hx_stub_ot_begins() == i + 1, "an Offset clip's take did not go offline");
+    hx_stub_ot_take(&st, &su);
+    snprintf(state, sizeof state, "%s", st);
+    snprintf(setup, sizeof setup, "%s", su);
+    hx_set_param(h, "transport", "stop");
+    hx_set_param(h, "resample_clear", "1");
+    hx_destroy(h);
+    {
+        FILE *f = fopen(snap, "w");
+        HX_ASSERT(f && fputs(state, f) >= 0 && fclose(f) == 0, "rig: could not write the snapshot");
+    }
+    h = copy_of(snap, setup, "4 0 2 0 0 2 |/x/offset.wav");
+    inst = (seq8_instance_t *)h->inst;
+    HX_ASSERT((*au_cl(inst, 4, 0)).rot == 96, "the copy lost the Offset (the saved project)");
+    fed = -1;
+    for (i = 0; i < 400 && fed < 0; i++) { hx_render(h, 1); hx_stub_feed(slot, &fed, NULL); }
+    HX_ASSERT(fed >= 0, "the copy's Offset clip never sounded");
+    {
+        const double fpt = 44100.0 * 60.0 / (120.0 * 96.0), off = 96.0 * fpt;   /* 22050: a beat at 120 */
+        const int16_t *blk = hx_stub_feed_last(slot);
+        /* the first tick falls on the same frame as in the run above (t0, the
+         * frame holding the ramp's 0 there); a Pitch voice starts at the
+         * block's top, so the frames before it lead in, before the take */
+        HX_ASSERT(abs(blk[t0 * 2] - ramp_at(off)) <= 2,
+                  "the take does not start at the Offset point");
+        bad = 0;
+        for (k = t0; k < 128; k++) if (blk[k * 2] != blk[t0 * 2] + (k - t0)) bad++;
+        HX_ASSERT(bad == 0, "the take does not play on from the Offset point");
+    }
+    hx_set_param(h, "transport", "stop");
+    hx_destroy(h);
+
+    printf("PASS: an Audio track's take recorded offline: its samples waited for, never the clock; an Offset clip from its Offset\n");
     return 0;
 }

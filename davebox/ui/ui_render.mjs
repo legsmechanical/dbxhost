@@ -77,7 +77,7 @@ import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
 import { isSampledTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
          auPos, auLazyState, auSelSlice, auSampleP2Cells, AU_P2_TEMPO, AU_P2_BARS, AU_P2_REVRS, AU_P2_OFFSET, auOffsetText, auClipWaveKnob, bankAutoTarget, AU_CLIP_TEMPO, AU_CLIP_BARS, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells, rmxBankCells, rmxPresetLongName, rmxOrderMoved, RMX_CHOPS, rmxChopIndex, knobAltOnTrack, auAltBit,
          auPadModeCells, AU_NOTE_BASE,
-         auFmtTime, auEnd, auPlayedEnd, auBpm, auFpt, auLenTicks, auIsFree, auSpeedText, auBarsText, auBarsOf, isSlicerTrack, auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
+         auFmtTime, auEnd, auPlayedEnd, auBpm, auFpt, auLenTicks, auOffsetFrame, auIsFree, auSpeedText, auBarsText, auBarsOf, isSlicerTrack, auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
 import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
 import { drawAudioAsk } from './ui_dialogs.mjs';
 import { drawAudioChooser } from './ui_audio_chooser.mjs';
@@ -98,17 +98,11 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
     const i = auInfo(t, c);
     const fr = i.nframes | 0;
     const A = o.A != null ? o.A : 0, B = o.B != null ? o.B : fr;
-    /* A Loop clip's Shift, where the view is the clip's time (`clipTime`:
-     * SAMPLE's Loop view, the Track View strip): the audio rotated inside the
-     * clip as it plays — clip frame v shows sample frame rot(v) — the beats
-     * staying put (Josh, 2026-10-30: "make the waveform rotate. feature isn't
-     * done until it is") */
-    const org = i.rstart | 0, cLen = o.clipTime ? auLenTicks(t, c, i) * auFpt(i) : 0;
-    const Lt = o.clipTime ? auLenTicks(t, c, i) : 0;
-    const by = o.clipTime && auIsLoop(i) && i.rot && Lt > 0 ? ((i.rot | 0) % Lt) * auFpt(i) : 0;
-    const inWin = (v) => v >= org && v < org + cLen;                       /* outside the clip's window nothing rotates */
-    const rot = (v) => inWin(v) ? org + (((v - org - by) % cLen) + cLen) % cLen : v;      /* clip frame -> sample frame */
-    const unrot = (f) => inWin(f) ? org + (((f - org + by) % cLen) + cLen) % cLen : f;    /* sample frame -> clip frame */
+    /* The audio in its own order, always: Offset turns the clip, never the
+     * waveform (Josh, 2026-11-13: "offset shouldn't reorder the wave in
+     * track overview"; it rotated since 2026-10-30) — it is the point the
+     * clip plays from, marked and rested on by the playhead (below) */
+    const ofr = o.clipTime ? auOffsetFrame(t, c, i) : -1;
     /* a view running past the file's end (SAMPLE's clip window when the Length
      * outlasts the sample) is empty there: only the columns inside are read —
      * and in the clip's time, past a Loop clip's End too (silent there) */
@@ -123,21 +117,7 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
         return cc ? Array.from({ length: n }, (_, k) => (k < nIn ? cc[k] : null)) : null;   /* null: past the file, empty */
     };
     let wIn = w, cols = null;
-    if (fr && by > 0) {
-        /* two pieces, split where the sample's start now falls */
-        const P = org + by;
-        const seg = (vA, vB) => {
-            const p0 = Math.round((vA - A) / (B - A) * w), p1 = Math.round((vB - A) / (B - A) * w);
-            if (p1 <= p0) return [];
-            const a = rot(vA);
-            return colsFor(p1 - p0, a, a + (vB - vA));
-        };
-        /* split where the sample's start falls and at the window's edges */
-        const cuts = [A, P, org, org + cLen, B].filter((v, k) => k === 0 || k === 4 || (v > A && v < B)).sort((a, b) => a - b);
-        const parts = [];
-        for (let k = 0; k + 1 < cuts.length; k++) if (cuts[k + 1] > cuts[k]) parts.push(seg(cuts[k], cuts[k + 1]));
-        cols = parts.some((x) => x === null) ? null : [].concat(...parts);
-    } else if (fr) {
+    if (fr) {
         wIn = B > fe ? Math.max(0, Math.min(w, Math.floor((fe - A) / (B - A) * w))) : w;
         cols = wIn > 0 ? auWaveColumns(t, c, wIn, A, Math.min(B, fe)) : [];
     }
@@ -148,8 +128,9 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
             /* the playhead too, where the OLED draws it below (Josh, 2026-11-09:
              * "waveforms in audio track overview should have playhead") */
             const pp = auPos();
-            const ho = (pp.t === t && pp.on) ? Object.assign({}, o, { playAt: by > 0 ? unrot(pp.frame) : pp.frame }) : o;
-            kitHudTap('Wave', hudWaveOf(t, c, i, A, B, by, cols, ho));
+            const rest = (!S.playing || !S.trackClipPlaying[t]) ? ofr : -1;
+            const ho = (pp.t === t && pp.on) ? Object.assign({}, o, { playAt: pp.frame }) : rest >= 0 ? Object.assign({}, o, { playAt: rest }) : o;
+            kitHudTap('Wave', hudWaveOf(t, c, i, A, B, cols, ho));
         } catch (e) { /* skip this frame's wave */ }
     }
     const mid = y + Math.floor(h / 2);
@@ -171,13 +152,12 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
     /* outside Start..End (a Slicer's Trim screen: its two handles): hatched off */
     const rs = o.trim ? o.trim[0] : i.rstart, re = o.trim ? o.trim[1] : o.edges && auIsLoop(i) ? auPlayedEnd(t, c, i) : auEnd(i);
     for (let k = 0; k < w; k++) {
-        const v = A + (B - A) * (k + 0.5) / w, f = by > 0 ? rot(v) : v;
+        const f = A + (B - A) * (k + 0.5) / w;
         if (f < rs || f > re) for (let j = y; j < y + h; j++) if (((k + j) & 1) === 0) set_pixel(x + k, j, 0);
     }
     if (o.edges) {
         /* Start and End: a line each, edged in black to read over the audio */
         const ln = (f) => {
-            if (by > 0) f = unrot(f);                /* where it falls in the turned clip */
             const px = x + Math.floor((f - A) / (B - A) * w + 1e-6);
             if (px >= x && px < x + w) { fill_rect(px - 1, y, 3, h, 0); fill_rect(px, y, 1, h, 1); }
         };
@@ -231,8 +211,8 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
     /* `offset`: the Offset, an arrow on top where the sample's Start lands in
      * the clip (Josh, 2026-11-13: "have an arrow on the waveform indicate
      * where it is"); at the window's left edge while there is none */
-    if (o.offset && auIsLoop(i) && !auIsFree(i)) {
-        const px = Math.max(x + 2, Math.min(x + w - 3, Math.floor((org + by - A) / (B - A) * w + 1e-6) + x));
+    if (o.offset && ofr >= 0 && ofr >= A && ofr <= B) {
+        const px = Math.max(x + 2, Math.min(x + w - 3, Math.floor((ofr - A) / (B - A) * w + 1e-6) + x));
         fill_rect(px - 3, y, 7, 4, 0);
         fill_rect(px - 2, y, 5, 1, 1); fill_rect(px - 1, y + 1, 3, 1, 1); set_pixel(px, y + 2, 1);
     }
@@ -240,21 +220,27 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
      * the clip's beats fall (Josh, 2026-10-29: "for loop mode, giving that
      * context should show bar indicators under it"); a bar 3 rows, a beat 1 */
     if (o.beats && o.beats.fpb > 0) {
-        const fpb = o.beats.fpb, org = o.beats.origin;
-        const b0 = Math.ceil((A - org) / fpb), b1 = Math.floor((B - org) / fpb);
+        /* the clip's bar starts at the Offset point: the beats count from
+         * there, both ways, inside the audio from Start on */
+        const fpb = o.beats.fpb, org = ofr >= 0 ? ofr : o.beats.origin, lo = ofr >= 0 ? (i.rstart | 0) : org;
+        const b0 = Math.ceil((Math.max(A, lo) - org) / fpb), b1 = Math.floor((B - org) / fpb);
         if (b1 - b0 <= w / 2) {                       /* only while they stay apart */
-            for (let b = Math.max(0, b0); b <= b1; b++) {
+            for (let b = b0; b <= b1; b++) {
                 const px = Math.min(x + w - 1, fx(org + b * fpb));
                 if (!inView(px)) continue;
+                const bar = ((b % 4) + 4) % 4 === 0;
                 /* compact (the overview strip, a footer under it): a bar 2 rows, a beat 1 */
-                if (o.beats.compact) fill_rect(px, y + h + (b % 4 === 0 ? 0 : 1), 1, b % 4 === 0 ? 2 : 1, 1);
-                else fill_rect(px, y + h + 1, 1, b % 4 === 0 ? 3 : 1, 1);
+                if (o.beats.compact) fill_rect(px, y + h + (bar ? 0 : 1), 1, bar ? 2 : 1, 1);
+                else fill_rect(px, y + h + 1, 1, bar ? 3 : 1, 1);
             }
         }
     }
+    /* the playhead: where it plays, or — stopped — resting at the Offset
+     * point it will play from */
     const p = auPos();
-    if (p.t === t && p.on) {
-        const px = fx(by > 0 ? unrot(p.frame) : p.frame);
+    const at = (p.t === t && p.on) ? p.frame : (!S.playing || !S.trackClipPlaying[t]) && ofr >= 0 ? ofr : -1;
+    if (at >= 0) {
+        const px = fx(at);
         if (inView(px)) {
             fill_rect(px, y - 1, 1, h + 2, 0);
             fill_rect(px + 1, y - 1, 1, h + 2, 1);
@@ -265,13 +251,13 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
 /* Track View at rest on an Audio track: the clip's sample — its waveform,
  * slice marks and playhead (v1 default, Josh 2026-10-27). */
 /* The waveform as the Screen view needs it: the amplitude columns (at 480
- * when the file is not rotated, the OLED's own otherwise), and every mark as a
+ * where the view is inside the file, the OLED's own otherwise), and every mark as a
  * fraction of the view — region, chops, the selected chop, trim handles.
  * Built only while a frame is being recorded (it costs a peaks walk). */
-function hudWaveOf(t, c, i, A, B, by, cols, o) {
+function hudWaveOf(t, c, i, A, B, cols, o) {
     const fr = i.nframes | 0, span = Math.max(1, B - A), at = (f) => Math.round((f - A) / span * 10000) / 10000;
     let amp = cols;
-    if (fr && !(by > 0) && B <= fr) { const hi = auWaveColumns(t, c, 480, A, B); if (hi) amp = hi; }
+    if (fr && B <= fr) { const hi = auWaveColumns(t, c, 480, A, B); if (hi) amp = hi; }
     const rs = o.trim ? o.trim[0] : i.rstart, re = o.trim ? o.trim[1] : auEnd(i);
     const out = {
         amp: amp ? amp.map((v) => v == null ? -1 : Math.round(Math.min(1, v * (o.gain ? Math.pow(10, o.gain / 20) : 1)) * 1000) / 1000) : null,
@@ -329,7 +315,7 @@ function hudSampleWave(ed, i, opts) {
         /* the OLED's own 128 columns while the finer read is not in yet */
         const fr = i.nframes | 0, A = ed.A | 0, B = ed.B | 0;
         const cols = fr && B > A ? auWaveColumns(ed.t, ed.c, 128, A, Math.min(B, fr)) : null;
-        kitHudTap('Wave', hudWaveOf(ed.t, ed.c, i, A, B, 0, cols, o));
+        kitHudTap('Wave', hudWaveOf(ed.t, ed.c, i, A, B, cols, o));
     } catch (e) { /* the picture is a nicety */ }
 }
 function drawAudioTrackRest(t) {

@@ -237,6 +237,54 @@ int main(void) {
     au_cl(inst, 2, 5)->freerun = 1;
     HX_ASSERT(!au_clip_default(au_cl(inst, 2, 5)), "a clip with only Free counts as default (not saved)");
     printf("  ok   — Free and Speed are saved and loaded\n");
+
+    /* ==== 6. Offset: saved as `of`, where in the sample the clip starts
+     * (Josh, 2026-11-13: step 1 plays from it); an older file's `sh` was
+     * where in the clip the sample started, so it loads as the loop minus
+     * it ==== */
+    {
+        static char st[65536], st2[65536];
+        const clip_t *lc0 = &inst->tracks[2].clips[0];
+        long Lt = (long)lc0->length * (lc0->ticks_per_step ? lc0->ticks_per_step : TICKS_PER_STEP);
+        HX_ASSERT(Lt > 96, "the Offset load test expects a clip over a beat");
+        hx_set_param(h, "t2_au_set_rot", "0 96");
+        seq8_save_state(inst);
+        FILE *f = fopen(inst->state_path, "r");
+        size_t n = f ? fread(st, 1, sizeof st - 1, f) : 0; if (f) fclose(f); st[n] = 0;
+        const char *a = strstr(st, "\"t2c0_aud\":\"");
+        HX_ASSERT(a, "the Offset clip was not saved");
+        const char *ae = strchr(a + 12, '"');
+        HX_ASSERT(memmem(a, (size_t)(ae - a), " of=96", 6) && memmem(a, (size_t)(ae - a), " sh=0 ", 6),
+                  "Offset is not saved as of= (with sh= left 0 for an older build)");
+        /* reloaded as it was */
+        hx_destroy(h);
+        h = hx_create(NULL); HX_NO_LEAD(h); inst = (seq8_instance_t *)h->inst;
+        snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
+        seq8_load_state(inst);
+        HX_ASSERT(au_cl(inst, 2, 0)->rot == 96, "of=96 did not load as Offset 96");
+        /* the same clip as an older build wrote it: sh=96, no of= */
+        {
+            const char *sh = strstr(a, " sh=0 "), *of = strstr(a, " of=96");
+            size_t k = 0;
+            HX_ASSERT(sh && of && sh < ae && of < ae, "the saved line");
+            memcpy(st2, st, (size_t)(sh - st)); k = (size_t)(sh - st);
+            k += (size_t)sprintf(st2 + k, " sh=96 ");
+            memcpy(st2 + k, sh + 6, (size_t)(of - (sh + 6))); k += (size_t)(of - (sh + 6));
+            strcpy(st2 + k, of + 6);
+        }
+        hx_destroy(h);                    /* (it saves the project: the older file goes in after) */
+        {
+            char sp[300];
+            snprintf(sp, sizeof sp, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
+            f = fopen(sp, "w"); HX_ASSERT(f, "rig: the older file"); fputs(st2, f); fclose(f);
+        }
+        h = hx_create(NULL); HX_NO_LEAD(h); inst = (seq8_instance_t *)h->inst;
+        snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
+        seq8_load_state(inst);
+        HX_ASSERT(au_cl(inst, 2, 0)->rot == (uint32_t)(Lt - 96),
+                  "an older file's sh=96 did not load as the clip's loop minus it");
+    }
+    printf("  ok   — Offset is saved as of=; an older sh= loads the other way round\n");
     hx_destroy(h);
 
     /* ==== 6. a Slicer refuses both ==== */

@@ -26,9 +26,12 @@ the section into a versioned heading at release time.
 - **Audio clips: the CLIP bank is when the sample plays.** It now holds Mode, Strch,
   Offset, **Nudge**, **Sync**, **Tempo** and **Bars**, one knob each (Nudge was behind
   Offset). Touching Strch, Offset, Tempo or Bars brings up the clip's waveform while you
-  hold the knob. On the SAMPLE waveform, **K4 is Offset**, with an arrow on top where the
-  sample's Start lands, and **Gain moved to K8**; **Revrs** is on page 2 only, which also
-  gains Offset on K8.
+  hold the knob. On the SAMPLE waveform, **K4 is Offset**, with an arrow on top, and **Gain
+  moved to K8**; **Revrs** is on page 2 only, which also gains Offset on K8.
+- **Offset is where the clip starts in its audio.** Step 1 plays from the Offset point (it
+  used to move the audio later instead), and the waveform no longer turns round with it:
+  stopped, the playhead rests at the Offset point and the beats count from there. Projects
+  saved before keep their sound.
 - **Record into Audio clips.** On an Audio track, **Rec** records the Move's audio input
   into the clip: an empty clip records until you press Rec again, to the bar; a clip with a
   sample records a new layer over what it plays. You hear the input through the track while

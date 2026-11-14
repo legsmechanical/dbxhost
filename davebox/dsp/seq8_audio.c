@@ -208,6 +208,15 @@ static double au_wrap(double x, double L) {
     while (x < 0) x += L;
     return x;
 }
+/* A Loop clip's Offset as the clip-time rotation the players use: `rot`
+ * ticks into the SAMPLE is where the clip starts — step 1 plays from the
+ * Offset point (Josh, 2026-11-13: "a playhead resting at offset point and
+ * start playback from there"), so the sample's own start falls `L - rot`
+ * into the clip. The players turn clip time U into sample time
+ * au_wrap(U - rotation, L). */
+static double au_rotw(uint32_t rot, double L) {
+    return L > 0 ? au_wrap(-(double)rot, L) : 0.0;
+}
 
 /* Decay's per-frame factor: -83.87 dB over `frames`, a Move drum cell's curve
  * (DR32's reconstruction, dr32_voice.h DR32_DECAY_DB_PER_TIME), so a chop and
@@ -3237,9 +3246,10 @@ static void au_save_state(void *vinst, FILE *fp) {
             for (c = 0; c < NUM_CLIPS; c++) {
                 const au_clip_t *cl = au_slot(inst, t, c);
                 if (au_clip_default(cl)) continue;
-                fprintf(fp, ",\"t%dc%d_aud\":\"rs=%u p=%d dt=%d g=%d rv=%d nu=%d sh=%u sy=%d bpm=%u", t, c,
+                fprintf(fp, ",\"t%dc%d_aud\":\"rs=%u p=%d dt=%d g=%d rv=%d nu=%d sh=0 sy=%d bpm=%u", t, c,
                         (unsigned)cl->rstart, cl->pitch, cl->detune, cl->gain_db, cl->revrs, cl->nudge_ms,
-                        (unsigned)cl->rot, cl->sync, (unsigned)cl->bpm10);
+                        cl->sync, (unsigned)cl->bpm10);
+                if (cl->rot) fprintf(fp, " of=%u", (unsigned)cl->rot);   /* Offset (sh, the old way round, is 0) */
                 if (cl->shot) fputs(" os=1", fp);   /* One-shot (an older build ignores the key) */
                 if (cl->rend) fprintf(fp, " en=%u", (unsigned)cl->rend);   /* End (likewise) */
                 if (cl->rspan) fprintf(fp, " sp=%u", (unsigned)cl->rspan); /* Bars, ticks (likewise) */
@@ -3394,7 +3404,16 @@ static void au_load_state(void *vinst, const char *buf) {
                 cl->gain_db = (int8_t)clamp_i((int)au_kv(kv, n, "g", 0), -40, 12);
                 cl->revrs = (uint8_t)(au_kv(kv, n, "rv", 0) ? 1 : 0);
                 cl->nudge_ms = (int16_t)clamp_i((int)au_kv(kv, n, "nu", 0), -500, 500);
-                cl->rot = (uint32_t)clamp_i((int)au_kv(kv, n, "sh", 0), 0, INT32_MAX);
+                /* Offset: `of`, where in the sample the clip starts. An older
+                 * file's `sh` was the other way round — where in the clip the
+                 * sample started — so it reads as the clip's loop minus it */
+                {
+                    long of = au_kv(kv, n, "of", -1), sh = au_kv(kv, n, "sh", 0);
+                    const clip_t *lcl = &inst->tracks[t].clips[c];
+                    long Lt = (long)lcl->length * (lcl->ticks_per_step ? lcl->ticks_per_step : TICKS_PER_STEP);
+                    if (of >= 0) cl->rot = (uint32_t)clamp_i((int)of, 0, INT32_MAX);
+                    else cl->rot = (sh > 0 && Lt > 0) ? (uint32_t)((Lt - sh % Lt) % Lt) : 0;
+                }
                 cl->shot = (uint8_t)(au_kv(kv, n, "os", 0) ? 1 : 0);
                 cl->rend = (uint32_t)clamp_i((int)au_kv(kv, n, "en", 0), 0, INT32_MAX);
                 cl->rspan = (uint32_t)clamp_i((int)au_kv(kv, n, "sp", 0), 0, AU_SPAN_MAX);

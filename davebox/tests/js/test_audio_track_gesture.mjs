@@ -1998,62 +1998,60 @@ step('⭐⭐ the sequence works with SAMPLE or SLICES up, as under any instrumen
     S.activeBank = 0; ticks(2);
 });
 
-step('⭐⭐ an Audio clip\'s Shift turns its waveform: zoomed out, SAMPLE and the Track View strip show the audio rotated inside the clip, the beats still (Josh, 2026-10-30: "make the waveform rotate. feature isn\'t done until it is")', () => {
-    const base = INFO24(0, 8, 0, 8, 50, 0);                   /* Loop, 84 BPM, Shift 0 */
-    const withRot = (r) => base.replace(/ 0\|/, ' 0 ' + r + '|');   /* ...slen 0, then the Shift */
+step('⭐⭐ Offset does not reorder the waveform: SAMPLE and the Track View strip show the audio in its own order, the playhead resting at the Offset point (step 1 plays from there), the beats counting from it (Josh, 2026-11-13: "offset shouldn\'t reorder the wave in track overview. it should have a playhead resting at offset point and start playback from there")', () => {
+    const base = INFO24(0, 8, 0, 8, 50, 0);                   /* Loop, 84 BPM, Offset 0 */
+    const withRot = (r) => base.replace(/ 0\|/, ' 0 ' + r + '|');   /* ...slen 0, then the Offset */
     const ac = S.trackActiveClip[4] | 0;
     S.clipLength[4][ac] = 16; S.clipTPS[4][ac] = 24;
     const wasPos = GET['t4_au_pos'];
-    GET['t4_au_pos'] = '0 0 -1';                              /* no playhead in the way */
+    GET['t4_au_pos'] = '0 0 -1';                              /* stopped: the playhead rests */
+    S.playing = false;
     GET['t4_au_info_0'] = withRot(0); kindSync(); ticks(4);
     assert(A.auInfo(4, 0).rot === 0, 'the fixture: ' + A.auInfo(4, 0).rot);
     mapPad(2, 3); ticks(4);
     assert(S.auEditor && S.auEditor.full, 'SAMPLE is not zoomed out');
-    const rows = (f, y0, y1) => (x) => { let v = ''; for (let y = y0; y <= y1; y++) v += f[y * 128 + x] ? 1 : 0; return v; };
+    const col = (f, x, y0, y1) => { let v = ''; for (let y = y0; y <= y1; y++) v += f[y * 128 + x] ? 1 : 0; return v; };
     const f0 = shown();
-    GET['t4_au_info_0'] = withRot(96); kindSync(); ticks(4);   /* a quarter of 384 ticks */
-    assert(A.auInfo(4, 0).rot === 96, 'the Shift was not read: ' + A.auInfo(4, 0).rot);
+    GET['t4_au_info_0'] = withRot(96); kindSync(); ticks(4);   /* a quarter of 384 ticks: x 32 */
+    assert(A.auInfo(4, 0).rot === 96, 'the Offset was not read: ' + A.auInfo(4, 0).rot);
     const f1 = shown();
-    const a = rows(f0, 24, 49), b = rows(f1, 24, 49);   /* under the Offset arrow (rows 20-23), which moves on its own */
-    let moved = 0, same = 0;
-    for (let x = 0; x < 128; x++) { if (b(x) === a((x - 32 + 128) % 128)) moved++; if (b(x) === a(x)) same++; }
-    assert(moved >= 124, 'the waveform did not turn a quarter of the screen: ' + moved + '/128 columns match');
-    assert(same < 100, 'control: the waveform looks the same unturned (' + same + '/128): the fixture cannot show a turn');
-    /* the beats stay where the clip's beats are */
-    const ta = rows(f0, 51, 53), tb = rows(f1, 51, 53);
-    let beats = 0; for (let x = 0; x < 128; x++) if (ta(x) === tb(x)) beats++;
-    assert(beats === 128, 'the beat ticks moved with the audio');
-    /* zoomed in across the Shift's point the view is two windows of the
-     * sample: both stay read — the screen settles, no read every tick */
+    /* the audio where it was: every column away from the two playhead places */
+    let same = 0, n = 0;
+    for (let x = 0; x < 128; x++) { if (x <= 2 || (x >= 30 && x <= 35)) continue; n++; if (col(f0, x, 24, 49) === col(f1, x, 24, 49)) same++; }
+    assert(same === n, 'the waveform moved with the Offset: ' + same + '/' + n + ' columns the same');
+    /* control: the fixture has audio to move (a turned copy would differ) */
+    let diff = 0; for (let x = 3; x < 126; x++) if (col(f0, x, 24, 49) !== col(f0, x + 2, 24, 49)) diff++;
+    assert(diff > 20, 'control: the fixture\'s waveform is too even to show a move (' + diff + ')');
+    /* the playhead resting at the Offset point: a white line edged in black */
+    const lineAt = (f, x0, x1) => { for (let x = x0; x <= x1; x++) if (/^1+$/.test(col(f, x, 20, 49)) && /^0+$/.test(col(f, x - 1, 20, 49))) return x; return -1; };
+    assert(lineAt(f1, 31, 34) >= 0, 'no playhead resting at the Offset point (x 31-34)');
+    assert(lineAt(f0, 31, 34) < 0, 'control: a line there with no Offset');
+    /* the clip's bar starts there: the tall tick at x 32, none at the Start */
+    const r53 = (f) => [...Array(128).keys()].filter((x) => f[53 * 128 + x]);
+    assert(r53(f0).indexOf(0) >= 0 && r53(f1).some((x) => x >= 31 && x <= 33) && r53(f1).indexOf(0) < 0,
+           'the bar tick does not move to the Offset point: ' + r53(f0) + ' / ' + r53(f1));
+    /* ...and playing, the playhead is where the engine plays, in the audio's order */
     {
-        /* an 8-step clip (both pieces inside the file), the view across its split */
-        S.clipLength[4][ac] = 8; kindSync(); ticks(2);
-        const ed = S.auEditor, P = A.auInfo(4, 0).rstart + 96 * A.auFpt(A.auInfo(4, 0));
-        ed.full = false; ed.A = Math.round(P - 5000); ed.B = Math.round(P + 5000);
-        shown();
-        assert(!ed.full && ed.A < P && ed.B > P, 'the zoomed view does not cross the Shift\'s point: ' + ed.A + '..' + ed.B + ' / ' + P);
-        const get = globalThis.host_module_get_param;
-        let reads = 0;
-        globalThis.host_module_get_param = (k) => { if (/_au_wave_/.test(String(k))) reads++; return get(k); };
-        try {
-            for (let n = 0; n < 6; n++) { shown(); ticks(1); }       /* settle */
-            reads = 0;
-            for (let n = 0; n < 10; n++) { shown(); ticks(1); }
-        } finally { globalThis.host_module_get_param = get; }
-        assert(reads === 0, 'the two pieces keep being re-read: ' + reads + ' reads in 10 ticks');
-        S.clipLength[4][ac] = 16;
+        const fr = Math.round(A.auInfo(4, 0).rstart + 200 * A.auFpt(A.auInfo(4, 0)));   /* 200 ticks into the sample */
+        GET['t4_au_pos'] = '1 ' + fr + ' 0'; S.playing = true; S.trackClipPlaying[4] = true; ticks(6);   /* read every 3rd tick */
+        const fp = shown();
+        const px = Math.floor((fr - S.auEditor.A) / (S.auEditor.B - S.auEditor.A) * 128);
+        assert(lineAt(fp, px, px + 2) >= 0 && lineAt(fp, 31, 34) < 0,
+               'playing, the playhead is not at the engine\'s frame (x ' + px + ') — or still rests at the Offset');
+        GET['t4_au_pos'] = '0 0 -1'; S.playing = false; S.trackClipPlaying[4] = false; ticks(2);
     }
     back(); ticks(2);
-    /* the Track View strip turns too */
+    /* the Track View strip: the audio in its order, the playhead resting at the Offset */
     GET['t4_au_info_0'] = withRot(0); kindSync(); ticks(4);
     S.activeBank = 0; S.bankCardLatched = false;
     const g0 = shown();
     GET['t4_au_info_0'] = withRot(96); kindSync(); ticks(4);
     const g1 = shown();
-    const sa = rows(g0, 49, 54), sb = rows(g1, 49, 54);
-    let smoved = 0, ssame = 0;
-    for (let x = 4; x < 124; x++) { if (sb(x) === sa(4 + ((x - 4 - 30 + 120) % 120))) smoved++; if (sb(x) === sa(x)) ssame++; }
-    assert(smoved >= 116 && ssame < 110, 'the Track View strip did not turn: ' + smoved + ' moved, ' + ssame + ' same of 120');
+    let ssame = 0, sn = 0;
+    for (let x = 4; x < 124; x++) { if (x <= 6 || (x >= 32 && x <= 37)) continue; sn++; if (col(g0, x, 49, 54) === col(g1, x, 49, 54)) ssame++; }
+    assert(ssame === sn, 'the Track View strip moved with the Offset: ' + ssame + '/' + sn);
+    let lit = -1; for (let x = 30; x < 40; x++) if (/^1+$/.test(col(g1, x, 49, 54))) lit = x;
+    assert(lit >= 0, 'the Track View strip has no playhead resting at the Offset point');
     GET['t4_au_pos'] = wasPos;
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; kindSync(); ticks(20);
 });
@@ -2305,13 +2303,13 @@ step('⭐⭐ an Audio track: no sequence — pad taps and steps do nothing, no S
             for (let i = 0; i < 40 && A.auInfo(4, ac).rot; i++) cc(73, 127);
             S.clipTPS[4][ac] = tps0;
         }
-        /* the pads follow it: a quarter-clip Shift puts the clip's first
-         * quarter of audio on pads 9-16 */
+        /* the pads are the clip's time: a quarter-clip Offset plays the
+         * audio's second quarter from pad 1, its first quarter last */
         {
             const i0 = A.auInfo(4, ac), L = len0 * tps;
             const plain = A.auLoopMarks(i0, 4, ac), rot = A.auLoopMarks(Object.assign({}, i0, { rot: L / 4 }), 4, ac);
-            assert(JSON.stringify(rot[8]) === JSON.stringify(plain[0]) && JSON.stringify(rot[0]) === JSON.stringify(plain[24]),
-                   'the Audio pads do not rotate with the Shift');
+            assert(JSON.stringify(rot[0]) === JSON.stringify(plain[8]) && JSON.stringify(rot[24]) === JSON.stringify(plain[0]),
+                   'the Audio pads do not start at the Offset');
         }
         /* K4 Nudge, its own knob (no alternate on K3 any more) */
         assert(A.auLoopBankCells(4)[3].label === 'Nudge', 'K4 is not Nudge: ' + A.auLoopBankCells(4)[3].label);

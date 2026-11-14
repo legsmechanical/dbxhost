@@ -353,7 +353,9 @@ static void ar_land(seq8_instance_t *inst, int t) {
         lt = bars * RS_BAR_TICKS;
         /* the clip runs on the master clock (melodic_anchor_playhead): the
          * take's first frame is where the take began in it */
-        cl->rot = lt ? inst->ar_start_abs % lt : 0;
+        /* ...so the clip starts that far round from the take's first frame:
+         * Offset is where in the sample the clip starts */
+        cl->rot = lt ? (lt - inst->ar_start_abs % lt) % lt : 0;
         cl->rstart = cl->slen = cl->rend = cl->rspan = 0;
     }
     memset(&r, 0, sizeof r);
