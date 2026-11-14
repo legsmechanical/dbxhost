@@ -3611,9 +3611,14 @@ static void au_tape_frame(au_tape_t *T, int16_t *ring, int32_t *l, int32_t *r, i
     if (++T->w >= AU_TAPE_RING) T->w = 0;
     if (T->fill < AU_TAPE_RING) T->fill++;
     if (T->st == 0 && inwin) {
-        /* a window opens: its length held to what the ring has behind it */
-        double room = (double)(T->fill > 1024 ? T->fill - 1024 : 0);
-        double cap = fx == AU_TAPE_BACK ? room : 2.0 * room;
+        /* a window opens, its length held to what the ring can serve. Stop,
+         * Start, Half read behind the write head, lagging at most half the
+         * window: no past needed. Back reads the past backwards while the
+         * write head runs forwards — they close at twice the speed — so it
+         * needs half the ring as well as that much written already (found by
+         * review: past AU_TAPE_RING/2 it read audio written in the window). */
+        double room = (double)(T->fill > 1024 ? T->fill - 1024 : 0), half = (double)(AU_TAPE_RING - 1024) / 2.0;
+        double cap = fx == AU_TAPE_BACK ? (room < half ? room : half) : 2.0 * (AU_TAPE_RING - 1024);
         T->fx = (uint8_t)fx;
         T->wf = wf < cap ? wf : cap;
         if (T->wf < 64) T->wf = 0;

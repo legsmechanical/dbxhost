@@ -2130,7 +2130,7 @@ typedef struct {
      * reads files or frees samples. */
     au_clip_t   au_store[NUM_TRACKS][NUM_CLIPS + 1];
     au_track_t  au_trk[NUM_TRACKS];
-    int16_t     au_tape_ring[NUM_TRACKS][AU_TAPE_RING * 2];   /* TAPE: what each track played, 4 s */
+    int16_t     au_tape_ring[NUM_TRACKS][AU_TAPE_RING * 2];   /* TAPE: what each track played, 8 s */
     rmx_work_t  rmx_w;          /* REMIX scratch (audio thread only) */
     note_t      rmx_sn[NUM_TRACKS][AU_RMX_SN];   /* REMIX: a Slicer clip's remixed notes (au_track_t.rmx_sn_n) */
     uint8_t     rmx_sv[NUM_TRACKS][AU_RMX_SN];   /* ...each one's ROLL velocity (0: none, the Slicer's one level) */

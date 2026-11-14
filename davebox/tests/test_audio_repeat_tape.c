@@ -242,6 +242,28 @@ static void tape_unit(void) {
     memset(&T, 0, sizeof T);
     for (i = 0; i < 3000; i++) { l = r = 100; au_tape_frame(&T, g_ring, &l, &r, i >= 2000, AU_TAPE_BACK, 100000); }
     HX_ASSERT(T.wf <= 2000 - 1024 + 1, "TAPE Back: a window longer than the ring's past was not held to it");
+    /* Back over a whole bar at 100 BPM (105840 frames), the ring full: the
+     * past backwards all the way, never the audio written in the window
+     * (found by review: at the old 4 s ring it went wrong at frame 88200) */
+    memset(&T, 0, sizeof T);
+    for (i = 0; i < AU_TAPE_RING; i++) { l = r = i % 30000; au_tape_frame(&T, g_ring, &l, &r, 0, AU_TAPE_BACK, 105840); }
+    {
+        int bad = 0, j;
+        double r0 = AU_TAPE_RING;
+        for (j = 0; j < 105840; j++) {
+            l = r = (AU_TAPE_RING + j) % 30000;
+            au_tape_frame(&T, g_ring, &l, &r, 1, AU_TAPE_BACK, 105840);
+            long want = ((long)(r0 - j) % 30000 + 30000) % 30000;
+            if (j > 0 && labs((long)l - want) > 1) bad++;
+        }
+        snprintf(msg, sizeof msg, "TAPE Back, a bar at 100 BPM: %d frames read the wrong audio", bad);
+        HX_ASSERT(bad == 0, msg);
+    }
+    /* Start on the first bar after a load (nothing written yet) still plays */
+    memset(&T, 0, sizeof T);
+    l = r = 0;
+    au_tape_frame(&T, g_ring, &l, &r, 1, AU_TAPE_START, 22050);
+    HX_ASSERT(T.st == 1 && T.wf == 22050, "TAPE Start on the first frame after a load was skipped");
     printf("  ok   — TAPE: Stop, Start, Half and Back over a ramp, the way back, the bar cycle\n");
 }
 

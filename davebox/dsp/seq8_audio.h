@@ -73,7 +73,7 @@
 #define AU_RMX_EV          256          /* REMIX / REPEAT events in one Loop bar (16 notes; ROLL and REPEAT add runs) */
 #define AU_TAPE_FX         4            /* TAPE's effects: Stop, Start, Half, Back */
 #define AU_TAPE_LENS       5            /* TAPE's windows: 1/16, 1/8, 1/4, 1/2, 1 bar */
-#define AU_TAPE_RING       176400       /* TAPE's memory of the track: 4 s of stereo frames */
+#define AU_TAPE_RING       352800       /* TAPE's memory of the track: 8 s of stereo frames (Back over a bar down to 60 BPM) */
 #define AU_TAPE_XF         256          /* TAPE: the crossfade back to the track as it plays */
 #define AU_TAPE_FADE       512          /* TAPE: a Stop's fade into silence, a Start's out of it */
 #define AU_TAPE_SLOW       0.2          /* TAPE: below this speed the level follows it down */
