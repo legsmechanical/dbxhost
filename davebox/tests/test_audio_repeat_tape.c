@@ -259,6 +259,24 @@ static void tape_unit(void) {
         snprintf(msg, sizeof msg, "TAPE Back, a bar at 100 BPM: %d frames read the wrong audio", bad);
         HX_ASSERT(bad == 0, msg);
     }
+    /* ...and a bar at 50 BPM (211680 frames, past half the ring): held to half
+     * the ring, every frame of it the past, backwards */
+    memset(&T, 0, sizeof T);
+    for (i = 0; i < AU_TAPE_RING; i++) { l = r = i % 30000; au_tape_frame(&T, g_ring, &l, &r, 0, AU_TAPE_BACK, 211680); }
+    {
+        int bad = 0, j;
+        double r0 = AU_TAPE_RING, half = (AU_TAPE_RING - 1024) / 2.0;
+        for (j = 0; j < 211680; j++) {
+            l = r = (AU_TAPE_RING + j) % 30000;
+            au_tape_frame(&T, g_ring, &l, &r, 1, AU_TAPE_BACK, 211680);
+            if (j == 0) { HX_ASSERT(fabs(T.wf - half) < 1.0, "TAPE Back, a bar at 50 BPM: not held to half the ring"); }
+            if (T.st != 1) break;
+            long want = ((long)(r0 - j) % 30000 + 30000) % 30000;
+            if (j > 0 && labs((long)l - want) > 1) bad++;
+        }
+        snprintf(msg, sizeof msg, "TAPE Back, a bar at 50 BPM: %d frames read the wrong audio", bad);
+        HX_ASSERT(bad == 0, msg);
+    }
     /* Start on the first bar after a load (nothing written yet) still plays */
     memset(&T, 0, sizeof T);
     l = r = 0;
