@@ -11,23 +11,27 @@ the section into a versioned heading at release time.
 ### Added
 - **Loop points for Audio clips.** On SAMPLE, **K3** is now **End**, as fine as Start (a
   single sample zoomed all the way in). Start and End mark the loop, and nothing past End
-  sounds. A new **Bars** knob on SAMPLE's page 2 sits beside **Tempo**, framed with it:
-  set how many bars Start to End lasts, odd numbers too, and the Tempo follows, so a
-  sample that isn't a perfect loop plays in time. Bars stay put when you move Start or End.
-  The clip's length (the Loop gestures) works as a sequence's loop does: a 1-bar loop in a
-  2-bar clip plays one bar and rests one. **Fit to clip** now sets Bars. Revrs moved to K7
-  on page 2. Start and End are drawn as lines, with the audio outside them dotted rather
-  than hidden. An arrow marks which of Tempo and Bars is in charge.
-- **Free mode for Audio clips.** The CLIP bank's **Mode** gains **Free** beside Loop and
-  Shot: launched with the clip, the sample loops Start to End on its own, off the
-  sequencer's timing. **Speed** (1–400 %) sets how fast; **Warp** changes time alone,
-  **Tape** time and pitch together, and Pitch and Detune still apply. Exports render it.
-  Track View's header names the clip's Mode: Loop, Shot or Free.
-- **Audio clips: the CLIP bank is when the sample plays.** It now holds Mode, Strch,
-  Offset, **Nudge**, **Sync**, **Tempo** and **Bars**, one knob each (Nudge was behind
-  Offset). Touching Strch, Offset, Tempo or Bars brings up the clip's waveform while you
-  hold the knob. On the SAMPLE waveform, **K4 is Offset**, with an arrow on top, and **Gain
-  moved to K8**; **Revrs** is on page 2 only, which also gains Offset on K8.
+  sounds. A new **Bars** knob sits beside **Tempo**, framed with it: set how many bars
+  Start to End lasts, odd numbers too, and the Tempo follows, so a sample that isn't a
+  perfect loop plays in time. Bars stay put when you move Start or End. The clip's length
+  (the Loop gestures) works as a sequence's loop does: a 1-bar loop in a 2-bar clip plays
+  one bar and rests one. **Fit to clip** now sets Bars. Start and End are drawn as lines,
+  with the audio outside them dotted rather than hidden. An arrow marks which of Tempo and
+  Bars is in charge.
+- **Free timing for Audio clips.** SAMPLE's new **Sync** knob is **Grid** or **Free**:
+  launched with the clip, a Free sample plays Start to End on its own, off the sequencer's
+  timing — looping with Mode Loop, once with Mode Shot (then the clip stops). **Speed**
+  (1–400 %) sets how fast; **Warp** Pitch changes time and pitch together, Warp time
+  alone, and Pitch, Detune, Offset and Nudge still apply. Exports render it. Track View's
+  header names it: *Loop Free 100%*, *Shot Free 50%*.
+- **SAMPLE has three pages; the CLIP bank is Mode and Strch.** After the waveform come
+  **TIME** (Sync · Warp · Nudge · Offset, then Tempo · Bars) and **SOUND** (Pitch · Detune ·
+  Revrs · Gain), laid out as the screen shows them, each setting on the knob page 1 gives
+  it. What was **Sync** (Vintage / Pitch / Warp) is now called **Warp**. Touching Offset,
+  Tempo or Bars (or CLIP's Strch) brings up the clip's waveform while you hold the knob.
+  On the waveform, **K4 is Offset**, with an arrow on top, and **Gain moved to K8**.
+  **Delete + click** resets the page showing: TIME's Sync, Warp, Nudge and Offset, or
+  SOUND's settings.
 - **Offset is where the clip starts in its audio.** Step 1 plays from the Offset point (it
   used to move the audio later instead), and the waveform no longer turns round with it:
   stopped, the playhead rests at the Offset point and the beats count from there. Projects

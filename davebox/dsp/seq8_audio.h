@@ -311,6 +311,8 @@ typedef struct {
     int8_t     cond;         /* Loop: the Conductor's semitones in force (Next: taken at the wrap) */
     uint8_t    free_on;      /* Free: the clip's run has started (its launch tick played) */
     double     free_ph;      /* Free Warp: where it is in Start..End, 0..1 (the stretcher's clock) */
+    double     free_left;    /* Free + Shot: how much of one pass of Start..End is still to play
+                              * (1 at the launch); at 0 the clip stops */
     /* THE LEAD: what the sequencer plays here is heard LEAD_FRAMES later, with
      * the MIDI the lead holds (LEAD_BLOCKS); a pad's voice is not delayed */
     int32_t    dl[LEAD_FRAMES * 2];

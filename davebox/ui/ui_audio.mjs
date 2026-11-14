@@ -58,10 +58,10 @@ const AU_SLC_SYNC_SQ = ['Off', 'Ptch'];
 function syncCell(t, i) {
     if (isSlicerTrack(t)) {
         const k = (i.sync | 0) === 1 ? 1 : 0;
-        return { kind: 'enumsq', label: 'Sync', name: 'Sync: Off · Pitch', text: AU_SLC_SYNC_NAMES[k], sq: AU_SLC_SYNC_SQ[k],
+        return { kind: 'enumsq', label: 'Warp', name: 'Warp: Off · Pitch', text: AU_SLC_SYNC_NAMES[k], sq: AU_SLC_SYNC_SQ[k],
                  options: AU_SLC_SYNC_NAMES, sel: k };
     }
-    return { kind: 'enumsq', label: 'Sync', name: 'Sync: Vintage · Pitch · Warp',
+    return { kind: 'enumsq', label: 'Warp', name: 'Warp: Vintage · Pitch · Warp',
              text: AU_SYNC_NAMES[auSyncIdx(i)], sq: AU_SYNC_SQ[auSyncIdx(i)], options: AU_SYNC_NAMES, sel: auSyncIdx(i) };
 }
 /* The sample's own Tempo, BPM (0 until it is known), and its bounds x10 */
@@ -142,9 +142,13 @@ export function auLoopMarks(i, t = -1, c = 0) {
  * have a playhead resting at offset point and start playback from there"); -1
  * where there is none (Free, a Slicer, no sample). */
 export function auOffsetFrame(t, c, i) {
-    if (!i || i.state !== 2 || !auIsLoop(i) || auIsFree(i) || isSlicerTrack(t)) return -1;
+    if (!i || i.state !== 2 || !auIsLoop(i) || isSlicerTrack(t)) return -1;
     const L = auLenTicks(t, c, i);
-    return (i.rstart | 0) + (L > 0 ? ((i.rot | 0) % L) : 0) * auFpt(i);
+    const off = (L > 0 ? ((i.rot | 0) % L) : 0) * auFpt(i);
+    if (!auIsFree(i)) return (i.rstart | 0) + off;
+    /* Free: inside its own region, wrapping, as the engine starts it (au_free_ph0) */
+    const R = Math.max(1, auPlayedEnd(t, c, i) - (i.rstart | 0));
+    return (i.rstart | 0) + (off % R);
 }
 /* Chop k is note k (Josh, 2026-10-28: "might as well do 128"), 32 to a pad
  * page; external MIDI reaches chop 1 at note 36 (ui.js). */
@@ -292,14 +296,37 @@ export function auSpeedTurn(t, c, steps) {
     S.auStartsRev = (S.auStartsRev | 0) + 1;
     return true;
 }
-/* Free's K1 on SAMPLE page 2: Sync named for what it does there — Warp
- * (time alone) or Tape (speed and pitch together, Sync Pitch); Vintage cuts
- * on the clock, which a Free clip has none of, so it reads as Warp */
-export const AU_FREE_SYNC_NAMES = ['Warp', 'Tape'];
+/* Free's Warp knob: Pitch (speed and pitch together, as a tape) or Warp
+ * (time alone) — the same two as on the grid; Vintage cuts on the clock, which
+ * a Free clip has none of, so it reads as Warp (Josh, 2026-11-14: one knob,
+ * "warp for sync") */
+export const AU_FREE_SYNC_NAMES = ['Pitch', 'Warp'];
 function freeSyncCell(i) {
-    const k = (i.sync | 0) === 2 ? 1 : 0;
-    return { kind: 'enumsq', label: 'Spd Md', name: 'Speed mode: Warp · Tape', text: AU_FREE_SYNC_NAMES[k],
+    const k = (i.sync | 0) === 2 ? 0 : 1;
+    return { kind: 'enumsq', label: 'Warp', name: 'Warp: Pitch · Warp', text: AU_FREE_SYNC_NAMES[k],
              options: AU_FREE_SYNC_NAMES, sel: k };
+}
+/* SYNC: whether the clip keeps to the sequencer (Grid) or runs at its own
+ * Speed (Free) — a Loop or a Shot alike (Josh, 2026-11-14: "free isn't really
+ * a clip mode. it should be available in both loop and one shot" · "sync for
+ * clock") */
+export const AU_CLOCK_NAMES = ['Grid', 'Free'];
+function clockCell(i) {
+    const k = auIsFree(i) ? 1 : 0;
+    return { kind: 'enumsq', label: 'Sync', name: 'Sync: Grid · Free', text: AU_CLOCK_NAMES[k], options: AU_CLOCK_NAMES, sel: k };
+}
+/* Sync turned: Grid or Free. True when it changed. */
+export function auFreeTurn(t, c, steps) {
+    const i = auInfo(t, c);
+    if (i.state !== 2 || !auIsLoop(i) || isSlicerTrack(t) || !steps) return false;
+    const v = steps > 0 ? 1 : 0;
+    if (v === (auIsFree(i) ? 1 : 0)) return false;
+    auSet(t, c, 'free', v);
+    const loc = Object.assign({}, i, { free: v });
+    loc.rend = auPlayedEnd(t, c, loc);
+    S.auInfo[t][c] = loc;
+    S.auStartsRev = (S.auStartsRev | 0) + 1;
+    return true;
 }
 function speedCell(i) {
     const sp = i.speed || 1000;
@@ -1013,11 +1040,10 @@ function stepSliceField(f, v, steps) {
     return v;
 }
 
-/* An Audio clip's CLIP bank knobs: WHEN the clip plays its sample — K1 Mode,
- * K2 Strch, K3 Offset, K4 Nudge, K5 Sync, K6 Tempo, K7 Bars; on Free K5 Speed
- * mode and K6 Speed. What it sounds like is SAMPLE's (Josh, 2026-11-13: the
- * banks split by what you hear and when you hear it; the knobs that move the
- * waveform show it while touched). Returns true when something changed. */
+/* An Audio clip's CLIP bank knobs: K1 Mode, K2 Strch — everything else is
+ * SAMPLE's, on the pages after its waveform (Josh, 2026-11-14: "aside from
+ * clip bank mode and stretch, let's figure out a way to put everything on
+ * multiple audio editor pages"). Returns true when something changed. */
 export function auClipBankKnob(t, k, steps) {
     const c = auClipOf(t), i = auInfo(t, c);
     const loc = Object.assign({}, i);
@@ -1028,20 +1054,10 @@ export function auClipBankKnob(t, k, steps) {
          * the clip stops (Josh, 2026-10-29: "a one-shot mode ... fired off and stop
          * at their end"; 2026-11-10: "it should be a clip bank setting"). Every
          * other setting stays what it was ("settings should persist across loop
-         * and one-shot"). */
-        /* ...and Free beside them (Josh, 2026-11-13): Loop · Shot · Free, a
-         * detent a step */
-        const cur = auIsFree(i) ? 2 : (i.shot ? 1 : 0);
-        const v = Math.max(0, Math.min(2, cur + (steps > 0 ? 1 : -1)));
-        if (v === cur) return false;
-        if (v === 2) { loc.free = 1; loc.shot = 0; auSet(t, c, 'free', 1); }
-        else if (v === 1) { loc.shot = 1; loc.free = 0; auSet(t, c, 'shot', 1); }
-        else {
-            if (i.shot) auSet(t, c, 'shot', 0);
-            if (auIsFree(i)) auSet(t, c, 'free', 0);
-            loc.shot = 0; loc.free = 0;
-        }
-        loc.rend = auPlayedEnd(t, c, loc);
+         * and one-shot"). Free is SAMPLE's Sync, with either (2026-11-14). */
+        const v = steps > 0 ? 1 : 0;
+        if (v === (i.shot ? 1 : 0)) return false;
+        loc.shot = v; auSet(t, c, 'shot', v);
     } else if (k === 1 && auIsFree(i)) {
         /* Strch on a Free clip: x2 plays it twice as long — half the Speed —
          * /2 the reverse; the clip's length does not hold it */
@@ -1052,12 +1068,6 @@ export function auClipBankKnob(t, k, steps) {
         }
         loc.speed = ns; auSet(t, c, 'speed', ns);
         S.auStrchDir = { t, dir: up ? 1 : -1 };
-    } else if (auIsFree(i)) {
-        /* Free: K5 Speed mode (Warp · Tape), K6 Speed; no clip grid for Offset,
-         * Nudge, Tempo or Bars to move against */
-        if (k === 4) return auSampleP2Knob(t, c, 1, steps);
-        if (k === 5) return auSpeedTurn(t, c, steps);
-        return false;
     } else if (k === 1) {
         /* Strch (Josh, 2026-10-30: "an audio-based analog of what they do with
          * midi"): x2 doubles the Length AND the sample's Tempo — the Tempo says
@@ -1090,23 +1100,19 @@ export function auClipBankKnob(t, k, steps) {
         else { loc.bpm10 = nb; auSet(t, c, 'bpm', nb); }
         if (i.rot) { loc.rot = up ? i.rot * 2 : Math.floor(i.rot / 2); auSet(t, c, 'rot', loc.rot); }
         S.auStrchDir = { t, dir: up ? 1 : -1 };
-    } else if (k === 2) return auOffsetStep(t, c, steps);
-    else if (k === 3) return auNudgeStep(t, c, steps);
-    else if (k === 4) return auSampleP2Knob(t, c, 1, steps);       /* Sync */
-    else if (k === 5) return auTempoStep(t, c, steps);
-    else if (k === 6) return auBarsTurn(t, c, steps);
-    else return false;
+    } else return false;
     S.auInfo[t][c] = loc;
     S.auStartsRev = (S.auStartsRev | 0) + 1;
     return true;
 }
 
 /* Offset: the audio a step later (or earlier) inside the clip, wrapping
- * round, as Shift moves a sequence's notes. A Loop or Shot clip's (Free keeps
- * no clip grid). True when it moved. */
+ * round, as Shift moves a sequence's notes. A Loop or Shot clip's, on the
+ * grid or Free (where it is how far into Start..End a launch starts — Josh,
+ * 2026-11-14); a Slicer's chops have none. True when it moved. */
 export function auOffsetStep(t, c, steps) {
     const i = auInfo(t, c);
-    if (i.state !== 2 || !auIsLoop(i) || auIsFree(i) || !steps) return false;
+    if (i.state !== 2 || !auIsLoop(i) || isSlicerTrack(t) || !steps) return false;
     const tps = S.clipTPS[t][c] || 24, L = (S.clipLength[t][c] | 0 || 16) * tps;
     const v = (((i.rot | 0) % L + (steps > 0 ? tps : -tps)) % L + L) % L;
     if (v === (i.rot | 0)) return false;
@@ -1134,13 +1140,11 @@ export function auTempoStep(t, c, steps) {
     return true;
 }
 /* The automation target a bank knob writes on track t, for the Track View's
- * touch gestures and its marks: an Audio clip's CLIP bank has its own knobs
- * (K6 Tempo, not a sequence's Playback Dir); every other bank, the table's. */
+ * touch gestures and its marks: an Audio clip's CLIP bank (Mode, Strch)
+ * automates nothing — not a sequence's knobs either; every other bank, the
+ * table's. (The sample's own lanes are SAMPLE's knobs'.) */
 export function bankAutoTarget(t, bank, k, altMode) {
-    if (bank === 0 && isSampledTrack(t) && !isSlicerTrack(t)) {
-        const i = auInfo(t, auClipOf(t));
-        return k === 5 && auIsLoop(i) && !auIsFree(i) ? 'seq:' + t + ':' + auAutoKey('bpm10') : null;
-    }
+    if (bank === 0 && isSampledTrack(t) && !isSlicerTrack(t)) return null;
     return seqAutoTargetForKnob(t, bank, k, altMode);
 }
 
@@ -1330,26 +1334,23 @@ export function knobAltOnTrack(t, padMode, bank, k) {
      * STEP page whatever the bank under it (device pass 2026-11-11: a Slicer
      * step's Start was unreachable from LIVE ARP) */
     if (S.stepReveal && S.heldStep >= 0) bank = BANK_STEP;
-    if (bank === 0 && isSampledTrack(t) && auIsLoop(auInfo(t, auClipOf(t)))) return null;   /* Offset and Nudge have a knob each */
+    if (bank === 0 && isSampledTrack(t) && auIsLoop(auInfo(t, auClipOf(t)))) return null;   /* Mode and Strch: no alts */
     /* a Slicer step: K3 Length, Start behind it (Josh, 2026-11-11: "why not
      * have start be the alt to length") */
     if (bank === BANK_STEP && padMode === PAD_MODE_SLICER) return k === 2 ? ['Length', 'Start'] : null;
     return knobAltFor(padMode, bank, k);
 }
 
-/* ---- the CLIP bank of an Audio clip: when it plays its sample (Josh,
- * 2026-11-13: "i'd like to be able to see what i'm editing on the waveform" —
- * the banks split by what you hear and when; a knob that moves the waveform
- * shows it while touched) — K1 Mode, K2 Strch, K3 Offset, K4 Nudge, K5 Sync,
- * K6 Tempo, K7 Bars; Free: K5 Speed mode, K6 Speed. ---- */
-export const AU_MODE_NAMES = ['Loop', 'Shot', 'Free'];
-export const AU_CLIP_TEMPO = 5, AU_CLIP_BARS = 6;
+/* ---- the CLIP bank of an Audio clip: K1 Mode (Loop · Shot), K2 Strch; the
+ * rest is SAMPLE's (Josh, 2026-11-14). Strch moves the waveform's grid, so
+ * touching it shows the waveform. ---- */
+export const AU_MODE_NAMES = ['Loop', 'Shot'];
 /* the knobs whose turn moves the waveform: the card shows it while touched */
 export function auClipWaveKnob(t, k) {
     if (!isSampledTrack(t) || isSlicerTrack(t)) return false;
     const i = auInfo(t, auClipOf(t));
     if (i.state !== 2 || !auIsLoop(i) || auIsFree(i)) return false;
-    return k === 1 || k === 2 || k === AU_CLIP_TEMPO || k === AU_CLIP_BARS;
+    return k === 1;
 }
 export function auLoopBankCells(t) {
     const c = auClipOf(t), i = auInfo(t, c), has = i.state === 2;
@@ -1358,16 +1359,10 @@ export function auLoopBankCells(t) {
      * bank's (a long one ran off the screen: found on the device) */
     const strch = { kind: 'valsq', label: 'Strch', name: 'Stretch',
                     text: (S.auStrchDir && S.auStrchDir.t === t && S.knobTouched === 1) ? (S.auStrchDir.dir > 0 ? 'x2' : '/2') : '1x' };
-    const free = auIsFree(i), msel = free ? 2 : i.shot ? 1 : 0;
+    const msel = i.shot ? 1 : 0;
     const mode = { kind: 'enumsq', label: 'Mode', name: 'Mode', text: AU_MODE_NAMES[msel],
                    options: AU_MODE_NAMES, sel: msel };
-    /* names short enough for the header (a long one ran off the screen) */
-    const named = (x, name) => Object.assign({}, x, { name });
-    if (free) return [live(mode), live(strch), BLANK, BLANK, live(named(freeSyncCell(i), 'Speed Mode')), live(named(speedCell(i), 'Speed')), BLANK, BLANK];
-    const b = auBarsOf(i);
-    const bars = { kind: 'valsq', label: 'Bars', name: 'Bars', text: auBarsText(b), norm: Math.min(1, b / 16), ringNorm: Math.min(1, b / 16) };
-    return [live(mode), live(strch), live(offsetCell(t, c, i)), live(named(nudgeCell(i), 'Nudge')), live(named(syncCell(t, i), 'Sync')),
-            live(named(tempoCell(i, false), 'Tempo')), live(bars), BLANK];
+    return [live(mode), live(strch), BLANK, BLANK, BLANK, BLANK, BLANK, BLANK];
 }
 /* ---- REMIX (Josh, 2026-11-10: "replacing midi effects banks on audio tracks
  * with loop remix effects like those on the yamaha rs7000"; 2026-11-11: "i
@@ -1578,41 +1573,71 @@ export function auAltBit(t, bank, k) {
  * (Josh, 2026-11-02: "move knob order: 1: sync, 2 pitch, 3 detune, 4 gain,
  * 5 tempo, 6 reverse" · "page 2 only"). Orig left its knob for Tempo's menu
  * (touch Tempo + click: Fit to clip · Original tempo). ---- */
-/* page 2's knob k → the page-1 knob it turns (sampleKnob's), Sync -1 */
-/* page 2's knobs as page 1's (sampleKnob), K1 Sync and K6 Bars its own */
-/* page 2's knobs by what they set (Josh, 2026-11-13: Offset on K8) */
-export const AU_P2_FIELDS = ['sync', 'pitch', 'detune', 'gain', 'tempo', 'bars', 'revrs', 'offset'];
-/* Tempo and Bars: the sample's own, framed together on page 2 (Josh,
- * 2026-11-13: "bars should be a knob in page 2 next to tempo - and they
- * should both be in a shatter box or something that indicates this is the
- * original samples bars/tempo") */
-export const AU_P2_TEMPO = 4, AU_P2_BARS = 5, AU_P2_REVRS = 6, AU_P2_OFFSET = 7;
-export function auSampleP2Cells(t, c) {
-    const i = auInfo(t, c);
-    const sync = syncCell(t, i);
+/* SAMPLE's pages after its waveform (Josh, 2026-11-14: "keep waveform view
+ * the way it is. those params and all others not in clip get put on
+ * thoughtfully organized pages that follow the waveform page" · "think about
+ * knob organization as the oled displays it: 2 rows of 4"). Each setting sits
+ * on the knob page 1 gives it, where page 1 has it:
+ *   page 2 TIME   Sync  Warp  Nudge Offset      (Free: Speed on Tempo's knob,
+ *                  -     -    Tempo Bars          no Bars)
+ *   page 3 SOUND   -     -     -     -
+ *                 Pitch Detune Revrs Gain
+ * A knob that does nothing on this clip reads `--` (a Slicer: Sync, Nudge,
+ * Offset; Free: Bars). */
+export const AU_P2_FIELDS = ['free', 'sync', 'nudge', 'offset', null, null, 'tempo', 'bars'];
+export const AU_P3_FIELDS = [null, null, null, null, 'pitch', 'detune', 'revrs', 'gain'];
+export const AU_P2_OFFSET = 3, AU_P2_TEMPO = 6, AU_P2_BARS = 7;
+export const AU_SAMPLE_PAGES = 3;
+/* The fields on SAMPLE page `page` (0 the waveform's, 1 TIME, 2 SOUND). */
+export function auPageFields(page) {
+    return page === 2 ? AU_P3_FIELDS : page === 1 ? AU_P2_FIELDS : [null, null, null, 'offset', 'pitch', 'detune', 'tempo', 'gain'];
+}
+/* Setting f of clip c on track t, as its knob's cell. */
+export function auSampleFieldCell(t, c, f) {
+    const i = auInfo(t, c), slc = isSlicerTrack(t), free = auIsFree(i), loop = auIsLoop(i) && !slc;
     const live = (x) => (i.state === 2 ? x : dash(x));
-    /* page 1's knobs as a grid (Josh, 2026-10-30: "the sample waveform knob
-     * params ... duplicated on p 2 of sample"), in their own order */
+    const off = (x) => Object.assign(dash(x), { na: true });   /* does nothing on this clip */
+    if (f === 'free') return loop ? live(clockCell(i)) : off(clockCell(i));
+    if (f === 'sync') return live(free ? freeSyncCell(i) : syncCell(t, i));
+    if (f === 'nudge') return slc ? off(nudgeCell(i)) : live(nudgeCell(i));
+    if (f === 'offset') return loop ? live(offsetCell(t, c, i)) : off(offsetCell(t, c, i));
     /* the corner brackets: touch + click opens Tempo's menu (Josh, 2026-11-02:
      * "tempo needs the corner indicators to show it's touch click") */
-    const tempo = tempoCell(i, true);
-    const gain = { kind: 'arc', label: 'Gain', name: 'Gain', text: fmtDb(i.gain), norm: (i.gain + 40) / 52 };
-    /* (a Slicer's K7 was its own Follows-the-Conductor switch: it answers to
-     * the Conductor's RESPONDER bank now, as every track does — Josh,
-     * 2026-11-12: "Can't that be handled the way other tracks handle it?") */
-    const b = auBarsOf(i);
-    const bars = auIsLoop(i)
-        ? { kind: 'valsq', label: 'Bars', name: 'Bars (the sample\'s own)', text: auBarsText(b),
-            norm: Math.min(1, b / 16) }
-        : BLANK;
-    /* FREE: Speed mode and Speed where Sync and Tempo were; no Bars (no grid) */
-    if (auIsFree(i))
-        return [live(freeSyncCell(i)), live(pitchCell('Pitch', i.pitch)), live(detuneCell('Detune', i.detune)),
-                live(gain), live(speedCell(i)), BLANK, live(revrsCell(i)), BLANK];
-    /* K8 Offset: a Loop or Shot clip's (a Slicer's chops have none) */
-    const off = auIsLoop(i) && !isSlicerTrack(t) ? live(offsetCell(t, c, i)) : BLANK;
-    return [live(sync), live(pitchCell('Pitch', i.pitch)), live(detuneCell('Detune', i.detune)),
-            live(gain), live(tempo), live(bars), live(revrsCell(i)), off];
+    if (f === 'tempo') return live(free ? speedCell(i) : tempoCell(i, true));
+    if (f === 'bars') {
+        const b = auBarsOf(i);
+        const bars = { kind: 'valsq', label: 'Bars', name: 'Bars (the sample\'s own)', text: auBarsText(b),
+                       norm: Math.min(1, b / 16), ringNorm: Math.min(1, b / 16) };
+        return auIsLoop(i) && !free ? live(bars) : off(bars);
+    }
+    if (f === 'pitch') return live(pitchCell('Pitch', i.pitch));
+    if (f === 'detune') return live(detuneCell('Detune', i.detune));
+    if (f === 'gain') return live({ kind: 'arc', label: 'Gain', name: 'Gain', text: fmtDb(i.gain), norm: (i.gain + 40) / 52 });
+    if (f === 'revrs') return live(revrsCell(i));
+    return BLANK;
+}
+/* Page 2 (TIME) and page 3 (SOUND) as cells. */
+export function auSamplePageCells(t, c, page) { return auPageFields(page).map((f) => (f ? auSampleFieldCell(t, c, f) : BLANK)); }
+export function auSampleP2Cells(t, c) { return auSamplePageCells(t, c, 1); }
+export function auSampleP3Cells(t, c) { return auSamplePageCells(t, c, 2); }
+/* A cell's LED ring: its place, or dark where the knob does nothing. */
+export function auCellRing(cell) {
+    if (!cell || cell.kind === 'blank' || cell.na) return null;
+    const at = (n) => ({ kind: 'arc', norm: Math.max(0, Math.min(1, n)) });
+    if (cell.options && cell.options.length > 1) return at((cell.sel | 0) / (cell.options.length - 1));
+    if (cell.signed != null) return at((cell.signed + 1) / 2);
+    if (cell.ringNorm != null) return at(cell.ringNorm);
+    if (cell.norm != null) return at(cell.norm);
+    return null;
+}
+/* the knobs on SAMPLE's later pages whose turn moves the waveform: the card
+ * shows it while touched (Offset, the Tempo, Bars; on Free, Offset alone) */
+export function auSampleWaveKnob(t, c, page, k) {
+    if (!isSampledTrack(t) || isSlicerTrack(t) || page !== 1) return false;
+    const i = auInfo(t, c);
+    if (i.state !== 2 || !auIsLoop(i)) return false;
+    if (auIsFree(i)) return k === AU_P2_OFFSET;
+    return k === AU_P2_OFFSET || k === AU_P2_TEMPO || k === AU_P2_BARS;
 }
 /* A turn on SAMPLE's second page. Returns true when something changed. */
 export function auSampleP2Knob(t, c, k, steps) {
@@ -1624,8 +1649,8 @@ export function auSampleP2Knob(t, c, k, steps) {
         if (v === ((i.sync | 0) === 1 ? 1 : 0)) return false;
         loc.sync = v; auSet(t, c, 'sync', v);
     } else if (k === 1 && auIsFree(i)) {
-        /* Free: Warp · Tape */
-        const v = steps > 0 ? 2 : 0;
+        /* Free: Pitch · Warp */
+        const v = steps > 0 ? 0 : 2;
         if (v === ((i.sync | 0) === 2 ? 2 : 0)) return false;
         loc.sync = v; auSet(t, c, 'sync', v);
     } else if (k === 1) {
@@ -1681,6 +1706,23 @@ export function auSampleReset(t, c) {
     if (i.state !== 2) return false;
     for (const f of ['gain', 'pitch', 'detune', 'revrs']) auSet(t, c, f, 0);
     S.auInfo[t][c] = Object.assign({}, i, { gain: 0, pitch: 0, detune: 0, revrs: 0 });
+    S.auStartsRev = (S.auStartsRev | 0) + 1;
+    return true;
+}
+/* TIME back to its defaults: Sync Grid, Warp Warp (a Slicer's Off), Nudge 0,
+ * Offset 0. Tempo and Bars are the sample's own, not settings with a default:
+ * they stay. True when anything changed. */
+export function auTimeReset(t, c) {
+    const i = auInfo(t, c);
+    if (i.state !== 2) return false;
+    const slc = isSlicerTrack(t), loc = Object.assign({}, i);
+    let any = false;
+    const put = (f, key, v) => { if ((i[f] | 0) !== v) { auSet(t, c, key, v); loc[f] = v; any = true; } };
+    put('sync', 'sync', 0);
+    if (!slc) { put('free', 'free', 0); put('nudge', 'nudge', 0); put('rot', 'rot', 0); }
+    if (!any) return false;
+    loc.rend = auPlayedEnd(t, c, loc);
+    S.auInfo[t][c] = loc;
     S.auStartsRev = (S.auStartsRev | 0) + 1;
     return true;
 }

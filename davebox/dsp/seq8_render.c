@@ -1335,8 +1335,10 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                                 tr->pfx.arp.pending_retrigger = 1;
                             cl->loop_cycle++;   /* v=34 Iter counter */
                             /* One-shot (an Audio clip's): its length once per
-                             * launch, then the clip stops (Josh, 2026-11-10) */
-                            if (au_shot(inst, t, tr->active_clip)) {
+                             * launch, then the clip stops (Josh, 2026-11-10) —
+                             * on the grid; a Free one stops when its own pass
+                             * ends (au_render) */
+                            if (au_shot(inst, t, tr->active_clip) && !inst->au_store[t][tr->active_clip].freerun) {
                                 tr->clip_playing = 0;
                                 silence_track_notes_v2(inst, tr);
                             }

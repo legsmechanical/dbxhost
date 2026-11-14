@@ -476,10 +476,10 @@ step('⭐⭐ the map\'s SAMPLE pad opens SAMPLE; a click there loads a sample �
      * and the params on page 2"): over to Pitch / Detune / Gain / Tempo / Revrs and back */
     jog(1); ticks(1);
     let ptx = globalThis.__texts(() => shown());
-    assert(ed.page === 1 && ptx.indexOf('2/2') >= 0 && ptx.indexOf('TEMPO') >= 0 && ptx.indexOf('ORIG') < 0, 'the jog did not turn to page 2: ' + JSON.stringify(ptx));
+    assert(ed.page === 1 && ptx.indexOf('2/3') >= 0 && ptx.indexOf('TEMPO') >= 0 && ptx.indexOf('ORIG') < 0, 'the jog did not turn to page 2: ' + JSON.stringify(ptx));
     jog(-1); ticks(1);
     ptx = globalThis.__texts(() => shown());
-    assert(ed.page === 0 && ptx.indexOf('1/2') >= 0, 'the jog did not turn back to page 1: ' + JSON.stringify(ptx));
+    assert(ed.page === 0 && ptx.indexOf('1/3') >= 0, 'the jog did not turn back to page 1: ' + JSON.stringify(ptx));
     /* a click opens SAMPLE's menu (Josh, 2026-10-30: "it should load a menu for
      * consistency"): Load sample · Trim · Normalize */
     click(); ticks(2);
@@ -715,7 +715,7 @@ step('⭐⭐ SAMPLE: the sample\'s name up top; Start / End light while touched 
     /* a click opens the menu (chopping is SLICES' alone), the jog turns the
      * page; SAMPLE page 1 of 2 under the sample's name (SLICE n/N is SLICES') */
     assert(['CLK', 'MENU', 'JOG', 'PAGE'].every((h) => tx.indexOf(h) >= 0), 'Slicer hints: ' + JSON.stringify(tx));
-    assert(tx.indexOf('1/2') >= 0 && tx.some((x) => /^BREAK PHENOM/.test(x)), 'the header: ' + JSON.stringify(tx.slice(0, 6)));
+    assert(tx.indexOf('1/3') >= 0 && tx.some((x) => /^BREAK PHENOM/.test(x)), 'the header: ' + JSON.stringify(tx.slice(0, 6)));
     tx = globalThis.__texts(() => { cc(72, 1); shown(); });
     assert(tx.indexOf('ZOOM +') >= 0, 'zooming in: ' + JSON.stringify(tx));
     tx = globalThis.__texts(() => { cc(72, 127); shown(); });
@@ -732,7 +732,7 @@ step('⭐⭐ SAMPLE: the sample\'s name up top; Start / End light while touched 
     mapPad(2, 3); ticks(2);
     let lf;
     tx = globalThis.__texts(() => { lf = shown(); });
-    assert(tx.indexOf('CLK') >= 0 && tx.indexOf('MENU') >= 0 && tx.indexOf('JOG') >= 0 && tx.indexOf('PAGE') >= 0 && tx.indexOf('1/2') >= 0,
+    assert(tx.indexOf('CLK') >= 0 && tx.indexOf('MENU') >= 0 && tx.indexOf('JOG') >= 0 && tx.indexOf('PAGE') >= 0 && tx.indexOf('1/3') >= 0,
            'Audio hints: ' + JSON.stringify(tx));
     /* nothing in the middle with no knob in hand (Josh) */
     const nm = A.auSampleName(4, 0).toUpperCase();
@@ -889,10 +889,10 @@ step('⭐⭐ WAVE K8 Gain · K5 Pitch · K6 Detune (the clip\'s; Gain on K8 sinc
         S.auInfo[4][0] = i0;
     }
     reset();
-    for (let k = 0; k < 20 && !sent('t4_au_set_bars').length; k++) cc(76, 1);
+    for (let k = 0; k < 20 && !sent('t4_au_set_bars').length; k++) cc(78, 1);   /* TIME's K8 (2026-11-14) */
     const want = Math.floor(derived + 1e-6) + 1;
     assert(sent('t4_au_set_bars').join() === '0 ' + want * 384 && A.auInfo(4, 0).span === want * 384,
-           'K6 up is not the next whole bar: ' + JSON.stringify(sent('t4_au_set_bars')) + ' want ' + want);
+           'K8 up is not the next whole bar: ' + JSON.stringify(sent('t4_au_set_bars')) + ' want ' + want);
     /* which one holds is marked: an arrow after its label (Josh, 2026-11-13:
      * "do 2" — the Octatrack's priority arrow) */
     {
@@ -990,14 +990,14 @@ step('⭐⭐ a Free clip on SAMPLE (Josh, 2026-11-13: "a mode ... irrespective o
     for (let x = 0; x < 128; x++) for (let y = 51; y < 54; y++) under += f[y * 128 + x] ? 1 : 0;
     assert(under === 0, 'beats drawn under a Free clip\'s waveform: ' + under + ' px');
     back(); ticks(2);
-    /* the Track View says so: "Free 100%" where a Loop clip says its Tempo */
+    /* the Track View says so: "Loop Free 100%" where a Loop clip says its Tempo */
     const ov = globalThis.__texts(() => shown());
-    assert(!S.auEditor && ov.some((x) => /^FREE 100%/.test(x)), 'the Track View does not say Free: ' + JSON.stringify(ov.slice(0, 6)));
+    assert(!S.auEditor && ov.some((x) => /^LOOP FREE 100%/.test(x)), 'the Track View does not say Free: ' + JSON.stringify(ov.slice(0, 6)));
     GET['t4_au_info_0'] = was; S.clipLength[4][0] = 16;
     kindSync(); ticks(2);
 });
 
-step('⭐⭐ Delete + click on a grid page resets that page only: SLICE n, ALL SLICES with Shift, SAMPLE page 2 (Josh: "for multi-page banks, we should have delete+jog only reset the active page")', () => {
+step('⭐⭐ Delete + click on a grid page resets that page only: SLICE n, ALL SLICES with Shift, SAMPLE\'s TIME and SOUND (Josh: "for multi-page banks, we should have delete+jog only reset the active page")', () => {
     GET['t4_au_info_0'] = INFO(1, 8); kindSync(); ticks(2);
     A.auSetSelSlice(4, 2);
     toSlicesP2();
@@ -1019,13 +1019,22 @@ step('⭐⭐ Delete + click on a grid page resets that page only: SLICE n, ALL S
     click();                                         /* a plain click resets nothing */
     assert(!sentLike(/_au_/).length, 'a plain click reset: ' + JSON.stringify(sentLike(/_au_/)));
     leave();
-    /* SAMPLE page 2: Gain, Pitch, Detune, Revrs — not Tempo, not Sync */
+    /* SAMPLE page 2 TIME: its own knobs — a Slicer's Warp back to Off — not
+     * the sound, not the Tempo (the sample's own) */
     mapPad(2, 3); jog(1); ticks(1);
+    S.auInfo[4][16] = Object.assign({}, A.auInfo(4, 16), { sync: 1 });
+    reset();
+    cc(HC.MoveDelete, 127); click(); cc(HC.MoveDelete, 0);
+    const st = sentLike(/_au_/).map((x) => x[0] + '=' + x[1]).join(' ');
+    assert(sent('t4_au_set_sync').join() === '16 0' && !sentLike(/_au_set_(gain|pitch|detune|revrs|bpm|bars)/).length,
+           'TIME did not reset its own knobs only: ' + st);
+    /* page 3 SOUND: Gain, Pitch, Detune, Revrs — not Tempo, not Warp */
+    jog(1); ticks(1);
     reset();
     cc(HC.MoveDelete, 127); click(); cc(HC.MoveDelete, 0);
     const sa = sentLike(/_au_/).map((x) => x[0] + '=' + x[1]).join(' ');
     assert(['gain', 'pitch', 'detune', 'revrs'].every((f) => sa.indexOf('t4_au_set_' + f + '=16 0') >= 0) && !sent('t4_au_set_bpm').length && !sent('t4_au_set_sync').length,
-           'SAMPLE page 2 did not reset its sound only: ' + sa);
+           'SOUND did not reset its sound only: ' + sa);
     leave();
     S.actionPopupEndTick = 0;
     S.activeBank = 0; ticks(2);
@@ -1112,8 +1121,10 @@ step('⭐⭐ the knob rings follow the Audio screens and the AUDIO bank: lit whe
         cc(HC.MoveLoop, 127); jog(-1); cc(HC.MoveLoop, 0); ticks(2);
         assert(S.clipLength[4][ac] === len0, 'Loop + jog left did not shorten it back: ' + S.clipLength[4][ac]);
     }
-    jog(1); ticks(3);                                /* SAMPLE page 2 (Loop): Sync, Pitch, Detune, Gain, Tempo, Bars, Revrs, Offset */
-    assert(sent8() === '11111111', 'SAMPLE page 2 rings: ' + sent8());
+    jog(1); ticks(3);                                /* SAMPLE page 2 TIME (Loop): Sync, Warp, Nudge, Offset / -, -, Tempo, Bars */
+    assert(sent8() === '11110011', 'SAMPLE page 2 rings: ' + sent8());
+    jog(1); ticks(3);                                /* page 3 SOUND: -, -, -, - / Pitch, Detune, Revrs, Gain */
+    assert(sent8() === '00001111', 'SAMPLE page 3 rings: ' + sent8());
     back();
     /* a Slicer's CLIP bank: K4 (no Legato there) dark, the rest lit (Josh,
      * 2026-11-12: "clip bank knob led rings are lit on empty knobs, which
@@ -1652,10 +1663,10 @@ step('⭐⭐ Tempo\'s menu: touch Tempo + click on SAMPLE, either page, offers F
     GET['t4_au_info_0'] = INFO24(0, 4, 0, 4, 50, 0); kindSync(); ticks(2);
     jog(1); ticks(1);
     assert(ed.page === 1, 'setup: not on page 2');
-    note(4, 127); ticks(1);
+    note(6, 127); ticks(1);
     assert(/TEMPO/i.test(say()), 'page 2: touching Tempo does not offer its menu: ' + say());
-    click(); note(4, 0); ticks(1);
-    assert(ed.pick && ed.pick.tempo, 'page 2: touch K5 + click did not open Tempo\'s menu');
+    click(); note(6, 0); ticks(1);
+    assert(ed.pick && ed.pick.tempo, 'page 2: touch K7 + click did not open Tempo\'s menu');
     reset();
     jog(1); click(); ticks(1);
     assert(sent('t4_au_set_orig').join() === '0 0' && !sent('t4_au_set_bpm').length, 'Original tempo: ' + JSON.stringify(sentLike(/_au_/)));
@@ -1664,12 +1675,12 @@ step('⭐⭐ Tempo\'s menu: touch Tempo + click on SAMPLE, either page, offers F
     S.clipLoopStart[4][0] = 16;
     GET['t4_au_info_0'] = INFO24(0, 4, 0, 4, 50, 0); kindSync(); ticks(2);
     reset();
-    touchClick(4); ticks(1); click(); ticks(1);
+    touchClick(6); ticks(1); click(); ticks(1);
     assert(sent('t4_au_set_bars').join() === '0 768' && /240 BPM/.test((S.actionPopupLines || []).join(' ')),
            'page 2, a loop starting at bar 2: ' + JSON.stringify(sent('t4_au_set_bars')) + ' ' + JSON.stringify(S.actionPopupLines));
     /* Back closes the menu, nothing set */
     reset();
-    touchClick(4); ticks(1); back(); ticks(1);
+    touchClick(6); ticks(1); back(); ticks(1);
     assert(!ed.pick && S.auEditor === ed && !sentLike(/_au_set_/).length, 'Back did something: ' + JSON.stringify(sentLike(/_au_/)));
     jog(-1); ticks(1);
     S.clipLoopStart[4][0] = 0;
@@ -2210,20 +2221,18 @@ step('⭐⭐ an Audio track: no sequence — pad taps and steps do nothing, no S
     ticks(2);
     assert(sentLike(/_step_/).length === 0, 'a step press edited an Audio clip: ' + JSON.stringify(sentLike(/_step_/)));
     const cells = A.auLoopBankCells(4);
-    assert(cells.map((c) => c.label).join() === 'Mode,Strch,Offst,Nudge,Sync,Tempo,Bars,' && cells[0].kind === 'enumsq' && cells[0].text === 'Loop',
+    assert(cells.map((c) => c.label).join() === 'Mode,Strch,,,,,,' && cells[0].kind === 'enumsq' && cells[0].text === 'Loop',
            'Audio CLIP bank: ' + cells.map((c) => c.label) + ' / K1 ' + JSON.stringify(cells[0]));
     /* the header reads the name while the knob is in hand: it must fit (a long
      * one ran off the screen on the device) */
-    assert(cells.every((c) => !c.name || c.name.length <= 16) && cells[1].name === 'Stretch' && cells[2].name === 'Offset',
+    assert(cells.every((c) => !c.name || c.name.length <= 16) && cells[1].name === 'Stretch',
            'names too long for the header: ' + cells.map((c) => c.name));
-    /* WHEN the clip plays its sample (Josh, 2026-11-13): K1 Mode (Loop ·
-     * Shot · Free; test_audio_shot_knob.mjs), K2 Strch, K3 Offset, K4 Nudge,
-     * K5 Sync, K6 Tempo, K7 Bars (each turned there); K8 does nothing, the
-     * sound is SAMPLE's */
+    /* K1 Mode (Loop · Shot; test_audio_shot_knob.mjs), K2 Strch; the rest is
+     * SAMPLE's pages (Josh, 2026-11-14): K3-K8 do nothing here */
     S.bankCardLatched = true;
     reset();
-    for (const k of [78]) { S.knobAccelLast[k - 71] = 0; for (let i = 0; i < 30; i++) cc(k, 1); }
-    assert(!sentLike(/_au_|_loop_set|resolution|quantize/).length, 'the Audio CLIP K8 acts: ' + JSON.stringify(sentLike(/_au_|_loop_set|resolution|quantize/)));
+    for (const k of [73, 74, 75, 76, 77, 78]) { S.knobAccelLast[k - 71] = 0; for (let i = 0; i < 30; i++) cc(k, 1); }
+    assert(!sentLike(/_au_|_loop_set|resolution|quantize/).length, 'an Audio CLIP K3-K8 acts: ' + JSON.stringify(sentLike(/_au_|_loop_set|resolution|quantize/)));
     {
         const ac = S.trackActiveClip[4] | 0, len0 = S.clipLength[4][ac] | 0 || 16, tps = S.clipTPS[4][ac] || 24;
         const bpm0 = A.auInfo(4, ac).bpm10 || 1200;
@@ -2278,29 +2287,71 @@ step('⭐⭐ an Audio track: no sequence — pad taps and steps do nothing, no S
             assert(Math.abs(A.auBpm(A.auInfo(4, ac)) - 600) < 0.11, 'the Tempo did not follow the doubled Bars: ' + A.auBpm(A.auInfo(4, ac)));
             S.clipLength[4][ac] = len0; S.auInfo[4][ac] = i0;
         }
-        /* K3 Offset: a step a detent run, wrapping round the clip, shown as
+    }
+    S.knobTouched = 7;
+    const lh = JSON.stringify(render.bankPageHints(0));
+    S.knobTouched = -1;
+    assert(lh.indexOf('CLK') < 0, 'a blank Audio CLIP knob offers a click: ' + lh);
+    S.bankCardLatched = false;
+
+    /* ...the sound is on SAMPLE: page 1's K8 Gain, Revrs off page 1 (Josh,
+     * 2026-11-13: "knock reverse off the waveform knobs (keep it on page 2
+     * though)"); then page 2 TIME and page 3 SOUND, two rows of four, each
+     * setting on page 1's knob where page 1 has it (Josh, 2026-11-14) */
+    mapPad(2, 3); ticks(2);
+    reset();
+    for (let i = 0; i < 20; i++) cc(78, 1);
+    assert(sent('t4_au_set_gain').length && !sent('t4_au_set_revrs').length && !sent('t4_au_set_nudge').length, 'SAMPLE K8 is not Gain: ' + JSON.stringify(sentLike(/_au_/)));
+    for (let i = 0; i < 20; i++) cc(78, 127);
+    jog(1); ticks(1);
+    const ed = S.auEditor;
+    assert(ed.page === 1, 'the jog did not turn SAMPLE to page 2');
+    /* TIME: Sync (Grid · Free) · Warp (Vintage · Pitch · Warp) · Nudge · Offset / - · - · Tempo · Bars */
+    const p2 = () => A.auSampleP2Cells(4, 0);
+    assert(p2().map((c) => c.label).join() === 'Sync,Warp,Nudge,Offst,,,Tempo,Bars', 'page 2: ' + p2().map((c) => c.label));
+    assert(p2()[6].opens === true && p2().filter((c) => c.opens).length === 1,
+           'Tempo does not wear the corner brackets, alone (Josh: "tempo needs the corner indicators to show it\'s touch click")');
+    assert(p2()[0].text === 'Grid' && p2()[1].text === 'Warp', 'a new clip is not on Grid / Warp: ' + p2()[0].text + ' ' + p2()[1].text);
+    for (let i = 0; i < 40; i++) cc(72, 127);
+    reset();
+    const tv = [];
+    for (let i = 0; i < 40; i++) { cc(72, 1); const t = p2()[1].text; if (tv[tv.length - 1] !== t) tv.push(t); }
+    assert(tv.join() === 'Vintage,Pitch,Warp' && sent('t4_au_set_sync').join() === '0 2,0 0',
+           'K2 is not Warp Vintage · Pitch · Warp: ' + tv.join() + ' ' + JSON.stringify(sentLike(/_au_/)));
+    assert(A.auSyncIdx({ sync: 1 }) === 0 && A.auSyncIdx({ sync: 2 }) === 1 && A.auSyncIdx({ sync: 0 }) === 2 &&
+           A.auSyncIdx({ sync: 99 }) === 2, 'Vintage / Pitch / Warp / an unknown value reads wrong');
+    for (const v of [0, 1, 2]) {
+        const was = S.auInfo[4][0];
+        S.auInfo[4][0] = Object.assign({}, was, { sync: v });
+        const sq = p2()[1].sq;
+        S.auInfo[4][0] = was;
+        assert(sq && sq.length <= 4, 'Warp ' + v + '\'s square: ' + sq);
+    }
+    {
+        const ac = S.trackActiveClip[4] | 0, len0 = S.clipLength[4][ac] | 0 || 16, tps = S.clipTPS[4][ac] || 24;
+        /* K4 Offset: a step a detent run, wrapping round the clip, shown as
          * a note value (Josh, 2026-11-12: "shift param should be labeled
          * offset and work in 1/16ths ... it needs to display as such" · "if
          * it's tied to track resolution that's fine") */
-        const c3 = A.auLoopBankCells(4)[2];
-        assert(c3.label === 'Offst' && c3.name === 'Offset' && c3.text === '0/16', 'K3 is not Offset 0/16: ' + JSON.stringify(c3));
+        const c3 = A.auSampleP2Cells(4, ac)[3];
+        assert(c3.label === 'Offst' && c3.name === 'Offset' && c3.text === '0/16', 'TIME K4 is not Offset 0/16: ' + JSON.stringify(c3));
         reset();
-        for (let i = 0; i < 30 && !sent('t4_au_set_rot').length; i++) cc(73, 1);
-        assert(tps === 24 && sent('t4_au_set_rot').join() === ac + ' 24' && A.auLoopBankCells(4)[2].text === '1/16',
-               'Offset is not a 1/16: ' + JSON.stringify(sent('t4_au_set_rot')) + ' ' + A.auLoopBankCells(4)[2].text);
+        for (let i = 0; i < 30 && !sent('t4_au_set_rot').length; i++) cc(74, 1);
+        assert(tps === 24 && sent('t4_au_set_rot').join() === ac + ' 24' && A.auSampleP2Cells(4, ac)[3].text === '1/16',
+               'Offset is not a 1/16: ' + JSON.stringify(sent('t4_au_set_rot')) + ' ' + A.auSampleP2Cells(4, ac)[3].text);
         reset();
-        for (let i = 0; i < 30 && sent('t4_au_set_rot').length < 2; i++) cc(73, 127);
+        for (let i = 0; i < 30 && sent('t4_au_set_rot').length < 2; i++) cc(74, 127);
         assert(sent('t4_au_set_rot').join() === ac + ' 0,' + ac + ' ' + (len0 * tps - tps), 'Offset does not wrap below 0: ' + JSON.stringify(sent('t4_au_set_rot')));
-        for (let i = 0; i < 40 && A.auInfo(4, ac).rot; i++) cc(73, 1);   /* back to 0 */
+        for (let i = 0; i < 40 && A.auInfo(4, ac).rot; i++) cc(74, 1);   /* back to 0 */
         /* ...at 1/8 steps (48 ticks): a 1/8 a detent, shown in eighths */
         {
             const tps0 = S.clipTPS[4][ac];
             S.clipTPS[4][ac] = 48;
             reset();
-            for (let i = 0; i < 30 && !sent('t4_au_set_rot').length; i++) cc(73, 1);
-            assert(sent('t4_au_set_rot').join() === ac + ' 48' && A.auLoopBankCells(4)[2].text === '1/8',
-                   'at 1/8 resolution Offset is not a 1/8: ' + JSON.stringify(sent('t4_au_set_rot')) + ' ' + A.auLoopBankCells(4)[2].text);
-            for (let i = 0; i < 40 && A.auInfo(4, ac).rot; i++) cc(73, 127);
+            for (let i = 0; i < 30 && !sent('t4_au_set_rot').length; i++) cc(74, 1);
+            assert(sent('t4_au_set_rot').join() === ac + ' 48' && A.auSampleP2Cells(4, ac)[3].text === '1/8',
+                   'at 1/8 resolution Offset is not a 1/8: ' + JSON.stringify(sent('t4_au_set_rot')) + ' ' + A.auSampleP2Cells(4, ac)[3].text);
+            for (let i = 0; i < 40 && A.auInfo(4, ac).rot; i++) cc(74, 127);
             S.clipTPS[4][ac] = tps0;
         }
         /* the pads are the clip's time: a quarter-clip Offset plays the
@@ -2311,103 +2362,70 @@ step('⭐⭐ an Audio track: no sequence — pad taps and steps do nothing, no S
             assert(JSON.stringify(rot[0]) === JSON.stringify(plain[8]) && JSON.stringify(rot[24]) === JSON.stringify(plain[0]),
                    'the Audio pads do not start at the Offset');
         }
-        /* K4 Nudge, its own knob (no alternate on K3 any more) */
-        assert(A.auLoopBankCells(4)[3].label === 'Nudge', 'K4 is not Nudge: ' + A.auLoopBankCells(4)[3].label);
-        reset();
-        S.knobAccelLast[3] = 0; cc(74, 1);
-        assert(sent('t4_au_set_nudge').length === 1 && !sent('t4_au_set_rot').length, 'K4 is not Nudge: ' + JSON.stringify(sentLike(/_au_/)));
-        S.knobAccelLast[3] = 0; cc(74, 127);
     }
-    /* Tempo and Bars (K6, K7) framed together, as on SAMPLE page 2: an
-     * outline down both sides of the pair, none round the rest of the row */
-    {
-        S.bankCardLatched = true; S.knobTouched = -1;
-        const f = shown();
-        const run = (x) => { let best = 0, n = 0; for (let y = 28; y < 57; y++) { n = f[y * 128 + x] ? n + 1 : 0; best = Math.max(best, n); } return best; };
-        assert(run(32) >= 8 && run(95) >= 8 && [29, 30, 31, 33, 34, 93, 94, 96, 97].every((x) => run(x) < 8),
-               'the CLIP bank\'s Tempo / Bars frame: ' + [29, 30, 31, 32, 33, 34, 93, 94, 95, 96, 97].map(run).join());
-    }
-    S.knobTouched = 7;
-    const lh = JSON.stringify(render.bankPageHints(0));
-    S.knobTouched = -1;
-    assert(lh.indexOf('CLK') < 0, 'a blank Audio CLIP knob offers a click: ' + lh);
-    S.bankCardLatched = false;
-
-    /* ...the sound is on SAMPLE: page 1's K8 Gain, Revrs off page 1 (Josh,
-     * 2026-11-13: "knock reverse off the waveform knobs (keep it on page 2
-     * though)"); page 2 is K1 Sync (Vintage · Pitch · Warp, the DSP's
-     * 1 · 2 · 0; a new clip on Warp), Pitch, Detune, Gain, Tempo, Bars,
-     * Revrs, Offset */
-    mapPad(2, 3); ticks(2);
+    /* K1 Sync: Free and back */
     reset();
-    for (let i = 0; i < 20; i++) cc(78, 1);
-    assert(sent('t4_au_set_gain').length && !sent('t4_au_set_revrs').length && !sent('t4_au_set_nudge').length, 'SAMPLE K8 is not Gain: ' + JSON.stringify(sentLike(/_au_/)));
-    for (let i = 0; i < 20; i++) cc(78, 127);
-    jog(1); ticks(1);
-    const ed = S.auEditor;
-    assert(ed.page === 1, 'the jog did not turn SAMPLE to page 2');
-    /* page 2 in its own order (Josh, 2026-11-02: "1: sync, 2 pitch, 3 detune, 4 gain, 5 tempo, 6 reverse" · "page 2 only") */
-    /* ...Bars beside Tempo, Revrs one along (Josh, 2026-11-13: "bars should be a knob in page 2 next to tempo") */
-    assert(A.auSampleP2Cells(4, 0).map((c) => c.label).join() === 'Sync,Pitch,Detune,Gain,Tempo,Bars,Revrs,Offst', 'page 2: ' + A.auSampleP2Cells(4, 0).map((c) => c.label));
-    assert(A.auSampleP2Cells(4, 0)[4].opens === true && A.auSampleP2Cells(4, 0).filter((c) => c.opens).length === 1,
-           'Tempo does not wear the corner brackets, alone (Josh: "tempo needs the corner indicators to show it\'s touch click")');
-    assert(A.auSampleP2Cells(4, 0)[0].text === 'Warp', 'a new clip is not on Warp: ' + A.auSampleP2Cells(4, 0)[0].text);
-    for (let i = 0; i < 40; i++) cc(71, 127);
+    for (let i = 0; i < 20 && !sent('t4_au_set_free').length; i++) cc(71, 1);
+    assert(sent('t4_au_set_free').join() === '0 1' && p2()[0].text === 'Free', 'K1 up is not Sync Free: ' + JSON.stringify(sentLike(/_au_/)));
+    for (let i = 0; i < 20 && sent('t4_au_set_free').length < 2; i++) cc(71, 127);
+    assert(sent('t4_au_set_free').join() === '0 1,0 0' && p2()[0].text === 'Grid', 'K1 down is not Sync Grid: ' + JSON.stringify(sent('t4_au_set_free')));
+    /* K3 Nudge, K4 Offset, K7 Tempo, K8 Bars; K5 / K6 nothing */
     reset();
-    const tv = [];
-    for (let i = 0; i < 40; i++) { cc(71, 1); const t = A.auSampleP2Cells(4, 0)[0].text; if (tv[tv.length - 1] !== t) tv.push(t); }
-    assert(tv.join() === 'Vintage,Pitch,Warp' && sent('t4_au_set_sync').join() === '0 2,0 0',
-           'K1 is not Sync Vintage · Pitch · Warp: ' + tv.join() + ' ' + JSON.stringify(sentLike(/_au_/)));
-    assert(A.auSyncIdx({ sync: 1 }) === 0 && A.auSyncIdx({ sync: 2 }) === 1 && A.auSyncIdx({ sync: 0 }) === 2 &&
-           A.auSyncIdx({ sync: 99 }) === 2, 'Vintage / Pitch / Warp / an unknown value reads wrong');
-    for (const v of [0, 1, 2]) {
-        const was = S.auInfo[4][0];
-        S.auInfo[4][0] = Object.assign({}, was, { sync: v });
-        const sq = A.auSampleP2Cells(4, 0)[0].sq;
-        S.auInfo[4][0] = was;
-        assert(sq && sq.length <= 4, 'Sync ' + v + '\'s square: ' + sq);
-    }
-    reset();
-    /* K2 Pitch, K3 Detune, K4 Gain, K5 Tempo, K6 Revrs; K7 / K8 nothing */
-    for (let i = 0; i < 20 && !sent('t4_au_set_pitch').length; i++) cc(72, 1);
     S.knobAccelLast[2] = 0; cc(73, 1);
-    S.knobAccelLast[3] = 0; cc(74, 1);
-    S.knobAccelLast[4] = 0; cc(75, 1);
-    for (let i = 0; i < 20 && !sent('t4_au_set_revrs').length; i++) cc(76, 1);
-    for (let i = 0; i < 20; i++) { cc(77, 1); cc(78, 1); }
-    assert(sent('t4_au_set_pitch').length === 1 && sent('t4_au_set_detune').length === 1 && sent('t4_au_set_gain').length === 1 &&
-           sent('t4_au_set_bpm').length === 1 && sent('t4_au_set_revrs').join() === '0 1' && !sent('t4_au_set_sync').length,
-           'page 2 K2-K8 are not Pitch / Detune / Gain / Tempo / Revrs / nothing: ' + JSON.stringify(sentLike(/_au_/)));
-    for (let i = 0; i < 20 && sent('t4_au_set_revrs').length < 2; i++) cc(76, 127);
+    for (let i = 0; i < 20 && !sent('t4_au_set_rot').length; i++) cc(74, 1);
+    for (let i = 0; i < 20; i++) { cc(75, 1); cc(76, 1); }
+    S.knobAccelLast[6] = 0; cc(77, 1);
+    assert(sent('t4_au_set_nudge').length === 1 && sent('t4_au_set_rot').length === 1 && sent('t4_au_set_bpm').length === 1 &&
+           !sent('t4_au_set_pitch').length && !sent('t4_au_set_detune').length && !sent('t4_au_set_gain').length,
+           'page 2 K3-K7 are not Nudge / Offset / nothing / nothing / Tempo: ' + JSON.stringify(sentLike(/_au_/)));
     reset();
     /* no knob of its own for Orig any more: touch K1 + click does nothing */
     note(0, 127); click(); note(0, 0); ticks(1);
     assert(!sent('t4_au_set_orig').length && !ed.pick, 'touch K1 + click still does something: ' + JSON.stringify(sentLike(/_au_/)));
-    jog(-1); back(); ticks(2);
+    /* SOUND: - · - · - · - / Pitch · Detune · Revrs · Gain */
+    jog(1); ticks(1);
+    assert(ed.page === 2, 'the jog did not turn SAMPLE to page 3');
+    const p3 = () => A.auSampleP3Cells(4, 0);
+    assert(p3().map((c) => c.label).join() === ',,,,Pitch,Detune,Revrs,Gain', 'page 3: ' + p3().map((c) => c.label));
+    jog(1); ticks(1);
+    assert(ed.page === 2, 'the jog went past page 3');
+    reset();
+    for (let i = 0; i < 20; i++) { cc(71, 1); cc(72, 1); cc(73, 1); cc(74, 1); }
+    for (let i = 0; i < 20 && !sent('t4_au_set_pitch').length; i++) cc(75, 1);
+    S.knobAccelLast[5] = 0; cc(76, 1);
+    for (let i = 0; i < 30 && !sent('t4_au_set_revrs').length; i++) cc(77, 1);
+    S.knobAccelLast[7] = 0; cc(78, 1);
+    assert(sent('t4_au_set_pitch').length === 1 && sent('t4_au_set_detune').length === 1 && sent('t4_au_set_revrs').join() === '0 1' &&
+           sent('t4_au_set_gain').length === 1 && !sent('t4_au_set_sync').length && !sent('t4_au_set_rot').length && !sent('t4_au_set_free').length,
+           'page 3 is not nothing x4 / Pitch / Detune / Revrs / Gain: ' + JSON.stringify(sentLike(/_au_/)));
+    for (let i = 0; i < 30 && sent('t4_au_set_revrs').length < 2; i++) cc(77, 127);
+    jog(-1); jog(-1); back(); ticks(2);
     S.bankCardLatched = false;
 });
 
-step('⭐⭐ a Slicer\'s SAMPLE page 2: K1 Sync is Off / Pitch (the engine\'s 0 / 1); no Conductor switch — the Conductor\'s RESPONDER bank governs it, as every track (Josh, 2026-11-12: "Can\'t that be handled the way other tracks handle it?")', () => {
+step('⭐⭐ a Slicer\'s SAMPLE page 2: K2 Warp is Off / Pitch (the engine\'s 0 / 1); no Conductor switch — the Conductor\'s RESPONDER bank governs it, as every track (Josh, 2026-11-12: "Can\'t that be handled the way other tracks handle it?")', () => {
     GET['t4_au_info_0'] = INFO(1, 8); GET['t4_au_marks_0'] = MARKS8; kindSync(); ticks(2);
     mapPad(2, 3); ticks(2);
     jog(1); ticks(1);
     const ed = S.auEditor;
     assert(ed && ed.page === 1 && ed.c === 16, 'not on a Slicer\'s SAMPLE page 2');
     const cells = () => A.auSampleP2Cells(4, 16);
-    /* no Bars on a Slicer (its clips are sequences); Revrs where an Audio clip's is */
-    assert(cells().map((c) => c.label).join() === 'Sync,Pitch,Detune,Gain,Tempo,,Revrs,', 'page 2: ' + cells().map((c) => c.label));
-    assert(cells()[0].text === 'Off' && JSON.stringify(cells()[0].options) === '["Off","Pitch"]' && cells()[5].kind === 'blank' && cells()[7].kind === 'blank',
-           'Sync / K6 / K8 at rest: ' + JSON.stringify([cells()[0], cells()[5], cells()[7]]));
+    /* the same slots as an Audio clip's; Sync (Grid · Free), Nudge, Offset and
+     * Bars read -- and rest: what plays is the chops, sequenced */
+    assert(cells().map((c) => c.label).join() === 'Sync,Warp,Nudge,Offst,,,Tempo,Bars', 'page 2: ' + cells().map((c) => c.label));
+    assert(cells()[1].text === 'Off' && JSON.stringify(cells()[1].options) === '["Off","Pitch"]' &&
+           [0, 2, 3, 7].every((k) => cells()[k].na && cells()[k].text === '--'),
+           'Warp / the knobs that rest: ' + JSON.stringify(cells().map((c) => [c.label, c.text, !!c.na])));
     reset();
-    for (let i = 0; i < 40 && !sent('t4_au_set_sync').length; i++) cc(71, 1);
-    assert(sent('t4_au_set_sync').join() === '16 1' && cells()[0].text === 'Pitch', 'K1 up is not Sync Pitch: ' + JSON.stringify(sentLike(/_au_/)));
-    for (let i = 0; i < 40; i++) cc(71, 1);         /* no third value */
-    assert(sent('t4_au_set_sync').join() === '16 1', 'Sync went past Pitch: ' + JSON.stringify(sent('t4_au_set_sync')));
-    for (let i = 0; i < 40 && sent('t4_au_set_sync').length < 2; i++) cc(71, 127);
-    assert(sent('t4_au_set_sync').join() === '16 1,16 0' && cells()[0].text === 'Off', 'K1 down is not Sync Off: ' + JSON.stringify(sent('t4_au_set_sync')));
+    for (let i = 0; i < 40 && !sent('t4_au_set_sync').length; i++) cc(72, 1);
+    assert(sent('t4_au_set_sync').join() === '16 1' && cells()[1].text === 'Pitch', 'K2 up is not Warp Pitch: ' + JSON.stringify(sentLike(/_au_/)));
+    for (let i = 0; i < 40; i++) cc(72, 1);         /* no third value */
+    assert(sent('t4_au_set_sync').join() === '16 1', 'Warp went past Pitch: ' + JSON.stringify(sent('t4_au_set_sync')));
+    for (let i = 0; i < 40 && sent('t4_au_set_sync').length < 2; i++) cc(72, 127);
+    assert(sent('t4_au_set_sync').join() === '16 1,16 0' && cells()[1].text === 'Off', 'K2 down is not Warp Off: ' + JSON.stringify(sent('t4_au_set_sync')));
     reset();
-    for (let i = 0; i < 40; i++) cc(77, 1);         /* K7: nothing there now */
-    assert(!sentLike(/_au_cond/).length, 'K7 still sends a Conductor switch: ' + JSON.stringify(sentLike(/_au_/)));
+    for (let i = 0; i < 40; i++) { cc(71, 1); cc(73, 1); cc(74, 1); cc(78, 1); }   /* the knobs that rest */
+    assert(!sentLike(/_au_(set_free|set_nudge|set_rot|set_bars|cond)/).length, 'a resting knob on a Slicer\'s TIME acts: ' + JSON.stringify(sentLike(/_au_/)));
     leave(); ticks(2);
     S.activeBank = 0; S.bankCardLatched = false;
 });

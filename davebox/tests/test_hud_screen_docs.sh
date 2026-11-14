@@ -74,7 +74,7 @@ ok('an Audio track\'s overview waveform says where the playhead is', tap.body.wa
 const sl1 = doc('sample-loop'), lab = (d) => ((d.body.knobs || []).map((c) => c && c.label)).join(',');
 ok('SAMPLE page 1 describes every knob it answers (Start Zoom End Offset Pitch Detune Tempo Gain)', sl1.where.screen === 'audio-wave-editor' && lab(sl1) === 'Start,Zoom,End,Offst,Pitch,Detune,Tempo,Gain' && !!sl1.body.wave, lab(sl1));
 const sl2 = doc('sample-loop-p2');
-ok('...page 2 keeps the waveform for the Screen view', !!(sl2.body.wave && sl2.body.wave.amp) && /^Sync/.test(lab(sl2)), lab(sl2));
+ok('...page 2 TIME keeps the waveform for the Screen view, its knobs in their places', !!(sl2.body.wave && sl2.body.wave.amp) && lab(sl2) === 'Sync,Warp,Nudge,Offst,,,Tempo,Bars', lab(sl2));
 const sc = doc('slices-slicer');
 ok('SLICES describes the slice\'s Start / End and its sound knobs', /^Start,Zoom,End,/.test(lab(sc)) && !!sc.body.wave, lab(sc));
 const ov = doc('track-melodic-playing');

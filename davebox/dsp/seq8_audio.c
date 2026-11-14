@@ -2545,6 +2545,18 @@ static double au_free_speed(const au_clip_t *cl) {
 static double au_free_step(const au_clip_t *cl, const au_sample_t *s, int cond) {
     return au_free_speed(cl) * au_tune(au_pitch(cl) + cond, au_detune(cl)) * (double)s->rate / 44100.0;
 }
+/* Free: where a launch starts in Start..End, 0..1 of the way through it —
+ * the Offset (ticks into the sample at its own Tempo, as a clip on the grid
+ * reads it; taken mod the clip's length L) less the Nudge (time, at the rate
+ * it plays: `fps` sample frames a second). Josh, 2026-11-14: Free is a Sync
+ * setting, so Offset and Nudge reach it as they reach any clip. */
+static double au_free_ph0(const au_clip_t *cl, const au_sample_t *s, uint32_t rs, uint32_t re, uint32_t L, double fps) {
+    double R = (double)re - (double)rs, off = 0;
+    if (!s || !(R > 0)) return 0;
+    if (cl->rot && L) off = (double)(cl->rot % L) * au_fpt_s(cl, s);
+    off -= (double)cl->nudge_ms * fps / 1000.0;
+    return au_wrap(off / R, 1.0);
+}
 
 static void au_trans_calc(au_clip_t *cl);
 
@@ -2874,7 +2886,7 @@ static void au_loop_start_in(au_track_t *at, au_clip_t *cl, const au_sample_t *s
 /* FREE on Tape: the voice that loops rs..re (au_free_range: Start..End) on
  * its own (v->loop) at `step`, `wait` frames from now (the launch tick's frame). */
 static void au_free_start(au_track_t *at, au_clip_t *cl, const au_sample_t *s, int c, uint32_t rs, uint32_t re,
-                          double step, uint32_t wait) {
+                          double step, uint32_t wait, double ph0) {
     int i;
     if (!s || re <= rs + 32) return;
     for (i = 0; i < AU_VOICES; i++) if (at->v[i].active) au_voice_release(&at->v[i], 64);
@@ -2883,8 +2895,11 @@ static void au_free_start(au_track_t *at, au_clip_t *cl, const au_sample_t *s, i
     v->smp = s;
     v->lo = rs; v->hi = re;
     v->wait = wait;
-    if (au_revrs(cl)) { v->pos = (double)re - 1.0; v->step = -step; }
-    else { v->pos = (double)rs; v->step = step; }
+    {   /* ph0: how far into Start..End it starts (au_free_ph0) */
+        double x = ph0 * ((double)re - (double)rs);
+        if (au_revrs(cl)) { v->pos = (double)re - 1.0 - x; v->step = -step; }
+        else { v->pos = (double)rs + x; v->step = step; }
+    }
     v->gain = au_db(au_gain(cl));
     v->clip = (uint8_t)c;
     v->fpitch = 0;                                 /* its speed is set each block (au_render) */
@@ -3417,7 +3432,7 @@ static void au_load_state(void *vinst, const char *buf) {
                 cl->shot = (uint8_t)(au_kv(kv, n, "os", 0) ? 1 : 0);
                 cl->rend = (uint32_t)clamp_i((int)au_kv(kv, n, "en", 0), 0, INT32_MAX);
                 cl->rspan = (uint32_t)clamp_i((int)au_kv(kv, n, "sp", 0), 0, AU_SPAN_MAX);
-                cl->freerun = (uint8_t)(au_kv(kv, n, "fr", 0) && !cl->shot ? 1 : 0);
+                cl->freerun = (uint8_t)(au_kv(kv, n, "fr", 0) ? 1 : 0);   /* with Loop or Shot */
                 l = (int)au_kv(kv, n, "spd", 0);
                 cl->speed_pm = (uint16_t)(l && l != 1000 ? clamp_i(l, AU_SPEED_MIN, AU_SPEED_MAX) : 0);
                 sy = au_kv(kv, n, "sy", AU_SYNC_WARP);

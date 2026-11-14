@@ -1226,7 +1226,8 @@ tempo in the file's name ("84 bpm") is taken as it is, even with a tail after th
 else bars in the name ("4bar"), else where its beats fall, else the project's tempo. Turn
 it if the guess is wrong. A new pick sets the clip to the sample's length in whole bars
 at that Tempo (up to 256 bars). The sample plays from **Start** each time the clip comes
-round, for the clip's own length. **Sync** says how it meets the project's tempo:
+round, for the clip's own length. **Warp** (on SAMPLE's **TIME** page) says how it meets
+the project's tempo:
 
 - **Warp** (the default) time-stretches the loop and keeps its pitch — at any tempo it
   sounds as recorded, only faster or slower, and **Pitch** and **Detune** transpose it
@@ -1279,7 +1280,7 @@ right one in the colours of its partner track: 1 with 5, 2 with 6, 3 with 7, 4 w
 From an external keyboard, note 36 plays chop 1.
 
 A Slicer has its own **Tempo** (guessed when the sample loads, as an Audio clip's) and
-**Sync**: **Off** (the default) plays the chops at their own speed, as cut; **Pitch**
+**Warp**: **Off** (the default) plays the chops at their own speed, as cut; **Pitch**
 retunes them, faster or slower, by the project's tempo against the sample's Tempo — a
 break follows the project as a sped-up or slowed-down record would. A Slicer follows the
 **Conductor** as any track does, by the Conductor's **RESPONDER** bank — but it starts with
@@ -1299,7 +1300,7 @@ the track's.
   pixel a detent, a single sample when zoomed all the way in. **Start and End mark the
   loop**, for a sample that isn't a perfect loop: nothing past End sounds. End reads **Off**
   until you turn it down; it goes as far as the end of the sample, and one detent past that
-  turns it Off again. Moving End never changes the speed — **Bars** (page 2) does that.
+  turns it Off again. Moving End never changes the speed — **Bars** (on TIME) does that.
   Start and End are lines on the waveform; the audio outside them stays on screen, dotted,
   so you can see what you're cutting (zoom in to scroll before Start).
   The clip's Length is set with the Loop gestures (see
@@ -1311,8 +1312,8 @@ the track's.
   above it; **K2** zooms. A Slicer has no Start or Length — what plays is its chops.
 
 On both, **K5** Pitch · **K6** Detune · **K8** Gain set the whole sample, and **K7** its
-**Tempo**, 1 BPM a detent (**Shift**: 0.1) — what Sync and **>Seq**'s step places follow.
-On an Audio clip **K4** is **Offset** (as on the CLIP bank): where in the audio the clip
+**Tempo**, 1 BPM a detent (**Shift**: 0.1) — what Warp and **>Seq**'s step places follow.
+On an Audio clip **K4** is **Offset** (as on the TIME page): where in the audio the clip
 starts, marked by a small arrow on top of the waveform — stopped, the playhead rests there,
 and step 1 plays from it. The waveform itself never moves. The knob in hand reads out at the top, and the waveform is drawn at the gain it plays
 at. Zoomed in, the view stays on what you touched last.
@@ -1322,10 +1323,34 @@ Length, the audio drawn where it lands at the sample's Tempo — squeezed or str
 turn Tempo, empty where the Length runs past the end of the sample — with a tick under it
 for each beat and a taller one for each bar.
 
-SAMPLE has two pages: **turn the jog** for the second (the header reads **1/2** or
-**2/2**). Page 2 shows every name and value at once: **Sync** (Audio: **Vintage**, **Pitch**
-or **Warp**; Slicer: **Off** or **Pitch**) · **Pitch** · **Detune** · **Gain** · **Tempo** ·
-**Bars** (an Audio clip's) · **Revrs** · **Offset** (an Audio clip's).
+SAMPLE has three pages: **turn the jog** for the next (the header reads **1/3**, **2/3**,
+**3/3**). The waveform is page 1; pages 2 and 3 show every name and value at once, two rows
+of four, each setting on the same knob as on page 1 where page 1 has it:
+
+| | K1 | K2 | K3 | K4 |
+|---|---|---|---|---|
+| **TIME**, top row | **Sync** | **Warp** | **Nudge** | **Offset** |
+| **TIME**, bottom row | | | **Tempo** | **Bars** |
+| **SOUND**, bottom row | **Pitch** | **Detune** | **Revrs** | **Gain** |
+
+(SOUND's top row is empty.)
+
+- **Sync** — **Grid** (the default): the clip keeps to the sequencer, fitted to the tempo;
+  or **Free** (below). It works with **Loop** and **Shot** alike.
+- **Warp** — how the speed is changed: **Vintage**, **Pitch** or **Warp** (above); on a
+  Free clip **Pitch** (speed and pitch together, as a tape) or **Warp** (the time alone);
+  on a Slicer **Off** or **Pitch**.
+- **Nudge** — moves the sample against the bar, 5 ms a detent (**Shift**: 1).
+- **Offset** — where in the audio the clip starts, a step (of the clip's resolution) a
+  detent, read as a note value: *3/16* is three 1/16 steps in. Step 1 plays from there, and
+  what lies before it comes round at the end of the loop. The waveform stays as it is;
+  stopped, the playhead rests at the Offset point, and the beat ticks count from it. The
+  pads, which follow the clip, start from it too.
+
+Touch **Offset**, **Tempo** or **Bars** and the clip's waveform comes up over the page while
+you hold it — Start and End, the Offset arrow, the beats — so you see what the turn does. A
+knob that does nothing on this clip reads **--**: on a Slicer, Sync, Nudge, Offset and Bars
+(what plays is its chops); on a Free clip, Bars.
 
 **Tempo and Bars** sit in a frame together: both describe the sample itself, not the clip.
 **Bars** is how many bars Start to End (or to the end of the sample, with End Off) lasts —
@@ -1346,27 +1371,33 @@ the knob shows the value it is playing at and a sounding chop follows it; the se
 comes back on Stop. A lane on Revrs flips the loop at its step. A Slicer's sample is every
 clip's, so a lane only ever holds it while it plays — it never rewrites the setting.
 
-**A Free clip** (CLIP bank **Mode**: **Free**) plays off the sequencer's timing. Launched
-with the clip, it plays from Start, then loops **Start to End on its own** at the sample's own
-speed: the project's tempo, the clip's length and its loop round don't touch it, so a loop of
-any length drifts against the beat as it likes. Page 2 trades **Sync** and **Tempo** for:
+**A Free clip** (TIME page **Sync**: **Free**) plays off the sequencer's timing. Launched
+with the clip, it plays Start to End **on its own** at the sample's own speed: the project's
+tempo, the clip's length and its loop round don't touch it, so a loop of any length drifts
+against the beat as it likes. With **Mode Loop** it loops Start to End for as long as the
+clip plays; with **Mode Shot** it plays Start to End once, then the clip stops — even when
+that is longer than the clip. TIME then reads:
 
-- **Spd Md** — how Speed works: **Warp** changes the time alone, at the same pitch; **Tape**
-  changes both together, as a tape does (faster is higher).
-- **Speed** — 1–400 % of the sample's own, 1 % a detent (**Shift**: 0.1 %). **K7** on page 1
-  turns it too.
+- **Warp** — **Pitch** changes speed and pitch together, as a tape does (faster is higher);
+  **Warp** changes the time alone, at the same pitch.
+- **Speed** (on Tempo's knob) — 1–400 % of the sample's own, 1 % a detent (**Shift**:
+  0.1 %). **K7** on page 1 turns it too. Touching it shows no waveform: it changes how fast
+  the sample plays, not what the waveform shows.
+- **Offset** and **Nudge** work as on the grid: a launch starts that far into Start..End
+  (the Offset measured at the sample's Tempo, wrapping round inside Start..End), less the
+  Nudge. The Offset arrow is on the waveform.
 
 **Pitch** and **Detune** still tune it, so on **Warp**, time and pitch are fully apart.
-**Bars** is blank (there's no grid), and the waveform shows Start to End with no beats. The
-Tempo, Bars and Sync you had are kept, so switching back to **Loop** puts them where they
-were. **REMIX** works on bars, so it has nothing to do on a Free clip: its settings are kept
-and read **--**. A Warp start is about 15 ms after the launch (the stretcher needs a head
-start); a Tape start is on the launch.
+**Bars** reads **--** (there's no grid), and the waveform shows Start to End with no beats.
+The Tempo, Bars and Warp you had are kept, so switching back to **Grid** puts them where
+they were. **REMIX** works on bars, so it has nothing to do on a Free clip: its settings are
+kept and read **--**. A Warp start is about 15 ms after the launch (the stretcher needs a
+head start); a Pitch start is on the launch.
 
-**Touch Tempo and click** (either page) for Tempo's menu:
+**Touch Tempo and click** (page 1 or TIME) for Tempo's menu:
 
 - **Fit to clip** (an Audio clip's) — sets **Bars** to the clip's length, so Start to End (or
-  the end of the sample) lasts exactly as long as the clip, and Sync stretches it to fit.
+  the end of the sample) lasts exactly as long as the clip, and Warp stretches it to fit.
   It fits once: change the clip's length afterwards and Bars stay as they are. One Undo
   puts it back. A fit outside 0.1–999.9 BPM says *Out of range*.
 - **Original tempo** — the sample's Tempo becomes the project's, so it plays exactly as
@@ -1459,15 +1490,17 @@ in a drum pad and is left out. The pads cut each other off, as the chops do.
 The sample's settings live in SAMPLE and SLICES, as an instrument's live in its editor:
 **Back** returns to the bank you were on. The sequence keeps working while either is up: tap
 or hold steps, **Record**, and **hold a step + jog right** for its step page. On a grid page
-(page 2 of either), **Delete + click** resets that page's knobs — the picked chop, every
-chop with Shift, or SAMPLE's Gain, Pitch, Detune and Revrs.
+(any page after the first), **Delete + click** resets that page's knobs — the picked chop,
+every chop with Shift; SAMPLE's TIME back to Sync Grid, Warp Warp (a Slicer's Off), Nudge 0
+and Offset 0 (the Tempo and Bars are the sample's own and stay); or SOUND's Gain, Pitch,
+Detune and Revrs.
 
 ### The banks
 
 | Bank | Knobs |
 |---|---|
 | **CLIP**, Slicer | As a melodic clip's (**Res**, **Strch**, **Shift**, **InQnt**, **Crop›**, **Dir**), with **>Seq›** on K8 (touch, click): one step per chop, each at its place at the sample's **Tempo**, so the clip plays the sample back as it was — now as chops you can rearrange. A clip whose length you never set grows to hold all of it (a coarser resolution past 256 steps); a length you set stays, and the chops past it wait beyond the loop's end. No Legato: a step holds one chop |
-| **CLIP**, Audio | When the clip plays its sample: **Mode** · **Strch** · **Offset** · **Nudge** · **Sync** · **Tempo** · **Bars** (Sync, Tempo and Bars as on [SAMPLE](#75-audio)'s page 2, Tempo and Bars framed together). Touch **Strch**, **Offset**, **Tempo** or **Bars** and the clip's waveform comes up over the bank while you hold it — Start and End, the Offset arrow, the beats — so you see what the turn does. **Mode** is **Loop** (the clip plays round and round), **Shot**: a one-shot — launched, the clip plays its length once from its top, then stops, so it can be fired off like a sample; launch it again to replay it — or **Free**: launched, the sample loops Start to End on its own, off the sequencer's timing, at its **Speed** (see [SAMPLE](#75-audio)). Every other setting stays as it is when you switch. On **Free**, **Strch** x2 halves the Speed (/2 doubles it); **K5** is the Speed mode (**Warp** or **Tape**) and **K6** the **Speed**, and Offset, Nudge, Tempo and Bars are blank. **Strch** works as a sequence's does, in audio, and **Offset** as a sequence's Shift. **Strch** x2 doubles the clip's Length and the sample's Tempo — the loop plays at half speed across twice the bars; /2 the reverse. With **Bars** set, Bars double instead of the Tempo, with the same result. Past 256 steps or the Tempo's range it says *BEAT STRETCH / EXPAND LIMIT* (or *COMPRESS LIMIT*). **Offset** is where in the audio the clip starts, a step (of the clip's resolution) a detent, and reads as a note value — *3/16* is three 1/16 steps in: step 1 plays from there, and what lies before it comes round at the end of the loop. The waveform stays as it is; stopped, the playhead rests at the Offset point, and the beat ticks count from it. The pads, which follow the clip, start from it too. **Nudge** moves the sample against the bar, 5 ms a detent (**Shift**: 1). The sound is SAMPLE's |
+| **CLIP**, Audio | **Mode** · **Strch**; everything else about the sample is on [SAMPLE](#75-audio)'s pages. **Mode** is **Loop** (the clip plays round and round) or **Shot**: a one-shot — launched, the clip plays its length once from its top, then stops, so it can be fired off like a sample; launch it again to replay it. Every other setting stays as it is when you switch. **Strch** works as a sequence's does, in audio: x2 doubles the clip's Length and the sample's Tempo — the loop plays at half speed across twice the bars; /2 the reverse. With **Bars** set, Bars double instead of the Tempo, with the same result. On a **Free** clip **Strch** x2 halves the Speed (/2 doubles it). Past 256 steps or the Tempo's range it says *BEAT STRETCH / EXPAND LIMIT* (or *COMPRESS LIMIT*). Touch **Strch** and the clip's waveform comes up over the bank while you hold it |
 | **PAD MODE** (Slicer) | **Layout**: **4 Rows** or **16 Pads**, how the chops sit on the pads |
 | **LIVE ARP** | As on a melodic track, but **Step** replaces Oct: each repeat moves one chop up (or down), up to 15 |
 | **REMIX** (both) | Rearranges the loop as it plays — see [REMIX](#remix) below |
@@ -1519,7 +1552,7 @@ so it isn't applied twice.
 - An **Audio** clip onto a **Slicer that has no sample** gives the Slicer that sample: the
   part the clip plays is cut into 16 even chops and laid on the clip's steps in order, so
   it sounds just as the loop did — then move them around. Pitch, Detune, Gain, Revrs and
-  Tempo come too; Sync Pitch stays Pitch, Warp and Vintage become Off. A Slicer that has a
+  Tempo come too; Warp Pitch stays Pitch, Warp and Vintage become Off. A Slicer that has a
   sample refuses it (*CAN'T PASTE*): clear it with **None** first.
 - A **Slicer's** clip onto another Slicer's carries its steps (and its automation) — they
   play the destination's chops.

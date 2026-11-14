@@ -12,8 +12,14 @@
  *     Nudge, Pitch its own; the clock never restarts at the clip's wrap; it
  *     sounds;
  *   - stopping stops it, and the next launch starts again at Start;
- *   - Free and Shot are one Mode: setting either clears the other;
- *   - saved (fr=1 spd=) and loaded; a clip with neither writes neither;
+ *   - Free goes with Loop or Shot (Josh, 2026-11-14: "free isn't really a clip
+ *     mode. it should be available in both loop and one shot"): Shot + Free
+ *     plays one pass of Start..End from the launch and the clip stops — the
+ *     grid's Shot does not cut it at the clip's end;
+ *   - Offset and Nudge reach a Free clip: it starts that far into Start..End
+ *     (the Offset at the sample's own Tempo, less the Nudge in time), Tape
+ *     and Warp alike;
+ *   - saved (fr=1 spd=, with os=1) and loaded; a clip with neither writes neither;
  *   - the info read reports Free (field 29) and Speed (30, per mille);
  *   - a Slicer refuses both keys. */
 #include "harness.h"
@@ -173,12 +179,78 @@ int main(void) {
     hx_set_param(h, "t2_au_set_nudge", "0 0");
     hx_set_param(h, "t2_au_set_pitch", "0 0");
 
-    /* ==== 3. one Mode: Shot clears Free, Free clears Shot ==== */
+    /* ==== 3. Free goes with Loop or Shot ==== */
     hx_set_param(h, "t2_au_set_shot", "0 1");
-    HX_ASSERT(cl->shot == 1 && cl->freerun == 0, "Shot did not clear Free");
+    HX_ASSERT(cl->shot == 1 && cl->freerun == 1, "Shot cleared Free");
+    hx_set_param(h, "t2_au_set_free", "0 0");
+    HX_ASSERT(cl->shot == 1 && cl->freerun == 0, "Free off cleared Shot");
     hx_set_param(h, "t2_au_set_free", "0 1");
-    HX_ASSERT(cl->shot == 0 && cl->freerun == 1, "Free did not clear Shot");
-    printf("  ok   — Free and Shot are one Mode\n");
+    HX_ASSERT(cl->shot == 1 && cl->freerun == 1, "Free cleared Shot");
+    {
+        /* one pass of the 22050-frame region, then the clip stops: n blocks of 128 */
+        int n;
+        double fpt = 44100.0 * 60.0 / (120.0 * PPQN);
+        hx_set_param(h, "t2_au_set_sync", "0 2");              /* Tape */
+        hx_set_param(h, "t2_au_set_speed", "0 1000");
+        start(h);
+        for (n = 0; n < 4000 && inst->tracks[2].clip_playing; n++) step(h);
+        HX_ASSERT(!inst->tracks[2].clip_playing, "Tape + Shot: the clip never stopped");
+        HX_ASSERT(n >= 170 && n <= 174, "Tape + Shot: did not stop after one pass of Start..End");
+        for (int i = 0; i < 10; i++) step(h);
+        HX_ASSERT(!au_loop_voice(at) && !at->free_on, "Tape + Shot: still sounding after the clip stopped");
+        stop(h);
+        /* a pass longer than the clip (Speed 10 %: 220500 frames, the clip a
+         * bar of 88200): the grid's Shot must not cut it at the clip's end */
+        hx_set_param(h, "t2_au_set_speed", "0 100");
+        start(h);
+        for (n = 0; n < 1000; n++) step(h);
+        HX_ASSERT(inst->tracks[2].clip_playing && at->free_on, "Tape + Shot: the clip's end cut a Free pass short");
+        for (; n < 4000 && inst->tracks[2].clip_playing; n++) step(h);
+        HX_ASSERT(n >= 1720 && n <= 1726, "Tape + Shot: a long pass did not stop at its end");
+        stop(h);
+        /* Warp: one pass plus the stretcher's lead */
+        hx_set_param(h, "t2_au_set_sync", "0 0");
+        hx_set_param(h, "t2_au_set_speed", "0 1000");
+        start(h);
+        for (n = 0; n < 4000 && inst->tracks[2].clip_playing; n++) step(h);
+        double want = (22050.0 + AU_WARP_LEAD) / 128.0;
+        HX_ASSERT(!inst->tracks[2].clip_playing && fabs(n - want) <= 2.0, "Warp + Shot: did not stop after one pass");
+        (void)fpt;
+        stop(h);
+    }
+    hx_set_param(h, "t2_au_set_shot", "0 0");
+    {
+        /* Offset and Nudge: where a launch starts in Start..End */
+        const au_sample_t *sm = cl->smp;
+        double off = fmod(48.0 * au_fpt_s(cl, sm), 22050.0), x, d;
+        hx_set_param(h, "t2_au_set_sync", "0 2");              /* Tape, Speed 100 %: frames as heard */
+        hx_set_param(h, "t2_au_set_rot", "0 48");
+        start(h);
+        x = au_loop_voice(at)->pos - 4410.0;
+        d = fmod(x - off + 22050.0, 22050.0);
+        HX_ASSERT(off > 1000.0 && d <= 130.0, "Tape: the Offset did not start it that far into Start..End");
+        stop(h);
+        hx_set_param(h, "t2_au_set_nudge", "0 100");            /* 100 ms later = 4410 frames back */
+        start(h);
+        x = au_loop_voice(at)->pos - 4410.0;
+        d = fmod(x - (off - 4410.0) + 2 * 22050.0, 22050.0);
+        HX_ASSERT(d <= 130.0, "Tape: the Nudge did not move the start");
+        stop(h);
+        /* Warp: the clock starts at the same place less the lead */
+        hx_set_param(h, "t2_au_set_sync", "0 0");
+        start(h);
+        {
+            double fpt = 44100.0 * 60.0 / (120.0 * PPQN), P = 22050.0 / fpt;
+            double ph0 = fmod((off - 4410.0) / 22050.0 + 2.0, 1.0);
+            double w = fmod(ph0 - AU_WARP_LEAD / (fpt * P) + 128.0 / (fpt * P) + 2.0, 1.0);
+            HX_ASSERT(fabs(at->free_ph - w) < 1e-6, "Warp: Offset and Nudge did not set where its clock starts");
+        }
+        stop(h);
+        hx_set_param(h, "t2_au_set_rot", "0 0");
+        hx_set_param(h, "t2_au_set_nudge", "0 0");
+        hx_set_param(h, "t2_au_set_speed", "0 500");
+    }
+    printf("  ok   — Free goes with Loop or Shot (Shot: one pass, then the clip stops); Offset and Nudge reach it\n");
 
     /* ==== 4. the info read ==== */
     HX_ASSERT(info_at(h, 29) == 1 && info_at(h, 30) == 500, "the info read does not report Free / Speed");
@@ -207,6 +279,7 @@ int main(void) {
     printf("  ok   — the info read reports Free and Speed; Speed goes down to 1 %%, and Warp sounds there\n");
 
     /* ==== 5. saved and loaded ==== */
+    hx_set_param(h, "t2_au_set_shot", "0 1");                  /* Free with Shot */
     seq8_save_state(inst);
     {
         FILE *f = fopen(inst->state_path, "r");
@@ -216,13 +289,15 @@ int main(void) {
         const char *ae = strchr(a + 12, '"');
         HX_ASSERT(memmem(a, (size_t)(ae - a), "fr=1", 4) != NULL, "Free saved without fr=1");
         HX_ASSERT(memmem(a, (size_t)(ae - a), "spd=750", 7) != NULL, "Speed saved without spd=");
+        HX_ASSERT(memmem(a, (size_t)(ae - a), "os=1", 4) != NULL, "Free with Shot saved without os=1");
     }
     hx_destroy(h);
     h = hx_create(NULL); HX_NO_LEAD(h); inst = (seq8_instance_t *)h->inst;
     snprintf(inst->state_path, sizeof inst->state_path, "%s/proj/dAVEBOx/seq8sa-state.json", g_root);
     seq8_load_state(inst);
     HX_ASSERT(au_cl(inst, 2, 0)->freerun == 1 && au_cl(inst, 2, 0)->speed_pm == 750, "reloaded: Free or Speed lost");
-    au_cl(inst, 2, 0)->freerun = 0; au_cl(inst, 2, 0)->speed_pm = 0;
+    HX_ASSERT(au_cl(inst, 2, 0)->shot == 1, "reloaded: Free with Shot lost the Shot");
+    au_cl(inst, 2, 0)->freerun = 0; au_cl(inst, 2, 0)->speed_pm = 0; au_cl(inst, 2, 0)->shot = 0;
     seq8_save_state(inst);
     {
         FILE *f = fopen(inst->state_path, "r");

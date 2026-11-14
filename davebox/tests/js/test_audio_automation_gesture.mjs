@@ -124,15 +124,24 @@ step('⭐⭐ K8 Gain turned while playing: written to the clip AND heard as seq:
     note(3, 127); turn(3, -1, 1); note(3, 0); ticks(1);
 });
 
-step('K7 Tempo and page 2\'s Revrs automate as au_bpm and au_revrs', () => {
+step('K7 Tempo (page 1 and TIME) and SOUND\'s Revrs automate as au_bpm and au_revrs', () => {
     sets.length = 0;
     note(6, 127); turn(6, 1, 1); ticks(1); note(6, 0); ticks(1);
     assert(sent('t4_pa_live').some((v) => v.indexOf('seq:4:au_bpm ') === 0), 'K7 is not seq:4:au_bpm: ' + JSON.stringify(sets));
     sets.length = 0;
-    cc(14, 1); ticks(1);                                    /* page 2: Revrs on K7 */
+    cc(14, 1); ticks(1);                                    /* page 2 TIME: Tempo on K7 too */
+    note(6, 127); turn(6, 1, 1); ticks(1); note(6, 0); ticks(1);
+    assert(sent('t4_pa_live').some((v) => v.indexOf('seq:4:au_bpm ') === 0), 'TIME\'s K7 is not seq:4:au_bpm: ' + JSON.stringify(sets));
+    sets.length = 0;
+    note(3, 127); for (let i = 0; i < 30 && !sent('t4_au_set_rot').length; i++) cc(74, 1); ticks(1); note(3, 0); ticks(1);   /* TIME's K4 Offset: the clip's time, not a lane */
+    assert(sent('t4_au_set_rot').length === 1 && !sets.some((x) => /_pa_(rest|live)/.test(x[0])), 'TIME\'s K4 Offset was not a plain write: ' + JSON.stringify(sets));
+    note(3, 127); for (let i = 0; i < 30 && sent('t4_au_set_rot').length < 2; i++) cc(74, 127); note(3, 0); ticks(1);
+    sets.length = 0;
+    cc(14, 1); ticks(1);                                    /* page 3 SOUND: Revrs on K7 */
     note(6, 127); for (let i = 0; i < 20; i++) cc(77, 1);   /* KNOB_DELIB: 20 detents a switch */ ticks(1); note(6, 0); ticks(1);
-    cc(14, 127); ticks(1);
-    assert(sent('t4_au_set_revrs').length === 1, 'page 2\'s K7 did not switch Revrs once: ' + JSON.stringify(sets) + ' ed=' + JSON.stringify({ page: S.auEditor && S.auEditor.page, mode: S.auEditor && S.auEditor.mode, ed: S.auEditor && S.auEditor.ed, info: A.auInfo(4, 0) }));
+    cc(14, 127); ticks(1); cc(14, 127); ticks(1);
+    assert(S.auEditor.page === 0, 'the jog did not come back to the waveform: page ' + S.auEditor.page);
+    assert(sent('t4_au_set_revrs').length === 1, 'SOUND\'s K7 did not switch Revrs once: ' + JSON.stringify(sets) + ' ed=' + JSON.stringify({ page: S.auEditor && S.auEditor.page, mode: S.auEditor && S.auEditor.mode, ed: S.auEditor && S.auEditor.ed, info: A.auInfo(4, 0) }));
     assert(sent('t4_pa_live').some((v) => v === 'seq:4:au_revrs 16383'), 'Revrs is not seq:4:au_revrs at 1: ' + JSON.stringify(sent('t4_pa_live')));
 });
 
@@ -148,7 +157,7 @@ step('⭐ Delete + touch clears the knob\'s lane; Mute + touch switches it off',
     assert(sent('t4_pa_clear_key').includes('0 seq:4:au_pitch'), 'Delete + touch K5 did not clear the Pitch lane: ' + JSON.stringify(sets));
 });
 
-step('⭐ the CLIP bank\'s knobs are the clip\'s own lanes: Delete + touch K6 clears the Tempo lane; K7 (Bars, a sequence\'s Playback Dir knob) touches no lane', () => {
+step('⭐ the CLIP bank (Mode, Strch) touches no lane — not a sequence\'s either; the Tempo lane is TIME\'s K7: Delete + touch there clears it', () => {
     while (S.auEditor) { cc(51, 127); cc(51, 0); ticks(1); }
     S.playing = false; S.sessionView = false; S.activeTrack = 4; S.activeBank = 0;
     const dir = C.seqAutoTargetForKnob(4, 0, 6, false);
@@ -157,11 +166,17 @@ step('⭐ the CLIP bank\'s knobs are the clip\'s own lanes: Delete + touch K6 cl
     AU.automationRefreshPresence(); ticks(2);
     assert(AU.automationStateFor(4, 0, dir) && AU.automationStateFor(4, 0, 'seq:4:au_bpm'), 'setup: the lanes are not listed');
     sets.length = 0;
+    for (let k = 0; k < 8; k++) {
+        S.deleteHeld = true; note(k, 127); note(k, 0); S.deleteHeld = false; ticks(1);
+        S.muteHeld = true; note(k, 127); note(k, 0); S.muteHeld = false; ticks(1);
+    }
+    assert(!sets.some((x) => /_pa_(clear_key|active)$/.test(x[0])), 'Delete / Mute + touch on the CLIP bank reached a lane: ' + JSON.stringify(sets));
+    E.openWave(4, 'sample'); ticks(2);
+    cc(14, 1); ticks(1);                                    /* TIME */
+    sets.length = 0;
     S.deleteHeld = true; note(6, 127); note(6, 0); S.deleteHeld = false; ticks(1);
-    S.muteHeld = true; note(6, 127); note(6, 0); S.muteHeld = false; ticks(1);
-    assert(!sets.some((x) => /_pa_(clear_key|active)$/.test(x[0])), 'Delete / Mute + touch K7 reached a lane: ' + JSON.stringify(sets));
-    S.deleteHeld = true; note(5, 127); note(5, 0); S.deleteHeld = false; ticks(1);
-    assert(sent('t4_pa_clear_key').includes('0 seq:4:au_bpm'), 'Delete + touch K6 did not clear the Tempo lane: ' + JSON.stringify(sets));
+    assert(sent('t4_pa_clear_key').includes('0 seq:4:au_bpm'), 'Delete + touch TIME\'s K7 did not clear the Tempo lane: ' + JSON.stringify(sets));
+    while (S.auEditor) { cc(51, 127); cc(51, 0); ticks(1); }
     GET['pa_list'] = ''; AU.automationRefreshPresence(); ticks(2);
 });
 

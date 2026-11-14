@@ -67,7 +67,7 @@ import { auInfo, auClipOf, auLazyStart, auLazyStop, auLazyTap, auLazyKeep, auLaz
          auSelSlice, auSetSelSlice, isSampledTrack, isSlicerTrack, auSeqClipOf, auEditTrim, auMarks, auMarksLocal, auSliceStart, auSliceEnd,
          auMarkAdd, auMarkDel, auManual, auEvenBake, auTrans, auTransBake, auRangeStep, auSet, auEnd, auPanelRingCells, auPanelReset,
          auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_LAZY_ENDED, AU_EVEN_MAX, AU_BPM10_MIN, AU_BPM10_MAX, auLenTicks,
-         auSampleP2Cells, auSampleP2Knob, AU_P2_FIELDS, AU_P2_BARS, auOffsetStep, auTempoStep, auShiftNorm, auBarsTurn, auIsFree, auSpeedTurn, AU_SPEED_MIN, AU_SPEED_MAX, auBpm, auSampleReset, auEdit, auTrimCuts, auOrig, auFit, auNudgeStep, auFpt, auPlayedEnd, auTooLongToChop, auAutoEdit, auAutoTouch, auSlicesAutoTouch, SLICE_GRID } from './ui_audio.mjs';
+         auSampleP2Cells, auSampleP2Knob, AU_P2_FIELDS, AU_P2_BARS, auPageFields, auSamplePageCells, auCellRing, auFreeTurn, AU_SAMPLE_PAGES, auTimeReset, auOffsetStep, auTempoStep, auShiftNorm, auBarsTurn, auIsFree, auSpeedTurn, AU_SPEED_MIN, AU_SPEED_MAX, auBpm, auSampleReset, auEdit, auTrimCuts, auOrig, auFit, auNudgeStep, auFpt, auPlayedEnd, auTooLongToChop, auAutoEdit, auAutoTouch, auSlicesAutoTouch, SLICE_GRID } from './ui_audio.mjs';
 import { registerScreenRingCells } from './ui_knob_leds.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { ccKnobDelta, knobPick, KNOB_PICK, KNOB_DELIB } from './ui_input_cc.mjs';
@@ -542,13 +542,23 @@ function clipTempo(ed, dir) {
     return true;
 }
 
-/* SAMPLE's knobs by what they set, on both its pages (Josh, 2026-11-13:
+/* SAMPLE's knobs by what they set, on all its pages (Josh, 2026-11-13:
  * page 1 "offset ... on knob 4 on the waveform view knobs, move gain to k8
- * and knock reverse off the waveform knobs (keep it on page 2 though)"):
- * page 1 K4 Offset, K5 Pitch, K6 Detune, K7 Tempo, K8 Gain; page 2
- * AU_P2_FIELDS. `k` is the physical knob (its detent state). */
-export const AU_P1_FIELDS = [null, null, null, 'offset', 'pitch', 'detune', 'tempo', 'gain'];
+ * and knock reverse off the waveform knobs"): page 1 K4 Offset, K5 Pitch, K6
+ * Detune, K7 Tempo, K8 Gain; page 2 TIME and page 3 SOUND as auPageFields
+ * has them. `k` is the physical knob (its detent state). */
+export const AU_P1_FIELDS = auPageFields(0);
 function sampleKnob(ed, f, k, d2) {
+    if (f === 'free') { const st = knobStep(k, d2, KNOB_PICK); return !!st && auFreeTurn(ed.t, ed.c, st); }
+    if (f === 'sync') { const st = knobStep(k, d2, KNOB_PICK); return !!st && auSampleP2Knob(ed.t, ed.c, 1, st); }
+    if (f === 'nudge') { const st = ccKnobDelta(d2, k); return !!st && !isSlicerTrack(ed.t) && auNudgeStep(ed.t, ed.c, st); }
+    if (f === 'bars') {
+        /* Bars: whole bars a detent, deliberate as a choice is */
+        const st = knobStep(k, d2, KNOB_PICK);
+        if (!st || !auBarsTurn(ed.t, ed.c, st)) return false;
+        centre(ed);
+        return true;
+    }
     if (f === 'gain') { const st = ccKnobDelta(d2, k); return !!st && clipStep(ed, 'gain', st > 0 ? 1 : -1); }
     if (f === 'pitch') { const st = knobStep(k, d2, KNOB_PICK); return !!st && clipStep(ed, 'pitch', st); }
     if (f === 'detune') { const st = ccKnobDelta(d2, k); return !!st && clipStep(ed, 'detune', st); }
@@ -561,9 +571,9 @@ function sampleKnob(ed, f, k, d2) {
 /* The automatable setting knob k turns on the screen as it is (sampleKnob's
  * on SAMPLE; SLICES' are the slice's own, not automatable), or null. */
 const SAMPLE_AUTO_FIELD = { gain: 'gain', pitch: 'pitch', detune: 'detune', tempo: 'bpm10', revrs: 'revrs' };
-function sampleAutoField(k, plain, p2, sl, slEdit) {
-    if ((p2 && sl) || (slEdit && k > 2)) return null;
-    return SAMPLE_AUTO_FIELD[(p2 ? AU_P2_FIELDS : AU_P1_FIELDS)[k]] || null;
+function sampleAutoField(k, plain, page, sl, slEdit) {
+    if ((page && sl) || (slEdit && k > 2)) return null;
+    return SAMPLE_AUTO_FIELD[auPageFields(page)[k]] || null;
 }
 
 /* A Tempo x10 as shown: 120, 224.1 */
@@ -696,7 +706,9 @@ export function audioEditorInput(status, d1, d2) {
     /* SAMPLE's two pages, turned by the jog (Josh, 2026-10-29: "the waveform
      * on page 1 and the params on page 2"); a chop editor keeps the jog */
     const plain = (sub === 'loop' || sub === 'chop') && !kind;
-    const p2 = plain && ed.page === 1;
+    /* ...and since 2026-11-14 three: the waveform, TIME, SOUND (a SLICES
+     * editor keeps two); `p2` is any page after the waveform */
+    const p2 = plain && (ed.page | 0) >= 1;
     /* SLICES (Josh, 2026-10-29): page 1 the chops — K1 / K3 the picked slice's
      * start / end, K2 Zoom, a click the chop types; page 2 the slice's sound,
      * Shift held for every slice */
@@ -710,7 +722,7 @@ export function audioEditorInput(status, d1, d2) {
              * the lane off / on — as a bank knob's touch does */
             /* ...and SLICES' with Shift held: ALL SLICES' (a single chop's own
              * sound is not automated) */
-            let af = sampleAutoField(d1, plain, p2, sl, slEdit);
+            let af = sampleAutoField(d1, plain, plain ? ed.page | 0 : 0, sl, slEdit);
             if (af === 'bpm10' && auIsFree(auInfo(ed.t, ed.c))) af = null;   /* Free: that knob is Speed */
             const asf = !af && S.shiftHeld && ((p2 && sl) || (slEdit && d1 > 2)) ? SLICE_GRID[d1] : null;
             const akey = af ? auAutoKey(af) : asf ? auSlicesAutoKey(asf) : null;
@@ -824,17 +836,9 @@ export function audioEditorInput(status, d1, d2) {
             return true;
         }
         if (p2) {
-            /* SAMPLE page 2 (AU_P2_KNOB): K1 Sync, then page 1's Pitch,
-             * Detune, Gain, Tempo, Revrs; no Start / Length */
+            /* SAMPLE page 2 TIME / page 3 SOUND: each knob its field */
             S.knobTouched = k; S.knobTurnedTick[k] = S.clockMs;
-            if (k === 0) {
-                const st = knobStep(k, d2, KNOB_PICK);
-                if (st) auSampleP2Knob(ed.t, ed.c, 1, st);
-            } else if (k === AU_P2_BARS) {
-                /* Bars: whole bars a detent, deliberate as a choice is */
-                const st = knobStep(k, d2, KNOB_PICK);
-                if (st && auBarsTurn(ed.t, ed.c, st)) centre(ed);
-            } else sampleKnob(ed, AU_P2_FIELDS[k], k, d2);
+            sampleKnob(ed, auPageFields(ed.page | 0)[k], k, d2);
             S.screenDirty = true;
             return true;
         }
@@ -867,7 +871,8 @@ export function audioEditorInput(status, d1, d2) {
     if (d1 === MoveMainKnob) {
         const dd = decodeDelta(d2);
         if (dd && plain) {
-            const pg = dd > 0 ? 1 : 0;
+            const n = ed.ed === 'slices' && sub === 'chop' ? 2 : AU_SAMPLE_PAGES;
+            const pg = Math.max(0, Math.min(n - 1, (ed.page | 0) + (dd > 0 ? 1 : -1)));
             if (pg !== (ed.page | 0)) { ed.page = pg; S.knobTouched = -1; S.screenDirty = true; }
             return true;
         }
@@ -909,18 +914,20 @@ export function audioEditorInput(status, d1, d2) {
             /* Delete + click: the page showing back to its defaults, as on a
              * bank (Josh, 2026-10-28: "for multi-page banks, we should have
              * delete+jog only reset the active page") — slice n, every slice
-             * with Shift; SAMPLE's Gain, Pitch, Detune and Revrs */
+             * with Shift; SAMPLE's TIME (Sync, Warp, Nudge, Offset) or SOUND
+             * (Gain, Pitch, Detune, Revrs) */
             if (sl) {
                 if (auPanelReset({ t: ed.t, page: S.shiftHeld ? 0 : 1 })) showActionPopup(S.shiftHeld ? 'ALL SLICES' : 'SLICE', 'RESET');
-            } else if (auSampleReset(ed.t, ed.c)) showActionPopup('SAMPLE', 'RESET');
+            } else if ((ed.page | 0) === 1) { if (auTimeReset(ed.t, ed.c)) showActionPopup('TIME', 'RESET'); }
+            else if (auSampleReset(ed.t, ed.c)) showActionPopup('SOUND', 'RESET');
             S.screenDirty = true;
             return true;
         }
         if (sl && p2) return true;
-        /* touch Tempo + click, on either page of SAMPLE: Tempo's menu — Fit
+        /* touch Tempo + click, on the waveform or TIME: Tempo's menu — Fit
          * to clip (a Loop clip's) · Original tempo (Josh, 2026-11-02: "both
          * on a small pop-up menu that shows when you touch click tempo") */
-        if (!sl && plain && S.knobTouched === (p2 ? 4 : 6) && !auIsFree(auInfo(ed.t, ed.c))) {
+        if (!sl && plain && S.knobTouched >= 0 && auPageFields(ed.page | 0)[S.knobTouched] === 'tempo' && !auIsFree(auInfo(ed.t, ed.c))) {
             auAutoTouch(ed.t, ed.c, 'bpm10', false);           /* the menu takes the knob's release */
             ed.pick = { level: 1, sel: 0, tempo: true };
             return true;
@@ -1107,17 +1114,13 @@ export function waveRingCells(ed) {
     if (slp && ed.page === 1) return slRings();
     const free = auIsFree(i);
     /* Offset's ring: a Loop or Shot clip's, dark where the knob does nothing */
-    const offRing = sub === 'loop' && !free && !isSlicerTrack(ed.t) ? at(auShiftNorm(ed.t, ed.c, i)) : null;
+    const offRing = sub === 'loop' && !isSlicerTrack(ed.t) ? at(auShiftNorm(ed.t, ed.c, i)) : null;
     const sampleRings = () => [at(((i.gain | 0) + 40) / 52), at(((i.pitch | 0) + 24) / 48), at(((i.detune | 0) + 50) / 100),
                                free ? at(((i.speed || 1000) - AU_SPEED_MIN) / (AU_SPEED_MAX - AU_SPEED_MIN))
                                     : at(((Math.round(auBpm(i) * 10) || 1200) - AU_BPM10_MIN) / (AU_BPM10_MAX - AU_BPM10_MIN)), at(i.revrs ? 1 : 0)];
-    if (!kind && ed.page === 1) {
-        /* page 2 (AU_P2_FIELDS): Sync, Pitch, Detune, Gain, Tempo, Bars,
-         * Revrs, Offset — lit where a knob works */
-        const cells = auSampleP2Cells(ed.t, ed.c), sr = sampleRings();
-        const slc = isSlicerTrack(ed.t), bc = cells[AU_P2_BARS];
-        return [cells[0] && cells[0].kind !== 'blank' ? at((cells[0].sel | 0) / (slc || free ? 1 : 2)) : null, sr[1], sr[2], sr[0], sr[3],
-                bc && bc.kind !== 'blank' ? at(bc.norm || 0) : null, sr[4], offRing];
+    if (!kind && (ed.page | 0) >= 1) {
+        /* pages 2 and 3: lit where a knob works, from the cells as drawn */
+        return auSamplePageCells(ed.t, ed.c, ed.page | 0).map(auCellRing);
     }
     let a = i.rstart, b = auEnd(i);
     if (kind === 'manual' || slp) {

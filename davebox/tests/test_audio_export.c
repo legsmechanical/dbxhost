@@ -379,6 +379,31 @@ int main(void) {
         }
         HX_ASSERT(bad == 0, "a Free Tape render does not loop Start..End at the sample's own speed");
         free(w);
+        /* Free with an Offset, as a Shot (Josh, 2026-11-14): from the Offset
+         * into Start..End, one pass, then silence */
+        hx_set_param(h, "t4_au_set_rot", "0 48");
+        hx_set_param(h, "t4_au_set_shot", "0 1");
+        HX_ASSERT(hx_get_param(h, "t4_c0_au_export", b, sizeof b) > 0 && b[0] == 'R', "a Free Shot clip was not rendered");
+        w = read_wav(p, &frames, &rate, &ch);
+        HX_ASSERT(w && frames == (uint32_t)(384 * fpt + 0.5), "the Free Shot render's header");
+        {
+            double off = fmod(48.0 * au_fpt_s(au_cl(inst, 4, 0), au_cl(inst, 4, 0)->smp), 22050.0);
+            uint32_t i;
+            HX_ASSERT(off > 1000.0, "rig: the Offset is too small to tell");
+            bad = 0;
+            for (k = 0; k < 8; k++) {
+                uint32_t at = (uint32_t)(k * 2700 + 7);
+                double x = fmod((double)at + off, 22050.0);
+                if (x < 4.0 || x > 22046.0) continue;               /* at the wrap */
+                if (fabs((double)w[at] - (1.0 + x)) > 1.5) bad++;
+            }
+            HX_ASSERT(bad == 0, "a Free render does not start at the Offset");
+            for (i = 22060; i < frames; i++) if (w[i]) { bad++; break; }
+            HX_ASSERT(bad == 0, "a Free Shot render sounds past its one pass");
+        }
+        free(w);
+        hx_set_param(h, "t4_au_set_rot", "0 0");
+        hx_set_param(h, "t4_au_set_shot", "0 0");
         /* FREE on Warp: still sounding past where a fitted loop would stop */
         hx_set_param(h, "t4_au_set_sync", "0 0");
         HX_ASSERT(hx_get_param(h, "t4_c0_au_export", b, sizeof b) > 0 && b[0] == 'R', "a Free Warp clip was not rendered");

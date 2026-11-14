@@ -858,13 +858,23 @@ static long au_export_loop(seq8_instance_t *inst, int t, int c, uint32_t len, do
     uint32_t k, frame = 0;
     int bad = 0;
     if (cl->freerun) {
+        /* from the Offset less the Nudge (au_free_ph0); a Shot: one pass, then silence */
+        uint32_t heard = nout;
         if (cl->sync == AU_SYNC_PITCH) {
-            au_free_start(&trk, cl, s, c, rs, re, au_free_step(cl, s, 0), 0);
-            au_xrender(&trk, f, &frame, nout, 0);
+            double st = au_free_step(cl, s, 0);
+            if (cl->shot && st > 0 && R / st < (double)heard) heard = (uint32_t)(R / st + 0.5);
+            au_free_start(&trk, cl, s, c, rs, re, st, 0, au_free_ph0(cl, s, rs, re, len, st * 44100.0));
+            au_xrender(&trk, f, &frame, heard, 0);
         } else {
             double Pf = R * 44100.0 / (au_free_speed(cl) * (double)s->rate * fpt);
-            bad = au_xwarp(f, s, rs, re, au_revrs(cl), Pf, Pf, 0.0, 0.0, fpt,
-                           au_tune(au_pitch(cl), au_detune(cl)), au_gain(cl), 0.0, nout) < 0;
+            double ph0 = au_free_ph0(cl, s, rs, re, len, au_free_speed(cl) * (double)s->rate);
+            if (cl->shot && Pf * fpt < (double)heard) heard = (uint32_t)(Pf * fpt + 0.5);
+            bad = au_xwarp(f, s, rs, re, au_revrs(cl), Pf, Pf, au_wrap(-ph0 * Pf, Pf), 0.0, fpt,
+                           au_tune(au_pitch(cl), au_detune(cl)), au_gain(cl), 0.0, heard) < 0;
+        }
+        {   static const int16_t z[2 * 256] = { 0 };
+            uint32_t left = nout - heard;
+            while (left) { uint32_t m = left > 256 ? 256 : left; fwrite(z, sizeof(int16_t) * 2, m, f); left -= m; }
         }
     } else if (cl->sync == AU_SYNC_WARP && !rpp->rmx_on) {
         /* Warp with an End or Bars: the live stretcher's map, its second pass */
@@ -1099,6 +1109,11 @@ static void au_render(seq8_instance_t *inst, int frames) {
                 double R = (double)(re - rs), sp = au_free_speed(cl);
                 /* the region in ticks of this clock at Speed (rpt / fpt = sp x rate / 44.1k) */
                 double P = R * 44100.0 / (sp * (double)s->rate * fpt);
+                uint32_t ftps = lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
+                uint32_t fL = (uint32_t)lc->length * ftps;
+                double st = au_free_step(cl, s, at->cond);
+                /* how much of one pass this block plays (Tape: its speed has the pitch in it) */
+                double adv = tape ? (R > 0 ? (double)frames * st / R : 0) : (P > 0 ? (double)frames / (fpt * P) : 0);
                 if (at->sync_on) { au_release_chops(at); at->sync_on = 0; }
                 if (au_cond_at_once(inst, t) || !at->free_on) at->cond = (int8_t)au_cond_now(inst, t);
                 if (re <= rs + 32 || !(P > 0)) {
@@ -1110,28 +1125,43 @@ static void au_render(seq8_instance_t *inst, int frames) {
                     if (ticked) {                       /* the launch tick: from here on its own */
                         at->free_on = 1;
                         at->loop_clip = (uint8_t)c;
-                        if (tape) au_free_start(at, cl, s, c, rs, re, au_free_step(cl, s, at->cond), inst->au_last_tick_off);
-                        else {
+                        if (tape) {
+                            double ph0 = au_free_ph0(cl, s, rs, re, fL, st * 44100.0);
+                            uint32_t wait = inst->au_last_tick_off;
+                            au_free_start(at, cl, s, c, rs, re, st, wait, ph0);
+                            at->free_left = 1.0 + (double)wait * st / R - adv;
+                        } else {
                             /* the stretcher starts AU_WARP_LEAD ahead of its
                              * clock: the clock starts that far before the
                              * region, so its first frame is heard, that late */
-                            at->free_ph = au_wrap(-AU_WARP_LEAD / (fpt * P), 1.0);
+                            double ph0 = au_free_ph0(cl, s, rs, re, fL, sp * (double)s->rate);
+                            at->free_ph = au_wrap(ph0 - AU_WARP_LEAD / (fpt * P), 1.0);
+                            at->free_left = 1.0 + AU_WARP_LEAD / (fpt * P) - adv;
                             at->w.tick = at->free_ph * P;
                             au_warp_block(inst, t, c, P, fpt, 1, 1, 1);
-                            at->free_ph = au_wrap(at->free_ph + (double)frames / (fpt * P), 1.0);
+                            at->free_ph = au_wrap(at->free_ph + adv, 1.0);
                         }
                     }
                 } else if (tape) {
                     au_warp_off(inst, t);
                     if (lv) {                           /* Speed, Pitch, Detune at once */
-                        double st = au_free_step(cl, s, at->cond);
                         lv->step = lv->step < 0 ? -st : st;
-                    } else au_free_start(at, cl, s, c, rs, re, au_free_step(cl, s, at->cond), 0);   /* lost to a kill: on again */
+                    } else if (!cl->shot) au_free_start(at, cl, s, c, rs, re, st, 0,
+                                                        au_free_ph0(cl, s, rs, re, fL, st * 44100.0));   /* lost to a kill: on again */
+                    at->free_left -= adv;
                 } else {
                     if (lv) au_voice_release(lv, 64);
                     at->w.tick = at->free_ph * P;
                     au_warp_block(inst, t, c, P, fpt, 1, ticked, 1);
-                    at->free_ph = au_wrap(at->free_ph + (double)frames / (fpt * P), 1.0);
+                    at->free_ph = au_wrap(at->free_ph + adv, 1.0);
+                    at->free_left -= adv;
+                }
+                /* Free + Shot: one pass of Start..End from the launch, then the
+                 * clip stops, as a Shot on the grid does at its end (Josh,
+                 * 2026-11-14: Free "should be available in both loop and one shot") */
+                if (cl->shot && at->free_on && at->free_left <= 0) {
+                    tr->clip_playing = 0;
+                    silence_track_notes_v2(inst, tr);
                 }
                 at->last_tick = -1;
             } else if (run) {
@@ -1741,8 +1771,7 @@ static int sp_track_audio(sp_ctx_t *cx) {
         } else if (slot && !strcmp(w, "shot")) {
             return 1;                                            /* an Audio clip's: a Slicer's clips are sequences */
         } else if (!strcmp(w, "shot")) {
-            cl->shot = (uint8_t)(v ? 1 : 0);
-            if (v) cl->freerun = 0;                              /* one Mode: Loop, Shot or Free */
+            cl->shot = (uint8_t)(v ? 1 : 0);                     /* Loop or Shot; Free is Sync's, either way */
         } else if (slot && (!strcmp(w, "free") || !strcmp(w, "speed"))) {
             return 1;                                            /* an Audio clip's */
         } else if (!strcmp(w, "free")) {
@@ -1755,7 +1784,6 @@ static int sp_track_audio(sp_ctx_t *cx) {
                 inst->au_trk[tidx].last_tick = -1;
             }
             cl->freerun = (uint8_t)(v ? 1 : 0);
-            if (v) cl->shot = 0;
         } else if (!strcmp(w, "speed")) {
             v = clamp_i(v, AU_SPEED_MIN, AU_SPEED_MAX);
             cl->speed_pm = (uint16_t)(v == 1000 ? 0 : v);

@@ -75,7 +75,7 @@ import { sessStripTargets } from './ui_engine.mjs';
 import { registerRingCells, knobRingNorm } from './ui_knob_leds.mjs';
 import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
 import { isSampledTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
-         auPos, auLazyState, auSelSlice, auSampleP2Cells, AU_P2_TEMPO, AU_P2_BARS, AU_P2_REVRS, AU_P2_OFFSET, auOffsetText, auClipWaveKnob, bankAutoTarget, AU_CLIP_TEMPO, AU_CLIP_BARS, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells, rmxBankCells, rmxPresetLongName, rmxOrderMoved, RMX_CHOPS, rmxChopIndex, knobAltOnTrack, auAltBit,
+         auPos, auLazyState, auSelSlice, auSampleP2Cells, AU_P2_TEMPO, AU_P2_BARS, AU_P2_OFFSET, auOffsetText, auClipWaveKnob, bankAutoTarget, auSamplePageCells, auSampleFieldCell, auSampleWaveKnob, AU_SAMPLE_PAGES, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells, rmxBankCells, rmxPresetLongName, rmxOrderMoved, RMX_CHOPS, rmxChopIndex, knobAltOnTrack, auAltBit,
          auPadModeCells, AU_NOTE_BASE,
          auFmtTime, auEnd, auPlayedEnd, auBpm, auFpt, auLenTicks, auOffsetFrame, auIsFree, auSpeedText, auBarsText, auBarsOf, isSlicerTrack, auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
 import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
@@ -102,7 +102,7 @@ function drawAudioWave(t, c, x, y, w, h, opts) {
      * waveform (Josh, 2026-11-13: "offset shouldn't reorder the wave in
      * track overview"; it rotated since 2026-10-30) — it is the point the
      * clip plays from, marked and rested on by the playhead (below) */
-    const ofr = o.clipTime ? auOffsetFrame(t, c, i) : -1;
+    const ofr = (o.clipTime || o.offset || o.restAt) ? auOffsetFrame(t, c, i) : -1;
     /* a view running past the file's end (SAMPLE's clip window when the Length
      * outlasts the sample) is empty there: only the columns inside are read —
      * and in the clip's time, past a Loop clip's End too (silent there) */
@@ -302,7 +302,7 @@ function hudSampleKnobs(ed, i, sub, kind, sl) {
     let rest;
     if (ed.mode === 'trim') rest = [B, B, B, B, B];
     else if (sl && !kind) { const pc = auPanelCells({ t, page: S.shiftHeld ? 0 : 1 }); rest = [pc[3], pc[4], pc[5], pc[6], pc[7]].map((x) => x || B); }
-    else { const p2 = auSampleP2Cells(t, c); rest = [sub === 'loop' ? p2[AU_P2_OFFSET] || B : B, p2[1], p2[2], p2[4], p2[3]]; }
+    else rest = [sub === 'loop' ? auSampleFieldCell(t, c, 'offset') : B].concat(['pitch', 'detune', 'tempo', 'gain'].map((f) => auSampleFieldCell(t, c, f)));
     kitHudTap('KitCells', { cells: [k1, zoomCell, k3].concat(rest), touched: S.knobTouched });
 }
 /* SAMPLE's page 2 is a knob page on the OLED; the Screen view keeps the
@@ -324,8 +324,8 @@ function drawAudioTrackRest(t) {
     /* a Loop clip says its sample's Tempo too (Josh, 2026-10-29: "LOOP 112") */
     const bpm = auBpm(i);
     const head = auIsSlice(i) ? 'Slice ' + (auSelSlice(t) + 1) + '/' + i.n + '  '
-        : auIsFree(i) ? 'Free ' + auSpeedText(i.speed) + '  '
-        : (i.shot ? 'Shot ' : 'Loop ') + (bpm ? (Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) + '  ' : ' ');   /* Shot says so (Josh, 2026-11-13) */
+        : (i.shot ? 'Shot ' : 'Loop ') + (auIsFree(i) ? 'Free ' + auSpeedText(i.speed) + '  '      /* Shot says so (Josh, 2026-11-13) */
+                                          : bpm ? (Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) + '  ' : ' ');
     ovwPrint(4, 9, head + auSampleName(t, c), 1);
     kitHudTap('Info', { left: head.trim() + ' · ' + auSampleName(t, c) });
     drawInfoRow2();
@@ -347,7 +347,7 @@ function drawAudioTrackRest(t) {
         /* (Free: Start..End, no beats — its own loop) */
         const free = auIsFree(i);
         const lo = i.rstart | 0, hi = free ? auPlayedEnd(t, c, i) : Math.round(lo + auLenTicks(t, c, i) * auFpt(i));
-        drawAudioWave(t, c, 4, 49, 120, 6, { noMarks: true, clipTime: !free, A: lo, B: Math.max(lo + 1, hi),   /* Josh, 2026-10-28: "no need to show slice points on the track overview waveform preview" */
+        drawAudioWave(t, c, 4, 49, 120, 6, { noMarks: true, clipTime: !free, restAt: free, A: lo, B: Math.max(lo + 1, hi),   /* Josh, 2026-10-28: "no need to show slice points on the track overview waveform preview" */
                                              beats: free ? null : { origin: lo, fpb: 96 * auFpt(i), compact: true } });
     }
 }
@@ -398,7 +398,7 @@ function drawAudioWaveEditor() {
     /* K2 Zoom, K4 Offset, K5 Pitch, K6 Detune, K7 the sample's Tempo, K8
      * Gain: what the knob in hand is doing */
     const bpm = auBpm(i);
-    const offOn = auWaveSub(ed) === 'loop' && !auIsFree(i) && !isSlicerTrack(t);
+    const offOn = auWaveSub(ed) === 'loop' && !isSlicerTrack(t);
     const zoomTxt = S.knobTouched === 1 ? 'ZOOM' + (ed.zoomDir > 0 ? ' +' : ed.zoomDir < 0 ? ' -' : '')
         : S.knobTouched === 3 && offOn ? 'OFFSET ' + auOffsetText(t, c, i)
         : S.knobTouched === 4 ? 'PITCH ' + sgn(i.pitch | 0)
@@ -462,27 +462,31 @@ function drawAudioWaveEditor() {
         if (S.knobTouched < 0) drawBankHeading(auPanelTitle(ped), false, false, '2/2');
         return;
     }
-    if (plain && ed.page === 1) {
+    if (plain && (ed.page | 0) >= 1) {
+        /* SAMPLE's pages after the waveform: 2 TIME, 3 SOUND (Josh,
+         * 2026-11-14; auPageFields) */
+        const pg = ed.page | 0, cells = auSamplePageCells(t, c, pg);
         hudSampleWave(ed, i, sub === 'loop' ? { noMarks: true } : { faint: true });
-        const p2 = auSampleP2Cells(t, c);
-        drawKitPage(auSampleName(t, c), p2, false,
-                    S.knobTouched === AU_P2_TEMPO && !auIsFree(i) ? [['clk', 'tempo']] : [['jog', 'page']]);
+        drawKitPage(pg === 1 ? 'TIME' : 'SOUND', cells, false,
+                    pg === 1 && S.knobTouched === AU_P2_TEMPO && !auIsFree(i) ? [['clk', 'tempo']] : [['jog', 'page']]);
         /* Tempo and Bars framed together: the sample's own (Josh, 2026-11-13:
          * "they should both be in a shatter box or something that indicates
          * this is the original samples bars/tempo") */
-        if (p2[AU_P2_BARS] && p2[AU_P2_BARS].kind !== 'blank') {
+        if (pg === 1 && !cells[AU_P2_BARS].na && !cells[AU_P2_TEMPO].na) {
             const hold = i.span > 0 ? AU_P2_BARS : AU_P2_TEMPO;
             /* the label as the kit draws it: a touched cell's shows its value */
-            const hc = p2[hold];
+            const hc = cells[hold];
             drawSampleOwnFrame(AU_P2_TEMPO, 2, hold, hc && (S.knobTouched === hold && hc.text != null ? hc.text : hc.label));
         }
-        if (S.knobTouched < 0) drawBankHeading(auSampleName(t, c), false, false, '2/2');
+        if (S.knobTouched < 0) drawBankHeading(pg === 1 ? 'TIME' : 'SOUND', false, false, (pg + 1) + '/' + AU_SAMPLE_PAGES);
+        /* a knob that moves the waveform shows it while touched */
+        if (S.knobTouched >= 0 && auSampleWaveKnob(t, c, pg, S.knobTouched)) drawClipWaveCard(t, c, cells[S.knobTouched]);
         return;
     }
     if (sub === 'loop') {
         /* the sample's name (Josh, 2026-10-28: "in loop mode, can we show the
          * sample name in the header of "sample" instead of "loop"") */
-        drawBankHeading(auSampleName(t, c), false, false, '1/2');
+        drawBankHeading(auSampleName(t, c), false, false, '1/' + AU_SAMPLE_PAGES);
         /* End reads as End alone — a time, or OFF (Josh, 2026-11-13: "i still
          * don't get end having a bars readout") */
         ends('S ' + auFmtTime(i.rstart, rt), i.cut > 0 ? 'E ' + auFmtTime(auEnd(i), rt) : 'E OFF');
@@ -491,7 +495,7 @@ function drawAudioWaveEditor() {
          * should just be completely invisible in loop mode") */
         /* Free: Start..End alone, no beats — it keeps no clip's time */
         const free = auIsFree(i);
-        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, gain: i.gain | 0, noMarks: true, clipTime: !free, edges: true, offset: !free,
+        drawAudioWave(t, c, 0, 20, 128, 30, { A: ed.A, B: ed.B, gain: i.gain | 0, noMarks: true, clipTime: !free, edges: true, offset: true,
                                               beats: free ? null : { origin: i.rstart, fpb: 96 * auFpt(i) } });
         hudSampleKnobs(ed, i, sub, null, false);
         /* touch Tempo: a click opens its menu (Fit to clip · Original tempo) */
@@ -517,7 +521,7 @@ function drawAudioWaveEditor() {
     }
     if (kind === 'manual') drawBankHeading('SLICE ' + (sel + 1) + '/' + mk.length, false);
     else if (sl) drawBankHeading('SLICE ' + (sel + 1) + '/' + mk.length, false, false, '1/2');
-    else drawBankHeading(auSampleName(t, c), false, false, '1/2');
+    else drawBankHeading(auSampleName(t, c), false, false, '1/' + AU_SAMPLE_PAGES);
     if (kind === 'manual') {
         const m = mk[sel];
         if (m) {
@@ -614,24 +618,17 @@ function drawRemixCard(cells) {
     fontPrint4x5(Math.round(B.x + (B.w - fontWidth4x5(line)) / 2), base + 4, line, 1);
 }
 
-/* An Audio clip's CLIP bank: Tempo and Bars framed together, the sample's
- * own, the one that holds marked (as SAMPLE's page 2 has them) */
-function drawClipTempoFrame(cells) {
-    const tc = cells[AU_CLIP_TEMPO], bc = cells[AU_CLIP_BARS];
-    if (!tc || !bc || tc.kind === 'blank' || bc.kind === 'blank') return;
-    const i = auInfo(S.activeTrack, auClipOf(S.activeTrack));
-    const hold = i.span > 0 ? AU_CLIP_BARS : AU_CLIP_TEMPO, hc = cells[hold];
-    drawSampleOwnFrame(AU_CLIP_TEMPO, 2, hold, hc && (S.knobTouched === hold && hc.text != null ? hc.text : hc.label));
-}
-/* THE WAVEFORM CARD: a CLIP bank knob that moves the waveform — Strch,
- * Offset, Tempo, Bars — shows it while touched (Josh, 2026-11-13: "i'd like
- * to be able to see what i'm editing on the waveform where it changes how the
- * waveform displays or the info on it, including offset, tempo, bars"): the
- * REMIX card's box, the knob and its value on its strip, the clip's window as
- * SAMPLE shows it — Start and End lines, the audio outside them dotted, the
- * Offset arrow, the beats — and the Tempo and Bars under it. */
-function drawClipWaveCard(cells) {
-    const t = S.activeTrack, c = auClipOf(t), i = auInfo(t, c), cell = cells[S.knobTouched];
+/* THE WAVEFORM CARD: a knob that moves the waveform — CLIP's Strch, TIME's
+ * Offset, Tempo and Bars — shows it while touched (Josh, 2026-11-13: "i'd
+ * like to be able to see what i'm editing on the waveform where it changes how
+ * the waveform displays or the info on it, including offset, tempo, bars";
+ * 2026-11-14: on the pages after the waveform, "a waveform visual popup like
+ * the one you just built"): the REMIX card's box, the knob and its value on
+ * its strip, the clip's window as SAMPLE shows it — Start and End lines, the
+ * audio outside them dotted, the Offset arrow, the beats — and the Tempo and
+ * Bars under it. A Free clip: Start..End alone, its Speed under it. */
+function drawClipWaveCard(t, c, cell) {
+    const i = auInfo(t, c), free = auIsFree(i);
     const B = kitStackBox(1);
     drawKitBackdropDim();
     fill_rect(B.x, B.y, B.w, B.h, 0);
@@ -643,13 +640,15 @@ function drawClipWaveCard(cells) {
         fontPrint4x5(B.x + 4, B.y + 3, fit4x5(name, B.w - vw - 14), 0);
         fontPrint4x5(B.x + B.w - 4 - vw, B.y + 3, val, 0);
     }
-    const lo = i.rstart | 0, hi = Math.max(lo + 128, Math.round(lo + auLenTicks(t, c, i) * auFpt(i)));
+    const lo = i.rstart | 0;
+    const hi = Math.max(lo + 128, free ? auPlayedEnd(t, c, i) : Math.round(lo + auLenTicks(t, c, i) * auFpt(i)));
     const wy = B.y + 12, wh = B.h - 23;
-    drawAudioWave(t, c, B.x + 2, wy, B.w - 4, wh, { A: lo, B: hi, gain: i.gain | 0, noMarks: true, clipTime: true, edges: true, offset: true,
-                                                    beats: { origin: lo, fpb: 96 * auFpt(i), compact: true } });
+    drawAudioWave(t, c, B.x + 2, wy, B.w - 4, wh, { A: lo, B: hi, gain: i.gain | 0, noMarks: true, clipTime: !free, edges: true, offset: true,
+                                                    beats: free ? null : { origin: lo, fpb: 96 * auFpt(i), compact: true } });
     const bpm = auBpm(i);
     const bars = auBarsText(auBarsOf(i));
-    const line = fit4x5((bpm ? (Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) : '--') + ' BPM   ' + bars + (bars === '1' ? ' BAR' : ' BARS'), B.w - 6);
+    const line = fit4x5(free ? 'SPEED ' + auSpeedText(i.speed)
+        : (bpm ? (Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) : '--') + ' BPM   ' + bars + (bars === '1' ? ' BAR' : ' BARS'), B.w - 6);
     fontPrint4x5(Math.round(B.x + (B.w - fontWidth4x5(line)) / 2), B.y + B.h - 7, line, 1);
     kitHudTap('Message', { big: cell ? (cell.name || cell.label) + ' ' + (cell.text || '') : '', lines: [line] });
 }
@@ -3542,8 +3541,8 @@ function drawUIBody() {
         }
         drawKitPage(bankHeaderName(S.activeTrack, bank), audioBankCells(bank, markKnobAlts(cells, bank)), false, bankPageHints(bank), _focusIdx);
         if (bank === BANK_REMIX && S.knobTouched >= 0 && S.rmxCard && isSampledTrack(S.activeTrack)) drawRemixCard(audioBankCells(bank, cells));
-        if (bank === 0 && isSampledTrack(S.activeTrack) && !audioSliceMode(S.activeTrack)) drawClipTempoFrame(audioBankCells(bank, cells));
-        if (bank === 0 && S.knobTouched >= 0 && auClipWaveKnob(S.activeTrack, S.knobTouched)) drawClipWaveCard(audioBankCells(bank, cells));
+        if (bank === 0 && S.knobTouched >= 0 && auClipWaveKnob(S.activeTrack, S.knobTouched))
+            drawClipWaveCard(S.activeTrack, auClipOf(S.activeTrack), audioBankCells(bank, cells)[S.knobTouched]);
         }
 
     } else if (isSampledTrack(S.activeTrack)) {
