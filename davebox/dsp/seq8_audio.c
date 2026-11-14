@@ -2729,8 +2729,8 @@ static au_voice_t *au_range_on(seq8_instance_t *inst, int t, int c, int slice, u
                           sync ? 1.0 : au_slc_speed(cl, bpm));
 }
 
-/* The same, into any track's voices from any copy of the sample: the export
- * renders a Slice clip into a private track (au_export_slice). */
+/* The same, into a track's voices from a given sample (REMIX's pieces pass
+ * their own track and speed). */
 static au_voice_t *au_range_on_in(au_track_t *at, const au_sample_t *s, int cs, au_clip_t *cl, int c,
                                   int slice, uint32_t a, uint32_t b, float vgain, uint32_t off, int sync, double vk) {
     int i;
@@ -2886,8 +2886,7 @@ static void au_loop_start(seq8_instance_t *inst, int t, int c, double off, doubl
     au_loop_start_in(&inst->au_trk[t], cl, cl->smp, c, off, rate, rev);
 }
 
-/* The same, into any track's voices from any copy of the sample: the export
- * renders a Loop clip into a private track (au_export_loop). */
+/* The same, into a track's voices from a given sample. */
 static void au_loop_start_in(au_track_t *at, au_clip_t *cl, const au_sample_t *s, int c, double off, double rate, int rev) {
     int i;
     uint32_t rs, re;
@@ -3040,176 +3039,6 @@ static uint32_t au_voice_render(au_voice_t *v, int32_t *acc, int frames) {
         v->age++;
     }
     return missed;
-}
-
-/* ---------------- Export: a Slice clip rendered offline ---------------- */
-
-/* A note of the clip as it plays (the export's render): its tick, its gate in
- * ticks, and the chop it plays. */
-typedef struct { uint32_t tick, gate; int16_t slice; uint8_t xrev, xsemi, xstart, xlen; } au_xnote_t;
-
-static int au_xnote_cmp(const void *x, const void *y) {
-    const au_xnote_t *a = x, *b = y;
-    return a->tick < b->tick ? -1 : a->tick > b->tick;
-}
-
-/* Render private track `trk` from *frame up to `next`, writing what falls
- * at or after f0 (the kept pass) to f as 16-bit stereo. */
-static void au_xrender(au_track_t *trk, FILE *f, uint32_t *frame, uint32_t next, uint32_t f0) {
-    static int32_t acc[2 * 4096];
-    static int16_t pcm[2 * 4096];
-    while (*frame < next) {
-        int len = (int)(next - *frame > 4096 ? 4096 : next - *frame), j;
-        memset(acc, 0, sizeof(int32_t) * 2 * (size_t)len);
-        for (j = 0; j < AU_VOICES; j++) if (trk->v[j].active) au_voice_render(&trk->v[j], acc, len);
-        if (*frame + (uint32_t)len > f0) {
-            int from = *frame >= f0 ? 0 : (int)(f0 - *frame);
-            for (j = from * 2; j < len * 2; j++)
-                pcm[j] = (int16_t)(acc[j] > 32767 ? 32767 : acc[j] < -32768 ? -32768 : acc[j]);
-            fwrite(pcm + from * 2, sizeof(int16_t) * 2, (size_t)(len - from), f);
-        }
-        *frame += (uint32_t)len;
-    }
-}
-
-/* Offline: what the stretcher plays for the clock's ticks [t0, t0 + n / fpt)
- * on the live map (au_warp_frame: Start..End lasting P ticks inside a loop of
- * L, after Shift and Nudge, Revrs) — the export's Warp renders: a Loop clip
- * with an End or Bars, and a Free one (au_export_loop). n stereo frames at
- * gain_db to f. It makes a stretcher, so it allocates: an export's, never the
- * audio thread's live path. Returns 0, or -1. */
-static int au_xwarp(FILE *f, const au_sample_t *s, uint32_t rs, uint32_t re, int revrs, double P, double L,
-                    double rot, double nud, double fpt, double pitch, int gain_db, double t0, uint32_t n) {
-    static au_warp_t W;                       /* only its map (cur, rpt) is read */
-    static au_warper_t X;                     /* only its underrun count */
-    static int16_t pcm[2 * 4096];
-    au_st_t *st;
-    float *in;
-    int cap, np = 0;
-    long guard = 0;
-    uint32_t written = 0;
-    double sp, v0, g = (double)au_db(gain_db) * 32767.0;
-    if (!s || re <= rs || !(P > 0) || !(L > 0) || !(fpt > 0) || !(pitch > 0)) return -1;
-    memset(&W.cur, 0, sizeof W.cur);
-    W.cur.smp = s; W.cur.rs = rs; W.cur.re = re; W.cur.P = P; W.cur.L = L; W.cur.fpt = fpt;
-    W.cur.rot = rot; W.cur.nud = nud; W.cur.pitch = pitch; W.cur.Lp = L; W.cur.dir = (uint8_t)(revrs ? AU_DIR_BWD : AU_DIR_FWD);
-    W.rpt = (double)(re - rs) / P;
-    sp = W.rpt * 44100.0 / ((double)s->rate * fpt);
-    st = au_st_create((int)s->rate, 44100, s->ch > 1 ? 2 : 1);
-    if (!st) return -1;
-    cap = au_st_max_input(st);
-    in = (float *)calloc((size_t)cap * 2, sizeof(float));
-    if (!in) { au_st_destroy(st); return -1; }
-    v0 = t0 * W.rpt;
-    au_st_reset(st, v0, sp, pitch);
-#define AU_XW_PUT(L_, R_) do { \
-        double l_ = (L_) * g, r_ = (R_) * g; \
-        pcm[np * 2]     = (int16_t)(l_ > 32767.0 ? 32767 : l_ < -32768.0 ? -32768 : (int)l_); \
-        pcm[np * 2 + 1] = (int16_t)(r_ > 32767.0 ? 32767 : r_ < -32768.0 ? -32768 : (int)r_); \
-        if (++np == 4096) { fwrite(pcm, sizeof(int16_t) * 2, (size_t)np, f); np = 0; } \
-        written++; } while (0)
-    while (written < n && guard++ < 4000000L) {
-        const float *ol, *or_;
-        double p0, p1;
-        int b, e, i, k;
-        au_st_want(st, sp, pitch, &b, &e);
-        if (e - b > cap) e = b + cap;
-        for (i = 0; i < e - b; i++) au_warp_frame(&X, &W, (double)(b + i), &in[i], &in[cap + i]);
-        k = au_st_grain(st, in, cap, &ol, &or_, &p0, &p1);
-        if (k <= 0 || p0 != p0 || p1 != p1 || p1 < p0) continue;   /* still filling after the reset */
-        for (i = 0; i < k && written < n; i++) {
-            double at = ((p0 + (p1 - p0) * i / k) - v0) / sp;      /* the output frame it belongs at */
-            if (at < (double)written - 0.5) continue;              /* the preroll, before t0 */
-            while ((double)written + 0.5 < at && written < n) AU_XW_PUT(0.0, 0.0);
-            if (written >= n) break;
-            AU_XW_PUT(ol[i], or_[i]);
-        }
-    }
-    while (written < n) AU_XW_PUT(0.0, 0.0);
-#undef AU_XW_PUT
-    if (np) fwrite(pcm, sizeof(int16_t) * 2, (size_t)np, f);
-    free(in);
-    au_st_destroy(st);
-    return 0;
-}
-
-/* The sample a render reads: the clip's own, or — streamed — the whole file,
- * read for the render (*own: to free after). NULL: none. */
-static const au_sample_t *au_xsample(seq8_instance_t *inst, au_clip_t *cl, au_sample_t **own) {
-    const au_sample_t *s = cl->smp;
-    *own = NULL;
-    if (!s || s->pcm) return s;
-    char dir[512], file[700];
-    int err = 0;
-    au_samples_dir(inst, dir, sizeof dir);
-    snprintf(file, sizeof file, "%s/%s", dir, cl->name);
-    *own = au_read_file(file, 0, &err);
-    if (!*own || !(*own)->pcm) { au_sample_free(*own); *own = NULL; return NULL; }
-    return *own;
-}
-
-/* Clip (t,c)'s Slice sequence as audio, for the Ableton export (Josh,
- * 2026-10-31: "render slice clips to audio"): the notes `xn` (sorted here)
- * over `span` ticks at `bpm`, played through the engine's own chop voices
- * into a PRIVATE track — the live track's voices are never touched — and
- * written to `path` as a 44.1 kHz 16-bit stereo WAV one cycle long. The
- * sequence plays twice and the second cycle is kept, so a chop sounding over
- * the loop point is heard at the start as it is when the clip comes round.
- * Left out: the Conductor and the DELAY echoes' fade (every chop at full
- * level). A streamed sample is read whole for the render and freed after.
- * Returns the frames written, or -1. */
-static long au_export_slice(seq8_instance_t *inst, int t, int c, au_xnote_t *xn, int n,
-                            uint32_t span, double bpm, const char *path) {
-    au_clip_t *cl = au_cl(inst, t, c);
-    au_sample_t *own = NULL;
-    static au_track_t trk;
-    uint8_t h[44];
-    if (!cl->smp || cl->mode != AU_MODE_SLICE || !span || bpm <= 0 || n < 0) return -1;
-    const au_sample_t *s = au_xsample(inst, cl, &own);
-    if (!s) return -1;
-    au_trans_settle(cl);
-    if (n > 1) qsort(xn, (size_t)n, sizeof *xn, au_xnote_cmp);
-    double fpt = 44100.0 * 60.0 / (bpm * (double)PPQN);
-    uint32_t f0 = (uint32_t)((double)span * fpt + 0.5), total = (uint32_t)((double)span * 2 * fpt + 0.5);
-    FILE *f = fopen(path, "wb");
-    if (!f) { au_sample_free(own); return -1; }
-    au_wav_header(h, total - f0, 44100, 2);
-    fwrite(h, 1, sizeof h, f);
-    memset(&trk, 0, sizeof trk);
-    uint32_t k, frame = 0;
-    int on = 0, i;
-    for (k = 0; k < span * 2; k++) {
-        uint32_t tick = k % span;
-        if (tick == 0 && k) on = 0;
-        /* the gates that end on this tick first (a note of either pass),
-         * then what starts on it */
-        for (i = 0; i < n; i++) {
-            uint32_t end = xn[i].tick + xn[i].gate;
-            if (end != k && end + span != k) continue;
-            int v;
-            for (v = 0; v < AU_VOICES; v++) {
-                au_voice_t *vo = &trk.v[v];
-                if (vo->active && vo->gated && vo->slice == xn[i].slice && !vo->rel_len)
-                    au_voice_release_at(vo, 220, 0);
-            }
-        }
-        while (on < n && xn[on].tick < tick) on++;
-        for (; on < n && xn[on].tick == tick; on++) {
-            uint32_t a, b;
-            if (au_slice_range(cl, s, xn[on].slice, &a, &b)) {
-                /* the step's own sound, as the live hit (au_note_event) */
-                au_rmx_rev = xn[on].xrev; au_rmx_semi = (int8_t)xn[on].xsemi;
-                au_win_start = xn[on].xstart; au_win_len = xn[on].xlen;
-                au_range_on_in(&trk, s, 0, cl, c, xn[on].slice, a, b, 1.0f, 0, 0, au_slc_speed(cl, bpm));
-                au_rmx_rev = 0; au_rmx_semi = 0; au_win_start = 0; au_win_len = 0;
-            }
-        }
-        au_xrender(&trk, f, &frame, (uint32_t)((double)(k + 1) * fpt + 0.5), f0);
-    }
-    int bad = ferror(f);
-    if (fclose(f) || bad) { au_sample_free(own); return -1; }
-    au_sample_free(own);
-    return (long)(total - f0);
 }
 
 /* ---------------- Lazy chop ---------------- */
