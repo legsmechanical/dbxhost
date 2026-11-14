@@ -1080,6 +1080,10 @@ export function auClipReset(t, c) {
  * offers Fwd and Bwd alone ("no sense in having those options when shot is
  * selected"), and a ping-pong set before shows as its first way. */
 export const AU_DIR_NAMES = ['Fwd', 'Bwd', 'PPf', 'PPb'];
+/* ...and as the MIDI clip's Dir widget lists them (ui_render KIT_DIR_NAMES):
+ * the cell is the same arrow square (Josh, 2026-11-14: "direction should show
+ * the arrows on the widget for consistency ... like on midi tracks") */
+const AU_DIR_FULL = ['Forward', 'Backward', 'Ping Pong', 'Rev Ping Pong'];
 export function auDirShown(i) { const d = i.dir | 0; return (i.shot && d >= 2) ? d - 2 : d; }
 /* the clip plays backwards now: the engine's word while it sounds (a
  * ping-pong's pass), else its first pass's way */
@@ -1419,8 +1423,8 @@ export function auLoopBankCells(t) {
     const msel = i.shot ? 1 : 0;
     const mode = { kind: 'enumsq', label: 'Mode', name: 'Mode', text: AU_MODE_NAMES[msel],
                    options: AU_MODE_NAMES, sel: msel };
-    const dsel = auDirShown(i), dopts = i.shot ? AU_DIR_NAMES.slice(0, 2) : AU_DIR_NAMES;
-    const dir = { kind: 'enumsq', label: 'Dir', name: 'Playback Dir', text: AU_DIR_NAMES[dsel], options: dopts, sel: dsel };
+    const dsel = auDirShown(i), dopts = i.shot ? AU_DIR_FULL.slice(0, 2) : AU_DIR_FULL;
+    const dir = { kind: 'dirsq', label: 'Dir', name: 'Playback Dir', text: AU_DIR_NAMES[dsel], options: dopts, sel: dsel };
     return [live(mode), live(strch), BLANK, BLANK, BLANK, BLANK, live(dir), BLANK];
 }
 /* ---- REMIX (Josh, 2026-11-10: "replacing midi effects banks on audio tracks

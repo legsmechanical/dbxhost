@@ -86,7 +86,8 @@ async function main() {
         assert(cells[0] && cells[0].label === 'Mode' && cells[0].text === 'Loop', 'K1 is not Mode Loop: ' + JSON.stringify(cells[0]));
         assert(cells[0].options.join() === 'Loop,Shot', 'Mode is not Loop · Shot (Free is SAMPLE\'s Sync now): ' + cells[0].options.join());
         assert(cells.map((x) => x.label || '').join() === 'Mode,Strch,,,,,Dir,', 'the CLIP bank: ' + cells.map((x) => x.label).join());
-        assert(cells[6].options.join() === 'Fwd,Bwd,PPf,PPb' && cells[6].text === 'Fwd', 'K7 Dir is not a MIDI clip\'s four: ' + JSON.stringify(cells[6]));
+        assert(cells[6].kind === 'dirsq' && cells[6].options.join() === 'Forward,Backward,Ping Pong,Rev Ping Pong' && cells[6].text === 'Fwd',
+               'K7 Dir is not a MIDI clip\'s arrow widget with its four: ' + JSON.stringify(cells[6]));
         assert(!A.knobAltOnTrack(T, 3, 0, 2), 'K3 has an alternate');
     });
 
@@ -113,7 +114,7 @@ async function main() {
         S.playing = false;
         dir = 2; shot = 1; info();
         let c6 = A.auLoopBankCells(T)[6];
-        assert(c6.options.join() === 'Fwd,Bwd' && c6.text === 'Fwd', 'a Shot\'s Dir is not Fwd · Bwd, PPf shown as Fwd: ' + JSON.stringify(c6));
+        assert(c6.options.join() === 'Forward,Backward' && c6.text === 'Fwd' && c6.sel === 0, 'a Shot\'s Dir is not Fwd · Bwd, PPf shown as Fwd: ' + JSON.stringify(c6));
         sets.length = 0; knob(6, 1, 30); ticks(1);
         assert(sets.filter(([k]) => k === 't' + T + '_au_set_dir').map(([, v]) => v).join() === '0 1', 'a Shot\'s K7 right did not go to Bwd: ' + JSON.stringify(sets));
         dir = 1; info();
