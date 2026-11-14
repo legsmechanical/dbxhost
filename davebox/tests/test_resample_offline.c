@@ -139,6 +139,7 @@ int main(void) {
 
     /* ---- real time: a scene (the whole mix), and said so ---- */
     b = hx_stub_ot_begins();
+    inst->resample_rt_why = 0;                          /* (Wet just above said the same) */
     hx_set_param(h, "resample_scene", "0 1 0 0 |/x/scene.wav");
     HX_ASSERT(hx_stub_ot_begins() == b && inst->resample_rt_why == RS_RT_MIX, "a scene take: not the whole mix's reason");
     hx_set_param(h, "transport", "stop");
