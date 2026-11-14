@@ -19,7 +19,12 @@
  * (MOVE_CAPTURE_SLOT, the slot's Dry stem: mute and solo ignored, as a
  * one-slot take ignores them live). What the copy sends reaches the instrument as the
  * host would deliver it: the slot's channel remap and transpose, realtime as a
- * broadcast, a DIRECT send past both. The take's file is 16-bit stereo
+ * broadcast, a DIRECT send past both. The slot's playing MIDI FX are copied
+ * too and sit where the chain has them: what the copy sends and the clock
+ * pass through them on the way to the instrument (DIRECT past them), and their
+ * tick output reaches it each block before it renders (chain_midi.c). A Dry
+ * take's fader and pan follow the copy's slot:volume / slot:pan writes (its
+ * automation), gliding as the live mix does (mix_glide.h). The take's file is 16-bit stereo
  * 44.1 kHz, written as it renders; DONE once it is complete. */
 #ifndef OFFLINE_TAKE_H
 #define OFFLINE_TAKE_H
@@ -27,6 +32,7 @@
 #include <stdint.h>
 #include "plugin_api_v1.h"
 #include "slot_clone.h"
+#include "midi_fx_clone.h"
 
 /* The slot as the host sends to it, read at begin. */
 typedef struct {
@@ -34,13 +40,15 @@ typedef struct {
     int   transpose;        /* semitones (shadow_chain_apply_transpose) */
     int   fwd_ch;           /* the channel voice messages are remapped to, -1 = as sent */
     float volume;           /* the fader (a Dry take's level) */
-    float pan_l, pan_r;     /* the pan's gains (shadow_pan_gain_l / _r) */
+    float pan;              /* the pan, 0..1 balance (mix_pan_gain_l / _r) */
 } offline_slot_info_t;
 
 typedef struct {
     const host_api_v1_t *host;                 /* the live host API, the copies' starting point */
     void *(*slot_instance)(int slot);          /* the chain instance on a slot, NULL = none */
     chain_slot_clone_source_fn *clone_source;  /* the shim's resolved chain export */
+    chain_midi_fx_clone_source_fn *mfx_source; /* ...and its MIDI FX one (NULL: a playing MIDI FX
+                                                * refuses the take) */
     int  (*slot_info)(int slot, offline_slot_info_t *out);
     int  (*run_command)(const char *const argv[]);   /* mkdir / chown of the take */
     void (*log)(const char *msg);

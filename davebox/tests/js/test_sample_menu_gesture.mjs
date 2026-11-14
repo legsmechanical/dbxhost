@@ -175,6 +175,13 @@ step('⭐ the take: RESAMPLING by bar, as PRINTING is shown — then RESAMPLED o
     assert(JSON.stringify(S.actionPopupLines) === JSON.stringify(['RESAMPLING', 'Scene A, bar 3/6', 'Back cancels']),
            'progress: ' + JSON.stringify(S.actionPopupLines));
     assert(S.actionPopupGauge === -1, 'a gauge — the bar is for values you dial, not a running job');
+    /* the whole mix records as it plays, and says so (Josh, 2026-11-14: "reason is useful") */
+    S.resampleRtWhy = 10;
+    ticks(2);
+    assert(JSON.stringify(S.actionPopupLines) === JSON.stringify(['RESAMPLING', 'Scene A, bar 3/6', 'Real time:', 'The whole mix', 'Back cancels']),
+           'the reason is not said: ' + JSON.stringify(S.actionPopupLines));
+    S.resampleRtWhy = 0;
+    ticks(2);
     /* the surface is held, as a print holds it: buttons swallowed, Back cancels */
     S.pendingDefaultSetParams.length = 0; sets.length = 0;
     tap(HC.MovePlay); tap(C.MoveSample); tap(C.MoveCapture);

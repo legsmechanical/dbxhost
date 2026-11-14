@@ -1564,6 +1564,7 @@ typedef struct {
     uint8_t  resample_hear;       /* track + 1 an export take plays muted or not (0 = none) */
     uint16_t resample_tracks;     /* bit t: track t launched for this take (rs_relaunch_once) */
     uint8_t  resample_offline;    /* this take is the host's offline take (offline_take_*) */
+    uint8_t  resample_rt_why;     /* RS_RT_*: why this take records in real time (0: offline, or none) */
     uint8_t  resample_prev_clip[NUM_TRACKS], resample_prev_relaunch[NUM_TRACKS];
     /* AUDIO INPUT RECORDING (seq8_audio_rec.c): the Move's input into an
      * Audio clip, as a FEED take (move_host_ext_v1_t.capture_feed). Positions
@@ -9637,6 +9638,9 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
     /* OFFLINE print: why the last one did not run or failed (0 = it ran). */
     if (!strcmp(key, "resample_err"))
         return snprintf(out, out_len, "%d", (int)inst->resample_err);
+    /* why the take records in real time (RS_RT_*, 0 = offline or no take) */
+    if (!strcmp(key, "resample_rt_why"))
+        return snprintf(out, out_len, "%d", (int)inst->resample_rt_why);
     /* RS_*: the host's offline take reads its copy's (offline_take.c) */
     if (!strcmp(key, "resample_state"))
         return snprintf(out, out_len, "%d", (int)inst->resample_state);
@@ -10034,10 +10038,11 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
             const int on = inst->playing && vt->clip_playing && vt->pa_view_slot;
             pos += snprintf(out + pos, (size_t)(out_len - pos), " %d", on ? (int)vt->pa_view_lt : -1);
         }
-        /* [65..67] scene resample: state (RS_*), frames captured, take frames */
-        pos += snprintf(out + pos, (size_t)(out_len - pos), " %d %u %u",
+        /* [65..68] scene resample: state (RS_*), frames captured, take frames,
+         * why it records in real time (RS_RT_*, 0 = offline or none) */
+        pos += snprintf(out + pos, (size_t)(out_len - pos), " %d %u %u %d",
                         (int)inst->resample_state, (unsigned)inst->resample_done,
-                        (unsigned)inst->resample_frames);
+                        (unsigned)inst->resample_frames, (int)inst->resample_rt_why);
         return pos;
     }
 

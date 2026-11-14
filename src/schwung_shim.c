@@ -1783,8 +1783,7 @@ static int ot_slot_info(int slot, offline_slot_info_t *out) {
                                  shadow_chain_slots[slot].channel);
     out->fwd_ch = ch == SHADOW_FORWARD_THRU ? -1 : ch;
     out->volume = shadow_chain_slots[slot].volume;
-    out->pan_l = shadow_pan_gain_l(shadow_chain_slots[slot].pan);
-    out->pan_r = shadow_pan_gain_r(shadow_chain_slots[slot].pan);
+    out->pan = shadow_chain_slots[slot].pan;
     return 1;
 }
 
@@ -11178,6 +11177,7 @@ static void shim_spi_init(void)
             .host = &shadow_host_api,
             .slot_instance = mfo_slot_instance,
             .clone_source = &shadow_chain_slot_clone_source,
+            .mfx_source = &shadow_chain_midi_fx_clone_source,
             .slot_info = ot_slot_info,
             .run_command = shim_run_command,
             .log = shadow_log,

@@ -26,6 +26,7 @@ import { NUM_TRACKS, NUM_CLIPS, ACTION_POPUP_MS, PAD_MODE_CONDUCT, PAD_MODE_AUDI
 /* a cycle (ui_resample imports sanitizeName from here): used only inside
  * function bodies */
 import { RS_ERR_TEXT } from './ui_resample.mjs';
+import { rtLines } from './ui_constants.mjs';
 
 /* Our own module directory — where build.sh/build_sound.sh put pack.py and the
  * JSON templates. It MUST follow the build's module id: SA ships as
@@ -1150,6 +1151,16 @@ function exportTakesFail(...lines) {
 
 function takeName(k) { return (k.t + 1) + SCENE_LETTERS[k.c]; }
 
+/* The card while a take runs: which clip, how far (pct, -1: not yet), and why
+ * it records in real time (RS_RT_*). Drawn again only when one changes. */
+function exportTakeCard(f, k, pct, why) {
+    const head = 'Audio ' + takeName(k) + ', ' + (f.i + 1) + '/' + f.list.length + (pct >= 0 ? '  ' + pct + '%' : '');
+    const key = head + '|' + why;
+    if (key === f.shown) return;
+    f.shown = key;
+    showActionPopupFor(60000, 'EXPORTING', head, ...rtLines(why), 'Back cancels');
+}
+
 /* Every tick while S.exportFlatten is set (tick context: get_param works). */
 function pollExportFlatten() {
     const f = S.exportFlatten;
@@ -1188,8 +1199,8 @@ function pollExportFlatten() {
         if (st !== RS_IDLE || sampling() || S.playing) return;
         S.pendingDefaultSetParams.push({ key: 'export_take',
             val: k.t + ' ' + k.c + ' ' + k.ticks + ' ' + k.cond + ' |' + k.path });
-        Object.assign(f, { phase: 'run', sent: true, seen: false, stopSent: false, at: nowMs() });
-        showActionPopupFor(60000, 'EXPORTING', 'Audio ' + takeName(k) + ', ' + (f.i + 1) + '/' + f.list.length, 'Back cancels');
+        Object.assign(f, { phase: 'run', sent: true, seen: false, stopSent: false, at: nowMs(), shown: '' });
+        exportTakeCard(f, k, -1, 0);
         return;
     }
     if (st === RS_IDLE) {
@@ -1197,7 +1208,12 @@ function pollExportFlatten() {
         return;
     }
     f.seen = true;
-    if (st === RS_ARMED || st === RS_STARTING || st === RS_RECORDING) return;
+    if (st === RS_ARMED || st === RS_STARTING || st === RS_RECORDING) {
+        /* how far it is, and why it records in real time when it does */
+        const frames = S.resampleFrames >>> 0, done = S.resampleDone >>> 0;
+        exportTakeCard(f, k, st === RS_RECORDING && frames ? Math.min(99, Math.floor(done * 100 / frames)) : -1, S.resampleRtWhy | 0);
+        return;
+    }
     if (st === RS_DONE) {
         if (!f.stopSent) {
             f.stopSent = true;

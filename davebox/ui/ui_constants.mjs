@@ -974,3 +974,28 @@ export const STEP_ITER_LIST = (function() {
             L.push((cl << 4) | ci);
     return L;
 })();
+
+/* Why a take records in real time (the engine's RS_RT_*, state_snapshot [68]),
+ * said under what it records (Josh, 2026-11-14: "reason is useful"): a slow
+ * take among fast ones is otherwise a mystery, and the reason says what to
+ * change to make it fast. */
+export const RS_RT_TEXT = {
+    1: 'Modulation',
+    2: 'Line input',
+    3: 'Voices on buses',
+    4: 'MIDI FX to sequencer',
+    5: 'FX hears MIDI',
+    6: 'A macro lane',
+    7: 'An automation lane',
+    8: 'MIDI FX automation',
+    9: 'Offline take failed',
+    10: 'The whole mix',
+    11: 'Move instrument',
+    12: 'Too big to copy',
+    13: 'No offline copy',
+};
+/* The card's lines for it: none while the take renders offline. */
+export function rtLines(why) {
+    why = why | 0;
+    return why ? ['Real time:', RS_RT_TEXT[why] || '?'] : [];
+}

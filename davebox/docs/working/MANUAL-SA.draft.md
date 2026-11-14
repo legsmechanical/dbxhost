@@ -2847,9 +2847,10 @@ with the tempo and root note (not the scale — the set opens in Major).
   with the Conductor when you answer **Yes** to **Apply Conductor?**. A muted or
   soloed-out track is recorded too. Each recording is exactly as long as the clip
   loops (up to 256 bars, or where it and the Conductor's clip line up), so it loops in
-  Live as it does here. Most clips are rendered much faster than they play; a track
-  whose sound can't be copied (modulation, a MIDI effect, automation of its level or
-  pan, and the like) is recorded in real time instead, with the same result.
+  Live as it does here. Most clips are rendered much faster than they play, and the
+  card counts up a percentage. A clip whose sound can't be copied is recorded in real
+  time instead, with the same result, and the card says why: *Modulation*, *Line input*,
+  *A macro lane* and so on.
   **Back** while it records cancels the export. Your project isn't changed. Sends
   come across as for any track, but the recordings don't include the Master FX.
 - **Schwung tracks are named for what they played** — `SCH-nusaw`, or
@@ -3070,12 +3071,14 @@ undone.
 
 **Faster than real time.** A Flatten, or a Resample clip **In place**, of a track that
 plays a Schwung instrument, or of an Audio track, records without playing: the clips aren't heard, and each
-one takes a fraction of its length. It records in real time instead, as before, when
-the instrument's sound depends on more than the notes: a modulation source (an LFO)
-on it, a MIDI effect, an effect that listens to MIDI, voices sent to buses, the line
-input, a knob mapped to a controller the clip sends, or automation of the track's
-levels, buses or macros. Move instruments and Wet or Dry takes always record in real
-time.
+one takes a fraction of its length — Dry takes too, and the track's MIDI effects and
+the automation the take can hear come along. It records in real time instead, as
+before, when the sound can't be copied: a modulation source (an LFO) on it, an effect
+that listens to MIDI, voices sent to buses, the line input, a knob mapped to a
+controller the clip sends, the track's own macro lane, automation of a MIDI effect,
+or a MIDI effect that plays into the sequencer. Move instruments and Wet takes always
+record in real time. When it does, the card says why (*Real time: Modulation*), so you
+know what to change to make it fast.
 
 After any resample, the clips you had armed are armed again, so Play carries on
 from where you were.

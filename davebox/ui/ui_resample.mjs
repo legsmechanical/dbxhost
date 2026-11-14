@@ -22,7 +22,7 @@
 import * as os from 'os';
 import { S } from './ui_state.mjs';
 import { showActionPopupFor } from './ui_persistence.mjs';
-import { SCENE_LETTERS, PAD_MODE_AUDIO } from './ui_constants.mjs';
+import { SCENE_LETTERS, PAD_MODE_AUDIO, rtLines } from './ui_constants.mjs';
 import { auPick, auUndoClips, dspAnswer } from './ui_audio.mjs';
 /* a cycle through ui_sound: used only inside function bodies */
 import { flattenStart } from './ui_audio_convert.mjs';
@@ -393,7 +393,9 @@ function startResample() {
 
 /* The running notice, as PRINTING's: held until the next one replaces it. */
 function showRunning(t, where) {
-    showActionPopupFor(60000, 'RESAMPLING', t.what + ', ' + where, 'Back cancels');
+    t.where = where;
+    t.shownWhy = S.resampleRtWhy | 0;
+    showActionPopupFor(60000, 'RESAMPLING', t.what + ', ' + where, ...rtLines(t.shownWhy), 'Back cancels');
 }
 
 /* Back while a take runs: the transport stop is the cancel. */
@@ -450,6 +452,8 @@ export function resampleTick() {
         return;
     }
     t.seen = true;
+    /* the reason it records in real time, once the engine has said it */
+    if (t.where && (S.resampleRtWhy | 0) !== (t.shownWhy | 0) && st >= RS_ARMED && st <= RS_RECORDING) showRunning(t, t.where);
     if (st === RS_ARMED || st === RS_STARTING) return;
     if (st === RS_RECORDING) {
         const frames = S.resampleFrames >>> 0, done = S.resampleDone >>> 0;

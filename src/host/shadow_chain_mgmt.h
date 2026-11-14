@@ -356,12 +356,8 @@ static inline float shadow_move_fx_effective_volume(int bus) {
 
 /* Balance-style pan gains for stereo signals.
  * pan 0.0 = full left (R silent), 0.5 = center (both unity), 1.0 = full right (L silent). */
-static inline float shadow_pan_gain_l(float pan) {
-    return (pan <= 0.5f) ? 1.0f : 2.0f * (1.0f - pan);
-}
-static inline float shadow_pan_gain_r(float pan) {
-    return (pan >= 0.5f) ? 1.0f : 2.0f * pan;
-}
+static inline float shadow_pan_gain_l(float pan) { return mix_pan_gain_l(pan); }   /* mix_glide.h */
+static inline float shadow_pan_gain_r(float pan) { return mix_pan_gain_r(pan); }
 
 /* Once per block, before a slot's (or a Move FX bus's) mix loop: the level and
  * balance its gain glides toward. Mute and solo are inside the effective

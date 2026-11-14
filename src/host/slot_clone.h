@@ -57,9 +57,17 @@ typedef struct {
 #define SLC_ERR_FX_MIDI    -5   /* an audio FX takes MIDI (it hears other tracks) */
 #define SLC_ERR_LINE_IN    -6   /* the instrument listens to the line input */
 #define SLC_ERR_TOO_BIG    -7   /* a state that does not fit */
+#define SLC_ERR_MFX_HOST   -8   /* its MIDI FX output goes to the host (midi_fx_to_host /
+                                 * midi_fx_host_route): a copy has no host to hand it to */
+
+/* chain_slot_clone_source's `with_fx`, as bits (0 and 1 keep their old meaning) */
+#define SLC_WITH_FX        1    /* also the playing audio FX */
+#define SLC_WITH_MIDI_FX   2    /* the caller copies the MIDI FX itself (chain_midi_fx_clone_source):
+                                 * a playing MIDI FX is no refusal */
 
 /* Exported by the chain DSP. Fills `out` with the instance's instrument and,
- * when `with_fx`, its playing audio FX. Returns 1, or an SLC_ERR_*. Audio
+ * with SLC_WITH_FX, its playing audio FX; SLC_WITH_MIDI_FX lets a playing
+ * MIDI FX through (the caller copies it). Returns 1, or an SLC_ERR_*. Audio
  * thread: get_param calls only. */
 typedef int (*chain_slot_clone_source_fn)(void *instance, slc_src_t *out, int with_fx);
 

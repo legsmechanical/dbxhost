@@ -344,7 +344,9 @@ typedef struct move_host_ext_v1 {
      * set_param(take->key, take->val): the same command a real-time take
      * would get. Then the host renders it block by
      * block in the live order -- the slot's copy, then the caller's copy, whose
-     * sends reach the slot's copy (heard the next block) -- and when the copy
+     * sends reach the slot's copy (heard the next block) through copies of the
+     * slot's playing MIDI FX, as the chain plays them; the copy's slot:volume /
+     * slot:pan writes move a Dry take's fader and pan -- and when the copy
      * calls capture_start_src(path, frames, kind, take->slot) the host writes
      * the slot copy's output at `kind` (MOVE_CAPTURE_SLOT_PRE / _FX, or
      * MOVE_CAPTURE_SLOT: after the FX at the slot's fader and pan as set,
@@ -392,6 +394,10 @@ typedef struct move_offline_take {
     int   slot;               /* the chain slot recorded (its instrument and feed) */
     int   kind;               /* MOVE_CAPTURE_SLOT_PRE, _SLOT_FX or _SLOT (Dry) */
     float bpm;                /* the copy's tempo until it declares its own */
+    unsigned absent;          /* modules that must NOT play for the copy to sound the same
+                               * (automation on them the caller cannot write itself): bit 0
+                               * the instrument, bit n fx<n> (1..4); one that plays refuses
+                               * the take, MOVE_OFFLINE_ERR_LANE */
 } move_offline_take_t;
 
 #define MOVE_OFFLINE_IDLE      0
@@ -406,6 +412,8 @@ typedef struct move_offline_take {
 #define MOVE_OFFLINE_ERR_FX_MIDI   -5
 #define MOVE_OFFLINE_ERR_LINE_IN   -6
 #define MOVE_OFFLINE_ERR_TOO_BIG   -7
+#define MOVE_OFFLINE_ERR_MFX_HOST  -8  /* its MIDI FX output goes to the caller (midi_fx_to_host / _host_route) */
+#define MOVE_OFFLINE_ERR_LANE      -9  /* a module take->absent names plays */
 #define MOVE_OFFLINE_ERR_BUSY      -20  /* a take is running, or its outcome not yet cleared */
 #define MOVE_OFFLINE_ERR_ARGS      -21
 #define MOVE_OFFLINE_ERR_NO_HOST   -22  /* no chain on the slot, or no export to read it */

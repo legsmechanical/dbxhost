@@ -33,6 +33,7 @@
 #include <unistd.h>
 
 #include "host/offline_take.h"
+#include "host/mix_glide.h"
 
 static int failures;
 #define CHECK(c, ...) do { if (!(c)) { failures++; fprintf(stderr, "FAIL %s:%d: ", __FILE__, __LINE__); \
@@ -41,11 +42,14 @@ static int failures;
 static int g_slot_err;           /* what the chain's export answers */
 static int g_no_synth;           /* ...for a slot with no instrument */
 static int g_with_fx_asked;
+static int g_mfx_asked;          /* the take copies the MIDI FX itself */
+static int g_mfx_on;             /* the slot plays one */
 
 static void *slot_instance(int slot) { static int dummy; return slot >= 0 && slot < 8 ? &dummy : NULL; }
 static int clone_source(void *inst, slc_src_t *out, int with_fx) {
     (void)inst;
-    g_with_fx_asked = with_fx;
+    g_with_fx_asked = with_fx & SLC_WITH_FX;
+    g_mfx_asked = with_fx & SLC_WITH_MIDI_FX;
     if (g_slot_err) return g_slot_err;
     memset(out, 0, sizeof *out);
     out->knob_ccs = 1u << 1;                            /* CC 72 is a knob mapping */
@@ -58,7 +62,7 @@ static int clone_source(void *inst, slc_src_t *out, int with_fx) {
         snprintf(out->state, sizeof out->state, "G=1 B=30");   /* the state wins over the param, as a load */
         out->state_len = (int)strlen(out->state);
     }
-    if (with_fx) {
+    if (with_fx & SLC_WITH_FX) {
         out->nfx = 1;
         snprintf(out->fx[0].so_path, sizeof out->fx[0].so_path, FIXTURE_DIR "/fx/fx.so");
         snprintf(out->fx[0].dir, sizeof out->fx[0].dir, FIXTURE_DIR "/fx");
@@ -70,10 +74,21 @@ static int clone_source(void *inst, slc_src_t *out, int with_fx) {
     return 1;
 }
 static chain_slot_clone_source_fn g_clone = clone_source;
+static int mfx_source(void *inst, mfo_fx_src_t *out, int max) {
+    (void)inst;
+    if (!g_mfx_on || max < 1) return 0;
+    memset(out, 0, sizeof *out);
+    snprintf(out->so_path, sizeof out->so_path, FIXTURE_DIR "/mfx/dsp.so");
+    snprintf(out->dir, sizeof out->dir, FIXTURE_DIR "/mfx");
+    snprintf(out->state, sizeof out->state, "O=12");
+    out->state_len = 4;
+    return 1;
+}
+static chain_midi_fx_clone_source_fn g_mfx = mfx_source;
 static int slot_info(int slot, offline_slot_info_t *o) {
     (void)slot;
     o->synth_level = 0.5f; o->transpose = 2; o->fwd_ch = 3;
-    o->volume = 0.5f; o->pan_l = 1.0f; o->pan_r = 0.25f;   /* a Dry take's fader and pan */
+    o->volume = 0.5f; o->pan = 0.125f;                     /* a Dry take's fader; pan: L 1, R 0.25 */
     return 1;
 }
 static void quiet(const char *m) { (void)m; }
@@ -117,7 +132,7 @@ static int16_t half(int v) { return (int16_t)lroundf((float)v * 0.5f); }
 int main(void) {
     const offline_take_host_t host = {
         .host = NULL, .slot_instance = slot_instance, .clone_source = &g_clone,
-        .slot_info = slot_info, .run_command = NULL, .log = quiet,
+        .slot_info = slot_info, .run_command = NULL, .log = quiet, .mfx_source = &g_mfx,
     };
     const char *pre = FIXTURE_DIR "/takes/pre.wav";
     uint32_t done = 0, total = 0, n;
@@ -187,6 +202,49 @@ int main(void) {
               "Dry: the FX take at the fader and pan: %d %d (FX %d %d)", w ? w[0] : -1, w ? w[1] : -1, fxl, fxr);
         free(w);
         offline_take_cancel();
+
+        /* ---- Dry: the copy's slot:volume write (its automation) moves the
+         * fader from the next block, gliding as the live mix does ---- */
+        t = take(4, 256, MOVE_CAPTURE_SLOT, dp);
+        CHECK(offline_take_begin(&t) == 1, "Dry + level: begin");
+        offline_take_run_pending();
+        w = read_wav(dp, &n);
+        {
+            /* block 2 hears 62 + 2 = 64; the gain at its frame k is the glide
+             * after k advances toward 1.0 from 0.5 */
+            const float pre2 = (float)(half(6403) + 7);
+            float gl = 0.5f;
+            int k;
+            for (k = 0; k < 127; k++) gl += (1.0f - gl) * MIX_GLIDE_SMOOTH;
+            CHECK(w && n == 256 && w[0] == (int16_t)lroundf((float)fxl * 0.5f) &&
+                  w[2 * 128] == (int16_t)lroundf(pre2 * 0.5f) && w[2 * 255] == (int16_t)lroundf(pre2 * gl),
+                  "Dry + level: %d / %d / %d (want %d, %d, %d)", w ? w[0] : -1, w ? w[2 * 128] : -1, w ? w[2 * 255] : -1,
+                  (int)lroundf((float)fxl * 0.5f), (int)lroundf(pre2 * 0.5f), (int)lroundf(pre2 * gl));
+        }
+        free(w);
+        offline_take_cancel();
+    }
+
+    /* ---- the slot's MIDI FX, copied: the copy's notes (and the clock) pass
+     * through them on the way to the instrument; their tick output reaches it ---- */
+    {
+        const char *mp = FIXTURE_DIR "/takes/mfx.wav";
+        g_mfx_on = 1;
+        t = take(0, 384, MOVE_CAPTURE_SLOT_PRE, mp);
+        CHECK(offline_take_begin(&t) == 1, "MIDI FX: begin");
+        CHECK(g_mfx_asked, "the take did not say it copies the MIDI FX itself");
+        offline_take_run_pending();
+        CHECK(offline_take_state(NULL, NULL) == MOVE_OFFLINE_DONE, "MIDI FX: DONE");
+        w = read_wav(mp, &n);
+        /* block 1: block 0's 60 (+2 transpose, +12 the effect) = 74; block 2:
+         * the effect's own 40 from its third tick, after block 1's 64+12;
+         * R: the Start reached the instrument through the effect */
+        CHECK(w && n == 384 && w[0] == half(7403) && w[2 * 128] == half(4003),
+              "MIDI FX: %d %d (want %d %d)", w ? w[0] : -1, w ? w[2 * 128] : -1, half(7403), half(4003));
+        CHECK(w && w[1] == half(200 + 1000 + 1330 + 30), "MIDI FX: the clock did not pass the effect: R %d", w ? w[1] : -1);
+        free(w);
+        offline_take_cancel();
+        g_mfx_on = 0;
     }
 
     /* ---- DIRECT: past the transpose, still remapped ---- */
@@ -264,6 +322,22 @@ int main(void) {
         CHECK(!exists(bp), "no file");
         offline_take_cancel();
     }
+
+    /* ---- absent: automation the caller cannot write is harmless only where
+     * its module does not play ---- */
+    t = take(0, 128, MOVE_CAPTURE_SLOT_PRE, pre);
+    t.absent = 1u;                                       /* the instrument must not play: it does */
+    CHECK(offline_take_begin(&t) == MOVE_OFFLINE_ERR_LANE, "absent instrument that plays: not refused");
+    g_no_synth = 1;
+    CHECK(offline_take_begin(&t) == 1, "absent instrument that does not play: refused");
+    offline_take_cancel(); offline_take_run_pending();
+    g_no_synth = 0;
+    t = take(0, 128, MOVE_CAPTURE_SLOT_FX, pre);
+    t.absent = 1u << 2;                                  /* fx2: the fixture's effect sits at position 1 = fx2 */
+    CHECK(offline_take_begin(&t) == MOVE_OFFLINE_ERR_LANE, "absent fx2 that plays: not refused");
+    t.absent = 1u << 3;                                  /* fx3: nothing there */
+    CHECK(offline_take_begin(&t) == 1, "absent fx3 (none there): refused");
+    offline_take_cancel(); offline_take_run_pending();
 
     /* ---- refusals ---- */
     g_slot_err = SLC_ERR_MOD;

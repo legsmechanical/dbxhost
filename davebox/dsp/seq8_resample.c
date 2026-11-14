@@ -215,39 +215,109 @@ static char rs_off_setup[PA_MAX_TARGETS * 192];
 static char rs_off_key[32];
 static char rs_off_val[512];
 
-static int rs_offline_automation_ok(const seq8_instance_t *inst, int slot) {
+/* Why a take records in real time (inst->resample_rt_why; the UI says it) */
+#define RS_RT_NONE      0
+#define RS_RT_MOD       1    /* modulation (an LFO, a modulator) moves a parameter */
+#define RS_RT_LINE_IN   2    /* the instrument listens to the line input */
+#define RS_RT_SPLIT     3    /* the instrument's voices go to buses */
+#define RS_RT_MFX_HOST  4    /* the slot's MIDI FX play into the sequencer */
+#define RS_RT_FX_MIDI   5    /* an audio effect hears MIDI (other tracks') */
+#define RS_RT_MACRO     6    /* a macro lane of the track */
+#define RS_RT_LANE      7    /* an automation lane the copy cannot play */
+#define RS_RT_MFX_LANE  8    /* automation of a MIDI effect */
+#define RS_RT_FAILED    9    /* the offline take failed */
+#define RS_RT_MIX       10   /* the whole mix (Wet) */
+#define RS_RT_MOVE      11   /* a Move instrument */
+#define RS_RT_BIG       12   /* a setting too big to copy */
+#define RS_RT_HOST      13   /* the host could not take it (busy, no copy of the chain) */
+
+static int rs_rt_of_host(int err) {
+    switch (err) {
+    case MOVE_OFFLINE_ERR_MOD:      return RS_RT_MOD;
+    case MOVE_OFFLINE_ERR_LINE_IN:  return RS_RT_LINE_IN;
+    case MOVE_OFFLINE_ERR_SPLIT:    return RS_RT_SPLIT;
+    case MOVE_OFFLINE_ERR_MFX_HOST: return RS_RT_MFX_HOST;
+    case MOVE_OFFLINE_ERR_MIDI_FX:  return RS_RT_MFX_HOST;
+    case MOVE_OFFLINE_ERR_FX_MIDI:  return RS_RT_FX_MIDI;
+    case MOVE_OFFLINE_ERR_LANE:     return RS_RT_LANE;
+    case MOVE_OFFLINE_ERR_TOO_BIG:  return RS_RT_BIG;
+    default:                        return RS_RT_HOST;
+    }
+}
+
+/* The automation in the project against what a take at `src` of `slot`
+ * (track `track`'s) hears. A lane the take cannot hear is no reason to record
+ * live: another slot's, a bus level, a send, a mute, the fader and pan before
+ * them (Pre, FX), an effect before them (Pre). One it hears must be one the
+ * engine writes itself (resolved: the copy gets the same write) — or one on a
+ * module that does not play, which writes nothing live either: those go to
+ * the host as `*absent` (bit 0 the instrument, bit n fx<n>), which checks.
+ * Returns RS_RT_* (0: the copy can play it). */
+static int rs_offline_lanes(const seq8_instance_t *inst, int track, int slot, int src, unsigned *absent) {
     int i;
+    *absent = 0;
     for (i = 0; i < PA_MAX_TARGETS; i++) {
         const char *n = inst->pa_targets[i];
         const pa_res_t *r = &inst->pa_res[i];
+        const char *comp, *key;
+        int ok;
         if (!n[0] || pa_target_is_midi(n, NULL) || pa_target_is_seq(n, NULL, NULL)) continue;
-        if (n[0] < '0' || n[0] > '9') return 0;                 /* bus:, mac:, ... the UI plays them */
+        if (!strncmp(n, "bus:", 4)) continue;                    /* a Move bus: no take of a slot hears it */
+        if (!strncmp(n, "mac:", 4)) {                            /* the UI plays macros */
+            if (my_atoi(n + 4) == track) return RS_RT_MACRO;
+            continue;
+        }
+        if (n[0] < '0' || n[0] > '9') return RS_RT_LANE;
         if (my_atoi(n) != slot) continue;                        /* another slot's */
-        if (!r->valid || strcmp(r->name, n)) return 0;           /* the UI would write it */
-        if (strncmp(r->key, "synth:", 6) &&
-                !(r->key[0] == 'f' && r->key[1] == 'x' && r->key[2] >= '1' && r->key[2] <= '4' && r->key[3] == ':'))
-            return 0;                                            /* the slot's level, pan, sends ... */
+        comp = strchr(n, ':');
+        key = strrchr(n, ':');
+        if (!comp || key == comp) return RS_RT_LANE;
+        comp++; key++;
+        ok = r->valid && !strcmp(r->name, n);                    /* the engine writes it */
+        if (!strncmp(comp, "slot:", 5)) {
+            if (!strcmp(key, "volume") || !strcmp(key, "pan")) {
+                if (src == RS_SRC_DRY && !ok) return RS_RT_LANE;
+            } else if (!strcmp(key, "synth_volume")) {
+                if (!ok) return RS_RT_LANE;
+            } else if (strncmp(key, "send", 4) && strcmp(key, "mute") && strcmp(key, "muted") &&
+                       strcmp(key, "solo") && strcmp(key, "soloed")) {
+                return RS_RT_LANE;
+            }
+        } else if (!strncmp(comp, "synth:", 6)) {
+            if (!ok) *absent |= 1u;
+        } else if (comp[0] == 'f' && comp[1] == 'x' && comp[2] >= '1' && comp[2] <= '4' && comp[3] == ':') {
+            if (src != RS_SRC_PRE && !ok) *absent |= 1u << (comp[2] - '0');
+        } else if (!strncmp(comp, "midi_fx", 7)) {
+            return RS_RT_MFX_LANE;
+        } else {
+            return RS_RT_LANE;
+        }
     }
-    return 1;
+    return RS_RT_NONE;
 }
 
 /* 1 = the host took it. `key` / `val` the command the copy is given (and the
  * real-time take's, if the host fails it), `frames` the take's length. */
-static int rs_offline_try_ex(seq8_instance_t *inst, uint32_t frames, int src, int slot,
+static int rs_offline_try_ex(seq8_instance_t *inst, uint32_t frames, int src, int track, int slot,
                              const char *key, const char *val, const char *path) {
     move_offline_take_t ot;
     FILE *fp;
     long pos;
-    int r, i, n = 0;
-    if (inst->offline || !g_ext || !g_ext->offline_take_begin || !g_ext->offline_take_state) return 0;
-    if (src != RS_SRC_PRE && src != RS_SRC_FX && src != RS_SRC_DRY) return 0;
-    if (strlen(val) >= sizeof ot.val || strlen(key) >= sizeof rs_off_key || !rs_offline_automation_ok(inst, slot)) return 0;
+    unsigned absent = 0;
+    int r, i, n = 0, why;
+    if (inst->offline) return 0;
+    inst->resample_rt_why = RS_RT_HOST;
+    if (!g_ext || !g_ext->offline_take_begin || !g_ext->offline_take_state) return 0;
+    if (src != RS_SRC_PRE && src != RS_SRC_FX && src != RS_SRC_DRY) { inst->resample_rt_why = RS_RT_MIX; return 0; }
+    if (strlen(val) >= sizeof ot.val || strlen(key) >= sizeof rs_off_key) return 0;
+    why = rs_offline_lanes(inst, track, slot, src, &absent);
+    if (why) { inst->resample_rt_why = (uint8_t)why; return 0; }
     fp = fmemopen(rs_off_state, sizeof rs_off_state - 1, "w");
     if (!fp) return 0;
     seq8_do_serialize(inst, fp);
     pos = ftell(fp);
     fclose(fp);
-    if (pos <= 0 || pos >= (long)sizeof rs_off_state - 1) return 0;
+    if (pos <= 0 || pos >= (long)sizeof rs_off_state - 1) { inst->resample_rt_why = RS_RT_BIG; return 0; }
     rs_off_state[pos] = '\0';
     rs_off_setup[0] = '\0';
     {   /* where the copy's Audio clips find their samples (first: the loads
@@ -277,8 +347,10 @@ static int rs_offline_try_ex(seq8_instance_t *inst, uint32_t frames, int src, in
     ot.slot = slot;
     ot.kind = src == RS_SRC_PRE ? MOVE_CAPTURE_SLOT_PRE : src == RS_SRC_FX ? MOVE_CAPTURE_SLOT_FX : MOVE_CAPTURE_SLOT;
     ot.bpm = (float)inst->tracks[0].pfx.cached_bpm;
+    ot.absent = absent;
     r = g_ext->offline_take_begin(&ot);
-    if (r != 1) return 0;
+    if (r != 1) { inst->resample_rt_why = (uint8_t)rs_rt_of_host(r); return 0; }
+    inst->resample_rt_why = RS_RT_NONE;
     snprintf(rs_off_key, sizeof rs_off_key, "%s", key);
     snprintf(rs_off_val, sizeof rs_off_val, "%s", val);
     snprintf(inst->resample_path, sizeof(inst->resample_path), "%s", path + 1);
@@ -296,8 +368,10 @@ static int rs_offline_try_ex(seq8_instance_t *inst, uint32_t frames, int src, in
 /* resample_clip's: a Pre or FX take, `bars` + `tail` long */
 static int rs_offline_try(seq8_instance_t *inst, int bars, int tail, int src, int slot,
                           const char *val, const char *path) {
+    int track = -1;
+    sscanf(val, "%d", &track);
     return rs_offline_try_ex(inst, rs_ticks_to_frames(inst, (uint32_t)(bars + tail) * RS_BAR_TICKS),
-                             src, slot, "resample_clip", val, path);
+                             src, track, slot, "resample_clip", val, path);
 }
 
 static void resample_clip_launch(seq8_instance_t *inst, const char *val, int offline_ok);
@@ -323,6 +397,7 @@ static void rs_offline_poll(seq8_instance_t *inst) {
     inst->resample_state = RS_IDLE;
     if (!strcmp(rs_off_key, "export_take")) export_take_launch(inst, rs_off_val, 0);
     else resample_clip_launch(inst, rs_off_val, 0);
+    if (inst->resample_state != RS_FAILED) inst->resample_rt_why = RS_RT_FAILED;
 }
 
 /* render_block, before the tick loop: arm the take a render after its first
@@ -444,6 +519,7 @@ static void resample_scene_start(seq8_instance_t *inst, const char *val) {
     int c = -1, bars = 0, warm = 0, tail = 0, t;
     const char *path = strchr(val, '|');
     sscanf(val, "%d %d %d %d", &c, &bars, &warm, &tail);
+    inst->resample_rt_why = RS_RT_MIX;                   /* the whole mix: never offline */
     if (rs_refuse(inst, c, bars, tail, path)) return;
     rs_remember_armed(inst);
     inst->resample_src = RS_SRC_WET;
@@ -482,6 +558,7 @@ static void resample_clip_launch(seq8_instance_t *inst, const char *val, int off
         inst->resample_err = RS_ERR_MUTED;
     if (inst->resample_err) { inst->resample_state = RS_FAILED; return; }
     /* faster than real time when the host can (rs_offline_try) */
+    inst->resample_rt_why = dst.route == ROUTE_SCHWUNG ? RS_RT_NONE : RS_RT_MOVE;
     if (offline_ok && dst.route == ROUTE_SCHWUNG && rs_offline_try(inst, bars, tail, src, dst.slot, val, path)) return;
     rs_remember_armed(inst);
     inst->resample_src  = (uint8_t)src;
@@ -576,7 +653,8 @@ static void export_take_launch(seq8_instance_t *inst, const char *val, int offli
             || !g_ext->capture_start_src) {
         inst->resample_err = RS_ERR_ROUTE; inst->resample_state = RS_FAILED; return;
     }
-    if (offline_ok && rs_offline_try_ex(inst, rs_ticks_to_frames(inst, ticks), RS_SRC_DRY, dst.slot, "export_take", val, path))
+    inst->resample_rt_why = RS_RT_NONE;
+    if (offline_ok && rs_offline_try_ex(inst, rs_ticks_to_frames(inst, ticks), RS_SRC_DRY, tr_i, dst.slot, "export_take", val, path))
         return;
     rs_remember_armed(inst);
     inst->resample_src  = RS_SRC_DRY;

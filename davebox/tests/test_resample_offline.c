@@ -116,6 +116,7 @@ int main(void) {
     hx_render(h, 1);
     HX_ASSERT(!inst->resample_offline && inst->playing && inst->resample_state == RS_ARMED,
               "a failed offline take was not recorded in real time");
+    HX_ASSERT(inst->resample_rt_why == RS_RT_FAILED, "a failed offline take: not the reason said");
     for (i = 0; i < 40 && inst->resample_state != RS_RECORDING; i++) hx_render(h, 1);
     {
         int kind = -1, index = -1;
@@ -132,6 +133,7 @@ int main(void) {
     b = hx_stub_ot_begins();
     hx_set_param(h, "resample_clip", "1 0 1 0 0 0 |/x/wet.wav");
     HX_ASSERT(hx_stub_ot_begins() == b && inst->playing && inst->resample_state == RS_ARMED, "Wet went offline");
+    HX_ASSERT(inst->resample_rt_why == RS_RT_MIX, "Wet: the reason is not the whole mix");
     hx_set_param(h, "transport", "stop");
     hx_set_param(h, "resample_clear", "1");
 
@@ -140,6 +142,7 @@ int main(void) {
     hx_set_param(h, "resample_clip", "1 0 1 0 0 2 |/x/mod.wav");
     HX_ASSERT(inst->playing && inst->resample_state == RS_ARMED && !inst->resample_offline,
               "a refused offline take was not recorded in real time");
+    HX_ASSERT(inst->resample_rt_why == RS_RT_MOD, "the host's refusal is not the reason said");
     hx_set_param(h, "transport", "stop");
     hx_set_param(h, "resample_clear", "1");
     hx_stub_ot_refuse(0);
@@ -156,26 +159,58 @@ int main(void) {
     hx_set_param(h, "transport", "stop");
     hx_set_param(h, "resample_clear", "1");
 
-    resolve(inst, 7, "1:slot:volume", 1, "slot:volume");       /* the slot's level: not the instrument */
-    hx_set_param(h, "resample_clip", "1 0 1 0 0 2 |/x/lvl.wav");
-    HX_ASSERT(!inst->resample_offline && inst->playing, "automation of the slot's level went offline");
-    hx_set_param(h, "transport", "stop");
-    hx_set_param(h, "resample_clear", "1");
-    inst->pa_targets[7][0] = '\0'; inst->pa_res[7].valid = 0;
+    /* what a take HEARS decides: the fader and pan only Dry, an effect only
+     * after the effects, sends / buses / other tracks' macros never */
+#define TRY(val, want_off, why, msg) do { \
+        b = hx_stub_ot_begins(); \
+        hx_set_param(h, "resample_clip", val); \
+        HX_ASSERT((want_off) ? went_offline(inst, b) : (hx_stub_ot_begins() == b && inst->playing && inst->resample_rt_why == (why)), msg); \
+        hx_set_param(h, "transport", "stop"); hx_set_param(h, "resample_clear", "1"); \
+    } while (0)
+    resolve(inst, 7, "1:slot:volume", 1, "slot:volume");       /* the slot's level, resolved */
+    TRY("1 0 1 0 0 2 |/x/lvl_pre.wav", 1, 0, "a level lane kept a Pre take (it does not hear the fader) real time");
+    TRY("1 0 1 0 0 1 |/x/lvl_dry.wav", 1, 0, "a resolved level lane kept a Dry take real time (the copy writes it)");
+    inst->pa_res[7].valid = 0;                                 /* not resolved: the UI would write it */
+    TRY("1 0 1 0 0 1 |/x/lvl_dry2.wav", 0, RS_RT_LANE, "an unresolved level lane went offline on Dry");
+    TRY("1 0 1 0 0 3 |/x/lvl_fx.wav", 1, 0, "an unresolved level lane kept an FX take (at unity) real time");
+    inst->pa_targets[7][0] = '\0';
 
-    inst->pa_res[5].valid = 0;                                 /* not resolved yet: the UI would write it */
-    hx_set_param(h, "resample_clip", "1 0 1 0 0 2 |/x/unres.wav");
-    HX_ASSERT(!inst->resample_offline && inst->playing, "an unresolved chain target went offline");
-    hx_set_param(h, "transport", "stop");
-    hx_set_param(h, "resample_clear", "1");
+    snprintf(inst->pa_targets[7], sizeof inst->pa_targets[7], "1:slot:send_a");
+    TRY("1 0 1 0 0 1 |/x/send.wav", 1, 0, "a send lane kept a Dry take real time");
+    inst->pa_targets[7][0] = '\0';
+
+    /* an instrument lane the engine cannot write: offline, the host told the
+     * instrument must not play (its lane writes nothing then) */
+    inst->pa_res[5].valid = 0;
+    TRY("1 0 1 0 0 2 |/x/unres.wav", 1, 0, "an unresolved instrument lane did not go to the host");
+    HX_ASSERT(hx_stub_ot_take(NULL, NULL)->absent == 1u, "the host was not told the instrument must be absent");
     inst->pa_res[5].valid = 1;
+    TRY("1 0 1 0 0 2 |/x/res.wav", 1, 0, "rig");
+    HX_ASSERT(hx_stub_ot_take(NULL, NULL)->absent == 0, "a resolved lane asked for an absent instrument");
+
+    /* an effect's: heard after the effects, not before */
+    snprintf(inst->pa_targets[9], sizeof inst->pa_targets[9], "1:fx2:mix");
+    TRY("1 0 1 0 0 2 |/x/fx_pre.wav", 1, 0, "an effect lane kept a Pre take real time");
+    HX_ASSERT(hx_stub_ot_take(NULL, NULL)->absent == 0, "a Pre take asked for an absent effect");
+    TRY("1 0 1 0 0 3 |/x/fx_fx.wav", 1, 0, "an unresolved effect lane did not go to the host");
+    HX_ASSERT(hx_stub_ot_take(NULL, NULL)->absent == (1u << 2), "the host was not told fx2 must be absent");
+    inst->pa_targets[9][0] = '\0';
+
+    /* the host refusing for a module that plays: real time, said */
+    hx_stub_ot_refuse(MOVE_OFFLINE_ERR_LANE);
+    TRY("1 0 1 0 0 2 |/x/lane.wav", 0, RS_RT_LANE, "a refused lane is not the reason said");
+    hx_stub_ot_refuse(0);
 
     snprintf(inst->pa_targets[8], sizeof inst->pa_targets[8], "bus:1:level");
-    hx_set_param(h, "resample_clip", "1 0 1 0 0 2 |/x/bus.wav");
-    HX_ASSERT(!inst->resample_offline && inst->playing, "a bus level lane (the UI plays it) went offline");
-    hx_set_param(h, "transport", "stop");
-    hx_set_param(h, "resample_clear", "1");
+    TRY("1 0 1 0 0 1 |/x/bus.wav", 1, 0, "a bus level lane (no slot take hears it) kept it real time");
+    snprintf(inst->pa_targets[8], sizeof inst->pa_targets[8], "mac:3:0");
+    TRY("1 0 1 0 0 1 |/x/mac3.wav", 1, 0, "another track's macro lane kept it real time");
+    snprintf(inst->pa_targets[8], sizeof inst->pa_targets[8], "mac:1:0");
+    TRY("1 0 1 0 0 1 |/x/mac1.wav", 0, RS_RT_MACRO, "the track's own macro lane went offline (the UI plays it)");
+    snprintf(inst->pa_targets[8], sizeof inst->pa_targets[8], "1:midi_fx1:rate");
+    TRY("1 0 1 0 0 1 |/x/mfx.wav", 0, RS_RT_MFX_LANE, "a MIDI effect's lane went offline");
     inst->pa_targets[8][0] = '\0';
+#undef TRY
     inst->pa_targets[5][0] = '\0'; inst->pa_res[5].valid = 0;
     inst->pa_targets[6][0] = '\0'; inst->pa_res[6].valid = 0;
 
@@ -196,6 +231,7 @@ int main(void) {
     b = hx_stub_ot_begins();
     hx_set_param(h, "resample_clip", "0 0 1 0 0 2 |/x/move.wav");
     HX_ASSERT(hx_stub_ot_begins() == b && inst->playing, "a Move instrument went offline");
+    HX_ASSERT(inst->resample_rt_why == RS_RT_MOVE, "a Move instrument: not the reason said");
     hx_set_param(h, "transport", "stop");
     hx_set_param(h, "resample_clear", "1");
     hx_destroy(h);

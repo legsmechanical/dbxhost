@@ -13,7 +13,8 @@ trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/eng" "$work/synth" "$work/fx" "$work/takes"
 
 # The engine: plays a scripted take. val = "<mode> <frames> <kind> <slot> |<path>".
-# Modes: 0 notes, 1 + a knob-mapped CC, 2 a DIRECT note, 3 notes + audio fed to the slot.
+# Modes: 0 notes, 1 + a knob-mapped CC, 2 a DIRECT note, 3 notes + audio fed to the slot,
+# 4 notes + the slot's level set to 1.0 as the take starts.
 cat > "$work/fixture_eng.c" <<'EOF'
 #include <stdint.h>
 #include <stdio.h>
@@ -77,6 +78,7 @@ static void e_render(void *ip, int16_t *out, int frames) {
         if (e->mode == 1) slot_send(e->slot, 0xB0, 72, 64);   /* a knob-mapped CC */
     } else if (e->block == 1) {
         if (g_ext->capture_start_src(e->path, e->frames, e->kind, e->slot)) e->rs = 3;
+        if (e->mode == 4) g_ext->set_slot_param(e->slot, "slot:volume", "1.0");   /* its level lane */
         if (e->mode == 2) {
             const uint8_t m[4] = { 0x09, 0x90, 70, 100 };
             g_ext->midi_send_slot_direct(e->slot, m, 4);     /* past transpose */
@@ -157,6 +159,37 @@ static audio_fx_api_v2_t api = { AUDIO_FX_API_VERSION_2, f_create, f_destroy, f_
 audio_fx_api_v2_t *move_audio_fx_init_v2(const host_api_v1_t *h) { (void)h; return &api; }
 EOF
 
+# The MIDI effect: notes up an octave (amount from its state "O=12"), and on
+# its third tick a note 40 of its own.
+mkdir -p "$work/mfx"
+cat > "$work/fixture_mfx.c" <<'EOF2'
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include "host/plugin_api_v1.h"
+#include "host/midi_fx_api_v1.h"
+typedef struct { int oct, ticks; } mfx_t;
+static void *m_create(const char *d, const char *c) { (void)d; (void)c; return calloc(1, sizeof(mfx_t)); }
+static void m_destroy(void *i) { free(i); }
+static int m_process(void *ip, const uint8_t *in, int len, uint8_t out[][3], int out_len[], int max) {
+    mfx_t *m = ip;
+    if (max < 1) return 0;
+    out[0][0] = in[0]; out[0][1] = len > 1 ? in[1] : 0; out[0][2] = len > 2 ? in[2] : 0; out_len[0] = len;
+    if (len >= 3 && ((in[0] & 0xF0) == 0x90 || (in[0] & 0xF0) == 0x80)) out[0][1] = (uint8_t)(in[1] + m->oct);
+    return 1;
+}
+static int m_tick(void *ip, int frames, int rate, uint8_t out[][3], int out_len[], int max) {
+    mfx_t *m = ip; (void)frames; (void)rate;
+    if (++m->ticks != 3 || max < 1) return 0;
+    out[0][0] = 0x93; out[0][1] = 40; out[0][2] = 100; out_len[0] = 3;
+    return 1;
+}
+static void m_set(void *ip, const char *k, const char *v) { mfx_t *m = ip; if (!strcmp(k, "state") && !strncmp(v, "O=", 2)) m->oct = atoi(v + 2); }
+static int m_get(void *ip, const char *k, char *b, int n) { (void)ip; (void)k; (void)b; (void)n; return -1; }
+static midi_fx_api_v1_t api = { MIDI_FX_API_VERSION, m_create, m_destroy, m_process, m_tick, m_set, m_get };
+midi_fx_api_v1_t *move_midi_fx_init(const host_api_v1_t *h) { (void)h; return &api; }
+EOF2
+cc -std=gnu11 -shared -fPIC -Isrc "$work/fixture_mfx.c" -o "$work/mfx/dsp.so"
 cc -std=gnu11 -shared -fPIC -Isrc "$work/fixture_eng.c" -o "$work/eng/dsp.so"
 cc -std=gnu11 -shared -fPIC -Isrc "$work/fixture_synth.c" -o "$work/synth/dsp.so"
 cc -std=gnu11 -shared -fPIC -Isrc "$work/fixture_fx.c" -o "$work/fx/fx.so"

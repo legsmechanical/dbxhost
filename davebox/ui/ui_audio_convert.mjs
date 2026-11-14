@@ -25,7 +25,7 @@
 
 import * as os from 'os';
 import { S } from './ui_state.mjs';
-import { NUM_CLIPS, SCENE_LETTERS, PAD_MODE_DRUM, PAD_MODE_AUDIO, PAD_MODE_SLICER, padSampled } from './ui_constants.mjs';
+import { NUM_CLIPS, SCENE_LETTERS, PAD_MODE_DRUM, PAD_MODE_AUDIO, PAD_MODE_SLICER, padSampled, rtLines } from './ui_constants.mjs';
 import { clipHasContent } from './ui_pure.mjs';
 import { hardResetClip } from './ui_editops.mjs';
 import { auPick, auUndoClips, dspAnswer } from './ui_audio.mjs';
@@ -168,8 +168,11 @@ export function auConvertStart(t) {
 }
 
 function status(cv, line2) {
+    cv.line2 = line2;
+    cv.shownWhy = S.resampleRtWhy | 0;
     showActionPopupFor(60000, (cv.inPlace ? 'FLATTEN ' : 'TO AUDIO ') + (cv.i + 1) + '/' + cv.list.length,
-                      (cv.t + 1) + SCENE_LETTERS[cv.list[cv.i].c] + (line2 ? ', ' + line2 : ''), 'Back cancels');
+                      (cv.t + 1) + SCENE_LETTERS[cv.list[cv.i].c] + (line2 ? ', ' + line2 : ''),
+                      ...rtLines(cv.shownWhy), 'Back cancels');
 }
 
 function abort(cv, ...lines) {
@@ -202,6 +205,7 @@ export function auConvertTick() {
         return;
     }
     cv.seen = true;
+    if ((S.resampleRtWhy | 0) !== (cv.shownWhy | 0) && st >= RS_ARMED && st <= RS_RECORDING) status(cv, cv.line2);
     if (st === RS_ARMED || st === RS_STARTING) return;
     if (st === RS_RECORDING) {
         const frames = S.resampleFrames >>> 0, done = S.resampleDone >>> 0;

@@ -876,6 +876,7 @@ export const S = {
     resampleState: 0,              /* state_snapshot [65..67]: the engine's RS_*, frames done, take frames */
     resampleDone: 0,
     resampleFrames: 0,
+    resampleRtWhy: 0,      /* RS_RT_*: why the take records in real time (0: offline, or none) */
     pendingSceneBakeResync: 0,
     pendingSceneBakeClip: 0,
     pendingSceneBakeApply: false,

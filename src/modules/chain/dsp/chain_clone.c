@@ -13,8 +13,10 @@
  * No instrument (or a bypassed one) is an empty so_path: the slot sounds only
  * what is fed to it (an Audio track's samples).
  * A slot whose sound depends on more than its notes and parameters -- a
- * modulation source, voices sent to buses, a MIDI FX, an audio FX that hears
- * MIDI (it would hear other tracks'), the line input -- is refused, and the
+ * modulation source, voices sent to buses, a MIDI FX (unless the caller
+ * copies it: SLC_WITH_MIDI_FX, and then not one whose output goes to the
+ * host), an audio FX that hears MIDI (it would hear other tracks'), the line
+ * input -- is refused, and the
  * take is recorded in real time. Parameters are read as the bulk read reads
  * them; one whose value does not fit is left at the copy's default, a state
  * that does not fit refuses the copy. */
@@ -66,7 +68,10 @@ int chain_slot_clone_source(void *instance, slc_src_t *out, int with_fx) {
     if (chain_mod_any_active(inst)) return SLC_ERR_MOD;
     if (api && inst->synth_render_split && inst->synth_split_voice_count > 0) return SLC_ERR_SPLIT;
     for (i = 0; i < inst->midi_fx_count && i < MAX_MIDI_FX; i++)
-        if (inst->midi_fx_instances[i] && !inst->midi_fx_bypassed[i]) return SLC_ERR_MIDI_FX;
+        if (inst->midi_fx_instances[i] && !inst->midi_fx_bypassed[i]) {
+            if (!(with_fx & SLC_WITH_MIDI_FX)) return SLC_ERR_MIDI_FX;
+            if (inst->midi_fx_to_host || inst->midi_fx_host_route) return SLC_ERR_MFX_HOST;
+        }
     if (api && inst->synth_consumes_line_input) return SLC_ERR_LINE_IN;
 
     out->so_path[0] = out->dir[0] = out->config[0] = out->preset[0] = '\0';
@@ -80,7 +85,7 @@ int chain_slot_clone_source(void *instance, slc_src_t *out, int with_fx) {
     }
 
     out->nfx = 0;
-    for (i = 0; with_fx && i < inst->fx_count && i < MAX_AUDIO_FX; i++) {
+    for (i = 0; (with_fx & SLC_WITH_FX) && i < inst->fx_count && i < MAX_AUDIO_FX; i++) {
         audio_fx_api_v2_t *fa = inst->fx_plugins_v2[i];
         slc_fx_src_t *o;
         if (!fa || !inst->fx_instances[i] || inst->fx_bypassed[i] || !inst->current_fx_modules[i][0]) continue;

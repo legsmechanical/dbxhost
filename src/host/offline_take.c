@@ -11,6 +11,8 @@
 #include <unistd.h>
 
 #include "audio_fx_api_v2.h"
+#include "midi_fx_api_v1.h"
+#include "mix_glide.h"
 #include "module_clone.h"
 #include "offline_take.h"
 #include "schwung_paths.h"
@@ -40,6 +42,8 @@ static struct {
     offline_slot_info_t info;
     char engine_so[512], engine_dir[512];
     slc_src_t src;
+    mfo_fx_src_t mfx[MFO_MAX_FX];   /* the slot's playing MIDI FX, in chain order */
+    int nmfx;
 } J;
 
 static inline int  st_get(void)  { return __atomic_load_n(&J.state, __ATOMIC_ACQUIRE); }
@@ -58,6 +62,10 @@ static struct {
 static struct {
     plugin_api_v2_t   *sapi;  void *sinst;
     audio_fx_api_v2_t *fapi[SLC_MAX_FX]; void *finst[SLC_MAX_FX]; int fpos[SLC_MAX_FX]; int nfx;
+    midi_fx_api_v1_t *mapi[MFO_MAX_FX]; void *minst[MFO_MAX_FX]; int nmfx;
+    float vol, pan;                                 /* a Dry take's fader and pan as the copy sets them */
+    float synth_level;                              /* the module level (slot:synth_volume), every take */
+    mix_glide_t glide;
     int32_t feed[OT_BLOCK * 2]; int fed;           /* slot_audio_feed for the next block */
     uint8_t held[16][128];                          /* transposed note per (channel, note), 0xFF none */
     FILE   *file;
@@ -73,6 +81,40 @@ static void t_fail(const char *why) {
 
 /* ---- what the engine copy sends, as the host would deliver it ---- */
 
+/* Through the copied MIDI FX in turn (v2_process_midi_fx), what the last one
+ * makes to the instrument; none copied: the message itself. */
+static void t_through_mfx(const uint8_t *msg, int len, int source) {
+    uint8_t cur[MIDI_FX_MAX_OUT_MSGS][3];
+    int cur_len[MIDI_FX_MAX_OUT_MSGS], cur_n = 1, i, m;
+    cur[0][0] = msg[0]; cur[0][1] = len > 1 ? msg[1] : 0; cur[0][2] = len > 2 ? msg[2] : 0;
+    cur_len[0] = len;
+    for (i = 0; i < T.nmfx; i++) {
+        uint8_t nxt[MIDI_FX_MAX_OUT_MSGS][3];
+        int nxt_len[MIDI_FX_MAX_OUT_MSGS], nxt_n = 0;
+        if (!T.mapi[i] || !T.minst[i] || !T.mapi[i]->process_midi) continue;
+        for (m = 0; m < cur_n && nxt_n < MIDI_FX_MAX_OUT_MSGS; m++)
+            nxt_n += T.mapi[i]->process_midi(T.minst[i], cur[m], cur_len[m], &nxt[nxt_n], &nxt_len[nxt_n],
+                                             MIDI_FX_MAX_OUT_MSGS - nxt_n);
+        cur_n = nxt_n;
+        for (m = 0; m < nxt_n; m++) { memcpy(cur[m], nxt[m], 3); cur_len[m] = nxt_len[m]; }
+    }
+    if (!T.sapi || !T.sinst || !T.sapi->on_midi) return;    /* no instrument: nothing hears it */
+    for (m = 0; m < cur_n; m++) T.sapi->on_midi(T.sinst, cur[m], cur_len[m], source);
+}
+
+/* Each block before the instrument renders: the MIDI FX timers, their output
+ * straight to it (v2_tick_midi_fx: not through the later modules). */
+static void t_tick_mfx(void) {
+    int i, k;
+    for (i = 0; i < T.nmfx; i++) {
+        uint8_t out[MIDI_FX_MAX_OUT_MSGS][3];
+        int lens[MIDI_FX_MAX_OUT_MSGS], n;
+        if (!T.mapi[i] || !T.minst[i] || !T.mapi[i]->tick) continue;
+        n = T.mapi[i]->tick(T.minst[i], OT_BLOCK, OT_RATE, out, lens, MIDI_FX_MAX_OUT_MSGS);
+        for (k = 0; k < n && T.sapi && T.sinst && T.sapi->on_midi; k++) T.sapi->on_midi(T.sinst, out[k], lens[k], 0);
+    }
+}
+
 /* The chain's own front (chain_midi.c v2_on_midi): a knob-mapped CC is the
  * chain's, not the instrument's — it moves a parameter by the time between
  * turns, which a copy cannot replay; the take is refused. */
@@ -82,8 +124,11 @@ static void t_to_synth(const uint8_t *m, int len, int source) {
         t_fail("a knob-mapped CC reached the slot");
         return;
     }
-    if (!T.sapi || !T.sinst || !T.sapi->on_midi) return;    /* no instrument: nothing hears it */
-    T.sapi->on_midi(T.sinst, m, len, source == MOVE_MIDI_SOURCE_DIRECT ? MOVE_MIDI_SOURCE_EXTERNAL : source);
+    if (source == MOVE_MIDI_SOURCE_DIRECT) {                 /* past the MIDI FX (v2_on_midi) */
+        if (T.sapi && T.sinst && T.sapi->on_midi) T.sapi->on_midi(T.sinst, m, len, MOVE_MIDI_SOURCE_EXTERNAL);
+        return;
+    }
+    t_through_mfx(m, len, source);
 }
 
 static void t_realtime(uint8_t st) {
@@ -92,8 +137,8 @@ static void t_realtime(uint8_t st) {
     else if (st == 0xFB) g_tp.running = 1;
     else if (st == 0xFC) g_tp.running = 0;
     else if (st == 0xF8 && g_tp.running) g_tp.clocks++;
-    /* shadow_chain_broadcast_realtime */
-    if (T.sapi && T.sinst && T.sapi->on_midi) T.sapi->on_midi(T.sinst, m, 1, MOVE_MIDI_SOURCE_EXTERNAL);
+    /* shadow_chain_broadcast_realtime: into the chain, through its MIDI FX */
+    t_through_mfx(m, 1, MOVE_MIDI_SOURCE_EXTERNAL);
 }
 
 static int is_realtime(uint8_t s) { return s == 0xF8 || s == 0xFA || s == 0xFB || s == 0xFC; }
@@ -152,7 +197,16 @@ static int    eh_send_slot_any(int s, const uint8_t *m, int n) { (void)s; (void)
 static int ex_set_slot_param(int slot, const char *key, const char *val) {
     int i;
     if (slot != J.take.slot || !key || !val) return 1;
-    if (!strncmp(key, "synth:", 6)) {
+    if (!strcmp(key, "slot:volume")) {                       /* shadow_handle_slot_param_set's clamps */
+        float v = (float)atof(val);
+        T.vol = v < 0.0f ? 0.0f : v > 4.0f ? 4.0f : v;
+    } else if (!strcmp(key, "slot:pan")) {
+        float v = (float)atof(val);
+        T.pan = v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v;
+    } else if (!strcmp(key, "slot:synth_volume")) {
+        float v = (float)atof(val);
+        T.synth_level = v < 0.0f ? 0.0f : v > 4.0f ? 4.0f : v;
+    } else if (!strncmp(key, "synth:", 6)) {
         if (T.sapi && T.sinst && T.sapi->set_param) T.sapi->set_param(T.sinst, key + 6, val);
     } else if (!strncmp(key, "fx", 2) && key[2] >= '1' && key[2] <= '4' && key[3] == ':') {
         for (i = 0; i < T.nfx; i++)
@@ -340,7 +394,7 @@ static void apply_params(void (*set)(void *, const char *, const char *), void *
 }
 
 static void level(int16_t *b) {
-    const float lvl = J.info.synth_level;
+    const float lvl = T.synth_level;
     int i;
     if (lvl == 1.0f) return;
     for (i = 0; i < OT_BLOCK * 2; i++) {
@@ -349,14 +403,16 @@ static void level(int16_t *b) {
     }
 }
 
-/* A Dry take: the slot's fader and pan as set, as the shim's one-slot tap
- * keeps a slot (sampler_take_tap_as_set; the mix's own rounding, clamped). */
+/* A Dry take: the slot's fader and pan, as the shim's mix loop applies them
+ * (its glide toward this block's target, the mix's own rounding, clamped).
+ * They start as set and follow the copy's slot:volume / slot:pan writes. */
 static void fader(int16_t *b) {
     int i;
+    mix_glide_target(&T.glide, T.vol, mix_pan_gain_l(T.pan), mix_pan_gain_r(T.pan));
     for (i = 0; i < OT_BLOCK * 2; i++) {
-        const float g = J.info.volume * ((i & 1) ? J.info.pan_r : J.info.pan_l);
-        int32_t v = (int32_t)lroundf((float)b[i] * g);
+        int32_t v = (int32_t)lroundf((float)b[i] * mix_glide_gain(&T.glide, i));
         b[i] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+        if (i & 1) mix_glide_advance(&T.glide);
     }
 }
 
@@ -406,6 +462,9 @@ static void run_job(void) {
     clock_gettime(CLOCK_MONOTONIC, &t0);
     memset(&T, 0, sizeof T);
     memset(T.held, 0xFF, sizeof T.held);
+    T.vol = J.info.volume;
+    T.pan = J.info.pan;
+    T.synth_level = J.info.synth_level;
     g_tp.bpm = J.take.bpm > 0.0f ? J.take.bpm : 120.0f;
     g_tp.running = 0; g_tp.clocks = 0;
     hosts_build();
@@ -426,6 +485,22 @@ static void run_job(void) {
                 T.sapi->on_midi(T.sinst, mw, 3, MOVE_MIDI_SOURCE_HOST);
             }
         apply_params(T.sapi->set_param, T.sinst, J.src.params, J.src.nparams, J.src.state, J.src.state_len);
+    }
+
+    /* the MIDI FX, in chain order, as a patch load sets them (each parameter, then "state") */
+    for (i = 0; i < J.nmfx; i++) {
+        const mfo_fx_src_t *f = &J.mfx[i];
+        midi_fx_api_v1_t *ma = (midi_fx_api_v1_t *)api_of(f->so_path, MIDI_FX_INIT_SYMBOL, &g_mod_host);
+        void *mi;
+        int j;
+        if (!ma || ma->api_version != MIDI_FX_API_VERSION || !ma->create_instance) { t_fail("no copy of a MIDI effect"); goto done; }
+        mi = ma->create_instance(f->dir, NULL);
+        if (!mi) { t_fail("a MIDI effect copy was not made"); goto done; }
+        T.mapi[T.nmfx] = ma; T.minst[T.nmfx] = mi; T.nmfx++;
+        if (ma->set_param) {
+            for (j = 0; j < f->nparams; j++) ma->set_param(mi, f->key[j], f->val[j]);
+            if (f->state_len > 0) ma->set_param(mi, "state", f->state);
+        }
     }
 
     if (J.take.kind == MOVE_CAPTURE_SLOT_FX || J.take.kind == MOVE_CAPTURE_SLOT)
@@ -449,7 +524,8 @@ static void run_job(void) {
 
     for (;;) {
         if (__atomic_load_n(&J.cancel, __ATOMIC_ACQUIRE)) { cancelled = 1; break; }
-        /* the slot renders what earlier blocks sent it */
+        /* the MIDI FX timers, then the slot renders what earlier blocks sent it */
+        t_tick_mfx();
         if (T.sinst) T.sapi->render_block(T.sinst, sbuf, OT_BLOCK);
         else memset(sbuf, 0, sizeof sbuf);
         if (T.fed) {
@@ -486,6 +562,7 @@ static void run_job(void) {
 done:
     if (einst && eng->destroy_instance) eng->destroy_instance(einst);
     for (i = 0; i < T.nfx; i++) if (T.fapi[i]->destroy_instance) T.fapi[i]->destroy_instance(T.finst[i]);
+    for (i = 0; i < T.nmfx; i++) if (T.mapi[i]->destroy_instance) T.mapi[i]->destroy_instance(T.minst[i]);
     if (T.sinst && T.sapi->destroy_instance) T.sapi->destroy_instance(T.sinst);
     if (T.file) {
         if (ok) t_header(T.file, T.written);
@@ -574,9 +651,21 @@ int offline_take_begin(const move_offline_take_t *take) {
         return MOVE_OFFLINE_ERR_NO_HOST;
     ci = H.slot_instance(take->slot);
     if (!ci || !H.slot_info(take->slot, &J.info)) return MOVE_OFFLINE_ERR_NO_HOST;
-    n = (*H.clone_source)(ci, &J.src, take->kind != MOVE_CAPTURE_SLOT_PRE);
+    n = (*H.clone_source)(ci, &J.src, (take->kind != MOVE_CAPTURE_SLOT_PRE ? SLC_WITH_FX : 0) |
+                                      (H.mfx_source && *H.mfx_source ? SLC_WITH_MIDI_FX : 0));
     if (n < 0) return n;
     if (n == 0) return MOVE_OFFLINE_ERR_NO_SYNTH;
+    /* automation the caller cannot write itself is harmless only where its
+     * module does not play (take->absent) */
+    if ((take->absent & 1u) && J.src.so_path[0]) return MOVE_OFFLINE_ERR_LANE;
+    for (n = 0; n < J.src.nfx; n++)
+        if (take->absent & (1u << (J.src.fx[n].position + 1))) return MOVE_OFFLINE_ERR_LANE;
+    J.nmfx = 0;
+    if (H.mfx_source && *H.mfx_source) {
+        int m = (*H.mfx_source)(ci, J.mfx, MFO_MAX_FX);
+        if (m < 0) return MOVE_OFFLINE_ERR_TOO_BIG;
+        J.nmfx = m;
+    }
     J.take = *take;
     J.take.key[sizeof J.take.key - 1] = '\0';
     J.take.val[sizeof J.take.val - 1] = '\0';

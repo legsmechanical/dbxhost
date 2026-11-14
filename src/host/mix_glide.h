@@ -67,4 +67,9 @@ static inline void mix_glide_ramp(float *state, float target, float *ramp, int f
     }
 }
 
+/* Balance-style pan gains for stereo signals (this fork's pan, 0..1):
+ * 0.0 = full left (R silent), 0.5 = centre (both unity), 1.0 = full right. */
+static inline float mix_pan_gain_l(float pan) { return (pan <= 0.5f) ? 1.0f : 2.0f * (1.0f - pan); }
+static inline float mix_pan_gain_r(float pan) { return (pan >= 0.5f) ? 1.0f : 2.0f * pan; }
+
 #endif /* MIX_GLIDE_H */

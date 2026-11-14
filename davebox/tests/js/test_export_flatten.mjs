@@ -129,6 +129,28 @@ step('⭐ with Apply Conductor the takes ask for it, and their lengths', () => {
     S.trackPadMode[6] = 0;
 });
 
+step('⭐ the card says how far a take is, and why it records in real time when it does (Josh, 2026-11-14: "reason is useful")', () => {
+    setup([[2, [[0, 384]]]], []);
+    xp.confirmExportStart();
+    for (let i = 0; i < 20 && !(rs && S.resampleState === 3); i++) tick(true);
+    assert(rs && S.resampleState === 3, 'rig: no take recording');
+    /* offline: the percentage, no reason */
+    S.resampleFrames = 1000; S.resampleDone = 400; S.resampleRtWhy = 0;
+    xp.pollPendingExport();
+    assert(S.actionPopupLines[0] === 'EXPORTING' && S.actionPopupLines[1] === 'Audio 3A, 1/1  40%' && S.actionPopupLines[2] === 'Back cancels',
+           'offline card ' + JSON.stringify(S.actionPopupLines));
+    /* live, with its reason */
+    S.resampleRtWhy = 1;
+    xp.pollPendingExport();
+    assert(S.actionPopupLines[2] === 'Real time:' && S.actionPopupLines[3] === 'Modulation' && S.actionPopupLines[4] === 'Back cancels',
+           'real-time card ' + JSON.stringify(S.actionPopupLines));
+    S.resampleRtWhy = 7;
+    xp.pollPendingExport();
+    assert(S.actionPopupLines[3] === 'An automation lane', 'the reason did not follow: ' + JSON.stringify(S.actionPopupLines));
+    S.resampleRtWhy = 0; S.resampleDone = 0;
+    runToWrite(400);
+});
+
 step('⭐ Back during a take stops the export, and its takes go', () => {
     setup([[2, [[0, 384], [1, 384]]]], []);
     E.cancelAt = 2;
