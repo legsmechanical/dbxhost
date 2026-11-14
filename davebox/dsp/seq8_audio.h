@@ -140,7 +140,7 @@ typedef struct {
     uint8_t      mode;               /* AU_MODE_* */
     uint8_t      even;               /* 0 = Off (the hand set plays), else 2..AU_MAX_SLICES equal slices of Start..End */
     uint8_t      nslices;            /* the hand set's slices, 1..AU_MAX_SLICES (128) */
-    uint8_t      jump;               /* retired (jump points): read and written only so the file format stays */
+    uint8_t      jump;               /* retired (jump points): neither saved nor read; kept for the struct's shape */
     uint32_t     rstart;             /* Start, sample frames */
     uint32_t     slen;               /* Slice: Length from Start, in ticks at the sample's Tempo (0 = to the
                                       * sample's end). Loop: unused, its Length is the clip's (au_range) */
@@ -162,8 +162,8 @@ typedef struct {
                                       * (speed and pitch together), anything else = Warp (time alone). */
     uint16_t     speed_pm;           /* Free: Speed, per mille of the sample's own (AU_SPEED_*); 0 = 1000 */
     int16_t      nudge_ms;           /* Loop: the sample's start against the bar, -500..+500 ms */
-    uint32_t     rot;                /* Loop: Shift — the clip's audio rotated this many ticks later inside
-                                      * the loop, wrapping (taken mod the clip's length where it plays) */
+    uint32_t     rot;                /* Loop: Offset — where in its audio the clip starts, ticks (taken mod
+                                      * the clip's length where it plays); saved as `of` */
     uint8_t      jmpq;               /* retired (jump quantize): as `jump` */
     uint8_t      sync;               /* Loop: AU_SYNC_* */
     uint16_t     bpm10;              /* the sample's own Tempo x10 (AU_BPM10_*); 0 = not known yet (guessed when it loads) */

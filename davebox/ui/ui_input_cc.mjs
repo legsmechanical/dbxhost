@@ -6,7 +6,7 @@
  * Extracted from ui.js (Phase 5b, increment 7 of the modularity refactor).
  */
 
-import { inputBankKnob } from './ui_audio_input.mjs';
+import { inputBankKnob, inputBankReset } from './ui_audio_input.mjs';
 import { auRecPress } from './ui_audio_rec.mjs';
 import {
     MoveShift, MoveBack, MovePlay, MoveLeft, MoveRight, MoveUp, MoveDown,
@@ -71,7 +71,7 @@ import { BANK_MAP_TRACK_POPUP_MS, SEQ_PAGE_POPUP_MS, seqAutoTargetForKnob, SEQ_A
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam, soundOpenModule, instrPickResume } from './ui_sound.mjs';
 import { auPurgeRun, closeAudioChooser, askClearAudioClip } from './ui_audio_chooser.mjs';
-import { isSampledTrack, isAudioTrack, audioSliceMode, auClipOf, auClipBankKnob, auAltBit, knobAltOnTrack, auSetLayout, auSetPage, AU_NOTE_BASE, AU_EVEN_MAX, auInfo, rmxBankKnob, rmxApplyPreset } from './ui_audio.mjs';
+import { isSampledTrack, isAudioTrack, audioSliceMode, auClipOf, auClipBankKnob, auClipReset, auAltBit, knobAltOnTrack, auSetLayout, auSetPage, AU_NOTE_BASE, AU_EVEN_MAX, auInfo, rmxBankKnob, rmxApplyPreset, rmxBankReset, auPageFields } from './ui_audio.mjs';
 
 /* AUDIO's CLIP bank (Slice mode) mirrors ALL LANES over the melodic clip's
  * knobs (Josh, 2026-10-27: "it seems like clip bank should mirror all lanes
@@ -876,6 +876,25 @@ function modalDialogUp() {
          * the capture; this is just the second door into it. */
         if (S.activeBank === BANK_MACROS && macroClearConfirmOpen()) {
             S.screenDirty = true; forceRedraw(); return;
+        }
+        if (S.activeBank === BANK_REMIX && isSampledTrack(S.activeTrack)) {
+            if (rmxBankReset(S.activeTrack)) showActionPopup('REMIX', 'RESET');
+            S.screenDirty = true;
+            return;
+        }
+        if (S.activeBank === BANK_INPUT && isAudioTrack(S.activeTrack)) {
+            if (inputBankReset(S.activeTrack)) showActionPopup('INPUT', 'RESET');
+            S.screenDirty = true;
+            return;
+        }
+        if (S.activeBank === 0 && isAudioTrack(S.activeTrack)) {
+            /* An Audio clip's CLIP bank is Mode and Strch only: its reset is
+             * Mode's. The melodic arm below would write Res / InQ / Dir, which
+             * this bank does not show — and Res changes the clip's length in
+             * ticks, so the audio's window with it. */
+            if (auClipReset(S.activeTrack, auClipOf(S.activeTrack))) showActionPopup('CLIP', 'RESET');
+            S.screenDirty = true;
+            return;
         }
         if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
             if (S.drumPerformMode[S.activeTrack] > 0) {
@@ -1930,6 +1949,11 @@ function autoLaneJump() {
             if (soundOpen()) soundExit();
             if (S.auPanel) closeAudioPanel();
             openWave(t, st.bank === AU_AUTO_BANK ? 'sample' : 'slices');
+            /* ...on the page its knob is on: Revrs is SOUND's (page 3), the rest page 1's */
+            if (S.auEditor && st.bank === AU_AUTO_BANK) {
+                const pg = [0, 1, 2].find((p) => auPageFields(p).includes(st.field));
+                if (pg != null) S.auEditor.page = pg;
+            }
             forceRedraw();
             return;
         }

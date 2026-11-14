@@ -1394,7 +1394,8 @@ they were. **REMIX** works on bars, so it has nothing to do on a Free clip: its 
 kept and read **--**. A Warp start is about 15 ms after the launch (the stretcher needs a
 head start); a Pitch start is on the launch.
 
-**Touch Tempo and click** (page 1 or TIME) for Tempo's menu:
+**Touch Tempo and click** (page 1 or TIME) for Tempo's menu (not on a Free clip, whose
+knob there is Speed):
 
 - **Fit to clip** (an Audio clip's) — sets **Bars** to the clip's length, so Start to End (or
   the end of the sample) lasts exactly as long as the clip, and Warp stretches it to fit.
@@ -1403,7 +1404,7 @@ head start); a Pitch start is on the launch.
 - **Original tempo** — the sample's Tempo becomes the project's, so it plays exactly as
   recorded.
 
-A **click** on SAMPLE opens its menu (**Shift + click** does the same):
+A **click** on SAMPLE's waveform page opens its menu (**Shift + click** does the same):
 
 - **Load sample** — the chooser (below).
 - **Trim** — on an Audio clip, cuts the file to what the clip plays, Start for its Length
@@ -1493,14 +1494,15 @@ or hold steps, **Record**, and **hold a step + jog right** for its step page. On
 (any page after the first), **Delete + click** resets that page's knobs — the picked chop,
 every chop with Shift; SAMPLE's TIME back to Sync Grid, Warp Warp (a Slicer's Off), Nudge 0
 and Offset 0 (the Tempo and Bars are the sample's own and stay); or SOUND's Gain, Pitch,
-Detune and Revrs.
+Detune and Revrs. A reset takes the automation lanes of what it reset with it (every
+chop's, on Shift's page), and one **Undo** brings it all back.
 
 ### The banks
 
 | Bank | Knobs |
 |---|---|
 | **CLIP**, Slicer | As a melodic clip's (**Res**, **Strch**, **Shift**, **InQnt**, **Crop›**, **Dir**), with **>Seq›** on K8 (touch, click): one step per chop, each at its place at the sample's **Tempo**, so the clip plays the sample back as it was — now as chops you can rearrange. A clip whose length you never set grows to hold all of it (a coarser resolution past 256 steps); a length you set stays, and the chops past it wait beyond the loop's end. No Legato: a step holds one chop |
-| **CLIP**, Audio | **Mode** · **Strch**; everything else about the sample is on [SAMPLE](#75-audio)'s pages. **Mode** is **Loop** (the clip plays round and round) or **Shot**: a one-shot — launched, the clip plays its length once from its top, then stops, so it can be fired off like a sample; launch it again to replay it. Every other setting stays as it is when you switch. **Strch** works as a sequence's does, in audio: x2 doubles the clip's Length and the sample's Tempo — the loop plays at half speed across twice the bars; /2 the reverse. With **Bars** set, Bars double instead of the Tempo, with the same result. On a **Free** clip **Strch** x2 halves the Speed (/2 doubles it). Past 256 steps or the Tempo's range it says *BEAT STRETCH / EXPAND LIMIT* (or *COMPRESS LIMIT*). Touch **Strch** and the clip's waveform comes up over the bank while you hold it |
+| **CLIP**, Audio | **Mode** · **Strch**; everything else about the sample is on [SAMPLE](#75-audio)'s pages. **Mode** is **Loop** (the clip plays round and round) or **Shot**: a one-shot — launched, the clip plays its length once from its top, then stops, so it can be fired off like a sample; launch it again to replay it. Every other setting stays as it is when you switch. **Strch** works as a sequence's does, in audio: x2 doubles the clip's Length and the sample's Tempo — the loop plays at half speed across twice the bars; /2 the reverse. With **Bars** set, Bars double instead of the Tempo, with the same result. On a **Free** clip **Strch** x2 halves the Speed (/2 doubles it). Past 256 steps or the Tempo's range it says *BEAT STRETCH / EXPAND LIMIT* (or *COMPRESS LIMIT*). Touch **Strch** and the clip's waveform comes up over the bank while you hold it (not on a Free clip). **Delete + click** puts Mode back to Loop |
 | **PAD MODE** (Slicer) | **Layout**: **4 Rows** or **16 Pads**, how the chops sit on the pads |
 | **LIVE ARP** | As on a melodic track, but **Step** replaces Oct: each repeat moves one chop up (or down), up to 15 |
 | **REMIX** (both) | Rearranges the loop as it plays — see [REMIX](#remix) below |
@@ -1526,6 +1528,8 @@ pad, on Audio and Slicer tracks alike, and each clip has its own.
 | **K6 Stutr** | How many stutters (quick repeats) play. **Touch K6 + click** turns it to **Rate** — **Orig**, **1/32**, **1/64**, how fast they repeat — then to **Vel**: **On**, the repeats ramp in level as the RS7000's do; **Off**, every repeat at full level |
 | **K7 Gaps** | How many gaps cut into the bar. **Touch K7 + click** turns it to **Depth**: how hard a gap cuts, from **100 %** (silent) down to a slight shortening |
 | **K8 Pitch** | How far the pitched pieces move, **−24 to +24** semitones: below 0 they go the other way — what went up goes down |
+
+**Delete + click** puts the clip's REMIX back as a new clip has it: Off, the first Chop and Order, its amounts. One **Undo** brings it back.
 
 Every amount works on what you hear: each turn up changes something that plays, on any
 Order, and the same settings always give the same bar. The effects combine — reverse a few
@@ -2854,8 +2858,7 @@ with the tempo and root note (not the scale — the set opens in Major).
   loops of variation.
 - **A remix exports as you hear it**: an Audio or Slicer clip with [REMIX](#remix) on is
   rendered with it (Live has no remix of its own), and a Slicer's steps play their own
-  Pitch, Length, Start and Reverse. On a **Warp** clip each remixed piece is cut at the
-  sample's own speed, as Live's *Beats* warping does.
+  Pitch, Length, Start and Reverse.
 - An **Apply Conductor?** step works as it does for [bake](#161-bake), and never
   changes your live set.
 - **Automation comes too** — see below.
@@ -3098,8 +3101,10 @@ the built-in mic when nothing is plugged in) into the active clip.
 - **An empty clip** records until you press **Rec** again, and stops at the end of
   that bar (up to 64 bars). The clip becomes that many bars long.
 - **A clip that has a sample** records a new layer: one pass of the clip, with what
-  you play mixed over the clip as you hear it. Pitch, Start, Reverse and the rest are
-  baked into the new sample, which the clip then plays as it is. Press **Rec** during
+  you play mixed over the clip as you hear it. Pitch, Start, Reverse, Speed, REMIX and
+  the rest are baked into the new sample, which the clip then plays as it is (Mode and
+  Free stay as they were: the file is the pass you heard). On a **Shot** clip the take
+  is its one pass, and on a Free one-shot however long that pass runs. Press **Rec** during
   the pass to stop adding to it: what you played stays, the rest of the pass keeps the
   old sound.
 - **Stopped**, Rec gives MIDI's one-bar count-in, then records from the top. **Playing**,
@@ -3126,6 +3131,8 @@ the built-in mic when nothing is plugged in) into the active clip.
   | K3 Gain | The input's level, for the take and what you hear | −24 to +24 dB (**0**) |
   | K4 Length | How long a take into an empty clip is | **Free** (until Rec again) · 1 · 2 · 4 · 8 bars |
   | K5 Overdub | A take into a clip that has a sample | **Layer** (over what it plays) · Replace |
+
+  **Delete + click** puts all five back to the defaults in bold.
 
   While **INPUT** is up, the track's overview shows the input's level where the
   waveform is, and **CLIP** when it reaches full scale. The Move picks the source itself: line-in when a cable

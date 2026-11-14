@@ -16,12 +16,12 @@ import * as os from 'os';
 import { S, noteUndoUnit } from './ui_state.mjs';
 import { showActionPopupFor } from './ui_persistence.mjs';
 import { SCENE_LETTERS } from './ui_constants.mjs';
-import { isAudioTrack, auInfo, auMarkStale, dspAnswer } from './ui_audio.mjs';
+import { isAudioTrack, auInfo, auMarkStale, dspAnswer, auSeqClipOf } from './ui_audio.mjs';
 import { sanitizeName } from './ui_export.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { disarmRecord } from './ui_record.mjs';
 import { forceRedraw, invalidateLEDCache } from './ui_leds.mjs';
-import { auIn } from './ui_audio_input.mjs';
+import { auIn, auInRead } from './ui_audio_input.mjs';
 import { confirmLineInput, feedbackGateActive, feedbackGateDraw, feedbackGateInput }
     from '/data/UserData/schwung/shared/feedback_gate.mjs';
 
@@ -78,7 +78,10 @@ export function auRecPress() {
     }
     const t = S.activeTrack;
     if (!isAudioTrack(t)) return false;
-    const c = S.trackActiveClip[t];
+    /* the clip on screen: stopped, the queued one (as the editor shows it, and
+     * as a MIDI take picks it) — the active one would be replaced at Play,
+     * and the take dropped with it */
+    const c = auSeqClipOf(t);
     if (auInfo(t, c).state === 1) { showActionPopupFor(2000, 'RECORD', 'Sample loading'); return true; }
     confirmLineInput('Record', (ok) => { if (ok) armTake(t, c); forceRedraw(); });
     forceRedraw();
@@ -94,7 +97,7 @@ function armTake(t, c) {
     host_module_set_param('t' + t + '_au_rec_arm', c + ' ' + AU_REC_LATENCY + ' |' + path);
     const layer = !!auInfo(t, c).name;
     S.auRec = { t, c, path, phase: 'armed', layer, at: nowMs(), polled: 0, stopAsked: false,
-                lenBars: layer ? 0 : [0, 1, 2, 4, 8][auIn(t).len % 5] };
+                lenBars: layer ? 0 : [0, 1, 2, 4, 8][(auIn(t).len ?? (auInRead(t) || { len: 0 }).len) % 5] };
     if (!S.playing) {
         /* MIDI's count-in: its screen, its click; the engine starts the clip */
         S.recordArmed        = true;

@@ -401,6 +401,24 @@ step('⭐ on a Slicer the same pad opens REMIX, and NOTE FX keeps its own pad', 
     assert(S.activeBank === 1, 'a Slicer\'s NOTE FX pad did not open NOTE FX: bank ' + S.activeBank);
 });
 
+{
+    const KL = await import('../../ui/ui_knob_leds.mjs');
+    step('...REMIX rings follow the values, and go dark on a Free clip', () => {
+        S.rmxSet[4] = [1, 15, 0, 1, 100, 50, 0, 0, -24, 0, 100];
+        const c = A.rmxBankCells(4);
+        const n = c.map((x) => KL.ringNormOfCell(x));
+        assert(n[3] === 1 && n[4] === 0.5 && n[7] === 0 && n[1] === 1, 'rings: ' + JSON.stringify(n));
+        const pm = S.trackPadMode[4];
+        S.trackPadMode[4] = C.PAD_MODE_AUDIO;                /* an Audio clip (a Slicer has no Free) */
+        const ac = A.auClipOf(4), keep = S.auInfo[4][ac];
+        S.auInfo[4][ac] = Object.assign({ nframes: 44100, rate: 44100 }, keep || {}, { state: 2, mode: 0, free: 1 });
+        const nf = A.rmxBankCells(4).map((x) => KL.ringNormOfCell(x));
+        assert(nf.every((x) => x === null), 'a Free clip\'s REMIX rings are lit: ' + JSON.stringify(nf));
+        S.auInfo[4][ac] = keep;
+        S.trackPadMode[4] = pm;
+    });
+}
+
 process.exit(failed);
 }
 main().catch((e) => { console.error(e); process.exit(1); });

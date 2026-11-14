@@ -1303,6 +1303,7 @@ typedef struct {
     uint8_t      drum_repeat_vel_scale[DRUM_LANES][8];
     int8_t       drum_repeat_nudge[DRUM_LANES][8];
     uint8_t      au_layout, au_cond;     /* a Slicer's (au_track_t): its slot rides undo_slc */
+    uint8_t      au_in_len, au_in_ovr;   /* an Audio track's INPUT Length / Overdub (au_track_t) */
 } flat_keep_t;
 #define LRS_SET(tr, s)  ((tr)->live_recorded_steps[(s)>>3] |=  (uint8_t)(1u<<((s)&7)))
 #define LRS_TEST(tr, s) ((tr)->live_recorded_steps[(s)>>3] &   (1u<<((s)&7)))
@@ -1561,6 +1562,7 @@ typedef struct {
     uint8_t  resample_restore;    /* put the armed clips back at the next transport stop */
     uint8_t  resample_lead_wait;  /* renders STARTING waits before capturing (LEAD_BLOCKS) */
     uint8_t  resample_hear;       /* track + 1 an export take plays muted or not (0 = none) */
+    uint16_t resample_tracks;     /* bit t: track t launched for this take (rs_relaunch_once) */
     uint8_t  resample_offline;    /* this take is the host's offline take (offline_take_*) */
     uint8_t  resample_prev_clip[NUM_TRACKS], resample_prev_relaunch[NUM_TRACKS];
     /* AUDIO INPUT RECORDING (seq8_audio_rec.c): the Move's input into an

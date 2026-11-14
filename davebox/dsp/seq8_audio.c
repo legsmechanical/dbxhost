@@ -3217,9 +3217,13 @@ static void au_lazy_finish(seq8_instance_t *inst) {
  * (JSON-escaped); a key this build does not know is skipped, one it misses
  * takes its default:
  *   t%dc%d_aud   an Audio clip with a sample or a setting:
- *                rs (Start, frames) p dt g rv nu (Nudge ms) sh (Shift ticks)
- *                sy (0 Warp, 1 Vintage, 2 Pitch; unknown -> Warp)
+ *                rs (Start, frames) p dt g rv nu (Nudge ms) sh (the old Shift,
+ *                ticks, the other way round: written 0, read into of)
+ *                sy (Warp: 0 Warp, 1 Vintage, 2 Pitch; unknown -> Warp)
  *                bpm (Tempo x10; 0 = guess when it loads)
+ *                of (Offset ticks) os (Shot) en (End, frames) sp (Bars, ticks)
+ *                fr (Free) spd (Free's Speed, per mille; 0 = 100 %), each
+ *                written only when set
  *   t%d_slc      a Slicer track: p dt g rv bpm sy (0 Off, 1 Pitch; 2 is Snap's,
  *                parked; unknown -> Off) sens cond (follows the Conductor)
  *                lay (0 4 Rows, 1 16 Pads) n (chops)
@@ -3350,8 +3354,10 @@ static void au_request_load(seq8_instance_t *inst, int t, int c) {
 }
 
 /* The key=value tokens of a state value, up to '|' or its closing quote:
- * up to AU_KV_MAX of them; *pp is left on the '|' (or the quote). */
-#define AU_KV_MAX 16
+ * up to AU_KV_MAX of them; *pp is left on the '|' (or the quote).
+ * ⚠ Past AU_KV_MAX the tokens are dropped without a word, and an Audio clip's
+ * line already has 15 (test_audio_track pins a line with room to spare). */
+#define AU_KV_MAX 32
 typedef struct { char k[8]; long v; } au_kv_t;
 static int au_read_kv(const char **pp, au_kv_t *kv) {
     const char *p = *pp;

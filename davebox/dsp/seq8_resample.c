@@ -344,6 +344,32 @@ static void resample_render_start(seq8_instance_t *inst, int frames) {
     }
 }
 
+/* After a warm-up pass: the take's Audio clips that play once (Shot) or on a
+ * clock of their own (Free) start again here, as they do when launched. The
+ * warm-up pass has already ended a Shot clip, and left a Free one wherever its
+ * own clock had got to. Called before any track plays this tick. */
+static void rs_relaunch_once(seq8_instance_t *inst) {
+    int t;
+    for (t = 0; t < NUM_TRACKS; t++) {
+        seq8_track_t *tr = &inst->tracks[t];
+        const au_clip_t *ac;
+        clip_t *cl;
+        if (!(inst->resample_tracks & (1u << t)) || tr->pad_mode != PAD_MODE_AUDIO) continue;
+        ac = &inst->au_store[t][tr->active_clip];
+        if (!ac->shot && !ac->freerun) continue;
+        cl = &tr->clips[tr->active_clip];
+        tr->queued_clip       = -1;
+        tr->pending_page_stop = 0;
+        tr->clip_playing      = 1;
+        tr->current_step      = initial_clip_step(cl->loop_start, cl->length, cl->playback_dir);
+        cl->pp_dir_state      = initial_pp_dir(cl->playback_dir);
+        tr->tick_in_step      = 0;
+        au_track_kill(inst, t, NULL);
+        inst->au_trk[t].free_on   = 0;              /* au_render starts it, and its stretcher, again */
+        inst->au_trk[t].last_tick = -1;
+    }
+}
+
 /* The tick loop, at the top of each master tick (before any track plays it). */
 static void resample_tick(seq8_instance_t *inst) {
     uint32_t abs;
@@ -354,6 +380,7 @@ static void resample_tick(seq8_instance_t *inst) {
     if (inst->resample_state == RS_ARMED && abs >= inst->resample_start_tick) {
         inst->resample_state     = RS_STARTING;
         inst->resample_lead_wait = LEAD_BLOCKS;
+        if (inst->resample_start_tick) rs_relaunch_once(inst);
     }
     /* The pass is over: every clip stops at this bar line, before any track
      * plays it, so the tail is ring-out. */
@@ -413,6 +440,7 @@ static void resample_scene_start(seq8_instance_t *inst, const char *val) {
         inst->tracks[t].will_relaunch     = 0;
         inst->tracks[t].pending_page_stop = 0;
     }
+    inst->resample_tracks = (uint16_t)((1u << NUM_TRACKS) - 1);
     rs_launch(inst, bars, warm, tail, path);
 }
 
@@ -458,6 +486,7 @@ static void resample_clip_launch(seq8_instance_t *inst, const char *val, int off
         inst->tracks[t].pending_page_stop = 0;
     }
     inst->tracks[tr_i].queued_clip = (int8_t)c;
+    inst->resample_tracks = (uint16_t)(1u << tr_i);
     rs_launch(inst, bars, warm, tail, path);
 }
 static void resample_clip_start(seq8_instance_t *inst, const char *val) {
@@ -542,5 +571,6 @@ static void export_take_start(seq8_instance_t *inst, const char *val) {
     if (cond && inst->conductor_track >= 0 && inst->conductor_track != tr_i)
         inst->tracks[inst->conductor_track].queued_clip = (int8_t)c;
     inst->resample_hear = (uint8_t)(tr_i + 1);
+    inst->resample_tracks = (uint16_t)(1u << tr_i);
     rs_launch_ticks(inst, ticks, 1, 0, path);
 }

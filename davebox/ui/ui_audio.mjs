@@ -33,7 +33,7 @@ import { dspGet } from './ui_dsp_get.mjs';
 /* a cycle (ui_audio_editor imports this module): used only inside a function body */
 import { lazyFinish } from './ui_audio_editor.mjs';
 import { PAD_MODE_AUDIO, PAD_MODE_SLICER, padSampled, NUM_CLIPS, BANK_STEP, TPS_VALUES, knobAltFor, seqAutoTargetForKnob, auAutoKey, auSlicesAutoKey, SEQ_AUTO_TARGETS, AU_AUTO_BANK, auAutoBank } from './ui_constants.mjs';
-import { automationParamEdit, automationParamTouch } from './ui_automation.mjs';
+import { automationParamEdit, automationParamTouch, automationClearKey } from './ui_automation.mjs';
 import { bankListForMode, AU_MODE_LOOP, AU_MODE_SLICE, auIsSlice, auIsLoop } from './ui_pure.mjs';
 
 export { AU_MODE_LOOP, AU_MODE_SLICE, auIsSlice, auIsLoop } from './ui_pure.mjs';
@@ -155,7 +155,7 @@ export function auOffsetFrame(t, c, i) {
 export const AU_NOTE_BASE = 0, AU_PAGE = 32, AU_EXT_BASE = 36;
 export const AU_LAYOUT_NAMES = ['4 Rows', '16 Pads'];
 export const AU_LAZY_NONE = 0, AU_LAZY_ARMED = 1, AU_LAZY_RUN = 2, AU_LAZY_ENDED = 3;
-export const AU_PLAY_NAMES = ['One', 'Gate', 'Loop'];
+export const AU_PLAY_NAMES = ['One', 'Gate'];   /* the engine's two (sp_track_audio.c clamps to Gate) */
 export const AU_ERR_TEXT = ['', "Can't read file", 'Not WAV / AIFF', 'Too long', 'Out of memory', "Can't copy", 'Nothing to raise'];
 export const AU_SLICE_MAX_SEC = 240;      /* the engine's Slice limit (seq8_audio.h): 4 minutes */
 
@@ -275,8 +275,8 @@ const DEFAULT_SLICE = { a: 0, b: 0, pinned: 0, pitch: 0, detune: 0, gain: 0, rev
  * timing" · "why not keep sync? it'd basically allow pitch and time to work
  * independently" · "yep"): Start..End loops on its own from the launch at
  * Speed; Sync's Pitch is Tape there (speed and pitch together), anything else
- * Warp (time alone). Tempo, Bars, the clip's length, Offset and Nudge do not
- * reach it. */
+ * Warp (time alone). Tempo, Bars and the clip's length do not reach it;
+ * Offset and Nudge set where in Start..End it starts. */
 export function auIsFree(i) { return !!i && auIsLoop(i) && (i.free | 0) === 1; }
 export const AU_SPEED_MIN = 10, AU_SPEED_MAX = 4000;    /* per mille, as the engine's: 1 % .. 400 % */
 export function auSpeedText(pm) {
@@ -492,6 +492,8 @@ export function auPos() { return _pos; }
  * until it lands, a stale one at once, the playhead every few ticks. */
 export function auTick() {
     auTickOthers();
+    /* Strch's x2 / /2 is the turn in hand: let go, and a later bare touch reads 1x */
+    if (S.auStrchDir && S.knobTouched !== 1) S.auStrchDir = null;
     const t = S.activeTrack;
     if (!isSampledTrack(t)) { _pos.on = 0; return; }
     const c = auClipOf(t);
@@ -664,6 +666,20 @@ export function auPick(t, c, path, join) {
 export function auUndoClips(t, cs) {
     setKey(t, 'undo', cs.join(' '));
 }
+/* A bank reset is one undo step (Josh, 2026-09-13: "it should be undoable on
+ * every bank"), taken before its writes: an Audio clip's own, or a Slicer's
+ * clips and slot. */
+function auResetUndo(t, c) {
+    noteUndoUnit();
+    if (isSlicerTrack(t)) setKey(t, 'undo_slc', '');
+    else auUndoClips(t, [c]);
+}
+/* ...and the lanes of what it reset go with it, as the MIDI banks' do: a lane
+ * left in place would take the value back at its next point. The undo step
+ * above holds them. */
+function auResetLanes(t, c, keys) {
+    for (const k of keys) automationClearKey(t, c, 'seq:' + t + ':' + k, false);
+}
 
 export function auClear(t, c) {
     noteUndoUnit();
@@ -740,13 +756,14 @@ export function auAutoMirror(t, field, val) {
 /* A MACRO on an Audio clip's sound: `key` is one of the `seq:` keys above
  * (au_* or au_s_*), its value on track t's current clip in lane units
  * (Decay's Full is 5001), or null where there is nothing to drive — no
- * sample yet, or ALL SLICES on a Loop clip. `read` (tick context only): an
+ * sample yet, ALL SLICES on a Loop clip, or the Tempo of a Free clip. `read` (tick context only): an
  * ALL SLICES row not yet read is read now. */
 export function auMacroValue(t, key, read) {
     const st = SEQ_AUTO_TARGETS[key];
     if (!st || !auAutoBank(st.bank) || !isSampledTrack(t)) return null;
     const c = auClipOf(t), i = auInfo(t, c);
     if (i.state !== 2) return null;
+    if (st.bank === AU_AUTO_BANK && st.field === 'bpm10' && auIsFree(i)) return null;   /* Free has no Tempo to drive: its knob is Speed */
     if (st.bank === AU_AUTO_BANK) return st.field === 'bpm10' ? (Math.round(auBpm(i) * 10) || 1200) : (i[st.field] | 0);
     if (!auIsSlice(i)) return null;
     let a = auAll(t, c);
@@ -902,7 +919,8 @@ export function auPanelTitle(ed) {
     return name;
 }
 
-const dash = (x) => Object.assign({}, x, { text: '--' });
+/* a knob with nothing to set here (no sample, no such slice, a Free clip's REMIX): `na` keeps its ring dark */
+const dash = (x) => Object.assign({}, x, { text: '--', na: true });
 const BLANK = { kind: 'blank', label: '' };
 
 const revrsCell = (i) => ({ kind: 'enumsq', label: 'Revrs', name: 'Reverse', text: i.revrs ? 'On' : 'Off', options: ['Off', 'On'], sel: i.revrs });
@@ -932,6 +950,8 @@ const soundCell = {
  * "duplicate of slice p2 params"; one knob, one param on both pages), Attk and
  * Decay on page 2's K1 / K2 where page 1 has Start and Zoom. */
 export const SLICE_GRID = ['atk', 'dec', null, 'gain', 'pitch', 'detune', 'rev', 'play'];
+/* ALL SLICES' automation lanes (ui_constants AU_SLICES_KEYS), cleared by its reset */
+const AU_SLICES_LANES = ['au_s_atk', 'au_s_dec', 'au_s_gain', 'au_s_pitch', 'au_s_detune', 'au_s_rev', 'au_s_play'];
 
 export function auPanelCells(ed) {
     const t = ed.t, c = auClipOf(t), i = auInfo(t, c);
@@ -969,7 +989,7 @@ export function auPanelCells(ed) {
         return SLICE_GRID.map((f) => {
             if (!f) return BLANK;
             const cell = soundCell[f](all);
-            cell.name = 'All Slices: ' + cell.name;
+            cell.name = 'All Slices: ' + cell.name.replace(/^Slice /, '');   /* "All Slices: Slice Detune" ran off the screen */
             return cell;
         }).map(live);
     }
@@ -1034,12 +1054,24 @@ function stepSliceField(f, v, steps) {
     if (f === 'detune') return Math.max(-50, Math.min(50, v + steps));
     if (f === 'gain') return Math.max(-40, Math.min(12, v + dir));
     if (f === 'rev') return dir > 0 ? 1 : 0;
-    if (f === 'play') return Math.max(0, Math.min(2, v + dir));
+    if (f === 'play') return Math.max(0, Math.min(AU_PLAY_NAMES.length - 1, v + dir));
     if (f === 'atk') return Math.max(0, Math.min(2000, v + steps * (v < 100 ? 2 : 20)));
     if (f === 'dec') return stepDecay(v, steps);
     return v;
 }
 
+/* Delete + click on an Audio clip's CLIP bank: Mode back to Loop. Strch is an
+ * action with nothing stored, and the MIDI CLIP bank's settings (Res, InQ,
+ * Dir) are not on this bank, so a reset leaves them alone. True when it changed. */
+export function auClipReset(t, c) {
+    const i = auInfo(t, c);
+    if (i.state !== 2 || !i.shot) return false;
+    auResetUndo(t, c);
+    auSet(t, c, 'shot', 0);
+    S.auInfo[t][c] = Object.assign({}, i, { shot: 0 });
+    S.auStartsRev = (S.auStartsRev | 0) + 1;
+    return true;
+}
 /* An Audio clip's CLIP bank knobs: K1 Mode, K2 Strch — everything else is
  * SAMPLE's, on the pages after its waveform (Josh, 2026-11-14: "aside from
  * clip bank mode and stretch, let's figure out a way to put everything on
@@ -1245,7 +1277,9 @@ export function auPanelReset(ed) {
     if (i.state !== 2) return false;
     const pn = auPanelPageName(ed);
     if (pn === 'CLIP' && auIsSlice(i)) {
+        auResetUndo(t, c);
         for (const f of SLICE_GRID) if (f) auSetAll(t, c, f, DEFAULT_SLICE[f]);
+        auResetLanes(t, c, AU_SLICES_LANES);
         _all.delete(t + '_' + c);
         for (const k of _sl.keys()) if (k.startsWith(t + '_' + c + '_')) _sl.delete(k);
         return true;
@@ -1260,6 +1294,7 @@ export function auPanelReset(ed) {
     }
     const l = auSelSlice(t);
     if (l >= i.n) return false;
+    auResetUndo(t, c);
     for (const f of SLICE_FIELDS) auSetSlice(t, c, l, f, DEFAULT_SLICE[f]);
     return true;
 }
@@ -1445,20 +1480,23 @@ export function rmxOrderMoved(t) {
 }
 export function rmxBankCells(t) {
     const r = rmxGet(t), o = rmxOrdersFor(t);
-    const pct = (label, name, v) => ({ kind: 'valsq', label, name, text: (v | 0) + '%' });
+    const pct = (label, name, v) => ({ kind: 'valsq', label, name, text: (v | 0) + '%', ringNorm: (v | 0) / 100 });
     const on = { kind: 'enumsq', label: 'Remix', name: 'Remix', text: r[0] ? 'On' : 'Off', options: ['Off', 'On'], sel: r[0] ? 1 : 0 };
     const ch = RMX_CHOPS[rmxChopIndex(r[1])];
-    const chop = { kind: 'valsq', label: 'Chop', name: 'Chop', text: ch.name, cardText: ch.full };
+    const chop = { kind: 'valsq', label: 'Chop', name: 'Chop', text: ch.name, cardText: ch.full,
+                   ringNorm: rmxChopIndex(r[1]) / (RMX_CHOPS.length - 1) };
     const ot = rmxOrderText(t);
     const order = { kind: 'valsq', label: 'Order', name: 'Order', text: ot,
-                    cardText: (o && o.cur >= 0 && !o.list[o.cur].rev) ? ot + '/' + o.list.length : ot };
+                    cardText: (o && o.cur >= 0 && !o.list[o.cur].rev) ? ot + '/' + o.list.length : ot,
+                    ringNorm: (o && o.list.length > 1 && o.cur >= 0) ? o.cur / (o.list.length - 1) : 0 };
     let k6;
     if (S.rmxK6 === 1) k6 = { kind: 'enumsq', label: 'Rate', name: 'Stutter Rate', text: RMX_RATES[r[9] | 0], options: RMX_RATES, sel: r[9] | 0 };
     else if (S.rmxK6 === 2) k6 = { kind: 'enumsq', label: 'Vel', name: 'Stutter Vel', text: r[3] === 0 ? 'Off' : 'On', options: ['Off', 'On'], sel: r[3] === 0 ? 0 : 1 };
     else k6 = pct('Stutr', 'Stutter', r[6]);
     const k7 = S.rmxK7 ? pct('Depth', 'Gap Depth', r[10]) : pct('Gaps', 'Gaps', r[7]);
     const cells = [on, chop, order, pct('Shufl', 'Shuffle', r[4]), pct('Revrs', 'Reverse', r[5]), k6, k7,
-            { kind: 'valsq', label: 'Pitch', name: 'Pitch', text: ((r[8] | 0) > 0 ? '+' : '') + (r[8] | 0) + 'st' }];
+            { kind: 'valsq', label: 'Pitch', name: 'Pitch', text: ((r[8] | 0) > 0 ? '+' : '') + (r[8] | 0) + 'st',
+              ringNorm: ((r[8] | 0) + 24) / 48 }];
     /* a Free clip has no bars to remix: the setting is kept, unheard, dashed */
     return rmxOffFree(t) ? cells.map(dash) : cells;
 }
@@ -1482,6 +1520,21 @@ export function rmxApplyPreset(t, set) {
     S.rmxSet[t] = r;
     host_module_set_param('t' + t + '_remix_var', String(set));
     S.rmxMapDirty = true;
+}
+/* Delete + click on REMIX: the clip's REMIX back to a fresh clip's (Off, the
+ * first Chop and arrangement, its dials, Vel On). One undo step. True when it
+ * changed. */
+export function rmxBankReset(t) {
+    const r = rmxGet(t), c = auClipOf(t);
+    if (r.every((v, i) => (v | 0) === RMX_DEF[i])) return false;
+    auResetUndo(t, c);
+    const send = (key, v) => host_module_set_param('t' + t + '_' + key, String(v));
+    send('remix_on', 0); send('remix_type', 0);
+    send('remix_var', 0);                                /* the arrangement and its own dials */
+    send('remix_rvel', 1);
+    S.rmxSet[t] = RMX_DEF.slice();
+    S.rmxMapDirty = true;
+    return true;
 }
 /* a REMIX knob moved by `steps`: detents for the pick knobs (Chop, Order,
  * Rate) and the toggles, a value delta for the amounts (1 % a unit; the
@@ -1596,7 +1649,7 @@ export function auPageFields(page) {
 export function auSampleFieldCell(t, c, f) {
     const i = auInfo(t, c), slc = isSlicerTrack(t), free = auIsFree(i), loop = auIsLoop(i) && !slc;
     const live = (x) => (i.state === 2 ? x : dash(x));
-    const off = (x) => Object.assign(dash(x), { na: true });   /* does nothing on this clip */
+    const off = (x) => dash(x);   /* does nothing on this clip */
     if (f === 'free') return loop ? live(clockCell(i)) : off(clockCell(i));
     if (f === 'sync') return live(free ? freeSyncCell(i) : syncCell(t, i));
     if (f === 'nudge') return slc ? off(nudgeCell(i)) : live(nudgeCell(i));
@@ -1704,7 +1757,9 @@ export function auTrimCuts(t, c) {
 export function auSampleReset(t, c) {
     const i = auInfo(t, c);
     if (i.state !== 2) return false;
+    auResetUndo(t, c);
     for (const f of ['gain', 'pitch', 'detune', 'revrs']) auSet(t, c, f, 0);
+    auResetLanes(t, c, ['au_gain', 'au_pitch', 'au_detune', 'au_revrs']);
     S.auInfo[t][c] = Object.assign({}, i, { gain: 0, pitch: 0, detune: 0, revrs: 0 });
     S.auStartsRev = (S.auStartsRev | 0) + 1;
     return true;
@@ -1716,11 +1771,11 @@ export function auTimeReset(t, c) {
     const i = auInfo(t, c);
     if (i.state !== 2) return false;
     const slc = isSlicerTrack(t), loc = Object.assign({}, i);
-    let any = false;
-    const put = (f, key, v) => { if ((i[f] | 0) !== v) { auSet(t, c, key, v); loc[f] = v; any = true; } };
-    put('sync', 'sync', 0);
-    if (!slc) { put('free', 'free', 0); put('nudge', 'nudge', 0); put('rot', 'rot', 0); }
-    if (!any) return false;
+    const todo = [['sync', 'sync']].concat(slc ? [] : [['free', 'free'], ['nudge', 'nudge'], ['rot', 'rot']])
+        .filter(([f]) => (i[f] | 0) !== 0);
+    if (!todo.length) return false;
+    auResetUndo(t, c);
+    for (const [f, key] of todo) { auSet(t, c, key, 0); loc[f] = 0; }
     loc.rend = auPlayedEnd(t, c, loc);
     S.auInfo[t][c] = loc;
     S.auStartsRev = (S.auStartsRev | 0) + 1;
@@ -1730,6 +1785,7 @@ export function auTimeReset(t, c) {
 export function auOrig(t, c) {
     const i = auInfo(t, c);
     if (i.state !== 2) return false;
+    auResetUndo(t, c);                                  /* one undo step, as Fit is */
     auSet(t, c, 'orig', 0);
     const bpm = S.bpmMirror > 0 ? S.bpmMirror : 120;   /* the DSP sets the same from its own */
     S.auInfo[t][c] = Object.assign({}, i, { bpm10: Math.round(bpm * 10), span: 0 });   /* a Tempo set: Bars give way */

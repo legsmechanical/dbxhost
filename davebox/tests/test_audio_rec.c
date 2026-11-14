@@ -291,6 +291,19 @@ int main(void) {
         HX_ASSERT(wait_loaded(h, T_REC, 0) == 2, "landing (4 bars): the take did not load");
         HX_ASSERT(inst->au_store[T_REC][0].rot == 3 * RS_BAR_TICKS,
                   "landing (4 bars from bar 2): the Offset is not three bars into the take");
+        /* the track changed kind between the take's end and its landing: nothing lands */
+        inst->ar_track = T_REC; inst->ar_clip = 1; inst->ar_fixed = 0;
+        inst->ar_ticks = 4 * RS_BAR_TICKS; inst->ar_start_abs = 0;
+        inst->ar_state = AR_DONE;
+        hx_set_param(h, "t4_convert_to_melodic", "");
+        HX_ASSERT(inst->tracks[T_REC].pad_mode == PAD_MODE_MELODIC_SCALE, "rig: the track did not leave Audio");
+        {
+            uint16_t len0 = inst->tracks[T_REC].clips[1].length;
+            hx_set_param(h, "t4_au_rec_land", "1");
+            hx_render(h, 4);
+            HX_ASSERT(inst->tracks[T_REC].clips[1].length == len0 && !inst->au_store[T_REC][1].name[0],
+                      "a take landed on a track that is no longer Audio (its clip resized or given the file)");
+        }
     }
     hx_destroy(h);
 
@@ -402,14 +415,84 @@ int main(void) {
     write_wav(p, b, n);
     inst->au_store[T_REC][0].pitch = 3;                   /* baked into the file: undone by the landing */
     inst->au_store[T_REC][0].rot = 24;
+    inst->au_store[T_REC][0].freerun = 1;                /* Free stays (at 100 % it plays the file as heard) */
+    inst->au_store[T_REC][0].speed_pm = 500;
+    inst->tracks[T_REC].clips[0].pfx_params.rmx_on = 1;
+    inst->au_store[T_REC][0].shot = 1;                   /* Shot stays: the file is its one pass */
     k = inst->tracks[T_REC].clips[0].length;
     hx_set_param(h, "t4_au_rec_land", "0");
     HX_ASSERT(wait_loaded(h, T_REC, 0) == 2 && !strcmp(inst->au_store[T_REC][0].name, "layer2.wav"), "layer: the take did not land");
     HX_ASSERT(k == 12 && inst->tracks[T_REC].clips[0].length == 12, "layer: the landing changed the clip's length (12 steps)");
     HX_ASSERT(inst->au_store[T_REC][0].pitch == 0 && inst->au_store[T_REC][0].rot == 0, "layer: the clip's settings were not set back (baked in)");
+    HX_ASSERT(!inst->au_store[T_REC][0].speed_pm && !inst->tracks[T_REC].clips[0].pfx_params.rmx_on,
+              "layer: Speed or REMIX was left on (applied twice)");
+    HX_ASSERT(inst->au_store[T_REC][0].shot && inst->au_store[T_REC][0].freerun, "layer: the landing turned Shot or Free off");
     hx_set_param(h, "undo_restore", "1");
     hx_render(h, 2);
     HX_ASSERT(wait_loaded(h, T_REC, 0) == 2 && !strcmp(inst->au_store[T_REC][0].name, "click.wav"), "Undo did not bring the last layer back");
+    hx_destroy(h);
+
+    /* ---- a layer on a Shot clip: its one pass is the take ---- */
+    h = rig(1, 1); inst = (seq8_instance_t *)h->inst;
+    snprintf(p, sizeof p, "0|%s/src/click.wav", g_root);
+    hx_set_param(h, "t4_au_pick", p);
+    HX_ASSERT(wait_loaded(h, T_REC, 0) == 2, "shot layer: the clip's sample did not load");
+    hx_set_param(h, "t4_au_set_sync", "0 2");
+    hx_set_param(h, "t4_au_set_orig", "0 0");
+    hx_set_param(h, "t4_c0_length", "12");
+    hx_set_param(h, "t4_au_set_shot", "0 1");
+    HX_ASSERT(inst->au_store[T_REC][0].shot, "shot layer: Shot did not land");
+    lat = 300;
+    lb_reset(lat, inst->tracks[T_CLICK].pfx.slot);
+    arm(h, lat, "shotlayer.wav");
+    hx_set_param(h, "record_count_in", "4");
+    k = RUN_UNTIL(h, inst->ar_state == AR_DONE || inst->ar_state >= AR_CANCELLED, 6000);
+    b = hx_stub_cfeed(&n, NULL);
+    {
+        char msg[160];
+        snprintf(msg, sizeof msg, "shot layer: state %d err %d, %u frames (want DONE, the clip's 12 steps = 66150)", inst->ar_state, inst->ar_err, n);
+        HX_ASSERT(inst->ar_state == AR_DONE && n == 66150, msg);
+    }
+    HX_ASSERT(b[0] == 32767, "shot layer: the clip is not at the take's top");
+    hx_destroy(h);
+    /* Free + Shot: its own pass, however long (the click file at half speed: 2 s) */
+    h = rig(1, 1); inst = (seq8_instance_t *)h->inst;
+    snprintf(p, sizeof p, "0|%s/src/click.wav", g_root);
+    hx_set_param(h, "t4_au_pick", p);
+    HX_ASSERT(wait_loaded(h, T_REC, 0) == 2, "free shot layer: the clip's sample did not load");
+    hx_set_param(h, "t4_au_set_sync", "0 2");
+    hx_set_param(h, "t4_c0_length", "12");
+    hx_set_param(h, "t4_au_set_shot", "0 1");
+    hx_set_param(h, "t4_au_set_free", "0 1");
+    hx_set_param(h, "t4_au_set_speed", "0 500");
+    lb_reset(lat, inst->tracks[T_CLICK].pfx.slot);
+    arm(h, lat, "freeshot.wav");
+    hx_set_param(h, "record_count_in", "4");
+    k = RUN_UNTIL(h, inst->ar_state == AR_DONE || inst->ar_state >= AR_CANCELLED, 12000);
+    b = hx_stub_cfeed(&n, NULL);
+    {
+        char msg[160];
+        uint32_t src = inst->au_store[T_REC][0].smp ? inst->au_store[T_REC][0].smp->frames : 0;
+        snprintf(msg, sizeof msg, "free shot layer: state %d err %d, %u frames (want DONE, about 2 x %u)", inst->ar_state, inst->ar_err, n, src);
+        HX_ASSERT(inst->ar_state == AR_DONE && src && n > 2 * src - 1024 && n < 2 * src + 1024, msg);
+    }
+    hx_destroy(h);
+    /* control: the Shot clip stopped by hand mid-take drops it */
+    h = rig(1, 1); inst = (seq8_instance_t *)h->inst;
+    snprintf(p, sizeof p, "0|%s/src/click.wav", g_root);
+    hx_set_param(h, "t4_au_pick", p);
+    HX_ASSERT(wait_loaded(h, T_REC, 0) == 2, "shot layer 2: the clip's sample did not load");
+    hx_set_param(h, "t4_au_set_sync", "0 2");
+    hx_set_param(h, "t4_c0_length", "12");
+    hx_set_param(h, "t4_au_set_shot", "0 1");
+    lb_reset(lat, inst->tracks[T_CLICK].pfx.slot);
+    arm(h, lat, "shotlayer2.wav");
+    hx_set_param(h, "record_count_in", "4");
+    RUN_UNTIL(h, inst->ar_state == AR_RECORDING, 6000);
+    RUN_UNTIL(h, inst->ar_done > BAR / 4, 2000);
+    inst->tracks[T_REC].clip_playing = 0;                 /* stopped mid-pass */
+    for (k = 0; k < 8; k++) render1(h);
+    HX_ASSERT(inst->ar_state == AR_CANCELLED, "shot layer: a Shot stopped mid-pass kept the take");
     hx_destroy(h);
 
     /* ---- the INPUT bank (per track) ---- */

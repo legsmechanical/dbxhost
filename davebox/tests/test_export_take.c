@@ -228,6 +228,31 @@ int main(void) {
     }
     printf("  ok   — the project is left as it was\n");
 
+    /* ---- a Shot clip, and a Free + Shot one, sound in the take (the
+     * warm-up pass ends them; the take launches them again) ---- */
+    {
+        uint64_t e, loop;
+        snprintf(p, sizeof p, "4 0 576 0 |%s/g.wav", g_root);
+        loop = take(h, p, &ok);
+        HX_ASSERT(ok && loop > 0, "control: the Loop clip's take is silent");
+        finish(h);
+        hx_set_param(h, "t4_au_set_shot", "0 1");
+        HX_ASSERT(inst->au_store[4][0].shot, "Shot did not land");
+        e = take(h, p, &ok);
+        printf("  ..   Loop take energy %llu, Shot %llu\n", (unsigned long long)loop, (unsigned long long)e);
+        HX_ASSERT(ok && e > 0, "a Shot clip's take is silent");
+        HX_ASSERT(e * 10 > loop * 9 && e * 10 < loop * 11, "a Shot clip's take is not one whole pass, as the Loop clip's is");
+        finish(h);
+        hx_set_param(h, "t4_au_set_free", "0 1");
+        HX_ASSERT(inst->au_store[4][0].freerun, "Free did not land");
+        e = take(h, p, &ok);
+        HX_ASSERT(ok && e > 0, "a Free + Shot clip's take is silent");
+        finish(h);
+        hx_set_param(h, "t4_au_set_free", "0 0");
+        hx_set_param(h, "t4_au_set_shot", "0 0");
+    }
+    printf("  ok   — a Shot clip, and a Free + Shot one, sound in their take\n");
+
     /* ---- refusals ---- */
     snprintf(p, sizeof p, "3 0 576 0 |%s/f.wav", g_root);
     hx_set_param(h, "export_take", p);

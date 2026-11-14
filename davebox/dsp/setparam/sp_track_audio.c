@@ -24,8 +24,10 @@
  *                                  frames a..b and chops the result 16 even
  *   tN_au_set_<field>   "C <v>"    Audio: start (frames) / pitch / detune / gain /
  *                                  bpm (the sample's own Tempo x10) / orig (Tempo =
- *                                  the project's) / revrs / nudge / rot (Shift,
- *                                  ticks) / sync (0 Warp, 1 Vintage, 2 Pitch).
+ *                                  the project's) / revrs / nudge / rot (Offset:
+ *                                  where in the audio the clip starts, ticks) /
+ *                                  sync (Warp: 0 Warp, 1 Vintage, 2 Pitch) / end /
+ *                                  bars / shot / free / speed.
  *                                  Slicer: pitch / detune / gain / revrs / bpm /
  *                                  sync (0 Off, 1 Pitch) / sens (Transient's) and
  *                                  two tools that WRITE the chops: even (N equal)
@@ -333,7 +335,8 @@ static void au_warp_anchor(au_warp_trk_t *w, double at_tick, int c, int hold) {
 }
 
 /* `freerun`: a Free clip — its region alone, L the region's own length in
- * ticks of the clock its caller runs (au_render), no Shift, Nudge or REMIX */
+ * ticks of the clock its caller runs (au_render), no REMIX; Offset and Nudge
+ * are in the phase it starts from (au_free_ph0) */
 static void au_warp_block(seq8_instance_t *inst, int t, int c, double L, double fpt, int playing, int ticked, int freerun) {
     au_warper_t *X = (au_warper_t *)inst->au_warper;
     au_warp_trk_t *w = &inst->au_trk[t].w;
@@ -766,7 +769,27 @@ static void au_rmx_block(seq8_instance_t *inst, int t, int c, int32_t tick, uint
     int nbars = (int)((len_ticks + AU_RMX_BAR - 1) / AU_RMX_BAR), b, i, m = 0;
     int pe[AU_VINTAGE_PER_BLOCK], pb[AU_VINTAGE_PER_BLOCK];
     double pd[AU_VINTAGE_PER_BLOCK];
-    for (b = 0; b < nbars; b++) {
+    /* only the bars this block's window touches (one, two across a bar line,
+     * and the clip's first after its end): scanning every bar of a long clip
+     * each block was 256 bars x every event, every 2.9 ms */
+    int bl[8], nbl = 0, bi;
+    if (span >= (double)AU_RMX_BAR || span >= L) {
+        for (b = 0; b < nbars && nbl < 8; b++) bl[nbl++] = b;      /* a backlog: a bar or more at once */
+        if (nbars > 8) nbl = -1;                                    /* ...too many to list: every bar */
+    } else {
+        double s0 = au_wrap(start, L), e0 = s0 + span;
+        int bh = (int)((e0 < L ? e0 : L - 1e-6) / AU_RMX_BAR);
+        for (b = (int)(s0 / AU_RMX_BAR); b <= bh && b < nbars; b++) bl[nbl++] = b;
+        if (e0 > L) {
+            int bw = (int)((e0 - L) / AU_RMX_BAR), j2, dup;
+            for (b = 0; b <= bw && b < nbars && nbl < 8; b++) {
+                for (dup = 0, j2 = 0; j2 < nbl; j2++) if (bl[j2] == b) dup = 1;
+                if (!dup) bl[nbl++] = b;
+            }
+        }
+    }
+    for (bi = 0; nbl < 0 ? bi < nbars : bi < nbl; bi++) {
+        b = nbl < 0 ? bi : bl[bi];
         for (i = 0; i < at->rmx_n && m < AU_VINTAGE_PER_BLOCK; i++) {
             double Td = (double)(b * AU_RMX_BAR + at->rmx_e[i].tick);
             if (Td >= L) continue;
@@ -781,13 +804,20 @@ static void au_rmx_block(seq8_instance_t *inst, int t, int c, int32_t tick, uint
         const rmx_ev_t *e = &at->rmx_e[pe[i]];
         double Us = (double)(pb[i] * AU_RMX_BAR + e->key * (AU_RMX_BAR / 16));
         if (Us >= L) continue;                           /* its source is past the clip's end */
-        double j = au_wrap(Us - rot, L) - nud;
-        if (j < 0 || j >= P) continue;
+        double j = au_wrap(Us - rot, L) - nud, late = 0;
+        /* Nudge later puts the region's top `nud` after the slot's: the
+         * piece from the first slot starts that late, from the region's top,
+         * and keeps the rest of its slot (it used to be skipped whole) */
+        if (j < 0) {
+            if (j <= -(double)(AU_RMX_BAR / 16)) continue;
+            late = -j; j = 0;
+        }
+        if (j >= P) continue;
         /* the piece is its source slot (a slice, as on the RS7000: a longer
          * gate holds it, never plays on into the next slot); repitched, it
          * plays that slot faster or slower. It runs a few frames past its
          * end, on the side it plays toward, into its fade (as Vintage's). */
-        double x0 = R * j / P, sl = R * (double)(AU_RMX_BAR / 16) / P, over = AU_VINTAGE_OVER + AU_VINTAGE_XF;
+        double x0 = R * j / P, sl = R * ((double)(AU_RMX_BAR / 16) - late) / P, over = AU_VINTAGE_OVER + AU_VINTAGE_XF;
         double lo = au_revrs(cl) ? (double)re - x0 - sl : (double)rs + x0, hi = lo + sl;
         if ((au_revrs(cl) ? 1 : 0) ^ (e->rev ? 1 : 0)) lo -= over; else hi += over;
         if (lo < (double)rs) lo = (double)rs;
@@ -796,6 +826,8 @@ static void au_rmx_block(seq8_instance_t *inst, int t, int c, int32_t tick, uint
         uint32_t a = (uint32_t)lo, bb = (uint32_t)hi;
         uint32_t off = (uint32_t)(pd[i] * fscale);
         if (off >= (uint32_t)frames) off = (uint32_t)frames - 1;
+        uint32_t off0 = off;                             /* the slot's own start: its gate counts from here */
+        off += (uint32_t)(late * fscale);               /* a wait past this block is the voice's own */
         /* monophonic, as a Loop clip's pieces always are: a piece still
          * sounding is cut where this one starts, though its own gate's
          * release is scheduled later (the voice's own cut skips those) */
@@ -812,7 +844,8 @@ static void au_rmx_block(seq8_instance_t *inst, int t, int c, int32_t tick, uint
         au_rmx_rev = 0; au_rmx_semi = 0;
         if (v) {
             v->wlo = rs; v->whi = re;
-            au_voice_release_at(v, 64, off + (uint32_t)((double)e->gate * fpt));
+            uint32_t rel = off0 + (uint32_t)((double)e->gate * fpt);
+            au_voice_release_at(v, 64, rel > off ? rel : off + 1);
         }
     }
 }
@@ -997,9 +1030,10 @@ static long au_export_reversed(seq8_instance_t *inst, int t, int c, const char *
         fwrite(buf, sizeof(int16_t) * s->ch, n, f);
     }
     int bad = ferror(f);
+    long frames = (long)s->frames;               /* s may be `own`: read it before it goes */
     au_sample_free(own);
     if (fclose(f) || bad) return -1;
-    return (long)s->frames;
+    return frames;
 }
 
 /* A sounding voice follows its clip's Pitch, Detune and Gain — and its
@@ -1095,7 +1129,8 @@ static void au_render(seq8_instance_t *inst, int frames) {
             if (frun) {
                 /* FREE: started on the clip's launch tick, then on its own —
                  * Start..End looping at the sample's own speed x Speed, the
-                 * clip's length, wrap, Shift, Nudge and REMIX not reaching it.
+                 * clip's length, wrap and REMIX not reaching it; Offset and Nudge
+                 * set where in Start..End it starts (au_free_ph0).
                  * Tape (Sync Pitch): one voice, speed and pitch together.
                  * Warp (else): the stretcher, on a clock of its own whose loop
                  * is the region (au_warp_block's freerun). */

@@ -54,6 +54,8 @@ async function main() {
     const tickmod = await import('../../ui/ui_tick.mjs');
     const render = await import('../../ui/ui_render.mjs');
     globalThis.__dbxE = await import('../../ui/ui_audio_editor.mjs');
+    const await_consts = await import('../../ui/ui_constants.mjs');
+    const await_auto = await import('../../ui/ui_automation.mjs');
     const _kitText = [];
     (await import('../../ui/ui_fonts_pp.mjs')).setKitTextTrace((x) => _kitText.push(String(x)));
     const texts = (fn) => { _kitText.length = 0; fn(); return _kitText.slice(); };
@@ -266,6 +268,66 @@ async function main() {
         sets.length = 0;
         note(0, 127); turn(-1, 30); note(0, 0);
         assert(shotSets().length === 1 && shotSets()[0] === '0 0', 'Loop not sent: ' + JSON.stringify(shotSets()));
+    });
+
+    step('Strch\'s x2 is the turn in hand: let go, and a later bare touch reads 1x (it kept x2)', () => {
+        info();
+        S.auStrchDir = { t: T, dir: 1 };
+        S.knobTouched = 1;
+        assert(A.auLoopBankCells(T)[1].text === 'x2', 'control: the turn in hand does not read x2');
+        S.knobTouched = -1; ticks(2);
+        S.knobTouched = 1;
+        assert(A.auLoopBankCells(T)[1].text === '1x', 'a bare touch after letting go reads ' + A.auLoopBankCells(T)[1].text);
+        S.knobTouched = -1;
+    });
+
+    step('⭐ Delete + click on the CLIP bank: Mode back to Loop, and nothing of the MIDI CLIP bank (Res / InQ / Dir) it does not show', () => {
+        shot = 1; free = 0; info();
+        S.activeBank = 0; S.sessionView = false; S.knobTouched = -1;
+        sets.length = 0;
+        cc(119, 127); cc(3, 127); cc(3, 0); cc(119, 0);
+        ticks(4);
+        const midi = sets.filter(([k]) => /_clip_resolution|_diq|_clip_playback_dir|_clip_playback_audio_reverse/.test(k));
+        assert(!midi.length, 'the reset wrote the MIDI CLIP bank\'s settings: ' + JSON.stringify(midi));
+        assert(shotSets().join() === '0 0', 'Mode not reset to Loop: ' + JSON.stringify(sets));
+        shot = 0; info(); sets.length = 0;
+        cc(119, 127); cc(3, 127); cc(3, 0); cc(119, 0);
+        ticks(4);
+        assert(!shotSets().length && !sets.some(([k]) => /_clip_resolution|_diq/.test(k)), 'a reset at Loop sent something: ' + JSON.stringify(sets));
+    });
+
+    step('⭐ Delete + click on REMIX: the clip\'s REMIX back to a fresh clip\'s, one undo step first; at the defaults, nothing', () => {
+        const CONSTS = await_consts;
+        S.rmxSet[T] = [1, 3, 17, 0, 40, 30, 0, 0, 5, 0, 100];
+        S.activeBank = CONSTS.BANK_REMIX; S.knobTouched = -1; sets.length = 0;
+        cc(119, 127); cc(3, 127); cc(3, 0); cc(119, 0);
+        ticks(4);
+        const ks = sets.filter(([k]) => !/_padmap$/.test(k)).map(([k, v]) => k.replace('t' + T + '_', '') + '=' + v);
+        assert(ks[0] === 'au_undo=0', 'the undo step is not first: ' + JSON.stringify(ks));
+        for (const w of ['remix_on=0', 'remix_type=0', 'remix_var=0', 'remix_rvel=1'])
+            assert(ks.includes(w), 'REMIX reset did not send ' + w + ': ' + JSON.stringify(ks));
+        sets.length = 0;
+        cc(119, 127); cc(3, 127); cc(3, 0); cc(119, 0);
+        ticks(4);
+        assert(!sets.some(([k]) => /remix_|au_undo/.test(k)), 'a reset at the defaults sent something: ' + JSON.stringify(sets));
+        S.activeBank = 0;
+    });
+
+    step('⭐ SOUND\'s reset is one undo step, and takes the Pitch lane with it (a lane left would put Pitch back)', () => {
+        const AUTO = await_auto;
+        const gp = globalThis.host_module_get_param;
+        globalThis.host_module_get_param = (k) => (String(k) === 'pa_list' ? T + ' 0 1 4 seq:' + T + ':au_pitch 0 0\n' : gp(k));
+        AUTO.automationRefreshPresence();
+        assert(AUTO.automationStateFor(T, 0, 'seq:' + T + ':au_pitch'), 'rig: no Pitch lane');
+        info(); sets.length = 0;
+        assert(A.auSampleReset(T, 0), 'nothing reset');
+        ticks(4);
+        const ks = sets.map(([k, v]) => k.replace('t' + T + '_', '') + '=' + v);
+        assert(ks[0] === 'au_undo=0', 'the undo step is not first: ' + JSON.stringify(ks));
+        assert(ks.includes('pa_clear_key=0 seq:' + T + ':au_pitch'), 'the Pitch lane stayed: ' + JSON.stringify(ks));
+        assert(!ks.some((k) => /pa_clear_key=0 seq:\d:au_gain/.test(k)), 'a lane that does not exist was cleared: ' + JSON.stringify(ks));
+        globalThis.host_module_get_param = gp;
+        AUTO.automationRefreshPresence();
     });
 
     process.exit(failed);

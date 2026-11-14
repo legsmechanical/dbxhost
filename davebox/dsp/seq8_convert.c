@@ -413,12 +413,18 @@ static void flat_xfer(seq8_track_t *tr, flat_keep_t *k, int swap) {
     }
 }
 
-/* A Slicer's PAD MODE Layout and Conductor switch live beside the track
- * (au_track_t): into / out of k as flat_xfer does the track's. */
+/* A Slicer's PAD MODE Layout and Conductor switch, and an Audio track's
+ * INPUT Length / Overdub, live beside the track (au_track_t): into / out of k
+ * as flat_xfer does the track's. */
 static void flat_au_xfer(seq8_instance_t *inst, int t, flat_keep_t *k, int swap) {
     au_track_t *at = &inst->au_trk[t];
-    if (swap) { FLAT_SWAP(at->layout, k->au_layout); FLAT_SWAP(at->cond_on, k->au_cond); }
-    else { k->au_layout = at->layout; k->au_cond = at->cond_on; }
+    if (swap) {
+        FLAT_SWAP(at->layout, k->au_layout); FLAT_SWAP(at->cond_on, k->au_cond);
+        FLAT_SWAP(at->in_len, k->au_in_len); FLAT_SWAP(at->in_ovr, k->au_in_ovr);
+    } else {
+        k->au_layout = at->layout; k->au_cond = at->cond_on;
+        k->au_in_len = at->in_len; k->au_in_ovr = at->in_ovr;
+    }
 }
 
 /* Before track t converts (to Audio or a Slicer, or out of either), with its

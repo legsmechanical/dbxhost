@@ -85,6 +85,7 @@ stubParamPagesDevice();
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const { BANKS, BANK_AUTOMATION, BANK_SOUND, BANK_MACROS, SEQ_AUTO_TARGETS } = await import('../../ui/ui_constants.mjs');
+globalThis.__laneC = await import('../../ui/ui_constants.mjs');
 const auto = await import('../../ui/ui_automation.mjs');
 const bank = await import('../../ui/ui_automation_bank.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
@@ -234,6 +235,24 @@ step('CONTROL: walking off the destination bank spends the return — Back is th
     back(); ticks(2);
     assert(S.activeBank === other && !S.bankCardLatched, 'a stale return fired from a bank it never sent you to');
     assert(S.autoReturn === null, 'the crumb survived the Back');
+});
+
+step('⭐ an Audio clip\'s Revrs lane -> SAMPLE on SOUND (page 3), where Revrs is; Pitch -> page 1', () => {
+    const C = globalThis.__laneC;
+    S.trackPadMode[T] = C.PAD_MODE_AUDIO;
+    S.auInfo[T] = S.auInfo[T] || [];
+    S.auInfo[T][0] = { state: 2, mode: 0, name: 'x.wav', nframes: 88200, rate: 44100, ch: 1, bpm10: 1200, rstart: 0, rend: 88200,
+                       pitch: 0, detune: 0, gain: 0, revrs: 0, nudge: 0, rot: 0, shot: 0, free: 0, speed: 1000, sync: 0, span: 0 };
+    LIST = T + ' 0 1 2 seq:' + T + ':au_revrs 0\n' + T + ' 0 1 2 seq:' + T + ':au_pitch 0\n';
+    auto.automationRefreshPresence();
+    openMenuOn('seq:' + T + ':au_revrs');
+    shiftClick(); ticks(3);
+    assert(S.auEditor && (S.auEditor.page | 0) === 2, 'the Revrs lane opened page ' + (S.auEditor ? S.auEditor.page : 'none') + ', not SOUND');
+    back(); ticks(4);
+    openMenuOn('seq:' + T + ':au_pitch');
+    shiftClick(); ticks(3);
+    assert(S.auEditor && (S.auEditor.page | 0) === 0, 'the Pitch lane opened page ' + (S.auEditor ? S.auEditor.page : 'none') + ', not page 1');
+    back(); ticks(4);
 });
 
 if (swallowed !== null) { console.error('  FAIL — a SWALLOWED exception reached the jserr log:\n' + swallowed); failed = 1; }

@@ -213,6 +213,33 @@ step('auConvertToKit itself refuses an Audio clip (defence in depth: the menu ke
     assert(kitsWritten().length === 0 && CMDS.length === 0, 'a refused Audio kit still wrote or copied');
 });
 
+{
+    const F = await import('../../ui/ui_fonts_pp.mjs');
+    step('⭐ every Slicer panel knob\'s touched header fits the screen (ALL SLICES Pitch / Detune ran 136 / 146 px against 124)', () => {
+        leave();
+        S.trackPadMode[4] = C.PAD_MODE_SLICER;               /* the steps before left it Audio */
+        slicer(INFO(1, 8), MARKS(8));
+        E.openWave(4, 'slices'); ticks(2);                    /* SLICES: CLIP (ALL SLICES) and SLICE n */
+        assert(A.auPanelPages(4).join() === 'CLIP,SLICE', 'rig: SLICES is not up: ' + JSON.stringify(A.auPanelPages(4)));
+        GET['t4_au_all_16'] = '-24 -50 -40 1 2000 5000 1';
+        A.auMarkStale(4, 16); ticks(2);
+        const over = [];
+        for (const page of [0, 1]) {
+            for (const c of A.auPanelCells({ t: 4, page })) {
+                if (!c || !c.name) continue;
+                const h = String(c.name).toUpperCase();          /* the touched header is the name (drawKitTouchedHeader) */
+                if (F.fontWidth4x5(h) > 124) over.push(h + ' = ' + F.fontWidth4x5(h) + ' px');
+            }
+        }
+        assert(!over.length, 'headers past 124 px: ' + JSON.stringify(over));
+    });
+    step('a chop\'s Play offers One and Gate only (it offered Loop, which the engine refuses)', () => {
+        const pc = [0, 1, 2].map((page) => A.auPanelCells({ t: 4, page }).find((c) => c && c.label === 'Play')).find((c) => c);
+        assert(pc && pc.options.join() === 'One,Gate', 'Play offers ' + (pc && pc.options.join()));
+        leave();
+    });
+}
+
 if (failed) { console.error('FAIL: test_audio_review_gaps'); process.exit(1); }
 console.log('PASS: test_audio_review_gaps');
 }

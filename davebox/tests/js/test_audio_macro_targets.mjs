@@ -223,6 +223,17 @@ step('⭐ a BOUNDED leg turns across its own span: Tempo held to 120-140 BPM ste
     assert(whole === 50, 'an unranged leg moved ' + whole + ' tenths, not 50 (the page law over 1..9999)');
 });
 
+step('a Tempo leg on a Free clip drives nothing (its knob is Speed; the engine ignores the Tempo there)', () => {
+    GET['t4_au_info_0'] = INFO(0); A.auMarkStale(4, 0); ticks(2);
+    const c = A.auClipOf(4);
+    assert(A.auMacroValue(4, 'au_bpm', false) != null, 'control: a Grid clip\'s Tempo leg reads nothing');
+    const keep = S.auInfo[4][c];
+    S.auInfo[4][c] = Object.assign({}, keep, { free: 1 });
+    assert(A.auMacroValue(4, 'au_bpm', false) === null, 'a Free clip\'s Tempo leg reads ' + A.auMacroValue(4, 'au_bpm', false));
+    assert(!A.auMacroWrite(4, 'au_bpm', 1500), 'a Free clip\'s Tempo leg wrote');
+    S.auInfo[4][c] = keep;
+});
+
 step('⭐ Lo / Hi on an Audio leg are in its own units: Tempo shows BPM and steps 1 BPM a detent (Shift 0.1)', () => {
     S.trackMacros[4][0] = { v: null, legs: [{ kind: 'au', key: 'au_bpm', lo: 0, hi: 1 }] };
     ticks(2);

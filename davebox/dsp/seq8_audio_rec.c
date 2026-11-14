@@ -95,6 +95,20 @@ static uint32_t ar_clip_tick(const seq8_instance_t *inst, const seq8_track_t *tr
     return (uint32_t)(tr->current_step - lc->loop_start) * tps + tr->tick_in_step;
 }
 
+/* The take's clip is Free + Shot: it plays one pass of its own, however long. */
+static int ar_free_shot(const seq8_instance_t *inst) {
+    const au_clip_t *ac = &inst->au_store[inst->ar_track][inst->ar_clip];
+    return ac->shot && ac->freerun;
+}
+/* The take's clip, stopped, is a Shot that played out. */
+static int ar_shot_over(const seq8_instance_t *inst, const seq8_track_t *tr, const clip_t *lc, uint32_t pos) {
+    const au_clip_t *ac = &inst->au_store[inst->ar_track][inst->ar_clip];
+    (void)tr; (void)lc;
+    if (!ac->shot) return 0;
+    if (ac->freerun) return inst->au_trk[inst->ar_track].free_on && inst->au_trk[inst->ar_track].free_left <= 0;
+    return pos == 0;                        /* the grid's Shot stops on its wrap, back at its top */
+}
+
 static void ar_end(seq8_instance_t *inst, int state) {
     if ((inst->ar_state == AR_RECORDING || inst->ar_state == AR_ENDING) && g_ext && g_ext->capture_stop)
         g_ext->capture_stop();
@@ -162,13 +176,20 @@ static void ar_tick(seq8_instance_t *inst) {
     lc = &tr->clips[inst->ar_clip];
     /* the take is the clip's while it plays: another clip, or none, ends it */
     if (tr->active_clip != inst->ar_clip || tr->pad_mode != PAD_MODE_AUDIO) { ar_end(inst, AR_CANCELLED); return; }
-    if (!tr->clip_playing) {
-        if (inst->ar_state == AR_RECORDING) ar_end(inst, AR_CANCELLED);
-        return;                              /* armed: it starts when the clip does */
-    }
     abs = inst->global_tick * TICKS_PER_STEP + inst->master_tick_in_step;
     pos = ar_clip_tick(inst, tr, lc);
     at  = inst->ar_pos + inst->au_tick_off + (lead_active(inst) ? LEAD_FRAMES : 0);
+    if (!tr->clip_playing) {
+        /* A layer on a Shot clip: the clip ending by itself is the take's
+         * end (on the grid at its length, Free when its one pass is over);
+         * stopped any other way, the take is dropped */
+        if (inst->ar_state == AR_RECORDING && inst->ar_fixed && ar_shot_over(inst, tr, lc, pos)) {
+            inst->ar_ticks = abs - inst->ar_start_abs;
+            inst->ar_total = at - inst->ar_p0;
+            inst->ar_state = AR_ENDING;
+        } else if (inst->ar_state == AR_RECORDING) ar_end(inst, AR_CANCELLED);
+        return;                              /* armed: it starts when the clip does */
+    }
     if (inst->ar_state == AR_ARMED) {
         int top = inst->ar_fixed ? (pos == 0) : (abs % RS_BAR_TICKS == 0);
         if (!top) return;
@@ -188,7 +209,7 @@ static void ar_tick(seq8_instance_t *inst) {
         uint32_t el = abs - inst->ar_start_abs;
         int end = 0;
         if (el == 0) return;
-        if (inst->ar_fixed) end = (pos == 0);
+        if (inst->ar_fixed) end = (pos == 0) && !ar_free_shot(inst);   /* Free + Shot: its pass, above */
         else if (abs % RS_BAR_TICKS == 0) {
             if (inst->ar_stop_req) end = 1;
             else if (inst->ar_len_bars && el >= (uint32_t)inst->ar_len_bars * RS_BAR_TICKS) end = 1;   /* its Length */
@@ -336,6 +357,7 @@ static void ar_land(seq8_instance_t *inst, int t) {
     const char *nm;
     if (inst->ar_state != AR_DONE || t != inst->ar_track) return;
     inst->ar_state = AR_IDLE;
+    if (inst->tracks[t].pad_mode != PAD_MODE_AUDIO) return;   /* the track changed kind since: nothing to land on */
     cl = au_cl(inst, t, c);
     au_samples_dir(inst, dir, sizeof dir);
     if (!dir[0]) return;
@@ -346,6 +368,12 @@ static void ar_land(seq8_instance_t *inst, int t) {
         cl->rstart = cl->slen = cl->rend = cl->rspan = 0;
         cl->pitch = 0; cl->detune = 0; cl->gain_db = 0;
         cl->revrs = 0; cl->nudge_ms = 0; cl->rot = 0;
+        /* ...and so are Speed and REMIX: played again, they would apply
+         * twice. Free and Shot stay: at 100 % a Free clip plays the file
+         * through once a pass, as it was heard (a Free + Shot take is its
+         * one pass, longer or shorter than the clip) */
+        cl->speed_pm = 0;
+        inst->tracks[t].clips[c].pfx_params.rmx_on = 0;
     } else {
         uint32_t bars = inst->ar_ticks / RS_BAR_TICKS;
         uint32_t lt;

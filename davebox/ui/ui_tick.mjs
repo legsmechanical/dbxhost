@@ -9,7 +9,7 @@
  */
 
 import { inputPrefsPush } from './ui_prefs.mjs';
-import { inputMeterPoll, auInStale } from './ui_audio_input.mjs';
+import { inputMeterPoll, auInStale, auInTick } from './ui_audio_input.mjs';
 import { auRecTick, auRecLedState } from './ui_audio_rec.mjs';
 import { miOpen, miOpenGroove, miTick, miAnimating, miActive } from './ui_midi_import.mjs';
 import { chordPadsOn } from './ui_custom_chords.mjs';
@@ -732,6 +732,9 @@ export function _tickImpl() {
     /* the INPUT bank's meter, while it is up */
     if (!S.sessionView && S.activeBank === BANK_INPUT && S.trackPadMode[S.activeTrack] === PAD_MODE_AUDIO)
         inputMeterPoll(S.activeTrack, S.clockMs);
+    /* the active Audio track's Length / Overdub, read here and never in a handler */
+    if (S.trackPadMode[S.activeTrack] === PAD_MODE_AUDIO && S.ledInitComplete && !S.stateLoading && (S.tickCount % 8) === 0)
+        auInTick(S.activeTrack);
 
     /* Reapply cable-2 channel remap if anything affecting it changed. */
     {

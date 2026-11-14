@@ -664,11 +664,12 @@ function drawRemixPresets() {
 }
 
 /* An Audio / Slicer track's bank as drawn: a knob whose value is text is
- * `ringBound` — its ring lit at the floor, as the kit pages' are. */
+ * `ringBound` — its ring lit at the floor, as the kit pages' are; one with
+ * nothing to set here (`na`: no sample, a Free clip's REMIX) stays dark. */
 function audioBankCells(bank, cells) {
     const out = audioBankCellsRaw(bank, cells);
     if (!isSampledTrack(S.activeTrack)) return out;
-    return out.map((c) => (c && c.kind !== 'blank') ? Object.assign({ ringBound: true }, c) : c);
+    return out.map((c) => (c && c.kind !== 'blank' && !c.na) ? Object.assign({ ringBound: true }, c) : c);
 }
 /* ⭐ ...and the knob rings read the same cells, whatever screen is up (Josh,
  * 2026-11-12: "clip bank knob led rings are lit on empty knobs, which they

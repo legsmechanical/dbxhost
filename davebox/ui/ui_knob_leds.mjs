@@ -176,6 +176,9 @@ export function ringNormOfCell(cell) {
      * is no value to read. An override would flatten a cell that HAS a value to
      * its dimmest step the moment someone marked it — the marker says "this knob
      * exists", never "ignore where it sits". */
+    /* `na`: a knob with nothing to set here (an Audio clip's REMIX on Free,
+     * a knob on a clip with no sample) — dark, whatever value it holds */
+    if (cell.na) return null;
     const n = ringNormOfCellValue(cell);
     if (n !== null) return n;
     return cell.ringBound ? RING_FLOOR : null;

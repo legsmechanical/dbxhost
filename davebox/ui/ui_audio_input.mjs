@@ -33,21 +33,34 @@ export const IN_OVR = ['Layer', 'Replace'];
 const GAIN_MIN = INPUT_GAIN_MIN, GAIN_MAX = INPUT_GAIN_MAX;
 
 /* Track t's INPUT bank: the device's Monitor / Input / Gain (ui_prefs) and
- * the track's Length / Overdub as the engine has them: { mon, mode, gain, len, ovr }. */
+ * the track's Length / Overdub as the engine has them: { mon, mode, gain, len, ovr }.
+ * Length and Overdub are null until auInRead has had an answer: this never
+ * reads the engine itself, because a knob handler calls it (a read there is
+ * a blocking round trip, and a timed-out one used to be kept as real values). */
 export function auIn(t) {
-    if (!S.auIn) S.auIn = {};
-    if (!S.auIn[t]) {
-        const v = dspAnswer('t' + t + '_au_in');
-        const a = v ? v.split(' ').map((x) => parseInt(x, 10) | 0) : [0, 0, 0, 0, 0];
-        S.auIn[t] = { len: a[3], ovr: a[4] };
-    }
+    const o = S.auIn && S.auIn[t];
     const p = inputPrefs();
-    return { mon: p.mon, mode: p.mode, gain: p.gain, len: S.auIn[t].len, ovr: S.auIn[t].ovr };
+    return { mon: p.mon, mode: p.mode, gain: p.gain, len: o ? o.len : null, ovr: o ? o.ovr : null };
+}
+/* Read track t's Length / Overdub from the engine (tick context). Null on no
+ * answer: nothing is kept, and the next tick asks again. */
+export function auInRead(t) {
+    const v = dspAnswer('t' + t + '_au_in');
+    if (!v) return null;
+    const a = v.split(' ').map((x) => parseInt(x, 10) | 0);
+    if (!S.auIn) S.auIn = {};
+    S.auIn[t] = { len: a[3] | 0, ovr: a[4] | 0 };
+    return S.auIn[t];
+}
+/* The tick: the active Audio track's, while not yet read. */
+export function auInTick(t) {
+    if (!(S.auIn && S.auIn[t]) && auInRead(t)) S.screenDirty = true;
 }
 /* Read again (a project load, a track that changed kind). */
 export function auInStale(t) { if (S.auIn) { if (t == null) S.auIn = {}; else delete S.auIn[t]; } }
 
 function enumCell(label, name, opts, sel) {
+    if (sel == null) return { kind: 'enumsq', label, name, text: '--', options: opts, sel: 0 };   /* not read yet */
     return { kind: 'enumsq', label, name, text: opts[sel], options: opts, sel };
 }
 
@@ -61,8 +74,8 @@ export function inputBankCells(t) {
         enumCell('Input', 'Input', IN_MODE, r.mode | 0),
         { kind: 'valsq', label: 'Gain', name: 'Gain', text: (g > 0 ? '+' : '') + g + 'dB',
           ringNorm: (g - GAIN_MIN) / (GAIN_MAX - GAIN_MIN) },
-        enumCell('Len', 'Length', IN_LEN, r.len | 0),
-        enumCell('Ovrdb', 'Overdub', IN_OVR, r.ovr | 0),
+        enumCell('Len', 'Length', IN_LEN, r.len),
+        enumCell('Ovrdb', 'Overdub', IN_OVR, r.ovr),
         B, B, B,
     ];
 }
@@ -85,7 +98,8 @@ export function inputBankKnob(t, k, steps) {
         setInputPref('gain', v); forceRedraw(); return true;
     }
     const own = (field, key, n) => {
-        const v = Math.max(0, Math.min(n - 1, (r[field] | 0) + steps));
+        if (r[field] == null) return false;                  /* not read yet: no base to step from */
+        const v = Math.max(0, Math.min(n - 1, r[field] + steps));
         if (v === r[field]) return false;
         S.auIn[t] = Object.assign({}, S.auIn[t], { [field]: v });
         send(t, key, v); forceRedraw();
@@ -94,6 +108,24 @@ export function inputBankKnob(t, k, steps) {
     if (k === 3) return own('len', 'in_len', 5);
     if (k === 4) return own('ovr', 'in_ovr', 2);
     return false;
+}
+
+/* Delete + click on INPUT: every knob back to its default — Monitor Rec,
+ * Stereo, 0 dB (the device's, as the bank sets them), Length Free, Overdub
+ * Layer (the track's). True when anything changed. */
+export function inputBankReset(t) {
+    const r = auIn(t);
+    let any = false;
+    if (r.mon !== 0) { setInputPref('mon', 0); any = true; }
+    if ((r.mode | 0) !== 0) { setInputPref('mode', 0); any = true; }
+    if ((r.gain | 0) !== 0) { setInputPref('gain', 0); any = true; }
+    for (const [f, key] of [['len', 'in_len'], ['ovr', 'in_ovr']]) {
+        if (r[f] == null || r[f] === 0) continue;     /* not read yet: nothing known to reset */
+        S.auIn[t] = Object.assign({}, S.auIn[t], { [f]: 0 });
+        send(t, key, 0); any = true;
+    }
+    if (any) forceRedraw();
+    return any;
 }
 
 /* Monitor moved `steps` along Off · Rec · On (the global menu and the bank):

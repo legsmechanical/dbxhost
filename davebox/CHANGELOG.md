@@ -31,7 +31,8 @@ the section into a versioned heading at release time.
   Tempo or Bars (or CLIP's Strch) brings up the clip's waveform while you hold the knob.
   On the waveform, **K4 is Offset**, with an arrow on top, and **Gain moved to K8**.
   **Delete + click** resets the page showing: TIME's Sync, Warp, Nudge and Offset, or
-  SOUND's settings.
+  SOUND's settings (and their automation lanes); on REMIX, INPUT and the CLIP bank
+  (Mode) it resets those too. Each reset is one Undo.
 - **Offset is where the clip starts in its audio.** Step 1 plays from the Offset point (it
   used to move the audio later instead), and the waveform no longer turns round with it:
   stopped, the playhead rests at the Offset point and the beats count from there. Projects
@@ -80,9 +81,8 @@ the section into a versioned heading at release time.
   depends on more than the notes (an LFO, a MIDI effect, automation of levels or
   macros) still records in real time.
 - **Fit to clip.** On SAMPLE, touch **Tempo** and click for a menu: **Fit to clip** (an
-  Audio clip's) sets the sample's Tempo so it fills the clip from Start to its end,
-  and Sync stretches it to match; **Original tempo** (was Orig) plays it as recorded.
-  SAMPLE's page 2 now reads Sync · Pitch · Detune · Gain · Tempo · Revrs.
+  Audio clip's) sets the sample's Bars so Start to End fills the clip, and Warp stretches
+  it to match; **Original tempo** (was Orig) plays it as recorded.
 - **Live merge records Audio tracks' sound.** In a Live merge, each Audio track records
   what it plays, before its effects, into its own sample, and the clip you place it in
   plays that sample. Other tracks still record their notes. A merge with an Audio
@@ -106,23 +106,22 @@ the section into a versioned heading at release time.
   play samples (WAV or AIFF, auditioned as you browse, copied into the project).
   - **Audio**: each clip holds its own sample and plays it with the clip, set and forget.
     Each sample has its own **Tempo** (guessed from its name or its beats when you pick
-    it), and **Sync** says how it meets the project's: **Warp** (the default)
+    it), and **Warp** says how it meets the project's: **Warp** (the default)
     time-stretches it and keeps its pitch — processor-intensive, so warp only a few tracks
     at once; **Vintage** cuts it into tiny crossfaded pieces on the clock, an old
-    sampler's sound; **Pitch** retunes it. Its CLIP bank is **Strch · Shift** (alt
-    **Nudge**); Loop + steps picks the part of the sample it plays, and its pads show the
-    clip in 32 sections. A track that plays an instrument first offers to **resample its
+    sampler's sound; **Pitch** retunes it. Its CLIP bank is **Mode · Strch**; Loop + steps
+    picks the part of the sample it plays, and its pads show the clip in 32 sections. A track that plays an instrument first offers to **resample its
     clips**, so each comes back as its own audio.
   - **Slicer**: one sample for the whole track, cut into up to 128 **chops** you play and
     sequence from the pads (32 to a pad page, **4 Rows** or **16 Pads**). Every clip plays
     the same chops: a clip is a sequence of chops, with a MIDI clip's CLIP bank and
     **>Seq**, which lays the chops on the steps. One chop at a time, one level (velocity is
-    ignored). Its own **Tempo** and **Sync**: **Off** plays the chops as cut, **Pitch**
+    ignored). Its own **Tempo** and **Warp**: **Off** plays the chops as cut, **Pitch**
     retunes them to the project's tempo. It follows the Conductor only if you switch it on.
     A loaded sample starts as 16 even chops; the steps you have play the new ones.
   - **SAMPLE** (the instrument pad on the bank map) is the sample: the waveform, zoomable,
-    with Gain · Pitch · Detune · Tempo · Revrs (an Audio clip's Start and Length too), and
-    a second page as a grid with Sync. A click opens **Load sample · Trim · Normalize**;
+    with Start · Zoom · End · Offset and Pitch · Detune · Tempo · Gain, then the **TIME**
+    and **SOUND** pages. A click opens **Load sample · Trim · Normalize**;
     Trim and Normalize make a **New** sample or **Overwrite** the file. A Slicer's Trim is
     a step before chopping, on its own screen with a start and an end handle.
   - **SLICES** (a Slicer's editor) makes the chops: **Even**, **Transient** (cut at the
@@ -151,14 +150,14 @@ the section into a versioned heading at release time.
     dial runs from Lo to Hi.
   - **LIVE ARP** plays chops (**Step** in place of Oct); NOTE FX keeps what doesn't move
     a pitch; there is no DELAY. Muting either silences it like a bus, so a loop keeps
-    time. **Delete + clip** clears the sequence only; **Shift + Delete** resets an Audio
-    clip, sample and all.
+    time. On a Slicer, **Delete + clip** clears the sequence only; on an Audio clip it asks
+    to remove the sample. **Shift + Delete** resets an Audio clip, sample and all.
   - **Long samples**: Audio clips take up to **30 minutes** (a pick sets up to 256 bars), a
     Slicer up to 4; anything over a minute plays from the card as it goes, and opens
     quickly after the first time. **Project Settings → Purge samples** clears out the
     ones nothing uses.
   - **Templates** keep a Slicer whole — its sample (copied into each new project), chops,
-    Tempo and Sync; Audio tracks arrive empty.
+    Tempo and Warp; Audio tracks arrive empty.
 - **Resample a scene.** Record what a scene sounds like into a sample, cut to loop
   exactly: **Sample → Resample scene**, pick the row, then the length (it starts where
   all the clips line up), an optional warm-up pass so tails carry into the loop, and
@@ -216,6 +215,9 @@ the section into a versioned heading at release time.
   Clips of the same length still hand over in step with each other.
 
 ### Fixed
+- **Step conditions survive a save on a clip whose loop doesn't start at step 1.**
+  Iter, Random and Ratchet (and a Slicer step's own sound) on steps after the loop's
+  first were lost when the project was saved and reopened.
 - **The browser's Screen view stays on the overview when you touch a knob on the MIX,
   MACROS or Pad Mode bank**, as it already did on the other banks: the touched knob
   lights in the strip under the clip, and the strip keeps the bank's name. The

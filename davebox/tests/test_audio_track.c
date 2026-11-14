@@ -1681,9 +1681,20 @@ int main(void) {
     /* ---- leaving Audio / a Slicer: samples let go, steps cleared (Q3) ---- */
     hx_set_param(h, "t5_au_chop", "0");
     HX_ASSERT(inst->tracks[5].clips[0].note_count == 16, "chop after reload");
-    hx_set_param(h, "t4_convert_to_melodic", "");
+    hx_set_param(h, "t4_au_in_len", "3");                     /* INPUT: Length 4 bars, Overdub Replace */
+    hx_set_param(h, "t4_au_in_ovr", "1");
+    HX_ASSERT(inst->au_trk[4].in_len == 3 && inst->au_trk[4].in_ovr == 1, "INPUT's Length / Overdub did not land");
+    hx_set_param(h, "t4_convert_to_melodic", "u");                /* as the UI sends it: one undo step */
     HX_ASSERT(inst->tracks[4].pad_mode == PAD_MODE_MELODIC_SCALE, "leaving Audio did not make the track melodic");
     HX_ASSERT(!AUA(4, 0)->smp && !AUA(4, 0)->name[0], "leaving Audio kept clip A's sample");
+    HX_ASSERT(!inst->au_trk[4].in_len && !inst->au_trk[4].in_ovr, "leaving Audio kept INPUT's settings");
+    /* Undo brings the Audio track back with its INPUT settings (they were lost) */
+    hx_set_param(h, "undo_restore", "1");
+    hx_render(h, 2);
+    HX_ASSERT(inst->tracks[4].pad_mode == PAD_MODE_AUDIO, "undo did not bring the Audio track back");
+    HX_ASSERT(inst->au_trk[4].in_len == 3 && inst->au_trk[4].in_ovr == 1, "undo of leaving Audio lost INPUT's Length / Overdub");
+    hx_set_param(h, "t4_convert_to_melodic", "");
+    HX_ASSERT(inst->tracks[4].pad_mode == PAD_MODE_MELODIC_SCALE, "leaving Audio again did not make the track melodic");
     hx_set_param(h, "t5_convert_to_melodic", "");
     HX_ASSERT(inst->tracks[5].pad_mode == PAD_MODE_MELODIC_SCALE && !AUS(5)->smp && !AUS(5)->name[0] &&
               inst->au_trk[5].layout == 0, "leaving the Slicer kept its sample or settings");

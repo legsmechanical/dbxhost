@@ -317,14 +317,20 @@ static void ensure_parent_dir(const char *path) {
     }
 }
 
-/* v=34 per-step trig-condition serialization (iter/random/ratchet).
- * Hex blob, 2 chars per step, exactly cl->length steps. Sparse at the
- * array level — emitted only when any element is non-zero. */
+/* v=34 per-step trig-condition serialization (iter/random/ratchet, and a
+ * Slicer's per-step sound). Hex blob, 2 chars per step, from step 0 to the
+ * last non-zero one. Sparse at the array level — emitted only when any
+ * element is non-zero.
+ * ⚠ The arrays are indexed by the clip's absolute step, and the loop window
+ * is [loop_start, loop_start + length): writing `length` entries from 0 (as
+ * this once did) dropped every setting past it on a clip whose loop does not
+ * start at its first step, and any left outside a window since shrunk.
+ * Older builds read the first `length` entries of a longer string. */
 static void write_step_hex_arr(FILE *fp, const char *key,
                                const uint8_t *arr, uint16_t len) {
-    int i, any = 0;
-    for (i = 0; i < (int)len; i++) if (arr[i]) { any = 1; break; }
-    if (!any) return;
+    int i;
+    while (len > 0 && !arr[len - 1]) len--;
+    if (!len) return;
     fprintf(fp, ",\"%s\":\"", key);
     for (i = 0; i < (int)len; i++) fprintf(fp, "%02x", (unsigned)arr[i]);
     fputc('"', fp);
@@ -672,19 +678,19 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
             {
                 char k[24];
                 snprintf(k, sizeof(k), "t%dc%d_si", t, c);
-                write_step_hex_arr(fp, k, cl->step_iter,    cl->length);
+                write_step_hex_arr(fp, k, cl->step_iter,    SEQ_STEPS);
                 snprintf(k, sizeof(k), "t%dc%d_sr", t, c);
-                write_step_hex_arr(fp, k, cl->step_random,  cl->length);
+                write_step_hex_arr(fp, k, cl->step_random,  SEQ_STEPS);
                 snprintf(k, sizeof(k), "t%dc%d_sx", t, c);
-                write_step_hex_arr(fp, k, cl->step_ratchet, cl->length);
+                write_step_hex_arr(fp, k, cl->step_ratchet, SEQ_STEPS);
                 snprintf(k, sizeof(k), "t%dc%d_sxr", t, c);
-                write_step_hex_arr(fp, k, cl->step_xrev,  cl->length);
+                write_step_hex_arr(fp, k, cl->step_xrev,  SEQ_STEPS);
                 snprintf(k, sizeof(k), "t%dc%d_sxs", t, c);
-                write_step_hex_arr(fp, k, cl->step_xsemi, cl->length);
+                write_step_hex_arr(fp, k, cl->step_xsemi, SEQ_STEPS);
                 snprintf(k, sizeof(k), "t%dc%d_sxa", t, c);
-                write_step_hex_arr(fp, k, cl->step_xstart, cl->length);
+                write_step_hex_arr(fp, k, cl->step_xstart, SEQ_STEPS);
                 snprintf(k, sizeof(k), "t%dc%d_sxl", t, c);
-                write_step_hex_arr(fp, k, cl->step_xlen, cl->length);
+                write_step_hex_arr(fp, k, cl->step_xlen, SEQ_STEPS);
             }
         }
     }
@@ -1590,20 +1596,20 @@ static void seq8_load_state(seq8_instance_t *inst) {
                 clip_t *_cl = &inst->tracks[t].clips[c];
                 char k[24];
                 snprintf(k, sizeof(k), "t%dc%d_si", t, c);
-                parse_step_hex_arr(buf, k, _cl->step_iter,    _cl->length, 255);
-                sanitize_step_iter_arr(_cl->step_iter, _cl->length);
+                parse_step_hex_arr(buf, k, _cl->step_iter,    SEQ_STEPS, 255);
+                sanitize_step_iter_arr(_cl->step_iter, SEQ_STEPS);
                 snprintf(k, sizeof(k), "t%dc%d_sr", t, c);
-                parse_step_hex_arr(buf, k, _cl->step_random,  _cl->length, 100);
+                parse_step_hex_arr(buf, k, _cl->step_random,  SEQ_STEPS, 100);
                 snprintf(k, sizeof(k), "t%dc%d_sx", t, c);
-                parse_step_hex_arr(buf, k, _cl->step_ratchet, _cl->length, 4);
+                parse_step_hex_arr(buf, k, _cl->step_ratchet, SEQ_STEPS, 4);
                 snprintf(k, sizeof(k), "t%dc%d_sxr", t, c);
-                parse_step_hex_arr(buf, k, _cl->step_xrev,  _cl->length, 1);
+                parse_step_hex_arr(buf, k, _cl->step_xrev,  SEQ_STEPS, 1);
                 snprintf(k, sizeof(k), "t%dc%d_sxs", t, c);
-                parse_step_hex_arr(buf, k, _cl->step_xsemi, _cl->length, 255);   /* int8 bits */
+                parse_step_hex_arr(buf, k, _cl->step_xsemi, SEQ_STEPS, 255);   /* int8 bits */
                 snprintf(k, sizeof(k), "t%dc%d_sxa", t, c);
-                parse_step_hex_arr(buf, k, _cl->step_xstart, _cl->length, 99);
+                parse_step_hex_arr(buf, k, _cl->step_xstart, SEQ_STEPS, 99);
                 snprintf(k, sizeof(k), "t%dc%d_sxl", t, c);
-                parse_step_hex_arr(buf, k, _cl->step_xlen, _cl->length, 99);
+                parse_step_hex_arr(buf, k, _cl->step_xlen, SEQ_STEPS, 99);
             }
         }
     }

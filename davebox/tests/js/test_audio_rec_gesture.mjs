@@ -65,9 +65,12 @@ globalThis.host_module_set_param = (k, v) => { sets.push([String(k), String(v)])
 
 const UUID = 'audio-rec-uuid', DIR = '/p/Samples';
 let PLAYING = '0', REC = '0 0 0 0 0 0 0 0', INPUT = '0 0 0 0 0', METER = '0 0';
-const snapshot = () => { const v = new Array(64).fill('0'); v[0] = PLAYING; return v.join(' '); };
+const snapshot = () => { const v = new Array(64).fill('0'); v[0] = PLAYING; for (let i = 17; i < 25; i++) v[i] = '-1'; return v.join(' '); };   /* v[17..24]: no clip queued */
+let GETS = [], INPUT_DOWN = false;
 globalThis.host_module_get_param = (k) => {
     k = String(k);
+    GETS.push(k);
+    if (INPUT_DOWN && /^t\d_au_in$/.test(k)) return null;      /* a timed-out read */
     if (k === 'state_uuid') return UUID;
     if (k === 'state_dirty') return '0';
     if (k === 'state_snapshot') return snapshot();
@@ -255,8 +258,9 @@ step('⭐⭐ the INPUT bank (green, above SAMPLE): its knobs set the track\'s in
     globalThis.onMidiMessageInternal(new Uint8Array([0x80, 2, 0]));
     clear(); turn(1, 20);                                                    /* Input: one deliberate step */
     assert(sent('ain_mode').join() === '1', 'Input: ' + JSON.stringify(sent('ain_mode')));
-    clear(); turn(3, 40);
+    GETS = []; clear(); turn(3, 40);
     assert(sent('t2_au_in_len').join() === '1,2', 'Length: ' + JSON.stringify(sent('t2_au_in_len')));
+    assert(!GETS.some((k) => /_au_in$/.test(k)), 'a knob turn read the engine (a blocking round trip in the handler): ' + JSON.stringify(GETS));
     clear(); turn(4, 20);
     assert(sent('t2_au_in_ovr').join() === '1', 'Overdub: ' + JSON.stringify(sent('t2_au_in_ovr')));
     /* Monitor: Rec -> Off (left), then On (right, past Rec) with no feedback risk */
@@ -307,7 +311,32 @@ step('⭐⭐ the INPUT bank (green, above SAMPLE): its knobs set the track\'s in
         assert(Math.abs(other - headingInkAt(46, 57)) < 10, 'the meter is drawn on the CLIP bank');
         S.auInfo[2][c] = keep;
     }
+    S.activeBank = BANK_INPUT; S.trackActiveBank[2] = BANK_INPUT;
+    /* a timed-out read is not kept as values: the cells read --, a turn sends nothing, the next answer lands */
+    INPUT_DOWN = true; S.auIn = null; ticks(16);
+    assert(INP.inputBankCells(2)[3].text === '--' && INP.inputBankCells(2)[4].text === '--',
+           'no answer, yet Length / Overdub read ' + INP.inputBankCells(2)[3].text + ' / ' + INP.inputBankCells(2)[4].text);
+    clear(); turn(3, 40);
+    assert(!sent('t2_au_in_len').length, 'with nothing read, a Length turn sent ' + JSON.stringify(sent('t2_au_in_len')));
+    INPUT_DOWN = false; INPUT = '0 0 0 2 1'; ticks(16);
+    assert(INP.inputBankCells(2)[3].text === '2 bars' && INP.inputBankCells(2)[4].text === 'Replace',
+           'the next answer did not land: ' + INP.inputBankCells(2)[3].text + ' / ' + INP.inputBankCells(2)[4].text);
+    /* Delete + click on INPUT: every knob back to its default */
+    PREFS.setInputPref('mode', 2); PREFS.setInputPref('gain', 5); S.knobTouched = -1; clear();
+    cc(119, 127); cc(3, 127); cc(3, 0); cc(119, 0); ticks(2);
+    assert(sent('t2_au_in_len').join() === '0' && sent('t2_au_in_ovr').join() === '0', 'INPUT reset, Length / Overdub: ' + JSON.stringify(sets));
+    assert(PREFS.inputPrefs().mode === 0 && PREFS.inputPrefs().gain === 0, 'INPUT reset, Input / Gain: ' + JSON.stringify(PREFS.inputPrefs()));
     S.activeBank = 0; S.trackActiveBank[2] = 0;
+});
+
+step('⭐ stopped with another clip queued: the take is the clip on screen (the queued one), as a MIDI take\'s is', () => {
+    const a0 = S.trackActiveClip[2], q0 = S.trackQueuedClip[2], r0 = S.auRec, cnt = S.recordArmed, pl = S.playing;
+    S.auRec = null; S.playing = false; S.recordArmed = false; S.recordCountingIn = false;
+    S.trackActiveClip[2] = 1; S.trackQueuedClip[2] = 3;
+    clear(); rec();
+    const a = sent('t2_au_rec_arm');
+    assert(a.length === 1 && a[0].split(' ')[0] === '3', 'the take armed on clip ' + (a[0] || '').split(' ')[0] + ', not the queued 3: ' + JSON.stringify(a));
+    S.auRec = r0; S.trackActiveClip[2] = a0; S.trackQueuedClip[2] = q0; S.recordArmed = cnt; S.playing = pl;
 });
 
 step('CONTROL: a Slicer keeps Rec for its chops', () => {

@@ -163,6 +163,22 @@ int main(void) {
             HX_ASSERT(which(m[k].mid, unit) == want, msg);
         }
 
+        /* ==== Nudge later: the pieces from slot 0 start that late, not
+         * skipped (1/16 0 and 10 play slot 0; Warp's pieces are the stretcher's) ==== */
+        if (sync != 0) {
+            hx_set_param(h, "t2_au_set_nudge", "0 10");          /* 10 ms of a 125 ms 1/16 */
+            HX_ASSERT(au_cl((seq8_instance_t *)h->inst, 2, 0)->nudge_ms == 10, "Nudge did not land");
+            measure_bar(h, m);
+            measure_bar(h, m);
+            for (k = 0; k < 16; k++) {
+                int want = k < 10 ? k : k - 10;
+                snprintf(msg, sizeof msg, "sync %d, NORMAL 1 + Nudge 10 ms: 1/16 %d plays %d, not %d", sync, k, which(m[k].mid, unit), want);
+                HX_ASSERT(which(m[k].mid, unit) == want, msg);
+            }
+            hx_set_param(h, "t2_au_set_nudge", "0 0");
+            measure_bar(h, m);
+        }
+
         /* ==== Export to Live: a remix is rendered — on every sync, Warp too
          * (Live cannot remix) — and the file plays it: 1/16 #11 is slot 0's ==== */
         {
