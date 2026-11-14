@@ -372,6 +372,12 @@ static int sp_globals_misc(sp_ctx_t *cx) {
         export_take_start(inst, val);
         return 1;
     }
+    if (!strcmp(key, "export_take_live")) {
+        /* the same take, never offline: the device check that the offline
+         * take and the live one come out the same */
+        export_take_launch(inst, val, 0);
+        return 1;
+    }
     if (!strcmp(key, "resample_clear")) {
         /* The UI has read a finished take's outcome. */
         if (!rs_active(inst)) inst->resample_state = RS_IDLE;

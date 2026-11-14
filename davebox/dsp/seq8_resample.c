@@ -195,7 +195,8 @@ static void rs_remember_armed(seq8_instance_t *inst) {
 /* ---- OFFLINE takes (move_host_ext_v1_t.offline_take_*) ----
  *
  * A clip take of a Schwung instrument, or of an Audio track's samples, before
- * the track's effects (Pre) or after them at unity (FX) hears nothing but the
+ * the track's effects (Pre), after them at unity (FX), or after them at the
+ * slot's fader and pan (Dry: the Ableton export's take) hears nothing but the
  * track: the host can record it faster than real time, with a private copy of
  * THIS engine playing this same command against this project's state, into
  * copies of the slot's instrument (none on an Audio track: the copy's samples
@@ -210,7 +211,8 @@ static void rs_remember_armed(seq8_instance_t *inst) {
  * on buses ...). A take the host then fails is recorded again in real time. */
 static char rs_off_state[1u << 20];
 static char rs_off_setup[PA_MAX_TARGETS * 192];
-/* what the real-time take needs if the offline one fails */
+/* what the real-time take needs if the offline one fails: the command and its value */
+static char rs_off_key[32];
 static char rs_off_val[512];
 
 static int rs_offline_automation_ok(const seq8_instance_t *inst, int slot) {
@@ -229,16 +231,17 @@ static int rs_offline_automation_ok(const seq8_instance_t *inst, int slot) {
     return 1;
 }
 
-/* 1 = the host took it. `val` is resample_clip's. */
-static int rs_offline_try(seq8_instance_t *inst, int bars, int tail, int src, int slot,
-                          const char *val, const char *path) {
+/* 1 = the host took it. `key` / `val` the command the copy is given (and the
+ * real-time take's, if the host fails it), `frames` the take's length. */
+static int rs_offline_try_ex(seq8_instance_t *inst, uint32_t frames, int src, int slot,
+                             const char *key, const char *val, const char *path) {
     move_offline_take_t ot;
     FILE *fp;
     long pos;
     int r, i, n = 0;
     if (inst->offline || !g_ext || !g_ext->offline_take_begin || !g_ext->offline_take_state) return 0;
-    if (src != RS_SRC_PRE && src != RS_SRC_FX) return 0;
-    if (strlen(val) >= sizeof ot.val || !rs_offline_automation_ok(inst, slot)) return 0;
+    if (src != RS_SRC_PRE && src != RS_SRC_FX && src != RS_SRC_DRY) return 0;
+    if (strlen(val) >= sizeof ot.val || strlen(key) >= sizeof rs_off_key || !rs_offline_automation_ok(inst, slot)) return 0;
     fp = fmemopen(rs_off_state, sizeof rs_off_state - 1, "w");
     if (!fp) return 0;
     seq8_do_serialize(inst, fp);
@@ -269,19 +272,20 @@ static int rs_offline_try(seq8_instance_t *inst, int bars, int tail, int src, in
     ot.state = rs_off_state;
     ot.state_len = (uint32_t)pos;
     ot.setup = rs_off_setup;
-    snprintf(ot.key, sizeof ot.key, "resample_clip");
+    snprintf(ot.key, sizeof ot.key, "%s", key);
     snprintf(ot.val, sizeof ot.val, "%s", val);
     ot.slot = slot;
-    ot.kind = src == RS_SRC_PRE ? MOVE_CAPTURE_SLOT_PRE : MOVE_CAPTURE_SLOT_FX;
+    ot.kind = src == RS_SRC_PRE ? MOVE_CAPTURE_SLOT_PRE : src == RS_SRC_FX ? MOVE_CAPTURE_SLOT_FX : MOVE_CAPTURE_SLOT;
     ot.bpm = (float)inst->tracks[0].pfx.cached_bpm;
     r = g_ext->offline_take_begin(&ot);
     if (r != 1) return 0;
+    snprintf(rs_off_key, sizeof rs_off_key, "%s", key);
     snprintf(rs_off_val, sizeof rs_off_val, "%s", val);
     snprintf(inst->resample_path, sizeof(inst->resample_path), "%s", path + 1);
     inst->resample_src        = (uint8_t)src;
     inst->resample_move       = 0;
     inst->resample_slot       = (uint8_t)slot;
-    inst->resample_frames     = rs_ticks_to_frames(inst, (uint32_t)(bars + tail) * RS_BAR_TICKS);
+    inst->resample_frames     = frames;
     inst->resample_bar_frames = rs_ticks_to_frames(inst, RS_BAR_TICKS);
     inst->resample_done       = 0;
     inst->resample_offline    = 1;
@@ -289,7 +293,15 @@ static int rs_offline_try(seq8_instance_t *inst, int bars, int tail, int src, in
     return 1;
 }
 
+/* resample_clip's: a Pre or FX take, `bars` + `tail` long */
+static int rs_offline_try(seq8_instance_t *inst, int bars, int tail, int src, int slot,
+                          const char *val, const char *path) {
+    return rs_offline_try_ex(inst, rs_ticks_to_frames(inst, (uint32_t)(bars + tail) * RS_BAR_TICKS),
+                             src, slot, "resample_clip", val, path);
+}
+
 static void resample_clip_launch(seq8_instance_t *inst, const char *val, int offline_ok);
+static void export_take_launch(seq8_instance_t *inst, const char *val, int offline_ok);
 
 /* render_block: the host's take, as this take's progress and outcome. */
 static void rs_offline_poll(seq8_instance_t *inst) {
@@ -309,7 +321,8 @@ static void rs_offline_poll(seq8_instance_t *inst) {
     /* FAILED (or gone): record it in real time, as if offline had not been tried */
     g_ext->offline_take_cancel();
     inst->resample_state = RS_IDLE;
-    resample_clip_launch(inst, rs_off_val, 0);
+    if (!strcmp(rs_off_key, "export_take")) export_take_launch(inst, rs_off_val, 0);
+    else resample_clip_launch(inst, rs_off_val, 0);
 }
 
 /* render_block, before the tick loop: arm the take a render after its first
@@ -542,8 +555,10 @@ static long export_take_ticks(const seq8_instance_t *inst, int t, int c, int con
 }
 
 /* set_param "export_take" = "T C ticks cond |path". Refusals as resample_clip's
- * (resample_err); `ticks` must be export_take_ticks's answer. */
-static void export_take_start(seq8_instance_t *inst, const char *val) {
+ * (resample_err); `ticks` must be export_take_ticks's answer. Faster than real
+ * time where the host can (rs_offline_try_ex, Dry), else as it plays. */
+static void export_take_start(seq8_instance_t *inst, const char *val) { export_take_launch(inst, val, 1); }
+static void export_take_launch(seq8_instance_t *inst, const char *val, int offline_ok) {
     int tr_i = -1, c = -1, cond = 0, t;
     unsigned ticks = 0;
     const char *path = strchr(val, '|');
@@ -561,6 +576,8 @@ static void export_take_start(seq8_instance_t *inst, const char *val) {
             || !g_ext->capture_start_src) {
         inst->resample_err = RS_ERR_ROUTE; inst->resample_state = RS_FAILED; return;
     }
+    if (offline_ok && rs_offline_try_ex(inst, rs_ticks_to_frames(inst, ticks), RS_SRC_DRY, dst.slot, "export_take", val, path))
+        return;
     rs_remember_armed(inst);
     inst->resample_src  = RS_SRC_DRY;
     inst->resample_move = 0;

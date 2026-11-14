@@ -18,6 +18,10 @@ the section into a versioned heading at release time.
   one bar and rests one. **Fit to clip** now sets Bars. Start and End are drawn as lines,
   with the audio outside them dotted rather than hidden. An arrow marks which of Tempo and
   Bars is in charge.
+- **Exporting Audio tracks to Ableton is much faster.** Each Audio and Slicer clip is now
+  rendered faster than real time where it can be, instead of played through in real time;
+  the result is the same. A track whose sound can't be copied (modulation, a MIDI effect,
+  automation of its level or pan, and the like) is still recorded as it plays.
 - **Dir for Audio clips, as for MIDI clips.** Revrs is gone from SAMPLE; the CLIP bank's
   **K7 Dir** plays a clip **Fwd**, **Bwd**, or ping-pong (**PPf** / **PPb**: a pass
   forwards, the next backwards). A Shot offers Fwd and Bwd. It works with every Warp, Free

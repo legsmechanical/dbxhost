@@ -346,7 +346,9 @@ typedef struct move_host_ext_v1 {
      * block in the live order -- the slot's copy, then the caller's copy, whose
      * sends reach the slot's copy (heard the next block) -- and when the copy
      * calls capture_start_src(path, frames, kind, take->slot) the host writes
-     * the slot copy's output at `kind` (MOVE_CAPTURE_SLOT_PRE / _FX) to `path`
+     * the slot copy's output at `kind` (MOVE_CAPTURE_SLOT_PRE / _FX, or
+     * MOVE_CAPTURE_SLOT: after the FX at the slot's fader and pan as set,
+     * mute and solo ignored) to `path`
      * from that block, `frames` long. What the copy feeds the slot
      * (slot_audio_feed) is mixed into the slot copy's next block, as live; a
      * slot with no instrument (or a bypassed one) is silence plus that feed.
@@ -388,7 +390,7 @@ typedef struct move_offline_take {
     char  key[32];            /* the command its copy is given */
     char  val[512];
     int   slot;               /* the chain slot recorded (its instrument and feed) */
-    int   kind;               /* MOVE_CAPTURE_SLOT_PRE or MOVE_CAPTURE_SLOT_FX */
+    int   kind;               /* MOVE_CAPTURE_SLOT_PRE, _SLOT_FX or _SLOT (Dry) */
     float bpm;                /* the copy's tempo until it declares its own */
 } move_offline_take_t;
 

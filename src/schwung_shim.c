@@ -1782,6 +1782,9 @@ static int ot_slot_info(int slot, offline_slot_info_t *out) {
                                  shadow_chain_slots[slot].default_forward_channel,
                                  shadow_chain_slots[slot].channel);
     out->fwd_ch = ch == SHADOW_FORWARD_THRU ? -1 : ch;
+    out->volume = shadow_chain_slots[slot].volume;
+    out->pan_l = shadow_pan_gain_l(shadow_chain_slots[slot].pan);
+    out->pan_r = shadow_pan_gain_r(shadow_chain_slots[slot].pan);
     return 1;
 }
 

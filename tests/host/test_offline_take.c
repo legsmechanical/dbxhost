@@ -73,6 +73,7 @@ static chain_slot_clone_source_fn g_clone = clone_source;
 static int slot_info(int slot, offline_slot_info_t *o) {
     (void)slot;
     o->synth_level = 0.5f; o->transpose = 2; o->fwd_ch = 3;
+    o->volume = 0.5f; o->pan_l = 1.0f; o->pan_r = 0.25f;   /* a Dry take's fader and pan */
     return 1;
 }
 static void quiet(const char *m) { (void)m; }
@@ -169,6 +170,21 @@ int main(void) {
         offline_take_run_pending();
         w = read_wav(fxp, &n);
         CHECK(w && n == 128 && w[0] == half(6203) + 7, "FX: after the level, + the effect: %d", w ? w[0] : -1);
+        int16_t fxl = w ? w[0] : 0, fxr = w ? w[1] : 0;
+        free(w);
+        offline_take_cancel();
+
+        /* ---- Dry (MOVE_CAPTURE_SLOT): after the effects, at the fader and pan ---- */
+        const char *dp = FIXTURE_DIR "/takes/dry.wav";
+        g_with_fx_asked = 0;
+        t = take(0, 128, MOVE_CAPTURE_SLOT, dp);
+        CHECK(offline_take_begin(&t) == 1, "Dry begin");
+        CHECK(g_with_fx_asked, "a Dry take copies the effects");
+        offline_take_run_pending();
+        CHECK(offline_take_state(NULL, NULL) == MOVE_OFFLINE_DONE, "Dry: DONE");
+        w = read_wav(dp, &n);
+        CHECK(w && n == 128 && w[0] == (int16_t)lroundf((float)fxl * 0.5f * 1.0f) && w[1] == (int16_t)lroundf((float)fxr * 0.5f * 0.25f),
+              "Dry: the FX take at the fader and pan: %d %d (FX %d %d)", w ? w[0] : -1, w ? w[1] : -1, fxl, fxr);
         free(w);
         offline_take_cancel();
     }
@@ -255,7 +271,7 @@ int main(void) {
     CHECK(offline_take_begin(&t) == MOVE_OFFLINE_ERR_MOD, "the slot's refusal is the answer");
     g_slot_err = 0;
     t.kind = MOVE_CAPTURE_MIX;
-    CHECK(offline_take_begin(&t) == MOVE_OFFLINE_ERR_ARGS, "only PRE / FX");
+    CHECK(offline_take_begin(&t) == MOVE_OFFLINE_ERR_ARGS, "only PRE / FX / Dry");
     CHECK(offline_take_state(NULL, NULL) == MOVE_OFFLINE_IDLE, "refusals leave it idle");
 
     /* ---- cancel while it runs, on the real thread ---- */

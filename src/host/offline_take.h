@@ -14,8 +14,10 @@
  *     the slot's block is written from the take's start —
  *
  * at the instrument's synth level (MOVE_CAPTURE_SLOT_PRE, the shim's
- * shadow_apply_synth_level) or after the copied FX at unity
- * (MOVE_CAPTURE_SLOT_FX). What the copy sends reaches the instrument as the
+ * shadow_apply_synth_level), after the copied FX at unity
+ * (MOVE_CAPTURE_SLOT_FX), or after them at the slot's fader and pan as set
+ * (MOVE_CAPTURE_SLOT, the slot's Dry stem: mute and solo ignored, as a
+ * one-slot take ignores them live). What the copy sends reaches the instrument as the
  * host would deliver it: the slot's channel remap and transpose, realtime as a
  * broadcast, a DIRECT send past both. The take's file is 16-bit stereo
  * 44.1 kHz, written as it renders; DONE once it is complete. */
@@ -31,6 +33,8 @@ typedef struct {
     float synth_level;      /* the PRE tap's level (shadow_apply_synth_level) */
     int   transpose;        /* semitones (shadow_chain_apply_transpose) */
     int   fwd_ch;           /* the channel voice messages are remapped to, -1 = as sent */
+    float volume;           /* the fader (a Dry take's level) */
+    float pan_l, pan_r;     /* the pan's gains (shadow_pan_gain_l / _r) */
 } offline_slot_info_t;
 
 typedef struct {

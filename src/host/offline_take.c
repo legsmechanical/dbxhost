@@ -349,6 +349,17 @@ static void level(int16_t *b) {
     }
 }
 
+/* A Dry take: the slot's fader and pan as set, as the shim's one-slot tap
+ * keeps a slot (sampler_take_tap_as_set; the mix's own rounding, clamped). */
+static void fader(int16_t *b) {
+    int i;
+    for (i = 0; i < OT_BLOCK * 2; i++) {
+        const float g = J.info.volume * ((i & 1) ? J.info.pan_r : J.info.pan_l);
+        int32_t v = (int32_t)lroundf((float)b[i] * g);
+        b[i] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+    }
+}
+
 /* The caller's state, for its copy to load: a file of the take's own. */
 static int write_state(void) {
     char tmp[sizeof OT_STATE_PATH + 8];
@@ -417,7 +428,7 @@ static void run_job(void) {
         apply_params(T.sapi->set_param, T.sinst, J.src.params, J.src.nparams, J.src.state, J.src.state_len);
     }
 
-    if (J.take.kind == MOVE_CAPTURE_SLOT_FX)
+    if (J.take.kind == MOVE_CAPTURE_SLOT_FX || J.take.kind == MOVE_CAPTURE_SLOT)
         for (i = 0; i < J.src.nfx; i++) {
             const slc_fx_src_t *f = &J.src.fx[i];
             audio_fx_api_v2_t *fa = (audio_fx_api_v2_t *)api_of(f->so_path, AUDIO_FX_INIT_V2_SYMBOL, &g_mod_host);
@@ -450,6 +461,7 @@ static void run_job(void) {
         }
         level(sbuf);
         for (i = 0; i < T.nfx; i++) T.fapi[i]->process_block(T.finst[i], sbuf, OT_BLOCK);
+        if (J.take.kind == MOVE_CAPTURE_SLOT) fader(sbuf);
         /* the sequencer copy: its sends land now, its take may start */
         eng->render_block(einst, ebuf, OT_BLOCK);
         played += OT_BLOCK;
@@ -555,13 +567,14 @@ int offline_take_begin(const move_offline_take_t *take) {
     int n;
     if (st_get() != OT_IDLE) return MOVE_OFFLINE_ERR_BUSY;
     if (!take || !take->state || !take->state_len || !take->key[0] ||
-            (take->kind != MOVE_CAPTURE_SLOT_PRE && take->kind != MOVE_CAPTURE_SLOT_FX))
+            (take->kind != MOVE_CAPTURE_SLOT_PRE && take->kind != MOVE_CAPTURE_SLOT_FX &&
+             take->kind != MOVE_CAPTURE_SLOT))
         return MOVE_OFFLINE_ERR_ARGS;
     if (!g_engine_so[0] || !H.slot_instance || !H.clone_source || !*H.clone_source || !H.slot_info)
         return MOVE_OFFLINE_ERR_NO_HOST;
     ci = H.slot_instance(take->slot);
     if (!ci || !H.slot_info(take->slot, &J.info)) return MOVE_OFFLINE_ERR_NO_HOST;
-    n = (*H.clone_source)(ci, &J.src, take->kind == MOVE_CAPTURE_SLOT_FX);
+    n = (*H.clone_source)(ci, &J.src, take->kind != MOVE_CAPTURE_SLOT_PRE);
     if (n < 0) return n;
     if (n == 0) return MOVE_OFFLINE_ERR_NO_SYNTH;
     J.take = *take;

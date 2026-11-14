@@ -262,6 +262,52 @@ int main(void) {
     }
     printf("  ok   — a Shot clip, and a Free + Shot one, sound in their take\n");
 
+    /* ---- faster than real time where the host can: the same command, Dry,
+     * to the host's copy; nothing launched here; a failure records it live ---- */
+    {
+        const move_offline_take_t *t;
+        int b = hx_stub_ot_begins(), i;
+        hx_stub_ot_enable(1);
+        snprintf(p, sizeof p, "4 0 576 0 |%s/off.wav", g_root);
+        hx_set_param(h, "export_take", p);
+        HX_ASSERT(hx_stub_ot_begins() == b + 1 && inst->resample_offline && !inst->playing && inst->resample_state == RS_RECORDING,
+                  "the export's take did not go offline (or launched the transport)");
+        t = hx_stub_ot_take(NULL, NULL);
+        HX_ASSERT(t && !strcmp(t->key, "export_take") && !strcmp(t->val, p) && t->kind == MOVE_CAPTURE_SLOT &&
+                  t->slot == inst->tracks[4].pfx.slot, "not the export's command, Dry, on the track's slot");
+        HX_ASSERT(inst->resample_frames == rs_ticks_to_frames(inst, 576), "the offline take's length is not the clip's");
+        hx_stub_ot_set(MOVE_OFFLINE_DONE, inst->resample_frames, inst->resample_frames);
+        hx_render(h, 1);
+        HX_ASSERT(inst->resample_state == RS_DONE && !inst->resample_offline, "the host's DONE was not the take's");
+        hx_set_param(h, "resample_clear", "1");
+        /* the host fails it: the same take, live */
+        b = hx_stub_ot_begins();
+        hx_set_param(h, "export_take", p);
+        HX_ASSERT(hx_stub_ot_begins() == b + 1, "rig: offline");
+        hx_stub_ot_set(MOVE_OFFLINE_FAILED, 0, 0);
+        hx_render(h, 1);
+        HX_ASSERT(!inst->resample_offline && inst->playing && inst->resample_state == RS_ARMED,
+                  "a failed offline export take was not recorded in real time");
+        for (i = 0; i < 20000 && inst->resample_state != RS_RECORDING; i++) hx_render(h, 1);
+        hx_stub_capture(&block, &frames, NULL, &path);
+        hx_stub_capture_src(&kind, &index);
+        HX_ASSERT(kind == MOVE_CAPTURE_SLOT && index == inst->tracks[4].pfx.slot && strstr(path, "/off.wav"),
+                  "the live retake is not the export's Dry take");
+        finish(h);
+        for (i = 0; i < 20000 && inst->resample_state == RS_RECORDING; i++) hx_render(h, 1);
+        hx_set_param(h, "resample_clear", "1");
+        /* export_take_live: the same take, never offline */
+        b = hx_stub_ot_begins();
+        hx_set_param(h, "export_take_live", p);
+        HX_ASSERT(hx_stub_ot_begins() == b && !inst->resample_offline && inst->playing && inst->resample_state == RS_ARMED,
+                  "export_take_live went offline");
+        hx_stub_ot_enable(0);
+        finish(h);
+        for (i = 0; i < 20000 && inst->resample_state == RS_RECORDING; i++) hx_render(h, 1);
+        hx_set_param(h, "resample_clear", "1");
+    }
+    printf("  ok   — offline where the host can (Dry, the same command); live again if it fails\n");
+
     /* ---- refusals ---- */
     snprintf(p, sizeof p, "3 0 576 0 |%s/f.wav", g_root);
     hx_set_param(h, "export_take", p);
