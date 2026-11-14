@@ -477,6 +477,12 @@ export const S = {
     /* ...its card up: a turn reveals it, the release takes it down ("touch
      * orients, turn reveals, release commits" — UI_LANGUAGE §8) */
     rmxCard: false,
+    /* REPEAT and TAPE of each track's active clip (the clip pfx snapshot, v[55..65]):
+     * REPEAT [on, grid 0..4, at 0..15, len 1..16, gate %, pitch st, fade %]; TAPE [on, effect, every, length] */
+    rptSet: Array.from({ length: NUM_TRACKS }, () => [0, 2, 12, 4, 100, 0, 0]),
+    tapeSet: Array.from({ length: NUM_TRACKS }, () => [0, 0, 0, 2]),
+    /* their picture card up (as REMIX's: a turn reveals it, the release takes it down) */
+    fxCard: false,
     trackRoute: new Array(8).fill(0),
     /* 1 = the track's notes go through its own slot's MIDI FX module (one is
      * loaded, Pre or Post: the engine's tN_fxpost / tN_fxpre). Mirrored here

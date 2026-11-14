@@ -1504,6 +1504,8 @@ Detune and Revrs.
 | **PAD MODE** (Slicer) | **Layout**: **4 Rows** or **16 Pads**, how the chops sit on the pads |
 | **LIVE ARP** | As on a melodic track, but **Step** replaces Oct: each repeat moves one chop up (or down), up to 15 |
 | **REMIX** (both) | Rearranges the loop as it plays — see [REMIX](#remix) below |
+| **REPEAT** (both) | A beat-repeat on each bar — see [REPEAT](#repeat) below |
+| **TAPE** (both) | A tape stop, spin-up, half-speed or back-spin on a bar cycle — see [TAPE](#tape) below |
 | **NOTE FX** (Slicer) | As on a drum track — nothing that changes a pitch. **Quant** lives here only |
 
 There's no RPT GROOVE, HARMONY, SEQ ARP, DELAY or MIDI FX on either kind. The step editor's
@@ -1514,7 +1516,9 @@ step's Pitch, Length / Start and Reverse (above).
 
 **REMIX** chops the bar up and plays it back rearranged — reversed bits, stutters, breaks
 and pitch jumps — without changing your clip. It's in the bank map's **FX** column, third
-pad, on Audio and Slicer tracks alike, and each clip has its own.
+pad, on Audio and Slicer tracks alike, and each clip has its own. **REPEAT** (second pad)
+and **TAPE** (fourth pad) sit beside it; on the jog walk they come REMIX, REPEAT, TAPE —
+the order the sound goes through them.
 
 | Knob | Does |
 |---|---|
@@ -1543,6 +1547,49 @@ reversed or pitched as the remix says, on top of its own sound. **To keep a remi
 it ([§16.1](#161-bake)): on an Audio clip that records it into a new sample, on a Slicer it
 writes the remixed steps, reversals and pitches into the clip. Either way REMIX turns off,
 so it isn't applied twice.
+
+### REPEAT
+
+**REPEAT** grabs a piece of the bar and repeats it — a stutter, a roll into the next bar, a
+beat played four times — every bar alike, after REMIX. Each clip has its own.
+
+| Knob | Does |
+|---|---|
+| **K1 Rept** | **Off** / **On** (turn deliberately) |
+| **K2 Grid** | The piece repeated: **1/4**, **1/8**, **1/16**, **1/32**, **1/64** |
+| **K3 Start** | The 1/16 of the bar (**1–16**) it grabs from and starts repeating on |
+| **K4 Len** | How long it repeats, **1/16** to **16/16** (cut at the bar's end) |
+| **K5 Gate** | Each repeat's length, **10–100 %** — below 100 the repeats get gaps |
+| **K6 Pitch** | Semitones added at each repeat, **−12 to +12**: a rising or falling stutter |
+| **K7 Fade** | Level lost at each repeat, **0–100 %** |
+
+The first turn shows what you'll get: **Start 13**, **Len 4/16**, **Grid 1/16** repeats the
+last beat's first 1/16 four times. Turning a knob shows the bar as REMIX's pop-up does (the
+repeats dotted when finer than 1/16, narrow when gated, with a caret when pitched) and a line
+like **1/16 FROM 13 FOR 4/16**. A change lands at the next bar line. With REMIX on, REPEAT
+repeats the remixed bar. A Free clip has no bars to repeat: REPEAT reads **--** there.
+**Bake** keeps it as REMIX does: in the new sample, or in a Slicer's steps (REPEAT turns off).
+Export renders it.
+
+### TAPE
+
+**TAPE** plays the track back like a tape machine for a moment, on a bar cycle: it slows to a
+stop into the bar line, spins up out of one, drops to half speed, or runs backwards — then
+it's straight back to the track as it plays. Each clip has its own.
+
+| Knob | Does |
+|---|---|
+| **K1 Tape** | **Off** / **On** (turn deliberately) |
+| **K2 Type** | **Stop** (slows to a halt into the bar line, pitch falling), **Start** (spins up out of silence from the bar line), **Half** (half speed — an octave down — into the bar line), **Back** (what just played, backwards, into the bar line) |
+| **K3 Every** | How often: every **1**, **2**, **4** or **8** bars — the bar line that ends the cycle (Start: the one that starts it) |
+| **K4 Len** | How long it lasts: **1/16**, **1/8**, **1/4**, **1/2** or a whole bar |
+
+Turning a knob shows the head's speed across the cycle — a line at the top where the track
+plays as it is, falling to the middle as it stops, below it when it runs backwards — and a
+line like **STOP 1/4 PER BAR**. TAPE plays back what the track itself made, so it works on
+any clip: Loop, Shot or Free, any Warp setting, and a Slicer. Bars count from the clip's
+start, through its loops. Export renders it; **Bake** on an Audio clip records it into the
+new sample (and turns it off); a Slicer's steps can't hold it, so there it stays on.
 
 ### Copying, clearing and undo
 

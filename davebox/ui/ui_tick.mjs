@@ -28,7 +28,7 @@ import {
     LED_OFF, NUM_TRACKS, NUM_CLIPS, DRUM_LANES, NUM_STEPS, TPS_VALUES,
     PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_CONDUCT,
     BANK_SOUND, BANK_MACROS, isSoundBank,
-    POLL_INTERVAL, STEP_JOG_HINT_MS, BANK_CHORD, BANK_AUDIO, BANK_REMIX, BANK_INPUT, DEFAULT_TRACK_OCTAVE,
+    POLL_INTERVAL, STEP_JOG_HINT_MS, BANK_CHORD, BANK_AUDIO, BANK_REMIX, BANK_INPUT, AUDIO_ONLY_BANKS, BANK_REPEAT, BANK_TAPE, DEFAULT_TRACK_OCTAVE,
     LED_PULSE_4TH, LED_BLINK_8TH,
     } from './ui_constants.mjs';
 
@@ -182,8 +182,8 @@ function convertTrackType(t, toDrum) {
     if (S.trackActiveBank[t] === BANK_CHORD) S.trackActiveBank[t] = 0;
     if (t === S.activeTrack && S.activeBank === BANK_CHORD) S.activeBank = 0;
     /* ...and only an Audio track has the AUDIO bank */
-    if (S.trackActiveBank[t] === BANK_AUDIO || S.trackActiveBank[t] === BANK_REMIX || S.trackActiveBank[t] === BANK_INPUT) S.trackActiveBank[t] = 0;
-    if (t === S.activeTrack && (S.activeBank === BANK_AUDIO || S.activeBank === BANK_REMIX || S.activeBank === BANK_INPUT)) S.activeBank = 0;
+    if (AUDIO_ONLY_BANKS.includes(S.trackActiveBank[t])) S.trackActiveBank[t] = 0;
+    if (t === S.activeTrack && AUDIO_ONLY_BANKS.includes(S.activeBank)) S.activeBank = 0;
     if (toDrum) {
         if (t === S.activeTrack && (S.activeBank === 2 || S.activeBank === 4)) S.activeBank = 0;
     } else {
@@ -263,8 +263,8 @@ function convertTrackToConduct(t) {
     const prevOctave = S.trackOctave[t];
     S.trackOctave[t] = DEFAULT_TRACK_OCTAVE;
     S.pendingConductReadback = { t: t, prevMode: prevMode, prevOctave: prevOctave };
-    if (S.trackActiveBank[t] === BANK_CHORD || S.trackActiveBank[t] === BANK_AUDIO || S.trackActiveBank[t] === BANK_REMIX || S.trackActiveBank[t] === BANK_INPUT) S.trackActiveBank[t] = 0;
-    if (t === S.activeTrack && (S.activeBank === BANK_CHORD || S.activeBank === BANK_AUDIO || S.activeBank === BANK_REMIX || S.activeBank === BANK_INPUT)) S.activeBank = 0;
+    if (S.trackActiveBank[t] === BANK_CHORD || AUDIO_ONLY_BANKS.includes(S.trackActiveBank[t])) S.trackActiveBank[t] = 0;
+    if (t === S.activeTrack && (S.activeBank === BANK_CHORD || AUDIO_ONLY_BANKS.includes(S.activeBank))) S.activeBank = 0;
     /* Mirror convertTrackType's drain barrier: the convert set_param must drain
      * before computePadNoteMap pushes tN_padmap, or same-buffer tN_* coalescing
      * drops the convert (DSP never sets the role → false refusal). The first
@@ -677,6 +677,10 @@ export function _tickImpl() {
     } else {
         S.rmxMapDirty = true;
         if (S.rmxCard) { S.rmxCard = false; S.screenDirty = true; }   /* the release takes the card down */
+    }
+    /* REPEAT's and TAPE's cards: likewise, the release (or leaving the bank) takes them down */
+    if (S.fxCard && (S.sessionView || S.knobTouched < 0 || (S.activeBank !== BANK_REPEAT && S.activeBank !== BANK_TAPE))) {
+        S.fxCard = false; S.screenDirty = true;
     }
     if (S.dspInboundEnabled) {
         const _muted = _padDispatchMutedNow();

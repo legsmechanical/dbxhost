@@ -78,6 +78,18 @@ static void pfx_set(seq8_instance_t *inst, seq8_track_t *tr,
     if (!strcmp(key, "remix_rev"))  { cp->rmx_rev  = (uint8_t)clamp_i(my_atoi(val), 0, 100); return; }
     if (!strcmp(key, "remix_roll")) { cp->rmx_roll = (uint8_t)clamp_i(my_atoi(val), 0, 100); return; }
     if (!strcmp(key, "remix_brk"))  { cp->rmx_brk  = (uint8_t)clamp_i(my_atoi(val), 0, 100); return; }
+    /* REPEAT and TAPE: per clip, read by the Audio engine at each bar line */
+    if (!strcmp(key, "repeat_on"))   { cp->rpt_on   = (uint8_t)clamp_i(my_atoi(val), 0, 1); return; }
+    if (!strcmp(key, "repeat_grid")) { cp->rpt_grid = (uint8_t)clamp_i(my_atoi(val), 0, RPT_GRIDS - 1); return; }
+    if (!strcmp(key, "repeat_at"))   { cp->rpt_at   = (uint8_t)clamp_i(my_atoi(val), 0, 15); return; }
+    if (!strcmp(key, "repeat_len"))  { cp->rpt_len  = (uint8_t)clamp_i(my_atoi(val), 1, 16); return; }
+    if (!strcmp(key, "repeat_gate")) { cp->rpt_gate = (uint8_t)clamp_i(my_atoi(val), 10, 100); return; }
+    if (!strcmp(key, "repeat_pit"))  { cp->rpt_pit  = (int8_t)clamp_i(my_atoi(val), -12, 12); return; }
+    if (!strcmp(key, "repeat_fade")) { cp->rpt_fade = (uint8_t)clamp_i(my_atoi(val), 0, 100); return; }
+    if (!strcmp(key, "tape_on"))     { cp->tape_on    = (uint8_t)clamp_i(my_atoi(val), 0, 1); return; }
+    if (!strcmp(key, "tape_fx"))     { cp->tape_fx    = (uint8_t)clamp_i(my_atoi(val), 0, AU_TAPE_FX - 1); return; }
+    if (!strcmp(key, "tape_every"))  { cp->tape_every = (uint8_t)clamp_i(my_atoi(val), 0, 3); return; }
+    if (!strcmp(key, "tape_len"))    { cp->tape_len   = (uint8_t)clamp_i(my_atoi(val), 0, AU_TAPE_LENS - 1); return; }
     if (!strcmp(key, "remix_pit"))  { cp->rmx_pit  = (int8_t)clamp_i(my_atoi(val), -24, 24); return; }
     if (!strcmp(key, "remix_rate")) { cp->rmx_rate = (uint8_t)clamp_i(my_atoi(val), 0, 2); return; }
 

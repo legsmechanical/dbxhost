@@ -569,7 +569,7 @@ static int rmx_slicer_apply(seq8_instance_t *inst, int t, int c) {
         cl->note_count = (uint16_t)n;
         memcpy(cl->step_xrev, xr, SEQ_STEPS); memcpy(cl->step_xsemi, xs, SEQ_STEPS);
         memcpy(cl->step_xstart, xa, SEQ_STEPS); memcpy(cl->step_xlen, xl, SEQ_STEPS);
-        cl->pfx_params.rmx_on = 0;
+        cl->pfx_params.rmx_on = 0; cl->pfx_params.rpt_on = 0;   /* both are in the steps now */
         at->rmx_sclip = 0xFF; at->rmx_slive = 0;           /* playback takes the clip as it is now */
     }
     return cl->note_count;
@@ -594,7 +594,7 @@ static void bake_clip(seq8_instance_t *inst, int t, int c, int loops, int wrap,
      * exactly what playback builds — as the clip's, and turns REMIX off; the
      * stages below then bake NOTE FX over them (Josh, 2026-11-11: "the idea
      * behind bake is flatten what you hear in the context of the track type") */
-    if (tr->pad_mode == PAD_MODE_SLICER && cl->pfx_params.rmx_on) {
+    if (tr->pad_mode == PAD_MODE_SLICER && au_fx_on(&cl->pfx_params)) {
         if (!rmx_slicer_apply(inst, t, c)) { clip_build_steps_from_notes(cl); inst->state_dirty = 1; return; }
     }
 

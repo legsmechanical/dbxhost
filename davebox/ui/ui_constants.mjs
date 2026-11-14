@@ -647,6 +647,13 @@ export const BANKS = [
      * Length, Overdub (Josh, 2026-11-12). ui_audio_input owns the cells and
      * the knobs. */
     { name: 'INPUT', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
+    /* 20 — REPEAT (BANK_REPEAT): an Audio or Slicer clip's beat-repeat, after
+     * REMIX — Repeat · Grid · Start · Length · Gate · Pitch · Fade, per clip
+     * (Josh, 2026-11-14). ui_audio owns the cells and the knobs. */
+    { name: 'REPEAT', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
+    /* 21 — TAPE (BANK_TAPE): an Audio or Slicer clip's tape stop / start /
+     * half / back on a bar cycle — Tape · Effect · Every · Length, per clip. */
+    { name: 'TAPE', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
 ];
 
 /* Conductor bank indices. Bank 0 (CLIP) is reused as the "Conduct" bank. */
@@ -678,6 +685,10 @@ export const BANK_CONFIG = 16;
 export const BANK_AUDIO = 17;
 export const BANK_REMIX = 18;
 export const BANK_INPUT = 19;
+export const BANK_REPEAT = 20;
+export const BANK_TAPE = 21;
+/* the banks an Audio / Slicer track alone has (a track that changes kind leaves them) */
+export const AUDIO_ONLY_BANKS = [17, 18, 19, 20, 21];
 export function isSoundBank(b) { return b === BANK_SOUND || b === BANK_MACROS || b === BANK_CONFIG; }
 
 /* The track's DEFAULT bank — CLIP on a melodic track, DRUM LANE on a drum one,

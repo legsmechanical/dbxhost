@@ -67,11 +67,11 @@ import { automationParamEdit, automationCaptureCommit, automationCaptureCommitAf
 import { sessStripTargets, engineLoadedModule, engineModuleName, slotIndex,
          moveBusForChannel, moveBusPrefix } from './ui_engine.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
-import { BANK_MAP_TRACK_POPUP_MS, SEQ_PAGE_POPUP_MS, seqAutoTargetForKnob, SEQ_AUTO_TARGETS, AU_AUTO_BANK, auAutoBank, midiTargetIsMidi, DEFAULT_TRACK_OCTAVE, BANK_REMIX, BANK_INPUT } from './ui_constants.mjs';
+import { BANK_MAP_TRACK_POPUP_MS, SEQ_PAGE_POPUP_MS, seqAutoTargetForKnob, SEQ_AUTO_TARGETS, AU_AUTO_BANK, auAutoBank, midiTargetIsMidi, DEFAULT_TRACK_OCTAVE, BANK_REMIX, BANK_INPUT, BANK_REPEAT, BANK_TAPE } from './ui_constants.mjs';
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam, soundOpenModule, instrPickResume } from './ui_sound.mjs';
 import { auPurgeRun, closeAudioChooser, askClearAudioClip } from './ui_audio_chooser.mjs';
-import { isSampledTrack, isAudioTrack, audioSliceMode, auClipOf, auClipBankKnob, auAltBit, knobAltOnTrack, auSetLayout, auSetPage, AU_NOTE_BASE, AU_EVEN_MAX, auInfo, rmxBankKnob, rmxApplyPreset } from './ui_audio.mjs';
+import { isSampledTrack, isAudioTrack, audioSliceMode, auClipOf, auClipBankKnob, auAltBit, knobAltOnTrack, auSetLayout, auSetPage, AU_NOTE_BASE, AU_EVEN_MAX, auInfo, rmxBankKnob, rmxApplyPreset, rptBankKnob, tapeBankKnob } from './ui_audio.mjs';
 
 /* AUDIO's CLIP bank (Slice mode) mirrors ALL LANES over the melodic clip's
  * knobs (Josh, 2026-10-27: "it seems like clip bank should mirror all lanes
@@ -5212,6 +5212,22 @@ function _onCC_knobs(d1, d2) {
                 const _st = (_delib || _pick) ? knobStep(knobIdx, d2, _delib ? KNOB_DELIB : KNOB_PICK)
                                               : ccKnobDelta(d2, knobIdx, bankStep({ min: 0, max: 100 }));
                 if (_st && rmxBankKnob(_t, knobIdx, _st)) S.screenDirty = true;
+                return;
+            }
+            if (bank === BANK_REPEAT) {
+                /* K1 Repeat deliberate (a toggle); K2 Grid, K3 Start, K4
+                 * Length, K6 Pitch picks; K5 Gate and K7 Fade continuous */
+                const _cls = [KNOB_DELIB, KNOB_PICK, KNOB_PICK, KNOB_PICK, null, KNOB_PICK, null, -1][knobIdx];
+                if (_cls === -1 || _cls === undefined) return;
+                const _st = _cls === null ? ccKnobDelta(d2, knobIdx, bankStep({ min: 0, max: 100 })) : knobStep(knobIdx, d2, _cls);
+                if (_st && rptBankKnob(_t, knobIdx, _st)) S.screenDirty = true;
+                return;
+            }
+            if (bank === BANK_TAPE) {
+                /* K1 Tape deliberate; K2 Type, K3 Every, K4 Length picks */
+                if (knobIdx > 3) return;
+                const _st = knobStep(knobIdx, d2, knobIdx === 0 ? KNOB_DELIB : KNOB_PICK);
+                if (_st && tapeBankKnob(_t, knobIdx, _st)) S.screenDirty = true;
                 return;
             }
             if (bank === 0 && !audioSliceMode(_t)) {

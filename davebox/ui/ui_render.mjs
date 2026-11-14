@@ -70,12 +70,12 @@ import { soundRender, renderTrackGatewayCard, renderConfigCardPeek, renderMacros
 import { drawAutomationBankBody, autoBankMenuOpen, autoMenuUp, autoHoldJumpActive, autoHoldJumpStep, autoLaneFocus, autoHeldValue, autoMapEditorComp, autoMapMarkedBank,
          autoOpsOpen, drawAutomationOpsGraph, drawLaneFocusOverlay } from './ui_automation_bank.mjs';
 import { automationStateFor, autoShiftHint } from './ui_automation.mjs';
-import { seqAutoTargetForKnob, fmtInstr, BANK_REMIX, BANK_INPUT, PAD_MODE_AUDIO } from './ui_constants.mjs';
+import { seqAutoTargetForKnob, fmtInstr, BANK_REMIX, BANK_INPUT, BANK_REPEAT, BANK_TAPE, PAD_MODE_AUDIO } from './ui_constants.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
 import { registerRingCells, knobRingNorm } from './ui_knob_leds.mjs';
 import { drawSampleMenu, drawResampleOptions } from './ui_resample.mjs';
 import { isSampledTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveColumns, auMarks,
-         auPos, auLazyState, auSelSlice, auSampleP2Cells, AU_P2_TEMPO, AU_P2_BARS, AU_P2_OFFSET, auOffsetText, auClipWaveKnob, bankAutoTarget, auSamplePageCells, auSampleFieldCell, auSampleWaveKnob, AU_SAMPLE_PAGES, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells, rmxBankCells, rmxPresetLongName, rmxOrderMoved, RMX_CHOPS, rmxChopIndex, knobAltOnTrack, auAltBit,
+         auPos, auLazyState, auSelSlice, auSampleP2Cells, AU_P2_TEMPO, AU_P2_BARS, AU_P2_OFFSET, auOffsetText, auClipWaveKnob, bankAutoTarget, auSamplePageCells, auSampleFieldCell, auSampleWaveKnob, AU_SAMPLE_PAGES, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells, rmxBankCells, rptBankCells, rptMap, rptMapLine, tapeBankCells, tapeCurve, tapeLine, tapeGet, rmxPresetLongName, rmxOrderMoved, RMX_CHOPS, rmxChopIndex, knobAltOnTrack, auAltBit,
          auPadModeCells, AU_NOTE_BASE,
          auFmtTime, auEnd, auPlayedEnd, auBpm, auFpt, auLenTicks, auOffsetFrame, auIsFree, auSpeedText, auBarsText, auBarsOf, isSlicerTrack, auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
 import { auEdHome, auWaveSub, auWaveView, auPickRows } from './ui_audio_editor.mjs';
@@ -576,16 +576,24 @@ function drawAudioWaveEditor() {
  * caret over it when pitched; a tick under each piece's start — and, under it,
  * the knob's value, the preset and the Type. */
 function drawRemixCard(cells) {
-    const t = S.activeTrack, c = cells[S.knobTouched];
+    const t = S.activeTrack;
+    const map = S.rmxMap && S.rmxMapT === t ? S.rmxMap : null;
+    /* the context: on or off, the Chop, and how much of the bar the Order moves */
+    const r = S.rmxSet[t] || [0, 0, 0];
+    const mv = rmxOrderMoved(t);
+    drawBarCard(cells[S.knobTouched], map,
+                (r[0] ? '' : 'OFF  ') + RMX_CHOPS[rmxChopIndex(r[1])].full.toUpperCase() + '  ' + (mv ? mv + '/16 MOVED' : 'AS WRITTEN'));
+}
+/* The card's box and title strip: the knob in hand, named, with its value
+ * (Josh, 2026-11-11: "rework the overlay so that it shows the param we're
+ * changing"). Returns the box. */
+function drawFxCardBox(c) {
     /* the pop-up convention: the screen dithered behind, the stack's box over
      * it (as the LFO's waveform draws inside its own) */
     const B = kitStackBox(1);
     drawKitBackdropDim();
     fill_rect(B.x, B.y, B.w, B.h, 0);
     rectOutline(B.x, B.y, B.w, B.h, 1);
-    /* the knob in hand, named, with its value (Josh, 2026-11-11: "rework the
-     * overlay so that it shows the param we're changing") — a title strip
-     * like the screen's own header */
     fill_rect(B.x + 1, B.y + 1, B.w - 2, 8, 1);
     if (c) {
         const name = String(c.name || c.label || '').toUpperCase(), val = String(c.cardText != null ? c.cardText : (c.text == null ? '' : c.text)).toUpperCase();
@@ -593,7 +601,14 @@ function drawRemixCard(cells) {
         fontPrint4x5(B.x + 4, B.y + 3, fit4x5(name, B.w - vw - 14), 0);
         fontPrint4x5(B.x + B.w - 4 - vw, B.y + 3, val, 0);
     }
-    const map = S.rmxMap && S.rmxMapT === t ? S.rmxMap : null;
+    return B;
+}
+/* A bar picture card (REMIX's, REPEAT's): a column per 1/16 — its height the
+ * slot heard, hollow when reversed, dotted when rolled, narrow when cut short,
+ * empty when silent, a caret over it when pitched; a tick under each piece's
+ * start — and a line of context under it. */
+function drawBarCard(c, map, text) {
+    const B = drawFxCardBox(c);
     const cw = 6, x0 = B.x + Math.floor((B.w - 16 * cw) / 2), base = B.y + B.h - 11, top = B.y + 15;
     fill_rect(x0 - 1, base + 1, 16 * cw + 1, 1, 1);
     if (map) for (let i = 0; i < 16 && i < map.length; i++) {
@@ -611,11 +626,37 @@ function drawRemixCard(cells) {
             else { set_pixel(cx - 1, cy, 1); set_pixel(cx + 1, cy, 1); set_pixel(cx, cy + 1, 1); }
         }
     }
-    /* the context: on or off, the Chop, and how much of the bar the Order moves */
-    const r = S.rmxSet[t] || [0, 0, 0];
-    const mv = rmxOrderMoved(t);
-    const line = fit4x5((r[0] ? '' : 'OFF  ') + RMX_CHOPS[rmxChopIndex(r[1])].full.toUpperCase() + '  ' + (mv ? mv + '/16 MOVED' : 'AS WRITTEN'), B.w - 6);
+    const line = fit4x5(text, B.w - 6);
     fontPrint4x5(Math.round(B.x + (B.w - fontWidth4x5(line)) / 2), base + 4, line, 1);
+    kitHudTap('Message', { big: c ? (c.name || c.label) + ' ' + (c.text || '') : '', lines: [text] });
+}
+/* REPEAT after a knob turns (as REMIX's card): the bar it makes */
+function drawRepeatCard(cells) {
+    const t = S.activeTrack;
+    drawBarCard(cells[S.knobTouched], rptMap(t), rptMapLine(t));
+}
+/* TAPE after a knob turns: the head's speed across one cycle — a line at the
+ * top where the track plays as it is, falling to the axis as it stops, below
+ * it when it runs backwards — and the setting in words under it. */
+function drawTapeCard(cells) {
+    const t = S.activeTrack, B = drawFxCardBox(cells[S.knobTouched]);
+    const x0 = B.x + 6, w = B.w - 12, top = B.y + 14, base = B.y + B.h - 11;
+    const mid = Math.round((top + base) / 2) + 4, amp = mid - top;
+    fill_rect(x0, mid, w, 1, 1);                                  /* the axis: stopped */
+    const v = tapeCurve(t, w);
+    let py = -1;
+    for (let i = 0; i < w; i++) {
+        const y = Math.round(mid - v[i] * amp);
+        const ya = py < 0 ? y : Math.min(py, y), yb = py < 0 ? y : Math.max(py, y);
+        fill_rect(x0 + i, ya, 1, yb - ya + 1, 1);
+        py = y;
+    }
+    /* the bar lines of the cycle */
+    const r = tapeGet(t), bars = 1 << (r[2] | 0);
+    for (let b = 0; b <= bars; b++) { const x = x0 + Math.round(b * (w - 1) / bars); fill_rect(x, base - 1, 1, 3, 1); }
+    const text = tapeLine(t), line = fit4x5(text, B.w - 6);
+    fontPrint4x5(Math.round(B.x + (B.w - fontWidth4x5(line)) / 2), base + 4, line, 1);
+    kitHudTap('Message', { big: '', lines: [text] });
 }
 
 /* THE WAVEFORM CARD: a knob that moves the waveform — CLIP's Strch, TIME's
@@ -690,12 +731,14 @@ function audioRingCells(bank) {
     }
     return audioBankCells(bank, base);
 }
-for (const _b of [0, 1, 2, 3, 4, 5, 7, BANK_REMIX, BANK_INPUT]) registerRingCells(_b, () => audioRingCells(_b));
+for (const _b of [0, 1, 2, 3, 4, 5, 7, BANK_REMIX, BANK_INPUT, BANK_REPEAT, BANK_TAPE]) registerRingCells(_b, () => audioRingCells(_b));
 function audioBankCellsRaw(bank, cells) {
     const t = S.activeTrack;
     if (!isSampledTrack(t)) return cells;
     const B = { kind: 'blank', label: '' };
     if (bank === BANK_REMIX) return rmxBankCells(t);
+    if (bank === BANK_REPEAT) return rptBankCells(t);
+    if (bank === BANK_TAPE) return tapeBankCells(t);
     if (bank === BANK_INPUT) return S.trackPadMode[t] === PAD_MODE_AUDIO ? inputBankCells(t) : cells.map(() => B);
     if (bank === 0) {
         if (!audioSliceMode(t)) return auLoopBankCells(t);
@@ -3541,6 +3584,8 @@ function drawUIBody() {
         }
         drawKitPage(bankHeaderName(S.activeTrack, bank), audioBankCells(bank, markKnobAlts(cells, bank)), false, bankPageHints(bank), _focusIdx);
         if (bank === BANK_REMIX && S.knobTouched >= 0 && S.rmxCard && isSampledTrack(S.activeTrack)) drawRemixCard(audioBankCells(bank, cells));
+        if (bank === BANK_REPEAT && S.knobTouched >= 0 && S.fxCard && isSampledTrack(S.activeTrack)) drawRepeatCard(audioBankCells(bank, cells));
+        if (bank === BANK_TAPE && S.knobTouched >= 0 && S.fxCard && isSampledTrack(S.activeTrack)) drawTapeCard(audioBankCells(bank, cells));
         if (bank === 0 && S.knobTouched >= 0 && auClipWaveKnob(S.activeTrack, S.knobTouched))
             drawClipWaveCard(S.activeTrack, auClipOf(S.activeTrack), audioBankCells(bank, cells)[S.knobTouched]);
         }

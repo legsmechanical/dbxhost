@@ -645,6 +645,18 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
                 if (p2->rmx_pit)  fprintf(fp, ",\"t%dc%d_rxpi\":%d", t, c, (int)p2->rmx_pit);
                 if (p2->rmx_rate) fprintf(fp, ",\"t%dc%d_rxra\":%d", t, c, (int)p2->rmx_rate);
                 if (p2->rmx_bdep != 100) fprintf(fp, ",\"t%dc%d_rxbd\":%d", t, c, (int)p2->rmx_bdep);
+                /* REPEAT and TAPE: sparse against a fresh clip's */
+                if (p2->rpt_on)          fprintf(fp, ",\"t%dc%d_rpo\":%d", t, c, (int)p2->rpt_on);
+                if (p2->rpt_grid != 2)   fprintf(fp, ",\"t%dc%d_rpg\":%d", t, c, (int)p2->rpt_grid);
+                if (p2->rpt_at != 12)    fprintf(fp, ",\"t%dc%d_rpa\":%d", t, c, (int)p2->rpt_at);
+                if (p2->rpt_len != 4)    fprintf(fp, ",\"t%dc%d_rpl\":%d", t, c, (int)p2->rpt_len);
+                if (p2->rpt_gate != 100) fprintf(fp, ",\"t%dc%d_rpt\":%d", t, c, (int)p2->rpt_gate);
+                if (p2->rpt_pit)         fprintf(fp, ",\"t%dc%d_rpp\":%d", t, c, (int)p2->rpt_pit);
+                if (p2->rpt_fade)        fprintf(fp, ",\"t%dc%d_rpf\":%d", t, c, (int)p2->rpt_fade);
+                if (p2->tape_on)         fprintf(fp, ",\"t%dc%d_tpo\":%d", t, c, (int)p2->tape_on);
+                if (p2->tape_fx)         fprintf(fp, ",\"t%dc%d_tpf\":%d", t, c, (int)p2->tape_fx);
+                if (p2->tape_every)      fprintf(fp, ",\"t%dc%d_tpe\":%d", t, c, (int)p2->tape_every);
+                if (p2->tape_len != 2)   fprintf(fp, ",\"t%dc%d_tpl\":%d", t, c, (int)p2->tape_len);
             }
             /* note list: "tick:pitch:vel:gate;" for each active note */
             if (cl->note_count > 0) {
@@ -1585,6 +1597,17 @@ static void seq8_load_state(seq8_instance_t *inst) {
             snprintf(key, sizeof(key), "t%dc%d_rxpi", t, c); p2->rmx_pit  = (int8_t)clamp_i(json_get_int(buf, key, 0), -24, 24);
             snprintf(key, sizeof(key), "t%dc%d_rxra", t, c); p2->rmx_rate = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 2);
             snprintf(key, sizeof(key), "t%dc%d_rxbd", t, c); p2->rmx_bdep = (uint8_t)clamp_i(json_get_int(buf, key, 100), 0, 100);
+            snprintf(key, sizeof(key), "t%dc%d_rpo", t, c); p2->rpt_on   = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 1);
+            snprintf(key, sizeof(key), "t%dc%d_rpg", t, c); p2->rpt_grid = (uint8_t)clamp_i(json_get_int(buf, key, 2), 0, RPT_GRIDS - 1);
+            snprintf(key, sizeof(key), "t%dc%d_rpa", t, c); p2->rpt_at   = (uint8_t)clamp_i(json_get_int(buf, key, 12), 0, 15);
+            snprintf(key, sizeof(key), "t%dc%d_rpl", t, c); p2->rpt_len  = (uint8_t)clamp_i(json_get_int(buf, key, 4), 1, 16);
+            snprintf(key, sizeof(key), "t%dc%d_rpt", t, c); p2->rpt_gate = (uint8_t)clamp_i(json_get_int(buf, key, 100), 10, 100);
+            snprintf(key, sizeof(key), "t%dc%d_rpp", t, c); p2->rpt_pit  = (int8_t)clamp_i(json_get_int(buf, key, 0), -12, 12);
+            snprintf(key, sizeof(key), "t%dc%d_rpf", t, c); p2->rpt_fade = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 100);
+            snprintf(key, sizeof(key), "t%dc%d_tpo", t, c); p2->tape_on    = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 1);
+            snprintf(key, sizeof(key), "t%dc%d_tpf", t, c); p2->tape_fx    = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, AU_TAPE_FX - 1);
+            snprintf(key, sizeof(key), "t%dc%d_tpe", t, c); p2->tape_every = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 3);
+            snprintf(key, sizeof(key), "t%dc%d_tpl", t, c); p2->tape_len   = (uint8_t)clamp_i(json_get_int(buf, key, 2), 0, AU_TAPE_LENS - 1);
             /* v=34 per-step trig conditions (iter/random/ratchet hex blobs) */
             {
                 clip_t *_cl = &inst->tracks[t].clips[c];
