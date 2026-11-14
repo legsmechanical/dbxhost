@@ -241,7 +241,7 @@ int main(void) {
          * R: the Start reached the instrument through the effect */
         CHECK(w && n == 384 && w[0] == half(7403) && w[2 * 128] == half(4003),
               "MIDI FX: %d %d (want %d %d)", w ? w[0] : -1, w ? w[2 * 128] : -1, half(7403), half(4003));
-        CHECK(w && w[1] == half(200 + 1000 + 1330 + 30), "MIDI FX: the clock did not pass the effect: R %d", w ? w[1] : -1);
+        CHECK(w && w[1] == half(200 + 2000 + 1330 + 30), "MIDI FX: the clock did not pass the effect (its Start doubled): R %d", w ? w[1] : -1);
         free(w);
         offline_take_cancel();
         g_mfx_on = 0;

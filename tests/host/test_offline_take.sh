@@ -159,8 +159,9 @@ static audio_fx_api_v2_t api = { AUDIO_FX_API_VERSION_2, f_create, f_destroy, f_
 audio_fx_api_v2_t *move_audio_fx_init_v2(const host_api_v1_t *h) { (void)h; return &api; }
 EOF
 
-# The MIDI effect: notes up an octave (amount from its state "O=12"), and on
-# its third tick a note 40 of its own.
+# The MIDI effect: notes up an octave (amount from its state "O=12"), a Start
+# doubled (so the clock is seen to pass through it), and on its third tick a
+# note 40 of its own.
 mkdir -p "$work/mfx"
 cat > "$work/fixture_mfx.c" <<'EOF2'
 #include <stdint.h>
@@ -176,6 +177,7 @@ static int m_process(void *ip, const uint8_t *in, int len, uint8_t out[][3], int
     if (max < 1) return 0;
     out[0][0] = in[0]; out[0][1] = len > 1 ? in[1] : 0; out[0][2] = len > 2 ? in[2] : 0; out_len[0] = len;
     if (len >= 3 && ((in[0] & 0xF0) == 0x90 || (in[0] & 0xF0) == 0x80)) out[0][1] = (uint8_t)(in[1] + m->oct);
+    if (len == 1 && in[0] == 0xFA && max >= 2) { out[1][0] = 0xFA; out_len[1] = 1; return 2; }   /* a Start, doubled */
     return 1;
 }
 static int m_tick(void *ip, int frames, int rate, uint8_t out[][3], int out_len[], int max) {

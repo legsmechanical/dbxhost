@@ -137,6 +137,13 @@ int main(void) {
     hx_set_param(h, "transport", "stop");
     hx_set_param(h, "resample_clear", "1");
 
+    /* ---- real time: a scene (the whole mix), and said so ---- */
+    b = hx_stub_ot_begins();
+    hx_set_param(h, "resample_scene", "0 1 0 0 |/x/scene.wav");
+    HX_ASSERT(hx_stub_ot_begins() == b && inst->resample_rt_why == RS_RT_MIX, "a scene take: not the whole mix's reason");
+    hx_set_param(h, "transport", "stop");
+    hx_set_param(h, "resample_clear", "1");
+
     /* ---- real time: the host refuses (the slot cannot be copied) ---- */
     hx_stub_ot_refuse(MOVE_OFFLINE_ERR_MOD);
     hx_set_param(h, "resample_clip", "1 0 1 0 0 2 |/x/mod.wav");
