@@ -510,7 +510,10 @@ static void resample_clip_start(seq8_instance_t *inst, const char *val) {
  *     take's start, as it is when the clip comes round.
  * Nothing in the project changes: the clips armed before are put back
  * (rs_remember_armed). */
-#define RS_EXPORT_CAP_BARS 64
+/* as long as a pick makes an Audio clip (Josh, 2026-11-14: "raise it for
+ * audio track exports" — it was 64); a take is written to the card as it
+ * records, so the length costs time, not memory */
+#define RS_EXPORT_CAP_BARS 256
 
 /* One clip's span in master ticks if it sounds, else 0. */
 static uint32_t rs_clip_span(const seq8_instance_t *inst, int t, int c) {

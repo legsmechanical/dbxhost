@@ -2846,7 +2846,8 @@ with the tempo and root note (not the scale — the set opens in Major).
   it: through the track's effects, at its level and pan, with its automation, and
   with the Conductor when you answer **Yes** to **Apply Conductor?**. A muted or
   soloed-out track is recorded too. Each recording is exactly as long as the clip
-  loops, so it loops in Live as it does here. This takes as long as the clips play.
+  loops (up to 256 bars, or where it and the Conductor's clip line up), so it loops in
+  Live as it does here. This takes as long as the clips play.
   **Back** while it records cancels the export. Your project isn't changed. Sends
   come across as for any track, but the recordings don't include the Master FX.
 - **Schwung tracks are named for what they played** — `SCH-nusaw`, or

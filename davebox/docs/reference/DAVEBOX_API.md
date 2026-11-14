@@ -92,7 +92,7 @@ All `tN_` keys: N = 0..7. All writes save state unless noted.
 
 **REMIX** (per clip, `clip_pfx_params_t`; Audio and Slicer): `tN_remix_on` 0/1 · `tN_remix_type` (the Chop, 0..RMX_TYPES−1) · `tN_remix_var` (a preset 0–79: the arrangement and its own dials) · `tN_remix_ord` (the arrangement only, the dials kept) · `tN_remix_shuf` / `_rev` / `_roll` / `_brk` / `_bdep` 0–100 · `tN_remix_pit` ±24 · `tN_remix_rate` 0–2 · `tN_remix_rvel` 0/1 — the active clip's; `tN_cC_pfx_set "remix_* v"` a clip by address. Taken at the next bar line. Get `tN_remix_orders`, `tN_remix_map`; the clip snapshot carries them. Saved `t%dc%d_rx*` (sparse).
 
-**Export's take of an Audio clip** (`seq8_resample.c`): get `export_take_ticks_tT_cC_kK` (the take's length in ticks: the clip's span, or with K 1 where it and the Conductor's clip in the row line up; 0 nothing sounds, −1 past 64 bars) · set `export_take "T C ticks cond |path"` (the track's slot, Dry, after one warm-up pass, muted or not; Shot and Free clips start again for the take; the armed clips come back after).
+**Export's take of an Audio clip** (`seq8_resample.c`): get `export_take_ticks_tT_cC_kK` (the take's length in ticks: the clip's span, or with K 1 where it and the Conductor's clip in the row line up; 0 nothing sounds, −1 past 256 bars, RS_EXPORT_CAP_BARS) · set `export_take "T C ticks cond |path"` (the track's slot, Dry, after one warm-up pass, muted or not; Shot and Free clips start again for the take; the armed clips come back after).
 
 **Perf Mode**: `perf_mods` (set, uint32 bitmask 24 bits; JS ORs toggled+held+recalled, sends on every change; see `PERF_MOD_*` in seq8.c and `PERF_MOD_PAD_MAP` in ui.js). `looper_retrigger "ticks"` (atomic stop+arm at new rate).
 

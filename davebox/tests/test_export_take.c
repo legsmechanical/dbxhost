@@ -113,9 +113,18 @@ int main(void) {
     }
     HX_ASSERT(geti(h, "export_take_ticks_t4_c0_k1") == 1152, "the take is not where the clip and the Conductor's line up");
     HX_ASSERT(geti(h, "export_take_ticks_t4_c0_k0") == 576, "without the Conductor its clip counts");
-    inst->tracks[6].clips[0].length = 255;          /* 6120 ticks against 576: past 64 bars */
+    inst->tracks[6].clips[0].length = 255;          /* 6120 ticks against 576: 127.5 bars, inside 256 */
+    HX_ASSERT(geti(h, "export_take_ticks_t4_c0_k1") == 48960, "a 127.5-bar line-up was refused (the cap was 64 bars)");
+    inst->tracks[6].clips[0].length = 253;          /* 6072 ticks against 576: 379.5 bars, past 256 */
     HX_ASSERT(geti(h, "export_take_ticks_t4_c0_k1") == -1, "a take past the cap was not refused");
     inst->tracks[6].clips[0].length = 16;
+    {   /* the clip alone, 128 bars (256 steps of 1/2): taken whole */
+        clip_t *lc = &inst->tracks[4].clips[0];
+        uint16_t l0 = lc->length, t0 = lc->ticks_per_step;
+        lc->length = 256; lc->ticks_per_step = 192;
+        HX_ASSERT(geti(h, "export_take_ticks_t4_c0_k0") == 49152, "a 128-bar Audio clip's take was refused");
+        lc->length = l0; lc->ticks_per_step = t0;
+    }
     printf("  ok   — a take is the clip's own span, or where it and the Conductor's line up\n");
 
     /* ---- the take: the slot, Dry, one pass in, exactly its ticks ---- */

@@ -1162,7 +1162,10 @@ function pollExportFlatten() {
             for (let c = 0; c < NUM_CLIPS; c++) {
                 const ticks = parseInt(host_module_get_param('export_take_ticks_t' + t + '_c' + c + '_k' + cond), 10);
                 if (ticks === -1) {
-                    exportTakesFail((t + 1) + SCENE_LETTERS[c] + ' and its', 'Conductor clip', 'meet past 64 bars');
+                    /* past the cap: the clip itself, or where it and the Conductor's meet */
+                    const own = cond ? parseInt(host_module_get_param('export_take_ticks_t' + t + '_c' + c + '_k0'), 10) : -1;
+                    if (own === -1) exportTakesFail((t + 1) + SCENE_LETTERS[c] + ' is longer', 'than 256 bars');
+                    else exportTakesFail((t + 1) + SCENE_LETTERS[c] + ' and its', 'Conductor clip', 'meet past 256 bars');
                     return;
                 }
                 if (!(ticks > 0)) continue;

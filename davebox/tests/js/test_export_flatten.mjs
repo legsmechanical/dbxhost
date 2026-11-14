@@ -35,7 +35,7 @@ globalThis.host_file_exists = (p) => !!E.files[p];
 globalThis.host_system_cmd = (c) => { E.cmds.push(c); return 0; };
 globalThis.host_module_get_param = (k) => {
     const m = /^export_take_ticks_t(\d)_c(\d+)_k(\d)$/.exec(k);
-    if (m) { E.queried.push(k); const v = E.ticks[m[1] + '_' + m[2]]; return v === undefined ? '0' : String(v); }
+    if (m) { E.queried.push(k); const v = E.ticks[m[1] + '_' + m[2] + '_k' + m[3]] ?? E.ticks[m[1] + '_' + m[2]]; return v === undefined ? '0' : String(v); }
     if (k === 'resample_err') return '7';
     return '';
 };
@@ -140,12 +140,27 @@ step('⭐ Back during a take stops the export, and its takes go', () => {
     assert(S.resampleTake === null, 'the surface is still held');
 });
 
-step('a clip that meets the Conductor past the cap refuses the export, recording nothing', () => {
+step('a clip longer than the cap (256 bars) refuses the export, recording nothing, and says the clip is too long', () => {
     setup([[2, [[0, 384], [1, -1]]]], []);
     xp.confirmExportStart();
     for (let i = 0; i < 10 && S.exportFlatten; i++) tick(true);
     assert(!armed() && !E.takes.length, 'it recorded');
-    assert(S.actionPopupLines[0] === 'NOT EXPORTED' && S.actionPopupLines[1] === '3B and its', 'popup ' + JSON.stringify(S.actionPopupLines));
+    assert(S.actionPopupLines[0] === 'NOT EXPORTED' && S.actionPopupLines[1] === '3B is longer' && S.actionPopupLines[2] === 'than 256 bars',
+           'popup ' + JSON.stringify(S.actionPopupLines));
+});
+
+step('a clip that meets the Conductor past the cap refuses the export, and names the Conductor (only then)', () => {
+    setup([[2, [[0, 384], [1, 384]]]], []);
+    E.ticks['2_1_k1'] = -1;
+    S.trackPadMode[6] = PAD_MODE_CONDUCT;
+    S.confirmExportCondPhase = true;
+    S.confirmExportCondSel = 0;
+    xp.confirmExportCondClick();
+    for (let i = 0; i < 10 && S.exportFlatten; i++) tick(true);
+    assert(!armed() && !E.takes.length, 'it recorded');
+    assert(S.actionPopupLines[0] === 'NOT EXPORTED' && S.actionPopupLines[1] === '3B and its' && S.actionPopupLines[3] === 'meet past 256 bars',
+           'popup ' + JSON.stringify(S.actionPopupLines));
+    S.trackPadMode[6] = 0;
 });
 
 step('a take the engine refuses stops the export, saying why', () => {

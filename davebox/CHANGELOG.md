@@ -101,7 +101,7 @@ the section into a versioned heading at release time.
   chops and NOTE FX are edited on the device.
 - **Export to Ableton carries Audio and Slicer tracks** as Live audio tracks: every clip
   is recorded as it sounds (its effects, level, pan and automation, and the Conductor if
-  you apply it), exactly as long as it loops. Your project isn't changed.
+  you apply it), exactly as long as it loops, up to 256 bars. Your project isn't changed.
 - **Audio and Slicer tracks** — two instruments in a track's **Instmt/Dest** picker that
   play samples (WAV or AIFF, auditioned as you browse, copied into the project).
   - **Audio**: each clip holds its own sample and plays it with the clip, set and forget.
