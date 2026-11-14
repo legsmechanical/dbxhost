@@ -179,6 +179,19 @@ int main(void) {
             measure_bar(h, m);
         }
 
+        /* ==== a 2-bar clip: round its loop point, the first piece of bar 1
+         * plays again (the block across the clip's end scans bar 1 too) ==== */
+        if (sync != 0) {
+            seq8_instance_t *inst2 = (seq8_instance_t *)h->inst;
+            inst2->tracks[2].clips[0].length = 32;
+            measure_bar(h, m);
+            measure_bar(h, m);
+            snprintf(msg, sizeof msg, "sync %d, NORMAL 1 on a 2-bar clip: its top plays %d (level %.0f), not slot 0, round the loop", sync, which(m[0].mid, unit), m[0].mid);
+            HX_ASSERT(which(m[0].mid, unit) == 0 && m[0].early > unit * 0.5, msg);
+            inst2->tracks[2].clips[0].length = 16;
+            measure_bar(h, m);
+        }
+
         /* ==== Export to Live: a remix is rendered — on every sync, Warp too
          * (Live cannot remix) — and the file plays it: 1/16 #11 is slot 0's ==== */
         {
