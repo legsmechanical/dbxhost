@@ -378,7 +378,7 @@ export function slcHints(pg, inside, shift, tempoTouched) {
         const clk = ['clk', tempoTouched ? 'tempo' : 'menu'];
         return shift ? [clk, ['tch', 'fine']] : [clk, ['jog', 'page']];
     }
-    if (shift) return [['clk', 'menu'], ['tch', 'all slices']];
+    if (shift) return inside ? [['tch', 'all slices']] : [['clk', 'menu'], ['tch', 'all slices']];
     if (pg === 1) return [['sh', 'menu'], ['jog', 'page']];
     return inside ? [['clk', 'add'], ['sh', 'menu'], ['back', 'done']] : [['clk', 'edit'], ['sh', 'menu'], ['jog', 'page']];
 }

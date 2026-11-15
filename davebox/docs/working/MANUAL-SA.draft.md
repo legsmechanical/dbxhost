@@ -1342,7 +1342,8 @@ it. **K4 Sync** (above), **K5 Pitch**, **K6 Detune**,
 slice adds its own to. Touch **Tempo** and click for **Original tempo**: the sample's Tempo
 becomes the project's.
 
-**The menus.** **Shift + click** on pages 1 and 2 opens the **SLICE** menu:
+**The menus.** **Shift + click** on pages 1 and 2 opens the **SLICE** menu (not from inside the
+slice editor, where a click adds a slice):
 
 - **Load sample** — the chooser (see SAMPLE, below).
 - **Even** cuts the range into equal slices: turn the jog for the count (2–128), the pads

@@ -1056,7 +1056,8 @@ function slcInput(ed, status, d1, d2) {
             return true;
         }
         if (pg === 2) { ed.pick = { menu: 'sample', level: 1, sel: 0 }; return true; }
-        if (S.shiftHeld) { ed.pick = { menu: 'slices', level: 1, sel: 0 }; return true; }
+        /* Shift+click opens the menu from outside only; inside the slice editor it does nothing */
+        if (S.shiftHeld) { if (!inside) ed.pick = { menu: 'slices', level: 1, sel: 0 }; return true; }
         if (pg === 1) return true;
         if (!inside) { openChop(ed, 'manual'); return true; }
         /* inside: a slice at the cursor */

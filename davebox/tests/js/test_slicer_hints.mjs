@@ -102,13 +102,17 @@ async function main() {
         click(); shift(false);
         assert(S.auEditor.pick && S.auEditor.pick.menu === 'slices', 'Shift + click did not open the SLICE menu: ' + JSON.stringify(S.auEditor.pick));
     });
-    step('⭐⭐ the slice editor: CLK ADD · SH MENU · BACK DONE; with Shift CLK MENU — each does that', () => {
+    step('⭐⭐ the slice editor: CLK ADD · SH MENU · BACK DONE; with Shift only TCH ALL SLICES — Shift + click does nothing inside', () => {
         fresh(0); click();
         let hs = hints();
         assert(JSON.stringify(hs) === JSON.stringify(['CLK ADD', 'SH MENU', 'BACK DONE']), 'inside: ' + JSON.stringify(hs));
-        shift(true); hs = hints(); has(hs, 'CLK MENU'); hasNot(hs, 'CLK ADD'); hasNot(hs, 'JOG PAGE');
+        shift(true); hs = hints();
+        assert(JSON.stringify(hs) === JSON.stringify(['TCH ALL SLICES']), 'inside with Shift: ' + JSON.stringify(hs));
+        const ed = S.auEditor, before = JSON.stringify(S.auInfo[ed.t][ed.c]);
         click(); shift(false);
-        assert(S.auEditor.pick && S.auEditor.pick.menu === 'slices', 'Shift + click inside did not open the SLICE menu');
+        assert(!S.auEditor.pick, 'Shift + click inside opened a menu: ' + JSON.stringify(S.auEditor.pick));
+        assert(AED.slcInside(S.auEditor), 'Shift + click inside left the slice editor');
+        assert(JSON.stringify(S.auInfo[ed.t][ed.c]) === before, 'Shift + click inside changed the slices');
         fresh(0); click(); cc(51, 127); ticks(1); cc(51, 0); ticks(2);
         assert(S.auEditor && !AED.slcInside(S.auEditor), 'BACK DONE did not leave the slice editor');
     });
