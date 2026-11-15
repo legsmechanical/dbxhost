@@ -843,6 +843,17 @@ function slcCursorBounds(ed) { const i = auInfo(ed.t, ed.c); return [i.rstart | 
  * (every slice's with Shift, `--` on the fields Shift leaves alone), the
  * sample's on page 3; K1 / K3 the points they move, K2 Zoom (no cell: the
  * waveform shows it). */
+/* Page 3's knobs that change how the sample DRAWS — Start, Zoom, End (the
+ * range and the strip's window) and Gain (the wave's height) — show the
+ * waveform card while in hand, as SAMPLE's do (Josh, 2026-11-15: "can we use a
+ * similar popup waveform view like the other audio tracks use when adjusting
+ * the anything in page 3 that changes the sample display?"). Pitch, Detune,
+ * Sync and Tempo change how it plays, not how it draws. */
+export const SLC_P3_WAVE_KNOBS = [0, 1, 2, 7];
+export function slcWaveKnob(ed, k) {
+    if (!isSlicerEd(ed) || ed.mode === 'chop' || (ed.page | 0) !== 2 || ed.ask || ed.pick) return false;
+    return SLC_P3_WAVE_KNOBS.indexOf(k) >= 0 && auInfo(ed.t, ed.c).state === 2;
+}
 const SLC_BLANK = { kind: 'blank', label: '' };
 export function slcPageCells(ed) {
     const t = ed.t, c = ed.c, i = auInfo(t, c), pg = chopKind(ed) ? 0 : (ed.page | 0);

@@ -1335,7 +1335,9 @@ own difference.
 **Page 3, SAMPLE** is the whole file: a strip of the waveform over K1–K3 with the **range**
 marked on it, the audio outside it dotted. **K1** / **K3** move the range's **Start** /
 **End** (a strip pixel a detent, **Shift** a single sample); **K2** zooms the strip round the
-edge you moved last (a magnifier marks it). **K4 Sync** (above), **K5 Pitch**, **K6 Detune**,
+edge you moved last (a magnifier marks it). Touch **Start**, **Zoom**, **End** or **Gain** and
+the waveform comes up large over the page while you hold the knob, the range and the slices on
+it. **K4 Sync** (above), **K5 Pitch**, **K6 Detune**,
 **K7 Tempo** (1 BPM a detent, **Shift** 0.1) and **K8 Gain** are the sample's: the base every
 slice adds its own to. Touch **Tempo** and click for **Original tempo**: the sample's Tempo
 becomes the project's.

@@ -78,7 +78,7 @@ import { isSampledTrack, audioSliceMode, auClipOf, auInfo, auSampleName, auWaveC
          auPos, auLazyState, auSelSlice, auSampleP2Cells, AU_P2_TEMPO, AU_P2_BARS, AU_P2_OFFSET, auOffsetText, auClipWaveKnob, bankAutoTarget, auSamplePageCells, auSampleFieldCell, auSampleWaveKnob, AU_SAMPLE_PAGES, auPanelCells, auPanelTitle, auPanelPages, auLoopBankCells, rmxBankCells, rmxPresetLongName, rmxOrderMoved, RMX_CHOPS, rmxChopIndex, knobAltOnTrack, auAltBit,
          auPadModeCells, AU_NOTE_BASE,
          auFmtTime, auEnd, auPlayedEnd, auBpm, auFpt, auLenTicks, auOffsetFrame, auIsFree, auSpeedText, auBarsText, auBarsOf, isSlicerTrack, auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_EVEN_MAX } from './ui_audio.mjs';
-import { auEdHome, auWaveSub, auWaveView, auPickRows, isSlicerEd, slcPageCells, slcStripView, SLC_STRIP_W } from './ui_audio_editor.mjs';
+import { auEdHome, auWaveSub, auWaveView, auPickRows, isSlicerEd, slcPageCells, slcStripView, slcWaveKnob, SLC_STRIP_W } from './ui_audio_editor.mjs';
 import { drawAudioAsk } from './ui_dialogs.mjs';
 import { drawAudioChooser } from './ui_audio_chooser.mjs';
 import { hudScreen, hudLayer, hudFrameOpen, hudFrameScreen, hudBodyToKnobs, hudKnobsToBody, hudFrameKnobs } from './hud/hud_frame.mjs';
@@ -381,11 +381,10 @@ function drawSlicerPage(ed, i, ends, mid, zoomTxt, lit) {
     if (pg === 2) {
         const name = auSampleName(t, c);
         const tempoTouched = S.knobTouched === 6;
-        drawKitPage(name, cells, false, tempoTouched ? [['clk', 'tempo'], ['jog', 'page']] : [['clk', 'menu'], ['jog', 'page']]);
-        if (S.knobTouched < 0) drawBankHeading(name, false, false, '3/3');
-        /* the strip over K1-K3: Start / End readouts (lit while their knob is
-         * in hand), the magnifier for K2, the whole file with the range */
-        fill_rect(0, 9, SLC_STRIP_W + 3, 23, 0);
+        /* the strip over K1-K3 FIRST: Start / End readouts (lit while their
+         * knob is in hand), the magnifier for K2, the whole file with the
+         * range — then the knob page, so a pop-up it opens (Sync's options)
+         * lands over the strip, not under it */
         const [sA, sB] = slcStripView(ed);
         const rs = i.rstart | 0, re = auEnd(i);
         const sTxt = 'S ' + auFmtTime(rs, rt), eTxt = 'E ' + auFmtTime(re, rt);
@@ -406,6 +405,10 @@ function drawSlicerPage(ed, i, ends, mid, zoomTxt, lit) {
         drawAudioWave(t, c, 1, 18, SLC_STRIP_W, 13, { A: sA, B: sB, trim: [rs, re], faint: true });
         fill_rect(0, 17, SLC_STRIP_W + 2, 1, 1); fill_rect(0, 31, SLC_STRIP_W + 2, 1, 1);
         fill_rect(0, 17, 1, 15, 1); fill_rect(SLC_STRIP_W + 1, 17, 1, 15, 1);
+        drawKitPage(name, cells, false, tempoTouched ? [['clk', 'tempo'], ['jog', 'page']] : [['clk', 'menu'], ['jog', 'page']]);
+        if (S.knobTouched < 0) drawBankHeading(name, false, false, '3/3');
+        /* a knob that changes how the sample draws shows it, large, while touched */
+        if (S.knobTouched >= 0 && slcWaveKnob(ed, S.knobTouched)) drawSlicerWaveCard(ed, i, cells[S.knobTouched]);
         return;
     }
     /* page 1, and the slice editor inside it */
@@ -526,17 +529,20 @@ function drawAudioWaveEditor() {
          * 2026-11-14; auPageFields) */
         const pg = ed.page | 0, cells = auSamplePageCells(t, c, pg);
         hudSampleWave(ed, i, sub === 'loop' ? { noMarks: true } : { faint: true });
-        drawKitPage(pg === 1 ? 'TIME' : 'SOUND', cells, false,
-                    pg === 1 && S.knobTouched === AU_P2_TEMPO && !auIsFree(i) ? [['clk', 'tempo']] : [['jog', 'page']]);
         /* Tempo and Bars framed together: the sample's own (Josh, 2026-11-13:
          * "they should both be in a shatter box or something that indicates
-         * this is the original samples bars/tempo") */
+         * this is the original samples bars/tempo") — drawn BEFORE the knob
+         * page, so a pop-up it opens (Warp's options) lands over the frame;
+         * the frame reads the kit's layout, which the page would set */
+        kitUseLayout('bank');
         if (pg === 1 && !cells[AU_P2_BARS].na && !cells[AU_P2_TEMPO].na) {
             const hold = i.span > 0 ? AU_P2_BARS : AU_P2_TEMPO;
             /* the label as the kit draws it: a touched cell's shows its value */
             const hc = cells[hold];
             drawSampleOwnFrame(AU_P2_TEMPO, 2, hold, hc && (S.knobTouched === hold && hc.text != null ? hc.text : hc.label));
         }
+        drawKitPage(pg === 1 ? 'TIME' : 'SOUND', cells, false,
+                    pg === 1 && S.knobTouched === AU_P2_TEMPO && !auIsFree(i) ? [['clk', 'tempo']] : [['jog', 'page']]);
         if (S.knobTouched < 0) drawBankHeading(pg === 1 ? 'TIME' : 'SOUND', false, false, (pg + 1) + '/' + AU_SAMPLE_PAGES);
         /* a knob that moves the waveform shows it while touched */
         if (S.knobTouched >= 0 && auSampleWaveKnob(t, c, pg, S.knobTouched)) drawClipWaveCard(t, c, cells[S.knobTouched]);
@@ -710,6 +716,41 @@ function drawClipWaveCard(t, c, cell) {
     const bars = auBarsText(auBarsOf(i));
     const line = fit4x5(free ? 'SPEED ' + auSpeedText(i.speed)
         : (bpm ? (Number.isInteger(bpm) ? bpm : bpm.toFixed(1)) : '--') + ' BPM   ' + bars + (bars === '1' ? ' BAR' : ' BARS'), B.w - 6);
+    fontPrint4x5(Math.round(B.x + (B.w - fontWidth4x5(line)) / 2), B.y + B.h - 7, line, 1);
+    kitHudTap('Message', { big: cell ? (cell.name || cell.label) + ' ' + (cell.text || '') : '', lines: [line] });
+}
+
+/* THE SLICER's WAVEFORM CARD (page 3, Start / Zoom / End / Gain in hand):
+ * SAMPLE's card for a Slicer — the knob and its value on the card's strip,
+ * the strip's own window of the file (so Zoom zooms it) drawn large: the
+ * range's two handles, the audio outside it dotted, the slices' ticks, at the
+ * sample's Gain; Start and End under it. */
+function drawSlicerWaveCard(ed, i, cell) {
+    const t = ed.t, c = ed.c, k = S.knobTouched;
+    const [sA, sB] = slcStripView(ed);
+    const rs = i.rstart | 0, re = auEnd(i);
+    const tm = (f) => auFmtTime(f, i.rate).toUpperCase();
+    /* K1-K3 are the strip's, not cells: named here (Zoom by how much of
+     * the file the window holds, as a factor) */
+    if (k === 0) cell = { name: 'Start', text: tm(rs) };
+    else if (k === 2) cell = { name: 'End', text: tm(re) };
+    else if (k === 1) {
+        const z = Math.max(1, (i.nframes | 0) / Math.max(1, sB - sA));
+        cell = { name: 'Zoom', text: 'x' + (z < 10 ? z.toFixed(1) : Math.round(z)) };
+    }
+    const B = kitStackBox(1);
+    drawKitBackdropDim();
+    fill_rect(B.x, B.y, B.w, B.h, 0);
+    rectOutline(B.x, B.y, B.w, B.h, 1);
+    fill_rect(B.x + 1, B.y + 1, B.w - 2, 8, 1);
+    if (cell) {
+        const name = String(cell.name || cell.label || '').toUpperCase(), val = String(cell.text == null ? '' : cell.text).toUpperCase();
+        const vw = fontWidth4x5(val);
+        fontPrint4x5(B.x + 4, B.y + 3, fit4x5(name, B.w - vw - 14), 0);
+        fontPrint4x5(B.x + B.w - 4 - vw, B.y + 3, val, 0);
+    }
+    drawAudioWave(t, c, B.x + 2, B.y + 12, B.w - 4, B.h - 23, { A: sA, B: sB, trim: [rs, re], faint: true, gain: i.gain | 0 });
+    const line = fit4x5('S ' + tm(rs) + '   E ' + tm(re), B.w - 6);
     fontPrint4x5(Math.round(B.x + (B.w - fontWidth4x5(line)) / 2), B.y + B.h - 7, line, 1);
     kitHudTap('Message', { big: cell ? (cell.name || cell.label) + ' ' + (cell.text || '') : '', lines: [line] });
 }

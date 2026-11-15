@@ -199,7 +199,8 @@ the section into a versioned heading at release time.
   Even, Transient, Lazy, Clear all, Convert to kit); page 3's click opens Load sample, Trim
   and Normalize. Even and Transient's click goes straight into editing the cut. Shift sets
   every slice on Play, Revrs, Attack and Decay; Pitch, Detune and Gain move every slice from
-  page 3. A slice outside the range is dark grey on the pads.
+  page 3. A slice outside the range is dark grey on the pads. Touch Start, Zoom, End or
+  Gain on page 3 and the waveform comes up large over the page while you hold the knob.
 - **A Slicer's Warp is now called Sync**: Off, Pitch or Warp. **Warp** now works on a
   Slicer: the whole sample is stretched to the project's tempo at its own pitch, in the
   background, and the slices play from the stretched copy, hitting as instantly as ever. A
@@ -251,6 +252,8 @@ the section into a versioned heading at release time.
   Clips of the same length still hand over in step with each other.
 
 ### Fixed
+- A knob's option list on SAMPLE's TIME page (Warp) and on the SLICER editor's page 3
+  (Sync) was partly hidden behind the page's own picture; it is in front now.
 - **The STEP page no longer shows a SHFT POINT hint while a step is held.** Shift
   switches how automation is written from other banks; it does nothing on the STEP page.
 - **Step conditions survive a save on a clip whose loop doesn't start at step 1.**
