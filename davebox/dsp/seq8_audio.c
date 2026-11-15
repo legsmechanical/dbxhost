@@ -2035,6 +2035,9 @@ static au_sample_t *au_pool_get(au_loader_t *L, const char *path, int *err) {
     return s;
 }
 
+#ifdef SEQ8_TESTING
+static int au_wowned_freed = 0;                    /* Warp copies freed (the tests count them back) */
+#endif
 static void au_pool_release(au_loader_t *L, au_sample_t *s) {
     int i;
     for (i = 0; i < AU_POOL_MAX; i++) {
@@ -2047,7 +2050,12 @@ static void au_pool_release(au_loader_t *L, au_sample_t *s) {
         au_sample_free(s);
         return;
     }
-    if (s && s->wowned) au_sample_free(s);         /* a Slicer's Warp copy: no pool, no other user */
+    if (s && s->wowned) {                          /* a Slicer's Warp copy: no pool, no other user */
+#ifdef SEQ8_TESTING
+        __atomic_add_fetch(&au_wowned_freed, 1, __ATOMIC_RELAXED);
+#endif
+        au_sample_free(s);
+    }
 }
 
 /* ---------------- a sample's own length in bars (loader thread) ----------------
@@ -2507,12 +2515,12 @@ static int au_kit_bake(const au_req_t *q, double *applied_db) {
     /* the Gain, held to a 0 dBFS peak: what is left over is the pads' */
     if (peak > 0.0 && peak * g > 32767.0) g = 32767.0 / peak;
     *applied_db = 20.0 * log10(g);
-    ok = au_kit_write_wav(q->path, src, v, g, n, 0);
+    ok = au_kit_write_wav(q->path, src, v, g, n, 0);   /* (a failed write leaves nothing: its temp goes) */
     if (ok && q->krev) {
         au_kit_rev_path(q->path, rp, sizeof rp);
         ok = au_kit_write_wav(rp, src, v, g, n, 1);
-        if (!ok) unlink(q->path);
-    } else if (!ok) unlink(q->path);
+        if (!ok) unlink(q->path);                      /* no kit without its reverse */
+    }
     au_sample_free(str);
     au_sample_free(full);
     return ok ? AU_ERR_NONE : AU_ERR_COPY;

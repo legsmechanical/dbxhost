@@ -1270,8 +1270,9 @@ step('⭐⭐ the SLICE menu › Convert to kit (Josh, 2026-10-30: "convert to ki
     globalThis.host_module_set_param = (k, v) => {
         set0(k, v);
         const m = String(k) === 't4_au_kit' && /^([01]) (\d+)\|(.*)$/.exec(String(v));
-        if (m) { bakes.push({ rev: m[1] === '1', seq: m[2], path: m[3] }); GET['t4_au_kit'] = '1 0 0.00 ' + m[2]; }
+        if (m) bakes.push({ rev: m[1] === '1', seq: m[2], path: m[3] });   /* (the engine's answer, below) */
     };
+    GET['t4_au_kit'] = '2 0 0.00 7';                  /* an earlier kit's answer, still there: a read can overtake the write */
     const bulk = [], gp0 = globalThis.host_module_get_params;
     globalThis.host_module_get_params = (blob) => { bulk.push(String(blob)); return ''; };
     try {
@@ -1285,6 +1286,8 @@ step('⭐⭐ the SLICE menu › Convert to kit (Josh, 2026-10-30: "convert to ki
         ticks(2);
         assert(bakes.length === 1 && bakes[0].path === SAMP && bakes[0].rev, 'the bake asked: ' + JSON.stringify(bakes));
         assert(cmds.length === 0, 'the sample was copied as it is: ' + JSON.stringify(cmds));
+        assert(!Object.keys(files).some((k) => k.indexOf('/Track Presets/dBx-slice/') >= 0), 'the preset was written on an earlier kit\'s answer');
+        GET['t4_au_kit'] = '1 0 0.00 ' + bakes[0].seq; ticks(10);   /* the engine took it: baking */
         assert(!Object.keys(files).some((k) => k.indexOf('/Track Presets/dBx-slice/') >= 0), 'the preset was written before the bake was in');
         assert((S.actionPopupLines || [])[0] === 'CONVERT TO KIT', 'no word while it bakes: ' + JSON.stringify(S.actionPopupLines));
         GET['t4_au_kit'] = '2 0 1.50 ' + bakes[0].seq;

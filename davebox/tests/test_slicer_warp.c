@@ -205,9 +205,14 @@ int main(void) {
     HX_ASSERT(wait_copy(h, 4) && at->wsmp != w1, "the new copy never landed");
     check_copy(at->wsmp, 1.2, "120 over 100");
     HX_ASSERT(at->wold == w1 || at->wold == NULL, "the old copy went somewhere else");
-    quiet(h);
-    hx_render(h, 2);
-    HX_ASSERT(at->wold == NULL, "the old copy was kept after no voice read it");
+    {
+        int before = __atomic_load_n(&au_wowned_freed, __ATOMIC_RELAXED);
+        quiet(h);
+        hx_render(h, 2);
+        HX_ASSERT(at->wold == NULL, "the old copy was kept after no voice read it");
+        for (i = 0; i < 2000 && __atomic_load_n(&au_wowned_freed, __ATOMIC_RELAXED) == before; i++) { hx_render(h, 1); usleep(1000); }
+        HX_ASSERT(__atomic_load_n(&au_wowned_freed, __ATOMIC_RELAXED) > before, "the retired copy was never freed (a leak)");
+    }
     /* within 0.05 %: kept */
     hx_set_param(h, "bpm", "120.04");
     hx_render(h, AU_SLC_WARP_SETTLE + 20);
@@ -243,8 +248,13 @@ int main(void) {
     hx_set_param(h, "t4_au_set_bpm", "16 1000");
     hx_set_param(h, "t4_au_set_sync", "16 3");
     HX_ASSERT(wait_copy(h, 4), "the copy for the bursts again");
-    au_track_release(inst, 4);
-    HX_ASSERT(!at->wsmp && !at->wold && !at->wpending, "a released track kept its copy");
+    {
+        int before = __atomic_load_n(&au_wowned_freed, __ATOMIC_RELAXED);
+        au_track_release(inst, 4);
+        HX_ASSERT(!at->wsmp && !at->wold && !at->wpending, "a released track kept its copy");
+        for (i = 0; i < 2000 && __atomic_load_n(&au_wowned_freed, __ATOMIC_RELAXED) == before; i++) { hx_render(h, 1); usleep(1000); }
+        HX_ASSERT(__atomic_load_n(&au_wowned_freed, __ATOMIC_RELAXED) > before, "a released track's copy was never freed (a leak)");
+    }
     hx_destroy(h);
 
     /* ==== 6. an offline copy hears Warp from its first hit ==== */
