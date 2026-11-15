@@ -1289,7 +1289,7 @@ step('⭐⭐ the SLICE menu › Convert to kit (Josh, 2026-10-30: "convert to ki
         assert(!Object.keys(files).some((k) => k.indexOf('/Track Presets/dBx-slice/') >= 0), 'the preset was written on an earlier kit\'s answer');
         GET['t4_au_kit'] = '1 0 0.00 ' + bakes[0].seq; ticks(10);   /* the engine took it: baking */
         assert(!Object.keys(files).some((k) => k.indexOf('/Track Presets/dBx-slice/') >= 0), 'the preset was written before the bake was in');
-        assert((S.actionPopupLines || [])[0] === 'CONVERT TO KIT', 'no word while it bakes: ' + JSON.stringify(S.actionPopupLines));
+        assert((S.actionPopupLines || []).join('|') === 'CONVERT TO KIT|Baking|My Song 5', 'no word while it bakes: ' + JSON.stringify(S.actionPopupLines));
         GET['t4_au_kit'] = '2 0 1.50 ' + bakes[0].seq;
         ticks(10);
         const kitPath = Object.keys(files).find((k) => k.indexOf('/Track Presets/dBx-slice/') >= 0);

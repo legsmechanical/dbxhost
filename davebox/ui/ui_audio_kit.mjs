@@ -266,7 +266,7 @@ export function auConvertToKit(t, c) {
     const seq = _kitSeq = (_kitSeq + 1) % 1000000;
     host_module_set_param('t' + t + '_au_kit', (rev ? '1 ' : '0 ') + seq + '|' + dst);
     _kit = { t, name, dst, revDst, rev, seq, pads: kept, total: pads.length, at: S.tickCount | 0 };
-    showActionPopupFor(KIT_TIMEOUT, 'CONVERT TO KIT', 'Baking ' + name);
+    showActionPopupFor(KIT_TIMEOUT, 'CONVERT TO KIT', 'Baking', name);   /* (the name on its own line: "Baking <name>" ran off the card) */
     return name;
 }
 
