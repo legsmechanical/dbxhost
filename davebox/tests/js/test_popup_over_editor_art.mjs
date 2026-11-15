@@ -135,6 +135,17 @@ async function main() {
             FT.length = 0; render.drawUI();
             assert(!card(FT.slice()), 'the card stayed up after K' + (k + 1) + ' was let go');
         }
+        /* pages 1 and 2 are the slice's: their knobs bring no card (page 1
+         * shows the waveform itself) */
+        for (const p of [1, 0]) {
+            toPage(p);
+            for (const k of [0, 1, 2, 7]) {
+                note(k, 127); ticks(1);
+                FT.length = 0; render.drawUI(); const tx = FT.slice();
+                note(k, 0); for (let g = 0; g < 200 && S.knobTouched >= 0; g++) ticks(1);
+                assert(!card(tx), 'page ' + (p + 1) + '\'s K' + (k + 1) + ' shows page 3\'s waveform card');
+            }
+        }
         AED.closeAudioEditor(); S.auPanel = null; ticks(2);
     });
 
