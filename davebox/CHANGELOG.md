@@ -224,6 +224,8 @@ the section into a versioned heading at release time.
   Clips of the same length still hand over in step with each other.
 
 ### Fixed
+- **The STEP page no longer shows a SHFT POINT hint while a step is held.** Shift
+  switches how automation is written from other banks; it does nothing on the STEP page.
 - **Step conditions survive a save on a clip whose loop doesn't start at step 1.**
   Iter, Random and Ratchet (and a Slicer step's own sound) on steps after the loop's
   first were lost when the project was saved and reopened.

@@ -1348,8 +1348,10 @@ export function bankPageHints(bank) {
      * pages, and FIRST, so the fit rule drops HLD BANKS rather than this. */
     if (bankHasAltParams(S.activeTrack, bank)) hints.unshift(['KNB+CLK', S.altMode ? 'VELOCITY' : 'NUDGE']);
     /* A held step's knob turn writes a lock: a PUNCH, or — Shift tapped — a
-     * POINT. The pair names what a tap switches TO. */
-    if (held) hints.push(autoShiftHint());
+     * POINT. The pair names what a tap switches TO. Not on the STEP bank:
+     * its knobs edit the step itself and write no lock, so the tap has
+     * nothing there to switch. */
+    if (held && bank !== BANK_STEP) hints.push(autoShiftHint());
     hints.push(['BACK', 'OUT']);
     return hints;
 }

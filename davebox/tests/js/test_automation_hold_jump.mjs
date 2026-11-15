@@ -108,7 +108,7 @@ globalThis.host_ext_midi_remap_enable = () => {};
 async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
-const { BANKS, BANK_AUTOMATION, SEQ_AUTO_TARGETS } = await import('../../ui/ui_constants.mjs');
+const { BANKS, BANK_AUTOMATION, BANK_STEP, SEQ_AUTO_TARGETS } = await import('../../ui/ui_constants.mjs');
 const auto = await import('../../ui/ui_automation.mjs');
 const bank = await import('../../ui/ui_automation_bank.mjs');
 const render = await import('../../ui/ui_render.mjs');
@@ -372,6 +372,9 @@ step('⭐ SHIFT TAP: every hold starts PUNCH; a tap with nothing written flips t
     assert(S.heldWrite && S.heldWrite.type === 1, 'a new hold is a PUNCH: ' + JSON.stringify(S.heldWrite));
     const hh = render.bankPageHints(S.activeBank);
     assert(hh.some(p => p[0] === 'SHFT' && p[1] === 'POINT'), 'the footer names what a tap switches to (SHFT POINT): ' + JSON.stringify(hh));
+    /* ...but not on the STEP page: its knobs edit the step, so no lock to switch */
+    const sh = render.bankPageHints(BANK_STEP);
+    assert(!sh.some(p => p[0] === 'SHFT'), 'the STEP page under a hold has no SHFT pair: ' + JSON.stringify(sh));
     sets.length = 0;
     shift(true); shift(false); ticks(2);
     assert(S.heldWrite.type === 0, 'the tap flipped it to POINT');
