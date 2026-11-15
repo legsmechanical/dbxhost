@@ -1328,7 +1328,8 @@ outside. **Back** leaves it.
 does — quickly, then a long tail — and its knob is finest at the short end, 1 ms a detent.
 
 **Hold Shift** on pages 1 and 2 and **Play**, **Revrs**, **Attk** and **Decay** set **every
-slice** at once (`--` where they differ). **Pitch**, **Detune** and **Gain** do nothing with
+slice** at once (`--` where they differ). **Start**, **Zoom** and **End** rest while Shift is
+held, their rings dark and their values off the screen. **Pitch**, **Detune** and **Gain** do nothing with
 Shift: page 3's are the sample's, and move every slice together while keeping each slice's
 own difference.
 

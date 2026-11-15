@@ -885,6 +885,8 @@ export function slcRingCells(ed) {
         cells[0] = at((i.rstart | 0) / fr); cells[1] = at(zoomOf(sA, sB)); cells[2] = at(auEnd(i) / fr);
         return cells;
     }
+    /* Shift on page 1: every slice's Play / Revrs only — Start, Zoom and End do nothing, so dark */
+    if (S.shiftHeld) return cells;
     const m = auMarks(ed.t, ed.c)[auSelSlice(ed.t)];
     cells[0] = m ? at(m[0] / fr) : null; cells[1] = at(zoomOf(ed.A, ed.B)); cells[2] = m ? at(m[1] / fr) : null;
     return cells;
@@ -925,7 +927,7 @@ function slcInput(ed, status, d1, d2) {
                 if (d1 === 1) ed.zoomDir = 0;
                 if (d1 === 0 || d1 === 2) {
                     if (pg === 2) { ed.sLast = d1 === 0 ? 'start' : 'end'; slcStripCentre(ed); }
-                    else if (sub === 'chop' && (!kind || inside)) { ed.last = d1 === 0 ? 'start' : 'end'; centre(ed); }
+                    else if (sub === 'chop' && (!kind || inside) && !S.shiftHeld) { ed.last = d1 === 0 ? 'start' : 'end'; centre(ed); }
                 }
             } else {
                 if (S.knobTouched === d1) S.knobTouched = -1;
@@ -998,7 +1000,8 @@ function slcInput(ed, status, d1, d2) {
         if (kind === 'even' || kind === 'transient') {
             if (k === 1) { ed.zoomDir = dd > 0 ? 1 : -1; moved = zoom(ed, ed.zoomDir); }
         } else if (pg === 0) {
-            if (k === 1) { ed.zoomDir = dd > 0 ? 1 : -1; moved = zoom(ed, ed.zoomDir); }
+            if (S.shiftHeld && k <= 2) { /* Shift: every slice's — Start, Zoom and End do nothing */ }
+            else if (k === 1) { ed.zoomDir = dd > 0 ? 1 : -1; moved = zoom(ed, ed.zoomDir); }
             else if (k === 0 || k === 2) { ed.last = k === 0 ? 'start' : 'end'; moved = chopPoint(ed, ed.last, dd); }
             else moved = slcSliceKnob(ed, SLC_P0[k], k, d2);
         } else if (pg === 1) {

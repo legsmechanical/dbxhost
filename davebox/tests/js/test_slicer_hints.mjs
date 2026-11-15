@@ -4,8 +4,8 @@
  * page 1, the slice editor inside it, page 2, page 3, page 3 with Tempo in
  * hand — plain and with Shift held: the hints drawn are read back, and each
  * one the footer names is PERFORMED and checked to do that: CLK EDIT enters
- * the slice editor, CLK ADD adds a slice, CLK MENU (Shift) opens the SLICE
- * menu, CLK MENU on page 3 the SAMPLE menu, CLK TEMPO Tempo's menu, JOG PAGE
+ * the slice editor, CLK ADD adds a slice, CLK MENU (Shift, outside) opens the
+ * SLICE menu, KNB EDIT ALL (Shift) leaves only the every-slice knobs live, CLK MENU on page 3 the SAMPLE menu, CLK TEMPO Tempo's menu, JOG PAGE
  * turns the page, BACK DONE leaves the slice editor. And with Shift held,
  * never JOG PAGE: Shift + the jog leaves the editor. */
 let failed = 0;
@@ -78,6 +78,9 @@ async function main() {
 
     const kit = await import('../../ui/ui_movy.mjs');
     const hints = () => { S.screenDirty = true; render.drawUI(); return (kit.kitHintsForTest() || []).map((h) => h[0].toUpperCase() + ' ' + h[1].toUpperCase()); };
+    const KT = [];
+    (await import('../../ui/ui_fonts_pp.mjs')).setKitTextTrace((x) => KT.push(String(x)));
+    const texts = () => { KT.length = 0; S.screenDirty = true; render.drawUI(); return KT.slice(); };
     const shift = (on) => { SHIFT = on ? 1 : 0; cc(49, on ? 127 : 0); ticks(1); };
     const click = () => { cc(3, 127); ticks(1); cc(3, 0); ticks(2); };
     const fresh = (p) => {
@@ -96,18 +99,18 @@ async function main() {
         click(); assert(AED.slcInside(S.auEditor), 'CLK EDIT did not enter the slice editor');
         fresh(0); cc(14, 1); ticks(2); assert((S.auEditor.page | 0) === 1, 'JOG PAGE did not turn to page 2');
     });
-    step('⭐⭐ page 1 with Shift: CLK MENU · TCH ALL SLICES, never JOG PAGE — and Shift + click opens the SLICE menu', () => {
+    step('⭐⭐ page 1 with Shift: CLK MENU · KNB EDIT ALL, never JOG PAGE — and Shift + click opens the SLICE menu', () => {
         fresh(0); shift(true);
-        const hs = hints(); has(hs, 'CLK MENU'); has(hs, 'TCH ALL SLICES'); hasNot(hs, 'JOG PAGE'); hasNot(hs, 'CLK EDIT');
+        const hs = hints(); has(hs, 'CLK MENU'); has(hs, 'KNB EDIT ALL'); hasNot(hs, 'JOG PAGE'); hasNot(hs, 'CLK EDIT');
         click(); shift(false);
         assert(S.auEditor.pick && S.auEditor.pick.menu === 'slices', 'Shift + click did not open the SLICE menu: ' + JSON.stringify(S.auEditor.pick));
     });
-    step('⭐⭐ the slice editor: CLK ADD · SH MENU · BACK DONE; with Shift only TCH ALL SLICES — Shift + click does nothing inside', () => {
+    step('⭐⭐ the slice editor: CLK ADD · SH ALL · BACK DONE; with Shift only KNB EDIT ALL — Shift + click does nothing inside', () => {
         fresh(0); click();
         let hs = hints();
-        assert(JSON.stringify(hs) === JSON.stringify(['CLK ADD', 'SH MENU', 'BACK DONE']), 'inside: ' + JSON.stringify(hs));
+        assert(JSON.stringify(hs) === JSON.stringify(['CLK ADD', 'SH ALL', 'BACK DONE']), 'inside: ' + JSON.stringify(hs));
         shift(true); hs = hints();
-        assert(JSON.stringify(hs) === JSON.stringify(['TCH ALL SLICES']), 'inside with Shift: ' + JSON.stringify(hs));
+        assert(JSON.stringify(hs) === JSON.stringify(['KNB EDIT ALL']), 'inside with Shift: ' + JSON.stringify(hs));
         const ed = S.auEditor, before = JSON.stringify(S.auInfo[ed.t][ed.c]);
         click(); shift(false);
         assert(!S.auEditor.pick, 'Shift + click inside opened a menu: ' + JSON.stringify(S.auEditor.pick));
@@ -116,13 +119,37 @@ async function main() {
         fresh(0); click(); cc(51, 127); ticks(1); cc(51, 0); ticks(2);
         assert(S.auEditor && !AED.slcInside(S.auEditor), 'BACK DONE did not leave the slice editor');
     });
-    step('⭐⭐ page 2: SH MENU · JOG PAGE; with Shift CLK MENU · TCH ALL SLICES — Shift + click opens the SLICE menu', () => {
+    step('⭐⭐ page 2: SH MENU · JOG PAGE; with Shift CLK MENU · KNB EDIT ALL — Shift + click opens the SLICE menu', () => {
         fresh(1);
         let hs = hints();
         assert(JSON.stringify(hs) === JSON.stringify(['SH MENU', 'JOG PAGE']), 'page 2: ' + JSON.stringify(hs));
-        shift(true); hs = hints(); has(hs, 'CLK MENU'); has(hs, 'TCH ALL SLICES'); hasNot(hs, 'JOG PAGE');
+        shift(true); hs = hints(); has(hs, 'CLK MENU'); has(hs, 'KNB EDIT ALL'); hasNot(hs, 'JOG PAGE');
         click(); shift(false);
         assert(S.auEditor.pick && S.auEditor.pick.menu === 'slices', 'Shift + click on page 2 did not open the SLICE menu');
+    });
+    step('⭐⭐ Shift on page 1 (inside and out): Start, Zoom and End do nothing and their rings are dark; Play and Revrs stay lit', () => {
+        for (const inside of [false, true]) {
+            fresh(0); if (inside) click();
+            const ed = S.auEditor, where = inside ? 'inside' : 'outside';
+            let r = AED.slcRingCells(ed);
+            S.knobTouched = -1; S.screenDirty = true; render.drawUI();
+            assert(texts().some((x) => /^S \d/.test(x)), where + ': control — no Start time on the OLED without Shift: ' + JSON.stringify(texts()));
+            assert(r[0] && r[1] && r[2], where + ': without Shift, Start / Zoom / End are lit: ' + JSON.stringify(r.slice(0, 3)));
+            shift(true);
+            r = AED.slcRingCells(ed);
+            assert(!r[0] && !r[1] && !r[2], where + ': with Shift, Start / Zoom / End rings are lit: ' + JSON.stringify(r.slice(0, 3)));
+            assert(r[3] && r[6], where + ': with Shift, Play / Revrs rings went dark: ' + JSON.stringify([r[3], r[6]]));
+            const before = JSON.stringify([AUD.auMarks(ed.t, ed.c), ed.A, ed.B, ed.cur]);
+            for (const k of [0, 2]) { note(k, 127); ticks(1); note(k, 0); ticks(1); }
+            assert(JSON.stringify([AUD.auMarks(ed.t, ed.c), ed.A, ed.B, ed.cur]) === before, where + ': a Start / End touch with Shift moved the view');
+            S.knobTouched = -1; S.screenDirty = true; render.drawUI();
+            assert(!texts().some((x) => /^S \d|^E \d|^E NEXT|ZOOM/.test(x)), where + ': with Shift the OLED still shows Start / End / Zoom: ' + JSON.stringify(texts()));
+            for (const k of [0, 1, 2]) { cc(71 + k, 1); ticks(1); cc(71 + k, 127); cc(71 + k, 127); ticks(1); }
+            assert(JSON.stringify([AUD.auMarks(ed.t, ed.c), ed.A, ed.B, ed.cur]) === before, where + ': a Start / Zoom / End turn with Shift moved something');
+            shift(false);
+            cc(71 + 1, 1); ticks(1);
+            assert(JSON.stringify([AUD.auMarks(ed.t, ed.c), ed.A, ed.B, ed.cur]) !== before, where + ': control — a Zoom turn without Shift moved nothing');
+        }
     });
     step('⭐⭐ page 3: CLK MENU · JOG PAGE (the SAMPLE menu); Tempo in hand CLK TEMPO; with Shift TCH FINE, never JOG PAGE', () => {
         fresh(2);

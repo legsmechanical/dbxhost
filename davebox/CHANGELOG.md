@@ -198,7 +198,7 @@ the section into a versioned heading at release time.
   to add slices with the jog's cursor; **Shift + click** outside the slice editor opens the slice menu (Load sample,
   Even, Transient, Lazy, Clear all, Convert to kit); page 3's click opens Load sample, Trim
   and Normalize. Even and Transient's click goes straight into editing the cut. Shift sets
-  every slice on Play, Revrs, Attack and Decay; Pitch, Detune and Gain move every slice from
+  every slice on Play, Revrs, Attack and Decay (Start, Zoom and End rest meanwhile); Pitch, Detune and Gain move every slice from
   page 3. A slice outside the range is dark grey on the pads. Touch Start, Zoom, End or
   Gain on page 3 and the waveform comes up large over the page while you hold the knob.
 - **A Slicer's Warp is now called Sync**: Off, Pitch or Warp. **Warp** now works on a

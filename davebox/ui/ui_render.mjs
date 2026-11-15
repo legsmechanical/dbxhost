@@ -301,7 +301,9 @@ function hudSampleKnobs(ed, i, sub, kind, sl) {
     if (isSlicerEd(ed)) rest = slcPageCells(ed).slice(3).map((x) => x || B);   /* the SLICER editor's page 1 order */
     else if (sl && !kind) { const pc = auPanelCells({ t, page: S.shiftHeld ? 0 : 1 }); rest = [pc[3], pc[4], pc[5], pc[6], pc[7]].map((x) => x || B); }
     else rest = [sub === 'loop' ? auSampleFieldCell(t, c, 'offset') : B].concat(['pitch', 'detune', 'tempo', 'gain'].map((f) => auSampleFieldCell(t, c, f)));
-    kitHudTap('KitCells', { cells: [k1, zoomCell, k3].concat(rest), touched: S.knobTouched });
+    /* the SLICER's Shift: every slice's knobs only — Start, Zoom and End blank, as on the OLED */
+    const slcAll = isSlicerEd(ed) && S.shiftHeld;
+    kitHudTap('KitCells', { cells: (slcAll ? [B, B, B] : [k1, zoomCell, k3]).concat(rest), touched: S.knobTouched });
 }
 /* SAMPLE's page 2 is a knob page on the OLED; the Screen view keeps the
  * waveform over it, as page 1 has it */
@@ -378,9 +380,9 @@ export function slcHints(pg, inside, shift, tempoTouched) {
         const clk = ['clk', tempoTouched ? 'tempo' : 'menu'];
         return shift ? [clk, ['tch', 'fine']] : [clk, ['jog', 'page']];
     }
-    if (shift) return inside ? [['tch', 'all slices']] : [['clk', 'menu'], ['tch', 'all slices']];
+    if (shift) return inside ? [['knb', 'edit all']] : [['clk', 'menu'], ['knb', 'edit all']];
     if (pg === 1) return [['sh', 'menu'], ['jog', 'page']];
-    return inside ? [['clk', 'add'], ['sh', 'menu'], ['back', 'done']] : [['clk', 'edit'], ['sh', 'menu'], ['jog', 'page']];
+    return inside ? [['clk', 'add'], ['sh', 'all'], ['back', 'done']] : [['clk', 'edit'], ['sh', 'menu'], ['jog', 'page']];
 }
 function drawSlicerPage(ed, i, ends, mid, zoomTxt, lit) {
     const t = ed.t, c = ed.c, rt = i.rate, inside = ed.mode === 'chop';
@@ -430,11 +432,13 @@ function drawSlicerPage(ed, i, ends, mid, zoomTxt, lit) {
     /* page 1, and the slice editor inside it */
     drawBankHeading('SLICE ' + (sel + 1) + '/' + n, false, false, inside ? undefined : '1/3');
     const m = mk[sel];
-    if (m) ends('S ' + auFmtTime(m[0], rt), m[1] === auEdHome(ed, sel) ? 'E NEXT' : 'E ' + auFmtTime(m[1], rt));
+    /* Shift: every slice's Play / Revrs — Start, Zoom and End are not "all" knobs, so not shown */
+    const allMode = !!S.shiftHeld;
+    if (m && !allMode) ends('S ' + auFmtTime(m[0], rt), m[1] === auEdHome(ed, sel) ? 'E NEXT' : 'E ' + auFmtTime(m[1], rt));
     if (S.knobTouched >= 3) {
         const cell = cells[S.knobTouched];
         if (cell && cell.label) mid((S.shiftHeld ? 'ALL ' : '') + (cell.label + ' ' + cell.text).toUpperCase());
-    } else if (zoomTxt) mid(zoomTxt);
+    } else if (zoomTxt && !allMode) mid(zoomTxt);
     drawAudioWave(t, c, 0, 20, 128, 30, inside ? { A: ed.A, B: ed.B, sel, cur: ed.cur, gain: i.gain | 0 }
                                                : { A: ed.A, B: ed.B, sel, gain: i.gain | 0 });
     if (!inside) drawBrackets(0, 19, 128, 32);          /* click to enter the slice editor */

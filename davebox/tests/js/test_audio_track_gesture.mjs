@@ -1047,8 +1047,8 @@ step('⭐⭐ the knob rings follow the Audio screens and the AUDIO bank: lit whe
     assert(globalThis.__ring() === null, 'rings taken with no Audio screen up');
     toSlicer(); ticks(3);                            /* the SLICER editor page 1: every knob works */
     assert(sent8() === '11111111', 'page 1 rings: ' + sent8());
-    S.shiftHeld = true; ticks(3);                    /* Shift: Pitch / Detune / Gain do nothing (K5 K6 K8 dark) */
-    assert(sent8() === '11110010', 'page 1 rings with Shift: ' + sent8());
+    S.shiftHeld = true; ticks(3);                    /* Shift: every slice's Play / Revrs only — Start, Zoom, End, Pitch, Detune, Gain dark */
+    assert(sent8() === '00010010', 'page 1 rings with Shift: ' + sent8());
     S.shiftHeld = false;
     jog(1); ticks(3);                                /* page 2 SHAPE: Attk, Decay */
     assert(sent8() === '11000000', 'page 2 rings: ' + sent8());
