@@ -213,6 +213,25 @@ int main(void) {
         for (i = 0; i < 2000 && __atomic_load_n(&au_wowned_freed, __ATOMIC_RELAXED) == before; i++) { hx_render(h, 1); usleep(1000); }
         HX_ASSERT(__atomic_load_n(&au_wowned_freed, __ATOMIC_RELAXED) > before, "the retired copy was never freed (a leak)");
     }
+    /* a copy retired while the one before it still sounds: the older is cut and freed */
+    {
+        int before;
+        au_sample_t *a1 = at->wsmp, *b1;
+        int e = 0;
+        v = hit(h, 1);                                            /* a voice on the current copy */
+        HX_ASSERT(v && v->smp == a1, "the voice on the copy");
+        au_slc_warp_retire(inst, 4);                              /* retired: kept while it sounds */
+        HX_ASSERT(at->wold == a1 && !at->wsmp, "the sounding copy was not kept");
+        b1 = au_wstretch_render(AUS(4)->smp, 1.2, &e);
+        HX_ASSERT(b1, "a second copy");
+        au_slc_warp_install(inst, 4, b1, 1.2, AUS(4));
+        before = __atomic_load_n(&au_wowned_freed, __ATOMIC_RELAXED);
+        au_slc_warp_retire(inst, 4);                              /* again, the first still kept */
+        HX_ASSERT(at->wold == b1 && !chop_voice(at), "the older copy's voice was not cut, or the newer not kept");
+        for (i = 0; i < 2000 && __atomic_load_n(&au_wowned_freed, __ATOMIC_RELAXED) == before; i++) { hx_render(h, 1); usleep(1000); }
+        HX_ASSERT(__atomic_load_n(&au_wowned_freed, __ATOMIC_RELAXED) > before, "the older copy was never freed (a leak)");
+        HX_ASSERT(wait_copy(h, 4) && at->wsmp, "no copy came back after the retires");
+    }
     /* within 0.05 %: kept */
     hx_set_param(h, "bpm", "120.04");
     hx_render(h, AU_SLC_WARP_SETTLE + 20);
