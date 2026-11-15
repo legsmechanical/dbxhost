@@ -11,11 +11,27 @@ cd "$(dirname "$0")/../.."
 export DAVEBOX_JS_TEST_DIR="${DAVEBOX_JS_TEST_DIR:-/tmp/davebox-js-tests-$(printf %s "$PWD" | cksum | cut -d" " -f1)}"
 mkdir -p "$DAVEBOX_JS_TEST_DIR"
 node tests/js/build.mjs
-fail=0
+# Run N at a time (tests/harness/pool.sh), each to its own log under the
+# per-tree dir; results print in glob order, as the serial loop did.
+# (tests/run.sh does not call this: it puts these units in its own pool.)
+set +e
+. tests/harness/pool.sh
+pool_start "$DAVEBOX_JS_TEST_DIR/results"
+names=(); units=(); failed=()
 for t in tests/js/test_*.mjs; do
-  out="$DAVEBOX_JS_TEST_DIR/$(basename "$t" .mjs).js"
-  if node "$out"; then echo "PASS: $(basename "$t")"; else echo "FAIL: $(basename "$t")"; fail=1; fi
+  [ -f "$t" ] || continue
+  names+=("$(basename "$t" .mjs)"); units+=("js:$(basename "$t" .mjs)")
 done
+pool_run "$DAVEBOX_JS_TEST_DIR/timings" ${units[@]+"${units[@]}"}
+pool_report_js ${names[@]+"${names[@]}"}
+fail=0; [ "$js_nfail" -eq 0 ] || fail=1
+echo "JS: $js_npass passed, $js_nfail failed, $(wc -l < "$POOL_SKIPS" | tr -d ' ') skipped"
+cat "$POOL_SKIPS"
+# Zero collected is not green.
+if [ "${#names[@]}" -eq 0 ]; then
+  echo "FAIL: collected NO tests/js/test_*.mjs - the JS units did not run" >&2
+  fail=1
+fi
 # ⚠ This is a SUBSET. CI runs davebox/tests/run.sh, which is these plus the
 # shell invariants, node --check on the web UI, and the manual/help generation —
 # roughly 134 checks against these ~28. A green run here says nothing about the

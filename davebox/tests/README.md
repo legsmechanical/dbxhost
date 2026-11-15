@@ -9,6 +9,16 @@ Design: `docs/superpowers/specs/2026-06-20-local-dsp-harness-design.md`.
 
 Override the compiler with `CC=...`. Build/run artifacts go to `/tmp/davebox-tests/`.
 
+The suite runs in parallel: C units, JS units and the `test_*.sh` invariants share
+one pool (`tests/harness/pool.sh`), one worker per core, each unit logging to its
+own file; results print afterwards in glob order. `DBX_TEST_JOBS=N` sets the width
+(`DBX_TEST_JOBS=1` is serial). C binaries are reused from a compile cache keyed on
+each unit's preprocessed source, so a run that changes nothing under `dsp/` or
+`tests/*.c` only runs them; `DBX_TEST_NO_CCACHE=1` compiles everything. C units
+that wait on a real thread (their source calls `usleep`/`nanosleep`/
+`pthread_create`) are built in the pool but run alone afterwards — see the
+comment in `tests/run.sh`.
+
 ## How it works
 
 - `tests/harness/harness.h` `#include`s the single `dsp/seq8.c` translation unit,

@@ -124,18 +124,20 @@ process.exit(2);}
 const outDir = process.env.DAVEBOX_JS_TEST_DIR || '/tmp/davebox-js-tests';
 const tests = globSync(path.join(repoRoot, 'tests/js/test_*.mjs'));
 
-for (const t of tests) {
-    const name = path.basename(t, '.mjs');
-    const outfile = path.join(outDir, `${name}.js`);
-    await esbuild.build({
-        entryPoints: [t],
-        bundle: true,
-        format: 'cjs',
-        platform: 'node',
-        outfile,
-        logLevel: 'warning',
-        banner: { js: guard },
-        plugins: [stubPlugin],
-    });
-    console.log(outfile);
-}
+/* ONE build with every test as an entry point, not one awaited build per test
+ * (2026-11-15). With ~270 tests the serial loop was ~10 s of the suite; esbuild
+ * parallelises a multi-entry build internally. No splitting, so each bundle is
+ * still self-contained and named <test>.js exactly as before — the runner and
+ * run-one.sh read the same paths. */
+await esbuild.build({
+    entryPoints: tests,
+    entryNames: '[name]',
+    outdir: outDir,
+    bundle: true,
+    format: 'cjs',
+    platform: 'node',
+    logLevel: 'warning',
+    banner: { js: guard },
+    plugins: [stubPlugin],
+});
+for (const t of tests) console.log(path.join(outDir, `${path.basename(t, '.mjs')}.js`));
