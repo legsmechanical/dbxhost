@@ -140,12 +140,12 @@ step('a Slicer: Instmt/Dest › Slicer converts the Audio track (the engine\'s u
            'setup: t4 did not become a Slicer: ' + S.trackPadMode[4]);
 });
 
-step('⭐ a Slicer: + Add lane offers All Slices too, its seven keys (Josh, 2026-11-02: "two instruments \"audio\" and \"slicer\"")', () => {
+step('⭐ a Slicer: + Add lane offers All Slices too, its four keys — Pitch / Detune / Gain are the sample\'s (Josh, 2026-11-15)', () => {
     try {
         assert(snd.soundAutoAddLane(4, 0, 0), 'the picker did not open'); ticks(3);
         pickRow('au:aus');
         const keys = snd.soundKnobParamsForTest().map(p => p.key).join(',');
-        assert(keys === 'au_s_atk,au_s_dec,au_s_gain,au_s_pitch,au_s_detune,au_s_rev,au_s_play', 'All Slices lists ' + keys);
+        assert(keys === 'au_s_atk,au_s_dec,au_s_rev,au_s_play', 'All Slices lists ' + keys);
         sets.length = 0;
         pickParam('au_s_dec');
         assert(sent('t4_pa_add').includes('0 seq:4:au_s_dec'), 'pa_add: ' + JSON.stringify(sets.filter(x => /pa_add/.test(x[0]))));

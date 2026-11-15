@@ -192,6 +192,15 @@ the section into a versioned heading at release time.
   again every 5 minutes until the Move is plugged in.
 
 ### Changed
+- **A Slicer has one editor, SLICER**, on the pad map's instrument pad: page 1 the slices
+  (the picked slice's edges and sound), page 2 its Attack and Decay, page 3 the whole
+  sample — a strip with the range on it, Sync, Pitch, Detune, Tempo and Gain. Click page 1
+  to add slices with the jog's cursor; **Shift + click** opens the slice menu (Load sample,
+  Even, Transient, Lazy, Clear all, Convert to kit); page 3's click opens Load sample, Trim
+  and Normalize. Even and Transient's click goes straight into editing the cut. Shift sets
+  every slice on Play, Revrs, Attack and Decay; Pitch, Detune and Gain move every slice from
+  page 3. A slice outside the range is dark grey on the pads.
+- **A Slicer's Warp is now called Sync**: Off, Pitch or Warp.
 - **A Slicer loads a sample without chopping it.** A new sample is one slice covering the
   sample's Start to End, and it follows them until you chop. Start and End are now the
   Slicer's range: slices play only inside it, and a slice outside it is silent until the

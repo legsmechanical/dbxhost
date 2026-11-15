@@ -2069,8 +2069,8 @@ static int sp_track_audio(sp_ctx_t *cx) {
  * sample and sound, the part the clip plays marked out in 16 even chops,
  * laid on (dt,dc)'s steps in order (so it sounds as the loop did) — one undo
  * step. Refused (0) when the Slicer has a sample already, the clip has none
- * loaded, or it is longer than a Slicer takes. Sync Pitch stays Pitch; Warp
- * and Vintage become Off (Snap, their match, is parked). */
+ * loaded, or it is longer than a Slicer takes. The part the clip played is the
+ * Slicer's range. */
 static int au_paste_to_slicer(seq8_instance_t *inst, int st, int sc, int dt, int dc) {
     au_clip_t *src = au_slot(inst, st, sc), *dst = au_slot(inst, dt, AU_SLC);
     const au_sample_t *s = src->smp;
@@ -2096,7 +2096,12 @@ static int au_paste_to_slicer(seq8_instance_t *inst, int st, int sc, int dt, int
     dst->pitch = src->pitch; dst->detune = src->detune; dst->gain_db = src->gain_db;
     dst->dir = src->dir;
     dst->bpm10 = (uint16_t)au_bpm10_played(src, s);   /* Bars: the Tempo they make */
-    dst->sync = src->sync == AU_SYNC_PITCH ? AU_SLC_SYNC_PITCH : AU_SLC_SYNC_OFF;
+    /* Sync: Pitch stays Pitch, Warp stays Warp where a Slicer offers it (a
+     * sample up to AU_SLC_WARP_MAX_SEC), Vintage becomes Off (Snap, its
+     * match, is parked) */
+    dst->sync = src->sync == AU_SYNC_PITCH ? AU_SLC_SYNC_PITCH
+              : src->sync == AU_SYNC_WARP && (uint64_t)s->frames <= (uint64_t)s->rate * AU_SLC_WARP_MAX_SEC ? AU_SLC_SYNC_WARP
+              : AU_SLC_SYNC_OFF;
     for (k = 0; k < AU_MAX_SLICES; k++) dst->sl[k].start = dst->sl[k].end = 0;
     for (k = 0; k < 16; k++) dst->sl[k].start = rs + (uint32_t)((uint64_t)(re - rs) * (uint32_t)k / 16u);
     if (re < s->frames) dst->sl[15].end = re;      /* the last chop ends where the clip did */

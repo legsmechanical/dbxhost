@@ -798,13 +798,13 @@ const AU_AUTO_KEYS = [
  * being Full (the clip's 0), at the dial's top as on the knob. */
 export const AU_SLICES_BANK = 'aus';
 const AU_SLICES_KEYS = [
+    /* the four Shift sets on every slice (the SLICER editor: Attk / Decay on
+     * page 2's K1 / K2, Play / Revrs on page 1's K4 / K7) — Pitch, Detune and
+     * Gain are the sample's (Josh, 2026-11-15) */
     { key: 'au_s_atk',    k: 0, min: 0,   max: 2000, label: 'Attack', field: 'atk' },
     { key: 'au_s_dec',    k: 1, min: 5,   max: 5001, label: 'Decay',  field: 'dec' },
-    { key: 'au_s_gain',   k: 3, min: -40, max: 12,   label: 'Gain',   field: 'gain' },
-    { key: 'au_s_pitch',  k: 4, min: -24, max: 24,   label: 'Pitch',  field: 'pitch' },
-    { key: 'au_s_detune', k: 5, min: -50, max: 50,   label: 'Detune', field: 'detune' },
     { key: 'au_s_rev',    k: 6, min: 0,   max: 1,    label: 'Rev',    field: 'rev', stepped: true },
-    { key: 'au_s_play',   k: 7, min: 0,   max: 1,    label: 'Play',   field: 'play', stepped: true },
+    { key: 'au_s_play',   k: 3, min: 0,   max: 2,    label: 'Play',   field: 'play', stepped: true },
 ];
 export const BANK_SHORT = { 0: 'Clip', 1: 'NFX', 2: 'Harm', 3: 'Dly', 4: 'SArp', 5: 'LArp', 7: 'Lanes', 18: 'Rmx',
                             [AU_AUTO_BANK]: 'Smp', [AU_SLICES_BANK]: 'Slcs' };

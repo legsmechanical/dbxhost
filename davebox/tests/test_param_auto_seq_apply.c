@@ -107,7 +107,7 @@ int main(void) {
         (void)I;
         hx_get_param(h, "pa_seq_keys", buf, sizeof(buf));
         int lines = 0; for (char *c = buf; *c; c++) if (*c == '\n') lines++;
-        HX_ASSERT(lines == PA_SEQ_COUNT && lines == 39, "pa_seq_keys does not list the whole table");
+        HX_ASSERT(lines == PA_SEQ_COUNT && lines == 36, "pa_seq_keys does not list the whole table");   /* 39 less the every-slice Gain / Pitch / Detune (2026-11-15) */
         HX_ASSERT(strstr(buf, "noteFX_gate 0 400 0\n") && strstr(buf, "all_lanes_playback_dir 0 3 1\n"),
                   "pa_seq_keys rows are not '<key> <min> <max> <mode>'");
         hx_destroy(h);

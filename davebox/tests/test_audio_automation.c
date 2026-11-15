@@ -301,7 +301,7 @@ int main(void) {
         HX_ASSERT(cl == &inst->au_store[4][AU_SLC], "all slices: a Slicer's clip does not play its slot");
         hx_set_param(h, "t4_au_slice_gain", "0 1 -6");            /* the chops differ */
         /* each key: both ends read back live, then rest writes NOTHING */
-        for (int i = PA_SEQ_IDX_AUS; i < PA_SEQ_IDX_AUS + 7; i++) {
+        for (int i = PA_SEQ_IDX_AUS; i < PA_SEQ_IDX_AUS + PA_SEQ_N_AUS; i++) {
             const pa_seq_def_t *d = &pa_seq_defs[i];
             pa_seq_apply(inst, 4, i, 16383, -1);
             int hi = pa_seq_read(inst, tr, tr->active_clip, i);
@@ -312,37 +312,40 @@ int main(void) {
                 return 1;
             }
         }
-        HX_ASSERT(cl->ovs == 0x7F && cl->sl[1].gain_db == -6 && cl->sl[0].gain_db == 0 && cl->sl[0].pitch == 0,
-                  "all slices: playback did not hold all seven live, or it wrote the chops");
+        /* the four lanes left (2026-11-15): Attk, Decay, Revrs, Play — Pitch,
+         * Detune and Gain are the sample's */
+        HX_ASSERT(PA_SEQ_N_AUS == 4 && !strcmp(pa_seq_defs[PA_SEQ_IDX_AUS + 2].key, "au_s_rev") &&
+                  !strcmp(pa_seq_defs[PA_SEQ_IDX_AUS + 3].key, "au_s_play") && pa_seq_defs[PA_SEQ_IDX_AUS + 3].max == AU_PLAY_THRU,
+                  "all slices: the lanes are not Attk / Decay / Revrs / Play (Play to Thru)");
+        HX_ASSERT(cl->ovs == (AU_OVS_ATK | AU_OVS_DEC | AU_OVS_REV | AU_OVS_PLAY) && cl->sl[1].gain_db == -6 && cl->sl[0].gain_db == 0,
+                  "all slices: playback did not hold all four live, or it wrote the chops");
         pa_seq_apply(inst, 4, PA_SEQ_IDX_AUS + 1, 16383, -1);
         HX_ASSERT(cl->ovs_dec == 0, "all slices: Decay's 5001 is not Full (0)");
-        for (int i = PA_SEQ_IDX_AUS; i < PA_SEQ_IDX_AUS + 7; i++) pa_seq_apply(inst, 4, i, 16383, tr->active_clip);
+        for (int i = PA_SEQ_IDX_AUS; i < PA_SEQ_IDX_AUS + PA_SEQ_N_AUS; i++) pa_seq_apply(inst, 4, i, 16383, tr->active_clip);
         HX_ASSERT(cl->ovs == 0 && cl->sl[1].gain_db == -6 && cl->sl[0].gain_db == 0 && cl->sl[3].pitch == 0,
                   "all slices: rest wrote a value into the chops (it must only let go)");
-        /* a chop starts at the lane's sound; a sounding one follows it */
-        au_voice_t *v = au_range_on(inst, 4, 0, 1, 0, 44100, 1.0f, 0, 0);
-        HX_ASSERT(v && fabsf(v->gain - au_db(-6)) < 1e-5f, "all slices: rig — chop 2 is not at its own -6 dB");
-        double s0 = v->step;
-        cl->ovs = AU_OVS_GAIN | AU_OVS_PITCH; cl->ovs_gain = 3; cl->ovs_pitch = 12;
-        au_voice_follow(inst, 4);
-        HX_ASSERT(fabsf(v->gain - au_db(3)) < 1e-5f && fabs(v->step / s0 - 2.0) < 1e-6,
-                  "all slices: a sounding chop did not follow the lane's Gain and Pitch");
+        /* a chop starts at the lane's sound: Revrs held on plays it backwards */
+        pa_seq_apply(inst, 4, PA_SEQ_IDX_AUS + 2, 16383, -1);
+        pa_seq_apply(inst, 4, PA_SEQ_IDX_AUS + 1, 0, -1);
         au_voice_t *v2 = au_range_on(inst, 4, 0, 2, 0, 44100, 1.0f, 0, 0);
-        HX_ASSERT(v2 && fabsf(v2->gain - au_db(3)) < 1e-5f && fabs(v2->step / s0 - 2.0) < 1e-6,
-                  "all slices: a new chop did not start at the lane's sound");
+        HX_ASSERT(v2 && v2->step < 0, "all slices: a new chop did not start at the lane's Revrs");
         hx_get_param(h, "t4_au_all_0", b, sizeof b);
-        HX_ASSERT(!strncmp(b, "12 3 ", 5), "all slices: the ALL SLICES read does not show what plays");
-        hx_set_param(h, "t4_au_all_gain", "0 -2");
-        HX_ASSERT(!(cl->ovs & AU_OVS_GAIN) && (cl->ovs & AU_OVS_PITCH), "all slices: a hand's setting did not take over its own field only");
+        {   /* "pitch gain rev atk dec play detune": the lane's Revrs shows */
+            int f[7];
+            HX_ASSERT(sscanf(b, "%d %d %d %d %d %d %d", &f[0], &f[1], &f[2], &f[3], &f[4], &f[5], &f[6]) == 7 && f[2] == 1,
+                      "all slices: the ALL SLICES read does not show what plays");
+        }
+        hx_set_param(h, "t4_au_all_rev", "0 0");
+        HX_ASSERT(!(cl->ovs & AU_OVS_REV) && (cl->ovs & AU_OVS_DEC), "all slices: a hand's setting did not take over its own field only");
         /* the slot is every clip's: a clip switch leaves what plays (the lane's
          * own rest is what lets go) */
         hx_set_param(h, "t4_launch_clip", "1");
         for (int i = 0; i < 4000 && inst->tracks[4].active_clip != 1; i++) hx_render(h, 1);
         hx_render(h, 2);
         HX_ASSERT(inst->tracks[4].active_clip == 1, "all slices: rig — clip 1 did not take over");
-        HX_ASSERT(cl->ovs & AU_OVS_PITCH, "all slices: a clip switch dropped the Slicer's live value");
-        pa_seq_apply(inst, 4, PA_SEQ_IDX_AUS + 3, 0, 0);
-        HX_ASSERT(!(cl->ovs & AU_OVS_PITCH) && cl->sl[0].pitch == 0, "all slices: the lane's rest did not let go (or wrote)");
+        HX_ASSERT(cl->ovs & AU_OVS_DEC, "all slices: a clip switch dropped the Slicer's live value");
+        pa_seq_apply(inst, 4, PA_SEQ_IDX_AUS + 1, 0, 0);
+        HX_ASSERT(!(cl->ovs & AU_OVS_DEC) && cl->sl[0].decay_ms == 0, "all slices: the lane's rest did not let go (or wrote)");
         /* the sample's lanes too: at rest on a Slicer they let go and write
          * nothing — one clip's rest must not rewrite every clip's sound */
         cl->ov = AU_OV_GAIN; cl->ov_gain = -20; cl->gain_db = 0;

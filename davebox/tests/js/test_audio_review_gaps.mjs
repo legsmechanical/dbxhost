@@ -111,8 +111,13 @@ if (!(S.trackPadMode[4] === C.PAD_MODE_SLICER && A.isSlicerTrack(4) && sent('t4_
     console.error('FAIL: setup: t4 did not become a Slicer: ' + S.trackPadMode[4]); process.exit(1);
 }
 
-/* SLICES › click › the chop types' rows */
-const openKitMenu = () => { mapPad(2, 2); const ed = S.auEditor; assert(ed && ed.ed === 'slices', 'SLICES did not open'); click(); return ed; };
+/* the SLICER pad (the instrument slot) › Shift + click › the SLICE menu's rows */
+const openKitMenu = () => {
+    mapPad(2, 3); const ed = S.auEditor;
+    assert(ed && ed.ed === 'slicer', 'the SLICER editor did not open');
+    S.shiftHeld = true; click(); S.shiftHeld = false;
+    return ed;
+};
 
 step('⭐⭐ more than 32 chops: Convert to kit writes 32 pads (36..67), the notice says 32', () => {
     slicer(INFO(1, 40, 0), MARKS(40));
@@ -166,13 +171,13 @@ step('⭐⭐ a failed load (state 3, the name kept) is "no sample" too: NO KIT, 
     assert(kitsWritten().length === 0 && CMDS.length === 0, 'a kit of a missing sample was written / copied');
 });
 
-step('⭐⭐ no chops: NO KIT / No chops, nothing copied or written', () => {
+step('⭐⭐ no slices: NO KIT / No slices, nothing copied or written', () => {
     slicer(INFO(1, 8, 0), '');
     fresh();
     S.pendingAuKit = { t: 4, c: 16 };
     ticks(2);
     const L = S.actionPopupLines || [];
-    assert(L[0] === 'NO KIT' && L[1] === 'No chops', 'notice: ' + JSON.stringify(L));
+    assert(L[0] === 'NO KIT' && L[1] === 'No slices', 'notice: ' + JSON.stringify(L));
     assert(kitsWritten().length === 0 && CMDS.length === 0, 'a kit with no chops was written / copied');
 });
 
@@ -233,9 +238,9 @@ step('auConvertToKit itself refuses an Audio clip (defence in depth: the menu ke
         }
         assert(!over.length, 'headers past 124 px: ' + JSON.stringify(over));
     });
-    step('a chop\'s Play offers One and Gate only (it offered Loop, which the engine refuses)', () => {
+    step('a slice\'s Play offers One, Gate and Thru — the engine\'s three (Josh, 2026-11-14: Thru)', () => {
         const pc = [0, 1, 2].map((page) => A.auPanelCells({ t: 4, page }).find((c) => c && c.label === 'Play')).find((c) => c);
-        assert(pc && pc.options.join() === 'One,Gate', 'Play offers ' + (pc && pc.options.join()));
+        assert(pc && pc.options.join() === 'One,Gate,Thru', 'Play offers ' + (pc && pc.options.join()));
         leave();
     });
 }

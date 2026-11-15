@@ -592,9 +592,12 @@ screen('sample-loop-p2', '7.5 Audio', 'SAMPLE — TIME (page 2)',
 screen('sample-loop-p3', '7.5 Audio', 'SAMPLE — SOUND (page 3)',
     'SAMPLE\'s SOUND page: Pitch, Detune, Revrs and Gain, on the knobs page 1 gives Pitch, Detune and Gain.',
     () => { sampledTrack(false); AED.openWave(4, 'sample'); ticks(4); if (!S.auEditor) throw new Error('SAMPLE did not open'); S.auEditor.page = 2; ticks(2); });
-screen('slices-slicer', '7.5 Audio', 'SLICES — a Slicer track',
-    'SLICES on a Slicer: the picked slice\'s Start and End, its own sound on K4-K8.',
-    () => { sampledTrack(true); AED.openWave(4, 'slices'); ticks(4); if (!S.auEditor) throw new Error('SLICES did not open'); });
+screen('slices-slicer', '7.5 Audio', 'The SLICER editor — page 1, SLICES',
+    'Page 1: the slices on the waveform, the picked one bracketed; the corner brackets say a click enters the slice editor.',
+    () => { sampledTrack(true); AED.openWave(4); ticks(4); if (!S.auEditor || S.auEditor.ed !== 'slicer') throw new Error('the SLICER editor did not open'); });
+screen('slicer-sample', '7.5 Audio', 'The SLICER editor — page 3, SAMPLE',
+    'Page 3: a strip of the whole file with the range on it, over the sample\'s knobs — Sync, Pitch, Detune, Tempo and Gain.',
+    () => { sampledTrack(true); AED.openWave(4); ticks(4); if (!S.auEditor) throw new Error('the SLICER editor did not open'); jog(1); jog(1); ticks(2); if (S.auEditor.page !== 2) throw new Error('not on page 3'); });
 screen('track-melodic-chord-held', '6.1 Playing and placing notes', 'Track View — naming a held chord',
     'Holding three pads: the chord you are playing is named in brackets at the right of the key/scale row.',
     () => {

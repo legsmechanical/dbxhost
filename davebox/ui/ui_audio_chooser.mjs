@@ -148,7 +148,7 @@ export function audioChooserTick() {
 export function drawAudioChooser() {
     const ch = S.auChooser;
     if (ch.askNone) {
-        drawAudioAsk('REMOVE SAMPLE', ch.c === AU_SLC ? ['The sample and its chops', 'go. The steps stay.']
+        drawAudioAsk('REMOVE SAMPLE', ch.c === AU_SLC ? ['The sample and its slices', 'go. The steps stay.']
                                                        : ['The sample in ' + (ch.t + 1) + CLIP_LETTERS[ch.c] + ' goes.', 'Undo brings it back.'], ch.askNone.sel);
         return;
     }

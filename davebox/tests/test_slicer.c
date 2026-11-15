@@ -272,9 +272,11 @@ int main(void) {
         hx_set_param(h, "t6_convert_to_slicer", "");
         hx_set_param(h, "t6_c3_step_0_toggle", "9");             /* the destination clip has a step */
         hx_set_param(h, "clip_copy", "2 0 6 3");
+        /* Warp (the Audio clip's default) stays Warp: a 2 s sample is under the minute */
         HX_ASSERT(!strcmp(AUS(6)->name, "ramp2.wav") && AUS(6)->gain_db == -4 && AUS(6)->bpm10 == 1200 &&
-                  AUS(6)->sync == AU_SLC_SYNC_OFF, "Audio -> Slicer: the slot did not take the clip's sample and sound");
-        HX_ASSERT(AUS(6)->nslices == 16 && AUS(6)->sl[0].start == 4410, "Audio -> Slicer: chop 1 is not where the clip starts");
+                  AUS(6)->sync == AU_SLC_SYNC_WARP, "Audio -> Slicer: the slot did not take the clip's sample and sound (Warp kept)");
+        HX_ASSERT(AUS(6)->nslices == 16 && AUS(6)->sl[0].start == 4410 && !AUS(6)->whole, "Audio -> Slicer: chop 1 is not where the clip starts");
+        HX_ASSERT(AUS(6)->rstart == 4410, "Audio -> Slicer: the range does not start where the clip played from");
         {
             uint32_t L = 4410 + (uint32_t)(16 * 24 * au_fpt_s(AUS(6), AUA(2, 0)->smp) + 0.5);
             if (L > 88200) L = 88200;

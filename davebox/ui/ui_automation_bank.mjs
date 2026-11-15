@@ -31,7 +31,8 @@
 
 import { S, noteUndoUnit, armBankDisplay } from './ui_state.mjs';
 import { BANK_AUTOMATION, BANK_SOUND, BANK_MACROS, PAD_MODE_DRUM, midiTargetIsMidi, SEQ_AUTO_TARGETS, AU_AUTO_BANK, auAutoBank } from './ui_constants.mjs';
-import { openWave, closeAudioPanel } from './ui_audio_editor.mjs';
+import { openWave, closeAudioPanel, slcPageForLane } from './ui_audio_editor.mjs';
+import { isSlicerTrack } from './ui_audio.mjs';
 import { soundOpen, soundExit, soundJumpToParam, soundEditorComp, soundAutoAddLane, soundLaneFocusRow, soundLevelValueText } from './ui_sound.mjs';
 import { readBankParams } from './ui_dsp_bridge.mjs';
 import { effectiveClip } from './ui_leds.mjs';
@@ -1073,6 +1074,7 @@ export function autoHoldJumpBegin(absStep) {
         /* An Audio clip's sound: SAMPLE (or SLICES, for ALL SLICES') over the
          * AUTOMATION bank, for as long as the step is held (its knobs lock it). */
         openWave(cy.t, sat.bank === AU_AUTO_BANK ? 'sample' : 'slices');
+        if (S.auEditor && isSlicerTrack(cy.t)) S.auEditor.page = slcPageForLane(sat.field, sat.bank === AU_AUTO_BANK);
         holdJump = { track: cy.t, clip: cy.c, bank: BANK_AUTOMATION, wave: true, altWas: !!S.altMode, knobAltWas: S.knobAlt, sel: a.sel,
                      opsSel: a.ops ? a.ops.sel : -1, cycle: Object.assign({}, cy), step: absStep };
         return true;

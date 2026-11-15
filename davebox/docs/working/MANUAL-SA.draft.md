@@ -138,7 +138,7 @@ sequences them:
 | **Melodic** | Scale-snapped notes on the pads and steps — see [Melodic Clips](#6-melodic-clips) |
 | **Drum** | The pads become 32 drum lanes, each its own step sequence — see [Drum Clips](#7-drum-clips) |
 | **Audio** | Each clip plays its own sample, in time with the project — see [Audio](#75-audio) |
-| **Slicer** | One sample for the track, cut into chops you play and sequence from the pads — see [Audio](#75-audio) |
+| **Slicer** | One sample for the track, cut into slices you play and sequence from the pads — see [Audio](#75-audio) |
 | **Conductor** | Plays no notes of its own; it transposes the other tracks live — see [The Conductor](#12-the-conductor) |
 
 ## Coming from Move
@@ -581,7 +581,7 @@ A track's **type** sets how you enter notes into it and how it sequences them.
 | Melodic | **Mode → Melodic** | Scale-snapped notes on the pads and steps — [Melodic Clips](#6-melodic-clips) |
 | Drum | **Mode → Drums** | 32 drum lanes, each its own step sequence — [Drum Clips](#7-drum-clips) |
 | Audio | **Instmt/Dest → Audio** | A sample per clip, played with the clip — [Audio](#75-audio) |
-| Slicer | **Instmt/Dest → Slicer** | One sample, chopped, the clips sequences of chops — [Audio](#75-audio) |
+| Slicer | **Instmt/Dest → Slicer** | One sample, chopped, the clips sequences of slices — [Audio](#75-audio) |
 | Conductor | **Instmt/Dest → Conductor** | Plays no notes of its own; transposes the other tracks — [The Conductor](#12-the-conductor) |
 
 - **Melodic** and **Drums** are the **Mode** row of the track's TRACK CONFIG
@@ -610,7 +610,7 @@ velocity) and **resets the sequencer effects** (NOTE FX, HARMONY, DELAY, SEQ ARP
   the Conductor; trying on a second track says which track already is. Choosing an
   instrument turns a Conductor back into a melodic track, without asking.
 - **Choosing Audio or Slicer** clears the track's notes (they were pitches, and on a
-  Slicer a pitch is a chop), asking first if there are any. The track's instrument
+  Slicer a pitch is a slice), asking first if there are any. The track's instrument
   goes and its effects stay; it plays through the track's own Schwung slot — a Move
   track takes one.
 - **Choosing Audio on a track that plays an instrument and has clips** first asks
@@ -1214,7 +1214,7 @@ Two kinds of track play samples instead of sending notes — choose either in th
 | Kind | What it is |
 |---|---|
 | **Audio** | **Each clip holds its own sample** and plays it with the clip — set and forget, locked to the clip's playhead and kept in time with the project. For loops, stems, whole recordings. |
-| **Slicer** | **One sample for the whole track**, cut into **chops** you play, sequence and rearrange from the pads. Every clip of the track plays the same chops: a clip is a step sequence of chops. For breaks, and for chopping up anything. |
+| **Slicer** | **One sample for the whole track**, cut into **slices** you play, sequence and rearrange from the pads. Every clip of the track plays the same slices: a clip is a step sequence of slices. For breaks, and for chopping up anything. |
 
 Both play through the track's own Schwung slot, so its effects, fader, pan, sends and mute
 apply. Nothing on either receives MIDI.
@@ -1253,47 +1253,156 @@ Audio clip has no sequence, so no STEP, NOTE FX or PAD MODE bank.
 
 ### Slicer tracks
 
-A Slicer holds **one sample and its chops**, the same for every clip. Its clips are
-sequences: each step holds one chop, placed and recorded as on any track — **hold a step
-+ tap a pad** places that chop. One chop plays at a time: a new chop cuts the last —
+A Slicer holds **one sample and its slices**, the same for every clip. Its clips are
+sequences: each step holds one slice, placed and recorded as on any track — **hold a step
++ tap a pad** places that slice. One slice plays at a time: a new slice cuts the last —
 unless it's the next piece of the sample, reached right where the last one has got to,
-which simply plays on. Every chop plays at one level (velocity is ignored); for more voices
-or velocity, **Convert to kit** (below) and play it on a drum track.
+which simply plays on. Every slice plays at one level (velocity is ignored); for more voices
+or velocity, **Convert to kit** (below) and play it on a drum track. *Chopping* is what you
+do to a sample; a *slice* is a piece it makes.
 
-**Each step has its own sound.** Hold a step: **K2 Pitch** (±24 semitones), **K3 Length**
-— how much of its chop the step plays, 100 % being all of it — with **Start** behind it
-(touch K3 + click), where in the chop it begins, and **K4 Reverse**. So one chop can play
-whole on one step, just its tail reversed on the next, and an octave up on a third. A step
-left at 100 % / 0 % / Off plays the chop as it is. These stay with the step through every
-edit, copy and Undo, a ratchet repeats them, and a pad played by hand always plays the chop
-as it is.
+**Each step has its own sound.** Hold a step: **K2 Pitch** (±24 semitones, on top of the
+slice's own), **K3 Length** — how much of its slice the step plays, 100 % being all of it —
+with **Start** behind it (touch K3 + click), where in the slice it begins, and **K4 Dir**:
+**Slice** (the step plays as its slice does), or the arrow **forwards** or **backwards**,
+whatever the slice says. So one slice can play whole on one step, just its tail backwards
+on the next, and an octave up on a third. A step left at 100 % / 0 % / Slice plays the
+slice as it is. These stay with the step through every edit, copy and Undo, a ratchet
+repeats them, and a pad played by hand always plays the slice as it is. REMIX's **Revrs**
+turns a step round whatever its Dir.
 
-**Loading a sample** on a Slicer cuts it into **16** even chops over the whole file. The
-steps you already have stay — they play the new chops. A Slicer takes samples up to
+**Loading a sample** doesn't chop it: it is **one slice**, from Start to End, until you
+chop it (below). The steps you already have stay. A Slicer takes samples up to
 **4 minutes**.
 
-**The pads** are the chops, in time order, 32 to a page; a chop playing, or a pad held, is
-white. Pads past the chop count are dark. A Slicer holds up to **128 chops**: **Octave Up /
-Down** shows the next or previous 32. They sit as **PAD MODE** says: **4 Rows** (8 a row
+**Start and End are the Slicer's range** (page 3 of the SLICER editor). Slices play only
+inside it: a slice crossing Start or End plays just the part inside, and a slice wholly
+outside is silent, its pad dark grey — still there to pick, and it plays again as soon as
+the range covers it. Moving the range never moves or re-cuts the slices. Every way of making
+slices stays inside the range.
+
+**The pads** are the slices, in time order, 32 to a page; a slice playing, or a pad held, is
+white. Pads past the slice count are dark. A Slicer holds up to **128 slices**: **Octave Up
+/ Down** shows the next or previous 32. They sit as **PAD MODE** says: **4 Rows** (8 a row
 from the bottom-left) or **16 Pads** (the left 4×4, then the right 4×4 — two banks, the
 right one in the colours of its partner track: 1 with 5, 2 with 6, 3 with 7, 4 with 8).
-From an external keyboard, note 36 plays chop 1.
+From an external keyboard, note 36 plays slice 1.
 
 A Slicer has its own **Tempo** (guessed when the sample loads, as an Audio clip's) and
-**Warp**: **Off** (the default) plays the chops at their own speed, as cut; **Pitch**
+**Sync**: **Off** (the default) plays the slices at their own speed, as cut; **Pitch**
 retunes them, faster or slower, by the project's tempo against the sample's Tempo — a
-break follows the project as a sped-up or slowed-down record would. A Slicer follows the
+break follows the project as a sped-up or slowed-down record would; **Warp** stretches the
+whole sample to the project's tempo at its own pitch (offered for samples up to a minute; a
+tempo change re-stretches it in the background a moment later). A Slicer follows the
 **Conductor** as any track does, by the Conductor's **RESPONDER** bank — but it starts with
 its RESPONDER off (when it becomes a Slicer, or a Conductor is made): a break isn't usually
 something to move with the key.
 
-### SAMPLE and SLICES
+### The SLICER editor
 
-**SAMPLE** is the sample's editor — the track's instrument. Open it from the bank map's
+The **SLICER** editor is a Slicer's instrument: the bank map's **SLICER** pad (where INST is
+on other tracks), the right 4×4's instrument pad, the instrument row in the track's sound
+menu, or **Shift + hold Note/Session**. It has three pages — **turn the jog** for the next
+(the header reads **1/3**, **2/3**, **3/3**). The pads pick the **slice** the knobs on pages
+1 and 2 edit.
+
+| Page | K1 | K2 | K3 | K4 | K5 | K6 | K7 | K8 |
+|---|---|---|---|---|---|---|---|---|
+| **1 SLICES** — the waveform | Start | Zoom | End | Play | Pitch | Detune | Revrs | Gain |
+| **2 SHAPE** | Attk | Decay | | | | | | |
+| **3 SAMPLE** — the whole file | Start | Zoom | End | Sync | Pitch | Detune | Tempo | Gain |
+
+**Page 1, SLICES** shows the waveform with the slices on it, the picked one bracketed, the
+audio outside the range dotted. **K1** / **K3** move the picked slice's start / end, one
+screen pixel a detent (a slice ends where the next begins, **E NEXT**; turn its end away to
+set its own). **K2** zooms. **K4–K8** are the slice's **Play** (**One** to its end, **Gate**
+as long as the step, **Thru** on to the range's End — the next slice cuts it off),
+**Pitch**, **Detune**, **Revrs** and **Gain**, each on top of the sample's. **Delete + pad**
+removes a slice (it joins the one before; slice 1 stays).
+
+**Click** (the corner brackets say so) to **enter the slice editor**: the jog moves a
+cursor through the range and a **click adds a slice** there; everything else works as
+outside. **Back** leaves it.
+
+**Page 2, SHAPE**: the slice's **Attk** and **Decay**. **Decay** falls away as a drum pad's
+does — quickly, then a long tail — and its knob is finest at the short end, 1 ms a detent.
+
+**Hold Shift** on pages 1 and 2 and **Play**, **Revrs**, **Attk** and **Decay** set **every
+slice** at once (`--` where they differ). **Pitch**, **Detune** and **Gain** do nothing with
+Shift: page 3's are the sample's, and move every slice together while keeping each slice's
+own difference.
+
+**Page 3, SAMPLE** is the whole file: a strip of the waveform over K1–K3 with the **range**
+marked on it, the audio outside it dotted. **K1** / **K3** move the range's **Start** /
+**End** (a strip pixel a detent, **Shift** a single sample); **K2** zooms the strip round the
+edge you moved last (a magnifier marks it). **K4 Sync** (above), **K5 Pitch**, **K6 Detune**,
+**K7 Tempo** (1 BPM a detent, **Shift** 0.1) and **K8 Gain** are the sample's: the base every
+slice adds its own to. Touch **Tempo** and click for **Original tempo**: the sample's Tempo
+becomes the project's.
+
+**The menus.** **Shift + click** on pages 1 and 2 opens the **SLICE** menu:
+
+- **Load sample** — the chooser (see SAMPLE, below).
+- **Even** cuts the range into equal slices: turn the jog for the count (2–128), the pads
+  lighting for each as you turn.
+- **Transient** cuts at the sample's hits: turn the jog for **Sens** — lower keeps only the
+  strongest, higher every small one — and watch the slices move on the wave; the count shows
+  top right (**128+** past the first 128).
+- **Lazy** chops by ear. Pad 1 lights white; tap it and the range plays. The next pad is
+  always the white one: tap it to drop a slice where the sample is. The slices so far stay
+  lit. It ends at the range's end, on **Back** or on a **click**. **Back** before the first
+  tap changes nothing.
+- **Clear all** — asks *Clear all slices?*; **Yes** leaves one slice, the range, as a fresh
+  load.
+- **Convert to kit** (below).
+
+In **Even** and **Transient**, **Back** keeps the cut; a **click** keeps it and goes
+straight into the slice editor at the same view, to nudge, add or remove a slice.
+
+On page 3, a **click** (or **Shift + click**) opens the **SAMPLE** menu: **Load sample**,
+**Trim** — cuts the file to the range and **keeps your slices**, each on the same sound
+(a slice wholly outside the range has no audio left and goes, its steps joining the nearest
+slice kept) — and **Normalize**. Trim and Normalize ask **New** or **Overwrite**, as on an
+Audio clip.
+
+A slice's sound settings belong to its number. **Adding or removing a slice renumbers the
+steps of every clip** of the track, so each keeps playing the same piece of the sample.
+**One Undo takes back a whole visit** to a chopping tool or the slice editor — every slice it
+made or moved, and every clip's steps with them.
+
+**Delete + click** resets the page showing: page 1 the picked slice's Play, Pitch, Detune,
+Revrs and Gain (with Shift, every slice's Play and Revrs), page 2 its Attk and Decay (with
+Shift, every slice's), page 3 the sample's Gain, Pitch and Detune. A reset takes the
+automation lanes of what it reset with it, and one **Undo** brings it all back.
+
+**Automation:** the sample's **Gain**, **Pitch**, **Detune** and **Tempo** automate as an
+Audio clip's do, and **every slice's Attack, Decay, Revrs and Play** (Shift held) — while
+such a lane plays, every slice plays at the lane's value, and on Stop each goes back to its
+own. A single slice's own sound isn't automated. A Slicer's sample is every clip's, so a
+lane only ever holds it while it plays — it never rewrites the setting.
+
+**Convert to kit** makes a Move drum rack preset from the slices: a pad for each, up to 32,
+in order. The sample is copied once into **Samples → dAVEBOx → Exported kits** and every pad
+plays its slice of it; the preset goes to **Track Presets → dBx-slice**, named after the
+project and track. Move's own drum tracks load it and play the first 16 pads (all 32 stay
+in the preset); an instrument that loads Move drum racks with more pads, such as DR32, gets
+them all. Each pad takes its slice's **Pitch**, **Detune**, **Gain**, **Attk** and **Decay**
+(with the Slicer's own Pitch, Detune and Gain under them) and **Play** (One plays the pad
+through; Gate holds it as long as you do). **Revrs** has no place in a drum pad and is left
+out. The pads cut each other off, as the slices do.
+
+The SLICER editor works as an instrument's editor: **Back** returns to the bank you were on,
+and the sequence keeps working while it is up — tap or hold steps, **Record**, and **hold a
+step + jog right** for its step page. The Shift shortcuts work here as anywhere: **Shift +
+a step** or **Shift + jog** leaves it and does what it always does.
+
+### SAMPLE
+
+**SAMPLE** is an Audio clip's editor — the track's instrument. Open it from the bank map's
 **SAMPLE** pad (where INST is on other tracks) or its instrument pad, by clicking the
 instrument row in the track's sound menu, or with the instrument shortcut
-(**Shift + hold Note/Session**). On an Audio track it follows the clip; on a Slicer it is
-the track's.
+(**Shift + hold Note/Session**). It follows the clip. (A Slicer's editor is the
+[SLICER editor](#the-slicer-editor), above.)
 
 - **No sample:** *Click to load sample* — a click opens the sample chooser.
 - **Audio:** the clip's waveform. **K1** Start · **K2** Zoom · **K3** End — both a screen
@@ -1308,12 +1417,8 @@ the track's.
   a sequence's loop does: it picks which part of the loop plays and for how long. A clip
   longer than the loop plays it once and is silent until it comes round — a 1-bar loop in a
   2-bar clip plays one bar, then rests one.
-- **Slicer:** the whole sample with its chops marked faintly, its length and chop count
-  above it; **K2** zooms. A Slicer has no Start or Length — what plays is its chops.
-
-On both, **K5** Pitch · **K6** Detune · **K8** Gain set the whole sample, and **K7** its
-**Tempo**, 1 BPM a detent (**Shift**: 0.1) — what Warp and **>Seq**'s step places follow.
-On an Audio clip **K4** is **Offset** (as on the TIME page): where in the audio the clip
+**K5** Pitch · **K6** Detune · **K8** Gain set the whole sample, and **K7** its
+**Tempo**, 1 BPM a detent (**Shift**: 0.1) — what Warp follows. **K4** is **Offset** (as on the TIME page): where in the audio the clip
 starts, marked by a small arrow on top of the waveform — stopped, the playhead rests there,
 and step 1 plays from it. The waveform itself never moves. The knob in hand reads out at the top, and the waveform is drawn at the gain it plays
 at. Zoomed in, the view stays on what you touched last.
@@ -1338,8 +1443,7 @@ of four, each setting on the same knob as on page 1 where page 1 has it:
 - **Sync** — **Grid** (the default): the clip keeps to the sequencer, fitted to the tempo;
   or **Free** (below). It works with **Loop** and **Shot** alike.
 - **Warp** — how the speed is changed: **Vintage**, **Pitch** or **Warp** (above); on a
-  Free clip **Pitch** (speed and pitch together, as a tape) or **Warp** (the time alone);
-  on a Slicer **Off** or **Pitch**.
+  Free clip **Pitch** (speed and pitch together, as a tape) or **Warp** (the time alone).
 - **Nudge** — moves the sample against the bar, 5 ms a detent (**Shift**: 1).
 - **Offset** — where in the audio the clip starts, a step (of the clip's resolution) a
   detent, read as a note value: *3/16* is three 1/16 steps in. Step 1 plays from there, and
@@ -1349,8 +1453,7 @@ of four, each setting on the same knob as on page 1 where page 1 has it:
 
 Touch **Offset**, **Tempo** or **Bars** and the clip's waveform comes up over the page while
 you hold it — Start and End, the Offset arrow, the beats — so you see what the turn does. A
-knob that does nothing on this clip reads **--**: on a Slicer, Sync, Nudge, Offset and Bars
-(what plays is its chops); on a Free clip, Bars.
+knob that does nothing on this clip reads **--**: on a Free clip, Bars.
 
 **Tempo and Bars** sit in a frame together: both describe the sample itself, not the clip.
 **Bars** is how many bars Start to End (or to the end of the sample, with End Off) lasts —
@@ -1367,9 +1470,8 @@ as you want the clip to run.
 
 **Gain, Pitch, Detune, Tempo and the CLIP bank's Dir can be automated** like any knob (see
 [Automation](#10-automation)): record them, or hold a step and turn. While a lane plays,
-the knob shows the value it is playing at and a sounding chop follows it; the setting
-comes back on Stop. A lane on Dir turns the loop round at its step. A Slicer's sample is every
-clip's, so a lane only ever holds it while it plays — it never rewrites the setting.
+the knob shows the value it is playing at and the sound follows it; the setting
+comes back on Stop. A lane on Dir turns the loop round at its step.
 
 **A Free clip** (TIME page **Sync**: **Free**) plays off the sequencer's timing. Launched
 with the clip, it plays Start to End **on its own** at the sample's own speed: the project's
@@ -1407,12 +1509,8 @@ knob there is Speed):
 A **click** on SAMPLE's waveform page opens its menu (**Shift + click** does the same):
 
 - **Load sample** — the chooser (below).
-- **Trim** — on an Audio clip, cuts the file to what the clip plays, Start for its Length
-  (Start moves to the beginning). On a Slicer, Trim is a step **before chopping**: it opens
-  its own screen — the whole sample, **K1** / **K3** a start and an end handle (a screen
-  pixel a detent, **Shift** a sample), **K2** zoom; a **click** cuts. The sample is cut to
-  the handles and chopped into 16 even chops again (the question says so if you had made
-  chops of your own); the steps stay. **Back** leaves the Trim screen.
+- **Trim** — cuts the file to what the clip plays, Start for its Length (Start moves to the
+  beginning).
 - **Normalize** — raises the file's loudest point to full scale.
 
 Trim and Normalize ask **New** (the default: a new sample, named *… trim* or *… norm*, the
@@ -1427,90 +1525,27 @@ anywhere: **Shift + a step** or **Shift + jog** leaves SAMPLE and does what it a
 into a folder. The file under the cursor plays as you rest on it (WAV or AIFF). Click a
 file to pick it: dAVEBOx **copies it into the project**, so the project keeps its sounds
 when copied or when the library changes. **None** clears the clip — on a Slicer it asks
-first (*the sample and its chops go; the steps stay*). An Audio clip takes samples up to
+first (*the sample and its slices go; the steps stay*). An Audio clip takes samples up to
 30 minutes; a Slicer up to 4. A sample longer than a minute plays from the card as it
 goes, so a long one costs little memory. Starting the transport partway through an Audio
 clip, changing Dir or moving Start or Length while it plays can leave a few
 milliseconds of silence before it comes in, on time. A sample whose file has gone reads
 *Missing: name* and stays silent.
 
-**SLICES** is a Slicer's second editor — the **SLICES** pad under CLIP on the bank map,
-joined to SAMPLE below it on the screen's map: one instrument. Both are on the right 4×4's
-shortcuts too, SLICES above SAMPLE. Page 1 is the chops, the one the pads last picked
-bracketed: **K1** / **K3** move its start / end, **K2** zooms, and a **click** opens the
-chop tools (**Even** · **Transient** · **Lazy** · **Manual** · **Convert to kit**). **K4–K8**
-are the picked chop's **Gain** · **Pitch** · **Detune** · **Revrs** · **Play** (**One** to the
-chop's end, **Gate** as long as the step). **Turn the jog** for page 2, the same as a grid,
-with **Attk** and **Decay** on K1 / K2. **Decay** falls away as a drum pad's does — quickly,
-then a long tail — and its knob is finest at the short end, 1 ms a detent. On both pages, **hold Shift** and the chop knobs set
-**every chop** at once (`--` where they differ). SAMPLE's **Pitch**, **Detune** and **Gain**
-are the base every chop adds its own to. **ALL SLICES** (Shift held) automates too:
-**Attack**, **Decay**, **Gain**, **Pitch**, **Detune**, **Rev** and **Play** — while its lane
-plays, every chop plays at the lane's value, and on Stop each goes back to its own. A single
-chop's own sound isn't automated.
-
-**Chops** are markers you make with the chop tools. Each opens the **chop editor**: the
-waveform with the chops on it, changing as you work, the pads playing them.
-
-- **Even** cuts the sample into equal chops, the count you have to begin with (16 on a
-  fresh one): turn the jog for the count (2–128), the pads lighting for each as you turn.
-- **Transient** cuts at the sample's hits: turn the jog for **Sens** — lower keeps only the
-  strongest, higher every small one (**Shift** for 5 a detent) — and watch the chops move on
-  the wave; the count shows top right (**128+** past the first 128).
-- **Lazy** chops by ear. Pad 1 lights white; tap it and the sample plays. The next pad is
-  always the white one: tap it to drop a chop where the sample is. The chops so far stay
-  lit. It ends at the sample's end, on **Back** or on a **click**. **Back** before the first
-  tap changes nothing.
-- **Manual** edits the chops you have, by hand:
-
-| Control | Does |
-|---|---|
-| **Pads** | Pick a chop, move the cursor to it and play it |
-| **K1** / **K3** | Move the selected chop's start / end, one screen pixel a detent — a single sample when zoomed all the way in. A chop ends where the next begins (**E NEXT**); turn its end away to set its own. Turned back, it stops there for a moment |
-| **K2 Zoom** | From the whole sample down to one sample a pixel |
-| **Jog** / **click** | Move the cursor (**Shift** for single samples) / add a chop there |
-| **Delete + pad** | Remove that chop: it joins the one before (chop 1's start stays) |
-| **Delete + click** | *Clear all chops?* — **Yes** leaves one chop, the whole sample |
-| **Back** | Back to SLICES |
-
-However you leave a chop editor — **Back**, a **click**, Note/Session, another track — the
-chops you made stay. A chop's sound settings belong to its number, so chop 3 keeps its
-sound. **Adding or removing a chop renumbers the steps of every clip** of the track, so
-each keeps playing the same piece of the sample. **One Undo takes back a whole visit** to a
-chop editor — every chop it made or moved, and every clip's steps with them.
-
-**Convert to kit** makes a Move drum rack preset from the chops: a pad for each, up to 32,
-in order. The sample is copied once into **Samples → dAVEBOx → Exported kits** and every pad
-plays its chop of it; the preset goes to **Track Presets → dBx-slice**, named after the
-project and track. Move's own drum tracks load it and play the first 16 pads (all 32 stay
-in the preset); an instrument that loads Move drum racks with more pads, such as DR32, gets
-them all. Each pad takes its chop's **Pitch**, **Detune**, **Gain**, **Attk** and **Decay** (with the Slicer's own Pitch, Detune and Gain under them) and
-**Play** (One plays the pad through; Gate holds it as long as you do). **Revrs** has no place
-in a drum pad and is left out. The pads cut each other off, as the chops do.
-
-The sample's settings live in SAMPLE and SLICES, as an instrument's live in its editor:
-**Back** returns to the bank you were on. The sequence keeps working while either is up: tap
-or hold steps, **Record**, and **hold a step + jog right** for its step page. On a grid page
-(any page after the first), **Delete + click** resets that page's knobs — the picked chop,
-every chop with Shift; SAMPLE's TIME back to Sync Grid, Warp Warp (a Slicer's Off), Nudge 0
-and Offset 0 (the Tempo and Bars are the sample's own and stay); or SOUND's Gain, Pitch
-and Detune. A reset takes the automation lanes of what it reset with it (every
-chop's, on Shift's page), and one **Undo** brings it all back.
-
 ### The banks
 
 | Bank | Knobs |
 |---|---|
-| **CLIP**, Slicer | As a melodic clip's (**Res**, **Strch**, **Shift**, **InQnt**, **Crop›**, **Dir**), with **>Seq›** on K8 (touch, click): one step per chop, each at its place at the sample's **Tempo**, so the clip plays the sample back as it was — now as chops you can rearrange. A clip whose length you never set grows to hold all of it (a coarser resolution past 256 steps); a length you set stays, and the chops past it wait beyond the loop's end. No Legato: a step holds one chop |
+| **CLIP**, Slicer | As a melodic clip's (**Res**, **Strch**, **Shift**, **InQnt**, **Crop›**, **Dir**), with **>Seq›** on K8 (touch, click): one step per slice, each at its place at the sample's **Tempo**, so the clip plays the sample back as it was — now as slices you can rearrange. A clip whose length you never set grows to hold all of it (a coarser resolution past 256 steps); a length you set stays, and the slices past it wait beyond the loop's end. No Legato: a step holds one slice |
 | **CLIP**, Audio | **Mode** · **Strch** · **K7 Dir**; everything else about the sample is on [SAMPLE](#75-audio)'s pages. **Dir** is a MIDI clip's: **Fwd**, **Bwd** (the sample backwards), **PPf** and **PPb** (ping-pong: a pass forwards, the next backwards, in turn — PPb starts backwards). A Shot plays one pass, so it offers Fwd and Bwd alone; a ping-pong set before plays as its first way, and comes back when you switch to Loop. **Mode** is **Loop** (the clip plays round and round) or **Shot**: a one-shot — launched, the clip plays its length once from its top, then stops, so it can be fired off like a sample; launch it again to replay it. Every other setting stays as it is when you switch. **Strch** works as a sequence's does, in audio: x2 doubles the clip's Length and the sample's Tempo — the loop plays at half speed across twice the bars; /2 the reverse. With **Bars** set, Bars double instead of the Tempo, with the same result. On a **Free** clip **Strch** x2 halves the Speed (/2 doubles it). Past 256 steps or the Tempo's range it says *BEAT STRETCH / EXPAND LIMIT* (or *COMPRESS LIMIT*). Touch **Strch** and the clip's waveform comes up over the bank while you hold it (not on a Free clip). **Delete + click** puts Mode back to Loop and Dir to Fwd |
-| **PAD MODE** (Slicer) | **Layout**: **4 Rows** or **16 Pads**, how the chops sit on the pads |
-| **LIVE ARP** | As on a melodic track, but **Step** replaces Oct: each repeat moves one chop up (or down), up to 15 |
+| **PAD MODE** (Slicer) | **Layout**: **4 Rows** or **16 Pads**, how the slices sit on the pads |
+| **LIVE ARP** | As on a melodic track, but **Step** replaces Oct: each repeat moves one slice up (or down), up to 15 |
 | **REMIX** (both) | Rearranges the loop as it plays — see [REMIX](#remix) below |
 | **NOTE FX** (Slicer) | As on a drum track — nothing that changes a pitch. **Quant** lives here only |
 
 There's no RPT GROOVE, HARMONY, SEQ ARP, DELAY or MIDI FX on either kind. The step editor's
-first knob reads **Slice n** and picks the step's chop; on a Slicer, **K2–K4** are the
-step's Pitch, Length / Start and Reverse (above).
+first knob reads **Slice n** and picks the step's slice; on a Slicer, **K2–K4** are the
+step's Pitch, Length / Start and Dir (above).
 
 ### REMIX
 
@@ -1542,7 +1577,7 @@ piece's start. The line under it names the Chop and how much of the bar the Orde
 (**6/16 MOVED**), or **OFF** while REMIX is off. It goes when you let go. On an Audio clip
 the pads follow: the 1/16 you're hearing pulses, the rest dim.
 
-**On a Slicer**, REMIX rearranges your steps bar by bar — a remixed step plays its chop
+**On a Slicer**, REMIX rearranges your steps bar by bar — a remixed step plays its slice
 reversed or pitched as the remix says, on top of its own sound. **To keep a remix**, bake
 it ([§16.1](#161-bake)): on an Audio clip that records it into a new sample, on a Slicer it
 writes the remixed steps, reversals and pitches into the clip. Either way REMIX turns off,
@@ -1554,12 +1589,13 @@ so it isn't applied twice.
 
 - An **Audio** clip onto an Audio clip carries its sample and settings.
 - An **Audio** clip onto a **Slicer that has no sample** gives the Slicer that sample: the
-  part the clip plays is cut into 16 even chops and laid on the clip's steps in order, so
-  it sounds just as the loop did — then move them around. Pitch, Detune, Gain and
-  Tempo come too; Warp Pitch stays Pitch, Warp and Vintage become Off. A Slicer that has a
+  part the clip plays becomes the Slicer's range, cut into 16 even slices and laid on the
+  clip's steps in order, so it sounds just as the loop did — then move them around. Pitch,
+  Detune, Gain and Tempo come too; Sync Pitch stays Pitch, Warp stays Warp (on a sample up
+  to a minute), Vintage becomes Off. A Slicer that has a
   sample refuses it (*CAN'T PASTE*): clear it with **None** first.
 - A **Slicer's** clip onto another Slicer's carries its steps (and its automation) — they
-  play the destination's chops.
+  play the destination's slices.
 - A **Slicer's** clip onto an **Audio** clip gives that clip the Slicer's sample; the steps
   don't come (an Audio clip has none).
 - Nothing crosses between these and a MIDI or drum track, and a **cut** stays on its own
@@ -1570,7 +1606,7 @@ clears the sample, and Undo brings it back. On a Slicer it clears the steps; the
 the track's and stays. **Shift + Delete + clip** resets it completely — on an Audio track, sample and all;
 on a Slicer the sample is the track's and stays. **Undo** covers the sample too: loading
 one, **None**, **Shift + Delete**, Resample **In place**, **Flatten track** (one Undo for every
-clip), a Trim or Normalize to a **New** sample, a visit to a chop editor, and pasting an
+clip), a Trim or Normalize to a **New** sample, a visit to a chopping tool or the slice editor, and pasting an
 Audio clip onto a Slicer each come back with one Undo. Turning a setting isn't an undo step
 of its own, and an **Overwrite** can't be undone. **Choosing another instrument** clears
 the track's steps and lets go of its samples, asking first — and one **Undo** brings it all
@@ -2199,9 +2235,9 @@ last). The bottom-left pad is an octave down.
   (below). A muted Conductor always holds them at zero.
 - Drum tracks never respond.
 - **Audio tracks** respond by playing their audio higher or lower — and so does a
-  **Slicer** with its **Cndct** switch on (off by default), never by changing which chop
+  **Slicer** with its **Cndct** switch on (off by default), never by changing which slice
   plays. The move is in semitones: with Scale Aware on, as far as the key's root moves
-  by the Conductor's degrees. On **Next** a chop takes the new pitch as it starts and an
+  by the Conductor's degrees. On **Next** a slice takes the new pitch as it starts and an
   Audio clip when it comes round; on **Now** what is sounding moves at once. An Audio
   clip in **Pitch** sync keeps its tempo's speed, so it does not move.
 
@@ -2774,7 +2810,7 @@ same, with a clean effects chain to build on.
   **In place**, [§16.6](#166-recording-audio)), and the clip starts over with it.
 - **A Slicer clip** bakes its [REMIX](#remix) first: the remixed steps — their reversals
   and pitches written onto each step's own sound — become the clip's, then NOTE FX bakes
-  over them. The chops themselves are never changed, so the Slicer's other clips sound the
+  over them. The slices themselves are never changed, so the Slicer's other clips sound the
   same.
 
 - **A melodic clip** (Track View): **Sample → Bake clip**, then choose the loop count (1× /
@@ -2784,7 +2820,7 @@ same, with a clean effects chain to build on.
   same choices. Empty clips are skipped.
 - When you bake a scene whose [Conductor](#12-the-conductor) clip has responding
   tracks, a last **Apply Conductor?** step can fold its transposition into those
-  clips. Baking a single clip never applies the Conductor. An **Audio** clip's chops
+  clips. Baking a single clip never applies the Conductor. An **Audio** clip's slices
   never move: when the Conductor holds one shift wherever the clip hears it, the
   shift goes into the clip's **Pitch** and the track stops following; when it
   changes, the clip is left alone and the track keeps following the Conductor live
@@ -3146,7 +3182,7 @@ the built-in mic when nothing is plugged in) into the active clip.
 - With **Replace**, the clip's sound is left out while you record and comes back
   after a punch-out (Rec during the pass).
 - With the speakers on and nothing plugged into line-in, the Move asks first: the mic
-  would hear the speakers. On a **Slicer**, Rec still records chops from the pads.
+  would hear the speakers. On a **Slicer**, Rec still records slices from the pads.
 
 ## 17.1 Project settings
 
@@ -3480,10 +3516,10 @@ dAVEBOx editor.
   Click a step in the **step band** to set its Iter, Prob, Ratchet, Nudge, Velocity
   and Gate, or clear it; the **Velocity** lane below edits note velocities. Drag the
   loop handles on the ruler to set the loop. Automation is edited on the device.
-- **Audio tracks:** a **Slice** clip's roll has a row per chop (**Chop 1** at the
-  bottom), and a step holds one chop, as on the device: adding one replaces what
+- **Audio tracks:** a **Slice** clip's roll has a row per slice (**Slice 1** at the
+  bottom), and a step holds one slice, as on the device: adding one replaces what
   was there. A **Loop** clip has no steps, so it shows no roll. The sample, its
-  chops and the clip's NOTE FX are edited on the device; the **Sound** view shows
+  slices and the clip's NOTE FX are edited on the device; the **Sound** view shows
   the track's effects and level.
 
 <img src="img/web-step-edit.png" alt="Editing a step from the step band, with the velocity lane below">

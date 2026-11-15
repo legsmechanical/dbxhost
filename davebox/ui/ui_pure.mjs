@@ -149,12 +149,6 @@ export function soundBankOnTrack(padMode, bank, t) {
  * drum lane since they apply per-lane").
  * Bank 0 stays each track's start and Back bank (BANK_DEFAULT); only the walk
  * moved. */
-/* An Audio track's current clip is a Slice clip (ui_audio's auClipOf and
- * auInfo, read straight from S: this module imports nothing but ui_state). */
-/* A Slicer's track (its pads are chops; Audio's show where the loop is). */
-function audioClipIsSlice(t) {
-    return !!(S.trackPadMode && S.trackPadMode[t] === PAD_MODE_SLICER);
-}
 
 export function bankCategoriesForMode(padMode, t) {
     /* AUDIO (Josh, 2026-10-27): no IN (no RPT GROOVE, no LIVE ARP, no
@@ -292,21 +286,21 @@ export function bankPadMapForMode(padMode, t) {
     const acts = BANK_MAP_ACTIONS[fam];
     for (const a in acts) {
         const p = acts[a];
-        if (a === 'slices' && !audioClipIsSlice(t)) continue;   /* a Loop clip has no slices: no SLICES pad */
+        /* a Slicer has ONE editor, SLICER, behind the instrument pad (the 2026-11-14
+         * rethink: SAMPLE and SLICES became one); a Loop clip has no slices */
+        if (a === 'slices') continue;
         if (!cols[p[0]].cells[p[1]]) cols[p[0]].cells[p[1]] = { bank: null, action: a,
-            name: (fam === 'audio' ? BANK_MAP_ACTION_NAMES_AUDIO : BANK_MAP_ACTION_NAMES)[a] };
+            name: fam === 'audio' ? (padMode === PAD_MODE_SLICER && a === 'wave' ? 'SLICER' : BANK_MAP_ACTION_NAMES_AUDIO[a])
+                                  : BANK_MAP_ACTION_NAMES[a] };
     }
     return cols;
 }
 
 /* Pads that are ONE thing, drawn as one box on the map: [{ c, r0, r1 }].
- * An Audio Slice clip's SLICES over SAMPLE (Josh, 2026-10-30: "connect the
- * sample and slice pads ... it basically says 'these are part of the same
- * instrument'"), and a drum track's DRUM LANE over ALL LANES (Josh, 2026-10-30:
- * "connect all lanes and drum lane pads in pad map like we just did with slice
- * sample"). */
+ * A drum track's DRUM LANE over ALL LANES (Josh, 2026-10-30: "connect all
+ * lanes and drum lane pads in pad map"). (A Slicer's SLICES over SAMPLE was
+ * one too, until the two became one SLICER pad: the 2026-11-14 rethink.) */
 const BANK_MAP_JOINS = {
-    audio: [(x) => x.action === 'slices', (x) => x.action === 'wave'],
     drum:  [(x) => x.bank === 0, (x) => x.bank === 7],
 };
 export function bankMapJoins(padMode, t) {
@@ -325,9 +319,10 @@ export function bankMapJoins(padMode, t) {
 export function bankPadMapActionAt(padMode, col, row) {
     const acts = BANK_MAP_ACTIONS[bankMapFamily(padMode)];
     for (const a in acts) {
-        /* SLICES is a Slicer's: on an Audio track the INPUT bank has its pad
-         * (bankPadMapForMode puts a bank first) */
-        if (a === 'slices' && padMode !== PAD_MODE_SLICER) continue;
+        /* no SLICES pad any more: a Slicer's one editor is the instrument
+         * pad's (the 2026-11-14 rethink); on an Audio track the INPUT bank
+         * has that pad (bankPadMapForMode puts a bank first) */
+        if (a === 'slices') continue;
         if (acts[a][0] === col && acts[a][1] === row) return a;
     }
     return null;
@@ -388,8 +383,8 @@ export function bankMapModuleAt(route, padMode, col, row, t) {
      * available in the right 4x4 shortcuts" · "slices above sample"); dark on
      * a Loop clip. */
     if (padSampled(padMode)) {
-        if (p.comp === 'midi_fx1') return padMode === PAD_MODE_SLICER ? Object.assign({}, p, { comp: 'slices', label: 'SLICES' }) : null;
-        if (p.comp === 'synth') return Object.assign({}, p, { label: 'SAMPLE' });
+        if (p.comp === 'midi_fx1') return null;
+        if (p.comp === 'synth') return Object.assign({}, p, { label: padMode === PAD_MODE_SLICER ? 'SLICER' : 'SAMPLE' });
         return p;
     }
     if (route === 2) return p.comp === 'midi_fx1' ? p : null;

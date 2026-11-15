@@ -205,7 +205,7 @@ export function auConvertToKit(t, c) {
      * too, rather than kit an Audio clip's unseen Even chops — found by test) */
     if (!auIsSlice(info)) { showActionPopupFor(2500, 'NO KIT', 'Not a Slicer'); return null; }
     const all = auMarks(t, c), chops = all.slice(0, KIT_PADS);
-    if (!chops.length) { showActionPopupFor(2500, 'NO KIT', 'No chops'); return null; }
+    if (!chops.length) { showActionPopupFor(2500, 'NO KIT', 'No slices'); return null; }
     const dir = String(host_module_get_param('t' + t + '_au_dir') || '');
     if (!dir) { showActionPopupFor(2500, 'NO KIT', 'No project'); return null; }
     const src = dir + '/' + info.name;

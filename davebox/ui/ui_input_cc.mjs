@@ -71,7 +71,7 @@ import { BANK_MAP_TRACK_POPUP_MS, SEQ_PAGE_POPUP_MS, seqAutoTargetForKnob, SEQ_A
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam, soundOpenModule, instrPickResume } from './ui_sound.mjs';
 import { auPurgeRun, closeAudioChooser, askClearAudioClip } from './ui_audio_chooser.mjs';
-import { isSampledTrack, isAudioTrack, audioSliceMode, auClipOf, auClipBankKnob, auClipReset, auAltBit, knobAltOnTrack, auSetLayout, auSetPage, AU_NOTE_BASE, AU_EVEN_MAX, auInfo, rmxBankKnob, rmxApplyPreset, rmxBankReset, auPageFields } from './ui_audio.mjs';
+import { isSampledTrack, isAudioTrack, isSlicerTrack, audioSliceMode, auClipOf, auClipBankKnob, auClipReset, auAltBit, knobAltOnTrack, auSetLayout, auSetPage, AU_NOTE_BASE, AU_EVEN_MAX, auInfo, rmxBankKnob, rmxApplyPreset, rmxBankReset, auPageFields } from './ui_audio.mjs';
 
 /* AUDIO's CLIP bank (Slice mode) mirrors ALL LANES over the melodic clip's
  * knobs (Josh, 2026-10-27: "it seems like clip bank should mirror all lanes
@@ -81,7 +81,7 @@ import { isSampledTrack, isAudioTrack, audioSliceMode, auClipOf, auClipBankKnob,
  * mode. Physical knob -> [bank, knob] it turns, where that is not the CLIP
  * bank's own same knob. */
 const AUDIO_SEQ_KNOB = 7;                  /* a Slicer's CLIP bank: >Seq where Import is */
-import { openWave, closeAudioPanel, slicesToSequence } from './ui_audio_editor.mjs';
+import { openWave, closeAudioPanel, slicesToSequence, slcPageForLane } from './ui_audio_editor.mjs';
 import { soundActive, soundPageBarShown, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVolGestureEnd, soundShiftEdge, soundOpenGenerator,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, macroClearConfirmAnswer,
@@ -1952,7 +1952,8 @@ function autoLaneJump() {
             if (S.auPanel) closeAudioPanel();
             openWave(t, st.bank === AU_AUTO_BANK ? 'sample' : 'slices');
             /* ...on the page its knob is on */
-            if (S.auEditor && st.bank === AU_AUTO_BANK) {
+            if (S.auEditor && isSlicerTrack(t)) S.auEditor.page = slcPageForLane(st.field, st.bank === AU_AUTO_BANK);
+            else if (S.auEditor && st.bank === AU_AUTO_BANK) {
                 const pg = [0, 1, 2].find((p) => auPageFields(p).includes(st.field));
                 if (pg != null) S.auEditor.page = pg;
             }
@@ -3849,7 +3850,7 @@ function _onCC_transport(d1, d2) {
         if (isSampledTrack(S.activeTrack)) {
             /* Audio: the next pad page of chops, as a drum track's lane page */
             if (auSetPage(S.activeTrack, (S.auPage[S.activeTrack] | 0) + 1))
-                showActionPopup('CHOPS', ((S.auPage[S.activeTrack] | 0) * 32 + 1) + '-' + ((S.auPage[S.activeTrack] | 0) * 32 + 32));
+                showActionPopup('SLICES', ((S.auPage[S.activeTrack] | 0) * 32 + 1) + '-' + ((S.auPage[S.activeTrack] | 0) * 32 + 32));
             computePadNoteMap();
             forceRedraw();
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
@@ -3875,7 +3876,7 @@ function _onCC_transport(d1, d2) {
     if (d1 === MoveDown && d2 > 0 && !S.sessionView && !S.sessionOverlayHeld) {
         if (isSampledTrack(S.activeTrack)) {
             if (auSetPage(S.activeTrack, (S.auPage[S.activeTrack] | 0) - 1))
-                showActionPopup('CHOPS', ((S.auPage[S.activeTrack] | 0) * 32 + 1) + '-' + ((S.auPage[S.activeTrack] | 0) * 32 + 32));
+                showActionPopup('SLICES', ((S.auPage[S.activeTrack] | 0) * 32 + 1) + '-' + ((S.auPage[S.activeTrack] | 0) * 32 + 32));
             computePadNoteMap();
             forceRedraw();
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
@@ -4926,10 +4927,10 @@ function _onCC_stepedit(d1, d2) {
               S.stepEditGate = Math.max(1, Math.min(_gmaxD, _nv)); }
             host_module_set_param(pfx + '_gate', String(S.stepEditGate));
         } else if (knobIdx === 3 && isSampledTrack(t)) {
-            /* a Slicer step's Reverse: a toggle, turned deliberately */
+            /* a Slicer step's Dir: Slice · Fwd · Rev, turned deliberately */
             const _st = knobStep(knobIdx, d2, KNOB_DELIB);
             if (!_st) return;
-            const _v = _st > 0 ? 1 : 0;
+            const _v = Math.max(0, Math.min(2, (S.stepEditXrev | 0) + (_st > 0 ? 1 : -1)));
             if (_v !== S.stepEditXrev) { S.stepEditXrev = _v; host_module_set_param(pfx + '_xrev', String(_v)); }
         } else if (knobIdx === 3) {
             /* K4 Vel: velocity 0-127, cont accel */

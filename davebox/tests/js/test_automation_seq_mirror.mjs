@@ -68,7 +68,7 @@ function load(list) {
     const rows = [...body.matchAll(/\{\s*"([a-zA-Z0-9_]+)",\s*(-?\d+),\s*(-?\d+),\s*PA_SEQ_(MELODIC|DRUM|AUDIO)\s*(?:,\s*([01])\s*)?\}/g)]
         .map(m => ({ key: m[1], min: +m[2], max: +m[3], mode: m[4], stepped: m[5] === '1' }));
     check(rows.length > 20, 'rig: the engine table was found (' + rows.length + ' rows)');
-    check(rows.filter(r => r.mode === 'AUDIO').length === 12, 'rig: the twelve Audio rows were parsed');
+    check(rows.filter(r => r.mode === 'AUDIO').length === 9, 'rig: the nine Audio rows were parsed (the sample\'s five, every slice\'s four)');
     check(rows.some(r => r.stepped) && rows.some(r => !r.stepped), 'rig: the stepped column was parsed (both kinds seen)');
     const ours = Object.values(SEQ_AUTO_TARGETS).filter(t => t.automatable !== false);
     check(Object.values(SEQ_AUTO_TARGETS).some(t => t.automatable === false),

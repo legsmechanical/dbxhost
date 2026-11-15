@@ -28,7 +28,7 @@ import { chordLayoutOn, chordPadColor } from './ui_chord_pads.mjs';
 import { pianoLayoutOn } from './ui_drummodel.mjs';
 import { customLayoutOn, customPadColor } from './ui_custom_chords.mjs';
 import { setLED, setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
-import { isSampledTrack, auInfo, auClipOf, auPos, auPlayheadChop, auPadToSlice, auLayoutOn, auLoopMarks, AU_LOOP_SECTIONS, auEnd, auSelSlice, auLazyOpen, auLazyState,
+import { isSampledTrack, auInfo, auClipOf, auPos, auPlayheadChop, auPadToSlice, auLayoutOn, auLoopMarks, AU_LOOP_SECTIONS, auEnd, auSelSlice, auLazyOpen, auLazyState, auSliceHeard, auMarks,
          auIsSlice, auIsLoop, AU_LAZY_ARMED, AU_LAZY_RUN, AU_NOTE_BASE, auPlayRev } from './ui_audio.mjs';
 
 const lastSentNoteLED   = new Array(128).fill(-1);
@@ -993,6 +993,7 @@ export function updateTrackLEDs() {
             const ph = slice ? -1 : auPlayheadChop(t);
             const sel = auSelSlice(t);
             const mk = !slice && ai.state === 2 ? auLoopMarks(ai, t, auClipOf(t)) : null;
+            const sliceMk = slice && ai.state === 2 ? auMarks(t, auClipOf(t)) : [];
             const reach = ai.reach >= 0 && ai.reach < auEnd(ai) - ai.rstart;
             /* never played: a section of the clip past the file's end, or
              * past where the clip comes round (Josh, 2026-10-29: "sections
@@ -1042,8 +1043,11 @@ export function updateTrackLEDs() {
                      * a held step's notes (Josh, 2026-11-11: "the slice on the
                      * step doesn't light up like it does for midi tracks") */
                     const inHeld = S.heldStep >= 0 && S.heldStepNotes.indexOf(AU_NOTE_BASE + k) >= 0;
+                    /* a slice the range hides (a hard edge — Josh, 2026-11-15):
+                     * dark grey, still there to pick (and to move back) */
+                    const hidden = k < ai.n && !!sliceMk[k] && !auSliceHeard(ai, sliceMk[k]);   /* (not read yet: heard) */
                     if (k < ai.n) color = ((ap.t === t && ap.on && ap.slice === k) || S.auPadDown[i] || inHeld) ? White
-                        : k === sel ? (right ? trackColor(pt) : tc) : (right ? trackDimColor(pt) : td);
+                        : k === sel ? (right ? trackColor(pt) : tc) : hidden ? DarkGrey : (right ? trackDimColor(pt) : td);
                 } else if (k < AU_LOOP_SECTIONS) {
                     /* a Loop clip that wraps before the sample ends:
                      * the chops it never reaches grey (Josh, 2026-10-28: "you

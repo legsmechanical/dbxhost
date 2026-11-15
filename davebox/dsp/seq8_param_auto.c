@@ -241,13 +241,13 @@ static const pa_seq_def_t pa_seq_defs[] = {
     /* ALL SLICES (SLICES with Shift): every chop held at the lane's value,
      * live, over its own; rest only lets go (the chops keep what differs).
      * Decay's 5001 is Full (decay_ms 0), at the dial's top as on the knob. */
+    /* ALL SLICES: the four a Shift turn sets on every slice — Pitch, Detune
+     * and Gain are the sample's to move (its own lanes), keeping each
+     * slice's difference (Josh, 2026-11-15) */
     { "au_s_atk",                  0, 2000, PA_SEQ_AUDIO },
     { "au_s_dec",                  5, 5001, PA_SEQ_AUDIO },
-    { "au_s_gain",               -40,   12, PA_SEQ_AUDIO },
-    { "au_s_pitch",              -24,   24, PA_SEQ_AUDIO },
-    { "au_s_detune",             -50,   50, PA_SEQ_AUDIO },
     { "au_s_rev",                  0,    1, PA_SEQ_AUDIO, 1 },
-    { "au_s_play",                 0,    1, PA_SEQ_AUDIO, 1 },      /* One / Gate (Loop left: Josh, 2026-11-02) */
+    { "au_s_play",                 0,    2, PA_SEQ_AUDIO, 1 },      /* One / Gate / Thru */
     { "all_lanes_playback_dir",    0,    3, PA_SEQ_DRUM, 1 },
 };
 _Static_assert(AU_BPM10_MIN == 1 && AU_BPM10_MAX == 9999, "au_bpm's row is AU_BPM10_MIN..MAX");
@@ -255,8 +255,9 @@ _Static_assert(AU_BPM10_MIN == 1 && AU_BPM10_MAX == 9999, "au_bpm's row is AU_BP
 #define PA_SEQ_IDX_CLIP_DIR  0
 #define PA_SEQ_IDX_LANES_DIR (PA_SEQ_COUNT - 1)
 #define PA_SEQ_IDX_AU        26                /* au_pitch; the clip's five run to au_bpm, */
-#define PA_SEQ_IDX_AUS       31                /* ...then ALL SLICES' seven, au_s_atk .. au_s_play */
-#define PA_SEQ_IS_AU(i)      ((i) >= PA_SEQ_IDX_AU && (i) < PA_SEQ_IDX_AUS + 7)
+#define PA_SEQ_IDX_AUS       31                /* ...then ALL SLICES' four, au_s_atk .. au_s_play */
+#define PA_SEQ_N_AUS         4
+#define PA_SEQ_IS_AU(i)      ((i) >= PA_SEQ_IDX_AU && (i) < PA_SEQ_IDX_AUS + PA_SEQ_N_AUS)
 
 static void pfx_set(seq8_instance_t *inst, seq8_track_t *tr,
                     clip_pfx_params_t *cp, const char *key, const char *val);
@@ -298,10 +299,7 @@ static int pa_seq_read(const seq8_instance_t *inst, const seq8_track_t *tr, int 
             switch (idx - PA_SEQ_IDX_AUS) {
             case 0:  return se.attack_ms;
             case 1:  return se.decay_ms ? se.decay_ms : 5001;
-            case 2:  return se.gain_db;
-            case 3:  return se.pitch;
-            case 4:  return se.detune;
-            case 5:  return se.rev;
+            case 2:  return se.rev;
             default: return se.play;
             }
         }
@@ -356,19 +354,15 @@ static void pa_au_apply(seq8_instance_t *inst, int track, int clip, int f, int v
     if (f >= PA_SEQ_IDX_AUS - PA_SEQ_IDX_AU) {
         /* ALL SLICES: rest lets go and writes nothing — the chops' own
          * settings may differ, and one value would flatten them */
-        static const uint8_t sbit[7] = { AU_OVS_ATK, AU_OVS_DEC, AU_OVS_GAIN, AU_OVS_PITCH,
-                                         AU_OVS_DETUNE, AU_OVS_REV, AU_OVS_PLAY };
+        static const uint8_t sbit[PA_SEQ_N_AUS] = { AU_OVS_ATK, AU_OVS_DEC, AU_OVS_REV, AU_OVS_PLAY };
         int g = f - (PA_SEQ_IDX_AUS - PA_SEQ_IDX_AU);
         if (is_rest) { cl->ovs &= (uint8_t)~sbit[g]; return; }
         if (!live) return;
         switch (g) {
         case 0: cl->ovs_atk = (uint16_t)v; break;
         case 1: cl->ovs_dec = (uint16_t)(v >= 5001 ? 0 : v); break;
-        case 2: cl->ovs_gain = (int8_t)v; break;
-        case 3: cl->ovs_pitch = (int8_t)v; break;
-        case 4: cl->ovs_detune = (int8_t)v; break;
-        case 5: cl->ovs_rev = (uint8_t)(v ? 1 : 0); break;
-        default: cl->ovs_play = (uint8_t)v; break;
+        case 2: cl->ovs_rev = (uint8_t)(v ? 1 : 0); break;
+        default: cl->ovs_play = (uint8_t)(v > AU_PLAY_MAX ? AU_PLAY_MAX : v); break;
         }
         cl->ovs |= sbit[g];
         return;

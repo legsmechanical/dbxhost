@@ -52,15 +52,39 @@ export function auSyncIdx(i) { const k = AU_SYNC_VALS.indexOf(i.sync | 0); retur
 /* A Slicer's Sync (Josh, 2026-11-02): Off — its chops at their own speed —
  * or Pitch, retuned by the project's tempo over the sample's own. The
  * engine's values are the indexes. (Snap is parked.) */
-export const AU_SLC_SYNC_NAMES = ['Off', 'Pitch'];
-const AU_SLC_SYNC_SQ = ['Off', 'Ptch'];
-/* The Sync cell for clip c of track t: the Slicer's two, Audio's three. */
+/* A Slicer's Sync (Josh, 2026-11-14: "off/PITCH/warp" · "it should be named
+ * sync, not follow"): its slices at their own speed, retuned by the tempo, or
+ * stretched to it at their own pitch — Warp pre-stretches the whole sample,
+ * offered up to AU_SLC_WARP_MAX_SEC. Engine values 0 / 1 / 3 (2 is Snap's). */
+export const AU_SLC_SYNC_NAMES = ['Off', 'Pitch', 'Warp'];
+export const AU_SLC_SYNC_VALS = [0, 1, 3];
+const AU_SLC_SYNC_SQ = ['Off', 'Ptch', 'Warp'];
+export const AU_SLC_WARP_MAX_SEC = 60;
+export function auSlcSyncIdx(i) { const k = AU_SLC_SYNC_VALS.indexOf(i.sync | 0); return k < 0 ? 0 : k; }
+/* Warp is offered for a sample up to a minute (Josh, 2026-11-15) */
+export function auSlcWarpOk(i) { return !!i && (i.nframes | 0) > 0 && (i.nframes | 0) <= (i.rate || 44100) * AU_SLC_WARP_MAX_SEC; }
+export function auSlcSyncCell(i) {
+    const k = auSlcSyncIdx(i), ok = auSlcWarpOk(i);
+    const opts = ok ? AU_SLC_SYNC_NAMES : AU_SLC_SYNC_NAMES.slice(0, 2);
+    return { kind: 'enumsq', label: 'Sync', name: 'Sync: Off · Pitch · Warp', text: AU_SLC_SYNC_NAMES[k], sq: AU_SLC_SYNC_SQ[k],
+             options: opts, sel: Math.min(k, opts.length - 1) };
+}
+/* A turn on the Slicer's Sync: Off · Pitch · Warp (Warp only where offered). */
+export function auSlcSyncTurn(t, c, steps) {
+    const i = auInfo(t, c);
+    if (i.state !== 2 || !steps) return false;
+    const top = auSlcWarpOk(i) ? 2 : 1;
+    const k = Math.max(0, Math.min(top, auSlcSyncIdx(i) + (steps > 0 ? 1 : -1)));
+    const v = AU_SLC_SYNC_VALS[k];
+    if (v === (i.sync | 0)) return false;
+    auSet(t, c, 'sync', v);
+    S.auInfo[t][c] = Object.assign({}, i, { sync: v });
+    S.auStartsRev = (S.auStartsRev | 0) + 1;
+    return true;
+}
+/* The Sync cell for clip c of track t: the Slicer's three, Audio's three. */
 function syncCell(t, i) {
-    if (isSlicerTrack(t)) {
-        const k = (i.sync | 0) === 1 ? 1 : 0;
-        return { kind: 'enumsq', label: 'Warp', name: 'Warp: Off · Pitch', text: AU_SLC_SYNC_NAMES[k], sq: AU_SLC_SYNC_SQ[k],
-                 options: AU_SLC_SYNC_NAMES, sel: k };
-    }
+    if (isSlicerTrack(t)) return auSlcSyncCell(i);
     return { kind: 'enumsq', label: 'Warp', name: 'Warp: Vintage · Pitch · Warp',
              text: AU_SYNC_NAMES[auSyncIdx(i)], sq: AU_SYNC_SQ[auSyncIdx(i)], options: AU_SYNC_NAMES, sel: auSyncIdx(i) };
 }
@@ -155,7 +179,7 @@ export function auOffsetFrame(t, c, i) {
 export const AU_NOTE_BASE = 0, AU_PAGE = 32, AU_EXT_BASE = 36;
 export const AU_LAYOUT_NAMES = ['4 Rows', '16 Pads'];
 export const AU_LAZY_NONE = 0, AU_LAZY_ARMED = 1, AU_LAZY_RUN = 2, AU_LAZY_ENDED = 3;
-export const AU_PLAY_NAMES = ['One', 'Gate'];   /* the engine's two (sp_track_audio.c clamps to Gate) */
+export const AU_PLAY_NAMES = ['One', 'Gate', 'Thru'];   /* the engine's three (AU_PLAY_*): Thru plays on to the range's End */
 export const AU_ERR_TEXT = ['', "Can't read file", 'Not WAV / AIFF', 'Too long', 'Out of memory', "Can't copy", 'Nothing to raise'];
 export const AU_SLICE_MAX_SEC = 240;      /* the engine's Slice limit (seq8_audio.h): 4 minutes */
 
@@ -263,13 +287,15 @@ export function auParseInfo(raw) {
          * off the clip's timing, at Speed (per mille of the sample's own) */
         free: head.length > 29 ? head[29] : 0,
         speed: head.length > 30 ? head[30] : 1000,
+        /* a Slicer not chopped yet: its one slice is the range, Start..End */
+        whole: head.length > 31 ? head[31] : 0,
         name: bar >= 0 ? String(raw).slice(bar + 1) : '',
     };
 }
 
 const DEFAULT_INFO = { state: 0, err: 0, mode: 0, even: 16, hand: 1, n: 16, rstart: 0, rend: 0,
-                       pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, dir: 0, nudge: 0, sync: 0, reach: -1, bpm10: 0, hits: 0, sens: 50, trans: 0, slen: 0, shot: 0, cut: 0, span: 0, free: 0, speed: 1000, name: '' };
-const DEFAULT_SLICE = { a: 0, b: 0, pinned: 0, pitch: 0, detune: 0, gain: 0, rev: 0, play: 0, atk: 0, dec: 0 };
+                       pitch: 0, detune: 0, gain: 0, nframes: 0, rate: 0, ch: 0, dir: 0, nudge: 0, sync: 0, reach: -1, bpm10: 0, hits: 0, sens: 50, trans: 0, slen: 0, shot: 0, cut: 0, span: 0, free: 0, speed: 1000, whole: 0, name: '' };
+const DEFAULT_SLICE = { a: 0, b: 0, pinned: 0, pitch: 0, detune: 0, gain: 0, rev: 0, play: 0, atk: 0, dec: 0, heard: 1 };
 
 /* A Free clip (Josh, 2026-11-13: "a mode ... irrespective of the sequencer's
  * timing" · "why not keep sync? it'd basically allow pitch and time to work
@@ -402,7 +428,8 @@ function auReadSlice(t, c, l) {
     const raw = dspGet('t' + t + '_au_sl_' + c + '_' + l);
     const v = String(raw || '').trim().split(/\s+/).map((x) => parseInt(x, 10));
     if (v.length < 9 || v.some((x) => isNaN(x))) return null;
-    const r = { a: v[0], b: v[1], pinned: v[2], pitch: v[3], gain: v[4], rev: v[5], play: v[6], atk: v[7], dec: v[8], detune: v[9] | 0 };
+    const r = { a: v[0], b: v[1], pinned: v[2], pitch: v[3], gain: v[4], rev: v[5], play: v[6], atk: v[7], dec: v[8], detune: v[9] | 0,
+                heard: v.length > 10 ? v[10] : 1 };   /* a b: where it lies; heard 0: the range hides it */
     _sl.set(t + '_' + c + '_' + l, r);
     return r;
 }
@@ -950,7 +977,7 @@ const soundCell = {
  * Decay on page 2's K1 / K2 where page 1 has Start and Zoom. */
 export const SLICE_GRID = ['atk', 'dec', null, 'gain', 'pitch', 'detune', 'rev', 'play'];
 /* ALL SLICES' automation lanes (ui_constants AU_SLICES_KEYS), cleared by its reset */
-const AU_SLICES_LANES = ['au_s_atk', 'au_s_dec', 'au_s_gain', 'au_s_pitch', 'au_s_detune', 'au_s_rev', 'au_s_play'];
+const AU_SLICES_LANES = ['au_s_atk', 'au_s_dec', 'au_s_rev', 'au_s_play'];
 
 export function auPanelCells(ed) {
     const t = ed.t, c = auClipOf(t), i = auInfo(t, c);
@@ -1282,7 +1309,8 @@ export function auFmtLen(ticks) {
 /* Where the clip ends in the file at its Tempo (the engine re-reads it; this is
  * the screen's until then). */
 export function auPlayedEnd(t, c, i) {
-    if (auIsSlice(i) && !(i.slen > 0)) return i.nframes;
+    /* a Slicer: its range's End (frames; 0 = the file's end) */
+    if (auIsSlice(i)) return i.cut > 0 ? Math.min(i.cut, i.nframes) : i.nframes;
     if (auIsFree(i)) return i.cut > 0 ? Math.min(i.cut, i.nframes) : i.nframes;   /* all of Start..End */
     const e = Math.min(i.nframes, Math.round(i.rstart + auLenTicks(t, c, i) * auFpt(i)));
     return !auIsSlice(i) && i.cut > 0 ? Math.min(e, i.cut) : e;
@@ -1290,7 +1318,7 @@ export function auPlayedEnd(t, c, i) {
 /* A clip's Length in ticks: a Loop clip's own, Slice's slen (0 = to the end) */
 export function auLenTicks(t, c, i) {
     if (!auIsSlice(i)) return (S.clipLength[t][c] | 0 || 16) * (S.clipTPS[t][c] || 24);
-    return i.slen > 0 ? i.slen : Math.max(0, Math.round((i.nframes - i.rstart) / auFpt(i)));
+    return Math.max(0, Math.round((auPlayedEnd(t, c, i) - i.rstart) / auFpt(i)));
 }
 
 /* One knob step on the AUDIO editor. Returns true when something changed. */
@@ -1724,11 +1752,8 @@ export function auSampleP2Knob(t, c, k, steps) {
     const i = auInfo(t, c);
     if (i.state !== 2 || !steps) return false;
     const loc = Object.assign({}, i);
-    if (k === 1 && isSlicerTrack(t)) {
-        const v = steps > 0 ? 1 : 0;
-        if (v === ((i.sync | 0) === 1 ? 1 : 0)) return false;
-        loc.sync = v; auSet(t, c, 'sync', v);
-    } else if (k === 1 && auIsFree(i)) {
+    if (k === 1 && isSlicerTrack(t)) return auSlcSyncTurn(t, c, steps);
+    else if (k === 1 && auIsFree(i)) {
         /* Free: Pitch · Warp */
         const v = steps > 0 ? 0 : 2;
         if (v === ((i.sync | 0) === 2 ? 2 : 0)) return false;
@@ -1755,20 +1780,6 @@ export function auEdit(t, c, op, ow) {
     auMarkStale(t, c);
     return true;
 }
-/* A Slicer's Trim (Josh, 2026-11-02: "Trim is a destructive operation so it
- * has to be something you do pre chop"): frames a..b of its sample into a new
- * one (or `ow` over the project's copy), chopped 16 even after (the engine);
- * the steps stay. */
-export function auEditTrim(t, a, b, ow) {
-    const i = auInfo(t, AU_SLC);
-    if (i.state !== 2 || !(b > a) || (a <= 0 && b >= i.nframes)) return false;
-    if (!ow) noteUndoUnit();
-    _editWatch.set(t + '_' + AU_SLC, 'TRIM');
-    setKey(t, 'edit', AU_SLC + ' 0 ' + (ow ? 1 : 0) + ' ' + Math.round(a) + ' ' + Math.round(b));
-    S.auInfo[t][AU_SLC] = Object.assign({}, i, { state: 1 });
-    auMarkStale(t, AU_SLC);
-    return true;
-}
 /* Whether Trim would cut anything: the clip plays less than the whole file */
 export function auTrimCuts(t, c) {
     const i = auInfo(t, c);
@@ -1787,6 +1798,31 @@ export function auSampleReset(t, c) {
     S.auStartsRev = (S.auStartsRev | 0) + 1;
     return true;
 }
+/* A Slicer page's Delete + click: `fields` of the picked slice — or, `all`,
+ * of every slice — back to their defaults. True when something was set. */
+export function auSlicerReset(t, c, fields, all) {
+    const i = auInfo(t, c);
+    if (i.state !== 2 || !fields.length) return false;
+    const l = auSelSlice(t);
+    if (!all && l >= i.n) return false;
+    auResetUndo(t, c);
+    for (const f of fields) {
+        if (all) auSetAll(t, c, f, DEFAULT_SLICE[f]);
+        else auSetSlice(t, c, l, f, DEFAULT_SLICE[f]);
+    }
+    _all.delete(t + '_' + c);
+    for (const k of _sl.keys()) if (k.startsWith(t + '_' + c + '_')) _sl.delete(k);
+    S.screenDirty = true;
+    return true;
+}
+/* Whether slice k of a Slicer is heard: inside the range (a hard edge — Josh,
+ * 2026-11-15), from where it lies (auMarks) and the range. */
+export function auSliceHeard(i, m) {
+    if (!m) return false;
+    const rs = i.rstart | 0, re = auPlayedEnd(-1, -1, i);
+    return m[1] > rs && m[0] < re;
+}
+
 /* TIME back to its defaults: Sync Grid, Warp Warp (a Slicer's Off), Nudge 0,
  * Offset 0. Tempo and Bars are the sample's own, not settings with a default:
  * they stay. True when anything changed. */
