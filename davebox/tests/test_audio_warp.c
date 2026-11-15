@@ -570,7 +570,13 @@ int main(void) {
         hx_set_param(h, "transport", "play");
         for (k = 0; k < 150; k++) step(h);
         hx_set_param(h, "t4_au_clear", "0");
+        /* the release is the thread's: on a loaded machine (the hook, CI) it
+         * can lag a fixed 400 blocks, so wait for it — 400 blocks, then a
+         * while at most — rather than for a count (it failed 4 in 6 at load 5) */
         for (k = 0; k < 400; k++) step(h);
+        for (k = 0; k < 4000 && (__atomic_load_n(&X->trk[4]->held, __ATOMIC_RELAXED) || X->trk[4]->cmd.smp); k++) {
+            step(h); usleep(1000);
+        }
         HX_ASSERT(!__atomic_load_n(&X->trk[4]->held, __ATOMIC_RELAXED) && !X->trk[4]->cmd.smp,
                   "the stretcher still holds a cleared sample");
         hx_set_param(h, "transport", "stop");
