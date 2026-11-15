@@ -1397,7 +1397,9 @@ takes its slice's own **Pitch**, **Detune**, **Gain**, **Attk** and **Decay**, a
 (One plays the pad through, Thru on to the range's end; Gate holds it as long as you do). A
 slice set to **Revrs** plays from a second file, the resample reversed (`… rev`), so a kit
 holds at most two. A slice crossing Start or End keeps only the part inside, as it plays.
-The pads cut each other off, as the slices do.
+The pads cut each other off, as the slices do. Unlike a slice, a pad responds to velocity, as
+a stock kit's does: a full-velocity hit is the slice's level, softer hits quieter. Turning a
+pad's velocity amount up past that can clip on hard hits, as it can on any Move kit.
 
 The SLICER editor works as an instrument's editor: **Back** returns to the bank you were on,
 and the sequence keeps working while it is up — tap or hold steps, **Record**, and **hold a

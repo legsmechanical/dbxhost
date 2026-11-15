@@ -39,7 +39,12 @@
  *   range's End, backwards down to Start), Gate -> Gate (A-S-R) · Revrs ->
  *   the reversed file, the region mirrored.
  * Every pad is in choke group 1: a Slicer plays one slice at a time.
- * Velocity does nothing to a slice, so Vel>Vol is 0.
+ * Velocity: a slice ignores it, but a pad responds as a stock kit's does —
+ * Vel>Vol at Move's 0.35 — with its Volume set so a velocity-127 hit is the
+ * slice's own level (Josh, 2026-11-15, picking it over a stock kit's
+ * -12 dB). The drum cell's law, 10^((vel-70) x amount x 0.4 / 20) (DR32's
+ * reconstruction, dr32_voice), boosts past unity above velocity 70: at
+ * Volume 0 a hard hit went up to 8 dB past the slice and clipped.
  *
  * The bake runs on the engine's loader for a moment (seconds, for a long
  * sample under Warp): auConvertToKit starts it, auKitTick waits for it and
@@ -74,6 +79,10 @@ const HOLD_INF = 60.0;                 /* a drum cell's "inf" hold */
 export const DECAY_SCALE = 1;
 const DECAY_MAX = 60.0;
 const ATTACK_MIN = 1e-4;
+/* Vel>Vol as a stock kit has it, and the Volume that puts velocity 127 at
+ * unity: -(127-70) x 0.35 x 0.4 = -7.98 dB. */
+export const VEL_TO_VOL = 0.35;
+export const PAD_VOLUME_DB = -(127 - 70) * VEL_TO_VOL * 0.4;
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -127,7 +136,8 @@ export function kitCell(start, length, sl, remDb) {
     if (sl.dec | 0) { p.Voice_Envelope_Hold = 0.0; p.Voice_Envelope_Decay = Math.min(DECAY_MAX, (sl.dec | 0) / 1000 * DECAY_SCALE); }
     else            { p.Voice_Envelope_Hold = HOLD_INF; }
     p.Voice_Envelope_Mode = (sl.play | 0) === 1 ? 'A-S-R' : 'A-H-D';
-    p.Voice_VelocityToVolume = 0.0;
+    p.Voice_VelocityToVolume = VEL_TO_VOL;
+    p.Volume = PAD_VOLUME_DB;
     return p;
 }
 

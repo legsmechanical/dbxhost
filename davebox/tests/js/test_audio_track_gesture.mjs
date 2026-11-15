@@ -1332,7 +1332,11 @@ step('⭐⭐ the SLICE menu › Convert to kit (Josh, 2026-10-30: "convert to ki
         /* slice 4 Thru: from 2/6 on to the range's End */
         assert(near(c2.Voice_PlaybackStart, 2 / 6) && near(c2.Voice_PlaybackLength, 4 / 6) && c2.Voice_Envelope_Mode === 'A-H-D', 'pad 3 (slice 4, Thru): ' + JSON.stringify(c2));
         assert(near(c5.Voice_PlaybackStart, 5 / 6) && near(c5.Voice_PlaybackLength, 1 / 6), 'pad 6 (slice 7, the last in the range): ' + JSON.stringify(c5));
-        assert(c0.Voice_VelocityToVolume === 0, 'velocity reaches a slice\'s level');
+        /* velocity as a stock kit's (0.35), the Volume putting a velocity-127 hit at
+         * the slice's level: the drum cell's law boosts past unity above 70 */
+        const vg = (vel, p) => Math.pow(10, ((vel - 70) * p.Voice_VelocityToVolume * 0.4 + p.Volume) / 20);
+        assert(near(c0.Voice_VelocityToVolume, 0.35) && near(vg(127, c0), 1) && vg(100, c0) < 1 && vg(127, c5) <= 1 + 1e-9,
+               'a hard hit lands on the slice\'s level, no louder: ' + JSON.stringify({ v: c0.Voice_VelocityToVolume, vol: c0.Volume }));
         assert(S.auEditor === ed && !ed.pick, 'the kit did not leave the SLICER editor up');
         /* the names: the project and the track (a Slicer's sample is the track's) — "My Song 5" */
         assert(kitPath === KIT && kit.name === 'My Song 5', 'the kit\'s name: ' + JSON.stringify({ kitPath, name: kit.name }));
