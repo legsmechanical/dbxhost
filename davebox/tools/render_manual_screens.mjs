@@ -105,7 +105,36 @@ globalThis.host_ui_publish = (json) => { if (json) hudLast = json; return !!HUD_
  * shadow_get_param for chain slot n (the Schwung chains). Only what a screen
  * READS is here — the values a real session would report for the demo set. */
 const ENGINE = { bpm: '120' };
-globalThis.host_module_get_param = (k) => (ENGINE[k] !== undefined ? ENGINE[k] : '');
+/* The demo sample's waveform, at any zoom: a drum break — a hit every 1/16
+ * (6000 frames), kick / hat / snare / hat with ghosts, each decaying — so a
+ * zoomed window (tN_au_wave_C_A_B, which the editors ask for) and the
+ * whole-file peaks (tN_au_peaks_C) are one sound, as the engine's are. The
+ * engine's format: 128 columns, each a signed min and max byte in hex. */
+const BREAK_HIT = 6000, BREAK_TAU = 1700;
+const BREAK_LVL = [1.0, 0.3, 0.55, 0.25, 0.85, 0.3, 0.45, 0.35, 0.95, 0.3, 0.6, 0.5, 0.85, 0.25, 0.4, 0.7];
+function breakAmp(a, b) {
+    /* the loudest point of frames [a, b): a hit inside, else the last one's tail */
+    let m = 0;
+    for (let h = Math.floor(a / BREAK_HIT) * BREAK_HIT; h < b; h += BREAK_HIT) {
+        const lvl = BREAK_LVL[(h / BREAK_HIT) % 16];
+        m = Math.max(m, h >= a ? lvl : lvl * Math.exp(-(a - h) / BREAK_TAU));
+    }
+    return m;
+}
+function breakCols(A, B) {
+    let s = '';
+    for (let k = 0; k < 128; k++) {
+        const a = A + (B - A) * k / 128, b = Math.max(a + 1, A + (B - A) * (k + 1) / 128);
+        const v = Math.round(breakAmp(a, b) * 120);
+        s += ((256 - v) & 255).toString(16).padStart(2, '0') + v.toString(16).padStart(2, '0');
+    }
+    return s;
+}
+globalThis.host_module_get_param = (k) => {
+    if (ENGINE[k] !== undefined) return ENGINE[k];
+    const w = ENGINE.breakTrack !== undefined && new RegExp('^t' + ENGINE.breakTrack + '_au_wave_\\d+_(\\d+)_(\\d+)$').exec(k);
+    return w ? breakCols(+w[1], +w[2]) : '';
+};
 globalThis.host_module_set_param = () => {};
 globalThis.host_module_set_params = () => true;
 const SLOT = Array.from({ length: 8 }, () => ({}));   /* one chain slot per track (CHAIN_SLOTS) */
@@ -557,7 +586,7 @@ function screen(slug, section, title, caption, setup, opts = {}) {
 screen('track-melodic-playing', '3.4 Reading the screen', 'Track View — melodic track playing',
     'The Track View overview: the bank and the instrument, the key, each track\'s clip, the page bar and what the controls do.',
     () => {});
-screen('track-audio', '7.5 Audio', 'Track View — an Audio track',
+screen('track-audio', 'Audio tracks', 'Track View — an Audio track',
     'An Audio track\'s overview: its clip\'s sample, and the knobs of the bank it is on.',
     () => {
         /* as the project fixture sets the others: the engine and the mirror */
@@ -568,36 +597,95 @@ screen('track-audio', '7.5 Audio', 'Track View — an Audio track',
 /* An Audio (mode 0, Loop) or Slicer (mode 1) T5 with a sample loaded and
  * playing at frame 24000 — the engine's answers, as the audio tests give them */
 function sampledTrack(slicer) {
-    const PEAKS = Array.from({ length: 128 }, (_, i) => ((i * 7) % 100).toString(16).padStart(2, '0').repeat(2)).join('');
-    const info = '2 0 ' + (slicer ? 1 : 0) + ' 8 1 16 0 96000 0 0 96000 48000 2 0 0 0 8 0 0 96000 840 8 50 0 0|Break Phenom 84 bpm.wav';
-    const marks = Array.from({ length: 8 }, (_, k) => (k * 12000) + ' ' + ((k + 1) * 12000)).join(' ');
+    const PEAKS = breakCols(0, 96000);
+    /* a Slicer's range sits inside the file (Start 1/16 in, End 1/16 short),
+     * cut Even into 8 — so the audio outside it shows dotted, as it does on
+     * the device */
+    const RS = slicer ? 6000 : 0, RE = slicer ? 90000 : 96000;
+    const info = '2 0 ' + (slicer ? 1 : 0) + ' 8 1 16 ' + RS + ' ' + RE + ' 0 0 96000 48000 2 0 0 0 8 0 0 96000 840 8 50 0 0|Break Phenom 84 bpm.wav';
+    const marks = Array.from({ length: 8 }, (_, k) => (RS + k * (RE - RS) / 8) + ' ' + (RS + (k + 1) * (RE - RS) / 8)).join(' ');
     const pm = slicer ? C.PAD_MODE_SLICER : C.PAD_MODE_AUDIO;
     S.trackPadMode[4] = pm;
-    Object.assign(ENGINE, { t4_pad_mode: String(pm), t4_au_dir: '/data/UserData/UserLibrary/Sets/x/dAVEBOx/samples',
+    Object.assign(ENGINE, { breakTrack: 4, t4_pad_mode: String(pm), t4_au_dir: '/data/UserData/UserLibrary/Sets/x/dAVEBOx/samples',
         t4_au_info_0: info, t4_au_info_16: info, t4_au_peaks_0: PEAKS, t4_au_peaks_16: PEAKS,
         t4_au_marks_0: marks, t4_au_marks_16: marks, t4_au_pos: '1 24000 2', t4_au_lazy: '0 0 0',
         t4_au_all_0: '0 x 0 0 0 0', t4_au_all_16: '0 x 0 0 0 0' });
     selectTrack(4); AUD.auMarkStale(4, slicer ? 16 : 0); AUD.auMarkStale(4, 0);
     S.playing = true; ticks(12);
 }
-screen('track-audio-playing', '7.5 Audio', 'Track View — an Audio track playing',
-    'An Audio track\'s overview while it plays: the clip\'s waveform with the playhead on it.',
+screen('track-audio-playing', 'Audio tracks', 'Track View — an Audio track playing',
+    'An Audio track\'s overview while it plays: the clip\'s Mode, its sample\'s Tempo and name.',
     () => { sampledTrack(false); if (!AUD.auPos().on) throw new Error('no playhead read'); });
-screen('sample-loop', '7.5 Audio', 'SAMPLE — an Audio clip',
-    'SAMPLE on an Audio clip: the waveform, Start and Length, the knobs under it.',
-    () => { sampledTrack(false); AED.openWave(4, 'sample'); ticks(4); if (!S.auEditor) throw new Error('SAMPLE did not open'); });
-screen('sample-loop-p2', '7.5 Audio', 'SAMPLE — TIME (page 2)',
+/* SAMPLE (an Audio clip's editor) and the SLICER editor, opened as the
+ * instrument shortcut opens them, their pages reached with the jog */
+function openSample() { sampledTrack(false); AED.openWave(4, 'sample'); ticks(4); if (!S.auEditor) throw new Error('SAMPLE did not open'); }
+function openSlicer() { sampledTrack(true); AED.openWave(4); ticks(4); if (!S.auEditor || S.auEditor.ed !== 'slicer') throw new Error('the SLICER editor did not open'); }
+function toPage(p) {
+    const pg = () => S.auEditor.page | 0;          /* SAMPLE opens with no page set: page 1 */
+    for (let g = 0; g < 4 && pg() !== p; g++) { jog(pg() < p ? 1 : -1); ticks(2); }
+    if (pg() !== p) throw new Error('the jog never reached page ' + (p + 1));
+}
+screen('sample-loop', 'SAMPLE', 'SAMPLE — an Audio clip',
+    'SAMPLE on an Audio clip: the waveform with the playhead on it, Start and End over it.',
+    () => { openSample(); });
+screen('sample-loop-p2', 'SAMPLE', 'SAMPLE — TIME (page 2)',
     'SAMPLE\'s TIME page: Sync, Warp, Nudge and Offset on top; the sample\'s own Tempo and Bars framed together below.',
-    () => { sampledTrack(false); AED.openWave(4, 'sample'); ticks(4); if (!S.auEditor) throw new Error('SAMPLE did not open'); S.auEditor.page = 1; ticks(2); });
-screen('sample-loop-p3', '7.5 Audio', 'SAMPLE — SOUND (page 3)',
+    () => { openSample(); toPage(1); });
+screen('sample-loop-p3', 'SAMPLE', 'SAMPLE — SOUND (page 3)',
     'SAMPLE\'s SOUND page: Pitch, Detune, Revrs and Gain, on the knobs page 1 gives Pitch, Detune and Gain.',
-    () => { sampledTrack(false); AED.openWave(4, 'sample'); ticks(4); if (!S.auEditor) throw new Error('SAMPLE did not open'); S.auEditor.page = 2; ticks(2); });
-screen('slices-slicer', '7.5 Audio', 'The SLICER editor — page 1, SLICES',
-    'Page 1: the slices on the waveform, the picked one bracketed; the corner brackets say a click enters the slice editor.',
-    () => { sampledTrack(true); AED.openWave(4); ticks(4); if (!S.auEditor || S.auEditor.ed !== 'slicer') throw new Error('the SLICER editor did not open'); });
-screen('slicer-sample', '7.5 Audio', 'The SLICER editor — page 3, SAMPLE',
+    () => { openSample(); toPage(2); });
+screen('slices-slicer', 'The SLICER editor', 'The SLICER editor — page 1, SLICES',
+    'Page 1: the slices on the waveform, the picked one bracketed, the audio outside the range dotted; the corner brackets say a click enters the slice editor.',
+    () => { openSlicer(); });
+screen('slicer-sample', 'The SLICER editor', 'The SLICER editor — page 3, SAMPLE',
     'Page 3: a strip of the whole file with the range on it, over the sample\'s knobs — Sync, Pitch, Detune, Tempo and Gain.',
-    () => { sampledTrack(true); AED.openWave(4); ticks(4); if (!S.auEditor) throw new Error('the SLICER editor did not open'); jog(1); jog(1); ticks(2); if (S.auEditor.page !== 2) throw new Error('not on page 3'); });
+    () => { openSlicer(); toPage(2); });
+screen('slicer-inside', 'The SLICER editor', 'The SLICER editor — inside the slice editor',
+    'A click on page 1: the jog moves the cursor through the range, and a click adds a slice where it stands.',
+    () => {
+        openSlicer(); click(); ticks(2);
+        if (!AED.slcInside(S.auEditor)) throw new Error('the click did not enter the slice editor');
+        jog(40); ticks(2);
+    });
+screen('slicer-even', 'The SLICER editor', 'The SLICER editor — chopping Even',
+    'SLICE menu › Even: the jog sets the count, and the range is cut into that many equal slices as you turn.',
+    () => {
+        openSlicer();
+        press(MoveShift); click(); release(MoveShift); ticks(2);
+        const ed = S.auEditor;
+        if (!ed.pick || ed.pick.menu !== 'slices') throw new Error('Shift + click did not open the SLICE menu');
+        const want = AED.auPickRows(ed).findIndex((r) => r.id === 'even');
+        if (want < 0) throw new Error('the SLICE menu has no Even');
+        for (let g = 0; g < 10 && ed.pick && ed.pick.sel !== want; g++) { jog(ed.pick.sel < want ? 1 : -1); ticks(1); }
+        click(); ticks(4);
+        if (S.auEditor.pick || !S.auEditor.chop || S.auEditor.chop.kind !== 'even') throw new Error('Even did not open');
+    });
+/* REMIX on the Slicer: its bank card, and the pop-up a turn brings up. The
+ * engine's answers are its own — tN_remix_orders and tN_remix_map dumped from
+ * the DSP (tests' harness) for Chop 2+4+4+4+2 (type 3), the RS7000's
+ * Reverse 9 (setting 24), Revrs 40 %, Stutr 30 %, Gaps 15 %, Pitch +5. */
+const RMX_DEMO = [1, 3, 24, 1, 100, 40, 30, 15, 5, 0, 100];
+const RMX_ENGINE = {
+    t4_remix_orders: '39 42 1.6.0 26.8.0 32.10.0 48.10.0 64.10.0 27.10.0 58.10.0 6.12.0 10.12.0 68.12.0 60.14.0 18.14.0 2.14.0 3.14.0 56.14.0 4.14.0 71.14.0 5.14.0 57.14.0 17.14.0 21.14.0 19.14.0 23.14.0 54.14.0 22.14.0 55.14.0 0.14.0 16.14.0 36.14.0 13.16.0 40.16.0 14.16.0 8.16.0 15.16.0 59.16.0 7.16.0 12.16.0 9.16.0 11.16.0 24.16.0 74.16.0 31.16.0',
+    t4_remix_map: '4.16.3 5.0.3 -1.24.0 -1.8.0 0.1.3 1.1.3 4.16.3 5.0.3 2.3.3 7.0.-5 0.17.3 1.1.3 7.2.-5 3.1.3 4.18.3 5.0.3',
+};
+function remixBank(rev = 40) {
+    sampledTrack(true);
+    Object.assign(ENGINE, RMX_ENGINE);
+    S.rmxSet[4] = RMX_DEMO.slice(); S.rmxSet[4][5] = rev; S.rmxMapDirty = true; S.rmxOrders = null;
+    toBank(C.BANK_REMIX); ticks(4);
+}
+screen('remix-card', 'REMIX', 'REMIX bank',
+    'REMIX: on or off, the Chop, the Order and the five amounts.',
+    () => { remixBank(); if (AUD.rmxOrderText(4) !== '40') throw new Error('the Order did not read: ' + AUD.rmxOrderText(4)); });
+screen('remix-popup', 'REMIX', 'REMIX — turning a knob',
+    'Turning Revrs: the bar it makes, a column per 1/16 — hollow reversed, dotted stuttered, a caret when pitched, empty when silent.',
+    () => {
+        remixBank(39); S.playing = false;   /* Revrs one short: the turn makes it the 40 */
+        knobTouch(4); knobTurn(4, 1); ticks(3);
+        if ((S.rmxSet[4][5] | 0) !== 40) throw new Error('Revrs is ' + S.rmxSet[4][5] + ', not the 40 the map was dumped at');
+        if (!S.rmxCard || !S.rmxMap) throw new Error('no REMIX pop-up');
+    });
 screen('track-melodic-chord-held', '6.1 Playing and placing notes', 'Track View — naming a held chord',
     'Holding three pads: the chord you are playing is named in brackets at the right of the key/scale row.',
     () => {

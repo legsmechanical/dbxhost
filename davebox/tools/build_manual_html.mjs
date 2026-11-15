@@ -254,6 +254,14 @@ const MANUAL_SCREENS = new Set([
     'bank-cond-octave',        // C-OCTAVE bank
     'bank-cond-when',          // C-WHEN bank
     'bank-repeat-groove',      // the groove bars
+    'slices-slicer',           // the SLICER editor: slices on the wave
+    'slicer-sample',           // its page 3: the range on the whole file
+    'slicer-inside',           // the slice editor's cursor
+    'slicer-even',             // chopping Even
+    'sample-loop',             // SAMPLE: an Audio clip's waveform
+    'sample-loop-p2',          // SAMPLE's TIME page: Tempo and Bars framed
+    'remix-card',              // REMIX bank
+    'remix-popup',             // the bar a REMIX setting makes
     'bank-automation',         // the list of what's automated
     'session-overview',        // Session View
     'perf-mode-mods',          // Performance Mode with mods engaged
