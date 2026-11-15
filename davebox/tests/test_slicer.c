@@ -9,9 +9,10 @@
  *      chop-editor visit (tN_au_undo_slc) brings back the slot and every
  *      clip's steps; Redo puts the edit back;
  *   4. a pick, None and a Trim on a Slicer are one undo step each; None
- *      keeps every clip's steps; a pick lands as 16 even chops;
- *   5. Trim is a step before chopping: frames a..b into a new file, 16 even
- *      chops over it, the steps kept;
+ *      keeps every clip's steps; a pick lands as ONE slice, the range (it is
+ *      not chopped: 2026-11-15) — the rig chops 16 even for what follows;
+ *   5. Trim cuts the file to the range and keeps the slices: those inside move
+ *      with the audio, those outside go, their steps joining the nearest kept;
  *   6. a sample over 4 minutes is refused (AU_ERR_LONG), the old one kept;
  *   7. paste: an Audio clip onto a Slicer with no sample (its sample, the
  *      part it plays in 16 even chops laid on the steps in order); refused
@@ -78,7 +79,11 @@ static void pick(hx_t *h, int t, int c, const char *file) {
     hx_set_param(h, k, v);
 }
 
-static hx_t *rig(void) {
+/* A Slicer on t4 with the ramp loaded — and, `chop`, cut 16 even (a pick
+ * itself no longer chops: section 1), the set most sections start from. */
+static hx_t *rig_n(int chop);
+#define rig() rig_n(1)
+static hx_t *rig_n(int chop) {
     hx_t *h = hx_create(NULL); HX_NO_LEAD(h);
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
     char p[300];
@@ -90,6 +95,7 @@ static hx_t *rig(void) {
     HX_ASSERT(inst->tracks[4].pad_mode == PAD_MODE_SLICER, "rig: t4 is not a Slicer");
     pick(h, 4, AU_SLC, "ramp.wav");
     HX_ASSERT(wait_loaded(h, 4, AU_SLC) == 2, "rig: the ramp did not load");
+    if (chop) hx_set_param(h, "t4_au_set_even", "16 16");
     return h;
 }
 
@@ -124,8 +130,18 @@ int main(void) {
     snprintf(p, sizeof p, "%s/src/long.wav", g_root); write_long(p);
 
     /* ==== 1. every clip plays the slot's chops ==== */
-    h = rig(); inst = (seq8_instance_t *)h->inst;
-    HX_ASSERT(AUS(4)->nslices == 16 && AUS(4)->sl[3].start == 3 * 44100 / 16, "a pick did not cut 16 even chops");
+    h = rig_n(0); inst = (seq8_instance_t *)h->inst;
+    /* a pick is NOT chopped (Josh, 2026-11-15): one slice, the whole range */
+    {
+        uint32_t a = 0, b2 = 0;
+        HX_ASSERT(AUS(4)->whole && au_count(AUS(4)) == 1, "a pick was chopped (it must load as one slice)");
+        HX_ASSERT(au_slice_range(AUS(4), AUS(4)->smp, 0, &a, &b2) && a == 0 && b2 == 44100, "the one slice is not the whole range");
+        hx_set_param(h, "t4_au_set_start", "16 4410");     /* it follows the range till chopped */
+        HX_ASSERT(au_slice_range(AUS(4), AUS(4)->smp, 0, &a, &b2) && a == 4410 && b2 == 44100, "the one slice did not follow Start");
+        hx_set_param(h, "t4_au_set_start", "16 0");
+    }
+    hx_set_param(h, "t4_au_set_even", "16 16");               /* chop it: 16 even, the rest of this test's set */
+    HX_ASSERT(!AUS(4)->whole && AUS(4)->nslices == 16 && AUS(4)->sl[3].start == 3 * 44100 / 16, "Even 16 did not cut 16 even chops");
     HX_ASSERT(au_cl(inst, 4, 0) == AUS(4) && au_cl(inst, 4, 9) == AUS(4), "a Slicer's clip does not play its slot");
     HX_ASSERT(au_cl(inst, 3, 0) == AUA(3, 0), "another track's clip resolves to a slot");
     hx_set_param(h, "t4_c2_step_0_toggle", "3");             /* clip C, step 1: chop 4 */
@@ -157,7 +173,9 @@ int main(void) {
         HX_ASSERT(v && fabs(v->step - 1.2) < 1e-9, "Sync Pitch: a chop at 120 over its own 100 is not 1.2x");
         hx_render(h, 60);
         hx_set_param(h, "t4_au_set_sync", "16 2");               /* Snap: parked, not offered */
-        HX_ASSERT(AUS(4)->sync == AU_SLC_SYNC_OFF, "a Sync past Pitch was not Off");
+        HX_ASSERT(AUS(4)->sync == AU_SLC_SYNC_OFF, "Snap's value was not Off");
+        hx_set_param(h, "t4_au_set_sync", "16 3");
+        HX_ASSERT(AUS(4)->sync == AU_SLC_SYNC_WARP, "Sync did not take Warp");
         hx_set_param(h, "t4_au_set_sync", "16 0");
     }
 
@@ -197,27 +215,43 @@ int main(void) {
     HX_ASSERT(wait_loaded(h, 4, AU_SLC) == 2 && !strcmp(AUS(4)->name, "ramp.wav") && AUS(4)->nslices == 16,
               "undo of None did not bring the sample and its chops back");
     pick(h, 4, AU_SLC, "ramp2.wav");
-    HX_ASSERT(wait_loaded(h, 4, AU_SLC) == 2 && !strcmp(AUS(4)->name, "ramp2.wav") && AUS(4)->nslices == 16 &&
-              AUS(4)->sl[1].start == 88200 / 16, "a second pick did not land as 16 even chops");
+    HX_ASSERT(wait_loaded(h, 4, AU_SLC) == 2 && !strcmp(AUS(4)->name, "ramp2.wav") && AUS(4)->whole &&
+              au_count(AUS(4)) == 1 && !AUS(4)->rstart && !AUS(4)->rend, "a second pick did not land as one slice, the whole file");
     HX_ASSERT(pitches(inst, 4, 0, pit, 64) == 1 && pit[0] == 6, "a pick changed the steps");
     hx_set_param(h, "undo_restore", "1");
     HX_ASSERT(wait_loaded(h, 4, AU_SLC) == 2 && !strcmp(AUS(4)->name, "ramp.wav"), "undo of a pick did not bring the old sample back");
 
-    /* ==== 5. Trim: frames a..b, a new file, 16 even chops, the steps kept ==== */
-    hx_set_param(h, "t4_au_edit", "16 0 0 11025 33075");
+    /* ==== 5. Trim: the range, a new file, the slices KEPT (Josh, 2026-11-15) ==== */
+    /* 16 even over 44100 (2756.25 each): the range 11025..33075 holds slices
+     * 4..11 whole; 0..3 and 12..15 have no audio left and go. Steps: clip A
+     * plays slice 6 (-> 2), clip B slice 1 (before: -> the first kept, 0) and
+     * slice 14 (past: -> the last kept, 7) */
+    HX_ASSERT(AUS(4)->nslices == 16 && !AUS(4)->whole, "Trim setup: not 16 even after the undo");
+    hx_set_param(h, "t4_c1_step_0_toggle", "1");
+    hx_set_param(h, "t4_c1_step_4_toggle", "14");
+    hx_set_param(h, "t4_au_slice_pitch", "16 5 7");          /* slice 5's own sound goes with it (-> 1) */
+    hx_set_param(h, "t4_au_set_start", "16 11025");
+    hx_set_param(h, "t4_au_set_end", "16 33075");
+    hx_set_param(h, "t4_au_edit", "16 0 0");
     HX_ASSERT(wait_loaded(h, 4, AU_SLC) == 2 && strcmp(AUS(4)->name, "ramp.wav") && AUS(4)->smp->frames == 22050,
-              "Trim did not cut the file to a..b");
-    HX_ASSERT(AUS(4)->nslices == 16 && AUS(4)->sl[1].start == 22050 / 16 && AUS(4)->sl[0].start == 0,
-              "Trim did not chop the result 16 even");
-    HX_ASSERT(AUS(4)->smp->pcm[0] == 1 + 11025, "the trimmed file does not start at a");
-    HX_ASSERT(pitches(inst, 4, 0, pit, 64) == 1 && pit[0] == 6, "Trim changed the steps");
+              "Trim did not cut the file to the range");
+    HX_ASSERT(AUS(4)->nslices == 8 && AUS(4)->sl[0].start == 0 && AUS(4)->sl[1].start == 13781 - 11025,
+              "Trim did not keep the slices inside the range, moved with the audio");
+    HX_ASSERT(AUS(4)->sl[1].pitch == 7, "a kept slice lost its own sound");
+    HX_ASSERT(!AUS(4)->rstart && !AUS(4)->rend, "after a Trim the range is not the whole new file");
+    HX_ASSERT(AUS(4)->smp->pcm[0] == 1 + 11025, "the trimmed file does not start at Start");
+    HX_ASSERT(pitches(inst, 4, 0, pit, 64) == 1 && pit[0] == 2, "clip A's step did not follow its slice (6 -> 2)");
+    HX_ASSERT(pitches(inst, 4, 1, pit, 64) == 2 && pit[0] == 0 && pit[1] == 7,
+              "clip B's steps outside the kept slices did not join the nearest kept (1 -> 0, 14 -> 7)");
     hx_set_param(h, "undo_restore", "1");
-    HX_ASSERT(wait_loaded(h, 4, AU_SLC) == 2 && !strcmp(AUS(4)->name, "ramp.wav") && AUS(4)->smp->frames == 44100,
-              "undo of a Trim did not bring the untrimmed file back");
-    hx_set_param(h, "t4_au_edit", "16 0 0 0 44100");         /* the whole file: nothing to trim */
+    HX_ASSERT(wait_loaded(h, 4, AU_SLC) == 2 && !strcmp(AUS(4)->name, "ramp.wav") && AUS(4)->smp->frames == 44100 &&
+              AUS(4)->nslices == 16, "undo of a Trim did not bring the untrimmed file and its slices back");
+    HX_ASSERT(pitches(inst, 4, 0, pit, 64) == 1 && pit[0] == 6, "undo of a Trim did not bring the steps back");
+    hx_set_param(h, "t4_au_set_start", "16 0");
+    hx_set_param(h, "t4_au_set_end", "16 0");
+    hx_set_param(h, "t4_au_edit", "16 0 0");                 /* the range is the whole file: nothing to trim */
     HX_ASSERT(AUS(4)->state == 2 && !strcmp(AUS(4)->name, "ramp.wav"), "a Trim of the whole file did something");
-    hx_set_param(h, "t4_au_edit", "16 0 0");                 /* a Slicer's Trim needs its frames */
-    HX_ASSERT(AUS(4)->state == 2 && !strcmp(AUS(4)->name, "ramp.wav"), "a Trim with no frames did something");
+    hx_set_param(h, "t4_c1_clear", "");
 
     /* ==== 6. over 4 minutes: refused, the old sample kept ==== */
     pick(h, 4, AU_SLC, "long.wav");
@@ -338,7 +372,7 @@ int main(void) {
         hx_set_param(h, "t6_au_layout", "1");
         hx_set_param(h, "bpm", "121");
         n = hx_get_param(h, "state_full", blob, (int)sizeof blob);
-        HX_ASSERT(n > 0 && strstr(blob, "\"t6_pm\":4") && strstr(blob, "\"t6_slc\":\"p=0 dt=0 g=0 bpm=0 sy=0 sens=50 lay=1 n=1|\""),
+        HX_ASSERT(n > 0 && strstr(blob, "\"t6_pm\":4") && strstr(blob, "\"t6_slc\":\"p=0 dt=0 g=0 bpm=0 sy=0 sens=50 lay=1 n=1 rs=0 en=0 wh=1|\""),
                   "file: a Slicer with no sample did not save its line");
         /* a chop's sound belongs to its number: past the count it is kept
          * (an Even of more chops later brings it back) */

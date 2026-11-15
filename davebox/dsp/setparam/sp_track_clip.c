@@ -440,7 +440,7 @@ static int sp_track_clip(sp_ctx_t *cx) {
             /* a Slicer step's own reverse (0/1) and pitch (-24..+24 st) */
             if (!strcmp(q, "_xrev") || !strcmp(q, "_xsemi") || !strcmp(q, "_xstart") || !strcmp(q, "_xlen")) {
                 undo_begin_single(inst, tidx, cidx);
-                if (!strcmp(q, "_xrev")) cl->step_xrev[sidx] = (uint8_t)clamp_i(my_atoi(val), 0, 1);
+                if (!strcmp(q, "_xrev")) cl->step_xrev[sidx] = (uint8_t)clamp_i(my_atoi(val), AU_SDIR_SLICE, AU_SDIR_REV);   /* a Slicer step's Dir */
                 else if (!strcmp(q, "_xsemi")) cl->step_xsemi[sidx] = (uint8_t)(int8_t)clamp_i(my_atoi(val), -24, 24);
                 else if (!strcmp(q, "_xstart")) cl->step_xstart[sidx] = (uint8_t)clamp_i(my_atoi(val), 0, 99);
                 else { int v = clamp_i(my_atoi(val), 1, 100); cl->step_xlen[sidx] = (uint8_t)(v >= 100 ? 0 : v); }

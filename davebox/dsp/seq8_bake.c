@@ -555,7 +555,21 @@ static int rmx_slicer_apply(seq8_instance_t *inst, int t, int c) {
             uint16_t ss = id < cl->note_count ? note_step(cl->notes[id].tick, cl->length, tps0) : 0;
             uint16_t d = note_step(rn->tick, cl->length, tps0);
             int semi = (int)(int8_t)cl->step_xsemi[ss] + inst->rmx_ss[t][k];
-            xr[d] = (uint8_t)((cl->step_xrev[ss] ? 1 : 0) ^ inst->rmx_sr[t][k]);
+            /* the step's Dir with REMIX's flip baked in: a flip turns a set
+             * Dir round, and turns a step that followed its slice into the
+             * slice's opposite, written out (a Dir has no "follow, flipped") */
+            {
+                uint8_t dir = cl->step_xrev[ss] <= AU_SDIR_REV ? cl->step_xrev[ss] : AU_SDIR_SLICE;
+                if (inst->rmx_sr[t][k]) {
+                    if (dir == AU_SDIR_SLICE) {
+                        int sl = (int)rn->pitch - AU_NOTE_BASE;
+                        const au_clip_t *sc = au_slot(inst, t, AU_SLC);
+                        int srev = sl >= 0 && sl < AU_MAX_SLICES ? sc->sl[sl].rev : 0;
+                        dir = srev ? AU_SDIR_FWD : AU_SDIR_REV;
+                    } else dir = dir == AU_SDIR_FWD ? AU_SDIR_REV : AU_SDIR_FWD;
+                }
+                xr[d] = dir;
+            }
             xs[d] = (uint8_t)(int8_t)(semi < -48 ? -48 : semi > 48 ? 48 : semi);
             xa[d] = cl->step_xstart[ss]; xl[d] = cl->step_xlen[ss];
         }

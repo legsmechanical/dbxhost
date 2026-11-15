@@ -2316,7 +2316,7 @@ static void au_loader_do(au_loader_t *L, const au_req_t *q) {
     if (q->kind == AU_REQ_PICK) {
         err = au_import(q->path, q->dir, r.name, sizeof r.name);
     } else if (q->kind == AU_REQ_EDIT) {
-        r.edit = 1; r.ow = q->ow; r.rechop = q->rechop;
+        r.edit = 1; r.ow = q->ow; r.rechop = q->rechop; r.ka = q->a; r.kb = q->b;
         err = au_edit_file(q, r.name, sizeof r.name, &r.cut);
         if (!err && q->ow) {
             /* the old audio under that name is gone: the next get reads the
@@ -2374,6 +2374,7 @@ static void au_clip_defaults(au_clip_t *cl) {
     cl->mode = AU_MODE_LOOP;
     cl->even = 16;
     cl->nslices = 1;
+    cl->whole = 1;                 /* a Slicer's: one slice, the range, till it is chopped */
     cl->jump = 16;
     cl->sens = AU_SENS_DEFAULT;
 }
@@ -2541,7 +2542,10 @@ static void au_range(const au_clip_t *cl, const au_sample_t *s, uint32_t *rs, ui
     double fpt = au_fpt_s(cl, s), a = cl->rstart, e;
     if (a + AU_GAP > s->frames) a = s->frames > AU_GAP ? s->frames - AU_GAP : 0;
     if (cl->mode == AU_MODE_SLICE) {
-        e = cl->slen ? a + (double)cl->slen * fpt : (double)s->frames;
+        /* a Slicer's range: Start..End, frames (End 0 = the file's end), so
+         * the sample's Tempo never moves it (2026-11-14 rethink) */
+        e = cl->rend && cl->rend < s->frames ? (double)cl->rend : (double)s->frames;
+        (void)fpt;
     } else {
         const clip_t *lc = au_lclip(cl);
         double tps = lc && lc->ticks_per_step ? lc->ticks_per_step : TICKS_PER_STEP;
@@ -2647,11 +2651,30 @@ static uint32_t au_home_end(const au_clip_t *cl, const au_sample_t *s, int k) {
     return re > cl->sl[k].start ? re : s->frames;
 }
 
-/* The frame range of slice k of clip cl. */
+/* The frame range of slice k of clip cl. A Slicer's range is a HARD EDGE
+ * (Josh, 2026-11-15): a slice crossing Start or End plays only the part
+ * inside, one wholly outside plays nothing (0) — nothing in the slice itself
+ * changes, so widening the range brings it back. Not chopped yet (`whole`):
+ * the one slice is the range itself. */
+static int au_slice_span(const au_clip_t *cl, const au_sample_t *s, int k, uint32_t *a, uint32_t *b, int edge);
 static int au_slice_range(const au_clip_t *cl, const au_sample_t *s, int k, uint32_t *a, uint32_t *b) {
+    return au_slice_span(cl, s, k, a, b, 1);
+}
+/* ...and where the slice itself lies, the range's edge not applied (the
+ * screen draws and edits a slice there even when the range hides it). */
+static int au_slice_raw(const au_clip_t *cl, const au_sample_t *s, int k, uint32_t *a, uint32_t *b) {
+    return au_slice_span(cl, s, k, a, b, 0);
+}
+static int au_slice_span(const au_clip_t *cl, const au_sample_t *s, int k, uint32_t *a, uint32_t *b, int edge) {
     uint32_t rs, re;
     int n = au_count(cl);
     if (k < 0 || k >= n) return 0;
+    if (cl->whole && !cl->trans && !cl->even) {
+        if (k) return 0;
+        au_range(cl, s, &rs, &re);
+        *a = rs; *b = re;
+        return re > rs;
+    }
     if (cl->trans) {
         if (k >= cl->tr_n) return 0;
         au_range(cl, s, &rs, &re);
@@ -2668,6 +2691,11 @@ static int au_slice_range(const au_clip_t *cl, const au_sample_t *s, int k, uint
         *b = cl->sl[k].end ? cl->sl[k].end : au_home_end(cl, s, k);
         if (*a >= s->frames) return 0;
         if (*b > s->frames) *b = s->frames;
+        if (edge && cl->mode == AU_MODE_SLICE) {     /* the range's hard edge */
+            au_range(cl, s, &rs, &re);
+            if (*a < rs) *a = rs;
+            if (*b > re) *b = re;
+        }
         if (*b <= *a) return 0;
     }
     return 1;
@@ -2697,6 +2725,10 @@ static int au_live_mark = 0;
  * and this many semitones up — set around one au_range_on call, as
  * au_live_mark is (au_rmx_block). */
 static int au_rmx_rev = 0, au_rmx_semi = 0;
+/* A Slicer step's Dir (AU_SDIR_*), set around one hit as the two above are:
+ * Slice = the slice's own Revrs, Fwd / Rev = that way whatever the slice
+ * says (an override); REMIX's flip (au_rmx_rev) then turns the result */
+static int au_step_dir = AU_SDIR_SLICE;
 /* a Loop clip's piece (sync): its pass plays backwards — set by the caller
  * around au_range_on, as the remix's are */
 static int au_loop_rev = 0;
@@ -2750,7 +2782,19 @@ static au_voice_t *au_range_on_in(au_track_t *at, const au_sample_t *s, int cs, 
         if (b2 > b) b2 = b;
         if (b2 > a2 + 8) { a = a2; b = b2; }
     }
-    uint8_t play = sl->play, rev = (uint8_t)((sync ? au_loop_rev : sl->rev) ^ (au_rmx_rev ? 1 : 0));
+    uint8_t play = sl->play;
+    uint8_t base = sync ? (uint8_t)au_loop_rev
+                 : au_step_dir == AU_SDIR_FWD ? 0 : au_step_dir == AU_SDIR_REV ? 1 : sl->rev;
+    uint8_t rev = (uint8_t)(base ^ (au_rmx_rev ? 1 : 0));
+    /* THRU: on from the slice's start to the range's End — backwards, from
+     * its end down to Start. A step's Length (a window short of the whole
+     * slice) still ends it there; the window's start still applies. */
+    if (!sync && play == AU_PLAY_THRU && cl->mode == AU_MODE_SLICE && !au_win_len) {
+        uint32_t rs, re;
+        au_range(cl, s, &rs, &re);
+        if (rev) { if (rs < a) a = rs; }
+        else if (re > b) b = re;
+    }
     double ratio = au_tune(au_pitch(cl) + sl->pitch + cs, au_detune(cl) + sl->detune) * (double)s->rate / 44100.0 * vk;
     if (au_rmx_semi) ratio *= au_semi(au_rmx_semi);
     float gain = au_db(au_gain(cl) + sl->gain_db) * vgain;
@@ -2762,7 +2806,7 @@ static au_voice_t *au_range_on_in(au_track_t *at, const au_sample_t *s, int cs, 
      * play the sample exactly as the Loop does (Josh, 2026-10-28: a Loop clip
      * switched to Slice must not change the sound). AU_JOIN covers a slice
      * starting on its block rather than its frame. */
-    if (play == AU_PLAY_ONE && !sl->attack_ms && !sl->decay_ms) {
+    if ((play == AU_PLAY_ONE || play == AU_PLAY_THRU) && !sl->attack_ms && !sl->decay_ms) {
         for (i = 0; i < AU_VOICES; i++) {
             v = &at->v[i];
             /* (a Vintage piece past its fade-in carries on like any) */
@@ -2770,8 +2814,11 @@ static au_voice_t *au_range_on_in(au_track_t *at, const au_sample_t *s, int cs, 
                 v->smp != s || v->gain != gain || v->step != (rev ? -ratio : ratio)) continue;
             double edge = rev ? (double)b - 1.0 : (double)a, at_off = v->pos + v->step * off;
             if (at_off - edge > AU_JOIN || edge - at_off > AU_JOIN) continue;
-            if (rev) { if (a < v->lo) v->lo = a; }
-            else if (b > v->hi) v->hi = b;
+            /* it plays on to THIS slice's end, never a longer one it carried
+             * (a One slice after a Thru one ends at its own end) */
+            if (sync) { if (rev) { if (a < v->lo) v->lo = a; } else if (b > v->hi) v->hi = b; }   /* a Vintage piece, as before */
+            else if (rev) v->lo = a;
+            else v->hi = b;
             v->slice = (uint8_t)slice;
             v->loop = 0;
             return v;
@@ -2800,8 +2847,8 @@ static au_voice_t *au_range_on_in(au_track_t *at, const au_sample_t *s, int cs, 
      * exponential like drum rack?"): its curve exactly (au_decay_k) */
     v->denv = 1.0f;
     v->dk = v->dec ? au_decay_k(v->dec) : 1.0f;
-    v->loop = (play == AU_PLAY_LOOP);
-    v->gated = (play != AU_PLAY_ONE);
+    v->loop = 0;
+    v->gated = (play == AU_PLAY_GATE);
     v->slice = (uint8_t)slice;
     v->cond = (int8_t)cs;
     v->starve = 64;
@@ -2847,12 +2894,14 @@ static void au_note_event(int t, int slice, uint8_t status, uint8_t vel, int ech
         float vg = echo ? (float)vel / 127.0f : 1.0f;
         if (at->nm_on[slice]) {
             at->nm_on[slice] = 0;
-            au_rmx_rev = at->nm_rev[slice]; au_rmx_semi = at->nm_semi[slice];
+            au_step_dir = at->nm_rev[slice] & AU_NM_DIR_MASK;
+            au_rmx_rev = (at->nm_rev[slice] & AU_NM_RMX) ? 1 : 0;
+            au_rmx_semi = at->nm_semi[slice];
             au_win_start = at->nm_start[slice]; au_win_len = at->nm_len[slice];
             if (!echo) vg = at->nm_vg[slice];
         }
         au_slice_on(inst, t, slice, vg);
-        au_rmx_rev = 0; au_rmx_semi = 0; au_win_start = 0; au_win_len = 0;
+        au_rmx_rev = 0; au_rmx_semi = 0; au_win_start = 0; au_win_len = 0; au_step_dir = AU_SDIR_SLICE;
     }
     else if ((status & 0xF0) == 0x80 || (status & 0xF0) == 0x90) au_slice_off(inst, t, slice);
 }
@@ -3065,6 +3114,7 @@ static void au_lazy_keep(seq8_instance_t *inst, int keep) {
         memcpy(cl->sl, inst->au_lazy_bak, sizeof cl->sl);
         cl->nslices = inst->au_lazy_bak_n;
         cl->even = inst->au_lazy_bak_even;
+        cl->whole = inst->au_lazy_bak_whole;
     }
     inst->state_dirty = 1;
     inst->au_lazy_track = inst->au_lazy_clip = -1;
@@ -3100,11 +3150,13 @@ static void au_lazy_finish(seq8_instance_t *inst) {
  *                of (Offset ticks) os (Shot) en (End, frames) sp (Bars, ticks)
  *                fr (Free) spd (Free's Speed, per mille; 0 = 100 %), each
  *                written only when set
- *   t%d_slc      a Slicer track: p dt g rv bpm sy (0 Off, 1 Pitch; 2 is Snap's,
- *                parked; unknown -> Off) sens cond (follows the Conductor)
- *                lay (0 4 Rows, 1 16 Pads) n (chops)
- *   t%ds%d_slc   chop k of it: st en (0 = HOME) p dt g rv pl (0 One, 1 Gate;
- *                unknown -> One) at dc (0 = full)
+ *   t%d_slc      a Slicer track: p dt g rv bpm sy (0 Off, 1 Pitch, 3 Warp; 2 is
+ *                Snap's, parked; unknown -> Off) sens cond (follows the Conductor)
+ *                lay (0 4 Rows, 1 16 Pads) n (slices) rs en (the range, frames;
+ *                en 0 = the file's end) wh (1: not chopped yet, the one slice is
+ *                the range)
+ *   t%ds%d_slc   slice k of it: st en (0 = HOME) p dt g rv pl (0 One, 1 Gate,
+ *                2 Thru; unknown -> One) at dc (0 = full)
  * ⚠ Any field whose ABSENCE changes the sound needs a version bump: a build
  * that skips it would drop it on its next save. */
 
@@ -3156,9 +3208,9 @@ static void au_save_state(void *vinst, FILE *fp) {
         } else if (pm == PAD_MODE_SLICER) {
             const au_clip_t *cl = au_slot(inst, t, AU_SLC);
             const au_track_t *at = &inst->au_trk[t];
-            fprintf(fp, ",\"t%d_slc\":\"p=%d dt=%d g=%d bpm=%u sy=%d sens=%d lay=%d n=%d", t,
+            fprintf(fp, ",\"t%d_slc\":\"p=%d dt=%d g=%d bpm=%u sy=%d sens=%d lay=%d n=%d rs=%u en=%u wh=%d", t,
                     cl->pitch, cl->detune, cl->gain_db, (unsigned)cl->bpm10, cl->sync, cl->sens,
-                    at->layout, cl->nslices);
+                    at->layout, cl->nslices, (unsigned)cl->rstart, (unsigned)cl->rend, cl->whole ? 1 : 0);
             au_put_name(fp, cl->name);
             fputc('"', fp);
             for (l = 0; l < AU_MAX_SLICES; l++) {
@@ -3339,7 +3391,11 @@ static void au_load_state(void *vinst, const char *buf) {
             l = (int)au_kv(kv, n, "bpm", 0);
             cl->bpm10 = (uint16_t)(l ? clamp_i(l, AU_BPM10_MIN, AU_BPM10_MAX) : 0);
             sy = au_kv(kv, n, "sy", AU_SLC_SYNC_OFF);
-            cl->sync = (uint8_t)(sy == AU_SLC_SYNC_PITCH ? AU_SLC_SYNC_PITCH : AU_SLC_SYNC_OFF);
+            cl->sync = (uint8_t)(sy == AU_SLC_SYNC_PITCH ? AU_SLC_SYNC_PITCH : sy == AU_SLC_SYNC_WARP ? AU_SLC_SYNC_WARP : AU_SLC_SYNC_OFF);
+            cl->rstart = (uint32_t)clamp_i((int)au_kv(kv, n, "rs", 0), 0, INT32_MAX);
+            cl->rend = (uint32_t)clamp_i((int)au_kv(kv, n, "en", 0), 0, INT32_MAX);
+            if (cl->rend && cl->rend < cl->rstart + AU_GAP) cl->rend = 0;
+            cl->whole = (uint8_t)(au_kv(kv, n, "wh", 0) ? 1 : 0);
             cl->sens = (uint8_t)clamp_i((int)au_kv(kv, n, "sens", AU_SENS_DEFAULT), 0, 100);
             /* a file from before the Slicer followed the Conductor's RESPONDER
              * bank: its own switch (cond=, off by default) — carried into
@@ -3363,7 +3419,7 @@ static void au_load_state(void *vinst, const char *buf) {
                 sl->gain_db = (int8_t)clamp_i((int)au_kv(kv, m, "g", 0), -40, 12);
                 sl->rev = (uint8_t)(au_kv(kv, m, "rv", 0) ? 1 : 0);
                 pl = au_kv(kv, m, "pl", AU_PLAY_ONE);
-                sl->play = (uint8_t)(pl == AU_PLAY_GATE ? AU_PLAY_GATE : AU_PLAY_ONE);
+                sl->play = (uint8_t)(pl == AU_PLAY_GATE || pl == AU_PLAY_THRU ? pl : AU_PLAY_ONE);
                 sl->attack_ms = (uint16_t)clamp_i((int)au_kv(kv, m, "at", 0), 0, 2000);
                 sl->decay_ms = (uint16_t)clamp_i((int)au_kv(kv, m, "dc", 0), 0, 5000);
             }

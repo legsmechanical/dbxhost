@@ -230,7 +230,9 @@ int main(void) {
     hx_set_param(h, "t4_convert_to_slicer", "");
     hx_set_param(h, "t4_au_set_end", "16 4410");
     hx_set_param(h, "t4_au_set_bars", "16 384");
-    HX_ASSERT(au_cl(inst, 4, AU_SLC)->rend == 0, "a Slicer took End");
+    /* a Slicer's End is its range's (frames; taken as given before a sample
+     * loads) — Bars stay an Audio clip's */
+    HX_ASSERT(au_cl(inst, 4, AU_SLC)->rend == 4410, "a Slicer did not take End as its range's");
     HX_ASSERT(au_cl(inst, 4, AU_SLC)->rspan == 0, "a Slicer took Bars");
     hx_destroy(h);
 

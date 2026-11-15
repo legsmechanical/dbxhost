@@ -48,6 +48,10 @@
  * any value it does not know reads as Off. */
 #define AU_SLC_SYNC_OFF    0
 #define AU_SLC_SYNC_PITCH  1
+#define AU_SLC_SYNC_WARP   3            /* stretched to the tempo at its own pitch: the whole sample
+                                         * pre-stretched in the background (Josh, 2026-11-14:
+                                         * "prestretch"), the slices played from that copy */
+#define AU_SLC_WARP_MAX_SEC 60          /* Warp is offered for samples up to a minute (Josh, 2026-11-15) */
 #define AU_BPM10_MIN       1            /* a sample's own Tempo, x10: 0.1 .. */
 #define AU_BPM10_MAX       9999         /* .. 999.9 BPM (Josh, 2026-10-30: "999.9 max and .1 minimum" —
                                          * it was the project's 20..300, which refused Strch x2 on a loop
@@ -86,7 +90,16 @@
 
 #define AU_PLAY_ONE        0            /* to the slice's end */
 #define AU_PLAY_GATE       1            /* for the step's gate */
-#define AU_PLAY_LOOP       2            /* loops the slice for the gate */
+#define AU_PLAY_THRU       2            /* THRU: from the slice's start on to the range's End (Josh,
+                                         * 2026-11-14: "an option for slices to play THROUGH the
+                                         * entire sample"); the next slice cuts it (mono) */
+#define AU_PLAY_MAX        AU_PLAY_THRU
+/* A Slicer step's Dir (clip_t.step_xrev): an override over the slice's Revrs */
+#define AU_SDIR_SLICE      0            /* follow the slice */
+#define AU_SDIR_FWD        1
+#define AU_SDIR_REV        2
+#define AU_NM_DIR_MASK     0x03         /* au_track_t.nm_rev: the step's Dir ... */
+#define AU_NM_RMX          0x04         /* ... and REMIX's flip on top */
 
 struct au_stream;
 
@@ -140,12 +153,17 @@ typedef struct {
     uint8_t      mode;               /* AU_MODE_* */
     uint8_t      even;               /* 0 = Off (the hand set plays), else 2..AU_MAX_SLICES equal slices of Start..End */
     uint8_t      nslices;            /* the hand set's slices, 1..AU_MAX_SLICES (128) */
+    uint8_t      whole;              /* a Slicer not chopped yet: its one slice IS the range, Start..End,
+                                      * and follows it (Josh, 2026-11-15: "just don't do any automatic
+                                      * chops on sample load. 1 chop and it plays the whole sample from
+                                      * start point to end point"); the first chop clears it */
     uint8_t      jump;               /* retired (jump points): neither saved nor read; kept for the struct's shape */
     uint32_t     rstart;             /* Start, sample frames */
-    uint32_t     slen;               /* Slice: Length from Start, in ticks at the sample's Tempo (0 = to the
-                                      * sample's end). Loop: unused, its Length is the clip's (au_range) */
-    uint32_t     rend;               /* Loop: End, sample frames — the audio stops there, silent till the
-                                      * clip comes round (0 = none: it runs on to the sample's end) */
+    uint32_t     slen;               /* retired (a Slicer's Length in ticks): its End is `rend` now, a frame,
+                                      * so the sample's Tempo never moves the range */
+    uint32_t     rend;               /* End, sample frames (0 = none: the sample's end). Loop: the audio stops
+                                      * there, silent till the clip comes round. Slicer: the range's End —
+                                      * a hard edge for every slice */
     uint32_t     rspan;              /* Loop: Bars, in ticks — Start..End (or the file's end) lasts this
                                       * long and the Tempo follows; held when End or Start moves
                                       * (0 = none: the Tempo rules) */
@@ -339,10 +357,13 @@ typedef struct {
      * clip's own */
     uint8_t    rmx_slive, rmx_sclip;   /* the notes: seq8_instance_t.rmx_sn */
     uint16_t   rmx_sn_n;
-    /* A Slicer's next hit of each chop, as the sequencer plays it: the step's
-     * own reverse / pitch (and a remix's on top), a ROLL repeat's level — set
+    /* A Slicer's next hit of each slice, as the sequencer plays it: the step's
+     * own Dir / pitch (and a remix's on top), a ROLL repeat's level — set
      * just before the note goes out, taken by that hit (au_note_event). A pad
-     * played by hand finds none and plays the chop as it is. */
+     * played by hand finds none and plays the slice as it is.
+     * nm_rev packs the direction (AU_NM_*): bits 0-1 the step's Dir (0 Slice:
+     * the slice's own Revrs, 1 forwards, 2 backwards — an override), bit 2
+     * REMIX's Revrs, which flips whatever the Dir chose (Josh, 2026-11-15). */
     uint8_t    nm_on[AU_MAX_SLICES], nm_rev[AU_MAX_SLICES];
     int8_t     nm_semi[AU_MAX_SLICES];
     uint8_t    nm_start[AU_MAX_SLICES], nm_len[AU_MAX_SLICES];   /* % of the chop: from, how much (0 = all) */
@@ -372,7 +393,7 @@ typedef struct {
     char         dir[256];   /* the project's samples/ directory */
     uint8_t      op, ow;     /* AU_REQ_EDIT: AU_EDIT_*; 1 = overwrite the file, 0 = a new sample */
     uint32_t     a, b;       /* AU_REQ_EDIT, Trim: the frames kept */
-    uint8_t      rechop;     /* a Slicer's Trim: 16 even chops over the result */
+    uint8_t      rechop;     /* a Slicer's Trim: a..b is its range; its slices are kept (au_slc_trim_slices) */
     uint8_t      keep;       /* AU_REQ_PICK: the clip keeps its length (a recorded take, seq8_audio_rec.c) */
     uint16_t     bpm10;      /* AU_REQ_PICK: the sample's Tempo x10 as known (a take: the project's), 0 = guess it */
 } au_req_t;
@@ -384,7 +405,8 @@ typedef struct {
     au_sample_t *smp;
     char         name[AU_PATH_MAX];
     uint8_t      edit, ow;   /* an AU_REQ_EDIT's answer: the clip keeps its settings; ow = the file was overwritten */
-    uint8_t      rechop;     /* ...a Slicer's Trim: its chops start again, 16 even */
+    uint8_t      rechop;     /* ...a Slicer's Trim: its slices are kept, moved with the audio (au_slc_trim_slices) */
+    uint32_t     ka, kb;     /* ...the frames the Trim kept (a..b of the old file) */
     uint32_t     cut;        /* ...frames the edit took off the front (Trim): every position moves back by it */
     uint8_t      keep;       /* the pick's keep: the clip's length stays as it is */
 } au_res_t;

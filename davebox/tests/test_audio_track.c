@@ -358,8 +358,8 @@ int main(void) {
 
     HX_ASSERT(AUA(4, 0)->bpm10 == 1200, "a sample with nothing to go on did not take the project's tempo");
 
-    /* ---- the SLICER: the track's one sample, cut into 16 even chops when it
-     * lands (Josh, 2026-11-02: "Yes"), the steps left alone ---- */
+    /* ---- the SLICER: the track's one sample, NOT chopped when it lands —
+     * one slice, the whole range (Josh, 2026-11-15) — the steps left alone ---- */
     hx_set_param(h, "t4_convert_to_slicer", "");
     HX_ASSERT(tr->pad_mode == PAD_MODE_SLICER && !AUA(4, 0)->name[0] && !AUS(4)->name[0],
               "converting Audio to a Slicer kept a sample");
@@ -367,8 +367,8 @@ int main(void) {
     snprintf(p, sizeof p, "%d|%s/src/mono48.wav", AU_SLC, g_root);
     hx_set_param(h, "t4_au_pick", p);
     HX_ASSERT(wait_loaded(h, 4, 0) == 2 && !strcmp(AUS(4)->name, "mono48.wav"), "a Slicer's pick did not land in its slot");
-    HX_ASSERT(AUS(4)->nslices == 16 && AUS(4)->even == 0 && AUS(4)->sl[1].start == 3000 && AUS(4)->sl[15].start == 45000,
-              "a Slicer's pick was not cut into 16 even chops");
+    HX_ASSERT(AUS(4)->whole && AUS(4)->nslices == 1 && AUS(4)->even == 0 && au_count(AUS(4)) == 1,
+              "a Slicer's pick was chopped (it must land as one slice)");
     HX_ASSERT(clip_pitches(inst, 4, 0, pit, 64) == 1 && pit[0] == 5, "a Slicer's pick changed the steps");
     HX_ASSERT(!AUA(4, 0)->name[0] && !AUA(4, 1)->smp, "a Slicer's pick landed in a clip");
     HX_ASSERT(AUS(4)->bpm10 == 1200, "a Slicer's sample with nothing to go on did not take the project's tempo");
@@ -500,10 +500,12 @@ int main(void) {
         HX_ASSERT(ac->nslices == 4 && ac->sl[1].start == 12000, "Even 0 changed the chops");
         hx_set_param(h, "t4_au_slice_start", "0 1 13000");
         HX_ASSERT(ac->sl[1].start == 13000, "a hand edit after Even did not apply");
-        /* no Start or Length on a Slicer: their keys change nothing */
-        hx_set_param(h, "t4_au_set_start", "0 24000");
+        /* a Slicer's range is Start / End (frames); the old Length key changes nothing */
         hx_set_param(h, "t4_au_set_slen", "0 100");
-        HX_ASSERT(ac->rstart == 0 && ac->slen == 0, "a Slicer took a Start or a Length");
+        HX_ASSERT(ac->slen == 0, "a Slicer took the retired Length");
+        hx_set_param(h, "t4_au_set_start", "0 24000");
+        HX_ASSERT(ac->rstart == 24000, "a Slicer's Start did not set");
+        hx_set_param(h, "t4_au_set_start", "0 0");
         /* back to the two-slice hand set the rest of the test expects */
         hx_set_param(h, "t4_au_manual", "0");
         hx_set_param(h, "t4_au_mark_add", "0 12000");
@@ -1050,7 +1052,9 @@ int main(void) {
     hx_set_param(h, "t5_convert_to_slicer", "");
     snprintf(p, sizeof p, "%d|%s/src/ramp2.wav", AU_SLC, g_root);
     hx_set_param(h, "t5_au_pick", p);
-    HX_ASSERT(wait_loaded(h, 5, 0) == 2 && AUS(5)->nslices == 16, "the ramp did not land on the Slicer in 16 chops");
+    HX_ASSERT(wait_loaded(h, 5, 0) == 2 && AUS(5)->whole, "the ramp did not land on the Slicer");
+    hx_set_param(h, "t5_au_set_even", "16 16");               /* chopped: 16 even */
+    HX_ASSERT(AUS(5)->nslices == 16, "Even 16 did not cut the ramp in 16 slices");
     hx_set_param(h, "t5_au_set_bpm", "16 1200");              /* 2 s: one bar at 120 */
     hx_set_param(h, "t5_au_chop", "7");                       /* the 16 chops onto the 16 steps */
     HX_ASSERT(clip_pitches(inst, 5, 7, pit, 64) == 16, "the chops were not laid on the steps");
@@ -1562,7 +1566,10 @@ int main(void) {
     {
         char b[256];
         hx_get_param(h, "t5_au_sl_0_1", b, sizeof b);
-        HX_ASSERT(strlen(b) > 2 && !strcmp(b + strlen(b) - 2, " 9"), "sl_C_L does not end with the slice's detune");
+        {
+            int f[11], nf = sscanf(b, "%d %d %d %d %d %d %d %d %d %d %d", &f[0], &f[1], &f[2], &f[3], &f[4], &f[5], &f[6], &f[7], &f[8], &f[9], &f[10]);
+            HX_ASSERT(nf == 11 && f[9] == 9 && f[10] == 1, "sl_C_L does not carry the slice's detune, then heard");
+        }
         hx_get_param(h, "t4_au_info_0", b, sizeof b);
         HX_ASSERT(strstr(b, " -17 0 "), "info_C does not carry the clip's detune, then its Tempo");
     }
@@ -1631,7 +1638,7 @@ int main(void) {
               "the state does not keep an Audio clip's Sync Vintage, Tempo and Offset (format 37; of=, sh= left 0)");
     HX_ASSERT(strstr(blob, "\"t4_pm\":3") && strstr(blob, "\"t4c0_aud\":\"rs=0 p=0 dt=-17 g=0 ") && strstr(blob, "|mono48.wav\""),
               "the state does not carry the Audio track and clip A");
-    HX_ASSERT(strstr(blob, "\"t5_pm\":4") && strstr(blob, "\"t5_slc\":\"p=0 dt=-17 g=0 bpm=2400 sy=1 sens=50 lay=1 n=16|ramp2.wav\""),
+    HX_ASSERT(strstr(blob, "\"t5_pm\":4") && strstr(blob, "\"t5_slc\":\"p=0 dt=-17 g=0 bpm=2400 sy=1 sens=50 lay=1 n=16 rs=0 en=0 wh=0|ramp2.wav\""),
               "the state does not carry the Slicer");
     HX_ASSERT(strstr(blob, "\"t5s1_slc\":\"st=5512 en=0 p=0 dt=9 g=-6 rv=0 pl=1 at=0 dc=0\""),
               "the state does not carry chop 2");
@@ -1933,6 +1940,7 @@ int main(void) {
                 for (ci = 0; ci < NUM_CLIPS; ci++) off &= !inst->tracks[6].clips[ci].cond_resp[5];
                 HX_ASSERT(off, "bake cond: a new Slicer's RESPONDER is on");
             }
+            hx_set_param(h, "t5_au_set_even", "16 16");           /* a pick is one slice: chop it */
             hx_set_param(h, "t5_au_chop", "0");
             nb = clip_pitches(inst, 5, 0, pit_before, 64);
             HX_ASSERT(nb > 1, "bake cond: no chops on the Slicer's steps");

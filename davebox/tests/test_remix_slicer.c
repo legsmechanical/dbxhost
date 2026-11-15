@@ -271,9 +271,9 @@ int main(void) {
      * octave up; the rest as they were; saved and reloaded ==== */
     hx_set_param(h, "t5_remix_on", "0");
     measure_bar(h, m);
-    hx_set_param(h, "t5_c0_step_3_xrev", "1");
+    hx_set_param(h, "t5_c0_step_3_xrev", "2");                /* the step's Dir: backwards (an override) */
     hx_set_param(h, "t5_c0_step_6_xsemi", "12");
-    HX_ASSERT(inst->tracks[5].clips[0].step_xrev[3] == 1 && (int8_t)inst->tracks[5].clips[0].step_xsemi[6] == 12, "the step keys did not land");
+    HX_ASSERT(inst->tracks[5].clips[0].step_xrev[3] == AU_SDIR_REV && (int8_t)inst->tracks[5].clips[0].step_xsemi[6] == 12, "the step keys did not land");
     measure_bar(h, m);
     measure_bar(h, m);
     HX_ASSERT(which(m[3].mid, unit) == 3 && m[3].early > m[3].late, "step 4 does not play its chop reversed");
@@ -322,13 +322,13 @@ int main(void) {
         static char sb[1 << 20]; size_t sn;
         HX_ASSERT(f, "no state file");
         sn = fread(sb, 1, sizeof sb - 1, f); sb[sn] = 0; fclose(f);
-        HX_ASSERT(strstr(sb, "\"t5c0_sxr\":\"00000001") && strstr(sb, "\"t5c0_sxs\":\"0000000000000c"),
+        HX_ASSERT(strstr(sb, "\"t5c0_sxr\":\"00000002") && strstr(sb, "\"t5c0_sxs\":\"0000000000000c"),
                   "the step's sound was not saved (t5c0_sxr / t5c0_sxs)");
         /* ...and read back by the loader */
         inst->tracks[5].clips[0].step_xrev[3] = 0; inst->tracks[5].clips[0].step_xsemi[6] = 0;
-        parse_step_hex_arr(sb, "t5c0_sxr", inst->tracks[5].clips[0].step_xrev,  inst->tracks[5].clips[0].length, 1);
+        parse_step_hex_arr(sb, "t5c0_sxr", inst->tracks[5].clips[0].step_xrev,  inst->tracks[5].clips[0].length, AU_SDIR_REV);
         parse_step_hex_arr(sb, "t5c0_sxs", inst->tracks[5].clips[0].step_xsemi, inst->tracks[5].clips[0].length, 255);
-        HX_ASSERT(inst->tracks[5].clips[0].step_xrev[3] == 1 && (int8_t)inst->tracks[5].clips[0].step_xsemi[6] == 12,
+        HX_ASSERT(inst->tracks[5].clips[0].step_xrev[3] == AU_SDIR_REV && (int8_t)inst->tracks[5].clips[0].step_xsemi[6] == 12,
                   "the saved step sound does not parse back");
     }
     hx_set_param(h, "t5_c0_step_3_xrev", "0");
@@ -386,7 +386,7 @@ int main(void) {
             HX_ASSERT(which(m[k].mid, unit) == want, msg);
             if (rmx_rev_flag[8][want]) {
                 snprintf(msg, sizeof msg, "baked REVERSE 9: 1/16 %d (chop %d) no longer plays reversed", k, want);
-                HX_ASSERT(m[k].early > m[k].late && inst->tracks[5].clips[0].step_xrev[k], msg);
+                HX_ASSERT(m[k].early > m[k].late && inst->tracks[5].clips[0].step_xrev[k] == AU_SDIR_REV, msg);
                 nrev++;
             }
         }

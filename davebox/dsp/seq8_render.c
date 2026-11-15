@@ -1165,17 +1165,20 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                             tr->play_pending_count++;
                             tr->note_active = 1;
                         }
-                        /* A Slicer's hit carries its step's own reverse / pitch,
+                        /* A Slicer's hit carries its step's own Dir / pitch,
                          * a remix's on top, and a remixed ROLL repeat's level —
                          * to the chop's next hit (au_track_t.nm_*) */
                         uint8_t _xon = 0, _xrev = 0, _xvg = 100, _xst = 0, _xln = 0;
                         int8_t  _xsemi = 0;
                         if (tr->pad_mode == PAD_MODE_SLICER && emit_pitch >= AU_NOTE_BASE && emit_pitch - AU_NOTE_BASE < AU_MAX_SLICES) {
                             int _xs = (int)(int8_t)cl->step_xsemi[_sidx];
-                            _xrev = cl->step_xrev[_sidx] ? 1 : 0;
+                            /* the step's Dir (AU_SDIR_*) and REMIX's flip, packed
+                             * apart (AU_NM_*): the Dir overrides the slice's Revrs,
+                             * the flip then turns the result (Josh, 2026-11-15) */
+                            _xrev = (uint8_t)(cl->step_xrev[_sidx] <= AU_SDIR_REV ? cl->step_xrev[_sidx] : AU_SDIR_SLICE);
                             _xst = cl->step_xstart[_sidx]; _xln = cl->step_xlen[_sidx];
                             if (_rmx) {
-                                _xrev ^= inst->rmx_sr[t][ni2];
+                                if (inst->rmx_sr[t][ni2]) _xrev ^= AU_NM_RMX;
                                 _xs += inst->rmx_ss[t][ni2];
                                 if (inst->rmx_sv[t][ni2]) _xvg = inst->rmx_sv[t][ni2];
                             }

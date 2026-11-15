@@ -190,7 +190,7 @@ int main(void) {
         hx_set_param(h, "t5_au_slice_pitch", "16 1 -7");
         hx_set_param(h, "t5_au_slice_gain", "16 1 -13");
         hx_set_param(h, "t5_au_slice_rev", "16 1 1");
-        hx_set_param(h, "t5_au_slice_play", "16 1 2");             /* past Gate (Loop left): Gate */
+        hx_set_param(h, "t5_au_slice_play", "16 1 3");             /* past Thru: Thru */
         hx_set_param(h, "t5_au_slice_atk", "16 1 37");
         hx_set_param(h, "t5_au_slice_dec", "16 1 1234");
         hx_set_param(h, "t5_au_slice_detune", "16 1 -23");
@@ -198,15 +198,15 @@ int main(void) {
         {
             au_slice_t *s = &ac->sl[1];
             HX_ASSERT(s->start == 7000 && s->end == 12345 && s->pitch == -7 && s->gain_db == -13 && s->rev == 1 &&
-                      s->play == AU_PLAY_GATE && s->attack_ms == 37 && s->decay_ms == 1234 && s->detune == -23 &&
+                      s->play == AU_PLAY_THRU && s->attack_ms == 37 && s->decay_ms == 1234 && s->detune == -23 &&
                       au_cl(inst, 4, 0)->rot == 77, "round trip setup: the slice keys did not set slice 2's fields");
         }
         /* clip 1: a file that will be gone from samples/ when the project loads */
         pick(h, 4, 1, "gone.wav");
         HX_ASSERT(wait_loaded(h, 4, 1) == 2, "missing: gone.wav did not load");
         h = save_and_reload(h); inst = (seq8_instance_t *)h->inst;
-        HX_ASSERT(strstr(g_blob, "\"t5s1_slc\":\"st=7000 en=12345 p=-7 dt=-23 g=-13 rv=1 pl=1 at=37 dc=1234\""),
-                  "round trip: the saved chop line is not \"st=7000 en=12345 p=-7 dt=-23 g=-13 rv=1 pl=1 at=37 dc=1234\"");
+        HX_ASSERT(strstr(g_blob, "\"t5s1_slc\":\"st=7000 en=12345 p=-7 dt=-23 g=-13 rv=1 pl=2 at=37 dc=1234\""),
+                  "round trip: the saved chop line is not \"st=7000 en=12345 p=-7 dt=-23 g=-13 rv=1 pl=2 at=37 dc=1234\"");
         ac = au_cl(inst, 5, AU_SLC);
         HX_ASSERT(!strcmp(ac->name, WEIRD), "round trip: a sample name holding \" and \\ did not survive the reload");
         {
@@ -214,7 +214,7 @@ int main(void) {
             HX_ASSERT(ac->nslices == 3 && ac->even == 0 && ac->sl[2].start == 15000,
                       "round trip: the hand set's count / Even / slice 3 changed over a reload");
             HX_ASSERT(s->start == 7000 && s->end == 12345 && s->pitch == -7 && s->gain_db == -13 && s->rev == 1 &&
-                      s->play == AU_PLAY_GATE && s->attack_ms == 37 && s->decay_ms == 1234 && s->detune == -23,
+                      s->play == AU_PLAY_THRU && s->attack_ms == 37 && s->decay_ms == 1234 && s->detune == -23,
                       "round trip: a hand-set slice's fields did not survive a reload exactly");
         }
         HX_ASSERT(au_cl(inst, 4, 0)->rot == 77, "round trip: Shift (rot) did not survive a reload");

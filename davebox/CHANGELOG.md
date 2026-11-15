@@ -192,6 +192,16 @@ the section into a versioned heading at release time.
   again every 5 minutes until the Move is plugged in.
 
 ### Changed
+- **A Slicer loads a sample without chopping it.** A new sample is one slice covering the
+  sample's Start to End, and it follows them until you chop. Start and End are now the
+  Slicer's range: slices play only inside it, and a slice outside it is silent until the
+  range covers it again. The Tempo no longer moves End.
+- **A Slicer's Trim keeps your slices.** It saves Start to End as a new file and every slice
+  stays on the same sound.
+- **A slice's Play has a third choice, Thru**: it plays on to the range's End until the next
+  slice cuts it.
+- **A Slicer step's Revrs is now Dir**: Slice (as the slice plays), forwards or backwards.
+  REMIX's Revrs still turns it round.
 - **A Slicer follows the Conductor through RESPONDER, like every track.** Its own switch on
   SAMPLE's page 2 is gone; a Slicer starts with its RESPONDER off, and an older project keeps
   each Slicer as it was.

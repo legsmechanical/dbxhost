@@ -1603,7 +1603,7 @@ static void seq8_load_state(seq8_instance_t *inst) {
                 snprintf(k, sizeof(k), "t%dc%d_sx", t, c);
                 parse_step_hex_arr(buf, k, _cl->step_ratchet, SEQ_STEPS, 4);
                 snprintf(k, sizeof(k), "t%dc%d_sxr", t, c);
-                parse_step_hex_arr(buf, k, _cl->step_xrev,  SEQ_STEPS, 1);
+                parse_step_hex_arr(buf, k, _cl->step_xrev,  SEQ_STEPS, AU_SDIR_REV);   /* a Slicer step's Dir: Slice / Fwd / Rev */
                 snprintf(k, sizeof(k), "t%dc%d_sxs", t, c);
                 parse_step_hex_arr(buf, k, _cl->step_xsemi, SEQ_STEPS, 255);   /* int8 bits */
                 snprintf(k, sizeof(k), "t%dc%d_sxa", t, c);

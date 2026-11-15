@@ -174,7 +174,7 @@ int main(void) {
     /* ---- saved: they are the chops ---- */
     inst->state_dirty = 1;
     HX_ASSERT(hx_get_param(h, "state_full", blob, (int)sizeof blob) > 0, "state_full");
-    HX_ASSERT(strstr(blob, "\"t4_slc\":\"") && strstr(blob, " n=4|clicks.wav") && strstr(blob, "\"t4s3_slc\":\"st=") &&
+    HX_ASSERT(strstr(blob, "\"t4_slc\":\"") && strstr(blob, " n=4 rs=0 en=0 wh=0|clicks.wav") && strstr(blob, "\"t4s3_slc\":\"st=") &&
               !strstr(blob, "\"t4s4_slc\""), "the save did not write Transient's 4 chops");
 
     /* ---- Even replaces them; a hand edit edits them ---- */
