@@ -78,6 +78,7 @@ async function main() {
 
     const kit = await import('../../ui/ui_movy.mjs');
     const hints = () => { S.screenDirty = true; render.drawUI(); return (kit.kitHintsForTest() || []).map((h) => h[0].toUpperCase() + ' ' + h[1].toUpperCase()); };
+    const await_HP = await import('../../ui/hud/hud_publish.mjs');
     const KT = [];
     (await import('../../ui/ui_fonts_pp.mjs')).setKitTextTrace((x) => KT.push(String(x)));
     const texts = () => { KT.length = 0; S.screenDirty = true; render.drawUI(); return KT.slice(); };
@@ -150,6 +151,29 @@ async function main() {
             cc(71 + 1, 1); ticks(1);
             assert(JSON.stringify([AUD.auMarks(ed.t, ed.c), ed.A, ed.B, ed.cur]) !== before, where + ': control — a Zoom turn without Shift moved nothing');
         }
+    });
+    step('⭐⭐ the remote screen follows: inside with Shift, no Start / Zoom / End cells or times, footer KNB EDIT ALL', () => {
+        const HP = await_HP;
+        let probe = 8e15;
+        const watched = () => {
+            let last = null;
+            globalThis.host_ui_publish = (j) => { if (j) last = j; return true; };
+            HP.hudTick(probe += 1e12); S.screenDirty = true; render.drawUI();
+            globalThis.host_ui_publish = () => false;
+            assert(last, 'nothing was published with a viewer connected');
+            return last;
+        };
+        fresh(0); click();
+        const plain = watched();
+        assert(/"Start"/.test(plain) && /"Zoom"/.test(plain), 'control: the plain frame has no Start / Zoom cells: ' + plain.slice(0, 400));
+        assert(/"S \d/.test(plain), 'control: the plain frame has no start time readout');
+        assert(/"sh"[^\]]*"all"/i.test(plain), 'the plain frame\'s footer has no SH ALL');
+        shift(true);
+        const sh = watched();
+        shift(false);
+        assert(!/"Start"|"Zoom"|"End"/.test(sh), 'with Shift the remote frame still has Start / Zoom / End: ' + sh.slice(0, 600));
+        assert(!/"S \d|"E \d|"E NEXT"/.test(sh), 'with Shift the remote frame still shows the slice times');
+        assert(/"knb"[^\]]*"edit all"/i.test(sh), 'with Shift the remote footer is not KNB EDIT ALL: ' + sh.slice(-400));
     });
     step('⭐⭐ page 3: CLK MENU · JOG PAGE (the SAMPLE menu); Tempo in hand CLK TEMPO; with Shift TCH FINE, never JOG PAGE', () => {
         fresh(2);
