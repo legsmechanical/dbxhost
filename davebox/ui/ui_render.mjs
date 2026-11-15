@@ -366,6 +366,22 @@ function drawAudioTrackRest(t) {
  *             (dotted outside), a magnifier over K2 for Zoom; the sample's
  *             knobs below (Josh, 2026-11-14: this layout so it reads apart from
  *             page 1 at a glance) */
+/* The SLICER editor's footer, page by page — what each gesture does NOW
+ * (Josh, 2026-11-15: "make sure the hints are updated on slice pages to
+ * account for the new gestures"). Shift + click opens the SLICE menu on pages
+ * 1 and 2 (the slice editor inside page 1 too), Shift + a knob sets every
+ * slice there, and Shift + the jog is a shortcut that LEAVES — so while Shift
+ * is held the footer says what Shift does, never JOG PAGE. Page 3's click
+ * opens SAMPLE's menu (touch Tempo: Tempo's), Shift a knob's fine step. */
+export function slcHints(pg, inside, shift, tempoTouched) {
+    if (pg === 2) {
+        const clk = ['clk', tempoTouched ? 'tempo' : 'menu'];
+        return shift ? [clk, ['tch', 'fine']] : [clk, ['jog', 'page']];
+    }
+    if (shift) return [['clk', 'menu'], ['tch', 'all slices']];
+    if (pg === 1) return [['sh', 'menu'], ['jog', 'page']];
+    return inside ? [['clk', 'add'], ['sh', 'menu'], ['back', 'done']] : [['clk', 'edit'], ['sh', 'menu'], ['jog', 'page']];
+}
 function drawSlicerPage(ed, i, ends, mid, zoomTxt, lit) {
     const t = ed.t, c = ed.c, rt = i.rate, inside = ed.mode === 'chop';
     const pg = inside ? 0 : (ed.page | 0);
@@ -374,7 +390,7 @@ function drawSlicerPage(ed, i, ends, mid, zoomTxt, lit) {
     void lit;
     if (pg === 1) {
         const title = 'SLICE ' + (sel + 1) + '/' + n;
-        drawKitPage(title, cells, false, S.shiftHeld ? [['jog', 'page']] : [['sh', 'all slices'], ['jog', 'page']]);
+        drawKitPage(title, cells, false, slcHints(1, false, !!S.shiftHeld, false));
         if (S.knobTouched < 0) drawBankHeading(title, false, false, '2/3');
         return;
     }
@@ -405,7 +421,7 @@ function drawSlicerPage(ed, i, ends, mid, zoomTxt, lit) {
         drawAudioWave(t, c, 1, 18, SLC_STRIP_W, 13, { A: sA, B: sB, trim: [rs, re], faint: true });
         fill_rect(0, 17, SLC_STRIP_W + 2, 1, 1); fill_rect(0, 31, SLC_STRIP_W + 2, 1, 1);
         fill_rect(0, 17, 1, 15, 1); fill_rect(SLC_STRIP_W + 1, 17, 1, 15, 1);
-        drawKitPage(name, cells, false, tempoTouched ? [['clk', 'tempo'], ['jog', 'page']] : [['clk', 'menu'], ['jog', 'page']]);
+        drawKitPage(name, cells, false, slcHints(2, false, !!S.shiftHeld, tempoTouched));
         if (S.knobTouched < 0) drawBankHeading(name, false, false, '3/3');
         /* a knob that changes how the sample draws shows it, large, while touched */
         if (slcWaveKnob(S.knobTouched)) drawSlicerWaveCard(ed, i, cells[S.knobTouched]);
@@ -423,7 +439,7 @@ function drawSlicerPage(ed, i, ends, mid, zoomTxt, lit) {
                                                : { A: ed.A, B: ed.B, sel, gain: i.gain | 0 });
     if (!inside) drawBrackets(0, 19, 128, 32);          /* click to enter the slice editor */
     hudSampleKnobs(ed, i, 'chop', inside ? 'manual' : null, true);
-    drawKitHintRow(MV_FOOTER_Y, inside ? [['clk', 'add'], ['back', 'done']] : [['clk', 'edit'], ['jog', 'page']]);
+    drawKitHintRow(MV_FOOTER_Y, slcHints(0, inside, !!S.shiftHeld, false));
 }
 
 function drawAudioWaveEditor() {
