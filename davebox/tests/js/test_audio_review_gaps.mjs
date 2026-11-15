@@ -43,7 +43,14 @@ globalThis.host_write_file = (path, body) => {
     FILES[String(path)] = String(body);
     return true;
 };
-globalThis.host_module_set_param = (k, v) => { sets.push([String(k), String(v)]); };
+/* the engine's bake (tN_au_kit "R seq|path"): done at once, its seq echoed, nothing left over */
+let KITS = [];
+let KIT_ANSWER = '2 0 0.00';   /* "state err rem" */
+globalThis.host_module_set_param = (k, v) => {
+    sets.push([String(k), String(v)]);
+    const m = /^t4_au_kit$/.test(String(k)) && /^([01]) (\d+)\|(.*)$/.exec(String(v));
+    if (m) { KITS.push({ rev: m[1] === '1', path: m[3] }); GET['t4_au_kit'] = KIT_ANSWER + ' ' + m[2]; }
+};
 /* the track's pad mode is the screen's (the engine's answer follows the conversion) */
 let PADMODE = () => '0';
 globalThis.host_module_get_param = (k) => (k === 't4_pad_mode' ? PADMODE() : GET[k] !== undefined ? GET[k] : '');
@@ -99,8 +106,9 @@ const mapPad = (c, r) => { cc(3, 127); note(P.bankMapPadForCell(c, r), 100); not
 const leave = () => { for (let n = 0; S.auEditor && n < 6; n++) { back(); ticks(1); } };
 /* the Slicer's sample: its slot, 16 */
 const slicer = (info, marks) => { GET['t4_au_info_16'] = info; GET['t4_au_marks_16'] = marks; A.auMarkStale(4, 16); ticks(2); };
-const fresh = () => { CMDS = []; FILES = {}; globalThis.__stubStat = null; S.actionPopupLines = []; S.actionPopupEndTick = 0; };
-const kitsWritten = () => Object.keys(FILES).filter((p) => /\.ablpreset$/.test(p));
+const fresh = () => { CMDS = []; KITS = []; FILES = {}; globalThis.__stubStat = null; S.actionPopupLines = []; S.actionPopupEndTick = 0; };
+/* a preset written, or a bake asked for */
+const kitsWritten = () => Object.keys(FILES).filter((p) => /\.ablpreset$/.test(p)).concat(KITS.map((k) => k.path));
 
 PADMODE = () => String(S.trackPadMode[4]);
 /* the track becomes a Slicer by the real gesture (Instmt/Dest -> Slicer, Yes) */
@@ -130,7 +138,7 @@ step('⭐⭐ more than 32 chops: Convert to kit writes 32 pads (36..67), the not
     click();
     assert(S.pendingAuKit, 'the row did not ask for the kit');
     ticks(2);
-    const kits = kitsWritten();
+    const kits = Object.keys(FILES).filter((p) => /\.ablpreset$/.test(p));
     assert(kits.length === 1, 'kits written: ' + JSON.stringify(kits));
     const kit = JSON.parse(FILES[kits[0]]);
     const pads = kit.chains[0].devices[0].chains;
@@ -140,10 +148,25 @@ step('⭐⭐ more than 32 chops: Convert to kit writes 32 pads (36..67), the not
     /* pad 32 is chop 32 (frames 62000..64000 of 96000), not a later one */
     const last = pads[31].devices[0].parameters;
     assert(Math.abs(last.Voice_PlaybackStart - 62000 / 96000) < 1e-9, 'pad 32 is not chop 32: start ' + last.Voice_PlaybackStart);
-    assert(CMDS.length === 1, 'the sample was not copied exactly once: ' + JSON.stringify(CMDS));
+    assert(CMDS.length === 0 && KITS.length === 1 && /\/Exported kits\/My Song 5\.wav$/.test(KITS[0].path) && !KITS[0].rev,
+           'the sample was not baked once (no copy, no reverse): ' + JSON.stringify([CMDS, KITS]));
     const L = S.actionPopupLines || [];
     assert(L[0] === 'KIT SAVED' && L[2] === '32 pads (8 left out)', 'the notice does not say 8 chops were left out: ' + JSON.stringify(L));
     leave();
+});
+
+step('⭐⭐ a bake that fails (the engine says 3 + why): NO KIT and the reason, no preset written', () => {
+    slicer(INFO(1, 8, 0), MARKS(8));
+    fresh();
+    KIT_ANSWER = '3 5 0.00';                        /* AU_ERR_COPY */
+    try {
+        S.pendingAuKit = { t: 4, c: 16 };
+        ticks(10);
+    } finally { KIT_ANSWER = '2 0 0.00'; }
+    const L = S.actionPopupLines || [];
+    assert(KITS.length === 1, 'no bake was asked: ' + JSON.stringify(KITS));
+    assert(L[0] === 'NO KIT' && L[1] === "Can't copy", 'notice: ' + JSON.stringify(L));
+    assert(!Object.keys(FILES).some((p) => /\.ablpreset$/.test(p)), 'a failed bake wrote a preset');
 });
 
 step('⭐⭐ no sample: the SLICES menu offers no Convert to kit; the tick path says NO KIT / No sample and writes nothing', () => {

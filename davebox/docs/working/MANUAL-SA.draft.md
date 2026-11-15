@@ -1381,15 +1381,19 @@ such a lane plays, every slice plays at the lane's value, and on Stop each goes 
 own. A single slice's own sound isn't automated. A Slicer's sample is every clip's, so a
 lane only ever holds it while it plays — it never rewrites the setting.
 
-**Convert to kit** makes a Move drum rack preset from the slices: a pad for each, up to 32,
-in order. The sample is copied once into **Samples → dAVEBOx → Exported kits** and every pad
-plays its slice of it; the preset goes to **Track Presets → dBx-slice**, named after the
-project and track. Move's own drum tracks load it and play the first 16 pads (all 32 stay
-in the preset); an instrument that loads Move drum racks with more pads, such as DR32, gets
-them all. Each pad takes its slice's **Pitch**, **Detune**, **Gain**, **Attk** and **Decay**
-(with the Slicer's own Pitch, Detune and Gain under them) and **Play** (One plays the pad
-through; Gate holds it as long as you do). **Revrs** has no place in a drum pad and is left
-out. The pads cut each other off, as the slices do.
+**Convert to kit** makes a Move drum rack preset from the slices: a pad for each slice
+inside the range, up to 32, in order. First the sample is **resampled as it sounds** —
+just the range, stretched to the project's tempo if Sync is Warp, retuned by Sync Pitch and
+the sample's Pitch and Detune, at its Gain — into **Samples → dAVEBOx → Exported kits**
+(it takes a moment; the screen says **Baking**). Every pad plays its slice of that file;
+the preset goes to **Track Presets → dBx-slice**, named after the project and track. Move's
+own drum tracks load it and play the first 16 pads (all 32 stay in the preset); an
+instrument that loads Move drum racks with more pads, such as DR32, gets them all. Each pad
+takes its slice's own **Pitch**, **Detune**, **Gain**, **Attk** and **Decay**, and **Play**
+(One plays the pad through, Thru on to the range's end; Gate holds it as long as you do). A
+slice set to **Revrs** plays from a second file, the resample reversed (`… rev`), so a kit
+holds at most two. A slice crossing Start or End keeps only the part inside, as it plays.
+The pads cut each other off, as the slices do.
 
 The SLICER editor works as an instrument's editor: **Back** returns to the bank you were on,
 and the sequence keeps working while it is up — tap or hold steps, **Record**, and **hold a

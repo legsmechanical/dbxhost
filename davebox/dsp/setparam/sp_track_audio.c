@@ -182,6 +182,19 @@ static void au_apply_results(seq8_instance_t *inst) {
         if (t == h) return;
         au_res_t r = inst->au_res[t & (AU_RING - 1)];
         __atomic_store_n(&inst->au_res_tail, t + 1, __ATOMIC_RELEASE);
+        if (r.kit) {                                           /* Convert to kit's bake */
+            if (r.track < NUM_TRACKS) {
+                inst->au_kit_state[r.track] = r.err ? 3 : 2;
+                inst->au_kit_err[r.track] = r.err;
+                inst->au_kit_db[r.track] = (float)r.kdb;
+            }
+            continue;
+        }
+        if (r.wstretch) {                                      /* a Slicer's Warp copy */
+            if (r.track < NUM_TRACKS) au_slc_warp_land(inst, &r);
+            else au_drop(inst, r.smp);
+            continue;
+        }
         if (r.track >= NUM_TRACKS || r.clip > AU_SLC) { au_drop(inst, r.smp); continue; }
         au_clip_t *cl = au_slot(inst, r.track, r.clip);
         if (r.gen != cl->gen) { au_drop(inst, r.smp); continue; }       /* superseded */
@@ -209,6 +222,11 @@ static void au_apply_results(seq8_instance_t *inst) {
         cl->smp = r.smp;
         cl->err = r.err;
         cl->state = r.smp ? 2 : 3;
+        /* Warp is a Slicer's for samples up to a minute: a longer one landing
+         * on it plays with Pitch, as the knob then shows */
+        if (r.smp && r.clip == AU_SLC && cl->sync == AU_SLC_SYNC_WARP &&
+            (uint64_t)r.smp->frames > (uint64_t)r.smp->rate * AU_SLC_WARP_MAX_SEC)
+            cl->sync = AU_SLC_SYNC_PITCH;
         if (r.smp) {
             int was_pick = !r.edit && (cl->name[0] == '\0' || strcmp(cl->name, r.name) != 0);
             if (r.edit) {
@@ -956,6 +974,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
         seq8_track_t *tr = &inst->tracks[t];
         au_track_t *at = &inst->au_trk[t];
         int any = 0;
+        au_slc_warp_tick(inst, t);       /* a Slicer's Warp copy kept to the tempo (any track: one that stops being a Slicer lets go of it) */
         if (!pad_mode_sampled(tr->pad_mode)) {
             for (i = 0; i < AU_VOICES; i++) at->v[i].active = 0;
             au_warp_off(inst, t);
@@ -1287,7 +1306,7 @@ static void au_render(seq8_instance_t *inst, int frames) {
     if (inst->au_lazy_track >= 0 && inst->au_lazy_state == AU_LAZY_RUN) {
         au_track_t *at = &inst->au_trk[inst->au_lazy_track];
         int live = 0;
-        for (i = 0; i < AU_VOICES; i++) if (at->v[i].active) { live = 1; inst->au_lazy_pos = (uint32_t)at->v[i].pos; }
+        for (i = 0; i < AU_VOICES; i++) if (at->v[i].active) { live = 1; inst->au_lazy_pos = (uint32_t)au_vpos(&at->v[i]); }
         if (!live) au_lazy_finish(inst);
     }
 }
@@ -1625,6 +1644,45 @@ static int sp_track_audio(sp_ctx_t *cx) {
         return 1;
     }
 
+    /* "R seq|path": CONVERT TO KIT's file — the Slicer's sample as it sounds,
+     * sample-wide, baked by the loader into the WAV `path` (R 1: and its
+     * reverse beside it, " rev" before the extension). Snapshots the range,
+     * Pitch / Detune / Gain, and Sync's speed at the project's tempo now.
+     * tN_au_kit reads how it went, with `seq` (the UI's number for it). */
+    if (!strcmp(sub, "kit")) {
+        au_clip_t *cl = au_slot(inst, tidx, AU_SLC);
+        const char *bar = strchr(p, '|');
+        au_req_t r;
+        uint32_t rs, re;
+        double bpm = inst->tracks[tidx].pfx.cached_bpm > 0 ? inst->tracks[tidx].pfx.cached_bpm : 120.0;
+        double tr = cl->bpm10 ? bpm * 10.0 / (double)cl->bpm10 : 1.0;
+        inst->au_kit_err[tidx] = 0;
+        inst->au_kit_db[tidx] = 0.0f;
+        inst->au_kit_seq[tidx] = (uint32_t)strtoul(p[0] && p[1] ? p + 2 : "0", NULL, 10);
+        if (inst->tracks[tidx].pad_mode != PAD_MODE_SLICER || !cl->smp || !bar || !bar[1] ||
+            strlen(bar + 1) >= sizeof r.path) {
+            inst->au_kit_state[tidx] = 3; inst->au_kit_err[tidx] = AU_ERR_FORMAT;
+            return 1;
+        }
+        au_range(cl, cl->smp, &rs, &re);
+        if (re <= rs) { inst->au_kit_state[tidx] = 3; inst->au_kit_err[tidx] = AU_ERR_FORMAT; return 1; }
+        memset(&r, 0, sizeof r);
+        r.kind = AU_REQ_KIT;
+        r.track = (uint8_t)tidx; r.clip = AU_SLC;
+        r.smp = cl->smp;
+        r.a = rs; r.b = re;
+        r.kvari = au_tune(cl->pitch, cl->detune) * (cl->sync == AU_SLC_SYNC_PITCH ? tr : 1.0);
+        r.kwarp = cl->sync == AU_SLC_SYNC_WARP &&
+                  (uint64_t)cl->smp->frames <= (uint64_t)cl->smp->rate * AU_SLC_WARP_MAX_SEC ? tr : 0.0;
+        r.kgain_db = cl->gain_db;
+        r.krev = (uint8_t)(*p == '1');
+        snprintf(r.path, sizeof r.path, "%s", bar + 1);
+        au_samples_dir(inst, r.dir, sizeof r.dir);       /* a streamed sample is read whole from there */
+        if (!au_req_push(inst, &r)) { inst->au_kit_state[tidx] = 3; inst->au_kit_err[tidx] = AU_ERR_MEM; return 1; }
+        inst->au_kit_state[tidx] = 1;
+        return 1;
+    }
+
     /* "C C ...": one undo step over these clips, before a Flatten replaces
      * them (each reset then joins it: tN_cC_hard_reset "j") */
     if (!strcmp(sub, "undo")) {
@@ -1760,6 +1818,10 @@ static int sp_track_audio(sp_ctx_t *cx) {
             if (c == tr->active_clip) au_track_kill(inst, tidx, NULL);
         } else if (!strcmp(w, "sync")) {
             v = slot ? (v == AU_SLC_SYNC_PITCH || v == AU_SLC_SYNC_WARP ? v : AU_SLC_SYNC_OFF) : clamp_i(v, 0, AU_SYNC_MAX);
+            /* Warp: samples up to a minute (the copy is the whole sample) — Pitch past it */
+            if (slot && v == AU_SLC_SYNC_WARP && cl->smp &&
+                (uint64_t)cl->smp->frames > (uint64_t)cl->smp->rate * AU_SLC_WARP_MAX_SEC)
+                v = AU_SLC_SYNC_PITCH;
             if (v != cl->sync && c == tr->active_clip) au_track_kill(inst, tidx, NULL);
             cl->sync = (uint8_t)v;
         } else if (!strcmp(w, "bpm") || !strcmp(w, "orig")) {
@@ -2035,7 +2097,7 @@ static int sp_track_audio(sp_ctx_t *cx) {
         if (inst->au_lazy_state != AU_LAZY_RUN || inst->au_lazy_n >= AU_MAX_SLICES) return 1;
         for (l = 0; l < AU_VOICES; l++) {
             if (!at->v[l].active || at->v[l].rel_len) continue;
-            uint32_t pos = (uint32_t)at->v[l].pos;
+            uint32_t pos = (uint32_t)au_vpos(&at->v[l]);
             /* keep starts ascending */
             if (pos < cl->sl[inst->au_lazy_n - 1].start + AU_GAP) return 1;
             cl->sl[inst->au_lazy_n].start = pos;
@@ -2382,7 +2444,7 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
             /* (a REMIX piece carries its gate's release from the start: it
              * sounds until that release begins) */
             if (!v->active || !v->smp || (v->rel_len && !(v->rel == v->rel_len && v->rel_wait > 0))) continue;
-            AU_POS_RET("1 %u %d", (unsigned)(v->pos < 0 ? 0 : v->pos), v->mode_loop ? -1 : v->slice);
+            AU_POS_RET("1 %u %d", (unsigned)(v->pos < 0 ? 0 : au_vpos(v)), v->mode_loop ? -1 : v->slice);
         }
         if (at->w.on && at->w.live) {
             /* Warp has no voice: the frame under the clock, on the clip's map —
@@ -2432,6 +2494,9 @@ static int au_get_param(seq8_instance_t *inst, const char *key, char *out, int o
                         (unsigned)inst->au_underruns);
     }
     if (!strcmp(k, "layout")) return snprintf(out, out_len, "%d", (int)inst->au_trk[t].layout);
+    if (!strcmp(k, "kit"))                        /* Convert to kit's bake: "<state 0 none 1 baking 2 done 3 failed> <AU_ERR_*> <Gain left to the pads, dB> <seq>" */
+        return snprintf(out, out_len, "%d %d %.2f %u", (int)inst->au_kit_state[t], (int)inst->au_kit_err[t],
+                        (double)inst->au_kit_db[t], (unsigned)inst->au_kit_seq[t]);
     if (!strcmp(k, "lazy")) {                     /* "<state AU_LAZY_*> <slices> <frame>" */
         int on = inst->au_lazy_track == t;
         return snprintf(out, out_len, "%d %d %u", on ? inst->au_lazy_state : 0, on ? inst->au_lazy_n : 0,

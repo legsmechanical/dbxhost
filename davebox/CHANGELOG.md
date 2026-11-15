@@ -200,7 +200,15 @@ the section into a versioned heading at release time.
   and Normalize. Even and Transient's click goes straight into editing the cut. Shift sets
   every slice on Play, Revrs, Attack and Decay; Pitch, Detune and Gain move every slice from
   page 3. A slice outside the range is dark grey on the pads.
-- **A Slicer's Warp is now called Sync**: Off, Pitch or Warp.
+- **A Slicer's Warp is now called Sync**: Off, Pitch or Warp. **Warp** now works on a
+  Slicer: the whole sample is stretched to the project's tempo at its own pitch, in the
+  background, and the slices play from the stretched copy, hitting as instantly as ever. A
+  tempo change re-stretches it about a second after the tempo stops moving. Offered for
+  samples up to a minute.
+- **Convert to kit resamples first.** The kit's sample is now the Slicer's range as it
+  sounds — stretched under Warp, retuned by Sync Pitch, Pitch and Detune, at its Gain — so the
+  kit plays like the Slicer. A reversed slice plays from a reversed copy, and a slice outside
+  the range is left out.
 - **A Slicer loads a sample without chopping it.** A new sample is one slice covering the
   sample's Start to End, and it follows them until you chop. Start and End are now the
   Slicer's range: slices play only inside it, and a slice outside it is silent until the

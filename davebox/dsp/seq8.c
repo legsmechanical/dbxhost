@@ -2155,6 +2155,11 @@ typedef struct {
     uint32_t    au_block;                     /* blocks rendered: a freed chunk waits two */
     uint32_t    au_underruns;                 /* frames a streamed voice found no chunk for */
     void       *au_warper;                    /* WARP: the stretcher thread's state (seq8_audio.c) */
+    /* CONVERT TO KIT, per track (tN_au_kit): 0 none, 1 baking, 2 done, 3 failed;
+     * the failure's AU_ERR_*; the dB of the Gain the bake could not take (the pads' to add) */
+    uint8_t     au_kit_state[NUM_TRACKS], au_kit_err[NUM_TRACKS];
+    float       au_kit_db[NUM_TRACKS];
+    uint32_t    au_kit_seq[NUM_TRACKS];       /* the request's number, echoed (a read can overtake the write) */
 } seq8_instance_t;
 
 /* What the serializer should write for clip (t,c) / lane: the original while a

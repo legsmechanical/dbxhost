@@ -90,7 +90,7 @@ import { printTick } from './ui_print.mjs';
 import { resampleTick } from './ui_resample.mjs';
 import { auTick, auReadTrack, auForgetTrack, isSampledTrack, isAudioTrack, auRead, rmxMapPoll, rmxOrdersPoll } from './ui_audio.mjs';
 import { auConvertStart, auConvertTick, auConvertApply } from './ui_audio_convert.mjs';
-import { auConvertToKit } from './ui_audio_kit.mjs';
+import { auConvertToKit, auKitTick } from './ui_audio_kit.mjs';
 import { openAudioChooser, closeAudioChooser, audioChooserTick } from './ui_audio_chooser.mjs';
 import { closeAudioEditor, closeAudioPanel, auEditorFollowClip } from './ui_audio_editor.mjs';
 import { applyInstrChoice, readConductorClip } from './ui_dsp_bridge.mjs';
@@ -2412,6 +2412,7 @@ export function _tickImpl() {
             S.pendingAuKit = null;
             auConvertToKit(_k.t, _k.c);
         }
+        auKitTick();                     /* a kit's bake in flight: its preset once it is in */
         if (S.pendingGrooveMenuReturn) {
             S.pendingGrooveMenuReturn = false;
             if (!miActive()) openGlobalMenuAt('Groove');

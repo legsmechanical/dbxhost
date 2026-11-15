@@ -1253,17 +1253,25 @@ step('⭐⭐ the chopping tools are the SLICE menu\'s (Shift + click on page 1 o
     GET['t4_au_info_0'] = INFO(1, 8, 0); kindSync(); ticks(2);
 });
 
-step('⭐⭐ SLICES › Convert to kit (Josh, 2026-10-30: "convert to kit. creates a move drum rack kit with 32 pad max ... carrying over slice pitch, decay, gain, etc." · "shared copy"): the sample copied once into the library, a pad per chop playing its part of it', () => {
-    GET['t4_au_info_0'] = INFO(1, 8, 0); kindSync(); ticks(2);
-    GET['t4_au_sl_0_1'] = '12000 24000 0 2 0 0 1 10 250 7';      /* Pitch +2, Gate, Attk 10 ms, Decay 250 ms, Detune 7 */
+step('⭐⭐ the SLICE menu › Convert to kit (Josh, 2026-10-30: "convert to kit. creates a move drum rack kit with 32 pad max ... carrying over slice pitch, decay, gain, etc." · 2026-11-14: "an offline resample of the entire sample of its sample-wide settings before exporting?" · "at most 2 samples — one reversed and one not"): the engine bakes the range; a pad per slice in it, playing its fraction of the bake (a backwards one, of the reverse)', () => {
+    /* the range 12000..84000 of 96000: slice 1 (0..12000) lies outside it */
+    GET['t4_au_info_0'] = INFO(1, 8, 0).replace(' 16 0 96000 ', ' 16 12000 84000 '); kindSync(); ticks(2);
+    GET['t4_au_sl_0_1'] = '12000 24000 0 2 0 0 1 10 250 7 1';    /* Pitch +2, Gate, Attk 10 ms, Decay 250 ms, Detune 7 */
+    GET['t4_au_sl_0_2'] = '24000 36000 0 0 -3 1 0 0 0 0 1';      /* Gain -3, Revrs, One */
+    GET['t4_au_sl_0_3'] = '36000 48000 0 0 0 0 2 0 0 0 1';       /* Thru: on to the range's End */
     S.currentSetName = 'My Song';
     const SAMP = '/data/UserData/UserLibrary/Samples/dAVEBOx/Exported kits/My Song 5.wav';
     const KIT = '/data/UserData/UserLibrary/Track Presets/dBx-slice/My Song 5.ablpreset';
-    const cmds = [], files = {};
-    const cmd0 = globalThis.host_system_cmd, wr0 = globalThis.host_write_file;
-    /* the copy lands where it was sent (its name is pinned at the end) */
-    globalThis.host_system_cmd = (c) => { cmds.push(String(c)); const m = /'([^']*)'$/.exec(String(c)); globalThis.__stubStat = { [m ? m[1] : SAMP]: { mode: 0o100644, size: 9 } }; return 0; };
+    const cmds = [], files = {}, bakes = [];
+    const cmd0 = globalThis.host_system_cmd, wr0 = globalThis.host_write_file, set0 = globalThis.host_module_set_param;
+    globalThis.host_system_cmd = (c) => { cmds.push(String(c)); return 0; };
     globalThis.host_write_file = (path, body) => { files[String(path)] = String(body); return wr0(path, body); };
+    /* the engine's bake: asked, then (a tick later) done with 1.5 dB of the Gain left to the pads */
+    globalThis.host_module_set_param = (k, v) => {
+        set0(k, v);
+        const m = String(k) === 't4_au_kit' && /^([01]) (\d+)\|(.*)$/.exec(String(v));
+        if (m) { bakes.push({ rev: m[1] === '1', seq: m[2], path: m[3] }); GET['t4_au_kit'] = '1 0 0.00 ' + m[2]; }
+    };
     const bulk = [], gp0 = globalThis.host_module_get_params;
     globalThis.host_module_get_params = (blob) => { bulk.push(String(blob)); return ''; };
     try {
@@ -1275,22 +1283,23 @@ step('⭐⭐ SLICES › Convert to kit (Josh, 2026-10-30: "convert to kit. creat
         click();
         assert(!ed.pick && S.pendingAuKit, 'the row did not ask for the kit');
         ticks(2);
-        /* the kit's content first, wherever it was written; its NAME is
-         * pinned last (a Slicer's sample is the slot, 16 — the name is the
-         * track and its current clip, 5A) */
-        assert(cmds.length === 1 && /^cp '\/data\/UserData\/UserLibrary\/Sets\/x\/dAVEBOx\/samples\/Break Phenom 84 bpm\.wav' '/.test(cmds[0]),
-               'the copy: ' + JSON.stringify(cmds));
+        assert(bakes.length === 1 && bakes[0].path === SAMP && bakes[0].rev, 'the bake asked: ' + JSON.stringify(bakes));
+        assert(cmds.length === 0, 'the sample was copied as it is: ' + JSON.stringify(cmds));
+        assert(!Object.keys(files).some((k) => k.indexOf('/Track Presets/dBx-slice/') >= 0), 'the preset was written before the bake was in');
+        assert((S.actionPopupLines || [])[0] === 'CONVERT TO KIT', 'no word while it bakes: ' + JSON.stringify(S.actionPopupLines));
+        GET['t4_au_kit'] = '2 0 1.50 ' + bakes[0].seq;
+        ticks(10);
         const kitPath = Object.keys(files).find((k) => k.indexOf('/Track Presets/dBx-slice/') >= 0);
         assert(kitPath, 'no kit written: ' + Object.keys(files).join());
-        assert((S.actionPopupLines || [])[0] === 'KIT SAVED', 'notice: ' + JSON.stringify(S.actionPopupLines));
+        assert((S.actionPopupLines || []).join('|') === 'KIT SAVED|My Song 5|6 pads', 'notice: ' + JSON.stringify(S.actionPopupLines));
         const slBulk = bulk.filter((b) => /_au_sl_/.test(b));
         assert(slBulk.length === 1 && /t4_au_sl_\d+_0/.test(slBulk[0]) && /t4_au_sl_\d+_7/.test(slBulk[0]),
-               'the chops were not read in one round trip: ' + slBulk.length + ' bulk reads');
+               'the slices were not read in one round trip: ' + slBulk.length + ' bulk reads');
         const kit = JSON.parse(files[kitPath]);
         /* numbers as Ableton writes them: floats keep ".0", the note / choke /
          * transpose fields are integers */
         assert(/"Volume": 0\.0\b/.test(files[kitPath]) && /"receivingNote": 36,/.test(files[kitPath]) &&
-               /"Voice_Transpose": 0,/.test(files[kitPath]) && !/"Volume": 0,/.test(files[kitPath]), 'numbers not as Ableton writes them');
+               /"Voice_Transpose": 2,/.test(files[kitPath]) && !/"Volume": 0,/.test(files[kitPath]), 'numbers not as Ableton writes them');
         assert(kit.kind === 'instrumentRack', 'the rack: ' + kit.kind);
         /* a native preset as Move writes one: schema 1.8.3, the drum rack with its
          * reverb return, then the rack-wide saturator */
@@ -1298,31 +1307,37 @@ step('⭐⭐ SLICES › Convert to kit (Josh, 2026-10-30: "convert to kit. creat
         assert(kit.chains[0].devices.map((d) => d.kind).join() === 'drumRack,saturator' &&
                kit.chains[0].devices[0].returnChains[0].devices[0].kind === 'reverb', 'not a native drum rack preset');
         const pads = kit.chains[0].devices[0].chains;
-        assert(kit.chains[0].devices[0].kind === 'drumRack' && pads.length === 16, 'pads: ' + pads.length + ' (8 chops, filled to 16)');
+        assert(kit.chains[0].devices[0].kind === 'drumRack' && pads.length === 16, 'pads: ' + pads.length + ' (6 slices in the range, filled to 16)');
         const cell = (k) => pads[k].devices[0];
-        const uri = cell(0).deviceData.sampleUri;
-        assert(/^ableton:\/user-library\/Samples\/dAVEBOx\/Exported%20kits\//.test(uri), 'the chops\' sample: ' + uri);
+        const uri = 'ableton:/user-library/Samples/dAVEBOx/Exported%20kits/My%20Song%205.wav';
+        const ruri = 'ableton:/user-library/Samples/dAVEBOx/Exported%20kits/My%20Song%205%20rev.wav';
         assert(pads.every((p, k) => p.drumZoneSettings.receivingNote === 36 + k), 'notes are not 36 up');
-        assert(pads.slice(0, 8).every((p, k) => cell(k).deviceData.sampleUri === uri && p.drumZoneSettings.chokeGroup === 1),
-               'the chops do not share the copy in choke group 1');
-        assert(pads.slice(8).every((p, k) => cell(8 + k).deviceData.sampleUri === null), 'pads past the chops are not empty');
-        const c0 = cell(0).parameters, c1 = cell(1).parameters, c2 = cell(2).parameters;
-        assert(c0.Voice_PlaybackStart === 0 && c0.Voice_PlaybackLength === 0.125, 'chop 1 region: ' + c0.Voice_PlaybackStart + ' ' + c0.Voice_PlaybackLength);
-        assert(c1.Voice_PlaybackStart === 0.125 && c1.Voice_Transpose === 2 && c1.Voice_Detune === 7 &&
-               c1.Voice_Envelope_Mode === 'A-S-R' && c1.Voice_Envelope_Attack === 0.01 &&
-               c1.Voice_Envelope_Hold === 0 && Math.abs(c1.Voice_Envelope_Decay - 0.25) < 1e-9 /* the slice's ms as they are: both decay on the drum cell's curve */, 'chop 2: ' + JSON.stringify(c1));
-        assert(Math.abs(c2.Voice_Gain - Math.pow(10, -3 / 20)) < 1e-9 && c2.Voice_Envelope_Hold === 60 &&
-               c2.Voice_Envelope_Mode === 'A-H-D', 'chop 3: ' + JSON.stringify(c2));
+        assert(pads.slice(0, 6).every((p, k) => cell(k).deviceData.sampleUri === (k === 1 ? ruri : uri) && p.drumZoneSettings.chokeGroup === 1),
+               'the slices do not play the bake (slice 3 its reverse) in choke group 1: ' + pads.slice(0, 6).map((p, k) => cell(k).deviceData.sampleUri).join());
+        assert(pads.slice(6).every((p, k) => cell(6 + k).deviceData.sampleUri === null), 'pads past the slices (and slice 8, past End) are not empty');
+        const near = (x, y) => Math.abs(x - y) < 1e-9;
+        const c0 = cell(0).parameters, c1 = cell(1).parameters, c2 = cell(2).parameters, c5 = cell(5).parameters;
+        const rem = Math.pow(10, 1.5 / 20);
+        /* pad 1 is slice 2 (slice 1 lies outside the range): its sixth of it */
+        assert(near(c0.Voice_PlaybackStart, 0) && near(c0.Voice_PlaybackLength, 1 / 6) && c0.Voice_Transpose === 2 && c0.Voice_Detune === 7 &&
+               c0.Voice_Envelope_Mode === 'A-S-R' && c0.Voice_Envelope_Attack === 0.01 && near(c0.Voice_Gain, rem) &&
+               c0.Voice_Envelope_Hold === 0 && near(c0.Voice_Envelope_Decay, 0.25) /* the slice's ms as they are: both decay on the drum cell's curve */,
+               'pad 1 (slice 2): ' + JSON.stringify(c0));
+        /* slice 3 backwards: 1/6..2/6 of the range, mirrored in the reverse */
+        assert(near(c1.Voice_PlaybackStart, 4 / 6) && near(c1.Voice_PlaybackLength, 1 / 6) && near(c1.Voice_Gain, Math.pow(10, -1.5 / 20)) &&
+               c1.Voice_Envelope_Hold === 60 && c1.Voice_Envelope_Mode === 'A-H-D', 'pad 2 (slice 3, Revrs): ' + JSON.stringify(c1));
+        /* slice 4 Thru: from 2/6 on to the range's End */
+        assert(near(c2.Voice_PlaybackStart, 2 / 6) && near(c2.Voice_PlaybackLength, 4 / 6) && c2.Voice_Envelope_Mode === 'A-H-D', 'pad 3 (slice 4, Thru): ' + JSON.stringify(c2));
+        assert(near(c5.Voice_PlaybackStart, 5 / 6) && near(c5.Voice_PlaybackLength, 1 / 6), 'pad 6 (slice 7, the last in the range): ' + JSON.stringify(c5));
         assert(c0.Voice_VelocityToVolume === 0, 'velocity reaches a slice\'s level');
         assert(S.auEditor === ed && !ed.pick, 'the kit did not leave the SLICER editor up');
         /* the names: the project and the track (a Slicer's sample is the track's) — "My Song 5" */
-        assert(cmds[0] === "cp '/data/UserData/UserLibrary/Sets/x/dAVEBOx/samples/Break Phenom 84 bpm.wav' '" + SAMP + "'",
-               'the copy\'s name: ' + JSON.stringify(cmds));
-        assert(kitPath === KIT && kit.name === 'My Song 5' && uri === 'ableton:/user-library/Samples/dAVEBOx/Exported%20kits/My%20Song%205.wav',
-               'the kit\'s name: ' + JSON.stringify({ kitPath, name: kit.name, uri }));
+        assert(kitPath === KIT && kit.name === 'My Song 5', 'the kit\'s name: ' + JSON.stringify({ kitPath, name: kit.name }));
     } finally {
-        globalThis.host_system_cmd = cmd0; globalThis.host_write_file = wr0; globalThis.host_module_get_params = gp0; globalThis.__stubStat = null;
-        delete GET['t4_au_sl_0_1'];
+        globalThis.host_system_cmd = cmd0; globalThis.host_write_file = wr0; globalThis.host_module_get_params = gp0;
+        globalThis.host_module_set_param = set0;
+        for (const k of ['t4_au_sl_0_1', 't4_au_sl_0_2', 't4_au_sl_0_3', 't4_au_kit']) delete GET[k];
+        GET['t4_au_info_0'] = INFO(1, 8, 0);
         leave(); ticks(2);
         S.actionPopupLines = []; S.actionPopupEndTick = 0;     /* the notice is a card over later screens */
     }

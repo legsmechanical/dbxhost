@@ -24,6 +24,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sched.h>
+#include <math.h>
 #if defined(__linux__)
 #include <sys/prctl.h>
 #endif
@@ -2046,6 +2047,7 @@ static void au_pool_release(au_loader_t *L, au_sample_t *s) {
         au_sample_free(s);
         return;
     }
+    if (s && s->wowned) au_sample_free(s);         /* a Slicer's Warp copy: no pool, no other user */
 }
 
 /* ---------------- a sample's own length in bars (loader thread) ----------------
@@ -2303,6 +2305,219 @@ out:
     return err;
 }
 
+/* ---------------- SLICER WARP: the pre-stretch (loader thread) ----------------
+ * Josh, 2026-11-14: Sync Warp on a Slicer — "prestretch". The whole sample is
+ * stretched to the project's tempo at its own pitch, once, by the loader with
+ * the same Bungee the Audio clip's Warp streams through, and the slices play
+ * from that copy as from any sample: instant hits, no stretcher latency. The
+ * copy is the same rate as the sample, `speed` times shorter (speed = the
+ * project's tempo over the sample's own), so a slice's frame f sits at
+ * f / speed in it. Not in the pool (no file): `wowned`, freed on its drop.
+ * Allocates and runs for seconds: the loader thread only (or an offline
+ * engine copy, which has no realtime thread). NULL with *err on failure. */
+static au_sample_t *au_wstretch_render(const au_sample_t *s, double speed, int *err) {
+    au_st_t *st;
+    au_sample_t *o;
+    float *in;
+    int cap, ch, started = 0;
+    uint32_t out_n, w = 0;
+    long idx = 0;
+    unsigned guard = 0;
+    *err = AU_ERR_NONE;
+    if (!s || !s->pcm || !s->frames || !(speed > 0.0)) { *err = AU_ERR_FORMAT; return NULL; }
+    ch = s->ch > 1 ? 2 : 1;
+    out_n = (uint32_t)((double)s->frames / speed + 0.5);
+    if (out_n < 1) out_n = 1;
+    st = au_st_create((int)s->rate, (int)s->rate, ch);
+    if (!st) { *err = AU_ERR_MEM; return NULL; }
+    cap = au_st_max_input(st);
+    in = (float *)calloc((size_t)cap * 2, sizeof(float));
+    o = (au_sample_t *)calloc(1, sizeof *o);
+    if (o) o->pcm = (int16_t *)calloc((size_t)out_n * (size_t)s->ch, sizeof(int16_t));
+    if (!in || !o || !o->pcm) {
+        free(in); if (o) free(o->pcm); free(o); au_st_destroy(st);
+        *err = AU_ERR_MEM; return NULL;
+    }
+    o->frames = out_n; o->rate = s->rate; o->ch = s->ch; o->refs = 1; o->wowned = 1;
+    snprintf(o->name, sizeof o->name, "%s", s->name);
+    au_st_reset(st, 0.0, speed, 1.0);
+    while (w < out_n && !au_abort) {
+        int b, e, i, n;
+        const float *ol, *or_;
+        double p0, p1;
+        au_st_want(st, speed, 1.0, &b, &e);
+        if (e - b > cap) e = b + cap;
+        for (i = 0; i < e - b; i++) {
+            long f = (long)b + i;
+            if (f >= 0 && (uint32_t)f < s->frames) {
+                const int16_t *fr = s->pcm + (size_t)f * s->ch;
+                in[i] = (float)fr[0] / 32768.0f;
+                in[cap + i] = s->ch > 1 ? (float)fr[1] / 32768.0f : in[i];
+            } else { in[i] = 0.f; in[cap + i] = 0.f; }
+        }
+        n = au_st_grain(st, in, cap, &ol, &or_, &p0, &p1);
+        if (n <= 0 || p0 != p0 || p1 != p1 || p1 < p0) {
+            if (++guard > 100000u) break;              /* never filled: give up rather than spin */
+            continue;
+        }
+        if (!started) {
+            /* the copy's frame 0 is the sample's: place the first good grain
+             * where its input position falls (a preroll lands before 0) */
+            idx = (long)floor(p0 / speed + 0.5);
+            started = 1;
+        }
+        for (i = 0; i < n && w < out_n; i++, idx++) {
+            float l = ol[i], r = or_[i];
+            if (idx < 0) continue;
+            if ((uint32_t)idx >= out_n) { w = out_n; break; }
+            {
+                int16_t *dst = o->pcm + (size_t)idx * o->ch;
+                long lv = lrintf(l * 32767.0f), rv = lrintf(r * 32767.0f);
+                dst[0] = (int16_t)(lv > 32767 ? 32767 : lv < -32768 ? -32768 : lv);
+                if (o->ch > 1) dst[1] = (int16_t)(rv > 32767 ? 32767 : rv < -32768 ? -32768 : rv);
+            }
+            w = (uint32_t)idx + 1;
+        }
+        if (p0 >= (double)s->frames) break;            /* the input has run out */
+    }
+    free(in);
+    au_st_destroy(st);
+    if (au_abort) { au_sample_free(o); *err = AU_ERR_MEM; return NULL; }
+    return o;
+}
+
+/* ---------------- CONVERT TO KIT: the bake (loader thread) ----------------
+ * Josh, 2026-11-14: "would it make sense to do an offline resample of the
+ * entire sample of its sample-wide settings before exporting?" — yes: the
+ * kit's file is the Slicer's sample as it sounds, sample-wide: cropped to the
+ * range, stretched to the project's tempo when Sync is Warp ("resample at
+ * current tempo"), then retuned by Sync Pitch's tempo ratio and the sample's
+ * own Pitch / Detune (varispeed, the engine's linear interpolation — as a
+ * slice plays) and set to its Gain. Every slice keeps the same fraction of
+ * the file (the changes are uniform), so the pads carry only the slices' own
+ * values. A Gain past full scale is baked to a 0 dBFS peak at most and the
+ * rest is the pads' (`applied_db` says what was baked). A second file, the
+ * bake reversed, is written when a slice plays backwards ("at most 2 samples
+ * — one reversed and one not"): a reversed slice's pad points into it. Both
+ * are 16-bit WAVs at the sample's own rate, written to a temp name, synced
+ * and renamed. Frames are made as they are written (a 4-minute stereo bake
+ * held whole would be ~100 MB): one pass finds the peak, one writes. */
+
+/* frame i of the bake: src read at i x v, linear, times g */
+static inline float au_kit_at(const au_sample_t *src, double v, uint32_t i, int k) {
+    double pos = (double)i * v;
+    uint32_t i0 = (uint32_t)pos, i1;
+    float fr;
+    if (i0 >= src->frames) i0 = src->frames - 1;
+    i1 = i0 + 1 < src->frames ? i0 + 1 : i0;
+    fr = (float)(pos - (double)i0);
+    return (float)src->pcm[(size_t)i0 * src->ch + k] +
+           (float)(src->pcm[(size_t)i1 * src->ch + k] - src->pcm[(size_t)i0 * src->ch + k]) * fr;
+}
+
+static int au_kit_write_wav(const char *path, const au_sample_t *src, double v, double g, uint32_t n, int reverse) {
+    char tmp[600];
+    FILE *f;
+    int ch = src->ch, k;
+    uint32_t rate = src->rate, data = n * (uint32_t)ch * 2u, i = 0;
+    int16_t buf[4096 * 2];
+    snprintf(tmp, sizeof tmp, "%s.tmp", path);
+    f = fopen(tmp, "wb");
+    if (!f) return 0;
+    {
+        unsigned char h[44];
+        uint32_t x;
+        uint16_t w;
+        memcpy(h, "RIFF", 4); x = 36 + data; memcpy(h + 4, &x, 4);
+        memcpy(h + 8, "WAVEfmt ", 8); x = 16; memcpy(h + 16, &x, 4);
+        w = 1; memcpy(h + 20, &w, 2); w = (uint16_t)ch; memcpy(h + 22, &w, 2);
+        memcpy(h + 24, &rate, 4); x = rate * (uint32_t)ch * 2u; memcpy(h + 28, &x, 4);
+        w = (uint16_t)(ch * 2); memcpy(h + 32, &w, 2); w = 16; memcpy(h + 34, &w, 2);
+        memcpy(h + 36, "data", 4); memcpy(h + 40, &data, 4);
+        if (fwrite(h, 1, 44, f) != 44) goto fail;
+    }
+    while (i < n) {
+        uint32_t m = n - i < 4096 ? n - i : 4096, j;
+        if (au_abort) goto fail;
+        for (j = 0; j < m; j++) {
+            uint32_t at = reverse ? n - 1 - (i + j) : i + j;
+            for (k = 0; k < ch; k++) {
+                long x = lrintf((float)(au_kit_at(src, v, at, k) * g));
+                buf[j * ch + k] = (int16_t)(x > 32767 ? 32767 : x < -32768 ? -32768 : x);
+            }
+        }
+        if (fwrite(buf, 2, (size_t)m * ch, f) != (size_t)m * ch) goto fail;
+        i += m;
+    }
+    if (fflush(f) != 0 || fsync(fileno(f)) != 0) goto fail;
+    if (fclose(f) != 0) { unlink(tmp); return 0; }
+    if (rename(tmp, path) != 0) { unlink(tmp); return 0; }
+    return 1;
+fail:
+    fclose(f);
+    unlink(tmp);
+    return 0;
+}
+
+/* The reversed file's name: " rev" before the extension. */
+static void au_kit_rev_path(const char *path, char *out, size_t sz) {
+    const char *dot = strrchr(path, '.'), *sl = strrchr(path, '/');
+    if (!dot || (sl && dot < sl)) { snprintf(out, sz, "%s rev", path); return; }
+    snprintf(out, sz, "%.*s rev%s", (int)(dot - path), path, dot);
+}
+
+static int au_kit_bake(const au_req_t *q, double *applied_db) {
+    const au_sample_t *s = q->smp;
+    au_sample_t crop;
+    au_sample_t *str = NULL, *full = NULL;
+    const au_sample_t *src;
+    uint32_t a = q->a, b = q->b, n, i;
+    double v = q->kvari, peak = 0.0, g = pow(10.0, q->kgain_db / 20.0);
+    int k, err = 0, ok;
+    char rp[300];
+    *applied_db = 0.0;
+    if (s && !s->pcm) {
+        /* a streamed sample (over au_stream_sec) holds only chunks: the bake
+         * reads the whole file from the project's samples/, for itself */
+        char src[600];
+        if (!q->dir[0] || !s->name[0]) return AU_ERR_FORMAT;
+        snprintf(src, sizeof src, "%s/%s", q->dir, s->name);
+        full = au_read_file_ex(src, 0, 0, &err);
+        if (!full) return err ? err : AU_ERR_OPEN;
+        if (full->frames != s->frames) { au_sample_free(full); return AU_ERR_FORMAT; }   /* not the file it was */
+        s = full;
+    }
+    if (!s || !s->pcm || b <= a || b > s->frames || !(v > 0.0)) { au_sample_free(full); return AU_ERR_FORMAT; }
+    memset(&crop, 0, sizeof crop);
+    crop.pcm = s->pcm + (size_t)a * s->ch;
+    crop.frames = b - a; crop.rate = s->rate; crop.ch = s->ch;
+    src = &crop;
+    if (q->kwarp > 0.0 && fabs(q->kwarp - 1.0) > 1e-9) {
+        str = au_wstretch_render(&crop, q->kwarp, &err);
+        if (!str) { au_sample_free(full); return err ? err : AU_ERR_MEM; }
+        src = str;
+    }
+    n = (uint32_t)((double)src->frames / v + 0.5);     /* (a semitone ratio is never exact: round) */
+    if (n < 1) n = 1;
+    for (i = 0; i < n; i++)
+        for (k = 0; k < src->ch; k++) {
+            float x = fabsf(au_kit_at(src, v, i, k));
+            if (x > peak) peak = x;
+        }
+    /* the Gain, held to a 0 dBFS peak: what is left over is the pads' */
+    if (peak > 0.0 && peak * g > 32767.0) g = 32767.0 / peak;
+    *applied_db = 20.0 * log10(g);
+    ok = au_kit_write_wav(q->path, src, v, g, n, 0);
+    if (ok && q->krev) {
+        au_kit_rev_path(q->path, rp, sizeof rp);
+        ok = au_kit_write_wav(rp, src, v, g, n, 1);
+        if (!ok) unlink(q->path);
+    } else if (!ok) unlink(q->path);
+    au_sample_free(str);
+    au_sample_free(full);
+    return ok ? AU_ERR_NONE : AU_ERR_COPY;
+}
+
 static void au_loader_do(au_loader_t *L, const au_req_t *q) {
     seq8_instance_t *inst = L->inst;
     au_res_t r;
@@ -2311,6 +2526,23 @@ static void au_loader_do(au_loader_t *L, const au_req_t *q) {
     if (q->kind == AU_REQ_DROP) { au_pool_release(L, q->smp); return; }
     memset(&r, 0, sizeof r);
     r.track = q->track; r.clip = q->clip; r.gen = q->gen; r.keep = q->keep;
+    if (q->kind == AU_REQ_WSTRETCH) {
+        /* the sample is the clip's and still held: its drop comes after this
+         * request in the same queue */
+        r.wstretch = 1; r.wspeed = q->wspeed; r.wsrc = q->smp;
+        r.smp = au_wstretch_render(q->smp, q->wspeed, &err);
+        r.err = (uint8_t)err;
+        au_res_push(inst, &r);
+        return;
+    }
+    if (q->kind == AU_REQ_KIT) {                    /* the sample held as above */
+        double db = 0.0;
+        r.kit = 1;
+        r.err = (uint8_t)au_kit_bake(q, &db);
+        r.kdb = r.err ? 0.0 : q->kgain_db - db;     /* the Gain left to the pads */
+        au_res_push(inst, &r);
+        return;
+    }
     au_ld_done = au_ld_total = 0;
     au_ld_key = (int)q->track * (NUM_CLIPS + 1) + (int)q->clip;
     if (q->kind == AU_REQ_PICK) {
@@ -2432,6 +2664,30 @@ static void au_shutdown(seq8_instance_t *inst) {
     if (L->started) pthread_join(L->th, NULL);
     au_warper_shutdown(inst);          /* it reads the streamer's chunks and the pool's samples */
     au_streamer_shutdown(inst);
+    /* a Slicer's Warp copies are in no pool: the tracks', those still on
+     * their way to the loader to be dropped, and answers not taken yet */
+    {
+        uint32_t k;
+        int t;
+        for (t = 0; t < NUM_TRACKS; t++) {
+            au_sample_free(inst->au_trk[t].wsmp); inst->au_trk[t].wsmp = NULL;
+            au_sample_free(inst->au_trk[t].wold); inst->au_trk[t].wold = NULL;
+        }
+        for (k = inst->au_req_tail; k != inst->au_req_head; k++) {
+            const au_req_t *q = &inst->au_req[k & (AU_RING - 1)];
+            if (q->kind == AU_REQ_DROP && q->smp && q->smp->wowned) au_sample_free(q->smp);
+        }
+        inst->au_req_tail = inst->au_req_head;
+        for (k = 0; k < inst->au_drop_npend; k++) {
+            au_sample_t *p = (au_sample_t *)inst->au_drop_pend[k];
+            if (p && p->wowned) au_sample_free(p);
+        }
+        inst->au_drop_npend = 0;
+        for (k = inst->au_res_tail; k != inst->au_res_head; k++) {
+            const au_res_t *r = &inst->au_res[k & (AU_RING - 1)];
+            if (r->wstretch && r->smp) au_sample_free(r->smp);
+        }
+    }
     for (i = 0; i < AU_POOL_MAX; i++)
         if (L->pool[i].smp) au_sample_free(L->pool[i].smp);
     free(L);
@@ -2468,6 +2724,109 @@ static void au_track_kill(seq8_instance_t *inst, int t, const au_sample_t *smp) 
         if (v->active && (!smp || v->smp == smp)) v->active = 0;
     }
 }
+
+/* ---------------- SLICER WARP: the audio thread's side ----------------
+ * (the render is the loader's: au_wstretch_render). Per block, per Slicer:
+ * the copy the slices should play from is kept in step with the tempo —
+ * asked for at once when there is none, again once the tempo has held for
+ * AU_SLC_WARP_SETTLE (Josh, 2026-11-15: re-stretch ~1 s after the tempo stops
+ * moving: a knob sweep, automation or Link drift asks once, not per block).
+ * While one is made the last copy plays on, mapped with ITS speed; with none
+ * yet, the slices play varispeed (au_range_on). A copy no longer wanted is
+ * retired: kept till no voice reads it (au_track_kill would cut a sounding
+ * slice), then handed back. */
+#define AU_SLC_WARP_SETTLE 345          /* blocks of 128 frames: ~1 s */
+#define AU_SLC_WARP_TOL    0.0005       /* a copy within 0.05 % of the speed wanted is kept */
+
+/* the project's tempo over the sample's own (1 while it is not known) */
+static double au_slc_tempo_ratio(const au_clip_t *cl, double bpm) {
+    unsigned b10 = au_bpm10(cl);
+    if (!b10 || !(bpm > 0)) return 1.0;
+    return bpm * 10.0 / (double)b10;
+}
+/* The copy a Slicer's slices play from now, or NULL (the sample itself). */
+static const au_sample_t *au_slc_warp_copy(seq8_instance_t *inst, int t, const au_clip_t *cl, double *speed) {
+    const au_track_t *at = &inst->au_trk[t];
+    if (cl->sync != AU_SLC_SYNC_WARP || !at->wsmp || at->wsrc != cl->smp || at->wsrc_gen != cl->gen) return NULL;
+    *speed = at->wspeed;
+    return at->wsmp;
+}
+static void au_slc_warp_retire(seq8_instance_t *inst, int t) {
+    au_track_t *at = &inst->au_trk[t];
+    if (!at->wsmp) return;
+    if (at->wold) { au_track_kill(inst, t, at->wold); au_drop(inst, at->wold); }
+    at->wold = at->wsmp;
+    at->wsmp = NULL;
+    at->wsrc = NULL;
+}
+static void au_slc_warp_install(seq8_instance_t *inst, int t, au_sample_t *smp, double speed, const au_clip_t *cl) {
+    au_track_t *at = &inst->au_trk[t];
+    au_slc_warp_retire(inst, t);
+    at->wsmp = smp;
+    at->wspeed = speed;
+    at->wsrc = cl->smp;
+    at->wsrc_gen = cl->gen;
+}
+static void au_slc_warp_tick(seq8_instance_t *inst, int t) {
+    au_track_t *at = &inst->au_trk[t];
+    au_clip_t *cl = au_slot(inst, t, AU_SLC);
+    const au_sample_t *s = cl->smp;
+    double bpm = inst->tracks[t].pfx.cached_bpm > 0 ? inst->tracks[t].pfx.cached_bpm : 120.0, sp;
+    int i, want;
+    if (at->wold) {
+        int busy = 0;
+        for (i = 0; i < AU_VOICES; i++) if (at->v[i].active && at->v[i].smp == at->wold) busy = 1;
+        if (!busy) { au_drop(inst, at->wold); at->wold = NULL; }
+    }
+    want = inst->tracks[t].pad_mode == PAD_MODE_SLICER && cl->sync == AU_SLC_SYNC_WARP && s && s->pcm &&
+           (uint64_t)s->frames <= (uint64_t)s->rate * AU_SLC_WARP_MAX_SEC;
+    sp = want ? au_slc_tempo_ratio(cl, bpm) : 1.0;
+    if (at->wsmp && (at->wsrc != s || at->wsrc_gen != cl->gen)) au_slc_warp_retire(inst, t);   /* another sample */
+    if (!want || fabs(sp - 1.0) < 1e-9) {
+        /* not Warp, or the tempos agree: the sample itself */
+        au_slc_warp_retire(inst, t);
+        at->wwant = 0;
+        at->wsettle = 0;
+        return;
+    }
+    if (fabs(sp - at->wwant) > 1e-9) { at->wwant = sp; at->wsettle = 0; }
+    else if (at->wsettle < AU_SLC_WARP_SETTLE) at->wsettle++;
+    if (at->wpending) return;
+    if (at->wsmp && fabs(at->wspeed - sp) <= AU_SLC_WARP_TOL * sp) return;     /* close enough */
+    if (at->wsmp && at->wsettle < AU_SLC_WARP_SETTLE) return;                    /* the tempo still moving */
+    if (inst->offline) {
+        /* an offline take: no realtime thread to spare, and the take must
+         * hear what the live one does from its first block — made here */
+        int err = 0;
+        au_sample_t *o = au_wstretch_render(s, sp, &err);
+        if (o) au_slc_warp_install(inst, t, o, sp, cl);
+        return;
+    }
+    {
+        au_req_t q;
+        memset(&q, 0, sizeof q);
+        q.kind = AU_REQ_WSTRETCH;
+        q.track = (uint8_t)t; q.clip = AU_SLC;
+        q.smp = (au_sample_t *)s;
+        q.wspeed = sp;
+        q.gen = ++at->wgen;
+        if (au_req_push(inst, &q)) at->wpending = 1;
+    }
+}
+/* The loader's answer (au_apply_results). */
+static void au_slc_warp_land(seq8_instance_t *inst, const au_res_t *r) {
+    int t = r->track;
+    au_track_t *at = &inst->au_trk[t];
+    au_clip_t *cl = au_slot(inst, t, AU_SLC);
+    if (r->gen == at->wgen) at->wpending = 0;
+    if (!r->smp) return;
+    if (r->gen != at->wgen || inst->tracks[t].pad_mode != PAD_MODE_SLICER || cl->sync != AU_SLC_SYNC_WARP ||
+        (const void *)cl->smp != r->wsrc) { au_drop(inst, r->smp); return; }
+    au_slc_warp_install(inst, t, r->smp, r->wspeed, cl);
+}
+
+/* A voice's place in its clip's FILE (a Warp copy's frame f is the file's f x speed). */
+static inline double au_vpos(const au_voice_t *v) { return v->wk > 0 ? v->pos * v->wk : v->pos; }
 
 static au_voice_t *au_voice_alloc(au_track_t *at) {
     int i, best = 0;
@@ -2743,11 +3102,24 @@ static au_voice_t *au_range_on_in(au_track_t *at, const au_sample_t *s, int cs, 
                                   int slice, uint32_t a, uint32_t b, float vgain, uint32_t off, int sync, double vk);
 /* A Slicer's speed against its own: Sync Pitch retunes its chops by the
  * project's tempo over the sample's own Tempo (varispeed); Off, or a Tempo
- * not known yet, plays them as they are. `bpm`: the project's. */
+ * not known yet, plays them as they are. Warp plays them from its stretched
+ * copy at their own speed (au_range_on) — this only while there is no copy
+ * yet (the first moments after a load or a switch to Warp): varispeed, so
+ * the slices already keep the project's time. `bpm`: the project's. */
 static double au_slc_speed(const au_clip_t *cl, double bpm) {
     unsigned b10 = au_bpm10(cl);
-    if (cl->mode != AU_MODE_SLICE || cl->sync != AU_SLC_SYNC_PITCH || !b10 || !(bpm > 0)) return 1.0;
+    if (cl->mode != AU_MODE_SLICE || (cl->sync != AU_SLC_SYNC_PITCH && cl->sync != AU_SLC_SYNC_WARP) ||
+        !b10 || !(bpm > 0)) return 1.0;
     return bpm * 10.0 / (double)b10;
+}
+/* While au_range_on starts a slice from a Warp copy: the copy's frames per
+ * file frame (1 / speed), for the range's End that Thru plays on to. */
+static double au_wscale = 1.0;
+static inline uint32_t au_wmap(uint32_t f, const au_sample_t *s) {
+    uint32_t m;
+    if (au_wscale == 1.0) return f;
+    m = (uint32_t)((double)f * au_wscale + 0.5);
+    return m > s->frames ? s->frames : m;
 }
 static au_voice_t *au_range_on(seq8_instance_t *inst, int t, int c, int slice, uint32_t a, uint32_t b,
                                float vgain, uint32_t off, int sync) {
@@ -2757,6 +3129,26 @@ static au_voice_t *au_range_on(seq8_instance_t *inst, int t, int c, int slice, u
      * loop's, held till the wrap on Next */
     int cs = sync ? (int)inst->au_trk[t].cond : au_cond_now(inst, t);
     double bpm = inst->tracks[t].pfx.cached_bpm > 0 ? inst->tracks[t].pfx.cached_bpm : 120.0;
+    if (!sync && cl == au_slot(inst, t, AU_SLC) && cl->sync == AU_SLC_SYNC_WARP) {   /* (c: the clip playing; a Slicer's all play the slot) */
+        /* WARP: the slice from the stretched copy, at its own speed — its
+         * frames at f / speed there. An offline take makes its copy before
+         * its first hit (the live one has had it since the tempo settled) */
+        const au_sample_t *w;
+        double sp = 1.0;
+        au_voice_t *v;
+        if (inst->offline && !au_slc_warp_copy(inst, t, cl, &sp)) au_slc_warp_tick(inst, t);
+        w = au_slc_warp_copy(inst, t, cl, &sp);
+        if (w && sp > 0) {
+            uint32_t wa = (uint32_t)((double)a / sp + 0.5), wb = (uint32_t)((double)b / sp + 0.5);
+            if (wb > w->frames) wb = w->frames;
+            if (wb <= wa) return NULL;
+            au_wscale = 1.0 / sp;
+            v = au_range_on_in(&inst->au_trk[t], w, cs, cl, c, slice, wa, wb, vgain, off, 0, 1.0);
+            au_wscale = 1.0;
+            if (v) v->wk = sp;
+            return v;
+        }
+    }
     return au_range_on_in(&inst->au_trk[t], cl->smp, cs, cl, c, slice, a, b, vgain, off, sync,
                           sync ? 1.0 : au_slc_speed(cl, bpm));
 }
@@ -2791,7 +3183,9 @@ static au_voice_t *au_range_on_in(au_track_t *at, const au_sample_t *s, int cs, 
      * slice) still ends it there; the window's start still applies. */
     if (!sync && play == AU_PLAY_THRU && cl->mode == AU_MODE_SLICE && !au_win_len) {
         uint32_t rs, re;
-        au_range(cl, s, &rs, &re);
+        /* (the range is the file's; a Warp copy's is it scaled: au_wmap) */
+        au_range(cl, au_wscale != 1.0 && cl->smp ? cl->smp : s, &rs, &re);
+        rs = au_wmap(rs, s); re = au_wmap(re, s);
         if (rev) { if (rs < a) a = rs; }
         else if (re > b) b = re;
     }
@@ -3238,6 +3632,15 @@ static void au_defaults_at(seq8_instance_t *inst, int t, int c) {
 static void au_track_release(seq8_instance_t *inst, int t) {
     int c;
     au_track_kill(inst, t, NULL);
+    /* the Warp copies go with the voices that read them */
+    au_drop(inst, inst->au_trk[t].wsmp);
+    au_drop(inst, inst->au_trk[t].wold);
+    inst->au_trk[t].wsmp = inst->au_trk[t].wold = NULL;
+    inst->au_trk[t].wsrc = NULL;
+    inst->au_trk[t].wspeed = inst->au_trk[t].wwant = 0;
+    inst->au_trk[t].wsettle = 0;
+    inst->au_trk[t].wpending = 0;
+    inst->au_trk[t].wgen++;                    /* a stretch still in flight lands nowhere */
     inst->au_trk[t].last_tick = -1;
     inst->au_trk[t].layout = 0;
     inst->au_trk[t].rmx_bar = -1; inst->au_trk[t].rmx_n = 0; inst->au_trk[t].rmx_on = 0;

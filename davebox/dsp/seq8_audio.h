@@ -128,6 +128,7 @@ typedef struct au_sample {
     uint32_t  nhits;                /* candidates; Sens picks which count (au_hit_kept) */
     char      name[AU_PATH_MAX];    /* the file inside samples/ */
     uint32_t  refs;                 /* clips using it (loader thread only) */
+    uint8_t   wowned;               /* a Slicer's Warp copy (au_wstretch_render): in no pool, freed on its drop */
 } au_sample_t;
 
 /* A slice of the HAND SET (made by Lazy / Manual, shaped in the chop editor).
@@ -268,6 +269,8 @@ typedef struct {
     int16_t  pc;             /* cents in its step: the same */
     int8_t   gdb;            /* dB in v->gain: the same */
     float    vg;             /* its velocity's level */
+    double   wk;             /* frames of the file per frame of smp: a Slicer's Warp copy is shorter
+                              * by its speed (au_vpos maps a position back); 0 = smp is the file */
 } au_voice_t;
 
 #define AU_VOICES 3          /* the sounding one, the one being choked, and room for a Vintage piece
@@ -374,6 +377,17 @@ typedef struct {
      * (Monitor / Input / Gain are the instance's: ain_*.) mon_g: the
      * monitor's level ramp through this track (0..64). */
     uint8_t    in_len, in_ovr, mon_g;
+    /* SLICER WARP (au_slc_warp_tick): the copy of the sample stretched to the
+     * project's tempo that the slices play from, its speed (the project's
+     * tempo over the sample's own) and the sample and gen it was made of;
+     * the last copy, kept till no voice reads it; the speed wanted and the
+     * blocks it has held; a request with the loader (its gen) */
+    au_sample_t *wsmp, *wold;
+    const void *wsrc;
+    uint32_t    wsrc_gen, wgen;
+    double      wspeed, wwant;
+    uint16_t    wsettle;
+    uint8_t     wpending;
 } au_track_t;
 
 /* Loader mailbox (set_param / render -> loader thread). */
@@ -381,6 +395,8 @@ typedef struct {
 #define AU_REQ_LOAD   2      /* load samples/`path` (state load) */
 #define AU_REQ_DROP   3      /* release a sample (smp) */
 #define AU_REQ_EDIT   4      /* Trim / Normalize samples/`path` into a 16-bit WAV, then load it */
+#define AU_REQ_WSTRETCH 5    /* a Slicer's Warp: stretch smp by wspeed into a copy (au_wstretch_render) */
+#define AU_REQ_KIT    6      /* Convert to kit: bake smp's a..b into the WAV `path` (au_kit_bake) */
 
 #define AU_EDIT_TRIM  0      /* keep frames a..b: what the clip plays */
 #define AU_EDIT_NORM  1      /* the whole file, its peak raised to full scale */
@@ -396,6 +412,12 @@ typedef struct {
     uint8_t      rechop;     /* a Slicer's Trim: a..b is its range; its slices are kept (au_slc_trim_slices) */
     uint8_t      keep;       /* AU_REQ_PICK: the clip keeps its length (a recorded take, seq8_audio_rec.c) */
     uint16_t     bpm10;      /* AU_REQ_PICK: the sample's Tempo x10 as known (a take: the project's), 0 = guess it */
+    double       wspeed;     /* AU_REQ_WSTRETCH: the speed (the project's tempo over the sample's) */
+    double       kvari;      /* AU_REQ_KIT: varispeed, sample frames per frame of the bake (Pitch, Detune, Sync Pitch) */
+    double       kwarp;      /* ...the Warp stretch's speed first (0: none) */
+    double       kgain_db;   /* ...the Gain, held to a 0 dBFS peak */
+    uint8_t      krev;       /* ...a reversed copy too (" rev" before the extension); dir: the
+                              * project's samples/, where a streamed sample is read whole from */
 } au_req_t;
 
 typedef struct {
@@ -409,6 +431,11 @@ typedef struct {
     uint32_t     ka, kb;     /* ...the frames the Trim kept (a..b of the old file) */
     uint32_t     cut;        /* ...frames the edit took off the front (Trim): every position moves back by it */
     uint8_t      keep;       /* the pick's keep: the clip's length stays as it is */
+    uint8_t      wstretch;   /* an AU_REQ_WSTRETCH's answer: smp is the copy (au_slc_warp_land) */
+    double       wspeed;     /* ...its speed */
+    const void  *wsrc;       /* ...the sample it was made of */
+    uint8_t      kit;        /* an AU_REQ_KIT's answer: err, and kdb, the Gain the bake left to the pads (dB) */
+    double       kdb;
 } au_res_t;
 
 #define AU_RING 512
