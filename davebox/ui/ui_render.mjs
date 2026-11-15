@@ -408,7 +408,7 @@ function drawSlicerPage(ed, i, ends, mid, zoomTxt, lit) {
         drawKitPage(name, cells, false, tempoTouched ? [['clk', 'tempo'], ['jog', 'page']] : [['clk', 'menu'], ['jog', 'page']]);
         if (S.knobTouched < 0) drawBankHeading(name, false, false, '3/3');
         /* a knob that changes how the sample draws shows it, large, while touched */
-        if (slcWaveKnob(ed, S.knobTouched)) drawSlicerWaveCard(ed, i, cells[S.knobTouched]);
+        if (slcWaveKnob(S.knobTouched)) drawSlicerWaveCard(ed, i, cells[S.knobTouched]);
         return;
     }
     /* page 1, and the slice editor inside it */

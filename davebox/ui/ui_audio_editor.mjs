@@ -850,10 +850,9 @@ function slcCursorBounds(ed) { const i = auInfo(ed.t, ed.c); return [i.rstart | 
  * the anything in page 3 that changes the sample display?"). Pitch, Detune,
  * Sync and Tempo change how it plays, not how it draws. */
 export const SLC_P3_WAVE_KNOBS = [0, 1, 2, 7];
-export function slcWaveKnob(ed, k) {
-    if (!isSlicerEd(ed) || ed.mode === 'chop' || (ed.page | 0) !== 2 || ed.ask || ed.pick) return false;
-    return SLC_P3_WAVE_KNOBS.indexOf(k) >= 0 && auInfo(ed.t, ed.c).state === 2;
-}
+/* (asked only from page 3's drawing, which a question, a menu or the slice
+ * editor never reaches — so the knob is all it decides) */
+export function slcWaveKnob(k) { return SLC_P3_WAVE_KNOBS.indexOf(k) >= 0; }
 const SLC_BLANK = { kind: 'blank', label: '' };
 export function slcPageCells(ed) {
     const t = ed.t, c = ed.c, i = auInfo(t, c), pg = chopKind(ed) ? 0 : (ed.page | 0);
