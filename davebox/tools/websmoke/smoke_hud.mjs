@@ -221,6 +221,11 @@ ok('...its dividers drawn as rules, never at the window\'s edge', el.querySelect
     ok('an enum knob\'s picker is a card over the overview, titled by its knob', !!vp.querySelector('.hud-o-track') && vpRows.slice(0, 3).join() === 'Off,Up,Down' &&
        /style/i.test((vp.querySelector('.hud-ovl .card .t') || {}).textContent || '') && /Down/.test((vp.querySelector('.hud-ovl .hud-row.sel') || {}).textContent || ''),
        vpRows.join(',') + ' / ' + ((vp.querySelector('.hud-ovl .card .t') || {}).textContent));
+    /* a waveform card (a knob that changes the drawing, in hand) names the knob and its value (Josh, 2026-11-15) */
+    const slf = fx('slices-slicer');
+    const wc = draw(Object.assign({}, slf, { body: Object.assign({}, slf.body, { popup: { wave: slf.body.wave, message: { big: 'Start 0:00.125', lines: ['S 0:00.125   E 0:01.875'] }, primary: 'message' } }) }));
+    const wcTxt = ((wc && wc.querySelector('.hud-ovl .card')) || {}).textContent || '';
+    ok('a waveform card shows the knob in hand and its value over its waveform', /Start/.test(wcTxt) && /0:00\.125/.test(wcTxt) && /0:01\.875/.test(wcTxt) && !!wc.querySelector('.hud-ovl .card svg.hud-wave'), wcTxt);
     const ipk = draw(fx('instrument-picker'));
     ok('...a Sound menu picker over the menu, one column', !!ipk.querySelector('.hud-body.hud-l-list .hud-row') && !!ipk.querySelector('.hud-ovl .card.c-list') &&
        !ipk.querySelector('.hud-ovl .hud-list.cols') && /Instmt/.test((ipk.querySelector('.hud-body') || {}).textContent || ''),

@@ -252,6 +252,8 @@ the section into a versioned heading at release time.
   Clips of the same length still hand over in step with each other.
 
 ### Fixed
+- **The browser's Screen view names the knob and its value on a waveform pop-up** (SAMPLE's
+  and the SLICER's), as the Move's screen does; it showed only the waveform.
 - A knob's option list on SAMPLE's TIME page (Warp) and on the SLICER editor's page 3
   (Sync) was partly hidden behind the page's own picture; it is in front now.
 - **The STEP page no longer shows a SHFT POINT hint while a step is held.** Shift

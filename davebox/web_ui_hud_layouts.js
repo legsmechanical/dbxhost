@@ -119,8 +119,17 @@
       for (let k = 0; k < 8; k++) knobs += H.cell(b.knobs[k], k, kdoc, {});
       knobs = '<div class="hud-knobs hud-wknobs">' + knobs + '</div>';
     }
-    return '<div class="hud-ro"><span class="l">' + ro('left') + '</span><span class="m">' + ro('mid') + '</span><span class="r">' + ro('right') + '</span></div>' +
-      '<div class="hud-wavebox ' + (knobs ? 'mid' : 'big') + '">' + H.waveSvg(b.wave, knobs ? 170 : 230) + '</div>' + knobs;
+    /* a waveform CARD (SAMPLE's, the SLICER's: a knob in hand that changes the
+     * drawing) carries its knob and value as a message: that over the wave, its
+     * line under it, as the OLED's card has them (Josh, 2026-11-15: the value
+     * of the param you're editing was missing) */
+    const msg = b.message;
+    const top = msg && msg.big
+      ? '<div class="hud-ro"><span class="l"></span><span class="m"><span class="ro on">' + esc(sentence(msg.big)) + '</span></span><span class="r"></span></div>'
+      : '<div class="hud-ro"><span class="l">' + ro('left') + '</span><span class="m">' + ro('mid') + '</span><span class="r">' + ro('right') + '</span></div>';
+    const under = msg && msg.lines && msg.lines.length
+      ? '<div class="hud-ro"><span class="l"></span><span class="m">' + msg.lines.map((l) => '<span class="ro">' + esc(sentence(l)) + '</span>').join('') + '</span><span class="r"></span></div>' : '';
+    return top + '<div class="hud-wavebox ' + (knobs ? 'mid' : 'big') + '">' + H.waveSvg(b.wave, knobs ? 170 : 230) + '</div>' + under + knobs;
   });
 
   /* keyboard — text entry: the text so far, large, with a cursor; the key grid

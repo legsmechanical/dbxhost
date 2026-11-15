@@ -174,6 +174,12 @@ async function main() {
         assert(!/"Start"|"Zoom"|"End"/.test(sh), 'with Shift the remote frame still has Start / Zoom / End: ' + sh.slice(0, 600));
         assert(!/"S \d|"E \d|"E NEXT"/.test(sh), 'with Shift the remote frame still shows the slice times');
         assert(/"knb"[^\]]*"edit all"/i.test(sh), 'with Shift the remote footer is not KNB EDIT ALL: ' + sh.slice(-400));
+        /* page 3's waveform card reaches it as a pop-up: the knob and its value, and the waveform */
+        fresh(2); note(0, 127); ticks(1);
+        const card = JSON.parse(watched());
+        note(0, 0); ticks(1);
+        const pop = card.body && card.body.popup;
+        assert(pop && pop.wave && pop.message && /^Start \S/.test(pop.message.big), 'page 3 Start in hand: no card with its value on the remote: ' + JSON.stringify(pop && { message: pop.message, wave: !!pop.wave, primary: pop.primary }));
     });
     step('⭐⭐ page 3: CLK MENU · JOG PAGE (the SAMPLE menu); Tempo in hand CLK TEMPO; with Shift TCH FINE, never JOG PAGE', () => {
         fresh(2);
