@@ -2443,9 +2443,9 @@ function levelCardHints() {
     const _tk = S.touchedIdx >= 0 ? S.touchedIdx : GS.knobTouched;
     const _sb = _tk >= 0 ? mixSendBus(_tk) : null;
     if (_sb) return [['CLK', _sb.id === 'sendA' ? 'SEND A' : 'SEND B'], ['BACK', 'OUT']];
-    /* the jog turns MIX's two pages (the levels, the channel strip) */
-    const _pg = (_tk < 0 && GS.heldStep < 0 && !midiTrack()) ? [['JOG', 'PAGE']] : [];
-    return cardJogHints(_tk >= 0).concat(_pg, [['BACK', 'OUT']]);
+    /* (The jog turns MIX's two pages; the header says which — MIX / MIX 2. A
+     * JOG PAGE pair does not fit beside these two: the row holds two.) */
+    return cardJogHints(_tk >= 0).concat([['BACK', 'OUT']]);
 }
 
 function volTarget() {
