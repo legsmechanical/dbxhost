@@ -237,7 +237,9 @@ function drawExportDoneDialog() {
     const fx = (S.exportMidiFxLeftOut || []).length ? 'No MIDI FX: T' + S.exportMidiFxLeftOut.join(' T') : '';
     /* ...and the channel strip, carried as Live's Compressor + Channel EQ — an
      * approximation of the EQ's voicing, so it is said */
-    const st = (S.exportStripApprox || []).length ? 'EQ/Comp approx: T' + S.exportStripApprox.join(' T') : '';
+    let st = (S.exportStripApprox || []).length ? 'EQ/Comp approx: T' + S.exportStripApprox.join(' T') : '';
+    /* a list too long for the line (it ran off the edge on the device) says how many */
+    if (st && text_width(st) > LIMIT) st = 'EQ/Comp approx: ' + S.exportStripApprox.length + ' tracks';
     const notes = [st, fx].filter(Boolean);
     let y = 14, lines = 0, i = 0;
     while (i < path.length && lines < 4 - notes.length) {
