@@ -1033,7 +1033,8 @@ function footer(shift) {
     if (MI.groove) {
         const git = MI.items[MI.idx];
         const gopen = git && (git.kind === 'up' || git.kind === 'dir');
-        return [['CLK', gopen ? 'OPEN' : 'KEEP'], ['JOG', 'HEAR'], ['BACK', 'DONE']];
+        /* Back goes up a folder or leaves: OUT (JOG HEAR never fit beside it) */
+        return [['CLK', gopen ? 'OPEN' : 'KEEP'], ['BACK', 'OUT']];
     }
     if (shift) return [['CLK', verb]];
     if (MI.layer === 'list') {
@@ -1041,7 +1042,9 @@ function footer(shift) {
         const open = it && (it.kind === 'up' || it.kind === 'dir' || (it.kind === 'file' && (META.get(it.path) || {}).parts > 1));
         return [['CLK', open ? 'OPEN' : 'PICK'], ['JOG', 'FILE'], ['SHFT', verb]];
     }
-    if (MI.drum) return [['RTPAD', 'SOUND'], ['SHFT', verb]];
+    /* the click LOADS here too (askLoad), as the melodic card says; Shift's
+     * HEAR / MUTE is named while Shift is held */
+    if (MI.drum) return [['CLK', 'LOAD'], ['RTPAD', 'SOUND']];
     return [['CLK', 'LOAD'], ['JOG', 'FILE'], ['SHFT', verb]];
 }
 export function miHintsForTest(shift) {
@@ -1194,6 +1197,6 @@ export function miRender(touchedIdx, shift, overlayIdx) {
                                                                 options: low.options, sel: low.sel }, BLANK, BLANK, BLANK]) : cells;
     drawKitBankPage(pageCells, { headerText, headerRight, touchedIdx: lowOverlay ? touched : topTouched,
                                  overlayIdx: lowOverlay ? touched : ov,
-                                 footer: MI.drum && MI.held >= 0 ? [['TAP', 'LANE'], ['AGAIN', 'OFF']] : footer(shift) });
+                                 footer: MI.drum && MI.held >= 0 ? [['PAD', 'LANE']] : footer(shift) });
     if (MI.drum && MI.held >= 0) drawSounds();
 }

@@ -266,7 +266,7 @@ step('the screen says Copy page, then PASTE on the footer', () => {
     S.actionPopupLines = []; S.actionPopupEndTick = 0;
     printed = []; render.drawUI();
     assert(printed.includes('Copy page'), 'drew ' + JSON.stringify(printed));
-    assert(pills() === '[["STEP","COPY"]]', 'footer ' + pills());
+    assert(pills() === '[["STEP","COPY"],["SHFT","CUT"]]', 'footer ' + pills());
     tap(0);
     S.actionPopupLines = []; S.actionPopupEndTick = 0;
     printed = []; render.drawUI();
@@ -274,6 +274,8 @@ step('the screen says Copy page, then PASTE on the footer', () => {
     cc(SHIFT, 127); cc(COPY, 0); cc(COPY, 127);
     printed = []; render.drawUI();
     assert(printed.includes('Cut page'), 'Shift: ' + JSON.stringify(printed));
+    /* Shift held, no source: the step takes a CUT source — the footer says so */
+    assert(pills() === '[["STEP","CUT"]]', 'Shift footer ' + pills());
     cc(SHIFT, 0); cc(COPY, 0);
     printed = []; render.drawUI();
     assert(printed.includes('Clip Length') && pills() === '[["STEP","PAGE"],["JOG","STEP"]]',

@@ -137,7 +137,8 @@ step('⭐ session mixer SEND A page: the track cells wear the brackets; the foot
     assert(render.sessMixerCellOpens(0) && render.sessMixerCellOpens(7), 'cells not clickable');
     note(0, true); ticks(1);
     render.drawUI();
-    assert(pills() === J([['CLK', 'SEND A'], ['BACK', 'OUT']]), 'footer ' + pills());
+    /* no BACK OUT: a Back tap in Session View does nothing (hints audit, 2026-11-16) */
+    assert(pills() === J([['CLK', 'SEND A']]), 'footer ' + pills());
     note(0, false); ticks(1);
 });
 

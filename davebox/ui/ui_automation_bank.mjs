@@ -255,11 +255,14 @@ export function drawAutomationBankBody() {
          * that has such a place on this track. */
         const jt = autoBankJumpTarget();
         const nLanes = autoBankRows(S.activeTrack, effectiveClip(S.activeTrack)).length;
-        hints = a.sel === nLanes ? [['CLK', 'ADD']]
+        /* Shift held: the plain clicks need Shift up — only the jump remains */
+        if (S.shiftHeld) hints = (a.sel < nLanes && jt && laneHome(jt.target, S.activeTrack)) ? [['CLK', 'JUMP']] : [];
+        else hints = a.sel === nLanes ? [['CLK', 'ADD']]
               : a.sel > nLanes ? [['CLK', 'CLEAR']]
               : (jt && laneHome(jt.target, S.activeTrack)) ? [['CLK', 'OPS'], ['SHFT', 'JUMP']] : [['CLK', 'OPS']];
     } else {
-        hints = [['CLK', 'MENU'], [S.heldStep >= 0 ? 'JOG' : 'JOG', S.heldStep >= 0 ? 'STEP' : 'BANK'], ['BACK', 'OUT']];
+        /* the jog stopped switching banks 2026-10-04; under a hold it reveals the step */
+        hints = S.heldStep >= 0 ? [['JOG', 'STEP'], ['BACK', 'OUT']] : [['CLK', 'MENU'], ['BACK', 'OUT']];
     }
     drawKitHintRow(MV_FOOTER_Y, hints);
 }

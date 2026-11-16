@@ -72,7 +72,7 @@ import {
 import { soundRender, renderTrackGatewayCard, renderConfigCardPeek, renderMacrosPeek } from './ui_sound.mjs';
 import { drawAutomationBankBody, autoBankMenuOpen, autoMenuUp, autoHoldJumpActive, autoHoldJumpStep, autoLaneFocus, autoHeldValue, autoMapEditorComp, autoMapMarkedBank,
          autoOpsOpen, drawAutomationOpsGraph, drawLaneFocusOverlay } from './ui_automation_bank.mjs';
-import { automationStateFor, autoShiftHint } from './ui_automation.mjs';
+import { automationStateFor, autoShiftHint, heldStepHints } from './ui_automation.mjs';
 import { seqAutoTargetForKnob, fmtInstr, BANK_REMIX, BANK_INPUT, PAD_MODE_AUDIO } from './ui_constants.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
 import { registerRingCells, knobRingNorm } from './ui_knob_leds.mjs';
@@ -381,11 +381,14 @@ function drawAudioTrackRest(t) {
 export function slcHints(pg, inside, shift, tempoTouched) {
     if (pg === 2) {
         const clk = ['clk', tempoTouched ? 'tempo' : 'menu'];
-        return shift ? [clk, ['tch', 'fine']] : [clk, ['jog', 'page']];
+        /* a knob TURNED with Shift is the fine step (TCH is a touch) */
+        return shift ? [clk, ['knb', 'fine']] : [clk, ['jog', 'page']];
     }
-    if (shift) return inside ? [['knb', 'edit all']] : [['clk', 'menu'], ['knb', 'edit all']];
-    if (pg === 1) return [['sh', 'menu'], ['jog', 'page']];
-    return inside ? [['clk', 'add'], ['sh', 'all'], ['back', 'done']] : [['clk', 'edit'], ['sh', 'menu'], ['jog', 'page']];
+    /* SHFT, the canon key (was SH); Back out of the slice editor is OUT —
+     * it goes up to page 1 of the same editor (hints audit, 2026-11-16) */
+    if (shift) return inside ? [['knb', 'edit all'], ['back', 'out']] : [['clk', 'menu'], ['knb', 'edit all']];
+    if (pg === 1) return [['shft', 'menu'], ['jog', 'page']];
+    return inside ? [['clk', 'add'], ['shft', 'all'], ['back', 'out']] : [['clk', 'edit'], ['shft', 'menu'], ['jog', 'page']];
 }
 function drawSlicerPage(ed, i, ends, mid, zoomTxt, lit) {
     const t = ed.t, c = ed.c, rt = i.rate, inside = ed.mode === 'chop';
@@ -478,7 +481,7 @@ function drawAudioWaveEditor() {
         drawKitList(auPickRows(ed), ed.pick.sel, { h: MV_FOOTER_Y - 11 });
         /* both menus close onto their editor: the chop types have no level
          * above them since chopping left SAMPLE */
-        drawKitHintRow(MV_FOOTER_Y, [['clk', 'pick'], ['back', ed.pick.level === 1 || ed.pick.only2 ? 'exit' : 'up']]);
+        drawKitHintRow(MV_FOOTER_Y, [['clk', 'pick'], ['back', 'out']]);   /* Back closes the menu onto its editor: OUT */
         return;
     }
     auWaveView(ed);
@@ -521,7 +524,7 @@ function drawAudioWaveEditor() {
         kitHudTap('Readout', { text: lz.state === AU_LAZY_RUN ? 'Tap the white pad' : 'Tap pad 1 to start', pos: 'left' });
         if (lz.state === AU_LAZY_RUN) right(lz.n + ' SLICE' + (lz.n === 1 ? '' : 'S'));
         drawAudioWave(t, c, 0, 20, 128, 30, { A: 0, B: i.nframes, sel: -1 });
-        drawKitHintRow(MV_FOOTER_Y, [['pad', lz.state === AU_LAZY_ARMED ? 'play' : 'chop'], ['clk', 'done']]);   /* two fit; a click or Back ends it, keeping the chops */
+        drawKitHintRow(MV_FOOTER_Y, [['pad', lz.state === AU_LAZY_ARMED ? 'start' : 'chop'], ['clk', 'done']]);   /* two fit; a click or Back ends it, keeping the chops */
         return;
     }
     const sub = auWaveSub(ed);
@@ -574,7 +577,8 @@ function drawAudioWaveEditor() {
             drawSampleOwnFrame(AU_P2_TEMPO, 2, hold, hc && (S.knobTouched === hold && hc.text != null ? hc.text : hc.label));
         }
         drawKitPage(pg === 1 ? 'TIME' : 'SOUND', cells, false,
-                    pg === 1 && S.knobTouched === AU_P2_TEMPO && !auIsFree(i) ? [['clk', 'tempo']] : [['jog', 'page']]);
+                    pg === 1 && S.knobTouched === AU_P2_TEMPO && !auIsFree(i) ? [['clk', 'tempo']]
+                    : S.shiftHeld ? [] : [['jog', 'page']]);   /* Shift + jog LEAVES (shortcutLeaves) */
         if (S.knobTouched < 0) drawBankHeading(pg === 1 ? 'TIME' : 'SOUND', false, false, (pg + 1) + '/' + AU_SAMPLE_PAGES);
         /* a knob that moves the waveform shows it while touched */
         if (S.knobTouched >= 0 && auSampleWaveKnob(t, c, pg, S.knobTouched)) drawClipWaveCard(t, c, cells[S.knobTouched]);
@@ -596,7 +600,9 @@ function drawAudioWaveEditor() {
                                               beats: free ? null : { origin: i.rstart, fpb: 96 * auFpt(i) } });
         hudSampleKnobs(ed, i, sub, null, false);
         /* touch Tempo: a click opens its menu (Fit to clip · Original tempo) */
-        drawKitHintRow(MV_FOOTER_Y, S.knobTouched === 6 && !free ? [['clk', 'tempo'], ['jog', 'page']] : [['clk', 'menu'], ['jog', 'page']]);
+        /* Shift + jog LEAVES the screen (shortcutLeaves): no JOG PAGE under Shift */
+        const _clk = S.knobTouched === 6 && !free ? ['clk', 'tempo'] : ['clk', 'menu'];
+        drawKitHintRow(MV_FOOTER_Y, S.shiftHeld ? [_clk] : [_clk, ['jog', 'page']]);
         return;
     }
     const mk = auMarks(t, c);
@@ -615,7 +621,8 @@ function drawAudioWaveEditor() {
         hudSampleKnobs(ed, i, sub, kind, sl);
         /* two fit; Back keeps the cut, a click (a Slicer's) keeps it and goes
          * straight into the slice editor at this view */
-        drawKitHintRow(MV_FOOTER_Y, [['jog', kind === 'even' ? 'count' : 'sens'], ['clk', isSlicerEd(ed) ? 'edit' : 'done']]);
+        const _ck = ['clk', isSlicerEd(ed) ? 'edit' : 'done'];
+        drawKitHintRow(MV_FOOTER_Y, S.shiftHeld ? [_ck] : [['jog', kind === 'even' ? 'count' : 'sens'], _ck]);   /* Shift + jog leaves */
         return;
     }
     if (kind === 'manual') drawBankHeading('SLICE ' + (sel + 1) + '/' + mk.length, false);
@@ -1220,7 +1227,7 @@ function drawSessionMixerPage() {
     if (touched) drawKitTouchedHeader(touched.name + '  ' + touched.text);
     else drawBankHeading(mode.label, false, false, sessMixerPageMark(mode));
     drawKitCells(cells, t);
-    drawKitHintRow(MV_FOOTER_Y, touched && touched.opens ? [['CLK', mode.label], ['BACK', 'OUT']]
+    drawKitHintRow(MV_FOOTER_Y, touched && touched.opens ? [['CLK', mode.label]]
                                                           : sessionMixerHints(mode));
     /* an EQ knob in hand: that track's EQ curve over the page */
     const _et = sessStripCardTrack();
@@ -1329,8 +1336,10 @@ export function sessMixerCellOpens(t) {
  * keeps the bank map shut and the jog turn walks nothing — so Back is the one
  * pair (a touched SEND cell adds its CLK, above). */
 function sessionMixerHints(mode) {
-    /* EQ's four bands are pages the jog turns: JOG PAGE, as every paged screen */
-    return (mode && mode.eq) ? [['JOG', 'PAGE'], ['BACK', 'OUT']] : [['BACK', 'OUT']];
+    /* EQ's four bands are pages the jog turns: JOG PAGE, as every paged screen.
+     * No BACK OUT: the mixer shows only while a knob / the jog is touched, and
+     * a Back tap in Session View does nothing (_backTap's "Session view home") */
+    return (mode && mode.eq) ? [['JOG', 'PAGE']] : [];
 }
 /* A paged mixer bank's "n/N" for the header's right side (the audio editors'
  * mark), or undefined: EQ's four bands. */
@@ -1494,6 +1503,11 @@ export function bankPageHints(bank) {
      * Slicer's CLIP bank is a MIDI clip's with >Seq on K8, no Legato or
      * Import (found on the device: it read CLK LEGATO); an Audio clip's has
      * no triggers. */
+    /* Shift held: every click below needs Shift UP (ui_input_cc's click
+     * handlers), so none is named. Under a held step, releasing Shift is the
+     * POINT/PUNCH tap — that is what the row says (hints audit, 2026-11-16). */
+    if (S.shiftHeld && !S.sessionView)
+        return stepHoldEstablished() && bank !== BANK_STEP ? [autoShiftHint()] : [];
     const au = isSampledTrack(S.activeTrack);
     if (au && bank === 0 && !S.sessionView) {
         if (audioSliceMode(S.activeTrack) && S.knobTouched === CROP_KNOB) return [['CLK', 'CROP']];
@@ -1523,16 +1537,16 @@ export function bankPageHints(bank) {
      * in the same slot, and HLD BANKS (which the hold suspends) is not shown.
      * On the STEP bank itself the jog does nothing under a hold: no pair. */
     const held = stepHoldEstablished();
-    const hints = held ? (stepRevealAvailable() ? [['JOG', 'STEP']] : []) : mapClickHints(bank);
+    /* A held step's knob turn writes a lock: a PUNCH, or — Shift tapped — a
+     * POINT. The pair names what a tap switches TO, and comes FIRST (it was
+     * cut by the fit rule behind JOG STEP + BACK on every card). Not on the
+     * STEP bank: its knobs edit the step itself and write no lock, and its
+     * jog does nothing under a hold — no pair there. heldStepHints drops BACK. */
+    const hints = held ? (bank !== BANK_STEP ? heldStepHints() : []) : mapClickHints(bank);
     /* RPT GROOVE: any knob + click goes to the other page — said on BOTH
      * pages, and FIRST, so the fit rule drops HLD BANKS rather than this. */
     if (bankHasAltParams(S.activeTrack, bank)) hints.unshift(['KNB+CLK', S.altMode ? 'VELOCITY' : 'NUDGE']);
-    /* A held step's knob turn writes a lock: a PUNCH, or — Shift tapped — a
-     * POINT. The pair names what a tap switches TO. Not on the STEP bank:
-     * its knobs edit the step itself and write no lock, so the tap has
-     * nothing there to switch. */
-    if (held && bank !== BANK_STEP) hints.push(autoShiftHint());
-    hints.push(['BACK', 'OUT']);
+    if (!held) hints.push(['BACK', 'OUT']);
     return hints;
 }
 
@@ -2120,12 +2134,13 @@ function overviewTrackRows() {
 }
 export function overviewHints() {
     if (devSnapOpen()) return devSnapHints();   /* the snapshot layer (item 18), either view */
-    if (S.shiftHeld) return [['JOG', 'TRACK']];
-    /* A held step owns the jog here too (heldStepJog runs ahead of the map):
-     * JOG STEP when there is a note to edit, nothing when there is not — and
-     * no HLD BANKS, which a held step keeps shut. */
+    /* A held step owns the jog here too (heldStepJog runs ahead of the map,
+     * and declines Shift + jog, so no JOG TRACK under a hold): the Shift tap's
+     * POINT/PUNCH, JOG STEP when there is a note to edit — and no HLD BANKS,
+     * which a held step keeps shut. With Shift down, its release is the tap. */
     if (stepHoldEstablished() && !S.sessionView)
-        return stepRevealAvailable() ? [['JOG', 'STEP']] : [];
+        return S.shiftHeld ? [autoShiftHint()] : heldStepHints();
+    if (S.shiftHeld) return [['JOG', 'TRACK']];
     /* Josh, 2026-10-04: "session should get touch-mix no shift track hint". */
     if (S.sessionView) return (S.perfViewLocked ? [] : [['HLD', 'BANKS']]).concat([['TCH', 'MIX']]);
     return [['HLD', 'BANKS'], ['TCH', 'EDIT'], ['SHFT', 'TRK']];
@@ -2324,7 +2339,8 @@ function drawTempoSelect() {
     const px  = BX + Math.round((ph / len) * BW);
     for (let yy = BY; yy < BY + BH; yy++) set_pixel(Math.min(px, BX + BW - 1), yy, 1);
 
-    drawKitHintRow(MV_FOOTER_Y, warp ? [['jog', 'bars'], ['shft', 'fine'], ['clk', 'set']]
+    /* Shift held: the jog's fine scale (ui_input_cc's warp jog) is what it does now */
+    drawKitHintRow(MV_FOOTER_Y, warp ? (S.shiftHeld ? [['jog', 'fine'], ['clk', 'set']] : [['jog', 'bars'], ['shft', 'fine'], ['clk', 'set']])
                                      : [['jog', 'tempo'], ['clk', 'set']]);
 }
 
@@ -3189,7 +3205,7 @@ function drawUIBody() {
     if (bank === BANK_CHORD && inTimeout && customCardSlot() >= 0) {
         hudScreen('track.custom-slot');
         const _cc = customCardCells(S.activeTrack, customCardSlot());
-        drawKitPage(_cc.title, _cc.cells, false, null);
+        drawKitPage(_cc.title, _cc.cells, false, S.knobTouched === 7 && !S.shiftHeld ? [['CLK', 'RESET']] : null);   /* K8 touch + click resets, as the Chord slot card says */
         fill_rect(0, 0, 128, MV_BAR_Y, 0);
         const _ht = fit4x5(_cc.title, 124);
         fontPrint4x5(Math.round((128 - fontWidth4x5(_ht)) / 2), 1, _ht, 1);
@@ -3225,8 +3241,10 @@ function drawUIBody() {
             fill_rect(_nvX - 1, 28, _nvW + 2, 14, 1);
             print(_l4x, 30, 'Steps: ', 1);
             print(_nvX, 30, steps + '/256', 0);
+            /* no source yet: Shift + step takes a CUT source (the title says
+             * "Cut page"), and the plain row says Shift does that */
             drawKitHintRow(MV_FOOTER_Y, _pageCopy
-                ? [['STEP', _pageSrc ? 'PASTE' : 'COPY']]
+                ? (_pageSrc ? [['STEP', 'PASTE']] : S.shiftHeld ? [['STEP', 'CUT']] : [['STEP', 'COPY'], ['SHFT', 'CUT']])
                 : [['STEP', 'PAGE'], ['JOG', 'STEP']]);
         }
         function _drawLoopTitle(title) {

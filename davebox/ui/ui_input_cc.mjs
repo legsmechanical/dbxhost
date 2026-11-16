@@ -2113,6 +2113,7 @@ function _onCC_buttons(d1, d2) {
 
     if (d1 === MoveDelete) {
         S.deleteHeld = d2 === 127;
+        S.screenDirty = true;     /* a footer may name Delete's gesture (the snapshot layer's STEP CLEAR) */
         /* delete_held now rides as the 34th token in the tN_padmap payload
          * (computePadNoteMap), so it shares the tick-based self-heal and
          * avoids the onMidiMessage coalescing risk the old separate

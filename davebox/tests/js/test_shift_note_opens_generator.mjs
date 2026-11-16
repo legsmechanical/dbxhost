@@ -176,6 +176,15 @@ step('⭑ the CONFIG pad opens the track\'s menu, on the Instrument row', () => 
     const h = JSON.stringify(sound.soundMenuHintsForTest());
     if (h !== JSON.stringify([['CLK', 'EDIT'], ['SHFT', 'CHANGE']]))
         throw new Error('Instrument row footer: ' + h);
+    /* ⭐ Shift held: the footer says what to do now — CLK CHANGE (Josh,
+     * 2026-11-16: "when you hold shift, there's no hint to click to change") */
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 49, 127])); ticks(2);
+    const hs = JSON.stringify(sound.soundMenuHintsForTest());
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 49, 0])); ticks(2);
+    if (hs !== JSON.stringify([['CLK', 'CHANGE']]))
+        throw new Error('Instrument row footer with Shift held: ' + hs);
+    if (JSON.stringify(sound.soundMenuHintsForTest()) !== h)
+        throw new Error('Shift released: the footer did not come back: ' + JSON.stringify(sound.soundMenuHintsForTest()));
     sound.soundExit(); ticks(4);
 });
 

@@ -15,7 +15,7 @@
  * 37 ms. So nothing here crosses per parameter: see THE TRANSPORT below.
  */
 
-import { S, noteUndoUnit } from './ui_state.mjs';
+import { S, noteUndoUnit, stepHoldEstablished, stepRevealAvailable } from './ui_state.mjs';
 import { POLL_INTERVAL, SEQ_AUTO_TARGETS, seqAutoAutomatable, BANK_SHORT, BANKS, PAD_MODE_DRUM, midiTargetIsMidi, midiTargetName, midiTargetTo14 } from './ui_constants.mjs';
 /* The move_fx: prefix has exactly one builder, and a source invariant pins
  * that (tests/test_move_fx_prefix_owner.sh). Build it here and the suite fails
@@ -1439,6 +1439,16 @@ export function automationExtendLock(track, clip, target, fromStep, toStep, tps,
  * writes TO (every hold starts PUNCH, so it first says POINT). */
 export function autoShiftHint() {
     return ['SHFT', (S.heldWrite && S.heldWrite.type === 0) ? 'PUNCH' : 'POINT'];
+}
+/* THE HELD-STEP FOOTER, one rule for every screen: null until the press is a
+ * HOLD (a tap may still toggle the step, so the footer does not flicker), then
+ * the Shift tap's POINT/PUNCH first (it has no on-screen trace) and JOG STEP
+ * where the jog reveals the step's page. No BACK pill: the 86px a BACK leaves
+ * holds only one of the two, and both say what the hold does (hints audit,
+ * 2026-11-16 — SHFT POINT was being cut on every bank card). */
+export function heldStepHints() {
+    if (!stepHoldEstablished()) return null;
+    return stepRevealAvailable() ? [autoShiftHint(), ['JOG', 'STEP']] : [autoShiftHint()];
 }
 
 /* THE SHIFT TAP (Josh, 2026-10-21: "how about hold step, and tapping

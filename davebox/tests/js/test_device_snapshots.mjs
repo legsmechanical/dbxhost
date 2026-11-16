@@ -188,7 +188,7 @@ step_('⭑ holding Capture past the threshold OPENS the layer, and the release r
     const h = JSON.stringify(D.devSnapHints());
     /* The footer is the layer's ONLY affordance, so it has to name the gesture
      * that actually saves. HOLD stopped saving on 2026-09-06 (Shift does). */
-    if (h !== JSON.stringify([['STEP', 'RECALL'], ['SHIFT', 'STORE']])) throw new Error('footer (Josh, 2026-09-06: Step:recall · Shift:store): ' + h);
+    if (h !== JSON.stringify([['STEP', 'RECALL'], ['SHFT', 'STORE']])) throw new Error('footer (Josh, 2026-09-06: Step:recall · Shift:store): ' + h);
     /* No entry flash (Josh, 2026-09-05): the SNAPSHOTS row + footer name the mode. */
     if (S.actionPopupEndTick >= 0 && S.actionPopupLines.some((l) => /SNAPSHOTS/.test(String(l))))
         throw new Error('the entry popup is back: ' + JSON.stringify(S.actionPopupLines));

@@ -533,7 +533,7 @@ async function main() {
         assert(mi().drum, 'not a drum card');
         assert(JSON.stringify(mi().voices.map(v => v.pitch)) === '[20,36]', 'sounds ' + JSON.stringify(mi().voices));
         assert(mi().assign[1] === 0, 'the kick (36) is not on the lane playing 36: ' + JSON.stringify(mi().assign));
-        assert(JSON.stringify(MI.miHintsForTest(false).footer) === '[["RTPAD","SOUND"],["SHFT","MUTE"]]', 'footer');
+        assert(JSON.stringify(MI.miHintsForTest(false).footer) === '[["CLK","LOAD"],["RTPAD","SOUND"]]', 'footer');
     });
 
     step('hold a sound pad (right-hand) and tap a lane pad: the sound moves there', () => {

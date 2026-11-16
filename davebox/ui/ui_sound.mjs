@@ -66,7 +66,7 @@ import { computePadNoteMap } from './ui_drummodel.mjs';
 import { forceRedraw, effectiveClip } from './ui_leds.mjs';
 import { automationParamEdit, automationNeedsPrev, automationParamTouch, automationStateFor, automationToggleActive,
          automationClearKey, automationEntriesFor, automationFxMoved, automationAddLane,
-         automationIsParam, autoShiftHint, automationTargetLabel } from './ui_automation.mjs';
+         automationIsParam, autoShiftHint, heldStepHints, automationTargetLabel } from './ui_automation.mjs';
 import { fontPrint4x5 } from './ui_fonts_pp.mjs';
 import { autoBankRestoreMenu, autoBankOpenLane, autoLaneFocus, autoHeldValue, autoHoldJumpActive, autoLanePinActive } from './ui_automation_bank.mjs';
 import { setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
@@ -2438,9 +2438,10 @@ export function soundEnterSendFromSessionMixer(key) {
 /* A sound bank card's jog pair: JOG STEP under a held step, else HLD BANKS
  * (the map) unless a knob is touched. */
 function cardJogHints(knobTouched) {
-    if (GS.heldStep >= 0) return [['JOG', 'STEP'], autoShiftHint()];
-    return knobTouched ? [] : [['HLD', 'BANKS']];
+    return heldStepHints() || (knobTouched ? [] : [['HLD', 'BANKS']]);
 }
+/* BACK OUT ends a card's row, except under a held step (heldStepHints). */
+function withBack(h) { return heldStepHints() ? h : h.concat([['BACK', 'OUT']]); }
 function levelCardHints() {
     /* MIX is no door (2026-09-26): a click opens the bank map — or, with a
      * step held, the jog reveals its page (spec §2) — and Back leaves. A
@@ -2453,8 +2454,8 @@ function levelCardHints() {
      * (Josh, 2026-11-16) — the row holds one pair beside BACK, so HLD BANKS
      * gives way here. A held step's JOG STEP still wins (the hold suspends
      * paging). */
-    if (GS.heldStep < 0 && mixPagingHere()) return [['JOG', 'PAGE'], ['BACK', 'OUT']];
-    return cardJogHints(_tk >= 0).concat([['BACK', 'OUT']]);
+    if (!heldStepHints() && mixPagingHere()) return [['JOG', 'PAGE'], ['BACK', 'OUT']];
+    return withBack(cardJogHints(_tk >= 0));
 }
 
 function volTarget() {
@@ -4275,6 +4276,9 @@ export function modBusInsertDisplayValue(insertName, moduleRaw) {
 function renderModBusChain() {
     const rows = ModBus.modBusChainRows(S.modBus, S.modBusGroup);
     if (!rows.length) { renderInChain([{ label: 'Reading...', hdr: true }], 0); return; }
+    /* a loaded insert: the click edits it, Shift + click changes the module */
+    const _c = rows[S.modBusChainIdx];
+    const bh = _c && _c.kind !== 'add' && _c.module ? followShift([['CLK', 'EDIT'], ['SHFT', 'CHANGE']]) : null;
     renderInChain(rows.map((c) => (c.kind === 'add'
         ? { label: '+ Add effect', hdr: true }
         : { label: c.label, hdr: true,
@@ -4288,7 +4292,7 @@ function renderModBusChain() {
              * no door mark, matching its old un-enterable affordance. */
             value: modBusInsertDisplayValue(
                 ModBus.modBusInsertName(S.modBus, S.modBusGroup, c.index), c.module) })),
-        S.modBusChainIdx);
+        S.modBusChainIdx, undefined, chainHintOpts(bh));
 }
 
 function renderModBusVoices() {
@@ -4546,11 +4550,14 @@ function knobLegRemove(j) {
     S.dirty = true;
 }
 function renderKnobLegs() {
-    renderInChain(knobLegRows().map((r, i) => ({
+    const rows = knobLegRows(), cur = rows[S.knobLegRow];
+    /* a leg: the click re-points it, Shift + click REMOVES it (no confirm) */
+    const h = cur && cur.kind === 'leg' && !S.knobLegEditing ? followShift([['CLK', 'CHANGE'], ['SHFT', 'REMOVE']]) : null;
+    renderInChain(rows.map((r, i) => ({
         label: r.label, hdr: !!r.hdr,
         /* The row being turned says so, the way slot settings do. */
         value: (S.knobLegEditing && i === S.knobLegRow) ? '[' + r.value + ']' : r.value,
-    })), S.knobLegRow);
+    })), S.knobLegRow, undefined, chainHintOpts(h));
 }
 
 function openKnobEditor() {
@@ -5926,7 +5933,8 @@ function enumPickHints() {
     if (!p || p.label !== INSTR_ROW_LABEL || !Array.isArray(p.rows)) return null;
     const r = p.rows[p.sel];
     if (!r || !r.gen) return null;
-    return [['SHFT', 'LISTS']];
+    /* Shift held: the click is what opens the lists now */
+    return S.shiftHeld ? [['CLK', 'LISTS'], ['BACK', 'OUT']] : [['SHFT', 'LISTS'], ['BACK', 'OUT']];
 }
 
 function renderEnumPick() {
@@ -6067,7 +6075,9 @@ function renderInChain(rows, sel, emptyMsg, opts) {
          * prints straight over them — reported from the device as "swap module
          * menu is printing directly overtop of the editor page". */
         clear_screen();
-        drawKitList(rows, sel, Object.assign({ emptyMsg }, opts || {}));
+        const _h = opts && opts.hints && opts.hints.length ? opts.hints : null;
+        drawKitList(rows, sel, Object.assign({ emptyMsg }, _h ? { visible: 4 } : (opts || {})));
+        if (_h) { fill_rect(0, MV_FOOTER_Y - 3, 128, 64 - (MV_FOOTER_Y - 3), 0); drawKitHintRow(MV_FOOTER_Y, _h); }
         return;
     }
     /* The ROOT is the nearest ancestor that does not float — the blocks picker
@@ -7553,7 +7563,7 @@ function macroCardHints() {
     const _tk = S.touchedIdx >= 0 ? S.touchedIdx : GS.knobTouched;
     if (_tk >= 0 && _tk < NUM_KNOBS)
         return [['CLK', macroLegs(macroMapping(_tk)).length ? 'EDIT' : 'ASSIGN'], ['BACK', 'OUT']];
-    return cardJogHints(_tk >= 0).concat([['BACK', 'OUT']]);
+    return withBack(cardJogHints(_tk >= 0));
 }
 function renderMacros() {
     clear_screen();
@@ -11949,7 +11959,7 @@ export function renderTrackGatewayCard(track) {
     clear_screen();
     kitUseLayout('bank');
     drawKitBankHeader(BANKS[BANK_SOUND].name, 'audio', bankHeaderRight(false));
-    drawKitHintRow(MV_FOOTER_Y, cardJogHints(GS.knobTouched >= 0).concat([['BACK', 'OUT']]));
+    drawKitHintRow(MV_FOOTER_Y, withBack(cardJogHints(GS.knobTouched >= 0)));
 }
 /* The CONFIG card in the same gap: the header, the brackets, the rows only if
  * sound mode last built them for this track. */
@@ -12008,7 +12018,7 @@ function renderNoEditor() {
     centreText(MV_ROW1_Y - 8, 'NO INSTRUMENT EDITOR');
     centreText(MV_ROW1_Y + 2, 'FOR ' + noEditorWords(S.track).toUpperCase());
     fill_rect(0, MV_FOOTER_Y - 3, 128, 64 - (MV_FOOTER_Y - 3), 0);
-    drawKitHintRow(MV_FOOTER_Y, [['BACK', 'MENU']]);
+    drawKitHintRow(MV_FOOTER_Y, [['CLK', 'MENU'], ['BACK', 'OUT']]);
 }
 
 /* One menu row as drawKitList draws it — the live menu (renderBlocks) and the
@@ -12106,7 +12116,7 @@ function renderConfigCard() {
     lastMenuHeader = { name: TRACK_MENU_TITLE, glyph: null, right: bankHeaderRight(false) };
     drawKitList(S.pickRows.map(pickRowCell), -1, { h: MV_FOOTER_Y - CFG_LIST_TOP });
     drawBrackets(0, CFG_LIST_TOP - 1, 128, MV_FOOTER_Y - CFG_LIST_TOP);
-    drawKitHintRow(MV_FOOTER_Y, [['CLK', 'MENU']].concat(GS.heldStep >= 0 ? [['JOG', 'STEP']] : [], [['BACK', 'OUT']]));
+    drawKitHintRow(MV_FOOTER_Y, heldStepHints() || [['CLK', 'MENU'], ['BACK', 'OUT']]);
 }
 export function soundConfigCardForTest() {
     return { view: S.view, card: S.view === VIEW_CFGCARD, rows: S.pickRows.map((r) => r.kind) };
@@ -12198,7 +12208,23 @@ function renderBlocks() {
 /* The sound menu's footer hints for ONE row — the decision, apart from the
  * drawing, so a test can pin it. Rows with the click/Shift+click grammar say
  * both; a row where only one of the two does anything says that one. */
-function menuRowHints(r) {
+function menuRowHints(r) { return followShift(menuRowHintsPlain(r)); }
+/* Shift held: a row's SHFT gesture is the click now, so the row says CLK
+ * <it> (Josh, 2026-11-16: "landing on a loaded instrument says
+ * "shift:change" but when you hold shift, there's no hint to click to
+ * change"). A row with no Shift gesture keeps its hints. */
+function followShift(h) {
+    if (!S.shiftHeld || !h) return h;
+    const sh = h.find((x) => x[0] === 'SHFT');
+    return sh ? [['CLK', sh[1]]] : h;
+}
+/* A chain list's footer opts: the box stops above the hint band (bottomY)
+ * on a row whose Shift + click does something (Josh, 2026-11-16: macro legs,
+ * presets, bus inserts — "add if we have room"); other rows keep the box. */
+function chainHintOpts(h) {
+    return h && h.length ? { bottomY: INSTR_BOTTOM_Y, hints: h } : undefined;
+}
+function menuRowHintsPlain(r) {
     if (!r) return [];
     if (r.kind === 'trackto') {
         /* A Conductor has nothing to ENTER, but Shift+click changes what it is —
@@ -12211,6 +12237,10 @@ function menuRowHints(r) {
         return [['CLK', 'EDIT'], ['SHFT', 'CHANGE']];
     }
     if (r.kind === 'block') return r.name ? [['CLK', 'EDIT'], ['SHFT', 'CHANGE']] : [['CLK', 'ADD']];
+    /* a Send row: the click takes the jog for its level, Shift + click opens
+     * that send's effects (soundInput's _sendBus door) */
+    if (r.kind === 'buslevel' && r.spec && (r.spec.key === 'send_a' || r.spec.key === 'send_b'))
+        return [['CLK', 'EDIT'], ['SHFT', 'FX']];
     /* Doors, levels, dividers: no pop-up — the row shows what it does. */
     return [];
 }
@@ -12482,9 +12512,14 @@ function editHints() {
     /* ⭑ A HELD STEP changes what the jog does (spec §2): it REVEALS the step's
      * page instead of paging — and that has no on-screen trace, so the pair
      * leads. JOG PAGE, which the hold suspends, is not shown. */
-    if (GS.heldStep >= 0) return [['JOG', 'STEP'], ['BACK', 'OUT']];
+    const held = heldStepHints();
+    if (held) return held;
+    /* Shift + jog walks sections only on a global bus editor; on a track it
+     * switches track (soundInput declines it), so a track never says SECT */
+    const sect = soundIsGlobal() && S.sections.length > 1;
+    if (sect && S.shiftHeld) return [['JOG', 'SECT'], ['BACK', 'OUT']];
     const hints = [['CLK', S.moduleId ? 'PRESET' : 'BROWSE']];
-    if (S.sections.length > 1) hints.push(['SHFT', 'SECT']);
+    if (sect) hints.push(['SHFT', 'SECT']);
     hints.push(['JOG', 'PAGE']);
     hints.push(['BACK', 'OUT']);
     return hints;
@@ -13770,7 +13805,7 @@ function renderChainScreen() {
     kitHudTap('Message', { big: String(engineModuleDisplayName(S.moduleId) || 'Module'), lines: [String(chainUiError() || 'module screen stopped')], wordmark: true });
     print(3, 12, String(engineModuleDisplayName(S.moduleId) || 'Module').slice(0, 24), 1);
     print(3, 30, String(chainUiError() || 'module screen stopped').slice(0, 24), 1);
-    drawKitHintRow(MV_FOOTER_Y, [['back', 'exit']]);
+    drawKitHintRow(MV_FOOTER_Y, [['BACK', 'EXIT']]);
 }
 
 function canvasCloseIfOpen() {
@@ -14046,7 +14081,7 @@ function renderEdit() {
     if (!S.banks.length) {
         drawKitHeaderParamPages(blockLabel(), '', false);
         centreText(30, S.moduleId ? 'NO PARAMS' : 'EMPTY');
-        drawKitHintRow(MV_FOOTER_Y, [['CLK', S.moduleId ? 'PRESETS' : 'PICK'], ['BACK', 'OUT']]);
+        drawKitHintRow(MV_FOOTER_Y, [['CLK', S.moduleId ? 'PRESET' : 'BROWSE'], ['BACK', 'OUT']]);
         return;
     }
     const bank = S.banks[S.bankIdx];
@@ -14072,7 +14107,7 @@ function renderEdit() {
         filt: filterVizFor(bank, S.values),
         footer: editHints(),
     });
-    if (S.shiftHeld && S.sections.length > 1) {
+    if (S.shiftHeld && S.sections.length > 1 && soundIsGlobal()) {   /* a track's Shift + jog switches track, not section */
         drawKitSectionPicker(S.sections, activeSection(S.sections, S.bankIdx));
     }
 }
@@ -14132,7 +14167,10 @@ function renderChainPatches() {
         centreText(58, S.patchMsg);
         return;
     }
-    renderInChain(rows, S.patchIdx);
+    /* a preset row: the click loads, Shift + click deletes (it asks) */
+    const ph = S.patchIdx >= 2 && S.patchNames[S.patchIdx - 2] !== undefined
+        ? followShift([['CLK', 'LOAD'], ['SHFT', 'DELETE']]) : null;
+    renderInChain(rows, S.patchIdx, undefined, chainHintOpts(ph));
 }
 
 function renderPresetList() {
@@ -14147,8 +14185,13 @@ function renderPresetList() {
     }
     drawKitHeader('USER PRESETS', false);
     const rows = ['[Save current…]'].concat(S.userPresets.map(p => p.name));
-    renderRows(rows, S.userIdx, '', listMsgCap(S.presetMsg));
+    /* a preset row: the click loads, Shift + click deletes (it asks) —
+     * the band is the message's while one shows */
+    const uh = !S.presetMsg && S.userIdx >= 1 && S.userPresets[S.userIdx - 1]
+        ? followShift([['CLK', 'LOAD'], ['SHFT', 'DELETE']]) : null;
+    renderRows(rows, S.userIdx, '', uh ? { visible: 4 } : listMsgCap(S.presetMsg));
     if (S.presetMsg) { clearListMsgBand(); centreText(58, S.presetMsg); }
+    else if (uh) { fill_rect(0, MV_FOOTER_Y - 3, 128, 64 - (MV_FOOTER_Y - 3), 0); drawKitHintRow(MV_FOOTER_Y, uh); }
 }
 
 /* Numbered scrollable list, same shape as the user list. The names behind it

@@ -26,6 +26,7 @@
 import {
     drawKitSampleSpan, drawKitHeaderParamPages, drawKitHintRow, MV_FOOTER_Y, kitHudTap,
 } from './ui_movy.mjs';
+import { S as GS } from './ui_state.mjs';
 import {
     isWavPosition, wavPositionMeta, wavPositionText, wavPositionRatio, wavRatioKnown,
     wavSetPrecision, wavKnobStep, wavZoomWindow, wavZoomLabel, wavMarkerInWindow,
@@ -473,8 +474,15 @@ function footer() {
         print(Math.max(0, Math.floor((128 - text_width(t)) / 2)), MV_FOOTER_Y + 1, t, 1);
         return;
     }
-    const hints = [['BACK', 'OUT'], ['JOG', 'MOVE']];
-    if (W && wavEditFileKey()) hints.push(['SHFT CLK', 'FILE']);
-    if (W && wavZoomOffered(W.meta, W.members.length)) hints.push(['K8', 'ZOOM']);
+    /* Shift + click is the ONLY way to change the sample here, and it was the
+     * pill the fit rule cut ('SHFT CLK FILE' beside JOG MOVE): it leads now,
+     * as the gesture with no trace. Shift held, the click does it and the jog
+     * is the fine step (hints audit, 2026-11-16). */
+    const file = !!(W && wavEditFileKey());
+    const zoom = !!(W && wavZoomOffered(W.meta, W.members.length));
+    let hints;
+    if (GS.shiftHeld) hints = (file ? [['CLK', 'FILE']] : []).concat([['JOG', 'FINE'], ['BACK', 'OUT']]);
+    else if (file) hints = [['SHFT', 'FILE']].concat(zoom ? [['K8', 'ZOOM']] : [], [['BACK', 'OUT']]);
+    else hints = [['JOG', 'MOVE']].concat(zoom ? [['K8', 'ZOOM']] : [], [['BACK', 'OUT']]);
     drawKitHintRow(null, hints);
 }

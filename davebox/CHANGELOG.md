@@ -7,6 +7,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Fixed
+- **Footer hints say what a gesture does now.** Hold Shift and a screen that offered a
+  Shift gesture names the click that performs it (Track Config's CHANGE, the Instrument
+  picker's LISTS, the automation menu's JUMP, snapshots' STORE, page copy's CUT, the
+  waveform editor's FILE). With a step held, the POINT / PUNCH hint is shown first instead
+  of being cut off. Hints that named gestures doing nothing there are gone (Shift + jog on
+  the Audio and Slicer screens, Back on the Session mixer, JOG BANK on the automation card),
+  and Shift is spelled SHFT everywhere. Macro legs, preset lists and bus inserts now show
+  their Shift + click gesture on the row it applies to.
+- **Slicer: the waveform stays on End.** After touching or turning End, playing another
+  slice keeps that slice's End in view until you touch Start or leave the slice editor.
 
 ## [2.0.0] — 2026-11-16
 ### Added

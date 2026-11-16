@@ -536,7 +536,7 @@ step('⭐⭐ the slice editor (page 1\'s click): pads pick, K1/K3 move by a pixe
     cc(HC.MoveDelete, 0);
     assert(sent('t4_au_mark_del').join() === '16 2', 'Delete + pad: ' + JSON.stringify(sent('t4_au_mark_del')));
     const tx = globalThis.__texts(() => assert(inked(shown()), 'the editor draws nothing'));
-    assert(['CLK', 'ADD', 'BACK', 'DONE'].every((h) => tx.indexOf(h) >= 0), 'slice-editor hints: ' + JSON.stringify(tx));
+    assert(['CLK', 'ADD', 'BACK', 'OUT'].every((h) => tx.indexOf(h) >= 0), 'slice-editor hints: ' + JSON.stringify(tx));
     /* Delete + click is the page's reset here as everywhere — never Clear all (the SLICE menu's alone) */
     reset();
     cc(HC.MoveDelete, 127); click(); cc(HC.MoveDelete, 0);
@@ -1255,7 +1255,7 @@ step('⭐⭐ the chopping tools are the SLICE menu\'s (Shift + click on page 1 o
     assert(ed.pick && ed.pick.menu === 'slices', 'Shift + click on page 2 is not the SLICE menu: ' + JSON.stringify(ed.pick));
     {
         const tx = globalThis.__texts(() => shown());
-        assert(tx.indexOf('EXIT') >= 0 && tx.indexOf('UP') < 0, 'the SLICE menu\'s Back hint: ' + JSON.stringify(tx));
+        assert(tx.indexOf('OUT') >= 0 && tx.indexOf('UP') < 0, 'the SLICE menu\'s Back hint: ' + JSON.stringify(tx));
     }
     back();
     assert(!ed.pick && S.auEditor === ed && ed.page === 1, 'Back did not close the SLICE menu onto page 2');

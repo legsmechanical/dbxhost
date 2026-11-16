@@ -6,7 +6,7 @@
  * one the footer names is PERFORMED and checked to do that: CLK EDIT enters
  * the slice editor, CLK ADD adds a slice, CLK MENU (Shift, outside) opens the
  * SLICE menu, KNB EDIT ALL (Shift) leaves only the every-slice knobs live, CLK MENU on page 3 the SAMPLE menu, CLK TEMPO Tempo's menu, JOG PAGE
- * turns the page, BACK DONE leaves the slice editor. And with Shift held,
+ * turns the page, BACK OUT leaves the slice editor. And with Shift held,
  * never JOG PAGE: Shift + the jog leaves the editor. */
 let failed = 0;
 const step = (l, fn) => { try { fn(); console.log(`  ok   — ${l}`); } catch (e) { console.error(`  FAIL — ${l}: ${e && e.stack ? e.stack : e}`); failed = 1; } };
@@ -93,10 +93,10 @@ async function main() {
     const has = (hs, h) => assert(hs.indexOf(h) >= 0, 'no ' + h + ' in ' + JSON.stringify(hs));
     const hasNot = (hs, h) => assert(hs.indexOf(h) < 0, h + ' is shown: ' + JSON.stringify(hs));
 
-    step('⭐⭐ page 1: CLK EDIT · SH MENU · JOG PAGE — and each does that', () => {
+    step('⭐⭐ page 1: CLK EDIT · SHFT MENU · JOG PAGE — and each does that', () => {
         fresh(0);
         const hs = hints();
-        assert(JSON.stringify(hs) === JSON.stringify(['CLK EDIT', 'SH MENU', 'JOG PAGE']), 'page 1: ' + JSON.stringify(hs));
+        assert(JSON.stringify(hs) === JSON.stringify(['CLK EDIT', 'SHFT MENU', 'JOG PAGE']), 'page 1: ' + JSON.stringify(hs));
         click(); assert(AED.slcInside(S.auEditor), 'CLK EDIT did not enter the slice editor');
         fresh(0); cc(14, 1); ticks(2); assert((S.auEditor.page | 0) === 1, 'JOG PAGE did not turn to page 2');
     });
@@ -106,24 +106,24 @@ async function main() {
         click(); shift(false);
         assert(S.auEditor.pick && S.auEditor.pick.menu === 'slices', 'Shift + click did not open the SLICE menu: ' + JSON.stringify(S.auEditor.pick));
     });
-    step('⭐⭐ the slice editor: CLK ADD · SH ALL · BACK DONE; with Shift only KNB EDIT ALL — Shift + click does nothing inside', () => {
+    step('⭐⭐ the slice editor: CLK ADD · SHFT ALL · BACK OUT; with Shift only KNB EDIT ALL — Shift + click does nothing inside', () => {
         fresh(0); click();
         let hs = hints();
-        assert(JSON.stringify(hs) === JSON.stringify(['CLK ADD', 'SH ALL', 'BACK DONE']), 'inside: ' + JSON.stringify(hs));
+        assert(JSON.stringify(hs) === JSON.stringify(['CLK ADD', 'SHFT ALL', 'BACK OUT']), 'inside: ' + JSON.stringify(hs));
         shift(true); hs = hints();
-        assert(JSON.stringify(hs) === JSON.stringify(['KNB EDIT ALL']), 'inside with Shift: ' + JSON.stringify(hs));
+        assert(JSON.stringify(hs) === JSON.stringify(['KNB EDIT ALL', 'BACK OUT']), 'inside with Shift: ' + JSON.stringify(hs));
         const ed = S.auEditor, before = JSON.stringify(S.auInfo[ed.t][ed.c]);
         click(); shift(false);
         assert(!S.auEditor.pick, 'Shift + click inside opened a menu: ' + JSON.stringify(S.auEditor.pick));
         assert(AED.slcInside(S.auEditor), 'Shift + click inside left the slice editor');
         assert(JSON.stringify(S.auInfo[ed.t][ed.c]) === before, 'Shift + click inside changed the slices');
         fresh(0); click(); cc(51, 127); ticks(1); cc(51, 0); ticks(2);
-        assert(S.auEditor && !AED.slcInside(S.auEditor), 'BACK DONE did not leave the slice editor');
+        assert(S.auEditor && !AED.slcInside(S.auEditor), 'BACK OUT did not leave the slice editor');
     });
-    step('⭐⭐ page 2: SH MENU · JOG PAGE; with Shift CLK MENU · KNB EDIT ALL — Shift + click opens the SLICE menu', () => {
+    step('⭐⭐ page 2: SHFT MENU · JOG PAGE; with Shift CLK MENU · KNB EDIT ALL — Shift + click opens the SLICE menu', () => {
         fresh(1);
         let hs = hints();
-        assert(JSON.stringify(hs) === JSON.stringify(['SH MENU', 'JOG PAGE']), 'page 2: ' + JSON.stringify(hs));
+        assert(JSON.stringify(hs) === JSON.stringify(['SHFT MENU', 'JOG PAGE']), 'page 2: ' + JSON.stringify(hs));
         shift(true); hs = hints(); has(hs, 'CLK MENU'); has(hs, 'KNB EDIT ALL'); hasNot(hs, 'JOG PAGE');
         click(); shift(false);
         assert(S.auEditor.pick && S.auEditor.pick.menu === 'slices', 'Shift + click on page 2 did not open the SLICE menu');
@@ -167,7 +167,7 @@ async function main() {
         const plain = watched();
         assert(/"Start"/.test(plain) && /"Zoom"/.test(plain), 'control: the plain frame has no Start / Zoom cells: ' + plain.slice(0, 400));
         assert(/"S \d/.test(plain), 'control: the plain frame has no start time readout');
-        assert(/"sh"[^\]]*"all"/i.test(plain), 'the plain frame\'s footer has no SH ALL');
+        assert(/"shft"[^\]]*"all"/i.test(plain), 'the plain frame\'s footer has no SHFT ALL');
         shift(true);
         const sh = watched();
         shift(false);
@@ -181,12 +181,12 @@ async function main() {
         const pop = card.body && card.body.popup;
         assert(pop && pop.wave && pop.message && /^Start \S/.test(pop.message.big), 'page 3 Start in hand: no card with its value on the remote: ' + JSON.stringify(pop && { message: pop.message, wave: !!pop.wave, primary: pop.primary }));
     });
-    step('⭐⭐ page 3: CLK MENU · JOG PAGE (the SAMPLE menu); Tempo in hand CLK TEMPO; with Shift TCH FINE, never JOG PAGE', () => {
+    step('⭐⭐ page 3: CLK MENU · JOG PAGE (the SAMPLE menu); Tempo in hand CLK TEMPO; with Shift KNB FINE, never JOG PAGE', () => {
         fresh(2);
         let hs = hints();
         assert(JSON.stringify(hs) === JSON.stringify(['CLK MENU', 'JOG PAGE']), 'page 3: ' + JSON.stringify(hs));
         click(); assert(S.auEditor.pick && S.auEditor.pick.menu === 'sample', 'CLK MENU on page 3 did not open the SAMPLE menu');
-        fresh(2); shift(true); hs = hints(); has(hs, 'CLK MENU'); has(hs, 'TCH FINE'); hasNot(hs, 'JOG PAGE'); shift(false);
+        fresh(2); shift(true); hs = hints(); has(hs, 'CLK MENU'); has(hs, 'KNB FINE'); hasNot(hs, 'JOG PAGE'); shift(false);
         fresh(2); note(6, 127); ticks(1);
         hs = hints(); has(hs, 'CLK TEMPO');
         click(); note(6, 0); ticks(1);

@@ -492,5 +492,9 @@ export function devSnapHints() {
      * one char shorter than STEP TAP's pair, so the row still fits; a third
      * (DEL CLEAR) does not, and Delete+step stays an unlabelled gesture as
      * it was. */
-    return [['STEP', 'RECALL'], ['SHIFT', 'STORE']];
+    /* With the modifier down, the step does that now (hints audit,
+     * 2026-11-16) — which also gives Delete + step its label */
+    if (S.deleteHeld) return [['STEP', 'CLEAR']];
+    if (S.shiftHeld) return [['STEP', 'STORE']];
+    return [['STEP', 'RECALL'], ['SHFT', 'STORE']];
 }
