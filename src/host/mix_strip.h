@@ -43,13 +43,17 @@
 #include <math.h>
 #include "mix_soft_clip.h"
 
+/* `static inline`, so a file that includes this header without running a
+ * strip emits nothing (and needs no libm); the shim, which runs it, gets one
+ * out-of-line copy compiled at -O3 (it builds unoptimised, so never inlines). */
 #if defined(__GNUC__) && !defined(__clang__)
-#define MIX_STRIP_HOT __attribute__((optimize("O3"), unused))
+#define MIX_STRIP_HOT __attribute__((optimize("O3")))
 #else
-#define MIX_STRIP_HOT __attribute__((unused))
+#define MIX_STRIP_HOT
 #endif
 
 #define MIX_STRIP_SR          44100.0f
+#define MIX_STRIP_PI          3.14159265358979f   /* (M_PI is not C11) */
 #define MIX_STRIP_MAX_FRAMES  128
 #define MIX_STRIP_EQ_DB_MAX   15.0f
 #define MIX_STRIP_LOW_HZ      80.0f
@@ -216,7 +220,7 @@ static inline float mix_strip_mid_hz(float p)
 static inline void mix_biquad_design(mix_biquad_t *c, int kind, float hz, float db, float q)
 {
     const float A = powf(10.0f, db / 40.0f);
-    const float w = 2.0f * (float)M_PI * hz / MIX_STRIP_SR;
+    const float w = 2.0f * MIX_STRIP_PI * hz / MIX_STRIP_SR;
     const float cw = cosf(w), sw = sinf(w);
     float b0, b1, b2, a0, a1, a2;
     if (kind == 1) {
@@ -311,7 +315,7 @@ static inline void mix_strip_step(mix_strip_t *st)
  * when the strip does nothing (untouched, no cost), else `scratch`, which it
  * filled. `now_block` is a counter the caller advances once per block: a
  * strip that was not run for a few blocks (a parked slot) starts clean. */
-static MIX_STRIP_HOT const int16_t *mix_strip_run(mix_strip_t *st, const int16_t *in, int16_t *scratch,
+static inline MIX_STRIP_HOT const int16_t *mix_strip_run(mix_strip_t *st, const int16_t *in, int16_t *scratch,
                                                   int frames, uint32_t now_block)
 {
     mix_strip_ensure(st);
