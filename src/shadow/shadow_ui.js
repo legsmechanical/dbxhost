@@ -5370,7 +5370,35 @@ const CHAIN_CONFIG_KEYS = [
     "slot:volume", "slot:pan", "slot:receive_channel", "slot:forward_channel",
     "slot:muted", "slot:soloed", "slot:send_a", "slot:send_b",
     "slot:transpose", "slot:synth_volume",
+    /* the channel strip, all five in one key (mix_strip.h): "low mid freq high comp" */
+    "slot:strip",
 ];
+
+/* A Move FX bus's saved fields (move_fx_meta.json), read in one bulk GET:
+ * the six levels, then the channel strip as one key. */
+const MOVE_STRIP_META_KEYS = ["volume", "pan", "send_a", "send_b", "muted", "soloed", "strip"];
+
+/* A channel strip's five values from a `strip` read ("low mid freq high comp")
+ * as the saved fields, and back. Flat / off when missing. */
+const STRIP_FIELDS = ["eq_low", "eq_mid", "eq_mid_freq", "eq_high", "comp"];
+const STRIP_DEFAULTS = [0, 0, 0.5, 0, 0];
+const STRIP_RANGES = [[-15, 15], [-15, 15], [0, 1], [-15, 15], [0, 1]];
+function stripFieldsFromWire(raw) {
+    const parts = String(raw || "").trim().split(/\s+/);
+    const out = {};
+    STRIP_FIELDS.forEach((f, k) => {
+        const v = parseFloat(parts[k]);
+        out[f] = isFinite(v) ? v : STRIP_DEFAULTS[k];
+    });
+    return out;
+}
+function stripWireFromSaved(s) {
+    return STRIP_FIELDS.map((f, k) => {
+        const v = s ? s[f] : undefined;
+        const [lo, hi] = STRIP_RANGES[k];
+        return (typeof v === "number" && isFinite(v) && v >= lo && v <= hi) ? v : STRIP_DEFAULTS[k];
+    }).join(" ");
+}
 
 /* One slot's CHAIN_CONFIG_KEYS values, in order — or null when ANY of them was
  * not answered: a failed request (timeout, overflow) or a `?` (the host did not
@@ -5414,7 +5442,7 @@ function saveChainConfigToDir(dir) {
         }
         const cfgSlots = [];
         for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
-            const [volR, panR, chR, fwdR, mutedR, soloedR, sendAR, sendBR, transposeR, synthVolR] = perSlot[i];
+            const [volR, panR, chR, fwdR, mutedR, soloedR, sendAR, sendBR, transposeR, synthVolR, stripR] = perSlot[i];
             const vol = parseFloat(volR || "1");
             const pan = parseFloat(panR || "0.5");
             const ch = parseInt(chR || "0");
@@ -5429,7 +5457,7 @@ function saveChainConfigToDir(dir) {
              * Reported on hardware 2026-08-05 as "the change didn't stick". */
             const transpose = parseInt(transposeR || "0", 10) || 0;
             const synthVol = parseFloat(synthVolR || "1");
-            cfgSlots.push({ name: slots[i] ? slots[i].name : "", channel: ch, volume: vol, pan: isNaN(pan) ? 0.5 : pan, forward_channel: fwd, muted: muted, soloed: soloed, send_a: sendA, send_b: sendB, transpose: transpose, synth_volume: isNaN(synthVol) ? 1 : synthVol });
+            cfgSlots.push({ name: slots[i] ? slots[i].name : "", channel: ch, volume: vol, pan: isNaN(pan) ? 0.5 : pan, forward_channel: fwd, muted: muted, soloed: soloed, send_a: sendA, send_b: sendB, transpose: transpose, synth_volume: isNaN(synthVol) ? 1 : synthVol, ...stripFieldsFromWire(stripR) });
         }
         return !!host_write_file(path, JSON.stringify({ slots: cfgSlots }, null, 2) + "\n");
     } catch (e) {
@@ -5571,6 +5599,8 @@ function loadChainConfigFromDir(dir) {
             setSlotParamWithTimeout(i, "slot:send_a", String(num(s.send_a, 0, 2, 0)), 500);
             setSlotParamWithTimeout(i, "slot:send_b", String(num(s.send_b, 0, 2, 0)), 500);
             setSlotParamWithTimeout(i, "slot:synth_volume", String(num(s.synth_volume, 0, 4, 1.0)), 500);
+            /* the channel strip: flat / off when the file has none */
+            setSlotParamWithTimeout(i, "slot:strip", stripWireFromSaved(s), 500);
         }
         debugLog("SET_CHANGED: loaded chain config from " + path + (data ? "" : " (none: defaults)"));
     } catch (e) {
@@ -9007,7 +9037,7 @@ function saveMoveFxChainConfig(onlySlot) {
             }
         }
         /* Per-slot strip state (volume + sends + mute/solo). ONE bulk GET for
-         * all four slots' 6 fields (24 keys total) at slot 0 — the strip
+         * all four slots' 7 fields (28 keys: the six levels and the channel strip) at slot 0 — the strip
          * fields resolve slot-independently off the key itself
          * (shadow_direct_get_param's "move_fx:" branch), so slot 0 is just
          * the routing arg. A timed-out read, a bulk-overflow null, or any
@@ -9017,7 +9047,7 @@ function saveMoveFxChainConfig(onlySlot) {
         let stripsOk = true;
         const stripKeys = [];
         for (let sl = 0; sl < MOVE_FX_SLOTS_JS; sl++) {
-            for (const f of ["volume", "pan", "send_a", "send_b", "muted", "soloed"]) {
+            for (const f of MOVE_STRIP_META_KEYS) {
                 stripKeys.push("move_fx:" + (sl + 1) + ":" + f);
             }
         }
@@ -9028,7 +9058,7 @@ function saveMoveFxChainConfig(onlySlot) {
             stripsOk = false;
         } else {
             for (let sl = 0; sl < MOVE_FX_SLOTS_JS; sl++) {
-                const base = sl * 6;
+                const base = sl * MOVE_STRIP_META_KEYS.length;
                 const _v = stripVals[base], _p = stripVals[base + 1],
                       _sa = stripVals[base + 2], _sb = stripVals[base + 3],
                       _m = stripVals[base + 4], _so = stripVals[base + 5];
@@ -9041,6 +9071,7 @@ function saveMoveFxChainConfig(onlySlot) {
                     send_b: isNaN(sb) ? 0.0 : sb,
                     muted: (parseInt(_m, 10) === 1) ? 1 : 0,
                     soloed: (parseInt(_so, 10) === 1) ? 1 : 0,
+                    ...stripFieldsFromWire(stripVals[base + 6]),
                 });
             }
         }
@@ -9109,6 +9140,8 @@ function restoreMoveFxFromFiles() {
             shadow_set_param(0, "move_fx:" + (sl + 1) + ":pan", pan.toFixed(3));
             shadow_set_param(0, "move_fx:" + (sl + 1) + ":send_a", sa.toFixed(3));
             shadow_set_param(0, "move_fx:" + (sl + 1) + ":send_b", sb.toFixed(3));
+            /* the channel strip, all five in one write; flat / off when absent */
+            shadow_set_param(0, "move_fx:" + (sl + 1) + ":strip", stripWireFromSaved(st));
             /* Both written for EVERY bus, for the same reason the levels are:
              * a set with no meta must RESET the process-wide value rather than
              * inherit the previous project's. That matters most for solo — a

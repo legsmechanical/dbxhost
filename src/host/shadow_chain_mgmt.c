@@ -610,6 +610,7 @@ void shadow_chain_defaults(void) {
         shadow_chain_slots[i].forward_channel = -1;
         shadow_chain_slots[i].default_forward_channel = -1;
         shadow_chain_slots[i].transpose = 0;
+        mix_strip_init(&shadow_chain_slots[i].strip);
         capture_clear(&shadow_chain_slots[i].capture);
         shadow_chain_slots[i].fade.gain = 0.0f;
         shadow_chain_slots[i].fade.target = 0.0f;
@@ -2235,6 +2236,9 @@ int shadow_handle_slot_param_set(int slot, const char *key, const char *value) {
         shadow_chain_slots[slot].send_b = lvl;
         return 1;
     }
+    /* the channel strip: slot:eq_low / eq_mid / eq_mid_freq / eq_high / comp */
+    if (strncmp(key, "slot:", 5) == 0 && mix_strip_set_key(&shadow_chain_slots[slot].strip, key + 5, value))
+        return 1;
     if (strcmp(key, "slot:muted") == 0) {
         shadow_apply_mute(slot, atoi(value));
         return 1;
@@ -2305,6 +2309,11 @@ int shadow_handle_slot_param_get(int slot, const char *key, char *buf, int buf_l
     }
     if (strcmp(key, "slot:send_b") == 0) {
         return snprintf(buf, buf_len, "%.2f", shadow_chain_slots[slot].send_b);
+    }
+    /* the channel strip (and slot:comp_gr, its gain reduction now) */
+    if (strncmp(key, "slot:", 5) == 0) {
+        int n = mix_strip_get_key(&shadow_chain_slots[slot].strip, key + 5, buf, buf_len);
+        if (n >= 0) return n;
     }
     if (strcmp(key, "slot:muted") == 0) {
         return snprintf(buf, buf_len, "%d", shadow_chain_slots[slot].muted);
@@ -2399,6 +2408,10 @@ int shadow_direct_get_param(uint8_t slot, const char *key, char *out, int cap) {
                         : (rest[5] == 'a') ? shadow_move_fx_strip[sl].send_a
                                            : shadow_move_fx_strip[sl].send_b;
                 return snprintf(out, cap, "%.3f", v);
+            }
+            {   /* the channel strip (mix_strip.h), and comp_gr */
+                int n = mix_strip_get_key(&shadow_move_fx_strip[sl].strip, rest, out, cap);
+                if (n >= 0) return n;
             }
             if (strcmp(rest, "muted") == 0 || strcmp(rest, "soloed") == 0) {
                 return snprintf(out, cap, "%d",
@@ -2521,6 +2534,11 @@ void shadow_direct_set_param(uint8_t slot, const char *key, const char *value) {
             if (lv < 0.0f) lv = 0.0f; if (lv > 1.0f) lv = 1.0f;
             if (rest[5] == 'a') shadow_move_fx_strip[sl].send_a = lv;
             else                shadow_move_fx_strip[sl].send_b = lv;
+            if (host.on_param_changed) host.on_param_changed(slot, key, value);
+            return;
+        }
+        /* the channel strip (mix_strip.h): eq_low ... comp */
+        if (mix_strip_set_key(&shadow_move_fx_strip[sl].strip, rest, value)) {
             if (host.on_param_changed) host.on_param_changed(slot, key, value);
             return;
         }
@@ -3832,6 +3850,13 @@ int shadow_param_apply_set_ex(int slot, const char *key, const char *value,
             return *io_error;
         }
 
+        /* The channel strip (mix_strip.h): eq_low ... comp — clamped there. */
+        if (mix_strip_set_key(&shadow_move_fx_strip[sl].strip, rest, value)) {
+            *io_error = 0;
+            *io_result_len = 0;
+            return *io_error;
+        }
+
         /* Mute / solo. Kept out of the float block above because they go
          * through the helpers, which own solo's exclusivity across both
          * families — writing the field directly here would let two things be
@@ -4628,6 +4653,18 @@ void shadow_inprocess_handle_param_request(void) {
              * per-key defaults — live in shadow_param_apply_set_ex now.) */
             if (req_type == 2) {  /* GET */
                 snprintf(shadow_param->value, SHADOW_PARAM_VALUE_LEN, "%.3f", *tgt);
+                shadow_param->error = 0;
+                shadow_param->result_len = strlen(shadow_param->value);
+            }
+            shadow_param_publish_response(req_id);
+            return;
+        }
+
+        /* The channel strip (mix_strip.h), and comp_gr. (A SET was applied
+         * by shadow_param_apply_set_ex.) */
+        if (mix_strip_is_key(rest)) {
+            if (req_type == 2) {  /* GET */
+                mix_strip_get_key(&shadow_move_fx_strip[sl].strip, rest, shadow_param->value, SHADOW_PARAM_VALUE_LEN);
                 shadow_param->error = 0;
                 shadow_param->result_len = strlen(shadow_param->value);
             }

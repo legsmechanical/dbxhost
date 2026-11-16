@@ -33,6 +33,7 @@
 #include <unistd.h>
 
 #include "host/offline_take.h"
+#include "host/mix_strip.h"
 #include "host/mix_glide.h"
 
 static int failures;
@@ -85,10 +86,12 @@ static int mfx_source(void *inst, mfo_fx_src_t *out, int max) {
     return 1;
 }
 static chain_midi_fx_clone_source_fn g_mfx = mfx_source;
+static float g_strip[5] = { 0.0f, 0.0f, 0.5f, 0.0f, 0.0f };   /* the channel strip: flat, comp off */
 static int slot_info(int slot, offline_slot_info_t *o) {
     (void)slot;
     o->synth_level = 0.5f; o->transpose = 2; o->fwd_ch = 3;
     o->volume = 0.5f; o->pan = 0.125f;                     /* a Dry take's fader; pan: L 1, R 0.25 */
+    memcpy(o->strip, g_strip, sizeof g_strip);
     return 1;
 }
 static void quiet(const char *m) { (void)m; }
@@ -202,6 +205,38 @@ int main(void) {
               "Dry: the FX take at the fader and pan: %d %d (FX %d %d)", w ? w[0] : -1, w ? w[1] : -1, fxl, fxr);
         free(w);
         offline_take_cancel();
+
+        /* ---- Dry with the channel strip engaged: the FX take through the strip
+         * (mix_strip.h — the code the live mix runs), then the fader and pan.
+         * The fixture's input changes block to block before the take starts,
+         * so the setting is one with no memory: the comp at 50% on a signal
+         * under its knee is its make-up alone (+3.5 dB), the same from the
+         * first sample. (The bands and the comp's curve are test_mix_strip's.) ---- */
+        {
+            const float set[5] = { 0.0f, 0.0f, 0.5f, 0.0f, 0.5f };
+            memcpy(g_strip, set, sizeof set);
+            int16_t *fx = read_wav(fxp, &n);
+            t = take(0, 128, MOVE_CAPTURE_SLOT, dp);
+            CHECK(offline_take_begin(&t) == 1, "Dry + strip: begin");
+            offline_take_run_pending();
+            w = read_wav(dp, &n);
+            mix_strip_t ms; mix_strip_init(&ms);
+            for (int f = 0; f < 5; f++) mix_strip_set_now(&ms, f, set[f]);
+            int16_t sx[256];
+            const int16_t *o = fx ? mix_strip_run(&ms, fx, sx, 128, 1) : NULL;
+            int same = o && o != fx && w && n == 128, diff = -1;
+            for (int i = 0; same && i < 256; i++) {
+                int16_t want = (int16_t)lroundf((float)o[i] * 0.5f * ((i & 1) ? 0.25f : 1.0f));
+                if (w[i] != want) { same = 0; diff = i; }
+            }
+            CHECK(same, "Dry + strip: the FX take through the strip, then the fader (first diff at %d)", diff);
+            CHECK(w && fx && abs(w[0] - (int)lroundf((float)fx[0] * 1.4962f * 0.5f)) <= 1,
+                  "Dry + strip: +3.5 dB of make-up is heard: %d (FX %d)", w ? w[0] : -1, fx ? fx[0] : -1);
+            free(w); free(fx);
+            offline_take_cancel();
+            const float flat[5] = { 0.0f, 0.0f, 0.5f, 0.0f, 0.0f };
+            memcpy(g_strip, flat, sizeof flat);
+        }
 
         /* ---- Dry: the copy's slot:volume write (its automation) moves the
          * fader from the next block, gliding as the live mix does ---- */

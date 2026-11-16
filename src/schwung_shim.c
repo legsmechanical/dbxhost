@@ -862,6 +862,16 @@ static void shim_wake_slot(int slot) {
  * pass over the block, no I/O, no locks. */
 static inline void shadow_slot_fx_track_idle(int s, const int16_t *fx_buf);
 
+/* THE CHANNEL STRIP (mix_strip.h): comp, then 3-band EQ, after a strip's FX
+ * and before its fader — every slot mix site and the Move FX bus run it. The
+ * block counter lets a strip that was skipped for a while (a parked slot)
+ * start clean. Returns `in` when the strip is flat and the comp off. */
+static uint32_t shadow_strip_block = 0;
+static inline const int16_t *shadow_strip_run(mix_strip_t *st, const int16_t *in, int16_t *scratch)
+{
+    return mix_strip_run(st, in, scratch, FRAMES_PER_BLOCK, shadow_strip_block);
+}
+
 /* Is this slot's FX chain PARKED (skipped) for this block? Every skip site
  * asks here. A slot that parked BEFORE a continuous-processing FX was loaded
  * into it would otherwise stay parked until audio arrived — the keep-alive in
@@ -1784,6 +1794,10 @@ static int ot_slot_info(int slot, offline_slot_info_t *out) {
     out->fwd_ch = ch == SHADOW_FORWARD_THRU ? -1 : ch;
     out->volume = shadow_chain_slots[slot].volume;
     out->pan = shadow_chain_slots[slot].pan;
+    for (int f = 0; f < MIX_STRIP_NPARAMS; f++) {
+        const mix_strip_t *st = &shadow_chain_slots[slot].strip;
+        out->strip[f] = st->inited ? st->target[f] : mix_strip_default(f);
+    }
     return 1;
 }
 
@@ -2365,6 +2379,12 @@ static void shadow_render_slot_task(void *vctx, int s, int lane) {
                                        render_buffer, MOVE_FRAMES_PER_BLOCK);
         /* No FX hook on this path: the feed joins after the slot's FX. */
         if (feed) slot_feed_mix(render_buffer, feed);
+        /* the channel strip, in place (this path has no capture taps) */
+        {
+            int16_t strip_buf[FRAMES_PER_BLOCK * 2];
+            const int16_t *sx = shadow_strip_run(&shadow_chain_slots[s].strip, render_buffer, strip_buf);
+            if (sx != render_buffer) memcpy(render_buffer, sx, sizeof(strip_buf));
+        }
         if (link_audio.enabled && s < LINK_AUDIO_SHADOW_CHANNELS) {
             float cap_vol = shadow_effective_volume(s) * shadow_chain_slots[s].fade.gain;
             for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++)
@@ -2798,6 +2818,7 @@ static void shadow_inprocess_mix_from_buffer(void) {
     (void)_mp1;
     if (!shadow_inprocess_ready || !global_mmap_addr) return;
     if (!shadow_deferred_dsp_valid) return;  /* No buffer to mix yet */
+    shadow_strip_block++;                    /* one per block: see shadow_strip_run */
 
     /* Fast path: nothing active. Leave Move's mailbox untouched. Snapshot the
      * Move component so any bridge query sees a coherent state, then return. */
@@ -3121,6 +3142,12 @@ static void shadow_inprocess_mix_from_buffer(void) {
                     }
                     msrc = mbuf;
                 }
+                /* The channel strip — comp, then EQ — after the bus's inserts,
+                 * before its fader (mix_strip.h). The mix, the publish, the
+                 * sends and an as-set take read `mstr`; the FX-at-unity take
+                 * and the idle scan stay on msrc. */
+                int16_t mstrip_buf[FRAMES_PER_BLOCK * 2];
+                const int16_t *mstr = shadow_strip_run(&shadow_move_fx_strip[s].strip, msrc, mstrip_buf);
                 /* The bus's OWN mixer state — its volume, its mute, and the
                  * shared solo group. Deliberately not the synth slot's mute at
                  * the same index: the two are alternative occupants of one
@@ -3156,14 +3183,14 @@ static void shadow_inprocess_mix_from_buffer(void) {
                 const float mtap_pl = shadow_pan_gain_l(shadow_move_fx_strip[s].pan),
                             mtap_pr = shadow_pan_gain_r(shadow_move_fx_strip[s].pan);
                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
-                    int32_t scaled = (int32_t)lroundf((float)msrc[i] * mix_glide_gain(bg, i));
+                    int32_t scaled = (int32_t)lroundf((float)mstr[i] * mix_glide_gain(bg, i));
                     la_acc[i] += scaled;
                     me_full[i]  += scaled;
                     me_unity[i] += scaled;
                     if (mtap_post) shadow_take_tap[i] = sampler_take_tap_sample(
                         mtap_unity ? (int32_t)msrc[i]
                         : !mtap_silenced ? scaled
-                        : (int32_t)lroundf((float)msrc[i] *
+                        : (int32_t)lroundf((float)mstr[i] *
                               sampler_take_tap_as_set(mtap_set_vol, mtap_pl, mtap_pr, i)));
                     if (bus_ps) {
                         int32_t c = scaled;
@@ -3179,7 +3206,7 @@ static void shadow_inprocess_mix_from_buffer(void) {
                     bus_ps->write_pos = bus_wp;
                 }
                 if (mtap_post) shadow_take_tap_valid = 1;
-                accumulate_sends_ex(msrc, mvol, shadow_move_fx_strip[s].send_a,
+                accumulate_sends_ex(mstr, mvol, shadow_move_fx_strip[s].send_a,
                                     shadow_move_fx_strip[s].send_b, send_accum);
 
                 /* Sleep only when the POST-insert signal is silent too, so a
@@ -3361,11 +3388,18 @@ static void shadow_inprocess_mix_from_buffer(void) {
                 /* Phase 2 idle (and the continuous-processing keep-alive). */
                 shadow_slot_fx_track_idle(s, fx_buf);
 
+                /* The channel strip — comp, then EQ — after the FX, before the
+                 * fader (mix_strip.h). Publish, mix, sends and an as-set take
+                 * read it; the FX-at-unity take stays on fx_buf (a bounce that
+                 * plays on through this strip must not get it twice). */
+                int16_t strip_buf[FRAMES_PER_BLOCK * 2];
+                const int16_t *sx = shadow_strip_run(&shadow_chain_slots[s].strip, fx_buf, strip_buf);
+
                 /* Capture for Link Audio publisher */
                 if (s < LINK_AUDIO_SHADOW_CHANNELS) {
                     float cap_vol = shadow_effective_volume(s) * shadow_chain_slots[s].fade.gain;
                     for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++)
-                        shadow_slot_capture[s][i] = (int16_t)lroundf((float)fx_buf[i] * cap_vol);
+                        shadow_slot_capture[s][i] = (int16_t)lroundf((float)sx[i] * cap_vol);
                     /* Write to publisher shared memory for link_subscriber */
                     if (shadow_pub_audio_shm) {
                         link_audio_pub_slot_t *ps = &shadow_pub_audio_shm->slots[s];
@@ -3392,19 +3426,19 @@ static void shadow_inprocess_mix_from_buffer(void) {
                             tap_pr = shadow_pan_gain_r(shadow_chain_slots[s].pan);
                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
                     float vol = mix_glide_gain(mg, i) * shadow_chain_slots[s].fade.gain;
-                    int32_t contrib = (int32_t)lroundf((float)fx_buf[i] * vol);
+                    int32_t contrib = (int32_t)lroundf((float)sx[i] * vol);
                     la_acc[i] += contrib;
                     me_full[i] += contrib;
                     me_unity[i] += contrib;
                     if (tap) shadow_take_tap[i] = sampler_take_tap_sample(
                         tap_unity ? (int32_t)lroundf((float)fx_buf[i] * shadow_chain_slots[s].fade.gain)
                         : !tap_silenced ? contrib
-                        : (int32_t)lroundf((float)fx_buf[i] * shadow_chain_slots[s].fade.gain *
+                        : (int32_t)lroundf((float)sx[i] * shadow_chain_slots[s].fade.gain *
                               sampler_take_tap_as_set(shadow_chain_slots[s].volume, tap_pl, tap_pr, i)));
                     if (i & 1) { shadow_fade_advance(s); mix_glide_advance(mg); }
                 }
                 if (tap) shadow_take_tap_valid = 1;
-                accumulate_sends(s, fx_buf, send_accum);
+                accumulate_sends(s, sx, send_accum);
                 accumulate_bus_sends(s, send_accum);
             }
             /* (The old "inactive slot, Move>Slot on: pass Link Audio through at
@@ -3428,6 +3462,12 @@ skip_la_rebuild:
                 if (shadow_slot_fx_parked(s)) continue;
 
                 int16_t *fx_buf = shadow_slot_fx_deferred[s];
+                /* The channel strip — comp, then EQ — after the FX, before the
+                 * fader (mix_strip.h). Publish, mix, sends and an as-set take
+                 * read it; the FX-at-unity take stays on fx_buf (a bounce that
+                 * plays on through this strip must not get it twice). */
+                int16_t strip_buf[FRAMES_PER_BLOCK * 2];
+                const int16_t *sx = shadow_strip_run(&shadow_chain_slots[s].strip, fx_buf, strip_buf);
 
                 /* Write to publisher shared memory for link_subscriber */
                 if (link_audio.enabled && s < LINK_AUDIO_SHADOW_CHANNELS && shadow_pub_audio_shm) {
@@ -3436,7 +3476,7 @@ skip_la_rebuild:
                     uint32_t wp = ps->write_pos;
                     for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
                         ps->ring[wp & LINK_AUDIO_PUB_SHM_RING_MASK] =
-                            (int16_t)lroundf((float)fx_buf[i] * cap_vol);
+                            (int16_t)lroundf((float)sx[i] * cap_vol);
                         wp++;
                     }
                     __sync_synchronize();
@@ -3455,18 +3495,18 @@ skip_la_rebuild:
                             tap_pr = shadow_pan_gain_r(shadow_chain_slots[s].pan);
                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
                     float vol = mix_glide_gain(mg, i) * shadow_chain_slots[s].fade.gain;
-                    int32_t contrib = (int32_t)lroundf((float)fx_buf[i] * vol);
+                    int32_t contrib = (int32_t)lroundf((float)sx[i] * vol);
                     me_full[i] += contrib;
                     me_unity[i] += contrib;
                     if (tap) shadow_take_tap[i] = sampler_take_tap_sample(
                         tap_unity ? (int32_t)lroundf((float)fx_buf[i] * shadow_chain_slots[s].fade.gain)
                         : !tap_silenced ? contrib
-                        : (int32_t)lroundf((float)fx_buf[i] * shadow_chain_slots[s].fade.gain *
+                        : (int32_t)lroundf((float)sx[i] * shadow_chain_slots[s].fade.gain *
                               sampler_take_tap_as_set(shadow_chain_slots[s].volume, tap_pl, tap_pr, i)));
                     if (i & 1) { shadow_fade_advance(s); mix_glide_advance(mg); }
                 }
                 if (tap) shadow_take_tap_valid = 1;
-                accumulate_sends(s, fx_buf, send_accum);
+                accumulate_sends(s, sx, send_accum);
                 accumulate_bus_sends(s, send_accum);
             } else if (shadow_slot_deferred_valid[s]) {
                 /* Fallback: FX not deferred — run inline (legacy path) */
@@ -3488,6 +3528,12 @@ skip_la_rebuild:
                     uint64_t lfx_us = timespec_delta_us(&lfx_t0, &lfx_t1);
                     if (lfx_us > spi_slot_fx_max[s]) spi_slot_fx_max[s] = lfx_us;
                 }
+                /* The channel strip — comp, then EQ — after the FX, before the
+                 * fader (mix_strip.h). Publish, mix, sends and an as-set take
+                 * read it; the FX-at-unity take stays on fx_buf (a bounce that
+                 * plays on through this strip must not get it twice). */
+                int16_t strip_buf[FRAMES_PER_BLOCK * 2];
+                const int16_t *sx = shadow_strip_run(&shadow_chain_slots[s].strip, fx_buf, strip_buf);
 
                 if (link_audio.enabled && s < LINK_AUDIO_SHADOW_CHANNELS && shadow_pub_audio_shm) {
                     float cap_vol = shadow_effective_volume(s) * shadow_chain_slots[s].fade.gain;
@@ -3495,7 +3541,7 @@ skip_la_rebuild:
                     uint32_t wp = ps->write_pos;
                     for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
                         ps->ring[wp & LINK_AUDIO_PUB_SHM_RING_MASK] =
-                            (int16_t)lroundf((float)fx_buf[i] * cap_vol);
+                            (int16_t)lroundf((float)sx[i] * cap_vol);
                         wp++;
                     }
                     __sync_synchronize();
@@ -3517,18 +3563,18 @@ skip_la_rebuild:
                             tap_pr = shadow_pan_gain_r(shadow_chain_slots[s].pan);
                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
                     float vol = mix_glide_gain(mg, i) * shadow_chain_slots[s].fade.gain;
-                    int32_t contrib = (int32_t)lroundf((float)fx_buf[i] * vol);
+                    int32_t contrib = (int32_t)lroundf((float)sx[i] * vol);
                     me_full[i] += contrib;
                     me_unity[i] += contrib;
                     if (tap) shadow_take_tap[i] = sampler_take_tap_sample(
                         tap_unity ? (int32_t)lroundf((float)fx_buf[i] * shadow_chain_slots[s].fade.gain)
                         : !tap_silenced ? contrib
-                        : (int32_t)lroundf((float)fx_buf[i] * shadow_chain_slots[s].fade.gain *
+                        : (int32_t)lroundf((float)sx[i] * shadow_chain_slots[s].fade.gain *
                               sampler_take_tap_as_set(shadow_chain_slots[s].volume, tap_pl, tap_pr, i)));
                     if (i & 1) { shadow_fade_advance(s); mix_glide_advance(mg); }
                 }
                 if (tap) shadow_take_tap_valid = 1;
-                accumulate_sends(s, fx_buf, send_accum);
+                accumulate_sends(s, sx, send_accum);
                 accumulate_bus_sends(s, send_accum);
             }
         }

@@ -145,7 +145,7 @@ void shadow_save_config_to_dir(const char *dir) {
          * STRIPS the fields it omits, so a setting saved by the other writer
          * disappears the next time this one runs. That is how transpose and the
          * sends could vanish without anything failing. */
-        fprintf(f, "    {\"name\": \"%s\", \"channel\": %d, \"volume\": %.3f, \"pan\": %.3f, \"forward_channel\": %d, \"muted\": %d, \"soloed\": %d, \"send_a\": %.3f, \"send_b\": %.3f, \"transpose\": %d, \"synth_volume\": %.3f}%s\n",
+        fprintf(f, "    {\"name\": \"%s\", \"channel\": %d, \"volume\": %.3f, \"pan\": %.3f, \"forward_channel\": %d, \"muted\": %d, \"soloed\": %d, \"send_a\": %.3f, \"send_b\": %.3f, \"transpose\": %d, \"synth_volume\": %.3f, \"eq_low\": %.2f, \"eq_mid\": %.2f, \"eq_mid_freq\": %.4f, \"eq_high\": %.2f, \"comp\": %.4f}%s\n",
                 host.chain_slots[i].patch_name, display_ch,
                 host.chain_slots[i].volume, host.chain_slots[i].pan,
                 display_fwd,
@@ -153,6 +153,13 @@ void shadow_save_config_to_dir(const char *dir) {
                 host.chain_slots[i].send_a, host.chain_slots[i].send_b,
                 host.chain_slots[i].transpose,
                 host.chain_slots[i].synth_volume,
+                /* the channel strip (mix_strip.h) — the shadow UI's writer
+                 * saves the same five fields */
+                host.chain_slots[i].strip.target[MIX_STRIP_EQ_LOW],
+                host.chain_slots[i].strip.target[MIX_STRIP_EQ_MID],
+                host.chain_slots[i].strip.inited ? host.chain_slots[i].strip.target[MIX_STRIP_EQ_MID_FREQ] : MIX_STRIP_FREQ_DEF,
+                host.chain_slots[i].strip.target[MIX_STRIP_EQ_HIGH],
+                host.chain_slots[i].strip.target[MIX_STRIP_COMP],
                 i < SHADOW_CHAIN_INSTANCES - 1 ? "," : "");
     }
     fprintf(f, "  ]\n}\n");
@@ -295,6 +302,20 @@ int shadow_load_config_from_dir(const char *dir) {
             if (sv_colon) {
                 float v = (float)atof(sv_colon + 1);
                 if (v >= 0.0f && v <= 4.0f) host.chain_slots[i].synth_volume = v;
+            }
+        }
+        /* The channel strip: each field read only INSIDE this slot's object
+         * (a field this slot lacks must not be taken from the next one), and
+         * flat / off when absent — a set saved before the strip existed. */
+        {
+            char *obj_end = strchr(name_pos, '}');
+            for (int fl = 0; fl < MIX_STRIP_NPARAMS; fl++) {
+                char pat[32];
+                snprintf(pat, sizeof pat, "\"%s\"", MIX_STRIP_KEYS[fl]);
+                char *fp = strstr(name_pos, pat);
+                char *fc = (fp && (!obj_end || fp < obj_end)) ? strchr(fp, ':') : NULL;
+                mix_strip_set_now(&host.chain_slots[i].strip, fl,
+                                  fc ? (float)atof(fc + 1) : mix_strip_default(fl));
             }
         }
     }

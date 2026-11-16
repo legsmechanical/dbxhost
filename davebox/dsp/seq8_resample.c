@@ -275,7 +275,10 @@ static int rs_offline_lanes(const seq8_instance_t *inst, int track, int slot, in
         comp++; key++;
         ok = r->valid && !strcmp(r->name, n);                    /* the engine writes it */
         if (!strncmp(comp, "slot:", 5)) {
-            if (!strcmp(key, "volume") || !strcmp(key, "pan")) {
+            if (!strcmp(key, "volume") || !strcmp(key, "pan") ||
+                /* the channel strip: heard by Dry alone, as the fader is */
+                !strcmp(key, "eq_low") || !strcmp(key, "eq_mid") || !strcmp(key, "eq_mid_freq") ||
+                !strcmp(key, "eq_high") || !strcmp(key, "comp")) {
                 if (src == RS_SRC_DRY && !ok) return RS_RT_LANE;
             } else if (!strcmp(key, "synth_volume")) {
                 if (!ok) return RS_RT_LANE;

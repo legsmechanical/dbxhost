@@ -183,6 +183,19 @@ int main(void) {
     TRY("1 0 1 0 0 3 |/x/lvl_fx.wav", 1, 0, "an unresolved level lane kept an FX take (at unity) real time");
     inst->pa_targets[7][0] = '\0';
 
+    /* the channel strip: heard as the fader is — by Dry alone, offline when resolved */
+    resolve(inst, 7, "1:slot:eq_low", 1, "slot:eq_low");
+    TRY("1 0 1 0 0 1 |/x/eq_dry.wav", 1, 0, "a resolved strip lane kept a Dry take real time (the copy writes it)");
+    inst->pa_res[7].valid = 0;
+    TRY("1 0 1 0 0 1 |/x/eq_dry2.wav", 0, RS_RT_LANE, "an unresolved strip lane went offline on Dry");
+    TRY("1 0 1 0 0 2 |/x/eq_pre.wav", 1, 0, "a strip lane kept a Pre take (it does not hear the strip) real time");
+    TRY("1 0 1 0 0 3 |/x/eq_fx.wav", 1, 0, "a strip lane kept an FX take (before the strip) real time");
+    inst->pa_targets[7][0] = '\0';
+    resolve(inst, 7, "1:slot:comp", 1, "slot:comp");
+    inst->pa_res[7].valid = 0;
+    TRY("1 0 1 0 0 3 |/x/comp_fx.wav", 1, 0, "an unresolved comp lane kept an FX take real time");
+    inst->pa_targets[7][0] = '\0';
+
     snprintf(inst->pa_targets[7], sizeof inst->pa_targets[7], "1:slot:send_a");
     TRY("1 0 1 0 0 1 |/x/send.wav", 1, 0, "a send lane kept a Dry take real time");
     inst->pa_targets[7][0] = '\0';

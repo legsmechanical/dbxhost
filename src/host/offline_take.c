@@ -13,6 +13,7 @@
 #include "audio_fx_api_v2.h"
 #include "midi_fx_api_v1.h"
 #include "mix_glide.h"
+#include "mix_strip.h"
 #include "module_clone.h"
 #include "offline_take.h"
 #include "schwung_paths.h"
@@ -66,6 +67,8 @@ static struct {
     float vol, pan;                                 /* a Dry take's fader and pan as the copy sets them */
     float synth_level;                              /* the module level (slot:synth_volume), every take */
     mix_glide_t glide;
+    mix_strip_t strip;      /* the channel strip, a Dry take's (before the fader) */
+    uint32_t strip_block;
     int32_t feed[OT_BLOCK * 2]; int fed;           /* slot_audio_feed for the next block */
     uint8_t held[16][128];                          /* transposed note per (channel, note), 0xFF none */
     FILE   *file;
@@ -203,6 +206,8 @@ static int ex_set_slot_param(int slot, const char *key, const char *val) {
     } else if (!strcmp(key, "slot:pan")) {
         float v = (float)atof(val);
         T.pan = v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v;
+    } else if (!strncmp(key, "slot:", 5) && mix_strip_set_key(&T.strip, key + 5, val)) {
+        /* the channel strip (mix_strip.h's clamps), automated like the fader */
     } else if (!strcmp(key, "slot:synth_volume")) {
         float v = (float)atof(val);
         T.synth_level = v < 0.0f ? 0.0f : v > 4.0f ? 4.0f : v;
@@ -403,11 +408,18 @@ static void level(int16_t *b) {
     }
 }
 
-/* A Dry take: the slot's fader and pan, as the shim's mix loop applies them
- * (its glide toward this block's target, the mix's own rounding, clamped).
- * They start as set and follow the copy's slot:volume / slot:pan writes. */
+/* A Dry take: the slot's channel strip (comp, then EQ — mix_strip.h, as the
+ * shim runs it between the FX and the fader), then its fader and pan, as the
+ * shim's mix loop applies them (its glide toward this block's target, the
+ * mix's own rounding, clamped). They start as set and follow the copy's
+ * slot:volume / slot:pan / strip writes. */
 static void fader(int16_t *b) {
     int i;
+    {
+        int16_t sx[OT_BLOCK * 2];
+        const int16_t *o = mix_strip_run(&T.strip, b, sx, OT_BLOCK, ++T.strip_block);
+        if (o != b) memcpy(b, o, sizeof sx);
+    }
     mix_glide_target(&T.glide, T.vol, mix_pan_gain_l(T.pan), mix_pan_gain_r(T.pan));
     for (i = 0; i < OT_BLOCK * 2; i++) {
         int32_t v = (int32_t)lroundf((float)b[i] * mix_glide_gain(&T.glide, i));
@@ -465,6 +477,8 @@ static void run_job(void) {
     T.vol = J.info.volume;
     T.pan = J.info.pan;
     T.synth_level = J.info.synth_level;
+    mix_strip_init(&T.strip);
+    for (i = 0; i < MIX_STRIP_NPARAMS; i++) mix_strip_set_now(&T.strip, i, J.info.strip[i]);
     g_tp.bpm = J.take.bpm > 0.0f ? J.take.bpm : 120.0f;
     g_tp.running = 0; g_tp.clocks = 0;
     hosts_build();

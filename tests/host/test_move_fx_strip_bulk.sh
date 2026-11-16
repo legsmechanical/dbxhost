@@ -39,11 +39,16 @@ function extractFn(name) {
     }
     fails.push(`${name}: unbalanced`); return "";
 }
-const code = extractFn("saveMoveFxChainConfig");
+/* the channel strip's helpers: one `move_fx:N:strip` key <-> five saved fields */
+const stripDecls = ["MOVE_STRIP_META_KEYS", "STRIP_FIELDS", "STRIP_DEFAULTS", "STRIP_RANGES"].map((n) => {
+    const m = src.match(new RegExp("const " + n + " = \\[[^;]*\\];"));
+    if (!m) fails.push(n + " declaration not found"); return m ? m[0] : "";
+}).join("\n") + "\n" + extractFn("stripFieldsFromWire");
+const code = stripDecls + "\n" + extractFn("saveMoveFxChainConfig");
 ok(code, "saveMoveFxChainConfig not found");
 ok(code.includes("shadow_get_params"), "saveMoveFxChainConfig no longer calls shadow_get_params — did S4 regress?");
 
-const STRIP_FIELDS = ["volume", "pan", "send_a", "send_b", "muted", "soloed"];
+const LEVEL_FIELDS = ["volume", "pan", "send_a", "send_b", "muted", "soloed"];
 const VALUE_CAP = 128 * 1024;
 
 /* Ground-truth strip state the host is serving, keyed by full param key. */
@@ -56,6 +61,7 @@ function makeStripTable() {
         t["move_fx:" + (sl + 1) + ":send_b"] = String(0.1 * sl);
         t["move_fx:" + (sl + 1) + ":muted"] = (sl === 1) ? "1" : "0";
         t["move_fx:" + (sl + 1) + ":soloed"] = "0";
+        t["move_fx:" + (sl + 1) + ":strip"] = (sl + 1) + ".00 -1.00 0.7500 0.50 " + (0.2 * sl).toFixed(4);
     }
     return t;
 }
@@ -126,6 +132,7 @@ if (metaWrite) {
             send_b: parseFloat(bulk.host.strips["move_fx:" + (sl + 1) + ":send_b"]),
             muted: parseInt(bulk.host.strips["move_fx:" + (sl + 1) + ":muted"], 10) === 1 ? 1 : 0,
             soloed: parseInt(bulk.host.strips["move_fx:" + (sl + 1) + ":soloed"], 10) === 1 ? 1 : 0,
+            eq_low: sl + 1, eq_mid: -1, eq_mid_freq: 0.75, eq_high: 0.5, comp: parseFloat((0.2 * sl).toFixed(4)),
         });
     }
     ok(JSON.stringify(meta.strips) === JSON.stringify(expect),

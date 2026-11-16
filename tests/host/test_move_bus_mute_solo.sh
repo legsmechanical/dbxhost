@@ -30,7 +30,7 @@ if grep -q 'shadow_move_fx_strip\[s\]\.volume' <<<"$busblock"; then
   exit 1
 fi
 # The sends ride the same gated gain, or a muted bus keeps feeding the reverb.
-if ! grep -q 'accumulate_sends_ex(msrc, mvol' <<<"$busblock"; then
+if ! grep -qE 'accumulate_sends_ex\(m(src|str), mvol' <<<"$busblock"; then
   echo "FAIL: the bus sends do not use the gated volume — a muted bus would still feed the send buses" >&2
   exit 1
 fi
@@ -70,7 +70,9 @@ fi
 #    `chain:` bulk GET rather than 6 discrete single-GET string literals per
 #    slot, so the pin looks for the field LIST and the decoded object shape.)
 save=$(awk '/Per-slot strip state/,/move_fx_meta.json/' src/shadow/shadow_ui.js)
-if ! grep -q '\["volume", "pan", "send_a", "send_b", "muted", "soloed"\]' <<<"$save"; then
+# (The list is MOVE_STRIP_META_KEYS now — the six levels, then the channel strip.)
+if ! grep -q 'for (const f of MOVE_STRIP_META_KEYS)' <<<"$save" ||
+   ! grep -q '^const MOVE_STRIP_META_KEYS = \["volume", "pan", "send_a", "send_b", "muted", "soloed", "strip"\];' src/shadow/shadow_ui.js; then
   echo "FAIL: saveMoveFxChainConfig's strip field list no longer includes muted/soloed in order" >&2
   exit 1
 fi

@@ -243,6 +243,9 @@ typedef struct {
     uint8_t soloed;
     /* The gain the mixer ACTUALLY applies for this bus — see mix_glide.h. */
     mix_glide_t mix;
+    /* The channel strip (mix_strip.h), keys `move_fx:<N>:eq_low` ... `comp`.
+     * Zero-filled by the initializer below, which mix_strip.h reads as flat. */
+    mix_strip_t strip;
 } move_fx_strip_t;
 extern move_fx_strip_t shadow_move_fx_strip[MOVE_FX_SLOTS];
 

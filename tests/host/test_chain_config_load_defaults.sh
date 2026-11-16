@@ -34,6 +34,8 @@ const make = new Function("FILES", "SETS", `
     const host_read_file = (p) => (p in FILES ? FILES[p] : null);
     const setSlotParamWithTimeout = (i, k, v) => { SETS.push([i, k, v]); return true; };
     const debugLog = () => {};
+    ${["STRIP_FIELDS", "STRIP_DEFAULTS", "STRIP_RANGES"].map((n) => (src.match(new RegExp("const " + n + " = \\[[^;]*\\];")) || [""])[0]).join("\n")}
+    ${extractFn("stripWireFromSaved")}
     ${extractFn("loadChainConfigFromDir")}
     return loadChainConfigFromDir;`);
 
@@ -54,6 +56,7 @@ for (let i = 0; i < 8; i++) {
     ok(by[i] && by[i]["slot:transpose"] === "0", `seeded slot ${i}: transpose written as 0, got ${by[i] && by[i]["slot:transpose"]}`);
     ok(by[i] && by[i]["slot:synth_volume"] === "1", `seeded slot ${i}: Module Level written as 1, got ${by[i] && by[i]["slot:synth_volume"]}`);
     ok(by[i]["slot:send_a"] === "0" && by[i]["slot:send_b"] === "0", `seeded slot ${i}: sends 0`);
+    ok(by[i]["slot:strip"] === "0 0 0.5 0 0", `seeded slot ${i}: the channel strip flat, comp off (got ${by[i]["slot:strip"]})`);
     ok(by[i]["slot:receive_channel"] === String(i + 1), `seeded slot ${i}: receive channel`);
     ok(by[i]["slot:muted"] === "0" && by[i]["slot:soloed"] === "0", `seeded slot ${i}: mute/solo from the file`);
 }

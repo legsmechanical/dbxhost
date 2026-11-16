@@ -47,12 +47,17 @@ function extractFn(name) {
 }
 const keysDecl = (src.match(/const CHAIN_CONFIG_KEYS = \[[^\]]*\];/) || [""])[0];
 ok(keysDecl, "CHAIN_CONFIG_KEYS declaration not found");
-const code = [keysDecl, "autosaveTraced", "readSlotConfigValues", "saveChainConfigToDir",
+/* the channel strip's helpers (one `slot:strip` key <-> five saved fields) */
+const stripDecls = ["STRIP_FIELDS", "STRIP_DEFAULTS", "STRIP_RANGES"].map((n) => {
+    const m = src.match(new RegExp("const " + n + " = \\[[^;]*\\];"));
+    ok(m, n + " declaration not found"); return m ? m[0] : "";
+}).join("\n");
+const code = [keysDecl, stripDecls, "stripFieldsFromWire", "autosaveTraced", "readSlotConfigValues", "saveChainConfigToDir",
               "saveOneDirtyUnit", "autosaveEndPass"]
-    .map((n) => n.startsWith("const ") ? n : extractFn(n)).join("\n");
+    .map((n) => (n.startsWith("const ") || n === stripDecls) ? n : extractFn(n)).join("\n");
 
 const SLOT_KEYS = ["volume", "pan", "receive_channel", "forward_channel", "muted", "soloed",
-                   "send_a", "send_b", "transpose", "synth_volume", "feedback_hold"];
+                   "send_a", "send_b", "transpose", "synth_volume", "feedback_hold", "strip"];
 
 /* A host: the values shadow_handle_slot_param_get would format, per slot. */
 function makeHost(opts = {}) {
@@ -61,7 +66,7 @@ function makeHost(opts = {}) {
         volume: (0.1 * (i + 1)).toFixed(2), pan: "0.50", receive_channel: String(i + 1),
         forward_channel: String(i - 1), muted: String(i % 2), soloed: "0",
         send_a: "0.25", send_b: "0.75", transpose: String(i - 4), synth_volume: "0.90",
-        feedback_hold: "0",
+        feedback_hold: "0", strip: (i === 3 ? "2.50 -4.00 0.2500 1.00 0.6000" : "0.00 0.00 0.5000 0.00 0.0000"),
     });
     const h = {
         vals, single: 0, bulk: 0, bulkKeys: 0, writes: [],
@@ -149,6 +154,9 @@ function drain(rig, max = 40) {
     ok(s3.volume === 0.4 && s3.channel === 4 && s3.forward_channel === 2 && s3.muted === 1 &&
        s3.send_b === 0.75 && s3.transpose === -1 && s3.synth_volume === 0.9 && s3.name === "S3",
        "config: slot 3 values do not match what the host served: " + JSON.stringify(s3));
+    ok(s3.eq_low === 2.5 && s3.eq_mid === -4 && s3.eq_mid_freq === 0.25 && s3.eq_high === 1 && s3.comp === 0.6 &&
+       doc.slots[0].eq_mid_freq === 0.5 && doc.slots[0].comp === 0,
+       "config: the channel strip's five fields do not match the served `slot:strip`: " + JSON.stringify(s3));
 
     /* Cross-pin: the JSON field order equals the C writer's (shadow_set_pages.c). */
     const c = fs.readFileSync("src/host/shadow_set_pages.c", "utf8");

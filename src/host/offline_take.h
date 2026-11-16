@@ -41,6 +41,7 @@ typedef struct {
     int   fwd_ch;           /* the channel voice messages are remapped to, -1 = as sent */
     float volume;           /* the fader (a Dry take's level) */
     float pan;              /* the pan, 0..1 balance (mix_pan_gain_l / _r) */
+    float strip[5];         /* the channel strip (mix_strip.h field order): a Dry take's, before the fader */
 } offline_slot_info_t;
 
 typedef struct {

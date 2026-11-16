@@ -6,6 +6,7 @@
 
 #include <stdint.h>
 #include "mix_glide.h"
+#include "mix_strip.h"
 
 /* Capture rules: bitmaps for which notes/CCs a slot captures */
 typedef struct shadow_capture_rules_t {
@@ -48,6 +49,9 @@ typedef struct shadow_chain_slot_t {
     /* The gain the mixer ACTUALLY applies for this slot, gliding per frame
      * toward the block's target — see mix_glide.h. */
     mix_glide_t mix;
+    /* The channel strip — comp, then 3-band EQ — after the slot's FX and before
+     * its fader (mix_strip.h). Keys `slot:eq_low` ... `slot:comp`. */
+    mix_strip_t strip;
     float send_a;           /* 0.0 to 1.0, post-fader send level to Send A bus */
     float send_b;           /* 0.0 to 1.0, post-fader send level to Send B bus */
     int muted;              /* 1 = muted (Mute+Track or Move speakerOn sync) */
