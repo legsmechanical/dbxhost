@@ -230,6 +230,8 @@ export function auWaveView(ed) {
  * screen is the clip, the audio where it lands (Josh, 2026-10-29: "the actual
  * part of the sample that plays needs to stretch, compress, have empty space
  * after it when zoomed fully out"). Anything else: the whole sample. */
+/* the margin SAMPLE's zoomed-out view keeps each side of the clip window */
+export const AU_VIEW_PAD = 0.125;
 export function auViewBounds(ed) {
     const i = auInfo(ed.t, ed.c), fr = i.nframes | 0;
     const sampleView = ed.ed !== 'slices' && ed.ed !== 'slicer' && !(ed.mode === 'chop' && ed.chop) && ed.mode !== 'lazy';
@@ -237,7 +239,16 @@ export function auViewBounds(ed) {
         const lo = i.rstart | 0;
         /* Free: Start..End, its own loop — no clip window to fill */
         const hi = auIsFree(i) ? auPlayedEnd(ed.t, ed.c, i) : Math.round(lo + auLenTicks(ed.t, ed.c, i) * auFpt(i));
-        if (hi - lo >= MIN_SPAN) return [lo, hi];
+        /* ...with a margin each side, so what lies outside Start..End (dithered)
+         * is in sight zoomed all the way out too, not only once zoomed in
+         * (Josh, 2026-11-16: "that works as long as you are zoomed in (even a
+         * little bit) but not when you're zoomed all the way out, which is
+         * disorienting" — the clip window, padded). The margin is the file's:
+         * none before frame 0, none past the file's end or the window's. */
+        if (hi - lo >= MIN_SPAN) {
+            const pad = Math.round((hi - lo) * AU_VIEW_PAD);
+            return [Math.max(0, lo - pad), Math.max(hi, Math.min(hi + pad, fr))];
+        }
     }
     if (fr && i.state === 2 && auIsSlice(i)) {
         /* SLICES and the chop editors: SAMPLE's Start for its Length — the

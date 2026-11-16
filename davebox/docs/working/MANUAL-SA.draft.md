@@ -1442,7 +1442,8 @@ at. Zoomed in, the view stays on what you touched last.
 Zoomed all the way out, an Audio clip's SAMPLE screen **is the clip**: from Start for its
 Length, the audio drawn where it lands at the sample's Tempo — squeezed or stretched as you
 turn Tempo, empty where the Length runs past the end of the sample — with a tick under it
-for each beat and a taller one for each bar.
+for each beat and a taller one for each bar. A margin either side shows a little of the
+sample before Start and after the clip, dithered, so you can see where you are in the file.
 
 SAMPLE has three pages: **turn the jog** for the next (the header reads **1/3**, **2/3**,
 **3/3**). The waveform is page 1; pages 2 and 3 show every name and value at once, two rows

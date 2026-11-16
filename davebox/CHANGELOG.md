@@ -260,6 +260,8 @@ the section into a versioned heading at release time.
   Clips of the same length still hand over in step with each other.
 
 ### Fixed
+- **SAMPLE zoomed all the way out shows a little of the audio outside Start and End**,
+  dithered, as it does once you zoom in, so the view no longer jumps when you zoom.
 - **The browser's Screen view shows which page of a bank you are on**, as the device's
   screen does: MIX 1/2 and 2/2 under the knobs, and in Session View a tab for every mixer
   bank (EQ with its band and page, and COMPRESS). A Slicer's page 3 shows Start, Zoom and

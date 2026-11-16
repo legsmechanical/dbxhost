@@ -891,7 +891,9 @@ step('⭐⭐ WAVE K8 Gain · K5 Pitch · K6 Detune (an Audio clip\'s; Gain on K8
     assert(sent('t4_au_set_end').pop() === '0 0' && !(A.auInfo(4, 0).cut > 0) && A.auBpm(A.auInfo(4, 0)) === 84,
            'past the file\'s end End did not go (the Tempo the knob\'s): ' + JSON.stringify(sent('t4_au_set_end')) + ' ' + A.auBpm(A.auInfo(4, 0)));
     /* K1 Start stops short of End */
-    for (let k = 0; k < 120; k++) { S.knobAccelLast[2] = 0; cc(73, 127); }
+    /* (End down part of the way: a detent is a pixel of the zoomed-out view,
+     * which is the clip window plus its margins) */
+    for (let k = 0; k < 60; k++) { S.knobAccelLast[2] = 0; cc(73, 127); }
     const endAt = A.auInfo(4, 0).cut;
     for (let k = 0; k < 200; k++) { S.knobAccelLast[0] = 0; cc(71, 1); }
     assert(endAt > 0 && A.auInfo(4, 0).rstart <= endAt - 16 && A.auInfo(4, 0).rstart > 0, 'Start passed End: ' + A.auInfo(4, 0).rstart + ' end ' + endAt);
@@ -1204,9 +1206,17 @@ step('⭐⭐ SAMPLE zoomed out is the clip: the audio where it lands at its Temp
     /* the Tempo knob squeezes it: at 168 the bar holds the whole file and more */
     reset();
     for (let i2 = 0; i2 < 84 && (A.auInfo(4, 0).bpm10 | 0) < 1680; i2++) { S.knobAccelLast[6] = 0; cc(77, 1); }
-    shown();                                          /* drawn at once (a tick would re-read this rig's fixed info) */
-    assert(A.auInfo(4, 0).bpm10 >= 1680 && ed.B - ed.A === Math.round(384 * A.auFpt(A.auInfo(4, 0))) && ed.B < want,
-           'turning Tempo up did not shorten the clip\'s window in the sample: ' + ed.A + '..' + ed.B + ' at ' + A.auInfo(4, 0).bpm10);
+    const f2 = shown();                               /* drawn at once (a tick would re-read this rig's fixed info) */
+    /* ...and zoomed out the view keeps a margin past the window, the file
+     * running on there dithered (Josh, 2026-11-16: the parts outside Start /
+     * End "not when you're zoomed all the way out, which is disorienting") */
+    const win = Math.round(384 * A.auFpt(A.auInfo(4, 0))), pad = Math.round(win * E.AU_VIEW_PAD);
+    assert(A.auInfo(4, 0).bpm10 >= 1680 && ed.A === 0 && ed.B === Math.min(win + pad, 96000) && ed.B < want,
+           'turning Tempo up did not shorten the clip\'s window (+ its margin) in the sample: ' + ed.A + '..' + ed.B + ' at ' + A.auInfo(4, 0).bpm10 + ' window ' + win);
+    const winX = Math.floor(win / (ed.B - ed.A) * 128);
+    let dith = 0, solid = 0;
+    for (let x = winX + 3; x < 127; x++) for (let y = 22; y < 48; y++) { if (f2[y * 128 + x]) dith++; else solid++; }
+    assert(winX < 120 && dith > 0, 'zoomed out, nothing of the file shows past the window (x ' + winX + '..127)');
     back(); ticks(2);
     S.activeBank = 0;
     /* Track View at rest says the Audio clip's Tempo on its info row (Josh: "LOOP 112") */
