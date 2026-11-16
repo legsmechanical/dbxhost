@@ -3598,8 +3598,11 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 - **Mixer:** all 8 tracks as strips — what each plays (the instrument's name,
   "Move 2", "MIDI"), a level fader (unity at **1.00x**; double-click resets), pan
   with a sticky centre, Send A/B, the [channel strip](#the-channel-strip)'s **EQ**
-  (Low, Mid, Freq, High; the gains stop at 0 dB) and **Compress**, with a bar under
-  it showing how hard the compressor is working, and **audio** mute/solo (separate from the track
+  as a small picture of its curve (click it to open the EQ: drag the **L**, **M** and
+  **H** points up and down for gain, and **M** sideways for its frequency; Shift for
+  fine moves, double-click a point to flatten it, **Flat** for all three) and
+  **Compress**, with a bar under it showing how hard the compressor is working, and
+  **audio** mute/solo (separate from the track
   header's ☰ Mute/Solo, which stops the sequence). MIDI tracks have no mixer or
   Sound controls. Solo is one group: soloing any strip dims the rest. Hardware knob
   moves show up live; browser fader moves are heard immediately and saved with the

@@ -8,7 +8,7 @@
  * settings?" — they were not: the editor had no EQ or comp at all. */
 import fs from 'fs';
 import path from 'path';
-import { STRIP_SPECS, STRIP_GR_ARC_DB } from '../../ui/ui_strip.mjs';
+import { STRIP_SPECS, STRIP_GR_ARC_DB, stripEqDb, stripMidHz } from '../../ui/ui_strip.mjs';
 
 let failed = 0;
 const ok = (l) => console.log(`  ok   — ${l}`);
@@ -27,8 +27,8 @@ function cut(from, to) {
     if (a < 0 || b < 0) throw new Error(`cannot find ${from} .. ${to} in web_ui_mix.js`);
     return text.slice(a, b);
 }
-const W = new Function(cut('const MIX_MODES = [', 'let mixSubscribed') +
-    '\nreturn { MIX_MODES, STRIP_MODES, STRIP_GR_FULL_DB, mixModeFor, mixSnap };')();
+const W = new Function(cut('const MIX_MODES = [', "/* The channel strip's controls") +
+    '\nreturn { MIX_MODES, STRIP_MODES, STRIP_GR_FULL_DB, mixModeFor, mixSnap, eqDb, eqMidHz, eqMidPos };')();
 
 step('the same five controls, in the device order', () => {
     assert(W.STRIP_MODES.map((m) => m.key).join() === STRIP_SPECS.map((s) => s.key).join(),
@@ -66,6 +66,25 @@ step('a gain slider stops on 0 dB; pan keeps its sticky centre', () => {
     assert(W.mixSnap(lo, 1.0) === 1.0, 'a real boost stays');
     assert(W.mixSnap(W.MIX_MODES[1], 0.51) === 0.5, 'pan centre');
     assert(W.mixSnap(W.STRIP_MODES[2], 0.001) === 0.001, 'the frequency has no detent');
+});
+
+step('the EQ pop-out draws the device\'s curve (the sound), at every setting tried', () => {
+    const sets = [{ eq_low: 6, eq_mid: 0, eq_mid_freq: 0.5, eq_high: 0 },
+                  { eq_low: -15, eq_mid: 15, eq_mid_freq: 0.12, eq_high: 9.5 },
+                  { eq_low: 0, eq_mid: -7.5, eq_mid_freq: 0.93, eq_high: -15 },
+                  { eq_low: 3, eq_mid: 4, eq_mid_freq: 0, eq_high: 2 }];
+    for (const v of sets) for (let i = 0; i <= 60; i++) {
+        const hz = 20 * Math.pow(1000, i / 60);
+        const a = W.eqDb(v, hz), b = stripEqDb(v, hz);
+        assert(Math.abs(a - b) < 1e-9, `${JSON.stringify(v)} @ ${hz.toFixed(0)} Hz: web ${a} vs device ${b}`);
+    }
+});
+step('the mid\'s frequency maps both ways, 125 Hz .. 8 kHz', () => {
+    for (const p of [0, 0.25, 0.5, 0.77, 1]) {
+        assert(Math.abs(W.eqMidHz(p) - stripMidHz(p)) < 1e-9, `hz(${p})`);
+        assert(Math.abs(W.eqMidPos(W.eqMidHz(p)) - p) < 1e-9, `pos(hz(${p}))`);
+    }
+    assert(W.eqMidPos(20) === 0 && W.eqMidPos(20000) === 1, 'clamped to its reach');
 });
 
 if (failed) { console.log('FAIL: test_web_strip'); process.exit(1); }

@@ -635,7 +635,7 @@ function sndTick() {
     const mode = mixModeFor(key);
     if (mode) el.textContent = mode.fmt(mixNum(key, mode.def));
   });
-  root.querySelectorAll(".sndcard-mix").forEach(mixGrUpdate);
+  root.querySelectorAll(".sndcard-mix").forEach(mixStripUpdate);
   root.querySelectorAll(".sndcard-mix .ms").forEach(ms => {
     const prefix = mixPrefixFor(+ms.closest(".strip").dataset.t);
     if (!prefix) return;

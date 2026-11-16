@@ -64,34 +64,104 @@ function mixSnap(mode, v) {
   return v;
 }
 
-/* The channel strip's controls under `prefix`, appended to `strip`: a small
- * EQ heading, a rule before the comp, a slider per control (made by `mk`, the view's own range
- * maker), and the comp's gain-reduction meter under its slider. Shared by the
- * Mixer view and the Sound view's strip card. */
+/* ---- the EQ's response: the device's own math (ui/ui_strip.mjs, which is
+ * mix_strip.h's RBJ design), so the picture is the sound. Pinned against
+ * stripEqDb by tests/js/test_web_strip.mjs. ---- */
+const EQ_SR = 44100, EQ_DB_MAX = 15, EQ_LOW_HZ = 80, EQ_HIGH_HZ = 12000;
+const EQ_MID_LO_HZ = 125, EQ_MID_SPAN = 64, EQ_MID_Q = 0.9;
+const eqMidHz = p => EQ_MID_LO_HZ * Math.pow(EQ_MID_SPAN, Math.max(0, Math.min(1, p)));
+const eqMidPos = hz => Math.max(0, Math.min(1, Math.log(hz / EQ_MID_LO_HZ) / Math.log(EQ_MID_SPAN)));
+function eqBiquad(kind, hz, db, q) {
+  const A = Math.pow(10, db / 40), w = 2 * Math.PI * hz / EQ_SR, cw = Math.cos(w), sw = Math.sin(w);
+  let b0, b1, b2, a0, a1, a2;
+  if (kind === 1) {
+    const al = sw / (2 * q);
+    b0 = 1 + al * A; b1 = -2 * cw; b2 = 1 - al * A; a0 = 1 + al / A; a1 = -2 * cw; a2 = 1 - al / A;
+  } else {
+    const al = sw * Math.SQRT1_2, sa = 2 * Math.sqrt(A) * al;
+    if (kind === 0) {
+      b0 = A * ((A + 1) - (A - 1) * cw + sa); b1 = 2 * A * ((A - 1) - (A + 1) * cw); b2 = A * ((A + 1) - (A - 1) * cw - sa);
+      a0 = (A + 1) + (A - 1) * cw + sa; a1 = -2 * ((A - 1) + (A + 1) * cw); a2 = (A + 1) + (A - 1) * cw - sa;
+    } else {
+      b0 = A * ((A + 1) + (A - 1) * cw + sa); b1 = -2 * A * ((A - 1) + (A + 1) * cw); b2 = A * ((A + 1) + (A - 1) * cw - sa);
+      a0 = (A + 1) - (A - 1) * cw + sa; a1 = 2 * ((A - 1) - (A + 1) * cw); a2 = (A + 1) - (A - 1) * cw - sa;
+    }
+  }
+  return { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: a1 / a0, a2: a2 / a0 };
+}
+function eqBiquadDb(c, hz) {
+  const w = 2 * Math.PI * hz / EQ_SR;
+  const c1 = Math.cos(w), s1 = Math.sin(w), c2 = Math.cos(2 * w), s2 = Math.sin(2 * w);
+  const nr = c.b0 + c.b1 * c1 + c.b2 * c2, ni = -(c.b1 * s1 + c.b2 * s2);
+  const dr = 1 + c.a1 * c1 + c.a2 * c2, di = -(c.a1 * s1 + c.a2 * s2);
+  return 10 * Math.log10((nr * nr + ni * ni) / (dr * dr + di * di));
+}
+/* the EQ's gain in dB at `hz` for {eq_low, eq_mid, eq_mid_freq, eq_high} */
+function eqDb(v, hz) {
+  let db = 0;
+  if (v.eq_low)  db += eqBiquadDb(eqBiquad(0, EQ_LOW_HZ, v.eq_low, 0), hz);
+  if (v.eq_mid)  db += eqBiquadDb(eqBiquad(1, eqMidHz(v.eq_mid_freq ?? 0.5), v.eq_mid, EQ_MID_Q), hz);
+  if (v.eq_high) db += eqBiquadDb(eqBiquad(2, EQ_HIGH_HZ, v.eq_high, 0), hz);
+  return db;
+}
+/* a position's four EQ values, from the wire */
+function eqVals(prefix) {
+  const o = {};
+  for (const m of STRIP_MODES) if (m.key !== "comp") o[m.key] = mixNum(prefix + m.key, m.def);
+  return o;
+}
+/* the curve as an SVG path across w x h: 20 Hz .. 20 kHz (log), +-15 dB */
+const eqX = (hz, w) => Math.log10(hz / 20) / 3 * w;
+const eqY = (db, h) => (1 - (Math.max(-EQ_DB_MAX, Math.min(EQ_DB_MAX, db)) + EQ_DB_MAX) / (2 * EQ_DB_MAX)) * h;
+function eqPath(v, w, h) {
+  const n = Math.max(24, Math.round(w / 2));
+  let d = "";
+  for (let i = 0; i < n; i++) {
+    const hz = 20 * Math.pow(1000, i / (n - 1));
+    d += (i ? "L" : "M") + (i / (n - 1) * w).toFixed(1) + " " + eqY(eqDb(v, hz), h).toFixed(1);
+  }
+  return d;
+}
+
+/* The channel strip's controls under `prefix`, appended to `strip`: the EQ as
+ * a small picture of its curve (click it for the EQ pop-out, where the bands
+ * are dragged on the graph), a rule, then COMPRESS as a slider (made by `mk`,
+ * the view's own range maker) with its gain-reduction meter. Shared by the
+ * Mixer view and the Sound view's strip card. Josh, 2026-11-16: "an eq pop-out
+ * on the mixer instead of all the knobs, that lets us adjust each control
+ * visually". */
 function mixStripCtls(strip, prefix, mk) {
   const head = document.createElement("div"); head.className = "sect"; head.textContent = "EQ";
   strip.appendChild(head);
-  for (const mode of STRIP_MODES) {
-    if (mode.key === "comp") {               /* a rule, unlabelled: its own label says COMPRESS */
-      const h2 = document.createElement("div"); h2.className = "sect";
-      strip.appendChild(h2);
-    }
-    const ctl = document.createElement("div"); ctl.className = "ctl";
-    const lab = document.createElement("label");
-    lab.innerHTML = mode.label.replace(/^EQ /, "") + ' <span class="val" data-k="' + prefix + mode.key + '"></span>';
-    ctl.appendChild(lab);
-    ctl.appendChild(mk(prefix + mode.key, mode, false));
-    if (mode.key === "comp") {
-      const gr = document.createElement("div"); gr.className = "gr"; gr.dataset.k = prefix + "comp_gr";
-      gr.title = "Gain reduction — how far the compressor is pulling the level down now";
-      gr.innerHTML = "<i></i>";
-      ctl.appendChild(gr);
-    }
-    strip.appendChild(ctl);
-  }
+  const th = document.createElement("div"); th.className = "eqthumb"; th.dataset.p = prefix;
+  th.title = "EQ — click to open it and drag the bands";
+  th.innerHTML = '<svg viewBox="0 0 100 40" preserveAspectRatio="none"><line class="z" x1="0" y1="20" x2="100" y2="20"/><path d=""/></svg>';
+  th.onclick = () => eqPopOpen(prefix, strip);
+  strip.appendChild(th);
+  const rule = document.createElement("div"); rule.className = "sect";
+  strip.appendChild(rule);
+  const mode = STRIP_MODES.find(m => m.key === "comp");
+  const ctl = document.createElement("div"); ctl.className = "ctl";
+  const lab = document.createElement("label");
+  lab.innerHTML = mode.label + ' <span class="val" data-k="' + prefix + mode.key + '"></span>';
+  ctl.appendChild(lab);
+  ctl.appendChild(mk(prefix + mode.key, mode, false));
+  const gr = document.createElement("div"); gr.className = "gr"; gr.dataset.k = prefix + "comp_gr";
+  gr.title = "Gain reduction — how far the compressor is pulling the level down now";
+  gr.innerHTML = "<i></i>";
+  ctl.appendChild(gr);
+  strip.appendChild(ctl);
 }
-/* the meters under `root` follow comp_gr (and hide while the comp is off) */
-function mixGrUpdate(root) {
+/* the strip's channel-strip readouts under `root` follow the wire: each EQ
+ * thumbnail's curve, each comp meter (hidden while the comp is off), and the
+ * pop-out if one is open */
+function mixStripUpdate(root) {
+  root.querySelectorAll(".eqthumb").forEach(th => {
+    const v = eqVals(th.dataset.p);
+    const flat = !v.eq_low && !v.eq_mid && !v.eq_high;
+    th.classList.toggle("flat", flat);
+    th.querySelector("path").setAttribute("d", eqPath(v, 100, 40));
+  });
   root.querySelectorAll(".gr").forEach(gr => {
     const key = gr.dataset.k, prefix = key.slice(0, key.length - "comp_gr".length);
     const on = mixNum(prefix + "comp", 0) > 0;
@@ -100,7 +170,125 @@ function mixGrUpdate(root) {
     gr.firstChild.style.width = Math.round(Math.min(1, -db / STRIP_GR_FULL_DB) * 100) + "%";
     gr.title = on ? "Gain reduction " + db.toFixed(1) + " dB" : "Compressor off";
   });
+  eqPopRender();
 }
+
+/* ---- the EQ pop-out: the curve large, a handle per band on it. Low and High
+ * move up and down (their corners are fixed, as on the device); Mid moves
+ * anywhere — across is its frequency, 125 Hz .. 8 kHz. Gains land on the
+ * device's 0.5 dB grid and stop at 0 dB; double-click a handle to flatten its
+ * band. Shift while dragging: fine. ---- */
+const EQ_POP_W = 560, EQ_POP_H = 240;
+let eqPop = null;   /* {prefix, el, drag: band | null} */
+const EQ_BANDS = [
+  { id: "low",  gain: "eq_low",  hz: () => EQ_LOW_HZ,  label: "LOW" },
+  { id: "mid",  gain: "eq_mid",  hz: v => eqMidHz(v.eq_mid_freq), label: "MID", freq: "eq_mid_freq" },
+  { id: "high", gain: "eq_high", hz: () => EQ_HIGH_HZ, label: "HIGH" },
+];
+function eqPopOpen(prefix, fromStrip) {
+  eqPopClose();
+  const t = fromStrip && fromStrip.dataset.t !== undefined ? +fromStrip.dataset.t : -1;
+  const el = document.createElement("div");
+  el.className = "eqpop";
+  const W = EQ_POP_W, H = EQ_POP_H;
+  let grid = "";
+  for (const hz of [50, 100, 200, 500, 1000, 2000, 5000, 10000]) {
+    const x = eqX(hz, W).toFixed(1);
+    grid += '<line class="g" x1="' + x + '" y1="0" x2="' + x + '" y2="' + H + '"/>' +
+      '<text class="gl" x="' + (+x + 3) + '" y="' + (H - 4) + '">' + (hz >= 1000 ? hz / 1000 + "k" : hz) + "</text>";
+  }
+  for (const db of [-12, -6, 6, 12]) {
+    const y = eqY(db, H).toFixed(1);
+    grid += '<line class="g" x1="0" y1="' + y + '" x2="' + W + '" y2="' + y + '"/>' +
+      '<text class="gl" x="3" y="' + (+y - 3) + '">' + (db > 0 ? "+" : "") + db + "</text>";
+  }
+  grid += '<line class="z" x1="0" y1="' + eqY(0, H) + '" x2="' + W + '" y2="' + eqY(0, H) + '"/>';
+  /* the mid's reach: 125 Hz .. 8 kHz, shaded */
+  const mx0 = eqX(EQ_MID_LO_HZ, W), mx1 = eqX(EQ_MID_LO_HZ * EQ_MID_SPAN, W);
+  grid = '<rect class="reach" x="' + mx0.toFixed(1) + '" y="0" width="' + (mx1 - mx0).toFixed(1) + '" height="' + H + '"/>' + grid;
+  let handles = "";
+  for (const b of EQ_BANDS)
+    handles += '<g class="h h-' + b.id + '" data-b="' + b.id + '"><circle r="15" class="hit"/><circle r="8" class="dot"/>' +
+      '<text y="-14" class="hl">' + b.label[0] + "</text></g>";
+  el.innerHTML =
+    '<div class="eqbox"><div class="eqhead"><span class="eqt"></span>' +
+    '<button class="eqflat" title="Flatten every band">Flat</button><button class="eqx" title="Close (Esc)">✕</button></div>' +
+    '<svg class="eqgraph" viewBox="0 0 ' + W + " " + H + '">' + grid + '<path class="c" d=""/>' + handles + "</svg>" +
+    '<div class="eqvals">' + EQ_BANDS.map(b => '<span data-b="' + b.id + '"></span>').join("") + "</div>" +
+    '<div class="eqhint">Drag a point: up and down is gain; Mid also slides across. Double-click a point to flatten it; hold Shift for fine moves.</div></div>';
+  document.body.appendChild(el);
+  eqPop = { prefix, el, drag: null, t };
+  el.onclick = e => { if (e.target === el) eqPopClose(); };
+  el.querySelector(".eqx").onclick = eqPopClose;
+  el.querySelector(".eqflat").onclick = () => { for (const b of EQ_BANDS) mixSet(prefix + b.gain, 0); eqPopRender(); eqAfterEdit(); };
+  const svg = el.querySelector(".eqgraph");
+  /* graph coordinates of a pointer event */
+  const at = e => { const r = svg.getBoundingClientRect();
+    return { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H }; };
+  svg.querySelectorAll(".h").forEach(g => {
+    const b = EQ_BANDS.find(x => x.id === g.dataset.b);
+    g.addEventListener("pointerdown", e => {
+      e.preventDefault();
+      g.setPointerCapture && g.setPointerCapture(e.pointerId);
+      const v = eqVals(prefix), p = at(e);
+      eqPop.drag = { b, x0: p.x, y0: p.y, g0: v[b.gain], f0: b.freq ? v[b.freq] : 0 };
+      mixDragKey = prefix + b.gain;
+      g.classList.add("on");
+    });
+    g.addEventListener("pointermove", e => {
+      const d = eqPop && eqPop.drag;
+      if (!d || d.b !== b) return;
+      const p = at(e), fine = e.shiftKey ? 0.2 : 1;
+      const gm = STRIP_MODES.find(m => m.key === b.gain);
+      /* relative, so a grab does not jump the band to the pointer; Shift scales it */
+      let g = d.g0 + (d.y0 - p.y) / H * (2 * EQ_DB_MAX) * fine;
+      g = Math.max(gm.min, Math.min(gm.max, Math.round(g / (gm.step * fine)) * gm.step * fine));
+      g = round4(mixSnap(gm, g));
+      if (g !== mixNum(prefix + b.gain, 0)) mixSet(prefix + b.gain, g);
+      if (b.freq) {
+        const fm = STRIP_MODES.find(m => m.key === b.freq);
+        const hz0 = eqMidHz(d.f0), x0 = eqX(hz0, W);
+        let f = eqMidPos(20 * Math.pow(1000, (x0 + (p.x - d.x0) * fine) / W));
+        f = round4(Math.round(f / fm.step) * fm.step);
+        if (f !== mixNum(prefix + b.freq, 0.5)) mixSet(prefix + b.freq, f);
+      }
+      eqPopRender();
+    });
+    const end = () => { if (eqPop && eqPop.drag && eqPop.drag.b === b) { eqPop.drag = null; mixDragKey = null;
+      mixQuiet[prefix + b.gain] = now(); if (b.freq) mixQuiet[prefix + b.freq] = now(); g.classList.remove("on"); eqAfterEdit(); } };
+    g.addEventListener("pointerup", end);
+    g.addEventListener("pointercancel", end);
+    g.addEventListener("dblclick", () => { mixSet(prefix + b.gain, 0); eqPopRender(); eqAfterEdit(); });
+  });
+  eqPopRender();
+}
+/* the views around the pop-out follow an edit made in it */
+function eqAfterEdit() {
+  const host = document.getElementById("mixstrips");
+  if (mixVisible && host) updateStrips(host);
+  if (typeof soundVisible !== "undefined" && soundVisible) sndTick();
+}
+function eqPopClose() {
+  if (!eqPop) return;
+  eqPop.el.remove();
+  if (eqPop.drag) mixDragKey = null;
+  eqPop = null;
+}
+function eqPopRender() {
+  if (!eqPop) return;
+  const { prefix, el, t } = eqPop, W = EQ_POP_W, H = EQ_POP_H, v = eqVals(prefix);
+  el.querySelector("path.c").setAttribute("d", eqPath(v, W, H));
+  for (const b of EQ_BANDS) {
+    const hz = b.hz(v);
+    el.querySelector(".h-" + b.id).setAttribute("transform",
+      "translate(" + eqX(hz, W).toFixed(1) + "," + eqY(v[b.gain], H).toFixed(1) + ")");
+    const gm = STRIP_MODES.find(m => m.key === b.gain);
+    el.querySelector('.eqvals [data-b="' + b.id + '"]').textContent =
+      b.label + " " + gm.fmt(v[b.gain]) + (b.freq ? " @ " + STRIP_MODES.find(m => m.key === b.freq).fmt(v[b.freq]) : "");
+  }
+  el.querySelector(".eqt").textContent = (t >= 0 ? "T" + (t + 1) + " — " + mixInstLabel(t) + " · " : "") + "EQ";
+}
+document.addEventListener("keydown", e => { if (e.key === "Escape" && eqPop) eqPopClose(); });
 
 let mixSubscribed = false;
 let mixVisible = false;
@@ -321,7 +509,7 @@ function updateStrips(host) {
     const mode = mixModeFor(key);
     if (mode) el.textContent = mode.fmt(mixNum(key, mode.def));
   });
-  mixGrUpdate(host);
+  mixStripUpdate(host);
   host.querySelectorAll(".ms").forEach(ms => {
     const t = +ms.closest(".strip").dataset.t;
     const prefix = mixPrefixFor(t);
