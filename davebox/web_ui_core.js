@@ -173,11 +173,16 @@ if (!window.schwungRemote) {
       for(let t=0;t<8;t++){ m["chain:"+t+":volume"]="1"; m["chain:"+t+":pan"]="0.5";
         m["chain:"+t+":send_a"]="0"; m["chain:"+t+":send_b"]="0";
         m["chain:"+t+":muted"]="0"; m["chain:"+t+":soloed"]="0";
+        m["chain:"+t+":eq_low"]="0"; m["chain:"+t+":eq_mid"]="0"; m["chain:"+t+":eq_mid_freq"]="0.5";
+        m["chain:"+t+":eq_high"]="0"; m["chain:"+t+":comp"]=t===4?"0.4":"0";
+        if(t===4) m["chain:"+t+":comp_gr"]="-4.5";
         if(t>=4){ m["chain:"+t+":synth_module"]=["obxd","dexed","",""][t-4]||"";
                   m["chain:"+t+":synth_name"]=["OB-Xd","Dexed","",""][t-4]||""; } }
       for(let b=1;b<=4;b++){ m["move_fx:"+b+":volume"]="1"; m["move_fx:"+b+":pan"]="0.5";
         m["move_fx:"+b+":send_a"]="0"; m["move_fx:"+b+":send_b"]="0";
-        m["move_fx:"+b+":muted"]="0"; m["move_fx:"+b+":soloed"]="0"; }
+        m["move_fx:"+b+":muted"]="0"; m["move_fx:"+b+":soloed"]="0";
+        m["move_fx:"+b+":eq_low"]="0"; m["move_fx:"+b+":eq_mid"]="0"; m["move_fx:"+b+":eq_mid_freq"]="0.5";
+        m["move_fx:"+b+":eq_high"]="0"; m["move_fx:"+b+":comp"]="0"; }
       Object.assign(KV,m); subs.forEach(cb=>cb(Object.assign({},m))); },
     /* component surface (Sound view): one fake instrument on the Schwung-routed
      * tracks so the generated editor previews in a plain browser; every other

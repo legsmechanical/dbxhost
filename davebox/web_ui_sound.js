@@ -576,6 +576,9 @@ function sndMixCard(t) {
     strip.appendChild(ctl);
   }
 
+  /* the channel strip (web_ui_mix.js): EQ, then COMP with its meter */
+  mixStripCtls(strip, prefix, sndRange);
+
   /* audio mute / solo — the session grid's M/S stops the sequencer instead */
   const ms = document.createElement("div"); ms.className = "ms";
   const mb = document.createElement("button"); mb.className = "mute"; mb.textContent = "M";
@@ -592,13 +595,14 @@ function sndMixCard(t) {
 function sndRange(key, mode, vertical) {
   const inp = document.createElement("input");
   inp.type = "range";
-  inp.min = mode.min; inp.max = mode.max; inp.step = (mode.max - mode.min) / 255;
+  inp.min = mode.min; inp.max = mode.max; inp.step = mode.step || (mode.max - mode.min) / 255;
   inp.dataset.k = key;
   if (vertical) inp.title = "Level — 1.00x is unity";
   inp.addEventListener("pointerdown", () => { mixDragKey = key; });
   inp.addEventListener("input", () => {
     let v = parseFloat(inp.value);
-    if (mode.key === "pan" && Math.abs(v - 0.5) < 0.02) { v = 0.5; inp.value = "0.5"; }
+    const sv = mixSnap(mode, v);
+    if (sv !== v) { v = sv; inp.value = String(v); }
     mixSet(key, round4(v));
     const el = document.querySelector('#sound .val[data-k="' + cssq(key) + '"]');
     if (el) el.textContent = mode.fmt(v);
@@ -622,15 +626,16 @@ function sndTick() {
   root.querySelectorAll(".sndcard-mix input[type=range]").forEach(inp => {
     const key = inp.dataset.k;
     if (!key || key === mixDragKey) return;
-    const mode = MIX_MODES.find(m => key.endsWith(":" + m.key));
+    const mode = mixModeFor(key);
     if (mode) inp.value = String(mixNum(key, mode.def));
   });
   root.querySelectorAll(".sndcard-mix .val").forEach(el => {
     const key = el.dataset.k;
     if (!key) return;
-    const mode = MIX_MODES.find(m => key.endsWith(":" + m.key));
+    const mode = mixModeFor(key);
     if (mode) el.textContent = mode.fmt(mixNum(key, mode.def));
   });
+  root.querySelectorAll(".sndcard-mix").forEach(mixGrUpdate);
   root.querySelectorAll(".sndcard-mix .ms").forEach(ms => {
     const prefix = mixPrefixFor(+ms.closest(".strip").dataset.t);
     if (!prefix) return;

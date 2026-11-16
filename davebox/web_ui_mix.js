@@ -1,7 +1,8 @@
 /* dAVEBOx remote UI — the Mixer view (phase D of the remote-UI arc).
  *
  * Eight strips in track order, each showing the mixer position the track OWNS:
- * its instrument, level fader, pan, sends and AUDIO mute/solo. Values ride the
+ * its instrument, level fader, pan, sends, the channel strip (EQ + comp, with
+ * the comp's gain reduction) and AUDIO mute/solo. Values ride the
  * manager's mixer wire namespace (chain:<track>:<key> / move_fx:<bus>:<key> —
  * see schwung-manager/mixerkeys.go); which family a track addresses is derived
  * here from the snapshot's route/chan, mirroring ui/ui_engine.mjs exactly.
@@ -29,6 +30,78 @@ const MIX_MODES = [
     fmt: v => Math.round(v * 100) + "%" },
 ];
 
+/* THE CHANNEL STRIP (src/host/mix_strip.h; the device's ui/ui_strip.mjs
+ * STRIP_SPECS): the 3-band EQ with its swept mid, then the one-knob comp, on
+ * every position. Same keys, ranges, detent steps, defaults and readouts as the
+ * device — tests/js/test_web_strip.mjs holds this table to STRIP_SPECS. The
+ * mid's frequency is a 0..1 position, 125 Hz x 64^p. */
+const STRIP_MODES = [
+  { key: "eq_low",      label: "EQ LOW",   min: -15, max: 15, def: 0,   step: 0.5,   detent: 0,
+    fmt: v => { const r = Math.round(v * 10) / 10; return r === 0 ? "0dB" : (r > 0 ? "+" : "") + r.toFixed(1) + "dB"; } },
+  { key: "eq_mid",      label: "EQ MID",   min: -15, max: 15, def: 0,   step: 0.5,   detent: 0,
+    fmt: v => { const r = Math.round(v * 10) / 10; return r === 0 ? "0dB" : (r > 0 ? "+" : "") + r.toFixed(1) + "dB"; } },
+  { key: "eq_mid_freq", label: "EQ FREQ",  min: 0,   max: 1,  def: 0.5, step: 0.005,
+    fmt: v => { const f = 125 * Math.pow(64, Math.max(0, Math.min(1, v)));
+                return f < 999.5 ? Math.round(f) + "Hz" : (f / 1000).toFixed(2) + "k"; } },
+  { key: "eq_high",     label: "EQ HIGH",  min: -15, max: 15, def: 0,   step: 0.5,   detent: 0,
+    fmt: v => { const r = Math.round(v * 10) / 10; return r === 0 ? "0dB" : (r > 0 ? "+" : "") + r.toFixed(1) + "dB"; } },
+  { key: "comp",        label: "COMPRESS", min: 0,   max: 1,  def: 0,   step: 0.01,
+    fmt: v => (v > 0 ? Math.max(1, Math.round(v * 100)) + "%" : "OFF") },
+];
+/* gain reduction a full meter stands for — the device's STRIP_GR_ARC_DB */
+const STRIP_GR_FULL_DB = 12;
+const MIX_ALL_MODES = MIX_MODES.concat(STRIP_MODES);
+/* the mode a wire key ("chain:3:eq_mid") belongs to — by its last segment, so
+ * eq_mid never matches eq_mid_freq */
+function mixModeFor(key) {
+  const k = String(key || "").slice(String(key || "").lastIndexOf(":") + 1);
+  return MIX_ALL_MODES.find(m => m.key === k) || null;
+}
+/* a slider's value on its mode's grid, with the gains' centre detent */
+function mixSnap(mode, v) {
+  if (mode.key === "pan" && Math.abs(v - 0.5) < 0.02) return 0.5;
+  if (mode.detent !== undefined && Math.abs(v - mode.detent) < mode.step * 0.8) return mode.detent;
+  return v;
+}
+
+/* The channel strip's controls under `prefix`, appended to `strip`: a small
+ * EQ heading, a rule before the comp, a slider per control (made by `mk`, the view's own range
+ * maker), and the comp's gain-reduction meter under its slider. Shared by the
+ * Mixer view and the Sound view's strip card. */
+function mixStripCtls(strip, prefix, mk) {
+  const head = document.createElement("div"); head.className = "sect"; head.textContent = "EQ";
+  strip.appendChild(head);
+  for (const mode of STRIP_MODES) {
+    if (mode.key === "comp") {               /* a rule, unlabelled: its own label says COMPRESS */
+      const h2 = document.createElement("div"); h2.className = "sect";
+      strip.appendChild(h2);
+    }
+    const ctl = document.createElement("div"); ctl.className = "ctl";
+    const lab = document.createElement("label");
+    lab.innerHTML = mode.label.replace(/^EQ /, "") + ' <span class="val" data-k="' + prefix + mode.key + '"></span>';
+    ctl.appendChild(lab);
+    ctl.appendChild(mk(prefix + mode.key, mode, false));
+    if (mode.key === "comp") {
+      const gr = document.createElement("div"); gr.className = "gr"; gr.dataset.k = prefix + "comp_gr";
+      gr.title = "Gain reduction — how far the compressor is pulling the level down now";
+      gr.innerHTML = "<i></i>";
+      ctl.appendChild(gr);
+    }
+    strip.appendChild(ctl);
+  }
+}
+/* the meters under `root` follow comp_gr (and hide while the comp is off) */
+function mixGrUpdate(root) {
+  root.querySelectorAll(".gr").forEach(gr => {
+    const key = gr.dataset.k, prefix = key.slice(0, key.length - "comp_gr".length);
+    const on = mixNum(prefix + "comp", 0) > 0;
+    const db = on ? Math.min(0, mixNum(key, 0)) : 0;
+    gr.classList.toggle("off", !on);
+    gr.firstChild.style.width = Math.round(Math.min(1, -db / STRIP_GR_FULL_DB) * 100) + "%";
+    gr.title = on ? "Gain reduction " + db.toFixed(1) + " dB" : "Compressor off";
+  });
+}
+
 let mixSubscribed = false;
 let mixVisible = false;
 let mixStructSig = "";         /* rebuild strips only when the shape changes */
@@ -54,6 +127,10 @@ if (R && typeof R.onParamChange === "function") {
       }
     }
     if (touched && mixVisible) renderMixer();
+    /* the Sound view's strip card too, so its gain-reduction meter moves at the
+     * feed's rate rather than its 300 ms refresh (web_ui_sound.js — a later
+     * script, but this only runs from events, after every script parsed) */
+    if (touched && soundVisible) sndTick();
     if (namesFresh && M) renderSession();
   });
 }
@@ -182,6 +259,9 @@ function buildStrips(host, anySolo) {
       el.appendChild(ctl);
     }
 
+    /* the channel strip: EQ, then COMP with its gain-reduction meter */
+    mixStripCtls(el, prefix, mkRange);
+
     /* audio mute / solo — labelled: the sequencer M/S lives on the session grid */
     const ms = document.createElement("div"); ms.className = "ms";
     const mb = document.createElement("button"); mb.className = "mute"; mb.textContent = "M";
@@ -201,14 +281,16 @@ function buildStrips(host, anySolo) {
 function mkRange(key, mode, vertical) {
   const inp = document.createElement("input");
   inp.type = "range";
-  inp.min = mode.min; inp.max = mode.max; inp.step = (mode.max - mode.min) / 255;
+  inp.min = mode.min; inp.max = mode.max; inp.step = mode.step || (mode.max - mode.min) / 255;
   inp.dataset.k = key;
   if (vertical) inp.title = "Level — 1.00x is unity";
   inp.addEventListener("pointerdown", () => { mixDragKey = key; });
   inp.addEventListener("input", () => {
     let v = parseFloat(inp.value);
-    /* pan sticky centre, matching the device feel (snapZone 0.02) */
-    if (mode.key === "pan" && Math.abs(v - 0.5) < 0.02) { v = 0.5; inp.value = "0.5"; }
+    /* pan's sticky centre (snapZone 0.02) and the gains' 0 dB detent,
+     * matching the device feel */
+    const sv = mixSnap(mode, v);
+    if (sv !== v) { v = sv; inp.value = String(v); }
     mixSet(key, round4(v));
     const val = document.querySelector('#mixer .val[data-k="' + cssq(key) + '"]');
     if (val) val.textContent = mode.fmt(v);
@@ -229,16 +311,17 @@ function updateStrips(host) {
   host.querySelectorAll("input[type=range]").forEach(inp => {
     const key = inp.dataset.k;
     if (key === mixDragKey) return;
-    const mode = MIX_MODES.find(m => key.endsWith(":" + m.key));
+    const mode = mixModeFor(key);
     if (!mode) return;
     inp.value = String(mixNum(key, mode.def));
   });
   host.querySelectorAll(".val").forEach(el => {
     const key = el.dataset.k;
     if (el.closest(".strip").classList.contains("wait")) { el.textContent = "…"; return; }
-    const mode = MIX_MODES.find(m => key.endsWith(":" + m.key));
+    const mode = mixModeFor(key);
     if (mode) el.textContent = mode.fmt(mixNum(key, mode.def));
   });
+  mixGrUpdate(host);
   host.querySelectorAll(".ms").forEach(ms => {
     const t = +ms.closest(".strip").dataset.t;
     const prefix = mixPrefixFor(t);
