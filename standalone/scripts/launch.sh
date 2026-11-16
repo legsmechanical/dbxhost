@@ -356,6 +356,10 @@ setsid --wait bash -c '
     # A refused Tools launch must fall back to stock too, not come round as a
     # boot-door session: date it like a quit (QUIT ALWAYS LANDS IN STOCK).
     at_boot || date +%s > "$DBX_DIR/quit-to-stock" 2>/dev/null || true
+    # A refusal before the sweep leaves the MoveLauncher that quiesce HELD
+    # stopped, and the resume below is a no-op on a unit that still has it.
+    # Let it run again so it brings Move back.
+    at_boot || pkill -CONT -x MoveLauncher 2>/dev/null || true
     unit --resume-launcher || true
     exit 1
   }
@@ -516,6 +520,17 @@ setsid --wait bash -c '
   if pidof $SWEEP_NAMES >/dev/null 2>&1; then
   for name in $SWEEP_NAMES; do
     pids=$(pidof $name 2>/dev/null || true)
+    if [ "$name" = MoveLauncher ] && [ -n "$pids" ]; then
+      # quiesce-stock.sh HELD it (SIGSTOP) so it could not report the
+      # graceful Move exit as "Move crashed". A held process only queues a
+      # TERM, so end a held one with KILL, before it can run again.
+      for p in $pids; do
+        if [ "$(cut -d" " -f3 /proc/$p/stat 2>/dev/null)" = T ]; then
+          echo "KILL MoveLauncher $p (held by quiesce)"; kill -9 $p 2>/dev/null || true
+          pids=$(echo " $pids " | sed "s/ $p / /; s/^ *//; s/ *$//")
+        fi
+      done
+    fi
     if [ -n "$pids" ]; then echo "TERM $name $pids"; kill $pids 2>/dev/null || true; fi
   done
   fi

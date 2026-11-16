@@ -234,6 +234,13 @@ graceful_enabled() {
     return 0
 }
 
+hold_launcher() {
+    lp=$(pidof MoveLauncher 2>/dev/null || true)
+    if [ -n "$lp" ]; then
+        kill -STOP $lp 2>/dev/null && say "MoveLauncher held ($lp) — it cannot report Move's exit as a crash"
+    fi
+}
+
 graceful_move_exit() {
     if ! graceful_enabled; then
         say "graceful exit OFF (DBX_QUIESCE_GRACEFUL / $GRACEFUL_OFF_FLAG) — freezing"
@@ -263,6 +270,17 @@ graceful_move_exit() {
     # down Move paints over them is for hardware to answer.
     paint_splash
     sleep 0.2
+
+    # HOLD MoveLauncher BEFORE Move goes. It SUPERVISES MoveOriginal, and the
+    # moment its Move exits it shows "Move crashed" (the string is in its
+    # binary) — however orderly the exit. That flashed on every Tools launch,
+    # in the second between this exit and launch.sh's sweep removing it. A
+    # stopped MoveLauncher cannot see its child go; the sweep then ends it with
+    # SIGKILL (a TERM would only wait for a CONT that never comes), and
+    # refuse() continues it if the launch is abandoned before the sweep.
+    # It runs as ableton, as we do. Never at boot: there it is our own
+    # supervisor, and quiesce does not run.
+    hold_launcher
 
     arch=$(uname -m 2>/dev/null || echo unknown)
     sent=0
