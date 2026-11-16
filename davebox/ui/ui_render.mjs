@@ -427,6 +427,15 @@ function drawSlicerPage(ed, i, ends, mid, zoomTxt, lit) {
         fill_rect(0, 17, SLC_STRIP_W + 2, 1, 1); fill_rect(0, 31, SLC_STRIP_W + 2, 1, 1);
         fill_rect(0, 17, 1, 15, 1); fill_rect(SLC_STRIP_W + 1, 17, 1, 15, 1);
         drawKitPage(name, cells, false, slcHints(2, false, !!S.shiftHeld, tempoTouched));
+        /* the Screen view has no strip over K1-K3: they are knobs there, with
+         * the strip's values (the card's: Zoom by how much of the file the
+         * window holds). Before the card, which is a pop-up over this page. */
+        if (hudFrameOpen()) {
+            const val = (label, text) => ({ kind: 'valsq', label, name: label, text: String(text) });
+            const z = Math.max(1, (i.nframes | 0) / Math.max(1, sB - sA));
+            kitHudTap('KitCells', { cells: [val('Start', auFmtTime(rs, rt)), val('Zoom', 'x' + (z < 10 ? z.toFixed(1) : Math.round(z))),
+                                            val('End', auFmtTime(re, rt))].concat(cells.slice(3)), touched: S.knobTouched });
+        }
         if (S.knobTouched < 0) drawBankHeading(name, false, false, '3/3');
         /* a knob that changes how the sample draws shows it, large, while touched */
         if (slcWaveKnob(S.knobTouched)) drawSlicerWaveCard(ed, i, cells[S.knobTouched]);

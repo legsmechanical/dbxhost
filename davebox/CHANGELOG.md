@@ -260,6 +260,10 @@ the section into a versioned heading at release time.
   Clips of the same length still hand over in step with each other.
 
 ### Fixed
+- **The browser's Screen view shows which page of a bank you are on**, as the device's
+  screen does: MIX 1/2 and 2/2 under the knobs, and in Session View a tab for every mixer
+  bank (EQ with its band and page, and COMPRESS). A Slicer's page 3 shows Start, Zoom and
+  End on its first three knobs.
 - **A kit from Convert to kit no longer clips when you turn a pad's velocity on.** Its pads
   now respond to velocity as a stock kit's do: a full-velocity hit is the slice's level and
   softer hits are quieter, in Move and in DR32.
