@@ -11,7 +11,7 @@ the complete reference — this guide links into it as you go.
 > [Schwung](https://github.com/charlesvestal/schwung). Its note tracks play Move's
 > built-in instruments, Schwung's instruments and effect chains, or an external synth
 > over USB; its Audio and Slicer tracks play samples of their own (see
-> [Audio](MANUAL-SA.md#75-audio)).
+> [Audio](MANUAL-SA.md#8-audio-tracks)).
 
 *(Running dAVEBOx as an ordinary tool inside official Schwung? That is dAVEBOx
 Legacy — see [`MANUAL.md`](MANUAL.md) instead.)*
@@ -36,7 +36,7 @@ of their own. dAVEBOx turns Move's Link on by itself each time it starts.
    project you last had open is already selected.)
 
 You can come back to the picker at any time with **Shift + Step 1**. More in the
-manual's [Projects](MANUAL-SA.md#175-projects) section.
+manual's [Projects](MANUAL-SA.md#195-projects) section.
 
 ---
 
@@ -115,7 +115,7 @@ A new project starts in a random key and scale. To change them, open **Project
 Settings** (**Shift + Step 2**), choose **Key** or **Scale**, click, turn to a new
 one and click. If your clips hold notes it asks whether to move them, and you hear
 the new key while it asks. See
-[Key & Scale](MANUAL-SA.md#172-key--scale) in the manual.
+[Key & Scale](MANUAL-SA.md#192-key--scale) in the manual.
 
 ---
 
@@ -135,7 +135,7 @@ These settings belong to *this clip only*. They're non-destructive: they
 transform playback without changing your written notes, so returning a knob to its
 default undoes it cleanly. Explore the other banks (NOTE FX, HARMONY, SEQ ARP) the
 same way — hold the jog, tap a pad, let go, turn the knobs. The
-[Sequencer Effects](MANUAL-SA.md#9-sequencer-effects) chapter covers every one.
+[Sequencer Effects](MANUAL-SA.md#11-sequencer-effects) chapter covers every one.
 
 ---
 
@@ -159,7 +159,7 @@ a row of clips across all tracks is a **scene**.
 
 Launching a *single* clip changes only its track. Launching a *scene* switches
 every track at once — an empty cell in that row silences its track. More in
-[Arranging](MANUAL-SA.md#11-arranging) and [Scenes](MANUAL-SA.md#112-scenes).
+[Arranging](MANUAL-SA.md#13-arranging) and [Scenes](MANUAL-SA.md#132-scenes).
 
 ---
 
@@ -182,7 +182,7 @@ live with a grid of effects.
    tap the step again to turn it off.
 
 Performance Mode is deep — capture lengths, latching, and 16 preset slots are all
-covered in [Performance Mode](MANUAL-SA.md#13-performance-mode).
+covered in [Performance Mode](MANUAL-SA.md#15-performance-mode).
 
 ---
 
@@ -202,7 +202,7 @@ last edit while stopped, and whenever you leave. There is no save button to pres
 
 For named backups you can return to, use **Save state** in Project Settings — it
 keeps up to 16 timestamped snapshots per project. See
-[Snapshots](MANUAL-SA.md#173-snapshots).
+[Snapshots](MANUAL-SA.md#193-snapshots).
 
 ---
 
@@ -221,13 +221,13 @@ You now know enough to make complete patterns. When you're ready for more:
 - **Recording live** — press **Record** to capture pad playing into a clip:
   [Recording](MANUAL-SA.md#64-recording).
 - **Automation** — record knob moves that play back with the clip:
-  [Automation](MANUAL-SA.md#10-automation).
+  [Automation](MANUAL-SA.md#12-automation).
 - **The Conductor** — a track that transposes all the others in real time:
-  [The Conductor](MANUAL-SA.md#12-the-conductor).
+  [The Conductor](MANUAL-SA.md#14-the-conductor).
 - **Exporting to Ableton Live** — **Project Settings → Export to Ableton** renders
-  the whole project to an `.ablbundle`: [Export to Live](MANUAL-SA.md#163-export-to-live).
+  the whole project to an `.ablbundle`: [Export to Live](MANUAL-SA.md#183-export-to-live).
 
 And whenever you need a quick reminder of a control, the manual's
-[Quick Reference](MANUAL-SA.md#19-quick-reference) lists every gesture on one screen.
+[Quick Reference](MANUAL-SA.md#21-quick-reference) lists every gesture on one screen.
 
 Have fun.
