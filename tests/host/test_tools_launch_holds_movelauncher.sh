@@ -36,13 +36,26 @@ code "$Q" | sed -n '/^hold_launcher()/,/^}/p' | grep -q 'kill -STOP' \
 # 2. launch.sh: the sweep's TERM pass, run for real against a stopped process.
 #    Lift the loop, point pidof at a stand-in named MoveLauncher, and check that
 #    the held one is KILLed (a TERM alone would leave it stopped forever).
-loop=$(sed -n '/^  for name in \$SWEEP_NAMES; do$/,/^  done$/p' "$L" | head -40)
+# Only the FIRST such loop (the TERM pass): the second is the KILL pass, and
+# lifting both would kill the stand-in whatever the TERM pass does.
+loop=$(awk '/^  for name in \$SWEEP_NAMES; do$/{f=1} f{print} f&&/^  done$/{exit}' "$L")
+printf '%s\n' "$loop" | grep -q 'kill -9 \$pids' && bad "the lifted loop includes the KILL pass"
+
 printf '%s\n' "$loop" | grep -q 'held by quiesce' || bad "cannot find the sweep TERM loop with the held-launcher branch"
 tmp=$(mktemp -d)
-trap 'kill -9 $(cat "$tmp/pid" 2>/dev/null) 2>/dev/null; rm -rf "$tmp"' EXIT
-cp "$(command -v sleep)" "$tmp/MoveLauncher"
-"$tmp/MoveLauncher" 30 &
+trap 'p=$(cat "$tmp/pid" 2>/dev/null); [ -n "$p" ] && { pkill -9 -P "$p"; kill -9 "$p"; } 2>/dev/null; rm -rf "$tmp"' EXIT
+# The stand-in HANDLES TERM, as MoveLauncher does (a TERM'd one exits with a
+# status, not a signal). That matters: Linux kills even a STOPPED process on a
+# TERM it does not handle, so a bare sleep would pass with TERM alone.
+bash -c 'trap "exit 3" TERM; while :; do sleep 0.05; done' &
 pid=$!; echo "$pid" > "$tmp/pid"
+# Stop it only once the handler is installed (SigCgt bit 15), or the TERM
+# would still be default-fatal and prove nothing.
+for _ in $(seq 50); do
+    cgt=$(sed -n 's/^SigCgt:[[:space:]]*//p' "/proc/$pid/status" 2>/dev/null)
+    [ -n "$cgt" ] && [ $(( 0x$cgt & 0x4000 )) -ne 0 ] && break
+    sleep 0.02
+done
 kill -STOP "$pid"
 sleep 0.1
 if [ ! -r "/proc/$pid/stat" ]; then
