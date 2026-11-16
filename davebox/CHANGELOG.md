@@ -8,6 +8,7 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 
+## [2.0.0] — 2026-11-16
 ### Added
 - **A channel strip on every track**: a one-knob compressor and a 3-band EQ with a
   sweepable mid, like a mixing desk's channel. **Turn the jog on MIX** for MIX 2: Low,

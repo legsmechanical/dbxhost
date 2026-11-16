@@ -6,10 +6,11 @@
 
 # The dAVEBOx SA Manual
 
-dAVEBOx is a **MIDI sequencer for the Ableton Move**. It records, arranges and
-plays back MIDI — notes and automation — and sends it to an instrument. It makes
-no sound of its own: each track plays one of Move's own instruments, a Schwung
-effect chain, or an external synth on the USB-A port.
+dAVEBOx is an **8-track sequencer and sampler for the Ableton Move**. It records,
+arranges and plays back notes and automation, and each track plays one of Move's
+own instruments, a Schwung effect chain, an external synth on the USB-A port — or
+samples of its own, on an [Audio](#8-audio-tracks) or [Slicer](#9-slicer-tracks)
+track.
 
 dAVEBOx runs inside [Schwung](https://github.com/charlesvestal/schwung) and takes
 over Move's pads, knobs and screen while it's open. It uses Move's vocabulary —
