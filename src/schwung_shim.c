@@ -744,7 +744,12 @@ have_format:;
     preview_data = (void *)(raw + data_off);
     preview_total_frames = data_sz / (nch * bytes_per_sample);
     preview_pos = 0;
-    preview_playing = 1;
+    /* RELEASE: every field above must be visible to the SPI thread before it
+     * sees "playing" — plain stores may be reordered (by the compiler at -O2,
+     * and by the ARM64 store buffer at any level), and a render that saw the
+     * new data pointer with the zeroed channel count / format read past the
+     * mapping. Paired with the acquire load in preview_render. */
+    __atomic_store_n(&preview_playing, 1, __ATOMIC_RELEASE);
     LOG_DEBUG("preview", "loaded %u frames, %d ch, fmt=%u/%u-bit", preview_total_frames, nch, audio_fmt, bps);
 }
 
@@ -771,7 +776,7 @@ static void shim_hook_preview_play(void) {
 }
 
 static void preview_render(int16_t *buf, int frames) {
-    if (!preview_playing || !preview_data || preview_total_frames == 0) return;
+    if (!__atomic_load_n(&preview_playing, __ATOMIC_ACQUIRE) || !preview_data || preview_total_frames == 0) return;
     const float gain = preview_gain;
     const int nch = preview_channels;
     const int is_float = (preview_format == PREVIEW_WAV_FORMAT_FLOAT);
@@ -6715,7 +6720,7 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
      * PRE-transfer log point: this block. POST-transfer (hw view) log
      * point: just before the hw→shadow memcpy in shim_post_transfer. */
     {
-        static int xmos_log_checked = 0;
+        static uint32_t xmos_log_checked = 0;
         if (xmos_log_checked++ % 44 == 0) {  /* check every ~1s */
             int want = (shim_debug_flags & SHIM_FLAG_XMOS_LOG) != 0;
             if (want && xmos_log_fd < 0) {
@@ -6797,7 +6802,7 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
      * These are rare control commands, not normal musical MIDI. */
     {
         static int midi_log_fd = -1;
-        static int midi_log_checked = 0;
+        static uint32_t midi_log_checked = 0;
         if (midi_log_checked++ % 4400 == 0) {  /* check every ~10s */
             int want = (shim_debug_flags & SHIM_FLAG_SPI_MIDI_LOG) != 0;
             if (want && midi_log_fd < 0) {
@@ -6934,6 +6939,11 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
         spi_consecutive_overruns = 0;
         spi_skip_dsp_this_frame = 0;
     }
+
+    /* Declared above the baseline goto, which jumps past where it is set and
+     * on to its reader after pre_done — it was read uninitialised there
+     * (GCC -O2's -Wmaybe-uninitialized found it). */
+    int jack_display_composited = 0;
 
     /* Skip all processing in baseline mode to measure pure Move ioctl time */
     if (spi_baseline_mode) goto pre_done;
@@ -7512,7 +7522,6 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
     /* Composite JACK display with skipback toast overlay when active.
      * Used for both the remote mirror and the physical OLED (via bridge_pre). */
     static uint8_t composited_jack_display[DISPLAY_BUFFER_SIZE];
-    int jack_display_composited = 0;
     if (g_jack_shm && g_jack_shm->display_active) {
         memcpy(composited_jack_display, g_jack_shm->display_data, DISPLAY_BUFFER_SIZE);
         if (skipback_overlay_timeout > 0) {

@@ -66,6 +66,14 @@ if [ -d "$REPO_ROOT/build" ] && [ -n "$(ls -A "$REPO_ROOT/build" 2>/dev/null)" ]
 fi
 mkdir -p "$REPO_ROOT/build"
 printf '%s' "$SCHWUNG_CFLAGS" > "$BUILD_STAMP"
+# The shim's optimisation level (SHIM_OPT, default -O2) is the shim's alone, so
+# a change drops only the shim — needs_rebuild reads mtimes, not flags, and
+# would otherwise keep a shim built at the other level.
+SHIM_STAMP="$REPO_ROOT/build/.shim-opt"
+if [ "$(cat "$SHIM_STAMP" 2>/dev/null || true)" != "${SHIM_OPT:--O2}" ]; then
+    rm -f "$REPO_ROOT/build/schwung-shim.so"
+fi
+printf '%s' "${SHIM_OPT:--O2}" > "$SHIM_STAMP"
 
 # Check if we need Docker
 if [ -z "$CROSS_PREFIX" ] && [ ! -f "/.dockerenv" ]; then
@@ -155,6 +163,7 @@ if [ -z "$CROSS_PREFIX" ] && [ ! -f "/.dockerenv" ]; then
         -e DISABLE_SCREEN_READER="$DISABLE_SCREEN_READER" \
         -e REQUIRE_SCREEN_READER="$REQUIRE_SCREEN_READER" \
         -e SCHWUNG_CFLAGS="$SCHWUNG_CFLAGS" \
+        -e SHIM_OPT="${SHIM_OPT:-}" \
         "$IMAGE_NAME"
 
     echo ""
@@ -331,7 +340,20 @@ if needs_rebuild build/schwung-shim.so \
     src/host/link_audio.h src/host/shadow_shm_util.h src/host/shim_thread.h src/host/render_pool.h \
     src/host/mix_strip.h src/host/mix_soft_clip.h src/host/mix_glide.h; then
     echo "Building shim..."
-    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g3 -shared -fPIC \
+    # ⭐ OPTIMISED (2026-11-16). The shim was built with no -O at all from the
+    # day it arrived as a 286-line SPI-intercept prototype (upstream a1688254,
+    # 2025-08-07) — never a recorded decision — and it grew into the whole
+    # per-block mixer at -O0. -O2 measured on device (CM5, the same project
+    # playing): Compute avg 143.5 -> ~114 us, mix_buf 37.6 -> ~21 us.
+    # ⚠ NO -mcpu / -march: one binary must run on CM4 (Cortex-A72, ARMv8.0)
+    # AND CM5 (Cortex-A76, ARMv8.2). The toolchain default is armv8-a generic
+    # with -moutline-atomics (LSE atomics chosen at run time), the same as every
+    # other host binary. Tuning for the A76 would emit instructions the A72
+    # faults on. SHIM_OPT overrides the level for an A/B (e.g. SHIM_OPT=-O0).
+    # -fno-strict-aliasing: the shim reads and writes typed views of byte
+    # buffers (SPI pages, shared-memory rings) everywhere; the safety net cost
+    # nothing measurable on device (mix_buf 17.5-18.2 us vs 17.9-18.9 without).
+    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g3 ${SHIM_OPT:--O2} -fno-strict-aliasing -Wall -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -shared -fPIC \
         -o build/schwung-shim.so \
         src/schwung_shim.c \
         src/lib/schwung_spi_lib.c \

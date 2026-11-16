@@ -357,6 +357,7 @@ static void shadow_dbus_handle_text(const char *text)
         if (strncmp(sr_shm->text, text, sizeof(sr_shm->text) - 1) != 0) {
             strncpy(sr_shm->text, text, sizeof(sr_shm->text) - 1);
             sr_shm->text[sizeof(sr_shm->text) - 1] = '\0';
+            __sync_synchronize();  /* the text lands before the new sequence */
             sr_shm->sequence++;  /* Increment to signal new message */
         }
     }

@@ -35,7 +35,9 @@ export SCHWUNG_CFLAGS
 # finds nothing to do. A miss builds and publishes. Untracked files are not in
 # the key (they never were in the build either). Set DBX_BUILD_CACHE=0 to skip.
 . "$HERE/scripts/build-cache.sh"
-CACHE_KEY="$(dbx_build_cache_key "$REPO_ROOT" "$SCHWUNG_CFLAGS")"
+# SHIM_OPT is in the key: a build at another shim level must never be restored
+# in place of the default one (or the reverse).
+CACHE_KEY="$(dbx_build_cache_key "$REPO_ROOT" "$SCHWUNG_CFLAGS shim:${SHIM_OPT:--O2}")"
 dbx_build_cache_restore "$REPO_ROOT" "$CACHE_KEY"
 
 SCHWUNG_SHM_PREFIX="$DBX_SHM_PREFIX" \

@@ -98,6 +98,15 @@ It takes effect at the next launch from stock Schwung's Tools menu. See `standal
 (Upstream's stock installer — `scripts/install.sh`, `uninstall.sh`, `package.sh` — was removed
 2026-09-24: no SA path used it.)
 
+## The shim's optimisation level
+
+The shim (`schwung-shim.so`, the per-block mixer) builds at **`-O2 -fno-strict-aliasing`**, with
+**no `-mcpu`/`-march`**: one binary runs on CM4 (Cortex-A72, ARMv8.0) and CM5 (Cortex-A76, ARMv8.2)
+Moves, and a newer target would emit instructions the CM4 faults on. Until 2026-11-16 it built with
+no `-O` at all. `SHIM_OPT=-O0 ./scripts/build.sh` (or through `build-host.sh`) rebuilds just the
+shim at another level for an A/B. The level is part of the build stamp and the build-cache key, so
+the two builds never stand in for each other. Pinned by `tests/host/test_shim_optimised.sh`.
+
 ## Build Outputs
 
 ```

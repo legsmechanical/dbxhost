@@ -155,7 +155,11 @@ int link_audio_read_channel_shm(link_audio_in_shm_t *shm, int slot_idx,
     __sync_synchronize();
     if (!slot->active) return 0;
 
-    uint32_t wp = slot->write_pos;
+    /* ACQUIRE on the producer's index: the ring samples read below must not
+     * be satisfied before it (the barrier above sits on the wrong side of
+     * this load). The sidecar publishes write_pos after a full barrier; the
+     * same fix as the MIDI-out ring's barrier-after-index. */
+    uint32_t wp = __atomic_load_n(&slot->write_pos, __ATOMIC_ACQUIRE);
     uint32_t rp = slot->read_pos;  /* we are the sole consumer */
     uint32_t avail = wp - rp;       /* wraps correctly on unsigned overflow */
     uint32_t need = (uint32_t)(frames * 2);

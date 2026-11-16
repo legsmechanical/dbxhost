@@ -465,7 +465,10 @@ void sampler_announce_menu_item(void) {
 
 /* Shared RT-side arm: reset the capture machinery. Caller sets state. */
 static int sampler_arm_common(void) {
-    if (sampler_writer_running || sampler_io_busy) return -1;
+    /* ACQUIRE pairs with the worker's release clear of io_busy: its last
+     * writes (sampler_state = IDLE above all) are visible before this arm
+     * sets the new state, so a late IDLE cannot land on top of RECORDING. */
+    if (sampler_writer_running || __atomic_load_n(&sampler_io_busy, __ATOMIC_ACQUIRE)) return -1;
     if (!sampler_ring_buffer) return -1;
     __atomic_store_n(&sampler_ring_write_pos, 0, __ATOMIC_RELEASE);
     __atomic_store_n(&sampler_ring_read_pos, 0, __ATOMIC_RELEASE);
@@ -814,7 +817,7 @@ void sampler_worker_cancel_preroll(void) {
         unlink(sampler_current_recording);
         sampler_current_recording[0] = '\0';
     }
-    sampler_io_busy = 0;
+    __atomic_store_n(&sampler_io_busy, 0, __ATOMIC_RELEASE);
     s_host.overlay_sync();
 }
 
@@ -826,7 +829,7 @@ void sampler_worker_finalize(void) {
         /* Prepare failed (or never ran) — nothing to finalize. */
         sampler_module_take = 0;
         if (sampler_state == SAMPLER_FINALIZING) sampler_state = SAMPLER_IDLE;
-        sampler_io_busy = 0;
+        __atomic_store_n(&sampler_io_busy, 0, __ATOMIC_RELEASE);
         s_host.overlay_sync();
         return;
     }
@@ -916,7 +919,7 @@ void sampler_worker_finalize(void) {
     sampler_module_take = 0;
     sampler_current_recording[0] = '\0';
     sampler_state = SAMPLER_IDLE;
-    sampler_io_busy = 0;
+    __atomic_store_n(&sampler_io_busy, 0, __ATOMIC_RELEASE);
 
     if (was_module_take) {
         /* The module shows its own result; only the file and the log speak. */
