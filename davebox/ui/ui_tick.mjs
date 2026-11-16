@@ -65,7 +65,7 @@ import { schSlotForTrack, schSlotsForTrack, schSlotMasksAllTracks } from './ui_c
 import { pollPendingExport } from './ui_export.mjs';
 import { pollPendingMidiExport } from './ui_midi_export.mjs';
 import { runTemplateSet } from './ui_template.mjs';
-import { drawUI, drawLoadingScreen, sessMixerVisible, refreshInstrAbbrev } from './ui_render.mjs';
+import { drawUI, drawLoadingScreen, sessMixerVisible, sessMixerShown, refreshInstrAbbrev } from './ui_render.mjs';
 import { hudTick } from './hud/hud_publish.mjs';
 import { pollDSP,
     refreshPerClipBankParams, refreshPerClipBankParamsFor, refreshDrumLaneBankParams, refreshSeqNotesIfCurrent,
@@ -1612,7 +1612,11 @@ export function _tickImpl() {
                     S.sessStripValsFor = _kt;
                 }
             }
-            if (_sm && _sm.key === 'comp' && sessMixerVisible()) {
+            /* ⚠ sessMixerShown, not sessMixerVisible: the page also shows on a
+             * jog touch or a held mode pad, with no knob touched, and the dots
+             * must move there too (Josh's Move, 2026-11-16: "the dot's there -
+             * but it doesn't move like it does on mix"). */
+            if (_sm && _sm.key === 'comp' && sessMixerShown()) {
                 if (++S.sessCompGrTick >= SESS_GR_TICKS) {
                     S.sessCompGrTick = 0;
                     const _keys = [], _who = [];

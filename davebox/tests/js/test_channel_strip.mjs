@@ -54,6 +54,7 @@ const snd = await import('../../ui/ui_sound.mjs');
 const bridge = await import('../../ui/ui_dsp_bridge.mjs');
 const auto = await import('../../ui/ui_automation.mjs');
 const strip = await import('../../ui/ui_strip.mjs');
+const kit = await import('../../ui/ui_movy.mjs');
 
 const cc = (d1, d2) => snd.soundOnCC(d1, d2, (v) => (v < 64 ? v : v - 128));
 const touch = (k, on) => snd.soundOnNote(on ? 0x90 : 0x80, k, on ? 127 : 0);
@@ -84,6 +85,16 @@ step('the jog turns MIX to page 2: Low · Mid · Freq · High · Comp, K6-K8 bla
     assert(!reads.some((k) => /eq_|:comp$/.test(k)), 'no per-key strip reads: ' + reads);
     draw();
     assert(px.length > 200, 'the page draws');
+});
+
+step('a paged bank says so: the header ends "2/2", the footer leads with JOG PAGE (Josh, 2026-11-16)', () => {
+    const hdr = [];
+    kit.setKitHudSink((fam, d) => { if (fam === 'KitBankHeader') hdr.push(d); });
+    draw();
+    kit.setKitHudSink(null);
+    assert(hdr.length && /(^| )2\/2$/.test(String(hdr[hdr.length - 1].right)), 'header right: ' + JSON.stringify(hdr[hdr.length - 1]));
+    const h = kit.kitHintsForTest();
+    assert(h && h[0][0] === 'JOG' && h[0][1] === 'PAGE', 'hints: ' + JSON.stringify(h));
 });
 
 step('K1 Low: 0.5 dB a detent; across 0 dB it STOPS on 0 (the centre detent), then goes on', () => {

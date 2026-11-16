@@ -1209,7 +1209,7 @@ function drawSessionMixerPage() {
     const t = S.knobTouched;
     const touched = (t >= 0 && cells[t] && cells[t].name) ? cells[t] : null;
     if (touched) drawKitTouchedHeader(touched.name + '  ' + touched.text);
-    else drawBankHeading(mode.label, false);
+    else drawBankHeading(mode.label, false, false, sessMixerPageMark(mode));
     drawKitCells(cells, t);
     drawKitHintRow(MV_FOOTER_Y, touched && touched.opens ? [['CLK', mode.label], ['BACK', 'OUT']]
                                                           : sessionMixerHints(mode));
@@ -1320,8 +1320,15 @@ export function sessMixerCellOpens(t) {
  * keeps the bank map shut and the jog turn walks nothing — so Back is the one
  * pair (a touched SEND cell adds its CLK, above). */
 function sessionMixerHints(mode) {
-    /* EQ's four bands are pages the jog turns */
-    return (mode && mode.eq) ? [['JOG', 'BAND'], ['BACK', 'OUT']] : [['BACK', 'OUT']];
+    /* EQ's four bands are pages the jog turns: JOG PAGE, as every paged screen */
+    return (mode && mode.eq) ? [['JOG', 'PAGE'], ['BACK', 'OUT']] : [['BACK', 'OUT']];
+}
+/* A paged mixer bank's "n/N" for the header's right side (the audio editors'
+ * mark), or undefined: EQ's four bands. */
+export function sessMixerPageMark(mode) {
+    if (!mode || !mode.eq) return undefined;
+    const eqs = SESS_KNOB_MODES.filter((m) => m && m.eq);
+    return (eqs.indexOf(mode) + 1) + '/' + eqs.length;
 }
 
 /* Levels get their OWN layout: eight tall faders in one row, not the 4x2 kit

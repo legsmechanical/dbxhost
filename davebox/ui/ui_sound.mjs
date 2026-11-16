@@ -2100,6 +2100,12 @@ export function soundMixJog(delta) {
     armBankDisplay();
     return true;
 }
+/* MIX's header right: the track and instrument, then the page as "n/N" (the
+ * audio editors' mark). */
+function mixHeaderRight() {
+    const r = bankHeaderRight(false);
+    return mixPagingHere() ? (r ? r + ' ' : '') + (S.mixPage + 1) + '/2' : r;
+}
 /* Is MIX on this screen, so the jog turns its page? (the card, a track's
  * levels — not a MIDI track's mix, not MACROS) */
 function mixPagingHere() {
@@ -2443,8 +2449,11 @@ function levelCardHints() {
     const _tk = S.touchedIdx >= 0 ? S.touchedIdx : GS.knobTouched;
     const _sb = _tk >= 0 ? mixSendBus(_tk) : null;
     if (_sb) return [['CLK', _sb.id === 'sendA' ? 'SEND A' : 'SEND B'], ['BACK', 'OUT']];
-    /* (The jog turns MIX's two pages; the header says which — MIX / MIX 2. A
-     * JOG PAGE pair does not fit beside these two: the row holds two.) */
+    /* The jog turns MIX's two pages: JOG PAGE leads, as on every paged screen
+     * (Josh, 2026-11-16) — the row holds one pair beside BACK, so HLD BANKS
+     * gives way here. A held step's JOG STEP still wins (the hold suspends
+     * paging). */
+    if (GS.heldStep < 0 && mixPagingHere()) return [['JOG', 'PAGE'], ['BACK', 'OUT']];
     return cardJogHints(_tk >= 0).concat([['BACK', 'OUT']]);
 }
 
@@ -11974,7 +11983,7 @@ function renderPrompt() {
     const lc = levelCells();
     drawKitBankPage(lc, {
         /* page 2 is the channel strip (comp, EQ) */
-        headerText: S.mixPage === 1 ? BANKS[BANK_SOUND].name + ' 2' : BANKS[BANK_SOUND].name, headerGlyph: 'audio', headerRight: bankHeaderRight(false),
+        headerText: BANKS[BANK_SOUND].name, headerGlyph: 'audio', headerRight: mixHeaderRight(),
         touchedIdx: S.touchedIdx, focusIdx: lc.focusIdx,
         footer: levelCardHints(),
     });

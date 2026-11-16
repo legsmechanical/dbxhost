@@ -65,6 +65,7 @@ const eng = await import('../../ui/ui_engine.mjs');
 const { SESS_PAD_MAP, bankMapPadForCell } = await import('../../ui/ui_pure.mjs');
 const cc = await import('../../ui/ui_input_cc.mjs');
 const render = await import('../../ui/ui_render.mjs');
+const kitm = await import('../../ui/ui_movy.mjs');
 
 const midi = (a, b, c) => globalThis.onMidiMessageInternal(new Uint8Array([a, b, c]));
 const ticks = (n) => { for (let i = 0; i < n; i++) tickmod._tickImpl(); };
@@ -112,6 +113,23 @@ step('the jog walks Low -> Mid -> Freq -> High, clamped at both ends; the EQ pad
     jog(-1); jog(-1); jog(-1); jog(-1); ticks(1); assert(mode().key === 'eq_low', 'clamped at low, got ' + mode().key);
 });
 
+step('EQ is a paged bank and says so: "1/4" .. "4/4" on the header, JOG PAGE in the footer (Josh, 2026-11-16)', () => {
+    const marks = [];
+    for (let i = 0; i < 4; i++) { marks.push(render.sessMixerPageMark(mode())); jog(1); ticks(1); }
+    assert(marks.join() === '1/4,2/4,3/4,4/4', 'marks: ' + marks);
+    for (let i = 0; i < 3; i++) { jog(-1); ticks(1); }
+    ticks(16);
+    assert(mode().key === 'eq_low', 'back on Low: ' + mode().key);
+    assert(render.sessMixerPageMark(eng.SESS_KNOB_MODES[eng.SESS_COMP_MODE]) === undefined, 'COMPRESS has one page: no mark');
+    const hdr = [];
+    S.jogTouched = true; kitm.setKitHudSink((fam, d) => { if (fam === 'KitBankHeader') hdr.push(d); });
+    render.drawUI();
+    kitm.setKitHudSink(null); S.jogTouched = false;
+    assert(hdr.length && hdr[hdr.length - 1].right === '1/4', 'header: ' + JSON.stringify(hdr[hdr.length - 1]));
+    const h = kitm.kitHintsForTest();
+    assert(h && h[0][0] === 'JOG' && h[0][1] === 'PAGE', 'hints: ' + JSON.stringify(h));
+});
+
 step('a turn writes the strip key in real units: Move bus -3 dB +2 detents = -2 dB; across 0 it stops on 0', () => {
     writes.length = 0;
     knob(0, 2); ticks(2);
@@ -152,6 +170,18 @@ step('COMPRESS: every track\'s gain reduction in ONE bulk read, each a dot on it
     assert(Math.abs(cells[4].dot - 0.5) < 1e-6, 'track 5\'s dot at 6 of 12 dB: ' + cells[4].dot);
     assert(cells[0].dot === undefined, 'track 1\'s comp is off: no dot');
     midi(0x90, 0, 0); ticks(1);
+});
+
+step('COMPRESS shown by a JOG TOUCH (no knob in hand): the dots still move (Josh\'s Move, 2026-11-16)', () => {
+    S.sessCompGr.fill(0); S.knobTouched = -1;
+    PV['strip_gr:s4'] = '-9.00';
+    bulks.length = 0;
+    S.jogTouched = true;
+    ticks(24);
+    S.jogTouched = false;
+    assert(bulks.some((b) => b.includes('strip_gr:s4')), 'read while the page shows: ' + JSON.stringify(bulks));
+    assert(S.sessCompGr[4] === -9, 'track 5 at -9 dB: ' + S.sessCompGr);
+    PV['strip_gr:s4'] = '-6.00';
 });
 
 /* ⚠ MIX page 2 through the REAL dispatch, at REST (Josh's Move, 2026-11-15:
