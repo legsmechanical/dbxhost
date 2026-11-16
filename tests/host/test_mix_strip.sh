@@ -53,6 +53,13 @@ grep -qF 'shadow_strip_block++;' "$shim" || fail "nothing advances the strip's b
 mg=src/host/shadow_chain_mgmt.c
 n=$(cnt 'shadow_move_fx_strip[sl].strip' "$mg")
 [ "$n" -eq 4 ] || fail "$n Move-bus key sites know the strip, want 4"
+# each site by its own statement (a count alone survives one being disabled)
+grep -qF 'int n = mix_strip_get_key(&shadow_move_fx_strip[sl].strip, rest, out, cap);' "$mg" || fail "the Move-bus direct GET does not read the strip"
+grep -qF 'if (mix_strip_set_key(&shadow_move_fx_strip[sl].strip, rest, value)) {' "$mg" || fail "the Move-bus SET paths do not write the strip"
+[ "$(cnt 'if (mix_strip_set_key(&shadow_move_fx_strip[sl].strip, rest, value)) {' "$mg")" -eq 2 ] || fail "want the strip SET at both Move-bus set sites (direct, apply_set_ex)"
+grep -qF 'if (mix_strip_is_key(rest)) {' "$mg" && \
+    grep -qF 'mix_strip_get_key(&shadow_move_fx_strip[sl].strip, rest, shadow_param->value, SHADOW_PARAM_VALUE_LEN);' "$mg" \
+    || fail "the Move-bus mailbox GET does not answer the strip"
 grep -qF 'mix_strip_set_key(&shadow_chain_slots[slot].strip, key + 5, value)' "$mg" || fail "slot: strip keys are not set"
 grep -qF 'mix_strip_get_key(&shadow_chain_slots[slot].strip, key + 5, buf, buf_len)' "$mg" || fail "slot: strip keys are not read"
 grep -qF 'mix_strip_init(&shadow_chain_slots[i].strip);' "$mg" || fail "slot defaults do not init the strip"
