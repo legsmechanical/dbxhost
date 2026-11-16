@@ -458,17 +458,19 @@ function focus(ed) {
     return ed.last === 'start' ? edStart(ed) : ed.last === 'end' ? edEnd(ed) : ed.cur;
 }
 
-/* The points K1 / K3 edit: the selected slice's (Slice), the clip's (Loop). */
+/* The points K1 / K3 edit: the selected slice's (Slice, and every SLICER
+ * page-1 view — its K1 / K3 always move the picked slice), the clip's (Loop). */
+function edSliceEdges(ed) { return chopKind(ed) === 'manual' || isSlicerEd(ed); }
 function edStart(ed) {
     const i = auInfo(ed.t, ed.c);
-    if (chopKind(ed) !== 'manual') return i.rstart;
+    if (!edSliceEdges(ed)) return i.rstart;
     const m = auMarks(ed.t, ed.c)[auSelSlice(ed.t)];
     return m ? m[0] : 0;
 }
 function edEnd(ed) {
     const i = auInfo(ed.t, ed.c);
     /* a Loop clip: where it stops playing — End, or its Length's end */
-    if (chopKind(ed) !== 'manual') return auIsLoop(i) ? auPlayedEnd(ed.t, ed.c, i) : auEnd(i);
+    if (!edSliceEdges(ed)) return auIsLoop(i) ? auPlayedEnd(ed.t, ed.c, i) : auEnd(i);
     const m = auMarks(ed.t, ed.c)[auSelSlice(ed.t)];
     return m ? m[1] : 0;
 }
@@ -991,8 +993,14 @@ function slcInput(ed, status, d1, d2) {
                 auSetSelSlice(t, k);
                 const m = auMarks(t, c)[k];
                 if (m && pg === 0) {
-                    if (inside) { ed.cur = Math.max(slcCursorBounds(ed)[0], Math.min(slcCursorBounds(ed)[1], m[0])); ed.last = 'jog'; }
-                    centre(ed, m[0]);
+                    /* the edge touched or turned last keeps the view: End
+                     * held, the new slice's End is centred (Josh, 2026-11-16:
+                     * "if the last knob i touched/turned was end after playing
+                     * a slice, then the waveform focus needs to stay on end
+                     * until i leave slice editor or i touch/turn start") */
+                    const edge = ed.last === 'start' || ed.last === 'end';
+                    if (inside) { ed.cur = Math.max(slcCursorBounds(ed)[0], Math.min(slcCursorBounds(ed)[1], m[0])); if (!edge) ed.last = 'jog'; }
+                    if (edge) centre(ed); else centre(ed, m[0]);
                 }
                 ed.endHold = 0;
                 S.ledsDirtyAudio = true;
@@ -1099,7 +1107,7 @@ function slcInput(ed, status, d1, d2) {
         S.backPressTick = -1; S.backHoldFired = false;
         if (held) return true;
         if (sub === 'lazy') lazyFinish(ed);
-        else if (kind) { closeChop(ed, true); ed.page = 0; }
+        else if (kind) { closeChop(ed, true); ed.page = 0; ed.last = 'jog'; }   /* leaving the slice editor lets go of the held edge */
         else leaveWave();
         S.screenDirty = true;
         return true;
