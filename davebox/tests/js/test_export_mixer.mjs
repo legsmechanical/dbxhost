@@ -286,8 +286,8 @@ assert(/function dummy\(name, color\)[\s\S]{0,400}?Enabled = false/.test(src),
            'the compressor at full: -30 dB, 4:1, +7 dB, 25 / 300 ms, 6 dB knee: ' + JSON.stringify(c));
     assert(near(20 * Math.log10(e.LowShelfGain), 6, 1e-6) && near(20 * Math.log10(e.HighShelfGain), -3, 1e-6),
            'shelves in Live\'s linear gain (1.0 = 0 dB)');
-    assert(near(20 * Math.log10(e.MidGain), -12, 1e-6) && e.MidFrequency === 7500,
-           'the mid clamped into Channel EQ\'s ±12 dB / 120 Hz - 7.5 kHz: ' + e.MidGain + ' @ ' + e.MidFrequency);
+    assert(near(20 * Math.log10(e.MidGain), -12, 1e-6) && near(e.MidFrequency, 5000, 0.01),
+           'the mid\'s gain clamped into Channel EQ\'s ±12 dB; the sweep\'s top (5 kHz) inside its 120 Hz - 7.5 kHz: ' + e.MidGain + ' @ ' + e.MidFrequency);
     const half = dev({ comp: 0.5 })[0].parameters;
     assert(near(20 * Math.log10(half.Threshold), -15, 1e-6) && half.Ratio === 2.5 && half.Gain === 3.5,
            'at 50%: -15 dB, 2.5:1, +3.5 dB');

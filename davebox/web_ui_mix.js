@@ -34,14 +34,14 @@ const MIX_MODES = [
  * STRIP_SPECS): the 3-band EQ with its swept mid, then the one-knob comp, on
  * every position. Same keys, ranges, detent steps, defaults and readouts as the
  * device — tests/js/test_web_strip.mjs holds this table to STRIP_SPECS. The
- * mid's frequency is a 0..1 position, 125 Hz x 64^p. */
+ * mid's frequency is a 0..1 position, 250 Hz x 20^p. */
 const STRIP_MODES = [
   { key: "eq_low",      label: "EQ LOW",   min: -15, max: 15, def: 0,   step: 0.5,   detent: 0,
     fmt: v => { const r = Math.round(v * 10) / 10; return r === 0 ? "0dB" : (r > 0 ? "+" : "") + r.toFixed(1) + "dB"; } },
   { key: "eq_mid",      label: "EQ MID",   min: -15, max: 15, def: 0,   step: 0.5,   detent: 0,
     fmt: v => { const r = Math.round(v * 10) / 10; return r === 0 ? "0dB" : (r > 0 ? "+" : "") + r.toFixed(1) + "dB"; } },
   { key: "eq_mid_freq", label: "EQ FREQ",  min: 0,   max: 1,  def: 0.5, step: 0.005,
-    fmt: v => { const f = 125 * Math.pow(64, Math.max(0, Math.min(1, v)));
+    fmt: v => { const f = 250 * Math.pow(20, Math.max(0, Math.min(1, v)));
                 return f < 999.5 ? Math.round(f) + "Hz" : (f / 1000).toFixed(2) + "k"; } },
   { key: "eq_high",     label: "EQ HIGH",  min: -15, max: 15, def: 0,   step: 0.5,   detent: 0,
     fmt: v => { const r = Math.round(v * 10) / 10; return r === 0 ? "0dB" : (r > 0 ? "+" : "") + r.toFixed(1) + "dB"; } },
@@ -67,8 +67,8 @@ function mixSnap(mode, v) {
 /* ---- the EQ's response: the device's own math (ui/ui_strip.mjs, which is
  * mix_strip.h's RBJ design), so the picture is the sound. Pinned against
  * stripEqDb by tests/js/test_web_strip.mjs. ---- */
-const EQ_SR = 44100, EQ_DB_MAX = 15, EQ_LOW_HZ = 80, EQ_HIGH_HZ = 12000;
-const EQ_MID_LO_HZ = 125, EQ_MID_SPAN = 64, EQ_MID_Q = 0.9;
+const EQ_SR = 44100, EQ_DB_MAX = 15, EQ_LOW_HZ = 100, EQ_HIGH_HZ = 10000;
+const EQ_MID_LO_HZ = 250, EQ_MID_SPAN = 20, EQ_MID_Q = 0.9;
 const eqMidHz = p => EQ_MID_LO_HZ * Math.pow(EQ_MID_SPAN, Math.max(0, Math.min(1, p)));
 const eqMidPos = hz => Math.max(0, Math.min(1, Math.log(hz / EQ_MID_LO_HZ) / Math.log(EQ_MID_SPAN)));
 function eqBiquad(kind, hz, db, q) {
@@ -175,7 +175,7 @@ function mixStripUpdate(root) {
 
 /* ---- the EQ pop-out: the curve large, a handle per band on it. Low and High
  * move up and down (their corners are fixed, as on the device); Mid moves
- * anywhere — across is its frequency, 125 Hz .. 8 kHz. Gains land on the
+ * anywhere — across is its frequency, 250 Hz .. 5 kHz. Gains land on the
  * device's 0.5 dB grid and stop at 0 dB; double-click a handle to flatten its
  * band. Shift while dragging: fine. ---- */
 const EQ_POP_W = 560, EQ_POP_H = 240;
@@ -203,7 +203,7 @@ function eqPopOpen(prefix, fromStrip) {
       '<text class="gl" x="3" y="' + (+y - 3) + '">' + (db > 0 ? "+" : "") + db + "</text>";
   }
   grid += '<line class="z" x1="0" y1="' + eqY(0, H) + '" x2="' + W + '" y2="' + eqY(0, H) + '"/>';
-  /* the mid's reach: 125 Hz .. 8 kHz, shaded */
+  /* the mid's reach: 250 Hz .. 5 kHz, shaded */
   const mx0 = eqX(EQ_MID_LO_HZ, W), mx1 = eqX(EQ_MID_LO_HZ * EQ_MID_SPAN, W);
   grid = '<rect class="reach" x="' + mx0.toFixed(1) + '" y="0" width="' + (mx1 - mx0).toFixed(1) + '" height="' + H + '"/>' + grid;
   let handles = "";

@@ -2472,10 +2472,10 @@ like a mixing desk's channel. Turn the jog back for the levels.
 
 | Knob | Control | Range |
 |---|---|---|
-| 1 | **Low**: a shelf at 80 Hz | ±15 dB |
+| 1 | **Low**: a shelf at 100 Hz | ±15 dB |
 | 2 | **Mid**: a broad peak at the Mid Freq | ±15 dB |
-| 3 | **Freq**: where the Mid acts | 125 Hz – 8 kHz (1 kHz at the middle) |
-| 4 | **High**: a shelf at 12 kHz | ±15 dB |
+| 3 | **Freq**: where the Mid acts | 250 Hz – 5 kHz (about 1.1 kHz at the middle) |
+| 4 | **High**: a shelf at 10 kHz | ±15 dB |
 | 5 | **Comp**: a one-knob compressor | Off – 100% |
 
 - Each gain moves 0.5 dB a detent (**Shift**: 0.1 dB) and stops at 0 dB on its way
@@ -2997,7 +2997,7 @@ with the tempo and root note (not the scale — the set opens in Major).
   Level and pan come across as automation.
 - **A track's channel strip comes across as Live devices**: a **Compressor** with the
   same threshold, ratio and make-up, then a **Channel EQ**. Live's Channel EQ has its
-  own fixed shelves and a narrower Mid (±12 dB, 120 Hz – 7.5 kHz), so the EQ is an
+  own fixed shelves and a Mid of ±12 dB at most, so the EQ is an
   approximation, and the screen says which tracks (*EQ/Comp approx*). Automation of
   the strip doesn't come across. An Audio track's strip is already in its recording.
 - **Notes are baked** — each clip exports what you hear: effects rendered, delay

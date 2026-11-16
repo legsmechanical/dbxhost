@@ -19,10 +19,10 @@
  * tests/js/test_channel_strip.mjs against the header). */
 export const STRIP_SR = 44100;
 export const STRIP_EQ_DB_MAX = 15;
-export const STRIP_LOW_HZ = 80;
-export const STRIP_HIGH_HZ = 12000;
-export const STRIP_MID_LO_HZ = 125;
-export const STRIP_MID_SPAN = 64;
+export const STRIP_LOW_HZ = 100;
+export const STRIP_HIGH_HZ = 10000;
+export const STRIP_MID_LO_HZ = 250;
+export const STRIP_MID_SPAN = 20;
 export const STRIP_MID_Q = 0.9;
 /* gain reduction a full arc of the comp's dot stands for */
 export const STRIP_GR_ARC_DB = 12;
@@ -35,7 +35,7 @@ export const STRIP_DB_FMT = (v) => {
     return (r > 0 ? '+' : '') + r.toFixed(1) + 'dB';
 };
 /* Hz to three figures, so one detent (~2 %) always moves the readout:
- * "125Hz" .. "999Hz", "1.02k" .. "8.00k". */
+ * "250Hz" .. "999Hz", "1.00k" .. "5.00k". */
 export const STRIP_HZ_FMT = (p) => {
     const f = stripMidHz(p);
     return f < 999.5 ? Math.round(f) + 'Hz' : (f / 1000).toFixed(2) + 'k';

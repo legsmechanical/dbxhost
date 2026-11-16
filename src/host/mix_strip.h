@@ -10,11 +10,13 @@
  * otherwise be EQ'd and compressed twice).
  *
  * EQ (RBJ biquads, transposed direct form II, float):
- *   Low   shelf  80 Hz fixed, slope 1        ±15 dB
- *   Mid   peak   125 Hz .. 8 kHz, Q 0.9      ±15 dB   f = 125 * 64^p, p 0..1
- *                                                     (p 0.5 = 1 kHz)
- *   High  shelf  12 kHz fixed, slope 1       ±15 dB
- * The fixed corners and the broad mid are an analog mixing desk's channel EQ.
+ *   Low   shelf  100 Hz fixed, slope 1       ±15 dB
+ *   Mid   peak   250 Hz .. 5 kHz, Q 0.9      ±15 dB   f = 250 * 20^p, p 0..1
+ *                                                     (p 0.5 ≈ 1.1 kHz)
+ *   High  shelf  10 kHz fixed, slope 1       ±15 dB
+ * The corners and the sweep are the Yamaha MG's (MG16XU: 100 Hz / 10 kHz
+ * shelves, mid 250 Hz - 5 kHz; Josh, 2026-11-16: "the high shelf seems to be
+ * positioned really high. what are the yamaha standard settings?" → "yeah").
  *
  * Compressor — one knob, voiced as a mixing desk's "1-knob" channel comp
  * (Yamaha MG: ratio 1:1 to 4:1, threshold down ~30 dB, output 0 to +7 dB,
@@ -56,12 +58,12 @@
 #define MIX_STRIP_PI          3.14159265358979f   /* (M_PI is not C11) */
 #define MIX_STRIP_MAX_FRAMES  128
 #define MIX_STRIP_EQ_DB_MAX   15.0f
-#define MIX_STRIP_LOW_HZ      80.0f
-#define MIX_STRIP_HIGH_HZ     12000.0f
-#define MIX_STRIP_MID_LO_HZ   125.0f
-#define MIX_STRIP_MID_SPAN    64.0f      /* 6 octaves: 125 Hz .. 8 kHz */
+#define MIX_STRIP_LOW_HZ      100.0f     /* Yamaha MG: 100 Hz shelf */
+#define MIX_STRIP_HIGH_HZ     10000.0f   /* Yamaha MG: 10 kHz shelf */
+#define MIX_STRIP_MID_LO_HZ   250.0f
+#define MIX_STRIP_MID_SPAN    20.0f      /* Yamaha MG sweep: 250 Hz .. 5 kHz */
 #define MIX_STRIP_MID_Q       0.9f
-#define MIX_STRIP_FREQ_DEF    0.5f       /* 1 kHz */
+#define MIX_STRIP_FREQ_DEF    0.5f       /* ~1.1 kHz, the sweep's middle */
 /* the comp's voicing */
 #define MIX_STRIP_THRESH_DB   (-30.0f)   /* at a = 1 */
 #define MIX_STRIP_RATIO_ADD   3.0f       /* ratio = 1 + 3a: 4:1 at a = 1 */

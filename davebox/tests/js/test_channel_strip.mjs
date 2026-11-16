@@ -187,10 +187,11 @@ step('ui_strip.mjs mirrors mix_strip.h\'s voicing (corners, span, Q, ±15 dB)', 
 
 step('the curve card\'s maths is the voicing: +15 dB mid peaks +15 at its frequency, shelves half-way at their corners', () => {
     const near = (a, b, e) => Math.abs(a - b) < e;
-    assert(near(strip.stripEqDb({ eq_mid: 15, eq_mid_freq: 0.5 }, 1000), 15, 0.05), 'mid at 1 kHz');
-    assert(near(strip.stripEqDb({ eq_mid: 15, eq_mid_freq: 1 }, 8000), 15, 0.05), 'mid at 8 kHz');
-    assert(near(strip.stripEqDb({ eq_low: 15 }, 80), 7.5, 0.3), 'low shelf at 80 Hz');
-    assert(near(strip.stripEqDb({ eq_high: 15 }, 12000), 7.5, 0.3), 'high shelf at 12 kHz');
+    assert(near(strip.stripEqDb({ eq_mid: 15, eq_mid_freq: 0.5 }, 1118.03), 15, 0.05), 'mid at ~1.1 kHz (the sweep\'s middle)');
+    assert(near(strip.stripEqDb({ eq_mid: 15, eq_mid_freq: 1 }, 5000), 15, 0.05), 'mid at 5 kHz');
+    assert(near(strip.stripEqDb({ eq_mid: 15, eq_mid_freq: 0 }, 250), 15, 0.05), 'mid at 250 Hz');
+    assert(near(strip.stripEqDb({ eq_low: 15 }, 100), 7.5, 0.3), 'low shelf at 100 Hz (Yamaha MG)');
+    assert(near(strip.stripEqDb({ eq_high: 15 }, 10000), 7.5, 0.3), 'high shelf at 10 kHz (Yamaha MG)');
     assert(near(strip.stripEqDb({ eq_low: 15 }, 5000), 0, 0.05), 'low shelf leaves 5 kHz');
     assert(strip.stripEqCurve({}, 50).every((d) => d === 0), 'flat is 0 dB everywhere');
 });

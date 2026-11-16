@@ -66,12 +66,12 @@ int main(void) {
         mix_strip_t s = fresh(); mix_strip_set_now(&s, MIX_STRIP_EQ_LOW, 15.0f);
         float g20 = sine_gain(&s, 20.0f, 0.1f, 60, 40);
         s = fresh(); mix_strip_set_now(&s, MIX_STRIP_EQ_LOW, 15.0f);
-        float g80 = sine_gain(&s, 80.0f, 0.1f, 40, 20);
+        float g100 = sine_gain(&s, 100.0f, 0.1f, 40, 20);
         s = fresh(); mix_strip_set_now(&s, MIX_STRIP_EQ_LOW, 15.0f);
         float g5k = sine_gain(&s, 5000.0f, 0.1f, 20, 20);
-        printf("     low +15: 20 Hz %+.2f  80 Hz %+.2f  5 kHz %+.2f\n", g20, g80, g5k);
+        printf("     low +15: 20 Hz %+.2f  100 Hz %+.2f  5 kHz %+.2f\n", g20, g100, g5k);
         check(fabsf(g20 - 15.0f) < 0.6f, "low shelf +15 dB reaches ~+15 at 20 Hz");
-        check(g80 > 6.0f && g80 < 9.5f, "low shelf is about half its gain at its 80 Hz corner");
+        check(g100 > 6.0f && g100 < 9.5f, "low shelf is about half its gain at its 100 Hz corner (Yamaha MG)");
         check(fabsf(g5k) < 0.3f, "low shelf leaves 5 kHz alone");
 
         s = fresh(); mix_strip_set_now(&s, MIX_STRIP_EQ_LOW, -15.0f);
@@ -81,22 +81,22 @@ int main(void) {
         s = fresh(); mix_strip_set_now(&s, MIX_STRIP_EQ_HIGH, 15.0f);
         float h18 = sine_gain(&s, 18000.0f, 0.1f, 20, 20);
         s = fresh(); mix_strip_set_now(&s, MIX_STRIP_EQ_HIGH, 15.0f);
-        float h12 = sine_gain(&s, 12000.0f, 0.1f, 20, 20);
+        float h10 = sine_gain(&s, 10000.0f, 0.1f, 20, 20);
         s = fresh(); mix_strip_set_now(&s, MIX_STRIP_EQ_HIGH, 15.0f);
         float h200 = sine_gain(&s, 200.0f, 0.1f, 20, 20);
-        printf("     high +15: 18 kHz %+.2f  12 kHz %+.2f  200 Hz %+.2f\n", h18, h12, h200);
+        printf("     high +15: 18 kHz %+.2f  10 kHz %+.2f  200 Hz %+.2f\n", h18, h10, h200);
         check(h18 > 13.0f && h18 < 15.6f, "high shelf +15 dB is near full at 18 kHz");
-        check(h12 > 6.0f && h12 < 9.5f, "high shelf is about half its gain at its 12 kHz corner");
+        check(h10 > 6.0f && h10 < 9.5f, "high shelf is about half its gain at its 10 kHz corner (Yamaha MG)");
         check(fabsf(h200) < 0.3f, "high shelf leaves 200 Hz alone");
 
-        const float pos[3] = { 0.0f, 0.5f, 1.0f }, hz[3] = { 125.0f, 1000.0f, 8000.0f };
+        const float pos[3] = { 0.0f, 0.5f, 1.0f }, hz[3] = { 250.0f, 1118.03f, 5000.0f };   /* Yamaha MG sweep: 250 Hz .. 5 kHz */
         for (int k = 0; k < 3; k++) {
             s = fresh(); mix_strip_set_now(&s, MIX_STRIP_EQ_MID_FREQ, pos[k]); mix_strip_set_now(&s, MIX_STRIP_EQ_MID, 15.0f);
             float g = sine_gain(&s, hz[k], 0.1f, 40, 20);
             char what[96]; snprintf(what, sizeof what, "mid +15 at position %.1f peaks ~+15 at %.0f Hz (%+.2f)", pos[k], hz[k], g);
             check(fabsf(g - 15.0f) < 0.4f, what);
         }
-        check(fabsf(mix_strip_mid_hz(0.5f) - 1000.0f) < 0.5f, "the mid's centre position is 1 kHz");
+        check(fabsf(mix_strip_mid_hz(0.5f) - 1118.03f) < 0.5f, "the mid's centre position is ~1.1 kHz (the 250 Hz - 5 kHz sweep's middle)");
         s = fresh(); mix_strip_set_now(&s, MIX_STRIP_EQ_MID, 15.0f);
         float m30 = sine_gain(&s, 30.0f, 0.1f, 60, 40);
         check(fabsf(m30) < 1.0f, "a 1 kHz mid boost leaves 30 Hz (nearly) alone");
