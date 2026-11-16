@@ -85,7 +85,7 @@ import { openWave, closeAudioPanel, slicesToSequence, slcPageForLane } from './u
 import { soundActive, soundPageBarShown, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVolGestureEnd, soundShiftEdge, soundOpenGenerator,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, macroClearConfirmAnswer,
-    macroClearConfirmReset, macroClearConfirmOpen, soundKnobCardClick, soundEnterSendFromSessionMixer,
+    macroClearConfirmReset, macroClearConfirmOpen, soundKnobCardClick, soundEnterSendFromSessionMixer, soundMixJog,
     soundOnCard, soundInEditor, soundEnterBusFx, soundResting, soundCardClick, soundKnobTouched } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { ensureGlobalMenuFresh, openGlobalMenu, openGlobalMenuAt } from './ui_menu.mjs';
@@ -1396,6 +1396,10 @@ function modalDialogUp() {
                     const _pg = Math.max(0, Math.min(SESS_EQ_PAGES - 1, (S.sessKnobMode - SESS_EQ_MODE0) + (delta > 0 ? 1 : -1)));
                     S.sessEqPage = _pg;
                     sessWalkTo(SESS_EQ_MODE0 + _pg);
+                } else if (!S.sessionView && S.activeBank === BANK_SOUND && soundMixJog(delta)) {
+                    /* MIX's two pages (the levels, the channel strip): at rest on
+                     * MIX the jog is davebox's (only the knobs reach sound mode),
+                     * so the turn is offered to it here */
                 } else if (S.sessionView && sessMixerVisible()) {
                 } else if (loopViewActive()) {
                     /* Track View + Loop held: adjust length ±1 step */

@@ -2088,6 +2088,18 @@ function levelIdxForKnob(k) {
     if (mixPageNow() === 1) return (k >= 0 && k < STRIP_SPECS.length) ? STRIP_BASE + k : -1;
     return (k >= 0 && k < STRIP_BASE && !(LEVEL_KNOB_SPECS[k] || {}).page) ? k : -1;
 }
+/* THE JOG TURNS MIX'S PAGE (the levels, the channel strip). Two callers:
+ * sound mode's own CC handler (the card latched open, sound mode steering) and
+ * davebox's jog handler — at REST on MIX (sound mode open, the card peeking on
+ * a touch) only the knobs reach sound mode and the jog stays davebox's
+ * (ui.js), so a turn there is offered here. True when it was MIX's. */
+export function soundMixJog(delta) {
+    if (!S.active || soundIsGlobal() || S.track !== GS.activeTrack || !mixPagingHere() || GS.heldStep >= 0) return false;
+    const p = delta > 0 ? 1 : delta < 0 ? 0 : S.mixPage;
+    if (p !== S.mixPage) { S.mixPage = p; S.levelGr = 0; S.dirty = true; forceRedraw(); }
+    armBankDisplay();
+    return true;
+}
 /* Is MIX on this screen, so the jog turns its page? (the card, a track's
  * levels — not a MIDI track's mix, not MACROS) */
 function mixPagingHere() {
@@ -10125,13 +10137,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
         /* ...except MIX, whose two pages the jog turns (the levels, the
          * channel strip — Josh, 2026-11-15: "second page of mix"); Shift + jog
          * still switches track. */
-        if (mixPagingHere() && !S.shiftHeld && GS.heldStep < 0) {
-            const _d = decodeDelta(d2);
-            const _p = _d > 0 ? 1 : _d < 0 ? 0 : S.mixPage;
-            if (_p !== S.mixPage) { S.mixPage = _p; S.levelGr = 0; S.dirty = true; forceRedraw(); }
-            armBankDisplay();
-            return true;
-        }
+        if (!S.shiftHeld && soundMixJog(decodeDelta(d2))) return true;
         if (isCardView(S.view)) return false;
         /* ---- Shift+jog = SWITCH TRACK, in the menu only ----
          *

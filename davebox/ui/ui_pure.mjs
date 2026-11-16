@@ -345,7 +345,9 @@ export const SESS_PAD_MAP = {
      * banks: EQ, and Compress both on the 2nd column"): EQ (the first of its
      * four band modes — SESS_EQ_MODE0) over COMPRESS (SESS_COMP_MODE).
      * Literal indices, pinned against ui_engine by test_session_strip.mjs. */
-    strip: { label: 'STRIP', col: 1, modes: [4, 8], names: ['EQ', 'COMPRESS'] },
+    /* (COMP on the map: COMPRESS overruns a map cell — seen on the device; the
+     * mixer page's header still says COMPRESS) */
+    strip: { label: 'STRIP', col: 1, modes: [4, 8], names: ['EQ', 'COMP'] },
     /* In the FOURTH column now, still clear of the mixer (Josh, 2026-10-15:
      * "so the two aren't sitting right next to each other"; 2026-11-15: "move
      * the FX column over to the 4th column so there's still some separation"). */

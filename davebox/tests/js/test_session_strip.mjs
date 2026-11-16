@@ -87,7 +87,7 @@ step('the map: the strip in the SECOND column (EQ over COMPRESS), FX moved to th
     assert(SESS_PAD_MAP.strip.modes[0] === eng.SESS_EQ_MODE0 && SESS_PAD_MAP.strip.modes[1] === eng.SESS_COMP_MODE,
            'the map\'s literal mode indices match ui_engine (' + SESS_PAD_MAP.strip.modes + ' vs ' + eng.SESS_EQ_MODE0 + ',' + eng.SESS_COMP_MODE + ')');
     const it = (S.bankMapKind = 'session', render.bankMapItems());
-    assert(it.cols[1] && it.cols[1].cells.join() === 'EQ,COMPRESS', 'the map screen\'s second column: ' + JSON.stringify(it.cols[1]));
+    assert(it.cols[1] && it.cols[1].cells.join() === 'EQ,COMP', 'the map screen\'s second column: ' + JSON.stringify(it.cols[1]));
     assert(it.cols[3] && it.cols[3].cells[0] === 'MASTER', 'FX in the fourth: ' + JSON.stringify(it.cols[3]));
     assert(it.cols[2] === null, 'the third column is the gap');
 });
@@ -152,6 +152,31 @@ step('COMPRESS: every track\'s gain reduction in ONE bulk read, each a dot on it
     assert(Math.abs(cells[4].dot - 0.5) < 1e-6, 'track 5\'s dot at 6 of 12 dB: ' + cells[4].dot);
     assert(cells[0].dot === undefined, 'track 1\'s comp is off: no dot');
     midi(0x90, 0, 0); ticks(1);
+});
+
+/* ⚠ MIX page 2 through the REAL dispatch, at REST (Josh's Move, 2026-11-15:
+ * the jog turned nothing — at rest on MIX only the knobs reach sound mode, so
+ * a test calling sound mode's handler directly passed while the device did
+ * not). Track View, MIX picked from the bank map, the jog turned. */
+const snd = await import('../../ui/ui_sound.mjs');
+const C = await import('../../ui/ui_constants.mjs');
+step('Track View, at rest on MIX: the jog turns MIX to page 2 and back (real dispatch)', () => {
+    S.sessionView = false; S.activeTrack = 4; S.trackRoute[4] = 0;
+    S.bankMapKind = 'track';
+    cc.bankMapPadTap(bankMapPadForCell(1, 3));            /* MIX: the CTRL column's bottom pad */
+    ticks(10);
+    assert(S.activeBank === C.BANK_SOUND, 'MIX picked: bank ' + S.activeBank);
+    assert(snd.soundOpen() && snd.soundMixPageForTest() === 0, 'sound mode open on MIX page 1');
+    jog(1); ticks(2);
+    assert(snd.soundMixPageForTest() === 1, 'the jog turned MIX to page 2 (at rest), page ' + snd.soundMixPageForTest());
+    writes.length = 0;
+    midi(0x90, 0, 127); knob(0, 2); ticks(3); midi(0x90, 0, 0);
+    assert(writes.some((x) => x.startsWith('slot:eq_low=1.000')), 'K1 at rest on page 2 is Low: ' + writes.filter((x) => /slot:/.test(x)));
+    jog(-1); ticks(2);
+    assert(snd.soundMixPageForTest() === 0, 'back to page 1');
+    writes.length = 0;
+    knob(0, -2); ticks(3);
+    assert(writes.some((x) => x.startsWith('slot:eq_low=0.000')) === false, 'page 1 again: K1 is not Low');
 });
 
 if (failed) { console.log('FAIL: session strip'); process.exit(1); }
