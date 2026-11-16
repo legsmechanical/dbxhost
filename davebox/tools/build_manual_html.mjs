@@ -260,6 +260,8 @@ const MANUAL_SCREENS = new Set([
     'slicer-even',             // chopping Even
     'sample-loop',             // SAMPLE: an Audio clip's waveform
     'sample-loop-p2',          // SAMPLE's TIME page: Tempo and Bars framed
+    'mix-strip',               // MIX 2: the channel strip, the comp's dot
+    'mix-strip-eq-curve',      // the EQ curve over the page
     'remix-card',              // REMIX bank
     'remix-popup',             // the bar a REMIX setting makes
     'bank-automation',         // the list of what's automated

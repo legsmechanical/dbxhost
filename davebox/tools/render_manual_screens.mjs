@@ -143,6 +143,17 @@ globalThis.shadow_get_param = (slot, k) => {
     return m[k] !== undefined ? m[k] : '';
 };
 globalThis.shadow_set_param = () => 1;
+/* a channel strip as the host answers its bulk `strip` read, and the comp's reduction */
+const STRIP_KEYS = ['eq_low', 'eq_mid', 'eq_mid_freq', 'eq_high', 'comp'];
+const stripOn = (t, strip, gr) => {
+    SLOT[t]['slot:strip'] = strip; SLOT[t]['slot:comp_gr'] = gr;
+    strip.split(' ').forEach((v, k) => { SLOT[t]['slot:' + STRIP_KEYS[k]] = v; });   /* the Session mixer reads each key */
+};
+const stripsOff = () => { for (const m of SLOT) for (const k of Object.keys(m)) if (/strip|eq_|comp/.test(k)) delete m[k]; };
+const busStripOn = (b, strip) => {
+    SLOT[0]['move_fx:' + b + ':strip'] = strip;
+    strip.split(' ').forEach((v, k) => { SLOT[0]['move_fx:' + b + ':' + STRIP_KEYS[k]] = v; });
+};
 globalThis.shadow_send_midi_to_dsp = () => {};
 globalThis.shadow_save_state_now = () => true;
 for (const fn of ['host_system_cmd', 'host_vol_block', 'host_edit_cc_block', 'move_midi_internal_send', 'set_led',
@@ -271,6 +282,7 @@ const MI = await import('../ui/ui_midi_import.mjs');
 const AUTO = await import('../ui/ui_automation.mjs');
 const AUD = await import('../ui/ui_audio.mjs');
 const AED = await import('../ui/ui_audio_editor.mjs');
+const SESS_EQ_MID = (await import('../ui/ui_engine.mjs')).SESS_EQ_MODE0 + 1;
 const { MoveShift, MoveBack, MoveMute, MoveDelete, MoveLoop, MoveCapture, MoveUndo, MoveCopy, MovePlay, MoveRec }
     = await import('/data/UserData/schwung/shared/constants.mjs');
 const { MoveNoteSession } = C;
@@ -576,6 +588,9 @@ function screen(slug, section, title, caption, setup, opts = {}) {
         if (_hud) _hud.oled = { fmt: 'rows', data: pack(currentFb()) };   /* the preview's stand-in for the live frame */
         shots.push({ slug, section, title, caption, fb: currentFb().slice(), hud: _hud });
         letGo();
+        /* state restore() cannot reach (a module's own, the engine's slots):
+         * a screen that changes it puts it back */
+        if (opts.after) opts.after();
     } catch (e) {
         try { letGo(); } catch (e2) { /* the screen already failed */ }
         failures.push({ slug, error: String(e && e.stack ? e.stack.split('\n').slice(0, 3).join(' | ') : e) });
@@ -913,6 +928,17 @@ screen('session-mixer-pan', '3.6 Parameter banks', 'Session mixer — Pan',
 screen('session-mixer-senda', '3.6 Parameter banks', 'Session mixer — Send A',
     'The Send A page: how much of each track feeds the first send bus.',
     () => { toSession(); toMixer(2); });
+screen('session-mixer-eq', 'The channel strip', 'Session mixer — EQ',
+    'The EQ pad on the Session map: one band of every track\'s EQ at once — the jog turns to the next band (2/4 is Mid).',
+    () => {
+        const strips = ['3.00 -4.50 0.6200 2.00 0.5500', '0 6.00 0.3000 0 0', '-2.50 2.00 0.8000 4.00 0.3000', '0 -6.00 0.5000 0 0'];
+        for (let t = 0; t < 8; t++) stripOn(t, strips[t % 4], '0');
+        for (let b = 1; b <= 4; b++) busStripOn(b, strips[b - 1]);
+        toSession();
+        S.sessKnobMode = SESS_EQ_MID; S.sessVolLevel.fill(-1); ticks(8);   /* a mode change re-reads, as the map's does */
+        noteOn(9, 127); ticks(4);
+        if (!R.sessMixerShown()) throw new Error('the EQ page is not shown');
+    }, { after: stripsOff });
 screen('session-bank-map', '14.8 Master FX and the sends', 'The Session map',
     'In Session View hold the jog: the mixer modes down the left, MASTER, SEND A and SEND B effects a column over — tap one and let go to open it.',
     () => { toSession(); press(3); ticks(2); if (!S.bankMapUp) throw new Error('holding the jog did not show the Session map'); });
@@ -1279,6 +1305,17 @@ screen('config-card', '14.1 Opening TRACK CONFIG', 'The CONFIG bank',
 screen('sound-card', '14.1 Opening TRACK CONFIG', 'The MIX card',
     'The last bank: the knobs are the track\'s levels.',
     () => { selectTrack(4); toBank(C.BANK_SOUND, false); knobTouch(0); ticks(4); });
+/* THE CHANNEL STRIP (MIX page 2): some EQ, and the comp working */
+screen('mix-strip', 'The channel strip', 'MIX 2 — the channel strip',
+    'Turn the jog on MIX: Low, Mid, Freq, High and Comp. The dot on Comp is how far it is turning the sound down now.',
+    () => { stripOn(4, '3.00 -4.50 0.6200 2.00 0.5500', '-4.20');
+            selectTrack(4); toBank(C.BANK_SOUND, false); jog(1); ticks(2); knobTouch(4); ticks(4); },
+    { after: () => { knobRelease(4); jog(-1); ticks(2); stripsOff(); if (SND.soundMixPageForTest() !== 0) throw new Error('MIX stayed on page 2'); } });
+screen('mix-strip-eq-curve', 'The channel strip', 'The EQ curve',
+    'Touch or turn an EQ knob: the curve over the page, the band in hand marked.',
+    () => { stripOn(4, '3.00 -4.50 0.6200 2.00 0.5500', '-4.20');
+            selectTrack(4); toBank(C.BANK_SOUND, false); jog(1); ticks(2); knobTouch(1); ticks(4); },
+    { after: () => { knobRelease(1); jog(-1); ticks(2); stripsOff(); if (SND.soundMixPageForTest() !== 0) throw new Error('MIX stayed on page 2'); } });
 screen('macros-card', '14.6 The MACROS bank', 'The MACROS bank',
     'Each knob shows its target; a knob driving several (MAC1) shows its own position.',
     () => { selectTrack(4); toBank(C.BANK_MACROS); ticks(8); });

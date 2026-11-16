@@ -7,10 +7,11 @@ Work through the lessons in order. Each one builds on the last. When you want th
 full detail on anything you meet here, the [**dAVEBOx SA Manual**](MANUAL-SA.md) is
 the complete reference — this guide links into it as you go.
 
-> **What is dAVEBOx?** An 8-track MIDI sequencer for the Ableton Move, running on
-> [Schwung](https://github.com/charlesvestal/schwung). It makes no sound of its own
-> — every note it plays is sent to Move's built-in instruments, to Schwung's effect
-> chains, or out to an external synth over USB.
+> **What is dAVEBOx?** An 8-track sequencer for the Ableton Move, running on
+> [Schwung](https://github.com/charlesvestal/schwung). Its note tracks play Move's
+> built-in instruments, Schwung's instruments and effect chains, or an external synth
+> over USB; its Audio and Slicer tracks play samples of their own (see
+> [Audio](MANUAL-SA.md#75-audio)).
 
 *(Running dAVEBOx as an ordinary tool inside official Schwung? That is dAVEBOx
 Legacy — see [`MANUAL.md`](MANUAL.md) instead.)*
