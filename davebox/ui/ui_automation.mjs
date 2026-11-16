@@ -683,6 +683,13 @@ const LEVEL_META = {
     send_a:       { key: 'send_a',       type: 'float', min: 0, max: 1, step: 0.01 },
     send_b:       { key: 'send_b',       type: 'float', min: 0, max: 1, step: 0.01 },
     synth_volume: { key: 'synth_volume', type: 'float', min: 0, max: 4, step: 0.01 },
+    /* the channel strip (ui_strip.mjs): the EQ gains straddle 0 dB, so a lane
+     * draws them bipolar around it (automationBipolarCenter) */
+    eq_low:       { key: 'eq_low',       type: 'float', min: -15, max: 15, step: 0.1 },
+    eq_mid:       { key: 'eq_mid',       type: 'float', min: -15, max: 15, step: 0.1 },
+    eq_mid_freq:  { key: 'eq_mid_freq',  type: 'float', min: 0, max: 1, step: 0.005 },
+    eq_high:      { key: 'eq_high',      type: 'float', min: -15, max: 15, step: 0.1 },
+    comp:         { key: 'comp',         type: 'float', min: 0, max: 1, step: 0.01 },
 };
 function isLevelComponent(comp) {
     return comp === 'slot' || /^move_fx:[0-9]+$/.test(comp);

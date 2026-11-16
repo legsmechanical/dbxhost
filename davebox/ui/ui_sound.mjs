@@ -197,6 +197,8 @@ export function soundParamAutoMarks() {
 export function soundEditorModuleId() { return S.moduleId || ''; }
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 import { hudScreen } from './hud/hud_frame.mjs';
+import { STRIP_SPECS, STRIP_KEYS, stripStep, stripCell, stripParseWire, isStripEqKey } from './ui_strip.mjs';
+import { drawStripEqCard } from './ui_strip_render.mjs';
 /* ⚠⚠ THE CANONICAL SPECIFIER, AND IT IS LOAD-BEARING. The registry is the
  * one the grid reads only because both names normalise to the same module:
  * the binding reaches it from inside this same
@@ -1041,10 +1043,17 @@ const S = {
      * screens. Values are cached here (a knob turn runs in the MIDI handler,
      * where the engine cannot be read), seeded once per context in the tick,
      * written coalesced per tick, persisted once when the hand lifts. */
-    levelVals: [1, 0.5, 0, 0, 1],
+    levelVals: [1, 0.5, 0, 0, 1, 0, 0, 0.5, 0, 0],
     levelSeededFor: '',    /* "<slot>/<bus id>" the cache was seeded for */
     levelPending: 0,       /* bitmask of level knobs owed to the engine */
     levelDirtySave: false,
+    /* MIX's page: 0 the levels, 1 the channel strip (STRIP: comp + 3-band
+     * EQ — Josh, 2026-11-15: "second page of mix"), turned by the jog */
+    mixPage: 0,
+    levelGr: 0,            /* the comp's gain reduction now (dB, <= 0), for its dot */
+    levelGrTick: 0,
+    stripTurnAt: 0,        /* when an EQ knob last moved (the curve card's window) */
+    stripTurnKey: '',
 };
 
 function log(msg) {
@@ -1246,6 +1255,9 @@ export function soundKnobParamsForTest() { return S.knobParams; }
 export function soundKnobPickRowsForTest() { return (S.knobTargets || []).map(t => t.id); }
 export function soundKnobPickForForTest() { return S.knobPickFor; }
 export function soundLevelCellsForTest() { return midiTrack() ? midiMixCells() : levelCells(); }
+/* MIX page 2: the page on screen, and the EQ knob the curve card is for (or null). */
+export function soundMixPageForTest() { return S.mixPage; }
+export function soundStripCardForTest() { return stripCardKey(); }
 export function soundLevelValSetForTest(i, v) { S.levelVals[i] = v; }
 export function soundMacroMergeForTest() { macroMergeAfterPatch(); }
 /* Drives the view directly so a Back edge can be exercised without walking the
@@ -2026,8 +2038,61 @@ const LEVEL_KNOB_SPECS = [
     /* ⚠ OFF THE PAGE (Josh, 2026-09-03): a macro target only. K5 on the
      * SOUND + CONFIG card is blank, and the bottom row carries the door. */
     { key: 'synth_volume', label: 'ModL', name: 'Module Level', widget: 'vbar',   def: 1.0, max: SLOT_LEVEL_MAX, units: 200, fmt: GAIN_FMT, slotOnly: true, macroOnly: true },
+    /* MIX page 2 — THE CHANNEL STRIP (ui_strip.mjs): K1 Low, K2 Mid, K3 Freq,
+     * K4 High, K5 Comp. Signed (the EQ gains), stepped on their own grid, and
+     * read from the host in ONE `strip` read. Indices 5..9; `knob` is the
+     * knob on page 2. */
+    ...STRIP_SPECS.map((sp, k) => Object.assign({}, sp, { strip: true, page: 1, knob: k })),
 ];
-for (const m of LEVEL_KNOB_SPECS) m.step = m.max / m.units;
+for (const m of LEVEL_KNOB_SPECS) if (m.step === undefined) m.step = m.max / m.units;
+const STRIP_BASE = LEVEL_KNOB_SPECS.findIndex((m) => m.strip);
+/* The EQ curve card: up while an EQ knob is touched, and for a moment after
+ * a turn or the release. */
+const STRIP_CARD_LINGER_MS = 700;
+const STRIP_GR_TICKS = 8;              /* one comp_gr read per this many ticks (~12 a second) */
+/* The EQ knob the curve card is for, or null: MIX page 2's card on screen, an
+ * EQ knob in hand or just turned / released. */
+function stripCardKey() {
+    if (S.mixPage !== 1 || !mixPagingHere()) return null;
+    const li = levelIdxForKnob(S.touchedIdx);
+    const m = li >= 0 ? LEVEL_KNOB_SPECS[li] : null;
+    if (m && m.strip && isStripEqKey(m.key)) return m.key;
+    return (S.stripTurnKey && nowMs() - S.stripTurnAt < STRIP_CARD_LINGER_MS) ? S.stripTurnKey : null;
+}
+function stripVals() {
+    const v = {};
+    for (let i = STRIP_BASE; i < LEVEL_KNOB_SPECS.length; i++) v[LEVEL_KNOB_SPECS[i].key] = S.levelVals[i];
+    return v;
+}
+/* Tick: the comp's gain reduction for its dot (MIX page 2 on screen, the comp
+ * on — one read every STRIP_GR_TICKS), and the curve card's window closing. */
+let _stripCardWas = null;
+function stripTick() {
+    const k = stripCardKey();
+    if (k !== _stripCardWas) { _stripCardWas = k; S.dirty = true; }
+    const on = S.mixPage === 1 && mixPagingHere() && bankCardShown() && S.levelVals[STRIP_BASE + 4] > 0;
+    if (!on) { if (S.levelGr) { S.levelGr = 0; S.dirty = true; } return; }
+    if (++S.levelGrTick < STRIP_GR_TICKS) return;
+    S.levelGrTick = 0;
+    const comp = levelComp();
+    const raw = parseFloat(comp === 'slot' ? engineGetSlotParam(S.slot, 'comp_gr') : engineGet(S.slot, comp, 'comp_gr'));
+    const gr = isFinite(raw) ? Math.min(0, Math.round(raw * 4) / 4) : 0;
+    if (gr !== S.levelGr) { S.levelGr = gr; S.dirty = true; }
+}
+const levelMin = (m) => (m && m.min !== undefined) ? m.min : 0;
+/* The level spec index under knob k on MIX's current page, or -1. */
+/* MIX's page as the knobs see it: the card's page on the card; the menu's
+ * screens keep the levels (page 1). */
+function mixPageNow() { return S.view === VIEW_PROMPT ? S.mixPage : 0; }
+function levelIdxForKnob(k) {
+    if (mixPageNow() === 1) return (k >= 0 && k < STRIP_SPECS.length) ? STRIP_BASE + k : -1;
+    return (k >= 0 && k < STRIP_BASE && !(LEVEL_KNOB_SPECS[k] || {}).page) ? k : -1;
+}
+/* Is MIX on this screen, so the jog turns its page? (the card, a track's
+ * levels — not a MIDI track's mix, not MACROS) */
+function mixPagingHere() {
+    return S.view === VIEW_PROMPT && levelsActive() && !midiTrack();
+}
 /* A level's value as its knob prints it (dB, L/R, %), for a lane drawn
  * elsewhere (the Screen view's AUTOMATION lanes); null for any other key. */
 export function soundLevelValueText(key, v) {
@@ -2148,9 +2213,15 @@ function levelSeedIfNeeded() {
     const k = levelSeedKey();
     if (S.levelSeededFor === k) return;
     const comp = levelComp();
+    let strip = null;                  /* the channel strip: all five in ONE read */
     for (let i = 0; i < LEVEL_KNOB_SPECS.length; i++) {
         const m = levelKnobSpec(i);
         if (!m) { S.levelVals[i] = LEVEL_KNOB_SPECS[i].def; continue; }
+        if (m.strip) {
+            if (!strip) strip = stripParseWire(comp === 'slot' ? engineGetSlotParam(S.slot, 'strip') : engineGet(S.slot, comp, 'strip'));
+            S.levelVals[i] = strip[m.key];
+            continue;
+        }
         const raw = parseFloat(comp === 'slot' ? engineGetSlotParam(S.slot, m.key) : engineGet(S.slot, comp, m.key));
         S.levelVals[i] = (isFinite(raw) && raw >= 0) ? raw : m.def;
     }
@@ -2185,12 +2256,16 @@ function onLevelTurn(idx, delta, bounds) {
      * sends step on THE PAGE LAW (Josh, 2026-09-13: the mixer elements besides
      * volume feel like the module editor's knobs) — 0.5 % of the range a
      * detent, Shift a tenth of that. */
-    let v = m.fader ? faderStep(prev, delta, m.units)
+    /* The channel strip steps on its own grid (0.5 dB a detent, Shift a
+     * fifth; the gains stop at 0 dB on the way across — ui_strip). */
+    let v = m.strip ? stripStep(m, prev, delta, S.shiftHeld)
+          : m.fader ? faderStep(prev, delta, m.units)
                     : prev + delta * pageFloatStep(0, m.max) * (S.shiftHeld ? PAGE_KNOB.fine : 1);
-    if (v < 0) v = 0;
+    if (v < levelMin(m)) v = levelMin(m);
     if (v > m.max) v = m.max;
     /* A macro leg's range, when one is set (ui_sound's legBounds). */
     if (bounds) v = Math.max(bounds[0], Math.min(bounds[1], v));
+    if (m.strip && isStripEqKey(m.key)) { S.stripTurnAt = nowMs(); S.stripTurnKey = m.key; }
     /* ⚠ A fader value is NOT rounded to three decimals — faderTravelToGain has
      * already snapped it to 0.1 dB, and 0.001 of gain is 6 dB at the bottom. */
     if (!m.fader) v = Math.round(v * 1000) / 1000;
@@ -2209,7 +2284,7 @@ function levelPollOne(li) {
     if (!m) return false;
     const comp = levelComp();
     const raw = parseFloat(comp === 'slot' ? engineGetSlotParam(S.slot, m.key) : engineGet(S.slot, comp, m.key));
-    if (!isFinite(raw) || raw < 0) return false;
+    if (!isFinite(raw) || raw < levelMin(m)) return false;
     const v = Math.round(raw * 1000) / 1000;
     if (v === S.levelVals[li]) return false;
     S.levelVals[li] = v;
@@ -2223,7 +2298,8 @@ function levelPollTick() {
     if (!levelsActive() || S.view !== VIEW_PROMPT || !GS.playing || S.levelPending) return;
     for (let n = 0; n < LEVEL_KNOB_SPECS.length; n++) {
         const li = (S.levelPoll + n) % LEVEL_KNOB_SPECS.length;
-        if (!levelPageSpec(li) || li === S.touchedIdx) continue;
+        /* the page on screen only; the knob under the hand excepted */
+        if (!levelPageSpec(li) || (LEVEL_KNOB_SPECS[li].page | 0) !== mixPageNow() || li === levelIdxForKnob(S.touchedIdx)) continue;
         if (levelPollOne(li)) S.dirty = true;
         S.levelPoll = li + 1;
         break;
@@ -2258,8 +2334,9 @@ function levelCells() {
     const cells = [];
     cells.focusIdx = -1;
     const focus = t === GS.activeTrack ? autoLaneFocus() : null;
-    for (let i = 0; i < 8; i++) {
-        const m = levelPageSpec(i);
+    for (let k = 0; k < 8; k++) {
+        const i = levelIdxForKnob(k);
+        const m = i >= 0 ? levelPageSpec(i) : null;
         if (!m) { cells.push({ kind: 'blank', label: '' }); continue; }
         const tg = S.slot + ':' + levelFullKey(i);
         /* The lane a jump came from is marked; while a step is held, every
@@ -2268,16 +2345,20 @@ function levelCells() {
         const hv = t === GS.activeTrack ? autoHeldValue(tg) : null;
         const fv = hv ? parseFloat(hv.wire) : NaN;
         const v = isFinite(fv) ? fv : S.levelVals[i];
-        if (fo && isFinite(fv)) cells.focusIdx = i;
+        if (fo && isFinite(fv)) cells.focusIdx = k;
         const st = automationStateFor(t, c, tg);
-        const cell = { label: m.label, name: m.name, text: m.fmt(v) };
+        let cell;
+        if (m.strip) cell = stripCell(m, v, S.levelGr);   /* the comp's dot rides its arc */
+        else {
+            cell = { label: m.label, name: m.name, text: m.fmt(v) };
+            if (m.widget === 'arcbip') { cell.kind = 'arcbip'; cell.signed = Math.max(-1, Math.min(1, (v - 0.5) * 2)); }
+            else { cell.kind = m.widget;
+                   /* A fader's bar shows TRAVEL — see THE FADER LAW in ui_engine. */
+                   cell.norm = m.fader ? faderGainToTravel(v) : Math.max(0, Math.min(1, v / m.max)); }
+        }
         if (fo) cell.lock = true;
-        if (m.widget === 'arcbip') { cell.kind = 'arcbip'; cell.signed = Math.max(-1, Math.min(1, (v - 0.5) * 2)); }
-        else { cell.kind = m.widget;
-               /* A fader's bar shows TRAVEL — see THE FADER LAW in ui_engine. */
-               cell.norm = m.fader ? faderGainToTravel(v) : Math.max(0, Math.min(1, v / m.max)); }
         if (st) cell.auto = st.active ? 'auto' : 'auto-off';
-        if (mixSendBus(i)) cell.opens = true;        /* touch + click: the send's effects */
+        if (mixSendBus(k)) cell.opens = true;        /* touch + click: the send's effects */
         cells.push(cell);
     }
     return cells;
@@ -2290,7 +2371,8 @@ function levelCells() {
  * Back returns to the MIX card (leaveBus, door 'mix'). */
 function mixSendBus(i) {
     if (S.view !== VIEW_PROMPT || midiTrack()) return null;
-    const m = levelPageSpec(i);
+    const li = levelIdxForKnob(i);
+    const m = li >= 0 ? levelPageSpec(li) : null;
     if (!m || (m.key !== 'send_a' && m.key !== 'send_b')) return null;
     return FX_BUSES.find(b => b.id === (m.key === 'send_a' ? 'sendA' : 'sendB')) || null;
 }
@@ -2349,7 +2431,9 @@ function levelCardHints() {
     const _tk = S.touchedIdx >= 0 ? S.touchedIdx : GS.knobTouched;
     const _sb = _tk >= 0 ? mixSendBus(_tk) : null;
     if (_sb) return [['CLK', _sb.id === 'sendA' ? 'SEND A' : 'SEND B'], ['BACK', 'OUT']];
-    return cardJogHints(_tk >= 0).concat([['BACK', 'OUT']]);
+    /* the jog turns MIX's two pages (the levels, the channel strip) */
+    const _pg = (_tk < 0 && GS.heldStep < 0 && !midiTrack()) ? [['JOG', 'PAGE']] : [];
+    return cardJogHints(_tk >= 0).concat(_pg, [['BACK', 'OUT']]);
 }
 
 function volTarget() {
@@ -5593,7 +5677,8 @@ export function routeForInstr(v) {
     if (v >= INSTR_MIDI_CH) return 2;      /* a channel or a followed track */
     return 1;
 }
-const LEVEL_KEYS = { volume: 1, pan: 1, send_a: 1, send_b: 1 };
+/* a strip's levels, on both routes alike — the channel strip's too */
+const LEVEL_KEYS = { volume: 1, pan: 1, send_a: 1, send_b: 1, eq_low: 1, eq_mid: 1, eq_mid_freq: 1, eq_high: 1, comp: 1 };
 /* `target` in the automation store's grammar: "<slot>:<comp>:<key>",
  * "seq:<track>:<key>", or a bare MIDI target (at / pb / cc:N). */
 export function targetCompatible(target, newRoute) {
@@ -6228,7 +6313,7 @@ function legWriteNorm(t, leg, f, cell, prev, knob) {
         const li = macroLevelIdx(leg);
         if (li < 0 || !levelKnobSpec(li)) return null;
         const spec = levelKnobSpec(li), was = S.levelVals[li];
-        const nv = Math.round(f * spec.max * 1000) / 1000;
+        const nv = Math.round((levelMin(spec) + f * (spec.max - levelMin(spec))) * 1000) / 1000;
         if (nv === was) return nv;
         S.levelVals[li] = nv;
         S.levelPending |= (1 << li);
@@ -6292,7 +6377,7 @@ function legRawToNorm(t, leg, cell, raw) {
     if (raw == null) return null;
     let min = 0, max = 1;
     if (leg.kind === MORPH_KIND) { /* already a 0..1 position */ }
-    else if (leg.kind === 'level') { const s2 = levelKnobSpec(macroLevelIdx(leg)); if (!s2) return null; max = s2.max; }
+    else if (leg.kind === 'level') { const s2 = levelKnobSpec(macroLevelIdx(leg)); if (!s2) return null; min = levelMin(s2); max = s2.max; }
     else if (leg.kind === 'bank') { const m2 = bankMacroMeta(leg, t); if (!m2) return null; min = m2.min; max = m2.max; }
     else if (leg.kind === AU_KIND) { const m2 = auMacroMeta(leg, t); if (!m2) return null; min = m2.min; max = m2.max; }
     else if (leg.kind === 'midi') { max = midiTargetMax(leg.target); }
@@ -6845,7 +6930,7 @@ function macroTurn(idx, delta) {
         const spec = li >= 0 ? levelKnobSpec(li) : null;
         /* A LEVEL macro is the level's own knob — its feel, its step. A range
          * only bounds where it can go (and flips it, if inverted). */
-        if (spec) onLevelTurn(li, legSteps(m, delta), legRanged(m) ? legBounds(m, 0, spec.max) : null);
+        if (spec) onLevelTurn(li, legSteps(m, delta), legRanged(m) ? legBounds(m, levelMin(spec), spec.max) : null);
         return;
     }
     /* A bank macro: detents accumulate as for a chain param (its drain is in
@@ -7270,7 +7355,8 @@ function macroPollTick() {
 function pageKnobTarget(k) {
     if (macrosActive()) { const m = macroTarget(k); return macroLive(m) ? macroAutoTarget(m, null, k) : null; }
     if (midiMixActive()) return (MIDI_MIX_SPECS[k] && MIDI_MIX_SPECS[k].target) || null;
-    return levelPageSpec(k) ? S.slot + ':' + levelFullKey(k) : null;
+    const li = levelIdxForKnob(k);
+    return (li >= 0 && levelPageSpec(li)) ? S.slot + ':' + levelFullKey(li) : null;
 }
 
 const upper = (x) => String(x == null ? '' : x).toUpperCase();
@@ -7334,9 +7420,14 @@ function macroCells(track, live) {
             const hv = (live && t === GS.activeTrack) ? autoHeldValue(macroAutoTarget(m, t, i)) : null;
             const hf = hv ? parseFloat(hv.wire) : NaN;
             const v = live ? (isFinite(hf) ? hf : S.levelVals[li]) : null;
-            cell = { label: spec.label, name: spec.name, text: v == null ? '--' : spec.fmt(v) };
-            if (spec.widget === 'arcbip') { cell.kind = 'arcbip'; cell.signed = v == null ? 0 : Math.max(-1, Math.min(1, (v - 0.5) * 2)); }
-            else { cell.kind = spec.widget; cell.norm = v == null ? 0 : Math.max(0, Math.min(1, v / spec.max)); }
+            if (spec.strip) {
+                cell = stripCell(spec, v == null ? spec.def : v, NaN);
+                if (v == null) cell.text = '--';
+            } else {
+                cell = { label: spec.label, name: spec.name, text: v == null ? '--' : spec.fmt(v) };
+                if (spec.widget === 'arcbip') { cell.kind = 'arcbip'; cell.signed = v == null ? 0 : Math.max(-1, Math.min(1, (v - 0.5) * 2)); }
+                else { cell.kind = spec.widget; cell.norm = v == null ? 0 : Math.max(0, Math.min(1, v / spec.max)); }
+            }
         } else if (m.kind === 'bank') {
             const meta = bankMacroMeta(m, t);
             if (!meta) { cells.push(unassigned()); continue; }
@@ -10009,7 +10100,8 @@ export function soundOnCC(d1, d2, decodeDelta) {
         }
         if (levelsActive()) {
             const delta = decodeDelta(d2);
-            if (delta && levelPageSpec(d1 - 71)) onLevelTurn(d1 - 71, delta);
+            const li = levelIdxForKnob(d1 - 71);
+            if (delta && li >= 0 && levelPageSpec(li)) onLevelTurn(li, delta);
             return true;
         }
         return true;
@@ -10030,6 +10122,16 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * Shift, switches track — both without a second copy here.
          * ⚠ The block below ends in an unconditional `return true`, so without
          * this the prompt would swallow every turn. */
+        /* ...except MIX, whose two pages the jog turns (the levels, the
+         * channel strip — Josh, 2026-11-15: "second page of mix"); Shift + jog
+         * still switches track. */
+        if (mixPagingHere() && !S.shiftHeld && GS.heldStep < 0) {
+            const _d = decodeDelta(d2);
+            const _p = _d > 0 ? 1 : _d < 0 ? 0 : S.mixPage;
+            if (_p !== S.mixPage) { S.mixPage = _p; S.levelGr = 0; S.dirty = true; forceRedraw(); }
+            armBankDisplay();
+            return true;
+        }
         if (isCardView(S.view)) return false;
         /* ---- Shift+jog = SWITCH TRACK, in the menu only ----
          *
@@ -10287,8 +10389,11 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * is both necessary and sufficient. Hence the branch after the loop. */
             const _lvlBefore = S.levelVals.slice();
             const _lvlSlot = S.slot;
+            /* the levels ON THE PAGE on screen (MIX page 1: the four; page 2:
+             * the channel strip) — a bank reset resets the bank you are on */
+            const _onPage = (i) => { const m = levelPageSpec(i); return (m && (m.page | 0) === mixPageNow()) ? m : null; };
             for (let i = 0; i < LEVEL_KNOB_SPECS.length; i++) {
-                const m = levelPageSpec(i);           /* the four ON the page */
+                const m = _onPage(i);
                 if (!m) continue;
                 if (S.levelVals[i] !== m.def) {
                     /* Same bookkeeping as onLevelTurn: the cache, the pending
@@ -10317,7 +10422,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
             const _resetLevels = function () {
                 const after = _lvlBefore.slice();
                 for (let i = 0; i < LEVEL_KNOB_SPECS.length; i++) {
-                    const m = levelPageSpec(i);
+                    const m = _onPage(i);
                     if (m) after[i] = m.def;
                 }
                 levelApplyValues(_lvlSlot, after);
@@ -10327,7 +10432,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * would discard a previous, real one and offer "UNDO" for a no-op. */
             let _lvlMoved = false;
             for (let i = 0; i < LEVEL_KNOB_SPECS.length; i++)
-                if (levelPageSpec(i) && S.levelVals[i] !== _lvlBefore[i]) _lvlMoved = true;
+                if (_onPage(i) && S.levelVals[i] !== _lvlBefore[i]) _lvlMoved = true;
             if (_cleared) {
                 /* A DSP checkpoint exists (the automation clear booked it), so the
                  * values ride it rather than replacing it. noteUndoUnit FIRST — it
@@ -11358,8 +11463,9 @@ export function soundOnNote(status, d1, d2) {
         automationParamTouch(t, c, 'midi', target, on);
         S.dirty = true;
     }
-    if (levelsActive() && levelPageSpec(d1)) {
-        const t = S.track, c = effectiveClip(t), target = S.slot + ':' + levelFullKey(d1);
+    const _li = levelsActive() ? levelIdxForKnob(d1) : -1;
+    if (_li >= 0 && levelPageSpec(_li)) {
+        const t = S.track, c = effectiveClip(t), target = S.slot + ':' + levelFullKey(_li);
         if (on) {
             if (S.deleteHeld) {
                 if (automationClearKey(t, c, target)) showActionPopup('AUTOMATION', 'CLEARED');
@@ -11371,7 +11477,12 @@ export function soundOnNote(status, d1, d2) {
         } else {
             flushLevelSave();
         }
-        automationParamTouch(t, c, S.slot, levelFullKey(d1), on);
+        automationParamTouch(t, c, S.slot, levelFullKey(_li), on);
+        /* an EQ knob in hand: the curve card (released: it lingers briefly) */
+        if (LEVEL_KNOB_SPECS[_li].strip && isStripEqKey(LEVEL_KNOB_SPECS[_li].key)) {
+            S.stripTurnAt = nowMs();
+            S.stripTurnKey = LEVEL_KNOB_SPECS[_li].key;
+        }
         S.dirty = true;
     }
 
@@ -11739,6 +11850,7 @@ export function soundTick() {
     levelSeedIfNeeded();
     drainLevelWrites();
     levelPollTick();
+    stripTick();
 
     /* One heavy job per tick, and never on top of pending writes: a discovery
      * pass or a browser scan is the most expensive thing this module does, and
@@ -11855,10 +11967,17 @@ function renderPrompt() {
     }
     const lc = levelCells();
     drawKitBankPage(lc, {
-        headerText: BANKS[BANK_SOUND].name, headerGlyph: 'audio', headerRight: bankHeaderRight(false),
+        /* page 2 is the channel strip (comp, EQ) */
+        headerText: S.mixPage === 1 ? BANKS[BANK_SOUND].name + ' 2' : BANKS[BANK_SOUND].name, headerGlyph: 'audio', headerRight: bankHeaderRight(false),
         touchedIdx: S.touchedIdx, focusIdx: lc.focusIdx,
         footer: levelCardHints(),
     });
+    /* an EQ knob in hand: the curve over the page */
+    const _ek = stripCardKey();
+    if (_ek) {
+        const _k = STRIP_SPECS.findIndex((x) => x.key === _ek);
+        drawStripEqCard(stripVals(), lc[_k], _ek);
+    }
     /* The bottom row stays empty: MIX is no longer a door (2026-09-26) — the
      * menu is the CONFIG bank's. */
 }

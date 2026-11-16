@@ -68,6 +68,7 @@ const { S } = await import('../../ui/ui_state.mjs');
 const nav = await import('/data/UserData/schwung/shared/menu_nav.mjs');
 const D = await import('../../ui/ui_dialogs.mjs');
 const ICC = await import('../../ui/ui_input_cc.mjs');
+const ENG = await import('../../ui/ui_engine.mjs');
 const CC_LEFT = 62, CC_RIGHT = 63;
 
 const cc = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
@@ -133,8 +134,10 @@ step('session mixer modes (sessWalkTo, the map pick): the mode list clamps both 
     S.sessKnobMode = 1;
     ICC.sessWalkTo(2, true);
     if (S.sessKnobMode !== 2) throw new Error('control failed: an interior pick did not move (' + S.sessKnobMode + ')');
-    ICC.sessWalkTo(9, true);
-    if (S.sessKnobMode !== 3) throw new Error('past SEND B landed on ' + S.sessKnobMode);
+    /* the last mode is COMPRESS since the channel strip (2026-11-15) */
+    const _last = ENG.SESS_KNOB_MODES.length - 1;
+    ICC.sessWalkTo(_last + 5, true);
+    if (S.sessKnobMode !== _last) throw new Error('past the last mode landed on ' + S.sessKnobMode);
     ICC.sessWalkTo(-1, true);
     if (S.sessKnobMode !== 0) throw new Error('below VOLUME landed on ' + S.sessKnobMode);
     S.sessionView = false;
@@ -147,9 +150,9 @@ step('⚠ a CLAMPED mixer pick must not discard the level cache (the flicker)', 
     ICC.sessWalkTo(2, true);                  /* a real change */
     if (S.sessVolLevel[0] !== -1)
         throw new Error('control failed: a real mode change no longer re-reads the levels');
-    S.sessKnobMode = 3;
+    S.sessKnobMode = ENG.SESS_KNOB_MODES.length - 1;
     S.sessVolLevel.fill(0.5);
-    ICC.sessWalkTo(4, true);                  /* clamped at SEND B */
+    ICC.sessWalkTo(ENG.SESS_KNOB_MODES.length, true);   /* clamped at the last mode */
     if (S.sessVolLevel.some((v) => v === -1))
         throw new Error('a clamped pick at the END wiped the level cache — the mixer flickers');
     S.sessKnobMode = 0;

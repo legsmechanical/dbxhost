@@ -14,7 +14,10 @@ import { seqFollowOn, cardHoldShows } from './ui_prefs.mjs';
 import { drawDaveBox, drawBannerDave, BANNER_H, drawDaveLoading } from './ui_daves.mjs';
 import { devSnapOpen, devSnapHints, devSnapTitle } from './ui_devsnap.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
-import { SESS_KNOB_MODES, engineLoadedModule, engineGeneratorName, faderGainToTravel} from './ui_engine.mjs';
+import { SESS_KNOB_MODES, SESS_COMP_MODE, sessModeIsEq, sessLevelReal, engineLoadedModule, engineGeneratorName, faderGainToTravel} from './ui_engine.mjs';
+import { stripCell, STRIP_SPECS } from './ui_strip.mjs';
+import { nowMs } from './ui_clock.mjs';
+import { drawStripEqCard } from './ui_strip_render.mjs';
 import { instrValueFor } from './ui_dsp_bridge.mjs';
 import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import { chordLabel, noteNames, noteLabel, heldInputNotes, keyUsesFlats, keyRootName, fitHeldLabel } from './ui_chord.mjs';
@@ -1209,7 +1212,30 @@ function drawSessionMixerPage() {
     else drawBankHeading(mode.label, false);
     drawKitCells(cells, t);
     drawKitHintRow(MV_FOOTER_Y, touched && touched.opens ? [['CLK', mode.label], ['BACK', 'OUT']]
-                                                          : sessionMixerHints());
+                                                          : sessionMixerHints(mode));
+    /* an EQ knob in hand: that track's EQ curve over the page */
+    const _et = sessStripCardTrack();
+    if (_et >= 0) drawStripEqCard(sessStripCardVals(_et), cells[_et], mode.key);
+}
+/* The track the Session mixer's EQ curve card is for, or -1: an EQ band's
+ * page, that track's knob in hand or just turned / released, its strip read. */
+export const SESS_STRIP_LINGER_MS = 700;
+export function sessStripCardTrack() {
+    const mode = SESS_KNOB_MODES[S.sessKnobMode];
+    if (!S.sessionView || !mode || !mode.eq) return -1;
+    const t = S.knobTouched >= 0 && S.knobTouched < NUM_TRACKS ? S.knobTouched
+            : (S.sessStripTrack >= 0 && nowMs() - S.sessStripTurnAt < SESS_STRIP_LINGER_MS) ? S.sessStripTrack : -1;
+    if (t < 0 || S.sessStripValsFor !== t || !S.sessStripVals) return -1;
+    const c = sessMixerCells(mode)[t];
+    return (c && c.kind !== 'blank' && c.kind !== 'xbox') ? t : -1;
+}
+/* Track t's EQ for the card: its strip as read on touch, the band on this page
+ * live from the cache (the knob may be turning). */
+function sessStripCardVals(t) {
+    const mode = SESS_KNOB_MODES[S.sessKnobMode];
+    const v = Object.assign({}, S.sessStripVals);
+    if (mode && mode.strip && S.sessVolLevel[t] >= 0) v[mode.key] = sessLevelReal(mode, S.sessVolLevel[t]);
+    return v;
 }
 /* The session mixer's eight cells for one mode: what drawSessionMixerPage
  * draws, and what the click asks (sessMixerCellOpens), so the gate and the
@@ -1234,6 +1260,21 @@ export function sessMixerCells(mode) {
             continue;
         }
         if (!hasPos || !(v >= 0)) { cells.push({ kind: 'blank', label }); continue; }
+        /* THE CHANNEL STRIP: its own cell (an EQ gain bipolar about 0 dB; the
+         * comp's gain reduction a dot on its arc). The cache holds an EQ gain
+         * offset — sessLevelReal undoes it. */
+        if (mode.strip) {
+            const cell = stripCell(mode, sessLevelReal(mode, v), S.sessCompGr ? S.sessCompGr[t] : NaN);
+            cell.label = label; cell.name = 'TRACK ' + (t + 1) + ' ' + mode.label;
+            cell.text = String(cell.text).toUpperCase();
+            const _stg = sessStripTargets(S, t, mode.key);
+            if (_stg.length) {
+                const st = automationStateFor(t, effectiveClip(t), _stg[0].target);
+                if (st) cell.auto = st.active ? 'auto' : 'auto-off';
+            }
+            cells.push(cell);
+            continue;
+        }
         /* A MIDI track's volume reads as its CC value (0..127), not a gain. */
         const cell = { label, name: 'TRACK ' + (t + 1) + ' ' + mode.label,
                        text: (isMidi && mode.key === 'volume') ? String(Math.round((v / mode.max) * 127))
@@ -1278,8 +1319,9 @@ export function sessMixerCellOpens(t) {
  * cells, and the footer canon. They show only while a knob is touched, which
  * keeps the bank map shut and the jog turn walks nothing — so Back is the one
  * pair (a touched SEND cell adds its CLK, above). */
-function sessionMixerHints() {
-    return [['BACK', 'OUT']];
+function sessionMixerHints(mode) {
+    /* EQ's four bands are pages the jog turns */
+    return (mode && mode.eq) ? [['JOG', 'BAND'], ['BACK', 'OUT']] : [['BACK', 'OUT']];
 }
 
 /* Levels get their OWN layout: eight tall faders in one row, not the 4x2 kit
@@ -2477,9 +2519,12 @@ export function bankMapItems() {
         return {
             cols: [0, 1, 2, 3].map((c) =>
                 c === 0 ? { label: m.mixer.label, cells: m.mixer.modes.map((i) => SESS_KNOB_MODES[i].label) }
+                : c === m.strip.col ? { label: m.strip.label, cells: m.strip.names.slice() }
                 : c === m.fx.col ? { label: m.fx.label, cells: m.fx.names.slice() } : null),
             cur: S.bankMapDeferred ? { c: S.bankMapDeferred.col, r: S.bankMapDeferred.row }
-                : (S.sessKnobMode | 0) < 4 ? { c: 0, r: S.sessKnobMode | 0 } : null,
+                : (S.sessKnobMode | 0) < 4 ? { c: 0, r: S.sessKnobMode | 0 }
+                : sessModeIsEq(S.sessKnobMode) ? { c: m.strip.col, r: 0 }
+                : S.sessKnobMode === SESS_COMP_MODE ? { c: m.strip.col, r: 1 } : null,
         };
     }
     const t = S.activeTrack;

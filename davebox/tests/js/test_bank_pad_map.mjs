@@ -403,22 +403,26 @@ step('Session: a MIXER pad walks the mode; MASTER opens its effects; the right h
     press(); holdPast();
     assert(S.bankMapUp && S.bankMapKind === 'session', 'session map did not arm');
     ticks(6);
-    /* The FX buses sit in the THIRD column, one clear of the mixer (Josh,
-     * 2026-10-15); the second column is dark. */
-    assert(led[pad(0, 0)] === K.White && led[pad(0, 1)] === K.Cyan && led[pad(2, 0)] === K.BrightOrange,
+    /* The channel strip in the SECOND column (EQ, COMPRESS — 2026-11-15), the
+     * FX buses in the FOURTH, the third dark between them (Josh, 2026-11-15:
+     * "move the FX column over to the 4th column so there's still some
+     * separation"). */
+    assert(led[pad(0, 0)] === K.White && led[pad(0, 1)] === K.Cyan && led[pad(3, 0)] === K.BrightOrange,
            'session pad colours');
-    for (let r = 0; r < 4; r++) assert((led[pad(1, r)] | 0) === 0, 'the second column is lit at row ' + r);
-    assert((led[pad(2, 1)] | 0) === 0 && rightDark(), 'session dark pads');
+    assert(led[pad(1, 0)] === K.MintGreen && led[pad(1, 1)] === K.TealGreen, 'EQ / COMPRESS pads: ' + led[pad(1, 0)] + ' ' + led[pad(1, 1)]);
+    for (let r = 0; r < 4; r++) assert((led[pad(2, r)] | 0) === 0, 'the third column is lit at row ' + r);
+    assert((led[pad(1, 2)] | 0) === 0 && (led[pad(3, 1)] | 0) === 0 && rightDark(), 'session dark pads');
     const f = frame();
-    assert(cellInk(f, 0, 0) > 0.6 && cellInk(f, 2, 1) === 0, 'session screen');
-    assert(cellInk(f, 2, 0) > 0.05 && cellInk(f, 1, 0) === 0, 'MASTER is not drawn in the third column on screen');
+    assert(cellInk(f, 0, 0) > 0.6 && cellInk(f, 3, 1) === 0, 'session screen');
+    assert(cellInk(f, 3, 0) > 0.05 && cellInk(f, 2, 0) === 0, 'MASTER is not drawn in the fourth column on screen');
+    assert(cellInk(f, 1, 0) > 0.05, 'EQ is not drawn in the second column');
     tap(pad(0, 1));
     assert(S.sessKnobMode === 1, 'PAN did not take: ' + S.sessKnobMode);
     tap(pad(6, 0));
     assert(S.bankMapUp, 'a right-half press did something');
-    tap(pad(1, 0));
-    assert(!S.bankMapDeferred, 'the old (second) column still acts');
     tap(pad(2, 0));
+    assert(!S.bankMapDeferred, 'the dark (third) column acts');
+    tap(pad(3, 0));
     assert(!snd.soundOpen() && S.bankMapUp, 'a HELD map opened MASTER before the release');
     release();
     assert(snd.soundOpen(), 'MASTER did not open the effect buses on the release');
@@ -434,7 +438,7 @@ step('⭐ Session, held: a MIXER pad walks the mode and the map stays; an FX pad
     tap(pad(0, 2));
     assert(S.sessKnobMode === 2, 'SEND A did not take: ' + S.sessKnobMode);
     assert(S.bankMapUp, 'the held session map went on a mixer pick');
-    tap(pad(2, 2));
+    tap(pad(3, 2));
     assert(!snd.soundOpen() && S.bankMapUp, 'SEND B opened before the release');
     release();
     assert(snd.soundOpen() && !S.bankMapUp, 'SEND B pad: open ' + snd.soundOpen() + ' up ' + S.bankMapUp);
@@ -579,10 +583,10 @@ step('held Session map: MASTER waits; a MIXER pad after it cancels it — the re
     if (snd.soundOpen()) snd.soundExit();
     home(); S.sessionView = true; S.sessKnobMode = 0; tickS(2);
     press(); holdPast();
-    tap(pad(2, 0));                                           /* MASTER: waits */
+    tap(pad(3, 0));                                           /* MASTER: waits */
     assert(S.bankMapUp && !snd.soundOpen(), 'MASTER opened mid-hold');
     ticks(6);
-    assert(led[pad(2, 0)] === K.White && led[pad(0, 0)] !== K.White, 'the waiting MASTER pad is not the White one');
+    assert(led[pad(3, 0)] === K.White && led[pad(0, 0)] !== K.White, 'the waiting MASTER pad is not the White one');
     tap(pad(0, 1));                                           /* PAN */
     assert(S.sessKnobMode === 1 && !S.bankMapDeferred, 'PAN did not take, or MASTER still waits');
     release(); tickS(3);

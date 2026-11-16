@@ -53,7 +53,10 @@ import { soundTrackTypeChanged } from './ui_sound.mjs';
 const FX_BLOCKS = ['fx1', 'fx2', 'fx3', 'fx4'];
 const STATE_WAIT_TICKS = 400;           /* ~4 s for the slot to take the module */
 
-const LEVELS = ['volume', 'pan', 'send_a', 'send_b'];
+/* ...and the channel strip (comp + EQ): part of the fader, so a take at the
+ * FX (before the strip) goes on through it on the Audio track — copied with
+ * the levels, and put back by Undo with them. */
+const LEVELS = ['volume', 'pan', 'send_a', 'send_b', 'eq_low', 'eq_mid', 'eq_mid_freq', 'eq_high', 'comp'];
 
 function fxBypass(slot) {
     return FX_BLOCKS.map((b) => (engineLoadedModule(slot, b) ? engineGet(slot, b, 'bypassed') : null));

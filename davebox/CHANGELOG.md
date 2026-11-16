@@ -9,6 +9,13 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 
 ### Added
+- **A channel strip on every track**: a one-knob compressor and a 3-band EQ with a
+  sweepable mid, like a mixing desk's channel. **Turn the jog on MIX** for MIX 2: Low,
+  Mid, Freq, High and Comp. In Session View, the map's second column has **EQ** (the jog
+  steps through its four bands, every track at once) and **COMPRESS**; the FX column
+  moved to the fourth. Touch an EQ knob to see the curve; a dot on the Comp knob shows
+  how hard it is working. It is saved, automatable, in snapshots and SnapMorph, shown on
+  the browser's Screen view, and exported to Live as a Compressor and Channel EQ.
 - **Loop points for Audio clips.** On SAMPLE, **K3** is now **End**, as fine as Start (a
   single sample zoomed all the way in). Start and End mark the loop, and nothing past End
   sounds. A new **Bars** knob sits beside **Tempo**, framed with it: set how many bars

@@ -61,6 +61,8 @@ grep -qF 'if (mix_strip_is_key(rest)) {' "$mg" && \
     grep -qF 'mix_strip_get_key(&shadow_move_fx_strip[sl].strip, rest, shadow_param->value, SHADOW_PARAM_VALUE_LEN);' "$mg" \
     || fail "the Move-bus mailbox GET does not answer the strip"
 grep -qF 'mix_strip_set_key(&shadow_chain_slots[slot].strip, key + 5, value)' "$mg" || fail "slot: strip keys are not set"
+grep -qF 'if (r[0] == '"'"'s'"'"' && n >= 0 && n < SHADOW_CHAIN_INSTANCES) st = &shadow_chain_slots[n].strip;' "$mg" &&
+    grep -qF 'if (st) return mix_strip_get_key(st, "comp_gr", out, cap);' "$mg" || fail "strip_gr:s<n>/m<n> (the bulk gain-reduction read) is not answered"
 grep -qF 'mix_strip_get_key(&shadow_chain_slots[slot].strip, key + 5, buf, buf_len)' "$mg" || fail "slot: strip keys are not read"
 grep -qF 'mix_strip_init(&shadow_chain_slots[i].strip);' "$mg" || fail "slot defaults do not init the strip"
 

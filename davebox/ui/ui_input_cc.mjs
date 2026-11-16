@@ -38,7 +38,7 @@ import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay,
          markJsUndoPatch, stepRevealAvailable, loopViewActive, endLoopLatch, knobAltOn } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
-         SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock, faderStep, faderWire,
+         SESS_KNOB_MODES, SESS_EQ_MODE0, SESS_EQ_PAGES, SESS_COMP_MODE, sessModeIsEq, sessLevelReal, sessLevelStore, SWEEP_UNITS, engineVolBlock, faderStep, faderWire,
          PAGE_KNOB, pageFloatStep, pageIntDetents } from './ui_engine.mjs';
 import { scaleNudgeNote, stepEntryVelocity,
          bankCycleForMode, bankListForMode, bankIsDoor, bankPadMapCellAt, bankPadMapActionAt, bankMapCellForPad, bankMapTrackForStep, bankMapModuleAt, SESS_PAD_MAP, bankDisplayName, clipHasContent } from './ui_pure.mjs';
@@ -112,6 +112,7 @@ import { setTrackMute, setTrackSolo, clearAllMuteSolo,
     resetFxBanks, resetBankParams, resetMidiFxChain, resetTarp, resetRptGroove, resetSingleFxBank, applyConductGridKnob, stepHoldCheckpoint , noteUndoUnit } from './ui_editops.mjs';
 import { _resolveLoopGesture, chordApplyRevoice, _onPadRelease, selectTrackFromPad } from './ui_input_pads.mjs';
 import { seqFollowOn, setSeqFollowOn } from './ui_prefs.mjs';
+import { stripStep } from './ui_strip.mjs';
 import { openSampleMenu, closeSampleFlow, sampleFlowUp, sampleMenuRotate, sampleMenuPick,
          reopenSampleMenu, menuIndexOf, openResampleOptions, resampleOptionsRotate,
          resampleOptionsClick, resampleOptionsBack, resampleRunning, cancelResample,
@@ -1386,10 +1387,16 @@ function modalDialogUp() {
                         S.seqLastClip = -1;
                         forceRedraw();
                     }
+                } else if (S.sessionView && sessModeIsEq(S.sessKnobMode)) {
+                    /* EQ's four pages — Low, Mid, Mid Freq, High (Josh,
+                     * 2026-11-15: "just jog to switch pages"); clamped, no wrap.
+                     * (Other modes: the turn walked the mixer modes until
+                     * 2026-10-04 — "retire jog to switch banks"; the Session
+                     * map's mixer columns pick the mode.) */
+                    const _pg = Math.max(0, Math.min(SESS_EQ_PAGES - 1, (S.sessKnobMode - SESS_EQ_MODE0) + (delta > 0 ? 1 : -1)));
+                    S.sessEqPage = _pg;
+                    sessWalkTo(SESS_EQ_MODE0 + _pg);
                 } else if (S.sessionView && sessMixerVisible()) {
-                    /* (The turn walked the mixer modes; retired 2026-10-04 with
-                     * the bank walk — "retire jog to switch banks". The Session
-                     * map's mixer column picks the mode.) */
                 } else if (loopViewActive()) {
                     /* Track View + Loop held: adjust length ±1 step */
                     const _t  = S.activeTrack;
@@ -1674,6 +1681,7 @@ function bankMapPadActs(note) {
         !!bankMapModuleAt(S.trackRoute[S.activeTrack], S.trackPadMode[S.activeTrack], cell.col, cell.row, S.activeTrack);
     if (S.bankMapKind === 'session') {
         if (cell.col === 0) return SESS_PAD_MAP.mixer.modes[cell.row] !== undefined;
+        if (cell.col === SESS_PAD_MAP.strip.col) return SESS_PAD_MAP.strip.modes[cell.row] !== undefined;
         if (cell.col === SESS_PAD_MAP.fx.col) return !!SESS_PAD_MAP.fx.buses[cell.row];
         return false;
     }
@@ -1719,6 +1727,14 @@ export function bankMapPadTap(note) {
         if (cell.col === 0) {
             const mode = SESS_PAD_MAP.mixer.modes[cell.row];
             if (mode !== undefined) { bankMapCancelMenu(); sessWalkTo(mode, pickRest); }
+        } else if (cell.col === SESS_PAD_MAP.strip.col) {
+            /* EQ opens on the band last turned to (the jog walks the four);
+             * COMPRESS is one page */
+            const mode = SESS_PAD_MAP.strip.modes[cell.row];
+            if (mode !== undefined) {
+                bankMapCancelMenu();
+                sessWalkTo(mode === SESS_EQ_MODE0 ? SESS_EQ_MODE0 + Math.max(0, Math.min(SESS_EQ_PAGES - 1, S.sessEqPage | 0)) : mode, pickRest);
+            }
         } else if (cell.col === SESS_PAD_MAP.fx.col) {
             const bus = SESS_PAD_MAP.fx.buses[cell.row];
             if (bus) bankMapMenuTap({ kind: 'bus', bus, col: cell.col, row: cell.row });
@@ -5065,7 +5081,13 @@ function _sessionKnobParam(knobIdx, d2) {
         return;
     }
     let v;
-    if (mode.fader) {
+    if (mode.strip) {
+        /* THE CHANNEL STRIP: its own grid (0.5 dB a detent, Shift a fifth; the
+         * gains stop at 0 dB on the way across), in its real units — the cache
+         * holds an EQ gain offset (sessLevelStore). */
+        v = sessLevelStore(mode, stripStep(mode, sessLevelReal(mode, lvl), d, S.shiftHeld));
+        if (mode.eq) { S.sessStripTurnAt = nowMs(); S.sessStripTrack = knobIdx; }
+    } else if (mode.fader) {
         /* ⭑ A FADER MOVES IN TRAVEL, NOT IN GAIN. The stored value is gain —
          * that is what the engine and every automation lane speak — so the turn
          * is gain -> travel -> add the detents -> gain. `units` spans the whole
@@ -5080,7 +5102,7 @@ function _sessionKnobParam(knobIdx, d2) {
         if (v < 0) v = 0;
         if (v > mode.max) v = mode.max;
     }
-    if (mode.snap !== undefined) {
+    if (mode.snap !== undefined && !mode.strip) {
         /* Snap only on the way IN: from outside the zone to inside it. It used
          * to snap any move that ended inside the zone, so a slow turn LEAVING
          * centre (0.5 % a detent, the zone 2 %) went 1L, C, 1L, C — pan could
@@ -5104,7 +5126,8 @@ function _sessionKnobParam(knobIdx, d2) {
                                     String(Math.round((v / _mx) * 127)), String(Math.round((lvl / _mx) * 127)));
             } else {
                 automationParamEdit(knobIdx, _clip, tg.slot, tg.fullKey,
-                    mode.fader ? faderWire(v) : v.toFixed(3), mode.fader ? faderWire(lvl) : lvl.toFixed(3));
+                    mode.fader ? faderWire(v) : sessLevelReal(mode, v).toFixed(3),
+                    mode.fader ? faderWire(lvl) : sessLevelReal(mode, lvl).toFixed(3));
             }
         }
     }

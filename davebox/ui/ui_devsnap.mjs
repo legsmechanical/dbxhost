@@ -53,7 +53,10 @@ export const DEVSNAP_HOLD_MS = 450;     /* = BACK_HOLD_MS: a deliberate long-pre
 export const DEVSNAP_CARD_MS = 1500;
 /* A recall that had to BYPASS something is a warning to read. */
 export const DEVSNAP_WARN_MS = 3500;
-const LEVEL_KEYS = ['volume', 'pan', 'send_a', 'send_b'];
+/* the levels a snapshot holds: the four, then the channel strip's five (comp
+ * + EQ, 2026-11-15). A snapshot saved before the strip has none of them, and a
+ * recall leaves the strip as it is (the `num` guard). */
+const LEVEL_KEYS = ['volume', 'pan', 'send_a', 'send_b', 'eq_low', 'eq_mid', 'eq_mid_freq', 'eq_high', 'comp'];
 /* A level that read back as nothing is NOT a level (isFinite(null) is true —
  * JSON turns NaN into null on the way through the file). */
 const num = (v) => (typeof v === 'number' && isFinite(v));

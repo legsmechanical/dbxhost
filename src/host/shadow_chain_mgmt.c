@@ -2396,6 +2396,18 @@ int shadow_direct_get_param(uint8_t slot, const char *key, char *out, int cap) {
      *
      * Read from the same shadow_move_fx_strip[] the single path reads, so the
      * two cannot answer differently. */
+    /* The channel strip's gain reduction for ANY strip, slot-independently —
+     * `strip_gr:s<slot>` (a chain slot) / `strip_gr:m<bus>` (a Move FX bus, 1-4)
+     * — so the Session mixer's COMPRESS page reads all eight tracks in ONE
+     * bulk request (each one's comp dot) rather than eight round trips. */
+    if (strncmp(key, "strip_gr:", 9) == 0) {
+        const char *r = key + 9;
+        int n = (r[0] && r[1] >= '0' && r[1] <= '9' && !r[2]) ? r[1] - '0' : -1;
+        const mix_strip_t *st = NULL;
+        if (r[0] == 's' && n >= 0 && n < SHADOW_CHAIN_INSTANCES) st = &shadow_chain_slots[n].strip;
+        else if (r[0] == 'm' && n >= 1 && n <= MOVE_FX_SLOTS) st = &shadow_move_fx_strip[n - 1].strip;
+        if (st) return mix_strip_get_key(st, "comp_gr", out, cap);
+    }
     if (strncmp(key, "move_fx:", 8) == 0) {
         const char *rest = key + 8;
         int sl = -1;

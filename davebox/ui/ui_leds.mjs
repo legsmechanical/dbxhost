@@ -16,12 +16,12 @@ import { arpVelLevel, drumVelocityToZone, bankPadMapForMode, SESS_PAD_MAP, bankM
 import { knobRingColor, knobRingNorm, ringCellsFor, ringNormOfCell, screenRingCells } from './ui_knob_leds.mjs';
 import { automationStateFor } from './ui_automation.mjs';
 import { devSnapOpen, devSnapLedFor } from './ui_devsnap.mjs';
-import { sessStripTargets, SESS_KNOB_MODES } from './ui_engine.mjs';
+import { sessStripTargets, SESS_KNOB_MODES, sessModeIsEq } from './ui_engine.mjs';
 import { seqAutoTargetForKnob, BANK_INPUT } from './ui_constants.mjs';
 import {
     White, Red, Green, Blue, DarkBlue, LightGrey, DarkGrey, Cyan, PurpleBlue,
     DeepRed, DeepGreen, DeepMagenta, Mustard, BrightPink,
-    DeepBrownYellow, BrightOrange, Tan, VividYellow, Violet,
+    DeepBrownYellow, BrightOrange, Tan, VividYellow, Violet, MintGreen, TealGreen,
     MoveBack, MoveCopy, MoveDelete
 } from '/data/UserData/schwung/shared/constants.mjs';
 import { chordLayoutOn, chordPadColor } from './ui_chord_pads.mjs';
@@ -646,6 +646,7 @@ export function paintProjectPickerSurface() {
  * colour, and CONFIG / MIX / INST wear the track's own colour. */
 const BANK_MAP_COL_COLORS = [Cyan, Violet, VividYellow, BrightOrange];
 const SESS_MAP_COLORS = [VividYellow, Cyan, Violet, Violet];   /* VOLUME, PAN, SEND A, SEND B */
+const SESS_STRIP_COLORS = [MintGreen, TealGreen];             /* EQ, COMPRESS */
 /* The active track's pad on the bank map: 300 ms on, 150 ms off. */
 export function bankMapTrackBlinkOn(ms) { return (ms % 450) < 300; }
 /* The 32 pads' colours while the map is up (index = note - 68), as palette
@@ -659,6 +660,12 @@ export function bankMapPadColors() {
     if (S.bankMapKind === 'session') {
         for (let r = 0; r < 4; r++) {
             col[at(0, r)] = !d && r === S.sessKnobMode ? White : SESS_MAP_COLORS[r];
+            /* the channel strip's column: EQ (any of its bands), COMPRESS */
+            const sc = SESS_PAD_MAP.strip.col, sm = SESS_PAD_MAP.strip.modes[r];
+            if (sm !== undefined) {
+                const here = r === 0 ? sessModeIsEq(S.sessKnobMode) : S.sessKnobMode === sm;
+                col[at(sc, r)] = !d && here ? White : SESS_STRIP_COLORS[r];
+            }
             const fc = SESS_PAD_MAP.fx.col;
             if (SESS_PAD_MAP.fx.buses[r]) col[at(fc, r)] = d && d.col === fc && d.row === r ? White : BrightOrange;
         }

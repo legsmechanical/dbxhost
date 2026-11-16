@@ -40,6 +40,7 @@
  * component, ≤7) and file reads; both happen ONCE per (track, knob, snap
  * list, project) and are budgeted per tick by the caller, never on a detent.
  */
+import { stripSpec } from './ui_strip.mjs';
 import { S as GS } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { NUM_TRACKS } from './ui_constants.mjs';
@@ -103,7 +104,10 @@ function readSnapshot(track, n) {
  * is −3 dB, exactly where the fader itself would sit halfway; pan and the
  * sends are linear 0..1. Written as `slot:<key>` pairs in the same bulk SET
  * as the chain params (the automation push spells them the same way). */
-const LEVEL_KEYS = ['volume', 'pan', 'send_a', 'send_b'];
+/* ...and the channel strip's five (comp + EQ, 2026-11-15), each linear in its
+ * own unit (the EQ gains in dB, -15..15). */
+const LEVEL_KEYS = ['volume', 'pan', 'send_a', 'send_b', 'eq_low', 'eq_mid', 'eq_mid_freq', 'eq_high', 'comp'];
+const levelClamp = (key, v) => { const sp = stripSpec(key); return Math.max(sp ? sp.min : 0, Math.min(sp ? sp.max : 1, v)); };
 const num = (v) => (typeof v === 'number' && isFinite(v));
 /* ── WHERE A TRACK'S SOUND LIVES (Josh, 2026-09-13: Move tracks too) ────────
  * A chain track: its slot (= the track index), components synth/fxN/midi_fxN,
@@ -131,7 +135,7 @@ function buildLevels(mixers, route) {
         const vals = [];
         for (const m of mixers) {
             if (!num(m[key])) { vals.length = 0; break; }
-            vals.push(key === 'volume' ? faderGainToTravel(m[key]) : Math.max(0, Math.min(1, m[key])));
+            vals.push(key === 'volume' ? faderGainToTravel(m[key]) : levelClamp(key, m[key]));
         }
         if (vals.length) out[key] = vals;
     }

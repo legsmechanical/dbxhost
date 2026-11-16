@@ -19,7 +19,8 @@
 
 import { S, conductorTrackIdx } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
-import { slotIndex, DAVEBOX_HOST_DIR, SLOT_LEVEL_MAX, engineGet, engineGetSlotParam } from './ui_engine.mjs';
+import { slotIndex, DAVEBOX_HOST_DIR, SLOT_LEVEL_MAX, engineGet, engineGetSlotParam, moveBusForChannel, moveBusComp } from './ui_engine.mjs';
+import { stripParseWire, stripMidHz } from './ui_strip.mjs';
 import { showActionPopup, showActionPopupFor } from './ui_persistence.mjs';
 import { midiFxLeftOut } from './ui_print.mjs';
 import { NUM_TRACKS, NUM_CLIPS, ACTION_POPUP_MS, PAD_MODE_CONDUCT, PAD_MODE_AUDIO, PAD_MODE_SLICER, padSampled, SCENE_LETTERS } from './ui_constants.mjs';
@@ -961,8 +962,56 @@ function buildAudioTrack(t, r, ctx) {
 }
 export function exportAudioTrackForTest(t, ctx) { const r = resolveTrack(t, ctx); paPrepareTrack(t, r, ctx); return buildAudioTrack(t, r, ctx); }
 
+/* THE CHANNEL STRIP, carried to Live (Josh, 2026-11-15: map it to Live's own
+ * devices): a track whose strip does something gets a Compressor then a
+ * Channel EQ after its instrument — the strip's order, comp before EQ. An
+ * APPROXIMATION, said so in the export: Live's Channel EQ has its own fixed
+ * corners (100 Hz / a high shelf) and its mid is ±12 dB over 120 Hz - 7.5 kHz,
+ * so our ±15 dB / 125 Hz - 8 kHz mid is clamped into it; the Compressor takes
+ * the one knob's threshold, ratio, make-up, attack and release exactly.
+ * Appended to the TRACK's devices, after the rack — never inside it: Move's
+ * racks are signed presets (lockSeal), and editing one breaks the signature.
+ * A flat strip adds nothing (the export is unchanged). An Audio track's strip
+ * is in its Dry take already. Device shapes copied from a set Move wrote. */
+const dbToLin = (db) => Math.pow(10, db / 20);
+export function stripLiveDevices(v) {
+    const eqOn = !!(v.eq_low || v.eq_mid || v.eq_high);
+    const a = Math.max(0, Math.min(1, v.comp || 0));
+    const out = [];
+    if (a > 0) out.push({ presetUri: null, kind: 'compressor', name: 'Comp (dAVEBOx strip)', parameters: {
+        Attack: 25.0, AutoReleaseControlOnOff: false, DryWet: 1.0, Enabled: true, ExpansionRatio: 1.15,
+        Gain: 7 * a, GainCompensation: false, Knee: 6.0, LogEnvelope: true, Model: 'Peak',
+        Ratio: 1 + 3 * a, Release: 300.0,
+        SideChainEq_Freq: 80.0, SideChainEq_Gain: 0.0, SideChainEq_Mode: 'High pass', SideChainEq_On: false, SideChainEq_Q: 0.41,
+        Threshold: dbToLin(-30 * a) }, deviceData: {} });
+    if (eqOn) out.push({ presetUri: null, kind: 'channelEq', name: 'EQ (dAVEBOx strip)', parameters: {
+        Enabled: true, Gain: 1.0, HighShelfGain: dbToLin(Math.max(-15, Math.min(15, v.eq_high || 0))),
+        HighpassOn: false, LowShelfGain: dbToLin(Math.max(-15, Math.min(15, v.eq_low || 0))),
+        MidFrequency: Math.max(120, Math.min(7500, stripMidHz(v.eq_mid_freq ?? 0.5))),
+        MidGain: dbToLin(Math.max(-12, Math.min(12, v.eq_mid || 0))) }, deviceData: {} });
+    return out;
+}
+/* Track t's strip as the host holds it (one read), or null: a chain slot's, or
+ * the Move bus a Move track plays through. */
+function stripOfTrack(t) {
+    const route = S.trackRoute ? S.trackRoute[t] : 0;
+    let raw = null;
+    if (route === 0) raw = engineGetSlotParam(slotIndex(t), 'strip');
+    else if (route === 1) {
+        const bus = moveBusForChannel(S.trackChannel ? S.trackChannel[t] : t + 1) | 0;
+        if (bus > 0) raw = engineGet(0, moveBusComp(bus), 'strip');
+    }
+    return raw ? stripParseWire(raw) : null;
+}
+
 function buildTrack(t, ctx) {
     const r = resolveTrack(t, ctx);
+    /* the channel strip as Live devices (a MIDI track; not the Conductor) */
+    if (!(S.trackPadMode && (padSampled(S.trackPadMode[t]) || S.trackPadMode[t] === PAD_MODE_CONDUCT))) {
+        const sv = stripOfTrack(t);
+        const sd = sv ? stripLiveDevices(sv) : [];
+        if (sd.length) { r.devices = (r.devices || []).concat(sd); (ctx.stripTracks = ctx.stripTracks || []).push(t + 1); }
+    }
     /* Ids must exist on the mixer before any clip can point at one. */
     paPrepareTrack(t, r, ctx);
     if (S.trackPadMode && padSampled(S.trackPadMode[t])) return buildAudioTrack(t, r, ctx);
@@ -1370,6 +1419,7 @@ function exportRun(auTakes) {
          * (reuses the global-menu dialog machinery: re-open the menu in dialog mode). */
         S.exportDonePath    = String(okStatus.out || outPath);
         S.exportDoneMissing = (okStatus.missing && okStatus.missing.length) ? okStatus.missing.length : 0;
+        S.exportStripApprox = ctx.stripTracks || [];   /* the strip went as Live devices: an approximation, said */
         S.exportDoneDialog  = true;
         S.globalMenuOpen    = true;
         S.screenDirty       = true;

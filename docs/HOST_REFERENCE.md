@@ -238,6 +238,22 @@ Master volume is estimated from Move's on-screen volume bar (`shadow_master_volu
 
 Under Link Audio rebuild mode (`rebuild_from_la`), mailbox is composited from per-track routed audio at unity via `shadow_chain_process_fx`, MFX runs on the mailbox, then master volume is applied for DAC out.
 
+### The channel strip
+
+Every mixer strip — each chain slot and each Move FX bus — runs a channel strip
+after its insert FX and before its fader and pan: a one-knob compressor, then a
+3-band EQ (80 Hz and 12 kHz shelves, a mid peak swept 125 Hz – 8 kHz, ±15 dB)
+— `src/host/mix_strip.h`, at all five mix sites (`tests/host/test_mix_strip.sh`
+pins them). The sends, the Link Audio publish and an as-set capture read its
+output; the **FX-at-unity** capture tap stays before it, so a bounce that plays
+on through the same strip is not processed twice. A flat strip with the comp at
+0 returns its input untouched (no cost). Keys: `slot:eq_low` / `eq_mid` /
+`eq_mid_freq` (0..1 position) / `eq_high` / `comp` (0..1), `comp_gr` (read-only
+gain reduction, dB), `strip` (all five in one write, space-separated), the same
+under `move_fx:N:`, and `strip_gr:s<slot>` / `strip_gr:m<bus>` for a bulk read of
+every strip's gain reduction at slot 0. Saved with the slot settings and in
+`move_fx_meta.json`; an offline Dry take runs it before the fader.
+
 
 ## Link Audio
 

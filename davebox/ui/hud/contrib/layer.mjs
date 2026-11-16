@@ -24,6 +24,7 @@ export function cellOut(c) {
     if (c.opens) o.opens = true;
     if (c.sq) o.sq = c.sq;
     if (c.ghost != null) o.ghost = c.ghost;
+    if (typeof c.dot === 'number') o.dot = r3(c.dot);     /* the comp's gain reduction, a point on its arc */
     if (c.meta) o.meta = c.meta;
     if (c.key) o.key = c.key;
     return o;

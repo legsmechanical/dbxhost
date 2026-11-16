@@ -10,7 +10,7 @@
    * centre, bipolar), a dot at the value. `ghost` = a faint second arc (a held
    * step's lock over the track's value); `color` overrides the knob's colour
    * (the session overview's dials wear their TRACK's). */
-  function dial(k, norm, bipolar, big, ghost, color) {
+  function dial(k, norm, bipolar, big, ghost, color, dot) {
     const a0 = 135, sw = 270, r = 38, c = 46, w = big ? 9 : 7, col = color || H.knobColor(k);
     const P = (a) => [c + r * Math.cos(a * Math.PI / 180), c + r * Math.sin(a * Math.PI / 180)];
     const arc = (s, e, stroke, op) => {
@@ -24,7 +24,10 @@
     const [dx, dy] = P(v);
     return '<svg class="hud-w-svg" viewBox="0 0 92 92">' + arc(a0, a0 + sw, '#1d2026') +
       (ghost != null ? arc(a0, a0 + sw * Math.max(0, Math.min(1, ghost)), '#ffffff', 0.13) : '') +
-      arc(s, e, col) + '<circle cx="' + dx.toFixed(1) + '" cy="' + dy.toFixed(1) + '" r="' + (big ? 6 : 4.5) + '" fill="' + col + '"/></svg>';
+      arc(s, e, col) + '<circle cx="' + dx.toFixed(1) + '" cy="' + dy.toFixed(1) + '" r="' + (big ? 6 : 4.5) + '" fill="' + col + '"/>' +
+      /* `dot`: a second point on the ring (the comp's gain reduction, from the arc's start) */
+      (typeof dot === 'number' ? (function () { const [gx, gy] = P(a0 + sw * Math.max(0, Math.min(1, dot)));
+        return '<circle class="hud-w-dot" cx="' + gx.toFixed(1) + '" cy="' + gy.toFixed(1) + '" r="3" fill="#ffffff"/>'; })() : '') + '</svg>';
   }
   H.dial = dial;
   /* plain — a knob that says nothing about its value (a module canvas, Move's
@@ -38,7 +41,7 @@
   const normOf = (c) => typeof c.norm === 'number' ? c.norm
     : (Array.isArray(c.options) && c.options.length > 1 && c.sel >= 0) ? c.sel / (c.options.length - 1) : 0;
   H.normOf = normOf;
-  H.widget('arc',    (c, k, x) => dial(k, normOf(c), false, x.touched, c.ghost));
+  H.widget('arc',    (c, k, x) => dial(k, normOf(c), false, x.touched, c.ghost, null, c.dot));
   H.widget('arcbip', (c, k, x) => dial(k, typeof c.signed === 'number' ? (c.signed + 1) / 2 : 0.5, true, x.touched, c.ghost));
   H.widget('frac',   (c, k, x) => dial(k, normOf(c), false, x.touched, c.ghost));
   /* a named enum: its word, framed, in the knob's colour when touched */

@@ -28,6 +28,7 @@
  * import survives to the device (see scripts/bundle_lab.sh). */
 import * as os from 'os';
 import { bulkDecode } from '/data/UserData/schwung/shared/snapshot.mjs';
+import { STRIP_SPECS } from './ui_strip.mjs';
 /* A module-owned page draws through the same clipped, origin-shifted context a
  * widget gets (engineCanvasPageDrawer). */
 import { frameCtx } from '/data/UserData/schwung/shared/param_pages/frame_ctx.mjs';
@@ -436,11 +437,30 @@ export const SESS_KNOB_MODES = [
     /* (The SESSION FX gateway — a click door at the end of the walk — left
      * 2026-10-04: the plain click is the Session map, whose FX pads open the
      * buses; Shift + Note/Session still opens the list.) */
+    /* THE CHANNEL STRIP (ui_strip.mjs; Josh, 2026-11-15: "2 new mixer banks:
+     * EQ, and Compress ... EQ is 4 pages - Low, Mid, Mid Freq, High", "just jog
+     * to switch pages"): the four EQ bands are four modes in a row (the EQ pad
+     * opens them, the jog walks them), then COMPRESS. Each steps on the strip's
+     * own grid (stripStep: 0.5 dB a detent, the gains' centre detent). */
+    ...STRIP_SPECS.map((sp, k) => ({ key: sp.key, label: sp.sess, short: sp.label, name: sp.name, widget: sp.widget,
+                                     def: sp.def, min: sp.min, max: sp.max, step: sp.step, detent: sp.detent,
+                                     units: Math.round((sp.max - sp.min) / sp.step),
+                                     fmt: sp.fmt, strip: true, eq: k < 4 })),
 ];
 /* One step = one of THIS mode's own units. Derived from the declaration, never
  * written per mode, so a mode cannot drift to a different feel — and the unit is
  * now a number the user can actually see change. */
-for (const m of SESS_KNOB_MODES) m.step = m.max / m.units;
+for (const m of SESS_KNOB_MODES) if (m.step === undefined) m.step = m.max / m.units;
+/* The strip's modes: the first EQ band (the EQ pad), and COMPRESS. */
+export const SESS_EQ_MODE0  = SESS_KNOB_MODES.findIndex((m) => m.key === 'eq_low');
+export const SESS_EQ_PAGES  = SESS_KNOB_MODES.filter((m) => m.eq).length;
+export const SESS_COMP_MODE = SESS_KNOB_MODES.findIndex((m) => m.key === 'comp');
+export const sessModeIsEq = (i) => !!(SESS_KNOB_MODES[i] && SESS_KNOB_MODES[i].eq);
+/* S.sessVolLevel holds -1 for "not read yet", so a level that goes below zero
+ * (an EQ gain, -15..15 dB) is held OFFSET by its minimum: stored = value - min,
+ * always >= 0. Every reader and writer of the cache converts at the edge. */
+export const sessLevelReal  = (mode, stored) => stored + ((mode && mode.min < 0) ? mode.min : 0);
+export const sessLevelStore = (mode, v) => v - ((mode && mode.min < 0) ? mode.min : 0);
 /* Derived, never hand-mirrored — these used to be two literal arrays beside the
  * table above, which is one edit away from a mode writing another mode's key. */
 export const SESS_KNOB_KEYS     = SESS_KNOB_MODES.map(m => m.key);

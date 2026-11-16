@@ -341,9 +341,15 @@ export function bankPadMapCellAt(padMode, t, col, row) {
  * with their counterparts on the mixer row"). Bus ids are FX_BUSES ids. */
 export const SESS_PAD_MAP = {
     mixer: { label: 'MIXER', modes: [0, 1, 2, 3] },
-    /* In the THIRD column, a column clear of the mixer (Josh, 2026-10-15: "so
-     * the two aren't sitting right next to each other"). */
-    fx:    { label: 'FX', col: 2, buses: ['master', null, 'sendA', 'sendB'],
+    /* THE CHANNEL STRIP in the SECOND column (Josh, 2026-11-15: "2 new mixer
+     * banks: EQ, and Compress both on the 2nd column"): EQ (the first of its
+     * four band modes — SESS_EQ_MODE0) over COMPRESS (SESS_COMP_MODE).
+     * Literal indices, pinned against ui_engine by test_session_strip.mjs. */
+    strip: { label: 'STRIP', col: 1, modes: [4, 8], names: ['EQ', 'COMPRESS'] },
+    /* In the FOURTH column now, still clear of the mixer (Josh, 2026-10-15:
+     * "so the two aren't sitting right next to each other"; 2026-11-15: "move
+     * the FX column over to the 4th column so there's still some separation"). */
+    fx:    { label: 'FX', col: 3, buses: ['master', null, 'sendA', 'sendB'],
              names: ['MASTER', null, 'SEND A', 'SEND B'] },
 };
 

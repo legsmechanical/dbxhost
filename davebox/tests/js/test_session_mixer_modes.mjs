@@ -25,9 +25,11 @@ function eq(a, b, label) { (a === b) ? ok(label) : bad(label, `expected ${b}, go
 /* 1. Four knob modes, in jog order. The FX GATEWAY (a click door at the end of
  *    the walk, 2026-09-01) left on 2026-10-04: the plain click is the Session
  *    map, whose FX pads open the buses. */
-eq(SESS_KNOB_MODES.length, 4, 'four mixer modes, no FX gateway');
-eq(SESS_KNOB_MODES.map(m => m.key).join(','), 'volume,pan,send_a,send_b',
-   'mode order is volume, pan, send_a, send_b');
+/* ...then the channel strip's five (2026-11-15): EQ's four bands (one mode
+ * each — the EQ pad opens them, the jog walks them) and COMPRESS. */
+eq(SESS_KNOB_MODES.length, 9, 'nine mixer modes: the four levels, the strip\'s five, no FX gateway');
+eq(SESS_KNOB_MODES.map(m => m.key).join(','), 'volume,pan,send_a,send_b,eq_low,eq_mid,eq_mid_freq,eq_high,comp',
+   'mode order is volume, pan, send_a, send_b, then the strip in mix_strip.h order');
 
 /* 2. The derived arrays are DERIVED — not hand-mirrored. Same length, same
  *    order, element-for-element. This is the pin that fails if someone
@@ -55,7 +57,7 @@ eq(SESS_KNOB_MODES[3].widget, 'arc',    'send B draws as a plain arc');
 eq(SESS_KNOB_MODES[0].max, SLOT_LEVEL_MAX, 'volume max is the shared level ceiling');
 for (let i = 1; i < 4; i++) eq(SESS_KNOB_MODES[i].max, 1.0, `${SESS_KNOB_MODES[i].key} max is 1.0`);
 for (const m of SESS_KNOB_MODES)
-    eq(Math.round(m.max / m.step), m.units, `${m.key}: ${m.units} units across its range`);
+    eq(Math.round((m.max - (m.min || 0)) / m.step), m.units, `${m.key}: ${m.units} units across its range`);
 
 /* ⭑⭑ THE UNIT MUST BE VISIBLE — this is the whole point of the 2026-08-26 change.
  * Josh: "is there a way to make all the knobs feel the same and still allow fine

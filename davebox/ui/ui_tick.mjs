@@ -35,6 +35,8 @@ import {
 import { lowBatteryTick } from './ui_battery.mjs';
 import { S, standDownBankDisplay, stepRevealAvailable, loopViewActive, endLoopLatch, forgetUndo, forgetProjectJs, conductorTrackIdx } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
+import { stripParseWire } from './ui_strip.mjs';
+const SESS_GR_TICKS = 8;              /* COMPRESS: one bulk gain-reduction read per this many ticks */
 import { tickPrefetch, dget, applyNewProjectSeed, midiFxResyncTick } from './ui_dsp_bridge.mjs';
 import { ledClockState, ledClockStep, ledClockSend } from './ui_led_clock.mjs';
 /* The LED controller's clock (ui_led_clock.mjs): its memory between ticks. */
@@ -75,9 +77,9 @@ import { xposeCancelPreview } from './ui_xpose.mjs';
 import { checkBackHold, backTapWouldAct, applyShiftEdge, raiseExitConfirm, syncCoRunShift, goToSessionOverview,
     bankMapEnd, checkShiftStep11Hold, checkJogHold, refuseNotesPastEnd } from './ui_input_cc.mjs';
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
-         engineGet, engineSet, moveBusForChannel, moveBusComp,
+         engineGet, engineSet, engineGetMany, moveBusForChannel, moveBusComp,
          SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, slotIndex, CHAIN_SLOTS, DAVEBOX_HOST_DIR,
-         SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS, SESS_KNOB_MODES, faderStep, faderWire, faderFormatDb, faderGainToTravel, SHIFT_VOL_THROW, trackLevelCardText} from './ui_engine.mjs';
+         SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS, SESS_KNOB_MODES, sessLevelReal, sessLevelStore, faderStep, faderWire, faderFormatDb, faderGainToTravel, SHIFT_VOL_THROW, trackLevelCardText} from './ui_engine.mjs';
 import { soundHasPendingAction, soundActive, soundOpen, soundResting, soundEnter, soundEnterMove, soundExit,
     soundTick, soundDirty, soundTrack, soundRetarget, soundIsGlobal,
     soundEnteredInSession, soundConsumeLedDirty,
@@ -1545,6 +1547,10 @@ export function _tickImpl() {
         if (S.sessionView && (S.tickCount % POLL_INTERVAL) === 0) {
             const _modeKey = SESS_KNOB_KEYS[S.sessKnobMode];
             const _modeDef = SESS_KNOB_DEFAULTS[S.sessKnobMode];
+            /* a mode below zero (an EQ gain) reads down to its minimum, and is
+             * cached offset (sessLevelStore) */
+            const _mode = SESS_KNOB_MODES[S.sessKnobMode];
+            const _modeMin = (_mode && _mode.min) || 0;
             schSlotMasksAllTracks(_sessMaskScratch);
             for (let _t = 0; _t < NUM_TRACKS; _t++) {
                 const _bus = S.trackRoute[_t] === 1 /* ROUTE_MOVE */
@@ -1562,7 +1568,7 @@ export function _tickImpl() {
                     S.sessVolSlots[_t] = 0;
                     if (S.sessVolLevel[_t] < 0 || _follow) {
                         const _raw = parseFloat(engineGet(0, moveBusComp(_bus), _modeKey));
-                        S.sessVolLevel[_t] = isFinite(_raw) && _raw >= 0 ? _raw : _modeDef;
+                        S.sessVolLevel[_t] = sessLevelStore(_mode, isFinite(_raw) && _raw >= _modeMin ? _raw : _modeDef);
                     }
                     continue;
                 }
@@ -1583,9 +1589,50 @@ export function _tickImpl() {
                     let _s0 = 0;
                     while (_s0 < CHAIN_SLOTS && !(_m & (1 << _s0))) _s0++;
                     const _raw = parseFloat(engineGetSlotParam(_s0, _modeKey));
-                    S.sessVolLevel[_t] = isFinite(_raw) && _raw >= 0 ? _raw : _modeDef;
+                    S.sessVolLevel[_t] = sessLevelStore(_mode, isFinite(_raw) && _raw >= _modeMin ? _raw : _modeDef);
                 }
             }
+        }
+        /* THE CHANNEL STRIP on the Session mixer: an EQ knob in hand reads
+         * that track's whole strip ONCE (the curve card needs all four bands);
+         * COMPRESS on screen reads every track's gain reduction in ONE bulk
+         * request every SESS_GR_TICKS (each knob's dot). */
+        if (S.sessionView) {
+            const _sm = SESS_KNOB_MODES[S.sessKnobMode];
+            const _kt = S.knobTouched;
+            if (_sm && _sm.eq && _kt >= 0 && _kt < NUM_TRACKS) {
+                S.sessStripTrack = _kt;
+                if (S.sessStripValsFor !== _kt) {
+                    const _sb = S.sessVolBus[_kt] | 0, _ss = S.sessVolSlots[_kt] | 0;
+                    let _s0 = 0;
+                    while (_s0 < CHAIN_SLOTS && !(_ss & (1 << _s0))) _s0++;
+                    const _raw = _sb > 0 ? engineGet(0, moveBusComp(_sb), 'strip')
+                               : (S.trackRoute[_kt] === 0 && _ss) ? engineGetSlotParam(_s0, 'strip') : null;
+                    S.sessStripVals = _raw != null ? stripParseWire(_raw) : null;
+                    S.sessStripValsFor = _kt;
+                }
+            }
+            if (_sm && _sm.key === 'comp' && sessMixerVisible()) {
+                if (++S.sessCompGrTick >= SESS_GR_TICKS) {
+                    S.sessCompGrTick = 0;
+                    const _keys = [], _who = [];
+                    for (let _t = 0; _t < NUM_TRACKS; _t++) {
+                        const _sb = S.sessVolBus[_t] | 0, _ss = S.sessVolSlots[_t] | 0;
+                        if (_sb > 0) { _keys.push('m' + _sb); _who.push(_t); }
+                        else if (S.trackRoute[_t] === 0 && _ss) {
+                            let _s0 = 0;
+                            while (_s0 < CHAIN_SLOTS && !(_ss & (1 << _s0))) _s0++;
+                            _keys.push('s' + _s0); _who.push(_t);
+                        }
+                    }
+                    const _got = _keys.length ? engineGetMany(0, 'strip_gr', _keys) : {};
+                    _who.forEach((_t, _i) => {
+                        const _g = parseFloat(_got[_keys[_i]]);
+                        const _v = isFinite(_g) ? Math.min(0, Math.round(_g * 4) / 4) : 0;
+                        if (_v !== S.sessCompGr[_t]) { S.sessCompGr[_t] = _v; S.screenDirty = true; }
+                    });
+                }
+            } else if (S.sessCompGr.some((g) => g)) S.sessCompGr.fill(0);
         }
         {
             const _wKey = SESS_KNOB_KEYS[S.sessKnobMode];
@@ -1597,7 +1644,7 @@ export function _tickImpl() {
                  * ui_engine: three decimals of gain wrote 20% of the fader's
                  * throw more than 0.05 dB off. Pan and sends keep theirs. */
                 const _v = (SESS_KNOB_MODES[S.sessKnobMode] && SESS_KNOB_MODES[S.sessKnobMode].fader)
-                    ? faderWire(S.sessVolLevel[_t]) : S.sessVolLevel[_t].toFixed(3);
+                    ? faderWire(S.sessVolLevel[_t]) : sessLevelReal(SESS_KNOB_MODES[S.sessKnobMode], S.sessVolLevel[_t]).toFixed(3);
                 const _bus = S.sessVolBus[_t] | 0;
                 if (_bus > 0) {
                     engineSet(0, moveBusComp(_bus), _wKey, _v);

@@ -332,7 +332,7 @@
       o.cells.forEach((c, t) => {
         const val = c && c.kind !== 'blank' ? c.text : '';
         const n = c && typeof c.norm === 'number' ? c.norm : c && typeof c.signed === 'number' ? (c.signed + 1) / 2 : null;
-        h += '<div class="mx' + (t === touched ? ' tch' : '') + '" data-in="knob" data-k="' + t + '" style="--kc:' + trackColor(t) + '"><div class="w">' + (n == null ? '' : H.dial(t, n, c.kind === 'arcbip', false, null, trackColor(t))) + '</div><span>' + esc(val) + '</span></div>';
+        h += '<div class="mx' + (t === touched ? ' tch' : '') + '" data-in="knob" data-k="' + t + '" style="--kc:' + trackColor(t) + '"><div class="w">' + (n == null ? '' : H.dial(t, n, c.kind === 'arcbip', false, null, trackColor(t), c.dot)) + '</div><span>' + esc(val) + '</span></div>';
       });
       h += '</div>';
     }

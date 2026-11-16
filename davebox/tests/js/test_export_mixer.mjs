@@ -273,6 +273,36 @@ assert(/dev\.parameters\.Enabled = false;/.test(src),
 assert(/function dummy\(name, color\)[\s\S]{0,400}?Enabled = false/.test(src),
        '…and it happens in dummy(), so it covers Schwung, Move-unmatched, Ext AND Conductor');
 
+/* ---- THE CHANNEL STRIP as Live devices (2026-11-15: "map it") ---------- */
+{
+    const dev = xp.stripLiveDevices;
+    assert(dev({ eq_low: 0, eq_mid: 0, eq_mid_freq: 0.5, eq_high: 0, comp: 0 }).length === 0,
+           'a flat strip adds no device (the export is unchanged)');
+    const d = dev({ eq_low: 6, eq_mid: -15, eq_mid_freq: 1, eq_high: -3, comp: 1 });
+    assert(d.length === 2 && d[0].kind === 'compressor' && d[1].kind === 'channelEq',
+           'comp THEN EQ, the strip\'s order: ' + d.map((x) => x.kind));
+    const c = d[0].parameters, e = d[1].parameters;
+    assert(near(20 * Math.log10(c.Threshold), -30, 1e-6) && c.Ratio === 4 && c.Gain === 7 && c.Attack === 25 && c.Release === 300 && c.Knee === 6,
+           'the compressor at full: -30 dB, 4:1, +7 dB, 25 / 300 ms, 6 dB knee: ' + JSON.stringify(c));
+    assert(near(20 * Math.log10(e.LowShelfGain), 6, 1e-6) && near(20 * Math.log10(e.HighShelfGain), -3, 1e-6),
+           'shelves in Live\'s linear gain (1.0 = 0 dB)');
+    assert(near(20 * Math.log10(e.MidGain), -12, 1e-6) && e.MidFrequency === 7500,
+           'the mid clamped into Channel EQ\'s ±12 dB / 120 Hz - 7.5 kHz: ' + e.MidGain + ' @ ' + e.MidFrequency);
+    const half = dev({ comp: 0.5 })[0].parameters;
+    assert(near(20 * Math.log10(half.Threshold), -15, 1e-6) && half.Ratio === 2.5 && half.Gain === 3.5,
+           'at 50%: -15 dB, 2.5:1, +3.5 dB');
+    assert(dev({ eq_mid: 3 }).length === 1 && dev({ eq_mid: 3 })[0].kind === 'channelEq', 'EQ alone: just the Channel EQ');
+    /* every parameter of the shapes Move writes (a set Move wrote) — no more, no fewer */
+    const MOVE_EQ = ['Enabled', 'Gain', 'HighShelfGain', 'HighpassOn', 'LowShelfGain', 'MidFrequency', 'MidGain'];
+    const MOVE_COMP = ['Attack', 'AutoReleaseControlOnOff', 'DryWet', 'Enabled', 'ExpansionRatio', 'Gain', 'GainCompensation', 'Knee',
+                       'LogEnvelope', 'Model', 'Ratio', 'Release', 'SideChainEq_Freq', 'SideChainEq_Gain', 'SideChainEq_Mode',
+                       'SideChainEq_On', 'SideChainEq_Q', 'Threshold'];
+    assert(JSON.stringify(Object.keys(e).sort()) === JSON.stringify(MOVE_EQ), 'Channel EQ\'s parameters are Move\'s: ' + Object.keys(e));
+    assert(JSON.stringify(Object.keys(c).sort()) === JSON.stringify(MOVE_COMP), 'Compressor\'s parameters are Move\'s: ' + Object.keys(c));
+    /* never inside the (signed) rack: appended to the track's devices */
+    assert(/r\.devices = \(r\.devices \|\| \[\]\)\.concat\(sd\)/.test(src), 'appended after the rack, never inside it');
+}
+
 if (failed) { console.log('FAIL: export mixer value space'); process.exit(1); }
 console.log('PASS: the export\'s mixer value space — dB volume, ±50 pan, unity default');
 }

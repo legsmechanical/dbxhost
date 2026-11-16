@@ -182,8 +182,8 @@ step('⭐⭐ the Session map\'s MASTER pad lands IN Master FX (Shift + Note/Sess
     snd.soundExit(); ticks(2);
     S.sessionView = true; ticks(2);
     cc(3, 127);                                         /* jog down: the Session map */
-    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 94, 100]));   /* MASTER: col 2 (the third), top row */
-    globalThis.onMidiMessageInternal(new Uint8Array([0x80, 94, 0]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 95, 100]));   /* MASTER: col 3 (the fourth, since 2026-11-15), top row */
+    globalThis.onMidiMessageInternal(new Uint8Array([0x80, 95, 0]));
     cc(3, 0);                                           /* jog up: it opens */
     ticks(4);
     const bus = snd.soundBusForTest();
@@ -204,8 +204,8 @@ step('⭐ the effect browser opened from the Session map\'s SEND A names the BUS
     snd.soundExit(); ticks(2);
     S.sessionView = true; ticks(2);
     cc(3, 127);
-    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 78, 100]));   /* SEND A: col 2, third row */
-    globalThis.onMidiMessageInternal(new Uint8Array([0x80, 78, 0]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 79, 100]));   /* SEND A: col 3, third row */
+    globalThis.onMidiMessageInternal(new Uint8Array([0x80, 79, 0]));
     cc(3, 0); ticks(4);
     const bus = snd.soundBusForTest();
     if (!bus || bus.id !== 'sendA') throw new Error('rig: SEND A did not open: ' + JSON.stringify(bus));

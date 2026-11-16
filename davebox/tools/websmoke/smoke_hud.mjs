@@ -226,6 +226,21 @@ ok('...its dividers drawn as rules, never at the window\'s edge', el.querySelect
     const wc = draw(Object.assign({}, slf, { body: Object.assign({}, slf.body, { popup: { wave: slf.body.wave, message: { big: 'Start 0:00.125', lines: ['S 0:00.125   E 0:01.875'] }, primary: 'message' } }) }));
     const wcTxt = ((wc && wc.querySelector('.hud-ovl .card')) || {}).textContent || '';
     ok('a waveform card shows the knob in hand and its value over its waveform', /Start/.test(wcTxt) && /0:00\.125/.test(wcTxt) && /0:01\.875/.test(wcTxt) && !!wc.querySelector('.hud-ovl .card svg.hud-wave'), wcTxt);
+    /* THE CHANNEL STRIP (2026-11-15): the comp's gain reduction a point on its
+     * knob, and the EQ curve card over the page, named by the knob in hand */
+    const stripDoc = Object.assign({}, kitDoc, { body: Object.assign({}, kitDoc.body, {
+        header: { text: 'MIX 2' }, touched: -1,
+        knobs: [{ kind: 'arcbip', label: 'Low', text: '+3.0dB', signed: 0.2 }, { kind: 'arcbip', label: 'Mid', text: '0dB', signed: 0 },
+                { kind: 'arc', label: 'Freq', text: '1.00k', norm: 0.5 }, { kind: 'arcbip', label: 'High', text: '0dB', signed: 0 },
+                { kind: 'arc', label: 'Comp', text: '50%', norm: 0.5, dot: 0.5 }, { kind: 'blank', label: '' }, { kind: 'blank', label: '' }, { kind: 'blank', label: '' }] }) });
+    const sd = draw(stripDoc);
+    const sdKn = sd ? [...sd.querySelectorAll('.hud-knobs .hud-kn')] : [];
+    ok('MIX 2: the comp\'s gain reduction is a point on its knob, and only its', sdKn.length === 8 && !!sdKn[4].querySelector('.hud-w-dot') &&
+       sdKn.filter((k) => k.querySelector('.hud-w-dot')).length === 1, sdKn.map((k) => !!k.querySelector('.hud-w-dot')).join());
+    const curve = Array.from({ length: 60 }, (_, i) => 0.5 + 0.2 * Math.exp(-Math.pow((i - 30) / 8, 2)));
+    const eq = draw(Object.assign({}, stripDoc, { body: Object.assign({}, stripDoc.body, { popup: { curve: { values: curve, name: 'MID +6.0DB' } } }) }));
+    ok('...an EQ knob in hand: the curve card over the page, named by the knob', !!eq && !!eq.querySelector('.hud-ovl .card svg') && /MID \+6\.0DB/.test(((eq.querySelector('.hud-ovl .card')) || {}).textContent || '') &&
+       eq.querySelectorAll('.hud-knobs .hud-kn').length === 8, ((eq && eq.querySelector('.hud-ovl')) || {}).innerHTML);
     const ipk = draw(fx('instrument-picker'));
     ok('...a Sound menu picker over the menu, one column', !!ipk.querySelector('.hud-body.hud-l-list .hud-row') && !!ipk.querySelector('.hud-ovl .card.c-list') &&
        !ipk.querySelector('.hud-ovl .hud-list.cols') && /Instmt/.test((ipk.querySelector('.hud-body') || {}).textContent || ''),

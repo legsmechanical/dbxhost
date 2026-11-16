@@ -467,8 +467,14 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
 map**:
 
 - **Hold the jog**: the **MIXER** column is Volume, Pan, Send A and
-  Send B; the third column, with a gap after MIXER, is the **FX** column. It opens the **Master**,
+  Send B; the second column is the [channel strip](#the-channel-strip), **EQ** over **COMPRESS**;
+  the fourth column, after a gap, is the **FX** column. It opens the **Master**,
   **Send A** and **Send B** effects directly, each level with its mixer row. The sends share a color.
+- On **EQ**, the knobs set one band on every track at once: **Low** first, and
+  **turning the jog** steps through **Mid**, **Mid Freq** and **High**. The EQ pad
+  reopens the band you were last on. Touch or turn a knob to see that track's EQ
+  curve over the page. On **COMPRESS**, each knob is a track's comp, with the dot
+  showing how hard it is working.
   As on a track, the map stays up while you hold the jog; the FX pads open their
   effects when you let go. The
   indicator at the top right names the mixer mode.
@@ -2400,6 +2406,32 @@ instead — Expression, Pan, Mod, Sustain, Program, Bank MSB and Bank LSB.
 knobs wear corner brackets to say so); **Back** returns to MIX. The session mixer
 does the same on its SEND A and SEND B pages: touch any track's knob and click.
 
+#### The channel strip
+
+**Turn the jog on MIX** for its second page, **MIX 2**: the track's channel strip,
+like a mixing desk's channel. Turn the jog back for the levels.
+
+| Knob | Control | Range |
+|---|---|---|
+| 1 | **Low**: a shelf at 80 Hz | ±15 dB |
+| 2 | **Mid**: a broad peak at the Mid Freq | ±15 dB |
+| 3 | **Freq**: where the Mid acts | 125 Hz – 8 kHz (1 kHz at the middle) |
+| 4 | **High**: a shelf at 12 kHz | ±15 dB |
+| 5 | **Comp**: a one-knob compressor | Off – 100% |
+
+- Each gain moves 0.5 dB a detent (**Shift**: 0.1 dB) and stops at 0 dB on its way
+  across, like a desk's centre detent.
+- **Comp** is a desk-style compressor: one knob lowers the threshold, raises the
+  ratio and adds make-up gain together. At 100% that is −30 dB, 4:1 and +7 dB. A
+  dot on the knob shows how much it is turning the sound down right now.
+- **Touch or turn an EQ knob** to see the EQ curve over the page.
+- The comp comes first, then the EQ, then the track's fader and pan, so the sends
+  hear it. A recording **after the effects** (Resample, Flatten) is taken before
+  the strip, and the strip goes on working on the flattened track. Per-pad and
+  module-bus sends are taken inside the instrument, before the strip.
+- The strip is saved with the project, can be automated, and is in track
+  snapshots and SnapMorph. A flat strip with the comp off costs no CPU.
+
 | Gesture | Result |
 |---|---|
 | **CONFIG** pad on the bank map | Open TRACK CONFIG |
@@ -2903,6 +2935,11 @@ with the tempo and root note (not the scale — the set opens in Major).
   `SCH-nusaw - Big Lead` when the module reports a patch name (most modules don't).
 - **Send levels come across**, along with two empty return tracks to send to.
   Level and pan come across as automation.
+- **A track's channel strip comes across as Live devices**: a **Compressor** with the
+  same threshold, ratio and make-up, then a **Channel EQ**. Live's Channel EQ has its
+  own fixed shelves and a narrower Mid (±12 dB, 120 Hz – 7.5 kHz), so the EQ is an
+  approximation, and the screen says which tracks (*EQ/Comp approx*). Automation of
+  the strip doesn't come across. An Audio track's strip is already in its recording.
 - **Notes are baked** — each clip exports what you hear: effects rendered, delay
   tails wrapped, drum polymeters flattened, and randomized clips written as several
   loops of variation.

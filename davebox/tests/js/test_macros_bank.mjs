@@ -717,7 +717,9 @@ step('a Move-routed track: the store seeds EMPTY at once (no knob_N reads), Leve
            'Levels then SnapMorph are targets, got ' + JSON.stringify(targets.map(t => t.name)));
     snd.soundQueueActionForTest({ t: 'knobparam', target: 'level' }); ticks(1);
     const rows = snd.soundKnobParamsForTest();
-    assert(rows.length === 4 && !rows.some(p => p.label === 'Module Level'), 'four bus levels, got ' + JSON.stringify(rows.map(p => p.label)));
+    /* the four bus levels, then the channel strip's five (comp + EQ, 2026-11-15) — no Module Level */
+    assert(JSON.stringify(rows.map(p => p.label)) === JSON.stringify(['Volume', 'Pan', 'Send A', 'Send B', 'Low', 'Mid', 'Mid Freq', 'High', 'Compress']),
+           'the bus levels and the strip, no Module Level, got ' + JSON.stringify(rows.map(p => p.label)));
     snd.soundExit();
 });
 

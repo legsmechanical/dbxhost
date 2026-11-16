@@ -899,6 +899,7 @@ export const S = {
     exportDonePath: '',            /* full device path shown in the export-done dialog */
     exportDoneMissing: 0,          /* count of samples that couldn't be bundled */
     exportMidiFxLeftOut: [],       /* tracks (1-based) whose MIDI FX module the export left out */
+    exportStripApprox: [],         /* tracks (1-based) whose channel strip went as Live's Compressor / Channel EQ (approximate) */
     noteSessionPressedTick: -1,
     sessionOverlayHeld: false,
     overviewCache: null,
@@ -1068,6 +1069,16 @@ export const S = {
      * channel can be received by SEVERAL slots (layering, or a slot set to
      * "All"), and all of them move together. -1 = not yet resolved/read. */
     sessKnobMode: 0,
+    /* the Session mixer's EQ: the band last turned to (0 Low .. 3 High), the
+     * track whose EQ knob last moved and when (the curve card), its strip
+     * values (one `strip` read on touch), and COMPRESS's gain reductions */
+    sessEqPage: 0,
+    sessStripTrack: -1,
+    sessStripTurnAt: 0,
+    sessStripVals: null,
+    sessStripValsFor: -1,
+    sessCompGr: [0, 0, 0, 0, 0, 0, 0, 0],
+    sessCompGrTick: 0,
     sessVolSlots: new Array(8).fill(-1),   /* bitmask of matching slots */
     /* A MOVE-routed track's level is not a slot's at all: it is the fader of the
      * Move FX bus its instrument returns on, the same value sound mode's VOLUME

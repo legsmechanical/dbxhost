@@ -54,9 +54,16 @@ step('melodic and drum put the same job on the same pad', () => {
 });
 
 step('Session: the MIXER column is every mixer mode but the gateway; FX buses beside their levels', () => {
+    /* the four levels down the first column; the channel strip's EQ (its first
+     * band — the jog walks the rest) and COMPRESS down the second: between
+     * them, every mixer mode is reachable from the map */
     const modes = P.SESS_PAD_MAP.mixer.modes;
-    const want = SESS_KNOB_MODES.map((m, i) => (m.widget === 'gateway' ? -1 : i)).filter((i) => i >= 0);
-    assert(modes.join() === want.join(), modes + ' vs ' + want);
+    assert(modes.join() === '0,1,2,3', 'mixer column ' + modes);
+    const sm = P.SESS_PAD_MAP.strip.modes;
+    assert(SESS_KNOB_MODES[sm[0]].key === 'eq_low' && SESS_KNOB_MODES[sm[1]].key === 'comp', 'strip column ' + sm);
+    const reach = new Set(modes.concat(sm));
+    SESS_KNOB_MODES.forEach((m, i) => { if (m.eq) reach.add(i); });
+    assert(SESS_KNOB_MODES.every((m, i) => reach.has(i)), 'a mixer mode the map cannot reach');
     const fx = P.SESS_PAD_MAP.fx.buses;
     assert(fx[0] === 'master' && fx[1] === null && fx[2] === 'sendA' && fx[3] === 'sendB', 'fx column ' + fx);
     assert(SESS_KNOB_MODES[modes[2]].key === 'send_a' || /SEND A/.test(SESS_KNOB_MODES[modes[2]].label), 'row 3 is not Send A');
