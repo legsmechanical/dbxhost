@@ -15,7 +15,13 @@ export const knobs = {
         const meta = frame.knobsScreen === 'track.bank' ? knobMetaFor(d.knobs, doc && doc.where) : null;
         /* the page's hint row too: a touched knob's footer says what a click
          * does (CLK CROP, CLK ASSIGN) — the overview's own hints cannot */
-        return { screen: frame.knobsScreen || undefined, header: d.header || undefined, knobs: d.knobs,
+        /* the page mark the OLED's header carries ("1/2" on MIX, "2/4" on a
+         * Session EQ band, a module's param pages): a page bar's own, else the
+         * header's trailing n/m — the knob strip has no header of its own */
+        let page;
+        if (d.page && d.page.count > 1) page = (d.page.idx + 1) + '/' + d.page.count;
+        else { const m = d.header && /(?:^|\s)(\d+\/\d+)\s*$/.exec(String(d.header.right || '')); if (m) page = m[1]; }
+        return { screen: frame.knobsScreen || undefined, header: d.header || undefined, knobs: d.knobs, page,
                  touched: typeof d.touched === 'number' ? d.touched : -1, meta: meta || undefined,
                  hints: d.hints && d.hints.length ? d.hints : undefined,
                  /* a picker the page opened (an enum's choices): over the overview, as over the page */

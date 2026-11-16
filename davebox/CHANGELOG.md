@@ -15,7 +15,8 @@ the section into a versioned heading at release time.
   steps through its four bands, every track at once) and **COMPRESS**; the FX column
   moved to the fourth. Touch an EQ knob to see the curve; a dot on the Comp knob shows
   how hard it is working. It is saved, automatable, in snapshots and SnapMorph, shown on
-  the browser's Screen view, and exported to Live as a Compressor and Channel EQ.
+  the browser's Screen view, editable on the browser's Mixer and Sound views (click a
+  strip's EQ curve to drag its bands on a graph; a gain-reduction bar under Compress), and exported to Live as a Compressor and Channel EQ.
 - **Loop points for Audio clips.** On SAMPLE, **K3** is now **End**, as fine as Start (a
   single sample zoomed all the way in). Start and End mark the loop, and nothing past End
   sounds. A new **Bars** knob sits beside **Tempo**, framed with it: set how many bars
@@ -259,6 +260,10 @@ the section into a versioned heading at release time.
   Clips of the same length still hand over in step with each other.
 
 ### Fixed
+- **The browser's Screen view shows which page of a bank you are on**, as the device's
+  screen does: MIX 1/2 and 2/2 under the knobs, and in Session View a tab for every mixer
+  bank (EQ with its band and page, and COMPRESS). A Slicer's page 3 shows Start, Zoom and
+  End on its first three knobs.
 - **A kit from Convert to kit no longer clips when you turn a pad's velocity on.** Its pads
   now respond to velocity as a stock kit's do: a full-velocity hit is the slice's level and
   softer hits are quieter, in Move and in DR32.

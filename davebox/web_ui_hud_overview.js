@@ -250,7 +250,8 @@
     /* a touch names its knob in the header's place; the strip keeps the bank's
      * name (where.bankName) so nothing above the knobs changes on a touch */
     const bank = (kn.header && kn.header.text) || (doc.where && doc.where.bankName) || '';
-    let head = '<div class="hud-o-kh"><span class="bk">' + esc(bank) + (bank ? ' bank' : 'knobs') + '</span>';
+    let head = '<div class="hud-o-kh"><span class="bk">' + esc(bank) + (bank ? ' bank' : 'knobs') +
+      (kn.page ? ' <span class="pg">' + esc(kn.page) + '</span>' : '') + '</span>';
     const meta = kn.meta && t >= 0 ? kn.meta[t] : null;
     if (c) {
       head += '<b>' + esc((meta && meta.full) || c.name || c.label || '') + '</b>';
@@ -300,7 +301,12 @@
     const right = tc ? '<b class="kt" style="--kc:' + trackColor(touched) + '">T' + (touched + 1) + ' ' + esc(trackName(m, touched)) + ' · ' + esc(H.sentence ? H.sentence(o.mode || '') : (o.mode || '')) + ' ' + esc(tc.text || '') + '</b>'
       : 'pads: rows ' + LETTERS[rowOff] + '–' + LETTERS[Math.min(15, rowOff + 3)];
     let h = '<div class="hud-o-sess">';
-    h += '<div class="hud-o-info"><span class="tabs">' + modes.map((n, i) => '<span class="tab' + (i === mi ? ' on' : '') + '">' + esc(H.sentence ? H.sentence(n) : n) + '</span>').join('') + '</span>' +
+    h += '<div class="hud-o-info"><span class="tabs">' + modes.map((n, i) => {
+      /* the lit EQ tab names its band and page, as the OLED's header does ("EQ LOW 1/4") */
+      const lit = i === mi, nm = lit && o.page ? o.mode : n;
+      return '<span class="tab' + (lit ? ' on' : '') + '">' + esc(H.sentence ? H.sentence(nm) : nm) +
+        (lit && o.page ? ' <span class="pg">' + esc(o.page) + '</span>' : '') + '</span>';
+    }).join('') + '</span>' +
       '<span class="r">' + right + '</span></div>';
     h += '<div class="hud-o-grid" style="grid-template-rows:auto repeat(' + (rTo - rFrom) + ',minmax(0,1fr))"><span></span>';
     for (let t = 0; t < 8; t++) h += '<div class="th' + (dt(t).muted ? ' mute' : '') + '" data-in="track" data-t="' + t + '" style="--c:' + trackColor(t) + '"><i>' + (t + 1) + '</i><span>' + esc(trackName(m, t)) + '</span>' + (dt(t).soloed ? '<b class="s">S</b>' : dt(t).muted ? '<b class="m">M</b>' : '') + '</div>';

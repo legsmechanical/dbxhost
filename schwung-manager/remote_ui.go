@@ -367,6 +367,7 @@ func (ru *RemoteUI) ensureShm() *ShmParams {
 func (ru *RemoteUI) Start(ctx context.Context) {
 	go ru.pollLoop(ctx)
 	go ru.notifyLoop(ctx)
+	go ru.mixerGrLoop(ctx)
 	go ru.refreshLoop(ctx)
 	go ru.toolTickLoop(ctx)
 	go ru.setRingConnectLoop(ctx)
@@ -1176,7 +1177,8 @@ func (ru *RemoteUI) handleGetHierarchy(ctx context.Context, c *ruClient, msg wsM
 }
 
 // handleSubscribeMixer marks the client for mixer fan-out and seeds it with
-// the full strip surface: 8 chain positions + 4 Move buses × 6 strip keys,
+// the full strip surface: 8 chain positions + 4 Move buses × 6 strip keys
+// and the channel strip's bulk read,
 // plus each chain position's instrument identity for the badge. The seed is
 // serial mailbox reads (~72 × ~3ms ≈ 220ms) in a goroutine so another
 // client's latency never rides on it; live updates thereafter come from the
@@ -1185,6 +1187,7 @@ func (ru *RemoteUI) handleSubscribeMixer(ctx context.Context, c *ruClient) {
 	c.mu.Lock()
 	c.mixerSub = true
 	c.mu.Unlock()
+	mixerGrResend()
 	ru.logger.Info("ws subscribe mixer")
 	if !ru.requireShm(ctx, c) {
 		return
@@ -1196,6 +1199,9 @@ func (ru *RemoteUI) handleSubscribeMixer(ctx context.Context, c *ruClient) {
 				if v, err := ru.shm.GetParam(uint8(n), "slot:"+k); err == nil {
 					params["chain:"+strconv.Itoa(n)+":"+k] = v
 				}
+			}
+			if v, err := ru.shm.GetParam(uint8(n), "slot:strip"); err == nil {
+				mixerExpandStrip("chain:"+strconv.Itoa(n)+":", v, params)
 			}
 			if id, err := ru.shm.GetParam(uint8(n), "synth_module"); err == nil {
 				params["chain:"+strconv.Itoa(n)+":synth_module"] = id
@@ -1211,6 +1217,9 @@ func (ru *RemoteUI) handleSubscribeMixer(ctx context.Context, c *ruClient) {
 					params[key] = v
 				}
 			}
+			if v, err := ru.shm.GetParam(0, "move_fx:"+strconv.Itoa(b)+":strip"); err == nil {
+				mixerExpandStrip("move_fx:"+strconv.Itoa(b)+":", v, params)
+			}
 		}
 		// QUEUED, never dropped: this is the only time the page gets every
 		// position's values and instrument name — writeJSONTry would discard it
@@ -1218,6 +1227,7 @@ func (ru *RemoteUI) handleSubscribeMixer(ctx context.Context, c *ruClient) {
 		// asks for every card's metadata at the same moment), and the page
 		// then shows "no instrument" until a reload wins the race. Already off
 		// the read loop, so waiting for the write lock costs nothing.
+		ru.mixerNoteComp(params)
 		ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: 0, Params: params})
 	}()
 }
@@ -2066,16 +2076,20 @@ func (ru *RemoteUI) notifyLoop(ctx context.Context) {
 			// sync path; the host already fires on_param_changed on every set.
 			mixerChanges := make(map[string]string)
 			for _, c := range changes {
-				if wire, ok := mixerShmToWire(c.Slot, c.Key); ok {
-					mixerChanges[wire] = c.Value
-					// an instrument change carries its display name too, as
-					// the subscribe seed does
-					if strings.HasSuffix(wire, ":synth_module") {
-						name := ""
-						if c.Value != "" {
-							name = ru.moduleDisplayName(c.Value)
+				one := make(map[string]string, 1)
+				if mixerShmToWireAll(c.Slot, c.Key, c.Value, one) {
+					ru.mixerNoteComp(one)
+					for wire, v := range one {
+						mixerChanges[wire] = v
+						// an instrument change carries its display name too, as
+						// the subscribe seed does
+						if strings.HasSuffix(wire, ":synth_module") {
+							name := ""
+							if v != "" {
+								name = ru.moduleDisplayName(v)
+							}
+							mixerChanges[strings.TrimSuffix(wire, "synth_module")+"synth_name"] = name
 						}
-						mixerChanges[strings.TrimSuffix(wire, "synth_module")+"synth_name"] = name
 					}
 				}
 				if c.Slot == 0 && c.Key == overtakeParamPrefix+"rui_poll" {

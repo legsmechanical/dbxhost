@@ -290,6 +290,7 @@ html.hud-review,body.hud-review{background:#050607;overflow:auto!important;heigh
 .hud-o-track.knobs{gap:6px}
 .hud-o-knobs{flex:0 0 auto;border-top:1px solid #23272f;padding-top:6px}
 .hud-o-kh{display:flex;align-items:baseline;gap:14px;height:22px;overflow:hidden;margin:0 0 4px 2px;font-size:13px;font-weight:800;letter-spacing:.06em;color:var(--h-dim);text-transform:uppercase;white-space:nowrap}
+.hud-o-kh .pg,.hud-o-info .tab .pg{color:var(--h-ink);opacity:.75;letter-spacing:0;font-weight:700}
 .hud-o-kh b{color:var(--h-ink);letter-spacing:.02em;text-transform:none;font-size:15px}
 .hud-o-kh .opts{display:flex;gap:10px;letter-spacing:0;text-transform:none;font-weight:700;color:#5c626d}
 .hud-o-kh .opts .on{color:var(--h-ink);background:#2a2f37;border-radius:5px;padding:1px 6px}

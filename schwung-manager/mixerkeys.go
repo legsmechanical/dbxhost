@@ -24,14 +24,72 @@ import (
 // mixerStripKeys is the writable per-position strip surface. Deliberately a
 // whitelist: the mixer wire form must not become a generic proxy for arbitrary
 // slot-namespace writes.
+//
+// The channel strip's five (src/host/mix_strip.h, MIX_STRIP_KEYS — the EQ and
+// the one-knob comp, on every position) are on it too; its read-only gain
+// reduction ("comp_gr") is not a write, and reaches the page by the manager's
+// own poll (mixerGrPoll), since no set ever fires for it.
 var mixerStripKeys = map[string]bool{
 	"volume": true, "pan": true, "send_a": true, "send_b": true,
 	"muted": true, "soloed": true,
+	"eq_low": true, "eq_mid": true, "eq_mid_freq": true, "eq_high": true, "comp": true,
 }
 
-// mixerSeedKeys is what a fresh mixer subscription is seeded with: the strip
-// surface plus the read-only instrument identity for the badge.
+// mixerSeedKeys is what a fresh mixer subscription is seeded with, one read
+// each: the strip surface bar the channel strip, which is one read of its
+// bulk key (mixerChannelStripKeys).
 var mixerSeedKeys = []string{"volume", "pan", "send_a", "send_b", "muted", "soloed"}
+
+// mixerChannelStripKeys is the channel strip in mix_strip.h's FIELD ORDER: the
+// order of its bulk key "strip" ("low mid freq high comp", read and written
+// whole — a project load restores a position's strip in that one write).
+var mixerChannelStripKeys = []string{"eq_low", "eq_mid", "eq_mid_freq", "eq_high", "comp"}
+
+// mixerExpandStrip splits a bulk "strip" value into its five wire keys under
+// `prefix` ("chain:3:"). Fields missing from the end are left out rather than
+// guessed.
+func mixerExpandStrip(prefix, value string, into map[string]string) {
+	f := strings.Fields(value)
+	for i, k := range mixerChannelStripKeys {
+		if i < len(f) {
+			into[prefix+k] = f[i]
+		}
+	}
+}
+
+// mixerStripPrefix is the wire prefix a notify-ring key for the bulk "strip"
+// belongs to ("slot:strip" on chain slot n → "chain:n:"; "move_fx:2:strip" →
+// "move_fx:2:"), or ok=false.
+func mixerStripPrefix(slot uint8, key string) (prefix string, ok bool) {
+	if key == "slot:strip" {
+		if slot >= maxChainSlots {
+			return "", false
+		}
+		return "chain:" + strconv.Itoa(int(slot)) + ":", true
+	}
+	if rest, found := strings.CutPrefix(key, "move_fx:"); found && slot == 0 {
+		busStr, k, found2 := strings.Cut(rest, ":")
+		b, err := strconv.Atoi(busStr)
+		if found2 && k == "strip" && err == nil && b >= 1 && b <= moveBusCount {
+			return "move_fx:" + busStr + ":", true
+		}
+	}
+	return "", false
+}
+
+// mixerShmToWireAll is mixerShmToWire for a change with its value: a bulk
+// "strip" write becomes its five keys, anything else its one.
+func mixerShmToWireAll(slot uint8, key, value string, into map[string]string) bool {
+	if prefix, ok := mixerStripPrefix(slot, key); ok {
+		mixerExpandStrip(prefix, value, into)
+		return true
+	}
+	if wire, ok := mixerShmToWire(slot, key); ok {
+		into[wire] = value
+		return true
+	}
+	return false
+}
 
 const moveBusCount = 4 // MOVE_FX_SLOTS — Move has 4 hardware instruments
 

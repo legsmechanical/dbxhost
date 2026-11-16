@@ -58,7 +58,18 @@ export const ovw = {
     collect: (frame) => {
         if (frame.screen !== 'session.overview') return null;
         const mode = SESS_KNOB_MODES[S.sessKnobMode] || SESS_KNOB_MODES[0];
-        return { mode: mode.label, modes: SESS_KNOB_MODES.slice(0, 4).map((m) => m.label),
-                 modeIdx: S.sessKnobMode | 0, rowOff: S.sceneRow | 0, cells: sessMixerCells(mode).map(cellOut), thumbs: thumbs(), clips: clips() };
+        /* one TAB per mixer bank, as the Session map has them: the four levels,
+         * EQ (its four bands are pages of one bank: "EQ LOW" is EQ page 1/4)
+         * and COMPRESS */
+        const tabs = [], tabOf = [];
+        for (const m of SESS_KNOB_MODES) {
+            const name = m.eq ? 'EQ' : m.label;
+            if (tabs[tabs.length - 1] !== name) tabs.push(name);
+            tabOf.push(tabs.length - 1);
+        }
+        const eqs = SESS_KNOB_MODES.filter((m) => m.eq);
+        const page = mode.eq ? (eqs.indexOf(mode) + 1) + '/' + eqs.length : undefined;
+        return { mode: mode.label, modes: tabs, modeIdx: tabOf[S.sessKnobMode | 0] | 0, page,
+                 rowOff: S.sceneRow | 0, cells: sessMixerCells(mode).map(cellOut), thumbs: thumbs(), clips: clips() };
     },
 };
