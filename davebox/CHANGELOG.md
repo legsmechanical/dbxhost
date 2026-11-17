@@ -8,6 +8,9 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Fixed
+- **Locks on DR32's synth-engine pads now take the value you set.** A held-step lock on an
+  engine pad's parameter (an 808 pad's Decay, say) recorded every value as the top and
+  played back near the bottom, so every hit sounded the same. Sample pads were not affected.
 - **Footer hints say what a gesture does now.** Hold Shift and a screen that offered a
   Shift gesture names the click that performs it (Track Config's CHANGE, the Instrument
   picker's LISTS, the automation menu's JUMP, snapshots' STORE, page copy's CUT, the

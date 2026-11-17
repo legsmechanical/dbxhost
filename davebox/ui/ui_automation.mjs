@@ -94,6 +94,9 @@ let lastDrainTick = -1000;
 let presenceStale = false;
 /* "<slot>:<comp>" -> { key: {min,max,step,type,options} }, one fetch each. */
 let metaCache = new Map();
+/* "<slot>:<comp>|<key>" a miss has re-read the metadata for (paramMeta) —
+ * once each, until the cache is dropped */
+let metaMissReread = new Set();
 
 /* Does this project have ANY automation?
  *
@@ -162,7 +165,7 @@ export function automationResolveOffForTest(on) { resolveOff = !!on; resolveStal
 
 export function automationResetCaches() {
     pending = new Map();
-    metaCache = new Map();
+    metaCache = new Map(); metaMissReread = new Set();
     anyAutomation = false;
     stopGrace = 0;
     gestures = new Map();
@@ -236,7 +239,7 @@ export function automationInvalidateMeta(slot) {
         resolveGen++;
     }
     resolveStale = true;
-    if (all) { metaCache = new Map(); return; }
+    if (all) { metaCache = new Map(); metaMissReread = new Set(); return; }
     const pfx = String(slot) + ':';
     for (const k of Array.from(metaCache.keys())) if (k.startsWith(pfx)) metaCache.delete(k);
 }
@@ -724,11 +727,40 @@ function componentMeta(slot, comp) {
     try { parsed = JSON.parse(raw || '[]'); }
     catch (e) { return {}; /* not cached: retry next visit */ }
     m = {};
+    /* ⚠⚠ THE HIERARCHY TOO, chain_params winning (a tester report,
+     * 2026-11-16: "unable to set different values for a pad decay"). A
+     * module may declare a parameter ONLY in its ui_hierarchy — DR32's synth
+     * engine pads (`e8_decay` 0..127, `sm_decay` 10..2000 ms …) are in no
+     * chain_params. With no metadata a value was read as 0..1, so every Decay
+     * of 1 or more recorded as the top (16383) and played back as "1": every
+     * lock the same. Engine keys also took a WRONG range by the suffix rule
+     * (`sm_cutoff` matched `cutoff`), which the exact bare key now beats. */
+    hierParams(slot, comp, m);
     for (const p of (parsed || [])) {
         if (p && p.key) m[p.key] = p;
     }
     metaCache.set(id, m);
     return m;
+}
+/* Every inline parameter object a module's served ui_hierarchy declares, by
+ * its bare key (a child level's keys are bare; paramMeta matches
+ * `pad5_e8_decay` to `e8_decay`). A failed read adds nothing. */
+function hierParams(slot, comp, m) {
+    let h;
+    try {
+        const raw = shadow_get_param(slot, comp + ':ui_hierarchy');
+        if (!raw || raw === '?') return;
+        h = JSON.parse(raw);
+    } catch (e) { return; }
+    const lv = h && h.levels;
+    if (!lv || typeof lv !== 'object') return;
+    for (const name in lv) {
+        const ps = lv[name] && lv[name].params;
+        if (!Array.isArray(ps)) continue;
+        for (const p of ps)
+            if (p && typeof p === 'object' && typeof p.key === 'string' && p.key &&
+                    (p.type || typeof p.min === 'number' || Array.isArray(p.options)) && !m[p.key]) m[p.key] = p;
+    }
 }
 
 /* One parameter's metadata. A REPEATED element's key (DR32's
@@ -739,7 +771,28 @@ function componentMeta(slot, comp) {
  * key wins; otherwise the longest bare key the full key ends with, after an
  * "_" and an element index. */
 function paramMeta(slot, comp, key) {
-    const m = componentMeta(slot, comp);
+    const m0 = componentMeta(slot, comp);
+    let p = paramMetaIn(m0, key);
+    /* A MISS RE-READS ONCE: DR32 serves an engine's pages only while the kit
+     * uses that engine, so a pad switched to a new engine after the first
+     * read has keys the cached copy never had. Once per key, until the cache
+     * is dropped, so a key that truly has none costs one read, not one a push. */
+    const id = slot + ':' + comp;
+    /* "known" = the key itself or its bare key (past the element prefix,
+     * `pad5_` / `sram_part_0_`) — a suffix match alone is not: `sm_cutoff`
+     * would take `cutoff`'s range until its engine's page is read */
+    const bare = key.replace(/^.*?\d+_/, '');
+    if ((p && (m0[key] || m0[bare])) || slot === 'seq' || slot === 'mac' || isLevelComponent(comp) || !metaCache.has(id)) return p;
+    const mk = id + '|' + key;
+    if (metaMissReread.has(mk)) return p;
+    metaMissReread.add(mk);
+    const was = metaCache.get(id);
+    metaCache.delete(id);
+    p = paramMetaIn(componentMeta(slot, comp), key);
+    if (!metaCache.has(id)) metaCache.set(id, was);   /* the re-read failed: keep what we had */
+    return p;
+}
+function paramMetaIn(m, key) {
     if (m[key]) return m[key];
     let best = '';
     for (const k in m) {

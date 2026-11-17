@@ -153,6 +153,35 @@ function load(targets) {
     globalThis.shadow_get_param = prev;
 }
 
+/* ---- a HIERARCHY-ONLY parameter takes its range from ui_hierarchy ------- */
+{
+    /* A tester, 2026-11-16: "unable to set different values for a pad
+     * decay"). DR32's synth-engine pads declare `e8_decay` (int 0..127) and
+     * `sm_cutoff` only in the ui_hierarchy they serve — chain_params has a
+     * plain `cutoff` 0..1. Without the hierarchy the lock was a 0..1 float
+     * (every Decay >= 1 played as "1") and sm_cutoff took cutoff's range. */
+    const prev = globalThis.shadow_get_param;
+    let engines = ['e8_decay'];
+    globalThis.shadow_get_param = (slot, key) => key === 'synth:chain_params'
+        ? JSON.stringify([{ key: 'cutoff', type: 'float', min: 0, max: 1 }])
+        : key === 'synth:ui_hierarchy'
+        ? JSON.stringify({ levels: {
+              pads: { child_prefix: 'pad', child_count: 32, params: ['cutoff', { level: 'eng_e8' }] },
+              eng_e8: { params: engines.includes('e8_decay') ? [{ key: 'e8_decay', type: 'int', min: 0, max: 127 }] : [] },
+              eng_sm: { params: engines.includes('sm_cutoff') ? [{ key: 'sm_cutoff', type: 'int', min: 20, max: 20000 }] : [] } } })
+        : prev(slot, key);
+    automationResetCaches();
+    check(automationWireValue('4:synth:pad5_e8_decay', 16383) === '127' && automationWireValue('4:synth:pad5_e8_decay', 8192) === '64',
+          '⭐⭐ pad5_e8_decay writes in its hierarchy range 0..127, got ' + automationWireValue('4:synth:pad5_e8_decay', 16383) + ' / ' + automationWireValue('4:synth:pad5_e8_decay', 8192));
+    /* an engine the kit took up AFTER the first read: a miss re-reads once */
+    engines = ['e8_decay', 'sm_cutoff'];
+    check(automationWireValue('4:synth:pad2_sm_cutoff', 16383) === '20000',
+          '⭐⭐ a pad switched to a new engine: sm_cutoff gets ITS range (re-read on the miss), not cutoff\'s 0..1 — got ' + automationWireValue('4:synth:pad2_sm_cutoff', 16383));
+    check(automationWireValue('4:synth:pad2_cutoff', 16383) === '1', 'control: the chain_params cutoff keeps 0..1');
+    globalThis.shadow_get_param = prev;
+    automationResetCaches();
+}
+
 /* ---- the description says what wireValue does --------------------------- */
 {
     /* The SAME expectations as the engine's formatter table. */
