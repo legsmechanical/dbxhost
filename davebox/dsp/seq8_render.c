@@ -319,6 +319,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
     lead_drain(inst, 0, 0);
     inst->pa_host_writes = 0;          /* this block's direct parameter writes (pa_emit_chain) */
     if (frames > 0) inst->rui_frames += (uint64_t)frames;  /* device clock (remote UI) */
+    if (inst->playing) inst->rui_play_ms = inst->rui_frames * 1000ULL / 44100ULL;
     resample_render_start(inst, frames);   /* arms / counts a scene resample's take */
     merge_stems_render_start(inst);        /* a merge's Audio tracks (seq8_merge_audio.c) */
     /* Stopped: there is no beat to wait for. */

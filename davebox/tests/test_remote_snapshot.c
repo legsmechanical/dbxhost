@@ -217,6 +217,24 @@ static void test_playhead_devms_field(void) {
     len = hx_get_param(h, "rui_poll", buf, (int)sizeof(buf));
     colons = 0; for (int i = 0; i < len; i++) if (buf[i] == ':') colons++;
     HX_ASSERT(colons == 3, "stopped-again rui_poll must drop devms");
+
+    /* The stopped rui_play carries the stop's ORDER key: the last playing
+     * block's devms + 1 (290 + 1) — later than every playing snapshot sent
+     * before the stop, so the browser can't let one that lands late restart
+     * its playhead. Frozen while stopped: the idle snapshot stays byte-stable. */
+    char stopped1[8192], stopped2[8192];
+    len = hx_get_param(h, "state", stopped1, (int)sizeof(stopped1));
+    HX_ASSERT(len > 0, "state (stopped) returned no data");
+    HX_ASSERT(strstr(stopped1, "\"rui_play\":\"0:") != NULL, "stopped rui_play missing");
+    { const char *p = strstr(stopped1, "\"rui_play\":\"");
+      const char *q = p ? strchr(p + 12, '"') : NULL;
+      int c2 = 0; for (const char *s = p + 12; s && s < q; s++) if (*s == ':') c2++;
+      HX_ASSERT(c2 == 3, "stopped rui_play (after a run) must carry the order key");
+      HX_ASSERT(q && q - 4 >= p && !strncmp(q - 4, ":291", 4),
+                "stop order key must be the last playing devms + 1 (291)"); }
+    hx_render(h, 100);
+    len = hx_get_param(h, "state", stopped2, (int)sizeof(stopped2));
+    HX_ASSERT(len > 0 && !strcmp(stopped1, stopped2), "stopped snapshot must stay byte-stable while idle");
     hx_destroy(h);
 }
 

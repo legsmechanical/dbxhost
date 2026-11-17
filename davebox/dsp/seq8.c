@@ -1362,6 +1362,13 @@ typedef struct {
                                * state_load (field-wise parse, no memset); resets
                                * ONLY on full re-instantiation — the browser detects
                                * the backward devms jump and re-learns its offset. */
+    uint64_t rui_play_ms;     /* devms of the last block rendered while PLAYING.
+                               * The stopped rui_play carries it +1 as its order
+                               * key: later than every playing snapshot sent
+                               * before the stop, frozen while stopped (so the
+                               * idle snapshot stays byte-stable). Without it a
+                               * playing snapshot delivered after the stop
+                               * restarted the browser's playhead for good. */
 
     /* Targeted re-sync accumulator: which clips changed since the on-device JS
      * last read `rui_dirty`. A bumped rui_rev tells JS "something changed"; the
@@ -8968,14 +8975,19 @@ static int seq8_remote_snapshot(seq8_instance_t *inst, char *out, int out_len) {
                  ? inst->tracks[0].pfx.cached_bpm : (double)BPM_DEFAULT;
     /* Browser-facing content rev (superset of rui_rev — see rui_content). */
     APP("{\"rui_rev\":\"%u\"", (unsigned)inst->rui_content_rev);
-    /* 4th field (playing only) = device-clock ms (free-running rendered-frame
-     * counter). The browser uses it to time-base playhead corrections so WiFi
-     * delivery delay can't masquerade as playhead position error. Omitted when
-     * stopped so the stopped digest/snapshot stays byte-stable. */
+    /* 4th field = device-clock ms (free-running rendered-frame counter).
+     * Playing: the browser time-bases playhead corrections on it so WiFi
+     * delivery delay can't masquerade as playhead position error. Stopped: the
+     * stop's ORDER key (rui_play_ms + 1, frozen while stopped, so the stopped
+     * snapshot stays byte-stable); absent until the transport has ever run. */
     if (inst->playing)
         APP(",\"rui_play\":\"1:%u:%d:%llu\"",
             (unsigned)rui_playhead_tick(inst), (int)bpm,
             (unsigned long long)(inst->rui_frames * 1000ULL / 44100ULL));
+    else if (inst->rui_play_ms)
+        APP(",\"rui_play\":\"0:%u:%d:%llu\"",
+            (unsigned)rui_playhead_tick(inst), (int)bpm,
+            (unsigned long long)(inst->rui_play_ms + 1));
     else
         APP(",\"rui_play\":\"0:%u:%d\"",
             (unsigned)rui_playhead_tick(inst), (int)bpm);
