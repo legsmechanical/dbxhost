@@ -3,8 +3,8 @@
  *
  * A step's lock used to reach its parameter through here: staged by the
  * engine, read on the next tick, written a frame later — after the note it
- * belonged to (tester, 2026-10-05: "the real automation actually occurs one
- * step late"). The engine can now write a chain parameter in its own render,
+ * belonged to, so a lock was heard one step late (a tester report,
+ * 2026-10-05). The engine can now write a chain parameter in its own render,
  * ahead of the step's notes, for every target this side has DESCRIBED to it
  * (set_param "pa_resolve"). This file pins the describing:
  *
@@ -155,8 +155,7 @@ function load(targets) {
 
 /* ---- a HIERARCHY-ONLY parameter takes its range from ui_hierarchy ------- */
 {
-    /* A tester, 2026-11-16: "unable to set different values for a pad
-     * decay"). DR32's synth-engine pads declare `e8_decay` (int 0..127) and
+    /* Locks on a DR32 engine pad all played the same value. DR32's synth-engine pads declare `e8_decay` (int 0..127) and
      * `sm_cutoff` only in the ui_hierarchy they serve — chain_params has a
      * plain `cutoff` 0..1. Without the hierarchy the lock was a 0..1 float
      * (every Decay >= 1 played as "1") and sm_cutoff took cutoff's range. */

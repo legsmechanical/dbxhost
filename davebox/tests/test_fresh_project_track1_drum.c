@@ -2,8 +2,8 @@
  * with track 1 in DRUM mode, whatever the project before it was — and with none
  * of that project's notes or parameter automation.
  *
- * Reported by a tester on a fresh install ("the first is a drumpad i think, but
- * the pads are in chromatic layout") and seen intermittently by Josh. The
+ * Reported by a tester on a fresh install (track 1 looked like a drum track
+ * but its pads were in chromatic layout) and seen intermittently by Josh. The
  * `state_load` handler resets every track to melodic so the previous project's
  * drum tracks do not leak, and a load that finds no project data then left it
  * there — track 1's drum default came back only if the UI later pushed

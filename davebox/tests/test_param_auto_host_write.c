@@ -1,8 +1,8 @@
 /* tests/test_param_auto_host_write.c — a step's parameter lock reaches the
  * instrument BEFORE that step's note.
  *
- * THE BUG THIS PINS (tester report, 2026-10-05: "the knob animation activating
- * at the right step but the real automation actually occurs one step late"):
+ * THE BUG THIS PINS (a tester report, 2026-10-05: the knob animated on the
+ * right step but the sound changed one step late):
  * the engine worked a lock out on time but could not write a chain parameter
  * itself — it staged the value for JS, which wrote it a UI tick and an audio
  * frame later, after the note had been sent. Anything a sound latches when it

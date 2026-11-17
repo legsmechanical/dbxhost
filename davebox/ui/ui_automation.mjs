@@ -727,10 +727,8 @@ function componentMeta(slot, comp) {
     try { parsed = JSON.parse(raw || '[]'); }
     catch (e) { return {}; /* not cached: retry next visit */ }
     m = {};
-    /* ⚠⚠ THE HIERARCHY TOO, chain_params winning (a tester report,
-     * 2026-11-16: "unable to set different values for a pad decay"). A
-     * module may declare a parameter ONLY in its ui_hierarchy — DR32's synth
-     * engine pads (`e8_decay` 0..127, `sm_decay` 10..2000 ms …) are in no
+    /* ⚠⚠ THE HIERARCHY TOO, chain_params winning. A module may declare a
+     * parameter ONLY in its ui_hierarchy — DR32's synth engine pads (`e8_decay` 0..127, `sm_decay` 10..2000 ms …) are in no
      * chain_params. With no metadata a value was read as 0..1, so every Decay
      * of 1 or more recorded as the top (16383) and played back as "1": every
      * lock the same. Engine keys also took a WRONG range by the suffix rule
