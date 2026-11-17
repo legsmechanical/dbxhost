@@ -211,8 +211,8 @@
       <text x="510.02" y="365.7" text-anchor="middle">Step buttons 1–16</text>
     </g>
     <g font-size="19" fill-opacity="0.72">
-      <text x="230" y="183.18" text-anchor="end">turn: banks / lists</text>
-      <text x="230" y="206.18" text-anchor="end">click: open / select</text>
+      <text x="230" y="183.18" text-anchor="end">hold: bank map</text>
+      <text x="230" y="206.18" text-anchor="end">turn · click: menus</text>
       <text x="84" y="262.43" text-anchor="end">step out</text>
       <text x="230" y="262.43" text-anchor="end">switch views</text>
       <text x="230" y="316.93" text-anchor="end">launch clips · scenes</text>
@@ -238,8 +238,8 @@
       <text x="700" y="487" text-anchor="start"><tspan font-weight="600" fill-opacity="1">Undo</tspan> undo · Shift: redo</text>
     </g>
     <g font-size="19" fill-opacity="0.72" text-anchor="middle">
-      <text x="501" y="522"><tspan font-weight="600" fill-opacity="1">Shift +</tspan> jog: switch track · Note/Session: TRACK CONFIG · Back: leave dAVEBOx</text>
-      <text x="501" y="546"><tspan font-weight="600" fill-opacity="1">Shift +</tspan> Step 1: projects · Step 2: Project Settings · bottom-row pad: track</text>
+      <text x="501" y="522"><tspan font-weight="600" fill-opacity="1">Shift +</tspan> jog: switch track · Back: leave dAVEBOx</text>
+      <text x="501" y="546"><tspan font-weight="600" fill-opacity="1">Shift +</tspan> Step 1: projects · Step 2: Project Settings</text>
     </g>
   </g>
 </svg>
