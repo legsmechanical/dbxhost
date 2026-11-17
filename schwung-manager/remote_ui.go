@@ -1507,13 +1507,8 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 	ru.maybeAnnounceArrival(ctx, clients)
 	rev, on, tick, bpm, devms := parseRuiPoll(digest)
 	// rui_play frame (used by BOTH the snapshot path — play-state edges must
-	// ride along, snapshots don't carry the on flag — and the playhead path).
-	// devms (device-clock ms, playing only) lets the browser time-base
-	// corrections independent of delivery latency.
-	play := fmt.Sprintf("%d:%d:%d", boolToInt(on), tick, bpm)
-	if on && devms > 0 {
-		play = fmt.Sprintf("%d:%d:%d:%d", boolToInt(on), tick, bpm, devms)
-	}
+	// ride along — and the playhead path).
+	play := ruiPlayFrame(on, tick, bpm, devms)
 	playUpdate := wsParamUpdate{Type: "param_update", Slot: 0,
 		Params: map[string]string{overtakeParamPrefix + "rui_play": play}}
 
@@ -1782,6 +1777,20 @@ func (ru *RemoteUI) signalToolGone(ctx context.Context, clients []*ruClient) {
 // digest. devms (present only while playing) is the module's free-running
 // device-clock ms for the tick — forwarded so the browser can time-base
 // playhead corrections independent of delivery latency.
+// ruiPlayFrame builds the browser's rui_play value from a rui_poll digest.
+// The 4th field is passed through whenever the digest has one: playing, it is
+// the device-clock ms the browser time-bases playhead corrections on; stopped,
+// it is the stop's ORDER key (later than every playing frame sent before the
+// stop). Dropping it on a stop left the browser unable to order the stop, so a
+// playing frame delivered after it (a stale cached snapshot) restarted the
+// playhead with Move stopped.
+func ruiPlayFrame(on bool, tick, bpm, devms int64) string {
+	if devms > 0 {
+		return fmt.Sprintf("%d:%d:%d:%d", boolToInt(on), tick, bpm, devms)
+	}
+	return fmt.Sprintf("%d:%d:%d", boolToInt(on), tick, bpm)
+}
+
 func parseRuiPoll(s string) (rev int64, on bool, tick int64, bpm int64, devms int64) {
 	p := strings.Split(s, ":")
 	if len(p) > 0 {

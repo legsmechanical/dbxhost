@@ -306,7 +306,40 @@ static void seq8_clock_follow_tick(seq8_instance_t *inst, int frames) {
     }
 }
 
-static void render_block(void *instance, int16_t *out_lr, int frames) {
+/* The remote session grid's live state — transport, and each track's active,
+ * queued and playing clip, mute, solo and route — changes without an edit: a
+ * launch, the switch at the bar line, a stop, a mute from the device. None of
+ * those bumped rui_content_rev, and the browser only re-reads the snapshot
+ * (rui_index) on a rev change; the host also serves that snapshot from a cache
+ * refreshed only on a rev change. So the grid's playing / queued highlights
+ * lagged until some unrelated edit, and a later full read (a reconnect, a
+ * return to the tab) could be served the state of minutes ago. One check per
+ * block over the fields rui_index carries covers every path that changes them.
+ * RT-safe: a few dozen byte loads, no allocation. */
+static void rui_live_check(seq8_instance_t *inst) {
+    uint32_t h = 2166136261u;
+#define RUI_LIVE_MIX(v) (h = (h ^ (uint32_t)(v)) * 16777619u)
+    RUI_LIVE_MIX(inst->playing ? 1 : 0);
+    for (int t = 0; t < NUM_TRACKS; t++) {
+        const seq8_track_t *tr = &inst->tracks[t];
+        RUI_LIVE_MIX(tr->active_clip);
+        RUI_LIVE_MIX((uint8_t)tr->queued_clip);
+        RUI_LIVE_MIX(tr->clip_playing ? 1 : 0);
+        RUI_LIVE_MIX(inst->mute[t]);
+        RUI_LIVE_MIX(inst->solo[t]);
+        RUI_LIVE_MIX(tr->pad_mode);
+        RUI_LIVE_MIX(tr->pfx.route);
+        RUI_LIVE_MIX(tr->channel);
+        RUI_LIVE_MIX(tr->pfx.slot);
+    }
+#undef RUI_LIVE_MIX
+    if (h != inst->rui_live_sig) {
+        inst->rui_live_sig = h;
+        rui_content(inst);
+    }
+}
+
+static void render_block_body(void *instance, int16_t *out_lr, int frames) {
     seq8_instance_t *inst = (seq8_instance_t *)instance;
     if (!inst) return;
 
@@ -1394,4 +1427,12 @@ mix_click:
         if (inst->metro_click_pos >= inst->metro_wav_frames)
             inst->metro_click_pos = UINT32_MAX;
     }
+}
+
+/* The block, then the grid check: a launch, the bar-line switch or a stop that
+ * happens INSIDE the block is seen in the same block (the body has several
+ * early returns, so the check sits outside it). */
+static void render_block(void *instance, int16_t *out_lr, int frames) {
+    render_block_body(instance, out_lr, frames);
+    if (instance) rui_live_check((seq8_instance_t *)instance);
 }

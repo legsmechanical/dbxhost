@@ -1362,6 +1362,10 @@ typedef struct {
                                * state_load (field-wise parse, no memset); resets
                                * ONLY on full re-instantiation — the browser detects
                                * the backward devms jump and re-learns its offset. */
+    uint32_t rui_live_sig;    /* fingerprint of the session state the browser grid
+                               * shows (transport, each track's active / queued /
+                               * playing clip, mute, solo, route) — see
+                               * rui_live_check. A change bumps rui_content_rev. */
     uint64_t rui_play_ms;     /* devms of the last block rendered while PLAYING.
                                * The stopped rui_play carries it +1 as its order
                                * key: later than every playing snapshot sent
@@ -9416,14 +9420,22 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
          * playhead. Keeps idle/playing polls off the heavy snapshot path. */
         double pbpm = (inst->tracks[0].pfx.cached_bpm > 0)
                       ? inst->tracks[0].pfx.cached_bpm : (double)BPM_DEFAULT;
-        /* 5th field (playing only) = device-clock ms; see snapshot rui_play.
-         * Omitted when stopped so the digest is byte-stable at idle (the shim
-         * pushes on digest CHANGE — a always-ticking field would push forever). */
+        /* 5th field = device-clock ms while playing; see snapshot rui_play.
+         * Never a ticking value when stopped, so the digest is byte-stable at
+         * idle (the shim pushes on digest CHANGE — a always-ticking field
+         * would push forever). */
         if (inst->playing)
             return snprintf(out, out_len, "%u:1:%u:%d:%llu",
                             (unsigned)inst->rui_content_rev,
                             (unsigned)rui_playhead_tick(inst), (int)pbpm,
                             (unsigned long long)(inst->rui_frames * 1000ULL / 44100ULL));
+        /* Stopped: the stop's order key (see rui_play_ms) once the transport
+         * has run — frozen while stopped, so the idle digest stays stable. */
+        if (inst->rui_play_ms)
+            return snprintf(out, out_len, "%u:0:%u:%d:%llu",
+                            (unsigned)inst->rui_content_rev,
+                            (unsigned)rui_playhead_tick(inst), (int)pbpm,
+                            (unsigned long long)(inst->rui_play_ms + 1));
         return snprintf(out, out_len, "%u:0:%u:%d",
                         (unsigned)inst->rui_content_rev,
                         (unsigned)rui_playhead_tick(inst), (int)pbpm);
