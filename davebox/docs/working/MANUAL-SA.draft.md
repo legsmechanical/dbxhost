@@ -533,8 +533,9 @@ even with a cable in the line input.
   **Back** again to leave the keyboard.
 - **NO SPEECH** means it heard nothing it could use; **MIC BUSY** means the sampler
   (**Shift + Volume + Sample**) is in use. English only.
-- It works with the music stopped: while it plays, Rec stays dark and shows **STOP TO
-  TALK**. If input monitoring is on, it's switched off while you talk so the microphone
+- It works with the music stopped: while it plays or counts in, Rec stays dark and
+  shows **STOP TO TALK**. While the card is up, the keys under it don't respond; press
+  **Back** to take a message down. If input monitoring is on, it's switched off while you talk so the microphone
   doesn't come out of the speakers, and comes back on afterwards.
 
 ## 3.8 Choosing a track's sound

@@ -416,8 +416,15 @@ A module can record through the same sampler with `move_host_ext_v1_t.capture_st
 
 `src/shared/text_entry.mjs` + `src/shared/dictation.mjs`: hold Rec on any keyboard to talk.
 The audio is a **custom sampler take** (`host_sampler_set_source(1)` Move Input,
-`host_sampler_set_silent(1)`, `host_sampler_start(<install>/dictation/<id>.wav)`); the user's
-own source is put back on every exit, and dictation refuses while `samplerState` is not idle.
+`host_sampler_set_silent(1)`, `host_sampler_start(<install>/dictation/<id>.wav)`); dictation
+refuses while `samplerState` is not idle. **Everything borrowed goes back once the sampler has
+STOPPED, on every exit** — source, voice prompts, the jack report, monitoring. A stop is a
+request the sampler's worker carries out up to ~200 ms later, and it announces "Sample saved"
+unless `sampler_silent` is still set then. A cancelled take waits in `draining`;
+`dictationService()` finishes it, and also enforces the 10 s cap and retries a jack message the
+inject ring refused. The keyboard's owner must call `dictationService()` every tick, keyboard
+on screen or not (dAVEBOx: first thing in `_tickImpl`); it makes no host call when nothing is
+owed. A press while our own take is still stopping waits for it rather than refusing.
 A custom take still draws the sampler's dot at (123,1) — the keyboard's title row stops short
 of it under the dictation card — and the Sample button can stop it (treated as an early
 release). The card's level meter reads the overlay's `samplerVuPeak`, which
@@ -427,20 +434,28 @@ release). The card's level meter reads the overlay's `samplerVuPeak`, which
 (CC 114: 0 = empty → mic). With a cable in (`host_line_in_connected()`), a take injects
 CC 114 = 0 to the Move (`move_midi_inject_to_move`) and, once the take has stopped, the
 hardware's CURRENT answer. The injection lands in Move's copy of MIDI_IN while the shim's
-jack detector reads the hardware's, so `line_in_connected` stays true to the cable.
+jack detector reads the hardware's, so `line_in_connected` stays true to the cable — and a
+session that ends mid-take is healed by the shim's own start-up re-assert from
+`line_in_state`, which our message never touches. ⚠ That the Move switches its capture on
+this message is not yet verified on hardware.
 
 **The keyboard's owner decides the rest** through `setDictationHooks({ refuse, begin, end })`:
 `refuse()` returns a notice when dictation may not run (polled while listening too);
 `begin()`/`end()` bracket the take exactly once on every exit, for silencing anything that
 would play the mic out loud. dAVEBOx registers them in `init()` (`ui_audio_input.mjs`):
-transport stopped only (`STOP TO TALK`), input monitoring Off for the take.
+the sequencer neither running nor waiting to (no count-in, record or merge; no audio take
+armed or running) — else `STOP TO TALK` — and input monitoring Off for the take.
 
 The words come from **`<install>/stt/bin/schwung-stt`** (`src/stt/`), one process per take,
 spawned at Rec-down through `stt-run.sh` (`host_system_cmd`, backgrounded) so the model
-loads while the user speaks: SCHED_OTHER, nice 19, cores 0-2, a 45 s hard limit. It waits
-for `<id>.go` (written once `host_sampler_is_recording()` goes false, i.e. the WAV is
-closed), decodes, and renames `<id>.json` into place (`ok`, `text`, `err`, `load_ms`,
-`decode_ms`, `audio_ms`); `<id>.cancel` makes it exit silently. Runtime: sherpa-onnx C API
+loads while the user speaks: started under `taskset 0x7 nice -n 19` (so even its libraries
+load off core 3), SCHED_OTHER asserted again inside, a 45 s hard limit. **One at a time:**
+the launcher ends any earlier helper first (`<id>.pid`, checked against the process name
+before the kill). It waits for `<id>.go` (written once `host_sampler_is_recording()` goes
+false, i.e. the WAV is closed), judges the take on its level BEFORE normalising
+(`stt_gate`: under 300 ms → `too_short`, peak under -40 dBFS → `no_speech`; a recognizer fed
+a quiet room invents words), decodes, and renames `<id>.json` into place (`ok`, `text`,
+`err`, `load_ms`, `decode_ms`, `audio_ms`); `<id>.cancel` makes it exit silently. Runtime: sherpa-onnx C API
 + ONNX Runtime + Moonshine Tiny (en), pinned in `scripts/stt-deps.lock`, fetched by
 `scripts/fetch-stt.sh`, laid out by `scripts/build.sh` as `build/stt/{bin,lib,model}`.
 
