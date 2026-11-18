@@ -35,6 +35,10 @@ for f in "$WORK"/*.wav "$WORK"/*.go "$WORK"/*.cancel "$WORK"/*.json "$WORK"/*.tm
     [ -e "$f" ] || continue
     case "${f##*/}" in "$ID".*) ;; *) rm -f "$f" ;; esac
 done
+# ONE recognizer thread: on the CM5 1, 2 and 3 threads timed the same
+# (2026-11-18, the same hashed samples: a name ~55 ms, 10 s of speech ~0.7 s
+# after a ~0.9 s load that overlaps the talking), and one thread leaves the
+# most room for the audio engine's render lanes on cores 0-2.
 # Cores 0-2 and the lowest priority from the first instruction, before the
 # 37 MB of libraries are even mapped (core 3 is the audio callback's). The
 # helper asserts both again itself.
@@ -43,7 +47,7 @@ command -v taskset >/dev/null 2>&1 && POLITE="taskset 0x7"
 command -v nice >/dev/null 2>&1 && POLITE="$POLITE nice -n 19"
 LD_LIBRARY_PATH="$STT_DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
     $POLITE "$STT_DIR/bin/schwung-stt" "$STT_DIR/model" "$WORK/$ID.wav" "$WORK/$ID.go" \
-    "$WORK/$ID.cancel" "$WORK/$ID.json" ${STT_THREADS:-2} "$TAKE_S" \
+    "$WORK/$ID.cancel" "$WORK/$ID.json" ${STT_THREADS:-1} "$TAKE_S" \
     </dev/null >>"$WORK/helper.log" 2>&1 &
 echo $! > "$WORK/$ID.pid"
 wait $!

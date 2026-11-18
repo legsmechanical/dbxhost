@@ -52,8 +52,8 @@ int main(int argc, char **argv) {
         return 2;
     }
     const char *dir = argv[1], *wav = argv[2], *go = argv[3], *cancel = argv[4], *result = argv[5];
-    int threads = (argc > 6) ? atoi(argv[6]) : 2;
-    if (threads < 1 || threads > 3) threads = 2;
+    int threads = (argc > 6) ? atoi(argv[6]) : 1;   /* 1: see stt-run.sh */
+    if (threads < 1 || threads > 3) threads = 1;
     /* the take's length (the keyboard's), and the waits that follow from it */
     int take_s, go_ms, hard_s;
     stt_limits((argc > 7) ? atoi(argv[7]) : 0, &take_s, &go_ms, &hard_s);

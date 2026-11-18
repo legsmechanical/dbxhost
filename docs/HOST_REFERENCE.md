@@ -456,7 +456,9 @@ The words come from **`<install>/stt/bin/schwung-stt`** (`src/stt/`), one proces
 spawned at Rec-down through `stt-run.sh <work> <id> <take-seconds>` (`host_system_cmd`,
 backgrounded) so the model
 loads while the user speaks: started under `taskset 0x7 nice -n 19` (so even its libraries
-load off core 3), SCHED_OTHER asserted again inside, a 45 s hard limit. **One at a time:**
+load off core 3), SCHED_OTHER asserted again inside, ONE recognizer thread (on the CM5, 1/2/3
+threads timed the same: a name decodes in ~55 ms, 10 s of speech in ~0.7 s, after a ~0.9 s load
+that overlaps the talking), a hard limit of the take + 60 s. **One at a time:**
 the launcher ends any earlier helper first (`<id>.pid`, checked against the process name
 before the kill). It waits for `<id>.go` (written once `host_sampler_is_recording()` goes
 false, i.e. the WAV is closed), judges the take on its level BEFORE normalising
