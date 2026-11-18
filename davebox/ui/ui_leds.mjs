@@ -97,6 +97,7 @@ export function dictationRecLed() {
     const st = v && v.dictation ? v.dictation.state : 'idle';
     if (st === 'starting' || st === 'listening') return { from: LED_OFF, color: Red, anim: 0 };
     if (st === 'finalizing' || st === 'transcribing') return { from: LED_OFF, color: White, anim: LED_PULSE_4TH };
+    if (S.playing) return { from: LED_OFF, color: LED_OFF, anim: 0 };   /* dictation waits for Stop */
     return { from: LED_OFF, color: 16, anim: 0 };   /* 16 = the picker's dim "available" */
 }
 

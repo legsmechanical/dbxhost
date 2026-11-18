@@ -89,6 +89,12 @@ globalThis.host_sampler_set_source = (v) => { LOG.push('source ' + v); SAMP.sour
 globalThis.host_sampler_start = (p) => { LOG.push('start ' + p); if (SAMP.startOk) SAMP.recording = true; return true; };
 globalThis.host_sampler_stop = () => { LOG.push('stop'); if (SAMP.recording) SAMP.closing = 3; return true; };
 
+/* The line-in jack as the hardware reports it (shadow_control), and what
+ * this host tells the Move about it (CC 114 through the inject ring). */
+const JACK = { lineIn: false };
+globalThis.host_line_in_connected = () => JACK.lineIn;
+globalThis.move_midi_inject_to_move = (pkt) => { if (pkt[2] === 114) LOG.push('jack114 ' + pkt[3]); return true; };
+
 /* LEDs: the last write to each button, with its animation channel. */
 const BTN = {};
 globalThis.move_midi_internal_send = (pkt) => {
@@ -115,6 +121,7 @@ const dict = await import('/data/UserData/schwung/shared/dictation.mjs');
 const { LED_PULSE_4TH } = await import('../../ui/ui_constants.mjs');
 const { Red, White } = await import('/data/UserData/schwung/shared/constants.mjs');
 fonts.setKitTextTrace((t) => INK.push(t));
+globalThis.init();                 /* the real start-up: it registers the keyboard's dictation hooks */
 
 const cc = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
 const note = (n, v) => globalThis.onMidiMessageInternal(new Uint8Array([v ? 0x90 : 0x80, n, v]));
@@ -141,6 +148,7 @@ function ready() {
     S.globalMenuOpen = false;
     te.closeTextEntry();
     SAMP.state = 0; SAMP.source = 0; SAMP.recording = false; SAMP.startOk = true; SAMP.closing = 0;
+    JACK.lineIn = false; S.inputPrefs = { mon: 0, mode: 0, gain: 0 };
     if (!S.bankParams || !S.bankParams[0])
         S.bankParams = Array.from({ length: 8 }, () => Array.from({ length: 16 }, () => new Array(8).fill(0)));
     NOW += 5000; ticks(1);                       /* any notice from a step before expires */
@@ -385,6 +393,88 @@ step('idle costs nothing: an open keyboard with no dictation makes no sampler or
     ticks(20);
     Object.assign(globalThis, { shadow_get_overlay_state: was.o, host_sampler_is_recording: was.r, host_file_exists: was.e });
     assert(calls === 0, calls + ' host calls from an idle keyboard');
+});
+
+step('⭐ transport playing: Rec says STOP TO TALK, nothing starts, the Rec light is dark', () => {
+    openTemplateKeyboard('Old Name');
+    S.playing = true; ticks(1);
+    assert(BTN[86].color === 0, 'Rec LED while playing ' + J(BTN[86]));
+    const n = SPAWNED.length;
+    recDown(); ticks(1);
+    assert(!LOG.some(l => /^start |^source |^silent |^set ain_mon|^jack114/.test(l)) && SPAWNED.length === n, 'started: ' + J(LOG));
+    assert(/STOP TO TALK/.test(screen()), 'on screen: ' + screen());
+    recUp(); S.playing = false;
+});
+
+step('the transport starting mid-take (from outside) ends it: stopped, put back, cancelled', () => {
+    openTemplateKeyboard('Old Name');
+    recDown(); ticks(1); later(600);
+    LOG.length = 0;
+    S.playing = true; ticks(1);
+    assert(LOG.indexOf('stop') >= 0 && LOG.indexOf('silent 0') >= 0, 'not stopped/restored: ' + J(LOG));
+    assert(FILES[WORK + '/' + lastId() + '.cancel'] === '1', 'helper not cancelled');
+    assert(!dict.dictationActive() && /STOP TO TALK/.test(screen()), 'on screen: ' + screen());
+    recUp(); S.playing = false;
+});
+
+step('⭐ Monitor On: Off for the take, On again once it stops; the saved setting untouched', () => {
+    openTemplateKeyboard('Old Name');
+    S.inputPrefs = { mon: 2, mode: 0, gain: 0 };
+    recDown();
+    const iMute = LOG.indexOf('set ain_mon=1'), iStart = LOG.findIndex(l => /^start /.test(l));
+    assert(iMute >= 0 && iMute < iStart, 'monitoring not off before the take: ' + J(LOG));
+    later(1200); recUp(); ticks(1);
+    assert(LOG.indexOf('set ain_mon=2') < 0, 'monitoring back on while the take is still closing: ' + J(LOG));
+    ticks(4);
+    const iBack = LOG.indexOf('set ain_mon=2');
+    assert(iBack > LOG.indexOf('stop'), 'monitoring not restored after the take: ' + J(LOG));
+    assert(!LOG.some(l => /input\.txt/.test(l)), 'the saved input setting was rewritten: ' + J(LOG));
+    assert(S.inputPrefs.mon === 2, 'pref changed');
+});
+
+step('Monitor On, cancelled with Back: monitoring comes back too', () => {
+    openTemplateKeyboard('Old Name');
+    S.inputPrefs = { mon: 2, mode: 0, gain: 0 };
+    recDown(); ticks(1); later(800);
+    cc(51, 127); cc(51, 0); ticks(1);
+    assert(LOG.indexOf('set ain_mon=1') >= 0 && LOG.lastIndexOf('set ain_mon=2') > LOG.indexOf('set ain_mon=1'), J(LOG));
+    recUp();
+});
+
+step('Monitor Rec is turned Off for the take too; Monitor Off leaves the engine alone', () => {
+    for (const mon of [1, 0]) {
+        openTemplateKeyboard('Old Name');
+        S.inputPrefs = { mon, mode: 0, gain: 0 };
+        if (mon === 0) { recDown(); assert(LOG.indexOf('set ain_mon=1') >= 0, 'Rec not muted: ' + J(LOG)); recUp(); ticks(6); continue; }
+        dictate({ ok: true, text: 'x' });
+        assert(!LOG.some(l => /^set ain_mon/.test(l)), 'monitor set with it Off: ' + J(LOG));
+    }
+});
+
+step('⭐ a cable in line-in: the Move is told the jack is empty for the take, and the truth after', () => {
+    openTemplateKeyboard('Old Name');
+    JACK.lineIn = true;
+    recDown();
+    const iJack = LOG.indexOf('jack114 0'), iStart = LOG.findIndex(l => /^start /.test(l));
+    assert(iJack >= 0 && iJack < iStart, 'mic not selected before the take: ' + J(LOG));
+    later(1200); recUp(); ticks(5);
+    assert(LOG.indexOf('jack114 127') > LOG.indexOf('stop'), 'line-in not given back after the take: ' + J(LOG));
+});
+
+step('…a cable pulled mid-take: the Move is told the jack is empty (the hardware\'s answer, not the old one)', () => {
+    openTemplateKeyboard('Old Name');
+    JACK.lineIn = true;
+    recDown(); later(800);
+    JACK.lineIn = false;
+    recUp(); ticks(5);
+    const after = LOG.slice(LOG.indexOf('stop'));
+    assert(after.indexOf('jack114 0') >= 0 && after.indexOf('jack114 127') < 0, J(LOG));
+});
+
+step('no cable: the jack is never mentioned to the Move', () => {
+    openTemplateKeyboard('Old Name');
+    dictate({ ok: true, text: 'x' });
+    assert(!LOG.some(l => /^jack114/.test(l)), J(LOG));
 });
 
 step('sanitizeTranscript: trimmed, single-spaced, no end punctuation, keyboard characters only', () => {

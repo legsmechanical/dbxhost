@@ -410,6 +410,8 @@ step('⭐ Save As keyboard: hold Rec, release, the words land — and sound mode
     globalThis.host_sampler_set_source = () => true;
     globalThis.host_sampler_start = () => { rec = true; return true; };
     globalThis.host_sampler_stop = () => { closing = 3; return true; };
+    globalThis.host_line_in_connected = () => false;
+    globalThis.move_midi_inject_to_move = () => true;
     globalThis.host_system_cmd = (c) => { const m = / (d[0-9a-z]+) >/.exec(String(c)); if (m) id = m[1]; return 0; };
     globalThis.host_write_file = (p, b) => { files[String(p)] = String(b); return saved.w(p, b); };
     globalThis.host_file_exists = (p) => (String(p) in files) || saved.e(p);

@@ -148,6 +148,25 @@ export function setInputMonitor(v) {
 }
 export const IN_MON_ORDER = IN_MON_SHOWN;
 
+/* DICTATION (hold Rec on the shared keyboard, src/shared/dictation.mjs):
+ * only with the transport stopped, and with monitoring OFF for the take —
+ * the mic must not come out of the speakers while you talk into it. The
+ * engine is told Off for the take and the device's own setting afterwards;
+ * the saved setting (input.txt) is never touched. */
+export const dictationHooks = {
+    refuse() { return S.playing ? 'STOP TO TALK' : null; },
+    begin() {
+        if (inputPrefs().mon === 1) return;               /* 1 = Off already */
+        host_module_set_param('ain_mon', '1');
+        S.dictationMonMuted = true;
+    },
+    end() {
+        if (!S.dictationMonMuted) return;
+        S.dictationMonMuted = false;
+        host_module_set_param('ain_mon', String(inputPrefs().mon));
+    },
+};
+
 /* THE METER: the input's peaks since the last read, held for the bars' fall,
  * with the track's Gain on them (what the take would get); `clip` holds a
  * second after a sample reaches full scale. Read every tick while the bank is

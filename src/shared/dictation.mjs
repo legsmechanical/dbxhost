@@ -24,6 +24,20 @@
  * Files (never /tmp on a Move): <install>/dictation/<id>.{wav,go,cancel,json}.
  * The id keeps a cancelled helper's late answer away from the next dictation.
  *
+ * The microphone, always: with a cable in the line-in jack the Move records
+ * the cable, so a take tells the Move the jack is empty (CC 114 = 0, the
+ * Move's own jack report) and tells it the truth again when the take ends.
+ * The host's `host_line_in_connected()` follows the hardware, not what we
+ * tell the Move, so the truth is always at hand to restore.
+ *
+ * The module using the keyboard owns the rest through setDictationHooks():
+ *   refuse()  a notice when dictation may not run now (polled while
+ *             listening too, so a transport started from outside ends it)
+ *   begin()   the take is starting: silence anything that would play the
+ *             mic out loud (monitoring)
+ *   end()     the take has stopped: put that back. Paired with begin()
+ *             exactly once, on every exit.
+ *
  * Idle costs nothing: tick() makes no host call unless a dictation is live.
  */
 
@@ -41,6 +55,18 @@ const RESULT_POLL_MS = 100;
 const NOTICE_MS = 1600;
 
 const SOURCE_MOVE_INPUT = 1;
+const CC_MIC_IN_DETECT = 114;          /* the Move's line-in jack report: 0 = empty (mic) */
+
+let hooks = null;
+/* Register the keyboard owner's hooks (see the header); null clears them. */
+export function setDictationHooks(h) { hooks = h || null; }
+function hook(name) {
+    if (!hooks || typeof hooks[name] !== 'function') return undefined;
+    try { return hooks[name](); } catch (e) { return undefined; }
+}
+function tellMoveLineIn(plugged) {
+    move_midi_inject_to_move([0x0B, 0xB0, CC_MIC_IN_DETECT, plugged ? 127 : 0]);
+}
 
 let st = null;          /* the live dictation, or null */
 let notice = null;      /* { text, until } */
@@ -55,12 +81,15 @@ function recording() { return !!host_sampler_is_recording(); }
 
 function showNotice(text) { notice = { text, until: now() + NOTICE_MS }; }
 
-/* Put the sampler back the way the user had it. Idempotent per dictation. */
+/* Put the sampler, the jack and monitoring back the way the user had them.
+ * Idempotent per dictation; runs as soon as the take has stopped. */
 function restoreSampler(d) {
     if (!d || d.restored) return;
     d.restored = true;
     if (d.prevSource !== SOURCE_MOVE_INPUT) host_sampler_set_source(d.prevSource | 0);
     host_sampler_set_silent(0);
+    if (d.forcedMic) tellMoveLineIn(!!host_line_in_connected());   /* the hardware's answer, now */
+    hook('end');
 }
 
 function writeCancel(d) {
@@ -98,6 +127,8 @@ export function dictationPress() {
     if (st && st.state === 'transcribing') finish(null);   /* talking again replaces it */
     if (st) return;
     notice = null;
+    const no = hook('refuse');
+    if (no) { showNotice(String(no)); return; }
     const ov = samplerOverlay();
     if ((ov.samplerState | 0) !== 0 || recording()) { showNotice('MIC BUSY'); return; }
     const id = 'd' + now().toString(36) + (seq++).toString(36);
@@ -105,7 +136,10 @@ export function dictationPress() {
     st = {
         id, base, state: 'starting', pressAt: now(), listenAt: 0, stopAt: 0, lastPoll: 0,
         prevSource: (ov.samplerSource | 0), restored: false, spawned: false, released: false,
+        forcedMic: !!host_line_in_connected(),
     };
+    hook('begin');
+    if (st.forcedMic) tellMoveLineIn(false);
     host_sampler_set_silent(1);
     host_sampler_set_source(SOURCE_MOVE_INPUT);
     host_sampler_start(base + '.wav');
@@ -152,6 +186,11 @@ export function dictationTick() {
     const t = now();
     const before = d.state + ':' + dictationState().seconds;
     let text = null;
+
+    if (d.state === 'starting' || d.state === 'listening') {
+        const no = hook('refuse');
+        if (no) { finish(String(no)); return { changed: true, text: null }; }
+    }
 
     if (d.state === 'starting') {
         if (recording()) {

@@ -96,6 +96,8 @@ import { soundModeCovered } from './ui_render.mjs';
 import { armCardHold } from './ui_prefs.mjs';
 import { _tickImpl, applyExtMidiRemap, requestSessionExit, requestPowerOff } from './ui_tick.mjs';
 import { batteryReport, lowBatteryInput } from './ui_battery.mjs';
+import { dictationHooks } from './ui_audio_input.mjs';
+import { setDictationHooks } from '/data/UserData/schwung/shared/dictation.mjs';
 
 /*
  * ⚠⚠ THE WAVE PEAKS IO — WITHOUT THIS, EVERY SAMPLE WIDGET DRAWS NOTHING.
@@ -258,6 +260,9 @@ globalThis.init = function () {
      * including sysex suppression — is DERIVED by the host from our
      * declared claims + the service stack from here on. */
     initPrimarySurface();
+    /* The keyboard's push-to-talk: stopped transport only, monitoring off
+     * for the take (ui_audio_input.mjs). */
+    setDictationHooks(dictationHooks);
     /* preflight.sh (standalone/scripts/preflight.sh) runs at launch, before
      * this module ever loads, and writes DAVEBOX_HOST_DIR + '/preflight_failed'
      * when a stock-tree seam it checks (owned modules, the Tools-menu stub, the
