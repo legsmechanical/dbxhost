@@ -516,6 +516,24 @@ a **Shift + Step** shortcut (see the [Quick Reference](#21-quick-reference)).
   as it was. A two-way setting flips on the click.
 - **Back** steps out; in Project Settings it also cancels a change in progress.
 
+**Typing a name** (a project, a template, Save As, a rename) uses the on-screen keyboard:
+turn the jog to a key and click it. **OK** saves, **Back** cancels.
+
+**Or say it: hold Rec, speak, let go.** The top line reads **LISTENING** while Rec is
+held (the Rec button lights red), then **TRANSCRIBING** for a moment (Rec pulses white),
+and the words appear in the name. It listens through the Move's microphone, or the
+line input when a cable is plugged in.
+
+- If the name hasn't been touched yet, what you say replaces it. Once you've typed
+  something, what you say is added after it.
+- The words are still editable with the keyboard before you press **OK**.
+- Up to about 10 seconds at a time; a quick tap on Rec shows **HOLD REC TO TALK**.
+- **Back** while it's listening or transcribing cancels just the dictation; press
+  **Back** again to leave the keyboard.
+- **NO SPEECH** means it heard nothing it could use; **MIC BUSY** means the sampler
+  (**Shift + Volume + Sample**) is in use. English only, and it works best with the
+  music stopped.
+
 ## 3.8 Choosing a track's sound
 
 > 🎬 **Video:** [Tutorial 1.5: Instruments](https://youtu.be/3kP6Zwm79_0?t=308) (from 5:08) · [Tutorial 1.6: Adding effects](https://youtu.be/3kP6Zwm79_0?t=374) (from 6:14)

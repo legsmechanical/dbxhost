@@ -820,6 +820,7 @@ CC_GRADIENT_SCALARS     = [0.30, 0.60, 1.0]
 | Armed for record | `Red`, or red-intensity scratch `(v,0,0)` |
 | Playing with a live CC value | Green-intensity scratch `(0,v,0)` |
 | **Copy source** | Blink `White` ↔ `LED_OFF`, 24-tick — identical for steps, drum lanes, clips |
+| **Rec under a keyboard** (dictation) | dim `16` available · solid `Red` listening · `White` pulse transcribing — `dictationRecLed()`, painted by the transport chain and the picker's surface painter |
 
 ⚠ **Only three white brightness levels are usable** (`CC_GRADIENT_SCALARS` = 0.30 / 0.60 / 1.0).
 The LEDs cannot resolve a finer ramp; a smooth gradient will read as noise.
@@ -865,6 +866,8 @@ one frame overflows.
 
 CC 3 jog click · CC 14 jog turn · CC 49 shift · CC 50 menu · CC 51 back · CC 71–78 knobs ·
 notes 0–9 knob capacitive touch · pads notes 68–99.
+
+**On a keyboard, Rec (CC 86) is push-to-talk:** hold to talk, release to transcribe (`src/shared/dictation.mjs`). It is handled ahead of the pads and the preview screen; while the mic is open the keyboard takes nothing but Rec-up and Back, and Back cancels the dictation, not the keyboard. The title row becomes an inverted bar (`LISTENING n s` / `TRANSCRIBING...` / a notice).
 
 **Touch orients, turn reveals, release commits.** A bare orienting touch must NOT open the picker
 overlay — only an actual turn does. This is the canonical grammar for every knob-driven overlay.
