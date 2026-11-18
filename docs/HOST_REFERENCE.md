@@ -421,6 +421,18 @@ own source is put back on every exit, and dictation refuses while `samplerState`
 A custom take still draws the sampler's dot at (123,1) — the keyboard's inverted title bar
 covers it — and the Sample button can stop it (treated as an early release).
 
+**Always the internal mic.** The Move picks its input from its own line-in jack report
+(CC 114: 0 = empty → mic). With a cable in (`host_line_in_connected()`), a take injects
+CC 114 = 0 to the Move (`move_midi_inject_to_move`) and, once the take has stopped, the
+hardware's CURRENT answer. The injection lands in Move's copy of MIDI_IN while the shim's
+jack detector reads the hardware's, so `line_in_connected` stays true to the cable.
+
+**The keyboard's owner decides the rest** through `setDictationHooks({ refuse, begin, end })`:
+`refuse()` returns a notice when dictation may not run (polled while listening too);
+`begin()`/`end()` bracket the take exactly once on every exit, for silencing anything that
+would play the mic out loud. dAVEBOx registers them in `init()` (`ui_audio_input.mjs`):
+transport stopped only (`STOP TO TALK`), input monitoring Off for the take.
+
 The words come from **`<install>/stt/bin/schwung-stt`** (`src/stt/`), one process per take,
 spawned at Rec-down through `stt-run.sh` (`host_system_cmd`, backgrounded) so the model
 loads while the user speaks: SCHED_OTHER, nice 19, cores 0-2, a 45 s hard limit. It waits

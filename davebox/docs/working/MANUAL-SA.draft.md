@@ -521,8 +521,8 @@ turn the jog to a key and click it. **OK** saves, **Back** cancels.
 
 **Or say it: hold Rec, speak, let go.** The top line reads **LISTENING** while Rec is
 held (the Rec button lights red), then **TRANSCRIBING** for a moment (Rec pulses white),
-and the words appear in the name. It listens through the Move's microphone, or the
-line input when a cable is plugged in.
+and the words appear in the name. It always listens through the Move's own microphone,
+even with a cable in the line input.
 
 - If the name hasn't been touched yet, what you say replaces it. Once you've typed
   something, what you say is added after it.
@@ -531,8 +531,10 @@ line input when a cable is plugged in.
 - **Back** while it's listening or transcribing cancels just the dictation; press
   **Back** again to leave the keyboard.
 - **NO SPEECH** means it heard nothing it could use; **MIC BUSY** means the sampler
-  (**Shift + Volume + Sample**) is in use. English only, and it works best with the
-  music stopped.
+  (**Shift + Volume + Sample**) is in use. English only.
+- It works with the music stopped: while it plays, Rec stays dark and shows **STOP TO
+  TALK**. If input monitoring is on, it's switched off while you talk so the microphone
+  doesn't come out of the speakers, and comes back on afterwards.
 
 ## 3.8 Choosing a track's sound
 

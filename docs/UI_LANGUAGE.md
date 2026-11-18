@@ -820,7 +820,7 @@ CC_GRADIENT_SCALARS     = [0.30, 0.60, 1.0]
 | Armed for record | `Red`, or red-intensity scratch `(v,0,0)` |
 | Playing with a live CC value | Green-intensity scratch `(0,v,0)` |
 | **Copy source** | Blink `White` ↔ `LED_OFF`, 24-tick — identical for steps, drum lanes, clips |
-| **Rec under a keyboard** (dictation) | dim `16` available · solid `Red` listening · `White` pulse transcribing — `dictationRecLed()`, painted by the transport chain and the picker's surface painter |
+| **Rec under a keyboard** (dictation) | dim `16` available · dark while the transport runs (refused) · solid `Red` listening · `White` pulse transcribing — `dictationRecLed()`, painted by the transport chain and the picker's surface painter |
 
 ⚠ **Only three white brightness levels are usable** (`CC_GRADIENT_SCALARS` = 0.30 / 0.60 / 1.0).
 The LEDs cannot resolve a finer ramp; a smooth gradient will read as noise.
