@@ -36,6 +36,15 @@ const char *stt_gate(long audio_ms, float raw_peak);
 #define STT_MAX_TAKE_S     30
 void stt_limits(int max_s, int *take_s, int *go_ms, int *hard_s);
 
+/* The stretch of a take to decode, from the voice detector's segments (sample
+ * indices: segment i covers [start[i], start[i] + len[i])). The span runs from
+ * the first segment's start to the last one's end, widened by pad on each side
+ * and clamped to [0, total). Hum or rustle around the words is left out: fed
+ * to the recognizer, it comes back as invented words.
+ * Returns 0 and fills *from / *to; -1 when there is no segment (no speech). */
+int stt_span(const long *start, const long *len, int nseg, long total, long pad,
+             long *from, long *to);
+
 /* Peak absolute sample value of a buffer. */
 float stt_peak(const float *x, int n);
 

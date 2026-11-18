@@ -102,7 +102,7 @@ printf '# nothing\n' > "$L"
 msg="$(STT_LOCK="$L" STT_CACHE="$T/cache" bash scripts/fetch-stt.sh 2>&1)"; rc=$?
 [ $rc -ne 0 ] && printf '%s' "$msg" | grep -q "lists nothing" && ok "an empty lock fails (zero entries is not green)" || bad "empty: rc=$rc $msg"
 # The real lock pins every entry the build needs, each with a 64-hex hash.
-for n in sherpa-onnx-lib sherpa-onnx-header moonshine-tiny-en; do
+for n in sherpa-onnx-lib sherpa-onnx-header moonshine-tiny-en silero-vad silero-vad-license; do
     grep -Eq "^$n [0-9a-f]{64} https://" scripts/stt-deps.lock && ok "lock pins $n" || bad "lock has no pinned $n"
 done
 

@@ -541,7 +541,8 @@ fi
 # runtime libraries, model). Its own folder, NOT build/lib/ (the shim's TTS libs).
 STT_STAGE=.cache/stt/stage
 for f in include/c-api.h lib/libsherpa-onnx-c-api.so lib/libonnxruntime.so \
-         model/encoder_model.ort model/decoder_model_merged.ort model/tokens.txt; do
+         model/encoder_model.ort model/decoder_model_merged.ort model/tokens.txt \
+         model/silero_vad.onnx model/SILERO_VAD_LICENSE; do
     [ -f "$STT_STAGE/$f" ] || { echo "ERROR: speech-to-text stage missing $f (run scripts/fetch-stt.sh)" >&2; exit 1; }
 done
 mkdir -p build/stt/bin build/stt/lib build/stt/model
@@ -552,7 +553,7 @@ if needs_rebuild build/stt/bin/schwung-stt src/stt/stt_helper.c src/stt/stt_core
         -I"$STT_STAGE/include" -Isrc/stt \
         src/stt/stt_helper.c src/stt/stt_core.c \
         -o build/stt/bin/schwung-stt \
-        -L"$STT_STAGE/lib" -lsherpa-onnx-c-api -Wl,--allow-shlib-undefined \
+        -L"$STT_STAGE/lib" -lsherpa-onnx-c-api -lm -Wl,--allow-shlib-undefined \
         || { echo "ERROR: schwung-stt build failed" >&2; exit 1; }
 else
     echo "Skipping schwung-stt (up to date)"
@@ -575,8 +576,9 @@ for f in build/stt/bin/schwung-stt build/stt/lib/libsherpa-onnx-c-api.so build/s
     fi
 done
 cp -u "$STT_STAGE"/model/encoder_model.ort "$STT_STAGE"/model/decoder_model_merged.ort \
-      "$STT_STAGE"/model/tokens.txt build/stt/model/
+      "$STT_STAGE"/model/tokens.txt "$STT_STAGE"/model/silero_vad.onnx build/stt/model/
 cp "$STT_STAGE"/model/LICENSE build/licenses/MOONSHINE_LICENSE.txt
+cp "$STT_STAGE"/model/SILERO_VAD_LICENSE build/licenses/SILERO_VAD_LICENSE.txt
 # The oldest Move glibc this repo knows of is 2.34 (see link-subscriber above).
 for f in build/stt/bin/schwung-stt build/stt/lib/libsherpa-onnx-c-api.so build/stt/lib/libonnxruntime.so; do
     bash davebox/scripts/check-glibc.sh "$f" 2.34 >/dev/null \

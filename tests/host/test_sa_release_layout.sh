@@ -13,7 +13,7 @@ printf x > "$B/schwung"; printf x > "$B/link-subscriber"; chmod +x "$B/link-subs
 cp standalone/scripts/layout-install.sh standalone/scripts/bootstrap.sh "$B/scripts/"; cp standalone/config.sh "$B/scripts/config.sh"
 cp standalone/scripts/install-privileged.sh "$B/bless.sh"
 printf x > "$B/modules/chain/dsp.so"; printf x > "$B/modules/audio_fx/verb/x"; printf x > "$B/presets/p"; printf x > "$B/help/a.md"
-STT_FILES="stt/bin/schwung-stt stt/stt-run.sh stt/lib/libsherpa-onnx-c-api.so stt/lib/libonnxruntime.so stt/model/encoder_model.ort stt/model/decoder_model_merged.ort stt/model/tokens.txt licenses/MOONSHINE_LICENSE.txt"
+STT_FILES="stt/bin/schwung-stt stt/stt-run.sh stt/lib/libsherpa-onnx-c-api.so stt/lib/libonnxruntime.so stt/model/encoder_model.ort stt/model/decoder_model_merged.ort stt/model/tokens.txt stt/model/silero_vad.onnx licenses/MOONSHINE_LICENSE.txt licenses/SILERO_VAD_LICENSE.txt"
 for f in $STT_FILES; do mkdir -p "$B/$(dirname "$f")"; printf x > "$B/$f"; done
 mkdir -p "$B/tests/host"; printf x > "$B/tests/host/t.sh"; for i in 0 1 2; do printf x > "$B/splash-$i.hex"; done
 D="$T/dist"; mkdir -p "$D"; printf '{"id":"davebox-sound","version":"9.9"}' > "$D/module.json"; printf x > "$D/dsp.so"; printf x > "$D/ui.js"

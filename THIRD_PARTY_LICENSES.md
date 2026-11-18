@@ -42,7 +42,8 @@ shared memory only. It keeps its own licence and imposes nothing on the rest.
 | `stt/bin/schwung-stt` (speech-to-text helper) | MIT | This repo's own code (`src/stt/`), dynamically linked to sherpa-onnx (Apache-2.0) — a separate program, never linked into the host |
 | `stt/lib/libsherpa-onnx-c-api.so` | Apache-2.0 | sherpa-onnx v2.0.1, redistributed unmodified (prebuilt) |
 | `stt/lib/libonnxruntime.so` | MIT | ONNX Runtime, redistributed unmodified (prebuilt, bundled by sherpa-onnx) |
-| `stt/model/*` | MIT | Moonshine Tiny English (quantized), redistributed unmodified |
+| `stt/model/*` (except `silero_vad.onnx`) | MIT | Moonshine Tiny English (quantized), redistributed unmodified |
+| `stt/model/silero_vad.onnx` | MIT | Silero VAD, redistributed unmodified (the export published with sherpa-onnx) |
 
 Corresponding source for the GPL components is available from each project's
 upstream repository, linked in its section below; `libs/link` is a git
@@ -490,6 +491,17 @@ SOFTWARE.
 
 **License:** MIT (the English models and the code). The model archive's own
 licence file ships as `licenses/MOONSHINE_LICENSE.txt`.
+
+### Silero VAD
+
+**Location:** `stt/model/silero_vad.onnx` — the voice detector that keeps a take
+with no voice in it away from the recognizer; the ONNX export published with
+sherpa-onnx (`asr-models/silero_vad.onnx`)
+**Author:** Silero Team
+**Upstream:** https://github.com/snakers4/silero-vad
+
+**License:** MIT. The licence text (pinned at upstream commit `066409f`) ships as
+`licenses/SILERO_VAD_LICENSE.txt`.
 
 ---
 

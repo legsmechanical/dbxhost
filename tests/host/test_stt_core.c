@@ -123,6 +123,18 @@ int main(void) {
     CHECK(stt_gate(300, 0.5f) == NULL, "300 ms refused");
     CHECK(stt_gate(1000, STT_SPEECH_PEAK) == NULL && stt_gate(1000, STT_SPEECH_PEAK * 0.9f) != NULL, "threshold moved");
 
+    /* the voiced span: first start to last end, padded, clamped; none = no speech */
+    { long st[3] = { 16000, 80000, 40000 }, ln[3] = { 8000, 16000, 4000 }, a = -9, b = -9;
+      CHECK(stt_span(st, ln, 3, 160000, 4800, &a, &b) == 0 && a == 11200 && b == 100800,
+            "span %ld-%ld, want 11200-100800 (segments out of order)", a, b);
+      CHECK(stt_span(st, ln, 3, 98000, 20000, &a, &b) == 0 && a == 0 && b == 98000, "unclamped %ld-%ld", a, b);
+      a = b = -9;
+      CHECK(stt_span(st, ln, 0, 160000, 4800, &a, &b) == -1 && a == -9 && b == -9, "no segment must be no speech");
+      long bad_st[1] = { -1 }, bad_ln[1] = { 500 };
+      CHECK(stt_span(bad_st, bad_ln, 1, 160000, 4800, &a, &b) == -1, "an invalid segment counted as speech");
+      long one_st[1] = { 1000 }, zero_ln[1] = { 0 };
+      CHECK(stt_span(one_st, zero_ln, 1, 160000, 4800, &a, &b) == -1, "an empty segment counted as speech"); }
+
     /* take length: 30 s by default, clamped; the helper's waits grow with it
      * (a 30 s take must not time out at the 15 s a short one would allow) */
     { int s, g, h;

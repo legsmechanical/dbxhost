@@ -461,11 +461,14 @@ threads timed the same: a name decodes in ~55 ms, 10 s of speech in ~0.7 s, afte
 that overlaps the talking), a hard limit of the take + 60 s. **One at a time:**
 the launcher ends any earlier helper first (`<id>.pid`, checked against the process name
 before the kill). It waits for `<id>.go` (written once `host_sampler_is_recording()` goes
-false, i.e. the WAV is closed), judges the take on its level BEFORE normalising
-(`stt_gate`: under 300 ms → `too_short`, peak under -40 dBFS → `no_speech`; a recognizer fed
-a quiet room invents words), decodes, and renames `<id>.json` into place (`ok`, `text`,
+false, i.e. the WAV is closed), refuses the cheap cases first (`stt_gate`, on the level BEFORE
+normalising: under 300 ms → `too_short`, peak under -40 dBFS → `no_speech`), then runs a
+Silero voice detector over the take at 16 kHz: no voice → `no_speech`, otherwise only the
+voiced stretch plus 0.3 s each side is decoded (`stt_span`). A recognizer fed a room invents
+words, and an ordinary room hums at about -50 dBFS with peaks above any level gate that
+still passes quiet speech — measured on a Move, it turned hum into "I've got a few". It decodes, and renames `<id>.json` into place (`ok`, `text`,
 `err`, `load_ms`, `decode_ms`, `audio_ms`); `<id>.cancel` makes it exit silently. Runtime: sherpa-onnx C API
-+ ONNX Runtime + Moonshine Tiny (en), pinned in `scripts/stt-deps.lock`, fetched by
++ ONNX Runtime + Moonshine Tiny (en) + Silero VAD, pinned in `scripts/stt-deps.lock`, fetched by
 `scripts/fetch-stt.sh`, laid out by `scripts/build.sh` as `build/stt/{bin,lib,model}`.
 
 ### Feedback Protection

@@ -20,3 +20,10 @@ grep -q 'stt_limits((argc > 7) ? atoi(argv\[7\]) : 0' src/stt/stt_helper.c && gr
     && grep -q 'alarm((unsigned)hard_s)' src/stt/stt_helper.c \
     || { echo "FAIL: stt_helper.c does not size its waits from the take length"; exit 1; }
 echo "PASS stt_helper sizes its waits from the take length"
+# Only the voice is decoded: the detector's model is loaded, a take where it
+# finds none is no_speech, and the recognizer gets the voiced span at 16 kHz.
+grep -q '"%s/silero_vad.onnx"' "$h" && grep -q 'voiced_span(vad, x16, n16, &from, &to) != 0) skip = "no_speech"' "$h" \
+    && grep -q 'SherpaOnnxAcceptWaveformOffline(st, VAD_RATE, x16 + from, (int32_t)(to - from))' "$h" \
+    && grep -q 'stt_span(st, ln, k, n, ' "$h" \
+    || { echo "FAIL: stt_helper.c does not decode only the voiced span"; exit 1; }
+echo "PASS stt_helper decodes only what the voice detector heard"

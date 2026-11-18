@@ -14,7 +14,13 @@
  *
  * Model: Moonshine v2 (encoder + merged decoder + tokens) through the
  * sherpa-onnx C API. Output is plain text; the UI sanitises it for the
- * keyboard. */
+ * keyboard.
+ *
+ * Only the VOICED part of a take is decoded. A Silero voice detector
+ * (<model-dir>/silero_vad.onnx) finds it; a take where it finds none is
+ * "no_speech" and never reaches the recognizer. A level gate cannot do this:
+ * an ordinary room hums at -50 dBFS, louder than any fixed threshold that
+ * still lets quiet speech through, and the recognizer turns hum into words. */
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
@@ -45,6 +51,59 @@ static void make_polite(void) {
 }
 
 static int cancelled(const char *cancel) { return access(cancel, F_OK) == 0; }
+
+#define VAD_RATE 16000
+#define VAD_WINDOW 512
+#define VAD_MAX_SEGS 64
+
+/* Resample to the detector's / recognizer's rate. Returns a malloc'd buffer
+ * (or NULL) and its length in *n. */
+static float *to_16k(const float *x, int frames, int rate, int *n) {
+    *n = 0;
+    if (rate == VAD_RATE) {
+        float *y = malloc(sizeof(float) * (size_t)(frames > 0 ? frames : 1));
+        if (y) { memcpy(y, x, sizeof(float) * (size_t)frames); *n = frames; }
+        return y;
+    }
+    const SherpaOnnxLinearResampler *rs =
+        SherpaOnnxCreateLinearResampler(rate, VAD_RATE, 0.99f * VAD_RATE / 2, 6);
+    if (!rs) return NULL;
+    const SherpaOnnxResampleOut *o = SherpaOnnxLinearResamplerResample(rs, x, frames, 1);
+    float *y = NULL;
+    if (o && o->n > 0 && (y = malloc(sizeof(float) * (size_t)o->n))) {
+        memcpy(y, o->samples, sizeof(float) * (size_t)o->n);
+        *n = o->n;
+    }
+    if (o) SherpaOnnxLinearResamplerResampleFree(o);
+    SherpaOnnxDestroyLinearResampler(rs);
+    return y;
+}
+
+/* Where the voice is. Returns 0 with the span to decode (16 kHz indices), or
+ * -1 when the detector heard no voice. */
+static int voiced_span(const SherpaOnnxVoiceActivityDetector *vad, const float *x, int n,
+                       long *from, long *to) {
+    long st[VAD_MAX_SEGS], ln[VAD_MAX_SEGS];
+    int k = 0;
+    for (int i = 0; i < n; i += VAD_WINDOW) {
+        int m = n - i < VAD_WINDOW ? n - i : VAD_WINDOW;
+        SherpaOnnxVoiceActivityDetectorAcceptWaveform(vad, x + i, m);
+    }
+    SherpaOnnxVoiceActivityDetectorFlush(vad);
+    while (!SherpaOnnxVoiceActivityDetectorEmpty(vad)) {
+        const SherpaOnnxSpeechSegment *sg = SherpaOnnxVoiceActivityDetectorFront(vad);
+        if (sg && k < VAD_MAX_SEGS) { st[k] = (long)sg->start; ln[k] = sg->n; k++; }
+        if (sg) SherpaOnnxDestroySpeechSegment(sg);
+        SherpaOnnxVoiceActivityDetectorPop(vad);
+    }
+    /* 0.3 s each side: the detector's edges are tight, and a clipped first
+     * consonant changes the word */
+    int r = stt_span(st, ln, k, n, VAD_RATE * 3 / 10, from, to);
+    fprintf(stderr, "schwung-stt: voice: %d segment%s", k, k == 1 ? "" : "s");
+    if (r == 0) fprintf(stderr, ", %.2f-%.2f s of %.2f s", *from / 16000.0, *to / 16000.0, n / 16000.0);
+    fputc('\n', stderr);
+    return r;
+}
 
 int main(int argc, char **argv) {
     if (argc < 6) {
@@ -78,45 +137,74 @@ int main(int argc, char **argv) {
     cfg.model_config.provider = "cpu";
     cfg.decoding_method = "greedy_search";
     const SherpaOnnxOfflineRecognizer *rec = SherpaOnnxCreateOfflineRecognizer(&cfg);
+
+    char vadm[1024];
+    snprintf(vadm, sizeof(vadm), "%s/silero_vad.onnx", dir);
+    SherpaOnnxVadModelConfig vc;
+    memset(&vc, 0, sizeof(vc));
+    vc.silero_vad.model = vadm;
+    vc.silero_vad.threshold = 0.5f;
+    vc.silero_vad.min_silence_duration = 0.5f;
+    vc.silero_vad.min_speech_duration = 0.25f;
+    vc.silero_vad.max_speech_duration = (float)take_s + 5.0f;   /* one take: never split */
+    vc.silero_vad.window_size = VAD_WINDOW;
+    vc.sample_rate = VAD_RATE;
+    vc.num_threads = 1;
+    vc.provider = "cpu";
+    const SherpaOnnxVoiceActivityDetector *vad =
+        rec ? SherpaOnnxCreateVoiceActivityDetector(&vc, (float)take_s + 5.0f) : NULL;
     long load_ms = stt_now_ms() - t0;
-    if (!rec) {
+    if (!rec || !vad) {
         if (!cancelled(cancel)) stt_write_result(result, 0, "", "load_failed", load_ms, 0, 0);
+        if (vad) SherpaOnnxDestroyVoiceActivityDetector(vad);
+        if (rec) SherpaOnnxDestroyOfflineRecognizer(rec);
         return 1;
     }
 
     int w = stt_wait_go(go, cancel, go_ms, 20);
-    if (w == 0) { SherpaOnnxDestroyOfflineRecognizer(rec); return 0; }
-    if (w < 0) {
-        stt_write_result(result, 0, "", "timeout", load_ms, 0, 0);
+    if (w <= 0) {
+        if (w < 0) stt_write_result(result, 0, "", "timeout", load_ms, 0, 0);
+        SherpaOnnxDestroyVoiceActivityDetector(vad);
         SherpaOnnxDestroyOfflineRecognizer(rec);
-        return 1;
+        return w < 0 ? 1 : 0;
     }
 
     float *pcm = NULL, raw_peak = 0.0f; int frames = 0, rate = 0;
     char err[64] = "";
     if (stt_wav_read_mono(wav, &pcm, &frames, &rate, &raw_peak, err, sizeof(err)) != 0) {
         if (!cancelled(cancel)) stt_write_result(result, 0, "", err, load_ms, 0, 0);
+        SherpaOnnxDestroyVoiceActivityDetector(vad);
         SherpaOnnxDestroyOfflineRecognizer(rec);
         return 1;
     }
     long audio_ms = rate ? (long)frames * 1000L / rate : 0;
-    const char *skip = stt_gate(audio_ms, raw_peak);     /* the level BEFORE normalising */
-    if (skip) {
-        if (!cancelled(cancel))
-            stt_write_result(result, 0, "", skip, load_ms, 0, audio_ms);
-        free(pcm);
+    /* cheap refusals first (the level BEFORE normalising), then the voice */
+    const char *skip = stt_gate(audio_ms, raw_peak);
+    long t1 = stt_now_ms();
+    int n16 = 0;
+    float *x16 = NULL;
+    long from = 0, to = 0;
+    if (!skip) {
+        x16 = to_16k(pcm, frames, rate, &n16);
+        if (!x16) skip = "oom";
+        else if (voiced_span(vad, x16, n16, &from, &to) != 0) skip = "no_speech";
+    }
+    free(pcm);
+    SherpaOnnxDestroyVoiceActivityDetector(vad);
+    if (skip || cancelled(cancel)) {
+        if (skip && !cancelled(cancel))
+            stt_write_result(result, 0, "", skip, load_ms, stt_now_ms() - t1, audio_ms);
+        free(x16);
         SherpaOnnxDestroyOfflineRecognizer(rec);
         return 0;
     }
-    if (cancelled(cancel)) { free(pcm); SherpaOnnxDestroyOfflineRecognizer(rec); return 0; }
 
-    long t1 = stt_now_ms();
     const SherpaOnnxOfflineStream *st = SherpaOnnxCreateOfflineStream(rec);
-    SherpaOnnxAcceptWaveformOffline(st, rate, pcm, frames);
+    SherpaOnnxAcceptWaveformOffline(st, VAD_RATE, x16 + from, (int32_t)(to - from));
     SherpaOnnxDecodeOfflineStream(rec, st);
     const SherpaOnnxOfflineRecognizerResult *r = SherpaOnnxGetOfflineStreamResult(st);
     long decode_ms = stt_now_ms() - t1;
-    free(pcm);
+    free(x16);
 
     const char *text = (r && r->text) ? r->text : "";
     while (*text == ' ') text++;

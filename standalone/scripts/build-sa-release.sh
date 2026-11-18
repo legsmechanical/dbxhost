@@ -63,7 +63,7 @@ done
 # them every push-to-talk ends in STT FAILED, from a tarball that looks fine.
 for f in stt/bin/schwung-stt stt/stt-run.sh stt/lib/libsherpa-onnx-c-api.so stt/lib/libonnxruntime.so \
          stt/model/encoder_model.ort stt/model/decoder_model_merged.ort stt/model/tokens.txt \
-         licenses/MOONSHINE_LICENSE.txt; do
+         stt/model/silero_vad.onnx licenses/MOONSHINE_LICENSE.txt licenses/SILERO_VAD_LICENSE.txt; do
     [ -s "$BUILD_DIR/$f" ] || { echo "ERROR: missing $BUILD_DIR/$f -- the speech-to-text runtime (scripts/fetch-stt.sh, then rebuild the host)" >&2; exit 1; }
 done
 [ -d "$BUILD_DIR/modules/chain" ] || { echo "ERROR: $BUILD_DIR/modules/chain missing (the owned chain host)" >&2; exit 1; }

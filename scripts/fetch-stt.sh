@@ -5,7 +5,8 @@
 #
 #   .cache/stt/stage/include/c-api.h
 #   .cache/stt/stage/lib/{libsherpa-onnx-c-api.so,libonnxruntime.so}
-#   .cache/stt/stage/model/{encoder_model.ort,decoder_model_merged.ort,tokens.txt,LICENSE}
+#   .cache/stt/stage/model/{encoder_model.ort,decoder_model_merged.ort,tokens.txt,LICENSE,
+#                           silero_vad.onnx,SILERO_VAD_LICENSE}
 #
 # Runs on the HOST before Docker (the container has no network), like the
 # Move-manual fetch — but unlike that one this FAILS CLOSED: a build without the
@@ -55,7 +56,8 @@ path_of() {   # basenames in the record: the repo path may contain spaces
     [ -n "$b" ] && printf '%s' "$CACHE/dl/$b"
 }
 LIB_TAR="$(path_of sherpa-onnx-lib)"; HDR="$(path_of sherpa-onnx-header)"; MODEL_TAR="$(path_of moonshine-tiny-en)"
-for v in LIB_TAR HDR MODEL_TAR; do
+VAD="$(path_of silero-vad)"; VAD_LIC="$(path_of silero-vad-license)"
+for v in LIB_TAR HDR MODEL_TAR VAD VAD_LIC; do
     [ -n "${!v}" ] || { echo "fetch-stt: FAIL - lock file has no entry for $v" >&2; exit 1; }
 done
 
@@ -77,6 +79,8 @@ if [ "$(cat "$STAGE/.stamp" 2>/dev/null || true)" != "$STAMP" ]; then
         [ -n "$f" ] || { echo "fetch-stt: FAIL - $m not in the model archive" >&2; exit 1; }
         cp "$f" "$STAGE/model/"
     done
+    cp "$VAD" "$STAGE/model/silero_vad.onnx"
+    cp "$VAD_LIC" "$STAGE/model/SILERO_VAD_LICENSE"
     rm -rf "$CACHE/x"
     printf '%s' "$STAMP" > "$STAGE/.stamp"
 fi

@@ -43,6 +43,8 @@ grep -q "^## sherpa-onnx, ONNX Runtime, Moonshine" THIRD_PARTY_LICENSES.md && ok
 grep -q 'cp licenses/Apache-2.0.txt ./build/licenses/' scripts/build.sh && ok "build.sh stages the Apache text" || bad "build.sh does not stage the Apache text"
 grep -q 'licenses/Apache-2.0.txt" "$P/licenses/"' standalone/scripts/build-sa-release.sh && ok "the release ships the Apache text" || bad "the release does not ship the Apache text"
 grep -q 'MOONSHINE_LICENSE.txt' scripts/build.sh && ok "build.sh stages the model licence" || bad "build.sh does not stage the model licence"
+grep -q 'SILERO_VAD_LICENSE.txt' scripts/build.sh && ok "build.sh stages the voice detector's licence" || bad "build.sh does not stage the voice detector's licence"
+grep -q '^### Silero VAD' THIRD_PARTY_LICENSES.md && ok "voice detector section" || bad "no Silero VAD section"
 
 sed -n 1,30p src/lib/jack2/shadow/JackShadowDriver.cpp | grep -q "License: MIT" \
   && bad "JackShadowDriver.cpp claims MIT (it is GPL-2.0-or-later)" \

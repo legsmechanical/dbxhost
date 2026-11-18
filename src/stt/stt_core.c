@@ -131,6 +131,23 @@ void stt_limits(int max_s, int *take_s, int *go_ms, int *hard_s) {
     if (hard_s) *hard_s = s + 60;
 }
 
+int stt_span(const long *start, const long *len, int nseg, long total, long pad,
+             long *from, long *to) {
+    long a = -1, b = -1;
+    for (int i = 0; i < nseg; i++) {
+        if (start[i] < 0 || len[i] <= 0) continue;
+        if (a < 0 || start[i] < a) a = start[i];
+        if (start[i] + len[i] > b) b = start[i] + len[i];
+    }
+    if (a < 0 || total <= 0) return -1;
+    a -= pad; b += pad;
+    if (a < 0) a = 0;
+    if (b > total) b = total;
+    if (b <= a) return -1;
+    *from = a; *to = b;
+    return 0;
+}
+
 const char *stt_gate(long audio_ms, float raw_peak) {
     if (audio_ms < STT_MIN_AUDIO_MS) return "too_short";
     if (raw_peak < STT_SPEECH_PEAK) return "no_speech";
