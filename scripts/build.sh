@@ -558,7 +558,22 @@ else
     echo "Skipping schwung-stt (up to date)"
 fi
 cp -u src/stt/stt-run.sh build/stt/stt-run.sh
-cp -u "$STT_STAGE"/lib/libsherpa-onnx-c-api.so "$STT_STAGE"/lib/libonnxruntime.so build/stt/lib/
+# The upstream libraries ship unstripped, ONNX Runtime with full debug info:
+# stripping takes the runtime from ~39 MB to ~22 MB with the same results
+# (every sample transcribed identically, 2026-11-18). --strip-unneeded keeps
+# the dynamic symbols the helper links against.
+for l in libsherpa-onnx-c-api.so libonnxruntime.so; do
+    if needs_rebuild "build/stt/lib/$l" "$STT_STAGE/lib/$l"; then
+        "${CROSS_PREFIX}strip" --strip-unneeded -o "build/stt/lib/$l" "$STT_STAGE/lib/$l" \
+            || { echo "ERROR: could not strip $l" >&2; exit 1; }
+    fi
+done
+"${CROSS_PREFIX}strip" --strip-unneeded build/stt/bin/schwung-stt
+for f in build/stt/bin/schwung-stt build/stt/lib/libsherpa-onnx-c-api.so build/stt/lib/libonnxruntime.so; do
+    if "${CROSS_PREFIX}readelf" -S "$f" | grep -q '\.debug_'; then
+        echo "ERROR: $f still carries debug info (it would ship ~17 MB of it)" >&2; exit 1
+    fi
+done
 cp -u "$STT_STAGE"/model/encoder_model.ort "$STT_STAGE"/model/decoder_model_merged.ort \
       "$STT_STAGE"/model/tokens.txt build/stt/model/
 cp "$STT_STAGE"/model/LICENSE build/licenses/MOONSHINE_LICENSE.txt
