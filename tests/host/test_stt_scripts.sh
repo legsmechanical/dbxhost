@@ -9,7 +9,8 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 2
 fail=0; ok(){ echo "  ok   — $1"; }; bad(){ echo "  FAIL — $1"; fail=1; }
-T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
+# Not mktemp's default: on Linux that is /tmp, which the launcher refuses by design.
+mkdir -p build/tests; T="$(mktemp -d "$PWD/build/tests/stt_scripts.XXXXXX")"; trap 'rm -rf "$T"' EXIT
 
 # ---- stt-run.sh against a stand-in helper ----------------------------------
 S="$T/stt"; W="$T/work"
@@ -48,7 +49,9 @@ msg="$(sh "$S/stt-run.sh" "$W" '../x' 2>&1)"; rc=$?
     && ok "stt-run.sh names /tmp only to refuse it" || bad "stt-run.sh uses /tmp"
 
 # ---- fetch-stt.sh fails closed ------------------------------------------------
-echo "hello" > "$T/blob.tar.bz2"
+# The file is placed in the cache already: the hash check runs on what is there
+# (no download, so no curl needed — the Linux test image has none).
+mkdir -p "$T/cache/dl"; echo "hello" > "$T/cache/dl/blob.tar.bz2"
 L="$T/lock"
 echo "sherpa-onnx-lib 0000000000000000000000000000000000000000000000000000000000000000 file://$T/blob.tar.bz2" > "$L"
 msg="$(STT_LOCK="$L" STT_CACHE="$T/cache" bash scripts/fetch-stt.sh 2>&1)"; rc=$?
