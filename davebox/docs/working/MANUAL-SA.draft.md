@@ -519,9 +519,10 @@ a **Shift + Step** shortcut (see the [Quick Reference](#21-quick-reference)).
 **Typing a name** (a project, a template, Save As, a rename) uses the on-screen keyboard:
 turn the jog to a key and click it. **OK** saves, **Back** cancels.
 
-**Or say it: hold Rec, speak, let go.** The top line reads **LISTENING** while Rec is
-held (the Rec button lights red), then **TRANSCRIBING** for a moment (Rec pulses white),
-and the words appear in the name. It always listens through the Move's own microphone,
+**Or say it: hold Rec, speak, let go.** A card opens over the keyboard: **LISTENING**,
+with a meter that moves as it hears you and a bar counting toward the 10-second limit
+(the Rec button lights red). Let go and it reads **TRANSCRIBING** for a moment (Rec
+pulses white), then the words appear in the name. It always listens through the Move's own microphone,
 even with a cable in the line input.
 
 - If the name hasn't been touched yet, what you say replaces it. Once you've typed

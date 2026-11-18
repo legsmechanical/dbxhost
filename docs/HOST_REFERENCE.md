@@ -418,8 +418,10 @@ A module can record through the same sampler with `move_host_ext_v1_t.capture_st
 The audio is a **custom sampler take** (`host_sampler_set_source(1)` Move Input,
 `host_sampler_set_silent(1)`, `host_sampler_start(<install>/dictation/<id>.wav)`); the user's
 own source is put back on every exit, and dictation refuses while `samplerState` is not idle.
-A custom take still draws the sampler's dot at (123,1) — the keyboard's inverted title bar
-covers it — and the Sample button can stop it (treated as an early release).
+A custom take still draws the sampler's dot at (123,1) — the keyboard's title row stops short
+of it under the dictation card — and the Sample button can stop it (treated as an early
+release). The card's level meter reads the overlay's `samplerVuPeak`, which
+`sampler_update_vu()` keeps while the sampler records, a custom take included.
 
 **Always the internal mic.** The Move picks its input from its own line-in jack report
 (CC 114: 0 = empty → mic). With a cable in (`host_line_in_connected()`), a take injects
