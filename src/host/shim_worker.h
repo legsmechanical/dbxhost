@@ -106,6 +106,8 @@ typedef struct {
     void (*corun_exit_log)(void);
     void (*stems_prepare)(void);
     void (*stems_finalize)(void);
+    /* Every tick (~200 ms): map/unmap the test daemon's param mailbox. */
+    void (*testd_param_service)(void);
 } shim_worker_hooks_t;
 
 void shim_worker_set_hooks(const shim_worker_hooks_t *hooks);

@@ -520,13 +520,12 @@ static int cmd_set_open_tool(int fd, const char *args) {
  * overtake-targeted calls. master_fx, jack:, chain-slot keys go
  * through with their own prefixes unchanged.
  *
- * Race window with shadow_ui: shadow_ui is the other producer on
- * this SHM. The wait_idle protocol (busy-wait until
- * request_type == 0) serializes both producers — the larger of
- * the two timeouts wins. Tests run with shadow_ui mostly idle
- * (no human interaction), so contention is rare. If a test hits
- * this race and gets TIMEOUT, the daemon returns ERR and the
- * test should retry — see `bus.set_param()` Python helper. */
+ * Mailbox: the daemon's OWN shadow_param_t (SHM_TESTD_PARAM), which
+ * the shim serves with the same handler as shadow_ui's. The daemon is
+ * its only producer, so wait_idle below only waits for our own previous
+ * request. (It used to share shadow_ui's mailbox; check-then-write does
+ * not exclude another process, and both lost requests and other
+ * clients' answers came back here.) */
 
 #define TESTD_PARAM_POLL_USEC      200
 /* Generous timeout: shadow_ui's own default is 100 ms, but it's

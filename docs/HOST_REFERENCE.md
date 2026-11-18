@@ -451,6 +451,16 @@ request/response slot, serviced once per SPI frame (~2.9 ms) by
 every bulk request, every state blob, and the lifecycle/special keys above — nothing on that list
 is eligible for the lane.
 
+⚠ **The mailbox is only correct with ONE producer.** "Wait until `request_type == 0`, then write"
+does not exclude another process, request ids are per-process (they collide), and the shim clears
+`request_type` when it publishes — before the requester has copied `value`. Two producers lose
+requests (a timeout) and read each other's answers. `schwung-testd` therefore has its **own**
+mailbox (`SHM_TESTD_PARAM`), served by the same handler in the same frame. The daemon creates it
+and names itself in `shadow_control->testd_param_pid`; the shim worker maps it only while that pid
+is a live process and unmaps it otherwise. Move locks all its memory, so anything the shim maps is
+resident — without the daemon nothing is mapped and the SPI thread's cost is one NULL check.
+The manager (`schwung-manager/shmparams.go`) still shares shadow_ui's mailbox.
+
 **Pending queue** (`shadow_param_queue.h`, `spq`, `g_param_pending` in `shadow_ui.c`) is the
 overflow fallback behind the mailbox: 64 entries, last-writer-wins per (slot, key), drained one per
 idle main-loop pass and by every blocking caller before it takes the mailbox. It exists because a
