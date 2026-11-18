@@ -520,7 +520,7 @@ a **Shift + Step** shortcut (see the [Quick Reference](#21-quick-reference)).
 turn the jog to a key and click it. **OK** saves, **Back** cancels.
 
 **Or say it: hold Rec, speak, let go.** A card opens over the keyboard: **LISTENING**,
-with a meter that moves as it hears you and a bar counting toward the 10-second limit
+with a meter that moves as it hears you and a bar counting toward the 30-second limit
 (the Rec button lights red). Let go and it reads **TRANSCRIBING** for a moment (Rec
 pulses white), then the words appear in the name. It always listens through the Move's own microphone,
 even with a cable in the line input.
@@ -528,8 +528,9 @@ even with a cable in the line input.
 - If the name hasn't been touched yet, what you say replaces it. Once you've typed
   something, what you say is added after it.
 - The words are still editable with the keyboard before you press **OK**.
-- Up to about 10 seconds at a time for a name; longer text, like lyrics, allows up to 30
-  seconds and keeps your punctuation. A quick tap on Rec shows **HOLD REC TO TALK**.
+- Up to 30 seconds at a time, long enough for a line of lyrics. Commas and the closing full
+  stop are left out (type a comma if you want one). A quick tap on Rec shows **HOLD REC TO
+  TALK**.
 - **Back** while it's listening or transcribing cancels just the dictation; press
   **Back** again to leave the keyboard.
 - **NO SPEECH** means it heard nothing it could use; **MIC BUSY** means the sampler

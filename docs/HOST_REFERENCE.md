@@ -421,7 +421,7 @@ refuses while `samplerState` is not idle. **Everything borrowed goes back once t
 STOPPED, on every exit** — source, voice prompts, the jack report, monitoring. A stop is a
 request the sampler's worker carries out up to ~200 ms later, and it announces "Sample saved"
 unless `sampler_silent` is still set then. A cancelled take waits in `draining`;
-`dictationService()` finishes it, and also enforces the 10 s cap and retries a jack message the
+`dictationService()` finishes it, and also enforces the 30 s cap and retries a jack message the
 inject ring refused. The keyboard's owner must call `dictationService()` every tick, keyboard
 on screen or not (dAVEBOx: first thing in `_tickImpl`); it makes no host call when nothing is
 owed. A press while our own take is still stopping waits for it rather than refusing.
@@ -430,11 +430,11 @@ of it under the dictation card — and the Sample button can stop it (treated as
 release). The card's level meter reads the overlay's `samplerVuPeak`, which
 `sampler_update_vu()` keeps while the sampler records, a custom take included.
 
-**How long a take may run is the keyboard's.** `openTextEntry({ dictation: { maxSeconds,
-punctuation } })`: a name keeps the 10 s default; longer text (sung lyrics) can ask for up to
-30 s and keep its sentence punctuation. The helper is told the length and sizes its own waits
-from it (`stt_limits`: the go within the take + 5 s, a hard limit of the take + 60 s); the UI
-waits 20 s plus the take for the words.
+**The same for every keyboard.** A take runs up to 30 s (`MAX_TALK_MS`), a name or a sung
+line alike: you talk until you let go. The helper is told the length and sizes its own waits from
+it (`stt_limits`: the go within the take + 5 s, a hard limit of the take + 60 s); the UI waits
+20 s plus the take's recorded length for the words. The transcript is cut to what the keyboard
+can type, with commas left out and the trailing `. ? !` dropped (the comma KEY is for typing).
 
 **Always the internal mic.** The Move picks its input from its own line-in jack report
 (CC 114: 0 = empty → mic). With a cable in (`host_line_in_connected()`), a take injects

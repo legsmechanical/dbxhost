@@ -11,8 +11,8 @@ the section into a versioned heading at release time.
 - **Say a name instead of typing it.** On any on-screen keyboard (project and template
   names, Save As, renames), **hold Rec and speak**, then let go: the words appear in the
   name, ready to edit before you press OK. A card over the keyboard shows that it's
-  listening, with a level meter so you can see it hearing you. Longer text, like lyrics,
-  can be spoken for up to 30 seconds and keeps its punctuation; names stay short and plain.
+  listening, with a level meter so you can see it hearing you. Talk for up to 30 seconds,
+  long enough for a whole line of lyrics.
 - **A comma on the on-screen keyboard** (on the symbols page). It always listens through the Move's own
   microphone, even with a cable in the line input, and only with the music stopped (not
   counting in);

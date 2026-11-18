@@ -743,7 +743,7 @@ export function drawTextEntry() {
  *   ┌┌──────────────────────────┐┐
  *   ││ 🎤 LISTENING          3s ││   or TRANSCRIBING / a notice, centred
  *   ││ [███████████          ]  ││   the mic's level
- *   ││ ━━━━━──────────────────  ││   the take against its 10 s cap
+ *   ││ ━━━━━──────────────────  ││   the take against its 30 s cap
  *   └└──────────────────────────┘┘
  */
 const CARD = { x: 8, y: 15, w: 112, h: 44 };
