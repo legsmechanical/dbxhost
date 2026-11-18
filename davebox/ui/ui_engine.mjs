@@ -1274,13 +1274,8 @@ export function engineCanvasPageHook(slotKey, comp, moduleId, canvas, hook, payl
             if (textReq || typeof a.openTextEntry !== 'function') return false;
             if (typeof a.textEntryActive === 'function' && a.textEntryActive()) return false;
             const o = opts || {};
-            /* dictation (dAVEBOx's own, MODULE_HOSTING.md): { maxSeconds,
-             * punctuation } for hold-Rec dictation — sung lyrics want a longer
-             * take and their commas. Upstream ignores the field. */
-            const d = o.dictation;
             textReq = { title: String(o.title == null ? '' : o.title),
-                        initial: String(o.initial == null ? '' : o.initial),
-                        dictation: d ? { maxSeconds: Number(d.maxSeconds) | 0, punctuation: !!d.punctuation } : null };
+                        initial: String(o.initial == null ? '' : o.initial) };
             return true;
         },
         /* Upstream's "open this file in a Tool". A dAVEBOx session has no
@@ -1294,8 +1289,7 @@ export function engineCanvasPageHook(slotKey, comp, moduleId, canvas, hook, payl
         if (textReq) {
             a.openTextEntry(textReq.title, textReq.initial, (text, cancelled) =>
                 engineCanvasPageHook(slotKey, comp, moduleId, canvas, 'onTextEntry',
-                    { text: cancelled ? null : String(text == null ? '' : text), cancelled: !!cancelled }, access),
-                { dictation: textReq.dictation });
+                    { text: cancelled ? null : String(text == null ? '' : text), cancelled: !!cancelled }, access));
         }
         return closed.wanted ? { close: true } : out;
     } catch (e) {

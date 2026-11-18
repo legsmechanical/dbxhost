@@ -25,13 +25,14 @@ int stt_wav_read_mono(const char *path, float **out, int *frames, int *rate,
 #define STT_SPEECH_PEAK  0.01f
 const char *stt_gate(long audio_ms, float raw_peak);
 
-/* How long a take may be, and what follows from it. The keyboard asks for a
- * length (a name: 10 s; sung lyrics: longer); the helper waits for the take to
- * end and then decodes it, so its limits grow with it.
+/* How long a take may be, and what follows from it. Every keyboard's take
+ * runs up to 30 s (a name or a sung line: you talk until you let go); the
+ * helper waits for the take to end and then decodes it, so its limits grow
+ * with the length it is given.
  *   max_s   clamped to 1..STT_MAX_TAKE_S (0 or less: STT_DEFAULT_TAKE_S)
  *   go_ms   how long to wait for the go: the take plus 5 s
  *   hard_s  the process's hard limit: the take plus 60 s to decode */
-#define STT_DEFAULT_TAKE_S 10
+#define STT_DEFAULT_TAKE_S 30
 #define STT_MAX_TAKE_S     30
 void stt_limits(int max_s, int *take_s, int *go_ms, int *hard_s);
 

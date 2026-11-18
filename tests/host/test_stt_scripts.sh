@@ -39,12 +39,12 @@ $W/dabc.go
 $W/dabc.cancel
 $W/dabc.json
 2
-10"
-[ "$(printf '%s\n' "$out" | sed 1d)" = "$want" ] && ok "helper args: model dir, this take's wav/go/cancel/result, 2 threads, a 10 s take" || bad "args: $out"
+30"
+[ "$(printf '%s\n' "$out" | sed 1d)" = "$want" ] && ok "helper args: model dir, this take's wav/go/cancel/result, 2 threads, a 30 s take by default" || bad "args: $out"
 left="$(cd "$W" && ls | sort | tr '\n' ' ')"
 [ "$left" = "dabc.json helper.log " ] && ok "other takes' leftovers and this take's audio removed; its answer kept" || bad "left behind: $left"
-STT_THREADS=1 sh "$S/stt-run.sh" "$W" dxyz 30
-[ "$(tail -2 "$S/args.txt" | tr '\n' ' ')" = "1 30 " ] && ok "STT_THREADS and the take length (a lyric's 30 s) reach the helper" || bad "threads/take: $(tail -2 "$S/args.txt")"
+STT_THREADS=1 sh "$S/stt-run.sh" "$W" dxyz 12
+[ "$(tail -2 "$S/args.txt" | tr '\n' ' ')" = "1 12 " ] && ok "STT_THREADS and the take length the UI gives reach the helper" || bad "threads/take: $(tail -2 "$S/args.txt")"
 msg="$(sh "$S/stt-run.sh" "$W" dq '3;rm' 2>&1)"; rc=$?
 [ $rc -ne 0 ] && printf '%s' "$msg" | grep -q "bad take length" && ok "refuses a take length that is not a number" || bad "take length: rc=$rc $msg"
 [ ! -e "$W/dabc.json" ] && [ -e "$W/dxyz.json" ] && ok "the next take clears the previous answer" || bad "answers: $(ls "$W")"

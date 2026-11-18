@@ -219,7 +219,7 @@ const PAGES = [
     'abcdefghijklmnopqrstuvwxyz',
     'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
     '1234567890.-!@#$%^&*',
-    '\'",;:?/\\<>()[]{}=-+'   /* the comma: lyrics are written with them */
+    '\'",;:?/\\<>()[]{}=-+'   /* the comma: for typing (dictation leaves commas out) */
 ];
 
 /* Special button indices (relative to end of character set) */
@@ -244,7 +244,6 @@ let state = {
     padSelect: false,      /* Enable pad-based character selection */
     pristine: false,       /* buffer is still the untouched initial text */
     drawnSig: '',          /* dictation label + buffer as last drawn */
-    dictation: null,       /* this keyboard's dictation options: { maxSeconds, punctuation } */
     onConfirm: null,
     onCancel: null,
     onAnnounce: null
@@ -259,12 +258,8 @@ let state = {
  * @param {Function} [options.onCancel] - Called when user cancels
  * @param {Function} [options.onAnnounce] - Screen reader announce callback
  * @param {boolean} [options.padSelect=false] - Enable pad-based character selection
- * @param {Object} [options.dictation] - Hold-Rec dictation for this text:
- *   { maxSeconds } how long one take may run (default 10, at most 30 — sung
- *   lyrics want longer than a name); { punctuation: true } keeps the
- *   sentence punctuation as heard (a name drops a trailing . ? !)
  */
-export function openTextEntry({ title = '', initialText = '', onConfirm, onCancel, onAnnounce = null, padSelect, dictation = null } = {}) {
+export function openTextEntry({ title = '', initialText = '', onConfirm, onCancel, onAnnounce = null, padSelect } = {}) {
     state.active = true;
     state.title = title;
     state.buffer = initialText.slice(0, MAX_BUFFER_LENGTH);
@@ -276,10 +271,6 @@ export function openTextEntry({ title = '', initialText = '', onConfirm, onCance
     state.lastChar = '';
     state.pristine = true;
     state.drawnSig = '';
-    state.dictation = {
-        maxSeconds: (dictation && dictation.maxSeconds) | 0,
-        punctuation: !!(dictation && dictation.punctuation),
-    };
     state.onConfirm = onConfirm;
     /* Use caller's explicit padSelect if provided, otherwise fall back to global setting.
      * If global is false, check the config file as a fallback — external modules loaded
@@ -384,7 +375,7 @@ export function handleTextEntryMidi(msg) {
         if (data2 > 0) {
             state.showingPreview = false;
             state.previewTimeout = 0;
-            dictationPress(state.dictation);
+            dictationPress();
         } else {
             dictationRelease();
             if (dictationActive()) announceTextEntry('Transcribing');
@@ -666,8 +657,7 @@ function getAnnounceBuffer() {
  */
 /* A transcript lands: replace the untouched initial text, else append. */
 function insertTranscript(text) {
-    const s = sanitizeTranscript(text, PAGES.join(''), MAX_BUFFER_LENGTH,
-                                 !!(state.dictation && state.dictation.punctuation));
+    const s = sanitizeTranscript(text, PAGES.join(''), MAX_BUFFER_LENGTH);
     if (!s) return false;
     if (state.pristine || !state.buffer) {
         state.buffer = s;

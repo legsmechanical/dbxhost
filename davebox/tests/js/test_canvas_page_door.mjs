@@ -54,7 +54,7 @@ const PAGE_OK = "\nglobalThis.canvas_overlay.drawPage = function (ctx, payload) 
     + "                          ctx.openTextEntry({ title: 'Again' }), ctx.openFileInTool('/data/x.wav', 'waveform-editor')];\n"
     + "  }\n"
     + "  if (m.data[1] === 3 && globalThis.__askLyrics)\n"
-    + "    ctx.openTextEntry({ title: 'Lyrics', initial: 'old words', dictation: { maxSeconds: 30, punctuation: true } });\n"
+    + "    ctx.openTextEntry({ title: 'Lyrics', initial: 'old words' });\n"
     + "  if (globalThis.__callDiveMethods) globalThis.__dive = [ctx.shiftHeld(), ctx.measureText('abc'),\n"
     + "      ctx.getValue(), typeof ctx.setValue, typeof ctx.random()];\n"
     + "};\n"
@@ -357,10 +357,10 @@ step('⭐ confirming answers with the text', () => {
         throw new Error('the page was retired: ' + engineLog.join(' | '));
 });
 
-/* A page that asks for LYRICS asks for dictation to match: a longer take and
- * the punctuation as heard (dAVEBOx's own field, MODULE_HOSTING.md). Hold Rec
- * past a name's 10 s, release, and the sung line lands whole, commas and all. */
-step('⭐ a page asking for lyrics: a 30 s take, and the words keep their commas and full stop', () => {
+/* A page asking for LONG text (sung lyrics) gets the same dictation as any
+ * keyboard, with nothing to opt into: a take runs up to 30 s, and a long line
+ * lands whole — without the commas and closing full stop the model adds. */
+step('⭐ a page asking for lyrics: the same 30 s take, nothing to ask for; the line lands whole', () => {
     const files = {}, saved = {
         r: globalThis.host_read_file, e: globalThis.host_file_exists, w: globalThis.host_write_file,
         c: globalThis.host_system_cmd, now: Date.now };
@@ -385,19 +385,19 @@ step('⭐ a page asking for lyrics: a 30 s take, and the words keep their commas
         if (!TE.isTextEntryActive() || TE.getTextEntryBuffer() !== 'old words') throw new Error('rig: the lyrics keyboard did not open');
         cc(86, 127); ticks(2);
         if (!/ 30 >\/dev\/null/.test(cmd)) throw new Error('the helper was not given a 30 s take: ' + cmd + ' / ' + JSON.stringify(TE.getTextEntryView().dictation));
-        t += 15000; ticks(2);                                    /* past a name's cap */
+        t += 25000; ticks(2);
         if (TE.getTextEntryView().dictation.state !== 'listening')
-            throw new Error('the take was cut at a name\'s 10 s: ' + JSON.stringify(TE.getTextEntryView().dictation));
+            throw new Error('a 25 s line was cut short: ' + JSON.stringify(TE.getTextEntryView().dictation));
         cc(86, 0); ticks(6);
         const dir = Object.keys(files).find(p => /\.go$/.test(p)).replace(/\/[^\/]+$/, '');
         files[dir + '/' + id + '.json'] = JSON.stringify({ ok: true, text: 'Breathe in, breathe out, I am made of air.' });
         t += 200; ticks(2);
-        if (TE.getTextEntryBuffer() !== 'Breathe in, breathe out, I am made of air.')
-            throw new Error('the lyric lost its punctuation: ' + JSON.stringify(TE.getTextEntryBuffer()));
+        if (TE.getTextEntryBuffer() !== 'Breathe in breathe out I am made of air')
+            throw new Error('the line did not land whole and plain: ' + JSON.stringify(TE.getTextEntryBuffer()));
         for (let i = 0; i < 120; i++) cc(14, 1);
         cc(3, 127); cc(3, 0); ticks(3);
         const th = textHooks();
-        if (th.length !== 1 || th[0][0] !== 'Breathe in, breathe out, I am made of air.')
+        if (th.length !== 1 || th[0][0] !== 'Breathe in breathe out I am made of air')
             throw new Error('onTextEntry got ' + JSON.stringify(th));
     } finally {
         Object.assign(globalThis, { host_read_file: saved.r, host_file_exists: saved.e,

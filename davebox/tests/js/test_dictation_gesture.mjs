@@ -190,7 +190,7 @@ step('⭐ hold Rec: the sampler on the Move input (silently), the helper started
     assert(iSil >= 0 && iSrc > iSil && iStart > iSrc && iCmd > iStart, 'order: ' + J(LOG));
     const start = LOG[iStart].slice(6), cmd = LOG[iCmd];
     assert(start.startsWith(WORK + '/') && start.endsWith('.wav'), 'take path ' + start);
-    assert(cmd === "cmd sh '/data/UserData/daveboxSA/stt/stt-run.sh' '" + WORK + "' " + lastId() + ' 10 >/dev/null 2>&1 &',
+    assert(cmd === "cmd sh '/data/UserData/daveboxSA/stt/stt-run.sh' '" + WORK + "' " + lastId() + ' 30 >/dev/null 2>&1 &',
            'spawn ' + cmd + ' / id ' + lastId());
     assert(!LOG.some(l => /\/tmp/.test(l)), '/tmp: ' + J(LOG));
     assert(S.recordArmed === armed, 'Rec under the keyboard armed recording');
@@ -293,15 +293,24 @@ step('a tap is not a take: the hint, no go, the helper cancelled', () => {
     assert(SAMP.source === 0 && kb() === 'X', 'state left behind');
 });
 
-step('the 10 s cap stops the take with Rec still held', () => {
+step('the cap — 30 s, the same for every keyboard — stops the take with Rec still held', () => {
     openTemplateKeyboard('X');
     recDown(); ticks(1);
-    later(dict.MAX_TALK_MS + 50);
+    later(20000);
+    assert(dstate().state === 'listening' && LOG.indexOf('stop') < 0, 'cut before 30 s: ' + J(dstate()));
+    assert(dict.MAX_TALK_MS === 30000, 'cap ' + dict.MAX_TALK_MS);
+    later(dict.MAX_TALK_MS - 20000 + 50);
     assert(LOG.indexOf('stop') >= 0, 'no stop at the cap: ' + J(LOG));
     ticks(5);
     assert(dstate().state === 'transcribing', 'state ' + J(dstate()));
     recUp(); ticks(1);
     assert(dstate().state === 'transcribing', 'the late release disturbed it: ' + J(dstate()));
+    /* 30 s of audio takes longer to decode than a name: the wait for the
+     * words is 20 s PLUS the take's own length */
+    later(40000);
+    assert(dstate().state === 'transcribing', 'a full take gave up waiting for its words at 40 s: ' + J(dstate()));
+    later(15000);
+    assert(dstate().state !== 'transcribing' && /STT FAILED/.test(screen()), 'never gave up: ' + J(dstate()));
 });
 
 step('the Sample button stopping the take behind our back: it carries on to transcribe', () => {
@@ -575,7 +584,7 @@ step('the cap holds even when nothing ticks the keyboard (only the dAVEBOx tick 
     openTemplateKeyboard('Old Name');
     recDown(); ticks(1);
     const real = te.tickTextEntry;
-    NOW += 10500;
+    NOW += 30500;
     dict.dictationService();
     assert(LOG.indexOf('stop') >= 0, 'an uncapped take: ' + J(LOG));
     recUp(); ticks(5); cc(51, 127); cc(51, 0); ticks(5);
@@ -595,43 +604,37 @@ step('"stopped" means the sequencer is not waiting either: count-in, merge count
 
 step('sanitizeTranscript: trimmed, single-spaced, no end punctuation, keyboard characters only', () => {
     const A = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890.-!@#$%^&*\'";:?/\\<>()[]{}=-+';
-    const t = (s, n = 512) => dict.sanitizeTranscript(s, A, n);
+    const t = (s, n = 512) => dict.sanitizeTranscript(s, A + ',', n);   /* the keyboard HAS a comma */
     assert(t('  Hello,   world!  ') === 'Hello world', J(t('  Hello,   world!  ')));
+    assert(t('Breathe in, breathe out,I am air.') === 'Breathe in breathe out I am air', 'commas are left out: ' + J(t('Breathe in, breathe out,I am air.')));
     assert(t('café über') === 'caf ber', J(t('café über')));
     assert(t('What?!') === 'What', J(t('What?!')));
     assert(t('Mr. Blue') === 'Mr. Blue', J(t('Mr. Blue')));
     assert(t('abcdef', 3) === 'abc', J(t('abcdef', 3)));
     assert(t('…') === '', J(t('…')));
-    const lyric = (x) => dict.sanitizeTranscript(x, A + ',', 512, true);
-    assert(lyric('Breathe in, breathe out.') === 'Breathe in, breathe out.', J(lyric('Breathe in, breathe out.')));
-    assert(lyric('Why?') === 'Why?', J(lyric('Why?')));
 });
 
-step('a NAME keyboard: a comma heard is kept (the keyboard has one now), a trailing full stop is not', () => {
+step('dictation leaves commas out and the trailing full stop off, though the keyboard has a comma key', () => {
     openTemplateKeyboard('Old Name');
     dictate({ ok: true, text: 'Late night, drive.' });
-    assert(kb() === 'Late night, drive', 'buffer ' + J(kb()));
+    assert(kb() === 'Late night drive', 'buffer ' + J(kb()));
     te.closeTextEntry(); ticks(5);
 });
 
-step('a keyboard asking for more than 30 s gets 30; a take there runs past 10 s', () => {
-    /* the keyboard itself (the module-page route is test_canvas_page_door.mjs) */
-    ready();
-    te.openTextEntry({ title: 'Lyrics', initialText: '', onConfirm() {}, dictation: { maxSeconds: 99, punctuation: true } });
-    const key = (d1, d2) => te.handleTextEntryMidi(new Uint8Array([0xB0, d1, d2]));
-    const step = (ms) => { NOW += ms; samplerWorker(); te.tickTextEntry(); };
-    LOG.length = 0;
-    key(86, 127); step(50);
-    assert(LOG.some(l => / 30 >\/dev\/null/.test(l)), 'take length: ' + J(LOG));
-    step(12000);
-    assert(dstate().state === 'listening', 'cut at 10 s: ' + J(dstate()));
-    step(19000);
-    assert(LOG.indexOf('stop') >= 0, 'not capped at 30 s: ' + J(LOG));
-    key(86, 0); for (let i = 0; i < 5; i++) step(20);
-    assert(dstate().state === 'transcribing', 'rig: ' + J(dstate()));
-    step(25000);          /* a name's take gives up at 20 s; 30 s of audio takes longer to decode */
-    assert(dstate().state === 'transcribing', 'a long take gave up waiting for its words: ' + J(dstate()));
-    key(51, 127); key(51, 0); for (let i = 0; i < 5; i++) step(20);
+step('the comma key types a comma', () => {
+    openTemplateKeyboard('');
+    const view = () => te.getTextEntryView();
+    const home = () => { for (let i = 0; i < 80; i++) jog(-1); };
+    for (let p = 0; p < 4 && !view().chars.includes(','); p++) {
+        home();
+        for (let i = 0; i < view().chars.length; i++) jog(1);   /* onto '...', the page switch */
+        click(); ticks(1);
+    }
+    assert(view().chars.includes(','), 'no page with a comma: ' + J(view()));
+    home();
+    for (let i = 0; i < view().chars.indexOf(','); i++) jog(1);
+    click(); ticks(1);
+    assert(kb() === ',', 'typed ' + J(kb()));
     te.closeTextEntry(); ticks(5);
 });
 }

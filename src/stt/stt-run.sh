@@ -16,7 +16,7 @@
 # Only then is everything belonging to another id removed — with no earlier
 # helper alive, nothing is waiting on its .cancel.
 STT_DIR="$(cd "$(dirname "$0")" && pwd)"
-WORK="${1:?work dir}"; ID="${2:?id}"; TAKE_S="${3:-10}"
+WORK="${1:?work dir}"; ID="${2:?id}"; TAKE_S="${3:-30}"
 case "$TAKE_S" in ''|*[!0-9]*) echo "stt-run: bad take length" >&2; exit 2 ;; esac
 PROC="${STT_PROC:-/proc}"
 case "$ID" in *[!A-Za-z0-9_-]*) echo "stt-run: bad id" >&2; exit 2 ;; esac
