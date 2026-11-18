@@ -459,7 +459,11 @@ mailbox (`SHM_TESTD_PARAM`), served by the same handler in the same frame. The d
 and names itself in `shadow_control->testd_param_pid`; the shim worker maps it only while that pid
 is a live process and unmaps it otherwise. Move locks all its memory, so anything the shim maps is
 resident — without the daemon nothing is mapped and the SPI thread's cost is one NULL check.
-The manager (`schwung-manager/shmparams.go`) still shares shadow_ui's mailbox.
+The manager has its own too (`SHM_WEB_PARAM`): it creates the file on its first read or write and
+removes it after ~30 s unused (`schwung-manager/shmparams.go`); the shim worker maps it while the
+file exists, keyed on its inode. With no remote page open the manager reads nothing, so it does not
+exist. Both processes count how their reads end (`param mailbox reads` in `debug.log` and
+`manager.log`: busy / timeout / lost / raced / clobbered).
 
 **Pending queue** (`shadow_param_queue.h`, `spq`, `g_param_pending` in `shadow_ui.c`) is the
 overflow fallback behind the mailbox: 64 entries, last-writer-wins per (slot, key), drained one per

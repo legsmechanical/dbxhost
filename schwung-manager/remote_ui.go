@@ -359,6 +359,7 @@ func (ru *RemoteUI) ensureShm() *ShmParams {
 	if shm != nil {
 		ru.shm = shm
 		ru.logger.Info("shared memory params: connected (lazy)")
+		go shm.logStats(ru.logger)
 	}
 	return ru.shm
 }

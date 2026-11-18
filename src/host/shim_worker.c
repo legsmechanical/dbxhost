@@ -354,7 +354,7 @@ static void *worker_main(void *arg) {
          * shadow_poll_current_set does not, the call is being skipped. */
         if (tick % 7 == 0 || shadow_set_tracking_forced_pending())
             shadow_poll_current_set();
-        if (worker_hooks.testd_param_service) worker_hooks.testd_param_service();
+        if (worker_hooks.private_mailbox_service) worker_hooks.private_mailbox_service();
         shadow_save_state_service();   /* the slot mix mutators only ask */
         shadow_mix_log_service();      /* ...and only count; the log is here */
         tick++;

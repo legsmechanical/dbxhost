@@ -73,6 +73,7 @@ func shmPath(name string) string { return "/dev/shm" + shmPrefix + name }
 func setShmPrefix(p string) {
 	shmPrefix = p
 	shmParamPath = shmPath("param")
+	shmWebParamPath = shmPath("web-param")
 	shmWebParamSetPath = shmPath("web-param-set")
 	shmWebParamNotifyPath = shmPath("web-param-notify")
 	dispSHM = shmPath("display-live")

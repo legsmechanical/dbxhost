@@ -177,6 +177,9 @@ static shadow_param_t *shadow_param = NULL;
  * the shim worker (shim_hook_testd_param); the SPI thread only loads this
  * pointer. NULL — nothing mapped — whenever no live daemon claims it. */
 static shadow_param_t *testd_param_shm = NULL;
+/* schwung-manager's own mailbox (SHM_WEB_PARAM), same rules: the worker maps,
+ * the SPI thread only loads the pointer. */
+static shadow_param_t *web_param_shm = NULL;
 static shadow_param_lane_t *shadow_param_lane_shm = NULL;    /* shadow_ui → shim fire-and-forget SET lane */
 static web_param_set_ring_t *web_param_set_shm = NULL;       /* Web UI → shim param set ring */
 
@@ -307,6 +310,45 @@ static void shim_hook_testd_param(void) {
     if (!p) return;   /* not there yet: retried next tick */
     testd_param_mapped_pid = pid;
     __atomic_store_n(&testd_param_shm, p, __ATOMIC_RELEASE);
+}
+
+/* schwung-manager mailbox upkeep — the shim worker, every ~200 ms, right after
+ * shim_hook_testd_param. The manager creates SHM_WEB_PARAM when it needs it
+ * and removes it when idle; this maps it while the file exists. The claim is
+ * the file itself, keyed on its inode: a file removed and created again
+ * between two ticks is a different inode and is remapped. One stat() per
+ * tick on this thread; nothing on the SPI thread but a pointer load. Same
+ * two-phase unmap as the test mailbox. */
+static shadow_param_t *web_param_retired = NULL;
+static ino_t web_param_mapped_ino = 0;
+static void shim_hook_web_param(void) {
+    if (web_param_retired) {
+        munmap(web_param_retired, SHADOW_PARAM_BUFFER_SIZE);
+        web_param_retired = NULL;
+    }
+    struct stat st;
+    ino_t ino = 0;
+    if (stat("/dev/shm" SHM_WEB_PARAM, &st) == 0 &&
+        (size_t)st.st_size >= SHADOW_PARAM_BUFFER_SIZE)
+        ino = st.st_ino;
+    if (ino == web_param_mapped_ino) return;
+    if (web_param_shm) {
+        web_param_retired = web_param_shm;
+        __atomic_store_n(&web_param_shm, (shadow_param_t *)NULL, __ATOMIC_RELEASE);
+    }
+    web_param_mapped_ino = 0;
+    if (!ino) return;
+    shadow_param_t *p = (shadow_param_t *)shadow_shm_map(SHM_WEB_PARAM,
+                                                         SHADOW_PARAM_BUFFER_SIZE, 0, 0);
+    if (!p) return;   /* gone again, or not sized yet: next tick */
+    web_param_mapped_ino = ino;
+    __atomic_store_n(&web_param_shm, p, __ATOMIC_RELEASE);
+}
+
+/* Both private mailboxes, one worker hook. */
+static void shim_hook_private_mailboxes(void) {
+    shim_hook_testd_param();
+    shim_hook_web_param();
 }
 
 /* Skipback resize hook — runs on the shim worker (off the audio path). */
@@ -7076,6 +7118,14 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
             shadow_inprocess_handle_param_request();
             shadow_param = ui_mailbox;
         }
+        /* The manager's mailbox, the same way (shim_hook_web_param). */
+        shadow_param_t *web_mailbox = __atomic_load_n(&web_param_shm, __ATOMIC_ACQUIRE);
+        if (web_mailbox) {
+            shadow_param_t *ui_mailbox = shadow_param;
+            shadow_param = web_mailbox;
+            shadow_inprocess_handle_param_request();
+            shadow_param = ui_mailbox;
+        }
     }
     pp_t0 = pp_now_us();
     shadow_drain_web_param_set();  /* Web UI fire-and-forget param sets */
@@ -11258,7 +11308,7 @@ static void shim_spi_init(void)
             .corun_exit_log         = corun_exit_log_worker,
             .stems_prepare          = stem_take_worker_prepare,
             .stems_finalize         = stem_take_worker_finalize,
-            .testd_param_service    = shim_hook_testd_param,
+            .private_mailbox_service = shim_hook_private_mailboxes,
         };
         shim_worker_set_hooks(&hooks);
     }

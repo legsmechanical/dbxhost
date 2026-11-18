@@ -56,7 +56,8 @@ echo "$hook" | grep -q 'munmap(testd_param_retired' && say "ok   — the mailbox
 um=$(echo "$hook" | grep -n 'munmap(testd_param_retired' | head -1 | cut -d: -f1)
 rt=$(echo "$hook" | grep -n 'testd_param_retired = testd_param_shm' | head -1 | cut -d: -f1)
 [ -n "$um" ] && [ -n "$rt" ] && [ "$um" -lt "$rt" ] && say "ok   — unmap is a tick after retiring the pointer the SPI thread reads" || bad "unmap is not deferred a tick"
-grep -q 'testd_param_service    = shim_hook_testd_param' "$S" && grep -q 'worker_hooks.testd_param_service()' src/host/shim_worker.c \
+grep -q 'private_mailbox_service = shim_hook_private_mailboxes' "$S" && grep -q 'worker_hooks.private_mailbox_service()' src/host/shim_worker.c \
+  && awk '/^static void shim_hook_private_mailboxes\(/{f=1} f{print} f&&/^}/{exit}' "$S" | grep -q 'shim_hook_testd_param();' \
   && say "ok   — the worker calls the hook" || bad "the hook is not wired into the worker"
 
 # SPI side: one pointer load, the same handler, the UI mailbox put back

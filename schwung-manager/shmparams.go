@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -26,8 +27,9 @@ const lostRetries = 3
 
 // ShmParams provides access to the shadow_param_t shared memory segment for
 // getting and setting module parameters. The protocol is request/response:
-// only one request can be in-flight at a time (serialised by the Go mutex,
-// with a wait-for-idle loop to handle contention with the JS shadow UI).
+// only one request can be in-flight at a time (serialised by the Go mutex).
+// The mailbox is the manager's own (see OpenShmParams), so this process is
+// its only producer.
 //
 // Field offsets must match shadow_param_t in src/host/shadow_constants.h.
 //
@@ -38,9 +40,137 @@ const lostRetries = 3
 // a request still in the slot is either ours (the host will answer it and
 // clear it) or the UI's (not ours to cancel).
 type ShmParams struct {
-	data      []byte
+	data      []byte // the mailbox mapping; nil while unclaimed (see claimLocked)
 	mu        sync.Mutex
 	nextReqID atomic.Uint32
+	stats     mailboxReadStats
+
+	// The manager's OWN mailbox (shmWebParamPath), claimed on first use and
+	// released after mailboxIdleRelease without one. Empty for a ShmParams
+	// built over a fixed mapping (tests): data is then never released.
+	privPath string
+	lastUse  time.Time
+}
+
+// mailboxIdleRelease: how long the manager keeps its mailbox with no reads or
+// writes. The shim maps the mailbox while the file exists, and Move locks all
+// its memory, so a held mailbox costs Move ~130 kB; with no remote page open
+// the manager reads nothing, so after this it holds nothing.
+const mailboxIdleRelease = 30 * time.Second
+
+// shmPrivMailboxSize: the file size the shim maps (SHADOW_PARAM_BUFFER_SIZE
+// in src/host/shadow_constants.h); it refuses a smaller segment.
+const shmPrivMailboxSize = 133120
+
+// claimLocked makes sure the manager's mailbox exists and is mapped, and
+// marks it in use. Call with s.mu held, before touching s.data. A fresh file
+// reads as zeros (idle); a left-over one (a crashed manager) has its request
+// flags reset — this process is its only producer.
+func (s *ShmParams) claimLocked() error {
+	s.lastUse = time.Now()
+	if s.data != nil {
+		return nil
+	}
+	if s.privPath == "" {
+		return errors.New("param mailbox not open")
+	}
+	f, err := os.OpenFile(s.privPath, os.O_RDWR|os.O_CREATE, 0o666)
+	if err != nil {
+		return fmt.Errorf("param mailbox: %w", err)
+	}
+	defer f.Close()
+	if err := f.Truncate(shmPrivMailboxSize); err != nil {
+		return fmt.Errorf("param mailbox: %w", err)
+	}
+	data, err := syscall.Mmap(int(f.Fd()), 0, shmParamSize,
+		syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+	if err != nil {
+		return fmt.Errorf("param mailbox: %w", err)
+	}
+	data[paramOffRequestType] = 0
+	data[paramOffResponseReady] = 0
+	s.data = data
+	return nil
+}
+
+// releaseIdle gives the mailbox back after mailboxIdleRelease unused: the
+// file is removed (the shim worker notices within ~200 ms and unmaps) and
+// this mapping dropped. Never mid-request. Runs for the life of the process.
+func (s *ShmParams) releaseIdle() {
+	for range time.Tick(5 * time.Second) {
+		s.releaseIfIdle(time.Now())
+	}
+}
+
+// releaseIfIdle is one releaseIdle pass. Reports whether it released.
+func (s *ShmParams) releaseIfIdle(now time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.data == nil || s.privPath == "" || now.Sub(s.lastUse) <= mailboxIdleRelease ||
+		s.data[paramOffRequestType] != 0 {
+		return false
+	}
+	os.Remove(s.privPath)
+	syscall.Munmap(s.data)
+	s.data = nil
+	return true
+}
+
+// mailboxReadStats counts how the manager's mailbox reads END. The mailbox
+// has two producers (this process and shadow_ui) and nothing makes their
+// claims atomic, so a read can be lost (the UI claimed the slot over it),
+// time out, find the slot busy, or have its answer overwritten while it is
+// copied: raced = another request was posted before the copy finished (the
+// value may be someone else's), clobbered = another response was published
+// (it is). Logged every 10 s while they change (logStats).
+type mailboxReadStats struct {
+	total, lost, timeout, busy, raced, clobbered atomic.Uint64
+}
+
+// noteWaitErr counts a read that ended before an answer: busy (waitIdle) or
+// lost/timeout (waitResponse).
+func (s *ShmParams) noteWaitErr(idle bool, err error) {
+	s.stats.total.Add(1)
+	switch {
+	case idle:
+		s.stats.busy.Add(1)
+	case errors.Is(err, errRequestLost):
+		s.stats.lost.Add(1)
+	default:
+		s.stats.timeout.Add(1)
+	}
+}
+
+// noteCopied counts a read whose answer has been copied out, checking that
+// nothing touched the slot while it was copied. Call with s.mu held, AFTER
+// the copy.
+func (s *ShmParams) noteCopied(reqID uint32) {
+	s.stats.total.Add(1)
+	if binary.LittleEndian.Uint32(s.data[paramOffResponseID:]) != reqID {
+		s.stats.clobbered.Add(1)
+	} else if binary.LittleEndian.Uint32(s.data[paramOffRequestID:]) != reqID {
+		s.stats.raced.Add(1)
+	}
+}
+
+func (st *mailboxReadStats) snapshot() [6]uint64 {
+	return [6]uint64{st.total.Load(), st.lost.Load(), st.timeout.Load(),
+		st.busy.Load(), st.raced.Load(), st.clobbered.Load()}
+}
+
+// logStats logs the read counters every 10 s while they change. Runs for the
+// life of the process (started once, when the mailbox is first opened).
+func (s *ShmParams) logStats(logger *slog.Logger) {
+	var last [6]uint64
+	for range time.Tick(10 * time.Second) {
+		c := s.stats.snapshot()
+		if c == last {
+			continue
+		}
+		last = c
+		logger.Info("param mailbox reads", "total", c[0], "lost", c[1],
+			"timeout", c[2], "busy", c[3], "raced", c[4], "clobbered", c[5])
+	}
 }
 
 // Byte offsets into shadow_param_t.
@@ -91,22 +221,24 @@ const (
 
 var shmParamPath = shmPath("param")
 
+// shmWebParamPath: the manager's own param mailbox (SHM_WEB_PARAM in
+// src/host/shadow_constants.h).
+var shmWebParamPath = shmPath("web-param")
+
 // OpenShmParams opens and mmaps the param shared memory segment.
 // Returns nil if the segment doesn't exist (not running on device).
+//
+// The manager does NOT use shadow_ui's mailbox (shmParamPath): with two
+// producers on one mailbox nothing made their claims atomic, so requests were
+// lost and answers read across. It has its own (shmWebParamPath), claimed on
+// first use; shadow_ui's segment is only checked here as "the host is up".
 func OpenShmParams() *ShmParams {
-	f, err := os.OpenFile(shmParamPath, os.O_RDWR, 0)
-	if err != nil {
+	if _, err := os.Stat(shmParamPath); err != nil {
 		return nil
 	}
-	defer f.Close()
-
-	data, err := syscall.Mmap(int(f.Fd()), 0, shmParamSize,
-		syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
-	if err != nil {
-		return nil
-	}
-
-	return &ShmParams{data: data}
+	s := &ShmParams{privPath: shmWebParamPath}
+	go s.releaseIdle()
+	return s
 }
 
 // TryGetParam is like GetParam but returns immediately if the mutex is held
@@ -123,6 +255,7 @@ func (s *ShmParams) TryGetParam(slot uint8, key string) (string, bool, error) {
 	}
 
 	if err := s.waitIdle(); err != nil {
+		s.noteWaitErr(true, err)
 		return "", true, err
 	}
 
@@ -139,6 +272,7 @@ func (s *ShmParams) TryGetParam(slot uint8, key string) (string, bool, error) {
 	s.data[paramOffRequestType] = 2
 
 	if err := s.waitResponse(reqID); err != nil {
+		s.noteWaitErr(false, err)
 		return "", true, err
 	}
 
@@ -155,6 +289,7 @@ func (s *ShmParams) TryGetParam(slot uint8, key string) (string, bool, error) {
 	}
 
 	value := string(s.data[paramOffValue : paramOffValue+int(resultLen)])
+	s.noteCopied(reqID)
 	return value, true, nil
 }
 
@@ -171,8 +306,11 @@ func (s *ShmParams) SetParamFast(slot uint8, key, value string) error {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.claimLocked(); err != nil {
+		return err
+	}
 
-	// Short idle wait — if shadow_ui.js is mid-request, bail quickly.
+	// Short idle wait — our previous request not yet served: bail quickly.
 	deadline := time.Now().Add(10 * time.Millisecond)
 	for s.data[paramOffRequestType] != 0 {
 		if time.Now().After(deadline) {
@@ -219,6 +357,7 @@ func (s *ShmParams) getParamOnce(slot uint8, key string) (string, error) {
 	defer s.mu.Unlock()
 
 	if err := s.waitIdle(); err != nil {
+		s.noteWaitErr(true, err)
 		return "", err
 	}
 
@@ -239,6 +378,7 @@ func (s *ShmParams) getParamOnce(slot uint8, key string) (string, error) {
 
 	// Wait for response.
 	if err := s.waitResponse(reqID); err != nil {
+		s.noteWaitErr(false, err)
 		return "", err
 	}
 
@@ -257,6 +397,7 @@ func (s *ShmParams) getParamOnce(slot uint8, key string) (string, error) {
 	}
 
 	value := string(s.data[paramOffValue : paramOffValue+int(resultLen)])
+	s.noteCopied(reqID)
 
 	return value, nil
 }
@@ -311,6 +452,9 @@ func (s *ShmParams) SetParam(slot uint8, key, value string) error {
 // waitIdle spins until request_type == 0, indicating the channel is free.
 // Must be called with s.mu held.
 func (s *ShmParams) waitIdle() error {
+	if err := s.claimLocked(); err != nil {
+		return err
+	}
 	deadline := time.Now().Add(paramIdleTimeout)
 	for s.data[paramOffRequestType] != 0 {
 		if time.Now().After(deadline) {
@@ -400,6 +544,7 @@ func (s *ShmParams) getParamsBulkOnce(slot uint8, keys []string) ([]BulkValue, e
 	defer s.mu.Unlock()
 
 	if err := s.waitIdle(); err != nil {
+		s.noteWaitErr(true, err)
 		return nil, err
 	}
 	reqID := s.nextReqID.Add(1)
@@ -414,6 +559,7 @@ func (s *ShmParams) getParamsBulkOnce(slot uint8, keys []string) ([]BulkValue, e
 	s.data[paramOffRequestType] = 3
 
 	if err := s.waitResponse(reqID); err != nil {
+		s.noteWaitErr(false, err)
 		return nil, err
 	}
 	if s.data[paramOffError] != 0 {
@@ -424,6 +570,7 @@ func (s *ShmParams) getParamsBulkOnce(slot uint8, keys []string) ([]BulkValue, e
 		return nil, fmt.Errorf("bulk get failed (result_len=%d)", n)
 	}
 	resp := string(s.data[paramOffValue : paramOffValue+int(n)])
+	s.noteCopied(reqID)
 	return parseBulkResponse(resp, len(keys))
 }
 

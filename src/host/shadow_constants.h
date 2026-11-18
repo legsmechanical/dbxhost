@@ -48,6 +48,12 @@
  * all its memory, so anything the shim maps is resident — without the daemon
  * the segment does not exist and costs nothing. */
 #define SHM_TESTD_PARAM SCHWUNG_SHM_PREFIX "testd-param"
+/* schwung-manager's OWN param mailbox (a shadow_param_t), for the same reason.
+ * The MANAGER creates it on its first read or write and removes it after ~30 s
+ * unused (schwung-manager/shmparams.go); the shim worker maps it while the
+ * file exists, keyed on its inode so a removed-and-recreated file is remapped.
+ * With no remote page open the manager reads nothing, so it does not exist. */
+#define SHM_WEB_PARAM SCHWUNG_SHM_PREFIX "web-param"
 /* Sidecar → shim external MIDI input (ext_midi_in.h). Cable-2 packets that
  * did not arrive on USB-A, e.g. from a Bluetooth LE MIDI device. */
 #define SHM_EXT_MIDI_IN SCHWUNG_SHM_PREFIX "ext-midi-in"
