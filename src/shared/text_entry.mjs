@@ -30,7 +30,7 @@ import { drawRect } from './menu_layout.mjs';
 import { announce as defaultAnnounce } from './screen_reader.mjs';
 import {
     dictationPress, dictationRelease, dictationCancel, dictationAbort, dictationTick,
-    dictationState, dictationActive, dictationListening, sanitizeTranscript,
+    dictationState, dictationActive, dictationCardUp, dictationDismissNotice, sanitizeTranscript,
 } from './dictation.mjs';
 
 /* Pad LED constants */
@@ -382,15 +382,16 @@ export function handleTextEntryMidi(msg) {
         }
         return true;
     }
-    if (status === 0xB0 && data1 === CC_BACK && dictationActive()) {
+    if (status === 0xB0 && data1 === CC_BACK && dictationCardUp()) {
         if (data2 > 0) {
-            dictationCancel();
-            announceTextEntry('Dictation cancelled');
+            if (dictationCancel()) announceTextEntry('Dictation cancelled');
+            else dictationDismissNotice();
         }
         return true;
     }
-    /* While the mic is open the keyboard does nothing else. */
-    if (dictationListening()) return true;
+    /* While the card is up (listening, transcribing, or its notice) the keys
+     * under it do nothing: they cannot be seen, so nothing may type or commit. */
+    if (dictationCardUp()) return true;
 
     /* Pad press (Note On) — select, or enter if pressed hard enough */
     if (state.padSelect && status === 0x90 && data1 >= 68 && data1 <= 99) {

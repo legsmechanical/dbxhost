@@ -154,7 +154,13 @@ export const IN_MON_ORDER = IN_MON_SHOWN;
  * engine is told Off for the take and the device's own setting afterwards;
  * the saved setting (input.txt) is never touched. */
 export const dictationHooks = {
-    refuse() { return S.playing ? 'STOP TO TALK' : null; },
+    /* "Stopped" = the sequencer is neither running nor waiting to: no
+     * count-in (record or merge, ours or the engine's), no audio take armed
+     * or running. */
+    refuse() {
+        return (S.playing || S.recordCountingIn || S.mergeCountingIn || S.countInDspPrev || S.auRec)
+            ? 'STOP TO TALK' : null;
+    },
     begin() {
         if (inputPrefs().mon === 1) return;               /* 1 = Off already */
         host_module_set_param('ain_mon', '1');

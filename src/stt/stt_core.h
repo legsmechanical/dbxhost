@@ -9,11 +9,21 @@
 /* Read a PCM WAV (16-bit or 32-bit float, 1 or 2 channels) as mono float.
  * Stereo: if one channel carries much less energy than the other (a mic wired
  * to one side), the louder channel is taken; otherwise the two are averaged.
- * The result is peak-normalised to 0.9 unless it is effectively silent.
+ * The result is peak-normalised to 0.9 unless it is effectively silent, so
+ * judge silence by *raw_peak (the mono signal's peak BEFORE normalising; NULL
+ * if not wanted), never by the returned buffer.
  * Returns 0 and fills *out (malloc'd, caller frees), *frames, *rate; or -1 with
  * a short reason in err. */
 int stt_wav_read_mono(const char *path, float **out, int *frames, int *rate,
-                      char *err, size_t errlen);
+                      float *raw_peak, char *err, size_t errlen);
+
+/* Whether a take is worth decoding. A recognizer fed silence or a click
+ * invents words, and on an untouched name those words would replace it.
+ * Returns "too_short" (under STT_MIN_AUDIO_MS), "no_speech" (raw peak under
+ * STT_SPEECH_PEAK, i.e. -40 dBFS), or NULL to decode. */
+#define STT_MIN_AUDIO_MS 300
+#define STT_SPEECH_PEAK  0.01f
+const char *stt_gate(long audio_ms, float raw_peak);
 
 /* Peak absolute sample value of a buffer. */
 float stt_peak(const float *x, int n);

@@ -35,8 +35,9 @@ float stt_peak(const float *x, int n) {
 }
 
 int stt_wav_read_mono(const char *path, float **out, int *frames, int *rate,
-                      char *err, size_t errlen) {
+                      float *raw_peak, char *err, size_t errlen) {
     *out = NULL; *frames = 0; *rate = 0;
+    if (raw_peak) *raw_peak = 0.0f;
     FILE *f = fopen(path, "rb");
     if (!f) { set_err(err, errlen, "no_wav"); return -1; }
     unsigned char hdr[12];
@@ -114,12 +115,19 @@ int stt_wav_read_mono(const char *path, float **out, int *frames, int *rate,
     }
     free(data);
     float pk = stt_peak(mono, n);
+    if (raw_peak) *raw_peak = pk;
     if (pk > 1e-4f && pk < 0.9f) {
         float g = 0.9f / pk;
         for (int i = 0; i < n; i++) mono[i] *= g;
     }
     *out = mono; *frames = n; *rate = (int)sr;
     return 0;
+}
+
+const char *stt_gate(long audio_ms, float raw_peak) {
+    if (audio_ms < STT_MIN_AUDIO_MS) return "too_short";
+    if (raw_peak < STT_SPEECH_PEAK) return "no_speech";
+    return NULL;
 }
 
 static int exists(const char *p) { struct stat st; return p && p[0] && stat(p, &st) == 0; }

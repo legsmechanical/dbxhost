@@ -18,6 +18,11 @@ mkdir -p "$S/bin" "$S/lib" "$S/model" "$W"
 cp src/stt/stt-run.sh "$S/stt-run.sh"
 cat > "$S/bin/schwung-stt" <<'EOF'
 #!/bin/sh
+# BLOCK: wait for go/cancel like the real helper (a take in progress).
+if [ -e "$(dirname "$0")/../BLOCK" ]; then
+    while [ ! -e "$3" ] && [ ! -e "$4" ]; do sleep 0.1; done
+    echo '{"ok":true,"text":"late"}' > "$5"; exit 0
+fi
 echo "LD=$LD_LIBRARY_PATH" > "$(dirname "$0")/../args.txt"
 for a in "$@"; do echo "$a" >> "$(dirname "$0")/../args.txt"; done
 echo '{"ok":true,"text":"x"}' > "$5"
@@ -40,6 +45,36 @@ left="$(cd "$W" && ls | sort | tr '\n' ' ')"
 STT_THREADS=1 sh "$S/stt-run.sh" "$W" dxyz
 [ "$(tail -1 "$S/args.txt")" = "1" ] && ok "STT_THREADS reaches the helper" || bad "threads: $(tail -1 "$S/args.txt")"
 [ ! -e "$W/dabc.json" ] && [ -e "$W/dxyz.json" ] && ok "the next take clears the previous answer" || bad "answers: $(ls "$W")"
+
+# ---- one helper at a time ----------------------------------------------------
+# A take in progress (helper waiting for its go), then a newer take: the earlier
+# helper is ENDED — not left waiting 15 s with the model loaded because the
+# newer launcher swept its .cancel away. /proc is faked (STT_PROC) so the name
+# check runs on any OS.
+P="$T/proc"; mkdir -p "$P"
+rm -f "$W"/*; touch "$S/BLOCK"
+STT_PROC="$P" sh "$S/stt-run.sh" "$W" dold & L1=$!
+for i in $(seq 50); do [ -s "$W/dold.pid" ] && break; sleep 0.1; done
+pid="$(cat "$W/dold.pid" 2>/dev/null)"
+[ -n "$pid" ] && ok "a running helper is recorded by pid" || bad "no dold.pid: $(ls "$W")"
+mkdir -p "$P/$pid"; echo schwung-stt > "$P/$pid/comm"
+rm -f "$S/BLOCK"
+STT_PROC="$P" sh "$S/stt-run.sh" "$W" dnew
+for i in $(seq 50); do kill -0 "$L1" 2>/dev/null || break; sleep 0.1; done
+if kill -0 "$pid" 2>/dev/null; then bad "the earlier helper is still running (pid $pid)"; kill "$pid" 2>/dev/null
+else ok "a newer take ends the earlier helper"; fi
+[ ! -e "$W/dold.json" ] && ok "…and the ended helper answers nothing" || bad "ended helper answered: $(cat "$W/dold.json")"
+[ ! -e "$W/dold.pid" ] && [ ! -e "$W/dnew.pid" ] && ok "no pid file outlives its helper" || bad "pid files left: $(ls "$W")"
+wait "$L1" 2>/dev/null
+# A pid file whose process is NOT a helper (the pid was reused): never killed.
+sleep 30 & SL=$!
+echo "$SL" > "$W/dstale.pid"; mkdir -p "$P/$SL"; echo sleep > "$P/$SL/comm"
+STT_PROC="$P" sh "$S/stt-run.sh" "$W" dthird
+kill -0 "$SL" 2>/dev/null && ok "a reused pid (not schwung-stt) is left alone" || bad "killed an unrelated process"
+[ ! -e "$W/dstale.pid" ] && ok "…and its stale pid file is cleared" || bad "stale pid file kept"
+kill "$SL" 2>/dev/null; wait "$SL" 2>/dev/null
+grep -q 'taskset 0x7' src/stt/stt-run.sh && grep -q 'nice -n 19' src/stt/stt-run.sh \
+    && ok "the helper starts on cores 0-2 at nice 19 (before its libraries load)" || bad "launcher does not pin the helper"
 
 msg="$(sh "$S/stt-run.sh" /tmp/dict dq 2>&1)"; rc=$?
 [ $rc -ne 0 ] && printf '%s' "$msg" | grep -q "refusing /tmp" && ok "refuses /tmp (the Move's root fs is full)" || bad "/tmp: rc=$rc $msg"

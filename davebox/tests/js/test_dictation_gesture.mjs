@@ -80,10 +80,9 @@ globalThis.text_width = (t) => Math.max(0, String(t).length * 6 - 1);
  * the worker closes the file. */
 const SAMP = { state: 0, source: 0, recording: false, startOk: true, closing: 0, vu: 0 };
 globalThis.shadow_get_overlay_state = () => ({ type: 0, samplerState: SAMP.state, samplerSource: SAMP.source, samplerVuPeak: SAMP.vu });
-globalThis.host_sampler_is_recording = () => {
-    if (SAMP.closing > 0 && --SAMP.closing === 0) SAMP.recording = false;
-    return SAMP.recording;
-};
+globalThis.host_sampler_is_recording = () => SAMP.recording;
+/* The sampler's worker closes the file over a few ticks, however often it is asked. */
+function samplerWorker() { if (SAMP.closing > 0 && --SAMP.closing === 0) SAMP.recording = false; }
 globalThis.host_sampler_set_silent = (v) => { LOG.push('silent ' + v); return true; };
 globalThis.host_sampler_set_source = (v) => { LOG.push('source ' + v); SAMP.source = v ? 1 : 0; return true; };
 globalThis.host_sampler_start = (p) => { LOG.push('start ' + p); if (SAMP.startOk) SAMP.recording = true; return true; };
@@ -133,7 +132,7 @@ const cc = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1
 const note = (n, v) => globalThis.onMidiMessageInternal(new Uint8Array([v ? 0x90 : 0x80, n, v]));
 const click = () => { cc(3, 127); cc(3, 0); };
 const jog = (d) => cc(14, d > 0 ? 1 : 127);
-const ticks = (n) => { for (let i = 0; i < n; i++) { S.tickCount++; tickmod._tickImpl(); } };
+const ticks = (n) => { for (let i = 0; i < n; i++) { samplerWorker(); S.tickCount++; tickmod._tickImpl(); } };
 const later = (ms) => { NOW += ms; ticks(1); };
 const recDown = () => cc(86, 127);
 const recUp = () => cc(86, 0);
@@ -316,7 +315,7 @@ step('the Sample button stopping the take behind our back: it carries on to tran
 step('⭐ Back while listening cancels the dictation only; a second Back closes the keyboard', () => {
     openTemplateKeyboard('Stay');
     recDown(); ticks(1); later(800);
-    cc(51, 127); cc(51, 0); ticks(1);
+    cc(51, 127); cc(51, 0); ticks(5);
     assert(te.isTextEntryActive(), 'Back closed the keyboard');
     assert(kb() === 'Stay' && dstate().state !== 'listening', J([kb(), dstate()]));
     assert(LOG.indexOf('stop') >= 0 && LOG.some(l => /\.cancel$/.test(l)) && SAMP.source === 0, J(LOG));
@@ -335,13 +334,35 @@ step('Back while transcribing: cancelled, and the late answer is ignored', () =>
     assert(kb() === 'Stay', 'the cancelled answer landed: ' + kb());
 });
 
-step('the keyboard closing mid-take (OK while transcribing, or closed from outside) tears it down', () => {
+step('⭐ the keys under the card are dead while it TRANSCRIBES: no typing, no OK', () => {
     openTemplateKeyboard('Mine');
     recDown(); ticks(1); later(800); recUp(); ticks(5);
-    keyboardConfirm(); ticks(4);
-    assert(!te.isTextEntryActive(), 'rig: still open');
+    assert(dstate().state === 'transcribing', 'rig: ' + J(dstate()));
+    const before = [kb(), te.getTextEntryView().selected];
+    jog(1); click(); note(70, 100); note(70, 0); keyboardConfirm(); ticks(2);
+    assert(te.isTextEntryActive(), 'OK under the card closed the keyboard');
+    assert(J([kb(), te.getTextEntryView().selected]) === J(before), 'keys moved under the card: ' + J([kb(), te.getTextEntryView().selected]));
+    assert(!LOG.some(l => /template-set/.test(l)), 'saved from under the card');
+});
+
+step('…and while a notice shows; Back takes the notice down, a second Back leaves', () => {
+    openTemplateKeyboard('Mine');
+    recDown(); ticks(1); later(100); recUp(); ticks(5);          /* a tap: the hint */
+    assert(/HOLD REC TO TALK/.test(screen()), 'rig: ' + screen());
+    const sel = te.getTextEntryView().selected;
+    jog(1); click(); ticks(1);
+    assert(kb() === 'Mine' && te.getTextEntryView().selected === sel, 'keys moved under the notice');
+    cc(51, 127); cc(51, 0); ticks(1);
+    assert(te.isTextEntryActive() && !/HOLD REC/.test(screen()), 'Back did not just dismiss: ' + screen());
+    cc(51, 127); cc(51, 0); ticks(1);
+    assert(!te.isTextEntryActive(), 'second Back did not leave');
+});
+
+step('the keyboard closing mid-take tears it down', () => {
+    openTemplateKeyboard('Mine');
+    recDown(); ticks(1); later(800); recUp(); ticks(5);
+    te.closeTextEntry(); ticks(4);
     assert(LOG.some(l => /\.cancel$/.test(l)), 'helper not cancelled: ' + J(LOG));
-    assert(LOG.some(l => /template-set .*'Mine'$/.test(l)), 'OK did not save the text as it stood');
     const stale = lastId();
     openTemplateKeyboard('Next');
     FILES[WORK + '/' + stale + '.json'] = J({ ok: true, text: 'stale words' });
@@ -349,8 +370,11 @@ step('the keyboard closing mid-take (OK while transcribing, or closed from outsi
     assert(kb() === 'Next', 'the previous keyboard\'s transcript landed here: ' + kb());
     recDown(); ticks(1); later(500);
     te.closeTextEntry();
-    assert(LOG.indexOf('stop') >= 0 && SAMP.source === 0 && LOG.some(l => /\.cancel$/.test(l)), J(LOG));
     assert(!dict.dictationActive(), 'dictation still live');
+    assert(LOG.indexOf('silent 0') < 0, 'the prompts back on before the sampler stopped (it would say Sample saved): ' + J(LOG));
+    ticks(5);                                   /* no keyboard now: the dAVEBOx tick serves it */
+    assert(LOG.indexOf('stop') >= 0 && SAMP.source === 0 && LOG.indexOf('silent 0') > LOG.indexOf('stop')
+           && LOG.some(l => /\.cancel$/.test(l)), J(LOG));
 });
 
 step('⭐ the project picker\'s Rename: Rec lights in the picker\'s painter; the words rename', () => {
@@ -417,7 +441,7 @@ step('the transport starting mid-take (from outside) ends it: stopped, put back,
     openTemplateKeyboard('Old Name');
     recDown(); ticks(1); later(600);
     LOG.length = 0;
-    S.playing = true; ticks(1);
+    S.playing = true; ticks(5);
     assert(LOG.indexOf('stop') >= 0 && LOG.indexOf('silent 0') >= 0, 'not stopped/restored: ' + J(LOG));
     assert(FILES[WORK + '/' + lastId() + '.cancel'] === '1', 'helper not cancelled');
     assert(!dict.dictationActive() && /STOP TO TALK/.test(screen()), 'on screen: ' + screen());
@@ -443,7 +467,7 @@ step('Monitor On, cancelled with Back: monitoring comes back too', () => {
     openTemplateKeyboard('Old Name');
     S.inputPrefs = { mon: 2, mode: 0, gain: 0 };
     recDown(); ticks(1); later(800);
-    cc(51, 127); cc(51, 0); ticks(1);
+    cc(51, 127); cc(51, 0); ticks(5);
     assert(LOG.indexOf('set ain_mon=1') >= 0 && LOG.lastIndexOf('set ain_mon=2') > LOG.indexOf('set ain_mon=1'), J(LOG));
     recUp();
 });
@@ -497,6 +521,76 @@ step('⭐ the card\'s meter follows the mic: silence is empty, a loud peak fills
     assert(mid > 40 && mid < 80 && full === 94, 'meter: -20 dB=' + mid + 'px, 0 dB=' + full + 'px (of 94)');
     SAMP.vu = 0; recUp(); ticks(6);
     assert(!/\[LEVEL/.test(screen()), 'the meter stays up while transcribing: ' + screen());
+});
+
+step('⭐ every cancel puts the prompts back only once the sampler has STOPPED (else: "Sample saved")', () => {
+    for (const how of ['tap', 'back', 'transport']) {
+        openTemplateKeyboard('Old Name');
+        S.inputPrefs = { mon: 2, mode: 0, gain: 0 }; JACK.lineIn = true;
+        recDown(); ticks(1);
+        if (how === 'tap') { later(100); recUp(); }
+        else if (how === 'back') { later(800); cc(51, 127); cc(51, 0); }
+        else { later(800); S.playing = true; }
+        ticks(1);
+        assert(SAMP.recording, how + ': rig: the sampler should still be closing');
+        for (const l of ['silent 0', 'source 0', 'set ain_mon=2', 'jack114 127'])
+            assert(LOG.indexOf(l) < 0, how + ': ' + l + ' while the sampler is still stopping: ' + J(LOG));
+        ticks(5);
+        assert(!SAMP.recording, how + ': rig: still recording');
+        for (const l of ['silent 0', 'source 0', 'set ain_mon=2', 'jack114 127'])
+            assert(LOG.indexOf(l) > LOG.indexOf('stop'), how + ': ' + l + ' not restored after the stop: ' + J(LOG));
+        if (how === 'tap') recUp(); else recUp();
+        S.playing = false;
+    }
+});
+
+step('a press while our cancelled take is still stopping WAITS for it, then starts (no MIC BUSY)', () => {
+    openTemplateKeyboard('Old Name');
+    recDown(); ticks(1); later(100); recUp();      /* a tap: the sampler is now closing */
+    recDown();
+    assert(!/MIC BUSY/.test(screen()) && /LISTENING/.test(screen()), 'on screen: ' + screen());
+    const starts = LOG.filter(l => /^start /.test(l)).length;
+    ticks(5);
+    assert(LOG.filter(l => /^start /.test(l)).length === starts + 1, 'the held press never started: ' + J(LOG));
+    later(1200); recUp(); ticks(5);
+    assert(dstate().state === 'transcribing', 'state ' + J(dstate()));
+    cc(51, 127); cc(51, 0); ticks(5);
+});
+
+step('the jack message is retried until the Move takes it (a full inject ring)', () => {
+    openTemplateKeyboard('Old Name');
+    JACK.lineIn = true;
+    recDown(); later(800); recUp();
+    const real = globalThis.move_midi_inject_to_move;
+    let refuse = 3;
+    globalThis.move_midi_inject_to_move = (pkt) => { if (refuse > 0) { refuse--; LOG.push('ring full'); return false; } return real(pkt); };
+    ticks(8);
+    globalThis.move_midi_inject_to_move = real;
+    const i = LOG.indexOf('jack114 127');
+    assert(i > LOG.lastIndexOf('ring full') && LOG.filter(l => l === 'ring full').length === 3, 'not retried: ' + J(LOG));
+    cc(51, 127); cc(51, 0); ticks(5);
+});
+
+step('the cap holds even when nothing ticks the keyboard (only the dAVEBOx tick runs)', () => {
+    openTemplateKeyboard('Old Name');
+    recDown(); ticks(1);
+    const real = te.tickTextEntry;
+    NOW += 10500;
+    dict.dictationService();
+    assert(LOG.indexOf('stop') >= 0, 'an uncapped take: ' + J(LOG));
+    recUp(); ticks(5); cc(51, 127); cc(51, 0); ticks(5);
+});
+
+step('"stopped" means the sequencer is not waiting either: count-in, merge count-in, an audio take', () => {
+    for (const k of ['recordCountingIn', 'mergeCountingIn', 'countInDspPrev', 'auRec']) {
+        openTemplateKeyboard('Old Name');
+        const was = S[k];
+        S[k] = k === 'auRec' ? { phase: 'armed' } : true;
+        recDown(); ticks(1);
+        assert(!LOG.some(l => /^start /.test(l)) && /STOP TO TALK/.test(screen()), k + ': ' + screen() + ' ' + J(LOG));
+        assert(BTN[86].color === 0, k + ': Rec lit ' + J(BTN[86]));
+        recUp(); S[k] = was;
+    }
 });
 
 step('sanitizeTranscript: trimmed, single-spaced, no end punctuation, keyboard characters only', () => {

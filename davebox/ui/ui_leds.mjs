@@ -25,6 +25,7 @@ import {
     MoveBack, MoveCopy, MoveDelete, MoveRec
 } from '/data/UserData/schwung/shared/constants.mjs';
 import { getTextEntryView } from '/data/UserData/schwung/shared/text_entry.mjs';
+import { dictationHooks } from './ui_audio_input.mjs';   /* a cycle, read only at tick time */
 import { chordLayoutOn, chordPadColor } from './ui_chord_pads.mjs';
 import { pianoLayoutOn } from './ui_drummodel.mjs';
 import { customLayoutOn, customPadColor } from './ui_custom_chords.mjs';
@@ -97,7 +98,7 @@ export function dictationRecLed() {
     const st = v && v.dictation ? v.dictation.state : 'idle';
     if (st === 'starting' || st === 'listening') return { from: LED_OFF, color: Red, anim: 0 };
     if (st === 'finalizing' || st === 'transcribing') return { from: LED_OFF, color: White, anim: LED_PULSE_4TH };
-    if (S.playing) return { from: LED_OFF, color: LED_OFF, anim: 0 };   /* dictation waits for Stop */
+    if (dictationHooks.refuse()) return { from: LED_OFF, color: LED_OFF, anim: 0 };   /* dictation waits for Stop */
     return { from: LED_OFF, color: 16, anim: 0 };   /* 16 = the picker's dim "available" */
 }
 

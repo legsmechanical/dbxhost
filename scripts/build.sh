@@ -76,8 +76,10 @@ fi
 printf '%s' "${SHIM_OPT:--O2}" > "$SHIM_STAMP"
 
 # Speech-to-text runtime + model (pinned in scripts/stt-deps.lock). Fetched on
-# the HOST — the container has no network — and verified on every build; inside
-# the container this only re-checks the hashes. Fails closed.
+# the HOST — the container has no network — and verified there on every build.
+# Inside the container it runs only if the stage is missing (it then fails,
+# having no network); a stage the host just verified is used as it is. Fails
+# closed.
 if [ ! -f "/.dockerenv" ] || [ ! -f "$REPO_ROOT/.cache/stt/stage/.stamp" ]; then
     "$REPO_ROOT/scripts/fetch-stt.sh"
 fi

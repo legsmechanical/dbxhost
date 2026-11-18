@@ -1,8 +1,8 @@
 /*
  * dictation.mjs — push-to-talk speech-to-text for the shared keyboard.
  *
- * Hold a button to talk, release to transcribe. The audio is the Move's input
- * (built-in mic, or line-in when a cable is in), taken through the host
+ * Hold a button to talk, release to transcribe. The audio is the Move's
+ * built-in mic (see "The microphone, always" below), taken through the host
  * sampler; the transcription runs in a separate helper process
  * (src/stt/stt_helper.c, started by stt-run.sh) at the lowest priority, off
  * the audio core. This module is the state machine between the two:
@@ -17,9 +17,18 @@
  *   transcribing  the helper has the go; waiting for its result file
  *
  * The helper is spawned at press time so loading the model overlaps the speech.
- * Every exit path goes through `finish()`, which puts the user's own sampler
- * source and voice prompts back as they were: the sampler belongs to the user
- * (Shift+Volume+Sample), dictation only borrows it.
+ * Every exit path goes through `finish()`. The user's own sampler source,
+ * voice prompts, jack report and monitoring are put back ONCE THE SAMPLER HAS
+ * STOPPED, never before: a stop is a request the sampler's worker carries out
+ * up to ~200 ms later, and it announces "Sample saved" if the prompts are on
+ * by then. A cancelled take waits in `draining` for that; dictationService()
+ * finishes it. The sampler belongs to the user (Shift+Volume+Sample),
+ * dictation only borrows it.
+ *
+ * dictationService() is the part that must run even with no keyboard on
+ * screen (a keyboard closed mid-take still has a sampler to put back, a jack
+ * message to deliver, a cap to enforce): the keyboard's owner calls it every
+ * tick. It makes no host call when nothing is owed.
  *
  * Files (never /tmp on a Move): <install>/dictation/<id>.{wav,go,cancel,json}.
  * The id keeps a cancelled helper's late answer away from the next dictation.
@@ -64,13 +73,27 @@ function hook(name) {
     if (!hooks || typeof hooks[name] !== 'function') return undefined;
     try { return hooks[name](); } catch (e) { return undefined; }
 }
-function tellMoveLineIn(plugged) {
-    move_midi_inject_to_move([0x0B, 0xB0, CC_MIC_IN_DETECT, plugged ? 127 : 0]);
+/* What the Move must be told about its line-in jack, until it has been:
+ * null = nothing owed, 'mic' = empty (record the mic), 'truth' = whatever the
+ * hardware reports now. The inject ring can be full; a message that did not
+ * go in is tried again every service tick rather than lost (a lost 'truth'
+ * would leave the Move recording the mic with a cable in, until re-plugged). */
+let jackOwed = null;
+function sendJack() {
+    if (jackOwed === null) return true;
+    const plugged = jackOwed === 'truth' ? !!host_line_in_connected() : false;
+    let sent = false;
+    try { sent = move_midi_inject_to_move([0x0B, 0xB0, CC_MIC_IN_DETECT, plugged ? 127 : 0]) !== false; }
+    catch (e) { sent = false; }
+    if (sent) jackOwed = null;
+    return sent;
 }
 
 let st = null;          /* the live dictation, or null */
 let notice = null;      /* { text, until } */
 let seq = 0;
+let draining = [];      /* cancelled takes whose sampler is still stopping */
+let queued = null;      /* { at, released } — Rec pressed while a take was still stopping */
 
 function now() { return Date.now(); }
 
@@ -88,7 +111,7 @@ function restoreSampler(d) {
     d.restored = true;
     if (d.prevSource !== SOURCE_MOVE_INPUT) host_sampler_set_source(d.prevSource | 0);
     host_sampler_set_silent(0);
-    if (d.forcedMic) tellMoveLineIn(!!host_line_in_connected());   /* the hardware's answer, now */
+    if (d.forcedMic) { jackOwed = 'truth'; sendJack(); }   /* the hardware's answer, now */
     hook('end');
 }
 
@@ -96,15 +119,42 @@ function writeCancel(d) {
     if (d && d.spawned) host_write_file(d.base + '.cancel', '1');
 }
 
-/* The single exit. `why` = a notice to show, or null. */
+/* The single exit. `why` = a notice to show, or null. The helper is told to
+ * stop at once; the sampler is put back once it has actually stopped. */
 function finish(why) {
     const d = st;
     st = null;
     if (!d) { if (why) showNotice(why); return; }
-    if (d.state === 'starting' || d.state === 'listening') host_sampler_stop();
-    restoreSampler(d);
+    if (d.state === 'starting' || d.state === 'listening') { host_sampler_stop(); d.stopAt = now(); }
     if (d.state !== 'done') writeCancel(d);
+    if (!d.restored) {
+        if (!d.stopAt) d.stopAt = now();
+        draining.push(d);
+        dictationService();
+    }
     if (why) showNotice(why);
+}
+
+/* Must run every tick, keyboard or not (see the header). */
+export function dictationService() {
+    if (jackOwed !== null) sendJack();
+    if (draining.length) {
+        const t = now();
+        const rec = recording();
+        draining = draining.filter((d) => {
+            if (rec && t - d.stopAt <= FINALIZE_TIMEOUT_MS) return true;
+            restoreSampler(d);
+            return false;
+        });
+        if (!draining.length && queued) {
+            const q = queued;
+            queued = null;
+            if (!q.released) startTake(q.at);
+            else if (now() - q.at < MIN_HOLD_MS) showNotice('HOLD REC TO TALK');
+        }
+    }
+    /* The cap, even if the keyboard has stopped being ticked. */
+    if (st && st.state === 'listening' && now() - st.listenAt >= MAX_TALK_MS) stopTake();
 }
 
 /* ---- public ------------------------------------------------------------- */
@@ -113,6 +163,7 @@ function finish(why) {
  * (-48..0 dBFS) while listening; elapsed 0..1 is the take against its cap. */
 export function dictationState() {
     const n = (notice && notice.until > now()) ? notice.text : '';
+    if (!st && queued) return { state: 'starting', seconds: 0, notice: '', level: 0, elapsed: 0 };
     if (!st) return { state: n ? 'notice' : 'idle', seconds: 0, notice: n, level: 0, elapsed: 0 };
     const ms = (st.state === 'listening') ? now() - st.listenAt : 0;
     return {
@@ -132,15 +183,34 @@ function levelOf(peak) {
 
 /* True while a dictation owns the input (Rec held / sampler busy for us). */
 export function dictationListening() {
-    return !!st && (st.state === 'starting' || st.state === 'listening' || st.state === 'finalizing');
+    return !!queued || (!!st && (st.state === 'starting' || st.state === 'listening' || st.state === 'finalizing'));
 }
-export function dictationActive() { return !!st; }
+export function dictationActive() { return !!st || !!queued; }
+
+/* True while the card is up: a dictation, or its notice. */
+export function dictationCardUp() {
+    return dictationActive() || (!!notice && notice.until > now());
+}
+/* Back on a notice: take it down now. */
+export function dictationDismissNotice() {
+    if (!notice) return false;
+    notice = null;
+    return true;
+}
 
 /* Rec down. */
 export function dictationPress() {
     if (st && st.state === 'transcribing') finish(null);   /* talking again replaces it */
-    if (st) return;
+    if (st || queued) return;
     notice = null;
+    const no = hook('refuse');
+    if (no) { showNotice(String(no)); return; }
+    dictationService();
+    if (draining.length) { queued = { at: now(), released: false }; return; }   /* our own take still stopping */
+    startTake(now());
+}
+
+function startTake(pressAt) {
     const no = hook('refuse');
     if (no) { showNotice(String(no)); return; }
     const ov = samplerOverlay();
@@ -148,12 +218,12 @@ export function dictationPress() {
     const id = 'd' + now().toString(36) + (seq++).toString(36);
     const base = WORK_DIR + '/' + id;
     st = {
-        id, base, state: 'starting', pressAt: now(), listenAt: 0, stopAt: 0, lastPoll: 0,
+        id, base, state: 'starting', pressAt, listenAt: 0, stopAt: 0, lastPoll: 0,
         prevSource: (ov.samplerSource | 0), restored: false, spawned: false, released: false, level: 0,
         forcedMic: !!host_line_in_connected(),
     };
     hook('begin');
-    if (st.forcedMic) tellMoveLineIn(false);
+    if (st.forcedMic) { jackOwed = 'mic'; sendJack(); }
     host_sampler_set_silent(1);
     host_sampler_set_source(SOURCE_MOVE_INPUT);
     host_sampler_start(base + '.wav');
@@ -163,6 +233,7 @@ export function dictationPress() {
 
 /* Rec up. */
 export function dictationRelease() {
+    if (queued) { queued.released = true; return; }
     if (!st) return;
     if (st.state === 'starting' || st.state === 'listening') {
         if (now() - st.pressAt < MIN_HOLD_MS) { finish('HOLD REC TO TALK'); return; }
@@ -173,16 +244,24 @@ export function dictationRelease() {
 
 /* Back: cancel the dictation (the keyboard stays). True if there was one. */
 export function dictationCancel() {
+    if (queued) { queued = null; return true; }
     if (!st) return false;
     finish(null);
     return true;
 }
 
-/* Tear everything down (keyboard closing). */
+/* Tear everything down (keyboard closing). What is still stopping is finished
+ * by dictationService(). */
 export function dictationAbort() {
+    queued = null;
     finish(null);
     notice = null;
 }
+
+/* A session that ends mid-take needs nothing from here: every host start
+ * re-sends the Move the saved line-in state (shim_worker.c, from the
+ * hardware's own reports, which our message never touches); a warm restart
+ * keeps this module's state, so dictationService() still finishes the take. */
 
 function stopTake() {
     host_sampler_stop();
@@ -192,6 +271,7 @@ function stopTake() {
 
 /* Advance. Returns { changed, text } — text is the transcript once, then null. */
 export function dictationTick() {
+    dictationService();
     if (!st) {
         if (notice && notice.until <= now()) { notice = null; return { changed: true, text: null }; }
         return { changed: false, text: null };

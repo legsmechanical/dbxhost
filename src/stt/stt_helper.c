@@ -30,18 +30,19 @@
 #include "stt_core.h"
 
 #define GO_TIMEOUT_MS   15000   /* the UI caps a take at ~10 s */
-#define MIN_AUDIO_MS      300   /* shorter than this: do not decode (hallucinates on silence) */
 #define HARD_LIMIT_S       45   /* whatever happens, this process is gone by then */
 
+/* stt-run.sh already starts this under `taskset 0x7 nice -n 19`; this makes
+ * sure of it (and says so in helper.log if the system refused). */
 static void make_polite(void) {
-    struct sched_param sp = { .sched_priority = 0 };
-    sched_setscheduler(0, SCHED_OTHER, &sp);
-    setpriority(PRIO_PROCESS, 0, 19);
+    if (setpriority(PRIO_PROCESS, 0, 19) != 0) perror("schwung-stt: nice 19");
 #ifdef __linux__
+    struct sched_param sp = { .sched_priority = 0 };
+    if (sched_setscheduler(0, SCHED_OTHER, &sp) != 0) perror("schwung-stt: SCHED_OTHER");
     cpu_set_t set;
     CPU_ZERO(&set);
     CPU_SET(0, &set); CPU_SET(1, &set); CPU_SET(2, &set);
-    sched_setaffinity(0, sizeof(set), &set);
+    if (sched_setaffinity(0, sizeof(set), &set) != 0) perror("schwung-stt: cores 0-2");
 #endif
 }
 
@@ -90,18 +91,18 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    float *pcm = NULL; int frames = 0, rate = 0;
+    float *pcm = NULL, raw_peak = 0.0f; int frames = 0, rate = 0;
     char err[64] = "";
-    if (stt_wav_read_mono(wav, &pcm, &frames, &rate, err, sizeof(err)) != 0) {
+    if (stt_wav_read_mono(wav, &pcm, &frames, &rate, &raw_peak, err, sizeof(err)) != 0) {
         if (!cancelled(cancel)) stt_write_result(result, 0, "", err, load_ms, 0, 0);
         SherpaOnnxDestroyOfflineRecognizer(rec);
         return 1;
     }
     long audio_ms = rate ? (long)frames * 1000L / rate : 0;
-    if (audio_ms < MIN_AUDIO_MS || stt_peak(pcm, frames) < 0.01f) {
+    const char *skip = stt_gate(audio_ms, raw_peak);     /* the level BEFORE normalising */
+    if (skip) {
         if (!cancelled(cancel))
-            stt_write_result(result, 0, "", audio_ms < MIN_AUDIO_MS ? "too_short" : "no_speech",
-                             load_ms, 0, audio_ms);
+            stt_write_result(result, 0, "", skip, load_ms, 0, audio_ms);
         free(pcm);
         SherpaOnnxDestroyOfflineRecognizer(rec);
         return 0;

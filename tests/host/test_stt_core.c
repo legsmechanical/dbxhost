@@ -63,7 +63,7 @@ int main(void) {
 
     /* stereo, both channels equal → averaged, normalised to 0.9, rate kept */
     path(p, "eq.wav"); write_wav(p, 2, 44100, 4410, 0.2f, 0.2f, 0, 0);
-    CHECK(stt_wav_read_mono(p, &x, &n, &rate, err, sizeof err) == 0, "eq read: %s", err);
+    CHECK(stt_wav_read_mono(p, &x, &n, &rate, NULL, err, sizeof err) == 0, "eq read: %s", err);
     CHECK(n == 4410 && rate == 44100, "eq n=%d rate=%d", n, rate);
     CHECK(fabsf(stt_peak(x, n) - 0.9f) < 0.01f, "eq peak %f", stt_peak(x, n));
     CHECK(corr_sine(x, n, rate) > 0.99, "eq not the sine");
@@ -73,11 +73,11 @@ int main(void) {
      * hides a 6 dB loss, so the CHOICE is pinned by the opposite-phase file
      * below: equal energy must be averaged (cancels to ~0), one-sided must not. */
     path(p, "oneside.wav"); write_wav(p, 2, 44100, 4410, 0.5f, 0.0f, 0, 0);
-    CHECK(stt_wav_read_mono(p, &x, &n, &rate, err, sizeof err) == 0, "oneside read: %s", err);
+    CHECK(stt_wav_read_mono(p, &x, &n, &rate, NULL, err, sizeof err) == 0, "oneside read: %s", err);
     CHECK(fabsf(stt_peak(x, n) - 0.9f) < 0.01f && corr_sine(x, n, rate) > 0.99, "oneside lost");
     free(x);
     path(p, "anti.wav"); write_wav(p, 2, 44100, 4410, 0.5f, -0.5f, 0, 0);   /* equal energy, opposite phase */
-    CHECK(stt_wav_read_mono(p, &x, &n, &rate, err, sizeof err) == 0, "anti read");
+    CHECK(stt_wav_read_mono(p, &x, &n, &rate, NULL, err, sizeof err) == 0, "anti read");
     CHECK(stt_peak(x, n) < 0.01f, "equal channels must be AVERAGED (peak %f)", stt_peak(x, n));
     free(x);
     /* the pick, not just the level: the quiet side carries a DIFFERENT tone
@@ -85,30 +85,49 @@ int main(void) {
      * mix the other tone in (correlation ~0.98). */
     right_hz = 1000.0f;
     path(p, "bleed.wav"); write_wav(p, 2, 44100, 4410, 0.5f, 0.1f, 0, 0);
-    CHECK(stt_wav_read_mono(p, &x, &n, &rate, err, sizeof err) == 0, "bleed read");
+    CHECK(stt_wav_read_mono(p, &x, &n, &rate, NULL, err, sizeof err) == 0, "bleed read");
     CHECK(corr_sine(x, n, rate) > 0.999, "one-sided mic was averaged with the other side (corr %f)", corr_sine(x, n, rate));
     free(x);
     right_hz = 440.0f;
     path(p, "rightonly.wav"); write_wav(p, 2, 44100, 4410, 0.0f, 0.5f, 0, 0);
-    CHECK(stt_wav_read_mono(p, &x, &n, &rate, err, sizeof err) == 0 && corr_sine(x, n, rate) > 0.99, "right-only lost");
+    CHECK(stt_wav_read_mono(p, &x, &n, &rate, NULL, err, sizeof err) == 0 && corr_sine(x, n, rate) > 0.99, "right-only lost");
     free(x);
 
     /* mono, extra chunk before data, unpatched size field */
     path(p, "mono.wav"); write_wav(p, 1, 16000, 1600, 0.5f, 0, 1, 1);
-    CHECK(stt_wav_read_mono(p, &x, &n, &rate, err, sizeof err) == 0, "mono read: %s", err);
+    CHECK(stt_wav_read_mono(p, &x, &n, &rate, NULL, err, sizeof err) == 0, "mono read: %s", err);
     CHECK(n == 1600 && rate == 16000, "mono n=%d rate=%d", n, rate);
     free(x);
 
     /* silence is not amplified into noise */
     path(p, "silent.wav"); write_wav(p, 2, 44100, 4410, 0.0f, 0.0f, 0, 0);
-    CHECK(stt_wav_read_mono(p, &x, &n, &rate, err, sizeof err) == 0 && stt_peak(x, n) == 0.0f, "silence changed");
+    CHECK(stt_wav_read_mono(p, &x, &n, &rate, NULL, err, sizeof err) == 0 && stt_peak(x, n) == 0.0f, "silence changed");
     free(x);
+
+    /* SILENCE IS JUDGED BEFORE NORMALISING. A quiet room (mic self-noise at
+     * -50 dBFS) comes back at full scale like everything else, so a gate on
+     * the returned buffer would pass it to the recognizer, which invents
+     * words. The raw peak is what the gate sees. */
+    float raw = -1.0f;
+    path(p, "hiss.wav"); write_wav(p, 2, 44100, 44100, 0.003f, 0.003f, 0, 0);
+    CHECK(stt_wav_read_mono(p, &x, &n, &rate, &raw, err, sizeof err) == 0, "hiss read");
+    CHECK(fabsf(stt_peak(x, n) - 0.9f) < 0.01f, "hiss not normalised (peak %f)", stt_peak(x, n));
+    CHECK(fabsf(raw - 0.003f) < 0.0005f, "raw peak %f, want 0.003", raw);
+    CHECK(stt_gate(1000, raw) && !strcmp(stt_gate(1000, raw), "no_speech"), "hiss would be decoded");
+    free(x);
+    path(p, "talk.wav"); write_wav(p, 2, 44100, 44100, 0.05f, 0.05f, 0, 0);   /* -26 dBFS: speech */
+    CHECK(stt_wav_read_mono(p, &x, &n, &rate, &raw, err, sizeof err) == 0, "talk read");
+    CHECK(stt_gate(1000, raw) == NULL, "speech refused (raw %f)", raw);
+    free(x);
+    CHECK(stt_gate(299, 0.5f) && !strcmp(stt_gate(299, 0.5f), "too_short"), "short take decoded");
+    CHECK(stt_gate(300, 0.5f) == NULL, "300 ms refused");
+    CHECK(stt_gate(1000, STT_SPEECH_PEAK) == NULL && stt_gate(1000, STT_SPEECH_PEAK * 0.9f) != NULL, "threshold moved");
 
     /* refusals */
     path(p, "nope.wav");
-    CHECK(stt_wav_read_mono(p, &x, &n, &rate, err, sizeof err) != 0 && !strcmp(err, "no_wav"), "missing: %s", err);
+    CHECK(stt_wav_read_mono(p, &x, &n, &rate, NULL, err, sizeof err) != 0 && !strcmp(err, "no_wav"), "missing: %s", err);
     path(p, "text.wav"); FILE *f = fopen(p, "w"); fputs("hello there, not a wave file", f); fclose(f);
-    CHECK(stt_wav_read_mono(p, &x, &n, &rate, err, sizeof err) != 0 && !strcmp(err, "not_wav"), "text: %s", err);
+    CHECK(stt_wav_read_mono(p, &x, &n, &rate, NULL, err, sizeof err) != 0 && !strcmp(err, "not_wav"), "text: %s", err);
 
     /* go / cancel / timeout */
     path(g, "1.go"); path(c, "1.cancel"); unlink(g); unlink(c);

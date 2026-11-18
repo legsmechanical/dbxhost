@@ -62,6 +62,7 @@ import { effectiveClip, updateStepLEDs, updateSessionLEDs, updateTrackLEDs, pain
     updatePerfModeLEDs, altIndicatorActive, clearAllLEDs, installFlagsWrap, removeFlagsWrap,
     buildLedInitQueue, drainLedInit, shiftClaimedByGesture, dictationRecLed } from './ui_leds.mjs';
 import { isTextEntryActive } from '/data/UserData/schwung/shared/text_entry.mjs';
+import { dictationService } from '/data/UserData/schwung/shared/dictation.mjs';
 import { schSlotForTrack, schSlotsForTrack, schSlotMasksAllTracks } from './ui_corun.mjs';
 import { pollPendingExport } from './ui_export.mjs';
 import { pollPendingMidiExport } from './ui_midi_export.mjs';
@@ -481,6 +482,10 @@ export function prerollGateTicks(countInDurMs, pressedDurMs, maxTicks) {
 let _tickGapLogMs = -1e9;
 export function _tickImpl() {
     lowBatteryTick();   /* first: a later stage throwing must not keep it down */
+    /* Dictation's own upkeep, keyboard or not: a take cancelled by the
+     * keyboard closing still has a sampler to put back once it stops, a jack
+     * message to deliver, and a cap. No host call when nothing is owed. */
+    try { dictationService(); } catch (e) { console.log('[dictation] service: ' + e); }
     /* ⭑⭑ STUCK-MODIFIER RECONCILE — heal a Shift release that never arrived.
      *
      * ⚠ FIRST, and UNCONDITIONAL. The first cut sat beside updateTrackLEDs(),
