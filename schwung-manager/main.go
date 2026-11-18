@@ -1317,6 +1317,7 @@ func main() {
 	shmParams := OpenShmParams()
 	if shmParams != nil {
 		logger.Info("shared memory params: connected")
+		go shmParams.logStats(logger)
 	} else {
 		logger.Info("shared memory params: not available (not on device)")
 	}

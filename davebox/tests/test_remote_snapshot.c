@@ -1,3 +1,4 @@
+#include <stdlib.h>
 /* tests/test_remote_snapshot.c — verify the remote-UI snapshot (get_param "state")
  * reflects clip note content + the tN_cC_ruisel selection target.
  *
@@ -216,11 +217,114 @@ static void test_playhead_devms_field(void) {
     hx_set_param(h, "transport", "stop");
     len = hx_get_param(h, "rui_poll", buf, (int)sizeof(buf));
     colons = 0; for (int i = 0; i < len; i++) if (buf[i] == ':') colons++;
-    HX_ASSERT(colons == 3, "stopped-again rui_poll must drop devms");
+    HX_ASSERT(colons == 4, "stopped-again rui_poll carries the stop's order key (the manager forwards it)");
+    HX_ASSERT(strstr(buf, ":291") != NULL, "rui_poll stop key must match rui_play's (291)");
+
+    /* The stopped rui_play carries the stop's ORDER key: the last playing
+     * block's devms + 1 (290 + 1) — later than every playing snapshot sent
+     * before the stop, so the browser can't let one that lands late restart
+     * its playhead. Frozen while stopped: the idle snapshot stays byte-stable. */
+    char stopped1[8192], stopped2[8192];
+    hx_render(h, 1);   /* the stop's own block bumps the content rev once (live state) */
+    len = hx_get_param(h, "state", stopped1, (int)sizeof(stopped1));
+    HX_ASSERT(len > 0, "state (stopped) returned no data");
+    HX_ASSERT(strstr(stopped1, "\"rui_play\":\"0:") != NULL, "stopped rui_play missing");
+    { const char *p = strstr(stopped1, "\"rui_play\":\"");
+      const char *q = p ? strchr(p + 12, '"') : NULL;
+      int c2 = 0; for (const char *s = p + 12; s && s < q; s++) if (*s == ':') c2++;
+      HX_ASSERT(c2 == 3, "stopped rui_play (after a run) must carry the order key");
+      HX_ASSERT(q && q - 4 >= p && !strncmp(q - 4, ":291", 4),
+                "stop order key must be the last playing devms + 1 (291)"); }
+    hx_render(h, 100);
+    len = hx_get_param(h, "state", stopped2, (int)sizeof(stopped2));
+    HX_ASSERT(len > 0 && !strcmp(stopped1, stopped2), "stopped snapshot must stay byte-stable while idle");
+    hx_destroy(h);
+}
+
+/* The session grid's live state (launches, the bar-line switch, start/stop,
+ * mute/solo) changes without an edit. The browser and the host's snapshot
+ * cache only re-read on a content-rev change, so the RULE is: whenever what the
+ * grid shows (rui_index) or the transport changes from one block to the next,
+ * the content rev must change too — and an idle or steadily playing device
+ * must NOT keep bumping it, or every block refetches the snapshot. Checked at
+ * every block across a scripted session. */
+typedef struct { hx_t *h; char idx[1024]; int on; unsigned rev; int fails, changes; } live_t;
+
+static void live_read(live_t *L, char *idx, int *on, unsigned *rev) {
+    static char st[65536];
+    char poll[256];
+    int n = hx_get_param(L->h, "rui_poll", poll, (int)sizeof(poll));
+    *rev = n > 0 ? (unsigned)strtoul(poll, NULL, 10) : 0u;
+    const char *c = n > 0 ? strchr(poll, ':') : NULL;
+    *on = c ? (c[1] == '1') : -1;
+    idx[0] = 0;
+    if (hx_get_param(L->h, "state", st, (int)sizeof(st)) > 0) {
+        const char *p = strstr(st, "\"rui_index\":\"");
+        if (p) { p += 13; const char *q = strchr(p, '"');
+                 size_t len = q ? (size_t)(q - p) : 0; if (len > 1023) len = 1023;
+                 memcpy(idx, p, len); idx[len] = 0; }
+    }
+}
+
+/* Render n blocks one at a time, checking the rule after each. */
+static void live_run(live_t *L, int n, const char *what) {
+    for (int i = 0; i < n; i++) {
+        hx_render(L->h, 1);
+        char idx[1024]; int on; unsigned rev;
+        live_read(L, idx, &on, &rev);
+        int changed = strcmp(idx, L->idx) != 0 || on != L->on;
+        if (changed) L->changes++;
+        if (changed && rev == L->rev) {
+            if (L->fails++ < 3)
+                fprintf(stderr, "  %s, block %d: grid/transport changed but content rev stayed %u\n",
+                        what, i, rev);
+        }
+        strcpy(L->idx, idx); L->on = on; L->rev = rev;
+    }
+}
+
+static void test_live_state_bumps_content_rev(void) {
+    live_t L = { .h = hx_create(NULL) };
+    HX_ASSERT(L.h != NULL, "hx_create returned NULL");
+    hx_t *h = L.h;
+    hx_render(h, 2);
+    live_read(&L, L.idx, &L.on, &L.rev);
+
+    unsigned r0 = L.rev;
+    live_run(&L, 50, "idle");
+    HX_ASSERT(L.rev == r0, "an idle device must not bump the content rev");
+
+    /* content on two tracks, two clips each (an empty clip launches too, but
+     * this is the common case) */
+    hx_set_param(h, "t1_c0_step_0_toggle", "60 100");
+    hx_set_param(h, "t1_c1_step_0_toggle", "62 100");
+    hx_set_param(h, "t2_c0_step_0_toggle", "64 100");
+    hx_set_param(h, "t2_c3_step_0_toggle", "65 100");
+    live_run(&L, 2, "content");
+
+    hx_set_param(h, "transport", "play");            live_run(&L, 4,   "start (no clip launched)");
+    hx_set_param(h, "t1_launch_clip", "0");          live_run(&L, 400, "launch t1 clip A → bar line");
+    unsigned rs = L.rev;
+    live_run(&L, 300, "steady playback");
+    HX_ASSERT(L.rev == rs, "steady playback must not keep bumping the content rev");
+    hx_set_param(h, "t1_launch_clip", "1");          live_run(&L, 400, "queue t1 clip B → bar-line switch");
+    hx_set_param(h, "launch_scene", "3");            live_run(&L, 400, "scene D → bar-line switch");
+    hx_set_param(h, "t2_mute", "1");                 live_run(&L, 2,   "mute");
+    hx_set_param(h, "t2_mute", "0");                 live_run(&L, 2,   "unmute");
+    hx_set_param(h, "t1_solo", "1");                 live_run(&L, 2,   "solo");
+    hx_set_param(h, "t1_solo", "0");                 live_run(&L, 2,   "unsolo");
+    hx_set_param(h, "transport", "stop");            live_run(&L, 4,   "stop");
+    hx_set_param(h, "t2_launch_clip", "0");          live_run(&L, 4,   "launch while stopped");
+    hx_set_param(h, "transport", "play");            live_run(&L, 400, "start with a clip armed");
+    hx_set_param(h, "transport", "stop");            live_run(&L, 4,   "stop again");
+
+    HX_ASSERT(L.changes >= 8, "the scripted session must actually change the grid (scenario broken?)");
+    HX_ASSERT(L.fails == 0, "a grid/transport change without a content-rev bump");
     hx_destroy(h);
 }
 
 int main(void) {
+    test_live_state_bumps_content_rev();
     test_snapshot_has_selected_clip_notes();
     test_snapshot_selection_switches_clip();
     test_snapshot_empty_clip_has_index();

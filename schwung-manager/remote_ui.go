@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"nhooyr.io/websocket"
@@ -38,6 +39,9 @@ type RemoteUI struct {
 
 	mu      sync.Mutex
 	clients map[*ruClient]struct{}
+	// connected counts clients without ru.mu, for ShmParams' hold check
+	// (which runs with no lock held and must not take ru.mu).
+	connected atomic.Int32
 
 	// fetches: the one-by-one value reads in flight, by "slot|comp". A second
 	// page asking for the same component JOINS the read already running
@@ -248,6 +252,19 @@ var masterFxSlots = []string{"fx1", "fx2", "fx3", "fx4"}
 
 // NewRemoteUI creates a RemoteUI. shm/setRing may be nil (lazy connect on first use).
 func NewRemoteUI(shm *ShmParams, setRing *ShmWebParamSetRing, basePath string, logger *slog.Logger) *RemoteUI {
+	ru := newRemoteUI(shm, setRing, basePath, logger)
+	ru.holdShm(shm)
+	return ru
+}
+
+// holdShm keeps the manager's param mailbox while any page is connected.
+func (ru *RemoteUI) holdShm(shm *ShmParams) {
+	if shm != nil {
+		shm.SetHold(func() bool { return ru.connected.Load() > 0 })
+	}
+}
+
+func newRemoteUI(shm *ShmParams, setRing *ShmWebParamSetRing, basePath string, logger *slog.Logger) *RemoteUI {
 	return &RemoteUI{
 		shm:      shm,
 		setRing:  setRing,
@@ -358,7 +375,9 @@ func (ru *RemoteUI) ensureShm() *ShmParams {
 	shm := OpenShmParams()
 	if shm != nil {
 		ru.shm = shm
+		ru.holdShm(shm)
 		ru.logger.Info("shared memory params: connected (lazy)")
+		go shm.logStats(ru.logger)
 	}
 	return ru.shm
 }
@@ -488,11 +507,13 @@ func (ru *RemoteUI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ru.mu.Lock()
 	ru.clients[client] = struct{}{}
 	ru.mu.Unlock()
+	ru.connected.Add(1)
 
 	defer func() {
 		ru.mu.Lock()
 		delete(ru.clients, client)
 		ru.mu.Unlock()
+		ru.connected.Add(-1)
 		markGone()
 		conn.Close(websocket.StatusNormalClosure, "bye")
 		// a page that leaves mid-press must not leave a pad sounding or Shift
@@ -1507,13 +1528,8 @@ func (ru *RemoteUI) serviceToolClients(ctx context.Context, shm *ShmParams, clie
 	ru.maybeAnnounceArrival(ctx, clients)
 	rev, on, tick, bpm, devms := parseRuiPoll(digest)
 	// rui_play frame (used by BOTH the snapshot path — play-state edges must
-	// ride along, snapshots don't carry the on flag — and the playhead path).
-	// devms (device-clock ms, playing only) lets the browser time-base
-	// corrections independent of delivery latency.
-	play := fmt.Sprintf("%d:%d:%d", boolToInt(on), tick, bpm)
-	if on && devms > 0 {
-		play = fmt.Sprintf("%d:%d:%d:%d", boolToInt(on), tick, bpm, devms)
-	}
+	// ride along — and the playhead path).
+	play := ruiPlayFrame(on, tick, bpm, devms)
 	playUpdate := wsParamUpdate{Type: "param_update", Slot: 0,
 		Params: map[string]string{overtakeParamPrefix + "rui_play": play}}
 
@@ -1782,6 +1798,20 @@ func (ru *RemoteUI) signalToolGone(ctx context.Context, clients []*ruClient) {
 // digest. devms (present only while playing) is the module's free-running
 // device-clock ms for the tick — forwarded so the browser can time-base
 // playhead corrections independent of delivery latency.
+// ruiPlayFrame builds the browser's rui_play value from a rui_poll digest.
+// The 4th field is passed through whenever the digest has one: playing, it is
+// the device-clock ms the browser time-bases playhead corrections on; stopped,
+// it is the stop's ORDER key (later than every playing frame sent before the
+// stop). Dropping it on a stop left the browser unable to order the stop, so a
+// playing frame delivered after it (a stale cached snapshot) restarted the
+// playhead with Move stopped.
+func ruiPlayFrame(on bool, tick, bpm, devms int64) string {
+	if devms > 0 {
+		return fmt.Sprintf("%d:%d:%d:%d", boolToInt(on), tick, bpm, devms)
+	}
+	return fmt.Sprintf("%d:%d:%d", boolToInt(on), tick, bpm)
+}
+
 func parseRuiPoll(s string) (rev int64, on bool, tick int64, bpm int64, devms int64) {
 	p := strings.Split(s, ":")
 	if len(p) > 0 {

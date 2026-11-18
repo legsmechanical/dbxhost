@@ -915,6 +915,36 @@ static int shadow_param_wait_idle(int timeout_ms) {
     return shadow_param_mailbox_idle();
 }
 
+/* How this process's mailbox READS end. The mailbox has two producers (this
+ * UI and schwung-manager) and nothing makes their claims atomic, so a read
+ * can find it busy, time out (its request overwritten before the shim read
+ * it), or have its answer overwritten while it is copied: raced = another
+ * request was posted before the copy finished (the value may be someone
+ * else's), clobbered = another response was published (it is). Logged every
+ * 10 s while they change (pget_stats_maybe_log). Main thread only. */
+static unsigned long g_pget_total, g_pget_busy, g_pget_timeout, g_pget_raced, g_pget_clobbered;
+
+static void pget_note_copied(uint32_t req_id) {
+    g_pget_total++;
+    if (shadow_param->response_id != req_id) g_pget_clobbered++;
+    else if (shadow_param->request_id != req_id) g_pget_raced++;
+}
+
+/* Main loop, every pass: one line per 10 s while the counters move, only
+ * with the unified log on. */
+static void pget_stats_maybe_log(void) {
+    static uint64_t last_ms;
+    static unsigned long last_total = (unsigned long)-1;
+    uint64_t now = param_lane_now_ms();
+    if (now - last_ms < 10000) return;
+    last_ms = now;
+    if (g_pget_total == last_total || !unified_log_enabled()) return;
+    last_total = g_pget_total;
+    unified_log("shadow_ui", LOG_LEVEL_INFO,
+                "param mailbox reads: total=%lu busy=%lu timeout=%lu raced=%lu clobbered=%lu",
+                g_pget_total, g_pget_busy, g_pget_timeout, g_pget_raced, g_pget_clobbered);
+}
+
 static int shadow_param_wait_response(uint32_t req_id, int timeout_ms) {
     int timeout = shadow_param_timeout_to_polls(timeout_ms);
     while (timeout > 0) {
@@ -1263,6 +1293,7 @@ static JSValue shadow_param_bulk_js(JSContext *ctx, int argc, JSValueConst *argv
     }
 
     if (!shadow_param_wait_idle(SHADOW_PARAM_DEFAULT_TIMEOUT_MS)) {
+        if (req_type == 3) { g_pget_total++; g_pget_busy++; }
         JS_FreeCString(ctx, key); JS_FreeCString(ctx, value); return JS_NULL;
     }
     uint32_t req_id = shadow_param_next_request_id();
@@ -1301,14 +1332,18 @@ static JSValue shadow_param_bulk_js(JSContext *ctx, int argc, JSValueConst *argv
      * value payload and request_id written above before it acts on them. */
     __atomic_store_n(&shadow_param->request_type, req_type, __ATOMIC_RELEASE);
 
-    if (shadow_param_wait_response(req_id, SHADOW_PARAM_DEFAULT_TIMEOUT_MS) <= 0)
+    int wr = shadow_param_wait_response(req_id, SHADOW_PARAM_DEFAULT_TIMEOUT_MS);
+    if (wr == 0 && req_type == 3) { g_pget_total++; g_pget_timeout++; }
+    if (wr <= 0)
         return JS_NULL;
     if (req_type == 4) return JS_TRUE;          /* BULK_SET — no payload back */
     if (shadow_param->error) return JS_NULL;
     int rlen = shadow_param->result_len;
     if (rlen < 0) return JS_NULL;
     if (rlen >= SHADOW_PARAM_VALUE_LEN) rlen = SHADOW_PARAM_VALUE_LEN - 1;
-    return JS_NewStringLen(ctx, shadow_param->value, (size_t)rlen);
+    JSValue bulk_out = JS_NewStringLen(ctx, shadow_param->value, (size_t)rlen);
+    pget_note_copied(req_id);
+    return bulk_out;
 }
 
 static JSValue js_shadow_get_params(JSContext *ctx, JSValueConst this_val,
@@ -1414,6 +1449,7 @@ static JSValue js_shadow_get_param(JSContext *ctx, JSValueConst this_val, int ar
         js_param_get_span_begin(key);
 
     if (!shadow_param_wait_idle(SHADOW_PARAM_DEFAULT_TIMEOUT_MS)) {
+        g_pget_total++; g_pget_busy++;
         JS_FreeCString(ctx, key);
         return JS_NULL;
     }
@@ -1445,11 +1481,15 @@ static JSValue js_shadow_get_param(JSContext *ctx, JSValueConst this_val, int ar
      * parent_span_id / key (written above) before it services this GET. */
     __atomic_store_n(&shadow_param->request_type, (uint8_t)2, __ATOMIC_RELEASE);  /* GET */
 
-    if (shadow_param_wait_response(req_id, SHADOW_PARAM_DEFAULT_TIMEOUT_MS) <= 0) {
+    int wr = shadow_param_wait_response(req_id, SHADOW_PARAM_DEFAULT_TIMEOUT_MS);
+    if (wr == 0) { g_pget_total++; g_pget_timeout++; }
+    if (wr <= 0) {
         return JS_NULL;
     }
 
-    return JS_NewString(ctx, shadow_param->value);
+    JSValue out = JS_NewString(ctx, shadow_param->value);
+    pget_note_copied(req_id);
+    return out;
 }
 
 /* === MIDI output functions for overtake modules === */
@@ -3487,6 +3527,7 @@ int main(int argc, char *argv[]) {
         /* Pending param writes go first: one per idle mailbox, paced by the
          * SPI frame. Free when the queue is empty (see shadow_param_queue.h). */
         if (shadow_param) shadow_param_drain_pending();
+        pget_stats_maybe_log();
 
         /* Process incoming MIDI BEFORE tick() so that the current frame's
          * drawUI() reflects the latest input (knob CCs, button presses).

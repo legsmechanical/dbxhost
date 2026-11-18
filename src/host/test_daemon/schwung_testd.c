@@ -74,6 +74,28 @@ static int map_shm_ro(const char *name, size_t size, void **out) {
     return 0;
 }
 
+/* Create (or reuse) a segment this daemon owns, sized for the shim's mapping. */
+static int create_shm_rw(const char *name, size_t size, void **out) {
+    int fd = shm_open(name, O_CREAT | O_RDWR, 0666);
+    if (fd < 0) {
+        fprintf(stderr, "shm_open(%s, CREAT) failed: %s\n", name, strerror(errno));
+        return -1;
+    }
+    if (ftruncate(fd, (off_t)size) != 0) {
+        fprintf(stderr, "ftruncate(%s, %zu) failed: %s\n", name, size, strerror(errno));
+        close(fd);
+        return -1;
+    }
+    void *p = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    close(fd);
+    if (p == MAP_FAILED) {
+        fprintf(stderr, "mmap(%s, RW) failed: %s\n", name, strerror(errno));
+        return -1;
+    }
+    *out = p;
+    return 0;
+}
+
 static int map_shm_rw(const char *name, size_t size, void **out) {
     int fd = shm_open(name, O_RDWR, 0666);
     if (fd < 0) {
@@ -104,13 +126,15 @@ static int wire_shm(daemon_shm_t *out) {
      * shim writes the buffer. */
     if (map_shm_rw(SHM_TEST_STREAM_MIDI_OUT, sizeof(test_stream_shm_t),
                    (void **)&out->midi_out_stream) < 0) return -1;
-    /* Param SHM: daemon is a *second* producer here (shadow_ui already is),
-     * routing SET_PARAM / GET_PARAM tests into chain DSPs and overtake
-     * modules. The wait_idle protocol in shadow_param_wait_idle()
-     * serializes the two producers — see SET_PARAM handler in commands.c
-     * for the rationale + race window. */
-    if (map_shm_rw(SHM_SHADOW_PARAM, sizeof(shadow_param_t),
-                   (void **)&out->param) < 0) return -1;
+    /* Param SHM: the daemon's OWN mailbox (SHM_TESTD_PARAM), the only
+     * producer on it. It used to share SHM_SHADOW_PARAM with shadow_ui and
+     * the manager, and "wait until idle, then write" does not exclude another
+     * process: requests were overwritten (5 s timeouts) and answers replaced
+     * by another client's before they were copied. The DAEMON creates it, at
+     * the size the shim maps, and unlinks it on exit; the shim maps it while
+     * control->testd_param_pid names us (main()). */
+    if (create_shm_rw(SHM_TESTD_PARAM, SHADOW_PARAM_BUFFER_SIZE,
+                      (void **)&out->param) < 0) return -1;
     /* The live display mirror, read-only: the daemon only ever reads the
      * frame. Turning the mirror ON is a write to shadow_control, which is
      * already mapped RW above — see SET_DISPLAY_MIRROR. */
@@ -127,6 +151,12 @@ static int wire_shm(daemon_shm_t *out) {
 /* --------------------------------------------------------------------------
  * Per-connection serve loop
  * -------------------------------------------------------------------------- */
+
+/* Undo the claim made in main(): the shim worker unmaps on the next tick. */
+static void testd_release_mailbox(daemon_shm_t *shm) {
+    __atomic_store_n(&shm->control->testd_param_pid, 0, __ATOMIC_RELEASE);
+    shm_unlink(SHM_TESTD_PARAM);
+}
 
 static void serve_client(int fd) {
     char line[TESTD_LINE_MAX];
@@ -225,8 +255,20 @@ int main(int argc, char **argv) {
     }
     commands_init(&shm);
 
+    /* Claim the private mailbox: reset its header (a previous daemon may have
+     * died mid-request), then name ourselves so the shim worker maps it. On
+     * exit: clear the pid and unlink. A SIGKILLed daemon leaves its pid — the
+     * worker sees that process is gone and unmaps. */
+    shm.param->response_ready = 0;
+    shm.param->response_id = 0;
+    __atomic_store_n(&shm.param->request_type, 0, __ATOMIC_RELEASE);
+    __atomic_store_n(&shm.control->testd_param_pid, (uint32_t)getpid(), __ATOMIC_RELEASE);
+
     int srv = open_listener(bind_addr, port);
-    if (srv < 0) return 1;
+    if (srv < 0) {
+        testd_release_mailbox(&shm);
+        return 1;
+    }
     g_listen_fd = srv;
 
     fprintf(stderr, "schwung-testd %s listening on %s:%d\n",
@@ -264,5 +306,6 @@ int main(int argc, char **argv) {
     int fd = g_listen_fd;
     g_listen_fd = -1;
     if (fd >= 0) close(fd);
+    testd_release_mailbox(&shm);
     return 0;
 }

@@ -67,6 +67,7 @@
 #include "host/shim_thread.h"
 #include "host/render_pool.h"   /* the per-slot chain render's fork-join pool */
 #include "host/sa_master_volume.h"
+#include "host/knob_coalesce.h"
 #include "host/spawn_command.h"
 #include "host/schwung_trace.h"
 #include "host/tts_engine.h"
@@ -172,6 +173,13 @@ static uint8_t shadow_display_mode = 0;
 static shadow_ui_state_t *shadow_ui_state = NULL;
 
 static shadow_param_t *shadow_param = NULL;
+/* schwung-testd's own mailbox (SHM_TESTD_PARAM). Mapped and unmapped ONLY by
+ * the shim worker (shim_hook_testd_param); the SPI thread only loads this
+ * pointer. NULL — nothing mapped — whenever no live daemon claims it. */
+static shadow_param_t *testd_param_shm = NULL;
+/* schwung-manager's own mailbox (SHM_WEB_PARAM), same rules: the worker maps,
+ * the SPI thread only loads the pointer. */
+static shadow_param_t *web_param_shm = NULL;
 static shadow_param_lane_t *shadow_param_lane_shm = NULL;    /* shadow_ui → shim fire-and-forget SET lane */
 static web_param_set_ring_t *web_param_set_shm = NULL;       /* Web UI → shim param set ring */
 
@@ -271,6 +279,77 @@ static int skipback_seconds_setting = SKIPBACK_DEFAULT_SECONDS; /* Skipback roll
 /* (skipback_require_volume and shadow_ui_trigger settings RETIRED 2026-08-09:
  * skipback is fixed on Shift+Vol+Capture and the jump-gesture families whose
  * trigger mode the setting selected are deleted.) */
+
+/* schwung-testd mailbox upkeep — runs on the shim worker every ~200 ms.
+ * Maps SHM_TESTD_PARAM while shadow_control->testd_param_pid names a live
+ * process, unmaps it when the pid clears, changes or dies. Move locks all its
+ * memory, so a mapping is resident: this is what keeps the mailbox at zero
+ * cost when nobody is driving the test bus. Unmapping is two-phase: the
+ * pointer the SPI thread reads is cleared on one tick and the pages are
+ * released on the NEXT (~200 ms later); the SPI thread holds the pointer only
+ * for the one synchronous handler call inside a block (~3 ms). */
+static shadow_param_t *testd_param_retired = NULL;
+static uint32_t testd_param_mapped_pid = 0;
+static void shim_hook_testd_param(void) {
+    if (testd_param_retired) {
+        munmap(testd_param_retired, SHADOW_PARAM_BUFFER_SIZE);
+        testd_param_retired = NULL;
+    }
+    uint32_t pid = shadow_control
+        ? __atomic_load_n(&shadow_control->testd_param_pid, __ATOMIC_ACQUIRE) : 0;
+    if (pid && kill((pid_t)pid, 0) != 0 && errno == ESRCH) pid = 0;  /* died without clearing */
+    if (pid == testd_param_mapped_pid) return;
+    if (testd_param_shm) {
+        testd_param_retired = testd_param_shm;
+        __atomic_store_n(&testd_param_shm, (shadow_param_t *)NULL, __ATOMIC_RELEASE);
+    }
+    testd_param_mapped_pid = 0;
+    if (!pid) return;
+    shadow_param_t *p = (shadow_param_t *)shadow_shm_map(SHM_TESTD_PARAM,
+                                                         SHADOW_PARAM_BUFFER_SIZE, 0, 0);
+    if (!p) return;   /* not there yet: retried next tick */
+    testd_param_mapped_pid = pid;
+    __atomic_store_n(&testd_param_shm, p, __ATOMIC_RELEASE);
+}
+
+/* schwung-manager mailbox upkeep — the shim worker, every ~200 ms, right after
+ * shim_hook_testd_param. The manager creates SHM_WEB_PARAM when it needs it
+ * and removes it when idle; this maps it while the file exists. The claim is
+ * the file itself, keyed on its inode: a file removed and created again
+ * between two ticks is a different inode and is remapped. One stat() per
+ * tick on this thread; nothing on the SPI thread but a pointer load. Same
+ * two-phase unmap as the test mailbox. */
+static shadow_param_t *web_param_retired = NULL;
+static ino_t web_param_mapped_ino = 0;
+static void shim_hook_web_param(void) {
+    if (web_param_retired) {
+        munmap(web_param_retired, SHADOW_PARAM_BUFFER_SIZE);
+        web_param_retired = NULL;
+    }
+    struct stat st;
+    ino_t ino = 0;
+    if (stat("/dev/shm" SHM_WEB_PARAM, &st) == 0 &&
+        (size_t)st.st_size >= SHADOW_PARAM_BUFFER_SIZE)
+        ino = st.st_ino;
+    if (ino == web_param_mapped_ino) return;
+    if (web_param_shm) {
+        web_param_retired = web_param_shm;
+        __atomic_store_n(&web_param_shm, (shadow_param_t *)NULL, __ATOMIC_RELEASE);
+    }
+    web_param_mapped_ino = 0;
+    if (!ino) return;
+    shadow_param_t *p = (shadow_param_t *)shadow_shm_map(SHM_WEB_PARAM,
+                                                         SHADOW_PARAM_BUFFER_SIZE, 0, 0);
+    if (!p) return;   /* gone again, or not sized yet: next tick */
+    web_param_mapped_ino = ino;
+    __atomic_store_n(&web_param_shm, p, __ATOMIC_RELEASE);
+}
+
+/* Both private mailboxes, one worker hook. */
+static void shim_hook_private_mailboxes(void) {
+    shim_hook_testd_param();
+    shim_hook_web_param();
+}
 
 /* Skipback resize hook — runs on the shim worker (off the audio path). */
 static void shim_hook_skipback_resize(void) {
@@ -7025,6 +7104,29 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
      * param.get span via the SHM-propagated trace context (Phase 2b). */
     shadow_inprocess_handle_param_request();
     if (pp_key[0]) pp_note("mbox", pp_slot, pp_key, pp_t0);
+    /* schwung-testd's mailbox, served by the same handler. The handler and
+     * everything it calls reach the mailbox through the `shadow_param` global
+     * (host.shadow_param_ptr points at it), all on this thread and synchronous
+     * (no request is held over to a later block), so pointing it at the test
+     * mailbox for this one call is enough. The worker maps it only while a
+     * live daemon claims it, so without the daemon this is one NULL check. */
+    {
+        shadow_param_t *testd_mailbox = __atomic_load_n(&testd_param_shm, __ATOMIC_ACQUIRE);
+        if (testd_mailbox) {
+            shadow_param_t *ui_mailbox = shadow_param;
+            shadow_param = testd_mailbox;
+            shadow_inprocess_handle_param_request();
+            shadow_param = ui_mailbox;
+        }
+        /* The manager's mailbox, the same way (shim_hook_web_param). */
+        shadow_param_t *web_mailbox = __atomic_load_n(&web_param_shm, __ATOMIC_ACQUIRE);
+        if (web_mailbox) {
+            shadow_param_t *ui_mailbox = shadow_param;
+            shadow_param = web_mailbox;
+            shadow_inprocess_handle_param_request();
+            shadow_param = ui_mailbox;
+        }
+    }
     pp_t0 = pp_now_us();
     shadow_drain_web_param_set();  /* Web UI fire-and-forget param sets */
     pp_note("web", 0, "", pp_t0);
@@ -8817,7 +8919,7 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
          * automation lanes during transport, etc.) may still see residual
          * stutter on very fast knob spins and should document that as a
          * tool-side characteristic. See docs/CORUN.md. */
-        int16_t corun_knob_delta[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+        static knob_coalesce_t s_knob_coalesce;
         int corun_knob_coalesce =
             (corun_target(shadow_control) == CORUN_TARGET_MOVE_NATIVE) &&
             !(corun_keep_mask_eff(shadow_control) & CORUN_GRP_KNOBS);
@@ -8901,6 +9003,7 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                     if (cin == 0x0B && type == 0xB0 && d1 == CC_MASTER_KNOB) {
                         if (!vol_claimed) filter = 0;
                     }
+                    if (vol_claimed) knob_coalesce_drop(&s_knob_coalesce, KNOB_COALESCE_VOLUME);
                     if ((cin == 0x09 || cin == 0x08) &&
                         (type == 0x90 || type == 0x80) &&
                         d1 == 8) {
@@ -8931,16 +9034,23 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                         corun_event_owner(shadow_control, type, d1) == CORUN_OWNER_PEER) {
                         filter = 0;
                         /* CC 71-78 detents: accumulate and emit once per frame
-                         * (see corun_knob_delta declaration above). Suppress
+                         * (knob_coalesce.h; see the declaration above). Suppress
                          * the individual event by re-asserting filter=1; the
                          * post-loop pass will inject one consolidated CC. */
                         if (corun_knob_coalesce && type == 0xB0 && d1 >= 71 && d1 <= 78) {
-                            int16_t delta = 0;
-                            if (d2 >= 1 && d2 <= 63) delta = d2;
-                            else if (d2 >= 65 && d2 <= 127) delta = (int16_t)d2 - 128;
-                            corun_knob_delta[d1 - 71] += delta;
+                            knob_coalesce_add(&s_knob_coalesce, d1 - 71, d2);
                             filter = 1;
                         }
+                    }
+                    /* The volume knob, whenever it goes through to Move: its
+                     * detents are summed and sent once every few frames
+                     * (knob_coalesce.h). One CC per detent during a fast spin
+                     * kept MIDI_IN occupied and starved the module's notes to
+                     * Move's own tracks -- they stuttered until the knob
+                     * stopped. */
+                    if (!filter && cin == 0x0B && type == 0xB0 && d1 == CC_MASTER_KNOB) {
+                        knob_coalesce_add(&s_knob_coalesce, KNOB_COALESCE_VOLUME, d2);
+                        filter = 1;
                     }
                 } else if (overtake_mode == 1) {
                     filter = 1;
@@ -9107,50 +9217,30 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
          * sequenced notes to Move-native instruments — the tool audibly drops
          * out and catches up at a different position (measured ~235 deferred
          * injects/s during a hard spin under a co-run sequencer). Fix: fold
-         * detents into a PERSISTENT accumulator and emit only 1 frame in KNOB_EMIT_PERIOD,
+         * detents into a PERSISTENT accumulator and emit only 1 frame in KNOB_COALESCE_PERIOD,
          * leaving the intervening frames' MIDI_IN empty so the drain (which needs
          * ~3 consecutive empty frames: hw-occupancy bail + DEFER_FRAMES=2) gets a
          * window. Knob→Move update rate drops 344→~86 Hz (imperceptible); deltas
          * are accumulated/carried so no motion is lost, only lightly time-quantized
          * during a spin. */
-        static int16_t  s_corun_knob_accum[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
-        static uint32_t s_corun_knob_phase = 0;
-        const int KNOB_EMIT_PERIOD = 4;   /* 1 emit + 3 empty frames per cycle */
-        for (int k = 0; k < 8; k++) s_corun_knob_accum[k] += corun_knob_delta[k];
-        if ((++s_corun_knob_phase % (uint32_t)KNOB_EMIT_PERIOD) == 0) {
-            for (int k = 0; k < 8; k++) {
-                if (s_corun_knob_accum[k] == 0) continue;
-                int16_t delta = s_corun_knob_accum[k];
-                if (delta > 63) delta = 63;
-                else if (delta < -63) delta = -63;
-                s_corun_knob_accum[k] -= delta;   /* carry remainder to next emit */
-                uint8_t d2 = (delta >= 0) ? (uint8_t)delta : (uint8_t)(delta + 128);
-                for (int j = 0; j < SHADOW_MIDI_IN_BYTES; j += 8) {
-                    if (sh_midi[j] == 0 && sh_midi[j + 1] == 0 &&
-                        sh_midi[j + 2] == 0 && sh_midi[j + 3] == 0) {
-                        sh_midi[j]     = 0x0B;     /* cable 0, CIN 0x0B = CC */
-                        sh_midi[j + 1] = 0xB0;     /* status: CC, channel 0 */
-                        sh_midi[j + 2] = (uint8_t)(71 + k);
-                        sh_midi[j + 3] = d2;
-                        /* Synthetic event: zero the timestamp dword */
-                        sh_midi[j + 4] = 0;
-                        sh_midi[j + 5] = 0;
-                        sh_midi[j + 6] = 0;
-                        sh_midi[j + 7] = 0;
-                        break;
-                    }
-                }
+        if (knob_coalesce_tick(&s_knob_coalesce)) {
+            for (int k = 0; k < KNOB_COALESCE_KNOBS; k++) {
+                uint8_t d2 = knob_coalesce_take(&s_knob_coalesce, k);
+                if (!d2) continue;
+                /* MIDI_IN full: put it back for the next emit, nothing lost. */
+                if (knob_coalesce_place(sh_midi, SHADOW_MIDI_IN_BYTES, knob_coalesce_cc(k), d2) != 0)
+                    knob_coalesce_add(&s_knob_coalesce, k, d2);
             }
         }
 
         /* NOTE: a second, duplicate coalesce loop used to live here. It strided
          * j += 4 over the 8-byte MIDI_IN events (the correct stride is 8, as in
-         * the loop above) and re-injected each corun_knob_delta a second time
+         * the loop above) and re-injected each knob's delta a second time
          * without zeroing the timestamp dword — double-injecting every knob CC
          * and writing CCs at 4-byte offsets *inside* 8-byte events, the exact
          * misalignment that causes a MIDI_IN SIGABRT (see docs/SPI_PROTOCOL.md).
          * Removed (copy-paste artifact); the j += 8 loop above is sufficient
-         * (corun_knob_delta is frame-local and uncleared by either loop). */
+         * (the old frame-local delta array was uncleared by either loop). */
     } else {
         /* Not in shadow mode - copy MIDI_IN directly */
         memcpy(sh_midi, hw_midi, MIDI_BUFFER_SIZE);
@@ -11218,6 +11308,7 @@ static void shim_spi_init(void)
             .corun_exit_log         = corun_exit_log_worker,
             .stems_prepare          = stem_take_worker_prepare,
             .stems_finalize         = stem_take_worker_finalize,
+            .private_mailbox_service = shim_hook_private_mailboxes,
         };
         shim_worker_set_hooks(&hooks);
     }

@@ -38,6 +38,22 @@
  * direction to the stream above, and a SEPARATE ring from SHM_SHADOW_MIDI_INJECT
  * on purpose — see the drain in schwung_shim.c's overtake scan. */
 #define SHM_TEST_INJECT_UI SCHWUNG_SHM_PREFIX "test-inject-ui"
+/* schwung-testd's OWN param mailbox (a shadow_param_t, dev-only). The test bus
+ * used to share SHM_SHADOW_PARAM with shadow_ui and the manager; with several
+ * producers on one mailbox a request could be overwritten before the shim read
+ * it (a 5 s timeout) or its answer replaced before it was copied (another
+ * client's value). One producer per mailbox makes the protocol correct as
+ * written. The DAEMON creates it (and unlinks it on exit); the shim maps it
+ * only while shadow_control->testd_param_pid names a live daemon. Move locks
+ * all its memory, so anything the shim maps is resident — without the daemon
+ * the segment does not exist and costs nothing. */
+#define SHM_TESTD_PARAM SCHWUNG_SHM_PREFIX "testd-param"
+/* schwung-manager's OWN param mailbox (a shadow_param_t), for the same reason.
+ * The MANAGER creates it on its first read or write and removes it after ~30 s
+ * unused (schwung-manager/shmparams.go); the shim worker maps it while the
+ * file exists, keyed on its inode so a removed-and-recreated file is remapped.
+ * With no remote page open the manager reads nothing, so it does not exist. */
+#define SHM_WEB_PARAM SCHWUNG_SHM_PREFIX "web-param"
 /* Sidecar → shim external MIDI input (ext_midi_in.h). Cable-2 packets that
  * did not arrive on USB-A, e.g. from a Bluetooth LE MIDI device. */
 #define SHM_EXT_MIDI_IN SCHWUNG_SHM_PREFIX "ext-midi-in"
@@ -428,6 +444,16 @@ typedef struct shadow_control_t {
      * (shadow_get_power_button). APPENDED.
      */
     volatile uint8_t power_prompt;
+    /*
+     * testd_param_pid: the pid of the schwung-testd that owns SHM_TESTD_PARAM,
+     * 0 = none. Written by the daemon (after creating the segment; cleared on
+     * exit). Read only by the shim WORKER (~5 Hz), which maps the mailbox while
+     * this names a live process and unmaps it otherwise — so a SIGKILLed daemon
+     * is noticed too. The SPI thread never reads it. A pid rather than a flag
+     * so a restarted daemon (a new segment) is told apart from the old one.
+     * APPENDED.
+     */
+    volatile uint32_t testd_param_pid;
 } shadow_control_t;
 
 /* select_launch sentinel: no trigger pending. */

@@ -1542,26 +1542,45 @@ function applyParams(params){
   /* Playhead/transport target: applied BEFORE the content gate — the post-edit
    * suppress window must never delay a stop/start edge or a phase correction.
    * Ordered by the DEVICE clock (devms is monotonic per instance) so a stale
-   * delivery can't rewind it; a large BACKWARD devms jump means the module was
-   * re-instantiated (rui_frames reset) → drop the learned clock offset and
+   * delivery can't rewind it — stops included: the stopped form carries an
+   * order key later than every playing snapshot sent before it, so a playing
+   * snapshot delivered after the stop can no longer restart the playhead.
+   * A large BACKWARD devms jump on a PLAYING snapshot means the module was
+   * re-instantiated (a stop's key is old by design, so it never counts) (rui_frames reset) → drop the learned clock offset and
    * re-learn immediately instead of holding a wrong minimum for 30s. */
+  let playFresh=false;
   {
-    const pl=m.play, backJump=pl.dev>0 && phLastDev>0 && pl.dev<phLastDev-5000;
+    const pl=m.play, backJump=pl.on && pl.dev>0 && phLastDev>0 && pl.dev<phLastDev-5000;
     if(backJump){ phOff=Infinity; phOffT=0; phLastDev=0; }
     if(pl.dev===0 || pl.dev>=phLastDev || backJump){
+      playFresh=true;
       if(pl.dev>0) phLastDev=pl.dev;
       const wasPlaying=phPlaying;
-      phTgtTick=pl.tick; phTgtT=now(); phTgtDev=pl.dev;
+      phTgtTick=pl.tick; phTgtT=now(); phTgtDev=pl.on?pl.dev:0;
       phBpm=pl.bpm||120; phPlaying=!!pl.on;
-      if(pl.dev>0){ const off=now()-pl.dev;         /* clock offset + latency */
+      /* A stopped snapshot's dev is its ORDER key (frozen at the stop), not
+       * the time it was sent: it orders, it never trains the clock offset. */
+      if(pl.dev>0 && pl.on){ const off=now()-pl.dev;         /* clock offset + latency */
         if(off<phOff || now()-phOffT>30000){ phOff=off; phOffT=now(); } }
       if(phPlaying&&!wasPlaying){ phEst=pl.tick; phEstT=now(); }
       if(phPlaying) startPlayhead(); else stopPlayhead();
     }
   }
   /* during the post-edit suppress window, ignore snapshots that haven't caught up */
-  if(now()<suppressRefreshUntil && M && m.rev<=M.rev){ revert(); stashRejected(params); return; }
+  /* ...and the transport is not content either: a start or stop does not bump
+   * rev, so inside the window the playhead above moved while M.play (the
+   * "playing / stopped" label, and the state the Play/Stop button toggles from)
+   * stayed on the old value — Stop clicked right after Play read "stopped" and
+   * sent play again. The play state goes through with the playhead. */
+  if(now()<suppressRefreshUntil && M && m.rev<=M.rev){
+    if(playFresh){ M.play=m.play; delete prevKv[P+"rui_play"]; renderChrome(); }
+    revert(); stashRejected(params); return; }
   const prevRev=lastRev, prevSel=lastSelKey;
+  /* A snapshot the device clock says is OLDER than the play state already
+   * shown (a fetch answered after a newer push — returning to the tab
+   * refreshes while pushes keep coming) keeps the newer play state, so the
+   * label never disagrees with the playhead. */
+  if(!playFresh && M && M.play) m.play=M.play;
   M=m;
   /* drum: land on a lane so the Lane + FX populate immediately instead of a blank
    * "select a lane" prompt on first click (once per clip; device honors the ruisel). */

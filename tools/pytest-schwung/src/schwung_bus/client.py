@@ -662,14 +662,11 @@ class SchwungBus:
 
     # ----- param get/set (routes through /schwung-param) -------------------
 
-    # Number of automatic retries on transient param-SHM contention
-    # errors ("param SHM busy", "param SET timeout", "param GET timeout").
-    # The /schwung-param SHM has two producers — shadow_ui and the
-    # daemon — and the wait_idle handshake can briefly fail when
-    # shadow_ui is mid-call (e.g. processing user input on its tick).
-    # 3 retries with 100ms backoff covers ~99% of intermittent races
-    # without masking real failures (a peer that's actually down
-    # times out forever, not intermittently).
+    # Number of automatic retries on param errors ("param SHM busy",
+    # "param SET timeout", "param GET timeout"). The daemon has its own
+    # mailbox now (it used to share shadow_ui's, which is where most of
+    # these came from), so a timeout means a slow or stalled module —
+    # e.g. a module load blocking the audio thread — not contention.
     PARAM_RETRY_COUNT = 3
     PARAM_RETRY_DELAY_S = 0.1
 
