@@ -371,6 +371,17 @@ which is the outcome this split exists to prevent. The text below is unchanged
 from the guide; where it says "a module" or "an overtake DSP", read "dAVEBOx's
 engine".
 
+### Dictation options on a page's text request (`ctx.openTextEntry({ dictation })`)
+
+In dAVEBOx's module editor a page's `ctx.openTextEntry({ title, initial })` opens the shared
+keyboard, where holding Rec dictates (`src/shared/dictation.mjs`). One extra field shapes that:
+`dictation: { maxSeconds, punctuation }` — how long one take may run (default 10, at most 30)
+and whether the words keep their sentence punctuation as heard (a name drops a trailing
+`. ? !`). For a field of sung lyrics, ask for `{ maxSeconds: 30, punctuation: true }`.
+Mapped in `engineCanvasPageHook` (`ui_engine.mjs`) → the editor's binding (`ui_sound.mjs`) →
+`openTextEntry({ dictation })`. Upstream's host ignores the field, so passing it costs a module
+nothing anywhere else; the text request works the same without it.
+
 ### The POWER button
 
 A module that exports `globalThis.onPowerButton` answers POWER itself: shadow_ui

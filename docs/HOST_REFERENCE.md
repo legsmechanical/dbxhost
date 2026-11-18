@@ -430,6 +430,12 @@ of it under the dictation card — and the Sample button can stop it (treated as
 release). The card's level meter reads the overlay's `samplerVuPeak`, which
 `sampler_update_vu()` keeps while the sampler records, a custom take included.
 
+**How long a take may run is the keyboard's.** `openTextEntry({ dictation: { maxSeconds,
+punctuation } })`: a name keeps the 10 s default; longer text (sung lyrics) can ask for up to
+30 s and keep its sentence punctuation. The helper is told the length and sizes its own waits
+from it (`stt_limits`: the go within the take + 5 s, a hard limit of the take + 60 s); the UI
+waits 20 s plus the take for the words.
+
 **Always the internal mic.** The Move picks its input from its own line-in jack report
 (CC 114: 0 = empty → mic). With a cable in (`host_line_in_connected()`), a take injects
 CC 114 = 0 to the Move (`move_midi_inject_to_move`) and, once the take has stopped, the
@@ -447,7 +453,8 @@ the sequencer neither running nor waiting to (no count-in, record or merge; no a
 armed or running) — else `STOP TO TALK` — and input monitoring Off for the take.
 
 The words come from **`<install>/stt/bin/schwung-stt`** (`src/stt/`), one process per take,
-spawned at Rec-down through `stt-run.sh` (`host_system_cmd`, backgrounded) so the model
+spawned at Rec-down through `stt-run.sh <work> <id> <take-seconds>` (`host_system_cmd`,
+backgrounded) so the model
 loads while the user speaks: started under `taskset 0x7 nice -n 19` (so even its libraries
 load off core 3), SCHED_OTHER asserted again inside, a 45 s hard limit. **One at a time:**
 the launcher ends any earlier helper first (`<id>.pid`, checked against the process name

@@ -528,7 +528,8 @@ even with a cable in the line input.
 - If the name hasn't been touched yet, what you say replaces it. Once you've typed
   something, what you say is added after it.
 - The words are still editable with the keyboard before you press **OK**.
-- Up to about 10 seconds at a time; a quick tap on Rec shows **HOLD REC TO TALK**.
+- Up to about 10 seconds at a time for a name; longer text, like lyrics, allows up to 30
+  seconds and keeps your punctuation. A quick tap on Rec shows **HOLD REC TO TALK**.
 - **Back** while it's listening or transcribing cancels just the dictation; press
   **Back** again to leave the keyboard.
 - **NO SPEECH** means it heard nothing it could use; **MIC BUSY** means the sampler
