@@ -1,6 +1,6 @@
 /* stt_helper.c — schwung-stt: transcribe one push-to-talk take.
  *
- *   schwung-stt <model-dir> <wav> <go-file> <cancel-file> <result-file> [threads]
+ *   schwung-stt <model-dir> <wav> <go-file> <cancel-file> <result-file> [threads] [take-seconds]
  *
  * One process per dictation. It is started the moment the user starts talking,
  * so loading the recognizer overlaps the speech; then it waits for <go-file>
@@ -29,8 +29,6 @@
 #include "c-api.h"
 #include "stt_core.h"
 
-#define GO_TIMEOUT_MS   15000   /* the UI caps a take at ~10 s */
-#define HARD_LIMIT_S       45   /* whatever happens, this process is gone by then */
 
 /* stt-run.sh already starts this under `taskset 0x7 nice -n 19`; this makes
  * sure of it (and says so in helper.log if the system refused). */
@@ -50,15 +48,18 @@ static int cancelled(const char *cancel) { return access(cancel, F_OK) == 0; }
 
 int main(int argc, char **argv) {
     if (argc < 6) {
-        fprintf(stderr, "usage: %s <model-dir> <wav> <go> <cancel> <result> [threads]\n", argv[0]);
+        fprintf(stderr, "usage: %s <model-dir> <wav> <go> <cancel> <result> [threads] [take-seconds]\n", argv[0]);
         return 2;
     }
     const char *dir = argv[1], *wav = argv[2], *go = argv[3], *cancel = argv[4], *result = argv[5];
     int threads = (argc > 6) ? atoi(argv[6]) : 2;
     if (threads < 1 || threads > 3) threads = 2;
+    /* the take's length (the keyboard's), and the waits that follow from it */
+    int take_s, go_ms, hard_s;
+    stt_limits((argc > 7) ? atoi(argv[7]) : 0, &take_s, &go_ms, &hard_s);
 
     make_polite();
-    alarm(HARD_LIMIT_S);
+    alarm((unsigned)hard_s);     /* whatever happens, this process is gone by then */
 
     char enc[1024], dec[1024], tok[1024];
     snprintf(enc, sizeof(enc), "%s/encoder_model.ort", dir);
@@ -83,7 +84,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    int w = stt_wait_go(go, cancel, GO_TIMEOUT_MS, 20);
+    int w = stt_wait_go(go, cancel, go_ms, 20);
     if (w == 0) { SherpaOnnxDestroyOfflineRecognizer(rec); return 0; }
     if (w < 0) {
         stt_write_result(result, 0, "", "timeout", load_ms, 0, 0);

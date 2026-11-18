@@ -13452,7 +13452,9 @@ function ppIo() {
                  * answer would lose the second one — but from the next tick
                  * (soundTickCanvasTextAnswer), once the keyboard is down. */
                 textEntryActive: () => isTextEntryActive(),
-                openTextEntry: (title, initial, done) => {
+                /* opts.dictation: { maxSeconds, punctuation } for hold-Rec
+                 * dictation (sung lyrics want a longer take, and commas). */
+                openTextEntry: (title, initial, done, opts) => {
                     const mod = S.moduleId;
                     const answer = (text, cancelled) => {
                         canvasTextAnswer = { slot, comp, mod, done, text, cancelled };
@@ -13460,6 +13462,7 @@ function ppIo() {
                     };
                     openTextEntry({
                         title, initialText: initial,
+                        dictation: opts && opts.dictation,
                         onConfirm: (t) => answer(String(t == null ? '' : t), false),
                         onCancel:  () => answer(null, true),
                     });

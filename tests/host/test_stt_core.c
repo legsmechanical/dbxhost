@@ -123,6 +123,14 @@ int main(void) {
     CHECK(stt_gate(300, 0.5f) == NULL, "300 ms refused");
     CHECK(stt_gate(1000, STT_SPEECH_PEAK) == NULL && stt_gate(1000, STT_SPEECH_PEAK * 0.9f) != NULL, "threshold moved");
 
+    /* take length: a name's default, a lyric's longer take, clamped; the
+     * helper's waits grow with it (a 30 s take must not time out at 15) */
+    { int s, g, h;
+      stt_limits(0, &s, &g, &h);  CHECK(s == 10 && g == 15000 && h == 70, "default %d %d %d", s, g, h);
+      stt_limits(30, &s, &g, &h); CHECK(s == 30 && g == 35000 && h == 90, "lyric %d %d %d", s, g, h);
+      stt_limits(99, &s, &g, &h); CHECK(s == 30, "unclamped %d", s);
+      stt_limits(-4, &s, NULL, NULL); CHECK(s == 10, "negative %d", s); }
+
     /* refusals */
     path(p, "nope.wav");
     CHECK(stt_wav_read_mono(p, &x, &n, &rate, NULL, err, sizeof err) != 0 && !strcmp(err, "no_wav"), "missing: %s", err);

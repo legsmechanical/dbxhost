@@ -190,7 +190,7 @@ step('⭐ hold Rec: the sampler on the Move input (silently), the helper started
     assert(iSil >= 0 && iSrc > iSil && iStart > iSrc && iCmd > iStart, 'order: ' + J(LOG));
     const start = LOG[iStart].slice(6), cmd = LOG[iCmd];
     assert(start.startsWith(WORK + '/') && start.endsWith('.wav'), 'take path ' + start);
-    assert(cmd === "cmd sh '/data/UserData/daveboxSA/stt/stt-run.sh' '" + WORK + "' " + lastId() + ' >/dev/null 2>&1 &',
+    assert(cmd === "cmd sh '/data/UserData/daveboxSA/stt/stt-run.sh' '" + WORK + "' " + lastId() + ' 10 >/dev/null 2>&1 &',
            'spawn ' + cmd + ' / id ' + lastId());
     assert(!LOG.some(l => /\/tmp/.test(l)), '/tmp: ' + J(LOG));
     assert(S.recordArmed === armed, 'Rec under the keyboard armed recording');
@@ -602,6 +602,34 @@ step('sanitizeTranscript: trimmed, single-spaced, no end punctuation, keyboard c
     assert(t('Mr. Blue') === 'Mr. Blue', J(t('Mr. Blue')));
     assert(t('abcdef', 3) === 'abc', J(t('abcdef', 3)));
     assert(t('…') === '', J(t('…')));
+    const lyric = (x) => dict.sanitizeTranscript(x, A + ',', 512, true);
+    assert(lyric('Breathe in, breathe out.') === 'Breathe in, breathe out.', J(lyric('Breathe in, breathe out.')));
+    assert(lyric('Why?') === 'Why?', J(lyric('Why?')));
+});
+
+step('a NAME keyboard: a comma heard is kept (the keyboard has one now), a trailing full stop is not', () => {
+    openTemplateKeyboard('Old Name');
+    dictate({ ok: true, text: 'Late night, drive.' });
+    assert(kb() === 'Late night, drive', 'buffer ' + J(kb()));
+    te.closeTextEntry(); ticks(5);
+});
+
+step('a keyboard asking for more than 30 s gets 30; a take there runs past 10 s', () => {
+    /* the keyboard itself (the module-page route is test_canvas_page_door.mjs) */
+    ready();
+    te.openTextEntry({ title: 'Lyrics', initialText: '', onConfirm() {}, dictation: { maxSeconds: 99, punctuation: true } });
+    const key = (d1, d2) => te.handleTextEntryMidi(new Uint8Array([0xB0, d1, d2]));
+    const step = (ms) => { NOW += ms; samplerWorker(); te.tickTextEntry(); };
+    LOG.length = 0;
+    key(86, 127); step(50);
+    assert(LOG.some(l => / 30 >\/dev\/null/.test(l)), 'take length: ' + J(LOG));
+    step(12000);
+    assert(dstate().state === 'listening', 'cut at 10 s: ' + J(dstate()));
+    step(19000);
+    assert(LOG.indexOf('stop') >= 0, 'not capped at 30 s: ' + J(LOG));
+    key(86, 0); for (let i = 0; i < 5; i++) step(20);
+    key(51, 127); key(51, 0); for (let i = 0; i < 5; i++) step(20);
+    te.closeTextEntry(); ticks(5);
 });
 }
 

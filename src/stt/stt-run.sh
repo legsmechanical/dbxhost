@@ -1,7 +1,7 @@
 #!/bin/sh
 # stt-run.sh — start one transcription in the background (from host_system_cmd).
 #
-#   sh <stt-dir>/stt-run.sh <work-dir> <id>
+#   sh <stt-dir>/stt-run.sh <work-dir> <id> [take-seconds]
 #
 # <stt-dir> (this script's folder) holds bin/schwung-stt, lib/*.so, model/.
 # <work-dir> is the dictation scratch folder on /data/UserData (never /tmp on a
@@ -16,7 +16,8 @@
 # Only then is everything belonging to another id removed — with no earlier
 # helper alive, nothing is waiting on its .cancel.
 STT_DIR="$(cd "$(dirname "$0")" && pwd)"
-WORK="${1:?work dir}"; ID="${2:?id}"
+WORK="${1:?work dir}"; ID="${2:?id}"; TAKE_S="${3:-10}"
+case "$TAKE_S" in ''|*[!0-9]*) echo "stt-run: bad take length" >&2; exit 2 ;; esac
 PROC="${STT_PROC:-/proc}"
 case "$ID" in *[!A-Za-z0-9_-]*) echo "stt-run: bad id" >&2; exit 2 ;; esac
 case "$WORK" in /tmp|/tmp/*) echo "stt-run: refusing /tmp" >&2; exit 2 ;; esac
@@ -42,7 +43,7 @@ command -v taskset >/dev/null 2>&1 && POLITE="taskset 0x7"
 command -v nice >/dev/null 2>&1 && POLITE="$POLITE nice -n 19"
 LD_LIBRARY_PATH="$STT_DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
     $POLITE "$STT_DIR/bin/schwung-stt" "$STT_DIR/model" "$WORK/$ID.wav" "$WORK/$ID.go" \
-    "$WORK/$ID.cancel" "$WORK/$ID.json" ${STT_THREADS:-2} \
+    "$WORK/$ID.cancel" "$WORK/$ID.json" ${STT_THREADS:-2} "$TAKE_S" \
     </dev/null >>"$WORK/helper.log" 2>&1 &
 echo $! > "$WORK/$ID.pid"
 wait $!

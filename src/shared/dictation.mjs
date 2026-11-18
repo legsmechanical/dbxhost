@@ -55,11 +55,18 @@ const INSTALL_DIR = (typeof HOST_INSTALL_DIR === 'string' && HOST_INSTALL_DIR)
 export const STT_DIR = INSTALL_DIR + '/stt';
 export const WORK_DIR = INSTALL_DIR + '/dictation';
 
-export const MAX_TALK_MS = 10000;      /* a take is capped here */
+export const MAX_TALK_MS = 10000;      /* a take is capped here, unless the keyboard asks for longer */
+export const MAX_TAKE_S = 30;          /* the longest a keyboard may ask for (sung lyrics); stt_core.h STT_MAX_TAKE_S */
 export const MIN_HOLD_MS = 300;        /* a shorter press is a tap: show the hint */
 const START_TIMEOUT_MS = 600;          /* sampler must report recording by then */
 const FINALIZE_TIMEOUT_MS = 3000;      /* WAV closed by then */
-const RESULT_TIMEOUT_MS = 20000;       /* helper answered by then */
+const RESULT_TIMEOUT_MS = 20000;       /* helper answered by then (plus the take's length: decoding grows with it) */
+
+/* A keyboard's dictation options -> the take's length in ms. */
+function takeMs(opts) {
+    const s = Math.floor(Number(opts && opts.maxSeconds) || 0);
+    return s > 0 ? Math.min(MAX_TAKE_S, s) * 1000 : MAX_TALK_MS;
+}
 const RESULT_POLL_MS = 100;
 const NOTICE_MS = 1600;
 
@@ -149,12 +156,12 @@ export function dictationService() {
         if (!draining.length && queued) {
             const q = queued;
             queued = null;
-            if (!q.released) startTake(q.at);
+            if (!q.released) startTake(q.at, q.maxMs);
             else if (now() - q.at < MIN_HOLD_MS) showNotice('HOLD REC TO TALK');
         }
     }
     /* The cap, even if the keyboard has stopped being ticked. */
-    if (st && st.state === 'listening' && now() - st.listenAt >= MAX_TALK_MS) stopTake();
+    if (st && st.state === 'listening' && now() - st.listenAt >= st.maxMs) stopTake();
 }
 
 /* ---- public ------------------------------------------------------------- */
@@ -169,7 +176,7 @@ export function dictationState() {
     return {
         state: st.state, seconds: Math.floor(ms / 1000), notice: '',
         level: st.state === 'listening' ? st.level : 0,
-        elapsed: Math.max(0, Math.min(1, ms / MAX_TALK_MS)),
+        elapsed: Math.max(0, Math.min(1, ms / st.maxMs)),
     };
 }
 
@@ -199,18 +206,21 @@ export function dictationDismissNotice() {
 }
 
 /* Rec down. */
-export function dictationPress() {
+/* opts (the keyboard's): { maxSeconds } — how long a take may run, up to
+ * MAX_TAKE_S; a name keeps the 10 s default. */
+export function dictationPress(opts) {
     if (st && st.state === 'transcribing') finish(null);   /* talking again replaces it */
     if (st || queued) return;
     notice = null;
     const no = hook('refuse');
     if (no) { showNotice(String(no)); return; }
     dictationService();
-    if (draining.length) { queued = { at: now(), released: false }; return; }   /* our own take still stopping */
-    startTake(now());
+    const maxMs = takeMs(opts);
+    if (draining.length) { queued = { at: now(), released: false, maxMs }; return; }   /* our own take still stopping */
+    startTake(now(), maxMs);
 }
 
-function startTake(pressAt) {
+function startTake(pressAt, maxMs) {
     const no = hook('refuse');
     if (no) { showNotice(String(no)); return; }
     const ov = samplerOverlay();
@@ -218,7 +228,7 @@ function startTake(pressAt) {
     const id = 'd' + now().toString(36) + (seq++).toString(36);
     const base = WORK_DIR + '/' + id;
     st = {
-        id, base, state: 'starting', pressAt, listenAt: 0, stopAt: 0, lastPoll: 0,
+        id, base, state: 'starting', pressAt, listenAt: 0, stopAt: 0, lastPoll: 0, maxMs,
         prevSource: (ov.samplerSource | 0), restored: false, spawned: false, released: false, level: 0,
         forcedMic: !!host_line_in_connected(),
     };
@@ -227,7 +237,8 @@ function startTake(pressAt) {
     host_sampler_set_silent(1);
     host_sampler_set_source(SOURCE_MOVE_INPUT);
     host_sampler_start(base + '.wav');
-    host_system_cmd("sh '" + STT_DIR + "/stt-run.sh' '" + WORK_DIR + "' " + id + " >/dev/null 2>&1 &");
+    host_system_cmd("sh '" + STT_DIR + "/stt-run.sh' '" + WORK_DIR + "' " + id + ' ' + (maxMs / 1000)
+                    + " >/dev/null 2>&1 &");
     st.spawned = true;
 }
 
@@ -299,7 +310,7 @@ export function dictationTick() {
         d.level = levelOf(samplerOverlay().samplerVuPeak);
         if (!recording()) {                      /* stopped behind our back (Sample) */
             d.state = 'finalizing'; d.stopAt = t;
-        } else if (t - d.listenAt >= MAX_TALK_MS) {
+        } else if (t - d.listenAt >= d.maxMs) {
             stopTake();
         }
     }
@@ -325,7 +336,7 @@ export function dictationTick() {
                 else showNotice(r && (r.err === 'no_speech' || r.err === 'too_short') ? 'NO SPEECH' : 'STT FAILED');
                 return { changed: true, text };
             }
-            if (t - d.goAt > RESULT_TIMEOUT_MS) {
+            if (t - d.goAt > RESULT_TIMEOUT_MS + d.maxMs) {
                 finish('STT FAILED');
                 return { changed: true, text: null };
             }
@@ -335,10 +346,12 @@ export function dictationTick() {
 }
 
 /* Turn a transcript into something the keyboard could have typed: trimmed,
- * single-spaced, no trailing sentence punctuation, only characters in `allowed`
- * (plus space), at most `maxLen` long. */
-export function sanitizeTranscript(text, allowed, maxLen) {
-    let s = String(text || '').replace(/\s+/g, ' ').trim().replace(/[.?!]+$/, '');
+ * single-spaced, only characters in `allowed` (plus space), at most `maxLen`
+ * long. A name also loses its trailing sentence punctuation; with
+ * `keepPunctuation` (sung lyrics) the words keep it as heard. */
+export function sanitizeTranscript(text, allowed, maxLen, keepPunctuation = false) {
+    let s = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!keepPunctuation) s = s.replace(/[.?!]+$/, '');
     let out = '';
     for (const ch of s) if (ch === ' ' || allowed.indexOf(ch) >= 0) out += ch;
     out = out.replace(/ +/g, ' ').trim();

@@ -53,6 +53,8 @@ const PAGE_OK = "\nglobalThis.canvas_overlay.drawPage = function (ctx, payload) 
     + "    globalThis.__asked = [ctx.openTextEntry({ title: 'Search', initial: 'ab' }),\n"
     + "                          ctx.openTextEntry({ title: 'Again' }), ctx.openFileInTool('/data/x.wav', 'waveform-editor')];\n"
     + "  }\n"
+    + "  if (m.data[1] === 3 && globalThis.__askLyrics)\n"
+    + "    ctx.openTextEntry({ title: 'Lyrics', initial: 'old words', dictation: { maxSeconds: 30, punctuation: true } });\n"
     + "  if (globalThis.__callDiveMethods) globalThis.__dive = [ctx.shiftHeld(), ctx.measureText('abc'),\n"
     + "      ctx.getValue(), typeof ctx.setValue, typeof ctx.random()];\n"
     + "};\n"
@@ -355,6 +357,56 @@ step('⭐ confirming answers with the text', () => {
         throw new Error('the page was retired: ' + engineLog.join(' | '));
 });
 
+/* A page that asks for LYRICS asks for dictation to match: a longer take and
+ * the punctuation as heard (dAVEBOx's own field, MODULE_HOSTING.md). Hold Rec
+ * past a name's 10 s, release, and the sung line lands whole, commas and all. */
+step('⭐ a page asking for lyrics: a 30 s take, and the words keep their commas and full stop', () => {
+    const files = {}, saved = {
+        r: globalThis.host_read_file, e: globalThis.host_file_exists, w: globalThis.host_write_file,
+        c: globalThis.host_system_cmd, now: Date.now };
+    let rec = false, closing = 0, id = null, cmd = '', t = Date.now();
+    Date.now = () => t;
+    globalThis.shadow_get_overlay_state = () => ({ samplerState: 0, samplerSource: 0 });
+    globalThis.host_sampler_is_recording = () => { if (closing > 0 && --closing === 0) rec = false; return rec; };
+    globalThis.host_sampler_set_silent = () => true;
+    globalThis.host_sampler_set_source = () => true;
+    globalThis.host_sampler_start = () => { rec = true; return true; };
+    globalThis.host_sampler_stop = () => { closing = 3; return true; };
+    globalThis.host_line_in_connected = () => false;
+    globalThis.move_midi_inject_to_move = () => true;
+    globalThis.host_system_cmd = (c) => { cmd = String(c); const m = / (d[0-9a-z]+) /.exec(cmd); if (m) id = m[1]; return 0; };
+    globalThis.host_write_file = (p, b) => { files[String(p)] = String(b); return saved.w(p, b); };
+    globalThis.host_file_exists = (p) => (String(p) in files) || saved.e(p);
+    globalThis.host_read_file = (p) => (String(p) in files) ? files[String(p)] : saved.r(p);
+    try {
+        globalThis.__askLyrics = true; globalThis.__hooks.length = 0;
+        cc(3, 127); cc(3, 0);
+        globalThis.__askLyrics = false;
+        if (!TE.isTextEntryActive() || TE.getTextEntryBuffer() !== 'old words') throw new Error('rig: the lyrics keyboard did not open');
+        cc(86, 127); ticks(2);
+        if (!/ 30 >\/dev\/null/.test(cmd)) throw new Error('the helper was not given a 30 s take: ' + cmd + ' / ' + JSON.stringify(TE.getTextEntryView().dictation));
+        t += 15000; ticks(2);                                    /* past a name's cap */
+        if (TE.getTextEntryView().dictation.state !== 'listening')
+            throw new Error('the take was cut at a name\'s 10 s: ' + JSON.stringify(TE.getTextEntryView().dictation));
+        cc(86, 0); ticks(6);
+        const dir = Object.keys(files).find(p => /\.go$/.test(p)).replace(/\/[^\/]+$/, '');
+        files[dir + '/' + id + '.json'] = JSON.stringify({ ok: true, text: 'Breathe in, breathe out, I am made of air.' });
+        t += 200; ticks(2);
+        if (TE.getTextEntryBuffer() !== 'Breathe in, breathe out, I am made of air.')
+            throw new Error('the lyric lost its punctuation: ' + JSON.stringify(TE.getTextEntryBuffer()));
+        for (let i = 0; i < 120; i++) cc(14, 1);
+        cc(3, 127); cc(3, 0); ticks(3);
+        const th = textHooks();
+        if (th.length !== 1 || th[0][0] !== 'Breathe in, breathe out, I am made of air.')
+            throw new Error('onTextEntry got ' + JSON.stringify(th));
+    } finally {
+        Object.assign(globalThis, { host_read_file: saved.r, host_file_exists: saved.e,
+                                    host_write_file: saved.w, host_system_cmd: saved.c });
+        Date.now = saved.now;
+        if (TE.isTextEntryActive()) TE.closeTextEntry();
+    }
+});
+
 /* ---- the same rule for the editor's OWN keyboards (Save As, rename) ---------
  * One tap, one owner: the keyboard cancels on the Back PRESS, and the editor
  * navigates on the RELEASE — so without a swallow, cancelling Save As also
@@ -412,7 +464,7 @@ step('⭐ Save As keyboard: hold Rec, release, the words land — and sound mode
     globalThis.host_sampler_stop = () => { closing = 3; return true; };
     globalThis.host_line_in_connected = () => false;
     globalThis.move_midi_inject_to_move = () => true;
-    globalThis.host_system_cmd = (c) => { const m = / (d[0-9a-z]+) >/.exec(String(c)); if (m) id = m[1]; return 0; };
+    globalThis.host_system_cmd = (c) => { const m = / (d[0-9a-z]+) \d+ >/.exec(String(c)); if (m) id = m[1]; return 0; };
     globalThis.host_write_file = (p, b) => { files[String(p)] = String(b); return saved.w(p, b); };
     globalThis.host_file_exists = (p) => (String(p) in files) || saved.e(p);
     globalThis.host_read_file = (p) => (String(p) in files) ? files[String(p)] : saved.r(p);

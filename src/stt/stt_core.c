@@ -124,6 +124,13 @@ int stt_wav_read_mono(const char *path, float **out, int *frames, int *rate,
     return 0;
 }
 
+void stt_limits(int max_s, int *take_s, int *go_ms, int *hard_s) {
+    int s = max_s <= 0 ? STT_DEFAULT_TAKE_S : max_s > STT_MAX_TAKE_S ? STT_MAX_TAKE_S : max_s;
+    if (take_s) *take_s = s;
+    if (go_ms) *go_ms = s * 1000 + 5000;
+    if (hard_s) *hard_s = s + 60;
+}
+
 const char *stt_gate(long audio_ms, float raw_peak) {
     if (audio_ms < STT_MIN_AUDIO_MS) return "too_short";
     if (raw_peak < STT_SPEECH_PEAK) return "no_speech";
