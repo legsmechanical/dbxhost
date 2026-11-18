@@ -23,6 +23,7 @@ static void put16(FILE *f, uint16_t v) { unsigned char b[2] = { v, v >> 8 }; fwr
 
 /* Writes a 16-bit WAV; l/r give per-channel amplitude of a 440 Hz sine.
  * junk = insert a LIST chunk before data; lie = data size field 0xFFFFFFFF. */
+static float right_hz = 440.0f;   /* the right channel's tone (left is always 440 Hz) */
 static void write_wav(const char *p, int chans, int rate, int frames, float l, float r, int junk, int lie) {
     FILE *f = fopen(p, "wb");
     uint32_t data = (uint32_t)frames * chans * 2;
@@ -33,8 +34,9 @@ static void write_wav(const char *p, int chans, int rate, int frames, float l, f
     fwrite("data", 1, 4, f); put32(f, lie ? 0xFFFFFFFFu : data);
     for (int i = 0; i < frames; i++) {
         float s = sinf(2.0f * 3.14159265f * 440.0f * i / rate);
+        float sr = sinf(2.0f * 3.14159265f * right_hz * i / rate);
         put16(f, (uint16_t)(int16_t)(s * l * 32767.0f));
-        if (chans == 2) put16(f, (uint16_t)(int16_t)(s * r * 32767.0f));
+        if (chans == 2) put16(f, (uint16_t)(int16_t)(sr * r * 32767.0f));
     }
     fclose(f);
 }
@@ -78,6 +80,15 @@ int main(void) {
     CHECK(stt_wav_read_mono(p, &x, &n, &rate, err, sizeof err) == 0, "anti read");
     CHECK(stt_peak(x, n) < 0.01f, "equal channels must be AVERAGED (peak %f)", stt_peak(x, n));
     free(x);
+    /* the pick, not just the level: the quiet side carries a DIFFERENT tone
+     * 14 dB down. Taking the loud side gives a clean 440 Hz; averaging would
+     * mix the other tone in (correlation ~0.98). */
+    right_hz = 1000.0f;
+    path(p, "bleed.wav"); write_wav(p, 2, 44100, 4410, 0.5f, 0.1f, 0, 0);
+    CHECK(stt_wav_read_mono(p, &x, &n, &rate, err, sizeof err) == 0, "bleed read");
+    CHECK(corr_sine(x, n, rate) > 0.999, "one-sided mic was averaged with the other side (corr %f)", corr_sine(x, n, rate));
+    free(x);
+    right_hz = 440.0f;
     path(p, "rightonly.wav"); write_wav(p, 2, 44100, 4410, 0.0f, 0.5f, 0, 0);
     CHECK(stt_wav_read_mono(p, &x, &n, &rate, err, sizeof err) == 0 && corr_sine(x, n, rate) > 0.99, "right-only lost");
     free(x);
