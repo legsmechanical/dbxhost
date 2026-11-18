@@ -522,8 +522,10 @@ turn the jog to a key and click it. **OK** saves, **Back** cancels.
 **Or say it: hold Rec, speak, let go.** A card opens over the keyboard: **LISTENING**,
 with a meter that moves as it hears you and a bar counting toward the 30-second limit
 (the Rec button lights red). Let go and it reads **TRANSCRIBING** for a moment (Rec
-pulses white), then the words appear in the name. It always listens through the Move's own microphone,
-even with a cable in the line input.
+pulses white), then the words appear in the name. It listens through the Move's microphone, or through
+the line input whenever a cable is plugged in, so a mic on line-in works too (and anything
+else playing into it will be heard). Silence and background noise come back as
+**NO SPEECH** rather than as words.
 
 - If the name hasn't been touched yet, what you say replaces it. Once you've typed
   something, what you say is added after it.

@@ -436,14 +436,12 @@ it (`stt_limits`: the go within the take + 5 s, a hard limit of the take + 60 s)
 20 s plus the take's recorded length for the words. The transcript is cut to what the keyboard
 can type, with commas left out and the trailing `. ? !` dropped (the comma KEY is for typing).
 
-**Always the internal mic.** The Move picks its input from its own line-in jack report
-(CC 114: 0 = empty → mic). With a cable in (`host_line_in_connected()`), a take injects
-CC 114 = 0 to the Move (`move_midi_inject_to_move`) and, once the take has stopped, the
-hardware's CURRENT answer. The injection lands in Move's copy of MIDI_IN while the shim's
-jack detector reads the hardware's, so `line_in_connected` stays true to the cable — and a
-session that ends mid-take is healed by the shim's own start-up re-assert from
-`line_in_state`, which our message never touches. ⚠ That the Move switches its capture on
-this message is not yet verified on hardware.
+**The take is the Move input as the hardware delivers it** — the built-in mic, or the
+line-in jack whenever a cable is in. The host cannot choose: measured 2026-11-18, injecting
+CC 114 = 0 (the Move's "jack empty" report) changed nothing in the AUDIO_IN buffer the
+sampler reads, and the Move sends its audio chip no SysEx at a jack change (XMOS logger
+armed across two unplug/replug cycles; the jack CCs are claim-denied, so Move did see
+them). The switch is made below the firmware. So dictation never mentions the jack.
 
 **The keyboard's owner decides the rest** through `setDictationHooks({ refuse, begin, end })`:
 `refuse()` returns a notice when dictation may not run (polled while listening too);

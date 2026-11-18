@@ -18,7 +18,7 @@
  *
  * The helper is spawned at press time so loading the model overlaps the speech.
  * Every exit path goes through `finish()`. The user's own sampler source,
- * voice prompts, jack report and monitoring are put back ONCE THE SAMPLER HAS
+ * voice prompts and monitoring are put back ONCE THE SAMPLER HAS
  * STOPPED, never before: a stop is a request the sampler's worker carries out
  * up to ~200 ms later, and it announces "Sample saved" if the prompts are on
  * by then. A cancelled take waits in `draining` for that; dictationService()
@@ -26,18 +26,19 @@
  * dictation only borrows it.
  *
  * dictationService() is the part that must run even with no keyboard on
- * screen (a keyboard closed mid-take still has a sampler to put back, a jack
- * message to deliver, a cap to enforce): the keyboard's owner calls it every
+ * screen (a keyboard closed mid-take still has a sampler to put back and a
+ * cap to enforce): the keyboard's owner calls it every
  * tick. It makes no host call when nothing is owed.
  *
  * Files (never /tmp on a Move): <install>/dictation/<id>.{wav,go,cancel,json}.
  * The id keeps a cancelled helper's late answer away from the next dictation.
  *
- * The microphone, always: with a cable in the line-in jack the Move records
- * the cable, so a take tells the Move the jack is empty (CC 114 = 0, the
- * Move's own jack report) and tells it the truth again when the take ends.
- * The host's `host_line_in_connected()` follows the hardware, not what we
- * tell the Move, so the truth is always at hand to restore.
+ * The take is the Move's audio input as the hardware delivers it: the
+ * built-in mic, or the line-in jack whenever a cable is in. The host cannot
+ * choose between them. Measured on a Move (2026-11-18): telling the Move the
+ * jack is empty (CC 114 = 0) changed nothing in the input buffer the sampler
+ * reads, and the Move sends its audio chip no message at a jack change, so
+ * the switch is made below the firmware. A mic on line-in is dictated through.
  *
  * The module using the keyboard owns the rest through setDictationHooks():
  *   refuse()  a notice when dictation may not run now (polled while
@@ -64,7 +65,6 @@ const RESULT_POLL_MS = 100;
 const NOTICE_MS = 1600;
 
 const SOURCE_MOVE_INPUT = 1;
-const CC_MIC_IN_DETECT = 114;          /* the Move's line-in jack report: 0 = empty (mic) */
 
 let hooks = null;
 /* Register the keyboard owner's hooks (see the header); null clears them. */
@@ -73,22 +73,6 @@ function hook(name) {
     if (!hooks || typeof hooks[name] !== 'function') return undefined;
     try { return hooks[name](); } catch (e) { return undefined; }
 }
-/* What the Move must be told about its line-in jack, until it has been:
- * null = nothing owed, 'mic' = empty (record the mic), 'truth' = whatever the
- * hardware reports now. The inject ring can be full; a message that did not
- * go in is tried again every service tick rather than lost (a lost 'truth'
- * would leave the Move recording the mic with a cable in, until re-plugged). */
-let jackOwed = null;
-function sendJack() {
-    if (jackOwed === null) return true;
-    const plugged = jackOwed === 'truth' ? !!host_line_in_connected() : false;
-    let sent = false;
-    try { sent = move_midi_inject_to_move([0x0B, 0xB0, CC_MIC_IN_DETECT, plugged ? 127 : 0]) !== false; }
-    catch (e) { sent = false; }
-    if (sent) jackOwed = null;
-    return sent;
-}
-
 let st = null;          /* the live dictation, or null */
 let notice = null;      /* { text, until } */
 let seq = 0;
@@ -104,14 +88,13 @@ function recording() { return !!host_sampler_is_recording(); }
 
 function showNotice(text) { notice = { text, until: now() + NOTICE_MS }; }
 
-/* Put the sampler, the jack and monitoring back the way the user had them.
+/* Put the sampler and monitoring back the way the user had them.
  * Idempotent per dictation; runs as soon as the take has stopped. */
 function restoreSampler(d) {
     if (!d || d.restored) return;
     d.restored = true;
     if (d.prevSource !== SOURCE_MOVE_INPUT) host_sampler_set_source(d.prevSource | 0);
     host_sampler_set_silent(0);
-    if (d.forcedMic) { jackOwed = 'truth'; sendJack(); }   /* the hardware's answer, now */
     hook('end');
 }
 
@@ -137,7 +120,6 @@ function finish(why) {
 
 /* Must run every tick, keyboard or not (see the header). */
 export function dictationService() {
-    if (jackOwed !== null) sendJack();
     if (draining.length) {
         const t = now();
         const rec = recording();
@@ -220,10 +202,8 @@ function startTake(pressAt) {
     st = {
         id, base, state: 'starting', pressAt, listenAt: 0, stopAt: 0, lastPoll: 0,
         prevSource: (ov.samplerSource | 0), restored: false, spawned: false, released: false, level: 0,
-        forcedMic: !!host_line_in_connected(),
     };
     hook('begin');
-    if (st.forcedMic) { jackOwed = 'mic'; sendJack(); }
     host_sampler_set_silent(1);
     host_sampler_set_source(SOURCE_MOVE_INPUT);
     host_sampler_start(base + '.wav');
@@ -259,10 +239,8 @@ export function dictationAbort() {
     notice = null;
 }
 
-/* A session that ends mid-take needs nothing from here: every host start
- * re-sends the Move the saved line-in state (shim_worker.c, from the
- * hardware's own reports, which our message never touches); a warm restart
- * keeps this module's state, so dictationService() still finishes the take. */
+/* A session that ends mid-take needs nothing from here: a warm restart keeps
+ * this module's state, so dictationService() still finishes the take. */
 
 function stopTake() {
     host_sampler_stop();

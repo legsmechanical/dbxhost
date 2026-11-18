@@ -88,8 +88,9 @@ globalThis.host_sampler_set_source = (v) => { LOG.push('source ' + v); SAMP.sour
 globalThis.host_sampler_start = (p) => { LOG.push('start ' + p); if (SAMP.startOk) SAMP.recording = true; return true; };
 globalThis.host_sampler_stop = () => { LOG.push('stop'); if (SAMP.recording) SAMP.closing = 3; return true; };
 
-/* The line-in jack as the hardware reports it (shadow_control), and what
- * this host tells the Move about it (CC 114 through the inject ring). */
+/* The line-in jack as the hardware reports it (shadow_control). Anything
+ * told to the Move about it (CC 114 through the inject ring) is logged: the
+ * host cannot choose mic over line, so dictation must never try. */
 const JACK = { lineIn: false };
 globalThis.host_line_in_connected = () => JACK.lineIn;
 globalThis.move_midi_inject_to_move = (pkt) => { if (pkt[2] === 114) LOG.push('jack114 ' + pkt[3]); return true; };
@@ -491,30 +492,16 @@ step('Monitor Rec is turned Off for the take too; Monitor Off leaves the engine 
     }
 });
 
-step('⭐ a cable in line-in: the Move is told the jack is empty for the take, and the truth after', () => {
-    openTemplateKeyboard('Old Name');
-    JACK.lineIn = true;
-    recDown();
-    const iJack = LOG.indexOf('jack114 0'), iStart = LOG.findIndex(l => /^start /.test(l));
-    assert(iJack >= 0 && iJack < iStart, 'mic not selected before the take: ' + J(LOG));
-    later(1200); recUp(); ticks(5);
-    assert(LOG.indexOf('jack114 127') > LOG.indexOf('stop'), 'line-in not given back after the take: ' + J(LOG));
-});
-
-step('…a cable pulled mid-take: the Move is told the jack is empty (the hardware\'s answer, not the old one)', () => {
-    openTemplateKeyboard('Old Name');
-    JACK.lineIn = true;
-    recDown(); later(800);
+step('⭐ a cable in line-in: the take goes ahead on the Move input as the hardware gives it; the jack is never mentioned to the Move', () => {
+    for (const cable of [true, false]) {
+        openTemplateKeyboard('Old Name');
+        JACK.lineIn = cable;
+        dictate({ ok: true, text: 'line words' });
+        assert(LOG.some(l => l === 'source 1') && LOG.some(l => /^start /.test(l)), (cable ? 'cable' : 'no cable') + ': no take: ' + J(LOG));
+        assert(!LOG.some(l => /^jack114/.test(l)), (cable ? 'cable' : 'no cable') + ': the jack was mentioned: ' + J(LOG));
+        assert(/line words/i.test(screen()), (cable ? 'cable' : 'no cable') + ': the words did not land: ' + screen());
+    }
     JACK.lineIn = false;
-    recUp(); ticks(5);
-    const after = LOG.slice(LOG.indexOf('stop'));
-    assert(after.indexOf('jack114 0') >= 0 && after.indexOf('jack114 127') < 0, J(LOG));
-});
-
-step('no cable: the jack is never mentioned to the Move', () => {
-    openTemplateKeyboard('Old Name');
-    dictate({ ok: true, text: 'x' });
-    assert(!LOG.some(l => /^jack114/.test(l)), J(LOG));
 });
 
 step('⭐ the card\'s meter follows the mic: silence is empty, a loud peak fills it, and it repaints by itself', () => {
@@ -535,18 +522,18 @@ step('⭐ the card\'s meter follows the mic: silence is empty, a loud peak fills
 step('⭐ every cancel puts the prompts back only once the sampler has STOPPED (else: "Sample saved")', () => {
     for (const how of ['tap', 'back', 'transport']) {
         openTemplateKeyboard('Old Name');
-        S.inputPrefs = { mon: 2, mode: 0, gain: 0 }; JACK.lineIn = true;
+        S.inputPrefs = { mon: 2, mode: 0, gain: 0 };
         recDown(); ticks(1);
         if (how === 'tap') { later(100); recUp(); }
         else if (how === 'back') { later(800); cc(51, 127); cc(51, 0); }
         else { later(800); S.playing = true; }
         ticks(1);
         assert(SAMP.recording, how + ': rig: the sampler should still be closing');
-        for (const l of ['silent 0', 'source 0', 'set ain_mon=2', 'jack114 127'])
+        for (const l of ['silent 0', 'source 0', 'set ain_mon=2'])
             assert(LOG.indexOf(l) < 0, how + ': ' + l + ' while the sampler is still stopping: ' + J(LOG));
         ticks(5);
         assert(!SAMP.recording, how + ': rig: still recording');
-        for (const l of ['silent 0', 'source 0', 'set ain_mon=2', 'jack114 127'])
+        for (const l of ['silent 0', 'source 0', 'set ain_mon=2'])
             assert(LOG.indexOf(l) > LOG.indexOf('stop'), how + ': ' + l + ' not restored after the stop: ' + J(LOG));
         if (how === 'tap') recUp(); else recUp();
         S.playing = false;
@@ -563,20 +550,6 @@ step('a press while our cancelled take is still stopping WAITS for it, then star
     assert(LOG.filter(l => /^start /.test(l)).length === starts + 1, 'the held press never started: ' + J(LOG));
     later(1200); recUp(); ticks(5);
     assert(dstate().state === 'transcribing', 'state ' + J(dstate()));
-    cc(51, 127); cc(51, 0); ticks(5);
-});
-
-step('the jack message is retried until the Move takes it (a full inject ring)', () => {
-    openTemplateKeyboard('Old Name');
-    JACK.lineIn = true;
-    recDown(); later(800); recUp();
-    const real = globalThis.move_midi_inject_to_move;
-    let refuse = 3;
-    globalThis.move_midi_inject_to_move = (pkt) => { if (refuse > 0) { refuse--; LOG.push('ring full'); return false; } return real(pkt); };
-    ticks(8);
-    globalThis.move_midi_inject_to_move = real;
-    const i = LOG.indexOf('jack114 127');
-    assert(i > LOG.lastIndexOf('ring full') && LOG.filter(l => l === 'ring full').length === 3, 'not retried: ' + J(LOG));
     cc(51, 127); cc(51, 0); ticks(5);
 });
 
