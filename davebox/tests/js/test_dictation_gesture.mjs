@@ -628,6 +628,9 @@ step('a keyboard asking for more than 30 s gets 30; a take there runs past 10 s'
     step(19000);
     assert(LOG.indexOf('stop') >= 0, 'not capped at 30 s: ' + J(LOG));
     key(86, 0); for (let i = 0; i < 5; i++) step(20);
+    assert(dstate().state === 'transcribing', 'rig: ' + J(dstate()));
+    step(25000);          /* a name's take gives up at 20 s; 30 s of audio takes longer to decode */
+    assert(dstate().state === 'transcribing', 'a long take gave up waiting for its words: ' + J(dstate()));
     key(51, 127); key(51, 0); for (let i = 0; i < 5; i++) step(20);
     te.closeTextEntry(); ticks(5);
 });
