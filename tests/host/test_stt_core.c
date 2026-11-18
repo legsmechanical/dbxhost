@@ -124,7 +124,7 @@ int main(void) {
     CHECK(stt_gate(1000, STT_SPEECH_PEAK) == NULL && stt_gate(1000, STT_SPEECH_PEAK * 0.9f) != NULL, "threshold moved");
 
     /* the voiced span: first start to last end, padded, clamped; none = no speech */
-    { long st[3] = { 16000, 80000, 40000 }, ln[3] = { 8000, 16000, 4000 }, a = -9, b = -9;
+    { long st[3] = { 80000, 16000, 40000 }, ln[3] = { 16000, 8000, 4000 }, a = -9, b = -9;
       CHECK(stt_span(st, ln, 3, 160000, 4800, &a, &b) == 0 && a == 11200 && b == 100800,
             "span %ld-%ld, want 11200-100800 (segments out of order)", a, b);
       CHECK(stt_span(st, ln, 3, 98000, 20000, &a, &b) == 0 && a == 0 && b == 98000, "unclamped %ld-%ld", a, b);
