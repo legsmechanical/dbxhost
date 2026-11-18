@@ -60,7 +60,8 @@ import { _padDispatchMutedNow, computePadNoteMap, syncDrumLaneSteps, syncDrumLan
 import { effectiveClip, updateStepLEDs, updateSessionLEDs, updateTrackLEDs, paintProjectPickerSurface, flashAtRate,
     invalidateLEDCache, trackColor, setPaletteEntryRGB, reapplyPalette, forceRedraw,
     updatePerfModeLEDs, altIndicatorActive, clearAllLEDs, installFlagsWrap, removeFlagsWrap,
-    buildLedInitQueue, drainLedInit, shiftClaimedByGesture } from './ui_leds.mjs';
+    buildLedInitQueue, drainLedInit, shiftClaimedByGesture, dictationRecLed } from './ui_leds.mjs';
+import { isTextEntryActive } from '/data/UserData/schwung/shared/text_entry.mjs';
 import { schSlotForTrack, schSlotsForTrack, schSlotMasksAllTracks } from './ui_corun.mjs';
 import { pollPendingExport } from './ui_export.mjs';
 import { pollPendingMidiExport } from './ui_midi_export.mjs';
@@ -2199,7 +2200,13 @@ export function _tickImpl() {
             const _recShiftHint = _shiftFlash && S.dspMergeState === 0 && !S.recordArmed;
             /* Transport LEDs */
             setButtonLED(MovePlay, S.playing ? Green : LED_OFF);
-            if (_recShiftHint) {
+            if (isTextEntryActive()) {
+                /* A keyboard is up: Rec is its push-to-talk (dictation), and
+                 * nothing else Rec does can happen under it. */
+                const r = dictationRecLed();
+                if (r.anim) setButtonLEDAnim(MoveRec, r.from, r.color, r.anim);
+                else setButtonLED(MoveRec, r.color);
+            } else if (_recShiftHint) {
                 setButtonLEDAnim(MoveRec, LED_OFF, Red, LED_PULSE_4TH);
             } else if (S.moveCoRunTrack >= 0) {
                 /* Co-run: keep Rec dark — you can't record while a co-run target owns

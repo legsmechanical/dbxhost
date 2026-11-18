@@ -391,6 +391,56 @@ step('⭐⭐ the HOST cancels the keyboard on the press: the lone release that r
     if (after !== before) throw new Error('a Back release with no press left the editor: was ' + before + ', now ' + after);
 });
 
+/* ---- dictation on the Save As keyboard ------------------------------------
+ * Hold Rec to talk (src/shared/dictation.mjs). The transcript arrives with NO
+ * input — a result file appearing — so sound mode must repaint off the
+ * keyboard's tick result; it used to throw that result away. The sampler and
+ * the helper are faked at the host-binding seam (test_dictation_gesture.mjs
+ * has the full behaviour). */
+step('⭐ Save As keyboard: hold Rec, release, the words land — and sound mode REPAINTS with no input', () => {
+    if (TE.isTextEntryActive()) throw new Error('rig: a keyboard is already up');
+    const files = {}, saved = {
+        r: globalThis.host_read_file, e: globalThis.host_file_exists, w: globalThis.host_write_file,
+        c: globalThis.host_system_cmd, now: Date.now };
+    let rec = false, closing = 0, id = null, t = Date.now();
+    Date.now = () => t;
+    globalThis.shadow_get_overlay_state = () => ({ samplerState: 0, samplerSource: 0 });
+    globalThis.host_sampler_is_recording = () => { if (closing > 0 && --closing === 0) rec = false; return rec; };
+    globalThis.host_sampler_set_silent = () => true;
+    globalThis.host_sampler_set_source = () => true;
+    globalThis.host_sampler_start = () => { rec = true; return true; };
+    globalThis.host_sampler_stop = () => { closing = 3; return true; };
+    globalThis.host_system_cmd = (c) => { const m = / (d[0-9a-z]+) >/.exec(String(c)); if (m) id = m[1]; return 0; };
+    globalThis.host_write_file = (p, b) => { files[String(p)] = String(b); return saved.w(p, b); };
+    globalThis.host_file_exists = (p) => (String(p) in files) || saved.e(p);
+    globalThis.host_read_file = (p) => (String(p) in files) ? files[String(p)] : saved.r(p);
+    try {
+        snd.soundQueueActionForTest({ t: 'usrsave' }); ticks(2);
+        if (!TE.isTextEntryActive()) throw new Error('rig: Save As did not open the keyboard');
+        cc(86, 127); ticks(2);
+        if (TE.getTextEntryView().dictation.state !== 'listening')
+            throw new Error('Rec did not open the mic: ' + JSON.stringify(TE.getTextEntryView().dictation));
+        t += 1500; ticks(1);
+        cc(86, 0); ticks(6);
+        if (TE.getTextEntryView().dictation.state !== 'transcribing')
+            throw new Error('not transcribing: ' + JSON.stringify(TE.getTextEntryView().dictation));
+        const dir = Object.keys(files).find(p => /\.go$/.test(p)).replace(/\/[^\/]+$/, '');
+        files[dir + '/' + id + '.json'] = JSON.stringify({ ok: true, text: 'Warm Pad' });
+        t += 200;
+        snd.soundDirtyForTest(true);
+        snd.soundTick();
+        if (TE.getTextEntryBuffer() !== 'Warm Pad') throw new Error('buffer ' + JSON.stringify(TE.getTextEntryBuffer()));
+        if (!snd.soundDirtyForTest(false)) throw new Error('the transcript landed and sound mode did not ask for a repaint');
+        cc(51, 127); cc(51, 0); ticks(3);
+        if (TE.isTextEntryActive()) throw new Error('rig: Back did not close the keyboard');
+    } finally {
+        Object.assign(globalThis, { host_read_file: saved.r, host_file_exists: saved.e,
+                                    host_write_file: saved.w, host_system_cmd: saved.c });
+        Date.now = saved.now;
+        if (TE.isTextEntryActive()) TE.closeTextEntry();
+    }
+});
+
 if (failed) { console.log('FAIL: canvas page door'); process.exit(1); }
 console.log('PASS: an enterable module page is a door in dAVEBOx\'s editor: click enters, the jog and click are the module\'s, Back is the module\'s first');
 }

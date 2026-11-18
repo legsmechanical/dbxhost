@@ -59,6 +59,13 @@ done
 # catalog install, 2026-10-20 (an upgrade hid it: the old copy stayed behind).
 [ -x "$BUILD_DIR/link-subscriber" ] || { echo "ERROR: missing $BUILD_DIR/link-subscriber -- Move tracks would play outside every dAVEBOx bus. Fetch the Link SDK (git submodule update --init --recursive libs/link) and rebuild the host" >&2; exit 1; }
 [ -s "$MANUAL_HTML" ] || { echo "ERROR: missing $MANUAL_HTML — the HTML manual (davebox/scripts/build_manual_html.sh) is the Help page" >&2; exit 1; }
+# Dictation on the keyboard: the helper, its runtime and the model. Without
+# them every push-to-talk ends in STT FAILED, from a tarball that looks fine.
+for f in stt/bin/schwung-stt stt/stt-run.sh stt/lib/libsherpa-onnx-c-api.so stt/lib/libonnxruntime.so \
+         stt/model/encoder_model.ort stt/model/decoder_model_merged.ort stt/model/tokens.txt \
+         licenses/MOONSHINE_LICENSE.txt; do
+    [ -s "$BUILD_DIR/$f" ] || { echo "ERROR: missing $BUILD_DIR/$f -- the speech-to-text runtime (scripts/fetch-stt.sh, then rebuild the host)" >&2; exit 1; }
+done
 [ -d "$BUILD_DIR/modules/chain" ] || { echo "ERROR: $BUILD_DIR/modules/chain missing (the owned chain host)" >&2; exit 1; }
 
 stage="$(mktemp -d)"; trap 'rm -rf "$stage"' EXIT
@@ -85,7 +92,7 @@ mkdir -p "$P/help"; cp "$MANUAL_HTML" "$P/help/manual.html"
 # file fatal. See THIRD_PARTY_LICENSES.md.
 mkdir -p "$P/licenses"
 cp "$REPO_ROOT/LICENSE" "$REPO_ROOT/THIRD_PARTY_LICENSES.md" "$P/"
-cp "$REPO_ROOT/licenses/GPL-2.0.txt" "$REPO_ROOT/licenses/GPL-3.0.txt" "$P/licenses/"
+cp "$REPO_ROOT/licenses/GPL-2.0.txt" "$REPO_ROOT/licenses/GPL-3.0.txt" "$REPO_ROOT/licenses/Apache-2.0.txt" "$P/licenses/"
 printf '%s\n' "$SA_VERSION" > "$P/sa-version.txt"
 # Every release ships with the debug log ON (Josh, 2026-09-28: "some
 # reasonable logging always on (even for testers)"; kept for 1.0, 2026-10-20).

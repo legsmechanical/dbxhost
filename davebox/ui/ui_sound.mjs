@@ -1155,6 +1155,9 @@ export function soundBusForTest() {
     return S.bus ? { id: S.bus.id, kind: S.bus.kind, door: S.busDoor ? S.busDoor.kind : null } : null;
 }
 export function soundPendingActionForTest() { return S.pendingAction; }
+/* Sound mode's repaint flag: read it, and clear it when asked (so a test can
+ * see whether a tick with no input asked for a repaint). */
+export function soundDirtyForTest(clear) { const d = !!S.dirty; if (clear) S.dirty = false; return d; }
 /* Put a full-screen canvas up without a module on disk: the screen's INPUT
  * rules are what a test of it needs, not a real overlay. */
 export function soundOpenCanvasForTest(meta, io) {
@@ -11615,7 +11618,9 @@ export function soundTick() {
     if (!S.active) return;
     S.tickCount++;
 
-    if (isTextEntryActive()) { tickTextEntry(); return; }
+    /* The keyboard changes with no input (a transcript lands, the dictation's
+     * seconds count, a notice expires), so its tick result must repaint. */
+    if (isTextEntryActive()) { if (tickTextEntry()) S.dirty = true; return; }
 
     /* ⭑ PUMP THE WAVE PEAKS, and ONLY while that screen is up.
      *

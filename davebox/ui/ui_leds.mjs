@@ -22,8 +22,9 @@ import {
     White, Red, Green, Blue, DarkBlue, LightGrey, DarkGrey, Cyan, PurpleBlue,
     DeepRed, DeepGreen, DeepMagenta, Mustard, BrightPink,
     DeepBrownYellow, BrightOrange, Tan, VividYellow, Violet, MintGreen, TealGreen,
-    MoveBack, MoveCopy, MoveDelete
+    MoveBack, MoveCopy, MoveDelete, MoveRec
 } from '/data/UserData/schwung/shared/constants.mjs';
+import { getTextEntryView } from '/data/UserData/schwung/shared/text_entry.mjs';
 import { chordLayoutOn, chordPadColor } from './ui_chord_pads.mjs';
 import { pianoLayoutOn } from './ui_drummodel.mjs';
 import { customLayoutOn, customPadColor } from './ui_custom_chords.mjs';
@@ -86,6 +87,17 @@ function cachedSetLEDAnim(note, from, to, anim) {
     if (lastSentNoteLED[note] === to && lastSentNoteAnim[note] === anim) return;
     cachedSetLED(note, from, 0);
     cachedSetLED(note, to, anim);
+}
+
+/* The Rec button while a keyboard is up: push-to-talk dictation lives there
+ * (hold Rec to talk). Dim = available, solid Red = the mic is open, a white
+ * pulse = transcribing. { from, color, anim } — anim 0 is a plain colour. */
+export function dictationRecLed() {
+    const v = getTextEntryView();
+    const st = v && v.dictation ? v.dictation.state : 'idle';
+    if (st === 'starting' || st === 'listening') return { from: LED_OFF, color: Red, anim: 0 };
+    if (st === 'finalizing' || st === 'transcribing') return { from: LED_OFF, color: White, anim: LED_PULSE_4TH };
+    return { from: LED_OFF, color: 16, anim: 0 };   /* 16 = the picker's dim "available" */
 }
 
 export function invalidateLEDCache() {
@@ -629,10 +641,23 @@ export function paintProjectPickerSurface() {
     if (!S.ledInitComplete) return;
     paintProjectPickerLEDs();                     /* pads + step lights/icons */
     const loaded = !S.awaitingProjectSelect;      /* a project is open behind us */
+    const renaming = !!(S.projectPadPicker && S.projectPadPicker.renameActive);
     for (const led of buildLedInitQueue()) {
         if (led.kind !== 'cc' || (led.id >= 16 && led.id <= 31)) continue;
+        if (renaming && led.id === MoveRec) {
+            /* the rename keyboard: Rec = dictation */
+            const r = dictationRecLed();
+            if (r.anim) {
+                if (!(lastSentButtonLED[MoveRec] === r.color && lastSentButtonAnim[MoveRec] === r.anim)) {
+                    cachedSetButtonLED(MoveRec, r.from, 0);
+                    cachedSetButtonLED(MoveRec, r.color, r.anim);
+                }
+            } else cachedSetButtonLED(MoveRec, r.color);
+            continue;
+        }
         let color = LED_OFF;
-        if (led.id === MoveCopy || led.id === MoveDelete) color = 16;   /* dim: available */
+        /* Copy/Delete act on the picker, not inside its rename keyboard. */
+        if (!renaming && (led.id === MoveCopy || led.id === MoveDelete)) color = 16;   /* dim: available */
         else if (loaded && led.id === MoveNoteSession)    color = 16;
         else if (loaded && led.id === MoveBack)           color = White;
         cachedSetButtonLED(led.id, color);

@@ -1,0 +1,405 @@
+/* tests/js/test_dictation_gesture.mjs — push-to-talk dictation on the shared
+ * keyboard, through the real gestures: the host's MIDI entry point
+ * (onMidiMessageInternal), the real tick, the real drawn frame.
+ *
+ * Hold Rec on any keyboard to talk, release to transcribe. The audio comes
+ * from the host sampler (Move Input), the words from a helper process; both
+ * are faked here at the host-binding seam, in the order the device produces
+ * them: the sampler reports recording a poll after start, keeps reporting it
+ * for a couple of polls after stop while the WAV is closed, and the helper's
+ * answer is a JSON file that appears later.
+ *
+ * Routes: Project menu → Save as Template... (the menu keyboard) and the
+ * project picker's Rename. Sound mode's Save As is covered in
+ * test_canvas_page_door.mjs (the repaint there is its own trap). */
+import './_bulk_get_stub.mjs';
+
+let failed = 0;
+function ok(l) { console.log(`  ok   — ${l}`); }
+function bad(l, e) { console.error(`  FAIL — ${l}: ${e && e.stack ? e.stack : e}`); failed = 1; }
+function step(l, fn) { try { fn(); ok(l); } catch (e) { bad(l, e); } }
+function assert(c, m) { if (!c) throw new Error(m); }
+const J = JSON.stringify;
+
+/* ---- the clock ------------------------------------------------------------ */
+let NOW = 1.8e12;
+Date.now = () => NOW;
+
+/* ---- the host -------------------------------------------------------------- */
+globalThis.HOST_INSTALL_DIR = '/data/UserData/daveboxSA';   /* js_host_common.c, the SA flavour */
+const LOG = [];
+const SPAWNED = [];          /* dictation ids, in spawn order */
+const FILES = {};
+const listing = { current: 1, projects: [
+    { uuid: 'a', name: 'Alpha', index: 0, color: 2 },
+    { uuid: 'b', name: 'Beta', index: 1, color: 1 },
+], templates: [] };
+const ALLOWED = ['tar ', 'cp ', 'mv ', 'mkdir ', 'rm ', 'ls ', 'test ', 'chmod ', 'sh '];
+globalThis.host_ui_publish = () => false;
+globalThis.host_system_cmd = (c) => {
+    c = String(c);
+    if (!ALLOWED.some(v => c.startsWith(v))) { LOG.push('REFUSED ' + c); return -1; }
+    LOG.push('cmd ' + c);
+    const m = /stt-run\.sh' '[^']*' (d[0-9a-z]+) /.exec(c);
+    if (m) SPAWNED.push(m[1]);
+    return 0;
+};
+globalThis.host_read_file = (p) => {
+    p = String(p);
+    if (/projects\.json$/.test(p)) return J(listing);
+    return FILES[p] !== undefined ? FILES[p] : '';
+};
+globalThis.host_write_file = (p, body) => { FILES[String(p)] = String(body); LOG.push('write ' + p); return true; };
+globalThis.host_file_exists = (p) => String(p) in FILES;
+globalThis.host_ensure_dir = () => true;
+globalThis.host_remove_dir = () => true;
+globalThis.host_module_set_param = (k, v) => { LOG.push('set ' + k + '=' + v); };
+globalThis.host_module_set_params = () => true;
+globalThis.host_module_get_param = () => '';
+globalThis.host_module_get_params = () => '';
+globalThis.shadow_get_param = () => '';
+globalThis.shadow_set_param = () => 1;
+globalThis.shadow_get_params = () => '';
+globalThis.shadow_set_params = () => true;
+globalThis.shadow_save_state_now = () => true;
+for (const fn of ['host_vol_block', 'host_edit_cc_block', 'clear_screen', 'draw_rect',
+                  'draw_line', 'set_pixel', 'flush_display', 'set_led',
+                  'host_open_service', 'host_close_service', 'host_ext_midi_remap_clear',
+                  'host_ext_midi_remap_set', 'host_ext_midi_remap_enable', 'host_autosave_hold',
+                  'pixel_print', 'move_midi_external_send', 'stipple_rect', 'host_pad_block'])
+    globalThis[fn] = () => 0;
+globalThis.shadow_get_ui_flags = () => 0;
+globalThis.host_state_subdir = () => 'dAVEBOx';
+globalThis.host_register_primary = () => true;
+globalThis.shadow_get_shift_held = () => 0;
+globalThis.text_width = (t) => Math.max(0, String(t).length * 6 - 1);
+
+/* The sampler, as the shim behaves (shadow_ui.c / shadow_sampler.c): source
+ * 0 = Resample, 1 = Move Input; start begins recording at once (unless the
+ * previous take's I/O is busy — silently); stop keeps "recording" true while
+ * the worker closes the file. */
+const SAMP = { state: 0, source: 0, recording: false, startOk: true, closing: 0 };
+globalThis.shadow_get_overlay_state = () => ({ type: 0, samplerState: SAMP.state, samplerSource: SAMP.source });
+globalThis.host_sampler_is_recording = () => {
+    if (SAMP.closing > 0 && --SAMP.closing === 0) SAMP.recording = false;
+    return SAMP.recording;
+};
+globalThis.host_sampler_set_silent = (v) => { LOG.push('silent ' + v); return true; };
+globalThis.host_sampler_set_source = (v) => { LOG.push('source ' + v); SAMP.source = v ? 1 : 0; return true; };
+globalThis.host_sampler_start = (p) => { LOG.push('start ' + p); if (SAMP.startOk) SAMP.recording = true; return true; };
+globalThis.host_sampler_stop = () => { LOG.push('stop'); if (SAMP.recording) SAMP.closing = 3; return true; };
+
+/* LEDs: the last write to each button, with its animation channel. */
+const BTN = {};
+globalThis.move_midi_internal_send = (pkt) => {
+    if (pkt[0] === 0x0b) BTN[pkt[2]] = { color: pkt[3], ch: pkt[1] & 0x0F };
+    return true;
+};
+
+/* What is ON SCREEN: every string drawn, plus inverted bars. */
+let INK = [];
+globalThis.print = (x, y, str, c) => { INK.push(String(str) + (c === 0 ? '(inv)' : '')); };
+globalThis.fill_rect = (x, y, w, h, c) => { if (y === 0 && w === 128 && h === 12 && c === 1) INK.push('[BAR]'); };
+
+async function main() {
+const { S } = await import('../../ui/ui_state.mjs');
+await import('../../ui/ui.js');
+const menu = await import('../../ui/ui_menu.mjs');
+const tickmod = await import('../../ui/ui_tick.mjs');
+const dlg = await import('../../ui/ui_dialogs.mjs');
+const leds = await import('../../ui/ui_leds.mjs');
+const render = await import('../../ui/ui_render.mjs');
+const fonts = await import('../../ui/ui_fonts_pp.mjs');
+const te = await import('/data/UserData/schwung/shared/text_entry.mjs');
+const dict = await import('/data/UserData/schwung/shared/dictation.mjs');
+const { LED_PULSE_4TH } = await import('../../ui/ui_constants.mjs');
+const { Red, White } = await import('/data/UserData/schwung/shared/constants.mjs');
+fonts.setKitTextTrace((t) => INK.push(t));
+
+const cc = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
+const note = (n, v) => globalThis.onMidiMessageInternal(new Uint8Array([v ? 0x90 : 0x80, n, v]));
+const click = () => { cc(3, 127); cc(3, 0); };
+const jog = (d) => cc(14, d > 0 ? 1 : 127);
+const ticks = (n) => { for (let i = 0; i < n; i++) { S.tickCount++; tickmod._tickImpl(); } };
+const later = (ms) => { NOW += ms; ticks(1); };
+const recDown = () => cc(86, 127);
+const recUp = () => cc(86, 0);
+const screen = () => { INK = []; render.drawUI(); return INK.join(' | ').toUpperCase(); };
+const kb = () => te.getTextEntryBuffer();
+const dstate = () => (te.getTextEntryView() || {}).dictation || {};
+const popup = () => (S.actionPopupLines || []).join(' / ');
+const keyboardConfirm = () => { for (let i = 0; i < 120; i++) jog(1); click(); };
+const lastId = () => SPAWNED[SPAWNED.length - 1] || null;
+const WORK = '/data/UserData/daveboxSA/dictation';
+const answer = (obj) => { FILES[WORK + '/' + lastId() + '.json'] = J(obj); };
+
+function ready() {
+    S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
+    S.awaitingProjectSelect = false; S.sessionView = false; S.currentSetUuid = 'proj-uuid';
+    S.pendingSetLoad = false; S.pendingDspSync = 0; S.playing = false;
+    S.projectPadPicker = null; S.templateManager = null; S.templateNameEntry = null;
+    S.globalMenuOpen = false;
+    te.closeTextEntry();
+    SAMP.state = 0; SAMP.source = 0; SAMP.recording = false; SAMP.startOk = true; SAMP.closing = 0;
+    if (!S.bankParams || !S.bankParams[0])
+        S.bankParams = Array.from({ length: 8 }, () => Array.from({ length: 16 }, () => new Array(8).fill(0)));
+    NOW += 5000; ticks(1);                       /* any notice from a step before expires */
+}
+/* The menu keyboard on S.currentSetName. */
+function openTemplateKeyboard(name) {
+    ready();
+    S.currentSetName = name;
+    menu.openGlobalMenuAt('Save as Template...'); click(); ticks(1);
+    assert(te.isTextEntryActive() && kb() === name, 'rig: no keyboard on ' + J(name) + ' (got ' + J(kb()) + ')');
+    LOG.length = 0;
+}
+/* Talk for `ms`, release, let the WAV close, answer, land. */
+function dictate(obj, ms = 1500) {
+    recDown(); ticks(1);
+    later(ms);
+    recUp(); ticks(5);
+    answer(obj);
+    later(150);
+}
+
+step('Rec on the keyboard: the dim "available" light', () => {
+    openTemplateKeyboard('Old Name');
+    ticks(1);
+    assert(BTN[86] && BTN[86].color === 16 && BTN[86].ch === 0, 'Rec LED ' + J(BTN[86]));
+});
+
+step('⭐ hold Rec: the sampler on the Move input (silently), the helper started — in that order, on /data/UserData', () => {
+    openTemplateKeyboard('Old Name');
+    const armed = S.recordArmed;
+    recDown();
+    const i = (re) => LOG.findIndex(l => re.test(l));
+    const iSil = i(/^silent 1$/), iSrc = i(/^source 1$/), iStart = i(/^start /), iCmd = i(/stt-run\.sh/);
+    assert(iSil >= 0 && iSrc > iSil && iStart > iSrc && iCmd > iStart, 'order: ' + J(LOG));
+    const start = LOG[iStart].slice(6), cmd = LOG[iCmd];
+    assert(start.startsWith(WORK + '/') && start.endsWith('.wav'), 'take path ' + start);
+    assert(cmd === "cmd sh '/data/UserData/daveboxSA/stt/stt-run.sh' '" + WORK + "' " + lastId() + ' >/dev/null 2>&1 &',
+           'spawn ' + cmd + ' / id ' + lastId());
+    assert(!LOG.some(l => /\/tmp/.test(l)), '/tmp: ' + J(LOG));
+    assert(S.recordArmed === armed, 'Rec under the keyboard armed recording');
+    ticks(1);
+    const sc = screen();
+    assert(/\[BAR\]/.test(sc) && /LISTENING 0S\(INV\)/.test(sc), 'on screen: ' + sc);
+    assert(BTN[86].color === Red && BTN[86].ch === 0, 'Rec LED ' + J(BTN[86]));
+    later(2300);
+    assert(/LISTENING 2S/.test(screen()), 'seconds do not count: ' + screen());
+});
+
+step('…while the mic is open the keyboard ignores the jog and the click', () => {
+    const before = [kb(), te.getTextEntryView().selected];
+    jog(1); jog(1); click();
+    assert(J([kb(), te.getTextEntryView().selected]) === J(before), 'keyboard moved: ' + J([kb(), te.getTextEntryView().selected]));
+});
+
+step('⭐ release: TRANSCRIBING; the go only once the WAV is closed; the user\'s sampler put back', () => {
+    LOG.length = 0;
+    recUp();
+    assert(LOG.indexOf('stop') >= 0, 'release did not stop the sampler: ' + J(LOG));
+    ticks(1);
+    assert(!LOG.some(l => /\.go$/.test(l)), 'go written while the sampler was still recording: ' + J(LOG));
+    assert(/TRANSCRIBING/.test(screen()), 'on screen: ' + screen());
+    ticks(4);
+    const iGo = LOG.findIndex(l => /\.go$/.test(l));
+    const iRestore = LOG.indexOf('source 0'), iSilent = LOG.indexOf('silent 0');
+    assert(iGo >= 0, 'no go: ' + J(LOG));
+    assert(iRestore >= 0 && iRestore < iGo && iSilent >= 0, 'not restored before the go: ' + J(LOG));
+    assert(SAMP.source === 0, 'the sampler is left on the Move input');
+    assert(dstate().state === 'transcribing', 'state ' + J(dstate()));
+    assert(BTN[86].color === White && BTN[86].ch === LED_PULSE_4TH, 'Rec LED ' + J(BTN[86]));
+});
+
+step('⭐ the words land: they REPLACE the untouched name, on screen; OK saves under them', () => {
+    answer({ ok: true, text: ' Late night drive.', load_ms: 300, decode_ms: 400 });
+    later(150);
+    assert(kb() === 'Late night drive', 'buffer ' + J(kb()));
+    const sc = screen();
+    assert(/LATE NIGHT DRIVE/.test(sc) && !/\[BAR\]/.test(sc), 'on screen: ' + sc);
+    assert(BTN[86].color === 16 && BTN[86].ch === 0, 'Rec LED ' + J(BTN[86]));
+    keyboardConfirm(); ticks(4);
+    assert(LOG.some(l => /template-set .*'Late night drive'$/.test(l)), J(LOG.filter(l => /template/.test(l))));
+});
+
+step('after typing, a transcript APPENDS with one space; sanitised to the keyboard\'s characters', () => {
+    openTemplateKeyboard('Josh');
+    click();                                    /* the selected key: 'a' */
+    assert(kb() === 'Josha', 'rig: ' + kb());
+    dictate({ ok: true, text: 'two  — tracks?' });
+    assert(kb() === 'Josha two tracks', 'buffer ' + J(kb()));
+});
+
+step('silence: the name is untouched, NO SPEECH shows, then goes', () => {
+    openTemplateKeyboard('Keep Me');
+    dictate({ ok: false, text: '', err: 'no_speech' });
+    assert(kb() === 'Keep Me', 'buffer ' + J(kb()));
+    assert(/NO SPEECH/.test(screen()), 'on screen: ' + screen());
+    later(2000);
+    assert(!/NO SPEECH/.test(screen()) && !/\[BAR\]/.test(screen()), 'notice stuck: ' + screen());
+    dictate({ ok: false, err: 'load_failed' });
+    assert(kb() === 'Keep Me' && /STT FAILED/.test(screen()), J([kb(), screen()]));
+});
+
+step('the sampler busy (menu open, recording, paused): MIC BUSY, nothing started', () => {
+    for (const st of [1, 2, 4]) {
+        openTemplateKeyboard('X');
+        SAMP.state = st;
+        recDown(); ticks(1);
+        assert(!LOG.some(l => /^start |stt-run/.test(l)), 'started with sampler state ' + st + ': ' + J(LOG));
+        assert(/MIC BUSY/.test(screen()), 'on screen: ' + screen());
+        recUp();
+    }
+});
+
+step('a start that never takes: MIC BUSY, the helper cancelled, the sampler put back', () => {
+    openTemplateKeyboard('X');
+    SAMP.startOk = false;
+    recDown(); ticks(1);
+    later(700);
+    assert(/MIC BUSY/.test(screen()), 'on screen: ' + screen());
+    assert(LOG.indexOf('source 0') >= 0 && LOG.some(l => /\.cancel$/.test(l)), J(LOG));
+    assert(SAMP.source === 0, 'source left on the Move input');
+});
+
+step('the user\'s sampler on Move Input stays on Move Input', () => {
+    openTemplateKeyboard('X');
+    SAMP.source = 1;
+    dictate({ ok: true, text: 'hi' });
+    assert(SAMP.source === 1 && LOG.indexOf('source 0') < 0, J(LOG));
+    assert(kb() === 'hi', kb());
+});
+
+step('a tap is not a take: the hint, no go, the helper cancelled', () => {
+    openTemplateKeyboard('X');
+    recDown(); ticks(1); later(100); recUp(); ticks(5);
+    assert(/HOLD REC TO TALK/.test(screen()), 'on screen: ' + screen());
+    assert(!LOG.some(l => /\.go$/.test(l)) && LOG.some(l => /\.cancel$/.test(l)), J(LOG));
+    assert(SAMP.source === 0 && kb() === 'X', 'state left behind');
+});
+
+step('the 10 s cap stops the take with Rec still held', () => {
+    openTemplateKeyboard('X');
+    recDown(); ticks(1);
+    later(dict.MAX_TALK_MS + 50);
+    assert(LOG.indexOf('stop') >= 0, 'no stop at the cap: ' + J(LOG));
+    ticks(5);
+    assert(dstate().state === 'transcribing', 'state ' + J(dstate()));
+    recUp(); ticks(1);
+    assert(dstate().state === 'transcribing', 'the late release disturbed it: ' + J(dstate()));
+});
+
+step('the Sample button stopping the take behind our back: it carries on to transcribe', () => {
+    openTemplateKeyboard('X');
+    recDown(); ticks(1); later(1200);
+    SAMP.closing = 2;                           /* the shim stopped it */
+    ticks(6);
+    assert(dstate().state === 'transcribing' && LOG.some(l => /\.go$/.test(l)), J([dstate(), LOG]));
+});
+
+step('⭐ Back while listening cancels the dictation only; a second Back closes the keyboard', () => {
+    openTemplateKeyboard('Stay');
+    recDown(); ticks(1); later(800);
+    cc(51, 127); cc(51, 0); ticks(1);
+    assert(te.isTextEntryActive(), 'Back closed the keyboard');
+    assert(kb() === 'Stay' && dstate().state !== 'listening', J([kb(), dstate()]));
+    assert(LOG.indexOf('stop') >= 0 && LOG.some(l => /\.cancel$/.test(l)) && SAMP.source === 0, J(LOG));
+    cc(51, 127); cc(51, 0); ticks(8);
+    assert(!te.isTextEntryActive(), 'the second Back did not close it');
+});
+
+step('Back while transcribing: cancelled, and the late answer is ignored', () => {
+    openTemplateKeyboard('Stay');
+    recDown(); ticks(1); later(800); recUp(); ticks(5);
+    assert(dstate().state === 'transcribing', 'rig ' + J(dstate()));
+    cc(51, 127); cc(51, 0); ticks(1);
+    assert(te.isTextEntryActive() && LOG.some(l => /\.cancel$/.test(l)), J(LOG));
+    answer({ ok: true, text: 'too late' });
+    later(300); ticks(3);
+    assert(kb() === 'Stay', 'the cancelled answer landed: ' + kb());
+});
+
+step('the keyboard closing mid-take (OK while transcribing, or closed from outside) tears it down', () => {
+    openTemplateKeyboard('Mine');
+    recDown(); ticks(1); later(800); recUp(); ticks(5);
+    keyboardConfirm(); ticks(4);
+    assert(!te.isTextEntryActive(), 'rig: still open');
+    assert(LOG.some(l => /\.cancel$/.test(l)), 'helper not cancelled: ' + J(LOG));
+    assert(LOG.some(l => /template-set .*'Mine'$/.test(l)), 'OK did not save the text as it stood');
+    const stale = lastId();
+    openTemplateKeyboard('Next');
+    FILES[WORK + '/' + stale + '.json'] = J({ ok: true, text: 'stale words' });
+    later(300); ticks(3);
+    assert(kb() === 'Next', 'the previous keyboard\'s transcript landed here: ' + kb());
+    recDown(); ticks(1); later(500);
+    te.closeTextEntry();
+    assert(LOG.indexOf('stop') >= 0 && SAMP.source === 0 && LOG.some(l => /\.cancel$/.test(l)), J(LOG));
+    assert(!dict.dictationActive(), 'dictation still live');
+});
+
+step('⭐ the project picker\'s Rename: Rec lights in the picker\'s painter; the words rename', () => {
+    ready();
+    dlg.openProjectPadPicker(); ticks(1);
+    assert(S.projectPadPicker, 'rig: no picker');
+    note(68, 100); note(68, 0); ticks(1);         /* pad 0 = Alpha → its menu */
+    for (let n = 0; n < 4 && !te.isTextEntryActive(); n++) {
+        const p = S.projectPadPicker;
+        if (!p || !p.menu) break;
+        if (/RENAME/.test(screen()) && n > 0) click(); else { jog(1); click(); }
+        ticks(1);
+    }
+    assert(te.isTextEntryActive() && kb() === 'Alpha', 'rig: no rename keyboard (' + J(kb()) + ') screen ' + screen());
+    ticks(1);
+    assert(BTN[86] && BTN[86].color === 16, 'Rec LED under the rename keyboard ' + J(BTN[86]));
+    assert(BTN[60] && BTN[60].color === 0, 'Copy still lit under the keyboard ' + J(BTN[60]));
+    LOG.length = 0;
+    recDown(); ticks(2);
+    assert(BTN[86].color === Red, 'Rec LED while listening ' + J(BTN[86]));
+    later(1500); recUp(); ticks(5);
+    assert(BTN[86].color === White && BTN[86].ch === LED_PULSE_4TH, 'Rec LED transcribing ' + J(BTN[86]));
+    answer({ ok: true, text: 'Morning Sketch' }); later(150);
+    assert(kb() === 'Morning Sketch', 'buffer ' + kb());
+    keyboardConfirm(); ticks(4);
+    assert(LOG.some(l => /rename/.test(l) && /Morning Sketch/.test(l)), 'no rename: ' + J(LOG.filter(l => /cmd/.test(l))));
+});
+
+step('Rec with no keyboard is still Record', () => {
+    ready();
+    LOG.length = 0;
+    const before = !!S.recordArmed;
+    cc(86, 127); cc(86, 0); ticks(2);
+    assert(!!S.recordArmed !== before, 'Rec did not reach Record (armed ' + S.recordArmed + ')');
+    cc(86, 127); cc(86, 0); ticks(2);           /* and back */
+    assert(!LOG.some(l => /stt-run|^start /.test(l)), 'dictation without a keyboard: ' + J(LOG));
+    assert(!dict.dictationActive(), 'a dictation started');
+});
+
+step('idle costs nothing: an open keyboard with no dictation makes no sampler or file call', () => {
+    openTemplateKeyboard('Quiet');
+    const was = { o: globalThis.shadow_get_overlay_state, r: globalThis.host_sampler_is_recording, e: globalThis.host_file_exists };
+    let calls = 0;
+    globalThis.shadow_get_overlay_state = () => { calls++; return was.o(); };
+    globalThis.host_sampler_is_recording = () => { calls++; return was.r(); };
+    globalThis.host_file_exists = (p) => { if (/dictation/.test(p)) calls++; return was.e(p); };
+    ticks(20);
+    Object.assign(globalThis, { shadow_get_overlay_state: was.o, host_sampler_is_recording: was.r, host_file_exists: was.e });
+    assert(calls === 0, calls + ' host calls from an idle keyboard');
+});
+
+step('sanitizeTranscript: trimmed, single-spaced, no end punctuation, keyboard characters only', () => {
+    const A = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890.-!@#$%^&*\'";:?/\\<>()[]{}=-+';
+    const t = (s, n = 512) => dict.sanitizeTranscript(s, A, n);
+    assert(t('  Hello,   world!  ') === 'Hello world', J(t('  Hello,   world!  ')));
+    assert(t('café über') === 'caf ber', J(t('café über')));
+    assert(t('What?!') === 'What', J(t('What?!')));
+    assert(t('Mr. Blue') === 'Mr. Blue', J(t('Mr. Blue')));
+    assert(t('abcdef', 3) === 'abc', J(t('abcdef', 3)));
+    assert(t('…') === '', J(t('…')));
+});
+}
+
+main().then(() => {
+    console.log(failed ? 'FAIL test_dictation_gesture' : 'PASS test_dictation_gesture');
+    process.exit(failed);
+}, (e) => { console.error(e); process.exit(1); });

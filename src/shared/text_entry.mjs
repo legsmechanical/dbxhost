@@ -16,11 +16,22 @@
  *
  *   // In your tick:
  *   if (isTextEntryActive()) { drawTextEntry(); return; }
+ *
+ * Dictation: hold Rec (CC 86) to talk, release to transcribe (dictation.mjs).
+ * The transcript REPLACES the text while it is still the untouched initial
+ * text (most keyboards open prefilled with the current name), and is appended
+ * after anything has been typed. Back during a dictation cancels only the
+ * dictation. A host must call tickTextEntry() every tick and redraw when it
+ * returns true — a transcript arrives with no input to trigger a repaint.
  */
 
 import { decodeDelta } from './input_filter.mjs';
 import { drawRect } from './menu_layout.mjs';
 import { announce as defaultAnnounce } from './screen_reader.mjs';
+import {
+    dictationPress, dictationRelease, dictationCancel, dictationAbort, dictationTick,
+    dictationState, dictationActive, dictationListening, sanitizeTranscript,
+} from './dictation.mjs';
 
 /* Pad LED constants */
 const PAD_NOTE_START = 68;
@@ -201,6 +212,7 @@ const GRID_START_X = 6;
 const CC_JOG_WHEEL = 14;
 const CC_JOG_CLICK = 3;
 const CC_BACK = 51;
+const CC_REC = 86;
 
 /* Character pages */
 const PAGES = [
@@ -230,6 +242,8 @@ let state = {
     lastAction: null,      /* 'char', 'space', 'backspace' */
     lastChar: '',          /* Last character entered (for repeat) */
     padSelect: false,      /* Enable pad-based character selection */
+    pristine: false,       /* buffer is still the untouched initial text */
+    drawnSig: '',          /* dictation label + buffer as last drawn */
     onConfirm: null,
     onCancel: null,
     onAnnounce: null
@@ -255,6 +269,8 @@ export function openTextEntry({ title = '', initialText = '', onConfirm, onCance
     state.previewTimeout = 0;
     state.lastAction = null;
     state.lastChar = '';
+    state.pristine = true;
+    state.drawnSig = '';
     state.onConfirm = onConfirm;
     /* Use caller's explicit padSelect if provided, otherwise fall back to global setting.
      * If global is false, check the config file as a fallback — external modules loaded
@@ -304,6 +320,7 @@ export function openTextEntry({ title = '', initialText = '', onConfirm, onCance
  * Close the text entry keyboard
  */
 export function closeTextEntry() {
+    dictationAbort();
     if (state.padSelect) {
         restorePadLEDs();
         if (typeof host_pad_block === 'function') host_pad_block(0);
@@ -351,6 +368,29 @@ export function handleTextEntryMidi(msg) {
     const status = msg[0] & 0xF0;
     const data1 = msg[1];
     const data2 = msg[2];
+
+    /* Dictation comes first: ahead of the pads, and ahead of the preview
+     * screen, which swallows every CC it does not know. */
+    if (status === 0xB0 && data1 === CC_REC) {
+        if (data2 > 0) {
+            state.showingPreview = false;
+            state.previewTimeout = 0;
+            dictationPress();
+        } else {
+            dictationRelease();
+            if (dictationActive()) announceTextEntry('Transcribing');
+        }
+        return true;
+    }
+    if (status === 0xB0 && data1 === CC_BACK && dictationActive()) {
+        if (data2 > 0) {
+            dictationCancel();
+            announceTextEntry('Dictation cancelled');
+        }
+        return true;
+    }
+    /* While the mic is open the keyboard does nothing else. */
+    if (dictationListening()) return true;
 
     /* Pad press (Note On) — select, or enter if pressed hard enough */
     if (state.padSelect && status === 0x90 && data1 >= 68 && data1 <= 99) {
@@ -485,6 +525,7 @@ function handleSelection(fromPad) {
                 showPreview(fromPad);
                 break;
             case SPECIAL_BACKSPACE:
+                state.pristine = false;
                 if (state.buffer.length > 0) {
                     state.buffer = state.buffer.slice(0, -1);
                 }
@@ -493,6 +534,7 @@ function handleSelection(fromPad) {
                 showPreview(fromPad);
                 break;
             case SPECIAL_CLEAR:
+                state.pristine = false;
                 state.buffer = '';
                 state.lastAction = 'clear';
                 announceTextEntry(`Cleared`);
@@ -524,6 +566,7 @@ function repeatLastAction() {
             announceTextEntry(`space entered, text ${getAnnounceBuffer()}`);
             break;
         case 'backspace':
+            state.pristine = false;
             if (state.buffer.length > 0) {
                 state.buffer = state.buffer.slice(0, -1);
             }
@@ -538,6 +581,7 @@ function repeatLastAction() {
  * Append character to buffer
  */
 function appendToBuffer(char) {
+    state.pristine = false;
     if (state.buffer.length < MAX_BUFFER_LENGTH) {
         state.buffer += char;
     }
@@ -610,8 +654,33 @@ function getAnnounceBuffer() {
  * Tick the text entry (call in your tick function)
  * @returns {boolean} true if state changed
  */
+/* A transcript lands: replace the untouched initial text, else append. */
+function insertTranscript(text) {
+    const s = sanitizeTranscript(text, PAGES.join(''), MAX_BUFFER_LENGTH);
+    if (!s) return false;
+    if (state.pristine || !state.buffer) {
+        state.buffer = s;
+    } else {
+        const sep = state.buffer.endsWith(' ') ? '' : ' ';
+        state.buffer = (state.buffer + sep + s).slice(0, MAX_BUFFER_LENGTH);
+    }
+    state.pristine = false;
+    state.lastAction = null;      /* a preview click must not repeat a stale key */
+    announceTextEntry(`Heard ${s}. Text ${getAnnounceBuffer()}`);
+    return true;
+}
+
 export function tickTextEntry() {
     if (!state.active) return false;
+
+    /* "Changed" is judged against what was last DRAWN, not as a one-shot
+     * flag: the host and the module can both tick this one keyboard, and a
+     * flag the first ticker consumed would leave the other's screen stale. */
+    const dict = dictationTick();
+    if (dict.text) insertTranscript(dict.text);
+    if (dict.changed || state.drawnSig) {
+        if (keyboardSig() !== state.drawnSig) return true;
+    }
 
     /* Commit deferred velocity entry after slide guard window */
     if (pendingEntryNote >= 0 && (Date.now() - pendingEntryTime) >= padConfig.slideGuardMs) {
@@ -648,6 +717,7 @@ export function getTextEntryView() {
         title: state.title || '', buffer: state.buffer || '', page: state.page, pages: PAGES.length,
         chars: getCurrentPageChars().slice(), selected: state.selectedIndex,
         specials: ['...', 'Space', 'Delete', 'Clear', 'OK'], preview: !!state.showingPreview,
+        dictation: dictationState(),
     };
 }
 
@@ -666,10 +736,31 @@ export function drawTextEntry() {
 /**
  * Draw the keyboard grid screen
  */
+/* The title row's words while a dictation is live (or its notice), else ''. */
+function dictationLabel() {
+    const d = dictationState();
+    if (d.state === 'starting' || d.state === 'listening') return `LISTENING ${d.seconds}s`;
+    if (d.state === 'finalizing' || d.state === 'transcribing') return 'TRANSCRIBING...';
+    if (d.state === 'notice') return d.notice;
+    return '';
+}
+
+function keyboardSig() {
+    const dl = dictationLabel();
+    return dl ? dl + '\u0000' + state.buffer : '';
+}
+
 function drawKeyboardScreen() {
     /* Title with current buffer */
     const bufferDisplay = state.buffer || '';
-    if (state.title) {
+    const dl = dictationLabel();
+    state.drawnSig = keyboardSig();
+    if (dl) {
+        /* Inverted, so it reads as a state rather than as text being typed (the
+         * sampler's own recording dot, drawn in this corner, vanishes into it). */
+        fill_rect(0, 0, SCREEN_WIDTH, RULE_Y, 1);
+        print(2, TITLE_Y, dl, 0);
+    } else if (state.title) {
         /* Combine title and buffer, truncate if needed */
         const combined = `${state.title}: ${bufferDisplay}`;
         const maxChars = Math.floor((SCREEN_WIDTH - 4) / 6);  /* 6px per char */
