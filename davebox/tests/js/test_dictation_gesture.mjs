@@ -78,8 +78,8 @@ globalThis.text_width = (t) => Math.max(0, String(t).length * 6 - 1);
  * 0 = Resample, 1 = Move Input; start begins recording at once (unless the
  * previous take's I/O is busy — silently); stop keeps "recording" true while
  * the worker closes the file. */
-const SAMP = { state: 0, source: 0, recording: false, startOk: true, closing: 0 };
-globalThis.shadow_get_overlay_state = () => ({ type: 0, samplerState: SAMP.state, samplerSource: SAMP.source });
+const SAMP = { state: 0, source: 0, recording: false, startOk: true, closing: 0, vu: 0 };
+globalThis.shadow_get_overlay_state = () => ({ type: 0, samplerState: SAMP.state, samplerSource: SAMP.source, samplerVuPeak: SAMP.vu });
 globalThis.host_sampler_is_recording = () => {
     if (SAMP.closing > 0 && --SAMP.closing === 0) SAMP.recording = false;
     return SAMP.recording;
@@ -105,7 +105,13 @@ globalThis.move_midi_internal_send = (pkt) => {
 /* What is ON SCREEN: every string drawn, plus inverted bars. */
 let INK = [];
 globalThis.print = (x, y, str, c) => { INK.push(String(str) + (c === 0 ? '(inv)' : '')); };
-globalThis.fill_rect = (x, y, w, h, c) => { if (y === 0 && w === 128 && h === 12 && c === 1) INK.push('[BAR]'); };
+/* The dictation card (text_entry.mjs CARD/METER): its frame's top edge, and
+ * the level meter's fill, by width. */
+globalThis.fill_rect = (x, y, w, h, c) => {
+    if (x === 8 && y === 15 && w === 112 && h === 1 && c === 1) INK.push('[CARD]');
+    if (x === 17 && y === 37 && h === 4 && c === 1) INK.push('[LEVEL ' + w + ']');
+};
+const levelPx = (sc) => { const m = /\[LEVEL (\d+)\]/.exec(sc); return m ? +m[1] : 0; };
 
 async function main() {
 const { S } = await import('../../ui/ui_state.mjs');
@@ -191,10 +197,11 @@ step('⭐ hold Rec: the sampler on the Move input (silently), the helper started
     assert(S.recordArmed === armed, 'Rec under the keyboard armed recording');
     ticks(1);
     const sc = screen();
-    assert(/\[BAR\]/.test(sc) && /LISTENING 0S\(INV\)/.test(sc), 'on screen: ' + sc);
+    assert(/\[CARD\]/.test(sc) && /LISTENING/.test(sc) && /0S/.test(sc), 'on screen: ' + sc);
+    assert(/OLD NAME/.test(sc), 'the name is not kept in view above the card: ' + sc);
     assert(BTN[86].color === Red && BTN[86].ch === 0, 'Rec LED ' + J(BTN[86]));
     later(2300);
-    assert(/LISTENING 2S/.test(screen()), 'seconds do not count: ' + screen());
+    assert(/\b2S\b/.test(screen()), 'seconds do not count: ' + screen());
 });
 
 step('…while the mic is open the keyboard ignores the jog and the click', () => {
@@ -475,6 +482,21 @@ step('no cable: the jack is never mentioned to the Move', () => {
     openTemplateKeyboard('Old Name');
     dictate({ ok: true, text: 'x' });
     assert(!LOG.some(l => /^jack114/.test(l)), J(LOG));
+});
+
+step('⭐ the card\'s meter follows the mic: silence is empty, a loud peak fills it, and it repaints by itself', () => {
+    openTemplateKeyboard('Old Name');
+    recDown(); ticks(1); later(400);
+    SAMP.vu = 0; later(50);
+    assert(levelPx(screen()) === 0, 'silence drew a level: ' + screen());
+    SAMP.vu = 3277;                                /* -20 dBFS */
+    assert(te.tickTextEntry() === true, 'a level change did not ask for a repaint');
+    const mid = levelPx(screen());
+    SAMP.vu = 32767; later(50);
+    const full = levelPx(screen());
+    assert(mid > 40 && mid < 80 && full === 94, 'meter: -20 dB=' + mid + 'px, 0 dB=' + full + 'px (of 94)');
+    SAMP.vu = 0; recUp(); ticks(6);
+    assert(!/\[LEVEL/.test(screen()), 'the meter stays up while transcribing: ' + screen());
 });
 
 step('sanitizeTranscript: trimmed, single-spaced, no end punctuation, keyboard characters only', () => {

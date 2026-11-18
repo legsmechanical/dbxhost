@@ -736,34 +736,83 @@ export function drawTextEntry() {
 /**
  * Draw the keyboard grid screen
  */
-/* The title row's words while a dictation is live (or its notice), else ''. */
-function dictationLabel() {
+/* THE DICTATION CARD: an inset card over the keyboard while a dictation is
+ * live or its notice shows. The title row (the name) stays in view above it.
+ *
+ *   ┌┌──────────────────────────┐┐
+ *   ││ 🎤 LISTENING          3s ││   or TRANSCRIBING / a notice, centred
+ *   ││ [███████████          ]  ││   the mic's level
+ *   ││ ━━━━━──────────────────  ││   the take against its 10 s cap
+ *   └└──────────────────────────┘┘
+ */
+const CARD = { x: 8, y: 15, w: 112, h: 44 };
+const METER = { x: 15, y: 35, w: 98, h: 8 };
+const TBAR_Y = 48;
+
+/* What the card shows, or null. `dots` animates TRANSCRIBING. */
+function dictationCard() {
     const d = dictationState();
-    if (d.state === 'starting' || d.state === 'listening') return `LISTENING ${d.seconds}s`;
-    if (d.state === 'finalizing' || d.state === 'transcribing') return 'TRANSCRIBING...';
-    if (d.state === 'notice') return d.notice;
-    return '';
+    if (d.state === 'starting' || d.state === 'listening') {
+        return { kind: 'listen', seconds: d.seconds,
+                 fill: Math.round(d.level * (METER.w - 4)), done: Math.round(d.elapsed * METER.w) };
+    }
+    if (d.state === 'finalizing' || d.state === 'transcribing')
+        return { kind: 'work', dots: 1 + Math.floor(Date.now() / 300) % 3 };
+    if (d.state === 'notice') return { kind: 'notice', text: d.notice };
+    return null;
 }
 
 function keyboardSig() {
-    const dl = dictationLabel();
-    return dl ? dl + '\u0000' + state.buffer : '';
+    const c = dictationCard();
+    return c ? JSON.stringify(c) + '\u0000' + state.buffer : '';
+}
+
+function textWidth(t) {
+    if (typeof text_width === 'function') { const w = text_width(t); if (w > 0) return w; }
+    return t.length * 6;
+}
+
+function drawMic(x, y) {
+    fill_rect(x + 2, y, 3, 6, 1);
+    fill_rect(x + 1, y + 3, 1, 2, 1); fill_rect(x + 5, y + 3, 1, 2, 1);
+    fill_rect(x + 2, y + 6, 3, 1, 1); fill_rect(x + 3, y + 7, 1, 1, 1);
+    fill_rect(x + 1, y + 8, 5, 1, 1);
+}
+
+function drawDictationCard(c) {
+    const { x, y, w, h } = CARD;
+    fill_rect(x - 2, y - 2, w + 4, h + 4, 0);   /* a margin, so keys do not touch the frame */
+    drawRect(x, y, w, h, 1);
+    drawRect(x + 2, y + 2, w - 4, h - 4, 1);
+    if (c.kind === 'listen') {
+        drawMic(x + 7, y + 6);
+        print(x + 17, y + 7, 'LISTENING', 1);
+        const s = `${c.seconds}s`;
+        print(x + w - 7 - textWidth(s), y + 7, s, 1);
+        drawRect(METER.x, METER.y, METER.w, METER.h, 1);
+        if (c.fill > 0) fill_rect(METER.x + 2, METER.y + 2, c.fill, METER.h - 4, 1);
+        fill_rect(METER.x, TBAR_Y + 1, METER.w, 1, 1);
+        if (c.done > 0) fill_rect(METER.x, TBAR_Y, c.done, 3, 1);
+    } else if (c.kind === 'work') {
+        const t = 'TRANSCRIBING';
+        print(x + Math.floor((w - textWidth(t)) / 2), y + 11, t, 1);
+        const dx = x + Math.floor(w / 2) - 7;
+        for (let i = 0; i < c.dots; i++) fill_rect(dx + i * 5, y + 27, 2, 2, 1);
+    } else {
+        print(x + Math.floor((w - textWidth(c.text)) / 2), y + 18, c.text, 1);
+    }
 }
 
 function drawKeyboardScreen() {
     /* Title with current buffer */
     const bufferDisplay = state.buffer || '';
-    const dl = dictationLabel();
+    const card = dictationCard();
     state.drawnSig = keyboardSig();
-    if (dl) {
-        /* Inverted, so it reads as a state rather than as text being typed (the
-         * sampler's own recording dot, drawn in this corner, vanishes into it). */
-        fill_rect(0, 0, SCREEN_WIDTH, RULE_Y, 1);
-        print(2, TITLE_Y, dl, 0);
-    } else if (state.title) {
-        /* Combine title and buffer, truncate if needed */
+    if (state.title) {
+        /* Combine title and buffer, truncate if needed. Under a dictation card
+         * the last few pixels are left to the sampler's recording dot (123,1). */
         const combined = `${state.title}: ${bufferDisplay}`;
-        const maxChars = Math.floor((SCREEN_WIDTH - 4) / 6);  /* 6px per char */
+        const maxChars = Math.floor((SCREEN_WIDTH - (card ? 10 : 4)) / 6);  /* 6px per char */
         const displayText = combined.length > maxChars
             ? '…' + combined.slice(-(maxChars - 1))
             : combined;
@@ -799,6 +848,8 @@ function drawKeyboardScreen() {
 
     /* Draw special buttons on fixed bottom row */
     drawSpecialButtons(charCount);
+
+    if (card) drawDictationCard(card);
 }
 
 /**

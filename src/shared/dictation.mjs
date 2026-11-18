@@ -109,11 +109,25 @@ function finish(why) {
 
 /* ---- public ------------------------------------------------------------- */
 
+/* { state, seconds, notice, level, elapsed }: level 0..1 is the mic's peak
+ * (-48..0 dBFS) while listening; elapsed 0..1 is the take against its cap. */
 export function dictationState() {
     const n = (notice && notice.until > now()) ? notice.text : '';
-    if (!st) return { state: n ? 'notice' : 'idle', seconds: 0, notice: n };
-    const secs = (st.state === 'listening') ? Math.floor((now() - st.listenAt) / 1000) : 0;
-    return { state: st.state, seconds: secs, notice: '' };
+    if (!st) return { state: n ? 'notice' : 'idle', seconds: 0, notice: n, level: 0, elapsed: 0 };
+    const ms = (st.state === 'listening') ? now() - st.listenAt : 0;
+    return {
+        state: st.state, seconds: Math.floor(ms / 1000), notice: '',
+        level: st.state === 'listening' ? st.level : 0,
+        elapsed: Math.max(0, Math.min(1, ms / MAX_TALK_MS)),
+    };
+}
+
+/* The sampler's own peak (shadow_sampler.c sampler_update_vu: runs while it
+ * records, with its own hold and fall) on a -48..0 dBFS scale. */
+function levelOf(peak) {
+    const p = peak | 0;
+    if (p <= 0) return 0;
+    return Math.max(0, Math.min(1, 1 + (20 * Math.log10(p / 32767)) / 48));
 }
 
 /* True while a dictation owns the input (Rec held / sampler busy for us). */
@@ -135,7 +149,7 @@ export function dictationPress() {
     const base = WORK_DIR + '/' + id;
     st = {
         id, base, state: 'starting', pressAt: now(), listenAt: 0, stopAt: 0, lastPoll: 0,
-        prevSource: (ov.samplerSource | 0), restored: false, spawned: false, released: false,
+        prevSource: (ov.samplerSource | 0), restored: false, spawned: false, released: false, level: 0,
         forcedMic: !!host_line_in_connected(),
     };
     hook('begin');
@@ -184,7 +198,8 @@ export function dictationTick() {
     }
     const d = st;
     const t = now();
-    const before = d.state + ':' + dictationState().seconds;
+    const sig = () => { const v = dictationState(); return v.state + ':' + v.seconds + ':' + Math.round(v.level * 64) + ':' + Math.round(v.elapsed * 64); };
+    const before = sig();
     let text = null;
 
     if (d.state === 'starting' || d.state === 'listening') {
@@ -201,6 +216,7 @@ export function dictationTick() {
             return { changed: true, text: null };
         }
     } else if (d.state === 'listening') {
+        d.level = levelOf(samplerOverlay().samplerVuPeak);
         if (!recording()) {                      /* stopped behind our back (Sample) */
             d.state = 'finalizing'; d.stopAt = t;
         } else if (t - d.listenAt >= MAX_TALK_MS) {
@@ -235,7 +251,7 @@ export function dictationTick() {
             }
         }
     }
-    return { changed: (d.state + ':' + dictationState().seconds) !== before, text };
+    return { changed: sig() !== before, text };
 }
 
 /* Turn a transcript into something the keyboard could have typed: trimmed,
