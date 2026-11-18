@@ -48,9 +48,19 @@ type ShmParams struct {
 	// The manager's OWN mailbox (shmWebParamPath), claimed on first use and
 	// released after mailboxIdleRelease without one. Empty for a ShmParams
 	// built over a fixed mapping (tests): data is then never released.
-	privPath string
-	lastUse  time.Time
+	privPath  string
+	lastUse   time.Time
+	claimedAt time.Time
+
+	// hold, when set, keeps the mailbox while it reports true (the remote UI:
+	// "a page is connected"), so a page in use never pays a re-claim. Read
+	// before s.mu is taken; it must not take any lock that is held while
+	// calling into ShmParams.
+	hold atomic.Pointer[func() bool]
 }
+
+// SetHold installs the keep-while-true check (see ShmParams.hold).
+func (s *ShmParams) SetHold(fn func() bool) { s.hold.Store(&fn) }
 
 // mailboxIdleRelease: how long the manager keeps its mailbox with no reads or
 // writes. The shim maps the mailbox while the file exists, and Move locks all
@@ -90,8 +100,13 @@ func (s *ShmParams) claimLocked() error {
 	data[paramOffRequestType] = 0
 	data[paramOffResponseReady] = 0
 	s.data = data
+	s.claimedAt = time.Now()
 	return nil
 }
+
+// freshClaimWait: how long a request in a just-claimed mailbox can sit before
+// the shim worker (~200 ms tick) has mapped it and served it.
+const freshClaimWait = 500 * time.Millisecond
 
 // releaseIdle gives the mailbox back after mailboxIdleRelease unused: the
 // file is removed (the shim worker notices within ~200 ms and unmaps) and
@@ -104,6 +119,9 @@ func (s *ShmParams) releaseIdle() {
 
 // releaseIfIdle is one releaseIdle pass. Reports whether it released.
 func (s *ShmParams) releaseIfIdle(now time.Time) bool {
+	if h := s.hold.Load(); h != nil && (*h)() {
+		return false
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.data == nil || s.privPath == "" || now.Sub(s.lastUse) <= mailboxIdleRelease ||
@@ -311,7 +329,13 @@ func (s *ShmParams) SetParamFast(slot uint8, key, value string) error {
 	}
 
 	// Short idle wait — our previous request not yet served: bail quickly.
-	deadline := time.Now().Add(10 * time.Millisecond)
+	// Longer right after a claim: the shim maps a new mailbox on its next
+	// worker tick, and until then nothing is served.
+	wait := 10 * time.Millisecond
+	if time.Since(s.claimedAt) < freshClaimWait {
+		wait = freshClaimWait
+	}
+	deadline := time.Now().Add(wait)
 	for s.data[paramOffRequestType] != 0 {
 		if time.Now().After(deadline) {
 			return fmt.Errorf("param channel busy")

@@ -108,3 +108,24 @@ func TestMailboxReadStatsClassifyACopy(t *testing.T) {
 		t.Fatalf("total/raced/clobbered = %d/%d/%d, want 3/1/1", c[0], c[4], c[5])
 	}
 }
+
+// A connected page keeps the mailbox however long it goes without a read:
+// re-claiming costs the next read up to a shim worker tick (~200 ms).
+func TestManagerMailboxIsKeptWhileAPageIsConnected(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "web-param")
+	s := &ShmParams{privPath: path}
+	connected := true
+	s.SetHold(func() bool { return connected })
+	s.mu.Lock()
+	if err := s.claimLocked(); err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Unlock()
+	if s.releaseIfIdle(time.Now().Add(time.Hour)) {
+		t.Fatalf("released while a page is connected")
+	}
+	connected = false
+	if !s.releaseIfIdle(time.Now().Add(time.Hour)) {
+		t.Fatalf("kept after the page left")
+	}
+}

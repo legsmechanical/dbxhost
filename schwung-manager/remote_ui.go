@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"nhooyr.io/websocket"
@@ -38,6 +39,9 @@ type RemoteUI struct {
 
 	mu      sync.Mutex
 	clients map[*ruClient]struct{}
+	// connected counts clients without ru.mu, for ShmParams' hold check
+	// (which runs with no lock held and must not take ru.mu).
+	connected atomic.Int32
 
 	// fetches: the one-by-one value reads in flight, by "slot|comp". A second
 	// page asking for the same component JOINS the read already running
@@ -248,6 +252,19 @@ var masterFxSlots = []string{"fx1", "fx2", "fx3", "fx4"}
 
 // NewRemoteUI creates a RemoteUI. shm/setRing may be nil (lazy connect on first use).
 func NewRemoteUI(shm *ShmParams, setRing *ShmWebParamSetRing, basePath string, logger *slog.Logger) *RemoteUI {
+	ru := newRemoteUI(shm, setRing, basePath, logger)
+	ru.holdShm(shm)
+	return ru
+}
+
+// holdShm keeps the manager's param mailbox while any page is connected.
+func (ru *RemoteUI) holdShm(shm *ShmParams) {
+	if shm != nil {
+		shm.SetHold(func() bool { return ru.connected.Load() > 0 })
+	}
+}
+
+func newRemoteUI(shm *ShmParams, setRing *ShmWebParamSetRing, basePath string, logger *slog.Logger) *RemoteUI {
 	return &RemoteUI{
 		shm:      shm,
 		setRing:  setRing,
@@ -358,6 +375,7 @@ func (ru *RemoteUI) ensureShm() *ShmParams {
 	shm := OpenShmParams()
 	if shm != nil {
 		ru.shm = shm
+		ru.holdShm(shm)
 		ru.logger.Info("shared memory params: connected (lazy)")
 		go shm.logStats(ru.logger)
 	}
@@ -489,11 +507,13 @@ func (ru *RemoteUI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ru.mu.Lock()
 	ru.clients[client] = struct{}{}
 	ru.mu.Unlock()
+	ru.connected.Add(1)
 
 	defer func() {
 		ru.mu.Lock()
 		delete(ru.clients, client)
 		ru.mu.Unlock()
+		ru.connected.Add(-1)
 		markGone()
 		conn.Close(websocket.StatusNormalClosure, "bye")
 		// a page that leaves mid-press must not leave a pad sounding or Shift
