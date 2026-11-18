@@ -44,8 +44,14 @@ for (const p of MODJSON.capabilities.chain_params) {
     if (p.key === 'detail') { p.as_page = true; p.preset_browser = true; }
     if (p.key === 'level') { p.live = true; p.viz.extra_keys = ['face']; }
 }
+/* A SECOND drawn page from the same canvas.js: one script drawing several
+ * pages tells them apart by payload.key, so each page needs its own drawer. */
+MODJSON.capabilities.chain_params.push({ key: 'scope', name: 'Scope', type: 'canvas',
+    canvas_script: 'canvas.js', as_page: true, page_first: true, show_value: false });
 MODJSON.capabilities.chain_params.unshift({ key: 'face', name: 'Character', short_name: 'Char',
     type: 'int', min: 0, max: 11, step: 1, default: 0, access: 'read', show_value: false });
+MODJSON.ui_hierarchy.levels.root.params.push({ level: 'more', label: 'More' });
+MODJSON.ui_hierarchy.levels.more = { label: 'More', knobs: ['mode'], params: ['scope', 'mode'] };
 Object.assign(MODJSON.ui_hierarchy.levels.root,
     { list_param: 'preset', count_param: 'preset_count', name_param: 'preset_name' });
 
@@ -263,6 +269,26 @@ step('⭐⭐ A: jog to the module page — drawPage runs with upstream\'s payloa
     const cx = box.x + (box.w >> 1), cy = box.y + (box.h >> 1);
     if (!fb[cy * 128 + cx]) throw new Error('the band centre is not lit');
     if (box.y === 0) throw new Error('the band starts on row 0 — the header was painted over');
+});
+
+step('⭐ A: a SECOND drawn page from the same script is drawn as itself, not as the first', () => {
+    /* The drawer was cached per script and closed over the first page's key,
+     * so every later page of the module drew as the first (CHIMERA's mouth
+     * page came out as its text page: blank). */
+    const onScope = () => { const pg = snd.soundPPForTest().page; return !!(pg && pg.canvas && pg.canvas.key === 'scope'); };
+    const seen = [];
+    for (let guard = 0; guard < 14; guard++) { cc(14, 127); ticks(3); }
+    for (let guard = 0; guard < 14 && !onScope(); guard++) { const pg = snd.soundPPForTest().page; seen.push(pg && pg.name); cc(14, 1); ticks(3); }
+    if (!onScope()) throw new Error('rig: the second canvas page is not in the rotation — saw ' + JSON.stringify(seen));
+    globalThis.__pageCalls.length = 0;
+    frame();
+    const keys = globalThis.__pageCalls.map(c => c.payload.key);
+    if (keys.length !== 1 || keys[0] !== 'scope') throw new Error('the scope page drew with key ' + JSON.stringify(keys));
+    jogToCanvasPage();
+    globalThis.__pageCalls.length = 0;
+    frame();
+    const back = globalThis.__pageCalls.map(c => c.payload.key);
+    if (back.length !== 1 || back[0] !== 'detail') throw new Error('back on detail, drew with key ' + JSON.stringify(back));
 });
 
 step('A: dAVEBOx\'s globals survive, and canvas_overlay did not leak', () => {

@@ -8,6 +8,9 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Fixed
+- **A module with several drawn pages shows each one.** Every drawn page of a module was
+  drawn as whichever one you visited first, so the others came out blank or showed the
+  wrong picture.
 - **Locks on DR32's synth-engine pads now take the value you set.** A held-step lock on an
   engine pad's parameter (an 808 pad's Decay, say) recorded every value as the top and
   played back near the bottom, so every hit sounded the same. Sample pads were not affected.

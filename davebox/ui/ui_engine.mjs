@@ -1176,7 +1176,13 @@ export function engineCanvasPageDrawer(slotKey, comp, moduleId, canvas) {
     const ref = canvas.overlay || '';
     const key = slotKey + '|' + moduleId + '|' + script + '|' + ref;
     if (pageDisabled.has(key)) return null;
-    if (pageDrawers.has(key)) return pageDrawers.get(key);
+    /* ⚠ The drawer closes over canvas.key, so it is cached PER PAGE: one
+     * script commonly draws several pages and tells them apart by that key.
+     * Keyed on the script alone, every page drew as whichever was asked for
+     * first — a module's second page came out blank or as the first. The
+     * script itself is still evaluated once (engineCanvasOverlayShared). */
+    const dkey = key + '|' + String(canvas.key || '');
+    if (pageDrawers.has(dkey)) return pageDrawers.get(dkey);
 
     const r = engineCanvasOverlayShared(slotKey, comp, moduleId, script, ref);
     const ov = (ref && ref !== 'canvas_overlay') ? r.named : r.overlay;
@@ -1211,7 +1217,7 @@ export function engineCanvasPageDrawer(slotKey, comp, moduleId, canvas) {
     }
     /* A directory not found yet is not remembered: the next frame may find it.
      * Everything else is this visit's answer. */
-    if (fn || !r.retry) pageDrawers.set(key, fn);
+    if (fn || !r.retry) pageDrawers.set(dkey, fn);
     return fn;
 }
 
