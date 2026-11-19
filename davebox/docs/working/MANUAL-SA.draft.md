@@ -2719,6 +2719,10 @@ The last two pages are the same for every module:
   On a drum track each note goes to the lane that plays it; notes no lane plays
   are heard but not recorded.
 - Pads and an external keyboard both go through it.
+- So does **aftertouch**, in either position, so an effect that responds to
+  pressure hears it. On **Pre** the clip's recorded aftertouch also plays through
+  the effect: what Record keeps from the effect is its notes, so this is how its
+  response to pressure is heard again on playback.
 - The setting is saved with the project and goes back to Post when the effect is
   removed. An effect that used **Notes to Seq** switches to Pre the first time you open it.
 

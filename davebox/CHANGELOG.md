@@ -40,6 +40,10 @@ the section into a versioned heading at release time.
   its own hold-Delete-and-pick-a-pad clear (DR32, for example), Delete + touching a knob
   said "pick a target" and left the automation in place. It clears that parameter's
   automation again, and a pad picked afterwards in the same hold is left alone.
+- **Aftertouch reaches a track's MIDI effect.** Pad pressure, and aftertouch the clip
+  plays, went around a MIDI effect module straight to the instrument, so an effect that
+  responds to pressure never felt it. It now goes through the effect first, as notes
+  do, in both Pre and Post.
 - **Locks on DR32's synth-engine pads now take the value you set.** A held-step lock on an
   engine pad's parameter (an 808 pad's Decay, say) recorded every value as the top and
   played back near the bottom, so every hit sounded the same. Sample pads were not affected.

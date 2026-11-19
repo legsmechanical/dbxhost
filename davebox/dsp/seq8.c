@@ -3219,6 +3219,24 @@ static void pfx_send(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
         }
     }
 
+    /* AFTERTOUCH INTO THE TRACK'S MIDI FX MODULE, as its notes go (a tester:
+     * an aftertouch-driven effect in front of the instrument heard no
+     * pressure in dAVEBOx, while stock Schwung runs pad pressure through the
+     * chain's MIDI FX). Every pressure source -- the pad, the arp replay, a
+     * recorded poly lane, the `at` automation lane -- comes through here, so
+     * this is the one place. PRE: into the effect, as played; POST: into the
+     * module, as played by the track. What the module makes of it comes back
+     * through pre_handback / post_handback, which emit non-notes past the
+     * module (pfx_emit, never here again). */
+    if (g_inst && fx->track_idx < NUM_TRACKS) {
+        const uint8_t _at = status & 0xF0;
+        if (_at == 0xA0 || _at == 0xD0) {
+            seq8_track_t *_tr = &g_inst->tracks[fx->track_idx];
+            if (pre_divert(g_inst, _tr, status, d1, d2)) return;
+            if (post_takes(g_inst, _tr)) { post_raw_send(_tr, _at, d1, d2); return; }
+        }
+    }
+
     /* Live Merge hook: multi-track capture. Append note-ons to the
      * per-track pending array and close gate when the matching note-off
      * fires. Destination scene row is chosen post-stop via merge_place_row.
