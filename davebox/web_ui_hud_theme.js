@@ -199,6 +199,8 @@ body[data-view="screen"] .seqonly{display:none}
 .hud-wavelab span{position:absolute;transform:translateX(-50%);font-size:13px;font-weight:600;color:var(--h-dim);white-space:nowrap}
 /* layout: keyboard */
 .hud-kbd{display:flex;flex-direction:column;gap:12px}
+.hud-kbd .dict{font-size:16px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;background:var(--h-acc);color:#0b0c0e;border-radius:8px;padding:6px 10px;align-self:flex-start}
+.hud-kbd .dict.live{background:#e5484d;color:#fff}
 .hud-kbd .t{font-size:14px;color:var(--h-dim);text-transform:uppercase;letter-spacing:.6px}
 .hud-kbd .buf{font-size:34px;font-weight:700;min-height:44px;border-bottom:2px solid #2a2f37;padding-bottom:6px;white-space:nowrap;overflow:hidden}
 .hud-kbd .buf i{display:inline-block;width:3px;height:32px;background:var(--h-acc);margin-left:3px;vertical-align:-4px}

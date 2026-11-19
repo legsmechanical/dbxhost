@@ -16,11 +16,22 @@
  *
  *   // In your tick:
  *   if (isTextEntryActive()) { drawTextEntry(); return; }
+ *
+ * Dictation: hold Rec (CC 86) to talk, release to transcribe (dictation.mjs).
+ * The transcript REPLACES the text while it is still the untouched initial
+ * text (most keyboards open prefilled with the current name), and is appended
+ * after anything has been typed. Back during a dictation cancels only the
+ * dictation. A host must call tickTextEntry() every tick and redraw when it
+ * returns true — a transcript arrives with no input to trigger a repaint.
  */
 
 import { decodeDelta } from './input_filter.mjs';
 import { drawRect } from './menu_layout.mjs';
 import { announce as defaultAnnounce } from './screen_reader.mjs';
+import {
+    dictationPress, dictationRelease, dictationCancel, dictationAbort, dictationTick,
+    dictationState, dictationActive, dictationCardUp, dictationDismissNotice, sanitizeTranscript,
+} from './dictation.mjs';
 
 /* Pad LED constants */
 const PAD_NOTE_START = 68;
@@ -201,13 +212,14 @@ const GRID_START_X = 6;
 const CC_JOG_WHEEL = 14;
 const CC_JOG_CLICK = 3;
 const CC_BACK = 51;
+const CC_REC = 86;
 
 /* Character pages */
 const PAGES = [
     'abcdefghijklmnopqrstuvwxyz',
     'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
     '1234567890.-!@#$%^&*',
-    '\'";:?/\\<>()[]{}=-+'
+    '\'",;:?/\\<>()[]{}=-+'   /* the comma: for typing (dictation leaves commas out) */
 ];
 
 /* Special button indices (relative to end of character set) */
@@ -230,6 +242,8 @@ let state = {
     lastAction: null,      /* 'char', 'space', 'backspace' */
     lastChar: '',          /* Last character entered (for repeat) */
     padSelect: false,      /* Enable pad-based character selection */
+    pristine: false,       /* buffer is still the untouched initial text */
+    drawnSig: '',          /* dictation label + buffer as last drawn */
     onConfirm: null,
     onCancel: null,
     onAnnounce: null
@@ -255,6 +269,8 @@ export function openTextEntry({ title = '', initialText = '', onConfirm, onCance
     state.previewTimeout = 0;
     state.lastAction = null;
     state.lastChar = '';
+    state.pristine = true;
+    state.drawnSig = '';
     state.onConfirm = onConfirm;
     /* Use caller's explicit padSelect if provided, otherwise fall back to global setting.
      * If global is false, check the config file as a fallback — external modules loaded
@@ -304,6 +320,7 @@ export function openTextEntry({ title = '', initialText = '', onConfirm, onCance
  * Close the text entry keyboard
  */
 export function closeTextEntry() {
+    dictationAbort();
     if (state.padSelect) {
         restorePadLEDs();
         if (typeof host_pad_block === 'function') host_pad_block(0);
@@ -351,6 +368,30 @@ export function handleTextEntryMidi(msg) {
     const status = msg[0] & 0xF0;
     const data1 = msg[1];
     const data2 = msg[2];
+
+    /* Dictation comes first: ahead of the pads, and ahead of the preview
+     * screen, which swallows every CC it does not know. */
+    if (status === 0xB0 && data1 === CC_REC) {
+        if (data2 > 0) {
+            state.showingPreview = false;
+            state.previewTimeout = 0;
+            dictationPress();
+        } else {
+            dictationRelease();
+            if (dictationActive()) announceTextEntry('Transcribing');
+        }
+        return true;
+    }
+    if (status === 0xB0 && data1 === CC_BACK && dictationCardUp()) {
+        if (data2 > 0) {
+            if (dictationCancel()) announceTextEntry('Dictation cancelled');
+            else dictationDismissNotice();
+        }
+        return true;
+    }
+    /* While the card is up (listening, transcribing, or its notice) the keys
+     * under it do nothing: they cannot be seen, so nothing may type or commit. */
+    if (dictationCardUp()) return true;
 
     /* Pad press (Note On) — select, or enter if pressed hard enough */
     if (state.padSelect && status === 0x90 && data1 >= 68 && data1 <= 99) {
@@ -485,6 +526,7 @@ function handleSelection(fromPad) {
                 showPreview(fromPad);
                 break;
             case SPECIAL_BACKSPACE:
+                state.pristine = false;
                 if (state.buffer.length > 0) {
                     state.buffer = state.buffer.slice(0, -1);
                 }
@@ -493,6 +535,7 @@ function handleSelection(fromPad) {
                 showPreview(fromPad);
                 break;
             case SPECIAL_CLEAR:
+                state.pristine = false;
                 state.buffer = '';
                 state.lastAction = 'clear';
                 announceTextEntry(`Cleared`);
@@ -524,6 +567,7 @@ function repeatLastAction() {
             announceTextEntry(`space entered, text ${getAnnounceBuffer()}`);
             break;
         case 'backspace':
+            state.pristine = false;
             if (state.buffer.length > 0) {
                 state.buffer = state.buffer.slice(0, -1);
             }
@@ -538,6 +582,7 @@ function repeatLastAction() {
  * Append character to buffer
  */
 function appendToBuffer(char) {
+    state.pristine = false;
     if (state.buffer.length < MAX_BUFFER_LENGTH) {
         state.buffer += char;
     }
@@ -610,8 +655,33 @@ function getAnnounceBuffer() {
  * Tick the text entry (call in your tick function)
  * @returns {boolean} true if state changed
  */
+/* A transcript lands: replace the untouched initial text, else append. */
+function insertTranscript(text) {
+    const s = sanitizeTranscript(text, PAGES.join(''), MAX_BUFFER_LENGTH);
+    if (!s) return false;
+    if (state.pristine || !state.buffer) {
+        state.buffer = s;
+    } else {
+        const sep = state.buffer.endsWith(' ') ? '' : ' ';
+        state.buffer = (state.buffer + sep + s).slice(0, MAX_BUFFER_LENGTH);
+    }
+    state.pristine = false;
+    state.lastAction = null;      /* a preview click must not repeat a stale key */
+    announceTextEntry(`Heard ${s}. Text ${getAnnounceBuffer()}`);
+    return true;
+}
+
 export function tickTextEntry() {
     if (!state.active) return false;
+
+    /* "Changed" is judged against what was last DRAWN, not as a one-shot
+     * flag: the host and the module can both tick this one keyboard, and a
+     * flag the first ticker consumed would leave the other's screen stale. */
+    const dict = dictationTick();
+    if (dict.text) insertTranscript(dict.text);
+    if (dict.changed || state.drawnSig) {
+        if (keyboardSig() !== state.drawnSig) return true;
+    }
 
     /* Commit deferred velocity entry after slide guard window */
     if (pendingEntryNote >= 0 && (Date.now() - pendingEntryTime) >= padConfig.slideGuardMs) {
@@ -648,6 +718,7 @@ export function getTextEntryView() {
         title: state.title || '', buffer: state.buffer || '', page: state.page, pages: PAGES.length,
         chars: getCurrentPageChars().slice(), selected: state.selectedIndex,
         specials: ['...', 'Space', 'Delete', 'Clear', 'OK'], preview: !!state.showingPreview,
+        dictation: dictationState(),
     };
 }
 
@@ -666,13 +737,83 @@ export function drawTextEntry() {
 /**
  * Draw the keyboard grid screen
  */
+/* THE DICTATION CARD: an inset card over the keyboard while a dictation is
+ * live or its notice shows. The title row (the name) stays in view above it.
+ *
+ *   ┌┌──────────────────────────┐┐
+ *   ││ 🎤 LISTENING          3s ││   or TRANSCRIBING / a notice, centred
+ *   ││ [███████████          ]  ││   the mic's level
+ *   ││ ━━━━━──────────────────  ││   the take against its 30 s cap
+ *   └└──────────────────────────┘┘
+ */
+const CARD = { x: 8, y: 15, w: 112, h: 44 };
+const METER = { x: 15, y: 35, w: 98, h: 8 };
+const TBAR_Y = 48;
+
+/* What the card shows, or null. `dots` animates TRANSCRIBING. */
+function dictationCard() {
+    const d = dictationState();
+    if (d.state === 'starting' || d.state === 'listening') {
+        return { kind: 'listen', seconds: d.seconds,
+                 fill: Math.round(d.level * (METER.w - 4)), done: Math.round(d.elapsed * METER.w) };
+    }
+    if (d.state === 'finalizing' || d.state === 'transcribing')
+        return { kind: 'work', dots: 1 + Math.floor(Date.now() / 300) % 3 };
+    if (d.state === 'notice') return { kind: 'notice', text: d.notice };
+    return null;
+}
+
+function keyboardSig() {
+    const c = dictationCard();
+    return c ? JSON.stringify(c) + '\u0000' + state.buffer : '';
+}
+
+function textWidth(t) {
+    if (typeof text_width === 'function') { const w = text_width(t); if (w > 0) return w; }
+    return t.length * 6;
+}
+
+function drawMic(x, y) {
+    fill_rect(x + 2, y, 3, 6, 1);
+    fill_rect(x + 1, y + 3, 1, 2, 1); fill_rect(x + 5, y + 3, 1, 2, 1);
+    fill_rect(x + 2, y + 6, 3, 1, 1); fill_rect(x + 3, y + 7, 1, 1, 1);
+    fill_rect(x + 1, y + 8, 5, 1, 1);
+}
+
+function drawDictationCard(c) {
+    const { x, y, w, h } = CARD;
+    fill_rect(x - 2, y - 2, w + 4, h + 4, 0);   /* a margin, so keys do not touch the frame */
+    drawRect(x, y, w, h, 1);
+    drawRect(x + 2, y + 2, w - 4, h - 4, 1);
+    if (c.kind === 'listen') {
+        drawMic(x + 7, y + 6);
+        print(x + 17, y + 7, 'LISTENING', 1);
+        const s = `${c.seconds}s`;
+        print(x + w - 7 - textWidth(s), y + 7, s, 1);
+        drawRect(METER.x, METER.y, METER.w, METER.h, 1);
+        if (c.fill > 0) fill_rect(METER.x + 2, METER.y + 2, c.fill, METER.h - 4, 1);
+        fill_rect(METER.x, TBAR_Y + 1, METER.w, 1, 1);
+        if (c.done > 0) fill_rect(METER.x, TBAR_Y, c.done, 3, 1);
+    } else if (c.kind === 'work') {
+        const t = 'TRANSCRIBING';
+        print(x + Math.floor((w - textWidth(t)) / 2), y + 11, t, 1);
+        const dx = x + Math.floor(w / 2) - 7;
+        for (let i = 0; i < c.dots; i++) fill_rect(dx + i * 5, y + 27, 2, 2, 1);
+    } else {
+        print(x + Math.floor((w - textWidth(c.text)) / 2), y + 18, c.text, 1);
+    }
+}
+
 function drawKeyboardScreen() {
     /* Title with current buffer */
     const bufferDisplay = state.buffer || '';
+    const card = dictationCard();
+    state.drawnSig = keyboardSig();
     if (state.title) {
-        /* Combine title and buffer, truncate if needed */
+        /* Combine title and buffer, truncate if needed. Under a dictation card
+         * the last few pixels are left to the sampler's recording dot (123,1). */
         const combined = `${state.title}: ${bufferDisplay}`;
-        const maxChars = Math.floor((SCREEN_WIDTH - 4) / 6);  /* 6px per char */
+        const maxChars = Math.floor((SCREEN_WIDTH - (card ? 10 : 4)) / 6);  /* 6px per char */
         const displayText = combined.length > maxChars
             ? '…' + combined.slice(-(maxChars - 1))
             : combined;
@@ -708,6 +849,8 @@ function drawKeyboardScreen() {
 
     /* Draw special buttons on fixed bottom row */
     drawSpecialButtons(charCount);
+
+    if (card) drawDictationCard(card);
 }
 
 /**

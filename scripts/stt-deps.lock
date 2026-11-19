@@ -1,0 +1,16 @@
+# Speech-to-text runtime + model, pinned. Read by scripts/fetch-stt.sh.
+# One entry per line: <name> <sha256> <url>
+# The archives are fetched into .cache/stt/ (gitignored) and VERIFIED; a hash
+# mismatch fails the build. Bumping a version = new URL + new hash here.
+#
+# sherpa-onnx (Apache-2.0) prebuilt linux-aarch64 CPU libraries: libsherpa-onnx-c-api.so,
+# libonnxruntime.so (ONNX Runtime, MIT). Glibc floor 2.17, GLIBCXX 3.4.19.
+sherpa-onnx-lib 15bd737eae467da32ec97e3740a329a535fd21e33caca4f327b0081451d11533 https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-v2.0.1-linux-aarch64-shared-cpu-lib.tar.bz2
+# The C API header for the SAME tag (raw file, not an archive).
+sherpa-onnx-header 5698f38ba09ad2bdf085c56a6cbbd7741acf15e25f4ce5c7097b9702cadf437f https://raw.githubusercontent.com/k2-fsa/sherpa-onnx/v2.0.1/sherpa-onnx/c-api/c-api.h
+# Moonshine Tiny English, quantized (Moonshine v2; MIT): encoder + merged decoder + tokens.
+moonshine-tiny-en 9ec31b342d8fa3240c3b81b8f82e1cf7e3ac467c93ca5a999b741d5887164f8d https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-tiny-en-quantized-2026-02-27.tar.bz2
+# Silero VAD (MIT), the voice detector: a take with no voice is never decoded.
+# The ONNX file as sherpa-onnx publishes it, and the licence at a pinned commit.
+silero-vad 9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6 https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx
+silero-vad-license 2e63e9a38b6e8fc0c7bc37ce174caca1862870856c6daf5697cfb785e925520b https://raw.githubusercontent.com/snakers4/silero-vad/066409f3d9db45a30d21dfcbf9147826ffdd7052/LICENSE

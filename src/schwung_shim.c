@@ -2897,6 +2897,10 @@ static const char *const spi_mix_phase_name[MIX_PHASE_COUNT] = {
         if (_us > spi_mix_phase_max[idx]) spi_mix_phase_max[idx] = _us;        \
     } while (0)
 
+/* The sampler source switch the SPI thread last applied, for the logger
+ * thread to report: bit 16 = pending, bits 8-15 = the request, 0-7 = source. */
+static volatile uint32_t sampler_source_log_pending = 0;
+
 static void shadow_inprocess_mix_from_buffer(void) {
     struct timespec _mp0, _mp1;   /* the shared pair MIX_PHASE_BEGIN/END use */
     (void)_mp1;
@@ -3929,9 +3933,14 @@ skip_la_rebuild:
                 ? SAMPLER_SOURCE_MOVE_INPUT
                 : SAMPLER_SOURCE_RESAMPLE;
             shadow_overlay_sync();
-            unified_log("shim", LOG_LEVEL_INFO,
-                       "sampler source request applied: req=%u -> source=%d (0=Resample,1=MoveInput)",
-                       src_req, (int)sampler_source);
+            /* Logged by spi_timing_logger_thread, never here: this is the SPI
+             * thread, and a log line is an fprintf + fflush. A push-to-talk
+             * take switches the source as the shim worker closes the take's
+             * WAV, and the write then waited on the disk: one frame over the
+             * compute budget in about one take in four, with debug logging on. */
+            __atomic_store_n(&sampler_source_log_pending,
+                             (uint32_t)src_req << 8 | (uint32_t)sampler_source | 0x10000u,
+                             __ATOMIC_RELEASE);
         }
 
         /* Skipback buffer resize: settings UI writes new desired length to
@@ -10958,6 +10967,13 @@ static void *spi_timing_logger_thread(void *arg)
         schwung_trace_poll_enable();
 
         if (!unified_log_enabled()) continue;
+        {
+            uint32_t sp = __atomic_exchange_n(&sampler_source_log_pending, 0, __ATOMIC_ACQ_REL);
+            if (sp & 0x10000u)
+                unified_log("shim", LOG_LEVEL_INFO,
+                           "sampler source request applied: req=%u -> source=%u (0=Resample,1=MoveInput)",
+                           (sp >> 8) & 0xFFu, sp & 0xFFu);
+        }
         if (spi_snap.seq == last_seq) continue;  /* No new data */
         last_seq = spi_snap.seq;
 

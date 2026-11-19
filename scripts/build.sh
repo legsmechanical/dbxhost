@@ -75,6 +75,15 @@ if [ "$(cat "$SHIM_STAMP" 2>/dev/null || true)" != "${SHIM_OPT:--O2}" ]; then
 fi
 printf '%s' "${SHIM_OPT:--O2}" > "$SHIM_STAMP"
 
+# Speech-to-text runtime + model (pinned in scripts/stt-deps.lock). Fetched on
+# the HOST — the container has no network — and verified there on every build.
+# Inside the container it runs only if the stage is missing (it then fails,
+# having no network); a stage the host just verified is used as it is. Fails
+# closed.
+if [ ! -f "/.dockerenv" ] || [ ! -f "$REPO_ROOT/.cache/stt/stage/.stamp" ]; then
+    "$REPO_ROOT/scripts/fetch-stt.sh"
+fi
+
 # Check if we need Docker
 if [ -z "$CROSS_PREFIX" ] && [ ! -f "/.dockerenv" ]; then
     echo "=== Schwung Build (via Docker) ==="
@@ -259,6 +268,7 @@ mkdir -p ./build/licenses/
 # looking identical to a good one -- never `|| true` here.
 cp LICENSE THIRD_PARTY_LICENSES.md ./build/
 cp licenses/GPL-2.0.txt licenses/GPL-3.0.txt ./build/licenses/
+cp licenses/Apache-2.0.txt ./build/licenses/
 mkdir -p ./build/modules/chain/
 
 # Generate bitmap font for host display (single source of truth: scripts/generate_font.py)
@@ -526,6 +536,54 @@ else
     echo "Skipping schwung-testd (up to date)"
 fi
 
+
+# Build the speech-to-text helper and lay out build/stt/ (helper, launcher,
+# runtime libraries, model). Its own folder, NOT build/lib/ (the shim's TTS libs).
+STT_STAGE=.cache/stt/stage
+for f in include/c-api.h lib/libsherpa-onnx-c-api.so lib/libonnxruntime.so \
+         model/encoder_model.ort model/decoder_model_merged.ort model/tokens.txt \
+         model/silero_vad.onnx model/SILERO_VAD_LICENSE; do
+    [ -f "$STT_STAGE/$f" ] || { echo "ERROR: speech-to-text stage missing $f (run scripts/fetch-stt.sh)" >&2; exit 1; }
+done
+mkdir -p build/stt/bin build/stt/lib build/stt/model
+if needs_rebuild build/stt/bin/schwung-stt src/stt/stt_helper.c src/stt/stt_core.c \
+    src/stt/stt_core.h "$STT_STAGE/include/c-api.h"; then
+    echo "Building schwung-stt..."
+    "${CROSS_PREFIX}gcc" -O2 -Wall -std=c11 \
+        -I"$STT_STAGE/include" -Isrc/stt \
+        src/stt/stt_helper.c src/stt/stt_core.c \
+        -o build/stt/bin/schwung-stt \
+        -L"$STT_STAGE/lib" -lsherpa-onnx-c-api -lm -Wl,--allow-shlib-undefined \
+        || { echo "ERROR: schwung-stt build failed" >&2; exit 1; }
+else
+    echo "Skipping schwung-stt (up to date)"
+fi
+cp -u src/stt/stt-run.sh build/stt/stt-run.sh
+# The upstream libraries ship unstripped, ONNX Runtime with full debug info:
+# stripping takes the runtime from ~39 MB to ~22 MB with the same results
+# (every sample transcribed identically, 2026-11-18). --strip-unneeded keeps
+# the dynamic symbols the helper links against.
+for l in libsherpa-onnx-c-api.so libonnxruntime.so; do
+    if needs_rebuild "build/stt/lib/$l" "$STT_STAGE/lib/$l"; then
+        "${CROSS_PREFIX}strip" --strip-unneeded -o "build/stt/lib/$l" "$STT_STAGE/lib/$l" \
+            || { echo "ERROR: could not strip $l" >&2; exit 1; }
+    fi
+done
+"${CROSS_PREFIX}strip" --strip-unneeded build/stt/bin/schwung-stt
+for f in build/stt/bin/schwung-stt build/stt/lib/libsherpa-onnx-c-api.so build/stt/lib/libonnxruntime.so; do
+    if "${CROSS_PREFIX}readelf" -S "$f" | grep -q '\.debug_'; then
+        echo "ERROR: $f still carries debug info (it would ship ~17 MB of it)" >&2; exit 1
+    fi
+done
+cp -u "$STT_STAGE"/model/encoder_model.ort "$STT_STAGE"/model/decoder_model_merged.ort \
+      "$STT_STAGE"/model/tokens.txt "$STT_STAGE"/model/silero_vad.onnx build/stt/model/
+cp "$STT_STAGE"/model/LICENSE build/licenses/MOONSHINE_LICENSE.txt
+cp "$STT_STAGE"/model/SILERO_VAD_LICENSE build/licenses/SILERO_VAD_LICENSE.txt
+# The oldest Move glibc this repo knows of is 2.34 (see link-subscriber above).
+for f in build/stt/bin/schwung-stt build/stt/lib/libsherpa-onnx-c-api.so build/stt/lib/libonnxruntime.so; do
+    bash davebox/scripts/check-glibc.sh "$f" 2.34 >/dev/null \
+        || { echo "ERROR: $f needs a glibc newer than the Move's" >&2; exit 1; }
+done
 
 # Always bundle TTS runtime libraries and data (even when screen reader is compiled
 # as disabled) so the screen reader can be enabled at runtime without rebuilding.

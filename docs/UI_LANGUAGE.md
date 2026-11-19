@@ -820,6 +820,7 @@ CC_GRADIENT_SCALARS     = [0.30, 0.60, 1.0]
 | Armed for record | `Red`, or red-intensity scratch `(v,0,0)` |
 | Playing with a live CC value | Green-intensity scratch `(0,v,0)` |
 | **Copy source** | Blink `White` ↔ `LED_OFF`, 24-tick — identical for steps, drum lanes, clips |
+| **Rec under a keyboard** (dictation) | dim `16` available · dark while the transport runs (refused) · solid `Red` listening · `White` pulse transcribing — `dictationRecLed()`, painted by the transport chain and the picker's surface painter |
 
 ⚠ **Only three white brightness levels are usable** (`CC_GRADIENT_SCALARS` = 0.30 / 0.60 / 1.0).
 The LEDs cannot resolve a finer ramp; a smooth gradient will read as noise.
@@ -865,6 +866,8 @@ one frame overflows.
 
 CC 3 jog click · CC 14 jog turn · CC 49 shift · CC 50 menu · CC 51 back · CC 71–78 knobs ·
 notes 0–9 knob capacitive touch · pads notes 68–99.
+
+**On a keyboard, Rec (CC 86) is push-to-talk:** hold to talk, release to transcribe (`src/shared/dictation.mjs`). It is handled ahead of the pads and the preview screen; while the card is up (listening, transcribing, or its notice) the keys under it are dead — no typing, no OK — and the keyboard takes nothing but Rec and Back. Back cancels the dictation (or takes a notice down), not the keyboard. While a dictation is live, or its notice shows, an **inset card** sits over the keyboard (`drawDictationCard`): listening = a mic, `LISTENING`, the seconds, a meter of the mic's level (the sampler's own peak, -48..0 dBFS) and a bar of the take against its 30 s cap (the same for every keyboard); transcribing = `TRANSCRIBING` with moving dots; a notice is centred in the same card. The title row keeps the name in view above it, stopping short of the sampler's recording dot at (123,1).
 
 **Touch orients, turn reveals, release commits.** A bare orienting touch must NOT open the picker
 overlay — only an actual turn does. This is the canonical grammar for every knob-driven overlay.

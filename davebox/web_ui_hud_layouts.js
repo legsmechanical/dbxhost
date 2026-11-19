@@ -137,7 +137,13 @@
   H.layout('keyboard', (d) => !!(d.body && d.body.keyboard), (doc, b) => {
     const k = b.keyboard, n = (k.chars || []).length;
     const key = (t, i, wide) => '<span class="key' + (i === k.selected ? ' sel' : '') + (wide ? ' w' : '') + '">' + esc(t) + '</span>';
-    return '<div class="hud-kbd">' + (k.title ? '<div class="t">' + esc(k.title) + '</div>' : '') +
+    /* dictation (hold Rec): the OLED's inverted title bar, as a banner */
+    const dk = k.dictation || {};
+    const dl = (dk.state === 'starting' || dk.state === 'listening') ? 'Listening ' + (dk.seconds | 0) + 's'
+      : (dk.state === 'finalizing' || dk.state === 'transcribing') ? 'Transcribing…'
+      : dk.state === 'notice' ? sentence(dk.notice || '') : '';
+    return '<div class="hud-kbd">' + (dl ? '<div class="dict' + (dk.state === 'listening' || dk.state === 'starting' ? ' live' : '') + '">' + esc(dl) + '</div>' : '') +
+      (k.title ? '<div class="t">' + esc(k.title) + '</div>' : '') +
       '<div class="buf">' + esc(k.buffer) + '<i></i></div>' +
       '<div class="keys">' + (k.chars || []).map((c, i) => key(c, i)).join('') + '</div>' +
       '<div class="spec">' + (k.specials || []).map((t, j) => key(t, n + j, true)).join('') + '</div></div>';

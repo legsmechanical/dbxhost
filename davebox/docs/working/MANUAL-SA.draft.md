@@ -516,6 +516,32 @@ a **Shift + Step** shortcut (see the [Quick Reference](#21-quick-reference)).
   as it was. A two-way setting flips on the click.
 - **Back** steps out; in Project Settings it also cancels a change in progress.
 
+**Typing a name** (a project, a template, Save As, a rename) uses the on-screen keyboard:
+turn the jog to a key and click it. **OK** saves, **Back** cancels.
+
+**Or say it: hold Rec, speak, let go.** A card opens over the keyboard: **LISTENING**,
+with a meter that moves as it hears you and a bar counting toward the 30-second limit
+(the Rec button lights red). Let go and it reads **TRANSCRIBING** for a moment (Rec
+pulses white), then the words appear in the name. It listens through the Move's microphone, or through
+the line input whenever a cable is plugged in, so a mic on line-in works too (and anything
+else playing into it will be heard). Silence and background noise come back as
+**NO SPEECH** rather than as words.
+
+- If the name hasn't been touched yet, what you say replaces it. Once you've typed
+  something, what you say is added after it.
+- The words are still editable with the keyboard before you press **OK**.
+- Up to 30 seconds at a time, long enough for a line of lyrics. Commas and the closing full
+  stop are left out (type a comma if you want one). A quick tap on Rec shows **HOLD REC TO
+  TALK**.
+- **Back** while it's listening or transcribing cancels just the dictation; press
+  **Back** again to leave the keyboard.
+- **NO SPEECH** means it heard nothing it could use; **MIC BUSY** means the sampler
+  (**Shift + Volume + Sample**) is in use. English only.
+- It works with the music stopped: while it plays or counts in, Rec stays dark and
+  shows **STOP TO TALK**. While the card is up, the keys under it don't respond; press
+  **Back** to take a message down. If input monitoring is on, it's switched off while you talk so the microphone
+  doesn't come out of the speakers, and comes back on afterwards.
+
 ## 3.8 Choosing a track's sound
 
 > 🎬 **Video:** [Tutorial 1.5: Instruments](https://youtu.be/3kP6Zwm79_0?t=308) (from 5:08) · [Tutorial 1.6: Adding effects](https://youtu.be/3kP6Zwm79_0?t=374) (from 6:14)

@@ -7,6 +7,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Added
+- **Say a name instead of typing it.** On any on-screen keyboard (project and template
+  names, Save As, renames), **hold Rec and speak**, then let go: the words appear in the
+  name, ready to edit before you press OK. A card over the keyboard shows that it's
+  listening, with a level meter so you can see it hearing you. Talk for up to 30 seconds,
+  long enough for a whole line of lyrics. It listens through the Move's microphone, or
+  through the line input when a cable is plugged in (a mic on line-in works too). It only
+  runs with the music stopped (not counting in); input monitoring is switched off while
+  you talk and comes back afterwards. Silence and background noise are ignored rather
+  than turned into words. It runs entirely on the Move and works in English. Rec lights
+  red while it listens and pulses white while it works it out.
+- **A comma on the on-screen keyboard** (on the symbols page).
+
 ### Fixed
 - **A module with several drawn pages shows each one.** Every drawn page of a module was
   drawn as whichever one you visited first, so the others came out blank or showed the

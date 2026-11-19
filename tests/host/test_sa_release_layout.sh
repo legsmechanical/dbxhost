@@ -13,6 +13,8 @@ printf x > "$B/schwung"; printf x > "$B/link-subscriber"; chmod +x "$B/link-subs
 cp standalone/scripts/layout-install.sh standalone/scripts/bootstrap.sh "$B/scripts/"; cp standalone/config.sh "$B/scripts/config.sh"
 cp standalone/scripts/install-privileged.sh "$B/bless.sh"
 printf x > "$B/modules/chain/dsp.so"; printf x > "$B/modules/audio_fx/verb/x"; printf x > "$B/presets/p"; printf x > "$B/help/a.md"
+STT_FILES="stt/bin/schwung-stt stt/stt-run.sh stt/lib/libsherpa-onnx-c-api.so stt/lib/libonnxruntime.so stt/model/encoder_model.ort stt/model/decoder_model_merged.ort stt/model/tokens.txt stt/model/silero_vad.onnx licenses/MOONSHINE_LICENSE.txt licenses/SILERO_VAD_LICENSE.txt"
+for f in $STT_FILES; do mkdir -p "$B/$(dirname "$f")"; printf x > "$B/$f"; done
 mkdir -p "$B/tests/host"; printf x > "$B/tests/host/t.sh"; for i in 0 1 2; do printf x > "$B/splash-$i.hex"; done
 D="$T/dist"; mkdir -p "$D"; printf '{"id":"davebox-sound","version":"9.9"}' > "$D/module.json"; printf x > "$D/dsp.so"; printf x > "$D/ui.js"
 printf 'HEAL' > "$T/heal"
@@ -59,6 +61,17 @@ BUILD_DIR="$B" HEAL_BIN="$T/heal" DAVEBOX_DIST="$D" MANUAL_HTML="$T/manual.html"
 [ $? -ne 0 ] && grep -q "Move tracks would play outside every dAVEBOx bus" "$T/log3" && [ ! -e "$T/out3/davebox-sa-module.tar.gz" ] \
     && ok "...and a release WITHOUT link-subscriber refuses to build" || bad "built without link-subscriber: $(cat "$T/log3")"
 mv "$T/ls.aside" "$B/link-subscriber"
+for f in $STT_FILES; do
+    has "davebox-sa/payload/$f" || bad "speech-to-text: payload/$f missing"
+done
+ok "the speech-to-text helper, runtime, model and its licence ship"
+has "davebox-sa/payload/licenses/Apache-2.0.txt" && ok "the Apache-2.0 text ships (sherpa-onnx)" || bad "no licenses/Apache-2.0.txt in the payload"
+mv "$B/stt/model/tokens.txt" "$T/tok.aside"
+BUILD_DIR="$B" HEAL_BIN="$T/heal" DAVEBOX_DIST="$D" MANUAL_HTML="$T/manual.html" SA_VERSION=1.2.3 bash \
+    standalone/scripts/build-sa-release.sh "$T/out5" > "$T/log5" 2>&1
+grep -q "speech-to-text runtime" "$T/log5" \
+    && ok "...and a release WITHOUT the model refuses to build" || bad "built without the model: $(cat "$T/log5")"
+mv "$T/tok.aside" "$B/stt/model/tokens.txt"
 for f in LICENSE THIRD_PARTY_LICENSES.md licenses/GPL-2.0.txt licenses/GPL-3.0.txt; do
     has "davebox-sa/payload/$f" && ok "payload/$f ships (the shim is GPL-3.0-or-later as conveyed)" || bad "payload/$f missing — a GPL binary shipped without its licence"
 done

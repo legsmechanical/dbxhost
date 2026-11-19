@@ -53,6 +53,8 @@ const PAGE_OK = "\nglobalThis.canvas_overlay.drawPage = function (ctx, payload) 
     + "    globalThis.__asked = [ctx.openTextEntry({ title: 'Search', initial: 'ab' }),\n"
     + "                          ctx.openTextEntry({ title: 'Again' }), ctx.openFileInTool('/data/x.wav', 'waveform-editor')];\n"
     + "  }\n"
+    + "  if (m.data[1] === 3 && globalThis.__askLyrics)\n"
+    + "    ctx.openTextEntry({ title: 'Lyrics', initial: 'old words' });\n"
     + "  if (globalThis.__callDiveMethods) globalThis.__dive = [ctx.shiftHeld(), ctx.measureText('abc'),\n"
     + "      ctx.getValue(), typeof ctx.setValue, typeof ctx.random()];\n"
     + "};\n"
@@ -355,6 +357,56 @@ step('⭐ confirming answers with the text', () => {
         throw new Error('the page was retired: ' + engineLog.join(' | '));
 });
 
+/* A page asking for LONG text (sung lyrics) gets the same dictation as any
+ * keyboard, with nothing to opt into: a take runs up to 30 s, and a long line
+ * lands whole — without the commas and closing full stop the model adds. */
+step('⭐ a page asking for lyrics: the same 30 s take, nothing to ask for; the line lands whole', () => {
+    const files = {}, saved = {
+        r: globalThis.host_read_file, e: globalThis.host_file_exists, w: globalThis.host_write_file,
+        c: globalThis.host_system_cmd, now: Date.now };
+    let rec = false, closing = 0, id = null, cmd = '', t = Date.now();
+    Date.now = () => t;
+    globalThis.shadow_get_overlay_state = () => ({ samplerState: 0, samplerSource: 0 });
+    globalThis.host_sampler_is_recording = () => { if (closing > 0 && --closing === 0) rec = false; return rec; };
+    globalThis.host_sampler_set_silent = () => true;
+    globalThis.host_sampler_set_source = () => true;
+    globalThis.host_sampler_start = () => { rec = true; return true; };
+    globalThis.host_sampler_stop = () => { closing = 3; return true; };
+    globalThis.host_line_in_connected = () => false;
+    globalThis.move_midi_inject_to_move = () => true;
+    globalThis.host_system_cmd = (c) => { cmd = String(c); const m = / (d[0-9a-z]+) /.exec(cmd); if (m) id = m[1]; return 0; };
+    globalThis.host_write_file = (p, b) => { files[String(p)] = String(b); return saved.w(p, b); };
+    globalThis.host_file_exists = (p) => (String(p) in files) || saved.e(p);
+    globalThis.host_read_file = (p) => (String(p) in files) ? files[String(p)] : saved.r(p);
+    try {
+        globalThis.__askLyrics = true; globalThis.__hooks.length = 0;
+        cc(3, 127); cc(3, 0);
+        globalThis.__askLyrics = false;
+        if (!TE.isTextEntryActive() || TE.getTextEntryBuffer() !== 'old words') throw new Error('rig: the lyrics keyboard did not open');
+        cc(86, 127); ticks(2);
+        if (!/ 30 >\/dev\/null/.test(cmd)) throw new Error('the helper was not given a 30 s take: ' + cmd + ' / ' + JSON.stringify(TE.getTextEntryView().dictation));
+        t += 25000; ticks(2);
+        if (TE.getTextEntryView().dictation.state !== 'listening')
+            throw new Error('a 25 s line was cut short: ' + JSON.stringify(TE.getTextEntryView().dictation));
+        cc(86, 0); ticks(6);
+        const dir = Object.keys(files).find(p => /\.go$/.test(p)).replace(/\/[^\/]+$/, '');
+        files[dir + '/' + id + '.json'] = JSON.stringify({ ok: true, text: 'Breathe in, breathe out, I am made of air.' });
+        t += 200; ticks(2);
+        if (TE.getTextEntryBuffer() !== 'Breathe in breathe out I am made of air')
+            throw new Error('the line did not land whole and plain: ' + JSON.stringify(TE.getTextEntryBuffer()));
+        for (let i = 0; i < 120; i++) cc(14, 1);
+        cc(3, 127); cc(3, 0); ticks(3);
+        const th = textHooks();
+        if (th.length !== 1 || th[0][0] !== 'Breathe in breathe out I am made of air')
+            throw new Error('onTextEntry got ' + JSON.stringify(th));
+    } finally {
+        Object.assign(globalThis, { host_read_file: saved.r, host_file_exists: saved.e,
+                                    host_write_file: saved.w, host_system_cmd: saved.c });
+        Date.now = saved.now;
+        if (TE.isTextEntryActive()) TE.closeTextEntry();
+    }
+});
+
 /* ---- the same rule for the editor's OWN keyboards (Save As, rename) ---------
  * One tap, one owner: the keyboard cancels on the Back PRESS, and the editor
  * navigates on the RELEASE — so without a swallow, cancelling Save As also
@@ -389,6 +441,58 @@ step('⭐⭐ the HOST cancels the keyboard on the press: the lone release that r
     cc(51, 0); ticks(4);                                         /* all dAVEBOx ever sees */
     const after = JSON.stringify([snd.soundPPForTest().on, pageName()]);
     if (after !== before) throw new Error('a Back release with no press left the editor: was ' + before + ', now ' + after);
+});
+
+/* ---- dictation on the Save As keyboard ------------------------------------
+ * Hold Rec to talk (src/shared/dictation.mjs). The transcript arrives with NO
+ * input — a result file appearing — so sound mode must repaint off the
+ * keyboard's tick result; it used to throw that result away. The sampler and
+ * the helper are faked at the host-binding seam (test_dictation_gesture.mjs
+ * has the full behaviour). */
+step('⭐ Save As keyboard: hold Rec, release, the words land — and sound mode REPAINTS with no input', () => {
+    if (TE.isTextEntryActive()) throw new Error('rig: a keyboard is already up');
+    const files = {}, saved = {
+        r: globalThis.host_read_file, e: globalThis.host_file_exists, w: globalThis.host_write_file,
+        c: globalThis.host_system_cmd, now: Date.now };
+    let rec = false, closing = 0, id = null, t = Date.now();
+    Date.now = () => t;
+    globalThis.shadow_get_overlay_state = () => ({ samplerState: 0, samplerSource: 0 });
+    globalThis.host_sampler_is_recording = () => { if (closing > 0 && --closing === 0) rec = false; return rec; };
+    globalThis.host_sampler_set_silent = () => true;
+    globalThis.host_sampler_set_source = () => true;
+    globalThis.host_sampler_start = () => { rec = true; return true; };
+    globalThis.host_sampler_stop = () => { closing = 3; return true; };
+    globalThis.host_line_in_connected = () => false;
+    globalThis.move_midi_inject_to_move = () => true;
+    globalThis.host_system_cmd = (c) => { const m = / (d[0-9a-z]+) \d+ >/.exec(String(c)); if (m) id = m[1]; return 0; };
+    globalThis.host_write_file = (p, b) => { files[String(p)] = String(b); return saved.w(p, b); };
+    globalThis.host_file_exists = (p) => (String(p) in files) || saved.e(p);
+    globalThis.host_read_file = (p) => (String(p) in files) ? files[String(p)] : saved.r(p);
+    try {
+        snd.soundQueueActionForTest({ t: 'usrsave' }); ticks(2);
+        if (!TE.isTextEntryActive()) throw new Error('rig: Save As did not open the keyboard');
+        cc(86, 127); ticks(2);
+        if (TE.getTextEntryView().dictation.state !== 'listening')
+            throw new Error('Rec did not open the mic: ' + JSON.stringify(TE.getTextEntryView().dictation));
+        t += 1500; ticks(1);
+        cc(86, 0); ticks(6);
+        if (TE.getTextEntryView().dictation.state !== 'transcribing')
+            throw new Error('not transcribing: ' + JSON.stringify(TE.getTextEntryView().dictation));
+        const dir = Object.keys(files).find(p => /\.go$/.test(p)).replace(/\/[^\/]+$/, '');
+        files[dir + '/' + id + '.json'] = JSON.stringify({ ok: true, text: 'Warm Pad' });
+        t += 200;
+        snd.soundDirtyForTest(true);
+        snd.soundTick();
+        if (TE.getTextEntryBuffer() !== 'Warm Pad') throw new Error('buffer ' + JSON.stringify(TE.getTextEntryBuffer()));
+        if (!snd.soundDirtyForTest(false)) throw new Error('the transcript landed and sound mode did not ask for a repaint');
+        cc(51, 127); cc(51, 0); ticks(3);
+        if (TE.isTextEntryActive()) throw new Error('rig: Back did not close the keyboard');
+    } finally {
+        Object.assign(globalThis, { host_read_file: saved.r, host_file_exists: saved.e,
+                                    host_write_file: saved.w, host_system_cmd: saved.c });
+        Date.now = saved.now;
+        if (TE.isTextEntryActive()) TE.closeTextEntry();
+    }
 });
 
 if (failed) { console.log('FAIL: canvas page door'); process.exit(1); }

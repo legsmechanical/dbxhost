@@ -491,7 +491,7 @@ setsid --wait bash -c '
   # (NOTE for editors: this whole session body is ONE single-quoted bash -c
   # string -- a bare apostrophe anywhere in it, even in a comment, ends the
   # string and the script stops parsing.)
-  SWEEP_NAMES="MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui link-subscriber schwung-manager display-server seq-midi-bridge"
+  SWEEP_NAMES="MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui link-subscriber schwung-manager display-server seq-midi-bridge schwung-stt"
   # ⚠⚠ ENTRY: AT BOOT, MoveLauncher IS OUR OWN SUPERVISOR — NEVER SWEEP IT.
   # The unit is Type=simple / KillMode=process / Restart=on-failure with
   # RestartSec=2s. MoveLauncher is still the unit main process when the selector
@@ -506,7 +506,7 @@ setsid --wait bash -c '
   # `Move` goes too: /opt/move/Move is the selector, our own ancestor image.
   SWEEP_WAIT_NAMES="MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui"
   if at_boot; then
-    SWEEP_NAMES="MoveMessageDisplay MoveOriginal schwung shadow_ui link-subscriber schwung-manager display-server seq-midi-bridge"
+    SWEEP_NAMES="MoveMessageDisplay MoveOriginal schwung shadow_ui link-subscriber schwung-manager display-server seq-midi-bridge schwung-stt"
     SWEEP_WAIT_NAMES="MoveMessageDisplay MoveOriginal schwung shadow_ui"
     echo "boot entry: MoveLauncher and Move held OUT of the sweep (they are our own supervisor)"
   fi

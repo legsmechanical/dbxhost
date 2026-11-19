@@ -217,6 +217,8 @@ never stabilised for reasons it recorded as unknown.
   schwung-shim.so        # Shim (also /usr/lib/)
   host/menu_ui.js
   shared/
+  stt/                   # speech-to-text helper + runtime + model (dictation)
+  dictation/             # dictation scratch: <id>.wav/.go/.cancel/.json, helper.log
   modules/
     chain/                          # Built-in
     sound_generators/<id>/          # External (by component_type)
@@ -409,6 +411,63 @@ Mute (CC 88) is passed through to Move firmware (even while shadow UI is shown) 
 Shift+Vol+Sample (volume-knob touch required; bare Shift+Sample is the primary module's). Source: resample (incl. Schwung synths) or Move Input. Duration in bars (or until stopped); uses MIDI clock, falls back to project tempo. Starts on note event or play. Saved to `Samples/Schwung/Resampler/YYYY-MM-DD/`.
 
 A module can record through the same sampler with `move_host_ext_v1_t.capture_start/stop` — a **module take** (`sampler_request_start_module`): a fixed number of frames ending inside a block (`sampler_take.h`), always `unity_view`, ignoring MIDI Stop, and silent (no dot, overlay or announcement; the Sample-button intercept stands aside). One take at a time, shared with this sampler. `capture_start_src` takes one source instead: a chain slot's own output (a dry stem: post-FX, at its fader and pan, no sends or Master FX; or before its FX; or after them at unity), kept by that slot's mix loop, or a Move track's, kept by its Move FX bus block (after the bus inserts at its fader, before them, or after them at unity) (`sampler_take_tap.h`). `MOVE_CAPTURE_FEED` records nothing of the session: the take is exactly the frames the module hands over with `capture_feed` from its render (`take_feed.h`, up to `MOVE_CAPTURE_FEED_MAX` per render), written at the mix tail — a render that hands over nothing adds nothing, and a partial block is a partial write, so the module starts and ends its take on the frame it chooses (dAVEBOx records the Move's input into an Audio clip this way, lined up and mixed with what it plays). The mix never reaches a FEED take, on either sampler source. A take that drops a block is voided and its file removed. A **stem take** (`stems_start/limit/stop/state`, `src/host/stem_take.c`) is separate from the sampler: up to 8 slots' instruments before their FX, each to its own WAV, read at the same point as the one-slot PRE take; each stem has its own ring, made once at init, and one writer thread drains them; the worker opens and closes the files. A dropped block or a file that will not open voids every file of it. An **offline take** (`offline_take_begin/state/cancel`, `src/host/offline_take.c`) records one slot's instrument faster than real time: a job thread runs private copies (`module_clone.h`: a byte copy under `cache/offline-clone/`, its own globals) of the overtake DSP and of the slot's instrument and FX (`chain_slot_clone_source`, `slot_clone.h`) in the shim's per-block order, and writes the take where the DSP copy calls `capture_start_src`. What the DSP copy feeds the slot (`slot_audio_feed`) is mixed into the slot's next block, as live; a slot with no instrument (or a bypassed one) is copied as silence plus that feed.
+
+### Dictation (push-to-talk on the shared keyboard)
+
+`src/shared/text_entry.mjs` + `src/shared/dictation.mjs`: hold Rec on any keyboard to talk.
+The audio is a **custom sampler take** (`host_sampler_set_source(1)` Move Input,
+`host_sampler_set_silent(1)`, `host_sampler_start(<install>/dictation/<id>.wav)`); dictation
+refuses while `samplerState` is not idle. **Everything borrowed goes back once the sampler has
+STOPPED, on every exit** — source, voice prompts, the jack report, monitoring. A stop is a
+request the sampler's worker carries out up to ~200 ms later, and it announces "Sample saved"
+unless `sampler_silent` is still set then. A cancelled take waits in `draining`;
+`dictationService()` finishes it, and also enforces the 30 s cap and retries a jack message the
+inject ring refused. The keyboard's owner must call `dictationService()` every tick, keyboard
+on screen or not (dAVEBOx: first thing in `_tickImpl`); it makes no host call when nothing is
+owed. A press while our own take is still stopping waits for it rather than refusing.
+A custom take still draws the sampler's dot at (123,1) — the keyboard's title row stops short
+of it under the dictation card — and the Sample button can stop it (treated as an early
+release). The card's level meter reads the overlay's `samplerVuPeak`, which
+`sampler_update_vu()` keeps while the sampler records, a custom take included.
+
+**The same for every keyboard.** A take runs up to 30 s (`MAX_TALK_MS`), a name or a sung
+line alike: you talk until you let go. The helper is told the length and sizes its own waits from
+it (`stt_limits`: the go within the take + 5 s, a hard limit of the take + 60 s); the UI waits
+20 s plus the take's recorded length for the words. The transcript is cut to what the keyboard
+can type, with commas left out and the trailing `. ? !` dropped (the comma KEY is for typing).
+
+**The take is the Move input as the hardware delivers it** — the built-in mic, or the
+line-in jack whenever a cable is in. The host cannot choose: measured 2026-11-18, injecting
+CC 114 = 0 (the Move's "jack empty" report) changed nothing in the AUDIO_IN buffer the
+sampler reads, and the Move sends its audio chip no SysEx at a jack change (XMOS logger
+armed across two unplug/replug cycles; the jack CCs are claim-denied, so Move did see
+them). The switch is made below the firmware. So dictation never mentions the jack.
+
+**The keyboard's owner decides the rest** through `setDictationHooks({ refuse, begin, end })`:
+`refuse()` returns a notice when dictation may not run (polled while listening too);
+`begin()`/`end()` bracket the take exactly once on every exit, for silencing anything that
+would play the mic out loud. dAVEBOx registers them in `init()` (`ui_audio_input.mjs`):
+the sequencer neither running nor waiting to (no count-in, record or merge; no audio take
+armed or running) — else `STOP TO TALK` — and input monitoring Off for the take.
+
+The words come from **`<install>/stt/bin/schwung-stt`** (`src/stt/`), one process per take,
+spawned at Rec-down through `stt-run.sh <work> <id> <take-seconds>` (`host_system_cmd`,
+backgrounded) so the model
+loads while the user speaks: started under `taskset 0x7 nice -n 19` (so even its libraries
+load off core 3), SCHED_OTHER asserted again inside, ONE recognizer thread (on the CM5, 1/2/3
+threads timed the same: a name decodes in ~55 ms, 10 s of speech in ~0.7 s, after a ~0.9 s load
+that overlaps the talking), a hard limit of the take + 60 s. **One at a time:**
+the launcher ends any earlier helper first (`<id>.pid`, checked against the process name
+before the kill). It waits for `<id>.go` (written once `host_sampler_is_recording()` goes
+false, i.e. the WAV is closed), refuses the cheap cases first (`stt_gate`, on the level BEFORE
+normalising: under 300 ms → `too_short`, peak under -40 dBFS → `no_speech`), then runs a
+Silero voice detector over the take at 16 kHz: no voice → `no_speech`, otherwise only the
+voiced stretch plus 0.3 s each side is decoded (`stt_span`). A recognizer fed a room invents
+words, and an ordinary room hums at about -50 dBFS with peaks above any level gate that
+still passes quiet speech — measured on a Move, it turned hum into "I've got a few". It decodes, and renames `<id>.json` into place (`ok`, `text`,
+`err`, `load_ms`, `decode_ms`, `audio_ms`); `<id>.cancel` makes it exit silently. Runtime: sherpa-onnx C API
++ ONNX Runtime + Moonshine Tiny (en) + Silero VAD, pinned in `scripts/stt-deps.lock`, fetched by
+`scripts/fetch-stt.sh`, laid out by `scripts/build.sh` as `build/stt/{bin,lib,model}`.
 
 ### Feedback Protection
 
