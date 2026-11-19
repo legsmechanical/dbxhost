@@ -468,6 +468,9 @@ still passes quiet speech — measured on a Move, it turned hum into "I've got a
 `err`, `load_ms`, `decode_ms`, `audio_ms`); `<id>.cancel` makes it exit silently. Runtime: sherpa-onnx C API
 + ONNX Runtime + Moonshine Tiny (en) + Silero VAD, pinned in `scripts/stt-deps.lock`, fetched by
 `scripts/fetch-stt.sh`, laid out by `scripts/build.sh` as `build/stt/{bin,lib,model}`.
+A folder named `<work>/keep/` makes the launcher copy each take and its answer there before
+the take is removed — a test set for comparing recognizers (`tools/stt-ab/`); nothing is kept
+unless that folder exists.
 
 ### Feedback Protection
 

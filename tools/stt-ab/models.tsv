@@ -1,0 +1,15 @@
+# Recognizers stt-ab compares. One per line, tab-separated:
+#   id  archive  family  enc  dec  joiner  tokens  extra
+# archive: a file in .cache/stt-ab/dl/ pinned in fetch.lock, or "current" for the
+# model the dictation ships (build/stt/model). Files are relative to the archive's
+# top folder. "-" = none. extra: space-separated bench options.
+moonshine-tiny	current	moonshine	encoder_model.ort	decoder_model_merged.ort	-	tokens.txt	-
+moonshine-tiny+gtcrn	current	moonshine	encoder_model.ort	decoder_model_merged.ort	-	tokens.txt	denoise=gtcrn:@gtcrn_simple.onnx
+moonshine-tiny+dpdfnet	current	moonshine	encoder_model.ort	decoder_model_merged.ort	-	tokens.txt	denoise=dpdfnet:@dpdfnet2.onnx
+moonshine-base	sherpa-onnx-moonshine-base-en-quantized-2026-02-27.tar.bz2	moonshine	encoder_model.ort	decoder_model_merged.ort	-	tokens.txt	-
+whisper-tiny.en-int8	sherpa-onnx-whisper-tiny.en.tar.bz2	whisper	tiny.en-encoder.int8.onnx	tiny.en-decoder.int8.onnx	-	tiny.en-tokens.txt	-
+whisper-tiny.en-fp32	sherpa-onnx-whisper-tiny.en.tar.bz2	whisper	tiny.en-encoder.onnx	tiny.en-decoder.onnx	-	tiny.en-tokens.txt	-
+whisper-base.en-int8	sherpa-onnx-whisper-base.en.tar.bz2	whisper	base.en-encoder.int8.onnx	base.en-decoder.int8.onnx	-	base.en-tokens.txt	-
+zipformer-small	sherpa-onnx-zipformer-small-en-2023-06-26.tar.bz2	transducer	encoder-epoch-99-avg-1.int8.onnx	decoder-epoch-99-avg-1.onnx	joiner-epoch-99-avg-1.int8.onnx	tokens.txt	-
+zipformer-small-beam4	sherpa-onnx-zipformer-small-en-2023-06-26.tar.bz2	transducer	encoder-epoch-99-avg-1.int8.onnx	decoder-epoch-99-avg-1.onnx	joiner-epoch-99-avg-1.int8.onnx	tokens.txt	decoding=modified_beam_search beam=4
+parakeet-110m	sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000-int8.tar.bz2	nemo_transducer	encoder.int8.onnx	decoder.int8.onnx	joiner.int8.onnx	tokens.txt	-

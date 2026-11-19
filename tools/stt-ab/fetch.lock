@@ -1,0 +1,9 @@
+# Archives stt-ab downloads into .cache/stt-ab/dl/, verified by sha256.
+# <name> <sha256> <url>
+sherpa-onnx-moonshine-base-en-quantized-2026-02-27.tar.bz2 43232c1d13013d37317163baec3135bd771a186a4356f28c889bab453bb0e891 https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-base-en-quantized-2026-02-27.tar.bz2
+sherpa-onnx-whisper-tiny.en.tar.bz2 2bd6cf965c8bb3e068ef9fa2191387ee63a9dfa2a4e37582a8109641c20005dd https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-tiny.en.tar.bz2
+sherpa-onnx-whisper-base.en.tar.bz2 475bc7052ce299c007f6d5d5407ba8601f819a2867f6eecee510ed17df581542 https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-base.en.tar.bz2
+sherpa-onnx-zipformer-small-en-2023-06-26.tar.bz2 c8bff1091c26c49731cddbcd60ef18061142ea11523df1b73bf1b14451b9c15e https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-zipformer-small-en-2023-06-26.tar.bz2
+sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000-int8.tar.bz2 f628312e9fdf8686374cb01a69425c41732529d540860311f16f37cbc32cfe9b https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000-int8.tar.bz2
+gtcrn_simple.onnx e77603ac0c23dac3227dd2d7135b3a585cbee2679048aecfa886657d3ae1b534 https://github.com/k2-fsa/sherpa-onnx/releases/download/speech-enhancement-models/gtcrn_simple.onnx
+dpdfnet2.onnx ce35d6025fc71df0ef10d1540e1b7916837bbfe5f6896deb744508d2cad487a9 https://github.com/k2-fsa/sherpa-onnx/releases/download/speech-enhancement-models/dpdfnet2.onnx

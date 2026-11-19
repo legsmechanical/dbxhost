@@ -51,6 +51,14 @@ LD_LIBRARY_PATH="$STT_DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
     </dev/null >>"$WORK/helper.log" 2>&1 &
 echo $! > "$WORK/$ID.pid"
 wait $!
+# A TEST SET, opt-in: with a folder named keep/ in the work dir, each take (and
+# the answer it got) is copied there before the take is removed, for comparing
+# recognizers on real takes (tools/stt-ab). Nothing is kept unless that folder
+# exists; delete it to stop.
+if [ -d "$WORK/keep" ]; then
+    cp -p "$WORK/$ID.wav" "$WORK/keep/$ID.wav" 2>/dev/null
+    cp -p "$WORK/$ID.json" "$WORK/keep/$ID.json" 2>/dev/null
+fi
 rm -f "$WORK/$ID.wav" "$WORK/$ID.go" "$WORK/$ID.cancel" "$WORK/$ID.pid"
 # Keep the log from growing without bound.
 if [ -f "$WORK/helper.log" ] && [ "$(wc -c < "$WORK/helper.log")" -gt 65536 ]; then

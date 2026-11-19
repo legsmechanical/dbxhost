@@ -48,6 +48,14 @@ STT_THREADS=3 sh "$S/stt-run.sh" "$W" dxyz 12
 msg="$(sh "$S/stt-run.sh" "$W" dq '3;rm' 2>&1)"; rc=$?
 [ $rc -ne 0 ] && printf '%s' "$msg" | grep -q "bad take length" && ok "refuses a take length that is not a number" || bad "take length: rc=$rc $msg"
 [ ! -e "$W/dabc.json" ] && [ -e "$W/dxyz.json" ] && ok "the next take clears the previous answer" || bad "answers: $(ls "$W")"
+# keep/: a take and its answer are copied aside only while that folder exists
+mkdir "$W/keep"; echo take > "$W/dkk.wav"; : > "$W/dkk.go"
+sh "$S/stt-run.sh" "$W" dkk
+[ "$(cat "$W/keep/dkk.wav" 2>/dev/null)" = take ] && [ -s "$W/keep/dkk.json" ] && [ ! -e "$W/dkk.wav" ] \
+    && ok "with keep/, the take and its answer are copied there; the take itself still goes" || bad "keep: $(ls "$W" "$W/keep")"
+rm -rf "$W/keep"; echo take > "$W/dkn.wav"; : > "$W/dkn.go"
+sh "$S/stt-run.sh" "$W" dkn
+[ ! -e "$W/keep" ] && ok "without keep/, nothing is kept" || bad "kept without a keep/ folder"
 
 # ---- one helper at a time ----------------------------------------------------
 # A take in progress (helper waiting for its go), then a newer take: the earlier
