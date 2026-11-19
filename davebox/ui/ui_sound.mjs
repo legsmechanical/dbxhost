@@ -1141,6 +1141,11 @@ export function soundModuleIdForTest() { return S.moduleId; }
 export function soundCompForTest() { return S.comp; }
 /* The knob grid's current page (level + name) while the editor is up, else null. */
 export function soundEditorPageForTest() { return ppOn ? currentParamPage() : null; }
+/* The automation lane a knob touch on the editor addresses: {clip, target}. */
+export function soundKnobLaneForTest(k) {
+    const fk = ppOn ? paramPagesFullKeyAt(k) : null;
+    return fk ? { clip: effectiveClip(S.track), target: S.slot + ':' + fk } : null;
+}
 export function soundQueueDiscoverForTest(n) { S.pendingDiscover = n | 0; }
 /* ⚠ busLevelEditing lives on sound mode's OWN S, not the global one — a rig
  * that sets it through ui_state is writing a different object entirely (the
@@ -10075,7 +10080,17 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * handling -- Delete's modifier tracking below, Undo and Copy in
              * ui_input_cc. Never the generic forward: the binding would take
              * them for an unclaiming module too. */
-            if (ppEditRoute(d1, d2)) { S.dirty = true; return true; }
+            if (ppEditRoute(d1, d2)) {
+                /* ⚠ The module's page took Delete for its pad-clear gesture,
+                 * but Delete + knob touch is still davebox's AUTOMATION clear
+                 * (a user report: on DR32 the touch said "pick a target" and
+                 * cleared nothing). Both readings live on one hold, so sound
+                 * mode's OWN latch follows the button either way — davebox's
+                 * (GS) does not, or a pad pick would also hit its Delete+pad. */
+                if (d1 === 119) ppTrackDeleteLatch(d2 >= 64);
+                S.dirty = true;
+                return true;
+            }
         } else if (handleParamPagesMidi([0xB0, d1, d2])) {
             S.dirty = true;
             return true;
@@ -10101,8 +10116,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
      * paints the rings too (what Delete+touch would clear), so the release
      * hands them back the same way. */
     if (d1 === 119) {
-        S.deleteHeld = d2 >= 64;
-        if (!S.deleteHeld && !S.muteHeld && S.autoLedPaint) { S.autoLedPaint = false; paramPagesRepaintKnobs(); }
+        ppTrackDeleteLatch(d2 >= 64);
         return false;
     }
 
@@ -11616,6 +11630,20 @@ function ppEditRoute(d1, d2) {
     if (!handleParamPagesMidi([0xB0, d1, d2])) return false;
     ppEditLatched.add(d1);
     return true;
+}
+
+/* Sound mode's Delete latch, set from either route (module-claimed or not). */
+function ppTrackDeleteLatch(held) {
+    S.deleteHeld = held;
+    if (!S.deleteHeld && !S.muteHeld && S.autoLedPaint) { S.autoLedPaint = false; paramPagesRepaintKnobs(); }
+}
+
+/* A Delete + knob touch that cleared automation has said what this hold
+ * means: end the module's pad-clear gesture (and its "PICK A TARGET" line),
+ * so a pad picked later in the same hold is not wiped as well. The press stays
+ * latched to the binding; its real release then finds no gesture, harmlessly. */
+function ppEndModuleClearGesture() {
+    if (ppEditLatched.has(119)) handleParamPagesMidi([0xB0, 119, 0]);
 }
 
 function reconcileEditCcClaim(force) {
@@ -13283,6 +13311,7 @@ function ppIo() {
             if (down) {
                 const t = S.track, c = effectiveClip(t), target = S.slot + ':' + fullKey;
                 if (S.deleteHeld) {
+                    ppEndModuleClearGesture();
                     if (automationClearKey(t, c, target)) showActionPopup('AUTOMATION', 'CLEARED');
                 } else if (S.muteHeld) {
                     /* ⚠⚠ Tell DAVEBOX the Mute was a MODIFIER — on ITS state

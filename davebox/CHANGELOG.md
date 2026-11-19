@@ -36,6 +36,10 @@ the section into a versioned heading at release time.
   wrong picture.
 - **Touch + click on a module's text parameter opens the keyboard.** It opened an empty
   screen instead. OK writes the text, and either way you're back on the page you came from.
+- **Delete + knob clears automation on a drum module's pad pages.** On a module that has
+  its own hold-Delete-and-pick-a-pad clear (DR32, for example), Delete + touching a knob
+  said "pick a target" and left the automation in place. It clears that parameter's
+  automation again, and a pad picked afterwards in the same hold is left alone.
 - **Locks on DR32's synth-engine pads now take the value you set.** A held-step lock on an
   engine pad's parameter (an 808 pad's Decay, say) recorded every value as the top and
   played back near the bottom, so every hit sounded the same. Sample pads were not affected.

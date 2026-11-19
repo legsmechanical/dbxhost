@@ -13,6 +13,9 @@
  *   3. a module that claimed nothing: Delete falls through to davebox's own
  *      modifier (deleteHeld), nothing is cleared, no claim is raised
  *   4. leaving sound mode drops the claim (host_edit_cc_block(0))
+ *   5. Delete + KNOB TOUCH on the claimed page still clears that parameter's
+ *      automation (a user report: DR32 said "pick a target" and cleared
+ *      nothing), and ends the pad-clear gesture so a later pick clears no pad
  *
  * ⚠ The premise this test exists for: the #425 port deleted the C binding
  * host_edit_cc_block while sound mode still called it, and every JS test stubs
@@ -75,8 +78,20 @@ globalThis.host_file_exists = () => false;
 globalThis.host_write_file = () => true;
 globalThis.host_ensure_dir = () => true;
 globalThis.host_remove_dir = () => true;
-globalThis.host_module_set_param = () => {};
-globalThis.host_module_get_param = () => '';
+/* The DSP's automation: pa_list is the one read, every pa_* write lands here. */
+let paList = '';
+const dspSets = [];
+globalThis.host_module_set_param = (k, v) => { dspSets.push(String(k) + '=' + String(v)); };
+globalThis.host_module_get_param = (k) => (k === 'pa_list' ? paList : '');
+{
+    const dec = (blob) => {
+        const out = []; if (!blob) return out;
+        let nl = blob.indexOf('\n'); const n = parseInt(blob.slice(0, nl), 10) || 0; let p = nl + 1;
+        for (let i = 0; i < n; i++) { const e = blob.indexOf('\n', p); const len = parseInt(blob.slice(p, e), 10) || 0; p = e + 1; out.push(blob.slice(p, p + len)); p += len; }
+        return out;
+    };
+    globalThis.host_module_set_params = (blob) => { const it = dec(blob); for (let i = 0; i + 1 < it.length; i += 2) dspSets.push(it[i] + '=' + it[i + 1]); return true; };
+}
 globalThis.shadow_get_param = (slot, k) => {
     const key = String(k);
     if (!key.startsWith('synth:')) return '';
@@ -125,6 +140,7 @@ async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
+const auto = await import('../../ui/ui_automation.mjs');
 const { MoveShift, MoveMainKnob, MoveUndo, MoveCopy, MoveDelete } = await import('/data/UserData/schwung/shared/constants.mjs');
 
 const VIEW_EDIT = 1;
@@ -240,6 +256,32 @@ step('4. back to the claiming module: Delete + pick CLEARS (declared defaults, "
     claimCalls.length = 0;
     snd.soundExit(); ticks(3);
     if (lastClaim() !== 0) throw new Error('soundExit did not drop the claim: ' + JSON.stringify(claimCalls));
+});
+
+step('5. claimed page: Delete + knob touch CLEARS the parameter\'s automation, and ends the pad-clear gesture', () => {
+    moduleId = 'claimer'; resetDev();
+    enterEditor(5);
+    onPadsPage();
+    const lane = snd.soundKnobLaneForTest(0);
+    if (!lane) throw new Error('control failed: knob 1 addresses no parameter');
+    const { clip, target } = lane;
+    const { automationRefreshPresence, automationStateFor } = auto;
+    paList = '5 ' + clip + ' 1 4 ' + target + '\n';
+    automationRefreshPresence();
+    if (!automationStateFor(5, clip, target)) throw new Error('control failed: the lane was not seeded for ' + target);
+    dspSets.length = 0; writes.length = 0;
+    cc(MoveDelete, 127);
+    if (S.deleteHeld) throw new Error('davebox took the Delete press the module\'s page had claimed');
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 0, 127]));   /* touch knob 1 */
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 0, 0]));
+    ticks(4);
+    const cleared = dspSets.filter((x) => x.startsWith('t5_pa_clear_key='));
+    if (cleared.length !== 1 || !cleared[0].endsWith(' ' + target)) throw new Error('no pa_clear_key for ' + target + ': ' + JSON.stringify(dspSets));
+    focus(2);
+    if (padWrites(2).length) throw new Error('the pad-clear gesture outlived the automation clear: ' + JSON.stringify(padWrites(2)));
+    cc(MoveDelete, 0);
+    if (snd.soundDeleteHeldForTest()) throw new Error('sound mode\'s Delete latch stuck after the release');
+    snd.soundExit(); ticks(3);
 });
 
 process.exit(failed);

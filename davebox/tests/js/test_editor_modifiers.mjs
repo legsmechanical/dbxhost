@@ -23,8 +23,14 @@ check(src.includes('if ((S.muteHeld || S.deleteHeld) && S.view === VIEW_EDIT) {'
 const muteRel = src.indexOf('if (d1 === 88) {');
 check(src.indexOf('if (!S.muteHeld && !S.deleteHeld && S.autoLedPaint)', muteRel) - muteRel < 200,
       'Mute release hands the rings back only when Delete is up too');
+/* The Delete latch lives in ONE helper, called from both routes: the plain
+ * press and a press the module's page claimed (its Delete+touch must still
+ * clear automation). */
 const delRel = src.indexOf('if (d1 === 119) {');
-check(src.indexOf('if (!S.deleteHeld && !S.muteHeld && S.autoLedPaint)', delRel) - delRel < 300,
+check(src.indexOf('ppTrackDeleteLatch(d2 >= 64)', delRel) - delRel < 100,
+      'the Delete press/release goes through the one latch helper');
+const latch = src.indexOf('function ppTrackDeleteLatch(held) {');
+check(latch >= 0 && src.indexOf('if (!S.deleteHeld && !S.muteHeld && S.autoLedPaint)', latch) - latch < 200,
       'Delete release hands the rings back only when Mute is up too');
 
 if (failed) { console.log('FAIL: editor modifiers'); process.exit(1); }
