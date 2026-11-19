@@ -40,10 +40,7 @@ shared memory only. It keeps its own licence and imposes nothing on the rest.
 | `bin/heal` (`davebox-heal`), `modules/chain` | MIT | This repo's own code |
 | `modules/tools/davebox-sound` (`dsp.so`) | MIT, with MPL-2.0 files | Own code **linked** with Bungee + Eigen (MPL-2.0, file-level, unmodified), PFFFT (BSD-style) and the static libstdc++/libgcc (GCC Runtime Library Exception) |
 | `stt/bin/schwung-stt` (speech-to-text helper) | MIT | This repo's own code (`src/stt/`), dynamically linked to sherpa-onnx (Apache-2.0) — a separate program, never linked into the host |
-| `stt/lib/libsherpa-onnx-c-api.so` | Apache-2.0 | sherpa-onnx v2.0.1, redistributed unmodified (prebuilt) |
-| `stt/lib/libonnxruntime.so` | MIT | ONNX Runtime, redistributed unmodified (prebuilt, bundled by sherpa-onnx) |
-| `stt/model/*` (except `silero_vad.onnx`) | MIT | Moonshine Tiny English (quantized), redistributed unmodified |
-| `stt/model/silero_vad.onnx` | MIT | Silero VAD, redistributed unmodified (the export published with sherpa-onnx) |
+| dictation add-on (`addons/dictation/`, **not in the release**: downloaded from the menu, built by `scripts/build-stt-addon.sh`) | Apache-2.0, MIT, CC-BY-4.0 | sherpa-onnx + ONNX Runtime (debug symbols stripped), NVIDIA Parakeet TDT-CTC 110M and Silero VAD as published by sherpa-onnx; carries its own `licenses/` with `NOTICE.txt` — see below |
 
 Corresponding source for the GPL components is available from each project's
 upstream repository, linked in its section below; `libs/link` is a git
@@ -431,26 +428,30 @@ rather than left implicit.
 
 ---
 
-## sherpa-onnx, ONNX Runtime, Moonshine (speech-to-text for the keyboard)
+## sherpa-onnx, ONNX Runtime, Parakeet (speech-to-text for the keyboard)
 
-**Used in:** `stt/` — push-to-talk dictation on the on-screen keyboard. The
-helper `stt/bin/schwung-stt` (this repo's MIT code, `src/stt/`) runs as its own
-process and dynamically links the two libraries below; nothing here is linked
-into the host, the shim or dAVEBOx.
-**Pinned in:** `scripts/stt-deps.lock` (URLs + sha256), fetched by
-`scripts/fetch-stt.sh`. All three are redistributed **unmodified**.
+**Used in:** push-to-talk dictation on the on-screen keyboard. The helper
+`stt/bin/schwung-stt` (this repo's MIT code, `src/stt/`, in the release) runs as
+its own process and dynamically links the two libraries below; nothing here is
+linked into the host, the shim or dAVEBOx.
+**Distributed as:** the dictation ADD-ON, a separate download the user installs
+from dAVEBOx's menu (`src/stt/addon.sh`) into `addons/dictation/` — never part
+of the release tarball. Built by `scripts/build-stt-addon.sh` from the inputs
+pinned in `scripts/stt-deps.lock` (URLs + sha256); the add-on itself is pinned
+by hash in `src/stt/addon.json`. It carries every text below in its own
+`licenses/`, with `NOTICE.txt` saying what each file is and what was changed.
 
 ### sherpa-onnx
 
-**Location:** `stt/lib/libsherpa-onnx-c-api.so` (prebuilt v2.0.1, linux-aarch64)
+**Location:** add-on `lib/libsherpa-onnx-c-api.so` (prebuilt v2.0.1, linux-aarch64, debug symbols stripped)
 **Author:** Xiaomi Corporation and the k2-fsa contributors
 **Upstream:** https://github.com/k2-fsa/sherpa-onnx
 
-**License:** Apache-2.0 — full text shipped as `licenses/Apache-2.0.txt`.
+**License:** Apache-2.0 — full text in the add-on as `licenses/Apache-2.0.txt`.
 
 ### ONNX Runtime
 
-**Location:** `stt/lib/libonnxruntime.so` (as bundled in the sherpa-onnx release)
+**Location:** add-on `lib/libonnxruntime.so` (as bundled in the sherpa-onnx release, debug symbols stripped)
 **Author:** Microsoft Corporation
 **Upstream:** https://github.com/microsoft/onnxruntime (its third-party notices:
 `ThirdPartyNotices.txt` in that repository)
@@ -481,27 +482,31 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### Moonshine Tiny (English)
+### Parakeet TDT-CTC 110M (English)
 
-**Location:** `stt/model/` (`encoder_model.ort`, `decoder_model_merged.ort`,
-`tokens.txt`) — the quantized export published with sherpa-onnx
-(`sherpa-onnx-moonshine-tiny-en-quantized-2026-02-27`)
-**Author:** Moonshine AI (formerly Useful Sensors)
-**Upstream:** https://github.com/moonshine-ai/moonshine
+**Location:** add-on `model/` (`encoder.int8.onnx`, `decoder.int8.onnx`,
+`joiner.int8.onnx`, `tokens.txt`) — the int8 ONNX export of the model's
+transducer half published by sherpa-onnx
+(`sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000-int8`), unmodified
+**Author:** NVIDIA
+**Upstream:** https://huggingface.co/nvidia/parakeet-tdt_ctc-110m
 
-**License:** MIT (the English models and the code). The model archive's own
-licence file ships as `licenses/MOONSHINE_LICENSE.txt`.
+**License:** Creative Commons Attribution 4.0 International
+(https://creativecommons.org/licenses/by/4.0/) — full text in the add-on as
+`licenses/PARAKEET_LICENSE.txt`, pinned in `scripts/stt-deps.lock`. Changes
+from NVIDIA's release: exported to ONNX and quantized to int8 by the sherpa-onnx
+project.
 
 ### Silero VAD
 
-**Location:** `stt/model/silero_vad.onnx` — the voice detector that keeps a take
+**Location:** add-on `model/silero_vad.onnx` — the voice detector that keeps a take
 with no voice in it away from the recognizer; the ONNX export published with
 sherpa-onnx (`asr-models/silero_vad.onnx`)
 **Author:** Silero Team
 **Upstream:** https://github.com/snakers4/silero-vad
 
-**License:** MIT. The licence text (pinned at upstream commit `066409f`) ships as
-`licenses/SILERO_VAD_LICENSE.txt`.
+**License:** MIT. The licence text (pinned at upstream commit `066409f`) is in the
+add-on as `licenses/SILERO_VAD_LICENSE.txt`.
 
 ---
 

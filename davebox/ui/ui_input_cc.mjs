@@ -718,6 +718,13 @@ function modalDialogUp() {
             forceRedraw();
             return;
         }
+        if (S.menuAsk) {
+            const _a = S.menuAsk;
+            S.menuAsk = null;
+            if (S.menuAskSel === 0) _a.yes();
+            S.screenDirty = true;
+            return;
+        }
         if (S.confirmPurge) {
             const _p = S.confirmPurge;
             S.confirmPurge = null;
@@ -1275,6 +1282,9 @@ function modalDialogUp() {
                 }
             } else if (S.exportDoneDialog) {
                 /* single OK button — jog does nothing */
+            } else if (S.menuAsk) {
+                const delta = decodeDelta(d2);
+                if (delta !== 0) { S.menuAskSel = S.menuAskSel === 0 ? 1 : 0; S.screenDirty = true; }
             } else if (S.confirmPurge) {
                 const delta = decodeDelta(d2);
                 if (delta !== 0) { S.confirmPurgeSel = S.confirmPurgeSel === 0 ? 1 : 0; S.screenDirty = true; }
@@ -3014,7 +3024,8 @@ function _backTap() {
     /* 2. Global menu (+ its nested confirms): a nested confirm closes to the
      *    menu, otherwise the menu itself closes. */
     if (S.globalMenuOpen) {
-        if (S.confirmPurge)               { S.confirmPurge = null; }
+        if (S.menuAsk)                    { S.menuAsk = null; }
+        else if (S.confirmPurge)          { S.confirmPurge = null; }
         else if (S.confirmClearSession)   { S.confirmClearSession = false; }
         else if (S.confirmSaveState)      { S.confirmSaveState = false; }
         else if (S.confirmConvertToDrum)  { closeConvertConfirm(); }

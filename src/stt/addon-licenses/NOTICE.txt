@@ -1,0 +1,24 @@
+dAVEBOx dictation add-on — what is in it, and under which terms
+
+lib/libsherpa-onnx-c-api.so
+    sherpa-onnx v2.0.1 (Xiaomi Corporation and the k2-fsa contributors),
+    https://github.com/k2-fsa/sherpa-onnx — Apache-2.0 (Apache-2.0.txt).
+    The published prebuilt library with its debug symbols stripped.
+
+lib/libonnxruntime.so
+    ONNX Runtime (Microsoft Corporation), https://github.com/microsoft/onnxruntime
+    — MIT (ONNXRUNTIME_LICENSE.txt). As bundled by sherpa-onnx, debug symbols
+    stripped.
+
+model/encoder.int8.onnx, decoder.int8.onnx, joiner.int8.onnx, tokens.txt
+    "Parakeet TDT-CTC 110M" (English) by NVIDIA,
+    https://huggingface.co/nvidia/parakeet-tdt_ctc-110m — licensed under
+    Creative Commons Attribution 4.0 International (PARAKEET_LICENSE.txt,
+    https://creativecommons.org/licenses/by/4.0/).
+    Changes: its transducer half exported to ONNX and quantized to int8 by the
+    sherpa-onnx project (sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000-int8);
+    redistributed here as that export, unmodified.
+
+model/silero_vad.onnx
+    Silero VAD (Silero Team), https://github.com/snakers4/silero-vad — MIT
+    (SILERO_VAD_LICENSE.txt). The export published with sherpa-onnx.

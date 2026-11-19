@@ -760,6 +760,8 @@ export const S = {
     confirmClearSession: false,
     confirmPurge: null,        /* Purge unused samples: { files, bytes } awaiting Yes */
     confirmPurgeSel: 1,
+    menuAsk: null,             /* a Project Settings Yes/No: { title, lines, yes() } (ui_menu) */
+    menuAskSel: 1,
     pendingTemplateSet: null,      /* a template save { id, name|null }: runs in ui_tick's save chain a tick after the DSP save (ui_template.mjs) */
     templateManager: null,         /* the TEMPLATES screen { list, sel, menu, confirm } (ui_dialogs.mjs) */
     templateNameEntry: null,       /* the keyboard naming a template { mode: 'save'|'rename', id } (ui_dialogs.mjs) */

@@ -38,12 +38,20 @@ grep -E '^cp (LICENSE|licenses/GPL)' scripts/build.sh | grep -q '|| true' \
 
 # The speech-to-text runtime: sherpa-onnx is Apache-2.0, which requires its
 # text to travel with the binary.
-grep -q "^## sherpa-onnx, ONNX Runtime, Moonshine" THIRD_PARTY_LICENSES.md && ok "speech-to-text section" || bad "no speech-to-text section"
+grep -q "^## sherpa-onnx, ONNX Runtime, Parakeet" THIRD_PARTY_LICENSES.md && ok "speech-to-text section" || bad "no speech-to-text section"
 [ -s licenses/Apache-2.0.txt ] && grep -q "Apache License" licenses/Apache-2.0.txt && ok "licenses/Apache-2.0.txt present" || bad "licenses/Apache-2.0.txt missing"
 grep -q 'cp licenses/Apache-2.0.txt ./build/licenses/' scripts/build.sh && ok "build.sh stages the Apache text" || bad "build.sh does not stage the Apache text"
 grep -q 'licenses/Apache-2.0.txt" "$P/licenses/"' standalone/scripts/build-sa-release.sh && ok "the release ships the Apache text" || bad "the release does not ship the Apache text"
-grep -q 'MOONSHINE_LICENSE.txt' scripts/build.sh && ok "build.sh stages the model licence" || bad "build.sh does not stage the model licence"
-grep -q 'SILERO_VAD_LICENSE.txt' scripts/build.sh && ok "build.sh stages the voice detector's licence" || bad "build.sh does not stage the voice detector's licence"
+# The add-on (scripts/build-stt-addon.sh) carries the runtime's and the model's
+# texts itself: Parakeet is CC-BY-4.0, which needs its attribution and licence.
+for f in NOTICE.txt ONNXRUNTIME_LICENSE.txt; do
+    [ -s "src/stt/addon-licenses/$f" ] && ok "add-on licence text $f" || bad "src/stt/addon-licenses/$f missing"
+done
+grep -q "Creative Commons Attribution 4.0" src/stt/addon-licenses/NOTICE.txt && grep -q "Changes:" src/stt/addon-licenses/NOTICE.txt \
+    && ok "the add-on's notice attributes Parakeet (CC-BY-4.0) and says what changed" || bad "NOTICE.txt lacks the CC-BY attribution"
+for f in PARAKEET_LICENSE.txt SILERO_VAD_LICENSE.txt Apache-2.0.txt ONNXRUNTIME_LICENSE.txt NOTICE.txt; do
+    grep -q "$f" scripts/build-stt-addon.sh && ok "the add-on ships $f" || bad "build-stt-addon.sh does not ship $f"
+done
 grep -q '^### Silero VAD' THIRD_PARTY_LICENSES.md && ok "voice detector section" || bad "no Silero VAD section"
 
 sed -n 1,30p src/lib/jack2/shadow/JackShadowDriver.cpp | grep -q "License: MIT" \

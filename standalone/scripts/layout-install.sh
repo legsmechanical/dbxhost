@@ -79,7 +79,8 @@ done
 for stale in bin/filebrowser bin/display_ctl bin/jack_midi_connect lib/jack \
              licenses/FILEBROWSER_LICENSE.txt shadow/shadow_poc scripts/post-update.sh \
              host/fonts host/logo-circle.png host/logo-splash.png host/logo-text.png \
-             host/schwung-print.png start.sh stop.sh; do
+             host/schwung-print.png start.sh stop.sh \
+             stt/lib stt/model licenses/MOONSHINE_LICENSE.txt licenses/SILERO_VAD_LICENSE.txt; do
     p="$DBX_DIR/$stale"
     [ -L "$p" ] && continue
     if [ -e "$p" ]; then rm -rf "$p"; echo "      retired: $stale (no longer shipped)"; fi

@@ -800,7 +800,10 @@ function drawDictationCard(c) {
         const dx = x + Math.floor(w / 2) - 7;
         for (let i = 0; i < c.dots; i++) fill_rect(dx + i * 5, y + 27, 2, 2, 1);
     } else {
-        print(x + Math.floor((w - textWidth(c.text)) / 2), y + 18, c.text, 1);
+        /* one line, or two split by \n (e.g. where to install the add-on) */
+        const ls = String(c.text).split('\n').slice(0, 2);
+        const y0 = ls.length > 1 ? y + 12 : y + 18;
+        ls.forEach(function(t, i) { print(x + Math.floor((w - textWidth(t)) / 2), y0 + i * 12, t, 1); });
     }
 }
 

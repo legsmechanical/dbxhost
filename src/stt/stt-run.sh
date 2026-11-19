@@ -3,7 +3,10 @@
 #
 #   sh <stt-dir>/stt-run.sh <work-dir> <id> [take-seconds]
 #
-# <stt-dir> (this script's folder) holds bin/schwung-stt, lib/*.so, model/.
+# <stt-dir> (this script's folder) holds bin/schwung-stt. The runtime libraries
+# and the model are the dictation ADD-ON (addon.sh), in <install-dir>/addons/
+# dictation/{lib,model} — <install-dir> being this folder's parent. STT_ADDON
+# overrides that (tests).
 # <work-dir> is the dictation scratch folder on /data/UserData (never /tmp on a
 # Move: the root fs is full). Files are named by the dictation's <id>:
 #   <id>.wav (the sampler's take) <id>.go <id>.cancel <id>.json (the result)
@@ -16,6 +19,7 @@
 # Only then is everything belonging to another id removed — with no earlier
 # helper alive, nothing is waiting on its .cancel.
 STT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ADDON="${STT_ADDON:-$(dirname "$STT_DIR")/addons/dictation}"
 WORK="${1:?work dir}"; ID="${2:?id}"; TAKE_S="${3:-30}"
 case "$TAKE_S" in ''|*[!0-9]*) echo "stt-run: bad take length" >&2; exit 2 ;; esac
 PROC="${STT_PROC:-/proc}"
@@ -40,13 +44,13 @@ done
 # after a ~0.9 s load that overlaps the talking), and one thread leaves the
 # most room for the audio engine's render lanes on cores 0-2.
 # Cores 0-2 and the lowest priority from the first instruction, before the
-# 37 MB of libraries are even mapped (core 3 is the audio callback's). The
+# 22 MB of libraries are even mapped (core 3 is the audio callback's). The
 # helper asserts both again itself.
 POLITE=""
 command -v taskset >/dev/null 2>&1 && POLITE="taskset 0x7"
 command -v nice >/dev/null 2>&1 && POLITE="$POLITE nice -n 19"
-LD_LIBRARY_PATH="$STT_DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-    $POLITE "$STT_DIR/bin/schwung-stt" "$STT_DIR/model" "$WORK/$ID.wav" "$WORK/$ID.go" \
+LD_LIBRARY_PATH="$ADDON/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+    $POLITE "$STT_DIR/bin/schwung-stt" "$ADDON/model" "$WORK/$ID.wav" "$WORK/$ID.go" \
     "$WORK/$ID.cancel" "$WORK/$ID.json" ${STT_THREADS:-1} "$TAKE_S" \
     </dev/null >>"$WORK/helper.log" 2>&1 &
 echo $! > "$WORK/$ID.pid"

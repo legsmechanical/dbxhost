@@ -35,6 +35,7 @@ import { exitMoveNativeCoRun, DAVEBOX_PICKER_KEEP_MASK, enterMoveSettingsCoRun }
 import { requestExport } from './ui_export.mjs';
 import { anyTemplates, SAVE_ROW, LIST_ROW } from './ui_template.mjs';
 import { xposePreviewSet } from './ui_xpose.mjs';
+import { dictationAddon, dictationAddonInstall, dictationAddonRemove } from '/data/UserData/schwung/shared/dictation.mjs';
 import { grooveOptions, grooveCurrentIndex, grooveSelect, grooveLabel,
          GROOVE_SWING_16, GROOVE_SWING_8, GROOVE_TABLE } from './ui_groove.mjs';
 
@@ -374,6 +375,7 @@ function buildGlobalMenuItems() {
             set: function(v) { setBluetoothOn(v); },
             onLabel: 'On', offLabel: 'Off'
         }) : null,
+        dictationRow(),
         createDivider(),
         /* The Daves switch (Josh, 2026-09-05): On = a collected Dave scrolls
          * through the session banner while playing; Off = the static wordmark.
@@ -387,6 +389,60 @@ function buildGlobalMenuItems() {
             openDaveBox();     /* closes the menu itself when it opens */
         }),
     ].filter(Boolean);   /* drops the host-gated entries when absent */
+}
+
+/* DICTATION (hold Rec on the keyboard) needs an ADD-ON the release does not
+ * carry: the speech runtime and model, ~110 MB. This row gets it, shows the
+ * download, and removes it (device-global, like Bluetooth). Click: Get /
+ * Update / Retry start the install, which carries on in the background with
+ * the menu closed; on an installed add-on it asks before removing. */
+const ADDON_POLL_MS = 500;
+let addonRow = { at: 0, text: '', a: null };
+function addonText(a) {
+    switch (a.state) {
+        case 'installed':   return 'Installed';
+        case 'outdated':    return 'Update';
+        case 'downloading': return a.pct + '%';
+        case 'verifying':   return 'Checking';
+        case 'installing':  return 'Unpacking';
+        case 'failed':      return a.err === 'no_space' ? 'No space' : a.err === 'network' ? 'Offline' : 'Retry';
+        default:            return 'Get ' + Math.round(a.bytes / 1e6) + ' MB';
+    }
+}
+function addonRefresh(now) {
+    addonRow.at = now;
+    addonRow.a = dictationAddon();
+    const t = addonText(addonRow.a);
+    const changed = t !== addonRow.text;
+    addonRow.text = t;
+    return changed;
+}
+/* Every tick while the menu is open: a changed state redraws the row. */
+export function menuAddonPoll(now) {
+    if (!S.globalMenuOpen || now - addonRow.at < ADDON_POLL_MS) return;
+    if (addonRefresh(now)) S.screenDirty = true;
+}
+function dictationRow() {
+    const item = createAction('Dictation', function() {
+        addonRefresh(Date.now());
+        const a = addonRow.a;
+        if (a.state === 'installed') {
+            S.menuAsk = { title: 'DICTATION', lines: ['Remove dictation?', 'Hold Rec on the keyboard', 'stops working.'],
+                          yes: function() { dictationAddonRemove(); addonRow.at = 0; } };
+            S.menuAskSel = 1;   /* opens on No */
+        } else if (a.state === 'downloading' || a.state === 'verifying' || a.state === 'installing') {
+            showMenuInfo('Dictation is installing.', 'It carries on with', 'this menu closed.');
+        } else {
+            dictationAddonInstall();
+            addonRow.at = 0;
+        }
+        S.screenDirty = true;
+    });
+    item.status = function() {
+        if (Date.now() - addonRow.at >= ADDON_POLL_MS) addonRefresh(Date.now());
+        return addonRow.text;
+    };
+    return item;
 }
 
 /* Open Project Settings with the cursor on the row labelled `label`. */

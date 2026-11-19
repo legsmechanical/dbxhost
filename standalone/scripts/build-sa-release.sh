@@ -59,12 +59,17 @@ done
 # catalog install, 2026-10-20 (an upgrade hid it: the old copy stayed behind).
 [ -x "$BUILD_DIR/link-subscriber" ] || { echo "ERROR: missing $BUILD_DIR/link-subscriber -- Move tracks would play outside every dAVEBOx bus. Fetch the Link SDK (git submodule update --init --recursive libs/link) and rebuild the host" >&2; exit 1; }
 [ -s "$MANUAL_HTML" ] || { echo "ERROR: missing $MANUAL_HTML — the HTML manual (davebox/scripts/build_manual_html.sh) is the Help page" >&2; exit 1; }
-# Dictation on the keyboard: the helper, its runtime and the model. Without
-# them every push-to-talk ends in STT FAILED, from a tarball that looks fine.
-for f in stt/bin/schwung-stt stt/stt-run.sh stt/lib/libsherpa-onnx-c-api.so stt/lib/libonnxruntime.so \
-         stt/model/encoder_model.ort stt/model/decoder_model_merged.ort stt/model/tokens.txt \
-         stt/model/silero_vad.onnx licenses/MOONSHINE_LICENSE.txt licenses/SILERO_VAD_LICENSE.txt; do
-    [ -s "$BUILD_DIR/$f" ] || { echo "ERROR: missing $BUILD_DIR/$f -- the speech-to-text runtime (scripts/fetch-stt.sh, then rebuild the host)" >&2; exit 1; }
+# Dictation on the keyboard: the helper, its launcher, the add-on installer and
+# its pin. The runtime and model are the ADD-ON (scripts/build-stt-addon.sh),
+# installed from the menu — never in the tarball. A pin without a hash would
+# refuse every download, so it is required too.
+for f in stt/bin/schwung-stt stt/stt-run.sh stt/addon.sh stt/addon.json; do
+    [ -s "$BUILD_DIR/$f" ] || { echo "ERROR: missing $BUILD_DIR/$f -- the dictation helper (rebuild the host)" >&2; exit 1; }
+done
+grep -q '"sha256": *"[0-9a-f]\{64\}"' "$BUILD_DIR/stt/addon.json" \
+    || { echo "ERROR: stt/addon.json pins no add-on (scripts/build-stt-addon.sh --pin)" >&2; exit 1; }
+for f in stt/lib stt/model; do
+    [ ! -e "$BUILD_DIR/$f" ] || { echo "ERROR: $BUILD_DIR/$f is a stale build output -- the runtime is the add-on now" >&2; exit 1; }
 done
 [ -d "$BUILD_DIR/modules/chain" ] || { echo "ERROR: $BUILD_DIR/modules/chain missing (the owned chain host)" >&2; exit 1; }
 

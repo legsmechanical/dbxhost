@@ -17,7 +17,9 @@ the section into a versioned heading at release time.
   runs with the music stopped (not counting in); input monitoring is switched off while
   you talk and comes back afterwards. Silence and background noise are ignored rather
   than turned into words. It runs entirely on the Move and works in English. Rec lights
-  red while it listens and pulses white while it works it out.
+  red while it listens and pulses white while it works it out. Dictation is an optional
+  download (about 113 MB) so the update stays small: install it from **Project Settings →
+  Dictation**, which shows the download's progress and can remove it again.
 - **A comma on the on-screen keyboard** (on the symbols page).
 
 ### Fixed

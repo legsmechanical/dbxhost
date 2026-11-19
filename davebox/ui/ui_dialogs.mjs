@@ -304,6 +304,7 @@ export function drawGlobalMenu() {
     if (S.tapTempoOpen)        { drawTapTempoScreen();       return; }
     if (S.exportDoneDialog)    { drawExportDoneDialog();     return; }
     if (S.confirmClearSession) { drawClearSessionConfirm();  return; }
+    if (S.menuAsk)             { drawAudioAsk(S.menuAsk.title, S.menuAsk.lines, S.menuAskSel); return; }
     if (S.confirmPurge)        { drawPurgeConfirm();         return; }
     if (S.confirmSaveState)    { drawSaveStateConfirm();     return; }
     if (S.confirmConvertToDrum){ drawConvertToDrumConfirm(); return; }
@@ -346,8 +347,10 @@ function drawGlobalMenuList() {
         /* formatItemValue returns '>' for a SUBMENU, which is the same glyph
          * drawKitList's own `chevron` draws in the same place — so the doors
          * need no special case here. */
+        /* an action row may carry a live `status` (the Dictation add-on) */
         return { label: item ? (item.label || '') : '', hdr: true,
-                 value: formatItemValue(item, isEditing, S.globalMenuState.editValue) };
+                 value: (item && typeof item.status === 'function') ? item.status()
+                     : formatItemValue(item, isEditing, S.globalMenuState.editValue) };
     }), S.globalMenuState.selectedIndex, {});
 }
 

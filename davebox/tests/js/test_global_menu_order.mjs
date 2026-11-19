@@ -50,7 +50,7 @@ const want = ['BPM', '---', 'Metro', 'Metro Vol', '---',
     'Clock Follow', 'Clock Out', '---', 'Groove', 'Groove Amt', '---', 'Key', 'Scale', 'Scale Aware', '---',
     'Launch', 'Beat Marks', 'Card Hold', '---', 'MIDI In', '---', 'Monitor', 'Input', 'Input Gain', '---', 'Projects...', 'Save as Template...', '---',
     'Save state', 'Load state', 'Clear Sess', '---', 'Export to Ableton', 'Purge samples', '---',
-    'Suspend session', 'Quit', '---', 'Host Settings...', 'Move Settings...', '---', 'Daves', 'Open Your Dave Box'];
+    'Suspend session', 'Quit', '---', 'Host Settings...', 'Move Settings...', 'Dictation', '---', 'Daves', 'Open Your Dave Box'];
 if (JSON.stringify(got) !== JSON.stringify(want)) {
     console.error('  FAIL — the global menu order:\n    got  ' + got.join(' | ') + '\n    want ' + want.join(' | '));
     failed = 1;

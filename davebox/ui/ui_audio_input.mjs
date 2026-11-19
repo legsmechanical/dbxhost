@@ -171,6 +171,14 @@ export const dictationHooks = {
         S.dictationMonMuted = false;
         host_module_set_param('ain_mon', String(inputPrefs().mon));
     },
+    /* The dictation add-on is not ready: where to get it (the Dictation row
+     * in Project Settings, ui_menu). */
+    missing(state) {
+        const what = state === 'outdated' ? 'UPDATE NEEDED'
+            : (state === 'downloading' || state === 'verifying' || state === 'installing') ? 'STILL INSTALLING'
+            : 'NOT INSTALLED';
+        return what + '\nPROJECT SETTINGS';
+    },
 };
 
 /* THE METER: the input's peaks since the last read, held for the bars' fall,

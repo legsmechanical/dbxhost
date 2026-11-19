@@ -51,6 +51,12 @@ globalThis.host_read_file = (p) => {
 };
 globalThis.host_write_file = (p, body) => { FILES[String(p)] = String(body); LOG.push('write ' + p); return true; };
 globalThis.host_file_exists = (p) => String(p) in FILES;
+/* The dictation add-on (stt/addon.sh): its pin, and the add-on installed to it. */
+const PIN = '/data/UserData/daveboxSA/stt/addon.json';
+const ADDON = '/data/UserData/daveboxSA/addons/dictation/addon.json';
+const ASTATUS = '/data/UserData/daveboxSA/addons/dictation.status';
+FILES[PIN] = J({ version: 2, url: 'https://x/dictation-addon-2.tar.gz', sha256: 'f'.repeat(64), bytes: 113455569, unpacked_bytes: 158904320 });
+FILES[ADDON] = J({ name: 'dictation', version: 2 });
 globalThis.host_ensure_dir = () => true;
 globalThis.host_remove_dir = () => true;
 globalThis.host_module_set_param = (k, v) => { LOG.push('set ' + k + '=' + v); };
@@ -573,6 +579,74 @@ step('"stopped" means the sequencer is not waiting either: count-in, merge count
         assert(BTN[86].color === 0, k + ': Rec lit ' + J(BTN[86]));
         recUp(); S[k] = was;
     }
+});
+
+/* ---- the add-on ---------------------------------------------------------- */
+step('⭐ no add-on: holding Rec says where to get it, and touches nothing', () => {
+    openTemplateKeyboard('Old Name');
+    const had = FILES[ADDON]; delete FILES[ADDON];
+    try {
+        const n = SPAWNED.length;
+        recDown(); ticks(1);
+        const sc = screen();
+        assert(/NOT INSTALLED/.test(sc) && /PROJECT SETTINGS/.test(sc), 'on screen: ' + sc);
+        assert(!LOG.some(l => /^(start |silent |source )/.test(l)) && SPAWNED.length === n, 'the sampler or helper was touched: ' + J(LOG));
+        recUp(); ticks(2);
+        FILES[ADDON] = J({ name: 'dictation', version: 1 });   /* an older add-on than the pin */
+        NOW += 5000; ticks(1); LOG.length = 0;
+        recDown(); ticks(1);
+        assert(/UPDATE NEEDED/.test(screen()) && !LOG.some(l => /^start /.test(l)), 'outdated: ' + screen() + ' ' + J(LOG));
+        recUp(); ticks(2);
+    } finally { FILES[ADDON] = had; te.closeTextEntry(); ticks(5); }
+});
+
+const dictRow = () => {
+    const i = S.globalMenuItems.findIndex(it => it && it.label === 'Dictation');
+    return i < 0 ? null : { i, value: S.globalMenuItems[i].status() };
+};
+step('⭐ Project Settings → Dictation: Get 113 MB, a click starts the install in the background', () => {
+    ready();
+    const had = FILES[ADDON]; delete FILES[ADDON]; delete FILES[ASTATUS];
+    try {
+        menu.openGlobalMenuAt('Dictation');
+        assert(dictRow() && dictRow().value === 'Get 113 MB', 'row ' + J(dictRow()));
+        assert(/DICTATION/.test(screen()) && /GET 113 MB/.test(screen()), 'on screen: ' + screen());
+        LOG.length = 0;
+        click(); ticks(1);
+        assert(LOG.includes("cmd sh '/data/UserData/daveboxSA/stt/addon.sh' install '/data/UserData/daveboxSA' >/dev/null 2>&1 &"),
+               'install not started: ' + J(LOG));
+        assert(dictRow().value === '0%', 'the row does not show the download at once: ' + J(dictRow()));
+        FILES[ASTATUS] = J({ state: 'downloading', pct: 40, err: '', t: Math.floor(NOW / 1000) });
+        later(600);
+        assert(dictRow().value === '40%' && /40%/.test(screen()), 'progress: ' + J(dictRow()) + ' ' + screen());
+        LOG.length = 0; click(); ticks(1);
+        assert(!LOG.some(l => /addon\.sh/.test(l)) && S.menuInfoLines.length, 'a click mid-install started another: ' + J(LOG));
+        S.menuInfoLines = [];
+        later(30000);   /* the run stopped writing: dead, not slow */
+        assert(dictRow().value === 'Retry', 'a dead run still reads as running: ' + J(dictRow()));
+        FILES[ASTATUS] = J({ state: 'failed', pct: 3, err: 'no_space', t: Math.floor(NOW / 1000) });
+        later(600);
+        assert(dictRow().value === 'No space', J(dictRow()));
+        FILES[ADDON] = had; later(600);
+        assert(dictRow().value === 'Installed', 'installed: ' + J(dictRow()));
+    } finally { FILES[ADDON] = had; delete FILES[ASTATUS]; S.globalMenuOpen = false; }
+});
+
+step('⭐ an installed add-on: click asks before removing; No keeps it, Back keeps it, Yes removes it', () => {
+    ready();
+    menu.openGlobalMenuAt('Dictation');
+    LOG.length = 0;
+    click(); ticks(1);
+    assert(S.menuAsk && /REMOVE DICTATION/.test(screen()), 'no confirm: ' + screen());
+    click(); ticks(1);                                   /* opens on No */
+    assert(!S.menuAsk && !LOG.some(l => /addon\.sh/.test(l)), 'No removed it: ' + J(LOG));
+    click(); ticks(1);
+    cc(51, 127); cc(51, 0); ticks(1);                    /* Back */
+    assert(!S.menuAsk && S.globalMenuOpen && !LOG.some(l => /addon\.sh/.test(l)), 'Back: ' + J(LOG) + ' open=' + S.globalMenuOpen);
+    click(); ticks(1); jog(-1); click(); ticks(1);       /* Yes */
+    assert(LOG.includes("cmd sh '/data/UserData/daveboxSA/stt/addon.sh' remove '/data/UserData/daveboxSA' >/dev/null 2>&1 &"),
+           'Yes did not remove: ' + J(LOG));
+    S.globalMenuOpen = false;
 });
 
 step('sanitizeTranscript: trimmed, single-spaced, no end punctuation, keyboard characters only', () => {

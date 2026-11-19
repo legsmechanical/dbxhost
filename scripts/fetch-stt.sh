@@ -5,8 +5,8 @@
 #
 #   .cache/stt/stage/include/c-api.h
 #   .cache/stt/stage/lib/{libsherpa-onnx-c-api.so,libonnxruntime.so}
-#   .cache/stt/stage/model/{encoder_model.ort,decoder_model_merged.ort,tokens.txt,LICENSE,
-#                           silero_vad.onnx,SILERO_VAD_LICENSE}
+#   .cache/stt/stage/model/{encoder.int8.onnx,decoder.int8.onnx,joiner.int8.onnx,tokens.txt,
+#                           PARAKEET_LICENSE,silero_vad.onnx,SILERO_VAD_LICENSE}
 #
 # Runs on the HOST before Docker (the container has no network), like the
 # Move-manual fetch — but unlike that one this FAILS CLOSED: a build without the
@@ -55,9 +55,9 @@ path_of() {   # basenames in the record: the repo path may contain spaces
     local b; b="$(awk -v n="$1" '$1 == n {print $2}' "$CACHE/verified.txt")"
     [ -n "$b" ] && printf '%s' "$CACHE/dl/$b"
 }
-LIB_TAR="$(path_of sherpa-onnx-lib)"; HDR="$(path_of sherpa-onnx-header)"; MODEL_TAR="$(path_of moonshine-tiny-en)"
+LIB_TAR="$(path_of sherpa-onnx-lib)"; HDR="$(path_of sherpa-onnx-header)"; MODEL_TAR="$(path_of parakeet-tdt-110m-en)"; MODEL_LIC="$(path_of parakeet-license)"
 VAD="$(path_of silero-vad)"; VAD_LIC="$(path_of silero-vad-license)"
-for v in LIB_TAR HDR MODEL_TAR VAD VAD_LIC; do
+for v in LIB_TAR HDR MODEL_TAR MODEL_LIC VAD VAD_LIC; do
     [ -n "${!v}" ] || { echo "fetch-stt: FAIL - lock file has no entry for $v" >&2; exit 1; }
 done
 
@@ -74,11 +74,12 @@ if [ "$(cat "$STAGE/.stamp" 2>/dev/null || true)" != "$STAMP" ]; then
         [ -n "$f" ] || { echo "fetch-stt: FAIL - $so not in the runtime archive" >&2; exit 1; }
         cp "$f" "$STAGE/lib/"
     done
-    for m in encoder_model.ort decoder_model_merged.ort tokens.txt LICENSE; do
-        f="$(find "$CACHE/x" -path '*moonshine*' -name "$m" -type f | head -1)"
+    for m in encoder.int8.onnx decoder.int8.onnx joiner.int8.onnx tokens.txt; do
+        f="$(find "$CACHE/x" -path '*parakeet*' -name "$m" -type f | head -1)"
         [ -n "$f" ] || { echo "fetch-stt: FAIL - $m not in the model archive" >&2; exit 1; }
         cp "$f" "$STAGE/model/"
     done
+    cp "$MODEL_LIC" "$STAGE/model/PARAKEET_LICENSE"
     cp "$VAD" "$STAGE/model/silero_vad.onnx"
     cp "$VAD_LIC" "$STAGE/model/SILERO_VAD_LICENSE"
     rm -rf "$CACHE/x"

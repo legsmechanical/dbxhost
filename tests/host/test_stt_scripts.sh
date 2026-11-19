@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The speech-to-text launcher (src/stt/stt-run.sh) and the pinned fetch
 # (scripts/fetch-stt.sh).
-#   stt-run: runs the helper with the bundled libs on its path and THIS take's
+#   stt-run: runs the helper with the ADD-ON's libs on its path (<install>/addons/
+#     dictation, beside stt/), its model dir, and THIS take's
 #     files, removes other takes' leftovers but keeps its own answer, removes
 #     its own audio when done, refuses /tmp and an id that is not a plain word.
 #   fetch-stt: a hash mismatch, a malformed or empty lock FAIL — each asserted
@@ -14,7 +15,8 @@ mkdir -p build/tests; T="$(mktemp -d "$PWD/build/tests/stt_scripts.XXXXXX")"; tr
 
 # ---- stt-run.sh against a stand-in helper ----------------------------------
 S="$T/stt"; W="$T/work"
-mkdir -p "$S/bin" "$S/lib" "$S/model" "$W"
+AD="$T/addons/dictation"
+mkdir -p "$S/bin" "$AD/lib" "$AD/model" "$W"
 cp src/stt/stt-run.sh "$S/stt-run.sh"
 cat > "$S/bin/schwung-stt" <<'EOF'
 #!/bin/sh
@@ -32,15 +34,15 @@ for f in old1.wav old1.go old1.json old2.cancel old2.json.tmp; do : > "$W/$f"; d
 : > "$W/dabc.wav"; : > "$W/dabc.go"
 sh "$S/stt-run.sh" "$W" dabc
 out="$(cat "$S/args.txt" 2>/dev/null)"
-printf '%s\n' "$out" | grep -qx "LD=$S/lib" && ok "helper runs with the bundled lib dir on LD_LIBRARY_PATH" || bad "LD_LIBRARY_PATH: $out"
-want="$S/model
+printf '%s\n' "$out" | grep -qx "LD=$AD/lib" && ok "helper runs with the add-on's lib dir on LD_LIBRARY_PATH" || bad "LD_LIBRARY_PATH: $out"
+want="$AD/model
 $W/dabc.wav
 $W/dabc.go
 $W/dabc.cancel
 $W/dabc.json
 1
 30"
-[ "$(printf '%s\n' "$out" | sed 1d)" = "$want" ] && ok "helper args: model dir, this take's wav/go/cancel/result, 1 thread, a 30 s take by default" || bad "args: $out"
+[ "$(printf '%s\n' "$out" | sed 1d)" = "$want" ] && ok "helper args: the add-on's model dir, this take's wav/go/cancel/result, 1 thread, a 30 s take by default" || bad "args: $out"
 left="$(cd "$W" && ls | sort | tr '\n' ' ')"
 [ "$left" = "dabc.json helper.log " ] && ok "other takes' leftovers and this take's audio removed; its answer kept" || bad "left behind: $left"
 STT_THREADS=3 sh "$S/stt-run.sh" "$W" dxyz 12
@@ -110,7 +112,7 @@ printf '# nothing\n' > "$L"
 msg="$(STT_LOCK="$L" STT_CACHE="$T/cache" bash scripts/fetch-stt.sh 2>&1)"; rc=$?
 [ $rc -ne 0 ] && printf '%s' "$msg" | grep -q "lists nothing" && ok "an empty lock fails (zero entries is not green)" || bad "empty: rc=$rc $msg"
 # The real lock pins every entry the build needs, each with a 64-hex hash.
-for n in sherpa-onnx-lib sherpa-onnx-header moonshine-tiny-en silero-vad silero-vad-license; do
+for n in sherpa-onnx-lib sherpa-onnx-header parakeet-tdt-110m-en parakeet-license silero-vad silero-vad-license; do
     grep -Eq "^$n [0-9a-f]{64} https://" scripts/stt-deps.lock && ok "lock pins $n" || bad "lock has no pinned $n"
 done
 

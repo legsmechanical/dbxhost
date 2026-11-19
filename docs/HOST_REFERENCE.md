@@ -455,8 +455,9 @@ spawned at Rec-down through `stt-run.sh <work> <id> <take-seconds>` (`host_syste
 backgrounded) so the model
 loads while the user speaks: started under `taskset 0x7 nice -n 19` (so even its libraries
 load off core 3), SCHED_OTHER asserted again inside, ONE recognizer thread (on the CM5, 1/2/3
-threads timed the same: a name decodes in ~55 ms, 10 s of speech in ~0.7 s, after a ~0.9 s load
-that overlaps the talking), a hard limit of the take + 60 s. **One at a time:**
+threads timed the same), a hard limit of the take + 60 s. With Parakeet on the CM5: a ~2 s load
+that overlaps the talking, then decoding at ~0.07x the voiced length (the slowest of 22 real
+takes, 0.5 s). **One at a time:**
 the launcher ends any earlier helper first (`<id>.pid`, checked against the process name
 before the kill). It waits for `<id>.go` (written once `host_sampler_is_recording()` goes
 false, i.e. the WAV is closed), refuses the cheap cases first (`stt_gate`, on the level BEFORE
@@ -465,9 +466,24 @@ Silero voice detector over the take at 16 kHz: no voice → `no_speech`, otherwi
 voiced stretch plus 0.3 s each side is decoded (`stt_span`). A recognizer fed a room invents
 words, and an ordinary room hums at about -50 dBFS with peaks above any level gate that
 still passes quiet speech — measured on a Move, it turned hum into "I've got a few". It decodes, and renames `<id>.json` into place (`ok`, `text`,
-`err`, `load_ms`, `decode_ms`, `audio_ms`); `<id>.cancel` makes it exit silently. Runtime: sherpa-onnx C API
-+ ONNX Runtime + Moonshine Tiny (en) + Silero VAD, pinned in `scripts/stt-deps.lock`, fetched by
-`scripts/fetch-stt.sh`, laid out by `scripts/build.sh` as `build/stt/{bin,lib,model}`.
+`err`, `load_ms`, `decode_ms`, `audio_ms`); `<id>.cancel` makes it exit silently. Recognizer:
+NVIDIA Parakeet TDT 110M (int8, a NeMo transducer), picked over Moonshine Tiny on real takes with
+`tools/stt-ab/`.
+
+**The runtime and model are an ADD-ON, not in the release** (~113 MB download, ~160 MB
+installed): sherpa-onnx C API + ONNX Runtime + Parakeet + Silero VAD, from the inputs pinned in
+`scripts/stt-deps.lock`, packed reproducibly by `scripts/build-stt-addon.sh` and pinned by hash
+in `src/stt/addon.json` (version, url, sha256, sizes). The release carries `build/stt/` = the
+helper, `stt-run.sh`, `addon.sh` and that pin. `stt/addon.sh install <install-dir>` (run in the
+background from dAVEBOx's Project Settings → Dictation row, via `dictationAddonInstall()` in
+`src/shared/dictation.mjs`) checks the room, downloads with resume, refuses a hash mismatch,
+unpacks beside and renames into `<install>/addons/dictation/`; it reports through
+`addons/dictation.status` (`state`, `pct`, `err`, and `t`, rewritten every second so a dead run
+reads as stopped). `remove` stops a run and deletes it. Layout-install merges, so the add-on
+outlives updates; a release whose pin names a newer version shows **Update**. A press with no
+ready add-on shows the owner's `missing(state)` notice instead of starting the sampler. Bump
+`version` in `addon.json` whenever the add-on's inputs change — the helper and the add-on are
+matched by it — then `build-stt-addon.sh --pin` and publish the file at the pinned url.
 A folder named `<work>/keep/` makes the launcher copy each take and its answer there before
 the take is removed — a test set for comparing recognizers (`tools/stt-ab/`); nothing is kept
 unless that folder exists.

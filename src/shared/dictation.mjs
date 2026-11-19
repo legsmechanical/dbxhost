@@ -47,6 +47,9 @@
  *             mic out loud (monitoring)
  *   end()     the take has stopped: put that back. Paired with begin()
  *             exactly once, on every exit.
+ *   missing(state)  the notice when the add-on is not ready (state as in
+ *             dictationAddon()): where the user installs it. Default
+ *             'NOT INSTALLED'.
  *
  * Idle costs nothing: tick() makes no host call unless a dictation is live.
  */
@@ -55,6 +58,12 @@ const INSTALL_DIR = (typeof HOST_INSTALL_DIR === 'string' && HOST_INSTALL_DIR)
     ? HOST_INSTALL_DIR : '/data/UserData/schwung';
 export const STT_DIR = INSTALL_DIR + '/stt';
 export const WORK_DIR = INSTALL_DIR + '/dictation';
+/* The runtime and model are an ADD-ON the release does not carry (~110 MB):
+ * installed on request by stt/addon.sh into addons/dictation/, pinned by
+ * stt/addon.json (version + sha256). A press without it shows a notice. */
+export const ADDON_DIR = INSTALL_DIR + '/addons/dictation';
+const ADDON_STATUS = INSTALL_DIR + '/addons/dictation.status';
+const ADDON_STALE_S = 20;              /* a running step rewrites its status every second */
 
 export const MAX_TALK_MS = 30000;      /* every take, any keyboard: a name or a sung line (stt_core.h STT_MAX_TAKE_S) */
 export const MIN_HOLD_MS = 300;        /* a shorter press is a tap: show the hint */
@@ -69,10 +78,55 @@ const SOURCE_MOVE_INPUT = 1;
 let hooks = null;
 /* Register the keyboard owner's hooks (see the header); null clears them. */
 export function setDictationHooks(h) { hooks = h || null; }
-function hook(name) {
+function hook(name, arg) {
     if (!hooks || typeof hooks[name] !== 'function') return undefined;
-    try { return hooks[name](); } catch (e) { return undefined; }
+    try { return hooks[name](arg); } catch (e) { return undefined; }
 }
+
+/* ---- the add-on ------------------------------------------------------------ */
+function readJson(path) {
+    try {
+        if (!host_file_exists(path)) return null;
+        const t = host_read_file(path);
+        return t ? JSON.parse(t) : null;
+    } catch (e) { return null; }
+}
+
+/* Where the add-on stands, for the menu row and the press:
+ *   state  'absent' | 'installed' | 'outdated' (an older version: Update)
+ *          | 'downloading' | 'verifying' | 'installing' | 'failed'
+ *   pct    download progress, 0-100       err   why it failed (addon.sh)
+ *   bytes  the download's size            ready the helper can run now */
+export function dictationAddon() {
+    const pin = readJson(STT_DIR + '/addon.json') || {};
+    const want = pin.version | 0;
+    const have = readJson(ADDON_DIR + '/addon.json');
+    const got = have ? (have.version | 0) : 0;
+    const ready = want > 0 && got === want;
+    const out = { state: ready ? 'installed' : (got ? 'outdated' : 'absent'), pct: 0, err: '',
+                  bytes: pin.bytes | 0, ready };
+    const s = readJson(ADDON_STATUS);
+    if (s && !ready) {
+        const age = Date.now() / 1000 - (+s.t || 0);
+        if (s.state === 'downloading' || s.state === 'verifying' || s.state === 'installing') {
+            if (age <= ADDON_STALE_S) { out.state = s.state; out.pct = s.pct | 0; }
+            else { out.state = 'failed'; out.err = 'stopped'; }
+        } else if (s.state === 'failed') { out.state = 'failed'; out.err = String(s.err || ''); }
+    }
+    return out;
+}
+
+function addonCmd(verb) {
+    host_system_cmd("sh '" + STT_DIR + "/addon.sh' " + verb + " '" + INSTALL_DIR + "' >/dev/null 2>&1 &");
+}
+/* Start (or resume) the download + install, in the background. The status is
+ * written at once so the menu shows it before the script's first word. */
+export function dictationAddonInstall() {
+    host_write_file(ADDON_STATUS, JSON.stringify({ state: 'downloading', pct: 0, err: '', t: Math.floor(Date.now() / 1000) }) + '\n');
+    addonCmd('install');
+}
+/* Remove it (and stop an install in progress). */
+export function dictationAddonRemove() { addonCmd('remove'); }
 let st = null;          /* the live dictation, or null */
 let notice = null;      /* { text, until } */
 let seq = 0;
@@ -195,6 +249,11 @@ export function dictationPress() {
 function startTake(pressAt) {
     const no = hook('refuse');
     if (no) { showNotice(String(no)); return; }
+    /* Without the add-on there is nothing to transcribe with: say so before
+     * the sampler is touched. The owner says where to get it (`missing`,
+     * given the add-on's state); two lines at most, split by \n. */
+    const add = dictationAddon();
+    if (!add.ready) { showNotice(String(hook('missing', add.state) || 'NOT INSTALLED')); return; }
     const ov = samplerOverlay();
     if ((ov.samplerState | 0) !== 0 || recording()) { showNotice('MIC BUSY'); return; }
     const id = 'd' + now().toString(36) + (seq++).toString(36);

@@ -12,9 +12,15 @@
  * worker threads (which inherit all of this) it drops to SCHED_OTHER, nice 19,
  * and pins itself to cores 0-2 — core 3 runs the SPI/audio callback.
  *
- * Model: Moonshine v2 (encoder + merged decoder + tokens) through the
- * sherpa-onnx C API. Output is plain text; the UI sanitises it for the
+ * Model: NVIDIA Parakeet TDT 110M (int8 encoder + decoder + joiner + tokens),
+ * a NeMo transducer, through the sherpa-onnx C API. Chosen over Moonshine Tiny
+ * on 22 real takes on the Move's own input (2026-11-19, tools/stt-ab): 12% vs
+ * 19% word errors, 15 vs 12 takes exact, and the gap is in names and music
+ * words; the same speed. Output is plain text; the UI sanitises it for the
  * keyboard.
+ *
+ * <model-dir> is the dictation add-on's model folder (installed from the
+ * menu, not shipped in the release: see stt-run.sh).
  *
  * Only the VOICED part of a take is decoded. A Silero voice detector
  * (<model-dir>/silero_vad.onnx) finds it; a take where it finds none is
@@ -120,9 +126,10 @@ int main(int argc, char **argv) {
     make_polite();
     alarm((unsigned)hard_s);     /* whatever happens, this process is gone by then */
 
-    char enc[1024], dec[1024], tok[1024];
-    snprintf(enc, sizeof(enc), "%s/encoder_model.ort", dir);
-    snprintf(dec, sizeof(dec), "%s/decoder_model_merged.ort", dir);
+    char enc[1024], dec[1024], join[1024], tok[1024];
+    snprintf(enc, sizeof(enc), "%s/encoder.int8.onnx", dir);
+    snprintf(dec, sizeof(dec), "%s/decoder.int8.onnx", dir);
+    snprintf(join, sizeof(join), "%s/joiner.int8.onnx", dir);
     snprintf(tok, sizeof(tok), "%s/tokens.txt", dir);
 
     long t0 = stt_now_ms();
@@ -130,8 +137,10 @@ int main(int argc, char **argv) {
     memset(&cfg, 0, sizeof(cfg));
     cfg.feat_config.sample_rate = 16000;
     cfg.feat_config.feature_dim = 80;
-    cfg.model_config.moonshine.encoder = enc;
-    cfg.model_config.moonshine.merged_decoder = dec;
+    cfg.model_config.transducer.encoder = enc;
+    cfg.model_config.transducer.decoder = dec;
+    cfg.model_config.transducer.joiner = join;
+    cfg.model_config.model_type = "nemo_transducer";
     cfg.model_config.tokens = tok;
     cfg.model_config.num_threads = threads;
     cfg.model_config.provider = "cpu";

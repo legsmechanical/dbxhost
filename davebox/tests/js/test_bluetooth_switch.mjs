@@ -63,12 +63,12 @@ step('a unit with no Bluetooth controller has no Bluetooth row', () => {
     if (cmds.some((c) => c.indexOf('bluetooth') >= 0)) throw new Error('the radio script ran: ' + cmds.join(' ; '));
 });
 
-step('with the marker the row sits with the device settings, after Move Settings', () => {
+step('with the marker the row sits with the device settings, after Move Settings (then Dictation)', () => {
     files[DIR + '/bluetooth-present'] = '';
     S.globalMenuOpen = false; menu.openGlobalMenu();
     const l = labels(); const i = l.indexOf('Bluetooth');
     if (i < 0) throw new Error('no Bluetooth row: ' + l.join(' | '));
-    if (l[i - 1] !== 'Move Settings...' || l[i + 1] !== '---')
+    if (l[i - 1] !== 'Move Settings...' || l[i + 1] !== 'Dictation')
         throw new Error('wrong place: ' + l.slice(i - 2, i + 2).join(' | '));
 });
 

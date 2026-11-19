@@ -87,7 +87,7 @@ import { soundHasPendingAction, soundActive, soundOpen, soundResting, soundEnter
     soundEnteredInSession, soundConsumeLedDirty,
     soundConsumeCoRunRequest, soundShowMenu, soundSetBank, midiVal, midiSendValue, soundShiftHeld } from './ui_sound.mjs';
 import { enterMoveNativeCoRun, moveSettingsTick } from './ui_corun.mjs';
-import { openGlobalMenuAt } from './ui_menu.mjs';
+import { openGlobalMenuAt, menuAddonPoll } from './ui_menu.mjs';
 import { cardHoldExpired } from './ui_prefs.mjs';
 import { heldIndicatorChanged } from './ui_chord.mjs';
 import { printTick } from './ui_print.mjs';
@@ -486,6 +486,7 @@ export function _tickImpl() {
      * keyboard closing still has a sampler to put back once it stops, a jack
      * message to deliver, and a cap. No host call when nothing is owed. */
     try { dictationService(); } catch (e) { console.log('[dictation] service: ' + e); }
+    menuAddonPoll(Date.now());
     /* ⭑⭑ STUCK-MODIFIER RECONCILE — heal a Shift release that never arrived.
      *
      * ⚠ FIRST, and UNCONDITIONAL. The first cut sat beside updateTrackLEDs(),

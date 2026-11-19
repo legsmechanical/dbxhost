@@ -305,6 +305,7 @@ step('ctx.close() from the module leaves the door', () => {
  * used to THROW here (no such method), which retires the page's hooks for the
  * visit. The keyboard is dAVEBOx's shared one — the Save As keyboard. */
 const TE = await import('/data/UserData/schwung/shared/text_entry.mjs');
+const D = await import('/data/UserData/schwung/shared/dictation.mjs');
 const textHooks = () => globalThis.__hooks.filter(h => h[0] === 'onTextEntry').map(h => h.slice(1));
 
 step('⭐⭐ a page asks for text: the shared keyboard opens AFTER the hook returns, titled and seeded', () => {
@@ -378,6 +379,9 @@ step('⭐ a page asking for lyrics: the same 30 s take, nothing to ask for; the 
     globalThis.host_write_file = (p, b) => { files[String(p)] = String(b); return saved.w(p, b); };
     globalThis.host_file_exists = (p) => (String(p) in files) || saved.e(p);
     globalThis.host_read_file = (p) => (String(p) in files) ? files[String(p)] : saved.r(p);
+    /* the dictation add-on, installed and matching its pin */
+    files[D.STT_DIR + '/addon.json'] = '{"version": 1, "sha256": "x", "bytes": 1}';
+    files[D.ADDON_DIR + '/addon.json'] = '{"name":"dictation","version":1}';
     try {
         globalThis.__askLyrics = true; globalThis.__hooks.length = 0;
         cc(3, 127); cc(3, 0);
@@ -468,6 +472,8 @@ step('⭐ Save As keyboard: hold Rec, release, the words land — and sound mode
     globalThis.host_write_file = (p, b) => { files[String(p)] = String(b); return saved.w(p, b); };
     globalThis.host_file_exists = (p) => (String(p) in files) || saved.e(p);
     globalThis.host_read_file = (p) => (String(p) in files) ? files[String(p)] : saved.r(p);
+    files[D.STT_DIR + '/addon.json'] = '{"version": 1, "sha256": "x", "bytes": 1}';
+    files[D.ADDON_DIR + '/addon.json'] = '{"name":"dictation","version":1}';
     try {
         snd.soundQueueActionForTest({ t: 'usrsave' }); ticks(2);
         if (!TE.isTextEntryActive()) throw new Error('rig: Save As did not open the keyboard');
