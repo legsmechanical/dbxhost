@@ -24,8 +24,12 @@ export function stubParamPagesDevice() {
     /* Knob-ring LEDs. The editor's EXIT hands these back — which is exactly the
      * teardown a missed call would strand lit, so it is not optional on device. */
     def('shadow_restore_knob_leds', () => {});
-    /* Precision mode: the binding asks the host whether Shift is held. */
-    def('shadow_get_shift_held', () => false);
+    /* Precision mode: the binding asks the host whether Shift is held.
+     * ⚠ 0, NOT false: the binding reads it as `shadow_get_shift_held() !== 0`
+     * (the device answers a number), so `false` read as HELD and every jog in
+     * a rig that took this default paged by LEVEL — skipping pages, which once
+     * read as "a drawn page after the grid is missing from the rotation". */
+    def('shadow_get_shift_held', () => 0);
     /* Param View (grid vs list). 1 = knobs, matching PARAM_VIEW_KNOBS. */
     def('param_view_get_mode', () => 1);
     /* Screen reader. Off, so announce() stays silent in a rig. */
