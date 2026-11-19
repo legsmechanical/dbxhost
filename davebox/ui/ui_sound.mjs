@@ -8428,7 +8428,31 @@ function runActionBody(a) {
         }
     }
     else if (a.t === 'textedit') startTextEdit(a.idx);
+    else if (a.t === 'pptext') startPpTextEdit(a);
     S.dirty = true;
+}
+
+/* The grid dived here for a STRING param (openParamEditor): the shared
+ * keyboard on its current value. Confirm writes it; either way out goes back
+ * to the grid page the click came from (ppRestorePage, recorded by the dive). */
+function startPpTextEdit(a) {
+    /* A tick later the editor may be on another component: open nothing. */
+    if (a.slot !== S.slot || a.comp !== S.comp || S.view !== VIEW_EDIT) return;
+    const backToGrid = () => {
+        ppSuppressOnce = false; ppDivedOut = false;
+        if (S.slot === a.slot && S.comp === a.comp) S.view = VIEW_EDIT;
+        S.dirty = true; S.ledDirty = true;
+    };
+    openTextEntry({
+        title: a.title.toUpperCase(),
+        initialText: String(engineGetChainParam(S.slot, a.fullKey) || ''),
+        onConfirm: (txt) => {
+            if (S.slot === a.slot && S.comp === a.comp) queueWrite(a.bare, String(txt));
+            backToGrid();
+        },
+        onCancel: backToGrid,
+    });
+    S.dirty = true; S.ledDirty = true;
 }
 
 function runDiscovery() {
@@ -13757,6 +13781,17 @@ installPpCtx({
         const fpCell = fpDecl ? makeCell(fpBare, fpDecl) : null;
         if (fpCell && fpCell.kind === 'file') {
             S.pendingAction = { t: 'ppfile', bare: fpBare, cell: fpCell, fileKey: fullKey };
+            S.dirty = true;
+            return;
+        }
+        /* ⭐ A STRING PARAM OPENS THE KEYBOARD on that param, as stock does —
+         * the fall-through below landed on the bank editor's front page, which
+         * for a module whose editor is all pages discovers nothing: touch +
+         * click on a text knob showed an empty screen. Deferred to the tick
+         * for the same reason as the browser above (it reads the param). */
+        if (fpCell && fpCell.kind === 'text') {
+            S.pendingAction = { t: 'pptext', bare: fpBare, fullKey, slot: S.slot, comp: S.comp,
+                                title: String((fpDecl && (fpDecl.name || fpDecl.label)) || fpBare) };
             S.dirty = true;
             return;
         }
