@@ -53,6 +53,7 @@ int main(void) {
 
     hx_set_param(h, "t0_route", "schwung");
     hx_set_param(h, "t1_route", "schwung");
+    hx_set_param(h, "t1_pfx_gate", "400");          /* each note outlasts its step */
     for (int s = 0; s < 16; s += 4) {
         char k[48];
         snprintf(k, sizeof k, "t1_c0_step_%d_toggle", s);
@@ -152,6 +153,13 @@ int main(void) {
             fbuf[got] = '\0';
             HX_ASSERT(strstr(fbuf, "\"t1_ma\":1") && !strstr(fbuf, "\"t0_ma\""), "t1_ma:1 saved, t0 (MIDI) absent");
         }
+        /* a load into the SAME instance re-asserts too: another project's
+         * buses are its own, whatever this instance last wrote */
+        hx_render(h, 2);
+        hx_clear_capture(h);
+        seq8_load_state(in);
+        hx_render(h, 2);
+        EXPECT_WRITES("1|slot:muted=1", "a load into a running instance re-asserts the Audio-mode mute");
         hx_destroy(h);
         h = NULL;
         hx_t *h2 = hx_create(NULL);
