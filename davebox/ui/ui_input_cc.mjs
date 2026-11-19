@@ -82,7 +82,7 @@ import { isSampledTrack, isAudioTrack, isSlicerTrack, audioSliceMode, auClipOf, 
  * bank's own same knob. */
 const AUDIO_SEQ_KNOB = 7;                  /* a Slicer's CLIP bank: >Seq where Import is */
 import { openWave, closeAudioPanel, slicesToSequence, slcPageForLane } from './ui_audio_editor.mjs';
-import { soundActive, soundPageBarShown, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVolGestureEnd, soundShiftEdge, soundOpenGenerator,
+import { soundActive, soundPageBarShown, soundOpen, soundExit, soundEnteredInSession, soundSetBank, soundIsGlobal, soundVolGestureEnd, soundShiftEdge, soundOpenGenerator,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, macroClearConfirmAnswer,
     macroClearConfirmReset, macroClearConfirmOpen, soundKnobCardClick, soundEnterSendFromSessionMixer, soundMixJog,
@@ -1632,7 +1632,15 @@ export function bankMapBegin() {
  * the new view cannot take a map (a chord, the Session FX editor, a locked
  * Performance view) it stays away, and the jog's release is inert. */
 export function bankMapFollowView(pressMs) {
-    if (S.bankMapUp || !bankMapArmable()) return;
+    if (S.bankMapUp) return;
+    /* A sound bank (MIX / SOUND / CONFIG card) keeps the sound menu open under
+     * Track View, and the tick closes it a frame AFTER a view switch (the
+     * "sound mode follows the view" check in ui_tick). Until then Session
+     * reads it as its FX editor owning the jog and refuses the map — seen on
+     * the device. Close it now, the same call the tick makes, which keeps the
+     * track's bank. */
+    if (soundOpen() && soundEnteredInSession() !== S.sessionView) { soundExit(); invalidateLEDCache(); }
+    if (!bankMapArmable()) return;
     S.jogPressMs = pressMs >= 0 ? pressMs : nowMs();
     S.bankMapKind = S.sessionView ? 'session' : 'track';
     bankMapArm();

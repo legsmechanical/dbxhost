@@ -864,6 +864,24 @@ step('⭐ THE MAP FOLLOWS THE VIEW: Note/Session with the jog held switches view
     assert(!S.bankMapUp && S.jogPressMs < 0, 'the map outlived the hold');
 });
 
+step('⭐ …from Track View ON A SOUND BANK (MIX / SOUND / CONFIG card — the sound menu open underneath): the map follows to Session too (device, 2026-11-19)', () => {
+    const ns = (v) => midi(0xB0, C.MoveNoteSession, v);
+    ccm.bankMapEnd(); home(); S.sessionView = false;
+    S.activeBank = C.BANK_SOUND; S.trackActiveBank[S.activeTrack] = C.BANK_SOUND;
+    ticks(6);
+    assert(snd.soundOpen(), 'setup: the SOUND bank did not open the sound menu underneath');
+    press(); holdPast(); ticks(2);
+    assert(S.bankMapUp && S.bankMapKind === 'track', 'setup: no track map over the SOUND bank');
+    ns(127); ticks(1); ns(0); ticks(4);
+    assert(S.sessionView, 'Note/Session did not reach Session View');
+    assert(S.bankMapUp && S.bankMapKind === 'session', 'the map did not follow to Session from a sound bank: up ' + S.bankMapUp + ' ' + S.bankMapKind);
+    ns(127); ticks(1); ns(0); ticks(4);
+    assert(!S.sessionView && S.bankMapUp && S.bankMapKind === 'track', 'and back to Track: ' + S.sessionView + ' ' + S.bankMapKind);
+    release(); ticks(6);
+    assert(!S.bankMapUp, 'the map outlived the hold');
+    S.activeBank = 0; S.trackActiveBank[S.activeTrack] = 0; ticks(4);
+});
+
 step('…without the map, Note/Session is untouched (no map appears)', () => {
     ccm.bankMapEnd(); home(); S.sessionView = false;
     midi(0xB0, C.MoveNoteSession, 127); ticks(1); midi(0xB0, C.MoveNoteSession, 0); ticks(2);
