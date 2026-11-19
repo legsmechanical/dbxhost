@@ -139,18 +139,23 @@ step('⭐ SESSION: a turn walks no mixer mode (retired 2026-10-04); the jog held
     S.sessionView = false;
 });
 
-step('⭐ a VIEW SWITCH closes a map — each view opens on its overview; the remembered bank survives', () => {
+/* ⭐ A VIEW SWITCH UNDER A HELD MAP carries the map to the new view (Josh,
+ * 2026-11-19: "allow it to remain up while switching between session/track
+ * modes with the pad map following") — it used to close it. Each view still
+ * opens on its overview, and the remembered bank survives. */
+step('⭐ a VIEW SWITCH under a held map: the map follows to the new view; each view opens on its overview; the remembered bank survives', () => {
     rest(); S.activeBank = 1;
     cc(3, 127);
     if (!S.bankMapUp) throw new Error('setup: no map');
     cc(50, 127); cc(50, 0);                      /* Note/Session -> session overview */
     if (!S.sessionView) throw new Error('the escape did not go to session view');
-    if (S.bankMapUp) throw new Error('the view switch did not close the map');
+    if (!S.bankMapUp || S.bankMapKind !== 'session') throw new Error('the map did not follow to Session: ' + S.bankMapKind);
     cc(3, 0);
+    if (S.bankMapUp) throw new Error('the jog release did not put the map away');
     cc(3, 127);
     if (!S.bankMapUp) throw new Error('setup: no session map');
     cc(50, 127); cc(50, 0);
-    if (S.bankMapUp) throw new Error('the escape did not close the session map');
+    if (!S.bankMapUp || S.bankMapKind !== 'track') throw new Error('the map did not follow back to Track: ' + S.bankMapKind);
     cc(3, 0);
     if (S.sessionView) { cc(50, 127); cc(50, 0); }
     if (S.sessionView) throw new Error('setup: did not switch back');

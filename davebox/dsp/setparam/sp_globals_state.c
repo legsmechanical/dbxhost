@@ -273,6 +273,7 @@ static int sp_globals_state(sp_ctx_t *cx) {
                 tr2->channel             = (uint8_t)t2;
                 tr2->pad_octave          = 3;
                 tr2->pfx.looper_on       = 1;
+                inst->mute_audio[t2]     = 0;
                 tr2->pfx.g_amt = tr2->pfx.g_timing = tr2->pfx.g_velocity = tr2->pfx.g_random = -1;
                 tr2->pfx.route           = (t2 < 4) ? ROUTE_MOVE : ROUTE_SCHWUNG;
                 /* The track's OWN instrument, 1:1 — the same default a fresh

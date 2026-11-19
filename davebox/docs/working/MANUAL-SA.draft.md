@@ -384,6 +384,10 @@ The banks are covered where they belong: [Clip Timing & Grid](#10-clip-timing--g
   what that track plays. The map stays up, now showing the new track's banks,
   so the bank you want there is the next tap. Steps 9–16 are dark and do
   nothing. Session View's map leaves the steps alone.
+- **Note/Session switches view under the map.** Keep holding the jog and press
+  **Note/Session**: the view changes as it always does and the map stays up,
+  now the new view's. Hold Note/Session to peek and the map comes along, there
+  and back.
 - **The right-hand pads open the track's module editors** while the map is up
   (Track View): **MIDI FX** (cyan) above **INSTRUMENT** (the track's colour) in
   the third column, **FX 1–4** (orange) down the far-right column. Tap one and
@@ -2591,7 +2595,7 @@ the rows it has:
 | **Buses** | Voice groups, on instruments that can split their voices — see [Presets, LFOs and buses](#165-presets-lfos-and-buses) |
 | **Presets** | Save and load the whole chain |
 | **LFOs** | Two LFOs for the track |
-| **Mode, Transpose, VelIn, AftTch, Looper, Grv Amt, Export to MIDI, Flatten track, Parallel** — and **Grv Timing, Grv Velocity, Grv Random** when the project uses a loaded groove | The track's own settings — see [Track settings](#194-track-settings) |
+| **Mode, Transpose, VelIn, AftTch, Looper, Mute Mode, Grv Amt, Export to MIDI, Flatten track, Parallel** — and **Grv Timing, Grv Velocity, Grv Random** when the project uses a loaded groove | The track's own settings — see [Track settings](#194-track-settings) |
 
 On the Instmt/Dest and effect rows, a hint band at the foot of the menu says what
 the click and the Shift chord do.
@@ -3463,6 +3467,7 @@ are hidden, so the list is shorter on a MIDI track or a Conductor.
 | VelIn | Live, 1–127 | Fixed value overrides input velocity |
 | AftTch | Off, Poly, Chan | Pad-pressure aftertouch (melodic; a Move track offers Off and Poly) |
 | Looper | On, Off | Feeds [Performance Mode](#15-performance-mode) |
+| Mute Mode | MIDI, Audio | What muting the track does. **MIDI** stops its notes. **Audio** lets the notes play on and mutes the track's sound at its mixer channel, so held notes and tails are still there when you unmute. A solo elsewhere mutes it the same way. Not on a MIDI track or the Conductor |
 | Grv Amt | Global, 0–100 % in 5 % steps | How much of the project's [groove](#the-groove) this track takes. Global follows Project Settings; 0 % plays straight |
 | Grv Timing, Grv Velocity, Grv Random | Global, 0–100 % in 5 % steps | Shown for a loaded groove: this track's own setting for each, or Global to follow Project Settings |
 | Export to MIDI | (click) | Saves the clip you are on, as it plays, as a MIDI file — see [Export a clip as a MIDI file](#185-export-a-clip-as-a-midi-file) |

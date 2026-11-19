@@ -534,6 +534,9 @@ export const S = {
      * Held by the DSP (tN_transpose); this is the UI mirror. */
     trackTranspose: new Array(8).fill(0),
     trackLooper: new Array(8).fill(1),
+    /* MUTE MODE (TRACK CONFIG "Mute"): 0 MIDI (mute stops the notes), 1 Audio
+     * (the notes play on, the track's bus is muted). DSP tN_mute_mode. */
+    trackMuteAudio: new Array(8).fill(0),
     /* Per-track say over the global groove's amounts: [amt, timing, velocity,
      * random], each -1 = follows the global setting, 0..100 = the track's own.
      * Held by the DSP (tN_groove_ovr); this is the UI mirror. */

@@ -499,6 +499,10 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
     for (t = 0; t < NUM_TRACKS; t++)
         if (inst->tracks[t].pfx.looper_on != 1)
             fprintf(fp, ",\"t%d_lp\":%d", t, (int)inst->tracks[t].pfx.looper_on);
+    /* Audio mute mode, sparse: absent = MIDI. */
+    for (t = 0; t < NUM_TRACKS; t++)
+        if (inst->mute_audio[t])
+            fprintf(fp, ",\"t%d_ma\":1", t);
     /* A track's own groove amounts, each only when it has one. */
     for (t = 0; t < NUM_TRACKS; t++) {
         const play_fx_t *gfx = &inst->tracks[t].pfx;
@@ -1232,6 +1236,10 @@ static void seq8_load_state(seq8_instance_t *inst) {
 
         snprintf(key, sizeof(key), "t%d_lp", t);
         inst->tracks[t].pfx.looper_on = (uint8_t)(json_get_int(buf, key, 1) ? 1 : 0);
+        snprintf(key, sizeof(key), "t%d_ma", t);
+        inst->mute_audio[t] = (uint8_t)(json_get_int(buf, key, 0) ? 1 : 0);
+        /* this project's buses are its own: re-assert from what it says */
+        inst->amute_tgt[t] = -1;
 
         {
             play_fx_t *gfx = &inst->tracks[t].pfx;

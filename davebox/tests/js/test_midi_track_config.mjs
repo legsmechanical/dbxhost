@@ -127,6 +127,28 @@ step('the rows SURVIVE the tick on a MIDI track (no follow rebuilds them away)',
     if (!sound.soundCfgRowsForTest().includes('transpose')) throw new Error('rows lost under the tick');
 });
 
+step('MUTE MODE (Josh, 2026-11-19): a Mute Mode row on a Schwung track and a Move track — MIDI / Audio, writing tN_mute_mode — none on a MIDI track', () => {
+    const sent = [];
+    const was = globalThis.host_module_set_param;
+    globalThis.host_module_set_param = (k, v) => { sent.push(k + '=' + v); };
+    try {
+        S.activeTrack = 0;
+        if (!configRowsFor(0).includes('mutemode')) throw new Error('no Mute row on a Schwung track');
+        const row = sound.configRowsForTest(0).find((r) => r.key === 'mutemode');
+        if (row.label !== 'Mute Mode' || row.fmt(0) !== 'MIDI' || row.fmt(1) !== 'Audio' || row.get() !== 0)
+            throw new Error('row ' + row.label + ' ' + row.fmt(0) + '/' + row.fmt(1) + ' get ' + row.get());
+        row.set(1);
+        if (!sent.includes('t0_mute_mode=1') || row.get() !== 1) throw new Error('set Audio wrote ' + sent.join(' ') + ', reads ' + row.get());
+        row.set(0);
+        if (!sent.includes('t0_mute_mode=0') || row.get() !== 0) throw new Error('set MIDI wrote ' + sent.join(' '));
+        S.activeTrack = 1;
+        if (configRowsFor(1).includes('mutemode')) throw new Error('a MIDI track offers a bus mute it does not have');
+        const r3 = S.trackRoute[3]; S.trackRoute[3] = 1;
+        if (!sound.configRowsForTest(3).some((r) => r.key === 'mutemode')) throw new Error('no Mute row on a Move track');
+        S.trackRoute[3] = r3;
+    } finally { globalThis.host_module_set_param = was; }
+});
+
 if (failed) process.exit(1);
 }
 main().catch((e) => { bad('main', e); process.exit(1); });

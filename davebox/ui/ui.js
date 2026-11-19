@@ -87,7 +87,7 @@ import { recordNoteOn, recordNoteOff,
 import { _onPadPress, _onPadRelease, _onPadAftertouch, _onStepButtons, customChordKeyEdit } from './ui_input_pads.mjs';
 import { applyBankPick, heldStepJog, bankMapArmable, bankMapScreenNow, bankMapBegin, bankMapEnd, bankMapPadTap, bankMapStepTap,
          bankMapDeferrable, jogDeferBegin, jogDeferTake,
-    bankMapRelease } from './ui_input_cc.mjs';
+    bankMapRelease, bankMapFollowView } from './ui_input_cc.mjs';
 import { standDownBankDisplay } from './ui_state.mjs';
 import { _onCCMsg, syncCoRunShift } from './ui_input_cc.mjs';
 import { soundChainTakesPad, soundSetChainPadReplay, soundActive, soundOpen, soundResting, soundExit, soundOnCC, soundOnNote, soundOnMidiRaw,
@@ -609,6 +609,22 @@ function _onMidiInternalImpl(data) {
      * away (bankMapRelease). Both edges live here, above every modal gate:
      * a release swallowed by a screen would strand the hold (the jog-touch
      * lesson above). Elsewhere the press goes on to its owner as before. */
+    /* THE MAP FOLLOWS THE VIEW (Josh, 2026-11-19: "when pad map is up, allow
+     * it to remain up while switching between session/track modes with the pad
+     * map following"). Note/Session with the jog held does exactly what it does
+     * without the map — a tap switches, a hold peeks and its release switches
+     * back, from a screen it lands on Session — and the map comes back as the
+     * new view's, under the same hold. Both edges, so a peek's return follows
+     * too. Not in co-run or Move's Settings: leaving those is asynchronous, so
+     * the map goes there as any other button ends it. */
+    if (status === 0xB0 && d1 === MoveNoteSession && S.bankMapUp &&
+            S.moveCoRunTrack < 0 && !S.moveSettingsOpen) {
+        const _pressMs = S.jogPressMs;
+        bankMapEnd();
+        _dispatchBelowJogRouter(data, status, d1, d2);
+        bankMapFollowView(_pressMs);
+        return;
+    }
     if (status === 0xB0 && d1 === MoveMainButton) {
         if (d2 === 127) {
             /* A press while a hold is still recorded: its release was lost.

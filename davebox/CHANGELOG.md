@@ -21,6 +21,14 @@ the section into a versioned heading at release time.
   download (about 113 MB) so the update stays small: install it from **Project Settings →
   Dictation**, which shows the download's progress and can remove it again.
 - **A comma on the on-screen keyboard** (on the symbols page).
+- **Mute can cut the sound instead of the notes.** A new **Mute Mode** setting in each
+  track's settings: **MIDI** (as before) stops the track's notes; **Audio** keeps the notes playing
+  and mutes the track's sound at its mixer channel, so held notes, tails and delays are
+  right there again the moment you unmute. Soloing another track mutes it the same way.
+  Not on MIDI tracks (there is no channel to mute) or the Conductor.
+- **The bank map follows you between views.** With the jog held, press **Note/Session** and
+  the view switches with the map still up, now showing that view's map. Holding
+  Note/Session to peek works too: the map follows you there and back.
 
 ### Fixed
 - **A module with several drawn pages shows each one.** Every drawn page of a module was

@@ -1735,6 +1735,15 @@ typedef struct {
     /* Mute/solo per track: 0=off, 1=on */
     uint8_t mute[NUM_TRACKS];
     uint8_t solo[NUM_TRACKS];
+    /* MUTE MODE per track (TRACK CONFIG "Mute"): 0 = MIDI, the notes stop (the
+     * default, and how mute always worked); 1 = Audio, the notes play on and the
+     * track's audio bus is muted instead (amute_apply). Saved as tN_ma. */
+    uint8_t mute_audio[NUM_TRACKS];
+    /* What amute_apply last wrote for each track: the target (a chain slot,
+     * AMUTE_BUS + bus, or -1 = nothing of ours) and its value. -1 also means
+     * "not yet asserted", so a loaded Audio-mode track writes its state once. */
+    int8_t  amute_tgt[NUM_TRACKS];
+    uint8_t amute_on[NUM_TRACKS];
 
     /* Conductor role: track index that is the Conductor, or -1 = none */
     int8_t   conductor_track;
@@ -2274,6 +2283,62 @@ static int effective_mute(seq8_instance_t *inst, int t) {
     for (i = 0; i < NUM_TRACKS; i++)
         if (inst->solo[i]) { any_solo = 1; break; }
     return inst->mute[t] || (any_solo && !inst->solo[t]);
+}
+
+/* MUTE MODE. An Audio-mode track keeps playing its notes while muted (or
+ * soloed out) and is silenced at its audio bus — its chain slot's or its Move
+ * bus's own mute — so tails, held notes and anything time-based carry on and
+ * come straight back on unmute. Only where the track HAS a bus: a MIDI-routed
+ * track and the Conductor mute their notes whatever the setting says. */
+static int mute_is_audio(const seq8_instance_t *inst, int t) {
+    const seq8_track_t *tr = &inst->tracks[t];
+    return inst->mute_audio[t] && tr->pad_mode != PAD_MODE_CONDUCT &&
+           (tr->pfx.route == ROUTE_SCHWUNG || tr->pfx.route == ROUTE_MOVE);
+}
+/* The note paths' gate: muted, and muted the MIDI way. */
+static int note_mute(seq8_instance_t *inst, int t) {
+    return effective_mute(inst, t) && !mute_is_audio(inst, t);
+}
+
+#define AMUTE_BUS 64        /* amute_tgt: >= this is Move bus (value - AMUTE_BUS), 0-based */
+#define AMUTE_MOVE_BUSES 4  /* move_fx:1..4 — ui_engine's MOVE_BUSES */
+static void amute_write(int tgt, int on) {
+    if (tgt >= AMUTE_BUS) {
+        char key[24];
+        snprintf(key, sizeof key, "move_fx:%d:muted", tgt - AMUTE_BUS + 1);
+        g_ext->set_slot_param(0, key, on ? "1" : "0");
+    } else {
+        g_ext->set_slot_param(tgt, "slot:muted", on ? "1" : "0");
+    }
+}
+/* Once per block (render_block): every Audio-mode track's bus follows its
+ * effective mute — a mute, a solo elsewhere, a scene or snapshot recall, an
+ * export take that plays it anyway — the block it changes. Writes only on a
+ * change; a target the track left (a route, slot or channel change, or Mute
+ * set back to MIDI) is unmuted on the way out. MIDI-mode tracks are never
+ * written, so a bus mute set by hand in the sound menu is left alone there.
+ * The host's setters are RT-safe (flags and atomics). Not on an offline take:
+ * it renders one track on its own copy and never touches the live mix. */
+static void amute_apply(seq8_instance_t *inst) {
+    int t;
+    if (inst->offline || !g_ext || !g_ext->set_slot_param) return;
+    for (t = 0; t < NUM_TRACKS; t++) {
+        int tgt = -1, on = 0;
+        if (mute_is_audio(inst, t)) {
+            const seq8_track_t *tr = &inst->tracks[t];
+            if (tr->pfx.route == ROUTE_MOVE)
+                tgt = AMUTE_BUS + (tr->channel < AMUTE_MOVE_BUSES ? tr->channel : AMUTE_MOVE_BUSES - 1);
+            else
+                tgt = tr->pfx.slot;
+            on = effective_mute(inst, t);
+        }
+        if (tgt == inst->amute_tgt[t] && (tgt < 0 || on == inst->amute_on[t])) continue;
+        if (inst->amute_tgt[t] >= 0 && inst->amute_tgt[t] != tgt && inst->amute_on[t])
+            amute_write(inst->amute_tgt[t], 0);
+        if (tgt >= 0) amute_write(tgt, on);
+        inst->amute_tgt[t] = (int8_t)tgt;
+        inst->amute_on[t]  = (uint8_t)on;
+    }
 }
 
 /* A Slicer does not follow the Conductor until asked: a break or a chop is not
@@ -4841,7 +4906,7 @@ static void drum_repeat_tick(seq8_instance_t *inst, seq8_track_t *tr) {
      * (a held pad is monitoring through the chain, mute or not). Bypassed
      * during count-in so live input is always audible. */
     if (inst->count_in_ticks == 0 && tr->drum_repeat_latched
-            && effective_mute(inst, (int)(tr - inst->tracks))) return;
+            && note_mute(inst, (int)(tr - inst->tracks))) return;
     /* Repeat Sync pending: wait for next rate-grid boundary on arp_master_tick. */
     if (tr->drum_repeat_pending) {
         uint16_t rate_ticks = DRUM_REPEAT_RATE_TICKS[tr->drum_repeat_rate_idx];
@@ -4995,7 +5060,7 @@ static void drum_repeat2_tick(seq8_instance_t *inst, seq8_track_t *tr) {
      * lanes (active without the latched bit) bypass mute to match live-monitor
      * semantics. Bypassed during count-in so live input is always audible. */
     int _track_muted = (inst->count_in_ticks == 0)
-                       && effective_mute(inst, (int)(tr - inst->tracks));
+                       && note_mute(inst, (int)(tr - inst->tracks));
     /* Resolve any lanes pending repeat-rate boundary. Each lane has its own
      * rate; activate per-lane when its rate divides arp_master_tick. */
     if (tr->drum_repeat2_pending) {
@@ -5433,7 +5498,7 @@ static void tarp_fire_step(seq8_instance_t *inst, seq8_track_t *tr) {
      * held buffer. silence_muted_tracks kills any sustaining note via
      * tarp_silence (latch-preserving). Unmute resumes mid-phrase.
      * Bypassed during count-in so live input is always audible. */
-    if (inst->count_in_ticks == 0 && effective_mute(inst, (int)(tr - inst->tracks))) return;
+    if (inst->count_in_ticks == 0 && note_mute(inst, (int)(tr - inst->tracks))) return;
 
     uint16_t rate = ARP_RATE_TICKS[a->rate_idx];
     if (rate == 0) rate = 24;
@@ -5629,7 +5694,7 @@ static void silence_muted_tracks(seq8_instance_t *inst) {
     int t;
     for (t = 0; t < NUM_TRACKS; t++) {
         seq8_track_t *tr = &inst->tracks[t];
-        if (effective_mute(inst, t)) {
+        if (note_mute(inst, t)) {
             silence_track_notes_v2(inst, tr);
             tr->step_dispatch_mask = 0;
         }
@@ -7398,6 +7463,7 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
     inst->offline = json_defaults && strstr(json_defaults, "\"offline\"") != NULL;
     au_init(inst);                 /* audio clips' defaults + the sample loader thread */
     inst->undo_slc_t = inst->redo_slc_t = -1;
+    memset(inst->amute_tgt, -1, sizeof inst->amute_tgt);   /* nothing asserted yet */
 
     inst->sample_rate    = (g_host && g_host->sample_rate > 0)
                            ? (float)g_host->sample_rate : 44100.0f;
@@ -8775,6 +8841,10 @@ static int pfx_get(seq8_track_t *tr, const char *key, char *out, int out_len) {
 
     if (!strcmp(key, "track_looper"))
         return snprintf(out, out_len, "%d", (int)fx->looper_on);
+    /* 1 = Audio mute mode (mute_is_audio) */
+    if (!strcmp(key, "mute_mode"))
+        return g_inst && tr >= g_inst->tracks && tr < g_inst->tracks + NUM_TRACKS
+             ? snprintf(out, out_len, "%d", (int)g_inst->mute_audio[tr - g_inst->tracks]) : -1;
     /* The track's own groove amounts: -1 = follows the global one. */
     if (!strcmp(key, "groove_amt"))      return snprintf(out, out_len, "%d", (int)fx->g_amt);
     if (!strcmp(key, "groove_timing"))   return snprintf(out, out_len, "%d", (int)fx->g_timing);
@@ -10109,7 +10179,7 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         if (!strcmp(sub, "digest")) {
             static const char *TRACK_KEYS[] = {
                 "active_clip", "pad_octave", "transpose", "channel", "diq", "midi_to", "fxpost", "fxpre",
-                "pad_mode", "route", "track_looper", "groove_ovr", "track_vel_override",
+                "pad_mode", "route", "track_looper", "mute_mode", "groove_ovr", "track_vel_override",
                 "tarp_si", "tarp_sll", "tarp_sv", "drum_r2rt",
                 "delay_clock_fb", "drum_meta",
                 /* The knob banks. These are the bulk of a track's readback —

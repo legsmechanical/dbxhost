@@ -276,6 +276,16 @@ static int sp_track_config(sp_ctx_t *cx) {
         return 1;
     }
 
+    /* tN_mute_mode: 0 = MIDI (mute stops the notes), 1 = Audio (the notes play
+     * on and the track's bus is muted — amute_apply, next block). Going back to
+     * MIDI while muted silences the notes now, as a mute would. */
+    if (!strcmp(sub, "mute_mode")) {
+        inst->mute_audio[tidx] = (uint8_t)(my_atoi(val) ? 1 : 0);
+        silence_muted_tracks(inst);
+        inst->state_dirty = 1;
+        return 1;
+    }
+
     /* tN_track_looper: include/exclude this track from the global MIDI looper */
     if (!strcmp(sub, "track_looper")) {
         uint8_t lo = (uint8_t)(my_atoi(val) ? 1 : 0);

@@ -1034,7 +1034,7 @@ static void render_block_body(void *instance, int16_t *out_lr, int frames) {
             /* Note-on: drum and melodic paths share the same note-firing logic but
              * drum iterates all 32 lanes, applying each lane's pfx params before scanning. */
             if (tr->pad_mode == PAD_MODE_DRUM && tr->drum_clips[tr->active_clip]) {
-                if (tr->clip_playing && !effective_mute(inst, t)) {
+                if (tr->clip_playing && !note_mute(inst, t)) {
                     int l;
                     for (l = 0; l < DRUM_LANES; l++) {
                         drum_lane_t *lane = &tr->drum_clips[tr->active_clip]->lanes[l];
@@ -1131,7 +1131,7 @@ static void render_block_body(void *instance, int16_t *out_lr, int frames) {
                         if (_at->rmx_slive) { _notes = inst->rmx_sn[t]; _nn = _at->rmx_sn_n; _rmx = 1; }
                     }
                 }
-                if (tr->clip_playing && !effective_mute(inst, t)) {
+                if (tr->clip_playing && !note_mute(inst, t)) {
                     int _gp, _gn = groove_track_early_n(inst, tr);
                     for (_gp = 0; _gp <= _gn; _gp++) {
                     groove_pass_t _g;
@@ -1434,5 +1434,8 @@ mix_click:
  * early returns, so the check sits outside it). */
 static void render_block(void *instance, int16_t *out_lr, int frames) {
     render_block_body(instance, out_lr, frames);
-    if (instance) rui_live_check((seq8_instance_t *)instance);
+    if (instance) {
+        rui_live_check((seq8_instance_t *)instance);
+        amute_apply((seq8_instance_t *)instance);
+    }
 }

@@ -1626,6 +1626,18 @@ export function bankMapBegin() {
     bankMapArm();
 }
 
+/* Note/Session under a held map (ui.js): the view switched with the map put
+ * away, and it comes back as the NEW view's map under the same hold — the
+ * original press time kept, so the release still sees the whole hold. Where
+ * the new view cannot take a map (a chord, the Session FX editor, a locked
+ * Performance view) it stays away, and the jog's release is inert. */
+export function bankMapFollowView(pressMs) {
+    if (S.bankMapUp || !bankMapArmable()) return;
+    S.jogPressMs = pressMs >= 0 ? pressMs : nowMs();
+    S.bankMapKind = S.sessionView ? 'session' : 'track';
+    bankMapArm();
+}
+
 /* The jog let go: the map goes, however short the hold was. */
 export function bankMapRelease() {
     /* A MENU pad tapped during the hold opens now, on the release. */

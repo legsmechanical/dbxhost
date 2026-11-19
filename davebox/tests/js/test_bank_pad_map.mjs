@@ -837,6 +837,41 @@ step('Move track: an FX pad names the module on the track\'s Move bus insert', (
     delete LOADED['move_fx:2:fx2:module'];
 });
 
+step('⭐ THE MAP FOLLOWS THE VIEW: Note/Session with the jog held switches view and the map comes back as the new view\'s (Josh, 2026-11-19)', () => {
+    ccm.bankMapEnd(); home(); S.sessionView = false; S.perfViewLocked = false;
+    const ns = (v) => midi(0xB0, C.MoveNoteSession, v);
+    press(); holdPast(); ticks(4);
+    assert(S.bankMapUp && S.bankMapKind === 'track', 'no track map: ' + S.bankMapKind);
+    assert((led[pad(3, 1)] | 0) !== 0, 'the track map\'s FX column (row 2) is dark');
+    /* a TAP: Session, and the Session map, under the same hold */
+    ns(127); ticks(1); ns(0); ticks(4);
+    assert(S.sessionView, 'Note/Session did not switch to Session View under the map');
+    assert(S.bankMapUp && S.bankMapKind === 'session', 'the map did not follow to Session: up ' + S.bankMapUp + ' ' + S.bankMapKind);
+    assert(S.jogPressMs >= 0, 'the hold was forgotten');
+    assert((led[pad(3, 1)] | 0) === 0 && led[pad(3, 0)] === K.BrightOrange,
+        'the pads are not the Session map: (3,1)=' + led[pad(3, 1)] + ' (3,0)=' + led[pad(3, 0)]);
+    /* and back */
+    ns(127); ticks(1); ns(0); ticks(4);
+    assert(!S.sessionView && S.bankMapUp && S.bankMapKind === 'track', 'the map did not follow back to Track: ' + S.bankMapKind);
+    assert((led[pad(3, 1)] | 0) !== 0, 'the pads are not the track map again');
+    /* a PEEK: hold Note/Session — Session while held, Track again on its release, the map along both ways */
+    ns(127); ticks(1);
+    assert(S.sessionView && S.bankMapKind === 'session', 'the peek did not carry the map: ' + S.bankMapKind);
+    holdLong(); ns(0); ticks(2);
+    assert(!S.sessionView && S.bankMapUp && S.bankMapKind === 'track', 'the peek\'s return did not carry the map: ' + S.sessionView + ' ' + S.bankMapKind);
+    /* the jog let go: the map goes, as always */
+    release(); ticks(2);
+    assert(!S.bankMapUp && S.jogPressMs < 0, 'the map outlived the hold');
+});
+
+step('…without the map, Note/Session is untouched (no map appears)', () => {
+    ccm.bankMapEnd(); home(); S.sessionView = false;
+    midi(0xB0, C.MoveNoteSession, 127); ticks(1); midi(0xB0, C.MoveNoteSession, 0); ticks(2);
+    assert(S.sessionView && !S.bankMapUp, 'up ' + S.bankMapUp);
+    midi(0xB0, C.MoveNoteSession, 127); ticks(1); midi(0xB0, C.MoveNoteSession, 0); ticks(2);
+    assert(!S.sessionView && !S.bankMapUp, 'did not return');
+});
+
 if (failed) { console.error('test_bank_pad_map: FAIL'); process.exit(1); }
 console.log('test_bank_pad_map: all passed');
 }

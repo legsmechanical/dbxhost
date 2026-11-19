@@ -578,6 +578,18 @@ function configRows(t) {
         opts: [0, 1], fmt: (v) => (v ? 'On' : 'Off'),
         get: () => (GS.trackLooper[t] !== 0 ? 1 : 0),
         set: (v) => applyTrackConfig(t, 'track_looper', v ? 1 : 0) });
+    /* MUTE MODE (Josh, 2026-11-19: "option for mute to be midi (current way
+     * mute works) or audio (mute the track's audio bus immediately)"). MIDI
+     * stops the notes; Audio lets them play on and mutes the track's bus (the
+     * DSP's amute_apply), so a tail or a held note is still there on unmute.
+     * Only where the track has a bus: not on a MIDI-routed track, not on a
+     * Conductor. */
+    if (GS.trackPadMode[t] !== PMC && (GS.trackRoute[t] === 0 || GS.trackRoute[t] === 1)) {
+        rows.push({ key: 'mutemode', label: 'Mute Mode',
+            opts: [0, 1], fmt: (v) => (v ? 'Audio' : 'MIDI'),
+            get: () => (GS.trackMuteAudio[t] ? 1 : 0),
+            set: (v) => applyTrackConfig(t, 'mute_mode', v ? 1 : 0) });
+    }
     /* THE GROOVE, per track (Josh, 2026-10-13: "have them follow global
      * settings by default but allow them to be overridden"). There is one
      * groove; each track follows its amounts until it is given its own. A row
@@ -3668,7 +3680,7 @@ const TRACK_MENU_GROUPS = [
     ['LFOs'],
     ['Mode', 'Layout'],
     ['Transpose', 'VelIn', 'AftTch'],
-    ['Looper'],
+    ['Looper', 'Mute Mode'],             /* what the track's notes do: looped, muted */
     ['Grv Amt', 'Grv Timing', 'Grv Velocity', 'Grv Random'],
     ['Export to MIDI', 'Flatten track'],      /* the one-shot actions on the clips */
     ['Parallel'],

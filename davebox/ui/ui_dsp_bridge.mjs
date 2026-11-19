@@ -1324,6 +1324,8 @@ function readTrackConfig(t) {
     if (trn !== null && trn !== undefined) S.trackTranspose[t] = parseInt(trn, 10) | 0;
     const lpr = dspGet('t' + t + '_track_looper');
     if (lpr !== null && lpr !== undefined) S.trackLooper[t] = parseInt(lpr, 10) | 0;
+    const mma = dspGet('t' + t + '_mute_mode');
+    if (mma !== null && mma !== undefined) S.trackMuteAudio[t] = parseInt(mma, 10) ? 1 : 0;
     const gov = dspGet('t' + t + '_groove_ovr');
     if (gov !== null && gov !== undefined) {
         const p = String(gov).trim().split(/\s+/).map((x) => parseInt(x, 10));
@@ -1524,6 +1526,7 @@ export function applyTrackConfig(t, key, val) {
     else if (key === 'track_vel_override') S.trackVelOverride[t] = val;
     else if (key === 'transpose')       S.trackTranspose[t] = val;
     else if (key === 'track_looper')    S.trackLooper[t] = val;
+    else if (key === 'mute_mode')       S.trackMuteAudio[t] = val ? 1 : 0;
     else if (key === 'groove_amt')      S.trackGrooveOvr[t][0] = val;
     else if (key === 'groove_timing')   S.trackGrooveOvr[t][1] = val;
     else if (key === 'groove_velocity') S.trackGrooveOvr[t][2] = val;
