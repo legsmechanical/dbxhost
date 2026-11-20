@@ -786,15 +786,15 @@ screen('bank-overview-walk', '4.1 The Bank Map', 'The bank pad map',
 screen('bank-overview-drum', '4.1 The Bank Map', 'The bank pad map on a drum track',
     'On a drum track, DRUM LANE and ALL LANES share one box because they are two views of the same lanes.',
     () => { selectTrack(1); toBank(0, false); press(3); ticks(2); if (!S.bankMapUp) throw new Error('holding the jog did not show the map'); });
-screen('bank-clip-alt', '11.1 The CLIP Bank', 'CLIP bank — alternate parameters',
+screen('bank-clip-alt', '4.3 Touch and Click', 'CLIP bank — alternate parameters',
     'To switch a knob to its alternate parameter, touch it and click the jog. Here Res is Zoom, Shift is Nudge and Dir is Reverse Style.',
     () => { toBank(0); for (const k of [0, 2, 6]) { knobTouch(k); click(); knobRelease(k); } ticks(2);
             if (S.knobAlt !== (1 | 4 | 64)) throw new Error('touch + click did not flip: ' + S.knobAlt); });
 screen('bank-knob-touched', '4.2 Playing a Bank', 'Touching a knob',
     'When you touch knob 1 on NOTE FX, the header spells out the parameter it controls.',
     () => { toBank(1); knobTouch(0); ticks(2); });
-screen('bank-crop-touched', '4.2 Playing a Bank', 'Touching a button knob',
-    'When you touch CLIP\'s Crop knob, the footer says what clicking the jog does.',
+screen('bank-crop-touched', '4.3 Touch and Click', 'Touching a knob that takes a click',
+    'The cells that take a click wear corner brackets. Touching CLIP\'s Crop knob names the action at the top, and the footer shows CLK and what clicking the jog will do.',
     () => { toBank(0); knobTouch(5); ticks(2); });
 screen('bank-value-popup', '4.2 Playing a Bank', 'Turning a list parameter',
     'Turning SEQ ARP\'s Style knob opens its list over the page. The highlight follows the knob, here moved from Off to Down.',

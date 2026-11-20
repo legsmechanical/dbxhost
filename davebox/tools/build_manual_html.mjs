@@ -281,6 +281,8 @@ const MANUAL_SCREENS = new Set([
     'track-audio-playing',     // an Audio track's overview
     'resample-options',        // resampling a scene: its options
     'session-mixer-volume',    // the Session mixer
+    'bank-crop-touched',       // touch and click: brackets and the CLK hint
+    'bank-clip-alt',           // touch and click: knobs switched to their alternates
     /* pad maps: the pads as the UI lights them */
     'pads-bank-map',           // the bank map and the module editors
     'pads-piano',              // Piano layout, with note names
