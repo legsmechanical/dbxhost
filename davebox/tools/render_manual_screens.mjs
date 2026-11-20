@@ -640,7 +640,7 @@ function screen(slug, section, title, caption, setup, opts = {}) {
 screen('track-melodic-playing', '3.4 Reading the Screen', 'Track View — melodic track playing',
     'The Track View overview shows the bank and the instrument, the key, each track\'s clip, the page bar and what the controls do.',
     () => {});
-screen('track-audio', '15.1 How It Plays', 'Track View — an Audio track',
+screen('track-audio', '16.1 How It Plays', 'Track View — an Audio track',
     'An Audio track\'s overview shows its clip\'s sample and the knobs of the bank it is on.',
     () => {
         /* as the project fixture sets the others: the engine and the mirror */
@@ -667,7 +667,7 @@ function sampledTrack(slicer) {
     selectTrack(4); AUD.auMarkStale(4, slicer ? 16 : 0); AUD.auMarkStale(4, 0);
     S.playing = true; ticks(12);
 }
-screen('track-audio-playing', '15.1 How It Plays', 'Track View — an Audio track playing',
+screen('track-audio-playing', '16.1 How It Plays', 'Track View — an Audio track playing',
     'While an Audio track plays, its overview shows the clip\'s Mode and its sample\'s Tempo and name.',
     () => { sampledTrack(false); if (!AUD.auPos().on) throw new Error('no playhead read'); });
 /* SAMPLE (an Audio clip's editor) and the SLICER editor, opened as the
@@ -679,29 +679,29 @@ function toPage(p) {
     for (let g = 0; g < 4 && pg() !== p; g++) { jog(pg() < p ? 1 : -1); ticks(2); }
     if (pg() !== p) throw new Error('the jog never reached page ' + (p + 1));
 }
-screen('sample-loop', '15.2 The SAMPLE Editor', 'SAMPLE — an Audio clip',
+screen('sample-loop', '16.2 The SAMPLE Editor', 'SAMPLE — an Audio clip',
     'SAMPLE on an Audio clip shows the waveform with the playhead on it, and Start and End over it.',
     () => { openSample(); });
-screen('sample-loop-p2', '15.2 The SAMPLE Editor', 'SAMPLE — TIME (page 2)',
+screen('sample-loop-p2', '16.2 The SAMPLE Editor', 'SAMPLE — TIME (page 2)',
     'SAMPLE\'s TIME page has Sync, Warp, Nudge and Offset on top. The sample\'s own Tempo and Bars are framed together below.',
     () => { openSample(); toPage(1); });
-screen('sample-loop-p3', '15.2 The SAMPLE Editor', 'SAMPLE — SOUND (page 3)',
+screen('sample-loop-p3', '16.2 The SAMPLE Editor', 'SAMPLE — SOUND (page 3)',
     'SAMPLE\'s SOUND page has Pitch, Detune, Revrs and Gain, on the knobs that page 1 gives Pitch, Detune and Gain.',
     () => { openSample(); toPage(2); });
-screen('slices-slicer', '16.2 The SLICER Editor', 'The SLICER editor — page 1, SLICES',
+screen('slices-slicer', '17.2 The SLICER Editor', 'The SLICER editor — page 1, SLICES',
     'Page 1 shows the slices on the waveform, with the picked one bracketed and the audio outside the range dotted. The corner brackets mean that clicking the jog enters the slice editor.',
     () => { openSlicer(); });
-screen('slicer-sample', '16.2 The SLICER Editor', 'The SLICER editor — page 3, SAMPLE',
+screen('slicer-sample', '17.2 The SLICER Editor', 'The SLICER editor — page 3, SAMPLE',
     'Page 3 shows a strip of the whole file with the range on it, over the sample\'s knobs: Sync, Pitch, Detune, Tempo and Gain.',
     () => { openSlicer(); toPage(2); });
-screen('slicer-inside', '16.3 Making Slices', 'The SLICER editor — inside the slice editor',
+screen('slicer-inside', '17.3 Making Slices', 'The SLICER editor — inside the slice editor',
     'Click the jog on page 1 to enter the slice editor. Turn the jog to move the cursor through the range, and click it to add a slice where the cursor stands.',
     () => {
         openSlicer(); click(); ticks(2);
         if (!AED.slcInside(S.auEditor)) throw new Error('the click did not enter the slice editor');
         jog(40); ticks(2);
     });
-screen('slicer-even', '16.3 Making Slices', 'The SLICER editor — chopping Even',
+screen('slicer-even', '17.3 Making Slices', 'The SLICER editor — chopping Even',
     'In the SLICE menu, choose Even and turn the jog to set the count. The range is cut into that many equal slices as you turn.',
     () => {
         openSlicer();
@@ -729,10 +729,10 @@ function remixBank(rev = 40) {
     S.rmxSet[4] = RMX_DEMO.slice(); S.rmxSet[4][5] = rev; S.rmxMapDirty = true; S.rmxOrders = null;
     toBank(C.BANK_REMIX); ticks(4);
 }
-screen('remix-card', '17.1 The REMIX Bank', 'REMIX bank',
+screen('remix-card', '18.1 The REMIX Bank', 'REMIX bank',
     'The REMIX bank shows whether it is on or off, the Chop, the Order and the five amounts.',
     () => { remixBank(); if (AUD.rmxOrderText(4) !== '40') throw new Error('the Order did not read: ' + AUD.rmxOrderText(4)); });
-screen('remix-popup', '17.2 Reading the Pop-up', 'REMIX — turning a knob',
+screen('remix-popup', '18.2 Reading the Pop-up', 'REMIX — turning a knob',
     'Turning Revrs draws a bar with a column per 1/16. A column is hollow when reversed, dotted when stuttered, has a caret when pitched and is empty when silent.',
     () => {
         remixBank(39); S.playing = false;   /* Revrs one short: the turn makes it the 40 */
@@ -759,23 +759,23 @@ screen('track-empty-clip', '7.3 Switching Clips', 'Track View — an empty clip'
 screen('track-drum', '9.1 The Drum Pads', 'Track View — drum track',
     'A drum track shows the lane bank and the selected lane\'s note.',
     () => { selectTrack(1); });
-screen('track-conductor', '24. The Conductor', 'Track View — the Conductor',
+screen('track-conductor', '25. The Conductor', 'Track View — the Conductor',
     'On the Conductor track (T8), the banks are headed C- and the header names it [CNDT].',
     () => { selectTrack(7); });
 
 /* 12 — Session View */
-screen('session-overview', '21. Session View', 'Session View',
+screen('session-overview', '22. Session View', 'Session View',
     'Session View shows the mixer page the jog is on and each track\'s playing clip.',
     () => { tap(MoveNoteSession); ticks(3); if (!S.sessionView) throw new Error('[Note/Session] did not switch view'); });
 
 /* 3.5 / 9 / 10 — the banks (melodic) */
 const MEL_BANKS = [
-    [0, 'bank-clip', '11.1 The CLIP Bank', 'CLIP bank', 'Each cell shows the knob above it.'],
-    [1, 'bank-notefx', '12.1 NOTE FX', 'NOTE FX bank', 'NOTE FX sets octave, offset, velocity, quantize, length, gate and random.'],
-    [2, 'bank-harmony', '12.2 HARMONY', 'HARMONY bank', 'HARMONY adds an octave voice and three harmony intervals.'],
-    [3, 'bank-delay', '12.3 DELAY', 'DELAY bank', 'DELAY sets rate, level, repeats, velocity and pitch feedback, gate, retrigger and random.'],
-    [4, 'bank-seqarp', '12.4 SEQ ARP', 'SEQ ARP bank', 'SEQ ARP sets style, rate, octave, gate, steps mode, retrigger and sync.'],
-    [5, 'bank-livearp', '12.5.1 LIVE ARP', 'LIVE ARP bank', 'LIVE ARP has the SEQ ARP controls plus Latch, for what you play live.'],
+    [0, 'bank-clip', '12.1 The CLIP Bank', 'CLIP bank', 'Each cell shows the knob above it.'],
+    [1, 'bank-notefx', '13.1 NOTE FX', 'NOTE FX bank', 'NOTE FX sets octave, offset, velocity, quantize, length, gate and random.'],
+    [2, 'bank-harmony', '13.2 HARMONY', 'HARMONY bank', 'HARMONY adds an octave voice and three harmony intervals.'],
+    [3, 'bank-delay', '13.3 DELAY', 'DELAY bank', 'DELAY sets rate, level, repeats, velocity and pitch feedback, gate, retrigger and random.'],
+    [4, 'bank-seqarp', '13.4 SEQ ARP', 'SEQ ARP bank', 'SEQ ARP sets style, rate, octave, gate, steps mode, retrigger and sync.'],
+    [5, 'bank-livearp', '13.5.1 LIVE ARP', 'LIVE ARP bank', 'LIVE ARP has the SEQ ARP controls plus Latch, for what you play live.'],
 ];
 for (const [b, slug, section, title, caption] of MEL_BANKS)
     screen(slug, section, title, caption, () => { toBank(b); });
@@ -799,7 +799,7 @@ screen('bank-crop-touched', '4.3 Touch and Click', 'Touching a knob that takes a
 screen('bank-value-popup', '4.2 Playing a Bank', 'Turning a list parameter',
     'Turning SEQ ARP\'s Style knob opens its list over the page. The highlight follows the knob, here moved from Off to Down.',
     () => { toBank(4); knobTouch(0); knobTurn(0, 20); ticks(2); });
-screen('bank-seqarp-steps', '12.4 SEQ ARP', 'SEQ ARP — per-step pitch editor',
+screen('bank-seqarp-steps', '13.4 SEQ ARP', 'SEQ ARP — per-step pitch editor',
     'Touch knob 5 (Steps) on SEQ ARP and click the jog to open the per-step editor. Knobs 1–8 set each step\'s pitch offset.',
     () => {
         toBank(4);
@@ -810,7 +810,7 @@ screen('bank-seqarp-steps', '12.4 SEQ ARP', 'SEQ ARP — per-step pitch editor',
         knobTouch(4); knobTurn(4, -3); knobRelease(4);
         ticks(2);
     });
-screen('bank-seqarp-steps-vel', '12.4 SEQ ARP', 'SEQ ARP — per-step velocity',
+screen('bank-seqarp-steps-vel', '13.4 SEQ ARP', 'SEQ ARP — per-step velocity',
     'Hold [Shift] in the per-step editor to show each step\'s velocity instead. Thru passes the played velocity.',
     () => {
         toBank(4); knobTouch(4); click(); knobRelease(4); ticks(2);
@@ -871,13 +871,13 @@ screen('notice-undo', '3.7 Copy, Delete and Undo', 'Undo feedback',
 
 /* 7 — drum banks */
 const DRUM_BANKS = [
-    [0, 'bank-drumlane', '11.2 The DRUM LANE Bank', 'DRUM LANE bank', 'DRUM LANE sets the selected lane\'s grid: resolution, stretch, shift, legato, euclid, crop, direction and follow.'],
-    [1, 'bank-drum-notefx', '12.1 NOTE FX', 'NOTE FX on a drum track', 'On a drum track, knobs 1 and 2 set the lane\'s MIDI note and knobs 3–6 shape that lane.'],
-    [3, 'bank-drum-delay', '12.3 DELAY', 'DELAY on a drum track', 'On a drum track, DELAY\'s knobs 5–7 become gate, clock feedback and retrigger.'],
+    [0, 'bank-drumlane', '12.2 The DRUM LANE Bank', 'DRUM LANE bank', 'DRUM LANE sets the selected lane\'s grid: resolution, stretch, shift, legato, euclid, crop, direction and follow.'],
+    [1, 'bank-drum-notefx', '13.1 NOTE FX', 'NOTE FX on a drum track', 'On a drum track, knobs 1 and 2 set the lane\'s MIDI note and knobs 3–6 shape that lane.'],
+    [3, 'bank-drum-delay', '13.3 DELAY', 'DELAY on a drum track', 'On a drum track, DELAY\'s knobs 5–7 become gate, clock feedback and retrigger.'],
 ];
 for (const [b, slug, section, title, caption] of DRUM_BANKS)
     screen(slug, section, title, caption, () => { selectTrack(1); toBank(b); });
-screen('bank-allanes', '11.3 The ALL LANES Bank', 'ALL LANES bank',
+screen('bank-allanes', '12.3 The ALL LANES Bank', 'ALL LANES bank',
     'ALL LANES sets resolution, stretch, shift, quantize, crop, input quantize, direction and repeat sync for all 32 lanes at once.',
     () => { selectTrack(1); toBank(7); });
 screen('note-repeat-modes', '9.4 Note Repeat', 'Choosing the right-pad mode',
@@ -887,7 +887,7 @@ screen('note-repeat-modes', '9.4 Note Repeat', 'Choosing the right-pad mode',
         press(MoveShift); noteOn(STEP(7), 127); noteOff(STEP(7)); release(MoveShift); ticks(2);
         if (!S.drumPerformMode[1]) throw new Error('[Shift]+[Step 8] did not change the right-pad mode');
     }, { align: false });
-screen('bank-repeat-groove', '12.5.2 RPT GROOVE', 'RPT GROOVE bank',
+screen('bank-repeat-groove', '13.5.2 RPT GROOVE', 'RPT GROOVE bank',
     'RPT GROOVE sets a velocity per gate step. A dotted bar is Thru, which uses the pad\'s own velocity.',
     () => {
         selectTrack(1);
@@ -914,7 +914,7 @@ const COND_BANKS = [
     [C.BANK_WHEN, 'bank-cond-when', 'TIMING', 'For each track, choose Next to follow at its next note, or Now to retrigger at once.'],
 ];
 for (const [b, slug, title, caption] of COND_BANKS)
-    screen(slug, '24.3 The Conductor\'s Banks', title + ' bank', caption, () => {
+    screen(slug, '25.3 The Conductor\'s Banks', title + ' bank', caption, () => {
         selectTrack(7);
         if (b === C.BANK_OCTAVE) { S.condOct[0][0] = 1; S.condOct[0][3] = -1; S.condOct[0][5] = 2; }
         if (b === C.BANK_RESPONDER) { S.condResp[0][2] = 0; }
@@ -952,22 +952,22 @@ const toMixer = (mode) => {
 };
 
 /* 12 — Session View: the mixer pages */
-screen('session-mixer-volume', '20.3 The Session Mixer', 'Session mixer — Volume',
+screen('session-mixer-volume', '21.3 The Session Mixer', 'Session mixer — Volume',
     'The Volume page has a fader per track.',
     () => { toSession(); toMixer(0); if (!R.sessMixerShown()) throw new Error('the mixer page is not shown'); });
-screen('session-mixer-touched', '20.3 The Session Mixer', 'Session mixer — turning a fader',
+screen('session-mixer-touched', '21.3 The Session Mixer', 'Session mixer — turning a fader',
     'When you turn a knob on the mixer page, the header names the track and its level, and the value replaces its number.',
     () => { toSession(); toMixer(0); noteOff(9); knobTouch(2); knobTurn(2, -3); ticks(2); });
-screen('session-mixer-touch-only', '20.3 The Session Mixer', 'Session mixer — touching a fader',
+screen('session-mixer-touch-only', '21.3 The Session Mixer', 'Session mixer — touching a fader',
     'When you touch a knob on the mixer page, the header names the track and its level, and its strip is marked.',
     () => { toSession(); toMixer(0); noteOff(9); knobTouch(4); ticks(2); });
-screen('session-mixer-pan', '20.3 The Session Mixer', 'Session mixer — Pan',
+screen('session-mixer-pan', '21.3 The Session Mixer', 'Session mixer — Pan',
     'The Pan page, the Session map\'s second mixer pad, has a bipolar dial per track.',
     () => { toSession(); toMixer(1); if (S.sessKnobMode !== 1) throw new Error('not on Pan: ' + S.sessKnobMode); });
-screen('session-mixer-senda', '20.3 The Session Mixer', 'Session mixer — Send A',
+screen('session-mixer-senda', '21.3 The Session Mixer', 'Session mixer — Send A',
     'The Send A page sets how much of each track feeds the first send bus.',
     () => { toSession(); toMixer(2); });
-screen('session-mixer-eq', '20.3 The Session Mixer', 'Session mixer — EQ',
+screen('session-mixer-eq', '21.3 The Session Mixer', 'Session mixer — EQ',
     'The EQ pad on the Session map shows one band of every track\'s EQ at once. Turn the jog to go to the next band (2/4 is Mid).',
     () => {
         const strips = ['3.00 -4.50 0.6200 2.00 0.5500', '0 6.00 0.3000 0 0', '-2.50 2.00 0.8000 4.00 0.3000', '0 -6.00 0.5000 0 0'];
@@ -978,12 +978,12 @@ screen('session-mixer-eq', '20.3 The Session Mixer', 'Session mixer — EQ',
         noteOn(9, 127); ticks(4);
         if (!R.sessMixerShown()) throw new Error('the EQ page is not shown');
     }, { after: stripsOff });
-screen('session-bank-map', '20.5 Master FX and the Sends', 'The Session map',
+screen('session-bank-map', '21.5 Master FX and the Sends', 'The Session map',
     'In Session View, hold the jog to show the mixer modes down the left and the MASTER, SEND A and SEND B effects a column over. Tap one and let go to open it.',
     () => { toSession(); press(3); ticks(2); if (!S.bankMapUp) throw new Error('holding the jog did not show the Session map'); });
 
 /* 12.3 — mute & solo, seen on the track row */
-screen('session-muted', '22.2 Muting in Session View', 'A muted track',
+screen('session-muted', '23.2 Muting in Session View', 'A muted track',
     'To mute track 3 in Session View, hold [Mute] and touch knob 3. Its number blinks in the track row, caught here on the off beat.',
     () => {
         toSession();
@@ -994,7 +994,7 @@ screen('session-muted', '22.2 Muting in Session View', 'A muted track',
         /* the blink's OFF half, so the mute shows */
         for (let g = 0; g < 60 && Math.floor(S.clockMs / 220) % 2 === 0; g++) ticks(1);
     }, { align: false });
-screen('session-soloed', '22.2 Muting in Session View', 'A soloed track',
+screen('session-soloed', '23.2 Muting in Session View', 'A soloed track',
     'To solo track 5 in Session View, hold [Shift] and [Mute] and touch knob 5. Its number shows filled in.',
     () => {
         toSession();
@@ -1003,10 +1003,10 @@ screen('session-soloed', '22.2 Muting in Session View', 'A soloed track',
     });
 
 /* 13 — Performance Mode */
-screen('perf-mode', '25. Performance Mode', 'Performance Mode',
+screen('perf-mode', '26. Performance Mode', 'Performance Mode',
     'Press [Loop] in Session View to enter Performance Mode. Nothing is engaged yet, and the footer shows the Hold, Sync and Latch states.',
     () => { toSession(); tap(MoveLoop); ticks(2); if (!S.perfViewLocked) throw new Error('[Loop] tap did not lock Performance Mode'); });
-screen('perf-mode-mods', '25.2.2 The Mods', 'Performance Mode — mods engaged',
+screen('perf-mode-mods', '26.2.2 The Mods', 'Performance Mode — mods engaged',
     'The screen shows the engaged mods and the loop length.',
     () => {
         toSession(); tap(MoveLoop); ticks(2);
@@ -1015,7 +1015,7 @@ screen('perf-mode-mods', '25.2.2 The Mods', 'Performance Mode — mods engaged',
         ticks(120);                                   /* past the engage flash */
         if (!(S.perfModsToggled | S.perfModsHeld)) throw new Error('no mods engaged');
     });
-screen('perf-mode-preset', '25.4 Presets', 'Performance Mode — a preset recalled',
+screen('perf-mode-preset', '26.4 Presets', 'Performance Mode — a preset recalled',
     'Pressing [Step 1] in Performance Mode recalls the Float preset, and the title names it.',
     () => { toSession(); tap(MoveLoop); ticks(2); noteOn(STEP(0), 127); noteOff(STEP(0)); ticks(120);
             if (S.perfRecalledSlot !== 0) throw new Error('step 1 did not recall preset 1'); });
@@ -1072,23 +1072,23 @@ const sampleMenu = (id) => {
     for (let n = 0; n < 4 && S.sampleMenu.items[S.sampleMenu.sel].id !== id; n++) jog(1);
     if (S.sampleMenu.items[S.sampleMenu.sel].id !== id) throw new Error('the menu has no ' + id);
 };
-screen('sample-menu-session', '14.1 The Sample Menu', 'The [Sample] menu — Session View',
+screen('sample-menu-session', '15.1 The Sample Menu', 'The [Sample] menu — Session View',
     'Press [Sample] in Session View to bake or resample a scene, or to start a Live Merge of all 8 tracks.',
     () => { stopTransport(); toSession(); sampleMenu('bake'); });
-screen('sample-menu-track', '14.1 The Sample Menu', 'The [Sample] menu — Track View',
+screen('sample-menu-track', '15.1 The Sample Menu', 'The [Sample] menu — Track View',
     'Press [Sample] in Track View to bake the clip or Live Merge the track.',
     () => { stopTransport(); sampleMenu('bake'); });
 
 /* 15.2 — Live Merge */
-screen('merge-notice-session', '14.3 Live Merge', 'Live Merge — armed from Session View',
+screen('merge-notice-session', '15.3 Live Merge', 'Live Merge — armed from Session View',
     'Choose Live merge from the [Sample] menu with the transport stopped. The notice says the merge will capture all 8 tracks, and [Record] starts it.',
     () => { stopTransport(); toSession(); sampleMenu('merge'); click(); ticks(2);
             if (!S.mergeNoticePending) throw new Error('no merge notice'); });
-screen('merge-notice-track', '14.3 Live Merge', 'Live Merge — armed from Track View',
+screen('merge-notice-track', '15.3 Live Merge', 'Live Merge — armed from Track View',
     'In Track View, Live merge track captures the active track alone.',
     () => { stopTransport(); sampleMenu('merge'); click(); ticks(2);
             if (!S.mergeNoticePending) throw new Error('no merge notice'); });
-screen('merge-place-scene', '14.3 Live Merge', 'Live Merge — placing the take',
+screen('merge-place-scene', '15.3 Live Merge', 'Live Merge — placing the take',
     'After a merge in Session View, tap a row or a scene step to receive the eight clips.',
     () => {
         toSession();
@@ -1096,7 +1096,7 @@ screen('merge-place-scene', '14.3 Live Merge', 'Live Merge — placing the take'
         engineSnapshot({ merge: 4 }); ticks(8);
         if (!S.pendingMergePlacement) throw new Error('the poll did not raise the placement prompt');
     });
-screen('merge-place-track', '14.3 Live Merge', 'Live Merge — keeping a single-track take',
+screen('merge-place-track', '15.3 Live Merge', 'Live Merge — keeping a single-track take',
     'After a merge in Track View, the empty clips on that track blink. Tap one to keep the take.',
     () => {
         engineSnapshot({ merge: 1, solo: 0 }); ticks(8);
@@ -1105,23 +1105,23 @@ screen('merge-place-track', '14.3 Live Merge', 'Live Merge — keeping a single-
     });
 
 /* 15.1 — Bake */
-screen('bake-clip', '14.2 Bake', 'Bake a clip',
+screen('bake-clip', '15.2 Bake', 'Bake a clip',
     'Choose Bake clip from the [Sample] menu in Track View, then choose how many loops to render into plain notes.',
     () => { sampleMenu('bake'); click(); ticks(2); if (!S.confirmBake) throw new Error('no bake confirm'); });
-screen('bake-drum', '14.2 Bake', 'Bake a drum clip',
+screen('bake-drum', '15.2 Bake', 'Bake a drum clip',
     'On a drum track, the bake first asks whether to bake the whole clip or just the selected lane.',
     () => { selectTrack(1); sampleMenu('bake'); click(); ticks(2); if (!S.confirmBake) throw new Error('no bake confirm'); });
-screen('bake-scene-pick', '14.2 Bake', 'Bake a scene — pick the row',
+screen('bake-scene-pick', '15.2 Bake', 'Bake a scene — pick the row',
     'Choose Bake scene from the [Sample] menu, then tap a row or a scene step to choose what to bake.',
     () => { toSession(); sampleMenu('bake'); click(); ticks(2); if (!S.pendingSceneBakePicker) throw new Error('no picker'); });
-screen('bake-scene-confirm', '14.2 Bake', 'Bake a scene — loops',
+screen('bake-scene-confirm', '15.2 Bake', 'Bake a scene — loops',
     'Once you choose a row, you get the same loop-count choice for every clip in the scene.',
     () => { toSession(); sampleMenu('bake'); click(); ticks(2);
             noteOn(STEP(0), 127); noteOff(STEP(0)); ticks(2);
             if (!S.confirmBakeScene) throw new Error('no scene bake confirm'); });
 
 /* 16.6 — Resample a clip (Track View: the current clip) */
-screen('resample-clip-options', '18.2 Resampling a Scene or Clip', 'Resample a clip',
+screen('resample-clip-options', '19.2 Resampling a Scene or Clip', 'Resample a clip',
     'Choose Resample clip from the [Sample] menu in Track View to record the current clip alone, Wet (as you hear it) or Dry (just its own chain).',
     () => { stopTransport(); selectTrack(4); ENGINE.resample_bars_t4_c0 = '1';
             for (let s = 0; s < 4; s++) { S.clipSteps[4][0][s * 4] = 1; } S.clipNonEmpty[4][0] = true;
@@ -1129,7 +1129,7 @@ screen('resample-clip-options', '18.2 Resampling a Scene or Clip', 'Resample a c
             if (!S.confirmResample) throw new Error('no clip resample options'); });
 
 /* 16.6 — Resample a scene */
-screen('resample-options', '18.2 Resampling a Scene or Clip', 'Resample a scene',
+screen('resample-options', '19.2 Resampling a Scene or Clip', 'Resample a scene',
     'Choose Resample scene from the [Sample] menu, then a row. The length starts where the clips line up, and Warm-up and Tail start off.',
     () => { stopTransport(); toSession(); ENGINE.resample_bars_0 = '4';
             sampleMenu('resample'); click(); ticks(2);
@@ -1152,7 +1152,7 @@ function menuTo(label) {
 screen('menu-project-settings', '3.6 Menus, Lists and Typing', 'Project Settings',
     'Hold [Shift] and press [Step 2] to open Project Settings. Every list in dAVEBOx looks like this.',
     () => { openSettings(); });
-screen('menu-clock', '27.2 Clock Follow', 'Project Settings — Clock Follow and Clock Out',
+screen('menu-clock', '28.2 Clock Follow', 'Project Settings — Clock Follow and Clock Out',
     'Scroll down to the clock rows: Clock Follow (Off or Move) and Clock Out.',
     () => { openSettings(); menuTo('Clock Follow'); });
 screen('menu-key-scale', '6.2 Key and Scale', 'Project Settings — Key and Scale',
@@ -1166,10 +1166,10 @@ screen('xpose-confirm', '6.2 Key and Scale', 'Transpose clips?',
     'If the melodic clips hold notes, committing a new key asks whether to move the notes with it.',
     () => { openSettings(); menuTo('Key'); click(); ticks(2); jog(3); ticks(2); click(); ticks(2);
             if (!S.confirmXpose) throw new Error('no transpose confirm'); });
-screen('menu-foot', '29.1 Project Settings', 'Project Settings — the foot of the list',
+screen('menu-foot', '30.1 Project Settings', 'Project Settings — the foot of the list',
     'Near the foot of the list are Suspend session, Quit and Host Settings. Projects, Save and Load state, Clear Sess and Export sit just above them.',
     () => { openSettings(); menuTo('Quit'); });
-screen('tap-tempo', '29.1 Project Settings', 'Tap Tempo',
+screen('tap-tempo', '30.1 Project Settings', 'Tap Tempo',
     'Hold [Shift] and press [Step 5], then tap any pad in time and the tempo follows. Turn the jog to fine-tune it.',
     () => { press(MoveShift); noteOn(STEP(4), 127); noteOff(STEP(4)); release(MoveShift); ticks(2);
             if (!S.tapTempoOpen) throw new Error('[Shift] + [Step 5] did not open tap tempo');
@@ -1189,14 +1189,14 @@ screen('snapshot-picker', '5.3 Save States', 'Load state',
         openSettings(); menuTo('Load state'); click(); ticks(2);
         if (!S.snapshotPicker) throw new Error('no snapshot picker');
     });
-screen('clear-session-confirm', '29.1 Project Settings', 'Clear Session',
+screen('clear-session-confirm', '30.1 Project Settings', 'Clear Session',
     'Clear Session asks you to confirm first, because it cannot be undone.',
     () => { openSettings(); menuTo('Clear Sess'); click(); ticks(2); if (!S.confirmClearSession) throw new Error('no confirm'); });
-screen('export-confirm', '26.1 Export to Ableton', 'Export to Ableton',
+screen('export-confirm', '27.1 Export to Ableton', 'Export to Ableton',
     'With the transport stopped, Export to Ableton in Project Settings asks you to confirm before it writes the bundle.',
     () => { stopTransport(); openSettings(); menuTo('Export to Ableton'); click(); ticks(4);
             if (!S.confirmExport) throw new Error('no export confirm'); });
-screen('export-conductor', '26.1 Export to Ableton', 'Export — Apply Conductor?',
+screen('export-conductor', '27.1 Export to Ableton', 'Export — Apply Conductor?',
     'With a Conductor in the set, the export asks whether to fold its transposition into the responding clips.',
     () => { stopTransport(); openSettings(); menuTo('Export to Ableton'); click(); ticks(4);
             jog(-1); ticks(1); click(); ticks(2);
@@ -1283,19 +1283,19 @@ function jogToLabel(label) {
     if (st().idx !== want) throw new Error('jog never reached ' + label);
     ticks(20);
 }
-screen('track-config', '19.3 The Menu', 'TRACK CONFIG — a Schwung track',
+screen('track-config', '20.3 The Menu', 'TRACK CONFIG — a Schwung track',
     'The menu starts with the track\'s chain: instrument, MIDI FX and effects.',
     () => { selectTrack(4); openTrackConfig(); });
-screen('track-config-levels', '19.3 The Menu', 'TRACK CONFIG — levels and presets',
+screen('track-config-levels', '20.3 The Menu', 'TRACK CONFIG — levels and presets',
     'Further down the same menu, below a line, are the track\'s levels: Volume, Pan, Send A and Send B.',
     () => { selectTrack(4); openTrackConfig(); for (let g = 0; g < 7; g++) { jog(1); ticks(1); } });
-screen('track-config-foot', '19.7 Track Settings', 'TRACK CONFIG — the track\'s own settings',
+screen('track-config-foot', '20.7 Track Settings', 'TRACK CONFIG — the track\'s own settings',
     'At the foot of the menu, the track\'s own settings end with Looper, then Parallel, each group behind a line.',
     () => { selectTrack(4); openTrackConfig(); for (let g = 0; g < 40; g++) { jog(1); ticks(1); }});
-screen('track-config-move', '19.3 The Menu', 'TRACK CONFIG — a Move track',
+screen('track-config-move', '20.3 The Menu', 'TRACK CONFIG — a Move track',
     'On a track playing a Move instrument, the chain row names it (Move 1). The rest of the menu is the Move bus\'s effects and levels.',
     () => { openTrackConfig(); });
-screen('instrument-picker', '19.4 Choosing an Instrument', 'The Instmt/Dest picker',
+screen('instrument-picker', '20.4 Choosing an Instrument', 'The Instmt/Dest picker',
     'The picker starts with the list filter, None, then Move\'s instruments. An instrument another track already plays shows that track and is skipped. The Conductor, Schwung instruments, MIDI channels and other tracks follow.',
     () => {
         selectTrack(4); openTrackConfig();
@@ -1303,12 +1303,12 @@ screen('instrument-picker', '19.4 Choosing an Instrument', 'The Instmt/Dest pick
         if (!SND.soundEnumPickForTest()) throw new Error('[Shift]+click did not open the picker');
         jog(-12); ticks(2);   /* the top of the list: its first groups */
     });
-screen('block-editor', '19.5 Editing a Module', 'Editing an instrument',
+screen('block-editor', '20.5 Editing a Module', 'Editing an instrument',
     'The knobs edit its parameters, and turning the jog moves through the pages.',
     () => { stopTransport(); selectTrack(4); openTrackConfig(); click(); ticks(8); });
 /* A module's list page (Josh, 2026-11-09: the Screen view drew these as empty
  * knobs): the editor jogged to its trailing My Presets page. */
-screen('block-editor-my-presets', '19.5.4 My Presets and Module', 'A module\'s My Presets page',
+screen('block-editor-my-presets', '20.5.4 My Presets and Module', 'A module\'s My Presets page',
     'After the parameter pages, My Presets saves and loads the module\'s own presets. Click the jog to go in, and turn it to pick a row.',
     () => {
         stopTransport(); selectTrack(4); openTrackConfig(); click(); ticks(8);
@@ -1323,7 +1323,7 @@ screen('block-editor-my-presets', '19.5.4 My Presets and Module', 'A module\'s M
 /* The same editor with the transport running: the footer is the track's page
  * bar. A 4-bar clip, viewing page 2 while page 3 plays, so every part of the
  * bar shows (solid, outlined, underlined, the playhead). */
-screen('block-editor-playing', '19.5.1 The Sequencer\'s Page', 'The page bar in an editor',
+screen('block-editor-playing', '20.5.1 The Sequencer\'s Page', 'The page bar in an editor',
     'While the transport runs, the bottom row is the track\'s page bar. Page 2 of 4 is on screen (solid) and page 3 is playing (outlined).',
     () => {
         selectTrack(4); openTrackConfig(); click(); ticks(8);
@@ -1333,32 +1333,32 @@ screen('block-editor-playing', '19.5.1 The Sequencer\'s Page', 'The page bar in 
         ticks(2);
     });
 
-screen('fx-browser', '19.3 The Menu', 'Adding an effect',
+screen('fx-browser', '20.3 The Menu', 'Adding an effect',
     'Clicking the jog on an empty effect block opens the module list, which shows the installed effects by name.',
     () => { selectTrack(4); openTrackConfig(); soundRowToLabel('FX 2'); ticks(1);
             if (SND.soundPickStateForTest().labels[SND.soundPickStateForTest().row] !== 'FX 2') throw new Error('not on FX 2');
             click(); ticks(6); });
-screen('config-card', '19.2 TRACK CONFIG', 'The CONFIG bank',
+screen('config-card', '20.2 TRACK CONFIG', 'The CONFIG bank',
     'The first bank on every walk shows the TRACK CONFIG menu at rest, inside the corner brackets. Click the jog to use it.',
     () => { selectTrack(4); toBank(C.BANK_CONFIG); ticks(8); });
-screen('sound-card', '20.1 Track Levels', 'The MIX card',
+screen('sound-card', '21.1 Track Levels', 'The MIX card',
     'On the last bank, the knobs are the track\'s levels.',
     () => { selectTrack(4); toBank(C.BANK_SOUND, false); knobTouch(0); ticks(4); });
 /* THE CHANNEL STRIP (MIX page 2): some EQ, and the comp working */
-screen('mix-strip', '20.2 The Channel Strip', 'MIX 2 — the channel strip',
+screen('mix-strip', '21.2 The Channel Strip', 'MIX 2 — the channel strip',
     'Turn the jog on MIX to show Low, Mid, Freq, High and Comp. The dot on Comp shows how far it is turning the sound down now.',
     () => { stripOn(4, '3.00 -4.50 0.6200 2.00 0.5500', '-4.20');
             selectTrack(4); toBank(C.BANK_SOUND, false); jog(1); ticks(2); knobTouch(4); ticks(4); },
     { after: () => { knobRelease(4); jog(-1); ticks(2); stripsOff(); if (SND.soundMixPageForTest() !== 0) throw new Error('MIX stayed on page 2'); } });
-screen('mix-strip-eq-curve', '20.2 The Channel Strip', 'The EQ curve',
+screen('mix-strip-eq-curve', '21.2 The Channel Strip', 'The EQ curve',
     'Touch or turn an EQ knob to show the curve over the page, with the band you are adjusting marked.',
     () => { stripOn(4, '3.00 -4.50 0.6200 2.00 0.5500', '-4.20');
             selectTrack(4); toBank(C.BANK_SOUND, false); jog(1); ticks(2); knobTouch(1); ticks(4); },
     { after: () => { knobRelease(1); jog(-1); ticks(2); stripsOff(); if (SND.soundMixPageForTest() !== 0) throw new Error('MIX stayed on page 2'); } });
-screen('macros-card', '23.1 The MACROS Bank', 'The MACROS bank',
+screen('macros-card', '24.1 The MACROS Bank', 'The MACROS bank',
     'Each knob shows its target. A knob that drives several (MAC1) shows its own position.',
     () => { selectTrack(4); toBank(C.BANK_MACROS); ticks(8); });
-screen('macros-unassigned-touched', '23.1 The MACROS Bank', 'Touching an unassigned macro',
+screen('macros-unassigned-touched', '24.1 The MACROS Bank', 'Touching an unassigned macro',
     'When you touch knob 7, which drives nothing yet, the footer says that clicking the jog assigns it.',
     () => { selectTrack(4); toBank(C.BANK_MACROS); ticks(8); knobTouch(6); ticks(2); });
 /* A macro's editor: touch its knob on the MACROS card and click the jog. */
@@ -1366,15 +1366,15 @@ const openMacro = (k) => {
     selectTrack(4); toBank(C.BANK_MACROS); ticks(8);
     knobTouch(k); click(); knobRelease(k); ticks(4);
 };
-screen('macros-multi', '23.1.1 One Knob, Several Parameters', 'One knob, several targets',
+screen('macros-multi', '24.1.1 One Knob, Several Parameters', 'One knob, several targets',
     'Touch a macro and click the jog to see everything that knob drives, each with its own range.',
     () => { openMacro(5); });
-screen('macros-targets', '23.1 The MACROS Bank', 'MACROS — choosing a target',
+screen('macros-targets', '24.1 The MACROS Bank', 'MACROS — choosing a target',
     'Touch an unassigned macro and click the jog to go straight to choosing a block, a bank, Levels, MIDI or, last, SnapMorph.',
     () => { openMacro(6); for (let g = 0; g < 20; g++) { jog(1); ticks(1); } });
 
 /* 14.3 — a MIDI track (route: a MIDI channel) */
-screen('midi-track-card', '20.1 Track Levels', 'MIX on a MIDI track',
+screen('midi-track-card', '21.1 Track Levels', 'MIX on a MIDI track',
     'On a track sending MIDI, the MIX card is a standard controller with Expression (touched here), Pan, Mod jog and Sustain, then the clip\'s Program and Bank.',
     () => {
         selectTrack(3);
@@ -1383,7 +1383,7 @@ screen('midi-track-card', '20.1 Track Levels', 'MIX on a MIDI track',
     });
 
 /* 14.3 — the global effect buses, from Session View */
-screen('fx-buses', '20.5 Master FX and the Sends', 'MASTER FX',
+screen('fx-buses', '21.5 Master FX and the Sends', 'MASTER FX',
     'The MASTER pad on the Session map opens Master FX and its four effect blocks. SEND A and SEND B open the same way.',
     () => { toSession(); mapTap(PURE.bankMapPadForCell(PURE.SESS_PAD_MAP.fx.col, 0)); ticks(6);
             const b = SND.soundBusForTest();
@@ -1403,21 +1403,21 @@ const importPage = (t) => {
     ticks(20); click(); ticks(4);                                         /* pick its first part */
     if (!MI.miStateForTest() || MI.miStateForTest().layer !== 'card') throw new Error('no MIDI browser card');
 };
-screen('import-files', '7.5.1 The List', 'Import MIDI — the list',
+screen('import-files', '11.1 The List', 'Import MIDI — the list',
     'Touch knob 8 on the CLIP bank and click the jog. On a track\'s first visit, the list shows your user data folder, with its folders and MIDI files.',
     () => { stopTransport(); openImport(3); });
-screen('import-parts', '7.5.1 The List', 'Import MIDI — a file with several parts',
+screen('import-parts', '11.1 The List', 'Import MIDI — a file with several parts',
     'A file with several parts opens like a folder: its parts are laid out like files, and each plays as you land on it.',
     () => { stopTransport(); openImport(3); jogToLabel('Bach Invention 8'); click(); ticks(4); });
-screen('import-options', '7.5.2 The Card', 'Import MIDI — the knobs',
+screen('import-options', '11.2 The Card', 'Import MIDI — the knobs',
     'The card has Start, Bars, Res and Stretch on top, then the notes on one line, with brackets marking what will land. Oct, Semi, Scale and the file\'s BPM are underneath.',
     () => { stopTransport(); importPage(3); });
-screen('import-options-cut', '7.5.2 The Card', 'Import MIDI — notes that will be cut',
+screen('import-options-cut', '11.2 The Card', 'Import MIDI — notes that will be cut',
     'When you move the start and length, the top right says how many notes won\'t land.',
     () => { stopTransport(); importPage(3);
             knobTouch(0); knobTurn(0, 12); knobRelease(0); knobTouch(1); knobTurn(1, -24); knobRelease(1); ticks(2); });
 
-screen('snapmorph-slots', '23.3 SnapMorph', 'SnapMorph — choosing snapshots',
+screen('snapmorph-slots', '24.3 SnapMorph', 'SnapMorph — choosing snapshots',
     'Click the jog on snapshots in the order the knob travels. [1] is the bottom of the turn.',
     () => { openMacro(6);
             for (let g = 0; g < 20; g++) { jog(1); ticks(1); } click(); ticks(4);
@@ -1430,14 +1430,14 @@ function withAutomation() {
     ENGINE.t4_c0_at_has = '1'; S.clipAtHas[4][0] = true;
     AUTO.automationNoteListChangedElsewhere();
 }
-screen('bank-automation', '13.2 The AUTOMATION Screen', 'AUTOMATION bank',
+screen('bank-automation', '14.2 The AUTOMATION Screen', 'AUTOMATION bank',
     'The AUTOMATION bank lists everything automated in the clip, with its state.',
     () => { selectTrack(4); withAutomation(); ticks(8);
             toBank(C.BANK_AUTOMATION); ticks(8);});
-screen('automation-menu', '13.2 The AUTOMATION Screen', 'AUTOMATION — the menu',
+screen('automation-menu', '14.2 The AUTOMATION Screen', 'AUTOMATION — the menu',
     'Click the jog for the menu. Turn it to a row and press it again for that row\'s operations.',
     () => { selectTrack(4); withAutomation(); ticks(8); toBank(C.BANK_AUTOMATION); ticks(8); click(); ticks(4); jog(1); ticks(2); });
-screen('automation-ops', '13.4 Lane Operations', 'AUTOMATION — a parameter\'s operations',
+screen('automation-ops', '14.4 Lane Operations', 'AUTOMATION — a parameter\'s operations',
     'A lane\'s operations are Mute, Wrap, Link, Loop, Rate, Scale, Clear and Delete.',
     () => { selectTrack(4); withAutomation(); ticks(8); toBank(C.BANK_AUTOMATION); ticks(8); click(); ticks(4); jog(1); ticks(2); click(); ticks(4); });
 
@@ -1462,23 +1462,23 @@ function withAutomationCurves() {
                                  '4:slot:volume ' + v14((x) => x < 0.6 ? 0.8 : 0.8 - (x - 0.6) * 1.5), ''].join('\n');
     S.playing = true; S.bpm = 120; S.trackClipPlaying[4] = true;
 }
-screen('automation-lanes', '13.2 The AUTOMATION Screen', 'AUTOMATION — the lanes, playing',
+screen('automation-lanes', '14.2 The AUTOMATION Screen', 'AUTOMATION — the lanes, playing',
     'Every lane of the clip is shown with its cycle. While the transport runs, each moves at its own rate.',
     () => { selectTrack(4); withAutomationCurves(); ticks(8); toBank(C.BANK_AUTOMATION); ticks(8); });
-screen('automation-lane-detail', '13.2 The AUTOMATION Screen', 'AUTOMATION — a lane selected',
+screen('automation-lane-detail', '14.2 The AUTOMATION Screen', 'AUTOMATION — a lane selected',
     'With the cursor on a lane, the step buttons show its current page as brightness, its points blinking.',
     () => { selectTrack(4); withAutomationCurves(); ticks(8); toBank(C.BANK_AUTOMATION); ticks(8); click(); ticks(4); jog(2); ticks(4);
             if (!S.autoCycle || S.autoCycle.target !== '4:synth:cutoff') throw new Error('the cursor is not on Syn>Cutoff'); });
-screen('automation-lane-ops', '13.4 Lane Operations', 'AUTOMATION — a lane\'s operations, playing',
+screen('automation-lane-ops', '14.4 Lane Operations', 'AUTOMATION — a lane\'s operations, playing',
     'A lane\'s operations appear over the list, with the lane itself below and its playhead running.',
     () => { selectTrack(4); withAutomationCurves(); ticks(8); toBank(C.BANK_AUTOMATION); ticks(8); click(); ticks(4); jog(2); ticks(4); click(); ticks(4); });
 
-screen('automation-hold-jump', '13.3 Editing a Lane on the Steps', 'Holding a lane\'s step',
+screen('automation-hold-jump', '14.3 Editing a Lane on the Steps', 'Holding a lane\'s step',
     'Hold a step with a point on the selected lane to show its parameter\'s page, with the lane\'s page over the other half. The knob shows that step\'s value.',
     () => { selectTrack(4); withAutomationCurves(); ticks(8); toBank(C.BANK_AUTOMATION); ticks(8); click(); ticks(4); jog(1); ticks(4);
             noteOn(STEP(0), 127); ticks(40); });
 
-screen('block-editor-automated', '13.3 Editing a Lane on the Steps', 'An automated parameter in its editor',
+screen('block-editor-automated', '14.3 Editing a Lane on the Steps', 'An automated parameter in its editor',
     'In a module\'s editor, a parameter with a lane in this clip wears the automation mark; a muted lane\'s is hollow.',
     () => { stopTransport(); selectTrack(4); withAutomation();
             /* Resonance's lane muted: its mark is the hollow one */
@@ -1486,20 +1486,20 @@ screen('block-editor-automated', '13.3 Editing a Lane on the Steps', 'An automat
             ticks(8); openTrackConfig(); soundRowToLabel('Instmt/Dest'); click(); ticks(8); });
 
 /* 16.3 / SnapMorph — the snapshot layer (hold Capture) */
-screen('snapshot-layer-track', '23.2 Sound Snapshots', 'The track snapshot layer',
+screen('snapshot-layer-track', '24.2 Sound Snapshots', 'The track snapshot layer',
     'Holding [Capture] in Track View opens the track\'s snapshot layer. The band names it, and the step buttons are its slots.',
     () => { press(MoveCapture); ticks(90); if (!S.devSnap || !S.devSnap.open) throw new Error('no snapshot layer'); });
-screen('snapshot-layer-session', '23.2 Sound Snapshots', 'The device snapshot layer',
+screen('snapshot-layer-session', '24.2 Sound Snapshots', 'The device snapshot layer',
     'Holding [Capture] in Session View opens the snapshot layer for the whole device.',
     () => { toSession(); press(MoveCapture); ticks(90); if (!S.devSnap || !S.devSnap.open) throw new Error('no snapshot layer'); });
 
 /* 12.5 — Shift + Volume */
-screen('track-volume-card', '20.4 Volume', 'Shift + Volume',
+screen('track-volume-card', '21.4 Volume', 'Shift + Volume',
     'Hold [Shift] and turn the Volume knob to adjust the active track\'s level from anywhere. A card shows it over the current screen.',
     () => { press(MoveShift); cc(79, 127); cc(79, 127); ticks(2); }, { align: false });
 
 /* Pop-ups over their page (the Screen view draws each as a card over it) */
-screen('sound-level-card', '19.3 The Menu', 'The level card in TRACK CONFIG',
+screen('sound-level-card', '20.3 The Menu', 'The level card in TRACK CONFIG',
     'Hold [Shift] and turn the Volume knob in TRACK CONFIG to show the track\'s level in a card over the menu.',
     () => { selectTrack(4); openTrackConfig(); press(MoveShift); cc(79, 1); cc(79, 1); ticks(2); }, { align: false });
 
@@ -1514,7 +1514,7 @@ screen('drum-lane-muted', '9.5 Copying, Clearing and Muting Lanes', 'A muted dru
             if (!(S.drumLaneMute[1] & 1)) throw new Error('lane 1 not muted'); });
 
 /* 4.1 / 8.1 — type changes */
-screen('conductor-exists', '24.1 Creating a Conductor', 'Only one Conductor',
+screen('conductor-exists', '25.1 Creating a Conductor', 'Only one Conductor',
     'If you choose Conductor for a second track, the info dialog says the set already has one.',
     () => { stopTransport(); selectTrack(3); openTrackConfig(); press(MoveShift); click(); release(MoveShift); ticks(4);
             const p = SND.soundEnumPickForTest(); const want = p.options.indexOf('Conductor');
@@ -1530,12 +1530,12 @@ screen('convert-drums', '7.2 Changing Type', 'Changing Keys to Drums',
             if (!S.confirmConvertToDrum) throw new Error('no convert confirm'); });
 
 /* 12.4 — mute snapshots */
-screen('mute-snapshot-saved', '22.3 Mute Snapshots', 'Saving a mute snapshot',
+screen('mute-snapshot-saved', '23.3 Mute Snapshots', 'Saving a mute snapshot',
     'In Session View, hold [Mute] and [Shift] and press a step button. The current mute and solo state is saved to that slot.',
     () => { toSession(); press(MoveMute); press(MoveShift); noteOn(STEP(2), 127); noteOff(STEP(2)); ticks(2); }, { align: false });
 
 /* 9 — Delete + jog click on MACROS asks first */
-screen('macros-clear-confirm', '23.1 The MACROS Bank', 'Clearing all macros',
+screen('macros-clear-confirm', '24.1 The MACROS Bank', 'Clearing all macros',
     'On MACROS, hold [Delete] and click the jog to unassign all eight knobs. It asks first.',
     () => { selectTrack(4); toBank(C.BANK_MACROS); ticks(8); press(MoveDelete); click(); ticks(2);
             if (!S.confirmMacroClear) throw new Error('no macro clear confirm'); });
@@ -1551,13 +1551,13 @@ screen('state-mismatch', '5.6 Compatibility and What\'s Saved', 'A set from anot
  * file, and supplying those would be staging the result, not reaching it. */
 
 /* 15.4 — importing over a clip that has notes */
-screen('import-replace', '7.5.3 Loading', 'Import MIDI — replacing a clip',
+screen('import-replace', '11.3 Loading', 'Import MIDI — replacing a clip',
     'If the clip you are on already holds notes, REPLACES shows at the top right. Clicking the jog asks before it loads.',
     () => { stopTransport(); importPage(0);
             if (MI.miStateForTest() && !/REPLACES/.test(JSON.stringify(MI.miHintsForTest(false))))
                 throw new Error('the clip is not one with notes'); });
 
-screen('import-confirm', '7.5 Importing a MIDI File', 'Import MIDI — loading asks first',
+screen('import-confirm', '11. Importing MIDI', 'Import MIDI — loading asks first',
     'Clicking the jog on the card opens dAVEBOx\'s Yes/No with No selected. [Back] is No.',
     () => { stopTransport(); importPage(0); click(); ticks(2);
             if (MI.miStateForTest().layer !== 'confirm') throw new Error('no confirm'); });
@@ -1605,11 +1605,11 @@ screen('pads-bass', '8.2.1 Piano and Bass', 'The Bass layout',
         if (PM.padModeCfg(S.activeTrack).piano.instr !== PM.INSTR_BASS) throw new Error('Instr never reached Bass');
     },
     { pads: { labels: padNoteLabels, steps: false } });
-screen('pads-audio', '15.1.1 What the Pads and Steps Show', 'An Audio clip on the pads',
+screen('pads-audio', '16.1.1 What the Pads and Steps Show', 'An Audio clip on the pads',
     'The clip is cut into 32 sections, one per pad. The sections played this time round are bright, the one playing pulses (drawn split), and the rest are dim. The grey pads are past the end of the sample.',
     () => { sampledTrack(false); },
     { pads: { steps: true } });
-screen('pads-slicer', '16.1.3 The Pads', 'A Slicer\'s pads',
+screen('pads-slicer', '17.1.3 The Pads', 'A Slicer\'s pads',
     'In 4 Rows, the slices run from the bottom-left, 8 to a row. Slice 3 is playing, so it is white, and slice 1 is the picked slice. This sample has 8 slices, so the pads past them are dark.',
     () => { sampledTrack(true); },
     { pads: { labels: Array.from({ length: 32 }, (_, i) => (i < 8 ? String(i + 1) : '')), steps: false } });
@@ -1619,11 +1619,11 @@ const PERF_LABELS = [
     'Decresc-\nendo', 'Swell', 'Cresc-\nendo', 'Pulse', 'Side-\nchain', 'Staccato', 'Legato', 'Ramp\nGate',
     'Half\nTime', '3 Skip', 'Phantom', 'Sparse', 'Glitch', 'Stagger', 'Shuffle', 'Back-\nwards',
 ];
-screen('pads-perf', '25.2 The Grid', 'The Performance Mode grid',
+screen('pads-perf', '26.2 The Grid', 'The Performance Mode grid',
     'From the bottom: capture length and mode, then the pitch mods, the velocity and gate mods, and the wild mods. A mod turns white while it is on.',
     () => { toSession(); tap(MoveLoop); ticks(4); if (!(S.loopHeld || S.perfViewLocked)) throw new Error('Performance Mode is not up'); },
     { pads: { labels: PERF_LABELS, steps: false } });
-screen('steps-shift', '30.8 Shift and Step Shortcuts', 'The step buttons while [Shift] is held',
+screen('steps-shift', '31.8 Shift and Step Shortcuts', 'The step buttons while [Shift] is held',
     'The steps that have a [Shift] shortcut are lit.',
     () => { press(MoveShift); ticks(4); },
     { pads: { noPads: true, stepLabels: ['Projects', 'Settings', '', '', 'Tap', 'Metro', 'Groove', 'Layout', 'Scale', 'VelIn', 'LIVE\nARP', '', 'Resume', '', 'Double', 'Quant'] } });

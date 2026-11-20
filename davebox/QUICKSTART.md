@@ -11,7 +11,7 @@ the complete reference — this guide links into it as you go.
 > [Schwung](https://github.com/charlesvestal/schwung). Its note tracks play Move's
 > built-in instruments, Schwung's instruments and effect chains, or an external synth
 > over USB; its Audio and Slicer tracks play samples of their own (see
-> [Audio](MANUAL-SA.md#15-audio-tracks)).
+> [Audio](MANUAL-SA.md#16-audio-tracks)).
 
 *(Running dAVEBOx as an ordinary tool inside official Schwung? That is dAVEBOx
 Legacy — see [`MANUAL.md`](MANUAL.md) instead.)*
@@ -135,7 +135,7 @@ These settings belong to *this clip only*. They're non-destructive: they
 transform playback without changing your written notes, so returning a knob to its
 default undoes it cleanly. Explore the other banks (NOTE FX, HARMONY, SEQ ARP) the
 same way — hold the jog, tap a pad, let go, turn the knobs. The
-[Sequencer Effects](MANUAL-SA.md#12-sequencer-effects) chapter covers every one.
+[Sequencer Effects](MANUAL-SA.md#13-sequencer-effects) chapter covers every one.
 
 ---
 
@@ -159,7 +159,7 @@ a row of clips across all tracks is a **scene**.
 
 Launching a *single* clip changes only its track. Launching a *scene* switches
 every track at once — an empty cell in that row silences its track. More in
-[Arranging](MANUAL-SA.md#21-session-view) and [Scenes](MANUAL-SA.md#213-scenes).
+[Arranging](MANUAL-SA.md#22-session-view) and [Scenes](MANUAL-SA.md#223-scenes).
 
 ---
 
@@ -182,7 +182,7 @@ live with a grid of effects.
    tap the step again to turn it off.
 
 Performance Mode is deep — capture lengths, latching, and 16 preset slots are all
-covered in [Performance Mode](MANUAL-SA.md#25-performance-mode).
+covered in [Performance Mode](MANUAL-SA.md#26-performance-mode).
 
 ---
 
@@ -212,7 +212,7 @@ You now know enough to make complete patterns. When you're ready for more:
 
 - **Choosing sounds** — give tracks 5–8 a Schwung instrument, add audio effects,
   and set levels from each track's TRACK CONFIG menu:
-  [Choosing a track's sound](MANUAL-SA.md#191-choosing-a-tracks-sound).
+  [Choosing a track's sound](MANUAL-SA.md#201-choosing-a-tracks-sound).
 - **Editing notes precisely** — hold a step and the knobs act on that step's
   notes (length, velocity, nudge, probability, ratchets):
   [Editing notes](MANUAL-SA.md#86-editing-notes).
@@ -221,13 +221,13 @@ You now know enough to make complete patterns. When you're ready for more:
 - **Recording live** — press **Record** to capture pad playing into a clip:
   [Recording](MANUAL-SA.md#101-recording).
 - **Automation** — record knob moves that play back with the clip:
-  [Automation](MANUAL-SA.md#13-automation).
+  [Automation](MANUAL-SA.md#14-automation).
 - **The Conductor** — a track that transposes all the others in real time:
-  [The Conductor](MANUAL-SA.md#24-the-conductor).
+  [The Conductor](MANUAL-SA.md#25-the-conductor).
 - **Exporting to Ableton Live** — **Project Settings → Export to Ableton** renders
-  the whole project to an `.ablbundle`: [Export to Live](MANUAL-SA.md#261-export-to-ableton).
+  the whole project to an `.ablbundle`: [Export to Live](MANUAL-SA.md#271-export-to-ableton).
 
 And whenever you need a quick reminder of a control, the manual's
-[Quick Reference](MANUAL-SA.md#30-quick-reference) lists every gesture on one screen.
+[Quick Reference](MANUAL-SA.md#31-quick-reference) lists every gesture on one screen.
 
 Have fun.
