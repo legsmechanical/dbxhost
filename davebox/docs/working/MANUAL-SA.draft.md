@@ -1225,11 +1225,7 @@ Drum tracks have NOTE FX and DELAY only. Alternates work as on CLIP: touch the k
 
 Everything runs as one chain, the live modifier first, then the effects:
 
-```
- LIVE INPUT ──▶ [LIVE ARP / Note Repeat] ──┐
-                                           ├─▶ NOTE FX ─▶ HARMONY ─▶ DELAY ─▶ SEQ ARP ─▶ OUT
- SEQUENCED NOTES ──────────────────────────┘
-```
+<img src="img/note-chain.svg" alt="Live input passes through LIVE ARP or Note Repeat, joins the sequenced notes, and both go through NOTE FX, HARMONY, DELAY and SEQ ARP.">
 
 A track's MIDI FX module comes before all of this. Set to Post, the default, it plays first and the effects work on what it plays. Set to Pre, it sits on what you play live, before LIVE ARP and before recording. See Position — Pre or Post in [Editing a module](#205-editing-a-module).
 
