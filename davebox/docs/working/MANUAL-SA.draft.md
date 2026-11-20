@@ -732,6 +732,58 @@ The clip transforms (Stretch, Shift, Nudge, Legato and Zoom) do nothing unless t
 
 Crop makes the loop the whole clip: on the CLIP bank, touch knob 6 and click the jog. Everything outside the loop is removed. One [Undo] brings it back.
 
+
+## 7.5 Importing a MIDI File
+
+> 🎬 **Video:** [Tutorial 7.2: MIDI import and export](https://youtu.be/DOw_4zAO6cI?t=61) (from 1:01)
+
+You can fill a clip with the notes from a standard MIDI file (`.mid`, `.midi`, `.smf`, `.kar` or `.rmi`), on any track except a Conductor.
+
+To open the MIDI browser, go to the CLIP or DRUM LANE bank, touch knob 8 and click the jog.
+
+Keep your MIDI files anywhere in your user data folder; the Files page of the [web manager](#293-davebox-and-official-schwung) uploads there. No MIDI files come with dAVEBOx.
+
+### 7.5.1 The List
+
+Every file plays as you land on it, in place of what the track plays, in time with the song if the track is playing. `DRM` marks an all-drums file. A file with several parts shows `NAME>` and its part count; click it to see the parts.
+
+Click the jog on a file or part to open its card. To leave the browser from anywhere, hold [Back].
+
+Each track remembers its own last file while you work.
+
+### 7.5.2 The Card
+
+The card is the file you picked, still playing. Each new file starts at Start 1, Res 1/16, Stretch x1 and its own length.
+
+| Knob | Parameter | What it does |
+|---|---|---|
+| 1 · Start | Start | The bar of the file to start from |
+| 2 · Bars | Bars | How many bars land in the clip, up to what the file has from Start and the clip holds at this resolution (1/16 holds 16 bars of 4/4) |
+| 3 · Res | Resolution | The clip's step size, 1/32 to a whole bar. Notes keep their timing |
+| 4 · Stretch | Stretch | /8, /4, /2, x1, x2, x4 or x8 of its length |
+| 5 · Oct | Octave | Up to three octaves up or down |
+| 6 · Semi | Semitone | Up to eleven semitones up or down |
+| 7 · Scale | Scale | On folds every note into the project's key and scale (between two scale notes, it goes up); Off plays it as written |
+| 8 | Tempo | The file's tempo in BPM, if it has one |
+
+Oct and Semi move the notes before Scale folds them.
+
+On a drum track, knob 5 is Map instead: GM (lanes play their General MIDI notes), Move (Move's kit layout) or Off (starting from the lane you are on). The right-hand pads are the file's sounds. Hold one to hear it alone and see where every sound goes, and tap a lane pad to put it there; tap the lane pad again to take it off. Up to eight sounds are placed.
+
+The line under the top knobs shows the file's notes, with brackets around what will land. The top right says what won't land: CUT (outside the brackets), OVER (past the clip's note limit) or OFF (drum sounds with no lane). REPLACES means the clip already has notes.
+
+To mute or unmute the preview, hold [Shift] and click the jog.
+
+### 7.5.3 Loading
+
+To load the file, click the jog on the card and confirm. The notes replace the clip you are on. On a drum track only the lanes a sound goes to are replaced. One [Undo] takes the whole load back.
+
+Only notes come in: no controllers, pitch bend or program changes, and not the file's tempo. Bars follow the file's time signature.
+
+A melodic clip's automation is cleared with the load ([Undo] brings it back). A melodic clip holds up to 512 notes, and so does a drum lane.
+
+The step buttons are blocked while you browse.
+
 ---
 
 # 8. Melodic Clips
@@ -1097,7 +1149,7 @@ Stretch makes one change per touch; let go and touch again to stretch again. It 
 
 A note shifted off the loop's end comes round to its start.
 
-Legato, Crop and Import MIDI are actions: touch the knob and click the jog. Legato lengthens the last note to the loop's end. Crop moves the loop to step 1 and removes everything outside it, automation included, as one [Undo]. Import MIDI is covered in [Import a MIDI file](#262-import-a-midi-file).
+Legato, Crop and Import MIDI are actions: touch the knob and click the jog. Legato lengthens the last note to the loop's end. Crop moves the loop to step 1 and removes everything outside it, automation included, as one [Undo]. Import MIDI is covered in [Importing a MIDI file](#75-importing-a-midi-file).
 
 Zoom, Stretch, Shift and Legato need the loop to start at step 1. If it starts later, Stretch says LOOP STARTS AFTER STEP 1 / CROP FIRST. Crop puts the loop at step 1.
 
@@ -2459,7 +2511,7 @@ apply to the track are hidden.
 | Mute Mode | MIDI, Audio | What muting the track does. See below. |
 | Grv Amt | Global, 0–100 % in 5 % steps | How much of the project's [groove](#63-the-groove) this track takes. |
 | Grv Timing, Grv Velocity, Grv Random | Global, 0–100 % in 5 % steps | Shown when a groove is loaded. |
-| Export to MIDI | (press) | Saves the clip you are on as a MIDI file. See [Export a clip as a MIDI file](#263-export-a-clip-as-a-midi-file). |
+| Export to MIDI | (press) | Saves the clip you are on as a MIDI file. See [Export a clip as a MIDI file](#262-export-a-clip-as-a-midi-file). |
 | Flatten track | (press) | Records every clip and turns the track into an Audio track. See [Flattening a track](#183-flattening-a-track). |
 | Parallel | On, Off | Runs the instrument on another processor core. See below. |
 
@@ -2934,7 +2986,7 @@ yours and are saved with the project.
 
 ---
 
-# 26. Import and Export
+# 26. Export
 
 A Slicer's slices can become a Move drum rack with [Convert to Kit](#164-convert-to-kit), resampled audio goes to the sample library ([Resampling a Scene or Clip](#182-resampling-a-scene-or-clip)), and whole projects are covered in [Backing Up and Moving Projects](#55-backing-up-and-moving-projects).
 
@@ -2989,58 +3041,7 @@ These do not come across:
 - Automation inside a Schwung module, and dAVEBOx's own bank parameters.
 - The part of a lane that runs past its clip. A 4-bar filter sweep over a 1-bar loop exports as its first bar, repeated.
 
-## 26.2 Import a MIDI File
-
-> 🎬 **Video:** [Tutorial 7.2: MIDI import and export](https://youtu.be/DOw_4zAO6cI?t=61) (from 1:01)
-
-You can fill a clip with the notes from a standard MIDI file (`.mid`, `.midi`, `.smf`, `.kar` or `.rmi`), on any track except a Conductor.
-
-To open the MIDI browser, go to the CLIP or DRUM LANE bank, touch knob 8 and click the jog.
-
-Keep your MIDI files anywhere in your user data folder; the Files page of the [web manager](#293-davebox-and-official-schwung) uploads there. No MIDI files come with dAVEBOx.
-
-### 26.2.1 The List
-
-Every file plays as you land on it, in place of what the track plays, in time with the song if the track is playing. `DRM` marks an all-drums file. A file with several parts shows `NAME>` and its part count; click it to see the parts.
-
-Click the jog on a file or part to open its card. To leave the browser from anywhere, hold [Back].
-
-Each track remembers its own last file while you work.
-
-### 26.2.2 The Card
-
-The card is the file you picked, still playing. Each new file starts at Start 1, Res 1/16, Stretch x1 and its own length.
-
-| Knob | Parameter | What it does |
-|---|---|---|
-| 1 · Start | Start | The bar of the file to start from |
-| 2 · Bars | Bars | How many bars land in the clip, up to what the file has from Start and the clip holds at this resolution (1/16 holds 16 bars of 4/4) |
-| 3 · Res | Resolution | The clip's step size, 1/32 to a whole bar. Notes keep their timing |
-| 4 · Stretch | Stretch | /8, /4, /2, x1, x2, x4 or x8 of its length |
-| 5 · Oct | Octave | Up to three octaves up or down |
-| 6 · Semi | Semitone | Up to eleven semitones up or down |
-| 7 · Scale | Scale | On folds every note into the project's key and scale (between two scale notes, it goes up); Off plays it as written |
-| 8 | Tempo | The file's tempo in BPM, if it has one |
-
-Oct and Semi move the notes before Scale folds them.
-
-On a drum track, knob 5 is Map instead: GM (lanes play their General MIDI notes), Move (Move's kit layout) or Off (starting from the lane you are on). The right-hand pads are the file's sounds. Hold one to hear it alone and see where every sound goes, and tap a lane pad to put it there; tap the lane pad again to take it off. Up to eight sounds are placed.
-
-The line under the top knobs shows the file's notes, with brackets around what will land. The top right says what won't land: CUT (outside the brackets), OVER (past the clip's note limit) or OFF (drum sounds with no lane). REPLACES means the clip already has notes.
-
-To mute or unmute the preview, hold [Shift] and click the jog.
-
-### 26.2.3 Loading
-
-To load the file, click the jog on the card and confirm. The notes replace the clip you are on. On a drum track only the lanes a sound goes to are replaced. One [Undo] takes the whole load back.
-
-Only notes come in: no controllers, pitch bend or program changes, and not the file's tempo. Bars follow the file's time signature.
-
-A melodic clip's automation is cleared with the load ([Undo] brings it back). A melodic clip holds up to 512 notes, and so does a drum lane.
-
-The step buttons are blocked while you browse.
-
-## 26.3 Export a Clip as a MIDI File
+## 26.2 Export a Clip as a MIDI File
 
 > 🎬 **Video:** [Tutorial 7.2: MIDI import and export](https://youtu.be/DOw_4zAO6cI?t=61) (from 1:01)
 
@@ -3050,7 +3051,7 @@ The clip is saved as it plays. NOTE FX, HARMONY, SEQ ARP and DELAY are baked in,
 
 A MIDI effect module set to Post is left out. To keep it, [bake](#142-bake) the clip first.
 
-The file goes to the `daveboxSA/MIDI` folder, named after the project, track and clip (for example `mngk 3B.mid`); a repeat export adds ` 2` rather than overwriting. Download it from the Files page of the [web manager](#293-davebox-and-official-schwung), or bring it back with [Import a MIDI File](#262-import-a-midi-file).
+The file goes to the `daveboxSA/MIDI` folder, named after the project, track and clip (for example `mngk 3B.mid`); a repeat export adds ` 2` rather than overwriting. Download it from the Files page of the [web manager](#293-davebox-and-official-schwung), or bring it back with [Importing a MIDI File](#75-importing-a-midi-file).
 
 ---
 
