@@ -118,7 +118,7 @@ or samples of its own on an Audio or Slicer track.
   <sub>The browser editor's sequencer, live in both directions with the Move</sub>
 </p>
 
-<table><tr><td align="center" width="50%"><img src="docs/readme/web-screen-notefx.png" width="380" alt="The Screen view on the NOTE FX bank: the clip's notes above the bank's knobs"><br><sub>The Screen view: the clip's notes over the bank you're on</sub></td><td align="center" width="50%"><img src="docs/readme/web-screen-instrument.png" width="380" alt="The Screen view in an instrument's editor: CHIMERA's Mouth page, its drawn mouth above the knobs"><br><sub>An instrument's editor, with the module's own picture</sub></td></tr></table>
+<table><tr><td align="center" width="50%"><img src="docs/readme/web-screen-notefx.png" width="380" alt="The Screen view on the NOTE FX bank: the clip's notes above the bank's knobs"><br><sub>The Screen view: the clip's notes over the bank you're on</sub></td><td align="center" width="50%"><img src="docs/readme/web-screen-instrument.png" width="380" alt="The Screen view in an instrument's editor: Tenebrae's Filter page, its filter curve and envelope drawn over the knobs"><br><sub>An instrument's editor: the filter and its envelope, drawn</sub></td></tr></table>
 
 ---
 

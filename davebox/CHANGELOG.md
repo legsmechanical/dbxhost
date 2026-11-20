@@ -19,7 +19,7 @@ the section into a versioned heading at release time.
 
   ![The Screen view on the NOTE FX bank: the clip's notes above the bank's knobs](https://raw.githubusercontent.com/legsmechanical/dbxhost/main/docs/readme/web-screen-notefx.png)
 
-  ![The Screen view in an instrument's editor: CHIMERA's Mouth page, its drawn mouth above the knobs](https://raw.githubusercontent.com/legsmechanical/dbxhost/main/docs/readme/web-screen-instrument.png)
+  ![The Screen view in an instrument's editor: Tenebrae's Filter page, its filter curve and envelope drawn over the knobs](https://raw.githubusercontent.com/legsmechanical/dbxhost/main/docs/readme/web-screen-instrument.png)
 - **A channel strip on every track**: a one-knob compressor and a 3-band EQ with a
   sweepable mid, like a mixing desk's channel. **Turn the jog on MIX** for MIX 2: Low,
   Mid, Freq, High and Comp. In Session View, the map's second column has **EQ** (the jog
