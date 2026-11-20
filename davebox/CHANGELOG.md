@@ -11,14 +11,12 @@ the section into a versioned heading at release time.
 
 ### Added
 
-#### Record audio from the mic or line input
-- **Audio tracks record straight from the Move's microphone or line input** into a clip — press
-  Rec on an Audio track. Record a new take or layer over what the clip already plays, and
-  monitor the input through the track as you go, with input gain, stereo or mono, and a level
-  meter on the new **INPUT** bank.
-
 #### Audio tracks
 Choose **Audio** in a track's Instmt/Dest picker.
+- **Record straight from the Move's microphone or line input** into a clip — press Rec on an
+  Audio track. Record a new take or layer over what the clip already plays, and monitor the
+  input through the track as you go, with input gain, stereo or mono, and a level meter on the
+  new **INPUT** bank.
 - **Play a sample in every clip**, in time with the project — WAV or AIFF, auditioned as you
   browse.
 - **Warp to the project's tempo** keeping the pitch, retune with it, or chop it like an old
