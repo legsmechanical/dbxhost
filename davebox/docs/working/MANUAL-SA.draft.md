@@ -3196,6 +3196,8 @@ On a track that plays a Move instrument, the Sound view shows its effects; the i
 
 The HUD (heads-up display) is dAVEBOx's screen, redrawn large and in color, with room for more, such as every knob and every lane's curve. While you edit a Move instrument, it shows Move's own screen.
 
+<img src="img/web-hud.png" alt="The HUD on the DELAY bank: the track and clip, the page bar, every knob with its value, and the control hints.">
+
 To open the HUD in its own window, for example on a tablet beside the Move, press Pop out.
 
 Some of the HUD works the Move:
