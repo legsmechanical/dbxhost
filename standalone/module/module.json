@@ -1,7 +1,7 @@
 {
   "id": "davebox-sa",
   "name": "dAVEBOx SA",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "abbrev": "dAVEBOx",
   "description": "An 8-track sequencer and sampler that runs as its own session, launched from Schwung: Move restarts into dAVEBOx SA, playing the modules you installed in Schwung, and Schwung comes back, untouched, when you quit.",
   "author": "legsmechanical",

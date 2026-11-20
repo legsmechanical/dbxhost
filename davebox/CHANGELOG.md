@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+
+## [2.0.1] — 2026-11-20
 2.0.0 was a test release; this section lists everything new since 1.1.3.
 
 ### Added
