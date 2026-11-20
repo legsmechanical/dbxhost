@@ -1491,11 +1491,23 @@ Each lane has a short menu of operations. To open it, click the jog on the lane'
 
 Wrap Reset holds the last value to the end of the loop, then jumps back to the lane's start. Carry glides from the last point into the start across the loop point.
 
+<img src="img/auto-wrap.svg" alt="Wrap: Reset jumps back to the lane's start at the loop point; Carry glides into it.">
+
 With Link on, the automation is transformed with the note sequence. Resolution and Stretch scale it. Shift and Nudge move it, inside the clip's loop. Doubling the loop copies it forward. Crop moves it to step 1 with the loop and removes what lay outside. On a drum track these are the ALL LANES versions, and a lane with its own Loop is left as it is. With Link off, the automation stays put whatever you do to the notes.
+
+<img src="img/auto-link.svg" alt="Link: shifting the notes moves the lane with them when Link is on, and leaves it in place when Link is off.">
 
 Loop can be shorter than the clip, so the lane repeats inside it, or longer, up to 256 steps, so it runs across several passes of the clip. A lane with its own Loop runs in step with the song, and restarts when its clip is launched at Launch 1-bar; see [Launching clips](#221-launching-clips). On a drum track, Loop shows the lane's cycle; see [On a Drum Track](#145-on-a-drum-track).
 
+<img src="img/auto-loop.svg" alt="Loop: a lane shorter than the clip repeats inside it; a longer one runs across several passes.">
+
+Rate plays the lane faster or slower than the clip. At x2 it runs twice in each pass of the clip; at /2 one pass covers only half of it.
+
+<img src="img/auto-rate.svg" alt="Rate: at x2 the lane plays twice in one pass of the clip; at /2 a pass covers half the lane.">
+
 Scale moves the lane toward zero or, on a centred parameter such as pan or pitch bend, toward and away from its centre.
+
+<img src="img/auto-scale.svg" alt="Scale at 50 %: a level moves halfway toward zero, pan halfway toward the centre.">
 
 On a drum track, set Loop on a cleared lane, and new recording or step input lands at that length.
 

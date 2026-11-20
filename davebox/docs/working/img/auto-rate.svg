@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 778 200" font-family="Jost, system-ui, sans-serif" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <title>Rate</title>
+  <desc>One pass of a 16-step clip. At x1 the lane plays once. At x2 it plays twice, at twice the speed. At /2 it plays at half speed, so one pass of the clip covers only the first half of the lane.</desc>
+  <path d="M4.0 40 V150 M18.4 40 V150 M32.8 40 V150 M47.1 40 V150 M61.5 40 V150 M75.9 40 V150 M90.2 40 V150 M104.6 40 V150 M119.0 40 V150 M133.4 40 V150 M147.8 40 V150 M162.1 40 V150 M176.5 40 V150 M190.9 40 V150 M205.2 40 V150 M219.6 40 V150 M234.0 40 V150 M4 150 H234" stroke-width="1" stroke-opacity="0.22"/>
+  <text x="4.0" y="26.0" font-size="16" text-anchor="start" fill="currentColor" stroke="none">Rate x1</text>
+  <text x="119.0" y="174.0" font-size="13" text-anchor="middle" fill="currentColor" stroke="none" fill-opacity="0.7">one pass of the clip</text>
+  <path d="M4.0 122.5 L119.0 56.5 L176.5 95.0 L234.0 122.5" stroke-width="2.5"/>
+  <path d="M274.0 40 V150 M288.4 40 V150 M302.8 40 V150 M317.1 40 V150 M331.5 40 V150 M345.9 40 V150 M360.2 40 V150 M374.6 40 V150 M389.0 40 V150 M403.4 40 V150 M417.8 40 V150 M432.1 40 V150 M446.5 40 V150 M460.9 40 V150 M475.2 40 V150 M489.6 40 V150 M504.0 40 V150 M274 150 H504" stroke-width="1" stroke-opacity="0.22"/>
+  <text x="274.0" y="26.0" font-size="16" text-anchor="start" fill="currentColor" stroke="none">Rate x2</text>
+  <text x="389.0" y="174.0" font-size="13" text-anchor="middle" fill="currentColor" stroke="none" fill-opacity="0.7">one pass of the clip</text>
+  <path d="M274.0 122.5 L331.5 56.5 L360.2 95.0 L389.0 122.5 L389.0 122.5 L446.5 56.5 L475.2 95.0 L504.0 122.5" stroke-width="2.5"/>
+  <path d="M544.0 40 V150 M558.4 40 V150 M572.8 40 V150 M587.1 40 V150 M601.5 40 V150 M615.9 40 V150 M630.2 40 V150 M644.6 40 V150 M659.0 40 V150 M673.4 40 V150 M687.8 40 V150 M702.1 40 V150 M716.5 40 V150 M730.9 40 V150 M745.2 40 V150 M759.6 40 V150 M774.0 40 V150 M544 150 H774" stroke-width="1" stroke-opacity="0.22"/>
+  <text x="544.0" y="26.0" font-size="16" text-anchor="start" fill="currentColor" stroke="none">Rate /2</text>
+  <text x="659.0" y="174.0" font-size="13" text-anchor="middle" fill="currentColor" stroke="none" fill-opacity="0.7">one pass of the clip</text>
+  <path d="M544.0 122.5 L774.0 56.5 L774.0 56.5" stroke-width="2.5"/>
+</svg>

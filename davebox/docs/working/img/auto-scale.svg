@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 768 210" font-family="Jost, system-ui, sans-serif" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <title>Scale</title>
+  <desc>Left: on a level, Scale 50 percent moves the lane halfway toward zero. Right: on a centred parameter such as pan, it moves the lane halfway toward the centre.</desc>
+  <path d="M4.0 40 V150 M26.5 40 V150 M49.0 40 V150 M71.5 40 V150 M94.0 40 V150 M116.5 40 V150 M139.0 40 V150 M161.5 40 V150 M184.0 40 V150 M206.5 40 V150 M229.0 40 V150 M251.5 40 V150 M274.0 40 V150 M296.5 40 V150 M319.0 40 V150 M341.5 40 V150 M364.0 40 V150 M4 150 H364" stroke-width="1" stroke-opacity="0.22"/>
+  <text x="4.0" y="26.0" font-size="16" text-anchor="start" fill="currentColor" stroke="none">A level: toward zero</text>
+  <path d="M4.0 117.0 L94.0 51.0 L184.0 89.5 L274.0 67.5 L364.0 117.0" stroke-width="2.5"/>
+  <path d="M4.0 133.5 L94.0 100.5 L184.0 119.8 L274.0 108.8 L364.0 133.5" stroke-width="2.5" stroke-dasharray="6 5" stroke-opacity="0.85"/>
+  <path d="M404.0 40 V150 M426.5 40 V150 M449.0 40 V150 M471.5 40 V150 M494.0 40 V150 M516.5 40 V150 M539.0 40 V150 M561.5 40 V150 M584.0 40 V150 M606.5 40 V150 M629.0 40 V150 M651.5 40 V150 M674.0 40 V150 M696.5 40 V150 M719.0 40 V150 M741.5 40 V150 M764.0 40 V150 M404 150 H764" stroke-width="1" stroke-opacity="0.22"/>
+  <text x="404.0" y="26.0" font-size="16" text-anchor="start" fill="currentColor" stroke="none">Pan: toward the centre</text>
+  <path d="M404 95.0 H764" stroke-width="1" stroke-opacity="0.5"/>
+  <text x="768.0" y="99.0" font-size="12" text-anchor="start" fill="currentColor" stroke="none" fill-opacity="0.7">C</text>
+  <path d="M404.0 133.5 L494.0 51.0 L584.0 117.0 L674.0 62.0 L764.0 133.5" stroke-width="2.5"/>
+  <path d="M404.0 114.2 L494.0 73.0 L584.0 106.0 L674.0 78.5 L764.0 114.2" stroke-width="2.5" stroke-dasharray="6 5" stroke-opacity="0.85"/>
+  <path d="M4 196 H34" stroke-width="2.5"/>
+  <text x="40.0" y="200.0" font-size="13" text-anchor="start" fill="currentColor" stroke="none" fill-opacity="0.8">100 %</text>
+  <path d="M100 196 H130" stroke-width="2.5" stroke-dasharray="6 5"/>
+  <text x="136.0" y="200.0" font-size="13" text-anchor="start" fill="currentColor" stroke="none" fill-opacity="0.8">50 %</text>
+</svg>

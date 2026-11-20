@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 768 200" font-family="Jost, system-ui, sans-serif" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <title>Wrap</title>
+  <desc>An 8-step lane shown over two passes. With Reset, the lane holds its last value to the end of the loop, then jumps back to its start. With Carry, it glides from its last point into the start across the loop point.</desc>
+  <path d="M4.0 40 V150 M26.5 40 V150 M49.0 40 V150 M71.5 40 V150 M94.0 40 V150 M116.5 40 V150 M139.0 40 V150 M161.5 40 V150 M184.0 40 V150 M206.5 40 V150 M229.0 40 V150 M251.5 40 V150 M274.0 40 V150 M296.5 40 V150 M319.0 40 V150 M341.5 40 V150 M364.0 40 V150 M4 150 H364" stroke-width="1" stroke-opacity="0.22"/>
+  <path d="M184.0 34 V156" stroke-width="1.5" stroke-dasharray="4 4" stroke-opacity="0.8"/>
+  <text x="4.0" y="26.0" font-size="16" text-anchor="start" fill="currentColor" stroke="none">Wrap: Reset</text>
+  <text x="184.0" y="174.0" font-size="13" text-anchor="middle" fill="currentColor" stroke="none" fill-opacity="0.7">dashed line: the loop point</text>
+  <path d="M4.0 117.0 L94.0 56.5 L139.0 95.0 L184.0 95.0 L184.0 117.0 L274.0 56.5 L319.0 95.0 L364.0 95.0" stroke-width="2.5"/>
+  <circle cx="4.0" cy="117.0" r="3.5" fill="currentColor" stroke="none"/>
+  <circle cx="94.0" cy="56.5" r="3.5" fill="currentColor" stroke="none"/>
+  <circle cx="139.0" cy="95.0" r="3.5" fill="currentColor" stroke="none"/>
+  <circle cx="184.0" cy="117.0" r="3.5" fill="currentColor" stroke="none"/>
+  <circle cx="274.0" cy="56.5" r="3.5" fill="currentColor" stroke="none"/>
+  <circle cx="319.0" cy="95.0" r="3.5" fill="currentColor" stroke="none"/>
+  <path d="M404.0 40 V150 M426.5 40 V150 M449.0 40 V150 M471.5 40 V150 M494.0 40 V150 M516.5 40 V150 M539.0 40 V150 M561.5 40 V150 M584.0 40 V150 M606.5 40 V150 M629.0 40 V150 M651.5 40 V150 M674.0 40 V150 M696.5 40 V150 M719.0 40 V150 M741.5 40 V150 M764.0 40 V150 M404 150 H764" stroke-width="1" stroke-opacity="0.22"/>
+  <path d="M584.0 34 V156" stroke-width="1.5" stroke-dasharray="4 4" stroke-opacity="0.8"/>
+  <text x="404.0" y="26.0" font-size="16" text-anchor="start" fill="currentColor" stroke="none">Wrap: Carry</text>
+  <text x="584.0" y="174.0" font-size="13" text-anchor="middle" fill="currentColor" stroke="none" fill-opacity="0.7">dashed line: the loop point</text>
+  <path d="M404.0 117.0 L494.0 56.5 L539.0 95.0 L584.0 117.0 L674.0 56.5 L719.0 95.0 L764.0 117.0" stroke-width="2.5"/>
+  <circle cx="404.0" cy="117.0" r="3.5" fill="currentColor" stroke="none"/>
+  <circle cx="494.0" cy="56.5" r="3.5" fill="currentColor" stroke="none"/>
+  <circle cx="539.0" cy="95.0" r="3.5" fill="currentColor" stroke="none"/>
+  <circle cx="584.0" cy="117.0" r="3.5" fill="currentColor" stroke="none"/>
+  <circle cx="674.0" cy="56.5" r="3.5" fill="currentColor" stroke="none"/>
+  <circle cx="719.0" cy="95.0" r="3.5" fill="currentColor" stroke="none"/>
+</svg>
