@@ -2092,8 +2092,8 @@ Shufl at 0% plays the bar as written, and at 100% the whole Order. On Pitch, val
 
 Three knobs have a second setting behind them. Touch the knob and click the jog to switch:
 
-- Order opens Presets…: the 80 remixes of the Yamaha RS7000 (Normal, Reverse, Roll, Break and Pitch, 1–16 each). Clicking one loads it, with its Order and all its amounts.
-- Stutr switches to Rate (Orig, 1/32 or 1/64: how fast the stutters repeat), then to Vel. With Vel On, the repeats ramp in level as the RS7000's do; with Off, every repeat is at full level.
+- Order opens Presets…: 80 ready-made remixes (Normal, Reverse, Roll, Break and Pitch, 1–16 each). Clicking one loads it, with its Order and all its amounts.
+- Stutr switches to Rate (Orig, 1/32 or 1/64: how fast the stutters repeat), then to Vel. With Vel On, the repeats ramp in level; with Off, every repeat is at full level.
 - Gaps switches to Depth: how hard a gap cuts, from 100% (silent) down to a slight shortening.
 
 The effects combine, and the same settings always give the same bar. A change lands at the next bar line.
@@ -3434,7 +3434,7 @@ These add to the Track View gestures.
 | Control | Action |
 |---|---|
 | Knob 1 | REMIX on / off |
-| Touch knob 3 + click the jog | Presets: the 80 RS7000 remixes |
+| Touch knob 3 + click the jog | Presets: 80 ready-made remixes |
 | Touch knob 6 + click the jog | Switch Stutr to Rate, then to Vel |
 | Touch knob 7 + click the jog | Switch Gaps to Depth |
 | [Delete] + click the jog | Reset the clip's REMIX |
