@@ -60,8 +60,8 @@ or samples of its own on an Audio or Slicer track.
   plays.
 - **Slicer tracks** chop a sample across the pads, evenly or on its transients;
   each step can have its own pitch, length and direction.
-- **REMIX** rearranges a loop live, from gentle to wild, with the Yamaha RS7000's
-  80 remixes as presets. **Bake** keeps the result.
+- **REMIX** rearranges a loop live, from gentle to wild, with 80 remixes as
+  presets. **Bake** keeps the result.
 - **Resample** what you hear into a new sample, or **Flatten** a whole track to
   audio.
 
