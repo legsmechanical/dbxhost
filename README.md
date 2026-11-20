@@ -118,10 +118,7 @@ or samples of its own on an Audio or Slicer track.
   <sub>The browser editor's sequencer, live in both directions with the Move</sub>
 </p>
 
-<p align="center">
-  <img src="docs/readme/web-screen-view.png" width="760" alt="The Screen view in Session View: every track's clips and the mixer, in colour"><br>
-  <sub>The Screen view: the Move's screen, in colour and with room to spare</sub>
-</p>
+<table><tr><td align="center" width="50%"><img src="docs/readme/web-screen-notefx.png" width="380" alt="The Screen view on the NOTE FX bank: the clip's notes above the bank's knobs"><br><sub>The Screen view: the clip's notes over the bank you're on</sub></td><td align="center" width="50%"><img src="docs/readme/web-screen-instrument.png" width="380" alt="The Screen view in an instrument's editor: CHIMERA's Mouth page, its drawn mouth above the knobs"><br><sub>An instrument's editor, with the module's own picture</sub></td></tr></table>
 
 ---
 

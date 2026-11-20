@@ -17,7 +17,9 @@ the section into a versioned heading at release time.
   you're on, and Move's own screen while you edit a Move instrument. You can work from it
   too: turn knobs, switch tracks and press the bank map's pads.
 
-  ![The Screen view in Session View: every track's clips and the mixer, in colour](https://raw.githubusercontent.com/legsmechanical/dbxhost/main/docs/readme/web-screen-view.png)
+  ![The Screen view on the NOTE FX bank: the clip's notes above the bank's knobs](https://raw.githubusercontent.com/legsmechanical/dbxhost/main/docs/readme/web-screen-notefx.png)
+
+  ![The Screen view in an instrument's editor: CHIMERA's Mouth page, its drawn mouth above the knobs](https://raw.githubusercontent.com/legsmechanical/dbxhost/main/docs/readme/web-screen-instrument.png)
 - **A channel strip on every track**: a one-knob compressor and a 3-band EQ with a
   sweepable mid, like a mixing desk's channel. **Turn the jog on MIX** for MIX 2: Low,
   Mid, Freq, High and Comp. In Session View, the map's second column has **EQ** (the jog
