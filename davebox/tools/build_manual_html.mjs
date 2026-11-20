@@ -33,12 +33,13 @@ const QS_SRC = resolve(ROOT, 'QUICKSTART.md');
 /* The manual's chapters, grouped into the parts the sidebar shows. Chapter numbers are the
  * manual's own; a chapter missing from this table lands in the last part rather than vanishing. */
 const PARTS = [
-    { title: 'Start', chapters: [1, 2, QS, 3, 4] },
-    { title: 'Sequencing', chapters: [5, 6, 7, 8, 9, 10] },
-    { title: 'Samples', chapters: [11, 12, 13, 14] },
-    { title: 'Sound and mix', chapters: [15, 16] },
-    { title: 'Arranging and performing', chapters: [17, 18, 19, 20, 21] },
-    { title: 'Beyond the Move', chapters: [22, 23, 24, 25, 26] },
+    { title: 'Start', chapters: [1, 2, QS, 3, 4, 5, 6] },
+    { title: 'Sequencing', chapters: [7, 8, 9, 10, 11, 12, 13, 14] },
+    { title: 'Recording and Playing Audio', chapters: [15, 16, 17, 18] },
+    { title: 'Sound and Mix', chapters: [19, 20] },
+    { title: 'Arranging and Performing', chapters: [21, 22, 23, 24, 25] },
+    { title: 'Connections and Files', chapters: [26, 27, 28] },
+    { title: 'Reference', chapters: [29, 30] },
 ];
 
 /* Hardware BUTTONS are drawn as keycaps — the labelled ones on the panel, plus the step buttons,

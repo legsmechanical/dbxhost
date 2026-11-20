@@ -232,10 +232,12 @@ the section into a versioned heading at release time.
   Note/Session to peek works too: the map follows you there and back.
 
 ### Changed
-- **The manual is reorganised** into six parts — Start, Sequencing, Samples, Sound and
-  mix, Arranging and performing, Beyond the Move — with new chapters for the bank map,
-  REMIX, recording and resampling, mixing, and mute and solo. The HTML manual has a new
-  layout: a contents sidebar, numbered sections and ruled tables.
+- **The manual is rewritten and reorganised** into seven parts — Start, Sequencing, Recording
+  and Playing Audio, Sound and Mix, Arranging and Performing, Connections and Files, and
+  Reference — in plain, step-by-step language, with new chapters for projects, tempo and groove,
+  the bank map, recording and capture, REMIX, recording and resampling, mixing and the audio path,
+  and a Quick Reference brought up to 2.0. The HTML manual has a new, plainer layout. Links to
+  numbered sections from the old manual no longer land on the same section.
 - **A Slicer has one editor, SLICER**, on the pad map's instrument pad: page 1 the slices
   (the picked slice's edges and sound), page 2 its Attack and Decay, page 3 the whole
   sample — a strip with the range on it, Sync, Pitch, Detune, Tempo and Gain. Click page 1
