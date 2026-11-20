@@ -1,13 +1,14 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/readme/hero-dark.png">
-    <img src="docs/readme/hero-light.png" width="760" alt="dAVEBOx SA, a MIDI sequencer for Ableton Move: an Ableton Move showing dAVEBOx's Track View">
+    <img src="docs/readme/hero-light.png" width="760" alt="dAVEBOx SA, a sequencer and sampler for Ableton Move: an Ableton Move showing dAVEBOx's Track View">
   </picture>
 </p>
 
-dAVEBOx SA is an 8-track MIDI sequencer for Ableton Move: clips and scenes on
-the pads, a sound of your choice on every track, note effects and automation
-per clip, and a browser editor on the same Wi-Fi.
+dAVEBOx SA is an 8-track sequencer and sampler for Ableton Move: clips and
+scenes on the pads, a sound of your choice on every track (or samples of its
+own), note effects and automation per clip, a channel strip on every track, and
+a browser editor on the same Wi-Fi.
 
 **SA stands for standalone session.** dAVEBOx SA is not a tool or overtake
 module running inside [Schwung](https://github.com/charlesvestal/schwung)'s
@@ -32,9 +33,9 @@ new happens here.
 
 ## What it does
 
-dAVEBOx makes no sound of its own. Every track sends its notes to an
-instrument: one of Move's own, a Schwung synth (OB-Xd, Dexed and the rest of
-the module catalog), or an external synth on the USB-A port.
+Every track plays an instrument: one of Move's own, a Schwung synth (OB-Xd,
+Dexed and the rest of the module catalog), an external synth on the USB-A port,
+or samples of its own on an Audio or Slicer track.
 
 **Sequencing**
 
@@ -50,6 +51,20 @@ the module catalog), or an external synth on the USB-A port.
 
 <table><tr><td align="center" width="50%"><img src="docs/readme/screen-track-view.png" width="360" alt="Track View: every track's clip, the key and the bank"><br><sub>Track View: every track's clip, the key and the bank</sub></td><td align="center" width="50%"><img src="docs/readme/screen-note-edit.png" width="360" alt="Hold a step to edit its note, length, velocity and more"><br><sub>Hold a step to edit its note, length, velocity and more</sub></td></tr></table>
 
+**Samples**
+
+- **Audio tracks** play a sample per clip, in time: loop points as fine as a
+  single sample, warp to the tempo with or without changing pitch, play forwards,
+  backwards or ping-pong, loop or one-shot.
+- **Record** from the Move's input straight into a clip, or layer over what it
+  plays.
+- **Slicer tracks** chop a sample across the pads, evenly or on its transients;
+  each step can have its own pitch, length and direction.
+- **REMIX** rearranges a loop live, from gentle to wild, with the Yamaha RS7000's
+  80 remixes as presets. **Bake** keeps the result.
+- **Resample** what you hear into a new sample, or **Flatten** a whole track to
+  audio.
+
 **Shaping the notes**
 
 - Every clip has its own note effects: arpeggiator, harmonizer, MIDI delay with
@@ -64,6 +79,8 @@ the module catalog), or an external synth on the USB-A port.
 
 **Sound and mixing**
 
+- A channel strip on every track: a 3-band EQ with a sweepable mid and a
+  one-knob compressor, like a mixing desk's.
 - Four insert effects per track, two send buses, master effects and two LFOs
   per track — on Move's instruments as well as Schwung's.
 - Macros: one knob moves several parameters, each over its own range.
@@ -77,23 +94,33 @@ the module catalog), or an external synth on the USB-A port.
 
 - Performance mode turns the pads into real-time modulation, with 16 preset slots.
 - Note repeat with groove, latch and multi-lane patterns on drum tracks.
-- 16 mute/solo snapshots, and scenes launched from the pads.
+- 16 mute/solo snapshots, and scenes launched from the pads. Mute can stop a
+  track's notes, or cut its sound and leave the tails ringing.
 
 <table><tr><td align="center" width="50%"><img src="docs/readme/screen-session-view.png" width="360" alt="Session View: each track's playing clip and the mixer"><br><sub>Session View: each track's playing clip and the mixer</sub></td><td align="center" width="50%"><img src="docs/readme/screen-performance.png" width="360" alt="Performance mode with mods engaged"><br><sub>Performance mode with mods engaged</sub></td></tr></table>
 
 **Getting things in and out**
 
 - Projects live on the pads, separate from your Move sets.
-- Export a project to an Ableton Live set, or any clip to a MIDI file; import
-  MIDI files into clips.
+- Export a project to an Ableton Live set, Audio tracks and the channel strip
+  included, or any clip to a MIDI file; import MIDI files into clips.
 - The browser editor at `move.local:7700` has the sequencer, mixer and sound
-  pages, a live mirror of the screen you can record, and the full manual.
+  pages, the full manual, and the **Screen view**: a full-colour companion to
+  the Move's screen that follows what you do, and that you can turn knobs and
+  switch tracks from. It works on a tablet or a phone held sideways.
+- Type names by voice: hold Rec on any on-screen keyboard and speak. It runs
+  entirely on the Move (English; an optional download).
 - Schwung's Quantized Sampler and Skipback work inside dAVEBOx, to record what
   you play as audio.
 
 <p align="center">
   <img src="docs/readme/web-sequencer.png" width="760" alt="The browser editor's sequencer: session grid, piano roll, step band and velocity lane"><br>
   <sub>The browser editor's sequencer, live in both directions with the Move</sub>
+</p>
+
+<p align="center">
+  <img src="docs/readme/web-screen-view.png" width="760" alt="The Screen view in Session View: every track's clips and the mixer, in colour"><br>
+  <sub>The Screen view: the Move's screen, in colour and with room to spare</sub>
 </p>
 
 ---

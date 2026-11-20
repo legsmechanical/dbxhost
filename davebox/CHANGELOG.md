@@ -7,59 +7,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
-### Added
-- **Say a name instead of typing it.** On any on-screen keyboard (project and template
-  names, Save As, renames), **hold Rec and speak**, then let go: the words appear in the
-  name, ready to edit before you press OK. A card over the keyboard shows that it's
-  listening, with a level meter so you can see it hearing you. Talk for up to 30 seconds,
-  long enough for a whole line of lyrics. It listens through the Move's microphone, or
-  through the line input when a cable is plugged in (a mic on line-in works too). It only
-  runs with the music stopped (not counting in); input monitoring is switched off while
-  you talk and comes back afterwards. Silence and background noise are ignored rather
-  than turned into words. It runs entirely on the Move and works in English. Rec lights
-  red while it listens and pulses white while it works it out. Dictation is an optional
-  download (about 113 MB) so the update stays small: install it from **Project Settings →
-  Dictation**, which shows the download's progress and can remove it again.
-- **A comma on the on-screen keyboard** (on the symbols page).
-- **Mute can cut the sound instead of the notes.** A new **Mute Mode** setting in each
-  track's settings: **MIDI** (as before) stops the track's notes; **Audio** keeps the notes playing
-  and mutes the track's sound at its mixer channel, so held notes, tails and delays are
-  right there again the moment you unmute. Soloing another track mutes it the same way.
-  Not on MIDI tracks (there is no channel to mute) or the Conductor.
-- **The bank map follows you between views.** With the jog held, press **Note/Session** and
-  the view switches with the map still up, now showing that view's map. Holding
-  Note/Session to peek works too: the map follows you there and back.
+2.0.0 was a test release; this section lists everything new since 1.1.3.
 
-### Fixed
-- **A module with several drawn pages shows each one.** Every drawn page of a module was
-  drawn as whichever one you visited first, so the others came out blank or showed the
-  wrong picture.
-- **Touch + click on a module's text parameter opens the keyboard.** It opened an empty
-  screen instead. OK writes the text, and either way you're back on the page you came from.
-- **Delete + knob clears automation on a drum module's pad pages.** On a module that has
-  its own hold-Delete-and-pick-a-pad clear (DR32, for example), Delete + touching a knob
-  said "pick a target" and left the automation in place. It clears that parameter's
-  automation again, and a pad picked afterwards in the same hold is left alone.
-- **Aftertouch reaches a track's MIDI effect.** Pad pressure, and aftertouch the clip
-  plays, went around a MIDI effect module straight to the instrument, so an effect that
-  responds to pressure never felt it. It now goes through the effect first, as notes
-  do, in both Pre and Post.
-- **Locks on DR32's synth-engine pads now take the value you set.** A held-step lock on an
-  engine pad's parameter (an 808 pad's Decay, say) recorded every value as the top and
-  played back near the bottom, so every hit sounded the same. Sample pads were not affected.
-- **Footer hints say what a gesture does now.** Hold Shift and a screen that offered a
-  Shift gesture names the click that performs it (Track Config's CHANGE, the Instrument
-  picker's LISTS, the automation menu's JUMP, snapshots' STORE, page copy's CUT, the
-  waveform editor's FILE). With a step held, the POINT / PUNCH hint is shown first instead
-  of being cut off. Hints that named gestures doing nothing there are gone (Shift + jog on
-  the Audio and Slicer screens, Back on the Session mixer, JOG BANK on the automation card),
-  and Shift is spelled SHFT everywhere. Macro legs, preset lists and bus inserts now show
-  their Shift + click gesture on the row it applies to.
-- **Slicer: the waveform stays on End.** After touching or turning End, playing another
-  slice keeps that slice's End in view until you touch Start or leave the slice editor.
-
-## [2.0.0] — 2026-11-16
 ### Added
+- **The browser's Screen view is a colour alternative to the OLED.** Open it from the web
+  manager (or add it to a tablet's home screen). It follows what you do and where you are
+  on the Move, and shows more than the OLED has room for: every knob with its value,
+  waveforms with a playhead, every automation lane with its curve, which page of a bank
+  you're on, and Move's own screen while you edit a Move instrument. You can work from it
+  too: turn knobs, switch tracks and press the bank map's pads.
+
+  ![The Screen view in Session View: every track's clips and the mixer, in colour](https://raw.githubusercontent.com/legsmechanical/dbxhost/main/docs/readme/web-screen-view.png)
 - **A channel strip on every track**: a one-knob compressor and a 3-band EQ with a
   sweepable mid, like a mixing desk's channel. **Turn the jog on MIX** for MIX 2: Low,
   Mid, Freq, High and Comp. In Session View, the map's second column has **EQ** (the jog
@@ -249,6 +207,27 @@ the section into a versioned heading at release time.
   the right, with a plug while the Move is on the charger. When Move says the battery
   is low, a **LOW BATTERY** card comes up over any screen until you click the jog, and
   again every 5 minutes until the Move is plugged in.
+- **Say a name instead of typing it.** On any on-screen keyboard (project and template
+  names, Save As, renames), **hold Rec and speak**, then let go: the words appear in the
+  name, ready to edit before you press OK. A card over the keyboard shows that it's
+  listening, with a level meter so you can see it hearing you. Talk for up to 30 seconds,
+  long enough for a whole line of lyrics. It listens through the Move's microphone, or
+  through the line input when a cable is plugged in (a mic on line-in works too). It only
+  runs with the music stopped (not counting in); input monitoring is switched off while
+  you talk and comes back afterwards. Silence and background noise are ignored rather
+  than turned into words. It runs entirely on the Move and works in English. Rec lights
+  red while it listens and pulses white while it works it out. Dictation is an optional
+  download (about 113 MB) so the update stays small: install it from **Project Settings →
+  Dictation**, which shows the download's progress and can remove it again.
+- **A comma on the on-screen keyboard** (on the symbols page).
+- **Mute can cut the sound instead of the notes.** A new **Mute Mode** setting in each
+  track's settings: **MIDI** (as before) stops the track's notes; **Audio** keeps the notes playing
+  and mutes the track's sound at its mixer channel, so held notes, tails and delays are
+  right there again the moment you unmute. Soloing another track mutes it the same way.
+  Not on MIDI tracks (there is no channel to mute) or the Conductor.
+- **The bank map follows you between views.** With the jog held, press **Note/Session** and
+  the view switches with the map still up, now showing that view's map. Holding
+  Note/Session to peek works too: the map follows you there and back.
 
 ### Changed
 - **A Slicer has one editor, SLICER**, on the pad map's instrument pad: page 1 the slices
@@ -311,6 +290,37 @@ the section into a versioned heading at release time.
   Clips of the same length still hand over in step with each other.
 
 ### Fixed
+- **A module with several drawn pages shows each one.** Every drawn page of a module was
+  drawn as whichever one you visited first, so the others came out blank or showed the
+  wrong picture.
+- **Touch + click on a module's text parameter opens the keyboard.** It opened an empty
+  screen instead. OK writes the text, and either way you're back on the page you came from.
+- **Delete + knob clears automation on a drum module's pad pages.** On a module that has
+  its own hold-Delete-and-pick-a-pad clear (DR32, for example), Delete + touching a knob
+  said "pick a target" and left the automation in place. It clears that parameter's
+  automation again, and a pad picked afterwards in the same hold is left alone.
+- **Aftertouch reaches a track's MIDI effect.** Pad pressure, and aftertouch the clip
+  plays, went around a MIDI effect module straight to the instrument, so an effect that
+  responds to pressure never felt it. It now goes through the effect first, as notes
+  do, in both Pre and Post.
+- **Locks on DR32's synth-engine pads now take the value you set.** A held-step lock on an
+  engine pad's parameter (an 808 pad's Decay, say) recorded every value as the top and
+  played back near the bottom, so every hit sounded the same. Sample pads were not affected.
+- **Footer hints say what a gesture does now.** Hold Shift and a screen that offered a
+  Shift gesture names the click that performs it (Track Config's CHANGE, the Instrument
+  picker's LISTS, the automation menu's JUMP, snapshots' STORE, page copy's CUT, the
+  waveform editor's FILE). With a step held, the POINT / PUNCH hint is shown first instead
+  of being cut off. Hints that named gestures doing nothing there are gone (Shift + jog on
+  the Audio and Slicer screens, Back on the Session mixer, JOG BANK on the automation card),
+  and Shift is spelled SHFT everywhere. Macro legs, preset lists and bus inserts now show
+  their Shift + click gesture on the row it applies to.
+- **Slicer: the waveform stays on End.** After touching or turning End, playing another
+  slice keeps that slice's End in view until you touch Start or leave the slice editor.
+- **A fast spin of the volume knob no longer stutters the sound** of tracks played by
+  Move's own instruments.
+- **The browser editor keeps up with the transport.** Its Play / Stop label follows the
+  Move right after a click, a stop is never undone by a late update, and the session grid
+  follows launches.
 - **No "Move crashed" flash when you open dAVEBOx SA from the Tools menu.** It came up
   for a moment as stock Move closed, before dAVEBOx loaded.
 - **SAMPLE zoomed all the way out shows a little of the audio outside Start and End**,

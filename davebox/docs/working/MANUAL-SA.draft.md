@@ -504,7 +504,7 @@ map**:
 ## 3.7 Menus & Project Settings
 
 **Shift + Step 2** opens **Project Settings** — the settings saved with the project
-(except **Card Hold**, **Monitor**, **Input**, **Input Gain**, **Bluetooth**, **Host Settings...** and **Move Settings...**,
+(except **Card Hold**, **Monitor**, **Input**, **Input Gain**, **Bluetooth**, **Dictation**, **Host Settings...** and **Move Settings...**,
 which apply to every project).
 The full list is in [Settings & Projects](#19-settings--projects); many settings have
 a **Shift + Step** shortcut (see the [Quick Reference](#21-quick-reference)).
@@ -521,7 +521,8 @@ a **Shift + Step** shortcut (see the [Quick Reference](#21-quick-reference)).
 - **Back** steps out; in Project Settings it also cancels a change in progress.
 
 **Typing a name** (a project, a template, Save As, a rename) uses the on-screen keyboard:
-turn the jog to a key and click it. **OK** saves, **Back** cancels.
+turn the jog to a key and click it. **OK** saves, **Back** cancels. The last page of
+keys is symbols, the comma among them.
 
 **Or say it: hold Rec, speak, let go.** A card opens over the keyboard: **LISTENING**,
 with a meter that moves as it hears you and a bar counting toward the 30-second limit
@@ -531,11 +532,20 @@ the line input whenever a cable is plugged in, so a mic on line-in works too (an
 else playing into it will be heard). Silence and background noise come back as
 **NO SPEECH** rather than as words.
 
+**Dictation is an add-on.** It isn't part of the update: get it once from **Project
+Settings → Dictation** (about 113 MB, so the Move needs to be online). The row shows
+**Get 113 MB**, then the download's progress (a percentage, **Checking**,
+**Unpacking**) and **Installed**. The download carries on with the menu closed. Click
+**Installed** to remove it again (it asks first). **Update** means a newer version is
+waiting; **Retry**, **Offline** or **No space** means the last try didn't finish.
+Until it's installed, holding Rec on a keyboard says **NOT INSTALLED** (or **STILL
+INSTALLING**, **UPDATE NEEDED**) and points you to **PROJECT SETTINGS**.
+
 - If the name hasn't been touched yet, what you say replaces it. Once you've typed
   something, what you say is added after it.
 - The words are still editable with the keyboard before you press **OK**.
 - Up to 30 seconds at a time, long enough for a line of lyrics. Commas and the closing full
-  stop are left out (type a comma if you want one). A quick tap on Rec shows **HOLD REC TO
+  stop are left out (type a comma from the symbols page if you want one). A quick tap on Rec shows **HOLD REC TO
   TALK**.
 - **Back** while it's listening or transcribing cancels just the dictation; press
   **Back** again to leave the keyboard.
@@ -711,6 +721,10 @@ the clip you're editing.
 - **Delete + Mute** clears every mute and solo (on a drum track, just its lane
   mutes and solos).
 - A live pad you hold still plays through a muted track.
+- A track's **Mute Mode** (in its [track settings](#194-track-settings)) says what
+  muting does: **MIDI** stops its notes; **Audio** lets them play on and silences its
+  sound, so tails and held notes are there again the moment you unmute (a live pad
+  is silenced too).
 - In Session View you mute each track from its knob — see
   [Arranging](#133-mute--solo).
 
@@ -1645,7 +1659,8 @@ menu, or **Shift + hold Note/Session**. It has three pages — **turn the jog** 
 **Page 1, SLICES** shows the waveform with the slices on it, the picked one bracketed, the
 audio outside the range dotted. **K1** / **K3** move the picked slice's start / end, one
 screen pixel a detent (a slice ends where the next begins, **E NEXT**; turn its end away to
-set its own). **K2** zooms. **K4–K8** are the slice's **Play** (**One** to its end, **Gate**
+set its own). **K2** zooms. Once you've touched or turned **End**, picking another slice
+shows that slice's end, until you touch **Start** or leave the slice editor. **K4–K8** are the slice's **Play** (**One** to its end, **Gate**
 as long as the step, **Thru** on to the range's End — the next slice cuts it off),
 **Pitch**, **Detune**, **Revrs** and **Gain**, each on top of the sample's. **Delete + pad**
 removes a slice (it joins the one before; slice 1 stays).
@@ -2078,8 +2093,10 @@ lane and isn't automated. See [Parameter banks](#36-parameter-banks) and
 [Sequencer Effects](#11-sequencer-effects).
 
 - An automated knob shows a dot on its cell and a blinking ring.
-- **Mute + touch** mutes that parameter's automation; **Delete + touch** clears it.
-  (In the session mixer, Mute + touch still mutes the track.)
+- **Mute + touch** mutes that parameter's automation; **Delete + touch** clears it,
+  also on a module page with its own hold-Delete gesture (DR32's pad pages): the
+  touch clears the automation, and a pad you pick later in the same hold is left
+  alone. (In the session mixer, Mute + touch still mutes the track.)
 - **The resting value** is where a parameter sits when nothing automates it: on
   Stop, and in clips without automation for it. There's one per parameter on its
   track. Turn the knob while stopped, or while a clip with no automation for it is
@@ -2297,7 +2314,10 @@ In Session View each knob stands for its track:
 | **Shift + Mute + touch knob** | Solo it |
 | **Delete + Mute** | Clear every mute and solo |
 
-- A live pad you hold still plays through a muted track.
+- A live pad you hold still plays through a muted track — unless its
+  **Mute Mode** is **Audio**, which mutes the sound and lets the notes play on (see
+  [Muting the track](#52-muting-the-track)). A solo elsewhere mutes such a track the same
+  way.
 - The knob LEDs show each track's state: its color when playing, dark when muted,
   blinking when soloed.
 - Mute the active track directly in [Track View](#52-muting-the-track); mute a drum
@@ -2681,7 +2701,7 @@ Record stay dAVEBOx's while it is up.
 **Touch a knob and click the jog** for a parameter a knob can't turn well:
 
 - a file opens the file browser;
-- text opens the keyboard;
+- text opens the keyboard (**OK** writes it; either way you're back on the page);
 - a long list opens a picker;
 - a sample marker opens a full-screen waveform (the jog moves the marker, knob 8
   zooms, **Shift + click** picks the file).
@@ -3350,6 +3370,7 @@ see [Track settings](#194-track-settings) below.
 | Host Settings... | dAVEBOx's copy of Schwung's settings (display, audio and more), over the top of dAVEBOx — see [§19.6](#196-davebox-and-official-schwung) | action | — |
 | Move Settings... | Move's own settings menu (Link, MIDI sync, inputs and more), dAVEBOx's copy — see below | action | — |
 | Bluetooth | The Bluetooth radio, for [Bluetooth MIDI](#172-external-midi-in-and-out) devices (shown only when the Move has one) | On, Off | — |
+| Dictation | Download, update or remove the add-on that lets you speak a name on the keyboard — see [§3.7](#37-menus--project-settings) | action (shows its state: Get, %, Installed…) | — |
 
 #### The groove
 
