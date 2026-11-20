@@ -1403,16 +1403,16 @@ const importPage = (t) => {
     ticks(20); click(); ticks(4);                                         /* pick its first part */
     if (!MI.miStateForTest() || MI.miStateForTest().layer !== 'card') throw new Error('no MIDI browser card');
 };
-screen('import-files', '7.5 Importing a MIDI File', 'Import MIDI — the list',
-    'Touch knob 8 on the CLIP card and click the jog. On a track\'s first visit, the list shows your user data folder, with its folders and MIDI files.',
+screen('import-files', '7.5.1 The List', 'Import MIDI — the list',
+    'Touch knob 8 on the CLIP bank and click the jog. On a track\'s first visit, the list shows your user data folder, with its folders and MIDI files.',
     () => { stopTransport(); openImport(3); });
-screen('import-parts', '7.5 Importing a MIDI File', 'Import MIDI — a file with several parts',
+screen('import-parts', '7.5.1 The List', 'Import MIDI — a file with several parts',
     'A file with several parts opens like a folder: its parts are laid out like files, and each plays as you land on it.',
     () => { stopTransport(); openImport(3); jogToLabel('Bach Invention 8'); click(); ticks(4); });
-screen('import-options', '7.5 Importing a MIDI File', 'Import MIDI — the knobs',
-    'The card has Start, Bars, Grid and Stretch on top, then the notes on one line, with brackets marking what will land. Oct, Semi, Scale and the file\'s BPM are underneath.',
+screen('import-options', '7.5.2 The Card', 'Import MIDI — the knobs',
+    'The card has Start, Bars, Res and Stretch on top, then the notes on one line, with brackets marking what will land. Oct, Semi, Scale and the file\'s BPM are underneath.',
     () => { stopTransport(); importPage(3); });
-screen('import-options-cut', '7.5 Importing a MIDI File', 'Import MIDI — notes that will be cut',
+screen('import-options-cut', '7.5.2 The Card', 'Import MIDI — notes that will be cut',
     'When you move the start and length, the top right says how many notes won\'t land.',
     () => { stopTransport(); importPage(3);
             knobTouch(0); knobTurn(0, 12); knobRelease(0); knobTouch(1); knobTurn(1, -24); knobRelease(1); ticks(2); });
@@ -1551,7 +1551,7 @@ screen('state-mismatch', '5.6 Compatibility and What\'s Saved', 'A set from anot
  * file, and supplying those would be staging the result, not reaching it. */
 
 /* 15.4 — importing over a clip that has notes */
-screen('import-replace', '7.5 Importing a MIDI File', 'Import MIDI — replacing a clip',
+screen('import-replace', '7.5.3 Loading', 'Import MIDI — replacing a clip',
     'If the clip you are on already holds notes, REPLACES shows at the top right. Clicking the jog asks before it loads.',
     () => { stopTransport(); importPage(0);
             if (MI.miStateForTest() && !/REPLACES/.test(JSON.stringify(MI.miHintsForTest(false))))

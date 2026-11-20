@@ -281,6 +281,10 @@ const MANUAL_SCREENS = new Set([
     'track-audio-playing',     // an Audio track's overview
     'resample-options',        // resampling a scene: its options
     'session-mixer-volume',    // the Session mixer
+    'import-files',            // Import MIDI: the list
+    'import-parts',            // Import MIDI: a file's parts
+    'import-options-cut',      // Import MIDI: notes the card will cut
+    'import-replace',          // Import MIDI: REPLACES on a clip with notes
     'bank-crop-touched',       // touch and click: brackets and the CLK hint
     'bank-clip-alt',           // touch and click: knobs switched to their alternates
     /* pad maps: the pads as the UI lights them */
