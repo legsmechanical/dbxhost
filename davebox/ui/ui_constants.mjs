@@ -933,9 +933,8 @@ export function padSampled(pm) { return pm === PAD_MODE_AUDIO || pm === PAD_MODE
  * params"). Touch one of these knobs and click the jog: that knob flips
  * between its main and alt parameter (S.knobAlt, knobAltOn), the others stay.
  * [main, alt] are the on-screen short names — the footer reads CLK + the one
- * a click would switch to. Page alts (RPT GROOVE, Arp Steps) are NOT here:
- * they are touch + click too, but page-wide (S.altMode / S.stepIntervalMode;
- * ARP_STEPS_KNOB below, and any knob on RPT GROOVE). */
+ * a click would switch to. RPT GROOVE's Nudge and Arp Steps are NOT here:
+ * they are jog pages (S.altMode / S.stepIntervalMode + S.arpVelPage). */
 export const KNOB_ALTS = {
     drum: {
         0: { 0: ['Res', 'Zoom'], 2: ['Shift', 'Nudge'], 6: ['Dir', 'Revrs'] },   /* DRUM LANE */
@@ -953,10 +952,10 @@ export const KNOB_ALTS = {
         0: { 0: ['Res', 'Zoom'], 2: ['Shift', 'Nudge'], 6: ['Dir', 'Revrs'] },
     },
 };
-/* Arp Steps opens from the Steps knob (K5 on SEQ ARP and LIVE ARP) touched +
- * a jog click (Josh, 2026-10-04: "live arp > step editor = knob touch + click
- * on steps param (k5)"; "seq arp should work like live arp"). */
-export const ARP_STEPS_KNOB = 4;
+/* SEQ ARP and LIVE ARP: banks whose jog pages 2-3 are Arp Steps (pitch,
+ * velocity) — arpPageJog. Until 2026-11-20 it opened from the Steps knob (K5)
+ * touched + a jog click (Josh, 2026-10-04); now a jog page ("off load those
+ * screens to bank pages"). */
 export function arpStepsBank(padMode, bank) {
     return padMode !== PAD_MODE_DRUM && (bank === 4 || bank === 5);
 }

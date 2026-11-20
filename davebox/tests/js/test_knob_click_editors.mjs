@@ -52,7 +52,7 @@ globalThis.host_ext_midi_remap_enable = () => {};
 
 async function main() {
 await import('../../ui/ui.js');
-const { S } = await import('../../ui/ui_state.mjs');
+const { S, standDownBankDisplay } = await import('../../ui/ui_state.mjs');
 /* This rig lets go and looks in the same instant; the release hold has its
  * own test (test_touch_hold.mjs). */
 S.touchHoldMs = 0;
@@ -98,58 +98,84 @@ const bracketed = (f, k) => {
     return !!(at(x, y) && at(x + w - 1, y) && at(x, y + h - 1) && at(x + w - 1, y + h - 1));
 };
 
+/* Arp Steps and RPT GROOVE's Nudge are JOG PAGES (Josh, 2026-11-20: "now that
+ * jog is free to move between pages, i wonder if we can off load those screens
+ * to bank pages" · "arp and rpt groove"). No knob opens them any more. */
+const jog = (d) => { cc(14, d > 0 ? 1 : 127); ticks(2); };
 for (const [bank, name] of [[5, 'LIVE ARP'], [4, 'SEQ ARP']]) {
-    step('⭐ ' + name + ': K5 (Steps) wears the brackets; touched, the footer says CLK STEPS; a plain click opens nothing', () => {
+    step('⭐ ' + name + ': no knob is a door any more — K5 wears no brackets, touched it offers no CLK, and touch + click opens nothing', () => {
         latch(bank);
         assert(S.bankCardLatched, 'setup: latched');
         const f = frame();
-        assert(bracketed(f, C.ARP_STEPS_KNOB), 'K5 is not bracketed');
-        assert(!bracketed(f, 0) && !bracketed(f, 5), 'another knob is bracketed');
-        assert(!kit.kitHintsForTest().some((h) => h[0] === 'CLK'), 'untouched footer offers a knob CLK: ' + drawnHints());
-        assert(kit.kitHintsForTest().some((h) => h[0] === 'HLD' && h[1] === 'BANKS'), 'untouched footer does not offer the map: ' + drawnHints());
-        click();
-        assert(!S.stepIntervalMode && !S.bankMapUp, 'a plain click opened Arp Steps, or left the map up');
-        for (const k of [0, 3, 7]) {
+        assert(!bracketed(f, 4), 'K5 is still bracketed');
+        assert(render.bankPagesRight(bank).endsWith(' 1/3'), 'header page mark: ' + render.bankPagesRight(bank));
+        for (const k of [0, 4, 7]) {
             touchClick(k);
-            assert(!S.stepIntervalMode, 'touch K' + (k + 1) + ' + click opened Arp Steps (only Steps, K5, does)');
+            assert(!S.stepIntervalMode, 'touch K' + (k + 1) + ' + click opened Arp Steps');
         }
-        touch(C.ARP_STEPS_KNOB);
-        assert(drawnHints() === JSON.stringify([['CLK', 'STEPS']]), 'touched K5 footer: ' + drawnHints());
-        untouch(C.ARP_STEPS_KNOB);
+        touch(4);
+        assert(!kit.kitHintsForTest().some((h) => h[0] === 'CLK'), 'touched K5 footer: ' + drawnHints());
+        untouch(4);
     });
-    step('⭐⭐ ' + name + ': touch K5 + click opens Arp Steps ON SCREEN; inside, neither click closes it; Back does, onto the card', () => {
-        const before = frame();
-        touchClick(C.ARP_STEPS_KNOB);
-        assert(S.stepIntervalMode, 'Arp Steps did not open');
-        assert(!same(before, frame()), 'the screen did not change');
-        click();
-        assert(S.stepIntervalMode, 'a plain click inside closed it');
-        touchClick(C.ARP_STEPS_KNOB);
-        assert(S.stepIntervalMode, 'touch K5 + click inside closed it (K5 is step 5 there)');
+    step('⭐⭐ ' + name + ': the jog turns its pages — settings, Arp Steps pitch, Arp Steps velocity — clamped at both ends, ON SCREEN', () => {
+        const p1 = frame();
+        jog(-1);
+        assert(!S.stepIntervalMode, 'a left turn on page 1 opened something');
+        jog(1);
+        assert(S.stepIntervalMode && !S.arpVelPage, 'page 2 is not Arp Steps pitch');
+        const p2 = frame();
+        assert(!same(p1, p2), 'page 2 did not change the screen');
+        assert(render.bankPagesRight(bank).endsWith(' 2/3'), 'page 2 mark: ' + render.bankPagesRight(bank));
+        assert(drawnHints() === JSON.stringify([['BACK', 'OUT']]), 'page 2 footer: ' + drawnHints());
+        jog(1);
+        assert(S.stepIntervalMode && S.arpVelPage, 'page 3 is not Arp Steps velocity');
+        assert(!same(p2, frame()), 'page 3 did not change the screen');
+        assert(render.bankPagesRight(bank).endsWith(' 3/3'), 'page 3 mark: ' + render.bankPagesRight(bank));
+        jog(1);
+        assert(S.stepIntervalMode && S.arpVelPage, 'a right turn on page 3 left it (no wrap)');
+        jog(-1);
+        assert(S.stepIntervalMode && !S.arpVelPage, 'a left turn did not come back to pitch');
+        jog(-1);
+        assert(!S.stepIntervalMode, 'a left turn did not come back to the settings');
+    });
+    step('⭐ ' + name + ': the knobs set PITCH on page 2 and VELOCITY on page 3 — Shift no longer chooses', () => {
+        const t = S.activeTrack, isSeq = bank === 4;
+        const ac = () => isSeq ? S.seqArpStepInt[t][S.activeClip[t]] : S.tarpStepInt[t];
+        const av = () => isSeq ? S.seqArpStepVel[t][S.activeClip[t]] : S.tarpStepVel[t];
+        jog(1);
+        sets.length = 0;
+        cc(71 + 1, 1); ticks(1); untouch(1);
+        assert(sets.some((x) => x.includes(isSeq ? '_seq_arp_step_int=1' : '_tarp_step_int=1')) || (ac()[1] | 0) !== 0,
+               'page 2 K2 did not set step 2\'s pitch: ' + JSON.stringify(sets));
+        jog(1);
+        sets.length = 0;
+        cc(71 + 2, 127); ticks(1); untouch(2);
+        assert(sets.some((x) => x.includes(isSeq ? '_seq_arp_step_vel=2' : '_tarp_step_vel=2')),
+               'page 3 K3 did not set step 3\'s velocity: ' + JSON.stringify(sets));
+        jog(-1); jog(-1);
+    });
+    step(name + ': Back leaves Arp Steps for the settings, onto the card', () => {
+        jog(1); jog(1);
+        assert(S.stepIntervalMode, 'setup');
         back();
         assert(!S.stepIntervalMode && S.bankCardLatched, 'Back: editor ' + S.stepIntervalMode + ' latched ' + S.bankCardLatched);
     });
-    step(name + ': a jog turn leaves Arp Steps, as before', () => {
-        touchClick(C.ARP_STEPS_KNOB);
-        assert(S.stepIntervalMode, 'setup');
-        cc(14, 1); ticks(2);
-        assert(!S.stepIntervalMode, 'the turn did not leave Arp Steps');
-    });
 }
 
-step('⭐ from REST: touch K5 + click opens Arp Steps; nothing locks, and Back is the overview', () => {
-    home(); toBank(5);
-    assert(!render.bankCardVisible(), 'setup: at rest');
-    touchClick(C.ARP_STEPS_KNOB);
+step('⭐ from REST: the jog opens Arp Steps; nothing locks, and Back is the overview', () => {
+    home(); toBank(5); standDownBankDisplay(true); ticks(2);
+    assert(!render.bankCardVisible(), 'setup: at rest (latched ' + S.bankCardLatched + ', touched ' + S.knobTouched + ', shift ' + S.shiftHeld + ')');
+    jog(1);
     assert(S.stepIntervalMode && !S.bankCardLatched, 'editor ' + S.stepIntervalMode + ' latched ' + S.bankCardLatched);
     back();
     assert(!S.stepIntervalMode && !render.bankCardVisible(), 'Back from the editor is the overview');
 });
 
-step('⭐⭐ RPT GROOVE: the footer says KNB+CLK NUDGE on the Velocity page — drawn, with room under the numbers', () => {
+step('⭐⭐ RPT GROOVE: Velocity is page 1/2 — no KNB+CLK in the footer, room under the numbers; a click or a touch + click flips nothing', () => {
     S.trackPadMode[2] = C.PAD_MODE_DRUM;
     latch(5);
-    assert(footerDrawn() === JSON.stringify([['KNB+CLK', 'NUDGE'], ['BACK', 'OUT']]), 'velocity page footer: ' + footerDrawn());
+    assert(!JSON.stringify(kit.kitHintsForTest()).includes('KNB+CLK'), 'velocity page footer: ' + footerDrawn());
+    assert(render.bankPagesRight(5).endsWith(' 1/2'), 'page mark: ' + render.bankPagesRight(5));
     const f = frame();
     let ink = 0; for (let y = kit.MV_FOOTER_Y - 2; y < kit.MV_FOOTER_Y; y++) for (let x = 0; x < 128; x++) ink += f[y * W + x];
     assert(ink === 0, 'the step numbers run into the footer: ' + ink + ' px');
@@ -157,17 +183,23 @@ step('⭐⭐ RPT GROOVE: the footer says KNB+CLK NUDGE on the Velocity page — 
     assert(nums > 0, 'the step numbers are not on their row (48) above the footer');
     click();
     assert(!S.altMode && !S.bankMapUp, 'a plain click flipped the page, or left the map up');
+    touchClick(3);
+    assert(!S.altMode, 'touch + click still flips to Nudge');
 });
 
-step('⭐⭐ RPT GROOVE: touch ANY knob + click flips to Nudge; the footer says KNB+CLK VELOCITY; and back', () => {
-    for (const k of [3, 7]) {
-        touchClick(k);
-        assert(S.altMode, 'K' + (k + 1) + ' + click did not flip to Nudge');
-        assert(footerDrawn() === JSON.stringify([['KNB+CLK', 'VELOCITY'], ['BACK', 'OUT']]), 'nudge page footer: ' + footerDrawn());
-        touchClick(0);
-        assert(!S.altMode, 'K1 + click did not flip back to Velocity');
-    }
-    touchClick(2);
+step('⭐⭐ RPT GROOVE: the jog turns to Nudge (2/2) and back, clamped; Back clears Nudge', () => {
+    const v = frame();
+    jog(-1);
+    assert(!S.altMode, 'a left turn on Velocity flipped it');
+    jog(1);
+    assert(S.altMode, 'a right turn did not go to Nudge');
+    assert(!same(v, frame()), 'Nudge did not change the screen');
+    assert(render.bankPagesRight(5).endsWith(' 2/2'), 'page mark: ' + render.bankPagesRight(5));
+    jog(1);
+    assert(S.altMode, 'a right turn on Nudge left it (no wrap)');
+    jog(-1);
+    assert(!S.altMode, 'a left turn did not come back to Velocity');
+    jog(1);
     back();
     assert(!S.altMode, 'Back did not clear the Nudge page');
     S.trackPadMode[2] = C.PAD_MODE_MELODIC_SCALE;

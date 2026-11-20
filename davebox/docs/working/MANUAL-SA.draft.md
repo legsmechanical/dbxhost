@@ -371,8 +371,10 @@ A knob with named choices, such as an arp style, opens its list while you turn i
 The knob LEDs light on every bank: knobs 1–4 white and 5–8 amber, with brightness following the
 value. A dark LED means nothing is on that knob.
 
-On a bank with pages, turning the jog flips the pages. The paged banks are MIX (the levels, then
-the [channel strip](#212-the-channel-strip)), an Audio clip's SAMPLE and a Slicer's SLICER editor.
+On a bank with pages, turning the jog flips the pages, and the header shows which page you are on
+(2/3). The paged banks are MIX (the levels, then the [channel strip](#212-the-channel-strip)), SEQ
+ARP and LIVE ARP (the settings, then [Arp Steps](#1341-the-arp-steps-editor)), RPT GROOVE
+(Velocity, then Nudge), an Audio clip's SAMPLE and a Slicer's SLICER editor.
 
 LIVE ARP opened with [Shift] and a held [Step 11], the module editors, AUTOMATION and TRACK CONFIG
 stay up until you press [Back].
@@ -388,8 +390,7 @@ A touch and click does one of these:
   Nudge, Dir to Reverse Style, Rand to Algo, and Rate to Clock Feedback. Touch and click again,
   press [Back], or leave the bank to switch it back.
 - It runs a one-shot action, such as Crop or Legato.
-- It opens an editor. Steps (knob 5) on SEQ ARP and LIVE ARP opens Arp Steps, any knob on RPT
-  GROOVE switches between its Velocity and Nudge pages, and a knob on MACROS opens that macro.
+- It opens an editor: a knob on MACROS opens that macro.
 
 On AUTOMATION, hold [Delete] and click the jog to clear the lane under the cursor.
 
@@ -1312,13 +1313,13 @@ The extra octaves set by OCT join the notes the style orders. For example, Down 
 
 ### 13.4.1 The Arp Steps Editor
 
-Each arp step can have its own pitch offset and velocity. To open the per-step editor, touch knob 5 (STEPS) and click the jog. It works the same on LIVE ARP.
+Each arp step can have its own pitch offset and velocity. The per-step editor is SEQ ARP's second and third pages: turn the jog right. It works the same on LIVE ARP.
 
-- Knobs 1–8 set each step's pitch offset (±24 scale degrees). With [Shift] held, they set each step's velocity. Thru passes the incoming velocity.
+- On page 2, knobs 1–8 set each step's pitch offset (±24 scale degrees). On page 3 they set each step's velocity. Thru passes the incoming velocity.
 - On the pads, the column is the step and the row is one of four velocity levels, bottom to top. Press the bottom row again to turn the step off. Hold [Delete] and tap a pad to set Thru.
 - To set the step-loop length (1–8), hold [Loop] and tap a pad.
 
-To close the editor, turn the jog or press [Back].
+To go back to the settings, turn the jog left or press [Back].
 
 ## 13.5 Live Input Modifiers
 
@@ -1348,7 +1349,7 @@ LIVE ARP can't be automated, because its settings belong to the track rather tha
 
 Repeat Groove shapes the 8-step gate mask of a drum lane's [Note Repeat](#94-note-repeat). It is set per lane, and you hear it while a repeat mode is active.
 
-RPT GROOVE has two pages. To switch pages, touch any knob and click the jog.
+RPT GROOVE has two pages. Turn the jog to switch pages.
 
 | Knob | Velocity page | Nudge page |
 |---|---|---|
@@ -3351,7 +3352,7 @@ While the map is up, [Steps 1–8] switch track. The right-hand pads open the MI
 | Side buttons | Launch the active track's clips (press the playing one to stop it) |
 | [Shift] + top / bottom side button | Scroll the four visible clips up / down one (the same window for every track) |
 | Hold the jog | The bank map while you hold: tap a pad to pick, let go to play. Inside a menu, an editor or Move's editor, hold about a third of a second |
-| Touch a knob + click the jog | Switch that knob to its Alt (Zoom, Nudge, Reverse Style, Algo, Clock Feedback), or open Arp Steps (knob 5), RPT GROOVE's other page (any knob) or a macro's editor |
+| Touch a knob + click the jog | Switch that knob to its Alt (Zoom, Nudge, Reverse Style, Algo, Clock Feedback), or open a macro's editor |
 | [Shift] + turn the jog | Switch tracks |
 | [Loop] (hold, or tap to keep it up) | Loop view |
 | [Loop] + turn the jog | Clip length |
@@ -3404,7 +3405,7 @@ These add to the Track View gestures.
 |---|---|
 | [Shift] + click the jog on Instmt/Dest, choose Audio or Slicer | Make the track an Audio or Slicer track |
 | SAMPLE or SLICER pad on the bank map | Open the sample editor |
-| Turn the jog in SAMPLE or SLICER | Next page |
+| Turn the jog in SAMPLE, SLICER, MIX, SEQ ARP, LIVE ARP or RPT GROOVE | Next page |
 | [Loop] + steps | Set the loop |
 | [Shift] + turn Tempo | Tempo in 0.1 BPM steps |
 | Touch Tempo + click the jog | Tempo menu: Fit to clip (Audio), Original tempo |

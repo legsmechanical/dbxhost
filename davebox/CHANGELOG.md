@@ -232,6 +232,10 @@ the section into a versioned heading at release time.
   Note/Session to peek works too: the map follows you there and back.
 
 ### Changed
+- **Arp Steps and RPT GROOVE's Nudge are pages now: turn the jog.** SEQ ARP and LIVE ARP have
+  three pages (the settings, each step's pitch, each step's velocity), and RPT GROOVE has two
+  (Velocity, Nudge). The header shows the page (2/3). Touching a knob and clicking no longer opens
+  them, and [Shift] no longer switches Arp Steps to velocity.
 - **The manual is rewritten and reorganised** into seven parts — Start, Sequencing, Recording
   and Playing Audio, Sound and Mix, Arranging and Performing, Connections and Files, and
   Reference — in plain, step-by-step language, with new chapters for projects, tempo and groove,

@@ -1608,10 +1608,9 @@ export function forceRedraw() {
     updateTrackLEDs();
 }
 
-/* The one PAGE alt: drum RPT GROOVE (5), Velocity/Nudge (S.altMode) — touch
- * ANY knob and click the jog (Josh, 2026-10-04). Arp Steps on SEQ ARP / LIVE
- * ARP opens from their Steps knob (arpStepsBank, ARP_STEPS_KNOB); the
- * single-knob alts flip one knob (KNOB_ALTS, S.knobAlt). */
+/* The one PAGE alt: drum RPT GROOVE (5), Velocity/Nudge (S.altMode) — the
+ * jog's pages since 2026-11-20, as Arp Steps on SEQ ARP / LIVE ARP are
+ * (arpPageJog); the single-knob alts flip one knob (KNOB_ALTS, S.knobAlt). */
 export function bankHasAltParams(t, bank) {
     return S.trackPadMode[t] === PAD_MODE_DRUM && bank === 5;
 }

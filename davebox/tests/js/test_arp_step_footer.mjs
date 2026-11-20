@@ -1,11 +1,8 @@
-/* tests/js/test_arp_step_footer.mjs — the arp step editor announces its Shift
- * page in the FOOTER (Josh, 2026-09-26: "instead of having the shift indicator
- * on the header, we need to add a footer pill hint and adjust the rest of the
- * screen accordingly").
- *
- * Draws the real SEQ ARP step-pitch screen: the footer carries SHFT VELOCITY and
- * BACK OUT, nothing is printed in the header gap any more, and the step numbers
- * and bars end above the footer. Holding Shift flips to the velocity page.
+/* tests/js/test_arp_step_footer.mjs — the arp step editor's footer and layout.
+ * Its velocity view was the Shift page until 2026-11-20; it is the bank's page
+ * 3 on the jog now (Josh: "off load those screens to bank pages"), so the
+ * footer carries BACK OUT alone on both pages and the step numbers and bars
+ * end above it. Shift no longer flips anything.
  */
 let failed = 0;
 const ok = (l) => console.log(`  ok   — ${l}`);
@@ -57,12 +54,11 @@ S.bankParams = Array.from({ length: 8 }, () => Array.from({ length: 16 }, () => 
 const frame = () => { fb.fill(0); render.drawUI(); return fb.slice(); };
 const hints = () => JSON.stringify(kit.kitHintsForTest());
 
-step('⭐ the pitch page: SHFT VELOCITY and BACK OUT in the footer', () => {
-    S.activeBank = 4; S.trackActiveBank[2] = 4; S.stepIntervalMode = true; S.shiftHeld = false; S.knobTouched = -1;
+step('⭐ the pitch page: BACK OUT alone in the footer (no SHFT VELOCITY: velocity is page 3)', () => {
+    S.activeBank = 4; S.trackActiveBank[2] = 4; S.stepIntervalMode = true; S.arpVelPage = false; S.shiftHeld = false; S.knobTouched = -1;
     frame();
     const h = kit.kitHintsForTest() || [];
-    assert(h.some((x) => x[0] === 'SHFT' && x[1] === 'VELOCITY'), 'no SHFT VELOCITY pill: ' + hints());
-    assert(h.some((x) => x[0] === 'BACK'), 'no BACK pill: ' + hints());
+    assert(JSON.stringify(h) === JSON.stringify([['BACK', 'OUT']]), 'footer: ' + hints());
     assert(swallowed === null, 'swallowed: ' + swallowed);
 });
 step('the step numbers and bars end above the footer', () => {
@@ -71,8 +67,8 @@ step('the step numbers and bars end above the footer', () => {
     let ink = 0; for (let y = kit.MV_FOOTER_Y - 2; y < kit.MV_FOOTER_Y; y++) for (let x = 0; x < 128; x++) ink += plain[y * 128 + x];
     assert(ink === 0, 'something runs into the footer: ' + ink + ' px in the rows above it');
     /* Step 5's number (column 5, x ~66..78) sits ABOVE the footer: drawn in the
-     * number row, and that stretch of the footer (between the SHFT and BACK
-     * pills) is empty. */
+     * number row, and that stretch of the footer (left of the BACK pill) is
+     * empty. */
     let above = 0, inFooter = 0;
     for (let x = 66; x < 79; x++) {
         for (let y = kit.MV_FOOTER_Y - 12; y < kit.MV_FOOTER_Y - 2; y++) above += plain[y * 128 + x];
@@ -81,15 +77,20 @@ step('the step numbers and bars end above the footer', () => {
     assert(above > 0, 'step 5 has no number above the footer');
     assert(inFooter === 0, 'something is drawn in the footer between the pills: ' + inFooter + ' px');
 });
-step('Shift held: the velocity page, no SHFT pill', () => {
+step('Shift held on the pitch page changes nothing; page 3 is the velocity page', () => {
+    const pitch = frame();
     S.shiftHeld = true;
-    frame();
-    const h = kit.kitHintsForTest() || [];
-    assert(!h.some((x) => x[0] === 'SHFT'), 'the SHFT pill stayed on the velocity page: ' + hints());
-    S.shiftHeld = false; S.stepIntervalMode = false;
+    const shifted = frame();
+    assert(pitch.every((v, i) => v === shifted[i]), 'Shift still flips the arp step screen');
+    S.shiftHeld = false;
+    S.arpVelPage = true;
+    const vel = frame();
+    assert(!pitch.every((v, i) => v === vel[i]), 'page 3 draws the same as page 2');
+    assert(JSON.stringify(kit.kitHintsForTest()) === JSON.stringify([['BACK', 'OUT']]), 'page 3 footer: ' + hints());
+    S.arpVelPage = false; S.stepIntervalMode = false;
 });
 
 if (failed) { console.log('FAIL: arp step footer'); process.exit(1); }
-console.log('PASS: the arp step editor names Shift in its footer');
+console.log('PASS: the arp step editor\'s footer and pages');
 }
 main().catch((e) => { console.error(e); process.exit(1); });

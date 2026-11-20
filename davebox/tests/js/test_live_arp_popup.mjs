@@ -117,16 +117,18 @@ step('from a locked DELAY card the hold switches to LIVE ARP, and Back stays the
     assert(S.activeBank === 5 && !S.bankCardLatched, 'bank ' + S.activeBank + ' latched ' + S.bankCardLatched);
 });
 
-step('touch K5 (Steps) + click on it opens Arp Steps (a plain click does not); Back closes that first, then the page', () => {
+step('a jog turn opens Arp Steps on the page (a plain click does not; nor does touch K5 + click since 2026-11-20); Back closes that first, then the page', () => {
     home();
     hold(); s11Up(); shiftUp(); ticks(2);
     midi(0xB0, 3, 127);
     assert(S.bankMapUp, 'control: the plain press did not show the map');
     midi(0xB0, 3, 0); ticks(2);
     assert(!S.stepIntervalMode && !S.bankMapUp, 'a plain click opened Arp Steps, or left the map up');
-    /* Touch K5 + click: the click is the knob's, Arp Steps opens. */
     midi(0x90, 4, 127); midi(0xB0, 3, 127); midi(0xB0, 3, 0); midi(0x90, 4, 0); ticks(2);
-    assert(S.stepIntervalMode && !S.bankMapUp, 'touch K5 + click did not open Arp Steps: ' + S.stepIntervalMode + ' map ' + S.bankMapUp);
+    assert(!S.stepIntervalMode, 'touch K5 + click still opens Arp Steps');
+    /* the jog turns to page 2, Arp Steps */
+    midi(0xB0, 14, 1); ticks(2);
+    assert(S.stepIntervalMode && !S.bankMapUp, 'the jog did not open Arp Steps: ' + S.stepIntervalMode + ' map ' + S.bankMapUp);
     back();
     assert(!S.stepIntervalMode && S.activeBank === 5 && S.bankCardLatched, 'first Back: ' + S.activeBank);
     back();
@@ -138,7 +140,7 @@ step('a jog turn walks no bank from it (the walk retired 2026-10-04)', () => {
     hold(); s11Up(); shiftUp(); ticks(2);
     midi(0x90, 9, 127); midi(0xB0, 14, 1); ticks(1); midi(0x80, 9, 0); ticks(2);
     assert(S.activeBank === 5, 'the turn walked off LIVE ARP: bank ' + S.activeBank);
-    back();
+    back(); back();
 });
 
 step('⭐ a project saved while it is up saves LIVE ARP as the track\'s bank', () => {

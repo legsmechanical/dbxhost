@@ -442,6 +442,7 @@ export const S = {
     /* Arp Steps interval-mode overlay flag — true while the user has clicked
      * jog on bank 4 (SEQ ARP) or 5 (TARP). Auto-clears on next jog turn. */
     stepIntervalMode: false,
+    arpVelPage: false,          /* Arp Steps' velocity page (3 of SEQ ARP / LIVE ARP) */
     /* TARP held-buffer mirror: pitches in DSP tarp.held_pitch[] for each track.
      * Polled from t{n}_tarp_held when tarp_latch is on; used to light source
      * pads in melodic Track View while the chord is latched. */

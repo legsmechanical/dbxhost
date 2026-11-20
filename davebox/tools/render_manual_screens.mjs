@@ -800,22 +800,21 @@ screen('bank-value-popup', '4.2 Playing a Bank', 'Turning a list parameter',
     'Turning SEQ ARP\'s Style knob opens its list over the page. The highlight follows the knob, here moved from Off to Down.',
     () => { toBank(4); knobTouch(0); knobTurn(0, 20); ticks(2); });
 screen('bank-seqarp-steps', '13.4 SEQ ARP', 'SEQ ARP — per-step pitch editor',
-    'Touch knob 5 (Steps) on SEQ ARP and click the jog to open the per-step editor. Knobs 1–8 set each step\'s pitch offset.',
+    'Turn the jog to SEQ ARP\'s second page for the per-step editor. Knobs 1–8 set each step\'s pitch offset.',
     () => {
         toBank(4);
         knobTurn(1, 0);
-        knobTouch(4); click(); knobRelease(4); ticks(2);
-        if (!S.stepIntervalMode) throw new Error('touch K5 + click did not open the steps editor');
+        jog(1); ticks(2);
+        if (!S.stepIntervalMode || S.arpVelPage) throw new Error('the jog did not turn to the steps editor\'s pitch page');
         knobTouch(2); knobTurn(2, 5); knobRelease(2);
         knobTouch(4); knobTurn(4, -3); knobRelease(4);
         ticks(2);
     });
 screen('bank-seqarp-steps-vel', '13.4 SEQ ARP', 'SEQ ARP — per-step velocity',
-    'Hold [Shift] in the per-step editor to show each step\'s velocity instead. Thru passes the played velocity.',
+    'The third page shows each step\'s velocity. Thru passes the played velocity.',
     () => {
-        toBank(4); knobTouch(4); click(); knobRelease(4); ticks(2);
-        if (!S.stepIntervalMode) throw new Error('touch K5 + click did not open the steps editor');
-        press(MoveShift); ticks(2);
+        toBank(4); jog(1); jog(1); ticks(2);
+        if (!S.stepIntervalMode || !S.arpVelPage) throw new Error('the jog did not turn to the steps editor\'s velocity page');
     });
 screen('bank-step-idle', '8.6 Editing Notes', 'STEP bank — no step held',
     'With no step held, the STEP bank asks you to hold a step.',

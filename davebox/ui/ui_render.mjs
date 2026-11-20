@@ -24,7 +24,7 @@ import { chordLabel, noteNames, noteLabel, heldInputNotes, keyUsesFlats, keyRoot
 import { chordIndicator, chordEditSlot, chordSlotCells } from './ui_chord_pads.mjs';
 import { padModeBankCells, customCardSlot, customCardCells } from './ui_pad_mode.mjs';
 import { triggerPhase } from './ui_trigger.mjs';
-import { LGTO_KNOB, CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, ARP_STEPS_KNOB, arpStepsBank } from './ui_constants.mjs';
+import { LGTO_KNOB, CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, arpStepsBank } from './ui_constants.mjs';
 import { miActive, miRender } from './ui_midi_import.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
@@ -899,6 +899,19 @@ function headerGlyphNow(bank) {
 /* The right label. `bare` = the resting track overview, whose TRACK ROW already
  * names the track (Josh, 2026-08-31: "it's redundant") — it keeps only the
  * instrument. Session view has no track to name. */
+/* A bank with jog pages says which page in its header, as MIX does: "T3[OB-Xd]
+ * 2/3". SEQ ARP / LIVE ARP: settings, Arp Steps pitch, Arp Steps velocity.
+ * RPT GROOVE: Velocity, Nudge. null (the plain header) for any other bank. */
+export function bankPagesRight(bank) {
+    if (S.sessionView) return null;
+    const t = S.activeTrack;
+    let mark = null;
+    if (arpStepsBank(S.trackPadMode[t], bank)) mark = (!S.stepIntervalMode ? 1 : S.arpVelPage ? 3 : 2) + '/3';
+    else if (bankHasAltParams(t, bank)) mark = (S.altMode ? 2 : 1) + '/2';
+    if (!mark) return null;
+    const r = bankHeaderRight(false);
+    return (r ? r + ' ' : '') + mark;
+}
 export function bankHeaderRight(bare) {
     if (S.sessionView) return '';
     /* A hold-jump from the AUTOMATION bank: this bank is TEMPORARY — say so,
@@ -1461,11 +1474,8 @@ function drawSessionFaderRow(cells, mode) {
  *   HLD  BANKS   holding the jog shows the bank pad map (bankMapBegin) —
  *                not while a knob is touched (bankMapArmable), and never on a
  *                door bank. The jog TURN walks nothing since 2026-10-04.
- *   CLK  STEPS   while the Steps knob (K5) is touched on SEQ ARP / LIVE ARP:
- *                touch + click opens the Arp Steps editor (2026-10-04).
- *   KNB+CLK NUDGE / VELOCITY   drum RPT GROOVE, on both pages: touch ANY
- *                knob and click for the other page (bankHasAltParams). First,
- *                so the fit rule drops HLD BANKS rather than it.
+ *   (SEQ ARP / LIVE ARP's Arp Steps and RPT GROOVE's Nudge are jog pages
+ *   since 2026-11-20, marked n/N in the header like MIX: no hint.)
  *   CLK ZOOM ... the single-knob alts (Zoom, Nudge, Revrs, Algo, ClkFb) flip
  *                on touch + click and say so while their knob is touched.
  *                No plain jog click has a bank meaning here any more.
@@ -1518,9 +1528,6 @@ export function bankPageHints(bank) {
             (bank === 7 && S.knobTouched === ALL_LANES_CROP_KNOB &&
              S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM))) return [['CLK', 'CROP']];
     if (!au && bank === 0 && S.knobTouched === IMPORT_KNOB && !S.sessionView) return [['CLK', 'IMPORT']];
-    /* A touched Steps knob on SEQ ARP / LIVE ARP opens Arp Steps. */
-    if (!S.sessionView && S.knobTouched === ARP_STEPS_KNOB &&
-            arpStepsBank(S.trackPadMode[S.activeTrack], bank)) return [['CLK', 'STEPS']];
     /* REMIX: K3 opens Presets…, K6 / K7 say what a click turns them to */
     if (!S.sessionView && bank === BANK_REMIX && isSampledTrack(S.activeTrack)) {
         if (S.knobTouched === 2) return [['CLK', 'PRESETS']];
@@ -1543,9 +1550,6 @@ export function bankPageHints(bank) {
      * STEP bank: its knobs edit the step itself and write no lock, and its
      * jog does nothing under a hold — no pair there. heldStepHints drops BACK. */
     const hints = held ? (bank !== BANK_STEP ? heldStepHints() : []) : mapClickHints(bank);
-    /* RPT GROOVE: any knob + click goes to the other page — said on BOTH
-     * pages, and FIRST, so the fit rule drops HLD BANKS rather than this. */
-    if (bankHasAltParams(S.activeTrack, bank)) hints.unshift(['KNB+CLK', S.altMode ? 'VELOCITY' : 'NUDGE']);
     if (!held) hints.push(['BACK', 'OUT']);
     return hints;
 }
@@ -1558,8 +1562,6 @@ function markKnobAlts(cells, bank) {
     const pm = S.trackPadMode[S.activeTrack];
     for (let k = 0; k < cells.length; k++)
         if (cells[k] && knobAltOnTrack(S.activeTrack, pm, bank, k)) cells[k].opens = true;
-    /* ...and the Steps knob on SEQ ARP / LIVE ARP, the door to Arp Steps. */
-    if (arpStepsBank(pm, bank) && cells[ARP_STEPS_KNOB]) cells[ARP_STEPS_KNOB].opens = true;
     return cells;
 }
 
@@ -1594,7 +1596,7 @@ function drawKitPage(name, cells, inverted, footer, focusIdx) {
     const hi = t >= 0 ? t : (focusIdx >= 0 ? focusIdx : -1);
     const touched = t >= 0 && cells[t] && cells[t].name ? cells[t] : null;
     if (touched) drawKitTouchedHeader(touched.name);
-    else (inverted ? drawBankHeadingInverted : drawBankHeading)(name, false);
+    else drawBankHeading(name, false, false, bankPagesRight(S.activeBank));
     /* ⚠ NO BANK-POSITION INDICATOR HERE, and it is a decision rather than an
      * omission. One was wired in on 2026-08-30 and taken straight back out:
      * "let's just get rid of the indicator row altogether." The jog opens a
@@ -3288,7 +3290,7 @@ function drawUIBody() {
         const t      = S.activeTrack;
         const isSeq  = (bank === 4);
         const _ac    = effectiveClip(t);
-        const _velPage = S.shiftHeld;   /* Shift page = absolute step velocity */
+        const _velPage = S.arpVelPage;   /* page 3 = absolute step velocity */
         const arr    = _velPage ? (isSeq ? S.seqArpStepVel[t][_ac] : S.tarpStepVel[t])
                                 : (isSeq ? S.seqArpStepInt[t][_ac] : S.tarpStepInt[t]);
         const _llRaw = isSeq ? (S.seqArpStepLoopLen[t][_ac] | 0) : (S.tarpStepLoopLen[t] | 0);
@@ -3300,14 +3302,14 @@ function drawUIBody() {
             else          drawKitTouchedHeader('Pitch: ' + (_v > 0 ? '+' : '') + _v);
         } else {
             const _hName = _velPage ? 'Step Vel' : 'Step Pitch';
-            drawBankHeading(_hName);
+            drawBankHeading(_hName, false, false, bankPagesRight(bank));
         }
         /* The Shift page is announced in the FOOTER, as every other screen's
          * modifiers are (Josh, 2026-09-26: "instead of having the shift
          * indicator on the header, we need to add a footer pill hint and adjust
          * the rest of the screen accordingly"). The bars and step numbers sit
          * above it. */
-        drawKitHintRow(MV_FOOTER_Y, _velPage ? [['BACK', 'OUT']] : [['SHFT', 'VELOCITY'], ['BACK', 'OUT']]);
+        drawKitHintRow(MV_FOOTER_Y, [['BACK', 'OUT']]);
         kitHudTap('Bars', { values: Array.from(arr).slice(0, 8).map((v) => v | 0), len: _ll, touched: _tk,
                             mode: _velPage ? 'vel' : 'pitch', min: _velPage ? 0 : -24, max: _velPage ? 128 : 24 });
         const _colW = 16, _barW = 10, _top = 14, _bot = 45, _numY = 48;
@@ -3576,7 +3578,7 @@ function drawUIBody() {
              * the header budget at 131px. Found by the source scan, not by the
              * name table — a table can only catch a wrong name, never a second
              * place that names things. */
-            drawBankHeadingInverted(bankHeaderName(S.activeTrack, 5));
+            drawBankHeading(bankHeaderName(S.activeTrack, 5), false, false, bankPagesRight(5));
         }
         /* Bars end at 45 and the numbers sit at 48 (the Arp Steps page's
          * geometry), leaving the footer row free for the KNB+CLK hint. */

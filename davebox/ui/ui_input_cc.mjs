@@ -25,7 +25,7 @@ import {
     TRACK_PAD_BASE, TPS_VALUES,
     BANKS, PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_AUDIO,
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_CONFIG, LGTO_KNOB,
-    CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, ARP_STEPS_KNOB, arpStepsBank, LOOP_NOT_AT_1_MS, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
+    CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, arpStepsBank, LOOP_NOT_AT_1_MS, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
     TICK_HZ, STEP_ITER_LIST, JOG_HOLD_MAP_MS,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool } from './ui_constants.mjs';
@@ -409,33 +409,9 @@ function _onCC_jog(d1, d2) {
         return;
     }
 
-    /* ⭑ ARP STEPS opens from the Steps knob (Josh, 2026-10-04: "live arp > step
-     * editor = knob touch + click on steps param (k5)"; "seq arp should work
-     * like live arp"): touch K5 on SEQ ARP / LIVE ARP and click. With Bank Lock
-     * on it locks the card under it, so Back lands on the card (the MIX-send
-     * precedent); off, Back is the overview. Inside the editor K5 is step 5's
-     * offset, so this does not close it — Back and a jog turn do. */
-    if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld &&
-            !S.copyHeld && !S.muteHeld && !S.stepIntervalMode &&
-            S.knobTouched === ARP_STEPS_KNOB && arpStepsBank(S.trackPadMode[S.activeTrack], S.activeBank)) {
-        S.stepIntervalMode = true;
-        computePadNoteMap();               /* the pads stop playing while the editor is up */
-        S.screenDirty = true;
-        forceRedraw();
-        return;
-    }
-
-    /* ⭑ RPT GROOVE flips Velocity / Nudge on ANY knob touched + click (Josh,
-     * 2026-10-04: "repeat groove velocity > nudge = touch any knob and click").
-     * The footer says so on both pages (bankPageHints: KNB+CLK). */
-    if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld &&
-            !S.copyHeld && !S.muteHeld && S.knobTouched >= 0 &&
-            bankHasAltParams(S.activeTrack, S.activeBank)) {
-        S.altMode = !S.altMode;
-        S.screenDirty = true;
-        forceRedraw();
-        return;
-    }
+    /* (Arp Steps and RPT GROOVE's Nudge page opened on a touch + click until
+     * 2026-11-20; they are jog PAGES now — arpPageJog / the RPT GROOVE branch
+     * of the jog turn.) */
 
     /* MIX and MACROS at REST (a touch peek, not latched): touch Send A / Send B
      * and click = that send's effects (Josh, 2026-10-01); touch a macro and
@@ -1131,19 +1107,6 @@ function modalDialogUp() {
             return;
         }
 
-        /* Arp Steps interval mode: jog turn exits the overlay and swallows
-         * the turn so the underlying bank knob param isn't nudged on exit. */
-        if (S.stepIntervalMode) {
-            const delta = decodeDelta(d2);
-            if (delta !== 0) {
-                S.stepIntervalMode = false;
-                computePadNoteMap();
-                S.screenDirty = true;
-                forceRedraw();
-            }
-            return;
-        }
-
         /* PROJECTS pad picker: the wheel drives whichever overlay is open.
          * (Swallow the turn either way — the picker owns the surface; without
          * this the turn fell through to the bank knob handling underneath.) */
@@ -1406,6 +1369,18 @@ function modalDialogUp() {
                     const _pg = Math.max(0, Math.min(SESS_EQ_PAGES - 1, (S.sessKnobMode - SESS_EQ_MODE0) + (delta > 0 ? 1 : -1)));
                     S.sessEqPage = _pg;
                     sessWalkTo(SESS_EQ_MODE0 + _pg);
+                } else if (!S.sessionView && arpStepsBank(S.trackPadMode[S.activeTrack], S.activeBank)) {
+                    /* SEQ ARP / LIVE ARP: three pages — the settings, Arp Steps'
+                     * pitch, Arp Steps' velocity (Josh, 2026-11-20: "now that jog
+                     * is free to move between pages ... off load those screens to
+                     * bank pages") */
+                    arpPageJog(delta);
+                } else if (!S.sessionView && bankHasAltParams(S.activeTrack, S.activeBank)) {
+                    /* RPT GROOVE: Velocity, then Nudge (same day); clamped */
+                    const _alt = delta > 0;
+                    if (_alt !== S.altMode) { S.altMode = _alt; S.screenDirty = true; }
+                    armBankDisplay();
+                    forceRedraw();
                 } else if (!S.sessionView && S.activeBank === BANK_SOUND && soundMixJog(delta)) {
                     /* MIX's two pages (the levels, the channel strip): at rest on
                      * MIX the jog is davebox's (only the knobs reach sound mode),
@@ -1480,6 +1455,23 @@ function modalDialogUp() {
         return;
     }
 
+}
+
+/* SEQ ARP / LIVE ARP's pages, on the jog, clamped (no wrap): 0 the bank's
+ * settings, 1 Arp Steps' pitch, 2 its velocity. Pages 1-2 are the Arp Steps
+ * editor (S.stepIntervalMode — the pads edit step velocity there);
+ * S.arpVelPage picks page 2 and means nothing while the editor is shut. */
+export function arpPageJog(delta) {
+    const pg = !S.stepIntervalMode ? 0 : S.arpVelPage ? 2 : 1;
+    const np = Math.max(0, Math.min(2, pg + (delta > 0 ? 1 : delta < 0 ? -1 : 0)));
+    if (np === pg) return;
+    const was = S.stepIntervalMode;
+    S.stepIntervalMode = np > 0;
+    S.arpVelPage = np === 2;
+    if (was !== S.stepIntervalMode) computePadNoteMap();   /* the pads stop playing while the editor is up */
+    if (np === 0) armBankDisplay();
+    S.screenDirty = true;
+    forceRedraw();
 }
 
 const bankListFor  = (track) => bankListForMode(S.trackPadMode[track], track);    /* every bank the track has */
@@ -5330,8 +5322,8 @@ function _onCC_knobs(d1, d2) {
             if (dir !== S.knobLastDir[knobIdx]) { S.knobAccum[knobIdx] = 0; S.knobLastDir[knobIdx] = dir; }
             const _kd = ccKnobDelta(d2, knobIdx);   /* unified: cont accel */
             if (_kd !== 0) {
-                if (S.shiftHeld) {
-                    /* Shift page: fine ABSOLUTE step velocity, floor 5 so fine
+                if (S.arpVelPage) {
+                    /* page 3: fine ABSOLUTE step velocity, floor 5 so fine
                      * values never collide with legacy 0-4 levels in saved
                      * state (pads handle step-off). Turning a dead (0) step
                      * brings it in at the floor. */
