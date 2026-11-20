@@ -326,8 +326,8 @@ The four columns of pads are groups, and each group's banks run from top to bott
 
 A bank the track doesn't have leaves its pad dark, so a bank is always on the same pad. On a drum
 track, RPT GROOVE takes LIVE ARP's pad, DRUM LANE takes CLIP's, and ALL LANES sits below it. Audio
-and Slicer tracks put SAMPLE or SLICER on INST's pad and REMIX on DELAY's, and an Audio track has
-INPUT below CLIP.
+and Slicer tracks put SAMPLE or SLICER on INST's pad and REMIX on DELAY's. An Audio track has
+INPUT below CLIP and nothing in IN.
 
 On a Conductor the second column is the RSPD group, which sets how the other tracks respond. See
 [The Conductor's banks](#253-the-conductors-banks).
@@ -1337,11 +1337,11 @@ The controls match [SEQ ARP](#134-seq-arp), except that Retrigger defaults to Of
 - Press [Loop] with no pads held to clear the latched notes. Latch stays on.
 - Stop, [Delete] + [Play], or switching to Session View unlatches.
 
-On Slicer and Audio tracks, Step replaces Oct; see [Slicer track banks](#175-the-banks).
+On a Slicer, Step replaces Oct; see [Slicer track banks](#175-the-banks). Audio tracks have no LIVE ARP.
 
 To turn LIVE ARP on or off with the last style, hold [Shift] and press [Step 11].
 
-To open LIVE ARP's page, hold [Shift] and hold [Step 11] for about half a second; press [Back] to close it. LIVE ARP is an ordinary bank: the knobs stay on it after the page closes, and it is the second pad of the IN column on the bank map.
+On a melodic track, hold [Shift] and hold [Step 11] for about half a second to open LIVE ARP; press [Back] to close it. On a Slicer, pick it on the bank map. LIVE ARP is an ordinary bank: the knobs stay on it after the page closes, and it is the second pad of the IN column on the bank map.
 
 LIVE ARP can't be automated, because its settings belong to the track rather than a clip. It is still available as a macro destination.
 
@@ -3482,7 +3482,7 @@ Hold [Shift] and press a step button:
 | 8 | Pad layout (Scale, Chrom, Piano, Chord, Custom) / cycle the right-pad mode | Track |
 | 9 | Scale: jump to Scale in Project Settings | Both |
 | 10 | VelIn (Live or 100); the icon is lit while fixed | Track |
-| 11 | Tap: LIVE ARP on or off; the icon is lit while on. Hold: LIVE ARP's page, until [Back] (the knobs stay on LIVE ARP) | Track (melodic) |
+| 11 | Tap: LIVE ARP on or off; the icon is lit while on. Hold: LIVE ARP, until [Back] (the knobs stay on LIVE ARP) | Track (melodic; on a Slicer, the tap only) |
 | 13 | Hold: come back from Suspend | Both |
 | 15 | Double the loop and copy its contents into the new half | Track |
 | 16 | Set NOTE FX Quantize to 100 % | Track |

@@ -309,8 +309,8 @@ length** decide what survives, and both belong to the caller.
 | `CLK PRESET` | 52 | `CLK PRESETS` | 57 |
 
 - ⭑⭑ **Every pair names a gesture the input code actually implements**, and the conditional ones
-  are conditional because the *gesture* is: `CLK STEP` only on melodic banks 4/5, `CLK ALT` only
-  where `bankHasAltParams`, `SHFT SECT` only where the module has more than one section, and
+  are conditional because the *gesture* is: `CLK LEGATO` only while CLIP's Legato knob is touched,
+  `SHFT SECT` only where the module has more than one section, and
   `CLK PRESET` becomes `CLK BROWSE` on an empty block because that is what the click then does.
   **Never hint a gesture that does not exist** — and never hint one belonging to another screen.
 - ⭑ **Order by what has no on-screen trace**, which is why the two rows differ. In sound mode the

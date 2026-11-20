@@ -221,7 +221,7 @@ Overrides all step LEDs after saving a preset slot.
 | Tap tempo active (override) | `Blue` (flash) or `LightGrey` |
 
 ### 3g. SEQ ARP / TRACK ARP step velocity editor (`ui_leds.mjs:L313`, `L334`)
-Active when bank 4 (SEQ ARP) K5 touched, or bank 5 (TRACK ARP) K6 touched, with Steps Mode ≠ Off.
+Active while the Arp Steps editor is up: SEQ ARP (bank 4) or LIVE ARP (bank 5), jog pages 2–3.
 8-column × 4-row velocity bar display per step.
 | Condition | Color |
 |-----------|-------|
