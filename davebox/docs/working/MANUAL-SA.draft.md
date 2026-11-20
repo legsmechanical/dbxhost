@@ -1328,7 +1328,7 @@ Live input modifiers shape what you play live, on the pads or over external MIDI
 
 > 🎬 **Video:** [Tutorial 4.4: LIVE ARP](https://youtu.be/jOnQWmr71JI?t=309) (from 5:09)
 
-LIVE ARP arpeggiates live pad and external input only. It is set per track, not per clip.
+LIVE ARP arpeggiates live pad and external input only, on melodic tracks and Slicers. It is set per track, not per clip.
 
 The controls match [SEQ ARP](#134-seq-arp), except that Retrigger defaults to Off. Knob 8 adds Latch (LATCH), which keeps the arp running after you let go of the pads.
 
@@ -1793,15 +1793,14 @@ Note that starting the transport partway through an Audio clip, changing Dir, or
 
 ## 16.5 The Banks
 
-An Audio track has three banks of its own besides the mix banks.
+An Audio track has two banks of its own besides the mix banks.
 
 | Bank | What it does |
 |---|---|
 | CLIP | How the clip plays: Mode, Strch and Dir |
-| LIVE ARP | As on a melodic track, but Step replaces Oct: each repeat moves one slice up (or down), up to 15 |
 | REMIX | Rearranges the loop as it plays; see [REMIX](#18-remix) |
 
-There is no RPT GROOVE, HARMONY, SEQ ARP, DELAY, NOTE FX or MIDI FX on an Audio track. Everything else is on [SAMPLE](#162-the-sample-editor)'s pages.
+There is no LIVE ARP, RPT GROOVE, HARMONY, SEQ ARP, DELAY, NOTE FX or MIDI FX on an Audio track. Everything else is on [SAMPLE](#162-the-sample-editor)'s pages.
 
 ### 16.5.1 The CLIP Bank
 
@@ -3329,7 +3328,7 @@ Hold the jog in Track View to see the bank map on the left 4×4 pads. The four c
 |---|---|---|---|---|
 | Melodic | PAD MODE, LIVE ARP, —, CONFIG | MACROS, AUTO, —, MIX | STEP, CLIP, —, INST | NOTE FX, HARMONY, DELAY, SEQ ARP |
 | Drum | —, RPT GROOVE, —, CONFIG | MACROS, AUTO, —, MIX | STEP, DRUM LANE, ALL LANES, INST | NOTE FX, —, DELAY |
-| Audio | —, LIVE ARP, —, CONFIG | MACROS, AUTO, —, MIX | —, CLIP, INPUT, SAMPLE | —, —, REMIX |
+| Audio | —, —, —, CONFIG | MACROS, AUTO, —, MIX | —, CLIP, INPUT, SAMPLE | —, —, REMIX |
 | Slicer | PAD MODE, LIVE ARP, —, CONFIG | MACROS, AUTO, —, MIX | STEP, CLIP, —, SLICER | NOTE FX, —, REMIX |
 | Conductor | —, —, —, CONFIG | ON/OFF, OCTAVE, TIMING (RSPD) | CLIP, STEP | NOTE FX |
 

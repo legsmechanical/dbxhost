@@ -2131,7 +2131,9 @@ export function _onPadRelease(status, d1, d2) {
          * ARP. Read off the recorded press, not S.shiftHeld (Shift may be up). */
         if (btn === 10 && S.shiftStep11Tick >= 0) {
             S.shiftStep11Tick = -1;
-            if (!S.sessionView && S.trackPadMode[S.activeTrack] !== PAD_MODE_DRUM) toggleLiveArp(S.activeTrack);
+            /* not on an Audio track: it has no LIVE ARP (Josh, 2026-11-20) */
+            if (!S.sessionView && S.trackPadMode[S.activeTrack] !== PAD_MODE_DRUM &&
+                    S.trackPadMode[S.activeTrack] !== PAD_MODE_AUDIO) toggleLiveArp(S.activeTrack);
             forceRedraw();
             return;
         }

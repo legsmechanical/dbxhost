@@ -213,12 +213,16 @@ step('⭐⭐ Yes: the engine converts, the slot keeps Schwung with no instrument
     S.clipNonEmpty[4][0] = false;
 });
 
-step('⭐⭐ the walk: an Audio track is LIVE ARP, MACROS, CLIP, MIX — no sequence (no STEP, NOTE FX or PAD MODE), no RPT GROOVE, HARMONY, SEQ ARP or DELAY', () => {
+step('⭐⭐ the walk: an Audio track is MACROS, CLIP, INPUT, REMIX, MIX — no sequence (no STEP, NOTE FX or PAD MODE), no LIVE ARP, RPT GROOVE, HARMONY, SEQ ARP or DELAY', () => {
     /* (an Audio clip plays its sample with the clip: what was a Loop clip —
      * Josh, 2026-10-28: "we don't need to show notes at all in loop mode") */
     const walk = P.bankCycleForMode(C.PAD_MODE_AUDIO, 4);
-    assert(JSON.stringify(walk) === JSON.stringify([5, C.BANK_MACROS, 0, C.BANK_INPUT, C.BANK_REMIX, C.BANK_SOUND]), 'walk: ' + walk.join());
+    assert(JSON.stringify(walk) === JSON.stringify([C.BANK_MACROS, 0, C.BANK_INPUT, C.BANK_REMIX, C.BANK_SOUND]), 'walk: ' + walk.join());
     const all = P.bankListForMode(C.PAD_MODE_AUDIO, 4);
+    /* no LIVE ARP: an Audio track's pads play nothing (Josh, 2026-11-20: "take it off on audio tracks") */
+    assert(all.indexOf(5) < 0, 'an Audio track lists LIVE ARP: ' + all.join());
+    assert(P.bankListForMode(C.PAD_MODE_SLICER, 4).indexOf(5) >= 0, 'a Slicer lost LIVE ARP');
+    assert(!P.bankPadMapForMode(C.PAD_MODE_AUDIO, 4)[0].cells.some((c) => c && c.bank === 5), 'the bank map shows LIVE ARP on an Audio track');
     assert(all.indexOf(C.BANK_CONFIG) >= 0 && all.indexOf(C.BANK_AUTOMATION) >= 0, 'doors: ' + all.join());
     assert(P.bankMapModuleAt(0, C.PAD_MODE_AUDIO, 6, 0, 4) === null, 'the MIDI FX pad is lit (Q4)');
     assert(P.bankMapModuleAt(0, C.PAD_MODE_AUDIO, 7, 0).comp === 'fx1', 'FX 1 is dark');
@@ -1100,6 +1104,15 @@ step('⭐⭐ the knob rings follow the Audio screens and the AUDIO bank: lit whe
     GET['t4_au_info_0'] = INFO(1, 8); kindSync(); ticks(2);
     S.activeBank = 0; S.bankCardLatched = false; shown(); ticks(3);
     assert(sent8() === '11101111', 'Slicer CLIP bank rings: ' + sent8());
+});
+
+step('[Shift] + a tap on [Step 11] does not turn LIVE ARP on on an Audio track (Josh, 2026-11-20: "take it off on audio tracks")', () => {
+    GET['t4_au_info_0'] = INFO(0, 8); kindSync(); ticks(2);
+    assert(S.trackPadMode[4] === C.PAD_MODE_AUDIO && S.activeTrack === 4, 'not on the Audio track');
+    S.bankParams[4][5][0] = 0; S.lastTarpStyle[4] = 1;
+    reset();
+    cc(HC.MoveShift, 127); note(16 + 10, 127); note(16 + 10, 0); cc(HC.MoveShift, 0); ticks(2);
+    assert((S.bankParams[4][5][0] | 0) === 0 && !sentLike(/^t4_tarp/).length, 'LIVE ARP turned on: ' + JSON.stringify(sentLike(/tarp/)));
 });
 
 step('⭐⭐ the SLICER editor\'s page 1: the picked slice — K1 / K3 its edges, K4-K8 its sound, Shift every slice on Play / Revrs; the corner brackets and CLK EDIT; Shift + click the SLICE menu; an Audio track has no SLICER pad', () => {
@@ -2188,7 +2201,7 @@ step('⭐⭐ an Audio track: no sequence — pad taps and steps do nothing, no S
     /* Josh, 2026-10-28: "we don't need to show notes at all in loop mode" */
     const walk = P.bankCycleForMode(C.PAD_MODE_AUDIO, 4);
     /* no PAD MODE on an Audio track (Josh, 2026-10-30: "loop mode should always be 4 rows and has no need for the pad bank") */
-    assert(JSON.stringify(walk) === JSON.stringify([5, C.BANK_MACROS, 0, C.BANK_INPUT, C.BANK_REMIX, C.BANK_SOUND]), 'Loop walk: ' + walk.join());
+    assert(JSON.stringify(walk) === JSON.stringify([C.BANK_MACROS, 0, C.BANK_INPUT, C.BANK_REMIX, C.BANK_SOUND]), 'Loop walk: ' + walk.join());
     const map = P.bankPadMapForMode(C.PAD_MODE_AUDIO, 4);
     assert(!map[2].cells[0] && !map[3].cells[0] && map[2].cells[1], 'the Loop map still has STEP / NOTE FX');
     DM.computePadNoteMap();

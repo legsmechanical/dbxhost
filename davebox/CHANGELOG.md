@@ -176,8 +176,8 @@ the section into a versioned heading at release time.
     Its **Lo** and **Hi** are set and shown in the setting's own units (BPM, dB…), not %.
     A Tempo macro starts bounded at 400 BPM (change it in the menu), and a ranged macro's
     dial runs from Lo to Hi.
-  - **LIVE ARP** plays chops (**Step** in place of Oct); NOTE FX keeps what doesn't move
-    a pitch; there is no DELAY. Muting either silences it like a bus, so a loop keeps
+  - On a Slicer, **LIVE ARP** plays chops (**Step** in place of Oct); an Audio track has no
+    LIVE ARP. NOTE FX keeps what doesn't move a pitch; there is no DELAY. Muting either silences it like a bus, so a loop keeps
     time. On a Slicer, **Delete + clip** clears the sequence only; on an Audio clip it asks
     to remove the sample. **Shift + Delete** resets an Audio clip, sample and all.
   - **Long samples**: Audio clips take up to **30 minutes** (a pick sets up to 256 bars), a

@@ -164,8 +164,11 @@ export function bankCategoriesForMode(padMode, t) {
         return [
             { label: null,   banks: [BANK_CONFIG] },
             /* IN (2026-10-28: "pad mode bank on IN column" · "let's add an
-             * input arp to it too"): PAD MODE's Layout, and LIVE ARP */
-            { label: 'IN',   banks: slice ? [BANK_CHORD, 5] : [5] },   /* PAD MODE: a Slice clip's (Josh, 2026-10-30) */
+             * input arp to it too"): PAD MODE's Layout, and LIVE ARP — a
+             * Slicer's only. An Audio track's pads play nothing, so its IN is
+             * empty and the group drops out (Josh, 2026-11-20: "take it off
+             * on audio tracks") */
+            { label: 'IN',   banks: slice ? [BANK_CHORD, 5] : [] },   /* PAD MODE: a Slice clip's (Josh, 2026-10-30) */
             { label: 'CTRL', banks: [BANK_MACROS, BANK_AUTOMATION] },
             /* INPUT (an Audio track's, above SAMPLE: Josh, 2026-11-12) */
             { label: 'SEQ',  banks: slice ? [BANK_STEP, 0] : [0, BANK_INPUT] },
