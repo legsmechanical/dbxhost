@@ -88,17 +88,23 @@ jobs:
       - run: go test ./...
 
   # ---------------------------------------------------------- cross-compile
-  # Proves the application COMPILES for ARM64. Reuses the exact Docker build
-  # path that release.yml runs on every tag, then asserts every expected
-  # artifact exists and is ELF/ARM-aarch64. build.sh runs under `set -e` with
-  # no compile step masked, so the first compiler error fails this job.
+  # Proves the application COMPILES for ARM64 in the same Docker image
+  # release.yml uses, then asserts every expected artifact exists and is
+  # ELF/ARM-aarch64. build.sh runs under `set -e` with no compile step masked,
+  # so the first compiler error fails this job.
+  # ⚠ release.yml calls build.sh on the RUNNER, which fetches the pinned
+  # speech-to-text runtime there before entering Docker; the container has no
+  # curl and no network. Running build.sh straight inside the container skips
+  # that, so the fetch is its own step here, on the runner.
   cross-compile:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive, fetch-depth: 0 }
       - uses: docker/setup-buildx-action@v3
-      - name: Build (same path as release.yml)
+      - name: Fetch the speech-to-text runtime (on the runner, as build.sh does)
+        run: ./scripts/fetch-stt.sh
+      - name: Build (same image as release.yml)
         run: |
           docker build -t schwung-builder .
           docker run --rm -v "$PWD:/build" schwung-builder
