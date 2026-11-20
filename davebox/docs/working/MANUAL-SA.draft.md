@@ -2223,7 +2223,7 @@ Moving the range never moves or re-cuts the slices. Every way of making slices s
 
 ### 16.1.3 The Pads
 
-The pads are the slices, in time order, 32 to a page. A slice that is playing, or a pad you hold, is white. Pads past the slice count are dark.
+The pads are the slices, in time order, 32 to a page. A slice that is playing, or a pad you hold, is white. The picked slice is in the track color and the others are dim. Pads past the slice count are dark.
 
 A Slicer holds up to 128 slices. Press [+] or [−] to show the next or previous 32.
 
@@ -3506,14 +3506,9 @@ as its slot, such as Slot 12. Under the header are the engaged mods, or NO MODS 
 
 ## 25.2 The Grid
 
-The pads are arranged in four rows:
-
-```
-   top row      wild mods        — blue
-                velocity / gate  — yellow
-                pitch mods       — magenta (melodic only)
-   bottom row   length · hold · sync · latch
-```
+The pads are arranged in four rows. From the top: the wild mods (blue), the velocity and gate mods
+(yellow), the pitch mods (magenta, melodic tracks only), and capture length and mode on the bottom
+row.
 
 ### 25.2.1 Capture Length and Mode
 

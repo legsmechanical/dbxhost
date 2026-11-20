@@ -275,6 +275,20 @@ const MANUAL_SCREENS = new Set([
     'macros-multi',            // one knob, several targets
     'snapmorph-slots',         // the order snapshots are picked in
     'import-options',          // the import knobs and the part's picture
+    'loop-view',               // a clip's pages on the step buttons
+    'automation-ops',          // a parameter's lane operations
+    'sample-menu-track',       // the Sample menu: bake, resample, merge
+    'track-audio-playing',     // an Audio track's overview
+    'resample-options',        // resampling a scene: its options
+    'session-mixer-volume',    // the Session mixer
+    /* pad maps: the pads as the UI lights them */
+    'pads-bank-map',           // the bank map and the module editors
+    'pads-piano',              // Piano layout, with note names
+    'pads-bass',               // Bass layout
+    'pads-audio',              // an Audio clip's sections
+    'pads-slicer',             // a Slicer's slices
+    'pads-perf',               // the Performance Mode grid
+    'steps-shift',             // the step buttons' Shift shortcuts
 ]);
 let screens = [];
 if (SCREENS) {
@@ -291,8 +305,69 @@ for (const s of screens) {
 }
 const placedScreens = new Set();
 
+/* ── pad maps: the pads (and the step buttons) as the real UI lit them ──
+ * The colours are the controller's palette, read from the browser mirror's table and lifted the way
+ * the mirror lifts them (an LED's raw value is far darker than the light it makes). */
+const MIRROR = readFileSync(resolve(ROOT, '../schwung-manager/static/mirror.html'), 'utf8');
+const COLOR_TABLE = [...MIRROR.split('const COLOR_TABLE = [')[1].split('];')[0].matchAll(/\[0x([0-9A-Fa-f]{6}),/g)]
+    .map((m) => parseInt(m[1], 16));
+if (COLOR_TABLE.length !== 128) throw new Error('mirror.html COLOR_TABLE: expected 128 entries, got ' + COLOR_TABLE.length);
+const LED_GAMMA = Number(/const LED_GAMMA = ([\d.]+)/.exec(MIRROR)[1]);
+function ledRgb(v, pal) {
+    if (!v || v > 127) return null;
+    let rgb = pal && pal[v] ? pal[v] : [(COLOR_TABLE[v] >> 16) & 255, (COLOR_TABLE[v] >> 8) & 255, COLOR_TABLE[v] & 255];
+    const m = Math.max(...rgb); if (!m) return null;
+    const k = 255 * Math.pow(m / 255, 1 / LED_GAMMA) / m;
+    return rgb.map((c) => Math.min(255, Math.round(c * k)));
+}
+const hex = (rgb) => '#' + rgb.map((c) => c.toString(16).padStart(2, '0')).join('');
+const inkOn = (rgb) => (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) > 150 ? '#111' : '#fff';
+function padSvg(p, alt) {
+    const PW = 64, PH = 48, G = 7, X0 = 2, Y0 = 2;
+    const cols = 8, rows = 4, gw = cols * PW + (cols - 1) * G;
+    const lab = p.labels || [];
+    let o = '';
+    const cell = (x, y, w, h, v, text, small, from) => {
+        const rgb = ledRgb(v, p.pal);
+        const frgb = from != null ? ledRgb(from, p.pal) : null;
+        /* A pulsing or blinking pad: the two colours it moves between, split corner to corner. */
+        if (rgb && frgb && from !== v) {
+            o += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="${hex(frgb)}"/>` +
+                 `<path d="M${x + w} ${y} L${x + w} ${y + h - 3} Q${x + w} ${y + h} ${x + w - 3} ${y + h} L${x} ${y + h} Z" fill="${hex(rgb)}"/>` +
+                 `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="none" stroke="currentColor" stroke-opacity="0.35"/>`;
+        } else o += rgb ? `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="${hex(rgb)}" stroke="currentColor" stroke-opacity="0.35"/>`
+                 : `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="currentColor" fill-opacity="0.06" stroke="currentColor" stroke-opacity="0.35"/>`;
+        if (text) {
+            const lines = String(text).split('\n');
+            const fs = small ? 9 : (lines.some((l) => l.length > 8) ? 9.5 : 11);
+            const y0 = y + h / 2 - (lines.length - 1) * fs * 0.55 + fs * 0.35;
+            o += `<text x="${x + w / 2}" y="${y0}" font-size="${fs}" text-anchor="middle" fill="${rgb ? inkOn(rgb) : 'currentColor'}" stroke="none">` +
+                lines.map((l, i) => `<tspan x="${x + w / 2}" dy="${i ? fs * 1.1 : 0}">${esc(l)}</tspan>`).join('') + '</text>';
+        }
+    };
+    let H = Y0 - 14;
+    if (!p.noPads) {
+        for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+            const i = (rows - 1 - r) * cols + c;   /* pads are listed bottom-left first */
+            cell(X0 + c * (PW + G), Y0 + r * (PH + G), PW, PH, p.pads[i], lab[i], false, p.padAnim && p.padAnim[i] && p.padFrom ? p.padFrom[i] : null);
+        }
+        H = Y0 + rows * (PH + G) - G;
+    }
+    if (p.steps) {
+        const sw = (gw - 15 * 4) / 16, sy = H + 14, sl = p.stepLabels || [];
+        for (let k = 0; k < 16; k++) cell(X0 + k * (sw + 4), sy, sw, sl.some(Boolean) ? 30 : 12, p.steps[k], sl[k], true);
+        H = sy + (sl.some(Boolean) ? 30 : 12);
+    }
+    return `<svg role="img" aria-label="${escAttr(alt)}" viewBox="0 0 ${gw + 2 * X0} ${H + 2}" font-family="Jost, system-ui, sans-serif">${o}</svg>`;
+}
+
 function figureHtml(list) {
-    const figs = list.map((s) => `<figure class="oled"><div class="bezel"><img src="${s.src}" width="128" height="64" alt="${escAttr(s.title + (s.caption ? ': ' + s.caption : ''))}"></div>` +
+    const pads = list.filter((s) => s.pads), oled = list.filter((s) => !s.pads);
+    if (pads.length && oled.length) return figureHtml(oled) + pads.map((s) => figureHtml([s])).join('');
+    if (pads.length > 1) return pads.map((s) => figureHtml([s])).join('');
+    const figs = list.map((s) => s.pads ? `<figure class="diagram pads">${padSvg(s.pads, s.title + (s.caption ? ': ' + s.caption : ''))}` +
+        `<figcaption><span class="ftitle">${esc(s.title)}</span>${s.caption ? ' ' + inline(s.caption) : ''}</figcaption></figure>` :
+        `<figure class="oled"><div class="bezel"><img src="${s.src}" width="128" height="64" alt="${escAttr(s.title + (s.caption ? ': ' + s.caption : ''))}"></div>` +
         `<figcaption><span class="ftitle">${esc(s.title)}</span>${s.caption ? ' ' + inline(s.caption) : ''}</figcaption></figure>`).join('');
     return `<div class="figs${list.length > 1 ? ' multi' : ''}">${figs}</div>`;
 }

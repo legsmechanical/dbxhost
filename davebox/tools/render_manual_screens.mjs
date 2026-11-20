@@ -98,7 +98,8 @@ globalThis.host_flush_display = () => {};
  * screen's published description beside its PNG — the browser's fixtures. */
 const HUD_OUT = process.env.HUD_OUT || '';
 let hudLast = null;
-globalThis.host_ui_publish = (json) => { if (json) hudLast = json; return !!HUD_OUT; };
+/* Always "a viewer is watching": a pad map reads its labels from the published description. */
+globalThis.host_ui_publish = (json) => { if (json) hudLast = json; return true; };
 
 /* ── the engine, as a fixture ───────────────────────────────────────────────
  * ENGINE answers host_module_get_param (the dAVEBOx DSP); SLOT[n] answers
@@ -156,11 +157,42 @@ const busStripOn = (b, strip) => {
 };
 globalThis.shadow_send_midi_to_dsp = () => {};
 globalThis.shadow_save_state_now = () => true;
-for (const fn of ['host_system_cmd', 'host_vol_block', 'host_edit_cc_block', 'move_midi_internal_send', 'set_led',
+for (const fn of ['host_system_cmd', 'host_vol_block', 'host_edit_cc_block', 'set_led',
                   'host_open_service', 'host_close_service', 'host_ext_midi_remap_clear', 'host_ext_midi_remap_set',
                   'host_ext_midi_remap_enable', 'host_autosave_hold', 'host_autosave_kick', 'shadow_restore_knob_leds',
                   'host_trace_begin', 'host_trace_end', 'host_send_midi', 'move_midi_inject_to_move', 'host_set_led'])
     globalThis[fn] = () => 0;
+/* The LEDs, as the hardware would show them: every pad, step and button write the UI sends, and
+ * any palette entry it rewrites. A pad map in the manual is drawn from this, so its colours are
+ * the real UI's, not a hand-picked copy. Pads are notes 68-99 (bottom-left first), steps 16-31. */
+const LED = { note: new Array(128).fill(0), anim: new Array(128).fill(0), from: new Array(128).fill(0), cc: new Array(128).fill(0), pal: {} };
+let sysex = [];
+globalThis.move_midi_internal_send = (p) => {
+    if (!p || p.length < 4) return 1;
+    for (let i = 0; i + 3 < p.length; i += 4) {
+        const cin = p[i] & 0x0F, st = p[i + 1] & 0xF0, ch = p[i + 1] & 0x0F;
+        if (cin >= 4 && cin <= 7) {                     /* SysEx: start/continue, then the end */
+            sysex.push(...p.slice(i + 1, i + 1 + (cin === 5 ? 1 : cin === 6 ? 2 : 3)));
+            if (cin !== 4) {
+                const b = sysex; sysex = [];
+                if (b[0] === 0xF0 && b[6] === 0x03 && b.length >= 14) {
+                    const v = (lo, hi) => lo | (hi << 7);
+                    LED.pal[b[7]] = [v(b[8], b[9]), v(b[10], b[11]), v(b[12], b[13])];
+                }
+            }
+        } else if (st === 0x90) {
+            const n = p[i + 2];
+            LED.from[n] = ch ? LED.note[n] : 0;   /* a pulse or blink runs from the colour set just before it */
+            LED.note[n] = p[i + 3]; LED.anim[n] = ch;
+        }
+        else if (st === 0xB0) LED.cc[p[i + 2]] = p[i + 3];
+    }
+    return 1;
+};
+const ledShot = () => ({
+    pads: LED.note.slice(68, 100), padAnim: LED.anim.slice(68, 100), padFrom: LED.from.slice(68, 100),
+    steps: LED.note.slice(16, 32), stepAnim: LED.anim.slice(16, 32), pal: { ...LED.pal },
+});
 /* Files the UI reads, by path suffix (projects.json, a project's name tag, the
  * snapshot manifest...). */
 const FILES = {};
@@ -282,6 +314,7 @@ const MI = await import('../ui/ui_midi_import.mjs');
 const AUTO = await import('../ui/ui_automation.mjs');
 const AUD = await import('../ui/ui_audio.mjs');
 const AED = await import('../ui/ui_audio_editor.mjs');
+const PADMODE = await import('../ui/ui_pad_mode.mjs');
 const SESS_EQ_MID = (await import('../ui/ui_engine.mjs')).SESS_EQ_MODE0 + 1;
 const { MoveShift, MoveBack, MoveMute, MoveDelete, MoveLoop, MoveCapture, MoveUndo, MoveCopy, MovePlay, MoveRec }
     = await import('/data/UserData/schwung/shared/constants.mjs');
@@ -584,9 +617,15 @@ function screen(slug, section, title, caption, setup, opts = {}) {
         resetFb(); globalThis.clear_screen();
         R.refreshInstrAbbrev();
         R.drawUI();
-        const _hud = HUD_OUT && hudLast ? JSON.parse(hudLast) : null;
+        const _hud = hudLast ? JSON.parse(hudLast) : null;
         if (_hud) _hud.oled = { fmt: 'rows', data: pack(currentFb()) };   /* the preview's stand-in for the live frame */
-        shots.push({ slug, section, title, caption, fb: currentFb().slice(), hud: _hud });
+        const po = opts.pads || (process.env.PADS_ALL ? {} : null);
+        const fbNow = currentFb().slice();
+        if (po) ticks(po.settle ?? 8);   /* the LED painter runs from tick: let it catch up */
+        const pads = po ? { ...ledShot(), labels: typeof po.labels === 'function' ? po.labels(_hud) : (po.labels || null),
+                            stepLabels: po.stepLabels || null, noPads: !!po.noPads } : null;
+        if (pads && po.steps === false) { pads.steps = null; pads.stepAnim = null; }
+        shots.push({ slug, section, title, caption, fb: fbNow, hud: _hud, pads });
         letGo();
         /* state restore() cannot reach (a module's own, the engine's slots):
          * a screen that changes it puts it back */
@@ -656,7 +695,7 @@ screen('slicer-sample', '16.2 The SLICER Editor', 'The SLICER editor — page 3,
     'Page 3 shows a strip of the whole file with the range on it, over the sample\'s knobs: Sync, Pitch, Detune, Tempo and Gain.',
     () => { openSlicer(); toPage(2); });
 screen('slicer-inside', '16.3 Making Slices', 'The SLICER editor — inside the slice editor',
-    'Click the jog on page 1 to enter the slice editor. Turn the jog to move the cursor through the range, and press it to add a slice where the cursor stands.',
+    'Click the jog on page 1 to enter the slice editor. Turn the jog to move the cursor through the range, and click it to add a slice where the cursor stands.',
     () => {
         openSlicer(); click(); ticks(2);
         if (!AED.slcInside(S.auEditor)) throw new Error('the click did not enter the slice editor');
@@ -1537,6 +1576,58 @@ for (const s of shots) {
     s.order = HEADINGS.indexOf(s.section);
     if (s.order < 0) problems.push(s.slug + ': section "' + s.section + '" is not a heading of the manual');
 }
+/* ── pad maps: the pads (and steps) as the real UI lights them, drawn as a diagram in the manual.
+ * Colours come from the LEDs the UI sent; the labels are either the UI's own (the published bank
+ * map, the pads' note map) or the names the manual's tables use for the same pads. */
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const noteName = (n) => (n == null || n > 127) ? '' : NOTE_NAMES[n % 12];
+const padNoteLabels = () => Array.from({ length: 32 }, (_, i) => noteName(S.padNoteMap[i]));
+const hudPadLabels = (h) => {
+    if (!h || !h.pads || !h.pads.cells) throw new Error('no published pad description');
+    return h.pads.cells.map((c) => (c && c.label ? c.label.replace(' ', '\n') : ''));
+};
+screen('pads-bank-map', '4.1 The Bank Map', 'The pads while the jog is held',
+    'The left 4×4 is the bank map, one column per group, with the bank you are on in white. On the right, MIDI FX and the instrument sit in the third column, and FX 1–4 run down the fourth.',
+    () => { toBank(3, false); press(3); ticks(2); if (!S.bankMapUp) throw new Error('holding the jog did not show the map'); },
+    { pads: { labels: hudPadLabels, steps: false } });
+/* at the default pad octave (an earlier screen may have moved it; restore() does not reach it) */
+const pianoLayout = () => { S.padOctave[S.activeTrack] = 3; for (let i = 0; i < 2; i++) { press(MoveShift); noteOn(STEP(7), 127); noteOff(STEP(7)); release(MoveShift); ticks(2); } };
+screen('pads-piano', '8.2.1 Piano and Bass', 'The Piano layout',
+    'Two octaves from C: the white keys on the bottom row of each, the black keys above them. The root is in the track color.',
+    () => { pianoLayout(); },
+    { pads: { labels: padNoteLabels, steps: false } });
+screen('pads-bass', '8.2.1 Piano and Bass', 'The Bass layout',
+    'Four strings, E A D G from the bottom row up, with the open string on the left and seven frets across.',
+    () => {
+        pianoLayout(); toBank(C.BANK_CHORD);
+        const PM = PADMODE;
+        for (let g = 0; g < 6 && PM.padModeCfg(S.activeTrack).piano.instr !== PM.INSTR_BASS; g++) { knobTurn(1, 6); ticks(2); }
+        if (PM.padModeCfg(S.activeTrack).piano.instr !== PM.INSTR_BASS) throw new Error('Instr never reached Bass');
+    },
+    { pads: { labels: padNoteLabels, steps: false } });
+screen('pads-audio', '15.1.1 What the Pads and Steps Show', 'An Audio clip on the pads',
+    'The clip is cut into 32 sections, one per pad. The sections played this time round are bright, the one playing pulses (drawn split), and the rest are dim. The grey pads are past the end of the sample.',
+    () => { sampledTrack(false); },
+    { pads: { steps: true } });
+screen('pads-slicer', '16.1.3 The Pads', 'A Slicer\'s pads',
+    'In 4 Rows, the slices run from the bottom-left, 8 to a row. Slice 3 is playing, so it is white, and slice 1 is the picked slice. This sample has 8 slices, so the pads past them are dark.',
+    () => { sampledTrack(true); },
+    { pads: { labels: Array.from({ length: 32 }, (_, i) => (i < 8 ? String(i + 1) : '')), steps: false } });
+const PERF_LABELS = [
+    '1/32', '1/16', '1/8', '1/4', '1/2', 'Hold', 'Sync', 'Latch',
+    'Oct\nUp', 'Oct\nDown', 'Scale\nUp', 'Scale\nDown', 'Fifth', 'Tritone', 'Drift', 'Storm',
+    'Decresc-\nendo', 'Swell', 'Cresc-\nendo', 'Pulse', 'Side-\nchain', 'Staccato', 'Legato', 'Ramp\nGate',
+    'Half\nTime', '3 Skip', 'Phantom', 'Sparse', 'Glitch', 'Stagger', 'Shuffle', 'Back-\nwards',
+];
+screen('pads-perf', '25.2 The Grid', 'The Performance Mode grid',
+    'From the bottom: capture length and mode, then the pitch mods, the velocity and gate mods, and the wild mods. A mod turns white while it is on.',
+    () => { toSession(); tap(MoveLoop); ticks(4); if (!(S.loopHeld || S.perfViewLocked)) throw new Error('Performance Mode is not up'); },
+    { pads: { labels: PERF_LABELS, steps: false } });
+screen('steps-shift', '30.8 Shift and Step Shortcuts', 'The step buttons while [Shift] is held',
+    'The steps that have a [Shift] shortcut are lit.',
+    () => { press(MoveShift); ticks(4); },
+    { pads: { noPads: true, stepLabels: ['Projects', 'Settings', '', '', 'Tap', 'Metro', 'Groove', 'Layout', 'Scale', 'VelIn', 'LIVE\nARP', '', 'Resume', '', 'Double', 'Quant'] } });
+
 const ordered = shots.map((s, i) => ({ s, i })).sort((a, b) =>
     ((a.s.order < 0 ? 1e9 : a.s.order) - (b.s.order < 0 ? 1e9 : b.s.order)) || (a.i - b.i)).map((x) => x.s);
 
@@ -1554,7 +1645,7 @@ for (const s of ordered) {
     writePng(s.fb, out + '/' + s.slug + '.png');
     const ink = s.fb.reduce((a, b) => a + b, 0);
     if (ink < LOW_INK) problems.push(s.slug + ': only ' + ink + ' px of ink — the rig probably drew the wrong screen');
-    json.push({ slug: s.slug, title: s.title, caption: s.caption, section: s.section, fb: pack(s.fb) });
+    json.push({ slug: s.slug, title: s.title, caption: s.caption, section: s.section, fb: pack(s.fb), ...(s.pads ? { pads: s.pads } : {}) });
     console.log(`${String(ink).padStart(5)} px  ${s.section.padEnd(40).slice(0, 40)}  ${s.slug}`);
 }
 writeFileSync(out + '/screens.json', JSON.stringify(json, null, 1));
