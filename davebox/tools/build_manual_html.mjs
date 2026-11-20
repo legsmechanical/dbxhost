@@ -354,6 +354,8 @@ function renderQuote(b) {
     else if (/^🚀/.test(t)) { kind = 'tip'; label = 'New here?'; first.text = t.replace(/^🚀\s*(\*\*New here\?\*\*)?\s*/, ''); }
     else if (/^🎬/.test(t)) { kind = 'video'; label = 'Video'; first.text = t.replace(/^🎬\s*(\*\*Video:?\*\*:?)?\s*/, ''); }
     else if (/^\*\*Tip:?\*\*/i.test(t)) { kind = 'tip'; label = 'Tip'; first.text = t.replace(/^\*\*Tip:?\*\*:?\s*/i, ''); }
+    /* A video pointer is one quiet line under the heading, not a box. */
+    if (kind === 'video' && b.blocks.length === 1 && first.type === 'p') return `<p class="video"><span class="vtag">Video</span><span>${inline(first.text)}</span></p>`;
     return `<aside class="callout ${kind}"><div class="clabel">${label}</div>${renderBlocks(b.blocks)}</aside>`;
 }
 
@@ -402,7 +404,6 @@ if (existsSync(QS_SRC)) {
     const at = chapters.findIndex((c) => c.num === 2) + 1;
     chapters.splice(at, 0, { num: QS, title: 'Quick Start', id: slugify('Quick Start', used), body: qsBlocks, sections: [] });
 }
-const numLabel = (c) => (typeof c.num === 'number' ? c.num + '. ' : '');
 
 function renderChapterBody(ch) {
     let html = '';
@@ -417,20 +418,16 @@ function renderChapterBody(ch) {
         pending = null;
     };
     const flushTail = () => { if (tail.length) html += figureHtml(tail); tail = []; };
-    /* A section's content (everything under an h2, h3s included) sits indented under its heading. */
-    let inSec = false;
     for (const b of ch.body) {
         if (b.type === 'h') {
             flushPending();
             flushTail();
             const id = slugify(b.text, used);
             const lvl = Math.min(b.level, 4);
-            if (b.level === 2) {
-                ch.sections.push({ id, title: b.text });
-                if (inSec) html += '</div>\n';
-            }
-            html += `<h${lvl} id="${id}"><a class="anchor" href="#${id}" aria-hidden="true">#</a>${inline(b.text)}</h${lvl}>\n`;
-            if (b.level === 2) { html += '<div class="secbody">\n'; inSec = true; }
+            if (b.level === 2) ch.sections.push({ id, title: b.text });
+            /* A numbered section's number hangs in the sheet's left margin. */
+            const sn = b.level === 2 && /^(\d+\.\d+)\s+(.*)$/.exec(b.text);
+            html += `<h${lvl} id="${id}">${sn ? `<span class="secnum">${sn[1]}</span>${inline(sn[2])}` : inline(b.text)}</h${lvl}>\n`;
             const hit = screensBySection.get(normHeading(b.text));
             if (hit) { pending = hit.filter((s) => !placedScreens.has(s)); pending.forEach((s) => placedScreens.add(s)); }
             seenPara = false;
@@ -441,18 +438,16 @@ function renderChapterBody(ch) {
     }
     flushPending();
     flushTail();
-    if (inSec) html += '</div>\n';
     return html;
 }
 
-const chapterHtml = chapters.map((ch, idx) => {
+/* No previous/next links: the sidebar is the navigation (Josh, 2026-10-01: pager links "just clutter
+ * things"). The chapter number is part of the heading, in plain text. */
+const chapterHtml = chapters.map((ch) => {
     const body = renderChapterBody(ch);
-    const prev = chapters[idx - 1], next = chapters[idx + 1];
-    const pager = `<nav class="pager">${prev ? `<a class="prev" href="#${prev.id}"><span>Previous</span>${numLabel(prev)}${esc(prev.title)}</a>` : '<span></span>'}` +
-        `${next ? `<a class="next" href="#${next.id}"><span>Next</span>${numLabel(next)}${esc(next.title)}</a>` : '<span></span>'}</nav>`;
-    const kicker = typeof ch.num === 'number' ? `Chapter ${ch.num}` : 'Walkthrough';
-    return `<section class="chapter" id="${ch.id}" data-num="${ch.num}">` +
-        `<header class="chhead"><div class="chnum">${kicker}</div><h1>${inline(ch.title)}</h1></header>\n${body}\n${pager}</section>`;
+    const num = typeof ch.num === 'number' ? `<div class="chnum">${ch.num}</div>` : '';
+    return `<section class="chapter sheet" id="${ch.id}" data-num="${ch.num}" data-title="${escAttr(ch.title)}">` +
+        `<header class="chhead">${num}<h1>${inline(ch.title)}</h1></header>\n${body}\n</section>`;
 }).join('\n');
 
 const unplaced = screens.filter((s) => !placedScreens.has(s));
@@ -477,18 +472,23 @@ if (orphans.length) PARTS[PARTS.length - 1].chapters.push(...orphans);
 const navHtml = PARTS.map((p) => `<div class="part"><div class="ptitle">${esc(p.title)}</div><ol>` +
     p.chapters.filter((n) => byNum.has(n)).map((n) => {
         const c = byNum.get(n);
-        return `<li data-ch="${c.id}"><a href="#${c.id}"><span class="n">${typeof c.num === 'number' ? c.num : '▸'}</span>${esc(c.title)}</a>` +
+        return `<li data-ch="${c.id}"><a href="#${c.id}"><span class="n">${typeof c.num === 'number' ? c.num : ''}</span>${esc(c.title)}</a>` +
             (c.sections.length ? `<ol class="subs">${c.sections.map((s) => `<li><a href="#${s.id}">${inline(s.title.replace(/^\d+\.\d+\s+/, ''))}</a></li>`).join('')}</ol>` : '') + '</li>';
     }).join('') + '</ol></div>').join('');
 
-const partCards = PARTS.map((p) => `<div class="pcard"><div class="ptitle">${esc(p.title)}</div><ul>` +
-    p.chapters.filter((n) => byNum.has(n)).map((n) => `<li><a href="#${byNum.get(n).id}">${esc(byNum.get(n).title)}</a></li>`).join('') + '</ul></div>').join('');
+
+/* A plain contents list on the front sheet, for readers without the sidebar (phones, print). */
+const tocHtml = PARTS.map((p) => `<div><h3>${esc(p.title)}</h3><ol>` +
+    p.chapters.filter((n) => byNum.has(n)).map((n) => {
+        const c = byNum.get(n);
+        return `<li><span class="n">${typeof c.num === 'number' ? c.num : ''}</span><a href="#${c.id}">${esc(c.title)}</a></li>`;
+    }).join('') + '</ol></div>').join('');
 
 const version = (() => { try { return JSON.parse(readFileSync(join(ROOT, 'module.json'), 'utf8')).version || ''; } catch { return ''; } })();
 
 const html = readFileSync(join(ROOT, 'tools/manual_template.html'), 'utf8')
     .replace(/\{\{(\w+)\}\}/g, (m, k) => ({  // a function, so '$' in the content is never a pattern
-        VERSION: esc(version), NAV: navHtml, INTRO: introHtml, PARTS: partCards, CHAPTERS: chapterHtml,
+        VERSION: esc(version), NAV: navHtml, INTRO: introHtml, TOC: tocHtml, CHAPTERS: chapterHtml,
         SCREENCOUNT: String(placedScreens.size),
     })[k] ?? m);
 
