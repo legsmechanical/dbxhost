@@ -481,7 +481,7 @@ void move_plugin_host_ext_v1(const move_host_ext_v1_t *ext) { g_ext = ext; }
 ## The UI description stream (`host_ui_publish`)
 
 dAVEBOx describes the screen it is drawing — what screen it is, the eight knob cells, lists, dialogs,
-the widgets — as one JSON document, and the browser's Screen view redraws it in colour. The host only
+the widgets — as one JSON document, and the browser's HUD redraws it in colour. The host only
 carries the latest document: `host_ui_publish(json)` writes it to a 16 KB shared page
 (`src/host/ui_publish_shm.h`, seqlock), and `display_server` streams it as `event: ui` on
 `/stream-auto?v=2`, beside the OLED frame and the control surface (the manager already proxies that

@@ -1,7 +1,7 @@
 {
-  "name": "dAVEBOx Screen",
+  "name": "dAVEBOx HUD",
   "short_name": "dAVEBOx",
-  "description": "The dAVEBOx Screen view, in a window of its own.",
+  "description": "The dAVEBOx HUD, in a window of its own.",
   "id": "/?screen=1",
   "start_url": "/?screen=1",
   "scope": "/",

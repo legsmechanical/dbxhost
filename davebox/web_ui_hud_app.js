@@ -56,7 +56,7 @@
   /* the app tags (web_ui_app.js). The screen runs under the status bar (it is
    * dark too) rather than below a reserved black band, so that one is SET even
    * where the page declares it; its content keeps clear of it (rescale). */
-  window.dbxApp.declareApp({ title: 'dAVEBOx Screen', short: 'dAVEBOx Screen', manifest: 'web_ui_screen.json', icon: 'web_ui_screen',
+  window.dbxApp.declareApp({ title: 'dAVEBOx HUD', short: 'dAVEBOx HUD', manifest: 'web_ui_screen.json', icon: 'web_ui_screen',
                              theme: '#08090b', statusBar: 'black-translucent', forceStatusBar: true });
 
   const fsBtn = fsOk() ? button('Full screen', 'Full screen (F)', toggleFull) : null;

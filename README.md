@@ -105,7 +105,7 @@ or samples of its own on an Audio or Slicer track.
 - Export a project to an Ableton Live set, Audio tracks and the channel strip
   included, or any clip to a MIDI file; import MIDI files into clips.
 - The browser editor at `move.local:7700` has the sequencer, mixer and sound
-  pages, the full manual, and the **Screen view**: a full-colour companion to
+  pages, the full manual, and the **HUD** (heads-up display): a full-colour companion to
   the Move's screen that follows what you do, and that you can turn knobs and
   switch tracks from. It works on a tablet or a phone held sideways.
 - Type names by voice: hold Rec on any on-screen keyboard and speak. It runs
@@ -118,7 +118,7 @@ or samples of its own on an Audio or Slicer track.
   <sub>The browser editor's sequencer, live in both directions with the Move</sub>
 </p>
 
-<table><tr><td align="center" width="50%"><img src="docs/readme/web-screen-notefx.png" width="380" alt="The Screen view on the NOTE FX bank: the clip's notes above the bank's knobs"><br><sub>The Screen view: the clip's notes over the bank you're on</sub></td><td align="center" width="50%"><img src="docs/readme/web-screen-instrument.png" width="380" alt="The Screen view in an instrument's editor: Tenebrae's Filter page, its filter curve and envelope drawn over the knobs"><br><sub>An instrument's editor: the filter and its envelope, drawn</sub></td></tr></table>
+<table><tr><td align="center" width="50%"><img src="docs/readme/web-screen-notefx.png" width="380" alt="The HUD on the NOTE FX bank: the clip's notes above the bank's knobs"><br><sub>The HUD: the clip's notes over the bank you're on</sub></td><td align="center" width="50%"><img src="docs/readme/web-screen-instrument.png" width="380" alt="The HUD in an instrument's editor: Tenebrae's Filter page, its filter curve and envelope drawn over the knobs"><br><sub>An instrument's editor: the filter and its envelope, drawn</sub></td></tr></table>
 
 ---
 

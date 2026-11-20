@@ -10,23 +10,23 @@ the section into a versioned heading at release time.
 2.0.0 was a test release; this section lists everything new since 1.1.3.
 
 ### Added
-- **The browser's Screen view is a colour alternative to the OLED.** Open it from the web
+- **The browser's HUD (heads-up display) is a colour alternative to the OLED.** Open it from the web
   manager (or add it to a tablet's home screen). It follows what you do and where you are
   on the Move, and shows more than the OLED has room for: every knob with its value,
   waveforms with a playhead, every automation lane with its curve, which page of a bank
   you're on, and Move's own screen while you edit a Move instrument. You can work from it
   too: turn knobs, switch tracks and press the bank map's pads.
 
-  ![The Screen view on the NOTE FX bank: the clip's notes above the bank's knobs](https://raw.githubusercontent.com/legsmechanical/dbxhost/main/docs/readme/web-screen-notefx.png)
+  ![The HUD on the NOTE FX bank: the clip's notes above the bank's knobs](https://raw.githubusercontent.com/legsmechanical/dbxhost/main/docs/readme/web-screen-notefx.png)
 
-  ![The Screen view in an instrument's editor: Tenebrae's Filter page, its filter curve and envelope drawn over the knobs](https://raw.githubusercontent.com/legsmechanical/dbxhost/main/docs/readme/web-screen-instrument.png)
+  ![The HUD in an instrument's editor: Tenebrae's Filter page, its filter curve and envelope drawn over the knobs](https://raw.githubusercontent.com/legsmechanical/dbxhost/main/docs/readme/web-screen-instrument.png)
 - **A channel strip on every track**: a one-knob compressor and a 3-band EQ with a
   sweepable mid, like a mixing desk's channel. **Turn the jog on MIX** for MIX 2: Low,
   Mid, Freq, High and Comp. In Session View, the map's second column has **EQ** (the jog
   steps through its four bands, every track at once) and **COMPRESS**; the FX column
   moved to the fourth. Touch an EQ knob to see the curve; a dot on the Comp knob shows
   how hard it is working. It is saved, automatable, in snapshots and SnapMorph, shown on
-  the browser's Screen view, editable on the browser's Mixer and Sound views (click a
+  the browser's HUD, editable on the browser's Mixer and Sound views (click a
   strip's EQ curve to drag its bands on a graph; a gain-reduction bar under Compress), and exported to Live as a Compressor and Channel EQ.
 - **Loop points for Audio clips.** On SAMPLE, **K3** is now **End**, as fine as Start (a
   single sample zoomed all the way in). Start and End mark the loop, and nothing past End
@@ -88,10 +88,10 @@ the section into a versioned heading at release time.
 - **Export to Live plays REMIX** and a Slicer step's own sound, rendered as you hear them.
 - **One-shot Audio clips.** On an Audio track's CLIP bank, knob 1 is **Mode**: **Loop** or
   **Shot**. A Shot clip plays its length once from its top each time it's launched, then stops.
-- **The Screen view turns knobs and switches tracks.** In the browser's Screen view,
+- **The HUD turns knobs and switches tracks.** In the browser's HUD,
   drag or scroll a knob to turn it, click a track to select it, and press the bank
   map's pads. Each does exactly what the same gesture does on the Move.
-- **The Screen view shows Move's own screen** while you edit a Move instrument, in
+- **The HUD shows Move's own screen** while you edit a Move instrument, in
   the track's colour. A page a module draws itself (Bouba-Kiki's Shape, MonkSynth's
   Face) shows the module's own picture above its knobs.
 - **The browser editor works on a tablet or a phone held sideways.** Bigger touch
@@ -327,14 +327,14 @@ the section into a versioned heading at release time.
   for a moment as stock Move closed, before dAVEBOx loaded.
 - **SAMPLE zoomed all the way out shows a little of the audio outside Start and End**,
   dithered, as it does once you zoom in, so the view no longer jumps when you zoom.
-- **The browser's Screen view shows which page of a bank you are on**, as the device's
+- **The browser's HUD shows which page of a bank you are on**, as the device's
   screen does: MIX 1/2 and 2/2 under the knobs, and in Session View a tab for every mixer
   bank (EQ with its band and page, and COMPRESS). A Slicer's page 3 shows Start, Zoom and
   End on its first three knobs.
 - **A kit from Convert to kit no longer clips when you turn a pad's velocity on.** Its pads
   now respond to velocity as a stock kit's do: a full-velocity hit is the slice's level and
   softer hits are quieter, in Move and in DR32.
-- **The browser's Screen view names the knob and its value on a waveform pop-up** (SAMPLE's
+- **The browser's HUD names the knob and its value on a waveform pop-up** (SAMPLE's
   and the SLICER's), as the Move's screen does; it showed only the waveform.
 - A knob's option list on SAMPLE's TIME page (Warp) and on the SLICER editor's page 3
   (Sync) was partly hidden behind the page's own picture; it is in front now.
@@ -343,28 +343,28 @@ the section into a versioned heading at release time.
 - **Step conditions survive a save on a clip whose loop doesn't start at step 1.**
   Iter, Random and Ratchet (and a Slicer step's own sound) on steps after the loop's
   first were lost when the project was saved and reopened.
-- **The browser's Screen view stays on the overview when you touch a knob on the MIX,
+- **The browser's HUD stays on the overview when you touch a knob on the MIX,
   MACROS or Pad Mode bank**, as it already did on the other banks: the touched knob
   lights in the strip under the clip, and the strip keeps the bank's name. The
-  Screen view also names each track's instrument (OB-Xd) rather than "Synth".
-- **The Screen view's knobs, clearer.** An Audio track shows its knobs too. A knob's
+  HUD also names each track's instrument (OB-Xd) rather than "Synth".
+- **The HUD's knobs, clearer.** An Audio track shows its knobs too. A knob's
   dial turns to its setting (Resolution's sat at zero). The knobs wear their track's
   colour, one colour, instead of eight. A knob that is a button (Crop, Apply Legato)
   looks like one, a knob a click does something on wears corner marks, and touching
   one says what the click does (**Click Crop**, **Click Assign**). The bank map's
   **Inst** pad names the instrument. The range readout is gone.
-- **The Screen view's waveforms have a playhead**, on an Audio track's overview and on
+- **The HUD's waveforms have a playhead**, on an Audio track's overview and on
   SAMPLE / SLICES. **SAMPLE and SLICES show every knob** under the waveform — Start,
   Zoom, Length or End, and the sound knobs — instead of only the one you touch, and
   SAMPLE's second page keeps the waveform above its knobs.
-- **Pop-ups stay pop-ups on the Screen view.** What the Move's screen shows in a box over
+- **Pop-ups stay pop-ups on the HUD.** What the Move's screen shows in a box over
   the page — an enum knob's choices, the Sound menu's pickers, the scale picker, the
   level card — is a card over that page in the browser, instead of replacing it. An
   enum knob's choices showed nowhere before; the bank picker showed an empty card; and
   the instrument picker now lists the Move instruments other tracks are playing.
-- **A module's list pages on the Screen view.** Presets, My Presets, Module, a module's
+- **A module's list pages on the HUD.** Presets, My Presets, Module, a module's
   own menus and the section list showed as eight empty knobs; they are lists now.
-- **Automation on the Screen view.** The AUTOMATION screen shows every lane with its curve
+- **Automation on the HUD.** The AUTOMATION screen shows every lane with its curve
   and its own playhead, in the Move's list order, headed by where each lane lives in full
   (NuSaw, Freeverb · FX 1, Levels). The selected lane is drawn large: its whole curve,
   its range and current value in the parameter's units, its points, the page the step

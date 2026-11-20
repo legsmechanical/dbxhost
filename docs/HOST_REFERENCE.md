@@ -130,7 +130,7 @@ and controllers, poor as a clock source.
 
 ## Surface input from the browser (`remote-surface`)
 
-The remote editor's Screen view sends the HARDWARE gesture a click stands for — knob detents
+The remote editor's HUD sends the HARDWARE gesture a click stands for — knob detents
 with the knob's touch held, a pad's note, Shift + a jog turn — over the `/ws/remote-ui` socket as
 `{"type":"surface","pkts":[[status,d1,d2],…]}`. The manager (`schwung-manager/shmsurface.go`) pushes
 them as cable-0 packets on the `remote-surface` ring, and the shim replays them in the overtake scan
