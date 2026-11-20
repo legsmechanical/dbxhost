@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 170" font-family="Jost, system-ui, sans-serif" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <title>The audio path</title>
+  <desc>A track's sound runs from the instrument through FX 1 to 4, the compressor, the EQ, and the fader and pan, then to Master FX and out; the sends A and B branch off after the fader and also feed Master FX. Four numbered points mark where recording can be taken: 1 after the instrument, 2 after FX 1 to 4, 3 after the fader and pan, 4 after Master FX.</desc>
+  <defs>
+    <marker id="ap-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="currentColor" stroke="none"/>
+    </marker>
+  </defs>
+  <g stroke-width="1.5">
+    <rect x="4" y="60" width="116" height="40" rx="4" fill="currentColor" fill-opacity="0.16"/>
+    <path d="M120 80 H142" marker-end="url(#ap-arrow)"/>
+    <rect x="146" y="60" width="78" height="40" rx="4" fill="currentColor" fill-opacity="0.16"/>
+    <path d="M224 80 H246" marker-end="url(#ap-arrow)"/>
+    <rect x="250" y="60" width="70" height="40" rx="4" fill="currentColor" fill-opacity="0.16"/>
+    <path d="M320 80 H342" marker-end="url(#ap-arrow)"/>
+    <rect x="346" y="60" width="50" height="40" rx="4" fill="currentColor" fill-opacity="0.16"/>
+    <path d="M396 80 H418" marker-end="url(#ap-arrow)"/>
+    <rect x="422" y="60" width="112" height="40" rx="4" fill="currentColor" fill-opacity="0.16"/>
+    <path d="M534 80 H604" marker-end="url(#ap-arrow)"/>
+    <rect x="608" y="60" width="110" height="40" rx="4" fill="currentColor" fill-opacity="0.16"/>
+    <path d="M718 80 H744" marker-end="url(#ap-arrow)"/>
+    <!-- the sends -->
+    <path d="M566 80 V128 H582" marker-end="url(#ap-arrow)"/>
+    <rect x="586" y="112" width="96" height="34" rx="4" fill="currentColor" fill-opacity="0.08"/>
+    <path d="M682 129 H700 V104" marker-end="url(#ap-arrow)"/>
+    <!-- where recording is taken -->
+    <g stroke-dasharray="3 3" stroke-opacity="0.6">
+      <path d="M133 38 V76"/><path d="M235 38 V76"/><path d="M552 38 V76"/><path d="M731 38 V76"/>
+    </g>
+  </g>
+  <g fill="currentColor" stroke="none" font-size="16" text-anchor="middle">
+    <text x="62" y="85">INSTRUMENT</text>
+    <text x="185" y="85">FX 1–4</text>
+    <text x="285" y="85">COMP</text>
+    <text x="371" y="85">EQ</text>
+    <text x="478" y="85">FADER, PAN</text>
+    <text x="663" y="85">MASTER FX</text>
+    <text x="772" y="85" font-size="14">OUT</text>
+    <text x="634" y="134" font-size="14">SEND A, B</text>
+  </g>
+  <g font-size="14" text-anchor="middle">
+    <circle cx="133" cy="24" r="12" stroke-width="1.5"/><text x="133" y="29" fill="currentColor" stroke="none">1</text>
+    <circle cx="235" cy="24" r="12" stroke-width="1.5"/><text x="235" y="29" fill="currentColor" stroke="none">2</text>
+    <circle cx="552" cy="24" r="12" stroke-width="1.5"/><text x="552" y="29" fill="currentColor" stroke="none">3</text>
+    <circle cx="731" cy="24" r="12" stroke-width="1.5"/><text x="731" y="29" fill="currentColor" stroke="none">4</text>
+  </g>
+</svg>

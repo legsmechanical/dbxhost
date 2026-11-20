@@ -2602,11 +2602,7 @@ release the jog.
 
 The numbers mark where a resample or a flatten records the track's sound.
 
-```
- INSTRUMENT ─▶ FX 1–4 ─▶ COMP ─▶ EQ ─▶ FADER, PAN ─┬──────────────▶ MASTER FX ─▶ OUT
-            ┆         ┆                          ┆ └─▶ SEND A, B ───────┘         ┆
-            1         2                          3                                4
-```
+<img src="img/audio-path.svg" alt="A track's audio path, with the four points where a resample or flatten records.">
 
 1. Flatten with Effects set to Pre, and Resample clip with In place on.
 2. Flatten with Effects set to Post. The channel strip and the fader go on working on the flattened

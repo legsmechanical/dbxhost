@@ -1125,9 +1125,54 @@ details.fold[open] > summary { margin-bottom: .5rem; }
 <p class="video"><span class="vtag">Video</span><span><a href="https://youtu.be/nrZD8SnbD6Q" target="_blank" rel="noopener">Tutorial 6.1: The session mixer and the sends</a></span></p><p>In Session View, the knobs are the mixer. To choose what they control, hold the jog for the Session map:</p><div class="figs"><figure class="oled"><div class="bezel"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAABACAYAAADS1n9/AAABRElEQVR42u3Z0Y6CMBRF0f7/Z/rsP6CJvmhobbgNl9q1EzLOTA9TTjcMaLndt8227laqv3jS+315Uxu7N761z/KFhTpRgF+L0xpXy7bG1V5bnEUEqH119p8sQG0xehc9IkBP3nYBAVqLu3dPUPt5z1XFVSD5JtC2iAAAAAAAgKWJPjfKz50vrUG9E5CfN69AAiiQAAokgAIJoMCkfPQp4NDfj36M2DPJs/Krzz/0MXCagRc6g7KPP/19AAUSQIErvxNIAAIokAAKJIACCaBAAiiQAAokgAIJoEACKJAA8gSQJ4A8AeQJIE8AeQLIE0CeAPIEkCeAPAHkZxYAAD4vJ5Hs0X2MyO+9nmn+mfkSKW/0PrIEyDzm7OMPH8gIA52Buf2HJ5B5Bsx+BYrOe8gV4C/+h016DzBCAI9/AAAAAAAAAF48AF2HSqmWEuSTAAAAAElFTkSuQmCC" width="128" height="64" alt="Session mixer — Volume: The Volume page has a fader per track."></div><figcaption><span class="ftitle">Session mixer — Volume</span> The Volume page has a fader per track.</figcaption></figure></div><ul><li>The MIXER column is Volume, Pan, Send A and Send B.</li><li>The second column is the <a href="#212-the-channel-strip">channel strip</a>: EQ over COMPRESS.</li><li>The fourth column is the FX column. It opens the Master, Send A and Send B effects directly.</li></ul><p>On EQ, the knobs set one band on every track at once. Turning the jog steps through Low, Mid, Mid Freq and High.</p><p>On the Send A or Send B page, touch a track's send and click the jog to open that send's effects.</p><p>Mixer knobs record automation into the track's clip like any other.</p><p>A track that plays another track's instrument has no strip. On a MIDI track, Volume is CC 7 and Pan is CC 10.</p><h2 id="214-volume"><span class="secnum">21.4</span>Volume</h2>
 <p>The Volume knob controls Move's master output, everywhere. To set the active track's volume, hold [Shift] and turn the Volume knob; this also works everywhere.</p><h2 id="215-master-fx-and-the-sends"><span class="secnum">21.5</span>Master FX and the Sends</h2>
 <p>The three buses are MASTER FX, SEND FX A and SEND FX B. Each has four effect blocks, edited like a track's. Each send's Return level sets how much comes back into the mix.</p><p>To reach a bus, hold the jog in Session View, tap MASTER, SEND A or SEND B on the Session map, and release the jog.</p><h2 id="216-the-audio-path"><span class="secnum">21.6</span>The Audio Path</h2>
-<p>The numbers mark where a resample or a flatten records the track's sound.</p><pre class="diagram"> INSTRUMENT ─▶ FX 1–4 ─▶ COMP ─▶ EQ ─▶ FADER, PAN ─┬──────────────▶ MASTER FX ─▶ OUT
-            ┆         ┆                          ┆ └─▶ SEND A, B ───────┘         ┆
-            1         2                          3                                4</pre><ol><li>Flatten with Effects set to Pre, and Resample clip with In place on.</li><li>Flatten with Effects set to Post. The channel strip and the fader go on working on the flattened track.</li><li>Resample clip with Source set to Dry: without the sends or Master FX.</li><li>Resample clip with Source set to Wet, and Resample scene: after Master FX. Resample clip plays only that track while it records.</li></ol><p>On a Move track, FX 1–4 are its Move FX bus. Per-pad and module-bus sends are taken inside the instrument, before the strip. See <a href="#192-resampling-a-scene-or-clip">Resampling a scene or clip</a> and <a href="#193-flattening-a-track">Flattening a track</a>.</p>
+<p>The numbers mark where a resample or a flatten records the track's sound.</p><div class="figs"><figure class="diagram"><svg role="img" aria-label="A track's audio path, with the four points where a resample or flatten records." xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 170" font-family="Jost, system-ui, sans-serif" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <title>The audio path</title>
+  <desc>A track's sound runs from the instrument through FX 1 to 4, the compressor, the EQ, and the fader and pan, then to Master FX and out; the sends A and B branch off after the fader and also feed Master FX. Four numbered points mark where recording can be taken: 1 after the instrument, 2 after FX 1 to 4, 3 after the fader and pan, 4 after Master FX.</desc>
+  <defs>
+    <marker id="ap-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="currentColor" stroke="none"/>
+    </marker>
+  </defs>
+  <g stroke-width="1.5">
+    <rect x="4" y="60" width="116" height="40" rx="4" fill="currentColor" fill-opacity="0.16"/>
+    <path d="M120 80 H142" marker-end="url(#ap-arrow)"/>
+    <rect x="146" y="60" width="78" height="40" rx="4" fill="currentColor" fill-opacity="0.16"/>
+    <path d="M224 80 H246" marker-end="url(#ap-arrow)"/>
+    <rect x="250" y="60" width="70" height="40" rx="4" fill="currentColor" fill-opacity="0.16"/>
+    <path d="M320 80 H342" marker-end="url(#ap-arrow)"/>
+    <rect x="346" y="60" width="50" height="40" rx="4" fill="currentColor" fill-opacity="0.16"/>
+    <path d="M396 80 H418" marker-end="url(#ap-arrow)"/>
+    <rect x="422" y="60" width="112" height="40" rx="4" fill="currentColor" fill-opacity="0.16"/>
+    <path d="M534 80 H604" marker-end="url(#ap-arrow)"/>
+    <rect x="608" y="60" width="110" height="40" rx="4" fill="currentColor" fill-opacity="0.16"/>
+    <path d="M718 80 H744" marker-end="url(#ap-arrow)"/>
+    <!-- the sends -->
+    <path d="M566 80 V128 H582" marker-end="url(#ap-arrow)"/>
+    <rect x="586" y="112" width="96" height="34" rx="4" fill="currentColor" fill-opacity="0.08"/>
+    <path d="M682 129 H700 V104" marker-end="url(#ap-arrow)"/>
+    <!-- where recording is taken -->
+    <g stroke-dasharray="3 3" stroke-opacity="0.6">
+      <path d="M133 38 V76"/><path d="M235 38 V76"/><path d="M552 38 V76"/><path d="M731 38 V76"/>
+    </g>
+  </g>
+  <g fill="currentColor" stroke="none" font-size="16" text-anchor="middle">
+    <text x="62" y="85">INSTRUMENT</text>
+    <text x="185" y="85">FX 1–4</text>
+    <text x="285" y="85">COMP</text>
+    <text x="371" y="85">EQ</text>
+    <text x="478" y="85">FADER, PAN</text>
+    <text x="663" y="85">MASTER FX</text>
+    <text x="772" y="85" font-size="14">OUT</text>
+    <text x="634" y="134" font-size="14">SEND A, B</text>
+  </g>
+  <g font-size="14" text-anchor="middle">
+    <circle cx="133" cy="24" r="12" stroke-width="1.5"/><text x="133" y="29" fill="currentColor" stroke="none">1</text>
+    <circle cx="235" cy="24" r="12" stroke-width="1.5"/><text x="235" y="29" fill="currentColor" stroke="none">2</text>
+    <circle cx="552" cy="24" r="12" stroke-width="1.5"/><text x="552" y="29" fill="currentColor" stroke="none">3</text>
+    <circle cx="731" cy="24" r="12" stroke-width="1.5"/><text x="731" y="29" fill="currentColor" stroke="none">4</text>
+  </g>
+</svg>
+<figcaption>A track's audio path, with the four points where a resample or flatten records.</figcaption></figure></div><ol><li>Flatten with Effects set to Pre, and Resample clip with In place on.</li><li>Flatten with Effects set to Post. The channel strip and the fader go on working on the flattened track.</li><li>Resample clip with Source set to Dry: without the sends or Master FX.</li><li>Resample clip with Source set to Wet, and Resample scene: after Master FX. Resample clip plays only that track while it records.</li></ol><p>On a Move track, FX 1–4 are its Move FX bus. Per-pad and module-bus sends are taken inside the instrument, before the strip. See <a href="#192-resampling-a-scene-or-clip">Resampling a scene or clip</a> and <a href="#193-flattening-a-track">Flattening a track</a>.</p>
 </section>
 <section class="chapter sheet" id="22-session-view" data-num="22" data-title="Session View"><header class="chhead"><div class="chnum">22</div><h1>Session View</h1></header>
 <p class="video"><span class="vtag">Video</span><span><a href="https://youtu.be/3kP6Zwm79_0?t=69" target="_blank" rel="noopener">Tutorial 1.2: Clips, scenes and the session grid</a> (from 1:09)</span></p><p>The pads show the clip grid: a column for each track and a row for each scene. Four of the 16 rows are visible at a time; press [+] and [−] to scroll. The knobs are the <a href="#213-the-session-mixer">session mixer</a>.</p><div class="figs"><figure class="oled"><div class="bezel"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAABACAYAAADS1n9/AAACH0lEQVR42u2dQa7DIAxEc/9jdt07tJsuqghjAwbH8EZCv00KIfYwNqSfXq/350M5t1wYAQJgCAiQqMM/3N9Lx0vvLwHSudL1S+cgwGICWJxsOWchmHYOAixwujRaewlQU45eVclGjiur5FulfKUCZAwPWxBgND+AABuGAMsxzySQEEAhCaRAAErSaTUAAAAAAACgBdICUc/ytPT5WptaZk+2v9j5mrM0x9Y+J73u7SeY4PyZBJD+Wub1kCCIBLWHSl4hAAVIogRSDtDzCJwcAIDokc/aPwAAgJNiGpY6cDrDlOIwAliXOC1q4qFEM0k96/qR999Vt7TO7KESqx3o4YAVajqrrW77eyqAhzE8iOMxAjM5/3EEGDXGqAEiRnNk+HIJAV4E8BoJow5YTUKPEOhJnBAFCLmBaAndhQCjT5bCsljn/MNjBhCR/7iEANYBWAiCACcSgKVgSDDk+Oj62e8/uv8QAAK0b6zwpPpSO731Tuu/+h30p9e3rmfQ/4Ysv8cAUfVLMjg6Ezqp/ygACgABjicAswBmARDgVAIAAAAAAAAAAAAAgM2RfecJds1wMF7pdcm4kuFrx+5t/7d/v5Z03vqrHbVjtfu9X7PUL+//OkpLAKsRtf3xtD3wLIa29K2l75b+bUuA2ohpNaK2FVrLo0vLz7pZCWBRJc3xW4WOSAWwSG2JlDMVgBBg3MGyJQcYJUWPApADMAtgFqDgC0BsM1iOlOFmAAAAAElFTkSuQmCC" width="128" height="64" alt="Session View: Session View shows the mixer page the jog is on and each track's playing clip."></div><figcaption><span class="ftitle">Session View</span> Session View shows the mixer page the jog is on and each track's playing clip.</figcaption></figure></div><div class="figs"><figure class="diagram"><svg role="img" aria-label="Session View: a column per track and a row per scene; the side buttons launch the row beside them, the step buttons launch scenes 1–16, and + / − scroll through the 16 rows." xmlns="http://www.w3.org/2000/svg" viewBox="0 0 956 430" font-family="'Source Sans 3', system-ui, sans-serif" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
