@@ -32,7 +32,7 @@ of their own. dAVEBOx turns Move's Link on by itself each time it starts.
    from your Move sets — one pad per project. Nothing is open yet.
 3. **Hold Shift and tap an empty pad.** That creates a new project and opens it in
    one press — if you have project templates, it asks Empty or Template first.
-   (Later, to carry on where you left off, just click the jog wheel: the
+   (Later, to carry on where you left off, just click the jog jog: the
    project you last had open is already selected.)
 
 You can come back to the picker at any time with **Shift + Step 1**. More in the
@@ -53,7 +53,7 @@ button:
 A few things worth knowing before the first lesson:
 
 - **The jog wheel shows the bank map.** In Track View, **press and hold the
-  jog** (the clickable encoder on the left): the left 4×4 pads become a map of
+  jog** (the clickable knob on the left): the left 4×4 pads become a map of
   the track's *parameter banks* — its effects and clip settings — and the screen
   shows the same map. **Tap a pad** to go to that bank, then **let go** of the
   jog. Letting go without tapping puts the map away without choosing.
@@ -112,7 +112,7 @@ Now let's play some notes on another track.
 5. Press **Play** if it isn't already running. Track 3 plays alongside your drums.
 
 A new project starts in a random key and scale. To change them, open **Project
-Settings** (**Shift + Step 2**), choose **Key** or **Scale**, click, turn to a new
+Settings** (**[Shift] + [Step 2]**), choose **Key** or **Scale**, click, turn to a new
 one and click. If your clips hold notes it asks whether to move them, and you hear
 the new key while it asks. See
 [Key & Scale](MANUAL-SA.md#62-key-and-scale) in the manual.
@@ -169,8 +169,8 @@ Performance Mode grabs a short loop of whatever's playing and lets you mangle it
 live with a grid of effects.
 
 1. In **Session View**, with your pattern playing, **tap the Loop button**. The
-   pad grid turns into a mod grid and stays that way (tap Loop again to leave; or
-   *hold* Loop to use it only while held).
+   pad grid turns into a mod grid and stays that way (tap [Loop] again to leave; or
+   *hold* [Loop] to use it only while held).
 2. The bottom row's pads 1–5 are capture lengths, from 1/32 up to 1/2 bar. **Hold
    one** and the music loops that slice for as long as you hold it; let go and it
    plays on as written.
