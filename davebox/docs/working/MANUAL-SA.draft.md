@@ -9,7 +9,7 @@
 dAVEBOx is an **8-track sequencer and sampler for the Ableton Move**. It records,
 arranges and plays back notes and automation, and each track plays one of Move's
 own instruments, a Schwung effect chain, an external synth on the USB-A port — or
-samples of its own, on an [Audio](#8-audio-tracks) or [Slicer](#9-slicer-tracks)
+samples of its own, on an [Audio](#11-audio-tracks) or [Slicer](#12-slicer-tracks)
 track.
 
 dAVEBOx runs inside [Schwung](https://github.com/charlesvestal/schwung) and takes
@@ -70,34 +70,56 @@ Nothing on your Move is modified permanently:
 - Your official Schwung install is untouched, and **a reboot returns you to it**
   (unless you made dAVEBOx your boot default).
 - Samples, presets and modules are shared between the two; settings are not —
-  see [dAVEBOx and official Schwung](#196-davebox-and-official-schwung).
-- Your Move sets are not shared: dAVEBOx keeps its own [projects](#195-projects).
+  see [dAVEBOx and official Schwung](#246-davebox-and-official-schwung).
+- Your Move sets are not shared: dAVEBOx keeps its own [projects](#245-projects).
 
 ---
 
 ## Contents
 
+**I. Start**
+
 1. [Overview](#1-overview)
 2. [Getting Started](#2-getting-started)
-3. [Operating the Sequencer](#3-operating-the-sequencer)
-4. [Tracks](#4-tracks)
-5. [Track View](#5-track-view)
+3. [The Basics](#3-the-basics)
+4. [Banks and the Bank Map](#4-banks-and-the-bank-map)
+
+**II. Sequencing**
+
+5. [Tracks and Clips](#5-tracks-and-clips)
 6. [Melodic Clips](#6-melodic-clips)
 7. [Drum Clips](#7-drum-clips)
-8. [Audio Tracks](#8-audio-tracks)
-9. [Slicer Tracks](#9-slicer-tracks)
-10. [Clip Timing & Grid](#10-clip-timing--grid)
-11. [Sequencer Effects](#11-sequencer-effects)
-12. [Automation](#12-automation)
-13. [Arranging](#13-arranging)
-14. [The Conductor](#14-the-conductor)
-15. [Performance Mode](#15-performance-mode)
-16. [Sound & Track Config](#16-sound--track-config)
-17. [Routing & Sync](#17-routing--sync)
-18. [Bake, Merge & Export](#18-bake-merge--export)
-19. [Settings & Projects](#19-settings--projects)
-20. [The Browser Editor](#20-the-browser-editor)
-21. [Quick Reference](#21-quick-reference)
+8. [Clip Timing & Grid](#8-clip-timing--grid)
+9. [Sequencer Effects](#9-sequencer-effects)
+10. [Automation](#10-automation)
+
+**III. Samples**
+
+11. [Audio Tracks](#11-audio-tracks)
+12. [Slicer Tracks](#12-slicer-tracks)
+13. [REMIX](#13-remix)
+14. [Recording & Resampling](#14-recording--resampling)
+
+**IV. Sound and mix**
+
+15. [Instruments & Effects](#15-instruments--effects)
+16. [Mixing](#16-mixing)
+
+**V. Arranging and performing**
+
+17. [Session View](#17-session-view)
+18. [Mute & Solo](#18-mute--solo)
+19. [Macros & Sound Snapshots](#19-macros--sound-snapshots)
+20. [The Conductor](#20-the-conductor)
+21. [Performance Mode](#21-performance-mode)
+
+**VI. Beyond the Move**
+
+22. [Bake, Merge & Export](#22-bake-merge--export)
+23. [Routing & Sync](#23-routing--sync)
+24. [Settings & Projects](#24-settings--projects)
+25. [The Browser Editor](#25-the-browser-editor)
+26. [Quick Reference](#26-quick-reference)
 
 ---
 
@@ -109,12 +131,12 @@ Everything in dAVEBOx nests like this:
 
 - A **note** (or an automation point) sits on a **step** — one slot of a clip's grid.
 - A run of steps makes a **clip** — the basic unit you program and play. A clip
-  also carries its own [sequencer effects](#11-sequencer-effects) and [automation](#12-automation).
+  also carries its own [sequencer effects](#9-sequencer-effects) and [automation](#10-automation).
 - A **track** holds **16 clips** and points at one instrument. Only one of its
   clips plays at a time.
 - A **scene** is one clip from each of the 8 tracks, launched together.
 - The whole thing is saved as a dAVEBOx **project** (see
-  [Projects](#195-projects)).
+  [Projects](#245-projects)).
 
 > **Like Move:** tracks and clips are the same objects as on Move (scenes are
 > dAVEBOx's own). dAVEBOx replaces Move's sequencer, not its instruments.
@@ -140,9 +162,9 @@ sequences them:
 |---|---|
 | **Melodic** | Scale-snapped notes on the pads and steps — see [Melodic Clips](#6-melodic-clips) |
 | **Drum** | The pads become 32 drum lanes, each its own step sequence — see [Drum Clips](#7-drum-clips) |
-| **Audio** | Each clip plays its own sample, in time with the project — see [Audio Tracks](#8-audio-tracks) |
-| **Slicer** | One sample for the track, cut into slices you play and sequence from the pads — see [Slicer Tracks](#9-slicer-tracks) |
-| **Conductor** | Plays no notes of its own; it transposes the other tracks live — see [The Conductor](#14-the-conductor) |
+| **Audio** | Each clip plays its own sample, in time with the project — see [Audio Tracks](#11-audio-tracks) |
+| **Slicer** | One sample for the track, cut into slices you play and sequence from the pads — see [Slicer Tracks](#12-slicer-tracks) |
+| **Conductor** | Plays no notes of its own; it transposes the other tracks live — see [The Conductor](#20-the-conductor) |
 
 ## Coming from Move
 
@@ -173,15 +195,15 @@ already know works here.
 |---|---|
 | 4 tracks, chosen with the track buttons | **8 tracks**: tracks 1–4 play Move's instruments, 5–8 Schwung instruments. Choose one with **Shift + jog**, or hold the jog and press **Step 1–8** — see [Selecting a track](#35-selecting-a-track) |
 | The buttons left of the pads select tracks | They launch the track's clips in Track View, and scenes in Session View |
-| Session Mode: a row per track, a column per scene, 8 clips per track | Session View: a **column** per track, a **row** per scene, **16 clips** per track, 4 rows at a time (**+ / −** scroll) — see [Arranging](#13-arranging) |
-| Slide a finger down a column to play a scene | Press a **side button** or a **step button** — see [Scenes](#132-scenes) |
-| The knobs play the selected device; the jog picks the device | The knobs play a **bank** — clip settings, sequencer effects, sound, macros, automation — and the jog's bank map picks the bank — see [Parameter banks](#36-parameter-banks) |
+| Session Mode: a row per track, a column per scene, 8 clips per track | Session View: a **column** per track, a **row** per scene, **16 clips** per track, 4 rows at a time (**+ / −** scroll) — see [Session View](#17-session-view) |
+| Slide a finger down a column to play a scene | Press a **side button** or a **step button** — see [Scenes](#172-scenes) |
+| The knobs play the selected device; the jog picks the device | The knobs play a **bank** — clip settings, sequencer effects, sound, macros, automation — and the jog's bank map picks the bank — see [Banks and the Bank Map](#4-banks-and-the-bank-map) |
 | Hold a step: the jog sets length, Volume sets velocity | Hold a step: the knobs set pitch, length, velocity, nudge and more — see [Editing notes](#63-editing-notes) |
-| Browse a track's presets with the jog | On a Move track, open Move's own editor from the track's menu and browse there — see [Choosing a track's sound](#38-choosing-a-tracks-sound) |
-| Mute + a track button mutes; add Shift to solo | **Mute** / **Shift + Mute** in Track View; in Session View, **Mute + touch** a track's knob — see [Mute & solo](#133-mute--solo) |
+| Browse a track's presets with the jog | On a Move track, open Move's own editor from the track's menu and browse there — see [Choosing a track's sound](#151-choosing-a-tracks-sound) |
+| Mute + a track button mutes; add Shift to solo | **Mute** / **Shift + Mute** in Track View; in Session View, **Mute + touch** a track's knob — see [Mute & solo](#182-in-session-view) |
 | Hold a track button and turn Volume | **Shift + Volume** sets the active track's volume; in Session View the knobs are a mixer |
 | Shift + Step 8 turns on 16 Pitches for a drum track | **Shift + Step 8** switches the right-hand pads between velocity zones and Note Repeat — see [Drum Clips](#7-drum-clips) |
-| Sets, in the Set Overview | **Projects**, in the project picker (**Shift + Step 1**). Your Move sets are left alone — see [Projects](#195-projects) |
+| Sets, in the Set Overview | **Projects**, in the project picker (**Shift + Step 1**). Your Move sets are left alone — see [Projects](#245-projects) |
 
 ---
 
@@ -220,7 +242,7 @@ Every new project is ready to play:
 - **Tracks 1–4** play Move's four instruments, loaded with a random stock drum kit,
   bass and two polyphonic sounds, like a new Move set. Track 1 is a drum track.
 - **Tracks 5–8** each have an empty Schwung chain, silent until you
-  [choose a sound](#38-choosing-a-tracks-sound) for them. Until then the header and
+  [choose a sound](#151-choosing-a-tracks-sound) for them. Until then the header and
   TRACK CONFIG show **--** for their instrument.
 
 Tracks that play Move instruments need **Link** turned on in Move's System
@@ -242,7 +264,7 @@ loading screen shows dAVEBOx's version under the wordmark (the web manager's
 - **Shift + Back** leaves dAVEBOx, from anywhere, saving first.
 
 dAVEBOx keeps its **own projects**, separate from your Move sets. Renaming,
-coloring, copying and deleting them are covered in [Projects](#195-projects).
+coloring, copying and deleting them are covered in [Projects](#245-projects).
 
 ## Set tempo, key, and scale
 
@@ -256,14 +278,14 @@ click, turn to change the value, and click again to set it:
   project starts in a random key and scale.
 
 Changing Key or Scale offers to move your existing notes with it — see
-[Key & Scale](#192-key--scale).
+[Key & Scale](#242-key--scale).
 
 Ready to make something? The [Quick Start](QUICKSTART.md) walks you through a
 first pattern, step by step.
 
 ---
 
-# 3. Operating the Sequencer
+# 3. The Basics
 
 ## 3.1 The controls
 
@@ -275,7 +297,7 @@ first pattern, step by step.
   Track View, and whole scenes in Session View.
 - **Left / Right** (the arrows) page through a clip; **+ / −** shift the pads'
   octave (on a drum track, the lane bank; in Session View, the rows).
-- Every gesture is listed in the [Quick Reference](#21-quick-reference).
+- Every gesture is listed in the [Quick Reference](#26-quick-reference).
 
 ## 3.2 Transport
 
@@ -289,7 +311,7 @@ first pattern, step by step.
   panic.
 
 dAVEBOx runs on its own clock by default; it can instead lock to Move's transport or
-send clock to external gear — see [Routing & Sync](#173-clock-follow).
+send clock to external gear — see [Routing & Sync](#233-clock-follow).
 
 ## 3.3 Switching views
 
@@ -322,7 +344,7 @@ The Track View overview, top to bottom:
   viewing, outlined for the page playing, with a tick for the playhead. A small mark
   at either end means there are notes outside the loop.
 - **Footer:** what the controls do here — `HLD BANKS` (hold the jog for the
-  [bank map](#36-parameter-banks)), `TCH EDIT` (touch a knob or the jog to see
+  [bank map](#4-banks-and-the-bank-map)), `TCH EDIT` (touch a knob or the jog to see
   the bank's page and edit it) and `SHFT TRK` (Shift picks the track). Hold
   **Shift** and it reads `JOG TRACK`: turn the jog to change track. In Session View the footer is `HLD BANKS` `TCH MIX` (touch a knob or
   the jog for the mixer page). A bank page says
@@ -335,179 +357,16 @@ There are no dedicated track buttons. Change the active track with:
 | Gesture | Works in |
 |---|---|
 | **Shift + jog turn** | Both views |
-| **Hold the jog and press Step 1–8** on the [bank map](#36-parameter-banks) (each lit in its track's colour; the track you're on blinks) | Track View |
+| **Hold the jog and press Step 1–8** on the [bank map](#4-banks-and-the-bank-map) (each lit in its track's colour; the track you're on blinks) | Track View |
 | **Tap a clip pad** (it also launches or stops that clip), or **Shift + pad** to open the clip in Track View | Session View |
 
-## 3.6 Parameter banks
-
-> 🎬 **Video:** [Tutorial 1.3: The bank map](https://youtu.be/3kP6Zwm79_0?t=160) (from 2:40)
-
-In Track View, the eight knobs control a **bank** of parameters, and the **bank
-map** — hold the jog — picks which bank. Each track has its own banks,
-in this order:
-
-| Track | Banks, in order |
-|---|---|
-| **Melodic** | **IN:** PAD MODE → LIVE ARP · **CTRL:** MACROS · **SEQ:** STEP → CLIP · **FX:** NOTE FX → HARMONY → DELAY → SEQ ARP · MIX |
-| **Drum** | **IN:** RPT GROOVE · **CTRL:** MACROS · **SEQ:** STEP → ALL LANES → DRUM LANE · **FX** (the selected lane's): NOTE FX → DELAY · MIX |
-| **Audio** | **IN:** LIVE ARP · **CTRL:** MACROS · **SEQ:** CLIP → INPUT · **FX:** REMIX · MIX |
-| **Slicer** | **IN:** PAD MODE → LIVE ARP · **CTRL:** MACROS · **SEQ:** STEP → CLIP · **FX:** REMIX → NOTE FX · MIX |
-| **Conductor** | CLIP → STEP → NOTE FX · **RSPD:** ON/OFF → OCTAVE → TIMING |
-
-A melodic track starts on **CLIP** and a drum track on **DRUM LANE**: the banks
-before it are what plays into the track, the ones after it its effects (in the
-order the notes pass through them) and, last, MIX.
-**CONFIG** (the track's TRACK CONFIG menu) and **AUTOMATION** are reached from
-the bank map (below). They are **screens, not banks**:
-opening one never changes the bank you're on (the overview and a knob peek
-still show it), and **Back** from the screen's top level returns you exactly
-where you were. **Shift + hold Step 11** jumps straight to LIVE ARP.
-The banks are grouped: **IN** (what you play in), **CTRL** (what moves the
-parameters), **SEQ** (the sequence) and **FX** (the note effects — on a drum
-track they apply to the selected lane). A Conductor
-starts on **CLIP**; its **RSPD** group is how the other tracks respond.
-
-The banks are covered where they belong: [Clip Timing & Grid](#10-clip-timing--grid),
-[Sequencer Effects](#11-sequencer-effects), [STEP](#63-editing-notes),
-[CONFIG, MIX and MACROS](#16-sound--track-config), and
-[AUTOMATION](#12-automation).
-
-- **Hold the jog** for the **bank map**: it appears the moment you press. The
-  left 4×4 pads become a map of the track's banks and the screen shows the same
-  map. **Tap a pad** to land on that bank — as many as you like, the map stays
-  while you hold — and **let go** to play again. Letting go without tapping
-  changes nothing. The map is up only while the jog is down; a click leaves
-  nothing on screen.
-- **Steps 1–8 are the tracks** while the map is up (Track View), each lit in
-  its track colour, with the track you are on blinking between its colour and
-  white. **Press one** to switch track — the screen flashes **TRACK n** and
-  what that track plays. The map stays up, now showing the new track's banks,
-  so the bank you want there is the next tap. Steps 9–16 are dark and do
-  nothing. Session View's map leaves the steps alone.
-- **Note/Session switches view under the map.** Keep holding the jog and press
-  **Note/Session**: the view changes as it always does and the map stays up,
-  now the new view's. Hold Note/Session to peek and the map comes along, there
-  and back.
-- **The right-hand pads open the track's module editors** while the map is up
-  (Track View): **MIDI FX** (cyan) above **INSTRUMENT** (the track's colour) in
-  the third column, **FX 1–4** (orange) down the far-right column. Tap one and
-  the screen flashes its name and what is loaded there (or **Empty**); like CONFIG, it
-  turns white and opens when you let go of the jog. **Back** from that editor
-  takes you back to where you were. A MIDI track has only MIDI FX, and a
-  Conductor none.
-- **CONFIG**, **AUTOMATION** and **INST** (and Session View's **MASTER**,
-  **SEND A** and **SEND B**) open a screen, so they wait: the pad turns white,
-  and the screen opens when you let go of the jog. Tap a bank after one and
-  nothing opens.
-- **From inside a screen** — a menu, TRACK CONFIG, a module's editor, the
-  AUTOMATION screen — **hold the jog** for about a third of a second and the
-  same map comes up over it. **Tap a pad** and you leave the screen for that
-  bank; **let go** without tapping and the screen is exactly as you left it.
-  A quick click there is still a click (it lands as you let go). This works
-  inside **Move's own editor** for a Move instrument too: the map shows over
-  Move's screen, and Move's editor is back untouched when you let go. The map
-  does not come up over the on-screen keyboard, over a question that needs an
-  answer, or while Shift, Delete, Copy, Mute or Loop is held.
-- **Turning the jog** does not change the bank. On a bank with **pages** — **MIX** (the
-  levels, then the [channel strip](#the-channel-strip)), an Audio clip's **SAMPLE** and a
-  Slicer's **SLICER** editor — it flips the pages (the header says which: **1/2**,
-  **2/3**), and **Delete + jog click** resets only the page showing.
-- **Touch the jog** to see the current bank's page while your finger rests on it;
-  let go and the overview is back. (In Session View it shows the mixer page.)
-- **Touch a knob** to see the bank's page while you touch it — nothing holds a
-  bank page on screen by itself. **Card Hold** in Project Settings keeps it up
-  for half a second, one or two after you let go, so you can read what you
-  set. (Pages you open on purpose — Shift + hold Step
-  11's LIVE ARP page, the editors, AUTOMATION, TRACK CONFIG — stay until Back.)
-- **Touch a knob and click the jog** to switch a knob marked *Alt* in the bank
-  tables to its alternate (Res → Zoom, Shift → Nudge, Dir → Reverse Style,
-  Rand → Algo, Rate → Clock Feedback). Only that knob changes. Its cell has
-  corner brackets, like the touch + click actions (Crop, Legato). While you touch
-  it, the bottom of the screen shows **CLK** and the name it will switch to.
-  Touch + click again, or **Back**, switches it back; leaving the bank does too.
-  Touch + click also opens a bank's editors: **Steps** (knob 5) on SEQ ARP and
-  LIVE ARP opens Arp Steps, any knob on RPT GROOVE switches between its
-  Velocity and Nudge pages, and a knob on MACROS opens that macro.
-  **Delete + click** on AUTOMATION clears the lane under the cursor.
-
-  Each column of the map is a group, and its banks run top to bottom. A bank the
-  track doesn't have leaves its pad dark, and nothing moves, so a bank is always
-  on the same pad:
-
-  | | IN | CTRL | SEQ | FX |
-  |---|---|---|---|---|
-  | **Melodic** | PAD MODE, LIVE ARP, —, CONFIG | MACROS, AUTO, —, MIX | STEP, CLIP, —, INST | NOTE FX, HARMONY, DELAY, SEQ ARP |
-  | **Drum** | —, RPT GROOVE, —, CONFIG | MACROS, AUTO, —, MIX | STEP, DRUM LANE, ALL LANES, INST | NOTE FX, —, DELAY |
-  | **Audio** | —, LIVE ARP, —, CONFIG | MACROS, AUTO, —, MIX | —, CLIP, INPUT, SAMPLE | —, —, REMIX |
-  | **Slicer** | PAD MODE, LIVE ARP, —, CONFIG | MACROS, AUTO, —, MIX | STEP, CLIP, —, SLICER | NOTE FX, —, REMIX |
-  | **Conductor** | —, —, —, CONFIG | ON/OFF, OCTAVE, TIMING (RSPD) | CLIP, STEP | NOTE FX |
-
-  On a drum track the screen's map draws DRUM LANE and ALL LANES as one box: two
-  views of the same lanes.
-
-  The pads wear their group's color; the bank you're on is white, and CONFIG,
-  MIX and INST wear the track's color. **CONFIG** and **AUTOMATION** open their
-  menus (TRACK CONFIG, the AUTOMATION menu) when you let go of the jog; **Back**
-  steps out. **INST** (beside MIX) is not a bank: it opens the track's
-  instrument, and Back returns you to where you were. A Conductor has
-  no INST.
-- **Shift + jog** steps through the **tracks**.
-- **Each track remembers its bank**, MIX and MACROS included — across
-  track switches, suspend, and quit and relaunch.
-- **Turning a knob** that sets a number (an octave, an offset, a rate, a length,
-  a count) turns its cell into an arc while you touch it, so the value moves the
-  way the knob does. A knob with named choices (arp style, direction) opens its
-  list instead, over a dimmed copy of the page.
-- **Every bank lights its knob rings:** knobs 1–4 white, 5–8 amber, brightness
-  following the value. A **dark** ring means nothing is on that knob here. The
-  Conductor's ON/OFF, OCTAVE and TIMING banks light each knob in its track's color.
-
-**Resetting a bank:**
-
-| Gesture | Result |
-|---|---|
-| **Delete + jog click** | Reset every parameter in the active bank (not ALL LANES, STEP, or the Conductor's ON/OFF, OCTAVE and TIMING). One-shot actions (Stretch, Shift, Legato, Crop) are left alone. On a drum track's RPT GROOVE bank, or any bank while Note Repeat is on, it resets the selected lane's groove |
-| **Delete + jog click** on **MACROS** | Unassign all eight macros on the track (**asks first**). Values and automation are left alone |
-| **Shift + Delete + jog click** | Reset all the sequencer effects — NOTE FX, HARMONY, DELAY and SEQ ARP. The CLIP, lane, STEP, MACROS and MIX banks, and automation, are left alone |
-| **Shift + Delete + side button** | Reset the whole clip — notes and all parameters |
-
-- **Resets are undoable:** **Undo** takes back a bank reset or a macro clear;
-  **Shift + Undo** re-applies it.
-- **Resetting a parameter also clears its [automation](#12-automation).** A bank
-  reset clears the automation for that bank's parameters only; clearing or
-  resetting a clip clears all of its automation. On a drum track, clearing a single
-  **lane** leaves automation alone — a drum clip's automation covers the whole clip.
-
-**In Session View** the knobs are the mixer, and the jog's map is the **Session
-map**:
-
-- **Hold the jog**: the **MIXER** column is Volume, Pan, Send A and
-  Send B; the second column is the [channel strip](#the-channel-strip), **EQ** over **COMPRESS**;
-  the fourth column, after a gap, is the **FX** column. It opens the **Master**,
-  **Send A** and **Send B** effects directly, each level with its mixer row. The sends share a color.
-- On **EQ**, the knobs set one band on every track at once: **Low** first, and
-  **turning the jog** steps through **Mid**, **Mid Freq** and **High**. The EQ pad
-  reopens the band you were last on. Touch or turn a knob to see that track's EQ
-  curve over the page. On **COMPRESS**, each knob is a track's comp, with the dot
-  showing how hard it is working.
-  As on a track, the map stays up while you hold the jog; the FX pads open their
-  effects when you let go. The
-  indicator at the top right names the mixer mode.
-- **Touch a knob** (or the jog) to see the mixer page. On the Send A or Send B
-  page, touch a track's send and click to open that send's effects.
-- Mixer knobs record automation like any other: turn one while recording and it
-  records into that track's clip.
-- A track that plays another track's instrument has no strip; its column shows a
-  cross.
-- On a MIDI track, Volume is CC 7 and Pan is CC 10.
-
-## 3.7 Menus & Project Settings
+## 3.6 Menus, lists and typing
 
 **Shift + Step 2** opens **Project Settings** — the settings saved with the project
 (except **Card Hold**, **Monitor**, **Input**, **Input Gain**, **Bluetooth**, **Dictation**, **Host Settings...** and **Move Settings...**,
 which apply to every project).
-The full list is in [Settings & Projects](#19-settings--projects); many settings have
-a **Shift + Step** shortcut (see the [Quick Reference](#21-quick-reference)).
+The full list is in [Settings & Projects](#24-settings--projects); many settings have
+a **Shift + Step** shortcut (see the [Quick Reference](#26-quick-reference)).
 
 **Every list in dAVEBOx works the same way:**
 
@@ -556,42 +415,14 @@ INSTALLING**, **UPDATE NEEDED**) and points you to **PROJECT SETTINGS**.
   **Back** to take a message down. If input monitoring is on, it's switched off while you talk so the microphone
   doesn't come out of the speakers, and comes back on afterwards.
 
-## 3.8 Choosing a track's sound
-
-> 🎬 **Video:** [Tutorial 1.5: Instruments](https://youtu.be/3kP6Zwm79_0?t=308) (from 5:08) · [Tutorial 1.6: Adding effects](https://youtu.be/3kP6Zwm79_0?t=374) (from 6:14)
-
-Each track's sound is set in its own menu, **TRACK CONFIG**:
-
-1. Hold the jog, tap the **CONFIG** pad (bottom-left of the bank map) and let go.
-2. The menu opens on **Instmt/Dest**, just below **MIDI FX**. **Shift + click** it
-   to choose what the track plays:
-   one of Move's four instruments, a Schwung instrument, a MIDI channel, and more.
-3. **Click** Instmt/Dest to edit the instrument. On a Move track this opens Move's
-   own editor for it — change the kit or preset there as you would on Move, then
-   press **Back** at the top of Move's editor to come back (**Note/Session** goes
-   to Session View).
-4. **Click** an empty **FX** row to add an audio effect after the instrument.
-5. **Click** the empty **MIDI FX** row to add a MIDI effect in front of the
-   instrument — on Move and MIDI tracks too.
-
-A module picked from this menu loads and leaves you on the menu, on its row; click
-the row to edit it.
-
-The right-hand pads of the [bank map](#36-parameter-banks) open these editors
-directly: **MIDI FX**, **INSTRUMENT** and **FX 1–4**. On an empty one the pad opens
-the module list, and the module you pick opens in its editor. While one is open, the map marks
-it (the instrument also lights **INST**) rather than the bank underneath.
-
-Everything else in the menu is in [Sound & Track Config](#16-sound--track-config).
-
-## 3.9 Saving, suspending & exiting
+## 3.7 Saving, suspending & exiting
 
 > 🎬 **Video:** [Tutorial 7.1: Projects and Save state](https://youtu.be/DOw_4zAO6cI)
 
 dAVEBOx saves as you go — when you stop the transport, a moment after your last
 edit while stopped, at the end of a recording, and whenever you suspend, quit or
 switch projects. It never saves during playback, and there's no manual save. For
-named backups, use [Save state](#193-snapshots).
+named backups, use [Save state](#243-snapshots).
 
 A project has a size limit (about 1 MB — far more than most projects use). Past
 it, dAVEBOx shows **PROJECT TOO BIG / SAVES ON QUIT ONLY / REMOVE SOME CLIPS**
@@ -623,13 +454,190 @@ STORAGE** and tries again.
 
 ---
 
-# 4. Tracks
+# 4. Banks and the Bank Map
+
+> 🎬 **Video:** [Tutorial 1.3: The bank map](https://youtu.be/3kP6Zwm79_0?t=160) (from 2:40)
+
+In Track View the eight knobs play a **bank**: one page of related controls — the
+clip's timing, a note effect, the track's levels. **Hold the jog** for the **bank
+map**, tap a pad to pick a bank, and let go to play.
+
+- **Each track remembers its bank**, MIX and MACROS included — across track
+  switches, suspend, and quit and relaunch.
+- A melodic track starts on **CLIP**, a drum track on **DRUM LANE**, a Conductor on
+  **CLIP**.
+- In Session View the knobs are the mixer, and holding the jog brings up the
+  **Session map** instead — see [The session mixer](#163-the-session-mixer).
+
+## 4.1 The bank map
+
+**Hold the jog** and the map appears the moment you press: the left 4×4 pads become a
+map of the track's banks, and the screen shows the same map.
+
+- **Tap a pad** to land on that bank. Tap as many as you like — the map stays while
+  you hold — and **let go** to play again.
+- **Letting go without tapping** changes nothing. The map is up only while the jog is
+  down; a quick click leaves nothing on screen.
+
+**The four columns are groups**, and each group's banks run top to bottom:
+
+| Group | What it holds |
+|---|---|
+| **IN** | What you play into the track: PAD MODE, LIVE ARP, RPT GROOVE |
+| **CTRL** | What moves the parameters: MACROS, AUTOMATION, and MIX at the foot |
+| **SEQ** | The sequence: STEP, CLIP, DRUM LANE, ALL LANES, INPUT |
+| **FX** | The note effects, in the order the notes pass through them: NOTE FX, HARMONY, DELAY, SEQ ARP, REMIX. On a drum track they act on the selected lane |
+
+A bank the track doesn't have leaves its pad dark, and nothing moves up to fill the
+gap, so a bank is always on the same pad. Read each cell top to bottom:
+
+| | IN | CTRL | SEQ | FX |
+|---|---|---|---|---|
+| **Melodic** | PAD MODE, LIVE ARP, —, CONFIG | MACROS, AUTO, —, MIX | STEP, CLIP, —, INST | NOTE FX, HARMONY, DELAY, SEQ ARP |
+| **Drum** | —, RPT GROOVE, —, CONFIG | MACROS, AUTO, —, MIX | STEP, DRUM LANE, ALL LANES, INST | NOTE FX, —, DELAY |
+| **Audio** | —, LIVE ARP, —, CONFIG | MACROS, AUTO, —, MIX | —, CLIP, INPUT, SAMPLE | —, —, REMIX |
+| **Slicer** | PAD MODE, LIVE ARP, —, CONFIG | MACROS, AUTO, —, MIX | STEP, CLIP, —, SLICER | NOTE FX, —, REMIX |
+| **Conductor** | —, —, —, CONFIG | ON/OFF, OCTAVE, TIMING (RSPD) | CLIP, STEP | NOTE FX |
+
+- The pads wear their group's colour; the bank you're on is white; **CONFIG**, **MIX**
+  and **INST** wear the track's colour.
+- On a drum track the screen draws DRUM LANE and ALL LANES as one box: two views of
+  the same lanes.
+- A Conductor's **RSPD** group sets how the other tracks respond — see
+  [The Conductor's banks](#203-the-conductors-banks).
+
+### Screens on the map
+
+**CONFIG** (the track's [TRACK CONFIG](#152-track-config) menu), **AUTO** (the
+[AUTOMATION](#10-automation) screen) and **INST** (the track's instrument) are
+**screens, not banks**:
+
+- Tap one and its pad turns white; the screen opens when you let go of the jog. Tap a
+  bank after it and nothing opens.
+- Opening one never changes the bank you're on — the overview and a knob peek still
+  show it — and **Back** from the screen's top level returns you exactly where you
+  were.
+- On Audio and Slicer tracks, **SAMPLE** and **SLICER** take INST's pad. They are
+  banks: the sample editor's pages.
+
+### More on the map
+
+- **Steps 1–8 are the tracks** (Track View), each lit in its track colour; the track
+  you're on blinks between its colour and white. **Press one** to switch track — the
+  screen flashes **TRACK n** and what that track plays. The map stays up, now showing
+  the new track's banks, so the bank you want there is the next tap. Steps 9–16 are
+  dark and do nothing.
+- **The right-hand pads open the track's module editors** (Track View): **MIDI FX**
+  (cyan) above **INSTRUMENT** (the track's colour) in the third column, **FX 1–4**
+  (orange) down the far-right column. Tap one and the screen flashes its name and
+  what is loaded there (or **Empty**); like CONFIG, it opens when you let go. A MIDI
+  track has only MIDI FX, and a Conductor none.
+- **Note/Session switches view under the map.** Keep holding the jog and press
+  **Note/Session**: the view changes and the map stays up, now the new view's. Hold
+  Note/Session to peek, and the map comes along there and back.
+- **Shift + hold Step 11** jumps straight to LIVE ARP.
+
+### From inside a screen
+
+Inside a menu, TRACK CONFIG, a module's editor or the AUTOMATION screen, **hold the
+jog** for about a third of a second and the same map comes up over it.
+
+- **Tap a pad** to leave the screen for that bank; **let go** without tapping and the
+  screen is exactly as you left it.
+- A quick click is still a click there; it lands as you let go.
+- It works inside **Move's own editor** for a Move instrument too: the map shows over
+  Move's screen, and Move's editor is back untouched when you let go.
+- The map doesn't come up over the on-screen keyboard, over a question that needs an
+  answer, or while Shift, Delete, Copy, Mute or Loop is held.
+
+## 4.2 Playing a bank
+
+- **Touch a knob** to see the bank's page while you touch it; let go and the overview
+  is back. **Card Hold** in [Project Settings](#241-project-settings) keeps the page
+  up for half a second, one or two after you let go, so you can read what you set.
+- **Touch the jog** for the same page while your finger rests on it.
+- **Turning a knob** that sets a number (an octave, an offset, a rate, a length, a
+  count) turns its cell into an arc while you touch it, so the value moves the way the
+  knob does. A knob with named choices (an arp style, a direction) opens its list
+  instead, over a dimmed copy of the page.
+- **The knob rings** light on every bank: knobs 1–4 white, 5–8 amber, brightness
+  following the value. A dark ring means nothing is on that knob. The Conductor's
+  ON/OFF, OCTAVE and TIMING banks light each knob in its track's colour.
+- **Turning the jog** never changes the bank. On a bank with **pages** — **MIX** (the
+  levels, then the [channel strip](#162-the-channel-strip)), an Audio clip's
+  **SAMPLE** and a Slicer's **SLICER** editor — it flips the pages, and the header
+  says which (**1/2**, **2/3**).
+- **Shift + jog** steps through the tracks.
+- Pages you open on purpose — LIVE ARP from Shift + hold Step 11, the editors,
+  AUTOMATION, TRACK CONFIG — stay up until **Back**.
+
+## 4.3 Touch + click
+
+**Touch a knob and click the jog** for what the knob can't do by turning. A cell that
+takes a click wears corner brackets, and while you touch it the bottom of the screen
+shows **CLK** and what the click will do.
+
+- **Alternate knobs.** A knob marked *Alt* in the bank tables switches to its
+  alternate: Res → Zoom, Shift → Nudge, Dir → Reverse Style, Rand → Algo, Rate → Clock
+  Feedback. Only that knob changes. Touch + click again, or **Back**, switches it
+  back; leaving the bank does too.
+- **Actions.** Crop, Legato and the other one-shot knobs run on the click.
+- **Editors.** **Steps** (knob 5) on SEQ ARP and LIVE ARP opens Arp Steps; any knob on
+  RPT GROOVE switches between its Velocity and Nudge pages; a knob on MACROS opens
+  that macro.
+- **Delete + click** on AUTOMATION clears the lane under the cursor.
+
+## 4.4 Resetting a bank
+
+| Gesture | Result |
+|---|---|
+| **Delete + jog click** | Reset every parameter in the bank you're on (not ALL LANES, STEP, or the Conductor's ON/OFF, OCTAVE and TIMING). One-shot actions (Stretch, Shift, Legato, Crop) are left alone. On a paged bank it resets only the page showing. On a drum track's RPT GROOVE bank, or any bank while Note Repeat is on, it resets the selected lane's groove |
+| **Delete + jog click** on **MACROS** | Unassign all eight macros on the track (**asks first**). Values and automation are left alone |
+| **Shift + Delete + jog click** | Reset all the sequencer effects — NOTE FX, HARMONY, DELAY and SEQ ARP. The CLIP, lane, STEP, MACROS and MIX banks, and automation, are left alone |
+| **Shift + Delete + side button** | Reset the whole clip — notes and all parameters |
+
+- **Resets are undoable:** **Undo** takes back a bank reset or a macro clear;
+  **Shift + Undo** re-applies it.
+- **Resetting a parameter also clears its [automation](#10-automation).** A bank
+  reset clears the automation for that bank's parameters only; clearing or resetting
+  a clip clears all of its automation. On a drum track, clearing a single **lane**
+  leaves automation alone — a drum clip's automation covers the whole clip.
+
+## 4.5 Where each bank is covered
+
+| Bank | Chapter |
+|---|---|
+| **PAD MODE** | [Pad layouts](#pad-layouts) (melodic), [The SLICER editor](#122-the-slicer-editor) (Slicer) |
+| **LIVE ARP**, **RPT GROOVE** | [Live input modifiers](#95-live-input-modifiers) |
+| **MACROS** | [The MACROS bank](#191-the-macros-bank) |
+| **AUTOMATION** | [Automation](#10-automation) |
+| **MIX** | [Track levels](#161-track-levels) and [the channel strip](#162-the-channel-strip) |
+| **STEP** | [Editing notes](#63-editing-notes) |
+| **CLIP**, **DRUM LANE**, **ALL LANES** | [Clip Timing & Grid](#8-clip-timing--grid); an Audio clip's CLIP in [The banks](#113-the-banks) |
+| **INPUT** | [Recording into an Audio clip](#141-recording-into-an-audio-clip) |
+| **SAMPLE**, **SLICER** | [SAMPLE](#112-sample), [The SLICER editor](#122-the-slicer-editor) |
+| **NOTE FX**, **HARMONY**, **DELAY**, **SEQ ARP** | [Sequencer Effects](#9-sequencer-effects) |
+| **REMIX** | [REMIX](#13-remix) |
+| **ON/OFF**, **OCTAVE**, **TIMING** | [The Conductor's banks](#203-the-conductors-banks) |
+
+---
+
+# 5. Tracks and Clips
 
 dAVEBOx has **8 tracks**. Each holds **16 clips**, plays one clip at a time, and
-points at one instrument (see
-[Choosing an instrument](#163-choosing-an-instrument)).
+points at one instrument (see [Choosing an instrument](#154-choosing-an-instrument)).
 
-## 4.1 Track type
+**Track View** is where you build one clip, always the **active track's** current
+clip:
+
+- The **pads** play the track's notes (melodic) or trigger its drum lanes.
+- The **16 step buttons** hold the clip's pattern.
+- **Hold the jog** for the [bank map](#4-banks-and-the-bank-map): tap a pad to choose the bank that shapes the clip.
+
+Clip contents are covered in [Melodic Clips](#6-melodic-clips) and
+[Drum Clips](#7-drum-clips).
+
+## 5.1 Track type
 
 A track's **type** sets how you enter notes into it and how it sequences them.
 
@@ -637,9 +645,9 @@ A track's **type** sets how you enter notes into it and how it sequences them.
 |---|---|---|
 | Melodic | **Mode → Melodic** | Scale-snapped notes on the pads and steps — [Melodic Clips](#6-melodic-clips) |
 | Drum | **Mode → Drums** | 32 drum lanes, each its own step sequence — [Drum Clips](#7-drum-clips) |
-| Audio | **Instmt/Dest → Audio** | A sample per clip, played with the clip — [Audio Tracks](#8-audio-tracks) |
-| Slicer | **Instmt/Dest → Slicer** | One sample, chopped, the clips sequences of slices — [Slicer Tracks](#9-slicer-tracks) |
-| Conductor | **Instmt/Dest → Conductor** | Plays no notes of its own; transposes the other tracks — [The Conductor](#14-the-conductor) |
+| Audio | **Instmt/Dest → Audio** | A sample per clip, played with the clip — [Audio Tracks](#11-audio-tracks) |
+| Slicer | **Instmt/Dest → Slicer** | One sample, chopped, the clips sequences of slices — [Slicer Tracks](#12-slicer-tracks) |
+| Conductor | **Instmt/Dest → Conductor** | Plays no notes of its own; transposes the other tracks — [The Conductor](#20-the-conductor) |
 
 - **Melodic** and **Drums** are the **Mode** row of the track's TRACK CONFIG
   menu. Scrolling previews the type; clicking commits it.
@@ -651,7 +659,7 @@ A track's **type** sets how you enter notes into it and how it sequences them.
 - A track keeps its color, clips and routing whatever its type — even as a
   Conductor, so its instrument is still there when you switch back.
 
-## 4.2 Changing type
+## 5.2 Changing type
 
 **Stop the transport first** — tracks can't change type while playing. Changing
 type **keeps your notes** across all 16 clips (position, pitch, length and
@@ -680,30 +688,16 @@ velocity) and **resets the sequencer effects** (NOTE FX, HARMONY, DELAY, SEQ ARP
   was. The recordings go straight into the project.
   **Back** while it records cancels the whole change. **No** converts without
   recording (the notes are cleared). **Back** on the question changes nothing.
-  [Flatten track](#186-recording-audio) does the same from TRACK CONFIG, and lets you
+  [Flatten track](#143-flattening-a-track) does the same from TRACK CONFIG, and lets you
   record the effects too.
 - **Leaving Audio or Slicer** (choosing an instrument, or the other of the two) clears
   every clip's steps and lets go of the samples, asking first; one **Undo** brings it
-  all back. The files stay in the project until you [purge them](#8-audio-tracks).
+  all back. The files stay in the project until you [purge them](#11-audio-tracks).
 
----
-
-# 5. Track View
-
-Track View is where you build one clip, always the **active track's** current
-clip:
-
-- The **pads** play the track's notes (melodic) or trigger its drum lanes.
-- The **16 step buttons** hold the clip's pattern.
-- **Hold the jog** for the [bank map](#36-parameter-banks): tap a pad to choose the bank that shapes the clip.
-
-Clip contents are covered in [Melodic Clips](#6-melodic-clips) and
-[Drum Clips](#7-drum-clips).
-
-## 5.1 Switching clips
+## 5.3 Switching clips
 
 The four **side buttons** (left of the pads) launch the active track's clips. They
-follow the four clip rows shown in [Session View](#13-arranging); the lit button is
+follow the four clip rows shown in [Session View](#17-session-view); the lit button is
 the clip you're editing.
 
 | Gesture | Result |
@@ -715,32 +709,19 @@ the clip you're editing.
 | **Delete + side button** | Clear its notes and automation (and free its length for the next recording) |
 | **Shift + Delete + side button** | Reset it — notes and all parameters |
 
-## 5.2 Muting the track
-
-- **Mute** silences the active track; **Shift + Mute** solos it.
-- **Delete + Mute** clears every mute and solo (on a drum track, just its lane
-  mutes and solos).
-- A live pad you hold still plays through a muted track.
-- A track's **Mute Mode** (in its [track settings](#194-track-settings)) says what
-  muting does: **MIDI** stops its notes; **Audio** lets them play on and silences its
-  sound, so tails and held notes are there again the moment you unmute (a live pad
-  is silenced too).
-- In Session View you mute each track from its knob — see
-  [Arranging](#133-mute--solo).
-
 ---
 
 # 6. Melodic Clips
 
 A melodic clip is a sequence of scale-snapped notes on a step grid. The
-[Sequencer Effects](#11-sequencer-effects) and [Automation](#12-automation) that shape it have their own
+[Sequencer Effects](#9-sequencer-effects) and [Automation](#10-automation) that shape it have their own
 chapters.
 
 ## 6.1 Playing and placing notes
 
 > 🎬 **Video:** [Tutorial 3.1: Placing notes](https://youtu.be/36-v3uYKR78)
 
-The pads play notes from the current [key and scale](#192-key--scale). **+ / −**
+The pads play notes from the current [key and scale](#242-key--scale). **+ / −**
 shifts the pad octave; a new track's pads start one octave up.
 
 While you hold notes (pads or an external keyboard), the screen names them in
@@ -764,7 +745,7 @@ To place notes on the grid, use the **16 step buttons**:
 | Hold a step with notes, then tap a later step | Stretch the note to reach it — see [Editing notes](#63-editing-notes) |
 | Hold a step, turn a knob to set a lock, then tap a later step | Stretch the lock's value to reach it — see [Editing notes](#63-editing-notes) |
 | **Copy + step → another step** | Copy the step's notes (same clip); **Shift + Copy** cuts |
-| **Delete + step** | Clear the step, and any automation on it (a lock is a knob value set for one step — see [Automation](#12-automation)) |
+| **Delete + step** | Clear the step, and any automation on it (a lock is a knob value set for one step — see [Automation](#10-automation)) |
 
 Steps past the clip's length are dimmed. These step gestures work on drum steps
 too — see [Drum Clips](#7-drum-clips).
@@ -944,7 +925,7 @@ Holding a step points whatever knobs are on screen at that step:
   the bank reads *Hold step to edit*.
 - On a module editor, MACROS, or a sequencer-effect bank (NOTE FX, HARMONY, DELAY,
   SEQ ARP, and CLIP's Dir), the knobs write a **lock** at that step (see
-  [Automation](#12-automation)).
+  [Automation](#10-automation)).
 - LIVE ARP and the rest of CLIP do nothing under a held step.
 
 **Reach the note settings from anywhere:** hold a step with notes and **turn the
@@ -959,7 +940,7 @@ while holding and `JOG BACK` on the step page. Empty steps have no step page.
   (Tapping steps *together*, without the pause, toggles them instead.)
 - **Stretch a lock:** if the last thing you did while holding the step was turn a
   knob to set a lock, tapping a later step stretches that **lock's value** up to and
-  including it instead, the same as on the [AUTOMATION screen](#122-the-automation-screen):
+  including it instead, the same as on the [AUTOMATION screen](#102-the-automation-screen):
   tap the end again to shorten it, or turn the knob again to change the whole range.
   While you hold, the range lights **orange**, not the
   note-length colour, so you can tell which one you're stretching. Only the parameter
@@ -1020,9 +1001,9 @@ Press **Record** to play notes into the active clip in real time.
   sizes itself to what you play.
 - Notes played in the last half-beat of the count-in land on step 1.
 - You can switch tracks mid-take; recording follows the active track.
-- Recording needs the **Forward** [playback direction](#101-clip-bank). A clip set
+- Recording needs the **Forward** [playback direction](#81-clip-bank). A clip set
   to another direction shows **REC UNAVAILABLE**: set its Dir to Fwd, or choose
-  **Bake Now** (see [Bake](#181-bake)).
+  **Bake Now** (see [Bake](#221-bake)).
 
 ### Step recording
 
@@ -1059,8 +1040,8 @@ dAVEBOx is always listening: play something, then tap **Capture** to keep it.
 - With **LIVE ARP** on, what is kept is the arpeggio you heard, not the pads
   you held; with **Note Repeat**, each repeated hit — the same as recording.
 - With a MIDI effect set to **Pre**, what is kept is what the effect played (see
-  [Editing a module](#164-editing-a-module)).
-- Knob moves are held too, and land as [automation](#12-automation).
+  [Editing a module](#155-editing-a-module)).
+- Knob moves are held too, and land as [automation](#10-automation).
 - The Capture button blinks white while there's something to keep.
 
 > **Like Move:** this is Move's Capture — play first, keep it after.
@@ -1069,7 +1050,7 @@ What Capture does depends on the transport:
 
 | Transport | What Capture does |
 |---|---|
-| Playing | Adds the buffered notes to the current clip where you played them; knob moves become [automation](#12-automation). Into an **empty** clip, the take keeps the beat you played it on and starts on the next bar |
+| Playing | Adds the buffered notes to the current clip where you played them; knob moves become [automation](#10-automation). Into an **empty** clip, the take keeps the beat you played it on and starts on the next bar |
 | Stopped, empty project | Reads a tempo from your playing, sizes a clip to whole bars, and starts it |
 | Stopped, current clip empty | Fits the take to the current tempo; the *Fit to bars* screen lets the jog pick how many bars it fills (**Shift + jog** fine-stretches it) |
 | Stopped, current clip holds notes | Session View opens — tap a blinking empty clip on that track to keep the take (**Record** cancels) |
@@ -1201,7 +1182,7 @@ selected lane at that velocity; with a step held it sets that hit's velocity, or
 places the hit if the step was empty. While you hold a step with a hit, the zone
 nearest its velocity lights white.
 
-**A lane's sound** is set by its MIDI note, on the [NOTE FX bank](#111-note-fx):
+**A lane's sound** is set by its MIDI note, on the [NOTE FX bank](#91-note-fx):
 knob 1 moves it by an octave, knob 2 by a semitone. The screen shows the note,
 e.g. `Pad: C1 (36)`. A new drum track's bank A plays notes 36–51 — the notes of a
 Move drum kit's 16 pads — so a Move kit lines up pad for pad.
@@ -1269,529 +1250,16 @@ top two rows are an 8-step **gate mask** — see the [drum pad diagram](#7-drum-
 
 ---
 
-# 8. Audio Tracks
-
-An **Audio** track plays samples instead of sending notes: **each clip holds its own
-sample** and plays it with the clip — set and forget, locked to the clip's playhead and
-kept in time with the project. For loops, stems, whole recordings. Choose **Audio** in the
-track's **Instmt/Dest** picker (**Shift + click** the row). (For one sample chopped into
-slices you play from the pads, see [Slicer Tracks](#9-slicer-tracks).)
-
-An Audio track plays through its own Schwung slot, so its effects, fader, pan, sends and
-mute apply. Nothing on it receives MIDI.
-
-## 8.1 How it plays
-
-Each clip knows its sample's own **Tempo** (0.1–999.9 BPM) — guessed when you pick it: a
-tempo in the file's name ("84 bpm") is taken as it is, even with a tail after the loop;
-else bars in the name ("4bar"), else where its beats fall, else the project's tempo. Turn
-it if the guess is wrong. A new pick sets the clip to the sample's length in whole bars
-at that Tempo (up to 256 bars). The sample plays from **Start** each time the clip comes
-round, for the clip's own length. **Warp** (on SAMPLE's **TIME** page) says how it meets
-the project's tempo:
-
-- **Warp** (the default) time-stretches the loop and keeps its pitch — at any tempo it
-  sounds as recorded, only faster or slower, and **Pitch** and **Detune** transpose it
-  without changing its length. Warp is processor-intensive: one or two warped tracks are
-  fine, but warping many at once can overload the Move and cause clicks or dropouts.
-- **Vintage** cuts the sample into tiny pieces on the sequencer's own clock (384 to a
-  bar) and starts each on its place at the sample's Tempo, crossfading from one to the
-  next — the same sound at its own tempo, and in time at any other, with the grit of an
-  old sampler.
-- **Pitch** retunes the loop, faster or slower, to the tempo (Pitch and Detune then give
-  way: the tempo sets the speed).
-
-Vintage and Pitch cost almost nothing. **Loop + steps** sets the loop as on any clip: the
-clip plays the part of the sample under those steps, laid over it from Start at its
-Tempo — on the SAMPLE screen too.
-
-**The pads** show where the loop is: the clip in 32 even sections, one a pad, dim in the
-track colour, the sections played this time round bright, the one playing pulsing. On a
-pass that plays backwards they fill from the end. Stopped, all dim. Sections past the end of the sample
-show grey — the clip never plays them. Tapping one does nothing. **The steps** show where
-the loop is too: dim, the playhead white, following it page by page while it plays. An
-Audio clip has no sequence, so no STEP, NOTE FX or PAD MODE bank.
-
-**Track View at rest** shows an Audio clip as SAMPLE does zoomed out — its bars across, the
-audio where it lands at the sample's Tempo, the beats under it and the playhead moving
-through — and its Tempo on the line above (*Loop 112*; a [Free](#82-sample) clip shows its
-Speed instead: *Loop Free 100%*, *Shot Free 50%*); a Slicer shows the page bar and
-playhead, as any sequenced track does.
-
-## 8.2 SAMPLE
-
-**SAMPLE** is an Audio clip's editor — the track's instrument. Open it from the bank map's
-**SAMPLE** pad (where INST is on other tracks) or its instrument pad, by clicking the
-instrument row in the track's sound menu, or with the instrument shortcut
-(**Shift + hold Note/Session**). It follows the clip. (A Slicer's editor is the
-[SLICER editor](#92-the-slicer-editor).)
-
-- **No sample:** *Click to load sample* — a click opens the sample chooser.
-- **Audio:** the clip's waveform. **K1** Start · **K2** Zoom · **K3** End — both a screen
-  pixel a detent, a single sample when zoomed all the way in. **Start and End mark the
-  loop**, for a sample that isn't a perfect loop: nothing past End sounds. End reads **Off**
-  until you turn it down; it goes as far as the end of the sample, and one detent past that
-  turns it Off again. Moving End never changes the speed — **Bars** (on TIME) does that.
-  Start and End are lines on the waveform; the audio outside them stays on screen, dotted,
-  so you can see what you're cutting (zoom in to scroll before Start).
-  The clip's Length is set with the Loop gestures (see
-  [Clip length & the loop](#66-clip-length--the-loop)), by the bar or the step, and works as
-  a sequence's loop does: it picks which part of the loop plays and for how long. A clip
-  longer than the loop plays it once and is silent until it comes round — a 1-bar loop in a
-  2-bar clip plays one bar, then rests one.
-**K5** Pitch · **K6** Detune · **K8** Gain set the whole sample, and **K7** its
-**Tempo**, 1 BPM a detent (**Shift**: 0.1) — what Warp follows. **K4** is **Offset** (as on the TIME page): where in the audio the clip
-starts, marked by a small arrow on top of the waveform — stopped, the playhead rests there,
-and step 1 plays from it. The waveform itself never moves. The knob in hand reads out at the top, and the waveform is drawn at the gain it plays
-at. Zoomed in, the view stays on what you touched last.
-
-Zoomed all the way out, an Audio clip's SAMPLE screen **is the clip**: from Start for its
-Length, the audio drawn where it lands at the sample's Tempo — squeezed or stretched as you
-turn Tempo, empty where the Length runs past the end of the sample — with a tick under it
-for each beat and a taller one for each bar. A margin either side shows a little of the
-sample before Start and after the clip, dithered, so you can see where you are in the file.
-
-SAMPLE has three pages: **turn the jog** for the next (the header reads **1/3**, **2/3**,
-**3/3**). The waveform is page 1; pages 2 and 3 show every name and value at once, two rows
-of four, each setting on the same knob as on page 1 where page 1 has it:
-
-| | K1 | K2 | K3 | K4 |
-|---|---|---|---|---|
-| **TIME**, top row | **Sync** | **Warp** | **Nudge** | **Offset** |
-| **TIME**, bottom row | | | **Tempo** | **Bars** |
-| **SOUND**, bottom row | **Pitch** | **Detune** | | **Gain** |
-
-(SOUND's top row is empty.)
-
-- **Sync** — **Grid** (the default): the clip keeps to the sequencer, fitted to the tempo;
-  or **Free** (below). It works with **Loop** and **Shot** alike.
-- **Warp** — how the speed is changed: **Vintage**, **Pitch** or **Warp** (above); on a
-  Free clip **Pitch** (speed and pitch together, as a tape) or **Warp** (the time alone).
-- **Nudge** — moves the sample against the bar, 5 ms a detent (**Shift**: 1).
-- **Offset** — where in the audio the clip starts, a step (of the clip's resolution) a
-  detent, read as a note value: *3/16* is three 1/16 steps in. Step 1 plays from there, and
-  what lies before it comes round at the end of the loop. The waveform stays as it is;
-  stopped, the playhead rests at the Offset point, and the beat ticks count from it. The
-  pads, which follow the clip, start from it too.
-
-Touch **Offset**, **Tempo** or **Bars** and the clip's waveform comes up over the page while
-you hold it — Start and End, the Offset arrow, the beats — so you see what the turn does. A
-knob that does nothing on this clip reads **--**: on a Free clip, Bars.
-
-**Tempo and Bars** sit in a frame together: both describe the sample itself, not the clip.
-**Bars** is how many bars Start to End (or to the end of the sample, with End Off) lasts —
-whole bars a detent, odd numbers too. Set it and the Tempo follows, so the loop plays in
-time; move Start or End afterwards and Bars stays put, the Tempo adjusting. Until you set
-it, Bars reads what the Tempo makes of the sample (*1.7*), and the first detent lands on
-the whole bar that way. Turning **Tempo** hands the speed back to it, and Bars reads what
-the new Tempo makes. A small arrow after **Tempo** or **Bars** marks the one in charge — the
-one that stays put when Start or End moves.
-
-For a sample that isn't neatly cut: set **Start** on the first beat, **End** where the loop
-repeats, then **Bars** to how long that is. The clip's length is separate — make it as long
-as you want the clip to run.
-
-**Gain, Pitch, Detune, Tempo and the CLIP bank's Dir can be automated** like any knob (see
-[Automation](#12-automation)): record them, or hold a step and turn. While a lane plays,
-the knob shows the value it is playing at and the sound follows it; the setting
-comes back on Stop. A lane on Dir turns the loop round at its step.
-
-**A Free clip** (TIME page **Sync**: **Free**) plays off the sequencer's timing. Launched
-with the clip, it plays Start to End **on its own** at the sample's own speed: the project's
-tempo, the clip's length and its loop round don't touch it, so a loop of any length drifts
-against the beat as it likes. With **Mode Loop** it loops Start to End for as long as the
-clip plays; with **Mode Shot** it plays Start to End once, then the clip stops — even when
-that is longer than the clip. TIME then reads:
-
-- **Warp** — **Pitch** changes speed and pitch together, as a tape does (faster is higher);
-  **Warp** changes the time alone, at the same pitch.
-- **Speed** (on Tempo's knob) — 1–400 % of the sample's own, 1 % a detent (**Shift**:
-  0.1 %). **K7** on page 1 turns it too. Touching it shows no waveform: it changes how fast
-  the sample plays, not what the waveform shows.
-- **Offset** and **Nudge** work as on the grid: a launch starts that far into Start..End
-  (the Offset measured at the sample's Tempo, wrapping round inside Start..End), less the
-  Nudge. The Offset arrow is on the waveform.
-
-**Pitch** and **Detune** still tune it, so on **Warp**, time and pitch are fully apart.
-**Bars** reads **--** (there's no grid), and the waveform shows Start to End with no beats.
-The Tempo, Bars and Warp you had are kept, so switching back to **Grid** puts them where
-they were. **REMIX** works on bars, so it has nothing to do on a Free clip: its settings are
-kept and read **--**. A Warp start is about 15 ms after the launch (the stretcher needs a
-head start); a Pitch start is on the launch.
-
-**Touch Tempo and click** (page 1 or TIME) for Tempo's menu (not on a Free clip, whose
-knob there is Speed):
-
-- **Fit to clip** (an Audio clip's) — sets **Bars** to the clip's length, so Start to End (or
-  the end of the sample) lasts exactly as long as the clip, and Warp stretches it to fit.
-  It fits once: change the clip's length afterwards and Bars stay as they are. One Undo
-  puts it back. A fit outside 0.1–999.9 BPM says *Out of range*.
-- **Original tempo** — the sample's Tempo becomes the project's, so it plays exactly as
-  recorded.
-
-A **click** on SAMPLE's waveform page opens its menu (**Shift + click** does the same):
-
-- **Load sample** — the chooser (below).
-- **Trim** — cuts the file to what the clip plays, Start for its Length (Start moves to the
-  beginning).
-- **Normalize** — raises the file's loudest point to full scale.
-
-Trim and Normalize ask **New** (the default: a new sample, named *… trim* or *… norm*, the
-original kept in the project) or **Overwrite** (the project's copy itself — everything
-using it changes). **Back** changes nothing. Both write a 16-bit WAV; the settings stay.
-If one can't be done the sample stays and the screen says why (*NOT NORMALIZED / Nothing to
-raise* on a silent file). **Back** leaves SAMPLE. The Shift shortcuts work here as
-anywhere: **Shift + a step** or **Shift + jog** leaves SAMPLE and does what it always does.
-
-**Choosing a sample:** the list starts with **This project** (samples it already holds),
-**dAVEBOx Resample**, **Recordings**, **Samples** and the **Core Library**; turn and click
-into a folder. The file under the cursor plays as you rest on it (WAV or AIFF). Click a
-file to pick it: dAVEBOx **copies it into the project**, so the project keeps its sounds
-when copied or when the library changes. **None** clears the clip — on a Slicer it asks
-first (*the sample and its slices go; the steps stay*). An Audio clip takes samples up to
-30 minutes; a Slicer up to 4. A sample longer than a minute plays from the card as it
-goes, so a long one costs little memory. Starting the transport partway through an Audio
-clip, changing Dir or moving Start or Length while it plays can leave a few
-milliseconds of silence before it comes in, on time. A sample whose file has gone reads
-*Missing: name* and stays silent.
-
-## 8.3 The banks
-
-| Bank | Knobs |
-|---|---|
-| **CLIP** | **Mode** · **Strch** · **K7 Dir**; everything else about the sample is on [SAMPLE](#8-audio-tracks)'s pages. **Dir** is a MIDI clip's: **Fwd**, **Bwd** (the sample backwards), **PPf** and **PPb** (ping-pong: a pass forwards, the next backwards, in turn — PPb starts backwards). A Shot plays one pass, so it offers Fwd and Bwd alone; a ping-pong set before plays as its first way, and comes back when you switch to Loop. **Mode** is **Loop** (the clip plays round and round) or **Shot**: a one-shot — launched, the clip plays its length once from its top, then stops, so it can be fired off like a sample; launch it again to replay it. Every other setting stays as it is when you switch. **Strch** works as a sequence's does, in audio: x2 doubles the clip's Length and the sample's Tempo — the loop plays at half speed across twice the bars; /2 the reverse. With **Bars** set, Bars double instead of the Tempo, with the same result. On a **Free** clip **Strch** x2 halves the Speed (/2 doubles it). Past 256 steps or the Tempo's range it says *BEAT STRETCH / EXPAND LIMIT* (or *COMPRESS LIMIT*). Touch **Strch** and the clip's waveform comes up over the bank while you hold it (not on a Free clip). **Delete + click** puts Mode back to Loop and Dir to Fwd |
-| **LIVE ARP** | As on a melodic track, but **Step** replaces Oct: each repeat moves one slice up (or down), up to 15 |
-| **REMIX** | Rearranges the loop as it plays — see [REMIX](#84-remix) below |
-
-There's no RPT GROOVE, HARMONY, SEQ ARP, DELAY, NOTE FX or MIDI FX on an Audio track.
-
-## 8.4 REMIX
-
-**REMIX** chops the bar up and plays it back rearranged — reversed bits, stutters, breaks
-and pitch jumps — without changing your clip. It's in the bank map's **FX** column, third
-pad, on Audio and Slicer tracks alike, and each clip has its own.
-
-| Knob | Does |
-|---|---|
-| **K1 Remix** | **Off** / **On** (turn deliberately) |
-| **K2 Chop** | How the bar is cut into pieces, from big to small: **10+6** (two pieces, 10 and 6 sixteenths long), **6+6+4**, … **8ths**, … **16ths** |
-| **K3 Order** | Where the pieces go — numbered from the gentlest (a phrase repeated) to the wildest (pieces from all over); **Rev** plays the whole bar backwards. How many there are depends on the Chop. **Touch K3 + click** opens **Presets…**: the 80 remixes of the Yamaha RS7000 (**Normal**, **Reverse**, **Roll**, **Break**, **Pitch**, 1–16 each) — the jog picks, a click loads one (its Order and all its amounts), **Back** leaves things as they were |
-| **K4 Shufl** | How many pieces follow the Order: **0 %** plays the bar as written, **100 %** the whole Order |
-| **K5 Revrs** | How much of what plays runs backwards |
-| **K6 Stutr** | How many stutters (quick repeats) play. **Touch K6 + click** turns it to **Rate** — **Orig**, **1/32**, **1/64**, how fast they repeat — then to **Vel**: **On**, the repeats ramp in level as the RS7000's do; **Off**, every repeat at full level |
-| **K7 Gaps** | How many gaps cut into the bar. **Touch K7 + click** turns it to **Depth**: how hard a gap cuts, from **100 %** (silent) down to a slight shortening |
-| **K8 Pitch** | How far the pitched pieces move, **−24 to +24** semitones: below 0 they go the other way — what went up goes down |
-
-**Delete + click** puts the clip's REMIX back as a new clip has it: Off, the first Chop and Order, its amounts. One **Undo** brings it back.
-
-Every amount works on what you hear: each turn up changes something that plays, on any
-Order, and the same settings always give the same bar. The effects combine — reverse a few
-pieces of an Order, then add a stutter. A change lands at the next bar line. **Turning** any
-REMIX knob shows a pop-up over the page: the knob's name and value across the top, then
-the bar it makes — a column per 1/16, as tall as the part of the loop it plays (in order,
-they rise like a stair), **hollow** when reversed, **dotted** when stuttered, **narrow**
-when cut short, **empty** when silent, with a **caret** when pitched and a tick under each
-piece's start. The line under it names the Chop and how much of the bar the Order moves
-(**6/16 MOVED**), or **OFF** while REMIX is off. It goes when you let go. On an Audio clip
-the pads follow: the 1/16 you're hearing pulses, the rest dim.
-
-**To keep a remix**, bake it ([§18.1](#181-bake)): on an Audio clip that records it into a
-new sample. REMIX then turns off, so it isn't applied twice. REMIX works on a Slicer too —
-see [REMIX on a Slicer](#94-remix-on-a-slicer).
-
-## 8.5 Recording into an Audio clip
-
-On an **Audio** track, **Rec** records the Move's audio input (the line-in jack, or
-the built-in mic when nothing is plugged in) into the active clip.
-
-- **An empty clip** records until you press **Rec** again, and stops at the end of
-  that bar (up to 64 bars). The clip becomes that many bars long.
-- **A clip that has a sample** records a new layer: one pass of the clip, with what
-  you play mixed over the clip as you hear it. Pitch, Start, Dir, Speed, REMIX and
-  the rest are baked into the new sample, which the clip then plays as it is (Mode and
-  Free stay as they were: the file is the pass you heard). On a **Shot** clip the take
-  is its one pass, and on a Free one-shot however long that pass runs. Press **Rec** during
-  the pass to stop adding to it: what you played stays, the rest of the pass keeps the
-  old sound.
-- **Stopped**, Rec gives MIDI's one-bar count-in, then records from the top. **Playing**,
-  the take waits for the clip's next loop (the next bar on an empty clip), and the
-  heading shows **WAIT**; while it records it shows **REC** and the bar. **Rec**
-  blinks red while it waits and is solid red while it records. The clip's pad in Session
-  View blinks white while it waits and pulses white while it records. In Track View the
-  pads go white: recording into an empty clip, one pad a bar (the bars recorded bright,
-  the one recording pulsing, the rest of a set Length dim); a clip with a sample keeps
-  its sections, the part recorded so far bright, the playhead pulsing, the rest dim.
-- You hear the input through the track's effects and fader while the take runs. The
-  take itself is recorded without them.
-- The take is saved as a new sample in the project, so **Undo** brings back the clip as
-  it was. Stopping the transport cancels a take; a take that heard nothing is dropped.
-- The **INPUT** bank (the green pad above **SAMPLE** on the pad map) sets the input.
-  **Monitor**, **Input** and **Gain** are one setting for the whole Move — the same
-  three are in Project Settings, so you can set them with no Audio track at all;
-  **Length** and **Overdub** are the track's, saved with the project:
-
-  | Knob | Does | Choices |
-  |---|---|---|
-  | K1 Monitor | When you hear the input | Off · **Rec** (through the track while a take runs) · On (always: straight to the output, through the track while a take runs) |
-  | K2 Input | Both channels, or one on both sides | **Stereo** · Mono L · Mono R |
-  | K3 Gain | The input's level, for the take and what you hear | −24 to +24 dB (**0**) |
-  | K4 Length | How long a take into an empty clip is | **Free** (until Rec again) · 1 · 2 · 4 · 8 bars |
-  | K5 Overdub | A take into a clip that has a sample | **Layer** (over what it plays) · Replace |
-
-  **Delete + click** puts all five back to the defaults in bold.
-
-  While **INPUT** is up, the track's overview shows the input's level where the
-  waveform is, and **CLIP** when it reaches full scale. The Move picks the source itself: line-in when a cable
-  is plugged in, else the built-in mic.
-- With **Replace**, the clip's sound is left out while you record and comes back
-  after a punch-out (Rec during the pass).
-- With the speakers on and nothing plugged into line-in, the Move asks first: the mic
-  would hear the speakers. On a **Slicer**, Rec still records slices from the pads.
-
-## 8.6 Copying, clearing and undo
-
-**Copying** follows the kind:
-
-- An **Audio** clip onto an Audio clip carries its sample and settings.
-- An **Audio** clip onto a **Slicer that has no sample** gives the Slicer that sample: the
-  part the clip plays becomes the Slicer's range, cut into 16 even slices and laid on the
-  clip's steps in order, so it sounds just as the loop did — then move them around. Pitch,
-  Detune, Gain and Tempo come too; Sync Pitch stays Pitch, Warp stays Warp (on a sample up
-  to a minute), Vintage becomes Off. A Slicer that has a
-  sample refuses it (*CAN'T PASTE*): clear it with **None** first.
-- A **Slicer's** clip onto another Slicer's carries its steps (and its automation) — they
-  play the destination's slices.
-- A **Slicer's** clip onto an **Audio** clip gives that clip the Slicer's sample; the steps
-  don't come (an Audio clip has none).
-- Nothing crosses between these and a MIDI or drum track, and a **cut** stays on its own
-  kind.
-
-**Delete + clip** on an **Audio** clip asks **Remove sample?** first (No is selected); Yes
-clears the sample, and Undo brings it back. On a Slicer it clears the steps; the sample is
-the track's and stays. **Shift + Delete + clip** resets it completely — on an Audio track, sample and all;
-on a Slicer the sample is the track's and stays. **Undo** covers the sample too: loading
-one, **None**, **Shift + Delete**, Resample **In place**, **Flatten track** (one Undo for every
-clip), a Trim or Normalize to a **New** sample, a visit to a chopping tool or the slice editor, and pasting an
-Audio clip onto a Slicer each come back with one Undo. Turning a setting isn't an undo step
-of its own, and an **Overwrite** can't be undone. **Choosing another instrument** clears
-the track's steps and lets go of its samples, asking first — and one **Undo** brings it all
-back. **Export to Ableton** brings both kinds across as Live audio tracks — see
-[§18.3](#183-export-to-live).
-
-**Purge samples.** Samples you no longer use stay in the project. **Project Settings →
-Purge samples** removes every one that no clip, no Slicer, no undo step and no saved state
-uses, after saying how many and how much space it frees.
-
----
-
-# 9. Slicer Tracks
-
-A **Slicer** holds **one sample for the whole track**, cut into **slices** you play,
-sequence and rearrange from the pads. Every clip of the track plays the same slices: a clip
-is a step sequence of slices. For breaks, and for chopping up anything. Choose **Slicer**
-in the track's **Instmt/Dest** picker (**Shift + click** the row). (For a sample per clip,
-played with it, see [Audio Tracks](#8-audio-tracks).)
-
-A Slicer plays through its own Schwung slot, so its effects, fader, pan, sends and mute
-apply.
-
-## 9.1 How it plays
-
-A Slicer holds **one sample and its slices**, the same for every clip. Its clips are
-sequences: each step holds one slice, placed and recorded as on any track — **hold a step
-+ tap a pad** places that slice. One slice plays at a time: a new slice cuts the last —
-unless it's the next piece of the sample, reached right where the last one has got to,
-which simply plays on. Every slice plays at one level (velocity is ignored); for more voices
-or velocity, **Convert to kit** (below) and play it on a drum track. *Chopping* is what you
-do to a sample; a *slice* is a piece it makes.
-
-**Each step has its own sound.** Hold a step: **K2 Pitch** (±24 semitones, on top of the
-slice's own), **K3 Length** — how much of its slice the step plays, 100 % being all of it —
-with **Start** behind it (touch K3 + click), where in the slice it begins, and **K4 Dir**:
-**Slice** (the step plays as its slice does), or the arrow **forwards** or **backwards**,
-whatever the slice says. So one slice can play whole on one step, just its tail backwards
-on the next, and an octave up on a third. A step left at 100 % / 0 % / Slice plays the
-slice as it is. These stay with the step through every edit, copy and Undo, a ratchet
-repeats them, and a pad played by hand always plays the slice as it is. REMIX's **Revrs**
-turns a step round whatever its Dir.
-
-**Loading a sample** doesn't chop it: it is **one slice**, from Start to End, until you
-chop it (below). The steps you already have stay. A Slicer takes samples up to
-**4 minutes**.
-
-**Start and End are the Slicer's range** (page 3 of the SLICER editor). Slices play only
-inside it: a slice crossing Start or End plays just the part inside, and a slice wholly
-outside is silent, its pad dark grey — still there to pick, and it plays again as soon as
-the range covers it. Moving the range never moves or re-cuts the slices. Every way of making
-slices stays inside the range.
-
-**The pads** are the slices, in time order, 32 to a page; a slice playing, or a pad held, is
-white. Pads past the slice count are dark. A Slicer holds up to **128 slices**: **Octave Up
-/ Down** shows the next or previous 32. They sit as **PAD MODE** says: **4 Rows** (8 a row
-from the bottom-left) or **16 Pads** (the left 4×4, then the right 4×4 — two banks, the
-right one in the colours of its partner track: 1 with 5, 2 with 6, 3 with 7, 4 with 8).
-From an external keyboard, note 36 plays slice 1.
-
-A Slicer has its own **Tempo** (guessed when the sample loads, as an Audio clip's) and
-**Sync**: **Off** (the default) plays the slices at their own speed, as cut; **Pitch**
-retunes them, faster or slower, by the project's tempo against the sample's Tempo — a
-break follows the project as a sped-up or slowed-down record would; **Warp** stretches the
-whole sample to the project's tempo at its own pitch (offered for samples up to a minute; a
-tempo change re-stretches it in the background a moment later). A Slicer follows the
-**Conductor** as any track does, by the Conductor's **RESPONDER** bank — but it starts with
-its RESPONDER off (when it becomes a Slicer, or a Conductor is made): a break isn't usually
-something to move with the key.
-
-## 9.2 The SLICER editor
-
-The **SLICER** editor is a Slicer's instrument: the bank map's **SLICER** pad (where INST is
-on other tracks), the right 4×4's instrument pad, the instrument row in the track's sound
-menu, or **Shift + hold Note/Session**. It has three pages — **turn the jog** for the next
-(the header reads **1/3**, **2/3**, **3/3**). The pads pick the **slice** the knobs on pages
-1 and 2 edit.
-
-| Page | K1 | K2 | K3 | K4 | K5 | K6 | K7 | K8 |
-|---|---|---|---|---|---|---|---|---|
-| **1 SLICES** — the waveform | Start | Zoom | End | Play | Pitch | Detune | Revrs | Gain |
-| **2 SHAPE** | Attk | Decay | | | | | | |
-| **3 SAMPLE** — the whole file | Start | Zoom | End | Sync | Pitch | Detune | Tempo | Gain |
-
-**Page 1, SLICES** shows the waveform with the slices on it, the picked one bracketed, the
-audio outside the range dotted. **K1** / **K3** move the picked slice's start / end, one
-screen pixel a detent (a slice ends where the next begins, **E NEXT**; turn its end away to
-set its own). **K2** zooms. Once you've touched or turned **End**, picking another slice
-shows that slice's end, until you touch **Start** or leave the slice editor. **K4–K8** are the slice's **Play** (**One** to its end, **Gate**
-as long as the step, **Thru** on to the range's End — the next slice cuts it off),
-**Pitch**, **Detune**, **Revrs** and **Gain**, each on top of the sample's. **Delete + pad**
-removes a slice (it joins the one before; slice 1 stays).
-
-**Click** (the corner brackets say so) to **enter the slice editor**: the jog moves a
-cursor through the range and a **click adds a slice** there; everything else works as
-outside. **Back** leaves it.
-
-**Page 2, SHAPE**: the slice's **Attk** and **Decay**. **Decay** falls away as a drum pad's
-does — quickly, then a long tail — and its knob is finest at the short end, 1 ms a detent.
-
-**Hold Shift** on pages 1 and 2 and **Play**, **Revrs**, **Attk** and **Decay** set **every
-slice** at once (`--` where they differ). **Start**, **Zoom** and **End** rest while Shift is
-held, their rings dark and their values off the screen. **Pitch**, **Detune** and **Gain** do nothing with
-Shift: page 3's are the sample's, and move every slice together while keeping each slice's
-own difference.
-
-**Page 3, SAMPLE** is the whole file: a strip of the waveform over K1–K3 with the **range**
-marked on it, the audio outside it dotted. **K1** / **K3** move the range's **Start** /
-**End** (a strip pixel a detent, **Shift** a single sample); **K2** zooms the strip round the
-edge you moved last (a magnifier marks it). Touch **Start**, **Zoom**, **End** or **Gain** and
-the waveform comes up large over the page while you hold the knob, the range and the slices on
-it. **K4 Sync** (above), **K5 Pitch**, **K6 Detune**,
-**K7 Tempo** (1 BPM a detent, **Shift** 0.1) and **K8 Gain** are the sample's: the base every
-slice adds its own to. Touch **Tempo** and click for **Original tempo**: the sample's Tempo
-becomes the project's.
-
-**The menus.** **Shift + click** on pages 1 and 2 opens the **SLICE** menu (not from inside the
-slice editor, where a click adds a slice):
-
-- **Load sample** — the chooser (see [SAMPLE](#82-sample)).
-- **Even** cuts the range into equal slices: turn the jog for the count (2–128), the pads
-  lighting for each as you turn.
-- **Transient** cuts at the sample's hits: turn the jog for **Sens** — lower keeps only the
-  strongest, higher every small one — and watch the slices move on the wave; the count shows
-  top right (**128+** past the first 128).
-- **Lazy** chops by ear. Pad 1 lights white; tap it and the range plays. The next pad is
-  always the white one: tap it to drop a slice where the sample is. The slices so far stay
-  lit. It ends at the range's end, on **Back** or on a **click**. **Back** before the first
-  tap changes nothing.
-- **Clear all** — asks *Clear all slices?*; **Yes** leaves one slice, the range, as a fresh
-  load.
-- **Convert to kit** (below).
-
-In **Even** and **Transient**, **Back** keeps the cut; a **click** keeps it and goes
-straight into the slice editor at the same view, to nudge, add or remove a slice.
-
-On page 3, a **click** (or **Shift + click**) opens the **SAMPLE** menu: **Load sample**,
-**Trim** — cuts the file to the range and **keeps your slices**, each on the same sound
-(a slice wholly outside the range has no audio left and goes, its steps joining the nearest
-slice kept) — and **Normalize**. Trim and Normalize ask **New** or **Overwrite**, as on an
-Audio clip.
-
-A slice's sound settings belong to its number. **Adding or removing a slice renumbers the
-steps of every clip** of the track, so each keeps playing the same piece of the sample.
-**One Undo takes back a whole visit** to a chopping tool or the slice editor — every slice it
-made or moved, and every clip's steps with them.
-
-**Delete + click** resets the page showing: page 1 the picked slice's Play, Pitch, Detune,
-Revrs and Gain (with Shift, every slice's Play and Revrs), page 2 its Attk and Decay (with
-Shift, every slice's), page 3 the sample's Gain, Pitch and Detune. A reset takes the
-automation lanes of what it reset with it, and one **Undo** brings it all back.
-
-**Automation:** the sample's **Gain**, **Pitch**, **Detune** and **Tempo** automate as an
-Audio clip's do, and **every slice's Attack, Decay, Revrs and Play** (Shift held) — while
-such a lane plays, every slice plays at the lane's value, and on Stop each goes back to its
-own. A single slice's own sound isn't automated. A Slicer's sample is every clip's, so a
-lane only ever holds it while it plays — it never rewrites the setting.
-
-**Convert to kit** makes a Move drum rack preset from the slices: a pad for each slice
-inside the range, up to 32, in order. First the sample is **resampled as it sounds** —
-just the range, stretched to the project's tempo if Sync is Warp, retuned by Sync Pitch and
-the sample's Pitch and Detune, at its Gain — into **Samples → dAVEBOx → Exported kits**
-(it takes a moment; the screen says **Baking**). Every pad plays its slice of that file;
-the preset goes to **Track Presets → dBx-slice**, named after the project and track. Move's
-own drum tracks load it and play the first 16 pads (all 32 stay in the preset); an
-instrument that loads Move drum racks with more pads, such as DR32, gets them all. Each pad
-takes its slice's own **Pitch**, **Detune**, **Gain**, **Attk** and **Decay**, and **Play**
-(One plays the pad through, Thru on to the range's end; Gate holds it as long as you do). A
-slice set to **Revrs** plays from a second file, the resample reversed (`… rev`), so a kit
-holds at most two. A slice crossing Start or End keeps only the part inside, as it plays.
-The pads cut each other off, as the slices do. Unlike a slice, a pad responds to velocity, as
-a stock kit's does: a full-velocity hit is the slice's level, softer hits quieter. Turning a
-pad's velocity amount up past that can clip on hard hits, as it can on any Move kit.
-
-The SLICER editor works as an instrument's editor: **Back** returns to the bank you were on,
-and the sequence keeps working while it is up — tap or hold steps, **Record**, and **hold a
-step + jog right** for its step page. The Shift shortcuts work here as anywhere: **Shift +
-a step** or **Shift + jog** leaves it and does what it always does.
-
-## 9.3 The banks
-
-| Bank | Knobs |
-|---|---|
-| **CLIP** | As a melodic clip's (**Res**, **Strch**, **Shift**, **InQnt**, **Crop›**, **Dir**), with **>Seq›** on K8 (touch, click): one step per slice, each at its place at the sample's **Tempo**, so the clip plays the sample back as it was — now as slices you can rearrange. A clip whose length you never set grows to hold all of it (a coarser resolution past 256 steps); a length you set stays, and the slices past it wait beyond the loop's end. No Legato: a step holds one slice |
-| **PAD MODE** | **Layout**: **4 Rows** or **16 Pads**, how the slices sit on the pads |
-| **LIVE ARP** | As on a melodic track, but **Step** replaces Oct: each repeat moves one slice up (or down), up to 15 |
-| **REMIX** | Rearranges the loop as it plays — see [REMIX on a Slicer](#94-remix-on-a-slicer) below |
-| **NOTE FX** | As on a drum track — nothing that changes a pitch. **Quant** lives here only |
-
-There's no RPT GROOVE, HARMONY, SEQ ARP, DELAY or MIDI FX on either kind. The step editor's
-first knob reads **Slice n** and picks the step's slice; on a Slicer, **K2–K4** are the
-step's Pitch, Length / Start and Dir (above).
-
-## 9.4 REMIX on a Slicer
-
-The [REMIX](#84-remix) bank works on a Slicer as on an Audio clip — the same knobs, the
-same pop-up. Here it rearranges your steps bar by bar: a remixed step plays its slice
-reversed or pitched as the remix says, on top of its own sound. **To keep a remix**, bake
-it ([§18.1](#181-bake)): it writes the remixed steps, reversals and pitches into the clip,
-and REMIX turns off, so it isn't applied twice.
-
-## 9.5 Copying, clearing and undo
-
-Copying, clearing and undo work as on an Audio track — see
-[Copying, clearing and undo](#86-copying-clearing-and-undo), which covers both kinds
-and pasting between them. On a Slicer, **Delete + clip** clears the steps and
-**Shift + Delete + clip** resets the clip; the sample is the track's and stays.
-
----
-
-# 10. Clip Timing & Grid
+# 8. Clip Timing & Grid
 
 These banks set a clip's grid, timing and playback — **CLIP** on a melodic track,
 **DRUM LANE** and **ALL LANES** on a drum track. Parameters marked **Rewrites
 notes** change your notes permanently (**Undo** reverses them); the rest only
 change how the clip plays.
 
-Resetting a bank is covered in [Parameter banks](#36-parameter-banks).
+Resetting a bank is covered in [Banks and the Bank Map](#4-banks-and-the-bank-map).
 
-## 10.1 CLIP bank
+## 8.1 CLIP bank
 
 > 🎬 **Video:** [Tutorial 3.3: The CLIP bank](https://youtu.be/36-v3uYKR78?t=156) (from 2:36)
 
@@ -1806,7 +1274,7 @@ A melodic clip's grid, direction, and note transforms.
 | 5 | `INQNT` | **Input Quantize** — snap recorded notes to the grid (Off, 1/64 … 1/4t). One value per track, shared with ALL LANES. | No | Off |
 | 6 | `CROP` | **Crop** — touch the knob and click the jog: the loop becomes the whole clip — it moves to step 1 and everything outside it is removed (automation too). One Undo. Turning it does nothing. | Yes | — |
 | 7 | `DIR` | **Direction** — Forward, Backward, or ping-pong. *Alt* (`REVRS`): **Reverse Style**. | No | Fwd |
-| 8 | `IMPRT` | **Import MIDI** — touch the knob and click the jog to fill a clip from a MIDI file — see [Import a MIDI file](#184-import-a-midi-file). Turning it does nothing. | Yes | — |
+| 8 | `IMPRT` | **Import MIDI** — touch the knob and click the jog to fill a clip from a MIDI file — see [Import a MIDI file](#224-import-a-midi-file). Turning it does nothing. | Yes | — |
 
 **Direction** is Forward, Backward, or one of two ping-pong modes (they differ
 only in which end they start from). **Reverse Style** (the alt of `Dir`) sets what
@@ -1818,11 +1286,11 @@ backward playback does to each note:
   note-off at its start — for a tape-reverse feel. In ping-pong, Audio plays the
   endpoints twice, so every note gets one forward and one reversed pass.
 
-Recording needs **Forward** direction; [bake](#181-bake) and
-[export](#183-export-to-live) freeze the direction into the notes and reset it to
+Recording needs **Forward** direction; [bake](#221-bake) and
+[export](#223-export-to-live) freeze the direction into the notes and reset it to
 Forward.
 
-## 10.2 DRUM LANE bank
+## 8.2 DRUM LANE bank
 
 > 🎬 **Video:** [Tutorial 2.2: Euclidean rhythms and per-lane loops](https://youtu.be/qqZKsu6e244?t=99) (from 1:39)
 
@@ -1840,10 +1308,10 @@ The **selected lane's** grid — the drum counterpart to the CLIP bank.
 | 8 | `IMPRT` | **Import MIDI** — touch the knob and click the jog. | Yes | — |
 
 Lane length is **Loop + jog**; the lane's MIDI note is on the
-[NOTE FX bank](#111-note-fx). Zoom, Stretch, Shift and Legato need the lane's loop
+[NOTE FX bank](#91-note-fx). Zoom, Stretch, Shift and Legato need the lane's loop
 at step 1 — **Crop** puts it there.
 
-## 10.3 ALL LANES bank
+## 8.3 ALL LANES bank
 
 Applies one setting to **all 32 lanes** at once. It opens like any other bank:
 the knobs, Loop and the Shift + Step shortcuts act on every lane straight away.
@@ -1862,22 +1330,22 @@ Touch Shift or Dir and click the jog to switch that knob to its *Alt*.
 
 Stretch and Shift are refused (*LOOP STARTS AFTER STEP 1 / CROP FIRST*) if **any** lane's loop
 starts later than step 1. The track's velocity input (**VelIn**) is on
-[TRACK CONFIG](#194-track-settings) and **Shift + Step 10**.
+[TRACK CONFIG](#244-track-settings) and **Shift + Step 10**.
 
 ---
 
-# 11. Sequencer Effects
+# 9. Sequencer Effects
 
 > 🎬 **Video:** [Tutorial 4.5: The signal flow](https://youtu.be/jOnQWmr71JI?t=385) (from 6:25)
 
 The sequencer effects work on **notes**, before they reach the instrument — for
-audio effects such as reverb, see [FX 1–4](#162-the-menu). Two kinds shape notes
+audio effects such as reverb, see [FX 1–4](#153-the-menu). Two kinds shape notes
 beyond the stored clip:
 
-- **Sequencer effects** (§11.1–11.4) reshape every note — sequenced or live — at playback,
+- **Sequencer effects** (§9.1–9.4) reshape every note — sequenced or live — at playback,
   per clip. They're non-destructive: return a knob to its default and the clip
   plays exactly as written.
-- **Live input modifiers** ([§11.5](#115-live-input-modifiers)) act only on what
+- **Live input modifiers** ([§9.5](#95-live-input-modifiers)) act only on what
   you play live, before it's sequenced: LIVE ARP on melodic tracks, and on drums
   [Note Repeat](#73-note-repeat), shaped by RPT GROOVE.
 
@@ -1895,12 +1363,12 @@ Everything runs one chain — the live modifier first, then the effects:
 A track's **MIDI FX module** comes before all of this. Set to **Post** (the default),
 it plays first and the effects work on what it plays; set to **Pre**, it sits on what
 you play live, before LIVE ARP and before recording — see **Position — Pre or Post**
-in [Editing a module](#164-editing-a-module).
+in [Editing a module](#155-editing-a-module).
 
 The global [groove](#the-groove) is applied after the chain;
-[Performance Mode](#15-performance-mode) comes last.
+[Performance Mode](#21-performance-mode) comes last.
 
-## 11.1 NOTE FX
+## 9.1 NOTE FX
 
 > 🎬 **Video:** [Tutorial 4.1: NOTE FX and HARMONY](https://youtu.be/jOnQWmr71JI)
 
@@ -1926,7 +1394,7 @@ note; knobs 3–6 apply to that lane, and 7–8 are empty.
 > record them. **QUANT** (here, and on ALL LANES) pulls notes toward the grid as
 > they play, leaving the clip as written. **Shift + Step 16** sets QUANT to 100 %.
 
-## 11.2 HARMONY
+## 9.2 HARMONY
 
 > 🎬 **Video:** [Tutorial 4.1: NOTE FX and HARMONY](https://youtu.be/jOnQWmr71JI)
 
@@ -1939,7 +1407,7 @@ below):
 - `HARM1`–`HARM3` — harmony intervals, ±24: scale degrees with Scale Aware on,
   semitones with it off.
 
-## 11.3 DELAY
+## 9.3 DELAY
 
 > 🎬 **Video:** [Tutorial 4.2: MIDI DELAY](https://youtu.be/jOnQWmr71JI?t=118) (from 1:58)
 
@@ -1961,7 +1429,7 @@ Echoes every note in rhythm.
 On a drum track DELAY has no pitch controls: knobs 5–7 are Gate, Clock Feedback and
 Retrigger.
 
-## 11.4 SEQ ARP
+## 9.4 SEQ ARP
 
 > 🎬 **Video:** [Tutorial 4.3: SEQ ARP](https://youtu.be/jOnQWmr71JI?t=201) (from 3:21)
 
@@ -1991,7 +1459,7 @@ reads **CLK STEPS** while you touch it. A jog turn or **Back** closes the editor
 - **Loop + pad** sets the step-loop length (1–8).
 - Turn the jog to close the editor.
 
-## 11.5 Live input modifiers
+## 9.5 Live input modifiers
 
 These shape what you play **live** — on the pads or over external MIDI — before
 it's sequenced, leaving the stored clip untouched.
@@ -2003,7 +1471,7 @@ it's sequenced, leaving the stored clip untouched.
 *Melodic. Per track.*
 
 An arpeggiator for live pad and external input; sequenced notes are left alone.
-The controls match [SEQ ARP](#114-seq-arp) (except Retrigger defaults to Off), plus
+The controls match [SEQ ARP](#94-seq-arp) (except Retrigger defaults to Off), plus
 **Latch** (`LATCH`, knob 8), which keeps the arp running after you let go:
 
 - With pads held, tap **Loop** to latch; tap it again (pads held) to unlatch.
@@ -2035,7 +1503,7 @@ says **KNB+CLK NUDGE** or **KNB+CLK VELOCITY**, whichever is next.
 
 ---
 
-# 12. Automation
+# 10. Automation
 
 > 🎬 **Video:** [Tutorial 6.2: Automation](https://youtu.be/nrZD8SnbD6Q?t=82) (from 1:22) · [Tutorial 6.3: Automating sounds and effects](https://youtu.be/nrZD8SnbD6Q?t=248) (from 4:08)
 
@@ -2049,7 +1517,7 @@ editor, and dAVEBOx can't reach those knobs: holding a step and turning one writ
 no lock, and recording doesn't capture it. The track's **levels**, its **MACROS**
 (Aftertouch, Pitch Bend) and dAVEBOx's own bank knobs still automate there.
 
-## 12.1 Making it
+## 10.1 Making it
 
 Two ways:
 
@@ -2063,7 +1531,7 @@ Two ways:
   **lock** — the value held flat for the whole step. The parameter jumps to it as
   the step starts and jumps back to what the lane was doing when it ends. Press a
   later step while you hold to stretch it across several (see
-  [The AUTOMATION screen](#122-the-automation-screen)). See also
+  [The AUTOMATION screen](#102-the-automation-screen)). See also
   [Editing notes](#63-editing-notes).
 - **Place a point.** Tap **Shift** while you hold the step — before or after
   turning — and a notice says **POINT**: the step gets a single point instead,
@@ -2089,8 +1557,8 @@ HARMONY, DELAY, and SEQ ARP (all but `STEPS`) — and an Audio clip's **Gain**, 
 **Detune** and **Tempo** on SAMPLE and **Dir** on its CLIP bank (listed as **Smp>Gain** and so on), and a
 Slicer's every-slice settings (Shift on the SLICER editor, listed as **Slcs>Attack** …); holding one of their steps opens
 that editor. On a drum track, NOTE FX is set per
-lane and isn't automated. See [Parameter banks](#36-parameter-banks) and
-[Sequencer Effects](#11-sequencer-effects).
+lane and isn't automated. See [Banks and the Bank Map](#4-banks-and-the-bank-map) and
+[Sequencer Effects](#9-sequencer-effects).
 
 - An automated knob shows a dot on its cell and a blinking ring.
 - **Mute + touch** mutes that parameter's automation; **Delete + touch** clears it,
@@ -2108,7 +1576,7 @@ lane and isn't automated. See [Parameter banks](#36-parameter-banks) and
 - **Projects made before this version** are converted when they open and play the
   same. Once saved, dAVEBOx 1.0.0 opens them without their automation.
 
-## 12.2 The AUTOMATION screen
+## 10.2 The AUTOMATION screen
 
 Tap **AUTO** on the bank map and let go: the screen opens on a **list of everything
 automated in the current clip** — parameters, levels, MIDI targets and the pads'
@@ -2192,7 +1660,7 @@ Loop, Rate, Scale) and new recording.
   It can be shorter than the clip (it repeats inside it) or longer, up to 256
   steps (it runs across several passes of the clip). A lane with its own Loop
   runs in step with the song, and restarts when its clip is launched at
-  **Launch 1-bar** — see [Launching clips](#131-launching-clips).
+  **Launch 1-bar** — see [Launching clips](#171-launching-clips).
 - **Rate** — /16 to ×16, the loop stretching to match.
 - **Scale** — 0–200 %: how far the lane moves (toward zero, or on a centred
   parameter like pan or pitch bend, toward and away from its centre).
@@ -2208,7 +1676,7 @@ The pads' aftertouch row (**PADS**) has only **Delete**.
 Loop, Rate and Scale before writing anything into it. Click it and choose the
 parameter as you would for a macro — a module, a bank, Levels or MIDI (on an Audio
 track or a Slicer also **Sample**, and on a Slicer **All Slices**), then the
-parameter (see [The MACROS bank](#166-the-macros-bank)). You come back to the list with the new lane's
+parameter (see [The MACROS bank](#191-the-macros-bank)). You come back to the list with the new lane's
 operations open; **Back** from the picker returns without adding one. Choosing a
 parameter that already has a lane in this clip opens that lane.
 
@@ -2239,345 +1707,676 @@ along; automation of an instrument or effect parameter comes along only when
 the destination has the same instrument or effect in the same place. Anything
 left behind is counted in a notice (**AUTOMATION / 1 LANE NOT CARRIED**).
 
-## 12.3 MIDI targets
+## 10.3 MIDI targets
 
 A macro can point at **Aftertouch** or **Pitch Bend** on any track, and at any
 **MIDI CC** on a MIDI track. They record, lock, mute and clear like any other
 parameter and appear in the AUTOMATION list by name — see
-[the MACROS bank](#166-the-macros-bank). Aftertouch played from the pads is
+[the MACROS bank](#191-the-macros-bank). Aftertouch played from the pads is
 recorded on its own and shows in the list as its own row.
 
 ---
 
-# 13. Arranging
+# 11. Audio Tracks
 
-> 🎬 **Video:** [Tutorial 1.2: Clips, scenes and the session grid](https://youtu.be/3kP6Zwm79_0?t=69) (from 1:09)
+An **Audio** track plays samples instead of sending notes: **each clip holds its own
+sample** and plays it with the clip — set and forget, locked to the clip's playhead and
+kept in time with the project. For loops, stems, whole recordings. Choose **Audio** in the
+track's **Instmt/Dest** picker (**Shift + click** the row). (For one sample chopped into
+slices you play from the pads, see [Slicer Tracks](#12-slicer-tracks).)
 
-Arranging happens in **Session View**: the clip grid on the pads, 8 tracks across
-and 4 rows visible. **+** and **−** scroll one row at a time through all 16 rows.
-The eight knobs are a mixer, one per track. What they set — Volume, Pan, Send A or
-Send B — is the **MIXER** column of the Session View bank map: hold the jog and tap
-one.
+An Audio track plays through its own Schwung slot, so its effects, fader, pan, sends and
+mute apply. Nothing on it receives MIDI.
 
-<img src="img/pads-session.svg" alt="Session View: a column per track and a row per scene; the side buttons launch the row beside them, the step buttons launch scenes 1–16, and + / − scroll through the 16 rows.">
+## 11.1 How it plays
 
-## 13.1 Launching clips
+Each clip knows its sample's own **Tempo** (0.1–999.9 BPM) — guessed when you pick it: a
+tempo in the file's name ("84 bpm") is taken as it is, even with a tail after the loop;
+else bars in the name ("4bar"), else where its beats fall, else the project's tempo. Turn
+it if the guess is wrong. A new pick sets the clip to the sample's length in whole bars
+at that Tempo (up to 256 bars). The sample plays from **Start** each time the clip comes
+round, for the clip's own length. **Warp** (on SAMPLE's **TIME** page) says how it meets
+the project's tempo:
 
-Clips launch **at once** by default. To have them wait for the next beat or bar, set
-**Launch** in [Project Settings](#191-project-settings).
+- **Warp** (the default) time-stretches the loop and keeps its pitch — at any tempo it
+  sounds as recorded, only faster or slower, and **Pitch** and **Detune** transpose it
+  without changing its length. Warp is processor-intensive: one or two warped tracks are
+  fine, but warping many at once can overload the Move and cause clicks or dropouts.
+- **Vintage** cuts the sample into tiny pieces on the sequencer's own clock (384 to a
+  bar) and starts each on its place at the sample's Tempo, crossfading from one to the
+  next — the same sound at its own tempo, and in time at any other, with the grit of an
+  old sampler.
+- **Pitch** retunes the loop, faster or slower, to the tempo (Pitch and Detune then give
+  way: the tempo sets the speed).
 
-| Gesture | Result |
+Vintage and Pitch cost almost nothing. **Loop + steps** sets the loop as on any clip: the
+clip plays the part of the sample under those steps, laid over it from Start at its
+Tempo — on the SAMPLE screen too.
+
+**The pads** show where the loop is: the clip in 32 even sections, one a pad, dim in the
+track colour, the sections played this time round bright, the one playing pulsing. On a
+pass that plays backwards they fill from the end. Stopped, all dim. Sections past the end of the sample
+show grey — the clip never plays them. Tapping one does nothing. **The steps** show where
+the loop is too: dim, the playhead white, following it page by page while it plays. An
+Audio clip has no sequence, so no STEP, NOTE FX or PAD MODE bank.
+
+**Track View at rest** shows an Audio clip as SAMPLE does zoomed out — its bars across, the
+audio where it lands at the sample's Tempo, the beats under it and the playhead moving
+through — and its Tempo on the line above (*Loop 112*; a [Free](#112-sample) clip shows its
+Speed instead: *Loop Free 100%*, *Shot Free 50%*); a Slicer shows the page bar and
+playhead, as any sequenced track does.
+
+## 11.2 SAMPLE
+
+**SAMPLE** is an Audio clip's editor — the track's instrument. Open it from the bank map's
+**SAMPLE** pad (where INST is on other tracks) or its instrument pad, by clicking the
+instrument row in the track's sound menu, or with the instrument shortcut
+(**Shift + hold Note/Session**). It follows the clip. (A Slicer's editor is the
+[SLICER editor](#122-the-slicer-editor).)
+
+- **No sample:** *Click to load sample* — a click opens the sample chooser.
+- **Audio:** the clip's waveform. **K1** Start · **K2** Zoom · **K3** End — both a screen
+  pixel a detent, a single sample when zoomed all the way in. **Start and End mark the
+  loop**, for a sample that isn't a perfect loop: nothing past End sounds. End reads **Off**
+  until you turn it down; it goes as far as the end of the sample, and one detent past that
+  turns it Off again. Moving End never changes the speed — **Bars** (on TIME) does that.
+  Start and End are lines on the waveform; the audio outside them stays on screen, dotted,
+  so you can see what you're cutting (zoom in to scroll before Start).
+  The clip's Length is set with the Loop gestures (see
+  [Clip length & the loop](#66-clip-length--the-loop)), by the bar or the step, and works as
+  a sequence's loop does: it picks which part of the loop plays and for how long. A clip
+  longer than the loop plays it once and is silent until it comes round — a 1-bar loop in a
+  2-bar clip plays one bar, then rests one.
+**K5** Pitch · **K6** Detune · **K8** Gain set the whole sample, and **K7** its
+**Tempo**, 1 BPM a detent (**Shift**: 0.1) — what Warp follows. **K4** is **Offset** (as on the TIME page): where in the audio the clip
+starts, marked by a small arrow on top of the waveform — stopped, the playhead rests there,
+and step 1 plays from it. The waveform itself never moves. The knob in hand reads out at the top, and the waveform is drawn at the gain it plays
+at. Zoomed in, the view stays on what you touched last.
+
+Zoomed all the way out, an Audio clip's SAMPLE screen **is the clip**: from Start for its
+Length, the audio drawn where it lands at the sample's Tempo — squeezed or stretched as you
+turn Tempo, empty where the Length runs past the end of the sample — with a tick under it
+for each beat and a taller one for each bar. A margin either side shows a little of the
+sample before Start and after the clip, dithered, so you can see where you are in the file.
+
+SAMPLE has three pages: **turn the jog** for the next (the header reads **1/3**, **2/3**,
+**3/3**). The waveform is page 1; pages 2 and 3 show every name and value at once, two rows
+of four, each setting on the same knob as on page 1 where page 1 has it:
+
+| | K1 | K2 | K3 | K4 |
+|---|---|---|---|---|
+| **TIME**, top row | **Sync** | **Warp** | **Nudge** | **Offset** |
+| **TIME**, bottom row | | | **Tempo** | **Bars** |
+| **SOUND**, bottom row | **Pitch** | **Detune** | | **Gain** |
+
+(SOUND's top row is empty.)
+
+- **Sync** — **Grid** (the default): the clip keeps to the sequencer, fitted to the tempo;
+  or **Free** (below). It works with **Loop** and **Shot** alike.
+- **Warp** — how the speed is changed: **Vintage**, **Pitch** or **Warp** (above); on a
+  Free clip **Pitch** (speed and pitch together, as a tape) or **Warp** (the time alone).
+- **Nudge** — moves the sample against the bar, 5 ms a detent (**Shift**: 1).
+- **Offset** — where in the audio the clip starts, a step (of the clip's resolution) a
+  detent, read as a note value: *3/16* is three 1/16 steps in. Step 1 plays from there, and
+  what lies before it comes round at the end of the loop. The waveform stays as it is;
+  stopped, the playhead rests at the Offset point, and the beat ticks count from it. The
+  pads, which follow the clip, start from it too.
+
+Touch **Offset**, **Tempo** or **Bars** and the clip's waveform comes up over the page while
+you hold it — Start and End, the Offset arrow, the beats — so you see what the turn does. A
+knob that does nothing on this clip reads **--**: on a Free clip, Bars.
+
+**Tempo and Bars** sit in a frame together: both describe the sample itself, not the clip.
+**Bars** is how many bars Start to End (or to the end of the sample, with End Off) lasts —
+whole bars a detent, odd numbers too. Set it and the Tempo follows, so the loop plays in
+time; move Start or End afterwards and Bars stays put, the Tempo adjusting. Until you set
+it, Bars reads what the Tempo makes of the sample (*1.7*), and the first detent lands on
+the whole bar that way. Turning **Tempo** hands the speed back to it, and Bars reads what
+the new Tempo makes. A small arrow after **Tempo** or **Bars** marks the one in charge — the
+one that stays put when Start or End moves.
+
+For a sample that isn't neatly cut: set **Start** on the first beat, **End** where the loop
+repeats, then **Bars** to how long that is. The clip's length is separate — make it as long
+as you want the clip to run.
+
+**Gain, Pitch, Detune, Tempo and the CLIP bank's Dir can be automated** like any knob (see
+[Automation](#10-automation)): record them, or hold a step and turn. While a lane plays,
+the knob shows the value it is playing at and the sound follows it; the setting
+comes back on Stop. A lane on Dir turns the loop round at its step.
+
+**A Free clip** (TIME page **Sync**: **Free**) plays off the sequencer's timing. Launched
+with the clip, it plays Start to End **on its own** at the sample's own speed: the project's
+tempo, the clip's length and its loop round don't touch it, so a loop of any length drifts
+against the beat as it likes. With **Mode Loop** it loops Start to End for as long as the
+clip plays; with **Mode Shot** it plays Start to End once, then the clip stops — even when
+that is longer than the clip. TIME then reads:
+
+- **Warp** — **Pitch** changes speed and pitch together, as a tape does (faster is higher);
+  **Warp** changes the time alone, at the same pitch.
+- **Speed** (on Tempo's knob) — 1–400 % of the sample's own, 1 % a detent (**Shift**:
+  0.1 %). **K7** on page 1 turns it too. Touching it shows no waveform: it changes how fast
+  the sample plays, not what the waveform shows.
+- **Offset** and **Nudge** work as on the grid: a launch starts that far into Start..End
+  (the Offset measured at the sample's Tempo, wrapping round inside Start..End), less the
+  Nudge. The Offset arrow is on the waveform.
+
+**Pitch** and **Detune** still tune it, so on **Warp**, time and pitch are fully apart.
+**Bars** reads **--** (there's no grid), and the waveform shows Start to End with no beats.
+The Tempo, Bars and Warp you had are kept, so switching back to **Grid** puts them where
+they were. **REMIX** works on bars, so it has nothing to do on a Free clip: its settings are
+kept and read **--**. A Warp start is about 15 ms after the launch (the stretcher needs a
+head start); a Pitch start is on the launch.
+
+**Touch Tempo and click** (page 1 or TIME) for Tempo's menu (not on a Free clip, whose
+knob there is Speed):
+
+- **Fit to clip** (an Audio clip's) — sets **Bars** to the clip's length, so Start to End (or
+  the end of the sample) lasts exactly as long as the clip, and Warp stretches it to fit.
+  It fits once: change the clip's length afterwards and Bars stay as they are. One Undo
+  puts it back. A fit outside 0.1–999.9 BPM says *Out of range*.
+- **Original tempo** — the sample's Tempo becomes the project's, so it plays exactly as
+  recorded.
+
+A **click** on SAMPLE's waveform page opens its menu (**Shift + click** does the same):
+
+- **Load sample** — the chooser (below).
+- **Trim** — cuts the file to what the clip plays, Start for its Length (Start moves to the
+  beginning).
+- **Normalize** — raises the file's loudest point to full scale.
+
+Trim and Normalize ask **New** (the default: a new sample, named *… trim* or *… norm*, the
+original kept in the project) or **Overwrite** (the project's copy itself — everything
+using it changes). **Back** changes nothing. Both write a 16-bit WAV; the settings stay.
+If one can't be done the sample stays and the screen says why (*NOT NORMALIZED / Nothing to
+raise* on a silent file). **Back** leaves SAMPLE. The Shift shortcuts work here as
+anywhere: **Shift + a step** or **Shift + jog** leaves SAMPLE and does what it always does.
+
+**Choosing a sample:** the list starts with **This project** (samples it already holds),
+**dAVEBOx Resample**, **Recordings**, **Samples** and the **Core Library**; turn and click
+into a folder. The file under the cursor plays as you rest on it (WAV or AIFF). Click a
+file to pick it: dAVEBOx **copies it into the project**, so the project keeps its sounds
+when copied or when the library changes. **None** clears the clip — on a Slicer it asks
+first (*the sample and its slices go; the steps stay*). An Audio clip takes samples up to
+30 minutes; a Slicer up to 4. A sample longer than a minute plays from the card as it
+goes, so a long one costs little memory. Starting the transport partway through an Audio
+clip, changing Dir or moving Start or Length while it plays can leave a few
+milliseconds of silence before it comes in, on time. A sample whose file has gone reads
+*Missing: name* and stays silent.
+
+## 11.3 The banks
+
+| Bank | Knobs |
 |---|---|
-| Tap a clip | Launch it (queued until the next boundary, if Launch waits) |
-| Tap the playing clip | Stop it at the end of its page (tap again to cancel) |
-| Tap a queued clip | Cancel the launch |
-| Tap an empty clip | Switch the track to it — the track goes quiet, and recording lands there |
-| **Shift + clip** | Open it in Track View. While stopped, a clip with notes opens without launching; an empty clip launches. |
-| **Copy + clip**, then another | Copy the clip (**Shift + Copy** cuts) |
-| **Delete + clip** | Clear its notes (it keeps playing); on an Audio clip, asks to remove its sample |
-| **Shift + Delete + clip** | Reset the clip completely |
+| **CLIP** | **Mode** · **Strch** · **K7 Dir**; everything else about the sample is on [SAMPLE](#11-audio-tracks)'s pages. **Dir** is a MIDI clip's: **Fwd**, **Bwd** (the sample backwards), **PPf** and **PPb** (ping-pong: a pass forwards, the next backwards, in turn — PPb starts backwards). A Shot plays one pass, so it offers Fwd and Bwd alone; a ping-pong set before plays as its first way, and comes back when you switch to Loop. **Mode** is **Loop** (the clip plays round and round) or **Shot**: a one-shot — launched, the clip plays its length once from its top, then stops, so it can be fired off like a sample; launch it again to replay it. Every other setting stays as it is when you switch. **Strch** works as a sequence's does, in audio: x2 doubles the clip's Length and the sample's Tempo — the loop plays at half speed across twice the bars; /2 the reverse. With **Bars** set, Bars double instead of the Tempo, with the same result. On a **Free** clip **Strch** x2 halves the Speed (/2 doubles it). Past 256 steps or the Tempo's range it says *BEAT STRETCH / EXPAND LIMIT* (or *COMPRESS LIMIT*). Touch **Strch** and the clip's waveform comes up over the bank while you hold it (not on a Free clip). **Delete + click** puts Mode back to Loop and Dir to Fwd |
+| **LIVE ARP** | As on a melodic track, but **Step** replaces Oct: each repeat moves one slice up (or down), up to 15 |
+| **REMIX** | Rearranges the loop as it plays — see [REMIX](#13-remix) |
 
-- Launching a clip replaces whatever was playing **on that track**.
-- **Where a launched clip starts** depends on **Launch** in Project Settings. At
-  **1-bar** it starts from its beginning — its notes, every drum lane, and any
-  automation lane with its own Loop. At every other setting (Now, 1/16 … 1/2) it
-  launches **in step with the song**: it plays from wherever it would be had it
-  been running since you pressed Play.
-- Switching to a track launches its current clip only if that clip is empty.
-- Keep holding **Copy** to paste one clip into several slots; releasing Copy
-  empties the clipboard.
+There's no RPT GROOVE, HARMONY, SEQ ARP, DELAY, NOTE FX or MIDI FX on an Audio track.
 
-## 13.2 Scenes
+## 11.4 Copying, clearing and undo
 
-A scene launches one clip from every track at once — tap a **side button** (left
-of the grid) or a **step button (1–16)**. **Shift + side button** launches at
-the end of the current page. Launching a scene switches **every** track to that row, so a track
-whose clip there is empty falls silent.
+**Copying** follows the kind:
 
-| Gesture | Result |
-|---|---|
-| **Copy + side button**, then a row | Copy all 8 clips |
-| **Shift + Copy + side button** | Cut the row |
-| **Capture + side button** | Snapshot the playing clips into the row |
-| **Delete + side button** | Clear the row's notes |
-| **Shift + Delete + side button** | Reset the row's clips |
+- An **Audio** clip onto an Audio clip carries its sample and settings.
+- An **Audio** clip onto a **Slicer that has no sample** gives the Slicer that sample: the
+  part the clip plays becomes the Slicer's range, cut into 16 even slices and laid on the
+  clip's steps in order, so it sounds just as the loop did — then move them around. Pitch,
+  Detune, Gain and Tempo come too; Sync Pitch stays Pitch, Warp stays Warp (on a sample up
+  to a minute), Vintage becomes Off. A Slicer that has a
+  sample refuses it (*CAN'T PASTE*): clear it with **None** first.
+- A **Slicer's** clip onto another Slicer's carries its steps (and its automation) — they
+  play the destination's slices.
+- A **Slicer's** clip onto an **Audio** clip gives that clip the Slicer's sample; the steps
+  don't come (an Audio clip has none).
+- Nothing crosses between these and a MIDI or drum track, and a **cut** stays on its own
+  kind.
 
-## 13.3 Mute & solo
+**Delete + clip** on an **Audio** clip asks **Remove sample?** first (No is selected); Yes
+clears the sample, and Undo brings it back. On a Slicer it clears the steps; the sample is
+the track's and stays. **Shift + Delete + clip** resets it completely — on an Audio track, sample and all;
+on a Slicer the sample is the track's and stays. **Undo** covers the sample too: loading
+one, **None**, **Shift + Delete**, Resample **In place**, **Flatten track** (one Undo for every
+clip), a Trim or Normalize to a **New** sample, a visit to a chopping tool or the slice editor, and pasting an
+Audio clip onto a Slicer each come back with one Undo. Turning a setting isn't an undo step
+of its own, and an **Overwrite** can't be undone. **Choosing another instrument** clears
+the track's steps and lets go of its samples, asking first — and one **Undo** brings it all
+back. **Export to Ableton** brings both kinds across as Live audio tracks — see
+[§22.3](#223-export-to-live).
 
-> 🎬 **Video:** [Tutorial 5.1: Mutes and mute snapshots](https://youtu.be/rV0Vhle7INg)
-
-In Session View each knob stands for its track:
-
-| Gesture | Result |
-|---|---|
-| **Mute + touch knob 1–8** | Mute that track |
-| **Shift + Mute + touch knob** | Solo it |
-| **Delete + Mute** | Clear every mute and solo |
-
-- A live pad you hold still plays through a muted track — unless its
-  **Mute Mode** is **Audio**, which mutes the sound and lets the notes play on (see
-  [Muting the track](#52-muting-the-track)). A solo elsewhere mutes such a track the same
-  way.
-- The knob LEDs show each track's state: its color when playing, dark when muted,
-  blinking when soloed.
-- Mute the active track directly in [Track View](#52-muting-the-track); mute a drum
-  lane in [Drum Clips](#74-copying-clearing--muting-lanes).
-
-## 13.4 Mute snapshots
-
-> 🎬 **Video:** [Tutorial 5.1: Mutes and mute snapshots](https://youtu.be/rV0Vhle7INg)
-
-Store up to **16 mute/solo states**; they persist across reboots. In Session View,
-hold **Mute** and the step buttons light (grey = empty, yellow = saved):
-
-| Gesture | Result |
-|---|---|
-| **Mute + Shift + step** | Save the current mute/solo state |
-| **Mute + step** | Recall it |
-| **Mute + Delete + step** | Clear that slot |
-
-For snapshots of the sound itself, see
-[Sound snapshots](#167-sound-snapshots--snapmorph).
-
-## 13.5 Volume
-
-- **Volume** controls Move's master output, everywhere.
-- **Shift + Volume** sets the **active track's** volume, also everywhere — Track
-  View, Session View and the sound editor.
-- A chain track's level and a Move track's mixer level are the same values the
-  mixer rows show, saved with the project.
-- A MIDI track sends standard **MIDI volume (CC 7)** on its channel out the USB
-  port. A track that plays another track's instrument has no output of its own and
-  says so.
+**Purge samples.** Samples you no longer use stay in the project. **Project Settings →
+Purge samples** removes every one that no clip, no Slicer, no undo step and no saved state
+uses, after saying how many and how much space it frees.
 
 ---
 
-# 14. The Conductor
+# 12. Slicer Tracks
 
-> 🎬 **Video:** [Tutorial 5.3: The Conductor](https://youtu.be/rV0Vhle7INg?t=146) (from 2:26)
+A **Slicer** holds **one sample for the whole track**, cut into **slices** you play,
+sequence and rearrange from the pads. Every clip of the track plays the same slices: a clip
+is a step sequence of slices. For breaks, and for chopping up anything. Choose **Slicer**
+in the track's **Instmt/Dest** picker (**Shift + click** the row). (For a sample per clip,
+played with it, see [Audio Tracks](#11-audio-tracks).)
 
-A **Conductor** transposes every playing melodic clip in real time, following the
-note it plays: sequence a progression on it and every responding track follows.
+A Slicer plays through its own Schwung slot, so its effects, fader, pan, sends and mute
+apply.
 
-- It sends no MIDI of its own; its sequence and live pads only steer the
-  transposition.
-- The other tracks' written notes never change — the shift is live.
-- **A project can hold one Conductor at a time.**
+## 12.1 How it plays
 
-## 14.1 Creating one
+A Slicer holds **one sample and its slices**, the same for every clip. Its clips are
+sequences: each step holds one slice, placed and recorded as on any track — **hold a step
++ tap a pad** places that slice. One slice plays at a time: a new slice cuts the last —
+unless it's the next piece of the sample, reached right where the last one has got to,
+which simply plays on. Every slice plays at one level (velocity is ignored); for more voices
+or velocity, **Convert to kit** (below) and play it on a drum track. *Chopping* is what you
+do to a sample; a *slice* is a piece it makes.
 
-**Shift + click** the track's **Instmt/Dest** row in its TRACK CONFIG menu (the row
-the menu opens on, just below MIDI FX), and choose **Conductor**, just after the Move
-instruments.
+**Each step has its own sound.** Hold a step: **K2 Pitch** (±24 semitones, on top of the
+slice's own), **K3 Length** — how much of its slice the step plays, 100 % being all of it —
+with **Start** behind it (touch K3 + click), where in the slice it begins, and **K4 Dir**:
+**Slice** (the step plays as its slice does), or the arrow **forwards** or **backwards**,
+whatever the slice says. So one slice can play whole on one step, just its tail backwards
+on the next, and an octave up on a third. A step left at 100 % / 0 % / Slice plays the
+slice as it is. These stay with the step through every edit, copy and Undo, a ratchet
+repeats them, and a pad played by hand always plays the slice as it is. REMIX's **Revrs**
+turns a step round whatever its Dir.
 
-- The transport must be stopped, and it asks first (*Make Conductor?*).
-- Its notes carry over; its effects, arps and automation reset.
-- If another track is already the Conductor, the screen says which — route that
-  one back first.
-- **Mute** pauses conducting; the responders snap back to their written pitch.
+**Loading a sample** doesn't chop it: it is **one slice**, from Start to End, until you
+chop it (below). The steps you already have stay. A Slicer takes samples up to
+**4 minutes**.
 
-A Conductor's TRACK CONFIG menu has only the Instmt/Dest row and the track's own
-settings — no FX slots, mixer controls, LFOs or presets. The track's instrument is
-**parked**: choose an instrument from the same picker and it returns with
-everything attached, and the track is ordinary again.
+**Start and End are the Slicer's range** (page 3 of the SLICER editor). Slices play only
+inside it: a slice crossing Start or End plays just the part inside, and a slice wholly
+outside is silent, its pad dark grey — still there to pick, and it plays again as soon as
+the range covers it. Moving the range never moves or re-cuts the slices. Every way of making
+slices stays inside the range.
 
-## 14.2 How the shift works
+**The pads** are the slices, in time order, 32 to a page; a slice playing, or a pad held, is
+white. Pads past the slice count are dark. A Slicer holds up to **128 slices**: **Octave Up
+/ Down** shows the next or previous 32. They sit as **PAD MODE** says: **4 Rows** (8 a row
+from the bottom-left) or **16 Pads** (the left 4×4, then the right 4×4 — two banks, the
+right one in the colours of its partner track: 1 with 5, 2 with 6, 3 with 7, 4 with 8).
+From an external keyboard, note 36 plays slice 1.
 
-Zero transposition is the **project's root note in middle C's octave (C3)**. On a
-new Conductor that note sits mid-grid — in a seven-note scale, the second row's
-fifth pad (and the same note on the third row's second pad and the bottom row's
-last). The bottom-left pad is an octave down.
+A Slicer has its own **Tempo** (guessed when the sample loads, as an Audio clip's) and
+**Sync**: **Off** (the default) plays the slices at their own speed, as cut; **Pitch**
+retunes them, faster or slower, by the project's tempo against the sample's Tempo — a
+break follows the project as a sped-up or slowed-down record would; **Warp** stretches the
+whole sample to the project's tempo at its own pitch (offered for samples up to a minute; a
+tempo change re-stretches it in the background a moment later). A Slicer follows the
+**Conductor** as any track does, by the Conductor's **RESPONDER** bank — but it starts with
+its RESPONDER off (when it becomes a Slicer, or a Conductor is made): a break isn't usually
+something to move with the key.
 
-- Play the root and nothing shifts; play higher and the responders rise, lower and
-  they fall.
-- The Conductor's own octave scales the move: an octave up on the Conductor is an
-  octave of transposition.
-- The shift follows the global **Scale Aware** setting — by scale degree (staying
-  in key) when on, by semitone when off.
-- Between Conductor notes the responders return to zero, unless **Cond Lock** is on
-  (below). A muted Conductor always holds them at zero.
-- Drum tracks never respond.
-- **Audio tracks** respond by playing their audio higher or lower — and so does a
-  **Slicer** with its **Cndct** switch on (off by default), never by changing which slice
-  plays. The move is in semitones: with Scale Aware on, as far as the key's root moves
-  by the Conductor's degrees. On **Next** a slice takes the new pitch as it starts and an
-  Audio clip when it comes round; on **Now** what is sounding moves at once. An Audio
-  clip in **Pitch** sync keeps its tempo's speed, so it does not move.
+## 12.2 The SLICER editor
 
-## 14.3 The Conductor's banks
+The **SLICER** editor is a Slicer's instrument: the bank map's **SLICER** pad (where INST is
+on other tracks), the right 4×4's instrument pad, the instrument row in the track's sound
+menu, or **Shift + hold Note/Session**. It has three pages — **turn the jog** for the next
+(the header reads **1/3**, **2/3**, **3/3**). The pads pick the **slice** the knobs on pages
+1 and 2 edit.
 
-A Conductor has six banks on its map, starting on CLIP; its CONFIG (the TRACK CONFIG menu) is on the bank map. ON/OFF, OCTAVE, TIMING and Cond Lock belong to the Conductor's current clip, so different Conductor clips
-can steer different tracks:
+| Page | K1 | K2 | K3 | K4 | K5 | K6 | K7 | K8 |
+|---|---|---|---|---|---|---|---|---|
+| **1 SLICES** — the waveform | Start | Zoom | End | Play | Pitch | Detune | Revrs | Gain |
+| **2 SHAPE** | Attk | Decay | | | | | | |
+| **3 SAMPLE** — the whole file | Start | Zoom | End | Sync | Pitch | Detune | Tempo | Gain |
 
-| Bank | Controls |
+**Page 1, SLICES** shows the waveform with the slices on it, the picked one bracketed, the
+audio outside the range dotted. **K1** / **K3** move the picked slice's start / end, one
+screen pixel a detent (a slice ends where the next begins, **E NEXT**; turn its end away to
+set its own). **K2** zooms. Once you've touched or turned **End**, picking another slice
+shows that slice's end, until you touch **Start** or leave the slice editor. **K4–K8** are the slice's **Play** (**One** to its end, **Gate**
+as long as the step, **Thru** on to the range's End — the next slice cuts it off),
+**Pitch**, **Detune**, **Revrs** and **Gain**, each on top of the sample's. **Delete + pad**
+removes a slice (it joins the one before; slice 1 stays).
+
+**Click** (the corner brackets say so) to **enter the slice editor**: the jog moves a
+cursor through the range and a **click adds a slice** there; everything else works as
+outside. **Back** leaves it.
+
+**Page 2, SHAPE**: the slice's **Attk** and **Decay**. **Decay** falls away as a drum pad's
+does — quickly, then a long tail — and its knob is finest at the short end, 1 ms a detent.
+
+**Hold Shift** on pages 1 and 2 and **Play**, **Revrs**, **Attk** and **Decay** set **every
+slice** at once (`--` where they differ). **Start**, **Zoom** and **End** rest while Shift is
+held, their rings dark and their values off the screen. **Pitch**, **Detune** and **Gain** do nothing with
+Shift: page 3's are the sample's, and move every slice together while keeping each slice's
+own difference.
+
+**Page 3, SAMPLE** is the whole file: a strip of the waveform over K1–K3 with the **range**
+marked on it, the audio outside it dotted. **K1** / **K3** move the range's **Start** /
+**End** (a strip pixel a detent, **Shift** a single sample); **K2** zooms the strip round the
+edge you moved last (a magnifier marks it). Touch **Start**, **Zoom**, **End** or **Gain** and
+the waveform comes up large over the page while you hold the knob, the range and the slices on
+it. **K4 Sync** (above), **K5 Pitch**, **K6 Detune**,
+**K7 Tempo** (1 BPM a detent, **Shift** 0.1) and **K8 Gain** are the sample's: the base every
+slice adds its own to. Touch **Tempo** and click for **Original tempo**: the sample's Tempo
+becomes the project's.
+
+**The menus.** **Shift + click** on pages 1 and 2 opens the **SLICE** menu (not from inside the
+slice editor, where a click adds a slice):
+
+- **Load sample** — the chooser (see [SAMPLE](#112-sample)).
+- **Even** cuts the range into equal slices: turn the jog for the count (2–128), the pads
+  lighting for each as you turn.
+- **Transient** cuts at the sample's hits: turn the jog for **Sens** — lower keeps only the
+  strongest, higher every small one — and watch the slices move on the wave; the count shows
+  top right (**128+** past the first 128).
+- **Lazy** chops by ear. Pad 1 lights white; tap it and the range plays. The next pad is
+  always the white one: tap it to drop a slice where the sample is. The slices so far stay
+  lit. It ends at the range's end, on **Back** or on a **click**. **Back** before the first
+  tap changes nothing.
+- **Clear all** — asks *Clear all slices?*; **Yes** leaves one slice, the range, as a fresh
+  load.
+- **Convert to kit** (below).
+
+In **Even** and **Transient**, **Back** keeps the cut; a **click** keeps it and goes
+straight into the slice editor at the same view, to nudge, add or remove a slice.
+
+On page 3, a **click** (or **Shift + click**) opens the **SAMPLE** menu: **Load sample**,
+**Trim** — cuts the file to the range and **keeps your slices**, each on the same sound
+(a slice wholly outside the range has no audio left and goes, its steps joining the nearest
+slice kept) — and **Normalize**. Trim and Normalize ask **New** or **Overwrite**, as on an
+Audio clip.
+
+A slice's sound settings belong to its number. **Adding or removing a slice renumbers the
+steps of every clip** of the track, so each keeps playing the same piece of the sample.
+**One Undo takes back a whole visit** to a chopping tool or the slice editor — every slice it
+made or moved, and every clip's steps with them.
+
+**Delete + click** resets the page showing: page 1 the picked slice's Play, Pitch, Detune,
+Revrs and Gain (with Shift, every slice's Play and Revrs), page 2 its Attk and Decay (with
+Shift, every slice's), page 3 the sample's Gain, Pitch and Detune. A reset takes the
+automation lanes of what it reset with it, and one **Undo** brings it all back.
+
+**Automation:** the sample's **Gain**, **Pitch**, **Detune** and **Tempo** automate as an
+Audio clip's do, and **every slice's Attack, Decay, Revrs and Play** (Shift held) — while
+such a lane plays, every slice plays at the lane's value, and on Stop each goes back to its
+own. A single slice's own sound isn't automated. A Slicer's sample is every clip's, so a
+lane only ever holds it while it plays — it never rewrites the setting.
+
+**Convert to kit** makes a Move drum rack preset from the slices: a pad for each slice
+inside the range, up to 32, in order. First the sample is **resampled as it sounds** —
+just the range, stretched to the project's tempo if Sync is Warp, retuned by Sync Pitch and
+the sample's Pitch and Detune, at its Gain — into **Samples → dAVEBOx → Exported kits**
+(it takes a moment; the screen says **Baking**). Every pad plays its slice of that file;
+the preset goes to **Track Presets → dBx-slice**, named after the project and track. Move's
+own drum tracks load it and play the first 16 pads (all 32 stay in the preset); an
+instrument that loads Move drum racks with more pads, such as DR32, gets them all. Each pad
+takes its slice's own **Pitch**, **Detune**, **Gain**, **Attk** and **Decay**, and **Play**
+(One plays the pad through, Thru on to the range's end; Gate holds it as long as you do). A
+slice set to **Revrs** plays from a second file, the resample reversed (`… rev`), so a kit
+holds at most two. A slice crossing Start or End keeps only the part inside, as it plays.
+The pads cut each other off, as the slices do. Unlike a slice, a pad responds to velocity, as
+a stock kit's does: a full-velocity hit is the slice's level, softer hits quieter. Turning a
+pad's velocity amount up past that can clip on hard hits, as it can on any Move kit.
+
+The SLICER editor works as an instrument's editor: **Back** returns to the bank you were on,
+and the sequence keeps working while it is up — tap or hold steps, **Record**, and **hold a
+step + jog right** for its step page. The Shift shortcuts work here as anywhere: **Shift +
+a step** or **Shift + jog** leaves it and does what it always does.
+
+## 12.3 The banks
+
+| Bank | Knobs |
 |---|---|
-| **CLIP** | The clip's timing and direction, with **Cond Lock** (`CDLK`) on knob 6: *Off* holds the shift only for each note's length; *Lock* holds it until the next Conductor note. |
-| **STEP** | Edits the held step, as on any track. |
-| **NOTE FX** | Shapes the Conductor's note before the shift is worked out — an octave, an offset, and a per-note random amount. Knobs 3–6 show `-`. |
-| **ON/OFF** | An on/off cell per track (`TR1…TR8`) — on (the default) means the track follows. A drum track's cell is empty; the Conductor's own reads `CNDCT`. |
-| **OCTAVE** | A per-track octave (**−4…+4**) added on top of the shift while the Conductor sounds. |
-| **TIMING** | Per track: **Next** (a responder takes the shift at its next note) or **Now** (a sounding note is retriggered at the new pitch at once). |
+| **CLIP** | As a melodic clip's (**Res**, **Strch**, **Shift**, **InQnt**, **Crop›**, **Dir**), with **>Seq›** on K8 (touch, click): one step per slice, each at its place at the sample's **Tempo**, so the clip plays the sample back as it was — now as slices you can rearrange. A clip whose length you never set grows to hold all of it (a coarser resolution past 256 steps); a length you set stays, and the slices past it wait beyond the loop's end. No Legato: a step holds one slice |
+| **PAD MODE** | **Layout**: **4 Rows** or **16 Pads**, how the slices sit on the pads |
+| **LIVE ARP** | As on a melodic track, but **Step** replaces Oct: each repeat moves one slice up (or down), up to 15 |
+| **REMIX** | Rearranges the loop as it plays — see [REMIX on a Slicer](#132-on-a-slicer) |
+| **NOTE FX** | As on a drum track — nothing that changes a pitch. **Quant** lives here only |
 
-## 14.4 Making it permanent
+There's no RPT GROOVE, HARMONY, SEQ ARP, DELAY or MIDI FX on either kind. The step editor's
+first knob reads **Slice n** and picks the step's slice; on a Slicer, **K2–K4** are the
+step's Pitch, Length / Start and Dir (above).
 
-When you [bake a scene](#181-bake) or [export to Live](#183-export-to-live), an
-**Apply Conductor?** step can fold the transposition into the responding clips.
-The Conductor track itself has no bake and exports as a silent placeholder.
+## 12.4 Copying, clearing and undo
+
+Copying, clearing and undo work as on an Audio track — see
+[Copying, clearing and undo](#114-copying-clearing-and-undo), which covers both kinds
+and pasting between them. On a Slicer, **Delete + clip** clears the steps and
+**Shift + Delete + clip** resets the clip; the sample is the track's and stays.
 
 ---
 
-# 15. Performance Mode
+# 13. REMIX
 
-> 🎬 **Video:** [Tutorial 5.2: Performance Mode](https://youtu.be/rV0Vhle7INg?t=73) (from 1:13)
+**REMIX** rearranges a loop as it plays, on Audio and Slicer tracks alike.
 
-Performance Mode grabs a short loop of what's playing and lets you transform it
-live from a grid of effects. It runs in **Session View**.
+## 13.1 The REMIX bank
 
-## 15.1 Entering and exiting
+**REMIX** chops the bar up and plays it back rearranged — reversed bits, stutters, breaks
+and pitch jumps — without changing your clip. It's in the bank map's **FX** column, third
+pad, on Audio and Slicer tracks alike, and each clip has its own.
 
-- **Tap Loop** to lock it on hands-free; **hold Loop** to use it only while held.
-- Tap **Loop**, **Back** or **Note/Session** to leave. The captured loop stops, but latched mods stay on for next time.
-- **Shift + Loop** toggles Latch.
-- The header shows the recalled preset (**Slot 12** for one of yours) or **Performance**; under it are the engaged mods, or *NO MODS ENGAGED*.
-
-## 15.2 The grid
-
-```
-   top row      wild mods        — blue
-                velocity / gate  — yellow
-                pitch mods       — magenta (melodic only)
-   bottom row   length · hold · sync · latch
-```
-
-The **bottom row** sets the capture length and mode:
-
-| Pad | Sets |
+| Knob | Does |
 |---|---|
-| 1–5 | Capture length: a 1/32, 1/16, 1/8, 1/4 or 1/2 note |
-| 6 | **Hold** — keep the loop while you hold this pad |
-| 7 | **Sync** — clock-aligned capture |
-| 8 | **Latch** — sticky mods |
+| **K1 Remix** | **Off** / **On** (turn deliberately) |
+| **K2 Chop** | How the bar is cut into pieces, from big to small: **10+6** (two pieces, 10 and 6 sixteenths long), **6+6+4**, … **8ths**, … **16ths** |
+| **K3 Order** | Where the pieces go — numbered from the gentlest (a phrase repeated) to the wildest (pieces from all over); **Rev** plays the whole bar backwards. How many there are depends on the Chop. **Touch K3 + click** opens **Presets…**: the 80 remixes of the Yamaha RS7000 (**Normal**, **Reverse**, **Roll**, **Break**, **Pitch**, 1–16 each) — the jog picks, a click loads one (its Order and all its amounts), **Back** leaves things as they were |
+| **K4 Shufl** | How many pieces follow the Order: **0 %** plays the bar as written, **100 %** the whole Order |
+| **K5 Revrs** | How much of what plays runs backwards |
+| **K6 Stutr** | How many stutters (quick repeats) play. **Touch K6 + click** turns it to **Rate** — **Orig**, **1/32**, **1/64**, how fast they repeat — then to **Vel**: **On**, the repeats ramp in level as the RS7000's do; **Off**, every repeat at full level |
+| **K7 Gaps** | How many gaps cut into the bar. **Touch K7 + click** turns it to **Depth**: how hard a gap cuts, from **100 %** (silent) down to a slight shortening |
+| **K8 Pitch** | How far the pitched pieces move, **−24 to +24** semitones: below 0 they go the other way — what went up goes down |
 
-Sync and Latch start on. **Shift + a length pad** keeps that length looping after
-you let go; lengths stack, and **Hold** clears them.
+**Delete + click** puts the clip's REMIX back as a new clip has it: Off, the first Chop and Order, its amounts. One **Undo** brings it back.
 
-The three **mod rows** transform the loop. With **Latch** on, tapping a mod pad
-toggles it on until you tap it again; with Latch off, a mod runs only while you hold
-its pad. Press a lit pad to turn its mod off.
+Every amount works on what you hear: each turn up changes something that plays, on any
+Order, and the same settings always give the same bar. The effects combine — reverse a few
+pieces of an Order, then add a stutter. A change lands at the next bar line. **Turning** any
+REMIX knob shows a pop-up over the page: the knob's name and value across the top, then
+the bar it makes — a column per 1/16, as tall as the part of the loop it plays (in order,
+they rise like a stair), **hollow** when reversed, **dotted** when stuttered, **narrow**
+when cut short, **empty** when silent, with a **caret** when pitched and a tick under each
+piece's start. The line under it names the Chop and how much of the bar the Order moves
+(**6/16 MOVED**), or **OFF** while REMIX is off. It goes when you let go. On an Audio clip
+the pads follow: the 1/16 you're hearing pulses, the rest dim.
 
-<details>
-<summary><b>Pitch mods</b> (magenta, melodic only)</summary>
+**To keep a remix**, bake it ([§22.1](#221-bake)): on an Audio clip that records it into a
+new sample. REMIX then turns off, so it isn't applied twice. REMIX works on a Slicer too —
+see [On a Slicer](#132-on-a-slicer) below.
 
-| Pad | Name | Effect |
-|---|---|---|
-| 1 | Oct Up | Alternates octave up / original |
-| 2 | Oct Down | Alternates octave down / original |
-| 3 | Scale Up | +1/+2/+3 scale degrees over 3 loops, then resets |
-| 4 | Scale Down | −1/−2/−3 over 3 loops |
-| 5 | Fifth | Up 4, 8, then 12 scale degrees (stacked fifths), then resets |
-| 6 | Tritone | Up 3, 6, then 9 scale degrees over 3 loops, then resets |
-| 7 | Drift | ±1 random walk, drifts to ±6 |
-| 8 | Storm | Random ±6 scale degrees per note — chaotic, in key |
+## 13.2 On a Slicer
 
-</details>
-
-<details>
-<summary><b>Velocity / gate mods</b> (yellow, all tracks)</summary>
-
-| Pad | Name | Effect |
-|---|---|---|
-| 1 | Decrescendo | −15 % velocity each loop, down to 10 % |
-| 2 | Swell | 16-loop triangle |
-| 3 | Crescendo | +15 % velocity each loop, up to full |
-| 4 | Pulse | Even loops full, odd loops 20 % |
-| 5 | Sidechain | −15 % per successive note in a loop |
-| 6 | Staccato | Gates to 1/8 of the loop |
-| 7 | Legato | Gates to the full loop |
-| 8 | Ramp Gate | Gate ramps up across notes |
-
-</details>
-
-<details>
-<summary><b>Wild mods</b> (blue)</summary>
-
-| Pad | Name | Effect |
-|---|---|---|
-| 1 | Half Time | Every other loop dropped |
-| 2 | 3 Skip | Every third loop dropped |
-| 3 | Phantom | Ghost note an octave below, ¼ velocity |
-| 4 | Sparse | ~50 % of notes dropped |
-| 5 | Glitch | ±2 scale-degree shift per note |
-| 6 | Stagger | Notes offset +0, +1, +2… scale degrees |
-| 7 | Shuffle | Pitch/hit order shuffled each loop |
-| 8 | Backwards | Pitch/hit order reversed each loop |
-
-</details>
-
-## 15.3 Which tracks it captures
-
-A track feeds Performance Mode when its **Looper** setting is on
-([Track settings](#194-track-settings)). While Performance Mode is locked, touch a
-knob to toggle its track's Looper — the knob LED is the track color when on.
-
-## 15.4 Presets
-
-The **step buttons are 16 preset slots**, while Performance Mode is locked on or
-Loop is held:
-
-- Press one to recall it (again to turn it off); **Shift + step** saves;
-  **Delete + step** clears.
-- Step LEDs: white = recalled, blue = saved, grey = empty.
-- Slots 1–8 ship with combinations (Float, Sink, Heartbeat, Fairy Dust, Robot,
-  Dissolve, Chaos, Lift). You can save over them; they return to the factory set at
-  the next launch.
-- Slots 9–16 are yours and are saved with the project.
+The [REMIX](#131-the-remix-bank) bank works on a Slicer as on an Audio clip — the same knobs, the
+same pop-up. Here it rearranges your steps bar by bar: a remixed step plays its slice
+reversed or pitched as the remix says, on top of its own sound. **To keep a remix**, bake
+it ([§22.1](#221-bake)): it writes the remixed steps, reversals and pitches into the clip,
+and REMIX turns off, so it isn't applied twice.
 
 ---
 
-# 16. Sound & Track Config
+# 14. Recording & Resampling
 
-Each track's sound — its instrument, effects, levels, and the knobs that play them
-— is set in the track's own menu, **TRACK CONFIG**. Playback carries on and the
+Audio comes into dAVEBOx three ways: recorded from the Move's input into an Audio clip,
+resampled from what dAVEBOx itself plays, or caught with Schwung's samplers.
+
+## 14.1 Recording into an Audio clip
+
+On an **Audio** track, **Rec** records the Move's audio input (the line-in jack, or
+the built-in mic when nothing is plugged in) into the active clip.
+
+- **An empty clip** records until you press **Rec** again, and stops at the end of
+  that bar (up to 64 bars). The clip becomes that many bars long.
+- **A clip that has a sample** records a new layer: one pass of the clip, with what
+  you play mixed over the clip as you hear it. Pitch, Start, Dir, Speed, REMIX and
+  the rest are baked into the new sample, which the clip then plays as it is (Mode and
+  Free stay as they were: the file is the pass you heard). On a **Shot** clip the take
+  is its one pass, and on a Free one-shot however long that pass runs. Press **Rec** during
+  the pass to stop adding to it: what you played stays, the rest of the pass keeps the
+  old sound.
+- **Stopped**, Rec gives MIDI's one-bar count-in, then records from the top. **Playing**,
+  the take waits for the clip's next loop (the next bar on an empty clip), and the
+  heading shows **WAIT**; while it records it shows **REC** and the bar. **Rec**
+  blinks red while it waits and is solid red while it records. The clip's pad in Session
+  View blinks white while it waits and pulses white while it records. In Track View the
+  pads go white: recording into an empty clip, one pad a bar (the bars recorded bright,
+  the one recording pulsing, the rest of a set Length dim); a clip with a sample keeps
+  its sections, the part recorded so far bright, the playhead pulsing, the rest dim.
+- You hear the input through the track's effects and fader while the take runs. The
+  take itself is recorded without them.
+- The take is saved as a new sample in the project, so **Undo** brings back the clip as
+  it was. Stopping the transport cancels a take; a take that heard nothing is dropped.
+- The **INPUT** bank (the green pad above **SAMPLE** on the pad map) sets the input.
+  **Monitor**, **Input** and **Gain** are one setting for the whole Move — the same
+  three are in Project Settings, so you can set them with no Audio track at all;
+  **Length** and **Overdub** are the track's, saved with the project:
+
+  | Knob | Does | Choices |
+  |---|---|---|
+  | K1 Monitor | When you hear the input | Off · **Rec** (through the track while a take runs) · On (always: straight to the output, through the track while a take runs) |
+  | K2 Input | Both channels, or one on both sides | **Stereo** · Mono L · Mono R |
+  | K3 Gain | The input's level, for the take and what you hear | −24 to +24 dB (**0**) |
+  | K4 Length | How long a take into an empty clip is | **Free** (until Rec again) · 1 · 2 · 4 · 8 bars |
+  | K5 Overdub | A take into a clip that has a sample | **Layer** (over what it plays) · Replace |
+
+  **Delete + click** puts all five back to the defaults in bold.
+
+  While **INPUT** is up, the track's overview shows the input's level where the
+  waveform is, and **CLIP** when it reaches full scale. The Move picks the source itself: line-in when a cable
+  is plugged in, else the built-in mic.
+- With **Replace**, the clip's sound is left out while you record and comes back
+  after a punch-out (Rec during the pass).
+- With the speakers on and nothing plugged into line-in, the Move asks first: the mic
+  would hear the speakers. On a **Slicer**, Rec still records slices from the pads.
+
+## 14.2 Resampling a scene or clip
+
+**Resample a scene** to record what it sounds like into a sample, cut to loop exactly:
+
+- With the transport stopped (and Clock Follow off), **Sample → Resample scene**, then
+  choose the row.
+- **Length** starts where all the scene's clips line up again (past 32 bars, the
+  longest clip); turn the jog to change it. **Warm-up** plays the scene once
+  first, so delay and reverb tails carry into the start of the loop. **Tail**
+  records extra bars after the clips stop, for the ring-out — the file is then
+  longer than the loop. Both start off.
+- Press the jog on **Start**: the scene plays from the top with no count-in and the
+  metronome silent, and **RESAMPLING** counts the bars. **RESAMPLED** says
+  what it recorded when it is done. As with a [MIDI FX print](#221-bake), **Back**
+  cancels and the other buttons wait until it's done.
+- It records the whole mix, after Master FX. Files go to the sample library under
+  **Samples → dAVEBOx → Resample**, named after the project, scene, length and tempo
+  (`mngk Scene C 4bar 120bpm.wav`), where Move's own sampler can use them. They
+  are not part of the project.
+
+**Resample a clip** the same way: **Sample → Resample clip**. Only that track plays
+while it records. Its options add **Source**: **Wet** is the track as you hear it,
+with its send effects and Master FX; **Dry** is just the track's own instrument and
+effects at its level — for a Move instrument, its Move track through its FX 1–4.
+Warm-up starts on for a Move instrument, because it sounds a few milliseconds
+late. The file is named like an exported clip (`mngk 3B 2bar 120bpm.wav`).
+A muted track, or one that plays MIDI out, has nothing to record.
+
+Audio and Slicer tracks resample like any other. An Audio clip plays its sample with no
+steps, so its length is the clip's own; a Slicer clip's is its sequence's. An Audio
+clip's options add **In place**: turned on, the recording goes into the project instead
+of the library and replaces the clip. The clip starts over with the recording as its
+sample, at default settings. (A Slicer has no In place: its sample is the whole
+track's.) It's
+recorded before the track's effects and volume, which go on playing on it, so
+they apply once; Source shows `-`.
+
+## 14.3 Flattening a track
+
+**Flatten a track** to turn it into audio: open its **TRACK CONFIG** menu, turn to
+**Flatten track** and click. With the transport stopped (and Clock Follow off), every clip with notes is
+recorded on its own, one after another, and the track becomes an
+[Audio track](#11-audio-tracks) with each clip playing its recording (a Slicer becomes an
+Audio track the same way). The
+notes and the instrument go. Its options come first; press the jog on **Flatten** to
+start:
+
+- **Effects**: **Pre** (the default) records the instrument before the track's effects,
+  which stay on the Audio track and keep sounding — you can still change them. **Post**
+  records through the effects, then bypasses them so they don't apply twice. They stay
+  in place, so you can switch them back on. Either way the recording leaves out the
+  track's volume and pan (the Audio track still has them) and its sends. A Move
+  instrument's effects are the ones on its FX 1–4: they're copied onto the Audio
+  track, with the Move track's volume, pan and sends, and the originals stay where
+  they were. The same goes for a track that plays another track's instrument.
+- **Warm-up** plays each clip once before recording it, so delay and reverb tails carry
+  into the start of the loop. It starts on for a Move instrument (which sounds a few
+  milliseconds late), off otherwise.
+- **Back** changes nothing; **Back** while it records cancels the whole flatten.
+
+Drum tracks flatten too, and so does a MIDI track that plays another track's
+instrument (it records that instrument with this track's notes). An **Audio track**
+flattens in place: every clip with a sample is recorded and starts over with its
+recording, at default settings, as [In place](#142-resampling-a-scene-or-clip) does for one clip. A track that plays
+MIDI out, has no instrument, is muted or has no notes (or samples) has nothing to flatten.
+
+**Undo** right after a flatten brings the track back as it was: its notes (or drum
+clips), its type, its instrument with its own sound, its routing, and its effects and
+levels as they were (switched back on if **Post** bypassed them). **Shift + Undo** flattens it again. Choosing **Audio** in
+**Instmt/Dest** comes back the same way. As with any Undo, only the last change can be
+undone.
+
+**Faster than real time.** A Flatten, or a Resample clip **In place**, of a track that
+plays a Schwung instrument, or of an Audio track, records without playing: the clips aren't heard, and each
+one takes a fraction of its length — Dry takes too, and the track's MIDI effects and
+the automation the take can hear come along. It records in real time instead, as
+before, when the sound can't be copied: a modulation source (an LFO) on it, an effect
+that listens to MIDI, voices sent to buses, the line input, a knob mapped to a
+controller the clip sends, the track's own macro lane, automation of a MIDI effect,
+or a MIDI effect that plays into the sequencer. Move instruments and Wet takes always
+record in real time. When it does, the card says why (*Real time: Modulation*), so you
+know what to change to make it fast.
+
+After any resample, the clips you had armed are armed again, so Play carries on
+from where you were.
+
+## 14.4 Schwung's samplers
+
+For anything else, use Schwung's two samplers — both work inside dAVEBOx:
+
+- **Quantized Sampler** — hold **Shift**, touch the **Volume** knob and press
+  **Sample**.
+- **Skipback** — hold **Shift**, touch the **Volume** knob and press **Capture**.
+  Its length is set under **Host Settings... → Audio → Skipback Len**.
+
+---
+
+# 15. Instruments & Effects
+
+Each track's sound — its instrument and its effects — is set in the track's own
+menu, **TRACK CONFIG**. Its levels are in [Mixing](#16-mixing). Playback carries on and the
 pads and step buttons stay with the sequencer, so you can keep playing.
 
-## 16.1 Opening TRACK CONFIG
+## 15.1 Choosing a track's sound
+
+> 🎬 **Video:** [Tutorial 1.5: Instruments](https://youtu.be/3kP6Zwm79_0?t=308) (from 5:08) · [Tutorial 1.6: Adding effects](https://youtu.be/3kP6Zwm79_0?t=374) (from 6:14)
+
+The short version:
+
+1. Hold the jog, tap the **CONFIG** pad (bottom-left of the bank map) and let go.
+2. The menu opens on **Instmt/Dest**, just below **MIDI FX**. **Shift + click** it
+   to choose what the track plays:
+   one of Move's four instruments, a Schwung instrument, a MIDI channel, and more.
+3. **Click** Instmt/Dest to edit the instrument. On a Move track this opens Move's
+   own editor for it — change the kit or preset there as you would on Move, then
+   press **Back** at the top of Move's editor to come back (**Note/Session** goes
+   to Session View).
+4. **Click** an empty **FX** row to add an audio effect after the instrument.
+5. **Click** the empty **MIDI FX** row to add a MIDI effect in front of the
+   instrument — on Move and MIDI tracks too.
+
+A module picked from this menu loads and leaves you on the menu, on its row; click
+the row to edit it.
+
+The right-hand pads of the [bank map](#4-banks-and-the-bank-map) open these editors
+directly: **MIDI FX**, **INSTRUMENT** and **FX 1–4**. On an empty one the pad opens
+the module list, and the module you pick opens in its editor. While one is open, the map marks
+it (the instrument also lights **INST**) rather than the bank underneath.
+
+The rest of this chapter covers the menu in full.
+
+## 15.2 TRACK CONFIG
 
 Open it from the **CONFIG** pad on the bank map (hold the jog, tap CONFIG, let go).
 The menu opens over the bank you were on; the jog moves its cursor and a click uses
 the row. **Back** from the top of the menu returns to that bank.
-
-The track's levels are on **MIX**, the bottom pad of the CTRL column (**Volume, Pan,
-Send A, Send B** on knobs 1–4). On a MIDI track MIX holds that track's controllers
-instead — Expression, Pan, Mod, Sustain, Program, Bank MSB and Bank LSB.
-**Touch Send A or Send B and click the jog** to land in that send's effects (the
-knobs wear corner brackets to say so); **Back** returns to MIX. The session mixer
-does the same on its SEND A and SEND B pages: touch any track's knob and click.
-
-#### The channel strip
-
-**Turn the jog on MIX** for its second page, **MIX 2**: the track's channel strip,
-like a mixing desk's channel. Turn the jog back for the levels.
-
-| Knob | Control | Range |
-|---|---|---|
-| 1 | **Low**: a shelf at 100 Hz | ±15 dB |
-| 2 | **Mid**: a broad peak at the Mid Freq | ±15 dB |
-| 3 | **Freq**: where the Mid acts | 250 Hz – 5 kHz (about 1.1 kHz at the middle) |
-| 4 | **High**: a shelf at 10 kHz | ±15 dB |
-| 5 | **Comp**: a one-knob compressor | Off – 100% |
-
-- Each gain moves 0.5 dB a detent (**Shift**: 0.1 dB) and stops at 0 dB on its way
-  across, like a desk's centre detent.
-- **Comp** is a desk-style compressor: one knob lowers the threshold, raises the
-  ratio and adds make-up gain together. At 100% that is −30 dB, 4:1 and +7 dB. A
-  dot on the knob shows how much it is turning the sound down right now.
-- **Touch or turn an EQ knob** to see the EQ curve over the page.
-- The comp comes first, then the EQ, then the track's fader and pan, so the sends
-  hear it. A recording **after the effects** (Resample, Flatten) is taken before
-  the strip, and the strip goes on working on the flattened track. Per-pad and
-  module-bus sends are taken inside the instrument, before the strip.
-- The strip is saved with the project, can be automated, and is in track
-  snapshots and SnapMorph. A flat strip with the comp off costs no CPU.
 
 | Gesture | Result |
 |---|---|
@@ -2591,7 +2390,7 @@ like a mixing desk's channel. Turn the jog back for the levels.
 - Once open, the menu **stays up until you leave it**.
 - Outside a module's own pages, knobs 1–4 stay the track's levels.
 
-Every list works as described in [Menus & Project Settings](#37-menus--project-settings).
+Every list works as described in [Menus, lists and typing](#36-menus-lists-and-typing).
 
 - Deeper screens open as **overlays** over the screen you came from, with a
   breadcrumb (`T3 > Macros > Knobs`).
@@ -2599,7 +2398,7 @@ Every list works as described in [Menus & Project Settings](#37-menus--project-s
   leaves it unchanged. The track's own settings at the foot of the menu are the
   exception: a click hands the setting to the jog.
 
-## 16.2 The menu
+## 15.3 The menu
 
 > 🎬 **Video:** [Tutorial 1.6: Adding effects](https://youtu.be/3kP6Zwm79_0?t=374) (from 6:14)
 
@@ -2608,14 +2407,14 @@ the rows it has:
 
 | Row | What it does |
 |---|---|
-| **MIDI FX** | A Schwung MIDI-effect module in front of the instrument (separate from the [sequencer effects](#11-sequencer-effects)), so it sits above it — the rows follow the signal. On Move and MIDI tracks too: the track's notes go through it on their way to Move or the MIDI port. |
-| **Instmt/Dest** | What the track plays — see [Choosing an instrument](#163-choosing-an-instrument). **Click** to edit it, **Shift + click** to change it. The menu opens on this row. |
+| **MIDI FX** | A Schwung MIDI-effect module in front of the instrument (separate from the [sequencer effects](#9-sequencer-effects)), so it sits above it — the rows follow the signal. On Move and MIDI tracks too: the track's notes go through it on their way to Move or the MIDI port. |
+| **Instmt/Dest** | What the track plays — see [Choosing an instrument](#154-choosing-an-instrument). **Click** to edit it, **Shift + click** to change it. The menu opens on this row. |
 | **FX 1–4** | Four audio (insert) effects after it. Click an **empty** one to pick an effect. On a Move track these are the track's Move FX bus. |
 | **Volume, Pan, Send A, Send B** | The track's levels. **Shift + click** a send to land in that send's own effects (or touch its knob on MIX and click); **Back** brings you home. |
-| **Buses** | Voice groups, on instruments that can split their voices — see [Presets, LFOs and buses](#165-presets-lfos-and-buses) |
+| **Buses** | Voice groups, on instruments that can split their voices — see [Presets, LFOs and buses](#156-presets-lfos-and-buses) |
 | **Presets** | Save and load the whole chain |
 | **LFOs** | Two LFOs for the track |
-| **Mode, Transpose, VelIn, AftTch, Looper, Mute Mode, Grv Amt, Export to MIDI, Flatten track, Parallel** — and **Grv Timing, Grv Velocity, Grv Random** when the project uses a loaded groove | The track's own settings — see [Track settings](#194-track-settings) |
+| **Mode, Transpose, VelIn, AftTch, Looper, Mute Mode, Grv Amt, Export to MIDI, Flatten track, Parallel** — and **Grv Timing, Grv Velocity, Grv Random** when the project uses a loaded groove | The track's own settings — see [Track settings](#244-track-settings) |
 
 On the Instmt/Dest and effect rows, a hint band at the foot of the menu says what
 the click and the Shift chord do.
@@ -2632,7 +2431,7 @@ the click and the Shift chord do.
 - **Mute + click the jog** on an effect row bypasses that effect without muting the
   track. Mute and solo live on the **Mute** button.
 
-## 16.3 Choosing an instrument
+## 15.4 Choosing an instrument
 
 > 🎬 **Video:** [Tutorial 1.5: Instruments](https://youtu.be/3kP6Zwm79_0?t=308) (from 5:08)
 
@@ -2643,7 +2442,7 @@ the click and the Shift chord do.
 | **List: All** | (a filter, not an instrument — see below) |
 | **None** | A Schwung track with no instrument loaded — the state a new project's tracks 5–8 start in. Its MIDI FX, effects, levels and **Presets** stay, so you can load a chain preset straight away. On a Schwung track it removes the instrument. |
 | **Move 1–4** | Play one of Move's four instruments |
-| **Conductor** | A [Conductor](#14-the-conductor) — converts the track behind a confirm, with the transport stopped |
+| **Conductor** | A [Conductor](#20-the-conductor) — converts the track behind a confirm, with the transport stopped |
 | **Every Schwung generator**, by name | A Schwung track, with that instrument loaded |
 | **MIDI Ch 1–16** | A MIDI track: out the USB-A port on that channel |
 | **Track N** | Play another track's instrument |
@@ -2664,7 +2463,7 @@ View only), and work with it as you would on Move.
 
 - Move takes the screen, jog, knobs, **Back**, **Mute** and **Shift** (so
   **Shift + jog** works in Move's editor). **Hold the jog** and the
-  [bank map](#36-parameter-banks) comes up over Move's screen — tap a bank or
+  [bank map](#4-banks-and-the-bank-map) comes up over Move's screen — tap a bank or
   a track to leave for it, or let go to stay; a quick click is still Move's,
   landing as you let go; the pads, step buttons and transport stay
   with dAVEBOx, and dAVEBOx's own Shift gestures still work.
@@ -2675,7 +2474,7 @@ View only), and work with it as you would on Move.
 A plain click does nothing on a MIDI channel or a followed track. On a Schwung
 track with no instrument (or set to **None**), it opens the picker.
 
-## 16.4 Editing a module
+## 15.5 Editing a module
 
 Click an instrument or effect to open its editor: the knobs edit its parameters and
 the jog turns the pages. **Shift + jog** switches track, and the editor follows to
@@ -2762,10 +2561,10 @@ sends on MIX and in the session mixer:
 parameters up on screen. Only a pad you physically press counts — a playing pattern
 or incoming MIDI never moves the editor.
 
-## 16.5 Presets, LFOs and buses
+## 15.6 Presets, LFOs and buses
 
 **Presets** (the SLOT PRESETS screen) saves and loads the track's whole chain —
-instrument, effects and [macros](#166-the-macros-bank):
+instrument, effects and [macros](#191-the-macros-bank):
 
 - **[Save]** overwrites the loaded preset (it asks first); **[Save as…]** names a
   new one.
@@ -2795,7 +2594,221 @@ has:
 - its own **Inserts**, and **Send A** and **Send B** levels;
 - **Rename** and **Delete**.
 
-## 16.6 The MACROS bank
+---
+
+# 16. Mixing
+
+Every track has a fader, pan, two sends and a channel strip — an EQ and a compressor.
+Set them track by track on the **MIX** bank, or across all eight tracks with the session
+mixer. Three buses sit across every track: **Master FX** and the two sends.
+
+## 16.1 Track levels
+
+The track's levels are on **MIX**, the bottom pad of the CTRL column (**Volume, Pan,
+Send A, Send B** on knobs 1–4). On a MIDI track MIX holds that track's controllers
+instead — Expression, Pan, Mod, Sustain, Program, Bank MSB and Bank LSB.
+**Touch Send A or Send B and click the jog** to land in that send's effects (the
+knobs wear corner brackets to say so); **Back** returns to MIX. The session mixer
+does the same on its SEND A and SEND B pages: touch any track's knob and click.
+
+## 16.2 The channel strip
+
+**Turn the jog on MIX** for its second page, **MIX 2**: the track's channel strip,
+like a mixing desk's channel. Turn the jog back for the levels.
+
+| Knob | Control | Range |
+|---|---|---|
+| 1 | **Low**: a shelf at 100 Hz | ±15 dB |
+| 2 | **Mid**: a broad peak at the Mid Freq | ±15 dB |
+| 3 | **Freq**: where the Mid acts | 250 Hz – 5 kHz (about 1.1 kHz at the middle) |
+| 4 | **High**: a shelf at 10 kHz | ±15 dB |
+| 5 | **Comp**: a one-knob compressor | Off – 100% |
+
+- Each gain moves 0.5 dB a detent (**Shift**: 0.1 dB) and stops at 0 dB on its way
+  across, like a desk's centre detent.
+- **Comp** is a desk-style compressor: one knob lowers the threshold, raises the
+  ratio and adds make-up gain together. At 100% that is −30 dB, 4:1 and +7 dB. A
+  dot on the knob shows how much it is turning the sound down right now.
+- **Touch or turn an EQ knob** to see the EQ curve over the page.
+- The comp comes first, then the EQ, then the track's fader and pan, so the sends
+  hear it. A recording **after the effects** (Resample, Flatten) is taken before
+  the strip, and the strip goes on working on the flattened track. Per-pad and
+  module-bus sends are taken inside the instrument, before the strip.
+- The strip is saved with the project, can be automated, and is in track
+  snapshots and SnapMorph. A flat strip with the comp off costs no CPU.
+
+## 16.3 The session mixer
+
+> 🎬 **Video:** [Tutorial 6.1: The session mixer and the sends](https://youtu.be/nrZD8SnbD6Q)
+
+**In Session View** the knobs are the mixer, and the jog's map is the **Session
+map**:
+
+- **Hold the jog**: the **MIXER** column is Volume, Pan, Send A and
+  Send B; the second column is the [channel strip](#162-the-channel-strip), **EQ** over **COMPRESS**;
+  the fourth column, after a gap, is the **FX** column. It opens the **Master**,
+  **Send A** and **Send B** effects directly, each level with its mixer row. The sends share a color.
+- On **EQ**, the knobs set one band on every track at once: **Low** first, and
+  **turning the jog** steps through **Mid**, **Mid Freq** and **High**. The EQ pad
+  reopens the band you were last on. Touch or turn a knob to see that track's EQ
+  curve over the page. On **COMPRESS**, each knob is a track's comp, with the dot
+  showing how hard it is working.
+  As on a track, the map stays up while you hold the jog; the FX pads open their
+  effects when you let go. The
+  indicator at the top right names the mixer mode. The step buttons stay with
+  the scenes.
+- **Touch a knob** (or the jog) to see the mixer page. On the Send A or Send B
+  page, touch a track's send and click to open that send's effects.
+- Mixer knobs record automation like any other: turn one while recording and it
+  records into that track's clip.
+- A track that plays another track's instrument has no strip; its column shows a
+  cross.
+- On a MIDI track, Volume is CC 7 and Pan is CC 10.
+
+## 16.4 Volume
+
+- **Volume** controls Move's master output, everywhere.
+- **Shift + Volume** sets the **active track's** volume, also everywhere — Track
+  View, Session View and the sound editor.
+- A chain track's level and a Move track's mixer level are the same values the
+  mixer rows show, saved with the project.
+- A MIDI track sends standard **MIDI volume (CC 7)** on its channel out the USB
+  port. A track that plays another track's instrument has no output of its own and
+  says so.
+
+## 16.5 Master FX and the sends
+
+Three buses sit across every track — **MASTER FX** and the two sends, **SEND FX A**
+and **SEND FX B** — each with four effect blocks, edited exactly like a track's.
+
+- Master FX processes everything on its way out.
+- A **send** is fed by each track's Send A or Send B level, so several tracks can
+  share one reverb or delay. Each send's **Return** level sets how much comes back
+  into the mix.
+
+To reach them, hold the jog in Session View, tap **MASTER**, **SEND A** or **SEND B** on the Session map and let go. **Back** from an effect bus's top level returns to the Session overview.
+
+---
+
+# 17. Session View
+
+> 🎬 **Video:** [Tutorial 1.2: Clips, scenes and the session grid](https://youtu.be/3kP6Zwm79_0?t=69) (from 1:09)
+
+Arranging happens in **Session View**: the clip grid on the pads, 8 tracks across
+and 4 rows visible. **+** and **−** scroll one row at a time through all 16 rows.
+The eight knobs are a mixer, one per track. What they set — Volume, Pan, Send A or
+Send B — is the **MIXER** column of the Session View bank map: hold the jog and tap
+one.
+
+<img src="img/pads-session.svg" alt="Session View: a column per track and a row per scene; the side buttons launch the row beside them, the step buttons launch scenes 1–16, and + / − scroll through the 16 rows.">
+
+## 17.1 Launching clips
+
+Clips launch **at once** by default. To have them wait for the next beat or bar, set
+**Launch** in [Project Settings](#241-project-settings).
+
+| Gesture | Result |
+|---|---|
+| Tap a clip | Launch it (queued until the next boundary, if Launch waits) |
+| Tap the playing clip | Stop it at the end of its page (tap again to cancel) |
+| Tap a queued clip | Cancel the launch |
+| Tap an empty clip | Switch the track to it — the track goes quiet, and recording lands there |
+| **Shift + clip** | Open it in Track View. While stopped, a clip with notes opens without launching; an empty clip launches. |
+| **Copy + clip**, then another | Copy the clip (**Shift + Copy** cuts) |
+| **Delete + clip** | Clear its notes (it keeps playing); on an Audio clip, asks to remove its sample |
+| **Shift + Delete + clip** | Reset the clip completely |
+
+- Launching a clip replaces whatever was playing **on that track**.
+- **Where a launched clip starts** depends on **Launch** in Project Settings. At
+  **1-bar** it starts from its beginning — its notes, every drum lane, and any
+  automation lane with its own Loop. At every other setting (Now, 1/16 … 1/2) it
+  launches **in step with the song**: it plays from wherever it would be had it
+  been running since you pressed Play.
+- Switching to a track launches its current clip only if that clip is empty.
+- Keep holding **Copy** to paste one clip into several slots; releasing Copy
+  empties the clipboard.
+
+## 17.2 Scenes
+
+A scene launches one clip from every track at once — tap a **side button** (left
+of the grid) or a **step button (1–16)**. **Shift + side button** launches at
+the end of the current page. Launching a scene switches **every** track to that row, so a track
+whose clip there is empty falls silent.
+
+| Gesture | Result |
+|---|---|
+| **Copy + side button**, then a row | Copy all 8 clips |
+| **Shift + Copy + side button** | Cut the row |
+| **Capture + side button** | Snapshot the playing clips into the row |
+| **Delete + side button** | Clear the row's notes |
+| **Shift + Delete + side button** | Reset the row's clips |
+
+---
+
+# 18. Mute & Solo
+
+Mute and solo work per track — from the **Mute** button in Track View, from the knobs in
+Session View — and each track's **Mute Mode** decides whether muting stops its notes or
+its sound.
+
+## 18.1 In Track View
+
+- **Mute** silences the active track; **Shift + Mute** solos it.
+- **Delete + Mute** clears every mute and solo (on a drum track, just its lane
+  mutes and solos).
+- A live pad you hold still plays through a muted track.
+- A track's **Mute Mode** (in its [track settings](#244-track-settings)) says what
+  muting does: **MIDI** stops its notes; **Audio** lets them play on and silences its
+  sound, so tails and held notes are there again the moment you unmute (a live pad
+  is silenced too).
+- In Session View you mute each track from its knob — see
+  [In Session View](#182-in-session-view), below.
+
+## 18.2 In Session View
+
+> 🎬 **Video:** [Tutorial 5.1: Mutes and mute snapshots](https://youtu.be/rV0Vhle7INg)
+
+In Session View each knob stands for its track:
+
+| Gesture | Result |
+|---|---|
+| **Mute + touch knob 1–8** | Mute that track |
+| **Shift + Mute + touch knob** | Solo it |
+| **Delete + Mute** | Clear every mute and solo |
+
+- A live pad you hold still plays through a muted track — unless its
+  **Mute Mode** is **Audio**, which mutes the sound and lets the notes play on (see
+  [Muting the track](#181-in-track-view)). A solo elsewhere mutes such a track the same
+  way.
+- The knob LEDs show each track's state: its color when playing, dark when muted,
+  blinking when soloed.
+- Mute the active track directly in [Track View](#181-in-track-view); mute a drum
+  lane in [Drum Clips](#74-copying-clearing--muting-lanes).
+
+## 18.3 Mute snapshots
+
+> 🎬 **Video:** [Tutorial 5.1: Mutes and mute snapshots](https://youtu.be/rV0Vhle7INg)
+
+Store up to **16 mute/solo states**; they persist across reboots. In Session View,
+hold **Mute** and the step buttons light (grey = empty, yellow = saved):
+
+| Gesture | Result |
+|---|---|
+| **Mute + Shift + step** | Save the current mute/solo state |
+| **Mute + step** | Recall it |
+| **Mute + Delete + step** | Clear that slot |
+
+For snapshots of the sound itself, see
+[Sound snapshots](#192-sound-snapshots--snapmorph).
+
+---
+
+# 19. Macros & Sound Snapshots
+
+Two ways to play a track's sound live: **macros** put any parameters on the knobs, and
+**sound snapshots** store whole sounds to recall, or to morph between with one knob.
+
+## 19.1 The MACROS bank
 
 > 🎬 **Video:** [Tutorial 5.4: Macros](https://youtu.be/rV0Vhle7INg?t=238) (from 3:58)
 
@@ -2870,7 +2883,7 @@ CC**, then the number). Pitch bend **springs back to centre** when you let go;
 
 Assignments belong to the project, and a saved chain preset carries them with it.
 
-## 16.7 Sound snapshots & SnapMorph
+## 19.2 Sound snapshots & SnapMorph
 
 > 🎬 **Video:** [Tutorial 5.5: Sound snapshots and SnapMorph](https://youtu.be/rV0Vhle7INg?t=372) (from 6:12)
 
@@ -2900,86 +2913,191 @@ of the turn, `[2]` next, and so on. The knob is live as soon as two are in.
 - It records as **one** lane (`SnapMorph K4` on the AUTOMATION screen) and doesn't
   export to Live.
 
-## 16.8 Master FX and the sends
-
-> 🎬 **Video:** [Tutorial 6.1: The session mixer and the sends](https://youtu.be/nrZD8SnbD6Q)
-
-Three buses sit across every track — **MASTER FX** and the two sends, **SEND FX A**
-and **SEND FX B** — each with four effect blocks, edited exactly like a track's.
-
-- Master FX processes everything on its way out.
-- A **send** is fed by each track's Send A or Send B level, so several tracks can
-  share one reverb or delay. Each send's **Return** level sets how much comes back
-  into the mix.
-
-To reach them, hold the jog in Session View, tap **MASTER**, **SEND A** or **SEND B** on the Session map and let go. **Back** from an effect bus's top level returns to the Session overview.
-
 ---
 
-# 17. Routing & Sync
+# 20. The Conductor
 
-## 17.1 Instruments & routing
+> 🎬 **Video:** [Tutorial 5.3: The Conductor](https://youtu.be/rV0Vhle7INg?t=146) (from 2:26)
 
-A track's destination is its **Instmt/Dest** row, at the top of
-[TRACK CONFIG](#163-choosing-an-instrument): one of **Move 1–4**, a **Schwung
-generator**, a **MIDI channel** (out USB-A), another **track**'s instrument, or
-**None** (a Schwung track with nothing loaded).
+A **Conductor** transposes every playing melodic clip in real time, following the
+note it plays: sequence a progression on it and every responding track follows.
 
-- A new project starts with tracks 1–4 on Move 1–4 and tracks 5–8 on Schwung.
-- Several tracks can go to MIDI channels at once for a multitimbral rig.
-- Tracks that play Move instruments need **Link** enabled in Move's System
-  Settings; dAVEBOx warns you (**LINK AUDIO ROUTE**) if it's off.
+- It sends no MIDI of its own; its sequence and live pads only steer the
+  transposition.
+- The other tracks' written notes never change — the shift is live.
+- **A project can hold one Conductor at a time.**
 
-## 17.2 External MIDI in and out
+## 20.1 Creating one
 
-A USB-A controller plays the **active track**, its notes moved onto that track's
-channel; filter by channel with **MIDI In** in Project Settings. On a drum track an
-incoming note plays the lane set to that note. What shapes live input depends on
-where the track goes:
+**Shift + click** the track's **Instmt/Dest** row in its TRACK CONFIG menu (the row
+the menu opens on, just below MIDI FX), and choose **Conductor**, just after the Move
+instruments.
 
-| Destination | Live external input |
+- The transport must be stopped, and it asks first (*Make Conductor?*).
+- Its notes carry over; its effects, arps and automation reset.
+- If another track is already the Conductor, the screen says which — route that
+  one back first.
+- **Mute** pauses conducting; the responders snap back to their written pitch.
+
+A Conductor's TRACK CONFIG menu has only the Instmt/Dest row and the track's own
+settings — no FX slots, mixer controls, LFOs or presets. The track's instrument is
+**parked**: choose an instrument from the same picker and it returns with
+everything attached, and the track is ordinary again.
+
+## 20.2 How the shift works
+
+Zero transposition is the **project's root note in middle C's octave (C3)**. On a
+new Conductor that note sits mid-grid — in a seven-note scale, the second row's
+fifth pad (and the same note on the third row's second pad and the bottom row's
+last). The bottom-left pad is an octave down.
+
+- Play the root and nothing shifts; play higher and the responders rise, lower and
+  they fall.
+- The Conductor's own octave scales the move: an octave up on the Conductor is an
+  octave of transposition.
+- The shift follows the global **Scale Aware** setting — by scale degree (staying
+  in key) when on, by semitone when off.
+- Between Conductor notes the responders return to zero, unless **Cond Lock** is on
+  (below). A muted Conductor always holds them at zero.
+- Drum tracks never respond.
+- **Audio tracks** respond by playing their audio higher or lower — and so does a
+  **Slicer** with its **Cndct** switch on (off by default), never by changing which slice
+  plays. The move is in semitones: with Scale Aware on, as far as the key's root moves
+  by the Conductor's degrees. On **Next** a slice takes the new pitch as it starts and an
+  Audio clip when it comes round; on **Now** what is sounding moves at once. An Audio
+  clip in **Pitch** sync keeps its tempo's speed, so it does not move.
+
+## 20.3 The Conductor's banks
+
+A Conductor has six banks on its map, starting on CLIP; its CONFIG (the TRACK CONFIG menu) is on the bank map. ON/OFF, OCTAVE, TIMING and Cond Lock belong to the Conductor's current clip, so different Conductor clips
+can steer different tracks:
+
+| Bank | Controls |
 |---|---|
-| Schwung | Through the sequencer effects |
-| MIDI channel | Through the sequencer effects, out USB-A |
-| Another track | Through the sequencer effects, into that track's instrument |
-| Move | Straight to Move, without the sequencer effects (they would loop back). With a MIDI FX module loaded, notes go through the module first |
+| **CLIP** | The clip's timing and direction, with **Cond Lock** (`CDLK`) on knob 6: *Off* holds the shift only for each note's length; *Lock* holds it until the next Conductor note. |
+| **STEP** | Edits the held step, as on any track. |
+| **NOTE FX** | Shapes the Conductor's note before the shift is worked out — an octave, an offset, and a per-note random amount. Knobs 3–6 show `-`. |
+| **ON/OFF** | An on/off cell per track (`TR1…TR8`) — on (the default) means the track follows. A drum track's cell is empty; the Conductor's own reads `CNDCT`. |
+| **OCTAVE** | A per-track octave (**−4…+4**) added on top of the shift while the Conductor sounds. |
+| **TIMING** | Per track: **Next** (a responder takes the shift at its next note) or **Now** (a sounding note is retriggered at the new pitch at once). |
 
-On a track set to a **MIDI channel**, everything goes out USB-A — the sequence, live
-pads, effects and automation. Transport Stop sends note-offs; **Delete + Play**
-while stopped sends a MIDI panic on every channel.
+## 20.4 Making it permanent
 
-**Bluetooth MIDI.** On a Move with a Bluetooth radio, a paired Bluetooth LE MIDI
-device works like one plugged into USB-A: it plays the active track, and it receives
-everything sent out USB-A. **Bluetooth** in Project Settings turns the radio on or
-off. SysEx is not carried.
-
-## 17.3 Clock Follow
-
-dAVEBOx runs its own clock by default. Set **Clock Follow → Move** in
-[Project Settings](#191-project-settings) to lock to Move's transport instead:
-dAVEBOx sequences while Move supplies clock, transport and voices.
-
-- **Tempo comes from Move.** BPM shows `Move` and can't be changed; Tap Tempo says
-  *Tempo follows Move*.
-- **Play drives Move.** dAVEBOx's Play starts and stops Move's transport, and both
-  launch from the same downbeat.
-- **Recording** starts Move and counts one bar on its clock before it records.
-- If Move's clock stops, so does dAVEBOx — though held arpeggios and synced delay
-  keep running at Move's tempo. If Move doesn't start, dAVEBOx plays on at its last
-  tempo and shows *CLOCK FOLLOW / Move didn't start*.
-- Keep Move's own sequencer empty on the tracks dAVEBOx feeds.
-
-Leave Clock Follow **Off** for the normal internal clock.
-
-## 17.4 Clock Out
-
-**Clock Out → On** sends MIDI clock and start/stop out the USB-A port, so external
-gear locks to dAVEBOx. It applies while free-running; with Clock Follow on Move it
-is suppressed and shows `—`.
+When you [bake a scene](#221-bake) or [export to Live](#223-export-to-live), an
+**Apply Conductor?** step can fold the transposition into the responding clips.
+The Conductor track itself has no bake and exports as a silent placeholder.
 
 ---
 
-# 18. Bake, Merge & Export
+# 21. Performance Mode
+
+> 🎬 **Video:** [Tutorial 5.2: Performance Mode](https://youtu.be/rV0Vhle7INg?t=73) (from 1:13)
+
+Performance Mode grabs a short loop of what's playing and lets you transform it
+live from a grid of effects. It runs in **Session View**.
+
+## 21.1 Entering and exiting
+
+- **Tap Loop** to lock it on hands-free; **hold Loop** to use it only while held.
+- Tap **Loop**, **Back** or **Note/Session** to leave. The captured loop stops, but latched mods stay on for next time.
+- **Shift + Loop** toggles Latch.
+- The header shows the recalled preset (**Slot 12** for one of yours) or **Performance**; under it are the engaged mods, or *NO MODS ENGAGED*.
+
+## 21.2 The grid
+
+```
+   top row      wild mods        — blue
+                velocity / gate  — yellow
+                pitch mods       — magenta (melodic only)
+   bottom row   length · hold · sync · latch
+```
+
+The **bottom row** sets the capture length and mode:
+
+| Pad | Sets |
+|---|---|
+| 1–5 | Capture length: a 1/32, 1/16, 1/8, 1/4 or 1/2 note |
+| 6 | **Hold** — keep the loop while you hold this pad |
+| 7 | **Sync** — clock-aligned capture |
+| 8 | **Latch** — sticky mods |
+
+Sync and Latch start on. **Shift + a length pad** keeps that length looping after
+you let go; lengths stack, and **Hold** clears them.
+
+The three **mod rows** transform the loop. With **Latch** on, tapping a mod pad
+toggles it on until you tap it again; with Latch off, a mod runs only while you hold
+its pad. Press a lit pad to turn its mod off.
+
+<details>
+<summary><b>Pitch mods</b> (magenta, melodic only)</summary>
+
+| Pad | Name | Effect |
+|---|---|---|
+| 1 | Oct Up | Alternates octave up / original |
+| 2 | Oct Down | Alternates octave down / original |
+| 3 | Scale Up | +1/+2/+3 scale degrees over 3 loops, then resets |
+| 4 | Scale Down | −1/−2/−3 over 3 loops |
+| 5 | Fifth | Up 4, 8, then 12 scale degrees (stacked fifths), then resets |
+| 6 | Tritone | Up 3, 6, then 9 scale degrees over 3 loops, then resets |
+| 7 | Drift | ±1 random walk, drifts to ±6 |
+| 8 | Storm | Random ±6 scale degrees per note — chaotic, in key |
+
+</details>
+
+<details>
+<summary><b>Velocity / gate mods</b> (yellow, all tracks)</summary>
+
+| Pad | Name | Effect |
+|---|---|---|
+| 1 | Decrescendo | −15 % velocity each loop, down to 10 % |
+| 2 | Swell | 16-loop triangle |
+| 3 | Crescendo | +15 % velocity each loop, up to full |
+| 4 | Pulse | Even loops full, odd loops 20 % |
+| 5 | Sidechain | −15 % per successive note in a loop |
+| 6 | Staccato | Gates to 1/8 of the loop |
+| 7 | Legato | Gates to the full loop |
+| 8 | Ramp Gate | Gate ramps up across notes |
+
+</details>
+
+<details>
+<summary><b>Wild mods</b> (blue)</summary>
+
+| Pad | Name | Effect |
+|---|---|---|
+| 1 | Half Time | Every other loop dropped |
+| 2 | 3 Skip | Every third loop dropped |
+| 3 | Phantom | Ghost note an octave below, ¼ velocity |
+| 4 | Sparse | ~50 % of notes dropped |
+| 5 | Glitch | ±2 scale-degree shift per note |
+| 6 | Stagger | Notes offset +0, +1, +2… scale degrees |
+| 7 | Shuffle | Pitch/hit order shuffled each loop |
+| 8 | Backwards | Pitch/hit order reversed each loop |
+
+</details>
+
+## 21.3 Which tracks it captures
+
+A track feeds Performance Mode when its **Looper** setting is on
+([Track settings](#244-track-settings)). While Performance Mode is locked, touch a
+knob to toggle its track's Looper — the knob LED is the track color when on.
+
+## 21.4 Presets
+
+The **step buttons are 16 preset slots**, while Performance Mode is locked on or
+Loop is held:
+
+- Press one to recall it (again to turn it off); **Shift + step** saves;
+  **Delete + step** clears.
+- Step LEDs: white = recalled, blue = saved, grey = empty.
+- Slots 1–8 ship with combinations (Float, Sink, Heartbeat, Fairy Dust, Robot,
+  Dissolve, Chaos, Lift). You can save over them; they return to the factory set at
+  the next launch.
+- Slots 9–16 are yours and are saved with the project.
+
+---
+
+# 22. Bake, Merge & Export
 
 Tap **Sample** for a short menu of what it can do — turn the jog to choose, press it
 to go, and **Back** steps back a level:
@@ -2991,7 +3109,7 @@ Bake scene and Resample scene then ask for the row: tap a side button, or a step
 button for any of the 16. Resample clip in Session View asks for the clip: tap its
 pad. In Track View it takes the track's current clip.
 
-## 18.1 Bake
+## 22.1 Bake
 
 > 🎬 **Video:** [Tutorial 4.6: Bake](https://youtu.be/jOnQWmr71JI?t=481) (from 8:01)
 
@@ -3000,9 +3118,9 @@ HARMONY, DELAY, SEQ ARP — into plain notes, then resets those effects. The cli
 same, with a clean effects chain to build on.
 
 - **An Audio clip** has no notes to bake: **Bake clip** records what the clip plays — its
-  [REMIX](#84-remix) and all — into a new sample in its place (**BAKE CLIP**: a resample
-  **In place**, [§18.6](#186-recording-audio)), and the clip starts over with it.
-- **A Slicer clip** bakes its [REMIX](#84-remix) first: the remixed steps — their reversals
+  [REMIX](#131-the-remix-bank) and all — into a new sample in its place (**BAKE CLIP**: a resample
+  **In place**, [§14.2](#142-resampling-a-scene-or-clip)), and the clip starts over with it.
+- **A Slicer clip** bakes its [REMIX](#131-the-remix-bank) first: the remixed steps — their reversals
   and pitches written onto each step's own sound — become the clip's, then NOTE FX bakes
   over them. The slices themselves are never changed, so the Slicer's other clips sound the
   same.
@@ -3012,7 +3130,7 @@ same, with a clean effects chain to build on.
 - **A drum clip** adds a first choice — the whole clip, or just the selected lane.
 - **A scene** (Session View): **Sample → Bake scene**, choose the row, then make the
   same choices. Empty clips are skipped.
-- When you bake a scene whose [Conductor](#14-the-conductor) clip has responding
+- When you bake a scene whose [Conductor](#20-the-conductor) clip has responding
   tracks, a last **Apply Conductor?** step can fold its transposition into those
   clips. Baking a single clip never applies the Conductor. An **Audio** clip's slices
   never move: when the Conductor holds one shift wherever the clip hears it, the
@@ -3036,7 +3154,7 @@ same, with a clean effects chain to build on.
 - **Scene bakes and Export to Live** stay instant and leave a Post MIDI effect
   module out; they tell you which tracks.
 
-## 18.2 Live Merge
+## 22.2 Live Merge
 
 **Live Merge** records the actual output of your tracks — arps, delays, knob rides
 and all — into plain clips.
@@ -3058,7 +3176,7 @@ and all — into plain clips.
   keeps its clip. With an Audio track in the merge, **Record** stops at the end of
   the bar, so the recording loops.
 
-## 18.3 Export to Live
+## 22.3 Export to Live
 
 **Project Settings → Export to Ableton** (transport stopped) writes an `.ablbundle`
 that desktop Live opens directly. The screen shows where it was saved: download it
@@ -3095,10 +3213,10 @@ with the tempo and root note (not the scale — the set opens in Major).
 - **Notes are baked** — each clip exports what you hear: effects rendered, delay
   tails wrapped, drum polymeters flattened, and randomized clips written as several
   loops of variation.
-- **A remix exports as you hear it**: an Audio or Slicer clip with [REMIX](#84-remix) on is
+- **A remix exports as you hear it**: an Audio or Slicer clip with [REMIX](#131-the-remix-bank) on is
   rendered with it (Live has no remix of its own), and a Slicer's steps play their own
   Pitch, Length, Start and Dir.
-- An **Apply Conductor?** step works as it does for [bake](#181-bake), and never
+- An **Apply Conductor?** step works as it does for [bake](#221-bake), and never
   changes your live set.
 - **Automation comes too** — see below.
 
@@ -3137,7 +3255,7 @@ drops straight back to its start. Points left outside a lane's loop
   automation loops with the clip, so the export keeps only the stretch inside the
   clip and repeats it.
 
-## 18.4 Import a MIDI file
+## 22.4 Import a MIDI file
 
 > 🎬 **Video:** [Tutorial 7.2: MIDI import and export](https://youtu.be/DOw_4zAO6cI?t=61) (from 1:01)
 
@@ -3216,8 +3334,7 @@ melodic track can each come back to their own folder.
 - The transport keeps running while you browse; the step buttons are blocked
   (lit dim).
 
-
-## 18.5 Export a clip as a MIDI file
+## 22.5 Export a clip as a MIDI file
 
 > 🎬 **Video:** [Tutorial 7.2: MIDI import and export](https://youtu.be/DOw_4zAO6cI?t=61) (from 1:01)
 
@@ -3232,145 +3349,117 @@ The file goes to the **MIDI** folder inside dAVEBOx SA's own folder
 (`daveboxSA/MIDI`), named after the project, track and clip (`mngk 3B.mid`); a
 second export of the same clip adds ` 2` rather than overwriting. Download it from
 the **Files** page of the Schwung web manager (the **dAVEBOx MIDI** link at the
-top), or bring it back with [Import MIDI](#184-import-a-midi-file). Stop the
+top), or bring it back with [Import MIDI](#224-import-a-midi-file). Stop the
 transport first — like the Ableton export, it won't run while playing.
-## 18.6 Recording audio
-
-**Resample a scene** to record what it sounds like into a sample, cut to loop exactly:
-
-- With the transport stopped (and Clock Follow off), **Sample → Resample scene**, then
-  choose the row.
-- **Length** starts where all the scene's clips line up again (past 32 bars, the
-  longest clip); turn the jog to change it. **Warm-up** plays the scene once
-  first, so delay and reverb tails carry into the start of the loop. **Tail**
-  records extra bars after the clips stop, for the ring-out — the file is then
-  longer than the loop. Both start off.
-- Press the jog on **Start**: the scene plays from the top with no count-in and the
-  metronome silent, and **RESAMPLING** counts the bars. **RESAMPLED** says
-  what it recorded when it is done. As with a [MIDI FX print](#181-bake), **Back**
-  cancels and the other buttons wait until it's done.
-- It records the whole mix, after Master FX. Files go to the sample library under
-  **Samples → dAVEBOx → Resample**, named after the project, scene, length and tempo
-  (`mngk Scene C 4bar 120bpm.wav`), where Move's own sampler can use them. They
-  are not part of the project.
-
-**Resample a clip** the same way: **Sample → Resample clip**. Only that track plays
-while it records. Its options add **Source**: **Wet** is the track as you hear it,
-with its send effects and Master FX; **Dry** is just the track's own instrument and
-effects at its level — for a Move instrument, its Move track through its FX 1–4.
-Warm-up starts on for a Move instrument, because it sounds a few milliseconds
-late. The file is named like an exported clip (`mngk 3B 2bar 120bpm.wav`).
-A muted track, or one that plays MIDI out, has nothing to record.
-
-Audio and Slicer tracks resample like any other. An Audio clip plays its sample with no
-steps, so its length is the clip's own; a Slicer clip's is its sequence's. An Audio
-clip's options add **In place**: turned on, the recording goes into the project instead
-of the library and replaces the clip. The clip starts over with the recording as its
-sample, at default settings. (A Slicer has no In place: its sample is the whole
-track's.) It's
-recorded before the track's effects and volume, which go on playing on it, so
-they apply once; Source shows `-`.
-
-**Flatten a track** to turn it into audio: open its **TRACK CONFIG** menu, turn to
-**Flatten track** and click. With the transport stopped (and Clock Follow off), every clip with notes is
-recorded on its own, one after another, and the track becomes an
-[Audio track](#8-audio-tracks) with each clip playing its recording (a Slicer becomes an
-Audio track the same way). The
-notes and the instrument go. Its options come first; press the jog on **Flatten** to
-start:
-
-- **Effects**: **Pre** (the default) records the instrument before the track's effects,
-  which stay on the Audio track and keep sounding — you can still change them. **Post**
-  records through the effects, then bypasses them so they don't apply twice. They stay
-  in place, so you can switch them back on. Either way the recording leaves out the
-  track's volume and pan (the Audio track still has them) and its sends. A Move
-  instrument's effects are the ones on its FX 1–4: they're copied onto the Audio
-  track, with the Move track's volume, pan and sends, and the originals stay where
-  they were. The same goes for a track that plays another track's instrument.
-- **Warm-up** plays each clip once before recording it, so delay and reverb tails carry
-  into the start of the loop. It starts on for a Move instrument (which sounds a few
-  milliseconds late), off otherwise.
-- **Back** changes nothing; **Back** while it records cancels the whole flatten.
-
-Drum tracks flatten too, and so does a MIDI track that plays another track's
-instrument (it records that instrument with this track's notes). An **Audio track**
-flattens in place: every clip with a sample is recorded and starts over with its
-recording, at default settings, as [In place](#186-recording-audio) does for one clip. A track that plays
-MIDI out, has no instrument, is muted or has no notes (or samples) has nothing to flatten.
-
-**Undo** right after a flatten brings the track back as it was: its notes (or drum
-clips), its type, its instrument with its own sound, its routing, and its effects and
-levels as they were (switched back on if **Post** bypassed them). **Shift + Undo** flattens it again. Choosing **Audio** in
-**Instmt/Dest** comes back the same way. As with any Undo, only the last change can be
-undone.
-
-**Faster than real time.** A Flatten, or a Resample clip **In place**, of a track that
-plays a Schwung instrument, or of an Audio track, records without playing: the clips aren't heard, and each
-one takes a fraction of its length — Dry takes too, and the track's MIDI effects and
-the automation the take can hear come along. It records in real time instead, as
-before, when the sound can't be copied: a modulation source (an LFO) on it, an effect
-that listens to MIDI, voices sent to buses, the line input, a knob mapped to a
-controller the clip sends, the track's own macro lane, automation of a MIDI effect,
-or a MIDI effect that plays into the sequencer. Move instruments and Wet takes always
-record in real time. When it does, the card says why (*Real time: Modulation*), so you
-know what to change to make it fast.
-
-After any resample, the clips you had armed are armed again, so Play carries on
-from where you were.
-
-For anything else, use Schwung's two samplers — both work inside dAVEBOx:
-
-- **Quantized Sampler** — hold **Shift**, touch the **Volume** knob and press
-  **Sample**.
-- **Skipback** — hold **Shift**, touch the **Volume** knob and press **Capture**.
-  Its length is set under **Host Settings... → Audio → Skipback Len**.
 
 ---
 
-# 19. Settings & Projects
+# 23. Routing & Sync
+
+## 23.1 Instruments & routing
+
+A track's destination is its **Instmt/Dest** row, at the top of
+[TRACK CONFIG](#154-choosing-an-instrument): one of **Move 1–4**, a **Schwung
+generator**, a **MIDI channel** (out USB-A), another **track**'s instrument, or
+**None** (a Schwung track with nothing loaded).
+
+- A new project starts with tracks 1–4 on Move 1–4 and tracks 5–8 on Schwung.
+- Several tracks can go to MIDI channels at once for a multitimbral rig.
+- Tracks that play Move instruments need **Link** enabled in Move's System
+  Settings; dAVEBOx warns you (**LINK AUDIO ROUTE**) if it's off.
+
+## 23.2 External MIDI in and out
+
+A USB-A controller plays the **active track**, its notes moved onto that track's
+channel; filter by channel with **MIDI In** in Project Settings. On a drum track an
+incoming note plays the lane set to that note. What shapes live input depends on
+where the track goes:
+
+| Destination | Live external input |
+|---|---|
+| Schwung | Through the sequencer effects |
+| MIDI channel | Through the sequencer effects, out USB-A |
+| Another track | Through the sequencer effects, into that track's instrument |
+| Move | Straight to Move, without the sequencer effects (they would loop back). With a MIDI FX module loaded, notes go through the module first |
+
+On a track set to a **MIDI channel**, everything goes out USB-A — the sequence, live
+pads, effects and automation. Transport Stop sends note-offs; **Delete + Play**
+while stopped sends a MIDI panic on every channel.
+
+**Bluetooth MIDI.** On a Move with a Bluetooth radio, a paired Bluetooth LE MIDI
+device works like one plugged into USB-A: it plays the active track, and it receives
+everything sent out USB-A. **Bluetooth** in Project Settings turns the radio on or
+off. SysEx is not carried.
+
+## 23.3 Clock Follow
+
+dAVEBOx runs its own clock by default. Set **Clock Follow → Move** in
+[Project Settings](#241-project-settings) to lock to Move's transport instead:
+dAVEBOx sequences while Move supplies clock, transport and voices.
+
+- **Tempo comes from Move.** BPM shows `Move` and can't be changed; Tap Tempo says
+  *Tempo follows Move*.
+- **Play drives Move.** dAVEBOx's Play starts and stops Move's transport, and both
+  launch from the same downbeat.
+- **Recording** starts Move and counts one bar on its clock before it records.
+- If Move's clock stops, so does dAVEBOx — though held arpeggios and synced delay
+  keep running at Move's tempo. If Move doesn't start, dAVEBOx plays on at its last
+  tempo and shows *CLOCK FOLLOW / Move didn't start*.
+- Keep Move's own sequencer empty on the tracks dAVEBOx feeds.
+
+Leave Clock Follow **Off** for the normal internal clock.
+
+## 23.4 Clock Out
+
+**Clock Out → On** sends MIDI clock and start/stop out the USB-A port, so external
+gear locks to dAVEBOx. It applies while free-running; with Clock Follow on Move it
+is suppressed and shows `—`.
+
+---
+
+# 24. Settings & Projects
 
 **Project Settings** (**Shift + Step 2**) holds the settings saved with each
 **project**. Anything belonging to one track is in that track's TRACK CONFIG menu —
-see [Track settings](#194-track-settings) below.
+see [Track settings](#244-track-settings) below.
 
-
-## 19.1 Project settings
+## 24.1 Project settings
 
 | Setting | What it does | Values | Default |
 |---|---|---|---|
 | BPM | Tempo (reads **Move** while Clock Follow is on) | 40–250 | — |
 | Metro | When the metronome sounds — never, during the count-in, while playing, or always | Off, Cnt-In, Play, Always | Cnt-In |
 | Metro Vol | Metronome level | 0–150 % | 100 % |
-| Clock Follow | Lock to Move's transport and tempo — see [§17.3](#173-clock-follow) | Off, Move | Off |
-| Clock Out | Send MIDI clock out USB-A to drive external gear — see [§17.4](#174-clock-out) (shows — while Clock Follow is on) | Off, On | Off |
+| Clock Follow | Lock to Move's transport and tempo — see [§23.3](#233-clock-follow) | Off, Move | Off |
+| Clock Out | Send MIDI clock out USB-A to drive external gear — see [§23.4](#234-clock-out) (shows — while Clock Follow is on) | Off, On | Off |
 | Groove | The project's timing feel — see [The groove](#the-groove) | Off, Browse..., Swing 1/16, Swing 1/8, the loaded groove | Swing 1/16 |
 | Groove Amt | How much of the groove is applied. For the two swings it reads as swing depth: 50 % is straight, 66 % is triplet swing | 0–100 % (50–75 % for a swing) | 0 % (reads 50 % on a swing — straight) |
 | Grv Timing | Shown for a loaded groove: how much of its timing shifts are applied | 0–100 % | the groove's own |
 | Grv Velocity | Shown for a loaded groove: how far notes are pulled towards its velocities | 0–100 % | the groove's own |
 | Grv Random | Shown for a loaded groove: how much each note wanders from its place, differently every time | 0–100 % | the groove's own |
-| Key | The project's root note — see [§19.2](#192-key--scale) | C…B | random |
-| Scale | The scale melodic tracks snap to — see [§19.2](#192-key--scale) | (below) | random |
+| Key | The project's root note — see [§24.2](#242-key--scale) | C…B | random |
+| Scale | The scale melodic tracks snap to — see [§24.2](#242-key--scale) | (below) | random |
 | Scale Aware | Whether scale-aware params move by scale degree (On) or semitone (Off) | On, Off | On |
-| Launch | When a launched clip or scene actually starts — at once (Now) or on the next boundary. At 1-bar it starts from its beginning; otherwise in step with the song ([§13.1](#131-launching-clips)) | Now, 1/16, 1/8, 1/4, 1/2, 1-bar | Now |
+| Launch | When a launched clip or scene actually starts — at once (Now) or on the next boundary. At 1-bar it starts from its beginning; otherwise in step with the song ([§17.1](#171-launching-clips)) | Now, 1/16, 1/8, 1/4, 1/2, 1-bar | Now |
 | Beat Marks | Dim markers on the step buttons at 1, 5, 9, 13 | On, Off | On |
-| Card Hold | How long a knob's page stays on screen after you let go of the knob (the mixer page in Session View) — see [§3.6](#36-parameter-banks) | Off, 0.5 s, 1 s, 2 s | Off |
+| Card Hold | How long a knob's page stays on screen after you let go of the knob (the mixer page in Session View) — see [§4](#4-banks-and-the-bank-map) | Off, 0.5 s, 1 s, 2 s | Off |
 | MIDI In | Channel filter for external input — All, or one channel | All, 1–16 | All |
-| Monitor | When you hear the Move's input — see [Recording into an Audio clip](#85-recording-into-an-audio-clip) | Off, Rec, On | Rec |
+| Monitor | When you hear the Move's input — see [Recording into an Audio clip](#141-recording-into-an-audio-clip) | Off, Rec, On | Rec |
 | Input | Both input channels, or one on both sides | Stereo, Mono L, Mono R | Stereo |
 | Input Gain | The input's level, for recording and what you hear | −24 to +24 dB | 0 dB |
-| Projects... | The project picker — see [Projects](#195-projects) | action | — |
-| Save as Template... | Save this project, under a name you give it, as a starting point for new ones — see [Projects](#195-projects) | action | — |
+| Projects... | The project picker — see [Projects](#245-projects) | action | — |
+| Save as Template... | Save this project, under a name you give it, as a starting point for new ones — see [Projects](#245-projects) | action | — |
 | Templates... | Shown while you have templates: rename, replace or delete them | action | — |
-| Save state / Load state | Save or restore a named snapshot — see [§19.3](#193-snapshots) | action | — |
+| Save state / Load state | Save or restore a named snapshot — see [§24.3](#243-snapshots) | action | — |
 | Clear Sess | Clear the whole project back to empty (asks first) | action | — |
-| Export to Ableton | Write a Live bundle of the project — see [§18.3](#183-export-to-live) | action | — |
-| Purge samples | Remove the project's samples no clip and no saved state uses (asks first) — see [§8](#8-audio-tracks) | action | — |
-| Suspend session | Park dAVEBOx and go back to Move (asks first) — see [§3.9](#39-saving-suspending--exiting) | action | — |
+| Export to Ableton | Write a Live bundle of the project — see [§22.3](#223-export-to-live) | action | — |
+| Purge samples | Remove the project's samples no clip and no saved state uses (asks first) — see [§11](#11-audio-tracks) | action | — |
+| Suspend session | Park dAVEBOx and go back to Move (asks first) — see [§3.7](#37-saving-suspending--exiting) | action | — |
 | Quit | Save and hand the device back to official Schwung (asks first) | action | — |
-| Host Settings... | dAVEBOx's copy of Schwung's settings (display, audio and more), over the top of dAVEBOx — see [§19.6](#196-davebox-and-official-schwung) | action | — |
+| Host Settings... | dAVEBOx's copy of Schwung's settings (display, audio and more), over the top of dAVEBOx — see [§24.6](#246-davebox-and-official-schwung) | action | — |
 | Move Settings... | Move's own settings menu (Link, MIDI sync, inputs and more), dAVEBOx's copy — see below | action | — |
-| Bluetooth | The Bluetooth radio, for [Bluetooth MIDI](#172-external-midi-in-and-out) devices (shown only when the Move has one) | On, Off | — |
-| Dictation | Download, update or remove the add-on that lets you speak a name on the keyboard — see [§3.7](#37-menus--project-settings) | action (shows its state: Get, %, Installed…) | — |
+| Bluetooth | The Bluetooth radio, for [Bluetooth MIDI](#232-external-midi-in-and-out) devices (shown only when the Move has one) | On, Off | — |
+| Dictation | Download, update or remove the add-on that lets you speak a name on the keyboard — see [§3.6](#36-menus-lists-and-typing) | action (shows its state: Get, %, Installed…) | — |
 
 #### The groove
 
@@ -3404,7 +3493,7 @@ The groove you load is saved inside the project, so the project keeps its feel
 even if the file is later removed.
 
 Each track follows the project's amounts until you give it its own. In a
-track's [settings](#194-track-settings), **Grv Amt** reads Global; turn it and
+track's [settings](#244-track-settings), **Grv Amt** reads Global; turn it and
 that track takes its own amount instead — more than the rest, less, or 0 % to
 play straight. With a loaded groove, **Grv Timing**, **Grv Velocity** and
 **Grv Random** work the same way, so a hi-hat can wander while the kick stays
@@ -3439,7 +3528,7 @@ groove moves it from there.
 Minor, Melodic Minor, Pentatonic Major, Pentatonic Minor, Blues, Whole Tone,
 Diminished.
 
-## 19.2 Key & Scale
+## 24.2 Key & Scale
 
 Editing **Key** or **Scale** moves your melodic clips with it:
 
@@ -3455,9 +3544,9 @@ Editing **Key** or **Scale** moves your melodic clips with it:
 - Instruments and MIDI effects that can follow the host's key (a **Host**
   setting) follow dAVEBOx's key, scale and tempo, live — the preview too.
 
-## 19.3 Snapshots
+## 24.3 Snapshots
 
-dAVEBOx saves as you go ([Saving](#39-saving-suspending--exiting)). For named
+dAVEBOx saves as you go ([Saving](#37-saving-suspending--exiting)). For named
 backups, **Save state** keeps up to **16 snapshots** per project:
 
 - Each is stamped with the date and time. Saving asks first; when all 16 are used,
@@ -3472,13 +3561,13 @@ backups, **Save state** keeps up to **16 snapshots** per project:
 | Kind | Holds | Kept | Recall |
 |---|---|---|---|
 | **Save state** (above) | The whole project | With the project, 16 | Project Settings → Load state |
-| [**Sound snapshots**](#167-sound-snapshots--snapmorph) | A track's sound (Track View) or every track's (Session View) | With the project, 16 | Hold **Capture**, tap a step |
-| [**Mute snapshots**](#134-mute-snapshots) | Mute and solo states | With the project, 16 | Session View: **Mute + step** |
-| [**Performance presets**](#154-presets) | A combination of Performance mods | With the project (1–8 are factory) | Performance Mode: a step |
-| [**Chain presets**](#165-presets-lfos-and-buses) | A track's whole chain — instrument, effects, macros | On the device, for every project | TRACK CONFIG → Presets |
-| [**Module presets**](#164-editing-a-module) | One instrument's or effect's settings | On the device, for every project | The module's My Presets page |
+| [**Sound snapshots**](#192-sound-snapshots--snapmorph) | A track's sound (Track View) or every track's (Session View) | With the project, 16 | Hold **Capture**, tap a step |
+| [**Mute snapshots**](#183-mute-snapshots) | Mute and solo states | With the project, 16 | Session View: **Mute + step** |
+| [**Performance presets**](#214-presets) | A combination of Performance mods | With the project (1–8 are factory) | Performance Mode: a step |
+| [**Chain presets**](#156-presets-lfos-and-buses) | A track's whole chain — instrument, effects, macros | On the device, for every project | TRACK CONFIG → Presets |
+| [**Module presets**](#155-editing-a-module) | One instrument's or effect's settings | On the device, for every project | The module's My Presets page |
 
-## 19.4 Track settings
+## 24.4 Track settings
 
 These sit **in the track's TRACK CONFIG menu**, in short groups below the sound
 rows — not in Project Settings. Click a row to give it the jog, turn to change the value, then
@@ -3487,22 +3576,22 @@ are hidden, so the list is shorter on a MIDI track or a Conductor.
 
 | Setting | Values | Notes |
 |---|---|---|
-| Mode | Melodic, Drums | [Track type](#41-track-type). Scrolling previews; the click commits |
+| Mode | Melodic, Drums | [Track type](#51-track-type). Scrolling previews; the click commits |
 | Transpose | −24…+24 st | Shifts everything the track plays |
 | VelIn | Live, 1–127 | Fixed value overrides input velocity |
 | AftTch | Off, Poly, Chan | Pad-pressure aftertouch (melodic; a Move track offers Off and Poly) |
-| Looper | On, Off | Feeds [Performance Mode](#15-performance-mode) |
+| Looper | On, Off | Feeds [Performance Mode](#21-performance-mode) |
 | Mute Mode | MIDI, Audio | What muting the track does. **MIDI** stops its notes. **Audio** lets the notes play on and mutes the track's sound at its mixer channel, so held notes and tails are still there when you unmute. A solo elsewhere mutes it the same way. Not on a MIDI track or the Conductor |
 | Grv Amt | Global, 0–100 % in 5 % steps | How much of the project's [groove](#the-groove) this track takes. Global follows Project Settings; 0 % plays straight |
 | Grv Timing, Grv Velocity, Grv Random | Global, 0–100 % in 5 % steps | Shown for a loaded groove: this track's own setting for each, or Global to follow Project Settings |
-| Export to MIDI | (click) | Saves the clip you are on, as it plays, as a MIDI file — see [Export a clip as a MIDI file](#185-export-a-clip-as-a-midi-file) |
-| Flatten track | (click) | Records every clip and turns the track into an Audio track, effects Pre or Post — on an Audio track, each clip in place — see [Recording audio](#186-recording-audio). Not on the Conductor |
+| Export to MIDI | (click) | Saves the clip you are on, as it plays, as a MIDI file — see [Export a clip as a MIDI file](#225-export-a-clip-as-a-midi-file) |
+| Flatten track | (click) | Records every clip and turns the track into an Audio track, effects Pre or Post — on an Audio track, each clip in place — see [Flattening a track](#143-flattening-a-track). Not on the Conductor |
 | Parallel | On, Off | Schwung tracks with an instrument: whether it may render on another core — set per instrument, device-wide |
 
 Where the track's notes go is the **Instmt/Dest** row near the top of the same menu, just under **MIDI FX** —
-see [Choosing an instrument](#163-choosing-an-instrument).
+see [Choosing an instrument](#154-choosing-an-instrument).
 
-## 19.5 Projects
+## 24.5 Projects
 
 > 🎬 **Video:** [Tutorial 7.1: Projects and Save state](https://youtu.be/DOw_4zAO6cI)
 
@@ -3613,7 +3702,7 @@ that slot empty and the screen names what's missing (**MODULES MISSING**).
   settings and sound; the project settings; mute/solo state and all snapshots;
   Performance Mode presets 9–16; and Note Repeat masks and rates.
 
-## 19.6 dAVEBOx and official Schwung
+## 24.6 dAVEBOx and official Schwung
 
 dAVEBOx runs on a fork of the Schwung host, started from and depending on your
 official Schwung install; only one of them runs at a time. What you install or make
@@ -3625,7 +3714,7 @@ is shared; each keeps its own settings.
 | **Module presets** and **chain presets** | **Shared.** Save one in either and it's there in both. |
 | **The instrument picker's lists** | **Shared.** One set of lists. |
 | **Samples and files** | **Shared.** The Files page shows the same folders from either. |
-| **Move sets and dAVEBOx projects** | **Separate.** See [Projects](#195-projects). |
+| **Move sets and dAVEBOx projects** | **Separate.** See [Projects](#245-projects). |
 | **Schwung's settings** | **Separate.** **Host Settings...** here and Global Settings in official Schwung are two copies; a change in one doesn't reach the other. |
 | **Move's settings** | **Separate.** **Move Settings...** here changes dAVEBOx's copy; Move on its own keeps yours. The first dAVEBOx session starts from a copy of your Move settings. |
 | **The web manager** (`move.local:7700`) | **dAVEBOx's own** during a session. Its Help is this manual and its Config is dAVEBOx's settings. Install modules from official Schwung's. |
@@ -3636,7 +3725,7 @@ resetting official Schwung removes them too.
 
 ---
 
-# 20. The Browser Editor
+# 25. The Browser Editor
 
 Open `http://move.local:7700` in a browser on the same network — the page is the
 dAVEBOx editor.
@@ -3709,7 +3798,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 
 - **Mixer:** all 8 tracks as strips — what each plays (the instrument's name,
   "Move 2", "MIDI"), a level fader (unity at **1.00x**; double-click resets), pan
-  with a sticky centre, Send A/B, the [channel strip](#the-channel-strip)'s **EQ**
+  with a sticky centre, Send A/B, the [channel strip](#162-the-channel-strip)'s **EQ**
   as a small picture of its curve (click it to open the EQ: drag the **L**, **M** and
   **H** points up and down for gain, and **M** sideways for its frequency; Shift for
   fine moves, double-click a point to flatten it, **Flat** for all three) and
@@ -3757,7 +3846,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 
 ---
 
-# 21. Quick Reference
+# 26. Quick Reference
 
 ### Track View
 
@@ -3885,7 +3974,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 
 - A ring is lit when its knob does something on this page (knobs 1–4 white, 5–8
   amber; brighter = higher value), and blinks when that parameter is
-  [automated](#12-automation) in this clip.
+  [automated](#10-automation) in this clip.
 - Holding Mute or Delete: red = automation on, white = off.
 - In Session View each ring is its track's color — dark when muted, flashing when
   soloed.
