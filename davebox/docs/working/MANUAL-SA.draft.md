@@ -1380,6 +1380,8 @@ To lock a step, hold the step and turn a knob. The step takes a lock, also calle
 
 To place a point instead, tap [Shift] while you hold the step, before or after turning. The step gets a single point, which the lane glides into and on from. Tap [Shift] again for PUNCH. Every hold starts as a punch. Holding [Shift] while you turn is still fine adjustment.
 
+<img src="img/punch-point.svg" alt="The same lane with something set on step 4. A punch jumps to its value for the step and jumps back; a point is a value the lane glides into and on from.">
+
 While you hold a step, every automated parameter on screen shows the value it plays at that step, until you let go.
 
 To remove the automation on a step, on every lane, hold [Delete] and press the step. Deleting a punch gives the lane back as it was before it.
