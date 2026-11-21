@@ -203,9 +203,14 @@ static void pfx_set(seq8_instance_t *inst, seq8_track_t *tr,
 #undef PFX_SET_BOTH
 
     if (!strcmp(key, "pfx_reset")) {
+        /* A reset gives the live chain and the stored clip the SAME values —
+         * a new clip's. pfx_reset() alone left the live chain at its own
+         * neutral (DELAY Level 0, feedback random mode 0) while the clip got
+         * 127 / Walk, so what played changed again at the next clip reload. */
         arp_silence(inst, tr);
         pfx_reset(fx);
         clip_pfx_params_init(cp);
+        pfx_apply_params(fx, cp);
         return;
     }
     if (!strcmp(key, "pfx_noteFx_reset")) {
@@ -228,7 +233,7 @@ static void pfx_set(seq8_instance_t *inst, seq8_track_t *tr,
     }
     if (!strcmp(key, "pfx_delay_reset")) {
         fx->delay_time_idx  = DEFAULT_DELAY_TIME_IDX; cp->delay_time_idx  = DEFAULT_DELAY_TIME_IDX;
-        fx->delay_level     = 0; cp->delay_level     = 0;
+        fx->delay_level     = 127; cp->delay_level   = 127;   /* a new clip's */
         fx->repeat_times    = 0; cp->repeat_times    = 0;
         fx->fb_velocity     = 0; cp->fb_velocity     = 0;
         fx->fb_note         = 0; cp->fb_note         = 0;
@@ -236,18 +241,25 @@ static void pfx_set(seq8_instance_t *inst, seq8_track_t *tr,
         fx->fb_note_random_mode = 2; cp->fb_note_random_mode = 2;
         fx->fb_gate_time    = 0; cp->fb_gate_time    = 0;
         fx->fb_clock        = 0; cp->fb_clock        = 0;
+        fx->delay_retrig    = 1; cp->delay_retrig    = 1;
         return;
     }
     if (!strcmp(key, "pfx_seq_arp_reset")) {
-        cp->seq_arp_style     = 0;
-        cp->seq_arp_rate      = ARP_RATE_DEFAULT;
-        cp->seq_arp_octaves   = 1;
-        cp->seq_arp_gate      = 100;
-        cp->seq_arp_steps_mode = 0;
-        cp->seq_arp_retrigger = 1;
-        cp->seq_arp_sync      = 1;
-        int _i;
-        for (_i = 0; _i < 8; _i++) cp->seq_arp_step_vel[_i] = 255;   /* Thru */
+        /* The stored clip takes a new clip's SEQ ARP values — the same ones
+         * arp_init_defaults() gives the live engine below. It used to store
+         * Oct 1 / Steps Off and keep the step intervals and loop length. */
+        clip_pfx_params_t d;
+        clip_pfx_params_init(&d);
+        cp->seq_arp_style      = d.seq_arp_style;
+        cp->seq_arp_rate       = d.seq_arp_rate;
+        cp->seq_arp_octaves    = d.seq_arp_octaves;
+        cp->seq_arp_gate       = d.seq_arp_gate;
+        cp->seq_arp_steps_mode = d.seq_arp_steps_mode;
+        cp->seq_arp_retrigger  = d.seq_arp_retrigger;
+        cp->seq_arp_sync       = d.seq_arp_sync;
+        memcpy(cp->seq_arp_step_vel, d.seq_arp_step_vel, sizeof(cp->seq_arp_step_vel));
+        memcpy(cp->seq_arp_step_int, d.seq_arp_step_int, sizeof(cp->seq_arp_step_int));
+        cp->seq_arp_step_loop_len = d.seq_arp_step_loop_len;
         arp_silence(inst, tr);
         arp_init_defaults(&fx->arp);
         fx->seq_arp_sync = 1;
@@ -262,6 +274,7 @@ static void pfx_set(seq8_instance_t *inst, seq8_track_t *tr,
             inst->printing = 0;
             pfx_reset(fx);
             clip_pfx_params_init(cp);
+            pfx_apply_params(fx, cp);
             seq8_ilog(inst, "SEQ8 print: done, chain reset to neutral");
         }
         return;

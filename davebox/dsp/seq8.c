@@ -5829,12 +5829,14 @@ static void drum_pfx_set(seq8_instance_t *inst, seq8_track_t *tr,
         p->note_length_mode  = 0;
     }
     if (!strcmp(key, "pfx_reset") || !strcmp(key, "pfx_delay_reset")) {
+        /* A new lane's values (drum_pfx_params_init), as the melodic reset. */
         p->delay_time_idx = DEFAULT_DRUM_DELAY_TIME_IDX;
-        p->delay_level    = 0;
+        p->delay_level    = 127;
         p->repeat_times   = 0;
         p->fb_velocity    = 0;
         p->fb_gate_time   = 0;
         p->fb_clock       = 0;
+        p->delay_retrig   = 1;
     }
     /* Accept canonical names and melodic key aliases from applyBankParam dispatch */
     if (!strcmp(key, "gate_time")     || !strcmp(key, "noteFX_gate"))

@@ -1766,7 +1766,8 @@ int main(void) {
             hx_set_param(h, "t7_pfx_noteFx_reset", "1");
             HX_ASSERT(c13->pfx_params.octave_shift == 0, "pfx_noteFx_reset: octave_shift back to 0 (catch-all + undo)");
             hx_set_param(h, "t7_pfx_delay_reset", "1");
-            HX_ASSERT(c13->pfx_params.delay_level == 0, "pfx_delay_reset: delay_level back to 0 (catch-all + undo)");
+            /* A reset gives a new clip's Level (127), live and stored alike. */
+            HX_ASSERT(c13->pfx_params.delay_level == 127, "pfx_delay_reset: delay_level back to a new clip's 127 (catch-all + undo)");
         }
     }
 
