@@ -431,9 +431,9 @@ static int drum_lane_extras_nondefault(const drum_lane_t *dl, int l) {
         /* Trig conditions: written below only for a lane that is written at
          * all, and the loader reads them only under that lane's `_g`. A lane
          * whose notes were cleared but whose conditions remain must count. */
-        || steps_any_nonzero(dlc->step_iter, dlc->length)
-        || steps_any_nonzero(dlc->step_random, dlc->length)
-        || steps_any_nonzero(dlc->step_ratchet, dlc->length);
+        || steps_any_nonzero(dlc->step_iter, SEQ_STEPS)
+        || steps_any_nonzero(dlc->step_random, SEQ_STEPS)
+        || steps_any_nonzero(dlc->step_ratchet, SEQ_STEPS);   /* all 256, as melodic */
 }
 
 /* Read up to `n` colon-separated non-negative ints ("64:0:24", or an
@@ -776,11 +776,11 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
                 {
                     char k[28];
                     snprintf(k, sizeof(k), "t%dc%dl%d_si", t, c, l);
-                    write_step_hex_arr(fp, k, dlc->step_iter,    dlc->length);
+                    write_step_hex_arr(fp, k, dlc->step_iter,    SEQ_STEPS);   /* all 256, as melodic; trailing zeros trimmed */
                     snprintf(k, sizeof(k), "t%dc%dl%d_sr", t, c, l);
-                    write_step_hex_arr(fp, k, dlc->step_random,  dlc->length);
+                    write_step_hex_arr(fp, k, dlc->step_random,  SEQ_STEPS);
                     snprintf(k, sizeof(k), "t%dc%dl%d_sx", t, c, l);
-                    write_step_hex_arr(fp, k, dlc->step_ratchet, dlc->length);
+                    write_step_hex_arr(fp, k, dlc->step_ratchet, SEQ_STEPS);
                 }
                 /* Per-lane drum pfx params (sparse — only non-default).
                  * ⚠ Empty lanes: "default" differs by lane kind for delay_level. A
@@ -1755,12 +1755,12 @@ static void seq8_load_state(seq8_instance_t *inst) {
                 {
                     char k[28];
                     snprintf(k, sizeof(k), "t%dc%dl%d_si", t, c, l);
-                    parse_step_hex_arr(buf, k, dlc->step_iter,    dlc->length, 255);
-                    sanitize_step_iter_arr(dlc->step_iter, dlc->length);
+                    parse_step_hex_arr(buf, k, dlc->step_iter,    SEQ_STEPS, 255);   /* all 256: conditions past the lane length are kept */
+                    sanitize_step_iter_arr(dlc->step_iter, SEQ_STEPS);
                     snprintf(k, sizeof(k), "t%dc%dl%d_sr", t, c, l);
-                    parse_step_hex_arr(buf, k, dlc->step_random,  dlc->length, 100);
+                    parse_step_hex_arr(buf, k, dlc->step_random,  SEQ_STEPS, 100);
                     snprintf(k, sizeof(k), "t%dc%dl%d_sx", t, c, l);
-                    parse_step_hex_arr(buf, k, dlc->step_ratchet, dlc->length, 4);
+                    parse_step_hex_arr(buf, k, dlc->step_ratchet, SEQ_STEPS, 4);
                 }
             }
         }
