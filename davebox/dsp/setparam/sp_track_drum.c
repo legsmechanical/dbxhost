@@ -213,6 +213,7 @@ static int sp_track_drum(sp_ctx_t *cx) {
                 dlc->step_gate[i] = (uint16_t)GATE_TICKS;
                 memset(dlc->note_tick_offset[i], 0, 8 * sizeof(int16_t));
             }
+            clip_clear_conds(dlc);   /* lane clear: conditions go too */
             dlc->active    = 0;
             dlc->note_count = 0;
             memset(dlc->notes, 0, sizeof(dlc->notes));
@@ -233,6 +234,9 @@ static int sp_track_drum(sp_ctx_t *cx) {
             int _rs;
             undo_begin_drum_clip(inst, tidx, (int)tr->active_clip);
             clip_init(dlc);
+            /* ...and the lane's effects, as the manual says a reset does. */
+            drum_pfx_params_init(&dlane->pfx_params);   /* lane reset: effects */
+            drum_pfx_apply_params(&tr->drum_lane_pfx[lane_idx], &dlane->pfx_params);
             tr->drum_current_step[lane_idx]   = 0;
             tr->drum_tick_in_step[lane_idx]   = 0;
             tr->drum_repeat_gate[lane_idx]      = 0xFF;

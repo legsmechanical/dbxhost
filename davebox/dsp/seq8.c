@@ -6976,6 +6976,13 @@ static void clip_copy_step_conds(clip_t *cl, int dst, int src) {
     CLIP_COND_ARRS(_CC)
 #undef _CC
 }
+/* Clearing a clip or lane clears its conditions with its notes (ruled
+ * 2026-11-21: a clear used to leave Iter / Random / Ratchet behind). */
+static void clip_clear_conds(clip_t *cl) {
+#define _CZ(a) memset(cl->a, 0, sizeof(cl->a));
+    CLIP_COND_ARRS(_CZ)
+#undef _CZ
+}
 /* Rewrite the window's conditions: slot ls + x takes what slot ls + src[x]
  * held before (src[x] < 0 = cleared), for x in [0, n). */
 static void clip_remap_conds(clip_t *cl, int ls, const int *src, int n) {

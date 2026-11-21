@@ -810,6 +810,7 @@ static int sp_track_clip(sp_ctx_t *cx) {
                 cl->length     = SEQ_STEPS_DEFAULT;   /* back to adaptive length */
                 cl->loop_start = 0;
             }
+            clip_clear_conds(cl);   /* clip clear: conditions go too */
             cl->active     = 0;
             cl->note_count = 0;
             memset(cl->notes, 0, sizeof(cl->notes));
@@ -858,6 +859,7 @@ static int sp_track_clip(sp_ctx_t *cx) {
                 cl->length     = SEQ_STEPS_DEFAULT;   /* back to adaptive length */
                 cl->loop_start = 0;
             }
+            clip_clear_conds(cl);   /* clip clear: conditions go too */
             cl->active     = 0;
             cl->note_count = 0;
             memset(cl->notes, 0, sizeof(cl->notes));
@@ -921,6 +923,7 @@ static int sp_track_clip(sp_ctx_t *cx) {
                     lc->step_gate[s] = (uint16_t)GATE_TICKS;
                     memset(lc->note_tick_offset[s], 0, 8 * sizeof(int16_t));
                 }
+                clip_clear_conds(lc);   /* drum clip clear: conditions go too */
                 lc->length     = SEQ_STEPS_DEFAULT;   /* back to adaptive length */
                 lc->loop_start = 0;
                 lc->active = 0;
