@@ -50,6 +50,34 @@ int main(void) {
     HX_ASSERT(I->tracks[1].transpose == 3, "control: transpose is 3");
     expect_dirty(h, "clip_copy", "1 0 1 1");
 
+    /* Stretch, step edits, the LIVE ARP latch, a repeat rate (2026-11-21:
+     * none of the first three set the flag; latch already did). */
+    HX_ASSERT(I->tracks[1].clips[I->tracks[1].active_clip].length == 8, "control: length 8 before stretch");
+    expect_dirty(h, "t1_beat_stretch", "1");
+    HX_ASSERT(I->tracks[1].clips[I->tracks[1].active_clip].length == 16, "control: stretch doubled the length");
+    expect_dirty(h, "t1_c0_step_4_toggle", "62 100");
+    expect_dirty(h, "t1_c0_step_5_add", "64 0 100");
+    expect_dirty(h, "t1_c0_step_4_clear", "1");
+    expect_dirty(h, "t1_tarp_latch", "1");
+    expect_dirty(h, "t0_drum_repeat2_rate", "2 5");
+
+    /* A refused stretch changes nothing and leaves the flag alone. */
+    I->state_dirty = 0;
+    hx_set_param(h, "t1_beat_stretch", "-1");   /* notes on steps 0 and 5 of 16 */
+    hx_set_param(h, "t1_beat_stretch", "-1");
+    {
+        int len = I->tracks[1].clips[I->tracks[1].active_clip].length;
+        if (len == 16) HX_ASSERT(I->state_dirty == 0, "a blocked stretch does not dirty the state");
+    }
+
+    /* Recording off marks the take: record-time edits defer their mark. */
+    I->tracks[1].recording = 1;
+    I->state_dirty = 0;
+    hx_set_param(h, "t1_c0_step_7_vel", "90");   /* deferred while recording */
+    hx_set_param(h, "t1_recording", "0");
+    HX_ASSERT(I->state_dirty == 1, "ending a recording marks the take dirty");
+    HX_ASSERT(I->tracks[1].recording == 0, "control: recording is off");
+
     /* ...and what the flag schedules carries the edit. */
     {
         static char buf[262144];

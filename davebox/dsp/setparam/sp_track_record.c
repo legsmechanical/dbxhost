@@ -144,6 +144,11 @@ static int sp_track_record(sp_ctx_t *cx) {
             /* Generated notes (slot_fx_note) still open keep the default length. */
             tr->fx_pending_count = 0;
             clip_clear_suppress(&tr->clips[tr->active_clip]);
+            /* A take's notes are saved state, and record-time edits defer
+             * their dirty mark (`if (!tr->recording)`), so the take is saved
+             * only if the end of recording marks it — the save forced at
+             * Record-off writes nothing for a clean state. */
+            if (tr->recording) inst->state_dirty = 1;   /* recording off: the take */
             tr->recording              = 0;
             tr->record_armed           = 0;
             tr->recording_pending_page = 0;

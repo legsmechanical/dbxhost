@@ -304,6 +304,7 @@ static int sp_track_clip(sp_ctx_t *cx) {
                 }
                 clip_migrate_to_notes(cl);
                 rui_mark(inst, tidx, cidx);
+                inst->state_dirty = 1;   /* step _toggle: a saved edit */
                 return 1;
             }
 
@@ -352,6 +353,7 @@ static int sp_track_clip(sp_ctx_t *cx) {
                     if (tr->recording) LRS_SET(tr, sidx);
                     clip_migrate_to_notes(cl);
                     rui_mark(inst, tidx, cidx);
+                    inst->state_dirty = 1;   /* step _add: a saved edit */
                 }
                 return 1;
             }
@@ -379,6 +381,7 @@ static int sp_track_clip(sp_ctx_t *cx) {
                 }
                 clip_migrate_to_notes(cl);
                 rui_mark(inst, tidx, cidx);
+                inst->state_dirty = 1;   /* step _clear: a saved edit */
                 return 1;
             }
             if (!strcmp(q, "_vel")) {

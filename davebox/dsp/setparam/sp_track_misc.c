@@ -131,6 +131,7 @@ static int sp_track_misc(sp_ctx_t *cx) {
         }
 
         clip_migrate_to_notes(cl);
+        inst->state_dirty = 1;   /* beat_stretch: a saved edit */
 
         rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);
         return 1;

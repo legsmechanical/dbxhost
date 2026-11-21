@@ -589,6 +589,7 @@ static int sp_track_drum2(sp_ctx_t *cx) {
         int rate_r = 0;
         while (*sp >= '0' && *sp <= '9') { rate_r = rate_r * 10 + (*sp++ - '0'); }
         drum_repeat2_rate_internal(tr, lane_r, rate_r);
+        inst->state_dirty = 1;   /* repeat2 rate: saved per lane */
         return 1;
     }
 
