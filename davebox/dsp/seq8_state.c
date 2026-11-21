@@ -228,8 +228,17 @@ static int json_str_value(const char *buf, const char *key, const char **out) {
     JIDX_FELL_BACK();
     snprintf(search, sizeof(search), "\"%s\":\"", key);
     p = strstr(buf, search);
+    if (p) { *out = p + strlen(search); return 1; }
+    /* A file written with a space after the colon (a template's state.json,
+     * Python's json.dump) — json_get_int already skips it; strings must too,
+     * or a template's groove table and name are silently dropped. */
+    snprintf(search, sizeof(search), "\"%s\":", key);
+    p = strstr(buf, search);
     if (!p) return 0;
-    *out = p + strlen(search);
+    p += strlen(search);
+    while (*p == ' ') p++;
+    if (*p != '"') return 0;
+    *out = p + 1;
     return 1;
 }
 
@@ -1862,13 +1871,15 @@ static void seq8_load_state(seq8_instance_t *inst) {
         inst->groove_backup_valid = 0;
         inst->groove_stage_open   = 0;
         {
-            const char *tp = strstr(buf, "\"_gtab\":\"");
-            if (tp && !groove_table_parse(g, tp + 9)) { g->base = 0; g->n_slots = 0; }
-            const char *np = strstr(buf, "\"_gn\":\"");
-            if (np && groove_has_table(g)) {
+            /* json_str_value, like every other key: a literal "_gtab":" search
+             * missed the table in a file written with a space after the colon
+             * (a template's state.json), and the groove came back Off. */
+            const char *tp = NULL, *np = NULL;
+            if (json_str_value(buf, "_gtab", &tp) && !groove_table_parse(g, tp)) { g->base = 0; g->n_slots = 0; }
+            if (json_str_value(buf, "_gn", &np) && groove_has_table(g)) {
                 char nm[sizeof(g->name)];
                 size_t k = 0;
-                for (np += 7; *np && *np != '"' && k + 1 < sizeof(nm); np++) nm[k++] = *np;
+                for (; *np && *np != '"' && k + 1 < sizeof(nm); np++) nm[k++] = *np;
                 nm[k] = '\0';
                 groove_set_name(g, nm);
             }
