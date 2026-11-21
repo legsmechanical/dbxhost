@@ -3680,7 +3680,7 @@ function drawUIBody() {
             withTouchArc({ kind: 'frac', label: 'Gate', name: 'Gate', text: _offDash(fmtGateMod(vals[4])),
               options: [0,1,2,3,4,5,6,7,8,9,10].map(fmtGateMod).map(_offDash), sel: vals[4] | 0 }),
             { kind: 'arcbip', label: 'ClkFb', name: 'Clock Feedback', text: fmtSign(vals[5]),
-              signed: Math.max(-1, Math.min(1, (vals[5] | 0) / 127)) },
+              signed: Math.max(-1, Math.min(1, (vals[5] | 0) / 100)) },
             toggleCell('Retrg', 'Retrig', vals[6], fmtBool(1), fmtBool(0)),
             { kind: 'blank', label: '' },
         ];

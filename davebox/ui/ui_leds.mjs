@@ -5,7 +5,7 @@ import { S, loopViewActive, knobAltOn } from './ui_state.mjs';
 import {
     NUM_STEPS, NUM_TRACKS, LED_OFF, LEDS_PER_FRAME,
     TRACK_COLORS, TRACK_DIM_COLORS, TRACK_PAD_BASE, SCENE_BTN_FLASH_MS,
-    PAD_MODE_DRUM, BANKS, LED_PULSE_24TH, LED_PULSE_4TH, LED_BLINK_8TH,
+    PAD_MODE_DRUM, BANKS, knobMetaFor, LED_PULSE_24TH, LED_PULSE_4TH, LED_BLINK_8TH,
     POLL_INTERVAL, TAP_TEMPO_FLASH_MS, PARAM_LED_BANKS, CONDUCT_LED_BANKS,
     SEQ8_NAV_FLAGS, MoveNoteSession, BANK_CONFIG, BANK_SOUND
 } from './ui_constants.mjs';
@@ -1414,7 +1414,7 @@ export function updateTrackLEDs() {
              * The shim-side restore edge (`shadow_restore_knob_leds`) exists for
              * the OTHER direction — handing the surface back to Move on exit —
              * and davebox owns the surface for its whole lifetime. */
-            let pm = BANKS[S.activeBank].knobs[k];
+            let pm = knobMetaFor(S.activeBank, k, S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM);
             /* LIVE ARP's Oct is Step on an Audio track, ±15 (ui_render) */
             if (S.activeBank === 5 && k === 2 && isSampledTrack(S.activeTrack)) pm = Object.assign({}, pm, { min: -15, max: 15 });
             ledVal = knobRingColor(

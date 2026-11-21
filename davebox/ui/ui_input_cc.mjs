@@ -23,7 +23,7 @@ import {
     MoveCapture, MoveSample, MoveMainKnob, MoveMainTouch, MoveMainButton,
     LED_OFF, NUM_TRACKS, NUM_CLIPS,
     TRACK_PAD_BASE, TPS_VALUES,
-    BANKS, PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_AUDIO,
+    BANKS, knobMetaFor, PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_AUDIO,
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_CONFIG, LGTO_KNOB,
     CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, arpStepsBank, LOOP_NOT_AT_1_MS, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
     TICK_HZ, STEP_ITER_LIST, JOG_HOLD_MAP_MS,
@@ -5765,7 +5765,7 @@ function _onCC_knobs(d1, d2) {
                 (knobIdx === 2 || knobIdx === 3 || knobIdx === 4 || knobIdx === 5)) {
             return;
         }
-        const pm      = BANKS[bank].knobs[knobIdx];
+        const pm      = knobMetaFor(bank, knobIdx, S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM);
         if (pm && pm.abbrev && pm.scope !== 'stub' && !S.knobLocked[knobIdx]) {
             const dir = (d2 >= 1 && d2 <= 63) ? 1 : -1;
             /* Unified response: class decides the feel. Clock Shift (+alt

@@ -649,6 +649,19 @@ export const BANKS = [
     { name: 'INPUT', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
 ];
 
+/* Drum DELAY: K5 and K6 drive delay_gate_fb and delay_clock_fb (the per-lane
+ * remap in applyBankParam), so they take THOSE params' ranges — not the
+ * melodic K5/K6 metadata (Pitch Feedback ±24, Gate 0..10), which let ClkFb
+ * reach only 0..10 and ran Gate past its end into a dead zone. */
+export const DRUM_DLY_KNOBS = {
+    4: BANKS[3].knobs[5],
+    5: p('ClkFb', 'Clock Feedback', 'delay_clock_fb', 'track', -100, 100, 0, fmtSign),
+};
+/* The knob metadata a turn on (bank, k) uses for a track. */
+export function knobMetaFor(bank, k, drum) {
+    return (drum && bank === 3 && DRUM_DLY_KNOBS[k]) || BANKS[bank].knobs[k];
+}
+
 /* Conductor bank indices. Bank 0 (CLIP) is reused as the "Conduct" bank. */
 export const BANK_RESPONDER = 8, BANK_OCTAVE = 9, BANK_WHEN = 10;
 /* The MIX bank (was SOUND + CONFIG): a bank like every other (Josh, 2026-09-24: "bottom
