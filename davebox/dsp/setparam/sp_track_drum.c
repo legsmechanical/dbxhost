@@ -264,6 +264,7 @@ static int sp_track_drum(sp_ctx_t *cx) {
                 dlc->step_vel[dst]        = dlc->step_vel[src];
                 dlc->step_gate[dst]       = dlc->step_gate[src];
                 memcpy(dlc->note_tick_offset[dst], dlc->note_tick_offset[src], 8 * sizeof(int16_t));
+                clip_copy_step_conds(dlc, dst, src);   /* conditions double too */
             }
             dlc->length = (uint16_t)(len * 2);
             {

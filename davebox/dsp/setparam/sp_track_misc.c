@@ -160,6 +160,7 @@ static int sp_track_misc(sp_ctx_t *cx) {
             cl->step_vel[dst]        = cl->step_vel[src];
             cl->step_gate[dst]       = cl->step_gate[src];
             memcpy(cl->note_tick_offset[dst], cl->note_tick_offset[src], 8 * sizeof(int16_t));
+            clip_copy_step_conds(cl, dst, src);   /* conditions double too */
         }
         /* Note link: the window's automation copied forward with its notes. */
         pa_link_copy(inst, tidx, (int)tr->active_clip, 0,

@@ -6966,6 +6966,27 @@ static void clip_migrate_to_notes(clip_t *cl) {
 /* Step arrays only: callers rebuild notes[] (clip_migrate_to_notes).   */
 /* ------------------------------------------------------------------ */
 
+/* Per-step conditions — Iter, Random, Ratchet and the Slicer step fields —
+ * travel with their step through Shift, Stretch and Double, as Crop and page
+ * copy already carried them (ruled 2026-11-21: they used to stay put). */
+#define CLIP_COND_ARRS(X) X(step_iter) X(step_random) X(step_ratchet) \
+                          X(step_xrev) X(step_xsemi) X(step_xstart) X(step_xlen)
+static void clip_copy_step_conds(clip_t *cl, int dst, int src) {
+#define _CC(a) cl->a[dst] = cl->a[src];
+    CLIP_COND_ARRS(_CC)
+#undef _CC
+}
+/* Rewrite the window's conditions: slot ls + x takes what slot ls + src[x]
+ * held before (src[x] < 0 = cleared), for x in [0, n). */
+static void clip_remap_conds(clip_t *cl, int ls, const int *src, int n) {
+    int x;
+#define _CR(a) { uint8_t t[SEQ_STEPS]; memcpy(t, cl->a, SEQ_STEPS); \
+                 for (x = 0; x < n && ls + x < SEQ_STEPS; x++) \
+                     cl->a[ls + x] = (src[x] >= 0 && ls + src[x] < SEQ_STEPS) ? t[ls + src[x]] : 0; }
+    CLIP_COND_ARRS(_CR)
+#undef _CR
+}
+
 /* Rotate the window by one step: dir 1 = later (the last step wraps to the
  * first), anything else = earlier. Updates clock_shift_pos and active. */
 static void clip_rotate_window(clip_t *cl, int dir) {
@@ -6999,6 +7020,11 @@ static void clip_rotate_window(clip_t *cl, int dir) {
     cl->step_vel[to]        = tmp_v;
     cl->step_gate[to]       = tmp_g;
     memcpy(cl->note_tick_offset[to], tmp_toff, 8 * sizeof(int16_t));
+    {   /* the conditions rotate with their steps */
+        int map[SEQ_STEPS], x;
+        for (x = 0; x < len; x++) map[x] = dir == 1 ? (x + len - 1) % len : (x + 1) % len;
+        clip_remap_conds(cl, first, map, len);
+    }
     cl->clock_shift_pos = (uint16_t)((cl->clock_shift_pos + (uint16_t)(dir == 1 ? 1 : len - 1))
                                      % (uint16_t)len);
     int i, any = 0;
@@ -7125,6 +7151,11 @@ static void clip_stretch_window(clip_t *cl, int dir) {
     int off_clamp = cl->ticks_per_step - 1;
     if (dir == 1) {
         int new_len = len * 2;
+        {   /* step i's conditions go to 2i; the new odd steps have none */
+            int map[SEQ_STEPS], x;
+            for (x = 0; x < new_len; x++) map[x] = (x & 1) ? -1 : x / 2;
+            clip_remap_conds(cl, ls, map, new_len);
+        }
         for (i = len - 1; i >= 1; i--) {
             int s = ls + i, d = ls + i * 2;
             int ng = (int)cl->step_gate[s] * 2;
@@ -7171,7 +7202,9 @@ static void clip_stretch_window(clip_t *cl, int dir) {
         uint8_t  tmp_vel[SEQ_STEPS];
         uint16_t tmp_gate[SEQ_STEPS];
         int16_t  tmp_tick_offset[SEQ_STEPS][8];
+        int      tmp_src[SEQ_STEPS];   /* which source step each slot took */
         for (i = 0; i < len; i++) {
+            tmp_src[i] = -1;
             tmp_steps[i] = 0;
             memset(tmp_notes[i], 0, 8);
             tmp_nc[i]   = 0;
@@ -7185,6 +7218,7 @@ static void clip_stretch_window(clip_t *cl, int dir) {
             if (cl->steps[s] && !tmp_steps[d]) {
                 int ng = ((int)cl->step_gate[s] + 1) / 2;
                 if (ng < 1) ng = 1;
+                tmp_src[d] = i;
                 tmp_steps[d] = 1;
                 memcpy(tmp_notes[d], cl->step_notes[s], 8);
                 tmp_nc[d]   = cl->step_note_count[s];
@@ -7201,6 +7235,7 @@ static void clip_stretch_window(clip_t *cl, int dir) {
                 int ng = ((int)cl->step_gate[s] + 1) / 2;
                 if (ng < 1) ng = 1;
                 /* tmp_steps[d] stays 0 (inactive) */
+                tmp_src[d] = i;
                 memcpy(tmp_notes[d], cl->step_notes[s], 8);
                 tmp_nc[d]   = cl->step_note_count[s];
                 tmp_vel[d]  = cl->step_vel[s];
@@ -7209,6 +7244,15 @@ static void clip_stretch_window(clip_t *cl, int dir) {
                     tmp_tick_offset[d][ni2] = (int16_t)((int)cl->note_tick_offset[s][ni2] / 2);
             }
         }
+        /* Conditions follow the step whose notes won the slot; a slot with
+         * no notes keeps the conditions of its first source that had any. */
+        for (i = 0; i < len / 2; i++) if (tmp_src[i] < 0) {
+            int a = 2 * i, b = 2 * i + 1, s0 = ls + a, s1 = ls + b;
+            int ca = cl->step_iter[s0] | cl->step_random[s0] | cl->step_ratchet[s0] | cl->step_xrev[s0]
+                   | cl->step_xsemi[s0] | cl->step_xstart[s0] | cl->step_xlen[s0];
+            tmp_src[i] = ca ? a : (b < len ? b : -1);
+        }
+        clip_remap_conds(cl, ls, tmp_src, len);
         /* Back into the window only: whatever lies outside it is not ours. */
         memcpy(&cl->steps[ls],               tmp_steps,       (size_t)len);
         memcpy(&cl->step_notes[ls][0],       tmp_notes,       (size_t)len * 8);
