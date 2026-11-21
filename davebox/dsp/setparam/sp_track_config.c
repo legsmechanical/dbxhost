@@ -176,6 +176,7 @@ static int sp_track_config(sp_ctx_t *cx) {
         if (inst->mute[tidx]) inst->solo[tidx] = 0;
         silence_muted_tracks(inst);
         rui_mark(inst, tidx, tr->active_clip);   /* rui_index mute/solo */
+        inst->state_dirty = 1;   /* mute: saved */
         return 1;
     }
 
@@ -189,6 +190,7 @@ static int sp_track_config(sp_ctx_t *cx) {
         if (inst->solo[tidx]) inst->mute[tidx] = 0;
         silence_muted_tracks(inst);
         rui_mark(inst, tidx, tr->active_clip);   /* rui_index mute/solo */
+        inst->state_dirty = 1;   /* solo: saved */
         return 1;
     }
 

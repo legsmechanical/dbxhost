@@ -454,6 +454,7 @@ static int sp_globals_misc(sp_ctx_t *cx) {
             inst->solo[t] = 0;
         }
         rui_touch(inst);   /* rui_index mute/solo (all tracks) */
+        inst->state_dirty = 1;   /* mute_all_clear: saved */
         return 1;
     }
 
@@ -498,6 +499,7 @@ static int sp_globals_misc(sp_ctx_t *cx) {
         }
         silence_muted_tracks(inst);
         rui_touch(inst);   /* rui_index mute/solo (snapshot recall, all tracks) */
+        inst->state_dirty = 1;   /* snap_load: saved */
         return 1;
     }
 
