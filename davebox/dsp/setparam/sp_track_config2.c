@@ -139,9 +139,12 @@ static int sp_track_config2(sp_ctx_t *cx) {
             rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);   /* content translated */
         }
         flat_end(inst, tidx, took);
-        /* Leaving the Conductor role: clear the one-Conductor latch. */
+        /* Leaving the Conductor role: clear the one-Conductor latch, and the
+         * shift it was applying (it would otherwise survive under Cond Lock
+         * until some other Conductor played). */
         if (inst->conductor_track == tidx) {
             inst->conductor_track = -1;
+            conductor_clear_offset(inst);   /* leaving the role: its shift goes */
             inst->state_dirty = 1;
         }
         return 1;
@@ -159,9 +162,12 @@ static int sp_track_config2(sp_ctx_t *cx) {
             flat_end(inst, tidx, took);
             rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);
         }
-        /* Leaving the Conductor role: clear the one-Conductor latch. */
+        /* Leaving the Conductor role: clear the one-Conductor latch, and the
+         * shift it was applying (it would otherwise survive under Cond Lock
+         * until some other Conductor played). */
         if (inst->conductor_track == tidx) {
             inst->conductor_track = -1;
+            conductor_clear_offset(inst);   /* leaving the role: its shift goes */
             inst->state_dirty = 1;
         }
         return 1;
@@ -205,7 +211,7 @@ static int sp_track_config2(sp_ctx_t *cx) {
         }
         convert_track_to_sampled(inst, tidx, pm);
         flat_end(inst, tidx, took);
-        if (inst->conductor_track == tidx) inst->conductor_track = -1;
+        if (inst->conductor_track == tidx) { inst->conductor_track = -1; conductor_clear_offset(inst); }
         if (pm == PAD_MODE_SLICER) cond_resp_off_track(inst, tidx);   /* not following until asked */
         rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);
         return 1;

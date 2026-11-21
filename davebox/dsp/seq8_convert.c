@@ -517,7 +517,7 @@ static void flat_swap(seq8_instance_t *inst) {
         }
     inst->flat_mode = tr->pad_mode;
     if (tr->pad_mode == PAD_MODE_CONDUCT) inst->conductor_track = (int8_t)t;
-    else if (inst->conductor_track == t) inst->conductor_track = -1;
+    else if (inst->conductor_track == t) { inst->conductor_track = -1; conductor_clear_offset(inst); }
     memset(tr->at_last_sent, 0xFF, AT_MAX_LANES);
     tr->at_last_clip = 0xFF;
     inst->state_dirty = 1;
