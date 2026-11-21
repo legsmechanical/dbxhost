@@ -30,6 +30,11 @@ static int sp_track_misc(sp_ctx_t *cx) {
             if (tr->current_step < cl->loop_start || tr->current_step >= _le)
                 tr->current_step = cl->loop_start;
         }
+        /* Stay in phase (ruled 2026-11-21): the length knob re-anchors the
+         * playhead to the song position, as the clip-addressed key, the drum
+         * lanes and Stretch already did — so a clip shortened while playing
+         * stays aligned with the bar and the other tracks. */
+        if (inst->playing) melodic_anchor_playhead(inst, tr, cl);   /* length knob: in phase */
         inst->state_dirty = 1;   /* persisted; the drum twin marks it too */
         rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);
         return 1;
