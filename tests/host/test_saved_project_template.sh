@@ -56,6 +56,10 @@ st = {"v": 36, "playing": 1, "t0_ac": 3, "t0_wr": 1,
       # project settings
       "key": 4, "scale": 2, "lq": 1, "bpm": 97.5, "saw": 0, "mic": 1, "metro_on": 1,
       "metro_vol": 60, "_swa": 30, "_swr": 1, "_cf": 1, "_cs": 1, "iq": 5,
+      # the groove and input quantize (kept since 2026-11-21)
+      "_gk": 2, "_ga": 60, "_gt": 90, "_gq": 10, "_gr": 5, "_gv": 20,
+      "_gtab": "24 16 0 100 3 90", "_gn": "Swing Feel",
+      "t0_goa": 30, "t2_got": 40, "t4_gov": 15, "t5_gor": 7, "t3diq": 4,
       "cndt": 7,
       # track config
       "t0_ch": 9, "t0_rt": 0, "t0_pm": 1, "t0_tr": -3, "t0_tvo": 90, "t0_lp": 0,
@@ -111,6 +115,9 @@ import json, sys
 st = json.load(open(sys.argv[1]))
 want = {"v": 37, "key": 4, "scale": 2, "lq": 1, "bpm": 97.5, "saw": 0, "mic": 1, "metro_on": 1,
         "metro_vol": 60, "_swa": 30, "_swr": 1, "_cf": 1, "_cs": 1, "cndt": 7,
+        "iq": 5, "_gk": 2, "_ga": 60, "_gt": 90, "_gq": 10, "_gr": 5, "_gv": 20,
+        "_gtab": "24 16 0 100 3 90", "_gn": "Swing Feel",
+        "t0_goa": 30, "t2_got": 40, "t4_gov": 15, "t5_gor": 7, "t3diq": 4,
         "t0_ch": 9, "t0_rt": 0, "t0_pm": 1, "t0_tr": -3, "t0_tvo": 90, "t0_lp": 0,
         "t4_ch": 2, "t4_rt": 2, "t4_mt": 1}
 for c in range(16):

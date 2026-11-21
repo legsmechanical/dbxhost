@@ -45,9 +45,15 @@ DRUM_LANES = 32
 
 # Project Settings rows, by state key.
 PROJECT_KEYS = ("key", "scale", "lq", "bpm", "saw", "mic", "metro_on", "metro_vol",
-                "_swa", "_swr", "_cf", "_cs")
+                "_swa", "_swr", "_cf", "_cs",
+                # The groove (kind, amount, timing / quantize / random /
+                # velocity, a loaded table and its name) and input quantize
+                # travel with a template too (ruled 2026-11-21).
+                "_gk", "_ga", "_gt", "_gq", "_gr", "_gv", "_gtab", "_gn", "iq")
 # TRACK CONFIG rows and the track's destination, per track: t<N><suffix>.
-TRACK_SUFFIXES = ("_ch", "_rt", "_mt", "_lp", "_tvo", "_tr", "_pm")
+# + the track's groove overrides and its input quantize (`t<N>diq`, no `_`).
+TRACK_SUFFIXES = ("_ch", "_rt", "_mt", "_lp", "_tvo", "_tr", "_pm",
+                  "_goa", "_got", "_gov", "_gor", "diq")
 GLOBAL_TRACK_KEYS = ("cndt",)
 # Kept from clip A and given to every clip (Josh, 2026-09-30): a MIDI track's
 # Program / Bank, the patch its synth plays.
