@@ -1052,6 +1052,18 @@ function buildTrack(t, ctx) {
     };
 }
 
+/* Ableton's name for each dAVEBOx scale, in SCALE_NAMES order (the interval
+ * sets match seq8.c SCALE_IVLS): Blues 0 3 5 6 7 10 is Live's Minor Blues,
+ * Diminished 0 2 3 5 6 8 9 11 its Whole-half Dim. Every dAVEBOx scale has a
+ * Live equivalent; an index out of range exports as Major. */
+export const ABL_SCALE_NAMES = [
+    'Major', 'Minor', 'Dorian', 'Phrygian', 'Lydian', 'Mixolydian',
+    'Locrian', 'Harmonic Minor', 'Melodic Minor',
+    'Major Pentatonic', 'Minor Pentatonic', 'Minor Blues', 'Whole Tone', 'Whole-half Dim.'
+];
+export function ablScaleName(i) { return ABL_SCALE_NAMES[i] || 'Major'; }
+export function exportSongForTest(bpm, ctx) { return buildSong(bpm, ctx); }
+
 function buildSong(bpm, ctx) {
     /* ⭑ ONE read for the whole project (see the DSP's `pa_export`), before any
      * track is built — the id counter runs document-wide, so it cannot be
@@ -1076,7 +1088,7 @@ function buildSong(bpm, ctx) {
         tempo: bpm,
         globalGrooveAmount: 0.0,
         rootNote: (S.padKey | 0),
-        scale: 'Major',           /* TODO Phase 3: map S.padScale -> Ableton scale-name vocab */
+        scale: ablScaleName(S.padScale | 0),
         melodicLayout: 'inKey',
         tracks: tracks,
         returnTracks: EXPORT_RETURNS.map((n, i) => emptyReturnTrack(n, i + 1)),
