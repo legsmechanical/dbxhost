@@ -319,6 +319,8 @@ export function copyClip(srcT, srcC, dstT, dstC) {
     if (audioPasteRefused(srcT, srcC, dstT, false)) return false;
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'clip_copy', val: `${srcT} ${srcC} ${dstT} ${dstC}`, _local: true });
+    /* The clip's program / bank travels with it (DSP clip_copy_program). */
+    S.clipProgram[dstT][dstC] = S.clipProgram[srcT][srcC].slice();
     /* The DSP moved LANES (pa_copy_clip); this module's mirror is fed only
      * by pa_list, so ask for a re-read — otherwise the copy PLAYS automation
      * the bank cannot see, and any gesture that checks the mirror first
@@ -345,6 +347,9 @@ export function cutClip(srcT, srcC, dstT, dstC) {
     if (audioPasteRefused(srcT, srcC, dstT, true)) return false;
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'clip_cut', val: `${srcT} ${srcC} ${dstT} ${dstC}`, _local: true });
+    /* The clip's program / bank travels with it (DSP clip_copy_program). */
+    S.clipProgram[dstT][dstC] = S.clipProgram[srcT][srcC].slice();
+    S.clipProgram[srcT][srcC] = [-1, -1, -1];
     /* The DSP moved LANES (pa_copy_clip); this module's mirror is fed only
      * by pa_list, so ask for a re-read — otherwise the copy PLAYS automation
      * the bank cannot see, and any gesture that checks the mirror first
@@ -380,6 +385,8 @@ export function copyRow(srcRow, dstRow) {
     if (srcRow === dstRow) return;
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'row_copy', val: `${srcRow} ${dstRow}`, _local: true });
+    /* Each track's clip program / bank travels with its row. */
+    for (let _t = 0; _t < 8; _t++) S.clipProgram[_t][dstRow] = S.clipProgram[_t][srcRow].slice();
     for (let t = 0; t < 8; t++) audioCopyMirror(t, srcRow, t, dstRow, false);
     /* The DSP moved LANES (pa_copy_clip); this module's mirror is fed only
      * by pa_list, so ask for a re-read — otherwise the copy PLAYS automation
@@ -410,6 +417,9 @@ export function cutRow(srcRow, dstRow) {
     if (srcRow === dstRow) return;
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'row_cut', val: `${srcRow} ${dstRow}`, _local: true });
+    /* Each track's clip program / bank travels with its row. */
+    for (let _t = 0; _t < 8; _t++) S.clipProgram[_t][dstRow] = S.clipProgram[_t][srcRow].slice();
+    for (let _t = 0; _t < 8; _t++) S.clipProgram[_t][srcRow] = [-1, -1, -1];
     for (let t = 0; t < 8; t++) audioCopyMirror(t, srcRow, t, dstRow, true);
     /* The DSP moved LANES (pa_copy_clip); this module's mirror is fed only
      * by pa_list, so ask for a re-read — otherwise the copy PLAYS automation
@@ -603,6 +613,8 @@ export function copyDrumClip(srcT, srcC, dstT, dstC) {
     if (srcT === dstT && srcC === dstC) return;
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'drum_clip_copy', val: `${srcT} ${srcC} ${dstT} ${dstC}`, _local: true });
+    /* The clip's program / bank travels with it (DSP clip_copy_program). */
+    S.clipProgram[dstT][dstC] = S.clipProgram[srcT][srcC].slice();
     /* The DSP copies the automation with the lanes (pa_copy_clip, each with
      * its cycle); this module's mirror is fed only by pa_list, so ask for a
      * re-read — otherwise the copy PLAYS automation the bank cannot see, and
@@ -621,6 +633,9 @@ export function cutDrumClip(srcT, srcC, dstT, dstC) {
     if (srcT === dstT && srcC === dstC) return;
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'drum_clip_cut', val: `${srcT} ${srcC} ${dstT} ${dstC}`, _local: true });
+    /* The clip's program / bank travels with it (DSP clip_copy_program). */
+    S.clipProgram[dstT][dstC] = S.clipProgram[srcT][srcC].slice();
+    S.clipProgram[srcT][srcC] = [-1, -1, -1];
     /* The DSP MOVES the automation with the lanes (pa_move_clip); see
      * copyDrumClip for the re-read and the carry filter. */
     automationCarryFilter(srcT, srcC, dstT, dstC);

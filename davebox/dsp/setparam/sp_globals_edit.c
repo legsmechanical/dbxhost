@@ -69,6 +69,7 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             dst->active = src->active;
             clip_migrate_to_notes(dst);
             clip_copy_cond_fields(dst, src);
+            clip_copy_program(dst, src);
             inst->tracks[dstT].clip_at_auto[dstC] = inst->tracks[srcT].clip_at_auto[srcC];
             pa_copy_clip(inst, srcT, srcC, dstT, dstC);
             if (inst->tracks[srcT].pad_mode == PAD_MODE_AUDIO) au_copy_clip(inst, srcT, srcC, dstT, dstC, 0);
@@ -120,6 +121,7 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             dst->active = src->active;
             clip_migrate_to_notes(dst);
             clip_copy_cond_fields(dst, src);
+            clip_copy_program(dst, src);
             pa_copy_clip(inst, t, srcRow, t, dstRow);
             if (inst->tracks[t].pad_mode == PAD_MODE_AUDIO) au_copy_clip(inst, t, srcRow, t, dstRow, 0);
             inst->tracks[t].clip_at_auto[dstRow] = inst->tracks[t].clip_at_auto[srcRow];
@@ -230,6 +232,7 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             dst->active = src->active;
             clip_migrate_to_notes(dst);
             clip_copy_cond_fields(dst, src);
+            clip_copy_program(dst, src);
             pa_move_clip(inst, srcT, srcC, dstT, dstC);
             if (srcTr->pad_mode == PAD_MODE_AUDIO) au_copy_clip(inst, srcT, srcC, dstT, dstC, 1);
             dstTr->clip_at_auto[dstC] = srcTr->clip_at_auto[srcC];
@@ -287,6 +290,7 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             dst->active = src->active;
             clip_migrate_to_notes(dst);
             clip_copy_cond_fields(dst, src);
+            clip_copy_program(dst, src);
             pa_move_clip(inst, t, srcRow, t, dstRow);
             if (tr->pad_mode == PAD_MODE_AUDIO) au_copy_clip(inst, t, srcRow, t, dstRow, 1);
             tr->clip_at_auto[dstRow] = tr->clip_at_auto[srcRow];
@@ -381,6 +385,7 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             if (!src || !dst) return 1;
             int l;
             undo_begin_drum_clip(inst, dstT, dstC);
+            clip_copy_program(&inst->tracks[dstT].clips[dstC], &inst->tracks[srcT].clips[srcC]);
             for (l = 0; l < DRUM_LANES; l++) {
                 uint8_t dst_midi_note = dst->lanes[l].midi_note;
                 clip_t *sc = &src->lanes[l].clip;
@@ -446,6 +451,9 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             if (!src || !dst) return 1;
             int l;
             undo_begin_drum_clip(inst, dstT, dstC);
+            clip_copy_program(&inst->tracks[dstT].clips[dstC], &inst->tracks[srcT].clips[srcC]);
+            { clip_t *_sc = &inst->tracks[srcT].clips[srcC];   /* a cut moves it */
+              _sc->program = _sc->bank_msb = _sc->bank_lsb = -1; }
             for (l = 0; l < DRUM_LANES; l++) {
                 uint8_t dst_midi_note = dst->lanes[l].midi_note;
                 uint8_t src_midi_note = src->lanes[l].midi_note;

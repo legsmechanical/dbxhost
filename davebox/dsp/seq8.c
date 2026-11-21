@@ -6094,6 +6094,13 @@ static void clip_init(clip_t *cl) {
 
 /* Copy a clip's per-clip Conductor settings (responder mask / octave / when /
  * lock). These live on clip_t and must travel with clip/scene copy + cut. */
+/* A clip's program change / bank select travels with it on copy and cut. */
+static void clip_copy_program(clip_t *dst, const clip_t *src) {
+    dst->program  = src->program;
+    dst->bank_msb = src->bank_msb;
+    dst->bank_lsb = src->bank_lsb;
+}
+
 static void clip_copy_cond_fields(clip_t *dst, const clip_t *src) {
     memcpy(dst->cond_resp, src->cond_resp, sizeof(dst->cond_resp));
     memcpy(dst->cond_oct,  src->cond_oct,  sizeof(dst->cond_oct));
