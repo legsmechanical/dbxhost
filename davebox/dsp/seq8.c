@@ -8762,7 +8762,13 @@ static void apply_clip_restore(seq8_instance_t *inst,
         }
         if ((int)inst->count_in_track == t && inst->count_in_ticks > 0)
             inst->count_in_ticks = 0;
-        memcpy(&tr->clips[c], &clips[i], sizeof(clip_t));
+        {   /* The pass counter is playback, not content: a clip playing on
+             * pass 3 stays on pass 3 (ruled 2026-11-21 — restoring the
+             * snapshot's value made its Iter conditions jump phase). */
+            uint16_t live_cycle = tr->clips[c].loop_cycle;
+            memcpy(&tr->clips[c], &clips[i], sizeof(clip_t));
+            tr->clips[c].loop_cycle = live_cycle;   /* undo keeps the live pass count */
+        }
         clip_migrate_to_notes(&tr->clips[c]);
         if (is_active_clip)
             pfx_sync_from_clip(tr);
