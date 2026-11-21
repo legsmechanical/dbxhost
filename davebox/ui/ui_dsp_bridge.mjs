@@ -1781,6 +1781,7 @@ export function restoreUiSidecar(applyDefaultsNow) {
             }
         }
         S.sessionView = us.sv === 1;
+        S.sessionViewFromLoad = true;   /* not a user edge: keep a saved LIVE ARP latch */
         if (Array.isArray(us.dl)) {
             for (let _t = 0; _t < NUM_TRACKS; _t++) {
                 const _l = us.dl[_t];

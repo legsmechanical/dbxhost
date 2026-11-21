@@ -554,6 +554,9 @@ export const S = {
     playing: false,
     activeTrack: 0,
     sessionView: false,
+    /* Set when a project LOAD changes sessionView: that edge is not the user
+     * entering Session View, so it must not release a saved LIVE ARP latch. */
+    sessionViewFromLoad: false,
     hasInitedOnce: false,
     _forceSessionCold: false,   /* set on the first init() of a fresh runtime (cold load) so restoreUiSidecar opens in Session view regardless of the saved sv; a resume (JS kept in memory) leaves it false. See ui.js init + restoreUiSidecar. */
     sceneRow: 0,

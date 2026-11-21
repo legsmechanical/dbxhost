@@ -522,6 +522,7 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
         if (tr2->tarp.steps_mode != 1)                 fprintf(fp, ",\"t%d_tasm\":%d",    t, (int)tr2->tarp.steps_mode);
         if (!tr2->tarp_sync)                           fprintf(fp, ",\"t%d_tasy\":0",     t);
         if (tr2->tarp.retrigger)                       fprintf(fp, ",\"t%d_targ\":1",     t);
+        if (tr2->tarp_latch)                           fprintf(fp, ",\"t%d_talt\":1",     t);   /* LIVE ARP latch */
         {
             int _i;
             for (_i = 0; _i < 8; _i++)
@@ -1440,6 +1441,10 @@ static void seq8_load_state(seq8_instance_t *inst) {
         tr2->tarp.steps_mode = (uint8_t)clamp_i(json_get_int(buf, key, 1), 1, 2);
         snprintf(key, sizeof(key), "t%d_tasy", t);
         tr2->tarp_sync = (uint8_t)(json_get_int(buf, key, 1) ? 1 : 0);
+        /* LIVE ARP latch (saved since 2026-11-21; a file without it: off).
+         * Only the latch flag — no held notes come back, so nothing sounds. */
+        snprintf(key, sizeof(key), "t%d_talt", t);
+        tr2->tarp_latch = (uint8_t)(json_get_int(buf, key, 0) ? 1 : 0);
         snprintf(key, sizeof(key), "t%d_targ", t);
         tr2->tarp.retrigger = (uint8_t)(json_get_int(buf, key, 0) ? 1 : 0);
         {

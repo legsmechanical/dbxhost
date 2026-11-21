@@ -768,8 +768,11 @@ export function _tickImpl() {
         }
     }
 
-    /* Reset TARP latch when entering session view */
-    if (S.sessionView && !_lastSessionView) {
+    /* Reset TARP latch when the USER enters session view — not when a project
+     * load opens in it (the latch is saved with the project). */
+    const _svFromLoad = S.sessionViewFromLoad;
+    S.sessionViewFromLoad = false;
+    if (S.sessionView && !_lastSessionView && !_svFromLoad) {
         const _t = S.activeTrack;
         if (S.bankParams[_t][5][7] | 0) {
             S.bankParams[_t][5][7] = 0;
