@@ -58,6 +58,8 @@ int main(void) {
     HX_ASSERT(lc->step_random[2] == 40 && lc->step_random[1] == 0, "lane Shift: Random moved with the hit");
     hx_set_param(h, "t0_l2_loop_double_fill", "1");
     HX_ASSERT(lc->step_random[2 + 16] == 40, "lane Double: the copy carries Random");
+    hx_set_param(h, "t0_all_lanes_double_fill", "1");
+    HX_ASSERT(lc->length == 64 && lc->step_random[2 + 32] == 40, "all-lanes Double: the copy carries Random");
 
     hx_destroy(h);
     printf("PASS: geometry_moves_conditions\n");
