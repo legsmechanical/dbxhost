@@ -1258,7 +1258,8 @@ static void render_block_body(void *instance, int16_t *out_lr, int frames) {
             /* Conductor offset is now driven from the Conductor's own
              * pfx_note_on / pfx_note_off (covers sequenced + live pad). This
              * per-tick safety only handles MUTE: a muted Conductor snaps to
-             * zero immediately, even mid-gate (no note-off fires when muted). */
+             * zero immediately, even mid-gate (no note-off fires when muted).
+             * Solo elsewhere never counts (effective_mute). */
             if (t == inst->conductor_track && tr->pad_mode == PAD_MODE_CONDUCT &&
                     effective_mute(inst, t)) {
                 conductor_clear_offset(inst);

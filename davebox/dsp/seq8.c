@@ -2280,6 +2280,10 @@ static int effective_mute(seq8_instance_t *inst, int t) {
      * or soloed out: the export carries every track. States RS_ARMED ..
      * RS_RECORDING (seq8_resample.c). */
     if (inst->resample_hear == t + 1 && inst->resample_state >= 1 && inst->resample_state <= 3) return 0;
+    /* The Conductor makes no sound, so solo has nothing to silence there:
+     * soloing another track must not mute it or drop the shift it applies
+     * (ruled 2026-11-21). Its own MUTE still works. */
+    if (inst->tracks[t].pad_mode == PAD_MODE_CONDUCT) return inst->mute[t];   /* B1: solo never mutes the Conductor */
     for (i = 0; i < NUM_TRACKS; i++)
         if (inst->solo[i]) { any_solo = 1; break; }
     return inst->mute[t] || (any_solo && !inst->solo[t]);
