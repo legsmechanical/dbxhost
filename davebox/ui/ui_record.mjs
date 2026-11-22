@@ -278,7 +278,11 @@ export function extNoteOffAll() {
  * copied-C-constant trap. */
 const STEP_REC_RAW_TPS      = 24;
 const STEP_REC_GATE_DEFAULT = 12;
-const _srGateFor = (chordLen) => (chordLen - 1) * STEP_REC_RAW_TPS + STEP_REC_GATE_DEFAULT;
+/* A tie follows the clip's own ticks per step (ruled 2026-11-21): full steps
+ * for the tied span, a half-step tail. At 1/16 (tps 24) this is exactly the
+ * two literals above; at 1/8 an untied note is 24 and one tie 72. */
+const _srTps = (t, ac) => (S.clipTPS[t] && S.clipTPS[t][ac]) || STEP_REC_RAW_TPS;
+const _srGateFor = (chordLen, tps) => (chordLen - 1) * tps + (tps >> 1);   /* A10-gate */
 
 const _srKey = (t, ac, step, op) => 't' + t + '_c' + ac + '_step_' + step + '_' + op;
 function _srQueue(key, val) { S.pendingDefaultSetParams.push({ key, val: String(val) }); }
@@ -341,6 +345,11 @@ export function stepRecPadPress(pitch, vel) {
         /* _add is add-only and dedupes DSP-side too; one op per press keeps
          * each write atomic against coalescing. */
         _srQueue(_srKey(t, ac, ws, 'add'), pitch + ' 0 ' + vel);
+        /* A fresh step's gate is the 1/16 default; off 1/16 it takes this
+         * clip's half step. After the _add: _gate refuses an empty step. */
+        const tps = _srTps(t, ac);
+        if (!entry.hadBefore && entry.added.length === 0 && tps !== STEP_REC_RAW_TPS)
+            _srQueue(_srKey(t, ac, ws, 'gate'), tps >> 1);   /* A10-fresh */
         entry.added.push(pitch);
         /* Mirrors, so LEDs/screen agree before the queue drains. */
         S.clipSteps[t][ac][ws] = 1;
@@ -380,7 +389,7 @@ export function stepRecArrow(dir) {
                 const entry = S.stepRecJournal.get(S.stepRecWroteStep);
                 if (entry) entry.chordLen = S.stepRecChordLen;
                 _srQueue(_srKey(t, ac, S.stepRecWroteStep, 'gate'),
-                         _srGateFor(S.stepRecChordLen));
+                         _srGateFor(S.stepRecChordLen, _srTps(t, ac)));
             }
             S.stepRecCursor = Math.min(S.stepRecWroteStep + S.stepRecChordLen, len - 1);
         } else {
@@ -395,7 +404,7 @@ export function stepRecArrow(dir) {
                 const entry = S.stepRecJournal.get(S.stepRecWroteStep);
                 if (entry) entry.chordLen = S.stepRecChordLen;
                 _srQueue(_srKey(t, ac, S.stepRecWroteStep, 'gate'),
-                         _srGateFor(S.stepRecChordLen));
+                         _srGateFor(S.stepRecChordLen, _srTps(t, ac)));
                 S.stepRecCursor = Math.min(S.stepRecWroteStep + S.stepRecChordLen, len - 1);
             }
         } else if (S.stepRecCursor > 0) {
@@ -411,7 +420,7 @@ export function stepRecArrow(dir) {
             if (tied) {
                 const [ws, e] = tied;
                 e.chordLen--;
-                _srQueue(_srKey(t, ac, ws, 'gate'), _srGateFor(e.chordLen));
+                _srQueue(_srKey(t, ac, ws, 'gate'), _srGateFor(e.chordLen, _srTps(t, ac)));
             } else if (S.stepRecJournal.has(p)) {
                 const e = S.stepRecJournal.get(p);
                 /* Gate back to default FIRST — _gate refuses on an empty step,
@@ -420,7 +429,7 @@ export function stepRecArrow(dir) {
                  * restored — the journal has no gate history; accepted, and
                  * the session-level undo still recovers it.) */
                 if (e.chordLen > 1)
-                    _srQueue(_srKey(t, ac, p, 'gate'), STEP_REC_GATE_DEFAULT);
+                    _srQueue(_srKey(t, ac, p, 'gate'), _srTps(t, ac) >> 1);   /* A10-back */
                 for (const n of e.added)
                     _srQueue(_srKey(t, ac, p, 'toggle'), String(n));
                 S.stepRecJournal.delete(p);

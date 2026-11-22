@@ -255,6 +255,64 @@ step('⭐ TIE shows the entry\'s TAIL on the steps AFTER the note while the pad 
     if ([17, 18].some((n) => ledNow[n] === 56)) throw new Error('the tail outlived the hold');
 });
 
+step('⭐ ties follow the clip\'s ticks per step: at 1/8 one tie is 72, an untied note 24', () => {
+    /* ruled 2026-11-21: gate = ties x tps + tps/2 (the 1/16 cases above are
+     * this with tps 24). */
+    rest();
+    const _tps = S.clipTPS[T][AC()];
+    S.clipTPS[T][AC()] = 48;
+    try {
+        rec.stepRecEnter(); clearQ();
+        padDn(PAD);
+        let q = queued();
+        const iAdd = q.findIndex(([k]) => k.endsWith('_step_0_add'));
+        const iGate = q.findIndex(([k]) => k.endsWith('_step_0_gate'));
+        if (iAdd < 0 || iGate < 0 || iGate < iAdd || parseInt(q[iGate][1]) !== 24)
+            throw new Error('a fresh 1/8 step did not get gate 24 after its _add: ' + JSON.stringify(q));
+        clearQ();
+        cc(HC.MoveRight, 127); cc(HC.MoveRight, 0);
+        padUp(PAD);
+        let gates = queued().filter(([k]) => k.endsWith('_step_0_gate'));
+        if (gates.length !== 1 || parseInt(gates[0][1]) !== 72)
+            throw new Error('1/8 tie gate wrong: ' + JSON.stringify(gates) + ' (want 1*48+24=72)');
+        if (S.stepRecCursor !== 2) throw new Error('tie did not move the cursor past the tied step');
+        clearQ();
+        padDn(PAD2); padUp(PAD2);                    /* an untied note on step 2 */
+        q = queued();
+        const a2 = q.findIndex(([k]) => k.endsWith('_step_2_add'));
+        const g2 = q.findIndex(([k]) => k.endsWith('_step_2_gate'));
+        if (a2 < 0 || g2 < a2 || parseInt(q[g2][1]) !== 24)
+            throw new Error('untied 1/8 note not gated 24 after its _add: ' + JSON.stringify(q));
+        clearQ();
+        cc(HC.MoveLeft, 127); cc(HC.MoveLeft, 0);      /* back onto 2: erase it */
+        cc(HC.MoveLeft, 127); cc(HC.MoveLeft, 0);      /* onto 1 = the tie tail: un-tie */
+        gates = queued().filter(([k]) => k.endsWith('_step_0_gate'));
+        if (gates.length !== 1 || parseInt(gates[0][1]) !== 24)
+            throw new Error('1/8 un-tie did not return to the half step 24: ' + JSON.stringify(gates));
+        cc(HC.MoveLeft, 127); cc(HC.MoveLeft, 0);      /* onto 0: erase the (untied) entry */
+        /* A tie clamped at the clip end: the backstep lands on the entry's
+         * own step and puts its gate back to this clip's half step first. */
+        rest(); rec.stepRecEnter();
+        const len = S.clipLength[T][AC()];
+        S.stepRecCursor = len - 2;
+        padDn(PAD);
+        cc(HC.MoveRight, 127); cc(HC.MoveRight, 0);
+        padUp(PAD);
+        if (S.stepRecCursor !== len - 1) throw new Error('setup: clamped tie cursor ' + S.stepRecCursor);
+        clearQ();
+        cc(HC.MoveLeft, 127); cc(HC.MoveLeft, 0);
+        gates = queued().filter(([k]) => k.endsWith('_step_' + (len - 2) + '_gate'));
+        if (gates.length !== 1 || parseInt(gates[0][1]) !== 24)
+            throw new Error('1/8 backstep did not restore the half-step gate 24: ' + JSON.stringify(queued()));
+        /* control at 1/16: a fresh step queues no gate — the stream is unchanged */
+        S.clipTPS[T][AC()] = 24;
+        rest(); rec.stepRecEnter(); clearQ();
+        padDn(PAD); padUp(PAD);
+        if (queued().some(([k]) => k.endsWith('_gate')))
+            throw new Error('a fresh 1/16 step queued a gate: ' + JSON.stringify(queued()));
+    } finally { S.clipTPS[T][AC()] = _tps; }
+});
+
 step('⭐ \'>\' bare is a REST; the cursor CLAMPS at the clip\'s last step', () => {
     rest();
     rec.stepRecEnter(); clearQ();
