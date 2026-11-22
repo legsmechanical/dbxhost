@@ -49,14 +49,14 @@ import { nowMs } from './ui_clock.mjs';
  * safe because both sides only call the binding inside function bodies, never
  * at module-init time — the same contract the ui_record ↔ ui_dsp_bridge cycle
  * documents. bankCardVisible is the ONE owner of card visibility. */
-import { bankCardShown, hudRestPass, sessMixerShown, bankHeaderRight, drawTrackPageBar, trackPageBarSig } from './ui_render.mjs';
+import { bankCardShown, hudRestPass, sessMixerShown, bankHeaderRight, drawTrackPageBar, trackPageBarSig, trackInstrName } from './ui_render.mjs';
 /* Destination read/write and the option list. ui_dsp_bridge does not import
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
 import { instrOptions, instrPickerRows, moveInstrOwner, fmtInstr, INSTR_SCHWUNG, INSTR_NONE, INSTR_MIDI_CH, INSTR_CONDUCT, INSTR_ROW_LABEL, NUM_CLIPS, fmtVelOverride, BANK_SOUND, BANK_MACROS, BANK_AUTOMATION, BANK_CONFIG, isSoundBank, BANKS, fmtPlayDir, fmtSign,
          BANK_MACRO_ALLOW, BANK_SHORT, seqAutoKeyFor, SEQ_AUTO_TARGETS, AU_AUTO_BANK, AU_SLICES_BANK, auAutoBank,
          midiTargetIsMidi, midiTargetCC, midiTargetName, midiTargetShort, midiTargetMax, midiTargetDefault, midiTargetTo14, PB_CENTRE,
-         PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD, PAD_MODE_AUDIO as PMA, PAD_MODE_SLICER as PMS, padSampled, INSTR_AUDIO, INSTR_SLICER, TRACK_PAD_BASE } from './ui_constants.mjs';
+         PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD, PAD_MODE_AUDIO as PMA, PAD_MODE_SLICER as PMS, padSampled, INSTR_AUDIO, INSTR_SLICER, TRACK_PAD_BASE, NUM_TRACKS } from './ui_constants.mjs';
 import { openWave } from './ui_audio_editor.mjs';
 import { auAutoMirror, auSlicesAutoMirror, auMacroValue, auMacroWrite, auInfo } from './ui_audio.mjs';
 import { applyTrackConfig, applyBankParam, readBankParams, syncTrackMidiFx, midiFxResyncAfterPatch } from './ui_dsp_bridge.mjs';
@@ -396,6 +396,11 @@ const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
       /* A module's own CHAIN SCREEN (ui_chain_host.mjs). ⚠ 35: the next free
        * id (34 is VIEW_HELP). */
       VIEW_CHAIN = 35,
+      /* THE GLOBAL MACROS' first list (2026-11-22): which track or bus a leg
+       * lives on — `T1 <instrument>` … `T8`, then the session buses. The
+       * picker is three lists deep there: scope → target → param. ⚠ 36: the
+       * next free id. */
+      VIEW_GMAC_SCOPE = 36,
       /* ⭑ THE CONFIG BANK's card (Josh, 2026-09-26): the TRACK CONFIG list at
        * rest, inside the door's corner brackets; a click makes it live
        * (VIEW_BLOCKS). A card like VIEW_PROMPT / VIEW_MACROS. ⚠ 24: the next
@@ -988,6 +993,10 @@ const S = {
      * dispatcher, the Instrument row), read by applyModulePick. */
     pickFromMenu: false,
     knobLegEditing: false,
+    gmPick: null,               /* the global picker's scope: {track, slot, bus} — what knobTargetList & co. address */
+    gmScopeRows: [],            /* [{label, track, slot, bus}] — built on the tick (instrument names are reads) */
+    gmScopeIdx: 0,
+    gmScopeFrom: 0,             /* where Back from the scope list lands: VIEW_MACROS or VIEW_KNOBLEGS */
     /* A mapped knob's `v` lives in the STORE, so a sweep dirties the sidecar
      * the way a MIDI knob's value does. ⚠ Its own flag: `midiValsDirty` means
      * "GS.trackMidiVals changed" and riding it would be a lie to the next
@@ -2432,10 +2441,11 @@ export function soundMixSendClick(i) {
  * Back lands on the MACROS card (VIEW_TREE parents) — shown while a knob or the
  * jog is touched, as every bank page is since 2026-10-04. */
 export function soundMacroKnobClick(k) {
-    if (S.view !== VIEW_MACROS || k < 0 || k >= NUM_KNOBS || S.track < 0) return false;
+    if (S.view !== VIEW_MACROS || k < 0 || k >= NUM_KNOBS || (S.track < 0 && !S.gmac)) return false;
     openKnobEditor();
     S.knobIdx = k;
     if (macroLegs(macroMapping(k)).length) openKnobLegs();
+    else if (S.gmac) { S.knobLegIdx = -1; queueGmacScope(VIEW_MACROS); }   /* the global picker starts at its scope */
     else { S.knobLegIdx = -1; S.pendingAction = { t: 'knobtarget' }; }   /* probes components — tick only */
     S.dirty = true;
     return true;
@@ -3550,6 +3560,7 @@ export function soundEnterGlobalMacros() {
     S.touchedIdx = -1;
     S.turnedSinceTouch = false;
     resetKnobAsn();            /* knobMeta and every macro cache belong to the last context */
+    S.gmPick = null;
     S.pendingWrites.length = 0;
     S.presetMsg = '';
     S.dirty = true;
@@ -4489,7 +4500,8 @@ function knobLegRows() {
     for (let j = 0; j < legs.length; j++) {
         const leg = legs[j];
         const a = asnFromMacro(leg);
-        rows.push({ kind: 'leg', leg: j, label: legShortName(leg), hdr: true, value: knobAsnLabel(a) });
+        /* the global page says which track or bus each leg lives on */
+        rows.push({ kind: 'leg', leg: j, label: (S.gmac ? gmacScope(leg).split(' ')[0] + ' ' : '') + legShortName(leg), hdr: true, value: knobAsnLabel(a) });
         rows.push({ kind: 'lo', leg: j, label: ' Lo', value: legBoundText(leg, leg.lo) });
         rows.push({ kind: 'hi', leg: j, label: ' Hi', value: legBoundText(leg, leg.hi) });
         /* TRAVEL, under the two bounds it qualifies (Josh, 2026-09-10). Two
@@ -4540,7 +4552,7 @@ const LEG_RANGE_STEP = 0.01;
  * range stays a percentage. */
 function legUnitMeta(leg) {
     if (leg.kind === AU_KIND) return auMacroMeta(leg);
-    if (leg.kind === 'bank') return bankMacroMeta(leg);
+    if (leg.kind === 'bank') return bankMacroMeta(leg, legT(leg));
     return null;
 }
 /* A bound's raw value, and the raw step a detent moves it: about a
@@ -4596,9 +4608,10 @@ function knobLegRemove(j) {
     const legs = macroLegs(mp).slice();
     if (j < 0 || j >= legs.length) return;
     legs.splice(j, 1);
-    GS.trackMacros[t][S.knobIdx] = legs.length ? { v: mp.v, legs } : null;
-    S.knobAsn[S.knobIdx] = asnFromMacro(macroLeg0(GS.trackMacros[t][S.knobIdx]));
-    macroMirrorToChain(S.knobIdx, GS.trackMacros[t][S.knobIdx]);
+    const store = S.gmac ? GS.globalMacros : GS.trackMacros[t];
+    store[S.knobIdx] = legs.length ? { v: mp.v, legs } : null;
+    S.knobAsn[S.knobIdx] = asnFromMacro(macroLeg0(store[S.knobIdx]));
+    if (!S.gmac) macroMirrorToChain(S.knobIdx, store[S.knobIdx]);
     S.macCells[S.knobIdx] = null; S.macVals[S.knobIdx] = null;
     S.macLegCells[S.knobIdx] = null; S.macLegVals[S.knobIdx] = null;
     S.knobAccum[S.knobIdx] = 0; S.macLastDir[S.knobIdx] = 0;
@@ -4622,6 +4635,70 @@ function openKnobEditor() {
     for (let i = 0; i < NUM_KNOBS; i++) S.knobAsn[i] = asnFromMacro(macroLeg0(store[i]));
     S.knobIdx = 0;
     S.view = VIEW_KNOBS;
+}
+
+/* ── THE GLOBAL PICKER'S FIRST LIST (2026-11-22) ───────────────────────────
+ * Which track (or, from slice 3, which session bus) the leg lives on; the
+ * target and param lists that follow are the track macros' own, run against
+ * that scope through withPick. Built on the tick: an instrument's name is a
+ * read per track. */
+function gmacScopeRows() {
+    const rows = [];
+    for (let t = 0; t < NUM_TRACKS; t++) {
+        const route = GS.trackRoute[t] | 0;
+        /* A Move-routed track's sound is its Move bus (the soundEnterMove
+         * context); every other route addresses its chain slot. */
+        const bus = route === 1 ? moveBusFor(t) : null;
+        rows.push({ label: 'T' + (t + 1) + ' ' + trackInstrName(t), track: t, slot: bus ? 0 : slotIndex(t), bus });
+    }
+    return rows;
+}
+function openGmacScope() {
+    S.gmScopeRows = gmacScopeRows();
+    /* The cursor starts on the leg being re-pointed, else where the last pick was. */
+    const legs = macroLegs(macroMapping(S.knobIdx));
+    const leg = (S.knobLegIdx >= 0 && S.knobLegIdx < legs.length) ? legs[S.knobLegIdx] : null;
+    const at = leg ? S.gmScopeRows.findIndex(r => r.track === leg.track && (r.track >= 0 || gmacScope(leg).indexOf(r.code || '') === 0))
+                   : (S.gmPick ? S.gmScopeRows.findIndex(r => r.track === S.gmPick.track && r.bus === S.gmPick.bus) : -1);
+    S.gmScopeIdx = at >= 0 ? at : 0;
+    S.view = VIEW_GMAC_SCOPE;
+}
+/* Ask for the scope list (tick only), remembering where Back lands. */
+function queueGmacScope(from) {
+    S.gmScopeFrom = from;
+    S.pendingAction = { t: 'gmacscope' };
+}
+function renderGmacScope() {
+    renderInChain(S.gmScopeRows.map(r => ({ label: r.label, chevron: true })), S.gmScopeIdx);
+}
+/* The target list's crumb: the scope's short name (`T3`, `MST`, `SNA`). */
+function gmacPickCrumb() {
+    const r = S.gmScopeRows[S.gmScopeIdx];
+    return r ? r.label.split(' ')[0] : 'Target';
+}
+function gmacScopeClick() {
+    const r = S.gmScopeRows[S.gmScopeIdx];
+    if (!r) return;
+    S.gmPick = { track: r.track, slot: r.slot, bus: r.bus };
+    S.pendingAction = { t: 'knobtarget' };        /* probes components — tick only */
+}
+/* Run the track picker's machinery against the global scope: knobTargetList,
+ * knobParamList and the commit read S.track / S.slot / S.bus, and for the
+ * length of the call those ARE the picked scope. S.gmac stays set, so the
+ * store they reach is still the global one. Off the global page: a plain call. */
+function withPick(fn) {
+    if (!S.gmac || !S.gmPick) return fn();
+    const sv = { track: S.track, slot: S.slot, bus: S.bus };
+    S.track = S.gmPick.track; S.slot = S.gmPick.slot; S.bus = S.gmPick.bus;
+    try { return fn(); }
+    finally { S.track = sv.track; S.slot = sv.slot; S.bus = sv.bus; }
+}
+/* The global target list leaves out what the global page cannot drive: no
+ * SnapMorph (a global morph is device snapshots, a later slice), no Levels
+ * (a track's levels are its own screen's cache) and no Sample / All Slices
+ * (their write records automation, and the global macros are live only). */
+function gmacTargetAllowed(t) {
+    return !(t.id === MORPH_TARGET || t.id === LEVEL_TARGET || (t.id && t.id.indexOf(AU_TARGET) === 0));
 }
 
 /* Components with a module loaded — the assignable targets. Ported from the
@@ -4700,8 +4777,10 @@ function qualifyDuplicates(rows) {
     return rows;
 }
 
-function openKnobTargets() {
+function openKnobTargets() { return withPick(openKnobTargetsHere); }
+function openKnobTargetsHere() {
     S.knobTargets = knobTargetList();
+    if (S.gmac) S.knobTargets = S.knobTargets.filter(gmacTargetAllowed);
     /* Choosing a LANE: no (None) to clear, no SnapMorph (its lane is a knob's
      * position, not a parameter), and only banks with something automatable. */
     if (S.knobPickFor) S.knobTargets = S.knobTargets.filter(t => t.id && t.id !== MORPH_TARGET &&
@@ -4724,6 +4803,8 @@ function openKnobTargets() {
 /* The target picker's cursor — a rig walking it needs to know where it
  * STARTED, since the seed above depends on the leg. */
 export function soundKnobTargetIdxForTest() { return S.knobTargetIdx; }
+/* The global scope list a rig walks: its rows, to find one without counting jogs. */
+export function soundGmacScopeForTest() { return { rows: S.gmScopeRows.map(r => r.label), idx: S.gmScopeIdx, view: S.view === VIEW_GMAC_SCOPE }; }
 export function soundKnobParamIdxForTest() { return S.knobParamIdx; }
 
 /* Knob-mappable params for a target — the host's getKnobParamsForTarget:
@@ -4821,7 +4902,8 @@ function knobParamList(target) {
     return params;
 }
 
-function openKnobParams(target) {
+function openKnobParams(target) { return withPick(() => openKnobParamsHere(target)); }
+function openKnobParamsHere(target) {
     S.knobTarget = target;
     S.knobParams = knobParamList(target);
     const cur = S.knobPickFor ? null : S.knobAsn[S.knobIdx];
@@ -4865,6 +4947,23 @@ const COMPONENT_NAMES = {
 /* A Move bus's insert FX carry the bus prefix (`move_fx:2:fx1`); the table is
  * keyed on the bare component, and the bus is already the screen's context. */
 function compBare(id) { return String(id || '').replace(/^move_fx:\d+:/, ''); }
+/* ⭑ WHERE A GLOBAL LEG LIVES, abbreviated for the touched header (2026-11-22:
+ * always the track or bus): `T3` (the instrument), `T3 FX1`, `T3 MFX`,
+ * `MST` / `MST FX1`, `SNA` / `SNB FX2`. 2-7 characters, so the 124 px header
+ * truncates only the param name. A Move bus insert is its OWNER track's. */
+function gmacScope(leg) {
+    const c = String((leg && leg.comp) || '');
+    let mm;
+    if ((mm = /^master_fx(?::fx(\d))?$/.exec(c))) return 'MST' + (mm[1] ? ' FX' + mm[1] : '');
+    if ((mm = /^send_fx:([ab])(?::fx(\d))?$/.exec(c))) return 'SN' + mm[1].toUpperCase() + (mm[2] ? ' FX' + mm[2] : '');
+    const tn = 'T' + ((leg && typeof leg.track === 'number' ? leg.track : -1) + 1);
+    if (!leg || leg.kind !== 'chain') return tn;
+    const bare = compBare(c);
+    if (bare === 'synth') return tn;
+    if ((mm = /^fx(\d)$/.exec(bare))) return tn + ' FX' + mm[1];
+    if (/^midi_fx/.test(bare)) return tn + ' MFX';
+    return tn + ' ' + bare.toUpperCase();
+}
 function compShort(id) {
     const e = COMPONENT_NAMES[compBare(id)];
     return e ? e.short : compBare(id);
@@ -4977,17 +5076,22 @@ function leaveMorphPicker() {
         S.view = VIEW_KNOBLEGS;
     } else S.view = VIEW_MACROS;
 }
-function commitKnobAssignment(target, param) {
+function commitKnobAssignment(target, param) { return withPick(() => commitKnobAssignmentHere(target, param)); }
+function commitKnobAssignmentHere(target, param) {
+    /* On the GLOBAL page S.track is the picked scope (withPick): -1 is a
+     * session bus, a legitimate scope there. */
     const i = S.knobIdx, t = S.track;
-    if (t < 0) return;
-    if (target === MORPH_TARGET) return commitMorphPick(param);
-    const store = GS.trackMacros[t] || (GS.trackMacros[t] = new Array(8).fill(null));
+    if (t < 0 && !S.gmac) return;
+    if (target === MORPH_TARGET) return S.gmac ? undefined : commitMorphPick(param);
+    const store = S.gmac ? GS.globalMacros : (GS.trackMacros[t] || (GS.trackMacros[t] = new Array(8).fill(null)));
     let m = null;
     if (target === LEVEL_TARGET && param) m = { kind: 'level', key: param };
     else if ((target === 'midicc' || target === 'midi') && midiTargetIsMidi(param)) m = { kind: 'midi', target: param };
     else if (target && target.indexOf('bank:') === 0) m = bankMacroFromAsn(target, param);
     else if (target && target.indexOf(AU_TARGET) === 0) m = auMacroFromAsn(target, param);
     else if (target && param) m = { kind: 'chain', comp: target, key: param };
+    /* A global leg names the track it drives (2026-11-22). */
+    if (m && S.gmac) m.track = t;
 
     const legs = macroLegs(store[i]).slice();
     const j = S.knobLegIdx;
@@ -5001,7 +5105,7 @@ function commitKnobAssignment(target, param) {
     }
     store[i] = legs.length ? { v: store[i] ? store[i].v : null, legs } : null;
     S.knobAsn[i] = asnFromMacro(macroLeg0(store[i]));
-    macroMirrorToChain(i, store[i]);
+    if (!S.gmac) macroMirrorToChain(i, store[i]);    /* the global store is mirrored nowhere */
     /* The cell and the value belonged to the OLD target — a number from a
      * different control, and a step law derived from a different range. The
      * tick re-seeds both. */
@@ -5116,8 +5220,12 @@ const VIEW_TREE = {
                           crumb: () => 'K' + (S.knobIdx + 1) },
     [VIEW_NOEDITOR]:    { parent: VIEW_BLOCKS,     float: false,
                           crumb: () => 'NO EDITOR' },
-    [VIEW_KNOB_TARGET]: { parent: VIEW_MACROS,     float: true, backPure: true,
-                          crumb: () => S.knobPickFor ? 'Add lane' : 'K' + (S.knobIdx + 1) },
+    /* On the GLOBAL page the target list sits under the scope list, and is
+     * named by the scope it addresses. */
+    [VIEW_KNOB_TARGET]: { parent: () => S.gmac ? VIEW_GMAC_SCOPE : VIEW_MACROS, float: true, backPure: true,
+                          crumb: () => S.knobPickFor ? 'Add lane' : S.gmac ? gmacPickCrumb() : 'K' + (S.knobIdx + 1) },
+    [VIEW_GMAC_SCOPE]:  { parent: VIEW_MACROS,     float: true,
+                          crumb: () => 'K' + (S.knobIdx + 1) },
     [VIEW_KNOB_PARAM]:  { parent: VIEW_KNOB_TARGET, float: true, backPure: true,
                           /* ⚠ Falls back: the target is empty until one is
                            * chosen, and now that the current screen IS the last
@@ -5794,14 +5902,69 @@ export function legCompatible(leg, newRoute) {
     if (leg.kind === 'chain') return compCompatible(leg.comp, leg.key, newRoute);
     return true;
 }
-/* What a change of `track` to `newRoute` would clear — from JS state only. */
-export function typeChangeImpact(track, newRoute) {
-    const legs = [];                                    /* [knobIdx, legIdx] */
-    const store = GS.trackMacros[track] || [];
-    for (let i = 0; i < store.length; i++) {
-        const mp = store[i]; if (!mp || !mp.legs) continue;
-        for (let l = 0; l < mp.legs.length; l++) if (!legCompatible(mp.legs[l], newRoute)) legs.push([i, l]);
+/* ── BOTH MACRO STORES, ONE WALK (2026-11-22) ──────────────────────────────
+ * A track's sound is driven from its own MACROS and from the GLOBAL macros
+ * (a leg whose `track` names it). Every prune and follow — a type change, a
+ * module swap, an FX reorder — walks both through here, so neither store can
+ * be forgotten by one of them. `fn(leg, at)`, at = { owner, i, l }, owner the
+ * track index for a track store or 'g' for the global one; a global leg's
+ * track is `leg.track`. */
+function forEachMacroLeg(fn) {
+    const tm = GS.trackMacros || [];
+    for (let t = 0; t < tm.length; t++) {
+        const st = tm[t]; if (!st) continue;
+        for (let i = 0; i < st.length; i++) {
+            const mp = st[i]; if (!mp || !mp.legs) continue;
+            for (let l = 0; l < mp.legs.length; l++) fn(mp.legs[l], { owner: t, i, l });
+        }
     }
+    const g = GS.globalMacros || [];
+    for (let i = 0; i < g.length; i++) {
+        const mp = g[i]; if (!mp || !mp.legs) continue;
+        for (let l = 0; l < mp.legs.length; l++) fn(mp.legs[l], { owner: 'g', i, l });
+    }
+}
+/* The track a leg drives, whichever store holds it. */
+function legOwnerTrack(leg, at) { return at.owner === 'g' ? (leg && typeof leg.track === 'number' ? leg.track : -1) : at.owner; }
+function macroStoreOf(owner) { return owner === 'g' ? GS.globalMacros : (GS.trackMacros && GS.trackMacros[owner]); }
+/* Drop the legs `entries` names ([knobIdx, legIdx, owner]); an empty mapping
+ * becomes null. A track store on screen re-mirrors to its chain (a leg pruned
+ * only in JS would leave the ENGINE driving the old target); the global store
+ * is mirrored nowhere and only its screen caches go. Returns true if any. */
+function dropMacroLegs(entries) {
+    if (!entries || !entries.length) return false;
+    const by = new Map();
+    for (const [i, l, owner] of entries) {
+        const ow = owner === undefined ? null : owner;
+        if (!by.has(ow)) by.set(ow, new Map());
+        const m = by.get(ow);
+        if (!m.has(i)) m.set(i, new Set());
+        m.get(i).add(l);
+    }
+    for (const [owner, drop] of by) {
+        const store = macroStoreOf(owner);
+        if (!store) continue;
+        for (const [i, set] of drop) {
+            const mp = store[i]; if (!mp) continue;
+            const legs = mp.legs.filter((_, l) => !set.has(l));
+            store[i] = legs.length ? { v: mp.v, legs } : null;
+            if (owner === 'g') continue;
+            if (!S.gmac && S.track === owner) {
+                S.knobAsn[i] = asnFromMacro(macroLeg0(store[i]));
+                macroMirrorToChain(i, store[i]);
+            }
+        }
+        if (owner === 'g') globalMacroDropCaches();
+    }
+    return true;
+}
+/* What a change of `track` to `newRoute` would clear — from JS state only.
+ * Both stores: the track's own macros and the global legs on that track. */
+export function typeChangeImpact(track, newRoute) {
+    const legs = [];                                    /* [knobIdx, legIdx, owner] */
+    forEachMacroLeg((leg, at) => {
+        if (legOwnerTrack(leg, at) === track && !legCompatible(leg, newRoute)) legs.push([at.i, at.l, at.owner]);
+    });
     const lanes = [];                                   /* [clip, target] */
     for (let c = 0; c < NUM_CLIPS; c++)
         for (const e of automationEntriesFor(track, c)) if (!targetCompatible(e.target, newRoute)) lanes.push([c, e.target]);
@@ -5868,21 +6031,7 @@ export function performTypeChange(c) {
     if (!c) return;
     const im = typeChangeImpact(c.track, c.route);     /* recomputed: state may have moved */
     applyInstrChangeNow(c.track, c.v);
-    const store = GS.trackMacros[c.track];
-    if (store && im.legs.length) {
-        const drop = new Map();
-        for (const [i, l] of im.legs) { if (!drop.has(i)) drop.set(i, new Set()); drop.get(i).add(l); }
-        for (const [i, set] of drop) {
-            const mp = store[i]; if (!mp) continue;
-            const legs = mp.legs.filter((_, l) => !set.has(l));
-            store[i] = legs.length ? { v: mp.v, legs } : null;
-            if (S.track === c.track) {
-                S.knobAsn[i] = asnFromMacro(macroLeg0(store[i]));
-                macroMirrorToChain(i, store[i]);
-            }
-        }
-        writeSidecar();
-    }
+    if (dropMacroLegs(im.legs)) writeSidecar();
     for (const [clip, target] of im.lanes) automationClearKey(c.track, clip, target);
     S.dirty = true;
 }
@@ -6235,7 +6384,7 @@ function renderKnobParam() {
  * owns its value optimistically. A SWEEP costs zero reads: the value is owned
  * here and written absolutely (the turn law below). */
 
-const MACRO_VIEWS = [VIEW_MACROS, VIEW_KNOBS, VIEW_KNOBLEGS, VIEW_KNOB_TARGET, VIEW_KNOB_PARAM];
+const MACRO_VIEWS = [VIEW_MACROS, VIEW_KNOBS, VIEW_KNOBLEGS, VIEW_KNOB_TARGET, VIEW_KNOB_PARAM, VIEW_GMAC_SCOPE];
 /* Where the eight knobs ARE the macros: the page, and the assign screens that
  * float over it (so you hear what you are assigning). Never a global bus. */
 function macrosActive() {
@@ -6243,6 +6392,32 @@ function macrosActive() {
     return !!(S.active && (S.gmac || (!soundIsGlobal() && S.track >= 0)) && MACRO_VIEWS.indexOf(S.view) >= 0);
 }
 const EMPTY_MACROS = Object.freeze([null, null, null, null, null, null, null, null]);
+/* ── A GLOBAL LEG CARRIES ITS OWN ADDRESS (2026-11-22) ─────────────────────
+ * On the global page there is no S.track / S.slot to lean on: each leg names
+ * its track (`track`, -1 = a session bus) and the slot follows from it. Every
+ * read, write and metadata cache on the macro path asks these, never S.*
+ * directly; off the global page they answer exactly what S.* says, so the
+ * track macros are untouched. */
+function legT(leg) {
+    if (!S.gmac) return S.track;
+    return (leg && typeof leg.track === 'number') ? leg.track : -1;
+}
+function legSlot(leg) {
+    if (!S.gmac) return S.slot;
+    /* a bus component (Master / Send FX, a Move bus insert) ignores the slot */
+    if (leg && /^(move_fx:|master_fx|send_fx:)/.test(leg.comp || '')) return 0;
+    const t = legT(leg);
+    return t >= 0 ? slotIndex(t) : 0;
+}
+/* S.knobMeta's key for a leg: the component alone on a track's page (one
+ * slot), slot + component on the global page (eight slots and the buses). */
+function kmKey(leg) { return S.gmac ? legSlot(leg) + '/' + leg.comp : leg.comp; }
+/* LIVE ONLY: the global macros record nothing (2026-11-22) — every
+ * automation edit on the macro path goes through here. */
+function macAutoEdit(t, clip, slot, fullKey, wire, prevWire) {
+    if (S.gmac) return;
+    automationParamEdit(t, clip, slot, fullKey, wire, prevWire);
+}
 /* The track's eight targets; an unseeded track reads as empty (tick migrates). */
 function macroStore(track) {
     /* The GLOBAL page's store: asked for "the screen's" store (no track, or
@@ -6398,10 +6573,11 @@ function legWriteNorm(t, leg, f, cell, prev, knob) {
         const v = legNormToV(leg, f);
         const wire = String(Math.round(v * 10000) / 10000);
         const prevWire = prev == null ? wire : String(Math.round(prev * 10000) / 10000);
-        automationParamEdit(t, effectiveClip(t), 'mac', t + ':' + knob, wire, prevWire);
+        macAutoEdit(t, effectiveClip(t), 'mac', t + ':' + knob, wire, prevWire);
         return v;
     }
     if (leg.kind === 'level') {
+        if (S.gmac) return null;                     /* not a global target (a screen's cache) */
         const li = macroLevelIdx(leg);
         if (li < 0 || !levelKnobSpec(li)) return null;
         const spec = levelKnobSpec(li), was = S.levelVals[li];
@@ -6421,10 +6597,11 @@ function legWriteNorm(t, leg, f, cell, prev, knob) {
         if (nv === was) return nv;
         bankMacroWriteFor(t, leg, nv);
         const ref = macroAutoRef(leg, t);
-        if (ref) automationParamEdit(t, effectiveClip(t), ref.slot, ref.fullKey, String(nv), String(was));
+        if (ref) macAutoEdit(t, effectiveClip(t), ref.slot, ref.fullKey, String(nv), String(was));
         return nv;
     }
     if (leg.kind === AU_KIND) {
+        if (S.gmac) return null;                     /* its write records (auMacroWrite): not a global target */
         const meta = auMacroMeta(leg, t), was = meta ? auMacroValue(t, leg.key, false) : null;
         if (was == null) return null;
         const nv = Math.round(meta.min + f * (meta.max - meta.min));
@@ -6435,7 +6612,7 @@ function legWriteNorm(t, leg, f, cell, prev, knob) {
         if (!midiTargetOnRoute(leg.target, t)) return null;
         const was = midiVal(t, leg.target);
         const nv = Math.round(f * midiTargetMax(leg.target));
-        if (nv !== was) midiSendValue(t, leg.target, nv, was, true);
+        if (nv !== was) midiSendValue(t, leg.target, nv, was, !S.gmac);
         return nv;
     }
     /* A chain leg. ⭑ clampValue quantises to the cell's own grid, which is
@@ -6444,9 +6621,9 @@ function legWriteNorm(t, leg, f, cell, prev, knob) {
     if (!cell || cell.vanished || MACRO_UNTURNABLE[cell.kind]) return null;
     const nv = clampValue(cell, cell.min + f * (cell.max - cell.min));
     if (nv == null || nv === prev) return nv;
-    queueWrite(leg.key, commitString(cell, nv), leg.comp);
-    automationParamEdit(t, effectiveClip(t), S.slot, macroFullKey(leg),
-                        commitString(cell, nv), prev == null ? '' : commitString(cell, prev));
+    queueWrite(leg.key, commitString(cell, nv), leg.comp, legSlot(leg));
+    macAutoEdit(t, effectiveClip(t), S.slot, macroFullKey(leg),
+                commitString(cell, nv), prev == null ? '' : commitString(cell, prev));
     return nv;
 }
 /* READ a leg's current value back as a 0..1 fraction of its own range — how
@@ -6462,7 +6639,7 @@ function legReadRaw(t, leg, cell) {
     if (leg.kind === AU_KIND) return auMacroMeta(leg, t) ? auMacroValue(t, leg.key, true) : null;
     if (leg.kind === 'midi') return midiTargetOnRoute(leg.target, t) ? midiVal(t, leg.target) : null;
     if (!cell || cell.vanished) return null;
-    return parseValue(cell, engineGet(S.slot, leg.comp, leg.key));   /* ⚠ a round trip */
+    return parseValue(cell, engineGet(legSlot(leg), leg.comp, leg.key));   /* ⚠ a round trip */
 }
 /* That raw value as a 0..1 fraction of the leg's target's own range. */
 function legRawToNorm(t, leg, cell, raw) {
@@ -6533,7 +6710,8 @@ function legShortName(leg) {
     if (leg.kind === 'bank') { const m = bankMacroMeta(leg); return m ? m.abbrev : 'Bank'; }
     if (leg.kind === AU_KIND) { const st = SEQ_AUTO_TARGETS[leg.key]; return st ? st.label : 'Smp'; }
     if (leg.kind === 'midi') return midiTargetName(leg.target).split(' ')[0];
-    const c = S.knobMeta[leg.comp] && S.knobMeta[leg.comp].find(q => q && q.key === leg.key);
+    const km = S.knobMeta[kmKey(leg)];
+    const c = km && km.find(q => q && q.key === leg.key);
     return c ? shortLabel(String(c.name || c.label || leg.key)) : leg.key;
 }
 function macroLevelIdx(m) { return LEVEL_KNOB_SPECS.findIndex(x => x.key === m.key); }
@@ -6585,14 +6763,14 @@ function pbSpringTick() {
     const e = 1 - Math.pow(1 - k, 3);
     const nv = Math.round(sp.from + (PB_CENTRE - sp.from) * e);
     const cur = midiVal(sp.track, 'pb');
-    if (nv !== cur) midiSendValue(sp.track, 'pb', nv, cur, true);
+    if (nv !== cur) midiSendValue(sp.track, 'pb', nv, cur, !sp.live);
     if (k >= 1) GS.pbSpring = null;
 }
 function pbRelease(t) {
     if (S.pbShiftTurned) { GS.pbLatched[t] = true; S.pbShiftTurned = false; return; }
     GS.pbLatched[t] = false;
     const cur = midiVal(t, 'pb');
-    if (cur !== PB_CENTRE) GS.pbSpring = { track: t, from: cur, t0: GS.clockMs };
+    if (cur !== PB_CENTRE) GS.pbSpring = { track: t, from: cur, t0: GS.clockMs, live: !!S.gmac };   /* live: a global macro's spring records nothing */
 }
 
 /* A macro's AUTOMATION target string — the store's own key. A chain or level
@@ -6623,11 +6801,14 @@ function macroLive(m) {
     if (!m) return false;
     /* A chain track, or a Move track on ITS OWN bus screen (S.bus is set there
      * with S.track ≥ 0; a session bus has no track). */
+    /* The global page drives no SnapMorph, Levels or Sample leg (live only;
+     * a global morph is device snapshots, not built yet). */
+    if (S.gmac && (m.kind === MORPH_KIND || m.kind === 'level' || m.kind === AU_KIND)) return false;
     if (m.kind === MORPH_KIND) return morphLegValid(m) && S.track >= 0 && ((GS.trackRoute[S.track] | 0) === 0 || (GS.trackRoute[S.track] | 0) === 1);
     if (m.kind === 'level') return !!macroLevelSpec(m);
-    if (m.kind === 'bank') return !!bankMacroMeta(m);
+    if (m.kind === 'bank') return !!bankMacroMeta(m, legT(m));
     if (m.kind === AU_KIND) return !!auMacroMeta(m);
-    if (m.kind === 'midi') return midiTargetOnRoute(m.target, S.track);
+    if (m.kind === 'midi') return midiTargetOnRoute(m.target, legT(m));
     return true;
 }
 
@@ -6983,7 +7164,7 @@ function fineStepFor(cell) {
  * `{ vanished: true }` when the target is not among the params the component
  * now exposes (module swapped) — drawn UNASSIGNED, never as a blank knob. */
 function macroCellFor(m) {
-    const meta = S.knobMeta[m.comp];
+    const meta = S.knobMeta[kmKey(m)];
     if (!meta) return null;
     const p = meta.find(q => q && q.key === m.key);
     if (!p) return { vanished: true };
@@ -7092,7 +7273,7 @@ function macroTick() {
     if (!macrosActive()) return;
     if (macroMigrateTick()) return;                   /* first visit, or a patch just loaded */
     const store = macroStore();
-    const seedKey = S.slot + '/' + (S.bus ? S.bus.id : 'slot') + '/' + S.track;
+    const seedKey = S.gmac ? 'gmac' : S.slot + '/' + (S.bus ? S.bus.id : 'slot') + '/' + S.track;
     if (S.macSeededFor !== seedKey) {
         S.macSeededFor = seedKey;
         S.macBanksRead = false;
@@ -7112,9 +7293,9 @@ function macroTick() {
         const done = {};
         for (const mp of store) {
             const m = macroLeg0(mp);
-            if (!m || m.kind !== 'bank' || done[m.bank] || !bankMacroMeta(m)) continue;
-            done[m.bank] = true;
-            readBankParams(S.track, m.bank);
+            if (!m || m.kind !== 'bank' || done[legT(m) + ':' + m.bank] || !bankMacroMeta(m, legT(m))) continue;
+            done[legT(m) + ':' + m.bank] = true;
+            readBankParams(legT(m), m.bank);
         }
     }
     /* MAPPED knobs seed first: each chain leg needs its component's metadata
@@ -7142,11 +7323,11 @@ function macroTick() {
                 continue;
             }
             if (leg.kind !== 'chain') continue;
-            if (!S.knobMeta[leg.comp]) {
+            if (!S.knobMeta[kmKey(leg)]) {
                 let list = [];
-                try { list = JSON.parse(engineGet(S.slot, leg.comp, 'chain_params') || '[]') || []; }
+                try { list = JSON.parse(engineGet(legSlot(leg), leg.comp, 'chain_params') || '[]') || []; }
                 catch (e) { list = []; }
-                S.knobMeta[leg.comp] = Array.isArray(list) ? list : [];
+                S.knobMeta[kmKey(leg)] = Array.isArray(list) ? list : [];
                 reads++; S.dirty = true;
             }
             if (!S.macLegCells[i][j]) S.macLegCells[i][j] = legCell(leg);
@@ -7157,7 +7338,7 @@ function macroTick() {
              * at 0.5 for a 0.5..20 reverb instead of where it actually was. */
             const c = S.macLegCells[i][j];
             if (c && !c.vanished && S.macLegVals[i][j] == null && reads < MACRO_READS_PER_TICK) {
-                S.macLegVals[i][j] = parseValue(c, engineGet(S.slot, leg.comp, leg.key));
+                S.macLegVals[i][j] = parseValue(c, engineGet(legSlot(leg), leg.comp, leg.key));
                 reads++; S.dirty = true;
             }
         }
@@ -7171,7 +7352,7 @@ function macroTick() {
             const order = legs.map((l, j) => j).sort((a, b) => (legs[a].kind === MORPH_KIND) - (legs[b].kind === MORPH_KIND));
             for (const j of order) {
                 if (!macroLive(legs[j])) continue;
-                const n = legReadNorm(S.track, legs[j], S.macLegCells[i][j]);
+                const n = legReadNorm(legT(legs[j]), legs[j], S.macLegCells[i][j]);
                 if (n == null) continue;
                 if (legs[j].kind === 'chain') reads++;
                 mp.v = legNormToV(legs[j], n);
@@ -7183,17 +7364,17 @@ function macroTick() {
     for (let i = 0; i < 8 && reads < MACRO_READS_PER_TICK; i++) {
         const m = macroLeg0(store[i]);
         if (!m || m.kind !== 'chain' || macroVDriven(store[i])) continue;
-        if (!S.knobMeta[m.comp]) {
+        if (!S.knobMeta[kmKey(m)]) {
             let list = [];
-            try { list = JSON.parse(engineGet(S.slot, m.comp, 'chain_params') || '[]') || []; }
+            try { list = JSON.parse(engineGet(legSlot(m), m.comp, 'chain_params') || '[]') || []; }
             catch (e) { list = []; }
-            S.knobMeta[m.comp] = Array.isArray(list) ? list : [];
+            S.knobMeta[kmKey(m)] = Array.isArray(list) ? list : [];
             reads++; S.dirty = true;
         }
         if (!S.macCells[i]) S.macCells[i] = macroCellFor(m);
         const cell = S.macCells[i];
         if (cell && !cell.vanished && S.macVals[i] == null && reads < MACRO_READS_PER_TICK) {
-            S.macVals[i] = parseValue(cell, engineGet(S.slot, m.comp, m.key));
+            S.macVals[i] = parseValue(cell, engineGet(legSlot(m), m.comp, m.key));
             reads++; S.dirty = true;
         }
     }
@@ -7229,7 +7410,7 @@ function macroTick() {
             for (const j of S.macApplyRange[i]) {
                 const leg = legs[j];
                 if (!leg) continue;
-                const got = legWriteNorm(S.track, leg, leg.lo + mp.v * (leg.hi - leg.lo), cells[j],
+                const got = legWriteNorm(legT(leg), leg, leg.lo + mp.v * (leg.hi - leg.lo), cells[j],
                                          S.macLegVals[i] ? S.macLegVals[i][j] : null, i);
                 if (got != null && S.macLegVals[i]) S.macLegVals[i][j] = got;
             }
@@ -7243,13 +7424,13 @@ function macroTick() {
                 if (!cell || cell.vanished || MACRO_UNTURNABLE[cell.kind]) { S.macApplyRange[i] = null; continue; }
                 if (S.macVals[i] == null) continue;                     /* wait for the seed */
             }
-            const raw = leg.kind === 'chain' ? S.macVals[i] : legReadRaw(S.track, leg, cell);
-            const n = legRawToNorm(S.track, leg, cell, raw);
+            const raw = leg.kind === 'chain' ? S.macVals[i] : legReadRaw(legT(leg), leg, cell);
+            const n = legRawToNorm(legT(leg), leg, cell, raw);
             if (n != null) {
                 const lo = Math.min(leg.lo, leg.hi), hi = Math.max(leg.lo, leg.hi);
                 const f = Math.max(lo, Math.min(hi, n));
                 if (f !== n) {
-                    const got = legWriteNorm(S.track, leg, f, cell, raw);
+                    const got = legWriteNorm(legT(leg), leg, f, cell, raw);
                     if (got != null && leg.kind === 'chain') S.macVals[i] = got;
                 }
             }
@@ -7284,7 +7465,7 @@ function macroTick() {
             const legs = mp.legs, cells = S.macLegCells[i] || [];
             for (let j = 0; j < legs.length; j++) {
                 const leg = legs[j];
-                const got = legWriteNorm(S.track, leg, leg.lo + nv * (leg.hi - leg.lo), cells[j],
+                const got = legWriteNorm(legT(leg), leg, leg.lo + nv * (leg.hi - leg.lo), cells[j],
                                          S.macLegVals[i] ? S.macLegVals[i][j] : null, i);
                 if (got != null && S.macLegVals[i]) S.macLegVals[i][j] = got;
             }
@@ -7297,8 +7478,9 @@ function macroTick() {
             continue;
         }
         const m = macroLeg0(store[i]), cell = S.macCells[i];
+        const mt = legT(m);                          /* the leg's track: S.track off the global page */
         if (m && m.kind === 'midi') {
-            if (!midiTargetOnRoute(m.target, S.track)) { S.knobAccum[i] = 0; continue; }
+            if (!midiTargetOnRoute(m.target, mt)) { S.knobAccum[i] = 0; continue; }
             /* cc/at: one unit per two detents (a 7-bit sweep in ~254); pb: the
              * 14-bit span at the chain law's 255 positions. */
             const step = m.target === 'pb' ? 64 : 1, sens = 2;
@@ -7307,14 +7489,15 @@ function macroTick() {
             while (S.knobAccum[i] <= -sens) { steps--; S.knobAccum[i] += sens; }
             if (!steps) continue;
             if (m.target === 'pb') GS.pbSpring = null;        /* the hand owns it again */
-            const cur = midiVal(S.track, m.target);
+            const cur = midiVal(mt, m.target);
             const mx = midiTargetMax(m.target);
             let nv = Math.max(0, Math.min(mx, cur + legSteps(m, steps) * step));
             nv = Math.round(legClamp(nv, m, 0, mx));
-            if (nv !== cur) { midiSendValue(S.track, m.target, nv, cur, true); S.dirty = true; }
+            if (nv !== cur) { midiSendValue(mt, m.target, nv, cur, !S.gmac); S.dirty = true; }
             continue;
         }
         if (m && m.kind === AU_KIND) {
+            if (S.gmac) { S.knobAccum[i] = 0; continue; }   /* not a global target */
             const meta = auMacroMeta(m);
             const cur = meta ? auMacroValue(S.track, m.key, false) : null;
             if (cur == null) { S.knobAccum[i] = 0; continue; }
@@ -7329,22 +7512,22 @@ function macroTick() {
             continue;
         }
         if (m && m.kind === 'bank') {
-            const meta = bankMacroMeta(m);
+            const meta = bankMacroMeta(m, mt);
             if (!meta) { S.knobAccum[i] = 0; continue; }
             const tr = legIntTravel(m, meta);
             let steps = 0;
             while (S.knobAccum[i] >= tr.sens) { steps++; S.knobAccum[i] -= tr.sens; }
             while (S.knobAccum[i] <= -tr.sens) { steps--; S.knobAccum[i] += tr.sens; }
             if (!steps) continue;
-            const cur = bankMacroValue(m);
+            const cur = bankMacroValue(m, mt);
             let nv = Math.max(meta.min, Math.min(meta.max, cur + legSteps(m, steps) * tr.step));
             nv = Math.round(legClamp(nv, m, meta.min, meta.max));
             if (nv !== cur) {
-                bankMacroWrite(m, nv);
+                bankMacroWriteFor(mt, m, nv);
                 /* A bank param is an automation target too (seq:<t>:<key>):
                  * the owner decides lock / take / plain, as for a chain knob. */
                 const ref = macroAutoRef(m);
-                if (ref) automationParamEdit(S.track, effectiveClip(S.track), ref.slot, ref.fullKey, String(nv), String(cur));
+                if (ref) macAutoEdit(S.track, effectiveClip(S.track), ref.slot, ref.fullKey, String(nv), String(cur));
                 S.dirty = true;
             }
             continue;
@@ -7370,11 +7553,11 @@ function macroTick() {
         if (next === cur) continue;
         S.macVals[i] = next;                             /* optimistic, drawn now */
         const wire = commitString(cell, next), prevWire = commitString(cell, cur);
-        queueWrite(m.key, wire, m.comp);
+        queueWrite(m.key, wire, m.comp, legSlot(m));
         /* The ONE owner of what a knob edit means — record, lock, override —
          * is ui_automation; a macro is its target, so it goes there exactly as
          * an editor knob does (held step = a lock, Record = a take). */
-        automationParamEdit(S.track, effectiveClip(S.track), S.slot, macroFullKey(m), wire, prevWire);
+        macAutoEdit(S.track, effectiveClip(S.track), S.slot, macroFullKey(m), wire, prevWire);
         S.dirty = true;
     }
     S.macReadsThisTick = reads;
@@ -7408,13 +7591,13 @@ function macroPollTick() {
             const j = macroAnchorIdx(mp);
             if (j < 0 || !S.macLegCells[i]) continue;
             const leg = mp.legs[j], c = S.macLegCells[i][j];
-            const raw = legReadRaw(S.track, leg, c);
+            const raw = legReadRaw(legT(leg), leg, c);
             if (raw == null) continue;
             S.macPoll = i + 1;
             if (raw === S.macAnchorVal[i]) break;              /* our own write, or nothing moved */
             S.macAnchorVal[i] = raw;
             if (S.macLegVals[i]) S.macLegVals[i][j] = raw;
-            const nv = legNormToV(leg, legRawToNorm(S.track, leg, c, raw));
+            const nv = legNormToV(leg, legRawToNorm(legT(leg), leg, c, raw));
             if (nv != null && nv !== mp.v) { mp.v = nv; S.dirty = true; }
             break;
         }
@@ -7435,7 +7618,7 @@ function macroPollTick() {
          * on it silenced every knob but the first once turned (Josh,
          * 2026-09-03: "only the 1st macro widget is visualizing"). */
         if (i === S.touchedIdx || (GS.clockMs - (S.macTurnMs[i] || 0)) < MACRO_HAND_MS) continue;
-        const v = parseValue(cell, engineGet(S.slot, m.comp, m.key));
+        const v = parseValue(cell, engineGet(legSlot(m), m.comp, m.key));
         if (v !== S.macVals[i]) { S.macVals[i] = v; S.dirty = true; }
         S.macPoll = i + 1;
         break;
@@ -7445,6 +7628,7 @@ function macroPollTick() {
 /* The knob's automation target on the current non-editor page — a level on
  * SOUND + CONFIG, a macro on MACROS — for the ring paint under Mute/Delete. */
 function pageKnobTarget(k) {
+    if (S.gmac) return null;                         /* live only: no lane to paint */
     if (macrosActive()) { const m = macroTarget(k); return macroLive(m) ? macroAutoTarget(m, null, k) : null; }
     if (midiMixActive()) return (MIDI_MIX_SPECS[k] && MIDI_MIX_SPECS[k].target) || null;
     const li = levelIdxForKnob(k);
@@ -7469,6 +7653,8 @@ function macroCells(track, live) {
         const k = 'K' + (i + 1);
         const unassigned = (label) => ({ kind: 'valsq', label: label || k, name: k + ' UNASSIGNED', text: '--' });
         if (!m) { cells.push(unassigned()); continue; }
+        /* The leg's own track on the global page (t is -1 there). */
+        const lt = S.gmac ? legT(m) : t;
         /* A MAPPED knob has no single parameter to BE, so it draws as a plain
          * arc of its own position under its own label (design §3.1) — and the
          * automation dot is ON if ANY leg is automated, because ruling A puts
@@ -7492,10 +7678,13 @@ function macroCells(track, live) {
                     if (st) { cellM.auto = st.active ? 'auto' : 'auto-off'; if (st.active && !focus) break; }
                 }
             }
+            /* The global page's header names where the FIRST leg lives. */
+            if (S.gmac) cellM.name = gmacScope(m) + ' ' + cellM.name;
             cells.push(cellM);
             continue;
         }
         let cell;
+        if (S.gmac && !macroLive(m)) { cells.push(unassigned()); continue; }   /* a kind the global page does not drive */
         if (m.kind === MORPH_KIND) {
             /* A SNAPMORPH knob: like a mapped knob, an arc of its own position
              * — its "value" is where it sits between the snapshots. */
@@ -7522,23 +7711,23 @@ function macroCells(track, live) {
                 else { cell.kind = spec.widget; cell.norm = v == null ? 0 : Math.max(0, Math.min(1, v / spec.max)); }
             }
         } else if (m.kind === 'bank') {
-            const meta = bankMacroMeta(m, t);
+            const meta = bankMacroMeta(m, lt);
             if (!meta) { cells.push(unassigned()); continue; }
             const tg = (live && t === GS.activeTrack) ? macroAutoTarget(m, t, i) : null;
             const hv = tg ? autoHeldValue(tg) : null;
-            cell = bankMacroCell(m, meta, hv ? (Number(hv.wire) | 0) : bankMacroValue(m, t));
+            cell = bankMacroCell(m, meta, hv ? (Number(hv.wire) | 0) : bankMacroValue(m, lt));
         } else if (m.kind === AU_KIND) {
-            const meta = auMacroMeta(m, t);
+            const meta = S.gmac ? null : auMacroMeta(m, t);
             if (!meta) { cells.push(unassigned()); continue; }
             const hv = (live && t === GS.activeTrack) ? autoHeldValue(macroAutoTarget(m, t, i)) : null;
             const v = hv ? (Number(hv.wire) | 0) : auMacroValue(t, m.key, false);
             /* no sample yet (or ALL SLICES on a Loop clip): nothing to drive */
             cell = v == null ? Object.assign(bankMacroCell(m, meta, meta.min), { text: '--' }) : bankMacroCell(m, meta, v);
         } else if (m.kind === 'midi') {
-            if (!midiTargetOnRoute(m.target, t)) { cells.push(unassigned()); continue; }
+            if (!midiTargetOnRoute(m.target, lt)) { cells.push(unassigned()); continue; }
             const hv = (live && t === GS.activeTrack) ? autoHeldValue(m.target) : null;
             const fv = hv ? parseInt(hv.wire, 10) : NaN;
-            cell = midiCellFor(m.target, isFinite(fv) ? fv : midiVal(t, m.target));
+            cell = midiCellFor(m.target, isFinite(fv) ? fv : midiVal(lt, m.target));
         } else {
             /* ⚠⚠ TWO CACHES, ONE DISPLAY. `macCells/macVals` are the PLAIN
              * path's; `macLegCells/macLegVals` are the v-driven path's, filled
@@ -7603,6 +7792,10 @@ function macroCells(track, live) {
                 }
             }
         }
+        /* ⭑ THE GLOBAL HEADER ALWAYS NAMES THE TRACK OR BUS (2026-11-22),
+         * abbreviated so the tail truncation only ever eats the param name:
+         * `T3 CUTOFF`, `T3 FX1 MIX`, `MST FX1 MIX`, `SNA RETURN`. */
+        if (S.gmac && cell) cell.name = gmacScope(m) + ' ' + (cell.name || '');
         if (live && !S.gmac && macroLive(m)) {
             const tg = macroAutoTarget(m, t, i);
             const st = tg ? automationStateFor(t, c, tg) : null;
@@ -8462,6 +8655,7 @@ function runActionBody(a) {
     else if (a.t === 'slotcfg')  openSlotCfg(a.keep, a.which);
     else if (a.t === 'knobs')    openKnobEditor();
     else if (a.t === 'knobtarget') openKnobTargets();
+    else if (a.t === 'gmacscope')  openGmacScope();
     else if (a.t === 'knobparam')  openKnobParams(a.target);
     else if (a.t === 'lfo')      openLfoEditor(a.lfo | 0);
     else if (a.t === 'lfotarget') openLfoTargets();
@@ -8898,18 +9092,14 @@ function cycleListFilter() {
  * exactly the ones that silently rebind.
  */
 export function moduleChangeImpact(track, slot, comp) {
-    const legs = [];                                    /* [knobIdx, legIdx] */
-    const store = (GS.trackMacros && GS.trackMacros[track]) || [];
-    for (let i = 0; i < store.length; i++) {
-        const mp = store[i]; if (!mp || !mp.legs) continue;
-        for (let l = 0; l < mp.legs.length; l++) {
-            const leg = mp.legs[l];
-            /* A macro leg carries no slot: it is per TRACK, and the track's own
-             * slot is the one it means. `comp` is what distinguishes synth from
-             * fx1..fx4 and the bus inserts. */
-            if (leg && leg.kind === 'chain' && leg.comp === comp) legs.push([i, l]);
-        }
-    }
+    const legs = [];                                    /* [knobIdx, legIdx, owner] */
+    /* A macro leg carries no slot: it is per TRACK, and the track's own slot
+     * is the one it means. `comp` is what distinguishes synth from fx1..fx4
+     * and the bus inserts. Both stores: a global leg names its track (-1 for
+     * a session bus, so a Master / Send FX swap reaches it too). */
+    forEachMacroLeg((leg, at) => {
+        if (legOwnerTrack(leg, at) === track && leg && leg.kind === 'chain' && leg.comp === comp) legs.push([at.i, at.l, at.owner]);
+    });
     const lanes = [];                                   /* [clip, target] */
     const prefix = slot + ':' + comp + ':';
     for (let c = 0; c < NUM_CLIPS; c++)
@@ -8977,15 +9167,19 @@ function insertFxFollow(c, from, to) {
     const isBus = c.track < 0;
     const legRe = isBus ? new RegExp('^' + c.scope.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + 'fx([1-4])$')
                         : /^fx([1-4])$/;
-    const tracks = isBus ? Array.from({ length: (GS.trackMacros || []).length }, (_, t) => t) : [c.track];
+    /* Both stores (forEachMacroLeg's owners): a bus move renames every leg
+     * on that bus, a chain move the legs on that ONE track — a global leg
+     * by the track it names. */
+    const owners = (isBus ? Array.from({ length: (GS.trackMacros || []).length }, (_, t) => t) : [c.track]).concat(['g']);
     let legsMoved = 0;
-    for (const t of tracks) {
-        const store = GS.trackMacros && GS.trackMacros[t];
+    for (const owner of owners) {
+        const store = macroStoreOf(owner);
         if (!store) continue;
         for (let i = 0; i < store.length; i++) {
             const mp = store[i]; if (!mp || !mp.legs) continue;
             let changed = false;
             const legs = mp.legs.map((leg) => {
+                if (owner === 'g' && !isBus && legOwnerTrack(leg, { owner }) !== c.track) return leg;
                 const m = leg && leg.kind === 'chain' && typeof leg.comp === 'string' && legRe.exec(leg.comp);
                 if (!m || map[+m[1]] === +m[1]) return leg;
                 changed = true; legsMoved++;
@@ -8993,7 +9187,8 @@ function insertFxFollow(c, from, to) {
             });
             if (changed) {
                 store[i] = Object.assign({}, mp, { legs });
-                if (S.track === t) S.knobAsn[i] = asnFromMacro(macroLeg0(store[i]));
+                if (owner === 'g') { if (S.gmac) { S.knobAsn[i] = asnFromMacro(macroLeg0(store[i])); S.macCells[i] = null; S.macLegCells[i] = null; } }
+                else if (!S.gmac && S.track === owner) S.knobAsn[i] = asnFromMacro(macroLeg0(store[i]));
             }
         }
     }
@@ -9026,24 +9221,10 @@ function insertFxFollow(c, from, to) {
  * same order and the same single sidecar write as performTypeChange. */
 function pruneForModuleChange(track, impact) {
     if (!impact) return;
-    const store = GS.trackMacros && GS.trackMacros[track];
-    if (store && impact.legs.length) {
-        const drop = new Map();
-        for (const [i, l] of impact.legs) { if (!drop.has(i)) drop.set(i, new Set()); drop.get(i).add(l); }
-        for (const [i, set] of drop) {
-            const mp = store[i]; if (!mp) continue;
-            const legs = mp.legs.filter((_, l) => !set.has(l));
-            store[i] = legs.length ? { v: mp.v, legs } : null;
-            if (S.track === track) {
-                S.knobAsn[i] = asnFromMacro(macroLeg0(store[i]));
-                /* ⚠ The mirror matters as much as the store: `macroMirrorToChain`
-                 * pushes the mapping down to the chain DSP, so a leg pruned only
-                 * in JS would leave the ENGINE still driving the old target. */
-                macroMirrorToChain(i, store[i]);
-            }
-        }
-        writeSidecar();
-    }
+    /* ⚠ The mirror matters as much as the store (dropMacroLegs re-mirrors a
+     * track store on screen): a leg pruned only in JS would leave the ENGINE
+     * still driving the old target. */
+    if (dropMacroLegs(impact.legs)) writeSidecar();
     for (const [clip, target] of impact.lanes) automationClearKey(track, clip, target);
     S.dirty = true;
 }
@@ -10234,7 +10415,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * and the track-volume handler in ui_input_cc acts on the active
          * track exactly as it does outside sound mode. */
         if (!S.shiftHeld) return false;
-        if (soundIsGlobal()) return false;
+        if (soundIsGlobal() || S.gmac) return false;     /* no track level on a session screen */
         const delta = decodeDelta(d2);
         if (delta) onVolumeTurn(delta);
         return true;
@@ -10438,6 +10619,8 @@ export function soundOnCC(d1, d2, decodeDelta) {
             }
             else if (S.knobLegEditing) knobLegRangeTurn(rows[S.knobLegRow], delta);
             else S.knobLegRow = listMove(rows.length, S.knobLegRow, delta);
+        } else if (S.view === VIEW_GMAC_SCOPE) {
+            S.gmScopeIdx = listMove(S.gmScopeRows.length, S.gmScopeIdx, delta);
         } else if (S.view === VIEW_KNOB_TARGET) {
             S.knobTargetIdx = listMove(S.knobTargets.length, S.knobTargetIdx, delta);
         } else if (S.view === VIEW_ENUM) {
@@ -10796,17 +10979,18 @@ export function soundOnCC(d1, d2, decodeDelta) {
         else if (S.view === VIEW_KNOBLEGS) {
             const rows = knobLegRows(), row = rows[S.knobLegRow];
             if (!row) { /* nothing */ }
-            else if (row.kind === 'add') { S.knobLegIdx = -1; S.pendingAction = { t: 'knobtarget' }; }
+            else if (row.kind === 'add') { S.knobLegIdx = -1; if (S.gmac) queueGmacScope(VIEW_KNOBLEGS); else S.pendingAction = { t: 'knobtarget' }; }
             else if (row.kind === 'leg') {
                 /* Shift+click REMOVES the leg; a plain click re-points it,
                  * keeping its range (a range belongs to the knob's shape, not
                  * to whichever parameter is on the other end of it). */
                 if (S.shiftHeld) knobLegRemove(row.leg);
-                else { S.knobLegIdx = row.leg; S.pendingAction = { t: 'knobtarget' }; }
+                else { S.knobLegIdx = row.leg; if (S.gmac) queueGmacScope(VIEW_KNOBLEGS); else S.pendingAction = { t: 'knobtarget' }; }
             }
             else if (row && row.kind === 'travel') knobLegTravelToggle(row);
             else S.knobLegEditing = !S.knobLegEditing;
         }
+        else if (S.view === VIEW_GMAC_SCOPE) gmacScopeClick();
         else if (S.view === VIEW_KNOB_TARGET) {
             const t = S.knobTargets[S.knobTargetIdx];
             if (t && !t.id) commitKnobAssignment('', '');      /* (None) = clear */
@@ -11431,6 +11615,11 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * two-stage Back slot settings has. */
             if (S.knobLegEditing) S.knobLegEditing = false;
             else S.view = VIEW_MACROS;      /* the card: the K-list has no door now */
+        } else if (S.view === VIEW_GMAC_SCOPE) {
+            /* Back lands where the scope list was opened from: the page, or
+             * the knob's leg list (+ Add target, a re-point). */
+            S.knobLegIdx = -1;
+            S.view = S.gmScopeFrom === VIEW_KNOBLEGS && macroLegs(macroMapping(S.knobIdx)).length ? VIEW_KNOBLEGS : VIEW_MACROS;
         } else if (S.view === VIEW_KNOBS) {
             /* The list floats over the MACROS page; Back returns to it. The
              * store was written at each commit (sidecar), nothing to flush. */
@@ -11444,7 +11633,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * that says so, and the breadcrumb reads the same edges.
              * ⚠ Below VIEW_LFO deliberately: LFO has an edit state to close
              * before it steps anywhere, so it is not a pure step-up. */
-            S.view = VIEW_TREE[S.view].parent;
+            S.view = treeParent(S.view);
         } else if (S.view === VIEW_PATCHES) {
             if (S.patchConfirm) S.patchConfirm = null;
             else { S.view = VIEW_BLOCKS; S.patchMsg = ''; }
@@ -11566,7 +11755,19 @@ export function soundOnNote(status, d1, d2) {
      * ranges and labels will live. Shift is free on a macro touch again; do
      * not re-hang an assign flow on it. (Shift + TURN on a pitch-bend macro
      * still LATCHES the bend: that is a VALUE gesture, not an assign one.) */
-    if (macrosActive()) {
+    if (macrosActive() && S.gmac) {
+        /* THE GLOBAL PAGE is live only (2026-11-22): a touch opens no
+         * automation gesture, and Delete / Mute + touch clear or toggle no
+         * lane. Only a pitch-bend leg's hand-off survives (its spring), and
+         * the release persists what the hand changed. */
+        for (const m of macroLegs(macroMapping(d1))) {
+            if (m.kind !== 'midi' || m.target !== 'pb' || !macroLive(m)) continue;
+            if (on) { GS.pbSpring = null; S.pbShiftTurned = false; }
+            else pbRelease(legT(m));
+        }
+        if (!on && (S.midiValsDirty || S.macDirty)) { S.midiValsDirty = false; S.macDirty = false; writeSidecar(); }
+        S.dirty = true;
+    } else if (macrosActive()) {
         /* A MACRO's touch is an automation gesture, exactly as an editor
          * knob's: Delete+touch clears, Mute+touch deactivates/reactivates
          * (and marks the Mute a modifier), and the touch itself opens/closes
@@ -11864,7 +12065,7 @@ export function soundTick() {
      * the five that exist here, unlit where nothing is automated; K6-K8 unlit.
      * On release the rings go back to unlit — nothing else paints them on
      * these screens (the editor's own repaint runs in its block below). */
-    if ((S.muteHeld || S.deleteHeld) && (levelsActive() || macrosActive() || midiMixActive())) {
+    if ((S.muteHeld || S.deleteHeld) && !S.gmac && (levelsActive() || macrosActive() || midiMixActive())) {   /* the global macros record nothing: no lane to paint */
         S.autoLedPaint = true;
         const t = S.track, c = effectiveClip(t);
         for (let k = 0; k < 8; k++) {
@@ -14556,6 +14757,7 @@ const SOUND_VIEW_NAMES = {
     [VIEW_KNOBLEGS]: 'knob-legs',
     [VIEW_KNOB_TARGET]: 'knob-target',
     [VIEW_KNOB_PARAM]: 'knob-param',
+    [VIEW_GMAC_SCOPE]: 'gmac-scope',
     [VIEW_LFO]: 'lfo',
     [VIEW_LFO_TARGET]: 'lfo-target',
     [VIEW_LFO_PARAM]: 'lfo-param',
@@ -14634,6 +14836,7 @@ export function soundRender() {
     else if (S.view === VIEW_KNOBS) renderKnobs();
     else if (S.view === VIEW_KNOBLEGS) renderKnobLegs();
     else if (S.view === VIEW_KNOB_TARGET) renderKnobTarget();
+    else if (S.view === VIEW_GMAC_SCOPE) renderGmacScope();
     else if (S.view === VIEW_KNOB_PARAM) renderKnobParam();
     else if (S.view === VIEW_LFO) renderLfo();
     else if (S.view === VIEW_LFO_TARGET) renderLfoTarget();
