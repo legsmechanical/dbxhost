@@ -391,38 +391,15 @@ static int sp_globals_misc(sp_ctx_t *cx) {
     if (!strcmp(key, "launch_scene")) {
         int cidx = clamp_i(my_atoi(val), 0, NUM_CLIPS - 1);
         int t;
-        if (inst->launch_quant == 0 && inst->playing) {
-            /* Now + transport running: fire per-track immediately */
-            for (t = 0; t < NUM_TRACKS; t++) {
-                seq8_track_t *tr2 = &inst->tracks[t];
-                clip_t  *_ncl   = &tr2->clips[cidx];
-                uint16_t newlen = _ncl->length;
-                uint16_t _nls   = _ncl->loop_start;
-                tr2->current_step     = tr2->clip_playing
-                                       ? (uint16_t)(_nls + tr2->current_step % newlen)
-                                       : (uint16_t)(_nls + inst->global_tick % newlen);
-                /* Same release the per-track immediate launch owes — a scene
-                 * launch is that gesture on all eight tracks at once, so
-                 * forgetting it here strands eight parameters, not one. */
-                pa_switch_request(inst, t, (int)tr2->active_clip, cidx);
-                tr2->active_clip      = (uint8_t)cidx;
-                pfx_sync_from_clip(tr2);
-                if (tr2->pad_mode == PAD_MODE_DRUM && tr2->drum_clips[cidx]) {
-                    int _dl;
-                    for (_dl = 0; _dl < DRUM_LANES; _dl++)
-                        drum_lane_anchor_playhead(inst, tr2, _dl,
-                            &tr2->drum_clips[cidx]->lanes[_dl].clip);
-                }
-                tr2->clip_playing     = 1;
-                tr2->queued_clip      = -1;
-                tr2->pending_page_stop = 0;
-                tr2->will_relaunch    = 0;
-            }
+        if (inst->playing) {
+            /* Each track switches exactly as LAUNCH_CLIP would switch it at
+             * this moment (ruled 2026-11-21): the same placement, silencing
+             * at Now, program / bank, and quantize boundary. */
+            for (t = 0; t < NUM_TRACKS; t++)
+                launch_clip_track(inst, t, cidx);   /* A5-route */
         } else {
-            /* Quantized or stopped: queue at next boundary */
+            /* Stopped: queue for the next Play, no active-clip change. */
             for (t = 0; t < NUM_TRACKS; t++) {
-                if (inst->tracks[t].clip_playing)
-                    inst->tracks[t].pending_page_stop = 1;
                 inst->tracks[t].queued_clip   = (int8_t)cidx;
                 inst->tracks[t].will_relaunch = 0;
             }
