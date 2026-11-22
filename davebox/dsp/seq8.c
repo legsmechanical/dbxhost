@@ -4949,8 +4949,12 @@ static void drum_repeat_tick(seq8_instance_t *inst, seq8_track_t *tr) {
         /* The active slot can be EMPTY (NULL) — cleared, or a clip-copy of an
          * empty source — and the fire below dereferences it. Skip the note;
          * the phase still advances. */
+        /* A muted (or soloed-out) LANE does not repeat, held pad or not
+         * (ruled 2026-11-21); the phase still advances, so an unmute
+         * resumes in step. Track mute keeps its own held-pad rule above. */
         if ((tr->drum_repeat_gate[lane] & (uint8_t)(1u << step))
-                && tr->drum_clips[tr->active_clip]) {
+                && tr->drum_clips[tr->active_clip]
+                && !effective_drum_mute(tr, lane) /* B3-rpt1 */) {
             /* Absolute per-step velocity; Thru (255, the default) passes the
              * held-pad velocity (incl. VelIn) through. */
             int vel = (int)tr->drum_repeat_vel_scale[lane][step];
@@ -5113,6 +5117,7 @@ static void drum_repeat2_tick(seq8_instance_t *inst, seq8_track_t *tr) {
         int fire_at     = nudge_ticks >= 0 ? nudge_ticks : (int)rate + nudge_ticks;
         if ((int)tr->drum_repeat2_phase[l] != fire_at) goto advance_l;
         if (!(tr->drum_repeat_gate[l] & (uint8_t)(1u << step))) goto advance_l;
+        if (effective_drum_mute(tr, l)) goto advance_l;   /* B3-rpt2: a muted lane does not repeat */
         if (!tr->drum_clips[tr->active_clip]) goto advance_l;   /* empty slot: see drum_repeat_tick */
         {
             /* Absolute per-step velocity, Thru = held-pad vel — same rule as Rpt1. */
