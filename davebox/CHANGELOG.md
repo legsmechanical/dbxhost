@@ -8,6 +8,11 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 
+### Added
+- **Global macros**: Session View's bank map has a MACROS pad. Its eight knobs can drive
+  parameters on any track, on the Master FX and on the Send FX (and a Send's Return), live and
+  unrecorded; the screen names the track or bus of the parameter you touch.
+
 ### Changed
 - **Track solo is exclusive**: soloing a track un-solos the others. **Mixer solo adds**: solo as
   many mixer strips as you like.

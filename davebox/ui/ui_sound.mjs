@@ -4651,7 +4651,30 @@ function gmacScopeRows() {
         const bus = route === 1 ? moveBusFor(t) : null;
         rows.push({ label: 'T' + (t + 1) + ' ' + trackInstrName(t), track: t, slot: bus ? 0 : slotIndex(t), bus });
     }
+    /* ...then the session buses (slice 3): no track (-1), slot 0, the bus as
+     * the context, so knobTargetList probes its four inserts. `code` is the
+     * header's abbreviation (gmacScope), which seeds the cursor on re-point. */
+    const NAMES = { master: ['Master FX', 'MST'], sendA: ['Send FX A', 'SNA'], sendB: ['Send FX B', 'SNB'] };
+    for (const b of FX_BUSES) {
+        const nm = NAMES[b.id];
+        if (nm) rows.push({ label: nm[0], code: nm[1], track: -1, slot: 0, bus: b });
+    }
     return rows;
+}
+/* A session bus's own levels (a Send's Return) are no module's params, so no
+ * chain_params lists them: the macro path is handed their metadata here, from
+ * the bus table — or macroCellFor would report the target VANISHED. */
+function busLevelFor(comp) {
+    for (const b of FX_BUSES) for (const l of (b.levels || [])) if (l.comp === comp) return b.levels;
+    return null;
+}
+function macroMetaRead(leg) {
+    const lv = busLevelFor(leg.comp);
+    if (lv) return lv.map(l => ({ key: l.key, name: l.label, type: 'float', min: l.min, max: l.max, step: l.step }));
+    let list = [];
+    try { list = JSON.parse(engineGet(legSlot(leg), leg.comp, 'chain_params') || '[]') || []; }
+    catch (e) { list = []; }
+    return Array.isArray(list) ? list : [];
 }
 function openGmacScope() {
     S.gmScopeRows = gmacScopeRows();
@@ -4726,7 +4749,11 @@ function knobTargetList() {
     /* THE MIDI TARGETS (spec §2b): CC on a MIDI track; aftertouch and pitch
      * bend on every track. */
     if (midiTrack) rows.push({ id: 'midicc', name: 'MIDI CC' });
-    rows.push({ id: 'midi', name: 'MIDI' });
+    /* A session bus (the global picker's Master / Send scope, track -1) has no
+     * MIDI to send — only its inserts and, on a Send, its Return. */
+    if (S.track >= 0) rows.push({ id: 'midi', name: 'MIDI' });
+    if (S.track < 0 && S.bus && S.bus.kind === 'global')
+        for (const l of (S.bus.levels || [])) rows.push({ id: l.comp, name: l.label });
     /* davebox's own BANKS (the allow-listed knobs), for this pad mode, then
      * the mixer levels: target KINDS of their own (spec §2; Josh 2026-09-03). */
     if (S.track >= 0) {
@@ -4812,6 +4839,9 @@ export function soundKnobParamIdxForTest() { return S.knobParamIdx; }
  * chain_params, then the legacy hardcoded fallback. */
 function knobParamList(target) {
     const params = [];
+    /* A session bus's own level (a Send's Return): the bus table's rows. */
+    const busLv = busLevelFor(target);
+    if (busLv) return busLv.map(l => ({ key: l.key, label: l.label }));
     if (target === LEVEL_TARGET) {
         for (let i = 0; i < LEVEL_KNOB_SPECS.length; i++)
             if (levelKnobSpec(i)) params.push({ key: LEVEL_KNOB_SPECS[i].key, label: LEVEL_KNOB_SPECS[i].name });
@@ -4946,7 +4976,9 @@ const COMPONENT_NAMES = {
 };
 /* A Move bus's insert FX carry the bus prefix (`move_fx:2:fx1`); the table is
  * keyed on the bare component, and the bus is already the screen's context. */
-function compBare(id) { return String(id || '').replace(/^move_fx:\d+:/, ''); }
+/* ...and so do the session buses' (`master_fx:fx1`, `send_fx:a:fx2`): the
+ * global picker shows them beside a param, the bus being its crumb. */
+function compBare(id) { return String(id || '').replace(/^(move_fx:\d+:|master_fx:|send_fx:[ab]:)/, ''); }
 /* ⭑ WHERE A GLOBAL LEG LIVES, abbreviated for the touched header (2026-11-22:
  * always the track or bus): `T3` (the instrument), `T3 FX1`, `T3 MFX`,
  * `MST` / `MST FX1`, `SNA` / `SNB FX2`. 2-7 characters, so the 124 px header
@@ -4965,6 +4997,8 @@ function gmacScope(leg) {
     return tn + ' ' + bare.toUpperCase();
 }
 function compShort(id) {
+    const sm = /^send_fx:([ab])$/.exec(String(id || ''));
+    if (sm) return 'SN' + sm[1].toUpperCase();      /* a Send's own level (its Return) */
     const e = COMPONENT_NAMES[compBare(id)];
     return e ? e.short : compBare(id);
 }
@@ -7324,10 +7358,7 @@ function macroTick() {
             }
             if (leg.kind !== 'chain') continue;
             if (!S.knobMeta[kmKey(leg)]) {
-                let list = [];
-                try { list = JSON.parse(engineGet(legSlot(leg), leg.comp, 'chain_params') || '[]') || []; }
-                catch (e) { list = []; }
-                S.knobMeta[kmKey(leg)] = Array.isArray(list) ? list : [];
+                S.knobMeta[kmKey(leg)] = macroMetaRead(leg);
                 reads++; S.dirty = true;
             }
             if (!S.macLegCells[i][j]) S.macLegCells[i][j] = legCell(leg);
@@ -7365,10 +7396,7 @@ function macroTick() {
         const m = macroLeg0(store[i]);
         if (!m || m.kind !== 'chain' || macroVDriven(store[i])) continue;
         if (!S.knobMeta[kmKey(m)]) {
-            let list = [];
-            try { list = JSON.parse(engineGet(legSlot(m), m.comp, 'chain_params') || '[]') || []; }
-            catch (e) { list = []; }
-            S.knobMeta[kmKey(m)] = Array.isArray(list) ? list : [];
+            S.knobMeta[kmKey(m)] = macroMetaRead(m);
             reads++; S.dirty = true;
         }
         if (!S.macCells[i]) S.macCells[i] = macroCellFor(m);

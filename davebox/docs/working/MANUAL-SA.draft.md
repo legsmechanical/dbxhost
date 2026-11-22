@@ -2798,6 +2798,30 @@ at any MIDI CC.
 Pitch bend springs back to centre when you let go of the knob. To latch it, hold [Shift] while you
 turn.
 
+### 24.1.4 Global Macros
+
+Session View has eight macros of its own, which can reach any track and the Master and Send
+effects. Hold the jog in Session View and tap MACROS, the top pad of the third column. The knobs
+are now the global macros; touch one to see the page. Tap a mixer pad to give the knobs back to
+the mixer.
+
+To assign a global macro, touch its knob and click the jog. Choose a track (T1 to T8, each with its
+instrument), Master FX, Send FX A or Send FX B, then a module and a parameter, as on a track's
+MACROS. A Send also offers its Return level. A track offers its modules, MIDI and its banks, but not
+Levels, SnapMorph or Sample.
+
+The touched knob's header always says where its parameter lives: `T3 CUTOFF`, `T3 FX1 MIX`,
+`MST FX1 MIX`, `SNA RETURN`. One knob can drive parameters on several tracks, with Lo, Hi and
+Travel as in [One Knob, Several Parameters](#2411-one-knob-several-parameters).
+
+Global macros play live and are never recorded. A parameter a lane plays back takes over again at
+its next point. A global macro can drive a parameter a track macro also drives; the last one turned
+wins.
+
+To unassign all eight, hold [Delete] and click the jog on the page, then confirm. [Undo] takes it
+back. Changing a track's instrument type, swapping a module or moving an effect asks first and
+carries the global macros along exactly as it does the track's own.
+
 ## 24.2 Sound Snapshots
 
 > 🎬 **Video:** [Tutorial 5.5: Sound snapshots and SnapMorph](https://youtu.be/rV0Vhle7INg?t=372) (from 6:12)
@@ -3515,7 +3539,7 @@ Hold [Shift] and press a step button:
 | [Shift] + side button | Launch at the end of the page |
 | Plus / minus buttons | Scroll rows |
 | Knobs 1–8 | Each track's Volume / Pan / Send A / Send B |
-| Hold the jog | The Session map: what the knobs set (Volume, Pan, Send A, Send B, EQ, Compress) and the Master and Send FX |
+| Hold the jog | The Session map: what the knobs set (Volume, Pan, Send A, Send B, EQ, Compress, the global MACROS) and the Master and Send FX |
 | Touch a knob or the jog | Show the mixer page |
 | [Mute] + touch a knob / [Shift] + [Mute] + touch a knob | Mute / solo that track |
 | [Delete] + [Mute] | Clear every mute and solo |
