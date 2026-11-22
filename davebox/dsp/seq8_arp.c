@@ -364,11 +364,11 @@ static void arp_tick(seq8_instance_t *inst, seq8_track_t *tr) {
                 arp_fire_step(inst, tr);
             }
         } else {
-            uint32_t total = inst->arp_master_tick - a->master_anchor;
-            if ((total % rate) == 0) {
-                a->pending_first_note = 0;
-                arp_fire_step(inst, tr);
-            }
+            /* Sync off = FREE: start on the note, as LIVE ARP does (ruled
+             * 2026-11-21); the Arp Steps column re-anchors here too. */
+            a->master_anchor      = inst->arp_master_tick;   /* A3-anchor */
+            a->pending_first_note = 0;                       /* A3-free */
+            arp_fire_step(inst, tr);
         }
         return;
     }
