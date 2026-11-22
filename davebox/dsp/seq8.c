@@ -5765,6 +5765,29 @@ static void silence_muted_tracks(seq8_instance_t *inst) {
 /* Plugin lifecycle                                                     */
 /* ------------------------------------------------------------------ */
 
+/* Seed for each per-track / per-lane random generator. Not the same value at
+ * every launch (ruled 2026-11-21): the first pass after a load is not the
+ * same "random" pattern each time. create_instance stirs the clock into the
+ * state; each call advances it, so tracks and lanes differ from each other
+ * too. The test build fixes the seed (seq8_rng_fixed) so every unit test and
+ * golden stays bit-identical; a test may clear it. Arithmetic only — safe on
+ * the audio thread. */
+#ifdef SEQ8_TESTING
+static int seq8_rng_fixed = 1;
+#else
+static int seq8_rng_fixed = 0;
+#endif
+static uint32_t seq8_rng_state = 0x6A09E667u;
+static uint32_t seq8_rng_seed(void) {
+    if (seq8_rng_fixed) return 12345u;                   /* A9-fixed */
+    seq8_rng_state += 0x9E3779B9u;                       /* A9-advance */
+    uint32_t z = seq8_rng_state;
+    z = (z ^ (z >> 16)) * 0x85EBCA6Bu;
+    z = (z ^ (z >> 13)) * 0xC2B2AE35u;
+    z ^= z >> 16;
+    return z ? z : 1u;
+}
+
 static void pfx_init_defaults(play_fx_t *fx) {
     /* Whole-struct zero FIRST: the bakes build their play_fx_t on the STACK,
      * and pfx_reset sets only the fields it names — a field it misses keeps
@@ -5774,7 +5797,7 @@ static void pfx_init_defaults(play_fx_t *fx) {
     memset(fx, 0, sizeof(*fx));
     pfx_reset(fx);                     /* explicit zero of all stages */
     fx->cached_bpm = (double)BPM_DEFAULT;
-    fx->rng        = 12345;
+    fx->rng        = seq8_rng_seed();   /* A9-track (a bake sets its own after) */
     fx->route      = ROUTE_SCHWUNG;    /* default: Schwung chains */
 }
 
@@ -5835,7 +5858,7 @@ static void drum_pfx_init_defaults(drum_pfx_t *px, uint8_t t_idx, uint8_t l_idx)
     px->gate_time   = 100;
     px->delay_time_idx = DEFAULT_DRUM_DELAY_TIME_IDX;
     px->cached_bpm  = (double)BPM_DEFAULT;
-    px->rng         = 12345;
+    px->rng         = seq8_rng_seed();   /* A9-lane */
     px->route       = ROUTE_SCHWUNG;
     px->looper_on   = 1;
     px->track_idx   = t_idx;
@@ -7648,6 +7671,8 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
 
     /* Unique nonce: JS polls this to detect DSP hot-reload */
     inst->instance_nonce = (uint32_t)time(NULL) ^ (uint32_t)((uintptr_t)inst >> 3);
+    /* Stir the clock into the random generators' seed state (see seq8_rng_seed). */
+    seq8_rng_state ^= ((uint32_t)time(NULL) * 2654435761u) ^ (uint32_t)((uintptr_t)inst >> 3);   /* A9-stir */
 
     int t, c;
     for (t = 0; t < NUM_TRACKS; t++) {
