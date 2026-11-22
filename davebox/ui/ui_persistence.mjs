@@ -440,6 +440,10 @@ export function sidecarObject() {
          * in the CURRENT shape only; the reader still accepts the pre-09-05
          * flat one, so an older sidecar loads and is rewritten reshaped. */
         mac: S.trackMacros.map(function(m) { return m ? m.slice() : null; }),
+        /* The GLOBAL macro store (Session's MACROS, 2026-11-22): eight
+         * mappings or null, each leg carrying its `track` (-1 = a session
+         * bus). Additive on v:9: absent → eight nulls. */
+        gmac: S.globalMacros.slice(),
         /* The MIDI knob values per track (target -> value) and the per-clip
          * Program / Bank triples; additive on v:9 (spec §2b, 2026-09-03). */
         mcv: S.trackMidiVals.map(function(m) { return Object.assign({}, m); }),
@@ -471,7 +475,7 @@ export function sidecarObject() {
  * either KEPT from this project or set to a fresh project's value.
  * tests/js/test_template_sidecar.mjs pins that every field is one or the
  * other, and the defaults against a fresh S. */
-export const TEMPLATE_SIDECAR_KEPT = ['v', 'am', 'pchr', 'pchd', 'ppno', 'pcus', 'pmd', 'mac', 'mcv', 'cpg', 'upr', 'bm', 'grf'];
+export const TEMPLATE_SIDECAR_KEPT = ['v', 'am', 'pchr', 'pchd', 'ppno', 'pcus', 'pmd', 'mac', 'gmac', 'mcv', 'cpg', 'upr', 'bm', 'grf'];
 export function sidecarDefaults() {
     const z8 = () => new Array(NUM_TRACKS).fill(0);
     return {
@@ -503,6 +507,7 @@ export function freshSidecar() {
     out.pcus = new Array(NUM_TRACKS).fill(0);
     out.pmd  = new Array(NUM_TRACKS).fill(null);
     out.mac  = new Array(NUM_TRACKS).fill(null);
+    out.gmac = new Array(8).fill(null);
     out.mcv  = Array.from({ length: NUM_TRACKS }, () => ({}));
     out.cpg  = Array.from({ length: NUM_TRACKS }, () => Array.from({ length: NUM_CLIPS }, () => [-1, -1, -1]));
     out.upr  = {};

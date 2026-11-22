@@ -410,18 +410,28 @@ step('Session: a MIXER pad walks the mode; MASTER opens its effects; the right h
     assert(led[pad(0, 0)] === K.White && led[pad(0, 1)] === K.Cyan && led[pad(3, 0)] === K.BrightOrange,
            'session pad colours');
     assert(led[pad(1, 0)] === K.MintGreen && led[pad(1, 1)] === K.TealGreen, 'EQ / COMPRESS pads: ' + led[pad(1, 0)] + ' ' + led[pad(1, 1)]);
-    for (let r = 0; r < 4; r++) assert((led[pad(2, r)] | 0) === 0, 'the third column is lit at row ' + r);
+    /* The third column is Session's CTRL column since 2026-11-22: MACROS on
+     * top in the track map's CTRL colour, the rest dark. */
+    assert(led[pad(2, 0)] === K.VividYellow, 'MACROS pad colour: ' + led[pad(2, 0)]);
+    for (let r = 1; r < 4; r++) assert((led[pad(2, r)] | 0) === 0, 'the third column is lit at row ' + r);
     assert((led[pad(1, 2)] | 0) === 0 && (led[pad(3, 1)] | 0) === 0 && rightDark(), 'session dark pads');
     const f = frame();
     assert(cellInk(f, 0, 0) > 0.6 && cellInk(f, 3, 1) === 0, 'session screen');
-    assert(cellInk(f, 3, 0) > 0.05 && cellInk(f, 2, 0) === 0, 'MASTER is not drawn in the fourth column on screen');
+    assert(cellInk(f, 3, 0) > 0.05 && cellInk(f, 2, 1) === 0, 'MASTER is not drawn in the fourth column on screen');
+    assert(cellInk(f, 2, 0) > 0.05, 'MACROS is not drawn atop the third column on screen');
     assert(cellInk(f, 1, 0) > 0.05, 'EQ is not drawn in the second column');
     tap(pad(0, 1));
     assert(S.sessKnobMode === 1, 'PAN did not take: ' + S.sessKnobMode);
     tap(pad(6, 0));
     assert(S.bankMapUp, 'a right-half press did something');
+    /* The third column's top pad is MACROS (2026-11-22): a BANK pad, immediate
+     * like a mixer mode — no menu waits for the release. A mixer pick leaves it. */
     tap(pad(2, 0));
-    assert(!S.bankMapDeferred, 'the dark (third) column acts');
+    assert(S.sessMacros && !S.bankMapDeferred && S.bankMapUp, 'MACROS did not take as a bank pad');
+    tap(pad(2, 1));
+    assert(S.sessMacros && !S.bankMapDeferred, 'a dark third-column pad acted');
+    tap(pad(0, 1));
+    assert(!S.sessMacros && S.sessKnobMode === 1, 'a mixer pick did not leave MACROS');
     tap(pad(3, 0));
     assert(!snd.soundOpen() && S.bankMapUp, 'a HELD map opened MASTER before the release');
     release();

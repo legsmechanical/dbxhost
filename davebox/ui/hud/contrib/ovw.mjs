@@ -11,6 +11,7 @@ import { S } from '../../ui_state.mjs';
 import { SESS_KNOB_MODES } from '../../ui_engine.mjs';
 import { sessMixerCells } from '../../ui_render.mjs';
 import { cellOut } from './layer.mjs';
+import { sessionRingCells } from '../../ui_knob_leds.mjs';
 
 const THUMB_MS = 1000;
 let thumbAt = -1e9, thumbCache = null;
@@ -66,6 +67,15 @@ export const ovw = {
             const name = m.eq ? 'EQ' : m.label;
             if (tabs[tabs.length - 1] !== name) tabs.push(name);
             tabOf.push(tabs.length - 1);
+        }
+        /* ...and the Session map's MACROS (the GLOBAL macros, 2026-11-22): a
+         * bank of its own, last, its cells the page's own. */
+        tabs.push('MACROS');
+        if (S.sessMacros) {
+            const mc = sessionRingCells() || [];
+            return { mode: 'MACROS', modes: tabs, modeIdx: tabs.length - 1, page: undefined,
+                     rowOff: S.sceneRow | 0, cells: Array.from({ length: 8 }, (_, i) => cellOut(mc[i] || null)),
+                     thumbs: thumbs(), clips: clips() };
         }
         const eqs = SESS_KNOB_MODES.filter((m) => m.eq);
         const page = mode.eq ? (eqs.indexOf(mode) + 1) + '/' + eqs.length : undefined;

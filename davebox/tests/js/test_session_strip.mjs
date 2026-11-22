@@ -90,7 +90,8 @@ step('the map: the strip in the SECOND column (EQ over COMPRESS), FX moved to th
     const it = (S.bankMapKind = 'session', render.bankMapItems());
     assert(it.cols[1] && it.cols[1].cells.join() === 'EQ,COMP', 'the map screen\'s second column: ' + JSON.stringify(it.cols[1]));
     assert(it.cols[3] && it.cols[3].cells[0] === 'MASTER', 'FX in the fourth: ' + JSON.stringify(it.cols[3]));
-    assert(it.cols[2] === null, 'the third column is the gap');
+    /* The gap column became Session's CTRL column (global MACROS, 2026-11-22). */
+    assert(it.cols[2] && it.cols[2].label === 'CTRL' && it.cols[2].cells.join() === 'MACROS', 'the third column is CTRL / MACROS: ' + JSON.stringify(it.cols[2]));
 });
 
 step('the EQ pad opens EQ LOW; the cache seeds negative gains (held offset, -3 dB reads -3 dB)', () => {

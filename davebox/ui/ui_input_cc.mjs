@@ -86,7 +86,8 @@ import { soundActive, soundPageBarShown, soundOpen, soundExit, soundEnteredInSes
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, macroClearConfirmAnswer,
     macroClearConfirmReset, macroClearConfirmOpen, soundKnobCardClick, soundEnterSendFromSessionMixer, soundMixJog,
-    soundOnCard, soundInEditor, soundEnterBusFx, soundResting, soundCardClick, soundKnobTouched } from './ui_sound.mjs';
+    soundOnCard, soundInEditor, soundEnterBusFx, soundResting, soundCardClick, soundKnobTouched,
+    soundGlobalMacrosOnCard, soundGlobalMacros } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { ensureGlobalMenuFresh, openGlobalMenu, openGlobalMenuAt } from './ui_menu.mjs';
 /* ⚠ one-way: ui_render never imports this module (checked 2026-08-31) —
@@ -851,6 +852,11 @@ function modalDialogUp() {
         }
         return;
     }
+    /* ⭐ Session's MACROS bank: Delete + jog clears the GLOBAL macros, after
+     * asking — the track MACROS bank's gesture, on its Session twin. */
+    if (d1 === 3 && d2 === 127 && S.deleteHeld && S.sessionView && S.sessMacros && macroClearConfirmOpen()) {
+        S.screenDirty = true; forceRedraw(); return;
+    }
     if (d1 === 3 && d2 === 127 && S.deleteHeld && !S.sessionView) {
         /* ⭐ MACROS: clear the track's assignments, after asking. Handled HERE as
          * well as in sound mode's own jog branch, because on the RESTING MACROS
@@ -1048,7 +1054,11 @@ function modalDialogUp() {
      * effect buses open from the map's FX pads. */
     if (d1 === 3 && d2 === 127 && !S.shiftHeld && !S.deleteHeld && !S.copyHeld && !S.muteHeld &&
             S.sessionView && !soundActive()) {
-        if (S.knobTouched >= 0 && sessMixerCellOpens(S.knobTouched))
+        /* On Session's MACROS bank the touched knob is a GLOBAL macro: its
+         * click opens that macro's editor, as on the track MACROS bank. */
+        if (S.sessMacros) {
+            if (S.knobTouched >= 0 && soundOpen()) soundKnobCardClick(S.knobTouched);
+        } else if (S.knobTouched >= 0 && sessMixerCellOpens(S.knobTouched))
             soundEnterSendFromSessionMixer(SESS_KNOB_MODES[S.sessKnobMode].key);
         S.screenDirty = true;
         forceRedraw();
@@ -1480,9 +1490,25 @@ const bankListFor  = (track) => bankListForMode(S.trackPadMode[track], track);  
  * column. `rest`: under the overview — nothing opens; otherwise the mixer
  * page's display window is armed. */
 export function sessWalkTo(mode, rest) {
+    /* A mixer mode is picked: Session leaves its MACROS bank, and the global
+     * page closes NOW (the tick's arm is the backstop) — a pick under a held
+     * map is followed by more taps before any tick runs. */
+    if (S.sessMacros) {
+        S.sessMacros = false;
+        if (soundGlobalMacros()) { soundExit(); invalidateLEDCache(); }
+    }
     const prev = S.sessKnobMode;
     S.sessKnobMode = Math.max(0, Math.min(SESS_KNOB_MODES.length - 1, mode | 0));
     if (S.sessKnobMode !== prev) _sessInvalidateAllLevels();
+    if (!rest) armBankDisplay();
+    forceRedraw();
+}
+
+/* Session's MACROS bank — the map's CTRL pad (2026-11-22). The mixer mode
+ * underneath is kept; the tick opens the GLOBAL macros page at rest. `rest`
+ * as sessWalkTo's. */
+export function sessPickMacros(rest) {
+    S.sessMacros = true;
     if (!rest) armBankDisplay();
     forceRedraw();
 }
@@ -1504,7 +1530,9 @@ export function bankMapArmable() {
     if (S.awaitingProjectSelect || S.stateLoading) return false;
     if (S.projectOpenFailed || S.projectListFailed) return false;
     if (S.backPressTick >= 0) return false;         /* Back is down: a suspend may follow */
-    if (S.sessionView) return !soundOpen() && !S.perfViewLocked;
+    /* The GLOBAL macros page at rest is Session's bank, not a screen: the map
+     * arms over it as it does over the track MACROS bank. */
+    if (S.sessionView) return (!soundOpen() || soundGlobalMacrosOnCard()) && !S.perfViewLocked;
     /* A screen owns its click: a DOOR bank (CONFIG, AUTOMATION) is only ever
      * its screen, menu open or not, and any door screen likewise. */
     if (bankIsDoor(S.trackPadMode[S.activeTrack], S.activeBank) || autoMenuUp() || doorScreenUp()) return false;
@@ -1547,7 +1575,7 @@ export function bankMapDeferrable() {
     if (S.backPressTick >= 0) return false;
     if (isTextEntryActive() || coveredByMoreThanMenu()) return false;
     if (S.globalMenuOpen) return true;
-    if (S.sessionView) return soundOpen() && !S.perfViewLocked;        /* the Session FX editor */
+    if (S.sessionView) return soundOpen() && !soundGlobalMacrosOnCard() && !S.perfViewLocked;        /* the Session FX editor, the global macros' assign screens */
     if (bankIsDoor(S.trackPadMode[S.activeTrack], S.activeBank) || autoMenuUp() || doorScreenUp()) return true;
     return soundActive() && !soundOnCard();
 }
@@ -1708,6 +1736,7 @@ function bankMapPadActs(note) {
     if (S.bankMapKind === 'session') {
         if (cell.col === 0) return SESS_PAD_MAP.mixer.modes[cell.row] !== undefined;
         if (cell.col === SESS_PAD_MAP.strip.col) return SESS_PAD_MAP.strip.modes[cell.row] !== undefined;
+        if (cell.col === SESS_PAD_MAP.ctrl.col) return !!SESS_PAD_MAP.ctrl.names[cell.row];
         if (cell.col === SESS_PAD_MAP.fx.col) return !!SESS_PAD_MAP.fx.buses[cell.row];
         return false;
     }
@@ -1761,6 +1790,9 @@ export function bankMapPadTap(note) {
                 bankMapCancelMenu();
                 sessWalkTo(mode === SESS_EQ_MODE0 ? SESS_EQ_MODE0 + Math.max(0, Math.min(SESS_EQ_PAGES - 1, S.sessEqPage | 0)) : mode, pickRest);
             }
+        } else if (cell.col === SESS_PAD_MAP.ctrl.col) {
+            /* MACROS: a bank pad, immediate like a mixer mode */
+            if (SESS_PAD_MAP.ctrl.names[cell.row]) { bankMapCancelMenu(); sessPickMacros(pickRest); }
         } else if (cell.col === SESS_PAD_MAP.fx.col) {
             const bus = SESS_PAD_MAP.fx.buses[cell.row];
             if (bus) bankMapMenuTap({ kind: 'bus', bus, col: cell.col, row: cell.row });
@@ -5051,6 +5083,7 @@ function _sessInvalidateAllLevels() {
 
 function _sessionKnobParam(knobIdx, d2) {
     if (knobIdx >= NUM_TRACKS) return;
+    if (S.sessMacros) return;          /* the knobs are the global macros (sound mode's) */
     const mode = SESS_KNOB_MODES[S.sessKnobMode];
     if (S.sessVolBus[knobIdx] <= 0) {
         /* A MIDI track: Volume = CC 7, Pan = CC 10 (spec §2b); the sends are a

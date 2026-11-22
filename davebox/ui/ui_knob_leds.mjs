@@ -155,6 +155,15 @@ export function screenRingCells() {
     if (!screenRingProvider) return null;
     try { return screenRingProvider() || null; } catch (e) { return null; }
 }
+/* Session View's MACROS bank (the GLOBAL macros, 2026-11-22): its cells
+ * while the page is open, else null. Its own provider, because the bank
+ * providers below are keyed by a TRACK bank and never reach Session. */
+let sessionRingProvider = null;
+export function registerSessionRingCells(fn) { sessionRingProvider = fn; }
+export function sessionRingCells() {
+    if (!sessionRingProvider) return null;
+    try { return sessionRingProvider() || null; } catch (e) { return null; }
+}
 const ringCellProviders = {};
 export function registerRingCells(bank, fn) { ringCellProviders[bank] = fn; }
 export function ringCellsFor(bank) {

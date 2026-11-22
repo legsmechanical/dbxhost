@@ -13,7 +13,7 @@ import { trackClipHasContent, updateSceneMapLEDs } from './ui_scene.mjs';
 import { PROJECT_COLORS, projectColorLED } from './ui_dialogs.mjs';
 import { autoMapEditorComp, autoMapMarkedBank } from './ui_automation_bank.mjs';
 import { arpVelLevel, drumVelocityToZone, bankPadMapForMode, SESS_PAD_MAP, bankMapPadForCell, bankMapTrackForStep, BANK_MAP_MODULE_PADS, bankMapModuleAt } from './ui_pure.mjs';
-import { knobRingColor, knobRingNorm, ringCellsFor, ringNormOfCell, screenRingCells } from './ui_knob_leds.mjs';
+import { knobRingColor, knobRingNorm, ringCellsFor, ringNormOfCell, screenRingCells, sessionRingCells } from './ui_knob_leds.mjs';
 import { automationStateFor } from './ui_automation.mjs';
 import { devSnapOpen, devSnapLedFor } from './ui_devsnap.mjs';
 import { sessStripTargets, SESS_KNOB_MODES, sessModeIsEq } from './ui_engine.mjs';
@@ -685,14 +685,19 @@ export function bankMapPadColors() {
     /* A menu pad waiting for the jog's release is the one White pad. */
     const d = S.bankMapDeferred;
     if (S.bankMapKind === 'session') {
+        /* On Session's MACROS bank no mixer mode is where you are. */
+        const mx = S.sessMacros ? -1 : S.sessKnobMode;
         for (let r = 0; r < 4; r++) {
-            col[at(0, r)] = !d && r === S.sessKnobMode ? White : SESS_MAP_COLORS[r];
+            col[at(0, r)] = !d && r === mx ? White : SESS_MAP_COLORS[r];
             /* the channel strip's column: EQ (any of its bands), COMPRESS */
             const sc = SESS_PAD_MAP.strip.col, sm = SESS_PAD_MAP.strip.modes[r];
             if (sm !== undefined) {
-                const here = r === 0 ? sessModeIsEq(S.sessKnobMode) : S.sessKnobMode === sm;
+                const here = !S.sessMacros && (r === 0 ? sessModeIsEq(S.sessKnobMode) : S.sessKnobMode === sm);
                 col[at(sc, r)] = !d && here ? White : SESS_STRIP_COLORS[r];
             }
+            /* CTRL (MACROS): the track map's CTRL colour — one family */
+            const cc = SESS_PAD_MAP.ctrl.col;
+            if (SESS_PAD_MAP.ctrl.names[r]) col[at(cc, r)] = !d && S.sessMacros ? White : BANK_MAP_COL_COLORS[cc];
             const fc = SESS_PAD_MAP.fx.col;
             if (SESS_PAD_MAP.fx.buses[r]) col[at(fc, r)] = d && d.col === fc && d.row === r ? White : BrightOrange;
         }
@@ -1333,6 +1338,13 @@ export function updateTrackLEDs() {
         let ledVal = LED_OFF;
         if (S.perfViewLocked) {
             ledVal = S.trackLooper[k] !== 0 ? trackColor(k) : LED_OFF;
+        } else if (S.sessionView && S.sessMacros) {
+            /* Session's MACROS bank: the rings ride the global macros' cells,
+             * the kit-page rule (dark where nothing is assigned). Live only,
+             * so nothing blinks for automation. */
+            if (k === 0) S._ringCells = sessionRingCells();
+            const cell = S._ringCells ? S._ringCells[k] : null;
+            ledVal = knobRingColor(k, ringNormOfCell(cell));
         } else if (S.sessionView) {
             const _tc = trackColor(k);
             const _isMuted = S.trackMuted[k];

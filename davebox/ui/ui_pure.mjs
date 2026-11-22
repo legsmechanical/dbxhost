@@ -354,6 +354,10 @@ export const SESS_PAD_MAP = {
     /* In the FOURTH column now, still clear of the mixer (Josh, 2026-10-15:
      * "so the two aren't sitting right next to each other"; 2026-11-15: "move
      * the FX column over to the 4th column so there's still some separation"). */
+    /* THE GLOBAL MACROS in the THIRD column (2026-11-22: the gap column, top
+     * pad) — Session's CTRL column, mirroring Track View's (MACROS on top).
+     * A bank pad, not a mixer mode: there is no SESS_KNOB_MODES entry. */
+    ctrl:  { label: 'CTRL', col: 2, names: ['MACROS'] },
     fx:    { label: 'FX', col: 3, buses: ['master', null, 'sendA', 'sendB'],
              names: ['MASTER', null, 'SEND A', 'SEND B'] },
 };

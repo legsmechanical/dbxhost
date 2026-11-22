@@ -2554,8 +2554,10 @@ export function bankMapItems() {
             cols: [0, 1, 2, 3].map((c) =>
                 c === 0 ? { label: m.mixer.label, cells: m.mixer.modes.map((i) => SESS_KNOB_MODES[i].label) }
                 : c === m.strip.col ? { label: m.strip.label, cells: m.strip.names.slice() }
+                : c === m.ctrl.col ? { label: m.ctrl.label, cells: m.ctrl.names.slice() }
                 : c === m.fx.col ? { label: m.fx.label, cells: m.fx.names.slice() } : null),
             cur: S.bankMapDeferred ? { c: S.bankMapDeferred.col, r: S.bankMapDeferred.row }
+                : S.sessMacros ? { c: m.ctrl.col, r: 0 }
                 : (S.sessKnobMode | 0) < 4 ? { c: 0, r: S.sessKnobMode | 0 }
                 : sessModeIsEq(S.sessKnobMode) ? { c: m.strip.col, r: 0 }
                 : S.sessKnobMode === SESS_COMP_MODE ? { c: m.strip.col, r: 1 } : null,
@@ -3094,7 +3096,9 @@ function drawUIBody() {
          * Deliberately ABOVE the popup branch: the page is the richer read-out
          * (eight tracks vs one), so while a knob is held it should win. Other
          * popups still show once the finger lifts and the window closes. */
-        if (sessMixerShown()) {
+        /* (Never over Session's MACROS bank: sound mode draws that page, and
+         * this guards the one tick before the tick opens it.) */
+        if (sessMixerShown() && !S.sessMacros) {
             hudScreen('session.mixer');
             drawSessionMixerPage();
             return;

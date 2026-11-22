@@ -58,7 +58,7 @@ function audioCopyMirror(srcT, srcC, dstT, dstC, move) {
     S.pendingStepsReread = 2; S.pendingStepsRereadTrack = dstT; S.pendingStepsRereadClip = dstC;
 }
 import { nowMs } from './ui_clock.mjs';
-import { soundActive, soundOpen, soundExit, soundIsGlobal, soundInEditor, soundFollowTrack, soundOnCard } from './ui_sound.mjs';
+import { soundActive, soundOpen, soundExit, soundIsGlobal, soundInEditor, soundFollowTrack, soundOnCard, soundGlobalMacros } from './ui_sound.mjs';
 import { isTextEntryActive } from '/data/UserData/schwung/shared/text_entry.mjs';
 import { stepRecExit } from './ui_record.mjs';
 import { clipHasContent, bankDisplayName, soundBankOnTrack } from './ui_pure.mjs';
@@ -743,9 +743,10 @@ export function _switchActiveTrack(newT) {
      * page are the track's BANK, and a track switch shows the new track's own
      * bank, as for every bank. Only a screen you are IN — the menu, an editor —
      * follows (09-05), and it changes no bank. */
-    const _follow = soundActive() && !soundOnCard() && !soundIsGlobal() && !isTextEntryActive() &&
+    /* (Neither follows nor closes the GLOBAL macros: they belong to no track.) */
+    const _follow = soundActive() && !soundOnCard() && !soundIsGlobal() && !soundGlobalMacros() && !isTextEntryActive() &&
                     S.trackPadMode[newT | 0] !== PAD_MODE_CONDUCT;
-    if (soundOpen() && !soundIsGlobal() && !_follow) soundExit();
+    if (soundOpen() && !soundIsGlobal() && !soundGlobalMacros() && !_follow) soundExit();
     /* The outgoing track remembers its bank, whatever it is. */
     S.trackActiveBank[S.activeTrack] = S.activeBank;
     /* Leaving a track leaves the AUTOMATION menu (Josh, 2026-09-25): coming

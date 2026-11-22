@@ -67,6 +67,13 @@ step('Session: the MIXER column is every mixer mode but the gateway; FX buses be
     const fx = P.SESS_PAD_MAP.fx.buses;
     assert(fx[0] === 'master' && fx[1] === null && fx[2] === 'sendA' && fx[3] === 'sendB', 'fx column ' + fx);
     assert(SESS_KNOB_MODES[modes[2]].key === 'send_a' || /SEND A/.test(SESS_KNOB_MODES[modes[2]].label), 'row 3 is not Send A');
+    /* The gap column is Session's CTRL column (2026-11-22): MACROS on top, a
+     * bank pad — the columns are all distinct, and no mixer mode is MACROS. */
+    const ct = P.SESS_PAD_MAP.ctrl;
+    assert(ct && ct.col === 2 && ct.names.join() === 'MACROS', 'ctrl column ' + JSON.stringify(ct));
+    assert(new Set([0, P.SESS_PAD_MAP.strip.col, ct.col, P.SESS_PAD_MAP.fx.col]).size === 4, 'two groups share a column');
+    assert(!SESS_KNOB_MODES.some((m) => /MACRO/i.test(m.label || '') || m.key === 'macros'), 'MACROS must not be a mixer mode');
+    assert(P.bankMapPadForCell(ct.col, 0) === 94, 'MACROS pad note ' + P.bankMapPadForCell(ct.col, 0));
 });
 
 step('pad <-> cell: the TOP row is 92, column 4+ is the right half', () => {

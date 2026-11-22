@@ -1988,6 +1988,38 @@ export function restoreUiSidecar(applyDefaultsNow) {
                 S.trackMacros[_t] = _out;
             }
         }
+        /* THE GLOBAL MACRO STORE (sidecar `gmac`, additive on v:9, 2026-11-22):
+         * the same mapping shape, each leg validated by the same `_leg` plus
+         * its `track` — an integer 0..7, or -1 for a session bus, where only
+         * a CHAIN leg on Master / Send FX (`master_fx`, `send_fx:a|b`, with
+         * an optional `:fxN`) is a target. No SnapMorph leg (a global morph
+         * is device snapshots, not built yet) and no Levels leg (a track's
+         * levels are its own screen's cache). A bad leg is DROPPED and its
+         * siblings survive; a mapping with none left is null. Absent means
+         * eight nulls — there is no chain store to migrate from. Reset FIRST,
+         * as the track store is. */
+        for (let _k = 0; _k < 8; _k++) S.globalMacros[_k] = null;
+        if (Array.isArray(us.gmac)) {
+            const _gleg = function(_e) {
+                if (!_e || typeof _e !== 'object') return null;
+                const _tr = _e.track;
+                if (typeof _tr !== 'number' || !isFinite(_tr) || (_tr | 0) !== _tr || _tr < -1 || _tr >= NUM_TRACKS) return null;
+                if (_e.kind === 'morph' || _e.kind === 'level') return null;
+                const _l = _leg(_e);
+                if (!_l) return null;
+                if (_tr < 0 && !(_l.kind === 'chain' && /^(master_fx|send_fx:[ab])(:fx[1-4])?$/.test(_l.comp))) return null;
+                _l.track = _tr;
+                return _l;
+            };
+            for (let _k = 0; _k < 8; _k++) {
+                const _e = us.gmac[_k];
+                if (!_e || typeof _e !== 'object' || !Array.isArray(_e.legs)) continue;
+                const _legs = _e.legs.map(_gleg).filter(Boolean);
+                if (!_legs.length) continue;
+                const _v = (typeof _e.v === 'number' && isFinite(_e.v)) ? Math.max(0, Math.min(1, _e.v)) : null;
+                S.globalMacros[_k] = { v: _v, legs: _legs };
+            }
+        }
         /* The MIDI knob values and the per-clip Program / Bank (additive on v:9). */
         for (let _t = 0; _t < NUM_TRACKS; _t++) {
             S.trackMidiVals[_t] = {};

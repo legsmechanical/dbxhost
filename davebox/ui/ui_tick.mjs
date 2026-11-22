@@ -100,7 +100,7 @@ import { closeAudioEditor, closeAudioPanel, auEditorFollowClip } from './ui_audi
 import { applyInstrChoice, readConductorClip } from './ui_dsp_bridge.mjs';
 import { INSTR_NONE, PAD_MODE_AUDIO, PAD_MODE_SLICER, padSampled } from './ui_constants.mjs';
 import { bankListForMode } from './ui_pure.mjs';
-import { soundTrackTypeChanged } from './ui_sound.mjs';
+import { soundTrackTypeChanged, soundEnterGlobalMacros, soundGlobalMacros } from './ui_sound.mjs';
 import { flatUndoCapture, flatUndoArm, leaveUndoArm, flatUndoTick, flatCopySourceFx } from './ui_flatten_undo.mjs';
 
 const BANK_DISPLAY_MS = 1000;
@@ -1763,7 +1763,19 @@ export function _tickImpl() {
                 && soundBankOnTrack(S.trackPadMode[S.activeTrack], S.activeBank, S.activeTrack)) {
             S.pendingSoundEnterTrack = S.activeTrack;
             S.pendingSoundEnterSilent = true;
-        } else if (soundOpen() && soundResting() && !isSoundBank(S.activeBank)
+        } else if (S.sessionView && S.sessMacros && !soundOpen() && !S.awaitingProjectSelect
+                   && S.moveCoRunTrack < 0) {
+            /* ⭑ SESSION's MACROS bank (2026-11-22): the same invariant for the
+             * Session map's CTRL pad — the GLOBAL macros page opens at rest,
+             * silently, so the knobs are the global macros on the overview.
+             * Note/Session out and back re-opens it here. */
+            soundEnterGlobalMacros();
+        } else if (soundGlobalMacros() && !S.sessMacros && !soundHasPendingAction()) {
+            /* ...and closes when Session leaves the bank (a mixer pick on the
+             * map). Its own arm: the one below tests the TRACK's bank, which
+             * means nothing to the global page. */
+            soundExit();
+        } else if (soundOpen() && soundResting() && !isSoundBank(S.activeBank) && !soundGlobalMacros()
                    && S.pendingSoundEnterTrack < 0 && !soundHasPendingAction()) {
             /* The converse (2026-09-24): a resting sound mode whose track is no
              * longer on SOUND+CFG / MACROS — moved off by a non-jog writer such
@@ -1889,7 +1901,8 @@ export function _tickImpl() {
              * which never equals activeTrack, so without this the follow fired
              * on the very next tick and replaced the bus screen with the last
              * track module's editor — the screen appeared for one frame. */
-            else if (!soundIsGlobal() && S.activeTrack !== soundTrack()) {
+            /* ...nor the GLOBAL macros page (track -1, like a bus). */
+            else if (!soundIsGlobal() && !soundGlobalMacros() && S.activeTrack !== soundTrack()) {
                 const _nt = S.activeTrack;
                 /* Follow the track ACROSS flavours: a Move-routed track has a
                  * sound too (its instrument bus), so switching onto one

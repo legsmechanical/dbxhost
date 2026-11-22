@@ -394,6 +394,8 @@ export const S = {
     confirmMacroClearSel: 1,
     confirmMacroClearTrack: -1,
     confirmMacroClearSlot: -1,
+    /* The confirm is for the GLOBAL store (Session's MACROS), not a track's. */
+    confirmMacroClearGlobal: false,
     /* The JS-only undo/redo unit — see markJsUndo. One deep, like every other
      * undo layer. Holds closures, so nothing may JSON-stringify it. */
     undoJs: null,
@@ -1078,6 +1080,11 @@ export const S = {
      * channel can be received by SEVERAL slots (layering, or a slot set to
      * "All"), and all of them move together. -1 = not yet resolved/read. */
     sessKnobMode: 0,
+    /* Session's MACROS bank is the one picked on the map (2026-11-22) — the
+     * CTRL column's pad. It is a bank pad, not a mixer mode: sessKnobMode keeps
+     * the mixer mode underneath, and a mixer pick clears this. Not persisted,
+     * like sessKnobMode. */
+    sessMacros: false,
     /* the Session mixer's EQ: the band last turned to (0 Low .. 3 High), the
      * track whose EQ knob last moved and when (the curve card), its strip
      * values (one `strip` read on touch), and COMPRESS's gain reductions */
@@ -1136,6 +1143,13 @@ export const S = {
      * Josh floated 2026-09-02) never will. `null` per track = never seeded:
      * ui_sound migrates the chain's knob_N assignments on first use. */
     trackMacros: new Array(8).fill(null),
+    /* THE GLOBAL MACRO STORE (2026-11-22): eight mappings or null, the Session
+     * map's MACROS bank. The track store's shape, with one field more on each
+     * leg: `track` — the track whose sound it drives (0..7), or -1 for a
+     * session bus (Master / Send FX). Live only: no leg records automation.
+     * Sidecar `gmac`; absent reads as eight nulls (no unseeded state — there
+     * is no chain store to migrate from). */
+    globalMacros: new Array(8).fill(null),
     /* The AUTOMATION bank's menu state (ui_automation_bank owns it; null = the plain card). */
     autoBank: null,
     /* The steps the AUTOMATION menu's selected lane holds points on, as a

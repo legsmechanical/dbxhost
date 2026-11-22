@@ -132,7 +132,8 @@ async function main() {
         let d = watched();
         assert(d.where && d.where.screen === 'session.overview', 'not the session overview: ' + (d.where && d.where.screen));
         const o = d.ovw;
-        assert(o.modes.join() === 'VOLUME,PAN,SEND A,SEND B,EQ,COMPRESS', 'tabs: ' + o.modes);
+        /* ...and the Session map's MACROS bank last (global macros, 2026-11-22) */
+        assert(o.modes.join() === 'VOLUME,PAN,SEND A,SEND B,EQ,COMPRESS,MACROS', 'tabs: ' + o.modes);
         assert(o.modes[o.modeIdx] === 'EQ', 'the lit tab: ' + o.modes[o.modeIdx]);
         assert(o.page === '2/' + ENG.SESS_EQ_PAGES && o.mode === 'EQ MID', 'band and page: ' + o.mode + ' ' + o.page);
         S.sessKnobMode = ENG.SESS_COMP_MODE; ticks(1);

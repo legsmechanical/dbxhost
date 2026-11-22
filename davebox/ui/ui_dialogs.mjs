@@ -659,7 +659,8 @@ export function drawBpmMoveInfo() {
 export function drawMacroClearConfirm() {
     clear_screen();
     dlgHeader('CLEAR MACROS');
-    dlgLines(['Unassign all 8 macros', 'on this track.']);
+    /* the Session map's MACROS bank clears the GLOBAL store (2026-11-22) */
+    dlgLines(S.confirmMacroClearGlobal ? ['Unassign all 8 global', 'macros.'] : ['Unassign all 8 macros', 'on this track.']);
     drawDialogButtonRow(46, 13, [{ label: 'OK',     sel: S.confirmMacroClearSel === 0 },
                                  { label: 'Cancel', sel: S.confirmMacroClearSel === 1 }], { x0: 6, x1: 122 });
 }

@@ -1052,7 +1052,10 @@ function _dispatchBelowJogRouter(data, status, d1, d2) {
                      * view; a strip's lane is switched on/off from the AUTOMATION
                      * bank instead. The ring blink and the fader mark still show
                      * the lane. ONE popup for the clear, however many targets. */
-                    if (S.sessionView) {
+                    /* (Not on Session's MACROS bank: the knob is a global
+                     * macro there, not track k's strip — and the macros are
+                     * live only, so the touch opens no gesture.) */
+                    if (S.sessionView && !S.sessMacros) {
                         const _mode = SESS_KNOB_MODES[S.sessKnobMode];
                         if (_mode) {
                             const _c = effectiveClip(d1);
@@ -1064,7 +1067,7 @@ function _dispatchBelowJogRouter(data, status, d1, d2) {
                             if (_cleared) showActionPopup('AUTOMATION', 'CLEARED');
                         }
                     }
-                    if (S.sessionView && S.muteHeld) {
+                    if (S.sessionView && S.muteHeld && !S.sessMacros) {
                         if (S.shiftHeld) setTrackSolo(d1, !S.trackSoloed[d1]);
                         else             setTrackMute(d1, !S.trackMuted[d1]);
                         invalidateLEDCache();
@@ -1084,7 +1087,7 @@ function _dispatchBelowJogRouter(data, status, d1, d2) {
                 if (d1 === MoveMainTouch && !S.globalMenuOpen && !S.shiftHeld) { S.jogTouched = true; forceRedraw(); }
             } else if (d2 < 64) {
                 if (d1 <= 7) {
-                    if (S.sessionView) {
+                    if (S.sessionView && !S.sessMacros) {
                         const _mode = SESS_KNOB_MODES[S.sessKnobMode];
                         if (_mode)
                             for (const tg of sessStripTargets(S, d1, _mode.key))

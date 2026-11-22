@@ -60,7 +60,7 @@ import { instrOptions, instrPickerRows, moveInstrOwner, fmtInstr, INSTR_SCHWUNG,
 import { openWave } from './ui_audio_editor.mjs';
 import { auAutoMirror, auSlicesAutoMirror, auMacroValue, auMacroWrite, auInfo } from './ui_audio.mjs';
 import { applyTrackConfig, applyBankParam, readBankParams, syncTrackMidiFx, midiFxResyncAfterPatch } from './ui_dsp_bridge.mjs';
-import { registerRingCells } from './ui_knob_leds.mjs';
+import { registerRingCells, registerSessionRingCells } from './ui_knob_leds.mjs';
 import { moduleParallelDefault, setModuleParallelDefault, reconcileParallelSlot } from './ui_parallel.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { forceRedraw, effectiveClip } from './ui_leds.mjs';
@@ -876,6 +876,7 @@ const S = {
     autoLedPaint: false,      /* the knob rings are showing automation status (Mute held) */
     touchedFullKey: null,     /* the parameter under the touched knob, from the editor's hook */            /* tracked HERE: the global one is a different S */
     enterSession: false,        /* the VIEW this screen was called from; leaving it ends us */
+    gmac: false,                /* the GLOBAL MACROS page (Session's MACROS bank): track -1, slot 0, no bus */
     bus: null,                  /* null = editing a TRACK's slot; else a bus descriptor
                                  * (FX_BUSES entry, or a Move bus from moveBusFor) */
     coRunRequest: -1,           /* track whose Move editor to open; -1 = none */
@@ -1763,6 +1764,7 @@ export function soundRetarget(track, slot) {
      * because `S.bus` cannot change in between. */
     if (!(S.bus && S.bus.kind === 'global')) wavEditCloseIfOpen();
     if (!(S.bus && S.bus.kind === 'global')) canvasCloseIfOpen();
+    S.gmac = false;            /* a retarget is a TRACK's context, never the global page */
     if (!(S.bus && S.bus.kind === 'global')) chainCloseIfOpen();
     flushForRetarget();
 
@@ -1871,6 +1873,7 @@ export function soundRetarget(track, slot) {
  * leaving sound mode and entering a track — so neither direction can inherit it. */
 function clearBusContext() {
     S.bus = null;
+    S.gmac = false;             /* the global macros are a session context too */
     S.mfxDoor = null;
     S.busIdx = 0;
     S.busLevelEditing = false;
@@ -3305,6 +3308,7 @@ export function soundEnterMove(track) {
     if (!wasActive) armBankDisplay();   /* same display window as soundEnter */
     S.enterSession = false;
     S.track = track;
+    S.gmac = false;
     S.slot = 0;                 /* move_fx: keys ignore the slot argument */
     S.bus = moveBusFor(track);
     S.mfxDoor = null;
@@ -3515,6 +3519,7 @@ export function soundEnterBuses() {
     S.active = true;
     S.enterSession = true;      /* called from SESSION view */
     S.bus = null;
+    S.gmac = false;
     S.track = -1;
     S.slot = 0;
     S.busIdx = 0;
@@ -3523,6 +3528,38 @@ export function soundEnterBuses() {
     S.dirty = true;
     log('buses: open');
 }
+
+/* ⭑ THE GLOBAL MACROS PAGE (2026-11-22): Session's MACROS bank. The track
+ * MACROS bank's model exactly — sound mode open AT REST on VIEW_MACROS, so the
+ * eight knobs are the macros on the session overview and a touch peeks the
+ * page — under a context of its own: no track (-1), slot 0, no bus. Opened
+ * SILENTLY by the tick while Session is on the bank (ui_tick); a mixer pick
+ * on the map closes it. Every leg names its own track (or -1, a session bus),
+ * so the engine addresses each leg through legT / legSlot, never S.track. */
+export function soundEnterGlobalMacros() {
+    if (!GS.sessionView) return false;
+    releaseVolume();
+    S.active = true;
+    S.enterSession = true;      /* called from SESSION view: leaving it ends us */
+    clearBusContext();
+    S.gmac = true;
+    S.track = -1;
+    S.slot = 0;
+    S.view = VIEW_MACROS;
+    S.shiftHeld = GS.shiftHeld === true;
+    S.touchedIdx = -1;
+    S.turnedSinceTouch = false;
+    resetKnobAsn();            /* knobMeta and every macro cache belong to the last context */
+    S.pendingWrites.length = 0;
+    S.presetMsg = '';
+    S.dirty = true;
+    log('global macros: open');
+    return true;
+}
+/* Sound mode is showing the GLOBAL macros (any of its screens). */
+export function soundGlobalMacros() { return !!(S.active && S.gmac); }
+/* ...and resting on the page itself, as the track MACROS bank rests. */
+export function soundGlobalMacrosOnCard() { return !!(S.active && S.gmac && S.view === VIEW_MACROS); }
 
 /* Straight into MASTER FX from session view (Shift + hold Note/Session, Josh
  * 2026-09-24). It is the list's own door plus the Master row's own click, so
@@ -6202,11 +6239,15 @@ const MACRO_VIEWS = [VIEW_MACROS, VIEW_KNOBS, VIEW_KNOBLEGS, VIEW_KNOB_TARGET, V
 /* Where the eight knobs ARE the macros: the page, and the assign screens that
  * float over it (so you hear what you are assigning). Never a global bus. */
 function macrosActive() {
-    return !!(S.active && !soundIsGlobal() && S.track >= 0 && MACRO_VIEWS.indexOf(S.view) >= 0);
+    /* The global page has no track, and is not a session BUS either. */
+    return !!(S.active && (S.gmac || (!soundIsGlobal() && S.track >= 0)) && MACRO_VIEWS.indexOf(S.view) >= 0);
 }
 const EMPTY_MACROS = Object.freeze([null, null, null, null, null, null, null, null]);
 /* The track's eight targets; an unseeded track reads as empty (tick migrates). */
 function macroStore(track) {
+    /* The GLOBAL page's store: asked for "the screen's" store (no track, or
+     * its own -1). An explicit track still answers that track's. */
+    if (S.gmac && (track == null || track < 0)) return GS.globalMacros;
     const t = (track == null) ? S.track : track;
     return (t >= 0 && GS.trackMacros[t]) || EMPTY_MACROS;
 }
@@ -7416,7 +7457,8 @@ const upper = (x) => String(x == null ? '' : x).toUpperCase();
  * unassigned or vanished macro reads UNASSIGNED in the touched header and `--`
  * in the cell — a labelled cell, never a blank knob (spec §2). */
 function macroCells(track, live) {
-    const t = track, c = effectiveClip(t);
+    /* t is -1 on the GLOBAL page: no clip, no automation (live only). */
+    const t = track, c = t >= 0 ? effectiveClip(t) : -1;
     const store = macroStore(t);
     const cells = [];
     cells.focusIdx = -1;
@@ -7436,7 +7478,7 @@ function macroCells(track, live) {
             const v = live ? mp.v : null;
             const cellM = { kind: 'arc', label: upper(macroMultiLabel(t, i)), name: upper(macroMultiName(mp)),
                             text: v == null ? '--' : Math.round(v * 100) + '%', norm: v == null ? 0 : v };
-            if (live) {
+            if (live && !S.gmac) {
                 for (const leg of mp.legs) {
                     if (!macroLive(leg)) continue;
                     const tg = macroAutoTarget(leg, t, i);
@@ -7561,7 +7603,7 @@ function macroCells(track, live) {
                 }
             }
         }
-        if (live && macroLive(m)) {
+        if (live && !S.gmac && macroLive(m)) {
             const tg = macroAutoTarget(m, t, i);
             const st = tg ? automationStateFor(t, c, tg) : null;
             if (st) cell.auto = st.active ? 'auto' : 'auto-off';
@@ -7590,7 +7632,7 @@ function renderMacros() {
     kitUseLayout('bank');
     const mc = macroCells(S.track, true);
     drawKitBankPage(mc, {
-        headerText: 'MACROS', headerGlyph: 'perf', headerRight: bankHeaderRight(false),
+        headerText: S.gmac ? 'GLOBAL MACROS' : 'MACROS', headerGlyph: 'perf', headerRight: bankHeaderRight(false),
         touchedIdx: S.touchedIdx, focusIdx: mc.focusIdx,
         footer: macroCardHints(),
     });
@@ -7604,6 +7646,14 @@ function renderMacros() {
 registerRingCells(BANK_MACROS, () => (S.active && !soundIsGlobal() && S.track === GS.activeTrack && S.track >= 0) ? macroCells(S.track, true) : null);
 registerRingCells(BANK_SOUND, () => (S.active && !soundIsGlobal() && S.track === GS.activeTrack && S.track >= 0 && S.view !== VIEW_EDIT)
     ? (midiTrack() ? midiMixCells() : levelCells()) : null);
+
+/* The GLOBAL page's rings (Session View's ring painter, ui_leds): the cells
+ * the page draws, while it is open. registerRingCells is keyed by a TRACK bank
+ * and never reaches Session, hence its own export. */
+export function globalMacroRingCells() {
+    return (S.active && S.gmac && S.view !== VIEW_EDIT) ? macroCells(-1, true) : null;
+}
+registerSessionRingCells(globalMacroRingCells);
 
 export function renderMacrosPeek(track) {
     clear_screen();
@@ -9802,6 +9852,18 @@ function macroClearAllForTrack(t, slot) {
  * overview — the more likely place to use it.
  * Returns false when there is no track to act on, so the caller can fall through. */
 export function macroClearConfirmOpen() {
+    /* The GLOBAL page: the same dialog, marked for the global store. No chain
+     * slot — the global store is mirrored nowhere. */
+    if (S.active && S.gmac) {
+        GS.confirmMacroClear = true;
+        GS.confirmMacroClearSel = 1;
+        GS.confirmMacroClearGlobal = true;
+        GS.confirmMacroClearTrack = -1;
+        GS.confirmMacroClearSlot = -1;
+        S.deleteHeld = false;      /* see below: the release will never reach us */
+        S.dirty = true;
+        return true;
+    }
     if (!S.active || S.track < 0) return false;
     GS.confirmMacroClear = true;
     GS.confirmMacroClearSel = 1;   /* Cancel is the default — destructive */
@@ -9824,8 +9886,22 @@ export function macroClearConfirmOpen() {
  * this file's CC path. `ok` false is Cancel: clear the flags, touch nothing. */
 export function macroClearConfirmAnswer(ok) {
     const t = GS.confirmMacroClearTrack, slot = GS.confirmMacroClearSlot;
+    const global = !!GS.confirmMacroClearGlobal;
     macroClearConfirmReset();
     if (!ok) return;
+    if (global) {
+        /* Undoable the same way: a copy of the eight mappings is the whole
+         * before-image (no chain mirror to re-point). */
+        const before = GS.globalMacros.slice();
+        const n = globalMacroClearAll();
+        if (n) {
+            markJsUndo('macros',
+                function () { globalMacroRestore(before); },
+                function () { globalMacroClearAll(); });
+        }
+        showActionPopup('GLOBAL MACROS', n ? 'CLEARED' : 'NONE SET');
+        return;
+    }
     /* ⭐ UNDOABLE (Josh, 2026-09-13: "it should be undoable"). The store is the
      * OWNER — the chain slot's knob_N_* keys are a mirror of it (macroMirrorToChain)
      * — so the before-image is a copy of the eight mappings, and restoring means
@@ -9873,8 +9949,36 @@ function macroRestoreForTrack(t, slot, before) {
  * that leaves the screen it belongs to must drop it or the dialog is painted on
  * top of an unrelated view with nothing able to dismiss it. ui_input_cc has
  * THREE parallel teardown lists plus soundExit — all four call this. */
+/* The GLOBAL store's clear and its undo. The screen caches are dropped only
+ * while the global page is the one showing, as macroClearAllForTrack guards a
+ * track's. */
+function globalMacroDropCaches() {
+    if (!S.gmac) return;
+    for (let i = 0; i < NUM_KNOBS; i++) {
+        S.knobAsn[i] = asnFromMacro(macroLeg0(GS.globalMacros[i]));
+        S.macCells[i] = null;    S.macVals[i] = null;
+        S.macLegCells[i] = null; S.macLegVals[i] = null;
+        S.knobAccum[i] = 0;      S.macLastDir[i] = 0;
+    }
+}
+function globalMacroClearAll() {
+    let n = 0;
+    for (let i = 0; i < NUM_KNOBS; i++) { if (GS.globalMacros[i]) n++; GS.globalMacros[i] = null; }
+    globalMacroDropCaches();
+    writeSidecar();
+    S.dirty = true;
+    return n;
+}
+function globalMacroRestore(before) {
+    if (!before) return;
+    for (let i = 0; i < NUM_KNOBS; i++) GS.globalMacros[i] = before[i] || null;
+    globalMacroDropCaches();
+    writeSidecar();
+    S.dirty = true;
+}
 export function macroClearConfirmReset() {
     GS.confirmMacroClear = false;
+    GS.confirmMacroClearGlobal = false;
     GS.confirmMacroClearSel = 1;   /* Cancel is the default — destructive */
     GS.confirmMacroClearTrack = -1;
     GS.confirmMacroClearSlot = -1;
@@ -14494,6 +14598,13 @@ export function soundRender() {
      * old reads here (GS.jogTouched, the transient bankSelectTick window) were
      * exactly the retired display drivers, and they were the "jog touch peeks
      * the card" half of the S+C-as-active-bank bug. */
+    /* ⭑ THE GLOBAL MACROS PAGE rests like the track MACROS bank, under
+     * SESSION's display law: it shows while a knob is touched or the jog
+     * reveals the mixer page (sessMixerShown), and otherwise stands down to
+     * the session overview. */
+    if (S.gmac && S.view === VIEW_MACROS &&
+            (hudRestPass() || (S.touchedIdx < 0 && !sessMixerShown())))
+        return false;
     if (isCardView(S.view) &&
             !soundIsGlobal() && !S.enterSession &&
             !S.instrEditing && !S.busLevelEditing &&
