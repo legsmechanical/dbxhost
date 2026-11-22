@@ -85,6 +85,17 @@ int main(void) {
     shadow_solo_count = 1;
     check(shadow_move_fx_effective_volume(1) == 1.0f, "solo wins over mute on a bus");
 
+    /* Additive mixer solo (this fork): a slot and a bus soloed together both
+     * sound, and everything else is silent. */
+    reset();
+    shadow_chain_slots[3].soloed = 1;
+    shadow_move_fx_strip[1].soloed = 1;
+    shadow_solo_count = 1;
+    check(shadow_effective_volume(3) == 1.0f, "two solos: the soloed slot sounds");
+    check(shadow_move_fx_effective_volume(1) == 1.0f, "two solos: the soloed bus sounds");
+    check(shadow_effective_volume(2) == 0.0f, "two solos: an unsoloed slot is silent");
+    check(shadow_move_fx_effective_volume(0) == 0.0f, "two solos: an unsoloed bus is silent");
+
     if (failures) {
         fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

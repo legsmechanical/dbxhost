@@ -124,6 +124,9 @@ Keep each isolated in its own commit so it is easy to exclude when cherry-pickin
   the module hooks `onPowerButton` and `onPowerReport` it calls), `host_ui_publish` (the UI
   description stream, `src/host/ui_publish_shm.h` — generic, offerable upstream). ⚠ Derive this list from the `JS_SetPropertyStr` registrations diffed against
   `upstream/main`, **not** from `docs/API.md`.
+- **Mixer solo is additive** (upstream: exclusive) — `shadow_chain_set_solo` /
+  `shadow_move_fx_set_solo` in `src/host/shadow_chain_mgmt.c` never clear another strip's
+  solo; dAVEBOx's track solo is the exclusive one. Pinned by `tests/host/test_move_bus_mute_solo.sh`.
 - **Fork-only param-key namespaces** that no `typeof` check can probe: `fx3:`/`fx4:` and
   `send_fx:a:`/`send_fx:b:`.
 - **One fork-only host EXTENSION for module DSPs:** `move_plugin_host_ext_v1` /

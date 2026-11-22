@@ -35,20 +35,21 @@ if ! grep -qE 'accumulate_sends_ex\(m(src|str), mvol' <<<"$busblock"; then
   exit 1
 fi
 
-# 2. Solo exclusivity has ONE writer per family, and each clears the other.
-#    The bug this prevents is two things soloed at once.
+# 2. Mixer solo is ADDITIVE in this fork (dAVEBOx ruling 2026-11-21: its track
+#    solo is the exclusive one). ONE writer per family, and neither clears any
+#    other strip's solo — a second solo joins the first.
 for fn in shadow_chain_set_solo shadow_move_fx_set_solo; do
   body=$(awk "/^void ${fn}\(/,/^}/" src/host/shadow_chain_mgmt.c)
   if [ -z "$body" ]; then
     echo "FAIL: $fn missing" >&2
     exit 1
   fi
-  if ! grep -q 'shadow_chain_slots\[i\]\.soloed = 0' <<<"$body"; then
-    echo "FAIL: $fn does not clear chain-slot solos — two things could be soloed at once" >&2
+  if grep -q 'shadow_chain_slots\[i\]\.soloed = 0' <<<"$body"; then
+    echo "FAIL: $fn clears chain-slot solos — mixer solo must be additive" >&2
     exit 1
   fi
-  if ! grep -q 'shadow_move_fx_strip\[i\]\.soloed = 0' <<<"$body"; then
-    echo "FAIL: $fn does not clear FX-bus solos — two things could be soloed at once" >&2
+  if grep -q 'shadow_move_fx_strip\[i\]\.soloed = 0' <<<"$body"; then
+    echo "FAIL: $fn clears FX-bus solos — mixer solo must be additive" >&2
     exit 1
   fi
   if ! grep -q 'shadow_recount_solo()' <<<"$body"; then

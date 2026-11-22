@@ -845,11 +845,11 @@ void shadow_apply_mute(int slot, int is_muted) {
     shadow_request_save_state();
 }
 
-/* Set (not toggle) a chain slot's solo. The single writer for chain solo, so
- * that "exclusive across both families" is stated once: every entry point —
- * the Shift+Mute+Track gesture, the slot:soloed param, a per-set restore —
- * goes through here rather than repeating the clear loops and getting one of
- * them wrong. */
+/* Set (not toggle) a chain slot's solo. The single writer for chain solo:
+ * every entry point — the Shift+Mute+Track gesture, the slot:soloed param, a
+ * per-set restore — goes through here. Mixer solo is ADDITIVE in this fork
+ * (dAVEBOx ruling 2026-11-21: its track solo is the exclusive one): soloing a
+ * strip leaves the others' solo alone, across both families. */
 void shadow_chain_set_solo(int slot, int is_soloed) {
     if (slot < 0 || slot >= SHADOW_CHAIN_INSTANCES) return;
     if (!is_soloed) {
@@ -857,11 +857,7 @@ void shadow_chain_set_solo(int slot, int is_soloed) {
         shadow_chain_slots[slot].soloed = 0;
         shadow_recount_solo();
     } else {
-        for (int i = 0; i < SHADOW_CHAIN_INSTANCES; i++)
-            shadow_chain_slots[i].soloed = 0;
-        for (int i = 0; i < MOVE_FX_SLOTS; i++)
-            shadow_move_fx_strip[i].soloed = 0;
-        shadow_chain_slots[slot].soloed = 1;
+        shadow_chain_slots[slot].soloed = 1;   /* additive: the others stay as they are */
         shadow_solo_count = 1;
     }
     for (int i = 0; i < SHADOW_CHAIN_INSTANCES; i++) {
@@ -893,10 +889,10 @@ void shadow_move_fx_apply_mute(int bus, int is_muted) {
     mix_log_note();
 }
 
-/* Solo an FX bus. Exclusive across both families: a chain slot and a bus can
- * occupy the same mixer position, and a solo that left the other family
- * sounding would not be a solo. Clearing this bus's solo clears the count
- * outright, matching shadow_toggle_solo — only ever one thing is soloed. */
+/* Solo an FX bus. Solo is one group across both families (anything not
+ * soloed goes silent, slot or bus), and ADDITIVE in this fork: soloing a bus
+ * leaves every other solo alone. Clearing it recounts, so another solo keeps
+ * the group live. */
 void shadow_move_fx_set_solo(int bus, int is_soloed) {
     if (bus < 0 || bus >= MOVE_FX_SLOTS) return;
     if (!is_soloed) {
@@ -904,15 +900,10 @@ void shadow_move_fx_set_solo(int bus, int is_soloed) {
         shadow_move_fx_strip[bus].soloed = 0;
         shadow_recount_solo();
     } else {
-        for (int i = 0; i < SHADOW_CHAIN_INSTANCES; i++)
-            shadow_chain_slots[i].soloed = 0;
-        for (int i = 0; i < MOVE_FX_SLOTS; i++)
-            shadow_move_fx_strip[i].soloed = 0;
-        shadow_move_fx_strip[bus].soloed = 1;
+        shadow_move_fx_strip[bus].soloed = 1;   /* additive: the others stay as they are */
         shadow_solo_count = 1;
     }
-    /* The chain slots' published UI state carries their solo flag, and clearing
-     * it above is invisible to the UI otherwise. */
+    /* The chain slots' published UI state carries the shared solo state. */
     for (int i = 0; i < SHADOW_CHAIN_INSTANCES; i++) {
         shadow_ui_state_update_slot(i);
     }

@@ -87,8 +87,9 @@ SYNTH (MOVE N)  →  FX 1  →  FX 2  →  FX 3  →  FX 4  →  Volume / Send A
     muting the slot leaves the bus sounding and vice versa.
   - **Solo is one group across both.** Soloing a bus silences every chain slot
     and every other bus, and a chain slot's solo silences the buses — a solo
-    that left half the mixer playing would not be a solo. Only one thing is
-    ever soloed, whichever family it is in.
+    that left half the mixer playing would not be a solo. It is **additive**:
+    soloing a second strip (either family) joins the first, and un-soloing one
+    leaves the others soloed. (dAVEBOx's TRACK solo is the exclusive one.)
   Both are **per project**, saved in the set's `move_fx_meta.json` beside the
   levels and flushed on the same cadence (project switch, session exit, overtake
   entry) — a mute is not written to disk the instant you set it.

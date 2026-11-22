@@ -10813,9 +10813,9 @@ export function soundOnCC(d1, d2, decodeDelta) {
                 S.busLevelDirty = true;
                 if (_r.spec.slot) queueSlotCfgWrite(_r.spec.key, _r.val, true);
                 else queueWrite(_r.spec.key, String(_r.val), _r.spec.comp);
-                /* Solo is exclusive host-side, so every other row's cached
-                 * value may now be stale — re-read on the tick, where the
-                 * readback traffic belongs. */
+                /* Solo is shared host-side (one group across slots and buses),
+                 * so other rows' cached state may be stale — re-read on the
+                 * tick, where the readback traffic belongs. */
                 if (_r.spec.key === 'soloed') S.pendingAction = { t: 'names' };
             } else {
                 S.busLevelEditing = !S.busLevelEditing;

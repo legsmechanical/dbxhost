@@ -249,8 +249,8 @@ typedef struct {
 } move_fx_strip_t;
 extern move_fx_strip_t shadow_move_fx_strip[MOVE_FX_SLOTS];
 
-/* Mute / solo for an FX bus. Solo is exclusive across BOTH families, so these
- * clear any chain-slot solo too (and shadow_toggle_solo clears bus solos). */
+/* Mute / solo for an FX bus. Solo is one group across BOTH families, and
+ * additive in this fork: a solo never clears another strip's. */
 void shadow_move_fx_apply_mute(int bus, int is_muted);
 void shadow_move_fx_set_solo(int bus, int is_soloed);
 /* Worker: log the mix state if a mute/solo changed since the last call. The
