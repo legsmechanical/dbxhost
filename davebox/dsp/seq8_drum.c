@@ -88,12 +88,8 @@ static void drum_pfx_send(drum_pfx_t *px, uint8_t status, uint8_t d1, uint8_t d2
         if (g_inst->looper_state == LOOPER_STATE_CAPTURING &&
                 (st == 0x90 || st == 0x80) &&
                 g_inst->looper_event_count < LOOPER_MAX_EVENTS) {
-            int ei = (int)g_inst->looper_event_count++;
-            g_inst->looper_events[ei].tick   = (uint16_t)g_inst->looper_pos;
-            g_inst->looper_events[ei].status = status;
-            g_inst->looper_events[ei].d1     = d1;
-            g_inst->looper_events[ei].d2     = d2;
-            g_inst->looper_events[ei].track  = px->track_idx;
+            /* Sorted in (looper_capture_store). */
+            int ei = looper_capture_store(g_inst, g_inst->looper_pos, px->track_idx, status, d1, d2);
             /* Apply perf mods to live emit so mods kick in immediately during
              * the first capture cycle. perf_apply skips pitch transforms for
              * drum tracks (gated on tr_idx pad_mode==DRUM); vel/gate/cycle

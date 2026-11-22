@@ -3130,6 +3130,43 @@ static uint64_t pfx_parked_on_at(const pfx_event_t *ev, int n, uint8_t ch, uint8
     return at;
 }
 
+/* Where the looper stores an event captured now. A note played live is heard
+ * the output lead behind the sequencer, so it is stepped back by the lead (a
+ * sequenced send, inside render, is already held by the lead). lead_back wraps
+ * inside the capture window: a note heard in the first lead's worth of ticks
+ * would land at the window's END with its note-off near the start — off before
+ * on — so it is clamped to tick 0 instead. Used by both capture sites (melodic
+ * and drum: drum hits used to keep the raw position, ~3 blocks late). */
+static uint32_t looper_heard_pos(const seq8_instance_t *inst) {
+    uint32_t pos = inst->looper_pos;
+    if (lead_now(inst) || !inst->looper_capture_ticks) return pos;
+    uint32_t back = lead_back(inst, pos, 0, inst->looper_capture_ticks);
+    if (back > pos) back = 0;   /* B6-clamp: never wrap to the loop end */
+    return back;
+}
+
+/* Store one captured event, keeping the buffer SORTED by tick. Replay walks it
+ * in order and fires only events whose tick equals the position, so one event
+ * stored earlier than the one before it (a live note stepped back by the lead
+ * behind an already-captured sequenced note) stalled the replay for the rest of
+ * every cycle. A stable insert: equal ticks keep arrival order. Bounded (it
+ * moves at most the events of the last lead's worth of ticks), no allocation.
+ * Returns the event's index. Caller has checked there is room. */
+static int looper_capture_store(seq8_instance_t *inst, uint32_t tick, uint8_t track,
+                                uint8_t status, uint8_t d1, uint8_t d2) {
+    int ei = (int)inst->looper_event_count++;
+    while (ei > 0 && inst->looper_events[ei - 1].tick > (uint16_t)tick) {   /* B6-sorted */
+        inst->looper_events[ei] = inst->looper_events[ei - 1];
+        ei--;
+    }
+    inst->looper_events[ei].tick   = (uint16_t)tick;
+    inst->looper_events[ei].status = status;
+    inst->looper_events[ei].d1     = d1;
+    inst->looper_events[ei].d2     = d2;
+    inst->looper_events[ei].track  = track;
+    return ei;
+}
+
 static void pfx_send(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
     /* SEQ ARP is the last chain stage. Any note-on/off coming out of the
      * upstream stages (NOTE FX → HARMZ → MIDI DLY immediate emit and queued
@@ -3168,16 +3205,9 @@ static void pfx_send(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
         if (g_inst->looper_state == LOOPER_STATE_CAPTURING &&
                 (st == 0x90 || st == 0x80) &&
                 g_inst->looper_event_count < LOOPER_MAX_EVENTS) {
-            int ei = (int)g_inst->looper_event_count++;
-            uint32_t lpos = g_inst->looper_pos;
-            /* played live: where it was heard, the lead behind the sequencer */
-            if (!lead_now(g_inst) && g_inst->looper_capture_ticks)
-                lpos = lead_back(g_inst, lpos, 0, g_inst->looper_capture_ticks);
-            g_inst->looper_events[ei].tick   = (uint16_t)lpos;
-            g_inst->looper_events[ei].status = status;
-            g_inst->looper_events[ei].d1     = d1;
-            g_inst->looper_events[ei].d2     = d2;
-            g_inst->looper_events[ei].track  = fx->track_idx;
+            /* played live: where it was heard (looper_heard_pos); sorted in */
+            int ei = looper_capture_store(g_inst, looper_heard_pos(g_inst), fx->track_idx,
+                                          status, d1, d2);
             /* Apply perf mods to live emit so mods kick in immediately during
              * the first capture cycle. Captured event (above) stays raw —
              * LOOPING playback re-applies perf_apply on the clean events. */
