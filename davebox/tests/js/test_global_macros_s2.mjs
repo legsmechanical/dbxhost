@@ -46,7 +46,7 @@ P['6|synth:ui_hierarchy'] = JSON.stringify({ levels: {
     pad_shape: { name: 'Shape', child_prefix: 'pad', child_count: 32, child_index_base: 1,
                  child_index_param: 'ui_current_pad',
                  params: [{ key: 'ui_current_pad', name: 'Pad', type: 'int', min: 1, max: 32 },
-                          { key: 'cutoff', name: 'Filter Freq', type: 'float', min: 0, max: 1 }] },
+                          { key: 'cutoff', type: 'float', min: 0, max: 1 }] },   /* name only in chain_params */
 } });
 P['6|synth:ui_current_pad'] = '5';
 P['6|synth:pad5_cutoff'] = '0.4';
@@ -115,6 +115,7 @@ const drawn = (k) => snd.soundMacrosForTest().drawn[k];
 
 /* Assign knob `k` (a fresh one, or + Add target on its leg list) to
  * T<track+1> Synth > `param`, all through the dispatch. */
+let lastParamRows = [];
 function assignVia(k, track, param, addRow) {
     note(k, 127); tick();
     click(); tick(3);
@@ -136,7 +137,8 @@ function assignVia(k, track, param, addRow) {
     assert(si >= 0, 'no Synth on T' + (track + 1) + "'s target list: " + tg);
     assert(tg.indexOf('levels') < 0 && !tg.some((id) => /morph|^au/.test(id)), 'the global list offers Levels / SnapMorph / Sample: ' + tg);
     jog(si - snd.soundKnobTargetIdxForTest()); click(); tick(3);
-    const pl = snd.soundKnobParamsForTest().map((p) => p.key);
+    lastParamRows = snd.soundKnobParamsForTest();
+    const pl = lastParamRows.map((p) => p.key);
     const pi = pl.indexOf(param);
     assert(pi >= 0, 'no ' + param + ' on the param list: ' + pl);
     jog(pi - snd.soundKnobParamIdxForTest()); click(); tick(3);
@@ -246,6 +248,8 @@ step('⭐⭐ a PER-PAD param (a child_prefix level, e.g. DR32): the leg is fixed
     /* the bare key is what the module never answers (device, 2026-11-22: the
      * knob read "--" and a turn did nothing) */
     assignVia(2, 6, 'pad5_cutoff');
+    /* the row is named from chain_params with its pad (device: it read "P1 cutoff") */
+    assert(lastParamRows.some((r) => r.key === 'pad5_cutoff' && r.label === 'P5 Filter Freq'), 'rows: ' + JSON.stringify(lastParamRows));
     const g = S.globalMacros[2];
     assert(g && g.legs.length === 1 && g.legs[0].key === 'pad5_cutoff' && g.legs[0].track === 6, 'store: ' + JSON.stringify(g));
     if (snd.soundViewForTest() !== 19) { cc(51, 127); cc(51, 0); tick(2); }

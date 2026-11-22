@@ -4900,6 +4900,15 @@ function knobParamList(target) {
         if (key && !params.find(p => p.key === key)) params.push({ key, label: label || key });
     };
     const hier = engineGet(S.slot, target, 'ui_hierarchy');
+    /* A hierarchy row may carry only its key and leave the name to
+     * chain_params (DR32's pad rows do): the list shows that name, not the
+     * key (device, 2026-11-22: "P1 hold_knob"). */
+    const cpName = {};
+    if (hier) {
+        try { for (const q of (JSON.parse(engineGet(S.slot, target, 'chain_params') || '[]') || []))
+                  if (q && q.key && (q.name || q.label)) cpName[q.key] = q.name || q.label; }
+        catch (e) { /* names stay keys */ }
+    }
     if (hier) {
         try {
             const h = JSON.parse(hier);
@@ -4919,13 +4928,13 @@ function knobParamList(target) {
                         cn = String(Number.isFinite(raw) ? raw : base);
                     }
                     const keyOf = (k) => cpfx ? cpfx + cn + '_' + k : k;
-                    const labelOf = (k, l) => cpfx ? childTag(cpfx, cn) + ' ' + (l || k) : (l || k);
+                    const labelOf = (k, l) => (cpfx ? childTag(cpfx, cn) + ' ' : '') + (l || cpName[k] || k);
                     for (const k of (Array.isArray(level.knobs) ? level.knobs : [])) {
-                        if (typeof k === 'string') push(keyOf(k), labelOf(k, k));
+                        if (typeof k === 'string') push(keyOf(k), labelOf(k));
                         else if (k && k.key) push(keyOf(k.key), labelOf(k.key, k.label || k.name));
                     }
                     for (const p of (Array.isArray(level.params) ? level.params : [])) {
-                        if (typeof p === 'string') { push(keyOf(p), labelOf(p, p)); continue; }
+                        if (typeof p === 'string') { push(keyOf(p), labelOf(p)); continue; }
                         if (!p || !p.key) continue;
                         if (cpfx && p.key === level.child_index_param) continue;   /* the selector itself */
                         push(keyOf(p.key), labelOf(p.key, p.label || p.name));
