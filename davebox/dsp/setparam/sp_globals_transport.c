@@ -162,15 +162,24 @@ static int sp_globals_transport(sp_ctx_t *cx) {
             if (page < 0) page = 0;
 
             seq8_track_t *atr = &inst->tracks[at];
-            uint16_t step_tps;
+            clip_t *acl;
             if (atr->pad_mode == PAD_MODE_DRUM && lane >= 0 && lane < DRUM_LANES
                     && atr->drum_clips[atr->active_clip]) {
-                step_tps = atr->drum_clips[atr->active_clip]->lanes[lane].clip.ticks_per_step;
+                acl = &atr->drum_clips[atr->active_clip]->lanes[lane].clip;
             } else {
-                step_tps = atr->clips[atr->active_clip].ticks_per_step;
+                acl = &atr->clips[atr->active_clip];
             }
+            uint16_t step_tps = acl->ticks_per_step;
             if (step_tps == 0) step_tps = TICKS_PER_STEP;
-            uint64_t master_off = (uint64_t)page * 16ULL * (uint64_t)step_tps;
+            /* The page lands inside the loop window (ruled 2026-11-21): the
+             * offset counts from loop_start, so this clip's playhead reaches
+             * page*16 exactly. A page before the window wraps into it. */
+            int32_t rel = page * 16 - (int32_t)acl->loop_start;   /* A4-rel */
+            if (rel < 0 && acl->length > 0) {
+                int32_t L = (int32_t)acl->length;
+                rel = ((rel % L) + L) % L;                        /* A4-wrap */
+            }
+            uint64_t master_off = (uint64_t)rel * (uint64_t)step_tps;
 
             /* Silence / finalize prelude (mirrors restart branch). */
             int t;
@@ -200,6 +209,7 @@ static int sp_globals_transport(sp_ctx_t *cx) {
             inst->tick_accum          = 0;
             inst->arp_master_tick     = (uint32_t)master_off;
             inst->count_in_ticks      = 0;
+            reset_all_loop_cycles(inst);   /* A4-cycles: as restart does */
             for (t = 0; t < NUM_TRACKS; t++) {
                 seq8_track_t *tr = &inst->tracks[t];
                 clip_t *cl = &tr->clips[tr->active_clip];
