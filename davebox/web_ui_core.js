@@ -128,7 +128,9 @@ if (!window.schwungRemote) {
       /* track header gear / mute / solo (Change 1) — keep the preview header live */
       if((m=k.match(/t(\d+)_launch_clip$/))){ const tk=tracks[+m[1]];
         if(tk){ tk.pl=1; tk.ac=Math.max(0,+v|0); tk.qc=-1; } rev++; rebuild(); return; }
-      if((m=k.match(/t(\d+)_(mute|solo)$/))){ tracks[+m[1]][m[2]]=+v?1:0; rev++; rebuild(); return; }
+      if((m=k.match(/t(\d+)_(mute|solo)$/))){ tracks[+m[1]][m[2]]=+v?1:0;
+        if(m[2]==="solo"&&+v) tracks.forEach((o,i)=>{ if(i!==+m[1]) o.solo=0; });   /* track solo is exclusive */
+        rev++; rebuild(); return; }
       if((m=k.match(/t(\d+)_route$/))){ const r={schwung:0,move:1,external:2,none:3}[v];
         if(r!=null) tracks[+m[1]].route=r; rev++; rebuild(); return; }
       if((m=k.match(/t(\d+)_channel$/))){ tracks[+m[1]].chan=Math.max(1,Math.min(16,+v|0)); rev++; rebuild(); return; }

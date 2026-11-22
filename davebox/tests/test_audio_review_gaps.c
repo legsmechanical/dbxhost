@@ -409,16 +409,16 @@ int main(void) {
         hx_stub_feed(4, NULL, &en);
         HX_ASSERT(en == 0, "solo: soloing another track did not silence the Audio track's output");
         HX_ASSERT(loop_voice(&inst->au_trk[4]), "solo: the loop stopped instead of playing on silently");
-        /* soloed too, it sounds again */
+        /* soloed itself (track solo is exclusive: track 2's solo goes), it sounds again */
         hx_set_param(h, "t4_solo", "1");
+        HX_ASSERT(!inst->solo[1], "solo: track solo is exclusive");
         hx_render(h, 3);
         hx_stub_feed_reset();
         hx_render(h, 4);
         blk = hx_stub_feed_last(4);
         for (k = 0, loud = 0; k < 256; k++) if (blk[k]) loud = 1;
         hx_stub_feed(4, NULL, &en);
-        HX_ASSERT(en > 0 && loud, "solo: the Audio track soloed with another stayed silent");
-        hx_set_param(h, "t1_solo", "0");
+        HX_ASSERT(en > 0 && loud, "solo: the soloed Audio track stayed silent");
         hx_set_param(h, "t4_solo", "0");
         hx_set_param(h, "transport", "stop");
         hx_render(h, 4);

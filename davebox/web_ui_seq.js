@@ -881,6 +881,8 @@ function openTrackGear(t,anchor){
     const paint=()=>b.classList.toggle("on", !!M.tracks[t][key]);
     paint();
     b.onclick=()=>{ const tr=M.tracks[t]; tr[key]=tr[key]?0:1;
+      /* track solo is exclusive: the DSP un-solos the others — mirror it */
+      if(key==="solo"&&tr.solo) M.tracks.forEach((o,i)=>{ if(i!==t) o.solo=0; });
       R.setParam(P+`t${t}_${key}`, tr[key]?"1":"0"); afterEdit(); renderSession(); paint(); pullSoon(); }; };
   tgMS("#tgMute","mute"); tgMS("#tgSolo","solo");
   el.querySelector("#tgMix").onclick=()=>{ closeTrackGear(); jumpTo("mix", t); };

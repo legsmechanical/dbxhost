@@ -121,6 +121,8 @@ export function setTrackSolo(t, on) {
      * no MIDI, and soloing it would wrongly silence every other track.) Mute
      * stays functional via setTrackMute. */
     if (S.trackPadMode[t] === PAD_MODE_CONDUCT) return;
+    /* Track solo is exclusive (the DSP un-solos the others; mirror it). */
+    if (on) S.trackSoloed.fill(false);
     S.trackSoloed[t] = on;
     if (on && S.trackMuted[t]) {
         S.trackMuted[t] = false;

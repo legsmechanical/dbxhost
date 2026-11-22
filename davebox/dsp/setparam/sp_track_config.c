@@ -187,9 +187,15 @@ static int sp_track_config(sp_ctx_t *cx) {
     if (!strcmp(sub, "solo")) {
         if (tr->pad_mode == PAD_MODE_CONDUCT) return 1;
         inst->solo[tidx] = (val[0] == '1') ? 1 : 0;
-        if (inst->solo[tidx]) inst->mute[tidx] = 0;
+        if (inst->solo[tidx]) {
+            /* Track solo is EXCLUSIVE (ruled 2026-11-21, flipped from
+             * additive; the mixer's solo is the additive one): soloing a
+             * track un-solos every other. */
+            for (int _o = 0; _o < NUM_TRACKS; _o++) if (_o != tidx) inst->solo[_o] = 0;   /* B2: exclusive */
+            inst->mute[tidx] = 0;
+        }
         silence_muted_tracks(inst);
-        rui_mark(inst, tidx, tr->active_clip);   /* rui_index mute/solo */
+        rui_touch(inst);   /* rui_index mute/solo: several headers may change */
         inst->state_dirty = 1;   /* solo: saved */
         return 1;
     }
